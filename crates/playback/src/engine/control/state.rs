@@ -8,7 +8,7 @@ impl PlaybackEngine {
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
         self.lock_playback()
-            .map_or(PlaybackState::Stopped, |p| p.state())
+            .map_or(PlaybackState::Stopped, |playback| playback.state())
     }
 
     /// 处理播放更新
@@ -51,8 +51,8 @@ impl PlaybackEngine {
             if event.tick > current_tick {
                 break;
             }
-            let event = if let Some(e) = self.event_queue.pop() {
-                e
+            let event = if let Some(popped_event) = self.event_queue.pop() {
+                popped_event
             } else {
                 break;
             };
@@ -83,7 +83,7 @@ impl PlaybackEngine {
             loop {
                 let next_on_tick = notes
                     .get(state.note_cursor)
-                    .map(|n| n.start_tick)
+                    .map(|note| note.start_tick)
                     .unwrap_or(u32::MAX);
                 let next_off_tick = state
                     .pending_offs
@@ -136,18 +136,18 @@ impl PlaybackEngine {
         let ctrl_events = &doc.control_events;
         let ctrl_cursor = &mut self.control_event_cursor;
         while *ctrl_cursor < ctrl_events.len() {
-            let ev = &ctrl_events[*ctrl_cursor];
-            let ev_tick = ev.tick as f32;
-            if ev_tick > current_tick {
+            let ctrl_event = &ctrl_events[*ctrl_cursor];
+            let ctrl_tick = ctrl_event.tick as f32;
+            if ctrl_tick > current_tick {
                 break;
             }
-            if ev_tick >= self.last_processed_tick && ev.track != self.current_track {
-                if ev.kind == 0 {
+            if ctrl_tick >= self.last_processed_tick && ctrl_event.track != self.current_track {
+                if ctrl_event.kind == 0 {
                     // 复制 packed 字段到局部变量，避免未对齐引用
-                    let cc_tick = ev.tick;
-                    let cc_track = ev.track;
-                    let cc_ch = ev.channel;
-                    let cc_param = ev.param;
+                    let cc_tick = ctrl_event.tick;
+                    let cc_track = ctrl_event.track;
+                    let cc_ch = ctrl_event.channel;
+                    let cc_param = ctrl_event.param;
                     tracing::debug!(
                         "process_other_tracks: CC 事件 (其他音轨) tick={} track={} ch={} param={}",
                         cc_tick,
@@ -156,7 +156,7 @@ impl PlaybackEngine {
                         cc_param,
                     );
                 }
-                Self::push_control_event(ev, messages);
+                Self::push_control_event(ctrl_event, messages);
             }
             *ctrl_cursor += 1;
         }
@@ -168,20 +168,20 @@ impl PlaybackEngine {
     /// 假设 midi_events 已按 tick 排序。
     fn process_midi_events(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         while self.midi_event_cursor < self.midi_events.len() {
-            let ev = &self.midi_events[self.midi_event_cursor];
-            if ev.tick > current_tick {
+            let midi_event = &self.midi_events[self.midi_event_cursor];
+            if midi_event.tick > current_tick {
                 break;
             }
-            if ev.tick >= self.last_processed_tick {
-                if matches!(ev.message, MidiMessage::ControlChange { .. }) {
+            if midi_event.tick >= self.last_processed_tick {
+                if matches!(midi_event.message, MidiMessage::ControlChange { .. }) {
                     tracing::debug!(
                         "process_midi_events: CC 事件触发 tick={} cursor={} cc={:?}",
-                        ev.tick,
+                        midi_event.tick,
                         self.midi_event_cursor,
-                        ev.message,
+                        midi_event.message,
                     );
                 }
-                Self::push_midi_message_from_event(&ev.message, messages);
+                Self::push_midi_message_from_event(&midi_event.message, messages);
             }
             self.midi_event_cursor += 1;
         }
@@ -193,7 +193,7 @@ impl PlaybackEngine {
             && let Some((_loop_start, loop_end)) = self.loop_range
             && current_tick >= loop_end
         {
-            let loop_start = self.loop_range.map_or(0.0, |(s, _)| s);
+            let loop_start = self.loop_range.map_or(0.0, |(start, _)| start);
             if let Some(mut playback) = self.lock_playback() {
                 playback.seek(loop_start);
             }
@@ -206,9 +206,11 @@ impl PlaybackEngine {
                     self.reset_track_state_to(track_idx, seek_tick_u, &doc);
                 }
                 let ctrl_events = &doc.control_events;
-                self.control_event_cursor = ctrl_events.partition_point(|ev| ev.tick < seek_tick_u);
-                self.midi_event_cursor =
-                    self.midi_events.partition_point(|ev| ev.tick < loop_start);
+                self.control_event_cursor =
+                    ctrl_events.partition_point(|ctrl_event| ctrl_event.tick < seek_tick_u);
+                self.midi_event_cursor = self
+                    .midi_events
+                    .partition_point(|midi_event| midi_event.tick < loop_start);
             }
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
@@ -216,27 +218,30 @@ impl PlaybackEngine {
     }
 
     #[inline]
-    fn push_control_event(ev: &midly::loader::PackedControlEvent, messages: &mut Vec<MidiMessage>) {
-        match ev.kind {
+    fn push_control_event(
+        event: &midly::loader::PackedControlEvent,
+        messages: &mut Vec<MidiMessage>,
+    ) {
+        match event.kind {
             0 => {
-                let (controller, value) = ev.as_control_change();
+                let (controller, value) = event.as_control_change();
                 messages.push(MidiMessage::ControlChange {
-                    channel: ev.channel,
+                    channel: event.channel,
                     controller,
                     value,
                 });
             }
             1 => {
-                let program = ev.as_program_change();
+                let program = event.as_program_change();
                 messages.push(MidiMessage::ProgramChange {
-                    channel: ev.channel,
+                    channel: event.channel,
                     program,
                 });
             }
             2 => {
-                let value = ev.as_pitch_bend();
+                let value = event.as_pitch_bend();
                 messages.push(MidiMessage::PitchBend {
-                    channel: ev.channel,
+                    channel: event.channel,
                     value,
                 });
             }

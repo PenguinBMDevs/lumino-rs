@@ -16,13 +16,13 @@ pub enum Container {
 
 impl std::str::FromStr for Container {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
             "MP4" => Ok(Container::Mp4),
             "MOV" => Ok(Container::Mov),
             "MKV" => Ok(Container::Mkv),
             "AVI" => Ok(Container::Avi),
-            _ => Err(format!("未知容器格式: {s}")),
+            _ => Err(format!("未知容器格式: {input}")),
         }
     }
 }
@@ -40,14 +40,14 @@ pub enum VideoCodec {
 
 impl std::str::FromStr for VideoCodec {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
             "H.264" => Ok(VideoCodec::H264),
             "H.265 / HEVC" => Ok(VideoCodec::H265),
             "ProRes" => Ok(VideoCodec::ProRes),
             "VP9" => Ok(VideoCodec::Vp9),
             "AV1" => Ok(VideoCodec::Av1),
-            _ => Err(format!("未知视频编码器: {s}")),
+            _ => Err(format!("未知视频编码器: {input}")),
         }
     }
 }
@@ -66,15 +66,15 @@ pub enum EncoderBackend {
 
 impl std::str::FromStr for EncoderBackend {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
             "Software (CPU)" => Ok(EncoderBackend::Software),
             "VideoToolbox (macOS)" => Ok(EncoderBackend::VideoToolbox),
             "NVENC (NVIDIA)" => Ok(EncoderBackend::Nvenc),
             "AMF (AMD)" => Ok(EncoderBackend::Amf),
             "QSV (Intel)" => Ok(EncoderBackend::Qsv),
             "VAAPI (Linux)" => Ok(EncoderBackend::Vaapi),
-            _ => Err(format!("未知编码后端: {s}")),
+            _ => Err(format!("未知编码后端: {input}")),
         }
     }
 }
@@ -90,12 +90,12 @@ pub enum QualityPreset {
 
 impl std::str::FromStr for QualityPreset {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
             "高" => Ok(QualityPreset::High),
             "中" => Ok(QualityPreset::Medium),
             "低" => Ok(QualityPreset::Low),
-            _ => Err(format!("未知质量预设: {s}")),
+            _ => Err(format!("未知质量预设: {input}")),
         }
     }
 }
@@ -135,12 +135,12 @@ impl std::fmt::Display for RenderMode {
 
 impl std::str::FromStr for RenderMode {
     type Err = String;
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
             "waterfall" | "瀑布流" | "Lumino瀑布流" => Ok(RenderMode::Waterfall),
             "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
             "miditrail" | "MIDITrail" => Ok(RenderMode::MIDITrail),
-            _ => Err(format!("未知渲染模式: {s}")),
+            _ => Err(format!("未知渲染模式: {input}")),
         }
     }
 }

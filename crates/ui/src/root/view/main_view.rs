@@ -175,7 +175,7 @@ impl Root {
             .sidebar
             .tracks
             .iter()
-            .map(|t| (t.id, t.name.clone()))
+            .map(|track| (track.id, track.name.clone()))
             .collect();
         let track_list_canvas = crate::editor::arrangement::TrackListCanvas::new(
             track_data,

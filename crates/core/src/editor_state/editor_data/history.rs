@@ -280,7 +280,7 @@ impl EditorData {
                     .unzip()
             } else {
                 (start..=end)
-                    .filter_map(|i| self.notes.get(i).map(|n| (n.tick, n.key)))
+                    .filter_map(|idx| self.notes.get(idx).map(|note| (note.tick, note.key)))
                     .unzip()
             };
             MoveOp {
@@ -295,14 +295,14 @@ impl EditorData {
             }
         };
 
-        for &i in &indices[1..] {
-            if i == prev + 1 {
-                prev = i;
+        for &note_idx in &indices[1..] {
+            if note_idx == prev + 1 {
+                prev = note_idx;
             } else {
                 ops.push(make_op(range_start, prev, seq));
                 seq = seq.wrapping_add(1);
-                range_start = i;
-                prev = i;
+                range_start = note_idx;
+                prev = note_idx;
             }
         }
         // 最后一段

@@ -34,8 +34,8 @@ impl EditorTransform for EditorData {
         }
         let mut min_key = u16::MAX;
         let mut max_key = u16::MIN;
-        for &i in &selected_indices {
-            if let Some(note) = self.notes.get(i) {
+        for &note_idx in &selected_indices {
+            if let Some(note) = self.notes.get(note_idx) {
                 min_key = min_key.min(note.key);
                 max_key = max_key.max(note.key);
             }
@@ -46,8 +46,8 @@ impl EditorTransform for EditorData {
         let center = (min_key as f32 + max_key as f32) / 2.0;
         self.push_history();
         let mut modified = 0;
-        for &i in &selected_indices {
-            if let Some(note) = self.notes.get_mut(i) {
+        for &note_idx in &selected_indices {
+            if let Some(note) = self.notes.get_mut(note_idx) {
                 let new_key = (2.0 * center - note.key as f32)
                     .round()
                     .clamp(0.0, max_key_index) as u16;
@@ -72,8 +72,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
-        for &i in &selected_indices {
-            if let Some(note) = self.notes.get_mut(i) {
+        for &note_idx in &selected_indices {
+            if let Some(note) = self.notes.get_mut(note_idx) {
                 let new_tick = (2.0 * axis_tick - (note.tick + note.length)).max(0.0);
                 if (new_tick - note.tick).abs() > f32::EPSILON {
                     note.tick = new_tick;
@@ -101,8 +101,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
-        for &i in &indices {
-            if let Some(note) = self.notes.get_mut(i) {
+        for &note_idx in &indices {
+            if let Some(note) = self.notes.get_mut(note_idx) {
                 let new_key = (note.key as i16 + semitones).clamp(0, 255) as u16;
                 if new_key != note.key {
                     note.key = new_key;
@@ -134,7 +134,7 @@ impl EditorTransform for EditorData {
         }
         let min_tick = indices
             .iter()
-            .filter_map(|i| self.notes.get(*i).map(|note| note.tick))
+            .filter_map(|idx| self.notes.get(*idx).map(|note| note.tick))
             .fold(f32::INFINITY, f32::min);
         if min_tick.is_infinite() {
             return 0;
@@ -142,8 +142,8 @@ impl EditorTransform for EditorData {
         self.push_history();
         let mut modified = 0;
         const MIN_LEN: f32 = 1.0;
-        for &i in &indices {
-            if let Some(note) = self.notes.get_mut(i) {
+        for &note_idx in &indices {
+            if let Some(note) = self.notes.get_mut(note_idx) {
                 let new_tick = min_tick + (note.tick - min_tick) * speed_factor;
                 let new_length = (note.length * speed_factor).max(MIN_LEN);
                 if (new_tick - note.tick).abs() > f32::EPSILON
@@ -168,8 +168,8 @@ impl EditorTransform for EditorData {
             .notes
             .iter()
             .enumerate()
-            .map(|(i, note)| VelocityPoint {
-                note_index: i,
+            .map(|(note_idx, note)| VelocityPoint {
+                note_index: note_idx,
                 tick: note.tick,
                 velocity: note.velocity,
                 length: note.length,

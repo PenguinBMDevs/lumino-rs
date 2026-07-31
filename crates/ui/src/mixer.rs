@@ -65,7 +65,11 @@ impl MixerState {
     /// 从音轨列表更新混音器状态
     pub fn sync_from_tracks(&mut self, tracks: &[crate::sidebar::Track]) {
         for track in tracks {
-            if let Some(existing) = self.tracks.iter_mut().find(|t| t.track_id == track.id) {
+            if let Some(existing) = self
+                .tracks
+                .iter_mut()
+                .find(|existing_track| existing_track.track_id == track.id)
+            {
                 existing.name = track.name.clone();
             } else {
                 self.tracks
@@ -73,8 +77,11 @@ impl MixerState {
             }
         }
         // 移除不存在的音轨
-        self.tracks
-            .retain(|t| tracks.iter().any(|st| st.id == t.track_id));
+        self.tracks.retain(|track| {
+            tracks
+                .iter()
+                .any(|sidebar_track| sidebar_track.id == track.track_id)
+        });
     }
 
     /// 渲染混音器视图

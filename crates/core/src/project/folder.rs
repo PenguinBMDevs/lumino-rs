@@ -170,36 +170,37 @@ mod tests {
 
     #[test]
     fn test_folder_structure_creation() {
-        let tmp = std::env::temp_dir().join("lumino_test_folder");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let test_dir = std::env::temp_dir().join("lumino_test_folder");
+        let _ = std::fs::remove_dir_all(&test_dir);
 
-        create_folder_structure(&tmp).expect("创建文件夹结构失败");
-        assert!(tmp.join(FolderPaths::LUMINO_DIR).exists());
-        assert!(tmp.join(FolderPaths::TRACKS_DIR).exists());
-        assert!(tmp.join(FolderPaths::IMAGE_DIR).exists());
-        assert!(tmp.join(FolderPaths::LOADED_DIR).join("mid").exists());
+        create_folder_structure(&test_dir).expect("创建文件夹结构失败");
+        assert!(test_dir.join(FolderPaths::LUMINO_DIR).exists());
+        assert!(test_dir.join(FolderPaths::TRACKS_DIR).exists());
+        assert!(test_dir.join(FolderPaths::IMAGE_DIR).exists());
+        assert!(test_dir.join(FolderPaths::LOADED_DIR).join("mid").exists());
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&test_dir);
     }
 
     #[test]
     fn test_version_file_roundtrip() {
-        let tmp = std::env::temp_dir().join("lumino_test_version");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(tmp.join(FolderPaths::LUMINO_DIR)).expect("创建.lumino目录失败");
+        let version_dir = std::env::temp_dir().join("lumino_test_version");
+        let _ = std::fs::remove_dir_all(&version_dir);
+        std::fs::create_dir_all(version_dir.join(FolderPaths::LUMINO_DIR))
+            .expect("创建.lumino目录失败");
 
-        write_version_file(&tmp, 1).expect("写入版本文件失败");
-        let version = read_version_file(&tmp).expect("读取版本文件失败");
+        write_version_file(&version_dir, 1).expect("写入版本文件失败");
+        let version = read_version_file(&version_dir).expect("读取版本文件失败");
         assert_eq!(version, 1);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&version_dir);
     }
 
     #[test]
     fn test_write_and_read_track() {
-        let tmp = std::env::temp_dir().join("lumino_test_track");
-        let _ = std::fs::remove_dir_all(&tmp);
-        std::fs::create_dir_all(&tmp).expect("创建临时目录失败");
+        let track_dir = std::env::temp_dir().join("lumino_test_track");
+        let _ = std::fs::remove_dir_all(&track_dir);
+        std::fs::create_dir_all(&track_dir).expect("创建临时目录失败");
 
         let meta = TrackMeta {
             track_id: 0,
@@ -223,11 +224,11 @@ mod tests {
             )],
         );
 
-        write_track(&tmp, 0, &data).expect("写入轨道数据失败");
-        let tracks = read_all_tracks(&tmp).expect("读取所有轨道数据失败");
+        write_track(&track_dir, 0, &data).expect("写入轨道数据失败");
+        let tracks = read_all_tracks(&track_dir).expect("读取所有轨道数据失败");
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].event_count, 1);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&track_dir);
     }
 }

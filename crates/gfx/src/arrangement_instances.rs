@@ -263,22 +263,22 @@ fn collect_notes_cache(
     let key_h = lh / 128.0;
     let scroll_x = viewport.scroll_x;
 
-    for n in notes {
-        let s = n.tick as f64;
-        let e = (n.tick + n.length) as f64;
+    for note in notes {
+        let s = note.tick as f64;
+        let e = (note.tick + note.length) as f64;
         if s > te || e < ts {
             continue;
         }
         let sx = cox + s as f32 * ppu - scroll_x;
         let sw = (e - s) as f32 * ppu;
-        let sy = lane_y + (127.0 - n.key as f32) * key_h;
+        let sy = lane_y + (127.0 - note.key as f32) * key_h;
         out.push(ArrangementNoteInstance::note(
             sx,
             sy,
             sw.max(2.0),
             4.0,
             color,
-            n.velocity,
+            note.velocity,
         ));
     }
 }
@@ -310,31 +310,32 @@ fn collect_notes_doc(
     let te_u = te as u32;
     const TICK_BUF: u32 = 19200;
 
-    let search_start = notes.partition_point(|n| n.start_tick < ts_u.saturating_sub(TICK_BUF));
+    let search_start =
+        notes.partition_point(|note_info| note_info.start_tick < ts_u.saturating_sub(TICK_BUF));
     let slice = &notes[search_start..];
 
-    for n in slice {
-        if n.start_tick > te_u {
+    for note_info in slice {
+        if note_info.start_tick > te_u {
             break;
         }
-        let end_tick = n.end_tick();
+        let end_tick = note_info.end_tick();
         if end_tick < ts_u {
             continue;
         }
         // NoteInfo → 屏幕坐标，一行输出，无 active-table 开销
-        let s = (n.start_tick as f64).max(ts);
+        let s = (note_info.start_tick as f64).max(ts);
         let e = (end_tick as f64).min(te);
         if s < e {
             let sx = cox + s as f32 * ppu - scroll_x;
             let sw = (e - s) as f32 * ppu;
-            let sy = lane_y + (127.0 - n.key as f32) * key_h;
+            let sy = lane_y + (127.0 - note_info.key as f32) * key_h;
             out.push(ArrangementNoteInstance::note(
                 sx,
                 sy,
                 sw.max(2.0),
                 4.0,
                 color,
-                n.velocity,
+                note_info.velocity,
             ));
         }
     }

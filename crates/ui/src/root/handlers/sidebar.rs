@@ -118,7 +118,12 @@ impl Root {
         // 如果是添加音轨，根据用户设置决定是否切换到新音轨
         if matches!(&event, sidebar::Event::AddTrack) {
             if self.settings.track_add_behavior == TrackAddBehavior::AutoSwitch {
-                let track_idx = self.sidebar.tracks.last().map(|t| t.id).unwrap_or(0);
+                let track_idx = self
+                    .sidebar
+                    .tracks
+                    .last()
+                    .map(|track| track.id)
+                    .unwrap_or(0);
                 self.sidebar.selected_track = track_idx;
                 tracing::debug!("Root: 添加音轨后自动选中新音轨 {}", track_idx);
                 crate::event::emit(crate::event::Event::Menu(crate::event::menu::Event::File(

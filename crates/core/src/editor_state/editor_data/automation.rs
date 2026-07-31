@@ -133,9 +133,9 @@ impl EditorData {
         self.automation_lanes[idx]
             .events
             .iter()
-            .map(|e| crate::midi_types::CcPoint {
-                tick: e.tick as f32,
-                value: (e.value as u8).min(127),
+            .map(|event| crate::midi_types::CcPoint {
+                tick: event.tick as f32,
+                value: (event.value as u8).min(127),
             })
             .collect()
     }
@@ -150,9 +150,9 @@ impl EditorData {
         self.automation_lanes[idx]
             .events
             .iter()
-            .map(|e| crate::midi_types::BendPoint {
-                tick: e.tick as f32,
-                value: (e.value as i16 - 8192).clamp(-8192, 8191),
+            .map(|event| crate::midi_types::BendPoint {
+                tick: event.tick as f32,
+                value: (event.value as i16 - 8192).clamp(-8192, 8191),
             })
             .collect()
     }

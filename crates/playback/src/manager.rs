@@ -291,17 +291,19 @@ impl PlaybackManager {
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
         self.lock_playback()
-            .map_or(PlaybackState::Stopped, |p| p.state())
+            .map_or(PlaybackState::Stopped, |playback| playback.state())
     }
 
     /// 获取当前tick
     pub fn current_tick(&self) -> f32 {
-        self.lock_playback().map_or(0.0, |p| p.current_tick())
+        self.lock_playback()
+            .map_or(0.0, |playback| playback.current_tick())
     }
 
     /// 获取当前BPM
     pub fn current_bpm(&self) -> f64 {
-        self.lock_playback().map_or(120.0, |p| p.current_bpm())
+        self.lock_playback()
+            .map_or(120.0, |playback| playback.current_bpm())
     }
 
     /// 设置循环

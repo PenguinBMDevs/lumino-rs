@@ -423,8 +423,8 @@ mod tests {
     fn test_from_note_store_empty() {
         let store = NoteStore::new();
         let idx = NoteSpatialIndex::from_note_store(&store);
-        let mut r = Vec::new();
-        idx.update_query(0.0, 100.0, 0, 127, &mut r);
-        assert!(r.is_empty());
+        let mut results = Vec::new();
+        idx.update_query(0.0, 100.0, 0, 127, &mut results);
+        assert!(results.is_empty());
     }
 }

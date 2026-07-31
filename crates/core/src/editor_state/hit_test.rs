@@ -22,18 +22,18 @@ pub fn hit_test_note(
 ) -> Option<(usize, HitType)> {
     let tick = view.x_to_tick(pos.0);
     let key = view.y_to_key(pos.1);
-    for (i, note) in notes.iter().enumerate().rev() {
+    for (note_idx, note) in notes.iter().enumerate().rev() {
         if note.key == key && tick >= note.tick && tick <= note.tick + note.length {
             let start_delta = (tick - note.tick).abs();
             let end_delta = (tick - (note.tick + note.length)).abs();
             let edge_threshold = edge_threshold_px / view.zoom_x;
             if end_delta < edge_threshold {
-                return Some((i, HitType::End));
+                return Some((note_idx, HitType::End));
             }
             if start_delta < edge_threshold {
-                return Some((i, HitType::Start));
+                return Some((note_idx, HitType::Start));
             }
-            return Some((i, HitType::Middle));
+            return Some((note_idx, HitType::Middle));
         }
     }
     None
@@ -54,12 +54,12 @@ pub fn get_selection_box_bounds(
     let mut max_te = f32::NEG_INFINITY;
     let mut max_k = u16::MIN;
     let mut min_k = u16::MAX;
-    for &i in selected_notes.iter() {
-        if let Some(n) = notes.get(i) {
-            min_t = min_t.min(n.tick);
-            max_te = max_te.max(n.tick + n.length);
-            max_k = max_k.max(n.key);
-            min_k = min_k.min(n.key);
+    for &note_idx in selected_notes.iter() {
+        if let Some(note) = notes.get(note_idx) {
+            min_t = min_t.min(note.tick);
+            max_te = max_te.max(note.tick + note.length);
+            max_k = max_k.max(note.key);
+            min_k = min_k.min(note.key);
         }
     }
     if min_t.is_infinite() {

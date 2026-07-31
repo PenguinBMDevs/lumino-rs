@@ -76,7 +76,7 @@ pub(crate) fn apply_drag_state_to_clones(
     let dt = delta_tick as f32;
     let dk = delta_key as i32;
 
-    let selected_count = selected.iter().filter(|b| *b).count();
+    let selected_count = selected.iter().filter(|&selected| selected).count();
     if selected_count == 0 {
         return Ok(AsyncCommitResult {
             notes,

@@ -87,20 +87,20 @@ mod tests {
         anim.factor = 0.5;
         anim.threshold = 1.0;
         anim.set_target(10.0, 20.0);
-        let mut x = 0.0;
-        let mut y = 0.0;
+        let mut scroll_x = 0.0;
+        let mut scroll_y = 0.0;
         let mut active = true;
         let mut iterations = 0;
         while active && iterations < 100 {
-            (x, y, active) = anim.update(x, y);
+            (scroll_x, scroll_y, active) = anim.update(scroll_x, scroll_y);
             if active {
                 anim.set_target(10.0, 20.0);
             }
             iterations += 1;
         }
         assert!(!active);
-        assert_eq!(x, 10.0);
-        assert_eq!(y, 20.0);
+        assert_eq!(scroll_x, 10.0);
+        assert_eq!(scroll_y, 20.0);
     }
 
     #[test]
@@ -199,14 +199,14 @@ mod tests {
         anim.factor = 0.5;
         anim.threshold = 0.1;
         anim.set_target(100.0, 0.0);
-        let mut x = 0.0;
+        let mut scroll_x = 0.0;
         let mut active = true;
         let mut iterations = 0;
         while active && iterations < 100 {
-            (x, _, active) = anim.update(x, 0.0);
+            (scroll_x, _, active) = anim.update(scroll_x, 0.0);
             iterations += 1;
         }
         assert!(!active, "应在 {iterations} 次内收敛");
-        assert!((x - 100.0).abs() < 0.1);
+        assert!((scroll_x - 100.0).abs() < 0.1);
     }
 }

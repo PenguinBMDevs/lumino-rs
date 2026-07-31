@@ -28,9 +28,9 @@ impl EditorData {
     pub fn sync_track_notes_at_indices(&mut self, indices: &[usize]) {
         let current_track = self.current_track;
         if let Some(track_notes) = self.track_notes.get_mut(&current_track) {
-            for &i in indices {
-                if let Some(src) = self.notes.get(i)
-                    && let Some(dst) = track_notes.get_mut(i)
+            for &note_idx in indices {
+                if let Some(src) = self.notes.get(note_idx)
+                    && let Some(dst) = track_notes.get_mut(note_idx)
                 {
                     dst.clone_from(src);
                 }
@@ -67,17 +67,17 @@ impl EditorData {
         }
 
         let mut modified = 0usize;
-        for (i, selected) in drag_state.selected.iter().enumerate() {
-            if !selected || i >= self.notes.len() {
+        for (note_idx, selected) in drag_state.selected.iter().enumerate() {
+            if !selected || note_idx >= self.notes.len() {
                 continue;
             }
-            if let Some(note) = self.notes.get_mut(i)
+            if let Some(note) = self.notes.get_mut(note_idx)
                 && drag_state.apply_to_note(note, max_key)
             {
                 modified += 1;
             }
             if let Some(track_notes) = self.track_notes.get_mut(&current_track)
-                && let Some(note) = track_notes.get_mut(i)
+                && let Some(note) = track_notes.get_mut(note_idx)
             {
                 drag_state.apply_to_note(note, max_key);
             }
@@ -133,11 +133,17 @@ impl EditorData {
             return false;
         }
         let (note_tick, note_length, key, velocity, channel) = {
-            let n = &self.notes[index];
-            if split_tick <= n.tick || split_tick >= n.tick + n.length {
+            let note = &self.notes[index];
+            if split_tick <= note.tick || split_tick >= note.tick + note.length {
                 return false;
             }
-            (n.tick, n.length, n.key, n.velocity, n.channel)
+            (
+                note.tick,
+                note.length,
+                note.key,
+                note.velocity,
+                note.channel,
+            )
         };
         self.push_history();
         self.notes.remove(index);
@@ -163,10 +169,17 @@ impl EditorData {
         }
         let selected_notes: Vec<NoteTuple> = sel
             .iter()
-            .filter_map(|&i| {
-                self.notes
-                    .get(i)
-                    .map(|n| (i, n.tick, n.key, n.length, n.velocity, n.channel))
+            .filter_map(|&note_idx| {
+                self.notes.get(note_idx).map(|note| {
+                    (
+                        note_idx,
+                        note.tick,
+                        note.key,
+                        note.length,
+                        note.velocity,
+                        note.channel,
+                    )
+                })
             })
             .collect();
         if selected_notes.is_empty() {
@@ -185,7 +198,7 @@ impl EditorData {
             let last = &group[group.len() - 1];
             let merged_tick = first.1;
             let merged_length = (last.1 + last.3) - merged_tick;
-            let rm: Vec<usize> = group.iter().map(|n| n.0).collect();
+            let rm: Vec<usize> = group.iter().map(|note_tuple| note_tuple.0).collect();
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
             for &idx in &rm_sorted {
@@ -214,7 +227,7 @@ impl EditorData {
         // 收集选中音符信息 (index, tick)
         let mut selected_notes: Vec<(usize, f32)> = sel
             .iter()
-            .filter_map(|&i| self.notes.get(i).map(|n| (i, n.tick)))
+            .filter_map(|&note_idx| self.notes.get(note_idx).map(|note| (note_idx, note.tick)))
             .collect();
 
         if selected_notes.len() < 2 {
@@ -241,13 +254,13 @@ impl EditorData {
         let mut tied = 0usize;
         self.push_history();
 
-        for i in 0..groups.len() - 1 {
-            let current_tick = groups[i].0;
-            let next_tick = groups[i + 1].0;
+        for group_idx in 0..groups.len() - 1 {
+            let current_tick = groups[group_idx].0;
+            let next_tick = groups[group_idx + 1].0;
             let new_length = next_tick - current_tick;
 
             // 当前 tick 组的所有音符都延长到下一组开头
-            for &idx in &groups[i].1 {
+            for &idx in &groups[group_idx].1 {
                 if let Some(note) = self.notes.get_mut(idx)
                     && new_length > note.length
                 {
@@ -328,14 +341,14 @@ impl EditorData {
         let te = start_tick.max(current_tick);
         let km = start_key.min(current_key);
         let kx = start_key.max(current_key);
-        let mut r = Vec::new();
-        for (i, n) in self.notes.iter().enumerate() {
-            let ne = n.tick + n.length;
-            if n.key >= km && n.key <= kx && n.tick <= te && ne >= ts {
-                r.push(i);
+        let mut results = Vec::new();
+        for (note_idx, note) in self.notes.iter().enumerate() {
+            let ne = note.tick + note.length;
+            if note.key >= km && note.key <= kx && note.tick <= te && ne >= ts {
+                results.push(note_idx);
             }
         }
-        r
+        results
     }
 }
 
@@ -356,11 +369,10 @@ mod tests {
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
         bv.set(2, true);
-        let drag_state = DragState::new(bv, 0, 60);
-        let mut ds = drag_state;
-        ds.set_delta(5, -2);
+        let mut drag_state = DragState::new(bv, 0, 60);
+        drag_state.set_delta(5, -2);
 
-        let modified = data.apply_drag_state_streaming(&ds, 127);
+        let modified = data.apply_drag_state_streaming(&drag_state, 127);
         assert_eq!(modified, 2);
 
         // notes 已更新

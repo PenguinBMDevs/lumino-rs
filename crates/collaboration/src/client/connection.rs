@@ -185,8 +185,8 @@ impl CollaborationClient {
                             .unwrap_or(0);
                         let ping = ClientMessage::Ping { timestamp };
                         if let Ok(text) = serde_json::to_string(&ping) {
-                            let mut w = write.lock().await;
-                            if let Err(e) = w.send(Message::Text(text.into())).await {
+                            let mut writer = write.lock().await;
+                            if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 tracing::warn!("心跳发送失败: {}", e);
                                 *state.write().await = ClientState::Disconnected;
                                 break;
@@ -197,8 +197,8 @@ impl CollaborationClient {
                     Some(client_msg) = message_rx.recv() => {
                         if let Ok(text) = serde_json::to_string(&client_msg) {
                             debug!("WS 发送: {}", &text[..text.len().min(100)]);
-                            let mut w = write.lock().await;
-                            if let Err(e) = w.send(Message::Text(text.into())).await {
+                            let mut writer = write.lock().await;
+                            if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 error!("发送消息失败: {}", e);
                                 *state.write().await = ClientState::Error;
                                 break;

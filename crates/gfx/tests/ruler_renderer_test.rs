@@ -87,10 +87,10 @@ fn test_ruler_tick_position_calculation() {
     // 计算第 5 个小节的位置
     let measure = 5;
     let tick = measure as f32 * ticks_per_measure as f32;
-    let x = keyboard_width + tick * zoom_x - scroll_x;
+    let screen_x = keyboard_width + tick * zoom_x - scroll_x;
 
     assert_eq!(tick, 9600.0); // 5 * 1920
-    assert_eq!(x, 20.0); // 60 + 9600 * 0.1 - 1000 = 60 + 960 - 1000 = 20
+    assert_eq!(screen_x, 20.0); // 60 + 9600 * 0.1 - 1000 = 60 + 960 - 1000 = 20
 }
 
 /// 测试大量标尺刻度生成性能
@@ -120,11 +120,11 @@ fn test_ruler_tick_generation_performance() {
 
     for measure in measure_start..=measure_end {
         let tick = measure as f32 * ticks_per_measure as f32;
-        let x = keyboard_width + tick * zoom_x - scroll_x;
+        let screen_x = keyboard_width + tick * zoom_x - scroll_x;
 
-        if x >= keyboard_width && x <= viewport_width {
+        if screen_x >= keyboard_width && screen_x <= viewport_width {
             instances.push(RulerTickInstance::new(
-                [x, 0.0],
+                [screen_x, 0.0],
                 [2.0, ruler_height],
                 [0.3, 0.3, 0.3, 1.0],
                 0,
@@ -142,11 +142,11 @@ fn test_ruler_tick_generation_performance() {
         if tick % ticks_per_measure as f32 == 0.0 {
             continue;
         }
-        let x = keyboard_width + tick * zoom_x - scroll_x;
+        let screen_x = keyboard_width + tick * zoom_x - scroll_x;
 
-        if x >= keyboard_width && x <= viewport_width {
+        if screen_x >= keyboard_width && screen_x <= viewport_width {
             instances.push(RulerTickInstance::new(
-                [x, ruler_height * 0.3],
+                [screen_x, ruler_height * 0.3],
                 [1.0, ruler_height * 0.7],
                 [0.5, 0.5, 0.5, 1.0],
                 1,

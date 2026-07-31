@@ -37,7 +37,10 @@ pub fn group_adjacent_notes(notes: &[NoteTuple], proximity: f32) -> Vec<Vec<Note
         }
     }
 
-    groups.into_iter().filter(|g| g.len() >= 2).collect()
+    groups
+        .into_iter()
+        .filter(|group| group.len() >= 2)
+        .collect()
 }
 
 #[cfg(test)]

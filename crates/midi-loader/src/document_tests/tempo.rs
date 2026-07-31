@@ -20,10 +20,10 @@ fn test_tempo_changes_uses_file_tempo_at_tick_zero() {
     midi.extend_from_slice(&header);
     midi.extend_from_slice(&track_chunk);
 
-    let tmp = std::env::temp_dir().join("tempo_140_test.mid");
-    std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+    let tempo_140_path = std::env::temp_dir().join("tempo_140_test.mid");
+    std::fs::write(&tempo_140_path, &midi).expect("测试：写入临时文件失败");
 
-    let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+    let doc = MidiDocument::from_notes_file(&tempo_140_path, None).expect("测试：加载MIDI文档失败");
 
     assert!(!doc.tempo_changes.is_empty(), "应有 tempo 变化");
     let (first_tick, first_bpm) = doc.tempo_changes[0];
@@ -37,7 +37,7 @@ fn test_tempo_changes_uses_file_tempo_at_tick_zero() {
         "所有 tempo 值必须大于 0"
     );
 
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&tempo_140_path);
 }
 
 #[test]
@@ -57,10 +57,10 @@ fn test_tempo_changes_default_120_when_no_tick_zero_tempo() {
     midi.extend_from_slice(&header);
     midi.extend_from_slice(&track_chunk);
 
-    let tmp = std::env::temp_dir().join("tempo_default_test.mid");
-    std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+    let default_path = std::env::temp_dir().join("tempo_default_test.mid");
+    std::fs::write(&default_path, &midi).expect("测试：写入临时文件失败");
 
-    let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+    let doc = MidiDocument::from_notes_file(&default_path, None).expect("测试：加载MIDI文档失败");
 
     assert!(!doc.tempo_changes.is_empty(), "应有默认 tempo");
     let (first_tick, first_bpm) = doc.tempo_changes[0];
@@ -70,7 +70,7 @@ fn test_tempo_changes_default_120_when_no_tick_zero_tempo() {
         "应为默认 120 BPM，实际为 {first_bpm}"
     );
 
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&default_path);
 }
 
 #[test]
@@ -91,10 +91,10 @@ fn test_tempo_changes_multiple_changes() {
     midi.extend_from_slice(&header);
     midi.extend_from_slice(&track_chunk);
 
-    let tmp = std::env::temp_dir().join("tempo_multi_test.mid");
-    std::fs::write(&tmp, &midi).expect("测试：写入临时文件失败");
+    let multi_path = std::env::temp_dir().join("tempo_multi_test.mid");
+    std::fs::write(&multi_path, &midi).expect("测试：写入临时文件失败");
 
-    let doc = MidiDocument::from_notes_file(&tmp, None).expect("测试：加载MIDI文档失败");
+    let doc = MidiDocument::from_notes_file(&multi_path, None).expect("测试：加载MIDI文档失败");
 
     assert_eq!(doc.tempo_changes.len(), 2, "应有 2 个 tempo 变化");
     let (t0, b0) = doc.tempo_changes[0];
@@ -104,5 +104,5 @@ fn test_tempo_changes_multiple_changes() {
     assert_eq!(t1, 960);
     assert!((b1 - 80.0).abs() < 0.5, "第二段应为 80 BPM，实际为 {b1}");
 
-    let _ = std::fs::remove_file(&tmp);
+    let _ = std::fs::remove_file(&multi_path);
 }

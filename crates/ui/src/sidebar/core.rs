@@ -315,7 +315,7 @@ impl Sidebar {
 
         // 同步 next_track_id：取当前值与最大 track id + 1 的较大值，
         // 防止添加音轨时生成与已有音轨重复的 ID。
-        let max_id = self.tracks.iter().map(|t| t.id).max().unwrap_or(0);
+        let max_id = self.tracks.iter().map(|track| track.id).max().unwrap_or(0);
         self.next_track_id = self.next_track_id.max(max_id + 1);
     }
 
@@ -338,8 +338,8 @@ impl Sidebar {
             TrackDisplayMode::ChannelGrouped => {
                 // 按通道分组，组内按 id 排序
                 let mut grouped: Vec<Vec<usize>> = vec![Vec::new(); 16];
-                for (idx, t) in old_tracks.iter().enumerate() {
-                    grouped[t.channel as usize].push(idx);
+                for (idx, track) in old_tracks.iter().enumerate() {
+                    grouped[track.channel as usize].push(idx);
                 }
 
                 for group in grouped {
@@ -368,26 +368,26 @@ impl Sidebar {
             TrackDisplayMode::TrackIndex => {
                 // 按 id 排序，标记为 01, 02, 03...
                 let mut sorted: Vec<&Track> = old_tracks.iter().collect();
-                sorted.sort_by_key(|t| t.id);
-                for (idx, t) in sorted.iter().enumerate() {
+                sorted.sort_by_key(|track| track.id);
+                for (idx, track) in sorted.iter().enumerate() {
                     let label = format!("{:02}", idx + 1);
                     self.tracks.push(Track {
-                        id: t.id,
-                        name: t.name.clone(),
-                        channel: t.channel,
+                        id: track.id,
+                        name: track.name.clone(),
+                        channel: track.channel,
                         display_label: label,
-                        is_conductor: t.is_conductor,
-                        can_delete: t.can_delete,
-                        is_muted: t.is_muted,
-                        is_soloed: t.is_soloed,
-                        color: t.color,
+                        is_conductor: track.is_conductor,
+                        can_delete: track.can_delete,
+                        is_muted: track.is_muted,
+                        is_soloed: track.is_soloed,
+                        color: track.color,
                     });
                 }
             }
         }
 
         // 恢复选中音轨（如果还在的话）
-        if self.tracks.iter().any(|t| t.id == current_selected) {
+        if self.tracks.iter().any(|track| track.id == current_selected) {
             self.selected_track = current_selected;
         } else if !self.tracks.is_empty() {
             self.selected_track = self.tracks[0].id;

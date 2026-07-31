@@ -100,7 +100,7 @@ fn test_loop_wrapping_seek_back() {
     // 检查 event_queue 中的事件 tick >= loop_start
     let events: Vec<_> = engine.event_queue.iter().collect();
     // BinaryHeap 是最大堆，注意 tick 小的优先级高
-    let min_event_tick = events.iter().map(|e| e.tick).min_by(|a, b| {
+    let min_event_tick = events.iter().map(|event| event.tick).min_by(|a, b| {
         a.partial_cmp(b)
             .expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN")
     });
@@ -202,7 +202,7 @@ fn test_document_streaming_emits_events_in_order() {
     // 收集所有 NoteOn/NoteOff 的 key 与类型，验证时间顺序
     let event_keys: Vec<_> = messages
         .iter()
-        .filter_map(|m| match m {
+        .filter_map(|msg| match msg {
             MidiMessage::NoteOn { key, .. } => Some(("on", *key)),
             MidiMessage::NoteOff { key, .. } => Some(("off", *key)),
             _ => None,

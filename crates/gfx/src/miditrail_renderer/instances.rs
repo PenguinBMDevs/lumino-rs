@@ -60,20 +60,20 @@ pub fn update_key_positions(
 
     let count = key_count as usize;
     let num_white = (0..count)
-        .filter(|k| !is_black_key(*k as u32))
+        .filter(|key_idx| !is_black_key(*key_idx as u32))
         .count()
         .max(1);
     let white_width = 1.0 / num_white as f32;
     let black_width = white_width * BLACK_KEY_WIDTH_RATIO;
 
     let mut pos = 0.0f32;
-    for i in 0..count {
-        if is_black_key(i as u32) {
-            key_positions[i] = pos - black_width * 0.5;
-            key_widths[i] = black_width;
+    for key_idx in 0..count {
+        if is_black_key(key_idx as u32) {
+            key_positions[key_idx] = pos - black_width * 0.5;
+            key_widths[key_idx] = black_width;
         } else {
-            key_positions[i] = pos;
-            key_widths[i] = white_width;
+            key_positions[key_idx] = pos;
+            key_widths[key_idx] = white_width;
             pos += white_width;
         }
     }
@@ -198,17 +198,17 @@ pub fn build_key_instances(
     let key_count = uniform.key_count as usize;
     let key_count = key_count.min(key_positions.len());
 
-    for i in 0..key_count {
-        let left = key_positions[i];
-        let width = key_widths[i];
-        let is_black = is_black_key(i as u32);
+    for key_idx in 0..key_count {
+        let left = key_positions[key_idx];
+        let width = key_widths[key_idx];
+        let is_black = is_black_key(key_idx as u32);
         let (y, height) = if is_black {
             (BLACK_KEY_ELEVATION, BLACK_KEY_HEIGHT)
         } else {
             (0.0, KEYBOARD_HEIGHT)
         };
-        let color = if active_keys.pressed[i] {
-            active_keys.colors[i]
+        let color = if active_keys.pressed[key_idx] {
+            active_keys.colors[key_idx]
         } else if is_black {
             pack_color([0.2, 0.2, 0.2, 1.0])
         } else {
@@ -227,7 +227,11 @@ pub fn build_key_instances(
         };
         let scale = [width, height, depth];
         let translation = [left, y, 0.0];
-        let press = press_factors.get(i).copied().unwrap_or(0.0).clamp(0.0, 1.0);
+        let press = press_factors
+            .get(key_idx)
+            .copied()
+            .unwrap_or(0.0)
+            .clamp(0.0, 1.0);
         out.push(MiditrailInstanceGpu::new(
             translation,
             scale,
@@ -254,19 +258,19 @@ pub fn build_aura_instances(
         .min(key_positions.len())
         .min(128);
 
-    for i in 0..key_count {
-        if !active_keys.pressed[i] {
+    for key_idx in 0..key_count {
+        if !active_keys.pressed[key_idx] {
             continue;
         }
-        let left = key_positions[i];
-        let width = key_widths[i];
+        let left = key_positions[key_idx];
+        let width = key_widths[key_idx];
         let center = left + width * 0.5;
         // 光环半径要足够大，以环绕音符立方体（音符宽约键宽、高约 0.007）
         let size = (width * 4.0).max(0.04);
         out.push(MiditrailAuraInstanceGpu {
             size,
             pos: center,
-            color_packed: active_keys.colors[i],
+            color_packed: active_keys.colors[key_idx],
             _padding: 0,
         });
     }

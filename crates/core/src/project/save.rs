@@ -275,62 +275,62 @@ mod tests {
     #[test]
     fn test_save_to_folder() {
         let project = create_test_project();
-        let tmp = std::env::temp_dir().join("lumino_save_folder_test");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let save_dir = std::env::temp_dir().join("lumino_save_folder_test");
+        let _ = std::fs::remove_dir_all(&save_dir);
 
-        save_to_folder(&project, &tmp).expect("保存项目到文件夹失败");
+        save_to_folder(&project, &save_dir).expect("保存项目到文件夹失败");
 
-        assert!(tmp.join("metadata.toml").exists());
-        assert!(tmp.join(".lumino/version").exists());
-        assert!(tmp.join("data/project/tracks/000.lmtrack").exists());
-        assert!(tmp.join("data/project/tempo.lmtemp").exists());
-        assert!(tmp.join("data/project/signature.lmsig").exists());
-        assert!(tmp.join("data/project/controls.lmctl").exists());
-        assert!(tmp.join("data/project/text_events.lmtxt").exists());
-        assert!(tmp.join("data/project/sysex.lmsyx").exists());
-        assert!(tmp.join("data/project/track_names.lmnames").exists());
+        assert!(save_dir.join("metadata.toml").exists());
+        assert!(save_dir.join(".lumino/version").exists());
+        assert!(save_dir.join("data/project/tracks/000.lmtrack").exists());
+        assert!(save_dir.join("data/project/tempo.lmtemp").exists());
+        assert!(save_dir.join("data/project/signature.lmsig").exists());
+        assert!(save_dir.join("data/project/controls.lmctl").exists());
+        assert!(save_dir.join("data/project/text_events.lmtxt").exists());
+        assert!(save_dir.join("data/project/sysex.lmsyx").exists());
+        assert!(save_dir.join("data/project/track_names.lmnames").exists());
 
         // 验证魔数
         let tempo_bytes =
-            std::fs::read(tmp.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
+            std::fs::read(save_dir.join("data/project/tempo.lmtemp")).expect("读取tempo文件失败");
         assert_eq!(&tempo_bytes[0..4], b"LMTM");
 
-        let sig_bytes =
-            std::fs::read(tmp.join("data/project/signature.lmsig")).expect("读取signature文件失败");
+        let sig_bytes = std::fs::read(save_dir.join("data/project/signature.lmsig"))
+            .expect("读取signature文件失败");
         assert_eq!(&sig_bytes[0..4], b"LMSG");
 
-        let ctl_bytes =
-            std::fs::read(tmp.join("data/project/controls.lmctl")).expect("读取controls文件失败");
+        let ctl_bytes = std::fs::read(save_dir.join("data/project/controls.lmctl"))
+            .expect("读取controls文件失败");
         assert_eq!(&ctl_bytes[0..4], b"LMCT");
 
-        let txt_bytes = std::fs::read(tmp.join("data/project/text_events.lmtxt"))
+        let txt_bytes = std::fs::read(save_dir.join("data/project/text_events.lmtxt"))
             .expect("读取text_events文件失败");
         assert_eq!(&txt_bytes[0..4], b"LMTX");
 
         let syx_bytes =
-            std::fs::read(tmp.join("data/project/sysex.lmsyx")).expect("读取sysex文件失败");
+            std::fs::read(save_dir.join("data/project/sysex.lmsyx")).expect("读取sysex文件失败");
         assert_eq!(&syx_bytes[0..4], b"LMSY");
 
-        let names_bytes = std::fs::read(tmp.join("data/project/track_names.lmnames"))
+        let names_bytes = std::fs::read(save_dir.join("data/project/track_names.lmnames"))
             .expect("读取track_names文件失败");
         assert_eq!(&names_bytes[0..4], b"LMNM");
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&save_dir);
     }
 
     #[test]
     fn test_save_to_archive() {
         let project = create_test_project();
-        let tmp = std::env::temp_dir().join("lumino_save_archive_test.lmpj");
-        let _ = std::fs::remove_file(&tmp);
+        let save_archive_path = std::env::temp_dir().join("lumino_save_archive_test.lmpj");
+        let _ = std::fs::remove_file(&save_archive_path);
 
-        save_to_archive(&project, &tmp).expect("保存项目到归档失败");
+        save_to_archive(&project, &save_archive_path).expect("保存项目到归档失败");
 
-        assert!(tmp.exists());
-        let bytes = std::fs::read(&tmp).expect("读取归档文件失败");
+        assert!(save_archive_path.exists());
+        let bytes = std::fs::read(&save_archive_path).expect("读取归档文件失败");
         assert!(bytes.len() > 4);
         assert_eq!(&bytes[0..4], b"LMPJ");
 
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&save_archive_path);
     }
 }

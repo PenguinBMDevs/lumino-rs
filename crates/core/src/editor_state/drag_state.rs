@@ -64,9 +64,9 @@ impl DragState {
         initial_key: i16,
     ) -> Self {
         let mut selected = BitVec::from_elem(note_count, false);
-        for i in indices {
-            if i < note_count {
-                selected.set(i, true);
+        for idx in indices {
+            if idx < note_count {
+                selected.set(idx, true);
             }
         }
         Self::new(selected, initial_tick, initial_key)
@@ -96,7 +96,7 @@ impl DragState {
 
     /// 选中音符数量
     pub fn selected_count(&self) -> usize {
-        self.selected.iter().filter(|b| *b).count()
+        self.selected.iter().filter(|&selected| selected).count()
     }
 
     /// 收集选中索引列表（逐位迭代，O(N)）
@@ -104,7 +104,7 @@ impl DragState {
         self.selected
             .iter()
             .enumerate()
-            .filter_map(|(i, b)| if b { Some(i) } else { None })
+            .filter_map(|(idx, selected)| if selected { Some(idx) } else { None })
             .collect()
     }
 
@@ -114,11 +114,11 @@ impl DragState {
     /// 定位被置 1 的位。16M 50% 选中 ~3ms（vs `selected_indices` 逐位迭代 ~50ms）。
     pub fn selected_indices_fast(&self) -> Vec<usize> {
         let mut indices = Vec::with_capacity(self.selected_count());
-        for (i, block) in self.selected.blocks().enumerate() {
+        for (block_idx, block) in self.selected.blocks().enumerate() {
             if block == 0 {
                 continue;
             }
-            let base = i * 64;
+            let base = block_idx * 64;
             let mut bits = block;
             while bits != 0 {
                 let tz = bits.trailing_zeros() as usize;
@@ -167,11 +167,11 @@ impl DragState {
             return 0;
         }
         let mut modified = 0usize;
-        for (i, selected) in self.selected.iter().enumerate() {
-            if !selected || i >= notes.len() {
+        for (note_idx, selected) in self.selected.iter().enumerate() {
+            if !selected || note_idx >= notes.len() {
                 continue;
             }
-            if let Some(note) = notes.get_mut(i)
+            if let Some(note) = notes.get_mut(note_idx)
                 && self.apply_to_note(note, max_key)
             {
                 modified += 1;
@@ -225,7 +225,7 @@ mod tests {
 
     fn make_notes(count: usize) -> Vector<Note> {
         (0..count)
-            .map(|i| Note::new(i as f32 * 10.0, 60 + i as u16, 5.0))
+            .map(|idx| Note::new(idx as f32 * 10.0, 60 + idx as u16, 5.0))
             .collect()
     }
 
@@ -234,58 +234,58 @@ mod tests {
         // from_elem 创建 3 个 bit 全 false
         let mut bv = BitVec::from_elem(3, false);
         bv.set(1, true);
-        let ds = DragState::new(bv, 100, 60);
-        assert_eq!(ds.delta_tick, 0);
-        assert_eq!(ds.delta_key, 0);
-        assert!(ds.has_selection());
-        assert_eq!(ds.selected_count(), 1);
+        let drag_state = DragState::new(bv, 100, 60);
+        assert_eq!(drag_state.delta_tick, 0);
+        assert_eq!(drag_state.delta_key, 0);
+        assert!(drag_state.has_selection());
+        assert_eq!(drag_state.selected_count(), 1);
     }
 
     #[test]
     fn test_drag_state_from_single() {
-        let ds = DragState::from_single(2, 5, 50, 60);
-        assert_eq!(ds.selected.len(), 5);
-        assert!(!ds.selected[0]);
-        assert!(!ds.selected[1]);
-        assert!(ds.selected[2]);
-        assert!(!ds.selected[3]);
-        assert_eq!(ds.selected_count(), 1);
+        let drag_state = DragState::from_single(2, 5, 50, 60);
+        assert_eq!(drag_state.selected.len(), 5);
+        assert!(!drag_state.selected[0]);
+        assert!(!drag_state.selected[1]);
+        assert!(drag_state.selected[2]);
+        assert!(!drag_state.selected[3]);
+        assert_eq!(drag_state.selected_count(), 1);
     }
 
     #[test]
     fn test_drag_state_from_single_out_of_range() {
-        let ds = DragState::from_single(10, 5, 50, 60);
-        assert_eq!(ds.selected_count(), 0);
-        assert!(!ds.has_selection());
+        let drag_state = DragState::from_single(10, 5, 50, 60);
+        assert_eq!(drag_state.selected_count(), 0);
+        assert!(!drag_state.has_selection());
     }
 
     #[test]
     fn test_update_delta() {
-        let mut ds = DragState::from_single(0, 1, 100, 60);
-        ds.update_delta(150, 64);
-        assert_eq!(ds.delta_tick, 50);
-        assert_eq!(ds.delta_key, 4);
+        let mut drag_state = DragState::from_single(0, 1, 100, 60);
+        drag_state.update_delta(150, 64);
+        assert_eq!(drag_state.delta_tick, 50);
+        assert_eq!(drag_state.delta_key, 4);
     }
 
     #[test]
     fn test_set_delta() {
-        let mut ds = DragState::default();
-        ds.set_delta(-30, -5);
-        assert_eq!(ds.delta_tick, -30);
-        assert_eq!(ds.delta_key, -5);
-        assert!(!ds.is_delta_zero());
+        let mut drag_state = DragState::default();
+        drag_state.set_delta(-30, -5);
+        assert_eq!(drag_state.delta_tick, -30);
+        assert_eq!(drag_state.delta_key, -5);
+        assert!(!drag_state.is_delta_zero());
     }
 
     #[test]
     fn test_is_delta_zero() {
-        let mut ds = DragState::default();
-        assert!(ds.is_delta_zero());
-        ds.set_delta(0, 1);
-        assert!(!ds.is_delta_zero());
-        ds.set_delta(1, 0);
-        assert!(!ds.is_delta_zero());
-        ds.set_delta(0, 0);
-        assert!(ds.is_delta_zero());
+        let mut drag_state = DragState::default();
+        assert!(drag_state.is_delta_zero());
+        drag_state.set_delta(0, 1);
+        assert!(!drag_state.is_delta_zero());
+        drag_state.set_delta(1, 0);
+        assert!(!drag_state.is_delta_zero());
+        drag_state.set_delta(0, 0);
+        assert!(drag_state.is_delta_zero());
     }
 
     #[test]
@@ -294,70 +294,70 @@ mod tests {
         let mut bv = BitVec::from_elem(5, false);
         bv.set(1, true);
         bv.set(3, true);
-        let ds = DragState::new(bv, 0, 0);
-        assert_eq!(ds.selected_indices(), vec![1, 3]);
+        let drag_state = DragState::new(bv, 0, 0);
+        assert_eq!(drag_state.selected_indices(), vec![1, 3]);
     }
 
     #[test]
     fn test_ghost_position_basic() {
-        let ds = DragState {
+        let drag_state = DragState {
             selected: BitVec::new(),
             delta_tick: 50,
             delta_key: 5,
             initial_tick: 0,
             initial_key: 60,
         };
-        let (t, k) = ds.ghost_position(100.0, 60, 127);
-        assert_eq!(t, 150.0);
-        assert_eq!(k, 65);
+        let (ghost_tick, ghost_key) = drag_state.ghost_position(100.0, 60, 127);
+        assert_eq!(ghost_tick, 150.0);
+        assert_eq!(ghost_key, 65);
     }
 
     #[test]
     fn test_ghost_position_clamps_negative_tick() {
-        let ds = DragState {
+        let drag_state = DragState {
             selected: BitVec::new(),
             delta_tick: -200,
             delta_key: 0,
             initial_tick: 0,
             initial_key: 60,
         };
-        let (t, _) = ds.ghost_position(100.0, 60, 127);
-        assert_eq!(t, 0.0, "tick 不应为负");
+        let (ghost_tick, _) = drag_state.ghost_position(100.0, 60, 127);
+        assert_eq!(ghost_tick, 0.0, "tick 不应为负");
     }
 
     #[test]
     fn test_ghost_position_clamps_key_range() {
-        let ds = DragState {
+        let drag_state = DragState {
             selected: BitVec::new(),
             delta_tick: 0,
             delta_key: -100,
             initial_tick: 0,
             initial_key: 60,
         };
-        let (_, k) = ds.ghost_position(100.0, 60, 127);
-        assert_eq!(k, 0, "key 不应小于 0");
+        let (_, ghost_key) = drag_state.ghost_position(100.0, 60, 127);
+        assert_eq!(ghost_key, 0, "key 不应小于 0");
 
-        let ds2 = DragState {
+        let drag_state_2 = DragState {
             selected: BitVec::new(),
             delta_tick: 0,
             delta_key: 100,
             initial_tick: 0,
             initial_key: 60,
         };
-        let (_, k2) = ds2.ghost_position(100.0, 100, 127);
-        assert_eq!(k2, 127, "key 不应超过 max_key");
+        let (_, ghost_key_2) = drag_state_2.ghost_position(100.0, 100, 127);
+        assert_eq!(ghost_key_2, 127, "key 不应超过 max_key");
     }
 
     #[test]
     fn test_apply_to_notes_zero_delta_no_op() {
         let mut notes = make_notes(3);
         let original: Vec<_> = notes.iter().cloned().collect();
-        let ds = DragState::from_single(0, 3, 0, 60);
-        let modified = ds.apply_to_notes(&mut notes, 127);
+        let drag_state = DragState::from_single(0, 3, 0, 60);
+        let modified = drag_state.apply_to_notes(&mut notes, 127);
         assert_eq!(modified, 0);
-        for (i, n) in notes.iter().enumerate() {
-            assert_eq!(n.tick, original[i].tick);
-            assert_eq!(n.key, original[i].key);
+        for (idx, note) in notes.iter().enumerate() {
+            assert_eq!(note.tick, original[idx].tick);
+            assert_eq!(note.key, original[idx].key);
         }
     }
 
@@ -408,49 +408,49 @@ mod tests {
 
     #[test]
     fn test_resize_to_grow() {
-        let mut ds = DragState::from_single(0, 2, 0, 60);
-        ds.resize_to(5);
-        assert_eq!(ds.selected.len(), 5);
-        assert!(ds.selected[0]);
-        assert!(!ds.selected[1]);
-        assert!(!ds.selected[4]);
+        let mut drag_state = DragState::from_single(0, 2, 0, 60);
+        drag_state.resize_to(5);
+        assert_eq!(drag_state.selected.len(), 5);
+        assert!(drag_state.selected[0]);
+        assert!(!drag_state.selected[1]);
+        assert!(!drag_state.selected[4]);
     }
 
     #[test]
     fn test_resize_to_shrink() {
         // from_elem 创建 5 个 bit 全 true
         let bv = BitVec::from_elem(5, true);
-        let mut ds = DragState::new(bv, 0, 60);
-        ds.resize_to(3);
-        assert_eq!(ds.selected.len(), 3);
-        assert!(ds.selected[0]);
-        assert!(ds.selected[2]);
+        let mut drag_state = DragState::new(bv, 0, 60);
+        drag_state.resize_to(3);
+        assert_eq!(drag_state.selected.len(), 3);
+        assert!(drag_state.selected[0]);
+        assert!(drag_state.selected[2]);
     }
 
     #[test]
     fn test_resize_to_same_size_noop() {
-        let mut ds = DragState::from_single(1, 3, 0, 60);
-        ds.resize_to(3);
-        assert_eq!(ds.selected.len(), 3);
-        assert!(ds.selected[1]);
+        let mut drag_state = DragState::from_single(1, 3, 0, 60);
+        drag_state.resize_to(3);
+        assert_eq!(drag_state.selected.len(), 3);
+        assert!(drag_state.selected[1]);
     }
 
     #[test]
     fn test_clear_resets_all() {
-        let mut ds = DragState::from_single(0, 3, 100, 60);
-        ds.set_delta(50, 5);
-        ds.clear();
-        assert!(!ds.has_selection());
-        assert!(ds.is_delta_zero());
-        assert_eq!(ds.selected.len(), 0);
+        let mut drag_state = DragState::from_single(0, 3, 100, 60);
+        drag_state.set_delta(50, 5);
+        drag_state.clear();
+        assert!(!drag_state.has_selection());
+        assert!(drag_state.is_delta_zero());
+        assert_eq!(drag_state.selected.len(), 0);
     }
 
     #[test]
     fn test_reset_delta_keeps_selection() {
-        let mut ds = DragState::from_single(0, 3, 100, 60);
-        ds.set_delta(50, 5);
-        ds.reset_delta();
-        assert!(ds.is_delta_zero());
-        assert!(ds.has_selection(), "selected 应保留");
+        let mut drag_state = DragState::from_single(0, 3, 100, 60);
+        drag_state.set_delta(50, 5);
+        drag_state.reset_delta();
+        assert!(drag_state.is_delta_zero());
+        assert!(drag_state.has_selection(), "selected 应保留");
     }
 }

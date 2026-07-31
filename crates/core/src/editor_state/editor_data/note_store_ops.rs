@@ -21,25 +21,25 @@ use crate::note_store::BitSet;
 /// 16M 1% 选中 ~0.01ms（vs 旧实现 ~1ms）。
 fn bitvec_to_bitset(bv: &BitVec) -> BitSet {
     let len = bv.len();
-    let mut s = BitSet::new(len);
+    let mut selected_bits = BitSet::new(len);
     // bit-vec 0.8 的 blocks() 返回 u64 块迭代器
-    for (i, block) in bv.blocks().enumerate() {
+    for (block_idx, block) in bv.blocks().enumerate() {
         if block == 0 {
             continue; // 跳过全 0 块（64 位）
         }
-        let base = i * 64;
+        let base = block_idx * 64;
         let mut bits = block;
         // trailing_zeros: 只遍历被设置的位
         while bits != 0 {
             let tz = bits.trailing_zeros() as usize;
             let idx = base + tz;
             if idx < len {
-                s.set(idx);
+                selected_bits.set(idx);
             }
             bits &= bits - 1; // 清除已处理位
         }
     }
-    s
+    selected_bits
 }
 
 impl EditorData {
@@ -127,9 +127,9 @@ impl EditorData {
         } else {
             // 冷路径：直接遍历 notes
             let mut modified = 0usize;
-            for i in 0..self.notes.len() {
-                if selected.get(i)
-                    && let Some(note) = self.notes.get_mut(i)
+            for note_idx in 0..self.notes.len() {
+                if selected.get(note_idx)
+                    && let Some(note) = self.notes.get_mut(note_idx)
                 {
                     let new_tick = (note.tick + delta_tick).max(0.0);
                     let new_key =
@@ -175,9 +175,9 @@ impl EditorData {
                 .batch_move_parallel(selected, delta_tick, delta_key, max_key)
         } else {
             let mut modified = 0usize;
-            for i in 0..self.notes.len() {
-                if selected.get(i)
-                    && let Some(note) = self.notes.get_mut(i)
+            for note_idx in 0..self.notes.len() {
+                if selected.get(note_idx)
+                    && let Some(note) = self.notes.get_mut(note_idx)
                 {
                     let new_tick = (note.tick + delta_tick).max(0.0);
                     let new_key =
@@ -202,13 +202,14 @@ impl EditorData {
         }
 
         let deleted = if self.note_store_enabled {
-            let d = self.note_store.delete_selected(selected);
+            let deleted = self.note_store.delete_selected(selected);
             self.sync_notes_from_store();
-            d
+            deleted
         } else {
             // 冷路径：用 HashSet + retain
-            let indices: HashSet<usize> =
-                (0..self.notes.len()).filter(|&i| selected.get(i)).collect();
+            let indices: HashSet<usize> = (0..self.notes.len())
+                .filter(|&idx| selected.get(idx))
+                .collect();
             let before = self.notes.len();
             let mut idx = 0usize;
             self.notes.retain(|_| {
@@ -234,9 +235,9 @@ impl EditorData {
         }
 
         let inserted = if self.note_store_enabled {
-            let n = self.note_store.insert_bulk(notes);
+            let inserted = self.note_store.insert_bulk(notes);
             self.sync_notes_from_store();
-            n
+            inserted
         } else {
             for note in notes {
                 self.notes.push_back(note.clone());
@@ -317,11 +318,11 @@ impl EditorData {
             )
         } else {
             let mut modified = 0usize;
-            for (i, selected) in drag_state.selected.iter().enumerate() {
-                if !selected || i >= self.notes.len() {
+            for (note_idx, selected) in drag_state.selected.iter().enumerate() {
+                if !selected || note_idx >= self.notes.len() {
                     continue;
                 }
-                if let Some(note) = self.notes.get_mut(i) {
+                if let Some(note) = self.notes.get_mut(note_idx) {
                     let new_tick = (note.tick + drag_state.delta_tick as f32).max(0.0);
                     let new_key = (note.key as i32 + drag_state.delta_key as i32)
                         .clamp(0, max_key as i32) as u16;
@@ -388,34 +389,34 @@ impl EditorData {
             modified
         } else {
             let mut modified = 0usize;
-            for &i in selected {
-                if let Some(n) = self.notes.get_mut(i) {
+            for &note_idx in selected {
+                if let Some(note) = self.notes.get_mut(note_idx) {
                     let mut changed = false;
                     if let Some(op) = velocity_op {
-                        let new_v = op.apply(n.velocity as f32).clamp(0.0, 127.0) as u8;
-                        if n.velocity != new_v {
-                            n.velocity = new_v;
+                        let new_v = op.apply(note.velocity as f32).clamp(0.0, 127.0) as u8;
+                        if note.velocity != new_v {
+                            note.velocity = new_v;
                             changed = true;
                         }
                     }
                     if let Some(op) = gate_op {
-                        let new_l = op.apply(n.length).max(1.0);
-                        if (n.length - new_l).abs() > f32::EPSILON {
-                            n.length = new_l;
+                        let new_l = op.apply(note.length).max(1.0);
+                        if (note.length - new_l).abs() > f32::EPSILON {
+                            note.length = new_l;
                             changed = true;
                         }
                     }
                     if let Some(op) = key_op {
-                        let new_k = op.apply(n.key as f32).clamp(0.0, max_key as f32) as u16;
-                        if n.key != new_k {
-                            n.key = new_k;
+                        let new_k = op.apply(note.key as f32).clamp(0.0, max_key as f32) as u16;
+                        if note.key != new_k {
+                            note.key = new_k;
                             changed = true;
                         }
                     }
                     if let Some(op) = tick_op {
-                        let new_t = op.apply(n.tick).max(0.0);
-                        if (n.tick - new_t).abs() > f32::EPSILON {
-                            n.tick = new_t;
+                        let new_t = op.apply(note.tick).max(0.0);
+                        if (note.tick - new_t).abs() > f32::EPSILON {
+                            note.tick = new_t;
                             changed = true;
                         }
                     }
@@ -498,8 +499,8 @@ impl EditorData {
         if self.note_store_enabled {
             self.note_store.for_each_ref(f);
         } else {
-            for (i, n) in self.notes.iter().enumerate() {
-                f(i, n.into());
+            for (note_idx, note) in self.notes.iter().enumerate() {
+                f(note_idx, note.into());
             }
         }
     }
@@ -523,15 +524,19 @@ mod tests {
     fn test_sync_note_store_auto_enable() {
         let mut editor_data = EditorData::new();
         // 低于阈值：不启用
-        for i in 0..100 {
-            editor_data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        for note_idx in 0..100 {
+            editor_data
+                .notes
+                .push_back(Note::new(note_idx as f32, 60, 1.0));
         }
         editor_data.sync_note_store();
         assert!(!editor_data.is_note_store_enabled());
 
         // 超过阈值：启用
-        for i in 0..NOTE_STORE_THRESHOLD {
-            editor_data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        for note_idx in 0..NOTE_STORE_THRESHOLD {
+            editor_data
+                .notes
+                .push_back(Note::new(note_idx as f32, 60, 1.0));
         }
         editor_data.sync_note_store();
         assert!(editor_data.is_note_store_enabled());
@@ -542,10 +547,10 @@ mod tests {
     fn test_batch_move_cold_path() {
         let mut editor_data = EditorData::new();
         editor_data.current_track = 1;
-        for i in 0..5 {
+        for note_idx in 0..5 {
             editor_data
                 .notes
-                .push_back(Note::new(i as f32 * 10.0, 60, 1.0));
+                .push_back(Note::new(note_idx as f32 * 10.0, 60, 1.0));
         }
         editor_data.sync_track_notes();
 
@@ -565,15 +570,17 @@ mod tests {
     fn test_batch_move_hot_path() {
         let mut editor_data = EditorData::new();
         editor_data.current_track = 1;
-        for i in 0..NOTE_STORE_THRESHOLD + 100 {
-            editor_data.notes.push_back(Note::new(i as f32, 60, 1.0));
+        for note_idx in 0..NOTE_STORE_THRESHOLD + 100 {
+            editor_data
+                .notes
+                .push_back(Note::new(note_idx as f32, 60, 1.0));
         }
         editor_data.sync_note_store();
         assert!(editor_data.is_note_store_enabled());
 
         let mut sel = BitSet::new(editor_data.notes.len());
-        for i in (0..editor_data.notes.len()).step_by(2) {
-            sel.set(i);
+        for note_idx in (0..editor_data.notes.len()).step_by(2) {
+            sel.set(note_idx);
         }
 
         let modified = editor_data.batch_move_notes(&sel, 5.0, 2, 127);
@@ -589,10 +596,10 @@ mod tests {
     fn test_batch_delete() {
         let mut editor_data = EditorData::new();
         editor_data.current_track = 1;
-        for i in 0..10 {
+        for note_idx in 0..10 {
             editor_data
                 .notes
-                .push_back(Note::new(i as f32 * 10.0, 60, 1.0));
+                .push_back(Note::new(note_idx as f32 * 10.0, 60, 1.0));
         }
         editor_data.sync_track_notes();
 
@@ -635,18 +642,20 @@ mod tests {
         // 端到端一致性测试：批量移动 + 删除 + 插入后 notes 与 note_store 同步
         let mut editor_data = EditorData::new();
         editor_data.current_track = 1;
-        for i in 0..NOTE_STORE_THRESHOLD + 50 {
-            editor_data
-                .notes
-                .push_back(Note::new(i as f32, 60 + (i % 12) as u16, 1.0));
+        for note_idx in 0..NOTE_STORE_THRESHOLD + 50 {
+            editor_data.notes.push_back(Note::new(
+                note_idx as f32,
+                60 + (note_idx % 12) as u16,
+                1.0,
+            ));
         }
         editor_data.sync_note_store();
         assert!(editor_data.is_note_store_enabled());
 
         // 1. 批量移动 50%
         let mut sel = BitSet::new(editor_data.notes.len());
-        for i in (0..editor_data.notes.len()).step_by(2) {
-            sel.set(i);
+        for note_idx in (0..editor_data.notes.len()).step_by(2) {
+            sel.set(note_idx);
         }
         let moved = editor_data.batch_move_notes(&sel, 10.0, 3, 127);
         assert!(moved > 0);
@@ -654,8 +663,8 @@ mod tests {
 
         // 2. 批量删除 25%
         let mut sel_del = BitSet::new(editor_data.notes.len());
-        for i in (0..editor_data.notes.len()).step_by(4) {
-            sel_del.set(i);
+        for note_idx in (0..editor_data.notes.len()).step_by(4) {
+            sel_del.set(note_idx);
         }
         let before = editor_data.notes.len();
         let deleted = editor_data.batch_delete_notes(&sel_del);
@@ -664,7 +673,7 @@ mod tests {
 
         // 3. 批量插入 100 个
         let new_notes: Vec<Note> = (0..100)
-            .map(|i| Note::new(i as f32 * 5.0, 70, 2.0))
+            .map(|idx| Note::new(idx as f32 * 5.0, 70, 2.0))
             .collect();
         let before_len = editor_data.notes.len();
         let inserted = editor_data.batch_insert_notes(&new_notes);

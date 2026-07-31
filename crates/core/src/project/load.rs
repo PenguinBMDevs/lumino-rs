@@ -260,34 +260,35 @@ mod tests {
     fn test_load_from_folder() {
         // 先保存再加载
         let project = create_test_project();
-        let tmp = std::env::temp_dir().join("lumino_load_folder_test");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let load_dir = std::env::temp_dir().join("lumino_load_folder_test");
+        let _ = std::fs::remove_dir_all(&load_dir);
 
-        crate::project::save::save_to_folder(&project, &tmp).expect("保存到文件夹失败");
-        let loaded = load_from_folder(&tmp).expect("从文件夹加载项目失败");
+        crate::project::save::save_to_folder(&project, &load_dir).expect("保存到文件夹失败");
+        let loaded = load_from_folder(&load_dir).expect("从文件夹加载项目失败");
 
         assert_eq!(loaded.metadata.project.name, "Test");
         assert_eq!(loaded.tracks.len(), 1);
         assert_eq!(loaded.loaded_track_count(), 1);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&load_dir);
     }
 
     #[test]
     fn test_load_from_archive() {
         // 先保存归档再加载
         let project = create_test_project();
-        let tmp = std::env::temp_dir().join("lumino_load_archive_test.lmpj");
-        let _ = std::fs::remove_file(&tmp);
+        let load_archive_path = std::env::temp_dir().join("lumino_load_archive_test.lmpj");
+        let _ = std::fs::remove_file(&load_archive_path);
 
-        crate::project::save::save_to_archive(&project, &tmp).expect("保存到归档失败");
-        let bytes = std::fs::read(&tmp).expect("读取归档文件失败");
+        crate::project::save::save_to_archive(&project, &load_archive_path)
+            .expect("保存到归档失败");
+        let bytes = std::fs::read(&load_archive_path).expect("读取归档文件失败");
         let loaded = load_from_archive(&bytes).expect("从归档加载项目失败");
 
         assert_eq!(loaded.metadata.project.name, "Test");
         assert_eq!(loaded.tracks.len(), 1);
 
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&load_archive_path);
     }
 
     fn create_event_rich_project() -> LuminoProject {
@@ -330,29 +331,30 @@ mod tests {
     #[test]
     fn test_load_events_roundtrip_folder() {
         let project = create_event_rich_project();
-        let tmp = std::env::temp_dir().join("lumino_load_events_folder_test");
-        let _ = std::fs::remove_dir_all(&tmp);
+        let events_dir = std::env::temp_dir().join("lumino_load_events_folder_test");
+        let _ = std::fs::remove_dir_all(&events_dir);
 
-        crate::project::save::save_to_folder(&project, &tmp).expect("保存到文件夹失败");
-        let loaded = load_from_folder(&tmp).expect("从文件夹加载项目失败");
+        crate::project::save::save_to_folder(&project, &events_dir).expect("保存到文件夹失败");
+        let loaded = load_from_folder(&events_dir).expect("从文件夹加载项目失败");
 
         assert_event_rich_project_eq(&loaded);
 
-        let _ = std::fs::remove_dir_all(&tmp);
+        let _ = std::fs::remove_dir_all(&events_dir);
     }
 
     #[test]
     fn test_load_events_roundtrip_archive() {
         let project = create_event_rich_project();
-        let tmp = std::env::temp_dir().join("lumino_load_events_archive_test.lmpj");
-        let _ = std::fs::remove_file(&tmp);
+        let events_archive_path = std::env::temp_dir().join("lumino_load_events_archive_test.lmpj");
+        let _ = std::fs::remove_file(&events_archive_path);
 
-        crate::project::save::save_to_archive(&project, &tmp).expect("保存到归档失败");
-        let bytes = std::fs::read(&tmp).expect("读取归档文件失败");
+        crate::project::save::save_to_archive(&project, &events_archive_path)
+            .expect("保存到归档失败");
+        let bytes = std::fs::read(&events_archive_path).expect("读取归档文件失败");
         let loaded = load_from_archive(&bytes).expect("从归档加载项目失败");
 
         assert_event_rich_project_eq(&loaded);
 
-        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&events_archive_path);
     }
 }

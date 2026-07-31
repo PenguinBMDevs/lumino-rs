@@ -97,19 +97,19 @@ impl Chunk {
 
     fn apply_to(&mut self, local_idx: usize, f: impl FnOnce(&mut Note)) {
         if local_idx < self.len {
-            let mut n = Note::from_raw(
+            let mut note = Note::from_raw(
                 self.ticks[local_idx],
                 self.keys[local_idx],
                 self.lengths[local_idx],
                 self.velocities[local_idx],
                 self.channels[local_idx],
             );
-            f(&mut n);
-            self.ticks[local_idx] = n.tick;
-            self.keys[local_idx] = n.key;
-            self.lengths[local_idx] = n.length;
-            self.velocities[local_idx] = n.velocity;
-            self.channels[local_idx] = n.channel;
+            f(&mut note);
+            self.ticks[local_idx] = note.tick;
+            self.keys[local_idx] = note.key;
+            self.lengths[local_idx] = note.length;
+            self.velocities[local_idx] = note.velocity;
+            self.channels[local_idx] = note.channel;
         }
     }
 
@@ -228,12 +228,12 @@ impl NoteStore {
     /// **O(N) 顺序扫描**：直接遍历 chunk 的 SoA 数组，不调用 `resolve()` 二分查找。
     /// 16M 音符 ~30ms（vs 原实现 O(N log N) 二分查找 ~1-2s）。
     pub fn to_im_vector(&self) -> im::Vector<Note> {
-        let mut v = im::Vector::new();
+        let mut notes_vec = im::Vector::new();
         let mut global_idx = 0usize;
         for chunk in &self.chunks {
             for i in 0..chunk.len {
                 if !self.tombstone.get(global_idx) {
-                    v.push_back(Note::from_raw(
+                    notes_vec.push_back(Note::from_raw(
                         chunk.ticks[i],
                         chunk.keys[i],
                         chunk.lengths[i],
@@ -244,7 +244,7 @@ impl NoteStore {
                 global_idx += 1;
             }
         }
-        v
+        notes_vec
     }
 
     /// 预分配容量（只分配 Vec 容量，不创建空 chunk，避免 offsets 不同步）

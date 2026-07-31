@@ -93,9 +93,9 @@ impl<'a> EventListCanvas<'a> {
     fn divider_positions(&self, column_widths: &[f32; 6]) -> [f32; 5] {
         let mut div_xs = [0.0f32; 5];
         let mut div_x = 0.0;
-        for i in 0..5 {
-            div_x += column_widths[i];
-            div_xs[i] = div_x;
+        for idx in 0..5 {
+            div_x += column_widths[idx];
+            div_xs[idx] = div_x;
         }
         div_xs
     }
@@ -135,9 +135,9 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         match event {
             canvas::Event::Mouse(MouseEvent::ButtonPressed(Button::Left)) => {
                 let dividers = self.divider_positions(&state.column_widths);
-                for (i, &x) in dividers.iter().enumerate() {
-                    if (local_x - x).abs() <= DIVIDER_HIT_WIDTH {
-                        state.dragging_divider = Some(i);
+                for (idx, &div_x) in dividers.iter().enumerate() {
+                    if (local_x - div_x).abs() <= DIVIDER_HIT_WIDTH {
+                        state.dragging_divider = Some(idx);
                         state.drag_start_x = local_x;
                         state.drag_start_widths = state.column_widths;
                         return Some(canvas::Action::capture());
@@ -181,7 +181,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         let dividers = self.divider_positions(&state.column_widths);
         if dividers
             .iter()
-            .any(|&x| (local_x - x).abs() <= DIVIDER_HIT_WIDTH)
+            .any(|&div_x| (local_x - div_x).abs() <= DIVIDER_HIT_WIDTH)
         {
             return iced_core::mouse::Interaction::ResizingHorizontally;
         }
@@ -332,8 +332,8 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         path.line_to(iced_core::Point::new(canvas_w, HEADER_HEIGHT - 1.0));
         // 垂直分隔线
         let mut col_x = 0.0_f32;
-        for &w in &column_widths[..column_widths.len() - 1] {
-            col_x += w;
+        for &width in &column_widths[..column_widths.len() - 1] {
+            col_x += width;
             path.move_to(iced_core::Point::new(col_x, 0.0));
             path.line_to(iced_core::Point::new(col_x, canvas_h));
         }

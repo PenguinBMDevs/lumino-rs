@@ -116,8 +116,8 @@ impl GpuNoteBuffer {
         let count = end_index - start_index;
 
         // 更新 CPU 缓存
-        for (i, instance) in instances[..count].iter().enumerate() {
-            self.instances[start_index + i] = *instance;
+        for (index, instance) in instances[..count].iter().enumerate() {
+            self.instances[start_index + index] = *instance;
         }
 
         // 计算偏移量

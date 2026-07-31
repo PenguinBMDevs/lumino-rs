@@ -143,7 +143,7 @@ fn collect_segments(
     let grid_left_x = view.keyboard_width;
 
     if visible_events.is_empty() {
-        let idx = lane.events.partition_point(|e| e.tick < pad_start);
+        let idx = lane.events.partition_point(|event| event.tick < pad_start);
         let val = if idx > 0 {
             lane.events[idx - 1].value
         } else {
@@ -164,7 +164,7 @@ fn collect_segments(
 
     let prev_idx = lane
         .events
-        .partition_point(|e| e.tick < visible_events[0].tick);
+        .partition_point(|event| event.tick < visible_events[0].tick);
     let chase_val = if prev_idx > 0 {
         lane.events[prev_idx - 1].value
     } else {
@@ -203,8 +203,10 @@ fn collect_segments(
         prev_y = y2;
     }
 
-    let last_visible_tick = visible_events.last().map_or(pad_end, |e| e.tick);
-    let next_idx = lane.events.partition_point(|e| e.tick <= last_visible_tick);
+    let last_visible_tick = visible_events.last().map_or(pad_end, |event| event.tick);
+    let next_idx = lane
+        .events
+        .partition_point(|event| event.tick <= last_visible_tick);
     let right_bound = if next_idx < lane.events.len() {
         view.tick_to_x(lane.events[next_idx].tick)
     } else {
@@ -359,8 +361,8 @@ fn push_polyline(
     let inv = 1.0 / steps as f32;
     let mut px = ctx.x1;
     let mut py = ctx.y1;
-    for i in 1..=steps {
-        let t = i as f32 * inv;
+    for step in 1..=steps {
+        let t = step as f32 * inv;
         let f = factor_fn(t);
         let nx = ctx.x1 + dx * t;
         let ny = ctx.y1 + dy * f;
@@ -404,9 +406,9 @@ mod tests {
             events: ticks
                 .iter()
                 .zip(values.iter())
-                .map(|(&t, &v)| AutomationEvent {
-                    tick: t,
-                    value: v,
+                .map(|(&tick, &value)| AutomationEvent {
+                    tick,
+                    value,
                     shape: SegmentShape::Step,
                 })
                 .collect(),
