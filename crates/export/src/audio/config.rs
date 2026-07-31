@@ -144,8 +144,8 @@ impl From<AudioChannelMode> for ChannelCount {
 }
 
 impl From<ThreadMode> for ThreadCount {
-    fn from(t: ThreadMode) -> Self {
-        match t {
+    fn from(thread_mode: ThreadMode) -> Self {
+        match thread_mode {
             ThreadMode::None => ThreadCount::None,
             ThreadMode::Auto => ThreadCount::Auto,
             ThreadMode::Manual(n) => ThreadCount::Manual(n as usize),
@@ -154,8 +154,8 @@ impl From<ThreadMode> for ThreadCount {
 }
 
 impl From<AudioInterpolation> for Interpolator {
-    fn from(i: AudioInterpolation) -> Self {
-        match i {
+    fn from(interp: AudioInterpolation) -> Self {
+        match interp {
             AudioInterpolation::Nearest => Interpolator::Nearest,
             AudioInterpolation::Linear => Interpolator::Linear,
         }

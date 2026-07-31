@@ -9,11 +9,11 @@ use crate::note::Note;
 impl NoteStore {
     /// 移除指定索引的音符（O(N) 平均，需要移动后续元素）
     pub fn remove(&mut self, idx: usize) -> Option<Note> {
-        let (ci, local) = self.resolve(idx)?;
-        let note = self.chunks[ci].get(local)?;
+        let (compacted_idx, local) = self.resolve(idx)?;
+        let note = self.chunks[compacted_idx].get(local)?;
 
         // 将后续所有音符向前移动一位
-        let mut current_ci = ci;
+        let mut current_ci = compacted_idx;
         let current_local = local;
 
         // 当前块内前移
@@ -76,23 +76,23 @@ impl NoteStore {
         // 从末尾向前移动
         for i in (idx + 1..self.total_len).rev() {
             if let Some(prev) = self.get_ref(i - 1) {
-                self.modify(i, |n| {
-                    n.tick = prev.tick;
-                    n.key = prev.key;
-                    n.length = prev.length;
-                    n.velocity = prev.velocity;
-                    n.channel = prev.channel;
+                self.modify(i, |note| {
+                    note.tick = prev.tick;
+                    note.key = prev.key;
+                    note.length = prev.length;
+                    note.velocity = prev.velocity;
+                    note.channel = prev.channel;
                 });
             }
         }
 
         // 写入新音符
-        self.modify(idx, |n| {
-            n.tick = note.tick;
-            n.key = note.key;
-            n.length = note.length;
-            n.velocity = note.velocity;
-            n.channel = note.channel;
+        self.modify(idx, |note_ref| {
+            note_ref.tick = note.tick;
+            note_ref.key = note.key;
+            note_ref.length = note.length;
+            note_ref.velocity = note.velocity;
+            note_ref.channel = note.channel;
         });
     }
 

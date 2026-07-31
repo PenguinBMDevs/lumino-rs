@@ -14,12 +14,12 @@ use crate::{ArchiveEntry, ArchiveError};
 
 /// 从已打开的 tar 存档中提取条目名称列表
 fn list_from<R: Read>(archive: &mut tar::Archive<R>) -> Result<Vec<ArchiveEntry>, ArchiveError> {
-    let mut result = Vec::new();
-    let entries = archive
+    let mut entries = Vec::new();
+    let archive_entries = archive
         .entries()
         .map_err(|e| ArchiveError::LibraryError(format!("tar 读取条目失败: {e}")))?;
 
-    for entry in entries {
+    for entry in archive_entries {
         let entry =
             entry.map_err(|e| ArchiveError::LibraryError(format!("tar 条目解析失败: {e}")))?;
         let name = entry
@@ -28,10 +28,10 @@ fn list_from<R: Read>(archive: &mut tar::Archive<R>) -> Result<Vec<ArchiveEntry>
             .to_string_lossy()
             .to_string();
         let is_dir = entry.header().entry_type().is_dir();
-        result.push(ArchiveEntry { name, is_dir });
+        entries.push(ArchiveEntry { name, is_dir });
     }
 
-    Ok(result)
+    Ok(entries)
 }
 
 /// 从已打开的 tar 存档中提取指定文件数据
@@ -59,11 +59,11 @@ fn extract_from<R: Read>(
         if normalized_name == normalized_target
             || normalized_name.ends_with(&format!("/{normalized_target}"))
         {
-            let mut data = Vec::new();
+            let mut entry_data = Vec::new();
             entry
-                .read_to_end(&mut data)
+                .read_to_end(&mut entry_data)
                 .map_err(|e| ArchiveError::LibraryError(format!("tar 读取数据失败: {e}")))?;
-            return Ok(data);
+            return Ok(entry_data);
         }
     }
 

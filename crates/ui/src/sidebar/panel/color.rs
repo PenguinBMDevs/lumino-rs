@@ -11,24 +11,24 @@ pub fn track_button_background(
     status: iced_widget::button::Status,
     theme: &Theme,
 ) -> Color {
-    let p = theme.extended_palette();
+    let palette = theme.extended_palette();
     match color {
         Some(c) => {
             if is_selected {
-                lumino_ui_core::color::blend_color(c, p.background.strong.color, 0.35)
+                lumino_ui_core::color::blend_color(c, palette.background.strong.color, 0.35)
             } else if status == iced_widget::button::Status::Hovered {
-                lumino_ui_core::color::blend_color(c, p.background.weak.color, 0.25)
+                lumino_ui_core::color::blend_color(c, palette.background.weak.color, 0.25)
             } else {
                 c
             }
         }
         None => {
             if is_selected {
-                p.background.strong.color
+                palette.background.strong.color
             } else if status == iced_widget::button::Status::Hovered {
-                p.background.weak.color
+                palette.background.weak.color
             } else {
-                p.background.base.color
+                palette.background.base.color
             }
         }
     }

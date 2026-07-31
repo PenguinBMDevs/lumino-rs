@@ -91,13 +91,13 @@ impl<'a> EventListCanvas<'a> {
 
     /// 根据列宽计算各分割线的 x 坐标
     fn divider_positions(&self, column_widths: &[f32; 6]) -> [f32; 5] {
-        let mut xs = [0.0f32; 5];
-        let mut x = 0.0;
+        let mut div_xs = [0.0f32; 5];
+        let mut div_x = 0.0;
         for i in 0..5 {
-            x += column_widths[i];
-            xs[i] = x;
+            div_x += column_widths[i];
+            div_xs[i] = div_x;
         }
-        xs
+        div_xs
     }
 
     /// 计算可见行范围（包含表头）
@@ -229,11 +229,11 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
 
         // 绘制表头文字
         let column_widths = state.column_widths;
-        let mut x = 4.0_f32;
+        let mut col_x = 4.0_f32;
         for (i, &header) in COL_HEADERS.iter().enumerate() {
             frame.fill_text(Text {
                 content: header.to_string(),
-                position: iced_core::Point::new(x, HEADER_HEIGHT * 0.5),
+                position: iced_core::Point::new(col_x, HEADER_HEIGHT * 0.5),
                 color: header_text_color,
                 size: iced_core::Pixels(FONT_SIZE),
                 line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -245,7 +245,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                 align_y: iced_core::alignment::Vertical::Center,
                 shaping: iced_widget::text::Shaping::Basic,
             });
-            x += column_widths[i];
+            col_x += column_widths[i];
         }
 
         // 可见行范围：优先使用 scrollable 报告的视口高度，未收到时回退到 canvas 高度
@@ -264,7 +264,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                 continue;
             };
             // Canvas 位于 scrollable 内部，scrollable 负责整体平移；这里使用内容坐标
-            let y = HEADER_HEIGHT + idx as f32 * ROW_HEIGHT;
+            let item_y = HEADER_HEIGHT + idx as f32 * ROW_HEIGHT;
 
             // 行交替背景：白行黑字、黑行白字，并适配当前主题
             let (row_bg, row_text_color) = if idx % 2 == 0 {
@@ -281,7 +281,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                 (bg, iced_core::Color::from_rgb(1.0, 1.0, 1.0))
             };
             frame.fill_rectangle(
-                iced_core::Point::new(0.0, y),
+                iced_core::Point::new(0.0, item_y),
                 iced_core::Size::new(canvas_w, ROW_HEIGHT),
                 row_bg,
             );
@@ -300,11 +300,11 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
             ];
 
             let column_widths = state.column_widths;
-            let mut x = 4.0_f32;
+            let mut col_x = 4.0_f32;
             for (i, value) in values.iter().enumerate() {
                 frame.fill_text(Text {
                     content: value.clone(),
-                    position: iced_core::Point::new(x, y + ROW_HEIGHT * 0.5),
+                    position: iced_core::Point::new(col_x, item_y + ROW_HEIGHT * 0.5),
                     color: row_text_color,
                     size: iced_core::Pixels(FONT_SIZE),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -316,7 +316,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
                     align_y: iced_core::alignment::Vertical::Center,
                     shaping: iced_widget::text::Shaping::Basic,
                 });
-                x += column_widths[i];
+                col_x += column_widths[i];
             }
         }
 
@@ -331,11 +331,11 @@ impl<'a> Program<Message, Theme, Renderer> for EventListCanvas<'a> {
         path.move_to(iced_core::Point::new(0.0, HEADER_HEIGHT - 1.0));
         path.line_to(iced_core::Point::new(canvas_w, HEADER_HEIGHT - 1.0));
         // 垂直分隔线
-        let mut x = 0.0_f32;
+        let mut col_x = 0.0_f32;
         for &w in &column_widths[..column_widths.len() - 1] {
-            x += w;
-            path.move_to(iced_core::Point::new(x, 0.0));
-            path.line_to(iced_core::Point::new(x, canvas_h));
+            col_x += w;
+            path.move_to(iced_core::Point::new(col_x, 0.0));
+            path.line_to(iced_core::Point::new(col_x, canvas_h));
         }
         frame.stroke(
             &path.build(),

@@ -37,9 +37,8 @@ impl NoteStore {
         let chunk_count = self.chunks.len();
         let chunks_per_thread = chunk_count.div_ceil(num_threads).max(1);
         let offsets = self.chunk_offsets.clone();
-        let dt = delta_tick;
-        let dk = delta_key as i32;
-        let mk = max_key as i32;
+        let delta_key_val = delta_key as i32;
+        let max_key_val = max_key as i32;
 
         std::thread::scope(|s| {
             for (thread_idx, chunk_group) in self.chunks.chunks_mut(chunks_per_thread).enumerate() {
@@ -66,15 +65,16 @@ impl NoteStore {
                             let mut bits = block;
                             // trailing_zeros: 只遍历被选中的位
                             while bits != 0 {
-                                let tz = bits.trailing_zeros() as usize;
-                                let gi = base + tz;
+                                let trailing_zeros_count = bits.trailing_zeros() as usize;
+                                let global_idx = base + trailing_zeros_count;
                                 bits &= bits - 1; // 清除已处理位
                                 // 检查全局索引是否在当前 chunk 范围内
-                                if gi >= chunk_start && gi < chunk_end {
-                                    let local = gi - chunk_start;
-                                    let new_tick = (chunk.ticks[local] + dt).max(0.0);
-                                    let new_key =
-                                        (chunk.keys[local] as i32 + dk).clamp(0, mk) as u16;
+                                if global_idx >= chunk_start && global_idx < chunk_end {
+                                    let local = global_idx - chunk_start;
+                                    let new_tick = (chunk.ticks[local] + delta_tick).max(0.0);
+                                    let new_key = (chunk.keys[local] as i32 + delta_key_val)
+                                        .clamp(0, max_key_val)
+                                        as u16;
                                     if (chunk.ticks[local] - new_tick).abs() > f32::EPSILON
                                         || chunk.keys[local] != new_key
                                     {
@@ -115,9 +115,8 @@ impl NoteStore {
         let chunk_count = self.chunks.len();
         let chunks_per_thread = chunk_count.div_ceil(num_threads).max(1);
         let offsets = self.chunk_offsets.clone();
-        let dt = delta_tick;
-        let dk = delta_key as i32;
-        let mk = max_key as i32;
+        let delta_key_val = delta_key as i32;
+        let max_key_val = max_key as i32;
 
         // 收集 BitVec 的 u32 块到本地 Vec，支持随机访问
         // bit-vec 0.8 默认 Block = u32，每块 32 位
@@ -150,14 +149,15 @@ impl NoteStore {
                             let base = bi * 32; // 每块 32 位
                             let mut bits = block;
                             while bits != 0 {
-                                let tz = bits.trailing_zeros() as usize;
-                                let gi = base + tz;
+                                let trailing_zeros_count = bits.trailing_zeros() as usize;
+                                let global_idx = base + trailing_zeros_count;
                                 bits &= bits - 1;
-                                if gi >= chunk_start && gi < chunk_end {
-                                    let local = gi - chunk_start;
-                                    let new_tick = (chunk.ticks[local] + dt).max(0.0);
-                                    let new_key =
-                                        (chunk.keys[local] as i32 + dk).clamp(0, mk) as u16;
+                                if global_idx >= chunk_start && global_idx < chunk_end {
+                                    let local = global_idx - chunk_start;
+                                    let new_tick = (chunk.ticks[local] + delta_tick).max(0.0);
+                                    let new_key = (chunk.keys[local] as i32 + delta_key_val)
+                                        .clamp(0, max_key_val)
+                                        as u16;
                                     if (chunk.ticks[local] - new_tick).abs() > f32::EPSILON
                                         || chunk.keys[local] != new_key
                                     {
@@ -364,11 +364,11 @@ impl NoteStore {
                             let base = bi * 64;
                             let mut bits = block;
                             while bits != 0 {
-                                let tz = bits.trailing_zeros() as usize;
-                                let gi = base + tz;
+                                let trailing_zeros_count = bits.trailing_zeros() as usize;
+                                let global_idx = base + trailing_zeros_count;
                                 bits &= bits - 1;
-                                if gi >= chunk_start && gi < chunk_end {
-                                    let local = gi - chunk_start;
+                                if global_idx >= chunk_start && global_idx < chunk_end {
+                                    let local = global_idx - chunk_start;
                                     if apply_batch_edit_target(chunk, local, &target) {
                                         local_modified += 1;
                                     }

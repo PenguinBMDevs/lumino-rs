@@ -45,7 +45,7 @@ pub fn get_total_physical_memory() -> u64 {
     let mut size: u64 = 0;
     let mut len = std::mem::size_of::<u64>() as libc::size_t;
 
-    let ret = unsafe {
+    let sysctl_result = unsafe {
         libc::sysctl(
             mib.as_mut_ptr(),
             2,
@@ -56,10 +56,10 @@ pub fn get_total_physical_memory() -> u64 {
         )
     };
 
-    if ret == 0 && len == std::mem::size_of::<u64>() {
+    if sysctl_result == 0 && len == std::mem::size_of::<u64>() {
         size
     } else {
-        tracing::warn!("MemoryMonitor: sysctl HW_MEMSIZE 失败 (ret={ret}), 使用兜底值");
+        tracing::warn!("MemoryMonitor: sysctl HW_MEMSIZE 失败 (ret={sysctl_result}), 使用兜底值");
         FALLBACK_TOTAL_MEMORY
     }
 }
@@ -122,7 +122,7 @@ pub fn get_current_rss() -> u64 {
     let mut info = std::mem::MaybeUninit::<MachTaskBasicInfo>::uninit();
     let mut count = (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
 
-    let result = unsafe {
+    let task_result = unsafe {
         libc::task_info(
             libc::mach_task_self(),
             MACH_TASK_BASIC_INFO,
@@ -131,10 +131,10 @@ pub fn get_current_rss() -> u64 {
         )
     };
 
-    if result == KERN_SUCCESS {
+    if task_result == KERN_SUCCESS {
         unsafe { (*info.as_ptr()).resident_size }
     } else {
-        tracing::warn!("MemoryMonitor: task_info 失败 (result={result}), 跳过检查");
+        tracing::warn!("MemoryMonitor: task_info 失败 (result={task_result}), 跳过检查");
         0
     }
 }
@@ -169,8 +169,8 @@ pub fn get_current_rss() -> u64 {
 #[cfg(any(target_os = "linux", target_os = "macos"))]
 pub fn get_process_cpu_time_us() -> u64 {
     let mut usage = std::mem::MaybeUninit::<libc::rusage>::uninit();
-    let ret = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
-    if ret == 0 {
+    let rusage_result = unsafe { libc::getrusage(libc::RUSAGE_SELF, usage.as_mut_ptr()) };
+    if rusage_result == 0 {
         let usage = unsafe { usage.assume_init() };
         let user_us = usage.ru_utime.tv_sec as u64 * 1_000_000 + usage.ru_utime.tv_usec as u64;
         let sys_us = usage.ru_stime.tv_sec as u64 * 1_000_000 + usage.ru_stime.tv_usec as u64;

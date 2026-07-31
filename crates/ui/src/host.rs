@@ -108,14 +108,14 @@ impl Host {
     /// MIDI 加载后立即调用，确保后续重生成时能从缓存取到完整音轨数据，
     /// 避免预生成贴图被不完整数据覆盖。
     pub fn preload_track_notes(&mut self, track_notes: Vec<Vec<lumino_core::Note>>) {
-        let data = &mut self.root.editor.editor_state.data;
+        let editor_data = &mut self.root.editor.editor_state.data;
         for (track_idx, notes) in track_notes.into_iter().enumerate() {
-            data.track_notes.insert(track_idx, notes.into());
+            editor_data.track_notes.insert(track_idx, notes.into());
         }
-        data.track_notes_gen += 1;
+        editor_data.track_notes_gen += 1;
         tracing::info!(
             "[onion-dirty] 预加载 track_notes: {} 个音轨",
-            data.track_notes.len()
+            editor_data.track_notes.len()
         );
     }
 

@@ -184,8 +184,8 @@ mod tests {
         let mut detector = RegionDeltaDetector::new(30720);
         let coord = RegionCoord::new(0, 0);
 
-        let result = detector.detect_delta(&coord, &[], 1000, 0);
-        assert_eq!(result, DeltaResult::NoChange);
+        let detection_result = detector.detect_delta(&coord, &[], 1000, 0);
+        assert_eq!(detection_result, DeltaResult::NoChange);
     }
 
     #[test]
@@ -194,8 +194,8 @@ mod tests {
         let coord = RegionCoord::new(0, 0);
         let ops = vec![make_add_op(vec![make_note(100.0, 60, 200.0, 0)])];
 
-        let result = detector.detect_delta(&coord, &ops, 1000, 1);
-        assert!(matches!(result, DeltaResult::Changed(_)));
+        let detection_result = detector.detect_delta(&coord, &ops, 1000, 1);
+        assert!(matches!(detection_result, DeltaResult::Changed(_)));
     }
 
     #[test]
@@ -208,8 +208,8 @@ mod tests {
         let _ = detector.detect_delta(&coord, &ops, 1000, 1);
 
         // Second detect with same data: no change
-        let result = detector.detect_delta(&coord, &ops, 2000, 1);
-        assert_eq!(result, DeltaResult::NoChange);
+        let detection_result = detector.detect_delta(&coord, &ops, 2000, 1);
+        assert_eq!(detection_result, DeltaResult::NoChange);
     }
 
     #[test]
@@ -221,8 +221,8 @@ mod tests {
         let _ = detector.detect_delta(&coord, &ops_with, 1000, 1);
 
         // Now region is empty (all notes deleted)
-        let result = detector.detect_delta(&coord, &[], 2000, 1);
-        assert_eq!(result, DeltaResult::Cleared);
+        let detection_result = detector.detect_delta(&coord, &[], 2000, 1);
+        assert_eq!(detection_result, DeltaResult::Cleared);
     }
 
     #[test]

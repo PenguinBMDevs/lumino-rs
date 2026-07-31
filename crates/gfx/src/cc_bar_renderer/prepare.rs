@@ -308,8 +308,8 @@ fn push_velocity_curve_instances(
     });
 
     for (i, point) in sorted.iter().enumerate() {
-        let x = ctx.panel_x + ctx.keyboard_width + point.tick * ctx.zoom_x - ctx.scroll_x;
-        let y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y
+        let bar_x = ctx.panel_x + ctx.keyboard_width + point.tick * ctx.zoom_x - ctx.scroll_x;
+        let bar_y = ctx.actual_panel_y + TOOLBAR_HEIGHT + ctx.max_y
             - (point.velocity as f32 / VELOCITY_MAX * ctx.graph_height);
 
         if i > 0 {
@@ -319,7 +319,7 @@ fn push_velocity_curve_instances(
                 - (prev.velocity as f32 / VELOCITY_MAX * ctx.graph_height);
 
             // Step 水平线段
-            let dx = x - prev_x;
+            let dx = bar_x - prev_x;
             if dx > 0.5 {
                 instances.push(CcBarInstance::new(
                     prev_x,
@@ -330,11 +330,11 @@ fn push_velocity_curve_instances(
                 ));
             }
             // Step 垂直线段
-            let dy = y - prev_y;
+            let dy = bar_y - prev_y;
             if dy.abs() > 0.5 {
                 instances.push(CcBarInstance::new(
-                    x - ctx.line_thickness / 2.0,
-                    prev_y.min(y),
+                    bar_x - ctx.line_thickness / 2.0,
+                    prev_y.min(bar_y),
                     ctx.line_thickness,
                     dy.abs(),
                     line_color,
@@ -343,10 +343,10 @@ fn push_velocity_curve_instances(
         }
 
         // 锚点圆（用圆角矩形渲染）
-        if x >= ctx.panel_x && x <= ctx.panel_x + ctx.canvas_size_x {
+        if bar_x >= ctx.panel_x && bar_x <= ctx.panel_x + ctx.canvas_size_x {
             instances.push(CcBarInstance::with_props(
-                x - CURVE_ANCHOR_RADIUS,
-                y - CURVE_ANCHOR_RADIUS,
+                bar_x - CURVE_ANCHOR_RADIUS,
+                bar_y - CURVE_ANCHOR_RADIUS,
                 CURVE_ANCHOR_RADIUS * 2.0,
                 CURVE_ANCHOR_RADIUS * 2.0,
                 anchor_color,

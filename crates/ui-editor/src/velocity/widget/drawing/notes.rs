@@ -23,11 +23,11 @@ pub fn draw_tempo_graph(
     let bpm_range = TEMPO_BPM_MAX - TEMPO_BPM_MIN;
 
     let mut screen_points: Vec<(Point, f64)> = Vec::new();
-    for p in points {
-        let x = p.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-        if x >= -50.0 && x <= width + 50.0 {
-            let pos = tempo_point_screen_pos(p, width, height, view, min_bpm, bpm_range);
-            screen_points.push((pos, p.bpm));
+    for point in points {
+        let point_screen_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if point_screen_x >= -50.0 && point_screen_x <= width + 50.0 {
+            let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
+            screen_points.push((pos, point.bpm));
         }
     }
     if screen_points.is_empty() {

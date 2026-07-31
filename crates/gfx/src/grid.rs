@@ -219,10 +219,10 @@ fn push_tick_instance(
     color: [f32; 4],
     size: [f32; 2],
 ) {
-    let x = keyboard_width + tick as f32 * zoom_x - scroll_x;
-    if x >= keyboard_width && x <= viewport_width {
+    let screen_x = keyboard_width + tick as f32 * zoom_x - scroll_x;
+    if screen_x >= keyboard_width && screen_x <= viewport_width {
         instances.push(RulerTickInstance::new(
-            [x, 0.0],
+            [screen_x, 0.0],
             size,
             color,
             kind,

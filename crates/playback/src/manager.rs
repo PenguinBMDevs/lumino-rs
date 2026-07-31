@@ -115,8 +115,8 @@ impl PlaybackManager {
             Command::SetDocument(doc, track) => engine.set_document(doc, track),
             Command::SetMidiEvents(events) => engine.set_midi_events(events),
             Command::SetTempoChanges(changes) => {
-                let mut p = engine.playback().lock();
-                p.set_tempo_changes(changes);
+                let mut playback_guard = engine.playback().lock();
+                playback_guard.set_tempo_changes(changes);
             }
             Command::SetVelocityFilterThreshold(threshold) => {
                 engine.set_velocity_filter_threshold(threshold);

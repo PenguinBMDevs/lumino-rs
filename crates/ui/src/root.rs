@@ -238,11 +238,11 @@ impl Root {
     /// 播放时每帧需要计算最大滚动范围，全量扫描 track_notes 在大型 MIDI 下会导致主线程卡顿。
     /// 使用 EditorData::track_notes_gen 作为缓存版本号，只在音符数据变化时重新计算。
     pub fn arrangement_max_tick_end(&mut self) -> f32 {
-        let data = &self.editor.editor_state.data;
+        let editor_data = &self.editor.editor_state.data;
         let vp = &mut self.arrangement_view.viewport;
-        let current_gen = data.track_notes_gen;
+        let current_gen = editor_data.track_notes_gen;
         if vp.cached_track_notes_gen != current_gen {
-            vp.cached_max_tick_end = data
+            vp.cached_max_tick_end = editor_data
                 .track_notes
                 .values()
                 .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))

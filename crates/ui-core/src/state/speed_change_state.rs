@@ -31,9 +31,9 @@ impl SpeedChangeDialogState {
             if denominator == 0.0 {
                 return None;
             }
-            let result = numerator / denominator;
-            if result > 0.0 {
-                return Some(result);
+            let division_result = numerator / denominator;
+            if division_result > 0.0 {
+                return Some(division_result);
             }
             return None;
         }

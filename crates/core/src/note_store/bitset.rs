@@ -99,8 +99,8 @@ impl BitSet {
             let base = block_idx * 64;
             let mut bits = block;
             while bits != 0 {
-                let tz = bits.trailing_zeros() as usize;
-                let idx = base + tz;
+                let trailing_zeros_count = bits.trailing_zeros() as usize;
+                let idx = base + trailing_zeros_count;
                 if idx < self.len {
                     f(idx);
                 }
@@ -128,8 +128,8 @@ impl BitSet {
 
     /// 批量 OR（墓碑删除用）
     pub fn or_from(&mut self, other: &BitSet) {
-        let n = self.blocks.len().min(other.blocks.len());
-        for i in 0..n {
+        let min_blocks = self.blocks.len().min(other.blocks.len());
+        for i in 0..min_blocks {
             self.blocks[i] |= other.blocks[i];
         }
     }

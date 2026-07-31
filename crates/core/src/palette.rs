@@ -101,14 +101,14 @@ impl PaletteManager {
         }
 
         // 将名为 "Random" 的调色板冒泡到第一个位置，作为默认调色板
-        if let Some(random_idx) = palettes.iter().position(|p| p.name == "Random")
+        if let Some(random_idx) = palettes.iter().position(|palette| palette.name == "Random")
             && random_idx != 0
         {
             let random = palettes.remove(random_idx);
             palettes.insert(0, random);
         }
 
-        let names = palettes.iter().map(|p| p.name).collect();
+        let names = palettes.iter().map(|palette| palette.name).collect();
         Self { palettes, names }
     }
 
@@ -124,7 +124,7 @@ impl PaletteManager {
 
     /// 按名称获取调色板
     pub fn get(&self, name: &str) -> Option<&Palette> {
-        self.palettes.iter().find(|p| p.name == name)
+        self.palettes.iter().find(|palette| palette.name == name)
     }
 
     /// 获取默认调色板（第一个）
@@ -134,9 +134,9 @@ impl PaletteManager {
 
     /// 获取有效调色板名称（如果不存在则返回默认名称）
     pub fn resolve_name(&self, name: &str) -> &'static str {
-        for &n in &self.names {
-            if n == name {
-                return n;
+        for &name_str in &self.names {
+            if name_str == name {
+                return name_str;
             }
         }
         self.names[0]
@@ -154,12 +154,12 @@ impl Palette {
 
     /// 获取颜色作为 `[f32; 4]`（归一化到 0.0-1.0）
     pub fn track_color_f32(&self, track_idx: usize) -> [f32; 4] {
-        let c = self.track_color(track_idx);
+        let color = self.track_color(track_idx);
         [
-            c[0] as f32 / 255.0,
-            c[1] as f32 / 255.0,
-            c[2] as f32 / 255.0,
-            c[3] as f32 / 255.0,
+            color[0] as f32 / 255.0,
+            color[1] as f32 / 255.0,
+            color[2] as f32 / 255.0,
+            color[3] as f32 / 255.0,
         ]
     }
 }
@@ -237,18 +237,18 @@ fn decode_palette_png(data: &[u8]) -> Result<Vec<PaletteColor>, PngDecodeError> 
             })?;
 
             let mut colors = Vec::with_capacity(pixel_count);
-            for &idx in buf.iter().take(pixel_count) {
-                let idx = idx as usize;
-                if idx * 3 + 2 < palette.len() {
-                    let r = palette[idx * 3];
-                    let g = palette[idx * 3 + 1];
-                    let b = palette[idx * 3 + 2];
-                    let a = trns_data
+            for &palette_idx_byte in buf.iter().take(pixel_count) {
+                let palette_idx = palette_idx_byte as usize;
+                if palette_idx * 3 + 2 < palette.len() {
+                    let red = palette[palette_idx * 3];
+                    let green = palette[palette_idx * 3 + 1];
+                    let blue = palette[palette_idx * 3 + 2];
+                    let alpha = trns_data
                         .as_ref()
-                        .and_then(|t| t.get(idx))
+                        .and_then(|t| t.get(palette_idx))
                         .copied()
                         .unwrap_or(255);
-                    colors.push([r, g, b, a]);
+                    colors.push([red, green, blue, alpha]);
                 } else {
                     colors.push([0, 0, 0, 255]);
                 }
@@ -306,19 +306,19 @@ pub fn current_track_color(track_idx: usize) -> PaletteColor {
     PALETTE_MANAGER
         .palettes()
         .get(idx)
-        .map(|p| p.track_color(track_idx))
+        .map(|palette| palette.track_color(track_idx))
         .unwrap_or_else(|| FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()])
 }
 
 /// 获取当前调色板的轨道颜色（[f32;4]，归一化到 0.0-1.0）
 #[inline]
 pub fn current_track_color_f32(track_idx: usize) -> [f32; 4] {
-    let c = current_track_color(track_idx);
+    let color = current_track_color(track_idx);
     [
-        c[0] as f32 / 255.0,
-        c[1] as f32 / 255.0,
-        c[2] as f32 / 255.0,
-        c[3] as f32 / 255.0,
+        color[0] as f32 / 255.0,
+        color[1] as f32 / 255.0,
+        color[2] as f32 / 255.0,
+        color[3] as f32 / 255.0,
     ]
 }
 
@@ -332,7 +332,11 @@ pub fn set_current_palette_by_name(name: &str) -> bool {
         return false;
     }
     let mgr = &*PALETTE_MANAGER;
-    if let Some(idx) = mgr.palettes().iter().position(|p| p.name == name) {
+    if let Some(idx) = mgr
+        .palettes()
+        .iter()
+        .position(|palette| palette.name == name)
+    {
         CURRENT_PALETTE_IDX.store(idx as u8, Ordering::Relaxed);
         CURRENT_PALETTE_INIT.store(true, Ordering::Relaxed);
         true
@@ -369,30 +373,30 @@ pub fn is_palette_locked() -> bool {
 pub fn onion_track_color(track_idx: usize) -> PaletteColor {
     let mgr = &*PALETTE_MANAGER;
     // 使用 CURRENT_PALETTE_INIT/PALETTE_INIT 判断是否初始化
-    let p = if !CURRENT_PALETTE_INIT.load(Ordering::Relaxed) {
+    let palette = if !CURRENT_PALETTE_INIT.load(Ordering::Relaxed) {
         mgr.default()
     } else {
         let idx = CURRENT_PALETTE_IDX.load(Ordering::Relaxed) as usize;
         mgr.palettes().get(idx).unwrap_or_else(|| mgr.default())
     };
     // 从第一个颜色开始取色（offset = 0）
-    if p.colors.is_empty() {
+    if palette.colors.is_empty() {
         // 如果调色板没有颜色，用备用色
         FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()]
     } else {
-        p.colors[track_idx % p.colors.len()]
+        palette.colors[track_idx % palette.colors.len()]
     }
 }
 
 /// 获取洋葱皮音轨颜色（[f32;4]，归一化到 0.0-1.0）
 #[inline]
 pub fn onion_track_color_f32(track_idx: usize) -> [f32; 4] {
-    let c = onion_track_color(track_idx);
+    let color = onion_track_color(track_idx);
     [
-        c[0] as f32 / 255.0,
-        c[1] as f32 / 255.0,
-        c[2] as f32 / 255.0,
-        c[3] as f32 / 255.0,
+        color[0] as f32 / 255.0,
+        color[1] as f32 / 255.0,
+        color[2] as f32 / 255.0,
+        color[3] as f32 / 255.0,
     ]
 }
 
@@ -405,7 +409,7 @@ pub fn current_palette_name() -> &'static str {
     PALETTE_MANAGER
         .palettes()
         .get(idx)
-        .map(|p| p.name)
+        .map(|palette| palette.name)
         .unwrap_or_else(|| PALETTE_MANAGER.default().name)
 }
 

@@ -52,24 +52,24 @@ pub fn parse_smf(
                     message: midly::MidiMessage::NoteOn { key, vel },
                 } => {
                     if vel > 0 {
-                        let ch = channel.as_int();
-                        let k = key;
-                        let v = vel.as_int();
+                        let midi_ch = channel.as_int();
+                        let note_key = key;
+                        let vel_int = vel.as_int();
                         if let Some((start_tick, start_vel, start_ch)) =
-                            active_notes.remove(&(ch, k))
+                            active_notes.remove(&(midi_ch, note_key))
                         {
                             let length = abs_tick.saturating_sub(start_tick) as f32;
-                            notes.push((start_tick as f32, k, length, start_vel, start_ch));
+                            notes.push((start_tick as f32, note_key, length, start_vel, start_ch));
                         }
-                        active_notes.insert((ch, k), (abs_tick, v, ch));
+                        active_notes.insert((midi_ch, note_key), (abs_tick, vel_int, midi_ch));
                     } else {
-                        let ch = channel.as_int();
-                        let k = key;
+                        let midi_ch = channel.as_int();
+                        let note_key = key;
                         if let Some((start_tick, start_vel, start_ch)) =
-                            active_notes.remove(&(ch, k))
+                            active_notes.remove(&(midi_ch, note_key))
                         {
                             let length = abs_tick.saturating_sub(start_tick) as f32;
-                            notes.push((start_tick as f32, k, length, start_vel, start_ch));
+                            notes.push((start_tick as f32, note_key, length, start_vel, start_ch));
                         }
                     }
                 }
@@ -77,11 +77,13 @@ pub fn parse_smf(
                     channel,
                     message: midly::MidiMessage::NoteOff { key, vel },
                 } => {
-                    let ch = channel.as_int();
-                    let k = key;
-                    if let Some((start_tick, start_vel, start_ch)) = active_notes.remove(&(ch, k)) {
+                    let midi_ch = channel.as_int();
+                    let note_key = key;
+                    if let Some((start_tick, start_vel, start_ch)) =
+                        active_notes.remove(&(midi_ch, note_key))
+                    {
                         let length = abs_tick.saturating_sub(start_tick) as f32;
-                        notes.push((start_tick as f32, k, length, start_vel, start_ch));
+                        notes.push((start_tick as f32, note_key, length, start_vel, start_ch));
                     }
                     let _ = vel;
                 }

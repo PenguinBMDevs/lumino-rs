@@ -136,9 +136,9 @@ pub fn with_tag<T>(tag: AllocTag, f: impl FnOnce() -> T) -> T {
     CURRENT_TAG.with(|c| {
         let old = c.get();
         c.set(tag);
-        let result = f();
+        let fn_output = f();
         c.set(old);
-        result
+        fn_output
     })
 }
 
@@ -372,11 +372,11 @@ mod tests {
     #[test]
     fn with_tag_sets_and_restores() {
         let original = current_tag();
-        let result = with_tag(AllocTag::Audio, || {
+        let tag_result = with_tag(AllocTag::Audio, || {
             assert_eq!(current_tag(), AllocTag::Audio);
             "done"
         });
-        assert_eq!(result, "done");
+        assert_eq!(tag_result, "done");
         assert_eq!(current_tag(), original);
     }
 

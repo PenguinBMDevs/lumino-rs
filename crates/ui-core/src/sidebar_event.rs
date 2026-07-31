@@ -80,12 +80,12 @@ pub enum Route {
 
 impl Route {
     pub fn tooltip(&self, lang: Language) -> &'static str {
-        let t = main_translations(lang);
+        let translations = main_translations(lang);
         match self {
-            Route::File => t.sidebar_file,
-            Route::Arrangement => t.sidebar_arrangement,
-            Route::Automation => t.sidebar_automation,
-            Route::EventList => t.sidebar_event_list,
+            Route::File => translations.sidebar_file,
+            Route::Arrangement => translations.sidebar_arrangement,
+            Route::Automation => translations.sidebar_automation,
+            Route::EventList => translations.sidebar_event_list,
             Route::VideoExport => match lang {
                 Language::ZhCn => "视频渲染",
                 Language::EnUs => "Video Render",
@@ -164,12 +164,12 @@ pub enum Event {
 }
 
 impl Event {
-    pub const fn route_updated(r: Route) -> Message {
-        Message::Sidebar(Self::RouteUpdated(r))
+    pub const fn route_updated(route: Route) -> Message {
+        Message::Sidebar(Self::RouteUpdated(route))
     }
 
-    pub const fn panel_toggled(r: Route) -> Message {
-        Message::Sidebar(Self::PanelToggled(r))
+    pub const fn panel_toggled(route: Route) -> Message {
+        Message::Sidebar(Self::PanelToggled(route))
     }
 
     pub const fn track_selected(id: usize) -> Message {
@@ -228,8 +228,8 @@ impl Event {
         Message::Sidebar(Self::PianoRollToggled)
     }
 
-    pub const fn group_toggled(g: GroupId) -> Message {
-        Message::Sidebar(Self::GroupToggled(g))
+    pub const fn group_toggled(group: GroupId) -> Message {
+        Message::Sidebar(Self::GroupToggled(group))
     }
 
     pub const fn track_context_menu_opened(track_id: usize) -> Message {

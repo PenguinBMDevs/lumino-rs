@@ -61,11 +61,11 @@ impl OverlayManager {
 
         for coord in &active_regions {
             let user_count = active_users_by_region.get(coord).copied().unwrap_or(0);
-            let result =
+            let detection_result =
                 self.detector
                     .detect_delta(coord, all_operations, timestamp_ms, user_count);
 
-            match result {
+            match detection_result {
                 DeltaResult::NoChange => {
                     // 检查是否需要触发合并或 flush
                     self.check_pending_flush(coord, timestamp_ms);

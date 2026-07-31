@@ -230,18 +230,18 @@ mod tests {
 
     #[test]
     fn test_compact_event_roundtrip() {
-        let ev = CompactEvent::new(12345, 2, EventKind::NoteOn, 5, 60, 100);
-        assert_eq!(ev.delta_tick(), 12345);
-        assert_eq!(ev.track_id(), 2);
-        assert_eq!(ev.kind(), EventKind::NoteOn);
-        assert_eq!(ev.channel(), 5);
-        assert_eq!(ev.param1(), 60);
-        assert_eq!(ev.param2(), 100);
+        let event = CompactEvent::new(12345, 2, EventKind::NoteOn, 5, 60, 100);
+        assert_eq!(event.delta_tick(), 12345);
+        assert_eq!(event.track_id(), 2);
+        assert_eq!(event.kind(), EventKind::NoteOn);
+        assert_eq!(event.channel(), 5);
+        assert_eq!(event.param1(), 60);
+        assert_eq!(event.param2(), 100);
 
         // 字节往返
-        let bytes = *ev.as_bytes();
+        let bytes = *event.as_bytes();
         let decoded = CompactEvent::from_bytes(&bytes);
-        assert_eq!(decoded, ev);
+        assert_eq!(decoded, event);
     }
 
     #[test]
@@ -274,8 +274,8 @@ mod tests {
 
     #[test]
     fn test_compact_event_track_filter() {
-        let ev = CompactEvent::new(0, 7, EventKind::NoteOn, 0, 60, 100);
-        assert!(ev.is_track(7));
-        assert!(!ev.is_track(3));
+        let event = CompactEvent::new(0, 7, EventKind::NoteOn, 0, 60, 100);
+        assert!(event.is_track(7));
+        assert!(!event.is_track(3));
     }
 }

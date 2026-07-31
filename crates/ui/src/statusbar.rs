@@ -70,7 +70,7 @@ impl StatusBar {
     }
 
     pub fn view<'a>(&'a self, language: Language) -> Element<'a> {
-        let t = main_translations(language);
+        let translations = main_translations(language);
 
         // 左侧描述区：优先显示悬停按钮的 `按钮名 - {解释说明}`，
         // 其次为显式 left_text，最后为"就绪"
@@ -80,7 +80,7 @@ impl StatusBar {
         } else if !self.info.left_text.is_empty() {
             self.info.left_text.clone()
         } else {
-            t.status_ready.to_string()
+            translations.status_ready.to_string()
         };
         let use_fps_style = self.use_fps_style();
 

@@ -41,7 +41,7 @@ impl EditorData {
         let (tx, rx) = mpsc::channel();
 
         std::thread::spawn(move || {
-            let result = apply_drag_state_to_clones(
+            let drag_result = apply_drag_state_to_clones(
                 notes,
                 track_notes,
                 &selected,
@@ -50,7 +50,7 @@ impl EditorData {
                 track_id,
                 max_key,
             );
-            let _ = tx.send(result);
+            let _ = tx.send(drag_result);
         });
 
         self.pending_commit = Some(super::async_commit::PendingCommit {
@@ -154,66 +154,68 @@ mod tests {
     use bit_vec::BitVec;
 
     fn make_data_with_notes() -> EditorData {
-        let mut data = EditorData::new();
-        data.current_track = 1;
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
-        data.notes.push_back(Note::new(10.0, 62, 1.0));
-        data.notes.push_back(Note::new(20.0, 64, 1.0));
-        data.track_notes.insert(1, data.notes.clone());
-        data
+        let mut editor_data = EditorData::new();
+        editor_data.current_track = 1;
+        editor_data.notes.push_back(Note::new(0.0, 60, 1.0));
+        editor_data.notes.push_back(Note::new(10.0, 62, 1.0));
+        editor_data.notes.push_back(Note::new(20.0, 64, 1.0));
+        editor_data.track_notes.insert(1, editor_data.notes.clone());
+        editor_data
     }
 
     #[test]
     fn test_streaming_commit_applies_correctly() {
-        let mut data = make_data_with_notes();
+        let mut editor_data = make_data_with_notes();
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
         bv.set(2, true);
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, -2);
 
-        assert!(data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(editor_data.apply_drag_state_async(&ds, 127).unwrap());
         let modified = loop {
-            if let Some(result) = data.poll_async_commit() {
+            if let Some(result) = editor_data.poll_async_commit() {
                 break result.unwrap();
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(data.notes[0].tick, 5.0);
-        assert_eq!(data.notes[0].key, 58);
-        assert_eq!(data.notes[2].tick, 25.0);
-        assert_eq!(data.notes[2].key, 62);
+        assert_eq!(editor_data.notes[0].tick, 5.0);
+        assert_eq!(editor_data.notes[0].key, 58);
+        assert_eq!(editor_data.notes[2].tick, 25.0);
+        assert_eq!(editor_data.notes[2].key, 62);
     }
 
     #[test]
     fn test_streaming_commit_zero_delta_is_noop() {
-        let mut data = make_data_with_notes();
+        let mut editor_data = make_data_with_notes();
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
         let ds = DragState::new(bv, 0, 60);
-        assert!(!data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(!editor_data.apply_drag_state_async(&ds, 127).unwrap());
     }
 
     #[test]
     fn test_streaming_commit_no_selection() {
-        let mut data = make_data_with_notes();
+        let mut editor_data = make_data_with_notes();
         let bv = BitVec::from_elem(3, false);
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, 0);
-        assert!(!data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(!editor_data.apply_drag_state_async(&ds, 127).unwrap());
     }
 
     #[test]
     fn test_streaming_speed_large_scale() {
         // 创建 1600 万音符，测试流式提交性能
         let note_count = 16_000_000;
-        let mut data = EditorData::new();
-        data.current_track = 1;
+        let mut editor_data = EditorData::new();
+        editor_data.current_track = 1;
         for i in 0..note_count {
-            data.notes.push_back(Note::new(i as f32 * 10.0, 60, 5.0));
+            editor_data
+                .notes
+                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
         }
-        data.track_notes.insert(1, data.notes.clone());
+        editor_data.track_notes.insert(1, editor_data.notes.clone());
 
         // 选中 50% 的音符（800 万个）
         let mut bv = BitVec::from_elem(note_count, false);
@@ -230,47 +232,49 @@ mod tests {
         );
         let start = std::time::Instant::now();
 
-        let result = apply_drag_state_to_clones(
-            data.notes.clone(),
-            data.track_notes.clone(),
+        let drag_result = apply_drag_state_to_clones(
+            editor_data.notes.clone(),
+            editor_data.track_notes.clone(),
             &ds.selected,
             ds.delta_tick,
             ds.delta_key,
-            data.current_track,
+            editor_data.current_track,
             127,
         );
 
         let elapsed = start.elapsed();
-        let result = result.unwrap();
+        let drag_result = drag_result.unwrap();
         let rate = if elapsed.as_secs_f64() > 0.0 {
-            (result.modified as f64 / elapsed.as_secs_f64()) as u64
+            (drag_result.modified as f64 / elapsed.as_secs_f64()) as u64
         } else {
             0
         };
         eprintln!(
             "流式提交完成: 修改 {} 个音符, 耗时 {:?} ({:.2}M/s)",
-            result.modified,
+            drag_result.modified,
             elapsed,
             rate as f64 / 1_000_000.0
         );
 
-        assert_eq!(result.modified, note_count / 2);
+        assert_eq!(drag_result.modified, note_count / 2);
         // 未选中的音符不变
-        assert_eq!(result.notes[1].tick, 10.0);
+        assert_eq!(drag_result.notes[1].tick, 10.0);
         // 选中的音符已偏移
-        assert_eq!(result.notes[0].tick, 10.0);
+        assert_eq!(drag_result.notes[0].tick, 10.0);
     }
 
     #[test]
     fn test_streaming_speed_100_percent_selected() {
         // 1600 万音符全选，测试最坏情况
         let note_count = 16_000_000;
-        let mut data = EditorData::new();
-        data.current_track = 1;
+        let mut editor_data = EditorData::new();
+        editor_data.current_track = 1;
         for i in 0..note_count {
-            data.notes.push_back(Note::new(i as f32 * 10.0, 60, 5.0));
+            editor_data
+                .notes
+                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
         }
-        data.track_notes.insert(1, data.notes.clone());
+        editor_data.track_notes.insert(1, editor_data.notes.clone());
 
         let bv = BitVec::from_elem(note_count, true);
         let mut ds = DragState::new(bv, 0, 60);
@@ -279,43 +283,45 @@ mod tests {
         eprintln!("流式提交测试（全选）: {} 音符", note_count);
         let start = std::time::Instant::now();
 
-        let result = apply_drag_state_to_clones(
-            data.notes.clone(),
-            data.track_notes.clone(),
+        let drag_result = apply_drag_state_to_clones(
+            editor_data.notes.clone(),
+            editor_data.track_notes.clone(),
             &ds.selected,
             ds.delta_tick,
             ds.delta_key,
-            data.current_track,
+            editor_data.current_track,
             127,
         );
 
         let elapsed = start.elapsed();
-        let result = result.unwrap();
+        let drag_result = drag_result.unwrap();
         let rate = if elapsed.as_secs_f64() > 0.0 {
-            (result.modified as f64 / elapsed.as_secs_f64()) as u64
+            (drag_result.modified as f64 / elapsed.as_secs_f64()) as u64
         } else {
             0
         };
         eprintln!(
             "流式提交（全选）完成: 修改 {} 个音符, 耗时 {:?} ({:.2}M/s)",
-            result.modified,
+            drag_result.modified,
             elapsed,
             rate as f64 / 1_000_000.0
         );
 
-        assert_eq!(result.modified, note_count);
+        assert_eq!(drag_result.modified, note_count);
     }
 
     #[test]
     fn test_compare_old_vs_new_approach() {
         // 对比新旧两种方案在 1000 万音符下的性能
         let note_count = 10_000_000;
-        let mut data = EditorData::new();
-        data.current_track = 1;
+        let mut editor_data = EditorData::new();
+        editor_data.current_track = 1;
         for i in 0..note_count {
-            data.notes.push_back(Note::new(i as f32 * 10.0, 60, 5.0));
+            editor_data
+                .notes
+                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
         }
-        data.track_notes.insert(1, data.notes.clone());
+        editor_data.track_notes.insert(1, editor_data.notes.clone());
 
         // 选中 50% 的音符
         let mut bv = BitVec::from_elem(note_count, false);
@@ -328,7 +334,7 @@ mod tests {
         // 旧方案：move_ops_from_drag_state + selected_indices()
         eprintln!("\n--- 对比测试: {} 音符, 50% 选中 ---", note_count);
         let start_old = std::time::Instant::now();
-        let ops = data.move_ops_from_drag_state(&ds);
+        let ops = editor_data.move_ops_from_drag_state(&ds);
         let elapsed_old = start_old.elapsed();
         eprintln!("[旧] move_ops_from_drag_state: {:?}", elapsed_old);
         eprintln!(
@@ -339,21 +345,21 @@ mod tests {
 
         // 新方案：直接遍历 BitVec
         let start_new = std::time::Instant::now();
-        let result = apply_drag_state_to_clones(
-            data.notes.clone(),
-            data.track_notes.clone(),
+        let drag_result = apply_drag_state_to_clones(
+            editor_data.notes.clone(),
+            editor_data.track_notes.clone(),
             &ds.selected,
             ds.delta_tick,
             ds.delta_key,
-            data.current_track,
+            editor_data.current_track,
             127,
         );
         let elapsed_new = start_new.elapsed();
-        let result = result.unwrap();
+        let drag_result = drag_result.unwrap();
         eprintln!("[新] 流式提交: {:?}", elapsed_new);
         eprintln!(
             "[新] 修改: {} 音符, 内存增量: ~2 MB (BitVec)",
-            result.modified
+            drag_result.modified
         );
         eprintln!(
             "[新] 速度提升: {:.1}x (移除了 move_ops_from_drag_state 全量构造开销)",

@@ -86,7 +86,7 @@ pub fn extract_entry_data(path: &Path, entry_name: &str) -> Result<EntryData, Ar
         )
     })?;
 
-    let data = match format {
+    let extracted_data = match format {
         ArchiveFormat::Rar | ArchiveFormat::SevenZ | ArchiveFormat::Lzh => {
             extract_entry_data_unarc(path, entry_name)
         }
@@ -112,7 +112,7 @@ pub fn extract_entry_data(path: &Path, entry_name: &str) -> Result<EntryData, Ar
 
     Ok(EntryData {
         name: entry_name.to_string(),
-        data,
+        data: extracted_data,
     })
 }
 
@@ -170,14 +170,14 @@ pub fn extract_entry_to_dir(
     entry_name: &str,
     output_dir: &Path,
 ) -> Result<PathBuf, ArchiveError> {
-    let data = extract_entry_data(path, entry_name)?;
+    let extracted_data = extract_entry_data(path, entry_name)?;
     std::fs::create_dir_all(output_dir)?;
 
-    let output_path = output_dir.join(&data.name);
+    let output_path = output_dir.join(&extracted_data.name);
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&output_path, &data.data)?;
+    std::fs::write(&output_path, &extracted_data.data)?;
 
     Ok(output_path)
 }

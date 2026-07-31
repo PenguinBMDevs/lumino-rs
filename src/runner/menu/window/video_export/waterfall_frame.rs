@@ -275,12 +275,12 @@ pub fn render_waterfall_frame(
     for note in &notes {
         if note.start_tick <= tick && note.end_tick > tick {
             let color_f = current_track_color_f32(note.track_idx as usize);
-            let b = (color_f[2] * 255.0).round() as u8;
-            let g = (color_f[1] * 255.0).round() as u8;
-            let r = (color_f[0] * 255.0).round() as u8;
-            let key = note.key as usize;
-            if key < 128 {
-                active_key_colors[key] = Some([b, g, r, 255]);
+            let blue = (color_f[2] * 255.0).round() as u8;
+            let green = (color_f[1] * 255.0).round() as u8;
+            let red = (color_f[0] * 255.0).round() as u8;
+            let note_key = note.key as usize;
+            if note_key < 128 {
+                active_key_colors[note_key] = Some([blue, green, red, 255]);
             }
         }
     }
@@ -301,11 +301,11 @@ pub fn render_waterfall_frame(
     for key in 0..key_count {
         if is_black_key(key as isize) {
             let boundary_x = white_count as f64 * white_w;
-            let x = (boundary_x - black_w_offset) as f32;
-            kb_layout.push((x, black_w as f32, true, key));
+            let pos_x = (boundary_x - black_w_offset) as f32;
+            kb_layout.push((pos_x, black_w as f32, true, key));
         } else {
-            let x = (white_count as f64 * white_w) as f32;
-            kb_layout.push((x, white_w as f32, false, key));
+            let pos_x = (white_count as f64 * white_w) as f32;
+            kb_layout.push((pos_x, white_w as f32, false, key));
             white_count += 1;
         }
     }
@@ -314,14 +314,14 @@ pub fn render_waterfall_frame(
     fn blend_key_color(base: [u8; 4], overlay: Option<[u8; 4]>, alpha: u8) -> [u8; 4] {
         match overlay {
             Some(oc) if alpha > 0 => {
-                let a = alpha as i32;
+                let alpha_val = alpha as i32;
                 [
-                    (base[0] as i32 + (oc[0] as i32 - base[0] as i32) * a / 255).clamp(0, 255)
-                        as u8,
-                    (base[1] as i32 + (oc[1] as i32 - base[1] as i32) * a / 255).clamp(0, 255)
-                        as u8,
-                    (base[2] as i32 + (oc[2] as i32 - base[2] as i32) * a / 255).clamp(0, 255)
-                        as u8,
+                    (base[0] as i32 + (oc[0] as i32 - base[0] as i32) * alpha_val / 255)
+                        .clamp(0, 255) as u8,
+                    (base[1] as i32 + (oc[1] as i32 - base[1] as i32) * alpha_val / 255)
+                        .clamp(0, 255) as u8,
+                    (base[2] as i32 + (oc[2] as i32 - base[2] as i32) * alpha_val / 255)
+                        .clamp(0, 255) as u8,
                     255,
                 ]
             }

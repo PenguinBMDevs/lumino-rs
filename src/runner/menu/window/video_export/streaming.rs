@@ -572,20 +572,20 @@ fn build_video_render_params_from_notes(
 
     let keyboard_width = 60.0f32;
     let ruler_height = 30.0f32;
-    let w = width.max(1) as f32;
-    let h = height.max(1) as f32;
+    let width_f = width.max(1) as f32;
+    let height_f = height.max(1) as f32;
 
     let viewport_tick_span = (ppq * 16).max(1) as f32;
-    let zoom_x = (w - keyboard_width) / viewport_tick_span;
+    let zoom_x = (width_f - keyboard_width) / viewport_tick_span;
     let key_count_f = KEY_COUNT as f32;
-    let zoom_y = (h - ruler_height) / key_count_f;
+    let zoom_y = (height_f - ruler_height) / key_count_f;
 
     let scroll_x = tick as f32 * zoom_x;
     let scroll_y = 0.0f32;
 
     let grid_instances = Vec::new();
     let ruler_instances = generate_ruler_instances(
-        w,
+        width_f,
         keyboard_width,
         ruler_height,
         scroll_x,
@@ -641,11 +641,11 @@ fn build_video_render_params_from_notes(
     }
 
     let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
-    let canvas_size = (w, h);
+    let canvas_size = (width_f, height_f);
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
-        logical_size: (w, h),
+        logical_size: (width_f, height_f),
         scale_factor: 1.0,
         scroll: (scroll_x, scroll_y),
         zoom: (zoom_x, zoom_y),

@@ -138,13 +138,13 @@ pub struct NoteView {
 }
 
 impl From<Note> for NoteView {
-    fn from(n: Note) -> Self {
+    fn from(note: Note) -> Self {
         Self {
-            tick: n.tick,
-            key: n.key,
-            length: n.length,
-            velocity: n.velocity,
-            channel: n.channel,
+            tick: note.tick,
+            key: note.key,
+            length: note.length,
+            velocity: note.velocity,
+            channel: note.channel,
         }
     }
 }
@@ -154,13 +154,13 @@ impl From<&Note> for NoteView {
     ///
     /// 用于 im::Vector 路径下 `for_each_note_view` 等场景，避免先 clone Note
     /// 再消耗的冗余开销。
-    fn from(n: &Note) -> Self {
+    fn from(note: &Note) -> Self {
         Self {
-            tick: n.tick,
-            key: n.key,
-            length: n.length,
-            velocity: n.velocity,
-            channel: n.channel,
+            tick: note.tick,
+            key: note.key,
+            length: note.length,
+            velocity: note.velocity,
+            channel: note.channel,
         }
     }
 }
@@ -382,31 +382,31 @@ impl NoteStore {
             return None;
         }
         // partition_point 找到第一个 > global_idx 的位置，前一个就是 chunk
-        let ci = self
+        let compacted_idx = self
             .chunk_offsets
             .partition_point(|&o| o <= global_idx)
             .saturating_sub(1);
-        let local = global_idx - self.chunk_offsets[ci];
-        Some((ci, local))
+        let local = global_idx - self.chunk_offsets[compacted_idx];
+        Some((compacted_idx, local))
     }
 
     /// 获取音符副本
     pub fn get(&self, idx: usize) -> Option<Note> {
-        let (ci, local) = self.resolve(idx)?;
-        self.chunks[ci].get(local)
+        let (compacted_idx, local) = self.resolve(idx)?;
+        self.chunks[compacted_idx].get(local)
     }
 
     /// 获取音符只读视图（避免构造 Note 结构体）
     pub fn get_ref(&self, idx: usize) -> Option<NoteView> {
-        let (ci, local) = self.resolve(idx)?;
-        self.chunks[ci].get_ref(local)
+        let (compacted_idx, local) = self.resolve(idx)?;
+        self.chunks[compacted_idx].get_ref(local)
     }
 
     /// 修改单个音符
     pub fn get_mut(&mut self, idx: usize) -> Option<NoteMut<'_>> {
-        let (ci, local) = self.resolve(idx)?;
+        let (compacted_idx, local) = self.resolve(idx)?;
         Some(NoteMut {
-            chunk: &mut self.chunks[ci],
+            chunk: &mut self.chunks[compacted_idx],
             local_idx: local,
         })
     }
@@ -418,11 +418,11 @@ impl NoteStore {
 
     /// 修改单个音符（回调式，避免中间 Note 结构体）
     pub fn modify(&mut self, idx: usize, f: impl FnOnce(&mut Note)) -> bool {
-        let (ci, local) = match self.resolve(idx) {
+        let (compacted_idx, local) = match self.resolve(idx) {
             Some(v) => v,
             None => return false,
         };
-        self.chunks[ci].apply_to(local, f);
+        self.chunks[compacted_idx].apply_to(local, f);
         true
     }
 
@@ -480,14 +480,14 @@ impl NoteStore {
         let mut result = Vec::with_capacity(end - start);
 
         // 一次二分查找定位起始 chunk
-        let (mut ci, mut local) = match self.resolve(start) {
+        let (mut compacted_idx, mut local) = match self.resolve(start) {
             Some(v) => v,
             None => return result,
         };
         let mut remaining = end - start;
 
         loop {
-            let chunk = &self.chunks[ci];
+            let chunk = &self.chunks[compacted_idx];
             let available = chunk.len - local;
             let to_take = available.min(remaining);
 
@@ -500,7 +500,7 @@ impl NoteStore {
                 break;
             }
 
-            ci += 1;
+            compacted_idx += 1;
             local = 0;
         }
 

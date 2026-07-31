@@ -446,11 +446,11 @@ impl Root {
     ///
     /// 在 `apply_settings` 末尾调用，让 UiConfig 的 4 个编辑字段实时生效。
     pub fn sync_history_config(&mut self) {
-        let s = &self.settings;
+        let settings = &self.settings;
         self.editor.editor_state.data.history.set_config(
-            s.history_total_limit,
-            s.merge_window_ms,
-            s.history_entry_limit as u32,
+            settings.history_total_limit,
+            settings.merge_window_ms,
+            settings.history_entry_limit as u32,
         );
     }
 

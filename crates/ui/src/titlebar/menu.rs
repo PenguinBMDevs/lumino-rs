@@ -21,12 +21,12 @@ pub enum MenuKind {
 impl MenuKind {
     /// 获取菜单类型的显示名称
     pub fn display_name(&self, lang: Language) -> &'static str {
-        let t = main_translations(lang);
+        let translations = main_translations(lang);
         match self {
-            Self::File => t.menu_file,
-            Self::Edit => t.menu_edit,
-            Self::View => t.menu_view,
-            Self::Help => t.menu_help,
+            Self::File => translations.menu_file,
+            Self::Edit => translations.menu_edit,
+            Self::View => translations.menu_view,
+            Self::Help => translations.menu_help,
         }
     }
 }
@@ -53,7 +53,7 @@ pub struct MenuConfig {
 }
 
 pub fn file_menu(lang: Language) -> MenuConfig {
-    let t = main_translations(lang);
+    let translations = main_translations(lang);
     use crate::event::menu::file;
     use MenuItem::*;
     MenuConfig {
@@ -75,7 +75,7 @@ pub fn file_menu(lang: Language) -> MenuConfig {
                         file::Event::export_project_folder(),
                     )),
                 ],
-                t.file_export_project.to_string(),
+                translations.file_export_project.to_string(),
             ),
             Separator,
             Action(crate::event::Event::menu_file(
@@ -281,7 +281,7 @@ fn base_split<'a>() -> Element<'a> {
 
 /// 获取事件的友好显示名称
 pub fn event_display_name(event: &Event, lang: Language) -> String {
-    let t = main_translations(lang);
+    let translations = main_translations(lang);
     use crate::event::menu::{
         edit::Event as EditEvent, file::Event as FileEvent, help::Event as HelpEvent,
         view::Event as ViewEvent,
@@ -290,35 +290,35 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
     match event {
         Event::Menu(menu_event) => match menu_event {
             crate::event::menu::Event::File(file_event) => match file_event {
-                FileEvent::New => t.file_new.to_string(),
-                FileEvent::Open => t.file_open.to_string(),
-                FileEvent::Save => t.file_save.to_string(),
-                FileEvent::Close => t.file_close.to_string(),
-                FileEvent::ImportFiles => t.file_import.to_string(),
-                FileEvent::ExportProjectArchive => t.file_export_archive.to_string(),
-                FileEvent::ExportProjectFolder => t.file_export_folder.to_string(),
-                FileEvent::ProjectSettings => t.file_project_settings.to_string(),
-                FileEvent::Settings => t.file_settings.to_string(),
-                FileEvent::Exit => t.file_exit.to_string(),
+                FileEvent::New => translations.file_new.to_string(),
+                FileEvent::Open => translations.file_open.to_string(),
+                FileEvent::Save => translations.file_save.to_string(),
+                FileEvent::Close => translations.file_close.to_string(),
+                FileEvent::ImportFiles => translations.file_import.to_string(),
+                FileEvent::ExportProjectArchive => translations.file_export_archive.to_string(),
+                FileEvent::ExportProjectFolder => translations.file_export_folder.to_string(),
+                FileEvent::ProjectSettings => translations.file_project_settings.to_string(),
+                FileEvent::Settings => translations.file_settings.to_string(),
+                FileEvent::Exit => translations.file_exit.to_string(),
                 _ => format!("{file_event:?}"),
             },
             crate::event::menu::Event::Edit(edit_event) => match edit_event {
-                EditEvent::Undo => t.edit_undo.to_string(),
-                EditEvent::Redo => t.edit_redo.to_string(),
-                EditEvent::Cut => t.edit_cut.to_string(),
-                EditEvent::Copy => t.edit_copy.to_string(),
-                EditEvent::Paste => t.edit_paste.to_string(),
-                EditEvent::SelectAll => t.edit_select_all.to_string(),
-                EditEvent::Find => t.edit_find.to_string(),
+                EditEvent::Undo => translations.edit_undo.to_string(),
+                EditEvent::Redo => translations.edit_redo.to_string(),
+                EditEvent::Cut => translations.edit_cut.to_string(),
+                EditEvent::Copy => translations.edit_copy.to_string(),
+                EditEvent::Paste => translations.edit_paste.to_string(),
+                EditEvent::SelectAll => translations.edit_select_all.to_string(),
+                EditEvent::Find => translations.edit_find.to_string(),
             },
             crate::event::menu::Event::View(view_event) => match view_event {
-                ViewEvent::ZoomIn => t.view_zoom_in.to_string(),
-                ViewEvent::ZoomOut => t.view_zoom_out.to_string(),
-                ViewEvent::ZoomReset => t.view_zoom_reset.to_string(),
+                ViewEvent::ZoomIn => translations.view_zoom_in.to_string(),
+                ViewEvent::ZoomOut => translations.view_zoom_out.to_string(),
+                ViewEvent::ZoomReset => translations.view_zoom_reset.to_string(),
                 _ => format!("{view_event:?}"),
             },
             crate::event::menu::Event::Help(help_event) => match help_event {
-                HelpEvent::About => t.help_about.to_string(),
+                HelpEvent::About => translations.help_about.to_string(),
             },
         },
         Event::Window(window_event) => format!("{window_event:?}"),

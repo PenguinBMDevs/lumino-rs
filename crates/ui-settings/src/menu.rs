@@ -12,16 +12,16 @@ use lumino_ui_core::{
 };
 
 pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
-    let t = settings_translations(lang);
+    let translations = settings_translations(lang);
     vec![
-        (t.general, Icon::Gear),
-        (t.audio, Icon::WaveForm),
-        (t.ui, Icon::FolderTree),
-        (t.shortcuts, Icon::Clock),
-        (t.onion_skin, Icon::Eye),
-        (t.palette, Icon::Arrangement),
-        (t.editing, Icon::Pencil),
-        (t.about, Icon::LogoInApp),
+        (translations.general, Icon::Gear),
+        (translations.audio, Icon::WaveForm),
+        (translations.ui, Icon::FolderTree),
+        (translations.shortcuts, Icon::Clock),
+        (translations.onion_skin, Icon::Eye),
+        (translations.palette, Icon::Arrangement),
+        (translations.editing, Icon::Pencil),
+        (translations.about, Icon::LogoInApp),
     ]
 }
 

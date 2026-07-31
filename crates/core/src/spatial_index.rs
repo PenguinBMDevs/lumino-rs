@@ -171,15 +171,18 @@ impl NoteSpatialIndex {
             return idx;
         }
 
-        let tick_min = note_refs.first().map(|n| n.tick).unwrap_or(0.0);
+        let tick_min = note_refs
+            .first()
+            .map(|note_ref| note_ref.tick)
+            .unwrap_or(0.0);
         let tick_max = note_refs
             .iter()
-            .map(|n| n.tick + n.length)
+            .map(|note_ref| note_ref.tick + note_ref.length)
             .max_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
             .unwrap_or(tick_min);
 
         if note_refs.len() <= Self::MAX_LEAF_CAPACITY {
-            note_refs.sort_by_key(|n| n.key);
+            note_refs.sort_by_key(|note_ref| note_ref.key);
             let idx = nodes.len();
             nodes.push(Node {
                 tick_min,
@@ -279,12 +282,16 @@ impl NoteSpatialIndex {
             }
 
             if !node.key_sorted.is_empty() {
-                let start_idx = node.key_sorted.partition_point(|n| n.key < key_min);
-                let end_idx = node.key_sorted.partition_point(|n| n.key <= key_max);
+                let start_idx = node
+                    .key_sorted
+                    .partition_point(|note_ref| note_ref.key < key_min);
+                let end_idx = node
+                    .key_sorted
+                    .partition_point(|note_ref| note_ref.key <= key_max);
 
-                for n in &node.key_sorted[start_idx..end_idx] {
-                    if n.tick + n.length >= tick_start && n.tick <= tick_end {
-                        result.push(n.index);
+                for note_ref in &node.key_sorted[start_idx..end_idx] {
+                    if note_ref.tick + note_ref.length >= tick_start && note_ref.tick <= tick_end {
+                        result.push(note_ref.index);
                     }
                 }
             }
@@ -318,12 +325,16 @@ impl NoteSpatialIndex {
             }
 
             if !node.key_sorted.is_empty() {
-                let start_idx = node.key_sorted.partition_point(|n| n.key < key_min);
-                let end_idx = node.key_sorted.partition_point(|n| n.key <= key_max);
+                let start_idx = node
+                    .key_sorted
+                    .partition_point(|note_ref| note_ref.key < key_min);
+                let end_idx = node
+                    .key_sorted
+                    .partition_point(|note_ref| note_ref.key <= key_max);
 
-                for n in &node.key_sorted[start_idx..end_idx] {
-                    if n.tick + n.length >= tick_start && n.tick <= tick_end {
-                        result.push((n.tick, n.key, n.length));
+                for note_ref in &node.key_sorted[start_idx..end_idx] {
+                    if note_ref.tick + note_ref.length >= tick_start && note_ref.tick <= tick_end {
+                        result.push((note_ref.tick, note_ref.key, note_ref.length));
                     }
                 }
             }

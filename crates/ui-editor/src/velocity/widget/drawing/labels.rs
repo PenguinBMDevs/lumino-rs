@@ -14,11 +14,11 @@ pub fn draw_scale_labels(
     match edit_mode {
         EditMode::Velocity | EditMode::Cc(_) => {
             let scale_values = [0u8, 32, 64, 96, 127];
-            for &v in &scale_values {
-                let y = VelocityCanvas::velocity_to_y(v, size.height);
+            for &value in &scale_values {
+                let label_y = VelocityCanvas::velocity_to_y(value, size.height);
                 frame.fill_text(canvas::Text {
-                    content: format!("{}", v),
-                    position: Point::new(4.0, y - 6.0),
+                    content: format!("{}", value),
+                    position: Point::new(4.0, label_y - 6.0),
                     max_width: width,
                     line_height: iced_core::text::LineHeight::Relative(1.0),
                     size: iced_core::Pixels(9.0),
@@ -38,11 +38,11 @@ pub fn draw_scale_labels(
                 (4096, "+4k"),
                 (8191, "+8k"),
             ];
-            for &(v, label) in &bend_labels {
-                let y = bend_value_to_y(v, size.height);
+            for &(value, label) in &bend_labels {
+                let label_y = bend_value_to_y(value, size.height);
                 frame.fill_text(canvas::Text {
                     content: label.to_string(),
-                    position: Point::new(4.0, y - 6.0),
+                    position: Point::new(4.0, label_y - 6.0),
                     max_width: width,
                     line_height: iced_core::text::LineHeight::Relative(1.0),
                     size: iced_core::Pixels(9.0),
@@ -57,10 +57,10 @@ pub fn draw_scale_labels(
         EditMode::Tempo => {
             let bpm_levels = generate_tempo_levels();
             for &bpm in &bpm_levels {
-                let y = tempo_bpm_to_y(bpm, size.height);
+                let label_y = tempo_bpm_to_y(bpm, size.height);
                 frame.fill_text(canvas::Text {
                     content: format!("{:.0}", bpm),
-                    position: Point::new(4.0, y - 6.0),
+                    position: Point::new(4.0, label_y - 6.0),
                     max_width: width,
                     line_height: iced_core::text::LineHeight::Relative(1.0),
                     size: iced_core::Pixels(9.0),

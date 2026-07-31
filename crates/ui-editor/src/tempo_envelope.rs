@@ -108,8 +108,8 @@ impl<'a> Program<Message, Theme, Renderer> for TempoCanvas<'a> {
             .points
             .iter()
             .filter(|p| {
-                let x = p.tick * self.zoom_x - self.scroll_x + self.keyboard_width;
-                x >= -50.0 && x <= width + 50.0
+                let point_x = p.tick * self.zoom_x - self.scroll_x + self.keyboard_width;
+                point_x >= -50.0 && point_x <= width + 50.0
             })
             .collect();
 
@@ -180,10 +180,10 @@ impl<'a> TempoCanvas<'a> {
         min_bpm: f64,
         bpm_range: f64,
     ) -> Point {
-        let x = point.tick * self.zoom_x - self.scroll_x + self.keyboard_width;
+        let point_x = point.tick * self.zoom_x - self.scroll_x + self.keyboard_width;
         let normalized = ((point.bpm - min_bpm) / bpm_range) as f32;
-        let y = height - 10.0 - normalized * (height - 20.0).max(0.0);
-        Point::new(x, y)
+        let point_y = height - 10.0 - normalized * (height - 20.0).max(0.0);
+        Point::new(point_x, point_y)
     }
 }
 

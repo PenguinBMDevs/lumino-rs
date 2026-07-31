@@ -45,11 +45,11 @@ impl Window {
     }
     pub fn update(&mut self, event: Event) {
         match event {
-            Event::Theme(r) => self.theme = get_theme(&r),
-            Event::Maximized(r) => self.is_maximized = r,
-            Event::Focused(r) => self.is_focused = r,
-            Event::FpsUpdate(v) => {
-                self.fps = Some(v);
+            Event::Theme(theme) => self.theme = get_theme(&theme),
+            Event::Maximized(maximized) => self.is_maximized = maximized,
+            Event::Focused(focused) => self.is_focused = focused,
+            Event::FpsUpdate(fps) => {
+                self.fps = Some(fps);
             }
             Event::PerfUpdate(_) => {
                 // PerfUpdate 由 Root 直接处理，不需要更新 Window 状态

@@ -407,17 +407,17 @@ mod tests {
 
     #[test]
     fn test_global_is_singleton() {
-        let a = MemoryMonitor::global() as *const MemoryMonitor;
-        let b = MemoryMonitor::global() as *const MemoryMonitor;
-        assert_eq!(a, b, "global() 应该返回相同实例");
+        let instance_a = MemoryMonitor::global() as *const MemoryMonitor;
+        let instance_b = MemoryMonitor::global() as *const MemoryMonitor;
+        assert_eq!(instance_a, instance_b, "global() 应该返回相同实例");
     }
 
     #[test]
     fn test_check_inner_normal() {
         let monitor = MemoryMonitor::new();
-        let result = monitor.check_inner("test: ");
+        let check_result = monitor.check_inner("test: ");
         assert_eq!(
-            result,
+            check_result,
             Some(false),
             "正常状态不应超限（若 RSS 读取失败也可能是 None，但不会是 Some(true)）"
         );

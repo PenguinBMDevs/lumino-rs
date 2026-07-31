@@ -231,22 +231,22 @@ mod tests {
 
     #[test]
     fn test_cc_point_construction() {
-        let p = CcPoint {
+        let point = CcPoint {
             tick: 480.0,
             value: 64,
         };
-        assert_eq!(p.tick, 480.0);
-        assert_eq!(p.value, 64);
+        assert_eq!(point.tick, 480.0);
+        assert_eq!(point.value, 64);
     }
 
     #[test]
     fn test_bend_point_construction() {
-        let p = BendPoint {
+        let point = BendPoint {
             tick: 960.0,
             value: 0,
         };
-        assert_eq!(p.tick, 960.0);
-        assert_eq!(p.value, 0);
+        assert_eq!(point.tick, 960.0);
+        assert_eq!(point.value, 0);
         let p_neg = BendPoint {
             tick: 0.0,
             value: -8192,
@@ -261,47 +261,47 @@ mod tests {
 
     #[test]
     fn test_velocity_point_construction() {
-        let p = VelocityPoint {
+        let point = VelocityPoint {
             note_index: 5,
             tick: 100.0,
             velocity: 80,
             length: 480.0,
         };
-        assert_eq!(p.note_index, 5);
-        assert_eq!(p.tick, 100.0);
-        assert_eq!(p.velocity, 80);
+        assert_eq!(point.note_index, 5);
+        assert_eq!(point.tick, 100.0);
+        assert_eq!(point.velocity, 80);
     }
 
     #[test]
     fn test_tempo_point_construction() {
-        let t = TempoPoint {
+        let tempo_pt = TempoPoint {
             tick: 0.0,
             bpm: 120.0,
         };
-        assert_eq!(t.tick, 0.0);
-        assert_eq!(t.bpm, 120.0);
+        assert_eq!(tempo_pt.tick, 0.0);
+        assert_eq!(tempo_pt.bpm, 120.0);
     }
 
     #[test]
     fn test_cc_display_known_controller() {
-        let d = CcDisplay(7);
-        let s = d.to_string();
-        assert!(s.contains("7"));
-        assert!(s.contains("Volume"));
+        let display = CcDisplay(7);
+        let display_str = display.to_string();
+        assert!(display_str.contains("7"));
+        assert!(display_str.contains("Volume"));
     }
 
     #[test]
     fn test_cc_display_unknown_controller() {
-        let d = CcDisplay(255);
-        let s = d.to_string();
-        assert_eq!(s, "255");
+        let display = CcDisplay(255);
+        let display_str = display.to_string();
+        assert_eq!(display_str, "255");
     }
 
     #[test]
     fn test_bend_display() {
-        let s = BendDisplay.to_string();
-        assert!(s.contains("Bend"));
-        assert!(s.contains("-8192"));
+        let display_str = BendDisplay.to_string();
+        assert!(display_str.contains("Bend"));
+        assert!(display_str.contains("-8192"));
     }
 
     #[test]

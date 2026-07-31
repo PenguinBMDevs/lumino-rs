@@ -29,10 +29,10 @@ impl Root {
         // 1. im::Vector 树遍历开销（16M 音符 ~3.5s → 更快）
         // 2. 读取脏数据 bug（commit_pending_drag 跳过 sync_notes_from_store 后
         //    self.notes 位置已过时，而 NoteStore 始终持有最新位置）
-        let data = &self.editor.editor_state.data;
-        let current_notes: Vec<NoteEvent> = if data.is_note_store_enabled() {
-            let mut notes = Vec::with_capacity(data.note_store.len());
-            data.note_store.for_each_ref(|_idx, view| {
+        let editor_data = &self.editor.editor_state.data;
+        let current_notes: Vec<NoteEvent> = if editor_data.is_note_store_enabled() {
+            let mut notes = Vec::with_capacity(editor_data.note_store.len());
+            editor_data.note_store.for_each_ref(|_idx, view| {
                 notes.push(NoteEvent {
                     tick: view.tick,
                     channel: view.channel,
@@ -43,7 +43,8 @@ impl Root {
             });
             notes
         } else {
-            data.notes
+            editor_data
+                .notes
                 .iter()
                 .map(|note| NoteEvent {
                     tick: note.tick,

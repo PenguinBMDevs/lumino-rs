@@ -31,27 +31,27 @@ impl RulerRenderer {
     ) {
         puffin::profile_function!();
 
-        let p = params;
         let params_changed = !self.cache_valid
-            || self.cache_scroll_x != p.scroll_x
-            || self.cache_zoom_x != p.zoom_x
-            || self.cache_viewport_width != p.viewport_size.0
-            || self.cache_keyboard_width != p.keyboard_width
-            || self.cache_ruler_height != p.ruler_height
-            || self.cache_ticks_per_measure != p.ticks_per_measure
-            || self.cache_ticks_per_beat != p.ticks_per_beat
-            || self.cache_time_signatures != p.time_signatures;
+            || self.cache_scroll_x != params.scroll_x
+            || self.cache_zoom_x != params.zoom_x
+            || self.cache_viewport_width != params.viewport_size.0
+            || self.cache_keyboard_width != params.keyboard_width
+            || self.cache_ruler_height != params.ruler_height
+            || self.cache_ticks_per_measure != params.ticks_per_measure
+            || self.cache_ticks_per_beat != params.ticks_per_beat
+            || self.cache_time_signatures != params.time_signatures;
 
         if params_changed {
-            self.cached_instances = self.generate_tick_instances(p);
-            self.cache_scroll_x = p.scroll_x;
-            self.cache_zoom_x = p.zoom_x;
-            self.cache_viewport_width = p.viewport_size.0;
-            self.cache_keyboard_width = p.keyboard_width;
-            self.cache_ruler_height = p.ruler_height;
-            self.cache_ticks_per_measure = p.ticks_per_measure;
-            self.cache_ticks_per_beat = p.ticks_per_beat;
-            self.cache_time_signatures.clone_from(&p.time_signatures);
+            self.cached_instances = self.generate_tick_instances(params);
+            self.cache_scroll_x = params.scroll_x;
+            self.cache_zoom_x = params.zoom_x;
+            self.cache_viewport_width = params.viewport_size.0;
+            self.cache_keyboard_width = params.keyboard_width;
+            self.cache_ruler_height = params.ruler_height;
+            self.cache_ticks_per_measure = params.ticks_per_measure;
+            self.cache_ticks_per_beat = params.ticks_per_beat;
+            self.cache_time_signatures
+                .clone_from(&params.time_signatures);
             self.cache_valid = true;
         }
 
@@ -69,7 +69,7 @@ impl RulerRenderer {
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let viewport_uniform = RulerViewportUniform::from_params(p);
+        let viewport_uniform = RulerViewportUniform::from_params(params);
         queue.write_buffer(
             &self.viewport_buffer,
             0,

@@ -83,9 +83,9 @@ fn test_for_each_ref() {
 #[test]
 fn test_modify() {
     let mut s = make_notes(3);
-    let modified = s.modify(1, |n| {
-        n.tick = 999.0;
-        n.key = 100;
+    let modified = s.modify(1, |note| {
+        note.tick = 999.0;
+        note.key = 100;
     });
     assert!(modified);
     assert_eq!(s.get(1).unwrap().tick, 999.0);
@@ -133,7 +133,7 @@ fn test_insert() {
 #[test]
 fn test_retain() {
     let mut s = make_notes(10);
-    s.retain(|n| n.tick < 50.0);
+    s.retain(|note| note.tick < 50.0);
 
     assert_eq!(s.len(), 5);
     assert_eq!(s.get(0).unwrap().tick, 0.0);
@@ -206,7 +206,7 @@ fn test_clone() {
     assert_eq!(s2.len(), 5);
 
     // 修改原存储不影响克隆
-    s.modify(0, |n| n.tick = 999.0);
+    s.modify(0, |note| note.tick = 999.0);
     assert_eq!(s.get(0).unwrap().tick, 999.0);
     assert_eq!(s2.get(0).unwrap().tick, 0.0);
 }

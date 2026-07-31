@@ -157,18 +157,18 @@ mod tests {
     fn test_quantize_tick_basic() {
         let grid_size = 480.0;
 
-        let result = quantize_tick(100.0, grid_size, 1.0);
-        assert!((result - 0.0).abs() < f32::EPSILON);
+        let quantized = quantize_tick(100.0, grid_size, 1.0);
+        assert!((quantized - 0.0).abs() < f32::EPSILON);
 
-        let result = quantize_tick(240.0, grid_size, 1.0);
+        let quantized = quantize_tick(240.0, grid_size, 1.0);
         // 240 正好在中间，四舍五入应该向上取整到 480
-        assert!((result - 480.0).abs() < f32::EPSILON);
+        assert!((quantized - 480.0).abs() < f32::EPSILON);
 
-        let result = quantize_tick(260.0, grid_size, 1.0);
-        assert!((result - 480.0).abs() < f32::EPSILON);
+        let quantized = quantize_tick(260.0, grid_size, 1.0);
+        assert!((quantized - 480.0).abs() < f32::EPSILON);
 
-        let result = quantize_tick(480.0, grid_size, 1.0);
-        assert!((result - 480.0).abs() < f32::EPSILON);
+        let quantized = quantize_tick(480.0, grid_size, 1.0);
+        assert!((quantized - 480.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -176,37 +176,37 @@ mod tests {
         let grid_size = 480.0;
         let tick = 240.0;
 
-        let result_0 = quantize_tick(tick, grid_size, 0.0);
-        assert!((result_0 - 240.0).abs() < f32::EPSILON);
+        let quantized_0 = quantize_tick(tick, grid_size, 0.0);
+        assert!((quantized_0 - 240.0).abs() < f32::EPSILON);
 
-        let result_05 = quantize_tick(tick, grid_size, 0.5);
+        let quantized_05 = quantize_tick(tick, grid_size, 0.5);
         // 完全量化(1.0)→480，50%强度: 240 + (480-240)*0.5 = 360
-        assert!((result_05 - 360.0).abs() < f32::EPSILON);
+        assert!((quantized_05 - 360.0).abs() < f32::EPSILON);
 
-        let result_1 = quantize_tick(tick, grid_size, 1.0);
+        let quantized_1 = quantize_tick(tick, grid_size, 1.0);
         // 四舍五入：240正好在中间，向上取整到480
-        assert!((result_1 - 480.0).abs() < f32::EPSILON);
+        assert!((quantized_1 - 480.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_quantize_grid_sizes() {
         let tick = 500.0;
 
-        let result_whole = quantize_tick(tick, 1920.0, 1.0);
+        let quantized_whole = quantize_tick(tick, 1920.0, 1.0);
         // 500/1920 = 0.26，四舍五入→0
-        assert!((result_whole - 0.0).abs() < f32::EPSILON);
+        assert!((quantized_whole - 0.0).abs() < f32::EPSILON);
 
-        let result_half = quantize_tick(tick, 960.0, 1.0);
+        let quantized_half = quantize_tick(tick, 960.0, 1.0);
         // 500/960 = 0.52，四舍五入→1，所以是 1*960=960
-        assert!((result_half - 960.0).abs() < f32::EPSILON);
+        assert!((quantized_half - 960.0).abs() < f32::EPSILON);
 
-        let result_quarter = quantize_tick(tick, 480.0, 1.0);
+        let quantized_quarter = quantize_tick(tick, 480.0, 1.0);
         // 500/480 = 1.04，四舍五入→1，所以是 1*480=480
-        assert!((result_quarter - 480.0).abs() < f32::EPSILON);
+        assert!((quantized_quarter - 480.0).abs() < f32::EPSILON);
 
-        let result_eighth = quantize_tick(tick, 240.0, 1.0);
+        let quantized_eighth = quantize_tick(tick, 240.0, 1.0);
         // 500/240 = 2.08，四舍五入→2，所以是 2*240=480
-        assert!((result_eighth - 480.0).abs() < f32::EPSILON);
+        assert!((quantized_eighth - 480.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -242,21 +242,21 @@ mod tests {
 
     #[test]
     fn test_edge_cases() {
-        let result_zero = quantize_tick(0.0, 480.0, 1.0);
-        assert!((result_zero - 0.0).abs() < f32::EPSILON);
+        let quantized_zero = quantize_tick(0.0, 480.0, 1.0);
+        assert!((quantized_zero - 0.0).abs() < f32::EPSILON);
 
-        let result_negative = quantize_tick(-100.0, 480.0, 1.0);
-        assert!((result_negative - 0.0).abs() < f32::EPSILON);
+        let quantized_negative = quantize_tick(-100.0, 480.0, 1.0);
+        assert!((quantized_negative - 0.0).abs() < f32::EPSILON);
 
-        let result_large = quantize_tick(100000.0, 480.0, 1.0);
+        let quantized_large = quantize_tick(100000.0, 480.0, 1.0);
         let expected: f32 = (100000.0_f32 / 480.0_f32).round() * 480.0_f32;
-        assert!((result_large - expected).abs() < f32::EPSILON);
+        assert!((quantized_large - expected).abs() < f32::EPSILON);
 
-        let result_zero_grid = quantize_tick(100.0, 0.0, 1.0);
-        assert!((result_zero_grid - 100.0).abs() < f32::EPSILON);
+        let quantized_zero_grid = quantize_tick(100.0, 0.0, 1.0);
+        assert!((quantized_zero_grid - 100.0).abs() < f32::EPSILON);
 
-        let result_zero_strength = quantize_tick(100.0, 480.0, 0.0);
-        assert!((result_zero_strength - 100.0).abs() < f32::EPSILON);
+        let quantized_zero_strength = quantize_tick(100.0, 480.0, 0.0);
+        assert!((quantized_zero_strength - 100.0).abs() < f32::EPSILON);
 
         let mut empty_notes: Vec<QuantizableNote> = vec![];
         let config = QuantizeConfig::default();
@@ -293,16 +293,16 @@ mod tests {
         let grid_size = 30.0;
         let tick = 37.0;
 
-        let result = quantize_tick(tick, grid_size, 1.0);
-        assert!((result - 30.0).abs() < f32::EPSILON);
+        let quantized = quantize_tick(tick, grid_size, 1.0);
+        assert!((quantized - 30.0).abs() < f32::EPSILON);
 
         let tick2 = 44.0;
-        let result2 = quantize_tick(tick2, grid_size, 1.0);
-        assert!((result2 - 30.0).abs() < f32::EPSILON);
+        let quantized2 = quantize_tick(tick2, grid_size, 1.0);
+        assert!((quantized2 - 30.0).abs() < f32::EPSILON);
 
         let tick3 = 46.0;
-        let result3 = quantize_tick(tick3, grid_size, 1.0);
-        assert!((result3 - 60.0).abs() < f32::EPSILON);
+        let quantized3 = quantize_tick(tick3, grid_size, 1.0);
+        assert!((quantized3 - 60.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -310,12 +310,12 @@ mod tests {
         let grid_size = 480.0;
         let tick = 120.0;
 
-        let result_25 = quantize_tick(tick, grid_size, 0.25);
+        let quantized_25 = quantize_tick(tick, grid_size, 0.25);
         let expected_25 = tick + (0.0 - tick) * 0.25;
-        assert!((result_25 - expected_25).abs() < f32::EPSILON);
+        assert!((quantized_25 - expected_25).abs() < f32::EPSILON);
 
-        let result_75 = quantize_tick(tick, grid_size, 0.75);
+        let quantized_75 = quantize_tick(tick, grid_size, 0.75);
         let expected_75 = tick + (0.0 - tick) * 0.75;
-        assert!((result_75 - expected_75).abs() < f32::EPSILON);
+        assert!((quantized_75 - expected_75).abs() < f32::EPSILON);
     }
 }

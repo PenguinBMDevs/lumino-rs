@@ -289,7 +289,7 @@ impl CollaborationService {
         let client = guard.take();
         drop(guard);
 
-        let result = match client {
+        let client_result = match client {
             Some(ref c) => block_in_place(move || {
                 let handle = tokio::runtime::Handle::current();
                 handle.block_on(f(c)).map_err(|e| e.to_string())
@@ -305,7 +305,7 @@ impl CollaborationService {
                 messages::CLIENT_LOCK_POISONED
             );
         }
-        result
+        client_result
     }
 
     /// 发送鼠标位置（同步 API）

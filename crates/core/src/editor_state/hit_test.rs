@@ -110,8 +110,8 @@ mod tests {
         state.data.notes.push_back(Note::new(0.0, 60, 400.0));
         let x = state.view.tick_to_x(200.0);
         let y = state.view.key_to_y(60);
-        let result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
-        assert_eq!(result, Some((0, HitType::Middle)));
+        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        assert_eq!(hit_result, Some((0, HitType::Middle)));
     }
 
     #[test]
@@ -120,8 +120,8 @@ mod tests {
         state.data.notes.push_back(Note::new(0.0, 60, 400.0));
         let x = state.view.tick_to_x(10.0);
         let y = state.view.key_to_y(60);
-        let result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
-        assert_eq!(result, Some((0, HitType::Start)));
+        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        assert_eq!(hit_result, Some((0, HitType::Start)));
     }
 
     #[test]
@@ -130,8 +130,8 @@ mod tests {
         state.data.notes.push_back(Note::new(0.0, 60, 400.0));
         let x = state.view.tick_to_x(390.0);
         let y = state.view.key_to_y(60);
-        let result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
-        assert_eq!(result, Some((0, HitType::End)));
+        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        assert_eq!(hit_result, Some((0, HitType::End)));
     }
 
     #[test]
@@ -140,8 +140,8 @@ mod tests {
         state.data.notes.push_back(Note::new(0.0, 60, 400.0));
         let x = state.view.tick_to_x(500.0);
         let y = state.view.key_to_y(60);
-        let result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
-        assert!(result.is_none());
+        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        assert!(hit_result.is_none());
     }
 
     #[test]
@@ -178,28 +178,28 @@ mod tests {
     #[test]
     fn test_hit_test_selection_box_inside() {
         let bounds = (0.0, 100.0, 0.0, 100.0);
-        let result = hit_test_selection_box(bounds, (50.0, 50.0));
-        assert_eq!(result, Some(SelectionHitType::Inside));
+        let hit_result = hit_test_selection_box(bounds, (50.0, 50.0));
+        assert_eq!(hit_result, Some(SelectionHitType::Inside));
     }
 
     #[test]
     fn test_hit_test_selection_box_left_edge() {
         let bounds = (0.0, 100.0, 0.0, 100.0);
-        let result = hit_test_selection_box(bounds, (2.0, 50.0));
-        assert_eq!(result, Some(SelectionHitType::LeftEdge));
+        let hit_result = hit_test_selection_box(bounds, (2.0, 50.0));
+        assert_eq!(hit_result, Some(SelectionHitType::LeftEdge));
     }
 
     #[test]
     fn test_hit_test_selection_box_right_edge() {
         let bounds = (0.0, 100.0, 0.0, 100.0);
-        let result = hit_test_selection_box(bounds, (98.0, 50.0));
-        assert_eq!(result, Some(SelectionHitType::RightEdge));
+        let hit_result = hit_test_selection_box(bounds, (98.0, 50.0));
+        assert_eq!(hit_result, Some(SelectionHitType::RightEdge));
     }
 
     #[test]
     fn test_hit_test_selection_box_miss() {
         let bounds = (0.0, 100.0, 0.0, 100.0);
-        let result = hit_test_selection_box(bounds, (200.0, 50.0));
-        assert!(result.is_none());
+        let hit_result = hit_test_selection_box(bounds, (200.0, 50.0));
+        assert!(hit_result.is_none());
     }
 }

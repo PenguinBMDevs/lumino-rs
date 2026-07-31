@@ -189,20 +189,20 @@ mod tests {
 
     #[test]
     fn test_perf_data_default() {
-        let data = PerfData::default();
-        assert_eq!(data.fps, 0.0);
-        assert_eq!(data.cpu_usage, 0.0);
-        assert_eq!(data.memory_mb, 0.0);
-        assert_eq!(data.gpu_frame_time_ms, 0.0);
+        let perf_data = PerfData::default();
+        assert_eq!(perf_data.fps, 0.0);
+        assert_eq!(perf_data.cpu_usage, 0.0);
+        assert_eq!(perf_data.memory_mb, 0.0);
+        assert_eq!(perf_data.gpu_frame_time_ms, 0.0);
     }
 
     #[test]
     fn test_perf_data_new() {
-        let data = PerfData::new(60.0, 25.5, 512.0, 16.7);
-        assert_eq!(data.fps, 60.0);
-        assert_eq!(data.cpu_usage, 25.5);
-        assert_eq!(data.memory_mb, 512.0);
-        assert_eq!(data.gpu_frame_time_ms, 16.7);
+        let perf_data = PerfData::new(60.0, 25.5, 512.0, 16.7);
+        assert_eq!(perf_data.fps, 60.0);
+        assert_eq!(perf_data.cpu_usage, 25.5);
+        assert_eq!(perf_data.memory_mb, 512.0);
+        assert_eq!(perf_data.gpu_frame_time_ms, 16.7);
     }
 
     // ─── TupletType ───

@@ -155,9 +155,9 @@ pub fn tempo_point_screen_pos(
     _min_bpm: f64,
     _bpm_range: f64,
 ) -> Point {
-    let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-    let y = tempo_bpm_to_y(point.bpm, bounds_height);
-    Point::new(x, y)
+    let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+    let point_y = tempo_bpm_to_y(point.bpm, bounds_height);
+    Point::new(point_x, point_y)
 }
 
 // ── 曲线绘制反馈的画布参数 ──

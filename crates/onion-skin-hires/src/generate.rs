@@ -69,12 +69,12 @@ pub fn generate_track_tile(
         }
 
         // key → Y 像素（key 0 = row 0，与 P1 onion-skin 一致）
-        let y = (note.key as u32).clamp(0, height - 1);
+        let key_y = (note.key as u32).clamp(0, height - 1);
 
         // 写入颜色（简单覆盖，不 blend，alpha 固定 255）
         // 把行切片按 u32 寻址后 fill，编译器可生成 memset/rep stos
         let color_u32 = u32::from_le_bytes([note.color[0], note.color[1], note.color[2], 255]);
-        let row_offset = (y * width) as usize * 4;
+        let row_offset = (key_y * width) as usize * 4;
         let row_start = row_offset + (x_start as usize) * 4;
         let row_end = row_offset + (x_end as usize) * 4;
         let row_pixels: &mut [u32] = bytemuck::cast_slice_mut(&mut pixels[row_start..row_end]);
@@ -152,7 +152,7 @@ pub fn merge_group_tiles(
 mod tests {
     use super::*;
 
-    fn note(start_tick: u32, end_tick: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
+    fn make_note(start_tick: u32, end_tick: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
         OnionSkinNote::from_ms(start_tick as f32, end_tick as f32, key, color)
     }
 
@@ -180,7 +180,7 @@ mod tests {
 
     #[test]
     fn test_generate_invalid_tick_range() {
-        let notes = vec![note(0, 100, 60, RED)];
+        let notes = vec![make_note(0, 100, 60, RED)];
         let tile = generate_track_tile(&notes, 0, 0, 100, 100, WIDTH, KEYS);
         assert!(tile.pixels.iter().all(|&b| b == 0));
     }
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_generate_single_note() {
         // tick 0-15360 在 [0, 30720) 组内，占左半边
-        let notes = vec![note(0, 15360, 60, RED)];
+        let notes = vec![make_note(0, 15360, 60, RED)];
         let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
 
         // x=0, y=60 应为红色
@@ -203,7 +203,7 @@ mod tests {
     fn test_generate_note_crossing_boundary() {
         // 音符跨越组边界：tick 25000-35000，组范围 [0, 30720)
         // 有效部分 25000-30720
-        let notes = vec![note(25000, 35000, 60, RED)];
+        let notes = vec![make_note(25000, 35000, 60, RED)];
         let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
 
         // 25000/30720 * 1920 ≈ 1562.5 → x_start≈1562
@@ -218,7 +218,7 @@ mod tests {
     #[test]
     fn test_generate_note_outside_group() {
         // 音符完全在组外
-        let notes = vec![note(40000, 50000, 60, RED)];
+        let notes = vec![make_note(40000, 50000, 60, RED)];
         let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
         assert!(tile.pixels.iter().all(|&b| b == 0));
     }
@@ -226,7 +226,7 @@ mod tests {
     #[test]
     fn test_generate_key_clamp() {
         // key=200 超出 128，应 clamp 到 127
-        let notes = vec![note(0, 100, 200, RED)];
+        let notes = vec![make_note(0, 100, 200, RED)];
         let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
         assert_eq!(pixel_at(&tile.pixels, WIDTH, 0, 127), RED);
     }
@@ -234,8 +234,16 @@ mod tests {
     #[test]
     fn test_merge_non_overlapping_tracks() {
         // 轨0: key=60 红色，轨1: key=61 蓝色，不重叠
-        let t0 = generate_track_tile(&[note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
-        let t1 = generate_track_tile(&[note(0, 15360, 61, BLUE)], 1, 0, 0, 30720, WIDTH, KEYS);
+        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
+        let t1 = generate_track_tile(
+            &[make_note(0, 15360, 61, BLUE)],
+            1,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
 
         let group = merge_group_tiles(
             &[t0, t1],
@@ -256,8 +264,8 @@ mod tests {
     fn test_merge_overlapping_tracks() {
         // 轨0: key=60 红色 [0, 15360)，轨1: key=60 蓝色 [0, 7680)
         // 重叠区 [0, 7680) 后轨（蓝）覆盖前轨（红）
-        let t0 = generate_track_tile(&[note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
-        let t1 = generate_track_tile(&[note(0, 7680, 60, BLUE)], 1, 0, 0, 30720, WIDTH, KEYS);
+        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
+        let t1 = generate_track_tile(&[make_note(0, 7680, 60, BLUE)], 1, 0, 0, 30720, WIDTH, KEYS);
 
         let group = merge_group_tiles(
             &[t0, t1],
@@ -285,9 +293,17 @@ mod tests {
     #[test]
     fn test_merge_preserves_lower_track() {
         // 轨0 有音符，轨1 该位置无音符 → 保留轨0
-        let t0 = generate_track_tile(&[note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
+        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
         // 轨1 在不同 key 有音符
-        let t1 = generate_track_tile(&[note(0, 15360, 70, BLUE)], 1, 0, 0, 30720, WIDTH, KEYS);
+        let t1 = generate_track_tile(
+            &[make_note(0, 15360, 70, BLUE)],
+            1,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
 
         let group = merge_group_tiles(
             &[t0, t1],

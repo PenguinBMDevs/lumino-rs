@@ -413,8 +413,8 @@ fn run_video_export_task(
         }
 
         let recv_start = Instant::now();
-        let data = match frame_rx.recv() {
-            Ok(d) => d,
+        let frame_data = match frame_rx.recv() {
+            Ok(buf) => buf,
             Err(_) => {
                 tracing::error!("帧数据通道关闭");
                 let _ =
@@ -425,12 +425,12 @@ fn run_video_export_task(
         };
         let recv_us = recv_start.elapsed().as_micros() as u64;
 
-        let p = param_queue
+        let frame_params = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
         let (should_stop, stats) = if is_gpu_compute_style {
             composite_waterfall_and_encode_frame(
-                data,
+                frame_data,
                 &mut encoder,
                 &progress_tx,
                 &preview_tx,
@@ -442,9 +442,9 @@ fn run_video_export_task(
                 &recycle_tx,
             )
         } else {
-            let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
+            let (sx, zx, kw, ppq_val, key_colors, _tick) = frame_params;
             composite_and_encode_frame(
-                data,
+                frame_data,
                 (sx, zx, kw, ppq_val, key_colors),
                 &mut encoder,
                 &progress_tx,
@@ -537,8 +537,8 @@ fn run_video_export_task(
 
     // drain 剩余 inflight 帧
     while !param_queue.is_empty() && !cancelled {
-        let data = match frame_rx.recv() {
-            Ok(d) => d,
+        let drain_frame = match frame_rx.recv() {
+            Ok(buf) => buf,
             Err(_) => {
                 tracing::error!("drain 阶段帧数据通道关闭");
                 cancelled = true;
@@ -546,12 +546,12 @@ fn run_video_export_task(
             }
         };
 
-        let p = param_queue
+        let drain_params = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
         let (should_stop, _stats) = if is_gpu_compute_style {
             composite_waterfall_and_encode_frame(
-                data,
+                drain_frame,
                 &mut encoder,
                 &progress_tx,
                 &preview_tx,
@@ -563,9 +563,9 @@ fn run_video_export_task(
                 &recycle_tx,
             )
         } else {
-            let (sx, zx, kw, ppq_val, key_colors, _tick) = p;
+            let (sx, zx, kw, ppq_val, key_colors, _tick) = drain_params;
             composite_and_encode_frame(
-                data,
+                drain_frame,
                 (sx, zx, kw, ppq_val, key_colors),
                 &mut encoder,
                 &progress_tx,
@@ -831,8 +831,8 @@ fn run_streaming_video_export_task(
             }
 
             let recv_start = Instant::now();
-            let data = match frame_rx.recv() {
-                Ok(d) => d,
+            let stream_frame = match frame_rx.recv() {
+                Ok(buf) => buf,
                 Err(_) => {
                     tracing::error!("帧数据通道关闭");
                     let _ = progress_tx.send((
@@ -848,12 +848,13 @@ fn run_streaming_video_export_task(
             };
             let recv_us = recv_start.elapsed().as_micros() as u64;
 
-            let p = param_queue
-                .pop_front()
-                .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
+            let stream_params =
+                param_queue
+                    .pop_front()
+                    .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
             let (should_stop, stats) = composite_and_encode_frame(
-                data,
-                p,
+                stream_frame,
+                stream_params,
                 &mut encoder,
                 &progress_tx,
                 &preview_tx,
@@ -946,8 +947,8 @@ fn run_streaming_video_export_task(
 
     // drain 剩余 inflight 帧
     while !param_queue.is_empty() && !cancelled {
-        let data = match frame_rx.recv() {
-            Ok(d) => d,
+        let stream_drain_frame = match frame_rx.recv() {
+            Ok(buf) => buf,
             Err(_) => {
                 tracing::error!("drain 阶段帧数据通道关闭");
                 cancelled = true;
@@ -955,12 +956,13 @@ fn run_streaming_video_export_task(
             }
         };
 
-        let p = param_queue
-            .pop_front()
-            .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
+        let stream_drain_params =
+            param_queue
+                .pop_front()
+                .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024]));
         let (should_stop, _stats) = composite_and_encode_frame(
-            data,
-            p,
+            stream_drain_frame,
+            stream_drain_params,
             &mut encoder,
             &progress_tx,
             &preview_tx,
@@ -1142,8 +1144,8 @@ fn composite_and_encode_frame(
     }
 
     let t0 = Instant::now();
-    let data = match encoder.write_frame(data) {
-        Ok(d) => d,
+    let encoded_frame = match encoder.write_frame(data) {
+        Ok(buf) => buf,
         Err(e) => {
             tracing::error!("写入视频帧失败: {e}");
             let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
@@ -1153,7 +1155,7 @@ fn composite_and_encode_frame(
     stats.encode_us = t0.elapsed().as_micros() as u64;
 
     // 将已写入的帧缓冲区归还给渲染线程对象池复用
-    if recycle_tx.send(data).is_err() {
+    if recycle_tx.send(encoded_frame).is_err() {
         tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
     }
 
@@ -1229,8 +1231,8 @@ fn composite_waterfall_and_encode_frame(
     }
 
     let t0 = Instant::now();
-    let data = match encoder.write_frame(data) {
-        Ok(d) => d,
+    let waterfall_encoded = match encoder.write_frame(data) {
+        Ok(buf) => buf,
         Err(e) => {
             tracing::error!("写入视频帧失败: {e}");
             let _ = progress_tx.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
@@ -1239,7 +1241,7 @@ fn composite_waterfall_and_encode_frame(
     };
     stats.encode_us = t0.elapsed().as_micros() as u64;
 
-    if recycle_tx.send(data).is_err() {
+    if recycle_tx.send(waterfall_encoded).is_err() {
         tracing::warn!("帧缓冲区归还失败：回收通道已关闭");
     }
 

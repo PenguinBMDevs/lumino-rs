@@ -95,39 +95,39 @@ mod tests {
 
     #[test]
     fn test_parse_set() {
-        let op = parse_batch_edit_input("64").unwrap();
-        assert_eq!(op, BatchEditOperation::Set(64.0));
-        assert!((op.apply(10.0) - 64.0).abs() < f32::EPSILON);
+        let operation = parse_batch_edit_input("64").unwrap();
+        assert_eq!(operation, BatchEditOperation::Set(64.0));
+        assert!((operation.apply(10.0) - 64.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_add() {
-        let op = parse_batch_edit_input("+20").unwrap();
-        assert_eq!(op, BatchEditOperation::Add(20.0));
-        assert!((op.apply(50.0) - 70.0).abs() < f32::EPSILON);
+        let operation = parse_batch_edit_input("+20").unwrap();
+        assert_eq!(operation, BatchEditOperation::Add(20.0));
+        assert!((operation.apply(50.0) - 70.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_subtract() {
-        let op = parse_batch_edit_input("-15").unwrap();
-        assert_eq!(op, BatchEditOperation::Subtract(15.0));
-        assert!((op.apply(50.0) - 35.0).abs() < f32::EPSILON);
+        let operation = parse_batch_edit_input("-15").unwrap();
+        assert_eq!(operation, BatchEditOperation::Subtract(15.0));
+        assert!((operation.apply(50.0) - 35.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_multiply_ceil() {
-        let op = parse_batch_edit_input("*1.5").unwrap();
-        assert_eq!(op, BatchEditOperation::Multiply(1.5));
-        assert!((op.apply(10.0) - 15.0).abs() < f32::EPSILON);
-        assert!((op.apply(3.0) - 5.0).abs() < f32::EPSILON);
+        let operation = parse_batch_edit_input("*1.5").unwrap();
+        assert_eq!(operation, BatchEditOperation::Multiply(1.5));
+        assert!((operation.apply(10.0) - 15.0).abs() < f32::EPSILON);
+        assert!((operation.apply(3.0) - 5.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_divide_ceil() {
-        let op = parse_batch_edit_input("/2").unwrap();
-        assert_eq!(op, BatchEditOperation::Divide(2.0));
-        assert!((op.apply(10.0) - 5.0).abs() < f32::EPSILON);
-        assert!((op.apply(7.0) - 4.0).abs() < f32::EPSILON);
+        let operation = parse_batch_edit_input("/2").unwrap();
+        assert_eq!(operation, BatchEditOperation::Divide(2.0));
+        assert!((operation.apply(10.0) - 5.0).abs() < f32::EPSILON);
+        assert!((operation.apply(7.0) - 4.0).abs() < f32::EPSILON);
     }
 
     #[test]

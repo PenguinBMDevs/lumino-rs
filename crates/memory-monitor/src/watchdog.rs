@@ -60,9 +60,9 @@ fn watchdog_get_process_rss(pid: u32) -> u64 {
         }
         let mut pmc: winapi::um::psapi::PROCESS_MEMORY_COUNTERS = std::mem::zeroed();
         pmc.cb = std::mem::size_of::<winapi::um::psapi::PROCESS_MEMORY_COUNTERS>() as u32;
-        let result = winapi::um::psapi::GetProcessMemoryInfo(handle, &mut pmc, pmc.cb);
+        let pmc_result = winapi::um::psapi::GetProcessMemoryInfo(handle, &mut pmc, pmc.cb);
         winapi::um::handleapi::CloseHandle(handle);
-        if result != 0 {
+        if pmc_result != 0 {
             pmc.WorkingSetSize as u64
         } else {
             0
@@ -100,14 +100,14 @@ fn watchdog_get_available_memory() -> u64 {
             / std::mem::size_of::<libc::integer_t>()) as u32;
 
         const KERN_SUCCESS: i32 = 0;
-        let ret = libc::host_statistics64(
+        let host_result = libc::host_statistics64(
             host,
             libc::HOST_VM_INFO64,
             stats.as_mut_ptr() as *mut libc::integer_t,
             &mut count,
         );
 
-        if ret != KERN_SUCCESS {
+        if host_result != KERN_SUCCESS {
             return u64::MAX;
         }
 
@@ -139,8 +139,8 @@ fn watchdog_get_available_memory() -> u64 {
 
 #[cfg(unix)]
 fn watchdog_force_kill(pid: u32) {
-    let ret = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
-    if ret != 0 {
+    let kill_result = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
+    if kill_result != 0 {
         std::process::abort();
     }
 }

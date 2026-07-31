@@ -8,10 +8,10 @@ use encoding_rs::*;
 fn read_vlq(data: &[u8], pos: &mut usize, end: usize) -> u32 {
     let mut value: u32 = 0;
     while *pos < end {
-        let b = data[*pos];
+        let byte = data[*pos];
         *pos += 1;
-        value = (value << 7) | (b & 0x7F) as u32;
-        if b & 0x80 == 0 {
+        value = (value << 7) | (byte & 0x7F) as u32;
+        if byte & 0x80 == 0 {
             break;
         }
     }
@@ -98,19 +98,20 @@ fn midi_data_after_riff(data: &[u8]) -> Option<&[u8]> {
 ///
 /// 支持普通 SMF 与 RIFF wrapper。
 pub fn scan_header_info(data: &[u8]) -> Option<(u16, u16)> {
-    let data = midi_data_after_riff(data)?;
+    let midi_data = midi_data_after_riff(data)?;
 
-    if data.len() < 14 {
+    if midi_data.len() < 14 {
         return None;
     }
 
-    let header_len = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
-    if header_len < 6 || 8 + header_len > data.len() {
+    let header_len =
+        u32::from_be_bytes([midi_data[4], midi_data[5], midi_data[6], midi_data[7]]) as usize;
+    if header_len < 6 || 8 + header_len > midi_data.len() {
         return None;
     }
 
-    let track_count = u16::from_be_bytes([data[10], data[11]]);
-    let division = u16::from_be_bytes([data[12], data[13]]);
+    let track_count = u16::from_be_bytes([midi_data[10], midi_data[11]]);
+    let division = u16::from_be_bytes([midi_data[12], midi_data[13]]);
     Some((track_count, division))
 }
 
@@ -121,19 +122,24 @@ pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
         return Vec::new();
     }
 
-    let data = match midi_data_after_riff(data) {
+    let stripped_data = match midi_data_after_riff(data) {
         Some(d) => d,
         None => return Vec::new(),
     };
 
-    if data.len() < 14 {
+    if stripped_data.len() < 14 {
         return Vec::new();
     }
 
-    let header_len = u32::from_be_bytes([data[4], data[5], data[6], data[7]]) as usize;
-    let track_count = u16::from_be_bytes([data[10], data[11]]) as usize;
+    let header_len = u32::from_be_bytes([
+        stripped_data[4],
+        stripped_data[5],
+        stripped_data[6],
+        stripped_data[7],
+    ]) as usize;
+    let track_count = u16::from_be_bytes([stripped_data[10], stripped_data[11]]) as usize;
     let header_total = 8 + header_len;
-    if header_total > data.len() {
+    if header_total > stripped_data.len() {
         return Vec::new();
     }
 
@@ -141,21 +147,26 @@ pub fn scan_track_names(data: &[u8]) -> Vec<Option<String>> {
     let mut track_idx = 0;
     let mut offset = header_total;
 
-    while track_idx < track_count && offset + 8 <= data.len() {
-        if &data[offset..offset + 4] != b"MTrk" {
-            let chunk_len =
-                u32::from_be_bytes(data[offset + 4..offset + 8].try_into().unwrap_or([0; 4]))
-                    as usize;
+    while track_idx < track_count && offset + 8 <= stripped_data.len() {
+        if &stripped_data[offset..offset + 4] != b"MTrk" {
+            let chunk_len = u32::from_be_bytes(
+                stripped_data[offset + 4..offset + 8]
+                    .try_into()
+                    .unwrap_or([0; 4]),
+            ) as usize;
             offset += 8 + chunk_len;
             continue;
         }
 
-        let chunk_len =
-            u32::from_be_bytes(data[offset + 4..offset + 8].try_into().unwrap_or([0; 4])) as usize;
+        let chunk_len = u32::from_be_bytes(
+            stripped_data[offset + 4..offset + 8]
+                .try_into()
+                .unwrap_or([0; 4]),
+        ) as usize;
         offset += 8;
-        let track_end = (offset + chunk_len).min(data.len());
+        let track_end = (offset + chunk_len).min(stripped_data.len());
 
-        let name = scan_track_name_in_chunk(data, offset, track_end);
+        let name = scan_track_name_in_chunk(stripped_data, offset, track_end);
         if let Some(n) = name {
             track_names[track_idx] = Some(n);
         }

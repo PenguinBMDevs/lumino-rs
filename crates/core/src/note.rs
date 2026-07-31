@@ -64,44 +64,44 @@ mod tests {
 
     #[test]
     fn test_note_new_defaults() {
-        let n = Note::new(100.0, 60, 480.0);
-        assert_eq!(n.tick, 100.0);
-        assert_eq!(n.key, 60);
-        assert_eq!(n.length, 480.0);
-        assert_eq!(n.velocity, 100); // 默认力度
-        assert_eq!(n.channel, 0); // 默认通道
+        let note = Note::new(100.0, 60, 480.0);
+        assert_eq!(note.tick, 100.0);
+        assert_eq!(note.key, 60);
+        assert_eq!(note.length, 480.0);
+        assert_eq!(note.velocity, 100); // 默认力度
+        assert_eq!(note.channel, 0); // 默认通道
     }
 
     #[test]
     fn test_note_from_raw() {
-        let n = Note::from_raw(200.0, 72, 960.0, 127, 5);
-        assert_eq!(n.tick, 200.0);
-        assert_eq!(n.key, 72);
-        assert_eq!(n.length, 960.0);
-        assert_eq!(n.velocity, 127);
-        assert_eq!(n.channel, 5);
+        let note = Note::from_raw(200.0, 72, 960.0, 127, 5);
+        assert_eq!(note.tick, 200.0);
+        assert_eq!(note.key, 72);
+        assert_eq!(note.length, 960.0);
+        assert_eq!(note.velocity, 127);
+        assert_eq!(note.channel, 5);
     }
 
     #[test]
     fn test_note_with_velocity() {
-        let n = Note::new(0.0, 60, 480.0).with_velocity(80);
-        assert_eq!(n.velocity, 80);
+        let note = Note::new(0.0, 60, 480.0).with_velocity(80);
+        assert_eq!(note.velocity, 80);
     }
 
     #[test]
     fn test_note_with_channel() {
-        let n = Note::new(0.0, 60, 480.0).with_channel(10);
-        assert_eq!(n.channel, 10);
+        let note = Note::new(0.0, 60, 480.0).with_channel(10);
+        assert_eq!(note.channel, 10);
     }
 
     #[test]
     fn test_note_builder_chain() {
-        let n = Note::new(10.0, 64, 240.0).with_velocity(90).with_channel(3);
-        assert_eq!(n.tick, 10.0);
-        assert_eq!(n.key, 64);
-        assert_eq!(n.length, 240.0);
-        assert_eq!(n.velocity, 90);
-        assert_eq!(n.channel, 3);
+        let note = Note::new(10.0, 64, 240.0).with_velocity(90).with_channel(3);
+        assert_eq!(note.tick, 10.0);
+        assert_eq!(note.key, 64);
+        assert_eq!(note.length, 240.0);
+        assert_eq!(note.velocity, 90);
+        assert_eq!(note.channel, 3);
     }
 
     #[test]
@@ -115,10 +115,10 @@ mod tests {
 
     #[test]
     fn test_note_velocity_range() {
-        let n = Note::new(0.0, 60, 480.0).with_velocity(0);
-        assert_eq!(n.velocity, 0);
-        let n = Note::new(0.0, 60, 480.0).with_velocity(127);
-        assert_eq!(n.velocity, 127);
+        let note = Note::new(0.0, 60, 480.0).with_velocity(0);
+        assert_eq!(note.velocity, 0);
+        let note = Note::new(0.0, 60, 480.0).with_velocity(127);
+        assert_eq!(note.velocity, 127);
     }
 
     #[test]

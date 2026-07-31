@@ -288,7 +288,7 @@ impl MidiDocument {
         } else {
             max_events
         };
-        let mut result = Vec::new();
+        let mut events = Vec::new();
         for (track_id, track_notes) in self.notes.iter().enumerate() {
             let track_id_u16 = track_id as u16;
             for note in track_notes {
@@ -296,17 +296,17 @@ impl MidiDocument {
                 let on_tick = on.delta_tick();
                 let off_tick = off.delta_tick();
                 if on_tick >= from_tick && on_tick < to_tick {
-                    result.push(on);
+                    events.push(on);
                 }
                 if off_tick >= from_tick && off_tick < to_tick {
-                    result.push(off);
+                    events.push(off);
                 }
-                if result.len() >= limit {
-                    return result;
+                if events.len() >= limit {
+                    return events;
                 }
             }
         }
-        result
+        events
     }
 
     /// 检查指定音轨在指定范围内是否有事件。

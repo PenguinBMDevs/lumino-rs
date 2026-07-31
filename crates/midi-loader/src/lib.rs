@@ -87,9 +87,9 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
         struct Helper {
             info: MidiInfo,
         }
-        let h = Helper::deserialize(deserializer)?;
+        let helper = Helper::deserialize(deserializer)?;
         Ok(ParsedMidi {
-            info: h.info,
+            info: helper.info,
             document: None,
         })
     }

@@ -181,10 +181,10 @@ impl TrackListCanvas {
         if self.track_conductors.get(idx).copied().unwrap_or(false) {
             return None;
         }
-        let y = idx as f32 * self.track_height - self.scroll_y;
+        let track_y = idx as f32 * self.track_height - self.scroll_y;
         let total_btn_w = 2.0 * BTN_SIZE + BTN_GAP;
         let btn_x_start = canvas_w - total_btn_w - 6.0;
-        let btn_y = y + (self.track_height - BTN_SIZE) * 0.5;
+        let btn_y = track_y + (self.track_height - BTN_SIZE) * 0.5;
         if pos.x < btn_x_start
             || pos.x > btn_x_start + total_btn_w
             || pos.y < btn_y
@@ -356,8 +356,8 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 continue;
             };
 
-            let y = idx as f32 * self.track_height - self.scroll_y;
-            if y + self.track_height < 0.0 || y > canvas_h {
+            let track_y = idx as f32 * self.track_height - self.scroll_y;
+            if track_y + self.track_height < 0.0 || track_y > canvas_h {
                 continue;
             }
 
@@ -392,7 +392,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
             };
 
             frame.fill_rectangle(
-                Point::new(0.0, y),
+                Point::new(0.0, track_y),
                 Size::new(canvas_w, self.track_height),
                 bg_color,
             );
@@ -405,7 +405,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     Color::from_rgb(0.5, 0.5, 0.5)
                 };
                 frame.fill_rectangle(
-                    Point::new(0.0, y),
+                    Point::new(0.0, track_y),
                     Size::new(BADGE_WIDTH, self.track_height),
                     badge_color,
                 );
@@ -441,7 +441,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
 
                 frame.fill_text(Text {
                     content: track_num,
-                    position: Point::new(text_x, y + self.track_height * 0.30),
+                    position: Point::new(text_x, track_y + self.track_height * 0.30),
                     color: text_color,
                     size: iced_core::Pixels(small_size),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -456,7 +456,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
 
                 frame.fill_text(Text {
                     content: label_text,
-                    position: Point::new(text_x + 32.0, y + self.track_height * 0.30),
+                    position: Point::new(text_x + 32.0, track_y + self.track_height * 0.30),
                     color: text_color,
                     size: iced_core::Pixels(small_size),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -472,7 +472,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 let name_size = (self.track_height * 0.25).clamp(9.0, 13.0);
                 frame.fill_text(Text {
                     content: name.clone(),
-                    position: Point::new(text_x, y + self.track_height * 0.70),
+                    position: Point::new(text_x, track_y + self.track_height * 0.70),
                     color: text_color,
                     size: iced_core::Pixels(name_size),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -490,7 +490,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                     let soloed = state.track_soloed.get(idx).copied().unwrap_or(false);
                     let total_btn_w = 2.0 * BTN_SIZE + BTN_GAP;
                     let btn_x_start = canvas_w - total_btn_w - 6.0;
-                    let btn_y = y + (self.track_height - BTN_SIZE) * 0.5;
+                    let btn_y = track_y + (self.track_height - BTN_SIZE) * 0.5;
 
                     let mute_fill = if muted {
                         palette.danger.base.color
@@ -547,7 +547,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 let size = (self.track_height * 0.45).clamp(8.0, 14.0);
                 frame.fill_text(Text {
                     content: track_num,
-                    position: Point::new(text_x, y + self.track_height * 0.5),
+                    position: Point::new(text_x, track_y + self.track_height * 0.5),
                     color: text_color,
                     size: iced_core::Pixels(size),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(
@@ -561,7 +561,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 });
                 frame.fill_text(Text {
                     content: name.clone(),
-                    position: Point::new(text_x + 40.0, y + self.track_height * 0.5),
+                    position: Point::new(text_x + 40.0, track_y + self.track_height * 0.5),
                     color: text_color,
                     size: iced_core::Pixels(size),
                     line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(

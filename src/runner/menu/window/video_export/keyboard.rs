@@ -43,11 +43,11 @@ pub struct PlaybackKeyColorState {
 ///
 /// 使用设置面板的调色板样式，保证琴键颜色与音符颜色一致。
 fn track_color_rgba(track_idx: usize) -> [u8; 4] {
-    let c = current_track_color_f32(track_idx);
+    let color_rgba = current_track_color_f32(track_idx);
     [
-        (c[0] * 255.0).round() as u8,
-        (c[1] * 255.0).round() as u8,
-        (c[2] * 255.0).round() as u8,
+        (color_rgba[0] * 255.0).round() as u8,
+        (color_rgba[1] * 255.0).round() as u8,
+        (color_rgba[2] * 255.0).round() as u8,
         255,
     ]
 }
@@ -318,12 +318,12 @@ pub fn composite_keyboard(
 
         // 使用 chunks_exact 自动向量化友好的方式处理每像素 4 字节
         for (fchunk, kchunk) in frame_row.chunks_exact_mut(4).zip(kb_row.chunks_exact(4)) {
-            let b = kchunk[0] as i32;
-            let g = kchunk[1] as i32;
-            let r = kchunk[2] as i32;
-            fchunk[0] = (b + (ob - b) * alpha_i / 255).clamp(0, 255) as u8;
-            fchunk[1] = (g + (og - g) * alpha_i / 255).clamp(0, 255) as u8;
-            fchunk[2] = (r + (or_ - r) * alpha_i / 255).clamp(0, 255) as u8;
+            let blue_ch = kchunk[0] as i32;
+            let green_ch = kchunk[1] as i32;
+            let red_ch = kchunk[2] as i32;
+            fchunk[0] = (blue_ch + (ob - blue_ch) * alpha_i / 255).clamp(0, 255) as u8;
+            fchunk[1] = (green_ch + (og - green_ch) * alpha_i / 255).clamp(0, 255) as u8;
+            fchunk[2] = (red_ch + (or_ - red_ch) * alpha_i / 255).clamp(0, 255) as u8;
             fchunk[3] = 255;
         }
     }

@@ -208,15 +208,15 @@ mod tests {
 
     #[test]
     fn test_region_coord_eq_hash() {
-        let a = RegionCoord::new(0, 0);
-        let b = RegionCoord::new(0, 0);
-        let c = RegionCoord::new(1, 0);
-        assert_eq!(a, b);
-        assert_ne!(a, c);
+        let coord_a = RegionCoord::new(0, 0);
+        let coord_b = RegionCoord::new(0, 0);
+        let coord_c = RegionCoord::new(1, 0);
+        assert_eq!(coord_a, coord_b);
+        assert_ne!(coord_a, coord_c);
         let mut set = std::collections::HashSet::new();
-        set.insert(a);
-        assert!(set.contains(&b));
-        assert!(!set.contains(&c));
+        set.insert(coord_a);
+        assert!(set.contains(&coord_b));
+        assert!(!set.contains(&coord_c));
     }
 
     #[test]

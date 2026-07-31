@@ -23,10 +23,10 @@ pub fn draw_vertical_lines(
     let measure_end = (visible_tick_end / ticks_per_measure).ceil() as u32;
     for measure in measure_start..=measure_end {
         let tick = measure as f32 * ticks_per_measure;
-        let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-        if x >= view.keyboard_width && x <= width {
+        let grid_x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if grid_x >= view.keyboard_width && grid_x <= width {
             frame.fill_rectangle(
-                Point::new(x, line_y),
+                Point::new(grid_x, line_y),
                 Size::new(1.0, line_h),
                 Color {
                     a: 0.5,
@@ -44,10 +44,10 @@ pub fn draw_vertical_lines(
         if (tick % ticks_per_measure).abs() < f32::EPSILON {
             continue;
         }
-        let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-        if x >= view.keyboard_width && x <= width {
+        let grid_x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        if grid_x >= view.keyboard_width && grid_x <= width {
             frame.fill_rectangle(
-                Point::new(x, line_y),
+                Point::new(grid_x, line_y),
                 Size::new(1.0, line_h),
                 Color {
                     a: 0.3,
@@ -69,10 +69,10 @@ pub fn draw_vertical_lines(
             {
                 continue;
             }
-            let x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-            if x >= view.keyboard_width && x <= width {
+            let grid_x = tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+            if grid_x >= view.keyboard_width && grid_x <= width {
                 frame.fill_rectangle(
-                    Point::new(x, line_y),
+                    Point::new(grid_x, line_y),
                     Size::new(1.0, line_h),
                     Color {
                         a: 0.15,
@@ -97,11 +97,11 @@ pub fn draw_horizontal_lines(
     match edit_mode {
         EditMode::Velocity | EditMode::Cc(_) => {
             let scale_values = [0u8, 32, 64, 96, 127];
-            for &v in &scale_values {
-                let y = VelocityCanvas::velocity_to_y(v, size.height);
+            for &value in &scale_values {
+                let velocity_y = VelocityCanvas::velocity_to_y(value, size.height);
                 let mut line_builder = path::Builder::new();
-                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                line_builder.move_to(Point::new(PANEL_PADDING_X, velocity_y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, velocity_y));
                 frame.stroke(
                     &line_builder.build(),
                     canvas::Stroke::default()
@@ -112,11 +112,11 @@ pub fn draw_horizontal_lines(
         }
         EditMode::Bend => {
             let bend_values: [i16; 5] = [-8192, -4096, 0, 4096, 8191];
-            for &v in &bend_values {
-                let y = bend_value_to_y(v, size.height);
+            for &value in &bend_values {
+                let velocity_y = bend_value_to_y(value, size.height);
                 let mut line_builder = path::Builder::new();
-                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                line_builder.move_to(Point::new(PANEL_PADDING_X, velocity_y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, velocity_y));
                 frame.stroke(
                     &line_builder.build(),
                     canvas::Stroke::default()
@@ -128,10 +128,10 @@ pub fn draw_horizontal_lines(
         EditMode::Tempo => {
             let bpm_levels = generate_tempo_levels();
             for &bpm in &bpm_levels {
-                let y = tempo_bpm_to_y(bpm, size.height);
+                let velocity_y = tempo_bpm_to_y(bpm, size.height);
                 let mut line_builder = path::Builder::new();
-                line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-                line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+                line_builder.move_to(Point::new(PANEL_PADDING_X, velocity_y));
+                line_builder.line_to(Point::new(width - PANEL_PADDING_X, velocity_y));
                 frame.stroke(
                     &line_builder.build(),
                     canvas::Stroke::default()

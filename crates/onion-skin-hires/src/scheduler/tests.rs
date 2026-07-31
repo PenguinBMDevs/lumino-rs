@@ -9,7 +9,7 @@ use crate::scheduler::{HiResProgressCallback, generate_all_tiles, generate_all_t
 use crate::types::{GroupTile, TileCoord};
 use lumino_onion_skin::OnionSkinNote;
 
-fn note(start: u32, end: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
+fn make_note(start: u32, end: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
     OnionSkinNote::from_ms(start as f32, end as f32, key, color)
 }
 
@@ -54,7 +54,7 @@ fn test_generate_empty_notes() {
 #[test]
 fn test_generate_empty_ticks() {
     let (config, hash) = test_config();
-    let mut notes = vec![vec![note(0, 100, 60, [255, 0, 0, 255])]];
+    let mut notes = vec![vec![make_note(0, 100, 60, [255, 0, 0, 255])]];
     let result = generate_all_tiles(&mut notes, &config, 1920, 128, 0, &hash, None);
     assert!(result.is_empty());
     cleanup(&config);
@@ -65,9 +65,9 @@ fn test_generate_single_group() {
     // 3 轨，1 个时间组（total_ticks=30720）
     let (config, hash) = test_config();
     let mut notes = vec![
-        vec![note(0, 15360, 60, [255, 0, 0, 255])],
-        vec![note(0, 15360, 61, [0, 255, 0, 255])],
-        vec![note(15360, 30720, 60, [0, 0, 255, 255])],
+        vec![make_note(0, 15360, 60, [255, 0, 0, 255])],
+        vec![make_note(0, 15360, 61, [0, 255, 0, 255])],
+        vec![make_note(15360, 30720, 60, [0, 0, 255, 255])],
     ];
 
     let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
@@ -93,7 +93,7 @@ fn test_generate_multi_track_groups() {
     // 10 轨 → 2 音轨组（8+2），1 时间组
     let (config, hash) = test_config();
     let mut notes: Vec<Vec<OnionSkinNote>> = (0..10)
-        .map(|i| vec![note(0, 100, i, [i, 0, 0, 255])])
+        .map(|i| vec![make_note(0, 100, i, [i, 0, 0, 255])])
         .collect();
 
     let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
@@ -115,8 +115,8 @@ fn test_generate_multi_time_groups() {
     // 1 轨，2 时间组（total_ticks=61440 = 2×30720）
     let (config, hash) = test_config();
     let mut notes = vec![vec![
-        note(0, 15360, 60, [255, 0, 0, 255]),     // 组0
-        note(40000, 50000, 64, [0, 0, 255, 255]), // 组1
+        make_note(0, 15360, 60, [255, 0, 0, 255]),     // 组0
+        make_note(40000, 50000, 64, [0, 0, 255, 255]), // 组1
     ]];
 
     let result = generate_all_tiles(&mut notes, &config, 1920, 128, 61440, &hash, None);
@@ -139,7 +139,7 @@ fn test_generate_multi_time_groups() {
 fn test_cache_hit_skips_generation() {
     // 第一次生成写缓存，第二次生成应从缓存读（像素一致）
     let (config, hash) = test_config();
-    let mut notes = vec![vec![note(0, 15360, 60, [255, 0, 0, 255])]];
+    let mut notes = vec![vec![make_note(0, 15360, 60, [255, 0, 0, 255])]];
 
     let first = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
     let second = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
@@ -159,8 +159,8 @@ fn test_cache_hit_skips_generation() {
 fn test_progress_callback_invoked() {
     let (config, hash) = test_config();
     let mut notes = vec![
-        vec![note(0, 100, 60, [255, 0, 0, 255])],
-        vec![note(0, 100, 61, [0, 255, 0, 255])],
+        vec![make_note(0, 100, 60, [255, 0, 0, 255])],
+        vec![make_note(0, 100, 61, [0, 255, 0, 255])],
     ];
 
     let call_count = Arc::new(AtomicUsize::new(0));
@@ -193,8 +193,8 @@ fn test_streaming_callback_per_tile() {
             let key = i as u8;
             // 轨 i 在 time_group 0 和 1 各放一个音符
             vec![
-                note(0, 100, key, [i as u8, 0, 0, 255]),
-                note(30720, 30820, key, [i as u8, 0, 0, 255]),
+                make_note(0, 100, key, [i as u8, 0, 0, 255]),
+                make_note(30720, 30820, key, [i as u8, 0, 0, 255]),
             ]
         })
         .collect();

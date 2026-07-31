@@ -94,7 +94,7 @@ impl MidiManager {
         let preferred = ui_config.preferred_backend;
 
         // 快速启动初始后端（不阻塞 UI）
-        let result = match preferred {
+        let init_result = match preferred {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
             // XSynth 模式下先启动 System，然后在后台初始化 XSynth
@@ -102,10 +102,10 @@ impl MidiManager {
         };
 
         let mut manager = Self {
-            api: result.api,
+            api: init_result.api,
             fallback_api: None,
-            output: result.output,
-            active_backend: result.backend,
+            output: init_result.output,
+            active_backend: init_result.backend,
             needs_reinit: false,
             preferred_backend: preferred,
             xsynth_init_rx: None,
@@ -155,14 +155,14 @@ impl MidiManager {
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
 
-            let result = Self::init_xsynth_blocking(&ui_config_clone);
+            let xsynth_result = Self::init_xsynth_blocking(&ui_config_clone);
 
-            match &result {
+            match &xsynth_result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
                 Err(e) => tracing::warn!("XSynth: 后台初始化失败: {}", e),
             }
 
-            let init_result = match result {
+            let init_result = match xsynth_result {
                 Ok((api, output)) => XSynthInitResult::Success { api, output },
                 Err(e) => XSynthInitResult::Failed(e),
             };
@@ -521,21 +521,21 @@ impl MidiManager {
         // 重新初始化
         if ui_config.preferred_backend == SynthBackend::XSynth {
             // 先快速启动 System，然后后台初始化 XSynth
-            let result = Self::init_system_output();
-            self.api = result.api;
-            self.output = result.output;
-            self.active_backend = result.backend;
+            let system_result = Self::init_system_output();
+            self.api = system_result.api;
+            self.output = system_result.output;
+            self.active_backend = system_result.backend;
             self.start_xsynth_async_init(ui_config);
         } else {
             // 初始化其他后端
-            let result = match ui_config.preferred_backend {
+            let backend_result = match ui_config.preferred_backend {
                 SynthBackend::Kdmapi => Self::init_kdmapi_output(),
                 SynthBackend::System => Self::init_system_output(),
                 _ => Self::init_system_output(),
             };
-            self.api = result.api;
-            self.output = result.output;
-            self.active_backend = result.backend;
+            self.api = backend_result.api;
+            self.output = backend_result.output;
+            self.active_backend = backend_result.backend;
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);

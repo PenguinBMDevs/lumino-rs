@@ -33,20 +33,23 @@ impl SegmentShape {
     /// 在归一化进度 `t ∈ [0, 1]` 上计算插值因子 `f ∈ [0, 1]`。
     /// 实际值 = v1 + (v2 - v1) * f。
     #[inline]
-    pub fn interpolate(self, t: f32) -> f32 {
-        debug_assert!((0.0..=1.0).contains(&t), "interpolate t out of range: {t}");
-        let t = t.clamp(0.0, 1.0);
+    pub fn interpolate(self, normalized_t: f32) -> f32 {
+        debug_assert!(
+            (0.0..=1.0).contains(&normalized_t),
+            "interpolate t out of range: {normalized_t}"
+        );
+        let t = normalized_t.clamp(0.0, 1.0);
         match self {
             SegmentShape::Step => 0.0,
             SegmentShape::Curve { tension } => {
-                let k = (tension as f32) / 127.0; // [-1, 1]
-                if k >= 0.0 {
+                let tension_norm = (tension as f32) / 127.0; // [-1, 1]
+                if tension_norm >= 0.0 {
                     // 慢起快落: 线性 → x²
-                    (1.0 - k) * t + k * t * t
+                    (1.0 - tension_norm) * t + tension_norm * t * t
                 } else {
                     // 快起慢落: 线性 → 1 - (1-x)²
-                    let k = -k;
-                    (1.0 - k) * t + k * (1.0 - (1.0 - t).powi(2))
+                    let tension_norm = -tension_norm;
+                    (1.0 - tension_norm) * t + tension_norm * (1.0 - (1.0 - t).powi(2))
                 }
             }
         }
@@ -247,9 +250,9 @@ pub struct AutomationLane {
 impl AutomationLane {
     /// 返回 tick 落在 `[start_tick, end_tick)` 范围内的事件切片。
     pub fn events_in_range(&self, start_tick: u32, end_tick: u32) -> &[AutomationEvent] {
-        let lo = self.events.partition_point(|e| e.tick < start_tick);
-        let hi = self.events.partition_point(|e| e.tick < end_tick);
-        &self.events[lo..hi]
+        let start_idx = self.events.partition_point(|e| e.tick < start_tick);
+        let end_idx = self.events.partition_point(|e| e.tick < end_tick);
+        &self.events[start_idx..end_idx]
     }
 
     /// Chase：找到 `target_tick` 之前的最后一个事件值。
@@ -272,10 +275,10 @@ impl AutomationLane {
         self.channel.hash(&mut hasher);
         self.target.hash(&mut hasher);
         self.events.len().hash(&mut hasher);
-        for e in &self.events {
-            e.tick.hash(&mut hasher);
-            e.value.hash(&mut hasher);
-            match e.shape {
+        for event in &self.events {
+            event.tick.hash(&mut hasher);
+            event.value.hash(&mut hasher);
+            match event.shape {
                 SegmentShape::Step => 0u8.hash(&mut hasher),
                 SegmentShape::Curve { tension } => {
                     1u8.hash(&mut hasher);

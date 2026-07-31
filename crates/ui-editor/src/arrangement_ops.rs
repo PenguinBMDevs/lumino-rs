@@ -1,7 +1,7 @@
 //! 工程走带视图音符操作（跨音轨）
 //!
 //! 提供 arrange_move_notes / arrange_erase / arrange_razor 三个操作，
-//! 直接修改 EditorData::track_notes，并在当前音轨受影响时同步 data.notes。
+//! 直接修改 EditorData::track_notes，并在当前音轨受影响时同步 editor_data.notes。
 
 use std::collections::{HashMap, HashSet};
 
@@ -40,13 +40,15 @@ impl Editor {
         let mut moved_by_dest: HashMap<usize, Vec<Note>> = HashMap::new();
 
         {
-            let data = &self.editor_state.data;
-            for (&track_idx, notes) in &data.track_notes {
-                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+            let editor_data = &self.editor_state.data;
+            for (&track_idx, notes) in &editor_data.track_notes {
+                let visual_pos = editor_data
+                    .visual_position_of(track_idx)
+                    .unwrap_or(track_idx);
                 for (i, note) in notes.iter().enumerate() {
                     if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                         let dest_visual = (visual_pos as i32 + delta_tracks).max(0) as usize;
-                        let dest_track = data
+                        let dest_track = editor_data
                             .track_visual_order
                             .get(dest_visual)
                             .copied()
@@ -72,12 +74,12 @@ impl Editor {
         let mut moved_count = 0usize;
 
         {
-            let data = &mut self.editor_state.data;
+            let editor_data = &mut self.editor_state.data;
             for (source_track, indices) in indices_by_source {
                 if source_track == current_track {
                     current_track_touched = true;
                 }
-                if let Some(notes) = data.track_notes.get_mut(&source_track) {
+                if let Some(notes) = editor_data.track_notes.get_mut(&source_track) {
                     let before = notes.len();
                     let mut idx = 0usize;
                     notes.retain(|_| {
@@ -93,7 +95,7 @@ impl Editor {
                 if dest_track == current_track {
                     current_track_touched = true;
                 }
-                let track_entry = data.track_notes.entry(dest_track).or_default();
+                let track_entry = editor_data.track_notes.entry(dest_track).or_default();
                 for note in notes_to_add {
                     track_entry.push_back(note);
                 }
@@ -135,9 +137,9 @@ impl Editor {
         let mut tracks_to_clean: Vec<usize> = Vec::new();
 
         {
-            let data = &self.editor_state.data;
+            let editor_data = &self.editor_state.data;
             for track_idx in track_lo..=track_hi {
-                if let Some(notes) = data.track_notes.get(&track_idx) {
+                if let Some(notes) = editor_data.track_notes.get(&track_idx) {
                     let has_any = notes
                         .iter()
                         .any(|note| note_in_rect(note, tick_start, tick_end));
@@ -159,9 +161,9 @@ impl Editor {
 
         let mut deleted_count = 0usize;
         {
-            let data = &mut self.editor_state.data;
+            let editor_data = &mut self.editor_state.data;
             for track_idx in tracks_to_clean {
-                if let Some(notes) = data.track_notes.get_mut(&track_idx) {
+                if let Some(notes) = editor_data.track_notes.get_mut(&track_idx) {
                     let before = notes.len();
                     notes.retain(|note| !note_in_rect(note, tick_start, tick_end));
                     deleted_count += before - notes.len();
@@ -194,8 +196,8 @@ impl Editor {
         let tick_f = tick as f32;
 
         let indices_to_split: Vec<usize> = {
-            let data = &self.editor_state.data;
-            let Some(notes) = data.track_notes.get(&track) else {
+            let editor_data = &self.editor_state.data;
+            let Some(notes) = editor_data.track_notes.get(&track) else {
                 return 0;
             };
             notes
@@ -222,8 +224,8 @@ impl Editor {
         let mut split_count = 0usize;
 
         {
-            let data = &mut self.editor_state.data;
-            if let Some(notes) = data.track_notes.get_mut(&track) {
+            let editor_data = &mut self.editor_state.data;
+            if let Some(notes) = editor_data.track_notes.get_mut(&track) {
                 // 从后往前分割，避免索引漂移
                 for idx in indices_to_split.into_iter().rev() {
                     if let Some(note) = notes.get(idx).cloned() {
@@ -272,8 +274,8 @@ impl Editor {
     /// track 为视觉位置（侧边栏顺序），而非文档音轨索引。
     /// ghost 计算中的 dtr 是视觉空间偏移，与视觉位置相加得到正确的渲染位置。
     pub fn arrangement_selected_notes(&self) -> Vec<(f64, f64, usize, u8)> {
-        let data = &self.editor_state.data;
-        let selection = &data.arrange_selection;
+        let editor_data = &self.editor_state.data;
+        let selection = &editor_data.arrange_selection;
         if selection.is_empty() {
             return Vec::new();
         }
@@ -281,8 +283,10 @@ impl Editor {
         let mut result = Vec::new();
 
         // 1. 从 track_notes 缓存收集
-        for (&track_idx, notes) in &data.track_notes {
-            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+        for (&track_idx, notes) in &editor_data.track_notes {
+            let visual_pos = editor_data
+                .visual_position_of(track_idx)
+                .unwrap_or(track_idx);
             for note in notes {
                 if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                     result.push((
@@ -296,12 +300,14 @@ impl Editor {
         }
 
         // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
-        if let Some(doc) = &data.document {
+        if let Some(doc) = &editor_data.document {
             for track_idx in 0..doc.notes.len() {
-                if data.track_notes.contains_key(&track_idx) {
+                if editor_data.track_notes.contains_key(&track_idx) {
                     continue;
                 }
-                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+                let visual_pos = editor_data
+                    .visual_position_of(track_idx)
+                    .unwrap_or(track_idx);
                 for note_event in doc.track_notes(track_idx) {
                     if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
                     {
@@ -346,8 +352,8 @@ impl Editor {
         let current_track_touched = track == current_track;
 
         {
-            let data = &mut self.editor_state.data;
-            let track_entry = data.track_notes.entry(track).or_default();
+            let editor_data = &mut self.editor_state.data;
+            let track_entry = editor_data.track_notes.entry(track).or_default();
             track_entry.push_back(note);
         }
 
@@ -369,8 +375,8 @@ impl Editor {
     /// 使用与钢琴卷帘相同的剪贴板格式，额外包含 origin_track。
     /// 返回是否有音符被复制。
     pub fn arrange_copy_selected_notes(&self) -> bool {
-        let data = &self.editor_state.data;
-        let selection = &data.arrange_selection;
+        let editor_data = &self.editor_state.data;
+        let selection = &editor_data.arrange_selection;
         if selection.is_empty() {
             return false;
         }
@@ -378,8 +384,10 @@ impl Editor {
         let mut all_notes: Vec<(usize, Note)> = Vec::new();
 
         // 1. 从 track_notes 缓存收集
-        for (&track_idx, notes) in &data.track_notes {
-            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+        for (&track_idx, notes) in &editor_data.track_notes {
+            let visual_pos = editor_data
+                .visual_position_of(track_idx)
+                .unwrap_or(track_idx);
             for note in notes {
                 if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                     all_notes.push((track_idx, note.clone()));
@@ -388,12 +396,14 @@ impl Editor {
         }
 
         // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
-        if let Some(doc) = &data.document {
+        if let Some(doc) = &editor_data.document {
             for track_idx in 0..doc.notes.len() {
-                if data.track_notes.contains_key(&track_idx) {
+                if editor_data.track_notes.contains_key(&track_idx) {
                     continue;
                 }
-                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+                let visual_pos = editor_data
+                    .visual_position_of(track_idx)
+                    .unwrap_or(track_idx);
                 for note_event in doc.track_notes(track_idx) {
                     if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
                     {
@@ -483,8 +493,8 @@ impl Editor {
         self.push_history();
 
         let _track_count = {
-            let data = &self.editor_state.data;
-            data.track_notes.len().max(1)
+            let editor_data = &self.editor_state.data;
+            editor_data.track_notes.len().max(1)
         };
         let current_track = self.editor_state.data.current_track;
         let mut current_track_touched = false;
@@ -496,8 +506,8 @@ impl Editor {
             let note_key = origin_key.saturating_add(*key_offset).min(127);
             let note = Note::from_raw(note_tick, note_key, *length, *velocity, *channel);
 
-            let data = &mut self.editor_state.data;
-            let track_entry = data.track_notes.entry(dest_track).or_default();
+            let editor_data = &mut self.editor_state.data;
+            let track_entry = editor_data.track_notes.entry(dest_track).or_default();
             track_entry.push_back(note);
             if dest_track == current_track {
                 current_track_touched = true;
@@ -556,10 +566,10 @@ impl Editor {
     ) -> Option<(f32, usize, Vec<ClipboardNoteEntry>)> {
         let anchor_tick = self.snap_tick(self.playback_position);
 
-        let data = &self.editor_state.data;
-        let selection = &data.arrange_selection;
+        let editor_data = &self.editor_state.data;
+        let selection = &editor_data.arrange_selection;
         let anchor_track = if selection.is_empty() {
-            data.current_track
+            editor_data.current_track
         } else {
             let mut min_track = usize::MAX;
             for rect in &selection.rects {
@@ -568,13 +578,13 @@ impl Editor {
                 }
             }
             if min_track == usize::MAX {
-                data.current_track
+                editor_data.current_track
             } else {
                 min_track
             }
         };
 
-        let max_track_count = data.track_notes.len().max(1);
+        let max_track_count = editor_data.track_notes.len().max(1);
         let mut pasted: Vec<ClipboardNoteEntry> = Vec::with_capacity(notes_value.len());
 
         for item in notes_value {
@@ -613,12 +623,14 @@ impl Editor {
 
         self.load_missing_tracks_from_document();
 
-        let data = &self.editor_state.data;
-        let selection = &data.arrange_selection;
+        let editor_data = &self.editor_state.data;
+        let selection = &editor_data.arrange_selection;
         let mut indices_by_track: std::collections::HashMap<usize, Vec<usize>> =
             std::collections::HashMap::new();
-        for (&track_idx, notes) in &data.track_notes {
-            let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+        for (&track_idx, notes) in &editor_data.track_notes {
+            let visual_pos = editor_data
+                .visual_position_of(track_idx)
+                .unwrap_or(track_idx);
             for (i, note) in notes.iter().enumerate() {
                 if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                     indices_by_track.entry(track_idx).or_default().push(i);
@@ -637,13 +649,13 @@ impl Editor {
         let mut deleted_count = 0usize;
 
         {
-            let data = &mut self.editor_state.data;
+            let editor_data = &mut self.editor_state.data;
             for (track_idx, mut indices) in indices_by_track {
                 if track_idx == current_track {
                     current_track_touched = true;
                 }
                 indices.sort_unstable_by(|a, b| b.cmp(a));
-                if let Some(notes) = data.track_notes.get_mut(&track_idx) {
+                if let Some(notes) = editor_data.track_notes.get_mut(&track_idx) {
                     for idx in indices {
                         notes.remove(idx);
                         deleted_count += 1;
@@ -692,9 +704,11 @@ impl Editor {
 
         // 第一遍：收集所有选中音符的索引和最小 tick
         {
-            let data = &self.editor_state.data;
-            for (&track_idx, notes) in &data.track_notes {
-                let visual_pos = data.visual_position_of(track_idx).unwrap_or(track_idx);
+            let editor_data = &self.editor_state.data;
+            for (&track_idx, notes) in &editor_data.track_notes {
+                let visual_pos = editor_data
+                    .visual_position_of(track_idx)
+                    .unwrap_or(track_idx);
                 for (i, note) in notes.iter().enumerate() {
                     if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
                         track_indices.entry(track_idx).or_default().push(i);
@@ -717,12 +731,12 @@ impl Editor {
 
         // 第二遍：执行变速
         {
-            let data = &mut self.editor_state.data;
+            let editor_data = &mut self.editor_state.data;
             for (track_idx, indices) in &track_indices {
                 if *track_idx == current_track {
                     current_track_touched = true;
                 }
-                if let Some(notes) = data.track_notes.get_mut(track_idx) {
+                if let Some(notes) = editor_data.track_notes.get_mut(track_idx) {
                     for &i in indices {
                         if let Some(note) = notes.get_mut(i) {
                             let nt = min_tick + (note.tick - min_tick) * speed_factor;
@@ -755,19 +769,19 @@ impl Editor {
         modified_count
     }
 
-    /// 工程走带操作后，若当前音轨受影响则同步 data.notes 与 NoteStore。
+    /// 工程走带操作后，若当前音轨受影响则同步 editor_data.notes 与 NoteStore。
     fn sync_current_track_after_arrange_op(&mut self, touched: bool) {
         if !touched {
             return;
         }
-        let data = &mut self.editor_state.data;
-        data.notes = data
+        let editor_data = &mut self.editor_state.data;
+        editor_data.notes = editor_data
             .track_notes
-            .get(&data.current_track)
+            .get(&editor_data.current_track)
             .cloned()
             .unwrap_or_default();
-        if data.is_note_store_enabled() {
-            data.sync_note_store();
+        if editor_data.is_note_store_enabled() {
+            editor_data.sync_note_store();
         }
         self.mark_notes_changed();
     }
@@ -780,13 +794,13 @@ impl Editor {
     /// 全量加载后由主循环中的 selection.contains 做 tick/key 层面筛选。
     fn load_missing_tracks_from_document(&mut self) {
         let tracks_to_load: Vec<usize> = {
-            let data = &self.editor_state.data;
-            let Some(doc) = &data.document else {
+            let editor_data = &self.editor_state.data;
+            let Some(doc) = &editor_data.document else {
                 return;
             };
             let mut result = Vec::new();
             for track_idx in 0..doc.notes.len() {
-                if !data.track_notes.contains_key(&track_idx) {
+                if !editor_data.track_notes.contains_key(&track_idx) {
                     result.push(track_idx);
                 }
             }
@@ -797,9 +811,9 @@ impl Editor {
             return;
         }
 
-        let data = &mut self.editor_state.data;
+        let editor_data = &mut self.editor_state.data;
         for track_idx in tracks_to_load {
-            let Some(doc) = &data.document else {
+            let Some(doc) = &editor_data.document else {
                 continue;
             };
             let doc_notes = doc.track_notes(track_idx);
@@ -807,9 +821,9 @@ impl Editor {
             for ne in doc_notes {
                 loaded.push_back(note_event_to_note(ne));
             }
-            data.track_notes.insert(track_idx, loaded);
+            editor_data.track_notes.insert(track_idx, loaded);
         }
-        data.mark_track_notes_changed();
+        editor_data.mark_track_notes_changed();
     }
 }
 

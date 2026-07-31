@@ -191,9 +191,9 @@ fn test_tempo_bpm_to_y_density_uniform() {
     let mut spacings = Vec::new();
     let mut prev_y = widget::tempo_bpm_to_y(levels[0], height);
     for &bpm in levels.iter().skip(1) {
-        let y = widget::tempo_bpm_to_y(bpm, height);
-        spacings.push((prev_y - y).abs());
-        prev_y = y;
+        let point_y = widget::tempo_bpm_to_y(bpm, height);
+        spacings.push((prev_y - point_y).abs());
+        prev_y = point_y;
     }
 
     let first = spacings[0];

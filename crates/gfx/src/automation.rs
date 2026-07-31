@@ -149,14 +149,14 @@ fn collect_segments(
         } else {
             0
         };
-        let y = view.value_to_y(val as f32, max_val);
+        let screen_y = view.value_to_y(val as f32, max_val);
         if width > grid_left_x {
             segs.push(SegSpan {
                 x1: grid_left_x,
-                y1: y,
+                y1: screen_y,
                 shape: SegmentShape::Step,
                 x2: width,
-                y2: y,
+                y2: screen_y,
             });
         }
         return segs;
@@ -265,11 +265,11 @@ pub fn build_lane_instances(
     if show_anchors {
         let visible_events = lane.events_in_range(pad_start, pad_end);
         for evt in visible_events {
-            let x = view.tick_to_x(evt.tick);
-            let y = view.value_to_y(evt.value as f32, max_val);
+            let screen_x = view.tick_to_x(evt.tick);
+            let screen_y = view.value_to_y(evt.value as f32, max_val);
             out.push(CcBarInstance::with_props(
-                x - ANCHOR_RADIUS,
-                y - ANCHOR_RADIUS,
+                screen_x - ANCHOR_RADIUS,
+                screen_y - ANCHOR_RADIUS,
                 2.0 * ANCHOR_RADIUS,
                 2.0 * ANCHOR_RADIUS,
                 [color[0], color[1], color[2], 1.0],

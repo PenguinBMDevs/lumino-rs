@@ -13,10 +13,10 @@ pub fn contrast_text_color(bg: Color) -> Color {
 }
 
 /// 两个颜色按 t 比例线性混合
-pub fn blend_color(a: Color, b: Color, t: f32) -> Color {
+pub fn blend_color(color_a: Color, color_b: Color, ratio: f32) -> Color {
     Color::from_rgb(
-        a.r + (b.r - a.r) * t,
-        a.g + (b.g - a.g) * t,
-        a.b + (b.b - a.b) * t,
+        color_a.r + (color_b.r - color_a.r) * ratio,
+        color_a.g + (color_b.g - color_a.g) * ratio,
+        color_a.b + (color_b.b - color_a.b) * ratio,
     )
 }

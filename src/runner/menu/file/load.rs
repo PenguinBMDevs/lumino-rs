@@ -221,13 +221,13 @@ impl RunnerInner {
         tokio::spawn(async move {
             progress_cb("正在加载 LMPJ 工程", 0.3);
             let path_for_blocking = path.clone();
-            let result = tokio::task::spawn_blocking(move || {
+            let load_result = tokio::task::spawn_blocking(move || {
                 let project = lumino_export::load_project(&path_for_blocking)?;
                 lumino_export::project_to_parsed_midi(&project, path_for_blocking)
             })
             .await;
 
-            match result {
+            match load_result {
                 Ok(Ok(parsed)) => {
                     progress_cb("工程加载成功", 1.0);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(

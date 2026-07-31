@@ -264,7 +264,7 @@ fn draw_ghost_note(
 ) {
     let lh = viewport.lane_height();
     let scroll_y = viewport.scroll_y;
-    let y = track as f32 * lh - scroll_y;
+    let click_y = track as f32 * lh - scroll_y;
     let scroll_x = viewport.scroll_x;
     let sx = viewport.tick_to_x(t_start) - scroll_x;
     let ex = viewport.tick_to_x(t_end) - scroll_x;
@@ -272,7 +272,7 @@ fn draw_ghost_note(
     let max_x = sx.max(ex);
 
     let height = lh * 0.25;
-    let y_center = y + lh * 0.5;
+    let y_center = click_y + lh * 0.5;
 
     let rect = iced_core::Rectangle {
         x: min_x,

@@ -240,9 +240,9 @@ impl<'a> StreamingMidiPlayer<'a> {
             return None;
         }
 
-        let result = self.tracks[ti].consume()?;
+        let consumed = self.tracks[ti].consume()?;
 
-        match result {
+        match consumed {
             Ok((_delta, kind)) => Some((min_tick, ti, kind)),
             Err(e) => {
                 // 解析错误：记录日志并跳过
@@ -290,9 +290,9 @@ mod tests {
     /// 用真实 MIDI 文件验证 `StreamingMidiPlayer` 能正确解析并逐事件输出。
     #[test]
     fn test_real_midi_parses() {
-        let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
+        let file_bytes = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
         let mut player =
-            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
+            StreamingMidiPlayer::from_bytes(&file_bytes).expect("real MIDI file should parse");
 
         assert!(player.ppqn > 0, "PPQN should be positive");
         assert!(player.total_ticks > 0, "total ticks should be positive");
@@ -321,9 +321,9 @@ mod tests {
     /// 验证 `next_event()` 返回的事件 tick 按非递减顺序排列。
     #[test]
     fn test_events_in_order() {
-        let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
+        let file_bytes = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
         let mut player =
-            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
+            StreamingMidiPlayer::from_bytes(&file_bytes).expect("real MIDI file should parse");
 
         let mut prev_tick: u64 = 0;
         while let Some((tick, _track, _kind)) = player.next_event() {
@@ -344,9 +344,9 @@ mod tests {
     /// 事件都被正确交织输出。
     #[test]
     fn test_multi_track_interleave() {
-        let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
+        let file_bytes = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
         let mut player =
-            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
+            StreamingMidiPlayer::from_bytes(&file_bytes).expect("real MIDI file should parse");
 
         let track_count = player.track_count();
         assert!(
@@ -374,9 +374,9 @@ mod tests {
     /// 验证 `NoteOn` 事件正确产生 `(key, vel)` 参数。
     #[test]
     fn test_note_on_events() {
-        let data = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
+        let file_bytes = std::fs::read(TEST_MIDI_PATH).expect("test MIDI file should exist");
         let mut player =
-            StreamingMidiPlayer::from_bytes(&data).expect("real MIDI file should parse");
+            StreamingMidiPlayer::from_bytes(&file_bytes).expect("real MIDI file should parse");
 
         let mut note_count = 0u64;
         while let Some((_tick, _track, kind)) = player.next_event() {

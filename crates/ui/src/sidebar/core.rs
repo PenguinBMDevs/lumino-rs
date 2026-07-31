@@ -348,19 +348,19 @@ impl Sidebar {
                     sorted_group
                         .sort_by_key(|&i| (old_tracks[i].is_conductor as u8, old_tracks[i].id));
                     for (label_idx, &idx) in sorted_group.iter().enumerate() {
-                        let t = &old_tracks[idx];
-                        let channel_letter = (b'A' + t.channel) as char;
+                        let track = &old_tracks[idx];
+                        let channel_letter = (b'A' + track.channel) as char;
                         let label = format!("{}{:02}", channel_letter, label_idx + 1);
                         self.tracks.push(Track {
-                            id: t.id,
-                            name: t.name.clone(),
-                            channel: t.channel,
+                            id: track.id,
+                            name: track.name.clone(),
+                            channel: track.channel,
                             display_label: label,
-                            is_conductor: t.is_conductor,
-                            can_delete: t.can_delete,
-                            is_muted: t.is_muted,
-                            is_soloed: t.is_soloed,
-                            color: t.color,
+                            is_conductor: track.is_conductor,
+                            can_delete: track.can_delete,
+                            is_muted: track.is_muted,
+                            is_soloed: track.is_soloed,
+                            color: track.color,
                         });
                     }
                 }

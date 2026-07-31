@@ -92,23 +92,23 @@ fn build_note_rectangle_render_params(
 
     let keyboard_width = 60.0f32;
     let ruler_height = 30.0f32;
-    let w = width.max(1) as f32;
-    let h = height.max(1) as f32;
+    let rect_width = width.max(1) as f32;
+    let rect_height = height.max(1) as f32;
 
     // X 向缩放：视口 tick 范围 = 4 小节
     let viewport_tick_span = (ppq * 16).max(1) as f32;
-    let zoom_x = (w - keyboard_width) / viewport_tick_span;
+    let zoom_x = (rect_width - keyboard_width) / viewport_tick_span;
 
     // Y 向缩放：覆盖整个键盘（固定 128 键）
     let key_count_f = KEY_COUNT as f32;
-    let zoom_y = (h - ruler_height) / key_count_f;
+    let zoom_y = (rect_height - ruler_height) / key_count_f;
 
     let scroll_x = tick as f32 * zoom_x;
     let scroll_y = 0.0f32;
 
     let grid_instances = Vec::new();
     let ruler_instances = generate_ruler_instances(
-        w,
+        rect_width,
         keyboard_width,
         ruler_height,
         scroll_x,
@@ -149,11 +149,11 @@ fn build_note_rectangle_render_params(
     }
 
     let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
-    let canvas_size = (w, h);
+    let canvas_size = (rect_width, rect_height);
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
-        logical_size: (w, h),
+        logical_size: (rect_width, rect_height),
         scale_factor: 1.0,
         scroll: (scroll_x, scroll_y),
         zoom: (zoom_x, zoom_y),
@@ -182,8 +182,8 @@ fn build_waterfall_render_params(
     key_count: u16,
     waterfall_scroll_speed: f32,
 ) -> RenderParams {
-    let w = width.max(1) as f32;
-    let h = height.max(1) as f32;
+    let waterfall_width = width.max(1) as f32;
+    let waterfall_height = height.max(1) as f32;
     let mut notes = Vec::new();
     collect_visible_notes_for_gpu(
         document,
@@ -208,11 +208,11 @@ fn build_waterfall_render_params(
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
-        logical_size: (w, h),
+        logical_size: (waterfall_width, waterfall_height),
         scale_factor: 1.0,
         ppq: ppq as f32,
         max_key_index: (key_count.saturating_sub(1)) as f32,
-        canvas_size: (w, h),
+        canvas_size: (waterfall_width, waterfall_height),
         is_waterfall_mode: true,
         waterfall_speed: waterfall_scroll_speed.max(0.1),
         waterfall_notes,
@@ -235,8 +235,8 @@ fn build_miditrail_render_params(
     miditrail_z_far: f32,
     fps: f32,
 ) -> RenderParams {
-    let w = width.max(1) as f32;
-    let h = height.max(1) as f32;
+    let miditrail_width = width.max(1) as f32;
+    let miditrail_height = height.max(1) as f32;
     // 为支持 Z 显示距离拉到最大，收集范围按最大倍数扩展；
     // 实际截断由 `miditrail_z_far` 在 GPU 实例构建阶段控制。
     let z_far_scale = MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH;
@@ -269,11 +269,11 @@ fn build_miditrail_render_params(
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
-        logical_size: (w, h),
+        logical_size: (miditrail_width, miditrail_height),
         scale_factor: 1.0,
         ppq: ppq as f32,
         max_key_index: (key_count.saturating_sub(1)) as f32,
-        canvas_size: (w, h),
+        canvas_size: (miditrail_width, miditrail_height),
         miditrail_enabled: true,
         miditrail_speed: waterfall_scroll_speed.max(0.1),
         miditrail_notes,

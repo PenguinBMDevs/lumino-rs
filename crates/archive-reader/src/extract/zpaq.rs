@@ -32,7 +32,7 @@ pub(super) fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveErro
     // 文件条目以 "- " 开头，split_whitespace() 后：
     //   ["-", "2021-01-13", "04:03:54", "16093243", "A", "Erosoul.mid"]
     // 文件名是最后一个元素（index 5）
-    let mut result = Vec::new();
+    let mut entries = Vec::new();
     for line in output.stdout.lines() {
         let line = line.trim();
         // 文件条目以 "- " 开头
@@ -46,7 +46,7 @@ pub(super) fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveErro
             if let Some(name) = parts.last()
                 && !name.is_empty()
             {
-                result.push(ArchiveEntry {
+                entries.push(ArchiveEntry {
                     name: name.to_string(),
                     is_dir: false,
                 });
@@ -54,11 +54,11 @@ pub(super) fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveErro
         }
     }
 
-    if result.is_empty() {
+    if entries.is_empty() {
         tracing::warn!("zpaq list stdout 解析为空，原始输出:\n{}", output.stdout);
     }
 
-    Ok(result)
+    Ok(entries)
 }
 
 /// 从 ZPAQ 压缩包中提取文件数据
@@ -67,8 +67,8 @@ pub(super) fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveErro
 pub(super) fn extract_entry_data(path: &Path, entry_name: &str) -> Result<Vec<u8>, ArchiveError> {
     let temp_dir = tempfile::tempdir()?;
     let output_path = do_extract(path, &[entry_name], temp_dir.path())?;
-    let data = std::fs::read(&output_path)?;
-    Ok(data)
+    let raw_bytes = std::fs::read(&output_path)?;
+    Ok(raw_bytes)
     // temp_dir 在函数退出时自动清理
 }
 

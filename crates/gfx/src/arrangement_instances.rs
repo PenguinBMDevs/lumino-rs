@@ -146,10 +146,10 @@ pub fn build_arrangement_all(
     let tpb = viewport.ppq as f64 * 4.0;
     for bar in ((ts / tpb).floor() as i32).max(0)..=(te / tpb).ceil() as i32 {
         let tick = bar as f64 * tpb;
-        let x = tick_to_x(viewport, tick);
-        if x >= cox && x <= cox + w {
+        let screen_x = tick_to_x(viewport, tick);
+        if screen_x >= cox && screen_x <= cox + w {
             out.push(ArrangementNoteInstance::grid_line(
-                x,
+                screen_x,
                 coy,
                 1.0,
                 h,

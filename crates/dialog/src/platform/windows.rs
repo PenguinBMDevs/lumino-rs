@@ -59,14 +59,14 @@ unsafe extern "system" fn window_proc(
     let rect = unsafe { rect.assume_init() };
     let screen_x = (lparam & 0xFFFF) as i32;
     let screen_y = ((lparam >> 16) & 0xFFFF) as i32;
-    let x = screen_x - rect.left;
-    let y = screen_y - rect.top;
+    let window_x = screen_x - rect.left;
+    let window_y = screen_y - rect.top;
     let width = rect.right - rect.left;
     let height = rect.bottom - rect.top;
-    let left = x < RESIZE_BORDER_WIDTH;
-    let right = x > width - RESIZE_BORDER_WIDTH;
-    let top = y < RESIZE_BORDER_WIDTH;
-    let bottom = y > height - RESIZE_BORDER_WIDTH;
+    let left = window_x < RESIZE_BORDER_WIDTH;
+    let right = window_x > width - RESIZE_BORDER_WIDTH;
+    let top = window_y < RESIZE_BORDER_WIDTH;
+    let bottom = window_y > height - RESIZE_BORDER_WIDTH;
 
     match (left, top, right, bottom) {
         (true, true, _, _) => HTTOPLEFT as LRESULT,

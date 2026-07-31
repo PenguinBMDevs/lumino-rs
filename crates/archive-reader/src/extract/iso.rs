@@ -17,9 +17,9 @@ pub(super) fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveErro
     let file = std::fs::File::open(path)?;
     match iso9660::ISO9660::new(file) {
         Ok(iso) => {
-            let mut result = Vec::new();
-            list_directory(&iso.root, "", &mut result)?;
-            Ok(result)
+            let mut entries = Vec::new();
+            list_directory(&iso.root, "", &mut entries)?;
+            Ok(entries)
         }
         Err(e) => {
             // iso9660 crate 解析失败，回退到原始数据扫描
@@ -111,11 +111,11 @@ pub(super) fn extract_entry_data(path: &Path, entry_name: &str) -> Result<Vec<u8
             match iso.open(target) {
                 Ok(Some(iso9660::DirectoryEntry::File(iso_file))) => {
                     let mut reader = iso_file.read();
-                    let mut data = Vec::new();
-                    reader.read_to_end(&mut data).map_err(|e| {
+                    let mut entry_data = Vec::new();
+                    reader.read_to_end(&mut entry_data).map_err(|e| {
                         ArchiveError::LibraryError(format!("iso9660 读取文件失败: {e}"))
                     })?;
-                    Ok(data)
+                    Ok(entry_data)
                 }
                 Ok(Some(_)) => Err(ArchiveError::EntryNotFound(entry_name.to_string())),
                 Ok(None) => Err(ArchiveError::EntryNotFound(entry_name.to_string())),
@@ -142,10 +142,10 @@ fn fallback_raw_extract(path: &Path) -> Result<Vec<u8>, ArchiveError> {
 
     // 搜索 "MThd" 魔数
     if let Some(offset) = buffer.windows(4).position(|w| w == b"MThd") {
-        let data = &buffer[offset..];
+        let slice_data = &buffer[offset..];
 
         // 验证 MIDI 头：MThd(4) + 长度(4) + 6字节头
-        if data.len() < 14 {
+        if slice_data.len() < 14 {
             return Err(ArchiveError::EntryNotFound("content".to_string()));
         }
 
@@ -153,13 +153,13 @@ fn fallback_raw_extract(path: &Path) -> Result<Vec<u8>, ArchiveError> {
         let mut end = 14; // 跳过 MThd 头
 
         // 解析所有 MTrk 块
-        while end + 8 <= data.len() {
-            if &data[end..end + 4] == b"MTrk" {
+        while end + 8 <= slice_data.len() {
+            if &slice_data[end..end + 4] == b"MTrk" {
                 let track_len = u32::from_be_bytes([
-                    data[end + 4],
-                    data[end + 5],
-                    data[end + 6],
-                    data[end + 7],
+                    slice_data[end + 4],
+                    slice_data[end + 5],
+                    slice_data[end + 6],
+                    slice_data[end + 7],
                 ]) as usize;
                 end += 8 + track_len;
             } else {
@@ -167,12 +167,12 @@ fn fallback_raw_extract(path: &Path) -> Result<Vec<u8>, ArchiveError> {
             }
         }
 
-        let mut result = data[..end].to_vec();
+        let mut result_data = slice_data[..end].to_vec();
         // 去除尾部零字节（ISO 填充）
-        while result.last() == Some(&0) {
-            result.pop();
+        while result_data.last() == Some(&0) {
+            result_data.pop();
         }
-        Ok(result)
+        Ok(result_data)
     } else {
         Err(ArchiveError::EntryNotFound("content".to_string()))
     }
@@ -193,10 +193,10 @@ pub(super) fn extract_all(
         Err(_e) => {
             // 回退：扫描并提取 MIDI
             tracing::warn!("iso9660 解析失败，回退到原始数据提取");
-            let data = fallback_raw_extract(path)?;
+            let extracted_data = fallback_raw_extract(path)?;
             let output_path = output_dir.join("content.mid");
             std::fs::create_dir_all(output_dir)?;
-            std::fs::write(&output_path, &data)?;
+            std::fs::write(&output_path, &extracted_data)?;
             Ok(vec![output_path])
         }
     }
@@ -229,8 +229,8 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
             }
             iso9660::DirectoryEntry::File(f) => {
                 let mut reader = f.read();
-                let mut data = Vec::new();
-                reader.read_to_end(&mut data).map_err(|e| {
+                let mut entry_data = Vec::new();
+                reader.read_to_end(&mut entry_data).map_err(|e| {
                     ArchiveError::LibraryError(format!("iso9660 读取文件失败: {e}"))
                 })?;
 
@@ -238,7 +238,7 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
                 if let Some(parent) = entry_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
-                std::fs::write(&entry_path, &data)?;
+                std::fs::write(&entry_path, &entry_data)?;
                 extracted.push(entry_path);
             }
         }

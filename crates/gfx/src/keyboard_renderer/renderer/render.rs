@@ -23,27 +23,26 @@ impl KeyboardRenderer {
     ) {
         puffin::profile_function!();
 
-        let p = params;
         let params_changed = !self.cache_valid
-            || self.cache_scroll_y != p.scroll_y
-            || self.cache_zoom_y != p.zoom_y
-            || self.cache_visible_key_count != p.visible_key_count
-            || self.cache_keyboard_width != p.keyboard_width
-            || self.cache_ruler_height != p.ruler_height;
+            || self.cache_scroll_y != params.scroll_y
+            || self.cache_zoom_y != params.zoom_y
+            || self.cache_visible_key_count != params.visible_key_count
+            || self.cache_keyboard_width != params.keyboard_width
+            || self.cache_ruler_height != params.ruler_height;
 
         if params_changed {
             self.cached_instances = self.generate_key_instances(
-                p.visible_key_count,
-                p.keyboard_width,
-                p.zoom_y,
-                p.scroll_y,
-                p.ruler_height,
+                params.visible_key_count,
+                params.keyboard_width,
+                params.zoom_y,
+                params.scroll_y,
+                params.ruler_height,
             );
-            self.cache_scroll_y = p.scroll_y;
-            self.cache_zoom_y = p.zoom_y;
-            self.cache_visible_key_count = p.visible_key_count;
-            self.cache_keyboard_width = p.keyboard_width;
-            self.cache_ruler_height = p.ruler_height;
+            self.cache_scroll_y = params.scroll_y;
+            self.cache_zoom_y = params.zoom_y;
+            self.cache_visible_key_count = params.visible_key_count;
+            self.cache_keyboard_width = params.keyboard_width;
+            self.cache_ruler_height = params.ruler_height;
             self.cache_valid = true;
         }
 
@@ -61,7 +60,7 @@ impl KeyboardRenderer {
             queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
         }
 
-        let viewport_uniform = KeyboardViewportUniform::from_params(p);
+        let viewport_uniform = KeyboardViewportUniform::from_params(params);
         queue.write_buffer(
             &self.viewport_buffer,
             0,

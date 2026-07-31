@@ -167,13 +167,13 @@ fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> 
         return Ok(handle.clone());
     }
 
-    let data = get_icon_data(icon)?;
+    let icon_data = get_icon_data(icon)?;
     let rgba = if should_invert_icon(icon, is_dark) {
-        invert_rgba(&data.rgba)
+        invert_rgba(&icon_data.rgba)
     } else {
-        data.rgba
+        icon_data.rgba
     };
-    let handle = Handle::from_rgba(data.width, data.height, rgba);
+    let handle = Handle::from_rgba(icon_data.width, icon_data.height, rgba);
     cache.insert((icon, is_dark), handle.clone());
     Ok(handle)
 }

@@ -360,16 +360,16 @@ impl Host {
         ) || self.root.editor.has_pending_drag();
 
         // 计算视口哈希
-        let v = &self.root.editor.editor_state.view;
+        let editor_view = &self.root.editor.editor_state.view;
         let canvas = &self.root.editor.editor_state.canvas;
         let current_viewport_hash = crate::host::RenderCache::compute_viewport_hash(
-            v.scroll_x,
-            v.scroll_y,
-            v.zoom_x,
-            v.zoom_y,
+            editor_view.scroll_x,
+            editor_view.scroll_y,
+            editor_view.zoom_x,
+            editor_view.zoom_y,
             canvas.size_x,
             canvas.size_y,
-            v.visible_key_count,
+            editor_view.visible_key_count,
         );
         let viewport_changed =
             current_viewport_hash != self.render_ctx.render_cache.note_viewport_hash;
@@ -479,7 +479,9 @@ impl Host {
             });
 
         // 滚动速度追踪保留，供未来 overscan 预测使用
-        let _velocity = self.scroll_tracker.update(v.scroll_x, v.zoom_x);
+        let _velocity = self
+            .scroll_tracker
+            .update(editor_view.scroll_x, editor_view.zoom_x);
         let _ = _velocity;
     }
 

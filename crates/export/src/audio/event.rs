@@ -212,9 +212,9 @@ impl<'a> MidiEventProcessor<'a> {
 fn apply_limiter(samples: &mut [f32], _channels: u16) {
     // 简单的峰值限制
     let threshold = 0.95;
-    for s in samples.iter_mut() {
-        if s.abs() > threshold {
-            *s = s.signum() * threshold;
+    for sample in samples.iter_mut() {
+        if sample.abs() > threshold {
+            *sample = sample.signum() * threshold;
         }
     }
 }

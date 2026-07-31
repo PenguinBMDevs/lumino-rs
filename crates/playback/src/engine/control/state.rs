@@ -70,15 +70,15 @@ impl PlaybackEngine {
         let tick_start_u = self.last_processed_tick as u32;
         let tick_end_u = current_tick as u32;
 
-        for t in 0..self.track_states.len() {
-            if t == self.current_track as usize {
+        for track_idx in 0..self.track_states.len() {
+            if track_idx == self.current_track as usize {
                 continue;
             }
-            let notes = doc.track_notes(t);
+            let notes = doc.track_notes(track_idx);
             if notes.is_empty() {
                 continue;
             }
-            let state = &mut self.track_states[t];
+            let state = &mut self.track_states[track_idx];
 
             loop {
                 let next_on_tick = notes
@@ -199,11 +199,11 @@ impl PlaybackEngine {
             }
             let seek_tick_u = loop_start as u32;
             if let Some(doc) = self.document.clone() {
-                for t in 0..self.track_states.len() {
-                    if t == self.current_track as usize {
+                for track_idx in 0..self.track_states.len() {
+                    if track_idx == self.current_track as usize {
                         continue;
                     }
-                    self.reset_track_state_to(t, seek_tick_u, &doc);
+                    self.reset_track_state_to(track_idx, seek_tick_u, &doc);
                 }
                 let ctrl_events = &doc.control_events;
                 self.control_event_cursor = ctrl_events.partition_point(|ev| ev.tick < seek_tick_u);

@@ -10,11 +10,11 @@ pub fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
     let text_color = velocity_text_color(theme);
     let velocity_levels = [0u8, 32, 64, 96, 127];
 
-    for &v in &velocity_levels {
-        let y = VelocityCanvas::velocity_to_y(v, height);
+    for &value in &velocity_levels {
+        let velocity_y = VelocityCanvas::velocity_to_y(value, height);
         let mut line_builder = path::Builder::new();
-        line_builder.move_to(Point::new(PANEL_PADDING_X, y));
-        line_builder.line_to(Point::new(width - PANEL_PADDING_X, y));
+        line_builder.move_to(Point::new(PANEL_PADDING_X, velocity_y));
+        line_builder.line_to(Point::new(width - PANEL_PADDING_X, velocity_y));
         frame.stroke(
             &line_builder.build(),
             canvas::Stroke::default()
@@ -23,8 +23,8 @@ pub fn draw_background(frame: &mut Frame<Renderer>, theme: &Theme, size: Size) {
         );
 
         frame.fill_text(canvas::Text {
-            content: format!("{}", v),
-            position: Point::new(4.0, y - 6.0),
+            content: format!("{}", value),
+            position: Point::new(4.0, velocity_y - 6.0),
             max_width: width,
             line_height: iced_core::text::LineHeight::Relative(1.0),
             size: iced_core::Pixels(9.0),

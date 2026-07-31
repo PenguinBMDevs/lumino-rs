@@ -17,11 +17,13 @@ impl super::super::VelocityCanvas<'_> {
     /// **性能优化**：NoteStore 启用时走 `build_velocity_points_from_store`，
     /// 10M+ 音符场景下避免全部 Note clone 开销（百毫秒级）。
     pub(super) fn points(&self) -> Vec<VelocityPoint> {
-        let data = &self.editor.editor_state.data;
-        if data.is_note_store_enabled() {
-            super::super::super::VelocityPanel::build_velocity_points_from_store(&data.note_store)
+        let editor_data = &self.editor.editor_state.data;
+        if editor_data.is_note_store_enabled() {
+            super::super::super::VelocityPanel::build_velocity_points_from_store(
+                &editor_data.note_store,
+            )
         } else {
-            super::super::super::VelocityPanel::build_velocity_points(&data.notes)
+            super::super::super::VelocityPanel::build_velocity_points(&editor_data.notes)
         }
     }
 
@@ -50,9 +52,9 @@ impl super::super::VelocityCanvas<'_> {
         bounds_height: f32,
         view: &ViewState,
     ) -> Point {
-        let x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-        let y = Self::velocity_to_y(point.velocity, bounds_height);
-        Point::new(x, y)
+        let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+        let point_y = Self::velocity_to_y(point.velocity, bounds_height);
+        Point::new(point_x, point_y)
     }
 
     /// 命中测试：寻找点击位置最近的力度点
@@ -121,10 +123,11 @@ impl super::super::VelocityCanvas<'_> {
     /// 获取当前音轨当前目标的自动化 lane（若存在）。
     pub(super) fn current_automation_lane(&self) -> Option<&AutomationLane> {
         let target = self.automation_target()?;
-        let data = &self.editor.editor_state.data;
-        let track = data.current_track as u16;
-        data.find_automation_lane(track, &target)
-            .and_then(|idx| data.automation_lanes.get(idx).map(|a| &**a))
+        let editor_data = &self.editor.editor_state.data;
+        let track = editor_data.current_track as u16;
+        editor_data
+            .find_automation_lane(track, &target)
+            .and_then(|idx| editor_data.automation_lanes.get(idx).map(|a| &**a))
     }
 
     /// 将 X 坐标转换为 tick（值空间）。
@@ -185,10 +188,10 @@ impl super::super::VelocityCanvas<'_> {
         let radius = HIT_RADIUS;
         let mut best: Option<(u32, f32)> = None;
         for evt in &lane.events {
-            let x = view.tick_to_x(evt.tick);
-            let y = view.value_to_y(evt.value as f32, max_val);
-            let dx = cursor_pos.x - x;
-            let dy = cursor_pos.y - y;
+            let evt_x = view.tick_to_x(evt.tick);
+            let evt_y = view.value_to_y(evt.value as f32, max_val);
+            let dx = cursor_pos.x - evt_x;
+            let dy = cursor_pos.y - evt_y;
             let dist = (dx * dx + dy * dy).sqrt();
             if dist < radius {
                 match best {

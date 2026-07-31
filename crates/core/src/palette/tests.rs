@@ -117,14 +117,14 @@ fn test_set_palette_ignored_when_locked() {
 
     // 解锁并设置到一个非默认调色板
     unlock_palette();
-    let result = set_current_palette_by_name(second_name);
-    assert!(result, "未锁定时应成功切换");
+    let palette_set = set_current_palette_by_name(second_name);
+    assert!(palette_set, "未锁定时应成功切换");
     assert_eq!(current_palette_name(), second_name);
 
     // 锁定后再尝试切换
     lock_palette();
-    let result = set_current_palette_by_name(first_name);
-    assert!(!result, "锁定时应返回 false");
+    let palette_set = set_current_palette_by_name(first_name);
+    assert!(!palette_set, "锁定时应返回 false");
     // 确认当前调色板未改变
     assert_eq!(
         current_palette_name(),
@@ -224,8 +224,8 @@ fn test_unlock_after_lock_allows_palette_switch() {
     // 2. 解锁后（模拟 Close / New 操作）应该能切换调色板
     unlock_palette();
     assert!(!is_palette_locked());
-    let result = set_current_palette_by_name(name_a);
-    assert!(result, "解锁后应能切换调色板");
+    let palette_set = set_current_palette_by_name(name_a);
+    assert!(palette_set, "解锁后应能切换调色板");
     assert_eq!(current_palette_name(), name_a);
 }
 

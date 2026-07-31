@@ -30,14 +30,14 @@ pub enum TrafficAction {
 }
 
 impl Event {
-    pub const fn theme(r: String) -> Message {
-        Message::Window(Self::Theme(r))
+    pub const fn theme(theme: String) -> Message {
+        Message::Window(Self::Theme(theme))
     }
-    pub const fn maximized(r: bool) -> Message {
-        Message::Window(Self::Maximized(r))
+    pub const fn maximized(maximized: bool) -> Message {
+        Message::Window(Self::Maximized(maximized))
     }
-    pub const fn focused(r: bool) -> Message {
-        Message::Window(Self::Focused(r))
+    pub const fn focused(focused: bool) -> Message {
+        Message::Window(Self::Focused(focused))
     }
     pub fn traffic_action(action: &TrafficAction) -> Message {
         Message::Window(Self::TrafficAction(action.clone()))
