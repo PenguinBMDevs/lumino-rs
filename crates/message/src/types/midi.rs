@@ -1,28 +1,5 @@
 //! MIDI 相关类型
 
-// ─── CC 或 Bend 下拉选项 ───
-
-/// CC 或 Bend 下拉选项
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CcOption {
-    /// 弯音
-    Bend,
-    /// CC 控制器
-    Cc(u8),
-}
-
-impl std::fmt::Display for CcOption {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CcOption::Bend => write!(f, "Bend: Pitch Bend (-8192..8191)"),
-            CcOption::Cc(n) => match CC_CONTROLLER_NAMES.iter().find(|(num, _)| *num == *n) {
-                Some((_, name)) => write!(f, "{}: {}", n, name),
-                None => write!(f, "{}", n),
-            },
-        }
-    }
-}
-
 /// CC 控制器名称映射
 pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
     (0, "Bank Select"),

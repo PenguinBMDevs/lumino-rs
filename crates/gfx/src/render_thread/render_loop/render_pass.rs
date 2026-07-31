@@ -141,17 +141,41 @@ pub fn execute_render_pass(
             hires.render_dirty_overlays(&mut render_pass, hires_visible_coords, has_depth);
         }
 
-        // 弯音编辑模式：先画半透明遮罩（在音符下方）
-        if params.pitch_bend_mode && !params.pitch_bend_instances.is_empty() {
+        // 弯音编辑模式：绘制顺序 = 遮罩(下) → 弯曲音符 → 锚点/连线(上)
+        if params.pitch_bend_mode {
+            let total = params.pitch_bend_instances.len() as u32;
+            let underlay = params.pitch_bend_underlay_count.min(total);
+
+            // 1. 半透明遮罩 + 基准线（在弯曲音符下方）
             render_pass.set_scissor_rect(0, 0, width, height);
-            frame
-                .renderers
-                .pitch_bend
-                .draw(&mut render_pass, params.pitch_bend_instances.len() as u32);
+            if underlay > 0 {
+                frame
+                    .renderers
+                    .pitch_bend
+                    .draw(&mut render_pass, 0, underlay);
+            }
+
+            // 2. 弯曲音符段（替代普通直音符，随弯音曲线柔性弯曲）
+            if !params.bend_note_instances.is_empty() {
+                render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+                frame
+                    .renderers
+                    .bend_note
+                    .draw(&mut render_pass, params.bend_note_instances.len() as u32);
+            }
+
+            // 3. 锚点 + 连线（在弯曲音符上方）
+            render_pass.set_scissor_rect(0, 0, width, height);
+            if total > underlay {
+                frame
+                    .renderers
+                    .pitch_bend
+                    .draw(&mut render_pass, underlay, total - underlay);
+            }
         }
 
-        // 绘制音符（弯音模式下音符在遮罩上方）
-        if render_notes {
+        // 绘制音符（弯音模式下由弯曲音符渲染器替代，跳过直音符）
+        if render_notes && !params.pitch_bend_mode {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame.renderers.note.draw(
                 &mut render_pass,

@@ -1,6 +1,7 @@
 #![allow(deprecated)]
 mod arrangement_instances;
 mod arrangement_renderer;
+mod bend_note_renderer;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
@@ -28,6 +29,7 @@ pub use arrangement_instances::{
 pub use arrangement_renderer::{
     ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,
 };
+pub use bend_note_renderer::{BendNoteCameraUniform, BendNoteInstance, BendNoteRenderer};
 pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
     build_cc_bar_instances,

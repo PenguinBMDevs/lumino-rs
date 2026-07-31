@@ -1,13 +1,8 @@
 //! 布局相关方法：坐标转换、命中测试、resize 区域检测
 
-use iced_core::{Point, Size};
-use lumino_core::{AutomationLane, AutomationTarget};
-use lumino_gfx::automation::AutomationViewParams;
+use iced_core::Point;
 
-use super::super::super::{
-    HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPoint,
-};
-use super::super::state::CtrlEnd;
+use super::super::super::{HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPoint};
 use crate::editor_state::ViewState;
 use crate::velocity::widget::TempoPoint;
 
@@ -85,44 +80,6 @@ impl super::super::VelocityCanvas<'_> {
         (0.0..=RESIZE_HANDLE_HEIGHT).contains(&cursor_pos.y)
     }
 
-    /// 当前编辑模式对应的自动化目标。
-    pub(super) fn automation_target(&self) -> Option<AutomationTarget> {
-        None
-    }
-
-    /// 构造 Canvas 局部坐标系的自动化视图参数。
-    pub(super) fn automation_view_params(
-        &self,
-        bounds_size: Size,
-    ) -> Option<(AutomationViewParams, AutomationTarget, f32)> {
-        let target = self.automation_target()?;
-        let view = &self.editor.editor_state.view;
-        let panel = &self.editor.velocity_panel;
-        let params = AutomationViewParams {
-            panel_height: bounds_size.height + TOOLBAR_HEIGHT,
-            pixels_per_tick: view.zoom_x,
-            scroll_x: view.scroll_x,
-            keyboard_width: view.keyboard_width,
-            value_zoom: panel.value_zoom,
-            value_scroll: panel.value_scroll,
-            panel_offset_x: 0.0,
-            panel_offset_y: 0.0,
-            toolbar_height: TOOLBAR_HEIGHT,
-            line_thickness: panel.automation_line_thickness,
-        };
-        let max_val = target.max_value() as f32;
-        Some((params, target, max_val))
-    }
-
-    /// 获取当前音轨当前目标的自动化 lane（若存在）。
-    pub(super) fn current_automation_lane(&self) -> Option<&AutomationLane> {
-        let target = self.automation_target()?;
-        let data = &self.editor.editor_state.data;
-        let track = data.current_track as u16;
-        data.find_automation_lane(track, &target)
-            .and_then(|idx| data.automation_lanes.get(idx).map(|a| &**a))
-    }
-
     /// 将 X 坐标转换为 tick（值空间）。
     pub(super) fn x_to_tick(&self, x: f32) -> f32 {
         let view = &self.editor.editor_state.view;
@@ -169,104 +126,5 @@ impl super::super::VelocityCanvas<'_> {
             }
         }
         closest.map(|(idx, _)| idx)
-    }
-
-    /// 命中测试：寻找点击位置最近的自动化锚点，返回其 tick。
-    pub(super) fn hit_test_automation_anchor(
-        lane: &AutomationLane,
-        view: &AutomationViewParams,
-        cursor_pos: Point,
-        max_val: f32,
-    ) -> Option<u32> {
-        let radius = HIT_RADIUS;
-        let mut best: Option<(u32, f32)> = None;
-        for evt in &lane.events {
-            let x = view.tick_to_x(evt.tick);
-            let y = view.value_to_y(evt.value as f32, max_val);
-            let dx = cursor_pos.x - x;
-            let dy = cursor_pos.y - y;
-            let dist = (dx * dx + dy * dy).sqrt();
-            if dist < radius {
-                match best {
-                    None => best = Some((evt.tick, dist)),
-                    Some((_, best_dist)) if dist < best_dist => best = Some((evt.tick, dist)),
-                    _ => {}
-                }
-            }
-        }
-        best.map(|(tick, _)| tick)
-    }
-
-    /// 从鼠标屏幕位置反推 Curve 段某一端控制点的偏移量 (x, y) ∈ [-0.5, 0.5]。
-    pub(super) fn compute_ctrl_from_mouse(
-        lane: &AutomationLane,
-        prev_tick: u32,
-        which: CtrlEnd,
-        mouse: Point,
-        view: &AutomationViewParams,
-        max_val: f32,
-    ) -> Option<(f32, f32)> {
-        use lumino_core::SegmentShape;
-        let prev_idx = lane.events.iter().position(|e| e.tick == prev_tick)?;
-        let prev = &lane.events[prev_idx];
-        let next = lane.events.get(prev_idx + 1)?;
-        let px0 = view.tick_to_x(prev.tick);
-        let py0 = view.value_to_y(prev.value as f32, max_val);
-        let px3 = view.tick_to_x(next.tick);
-        let py3 = view.value_to_y(next.value as f32, max_val);
-        let dx = px3 - px0;
-        let dy = py3 - py0;
-        // 参考点：Out 用 P0，In 用 P3
-        let (rx, ry) = match which {
-            CtrlEnd::Out => (px0, py0),
-            CtrlEnd::In => (px3, py3),
-        };
-        // x 方向 clamp 到 CSS 单调区间
-        let x_range = match which {
-            CtrlEnd::Out => (0.0, 0.25),
-            CtrlEnd::In => (-0.25, 0.0),
-        };
-        let new_x = if dx.abs() < 1e-3 {
-            0.0
-        } else {
-            ((mouse.x - rx) / dx / SegmentShape::SCALE).clamp(x_range.0, x_range.1)
-        };
-        let new_y = if dy.abs() < 1e-3 {
-            0.0
-        } else {
-            ((mouse.y - ry) / dy / SegmentShape::SCALE).clamp(-0.5, 0.5)
-        };
-        Some((new_x, new_y))
-    }
-
-    /// 把拖拽出的控制点 (x, y) 按端别合并进 prev_tick 事件的 shape。
-    pub(super) fn merge_ctrl_shape(
-        lane: &AutomationLane,
-        prev_tick: u32,
-        which: CtrlEnd,
-        new_ctrl: (f32, f32),
-    ) -> lumino_core::SegmentShape {
-        use lumino_core::SegmentShape;
-        lane.events
-            .iter()
-            .find(|e| e.tick == prev_tick)
-            .map(|e| match e.shape {
-                SegmentShape::Curve { x1, y1, x2, y2 } => match which {
-                    CtrlEnd::Out => SegmentShape::Curve {
-                        x1: new_ctrl.0,
-                        y1: new_ctrl.1,
-                        x2,
-                        y2,
-                    },
-                    CtrlEnd::In => SegmentShape::Curve {
-                        x1,
-                        y1,
-                        x2: new_ctrl.0,
-                        y2: new_ctrl.1,
-                    },
-                },
-                SegmentShape::Step => SegmentShape::Step,
-            })
-            .unwrap_or(SegmentShape::Step)
     }
 }

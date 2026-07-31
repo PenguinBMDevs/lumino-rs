@@ -93,6 +93,21 @@ pub fn prepare_renderers(
         renderers
             .pitch_bend
             .prepare(device, queue, &params.pitch_bend_instances, camera);
+
+        // 准备弯曲音符渲染器（替代普通直音符，随弯音曲线柔性弯曲）
+        let bend_camera = crate::BendNoteCameraUniform {
+            scroll: [params.scroll.0, params.scroll.1],
+            zoom: [params.zoom.0, params.zoom.1],
+            viewport_size: [params.logical_size.0, params.logical_size.1],
+            canvas_offset: [params.canvas_offset.0, params.canvas_offset.1],
+            keyboard_width: params.keyboard_width,
+            ruler_height: params.ruler_height,
+            max_key_index: params.max_key_index,
+            _padding: 0.0,
+        };
+        renderers
+            .bend_note
+            .prepare(device, queue, &params.bend_note_instances, bend_camera);
     }
 
     // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv

@@ -1,6 +1,8 @@
-//! 力度 / CC / Tempo 编辑面板动作
+//! 力度 / Tempo 编辑面板动作
 
-/// 力度 / CC / Tempo 编辑面板动作
+/// 力度 / Tempo 编辑面板动作
+///
+/// CC/Bend 控制器编辑与自动化曲线编辑已从 UI 移除（数据层保留）。
 #[derive(Debug, Clone)]
 pub enum VelocityAction {
     /// 力度拖拽开始：需要 push history 进行撤销支持
@@ -18,12 +20,8 @@ pub enum VelocityAction {
     CurvePaint(Vec<(usize, u8)>),
     /// 力度曲线绘制结束
     CurveEnd,
-    /// 切换编辑模式（力度/Tempo/CC/Bend）
+    /// 切换编辑模式（力度/Tempo）
     ToggleMode,
-    /// 选择 CC 控制器编号
-    CcControllerSelected(u8),
-    /// 选择 CC 或 Bend 选项
-    CcOptionSelected(crate::CcOption),
     /// 速度编辑：拖拽开始
     /// 参数: (point_index 在 data.tempo_points 中的索引)
     TempoDragStart(usize),
@@ -36,17 +34,4 @@ pub enum VelocityAction {
     TempoAdd(f32, f64),
     /// 速度编辑：删除速度点
     TempoDelete(usize),
-    /// 自动化编辑：先 push history 再应用单个编辑。
-    /// 用于单击、双击、右键删除等瞬时操作。
-    AutomationEdit(lumino_core::AutomationEdit),
-    /// 自动化批量编辑：不 push history，用于拖拽/曲线绘制中的连续更新。
-    AutomationBatch(Vec<lumino_core::AutomationEdit>),
-    /// 自动化拖拽开始：push history，不应用编辑。
-    AutomationDragStart,
-    /// 调整自动化曲线垂直缩放。
-    /// 参数: 缩放因子（相乘），在 0.01..8.0 之间钳制。
-    AutomationZoom(f32),
-    /// 调整自动化曲线垂直滚动。
-    /// 参数: 滚动量（值空间单位）。
-    AutomationScroll(f32),
 }

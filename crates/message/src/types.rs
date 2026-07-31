@@ -12,7 +12,7 @@
 //! | `editor` | 编辑器 | EditorAction |
 //! | `audio` | 音频/导出 | AudioChannels, AudioFormat, ThreadingOption, Interpolation |
 //! | `collab` | 协作 | (预留) |
-//! | `midi` | MIDI | CcOption, CC_CONTROLLER_NAMES |
+//! | `midi` | MIDI | CC_CONTROLLER_NAMES |
 //! | `ui` | UI | PerfData, TupletType, SpeedFactor |
 
 pub mod audio;

@@ -1,6 +1,6 @@
 //! 力度编辑面板消息处理器
 //!
-//! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑、CC 控制器切换等）。
+//! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑）。
 
 use crate::editor::editor_state::TempoPoint;
 use crate::editor::velocity::EditMode;
@@ -47,27 +47,8 @@ impl VelocityHandler {
                 let panel = &mut root.editor.velocity_panel;
                 let is_conductor = root.sidebar.selected_track == 0
                     && root.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
-                panel.edit_mode =
-                    Self::next_edit_mode(panel.edit_mode, is_conductor, panel.selected_cc);
+                panel.edit_mode = Self::next_edit_mode(panel.edit_mode, is_conductor);
                 tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);
-                return; // 不需要重绘
-            }
-            VA::CcControllerSelected(cc) => {
-                root.editor.velocity_panel.selected_cc = cc;
-                tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
-                return; // 不需要重绘
-            }
-            VA::CcOptionSelected(option) => {
-                use crate::editor::velocity::CcOption;
-                match option {
-                    CcOption::Bend => {
-                        tracing::debug!("力度面板: Bend 模式已移除");
-                    }
-                    CcOption::Cc(cc) => {
-                        root.editor.velocity_panel.selected_cc = cc;
-                        tracing::debug!("力度面板: 选择 CC 控制器 {}", cc);
-                    }
-                }
                 return; // 不需要重绘
             }
             // ── Tempo 编辑动作 ──
@@ -120,47 +101,6 @@ impl VelocityHandler {
                 }
                 return;
             }
-            // ── 自动化曲线编辑动作 ──
-            VA::AutomationEdit(edit) => {
-                root.editor.push_history();
-                root.editor.editor_state.data.apply_automation_edit(edit);
-                root.update_playback_notes();
-                tracing::debug!("自动化面板: 应用编辑");
-                return;
-            }
-            VA::AutomationBatch(edits) => {
-                for edit in edits {
-                    root.editor.editor_state.data.apply_automation_edit(edit);
-                }
-                root.update_playback_notes();
-                return;
-            }
-            VA::AutomationDragStart => {
-                root.editor.push_history();
-                tracing::debug!("自动化面板: 拖拽开始");
-                return;
-            }
-            VA::AutomationZoom(factor) => {
-                let panel = &mut root.editor.velocity_panel;
-                let max_val = Self::automation_max_value(panel.edit_mode);
-                let new_zoom = (panel.value_zoom * factor).clamp(0.01, 8.0);
-                panel.value_zoom = new_zoom;
-                if let Some(max_val) = max_val {
-                    panel.clamp_value_scroll(max_val);
-                }
-                tracing::debug!("自动化面板: 垂直缩放 {}", panel.value_zoom);
-                return;
-            }
-            VA::AutomationScroll(amount) => {
-                let panel = &mut root.editor.velocity_panel;
-                let max_val = Self::automation_max_value(panel.edit_mode);
-                if let Some(max_val) = max_val {
-                    panel.value_scroll += amount;
-                    panel.clamp_value_scroll(max_val);
-                    tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
-                }
-                return;
-            }
         }
 
         // 同步播放引擎：力度修改必须实时反映到播放中
@@ -185,20 +125,17 @@ impl VelocityHandler {
         }
     }
 
-    /// 根据当前编辑模式、是否在 Conductor 音轨以及选中的 CC 计算下一个编辑模式
-    fn next_edit_mode(mode: EditMode, is_conductor: bool, _selected_cc: u8) -> EditMode {
-        match (mode, is_conductor) {
-            // 普通音轨：Velocity → Bend → Cc(selected_cc) → Velocity
-            (EditMode::Velocity, false) => EditMode::Velocity,
-            (EditMode::Tempo, true) => EditMode::Tempo,
-            (EditMode::Velocity, true) => EditMode::Tempo,
-            (EditMode::Tempo, false) => EditMode::Velocity,
+    /// 根据当前编辑模式与是否在 Conductor 音轨计算下一个编辑模式。
+    /// 指挥轨道固定 Tempo，其他轨道固定 Velocity。
+    fn next_edit_mode(mode: EditMode, is_conductor: bool) -> EditMode {
+        if is_conductor {
+            EditMode::Tempo
+        } else {
+            match mode {
+                EditMode::Velocity => EditMode::Velocity,
+                EditMode::Tempo => EditMode::Velocity,
+            }
         }
-    }
-
-    /// 根据编辑模式返回自动化目标的最大值，用于垂直缩放/滚动裁剪
-    fn automation_max_value(_mode: EditMode) -> Option<f32> {
-        None
     }
 }
 

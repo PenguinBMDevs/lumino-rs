@@ -12,7 +12,7 @@ mod tests;
 
 /// 渲染器对象集合（消除 prepare_renderers / execute_render_pass 的参数重复）
 ///
-/// 将 5 个渲染器捆绑为一个结构体，使渲染管线函数签名更清晰。
+/// 将 7 个渲染器捆绑为一个结构体，使渲染管线函数签名更清晰。
 pub struct Renderers {
     pub grid: crate::GridRenderer,
     pub note: crate::NoteRenderer,
@@ -20,6 +20,7 @@ pub struct Renderers {
     pub arrangement: crate::ArrangementRenderer,
     pub cc_bar: crate::CcBarRenderer,
     pub pitch_bend: crate::PitchBendRenderer,
+    pub bend_note: crate::BendNoteRenderer,
 }
 
 impl Renderers {
@@ -32,6 +33,7 @@ impl Renderers {
             arrangement: crate::ArrangementRenderer::new(device, format),
             cc_bar: crate::CcBarRenderer::new(device, format),
             pitch_bend: crate::PitchBendRenderer::new(device, format),
+            bend_note: crate::BendNoteRenderer::new(device, format),
         }
     }
 
@@ -48,6 +50,7 @@ impl Renderers {
             arrangement: crate::ArrangementRenderer::new_without_depth(device, format),
             cc_bar: crate::CcBarRenderer::new_without_depth(device, format),
             pitch_bend: crate::PitchBendRenderer::new_without_depth(device, format),
+            bend_note: crate::BendNoteRenderer::new_without_depth(device, format),
         }
     }
 }

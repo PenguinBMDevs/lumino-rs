@@ -237,14 +237,14 @@ impl PitchBendCurve {
         }
     }
 
-    /// 按小节 1024 份采样生成弯音事件序列
+    /// 按 1 tick 粒度采样生成弯音事件序列（报告 5.1：曲线模式 1 tick 采样）
     ///
-    /// - `ticks_per_measure`：每小节的 tick 数
+    /// - `_ticks_per_measure`：保留参数以兼容旧接口，实际固定 1 tick 步长
     /// - `start_tick` / `end_tick`：采样范围
     /// - 跳过相邻相同值（节流）
     pub fn sample_to_events(
         &self,
-        ticks_per_measure: u32,
+        _ticks_per_measure: u32,
         start_tick: u32,
         end_tick: u32,
     ) -> Vec<PitchBendSample> {
@@ -252,8 +252,8 @@ impl PitchBendCurve {
             return Vec::new();
         }
 
-        let steps_per_measure = 1024u32;
-        let step = (ticks_per_measure / steps_per_measure.max(1)).max(1);
+        // 1 tick 粒度采样，精确还原弯音曲线（含突变点）
+        let step = 1u32;
 
         let mut result = Vec::new();
         let mut last_value: Option<i16> = None;

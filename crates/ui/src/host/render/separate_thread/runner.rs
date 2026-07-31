@@ -288,14 +288,17 @@ impl Host {
     }
 
     /// 构建弯音编辑模式的 WGPU 渲染实例（专用 PitchBendInstance）
-    fn build_pitch_bend_wgpu_instances(&self) -> Vec<lumino_gfx::PitchBendInstance> {
+    ///
+    /// 返回 `(实例列表, 下层实例数量)`。下层 = 遮罩 + 基准线（绘制在弯曲音符之下）；
+    /// 其余 = 锚点 + 连线（绘制在弯曲音符之上）。
+    fn build_pitch_bend_wgpu_instances(&self) -> (Vec<lumino_gfx::PitchBendInstance>, u32) {
         use lumino_gfx::PitchBendInstance;
 
         let editor = &self.root.editor;
         let es = &editor.editor_state;
         let curve = match es.pitch_bend_curve.as_ref() {
             Some(c) => c,
-            None => return vec![],
+            None => return (vec![], 0),
         };
 
         let v = &es.view;
@@ -325,6 +328,9 @@ impl Host {
                 [1.0, 0.8, 0.2, 0.5],
             ));
         }
+
+        // 下层实例 = 遮罩 + 基准线
+        let underlay_count = instances.len() as u32;
 
         // 3. 锚点之间的连线（阶梯式：水平段+垂直段）
         if curve.anchors.len() >= 2 {
@@ -375,6 +381,62 @@ impl Host {
             instances.push(PitchBendInstance::anchor(ax, ay, ANCHOR_RADIUS, color));
         }
 
+        (instances, underlay_count)
+    }
+
+    /// 构建弯音编辑模式的弯曲音符段实例（BendNoteInstance）
+    ///
+    /// 将当前轨道可见音符按 tick 细分为梯形段，段起止 y 由弯音曲线采样决定：
+    /// - 曲线模式：贝塞尔采样 → 音符柔性弯曲
+    /// - 直线模式：线性采样 → 突变点处出现阶梯折断
+    ///
+    /// 段宽约 8 屏幕像素（随 zoom 自适应），段间平滑过渡。
+    fn build_bend_note_instances(&self) -> Vec<lumino_gfx::BendNoteInstance> {
+        use lumino_core::pitch_bend::{PITCH_BEND_MAX, PITCH_BEND_RANGE_SEMITONES};
+        use lumino_gfx::BendNoteInstance;
+
+        let editor = &self.root.editor;
+        let es = &editor.editor_state;
+        let curve = match es.pitch_bend_curve.as_ref() {
+            Some(c) => c,
+            None => return vec![],
+        };
+        if curve.anchors.is_empty() {
+            return vec![];
+        }
+
+        // 弯音值 → key 偏移（±2 semitones 对应 ±8192，与锚点 Y 映射一致）
+        let value_to_key_offset = |value: i16| -> f32 {
+            value as f32 / PITCH_BEND_MAX as f32 * PITCH_BEND_RANGE_SEMITONES as f32
+        };
+
+        // 段宽约 8 屏幕像素（随 zoom 自适应），最少 1 tick
+        let zoom_x = es.view.zoom_x.max(0.01);
+        let seg_ticks = (8.0 / zoom_x).max(1.0);
+
+        // 弯曲音符统一蓝色（与锚点视觉一致，报告 3.1：音符提升至遮罩层蓝色显示）
+        let color = lumino_gfx::pack_color([0.3, 0.6, 1.0, 1.0]);
+
+        let visible = &self.render_ctx.render_cache.visible_notes_buffer;
+        let mut instances = Vec::new();
+        for &(tick, key, length) in visible {
+            let start_tick = tick;
+            let end_tick = tick + length;
+            if end_tick <= start_tick {
+                continue;
+            }
+            let key_f = key as f32;
+            let mut t0 = start_tick;
+            while t0 < end_tick {
+                let t1 = (t0 + seg_ticks).min(end_tick);
+                let v0 = curve.sample_value(t0.round() as u32);
+                let v1 = curve.sample_value(t1.round() as u32);
+                let y0 = key_f + value_to_key_offset(v0);
+                let y1 = key_f + value_to_key_offset(v1);
+                instances.push(BendNoteInstance::new(t0, t1, y0, y1, color));
+                t0 = t1;
+            }
+        }
         instances
     }
 
@@ -631,6 +693,20 @@ impl Host {
                 ))
             };
 
+        // 弯音编辑模式：构建弯曲音符段实例 + 弯音图元（遮罩/锚点/连线）
+        let (pitch_bend_instances, pitch_bend_underlay_count) = if es.is_pitch_bend_mode() {
+            let instances = self.build_pitch_bend_wgpu_instances();
+            let underlay = instances.1;
+            (instances.0, underlay)
+        } else {
+            (vec![], 0)
+        };
+        let bend_note_instances = if es.is_pitch_bend_mode() {
+            self.build_bend_note_instances()
+        } else {
+            vec![]
+        };
+
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
@@ -660,7 +736,9 @@ impl Host {
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
             .pitch_bend_mode(es.is_pitch_bend_mode())
-            .pitch_bend_instances(self.build_pitch_bend_wgpu_instances())
+            .bend_note_instances(bend_note_instances)
+            .pitch_bend_instances(pitch_bend_instances)
+            .pitch_bend_underlay_count(pitch_bend_underlay_count)
             .build()
     }
 }

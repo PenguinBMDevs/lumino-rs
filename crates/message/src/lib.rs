@@ -306,17 +306,6 @@ mod tests {
         assert!(AudioFormat::WavPack.needs_ffmpeg());
     }
 
-    // ─── CcOption ───
-
-    #[test]
-    fn test_cc_option_display() {
-        let bend = CcOption::Bend;
-        assert!(bend.to_string().contains("Bend"));
-
-        let cc7 = CcOption::Cc(7);
-        assert!(cc7.to_string().contains("Volume"));
-    }
-
     // ─── CC_CONTROLLER_NAMES ───
 
     #[test]

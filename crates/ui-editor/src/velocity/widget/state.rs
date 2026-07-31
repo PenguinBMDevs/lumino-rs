@@ -1,37 +1,9 @@
-//! 力度 / CC / Tempo Canvas 状态定义
+//! 力度 / Tempo Canvas 状态定义
 
 use std::collections::HashMap;
 use std::time::Instant;
 
-/// 贝塞尔控制点端别：cubic Bézier 有两个控制点，分别是 P1（起点出）和 P2（终点入）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CtrlEnd {
-    /// 第一控制点 P1 = P0 + (P3-P0) * (x1, y1)，从起点指出。
-    Out,
-    /// 第二控制点 P2 = P0 + (P3-P0) * (x2, y2)，从终点指入。
-    In,
-}
-
-/// 自动化编辑拖拽状态。
-#[derive(Debug, Clone, Copy)]
-pub enum AutomationDrag {
-    /// Pencil 工具：拖拽锚点，`old_tick` 为原始 tick。
-    MoveAnchor { old_tick: u32 },
-    /// Curve 工具：从起点绘制到当前点。
-    CurveDraw { start_tick: u32, start_value: u16 },
-    /// 拖拽贝塞尔曲线的某个控制点。
-    /// `prev_tick`：被拖段的前驱事件 tick（段的起点，shape 存于此事件）。
-    /// `which`：拖的是 P1（Out）还是 P2（In）。
-    /// `start_x/start_y`：按下时该控制点的归一化 (x, y) 位置，用于判断是否实际移动过。
-    DragControlPoint {
-        prev_tick: u32,
-        which: CtrlEnd,
-        start_x: f32,
-        start_y: f32,
-    },
-}
-
-/// 力度 / CC / Tempo Canvas 状态
+/// 力度 / Tempo Canvas 状态
 #[derive(Debug)]
 pub struct VelocityCanvasState {
     /// 当前正在拖拽的力度点索引（在 points 中的索引，非 note_index）
@@ -58,22 +30,14 @@ pub struct VelocityCanvasState {
     pub curve_start_velocity: u8,
     /// 当前笔触影响的音符索引 -> 新力度值
     pub curve_affected: HashMap<usize, u8>,
-    /// 自动化编辑拖拽状态（Pencil/Curve 工具）。
-    pub automation_drag: Option<AutomationDrag>,
-    /// 当前悬停的自动化锚点 tick。
-    pub hover_anchor_tick: Option<u32>,
     /// 上次左键点击时间与位置，用于检测双击。
     pub last_click: Option<(Instant, iced_core::Point)>,
-    /// 自动化曲线绘制时的当前 ghost 值（仅用于绘制反馈）。
-    pub automation_curve_current: Option<(u32, u16)>,
     /// 当前键盘修饰键状态，用于滚轮缩放判断。
     pub modifiers: iced_core::keyboard::Modifiers,
     /// 当前拖拽的 tempo 点索引
     pub tempo_drag_idx: Option<usize>,
     /// 当前悬停的 tempo 点索引
     pub tempo_hover_idx: Option<usize>,
-    /// 当前拖拽的控制点 ghost 信息（prev_tick, which, 新的 shape）。
-    pub drag_ctrl_ghost: Option<(u32, CtrlEnd, lumino_core::SegmentShape)>,
 }
 
 impl Default for VelocityCanvasState {
@@ -98,14 +62,10 @@ impl VelocityCanvasState {
             curve_start_x: 0.0,
             curve_start_velocity: 0,
             curve_affected: HashMap::new(),
-            automation_drag: None,
-            hover_anchor_tick: None,
             last_click: None,
-            automation_curve_current: None,
             modifiers: iced_core::keyboard::Modifiers::default(),
             tempo_drag_idx: None,
             tempo_hover_idx: None,
-            drag_ctrl_ghost: None,
         }
     }
 
@@ -135,46 +95,5 @@ impl VelocityCanvasState {
     pub fn reset_velocity_curve(&mut self) {
         self.curve_active = false;
         self.curve_affected.clear();
-    }
-
-    /// 重置自动化编辑拖拽状态
-    pub fn reset_automation_drag(&mut self) {
-        self.automation_drag = None;
-        self.automation_curve_current = None;
-        self.drag_ctrl_ghost = None;
-    }
-
-    /// 设置 Pencil 工具移动锚点拖拽。
-    pub fn start_move_anchor(&mut self, old_tick: u32) {
-        self.automation_drag = Some(AutomationDrag::MoveAnchor { old_tick });
-    }
-
-    /// 设置 Curve 工具绘制。
-    pub fn start_curve_draw(&mut self, start_tick: u32, start_value: u16) {
-        self.automation_drag = Some(AutomationDrag::CurveDraw {
-            start_tick,
-            start_value,
-        });
-    }
-
-    /// 设置贝塞尔控制点拖拽。
-    pub fn start_drag_control_point(
-        &mut self,
-        prev_tick: u32,
-        which: CtrlEnd,
-        start_x: f32,
-        start_y: f32,
-    ) {
-        self.automation_drag = Some(AutomationDrag::DragControlPoint {
-            prev_tick,
-            which,
-            start_x,
-            start_y,
-        });
-    }
-
-    /// 当前是否处于自动化拖拽中。
-    pub fn is_automation_dragging(&self) -> bool {
-        self.automation_drag.is_some()
     }
 }

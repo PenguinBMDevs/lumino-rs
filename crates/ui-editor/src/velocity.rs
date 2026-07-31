@@ -1,6 +1,7 @@
-//! 力度/Tempo/CC 编辑面板 - 类 Cubase 的 Controller Lane
+//! 力度/Tempo 编辑面板 - 类 Cubase 的 Controller Lane
 //!
-//! X 轴与钢琴卷帘对齐联动。力度/CC 的 Y 轴 0-127，Tempo 的 Y 轴为可视 BPM 范围。
+//! X 轴与钢琴卷帘对齐联动。力度 Y 轴 0-127，Tempo Y 轴为可视 BPM 范围。
+//! CC/Bend 控制器编辑已移除（数据层保留）。
 
 pub mod widget;
 
@@ -37,15 +38,10 @@ pub const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
 /// 工具栏高度
 pub const TOOLBAR_HEIGHT: f32 = 28.0;
 
-/// CC 或 Bend 下拉选项 — 重新导出自 lumino-message
-pub use lumino_message::CcOption;
-
-/// 力度/CC 编辑面板组件
+/// 力度/Tempo 编辑面板组件
 pub struct VelocityPanel {
     /// 当前编辑模式
     pub edit_mode: EditMode,
-    /// CC 模式下选择的控制器编号
-    pub selected_cc: u8,
     /// 自动化曲线垂直缩放。1.0 = 满量程映射到面板数据区高度。
     pub value_zoom: f32,
     /// 自动化曲线垂直滚动偏移（值空间单位）。
@@ -58,7 +54,6 @@ impl VelocityPanel {
     pub fn new() -> Self {
         Self {
             edit_mode: EditMode::Velocity,
-            selected_cc: 1, // 默认调制轮
             value_zoom: 1.0,
             value_scroll: 0.0,
             automation_line_thickness: 2.0,
@@ -94,7 +89,6 @@ impl VelocityPanel {
             row![
                 self.build_mode_button(is_tempo, is_velocity, language, t),
                 space().width(8),
-                self.build_cc_selector(),
                 space().width(iced_core::Length::Fill),
                 text(self.build_info_text(language))
                     .size(11)
@@ -113,7 +107,6 @@ impl VelocityPanel {
         let canvas = Canvas::new(widget::VelocityCanvas {
             editor,
             edit_mode: self.edit_mode,
-            selected_cc: self.selected_cc,
         })
         .width(iced_core::Length::Fill)
         .height(canvas_height);
@@ -172,12 +165,6 @@ impl VelocityPanel {
                 .with_background(bg)
             })
             .into()
-    }
-
-    /// 构建 CC 控制器选择器（已移除 CC/Bend 模式，返回空白占位）
-    fn build_cc_selector<'a>(&'a self) -> Element<'a> {
-        use iced_widget::space;
-        space().width(0).into()
     }
 
     /// 构建模式信息文字

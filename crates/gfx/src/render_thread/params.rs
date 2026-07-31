@@ -90,6 +90,11 @@ pub struct RenderParams {
     pub pitch_bend_overlay_color: [f32; 4],
     /// 弯音渲染实例列表（遮罩/锚点/曲线/基准线）
     pub pitch_bend_instances: Vec<PitchBendInstance>,
+    /// 弯音图元中属于"下层"的实例数量（遮罩+基准线，绘制在弯曲音符之下）。
+    /// 其余实例（锚点/连线）绘制在弯曲音符之上。
+    pub pitch_bend_underlay_count: u32,
+    /// 弯音编辑模式弯曲音符段实例列表（替代普通直音符渲染）
+    pub bend_note_instances: Vec<crate::BendNoteInstance>,
 }
 
 impl Default for RenderParams {
@@ -140,6 +145,8 @@ impl Default for RenderParams {
             pitch_bend_mode: false,
             pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
             pitch_bend_instances: Vec::new(),
+            pitch_bend_underlay_count: 0,
+            bend_note_instances: Vec::new(),
         }
     }
 }
@@ -204,6 +211,8 @@ pub struct RenderParamsBuilder {
     fps: f32,
     pitch_bend_mode: bool,
     pitch_bend_instances: Vec<PitchBendInstance>,
+    pitch_bend_underlay_count: u32,
+    bend_note_instances: Vec<crate::BendNoteInstance>,
 }
 
 impl Default for RenderParamsBuilder {
@@ -249,6 +258,8 @@ impl Default for RenderParamsBuilder {
             fps: 60.0,
             pitch_bend_mode: false,
             pitch_bend_instances: Vec::new(),
+            pitch_bend_underlay_count: 0,
+            bend_note_instances: Vec::new(),
         }
     }
 }
@@ -440,6 +451,18 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置弯音"下层"实例数量（遮罩+基准线，绘制在弯曲音符之下）
+    pub fn pitch_bend_underlay_count(mut self, count: u32) -> Self {
+        self.pitch_bend_underlay_count = count;
+        self
+    }
+
+    /// 设置弯音编辑模式弯曲音符段实例
+    pub fn bend_note_instances(mut self, instances: Vec<crate::BendNoteInstance>) -> Self {
+        self.bend_note_instances = instances;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -494,6 +517,8 @@ impl RenderParamsBuilder {
             pitch_bend_mode: self.pitch_bend_mode,
             pitch_bend_overlay_color: [0.5, 0.5, 0.5, 0.3],
             pitch_bend_instances: self.pitch_bend_instances,
+            pitch_bend_underlay_count: self.pitch_bend_underlay_count,
+            bend_note_instances: self.bend_note_instances,
         }
     }
 }

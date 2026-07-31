@@ -1,4 +1,4 @@
-//! 力度/CC/Tempo Canvas 程序
+//! 力度/Tempo Canvas 程序
 //!
 //! 包含 Canvas Program trait 实现和事件处理逻辑。
 
@@ -26,11 +26,9 @@ pub struct TempoPoint {
 
 use super::EditMode;
 
-/// 力度/CC Canvas 程序
+/// 力度/Tempo Canvas 程序
 pub struct VelocityCanvas<'a> {
     pub editor: &'a crate::Editor,
     /// 当前编辑模式
     pub edit_mode: EditMode,
-    /// CC 模式下选择的控制器编号
-    pub selected_cc: u8,
 }
