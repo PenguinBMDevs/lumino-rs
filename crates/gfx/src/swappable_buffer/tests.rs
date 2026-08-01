@@ -3,6 +3,8 @@
 //! 所有测试均在单线程上下文执行，因此 unsafe 调用的前置条件（唯一写入者、
 //! 唯一读取者、写入完成后 swap 等）由测试流程的顺序执行天然保证。
 
+use std::sync::atomic::Ordering;
+
 use super::*;
 
 #[test]

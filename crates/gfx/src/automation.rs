@@ -396,7 +396,7 @@ fn push_polyline(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::{AutomationEvent, AutomationTarget};
+    use lumino_note_core::{AutomationEvent, AutomationTarget};
 
     fn make_lane(ticks: &[u32], values: &[u16]) -> AutomationLane {
         AutomationLane {
