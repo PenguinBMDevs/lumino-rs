@@ -5,7 +5,7 @@ use super::utils::{is_key_dark, note_name};
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
-use lumino_ui_constants::editor::KEY_LABEL_FONT_SIZE;
+use lumino_ui_core::constants::editor::KEY_LABEL_FONT_SIZE;
 use lumino_ui_core::Renderer;
 
 /// 绘制钢琴键盘到 Geometry（用于 Canvas 绘制）

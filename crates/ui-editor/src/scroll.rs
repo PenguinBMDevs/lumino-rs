@@ -1,6 +1,6 @@
 use super::CacheInvalidation;
 use lumino_editor_state::editor_state::viewport::Viewport;
-use lumino_ui_constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
+use lumino_ui_core::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
 
 impl super::Editor {
     // 滚动控制 — 直接通过 viewport 模块操作

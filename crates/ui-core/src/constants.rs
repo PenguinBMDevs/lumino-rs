@@ -1,4 +1,7 @@
 //! 全局常量定义
+//!
+//! 从 `lumino-ui-constants` crate 合并而来。
+//! 渲染相关的颜色常量已在 `lumino-gfx::constants` 中定义，此处不重复。
 
 /// UI 尺寸相关常量
 pub mod dimensions {
@@ -143,38 +146,6 @@ pub mod editor {
     pub const DEFAULT_MIDI_CHANNEL: u8 = 0;
     /// 默认粘贴锚点音高（中央 C）
     pub const DEFAULT_PASTE_ANCHOR_KEY: u16 = 60;
-}
-
-/// 渲染相关常量
-pub mod rendering {
-    /// 初始缓冲区容量
-    pub const INITIAL_INSTANCE_CAPACITY: usize = 1024;
-
-    /// 主题亮度阈值（用于判断暗色/亮色主题）
-    pub const THEME_BRIGHTNESS_THRESHOLD: f32 = 0.5;
-
-    /// 网格点击时间阈值（毫秒）
-    pub const GRID_CLICK_TIME_THRESHOLD_MS: u128 = 300;
-    /// 网格点击位置阈值（像素）
-    pub const GRID_CLICK_POS_THRESHOLD_PX: f32 = 10.0;
-    /// 网格滚动最大增量
-    pub const GRID_SCROLL_MAX_DELTA: f32 = 100.0;
-
-    /// 独立线程渲染路径中的默认网格颜色（TODO: 从主题系统获取）
-    pub mod grid_colors {
-        /// 黑键线颜色
-        pub const BLACK_KEY_LINE: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
-        /// 白键线颜色
-        pub const WHITE_KEY_LINE: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
-        /// 小节线颜色
-        pub const BAR_LINE: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
-        /// 拍线颜色
-        pub const BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
-        /// 半拍线颜色
-        pub const HALF_BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.5];
-        /// 网格线颜色
-        pub const GRID_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.2];
-    }
 }
 
 /// 内存管理常量

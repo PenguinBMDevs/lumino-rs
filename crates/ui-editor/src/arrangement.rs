@@ -7,7 +7,7 @@ pub mod interaction;
 pub mod track_list;
 
 use iced_core::Point;
-use lumino_ui_constants::editor::zoom::{MAX_ARRANGEMENT_ZOOM_X, MIN_ARRANGEMENT_ZOOM_X};
+use lumino_ui_core::constants::editor::zoom::{MAX_ARRANGEMENT_ZOOM_X, MIN_ARRANGEMENT_ZOOM_X};
 
 pub use click_canvas::ArrangementClickCanvas;
 pub use track_list::TrackListCanvas;

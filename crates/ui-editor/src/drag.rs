@@ -483,4 +483,4 @@ impl Editor {
     // `commit_current_edit` 时触发）。详见 `interaction/released.rs`。
 }
 
-use lumino_ui_constants::editor::DRAG_START_THRESHOLD_RATIO;
+use lumino_ui_core::constants::editor::DRAG_START_THRESHOLD_RATIO;

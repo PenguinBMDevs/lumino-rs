@@ -101,8 +101,8 @@ impl Editor {
 
         let note_count = all_notes.len();
         let payload = serde_json::json!({
-            "lumino": lumino_ui_constants::editor::CLIPBOARD_FORMAT,
-            "version": lumino_ui_constants::editor::CLIPBOARD_VERSION,
+            "lumino": lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
+            "version": lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
             "type": "arrangement",
             "origin_tick": origin_tick,
             "origin_key": origin_key,

@@ -52,7 +52,7 @@ impl ArrangementClickCanvas {
         track_count: usize,
     ) -> Option<canvas::Action<Message>> {
         use iced_core::mouse;
-        use lumino_ui_constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+        use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Middle)) => {

@@ -1,4 +1,5 @@
 #![allow(deprecated)]
+pub mod cache;
 mod arrangement_instances;
 mod arrangement_renderer;
 mod cc_bar_renderer;

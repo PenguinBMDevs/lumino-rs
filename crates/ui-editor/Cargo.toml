@@ -25,7 +25,7 @@ lumino-editor-state = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-ui-core = { workspace = true }
-lumino-ui-constants = { workspace = true }
+# lumino-ui-constants: merged into lumino-ui-core::constants
 lumino-message = { workspace = true }
 lumino-event = { workspace = true }
 lumino-memtrace = { workspace = true }

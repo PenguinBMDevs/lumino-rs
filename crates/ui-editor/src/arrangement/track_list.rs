@@ -205,7 +205,7 @@ impl TrackListCanvas {
         pos: Point,
         canvas_w: f32,
     ) -> Option<canvas::Action<Message>> {
-        use lumino_ui_constants::editor::{DOUBLE_CLICK_DISTANCE_PX, DOUBLE_CLICK_TIME_MS};
+        use lumino_ui_core::constants::editor::{DOUBLE_CLICK_DISTANCE_PX, DOUBLE_CLICK_TIME_MS};
 
         let rel_y = pos.y + self.scroll_y;
         let idx = self.track_index_at_y(rel_y)?;
@@ -299,7 +299,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 None
             }
             canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) => {
-                use lumino_ui_constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+                use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
                 let (_, dy) = match delta {
                     iced_core::mouse::ScrollDelta::Lines { x, y } => {
                         (x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)

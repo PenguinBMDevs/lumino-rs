@@ -3,7 +3,7 @@
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_ui_constants::editor::SELECTION_BOX_FILL_ALPHA;
+use lumino_ui_core::constants::editor::SELECTION_BOX_FILL_ALPHA;
 use lumino_ui_core::Renderer;
 
 /// 绘制选择框

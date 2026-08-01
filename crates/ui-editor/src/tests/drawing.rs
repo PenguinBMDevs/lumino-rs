@@ -1,7 +1,7 @@
 //! 坐标转换与绘图相关测试
 
 use crate::Editor;
-use lumino_ui_constants::editor::zoom;
+use lumino_ui_core::constants::editor::zoom;
 
 /// 测试坐标转换：tick 到 x 坐标
 #[test]

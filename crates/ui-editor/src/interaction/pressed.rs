@@ -8,7 +8,7 @@ use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
 use lumino_editor_state::DragState;
 use lumino_editor_state::editor_state::interaction_ops;
 use lumino_message::Tool;
-use lumino_ui_constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
+use lumino_ui_core::constants::editor::{DEFAULT_MIDI_CHANNEL, DEFAULT_NOTE_VELOCITY};
 
 impl Editor {
     /// 处理鼠标按下事件

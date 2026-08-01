@@ -28,9 +28,9 @@ lumino-memory-monitor = { workspace = true }
 lumino-memtrace = { workspace = true }
 lumino-playback = { workspace = true }
 lumino-collaboration = { workspace = true }
-lumino-ui-constants = { workspace = true }
+# lumino-ui-constants: merged into lumino-ui-core::constants
 lumino-ui-core = { workspace = true }
-lumino-ui-host = { workspace = true }
+# lumino-ui-host: merged into lumino-gfx::cache
 lumino-ui-settings = { workspace = true }
 lumino-ui-editor = { workspace = true }
 # crates.io

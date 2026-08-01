@@ -4140,10 +4140,8 @@ dependencies = [
  "lumino-midly",
  "lumino-note-core",
  "lumino-playback",
- "lumino-ui-constants",
  "lumino-ui-core",
  "lumino-ui-editor",
- "lumino-ui-host",
  "lumino-ui-settings",
  "once_cell",
  "parking_lot",
@@ -4160,10 +4158,6 @@ dependencies = [
  "wgpu",
  "winit",
 ]
-
-[[package]]
-name = "lumino-ui-constants"
-version = "0.2.0-crates-io-preview1"
 
 [[package]]
 name = "lumino-ui-core"
@@ -4207,7 +4201,6 @@ dependencies = [
  "lumino-message",
  "lumino-midi-loader",
  "lumino-note-core",
- "lumino-ui-constants",
  "lumino-ui-core",
  "once_cell",
  "puffin",
@@ -4215,14 +4208,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tracing",
-]
-
-[[package]]
-name = "lumino-ui-host"
-version = "0.2.0-crates-io-preview1"
-dependencies = [
- "iced_wgpu",
- "lumino-gfx",
 ]
 
 [[package]]

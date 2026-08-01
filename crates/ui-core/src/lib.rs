@@ -28,6 +28,8 @@ pub mod window;
 /// 共享资源（图标等）
 pub mod resources;
 
+pub mod constants;
+
 pub use message::Message;
 
 /// 使用 Iced 默认主题（内置于 iced_core）。

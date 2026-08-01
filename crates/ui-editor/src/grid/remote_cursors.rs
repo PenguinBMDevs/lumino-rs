@@ -4,7 +4,7 @@ use super::utils::parse_color;
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Geometry, Path, Stroke};
-use lumino_ui_constants::editor as editor_constants;
+use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::Renderer;
 
 /// 绘制远程光标

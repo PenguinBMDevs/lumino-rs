@@ -3,7 +3,7 @@
 use crate::Editor;
 use iced_core::{Point, Rectangle};
 use iced_widget::canvas::{Frame, Geometry, Path, Stroke};
-use lumino_ui_constants::editor as editor_constants;
+use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::Renderer;
 
 /// 绘制演奏指示线

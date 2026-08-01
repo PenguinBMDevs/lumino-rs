@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use iced_core::Point;
 
 use super::super::{EditState, Editor, HitType};
-use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
+use lumino_ui_core::constants::editor::NOTE_EDGE_THRESHOLD_PX;
 
 /// 收集当前 ghost 偏移影响的所有音符索引，按索引降序返回
 ///

@@ -1,6 +1,6 @@
 #![allow(deprecated)]
 pub mod constants {
-    pub use lumino_ui_constants::*;
+    pub use lumino_ui_core::constants::*;
 }
 pub use lumino_ui_core::app_mode;
 pub use lumino_ui_editor as editor;

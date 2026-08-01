@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
-use iced_wgpu::wgpu;
-use lumino_gfx::SwappableBuffer;
+use wgpu;
+
+use crate::swappable_buffer::SwappableBuffer;
+use crate::{ArrangementNoteInstance, NoteInstance};
 
 /// 音符渲染视口缓存（带 overscan）
 ///
@@ -38,7 +40,7 @@ impl NoteRenderViewport {
 /// - 交换操作: 原子指针交换，无数据拷贝
 pub struct RenderCache {
     /// 双缓冲主音符实例数据（UI线程写入，渲染线程读取）
-    pub note_instances_buffer: Arc<SwappableBuffer<lumino_gfx::NoteInstance>>,
+    pub note_instances_buffer: Arc<SwappableBuffer<NoteInstance>>,
     /// 主音符版本号（用于检测数据变化）
     pub note_instances_version: u64,
     /// 网格线视口哈希（用于检测变化）
@@ -52,7 +54,7 @@ pub struct RenderCache {
     /// 缓存的深度纹理 (宽, 高, view)
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
     /// 走带视图实例缓存（避免每帧重建）
-    pub arrangement_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
+    pub arrangement_instances: Vec<ArrangementNoteInstance>,
 }
 
 impl RenderCache {
