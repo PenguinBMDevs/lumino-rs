@@ -1,6 +1,9 @@
 //! 播放状态子模块
 //!
 //! 由 Root 持有，存储播放相关状态。
+//!
+//! 注意：此模块从 `lumino-ui-core` 迁移而来（ui-core 是 UI 基础层，
+//! 不应依赖 playback/midi-io 等业务 crate）。
 
 use lumino_playback::{MidiTrackEvent, PlaybackManager, TempoChange};
 

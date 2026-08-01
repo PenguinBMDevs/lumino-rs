@@ -17,11 +17,8 @@ pub mod theme;
 pub mod toolbar_event;
 pub mod window_event;
 
-pub mod midi_state;
-pub mod playback_state;
-/// Root 持有的子状态类型（视觉/渲染、MIDI 连接、播放）
+/// Root 持有的子状态类型（视觉/渲染状态；播放/MIDI 连接状态已上移至 lumino-ui::state）
 pub mod visual_state;
-
 /// 窗口状态（Window 结构体）
 pub mod window;
 

@@ -56,11 +56,11 @@ pub struct Root {
     /// UI 状态
     pub(crate) state: RootState,
     /// 播放状态（播放管理器、Tempo 变化、MIDI 输出等）
-    pub playback: lumino_ui_core::playback_state::PlaybackState,
+    pub playback: crate::state::playback_state::PlaybackState,
     /// 视觉/渲染状态（洋葱皮缓存、力度面板等）
     pub visual: lumino_ui_core::visual_state::VisualState,
     /// MIDI 连接状态（文档引用、输入连接、缓冲区、API）
-    pub midi: lumino_ui_core::midi_state::MidiConnectionState,
+    pub midi: crate::state::midi_state::MidiConnectionState,
     /// 录制状态
     pub recording: editor::recording::RecordingState,
     /// Toast 通知管理器（用于编辑拦截/操作反馈等临时通知）
@@ -109,12 +109,12 @@ impl Root {
                 is_progress_window: params.is_progress_window,
                 use_native_titlebar: params.ui_config.use_native_titlebar,
                 state,
-                playback: lumino_ui_core::playback_state::PlaybackState::new(),
+                playback: crate::state::playback_state::PlaybackState::new(),
                 visual: lumino_ui_core::visual_state::VisualState::new(
                     params.ui_config.velocity_filter_threshold,
                     crate::editor::velocity::VELOCITY_PANEL_HEIGHT,
                 ),
-                midi: lumino_ui_core::midi_state::MidiConnectionState::new(),
+                midi: crate::state::midi_state::MidiConnectionState::new(),
                 recording: editor::recording::RecordingState::new(),
                 toast: crate::toast::ToastManager::new(),
                 window_resize_guard: false,

@@ -23,9 +23,8 @@ lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
 lumino-event = { workspace = true }
 lumino-message = { workspace = true }
-lumino-midi-io = { workspace = true }
-lumino-midi-loader = { workspace = true }
-lumino-playback = { workspace = true }
+# 注意：playback / midi-io / midi-loader 依赖已随 midi_state/playback_state
+# 上移至 lumino-ui::state（ui-core 保持为 UI 基础层，不依赖业务 crate）
 image = "0.25"
 once_cell = "1.20"
 resvg = "0.44"

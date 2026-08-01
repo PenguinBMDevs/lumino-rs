@@ -1,6 +1,9 @@
 //! MIDI 连接状态子模块
 //!
 //! 由 Root 持有，存储 MIDI 连接相关状态。
+//!
+//! 注意：此模块从 `lumino-ui-core` 迁移而来（ui-core 是 UI 基础层，
+//! 不应依赖 playback/midi-io 等业务 crate）。
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
