@@ -13,4 +13,5 @@ workspace = true
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
 lumino-event = { workspace = true }

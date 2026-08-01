@@ -2,9 +2,9 @@
 //!
 //! 使用与钢琴卷帘相同的 JSON 剪贴板格式，额外包含 origin_track。
 
+use super::Editor;
 use super::helpers::ClipboardNoteEntry;
 use super::helpers::note_event_to_note;
-use super::Editor;
 use crate::note::Note;
 
 impl Editor {
@@ -164,7 +164,8 @@ impl Editor {
                     .visual_position_of(track_idx)
                     .unwrap_or(track_idx);
                 for note_event in doc.track_notes(track_idx) {
-                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
+                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
+                    {
                         let note = note_event_to_note(note_event);
                         all_notes.push((track_idx, note));
                     }

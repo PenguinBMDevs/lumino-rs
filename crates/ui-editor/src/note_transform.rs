@@ -1,5 +1,5 @@
 use super::Editor;
-use lumino_core::EditorTransform;
+use lumino_editor_state::EditorTransform;
 
 use std::collections::HashSet;
 

@@ -9,7 +9,9 @@ use crate::message::{Message, VideoExportAction};
 use crate::view::widgets;
 
 use super::helpers;
-use super::layout::{buttons_section, midi_source_section, output_path_section, pick_list_row, title_section};
+use super::layout::{
+    buttons_section, midi_source_section, output_path_section, pick_list_row, title_section,
+};
 use super::state::{MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState};
 
 /// 渲染设置区域（容器格式、编码器、硬件加速、质量、分辨率、帧率）
@@ -137,10 +139,7 @@ fn waterfall_speed_slider_row<'a>(
     };
 
     row![
-        text("下落速度:")
-            .size(14)
-            .style(label_style)
-            .width(100),
+        text("下落速度:").size(14).style(label_style).width(100),
         slider(0.1..=10.0, state.waterfall_speed, |v| {
             Message::VideoExport(VideoExportAction::WaterfallSpeedChanged(v))
         })
@@ -167,10 +166,7 @@ fn miditrail_z_far_slider_row<'a>(
 
     if state.render_mode == "MIDITrail" {
         row![
-            text("Z 显示距离:")
-                .size(14)
-                .style(label_style)
-                .width(100),
+            text("Z 显示距离:").size(14).style(label_style).width(100),
             slider(0.1..=MIDITRAIL_Z_FAR_MAX, state.miditrail_z_far, |v| {
                 Message::VideoExport(VideoExportAction::MiditrailZFarChanged(v))
             })
@@ -270,13 +266,23 @@ pub fn view_video_export_overlay<'a>(
     let palette = theme.extended_palette();
 
     let content: crate::Element<'a> = match &state.overlay {
-        VideoExportOverlayState::Exporting => super::handlers::exporting_overlay(state, theme, palette),
-        VideoExportOverlayState::Finalizing => super::handlers::finalizing_overlay(state, theme, palette),
+        VideoExportOverlayState::Exporting => {
+            super::handlers::exporting_overlay(state, theme, palette)
+        }
+        VideoExportOverlayState::Finalizing => {
+            super::handlers::finalizing_overlay(state, theme, palette)
+        }
         VideoExportOverlayState::Completed {
             total_frames,
             elapsed_secs,
             avg_fps,
-        } => super::handlers::completed_overlay(state, *total_frames, *elapsed_secs, *avg_fps, palette),
+        } => super::handlers::completed_overlay(
+            state,
+            *total_frames,
+            *elapsed_secs,
+            *avg_fps,
+            palette,
+        ),
         VideoExportOverlayState::Error(err) => super::handlers::error_overlay(err.clone(), palette),
         VideoExportOverlayState::None => return None,
     };

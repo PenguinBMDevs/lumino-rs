@@ -13,6 +13,9 @@ workspace = true
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-project = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-note-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }

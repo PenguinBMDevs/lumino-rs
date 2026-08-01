@@ -8,7 +8,7 @@
 use iced_core::Point;
 
 use super::super::{EditState, Editor, SelectionHitType};
-use lumino_core::editor_state::hit_test;
+use lumino_editor_state::editor_state::hit_test;
 
 impl Editor {
     pub fn get_selection_box_bounds(&self) -> Option<(f32, f32, f32, f32)> {

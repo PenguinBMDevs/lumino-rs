@@ -2,7 +2,7 @@ use iced_aw::{Menu, MenuBar, menu::Item, style::menu_bar};
 use iced_core::{Alignment, Background, Border, Color, Length};
 use iced_widget::{button, column, container, row, space, text};
 
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 
 use crate::{Element, Message, Renderer, Theme, message, resources::icon};
 

@@ -290,11 +290,11 @@ pub struct CcBarColors {
 /// CC 柱状条数据点
 #[derive(Debug, Clone)]
 pub struct CcBarData<'a> {
-    pub velocity_points: &'a [lumino_core::VelocityPoint],
-    pub cc_points: &'a [lumino_core::CcPoint],
-    pub bend_points: &'a [lumino_core::BendPoint],
+    pub velocity_points: &'a [lumino_note_core::VelocityPoint],
+    pub cc_points: &'a [lumino_note_core::CcPoint],
+    pub bend_points: &'a [lumino_note_core::BendPoint],
     /// 可选的自动化 lane（CC / Bend 曲线模式优先使用）。
-    pub automation_lane: Option<&'a lumino_core::AutomationLane>,
+    pub automation_lane: Option<&'a lumino_note_core::AutomationLane>,
     /// 力度面板显示样式（true=曲线折线图，false=柱状图）
     pub velocity_curve_style: bool,
 }

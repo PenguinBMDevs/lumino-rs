@@ -1,5 +1,5 @@
 use iced_widget::{container, row};
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
 
 use super::core::{ROUTE_BAR_WIDTH, Sidebar};
 use super::{panel, route};
@@ -13,7 +13,7 @@ impl Sidebar {
         window: &'a window::Window,
         language: Language,
         current_mode: AppMode,
-        current_track_notes: &'a lumino_core::im::Vector<lumino_core::Note>,
+        current_track_notes: &'a im::Vector<lumino_note_core::Note>,
         ppq: u16,
         snap_precision: f32,
     ) -> Element<'a> {

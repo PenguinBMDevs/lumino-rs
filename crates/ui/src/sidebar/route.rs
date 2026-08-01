@@ -1,6 +1,6 @@
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, row, space};
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
 
 use super::{Event, GroupId, ROUTES, Route, RouteConfig};
 use crate::titlebar::mode_toggle::AppMode;

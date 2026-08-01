@@ -307,7 +307,7 @@ impl Root {
     ///
     /// 将控制事件（CC / PitchBend）按音轨导入 automation_lanes，与 Yinhe 的自动化数据模型对齐。
     pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
-        use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
+        use lumino_note_core::{AutomationEdit, AutomationTarget, SegmentShape};
 
         // 每次加载新文档时重建自动化 lane，避免旧数据残留。
         self.editor.editor_state.data.automation_lanes.clear();

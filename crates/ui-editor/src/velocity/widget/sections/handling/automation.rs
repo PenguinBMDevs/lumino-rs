@@ -4,7 +4,8 @@
 
 use iced_core::{Point, Size};
 use iced_widget::canvas;
-use lumino_core::{AutomationEdit, Tool};
+use lumino_core::Tool;
+use lumino_note_core::AutomationEdit;
 
 use lumino_ui_core::Message;
 use lumino_ui_core::message::VelocityAction;
@@ -57,7 +58,17 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             return None;
         }
 
-        self.handle_automation_tool_action(state, cursor_pos, bounds_size, &view, max_val, lane_ref.map(|v| &**v), lane_idx.map(|v| v as u16), track_idx, target)
+        self.handle_automation_tool_action(
+            state,
+            cursor_pos,
+            bounds_size,
+            &view,
+            max_val,
+            lane_ref.map(|v| &**v),
+            lane_idx.map(|v| v as u16),
+            track_idx,
+            target,
+        )
     }
 
     /// 根据当前工具执行自动化操作
@@ -68,21 +79,19 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         bounds_size: Size,
         view: &lumino_gfx::automation::AutomationViewParams,
         max_val: f32,
-        lane_ref: Option<&lumino_core::AutomationLane>,
+        lane_ref: Option<&lumino_note_core::AutomationLane>,
         lane_idx: Option<u16>,
         track_idx: u16,
-        target: lumino_core::AutomationTarget,
+        target: lumino_note_core::AutomationTarget,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
-            Tool::Eraser => {
-                self.handle_automation_eraser_delete(lane_ref, lane_idx, track_idx, view, cursor_pos, max_val)
-            }
+            Tool::Eraser => self.handle_automation_eraser_delete(
+                lane_ref, lane_idx, track_idx, view, cursor_pos, max_val,
+            ),
             Tool::Pencil | Tool::Pointer => {
                 self.handle_automation_anchor_drag_start(state, lane_ref, view, cursor_pos, max_val)
             }
-            Tool::Curve => {
-                self.handle_automation_curve_start(state, view, cursor_pos, max_val)
-            }
+            Tool::Curve => self.handle_automation_curve_start(state, view, cursor_pos, max_val),
             _ => None,
         }
     }
@@ -90,7 +99,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     /// Eraser 工具：删除命中的自动化锚点
     fn handle_automation_eraser_delete(
         &self,
-        lane_ref: Option<&lumino_core::AutomationLane>,
+        lane_ref: Option<&lumino_note_core::AutomationLane>,
         lane_idx: Option<u16>,
         track_idx: u16,
         view: &lumino_gfx::automation::AutomationViewParams,
@@ -116,7 +125,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     fn handle_automation_anchor_drag_start(
         &self,
         state: &mut VelocityCanvasState,
-        lane_ref: Option<&lumino_core::AutomationLane>,
+        lane_ref: Option<&lumino_note_core::AutomationLane>,
         view: &lumino_gfx::automation::AutomationViewParams,
         cursor_pos: Point,
         max_val: f32,
@@ -165,15 +174,22 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             .find_automation_lane(track_idx, &target);
 
         match drag {
-            AutomationDrag::MoveAnchor { old_tick } => {
-                self.handle_move_anchor_drag(state, view, target, max_val, track_idx, lane_idx, old_tick, cursor_pos)
-            }
+            AutomationDrag::MoveAnchor { old_tick } => self.handle_move_anchor_drag(
+                state, view, target, max_val, track_idx, lane_idx, old_tick, cursor_pos,
+            ),
             AutomationDrag::CurveDraw {
                 start_tick,
                 start_value,
-            } => {
-                self.handle_curve_draw_drag(state, view, target, max_val, track_idx, start_tick, start_value, cursor_pos)
-            }
+            } => self.handle_curve_draw_drag(
+                state,
+                view,
+                target,
+                max_val,
+                track_idx,
+                start_tick,
+                start_value,
+                cursor_pos,
+            ),
         }
     }
 
@@ -182,7 +198,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         &self,
         state: &mut VelocityCanvasState,
         view: lumino_gfx::automation::AutomationViewParams,
-        target: lumino_core::AutomationTarget,
+        target: lumino_note_core::AutomationTarget,
         max_val: f32,
         track_idx: u16,
         lane_idx: Option<usize>,
@@ -199,10 +215,13 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         state.automation_curve_current = Some((new_tick, new_value));
 
         if new_tick == old_tick {
-            return self.handle_anchor_value_update(track_idx, lane_idx, old_tick, new_tick, new_value);
+            return self
+                .handle_anchor_value_update(track_idx, lane_idx, old_tick, new_tick, new_value);
         }
 
-        self.handle_anchor_position_move(state, track_idx, lane_idx, &target, old_tick, new_tick, new_value)
+        self.handle_anchor_position_move(
+            state, track_idx, lane_idx, &target, old_tick, new_tick, new_value,
+        )
     }
 
     /// 同 tick 仅更新 value
@@ -221,7 +240,9 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             new_tick,
             new_value,
         };
-        Some(publish_velocity(VelocityAction::AutomationBatch(vec![edit])))
+        Some(publish_velocity(VelocityAction::AutomationBatch(vec![
+            edit,
+        ])))
     }
 
     /// 移动到新 tick：先删除旧事件再添加新事件
@@ -230,7 +251,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         state: &mut VelocityCanvasState,
         track_idx: u16,
         lane_idx: usize,
-        target: &lumino_core::AutomationTarget,
+        target: &lumino_note_core::AutomationTarget,
         old_tick: u32,
         new_tick: u32,
         new_value: u16,
@@ -254,5 +275,4 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         state.automation_drag = Some(AutomationDrag::MoveAnchor { old_tick: new_tick });
         Some(publish_velocity(VelocityAction::AutomationBatch(edits)))
     }
-
 }

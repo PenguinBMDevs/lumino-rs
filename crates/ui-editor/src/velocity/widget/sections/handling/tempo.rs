@@ -52,9 +52,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         hit_idx: Option<usize>,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
-            Tool::Eraser => {
-                hit_idx.map(|idx| publish_velocity(VelocityAction::TempoDelete(idx)))
-            }
+            Tool::Eraser => hit_idx.map(|idx| publish_velocity(VelocityAction::TempoDelete(idx))),
             Tool::Pencil => {
                 if let Some(idx) = hit_idx {
                     // 点击已有锚点：开始拖拽

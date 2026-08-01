@@ -1,6 +1,6 @@
 //! 批量编辑对话框状态
 
-pub use lumino_core::batch_edit::{BatchEditOperation, parse_batch_edit_input};
+pub use lumino_note_core::batch_edit::{BatchEditOperation, parse_batch_edit_input};
 
 /// 批量编辑对话框状态
 #[derive(Debug, Clone)]

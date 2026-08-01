@@ -5,7 +5,7 @@
 use super::*;
 use crate::Note;
 use crate::editor_state::ViewState;
-use lumino_core::NoteStore;
+use lumino_note_core::NoteStore;
 
 // ===== Velocity 测试 =====
 
@@ -103,7 +103,7 @@ fn test_build_cc_points_empty() {
 #[test]
 fn test_build_cc_points_with_data() {
     use crate::Editor;
-    use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
+    use lumino_note_core::{AutomationEdit, AutomationTarget, SegmentShape};
 
     let mut editor = Editor::new();
     // 通过 automation_lanes 添加 CC 1 数据（当前音轨为 0）
@@ -132,7 +132,7 @@ fn test_build_cc_points_with_data() {
 #[test]
 fn test_build_cc_points_wrong_number() {
     use crate::Editor;
-    use lumino_core::{AutomationEdit, AutomationTarget, SegmentShape};
+    use lumino_note_core::{AutomationEdit, AutomationTarget, SegmentShape};
 
     let mut editor = Editor::new();
     editor
@@ -235,11 +235,11 @@ fn test_build_tempo_points_from_editor_data() {
     let mut editor = Editor::new();
     // 直接向 tempo_points 写入数据模拟已加载文档
     editor.editor_state.data.tempo_points = vec![
-        lumino_core::TempoPoint {
+        lumino_note_core::TempoPoint {
             tick: 0.0,
             bpm: 120.0,
         },
-        lumino_core::TempoPoint {
+        lumino_note_core::TempoPoint {
             tick: 480.0,
             bpm: 140.0,
         },

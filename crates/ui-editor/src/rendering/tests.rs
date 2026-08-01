@@ -4,7 +4,7 @@
 
 use super::ghost::ghost_delta_for_index;
 use crate::EditState;
-use lumino_core::DragState;
+use lumino_editor_state::DragState;
 
 fn drag_state_with_selected(indices: &[usize], total: usize, dt: i64, dk: i16) -> DragState {
     let mut ds = DragState::from_indices(indices.iter().copied(), total, 0, 0);

@@ -11,8 +11,8 @@ mod resize;
 mod route;
 mod track;
 
-use crate::sidebar::core::{Route, Sidebar};
 use crate::sidebar::Event;
+use crate::sidebar::core::{Route, Sidebar};
 
 impl Sidebar {
     pub fn update(&mut self, event: Event) -> bool {

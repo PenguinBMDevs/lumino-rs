@@ -93,8 +93,7 @@ impl Root {
                 old.automation_line_thickness,
                 new.automation_line_thickness
             );
-            self.editor.velocity_panel.automation_line_thickness =
-                new.automation_line_thickness;
+            self.editor.velocity_panel.automation_line_thickness = new.automation_line_thickness;
         }
     }
 
@@ -141,11 +140,7 @@ impl Root {
     /// 同步显示设置（HiDPI 图标、256 键模式、音轨列表显示模式）
     fn sync_display_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
         if old.icon_hidpi != new.icon_hidpi {
-            tracing::info!(
-                "同步 HiDPI 图标: {} -> {}",
-                old.icon_hidpi,
-                new.icon_hidpi
-            );
+            tracing::info!("同步 HiDPI 图标: {} -> {}", old.icon_hidpi, new.icon_hidpi);
             crate::resources::icon::set_hidpi_enabled(new.icon_hidpi);
         }
 

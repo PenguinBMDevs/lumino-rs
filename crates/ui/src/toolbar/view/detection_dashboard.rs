@@ -19,7 +19,7 @@ use iced_widget::{button, column, container, row, space, text, text_input};
 use crate::statusbar::performance::PerfData;
 use crate::toolbar::{Event, Toolbar};
 use crate::{Element, Theme};
-use lumino_core::midi_types::TempoPoint;
+use lumino_note_core::midi_types::TempoPoint;
 
 impl Toolbar {
     /// 渲染检测仪表盘（yinhe 同款时间码显示）

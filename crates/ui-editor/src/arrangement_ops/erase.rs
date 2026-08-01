@@ -2,8 +2,8 @@
 //!
 //! 删除矩形范围 (tick_start..tick_end, track_lo..=track_hi) 内的所有音符。
 
-use super::helpers::note_in_rect;
 use super::Editor;
+use super::helpers::note_in_rect;
 
 impl Editor {
     /// 擦除工程走带矩形范围内的音符。

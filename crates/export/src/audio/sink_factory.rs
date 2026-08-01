@@ -11,9 +11,7 @@ use super::config::AudioRenderConfig;
 use super::stream::{FfmpegSink, SampleSink, WavFileSink};
 
 /// 根据配置创建输出接收器
-pub(super) fn create_output_sink(
-    config: &AudioRenderConfig,
-) -> ExportResult<Box<dyn SampleSink>> {
+pub(super) fn create_output_sink(config: &AudioRenderConfig) -> ExportResult<Box<dyn SampleSink>> {
     let codec = config.audio_codec;
 
     if codec.needs_ffmpeg() {

@@ -9,7 +9,7 @@ use iced_widget::{container, mouse_area, row, space};
 use super::Element;
 use crate::titlebar::mode_toggle::AppMode;
 use crate::{Theme, window};
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
 
 pub struct Titlebar;
 

@@ -2,17 +2,14 @@
 //!
 //! RunnerInner 中与窗口操作、对话框结果处理等相关的实现。
 
-use super::*;
 use super::super::dialog_manager::DialogResult;
 use super::super::midi_manager::{MidiManager, handle_audio_action};
 use super::super::window_manager::WindowManager;
+use super::*;
 
 impl RunnerInner {
     /// 处理音频动作（播放/停止/音符发送）
-    pub(crate) fn process_audio_actions(
-        window: &mut WindowManager,
-        midi: &mut MidiManager,
-    ) {
+    pub(crate) fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {
         let actions = window.ui_mut().take_audio_actions();
 
         if !actions.is_empty() {
@@ -27,10 +24,7 @@ impl RunnerInner {
     }
 
     /// 将对话框结果应用到主窗口 UI
-    pub(crate) fn apply_dialog_result_to_ui(
-        ui: &mut lumino_ui::Host,
-        result: DialogResult,
-    ) {
+    pub(crate) fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
         match result {
             DialogResult::CustomPrecision {
                 numerator,
@@ -39,27 +33,18 @@ impl RunnerInner {
                 tracing::info!("应用自定义精度: {}/{}", numerator, denominator);
 
                 // 应用到主窗口的编辑器
-                if let (Ok(num), Ok(den)) =
-                    (numerator.parse::<f32>(), denominator.parse::<f32>())
-                {
+                if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
                     // 从编辑器状态获取实际的 PPQ 值
                     let ppq = ui.ppq();
-                    let ticks =
-                        Self::compute_custom_precision_ticks(ppq as f32, num, den);
+                    let ticks = Self::compute_custom_precision_ticks(ppq as f32, num, den);
 
                     ui.set_custom_precision(ticks);
-                    tracing::info!(
-                        "自定义精度已应用: {} ticks (PPQ={})",
-                        ticks,
-                        ppq
-                    );
+                    tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
                 }
             }
             DialogResult::LoadConfirm => {
                 // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
-                tracing::warn!(
-                    "LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理"
-                );
+                tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
             }
             DialogResult::ProjectSettings {
                 title,
@@ -100,10 +85,7 @@ impl RunnerInner {
     }
 
     /// 重启窗口（标题栏设置变更后）
-    pub(crate) fn restart_window(
-        &mut self,
-        event_loop: &winit::event_loop::ActiveEventLoop,
-    ) {
+    pub(crate) fn restart_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         tracing::info!("正在重启窗口以应用标题栏设置...");
 
         // 保存当前窗口状态

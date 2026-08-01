@@ -16,6 +16,9 @@ default = []
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-editor-state = { workspace = true }
 lumino-event = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-message = { workspace = true }

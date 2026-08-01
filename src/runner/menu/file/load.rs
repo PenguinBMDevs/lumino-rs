@@ -30,7 +30,7 @@ impl RunnerInner {
         };
 
         // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
-        lumino_core::palette::unlock_palette();
+        lumino_extras::palette::unlock_palette();
 
         tracing::info!("用户选择了文件：{:?}", path);
         self.handle_midi_or_archive(path);
@@ -145,7 +145,7 @@ impl RunnerInner {
         };
 
         // 解锁调色板，新 MIDI 加载后 MidiParsed 会重新锁定
-        lumino_core::palette::unlock_palette();
+        lumino_extras::palette::unlock_palette();
 
         tracing::info!("开始导入文件：{:?}", path);
         self.handle_midi_or_archive(path);

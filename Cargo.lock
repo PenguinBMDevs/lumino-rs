@@ -3760,22 +3760,12 @@ version = "0.2.0-crates-io-preview1"
 dependencies = [
  "bincode",
  "bit-vec",
- "chrono",
- "crc32fast",
- "font-kit",
  "im",
- "libc",
- "lumino-midi-model",
- "lumino-midly",
- "png 0.17.16",
- "puffin",
  "serde",
  "serde_json",
  "thiserror 2.0.18",
  "toml 0.9.12+spec-1.1.0",
  "tracing",
- "winapi",
- "zstd",
 ]
 
 [[package]]
@@ -3790,6 +3780,19 @@ dependencies = [
  "tracing",
  "winapi",
  "winit",
+]
+
+[[package]]
+name = "lumino-editor-state"
+version = "0.2.0-crates-io-preview1"
+dependencies = [
+ "bit-vec",
+ "im",
+ "lumino-core",
+ "lumino-midi-model",
+ "lumino-note-core",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -3809,13 +3812,16 @@ dependencies = [
  "encoding_rs",
  "hound",
  "lumino-core",
+ "lumino-extras",
  "lumino-memory-monitor",
  "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-midi-model",
  "lumino-midly",
+ "lumino-note-core",
  "lumino-onion-skin",
  "lumino-onion-skin-hires",
+ "lumino-project",
  "memmap2",
  "num-bigint",
  "serde",
@@ -3832,6 +3838,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-extras"
+version = "0.2.0-crates-io-preview1"
+dependencies = [
+ "lumino-core",
+ "png 0.17.16",
+ "serde",
+ "serde_json",
+ "tracing",
+]
+
+[[package]]
 name = "lumino-gfx"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
@@ -3841,8 +3858,10 @@ dependencies = [
  "half",
  "im",
  "lumino-core",
+ "lumino-editor-state",
  "lumino-memtrace",
  "lumino-midi-loader",
+ "lumino-note-core",
  "lumino-onion-skin",
  "lumino-onion-skin-hires",
  "naga",
@@ -3879,6 +3898,7 @@ version = "0.2.0-crates-io-preview1"
 dependencies = [
  "lumino-core",
  "lumino-event",
+ "lumino-note-core",
 ]
 
 [[package]]
@@ -3947,12 +3967,28 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-note-core"
+version = "0.2.0-crates-io-preview1"
+dependencies = [
+ "bit-vec",
+ "font-kit",
+ "im",
+ "lumino-core",
+ "puffin",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "tracing",
+]
+
+[[package]]
 name = "lumino-onion-skin"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
  "bytemuck",
  "lumino-core",
  "lumino-midi-loader",
+ "lumino-note-core",
  "thiserror 2.0.18",
  "tracing",
  "wgpu",
@@ -3986,6 +4022,24 @@ dependencies = [
  "parking_lot",
  "puffin",
  "tracing",
+]
+
+[[package]]
+name = "lumino-project"
+version = "0.2.0-crates-io-preview1"
+dependencies = [
+ "bincode",
+ "chrono",
+ "crc32fast",
+ "lumino-core",
+ "lumino-midi-model",
+ "lumino-midly",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+ "toml 0.9.12+spec-1.1.0",
+ "tracing",
+ "zstd",
 ]
 
 [[package]]
@@ -4024,12 +4078,15 @@ dependencies = [
  "lumino-dialog",
  "lumino-event",
  "lumino-export",
+ "lumino-extras",
  "lumino-gfx",
  "lumino-memory-monitor",
  "lumino-memtrace",
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-midly",
+ "lumino-note-core",
+ "lumino-project",
  "lumino-ui",
  "muda",
  "parking_lot",
@@ -4071,7 +4128,9 @@ dependencies = [
  "image",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-editor-state",
  "lumino-event",
+ "lumino-extras",
  "lumino-gfx",
  "lumino-memory-monitor",
  "lumino-memtrace",
@@ -4079,6 +4138,7 @@ dependencies = [
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-midly",
+ "lumino-note-core",
  "lumino-playback",
  "lumino-ui-constants",
  "lumino-ui-core",
@@ -4115,9 +4175,11 @@ dependencies = [
  "image",
  "lumino-core",
  "lumino-event",
+ "lumino-extras",
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-note-core",
  "lumino-playback",
  "once_cell",
  "resvg",
@@ -4137,11 +4199,14 @@ dependencies = [
  "iced_widget",
  "im",
  "lumino-core",
+ "lumino-editor-state",
  "lumino-event",
+ "lumino-extras",
  "lumino-gfx",
  "lumino-memtrace",
  "lumino-message",
  "lumino-midi-loader",
+ "lumino-note-core",
  "lumino-ui-constants",
  "lumino-ui-core",
  "once_cell",
@@ -4167,6 +4232,8 @@ dependencies = [
  "iced_core",
  "iced_widget",
  "lumino-core",
+ "lumino-extras",
+ "lumino-note-core",
  "lumino-ui-core",
  "rfd",
  "tracing",

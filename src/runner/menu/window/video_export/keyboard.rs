@@ -5,7 +5,7 @@
 //! 拆分原因：原 `video_export.rs` 超过 400 行限制，
 //! 键盘相关逻辑独立成子模块，便于维护和测试。
 
-use lumino_core::palette::current_track_color_f32;
+use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::is_black_key;
 use lumino_midi_loader::MidiDocument;
 

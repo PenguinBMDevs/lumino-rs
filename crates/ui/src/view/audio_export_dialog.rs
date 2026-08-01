@@ -5,19 +5,19 @@
 //! 缺少 Theme/Renderer 泛型参数问题。
 //! 类型别名一律使用 crate::Element<'a>（4 泛型参数已对齐）。
 
-mod title;
-mod project_info;
+mod buttons;
 mod event_filter;
 mod output_path;
-mod buttons;
+mod project_info;
+mod title;
 
 use iced_widget::{column, container, scrollable, space};
 
 use crate::state::root_state::AudioExportDialogState;
 
 use self::{
-    buttons::buttons_section, event_filter::event_filter_section,
-    output_path::output_path_section, project_info::project_info_section, title::title_section,
+    buttons::buttons_section, event_filter::event_filter_section, output_path::output_path_section,
+    project_info::project_info_section, title::title_section,
 };
 
 /// 渲染音频导出对话框
@@ -87,60 +87,100 @@ fn audio_settings_section<'a>(
         row![
             text("输出格式:").size(14).style(label_style).width(120),
             pick_list(
-                vec![AudioFormat::WAV, AudioFormat::FLAC, AudioFormat::MP3, AudioFormat::Ogg, AudioFormat::WavPack],
+                vec![
+                    AudioFormat::WAV,
+                    AudioFormat::FLAC,
+                    AudioFormat::MP3,
+                    AudioFormat::Ogg,
+                    AudioFormat::WavPack
+                ],
                 Some(state.format),
                 |v| Message::AudioExport(AudioExportAction::FormatChanged(v)),
-            ).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+            )
+            .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 比特率
         row![
-            text("比特率 (kbps):").size(14).style(label_style).width(120),
+            text("比特率 (kbps):")
+                .size(14)
+                .style(label_style)
+                .width(120),
             text_input("320", &state.audio_bitrate.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::BitrateChanged(v)))
-                .padding([6, 10]).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+                .padding([6, 10])
+                .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 采样率
         row![
             text("采样率:").size(14).style(label_style).width(120),
             pick_list(
-                vec![22050u32, 44100, 48000, 96000], Some(state.sample_rate),
+                vec![22050u32, 44100, 48000, 96000],
+                Some(state.sample_rate),
                 |v| Message::AudioExport(AudioExportAction::SampleRateChanged(v)),
-            ).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+            )
+            .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 通道数
         row![
             text("通道数:").size(14).style(label_style).width(120),
             pick_list(
-                vec![AudioChannels::Mono, AudioChannels::Stereo], Some(state.channels),
+                vec![AudioChannels::Mono, AudioChannels::Stereo],
+                Some(state.channels),
                 |v| Message::AudioExport(AudioExportAction::ChannelsChanged(v)),
-            ).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+            )
+            .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 层数限制
         row![
             text("层数限制:").size(14).style(label_style).width(120),
             text_input("32", &state.layers.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
-                .padding([6, 10]).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+                .padding([6, 10])
+                .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(8),
         // 通道多线程
-        threading_row("通道多线程:", state.channel_threading, |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)), palette),
+        threading_row(
+            "通道多线程:",
+            state.channel_threading,
+            |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)),
+            palette
+        ),
         space().height(8),
         // 按键多线程
-        threading_row("按键多线程:", state.key_threading, |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)), palette),
+        threading_row(
+            "按键多线程:",
+            state.key_threading,
+            |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)),
+            palette
+        ),
         space().height(8),
         // 插值算法
         row![
             text("插值算法:").size(14).style(label_style).width(120),
             pick_list(
-                vec![Interpolation::None, Interpolation::Linear], Some(state.interpolation),
+                vec![Interpolation::None, Interpolation::Linear],
+                Some(state.interpolation),
                 |v| Message::AudioExport(AudioExportAction::InterpolationChanged(v)),
-            ).width(Length::Fixed(200.0)),
-        ].spacing(8).align_y(Alignment::Center),
+            )
+            .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
         space().height(12),
         // 复选框
         checkbox(state.apply_limiter)
@@ -185,7 +225,8 @@ fn threading_row<'a>(
             ],
             Some(selected),
             on_change,
-        ).width(Length::Fixed(200.0)),
+        )
+        .width(Length::Fixed(200.0)),
     ]
     .spacing(8)
     .align_y(Alignment::Center)

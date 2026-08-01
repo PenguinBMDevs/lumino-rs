@@ -217,9 +217,11 @@ impl VelocityHandler {
     /// 根据编辑模式返回自动化目标的最大值，用于垂直缩放/滚动裁剪
     fn automation_max_value(mode: EditMode) -> Option<f32> {
         match mode {
-            EditMode::Bend => Some(lumino_core::AutomationTarget::PitchBend.max_value() as f32),
+            EditMode::Bend => {
+                Some(lumino_note_core::AutomationTarget::PitchBend.max_value() as f32)
+            }
             EditMode::Cc(n) => {
-                Some(lumino_core::AutomationTarget::CC { controller: n }.max_value() as f32)
+                Some(lumino_note_core::AutomationTarget::CC { controller: n }.max_value() as f32)
             }
             _ => None,
         }

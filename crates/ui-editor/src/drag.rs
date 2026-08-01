@@ -5,7 +5,7 @@ mod compute_state_changes;
 use super::{EditState, Editor};
 use compute_state_changes::*;
 use iced_core::Point;
-use lumino_core::DragState;
+use lumino_editor_state::DragState;
 
 impl Editor {
     /// 检查是否应从 PendingDrag 转换到 Dragging 状态
@@ -43,13 +43,19 @@ impl Editor {
 
     /// 根据编辑状态计算音符变化量 → (new_tick, new_key, new_length, note_to_play)
     pub(crate) fn compute_state_changes(
-        &mut self, tick: f32, key: u16, snapped_tick: f32,
+        &mut self,
+        tick: f32,
+        key: u16,
+        snapped_tick: f32,
     ) -> (Option<f32>, Option<u16>, Option<f32>, Option<u16>) {
         crate::puffin_profiler::compute_state_changes();
         let v = &self.editor_state.view;
         let snap_precision = v.snap_precision;
         let visible_key_count = v.visible_key_count;
-        if matches!(self.editor_state.interaction.edit_state, EditState::Selecting { .. }) {
+        if matches!(
+            self.editor_state.interaction.edit_state,
+            EditState::Selecting { .. }
+        ) {
             self.update_selection();
             return (None, None, None, None);
         }
@@ -66,31 +72,79 @@ impl Editor {
         let (mut new_tick, mut new_length, mut note_to_play) = (None, None, None);
         match &mut self.editor_state.interaction.edit_state {
             EditState::Drawing { current_tick, .. } => handle_drawing(current_tick, snapped_tick),
-            EditState::Dragging { note_index, drag_state, last_played_key } => {
-                let orig = self.editor_state.data.notes.get(*note_index).map(|n| (n.tick, n.key));
-                note_to_play = handle_dragging(drag_state, last_played_key, tick, key, snapped_tick,
-                    snap_precision, visible_key_count, &orig);
+            EditState::Dragging {
+                note_index,
+                drag_state,
+                last_played_key,
+            } => {
+                let orig = self
+                    .editor_state
+                    .data
+                    .notes
+                    .get(*note_index)
+                    .map(|n| (n.tick, n.key));
+                note_to_play = handle_dragging(
+                    drag_state,
+                    last_played_key,
+                    tick,
+                    key,
+                    snapped_tick,
+                    snap_precision,
+                    visible_key_count,
+                    &orig,
+                );
             }
-            EditState::ResizingStart { original_tick, original_length, .. } => {
+            EditState::ResizingStart {
+                original_tick,
+                original_length,
+                ..
+            } => {
                 (new_tick, new_length) = handle_resizing_start(
-                    *original_tick, *original_length, snapped_tick, snap_precision);
+                    *original_tick,
+                    *original_length,
+                    snapped_tick,
+                    snap_precision,
+                );
             }
             EditState::ResizingEnd { note_index, .. } => {
                 new_length = handle_resizing_end(
-                    &self.editor_state.data.notes, *note_index, snapped_tick, snap_precision);
+                    &self.editor_state.data.notes,
+                    *note_index,
+                    snapped_tick,
+                    snap_precision,
+                );
             }
             EditState::DraggingSelection { drag_state } => {
-                handle_dragging_selection(drag_state, key, snapped_tick, snap_precision); }
-            EditState::ResizingSelectionStart { last_tick } => if handle_resizing_selection_start(
-                last_tick, snapped_tick, snap_precision, &sel,
-                &mut self.editor_state.data.note_store, &mut self.editor_state.data.notes,
-                &self.selected_bounds, self.editor_state.data.note_store_enabled,
-            ) { self.mark_ghost_dirty(); },
-            EditState::ResizingSelectionEnd { last_tick } => if handle_resizing_selection_end(
-                last_tick, snapped_tick, snap_precision, &sel,
-                &mut self.editor_state.data.note_store, &mut self.editor_state.data.notes,
-                &self.selected_bounds, self.editor_state.data.note_store_enabled,
-            ) { self.mark_ghost_dirty(); },
+                handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
+            }
+            EditState::ResizingSelectionStart { last_tick } => {
+                if handle_resizing_selection_start(
+                    last_tick,
+                    snapped_tick,
+                    snap_precision,
+                    &sel,
+                    &mut self.editor_state.data.note_store,
+                    &mut self.editor_state.data.notes,
+                    &self.selected_bounds,
+                    self.editor_state.data.note_store_enabled,
+                ) {
+                    self.mark_ghost_dirty();
+                }
+            }
+            EditState::ResizingSelectionEnd { last_tick } => {
+                if handle_resizing_selection_end(
+                    last_tick,
+                    snapped_tick,
+                    snap_precision,
+                    &sel,
+                    &mut self.editor_state.data.note_store,
+                    &mut self.editor_state.data.notes,
+                    &self.selected_bounds,
+                    self.editor_state.data.note_store_enabled,
+                ) {
+                    self.mark_ghost_dirty();
+                }
+            }
             _ => {}
         }
         (new_tick, None, new_length, note_to_play)
@@ -102,16 +156,23 @@ impl Editor {
         puffin::profile_scope!("diag::update_selection_total");
 
         // 非 Selecting 状态 → 清除缓存并返回
-        if !matches!(self.editor_state.interaction.edit_state, EditState::Selecting { .. }) {
+        if !matches!(
+            self.editor_state.interaction.edit_state,
+            EditState::Selecting { .. }
+        ) {
             self.cached_selection_bounds.set(None);
             return;
         }
 
         let (start_tick, start_key, current_tick, current_key) =
             match &self.editor_state.interaction.edit_state {
-                EditState::Selecting { start_tick, start_key, current_tick, current_key, .. } => {
-                    (*start_tick, *start_key, *current_tick, *current_key)
-                }
+                EditState::Selecting {
+                    start_tick,
+                    start_key,
+                    current_tick,
+                    current_key,
+                    ..
+                } => (*start_tick, *start_key, *current_tick, *current_key),
                 _ => unreachable!("confirmed Selecting above"),
             };
 
@@ -187,7 +248,11 @@ impl Editor {
 
 /// 全量重建封装（用于从 `update_selection` 的 guard 块中调用）
 fn rebuild_full_selection(
-    editor: &mut Editor, min_tick: f32, max_tick: f32, min_key: u16, max_key: u16,
+    editor: &mut Editor,
+    min_tick: f32,
+    max_tick: f32,
+    min_key: u16,
+    max_key: u16,
 ) {
     puffin::profile_scope!("diag::selection_full_rebuild");
     editor.rebuild_selected_notes(min_tick, max_tick, min_key, max_key);
@@ -197,7 +262,10 @@ fn rebuild_full_selection(
 fn apply_selection_delta(
     editor: &mut Editor,
     old_bounds: (f32, f32, u16, u16),
-    new_min_t: f32, new_max_t: f32, new_min_k: u16, new_max_k: u16,
+    new_min_t: f32,
+    new_max_t: f32,
+    new_min_k: u16,
+    new_max_k: u16,
 ) {
     let (old_min_t, old_max_t, old_min_k, old_max_k) = old_bounds;
     editor.ensure_spatial_index();
@@ -209,8 +277,15 @@ fn apply_selection_delta(
 
     // 减少区域（old 里有，new 里没有）
     rect_subtract(
-        old_min_t, old_max_t, old_min_k, old_max_k,
-        new_min_t, new_max_t, new_min_k, new_max_k, &mut delta_rects,
+        old_min_t,
+        old_max_t,
+        old_min_k,
+        old_max_k,
+        new_min_t,
+        new_max_t,
+        new_min_k,
+        new_max_k,
+        &mut delta_rects,
     );
 
     let remove_list = {
@@ -233,8 +308,15 @@ fn apply_selection_delta(
 
     // 新增区域（new 里有，old 里没有）
     rect_subtract(
-        new_min_t, new_max_t, new_min_k, new_max_k,
-        old_min_t, old_max_t, old_min_k, old_max_k, &mut delta_rects,
+        new_min_t,
+        new_max_t,
+        new_min_k,
+        new_max_k,
+        old_min_t,
+        old_max_t,
+        old_min_k,
+        old_max_k,
+        &mut delta_rects,
     );
 
     let added_indices = {
@@ -256,7 +338,11 @@ fn apply_selection_delta(
 
     puffin::profile_scope!("diag::selection_delta");
     if removed + added > 100 {
-        tracing::debug!("diag::selection_delta — 移除了 {} 个, 新增了 {} 个", removed, added);
+        tracing::debug!(
+            "diag::selection_delta — 移除了 {} 个, 新增了 {} 个",
+            removed,
+            added
+        );
     }
 }
 

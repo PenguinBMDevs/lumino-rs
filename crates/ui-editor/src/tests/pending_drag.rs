@@ -10,7 +10,7 @@
 use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
-use lumino_core::DragState;
+use lumino_editor_state::DragState;
 
 /// 模拟 pressed.rs 中批量拖动入口：push_history（首次）+ 进入 DraggingSelection
 ///

@@ -254,7 +254,7 @@ impl Host {
             editor
                 .editor_state
                 .data
-                .find_automation_lane(track_idx, &lumino_core::AutomationTarget::PitchBend)
+                .find_automation_lane(track_idx, &lumino_note_core::AutomationTarget::PitchBend)
                 .and_then(|idx| {
                     editor
                         .editor_state
@@ -269,7 +269,7 @@ impl Host {
                 .data
                 .find_automation_lane(
                     track_idx,
-                    &lumino_core::AutomationTarget::CC {
+                    &lumino_note_core::AutomationTarget::CC {
                         controller: cc_number,
                     },
                 )
@@ -537,7 +537,7 @@ impl Host {
             // 使用当前调色板的颜色（来自 PaletteManager），
             // 超出调色板颜色数的轨道循环取色
             for (i, slot) in track_colors.iter_mut().enumerate() {
-                *slot = lumino_core::palette::current_track_color_f32(i);
+                *slot = lumino_extras::palette::current_track_color_f32(i);
             }
             let playhead_x = if self.root.editor.playback_position > 0.0 {
                 self.root.editor.playback_position * av.zoom_x - data.scroll.0

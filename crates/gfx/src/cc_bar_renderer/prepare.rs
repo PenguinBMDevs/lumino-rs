@@ -5,6 +5,7 @@ use super::core::{
 };
 use crate::automation::{AutomationViewParams, build_lane_instances};
 use crate::gpu_resource_tracker;
+use lumino_note_core::EditMode;
 
 impl CcBarRenderer {
     /// 准备渲染数据
@@ -51,13 +52,11 @@ impl CcBarRenderer {
 /// Data points (velocity_points, cc_points, bend_points) are pre-computed
 /// by the UI layer.
 pub fn build_cc_bar_instances(
-    edit_mode: &lumino_core::EditMode,
+    edit_mode: &EditMode,
     view_params: &CcBarViewParams,
     data: &CcBarData<'_>,
     colors: &CcBarColors,
 ) -> Vec<CcBarInstance> {
-    use lumino_core::EditMode;
-
     let is_tempo = matches!(edit_mode, EditMode::Tempo);
     let (is_bend, is_velocity) = match edit_mode {
         EditMode::Bend => (true, false),
@@ -277,7 +276,7 @@ struct VelocityCurveContext<'a> {
     /// 画布宽度
     canvas_size_x: f32,
     /// 力度点数据切片
-    velocity_points: &'a [lumino_core::VelocityPoint],
+    velocity_points: &'a [lumino_note_core::VelocityPoint],
     /// 曲线/锚点线宽
     line_thickness: f32,
 }
@@ -300,7 +299,7 @@ fn push_velocity_curve_instances(
         LINE_ALPHA,
     ];
 
-    let mut sorted: Vec<&lumino_core::VelocityPoint> = ctx.velocity_points.iter().collect();
+    let mut sorted: Vec<&lumino_note_core::VelocityPoint> = ctx.velocity_points.iter().collect();
     sorted.sort_by(|a, b| {
         a.tick
             .partial_cmp(&b.tick)
@@ -380,7 +379,7 @@ struct VelocityBarContext<'a> {
     /// 画布宽度
     canvas_size_x: f32,
     /// 力度点数据切片
-    velocity_points: &'a [lumino_core::VelocityPoint],
+    velocity_points: &'a [lumino_note_core::VelocityPoint],
 }
 
 /// 力度柱状图模式：bar 宽度取 note 长度（从 VelocityPoint 直接读取）。

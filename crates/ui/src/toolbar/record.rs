@@ -4,7 +4,7 @@ use crate::toolbar::{ButtonId, Event, Toolbar};
 use crate::widget;
 use crate::{Element, Theme, window};
 use iced_widget::{button, container, text};
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
 
 impl Toolbar {
     /// 渲染录制按钮
@@ -15,7 +15,7 @@ impl Toolbar {
         _window: &'a window::Window,
         language: Language,
     ) -> Element<'a> {
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         let is_recording = self.is_recording;
         let weak_color = _palette.background.weak.color;
         let strong_color = _palette.background.strong.color;

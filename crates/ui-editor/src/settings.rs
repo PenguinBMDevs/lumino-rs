@@ -1,6 +1,6 @@
 use super::CacheInvalidation;
-use lumino_core::editor_state::viewport::Viewport;
 use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
+use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_ui_constants::editor::{MAX_VISIBLE_KEY_COUNT, MIN_VISIBLE_KEY_COUNT};
 
 impl super::Editor {

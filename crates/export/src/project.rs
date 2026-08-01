@@ -9,10 +9,10 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-pub use lumino_core::project::*;
+pub use lumino_project::project::*;
 
 // 重新导出核心保存函数，保持 `lumino_export::project::save_to_archive` 等路径可用
-pub use lumino_core::project::save::{save_to_archive, save_to_folder};
+pub use lumino_project::project::save::{save_to_archive, save_to_folder};
 
 /// 文件夹工程入口文件内容
 ///
@@ -52,7 +52,7 @@ pub fn save_project_to_folder_with_entry(
         .unwrap_or_else(|| "project".into());
 
     // 先写入核心数据到数据文件夹
-    lumino_core::project::save::save_to_folder(project, &data_folder)
+    lumino_project::project::save::save_to_folder(project, &data_folder)
         .map_err(crate::ExportError::from)?;
 
     // 计算项目级缓存哈希，并导出高精度洋葱皮贴图到 data/image
@@ -113,7 +113,7 @@ fn compute_project_cache_hash(project: &LuminoProject) -> String {
 /// 仅对文件夹入口文件有效；二进制归档或旧版 LMPJ 返回 `None`。
 pub fn load_project_image_metadata(
     entry_path: impl AsRef<Path>,
-) -> Option<lumino_core::project::metadata::ImageMetadata> {
+) -> Option<lumino_project::project::metadata::ImageMetadata> {
     let entry_path = entry_path.as_ref();
     let bytes = std::fs::read(entry_path).ok()?;
     if bytes.len() >= 4 && &bytes[0..4] == b"LMPJ" {
@@ -159,12 +159,12 @@ pub fn load_project(path: impl AsRef<Path>) -> crate::ExportResult<LuminoProject
     let path = path.as_ref();
 
     if path.is_dir() {
-        return lumino_core::project::load::load_project(path).map_err(crate::ExportError::from);
+        return lumino_project::project::load::load_project(path).map_err(crate::ExportError::from);
     }
 
     let bytes = std::fs::read(path)?;
     if bytes.len() >= 4 && &bytes[0..4] == b"LMPJ" {
-        return lumino_core::project::load::load_project(path).map_err(crate::ExportError::from);
+        return lumino_project::project::load::load_project(path).map_err(crate::ExportError::from);
     }
 
     // 尝试作为入口文件解析
@@ -176,7 +176,7 @@ pub fn load_project(path: impl AsRef<Path>) -> crate::ExportResult<LuminoProject
             .unwrap_or_else(|| Path::new("."))
             .join(&entry.data_folder);
         if data_dir.is_dir() {
-            return lumino_core::project::load::load_project(&data_dir)
+            return lumino_project::project::load::load_project(&data_dir)
                 .map_err(crate::ExportError::from);
         }
         return Err(crate::ExportError::FileFormat(format!(
@@ -247,9 +247,9 @@ impl From<lumino_core::CoreError> for crate::ExportError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::project::TrackVisibilitySer;
-    use lumino_core::project::track::{LmtrackData, TrackMeta};
     use lumino_midi_model::compact::{CompactEvent, EventKind};
+    use lumino_project::project::TrackVisibilitySer;
+    use lumino_project::project::track::{LmtrackData, TrackMeta};
     use tempfile::tempdir;
 
     fn make_test_project() -> LuminoProject {
@@ -401,7 +401,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let data_folder = dir.path().join("plain_folder");
         let project = make_test_project();
-        lumino_core::project::save::save_to_folder(&project, &data_folder)
+        lumino_project::project::save::save_to_folder(&project, &data_folder)
             .expect("保存到文件夹失败");
 
         let loaded = load_project(&data_folder).expect("加载普通文件夹失败");

@@ -1,8 +1,6 @@
-use crate::{
-    GroupTile, HiResConfig, HiResRenderer,
-};
+use crate::{GroupTile, HiResConfig, HiResRenderer};
 
-use super::super::context::{RenderContext, HiResUploadContext, UploadHiResTileParams};
+use super::super::context::{HiResUploadContext, RenderContext, UploadHiResTileParams};
 use super::super::types::HiResMeta;
 
 // ── 视频导出高精度贴图上传 ──────────────────────────────────

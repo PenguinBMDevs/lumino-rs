@@ -7,7 +7,7 @@
 use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
-use lumino_core::DragState;
+use lumino_editor_state::DragState;
 
 // ===== Undo / Redo 拦截测试 =====
 

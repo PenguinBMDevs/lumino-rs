@@ -2,8 +2,8 @@
 
 use crate::host::{Host, types::NoteData};
 use crate::message;
-use lumino_core::TempoPoint;
 use lumino_midi_loader::MidiDocument;
+use lumino_note_core::TempoPoint;
 use std::sync::Arc;
 
 impl Host {

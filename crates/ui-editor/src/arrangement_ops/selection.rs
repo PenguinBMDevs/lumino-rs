@@ -7,8 +7,8 @@
 
 use std::collections::HashMap;
 
-use super::helpers::note_event_to_note;
 use super::Editor;
+use super::helpers::note_event_to_note;
 
 impl Editor {
     /// 获取当前工程走带选择范围内的音符列表。
@@ -52,7 +52,8 @@ impl Editor {
                     .visual_position_of(track_idx)
                     .unwrap_or(track_idx);
                 for note_event in doc.track_notes(track_idx) {
-                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
+                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
+                    {
                         result.push((
                             note_event.start_tick as f64,
                             note_event.end_tick as f64,
@@ -212,7 +213,7 @@ impl Editor {
     /// 收集变速操作的目标音轨索引和最小 tick。
     fn collect_speed_change_targets(
         &self,
-        selection: &lumino_core::ArrangeSelection,
+        selection: &lumino_note_core::ArrangeSelection,
     ) -> (HashMap<usize, Vec<usize>>, f32) {
         let mut track_indices: HashMap<usize, Vec<usize>> = HashMap::new();
         let mut min_tick = f32::INFINITY;

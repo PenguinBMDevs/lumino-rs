@@ -7,8 +7,8 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::SynthBackend;
+use lumino_extras::i18n::settings_translations;
 
 /// 本地化合成器后端包装
 #[derive(Debug, Clone, Copy)]
@@ -32,10 +32,10 @@ impl std::fmt::Display for LocalizedSynth {
 }
 
 impl LocalizedSynth {
-    fn new(backend: SynthBackend, lang: lumino_core::i18n::Language) -> Self {
+    fn new(backend: SynthBackend, lang: lumino_extras::i18n::Language) -> Self {
         Self {
             inner: backend,
-            name: lumino_core::i18n::synth_backend_name(backend, lang),
+            name: lumino_extras::i18n::synth_backend_name(backend, lang),
         }
     }
 }
@@ -97,7 +97,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
 /// 渲染 XSynth 选项
 fn render_xsynth_options<'a>(
     settings: &SettingsPanel,
-    t: &lumino_core::i18n::SettingsTranslations,
+    t: &lumino_extras::i18n::SettingsTranslations,
 ) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     let mut col = column![];
 
@@ -158,9 +158,9 @@ fn render_xsynth_options<'a>(
             write!(f, "{}", self.1)
         }
     }
-    fn voice_name(value: Option<usize>, lang: lumino_core::i18n::Language) -> &'static str {
+    fn voice_name(value: Option<usize>, lang: lumino_extras::i18n::Language) -> &'static str {
         match lang {
-            lumino_core::i18n::Language::ZhCn => match value {
+            lumino_extras::i18n::Language::ZhCn => match value {
                 Some(1) => "1 (极保守)",
                 Some(2) => "2",
                 Some(4) => "4 (默认)",
@@ -171,7 +171,7 @@ fn render_xsynth_options<'a>(
                 None => "不限制",
                 _ => "",
             },
-            lumino_core::i18n::Language::EnUs => match value {
+            lumino_extras::i18n::Language::EnUs => match value {
                 Some(1) => "1 (Conservative)",
                 Some(2) => "2",
                 Some(4) => "4 (Default)",
@@ -272,7 +272,7 @@ fn render_xsynth_options<'a>(
 /// 渲染 MIDI 输入设备选择器
 fn render_midi_device_selector<'a>(
     settings: &'a SettingsPanel,
-    t: &lumino_core::i18n::SettingsTranslations,
+    t: &lumino_extras::i18n::SettingsTranslations,
 ) -> Element<'a> {
     let device_count = settings.midi_devices.len();
     if device_count == 0 {

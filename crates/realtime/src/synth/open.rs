@@ -9,18 +9,18 @@ use cpal::{Device, SupportedStreamConfig};
 use crossbeam_channel::{bounded, unbounded};
 use lumino_memtrace::AllocTag;
 
+use xsynth_core::AudioStreamParams;
 use xsynth_core::channel_group::{
     ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthFormat as XSynthFormat, ThreadCount,
 };
-use xsynth_core::AudioStreamParams;
 
 use crate::config::{SynthFormat, XSynthRealtimeConfig};
 use crate::events::SynthEvent;
-use crate::stats::{RenderPerfShared, RealtimeSynthStats};
+use crate::stats::{RealtimeSynthStats, RenderPerfShared};
 
 use super::audio_stream::build_stream;
 use super::render::render_thread_loop;
-use super::{SendSyncStream, RealtimeSynth};
+use super::{RealtimeSynth, SendSyncStream};
 
 impl RealtimeSynth {
     /// 获取默认音频输出设备及其配置
@@ -74,19 +74,24 @@ impl RealtimeSynth {
         let (vec_return_tx, vec_return_rx) = unbounded::<Vec<f32>>();
         let vec_return_tx_render = vec_return_tx.clone();
 
-        let render_window =
-            (sample_rate as f64 * config.render_window_ms / 1000.0) as usize;
+        let render_window = (sample_rate as f64 * config.render_window_ms / 1000.0) as usize;
         let render_len = render_window * channels as usize;
 
-        let (render_thread, running) =
-            lumino_memtrace::with_tag(AllocTag::Audio, || {
-                setup_render_thread(
-                    &config, stream_params, event_receiver,
-                    sample_tx.clone(), vec_return_rx, vec_return_tx_render,
-                    perf.clone(), total_voice_count,
-                    render_len, channels, sample_rate,
-                )
-            });
+        let (render_thread, running) = lumino_memtrace::with_tag(AllocTag::Audio, || {
+            setup_render_thread(
+                &config,
+                stream_params,
+                event_receiver,
+                sample_tx.clone(),
+                vec_return_rx,
+                vec_return_tx_render,
+                perf.clone(),
+                total_voice_count,
+                render_len,
+                channels,
+                sample_rate,
+            )
+        });
 
         let stream = build_stream(device, stream_config, sample_rx, vec_return_tx.clone());
         stream.play().expect("failed to start audio stream");
@@ -138,12 +143,21 @@ fn setup_render_thread(
             let running_render = running.clone();
             let perf_render = perf_render.clone();
             let voice_render = voice_render.clone();
-            move || render_thread_loop(
-                channel_group, event_receiver, sample_tx,
-                vec_return_rx, vec_return_tx_render,
-                perf_render, voice_render, running_render,
-                render_len, channels, sample_rate,
-            )
+            move || {
+                render_thread_loop(
+                    channel_group,
+                    event_receiver,
+                    sample_tx,
+                    vec_return_rx,
+                    vec_return_tx_render,
+                    perf_render,
+                    voice_render,
+                    running_render,
+                    render_len,
+                    channels,
+                    sample_rate,
+                )
+            }
         })
         .expect("failed to spawn render thread");
 

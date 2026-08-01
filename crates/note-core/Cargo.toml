@@ -1,0 +1,23 @@
+[package]
+name = "lumino-note-core"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+lumino-core = { workspace = true }
+thiserror = { workspace = true }
+font-kit = "0.14"
+im = { version = "15.1.0", features = ["rayon"] }
+bit-vec = "0.8"
+puffin = { workspace = true }

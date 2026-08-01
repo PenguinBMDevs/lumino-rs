@@ -289,7 +289,7 @@ fn test_selection_inside_keeps_pending_drag_state() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     // 设置 pending_drag_state（模拟之前拖动过且未提交）
-    let mut pending = lumino_core::DragState::from_single(0, 1, 0, 60);
+    let mut pending = lumino_editor_state::DragState::from_single(0, 1, 0, 60);
     pending.set_delta(50, 2);
     editor.pending_drag_state = Some(pending);
 

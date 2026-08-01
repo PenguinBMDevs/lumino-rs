@@ -38,9 +38,9 @@ pub enum VelocityAction {
     TempoDelete(usize),
     /// 自动化编辑：先 push history 再应用单个编辑。
     /// 用于单击、双击、右键删除等瞬时操作。
-    AutomationEdit(lumino_core::AutomationEdit),
+    AutomationEdit(lumino_note_core::AutomationEdit),
     /// 自动化批量编辑：不 push history，用于拖拽/曲线绘制中的连续更新。
-    AutomationBatch(Vec<lumino_core::AutomationEdit>),
+    AutomationBatch(Vec<lumino_note_core::AutomationEdit>),
     /// 自动化拖拽开始：push history，不应用编辑。
     AutomationDragStart,
     /// 调整自动化曲线垂直缩放。

@@ -1,7 +1,7 @@
 //! 事件列表视图测试
 
 use lumino_core::im::Vector;
-use lumino_core::note::Note;
+use lumino_note_core::note::Note;
 
 use super::{EventListCanvas, HEADER_HEIGHT, ROW_HEIGHT};
 

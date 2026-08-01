@@ -3,7 +3,7 @@
 //! 包括侧边栏事件枚举及其依赖的分组和路由类型。
 
 use iced_core::{Color, Point};
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::TrackContextMenuItem;
 
 use crate::Message;

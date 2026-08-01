@@ -4,7 +4,7 @@
 //! 位图字体（draw_digit / DIGIT_BITMAPS 等）也集中于此，
 //! 并通过私有 use 在 video_export.rs 的标尺小节号合成中使用。
 
-use lumino_core::palette::current_track_color_f32;
+use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::is_black_key;
 use lumino_midi_loader::MidiDocument;
 

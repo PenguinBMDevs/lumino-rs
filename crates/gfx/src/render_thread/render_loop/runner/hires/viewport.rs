@@ -1,9 +1,6 @@
-use crate::{
-    HiResConfig, HiResRenderMode, HiResRenderer, HiResUniform,
-    TileCoord,
-};
 use super::super::super::super::params::RenderParams;
 use super::super::types::HiResMeta;
+use crate::{HiResConfig, HiResRenderMode, HiResRenderer, HiResUniform, TileCoord};
 
 // ── 高精度贴图视口驱动 ────────────────────────────────────
 
@@ -32,8 +29,7 @@ fn compute_tile_uniform(
         HiResRenderMode::Native => {
             let texture_zoom = config.tile_width_px as f32 / ticks_per_group as f32;
             let tick_offset = scroll_x / zoom_x;
-            let area_x =
-                base_x + (tick_start as f32 - tick_offset) * texture_zoom * scale;
+            let area_x = base_x + (tick_start as f32 - tick_offset) * texture_zoom * scale;
             let area_w = config.tile_width_px as f32 * scale;
             (area_x, area_w)
         }

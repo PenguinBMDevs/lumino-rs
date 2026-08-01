@@ -3,13 +3,13 @@ use iced_widget::{button, column, container, row, space, text};
 
 use crate::message::{Message, SettingsDialogAction};
 use crate::{settings, window};
-use lumino_core::i18n::settings_translations;
+use lumino_extras::i18n::settings_translations;
 
 /// 渲染设置对话框
 pub fn view_settings_dialog<'a>(
     settings: &'a settings::SettingsPanel,
     window: &'a window::Window,
-    system_fonts: &'a [lumino_core::font_scanner::FontInfo],
+    system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> crate::Element<'a> {
     let t = settings_translations(settings.language);
     let palette = window.theme.extended_palette();

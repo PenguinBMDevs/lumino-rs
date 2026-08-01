@@ -4,7 +4,7 @@ use iced_core::{Alignment, Border, Length, Padding};
 use iced_widget::{button, column, container, row, scrollable, text};
 
 use super::{Event, SettingsPanel, components::*};
-use lumino_core::i18n::{Language, settings_translations};
+use lumino_extras::i18n::{Language, settings_translations};
 use lumino_ui_core::{
     Message, Theme,
     resources::icon::{self, Icon},

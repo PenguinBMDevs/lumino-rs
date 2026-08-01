@@ -4,7 +4,7 @@
 
 use iced_widget::{checkbox, column, row, space, text, text_input};
 
-use crate::{Message};
+use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
 
@@ -58,11 +58,14 @@ fn velocity_filter_section<'a>(
             .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterVelocityChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
-        range_input_row("力度范围:", palette, state.velocity_low, state.velocity_high, |v| {
-            Message::AudioExport(AudioExportAction::VelocityLowChanged(v))
-        }, |v| {
-            Message::AudioExport(AudioExportAction::VelocityHighChanged(v))
-        }),
+        range_input_row(
+            "力度范围:",
+            palette,
+            state.velocity_low,
+            state.velocity_high,
+            |v| { Message::AudioExport(AudioExportAction::VelocityLowChanged(v)) },
+            |v| { Message::AudioExport(AudioExportAction::VelocityHighChanged(v)) }
+        ),
     ]
     .width(iced_core::Length::Fill)
     .into()
@@ -83,11 +86,14 @@ fn key_filter_section<'a>(
             .on_toggle(|v| Message::AudioExport(AudioExportAction::FilterKeyChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
-        range_input_row("键位范围:", palette, state.key_low, state.key_high, |v| {
-            Message::AudioExport(AudioExportAction::KeyLowChanged(v))
-        }, |v| {
-            Message::AudioExport(AudioExportAction::KeyHighChanged(v))
-        }),
+        range_input_row(
+            "键位范围:",
+            palette,
+            state.key_low,
+            state.key_high,
+            |v| { Message::AudioExport(AudioExportAction::KeyLowChanged(v)) },
+            |v| { Message::AudioExport(AudioExportAction::KeyHighChanged(v)) }
+        ),
     ]
     .width(iced_core::Length::Fill)
     .into()

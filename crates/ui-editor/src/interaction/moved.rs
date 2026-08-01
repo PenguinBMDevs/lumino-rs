@@ -3,7 +3,7 @@
 //! 包含：鼠标移动时的状态更新、编辑变化计算、变化值应用
 
 use crate::{EditState, Editor};
-use lumino_core::editor_state::interaction_ops;
+use lumino_editor_state::editor_state::interaction_ops;
 
 impl Editor {
     /// 处理鼠标移动事件

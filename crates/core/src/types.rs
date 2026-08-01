@@ -180,6 +180,36 @@ impl DotType {
     }
 }
 
+// ─── 语言支持 ───
+
+/// 支持的语言
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize, Default)]
+pub enum Language {
+    /// 简体中文（默认）
+    #[serde(rename = "zh-CN")]
+    #[default]
+    ZhCn,
+    /// English
+    #[serde(rename = "en-US")]
+    EnUs,
+}
+
+impl Language {
+    /// 返回所有可用语言列表
+    pub fn all() -> [Language; 2] {
+        [Language::ZhCn, Language::EnUs]
+    }
+}
+
+impl std::fmt::Display for Language {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Language::ZhCn => write!(f, "简体中文"),
+            Language::EnUs => write!(f, "English"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

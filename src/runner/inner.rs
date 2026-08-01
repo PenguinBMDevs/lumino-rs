@@ -19,8 +19,8 @@ pub use lumino_midi_loader::ParsedMidi;
 mod collab;
 mod file;
 mod midi;
-mod session;
 mod persist;
+mod session;
 mod test;
 mod window;
 
@@ -64,8 +64,7 @@ pub(crate) struct WindowState {
     pub(crate) export_progress_rx:
         Option<tokio::sync::mpsc::UnboundedReceiver<(String, f64, u64, f64, f64)>>,
     /// 视频导出预览帧接收器（RGBA 像素数据）
-    pub(crate) video_preview_rx:
-        Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
+    pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
     /// 视频导出取消标志（后台线程通过此标志检测用户取消）
     pub(crate) video_export_cancel: Arc<AtomicBool>,
 }

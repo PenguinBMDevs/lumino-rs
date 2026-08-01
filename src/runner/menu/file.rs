@@ -35,8 +35,8 @@ impl RunnerInner {
                 tracing::info!("MIDI 文件解析完成：{}", parsed.info);
 
                 // MIDI 加载后强制使用 Random 调色板并锁定（禁止用户修改）
-                lumino_core::palette::set_current_palette_by_name("Random");
-                lumino_core::palette::lock_palette();
+                lumino_extras::palette::set_current_palette_by_name("Random");
+                lumino_extras::palette::lock_palette();
 
                 // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(&parsed);
@@ -88,7 +88,7 @@ impl RunnerInner {
             Close => {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
-                lumino_core::palette::unlock_palette();
+                lumino_extras::palette::unlock_palette();
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
                 tracing::info!("工程已关闭");
@@ -172,7 +172,7 @@ impl RunnerInner {
         // 清空当前工程
         self.midi_state.current_midi = None;
         self.midi_state.current_midi_source = None;
-        lumino_core::palette::unlock_palette();
+        lumino_extras::palette::unlock_palette();
 
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();
@@ -190,7 +190,7 @@ impl RunnerInner {
     fn trigger_onion_skin_generation(
         &mut self,
         parsed: &lumino_midi_loader::ParsedMidi,
-        image_meta: Option<lumino_core::project::metadata::ImageMetadata>,
+        image_meta: Option<lumino_project::project::metadata::ImageMetadata>,
     ) {
         let Some(document) = parsed.document.as_ref() else {
             tracing::debug!("洋葱皮：MIDI 无 document（LMPJ 路径），跳过生成");
@@ -201,7 +201,8 @@ impl RunnerInner {
         let ppq = parsed.info.division;
         let track_count = document.track_count();
         let mut notes: Vec<Vec<lumino_gfx::OnionSkinNote>> = Vec::with_capacity(track_count);
-        let mut editor_track_notes: Vec<Vec<lumino_core::Note>> = Vec::with_capacity(track_count);
+        let mut editor_track_notes: Vec<Vec<lumino_note_core::Note>> =
+            Vec::with_capacity(track_count);
         for track_idx in 0..track_count {
             let track_notes = document.track_notes(track_idx);
             let converted: Vec<lumino_gfx::OnionSkinNote> = track_notes
@@ -213,10 +214,10 @@ impl RunnerInner {
             notes.push(converted);
 
             // 同步填充 editor 的 track_notes 缓存，供后续重生成使用
-            let editor_notes: Vec<lumino_core::Note> = track_notes
+            let editor_notes: Vec<lumino_note_core::Note> = track_notes
                 .iter()
                 .map(|n| {
-                    lumino_core::Note::from_raw(
+                    lumino_note_core::Note::from_raw(
                         n.start_tick as f32,
                         n.key as u16,
                         n.length() as f32,
@@ -304,7 +305,7 @@ impl RunnerInner {
 ///
 /// 从当前调色板的第二个颜色开始取色（第一个颜色保留给主音轨音符）。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    lumino_core::palette::onion_track_color(track_idx)
+    lumino_extras::palette::onion_track_color(track_idx)
 }
 
 /// 从文件路径读取文件创建时间并格式化为本地时间字符串

@@ -2,13 +2,13 @@
 //!
 //! 计算可见/隐藏分组，将隐藏分组展开为菜单项列表。
 
-use lumino_core::i18n::Language;
 use lumino_core::storage::config::AutoScrollMode;
+use lumino_extras::i18n::Language;
 
+use crate::Message;
 use crate::resources::icon;
 use crate::toolbar::overflow::state::{OverflowMenuItem, ToolbarGroup};
 use crate::toolbar::{Event, FlipHorizontalMode, Tool, Toolbar};
-use crate::Message;
 
 /// 修饰键事件元组（翻转水平事件、移调 tooltip+事件：下/上）
 type ModifierEvents = (&'static str, Message, &'static str, Message, Message);
@@ -96,17 +96,22 @@ impl Toolbar {
         language: Language,
         arrangement_mode: bool,
     ) -> Vec<OverflowMenuItem> {
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         match group {
             ToolbarGroup::Record => self.record_overflow_items(t),
             ToolbarGroup::Playback => self.playback_overflow_items(t),
             ToolbarGroup::Loop => self.loop_overflow_items(t),
             ToolbarGroup::UndoRedo => self.undo_redo_overflow_items(t),
             ToolbarGroup::Dashboard => Vec::new(),
-            ToolbarGroup::Tools => self.tools_overflow_items(language, has_selection, arrangement_mode),
+            ToolbarGroup::Tools => {
+                self.tools_overflow_items(language, has_selection, arrangement_mode)
+            }
             ToolbarGroup::AutoScroll => self.auto_scroll_overflow_items(t),
             ToolbarGroup::Collaboration => vec![mi(
-                icon::Users, t.collaboration_tooltip, Event::open_collaboration_dialog(), true,
+                icon::Users,
+                t.collaboration_tooltip,
+                Event::open_collaboration_dialog(),
+                true,
             )],
         }
     }
@@ -116,12 +121,20 @@ impl Toolbar {
     /// 录制分组溢出项
     fn record_overflow_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![mi(
             icon::PlayCircle,
-            if self.is_recording { t.record_stop } else { t.record_start },
-            if self.is_recording { Event::record_stop() } else { Event::record() },
+            if self.is_recording {
+                t.record_stop
+            } else {
+                t.record_start
+            },
+            if self.is_recording {
+                Event::record_stop()
+            } else {
+                Event::record()
+            },
             true,
         )]
     }
@@ -129,28 +142,54 @@ impl Toolbar {
     /// 播放控制分组溢出项（快退/播放·暂停/快进）
     fn playback_overflow_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::SkipBackward, t.skip_backward, Event::skip_backward(), true),
             mi(
-                if self.is_playing { icon::Pause } else { icon::Play },
-                if self.is_playing { t.pause } else { t.play },
-                if self.is_playing { Event::pause() } else { Event::play() },
+                icon::SkipBackward,
+                t.skip_backward,
+                Event::skip_backward(),
                 true,
             ),
-            mi(icon::SkipForward, t.skip_forward, Event::skip_forward(), true),
+            mi(
+                if self.is_playing {
+                    icon::Pause
+                } else {
+                    icon::Play
+                },
+                if self.is_playing { t.pause } else { t.play },
+                if self.is_playing {
+                    Event::pause()
+                } else {
+                    Event::play()
+                },
+                true,
+            ),
+            mi(
+                icon::SkipForward,
+                t.skip_forward,
+                Event::skip_forward(),
+                true,
+            ),
         ]
     }
 
     /// 循环切换分组溢出项
     fn loop_overflow_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![mi(
-            if self.is_looping { icon::ArrowsLeftRight } else { icon::Ban },
-            if self.is_looping { t.loop_on } else { t.loop_off },
+            if self.is_looping {
+                icon::ArrowsLeftRight
+            } else {
+                icon::Ban
+            },
+            if self.is_looping {
+                t.loop_on
+            } else {
+                t.loop_off
+            },
             Event::toggle_loop(),
             true,
         )]
@@ -159,7 +198,7 @@ impl Toolbar {
     /// 撤销/重做分组溢出项
     fn undo_redo_overflow_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
             mi(icon::Undo, t.undo, Event::undo(), true),
@@ -170,7 +209,7 @@ impl Toolbar {
     /// 自动滚动分组溢出项
     fn auto_scroll_overflow_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![mi(
             match self.auto_scroll_mode {
@@ -191,7 +230,7 @@ impl Toolbar {
         has_selection: bool,
         arrangement_mode: bool,
     ) -> Vec<OverflowMenuItem> {
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         if arrangement_mode {
             return self.arrangement_tools_items(t);
         }
@@ -206,32 +245,67 @@ impl Toolbar {
     /// 工程走带模式下工具项（指针/曲线/橡皮）
     fn arrangement_tools_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::MousePointer, t.tool_pointer, Event::tool_selected(Tool::Pointer), true),
-            mi(icon::Curve, t.tool_curve, Event::tool_selected(Tool::Curve), true),
-            mi(icon::Eraser, t.tool_eraser, Event::tool_selected(Tool::Eraser), true),
+            mi(
+                icon::MousePointer,
+                t.tool_pointer,
+                Event::tool_selected(Tool::Pointer),
+                true,
+            ),
+            mi(
+                icon::Curve,
+                t.tool_curve,
+                Event::tool_selected(Tool::Curve),
+                true,
+            ),
+            mi(
+                icon::Eraser,
+                t.tool_eraser,
+                Event::tool_selected(Tool::Eraser),
+                true,
+            ),
         ]
     }
 
     /// 基础工具项（指针/铅笔/橡皮/曲线：无需选中，无修饰键）
     fn basic_selection_tool_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::MousePointer, t.tool_pointer, Event::tool_selected(Tool::Pointer), true),
-            mi(icon::Pencil, t.tool_pencil, Event::tool_selected(Tool::Pencil), true),
-            mi(icon::Eraser, t.tool_eraser, Event::tool_selected(Tool::Eraser), true),
-            mi(icon::Curve, t.tool_curve, Event::tool_selected(Tool::Curve), true),
+            mi(
+                icon::MousePointer,
+                t.tool_pointer,
+                Event::tool_selected(Tool::Pointer),
+                true,
+            ),
+            mi(
+                icon::Pencil,
+                t.tool_pencil,
+                Event::tool_selected(Tool::Pencil),
+                true,
+            ),
+            mi(
+                icon::Eraser,
+                t.tool_eraser,
+                Event::tool_selected(Tool::Eraser),
+                true,
+            ),
+            mi(
+                icon::Curve,
+                t.tool_curve,
+                Event::tool_selected(Tool::Curve),
+                true,
+            ),
         ]
     }
 
     /// 动作工具项（量化/变速/分割/合并/连奏：无需选中，无修饰键）
     fn action_tool_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
             mi(icon::Quantize, t.tool_quantize, Event::quantize(), true),
@@ -245,7 +319,7 @@ impl Toolbar {
     /// 构造修饰键相关事件与 tooltip（翻转/移调）
     fn setup_modifier_events(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> ModifierEvents {
         let ctrl = self.ctrl_pressed;
         let shift = self.shift_pressed;
@@ -280,13 +354,23 @@ impl Toolbar {
     /// 需要选中项的修饰工具（翻转垂直/翻转水平/移调下/移调上）
     fn modifier_tool_items(
         &self,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
         has_selection: bool,
         ev: ModifierEvents,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::FlipVertical, t.tool_flip_vertical, Event::flip_vertical(), has_selection),
-            mi(icon::FlipHorizontal, t.tool_flip_horizontal, ev.4, has_selection),
+            mi(
+                icon::FlipVertical,
+                t.tool_flip_vertical,
+                Event::flip_vertical(),
+                has_selection,
+            ),
+            mi(
+                icon::FlipHorizontal,
+                t.tool_flip_horizontal,
+                ev.4,
+                has_selection,
+            ),
             mi(icon::TransposeDown, ev.0, ev.1, has_selection),
             mi(icon::TransposeUp, ev.2, ev.3, has_selection),
         ]

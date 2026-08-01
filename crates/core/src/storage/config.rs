@@ -1,4 +1,4 @@
-use crate::i18n::Language;
+use crate::types::Language;
 use serde::{Deserialize, Serialize};
 
 /// 用户界面配置

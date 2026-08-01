@@ -10,7 +10,7 @@ use crate::toolbar::buttons::{flip_button, tool_button, tool_selector};
 use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, RESIZE_HANDLE_HEIGHT, Tool, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
-use lumino_core::i18n::{Language, MainTranslations};
+use lumino_extras::i18n::{Language, MainTranslations};
 
 impl Toolbar {
     /// 渲染播放控制区域（SkipBack / PlayPause / SkipForward），132px 宽

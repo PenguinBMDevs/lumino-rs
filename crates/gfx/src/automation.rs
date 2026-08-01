@@ -2,7 +2,7 @@
 //!
 //! 从 yinhe 项目移植：将 Step / Curve 插值的事件序列转换为 2px 线段与圆角锚点实例。
 
-use lumino_core::{AutomationLane, SegmentShape};
+use lumino_note_core::automation::{AutomationLane, SegmentShape};
 
 use crate::cc_bar_renderer::CcBarInstance;
 

@@ -4,7 +4,7 @@
 
 use crate::{CacheInvalidation, Editor};
 use iced_core::Point;
-use lumino_core::editor_state::viewport::Viewport;
+use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
 
 impl Editor {

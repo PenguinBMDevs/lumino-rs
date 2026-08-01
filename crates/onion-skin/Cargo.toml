@@ -17,4 +17,5 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 bytemuck = { version = "1.21", features = ["derive"] }
 lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
 lumino-midi-loader = { workspace = true }

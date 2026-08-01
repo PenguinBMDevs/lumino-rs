@@ -7,14 +7,14 @@ pub mod widget;
 pub use widget::TempoPoint;
 pub use widget::VelocityCanvasState;
 
-// 重新导出自 lumino-core 的数据类型
-pub use lumino_core::{
-    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, EditorTransform,
-    VelocityPoint,
+// 重新导出自 lumino-note-core / lumino-editor-state 的数据类型
+pub use lumino_editor_state::EditorTransform;
+pub use lumino_note_core::{
+    BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcDisplay, CcPoint, EditMode, VelocityPoint,
 };
 
-use lumino_core::NoteStore;
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
+use lumino_note_core::NoteStore;
 use lumino_ui_core::Element;
 
 /// 面板高度（像素）
@@ -84,7 +84,7 @@ impl VelocityPanel {
         use iced_widget::canvas::Canvas;
         use iced_widget::{column, container, row, space, text};
 
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         let toolbar_height = TOOLBAR_HEIGHT;
         let canvas_height = (panel_height - toolbar_height).max(10.0);
 
@@ -138,7 +138,7 @@ impl VelocityPanel {
         is_tempo: bool,
         is_velocity: bool,
         _language: Language,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Element<'a> {
         use iced_widget::{button, text};
 
@@ -210,7 +210,7 @@ impl VelocityPanel {
 
     /// 构建模式信息文字
     fn build_info_text(&self, language: Language) -> String {
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         if self.edit_mode == EditMode::Tempo {
             t.velocity_panel_tempo_info.to_string()
         } else if self.edit_mode == EditMode::Velocity {

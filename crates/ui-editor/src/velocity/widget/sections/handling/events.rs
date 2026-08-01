@@ -107,7 +107,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             .get(lane_idx)?;
         if let Some(tick) = Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val) {
             return Some(publish_velocity(VelocityAction::AutomationEdit(
-                lumino_core::AutomationEdit::Delete {
+                lumino_note_core::AutomationEdit::Delete {
                     track_idx,
                     lane_idx,
                     tick,

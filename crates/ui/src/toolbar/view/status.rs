@@ -10,7 +10,7 @@ use crate::resources::icon;
 use crate::toolbar::{ButtonId, Event, NotePrecision, Toolbar};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
-use lumino_core::i18n::{Language, MainTranslations};
+use lumino_extras::i18n::{Language, MainTranslations};
 
 /// 本地化音符精度包装（支持按语言显示名称）
 #[derive(Debug, Clone, Copy)]
@@ -37,7 +37,7 @@ impl LocalizedPrecision {
     fn new(precision: NotePrecision, lang: Language) -> Self {
         Self {
             inner: precision,
-            name: lumino_core::i18n::note_precision_name(precision, lang),
+            name: lumino_extras::i18n::note_precision_name(precision, lang),
         }
     }
 }

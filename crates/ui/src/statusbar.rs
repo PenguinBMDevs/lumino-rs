@@ -2,7 +2,7 @@ pub mod performance;
 
 use iced_core::Length;
 use iced_widget::{container, row, text};
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 use lumino_ui_core::button_descs::ButtonId;
 
 use super::Element;

@@ -14,10 +14,10 @@
 
 use super::Editor;
 
-mod helpers;
-mod move_notes;
-mod erase;
-mod razor;
-mod selection;
 mod add_note;
 mod clipboard;
+mod erase;
+mod helpers;
+mod move_notes;
+mod razor;
+mod selection;

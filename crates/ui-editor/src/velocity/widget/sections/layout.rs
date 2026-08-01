@@ -1,8 +1,8 @@
 //! 布局相关方法：坐标转换、命中测试、resize 区域检测
 
 use iced_core::{Point, Size};
-use lumino_core::{AutomationLane, AutomationTarget};
 use lumino_gfx::automation::AutomationViewParams;
+use lumino_note_core::{AutomationLane, AutomationTarget};
 
 use super::super::super::{
     HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPoint,

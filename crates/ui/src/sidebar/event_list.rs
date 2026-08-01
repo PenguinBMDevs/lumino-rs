@@ -6,8 +6,8 @@
 use iced_core::{Length, Padding, Rectangle};
 use iced_widget::canvas::{self, Frame, Geometry, Program, Text};
 use iced_widget::{container, scrollable};
-use lumino_core::im::Vector;
-use lumino_core::note::{Note, note_name};
+use im::Vector;
+use lumino_note_core::note::{Note, note_name};
 
 use crate::editor::grid::theme::ThemeExt;
 

@@ -9,8 +9,8 @@
 use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
-use lumino_core::DragState;
-use lumino_core::history::OpKind;
+use lumino_editor_state::DragState;
+use lumino_note_core::history::OpKind;
 
 /// 模拟用户完整拖动一个音符的流程：
 /// push_history（按下时） → 进入 Dragging（移动时） → commit（松手时）

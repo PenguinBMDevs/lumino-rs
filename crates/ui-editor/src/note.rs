@@ -6,7 +6,7 @@
 use iced_core::{Color, Point, Rectangle, Size};
 use lumino_gfx::NoteInstance;
 
-pub use lumino_core::Note;
+pub use lumino_note_core::Note;
 
 use crate::editor_state::ViewState;
 

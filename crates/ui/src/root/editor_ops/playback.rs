@@ -70,7 +70,7 @@ impl Root {
                 continue;
             }
             match &lane.target {
-                lumino_core::automation::AutomationTarget::CC { controller } => {
+                lumino_note_core::automation::AutomationTarget::CC { controller } => {
                     for ev in &lane.events {
                         midi_events.push(MidiTrackEvent {
                             tick: ev.tick as f32,
@@ -82,7 +82,7 @@ impl Root {
                         });
                     }
                 }
-                lumino_core::automation::AutomationTarget::PitchBend => {
+                lumino_note_core::automation::AutomationTarget::PitchBend => {
                     for ev in &lane.events {
                         // AutomationEvent.value 范围 0-16383，中心 8192
                         let pb_value = (ev.value as f32 - 8192.0) / 8192.0;

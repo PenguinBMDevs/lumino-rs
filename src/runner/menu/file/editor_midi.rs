@@ -3,12 +3,12 @@
 //! 将 UI 编辑器中的音符、tempo 点与原始文档的 PC/CC 事件组合，
 //! 生成可用于保存/导出的 `MidiDocument` 或 MIDI 字节。
 
-use lumino_core::midi_types::TempoPoint;
 use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTimeSignatureEvent,
     MidiTrackData, extract_pc_cc_events,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo, constants::DEFAULT_PPQN};
+use lumino_note_core::midi_types::TempoPoint;
 use std::collections::HashMap;
 
 use crate::runner::RunnerInner;

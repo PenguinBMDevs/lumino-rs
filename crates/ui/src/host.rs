@@ -107,7 +107,7 @@ impl Host {
     ///
     /// MIDI 加载后立即调用，确保后续重生成时能从缓存取到完整音轨数据，
     /// 避免预生成贴图被不完整数据覆盖。
-    pub fn preload_track_notes(&mut self, track_notes: Vec<Vec<lumino_core::Note>>) {
+    pub fn preload_track_notes(&mut self, track_notes: Vec<Vec<lumino_note_core::Note>>) {
         let editor_data = &mut self.root.editor.editor_state.data;
         for (track_idx, notes) in track_notes.into_iter().enumerate() {
             editor_data.track_notes.insert(track_idx, notes.into());
@@ -241,7 +241,7 @@ pub fn prewarm_dialog_shared_engine(gfx: &lumino_gfx::Context) {
 ///
 /// 从当前调色板的第一个颜色开始取色。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    lumino_core::palette::onion_track_color(track_idx)
+    lumino_extras::palette::onion_track_color(track_idx)
 }
 
 /// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏

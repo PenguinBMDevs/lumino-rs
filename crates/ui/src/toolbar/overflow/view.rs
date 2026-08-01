@@ -32,13 +32,17 @@ impl Toolbar {
         &'a self,
         hidden_groups: &[ToolbarGroup],
         has_selection: bool,
-        language: lumino_core::i18n::Language,
+        language: lumino_extras::i18n::Language,
         panel_background: Color,
         theme: &'a Theme,
         arrangement_mode: bool,
     ) -> Element<'a> {
         let buttons = self.build_overflow_buttons(
-            hidden_groups, has_selection, language, theme, arrangement_mode,
+            hidden_groups,
+            has_selection,
+            language,
+            theme,
+            arrangement_mode,
         );
         let (grid, panel_width, panel_height) = Self::build_overflow_panel(buttons);
 
@@ -60,7 +64,7 @@ impl Toolbar {
         &'a self,
         hidden_groups: &[ToolbarGroup],
         has_selection: bool,
-        language: lumino_core::i18n::Language,
+        language: lumino_extras::i18n::Language,
         theme: &'a Theme,
         arrangement_mode: bool,
     ) -> Vec<Element<'a>> {

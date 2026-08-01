@@ -6,7 +6,7 @@
 //! puffin::profile_scope! 等 per-element 开销。puffin scope 应放在外层的
 //! 循环函数（collect_visible_note_data 等）中。
 
-use super::EditState;
+use crate::EditState;
 
 /// 计算音符 i 在当前编辑状态下的 ghost 偏移量
 ///
@@ -26,7 +26,7 @@ use super::EditState;
 /// 现在 pending delta 在异步完成前对所有状态都生效。
 pub(crate) fn ghost_delta_for_index(
     i: usize,
-    pending: &Option<lumino_core::DragState>,
+    pending: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
 ) -> Option<(i64, i16)> {
     // 注意：此函数在 hot loop 中被调用（每帧可达百万次），
@@ -71,7 +71,7 @@ pub(crate) fn ghost_delta_for_index(
 /// 仅用于判断是否走 ghost 路径，开销可忽略。
 #[inline]
 pub(crate) fn has_active_ghost_delta(
-    pending: &Option<lumino_core::DragState>,
+    pending: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
 ) -> bool {
     pending.is_some()
@@ -90,7 +90,7 @@ pub(crate) fn has_active_ghost_delta(
 #[inline]
 pub(crate) fn is_note_ghosted(
     i: usize,
-    pending: &Option<lumino_core::DragState>,
+    pending: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
 ) -> bool {
     // 检查当前拖动状态的选中集合（含 Dragging 和 DraggingSelection）

@@ -3,8 +3,10 @@ use crate::editor::note::Note;
 use crate::message::Message;
 use crate::playback::PlaybackState;
 use crate::toolbar;
-use lumino_core::automation::{AutomationEvent, AutomationLane, AutomationTarget, SegmentShape};
 use lumino_midi_loader::{MidiDocument, TrackManager};
+use lumino_note_core::automation::{
+    AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
+};
 use std::sync::Arc;
 use std::sync::atomic::AtomicU32;
 

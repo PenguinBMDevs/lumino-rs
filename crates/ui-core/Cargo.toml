@@ -19,6 +19,8 @@ iced_core = { workspace = true }
 iced_wgpu = { version = "0.14.0", features = ["geometry", "image"] }
 iced_widget = { version = "0.14.0", features = ["image"] }
 lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-extras = { workspace = true }
 lumino-event = { workspace = true }
 lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }

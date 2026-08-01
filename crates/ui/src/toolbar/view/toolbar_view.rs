@@ -26,12 +26,12 @@ impl Toolbar {
         &'a self,
         window: &'a window::Window,
         has_selection: bool,
-        language: lumino_core::i18n::Language,
+        language: lumino_extras::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         available_width: f32,
         arrangement_mode: bool,
     ) -> Element<'a> {
-        let t = lumino_core::i18n::main_translations(language);
+        let t = lumino_extras::i18n::main_translations(language);
         let palette = window.theme.extended_palette();
 
         // 计算内容区域高度（总高度减去手柄高度）
@@ -106,9 +106,9 @@ impl Toolbar {
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
         has_selection: bool,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
         window: &'a window::Window,
-        language: lumino_core::i18n::Language,
+        language: lumino_extras::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         arrangement_mode: bool,
     ) {
@@ -149,7 +149,7 @@ impl Toolbar {
         visible_groups: &[ToolbarGroup],
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
         window: &'a window::Window,
         arrangement_mode: bool,
     ) {
@@ -166,7 +166,7 @@ impl Toolbar {
                 false,
                 t,
                 window,
-                lumino_core::i18n::Language::ZhCn,
+                lumino_extras::i18n::Language::ZhCn,
                 // perf 仅在 Dashboard 分组使用，右侧分组不需要，占位即可
                 &ToolbarPerfContext {
                     perf_data: &crate::statusbar::performance::PerfData::new(0.0, 0.0, 0.0, 0.0),
@@ -191,9 +191,9 @@ impl Toolbar {
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
         has_selection: bool,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
         window: &'a window::Window,
-        language: lumino_core::i18n::Language,
+        language: lumino_extras::i18n::Language,
         perf: &ToolbarPerfContext<'_>,
         arrangement_mode: bool,
     ) -> Element<'a> {
@@ -239,7 +239,7 @@ impl Toolbar {
         &'a self,
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
-        t: &'static lumino_core::i18n::MainTranslations,
+        t: &'static lumino_extras::i18n::MainTranslations,
         window: &'a window::Window,
     ) -> Element<'a> {
         use crate::resources::icon;

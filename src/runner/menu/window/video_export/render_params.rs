@@ -2,8 +2,8 @@
 //!
 //! 将 RenderParams 构建逻辑独立拆分，便于维护。
 
-use lumino_core::palette::current_track_color_f32;
 use lumino_event::window::video::RenderMode;
+use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{
     MiditrailNoteGpu, NoteInstance, RenderParams, generate_ruler_instances,
     miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},

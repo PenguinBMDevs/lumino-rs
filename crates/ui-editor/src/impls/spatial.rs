@@ -77,10 +77,10 @@ impl Editor {
             )
         } else {
             // 冷路径：从 im::Vector 收集 NoteRef
-            let note_refs: Vec<lumino_core::NoteRef> = notes
+            let note_refs: Vec<lumino_note_core::NoteRef> = notes
                 .iter()
                 .enumerate()
-                .map(|(i, n)| lumino_core::NoteRef {
+                .map(|(i, n)| lumino_note_core::NoteRef {
                     tick: n.tick,
                     key: n.key,
                     length: n.length,

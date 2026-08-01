@@ -2,7 +2,7 @@ use iced_core::{Alignment, Length, Padding};
 use iced_widget::{
     Stack, button, column, container, mouse_area, row, scrollable, space, text, text_input,
 };
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 
 use crate::{
     Element, Theme,
@@ -25,7 +25,7 @@ pub struct SidebarViewParams<'a> {
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
     /// 当前轨道音符集合（零拷贝引用）
-    pub current_track_notes: &'a lumino_core::im::Vector<lumino_core::Note>,
+    pub current_track_notes: &'a im::Vector<lumino_note_core::Note>,
     /// 当前 PPQ，用于小节/拍计算
     pub ppq: u16,
     /// 当前吸附精度，作为 Step 列显示值

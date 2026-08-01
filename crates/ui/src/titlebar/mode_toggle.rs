@@ -3,7 +3,7 @@ use iced_widget::{button, container, row, text};
 
 use crate::widget;
 use crate::{Element, Message, Theme, resources::icon};
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 
 pub use lumino_ui_core::app_mode::AppMode;
 

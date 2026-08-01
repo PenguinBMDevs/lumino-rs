@@ -93,7 +93,7 @@ impl Editor {
     /// 收集移动操作的源音轨索引和目标音符（第一遍扫描）。
     fn collect_move_sources_and_dests(
         &self,
-        selection: &lumino_core::ArrangeSelection,
+        selection: &lumino_note_core::ArrangeSelection,
         delta_ticks: i64,
         delta_tracks: i32,
     ) -> (HashMap<usize, HashSet<usize>>, HashMap<usize, Vec<Note>>) {

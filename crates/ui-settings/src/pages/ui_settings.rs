@@ -7,8 +7,8 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_core::storage::config::{SelectionBoxMode, TrackDisplayMode};
+use lumino_extras::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_ui_core::window;
 
 /// 本地化主题选项（显示名 vs 规范标识符）
@@ -57,7 +57,7 @@ impl LocalizedSelectionBox {
     fn new(mode: SelectionBoxMode, lang: Language) -> Self {
         Self {
             inner: mode,
-            name: lumino_core::i18n::selection_box_mode_name(mode, lang),
+            name: lumino_extras::i18n::selection_box_mode_name(mode, lang),
         }
     }
 }
@@ -66,7 +66,7 @@ impl LocalizedSelectionBox {
 pub fn view<'a>(
     settings: &'a SettingsPanel,
     window: &lumino_ui_core::window::Window,
-    system_fonts: &[lumino_core::font_scanner::FontInfo],
+    system_fonts: &[lumino_note_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     let t = settings_translations(settings.language);
 
@@ -200,7 +200,7 @@ pub fn view<'a>(
 fn build_font_section<'a>(
     settings: &'a SettingsPanel,
     t: &'static SettingsTranslations,
-    system_fonts: &[lumino_core::font_scanner::FontInfo],
+    system_fonts: &[lumino_note_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     // 字体选项 - 从系统扫描的字体列表构建
     let font_options: Vec<String> = system_fonts.iter().map(|f| f.name.clone()).collect();

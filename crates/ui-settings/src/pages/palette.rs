@@ -9,7 +9,7 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::{Event, SettingsPanel};
-use lumino_core::palette::PaletteColor;
+use lumino_extras::palette::PaletteColor;
 
 /// 调色板预览颜色条的大小
 const SWATCH_SIZE: f32 = 28.0;
@@ -20,13 +20,13 @@ const SWATCH_SPACING: f32 = 2.0;
 
 /// 渲染调色板设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
-    let t = lumino_core::i18n::settings_translations(settings.language);
+    let t = lumino_extras::i18n::settings_translations(settings.language);
 
     // 当前调色板名称
     let current_palette_name = settings.selected_palette.as_str();
 
     // 检查调色板是否被锁定
-    let palette_locked = lumino_core::palette::is_palette_locked();
+    let palette_locked = lumino_extras::palette::is_palette_locked();
 
     // 调色板选择器：MIDI 加载后锁定，显示只读指示
     let picker: Element<'a> = if palette_locked {
@@ -50,7 +50,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     };
 
     // 获取当前选中调色板的详细信息
-    let palette_mgr = &*lumino_core::palette::PALETTE_MANAGER;
+    let palette_mgr = &*lumino_extras::palette::PALETTE_MANAGER;
     let palette = palette_mgr.get(current_palette_name);
 
     // 颜色预览

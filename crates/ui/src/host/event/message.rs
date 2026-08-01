@@ -12,8 +12,7 @@ impl Host {
                 Some(false) // 窗口动作不需要 UI 重建
             }
             message::Message::Window(window::Event::ToggleMaximize) => {
-                self.window_ctx.pending_window_action =
-                    Some(window::TrafficAction::ToggleMaximize);
+                self.window_ctx.pending_window_action = Some(window::TrafficAction::ToggleMaximize);
                 Some(false)
             }
             message::Message::Window(window::Event::Close) => {

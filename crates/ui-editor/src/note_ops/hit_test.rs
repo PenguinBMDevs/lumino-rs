@@ -17,7 +17,7 @@ use lumino_ui_constants::editor::NOTE_EDGE_THRESHOLD_PX;
 /// 降序是为了 hit test 时优先匹配视觉上靠上的音符。
 fn collect_ghost_indices(
     edit_state: &EditState,
-    pending: &Option<lumino_core::DragState>,
+    pending: &Option<lumino_editor_state::DragState>,
 ) -> Vec<usize> {
     let mut set = HashSet::new();
     if let Some(pending) = pending {

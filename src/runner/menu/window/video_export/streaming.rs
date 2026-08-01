@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck;
-use lumino_core::palette::current_track_color_f32;
+use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{NoteInstance, RenderParams, generate_ruler_instances, pack_color};
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};

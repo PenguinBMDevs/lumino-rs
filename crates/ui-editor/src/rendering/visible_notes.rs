@@ -9,8 +9,9 @@
 //! - dirty 时线性扫描，!dirty 且有索引时用索引查询
 //! - 索引重建交给交互路径（hit_test_note / update_selection）按需触发
 
+use super::Editor;
 use super::ghost::{has_active_ghost_delta, is_note_ghosted};
-use super::{EditState, Editor};
+use crate::EditState;
 
 impl Editor {
     /// 收集当前视口内可见的音符数据（tick, key, length）
@@ -100,7 +101,7 @@ impl Editor {
         visible_key_max: u16,
         max_key: u16,
         edit_state: &EditState,
-        pending: &Option<lumino_core::DragState>,
+        pending: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
         note_store_enabled: bool,
     ) {
@@ -184,7 +185,7 @@ impl Editor {
         visible_key_max: u16,
         max_key: u16,
         edit_state: &EditState,
-        pending: &Option<lumino_core::DragState>,
+        pending: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
         note_store_enabled: bool,
     ) {
@@ -280,7 +281,7 @@ fn apply_ghost_delta(
     key: u16,
     drag_dt: i64,
     drag_dk: i16,
-    pending: &Option<lumino_core::DragState>,
+    pending: &Option<lumino_editor_state::DragState>,
     i: usize,
     max_key: u16,
 ) -> (f32, u16) {

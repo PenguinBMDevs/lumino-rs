@@ -3,7 +3,8 @@
 //! 将每个 `EditState` 变体的处理逻辑拆分为独立函数（≤30 行），
 //! 使 `compute_state_changes()` 主方法 ≤40 行。
 
-use lumino_core::{DragState, Note, NoteStore};
+use lumino_editor_state::DragState;
+use lumino_note_core::{Note, NoteStore};
 use std::cell::Cell;
 
 // ──────────────────────────────────────────────
@@ -35,8 +36,7 @@ pub(super) fn handle_dragging(
     let raw_delta_tick = tick - drag_state.initial_tick as f32;
     let snapped_delta_tick = (raw_delta_tick / snap_precision).round() * snap_precision;
     let calculated_key = (key as i32 - drag_state.initial_key as i32 + *original_key as i32)
-        .clamp(0, visible_key_count.saturating_sub(1) as i32)
-        as u16;
+        .clamp(0, visible_key_count.saturating_sub(1) as i32) as u16;
 
     let delta_key = (calculated_key as i16).saturating_sub(*original_key as i16);
     drag_state.set_delta(snapped_delta_tick as i64, delta_key);
@@ -73,9 +73,9 @@ pub(super) fn handle_resizing_end(
     snapped_tick: f32,
     snap_precision: f32,
 ) -> Option<f32> {
-    notes.get(note_index).map(|note| {
-        (snapped_tick - note.tick).max(snap_precision)
-    })
+    notes
+        .get(note_index)
+        .map(|note| (snapped_tick - note.tick).max(snap_precision))
 }
 
 // ──────────────────────────────────────────────
@@ -102,8 +102,12 @@ pub(super) fn handle_dragging_selection(
 
 /// 对选中的音符应用左边缘调整（tick 右移 + length 缩减）
 fn apply_resize_start_to_selected(
-    delta_tick: f32, snap_precision: f32, selected: &[usize],
-    note_store: &mut NoteStore, notes: &mut im::Vector<Note>, note_store_enabled: bool,
+    delta_tick: f32,
+    snap_precision: f32,
+    selected: &[usize],
+    note_store: &mut NoteStore,
+    notes: &mut im::Vector<Note>,
+    note_store_enabled: bool,
 ) {
     if note_store_enabled {
         for &i in selected {
@@ -130,8 +134,12 @@ fn apply_resize_start_to_selected(
 
 /// 对选中的音符应用右边缘调整（length 增加）
 fn apply_resize_end_to_selected(
-    delta_tick: f32, snap_precision: f32, selected: &[usize],
-    note_store: &mut NoteStore, notes: &mut im::Vector<Note>, note_store_enabled: bool,
+    delta_tick: f32,
+    snap_precision: f32,
+    selected: &[usize],
+    note_store: &mut NoteStore,
+    notes: &mut im::Vector<Note>,
+    note_store_enabled: bool,
 ) {
     if note_store_enabled {
         for &i in selected {
@@ -156,8 +164,11 @@ fn apply_resize_end_to_selected(
 
 /// 批量调整左边缘：选中音符 tick 右移 + length 缩减
 pub(super) fn handle_resizing_selection_start(
-    last_tick: &mut f32, snapped_tick: f32, snap_precision: f32,
-    selected: &[usize], note_store: &mut NoteStore,
+    last_tick: &mut f32,
+    snapped_tick: f32,
+    snap_precision: f32,
+    selected: &[usize],
+    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
     note_store_enabled: bool,
@@ -168,22 +179,28 @@ pub(super) fn handle_resizing_selection_start(
     }
 
     apply_resize_start_to_selected(
-        delta_tick, snap_precision, selected, note_store, notes, note_store_enabled,
+        delta_tick,
+        snap_precision,
+        selected,
+        note_store,
+        notes,
+        note_store_enabled,
     );
     *last_tick = snapped_tick;
 
     if let Some((min_t, max_te, max_k, min_k)) = selected_bounds.get() {
-        selected_bounds.set(Some((
-            (min_t + delta_tick).max(0.0), max_te, max_k, min_k,
-        )));
+        selected_bounds.set(Some(((min_t + delta_tick).max(0.0), max_te, max_k, min_k)));
     }
     true
 }
 
 /// 批量调整右边缘：选中音符 length 增加
 pub(super) fn handle_resizing_selection_end(
-    last_tick: &mut f32, snapped_tick: f32, snap_precision: f32,
-    selected: &[usize], note_store: &mut NoteStore,
+    last_tick: &mut f32,
+    snapped_tick: f32,
+    snap_precision: f32,
+    selected: &[usize],
+    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
     note_store_enabled: bool,
@@ -194,7 +211,12 @@ pub(super) fn handle_resizing_selection_end(
     }
 
     apply_resize_end_to_selected(
-        delta_tick, snap_precision, selected, note_store, notes, note_store_enabled,
+        delta_tick,
+        snap_precision,
+        selected,
+        note_store,
+        notes,
+        note_store_enabled,
     );
     *last_tick = snapped_tick;
 

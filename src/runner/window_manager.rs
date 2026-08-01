@@ -56,7 +56,7 @@ impl WindowManager {
         // 在后台预热系统字体缓存，使首次打开设置对话框时字体下拉菜单
         // 的列表已就绪，不阻塞 UI 线程。字体扫描在后台线程调用
         // get_cached_fonts() 完成，OnceLock 保证只扫一次。
-        lumino_core::font_scanner::prewarm_font_cache();
+        lumino_note_core::font_scanner::prewarm_font_cache();
 
         let mut ui = lumino_ui::Host::new(
             window.clone(),

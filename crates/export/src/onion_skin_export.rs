@@ -6,12 +6,12 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use lumino_core::palette::onion_track_color;
-use lumino_core::project::metadata::ImageMetadata;
-use lumino_core::project::{LuminoProject, TrackSlot};
+use lumino_extras::palette::onion_track_color;
 use lumino_midi_model::compact::{CompactEvent, EventKind};
 use lumino_onion_skin::OnionSkinNote;
 use lumino_onion_skin_hires::{HiResConfig, generate_all_tiles};
+use lumino_project::project::metadata::ImageMetadata;
+use lumino_project::project::{LuminoProject, TrackSlot};
 
 use crate::ExportResult;
 
@@ -89,7 +89,7 @@ fn collect_onion_skin_notes(project: &LuminoProject) -> Vec<Vec<OnionSkinNote>> 
 ///
 /// `CompactEvent` 按 delta_tick 排序，通过 NoteOn/NoteOff 配对得到音符起止。
 fn track_notes_from_lmtrack(
-    data: &lumino_core::project::LmtrackData,
+    data: &lumino_project::project::LmtrackData,
     track_idx: u16,
 ) -> Vec<OnionSkinNote> {
     let events: Vec<CompactEvent> = match data.compact_events() {
@@ -144,10 +144,10 @@ fn track_notes_from_lmtrack(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::project::LmtrackData;
-    use lumino_core::project::TrackVisibilitySer;
-    use lumino_core::project::track::TrackMeta;
     use lumino_midi_model::compact::CompactEvent;
+    use lumino_project::project::LmtrackData;
+    use lumino_project::project::TrackVisibilitySer;
+    use lumino_project::project::track::TrackMeta;
     use tempfile::tempdir;
 
     fn make_track_with_note(meta_max_tick: u32) -> LmtrackData {

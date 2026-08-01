@@ -15,26 +15,10 @@ workspace = true
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
-lumino-midi-model = { workspace = true }
 thiserror = { workspace = true }
-font-kit = "0.14"
 toml = { workspace = true }
-chrono = { version = "0.4", features = ["serde"] }
-im = { version = "15.1.0", features = ["rayon"] }
-puffin = { workspace = true }
-png = "0.17"
-bit-vec = "0.8"
-# 工程文件格式依赖
-midly = { workspace = true }
 bincode = { workspace = true }
-zstd = { workspace = true }
-crc32fast = "1.3"
 
-[target.'cfg(target_os = "linux")'.dependencies]
-libc = "0.2"
-
-[target.'cfg(target_os = "macos")'.dependencies]
-libc = "0.2"
-
-[target.'cfg(target_os = "windows")'.dependencies]
-winapi = { version = "0.3", features = ["sysinfoapi", "psapi", "processthreadsapi", "handleapi", "winnt"] }
+[dev-dependencies]
+bit-vec = "0.8"
+im = { version = "15.1.0", features = ["rayon"] }

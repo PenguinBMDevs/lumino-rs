@@ -1,7 +1,7 @@
 //! 事件类型转换 — MergedEvent ↔ TrackEventKind 转换及辅助函数
 
-use midly::{MidiMessage, PitchBend, TrackEventKind};
 use midly::num::{u4, u7, u14};
+use midly::{MidiMessage, PitchBend, TrackEventKind};
 
 use lumino_midi_loader::MidiDocument;
 

@@ -23,8 +23,14 @@ pub(super) fn build_stream(
         .build_output_stream(
             &stream_config.into(),
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                audio_callback(data, &mut output_vec, &mut remainder,
-                    &sample_rx, &vec_return_tx, &mut limiter);
+                audio_callback(
+                    data,
+                    &mut output_vec,
+                    &mut remainder,
+                    &sample_rx,
+                    &vec_return_tx,
+                    &mut limiter,
+                );
             },
             err_fn,
             None,

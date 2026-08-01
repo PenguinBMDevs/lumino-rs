@@ -7,8 +7,8 @@ use lumino_ui_core::{Element, Message};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::i18n::settings_translations;
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
+use lumino_extras::i18n::settings_translations;
 
 /// 本地化橡皮擦行为包装
 #[derive(Debug, Clone, Copy)]
@@ -32,10 +32,10 @@ impl std::fmt::Display for LocalizedEraser {
 }
 
 impl LocalizedEraser {
-    fn new(behavior: EraserBehavior, lang: lumino_core::i18n::Language) -> Self {
+    fn new(behavior: EraserBehavior, lang: lumino_extras::i18n::Language) -> Self {
         Self {
             inner: behavior,
-            name: lumino_core::i18n::eraser_behavior_name(behavior, lang),
+            name: lumino_extras::i18n::eraser_behavior_name(behavior, lang),
         }
     }
 }
@@ -62,10 +62,10 @@ impl std::fmt::Display for LocalizedTrackAdd {
 }
 
 impl LocalizedTrackAdd {
-    fn new(behavior: TrackAddBehavior, lang: lumino_core::i18n::Language) -> Self {
+    fn new(behavior: TrackAddBehavior, lang: lumino_extras::i18n::Language) -> Self {
         Self {
             inner: behavior,
-            name: lumino_core::i18n::track_add_behavior_name(behavior, lang),
+            name: lumino_extras::i18n::track_add_behavior_name(behavior, lang),
         }
     }
 }

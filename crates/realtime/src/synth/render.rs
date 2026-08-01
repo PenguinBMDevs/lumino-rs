@@ -35,11 +35,19 @@ pub(super) fn render_thread_loop(
 
         while running_render.load(Ordering::Relaxed) {
             if render_iteration(
-                &mut channel_group, &event_receiver, &sample_tx,
-                &vec_return_rx, &vec_return_tx_render,
-                &perf_render, &voice_render,
-                render_len, channels, sample_rate,
-                render_timeout_ns, render_window_ms, event_budget_ns,
+                &mut channel_group,
+                &event_receiver,
+                &sample_tx,
+                &vec_return_rx,
+                &vec_return_tx_render,
+                &perf_render,
+                &voice_render,
+                render_len,
+                channels,
+                sample_rate,
+                render_timeout_ns,
+                render_window_ms,
+                event_budget_ns,
             ) {
                 break;
             }
@@ -77,16 +85,28 @@ fn render_iteration(
     }
 
     if handle_idle(
-        channel_group, perf_render, event_receiver, sample_tx,
-        render_window_ms, event_count,
+        channel_group,
+        perf_render,
+        event_receiver,
+        sample_tx,
+        render_window_ms,
+        event_count,
     ) {
         return false;
     }
 
     render_window_and_report(
-        channel_group, sample_tx, vec_return_rx, vec_return_tx_render,
-        perf_render, start, render_len, channels, sample_rate,
-        event_count, voice_render,
+        channel_group,
+        sample_tx,
+        vec_return_rx,
+        vec_return_tx_render,
+        perf_render,
+        start,
+        render_len,
+        channels,
+        sample_rate,
+        event_count,
+        voice_render,
     )
 }
 
@@ -131,7 +151,9 @@ fn render_window_and_report(
         buf = Vec::with_capacity(render_len);
     }
     // SAFETY: read_samples_unchecked 保证全覆盖
-    unsafe { buf.set_len(render_len); }
+    unsafe {
+        buf.set_len(render_len);
+    }
 
     // 渲染一个窗口
     channel_group.read_samples_unchecked(&mut buf);
@@ -143,7 +165,14 @@ fn render_window_and_report(
         return true;
     }
 
-    update_render_perf_stats(perf_render, start, render_len, channels, sample_rate, event_count);
+    update_render_perf_stats(
+        perf_render,
+        start,
+        render_len,
+        channels,
+        sample_rate,
+        event_count,
+    );
     false
 }
 

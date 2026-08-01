@@ -89,7 +89,7 @@ impl Root {
                 view_settings_dialog(
                     &self.settings,
                     &self.window,
-                    lumino_core::font_scanner::get_cached_fonts(),
+                    lumino_note_core::font_scanner::get_cached_fonts(),
                 )
             }
             DialogType::SpeedChange => {

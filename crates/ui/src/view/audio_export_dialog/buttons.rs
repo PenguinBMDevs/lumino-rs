@@ -4,7 +4,7 @@
 
 use iced_widget::{button, column, progress_bar, row, space, text};
 
-use crate::{Message};
+use crate::Message;
 use crate::message::AudioExportAction;
 use crate::state::root_state::AudioExportDialogState;
 

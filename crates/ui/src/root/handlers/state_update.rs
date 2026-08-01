@@ -65,7 +65,7 @@ impl Root {
                     if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
                         state.view.zoom_y = fill_zoom;
                         let total_ticks = state.view.total_ticks;
-                        lumino_core::editor_state::viewport::Viewport::new(
+                        lumino_editor_state::editor_state::viewport::Viewport::new(
                             &mut state.view,
                             &mut state.max_scroll,
                         )

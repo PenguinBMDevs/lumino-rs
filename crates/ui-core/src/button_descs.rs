@@ -10,7 +10,7 @@
 //! 新增工具栏按钮时，只需在此处补充 `ButtonId` 变体并填写对应描述，
 //! 编译期即可保证不漏配。
 
-use lumino_core::i18n::{Language, MainTranslations, main_translations};
+use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 
 /// 工具栏按钮的稳定角色标识
 ///

@@ -7,11 +7,11 @@ use std::cell::UnsafeCell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, AtomicU64, AtomicUsize};
 
-pub(crate) mod state;
-mod unsafe_access;
 mod queue;
+pub(crate) mod state;
 #[cfg(test)]
 mod tests;
+mod unsafe_access;
 pub use queue::{MpscQueue, RenderData};
 
 /// 三缓冲结构

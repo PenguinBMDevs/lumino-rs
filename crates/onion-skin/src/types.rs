@@ -1,7 +1,7 @@
 //! 洋葱皮类型定义
 
-use lumino_core::note::Note;
 use lumino_midi_loader::NoteInfo;
+use lumino_note_core::Note;
 
 /// 洋葱皮音符数据（用于后台生成）
 ///
@@ -90,9 +90,9 @@ impl OnionSkinNote {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_core::note::Note;
     use lumino_midi_loader::NoteEvent;
     use lumino_midi_loader::NoteInfo;
+    use lumino_note_core::Note;
 
     #[test]
     fn from_ms_sets_tick_to_zero() {

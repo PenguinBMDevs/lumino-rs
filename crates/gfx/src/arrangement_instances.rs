@@ -4,7 +4,7 @@
 //! 定位可见范围起点，只扫描 O(log N + K) 个事件。
 
 use crate::ArrangementNoteInstance;
-use lumino_core::note::Note;
+use lumino_note_core::note::Note;
 use std::collections::HashMap;
 
 type TrackNotesMap = HashMap<usize, im::Vector<Note>>;

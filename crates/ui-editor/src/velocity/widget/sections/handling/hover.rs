@@ -4,7 +4,7 @@
 
 use iced_core::{Point, Size};
 use iced_widget::canvas;
-use lumino_core::{AutomationEdit, SegmentShape};
+use lumino_note_core::{AutomationEdit, SegmentShape};
 
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
@@ -126,8 +126,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             } else {
                 (point_x - min_x) / (max_x - min_x)
             };
-            let interp_velocity_f =
-                start_velocity as f32 * (1.0 - t) + current_velocity as f32 * t;
+            let interp_velocity_f = start_velocity as f32 * (1.0 - t) + current_velocity as f32 * t;
             let new_velocity = interp_velocity_f.round().clamp(0.0, 127.0) as u8;
 
             if point.velocity != new_velocity {
@@ -149,7 +148,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         &self,
         state: &mut VelocityCanvasState,
         view: lumino_gfx::automation::AutomationViewParams,
-        target: lumino_core::AutomationTarget,
+        target: lumino_note_core::AutomationTarget,
         max_val: f32,
         track_idx: u16,
         start_tick: u32,
@@ -165,17 +164,29 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         state.automation_curve_current = Some((current_tick, current_value));
 
         if current_tick == start_tick {
-            return self.handle_single_click_curve_add(track_idx, &target, current_tick, current_value);
+            return self.handle_single_click_curve_add(
+                track_idx,
+                &target,
+                current_tick,
+                current_value,
+            );
         }
 
-        self.handle_two_point_curve_add(track_idx, &target, start_tick, start_value, current_tick, current_value)
+        self.handle_two_point_curve_add(
+            track_idx,
+            &target,
+            start_tick,
+            start_value,
+            current_tick,
+            current_value,
+        )
     }
 
     /// 单点点击：只创建一个 Curve{tension:0} 锚点
     fn handle_single_click_curve_add(
         &self,
         track_idx: u16,
-        target: &lumino_core::AutomationTarget,
+        target: &lumino_note_core::AutomationTarget,
         tick: u32,
         value: u16,
     ) -> Option<canvas::Action<Message>> {
@@ -195,7 +206,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     fn handle_two_point_curve_add(
         &self,
         track_idx: u16,
-        target: &lumino_core::AutomationTarget,
+        target: &lumino_note_core::AutomationTarget,
         start_tick: u32,
         start_value: u16,
         current_tick: u32,

@@ -1,6 +1,6 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, scrollable, space, text, text_input};
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 
 use crate::message::{Message, ProjectSettingsAction};
 use crate::state::root_state::ProjectSettingsDialogState;

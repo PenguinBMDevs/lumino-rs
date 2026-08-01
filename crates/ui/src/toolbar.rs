@@ -34,7 +34,7 @@ pub struct ToolbarPerfContext<'a> {
     /// 每四分音符脉冲数（PPQ）
     pub ppq: u16,
     /// 速度变化点（用于 tick→秒 / BPM 换算）
-    pub tempo_points: &'a [lumino_core::midi_types::TempoPoint],
+    pub tempo_points: &'a [lumino_note_core::midi_types::TempoPoint],
 }
 
 /// 工具栏组件

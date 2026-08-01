@@ -1,6 +1,6 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, space, text, text_input};
-use lumino_core::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 
 use crate::message::{CustomPrecisionAction, Message};
 use crate::state::root_state::CustomPrecisionDialogState;
@@ -31,7 +31,7 @@ impl LocalizedDotType {
     fn new(dot_type: DotType, lang: Language) -> Self {
         Self {
             inner: dot_type,
-            name: lumino_core::i18n::dot_type_name(dot_type, lang),
+            name: lumino_extras::i18n::dot_type_name(dot_type, lang),
         }
     }
 }

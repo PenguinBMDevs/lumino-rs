@@ -2,8 +2,8 @@
 //!
 //! RunnerInner 中与配置保存、差异检测等相关的实现。
 
-use super::*;
 use super::super::window_manager::WindowManager;
+use super::*;
 
 struct ConfigDiff {
     synth_changed: bool,
@@ -23,8 +23,8 @@ impl RunnerInner {
         current_theme: &str,
     ) -> Option<ConfigDiff> {
         let theme_changed = current_theme != old.theme;
-        let synth_changed = new.synth_backend != old.preferred_backend
-            || new.soundfont_path != old.soundfont_path;
+        let synth_changed =
+            new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path;
         let xsynth_changed = new.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.xsynth_sample_rate != old.xsynth_sample_rate
             || new.xsynth_threads != old.xsynth_threads
@@ -51,14 +51,29 @@ impl RunnerInner {
             || new.merge_window_ms != old.merge_window_ms
             || new.intercept_notification_enabled != old.intercept_notification_enabled
             || new.automation_line_thickness != old.automation_line_thickness;
-        if theme_changed || synth_changed || xsynth_changed || titlebar_changed || font_changed || other_changed {
-            Some(ConfigDiff { synth_changed, xsynth_changed, titlebar_changed, font_changed })
+        if theme_changed
+            || synth_changed
+            || xsynth_changed
+            || titlebar_changed
+            || font_changed
+            || other_changed
+        {
+            Some(ConfigDiff {
+                synth_changed,
+                xsynth_changed,
+                titlebar_changed,
+                font_changed,
+            })
         } else {
             None
         }
     }
 
-    pub(crate) fn compute_custom_precision_ticks(ppq: f32, numerator: f32, denominator: f32) -> f32 {
+    pub(crate) fn compute_custom_precision_ticks(
+        ppq: f32,
+        numerator: f32,
+        denominator: f32,
+    ) -> f32 {
         ppq * 4.0 * numerator / denominator
     }
 
@@ -78,36 +93,54 @@ impl RunnerInner {
         let diff = match Self::config_diff(new, old, &current_theme) {
             Some(d) => d,
             None if !auto_scroll_mode_changed => return,
-            None => ConfigDiff { synth_changed: false, xsynth_changed: false, titlebar_changed: false, font_changed: false },
+            None => ConfigDiff {
+                synth_changed: false,
+                xsynth_changed: false,
+                titlebar_changed: false,
+                font_changed: false,
+            },
         };
         if diff.synth_changed {
             tracing::info!(
                 "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
-                old.preferred_backend, new.synth_backend,
-                display_or_empty(&old.soundfont_path), display_or_empty(&new.soundfont_path),
+                old.preferred_backend,
+                new.synth_backend,
+                display_or_empty(&old.soundfont_path),
+                display_or_empty(&new.soundfont_path),
             );
             self.midi_state.midi.mark_for_reinit();
         }
         if diff.xsynth_changed {
             tracing::info!(
                 "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
-                old.xsynth_buffer_ms, new.xsynth_buffer_ms,
-                old.xsynth_sample_rate, new.xsynth_sample_rate,
-                old.xsynth_threads, new.xsynth_threads,
-                old.xsynth_fade_out_killing, new.xsynth_fade_out,
-                old.xsynth_max_voices_per_key, new.xsynth_max_voices_per_key,
+                old.xsynth_buffer_ms,
+                new.xsynth_buffer_ms,
+                old.xsynth_sample_rate,
+                new.xsynth_sample_rate,
+                old.xsynth_threads,
+                new.xsynth_threads,
+                old.xsynth_fade_out_killing,
+                new.xsynth_fade_out,
+                old.xsynth_max_voices_per_key,
+                new.xsynth_max_voices_per_key,
             );
             self.midi_state.midi.mark_for_reinit();
         }
         if diff.titlebar_changed {
-            tracing::info!("标题栏设置已改变: native_titlebar {} -> {}", old.use_native_titlebar, new.use_native_titlebar);
+            tracing::info!(
+                "标题栏设置已改变: native_titlebar {} -> {}",
+                old.use_native_titlebar,
+                new.use_native_titlebar
+            );
             self.window_state.needs_window_restart = true;
         }
         if diff.font_changed {
             tracing::info!(
                 "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
-                display_or_empty(&old.program_font_name), display_or_empty(&new.program_font_name),
-                display_or_empty(&old.program_font_path), display_or_empty(&new.program_font_path),
+                display_or_empty(&old.program_font_name),
+                display_or_empty(&new.program_font_name),
+                display_or_empty(&old.program_font_path),
+                display_or_empty(&new.program_font_path),
             );
             self.window_state.needs_window_restart = true;
         }
@@ -130,7 +163,15 @@ impl RunnerInner {
             config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
             config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
             config.ui.eraser_behavior = new.eraser_behavior;
-            config.ui.auto_scroll.mode = self.window_state.window.ui().root().editor.editor_state.auto_scroll.mode;
+            config.ui.auto_scroll.mode = self
+                .window_state
+                .window
+                .ui()
+                .root()
+                .editor
+                .editor_state
+                .auto_scroll
+                .mode;
             config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;
             config.ui.auto_scroll.page_trigger_offset = new.auto_scroll_page_trigger_offset;
             config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;
@@ -151,7 +192,7 @@ impl RunnerInner {
             config.ui.intercept_notification_enabled = new.intercept_notification_enabled;
             config.ui.automation_line_thickness = new.automation_line_thickness;
         });
-        lumino_core::palette::set_current_palette_by_name(&new.selected_palette);
+        lumino_extras::palette::set_current_palette_by_name(&new.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {
             tracing::warn!("保存配置失败: {e}");
         }

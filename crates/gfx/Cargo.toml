@@ -26,6 +26,8 @@ anyhow = { workspace = true }
 im = { version = "15.1.0", features = ["rayon"] }
 rayon = "1.10"
 lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-editor-state = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-onion-skin = { workspace = true }
 lumino-onion-skin-hires = { workspace = true }

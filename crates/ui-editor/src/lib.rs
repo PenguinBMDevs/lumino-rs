@@ -65,7 +65,7 @@ mod impls;
 ///
 /// 从当前调色板的第一个颜色开始取色。
 pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
-    lumino_core::palette::onion_track_color(track_idx)
+    lumino_extras::palette::onion_track_color(track_idx)
 }
 
 /// 缓存失效标志位
@@ -129,7 +129,7 @@ pub struct Editor {
     /// 渲染时 ghost 位置 = note + pending_drag_state.delta + drag_state.delta。
     ///
     /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
-    pub(crate) pending_drag_state: Option<lumino_core::DragState>,
+    pub(crate) pending_drag_state: Option<lumino_editor_state::DragState>,
 
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,

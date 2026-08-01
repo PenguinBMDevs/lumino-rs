@@ -64,7 +64,7 @@ impl Editor {
                 // BitSet 16M 位仅 256KB，O(N/64) 初始化 ~0.3ms
                 self.editor_state.interaction.selected_notes.clear();
                 self.editor_state.interaction.selection_bitset =
-                    Some(lumino_core::BitSet::all_set(count));
+                    Some(lumino_note_core::BitSet::all_set(count));
                 self.selected_bounds.set(Some(bounds));
                 return;
             }

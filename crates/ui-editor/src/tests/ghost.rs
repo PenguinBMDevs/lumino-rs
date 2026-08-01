@@ -8,7 +8,7 @@ use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
 use crate::rendering::ghost_delta_for_index;
-use lumino_core::DragState;
+use lumino_editor_state::DragState;
 
 // ===== is_editing 判定测试 =====
 

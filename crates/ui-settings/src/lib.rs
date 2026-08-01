@@ -12,8 +12,8 @@ pub mod pages;
 use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
-use lumino_core::i18n::Language;
 use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
+use lumino_extras::i18n::Language;
 use lumino_ui_core::{Element, Message, Theme, window};
 
 use components::*;
@@ -85,7 +85,7 @@ pub struct SettingsPanel {
 
 impl SettingsPanel {
     pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
-        let palette_mgr = &*lumino_core::palette::PALETTE_MANAGER;
+        let palette_mgr = &*lumino_extras::palette::PALETTE_MANAGER;
         let available_palettes = palette_mgr.names().to_vec();
         let selected_palette = if ui_config.selected_palette.is_empty() {
             palette_mgr.default().name.to_string()
@@ -309,7 +309,7 @@ impl SettingsPanel {
 pub fn view<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
-    system_fonts: &'a [lumino_core::font_scanner::FontInfo],
+    system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> Element<'a> {
     let menu_items = menu::create_menu_items(settings.language);
 
@@ -334,7 +334,7 @@ pub fn view<'a>(
 fn render_content_area<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
-    system_fonts: &'a [lumino_core::font_scanner::FontInfo],
+    system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),

@@ -107,12 +107,18 @@ pub fn completed_overlay<'a>(
         text(format!("总帧数: {total_frames}"))
             .size(13)
             .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("时长: {}", helpers::format_duration(stats.duration)))
-            .size(13)
-            .style(widgets::dialog_muted_text_style(palette)),
-        text(format!("总用时: {}", helpers::format_duration(elapsed_secs)))
-            .size(13)
-            .style(widgets::dialog_muted_text_style(palette)),
+        text(format!(
+            "时长: {}",
+            helpers::format_duration(stats.duration)
+        ))
+        .size(13)
+        .style(widgets::dialog_muted_text_style(palette)),
+        text(format!(
+            "总用时: {}",
+            helpers::format_duration(elapsed_secs)
+        ))
+        .size(13)
+        .style(widgets::dialog_muted_text_style(palette)),
         text(format!("平均速度: {avg_fps:.1} fps"))
             .size(13)
             .style(widgets::dialog_muted_text_style(palette)),

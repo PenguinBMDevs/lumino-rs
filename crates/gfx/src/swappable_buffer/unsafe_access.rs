@@ -10,8 +10,8 @@
 
 use std::sync::atomic::Ordering;
 
-use super::state::{pack_state, unpack_ready, unpack_reading, unpack_writer};
 use super::SwappableBuffer;
+use super::state::{pack_state, unpack_reading, unpack_ready, unpack_writer};
 
 impl<T> SwappableBuffer<T> {
     /// UI 线程：获取写入缓冲区引用（独占）

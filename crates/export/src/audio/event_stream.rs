@@ -53,7 +53,11 @@ impl<'a> MidiDocEventStream<'a> {
         for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
             if note_idx < self.doc.notes[track_idx].len() {
                 let note = &self.doc.notes[track_idx][note_idx];
-                let tick = if note_on_emitted { note.end_tick } else { note.start_tick };
+                let tick = if note_on_emitted {
+                    note.end_tick
+                } else {
+                    note.start_tick
+                };
                 if tick < min_tick {
                     min_tick = tick;
                 }
@@ -79,7 +83,11 @@ impl<'a> MidiDocEventStream<'a> {
                 continue;
             }
             let note = &self.doc.notes[track_idx][note_idx];
-            let tick = if note_on_emitted { note.end_tick } else { note.start_tick };
+            let tick = if note_on_emitted {
+                note.end_tick
+            } else {
+                note.start_tick
+            };
             if tick != min_tick {
                 continue;
             }
@@ -113,11 +121,7 @@ impl<'a> MidiDocEventStream<'a> {
     }
 
     /// 尝试在指定 tick 处添加控制事件到最佳候选
-    fn try_control_event_at(
-        &self,
-        min_tick: u32,
-        best: &mut Option<(u8, MergedEvent)>,
-    ) {
+    fn try_control_event_at(&self, min_tick: u32, best: &mut Option<(u8, MergedEvent)>) {
         if self.ctrl_cursor >= self.doc.control_events.len() {
             return;
         }
@@ -128,15 +132,36 @@ impl<'a> MidiDocEventStream<'a> {
         let candidate = match ctrl.kind {
             0 => {
                 let (c, v) = ctrl.as_control_change();
-                Some((2, MergedEvent { tick: ctrl.tick, kind: 2, channel: ctrl.channel, param1: c, param2: v as u16 }))
+                Some((
+                    2,
+                    MergedEvent {
+                        tick: ctrl.tick,
+                        kind: 2,
+                        channel: ctrl.channel,
+                        param1: c,
+                        param2: v as u16,
+                    },
+                ))
             }
             1 => Some((
                 3,
-                MergedEvent { tick: ctrl.tick, kind: 3, channel: ctrl.channel, param1: ctrl.as_program_change(), param2: 0 },
+                MergedEvent {
+                    tick: ctrl.tick,
+                    kind: 3,
+                    channel: ctrl.channel,
+                    param1: ctrl.as_program_change(),
+                    param2: 0,
+                },
             )),
             2 => Some((
                 4,
-                MergedEvent { tick: ctrl.tick, kind: 4, channel: ctrl.channel, param1: 0, param2: ctrl.param },
+                MergedEvent {
+                    tick: ctrl.tick,
+                    kind: 4,
+                    channel: ctrl.channel,
+                    param1: 0,
+                    param2: ctrl.param,
+                },
             )),
             _ => None,
         };
@@ -156,7 +181,11 @@ impl<'a> MidiDocEventStream<'a> {
                     let (note_idx, note_on_emitted) = cursor;
                     if *note_idx < self.doc.notes[track_idx].len() {
                         let note = &self.doc.notes[track_idx][*note_idx];
-                        let note_tick = if *note_on_emitted { note.end_tick } else { note.start_tick };
+                        let note_tick = if *note_on_emitted {
+                            note.end_tick
+                        } else {
+                            note.start_tick
+                        };
                         if note_tick == event.tick {
                             if *note_on_emitted {
                                 *note_idx += 1;

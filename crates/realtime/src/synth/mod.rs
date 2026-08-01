@@ -17,14 +17,16 @@ mod render;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use cpal::traits::StreamTrait;
 use cpal::Stream;
+use cpal::traits::StreamTrait;
 use crossbeam_channel::Sender;
 
 use xsynth_core::AudioStreamParams;
 
 use crate::events::SynthEvent;
-use crate::stats::{RealtimeSynthStats, RealtimeSynthStatsReader, RenderPerfShared, RenderPerfStats};
+use crate::stats::{
+    RealtimeSynthStats, RealtimeSynthStatsReader, RenderPerfShared, RenderPerfStats,
+};
 
 /// 发送同步/同步的流包装器
 struct SendSyncStream(Stream);

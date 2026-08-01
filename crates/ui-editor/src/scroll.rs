@@ -1,5 +1,5 @@
 use super::CacheInvalidation;
-use lumino_core::editor_state::viewport::Viewport;
+use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_ui_constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X, MIN_ZOOM_Y};
 
 impl super::Editor {

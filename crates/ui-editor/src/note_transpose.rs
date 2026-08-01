@@ -1,7 +1,7 @@
 //! 音符移调操作模块
 
 use super::Editor;
-use lumino_core::EditorTransform;
+use lumino_editor_state::EditorTransform;
 
 use std::collections::HashSet;
 

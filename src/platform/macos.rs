@@ -2,7 +2,7 @@
 
 use std::{collections::HashMap, sync::OnceLock};
 
-use lumino_core::i18n::Language;
+use lumino_extras::i18n::Language;
 use lumino_ui::event::{self as event, Event as CoreEvent};
 use lumino_ui::titlebar::menu::{MenuItem as UiMenuItem, event_display_name, menus as ui_menus};
 use muda::{

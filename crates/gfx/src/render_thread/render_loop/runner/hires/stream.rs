@@ -37,11 +37,11 @@ pub(crate) fn drain_hires_stream(
             }
             Ok(HiResStreamMsg::Finished) => {
                 if hires_renderer.is_some() {
-                    let flush = ctx.device.create_command_encoder(
-                        &wgpu::CommandEncoderDescriptor {
-                            label: Some("hires_stream_flush"),
-                        },
-                    );
+                    let flush =
+                        ctx.device
+                            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                                label: Some("hires_stream_flush"),
+                            });
                     ctx.queue.submit(std::iter::once(flush.finish()));
                 }
                 push_onion_progress(onion_progress, "高精度洋葱皮贴图流式生成+上传完成", 1.0);

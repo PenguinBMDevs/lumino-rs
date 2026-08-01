@@ -4,7 +4,7 @@
 
 use iced_core::Alignment;
 use iced_widget::{column, row, text, text_input};
-use lumino_core::i18n::settings_translations;
+use lumino_extras::i18n::settings_translations;
 use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;

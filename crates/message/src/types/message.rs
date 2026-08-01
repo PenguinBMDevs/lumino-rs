@@ -189,9 +189,11 @@ mod tests {
         );
         assert!(matches!(
             msg,
-            Message::PianoRollContextMenu(crate::context_menu::PianoRollContextMenuAction::ItemClicked(
-                crate::context_menu::PianoRollContextMenuItem::Copy
-            ))
+            Message::PianoRollContextMenu(
+                crate::context_menu::PianoRollContextMenuAction::ItemClicked(
+                    crate::context_menu::PianoRollContextMenuItem::Copy
+                )
+            )
         ));
     }
 }
