@@ -1,0 +1,83 @@
+# Lumino vendored copy of xsynth-realtime 0.4.0 (LGPL-3.0)
+#
+# 原版来自 https://github.com/BlackMIDIDevs/xsynth (crates.io: xsynth-realtime 0.4.0)
+# 通过 [patch.crates-io] 指向本目录，用于：
+# - 音频流重定向：设备拔出/更换后，在 xsynth_stream_owner 线程内原地重建 cpal 流，
+#   合成管线（VoiceChannel / BufferedRenderer / 音色库）保持不变。
+# 修改点：realtime_synth.rs 中的 StreamCommand::Restart / RestartSelf 与 StreamRestartError。
+
+[package]
+edition = "2021"
+name = "xsynth-realtime"
+version = "0.4.0"
+authors = [
+    "Arduano",
+    "MBMS",
+    "Kaydax",
+    "Khangaroo",
+]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+description = "A real-time MIDI synthesizer using XSynth. (Lumino vendored fork)"
+homepage = "https://github.com/BlackMIDIDevs/xsynth"
+readme = "README.md"
+keywords = [
+    "midi",
+    "synthesizer",
+    "soundfont",
+]
+categories = ["multimedia::audio"]
+license = "LGPL-3.0"
+repository = "https://github.com/BlackMIDIDevs/xsynth"
+
+[features]
+serde = [
+    "dep:serde",
+    "xsynth-core/serde",
+]
+
+[lib]
+name = "xsynth_realtime"
+path = "src/lib.rs"
+
+[dependencies.atomic_refcell]
+version = "0.1.13"
+
+[dependencies.bytemuck]
+version = "1.16.3"
+
+[dependencies.cpal]
+version = "0.15.3"
+
+[dependencies.crossbeam-channel]
+version = "0.5.13"
+
+[dependencies.lazy_static]
+version = "1.5.0"
+
+[dependencies.rayon]
+version = "1.10.0"
+
+[dependencies.serde]
+version = "1.0"
+features = ["derive"]
+optional = true
+
+[dependencies.spin_sleep]
+version = "1.2.1"
+
+[dependencies.thiserror]
+version = "1.0.63"
+
+[dependencies.to_vec]
+version = "0.1.0"
+
+[dependencies.wav]
+version = "1.0.1"
+
+[dependencies.xsynth-core]
+version = "=0.4.0"

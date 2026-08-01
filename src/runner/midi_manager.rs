@@ -293,6 +293,24 @@ impl MidiManager {
         }
     }
 
+    /// 处理音频流恢复（音频设备被拔出/更换后）。
+    ///
+    /// XSynth 底层会自动重定向到系统默认输出设备；仅当自愈失败
+    /// （如新设备参数与管线不一致）时，此方法触发上层重建管线。
+    pub fn handle_stream_recovery(&mut self) {
+        let Some(api) = self.api.as_mut() else {
+            return;
+        };
+        if !api.poll_stream_recovery_needed() {
+            return;
+        }
+        tracing::warn!("音频设备已改变，正在恢复音频流...");
+        match api.recover_stream() {
+            Ok(()) => tracing::info!("音频流已恢复（已重定向/重建到默认输出设备）"),
+            Err(e) => tracing::error!("音频流恢复失败: {e}"),
+        }
+    }
+
     /// 检查异步初始化是否完成，如果完成则切换到 XSynth
     ///
     /// 返回 `true` 表示后端已成功切换到 XSynth，调用方应据此更新播放 MIDI 输出。

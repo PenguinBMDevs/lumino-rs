@@ -1,18 +1,19 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
 use xsynth_core::{
     AudioStreamParams, ChannelCount,
-    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent},
     soundfont::SoundfontBase,
 };
 
 use lumino_realtime::{
-    RealtimeEventSender, RealtimeSynth, SynthEvent, ThreadCount as LuminoThreadCount,
-    XSynthRealtimeConfig,
+    RealtimeEventSender, RealtimeSynth, StreamRestartError, SynthEvent,
+    ThreadCount as LuminoThreadCount, XSynthRealtimeConfig,
 };
 
+use super::xsynth_output::XSynthOutputConn;
 use crate::constants::*;
 use crate::soundfont_cache;
 use crate::{
@@ -30,6 +31,7 @@ pub struct XSynthStats {
     pub buffer_samples: i64,
 }
 
+#[derive(Debug, Clone)]
 pub struct XSynthOptions {
     pub buffer_ms: f64,
     pub threads: i32,
@@ -39,7 +41,12 @@ pub struct XSynthOptions {
 
 pub struct XSynth {
     synth: RealtimeSynth,
-    sender: RealtimeEventSender,
+    /// 共享事件发送器（全量重建时替换，所有已创建的输出连接自动跟随）
+    sender_shared: Arc<Mutex<RealtimeEventSender>>,
+    /// 音色库路径（重建管线时重用）
+    soundfont_path: PathBuf,
+    /// 打开选项（重建管线时重用）
+    options: Option<XSynthOptions>,
     version: String,
 }
 
@@ -55,12 +62,33 @@ impl XSynth {
             )));
         }
 
+        let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref())?;
+        let sender_shared = Arc::new(Mutex::new(sender));
+
+        let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
+        tracing::info!("XSynth: 初始化完成");
+
+        Ok(Self {
+            synth,
+            sender_shared,
+            soundfont_path: soundfont_path.to_path_buf(),
+            options,
+            version,
+        })
+    }
+
+    /// 初始化合成管线：预加载音色库 → 打开音频流 → 配置音色库事件。
+    ///
+    /// 被 `new` 与 `rebuild`（设备参数变化后全量重建）复用。
+    fn init_synth(
+        soundfont_path: &Path,
+        options: Option<&XSynthOptions>,
+    ) -> Result<(RealtimeSynth, RealtimeEventSender), Error> {
         // 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
         // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
         // BufferedRenderer 的 render pipeline 能立即产生有效数据，
         // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
         let sample_rate = options
-            .as_ref()
             .map(|o| o.sample_rate)
             .unwrap_or(DEFAULT_SAMPLE_RATE);
         let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
@@ -145,14 +173,7 @@ impl XSynth {
             ChannelAudioEvent::ResetControl,
         )));
 
-        let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
-        tracing::info!("XSynth: 初始化完成");
-
-        Ok(Self {
-            synth,
-            sender,
-            version,
-        })
+        Ok((synth, sender))
     }
 
     /// 获取运行时统计信息
@@ -163,6 +184,50 @@ impl XSynth {
             average_renderer_load: stats.buffer().average_renderer_load(),
             buffer_samples: stats.buffer().last_samples_after_read(),
         }
+    }
+
+    /// 检查音频流是否因设备移除等不可用，需要恢复。
+    ///
+    /// 底层（xsynth-realtime）在音频设备被拔出/更换时自动尝试重定向到
+    /// 系统默认输出设备；仅当自愈失败（如新设备参数与管线不一致）时才返回 `true`。
+    pub fn poll_stream_recovery_needed(&self) -> bool {
+        self.synth.poll_recovery_error().is_some()
+    }
+
+    /// 恢复音频流：优先直接重定向到系统默认输出设备（合成管线不变），
+    /// 重定向不可行（设备参数变化）时全量重建合成管线。
+    pub fn recover_stream(&mut self) -> Result<(), String> {
+        match self.synth.restart_stream() {
+            Ok(()) => {
+                tracing::info!("XSynth: 音频流已重定向到默认输出设备（合成管线保持不变）");
+                Ok(())
+            }
+            Err(StreamRestartError::ConfigChanged(msg)) => {
+                tracing::warn!("XSynth: 设备参数已改变 ({msg})，重建合成管线");
+                self.rebuild()
+            }
+            Err(e) => {
+                tracing::warn!("XSynth: 音频流重定向失败 ({e})，重建合成管线");
+                self.rebuild()
+            }
+        }
+    }
+
+    /// 全量重建合成管线（使用当前系统默认输出设备）。
+    ///
+    /// 重建后替换共享事件发送器，所有已创建的 `XSynthOutputConn` 自动跟随新管线；
+    /// 无需上层重建输出连接。
+    fn rebuild(&mut self) -> Result<(), String> {
+        let (synth, sender) = Self::init_synth(&self.soundfont_path, self.options.as_ref())
+            .map_err(|e| format!("重建合成管线失败: {e}"))?;
+
+        // 替换合成器（旧实例 drop：发送 Shutdown 并 join 全部线程）
+        self.synth = synth;
+        // 替换共享发送器：已创建的输出连接通过 Arc 读取，自动指向新管线
+        *self.sender_shared.lock().unwrap_or_else(|e| e.into_inner()) = sender;
+
+        tracing::info!("XSynth: 合成管线已重建");
+        Ok(())
     }
 }
 
@@ -187,7 +252,7 @@ impl Api for XSynth {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(XSynthOutputConn {
-            sender: Mutex::new(self.sender.clone()),
+            sender: self.sender_shared.clone(),
         }))
     }
 
@@ -199,145 +264,5 @@ impl Api for XSynth {
         Err(Error::InitFailed(
             "XSynth does not support MIDI input".into(),
         ))
-    }
-}
-
-struct XSynthOutputConn {
-    sender: Mutex<RealtimeEventSender>,
-}
-
-impl XSynthOutputConn {
-    /// 发送事件到渲染线程 — 通过 xsynth-realtime 的 RealtimeEventSender。
-    fn send_event(&self, event: SynthEvent) {
-        self.sender
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .send_event(event);
-    }
-}
-
-impl OutputConnection for XSynthOutputConn {
-    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-        let velocity = if vel == 0 { 1 } else { vel };
-        self.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                key: key & MIDI_VALUE_MASK,
-                vel: velocity & MIDI_VALUE_MASK,
-            }),
-        ));
-        Ok(())
-    }
-
-    fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-        self.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                key: key & MIDI_VALUE_MASK,
-            }),
-        ));
-        Ok(())
-    }
-
-    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-        self.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
-                controller, value,
-            ))),
-        ));
-        Ok(())
-    }
-
-    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-        self.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
-        ));
-        Ok(())
-    }
-
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
-        self.send_event(SynthEvent::Channel(
-            channel,
-            ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                value,
-            ))),
-        ));
-        Ok(())
-    }
-
-    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
-        let status = data[0] & 0xF0;
-        let channel = (data[0] & 0x0F) as u32;
-        let b1 = data[1];
-        let b2 = data[2];
-
-        match status {
-            0x80 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                    key: b1 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0x90 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                    key: b1 & MIDI_VALUE_MASK,
-                    vel: b2 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0xB0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
-            )),
-            0xC0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
-            )),
-            0xD0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
-            )),
-            0xE0 => {
-                let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
-                self.send_event(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                        bend,
-                    ))),
-                ));
-            }
-            _ => {
-                return Err(Error::SendFailed(format!(
-                    "xsynth 不支持的消息类型: 0x{:02X}",
-                    status
-                )));
-            }
-        };
-        Ok(())
-    }
-
-    fn all_notes_off(&mut self) -> Result<(), Error> {
-        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-            ChannelAudioEvent::AllNotesOff,
-        )));
-        Ok(())
-    }
-
-    fn reset_control(&mut self) -> Result<(), Error> {
-        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-            ChannelAudioEvent::ResetControl,
-        )));
-        Ok(())
-    }
-
-    fn close(self: Box<Self>) {
-        tracing::debug!("XSynthOutputConn::close: 关闭连接");
     }
 }

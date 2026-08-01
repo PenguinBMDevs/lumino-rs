@@ -8,6 +8,6 @@
 
 #[allow(unused_imports)]
 pub use xsynth_realtime::{
-    RealtimeEventSender, RealtimeSynth, RealtimeSynthError, RealtimeSynthStatsReader, SynthFormat,
-    XSynthRealtimeConfig,
+    RealtimeEventSender, RealtimeSynth, RealtimeSynthError, RealtimeSynthStatsReader,
+    StreamRestartError, SynthFormat, XSynthRealtimeConfig,
 };

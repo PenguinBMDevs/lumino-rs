@@ -2,6 +2,11 @@
 members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/note-core", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state"]
 resolver = "3"
 
+# xsynth-realtime 使用本地 vendor 分支：
+# 支持音频设备拔出/更换后，在 stream owner 线程内原地重定向 cpal 流（合成管线不动）。
+[patch.crates-io]
+xsynth-realtime = { path = "vendor/xsynth-realtime" }
+
 [workspace.package]
 version = "0.2.0-crates-io-preview1"
 rust-version = "1.92.0"

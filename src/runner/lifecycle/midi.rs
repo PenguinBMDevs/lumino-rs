@@ -5,6 +5,9 @@ use crate::runner::inner::RunnerInner;
 impl RunnerInner {
     /// 处理 MIDI 重新初始化和 XSynth 异步初始化检查
     pub(crate) fn handle_midi_reinit(&mut self) {
+        // 检查音频流恢复（音频设备被拔出/更换后自动重定向/重建）
+        self.midi_state.midi.handle_stream_recovery();
+
         // 检查是否需要重新初始化 MIDI
         if self.midi_state.midi.needs_reinit() {
             let ui_config = self.window_state.storage.config.get().ui.clone();

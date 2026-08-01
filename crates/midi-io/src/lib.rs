@@ -71,6 +71,22 @@ pub trait Api: Send + Sync {
         id: u32,
         callback: MidiInputCallback,
     ) -> Result<Box<dyn InputConnection>, Error>;
+
+    /// 检查音频流是否需要恢复（如音频设备被拔出/更换导致流不可用）。
+    ///
+    /// 默认实现：不支持流恢复的后端返回 `false`。
+    /// XSynth 后端在流自愈失败（如新设备参数与管线不一致）时返回 `true`，
+    /// 调用方应随后调用 [`Api::recover_stream`]。
+    fn poll_stream_recovery_needed(&self) -> bool {
+        false
+    }
+
+    /// 恢复音频流：重定向到系统默认输出设备，或全量重建合成管线。
+    ///
+    /// 默认实现：不支持流恢复的后端返回错误，调用方应仅记录日志。
+    fn recover_stream(&mut self) -> Result<(), String> {
+        Err("当前后端不支持音频流恢复".to_string())
+    }
 }
 
 /// MIDI 输出连接接口
