@@ -20,7 +20,6 @@ fn generate_and_upload_dirty_overlays(
     track_group: u32,
     track_start: u16,
     track_end: u16,
-    track_count: u16,
 ) {
     for &time_g in target_time_groups {
         let tick_start = time_g * ticks_per_group;
@@ -124,7 +123,6 @@ pub(crate) fn handle_show_dirty_overlay(
             track_group,
             track_start,
             track_end,
-            track_count,
         );
     }
 

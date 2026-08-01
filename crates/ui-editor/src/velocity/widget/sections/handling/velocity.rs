@@ -5,7 +5,6 @@
 use iced_core::{Point, Size};
 use iced_widget::canvas;
 
-use crate::editor_state::ViewState;
 use lumino_ui_core::Message;
 use lumino_ui_core::message::VelocityAction;
 

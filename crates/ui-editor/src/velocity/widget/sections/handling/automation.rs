@@ -61,13 +61,11 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         self.handle_automation_tool_action(
             state,
             cursor_pos,
-            bounds_size,
             &view,
             max_val,
             lane_ref.map(|v| &**v),
             lane_idx.map(|v| v as u16),
             track_idx,
-            target,
         )
     }
 
@@ -76,13 +74,11 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         &self,
         state: &mut VelocityCanvasState,
         cursor_pos: Point,
-        bounds_size: Size,
         view: &lumino_gfx::automation::AutomationViewParams,
         max_val: f32,
         lane_ref: Option<&lumino_note_core::AutomationLane>,
         lane_idx: Option<u16>,
         track_idx: u16,
-        target: lumino_note_core::AutomationTarget,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
             Tool::Eraser => self.handle_automation_eraser_delete(

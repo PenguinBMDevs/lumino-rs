@@ -5,8 +5,8 @@ use super::theme::ThemeExt;
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Geometry, Path, Stroke, Text};
-use lumino_ui_core::constants::editor::MEASURE_NUMBER_FONT_SIZE;
 use lumino_ui_core::Renderer;
+use lumino_ui_core::constants::editor::MEASURE_NUMBER_FONT_SIZE;
 
 /// 绘制时间轴标尺到 Geometry（用于 Canvas 绘制）
 pub fn draw_to_geometry(

@@ -88,7 +88,6 @@ impl Editor {
                     last_played_key,
                     tick,
                     key,
-                    snapped_tick,
                     snap_precision,
                     visible_key_count,
                     &orig,

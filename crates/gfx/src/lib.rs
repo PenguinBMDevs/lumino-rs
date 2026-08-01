@@ -1,7 +1,7 @@
 #![allow(deprecated)]
-pub mod cache;
 mod arrangement_instances;
 mod arrangement_renderer;
+pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;

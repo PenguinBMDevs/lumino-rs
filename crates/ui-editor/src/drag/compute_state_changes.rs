@@ -24,7 +24,6 @@ pub(super) fn handle_dragging(
     last_played_key: &mut u16,
     tick: f32,
     key: u16,
-    snapped_tick: f32,
     snap_precision: f32,
     visible_key_count: u16,
     original_pos: &Option<(f32, u16)>,

@@ -4,8 +4,8 @@ use super::utils::parse_color;
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Geometry, Path, Stroke};
-use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::Renderer;
+use lumino_ui_core::constants::editor as editor_constants;
 
 /// 绘制远程光标
 pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geometry<Renderer>> {

@@ -1,4 +1,4 @@
-use crate::{GroupTile, HiResConfig, HiResRenderer};
+use crate::{HiResConfig, HiResRenderer};
 
 use super::super::context::{HiResUploadContext, RenderContext, UploadHiResTileParams};
 use super::super::types::HiResMeta;

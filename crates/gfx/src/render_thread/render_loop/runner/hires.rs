@@ -15,10 +15,8 @@ pub(crate) mod video;
 pub(crate) mod viewport;
 
 // Re-export public functions for external callers
-pub(crate) use common::push_onion_progress;
-pub(crate) use generate::handle_dispose_hires;
 pub(crate) use stream::drain_hires_stream;
-pub(crate) use video::{upload_hires_video_tiles, upload_hires_video_tiles_command};
+pub(crate) use video::upload_hires_video_tiles_command;
 pub(crate) use viewport::update_hires_viewport;
 
 /// 处理高精度洋葱皮控制命令（分发器，各命令逻辑在独立模块中）

@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use winit::event_loop::ControlFlow;
 
-use super::dialog_manager::{DialogManager, DialogResult};
+use super::dialog_manager::DialogManager;
 use super::file_handler::FileHandler;
 use super::midi_handler::MidiHandler;
 use super::midi_manager::MidiManager;

@@ -280,7 +280,8 @@ mod tests {
         let load_archive_path = std::env::temp_dir().join("lumino_load_archive_test.lmpj");
         let _ = std::fs::remove_file(&load_archive_path);
 
-        crate::project::save::save_to_archive(&project, &load_archive_path).expect("保存到归档失败");
+        crate::project::save::save_to_archive(&project, &load_archive_path)
+            .expect("保存到归档失败");
         let bytes = std::fs::read(&load_archive_path).expect("读取归档文件失败");
         let loaded = load_from_archive(&bytes).expect("从归档加载项目失败");
 

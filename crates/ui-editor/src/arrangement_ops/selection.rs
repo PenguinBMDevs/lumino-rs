@@ -8,7 +8,6 @@
 use std::collections::HashMap;
 
 use super::Editor;
-use super::helpers::note_event_to_note;
 
 impl Editor {
     /// 获取当前工程走带选择范围内的音符列表。

@@ -12,7 +12,7 @@ use lumino_ui_core::message::VelocityAction;
 use super::super::super::super::{
     TOOLBAR_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT, VELOCITY_PANEL_MIN_HEIGHT, VelocityPanel,
 };
-use super::super::super::state::{AutomationDrag, VelocityCanvasState};
+use super::super::super::state::VelocityCanvasState;
 use super::publish_velocity;
 
 impl<'a> super::super::super::VelocityCanvas<'a> {

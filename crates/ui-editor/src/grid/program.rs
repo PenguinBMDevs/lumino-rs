@@ -4,8 +4,8 @@ use super::state::GridInteractionState;
 use crate::Editor;
 use iced_core::Point;
 use iced_widget::canvas::{self};
-use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::Message;
+use lumino_ui_core::constants::editor as editor_constants;
 
 pub struct PianoRollGrid<'a> {
     pub editor: &'a Editor,
