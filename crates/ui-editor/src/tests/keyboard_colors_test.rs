@@ -34,6 +34,7 @@ fn make_test_doc() -> MidiDocument {
         track_count,
         tracks: lumino_midi_loader::TrackManager::new(track_count),
         division: 480,
+        track_ports: vec![],
     }
 }
 

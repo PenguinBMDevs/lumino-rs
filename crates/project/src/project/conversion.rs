@@ -235,6 +235,7 @@ impl LuminoProject {
             track_count,
             tracks: TrackManager::new(track_count),
             division: self.metadata.audio.division,
+            track_ports: vec![0u8; track_count as usize],
         })
     }
 

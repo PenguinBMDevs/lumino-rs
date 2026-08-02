@@ -417,6 +417,7 @@ fn test_cc_via_set_midi_document() {
         track_count: 2,
         tracks: TrackManager::new(2),
         division: 480,
+        track_ports: vec![],
     });
 
     // 模拟 MIDI 加载流程

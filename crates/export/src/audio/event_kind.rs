@@ -80,6 +80,7 @@ mod tests {
             track_count,
             tracks: TrackManager::new(track_count),
             division: 480,
+            track_ports: vec![],
         }
     }
 

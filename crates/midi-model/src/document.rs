@@ -51,6 +51,8 @@ pub struct MidiDocument {
     pub tracks: TrackManager,
     /// MIDI 文件头 division（PPQ）
     pub division: u16,
+    /// 每轨 MIDI 端口（从 MidiPort meta FF 21 提取，默认 0）
+    pub track_ports: Vec<u8>,
 }
 
 impl std::fmt::Debug for MidiDocument {
@@ -124,25 +126,6 @@ impl MidiDocument {
 
                     let mut track_notes: Vec<NoteEvent> =
                         events.notes.into_iter().map(NoteEvent::from).collect();
-
-                    // 诊断：直接打印前 5 个 PackedNote 的原始 channel 值
-                    let raw_channels: String = track_notes
-                        .iter()
-                        .take(5)
-                        .map(|n| format!("ch{}", n.channel))
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    if let Some(first) = track_notes.first() {
-                        tracing::info!(
-                            "RAW通道 track{}: {} 音符, 首5个=[{}], 第1个通道={}",
-                            track_idx,
-                            track_notes.len(),
-                            raw_channels,
-                            first.channel
-                        );
-                    } else {
-                        tracing::info!("RAW通道 track{}: 无音符", track_idx);
-                    }
 
                     if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
                         total_ticks = total_ticks.max(last.end_tick);
@@ -220,68 +203,27 @@ impl MidiDocument {
             let track_count = notes.len() as u16;
             let tracks_manager = TrackManager::new(track_count);
 
-            // 每轨通道分布摘要
-            let track_ch_summary: String = notes
-                .iter()
-                .enumerate()
-                .map(|(ti, ns)| {
-                    if ns.is_empty() {
-                        format!("t{}:空", ti)
-                    } else {
-                        let mut cs = [0u32; 16];
-                        for n in ns {
-                            if n.channel < 16 {
-                                cs[n.channel as usize] += 1;
-                            }
-                        }
-                        let major = cs
-                            .iter()
-                            .enumerate()
-                            .max_by_key(|&(_, &c)| c)
-                            .map(|(ch, _)| ch)
-                            .unwrap_or(0);
-                        format!("t{}:ch{}", ti, major)
-                    }
-                })
-                .collect::<Vec<_>>()
-                .join(", ");
-            tracing::info!(
-                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, 通道=[{}]",
-                total_notes,
-                control_events.len(),
-                track_count,
-                total_ticks,
-                all_tempo_changes.len(),
-                track_ch_summary
-            );
-
-            // 底层诊断：dump 每个音轨第一个 NoteOn 的原始状态字节（十六进制）
-            // 状态字节低 4 位 = MIDI 通道。例如 0x90 = NoteOn ch0, 0x95 = NoteOn ch5
-            {
+            // 从 SMF 提取 MidiPort meta (FF 21) 事件，获取每轨的 MIDI 端口
+            let track_ports: Vec<u8> = {
                 if let Ok(smf) = midly::Smf::parse(file_bytes) {
-                    let raw_hex: Vec<String> = smf
-                        .tracks
+                    smf.tracks
                         .iter()
                         .map(|track| {
                             for ev in track {
-                                if let midly::TrackEventKind::Midi { channel, message } = &ev.kind
-                                    && let midly::MidiMessage::NoteOn { vel, .. } = message
-                                    && vel.as_int() > 0
+                                if let midly::TrackEventKind::Meta(midly::MetaMessage::MidiPort(
+                                    port,
+                                )) = &ev.kind
                                 {
-                                    let status_byte = 0x90 | channel.as_int();
-                                    return format!(
-                                        "0x{:02X}(ch{})",
-                                        status_byte,
-                                        channel.as_int()
-                                    );
+                                    return port.as_int();
                                 }
                             }
-                            "无音符".to_string()
+                            0u8
                         })
-                        .collect();
-                    tracing::info!("原始状态字节 首NoteOn=[{}]", raw_hex.join(", "));
+                        .collect()
+                } else {
+                    vec![0u8; track_count as usize]
                 }
-            }
+            };
 
             if let Some(cb) = progress {
                 (cb)(0.90);
@@ -302,6 +244,7 @@ impl MidiDocument {
                     track_count,
                     tracks: tracks_manager,
                     division,
+                    track_ports,
                 },
                 division,
                 total_notes,
@@ -495,6 +438,16 @@ impl MidiDocument {
         }
         // 策略 3：都没有，返回 0
         0
+    }
+
+    /// 获取指定音轨的 MIDI 端口（从 MidiPort meta FF 21 提取）。
+    /// 若音轨无 MidiPort 事件，返回 0（默认端口）。
+    #[inline]
+    pub fn track_port(&self, track_id: u16) -> u8 {
+        self.track_ports
+            .get(track_id as usize)
+            .copied()
+            .unwrap_or(0)
     }
 
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。

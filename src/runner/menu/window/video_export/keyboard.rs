@@ -357,6 +357,7 @@ mod tests {
             track_count: 2,
             tracks: TrackManager::new(2),
             division: 480,
+            track_ports: vec![],
         }
     }
 
@@ -430,6 +431,7 @@ mod tests {
             track_count: 1,
             tracks: TrackManager::new(1),
             division: 480,
+            track_ports: vec![],
         };
         let mut state = PlaybackKeyColorState::default();
         let mut colors = [0u8; KEY_COLOR_BYTES];

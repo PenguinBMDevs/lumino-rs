@@ -190,6 +190,7 @@ fn test_document_streaming_emits_events_in_order() {
         track_count: 2,
         tracks: TrackManager::new(2),
         division: 480,
+        track_ports: vec![],
     });
 
     engine.set_document(doc, 0);

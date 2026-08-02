@@ -18,6 +18,7 @@ fn make_test_document() -> MidiDocument {
         track_count: 1,
         tracks: TrackManager::new(1),
         division: 480,
+        track_ports: vec![],
     }
 }
 
@@ -101,6 +102,7 @@ fn test_to_midi_document_roundtrip_overlapping_notes() {
         track_count: 1,
         tracks: TrackManager::new(1),
         division: 480,
+        track_ports: vec![],
     };
     let project = LuminoProject::from_midi_document(&doc);
     let rebuilt = project.to_midi_document().expect("重叠音符重建失败");
