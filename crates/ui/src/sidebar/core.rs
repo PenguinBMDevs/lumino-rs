@@ -11,7 +11,7 @@ pub const DEFAULT_PANEL_WIDTH: f32 = 200.0;
 /// 面板最小宽度
 pub const MIN_PANEL_WIDTH: f32 = 150.0;
 /// 面板最大宽度
-pub const MAX_PANEL_WIDTH: f32 = 400.0;
+pub const MAX_PANEL_WIDTH: f32 = 900.0;
 /// 调整大小手柄宽度
 pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
 

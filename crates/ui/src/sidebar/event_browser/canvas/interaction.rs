@@ -13,7 +13,7 @@ use crate::sidebar::Event;
 
 use super::hit_test;
 use super::popup::{self, PopupHit};
-use super::{CanvasState, EventBrowserCanvas, SPLITTER_WIDTH};
+use super::{CanvasState, EventBrowserCanvas, HEADER_HEIGHT, SPLITTER_WIDTH};
 use crate::sidebar::event_browser::detail;
 use crate::sidebar::event_browser::edit::PopupState;
 use crate::sidebar::event_browser::state::{ArchiveKey, EditRequest, SelectedItem};
@@ -45,6 +45,13 @@ impl<'a> EventBrowserCanvas<'a> {
         }
 
         if local.x < tree_w {
+            // 树行高调整手柄（树区域底部表头线附近）
+            if (local.y - HEADER_HEIGHT).abs() <= 3.0 {
+                state.tree_row_resizing = true;
+                state.tree_row_resize_start_y = local.y;
+                state.tree_row_resize_start_height = state.tree_row_height;
+                return Some(canvas::Action::capture());
+            }
             // 树区域
             return self.handle_tree_click(state, local);
         }
@@ -110,7 +117,7 @@ impl<'a> EventBrowserCanvas<'a> {
         state: &mut CanvasState,
         local: Point,
     ) -> Option<canvas::Action<Message>> {
-        let idx = hit_test::hit_test_tree(local.y, state.scroll_y)?;
+        let idx = hit_test::hit_test_tree(local.y, state.scroll_y, state.tree_row_height)?;
         let all = self.visible_tree_items();
         let item = all.get(idx)?.clone();
         match item {

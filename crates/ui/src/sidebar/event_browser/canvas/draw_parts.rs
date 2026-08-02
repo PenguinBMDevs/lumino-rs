@@ -110,13 +110,16 @@ pub(super) fn draw_empty_hint(
 }
 
 /// 绘制文本。
+///
+/// 使用 `f32::MAX` 作为 `max_width` 防止文本换行（Canvas 在固定行高下换行会溢出）。
+/// 文本溢出部分由 Canvas 自动裁剪。
 pub(super) fn draw_text(
     frame: &mut Frame<Renderer>,
     content: &str,
     x: f32,
     y: f32,
     color: Color,
-    max_width: f32,
+    _max_width: f32,
     align: alignment::Horizontal,
 ) {
     frame.fill_text(Text {
@@ -126,7 +129,7 @@ pub(super) fn draw_text(
         size: iced_core::Pixels(FONT_SIZE),
         line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
         font: iced_core::Font::default(),
-        max_width,
+        max_width: f32::MAX,
         align_x: align.into(),
         align_y: alignment::Vertical::Center,
         shaping: iced_widget::text::Shaping::Basic,

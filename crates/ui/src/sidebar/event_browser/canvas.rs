@@ -33,6 +33,8 @@ pub const TREE_INDENT: f32 = 14.0;
 pub const SPLITTER_WIDTH: f32 = 6.0;
 /// 树最小宽度
 pub const MIN_TREE_WIDTH: f32 = 100.0;
+/// 树最大宽度
+pub const MAX_TREE_WIDTH: f32 = 200.0;
 /// 最小列宽
 pub const MIN_COL_WIDTH: f32 = 20.0;
 /// 列分隔线命中半径
@@ -65,12 +67,18 @@ pub struct CanvasState {
     pub scroll_y: f32,
     /// 视口高度
     pub viewport_height: f32,
+    /// 树项行高（可调整）
+    pub tree_row_height: f32,
+    /// 正在拖拽调整树项行高
+    pub tree_row_resizing: bool,
+    /// 树项行高拖拽开始时的鼠标 Y
+    pub tree_row_resize_start_y: f32,
+    /// 树项行高拖拽开始时的行高快照
+    pub tree_row_resize_start_height: f32,
     /// 弹窗状态
     pub popup: Option<PopupState>,
     /// 右键上下文菜单（tick, x, y）
     pub context_menu: Option<(u32, Point)>,
-    /// 当前选中的树叶子项（绘制用缓存，从 EventBrowserState 同步）
-    pub selected_item: Option<SelectedItem>,
 }
 
 impl Default for CanvasState {
@@ -86,9 +94,12 @@ impl Default for CanvasState {
             tree_ratio: 0.35,
             scroll_y: 0.0,
             viewport_height: 0.0,
+            tree_row_height: ROW_HEIGHT,
+            tree_row_resizing: false,
+            tree_row_resize_start_y: 0.0,
+            tree_row_resize_start_height: ROW_HEIGHT,
             popup: None,
             context_menu: None,
-            selected_item: None,
         }
     }
 }
@@ -107,9 +118,9 @@ impl<'a> EventBrowserCanvas<'a> {
         Self { state, data }
     }
 
-    /// 树宽度 = 面板宽度 × 比例
+    /// 树宽度 = 面板宽度 × 比例，受 MIN_TREE_WIDTH / MAX_TREE_WIDTH 约束
     fn tree_width(&self, bounds: Rectangle, state: &CanvasState) -> f32 {
-        (bounds.width * state.tree_ratio).max(MIN_TREE_WIDTH)
+        (bounds.width * state.tree_ratio).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH)
     }
 
     /// 当前页的行切片（不可变版本，避免修改 state）
@@ -219,9 +230,13 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
                 self.handle_right_press(state, bounds, local)
             }
             canvas::Event::Mouse(MouseEvent::ButtonReleased(Button::Left)) => {
-                if state.dragging_divider.is_some() || state.splitter_dragging {
+                if state.dragging_divider.is_some()
+                    || state.splitter_dragging
+                    || state.tree_row_resizing
+                {
                     state.dragging_divider = None;
                     state.splitter_dragging = false;
+                    state.tree_row_resizing = false;
                     return Some(canvas::Action::capture());
                 }
                 None
@@ -239,6 +254,13 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
                     state.tree_ratio = ratio;
                     return Some(canvas::Action::capture());
                 }
+                if state.tree_row_resizing {
+                    let delta = local.y - state.tree_row_resize_start_y;
+                    let new_height = (state.tree_row_resize_start_height + delta)
+                        .clamp(ROW_HEIGHT * 0.5, ROW_HEIGHT * 3.0);
+                    state.tree_row_height = new_height;
+                    return Some(canvas::Action::capture());
+                }
                 None
             }
             _ => None,
@@ -251,7 +273,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
         bounds: Rectangle,
         cursor: iced_core::mouse::Cursor,
     ) -> iced_core::mouse::Interaction {
-        if state.dragging_divider.is_some() || state.splitter_dragging {
+        if state.dragging_divider.is_some() || state.splitter_dragging || state.tree_row_resizing {
             return iced_core::mouse::Interaction::ResizingHorizontally;
         }
         let Some(pos) = cursor.position() else {
@@ -259,6 +281,10 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
         };
         let local = Point::new(pos.x - bounds.x, pos.y - bounds.y);
         let tree_w = self.tree_width(bounds, state);
+        // 树行高调整手柄（树区域底部表头线附近）
+        if local.x < tree_w && (local.y - HEADER_HEIGHT).abs() <= 3.0 {
+            return iced_core::mouse::Interaction::ResizingVertically;
+        }
         // 树/表格分隔条
         if (local.x - tree_w - SPLITTER_WIDTH * 0.5).abs() <= SPLITTER_WIDTH * 0.5 {
             return iced_core::mouse::Interaction::ResizingHorizontally;

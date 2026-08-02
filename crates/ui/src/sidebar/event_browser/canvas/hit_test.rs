@@ -52,12 +52,13 @@ pub fn apply_divider_drag(idx: usize, delta: f32, start_widths: &[f32]) -> f32 {
 /// 命中测试树行，返回树项索引。
 ///
 /// 跳过表头区域（HEADER_HEIGHT），避免点击表头误触树项。
-pub fn hit_test_tree(y: f32, scroll_y: f32) -> Option<usize> {
+/// `tree_row_height` 为树项当前行高（可调整）。
+pub fn hit_test_tree(y: f32, scroll_y: f32, tree_row_height: f32) -> Option<usize> {
     let tree_y = y - HEADER_HEIGHT;
     if tree_y < 0.0 {
         return None;
     }
-    let idx = ((scroll_y + tree_y) / ROW_HEIGHT).floor() as usize;
+    let idx = ((scroll_y + tree_y) / tree_row_height).floor() as usize;
     Some(idx)
 }
 
@@ -114,12 +115,15 @@ mod tests {
     #[test]
     fn hit_test_tree_basic() {
         // 表头区域（y < HEADER_HEIGHT）应返回 None
-        assert_eq!(hit_test_tree(0.0, 0.0), None);
+        assert_eq!(hit_test_tree(0.0, 0.0, ROW_HEIGHT), None);
         assert_eq!(
-            hit_test_tree(HEADER_HEIGHT + ROW_HEIGHT * 2.5, 0.0),
+            hit_test_tree(HEADER_HEIGHT + ROW_HEIGHT * 2.5, 0.0, ROW_HEIGHT),
             Some(2)
         );
-        assert_eq!(hit_test_tree(HEADER_HEIGHT, ROW_HEIGHT * 3.0), Some(3));
+        assert_eq!(
+            hit_test_tree(HEADER_HEIGHT, ROW_HEIGHT * 3.0, ROW_HEIGHT),
+            Some(3)
+        );
     }
 
     #[test]

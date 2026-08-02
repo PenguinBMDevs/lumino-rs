@@ -12,8 +12,8 @@ use crate::sidebar::event_browser::canvas::draw_parts::{
 };
 use crate::sidebar::event_browser::canvas::popup::draw_popup;
 use crate::sidebar::event_browser::canvas::{
-    CanvasState, EventBrowserCanvas, HEADER_HEIGHT, MIN_TREE_WIDTH, ROW_HEIGHT, SPLITTER_WIDTH,
-    TREE_INDENT,
+    CanvasState, EventBrowserCanvas, HEADER_HEIGHT, MAX_TREE_WIDTH, MIN_TREE_WIDTH, ROW_HEIGHT,
+    SPLITTER_WIDTH, TREE_INDENT,
 };
 use crate::sidebar::event_browser::detail::EventTableRow;
 use crate::sidebar::event_browser::state::{ArchiveKey, SelectedItem, TreeItem};
@@ -34,13 +34,14 @@ pub(super) fn draw(
 ) {
     fill_background(frame, bounds, theme);
 
-    let tree_w = (bounds.width * state.tree_ratio).max(MIN_TREE_WIDTH);
+    let tree_w = (bounds.width * state.tree_ratio).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
     let table_x = tree_w + SPLITTER_WIDTH;
 
     // 左侧树
     draw_tree(
         frame,
         theme,
+        state,
         canvas,
         tree_items,
         visible_tree_count,
@@ -49,7 +50,16 @@ pub(super) fn draw(
     );
 
     // 右侧表头（固定于视口顶部）
-    draw_table_header(frame, theme, table_x, bounds.width - table_x, state);
+    // 使用 EventBrowserState 中的 selected_item（CanvasState 中的可能未同步）
+    let selected_item = canvas.state.selected_item.as_ref();
+    draw_table_header(
+        frame,
+        theme,
+        table_x,
+        bounds.width - table_x,
+        selected_item,
+        &state.column_widths,
+    );
 
     // 右侧表格行
     draw_table_rows(
@@ -109,9 +119,11 @@ fn fill_background(frame: &mut Frame<Renderer>, bounds: Rectangle, theme: &Theme
     );
 }
 
+#[allow(clippy::too_many_arguments)]
 fn draw_tree(
     frame: &mut Frame<Renderer>,
     theme: &Theme,
+    state: &CanvasState,
     canvas: &EventBrowserCanvas<'_>,
     tree_items: &[TreeItem],
     visible_count: usize,
@@ -135,18 +147,36 @@ fn draw_tree(
         alignment::Horizontal::Left,
     );
 
+    // 表头底部线（同时也是行高调整手柄指示器）
+    draw_tree_header_bottom_line(frame, theme, tree_w);
+
     // 树项从 HEADER_HEIGHT 之后开始绘制，避免与表头重叠
-    let scroll_remainder = scroll_y % ROW_HEIGHT;
-    let first = (scroll_y / ROW_HEIGHT).floor() as usize;
+    let row_h = state.tree_row_height;
+    let scroll_remainder = scroll_y % row_h;
+    let first = (scroll_y / row_h).floor() as usize;
     for (i, item) in tree_items
         .iter()
         .take(visible_count)
         .skip(first)
         .enumerate()
     {
-        let y = HEADER_HEIGHT + i as f32 * ROW_HEIGHT - scroll_remainder;
-        draw_tree_item(frame, theme, canvas, item, tree_w, y);
+        let y = HEADER_HEIGHT + i as f32 * row_h - scroll_remainder;
+        draw_tree_item(frame, theme, canvas, item, tree_w, y, row_h);
     }
+}
+
+/// 绘制树表头底部分隔线（兼做行高调整手柄指示器）
+fn draw_tree_header_bottom_line(frame: &mut Frame<Renderer>, theme: &Theme, tree_w: f32) {
+    let (_, _, _, line_color) = colors(theme);
+    let mut path = Builder::new();
+    path.move_to(Point::new(0.0, HEADER_HEIGHT - 1.0));
+    path.line_to(Point::new(tree_w, HEADER_HEIGHT - 1.0));
+    frame.stroke(
+        &path.build(),
+        iced_widget::canvas::Stroke::default()
+            .with_color(line_color)
+            .with_width(1.0),
+    );
 }
 
 fn draw_tree_item(
@@ -156,6 +186,7 @@ fn draw_tree_item(
     item: &TreeItem,
     tree_w: f32,
     y: f32,
+    row_h: f32,
 ) {
     let (_, _, text_color, _) = colors(theme);
     let (name, depth, expandable, expanded) = match item {
@@ -177,7 +208,7 @@ fn draw_tree_item(
     };
 
     let x = 4.0 + depth as f32 * TREE_INDENT + if expandable { 10.0 } else { 0.0 };
-    let text_y = y + ROW_HEIGHT * 0.5;
+    let text_y = y + row_h * 0.5;
 
     if expandable {
         draw_triangle(
@@ -196,7 +227,7 @@ fn draw_tree_item(
         Color::TRANSPARENT
     };
     if bg != Color::TRANSPARENT {
-        frame.fill_rectangle(Point::new(0.0, y), Size::new(tree_w, ROW_HEIGHT), bg);
+        frame.fill_rectangle(Point::new(0.0, y), Size::new(tree_w, row_h), bg);
     }
 
     draw_text(
@@ -237,7 +268,8 @@ fn draw_table_header(
     theme: &Theme,
     table_x: f32,
     table_w: f32,
-    state: &CanvasState,
+    selected_item: Option<&SelectedItem>,
+    column_widths: &[f32],
 ) {
     let (header_bg, header_fg, _, line_color) = colors(theme);
     frame.fill_rectangle(
@@ -246,11 +278,11 @@ fn draw_table_header(
         header_bg,
     );
 
-    if let Some(item) = canvas_selected_item(state) {
+    if let Some(item) = selected_item {
         let headers = headers_for(item);
         let mut x = table_x + 4.0;
         for (i, (title, _)) in headers.iter().enumerate() {
-            let w = state.column_widths.get(i).copied().unwrap_or(60.0);
+            let w = column_widths.get(i).copied().unwrap_or(60.0);
             draw_text(
                 frame,
                 title,
@@ -370,10 +402,6 @@ fn draw_splitter(frame: &mut Frame<Renderer>, theme: &Theme, x: f32, height: f32
             .with_color(line_color.scale_alpha(0.5))
             .with_width(SPLITTER_WIDTH),
     );
-}
-
-fn canvas_selected_item(state: &CanvasState) -> Option<&SelectedItem> {
-    state.selected_item.as_ref()
 }
 
 fn headers_for(item: &SelectedItem) -> &'static [(&'static str, f32)] {
