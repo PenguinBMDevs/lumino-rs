@@ -248,7 +248,8 @@ impl Sidebar {
         format!("{}{:02}", Self::port_letter(port), channel + 1)
     }
 
-    /// 从 MIDI 数据更新音轨列表（yinhe 风格：按原始顺序，标签 = 端口字母 + 通道号）
+    /// 从 MIDI 数据更新音轨列表（按 port→channel→id 排序，同端口按通道号排列）
+    /// 排序键：port（端口字母 A→Z），channel（通道号 01→16），id（稳定排序保序）
     /// track_infos: (track_index, track_name, note_count, channel, port)
     pub fn update_tracks_from_midi(
         &mut self,
@@ -282,6 +283,10 @@ impl Sidebar {
                 color: None,
             });
         }
+
+        // 按 port→channel→id 排序：同一端口的音轨按通道号排列
+        // 端口 A→Z，通道 01→16，id 保序
+        self.tracks.sort_by_key(|t| (t.port, t.channel, t.id));
 
         // 如果有音轨，默认选择第一个
         if !self.tracks.is_empty() {
