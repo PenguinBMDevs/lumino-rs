@@ -96,6 +96,10 @@ pub(super) fn collect_key_sig_rows(
 /// 文本类事件统一 trait：提供 tick 访问。
 pub(super) trait TextEventSource {
     fn tick(&self) -> u32;
+    /// 事件所属音轨。`None` 表示全局事件（Marker），不做 track 过滤。
+    fn track(&self) -> Option<u16> {
+        None
+    }
 }
 
 impl TextEventSource for MarkerEvent {
@@ -108,23 +112,37 @@ impl TextEventSource for LyricsEvent {
     fn tick(&self) -> u32 {
         self.tick
     }
+    fn track(&self) -> Option<u16> {
+        Some(self.track)
+    }
 }
 
 impl TextEventSource for ChordEvent {
     fn tick(&self) -> u32 {
         self.tick
     }
+    fn track(&self) -> Option<u16> {
+        Some(self.track)
+    }
 }
 
 /// 收集文本类事件（Marker / Lyrics / Chord）行。
+///
+/// `track_filter`：`Some(t)` 时仅收集 `t` 音轨的事件；`None` 收集全部
+/// （用于 Marker 等全局事件）。
 pub(super) fn collect_text_rows<T: TextEventSource>(
     bl: &BarLookup,
     kind: TextEventKind,
     events: &[T],
+    track_filter: Option<u16>,
     text_of: impl Fn(&T) -> String,
 ) -> Vec<EventTableRow> {
     events
         .iter()
+        .filter(|evt| match track_filter {
+            Some(t) => evt.track() == Some(t),
+            None => true,
+        })
         .enumerate()
         .map(|(idx, evt)| {
             let tick = evt.tick();
@@ -161,10 +179,11 @@ pub(super) fn collect_text_rows<T: TextEventSource>(
 pub(super) fn collect_pc_rows(
     data: &EventBrowserData<'_>,
     bl: &BarLookup,
-    _track: u16,
+    track: u16,
 ) -> Vec<EventTableRow> {
     data.program_changes
         .iter()
+        .filter(|evt| evt.track == track)
         .enumerate()
         .map(|(idx, evt)| {
             let tick = evt.tick;

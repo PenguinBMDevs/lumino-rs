@@ -2,16 +2,19 @@
 //!
 //! 消费 `Sidebar` 缓存的 `EventListAction`，将其应用到 `EditorData`，
 //! 并处理跳转请求。所有操作先 push history，保证 Undo/Redo 可用。
+//!
+//! 音符编辑（删除/插入/字段修改）见同级子模块 `notes`。
 
 use crate::root::Root;
 use crate::sidebar::event_browser::{
-    EditRequest, EventListAction, JumpRequest, NoteRef, SelectedItem, TextEventKind,
+    EditRequest, EventListAction, JumpRequest, SelectedItem, TextEventKind,
 };
-use lumino_note_core::event::ScaleType;
-use lumino_note_core::note::Note;
+use lumino_note_core::event::{ScaleType, SegmentShape};
+
+mod notes;
 
 impl Root {
-    /// 处理事件列表跳转请求：切换音轨并移动播放指示线。
+    /// 处理事件列表跳转请求：切换音轨、移动播放指示线并滚动视口。
     pub(crate) fn handle_event_list_jump(&mut self, req: &JumpRequest) {
         // 切换音轨（若指定且不同）
         if let Some((track, _key)) = req.note {
@@ -25,7 +28,22 @@ impl Root {
         if req.tick > 0 {
             self.editor.playback_position = req.tick as f32;
         }
+        // 精确滚动：将钢琴卷帘视口滚到目标 tick，保证可见
+        self.scroll_editor_to_tick(req.tick);
         tracing::debug!("Root: 事件列表跳转到 tick {}", req.tick);
+    }
+
+    /// 将钢琴卷帘水平滚动到指定 tick（左对齐 + clamp 到最大滚动）。
+    ///
+    /// 视口宽度由渲染层持有，此处退化为左对齐保证可见；目标超出
+    /// 文档末尾时自动 clamp 到末尾。
+    fn scroll_editor_to_tick(&mut self, tick: u32) {
+        let view = &mut self.editor.editor_state.view;
+        let target_x = tick as f32 * view.zoom_x;
+        let max_scroll = view.total_ticks as f32 * view.zoom_x;
+        view.scroll_x = target_x.min(max_scroll).max(0.0);
+        view.smooth_scroll.target_x = view.scroll_x;
+        view.smooth_scroll.active = false;
     }
 
     /// 将待执行的编辑操作应用到 EditorData。
@@ -50,9 +68,13 @@ impl Root {
             } => data.set_time_sig_event(tick, numerator, denominator),
             SetKeySig { tick, root, scale } => data.set_key_sig_event(tick, root, scale),
             SetMarker { tick, text } => data.set_marker_event(tick, text),
-            SetLyrics { tick, text, .. } => data.set_lyrics_event(tick, text),
-            SetChord { tick, text, .. } => data.set_chord_event(tick, text),
-            SetProgramChange { tick, program, .. } => data.set_program_change_event(tick, program),
+            SetLyrics { track, tick, text } => data.set_lyrics_event(track, tick, text),
+            SetChord { track, tick, text } => data.set_chord_event(track, tick, text),
+            SetProgramChange {
+                track,
+                tick,
+                program,
+            } => data.set_program_change_event(track, tick, program),
             SetAutomation {
                 track,
                 target,
@@ -91,50 +113,6 @@ impl Root {
         self.editor.spatial.note_index_dirty.set(true);
     }
 
-    /// 删除选中的音符（按 tick 匹配当前音轨）。
-    fn apply_delete_selected(&mut self, ticks: std::collections::HashSet<u32>) {
-        if ticks.is_empty() {
-            return;
-        }
-        let data = &mut self.editor.editor_state.data;
-        data.delete_notes_at_ticks(&ticks);
-        // 清空选中状态
-        self.sidebar.event_browser_state.selected_ticks.clear();
-        self.sidebar.event_browser_state.last_clicked_tick = None;
-    }
-
-    /// 在指定 tick 插入新音符（C4, 480 tick）。
-    fn apply_insert_at(&mut self, tick: u32) {
-        let data = &mut self.editor.editor_state.data;
-        if data.current_track == 0 {
-            tracing::warn!("Root: Conductor 轨道禁止插入音符");
-            return;
-        }
-        let _ = data.insert_note_at_tick(tick as f32);
-    }
-
-    /// 通过 NoteRef 定位音符并应用修改。
-    ///
-    /// NoteRef 的 `id` 是 (tick, key, length, velocity, channel, track) 的哈希，
-    /// 通过匹配原始字段定位 `notes` 中的索引，避免修改后索引漂移。
-    fn apply_note_edit(&mut self, note_ref: &NoteRef, f: impl Fn(&mut Note)) {
-        let target = (note_ref.start_tick as f32, note_ref.key as u16);
-        let data = &mut self.editor.editor_state.data;
-        let Some(idx) = data.notes.iter().position(|n| (n.tick, n.key) == target) else {
-            tracing::warn!(
-                "Root: 未找到音符 start_tick={} key={}",
-                note_ref.start_tick,
-                note_ref.key
-            );
-            return;
-        };
-        data.push_history();
-        if let Some(note) = data.notes.get_mut(idx) {
-            f(note);
-        }
-        data.mark_track_notes_changed();
-    }
-
     /// 解析 popup 确认值，生成可执行的编辑操作。
     ///
     /// 需要读取 `EditorData` 当前值（如拍号分母、自动化目标范围）的请求在此处理；
@@ -150,6 +128,7 @@ impl Root {
             AutoTick {
                 tick: _,
                 value: old,
+                shape,
             } => value
                 .parse::<u32>()
                 .ok()
@@ -158,36 +137,46 @@ impl Root {
                     target: current_automation_target(self),
                     tick: new_tick,
                     value: old,
-                    shape: lumino_note_core::event::SegmentShape::Step,
+                    shape,
                 }),
-            AutoValue { tick, value: _ } => {
-                value
-                    .parse::<f32>()
-                    .ok()
-                    .map(|new_value| EventListAction::SetAutomation {
-                        track: self.sidebar.selected_track as u16,
-                        target: current_automation_target(self),
-                        tick,
-                        value: new_value,
-                        shape: lumino_note_core::event::SegmentShape::Step,
-                    })
-            }
-            AutoShape { tick, shape: _ } => {
+            AutoValue {
+                tick,
+                value: _,
+                shape,
+            } => value
+                .parse::<f32>()
+                .ok()
+                .map(|new_value| EventListAction::SetAutomation {
+                    track: self.sidebar.selected_track as u16,
+                    target: current_automation_target(self),
+                    tick,
+                    value: new_value,
+                    shape,
+                }),
+            AutoShape {
+                tick,
+                value: old_value,
+                shape: old_shape,
+            } => {
                 let shape = if value == "Curve" {
-                    lumino_note_core::event::SegmentShape::Curve {
-                        x1: 0.25,
-                        y1: 0.0,
-                        x2: 0.75,
-                        y2: 1.0,
+                    match old_shape {
+                        // 保留用户已有的贝塞尔控制点；仅当原来是 Step 时给默认曲线
+                        SegmentShape::Curve { .. } => old_shape,
+                        SegmentShape::Step => SegmentShape::Curve {
+                            x1: 0.25,
+                            y1: 0.0,
+                            x2: 0.75,
+                            y2: 1.0,
+                        },
                     }
                 } else {
-                    lumino_note_core::event::SegmentShape::Step
+                    SegmentShape::Step
                 };
                 Some(EventListAction::SetAutomation {
                     track: self.sidebar.selected_track as u16,
                     target: current_automation_target(self),
                     tick,
-                    value: 0.0,
+                    value: old_value,
                     shape,
                 })
             }

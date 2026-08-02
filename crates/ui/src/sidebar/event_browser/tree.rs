@@ -3,12 +3,16 @@
 //! 本模块只产生渲染所需的行数据，不包含任何 egui 或 iced Canvas 绘制代码。
 
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
+use lumino_note_core::automation::AutomationLane;
 use lumino_note_core::event::AutomationTarget;
 
 use crate::sidebar::core::Track;
 
 use super::state::{ArchiveKey, SelectedItem};
+
+mod automation;
 
 /// 树中的一行数据。
 #[derive(Clone, Debug, PartialEq)]
@@ -52,7 +56,7 @@ pub enum TreeItem {
 ///       - Lyrics（叶子）
 ///       - Chord（叶子）
 #[allow(clippy::vec_init_then_push)] // 树项分段 push，结构更清晰
-pub(super) fn collect_tree_items(tracks: &[Track]) -> Vec<TreeItem> {
+pub(super) fn collect_tree_items(tracks: &[Track], lanes: &[Arc<AutomationLane>]) -> Vec<TreeItem> {
     let mut items = Vec::new();
 
     items.push(TreeItem::Leaf {
@@ -136,10 +140,8 @@ pub(super) fn collect_tree_items(tracks: &[Track]) -> Vec<TreeItem> {
                         item: SelectedItem::Notes { track: track_idx },
                     });
 
-                    // TODO: 接入 automation lanes
-                    let _ = track; // 占位，未来从 track 读取 lanes
-                    let automation_items = collect_automation_items(track_idx);
-                    items.extend(automation_items);
+                    // 该音轨的 automation lanes（每条 lane 一个叶子）
+                    items.extend(automation::collect_automation_items(track_idx, lanes));
 
                     items.push(TreeItem::Leaf {
                         name: "Program Change".to_string(),
@@ -237,14 +239,7 @@ fn track_name(track: &Track) -> String {
     }
 }
 
-/// TODO: 接入 automation lanes。
-///
-/// 当前 `Track` 类型尚未暴露 automation lanes，返回空 Vec 占位。
-/// 后续应读取 `track.automation_lanes` 并为每条 lane 生成 `SelectedItem::Automation` 叶子。
-fn collect_automation_items(_track_idx: u16) -> Vec<TreeItem> {
-    Vec::new()
-}
-
+/// 收集指定音轨的 automation lanes 叶子。
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,7 +258,6 @@ mod tests {
             color: None,
         }
     }
-
     #[test]
     fn port_letter_basic() {
         assert_eq!(port_letter(0), 'A');
@@ -297,7 +291,7 @@ mod tests {
             make_track(0, "Conductor", 0, 0, true),
             make_track(1, "Lead", 0, 0, false),
         ];
-        let items = collect_tree_items(&tracks);
+        let items = collect_tree_items(&tracks, &[]);
 
         // 2 固定文件叶子 + 1 Conductor 根 + 6 Conductor 子叶子
         assert!(
@@ -346,7 +340,7 @@ mod tests {
     #[test]
     fn collect_tree_items_skips_conductor_tracks() {
         let tracks = vec![make_track(0, "Conductor", 0, 0, true)];
-        let items = collect_tree_items(&tracks);
+        let items = collect_tree_items(&tracks, &[]);
         assert!(!items.iter().any(|i| matches!(i, TreeItem::Track { .. })));
     }
 }

@@ -22,6 +22,12 @@ trait EventByTick {
     fn tick(&self) -> u32;
 }
 
+/// 带音轨归属的事件 trait：用于 per-track 事件（Lyrics/Chord/PC）
+trait EventByTrack: EventByTick {
+    /// 返回事件所属音轨
+    fn track(&self) -> u16;
+}
+
 macro_rules! impl_event_by_tick {
     ($t:ty) => {
         impl EventByTick for $t {
@@ -40,6 +46,22 @@ impl_event_by_tick!(ChordEvent);
 impl_event_by_tick!(ProgramChangeEvent);
 impl_event_by_tick!(AutomationEvent);
 
+impl EventByTrack for LyricsEvent {
+    fn track(&self) -> u16 {
+        self.track
+    }
+}
+impl EventByTrack for ChordEvent {
+    fn track(&self) -> u16 {
+        self.track
+    }
+}
+impl EventByTrack for ProgramChangeEvent {
+    fn track(&self) -> u16 {
+        self.track
+    }
+}
+
 impl EventByTick for (u32, u8, u8) {
     fn tick(&self) -> u32 {
         self.0
@@ -56,36 +78,31 @@ fn replace_or_insert_event<T: EventByTick>(events: &mut Vec<T>, event: T) {
     }
 }
 
+/// 替换或插入带音轨归属的事件：按 (track, tick) 定位，保持按 tick 升序
+fn replace_or_insert_tracked_event<T: EventByTrack>(events: &mut Vec<T>, event: T) {
+    if let Some(pos) = events
+        .iter()
+        .position(|e| e.track() == event.track() && e.tick() == event.tick())
+    {
+        events[pos] = event;
+    } else {
+        let idx = events.partition_point(|e| e.tick() < event.tick());
+        events.insert(idx, event);
+    }
+}
+
 /// 删除指定 tick 的事件
 fn delete_events_by_ticks<T: EventByTick>(events: &mut Vec<T>, ticks: &HashSet<u32>) {
     events.retain(|e| !ticks.contains(&e.tick()));
 }
 
-/// 将事件浏览器自动化目标映射到现有自动化 lane 目标
-fn event_target_to_auto_target(target: &AutomationTarget) -> auto::AutomationTarget {
-    match target {
-        AutomationTarget::Cc(controller) => auto::AutomationTarget::CC {
-            controller: *controller,
-        },
-        AutomationTarget::PitchBend => auto::AutomationTarget::PitchBend,
-        AutomationTarget::Rpn(parameter) => auto::AutomationTarget::Rpn {
-            parameter: *parameter,
-        },
-        AutomationTarget::Nrpn(parameter) => auto::AutomationTarget::Nrpn {
-            parameter: *parameter,
-        },
-        AutomationTarget::Tempo => unreachable!("Tempo 目标应单独处理，不映射到自动化 lane"),
-    }
-}
-
-/// 将事件浏览器线段形状映射到现有自动化 lane 形状
-///
-/// 当前仅支持 Step 映射；贝塞尔控制点映射到 tension 的能力待扩展。
-fn event_shape_to_auto_shape(shape: SegmentShape) -> auto::SegmentShape {
-    match shape {
-        SegmentShape::Step => auto::SegmentShape::Step,
-        SegmentShape::Curve { .. } => auto::SegmentShape::Curve { tension: 0 },
-    }
+/// 删除指定音轨中指定 tick 的事件
+fn delete_tracked_events_by_ticks<T: EventByTrack>(
+    events: &mut Vec<T>,
+    track: u16,
+    ticks: &HashSet<u32>,
+) {
+    events.retain(|e| e.track() != track || !ticks.contains(&e.tick()));
 }
 
 impl EditorData {
@@ -152,61 +169,65 @@ impl EditorData {
     // ── Lyrics ───────────────────────────────────────────────
 
     /// 设置或替换歌词事件
-    pub fn set_lyrics_event(&mut self, tick: u32, text: String) {
+    pub fn set_lyrics_event(&mut self, track: u16, tick: u32, text: String) {
         self.push_history();
-        replace_or_insert_event(&mut self.lyrics, LyricsEvent { tick, text });
+        replace_or_insert_tracked_event(&mut self.lyrics, LyricsEvent { track, tick, text });
     }
 
-    /// 删除指定 tick 的歌词事件
-    pub fn delete_lyrics_events(&mut self, ticks: &HashSet<u32>) {
+    /// 删除指定音轨指定 tick 的歌词事件
+    pub fn delete_lyrics_events(&mut self, track: u16, ticks: &HashSet<u32>) {
         self.push_history();
-        delete_events_by_ticks(&mut self.lyrics, ticks);
+        delete_tracked_events_by_ticks(&mut self.lyrics, track, ticks);
     }
 
-    /// 在指定 tick 插入空歌词事件
-    pub fn insert_lyrics_event(&mut self, tick: u32) {
-        self.set_lyrics_event(tick, String::new());
+    /// 在指定音轨指定 tick 插入空歌词事件
+    pub fn insert_lyrics_event(&mut self, track: u16, tick: u32) {
+        self.set_lyrics_event(track, tick, String::new());
     }
 
     // ── Chord ────────────────────────────────────────────────
 
     /// 设置或替换和弦事件
-    pub fn set_chord_event(&mut self, tick: u32, text: String) {
+    pub fn set_chord_event(&mut self, track: u16, tick: u32, text: String) {
         self.push_history();
-        replace_or_insert_event(&mut self.chords, ChordEvent { tick, text });
+        replace_or_insert_tracked_event(&mut self.chords, ChordEvent { track, tick, text });
     }
 
-    /// 删除指定 tick 的和弦事件
-    pub fn delete_chord_events(&mut self, ticks: &HashSet<u32>) {
+    /// 删除指定音轨指定 tick 的和弦事件
+    pub fn delete_chord_events(&mut self, track: u16, ticks: &HashSet<u32>) {
         self.push_history();
-        delete_events_by_ticks(&mut self.chords, ticks);
+        delete_tracked_events_by_ticks(&mut self.chords, track, ticks);
     }
 
-    /// 在指定 tick 插入空和弦事件
-    pub fn insert_chord_event(&mut self, tick: u32) {
-        self.set_chord_event(tick, String::new());
+    /// 在指定音轨指定 tick 插入空和弦事件
+    pub fn insert_chord_event(&mut self, track: u16, tick: u32) {
+        self.set_chord_event(track, tick, String::new());
     }
 
     // ── Program Change ───────────────────────────────────────
 
     /// 设置或替换音色变换事件
-    pub fn set_program_change_event(&mut self, tick: u32, program: u8) {
+    pub fn set_program_change_event(&mut self, track: u16, tick: u32, program: u8) {
         self.push_history();
-        replace_or_insert_event(
+        replace_or_insert_tracked_event(
             &mut self.program_changes,
-            ProgramChangeEvent { tick, program },
+            ProgramChangeEvent {
+                track,
+                tick,
+                program,
+            },
         );
     }
 
-    /// 删除指定 tick 的音色变换事件
-    pub fn delete_program_change_events(&mut self, ticks: &HashSet<u32>) {
+    /// 删除指定音轨指定 tick 的音色变换事件
+    pub fn delete_program_change_events(&mut self, track: u16, ticks: &HashSet<u32>) {
         self.push_history();
-        delete_events_by_ticks(&mut self.program_changes, ticks);
+        delete_tracked_events_by_ticks(&mut self.program_changes, track, ticks);
     }
 
-    /// 在指定 tick 插入默认音色 0 事件
-    pub fn insert_program_change_event(&mut self, tick: u32) {
-        self.set_program_change_event(tick, 0);
+    /// 在指定音轨指定 tick 插入默认音色 0 事件
+    pub fn insert_program_change_event(&mut self, track: u16, tick: u32) {
+        self.set_program_change_event(track, tick, 0);
     }
 
     // ── Automation ───────────────────────────────────────────
@@ -240,10 +261,10 @@ impl EditorData {
             return;
         }
 
-        let auto_target = event_target_to_auto_target(&target);
+        let auto_target = super::shape_convert::event_target_to_auto_target(&target);
         let max = auto_target.max_value() as f32;
         let auto_value = value.max(0.0).min(max).round() as u16;
-        let auto_shape = event_shape_to_auto_shape(shape);
+        let auto_shape = super::shape_convert::event_shape_to_auto_shape(shape);
 
         self.push_history();
         let idx = self.find_or_create_automation_lane(track, auto_target);
@@ -273,7 +294,7 @@ impl EditorData {
             return;
         }
 
-        let auto_target = event_target_to_auto_target(target);
+        let auto_target = super::shape_convert::event_target_to_auto_target(target);
         if let Some(idx) = self.find_automation_lane(track, &auto_target) {
             self.push_history();
             let lane = Arc::make_mut(&mut self.automation_lanes[idx]);

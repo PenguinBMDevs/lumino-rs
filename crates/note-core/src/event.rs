@@ -37,6 +37,8 @@ pub struct MarkerEvent {
 /// 歌词事件
 #[derive(Debug, Clone, PartialEq)]
 pub struct LyricsEvent {
+    /// 所属音轨（0 = Conductor）
+    pub track: u16,
     /// 事件所在 tick
     pub tick: u32,
     /// 歌词文本
@@ -46,6 +48,8 @@ pub struct LyricsEvent {
 /// 和弦事件
 #[derive(Debug, Clone, PartialEq)]
 pub struct ChordEvent {
+    /// 所属音轨（0 = Conductor）
+    pub track: u16,
     /// 事件所在 tick
     pub tick: u32,
     /// 和弦文本
@@ -55,6 +59,8 @@ pub struct ChordEvent {
 /// 音色变换事件
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProgramChangeEvent {
+    /// 所属音轨（0 = Conductor）
+    pub track: u16,
     /// 事件所在 tick
     pub tick: u32,
     /// 音色编号

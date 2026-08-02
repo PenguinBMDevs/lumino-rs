@@ -28,6 +28,7 @@ mod history;
 mod note_store_ops;
 mod notes;
 mod reset;
+mod shape_convert;
 #[cfg(test)]
 mod tests_automation;
 #[cfg(test)]

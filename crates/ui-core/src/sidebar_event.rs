@@ -153,12 +153,25 @@ pub enum TextEventKind {
 /// 右键编辑请求：cell 上右键时写入状态，由上层 UI 取出分派。
 #[derive(Clone, Debug, PartialEq)]
 pub enum EditRequest {
-    /// Automation 的 tick 编辑（位置移动）
-    AutoTick { tick: u32, value: f32 },
-    /// Automation 的 value 编辑
-    AutoValue { tick: u32, value: f32 },
-    /// Automation 的 shape 编辑
-    AutoShape { tick: u32, shape: SegmentShape },
+    /// Automation 的 tick 编辑（位置移动）。`value`/`shape` 为当前值，
+    /// 应用时保留（只改 tick）。
+    AutoTick {
+        tick: u32,
+        value: f32,
+        shape: SegmentShape,
+    },
+    /// Automation 的 value 编辑。`shape` 为当前值，应用时保留（只改 value）。
+    AutoValue {
+        tick: u32,
+        value: f32,
+        shape: SegmentShape,
+    },
+    /// Automation 的 shape 编辑。`value` 为当前值，应用时保留（只改 shape）。
+    AutoShape {
+        tick: u32,
+        value: f32,
+        shape: SegmentShape,
+    },
     /// 音符 start_tick 编辑（保持 gate 不变，end_tick 跟随平移）
     NoteStartTick { note: NoteRef },
     /// 音符 end_tick 编辑（gate 随之变化）

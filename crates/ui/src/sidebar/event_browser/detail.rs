@@ -113,21 +113,25 @@ pub(super) fn collect_rows(item: &SelectedItem, data: &EventBrowserData<'_>) -> 
     let mut rows = match item {
         SelectedItem::TimeSig => rows::collect_time_sig_rows(data, &bar_lookup),
         SelectedItem::KeySig => rows::collect_key_sig_rows(data, &bar_lookup),
-        SelectedItem::Markers => {
-            rows::collect_text_rows(&bar_lookup, TextEventKind::Marker, data.markers, |m| {
-                m.text.clone()
-            })
-        }
+        SelectedItem::Markers => rows::collect_text_rows(
+            &bar_lookup,
+            TextEventKind::Marker,
+            data.markers,
+            None,
+            |m| m.text.clone(),
+        ),
         SelectedItem::ConductorLyrics => rows::collect_text_rows(
             &bar_lookup,
             TextEventKind::ConductorLyrics,
             data.lyrics,
+            Some(0),
             |l| l.text.clone(),
         ),
         SelectedItem::ConductorChord => rows::collect_text_rows(
             &bar_lookup,
             TextEventKind::ConductorChord,
             data.chords,
+            Some(0),
             |c| c.text.clone(),
         ),
         SelectedItem::Notes { track } => note::collect_note_rows(data, &bar_lookup, *track),
@@ -139,12 +143,14 @@ pub(super) fn collect_rows(item: &SelectedItem, data: &EventBrowserData<'_>) -> 
             &bar_lookup,
             TextEventKind::Lyrics { track: *track },
             data.lyrics,
+            Some(*track),
             |l| l.text.clone(),
         ),
         SelectedItem::Chord { track } => rows::collect_text_rows(
             &bar_lookup,
             TextEventKind::Chord { track: *track },
             data.chords,
+            Some(*track),
             |c| c.text.clone(),
         ),
         SelectedItem::ProjectJson => rows::collect_project_rows(),

@@ -65,8 +65,8 @@ fn test_marker_crud() {
 #[test]
 fn test_lyrics_crud() {
     let mut data = EditorData::new();
-    data.set_lyrics_event(0, "La".into());
-    data.insert_lyrics_event(480);
+    data.set_lyrics_event(0, 0, "La".into());
+    data.insert_lyrics_event(0, 480);
 
     assert_eq!(data.lyrics.len(), 2);
     assert_eq!(data.lyrics[0].text, "La");
@@ -74,15 +74,42 @@ fn test_lyrics_crud() {
 
     let mut ticks = HashSet::new();
     ticks.insert(0);
-    data.delete_lyrics_events(&ticks);
+    data.delete_lyrics_events(0, &ticks);
     assert_eq!(data.lyrics.len(), 1);
+}
+
+#[test]
+fn test_lyrics_per_track_isolation() {
+    let mut data = EditorData::new();
+    // 同一 tick 不同音轨：互不覆盖
+    data.set_lyrics_event(1, 480, "Lead 歌词".into());
+    data.set_lyrics_event(2, 480, "Bass 歌词".into());
+    assert_eq!(data.lyrics.len(), 2);
+
+    // 替换同 (track, tick) 事件
+    data.set_lyrics_event(1, 480, "Lead 更新".into());
+    assert_eq!(data.lyrics.len(), 2);
+    assert_eq!(
+        data.lyrics
+            .iter()
+            .find(|e| e.track == 1)
+            .map(|e| e.text.as_str()),
+        Some("Lead 更新")
+    );
+
+    // 删除仅影响指定音轨
+    let mut ticks = HashSet::new();
+    ticks.insert(480);
+    data.delete_lyrics_events(1, &ticks);
+    assert_eq!(data.lyrics.len(), 1);
+    assert_eq!(data.lyrics[0].track, 2);
 }
 
 #[test]
 fn test_chord_crud() {
     let mut data = EditorData::new();
-    data.set_chord_event(0, "C".into());
-    data.insert_chord_event(480);
+    data.set_chord_event(0, 0, "C".into());
+    data.insert_chord_event(0, 480);
 
     assert_eq!(data.chords.len(), 2);
     assert_eq!(data.chords[0].text, "C");
@@ -90,15 +117,15 @@ fn test_chord_crud() {
 
     let mut ticks = HashSet::new();
     ticks.insert(0);
-    data.delete_chord_events(&ticks);
+    data.delete_chord_events(0, &ticks);
     assert_eq!(data.chords.len(), 1);
 }
 
 #[test]
 fn test_program_change_crud() {
     let mut data = EditorData::new();
-    data.set_program_change_event(0, 5);
-    data.insert_program_change_event(480);
+    data.set_program_change_event(0, 0, 5);
+    data.insert_program_change_event(0, 480);
 
     assert_eq!(data.program_changes.len(), 2);
     assert_eq!(data.program_changes[0].program, 5);
@@ -106,8 +133,22 @@ fn test_program_change_crud() {
 
     let mut ticks = HashSet::new();
     ticks.insert(0);
-    data.delete_program_change_events(&ticks);
+    data.delete_program_change_events(0, &ticks);
     assert_eq!(data.program_changes.len(), 1);
+}
+
+#[test]
+fn test_program_change_per_track_isolation() {
+    let mut data = EditorData::new();
+    data.set_program_change_event(1, 480, 5);
+    data.set_program_change_event(2, 480, 40);
+    assert_eq!(data.program_changes.len(), 2);
+
+    let mut ticks = HashSet::new();
+    ticks.insert(480);
+    data.delete_program_change_events(1, &ticks);
+    assert_eq!(data.program_changes.len(), 1);
+    assert_eq!(data.program_changes[0].track, 2);
 }
 
 #[test]
@@ -145,6 +186,81 @@ fn test_automation_tempo() {
     ticks.insert(0);
     data.delete_automation_events(0, &AutomationTarget::Tempo, &ticks);
     assert!(data.tempo_points.is_empty());
+}
+
+/// 正向（tension → 控制点）与反向（控制点 → tension）互逆性测试。
+///
+/// 正向映射见 `detail/auto.rs::lane_shape_to_event_shape`：
+/// - `t >= 0`：y1 = 0，y2 = 0.5t
+/// - `t < 0`：y1 = -0.5t，y2 = 1
+#[test]
+fn test_curve_tension_roundtrip() {
+    use super::shape_convert::curve_to_tension;
+
+    // 与 UI 正向映射一致的控制点 → 应反算出原 tension（±1 容差）
+    let cases = [
+        (0i8, (0.25, 0.0, 0.75, 1.0)),
+        (127i8, (0.25, 0.0, 0.75, 0.5)),
+        (-127i8, (0.25, 0.5, 0.75, 1.0)),
+        (64i8, (0.25, 0.0, 0.75, 0.25)),
+        (-64i8, (0.25, 0.25, 0.75, 1.0)),
+        (32i8, (0.25, 0.0, 0.75, 0.125)),
+        (-32i8, (0.25, 0.125, 0.75, 1.0)),
+    ];
+    for (tension, (x1, y1, x2, y2)) in cases {
+        let back = curve_to_tension(x1, y1, x2, y2);
+        assert!(
+            (back - tension).abs() <= 1,
+            "tension {tension} → 控制点 → 反算 {back}，误差应 ≤1"
+        );
+    }
+}
+
+/// 任意贝塞尔控制点（非流形）也映射到合法 tension 范围。
+#[test]
+fn test_curve_to_tension_generic_points() {
+    use super::shape_convert::curve_to_tension;
+    let t = curve_to_tension(0.1, 0.2, 0.9, 0.7);
+    assert!((-127..=127).contains(&t));
+    // 中心对称控制点 → 接近 0
+    let t2 = curve_to_tension(0.25, 0.4, 0.75, 0.6);
+    assert!(t2.abs() <= 2, "对称控制点应接近直线，tension = {t2}");
+}
+
+/// 编辑自动化事件时保留曲线形状：set_automation_event 中 Curve 控制点
+/// 反算为 lane tension（不再是固定 0）。
+#[test]
+fn test_set_automation_preserves_curve_tension() {
+    use lumino_note_core::automation::SegmentShape as LaneShape;
+    let mut data = EditorData::new();
+    // ease-in 曲线（tension 正向 → y2 < 1）
+    data.set_automation_event(
+        1,
+        AutomationTarget::Cc(7),
+        0,
+        100.0,
+        SegmentShape::Curve {
+            x1: 0.25,
+            y1: 0.0,
+            x2: 0.75,
+            y2: 0.5,
+        },
+    );
+    let idx = data
+        .find_automation_lane(
+            1,
+            &lumino_note_core::automation::AutomationTarget::CC { controller: 7 },
+        )
+        .expect("应存在 volume lane");
+    match data.automation_lanes[idx].events[0].shape {
+        LaneShape::Curve { tension } => {
+            assert!(
+                tension > 100,
+                "ease-in 曲线 tension 应接近 127，实际 {tension}"
+            )
+        }
+        LaneShape::Step => panic!("曲线控制点不应映射为 Step"),
+    }
 }
 
 #[test]

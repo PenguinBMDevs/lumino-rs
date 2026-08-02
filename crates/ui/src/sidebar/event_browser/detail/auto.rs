@@ -56,14 +56,14 @@ fn collect_tempo_rows(
             let value = pt.bpm as f32;
             let edits = vec![
                 None,
-                Some(EditRequest::AutoTick { tick, value }),
-                Some(EditRequest::AutoTick { tick, value }),
-                Some(EditRequest::AutoValue { tick, value }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
+                Some(EditRequest::AutoTick { tick, value, shape }),
+                Some(EditRequest::AutoTick { tick, value, shape }),
+                Some(EditRequest::AutoValue { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
             ];
             let jumps = vec![
                 None,
@@ -110,14 +110,14 @@ fn collect_lane_rows(bl: &BarLookup, lane: &AutomationLane) -> Vec<EventTableRow
             ];
             let edits = vec![
                 None,
-                Some(EditRequest::AutoTick { tick, value }),
-                Some(EditRequest::AutoTick { tick, value }),
-                Some(EditRequest::AutoValue { tick, value }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
-                Some(EditRequest::AutoShape { tick, shape }),
+                Some(EditRequest::AutoTick { tick, value, shape }),
+                Some(EditRequest::AutoTick { tick, value, shape }),
+                Some(EditRequest::AutoValue { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
+                Some(EditRequest::AutoShape { tick, value, shape }),
             ];
             let jumps = vec![
                 None,
