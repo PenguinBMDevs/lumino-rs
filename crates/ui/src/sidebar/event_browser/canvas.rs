@@ -193,7 +193,22 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
             canvas::Event::Mouse(MouseEvent::WheelScrolled {
                 delta: ScrollDelta::Lines { y, .. },
             }) => {
-                state.scroll_y = (state.scroll_y + y * ROW_HEIGHT * 3.0).max(0.0);
+                // 计算最大滚动值，避免无内容可滚动时仍可滚动
+                let tree_items = self.visible_tree_items();
+                let tree_content_h = HEADER_HEIGHT + tree_items.len() as f32 * ROW_HEIGHT;
+                let rows = detail::collect_rows(
+                    self.state
+                        .selected_item
+                        .as_ref()
+                        .unwrap_or(&SelectedItem::TimeSig),
+                    &self.data,
+                );
+                let (_, page_rows) = self.page_slice(&rows);
+                let table_content_h = HEADER_HEIGHT + page_rows.len() as f32 * ROW_HEIGHT;
+                let content_h = tree_content_h.max(table_content_h);
+                let max_scroll = (content_h - state.viewport_height).max(0.0);
+
+                state.scroll_y = (state.scroll_y + y * ROW_HEIGHT * 3.0).clamp(0.0, max_scroll);
                 Some(canvas::Action::request_redraw())
             }
             // ── 鼠标按下 ──

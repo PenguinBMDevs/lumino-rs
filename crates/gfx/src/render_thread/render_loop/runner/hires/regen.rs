@@ -9,8 +9,11 @@ use super::super::context::RenderContext;
 use super::super::types::{HiResMeta, HiResStreamMsg};
 use super::common::ensure_renderer_for_config;
 
-/// 合并单个 time_group 中所有音轨组的像素缓冲
-fn regen_time_group_merged_pixels(
+/// 合并单个 time_group 中所有音轨组的像素缓冲到 `output` 中
+///
+/// `output` 长度必须为 `width × key_count × 4`，函数会用 `fill(0)` 重置。
+fn regen_time_group_merged_pixels_into(
+    output: &mut [u8],
     time_g: u32,
     ticks_per_group: u32,
     track_group: u32,
@@ -24,11 +27,10 @@ fn regen_time_group_merged_pixels(
     ppq: u16,
     measures_per_group: u32,
     cache_dir: &std::path::Path,
-) -> Vec<u8> {
+) {
+    output.fill(0);
     let tick_start = time_g * ticks_per_group;
     let tick_end = tick_start + ticks_per_group;
-    let buf_size = (width * key_count as u32) as usize * 4;
-    let mut merged_pixels = vec![0u8; buf_size];
 
     for tg in 0..all_track_groups {
         let tg_start = (tg * TRACKS_PER_GROUP as u32) as u16;
@@ -39,7 +41,7 @@ fn regen_time_group_merged_pixels(
                 let t = track_start + local_idx as u16;
                 let tile =
                     generate_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
-                merge_track_tile_into(&mut merged_pixels, &tile);
+                merge_track_tile_into(output, &tile);
             }
         } else {
             for t in tg_start..tg_end {
@@ -57,12 +59,11 @@ fn regen_time_group_merged_pixels(
                 if let Ok(Some(tile)) =
                     read_track_tile_cache(cache_dir, mh, t, time_g, &expected_meta)
                 {
-                    merge_track_tile_into(&mut merged_pixels, &tile);
+                    merge_track_tile_into(output, &tile);
                 }
             }
         }
     }
-    merged_pixels
 }
 
 /// 处理 RegenerateHiResTrack：重生成指定音轨的高精度贴图
@@ -120,8 +121,11 @@ pub(crate) fn handle_regenerate_hires_track(
             n.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
         }
 
+        let buf_size = (width * key_count as u32) as usize * 4;
         for time_g in 0..time_groups {
-            let merged = regen_time_group_merged_pixels(
+            let mut merged_pixels = vec![0u8; buf_size];
+            regen_time_group_merged_pixels_into(
+                &mut merged_pixels,
                 time_g,
                 ticks_per_group,
                 track_group,
@@ -140,7 +144,7 @@ pub(crate) fn handle_regenerate_hires_track(
                 let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
                     track_group,
                     time_group: time_g,
-                    pixels: merged,
+                    pixels: merged_pixels,
                     width,
                     height: key_count as u32,
                 });

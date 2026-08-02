@@ -119,6 +119,7 @@ fn draw_tree(
     scroll_y: f32,
 ) {
     let (header_bg, header_fg, _, _) = colors(theme);
+    // 绘制表头
     frame.fill_rectangle(
         Point::new(0.0, 0.0),
         Size::new(tree_w, HEADER_HEIGHT),
@@ -134,6 +135,8 @@ fn draw_tree(
         alignment::Horizontal::Left,
     );
 
+    // 树项从 HEADER_HEIGHT 之后开始绘制，避免与表头重叠
+    let scroll_remainder = scroll_y % ROW_HEIGHT;
     let first = (scroll_y / ROW_HEIGHT).floor() as usize;
     for (i, item) in tree_items
         .iter()
@@ -141,7 +144,7 @@ fn draw_tree(
         .skip(first)
         .enumerate()
     {
-        let y = i as f32 * ROW_HEIGHT;
+        let y = HEADER_HEIGHT + i as f32 * ROW_HEIGHT - scroll_remainder;
         draw_tree_item(frame, theme, canvas, item, tree_w, y);
     }
 }

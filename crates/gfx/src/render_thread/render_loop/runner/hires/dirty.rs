@@ -24,14 +24,17 @@ fn generate_and_upload_dirty_overlays(
     track_group: u32,
     track_start: u16,
 ) {
+    // 复用像素缓冲，避免每 time_group 重新分配
+    let buf_size = (width * key_count as u32) as usize * 4;
+    let mut merged_pixels = vec![0u8; buf_size];
+
     for &time_g in target_time_groups {
         let tick_start = time_g * ticks_per_group;
         let tick_end = tick_start + ticks_per_group;
         let merged_coord = TileCoord::new(track_group, time_g);
 
-        // 单缓冲 + 流式 merge：生成一轨、合并一轨、释放一轨
-        let buf_size = (width * key_count as u32) as usize * 4;
-        let mut merged_pixels = vec![0u8; buf_size];
+        // 重置缓冲（只清空已使用的行，避免全量 1MB memset）
+        merged_pixels.fill(0);
 
         for (local_idx, notes) in sorted_notes.iter().enumerate() {
             let t = track_start + local_idx as u16;
