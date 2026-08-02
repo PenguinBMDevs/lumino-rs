@@ -108,6 +108,10 @@ pub struct SettingsTranslations {
     /// 自动化曲线连线粗细
     pub ui_automation_line_thickness: &'static str,
     pub ui_automation_line_thickness_hint: &'static str,
+    /// 日志存储份数
+    pub log_retention_section: &'static str,
+    pub log_retention_count: &'static str,
+    pub log_retention_count_hint: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -195,6 +199,9 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_notification_hint: "编辑中触发 Undo/Redo/Save/Play/Export 时显示提示（关闭则静默处理）",
     ui_automation_line_thickness: "自动化曲线连线粗细:",
     ui_automation_line_thickness_hint: "自动化面板中事件瞄点之间的连线粗细（1-10 像素）",
+    log_retention_section: "日志",
+    log_retention_count: "日志文件保留份数:",
+    log_retention_count_hint: "日志文件存储在配置目录的 logs/ 下，超过此份数时自动删除最旧的日志（0 = 不限制）",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -282,6 +289,9 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_notification_hint: "Show notification when Undo/Redo/Save/Play/Export is intercepted during editing (disable for silent handling)",
     ui_automation_line_thickness: "Automation line thickness:",
     ui_automation_line_thickness_hint: "Line thickness between event anchor points in the automation panel (1-10 pixels)",
+    log_retention_section: "Logging",
+    log_retention_count: "Log file retention count:",
+    log_retention_count_hint: "Log files are stored in logs/ under the config directory. Oldest files are auto-deleted when exceeding this limit (0 = unlimited)",
 };
 
 /// 获取设置面板翻译

@@ -1,7 +1,7 @@
 //! 设置页面 - 常规设置
 
 use iced_core::Alignment;
-use iced_widget::{column, pick_list, row, text};
+use iced_widget::{column, pick_list, row, text, text_input};
 use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
@@ -130,6 +130,27 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         text(t.track_add_behavior_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+        iced_widget::space().height(20),
+        // 日志存储份数设置
+        text(t.log_retention_section)
+            .size(TEXT_SIZE_SECTION)
+            .style(create_content_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        row![
+            text(t.log_retention_count)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input("10", &settings.log_retention_count.to_string())
+                .on_input(|v| Message::Settings(crate::Event::LogRetentionCountChanged(v)))
+                .width(80.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(4),
+        text(t.log_retention_count_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

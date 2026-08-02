@@ -244,6 +244,9 @@ pub struct UiConfig {
     /// 自动化曲线连线粗细（像素，1-10，默认 2）
     #[serde(default = "default_automation_line_thickness")]
     pub automation_line_thickness: f32,
+    /// 日志文件保留份数（默认 10，0 = 不限制）
+    #[serde(default = "default_log_retention_count")]
+    pub log_retention_count: usize,
 }
 
 fn default_true() -> bool {
@@ -271,6 +274,10 @@ fn default_max_voices_per_key() -> Option<usize> {
 }
 fn default_automation_line_thickness() -> f32 {
     2.0
+}
+
+fn default_log_retention_count() -> usize {
+    10
 }
 
 fn default_velocity_filter_threshold() -> u8 {
@@ -338,6 +345,7 @@ impl Default for UiConfig {
             merge_window_ms: default_merge_window_ms(),
             intercept_notification_enabled: true,
             automation_line_thickness: default_automation_line_thickness(),
+            log_retention_count: default_log_retention_count(),
         }
     }
 }

@@ -128,6 +128,14 @@ impl Runner {
     ) -> Result<RunnerInner, InitError> {
         let storage = storage::Storage::new()?;
 
+        // 在存储初始化后启动文件日志
+        {
+            let config_dir = storage::config_dir();
+            let log_dir = config_dir.join("logs");
+            let retention = storage.config.get().ui.log_retention_count;
+            crate::logging::start_file_logging(log_dir, retention);
+        }
+
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 

@@ -49,4 +49,6 @@ pub enum Event {
     InterceptNotificationChanged(bool),
     /// 自动化曲线连线粗细（像素，1-10）
     AutomationLineThicknessChanged(f32),
+    /// 日志文件保留份数
+    LogRetentionCountChanged(String),
 }

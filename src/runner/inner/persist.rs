@@ -190,6 +190,7 @@ impl RunnerInner {
             config.ui.merge_window_ms = new.merge_window_ms;
             config.ui.intercept_notification_enabled = new.intercept_notification_enabled;
             config.ui.automation_line_thickness = new.automation_line_thickness;
+            config.ui.log_retention_count = new.log_retention_count;
         });
         lumino_extras::palette::set_current_palette_by_name(&new.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {

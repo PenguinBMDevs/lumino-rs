@@ -79,6 +79,8 @@ pub struct SettingsPanel {
     pub intercept_notification_enabled: bool,
     /// 自动化曲线连线粗细（像素，1-10）
     pub automation_line_thickness: f32,
+    /// 日志文件保留份数
+    pub log_retention_count: usize,
 }
 
 impl SettingsPanel {
@@ -131,6 +133,7 @@ impl SettingsPanel {
             merge_window_ms: ui_config.merge_window_ms,
             intercept_notification_enabled: ui_config.intercept_notification_enabled,
             automation_line_thickness: ui_config.automation_line_thickness,
+            log_retention_count: ui_config.log_retention_count,
         }
     }
 
@@ -293,6 +296,11 @@ impl SettingsPanel {
             }
             Event::AutomationLineThicknessChanged(v) => {
                 self.automation_line_thickness = v.clamp(1.0, 10.0);
+            }
+            Event::LogRetentionCountChanged(s) => {
+                if let Ok(v) = s.parse::<usize>() {
+                    self.log_retention_count = v;
+                }
             }
         }
     }
