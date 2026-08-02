@@ -284,8 +284,9 @@ mod tests {
             crate::sidebar::Track {
                 id: 0,
                 name: "Track 1".to_string(),
+                port: 0,
                 channel: 0,
-                display_label: "01".to_string(),
+                display_label: "A01".to_string(),
                 is_conductor: true,
                 can_delete: false,
                 is_muted: false,
@@ -295,8 +296,9 @@ mod tests {
             crate::sidebar::Track {
                 id: 1,
                 name: "Track 2".to_string(),
+                port: 0,
                 channel: 0,
-                display_label: "02".to_string(),
+                display_label: "A01".to_string(),
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,
@@ -324,8 +326,9 @@ mod tests {
         let tracks = vec![crate::sidebar::Track {
             id: 0,
             name: "Track 1".to_string(),
+            port: 0,
             channel: 0,
-            display_label: "01".to_string(),
+            display_label: "A01".to_string(),
             is_conductor: true,
             can_delete: false,
             is_muted: false,

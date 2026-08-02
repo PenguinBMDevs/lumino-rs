@@ -52,8 +52,7 @@ impl Editor {
     /// 从 MidiDocument 加载尚未被 track_notes 缓存的音轨。
     ///
     /// 加载所有音轨而非仅 selection 覆盖的音轨，因为 ArrangeSelection 存储的是
-    /// 视觉音轨位置（侧边栏顺序），而 track_notes 使用文档音轨索引。在默认的
-    /// ChannelGrouped 模式下两者不一致，按 selection 筛选会导致错误/缺失音轨加载。
+    /// 视觉音轨位置（侧边栏顺序），而 track_notes 使用文档音轨索引。
     /// 全量加载后由主循环中的 selection.contains 做 tick/key 层面筛选。
     pub(super) fn load_missing_tracks_from_document(&mut self) {
         let tracks_to_load: Vec<usize> = {

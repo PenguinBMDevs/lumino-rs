@@ -124,6 +124,26 @@ impl MidiDocument {
 
                     let mut track_notes: Vec<NoteEvent> =
                         events.notes.into_iter().map(NoteEvent::from).collect();
+
+                    // 诊断：直接打印前 5 个 PackedNote 的原始 channel 值
+                    let raw_channels: String = track_notes
+                        .iter()
+                        .take(5)
+                        .map(|n| format!("ch{}", n.channel))
+                        .collect::<Vec<_>>()
+                        .join(", ");
+                    if let Some(first) = track_notes.first() {
+                        tracing::info!(
+                            "RAW通道 track{}: {} 音符, 首5个=[{}], 第1个通道={}",
+                            track_idx,
+                            track_notes.len(),
+                            raw_channels,
+                            first.channel
+                        );
+                    } else {
+                        tracing::info!("RAW通道 track{}: 无音符", track_idx);
+                    }
+
                     if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
                         total_ticks = total_ticks.max(last.end_tick);
                     }
@@ -200,18 +220,68 @@ impl MidiDocument {
             let track_count = notes.len() as u16;
             let tracks_manager = TrackManager::new(track_count);
 
+            // 每轨通道分布摘要
+            let track_ch_summary: String = notes
+                .iter()
+                .enumerate()
+                .map(|(ti, ns)| {
+                    if ns.is_empty() {
+                        format!("t{}:空", ti)
+                    } else {
+                        let mut cs = [0u32; 16];
+                        for n in ns {
+                            if n.channel < 16 {
+                                cs[n.channel as usize] += 1;
+                            }
+                        }
+                        let major = cs
+                            .iter()
+                            .enumerate()
+                            .max_by_key(|&(_, &c)| c)
+                            .map(|(ch, _)| ch)
+                            .unwrap_or(0);
+                        format!("t{}:ch{}", ti, major)
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(", ");
             tracing::info!(
-                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, {} 歌词, {} 标记, {} SysEx, division={}",
+                "MidiDocument: 已加载 {} 个音符, {} 个控制事件, {} 音轨, {} ticks, {} tempo 变化, 通道=[{}]",
                 total_notes,
                 control_events.len(),
                 track_count,
                 total_ticks,
                 all_tempo_changes.len(),
-                lyrics.len(),
-                markers.len(),
-                sys_ex.len(),
-                division
+                track_ch_summary
             );
+
+            // 底层诊断：dump 每个音轨第一个 NoteOn 的原始状态字节（十六进制）
+            // 状态字节低 4 位 = MIDI 通道。例如 0x90 = NoteOn ch0, 0x95 = NoteOn ch5
+            {
+                if let Ok(smf) = midly::Smf::parse(file_bytes) {
+                    let raw_hex: Vec<String> = smf
+                        .tracks
+                        .iter()
+                        .map(|track| {
+                            for ev in track {
+                                if let midly::TrackEventKind::Midi { channel, message } = &ev.kind
+                                    && let midly::MidiMessage::NoteOn { vel, .. } = message
+                                    && vel.as_int() > 0
+                                {
+                                    let status_byte = 0x90 | channel.as_int();
+                                    return format!(
+                                        "0x{:02X}(ch{})",
+                                        status_byte,
+                                        channel.as_int()
+                                    );
+                                }
+                            }
+                            "无音符".to_string()
+                        })
+                        .collect();
+                    tracing::info!("原始状态字节 首NoteOn=[{}]", raw_hex.join(", "));
+                }
+            }
 
             if let Some(cb) = progress {
                 (cb)(0.90);
@@ -400,28 +470,31 @@ impl MidiDocument {
         }
     }
 
-    /// 获取指定音轨的代表性 MIDI 通道（出现频率最高的通道）。
-    /// 如果音轨没有音符，返回 0。
+    /// 获取指定音轨的代表性 MIDI 通道。
+    ///
+    /// 通道确定策略（参考 yinhe MIDI 导入逻辑）：
+    /// 1. 如果有音符，取**第一个音符**的通道；
+    /// 2. 如果没有音符但有控制事件（CC/PC/PB），取第一个控制事件的通道；
+    /// 3. 如果既无音符也无控制事件，返回 0（默认）。
+    ///
+    /// 取首事件通道而非统计最频通道，原因：
+    /// - 一个音轨中绝大多数音符在单一通道，但可能混入少量其他通道的事件
+    ///   （如控制器事件），统计最频会导致偶然偏差；
+    /// - 首个事件的通道代表 DAW/MIDI 编排时为该轨分配的"意图通道"。
     pub fn track_channel(&self, track_id: u16) -> u8 {
         let tid = track_id as usize;
-        match self.notes.get(tid) {
-            Some(notes) if !notes.is_empty() => {
-                let mut counts = [0u32; 16];
-                for n in notes {
-                    counts[n.channel as usize] += 1;
-                }
-                let mut max_ch = 0;
-                let mut max_count = 0;
-                for (ch, &count) in counts.iter().enumerate() {
-                    if count > max_count {
-                        max_count = count;
-                        max_ch = ch;
-                    }
-                }
-                max_ch as u8
-            }
-            _ => 0,
+        // 策略 1：取第一个音符的通道
+        if let Some(first) = self.notes.get(tid).and_then(|n| n.first()) {
+            return first.channel & 0x0F;
         }
+        // 策略 2：没有音符时，取第一个控制事件的通道
+        for ev in &self.control_events {
+            if ev.track == track_id {
+                return ev.channel & 0x0F;
+            }
+        }
+        // 策略 3：都没有，返回 0
+        0
     }
 
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。

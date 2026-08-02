@@ -15,9 +15,8 @@ impl EditorData {
 
     /// 返回文档音轨索引对应的视觉位置
     ///
-    /// 在 ChannelGrouped 模式下，侧边栏音轨按 channel 分组，视觉位置与
-    /// 文档音轨索引不一定相等。此方法用于将 track_notes 的键（文档音轨索引）
-    /// 映射到视觉位置，以便与 ArrangeSelection 中的 track 范围进行比较。
+    /// 侧边栏音轨按原始序号排列，视觉位置与文档音轨索引一致（恒等映射）。
+    /// 此方法保留供 arrangement 操作统一使用，便于未来支持拖动排序等变化。
     ///
     /// 如果音轨不在映射中，返回 `None`（此时回退到 `track_idx` 本身作为视觉位置）。
     pub fn visual_position_of(&self, track_id: usize) -> Option<usize> {

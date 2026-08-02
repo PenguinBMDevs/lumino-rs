@@ -77,9 +77,9 @@ pub struct EditorData {
     /// 视觉位置 → 文档音轨索引 映射
     ///
     /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
-    /// 在 ChannelGrouped 模式下，侧边栏音轨按 channel 分组，视觉位置 i 与
-    /// 文档音轨索引不一定相等。此映射用于 arrangement 操作中正确匹配 selection
-    /// 的 track 范围（视觉位置）与 track_notes 的键（文档音轨索引）。
+    /// 侧边栏音轨按原始序号排列，视觉位置 i 等于文档音轨索引（恒等映射）。
+    /// 此映射仍保留供 arrangement 操作统一使用。若将来侧边栏顺序与文档顺序
+    /// 不一致（如拖动排序），只需更新此映射即可。
     pub track_visual_order: Vec<usize>,
 }
 

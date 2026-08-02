@@ -3,7 +3,7 @@
 //! 设置面板的事件枚举（仅枚举，不包含面板逻辑）。
 
 use lumino_core::storage::config::{
-    EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior, TrackDisplayMode,
+    EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 use lumino_extras::i18n::Language;
 
@@ -42,7 +42,6 @@ pub enum Event {
     PlaybackKeyColorsEnabledChanged(bool),
     TrackAddBehaviorChanged(TrackAddBehavior),
     PaletteChanged(String),
-    TrackDisplayModeChanged(TrackDisplayMode),
     // 编辑设置
     HistoryTotalLimitChanged(String),
     HistoryEntryLimitChanged(String),

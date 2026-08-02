@@ -45,7 +45,6 @@ impl RunnerInner {
             || new.velocity_curve_style != old.velocity_curve_style
             || new.playback_key_colors_enabled != old.playback_key_colors_enabled
             || new.track_add_behavior != old.track_add_behavior
-            || new.track_display_mode != old.track_display_mode
             || new.history_total_limit != old.history_total_limit
             || new.history_entry_limit != old.history_entry_limit
             || new.merge_window_ms != old.merge_window_ms

@@ -27,12 +27,19 @@ impl MidiHandler {
         // 音符将在首次渲染或切换音轨时从 MidiDocument 懒加载
         // 这样可以避免 track_notes + MidiDocument 两份数据共存导致内存翻倍
         // 注意：使用 track_note_count 而非 get_track_notes 以避免全量提取
+        let mut channel_log = String::with_capacity(track_count * 8);
         for track_idx in 0..track_count {
             let note_count = document.track_note_count(track_idx as u16);
             let track_name = document.track_name(track_idx).map(|s| s.to_string());
             let channel = document.track_channel(track_idx as u16);
-            track_infos.push((track_idx, track_name, note_count, channel));
+            // SMF 无端口概念，默认 port=0（yinhe 同样默认 port=0）
+            track_infos.push((track_idx, track_name, note_count, channel, 0));
+            if !channel_log.is_empty() {
+                channel_log.push_str(", ");
+            }
+            channel_log.push_str(&format!("track{}:ch{}", track_idx, channel));
         }
+        tracing::info!("音轨通道分布: [{}]", channel_log);
 
         ui.set_ppq(parsed.info.division);
         ui.update_tracks(&track_infos);
@@ -59,9 +66,9 @@ impl MidiHandler {
         }
 
         // 加载第一个有音符的音轨到编辑器（实际显示 + 懒加载缓存）
-        if let Some((first_track_idx, _, _, _)) = track_infos
+        if let Some((first_track_idx, _, _, _, _)) = track_infos
             .iter()
-            .find(|(_, _, note_count, _)| *note_count > 0)
+            .find(|(_, _, note_count, _, _)| *note_count > 0)
         {
             let first_notes = document.get_track_notes(*first_track_idx as u16);
             ui.load_track_notes(*first_track_idx, &first_notes);

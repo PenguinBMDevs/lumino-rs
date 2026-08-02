@@ -7,24 +7,8 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
-/// 音轨列表显示模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum TrackDisplayMode {
-    /// 按通道分组排列，标签为 A01, A02, ..., B01, B02, ...
-    #[default]
-    ChannelGrouped,
-    /// 按音轨序号排列，标签为 01, 02, 03, ...
-    TrackIndex,
-}
-
-impl std::fmt::Display for TrackDisplayMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TrackDisplayMode::ChannelGrouped => write!(f, "按通道分组"),
-            TrackDisplayMode::TrackIndex => write!(f, "按音轨序号"),
-        }
-    }
-}
+// 音轨标签格式同 yinhe：{通道字母}{通道号+1:02}，音轨始终按原始序号排列。
+// 通道字母 ch0=A, ch1=B, ..., ch15=P，通道号 1-16（零填充两位数）。
 
 /// 添加音轨时的行为
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -242,9 +226,6 @@ pub struct UiConfig {
     /// 添加音轨时的行为（自动跳转到新音轨 / 保持当前音轨）
     #[serde(default)]
     pub track_add_behavior: TrackAddBehavior,
-    /// 音轨列表显示模式（按通道分组 / 按音轨序号）
-    #[serde(default)]
-    pub track_display_mode: TrackDisplayMode,
     /// 当前选中的调色板名称（空字符串表示使用默认）
     #[serde(default)]
     pub selected_palette: String,
@@ -351,7 +332,6 @@ impl Default for UiConfig {
             hires_gpu_mem_limit_mb: default_hires_gpu_mem_limit(),
             playback_key_colors_enabled: false,
             track_add_behavior: TrackAddBehavior::default(),
-            track_display_mode: TrackDisplayMode::default(),
             selected_palette: String::new(),
             history_total_limit: default_history_total_limit(),
             history_entry_limit: default_history_entry_limit(),

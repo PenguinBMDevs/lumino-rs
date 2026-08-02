@@ -5,7 +5,8 @@ use crate::root::Root;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）
-    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8)]) {
+    /// track_infos: (track_index, track_name, note_count, channel, port)
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8, u8)]) {
         self.sidebar.update_tracks_from_midi(track_infos);
         // 同步视觉位置到文档音轨索引的映射
         // sidebar.tracks 的顺序就是视觉位置，每个 track.id 是文档音轨索引
@@ -128,8 +129,9 @@ impl Root {
             self.sidebar.tracks.push(crate::sidebar::Track {
                 id: track_idx,
                 name: format!("Track {}", track_idx),
+                port: 0,
                 channel: 0,
-                display_label: format!("{:02}", track_idx + 1),
+                display_label: format!("A{:02}", (track_idx + 1).min(16)),
                 is_conductor: false,
                 can_delete: true,
                 is_muted: false,

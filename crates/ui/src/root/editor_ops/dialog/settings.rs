@@ -154,16 +154,6 @@ impl Root {
             self.editor.set_visible_key_count(new_count);
             self.editor.editor_state.view.key_count = new_count;
         }
-
-        if old.track_display_mode != new.track_display_mode {
-            tracing::info!(
-                "同步音轨列表显示模式: {:?} -> {:?}",
-                old.track_display_mode,
-                new.track_display_mode
-            );
-            self.sidebar.track_display_mode = new.track_display_mode;
-            self.sidebar.reapply_display_mode();
-        }
     }
 
     /// 同步音频相关设置（合成器后端、音色库路径、XSynth 参数）

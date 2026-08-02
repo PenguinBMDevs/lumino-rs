@@ -177,13 +177,38 @@ impl Root {
             .iter()
             .map(|track| (track.id, track.name.clone()))
             .collect();
+
+        // 收集每轨的显示标签、通道号、Conductor 标识等元数据，
+        // 确保走带视图的通道标签与侧边栏一致。
+        let track_labels: Vec<String> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|track| track.display_label.clone())
+            .collect();
+        let track_channels: Vec<u8> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|track| track.channel)
+            .collect();
+        let track_conductors: Vec<bool> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|track| track.is_conductor)
+            .collect();
+
         let track_list_canvas = crate::editor::arrangement::TrackListCanvas::new(
             track_data,
             self.sidebar.selected_track,
             vp.scroll_y,
             TRACK_HEIGHT * vp.zoom_y,
             total_height,
-        );
+        )
+        .with_labels(track_labels)
+        .with_channels(track_channels)
+        .with_conductors(track_conductors);
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);

@@ -35,19 +35,12 @@ impl Sidebar {
     pub(super) fn handle_add_track(&mut self) {
         let new_id = self.next_track_id;
         self.next_track_id += 1;
-        let display_mode = self.track_display_mode;
-        let display_label = match display_mode {
-            lumino_core::storage::config::TrackDisplayMode::ChannelGrouped => {
-                // 使用通道字母 + 序号（简化处理，实际应计算通道）
-                format!("A{:02}", new_id + 1)
-            }
-            lumino_core::storage::config::TrackDisplayMode::TrackIndex => {
-                format!("{:02}", new_id + 1)
-            }
-        };
+        // yinhe 风格标签：端口字母 + 通道号（默认 port=0, channel=0）
+        let display_label = "A01".to_string();
         self.tracks.push(Track {
             id: new_id,
             name: display_label.clone(),
+            port: 0,
             channel: 0,
             display_label,
             is_conductor: false,
@@ -66,12 +59,13 @@ impl Sidebar {
         if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
             let new_id = self.next_track_id;
             self.next_track_id += 1;
-            let display_label = format!("{:02}", new_id + 1);
+            let display_label = "A01".to_string();
             self.tracks.insert(
                 idx,
                 Track {
                     id: new_id,
                     name: display_label.clone(),
+                    port: 0,
                     channel: 0,
                     display_label,
                     is_conductor: false,
@@ -92,13 +86,14 @@ impl Sidebar {
         if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
             let new_id = self.next_track_id;
             self.next_track_id += 1;
-            let display_label = format!("{:02}", new_id + 1);
+            let display_label = "A01".to_string();
             let insert_idx = (idx + 1).min(self.tracks.len());
             self.tracks.insert(
                 insert_idx,
                 Track {
                     id: new_id,
                     name: display_label.clone(),
+                    port: 0,
                     channel: 0,
                     display_label,
                     is_conductor: false,

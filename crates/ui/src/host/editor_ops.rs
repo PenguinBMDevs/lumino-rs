@@ -14,8 +14,8 @@ impl Host {
         self.root.reset_playback_manager();
     }
     /// 更新音轨列表（从 MIDI 导入）
-    /// track_infos: (track_index, track_name, note_count, channel)
-    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8)]) {
+    /// track_infos: (track_index, track_name, note_count, channel, port)
+    pub fn update_tracks(&mut self, track_infos: &[(usize, Option<String>, u64, u8, u8)]) {
         self.root.update_tracks(track_infos);
         // 仅请求重绘，不重建UI树（音轨列表数据由WGPU层处理）
         self.window_ctx.window.request_redraw();

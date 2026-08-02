@@ -7,7 +7,7 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::storage::config::{SelectionBoxMode, TrackDisplayMode};
+use lumino_core::storage::config::SelectionBoxMode;
 use lumino_extras::i18n::{Language, SettingsTranslations, settings_translations};
 use lumino_ui_core::window;
 
@@ -361,33 +361,6 @@ fn build_interaction_section<'a>(
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
         text(t.selection_box_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-        iced_widget::space().height(24),
-        // 音轨列表显示模式设置
-        text(t.track_display_mode)
-            .size(TEXT_SIZE_TITLE)
-            .style(create_content_text_style()),
-        iced_widget::space().height(12),
-        row![
-            text(t.track_display_mode_label)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            pick_list(
-                vec![
-                    TrackDisplayMode::ChannelGrouped,
-                    TrackDisplayMode::TrackIndex
-                ],
-                Some(settings.track_display_mode),
-                |mode| Message::Settings(crate::Event::TrackDisplayModeChanged(mode)),
-            )
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.track_display_mode_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
         iced_widget::space().height(24),

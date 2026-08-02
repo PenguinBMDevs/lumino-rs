@@ -82,11 +82,6 @@ impl MessageHandler for SettingsHandler {
             crate::settings::Event::LanguageChanged(lang) => {
                 tracing::debug!("Root: 界面语言切换为 {:?}", lang);
             }
-            crate::settings::Event::TrackDisplayModeChanged(mode) => {
-                root.sidebar.track_display_mode = mode;
-                root.sidebar.reapply_display_mode();
-                tracing::debug!("Root: 音轨列表显示模式切换为 {:?}", mode);
-            }
             crate::settings::Event::AutomationLineThicknessChanged(v) => {
                 root.editor.velocity_panel.automation_line_thickness = v;
                 tracing::debug!("Root: 自动化曲线连线粗细设置为 {}", v);
