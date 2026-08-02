@@ -3,12 +3,16 @@ use std::sync::{Arc, Mutex};
 use crate::render_thread::HiResTrackParams;
 use crate::{HiResConfig, HiResRenderer, TRACKS_PER_GROUP, TileCoord, generate_track_tile};
 use lumino_onion_skin::OnionSkinNote;
+use lumino_onion_skin_hires::merge_track_tile_into;
 
 use super::super::context::RenderContext;
 use super::super::types::HiResMeta;
 use super::common::{ensure_renderer_for_config, push_onion_progress};
 
 /// 对所有目标 time_group 生成并上传脏区域覆层贴图
+///
+/// 使用流式 merge：单缓冲 + 逐轨生成合并，避免 Vec<TrackTile> 累积
+///（原实现同时持有 8 张 TrackTile = 8MB，现降至 ~2MB 峰值）。
 fn generate_and_upload_dirty_overlays(
     renderer: &mut HiResRenderer,
     ctx: &RenderContext,
@@ -19,38 +23,31 @@ fn generate_and_upload_dirty_overlays(
     key_count: u16,
     track_group: u32,
     track_start: u16,
-    track_end: u16,
 ) {
     for &time_g in target_time_groups {
         let tick_start = time_g * ticks_per_group;
         let tick_end = tick_start + ticks_per_group;
         let merged_coord = TileCoord::new(track_group, time_g);
 
-        let mut track_tiles = Vec::with_capacity(sorted_notes.len());
+        // 单缓冲 + 流式 merge：生成一轨、合并一轨、释放一轨
+        let buf_size = (width * key_count as u32) as usize * 4;
+        let mut merged_pixels = vec![0u8; buf_size];
+
         for (local_idx, notes) in sorted_notes.iter().enumerate() {
             let t = track_start + local_idx as u16;
             let tile =
                 generate_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
-            track_tiles.push(tile);
+            merge_track_tile_into(&mut merged_pixels, &tile);
+            // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放（不累积）
         }
-
-        let group_tile = crate::merge_group_tiles(
-            &track_tiles,
-            merged_coord,
-            tick_start,
-            tick_end,
-            width,
-            key_count,
-            (track_start, track_end),
-        );
 
         renderer.upload_dirty_overlay(
             &ctx.device,
             &ctx.queue,
             merged_coord,
-            &group_tile.pixels,
-            group_tile.width,
-            group_tile.height,
+            &merged_pixels,
+            width,
+            key_count as u32,
         );
     }
 }
@@ -94,7 +91,6 @@ pub(crate) fn handle_show_dirty_overlay(
     let time_groups = config.time_group_count(total_ticks, ppq);
     let width = config.tile_width_px;
     let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
-    let track_end = (track_start as u32 + group_notes.len() as u32).min(track_count as u32) as u16;
 
     let mut sorted_notes = group_notes;
     for notes in &mut sorted_notes {
@@ -122,7 +118,6 @@ pub(crate) fn handle_show_dirty_overlay(
             key_count,
             track_group,
             track_start,
-            track_end,
         );
     }
 

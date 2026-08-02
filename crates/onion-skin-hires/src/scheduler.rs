@@ -17,9 +17,8 @@ use tracing::{info, warn};
 
 use crate::cache;
 use crate::config::HiResConfig;
-use crate::generate::merge_pixels_into;
 use crate::scheduler::generate::{
-    CacheWriteJob, TileGenContext, TrackGroupRequest, generate_one_time_group_tile,
+    CacheWriteJob, TileGenContext, TrackGroupRequest, generate_one_time_group_tile_into,
     generate_one_track_group, sort_notes_per_track,
 };
 use crate::types::{GroupTile, TileCoord};
@@ -260,17 +259,16 @@ pub fn generate_all_tiles_streaming<F>(
         let mut merged_pixels = vec![0u8; buf_size];
 
         for track_group in 0..track_groups {
-            let group_tile = generate_one_time_group_tile(
+            // 直接写入 merged_pixels，不创建中间 GroupTile，省去一次完整贴图分配
+            generate_one_time_group_tile_into(
                 track_group,
                 time_group,
                 tick_start,
                 tick_end,
                 notes,
                 &tile_ctx,
+                &mut merged_pixels,
             );
-            // 合并整张贴图像素到跨 track_group 缓冲
-            merge_pixels_into(&mut merged_pixels, &group_tile.pixels);
-            // group_tile 在此作用域结束时 drop
         }
 
         let merged = GroupTile {

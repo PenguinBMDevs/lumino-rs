@@ -64,6 +64,43 @@ pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
 ///
 /// 内部：逐轨生成单音轨贴图（缓存优先），边生成边合并到整合组缓冲，
 /// 合并后立即释放单轨贴图，避免 8 张完整尺寸贴图同时堆积在内存中。
+///
+/// 直接写入外部 `output` 缓冲，不额外分配中间 GroupTile。
+/// `output` 长度必须为 `width × key_count × 4`，调用方负责初始化为零。
+pub(super) fn generate_one_time_group_tile_into(
+    track_group: u32,
+    time_group: u32,
+    tick_start: u32,
+    tick_end: u32,
+    notes: &[Vec<OnionSkinNote>],
+    ctx: &TileGenContext<'_>,
+    output: &mut [u8],
+) {
+    let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
+    let track_end =
+        ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
+
+    for track_idx in track_start..track_end {
+        let tile = generate_or_load_track_tile(
+            &notes[track_idx as usize],
+            track_idx,
+            time_group,
+            tick_start,
+            tick_end,
+            ctx,
+        );
+        merge_track_tile_into(output, &tile);
+        // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放
+    }
+}
+
+/// 生成单个音轨组在指定 time_group 的整合组贴图（返回 owned GroupTile）
+///
+/// 内部分配自己的像素缓冲，适合需要返回 GroupTile 的场景（非流式路径）。
+/// 流式路径请使用 [`generate_one_time_group_tile_into`] 以避免中间分配。
+///
+/// 当前未被直接调用，保留作为公共 API 供外部非流式场景使用。
+#[allow(dead_code)]
 pub(super) fn generate_one_time_group_tile(
     track_group: u32,
     time_group: u32,
@@ -80,20 +117,15 @@ pub(super) fn generate_one_time_group_tile(
     let pixel_count = (ctx.width * ctx.key_count as u32) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
 
-    // ★ streaming merge：生成一轨、合并一轨、释放一轨 ★
-    // 避免 Vec<TrackTile> 同时持有 8 张完整尺寸贴图导致的内存峰值。
-    for track_idx in track_start..track_end {
-        let tile = generate_or_load_track_tile(
-            &notes[track_idx as usize],
-            track_idx,
-            time_group,
-            tick_start,
-            tick_end,
-            ctx,
-        );
-        merge_track_tile_into(&mut pixels, &tile);
-        // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放
-    }
+    generate_one_time_group_tile_into(
+        track_group,
+        time_group,
+        tick_start,
+        tick_end,
+        notes,
+        ctx,
+        &mut pixels,
+    );
 
     GroupTile {
         coord,
