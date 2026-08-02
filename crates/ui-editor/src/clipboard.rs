@@ -51,6 +51,8 @@ impl Editor {
                 "tick": note.tick - origin_tick,
                 "key": note.key - origin_key,
                 "length": note.length,
+                "velocity": note.velocity,
+                "channel": note.channel,
             })).collect::<Vec<_>>(),
         });
 
@@ -119,9 +121,17 @@ impl Editor {
                 let tick_offset = item.get("tick")?.as_f64()?;
                 let key_offset = item.get("key")?.as_u64()? as u16;
                 let length = item.get("length")?.as_f64()?;
+                let velocity = item.get("velocity").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
+                let channel = item.get("channel").and_then(|c| c.as_u64()).unwrap_or(0) as u8;
                 let tick = (anchor.0 + tick_offset as f32).max(0.0);
                 let key = anchor.1.saturating_add(key_offset).min(max_key);
-                Some(super::Note::new(tick, key, length as f32))
+                Some(super::Note::from_raw(
+                    tick,
+                    key,
+                    length as f32,
+                    velocity,
+                    channel,
+                ))
             })
             .collect();
 
