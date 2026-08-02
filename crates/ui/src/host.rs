@@ -98,6 +98,11 @@ pub struct Host {
     pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
     /// 高精度贴图：脏区域覆层是否已发送到渲染线程（防止每帧重复发送）
     pub(crate) hires_overlay_sent: bool,
+    /// 高精度贴图：脏音轨被切换走的时间记录（track_idx → switch_away_time）
+    ///
+    /// 用于实现"切换走后才开始冷静期计时"的语义——只有用户切换走脏音轨后
+    /// 才开始计时，冷静期内用户切回该脏音轨则取消待处理的重生成。
+    pub(crate) hires_switch_away_times: std::collections::HashMap<u16, Instant>,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
 }

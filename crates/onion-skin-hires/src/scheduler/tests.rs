@@ -276,7 +276,12 @@ fn create_large_noteset(
     let mut all_notes: Vec<Vec<OnionSkinNote>> = Vec::with_capacity(track_count as usize);
 
     for t in 0..track_count {
-        let color = [t as u8, (t * 37) as u8, 255u8.wrapping_sub((t * 13) as u8), 255];
+        let color = [
+            t as u8,
+            (t * 37) as u8,
+            255u8.wrapping_sub((t * 13) as u8),
+            255,
+        ];
         let mut track_notes = Vec::with_capacity(notes_per_track);
 
         // 将音符均匀分布到整个 timeline，多 key 覆盖

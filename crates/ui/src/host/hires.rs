@@ -46,6 +46,7 @@ impl Host {
         self.hires_dirty_tracks.clear();
         self.hires_dirty_regions.clear();
         self.hires_dirty_time_groups.clear();
+        self.hires_switch_away_times.clear();
         self.hires_last_edit = None;
         self.init_default_hires_context();
     }
@@ -242,8 +243,12 @@ impl Host {
     }
 
     /// 检查冷静期是否到期，返回需要重生成的脏音轨列表
+    ///
+    /// 冷静期从用户切换走脏音轨的那一刻开始计时，而不是从编辑时刻。
+    /// 只有用户切换走脏音轨后，10s内没有切回，才会触发重生成。
+    /// 用户在当前音轨上编辑时不会触发重生成。
     pub fn check_hires_regen(&mut self) -> Option<Vec<u16>> {
-        if self.hires_dirty_tracks.is_empty() {
+        if self.hires_switch_away_times.is_empty() {
             return None;
         }
         let cooldown = self
@@ -251,18 +256,38 @@ impl Host {
             .as_ref()
             .map(|c| c.cooldown_secs)
             .unwrap_or(crate::constants::timing::DEFAULT_HIRES_COOLDOWN_SECS);
-        if let Some(last) = self.hires_last_edit
-            && last.elapsed().as_secs() >= cooldown
-        {
-            let dirty: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
-            self.hires_dirty_tracks.clear();
-            self.hires_dirty_regions.clear();
-            self.hires_dirty_time_groups.clear();
+
+        // 收集冷静期已到期的脏音轨（从切换走开始计时）
+        let now = Instant::now();
+        let mut ready: Vec<u16> = Vec::new();
+        self.hires_switch_away_times
+            .retain(|&track, &mut switch_time| {
+                if now.duration_since(switch_time).as_secs() >= cooldown {
+                    ready.push(track);
+                    false // 移除已就绪的音轨
+                } else {
+                    true // 未到期，保留继续计时
+                }
+            });
+
+        if ready.is_empty() {
+            return None;
+        }
+
+        // 从脏集合中移除就绪的音轨
+        for &track in &ready {
+            self.hires_dirty_tracks.remove(&track);
+            self.hires_dirty_regions.remove(&track);
+            self.hires_dirty_time_groups.remove(&track);
+        }
+
+        // 如果没有剩余的脏音轨了，清理相关状态
+        if self.hires_dirty_tracks.is_empty() {
             self.hires_last_edit = None;
             self.hires_overlay_sent = false;
-            return Some(dirty);
         }
-        None
+
+        Some(ready)
     }
 
     /// 设置高精度贴图冷静期秒数（从配置初始化）

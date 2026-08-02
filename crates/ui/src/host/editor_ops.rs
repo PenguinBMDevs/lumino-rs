@@ -1,10 +1,12 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
+use std::sync::Arc;
+use std::time::Instant;
+
 use crate::host::{Host, types::NoteData};
 use crate::message;
 use lumino_midi_loader::MidiDocument;
 use lumino_note_core::TempoPoint;
-use std::sync::Arc;
 
 impl Host {
     /// 重置播放管理器（加载新文件时调用）
@@ -54,8 +56,9 @@ impl Host {
     /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图：
     /// 1. 先发送临时脏区域覆层命令，在旧音轨位置立即显示编辑内容；
     /// 2. 执行音轨切换；
-    /// 3. 立即触发后台重生（绕过冷静期），重生完成后自动替换覆层。
+    /// 3. 记录脏音轨的切换走时间（开始冷静期计时），不立即触发重生成。
     ///
+    /// 如果切回脏音轨（冷静期内），取消待处理的重生成，保持脏标记让用户继续编辑。
     /// 覆层与重生均以音轨组（track_group）为单位合并处理，
     /// 避免同组多个脏音轨互相覆盖或重生成时丢失同组其他音轨数据。
     pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
@@ -136,12 +139,20 @@ impl Host {
         // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
         self.root.set_current_track(track_idx, open_panel);
 
-        // 按音轨组触发后台重生，每个 group 只重生一次
-        let mut regen_groups = std::collections::HashSet::new();
+        // 记录脏音轨的切换走时间（开始冷静期计时），或取消待处理的重生成
+        //
+        // 切换走脏音轨 → 记录切换时间，冷静期从此刻开始计时
+        // 切回脏音轨 → 从 switch_away_times 移除，取消待处理的重生成
+        let new_track = track_idx as u16;
         for &dirty_track in &dirty_tracks {
-            let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
-            if regen_groups.insert(group) {
-                self.force_hires_regen(dirty_track);
+            if dirty_track == new_track {
+                // 用户切回脏音轨 → 取消待处理的重生成，保持脏标记让用户继续编辑
+                self.hires_switch_away_times.remove(&dirty_track);
+            } else {
+                // 用户切换走脏音轨 → 记录切换时间（仅首次记录，不重置已有计时）
+                self.hires_switch_away_times
+                    .entry(dirty_track)
+                    .or_insert_with(Instant::now);
             }
         }
 
@@ -275,6 +286,7 @@ impl Host {
         self.hires_dirty_tracks.clear();
         self.hires_dirty_regions.clear();
         self.hires_dirty_time_groups.clear();
+        self.hires_switch_away_times.clear();
         self.hires_last_edit = None;
         self.hires_overlay_sent = false;
 

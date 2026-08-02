@@ -110,6 +110,7 @@ impl Host {
             hires_midi_hash: Some(midi_hash),
             hires_gen_info: Some((ppq, key_count, total_ticks)),
             hires_overlay_sent: false,
+            hires_switch_away_times: std::collections::HashMap::new(),
             message_router: handlers::create_message_router(),
         }
     }
