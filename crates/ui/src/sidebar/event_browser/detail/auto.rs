@@ -1,5 +1,6 @@
 //! 事件浏览器表格行聚合 — 自动化事件（CC/PB/RPN/NRPN/Tempo）。
 
+use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::automation::{
     AutomationLane, AutomationTarget as LaneTarget, SegmentShape as LaneShape,
 };
@@ -8,7 +9,7 @@ use lumino_ui_core::sidebar_event::EditRequest;
 
 use crate::sidebar::event_browser::bar_lookup::BarLookup;
 use crate::sidebar::event_browser::detail::{EventBrowserData, EventTableRow, make_jump};
-use crate::sidebar::event_browser::table::{curve_points_text, shape_text};
+use crate::sidebar::event_browser::table::shape_text;
 
 /// 收集自动化事件行。
 ///
@@ -18,11 +19,12 @@ pub(super) fn collect_auto_rows(
     bl: &BarLookup,
     track: u16,
     target: &EventTarget,
+    t: &MainTranslations,
 ) -> Vec<EventTableRow> {
     if *target == EventTarget::Tempo {
-        collect_tempo_rows(data, bl, track)
+        collect_tempo_rows(data, bl, track, t)
     } else if let Some(lane) = find_lane(data, track, target) {
-        collect_lane_rows(bl, lane)
+        collect_lane_rows(bl, lane, t)
     } else {
         Vec::new()
     }
@@ -33,6 +35,7 @@ fn collect_tempo_rows(
     data: &EventBrowserData<'_>,
     bl: &BarLookup,
     track: u16,
+    t: &MainTranslations,
 ) -> Vec<EventTableRow> {
     let _ = track;
     data.tempo_points
@@ -41,17 +44,12 @@ fn collect_tempo_rows(
         .map(|(idx, pt)| {
             let tick = pt.tick as u32;
             let shape = EventShape::Step;
-            let pts = curve_points_text(shape);
             let cells = vec![
                 String::new(),
                 tick.to_string(),
                 bl.format(tick),
                 format!("{:.2}", pt.bpm),
-                pts[0].clone(),
-                pts[1].clone(),
-                pts[2].clone(),
-                pts[3].clone(),
-                shape_text(shape),
+                shape_text(shape, t),
             ];
             let value = pt.bpm as f32;
             let edits = vec![
@@ -60,17 +58,9 @@ fn collect_tempo_rows(
                 Some(EditRequest::AutoTick { tick, value, shape }),
                 Some(EditRequest::AutoValue { tick, value, shape }),
                 Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
             ];
             let jumps = vec![
                 None,
-                make_jump(tick, None),
-                make_jump(tick, None),
-                make_jump(tick, None),
-                make_jump(tick, None),
                 make_jump(tick, None),
                 make_jump(tick, None),
                 make_jump(tick, None),
@@ -88,7 +78,11 @@ fn collect_tempo_rows(
 }
 
 /// 收集自动化 lane 事件行。
-fn collect_lane_rows(bl: &BarLookup, lane: &AutomationLane) -> Vec<EventTableRow> {
+fn collect_lane_rows(
+    bl: &BarLookup,
+    lane: &AutomationLane,
+    t: &MainTranslations,
+) -> Vec<EventTableRow> {
     lane.events
         .iter()
         .enumerate()
@@ -96,17 +90,12 @@ fn collect_lane_rows(bl: &BarLookup, lane: &AutomationLane) -> Vec<EventTableRow
             let tick = evt.tick;
             let value = evt.value as f32;
             let shape = lane_shape_to_event_shape(evt.shape);
-            let pts = curve_points_text(shape);
             let cells = vec![
                 String::new(),
                 tick.to_string(),
                 bl.format(tick),
                 value.to_string(),
-                pts[0].clone(),
-                pts[1].clone(),
-                pts[2].clone(),
-                pts[3].clone(),
-                shape_text(shape),
+                shape_text(shape, t),
             ];
             let edits = vec![
                 None,
@@ -114,17 +103,9 @@ fn collect_lane_rows(bl: &BarLookup, lane: &AutomationLane) -> Vec<EventTableRow
                 Some(EditRequest::AutoTick { tick, value, shape }),
                 Some(EditRequest::AutoValue { tick, value, shape }),
                 Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
-                Some(EditRequest::AutoShape { tick, value, shape }),
             ];
             let jumps = vec![
                 None,
-                make_jump(tick, None),
-                make_jump(tick, None),
-                make_jump(tick, None),
-                make_jump(tick, None),
                 make_jump(tick, None),
                 make_jump(tick, None),
                 make_jump(tick, None),

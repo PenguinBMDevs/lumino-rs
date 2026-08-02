@@ -3,6 +3,7 @@
 //! 本模块只包含分页、行选择、`SegmentShape` 文本化等与 UI 框架无关的逻辑。
 //! 任何 egui 或 iced Canvas 的绘制代码均不放在此处。
 
+use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::event::SegmentShape;
 
 use super::state::EventBrowserState;
@@ -86,29 +87,10 @@ pub(super) fn handle_row_click(
 }
 
 /// 把 `SegmentShape` 格式化为表格单元格文本（仅类型名）。
-pub(super) fn shape_text(shape: SegmentShape) -> String {
+pub(super) fn shape_text(shape: SegmentShape, t: &MainTranslations) -> String {
     match shape {
-        SegmentShape::Step => "Step".to_string(),
-        SegmentShape::Curve { .. } => "Curve".to_string(),
-    }
-}
-
-/// 曲线控制点四分量文本，顺序为 (X1, Y1, X2, Y2)。
-/// 离散（Step）没有控制点，全部返回 "N/A"。
-pub(super) fn curve_points_text(shape: SegmentShape) -> [String; 4] {
-    match shape {
-        SegmentShape::Step => [
-            "N/A".to_string(),
-            "N/A".to_string(),
-            "N/A".to_string(),
-            "N/A".to_string(),
-        ],
-        SegmentShape::Curve { x1, y1, x2, y2 } => [
-            format!("{:.2}", x1),
-            format!("{:.2}", y1),
-            format!("{:.2}", x2),
-            format!("{:.2}", y2),
-        ],
+        SegmentShape::Step => t.eb_step.to_string(),
+        SegmentShape::Curve { .. } => t.eb_curve.to_string(),
     }
 }
 
@@ -207,36 +189,5 @@ mod tests {
         let mut state = EventBrowserState::default();
         handle_row_click(&mut state, 42, &[42], true, false);
         assert_eq!(state.last_clicked_tick, Some(42));
-    }
-
-    #[test]
-    fn shape_text_variants() {
-        assert_eq!(shape_text(SegmentShape::Step), "Step");
-        assert_eq!(
-            shape_text(SegmentShape::Curve {
-                x1: 0.0,
-                y1: 0.0,
-                x2: 0.0,
-                y2: 0.0,
-            }),
-            "Curve"
-        );
-    }
-
-    #[test]
-    fn curve_points_text_step_is_na() {
-        let texts = curve_points_text(SegmentShape::Step);
-        assert!(texts.iter().all(|s| s == "N/A"));
-    }
-
-    #[test]
-    fn curve_points_text_curve_values() {
-        let texts = curve_points_text(SegmentShape::Curve {
-            x1: 0.1,
-            y1: 0.2,
-            x2: 0.3,
-            y2: 0.4,
-        });
-        assert_eq!(texts, ["0.10", "0.20", "0.30", "0.40"]);
     }
 }

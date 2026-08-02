@@ -90,6 +90,7 @@ impl<'a> EventBrowserCanvas<'a> {
                 .as_ref()
                 .unwrap_or(&SelectedItem::TimeSig),
             &self.data,
+            self.t,
         );
         let (_, page_rows) = self.page_slice(&rows);
         let row_idx = hit_test::hit_test_row(local.y, state.scroll_y)?;
@@ -151,6 +152,7 @@ impl<'a> EventBrowserCanvas<'a> {
                 .as_ref()
                 .unwrap_or(&SelectedItem::TimeSig),
             &self.data,
+            self.t,
         );
         let (page, page_rows) = self.page_slice(&rows);
         let row = page_rows.get(row_idx)?;

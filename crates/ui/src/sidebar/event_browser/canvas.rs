@@ -6,6 +6,7 @@
 use iced_core::mouse::{Button, Event as MouseEvent, ScrollDelta};
 use iced_core::{Length, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Geometry, Program};
+use lumino_extras::i18n::MainTranslations;
 
 use crate::editor::grid::theme::ThemeExt;
 use crate::sidebar::event_browser::detail::{self, EventBrowserData, EventTableRow};
@@ -110,12 +111,18 @@ pub struct EventBrowserCanvas<'a> {
     pub state: &'a EventBrowserState,
     /// 渲染数据（只读引用）
     pub data: EventBrowserData<'a>,
+    /// 多语言翻译
+    pub t: &'static MainTranslations,
 }
 
 impl<'a> EventBrowserCanvas<'a> {
     /// 创建事件浏览器 Canvas
-    pub fn new(state: &'a EventBrowserState, data: EventBrowserData<'a>) -> Self {
-        Self { state, data }
+    pub fn new(
+        state: &'a EventBrowserState,
+        data: EventBrowserData<'a>,
+        t: &'static MainTranslations,
+    ) -> Self {
+        Self { state, data, t }
     }
 
     /// 树宽度 = 面板宽度 × 比例，受 MIN_TREE_WIDTH / MAX_TREE_WIDTH 约束
@@ -213,6 +220,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
                         .as_ref()
                         .unwrap_or(&SelectedItem::TimeSig),
                     &self.data,
+                    self.t,
                 );
                 let (_, page_rows) = self.page_slice(&rows);
                 let table_content_h = HEADER_HEIGHT + page_rows.len() as f32 * ROW_HEIGHT;
@@ -316,6 +324,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
                 .as_ref()
                 .unwrap_or(&SelectedItem::TimeSig),
             &self.data,
+            self.t,
         );
         let (page, page_rows) = self.page_slice(&rows);
         let total_pages = total_pages(rows.len());
@@ -335,7 +344,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
 
         // 右键上下文菜单
         if let Some((_, menu_pos)) = &state.context_menu {
-            draw_context_menu(&mut frame, theme, *menu_pos);
+            draw_context_menu(&mut frame, theme, *menu_pos, self.t);
         }
 
         vec![frame.into_geometry()]
@@ -347,8 +356,9 @@ pub fn view_event_browser<'a>(
     state: &'a EventBrowserState,
     data: EventBrowserData<'a>,
     _context_menu_tick: Option<u32>,
+    t: &'static MainTranslations,
 ) -> Element<'a> {
-    let canvas = EventBrowserCanvas::new(state, data);
+    let canvas = EventBrowserCanvas::new(state, data, t);
     iced_widget::canvas::Canvas::new(canvas)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -356,7 +366,7 @@ pub fn view_event_browser<'a>(
 }
 
 /// 绘制右键上下文菜单
-fn draw_context_menu(frame: &mut Frame<Renderer>, theme: &Theme, pos: Point) {
+fn draw_context_menu(frame: &mut Frame<Renderer>, theme: &Theme, pos: Point, t: &MainTranslations) {
     use iced_core::Color;
     let palette = theme.extended_palette();
     let is_light = theme.is_light();
@@ -397,10 +407,8 @@ fn draw_context_menu(frame: &mut Frame<Renderer>, theme: &Theme, pos: Point) {
             .with_width(1.0),
     );
 
-    for (i, label) in ["Insert Above", "Insert Below", "Delete"]
-        .iter()
-        .enumerate()
-    {
+    let labels = [t.eb_insert_above, t.eb_insert_below, t.eb_delete];
+    for (i, label) in labels.iter().enumerate() {
         let y = pos.y + i as f32 * item_h;
         frame.fill_text(iced_widget::canvas::Text {
             content: (*label).to_string(),

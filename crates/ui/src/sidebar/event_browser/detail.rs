@@ -10,6 +10,7 @@
 
 use std::sync::Arc;
 
+use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::automation::AutomationLane;
 use lumino_note_core::event::{
     ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent,
@@ -70,49 +71,52 @@ pub(super) struct EventTableRow {
 }
 
 /// 按 `SelectedItem` 返回列标题与默认列宽。
-pub(super) fn headers(item: &SelectedItem) -> &'static [(&'static str, f32)] {
+pub(super) fn headers(item: &SelectedItem, t: &MainTranslations) -> Vec<(String, f32)> {
     match item {
         SelectedItem::ProjectJson | SelectedItem::MappingJson => {
-            &[("Key", 120.0), ("Value", 200.0)]
+            vec![
+                (t.eb_key_colon.to_string(), 120.0),
+                (t.eb_value_colon.to_string(), 200.0),
+            ]
         }
-        SelectedItem::Notes { .. } => &[
-            ("#", 30.0),
-            ("id", 50.0),
-            ("tick", 55.0),
-            ("position", 70.0),
-            ("gate", 55.0),
-            ("end_tick", 55.0),
-            ("end_pos", 70.0),
-            ("key", 45.0),
-            ("velocity", 50.0),
-            ("channel", 50.0),
+        SelectedItem::Notes { .. } => vec![
+            (t.eb_hash.to_string(), 30.0),
+            (t.eb_id.to_string(), 50.0),
+            (t.eb_tick.to_string(), 55.0),
+            (t.eb_position.to_string(), 70.0),
+            (t.eb_gate.to_string(), 55.0),
+            (t.eb_end_tick.to_string(), 55.0),
+            (t.eb_end_pos.to_string(), 70.0),
+            (t.eb_key.to_string(), 45.0),
+            (t.eb_velocity.to_string(), 50.0),
+            (t.eb_channel.to_string(), 50.0),
         ],
-        SelectedItem::Automation { .. } => &[
-            ("#", 30.0),
-            ("tick", 55.0),
-            ("position", 70.0),
-            ("value", 60.0),
-            ("x1", 45.0),
-            ("y1", 45.0),
-            ("x2", 45.0),
-            ("y2", 45.0),
-            ("shape", 55.0),
+        SelectedItem::Automation { .. } => vec![
+            (t.eb_hash.to_string(), 30.0),
+            (t.eb_tick.to_string(), 55.0),
+            (t.eb_position.to_string(), 70.0),
+            (t.eb_value.to_string(), 60.0),
+            (t.eb_shape.to_string(), 55.0),
         ],
-        _ => &[
-            ("#", 30.0),
-            ("tick", 55.0),
-            ("position", 70.0),
-            ("value", 200.0),
+        _ => vec![
+            (t.eb_hash.to_string(), 30.0),
+            (t.eb_tick.to_string(), 55.0),
+            (t.eb_position.to_string(), 70.0),
+            (t.eb_value.to_string(), 200.0),
         ],
     }
 }
 
 /// 按 `SelectedItem` 收集当前页应显示的所有行。
-pub(super) fn collect_rows(item: &SelectedItem, data: &EventBrowserData<'_>) -> Vec<EventTableRow> {
+pub(super) fn collect_rows(
+    item: &SelectedItem,
+    data: &EventBrowserData<'_>,
+    t: &MainTranslations,
+) -> Vec<EventTableRow> {
     let bar_lookup = build_bar_lookup(data);
     let mut rows = match item {
-        SelectedItem::TimeSig => rows::collect_time_sig_rows(data, &bar_lookup),
-        SelectedItem::KeySig => rows::collect_key_sig_rows(data, &bar_lookup),
+        SelectedItem::TimeSig => rows::collect_time_sig_rows(data, &bar_lookup, t),
+        SelectedItem::KeySig => rows::collect_key_sig_rows(data, &bar_lookup, t),
         SelectedItem::Markers => rows::collect_text_rows(
             &bar_lookup,
             TextEventKind::Marker,
@@ -137,7 +141,7 @@ pub(super) fn collect_rows(item: &SelectedItem, data: &EventBrowserData<'_>) -> 
         SelectedItem::Notes { track } => note::collect_note_rows(data, &bar_lookup, *track),
         SelectedItem::ProgramChange { track } => rows::collect_pc_rows(data, &bar_lookup, *track),
         SelectedItem::Automation { track, target } => {
-            auto::collect_auto_rows(data, &bar_lookup, *track, target)
+            auto::collect_auto_rows(data, &bar_lookup, *track, target, t)
         }
         SelectedItem::Lyrics { track } => rows::collect_text_rows(
             &bar_lookup,
@@ -153,8 +157,8 @@ pub(super) fn collect_rows(item: &SelectedItem, data: &EventBrowserData<'_>) -> 
             Some(*track),
             |c| c.text.clone(),
         ),
-        SelectedItem::ProjectJson => rows::collect_project_rows(),
-        SelectedItem::MappingJson => rows::collect_mapping_rows(),
+        SelectedItem::ProjectJson => rows::collect_project_rows(t),
+        SelectedItem::MappingJson => rows::collect_mapping_rows(t),
     };
 
     rows.sort_by(|a, b| a.tick.cmp(&b.tick).then(a.id.cmp(&b.id)));

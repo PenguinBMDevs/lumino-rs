@@ -4,6 +4,7 @@
 
 use iced_core::{Color, Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, path::Builder};
+use lumino_extras::i18n::MainTranslations;
 
 use crate::Renderer;
 use crate::Theme;
@@ -59,6 +60,7 @@ pub(super) fn draw(
         bounds.width - table_x,
         selected_item,
         &state.column_widths,
+        canvas.t,
     );
 
     // 右侧表格行
@@ -139,7 +141,7 @@ fn draw_tree(
     );
     draw_text(
         frame,
-        "Archive",
+        canvas.t.eb_archive,
         4.0,
         HEADER_HEIGHT * 0.5,
         header_fg,
@@ -270,6 +272,7 @@ fn draw_table_header(
     table_w: f32,
     selected_item: Option<&SelectedItem>,
     column_widths: &[f32],
+    t: &MainTranslations,
 ) {
     let (header_bg, header_fg, _, line_color) = colors(theme);
     frame.fill_rectangle(
@@ -279,7 +282,7 @@ fn draw_table_header(
     );
 
     if let Some(item) = selected_item {
-        let headers = headers_for(item);
+        let headers = crate::sidebar::event_browser::detail::headers(item, t);
         let mut x = table_x + 4.0;
         for (i, (title, _)) in headers.iter().enumerate() {
             let w = column_widths.get(i).copied().unwrap_or(60.0);
@@ -402,8 +405,4 @@ fn draw_splitter(frame: &mut Frame<Renderer>, theme: &Theme, x: f32, height: f32
             .with_color(line_color.scale_alpha(0.5))
             .with_width(SPLITTER_WIDTH),
     );
-}
-
-fn headers_for(item: &SelectedItem) -> &'static [(&'static str, f32)] {
-    crate::sidebar::event_browser::detail::headers(item)
 }

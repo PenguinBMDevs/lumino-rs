@@ -95,11 +95,12 @@ pub fn view<'a>(
             container(col).into()
         }
         Route::EventList => {
-            // 事件浏览器：由 Agent #3 实现渲染，当前为占位
+            // 事件浏览器
             event_browser::view_event_browser(
                 params.event_browser_state,
                 params.event_browser_data,
                 params.event_list_context_menu_tick,
+                t,
             )
         }
         Route::File => {

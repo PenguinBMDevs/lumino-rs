@@ -3,6 +3,7 @@
 //! 提供拍号、调号、标记/歌词/和弦、音色变换及 project/mapping 概览
 //! 的行数据收集函数。
 
+use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::event::{ChordEvent, LyricsEvent, MarkerEvent, ScaleType};
 use lumino_ui_core::sidebar_event::{EditRequest, TextEventKind};
 
@@ -13,6 +14,7 @@ use crate::sidebar::event_browser::detail::{EventBrowserData, EventTableRow, mak
 pub(super) fn collect_time_sig_rows(
     data: &EventBrowserData<'_>,
     bl: &BarLookup,
+    _t: &MainTranslations,
 ) -> Vec<EventTableRow> {
     data.time_signatures
         .iter()
@@ -55,6 +57,7 @@ pub(super) fn collect_time_sig_rows(
 pub(super) fn collect_key_sig_rows(
     data: &EventBrowserData<'_>,
     bl: &BarLookup,
+    t: &MainTranslations,
 ) -> Vec<EventTableRow> {
     data.key_signatures
         .iter()
@@ -66,7 +69,7 @@ pub(super) fn collect_key_sig_rows(
                 tick.to_string(),
                 bl.format(tick),
                 evt.root.to_string(),
-                scale_text(evt.scale),
+                scale_text(evt.scale, t),
             ];
             let edits = vec![
                 None,
@@ -217,17 +220,17 @@ pub(super) fn collect_pc_rows(
 }
 
 /// project.json 概览行（静态 key-value）。
-pub(super) fn collect_project_rows() -> Vec<EventTableRow> {
+pub(super) fn collect_project_rows(t: &MainTranslations) -> Vec<EventTableRow> {
     vec![
-        make_kv_row(0, "project.json", "loaded"),
+        make_kv_row(0, "project.json", t.eb_loaded),
         make_kv_row(1, "format", "v1"),
     ]
 }
 
 /// mapping.json 概览行（静态 key-value）。
-pub(super) fn collect_mapping_rows() -> Vec<EventTableRow> {
+pub(super) fn collect_mapping_rows(t: &MainTranslations) -> Vec<EventTableRow> {
     vec![
-        make_kv_row(0, "mapping.json", "loaded"),
+        make_kv_row(0, "mapping.json", t.eb_loaded),
         make_kv_row(1, "version", "1"),
     ]
 }
@@ -243,17 +246,17 @@ fn make_kv_row(id: usize, key: &str, value: &str) -> EventTableRow {
 }
 
 /// 调式显示名称。
-pub(super) fn scale_text(scale: ScaleType) -> String {
+pub(super) fn scale_text(scale: ScaleType, t: &MainTranslations) -> String {
     match scale {
-        ScaleType::Major => "Major".to_string(),
-        ScaleType::Minor => "Minor".to_string(),
-        ScaleType::Dorian => "Dorian".to_string(),
-        ScaleType::Phrygian => "Phrygian".to_string(),
-        ScaleType::Lydian => "Lydian".to_string(),
-        ScaleType::Mixolydian => "Mixolydian".to_string(),
-        ScaleType::Aeolian => "Aeolian".to_string(),
-        ScaleType::Locrian => "Locrian".to_string(),
-        ScaleType::HarmonicMinor => "HarmonicMinor".to_string(),
-        ScaleType::MelodicMinor => "MelodicMinor".to_string(),
+        ScaleType::Major => t.eb_major.to_string(),
+        ScaleType::Minor => t.eb_minor.to_string(),
+        ScaleType::Dorian => t.eb_dorian.to_string(),
+        ScaleType::Phrygian => t.eb_phrygian.to_string(),
+        ScaleType::Lydian => t.eb_lydian.to_string(),
+        ScaleType::Mixolydian => t.eb_mixolydian.to_string(),
+        ScaleType::Aeolian => t.eb_aeolian.to_string(),
+        ScaleType::Locrian => t.eb_locrian.to_string(),
+        ScaleType::HarmonicMinor => t.eb_harmonic_minor.to_string(),
+        ScaleType::MelodicMinor => t.eb_melodic_minor.to_string(),
     }
 }
