@@ -30,21 +30,22 @@ impl History {
         }
 
         let top = self.undo_stack.back()?;
-        let HistoryEntry::Snapshot(top_snap) = top else {
+        let HistoryEntry::Snapshot(bx) = top else {
             return self.undo(current_state);
         };
-        let chain_groups = Self::collect_chain_groups(top_snap);
+        let chain_groups = Self::collect_chain_groups(bx.as_ref());
 
         // 把 current 标记为 ChainMarker 推入 redo（chain 的 after 状态）
         let mut marker = current_state;
         marker.op_kind = OpKind::ChainMarker;
-        self.redo_stack.push_back(HistoryEntry::Snapshot(marker));
+        self.redo_stack
+            .push_back(HistoryEntry::Snapshot(Box::new(marker)));
 
         // pop 同 chain 的快照，记录 chain 中最早（最后被 pop）的 snapshot
         let mut earliest_in_chain: Option<HistoryEntry> = None;
         while let Some(top) = self.undo_stack.back() {
-            if let HistoryEntry::Snapshot(s) = top
-                && Self::snapshot_in_chain(s, &chain_groups)
+            if let HistoryEntry::Snapshot(bx) = top
+                && Self::snapshot_in_chain(bx.as_ref(), &chain_groups)
             {
                 let snap = self.undo_stack.pop_back()?;
                 earliest_in_chain = Some(snap.clone());
@@ -78,19 +79,20 @@ impl History {
 
         // 把 current 推入 undo
         self.undo_stack
-            .push_back(HistoryEntry::Snapshot(current_state.clone()));
+            .push_back(HistoryEntry::Snapshot(Box::new(current_state.clone())));
 
         // 找到当前 chain 的 group 集合（从 redo_stack 栈顶）
         let top = self.redo_stack.back()?;
-        let HistoryEntry::Snapshot(top_snap) = top else {
+        let HistoryEntry::Snapshot(bx) = top else {
             // 非 Snapshot 的 chain 理论上不会出现，安全退化
             return self.redo(current_state);
         };
-        let chain_groups = Self::collect_chain_groups(top_snap);
+        let chain_groups = Self::collect_chain_groups(bx.as_ref());
 
         // pop 同 chain 的快照（不包括 ChainMarker）
         while let Some(top) = self.redo_stack.back() {
-            if let HistoryEntry::Snapshot(s) = top {
+            if let HistoryEntry::Snapshot(bx) = top {
+                let s = bx.as_ref();
                 if s.op_kind.is_chain_marker() {
                     break;
                 }

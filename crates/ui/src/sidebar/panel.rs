@@ -7,7 +7,7 @@ use lumino_extras::i18n::{Language, main_translations};
 use crate::{
     Element, Theme,
     resources::icon::{self, Icon},
-    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track},
+    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track, event_browser},
     window,
 };
 
@@ -24,16 +24,12 @@ pub struct SidebarViewParams<'a> {
     pub context_menu_target_id: Option<usize>,
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
-    /// 当前轨道音符集合（零拷贝引用）
-    pub current_track_notes: &'a im::Vector<lumino_note_core::Note>,
-    /// 当前 PPQ，用于小节/拍计算
-    pub ppq: u16,
-    /// 当前吸附精度，作为 Step 列显示值
-    pub snap_precision: f32,
-    /// 事件列表垂直滚动偏移
-    pub event_list_scroll_y: f32,
-    /// 事件列表可视区域高度（用于虚拟滚动）
-    pub event_list_viewport_height: f32,
+    /// 事件浏览器状态
+    pub event_browser_state: &'a event_browser::EventBrowserState,
+    /// 事件浏览器渲染数据
+    pub event_browser_data: event_browser::EventBrowserData<'a>,
+    /// 事件列表上下文菜单当前关联的 tick（None 表示未打开）
+    pub event_list_context_menu_tick: Option<u32>,
 }
 
 pub fn view<'a>(
@@ -99,13 +95,11 @@ pub fn view<'a>(
             container(col).into()
         }
         Route::EventList => {
-            // 事件列表：直接渲染当前轨道音符，零拷贝传递切片
-            super::event_list::view_event_list(
-                params.current_track_notes,
-                params.ppq,
-                params.snap_precision,
-                params.event_list_scroll_y,
-                params.event_list_viewport_height,
+            // 事件浏览器：由 Agent #3 实现渲染，当前为占位
+            event_browser::view_event_browser(
+                params.event_browser_state,
+                params.event_browser_data,
+                params.event_list_context_menu_tick,
             )
         }
         Route::File => {

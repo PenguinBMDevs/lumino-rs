@@ -21,6 +21,11 @@ impl EditorData {
             bpm: 120.0,
         }];
         self.time_signatures = vec![(0, 4, 4)];
+        self.key_signatures.clear();
+        self.markers.clear();
+        self.lyrics.clear();
+        self.chords.clear();
+        self.program_changes.clear();
         self.note_store.clear();
         self.note_store_enabled = false;
         self.arrange_selection.clear();

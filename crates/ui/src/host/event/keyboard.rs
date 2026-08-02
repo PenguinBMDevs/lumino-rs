@@ -53,7 +53,7 @@ impl Host {
             (winit::keyboard::KeyCode::KeyA, true, _) => Some(message::EditorAction::SelectAll),
             (winit::keyboard::KeyCode::KeyQ, true, _) => {
                 // Ctrl+Q 走独立路径（不走 EditorAction）
-                return None;
+                None
             }
             _ => None,
         }
@@ -80,12 +80,12 @@ impl Host {
         }
 
         // 工程走带视图激活时，先尝试走带快捷键
-        if self.root.sidebar.route == Route::Arrangement {
-            if let Some(msg) = Self::match_arrangement_shortcut(key, ctrl, shift) {
-                self.route_message(msg);
-                self.window_ctx.window.request_redraw();
-                return;
-            }
+        if self.root.sidebar.route == Route::Arrangement
+            && let Some(msg) = Self::match_arrangement_shortcut(key, ctrl, shift)
+        {
+            self.route_message(msg);
+            self.window_ctx.window.request_redraw();
+            return;
         }
 
         // Ctrl+Q：单独处理

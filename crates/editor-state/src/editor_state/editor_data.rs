@@ -10,6 +10,9 @@ use std::sync::Arc;
 
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::automation::AutomationLane;
+use lumino_note_core::event::{
+    ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent,
+};
 use lumino_note_core::history::History;
 use lumino_note_core::midi_types::{CcData, TempoPoint};
 use lumino_note_core::note::Note;
@@ -20,6 +23,7 @@ pub(crate) mod async_commit;
 pub(crate) mod async_commit_streaming;
 mod automation;
 mod construct;
+mod event_ops;
 mod history;
 mod note_store_ops;
 mod notes;
@@ -30,6 +34,8 @@ mod tests_automation;
 mod tests_basics;
 #[cfg(test)]
 mod tests_build_points;
+#[cfg(test)]
+mod tests_event_ops;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
@@ -58,6 +64,16 @@ pub struct EditorData {
     pub tempo_points: Vec<TempoPoint>,
     /// 拍号变化列表（tick, 分子, 分母）。分母为人类可读值，如 4、8。
     pub time_signatures: Vec<(u32, u8, u8)>,
+    /// 调号事件列表
+    pub key_signatures: Vec<KeySignatureEvent>,
+    /// 标记事件列表
+    pub markers: Vec<MarkerEvent>,
+    /// 歌词事件列表
+    pub lyrics: Vec<LyricsEvent>,
+    /// 和弦事件列表
+    pub chords: Vec<ChordEvent>,
+    /// 音色变换事件列表
+    pub program_changes: Vec<ProgramChangeEvent>,
     /// 高性能 SoA 音符存储（与 `notes` 并存，用于批量操作热路径）
     ///
     /// 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用：

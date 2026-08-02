@@ -42,6 +42,7 @@ impl Root {
             &self.window,
             self.settings.language,
             self.state.current_mode,
+            &self.editor.editor_state.data,
             current_track_notes,
             ppq,
             self.toolbar.note_precision.as_ticks(ppq),

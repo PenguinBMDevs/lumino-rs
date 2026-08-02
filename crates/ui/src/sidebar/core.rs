@@ -1,4 +1,5 @@
 use crate::resources::icon;
+use crate::sidebar::event_browser;
 use iced_core::Color;
 
 pub use lumino_ui_core::sidebar_event::{GroupId, Route};
@@ -166,6 +167,14 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
+    /// 事件浏览器状态
+    pub event_browser_state: event_browser::EventBrowserState,
+    /// 事件列表上下文菜单当前关联的 tick（None 表示未打开）
+    pub event_list_context_menu_tick: Option<u32>,
+    /// 事件列表待应用到 editor 的操作（由 Root 在 update 后消费）
+    pub pending_event_list_action: Option<event_browser::EventListAction>,
+    /// 事件列表 popup 待解析的原始编辑请求（由 Root 在 update 后消费）
+    pub pending_event_list_edit: Option<(event_browser::EditRequest, String)>,
     /// 事件列表垂直滚动偏移
     pub event_list_scroll_y: f32,
     /// 事件列表可视区域高度（用于虚拟滚动）
@@ -222,6 +231,10 @@ impl Sidebar {
             track_context_menu: TrackContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
+            event_browser_state: event_browser::EventBrowserState::default(),
+            event_list_context_menu_tick: None,
+            pending_event_list_action: None,
+            pending_event_list_edit: None,
             event_list_scroll_y: 0.0,
             event_list_viewport_height: 0.0,
             next_track_id: 2,
@@ -314,6 +327,15 @@ impl Sidebar {
         if open_panel && self.route != Route::Arrangement {
             self.panel_visible = true;
         }
+    }
+    /// 取出并清空待执行的 editor 数据操作。
+    pub fn take_event_list_action(&mut self) -> Option<event_browser::EventListAction> {
+        self.pending_event_list_action.take()
+    }
+
+    /// 取出并清空待解析的 popup 编辑请求。
+    pub fn take_event_list_edit(&mut self) -> Option<(event_browser::EditRequest, String)> {
+        self.pending_event_list_edit.take()
     }
 }
 

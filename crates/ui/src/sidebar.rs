@@ -2,7 +2,7 @@
 mod color_picker;
 mod context_menu;
 mod core;
-mod event_list;
+pub(crate) mod event_browser;
 mod handling;
 mod view;
 

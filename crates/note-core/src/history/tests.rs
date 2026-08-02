@@ -25,7 +25,7 @@ fn make_snapshot(notes_len: usize) -> EditorSnapshot {
 
 fn assert_snapshot(entry: &HistoryEntry) -> &EditorSnapshot {
     match entry {
-        HistoryEntry::Snapshot(s) => s,
+        HistoryEntry::Snapshot(bx) => &*bx,
         HistoryEntry::Operation(_) => panic!("期望 Snapshot，得到 Operation"),
     }
 }
@@ -39,7 +39,7 @@ fn assert_operation(entry: &HistoryEntry) -> &OperationEntry {
 
 fn op_kind_of(entry: &HistoryEntry) -> OpKind {
     match entry {
-        HistoryEntry::Snapshot(s) => s.op_kind,
+        HistoryEntry::Snapshot(bx) => bx.op_kind,
         HistoryEntry::Operation(o) => o.op_kind,
     }
 }

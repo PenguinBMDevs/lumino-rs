@@ -13,11 +13,19 @@ impl EditorData {
 
     /// 构造当前状态的 EditorSnapshot（不带元数据）
     fn make_snapshot(&self) -> EditorSnapshot {
-        EditorSnapshot::new(
-            self.notes.clone(),
-            self.current_track,
-            self.automation_lanes.clone(),
-        )
+        EditorSnapshot {
+            notes: self.notes.clone(),
+            current_track: self.current_track,
+            automation_lanes: self.automation_lanes.clone(),
+            time_signatures: Some(self.time_signatures.clone()),
+            key_signatures: Some(self.key_signatures.clone()),
+            markers: Some(self.markers.clone()),
+            lyrics: Some(self.lyrics.clone()),
+            chords: Some(self.chords.clone()),
+            program_changes: Some(self.program_changes.clone()),
+            tempo_points: Some(self.tempo_points.clone()),
+            ..EditorSnapshot::new(im::Vector::new(), 0, Vec::new())
+        }
     }
 
     // ── 向后兼容的 push / undo / redo ───────────────────────
@@ -133,7 +141,7 @@ impl EditorData {
     /// 根据 HistoryEntry 类型应用撤销/重做
     fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
         match entry {
-            HistoryEntry::Snapshot(s) => self.apply_snapshot(s),
+            HistoryEntry::Snapshot(s) => self.apply_snapshot(*s),
             HistoryEntry::Operation(op) => {
                 // 对 OperationEntry：undo 时传入 inverse=true 按原始位置恢复；
                 // redo 时 inverse=false 按 delta 前进。
@@ -147,6 +155,27 @@ impl EditorData {
         self.notes = snapshot.notes;
         self.current_track = snapshot.current_track;
         self.automation_lanes = snapshot.automation_lanes.clone();
+        if let Some(v) = snapshot.time_signatures {
+            self.time_signatures = v;
+        }
+        if let Some(v) = snapshot.key_signatures {
+            self.key_signatures = v;
+        }
+        if let Some(v) = snapshot.markers {
+            self.markers = v;
+        }
+        if let Some(v) = snapshot.lyrics {
+            self.lyrics = v;
+        }
+        if let Some(v) = snapshot.chords {
+            self.chords = v;
+        }
+        if let Some(v) = snapshot.program_changes {
+            self.program_changes = v;
+        }
+        if let Some(v) = snapshot.tempo_points {
+            self.tempo_points = v;
+        }
     }
 
     /// 当前 view 下可用于 clamp key 的最大 key 索引

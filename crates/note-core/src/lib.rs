@@ -5,6 +5,7 @@
 pub mod arrange_selection;
 pub mod automation;
 pub mod batch_edit;
+pub mod event;
 pub mod font_scanner;
 pub mod history;
 pub mod midi_types;
@@ -18,8 +19,16 @@ pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };
 pub use batch_edit::{BatchEditOperation, parse_batch_edit_input};
+pub use event::{
+    AutomationEvent as EventAutomationEvent, AutomationTarget as EventAutomationTarget, ChordEvent,
+    KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent, ScaleType,
+    SegmentShape as EventSegmentShape, TimeSignatureEvent,
+};
 pub use font_scanner::{FontInfo, get_cached_fonts, prewarm_font_cache, scan_system_fonts};
-pub use history::{EditorSnapshot, History, HistoryEntry, MoveOp, OpKind, OperationEntry};
+pub use history::{
+    EditorSnapshot, EventListDelta, EventListItem, EventListTarget, History, HistoryEntry, MoveOp,
+    OpKind, OperationEntry, UndoAction,
+};
 pub use midi_types::{
     BendDisplay, BendPoint, CC_CONTROLLER_NAMES, CcData, CcDisplay, CcPoint, EditMode,
     PITCH_BEND_CENTER, TempoPoint, VelocityPoint,

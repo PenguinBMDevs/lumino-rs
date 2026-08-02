@@ -8,15 +8,17 @@
 //! - undo_logical / redo_logical 跨 parent_group_id 一次性回退/重做整个逻辑操作
 //! - NoteMove 使用轻量 MoveOp 操作日志替代完整快照，降低内存占用
 
-use crate::automation::AutomationLane;
-use crate::note::Note;
-use im::Vector;
 use std::collections::VecDeque;
-use std::sync::Arc;
 use std::time::Instant;
 
 mod entry;
 pub use entry::{HistoryEntry, MoveOp, OperationEntry};
+
+mod event_list;
+pub use event_list::{EventListDelta, EventListItem, EventListTarget, UndoAction};
+
+mod snapshot;
+pub use snapshot::EditorSnapshot;
 
 /// 操作类型（决定是否走合并窗口、是否参与逻辑撤销链）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -53,68 +55,6 @@ impl OpKind {
     /// 是否为内部 chain 标记
     pub fn is_chain_marker(self) -> bool {
         matches!(self, OpKind::ChainMarker)
-    }
-}
-
-/// A snapshot of the editor state for undo/redo functionality
-#[derive(Debug, Clone)]
-pub struct EditorSnapshot {
-    pub notes: Vector<Note>,
-    pub current_track: usize,
-    /// 自动化 lane 快照。`Arc` 共享：未修改的 lane 在所有快照间物理共址，
-    /// 快照克隆为 O(lane 数) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。
-    pub automation_lanes: Vec<Arc<AutomationLane>>,
-    /// 操作元数据：分组 ID（同一逻辑操作的所有快照共享 group_id）
-    pub group_id: Option<u64>,
-    /// 父分组 ID（超限分割时，新分组的 parent 指向被分割的旧分组）
-    pub parent_group_id: Option<u64>,
-    /// 操作时间戳（用于合并窗口判断）
-    pub timestamp: Instant,
-    /// 操作类型
-    pub op_kind: OpKind,
-    /// 该分组内已合并的条目数（用于超限分割判断）
-    pub entry_count: u32,
-}
-
-impl EditorSnapshot {
-    /// 创建快照（向后兼容，元数据用默认值）
-    pub fn new(
-        notes: Vector<Note>,
-        current_track: usize,
-        automation_lanes: Vec<Arc<AutomationLane>>,
-    ) -> Self {
-        Self {
-            notes,
-            current_track,
-            automation_lanes,
-            group_id: None,
-            parent_group_id: None,
-            timestamp: Instant::now(),
-            op_kind: OpKind::Other,
-            entry_count: 1,
-        }
-    }
-
-    /// 创建带元数据的快照
-    pub fn with_metadata(
-        notes: Vector<Note>,
-        current_track: usize,
-        automation_lanes: Vec<Arc<AutomationLane>>,
-        op_kind: OpKind,
-        group_id: Option<u64>,
-        parent_group_id: Option<u64>,
-        entry_count: u32,
-    ) -> Self {
-        Self {
-            notes,
-            current_track,
-            automation_lanes,
-            group_id,
-            parent_group_id,
-            timestamp: Instant::now(),
-            op_kind,
-            entry_count,
-        }
     }
 }
 
@@ -180,7 +120,7 @@ impl History {
             op_kind: OpKind::Other,
             ..snapshot
         };
-        self.push_internal(HistoryEntry::Snapshot(snap));
+        self.push_internal(HistoryEntry::Snapshot(Box::new(snap)));
     }
 
     /// 推入带 op_kind 的快照（不合并，但记录 group_id）
@@ -193,7 +133,7 @@ impl History {
             entry_count: 1,
             ..snapshot
         };
-        self.push_internal(HistoryEntry::Snapshot(snap));
+        self.push_internal(HistoryEntry::Snapshot(Box::new(snap)));
     }
 
     /// 推入可合并的快照（仅 `OpKind::NoteCreate` 等可合并类型）
@@ -207,7 +147,8 @@ impl History {
     pub fn push_mergeable(&mut self, snapshot: EditorSnapshot, op_kind: OpKind) -> bool {
         let now = Instant::now();
 
-        if let Some(HistoryEntry::Snapshot(top)) = self.undo_stack.back() {
+        if let Some(HistoryEntry::Snapshot(bx)) = self.undo_stack.back() {
+            let top = bx.as_ref();
             let same_kind = top.op_kind == op_kind;
             // 严格小于：window=0 时任何间隔都不在窗口内（语义：0 窗口 = 不合并）
             let within_window =
@@ -218,17 +159,15 @@ impl History {
                 let parent_group_id = top.parent_group_id;
                 let group_id = top.group_id;
                 let merged = EditorSnapshot {
-                    notes: top.notes.clone(),
-                    current_track: top.current_track,
-                    automation_lanes: top.automation_lanes.clone(),
                     group_id,
                     parent_group_id,
                     timestamp: now,
                     op_kind,
                     entry_count: top.entry_count + 1,
+                    ..top.clone()
                 };
                 self.undo_stack.pop_back();
-                self.push_internal(HistoryEntry::Snapshot(merged));
+                self.push_internal(HistoryEntry::Snapshot(Box::new(merged)));
                 return true;
             }
 
@@ -242,7 +181,7 @@ impl History {
                     entry_count: 1,
                     ..snapshot
                 };
-                self.push_internal(HistoryEntry::Snapshot(split));
+                self.push_internal(HistoryEntry::Snapshot(Box::new(split)));
                 return false;
             }
         }
@@ -256,7 +195,7 @@ impl History {
             entry_count: 1,
             ..snapshot
         };
-        self.push_internal(HistoryEntry::Snapshot(new_snap));
+        self.push_internal(HistoryEntry::Snapshot(Box::new(new_snap)));
         false
     }
 
@@ -293,10 +232,11 @@ impl History {
             return None;
         }
         match self.undo_stack.pop_back()? {
-            HistoryEntry::Snapshot(s) => {
+            HistoryEntry::Snapshot(bx) => {
+                let s = *bx;
                 self.redo_stack
-                    .push_back(HistoryEntry::Snapshot(current_state));
-                Some(HistoryEntry::Snapshot(s))
+                    .push_back(HistoryEntry::Snapshot(Box::new(current_state)));
+                Some(HistoryEntry::Snapshot(Box::new(s)))
             }
             HistoryEntry::Operation(op) => {
                 let inverse = op.inverse();
@@ -313,10 +253,11 @@ impl History {
             return None;
         }
         match self.redo_stack.pop_back()? {
-            HistoryEntry::Snapshot(s) => {
+            HistoryEntry::Snapshot(bx) => {
+                let s = *bx;
                 self.undo_stack
-                    .push_back(HistoryEntry::Snapshot(current_state));
-                Some(HistoryEntry::Snapshot(s))
+                    .push_back(HistoryEntry::Snapshot(Box::new(current_state)));
+                Some(HistoryEntry::Snapshot(Box::new(s)))
             }
             HistoryEntry::Operation(op) => {
                 let forward = op.inverse();

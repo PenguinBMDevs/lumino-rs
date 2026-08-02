@@ -76,8 +76,11 @@ impl OperationEntry {
 }
 
 /// 历史记录条目：完整快照或轻量操作日志
+///
+/// `Snapshot` 使用 `Box` 包装：`EditorSnapshot` 含大量事件字段（>300B），
+/// 装箱避免枚举体积膨胀（clippy::large_enum_variant）。
 #[derive(Debug, Clone)]
 pub enum HistoryEntry {
-    Snapshot(super::EditorSnapshot),
+    Snapshot(Box<super::EditorSnapshot>),
     Operation(OperationEntry),
 }

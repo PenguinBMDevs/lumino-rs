@@ -21,6 +21,7 @@ pub mod collaboration;
 pub mod core_window;
 pub mod dialog;
 pub mod editor_action;
+pub mod event_list;
 pub mod loop_range;
 pub mod settings;
 pub mod sidebar;
