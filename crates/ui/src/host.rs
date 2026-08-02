@@ -274,7 +274,7 @@ fn create_font_from_config(ui_config: &config::UiConfig) -> Font {
         return Font::with_name(cached.as_str());
     }
 
-    // 使用默认字体
+    // 使用默认字体（用户未配置时回退）
     tracing::info!("使用默认字体 (SansSerif)");
     Font::default()
 }

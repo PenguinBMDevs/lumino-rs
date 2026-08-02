@@ -317,7 +317,7 @@ impl Default for UiConfig {
             xsynth_max_voices_per_key: default_max_voices_per_key(),
             selection_box_mode: SelectionBoxMode::default(),
             eraser_behavior: EraserBehavior::default(),
-            program_font_name: String::new(),
+            program_font_name: String::from("Microsoft YaHei"),
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),

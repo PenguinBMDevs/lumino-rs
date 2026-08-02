@@ -40,7 +40,7 @@ impl<'a> EventBrowserCanvas<'a> {
         if (local.x - tree_w - SPLITTER_WIDTH * 0.5).abs() <= SPLITTER_WIDTH * 0.5 {
             state.splitter_dragging = true;
             state.splitter_start_x = local.x;
-            state.splitter_start_ratio = state.tree_ratio;
+            state.splitter_start_ratio = state.tree_width;
             return Some(canvas::Action::capture());
         }
 

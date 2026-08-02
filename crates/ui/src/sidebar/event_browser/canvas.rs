@@ -60,10 +60,10 @@ pub struct CanvasState {
     pub splitter_dragging: bool,
     /// 拖拽开始时的鼠标 x
     pub splitter_start_x: f32,
-    /// 拖拽开始时的树比例
+    /// 拖拽开始时的树宽度
     pub splitter_start_ratio: f32,
-    /// 当前树/表格比例
-    pub tree_ratio: f32,
+    /// 树宽度（绝对值，不随面板宽度变化，仅由分隔条拖拽改变）
+    pub tree_width: f32,
     /// 垂直滚动偏移
     pub scroll_y: f32,
     /// 视口高度
@@ -92,7 +92,7 @@ impl Default for CanvasState {
             splitter_dragging: false,
             splitter_start_x: 0.0,
             splitter_start_ratio: 0.0,
-            tree_ratio: 0.35,
+            tree_width: MIN_TREE_WIDTH,
             scroll_y: 0.0,
             viewport_height: 0.0,
             tree_row_height: ROW_HEIGHT,
@@ -125,9 +125,10 @@ impl<'a> EventBrowserCanvas<'a> {
         Self { state, data, t }
     }
 
-    /// 树宽度 = 面板宽度 × 比例，受 MIN_TREE_WIDTH / MAX_TREE_WIDTH 约束
+    /// 树宽度 = 存储的绝对值，受 MIN_TREE_WIDTH / MAX_TREE_WIDTH 约束
     fn tree_width(&self, bounds: Rectangle, state: &CanvasState) -> f32 {
-        (bounds.width * state.tree_ratio).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH)
+        let _ = bounds;
+        state.tree_width.clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH)
     }
 
     /// 当前页的行切片（不可变版本，避免修改 state）
@@ -258,8 +259,9 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
                     return Some(canvas::Action::capture());
                 }
                 if state.splitter_dragging {
-                    let ratio = (local.x / bounds.width).clamp(0.2, 0.8);
-                    state.tree_ratio = ratio;
+                    let delta = local.x - state.splitter_start_x;
+                    state.tree_width =
+                        (state.splitter_start_ratio + delta).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
                     return Some(canvas::Action::capture());
                 }
                 if state.tree_row_resizing {

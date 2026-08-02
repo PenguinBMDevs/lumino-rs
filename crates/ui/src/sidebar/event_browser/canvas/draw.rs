@@ -35,7 +35,7 @@ pub(super) fn draw(
 ) {
     fill_background(frame, bounds, theme);
 
-    let tree_w = (bounds.width * state.tree_ratio).clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
+    let tree_w = state.tree_width.clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
     let table_x = tree_w + SPLITTER_WIDTH;
 
     // 左侧树
