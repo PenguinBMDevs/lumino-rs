@@ -24,11 +24,11 @@ use crate::util::is_digits_or_empty;
 /// 工具栏视图所需的性能/检测数据聚合
 ///
 /// 移植自 yinhe `chrome/transport_bar.rs` 的 `TransportContext`：用结构体替代长参数列表，
-/// 避免工具栏渲染函数参数爆炸。数据接口复用 Lumino 既有实现
-/// （`PerfData` 由 `CpuMonitor` + `lumino_memory_monitor` 计算；`tempo_points`/`ppq` 来自编辑器）。
+/// 避免工具栏渲染函数参数爆炸。
+///
+/// 注意：CPU/内存性能数据已移至底部状态栏（statusbar）显示，因此此处不再包含
+/// `perf_data`；仅保留时间码换算所需的播放位置/PPQ/速度点。
 pub struct ToolbarPerfContext<'a> {
-    /// 性能监控数据（CPU/内存等）
-    pub perf_data: &'a crate::statusbar::performance::PerfData,
     /// 当前播放位置（tick）
     pub playback_tick: f32,
     /// 每四分音符脉冲数（PPQ）

@@ -169,7 +169,6 @@ impl Toolbar {
                 lumino_extras::i18n::Language::ZhCn,
                 // perf 仅在 Dashboard 分组使用，右侧分组不需要，占位即可
                 &ToolbarPerfContext {
-                    perf_data: &crate::statusbar::performance::PerfData::new(0.0, 0.0, 0.0, 0.0),
                     playback_tick: 0.0,
                     ppq: 480,
                     tempo_points: &[],
@@ -211,7 +210,6 @@ impl Toolbar {
             ToolbarGroup::Dashboard => self.render_detection_dashboard(
                 content_height,
                 palette,
-                perf.perf_data,
                 perf.playback_tick,
                 perf.ppq,
                 perf.tempo_points,

@@ -18,7 +18,7 @@ pub use lumino_message::PerfData;
 
 /// 汇总 lumino_memtrace 的分配器追踪数据与 GPU 资源占用，返回总内存（MB）。
 ///
-/// 该值用于替代单纯的 RSS 读数，使工具栏检测仪表盘能反映被追踪的子系统
+/// 该值用于替代单纯的 RSS 读数，使底部状态栏的内存指标能反映被追踪的子系统
 /// 分配（MIDI、音频、UI、GPU 等）的真实占用。
 pub fn aggregate_memory_mb() -> f64 {
     let snapshot = lumino_memtrace::Snapshot::capture();
@@ -59,8 +59,9 @@ fn get_cpu_time_us() -> u64 {
     lumino_memory_monitor::platform::get_process_cpu_time_us()
 }
 
-// 性能监控面板 UI 已移除：其功能由工具栏检测仪表盘（toolbar::view::detection_dashboard）
-// 承接，复用了下方保留的数据读取接口（CpuMonitor / PerfData / lumino_memory_monitor）。
+// 性能监控面板 UI 已移除：其数据由底部状态栏（statusbar）的 CPU/MEM 指标
+// 显示，仿照 yinhe 底部栏 `mode_bar.rs` 的 metric 设计。
+// 下方保留数据读取接口（CpuMonitor / PerfData / lumino_memory_monitor）供状态栏复用。
 
 #[cfg(test)]
 mod tests {

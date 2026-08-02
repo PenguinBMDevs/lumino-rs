@@ -1,22 +1,23 @@
 //! 检测仪表盘（已移至工具选择区框左侧）
 //!
 //! 移植自 yinhe 项目 `chrome/transport_bar.rs` 的 `show_timecode_display`：
-//! 顶部数据显示模块（CPU 占用、内存占用、播放时间等）。
+//! 时间码显示模块（BPM、PPQ、播放位置、播放时间）。
 //!
 //! 说明：yinhe 使用 egui 渲染该模块，而 Lumino 使用 iced，无法逐字照抄 egui 代码。
-//! 此处按 yinhe 的**设计语言**（三列 + 上下双行文字 + 强调色 + 垂直分隔线）
+//! 此处按 yinhe 的**设计语言**（双列 + 上下双行文字 + 强调色 + 垂直分隔线）
 //! 用 iced 重写，背景/文字色全部通过主题 palette 自动适配，与工具栏工具框风格统一：
 //! - 背景色：`palette.background.weak`（与工具选择框一致）
 //! - 数值色：`palette.primary.strong`（主题强调色）
 //! - 标签色：`palette.background.weak.text`（标签说明文字）
 //! - 分隔线：`palette.background.strong`（微高于背景色，保证可见）
-//! - CPU / 内存：来自 `PerfData`（由 `CpuMonitor` + `lumino_memory_monitor` 计算）
 //! - 播放时间 / BPM：由 `tempo_points` + `ppq` 将播放位置（tick）换算得到
+//!
+//! 注意：CPU / 内存性能数据已移至底部状态栏（statusbar），与 yinhe 底部栏的
+//! CPU / MEM / FPS 指标设计保持一致，本仪表盘仅保留时间码信息。
 
 use iced_core::Alignment;
 use iced_widget::{button, column, container, row, space, text, text_input};
 
-use crate::statusbar::performance::PerfData;
 use crate::toolbar::{Event, Toolbar};
 use crate::{Element, Theme};
 use lumino_note_core::midi_types::TempoPoint;
@@ -24,21 +25,19 @@ use lumino_note_core::midi_types::TempoPoint;
 impl Toolbar {
     /// 渲染检测仪表盘（yinhe 同款时间码显示）
     ///
-    /// 三列布局（对齐 yinhe `show_timecode_display`）：
-    /// - 列 0：CPU 占用（上） / 内存占用（下）
-    /// - 列 1：当前 BPM（上） / PPQ（下）
-    /// - 列 2：播放位置 小节.拍（上） / 播放时间 mm:ss.cs（下）
+    /// 双列布局（对齐 yinhe `show_timecode_display`）：
+    /// - 列 0：当前 BPM（上） / PPQ（下）
+    /// - 列 1：播放位置 小节.拍（上） / 播放时间 mm:ss.cs（下）
+    ///
+    /// CPU / 内存等性能数据已移至底部状态栏（statusbar）显示。
     pub fn render_detection_dashboard<'a>(
         &'a self,
         content_height: f32,
         palette: &'a iced_core::theme::palette::Extended,
-        perf_data: &PerfData,
         playback_tick: f32,
         ppq: u16,
         tempo_points: &[TempoPoint],
     ) -> Element<'a> {
-        let cpu = perf_data.cpu_usage;
-        let mem = perf_data.memory_mb;
         let bpm = bpm_at_tick(tempo_points, playback_tick);
         let time_secs = tick_to_seconds(tempo_points, ppq, playback_tick);
         let pos = format_position(playback_tick, ppq);
@@ -48,14 +47,7 @@ impl Toolbar {
         let sep_color = palette.background.strong.color;
         let sep_h = (content_height * 0.55).max(8.0);
 
-        let c0 = metric_column_with_button(
-            format!("{cpu:.1}%"),
-            format!("{mem:.1} MB"),
-            accent,
-            dim,
-            76.0,
-        );
-        let c1 = if self.ppq_editing {
+        let c0 = if self.ppq_editing {
             ppq_edit_column(
                 format!("{bpm:.1}"),
                 &self.ppq_edit_buffer,
@@ -66,19 +58,11 @@ impl Toolbar {
         } else {
             ppq_display_column(format!("{bpm:.1}"), ppq, accent, dim, 80.0)
         };
-        let c2 = metric_column(pos, format_time(time_secs), accent, dim, 86.0);
+        let c1 = metric_column(pos, format_time(time_secs), accent, dim, 86.0);
 
         container(
-            row![
-                c0,
-                v_separator(sep_h, sep_color),
-                space().width(10),
-                c1,
-                v_separator(sep_h, sep_color),
-                space().width(10),
-                c2,
-            ]
-            .align_y(Alignment::Center),
+            row![c0, v_separator(sep_h, sep_color), space().width(10), c1,]
+                .align_y(Alignment::Center),
         )
         .height(content_height)
         .padding([0, 12])
@@ -112,37 +96,6 @@ fn metric_column<'a>(
         text(bot)
             .size(11)
             .style(move |_t: &Theme| text::Style { color: Some(dim) }),
-    ]
-    .width(iced_widget::core::Length::Fixed(width))
-    .align_x(Alignment::Center)
-    .into()
-}
-
-/// 带按钮的单列：上行强调色数值 + 下行可点击的弱化说明文字
-fn metric_column_with_button<'a>(
-    top: String,
-    bot: String,
-    accent: iced_core::Color,
-    dim: iced_core::Color,
-    width: f32,
-) -> Element<'a> {
-    let memory_button = button(text(bot).size(11))
-        .on_press(crate::toolbar::Event::open_memory_monitor_dialog())
-        .padding([0.0, 0.0])
-        .style(move |_t: &Theme, _status| button::Style {
-            background: None,
-            text_color: dim,
-            border: iced_core::Border::default(),
-            shadow: Default::default(),
-            snap: false,
-        });
-
-    column![
-        text(top).size(13).style(move |_t: &Theme| text::Style {
-            color: Some(accent),
-        }),
-        space().height(2),
-        memory_button,
     ]
     .width(iced_widget::core::Length::Fixed(width))
     .align_x(Alignment::Center)

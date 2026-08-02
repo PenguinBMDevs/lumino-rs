@@ -99,7 +99,6 @@ impl Root {
                     |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
                 );
                 let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                    perf_data: self.statusbar.perf_data(),
                     playback_tick: self.editor.playback_position,
                     ppq: self.editor.editor_state.view.ppq,
                     tempo_points: &self.editor.editor_state.data.tempo_points,
@@ -329,7 +328,6 @@ impl Root {
         let arrangement_row = iced_widget::row![track_list, arrangement_area, v_scrollbar,];
 
         let perf_ctx = crate::toolbar::ToolbarPerfContext {
-            perf_data: self.statusbar.perf_data(),
             playback_tick: self.editor.playback_position,
             ppq: self.editor.editor_state.view.ppq,
             tempo_points: &self.editor.editor_state.data.tempo_points,

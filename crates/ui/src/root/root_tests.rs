@@ -168,7 +168,6 @@ fn test_speed_change_button_always_enabled_in_view() {
 
     // 构造检测仪表盘所需的性能上下文（与产品运行时一致的数据来源）
     let perf_ctx = crate::toolbar::ToolbarPerfContext {
-        perf_data: root.statusbar.perf_data(),
         playback_tick: root.editor.playback_position,
         ppq: root.editor.editor_state.view.ppq,
         tempo_points: &root.editor.editor_state.data.tempo_points,

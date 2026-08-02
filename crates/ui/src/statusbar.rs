@@ -1,7 +1,7 @@
 pub mod performance;
 
 use iced_core::Length;
-use iced_widget::{container, row, text};
+use iced_widget::{button, container, row, space, text};
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_ui_core::button_descs::ButtonId;
 
@@ -51,11 +51,6 @@ impl StatusBar {
         self.perf_data = data;
     }
 
-    /// 获取性能数据引用
-    pub fn perf_data(&self) -> &PerfData {
-        &self.perf_data
-    }
-
     /// 设置/清除悬停描述文字。
     ///
     /// `Some(id)` 表示鼠标正悬停在标识为 `id` 的工具栏按钮上；
@@ -101,17 +96,24 @@ impl StatusBar {
             .width(Length::Fixed(220.0))
             .into();
 
-        // 右侧 FPS（移至此显示）
-        let fps_section: Element<'a> = if let Some(fps) = self.fps {
-            text(format!("FPS: {:.1}", fps))
-                .size(12)
-                .style(move |theme: &Theme| {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.primary.strong.color),
-                    }
-                })
-                .into()
+        // 右侧性能指标组：CPU / MEM / FPS（仿照 yinhe mode_bar 底部栏的 metric 设计：
+        // label 用弱色、value 用强调色；MEM 可点击打开内存监控对话框）
+        let perf_section: Element<'a> = if let Some(fps) = self.fps {
+            row![
+                metric_label("CPU"),
+                metric_value(format!("{:.1}%", self.perf_data.cpu_usage)),
+                space().width(12),
+                metric_label("MEM"),
+                metric_clickable_value(
+                    format!("{:.1} MB", self.perf_data.memory_mb),
+                    crate::toolbar::Event::open_memory_monitor_dialog(),
+                ),
+                space().width(12),
+                metric_label("FPS"),
+                metric_value(format!("{:.1}", fps)),
+            ]
+            .align_y(iced_core::Alignment::Center)
+            .into()
         } else {
             iced_widget::Space::new().into()
         };
@@ -120,7 +122,7 @@ impl StatusBar {
             row![
                 left_section,
                 iced_widget::space().width(Length::Fill),
-                fps_section,
+                perf_section,
                 text(&self.info.right_text).size(12),
             ]
             .spacing(8)
@@ -135,4 +137,53 @@ impl StatusBar {
         })
         .into()
     }
+}
+
+/// 指标标签（弱色小字，仿照 yinhe mode_bar 的 `metric` 标签）
+fn metric_label<'a>(label: &'a str) -> Element<'a> {
+    text(label)
+        .size(12)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            text::Style {
+                color: Some(palette.background.weak.text),
+            }
+        })
+        .into()
+}
+
+/// 指标数值（强调色，仿照 yinhe mode_bar 的 `metric` 数值）
+fn metric_value<'a>(value: String) -> Element<'a> {
+    text(value)
+        .size(12)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            text::Style {
+                color: Some(palette.primary.strong.color),
+            }
+        })
+        .into()
+}
+
+/// 可点击的指标数值（强调色，点击发送消息，仿照 yinhe `metric_clickable`）
+fn metric_clickable_value<'a>(value: String, on_press: crate::Message) -> Element<'a> {
+    button(text(value).size(12).style(|theme: &Theme| {
+        let palette = theme.extended_palette();
+        text::Style {
+            color: Some(palette.primary.strong.color),
+        }
+    }))
+    .on_press(on_press)
+    .padding([0.0, 0.0])
+    .style(|theme: &Theme, _status| {
+        let palette = theme.extended_palette();
+        button::Style {
+            background: None,
+            text_color: palette.primary.strong.color,
+            border: iced_core::Border::default(),
+            shadow: Default::default(),
+            snap: false,
+        }
+    })
+    .into()
 }
