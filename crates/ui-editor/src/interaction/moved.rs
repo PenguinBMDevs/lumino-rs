@@ -47,16 +47,22 @@ impl Editor {
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            // 直接跟随模式：框选框使用原始坐标，不吸附到网格
-            *current_tick = if self.editor_state.view.selection_box_mode
+            // Y 向框选工具：X 维度强制按用户精度 snap，Y 维度保持全范围不动
+            let is_y_select = self.editor_state.tool == lumino_message::Tool::PointerYSelect;
+            *current_tick = if is_y_select {
+                snapped_tick
+            } else if self.editor_state.view.selection_box_mode
                 == lumino_core::storage::config::SelectionBoxMode::Direct
             {
+                // 直接跟随模式：框选框使用原始坐标，不吸附到网格
                 tick
             } else {
                 snapped_tick
             };
-            *current_key = key;
-            *current_y = pos.y;
+            if !is_y_select {
+                *current_key = key;
+                *current_y = pos.y;
+            }
         }
 
         let (new_tick, new_key, new_length) =

@@ -84,6 +84,7 @@ define_icons! {
     (Undo, "../../../../resources/icons/toolbar/undo.svg"),
     (Redo, "../../../../resources/icons/toolbar/redo.svg"),
     (MousePointer, "../../../../resources/icons/toolbar/mouse-pointer.svg"),
+    (MousePointerYSelect, "../../../../resources/icons/toolbar/mouse-pointer-y-select.svg"),
     (Pencil, "../../../../resources/icons/toolbar/pencil.svg"),
     (Eraser, "../../../../resources/icons/toolbar/eraser.svg"),
     (Curve, "../../../../resources/icons/toolbar/curve.svg"),
@@ -103,6 +104,8 @@ define_icons! {
     (Glue, "../../../../resources/icons/toolbar/glue.svg"),
     // 连奏/同音连接
     (Tie, "../../../../resources/icons/toolbar/tie.svg"),
+    // 图片转 MIDI 占位图标
+    (ImageToMidi, "../../../../resources/icons/toolbar/image-to-midi.svg"),
     // 标题栏图标
     (PencilOutline, "../../../../resources/icons/titlebar/pencil-outline.svg"),
     (Keys, "../../../../resources/icons/titlebar/keys.svg"),

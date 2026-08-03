@@ -25,6 +25,7 @@ pub enum ButtonId {
     Record,
     RecordStop,
     Pointer,
+    PointerYSelect,
     Pencil,
     Eraser,
     Curve,
@@ -43,6 +44,7 @@ pub enum ButtonId {
     AutoScroll,
     Collaboration,
     More,
+    ImageToMidi,
 }
 
 /// 按钮名（实际显示文本），随语言切换
@@ -55,6 +57,7 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
         ButtonId::Record => t.record_start,
         ButtonId::RecordStop => t.record_stop,
         ButtonId::Pointer => t.tool_pointer,
+        ButtonId::PointerYSelect => t.tool_pointer_y_select,
         ButtonId::Pencil => t.tool_pencil,
         ButtonId::Eraser => t.tool_eraser,
         ButtonId::Curve => t.tool_curve,
@@ -74,6 +77,7 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
         ButtonId::AutoScroll => t.auto_scroll_tooltip,
         ButtonId::Collaboration => t.collaboration_tooltip,
         ButtonId::More => t.toolbar_more,
+        ButtonId::ImageToMidi => t.tool_image_to_midi,
     }
 }
 
@@ -88,6 +92,10 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("Record", "开始录制 MIDI 输入"),
     ("RecordStop", "停止录制"),
     ("Pointer", "选择/移动音符"),
+    (
+        "PointerYSelect",
+        "Y向框选工具（Y维度自动全选，X维度按精度框选）",
+    ),
     ("Pencil", "绘制音符"),
     ("Eraser", "擦除音符"),
     ("Curve", "绘制自动化曲线"),
@@ -106,6 +114,7 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("AutoScroll", "切换自动滚动模式"),
     ("Collaboration", "打开多人协作面板"),
     ("More", "打开更多工具菜单"),
+    ("ImageToMidi", "图片转MIDI（功能开发中）"),
 ];
 
 /// 英文解释说明占位表（待人工填写）
@@ -122,6 +131,10 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Record", "Start MIDI recording"),
     ("RecordStop", "Stop recording"),
     ("Pointer", "Select/move notes"),
+    (
+        "PointerYSelect",
+        "Y-axis box select (auto full Y, X by precision)",
+    ),
     ("Pencil", "Draw notes"),
     ("Eraser", "Erase notes"),
     ("Curve", "Draw velocity curve"),
@@ -146,6 +159,7 @@ const DESC_EN: &[(&str, &str)] = &[
     ("AutoScroll", "Toggle auto-scroll"),
     ("Collaboration", "Open realtime collaboration panel"),
     ("More", "Open more tools menu"),
+    ("ImageToMidi", "Image to MIDI (coming soon)"),
 ];
 
 pub fn button_desc(id: ButtonId, lang: Language) -> (&'static str, &'static str) {
@@ -173,6 +187,7 @@ impl ButtonId {
             ButtonId::Record => "Record",
             ButtonId::RecordStop => "RecordStop",
             ButtonId::Pointer => "Pointer",
+            ButtonId::PointerYSelect => "PointerYSelect",
             ButtonId::Pencil => "Pencil",
             ButtonId::Eraser => "Eraser",
             ButtonId::Curve => "Curve",
@@ -191,6 +206,7 @@ impl ButtonId {
             ButtonId::AutoScroll => "AutoScroll",
             ButtonId::Collaboration => "Collaboration",
             ButtonId::More => "More",
+            ButtonId::ImageToMidi => "ImageToMidi",
         }
     }
 }

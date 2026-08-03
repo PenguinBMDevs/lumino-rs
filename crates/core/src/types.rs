@@ -26,6 +26,8 @@ pub enum Tool {
     /// 指针/选择工具
     #[default]
     Pointer,
+    /// Y 向框选工具（Y 维度自动全选，X 维度按音符精度 snap 框选）
+    PointerYSelect,
     /// 铅笔工具（绘制音符 / 自动化点）
     Pencil,
     /// 画笔工具

@@ -192,6 +192,15 @@ impl Toolbar {
                 ),
                 space().width(4),
                 tool_selector(
+                    icon::MousePointerYSelect,
+                    t.tool_pointer_y_select,
+                    Tool::PointerYSelect,
+                    self.current_tool,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::PointerYSelect))),
+                ),
+                space().width(4),
+                tool_selector(
                     icon::Pencil,
                     t.tool_pencil,
                     Tool::Pencil,
@@ -305,6 +314,15 @@ impl Toolbar {
                     Event::tie(),
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Tie))),
+                ),
+                space().width(8),
+                // 图片转 MIDI 占位按钮（功能开发中）
+                tool_button(
+                    icon::ImageToMidi,
+                    t.tool_image_to_midi,
+                    Event::image_to_midi_clicked(),
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::ImageToMidi))),
                 ),
                 space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),

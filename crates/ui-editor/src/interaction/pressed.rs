@@ -36,6 +36,8 @@ impl Editor {
 
         match self.editor_state.tool {
             Tool::Pointer => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
+            // Y 向框选工具：行为与 Pointer 相同，但在 Selecting 状态下 Y 维度自动覆盖全部可见键
+            Tool::PointerYSelect => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
             Tool::Curve => {
                 // 曲线编辑工具只能在自动化面板中使用，不能在钢琴卷帘上绘制音符
@@ -67,12 +69,15 @@ impl Editor {
     ) {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        let selection_start_tick =
-            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
-                tick
-            } else {
-                snapped_tick
-            };
+        // Y 向框选工具强制 X 维度按用户精度 snap（忽略 Direct 模式）
+        let is_y_select = self.editor_state.tool == Tool::PointerYSelect;
+        let selection_start_tick = if is_y_select {
+            snapped_tick
+        } else if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+            tick
+        } else {
+            snapped_tick
+        };
 
         // 优先级 1：有选中音符时，先检测选择框命中
         // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
@@ -149,13 +154,22 @@ impl Editor {
             self.flush_pending_drag();
             self.playback_position = snapped_tick;
             self.selection_clear();
+            // Y 向框选工具：Y 维度自动覆盖全部可见键范围
+            let (start_key, current_key, start_y, current_y) = if is_y_select {
+                let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+                let top_y = self.editor_state.view.key_to_y(max_key);
+                let bottom_y = self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
+                (max_key, 0, top_y, bottom_y)
+            } else {
+                (key, key, pos.y, pos.y)
+            };
             self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                 start_tick: selection_start_tick,
-                start_key: key,
+                start_key,
                 current_tick: selection_start_tick,
-                current_key: key,
-                start_y: pos.y,
-                current_y: pos.y,
+                current_key,
+                start_y,
+                current_y,
             };
         }
     }

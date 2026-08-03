@@ -27,7 +27,10 @@ impl Editor {
         use lumino_core::storage::config::SelectionBoxMode;
 
         // 直接跟随模式：不需要弹簧动画，直接返回
-        if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
+        // Y 向框选工具：Y 维度固定全范围，弹簧动画无意义，直接返回
+        if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct
+            || self.editor_state.tool == lumino_message::Tool::PointerYSelect
+        {
             // 清除任何残留的动画状态
             self.selection_box_anim.set(None);
             return;

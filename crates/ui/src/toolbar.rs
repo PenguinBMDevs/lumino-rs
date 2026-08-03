@@ -274,6 +274,9 @@ impl Toolbar {
             }
             // 悬停描述事件：工具栏自身不处理，交由 Root 写入底部状态栏
             Event::ButtonHovered(_) => {}
+            Event::ImageToMidiClicked => {
+                tracing::info!("工具栏: 图片转MIDI功能开发中，按钮已点击");
+            }
         }
     }
 

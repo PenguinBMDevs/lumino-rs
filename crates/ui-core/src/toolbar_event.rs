@@ -90,6 +90,8 @@ pub enum Event {
     /// 该事件用于驱动底部状态栏左侧的"功能按钮描述"显示区：
     /// 悬停时显示 `按钮名 - {解释说明}`，离开时清空。
     ButtonHovered(Option<ButtonId>),
+    /// 图片转 MIDI 占位按钮（功能开发中）
+    ImageToMidiClicked,
 }
 
 /// 水平翻转模式
@@ -274,5 +276,10 @@ impl Event {
     /// 鼠标悬停工具栏按钮。`id` 为按钮角色标识，传 `None` 表示离开按钮。
     pub fn button_hovered(id: Option<ButtonId>) -> Message {
         Message::Toolbar(Self::ButtonHovered(id))
+    }
+
+    /// 图片转 MIDI 占位按钮点击事件
+    pub const fn image_to_midi_clicked() -> Message {
+        Message::Toolbar(Self::ImageToMidiClicked)
     }
 }
