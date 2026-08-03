@@ -1,6 +1,1 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-  <circle cx="12" cy="12" r="9"></circle>
-  <polyline points="12,6 12,12 16,14"></polyline>
-  <line x1="6" y1="4" x2="8" y2="7"></line>
-  <line x1="18" y1="4" x2="16" y2="7"></line>
-</svg>
+<svg version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="20" height="20" viewBox="0,0,20,20"><g transform="translate(-230,-170)"><g fill="none" stroke="#000000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-miterlimit="10"><path d="M231,180c0,-4.97056 4.02944,-9 9,-9c4.97056,0 9,4.02944 9,9c0,4.97056 -4.02944,9 -9,9c-4.97056,0 -9,-4.02944 -9,-9z"/><path d="M244,182l-4,-2v-6"/></g></g></svg><!--rotationCenter:10:10-->
