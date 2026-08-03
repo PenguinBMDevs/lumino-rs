@@ -48,11 +48,11 @@ impl DialogWindow {
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (700.0, 500.0, "设置", true),
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
-            DialogType::BatchEdit => (420.0, 740.0, "批量编辑", true),
+            DialogType::BatchEdit => (420.0, 640.0, "批量编辑", true),
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
-            DialogType::RecoverTrack => (560.0, 470.0, "找回删除音轨", true),
+            DialogType::RecoverTrack => (560.0, 870.0, "找回删除音轨", true),
         };
 
         let mut attributes = WindowAttributes::default()
