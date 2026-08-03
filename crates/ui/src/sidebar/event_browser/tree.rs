@@ -5,6 +5,7 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::automation::AutomationLane;
 use lumino_note_core::event::AutomationTarget;
 
@@ -56,27 +57,31 @@ pub enum TreeItem {
 ///       - Lyrics（叶子）
 ///       - Chord（叶子）
 #[allow(clippy::vec_init_then_push)] // 树项分段 push，结构更清晰
-pub(super) fn collect_tree_items(tracks: &[Track], lanes: &[Arc<AutomationLane>]) -> Vec<TreeItem> {
+pub(super) fn collect_tree_items(
+    tracks: &[Track],
+    lanes: &[Arc<AutomationLane>],
+    t: &MainTranslations,
+) -> Vec<TreeItem> {
     let mut items = Vec::new();
 
     items.push(TreeItem::Leaf {
-        name: "project.json".to_string(),
+        name: t.eb_project.to_string(),
         depth: 0,
         item: SelectedItem::ProjectJson,
     });
     items.push(TreeItem::Leaf {
-        name: "mapping.json".to_string(),
+        name: t.eb_archive.to_string(),
         depth: 0,
         item: SelectedItem::MappingJson,
     });
 
     items.push(TreeItem::Root {
-        name: "Conductor".to_string(),
+        name: t.eb_conductor.to_string(),
         key: ArchiveKey::Conductor,
     });
     // Conductor 子项始终显示，depth = 1
     items.push(TreeItem::Leaf {
-        name: "Tempo".to_string(),
+        name: t.eb_tempo.to_string(),
         depth: 1,
         item: SelectedItem::Automation {
             track: 0,
@@ -84,27 +89,27 @@ pub(super) fn collect_tree_items(tracks: &[Track], lanes: &[Arc<AutomationLane>]
         },
     });
     items.push(TreeItem::Leaf {
-        name: "TimeSig".to_string(),
+        name: t.eb_time_sig.to_string(),
         depth: 1,
         item: SelectedItem::TimeSig,
     });
     items.push(TreeItem::Leaf {
-        name: "KeySig".to_string(),
+        name: t.eb_key_sig.to_string(),
         depth: 1,
         item: SelectedItem::KeySig,
     });
     items.push(TreeItem::Leaf {
-        name: "Markers".to_string(),
+        name: t.eb_markers.to_string(),
         depth: 1,
         item: SelectedItem::Markers,
     });
     items.push(TreeItem::Leaf {
-        name: "Lyrics".to_string(),
+        name: t.eb_lyrics.to_string(),
         depth: 1,
         item: SelectedItem::ConductorLyrics,
     });
     items.push(TreeItem::Leaf {
-        name: "Chord".to_string(),
+        name: t.eb_chord.to_string(),
         depth: 1,
         item: SelectedItem::ConductorChord,
     });
@@ -135,7 +140,7 @@ pub(super) fn collect_tree_items(tracks: &[Track], lanes: &[Arc<AutomationLane>]
 
                     // Track 下的叶子 depth = 3
                     items.push(TreeItem::Leaf {
-                        name: "Notes".to_string(),
+                        name: t.eb_notes.to_string(),
                         depth: 3,
                         item: SelectedItem::Notes { track: track_idx },
                     });
@@ -144,17 +149,17 @@ pub(super) fn collect_tree_items(tracks: &[Track], lanes: &[Arc<AutomationLane>]
                     items.extend(automation::collect_automation_items(track_idx, lanes));
 
                     items.push(TreeItem::Leaf {
-                        name: "Program Change".to_string(),
+                        name: t.eb_program_change.to_string(),
                         depth: 3,
                         item: SelectedItem::ProgramChange { track: track_idx },
                     });
                     items.push(TreeItem::Leaf {
-                        name: "Lyrics".to_string(),
+                        name: t.eb_lyrics.to_string(),
                         depth: 3,
                         item: SelectedItem::Lyrics { track: track_idx },
                     });
                     items.push(TreeItem::Leaf {
-                        name: "Chord".to_string(),
+                        name: t.eb_chord.to_string(),
                         depth: 3,
                         item: SelectedItem::Chord { track: track_idx },
                     });
@@ -243,6 +248,7 @@ fn track_name(track: &Track) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use lumino_extras::i18n::{Language, main_translations};
 
     fn make_track(id: usize, name: &str, port: u8, channel: u8, is_conductor: bool) -> Track {
         Track {
@@ -287,32 +293,33 @@ mod tests {
 
     #[test]
     fn collect_tree_items_has_fixed_entries() {
+        let t = main_translations(Language::EnUs);
         let tracks = vec![
             make_track(0, "Conductor", 0, 0, true),
             make_track(1, "Lead", 0, 0, false),
         ];
-        let items = collect_tree_items(&tracks, &[]);
+        let items = collect_tree_items(&tracks, &[], t);
 
         // 2 固定文件叶子 + 1 Conductor 根 + 6 Conductor 子叶子
         assert!(
             items
                 .iter()
-                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == "project.json"))
+                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == t.eb_project))
         );
         assert!(
             items
                 .iter()
-                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == "mapping.json"))
+                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == t.eb_archive))
         );
         assert!(
             items
                 .iter()
-                .any(|i| matches!(i, TreeItem::Root { name, .. } if name == "Conductor"))
+                .any(|i| matches!(i, TreeItem::Root { name, .. } if name == t.eb_conductor))
         );
         assert!(
             items
                 .iter()
-                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == "Tempo"))
+                .any(|i| matches!(i, TreeItem::Leaf { name, .. } if name == t.eb_tempo))
         );
 
         // Port / Channel / Track
@@ -333,14 +340,15 @@ mod tests {
         );
 
         // Track 下的固定叶子
-        assert!(items.iter().any(|i| matches!(i, TreeItem::Leaf { name, item: SelectedItem::Notes { .. }, .. } if name == "Notes")));
-        assert!(items.iter().any(|i| matches!(i, TreeItem::Leaf { name, item: SelectedItem::ProgramChange { .. }, .. } if name == "Program Change")));
+        assert!(items.iter().any(|i| matches!(i, TreeItem::Leaf { name, item: SelectedItem::Notes { .. }, .. } if name == t.eb_notes)));
+        assert!(items.iter().any(|i| matches!(i, TreeItem::Leaf { name, item: SelectedItem::ProgramChange { .. }, .. } if name == t.eb_program_change)));
     }
 
     #[test]
     fn collect_tree_items_skips_conductor_tracks() {
+        let t = main_translations(Language::EnUs);
         let tracks = vec![make_track(0, "Conductor", 0, 0, true)];
-        let items = collect_tree_items(&tracks, &[]);
+        let items = collect_tree_items(&tracks, &[], t);
         assert!(!items.iter().any(|i| matches!(i, TreeItem::Track { .. })));
     }
 }

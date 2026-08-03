@@ -219,19 +219,40 @@ pub(super) fn collect_pc_rows(
         .collect()
 }
 
-/// project.json 概览行（静态 key-value）。
-pub(super) fn collect_project_rows(t: &MainTranslations) -> Vec<EventTableRow> {
+/// project.json 概览行（从 EventBrowserData 读取真实元数据）。
+pub(super) fn collect_project_rows(
+    data: &EventBrowserData<'_>,
+    t: &MainTranslations,
+) -> Vec<EventTableRow> {
+    let bpm = if data.tempo_points.is_empty() {
+        data.project_bpm
+    } else {
+        data.tempo_points[0].bpm
+    };
     vec![
-        make_kv_row(0, "project.json", t.eb_loaded),
-        make_kv_row(1, "format", "v1"),
+        make_kv_row(0, t.eb_name, data.project_name),
+        make_kv_row(1, t.eb_format, &format!("v{}", data.project_format_version)),
+        make_kv_row(2, t.eb_author, data.project_author),
+        make_kv_row(3, t.eb_bpm, &format!("{:.2}", bpm)),
+        make_kv_row(4, t.eb_division, &data.project_division.to_string()),
+        make_kv_row(5, t.eb_track_count, &data.project_track_count.to_string()),
+        make_kv_row(6, t.eb_note_count, &data.project_note_count.to_string()),
+        make_kv_row(7, t.eb_created, data.project_created),
+        make_kv_row(8, t.eb_modified, data.project_modified),
     ]
 }
 
-/// mapping.json 概览行（静态 key-value）。
-pub(super) fn collect_mapping_rows(t: &MainTranslations) -> Vec<EventTableRow> {
+/// mapping.json 概览行（从 EventBrowserData 读取音轨映射信息）。
+pub(super) fn collect_mapping_rows(
+    data: &EventBrowserData<'_>,
+    t: &MainTranslations,
+) -> Vec<EventTableRow> {
+    let track_count = data.project_track_count;
+    let note_count = data.project_note_count;
     vec![
-        make_kv_row(0, "mapping.json", t.eb_loaded),
-        make_kv_row(1, "version", "1"),
+        make_kv_row(0, t.eb_loaded, &format!("{} {}", t.eb_loaded, "")),
+        make_kv_row(1, t.eb_track_count, &track_count.to_string()),
+        make_kv_row(2, t.eb_note_count, &note_count.to_string()),
     ]
 }
 

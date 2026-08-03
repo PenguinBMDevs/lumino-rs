@@ -44,6 +44,23 @@ impl Sidebar {
                     chords: &editor_data.chords,
                     program_changes: &editor_data.program_changes,
                     automation_lanes: &editor_data.automation_lanes,
+                    project_name: "",
+                    project_author: "",
+                    project_bpm: editor_data
+                        .tempo_points
+                        .first()
+                        .map(|p| p.bpm)
+                        .unwrap_or(120.0),
+                    project_division: ppq,
+                    project_track_count: self.tracks.len() as u16,
+                    project_note_count: editor_data
+                        .track_notes
+                        .values()
+                        .map(|v| v.len() as u64)
+                        .sum(),
+                    project_created: "",
+                    project_modified: "",
+                    project_format_version: 1,
                 },
                 event_list_context_menu_tick: self.event_list_context_menu_tick,
                 program_font_name,

@@ -144,8 +144,6 @@ impl<'a> EventBrowserCanvas<'a> {
         local: Point,
         table_local_x: f32,
     ) -> Option<canvas::Action<Message>> {
-        let col = hit_test::hit_test_cell(table_local_x, &state.column_widths)?;
-        let row_idx = hit_test::hit_test_row(local.y, state.scroll_y)?;
         let rows = detail::collect_rows(
             self.state
                 .selected_item
@@ -154,17 +152,30 @@ impl<'a> EventBrowserCanvas<'a> {
             &self.data,
             self.t,
         );
+        // 空表格：点击加号插入第一个事件
+        if rows.is_empty() {
+            return Some(canvas::Action::publish(Event::event_list_edit(
+                EditRequest::InsertFirst,
+            )));
+        }
+        let col = hit_test::hit_test_cell(table_local_x, &state.column_widths)?;
+        let row_idx = hit_test::hit_test_row(local.y, state.scroll_y)?;
         let (page, page_rows) = self.page_slice(&rows);
         let row = page_rows.get(row_idx)?;
         let tick = row.tick;
         if col == 0 {
-            // 行头：单选（Ctrl/Shift 通过修饰键消息）
-            let ctrl = iced_core::keyboard::Modifiers::default().command();
-            // 简化：普通单击 → 单选
-            let _ = ctrl;
+            // 行头：单选
             return Some(canvas::Action::publish(Event::event_list_row_clicked(tick)));
         }
-        // 单元格：跳转
+        // 单元格：左键打开编辑弹窗（与右键行为一致）
+        if let Some(request) = row.cell_edits.get(col).and_then(|e| e.clone()) {
+            let cell_text = row.cells.get(col).cloned().unwrap_or_default();
+            if let Some(popup) = PopupState::from_request(request, &cell_text) {
+                state.popup = Some(popup);
+                return Some(canvas::Action::capture());
+            }
+        }
+        // 跳转
         if let Some(jump) = row.cell_jumps.get(col).and_then(|j| j.clone()) {
             let _ = page;
             return Some(canvas::Action::publish(Event::event_list_jump(jump)));

@@ -53,6 +53,25 @@ pub struct EventBrowserData<'a> {
     pub program_changes: &'a [ProgramChangeEvent],
     /// 自动化事件 lane。
     pub automation_lanes: &'a [Arc<AutomationLane>],
+    // ── 工程元数据（用于 project/mapping 概览） ──
+    /// 工程名称。
+    pub project_name: &'a str,
+    /// 工程作者。
+    pub project_author: &'a str,
+    /// 默认 BPM。
+    pub project_bpm: f64,
+    /// 精度（每四分音符 tick）。
+    pub project_division: u16,
+    /// 音轨总数。
+    pub project_track_count: u16,
+    /// 音符总数。
+    pub project_note_count: u64,
+    /// 创建时间。
+    pub project_created: &'a str,
+    /// 修改时间。
+    pub project_modified: &'a str,
+    /// 格式版本。
+    pub project_format_version: u32,
 }
 
 /// 事件浏览器表格中的一行。
@@ -157,8 +176,8 @@ pub(super) fn collect_rows(
             Some(*track),
             |c| c.text.clone(),
         ),
-        SelectedItem::ProjectJson => rows::collect_project_rows(t),
-        SelectedItem::MappingJson => rows::collect_mapping_rows(t),
+        SelectedItem::ProjectJson => rows::collect_project_rows(data, t),
+        SelectedItem::MappingJson => rows::collect_mapping_rows(data, t),
     };
 
     rows.sort_by(|a, b| a.tick.cmp(&b.tick).then(a.id.cmp(&b.id)));

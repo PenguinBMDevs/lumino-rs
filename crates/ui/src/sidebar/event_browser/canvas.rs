@@ -165,7 +165,7 @@ impl<'a> EventBrowserCanvas<'a> {
 
     /// 收集展开状态下可见的树项
     fn visible_tree_items(&self) -> Vec<TreeItem> {
-        let all = collect_tree_items(self.data.tracks, self.data.automation_lanes);
+        let all = collect_tree_items(self.data.tracks, self.data.automation_lanes, self.t);
         let mut out = Vec::with_capacity(all.len());
         let mut hidden = 0usize;
         for item in &all {
