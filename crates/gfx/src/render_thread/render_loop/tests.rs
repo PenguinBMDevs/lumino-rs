@@ -73,6 +73,11 @@ fn test_miditrail_shader_valid() {
 }
 
 #[test]
+fn test_waterfall_shader_valid() {
+    validate_wgsl(include_str!("../../shaders/waterfall.wgsl"), "waterfall");
+}
+
+#[test]
 fn test_video_export_renderers_use_no_depth_shaders() {
     // 视频导出路径使用的所有着色器均不应写入 depth output。
     // 若着色器中存在 @builtin(position).z 写入或 @builtin(frag_depth) 输出，

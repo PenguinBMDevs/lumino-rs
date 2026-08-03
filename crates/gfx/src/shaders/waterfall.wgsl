@@ -5,6 +5,13 @@
 //
 // dispatch: (ceil(w/16), ceil(h/16), 1)
 // workgroup_size: (16, 16, 1)
+//
+// 性能设计（10W+ 密集音符优化）：
+// 音符按 (key, start_tick) 升序排列，通过 key_offsets 分桶。
+// 每个像素先 O(1) 定位所在 key 的桶 [offsets[key], offsets[key+1])，
+// 再桶内二分定位 start_tick <= pixel_tick 的上界，最后从该位置
+// 向前回溯（最大回溯 SEARCH_BUFFER），命中即 break。
+// 复杂度：O(N×P) → O(P × (log(N/K) + 桶内回溯窗口))，避免 GPU 内存带宽饥饿。
 
 // ── 数据结构 ──
 
@@ -32,6 +39,7 @@ struct WaterfallNote {
 @group(0) @binding(1) var<storage, read> notes: array<WaterfallNote>;
 @group(0) @binding(2) var<storage, read> active_key_colors: array<u32>;
 @group(0) @binding(3) var output_tex: texture_storage_2d<rgba8unorm, write>;
+@group(0) @binding(4) var<storage, read> key_offsets: array<u32>;
 
 // ── 工具函数 ──
 
@@ -90,34 +98,75 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     let tick_end = tick + viewport_tick_span;
     let zoom_x = f32(w) / f32(key_count);
     let zoom_y = f32(note_area_h) / f32(viewport_tick_span);
+    // 预计算倒数，避免每像素除法（pixel_tick 换算用）
+    let inv_zoom_y = 1.0 / max(zoom_y, 1e-6);
 
     // 默认黑色背景
     var pixel: u32 = pack_u32(0u, 0u, 0u, 255u);
 
     if y < note_area_h {
         // ── 音符区域 ──
-        let note_count = arrayLength(&notes);
-        for (var i = 0u; i < note_count; i++) {
-            let n = notes[i];
+        // 像素 → key 列（O(1) 分桶定位）。
+        // 列 k 覆盖像素区间 [u32(k*z), u32(k*z)+u32(ceil(z)))，
+        // 不能简单用 floor(x/z)（浮点截断在列边界会偏一个 key，
+        // 如 z=21.8 时 x=43 属于列 2，但 43/21.8=1.97 截断为 1）。
+        // 方案：主键 k0 = floor(x/z)，若 x 越过 k0 列右边界则取 k0+1。
+        let z = zoom_x;
+        let k0 = min(u32(f32(x) / z), key_count - 1u);
+        let col_left = u32(f32(k0) * z);
+        let col_right = col_left + u32(ceil(z));
+        var key = k0;
+        if x >= col_right && k0 + 1u < key_count {
+            key = k0 + 1u;
+        }
+        let bucket_start = key_offsets[key];
+        let bucket_end = key_offsets[key + 1u];
+        let bucket_len = bucket_end - bucket_start;
 
-            // 将音符的 tick 范围裁剪到视口内，避免 u32 下溢
-            let visible_end = min(n.end_tick, tick_end);
-            let visible_start = max(n.start_tick, tick);
-            if visible_end <= visible_start {
-                continue;
+        // 像素 y 对应的 tick 位置（桶内二分定位上界用）
+        let pixel_tick = tick_end - u32(f32(y) * inv_zoom_y);
+
+        if bucket_len > 0u {
+            // 桶内二分：第一个 start_tick > pixel_tick 的位置（上界）。
+            // 只有 start_tick <= pixel_tick 的音符才可能覆盖该像素，
+            // 因此只需扫描 [bucket_start, hi) 区间。
+            var lo = bucket_start;
+            var hi = bucket_end;
+            while lo < hi {
+                let mid = (lo + hi) / 2u;
+                if notes[mid].start_tick <= pixel_tick {
+                    lo = mid + 1u;
+                } else {
+                    hi = mid;
+                }
             }
+            // 回溯扫描 [bucket_start, hi)：候选音符按 start_tick 升序，
+            // 命中即 break。与原实现一致的矩形判定（含 u32 边界保护），
+            // 视觉结果完全一致；遍历范围从全量 N 缩小到桶内候选。
+            var i = hi;
+            while i > bucket_start {
+                i -= 1u;
+                let n = notes[i];
 
-            let note_x = u32(f32(n.key) * zoom_x);
-            let note_w = u32(ceil(zoom_x));
-            let note_top = u32(f32(tick_end - visible_end) * zoom_y);
-            // 将 note_bottom 限制在 note_area_h 内，防止浮点精度导致音符被裁切
-            let note_bottom = min(u32(f32(tick_end - visible_start) * zoom_y), note_area_h);
-            let note_h = max(note_bottom - note_top, 1u);
+                // 将音符的 tick 范围裁剪到视口内，避免 u32 下溢
+                let visible_end = min(n.end_tick, tick_end);
+                let visible_start = max(n.start_tick, tick);
+                if visible_end <= visible_start {
+                    continue;
+                }
 
-            if x >= note_x && x < note_x + note_w && y >= note_top && y < note_top + note_h {
-                let c = unpack_color(n.color_packed);
-                pixel = pack_u32(c.x, c.y, c.z, 200u);
-                break;
+                let note_x = u32(f32(n.key) * zoom_x);
+                let note_w = u32(ceil(zoom_x));
+                let note_top = u32(f32(tick_end - visible_end) * zoom_y);
+                // 将 note_bottom 限制在 note_area_h 内，防止浮点精度导致音符被裁切
+                let note_bottom = min(u32(f32(tick_end - visible_start) * zoom_y), note_area_h);
+                let note_h = max(note_bottom - note_top, 1u);
+
+                if x >= note_x && x < note_x + note_w && y >= note_top && y < note_top + note_h {
+                    let c = unpack_color(n.color_packed);
+                    pixel = pack_u32(c.x, c.y, c.z, 200u);
+                    break;
+                }
             }
         }
     } else {

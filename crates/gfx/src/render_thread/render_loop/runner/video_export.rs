@@ -256,6 +256,7 @@ fn handle_waterfall_frame(
         &mut encoder,
         &uniform,
         notes,
+        &params.waterfall_key_offsets,
         &active_key_colors,
     );
 

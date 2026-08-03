@@ -68,8 +68,13 @@ pub struct RenderParams {
     pub is_waterfall_mode: bool,
     /// 瀑布流滚动速度
     pub waterfall_speed: f32,
-    /// 瀑布流 GPU 音符数据（仅在瀑布流模式下使用）
+    /// 瀑布�?GPU 音符数据（仅在瀑布流模式下使用�?
     pub waterfall_notes: Vec<WaterfallNoteGpu>,
+    /// 瀑布流音符按 key 分桶的偏移表（129 个 u32：key i 的起始索引为
+    /// `waterfall_key_offsets[i]`，结束为 `waterfall_key_offsets[i+1]`）。
+    /// `waterfall_notes` 按 `(key, start_tick)` 升序排列，shader 借此实现
+    /// 每像素 O(1) 定位 + 二分回溯，避免 10W+ 密集音符时全量遍历。
+    pub waterfall_key_offsets: Vec<u32>,
     /// 瀑布流当前 MIDI tick 值（与 scroll.0 不同，scroll.0 是像素位置）
     pub waterfall_current_tick: u32,
     /// Miditrail 渲染开关（非 None 时走 Miditrail 3D GPU 渲染器）
@@ -124,6 +129,7 @@ impl Default for RenderParams {
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
+            waterfall_key_offsets: Vec::new(),
             waterfall_current_tick: 0,
             miditrail_enabled: false,
             miditrail_speed: 1.0,
@@ -186,6 +192,7 @@ pub struct RenderParamsBuilder {
     is_waterfall_mode: bool,
     waterfall_speed: f32,
     waterfall_notes: Vec<WaterfallNoteGpu>,
+    waterfall_key_offsets: Vec<u32>,
     waterfall_current_tick: u32,
     miditrail_enabled: bool,
     miditrail_speed: f32,
@@ -229,6 +236,7 @@ impl Default for RenderParamsBuilder {
             is_waterfall_mode: false,
             waterfall_speed: 1.0,
             waterfall_notes: Vec::new(),
+            waterfall_key_offsets: Vec::new(),
             waterfall_current_tick: 0,
             miditrail_enabled: false,
             miditrail_speed: 1.0,
@@ -459,6 +467,7 @@ impl RenderParamsBuilder {
             is_waterfall_mode: self.is_waterfall_mode,
             waterfall_speed: self.waterfall_speed,
             waterfall_notes: self.waterfall_notes,
+            waterfall_key_offsets: self.waterfall_key_offsets,
             waterfall_current_tick: self.waterfall_current_tick,
             miditrail_enabled: self.miditrail_enabled,
             miditrail_speed: self.miditrail_speed,

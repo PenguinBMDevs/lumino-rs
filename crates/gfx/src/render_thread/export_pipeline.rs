@@ -88,11 +88,15 @@ impl StagingRing {
                 false
             };
             if needs_resize {
+                // 必须先丢弃 rx 再销毁 buffer：wgpu 在 buffer drop 时会同步触发
+                // 挂起的 map_async 回调（Err(MapAborted)），若 rx 仍存活，该错误会
+                // 滞留在 channel 中，后续 try_read 的 is_ok() 误判导致
+                // get_mapped_range 在已销毁 buffer 上 panic（wgpu_core.rs:2169）。
+                slot.rx = None;
                 if let Some(old) = slot.buffer.take() {
                     gpu_resource_tracker::sub_buffer(&old.buffer);
                 }
                 slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
-                slot.rx = None;
                 changed = true;
             }
         }
@@ -145,11 +149,39 @@ impl StagingRing {
         let _ = self.device.poll(wgpu::PollType::Poll);
         let slot = &self.slots[self.next_read];
         if let Some(ref rx) = slot.rx
-            && rx.try_recv().is_ok()
+            && let Ok(map_result) = rx.try_recv()
         {
-            return Some(self.finish_read());
+            // 必须检查 map 结果：wgpu 在 buffer 销毁/取消 map 时回调
+            // Err(BufferAsyncError::Destroyed/MapAborted)，此时 buffer 已不可读，
+            // 直接 finish_read 会 get_mapped_range panic。
+            if map_result.is_ok() {
+                return Some(self.finish_read());
+            }
+            // map 失败（buffer 已销毁等）：重建该槽位并跳过，避免 panic
+            tracing::warn!("staging ring map 失败：{:?}，重建槽位", map_result.err());
+            self.rebuild_slot(self.next_read);
+            self.next_read = (self.next_read + 1) % 4;
+            self.inflight -= 1;
+            return None;
         }
         None
+    }
+
+    /// 重建槽位的 staging buffer（map 失败/超时后调用，丢弃失效资源）
+    fn rebuild_slot(&mut self, slot_idx: usize) {
+        let slot = &mut self.slots[slot_idx];
+        slot.rx = None;
+        let size = slot
+            .buffer
+            .as_ref()
+            .map(|b| (b.width, b.height))
+            .unwrap_or((0, 0));
+        if let Some(old) = slot.buffer.take() {
+            gpu_resource_tracker::sub_buffer(&old.buffer);
+        }
+        if size.0 > 0 && size.1 > 0 {
+            slot.buffer = Some(Self::create_staging_buffer(&self.device, size.0, size.1));
+        }
     }
 
     fn wait_read(&mut self) -> Vec<u8> {
@@ -161,13 +193,29 @@ impl StagingRing {
             {
                 let slot = &self.slots[self.next_read];
                 if let Some(ref rx) = slot.rx
-                    && rx.try_recv().is_ok()
+                    && let Ok(map_result) = rx.try_recv()
                 {
-                    return self.finish_read();
+                    if map_result.is_ok() {
+                        return self.finish_read();
+                    }
+                    // map 失败：重建槽位并跳过（不进入 finish_read，避免 panic）
+                    tracing::warn!(
+                        "staging ring wait_read map 失败：{:?}，重建槽位",
+                        map_result.err()
+                    );
+                    self.rebuild_slot(self.next_read);
+                    self.next_read = (self.next_read + 1) % 4;
+                    self.inflight -= 1;
+                    return Vec::new();
                 }
             }
             if std::time::Instant::now() >= deadline {
                 tracing::warn!("staging ring wait_read 超时 5s");
+                // 超时说明该槽位的 map 可能永远不完成（如 GPU 忙/已销毁），
+                // 重建槽位并跳过，避免 inflight 计数泄漏导致死锁
+                self.rebuild_slot(self.next_read);
+                self.next_read = (self.next_read + 1) % 4;
+                self.inflight = self.inflight.saturating_sub(1);
                 return Vec::new();
             }
             let _ = self.device.poll(wgpu::PollType::Wait {
@@ -245,6 +293,8 @@ impl StagingRing {
 impl Drop for StagingRing {
     fn drop(&mut self) {
         for slot in &mut self.slots {
+            // 先丢弃 rx，避免 wgpu 在 buffer drop 时同步回调 Err 消息滞留
+            slot.rx = None;
             if let Some(old) = slot.buffer.take() {
                 gpu_resource_tracker::sub_buffer(&old.buffer);
             }

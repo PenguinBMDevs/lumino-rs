@@ -211,6 +211,23 @@ fn build_waterfall_render_params(
         });
     }
 
+    // 按 (key, start_tick) 稳定排序，生成动态 key 桶偏移表。
+    // shader 每像素 O(1) 定位所在 key 的桶，桶内二分回溯扫描，
+    // 避免 10W+ 密集音符时全量遍历（O(N×P) → O(P×log(N/K))）。
+    // 偏移表语义：`offsets[k]` = 第一个 `key >= k` 的音符索引，
+    // 桶 k 的区间为 `[offsets[k], offsets[k+1])`，空桶区间自然为空。
+    waterfall_notes.sort_by(|a, b| a.key.cmp(&b.key).then(a.start_tick.cmp(&b.start_tick)));
+    let mut waterfall_key_offsets = vec![0u32; key_count as usize + 1];
+    {
+        let mut idx = 0usize;
+        for (k, slot) in waterfall_key_offsets.iter_mut().enumerate() {
+            while idx < waterfall_notes.len() && waterfall_notes[idx].key < k as u32 {
+                idx += 1;
+            }
+            *slot = idx as u32;
+        }
+    }
+
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
         logical_size: (waterfall_width, waterfall_height),
@@ -221,6 +238,7 @@ fn build_waterfall_render_params(
         is_waterfall_mode: true,
         waterfall_speed: waterfall_scroll_speed.max(0.1),
         waterfall_notes,
+        waterfall_key_offsets,
         waterfall_current_tick: tick,
         time_signatures: document.time_signatures.clone(),
         ..Default::default()
@@ -463,5 +481,96 @@ mod tests {
         assert_eq!(windowed, full, "二分窗口收集结果与全量遍历不一致");
         // 预期可见：跨视口长音符 + 视口内 2 个 + 跨右边界 1 个
         assert_eq!(windowed.len(), 4);
+    }
+
+    /// 分桶偏移表正确性：偏移表将音符按 key 分组，桶区间非重叠且覆盖全部音符。
+    /// 覆盖：空桶、稀疏 key、连续 key、哨兵偏移。
+    fn build_offsets(notes: &[lumino_gfx::WaterfallNoteGpu], key_count: u16) -> Vec<u32> {
+        let mut sorted = notes.to_vec();
+        sorted.sort_by(|a, b| a.key.cmp(&b.key).then(a.start_tick.cmp(&b.start_tick)));
+        let mut offsets = vec![0u32; key_count as usize + 1];
+        let mut idx = 0usize;
+        for (k, slot) in offsets.iter_mut().enumerate() {
+            while idx < sorted.len() && sorted[idx].key < k as u32 {
+                idx += 1;
+            }
+            *slot = idx as u32;
+        }
+        // 校验排序后的桶区间
+        for k in 0..key_count as u32 {
+            let start = offsets[k as usize] as usize;
+            let end = offsets[k as usize + 1] as usize;
+            for n in &sorted[start..end] {
+                assert_eq!(n.key, k, "桶 {k} 包含错误 key 的音符");
+            }
+        }
+        assert_eq!(offsets[key_count as usize] as usize, sorted.len());
+        offsets
+    }
+
+    #[test]
+    fn test_waterfall_key_offsets_partition() {
+        // 稀疏 key：0、1、3（2 为空桶）、127
+        let notes = vec![
+            lumino_gfx::WaterfallNoteGpu {
+                key: 127,
+                start_tick: 100,
+                end_tick: 200,
+                color_packed: 0,
+            },
+            lumino_gfx::WaterfallNoteGpu {
+                key: 0,
+                start_tick: 300,
+                end_tick: 400,
+                color_packed: 0,
+            },
+            lumino_gfx::WaterfallNoteGpu {
+                key: 3,
+                start_tick: 50,
+                end_tick: 150,
+                color_packed: 0,
+            },
+            lumino_gfx::WaterfallNoteGpu {
+                key: 1,
+                start_tick: 10,
+                end_tick: 20,
+                color_packed: 0,
+            },
+        ];
+        let key_count = 128u16;
+        let offsets = build_offsets(&notes, key_count);
+
+        // 桶 0/1/3 各 1 个音符，桶 2 为空
+        assert_eq!(offsets[0], 0);
+        assert_eq!(offsets[1], 1);
+        assert_eq!(offsets[2], 2, "空桶 2 应与桶 1 末尾对齐");
+        assert_eq!(offsets[3], 2);
+        assert_eq!(offsets[4], 3);
+        // 哨兵：全部音符数
+        assert_eq!(offsets[128], 4);
+    }
+
+    #[test]
+    fn test_waterfall_key_offsets_empty_and_single() {
+        // 空音符：全 0
+        let offsets = build_offsets(&[], 88);
+        assert!(offsets.iter().all(|&o| o == 0));
+        assert_eq!(offsets.len(), 89);
+
+        // 单 key 连续多个音符
+        let notes: Vec<lumino_gfx::WaterfallNoteGpu> = (0..5)
+            .map(|i| lumino_gfx::WaterfallNoteGpu {
+                key: 60,
+                start_tick: i * 100,
+                end_tick: i * 100 + 50,
+                color_packed: 0,
+            })
+            .collect();
+        let offsets = build_offsets(&notes, 88);
+        assert_eq!(offsets[60], 0);
+        assert_eq!(offsets[61], 5);
+        // 前面的 key 全部为空桶
+        assert_eq!(offsets[0], 0);
+        assert_eq!(offsets[59], 0);
     }
 }
