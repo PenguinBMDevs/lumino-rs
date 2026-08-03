@@ -149,6 +149,16 @@ pub struct TrackContextMenuState {
 pub struct PanelContextMenuState {
     /// 当前菜单是否打开
     pub is_open: bool,
+    /// 菜单打开时的鼠标位置（窗口逻辑坐标，用于定位菜单）
+    pub mouse_pos: Option<(f32, f32)>,
+}
+
+impl PanelContextMenuState {
+    /// 清除菜单状态
+    pub fn reset(&mut self) {
+        self.is_open = false;
+        self.mouse_pos = None;
+    }
 }
 
 // ─── Sidebar 主结构 ───
@@ -410,6 +420,11 @@ impl Sidebar {
         let v = self.pending_recover_track_dialog;
         self.pending_recover_track_dialog = false;
         v
+    }
+
+    /// 设置面板右键菜单位置（由 Host 在 process_message 中捕获鼠标位置后调用）
+    pub fn set_panel_context_menu_pos(&mut self, x: f32, y: f32) {
+        self.panel_context_menu.mouse_pos = Some((x, y));
     }
 
     /// 分配新的音轨 ID，跳过 `reserved_track_ids` 中已占用的 ID

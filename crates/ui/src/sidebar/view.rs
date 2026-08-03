@@ -65,6 +65,7 @@ impl Sidebar {
                 event_list_context_menu_tick: self.event_list_context_menu_tick,
                 program_font_name,
                 panel_context_menu_open: self.panel_context_menu.is_open,
+                panel_context_menu_pos: self.panel_context_menu.mouse_pos,
             };
             panel::view(sidebar_params, window, language)
         } else {

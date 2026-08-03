@@ -75,6 +75,7 @@ impl Sidebar {
     /// 处理打开音轨列表面板空白区域右键菜单
     pub(super) fn handle_panel_context_menu_opened(&mut self) {
         self.panel_context_menu.is_open = true;
+        // 鼠标位置由 Host 在 process_message 中通过 set_panel_context_menu_pos 设置
         // 关闭其他浮动菜单，避免叠加
         self.track_context_menu = TrackContextMenuState::default();
         self.color_picking_track = None;
@@ -82,7 +83,7 @@ impl Sidebar {
 
     /// 处理关闭音轨列表面板空白区域右键菜单
     pub(super) fn handle_panel_context_menu_closed(&mut self) {
-        self.panel_context_menu.is_open = false;
+        self.panel_context_menu.reset();
     }
 
     /// 处理点击音轨列表面板空白区域右键菜单项

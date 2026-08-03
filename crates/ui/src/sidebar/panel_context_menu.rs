@@ -127,15 +127,17 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
         .into()
 }
 
-/// 将菜单面板定位在面板右上角
+/// 将菜单面板定位在鼠标位置附近
 ///
-/// 由于 iced 0.14 的 `mouse_area::on_right_press` 仅传递 Message 无法获取坐标，
-/// 菜单固定显示在面板右上角（顶部偏移 `MENU_OFFSET_Y`，右侧偏移 `MENU_OFFSET_X`）。
-/// 通过 `align_x = Right` 实现右对齐，`Padding::top` 控制垂直偏移。
-pub fn positioned_menu<'a>() -> Element<'a> {
+/// `pos` 为鼠标在窗口中的逻辑坐标（由 `window_ctx.cursor_position` 提供）。
+/// 菜单以鼠标位置的 Y 坐标为基准，向右上角偏移，显示在面板右侧区域。
+/// 若无位置信息，则默认显示在面板右上角。
+pub fn positioned_menu<'a>(pos: Option<(f32, f32)>) -> Element<'a> {
+    let top = pos.map_or(MENU_OFFSET_Y, |(_, y)| y + MENU_OFFSET_Y);
+
     container(panel())
         .padding(Padding {
-            top: MENU_OFFSET_Y,
+            top,
             right: MENU_OFFSET_X,
             bottom: 0.0,
             left: 0.0,
@@ -173,7 +175,12 @@ mod tests {
     }
 
     #[test]
-    fn test_positioned_menu() {
-        let _element = positioned_menu();
+    fn test_positioned_menu_without_pos() {
+        let _element = positioned_menu(None);
+    }
+
+    #[test]
+    fn test_positioned_menu_with_pos() {
+        let _element = positioned_menu(Some((100.0, 200.0)));
     }
 }

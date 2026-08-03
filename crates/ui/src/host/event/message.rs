@@ -111,6 +111,15 @@ impl Host {
             return self.handle_arrangement_message(message);
         }
 
+        // 在 route_message 前，捕获面板右键菜单打开时的鼠标位置
+        if matches!(
+            &message,
+            message::Message::Sidebar(sidebar::Event::PanelContextMenuOpened)
+        ) && let Some(pos) = self.window_ctx.cursor_position
+        {
+            self.root.sidebar.set_panel_context_menu_pos(pos.x, pos.y);
+        }
+
         // 其他消息交给 root 处理，假设可能有状态变更
         {
             puffin::profile_scope!("process_message::route_message");

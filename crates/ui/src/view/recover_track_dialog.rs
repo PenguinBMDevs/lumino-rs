@@ -15,7 +15,7 @@ use crate::state::root_state::{RecoverTrackDialogState, RecoverTrackEntry};
 /// 列表行高
 const ROW_HEIGHT: f32 = 36.0;
 /// 列表区域最大高度（超出滚动）
-const LIST_MAX_HEIGHT: f32 = 280.0;
+const LIST_MAX_HEIGHT: f32 = 330.0;
 /// 表头列宽比例（文件名 : 删除时间 : 音符总数）
 const COL_FILENAME: f32 = 240.0;
 const COL_DELETED_AT: f32 = 180.0;

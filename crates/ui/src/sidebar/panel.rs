@@ -26,6 +26,8 @@ pub struct SidebarViewParams<'a> {
     pub color_picking_track: Option<usize>,
     /// 音轨列表面板空白区域右键菜单是否打开
     pub panel_context_menu_open: bool,
+    /// 面板右键菜单位置（窗口逻辑坐标，打开时有效）
+    pub panel_context_menu_pos: Option<(f32, f32)>,
     /// 事件浏览器状态
     pub event_browser_state: &'a event_browser::EventBrowserState,
     /// 事件浏览器渲染数据
@@ -218,7 +220,9 @@ pub fn view<'a>(
             } else if params.panel_context_menu_open {
                 stack
                     .push(super::panel_context_menu::background_close_overlay())
-                    .push(super::panel_context_menu::positioned_menu())
+                    .push(super::panel_context_menu::positioned_menu(
+                        params.panel_context_menu_pos,
+                    ))
                     .into()
             } else {
                 stack.into()
