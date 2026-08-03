@@ -364,6 +364,16 @@ fn build_frame_index(
         return Ok(Vec::new());
     }
 
+    // 预计算全文件最大音符长度，用作搜索窗口下界的动态缓冲区。
+    // 固定 TICK_SEARCH_BUFFER=19200 会导致时长超过该值的超长音符
+    // 在 start_tick 远早于 vp_start 时被窗口排除，音符半路消失。
+    let max_note_length = records
+        .iter()
+        .map(|r| r.end_tick.saturating_sub(r.start_tick))
+        .max()
+        .unwrap_or(0)
+        .max(TICK_SEARCH_BUFFER);
+
     let index: Vec<FrameIndexEntry> = (0..total_frames)
         .into_par_iter()
         .map(|frame_idx| {
@@ -372,18 +382,19 @@ fn build_frame_index(
             let vp_start = center_tick;
             let vp_end = vp_start.saturating_add(viewport_tick_span);
 
-            // 二分窗口 [left, right)：left = 第一个 start_tick >= vp_start - BUFFER 的记录，
-            // right = 第一个 start_tick > vp_end 的记录。
+            // 二分窗口 [left, right)：left = 第一个 start_tick >= vp_start - max_note_length
+            // 的记录，right = 第一个 start_tick > vp_end 的记录。
             //
             // 正确性：视口内可见音符（end_tick >= vp_start && start_tick <= vp_end）必然
-            // start_tick <= vp_end（在上界内）；跨视口长音符（时长 <= TICK_SEARCH_BUFFER）
-            // 必然 start_tick >= vp_start - BUFFER（在下界内）。因此窗口是可见集合的超集，
-            // 渲染前再按完整区间条件过滤即可。
+            // start_tick <= vp_end（在上界内）；任意时长的跨视口长音符必然满足
+            // start_tick >= vp_start - max_note_length（因为 end_tick - start_tick <= max_note_length，
+            // 而 end_tick >= vp_start → start_tick >= vp_start - max_note_length）。
+            // 因此窗口是可见集合的超集，渲染前再按完整区间条件过滤即可。
             //
             // 性能：每帧读取量从"视口起点到文件末尾"（O(N)）降为 O(窗口内音符数)，
             // 修复导出耗时随总音符数线性上升的问题。
             let left = records
-                .partition_point(|r| r.start_tick < vp_start.saturating_sub(TICK_SEARCH_BUFFER));
+                .partition_point(|r| r.start_tick < vp_start.saturating_sub(max_note_length));
             let right = records.partition_point(|r| r.start_tick <= vp_end);
 
             FrameIndexEntry {

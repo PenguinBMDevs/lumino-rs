@@ -9,7 +9,7 @@ use lumino_gfx::{
     miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},
     pack_color,
 };
-use lumino_midi_loader::{MidiDocument, NoteEvent, TICK_SEARCH_BUFFER};
+use lumino_midi_loader::{MidiDocument, NoteEvent};
 
 /// 视频导出每帧可见音符的临时数据结构
 #[derive(Clone)]
@@ -358,23 +358,22 @@ fn collect_visible_notes_for_gpu(
 /// `MidiDocument.notes` 每轨按 `start_tick` 升序排列（见 document.rs）。
 /// 视口 `[tick_start, tick_end]` 内的可见音符必然满足：
 /// - `start_tick <= tick_end`（音符必须已开始）；
-/// - 时长不超过 `TICK_SEARCH_BUFFER` 的跨视口长音符必然满足
-///   `start_tick >= tick_start - TICK_SEARCH_BUFFER`（提前足够早的已结束）。
+/// - 任意时长的跨视口长音符（即使 `start_tick` 远早于 `tick_start`）只要
+///   `end_tick >= tick_start` 即为可见——因此下界固定为 0，不使用固定
+///   `TICK_SEARCH_BUFFER`，否则时长超过该缓冲区的超长音符在半路消失。
+///   （见：`build_note_rectangle_render_params` / `collect_visible_notes_for_gpu`）
 ///
-/// 因此只需线性扫描该窗口内的音符，每帧复杂度从 O(总音符数) 降为
-/// O(log N + 窗口内音符数)——视频导出速度不再随总音符数线性下降。
-/// 窗口策略与 `MidiDocument::get_track_notes_in_range` 完全一致。
+/// 上界仍通过二分查找定位，避免扫描文件末尾的未开始音符。
 /// `pub(super)`：供 waterfall_frame.rs（CPU 瀑布流）复用同一窗口逻辑。
 pub(super) fn note_search_bounds(
     track_notes: &[NoteEvent],
-    tick_start: u32,
+    _tick_start: u32,
     tick_end: u32,
 ) -> (usize, usize) {
-    let search_start = track_notes
-        .partition_point(|n| n.start_tick < tick_start.saturating_sub(TICK_SEARCH_BUFFER));
-    let search_end =
-        search_start + track_notes[search_start..].partition_point(|n| n.start_tick <= tick_end);
-    (search_start, search_end)
+    // 下界固定为 0：超长音符的 start_tick 可能远早于 tick_start - TICK_SEARCH_BUFFER，
+    // 但 end_tick 仍在当前 tick 之后，必须被纳入搜索窗口。
+    let search_end = track_notes.partition_point(|n| n.start_tick <= tick_end);
+    (0, search_end)
 }
 
 /// GPU 可见音符临时结构
@@ -401,8 +400,8 @@ mod tests {
         v
     }
 
-    /// 性能回归护栏：百万音符文档下，二分窗口只覆盖视口附近，
-    /// 不能退化为全量扫描（确定性断言，无 flaky）。
+    /// 正确性护栏：下界固定为 0 后，窗口从文件头开始，但上界仍通过二分查找
+    /// 限制在 `tick_end` 以内，不会退化为全量扫描。
     #[test]
     fn test_note_search_bounds_window_is_small() {
         // 100 万音符均匀分布在 [0, 10_000_000) tick
@@ -417,20 +416,25 @@ mod tests {
         let (start, end) = note_search_bounds(&track, 5_000_000, 5_007_680);
         let window_len = end - start;
 
-        // 窗口只覆盖视口起点前后（含 TICK_SEARCH_BUFFER 扩展），远小于总量
-        assert!(window_len < 10_000, "窗口过大: {window_len}");
+        // 下界为 0，窗口从文件头开始
+        assert_eq!(start, 0, "下界应固定为 0");
+        // 上界仍通过二分查找限制在 tick_end 以内，不会扫描文件末尾
+        assert!(window_len < TOTAL, "窗口不应覆盖全部音符");
         assert!(window_len > 0, "窗口不应为空");
-        // 窗口应恰好覆盖视口起点附近的音符（含缓冲区内跨视口长音符）
-        assert!(track[start].start_tick < 5_000_000);
+        // 窗口应包含所有 start_tick <= tick_end 的音符
         assert!(track[end - 1].start_tick <= 5_007_680);
+        if end < TOTAL {
+            assert!(track[end].start_tick > 5_007_680);
+        }
     }
 
     /// 正确性：二分窗口收集结果必须与全量遍历完全一致
     /// （覆盖：视口前已结束、跨视口长音符、视口内、视口后未开始）
     ///
-    /// 注意：时长超过 `TICK_SEARCH_BUFFER`（19200 ticks）的超长跨视口音符
-    /// 会被窗口下界跳过——这是与 `MidiDocument::get_track_notes_in_range`
-    /// 一致的既有取舍（编辑器钢琴卷帘同样如此），不在此测试覆盖范围内。
+    /// 注意：下界固定为 0 后，窗口包含所有 `start_tick <= tick_end` 的音符，
+    /// 不再受固定 `TICK_SEARCH_BUFFER` 限制，超长音符也能正确保留。
+    /// 最终过滤由 `end_tick > tick_start && start_tick < tick_end` 完成，
+    /// 结果应与全量遍历严格一致。
     #[test]
     fn test_visible_notes_collection_matches_full_scan() {
         let doc = MidiDocument {
