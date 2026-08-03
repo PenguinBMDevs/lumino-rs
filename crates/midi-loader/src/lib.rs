@@ -10,7 +10,7 @@ pub mod streaming;
 // 重新导出 lumino-midi-model 中的类型（调用链保持 lumino_midi_loader::Xxx 不变）
 pub use lumino_midi_model::{
     CompactEvent, EventKind, LoaderError, LoaderResult, MidiDocument, NoteEvent, NoteInfo,
-    TrackManager, TrackView, TrackVisibility,
+    TICK_SEARCH_BUFFER, TrackManager, TrackView, TrackVisibility,
 };
 
 pub use event::MidiEvent;

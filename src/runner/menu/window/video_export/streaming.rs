@@ -3,8 +3,8 @@
 //! 当内存中没有 MidiDocument 时，使用本模块：
 //! 1. 读取 MIDI 文件字节（一次性，解析后释放）
 //! 2. 使用 MmapSmf 零拷贝 + 多轨道并行解析音符，写入硬盘缓存
-//! 3. 构建帧索引，实现 O(1) 视口音符范围查询
-//! 4. 渲染每帧时从硬盘 seek+read 读取可见音符，渲染后立即丢弃
+//! 3. 构建帧索引，实现 O(log N) 视口音符窗口查询（按 start_tick 二分）
+//! 4. 渲染每帧时从硬盘 seek+read 读取窗口内音符，渲染后立即丢弃
 
 use std::io::{BufWriter, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use std::sync::Arc;
 use bytemuck;
 use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{NoteInstance, RenderParams, generate_ruler_instances, pack_color};
+use lumino_midi_loader::TICK_SEARCH_BUFFER;
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};
 use rayon::prelude::*;
@@ -252,8 +253,10 @@ pub fn parse_midi_to_cache(
         }
     });
 
-    // 并行排序：按 end_tick 排序后写入缓存
-    all_records.par_sort_unstable_by_key(|r| r.end_tick);
+    // 并行排序：按 start_tick 排序后写入缓存。
+    // 帧索引基于 start_tick 二分窗口查询，保证每帧只读取视口窗口内的音符
+    // （而非"视口起点到文件末尾"的全部音符）。
+    all_records.par_sort_unstable_by_key(|r| r.start_tick);
 
     // 写入缓存文件
     {
@@ -352,7 +355,8 @@ fn build_frame_index(
 ) -> Result<Vec<FrameIndexEntry>, String> {
     let total_secs = ticks_to_seconds(total_ticks as u64, ppqn, tempos);
     let total_frames = (total_secs * fps).ceil() as u64;
-    let _ = viewport_beats;
+    // 视口 tick 跨度 = 拍数 × PPQN（与内存模式 viewport_tick_span = ppq * 16 一致）
+    let viewport_tick_span = ((ppqn as f64 * viewport_beats.max(1.0)) as u32).max(1);
 
     let note_count = records.len();
 
@@ -366,12 +370,25 @@ fn build_frame_index(
             let frame_time = frame_idx as f64 / fps;
             let center_tick = seconds_to_tick(frame_time, ppqn, tempos);
             let vp_start = center_tick;
+            let vp_end = vp_start.saturating_add(viewport_tick_span);
 
-            let left = records.partition_point(|r| r.end_tick < vp_start);
+            // 二分窗口 [left, right)：left = 第一个 start_tick >= vp_start - BUFFER 的记录，
+            // right = 第一个 start_tick > vp_end 的记录。
+            //
+            // 正确性：视口内可见音符（end_tick >= vp_start && start_tick <= vp_end）必然
+            // start_tick <= vp_end（在上界内）；跨视口长音符（时长 <= TICK_SEARCH_BUFFER）
+            // 必然 start_tick >= vp_start - BUFFER（在下界内）。因此窗口是可见集合的超集，
+            // 渲染前再按完整区间条件过滤即可。
+            //
+            // 性能：每帧读取量从"视口起点到文件末尾"（O(N)）降为 O(窗口内音符数)，
+            // 修复导出耗时随总音符数线性上升的问题。
+            let left = records
+                .partition_point(|r| r.start_tick < vp_start.saturating_sub(TICK_SEARCH_BUFFER));
+            let right = records.partition_point(|r| r.start_tick <= vp_end);
 
             FrameIndexEntry {
                 note_offset: left as u32,
-                note_count: (note_count as u32).saturating_sub(left as u32),
+                note_count: right.saturating_sub(left) as u32,
             }
         })
         .collect();
@@ -669,4 +686,108 @@ struct SortableNote {
     start_tick: u32,
     length: u32,
     track_idx: u16,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const PPQN: u32 = 480;
+    const FPS: f64 = 10.0;
+    const TEMPOS: [(u32, f32); 1] = [(0, 120.0)];
+
+    fn make_records(n: u32, total_ticks: u32) -> Vec<NoteRecord> {
+        let mut records: Vec<NoteRecord> = (0..n)
+            .map(|i| {
+                // 均匀分布：间隔约 total_ticks / n，音符时长 240 ticks
+                let t = i * (total_ticks / n).max(1);
+                NoteRecord {
+                    start_tick: t,
+                    end_tick: t.saturating_add(240),
+                    key: 60,
+                    velocity: 100,
+                    track: 0,
+                    channel: 0,
+                }
+            })
+            .collect();
+        // 跨视口长音符（时长 = 2400 < TICK_SEARCH_BUFFER，必须被窗口覆盖）
+        records.push(NoteRecord {
+            start_tick: 1_000,
+            end_tick: 3_400,
+            key: 61,
+            velocity: 100,
+            track: 0,
+            channel: 0,
+        });
+        records.sort_unstable_by_key(|r| r.start_tick);
+        records
+    }
+
+    /// 正确性：每个帧的窗口必须覆盖该帧视口内所有**时长不超过
+    /// `TICK_SEARCH_BUFFER`** 的可见音符（超集性质）。
+    ///
+    /// 可见判定与 `build_video_render_params_from_notes` 的过滤条件一致：
+    /// `end_tick >= vp_start && start_tick <= vp_end`。
+    ///
+    /// 注意：时长超过 `TICK_SEARCH_BUFFER` 的超长跨视口音符会被窗口下界跳过，
+    /// 这是与内存模式 `MidiDocument::get_track_notes_in_range` 一致的既有取舍。
+    #[test]
+    fn test_frame_index_window_covers_all_visible_notes() {
+        let total_ticks = 576_000u32; // 10 分钟 @120bpm
+        let records = make_records(200, total_ticks);
+
+        let index = build_frame_index(&records, PPQN, total_ticks, &TEMPOS, FPS, 16.0)
+            .expect("build_frame_index 不应失败");
+        assert!(!index.is_empty());
+
+        let viewport_span = (PPQN as f64 * 16.0) as u32;
+        for (frame_idx, entry) in index.iter().enumerate() {
+            let frame_time = frame_idx as f64 / FPS;
+            let vp_start = seconds_to_tick(frame_time, PPQN, &TEMPOS);
+            let vp_end = vp_start.saturating_add(viewport_span);
+            let range = entry.note_offset as usize..(entry.note_offset + entry.note_count) as usize;
+
+            for (i, r) in records.iter().enumerate() {
+                let is_visible = r.end_tick >= vp_start && r.start_tick <= vp_end;
+                let within_buffer = r.end_tick.saturating_sub(r.start_tick) <= TICK_SEARCH_BUFFER;
+                if is_visible && within_buffer {
+                    assert!(
+                        range.contains(&i),
+                        "帧 {frame_idx} (vp {vp_start}..{vp_end}) 遗漏可见记录 {i}: \
+                         start={} end={}",
+                        r.start_tick,
+                        r.end_tick,
+                    );
+                }
+            }
+        }
+    }
+
+    /// 性能护栏：大文件下每帧窗口大小必须远小于总记录数。
+    ///
+    /// 旧实现窗口 = [视口起点, 文件末尾)，帧 0 即读取全部记录（O(N) 每帧），
+    /// 导出速度随总音符数线性下降。修复后窗口仅覆盖视口附近
+    /// （±TICK_SEARCH_BUFFER 扩展），大小与总记录数无关。
+    #[test]
+    fn test_frame_index_window_stays_small_for_large_files() {
+        let total_ticks = 576_000u32; // 10 分钟 @120bpm
+        const RECORD_COUNT: usize = 10_000;
+        let records = make_records(RECORD_COUNT as u32, total_ticks);
+
+        let index = build_frame_index(&records, PPQN, total_ticks, &TEMPOS, FPS, 16.0)
+            .expect("build_frame_index 不应失败");
+
+        let max_window = index
+            .iter()
+            .map(|e| e.note_count as usize)
+            .max()
+            .expect("帧索引不应为空");
+        // 窗口仅覆盖视口 ± 缓冲区（~34560 ticks / 576000 ticks ≈ 6% 的记录），
+        // 远小于总数；旧实现首帧窗口 = RECORD_COUNT。
+        assert!(
+            max_window * 20 < RECORD_COUNT,
+            "帧索引窗口过大: max={max_window}, 总记录={RECORD_COUNT}"
+        );
+    }
 }

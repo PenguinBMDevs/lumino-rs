@@ -8,6 +8,8 @@ use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::is_black_key;
 use lumino_midi_loader::MidiDocument;
 
+use super::render_params::note_search_bounds;
+
 /// 5x7 位图字体：数字 0-9
 ///
 /// 每个数字 5 列宽、7 行高，每行用一个 u8 位掩码表示（LSB = 左端像素）。
@@ -220,8 +222,13 @@ pub fn render_waterfall_frame(
     }
 
     let mut notes: Vec<WaterfallNote> = Vec::new();
+    // 每轨按 start_tick 有序 → 二分窗口定位，避免每帧 O(N) 全量遍历
     for (track_idx, track_notes) in document.notes.iter().enumerate() {
-        for n in track_notes {
+        if track_notes.is_empty() {
+            continue;
+        }
+        let (search_start, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+        for n in &track_notes[search_start..search_end] {
             if n.end_tick > tick_start && n.start_tick < tick_end {
                 notes.push(WaterfallNote {
                     key: n.key,

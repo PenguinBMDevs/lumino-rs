@@ -16,7 +16,7 @@ pub mod note_info;
 pub mod track;
 
 pub use compact::{CompactEvent, EventKind};
-pub use document::MidiDocument;
+pub use document::{MidiDocument, TICK_SEARCH_BUFFER};
 pub use error::{LoaderError, LoaderResult};
 pub use note_event::NoteEvent;
 pub use note_info::NoteInfo;

@@ -15,7 +15,15 @@ pub(crate) mod scan;
 use std::path::Path;
 
 /// Tick 搜索缓冲区大小（用于二分查找的范围扩展）
-const TICK_SEARCH_BUFFER: u32 = 19200;
+///
+/// 语义：查询视口 `[tick_start, tick_end]` 内音符时，从
+/// `tick_start - TICK_SEARCH_BUFFER` 开始二分定位，保证时长不超过该缓冲区的
+/// 跨视口长音符（start_tick 早于视口起点）不被遗漏。19200 tick ≈ 10 小节
+/// （PPQ=480），覆盖绝大多数 MIDI 音符时长。
+///
+/// 视频导出（video_export）的可见音符收集与流式帧索引复用此常量，
+/// 避免各模块魔法数漂移。
+pub const TICK_SEARCH_BUFFER: u32 = 19200;
 
 /// 解析后的 MIDI 文档（全内存紧凑存放）
 ///
