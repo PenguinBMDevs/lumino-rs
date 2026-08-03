@@ -190,6 +190,29 @@ pub fn view<'a>(
         text(t.ui_automation_line_thickness_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
+        iced_widget::space().height(24),
+        // ── 底边栏监控数据刷新间隔 ──
+        row![
+            text(t.ui_monitor_refresh_interval)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(200.0),
+            iced_widget::slider(50.0..=2000.0, settings.monitor_refresh_interval_ms, |v| {
+                Message::Settings(crate::Event::MonitorRefreshIntervalChanged(v))
+            })
+            .step(1.0_f32)
+            .width(200.0),
+            text(format!("{:.0} ms", settings.monitor_refresh_interval_ms))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(60.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(4),
+        text(t.ui_monitor_refresh_interval_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

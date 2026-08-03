@@ -86,6 +86,9 @@ impl MessageHandler for SettingsHandler {
                 root.editor.velocity_panel.automation_line_thickness = v;
                 tracing::debug!("Root: 自动化曲线连线粗细设置为 {}", v);
             }
+            crate::settings::Event::MonitorRefreshIntervalChanged(v) => {
+                tracing::debug!("Root: 监控数据刷新间隔设置为 {}ms", v);
+            }
             _ => {} // 其他设置变更由 settings.update() 同步
         }
 

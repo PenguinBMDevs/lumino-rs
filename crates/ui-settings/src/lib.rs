@@ -81,6 +81,8 @@ pub struct SettingsPanel {
     pub automation_line_thickness: f32,
     /// 日志文件保留份数
     pub log_retention_count: usize,
+    /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
+    pub monitor_refresh_interval_ms: f32,
 }
 
 impl SettingsPanel {
@@ -134,6 +136,7 @@ impl SettingsPanel {
             intercept_notification_enabled: ui_config.intercept_notification_enabled,
             automation_line_thickness: ui_config.automation_line_thickness,
             log_retention_count: ui_config.log_retention_count,
+            monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
         }
     }
 
@@ -301,6 +304,9 @@ impl SettingsPanel {
                 if let Ok(v) = s.parse::<usize>() {
                     self.log_retention_count = v;
                 }
+            }
+            Event::MonitorRefreshIntervalChanged(v) => {
+                self.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);
             }
         }
     }

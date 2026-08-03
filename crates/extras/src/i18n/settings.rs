@@ -112,6 +112,9 @@ pub struct SettingsTranslations {
     pub log_retention_section: &'static str,
     pub log_retention_count: &'static str,
     pub log_retention_count_hint: &'static str,
+    /// 底边栏监控数据刷新间隔
+    pub ui_monitor_refresh_interval: &'static str,
+    pub ui_monitor_refresh_interval_hint: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -199,6 +202,8 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_notification_hint: "编辑中触发 Undo/Redo/Save/Play/Export 时显示提示（关闭则静默处理）",
     ui_automation_line_thickness: "自动化曲线连线粗细:",
     ui_automation_line_thickness_hint: "自动化面板中事件瞄点之间的连线粗细（1-10 像素）",
+    ui_monitor_refresh_interval: "监控数据刷新间隔:",
+    ui_monitor_refresh_interval_hint: "底边栏 CPU/MEM/FPS 监控数据的刷新频率（50-2000ms，默认 100ms）",
     log_retention_section: "日志",
     log_retention_count: "日志文件保留份数:",
     log_retention_count_hint: "日志文件存储在配置目录的 logs/ 下，超过此份数时自动删除最旧的日志（0 = 不限制）",
@@ -289,6 +294,8 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     editing_intercept_notification_hint: "Show notification when Undo/Redo/Save/Play/Export is intercepted during editing (disable for silent handling)",
     ui_automation_line_thickness: "Automation line thickness:",
     ui_automation_line_thickness_hint: "Line thickness between event anchor points in the automation panel (1-10 pixels)",
+    ui_monitor_refresh_interval: "Monitor refresh interval:",
+    ui_monitor_refresh_interval_hint: "Refresh interval for CPU/MEM/FPS monitoring data in the bottom bar (50-2000ms, default 100ms)",
     log_retention_section: "Logging",
     log_retention_count: "Log file retention count:",
     log_retention_count_hint: "Log files are stored in logs/ under the config directory. Oldest files are auto-deleted when exceeding this limit (0 = unlimited)",

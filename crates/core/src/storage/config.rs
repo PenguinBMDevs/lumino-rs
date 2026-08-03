@@ -247,6 +247,9 @@ pub struct UiConfig {
     /// 日志文件保留份数（默认 10，0 = 不限制）
     #[serde(default = "default_log_retention_count")]
     pub log_retention_count: usize,
+    /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
+    #[serde(default = "default_monitor_refresh_interval_ms")]
+    pub monitor_refresh_interval_ms: f32,
 }
 
 fn default_true() -> bool {
@@ -274,6 +277,10 @@ fn default_max_voices_per_key() -> Option<usize> {
 }
 fn default_automation_line_thickness() -> f32 {
     2.0
+}
+
+fn default_monitor_refresh_interval_ms() -> f32 {
+    100.0
 }
 
 fn default_log_retention_count() -> usize {
@@ -346,6 +353,7 @@ impl Default for UiConfig {
             intercept_notification_enabled: true,
             automation_line_thickness: default_automation_line_thickness(),
             log_retention_count: default_log_retention_count(),
+            monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
         }
     }
 }

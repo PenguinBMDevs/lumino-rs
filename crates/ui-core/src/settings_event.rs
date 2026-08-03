@@ -51,4 +51,6 @@ pub enum Event {
     AutomationLineThicknessChanged(f32),
     /// 日志文件保留份数
     LogRetentionCountChanged(String),
+    /// 底边栏监控数据刷新间隔（毫秒，50-2000）
+    MonitorRefreshIntervalChanged(f32),
 }
