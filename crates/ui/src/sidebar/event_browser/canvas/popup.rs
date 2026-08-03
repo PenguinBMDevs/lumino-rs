@@ -1,6 +1,6 @@
 //! 浮动编辑弹窗绘制与命中测试。
 
-use iced_core::{Color, Point, Rectangle, Size};
+use iced_core::{Color, Font, Point, Rectangle, Size};
 use iced_widget::canvas::{Frame, Text, path::Builder};
 
 use crate::Renderer;
@@ -31,6 +31,7 @@ pub fn draw_popup(
     theme: &Theme,
     popup: &PopupState,
     bounds: Rectangle,
+    font: Font,
 ) {
     let palette = theme.extended_palette();
     let is_light = theme.is_light();
@@ -83,7 +84,7 @@ pub fn draw_popup(
         color: fg,
         size: iced_core::Pixels(FONT_SIZE + 1.0),
         line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
-        font: iced_core::Font::default(),
+        font,
         max_width: POPUP_WIDTH - 16.0,
         align_x: iced_core::alignment::Horizontal::Center.into(),
         align_y: iced_core::alignment::Vertical::Center,
@@ -102,6 +103,7 @@ pub fn draw_popup(
         &value_text,
         fg,
         border,
+        font,
     );
 
     // Choice 时左右箭头
@@ -121,6 +123,7 @@ pub fn draw_popup(
         Point::new(cx - BUTTON_WIDTH - 8.0, btn_y),
         palette.primary.strong.color,
         Color::WHITE,
+        font,
     );
     draw_button(
         frame,
@@ -128,6 +131,7 @@ pub fn draw_popup(
         Point::new(cx + 8.0, btn_y),
         palette.background.weak.color,
         fg,
+        font,
     );
 }
 
@@ -151,6 +155,7 @@ fn draw_input_box(
     text: &str,
     fg: Color,
     border: Color,
+    font: Font,
 ) {
     let x = cx - width * 0.5;
     let rect = Rectangle::new(Point::new(x, y - height * 0.5), Size::new(width, height));
@@ -174,7 +179,7 @@ fn draw_input_box(
         color: fg,
         size: iced_core::Pixels(FONT_SIZE),
         line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
-        font: iced_core::Font::default(),
+        font,
         max_width: width - 8.0,
         align_x: iced_core::alignment::Horizontal::Center.into(),
         align_y: iced_core::alignment::Vertical::Center,
@@ -182,7 +187,14 @@ fn draw_input_box(
     });
 }
 
-fn draw_button(frame: &mut Frame<Renderer>, label: &str, pos: Point, bg: Color, fg: Color) {
+fn draw_button(
+    frame: &mut Frame<Renderer>,
+    label: &str,
+    pos: Point,
+    bg: Color,
+    fg: Color,
+    font: Font,
+) {
     let rect = Rectangle::new(pos, Size::new(BUTTON_WIDTH, BUTTON_HEIGHT));
     frame.fill_rectangle(rect.position(), rect.size(), bg);
     let mut path = Builder::new();
@@ -199,7 +211,7 @@ fn draw_button(frame: &mut Frame<Renderer>, label: &str, pos: Point, bg: Color, 
         color: fg,
         size: iced_core::Pixels(FONT_SIZE),
         line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
-        font: iced_core::Font::default(),
+        font,
         max_width: BUTTON_WIDTH,
         align_x: iced_core::alignment::Horizontal::Center.into(),
         align_y: iced_core::alignment::Vertical::Center,

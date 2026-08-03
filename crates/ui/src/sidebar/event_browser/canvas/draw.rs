@@ -2,7 +2,7 @@
 //!
 //! 分页器/空表提示/通用文本与颜色绘制拆分为 `draw_parts`。
 
-use iced_core::{Color, Point, Rectangle, Size, alignment};
+use iced_core::{Color, Font, Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, path::Builder};
 use lumino_extras::i18n::MainTranslations;
 
@@ -38,6 +38,8 @@ pub(super) fn draw(
     let tree_w = state.tree_width.clamp(MIN_TREE_WIDTH, MAX_TREE_WIDTH);
     let table_x = tree_w + SPLITTER_WIDTH;
 
+    let font = canvas.font();
+
     // 左侧树
     draw_tree(
         frame,
@@ -48,6 +50,7 @@ pub(super) fn draw(
         visible_tree_count,
         tree_w,
         state.scroll_y,
+        font,
     );
 
     // 右侧表头（固定于视口顶部）
@@ -61,6 +64,7 @@ pub(super) fn draw(
         selected_item,
         &state.column_widths,
         canvas.t,
+        font,
     );
 
     // 右侧表格行
@@ -73,6 +77,7 @@ pub(super) fn draw(
         rows,
         &state.column_widths,
         state.scroll_y,
+        font,
     );
 
     // 列分隔线与表头底部分隔线
@@ -99,17 +104,18 @@ pub(super) fn draw(
             bounds.width - table_x,
             page,
             total_pages,
+            font,
         );
     }
 
     // 空表加号
     if rows.is_empty() {
-        draw_empty_hint(frame, theme, table_x, bounds.width - table_x);
+        draw_empty_hint(frame, theme, table_x, bounds.width - table_x, font);
     }
 
     // Popup 叠加层
     if let Some(popup) = &state.popup {
-        draw_popup(frame, theme, popup, bounds);
+        draw_popup(frame, theme, popup, bounds, font);
     }
 }
 
@@ -131,6 +137,7 @@ fn draw_tree(
     visible_count: usize,
     tree_w: f32,
     scroll_y: f32,
+    font: Font,
 ) {
     let (header_bg, header_fg, _, _) = colors(theme);
     // 绘制表头
@@ -147,6 +154,7 @@ fn draw_tree(
         header_fg,
         tree_w - 8.0,
         alignment::Horizontal::Left,
+        font,
     );
 
     // 表头底部线（同时也是行高调整手柄指示器）
@@ -163,7 +171,7 @@ fn draw_tree(
         .enumerate()
     {
         let y = HEADER_HEIGHT + i as f32 * row_h - scroll_remainder;
-        draw_tree_item(frame, theme, canvas, item, tree_w, y, row_h);
+        draw_tree_item(frame, theme, canvas, item, tree_w, y, row_h, font);
     }
 }
 
@@ -189,6 +197,7 @@ fn draw_tree_item(
     tree_w: f32,
     y: f32,
     row_h: f32,
+    font: Font,
 ) {
     let (_, _, text_color, _) = colors(theme);
     let (name, depth, expandable, expanded) = match item {
@@ -240,6 +249,7 @@ fn draw_tree_item(
         text_color,
         (tree_w - x - 4.0).max(0.0),
         alignment::Horizontal::Left,
+        font,
     );
 }
 
@@ -273,6 +283,7 @@ fn draw_table_header(
     selected_item: Option<&SelectedItem>,
     column_widths: &[f32],
     t: &MainTranslations,
+    font: Font,
 ) {
     let (header_bg, header_fg, _, line_color) = colors(theme);
     frame.fill_rectangle(
@@ -294,6 +305,7 @@ fn draw_table_header(
                 header_fg,
                 w - 8.0,
                 alignment::Horizontal::Left,
+                font,
             );
             x += w;
         }
@@ -321,6 +333,7 @@ fn draw_table_rows(
     rows: &[EventTableRow],
     column_widths: &[f32],
     scroll_y: f32,
+    font: Font,
 ) {
     let (_, _, text_color, line_color) = colors(theme);
     let first = (scroll_y / ROW_HEIGHT).floor() as usize;
@@ -349,6 +362,7 @@ fn draw_table_rows(
                 text_color,
                 w - 8.0,
                 alignment::Horizontal::Left,
+                font,
             );
             x += w;
         }

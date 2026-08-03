@@ -30,6 +30,8 @@ pub struct SidebarViewParams<'a> {
     pub event_browser_data: event_browser::EventBrowserData<'a>,
     /// 事件列表上下文菜单当前关联的 tick（None 表示未打开）
     pub event_list_context_menu_tick: Option<u32>,
+    /// 程序字体名称（来自设置）
+    pub program_font_name: &'a str,
 }
 
 pub fn view<'a>(
@@ -101,6 +103,7 @@ pub fn view<'a>(
                 params.event_browser_data,
                 params.event_list_context_menu_tick,
                 t,
+                params.program_font_name,
             )
         }
         Route::File => {

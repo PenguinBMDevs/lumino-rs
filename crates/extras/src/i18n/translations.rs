@@ -210,7 +210,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     sidebar_file: "音轨列表",
     sidebar_arrangement: "音轨总览",
     sidebar_automation: "自动化面板",
-    sidebar_event_list: "事件列表",
+    sidebar_event_list: "事件浏览器",
     sidebar_track_list: "音轨列表",
     sidebar_add_track: "添加音轨",
     precision_note_label: "分音符",

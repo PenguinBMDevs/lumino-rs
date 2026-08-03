@@ -2,7 +2,7 @@
 //!
 //! 从 draw.rs 拆分：分页器、空表提示、文本/矩形/颜色等通用绘制。
 
-use iced_core::{Color, Point, Rectangle, Size, alignment};
+use iced_core::{Color, Font, Point, Rectangle, Size, alignment};
 use iced_widget::canvas::{Frame, Text, path::Builder};
 
 use crate::Renderer;
@@ -21,6 +21,7 @@ pub(super) fn draw_pager(
     table_w: f32,
     page: usize,
     total_pages: usize,
+    font: Font,
 ) {
     let (_, _, text_color, line_color) = colors(theme);
     let y = table_content_h;
@@ -31,13 +32,14 @@ pub(super) fn draw_pager(
     );
 
     // 左按钮
-    draw_pager_button(frame, "<", Point::new(table_x + 4.0, y + 4.0), theme);
+    draw_pager_button(frame, "<", Point::new(table_x + 4.0, y + 4.0), theme, font);
     // 右按钮
     draw_pager_button(
         frame,
         ">",
         Point::new(table_x + table_w - PAGER_BUTTON_WIDTH - 4.0, y + 4.0),
         theme,
+        font,
     );
 
     let label = format!("{} / {}", page + 1, total_pages);
@@ -49,6 +51,7 @@ pub(super) fn draw_pager(
         text_color,
         table_w - PAGER_BUTTON_WIDTH * 2.0 - 16.0,
         alignment::Horizontal::Center,
+        font,
     );
 
     let mut path = Builder::new();
@@ -63,7 +66,13 @@ pub(super) fn draw_pager(
 }
 
 /// 绘制单个分页器按钮。
-fn draw_pager_button(frame: &mut Frame<Renderer>, label: &str, pos: Point, theme: &Theme) {
+fn draw_pager_button(
+    frame: &mut Frame<Renderer>,
+    label: &str,
+    pos: Point,
+    theme: &Theme,
+    font: Font,
+) {
     let (_, _, text_color, border_color) = colors(theme);
     let rect = Rectangle::new(pos, Size::new(PAGER_BUTTON_WIDTH, PAGER_HEIGHT - 8.0));
     frame.fill_rectangle(
@@ -87,6 +96,7 @@ fn draw_pager_button(frame: &mut Frame<Renderer>, label: &str, pos: Point, theme
         text_color,
         PAGER_BUTTON_WIDTH,
         alignment::Horizontal::Center,
+        font,
     );
 }
 
@@ -96,6 +106,7 @@ pub(super) fn draw_empty_hint(
     theme: &Theme,
     table_x: f32,
     table_w: f32,
+    font: Font,
 ) {
     let (_, _, text_color, _) = colors(theme);
     draw_text(
@@ -106,13 +117,14 @@ pub(super) fn draw_empty_hint(
         text_color,
         table_w,
         alignment::Horizontal::Center,
+        font,
     );
 }
 
 /// 绘制文本。
 ///
 /// 使用 `f32::MAX` 作为 `max_width` 防止文本换行（Canvas 在固定行高下换行会溢出）。
-/// 文本溢出部分由 Canvas 自动裁剪。
+/// 在指定位置绘制文本。
 pub(super) fn draw_text(
     frame: &mut Frame<Renderer>,
     content: &str,
@@ -121,6 +133,7 @@ pub(super) fn draw_text(
     color: Color,
     _max_width: f32,
     align: alignment::Horizontal,
+    font: Font,
 ) {
     frame.fill_text(Text {
         content: content.to_string(),
@@ -128,7 +141,7 @@ pub(super) fn draw_text(
         color,
         size: iced_core::Pixels(FONT_SIZE),
         line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
-        font: iced_core::Font::default(),
+        font,
         max_width: f32::MAX,
         align_x: align.into(),
         align_y: alignment::Vertical::Center,

@@ -19,6 +19,7 @@ impl Sidebar {
         current_track_notes: &'a im::Vector<lumino_note_core::Note>,
         ppq: u16,
         _snap_precision: f32,
+        program_font_name: &'a str,
     ) -> Element<'a> {
         let panel = if self.panel_visible {
             let sidebar_params = panel::SidebarViewParams {
@@ -45,6 +46,7 @@ impl Sidebar {
                     automation_lanes: &editor_data.automation_lanes,
                 },
                 event_list_context_menu_tick: self.event_list_context_menu_tick,
+                program_font_name,
             };
             panel::view(sidebar_params, window, language)
         } else {

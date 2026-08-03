@@ -4,7 +4,7 @@
 //! 绘制细节拆分为 `draw`，命中测试拆分为 `hit_test`，弹窗绘制拆分为 `popup`。
 
 use iced_core::mouse::{Button, Event as MouseEvent, ScrollDelta};
-use iced_core::{Length, Point, Rectangle, Size};
+use iced_core::{Font, Length, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Frame, Geometry, Program};
 use lumino_extras::i18n::MainTranslations;
 
@@ -113,6 +113,8 @@ pub struct EventBrowserCanvas<'a> {
     pub data: EventBrowserData<'a>,
     /// 多语言翻译
     pub t: &'static MainTranslations,
+    /// 用于 Canvas 文本绘制的字体
+    pub font: Font,
 }
 
 impl<'a> EventBrowserCanvas<'a> {
@@ -121,8 +123,29 @@ impl<'a> EventBrowserCanvas<'a> {
         state: &'a EventBrowserState,
         data: EventBrowserData<'a>,
         t: &'static MainTranslations,
+        program_font_name: &str,
     ) -> Self {
-        Self { state, data, t }
+        // Font::with_name 需要 &'static str，这里使用 Box::leak 转换运行时的字体名称。
+        // 与 host/font.rs 中的 FONT_NAME_CACHE 思路一致。
+        // 字体名称字符串通常很小（~16字节），且仅在用户修改设置时变化，泄漏量可忽略。
+        let font = if program_font_name.is_empty() {
+            Font::default()
+        } else {
+            let leaked: &'static str = Box::leak(program_font_name.to_string().into_boxed_str());
+            Font::with_name(leaked)
+        };
+        Self {
+            state,
+            data,
+            t,
+            font,
+        }
+    }
+
+    /// 根据程序字体名称创建 iced Font。
+    /// 空名称时回退到默认字体。
+    pub fn font(&self) -> Font {
+        self.font
     }
 
     /// 树宽度 = 存储的绝对值，受 MIN_TREE_WIDTH / MAX_TREE_WIDTH 约束
@@ -346,7 +369,7 @@ impl<'a> Program<Message, Theme, Renderer> for EventBrowserCanvas<'a> {
 
         // 右键上下文菜单
         if let Some((_, menu_pos)) = &state.context_menu {
-            draw_context_menu(&mut frame, theme, *menu_pos, self.t);
+            draw_context_menu(&mut frame, theme, *menu_pos, self.t, self.font());
         }
 
         vec![frame.into_geometry()]
@@ -359,8 +382,9 @@ pub fn view_event_browser<'a>(
     data: EventBrowserData<'a>,
     _context_menu_tick: Option<u32>,
     t: &'static MainTranslations,
+    program_font_name: &str,
 ) -> Element<'a> {
-    let canvas = EventBrowserCanvas::new(state, data, t);
+    let canvas = EventBrowserCanvas::new(state, data, t, program_font_name);
     iced_widget::canvas::Canvas::new(canvas)
         .width(Length::Fill)
         .height(Length::Fill)
@@ -368,7 +392,13 @@ pub fn view_event_browser<'a>(
 }
 
 /// 绘制右键上下文菜单
-fn draw_context_menu(frame: &mut Frame<Renderer>, theme: &Theme, pos: Point, t: &MainTranslations) {
+fn draw_context_menu(
+    frame: &mut Frame<Renderer>,
+    theme: &Theme,
+    pos: Point,
+    t: &MainTranslations,
+    font: Font,
+) {
     use iced_core::Color;
     let palette = theme.extended_palette();
     let is_light = theme.is_light();
@@ -418,7 +448,7 @@ fn draw_context_menu(frame: &mut Frame<Renderer>, theme: &Theme, pos: Point, t: 
             color: fg,
             size: iced_core::Pixels(FONT_SIZE),
             line_height: iced_core::text::LineHeight::Absolute(iced_core::Pixels(FONT_SIZE + 2.0)),
-            font: iced_core::Font::default(),
+            font,
             max_width: width - 16.0,
             align_x: iced_core::alignment::Horizontal::Left.into(),
             align_y: iced_core::alignment::Vertical::Center,

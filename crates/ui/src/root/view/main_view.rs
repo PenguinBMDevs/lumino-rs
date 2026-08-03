@@ -46,6 +46,7 @@ impl Root {
             current_track_notes,
             ppq,
             self.toolbar.note_precision.as_ticks(ppq),
+            self.settings.program_font_name.as_str(),
         );
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
