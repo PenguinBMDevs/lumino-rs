@@ -52,7 +52,7 @@ impl DialogWindow {
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
-            DialogType::RecoverTrack => (560.0, 870.0, "找回删除音轨", true),
+            DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
         };
 
         let mut attributes = WindowAttributes::default()
