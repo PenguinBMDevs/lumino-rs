@@ -433,4 +433,39 @@ mod tests {
             "存在无法解析/渲染的 SVG 图标，请检查 resources/icons"
         );
     }
+
+    /// viewBox 扩大 1.5 倍后，内容线性缩小 1/3 且在画布中居中
+    #[test]
+    fn test_render_svg_shrunken_viewbox_centers_content() {
+        // 20x20 内容放进 30x30 viewBox：渲染到 24x24 应为 16x16 且居中
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="-5 -5 30 30"><rect x="0" y="0" width="20" height="20" fill="#ff0000"/></svg>"##;
+        let data = render_svg(svg, 24, 24).expect("渲染失败");
+        // scale = 24/30 = 0.8 → 内容 16x16，offset = (24-16)/2 = 4
+        assert_eq!(content_bbox(&data), (4, 4, 20, 20));
+    }
+
+    /// 真实播放图标（playback-start）：缩小 1/3 后内容约 12.8x16 且居中
+    #[test]
+    fn test_play_icon_shrunk_to_two_thirds_and_centered() {
+        let data = render_svg(super::bytes(Icon::Play), 24, 24).expect("渲染失败");
+        let (min_x, min_y, max_x, max_y) = content_bbox(&data);
+        let w = max_x - min_x;
+        let h = max_y - min_y;
+        // viewBox 10.39x13.00 → 15.58x19.50：scale = 24/19.50 ≈ 1.23 → 内容约 12.8x16.0
+        assert!((w as f32 - 12.78).abs() <= 1.5, "宽度 {w} 应约为 12.78");
+        assert!((h as f32 - 16.0).abs() <= 1.5, "高度 {h} 应约为 16.0");
+        // 水平/垂直居中
+        assert_eq!(
+            min_x,
+            24 - max_x,
+            "内容应水平居中: left={min_x}, right={}",
+            24 - max_x
+        );
+        assert_eq!(
+            min_y,
+            24 - max_y,
+            "内容应垂直居中: top={min_y}, bottom={}",
+            24 - max_y
+        );
+    }
 }
