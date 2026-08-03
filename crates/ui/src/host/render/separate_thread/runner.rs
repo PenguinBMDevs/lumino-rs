@@ -11,7 +11,6 @@ use crate::RenderParams;
 use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::host::render::note_worker;
-use crate::host::render::{DEFAULT_KEYBOARD_WIDTH, DEFAULT_RULER_HEIGHT};
 use lumino_gfx::{
     ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
     ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
@@ -169,18 +168,14 @@ impl Host {
         // WGPU 渲染模式下不使用 Iced Canvas 键盘
         let keyboard_instances = vec![];
 
-        let ruler_instances = if self.root.is_arrangement_mode() {
-            vec![] // 走带模式不使用标尺
-        } else {
-            puffin::profile_scope!("generate_ruler_instances");
-            self.generate_ruler_instances(
-                viewport_size.width,
-                DEFAULT_KEYBOARD_WIDTH,
-                DEFAULT_RULER_HEIGHT,
-                scroll.0,
-                zoom.0,
-            )
-        };
+        // 标尺实例由 GPU 线程的 RulerRenderer::prepare 内部基于缓存生成，
+        // UI 线程不再每帧重复生成——之前每帧调用 generate_ruler_instances 是冗余的：
+        // 1. 生成内容完全没被 GPU 使用（仅取 is_empty/len 判断）
+        // 2. 与 GPU 端 cached_instances 的参数（keyboard_width 等）不一致时长度可能不同，
+        //    作为 instance_count 传给 draw 会读到 buffer 末尾的垃圾数据
+        // 3. 滚动/缩放时每帧 O(N) CPU 工作 + Vec 分配，纯属浪费
+        // 字段保留为空 Vec 以维持 RenderData 结构体兼容性。
+        let ruler_instances = vec![];
 
         self.update_note_data_for_wgpu_thread();
 

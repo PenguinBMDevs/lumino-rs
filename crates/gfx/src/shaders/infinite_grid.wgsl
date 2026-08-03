@@ -99,8 +99,8 @@ fn ticks_per_measure(ts: vec3<u32>) -> f32 {
 }
 
 // 到最近小节线的距离（当前拍号段内）
-fn nearest_measure_distance(world_tick: f32) -> f32 {
-    let ts = get_time_signature(world_tick);
+// 优化：ts 由调用方传入，避免每像素多次调用 get_time_signature 线性扫描。
+fn nearest_measure_distance(world_tick: f32, ts: vec3<u32>) -> f32 {
     let tpm = ticks_per_measure(ts);
     let segment_start = f32(ts.x);
     let offset = world_tick - segment_start;
@@ -112,8 +112,7 @@ fn nearest_measure_distance(world_tick: f32) -> f32 {
 }
 
 // 到最近拍线的距离（当前拍号段内）
-fn nearest_beat_distance(world_tick: f32) -> f32 {
-    let ts = get_time_signature(world_tick);
+fn nearest_beat_distance(world_tick: f32, ts: vec3<u32>) -> f32 {
     let tpb = ticks_per_beat(ts);
     let segment_start = f32(ts.x);
     let offset = world_tick - segment_start;
@@ -125,17 +124,15 @@ fn nearest_beat_distance(world_tick: f32) -> f32 {
 }
 
 // 到最近半拍线的距离
-fn nearest_half_beat_distance(world_tick: f32) -> f32 {
-    let beat_dist = nearest_beat_distance(world_tick);
-    let ts = get_time_signature(world_tick);
+fn nearest_half_beat_distance(world_tick: f32, ts: vec3<u32>) -> f32 {
+    let beat_dist = nearest_beat_distance(world_tick, ts);
     let tpb = ticks_per_beat(ts);
     let half = tpb * 0.5;
     return min(beat_dist, half - beat_dist);
 }
 
 // 到 interval 网格线的最近距离（用于细分网格）
-fn nearest_grid_distance(world_tick: f32, interval: f32) -> f32 {
-    let ts = get_time_signature(world_tick);
+fn nearest_grid_distance(world_tick: f32, interval: f32, ts: vec3<u32>) -> f32 {
     let segment_start = f32(ts.x);
     let offset = world_tick - segment_start;
     let idx = floor(offset / interval);
@@ -236,11 +233,16 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let base_width = 1.0;
     let before_tick_zero = world_tick < 0.0;
 
+    // 优化：每个 fragment 的 world_tick 对应唯一拍号段，预先查询一次复用，
+    // 避免 nearest_*_distance 内部各自调用 get_time_signature（每像素最坏 ~10 次
+    // O(time_signature_count) 线性扫描）。降到 1 次查询，显著降低 GPU 着色器负担。
+    let current_ts = get_time_signature(world_tick);
+
     // X轴网格线（从粗到细检查，粗线优先绘制）
     if !before_tick_zero {
         // 小节线
         if measure_alpha > 0.0 {
-            let measure_dist = nearest_measure_distance(world_tick) * camera.zoom.x;
+            let measure_dist = nearest_measure_distance(world_tick, current_ts) * camera.zoom.x;
             if measure_dist < 2.0 {
                 return mix(bg_color, camera.color_bar, measure_alpha);
             }
@@ -248,7 +250,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         // 拍线（4分音符）
         if beat_alpha > 0.0 {
-            let beat_dist = nearest_beat_distance(world_tick) * camera.zoom.x;
+            let beat_dist = nearest_beat_distance(world_tick, current_ts) * camera.zoom.x;
             if beat_dist < base_width * 1.5 {
                 return mix(bg_color, camera.color_beat, 0.8 * beat_alpha);
             }
@@ -256,7 +258,7 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
         // 半拍线（8分音符）
         if halfbeat_alpha > 0.0 {
-            let half_dist = nearest_half_beat_distance(world_tick) * camera.zoom.x;
+            let half_dist = nearest_half_beat_distance(world_tick, current_ts) * camera.zoom.x;
             if half_dist < base_width {
                 return mix(bg_color, camera.color_half_beat, 0.7 * halfbeat_alpha);
             }
@@ -268,12 +270,11 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
             if tier_alpha <= 0.0 {
                 continue;
             }
-            let ts = get_time_signature(world_tick);
-            let interval = ticks_per_beat(ts) / grid_tier_divisor(tier);
+            let interval = ticks_per_beat(current_ts) / grid_tier_divisor(tier);
             if interval <= 0.0 {
                 continue;
             }
-            let dist = nearest_grid_distance(world_tick, interval) * camera.zoom.x;
+            let dist = nearest_grid_distance(world_tick, interval, current_ts) * camera.zoom.x;
             if dist < grid_threshold_px(tier) {
                 return mix(bg_color, camera.color_grid, 0.5 * tier_alpha);
             }

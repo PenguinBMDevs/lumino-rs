@@ -55,7 +55,10 @@ pub fn prepare_renderers(
     renderers.grid.prepare(queue, &grid_params);
 
     // 准备标尺渲染器
-    if !params.ruler_instances.is_empty() {
+    // 走带模式不使用标尺；钢琴卷帘模式始终调用 prepare，
+    // 内部基于 scroll/zoom/viewport 等 8 个字段的缓存比对决定是否重新生成实例，
+    // 滚动/缩放未变化时仅做一次字段比较即返回，开销可忽略。
+    if !params.is_arrangement_mode {
         let ruler_params = crate::RulerPrepareParams {
             viewport_size: params.logical_size,
             ruler_height: params.ruler_height,

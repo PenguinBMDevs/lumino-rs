@@ -152,12 +152,17 @@ pub fn execute_render_pass(
         }
 
         // 绘制标尺
-        if !params.ruler_instances.is_empty() {
+        // 使用 RulerRenderer 内部 cached_instances 的长度作为 instance_count，
+        // 而非 RenderParams.ruler_instances.len()：前者是 GPU buffer 实际持有的实例数，
+        // 后者由 UI 线程单独生成，参数（如 keyboard_width）不一致时长度可能不同，
+        // 会导致 draw 越界读到 buffer 末尾的垃圾数据。
+        let ruler_count = frame.renderers.ruler.instance_count();
+        if ruler_count > 0 {
             render_pass.set_scissor_rect(0, 0, width, height);
             frame
                 .renderers
                 .ruler
-                .draw(&mut render_pass, params.ruler_instances.len() as u32);
+                .draw(&mut render_pass, ruler_count as u32);
         }
 
         // 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）
@@ -189,6 +194,7 @@ pub fn update_stats(
     frame_time: Duration,
     params: &RenderParams,
     stats_clone: &Arc<Mutex<RenderStats>>,
+    ruler_tick_count: usize,
 ) {
     *frame_count += 1;
 
@@ -196,7 +202,7 @@ pub fn update_stats(
         stats.frame_count = *frame_count;
         stats.last_frame_time_ms = frame_time.as_secs_f64() * 1000.0;
         stats.grid_line_count = params.grid_instances.len();
-        stats.ruler_tick_count = params.ruler_instances.len();
+        stats.ruler_tick_count = ruler_tick_count;
     }
 
     // 更新 FPS

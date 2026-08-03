@@ -152,6 +152,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 frame_time,
                 params,
                 &channels.stats_clone,
+                renderers.ruler.instance_count(),
             );
         }
     }

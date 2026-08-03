@@ -8,7 +8,6 @@
 //! 子模块组织：
 //! - `data`: 渲染数据类型定义
 //! - `frame`: 帧准备逻辑（FPS计算、播放状态）
-//! - `grid`: 网格、键盘、标尺生成
 //! - `notes`: 音符实例更新
 //! - `viewport`: 视口信息收集
 //! - `encoder`: 渲染编码器管理
@@ -24,7 +23,6 @@ use crate::host::Host;
 mod data;
 mod encoder;
 mod frame;
-mod grid;
 pub(super) mod note_worker;
 mod separate_thread;
 mod single_thread;
@@ -37,10 +35,6 @@ mod viewport;
 // 常量定义 - 避免魔法数字
 // =============================================================================
 
-/// 默认键盘宽度（像素）
-pub const DEFAULT_KEYBOARD_WIDTH: f32 = 60.0;
-/// 默认标尺高度（像素）
-pub const DEFAULT_RULER_HEIGHT: f32 = 30.0;
 /// FPS 更新间隔（毫秒）
 pub const FPS_UPDATE_INTERVAL_MS: u128 = 50;
 
