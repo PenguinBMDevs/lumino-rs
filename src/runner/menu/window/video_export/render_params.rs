@@ -260,9 +260,15 @@ fn build_miditrail_render_params(
 ) -> RenderParams {
     let miditrail_width = width.max(1) as f32;
     let miditrail_height = height.max(1) as f32;
-    // 为支持 Z 显示距离拉到最大，收集范围按最大倍数扩展；
-    // 实际截断由 `miditrail_z_far` 在 GPU 实例构建阶段控制。
-    let z_far_scale = MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH;
+    // 收集范围按实际 Z 显示距离缩放（而非写死最大值）：
+    // GPU 实例构建中音符可见条件为 `start_tick - tick < span × z_far/SCENE_DEPTH`，
+    // 因此收集窗口上界取 `tick + span × z_far/SCENE_DEPTH` 即可精确覆盖，
+    // 避免默认 z_far=7.5（=SCENE_DEPTH）时白收集 2 倍音符（10 万级场景 CPU 复制与
+    // GPU 扫描均减半）。z_far 拉满 15.0 时退化为 2.0×，行为与旧实现一致。
+    let z_far_scale = (miditrail_z_far.max(0.1) / MIDITRAIL_SCENE_DEPTH).clamp(
+        0.1 / MIDITRAIL_SCENE_DEPTH,
+        MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH,
+    );
 
     let mut notes = Vec::new();
     collect_visible_notes_for_gpu(
