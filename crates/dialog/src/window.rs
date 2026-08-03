@@ -46,7 +46,7 @@ impl DialogWindow {
             DialogType::Collaboration => (420.0, 320.0, "多人协作", false),
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
-            DialogType::Settings => (700.0, 500.0, "设置", true),
+            DialogType::Settings => (720.0, 540.0, "设置", true),
             DialogType::SpeedChange => (400.0, 250.0, "变速", false),
             DialogType::BatchEdit => (420.0, 640.0, "批量编辑", true),
             DialogType::ExportProgress => (400.0, 200.0, "音频导出", false),
