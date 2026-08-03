@@ -8,6 +8,10 @@ pub use project::{
     LoadedFileEntry, LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     archive::{ArchiveHeader, FileEntry, FileTable, build_archive, read_file_from_archive},
     data_formats::{LmctlData, LmnamesData, LmsigData, LmtempData},
+    deleted_track::{
+        DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
+        list_deleted_tracks, load_deleted_track, save_deleted_track,
+    },
     folder::FolderPaths,
     load::load_project,
     metadata::ProjectMetadata,

@@ -78,6 +78,12 @@ pub enum Event {
     OpenMemoryMonitorDialog,
     /// 关闭内存监控对话框
     CloseMemoryMonitorDialog,
+    /// 打开"找回删除音轨"对话框
+    ///
+    /// 实际的条目列表由 Runner 在对话框 UI 就绪后扫描缓存目录并填充。
+    OpenRecoverTrackDialog,
+    /// 关闭"找回删除音轨"对话框
+    CloseRecoverTrackDialog,
     /// 应用工程设置
     ApplyProjectSettings {
         title: String,

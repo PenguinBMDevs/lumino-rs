@@ -4,6 +4,7 @@ use iced_winit::winit;
 
 use crate::host::Host;
 use crate::{message, toolbar};
+use lumino_message::TrackContextMenuItem;
 use lumino_ui_core::sidebar_event::Route;
 
 impl Host {
@@ -64,6 +65,33 @@ impl Host {
         self.route_message(message::Message::Toolbar(toolbar::Event::Quantize));
     }
 
+    /// 处理音轨列表视图（Route::File）下的 Delete/Backspace 快捷键
+    ///
+    /// 仅删除当前选中且 `can_delete` 的音轨入口（UI 入口立即移除，
+    /// 数据缓存到 `.lmdeltrack` 由 Runner 异步写入）。
+    /// Conductor 轨道（can_delete=false）跳过。
+    fn handle_track_delete_shortcut(&mut self) {
+        let selected_id = self.root.sidebar.selected_track;
+        let can_delete = self
+            .root
+            .sidebar
+            .tracks
+            .iter()
+            .find(|t| t.id == selected_id)
+            .map(|t| t.can_delete)
+            .unwrap_or(false);
+        if !can_delete {
+            return;
+        }
+        self.route_message(
+            lumino_ui_core::sidebar_event::Event::track_context_menu_item_clicked(
+                selected_id,
+                TrackContextMenuItem::Delete,
+            ),
+        );
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 处理键盘快捷键，返回是否有操作
     pub(crate) fn handle_keyboard_shortcuts(
         &mut self,
@@ -91,6 +119,17 @@ impl Host {
         // Ctrl+Q：单独处理
         if key == winit::keyboard::KeyCode::KeyQ && ctrl {
             self.handle_ctrl_q_shortcut();
+            return;
+        }
+
+        // 音轨列表视图（Route::File）下的 Delete 快捷键：删除选中音轨
+        // 与编辑器 Delete（Route 非 File 时由 EditorAction::DeletePressed 处理）互斥。
+        if self.root.sidebar.route == Route::File
+            && (key == winit::keyboard::KeyCode::Delete
+                || key == winit::keyboard::KeyCode::Backspace)
+            && !ctrl
+        {
+            self.handle_track_delete_shortcut();
             return;
         }
 

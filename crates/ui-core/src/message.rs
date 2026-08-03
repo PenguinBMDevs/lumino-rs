@@ -14,8 +14,8 @@ pub use lumino_message::{
     AudioAction, AudioChannels, AudioExportAction, AudioFormat, BatchEditAction, BatchEditField,
     CcOption, CustomPrecisionAction, DotType, EditorAction, Interpolation, LoadConfirmAction,
     LoopRangeAction, Message as GenericMessage, NotePrecision, PerfData, Point2,
-    ProjectSettingsAction, SettingsDialogAction, Size2, SpeedChangeAction, SpeedFactor,
-    ThreadingOption, Tool, TupletType, VelocityAction, VideoExportAction,
+    ProjectSettingsAction, RecoverTrackAction, SettingsDialogAction, Size2, SpeedChangeAction,
+    SpeedFactor, ThreadingOption, Tool, TupletType, VelocityAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

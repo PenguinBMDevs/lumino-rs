@@ -172,6 +172,10 @@ impl winit::application::ApplicationHandler for Runner {
         // 初始化新创建的对话框（同步主窗口的协作状态）
         this.about_to_wait_init_dialogs(event_loop);
 
+        // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
+        // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
+        this.try_fill_recover_track_entries();
+
         // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
         // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的
         // 预览帧/进度会被转发到一个不存在的对话框而丢失。

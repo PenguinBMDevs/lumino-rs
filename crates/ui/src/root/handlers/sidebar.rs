@@ -97,6 +97,13 @@ impl Root {
             needs_redraw = true;
         }
 
+        // 消费 sidebar 中待删除音轨请求，构造 payload 转发给 Runner 写入 .lmdeltrack
+        // 必须在 sidebar.update 之后调用——此时 pending_track_deletion 才被设置。
+        self.forward_pending_track_deletion();
+
+        // 消费 sidebar 中"找回删除音轨"对话框打开请求，转发给 Runner 打开对话框
+        self.forward_pending_recover_track_dialog();
+
         // 分组切换 → 同步 AppMode（必须在 sidebar.update 之后，因为 active_group 在那里改变）
         if matches!(&event, sidebar::Event::GroupToggled(_)) {
             match self.sidebar.active_group {

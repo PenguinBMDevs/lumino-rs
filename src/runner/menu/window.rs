@@ -15,6 +15,7 @@ mod audio_export;
 mod collaboration;
 mod dialog;
 mod sync;
+mod track;
 mod video_export;
 mod video_export_handler;
 
@@ -25,6 +26,7 @@ impl RunnerInner {
             WindowEvent::Dialog(e) => self.handle_dialog_events(e),
             WindowEvent::Collaboration(e) => self.handle_collaboration_events(e),
             WindowEvent::Sync(e) => self.handle_sync_events(e),
+            WindowEvent::Track(e) => self.handle_track_events(e),
             _ => {}
         }
     }

@@ -91,6 +91,20 @@ impl RunnerInner {
                 // 此处不直接应用。
             }
             OpenLoadConfirmDialog { .. } => {}
+            OpenRecoverTrackDialog => {
+                tracing::info!("请求打开找回删除音轨对话框");
+                // 先扫描缓存目录，把条目列表暂存到 pending_recover_track_entries
+                // 对话框 UI 就绪后在 about_to_wait 中通过 try_fill_recover_track_entries 注入
+                let entries = self.scan_recover_track_entries();
+                tracing::info!("找回删除音轨：扫描到 {} 个已删除音轨缓存", entries.len());
+                self.pending_recover_track_entries = Some(entries);
+                self.window_state.dialog_manager.open_recover_track();
+            }
+            CloseRecoverTrackDialog => {
+                self.close_dialog_traced(DialogType::RecoverTrack, "找回删除音轨");
+                // 清空 pending（防止对话框已关闭后 pending 残留）
+                self.pending_recover_track_entries = None;
+            }
             StartAudioExport { config, document } => {
                 self.handle_start_audio_export(config, document);
             }

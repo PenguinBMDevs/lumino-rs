@@ -76,6 +76,19 @@ impl DialogManager {
         });
     }
 
+    /// 请求打开"找回删除音轨"对话框
+    ///
+    /// 实际的条目列表由 Runner 在对话框 UI 就绪后通过
+    /// `Host::set_recover_track_dialog_entries` 注入（扫描缓存目录）。
+    pub fn open_recover_track(&mut self) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::RecoverTrack,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+        });
+    }
+
     /// 分帧处理等待中的对话框初始化。
     ///
     /// 将原本在 `about_to_wait` 中单次同步完成的“创建窗口 + GFX + UI”拆成
@@ -163,6 +176,17 @@ impl DialogManager {
     /// 检查指定类型的对话框是否存在
     pub fn has_dialog_type(&self, dialog_type: DialogType) -> bool {
         self.dialogs.values().any(|d| d.dialog_type == dialog_type)
+    }
+
+    /// 查找指定类型的第一个对话框窗口 ID
+    ///
+    /// 用于 Runner 在对话框 UI 就绪后注入数据（如 RecoverTrack 对话框的条目列表）。
+    /// 返回 `None` 表示该类型对话框尚未就绪（仍在初始化或不存在）。
+    pub fn first_dialog_id_of_type(&self, dialog_type: DialogType) -> Option<WindowId> {
+        self.dialogs
+            .values()
+            .find(|d| d.dialog_type == dialog_type)
+            .map(|d| d.window_id())
     }
 
     /// 转发视频导出进度到 VideoExport 对话框

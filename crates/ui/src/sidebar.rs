@@ -4,10 +4,11 @@ mod context_menu;
 mod core;
 pub(crate) mod event_browser;
 mod handling;
+mod panel;
+mod panel_context_menu;
 mod view;
 
 pub mod event;
-mod panel;
 mod route;
 
 pub use core::{GroupId, RESIZE_HANDLE_WIDTH, ROUTES, Route, RouteConfig, Sidebar, Track};

@@ -7,6 +7,7 @@
 pub mod archive;
 pub mod conversion;
 pub mod data_formats;
+pub mod deleted_track;
 pub mod folder;
 pub mod load;
 pub mod metadata;
@@ -14,6 +15,10 @@ pub mod save;
 pub mod track;
 
 pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData};
+pub use deleted_track::{
+    DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
+    list_deleted_tracks, load_deleted_track, save_deleted_track,
+};
 pub use metadata::ProjectMetadata;
 pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
 

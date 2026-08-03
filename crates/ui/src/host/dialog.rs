@@ -61,6 +61,52 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置找回删除音轨对话框是否打开（用于独立对话框窗口）
+    pub fn set_recover_track_dialog_open(&mut self, open: bool) {
+        self.root.set_recover_track_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 设置找回删除音轨对话框的条目列表（Runner 扫描缓存目录后调用）
+    pub fn set_recover_track_dialog_entries(
+        &mut self,
+        entries: Vec<crate::state::root_state::RecoverTrackEntry>,
+    ) {
+        self.root.set_recover_track_dialog_entries(entries);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// Runner 扫描 `.lmdeltrack` 缓存目录后，通过此方法把条目列表回填给 UI
+    ///
+    /// 内部把 `RecoverTrackEntryPayload` 转换为 UI 状态结构并填充对话框。
+    pub fn apply_recover_track_entries(
+        &mut self,
+        entries: Vec<lumino_event::window::track::RecoverTrackEntryPayload>,
+    ) {
+        self.root.apply_recover_track_entries(entries);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// Runner 加载 `.lmdeltrack` 后，通过此方法把音轨重新加入 sidebar.tracks + editor_state
+    pub fn apply_track_restored(
+        &mut self,
+        payload: lumino_event::window::track::TrackDeletionPayload,
+    ) {
+        self.root.apply_track_restored(payload);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// Runner 永久销毁 `.lmdeltrack` 后，通过此方法释放 reserved_track_id
+    pub fn apply_track_permanently_deleted(&mut self, track_id: u16) {
+        self.root.apply_track_permanently_deleted(track_id);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 应用音符变速到主窗口
     pub fn apply_speed_change(&mut self, factor: f32) {
         self.root.apply_speed_change(factor);

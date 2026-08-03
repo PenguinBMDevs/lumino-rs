@@ -24,6 +24,8 @@ pub struct SidebarViewParams<'a> {
     pub context_menu_target_id: Option<usize>,
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
+    /// 音轨列表面板空白区域右键菜单是否打开
+    pub panel_context_menu_open: bool,
     /// 事件浏览器状态
     pub event_browser_state: &'a event_browser::EventBrowserState,
     /// 事件浏览器渲染数据
@@ -181,33 +183,45 @@ pub fn view<'a>(
                 ))
                 .height(Length::Fill);
 
-            // 当右键菜单或颜色选择器打开时，使用 Stack 覆盖层实现悬浮面板（不挤占 UI）
-            let base_content = container(scrollable_content);
-            if let Some(target_id) = params.context_menu_target_id {
-                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
-                    // 预估菜单垂直位置：面板顶部内边距(8) + 标题行(12) + 间距(8) + 音轨索引 * 音轨行高(34)
-                    let menu_y = 28.0 + track_index as f32 * 34.0;
-                    Stack::new()
-                        .push(base_content)
-                        .push(super::context_menu::background_close_overlay())
-                        .push(super::context_menu::positioned_menu(target_id, menu_y))
-                        .into()
-                } else {
-                    base_content.into()
-                }
-            } else if let Some(target_id) = params.color_picking_track {
+            // base_content 用 mouse_area 包裹：在空白区域右键打开面板级菜单。
+            // 音轨行本身的 mouse_area（on_right_press TrackContextMenuOpened）会先
+            // `capture_event()` 阻止冒泡，因此只有点击非音轨行的空白区域才会
+            // 触发本层的 PanelContextMenuOpened。
+            let base_content = mouse_area(container(scrollable_content))
+                .on_right_press(Event::panel_context_menu_opened());
+
+            // 浮动菜单优先级：颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
+            // base_content 作为 Stack 最底层，按需叠加浮动覆盖层。
+            let stack = Stack::new().push(base_content);
+
+            if let Some(target_id) = params.color_picking_track {
                 if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
                     let picker_y = 28.0 + track_index as f32 * 34.0;
-                    Stack::new()
-                        .push(base_content)
+                    stack
                         .push(super::color_picker::background_close_overlay(target_id))
                         .push(super::color_picker::positioned_panel(target_id, picker_y))
                         .into()
                 } else {
-                    base_content.into()
+                    stack.into()
                 }
+            } else if let Some(target_id) = params.context_menu_target_id {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    // 预估菜单垂直位置：面板顶部内边距(8) + 标题行(12) + 间距(8) + 音轨索引 * 音轨行高(34)
+                    let menu_y = 28.0 + track_index as f32 * 34.0;
+                    stack
+                        .push(super::context_menu::background_close_overlay())
+                        .push(super::context_menu::positioned_menu(target_id, menu_y))
+                        .into()
+                } else {
+                    stack.into()
+                }
+            } else if params.panel_context_menu_open {
+                stack
+                    .push(super::panel_context_menu::background_close_overlay())
+                    .push(super::panel_context_menu::positioned_menu())
+                    .into()
             } else {
-                base_content.into()
+                stack.into()
             }
         }
         _ => container(space()).into(),

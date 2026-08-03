@@ -5,6 +5,7 @@ mod batch_edit;
 mod custom_precision;
 mod load_confirm;
 mod project_settings;
+mod recover_track;
 mod settings;
 mod speed_change;
 mod video_export;
@@ -39,6 +40,7 @@ impl MessageHandler for DialogHandler {
             Message::VideoExport(action) => self.handle_video_export(root, action),
             Message::SpeedChange(action) => self.handle_speed_change(root, action),
             Message::BatchEdit(action) => self.handle_batch_edit(root, action),
+            Message::RecoverTrack(action) => self.handle_recover_track(root, action),
             other => Some(other),
         }
     }

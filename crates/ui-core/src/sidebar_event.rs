@@ -4,7 +4,7 @@
 
 use iced_core::{Color, Point};
 use lumino_extras::i18n::{Language, main_translations};
-use lumino_message::TrackContextMenuItem;
+use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
 use lumino_note_core::event::{AutomationTarget, ScaleType, SegmentShape};
 use std::collections::HashSet;
 
@@ -438,6 +438,16 @@ pub enum Event {
     TrackContextMenuClosed,
     /// 点击音轨选项卡右键菜单项
     TrackContextMenuItemClicked(usize, TrackContextMenuItem),
+    /// 打开音轨列表面板空白区域右键菜单
+    ///
+    /// 注意：iced 0.14 的 `mouse_area::on_right_press` 仅传递 Message，
+    /// 无法获取点击坐标。菜单固定显示在面板右上角（由 `panel_context_menu`
+    /// 模块的 `positioned_menu` 决定）。
+    PanelContextMenuOpened,
+    /// 关闭音轨列表面板空白区域右键菜单
+    PanelContextMenuClosed,
+    /// 点击音轨列表面板空白区域右键菜单项
+    PanelContextMenuItemClicked(PanelContextMenuItem),
     /// 开始重命名音轨
     TrackRenameStarted(usize),
     /// 重命名输入变化
@@ -562,6 +572,18 @@ impl Event {
         item: TrackContextMenuItem,
     ) -> Message {
         Message::Sidebar(Self::TrackContextMenuItemClicked(track_id, item))
+    }
+
+    pub const fn panel_context_menu_opened() -> Message {
+        Message::Sidebar(Self::PanelContextMenuOpened)
+    }
+
+    pub const fn panel_context_menu_closed() -> Message {
+        Message::Sidebar(Self::PanelContextMenuClosed)
+    }
+
+    pub const fn panel_context_menu_item_clicked(item: PanelContextMenuItem) -> Message {
+        Message::Sidebar(Self::PanelContextMenuItemClicked(item))
     }
 
     pub fn track_rename_started(track_id: usize) -> Message {

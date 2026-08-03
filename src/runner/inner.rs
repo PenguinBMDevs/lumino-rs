@@ -107,6 +107,14 @@ pub(crate) struct RunnerInner {
     pub(crate) collab_state: CollabState,
     pub(crate) test_state: TestState,
     pub(crate) session_tracker: SessionTracker,
+    /// 找回删除音轨对话框的待填充条目列表
+    ///
+    /// 用户请求打开对话框时，Runner 先扫描缓存目录得到条目列表存于此字段，
+    /// 在 `about_to_wait` 中检测对话框 UI 就绪后填充并清空。对话框分帧
+    /// 初始化（窗口 → GFX → UI）导致打开请求与 UI 就绪之间有数帧延迟，
+    /// 此字段作为缓冲。
+    pub(crate) pending_recover_track_entries:
+        Option<Vec<lumino_ui::event::window::track::RecoverTrackEntryPayload>>,
 }
 
 // ── impl Runner ─────────────────────────────────────────────────────────
@@ -219,6 +227,7 @@ impl Runner {
                 last_memory_log: None,
             },
             session_tracker: SessionTracker::new(),
+            pending_recover_track_entries: None,
         };
 
         Ok(runner)

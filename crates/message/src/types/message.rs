@@ -12,6 +12,7 @@ use crate::custom_precision::CustomPrecisionAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::project_settings::ProjectSettingsAction;
+use crate::recover_track::RecoverTrackAction;
 use crate::settings_dialog::SettingsDialogAction;
 use crate::speed_change::SpeedChangeAction;
 use crate::types::editor::EditorAction;
@@ -111,6 +112,8 @@ pub enum Message<W, S, Se, T> {
     SpeedChange(SpeedChangeAction),
     /// 批量编辑动作
     BatchEdit(BatchEditAction),
+    /// 找回删除音轨对话框动作
+    RecoverTrack(RecoverTrackAction),
     /// 视频导出动作
     VideoExport(VideoExportAction),
     /// 批量消息（用于 canvas 等一次事件需要发布多条消息的场景）

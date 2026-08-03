@@ -46,6 +46,16 @@ pub enum TrackContextMenuItem {
     SetChannel,
 }
 
+/// 音轨列表面板空白区域右键上下文菜单项
+///
+/// 与 `TrackContextMenuItem` 区分：本枚举针对音轨列表空白区域
+/// （非音轨选项卡本身）触发的右键菜单，用于工程级音轨管理动作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PanelContextMenuItem {
+    /// 找回删除音轨（弹出对话框，列出已缓存的 `.lmdeltrack` 文件）
+    RecoverDeletedTrack,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -69,6 +79,11 @@ mod tests {
             TrackContextMenuItem::SetColor,
             TrackContextMenuItem::SetChannel,
         ];
+    }
+
+    #[test]
+    fn test_panel_menu_item_variants() {
+        let _items = [PanelContextMenuItem::RecoverDeletedTrack];
     }
 
     #[test]

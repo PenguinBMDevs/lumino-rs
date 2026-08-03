@@ -3,6 +3,7 @@ pub mod collaboration;
 pub mod dialog;
 pub mod lifecycle;
 pub mod sync;
+pub mod track;
 pub mod video;
 
 use std::sync::Arc;
@@ -14,6 +15,8 @@ pub enum Event {
     Dialog(dialog::Event),
     Collaboration(collaboration::Event),
     Sync(sync::Event),
+    /// 音轨删除 / 恢复（与 .lmdeltrack 缓存交互）
+    Track(track::Event),
 }
 
 impl Event {
@@ -95,6 +98,33 @@ impl Event {
     }
     pub const fn close_memory_monitor_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseMemoryMonitorDialog)
+    }
+    pub const fn open_recover_track_dialog() -> Self {
+        Self::Dialog(dialog::Event::OpenRecoverTrackDialog)
+    }
+    pub const fn close_recover_track_dialog() -> Self {
+        Self::Dialog(dialog::Event::CloseRecoverTrackDialog)
+    }
+    pub fn delete_track(payload: track::TrackDeletionPayload) -> Self {
+        Self::Track(track::Event::DeleteTrack(payload))
+    }
+    pub fn restore_track(path: std::path::PathBuf, original_index: usize) -> Self {
+        Self::Track(track::Event::RestoreTrack {
+            path,
+            original_index,
+        })
+    }
+    pub fn permanently_delete_track(path: std::path::PathBuf, track_id: u16) -> Self {
+        Self::Track(track::Event::PermanentlyDeleteTrack { path, track_id })
+    }
+    pub fn recover_track_dialog_scanned(entries: Vec<track::RecoverTrackEntryPayload>) -> Self {
+        Self::Track(track::Event::RecoverTrackDialogScanned(entries))
+    }
+    pub fn track_restored(payload: track::TrackDeletionPayload) -> Self {
+        Self::Track(track::Event::TrackRestored(payload))
+    }
+    pub fn track_permanently_deleted(track_id: u16) -> Self {
+        Self::Track(track::Event::TrackPermanentlyDeleted { track_id })
     }
     pub fn apply_project_settings(
         title: String,

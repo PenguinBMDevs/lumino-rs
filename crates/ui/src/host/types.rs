@@ -1,5 +1,7 @@
 //! Host 子模块 - 类型定义和工具函数
 
+use std::path::PathBuf;
+
 use iced_core::{Event, mouse, touch};
 
 /// 音符数据: (tick, key, length, velocity, channel)
@@ -35,6 +37,20 @@ pub enum DialogResult {
         gate: String,
         key: String,
         tick: String,
+    },
+    /// 找回删除音轨：恢复到原位置
+    RecoverTrackRestore {
+        /// 缓存文件路径（Runner 加载后写入 sidebar.tracks）
+        path: PathBuf,
+        /// 删除时记录的原始 sidebar.tracks 索引（恢复时优先放回此位置）
+        original_index: usize,
+    },
+    /// 找回删除音轨：永久销毁
+    RecoverTrackPermanentlyDelete {
+        /// 缓存文件路径
+        path: PathBuf,
+        /// 删除时记录的音轨 ID（用于释放 reserved_track_ids 占用）
+        track_id: u16,
     },
 }
 

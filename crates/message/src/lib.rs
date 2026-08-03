@@ -12,6 +12,7 @@ pub mod custom_precision;
 pub mod load_confirm;
 pub mod loop_range;
 pub mod project_settings;
+pub mod recover_track;
 pub mod settings_dialog;
 pub mod speed_change;
 pub mod types;
@@ -22,12 +23,14 @@ pub use audio_export::AudioExportAction;
 pub use batch_edit::{BatchEditAction, BatchEditField};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
-    PianoRollContextMenuAction, PianoRollContextMenuItem, TrackContextMenuItem,
+    PanelContextMenuItem, PianoRollContextMenuAction, PianoRollContextMenuItem,
+    TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use project_settings::ProjectSettingsAction;
+pub use recover_track::RecoverTrackAction;
 pub use settings_dialog::SettingsDialogAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;

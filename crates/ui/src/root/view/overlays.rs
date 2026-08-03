@@ -13,7 +13,8 @@ use crate::view::{
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     memory_monitor_dialog::view_memory_monitor_dialog,
-    project_settings_dialog::view_project_settings_dialog, settings_dialog::view_settings_dialog,
+    project_settings_dialog::view_project_settings_dialog,
+    recover_track_dialog::view_recover_track_dialog, settings_dialog::view_settings_dialog,
     speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
 };
 use crate::{Element, Theme};
@@ -145,6 +146,9 @@ impl Root {
             }
             DialogType::MemoryMonitor => {
                 view_memory_monitor_dialog(&self.state.memory_monitor_dialog, &self.window.theme)
+            }
+            DialogType::RecoverTrack => {
+                view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
             }
         };
 

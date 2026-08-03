@@ -6,6 +6,7 @@ pub mod export_progress_dialog;
 pub mod load_confirm_dialog;
 pub mod memory_monitor_dialog;
 pub mod project_settings_dialog;
+pub mod recover_track_dialog;
 pub mod settings_dialog;
 pub mod speed_change_dialog;
 pub mod video_export_dialog;

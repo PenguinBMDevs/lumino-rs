@@ -6,6 +6,7 @@ pub mod export_progress_state;
 pub mod load_confirm_state;
 pub mod memory_monitor_state;
 pub mod project_settings_state;
+pub mod recover_track_state;
 pub mod speed_change_state;
 pub mod toggle_animation;
 pub mod video_export_state;
@@ -18,6 +19,7 @@ pub use export_progress_state::ExportProgressDialogState;
 pub use load_confirm_state::LoadConfirmDialogState;
 pub use memory_monitor_state::MemoryMonitorDialogState;
 pub use project_settings_state::ProjectSettingsDialogState;
+pub use recover_track_state::{RecoverTrackDialogState, RecoverTrackEntry};
 pub use speed_change_state::SpeedChangeDialogState;
 pub use toggle_animation::ToggleAnimationState;
 pub use video_export_state::{

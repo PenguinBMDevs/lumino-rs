@@ -5,8 +5,8 @@ pub use lumino_ui_core::state::{
     AudioExportDialogState, BatchEditDialogState, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
-    ProjectSettingsDialogState, SpeedChangeDialogState, ToggleAnimationState,
-    VideoExportDialogState, VideoExportOverlayState,
+    ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SpeedChangeDialogState,
+    ToggleAnimationState, VideoExportDialogState, VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;
@@ -27,6 +27,8 @@ pub enum DialogType {
     ExportProgress,
     VideoExport,
     MemoryMonitor,
+    /// 找回删除音轨
+    RecoverTrack,
 }
 
 /// Root 组件的状态
@@ -59,6 +61,8 @@ pub struct RootState {
     pub batch_edit_dialog: BatchEditDialogState,
     /// 内存监控对话框状态
     pub memory_monitor_dialog: MemoryMonitorDialogState,
+    /// 找回删除音轨对话框状态
+    pub recover_track_dialog: RecoverTrackDialogState,
     /// 精度设置
     pub note_precision: NotePrecision,
     /// 当前应用模式（编辑器/瀑布流）
@@ -91,6 +95,7 @@ impl RootState {
             speed_change_dialog: SpeedChangeDialogState::new(),
             batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
+            recover_track_dialog: RecoverTrackDialogState::default(),
             note_precision: NotePrecision::default(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),

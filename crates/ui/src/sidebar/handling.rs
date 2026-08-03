@@ -25,6 +25,7 @@ impl Sidebar {
         let prev_color_picking = self.color_picking_track;
         let prev_event_browser_state = self.event_browser_state.clone();
         let prev_event_list_context_menu_tick = self.event_list_context_menu_tick;
+        let prev_panel_context_menu_open = self.panel_context_menu.is_open;
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => self.handle_group_toggle(group),
@@ -47,6 +48,10 @@ impl Sidebar {
             TrackContextMenuItemClicked(id, item) => {
                 self.handle_track_context_menu_item_clicked(id, item)
             }
+            // ── 音轨列表面板空白区域右键菜单 ──
+            PanelContextMenuOpened => self.handle_panel_context_menu_opened(),
+            PanelContextMenuClosed => self.handle_panel_context_menu_closed(),
+            PanelContextMenuItemClicked(item) => self.handle_panel_context_menu_item_clicked(item),
             // ── 音轨重命名 ──
             TrackRenameStarted(id) => self.handle_track_rename_started(id),
             TrackRenameChanged(id, value) => self.handle_track_rename_changed(id, value),
@@ -95,5 +100,6 @@ impl Sidebar {
             || self.color_picking_track != prev_color_picking
             || self.event_browser_state != prev_event_browser_state
             || self.event_list_context_menu_tick != prev_event_list_context_menu_tick
+            || self.panel_context_menu.is_open != prev_panel_context_menu_open
     }
 }

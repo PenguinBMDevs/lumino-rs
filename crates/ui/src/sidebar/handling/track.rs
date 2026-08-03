@@ -33,8 +33,7 @@ impl Sidebar {
 
     /// 处理添加音轨
     pub(super) fn handle_add_track(&mut self) {
-        let new_id = self.next_track_id;
-        self.next_track_id += 1;
+        let new_id = self.allocate_track_id();
         // yinhe 风格标签：端口字母 + 通道号（默认 port=0, channel=0）
         let display_label = "A01".to_string();
         self.tracks.push(Track {
@@ -57,8 +56,7 @@ impl Sidebar {
     /// 处理在指定音轨上方添加
     pub(super) fn handle_track_add_above(&mut self, id: usize) {
         if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
-            let new_id = self.next_track_id;
-            self.next_track_id += 1;
+            let new_id = self.allocate_track_id();
             let display_label = "A01".to_string();
             self.tracks.insert(
                 idx,
@@ -84,8 +82,7 @@ impl Sidebar {
     /// 处理在指定音轨下方添加
     pub(super) fn handle_track_add_below(&mut self, id: usize) {
         if let Some(idx) = self.tracks.iter().position(|t| t.id == id) {
-            let new_id = self.next_track_id;
-            self.next_track_id += 1;
+            let new_id = self.allocate_track_id();
             let display_label = "A01".to_string();
             let insert_idx = (idx + 1).min(self.tracks.len());
             self.tracks.insert(

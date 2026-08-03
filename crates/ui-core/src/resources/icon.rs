@@ -119,6 +119,7 @@ define_icons! {
     (ContextMenuSelectAll, "../../../../resources/icons/context-menu/select-all-notes.svg"),
     (ContextMenuColorPalette, "../../../../resources/icons/context-menu/set-track-color.svg"),
     (ContextMenuChannel, "../../../../resources/icons/context-menu/set-midi-channel.svg"),
+    (ContextMenuRecoverTrack, "../../../../resources/icons/context-menu/recover-deleted-track.svg"),
 }
 
 #[derive(Clone)]
