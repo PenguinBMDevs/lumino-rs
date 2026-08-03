@@ -20,16 +20,6 @@ impl Root {
         self.sidebar.event_browser_state.last_clicked_tick = None;
     }
 
-    /// 在指定 tick 插入新音符（C4, 480 tick）。
-    pub(super) fn apply_insert_at(&mut self, tick: u32) {
-        let data = &mut self.editor.editor_state.data;
-        if data.current_track == 0 {
-            tracing::warn!("Root: Conductor 轨道禁止插入音符");
-            return;
-        }
-        let _ = data.insert_note_at_tick(tick as f32);
-    }
-
     /// 通过 NoteRef 定位音符并应用修改。
     ///
     /// NoteRef 的 `id` 是 (tick, key, length, velocity, channel, track) 的哈希，

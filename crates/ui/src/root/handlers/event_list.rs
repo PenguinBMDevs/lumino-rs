@@ -55,11 +55,11 @@ impl Root {
                 let ticks = self.sidebar.event_browser_state.selected_ticks.clone();
                 self.apply_delete_selected(ticks);
             }
-            InsertAbove(tick) => self.apply_insert_at(tick),
-            InsertBelow(tick) => self.apply_insert_at(tick),
+            InsertAbove(tick) => self.insert_event_for_selected(tick),
+            InsertBelow(tick) => self.insert_event_for_selected(tick),
             InsertFirst => {
                 let tick = (self.editor.playback_position.max(0.0)) as u32;
-                self.apply_insert_at(tick);
+                self.insert_event_for_selected(tick);
             }
             SetTimeSig {
                 tick,
@@ -111,6 +111,45 @@ impl Root {
         // 编辑后刷新侧边栏音符数据
         self.editor.editor_state.data.sync_track_notes();
         self.editor.spatial.note_index_dirty.set(true);
+    }
+
+    /// 根据当前选中项插入对应类型的事件。
+    ///
+    /// Conductor 级事件（TimeSig/KeySig/Markers/ConductorLyrics/ConductorChord）
+    /// 插入到全局数据；per-track 事件插入到对应音轨；音符需要 current_track 非 0。
+    fn insert_event_for_selected(&mut self, tick: u32) {
+        use SelectedItem::*;
+        let selected = self.sidebar.event_browser_state.selected_item.clone();
+        let data = &mut self.editor.editor_state.data;
+        match selected {
+            Some(TimeSig) => data.insert_time_sig_event(tick),
+            Some(KeySig) => data.insert_key_sig_event(tick),
+            Some(Markers) => data.insert_marker_event(tick),
+            Some(ConductorLyrics) => data.insert_lyrics_event(0, tick),
+            Some(ConductorChord) => data.insert_chord_event(0, tick),
+            Some(Notes { track }) => {
+                // 音符插入需要切换到目标音轨
+                let prev_track = data.current_track;
+                data.current_track = track as usize;
+                let _ = data.insert_note_at_tick(tick as f32);
+                data.current_track = prev_track;
+            }
+            Some(ProgramChange { track }) => data.insert_program_change_event(track, tick),
+            Some(Automation { track, target }) => {
+                data.insert_automation_event(track, &target, tick)
+            }
+            Some(Lyrics { track }) => data.insert_lyrics_event(track, tick),
+            Some(Chord { track }) => data.insert_chord_event(track, tick),
+            Some(ProjectJson) | Some(MappingJson) => {
+                // 元数据只读，不可插入
+            }
+            None => {
+                // 未选中任何项，回退到旧行为（插入音符，Conductor 轨道禁止）
+                if data.current_track != 0 {
+                    let _ = data.insert_note_at_tick(tick as f32);
+                }
+            }
+        }
     }
 
     /// 解析 popup 确认值，生成可执行的编辑操作。
