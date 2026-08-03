@@ -295,9 +295,16 @@ fn render_svg(
 
     let scale_x = target_width as f32 / svg_width;
     let scale_y = target_height as f32 / svg_height;
+    // 等比缩放（contain），保持图标原始宽高比，避免拉伸变形
     let scale = scale_x.min(scale_y);
 
-    let transform = tiny_skia::Transform::from_scale(scale, scale);
+    // 缩放后的内容尺寸；不足目标画布时水平/垂直居中，避免贴左上角
+    let scaled_w = svg_width * scale;
+    let scaled_h = svg_height * scale;
+    let offset_x = (target_width as f32 - scaled_w) / 2.0;
+    let offset_y = (target_height as f32 - scaled_h) / 2.0;
+
+    let transform = tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, offset_x, offset_y);
 
     let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
         .ok_or(IconError::PixmapCreationError)?;
@@ -348,5 +355,82 @@ mod tests {
         assert!(!should_invert_icon(Icon::Gear, false));
         assert!(should_invert_icon(Icon::Play, true));
         assert!(!should_invert_icon(Icon::Play, false));
+    }
+
+    /// 计算渲染结果中非透明像素的包围盒 (min_x, min_y, max_x, max_y)
+    fn content_bbox(data: &IconData) -> (u32, u32, u32, u32) {
+        let mut min_x = data.width;
+        let mut min_y = data.height;
+        let mut max_x = 0;
+        let mut max_y = 0;
+        for y in 0..data.height {
+            for x in 0..data.width {
+                let idx = ((y * data.width + x) * 4 + 3) as usize;
+                if data.rgba[idx] > 0 {
+                    min_x = min_x.min(x);
+                    min_y = min_y.min(y);
+                    max_x = max_x.max(x + 1);
+                    max_y = max_y.max(y + 1);
+                }
+            }
+        }
+        (min_x, min_y, max_x, max_y)
+    }
+
+    /// 非正方形图标（20x10）渲染到 24x24 画布：等比缩放后水平铺满、垂直居中
+    #[test]
+    fn test_render_svg_centers_non_square_icon() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="20" height="10" viewBox="0 0 20 10"><rect x="0" y="0" width="20" height="10" fill="#ff0000"/></svg>"##;
+        let data = render_svg(svg, 24, 24).expect("渲染失败");
+        // scale = min(24/20, 24/10) = 1.2 → 内容 24x12，y 方向居中：offset = (24-12)/2 = 6
+        assert_eq!(content_bbox(&data), (0, 6, 24, 18));
+    }
+
+    /// 高瘦图标（10x20）渲染到 24x24 画布：垂直铺满、水平居中
+    #[test]
+    fn test_render_svg_centers_tall_icon() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="10" height="20" viewBox="0 0 10 20"><rect x="0" y="0" width="10" height="20" fill="#00ff00"/></svg>"##;
+        let data = render_svg(svg, 24, 24).expect("渲染失败");
+        // scale = min(24/10, 24/20) = 1.2 → 内容 12x24，x 方向居中：offset = (24-12)/2 = 6
+        assert_eq!(content_bbox(&data), (6, 0, 18, 24));
+    }
+
+    /// 正方形图标（24x24）渲染到 24x24 画布：铺满、无留白
+    #[test]
+    fn test_render_svg_square_icon_fills_canvas() {
+        let svg = br##"<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><rect x="0" y="0" width="24" height="24" fill="#0000ff"/></svg>"##;
+        let data = render_svg(svg, 24, 24).expect("渲染失败");
+        assert_eq!(content_bbox(&data), (0, 0, 24, 24));
+    }
+
+    /// 真实图标文件：note-tie（20x11.75 非正方形）渲染后内容在 24x24 中垂直居中
+    #[test]
+    fn test_render_real_note_tie_icon_is_centered() {
+        let svg_data = super::bytes(Icon::Tie);
+        let data = render_svg(svg_data, 24, 24).expect("渲染失败");
+        let (min_x, min_y, max_x, max_y) = content_bbox(&data);
+        // 内容必须完全落在 24x24 画布内（不裁剪、不越界）
+        assert!(max_x <= 24 && max_y <= 24);
+        // 等比缩放后 content 高度 < 24，应垂直居中：上下留白相等
+        let top = min_y;
+        let bottom = 24 - max_y;
+        assert_eq!(top, bottom, "内容应垂直居中: top={top}, bottom={bottom}");
+        // 水平方向应铺满或居中（note-tie 宽高比接近 20:11.75，按 24x24 缩放后可能贴边）
+        let left = min_x;
+        let right = 24 - max_x;
+        assert_eq!(left, right, "内容应水平居中: left={left}, right={right}");
+    }
+
+    /// 全量回归：所有内置 SVG 都能解析并渲染，防止批量修改后出现非法文件
+    #[test]
+    fn test_all_icon_svgs_parse_and_render() {
+        // 直接触发宏生成的缓存构建：任一 SVG 解析失败会缺失条目（构建函数内部只打日志不 panic）
+        let cache = build_icon_cache();
+        // 当前 define_icons! 宏内共 56 个图标；若宏新增条目此处需同步更新
+        assert_eq!(
+            cache.len(),
+            56,
+            "存在无法解析/渲染的 SVG 图标，请检查 resources/icons"
+        );
     }
 }
