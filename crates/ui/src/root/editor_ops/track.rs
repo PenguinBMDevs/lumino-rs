@@ -26,8 +26,16 @@ impl Root {
 
     pub fn set_ppq(&mut self, ppq: u16) {
         self.editor.set_ppq(ppq);
-        self.editor.set_snap_precision(ppq as f32);
-        self.editor.set_default_note_length(ppq as f32);
+        // 按用户当前选择的精度换算 tick，而非无条件重置为四分音符（PPQ）。
+        // 旧逻辑每次都把 data 层 snap_precision 硬编码为 ppq，导致：
+        //   1) 默认状态下 UI 显示"全音符"而实际吸附是四分音符；
+        //   2) 用户手动切换精度后，一旦变更 PPQ，精度会被悄悄改回四分音符。
+        // 自定义精度是用户明确指定的绝对 tick 值，PPQ 变更时保持不变。
+        if self.toolbar.note_precision != crate::toolbar::NotePrecision::Custom {
+            let precision_ticks = self.toolbar.note_precision.as_ticks(ppq);
+            self.editor.set_snap_precision(precision_ticks);
+            self.editor.set_default_note_length(precision_ticks);
+        }
         // 同步到走带视图（影响网格线定位）
         self.arrangement_view.viewport.ppq = ppq;
         // PPQ 变更直接影响小节/拍线位置，必须立即失效网格和标尺缓存

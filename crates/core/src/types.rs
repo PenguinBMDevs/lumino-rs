@@ -48,11 +48,14 @@ pub enum Tool {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum NotePrecision {
     /// 全音符 (4拍)
-    #[default]
     Whole,
     /// 二分音符 (2拍)
     Half,
     /// 四分音符 (1拍)
+    ///
+    /// 默认精度：与 `ViewState::DEFAULT_SNAP_PRECISION`（= PPQ，即四分音符 tick 数）保持一致，
+    /// 保证 UI 显示与实际网格吸附行为对齐（PPQ 的语义即 "Pulses Per Quarter note"）。
+    #[default]
     Quarter,
     /// 八分音符 (1/2拍)
     Eighth,
@@ -244,7 +247,8 @@ mod tests {
 
     #[test]
     fn test_note_precision_default() {
-        assert_eq!(NotePrecision::default(), NotePrecision::Whole);
+        // 默认精度 = 四分音符，与 ViewState 默认吸附精度（PPQ）保持一致
+        assert_eq!(NotePrecision::default(), NotePrecision::Quarter);
     }
 
     #[test]

@@ -44,7 +44,9 @@ impl Root {
     pub fn set_custom_precision(&mut self, ticks: f32) {
         self.editor.set_snap_precision(ticks);
         self.editor.set_default_note_length(ticks);
-        self.state.note_precision = toolbar::NotePrecision::Custom;
+        // 同步 UI 显示状态到 toolbar（status.rs 显示源），
+        // 确保自定义精度生效后下拉框显示"自定义"而非旧值
+        self.toolbar.note_precision = toolbar::NotePrecision::Custom;
         tracing::info!("自定义精度已设置为 {} ticks", ticks);
     }
 }

@@ -10,7 +10,6 @@ pub use lumino_ui_core::state::{
 };
 
 use crate::app_mode::AppMode;
-use crate::toolbar::NotePrecision;
 
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -63,8 +62,6 @@ pub struct RootState {
     pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 找回删除音轨对话框状态
     pub recover_track_dialog: RecoverTrackDialogState,
-    /// 精度设置
-    pub note_precision: NotePrecision,
     /// 当前应用模式（编辑器/瀑布流）
     pub current_mode: AppMode,
     /// 模式切换按钮动画状态
@@ -96,7 +93,6 @@ impl RootState {
             batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             recover_track_dialog: RecoverTrackDialogState::default(),
-            note_precision: NotePrecision::default(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),
         }
