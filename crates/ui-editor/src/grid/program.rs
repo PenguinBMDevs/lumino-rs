@@ -444,4 +444,60 @@ mod tests {
             ))
         ));
     }
+
+    /// 斜向滚动（触控板双指对角线滑动）：单条事件携带双轴非零分量，
+    /// 必须同时驱动 X 轴与 Y 轴滚动——这是「斜向滚动」的核心验收点。
+    #[test]
+    fn test_grid_wheel_diagonal_scrolls_both_axes() {
+        let mut editor = Editor::new();
+        editor.editor_state.canvas.size_x = 2000.0;
+        editor.editor_state.canvas.size_y = 1000.0;
+        // 制造足够内容使 max_scroll 双轴均 > 0（否则会被 clamp 到 0 导致滚动失效）
+        editor.editor_state.view.total_ticks = 100000;
+        {
+            let state = &mut editor.editor_state;
+            let total_ticks = state.view.total_ticks;
+            lumino_editor_state::editor_state::viewport::Viewport::new(
+                &mut state.view,
+                &mut state.max_scroll,
+            )
+            .update_max_scroll(total_ticks);
+        }
+        let grid = PianoRollGrid::new(&editor);
+
+        // 触控板左滑+上滑（像素增量 x<0, y<0）
+        let action = grid
+            .handle_wheel_scroll(
+                &ScrollDelta::Pixels {
+                    x: -100.0,
+                    y: -50.0,
+                },
+                false,
+            )
+            .expect("斜向滚动应产生动作");
+        let (message, _, _) = action.into_inner();
+        let (delta_x, delta_y) = match message {
+            Some(Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
+                delta_x,
+                delta_y,
+            })) => (delta_x, delta_y),
+            other => panic!("网格区滚轮应发 Scrolled，实际为: {other:?}"),
+        };
+        // 双轴分量都应非零
+        assert!(delta_x < 0.0, "左滑应产生负 delta_x，实际={delta_x}");
+        assert!(delta_y < 0.0, "上滑应产生负 delta_y，实际={delta_y}");
+
+        // Editor 消费后：双轴目标位置都应变化（斜向滚动生效）
+        editor.handle_action(lumino_ui_core::message::EditorAction::Scrolled { delta_x, delta_y });
+        assert!(
+            editor.editor_state.view.smooth_scroll.target_x > 0.0,
+            "斜向滚动后 scroll_x 应增大，实际 target_x={}",
+            editor.editor_state.view.smooth_scroll.target_x
+        );
+        assert!(
+            editor.editor_state.view.smooth_scroll.target_y > 0.0,
+            "斜向滚动后 scroll_y 应增大，实际 target_y={}",
+            editor.editor_state.view.smooth_scroll.target_y
+        );
+    }
 }

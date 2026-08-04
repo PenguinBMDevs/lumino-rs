@@ -220,4 +220,48 @@ mod tests {
             "delta=0 不应改变 target_y"
         );
     }
+
+    /// 回归测试：触控板斜向滚动（对角线滑动）。
+    ///
+    /// 根因：Windows/winit 把双指斜向手势拆成两条独立事件——
+    /// `WM_MOUSEWHEEL` 仅带 y、`WM_MOUSEHWHEEL` 仅带 x，iced 各自转为一条 WheelScrolled。
+    /// 若 handle_scrolled 以 scroll_x/scroll_y 瞬时值为基准，第二条事件会把第一条设好的轴
+    /// 重置回当前位置，导致斜向退化为单轴。修复后以 smooth_scroll 当前目标为基准叠加，
+    /// 两条事件正确累积为对角线滚动。
+    #[test]
+    fn test_scroll_diagonal_two_separate_events_accumulate() {
+        let mut editor = Editor::new();
+        editor.editor_state.canvas.size_x = 2000.0;
+        editor.editor_state.canvas.size_y = 1000.0;
+        // 制造足够内容使 max_scroll 双轴均 > 0
+        editor.editor_state.view.total_ticks = 100000;
+        {
+            let state = &mut editor.editor_state;
+            let total = state.view.total_ticks;
+            lumino_editor_state::editor_state::viewport::Viewport::new(
+                &mut state.view,
+                &mut state.max_scroll,
+            )
+            .update_max_scroll(total);
+        }
+
+        // 第一条事件：纯水平（模拟 WM_MOUSEHWHEEL）
+        editor.handle_scrolled(-100.0, 0.0);
+        let after_x = editor.editor_state.view.smooth_scroll.target_x;
+        let after_y = editor.editor_state.view.smooth_scroll.target_y;
+        assert!(after_x > 0.0, "水平事件后 target_x 应增大，实际={after_x}");
+        assert_eq!(after_y, 0.0, "水平事件不应改变 target_y");
+
+        // 第二条事件：纯垂直（模拟 WM_MOUSEWHEEL），应叠加而非覆盖
+        editor.handle_scrolled(0.0, -50.0);
+        let final_x = editor.editor_state.view.smooth_scroll.target_x;
+        let final_y = editor.editor_state.view.smooth_scroll.target_y;
+        assert!(
+            final_x > 0.0,
+            "垂直事件后 target_x 应保留水平事件的累积值，实际={final_x}"
+        );
+        assert!(final_y > 0.0, "垂直事件后 target_y 应增大，实际={final_y}");
+        // 双轴均非零 → 斜向滚动生效
+        assert!(final_x > after_x - 1.0, "target_x 不应被垂直事件回退");
+    }
 }
