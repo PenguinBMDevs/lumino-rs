@@ -70,6 +70,9 @@ impl<'a> Viewport<'a> {
     }
 
     /// 设置垂直缩放
+    ///
+    /// `fixed_ratio` 语义：鼠标在**内容区**（canvas 高度减去标尺区）内的锚点比例，
+    /// 0.0 贴内容区顶部、1.0 贴底部（与 `set_zoom_x` 的 `width - keyboard_width` 对齐）。
     pub fn set_zoom_y(
         &mut self,
         zoom_y: f32,
@@ -81,12 +84,11 @@ impl<'a> Viewport<'a> {
         let old = self.view.zoom_y;
         self.view.zoom_y = zoom_y.clamp(min_zoom, max_zoom);
         let ratio = self.view.zoom_y / old;
-        let viewport_height = canvas_height.max(0.0);
+        let viewport_height = (canvas_height - self.view.ruler_height).max(0.0);
         let fixed_point = self.view.scroll_y + viewport_height * fixed_ratio;
         self.view.scroll_y = fixed_point * ratio - viewport_height * fixed_ratio;
         self.update_max_scroll(self.view.total_ticks);
-        let viewport_height2 = (canvas_height - self.view.ruler_height).max(0.0);
-        let max_scroll = (self.max_scroll.1 - viewport_height2).max(0.0);
+        let max_scroll = (self.max_scroll.1 - viewport_height).max(0.0);
         self.view.scroll_y = self.view.scroll_y.max(0.0).min(max_scroll);
     }
 
@@ -169,5 +171,65 @@ mod tests {
         let mut vp = Viewport::new(&mut view, &mut max_scroll);
         vp.set_visible_key_count(10, 20, 100, 800.0);
         assert_eq!(vp.view.visible_key_count, 20);
+    }
+
+    /// 缩放以鼠标为中心：X 轴缩放前后，鼠标指针下的 tick 保持不动
+    /// （对应 yinhe 的 `zoom_around_x_preserves_tick` 不变式）
+    #[test]
+    fn test_set_zoom_x_keeps_tick_under_pointer() {
+        let (mut view, mut max_scroll) = setup_viewport();
+        view.scroll_x = 200.0;
+        view.zoom_x = 2.0;
+        let kbw = 120.0;
+        let canvas_w = 800.0;
+        let viewport_w = canvas_w - kbw;
+
+        // 指针位于内容区 40% 处，记下缩放前的 tick
+        let pointer_x = kbw + viewport_w * 0.4;
+        let zoom_before = view.zoom_x;
+        let tick_before = view.x_to_tick(pointer_x);
+        // 注意：x_to_tick 依赖 x 为画布局部坐标，这里 pointer_x 即局部坐标（无 bounds 偏移）
+
+        {
+            let total_ticks = view.total_ticks;
+            let mut vp = Viewport::new(&mut view, &mut max_scroll);
+            vp.update_max_scroll(total_ticks);
+            vp.set_zoom_x(zoom_before * 1.5, 0.4, kbw, canvas_w, 0.001, 10.0);
+        }
+        let tick_after = view.x_to_tick(pointer_x);
+        assert!(
+            (tick_before - tick_after).abs() < 1e-3,
+            "X 轴缩放后指针下的 tick 漂移: before={tick_before}, after={tick_after}"
+        );
+    }
+
+    /// 缩放以鼠标为中心：Y 轴缩放前后，鼠标指针下的 key 保持不动
+    #[test]
+    fn test_set_zoom_y_keeps_key_under_pointer() {
+        let (mut view, mut max_scroll) = setup_viewport();
+        // 选择远离边界的状态：内容高度远超视口（128 键 × 30 zoom），
+        // 避免缩放后的 scroll clamp 到 [0, max] 端点干扰锚点断言
+        view.scroll_y = 1000.0;
+        view.zoom_y = 30.0;
+        let canvas_h = 600.0;
+        let ruler_h = view.ruler_height;
+        let viewport_h = canvas_h - ruler_h;
+
+        // 指针位于内容区 60% 处，记下缩放前的 key
+        let pointer_y = ruler_h + viewport_h * 0.6;
+        let zoom_before = view.zoom_y;
+        let key_before = view.y_to_key(pointer_y);
+
+        {
+            let total_ticks = view.total_ticks;
+            let mut vp = Viewport::new(&mut view, &mut max_scroll);
+            vp.update_max_scroll(total_ticks);
+            vp.set_zoom_y(zoom_before * 0.7, 0.6, canvas_h, 0.5, 100.0);
+        }
+        let key_after = view.y_to_key(pointer_y);
+        assert!(
+            (key_before as i32 - key_after as i32).abs() <= 1,
+            "Y 轴缩放后指针下的 key 漂移: before={key_before}, after={key_after}"
+        );
     }
 }

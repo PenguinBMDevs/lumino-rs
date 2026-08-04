@@ -36,6 +36,7 @@ impl Editor {
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 selected_bounds: Cell::new(None),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
+                ctrl_pressed: false,
             }
         })
     }
@@ -115,6 +116,19 @@ impl Editor {
     pub fn remove_remote_cursor(&mut self, user_id: &str) {
         self.remote_cursors.remove(user_id);
         self.grid_cache.clear();
+    }
+
+    /// 记录 Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动）
+    ///
+    /// ruler/键盘区 Ctrl+滚轮缩放依赖此字段，走 host 层可靠通道，
+    /// 避免 canvas 内 `ModifiersChanged` 事件因焦点问题不送达。
+    pub fn set_ctrl_pressed(&mut self, pressed: bool) {
+        self.ctrl_pressed = pressed;
+    }
+
+    /// 当前 Ctrl 键是否按下（可靠通道）
+    pub fn ctrl_pressed(&self) -> bool {
+        self.ctrl_pressed
     }
 
     /// 获取并清空待处理的音频动作
@@ -375,5 +389,26 @@ impl Editor {
 impl Default for Editor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_ctrl_pressed_defaults_false() {
+        // 可靠通道（窗口级 CtrlKeyChanged）默认未按下，与 canvas 内状态互相兜底
+        let editor = Editor::new();
+        assert!(!editor.ctrl_pressed());
+    }
+
+    #[test]
+    fn test_ctrl_pressed_set_and_get() {
+        let mut editor = Editor::new();
+        editor.set_ctrl_pressed(true);
+        assert!(editor.ctrl_pressed());
+        editor.set_ctrl_pressed(false);
+        assert!(!editor.ctrl_pressed());
     }
 }

@@ -330,4 +330,81 @@ mod tests {
         );
         assert!(action.is_none());
     }
+
+    /// 互斥隔离：标尺区 Ctrl+滚轮只产生缩放，绝不产生平移（Scrolled）
+    #[test]
+    fn test_ruler_wheel_ctrl_zooms_only() {
+        let editor = Editor::new();
+        let grid = PianoRollGrid::new(&editor);
+        let action = grid
+            .handle_ruler_wheel_scroll(
+                &ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                true,
+                Point::new(430.0, 20.0),
+            )
+            .expect("Ctrl+滚轮应产生动作");
+        // 展开 Action 检查是否只有 ZoomXChanged（缩放与平移互斥，二者不会同时发出）
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ZoomXChanged { zoom, fixed_ratio }) => {
+                assert!(zoom > 0.0);
+                assert!((0.0..=1.0).contains(&fixed_ratio));
+            }
+            other => panic!("Ctrl+滚轮标尺区应只发 ZoomXChanged，实际为: {other:?}"),
+        }
+    }
+
+    /// 互斥隔离：标尺区无 Ctrl 滚轮只产生水平平移，绝不产生缩放
+    #[test]
+    fn test_ruler_wheel_without_ctrl_pans_only() {
+        let editor = Editor::new();
+        let grid = PianoRollGrid::new(&editor);
+        let action = grid
+            .handle_ruler_wheel_scroll(
+                &ScrollDelta::Lines { x: 0.0, y: 1.0 },
+                false,
+                Point::new(430.0, 20.0),
+            )
+            .expect("普通滚轮应产生动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
+                delta_x,
+                delta_y,
+            })) => {
+                // 向上滚 → 视图右移（delta_x > 0），且无垂直分量
+                assert!(delta_x > 0.0);
+                assert_eq!(delta_y, 0.0);
+            }
+            other => panic!("无 Ctrl 标尺区应只发 Scrolled，实际为: {other:?}"),
+        }
+    }
+
+    /// 互斥隔离：Ctrl 状态下普通平移分支绝不生效——
+    /// Ctrl+滚轮与普通滚轮不可叠加，同一事件至多产生一种动作
+    #[test]
+    fn test_ruler_wheel_actions_are_exclusive() {
+        let editor = Editor::new();
+        let grid = PianoRollGrid::new(&editor);
+        // 同一个滚轮事件，在 Ctrl 按下/松开两种状态下产生且只产生一种动作
+        let ctrl_action = grid.handle_ruler_wheel_scroll(
+            &ScrollDelta::Lines { x: 0.0, y: -1.0 },
+            true,
+            Point::new(430.0, 20.0),
+        );
+        let plain_action = grid.handle_ruler_wheel_scroll(
+            &ScrollDelta::Lines { x: 0.0, y: -1.0 },
+            false,
+            Point::new(430.0, 20.0),
+        );
+        let ctrl_msg = ctrl_action.expect("Ctrl+滚轮应产生动作").into_inner().0;
+        let plain_msg = plain_action.expect("普通滚轮应产生动作").into_inner().0;
+        assert!(matches!(ctrl_msg, Some(Message::ZoomXChanged { .. })));
+        assert!(matches!(
+            plain_msg,
+            Some(Message::EditorAction(
+                lumino_ui_core::message::EditorAction::Scrolled { .. }
+            ))
+        ));
+    }
 }

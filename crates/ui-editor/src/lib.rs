@@ -158,6 +158,12 @@ pub struct Editor {
 
     /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,
+
+    /// Ctrl 键按下状态（窗口级 `CtrlKeyChanged` 消息驱动，可靠通道）
+    ///
+    /// 与 `GridInteractionState.control_pressed`（iced canvas 内事件，可能因焦点
+    /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
+    ctrl_pressed: bool,
 }
 
 /// 框选框弹簧动画状态
