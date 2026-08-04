@@ -6,6 +6,11 @@
 const PREVIEW_FLAG: u32 = 1u;
 const PREVIEW_ALPHA: f32 = 0.7;
 
+/// 主音轨音符边框宽度（像素）
+const BORDER_WIDTH: f32 = 4.0;
+/// 边框颜色加深因子（RGB 乘以此值得到边框色）
+const BORDER_DARKEN_FACTOR: f32 = 0.65;
+
 struct CameraUniform {
     scroll: vec2<f32>,
     zoom: vec2<f32>,
@@ -85,11 +90,33 @@ fn vs_main(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // 非预览音符：直接返回原始颜色（保持向后兼容）
-    if (input.flags & PREVIEW_FLAG) == 0u {
-        return input.color;
+    // 预览音符：透明度70%的普通音符样式，不加边框
+    if (input.flags & PREVIEW_FLAG) != 0u {
+        return vec4<f32>(input.color.rgb, input.color.a * PREVIEW_ALPHA);
     }
 
-    // 预览音符：透明度70%的普通音符样式
-    return vec4<f32>(input.color.rgb, input.color.a * PREVIEW_ALPHA);
+    // 非预览音符：绘制深色边框
+    let pixel_pos = input.position.xy;
+    let note_min = input.screen_origin;
+    let note_max = input.screen_origin + input.screen_size;
+
+    // 计算到最近边缘的距离
+    let dist_left = pixel_pos.x - note_min.x;
+    let dist_right = note_max.x - pixel_pos.x;
+    let dist_top = pixel_pos.y - note_min.y;
+    let dist_bottom = note_max.y - pixel_pos.y;
+    let min_dist = min(min(dist_left, dist_right), min(dist_top, dist_bottom));
+
+    // 边框宽度不超过音符最小尺寸的一半（防止小音符全变边框）
+    let half_min_dim = min(input.screen_size.x, input.screen_size.y) * 0.5;
+    let effective_border = min(BORDER_WIDTH, half_min_dim);
+
+    if (min_dist < effective_border) {
+        // 边框像素：使用比填充色更深的颜色
+        let border_rgb = input.color.rgb * BORDER_DARKEN_FACTOR;
+        return vec4<f32>(border_rgb, input.color.a);
+    }
+
+    // 内部像素：原始颜色
+    return input.color;
 }
