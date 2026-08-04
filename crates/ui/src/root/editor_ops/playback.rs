@@ -152,10 +152,13 @@ impl Root {
     }
 
     /// 将编辑器的 tempo_points 同步到播放管理器
+    ///
+    /// 播放管理器是懒创建的（首次播放时 `init_playback_manager`）。当管理器尚未
+    /// 初始化时，必须与 `load_tempo_changes` 保持一致——把变更缓存到
+    /// `pending_tempo_changes`，由首次播放时消费。否则在"空白工程先设置 BPM 再
+    /// 从头播放"的操作序列下，tempo 会被静默丢弃，播放回落默认 120 BPM，且后续
+    /// 编辑（拖拽多个控制点）全部失效——表现为"只识别第一个 BPM / 首个为默认值"。
     pub fn update_playback_bpm(&mut self) {
-        let Some(manager) = &mut self.playback.manager else {
-            return;
-        };
         let changes: Vec<crate::playback::TempoChange> = self
             .editor
             .editor_state
@@ -164,7 +167,12 @@ impl Root {
             .iter()
             .map(|tp| crate::playback::TempoChange::from_bpm(tp.tick, tp.bpm))
             .collect();
-        manager.update_tempo_changes(changes);
+
+        if let Some(manager) = &mut self.playback.manager {
+            manager.update_tempo_changes(changes);
+        } else {
+            self.playback.pending_tempo_changes = Some(changes);
+        }
     }
 
     /// 重置播放管理器（加载新文件时调用）
