@@ -222,12 +222,14 @@ impl Root {
     }
 
     /// 更新播放状态（应在主循环中定期调用）
+    ///
+    /// 通过无阻塞播放回调（`try_recv_frame`）从播放线程拉取最新帧，
+    /// **彻底不再 `lock(playback)`**，消除 UI 帧渲染与播放线程的锁争用。
     pub fn update_playback(&mut self) -> Option<f32> {
-        if let Some(manager) = &mut self.playback.manager {
-            if manager.state() != crate::playback::PlaybackState::Playing {
-                return None;
-            }
-            Some(manager.current_tick())
+        if let Some(manager) = &self.playback.manager {
+            // 非阻塞拉取最新播放帧：播放线程每帧 try_send，UI 每帧 try_recv。
+            // 返回 None 表示无新帧（未播放或线程尚未推送），UI 保持原位置。
+            manager.try_recv_frame().map(|frame| frame.tick)
         } else {
             None
         }
@@ -295,11 +297,17 @@ impl Root {
     }
 
     /// 获取播放状态
+    ///
+    /// 通过 `last_frame` 缓存非阻塞读取，彻底不再 `lock(playback)`，
+    /// 消除 UI 帧渲染与播放线程的锁争用。
     pub fn is_playing(&self) -> bool {
         self.playback
             .manager
             .as_ref()
-            .map(|m| m.state() == crate::playback::PlaybackState::Playing)
+            .map(|m| {
+                m.last_frame()
+                    .map_or(false, |f| f.state == crate::playback::PlaybackState::Playing)
+            })
             .unwrap_or_default()
     }
 

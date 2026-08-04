@@ -4,10 +4,34 @@
 
 use crate::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use crate::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
+use crossbeam_channel::{bounded, Receiver, Sender};
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
 use std::thread;
 use std::time::Duration;
+
+/// 播放回调帧：播放线程每帧通过无锁 channel 推送给 UI 的实时播放快照。
+///
+/// 设计要点（无阻塞音频实时播放回调）：
+/// - 由播放线程在 `update()` 后构造，通过 `try_send` 非阻塞投递，**绝不阻塞播放线程**。
+/// - UI 线程每帧 `try_recv()` 非阻塞拉取最新帧，**彻底不再 `lock(playback)`**，
+///   消除 UI 帧渲染与播放线程对 `Playback` 锁的争用（原 `current_tick()` 每帧抢锁导致卡顿）。
+/// - channel 容量有限（环形缓冲），满则丢弃最旧帧，保证 UI 始终拿到最新进度。
+#[derive(Debug, Clone, Copy)]
+pub struct PlaybackFrame {
+    /// 当前播放位置（tick）
+    pub tick: f32,
+    /// 当前播放状态
+    pub state: PlaybackState,
+    /// 当前 BPM（随 tempo 变化实时更新）
+    pub bpm: f64,
+}
+
+/// 播放回调类型：在播放线程中调用，参数为实时播放帧快照。
+///
+/// 回调体在播放线程执行，必须**轻量且非阻塞**（仅做数据拷贝/发 channel），
+/// 严禁执行 UI 渲染、文件 I/O 或任何可能长时间运行的操作。
+pub type PlaybackCallback = Box<dyn FnMut(PlaybackFrame) + Send>;
 
 enum Command {
     SetMidiOutput(Box<dyn lumino_midi_io::OutputConnection>),
@@ -34,6 +58,12 @@ pub struct PlaybackManager {
     sender: mpsc::Sender<Command>,
     /// 播放器引用（共享）
     playback: Arc<Mutex<Playback>>,
+    /// 播放回调帧接收端（UI 线程持有，非阻塞 try_recv）
+    frame_rx: Receiver<PlaybackFrame>,
+    /// 最新播放帧缓存（播放线程每帧写，UI 非阻塞读，零消费冲突）
+    last_frame: Arc<Mutex<Option<PlaybackFrame>>>,
+    /// 用户注册的播放回调（在播放线程中调用，必须轻量非阻塞）
+    callback: Arc<Mutex<Option<PlaybackCallback>>>,
     /// 线程句柄
     thread_handle: Option<thread::JoinHandle<()>>,
 }
@@ -46,48 +76,88 @@ impl PlaybackManager {
 
         let (sender, receiver) = mpsc::channel::<Command>();
 
-        let thread_handle = thread::spawn(move || {
-            let mut engine = engine;
-            let mut midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>> = None;
+        // 播放回调帧 channel：容量 8 的环形缓冲，满则丢最旧帧。
+        // 播放线程 try_send 非阻塞投递，UI 线程 try_recv 非阻塞拉取。
+        let (frame_tx, frame_rx) = bounded::<PlaybackFrame>(8);
+        let last_frame = Arc::new(Mutex::new(None::<PlaybackFrame>));
+        let callback = Arc::new(Mutex::new(None::<PlaybackCallback>));
 
-            loop {
-                // 处理所有挂起的命令
-                while let Ok(cmd) = receiver.try_recv() {
-                    if matches!(cmd, Command::Quit) {
-                        return;
+        let thread_handle = thread::spawn({
+            let frame_tx = frame_tx;
+            let last_frame = Arc::clone(&last_frame);
+            let callback = Arc::clone(&callback);
+            move || {
+                let mut engine = engine;
+                let mut midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>> = None;
+
+                loop {
+                    // 处理所有挂起的命令
+                    while let Ok(cmd) = receiver.try_recv() {
+                        if matches!(cmd, Command::Quit) {
+                            return;
+                        }
+                        Self::handle_command(
+                            cmd,
+                            &mut engine,
+                            &mut midi_output,
+                            &frame_tx,
+                            &last_frame,
+                        );
                     }
-                    Self::handle_command(cmd, &mut engine, &mut midi_output);
-                }
 
-                // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
-                // 空闲时阻塞等待命令，避免空转烧满一个核。
-                if engine.is_playing() {
-                    // 更新引擎并发送 MIDI 消息
-                    let messages = engine.update();
-                    Self::flush_midi_messages(messages, &mut midi_output);
+                    // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
+                    // 空闲时阻塞等待命令，避免空转烧满一个核。
+                    if engine.is_playing() {
+                        // 更新引擎并发送 MIDI 消息
+                        let messages = engine.update();
+                        Self::flush_midi_messages(messages, &mut midi_output);
 
-                    // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
-                    // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
-                    // 导致事件突发（15ms 的音符被一次性发送）。
-                    // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
-                    let target = std::time::Instant::now() + Duration::from_millis(1);
-                    thread::sleep(Duration::from_micros(700));
-                    while std::time::Instant::now() < target {
-                        std::hint::spin_loop();
-                    }
-                } else {
-                    // 空闲分支：阻塞等待命令（50ms 超时兜底，处理 Seek/Pause 后残留引擎状态）
-                    match receiver.recv_timeout(Duration::from_millis(50)) {
-                        Ok(cmd) => {
-                            if matches!(cmd, Command::Quit) {
-                                return;
+                        // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
+                        // 同时触发用户注册的回调（轻量非阻塞）。
+                        // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
+                        let bpm = engine
+                            .lock_playback()
+                            .map_or(120.0, |p| p.current_bpm());
+                        let frame = PlaybackFrame {
+                            tick: engine.current_tick(),
+                            state: engine.state(),
+                            bpm,
+                        };
+                        let _ = frame_tx.try_send(frame);
+                        *last_frame.lock() = Some(frame);
+                        if let Some(cb) = callback.lock().as_mut() {
+                            cb(frame);
+                        }
+
+                        // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
+                        // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，
+                        // 导致事件突发（15ms 的音符被一次性发送）。
+                        // 混合策略：sleep(700μs) + spin(300μs) 实现接近 1ms 的精度。
+                        let target = std::time::Instant::now() + Duration::from_millis(1);
+                        thread::sleep(Duration::from_micros(700));
+                        while std::time::Instant::now() < target {
+                            std::hint::spin_loop();
+                        }
+                    } else {
+                        // 空闲分支：阻塞等待命令（50ms 超时兜底，处理 Seek/Pause 后残留引擎状态）
+                        match receiver.recv_timeout(Duration::from_millis(50)) {
+                            Ok(cmd) => {
+                                if matches!(cmd, Command::Quit) {
+                                    return;
+                                }
+                                Self::handle_command(
+                                    cmd,
+                                    &mut engine,
+                                    &mut midi_output,
+                                    &frame_tx,
+                                    &last_frame,
+                                );
                             }
-                            Self::handle_command(cmd, &mut engine, &mut midi_output);
+                            Err(mpsc::RecvTimeoutError::Timeout) => {
+                                // 空闲心跳：清空可能残留的 MIDI 状态（如暂停后的 all_notes_off 已在命令中处理）
+                            }
+                            Err(mpsc::RecvTimeoutError::Disconnected) => return,
                         }
-                        Err(mpsc::RecvTimeoutError::Timeout) => {
-                            // 空闲心跳：清空可能残留的 MIDI 状态（如暂停后的 all_notes_off 已在命令中处理）
-                        }
-                        Err(mpsc::RecvTimeoutError::Disconnected) => return,
                     }
                 }
             }
@@ -96,6 +166,9 @@ impl PlaybackManager {
         Self {
             sender,
             playback,
+            frame_rx,
+            last_frame,
+            callback,
             thread_handle: Some(thread_handle),
         }
     }
@@ -103,10 +176,14 @@ impl PlaybackManager {
     /// 处理单个播放控制命令。
     ///
     /// 从 `new()` 的线程闭包中提取，按命令更新引擎状态和 MIDI 输出连接。
+    /// `frame_tx` / `last_frame` 用于在状态切换（Play/Pause/Stop）后主动推送一帧，
+    /// 保证 UI 能立即感知状态变化（无需等待下一播放循环迭代）。
     fn handle_command(
         cmd: Command,
         engine: &mut PlaybackEngine,
         midi_output: &mut Option<Box<dyn lumino_midi_io::OutputConnection>>,
+        frame_tx: &Sender<PlaybackFrame>,
+        last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
     ) {
         match cmd {
             Command::SetMidiOutput(output) => *midi_output = Some(output),
@@ -121,7 +198,10 @@ impl PlaybackManager {
             Command::SetVelocityFilterThreshold(threshold) => {
                 engine.set_velocity_filter_threshold(threshold);
             }
-            Command::Play => engine.play(),
+            Command::Play => {
+                engine.play();
+                Self::push_state_frame(engine, frame_tx, last_frame);
+            }
             Command::Pause => {
                 engine.pause();
                 if let Some(out) = midi_output {
@@ -130,6 +210,7 @@ impl PlaybackManager {
                     }
                     let _ = out.all_notes_off();
                 }
+                Self::push_state_frame(engine, frame_tx, last_frame);
             }
             Command::Stop => {
                 engine.stop();
@@ -137,6 +218,7 @@ impl PlaybackManager {
                     let _ = out.all_notes_off();
                     let _ = out.reset_control();
                 }
+                Self::push_state_frame(engine, frame_tx, last_frame);
             }
             Command::Seek(tick) => {
                 if let Some(out) = midi_output {
@@ -150,6 +232,25 @@ impl PlaybackManager {
             Command::ClearLoopRange => engine.clear_loop_range(),
             Command::Quit => {}
         }
+    }
+
+    /// 主动推送一帧状态快照（用于 Play/Pause/Stop 等状态切换后）。
+    ///
+    /// 状态切换后播放线程可能进入空闲分支（不再每 1ms 推帧），
+    /// 主动 try_send 一帧保证 UI 立即感知状态变化，绝不阻塞。
+    fn push_state_frame(
+        engine: &PlaybackEngine,
+        frame_tx: &Sender<PlaybackFrame>,
+        last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+    ) {
+        let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
+        let frame = PlaybackFrame {
+            tick: engine.current_tick(),
+            state: engine.state(),
+            bpm,
+        };
+        let _ = frame_tx.try_send(frame);
+        *last_frame.lock() = Some(frame);
     }
 
     /// 将引擎输出的 MIDI 消息发送到 MIDI 输出设备。
@@ -304,6 +405,37 @@ impl PlaybackManager {
     pub fn current_bpm(&self) -> f64 {
         self.lock_playback()
             .map_or(120.0, |playback| playback.current_bpm())
+    }
+
+    /// 注册播放回调（无阻塞音频实时播放回调）
+    ///
+    /// 回调在播放线程中调用，参数为实时播放帧快照（`PlaybackFrame`）。
+    /// 回调体必须**轻量且非阻塞**（仅做数据拷贝/发 channel），
+    /// 严禁执行 UI 渲染、文件 I/O 或任何可能长时间运行的操作。
+    ///
+    /// 重复调用会替换之前的回调。传入 `None` 清除回调。
+    pub fn set_playback_callback(&mut self, callback: Option<PlaybackCallback>) {
+        *self.callback.lock() = callback;
+    }
+
+    /// 非阻塞拉取最新播放帧（UI 线程调用）
+    ///
+    /// 通过无锁 channel `try_recv` 获取播放线程推送的最新 `PlaybackFrame`，
+    /// **绝不阻塞 UI 线程**。channel 为环形缓冲，返回的是最近一次推送的帧
+    /// （丢弃中间帧），保证 UI 始终拿到最新进度。
+    ///
+    /// 返回 `None` 表示当前无新帧（播放线程未运行或尚未产生帧）。
+    pub fn try_recv_frame(&self) -> Option<PlaybackFrame> {
+        self.frame_rx.try_recv().ok()
+    }
+
+    /// 非阻塞读取最新播放帧快照（UI 线程调用，不消费）
+    ///
+    /// 从 `last_frame` 缓存读取，与 `try_recv_frame` 互不干扰（后者消费 channel，
+    /// 前者只读缓存）。用于 `is_playing()` 等需要反复查询状态、不希望吞掉帧的场景。
+    /// **绝不阻塞 UI 线程**，零锁争用（parking_lot 读锁极轻）。
+    pub fn last_frame(&self) -> Option<PlaybackFrame> {
+        *self.last_frame.lock()
     }
 
     /// 设置循环
