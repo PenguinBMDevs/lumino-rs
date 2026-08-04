@@ -7,6 +7,7 @@ use iced_widget::canvas;
 
 use crate::velocity::EditMode;
 use lumino_ui_core::Message;
+use lumino_ui_core::constants::editor::SCROLL_LINES_SCALE;
 use lumino_ui_core::message::VelocityAction;
 
 use super::super::super::super::{
@@ -204,31 +205,40 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         &self,
         state: &VelocityCanvasState,
         delta: mouse::ScrollDelta,
-        bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
-        // Velocity/Tempo 模式：滚轮无操作
-        if self.edit_mode == EditMode::Velocity || self.edit_mode == EditMode::Tempo {
-            return None;
-        }
-
-        let (_view, _target, max_val) = self.automation_view_params(bounds_size)?;
-        let delta_y = match delta {
-            mouse::ScrollDelta::Lines { y, .. } => y,
-            mouse::ScrollDelta::Pixels { y, .. } => y / 50.0,
+        // 双轴解包：
+        // - 垂直分量沿用既有换算（Pixels ÷50 → 滚轮档位）
+        // - 水平分量与钢琴卷帘网格一致（Lines ×SCROLL_LINES_SCALE，Pixels 原样）
+        let (delta_x, delta_y) = match delta {
+            mouse::ScrollDelta::Lines { x, y } => (x * SCROLL_LINES_SCALE, y),
+            mouse::ScrollDelta::Pixels { x, y } => (x, y / 50.0),
         };
-        if delta_y == 0.0 {
-            return None;
-        }
 
+        // Ctrl+滚轮：自动化垂直缩放（仅 CC/Bend 模式；Velocity/Tempo 保持无操作）。
+        // 与钢琴卷帘标尺区一致：Ctrl 状态下滚轮只缩放、不平移。
         if state.modifiers.control() {
+            if self.edit_mode == EditMode::Velocity || self.edit_mode == EditMode::Tempo {
+                return None;
+            }
+            if delta_y == 0.0 {
+                return None;
+            }
             let zoom_delta = 1.0 + delta_y * 0.1;
             return Some(publish_velocity(VelocityAction::AutomationZoom(zoom_delta)));
         }
 
-        let scroll_amount = -delta_y * max_val * 0.05;
-        Some(publish_velocity(VelocityAction::AutomationScroll(
-            scroll_amount,
-        )))
+        // 双轴皆无滚动：无操作
+        if delta_x == 0.0 && delta_y == 0.0 {
+            return None;
+        }
+
+        // 双向滚动：单条消息携带双轴分量，由 VelocityHandler 分派——
+        // 水平 → 时间轴滚动（EditorAction::Scrolled，与钢琴卷帘共享自然滚动约定）
+        // 垂直 → 自动化曲线滚动（仅 CC/Bend 模式生效）
+        Some(publish_velocity(VelocityAction::WheelScrolled {
+            delta_x,
+            delta_y,
+        }))
     }
 
     pub(crate) fn handle_modifiers_changed(

@@ -94,3 +94,5 @@ daemon.pid
 
 # mimocode
 .mimocode/
+
+.agents/

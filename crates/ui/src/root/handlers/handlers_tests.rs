@@ -217,3 +217,67 @@ fn test_piano_roll_context_menu_item_click_closes_and_dispatches() {
     assert!(!root.editor.context_menu.open);
     assert_eq!(root.editor.editor_state.interaction.selected_notes.len(), 1);
 }
+
+// ===== 力度面板双向滚轮测试 =====
+
+use crate::editor::velocity::EditMode;
+use crate::message::VelocityAction;
+
+/// 双向滚轮（对角线）：水平分量滚动时间轴，垂直分量滚动自动化曲线，同时生效
+#[test]
+fn test_velocity_wheel_scrolled_bidirectional() {
+    let mut root = create_root();
+    // 水平滚动需要横向内容空间（与网格测试一致）
+    root.editor.editor_state.canvas.size_x = 1000.0;
+    // 垂直滚动需要 zoom > 1 才有滚动余量（默认 zoom=1.0 时可见范围=满量程，会被 clamp 到 0）
+    root.editor.velocity_panel.value_zoom = 2.0;
+    root.editor.velocity_panel.edit_mode = EditMode::Cc(1);
+
+    let before_x = root.editor.editor_state.view.smooth_scroll.target_x;
+    VelocityHandler::new().handle(
+        &mut root,
+        Message::Velocity(VelocityAction::WheelScrolled {
+            delta_x: -100.0,
+            delta_y: -1.0, // 上滑 → 自动化曲线 value_scroll 增大
+        }),
+    );
+
+    // 水平：左滑 → scroll_x 增大（内容跟随手指）
+    assert!(
+        root.editor.editor_state.view.smooth_scroll.target_x > before_x,
+        "水平分量应滚动时间轴，target_x={}",
+        root.editor.editor_state.view.smooth_scroll.target_x
+    );
+    // 垂直：自动化曲线滚动（CC 模式生效）
+    assert!(
+        root.editor.velocity_panel.value_scroll > 0.0,
+        "垂直分量应滚动自动化曲线，value_scroll={}",
+        root.editor.velocity_panel.value_scroll
+    );
+}
+
+/// 双向滚轮：Velocity 模式垂直分量不生效（保持无操作语义），水平分量仍生效
+#[test]
+fn test_velocity_wheel_scrolled_vertical_ignored_in_velocity_mode() {
+    let mut root = create_root();
+    root.editor.editor_state.canvas.size_x = 1000.0;
+    root.editor.velocity_panel.edit_mode = EditMode::Velocity;
+
+    let before_x = root.editor.editor_state.view.smooth_scroll.target_x;
+    VelocityHandler::new().handle(
+        &mut root,
+        Message::Velocity(VelocityAction::WheelScrolled {
+            delta_x: -100.0,
+            delta_y: 1.0,
+        }),
+    );
+
+    assert_eq!(
+        root.editor.velocity_panel.value_scroll, 0.0,
+        "Velocity 模式垂直分量应被忽略"
+    );
+    assert!(
+        root.editor.editor_state.view.smooth_scroll.target_x > before_x,
+        "水平分量仍应滚动时间轴"
+    );
+}

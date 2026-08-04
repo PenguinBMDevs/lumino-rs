@@ -4,7 +4,7 @@
 
 use crate::editor::editor_state::TempoPoint;
 use crate::editor::velocity::EditMode;
-use crate::message::{Message, VelocityAction};
+use crate::message::{EditorAction, Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 
@@ -156,13 +156,23 @@ impl VelocityHandler {
                 tracing::debug!("自动化面板: 垂直缩放 {}", panel.value_zoom);
                 return;
             }
-            VA::AutomationScroll(amount) => {
-                let panel = &mut root.editor.velocity_panel;
-                let max_val = Self::automation_max_value(panel.edit_mode);
-                if let Some(max_val) = max_val {
-                    panel.value_scroll += amount;
-                    panel.clamp_value_scroll(max_val);
-                    tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
+            VA::WheelScrolled { delta_x, delta_y } => {
+                // 水平分量：时间轴滚动（与钢琴卷帘网格一致的自然滚动；支持双向同时滚动）
+                if delta_x != 0.0 {
+                    root.handle_editor_action(EditorAction::Scrolled {
+                        delta_x,
+                        delta_y: 0.0,
+                    });
+                }
+                // 垂直分量：自动化曲线滚动（仅 CC/Bend 模式生效；Velocity/Tempo 保持无操作）
+                if delta_y != 0.0 {
+                    let panel = &mut root.editor.velocity_panel;
+                    if let Some(max_val) = Self::automation_max_value(panel.edit_mode) {
+                        let amount = -delta_y * max_val * 0.05;
+                        panel.value_scroll += amount;
+                        panel.clamp_value_scroll(max_val);
+                        tracing::debug!("自动化面板: 垂直滚动 {}", panel.value_scroll);
+                    }
                 }
                 return;
             }

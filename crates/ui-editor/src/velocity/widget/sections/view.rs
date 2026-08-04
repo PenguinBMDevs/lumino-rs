@@ -54,7 +54,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 self.handle_button_released(state)
             }
             canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                self.handle_wheel_scrolled(state, *delta, bounds_size)
+                self.handle_wheel_scrolled(state, *delta)
             }
             canvas::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {
                 Self::handle_modifiers_changed(state, *modifiers);
