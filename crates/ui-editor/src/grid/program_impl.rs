@@ -72,6 +72,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             }
             Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
                 state.shift_pressed = modifiers.shift();
+                state.control_pressed = modifiers.control();
             }
             Event::Mouse(mouse::Event::CursorMoved { position }) => {
                 let local_pos = iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
@@ -119,6 +120,23 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    let view = &self.editor.editor_state.view;
+                    // 标尺区域（顶部小节号栏）：Ctrl+滚轮缩放 X 轴，普通滚轮水平平移
+                    if local_pos.y < view.ruler_height {
+                        return self.handle_ruler_wheel_scroll(
+                            delta,
+                            state.control_pressed,
+                            local_pos,
+                        );
+                    }
+                    // 键盘区域（左侧琴键栏）：Ctrl+滚轮缩放 Y 轴
+                    if local_pos.x < view.keyboard_width {
+                        return self.handle_keyboard_wheel_scroll(
+                            delta,
+                            state.control_pressed,
+                            local_pos,
+                        );
+                    }
                     if self.editor.is_inside_canvas(local_pos) {
                         return self.handle_wheel_scroll(delta, state.shift_pressed);
                     }

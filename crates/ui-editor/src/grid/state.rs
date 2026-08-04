@@ -13,6 +13,8 @@ pub struct GridInteractionState {
     pub last_click_pos: Option<Point>,
     /// Shift 键是否按下
     pub shift_pressed: bool,
+    /// Ctrl 键是否按下（用于滚轮缩放快捷操作）
+    pub control_pressed: bool,
     /// 循环区域是否正在拖拽（同步标记，无需等消息处理）
     pub is_loop_dragging: bool,
     /// 演奏指示线是否正在被拖拽
@@ -26,6 +28,7 @@ impl Default for GridInteractionState {
             last_click_time: std::time::Instant::now(),
             last_click_pos: None,
             shift_pressed: false,
+            control_pressed: false,
             is_loop_dragging: false,
             is_dragging_indicator: false,
         }
