@@ -123,10 +123,11 @@ impl<'a> PianoRollGrid<'a> {
 
         // Shift+滚轮：将垂直滚动转换为水平滚动
         // 部分平台已自动转换（delta_x 非零），未转换的平台需要手动处理
-        // 注意取反：handle_scrolled 中 X 轴是 scroll_x + delta_x（直接加），
-        // Y 轴是 scroll_y - delta_y（取反减），所以垂直→水平映射时必须取反符号。
+        // 注意：handle_scrolled 中 X/Y 两轴均为 scroll - delta（取反累加），
+        // 因此垂直增量直接平移到水平轴即可保持语义一致：
+        // 向下滚（delta_y < 0）→ delta_x < 0 → scroll_x 增大（视图右移）。
         if shift_pressed && delta_x.abs() < f32::EPSILON {
-            delta_x = -delta_y;
+            delta_x = delta_y;
             delta_y = 0.0;
         }
 
@@ -166,6 +167,8 @@ impl<'a> PianoRollGrid<'a> {
 
         // 普通滚轮：垂直增量映射为水平移动。向上滚（delta_y > 0）向右移动视图
         // （scroll_x 增大），向下滚（delta_y < 0）向左移动视图。
+        // 注意取反：handle_scrolled 中两轴均为 scroll - delta（取反累加），
+        // 发送 -delta_y 才能保持"向上滚 → 视图右移"的既有语义。
         let (_, delta_y) = Self::wheel_delta(delta);
         let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
         if delta_y.abs() < f32::EPSILON {
@@ -173,7 +176,7 @@ impl<'a> PianoRollGrid<'a> {
         }
         Some(canvas::Action::publish(Message::EditorAction(
             EditorAction::Scrolled {
-                delta_x: delta_y,
+                delta_x: -delta_y,
                 delta_y: 0.0,
             },
         )))
@@ -372,12 +375,46 @@ mod tests {
                 delta_x,
                 delta_y,
             })) => {
-                // 向上滚 → 视图右移（delta_x > 0），且无垂直分量
-                assert!(delta_x > 0.0);
+                // 向上滚 → 发送 delta_x < 0（handle_scrolled 取反后 scroll_x 增大、视图右移），且无垂直分量
+                assert!(delta_x < 0.0);
                 assert_eq!(delta_y, 0.0);
             }
             other => panic!("无 Ctrl 标尺区应只发 Scrolled，实际为: {other:?}"),
         }
+    }
+
+    /// 触控板水平滑动方向（回归测试：左滑/右滑应内容跟随手指）：
+    /// 1) 网格区收到触控板像素增量 → 原样透传 delta_x（左滑为负）；
+    /// 2) Editor 消费后 scroll_x 符号与 delta_x 相反（左滑 → scroll_x 增大）。
+    #[test]
+    fn test_grid_wheel_horizontal_swipe_follows_finger() {
+        let mut editor = Editor::new();
+        editor.editor_state.canvas.size_x = 1000.0;
+        editor.editor_state.canvas.size_y = 500.0;
+        let grid = PianoRollGrid::new(&editor);
+
+        // 触控板左滑（像素增量 x < 0）
+        let action = grid
+            .handle_wheel_scroll(&ScrollDelta::Pixels { x: -100.0, y: 0.0 }, false)
+            .expect("触控板水平滑动应产生动作");
+        let (message, _, _) = action.into_inner();
+        let (delta_x, delta_y) = match message {
+            Some(Message::EditorAction(lumino_ui_core::message::EditorAction::Scrolled {
+                delta_x,
+                delta_y,
+            })) => (delta_x, delta_y),
+            other => panic!("网格区滚轮应发 Scrolled，实际为: {other:?}"),
+        };
+        assert!(delta_x < 0.0, "左滑应产生负 delta_x，实际={delta_x}");
+        assert_eq!(delta_y, 0.0);
+
+        // Editor 消费后：scroll_x 增大（内容跟随手指左移，显示更后音符）
+        editor.handle_action(lumino_ui_core::message::EditorAction::Scrolled { delta_x, delta_y });
+        assert!(
+            editor.editor_state.view.smooth_scroll.target_x > 0.0,
+            "左滑后 scroll_x 应增大，实际 target_x={}",
+            editor.editor_state.view.smooth_scroll.target_x
+        );
     }
 
     /// 互斥隔离：Ctrl 状态下普通平移分支绝不生效——

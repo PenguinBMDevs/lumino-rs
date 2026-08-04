@@ -78,11 +78,16 @@ impl Editor {
         }
     }
 
-    /// 处理滚动事件（鼠标滚轮）
+    /// 处理滚动事件（鼠标滚轮 / 触控板）
     /// 使用平滑滚动动画，不直接设置位置。
     ///
-    /// 垂直方向反转：向上滚动（delta_y > 0）应减小 scroll_y（显示更高音区）。
-    /// 水平方向保持标准方向：正 delta_x 向右滚动（scroll_x 增大，显示更后音符）。
+    /// 两轴符号约定统一为"增量取反后累加"（内容跟随手指 / 自然滚动方向）：
+    /// - 垂直：向上滚（delta_y > 0）→ scroll_y 减小（显示更高音区）；
+    /// - 水平：向右滚（delta_x > 0）→ scroll_x 减小（显示更前音符），
+    ///   触控板左滑（delta_x < 0）→ scroll_x 增大，内容跟随手指左移。
+    ///
+    /// 注意：早期实现 X 轴为 `scroll_x + delta_x`（与 Y 轴符号相反），
+    /// 导致触控板水平滑动方向反向；现已与 Y 轴统一（力度面板同款约定）。
     /// 两个方向均钳制到有效范围，防止平滑滚动越界。
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
         let state = &mut self.editor_state;
@@ -90,7 +95,7 @@ impl Editor {
         let max_x =
             (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
         let max_y = (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
-        let target_x = (v.scroll_x + delta_x).clamp(0.0, max_x);
+        let target_x = (v.scroll_x - delta_x).clamp(0.0, max_x);
         let target_y = (v.scroll_y - delta_y).clamp(0.0, max_y);
         v.smooth_scroll.set_target(target_x, target_y);
     }

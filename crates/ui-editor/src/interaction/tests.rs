@@ -108,12 +108,15 @@ mod tests {
         let mut editor = Editor::new();
         editor.editor_state.canvas.size_x = 1000.0;
         editor.editor_state.canvas.size_y = 500.0;
+        // 先滚到中间位置，确保减量方向可观察
+        editor.editor_state.view.scroll_x = 500.0;
+        editor.editor_state.view.smooth_scroll.target_x = 500.0;
 
-        // 向右滚 → delta_x > 0 → scroll_x 应增大（显示更后音符）
+        // 向右滚 → delta_x > 0 → scroll_x 应减小（内容跟随手指向右，显示更前音符）
         editor.handle_scrolled(50.0, 0.0);
         assert!(
-            editor.editor_state.view.smooth_scroll.target_x > 0.0,
-            "向右滚动应增大 scroll_x，但 target_x={}",
+            editor.editor_state.view.smooth_scroll.target_x < 500.0,
+            "向右滚动应减小 scroll_x，但 target_x={} >= 500",
             editor.editor_state.view.smooth_scroll.target_x
         );
         assert!(editor.editor_state.view.smooth_scroll.active);
@@ -124,14 +127,15 @@ mod tests {
         let mut editor = Editor::new();
         editor.editor_state.canvas.size_x = 1000.0;
         editor.editor_state.canvas.size_y = 500.0;
-        // 先设到中间位置，确保减量方向可观察
+        // 先设到中间位置，确保增量方向可观察
         editor.editor_state.view.scroll_x = 500.0;
         editor.editor_state.view.smooth_scroll.target_x = 500.0;
 
+        // 向左滚 → delta_x < 0 → scroll_x 应增大（内容跟随手指向左，显示更后音符）
         editor.handle_scrolled(-100.0, 0.0);
         assert!(
-            editor.editor_state.view.smooth_scroll.target_x < 500.0,
-            "向左滚动应减小 scroll_x，但 target_x={} >= 500",
+            editor.editor_state.view.smooth_scroll.target_x > 500.0,
+            "向左滚动应增大 scroll_x，但 target_x={} <= 500",
             editor.editor_state.view.smooth_scroll.target_x
         );
     }
@@ -161,16 +165,16 @@ mod tests {
         editor.editor_state.canvas.size_x = 1000.0;
         editor.editor_state.canvas.size_y = 500.0;
 
-        // 向右滚很大 → target_x 应被上界钳制到 max_x
+        // 向左滚很大（delta_x < 0）→ target_x 应被上界钳制到 max_x
         // max_x = 76800 - (1000 - 120).max(0) = 76800 - 880 = 75920
-        editor.handle_scrolled(999999.0, 0.0);
+        editor.handle_scrolled(-999999.0, 0.0);
         let max_x = (DEFAULT_MAX_X
             - (editor.editor_state.canvas.size_x - editor.editor_state.view.keyboard_width)
                 .max(0.0))
         .max(0.0);
         assert_eq!(
             editor.editor_state.view.smooth_scroll.target_x, max_x,
-            "向右滚到极限应停在 max_x={}，实际 target_x={}",
+            "向左滚到极限应停在 max_x={}，实际 target_x={}",
             max_x, editor.editor_state.view.smooth_scroll.target_x
         );
     }
@@ -181,11 +185,11 @@ mod tests {
         editor.editor_state.canvas.size_x = 1000.0;
         editor.editor_state.canvas.size_y = 500.0;
 
-        // 从 scroll=0 向上滚 → target 不应低于 0
-        editor.handle_scrolled(-999999.0, 0.0);
+        // 从 scroll=0 向右滚（delta_x > 0）→ target 不应低于 0（下界钳制）
+        editor.handle_scrolled(999999.0, 0.0);
         assert_eq!(
             editor.editor_state.view.smooth_scroll.target_x, 0.0,
-            "向左滚到极限应停在 0，实际 target_x={}",
+            "向右滚到极限应停在 0，实际 target_x={}",
             editor.editor_state.view.smooth_scroll.target_x
         );
 
