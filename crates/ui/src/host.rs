@@ -82,27 +82,15 @@ pub struct Host {
     /// 高精度贴图：脏区域追踪（track_idx → 脏音符列表），用于临时贴图覆层
     pub(crate) hires_dirty_regions: std::collections::HashMap<u16, Vec<lumino_gfx::OnionSkinNote>>,
     /// 高精度贴图：每个脏音轨受影响的 time_group 集合
-    ///
-    /// 仅用于 `ShowHiResDirtyOverlay` 命令过滤覆层范围，避免覆盖未编辑的
-    /// time_group 导致原洋葱皮贴图被空白覆层盖住。
-    /// `RegenerateHiResTrack` 全量重生，不使用此字段。
+    ///（保留供后续按需重生成使用）
     pub(crate) hires_dirty_time_groups:
         std::collections::HashMap<u16, std::collections::HashSet<u32>>,
-    /// 高精度贴图：最后一次编辑时间（用于冷静期判断）
-    pub(crate) hires_last_edit: Option<Instant>,
     /// 高精度贴图：全量配置（重生成时直接使用副本）
     pub(crate) hires_config: Option<lumino_gfx::HiResConfig>,
     /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
     pub(crate) hires_midi_hash: Option<String>,
     /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
     pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
-    /// 高精度贴图：脏区域覆层是否已发送到渲染线程（防止每帧重复发送）
-    pub(crate) hires_overlay_sent: bool,
-    /// 高精度贴图：脏音轨被切换走的时间记录（track_idx → switch_away_time）
-    ///
-    /// 用于实现"切换走后才开始冷静期计时"的语义——只有用户切换走脏音轨后
-    /// 才开始计时，冷静期内用户切回该脏音轨则取消待处理的重生成。
-    pub(crate) hires_switch_away_times: std::collections::HashMap<u16, Instant>,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
 }

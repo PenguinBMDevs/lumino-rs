@@ -3,8 +3,9 @@ pub mod types;
 use crate::gpu_resource_tracker;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, FLAG_PREVIEW, NoteInstance, OnionBgTileRef,
-    RenderUniform, pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, OnionBgTileRef,
+    PREVIEW_BORDER_SENTINEL, RenderUniform, calculate_border_width, pack_key_color,
+    unpack_key_color,
 };
 
 // 子模块
@@ -76,16 +77,32 @@ mod tests {
     /// 测试 NoteInstance 创建和属性访问
     #[test]
     fn test_note_instance_creation() {
-        let instance = NoteInstance::new(100.0, 60.0, 200.0, [1.0, 0.5, 0.0, 0.8]);
+        // border_width = 4（wasabi 风格）
+        let instance = NoteInstance::new(100.0, 60.0, 200.0, [1.0, 0.5, 0.0, 0.8], 4);
 
-        assert_eq!(instance.position, [100.0, 60.0]);
-        assert_eq!(instance.size_x, 200.0);
-        // 颜色打包后解包验证
-        let unpacked = crate::note_renderer::types::unpack_color(instance.color_packed);
+        assert_eq!(instance.start_length, [100.0, 200.0]);
+        assert_eq!(instance.border_width, 4);
+        // key_color 解包验证：低 8 位 = key, 高 24 位 = RGB
+        let (key, unpacked) = crate::note_renderer::types::unpack_key_color(instance.key_color);
+        assert_eq!(key, 60);
         assert!((unpacked[0] - 1.0).abs() < 0.01);
         assert!((unpacked[1] - 0.5).abs() < 0.01);
         assert!(unpacked[2].abs() < 0.01);
-        assert!((unpacked[3] - 0.8).abs() < 0.01);
+        // alpha 在 key_color 编码中不存（与 wasabi 一致），恒为 1.0
+        assert!((unpacked[3] - 1.0).abs() < 0.01);
+    }
+
+    /// 测试 NoteInstance 字节大小 = 16（与 wasabi NoteVertex 一致）
+    #[test]
+    fn test_note_instance_size_16_bytes() {
+        assert_eq!(std::mem::size_of::<NoteInstance>(), 16);
+    }
+
+    /// 测试预览音符哨兵值
+    #[test]
+    fn test_preview_sentinel() {
+        let preview = NoteInstance::new_preview(0.0, 0.0, 100.0, [1.0; 4]);
+        assert_eq!(preview.border_width, PREVIEW_BORDER_SENTINEL);
     }
 
     /// 测试 CameraUniform 默认值
@@ -136,5 +153,27 @@ mod tests {
         assert_eq!(args.instance_count, 0);
         assert_eq!(args.first_vertex, 0);
         assert_eq!(args.first_instance, 0);
+    }
+
+    /// 测试 calculate_border_width 复刻 wasabi `utils::calculate_border_width`
+    /// 公式：`((width_pixels / keys_len) / 12.0).clamp(1.0, 5.0).round() * 2.0`
+    #[test]
+    fn test_calculate_border_width_wasabi_parity() {
+        use crate::calculate_border_width;
+        // keys_len <= 0 → 0（防御）
+        assert_eq!(calculate_border_width(800.0, 0.0), 0);
+        assert_eq!(calculate_border_width(800.0, -1.0), 0);
+
+        // 典型钢琴卷帘：800px / 88 键 → pixels_per_key ≈ 9.09 → /12 ≈ 0.76 → clamp 1.0 → *2 = 2
+        assert_eq!(calculate_border_width(800.0, 88.0), 2);
+
+        // zoom_y = 24 px/key（用户提到的 4 像素场景）：24/12 = 2.0 → round 2 → *2 = 4
+        assert_eq!(calculate_border_width(24.0 * 12.0, 12.0), 4);
+
+        // 极度放大：pixels_per_key = 66.7 → /12 ≈ 5.56 → clamp 5.0 → *2 = 10
+        assert_eq!(calculate_border_width(800.0, 12.0), 10);
+
+        // 边界：pixels_per_key/12 恰好 = 5.0 → clamp 不触发 → round 5 → *2 = 10
+        assert_eq!(calculate_border_width(60.0 * 12.0, 12.0), 10);
     }
 }

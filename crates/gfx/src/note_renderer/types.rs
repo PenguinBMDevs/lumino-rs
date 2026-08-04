@@ -1,69 +1,97 @@
 //! 音符渲染器类型定义
 
-/// 预览音符标记位
-pub const FLAG_PREVIEW: u32 = 1;
+/// 预览音符的 border_width 哨兵值。
+/// 当 `border_width == PREVIEW_BORDER_SENTINEL` 时，FS 走预览分支（70% alpha，不画边框）。
+pub const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFF_FFFF;
 
-/// 音符逻辑实例数据 — 24 bytes 紧凑布局
+/// 音符逻辑实例数据 — 16 bytes，严格对齐 wasabi `NoteVertex`
 ///
-/// 优化（参考 wasabi）：
-///   1. `size_y` 固定为 1.0（GPU 通过 zoom_y 展开），移除 4 bytes
-///   2. `color` 从 [f32;4] 压缩为 u32 RGBA，移除 12 bytes
+/// 字段布局完全复刻 wasabi（参考 `wasabi/src/gui/window/scene/note_list_system/notes_render_pass.rs:41-50`）：
+///   - `start_length`: `[f32; 2]` — `[start, length]`，单位 tick（保留 lumino 编辑器语义）
+///   - `key_color`: `u32` — 低 8 位 = MIDI key，高 24 位 = RGB（无 alpha，与 wasabi 一致）
+///   - `border_width`: `u32` — 边框像素宽度，CPU 端 `calculate_border_width` 算出
 ///
-/// 新增：`flags` 字段标记预览音符等特殊状态
-/// padding 确保 WGSL storage buffer 对齐（vec2<f32> alignment = 8）
+/// 与 wasabi 的唯一差异：`start`/`length` 单位保留 tick（lumino 是 DAW 编辑器，tick 是底层语义），
+/// 其余 GPU 侧数据存放逻辑完全一致。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct NoteInstance {
-    /// 逻辑位置: [tick, key]
-    pub position: [f32; 2],
-    /// 逻辑长度（height 固定为 1.0，在 GPU 中通过 zoom_y 展开）
-    pub size_x: f32,
-    /// 颜色 RGBA 打包 (0xRRGGBBAA)
-    pub color_packed: u32,
-    /// 标记位（bit 0: FLAG_PREVIEW — 预览音符，启用圆角+边框渲染）
-    pub flags: u32,
-    /// WGSL struct alignment padding（vec2<f32> 对齐要求 8 的倍数）
-    pub _padding: u32,
+    /// `[start_tick, length_tick]`，与 wasabi `start_length` 字段名/字节对齐
+    pub start_length: [f32; 2],
+    /// 低 8 位 = key，高 24 位 = RGB（与 wasabi `key_color` 编码一致）
+    pub key_color: u32,
+    /// 边框像素宽度；`PREVIEW_BORDER_SENTINEL` 表示预览音符
+    pub border_width: u32,
 }
 
-/// 将 [f32; 4] 颜色打包为 u32 (0xRRGGBBAA)
+/// 将 `(key, color)` 编码为 wasabi 风格的 `key_color` u32
+/// 低 8 位 = key，高 24 位 = RGB（每通道 8 位，无 alpha）
 #[must_use]
-pub fn pack_color(color: [f32; 4]) -> u32 {
+pub fn pack_key_color(key: u8, color: [f32; 4]) -> u32 {
     let r = (color[0].clamp(0.0, 1.0) * 255.0) as u32;
     let g = (color[1].clamp(0.0, 1.0) * 255.0) as u32;
     let b = (color[2].clamp(0.0, 1.0) * 255.0) as u32;
-    let a = (color[3].clamp(0.0, 1.0) * 255.0) as u32;
-    (r << 24) | (g << 16) | (b << 8) | a
+    let rgb = (r << 16) | (g << 8) | b;
+    (key as u32) | (rgb << 8)
 }
 
-/// 将 u32 打包颜色解包为 [f32; 4]
+/// 将 `key_color` u32 解码为 `(key, rgba)`
+/// alpha 不存于 `key_color`，恒为 1.0（与 wasabi 一致）
 #[must_use]
-pub fn unpack_color(packed: u32) -> [f32; 4] {
-    let r = ((packed >> 24) & 0xFF) as f32 / 255.0;
-    let g = ((packed >> 16) & 0xFF) as f32 / 255.0;
-    let b = ((packed >> 8) & 0xFF) as f32 / 255.0;
-    let a = (packed & 0xFF) as f32 / 255.0;
-    [r, g, b, a]
+pub fn unpack_key_color(packed: u32) -> (u8, [f32; 4]) {
+    let key = (packed & 0xFF) as u8;
+    let rgb = packed >> 8;
+    let r = ((rgb >> 16) & 0xFF) as f32 / 255.0;
+    let g = ((rgb >> 8) & 0xFF) as f32 / 255.0;
+    let b = (rgb & 0xFF) as f32 / 255.0;
+    (key, [r, g, b, 1.0])
 }
 
 impl NoteInstance {
-    /// 创建新的音符逻辑实例（默认 flags=0，普通音符）
+    /// 创建新的音符逻辑实例（普通音符）
+    /// `border_width` 由 `calculate_border_width` 算出，主音轨所有音符共享同一值
     #[must_use]
-    pub fn new(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
-        Self::new_with_flags(tick, key, length, color, 0)
-    }
-
-    /// 创建新的音符逻辑实例（带标记位）
-    #[must_use]
-    pub fn new_with_flags(tick: f32, key: f32, length: f32, color: [f32; 4], flags: u32) -> Self {
+    pub fn new(tick: f32, key: f32, length: f32, color: [f32; 4], border_width: u32) -> Self {
         Self {
-            position: [tick, key],
-            size_x: length,
-            color_packed: pack_color(color),
-            flags,
-            _padding: 0,
+            start_length: [tick, length],
+            key_color: pack_key_color(key_to_u8(key), color),
+            border_width,
         }
     }
+
+    /// 创建预览音符（`border_width = PREVIEW_BORDER_SENTINEL`，FS 走预览分支）
+    #[must_use]
+    pub fn new_preview(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
+        Self {
+            start_length: [tick, length],
+            key_color: pack_key_color(key_to_u8(key), color),
+            border_width: PREVIEW_BORDER_SENTINEL,
+        }
+    }
+}
+
+/// 将 f32 key（浮点索引）钳制到 u8 范围
+fn key_to_u8(key: f32) -> u8 {
+    key.round().clamp(0.0, 255.0) as u8
+}
+
+/// 计算音符边框像素宽度（复刻 wasabi `utils::calculate_border_width`）
+///
+/// 参考：`wasabi/src/utils.rs:13-15`
+/// ```ignore
+/// pub fn calculate_border_width(width_pixels: f32, keys_len: f32) -> f32 {
+///     ((width_pixels / keys_len) / 12.0).clamp(1.0, 5.0).round() * 2.0
+/// }
+/// ```
+///
+/// 主音轨所有音符共享同一 `zoom.y`，因此 CPU 端只算一次填所有音符（D2=C 决策）。
+#[must_use]
+pub fn calculate_border_width(width_pixels: f32, keys_len: f32) -> u32 {
+    if keys_len <= 0.0 {
+        return 0;
+    }
+    let raw = ((width_pixels / keys_len) / 12.0).clamp(1.0, 5.0).round() * 2.0;
+    raw as u32
 }
 
 /// 洋葱皮背景瓦片引用 — 16 bytes，与 NoteInstance 对齐
@@ -182,31 +210,25 @@ impl Default for DrawIndirectArgs {
     }
 }
 
-/// 顶点属性布局 — 24 bytes NoteInstance（flags 用于预览/特殊渲染，_padding 仅为对齐不传入）
-pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 4] = [
+/// 顶点属性布局 — 16 bytes NoteInstance（与 wasabi NoteVertex 字段对齐）
+/// 3 个属性：start_length(vec2) / key_color(u32) / border_width(u32)
+pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
     wgpu::VertexAttribute {
         offset: 0,
         shader_location: 0,
-        format: wgpu::VertexFormat::Float32x2, // position
+        format: wgpu::VertexFormat::Float32x2, // start_length: [start, length]
     },
     wgpu::VertexAttribute {
+        // start_length(8) = 8
         offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
         shader_location: 1,
-        format: wgpu::VertexFormat::Float32, // size_x
+        format: wgpu::VertexFormat::Uint32, // key_color
     },
     wgpu::VertexAttribute {
-        // position(8) + size_x(4) = 12
-        offset: (std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<f32>())
+        // start_length(8) + key_color(4) = 12
+        offset: (std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<u32>())
             as wgpu::BufferAddress,
         shader_location: 2,
-        format: wgpu::VertexFormat::Uint32, // color_packed
-    },
-    wgpu::VertexAttribute {
-        // position(8) + size_x(4) + color_packed(4) = 16
-        offset: (std::mem::size_of::<[f32; 2]>()
-            + std::mem::size_of::<f32>()
-            + std::mem::size_of::<u32>()) as wgpu::BufferAddress,
-        shader_location: 3,
-        format: wgpu::VertexFormat::Uint32, // flags
+        format: wgpu::VertexFormat::Uint32, // border_width
     },
 ];

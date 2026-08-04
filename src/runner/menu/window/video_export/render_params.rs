@@ -5,9 +5,9 @@
 use lumino_event::window::video::RenderMode;
 use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{
-    MiditrailNoteGpu, NoteInstance, RenderParams, generate_ruler_instances,
+    MiditrailNoteGpu, NoteInstance, RenderParams, calculate_border_width, generate_ruler_instances,
     miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},
-    pack_color,
+    pack_color, pack_key_color,
 };
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 
@@ -142,14 +142,16 @@ fn build_note_rectangle_render_params(
     visible_notes.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
     note_instances_out.clear();
     note_instances_out.reserve(visible_notes.len());
+    // wasabi 风格 border_width：CPU 端算一次填所有音符（D2=C 决策）
+    // wasabi 场景视图键轴水平 → 用 image.extent()[0]（宽度）；
+    // lumino 钢琴卷帘键轴垂直 → 等价映射为画布高度（减标尺），保持 wasabi 语义
+    let border_width = calculate_border_width(rect_height - ruler_height, KEY_COUNT as f32);
     for n in visible_notes.iter() {
-        let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
+        let key_color = pack_key_color(n.key, current_track_color_f32(n.track_idx as usize));
         note_instances_out.push(NoteInstance {
-            position: [n.start_tick as f32, n.key as f32],
-            size_x: (n.length as f32).max(1.0),
-            color_packed,
-            flags: 0,
-            _padding: 0,
+            start_length: [n.start_tick as f32, (n.length as f32).max(1.0)],
+            key_color,
+            border_width,
         });
     }
 

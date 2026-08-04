@@ -78,7 +78,7 @@ pub const ROUTES: [RouteConfig; 10] = [
         group: GroupId::Project,
         icon: icon::Arrangement,
     },
-    // ── 瀑布流播放器组（黄色） ──
+    // ── 播放器组（黄色） ──
     RouteConfig::GroupParent {
         group: GroupId::Waterfall,
         icon: icon::PlayCircle,

@@ -305,8 +305,9 @@ impl Root {
             .manager
             .as_ref()
             .map(|m| {
-                m.last_frame()
-                    .map_or(false, |f| f.state == crate::playback::PlaybackState::Playing)
+                m.last_frame().map_or(false, |f| {
+                    f.state == crate::playback::PlaybackState::Playing
+                })
             })
             .unwrap_or_default()
     }

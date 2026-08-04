@@ -12,7 +12,9 @@ use std::sync::Arc;
 
 use bytemuck;
 use lumino_extras::palette::current_track_color_f32;
-use lumino_gfx::{NoteInstance, RenderParams, generate_ruler_instances, pack_color};
+use lumino_gfx::{
+    NoteInstance, RenderParams, calculate_border_width, generate_ruler_instances, pack_key_color,
+};
 use lumino_midi_loader::TICK_SEARCH_BUFFER;
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};
@@ -642,13 +644,13 @@ fn build_video_render_params_from_notes(
     let note_instances: Vec<NoteInstance> = temp
         .into_iter()
         .map(|n| {
-            let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
+            let key_color = pack_key_color(n.key, current_track_color_f32(n.track_idx as usize));
             NoteInstance {
-                position: [n.start_tick as f32, n.key as f32],
-                size_x: (n.length as f32).max(1.0),
-                color_packed,
-                flags: 0,
-                _padding: 0,
+                start_length: [n.start_tick as f32, (n.length as f32).max(1.0)],
+                key_color,
+                // wasabi 语义：键轴方向像素长度 / 可见键数；
+                // lumino 钢琴卷帘键轴垂直 → 用画布高度（减标尺）映射 wasabi 的 width_pixels
+                border_width: calculate_border_width(height_f - ruler_height, KEY_COUNT as f32),
             }
         })
         .collect();

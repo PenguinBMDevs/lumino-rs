@@ -1,12 +1,10 @@
-// 音符 GPU 裁剪着色器 — 紧凑 NoteInstance 布局 (24 bytes)
+// 音符 GPU 裁剪着色器 — 紧凑 NoteInstance 布局 (16 bytes，与 wasabi NoteVertex 对齐)
 // workgroup 批量原子版本：每 workgroup 只做 1 次全局 atomicAdd
 
 struct NoteInstance {
-    position: vec2<f32>,
-    size_x: f32,
-    color_packed: u32,
-    flags: u32,
-    _padding: u32,
+    start_length: vec2<f32>,  // [start_tick, length_tick]
+    key_color: u32,           // 低8位=key, 高24位=RGB
+    border_width: u32,        // 边框像素宽
 };
 
 struct CameraUniform {
@@ -61,9 +59,10 @@ fn main(
     if (in_range) {
         let instance = all_instances[index];
 
-        let tick = instance.position.x;
-        let key = instance.position.y;
-        let length = instance.size_x;
+        let tick = instance.start_length.x;
+        let length = instance.start_length.y;
+        // key 从 key_color 低 8 位解码（与 wasabi/note.wgsl 一致）
+        let key = f32(instance.key_color & 0xFFu);
 
         if (length > 0.0) {
             let screen_min_x = tick * camera.zoom.x - camera.scroll.x

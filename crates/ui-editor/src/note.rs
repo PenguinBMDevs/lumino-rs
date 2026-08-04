@@ -15,7 +15,7 @@ pub trait NoteExt {
     /// 计算音符在屏幕上的边界矩形
     fn screen_bounds(&self, view_state: &ViewState) -> Rectangle;
     /// 转换为 GPU 实例
-    fn to_instance(&self, color: Color) -> NoteInstance;
+    fn to_instance(&self, color: Color, border_width: u32) -> NoteInstance;
 }
 
 impl NoteExt for Note {
@@ -32,12 +32,13 @@ impl NoteExt for Note {
     }
 
     /// 转换为 GPU 实例
-    fn to_instance(&self, color: Color) -> NoteInstance {
+    fn to_instance(&self, color: Color, border_width: u32) -> NoteInstance {
         NoteInstance::new(
             self.tick,
             self.key as f32,
             self.length,
             color_to_array(color),
+            border_width,
         )
     }
 }

@@ -47,15 +47,18 @@ pub use lumino_onion_skin_hires::{
     generate_all_tiles, generate_track_tile, merge_group_tiles, read_track_tile_cache,
 };
 pub use note_renderer::{
-    CameraParams, CameraUniform, CullUniform, FLAG_PREVIEW, NoteInstance, NoteRenderer,
-    OnionBgTileRef, RenderUniform, pack_color, unpack_color,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,
+    PREVIEW_BORDER_SENTINEL, RenderUniform, calculate_border_width, pack_key_color,
+    unpack_key_color,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
 
-pub use miditrail_renderer::{MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu};
+pub use miditrail_renderer::{
+    MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, pack_color,
+};
 pub use render_thread::RenderParams;
 pub use waterfall_renderer::{WaterfallNoteGpu, WaterfallRenderer, WaterfallUniformGpu};
 /// 重导出 wgpu 纹理格式，供 UI 层匹配视频导出像素格式

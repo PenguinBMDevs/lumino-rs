@@ -1,7 +1,6 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
 use std::sync::Arc;
-use std::time::Instant;
 
 use crate::host::{Host, types::NoteData};
 use crate::message;
@@ -52,111 +51,8 @@ impl Host {
     }
 
     /// 设置当前音轨
-    ///
-    /// 如果切换到新音轨时旧音轨有脏标记的高精度贴图：
-    /// 1. 先发送临时脏区域覆层命令，在旧音轨位置立即显示编辑内容；
-    /// 2. 执行音轨切换；
-    /// 3. 记录脏音轨的切换走时间（开始冷静期计时），不立即触发重生成。
-    ///
-    /// 如果切回脏音轨（冷静期内），取消待处理的重生成，保持脏标记让用户继续编辑。
-    /// 覆层与重生均以音轨组（track_group）为单位合并处理，
-    /// 避免同组多个脏音轨互相覆盖或重生成时丢失同组其他音轨数据。
     pub fn set_current_track(&mut self, track_idx: usize, open_panel: bool) {
-        let old_track = self.root.editor.current_track() as u16;
-        if old_track as usize == track_idx {
-            // 切换到当前已是激活的音轨：不触发覆盖层/重生，只同步 UI 状态。
-            // 避免用户重复点击同一音轨时，因历史脏标记而误触发全量重生。
-            self.root.set_current_track(track_idx, open_panel);
-            self.window_ctx.window.request_redraw();
-            return;
-        }
-
-        // 收集当前所有脏音轨，避免切换时只显示单个音轨的覆盖层
-        let dirty_tracks: Vec<u16> = self.hires_dirty_tracks.iter().copied().collect();
-
-        if let (Some(cfg), Some(hash), Some((ppq, key_count, total_ticks))) = (
-            self.hires_config.clone(),
-            self.hires_midi_hash.clone(),
-            self.hires_gen_info,
-        ) {
-            // 按音轨组分组脏音轨，同组只发送一个合并覆层
-            let mut dirty_by_group: std::collections::HashMap<u32, Vec<u16>> =
-                std::collections::HashMap::new();
-            for &dirty_track in &dirty_tracks {
-                let group = (dirty_track / lumino_gfx::TRACKS_PER_GROUP) as u32;
-                dirty_by_group.entry(group).or_default().push(dirty_track);
-            }
-
-            // 推断需要的音轨总数
-            let max_dirty = dirty_tracks.iter().copied().max().unwrap_or(0);
-            let track_count = (self.root.sidebar.tracks.len() as u16)
-                .max(max_dirty + 1)
-                .max(track_idx as u16 + 1);
-
-            for (group, tracks) in &dirty_by_group {
-                let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
-                let group_end = (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
-                let mut group_notes = Vec::with_capacity((group_end - group_start) as usize);
-                for t in group_start..group_end {
-                    // 脏音轨使用快照（当前帧可能尚未保存到 track_notes）
-                    let notes = if let Some(dirty_notes) = self.hires_dirty_regions.get(&t) {
-                        dirty_notes.clone()
-                    } else {
-                        self.get_track_notes_for_hires(t)
-                    };
-                    group_notes.push(notes);
-                }
-
-                // 收集该 group 内所有脏音轨的 time_group 并集
-                // 只对实际发生编辑的 time_group 生成覆层，避免覆盖未编辑区域
-                let mut dirty_time_groups: std::collections::HashSet<u32> =
-                    std::collections::HashSet::new();
-                for &t in tracks {
-                    if let Some(s) = self.hires_dirty_time_groups.get(&t) {
-                        dirty_time_groups.extend(s.iter().copied());
-                    }
-                }
-                let mut dirty_time_groups: Vec<u32> = dirty_time_groups.into_iter().collect();
-                dirty_time_groups.sort_unstable();
-
-                let representative = tracks[0];
-                if group_notes.iter().any(|n| !n.is_empty()) {
-                    self.send_hires_dirty_overlay(lumino_gfx::render_thread::HiResTrackParams {
-                        track_idx: representative,
-                        group_notes,
-                        dirty_time_groups,
-                        ppq,
-                        key_count,
-                        total_ticks,
-                        track_count,
-                        config: cfg.clone(),
-                        midi_hash: hash.clone(),
-                    });
-                }
-            }
-        }
-
-        // 执行音轨切换（保存旧音轨 notes 到 track_notes 缓存）
         self.root.set_current_track(track_idx, open_panel);
-
-        // 记录脏音轨的切换走时间（开始冷静期计时），或取消待处理的重生成
-        //
-        // 切换走脏音轨 → 记录切换时间，冷静期从此刻开始计时
-        // 切回脏音轨 → 从 switch_away_times 移除，取消待处理的重生成
-        let new_track = track_idx as u16;
-        for &dirty_track in &dirty_tracks {
-            if dirty_track == new_track {
-                // 用户切回脏音轨 → 取消待处理的重生成，保持脏标记让用户继续编辑
-                self.hires_switch_away_times.remove(&dirty_track);
-            } else {
-                // 用户切换走脏音轨 → 记录切换时间（仅首次记录，不重置已有计时）
-                self.hires_switch_away_times
-                    .entry(dirty_track)
-                    .or_insert_with(Instant::now);
-            }
-        }
-
-        // 仅请求重绘，不重建UI树（音轨切换由WGPU层处理）
         self.window_ctx.window.request_redraw();
     }
 
@@ -282,13 +178,10 @@ impl Host {
         // 清空后重新初始化默认高精度洋葱皮上下文，确保后续编辑仍能生成贴图
         self.init_default_hires_context();
 
-        // 清空高精度脏标记，避免新建工程/关闭文件后残留脏状态误触发覆盖层/重生
+        // 清空高精度脏标记，避免新建工程/关闭文件后残留脏状态误触发
         self.hires_dirty_tracks.clear();
         self.hires_dirty_regions.clear();
         self.hires_dirty_time_groups.clear();
-        self.hires_switch_away_times.clear();
-        self.hires_last_edit = None;
-        self.hires_overlay_sent = false;
 
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");

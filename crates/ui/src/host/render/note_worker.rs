@@ -100,6 +100,7 @@ pub(super) fn build_main_note_instances(
     default_note_length: f32,
     snap_precision: f32,
     preview_ctx: &PreviewNoteContext,
+    border_width: u32,
 ) {
     use rayon::prelude::*;
 
@@ -115,27 +116,38 @@ pub(super) fn build_main_note_instances(
     if visible_notes.len() >= PARALLEL_THRESHOLD {
         instances.resize(
             visible_notes.len(),
-            lumino_gfx::NoteInstance::new(0.0, 0.0, 0.0, [0.0; 4]),
+            lumino_gfx::NoteInstance::new(0.0, 0.0, 0.0, [0.0; 4], border_width),
         );
         instances
             .par_iter_mut()
             .enumerate()
             .for_each(|(i, instance)| {
                 let (tick, key, length) = visible_notes[i];
-                *instance =
-                    lumino_gfx::NoteInstance::new(tick, key as f32, length, fixed_note_color);
+                *instance = lumino_gfx::NoteInstance::new(
+                    tick,
+                    key as f32,
+                    length,
+                    fixed_note_color,
+                    border_width,
+                );
             });
     } else {
         // 小数据量：顺序写入，避免并行分片开销
         instances.extend(visible_notes.iter().map(|(tick, key, length)| {
-            lumino_gfx::NoteInstance::new(*tick, *key as f32, *length, fixed_note_color)
+            lumino_gfx::NoteInstance::new(
+                *tick,
+                *key as f32,
+                *length,
+                fixed_note_color,
+                border_width,
+            )
         }));
     }
 
     // 预览音符的默认长度：优先使用上次放置的音符长度，其次使用精度设置的默认长度
     let preview_default_length = preview_ctx.last_note_length.unwrap_or(default_note_length);
 
-    // 正在绘制的音符（Drawing 状态）
+    // 正在绘制的音符（Drawing 状态）— 预览音符用 new_preview（border_width 哨兵）
     if let crate::editor::editor_state::EditState::Drawing {
         start_tick,
         key,
@@ -150,21 +162,19 @@ pub(super) fn build_main_note_instances(
             // 未拖动时使用 last_note_length 或 default_note_length
             (*start_tick, preview_default_length)
         };
-        instances.push(lumino_gfx::NoteInstance::new_with_flags(
+        instances.push(lumino_gfx::NoteInstance::new_preview(
             tick,
             *key as f32,
             length.max(snap_precision),
             MAIN_TRACK_NOTE_COLOR,
-            lumino_gfx::FLAG_PREVIEW,
         ));
     } else if preview_ctx.hover_preview {
         // hover 预览音符（铅笔工具 + Idle 状态，跟随鼠标指针）
-        instances.push(lumino_gfx::NoteInstance::new_with_flags(
+        instances.push(lumino_gfx::NoteInstance::new_preview(
             preview_ctx.cursor_tick,
             preview_ctx.cursor_key as f32,
             preview_default_length.max(snap_precision),
             MAIN_TRACK_NOTE_COLOR,
-            lumino_gfx::FLAG_PREVIEW,
         ));
     }
 

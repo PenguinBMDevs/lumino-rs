@@ -141,9 +141,6 @@ impl winit::application::ApplicationHandler for Runner {
         // 同时检测洋葱皮生成完成，设置编辑开始时间
         this.about_to_wait_onion_progress();
 
-        // 高精度贴图冷静期检查：到期后触发脏音轨重生成
-        this.about_to_wait_hires_regen();
-
         // 注意：脏区域临时覆层只在 set_current_track 中发送，
         // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
         // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
@@ -233,82 +230,6 @@ impl crate::runner::inner::RunnerInner {
                     );
                 }
                 cb(&msg, pct as f64);
-            }
-        }
-    }
-
-    /// 高精度贴图冷静期到期后，按音轨组重生脏音轨的 HiRes 贴图。
-    fn about_to_wait_hires_regen(&mut self) {
-        puffin::profile_scope!("runner_about_to_wait_hires_regen");
-        let dirty_tracks = self.window_state.window.ui_mut().check_hires_regen();
-        if let Some(tracks) = dirty_tracks {
-            // 收集重生成所需上下文（clone 出来避免循环里反复借用）
-            let regen_context = {
-                let ui = self.window_state.window.ui();
-                let hash = ui.hires_midi_hash().map(|s| s.to_string());
-                let info = ui.hires_gen_info();
-                let ui_cfg = self.window_state.storage.config.get().ui.clone();
-                let config = lumino_gfx::HiResConfig {
-                    enabled: ui_cfg.hires_onion_enabled,
-                    measures_per_group: ui_cfg.hires_measures_per_group,
-                    tile_width_px: ui_cfg.hires_tile_width_px,
-                    cooldown_secs: ui_cfg.hires_cooldown_secs,
-                    gpu_mem_limit_mb: ui_cfg.hires_gpu_mem_limit_mb,
-                    render_mode: lumino_gfx::HiResRenderMode::default(),
-                    group_tile_mem_limit_mb: 256,
-                    cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
-                };
-                hash.zip(info).map(|(h, i)| (h, i, config))
-            };
-            if let Some((midi_hash, (ppq, key_count, total_ticks), config)) = regen_context {
-                tracing::info!("高精度贴图冷静期到期，重生 {} 个脏音轨", tracks.len());
-                // 按音轨组分组，每个 group 只重生一次，避免同组重复生成
-                let mut tracks_by_group: std::collections::HashMap<u32, Vec<u16>> =
-                    std::collections::HashMap::new();
-                for track_idx in &tracks {
-                    let group = (*track_idx / lumino_gfx::TRACKS_PER_GROUP) as u32;
-                    tracks_by_group.entry(group).or_default().push(*track_idx);
-                }
-
-                for (group, group_tracks) in &tracks_by_group {
-                    let max_track = group_tracks.iter().copied().max().unwrap_or(0);
-                    // 音轨总数取当前侧边栏音轨数与组内最大音轨索引+1 的较大值
-                    let track_count = {
-                        let ui = self.window_state.window.ui();
-                        (ui.track_count() as u16).max(max_track + 1)
-                    };
-
-                    // 收集该 group 内所有音轨的最新音符
-                    let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
-                    let group_end = (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
-                    let mut group_notes = Vec::with_capacity((group_end - group_start) as usize);
-                    for t in group_start..group_end {
-                        let notes = self.window_state.window.ui().get_track_notes_for_hires(t);
-                        group_notes.push(notes);
-                    }
-
-                    let representative = group_tracks[0];
-                    tracing::info!(
-                        "高精度贴图冷静期到期重生: group={}, representative_track={}, group_tracks={}",
-                        group,
-                        representative,
-                        group_notes.len()
-                    );
-                    self.window_state.window.ui_mut().send_hires_regen(
-                        lumino_gfx::render_thread::HiResTrackParams::new(
-                            representative,
-                            group_notes,
-                            // 重生命令做全量替换，不需要按 time_group 过滤
-                            Vec::new(),
-                            ppq,
-                            key_count,
-                            total_ticks,
-                            track_count,
-                            config.clone(),
-                            midi_hash.clone(),
-                        ),
-                    );
-                }
             }
         }
     }

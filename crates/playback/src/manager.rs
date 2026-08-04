@@ -4,7 +4,7 @@
 
 use crate::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 use crate::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -115,9 +115,7 @@ impl PlaybackManager {
                         // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
                         // 同时触发用户注册的回调（轻量非阻塞）。
                         // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
-                        let bpm = engine
-                            .lock_playback()
-                            .map_or(120.0, |p| p.current_bpm());
+                        let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
                         let frame = PlaybackFrame {
                             tick: engine.current_tick(),
                             state: engine.state(),

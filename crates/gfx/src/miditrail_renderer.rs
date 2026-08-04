@@ -11,6 +11,8 @@ mod pipeline;
 mod render_pass;
 mod types;
 
+/// 重导出颜色打包工具（供视频导出 waterfall/miditrail 模式使用）
+pub use instances::pack_color;
 pub use types::{
     MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailInstanceGpu, MiditrailNoteGpu,
     MiditrailUniformGpu,

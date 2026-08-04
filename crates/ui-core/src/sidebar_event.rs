@@ -19,7 +19,7 @@ pub enum GroupId {
     PianoRoll,
     /// 工程走带组（绿色）
     Project,
-    /// 瀑布流播放器组（黄色）
+    /// 播放器组（黄色）
     Waterfall,
     /// 渲染组（蓝色）
     Renderer,
@@ -57,8 +57,8 @@ impl GroupId {
                 Language::EnUs => "Project",
             },
             GroupId::Waterfall => match lang {
-                Language::ZhCn => "瀑布流播放器",
-                Language::EnUs => "Waterfall Player",
+                Language::ZhCn => "播放器",
+                Language::EnUs => "Player",
             },
             GroupId::Renderer => match lang {
                 Language::ZhCn => "渲染器",
