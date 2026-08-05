@@ -203,7 +203,7 @@ impl Context {
                 view_formats: vec![],
                 // 降低帧延迟以减少输入延迟，提高响应性
                 // 对于高帧率应用，1帧延迟比2帧更好
-                desired_maximum_frame_latency: 1,
+                desired_maximum_frame_latency: 2,
             },
         );
 
@@ -243,7 +243,7 @@ impl Context {
                 present_mode: self.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats: vec![],
-                desired_maximum_frame_latency: 1,
+                desired_maximum_frame_latency: 2,
             },
         );
     }
