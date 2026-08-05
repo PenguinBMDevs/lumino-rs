@@ -24,37 +24,19 @@ impl Root {
 
         // 当前音轨音符（编辑过的，从 editor.notes 实时送）。
         // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
-        //
-        // NoteStore 热路径：当 note_store_enabled 时直读 SoA 数据，避免：
-        // 1. im::Vector 树遍历开销（16M 音符 ~3.5s → 更快）
-        // 2. 读取脏数据 bug（commit_pending_drag 跳过 sync_notes_from_store 后
-        //    self.notes 位置已过时，而 NoteStore 始终持有最新位置）
+        // NoteStore 冗余层已删除，统一从 notes 读取。
         let editor_data = &self.editor.editor_state.data;
-        let current_notes: Vec<NoteEvent> = if editor_data.is_note_store_enabled() {
-            let mut notes = Vec::with_capacity(editor_data.note_store.len());
-            editor_data.note_store.for_each_ref(|_idx, view| {
-                notes.push(NoteEvent {
-                    tick: view.tick,
-                    channel: view.channel,
-                    key: view.key as u8,
-                    velocity: view.velocity,
-                    length: view.length,
-                });
-            });
-            notes
-        } else {
-            editor_data
-                .notes
-                .iter()
-                .map(|note| NoteEvent {
-                    tick: note.tick,
-                    channel: note.channel,
-                    key: note.key as u8,
-                    velocity: note.velocity,
-                    length: note.length,
-                })
-                .collect()
-        };
+        let current_notes: Vec<NoteEvent> = editor_data
+            .notes
+            .iter()
+            .map(|note| NoteEvent {
+                tick: note.tick,
+                channel: note.channel,
+                key: note.key as u8,
+                velocity: note.velocity,
+                length: note.length,
+            })
+            .collect();
         manager.set_current_track_notes(current_notes);
         manager.set_velocity_filter_threshold(self.visual.velocity_filter_threshold);
 

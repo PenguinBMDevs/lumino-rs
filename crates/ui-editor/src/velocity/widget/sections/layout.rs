@@ -14,17 +14,10 @@ use crate::velocity::widget::TempoPoint;
 impl super::super::VelocityCanvas<'_> {
     /// 获取所有力度点
     ///
-    /// **性能优化**：NoteStore 启用时走 `build_velocity_points_from_store`，
-    /// 10M+ 音符场景下避免全部 Note clone 开销（百毫秒级）。
+    /// 直接遍历 notes 构建力度点（NoteStore 冗余层已删除）。
     pub(super) fn points(&self) -> Vec<VelocityPoint> {
         let editor_data = &self.editor.editor_state.data;
-        if editor_data.is_note_store_enabled() {
-            super::super::super::VelocityPanel::build_velocity_points_from_store(
-                &editor_data.note_store,
-            )
-        } else {
-            super::super::super::VelocityPanel::build_velocity_points(&editor_data.notes)
-        }
+        super::super::super::VelocityPanel::build_velocity_points(&editor_data.notes)
     }
 
     /// 将力度值映射到 Y 坐标

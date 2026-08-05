@@ -574,6 +574,27 @@ impl MidiDocument {
     pub fn track_notes_mut(&mut self, track_id: usize) -> Option<&mut Vec<NoteEvent>> {
         self.notes.get_mut(track_id)
     }
+
+    /// 整轨替换音符（undo/redo 快照恢复专用）。
+    ///
+    /// `notes` 需按 start_tick 升序（调用方负责排序）；本方法直接整体赋值，
+    /// 不做排序校验。track_id 越界返回 false。
+    pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
+        let Some(track) = self.notes.get_mut(track_id) else {
+            return false;
+        };
+        *track = notes;
+        true
+    }
+
+    /// 清空指定音轨的所有音符。track_id 越界返回 false。
+    pub fn clear_track_notes(&mut self, track_id: usize) -> bool {
+        let Some(track) = self.notes.get_mut(track_id) else {
+            return false;
+        };
+        track.clear();
+        true
+    }
 }
 
 /// MidiDocument 可写 API 单元测试（独立文件，保持本文件 < 400 行）

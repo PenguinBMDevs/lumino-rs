@@ -70,33 +70,25 @@ impl Editor {
             return;
         }
 
-        // 热路径：NoteStore 启用时直接从 SoA 数据构建，跳过 im::Vector 中介
-        let new_index = if self.editor_state.data.is_note_store_enabled() {
-            crate::spatial_index::NoteSpatialIndex::from_note_store(
-                &self.editor_state.data.note_store,
-            )
-        } else {
-            // 冷路径：从 im::Vector 收集 NoteRef
-            let note_refs: Vec<lumino_note_core::NoteRef> = notes
-                .iter()
-                .enumerate()
-                .map(|(i, n)| lumino_note_core::NoteRef {
-                    tick: n.tick,
-                    key: n.key,
-                    length: n.length,
-                    index: i,
-                })
-                .collect();
-            crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs)
-        };
+        // 从 im::Vector 收集 NoteRef 构建空间索引（NoteStore 冗余层已删除）
+        let note_refs: Vec<lumino_note_core::NoteRef> = notes
+            .iter()
+            .enumerate()
+            .map(|(i, n)| lumino_note_core::NoteRef {
+                tick: n.tick,
+                key: n.key,
+                length: n.length,
+                index: i,
+            })
+            .collect();
+        let new_index = crate::spatial_index::NoteSpatialIndex::from_note_refs(&note_refs);
 
         *self.spatial.note_index.borrow_mut() = Some(new_index);
         self.spatial.note_index_dirty.set(false);
 
         tracing::debug!(
-            "Editor: rebuild spatial index from ensure_spatial_index for {} notes (note_store={})",
+            "Editor: rebuild spatial index from ensure_spatial_index for {} notes",
             notes.len(),
-            self.editor_state.data.is_note_store_enabled(),
         );
     }
 }

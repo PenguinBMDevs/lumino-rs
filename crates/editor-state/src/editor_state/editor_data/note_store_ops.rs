@@ -1,15 +1,11 @@
-//! NoteStore 集成操作：同步、批量移动、批量删除、批量插入
+//! NoteStore 集成操作（降级兼容层）
 //!
-//! 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用 NoteStore 作为批量操作热路径。
-//! `notes` (im::Vector) 仍为权威源，操作完成后通过 `sync_note_store()` 同步。
+//! 2026-08 单一权威源改造：`NoteStore`（SoA 冗余镜像）已删除。
+//! 本模块保留全部公共 API 签名，内部降级为直接操作 `notes`（im::Vector），
+//! 保证下游（ui-editor / ui）在重接到 MidiDocument 前零改动编译通过。
 //!
-//! ## 子模块
-//! - `sync` — 同步启用/禁用 + BitVec→BitSet 转换
-//! - `batch_move` — 批量移动（并行热路径 + 冷路径回退）
-//! - `batch_edit` — 批量编辑属性（力度/长度/key/tick）
-//! - `delete` — 批量删除
-//! - `insert` — 批量/单个插入
-//! - `access` — 状态查询与迭代访问器
+//! 第二阶段 ChunkedNotes（MidiDocument 分块）接管后，本模块的
+//! 批量热路径将迁往 document 侧，此兼容层随后删除。
 
 mod access;
 mod batch_edit;

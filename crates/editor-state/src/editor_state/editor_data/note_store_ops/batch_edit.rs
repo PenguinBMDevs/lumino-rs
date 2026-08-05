@@ -1,11 +1,12 @@
-//! 批量编辑音符属性（力度、长度、key、tick）
+//! 批量编辑音符属性（力度、长度、key、tick）（降级兼容层）
+//!
+//! NoteStore SoA 热路径已删除，统一走 im::Vector 冷路径。
+//! 保留签名兼容下游调用。
 
 use std::collections::HashSet;
 
 use super::super::EditorData;
-use lumino_note_core::batch_edit::BatchEditOperation;
 use lumino_note_core::batch_edit::parse_batch_edit_input;
-use lumino_note_core::note_store::BitSet;
 
 impl EditorData {
     /// 批量编辑选中音符的力度、长度、key、tick
@@ -41,65 +42,6 @@ impl EditorData {
 
         self.push_history();
 
-        let modified = if self.note_store_enabled {
-            self.apply_batch_edit_hot_path(selected, velocity_op, gate_op, key_op, tick_op, max_key)
-        } else {
-            self.apply_batch_edit_cold_path(
-                selected,
-                velocity_op,
-                gate_op,
-                key_op,
-                tick_op,
-                max_key,
-            )
-        };
-
-        if modified > 0 {
-            self.sync_track_notes();
-        } else {
-            self.history.discard_last();
-        }
-        modified
-    }
-
-    /// NoteStore 热路径：通过 SoA batch_edit_* 方法批量编辑
-    fn apply_batch_edit_hot_path(
-        &mut self,
-        selected: &HashSet<usize>,
-        velocity_op: Option<BatchEditOperation>,
-        gate_op: Option<BatchEditOperation>,
-        key_op: Option<BatchEditOperation>,
-        tick_op: Option<BatchEditOperation>,
-        max_key: u16,
-    ) -> usize {
-        let bitset = BitSet::from_iter(self.note_store.len(), selected.iter().copied());
-        let mut modified = 0usize;
-        if let Some(op) = velocity_op {
-            modified += self.note_store.batch_edit_velocity(&bitset, op);
-        }
-        if let Some(op) = gate_op {
-            modified += self.note_store.batch_edit_gate(&bitset, op);
-        }
-        if let Some(op) = key_op {
-            modified += self.note_store.batch_edit_key(&bitset, op, max_key);
-        }
-        if let Some(op) = tick_op {
-            modified += self.note_store.batch_edit_tick(&bitset, op);
-        }
-        self.sync_notes_from_store();
-        modified
-    }
-
-    /// 冷路径：直接遍历 im::Vector 逐个编辑
-    fn apply_batch_edit_cold_path(
-        &mut self,
-        selected: &HashSet<usize>,
-        velocity_op: Option<BatchEditOperation>,
-        gate_op: Option<BatchEditOperation>,
-        key_op: Option<BatchEditOperation>,
-        tick_op: Option<BatchEditOperation>,
-        max_key: u16,
-    ) -> usize {
         let mut modified = 0usize;
         for &note_idx in selected {
             if let Some(note) = self.notes.get_mut(note_idx) {
@@ -136,6 +78,12 @@ impl EditorData {
                     modified += 1;
                 }
             }
+        }
+
+        if modified > 0 {
+            self.sync_track_notes();
+        } else {
+            self.history.discard_last();
         }
         modified
     }

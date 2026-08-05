@@ -4,7 +4,7 @@
 //! 使 `compute_state_changes()` 主方法 ≤40 行。
 
 use lumino_editor_state::DragState;
-use lumino_note_core::{Note, NoteStore};
+use lumino_note_core::Note;
 use std::cell::Cell;
 
 // ──────────────────────────────────────────────
@@ -104,28 +104,14 @@ fn apply_resize_start_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
-    note_store_enabled: bool,
 ) {
-    if note_store_enabled {
-        for &i in selected {
-            note_store.modify(i, |n| {
-                let new_len = n.length - delta_tick;
-                if new_len >= snap_precision {
-                    n.tick += delta_tick;
-                    n.length = new_len;
-                }
-            });
-        }
-    } else {
-        for &i in selected {
-            if let Some(note) = notes.get_mut(i) {
-                let new_len = note.length - delta_tick;
-                if new_len >= snap_precision {
-                    note.tick += delta_tick;
-                    note.length = new_len;
-                }
+    for &i in selected {
+        if let Some(note) = notes.get_mut(i) {
+            let new_len = note.length - delta_tick;
+            if new_len >= snap_precision {
+                note.tick += delta_tick;
+                note.length = new_len;
             }
         }
     }
@@ -136,26 +122,13 @@ fn apply_resize_end_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
-    note_store_enabled: bool,
 ) {
-    if note_store_enabled {
-        for &i in selected {
-            note_store.modify(i, |n| {
-                let new_len = n.length + delta_tick;
-                if new_len >= snap_precision {
-                    n.length = new_len;
-                }
-            });
-        }
-    } else {
-        for &i in selected {
-            if let Some(note) = notes.get_mut(i) {
-                let new_len = note.length + delta_tick;
-                if new_len >= snap_precision {
-                    note.length = new_len;
-                }
+    for &i in selected {
+        if let Some(note) = notes.get_mut(i) {
+            let new_len = note.length + delta_tick;
+            if new_len >= snap_precision {
+                note.length = new_len;
             }
         }
     }
@@ -167,24 +140,15 @@ pub(super) fn handle_resizing_selection_start(
     snapped_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
-    note_store_enabled: bool,
 ) -> bool {
     let delta_tick = snapped_tick - *last_tick;
     if delta_tick == 0.0 {
         return false;
     }
 
-    apply_resize_start_to_selected(
-        delta_tick,
-        snap_precision,
-        selected,
-        note_store,
-        notes,
-        note_store_enabled,
-    );
+    apply_resize_start_to_selected(delta_tick, snap_precision, selected, notes);
     *last_tick = snapped_tick;
 
     if let Some((min_t, max_te, max_k, min_k)) = selected_bounds.get() {
@@ -199,24 +163,15 @@ pub(super) fn handle_resizing_selection_end(
     snapped_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    note_store: &mut NoteStore,
     notes: &mut im::Vector<Note>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
-    note_store_enabled: bool,
 ) -> bool {
     let delta_tick = snapped_tick - *last_tick;
     if delta_tick == 0.0 {
         return false;
     }
 
-    apply_resize_end_to_selected(
-        delta_tick,
-        snap_precision,
-        selected,
-        note_store,
-        notes,
-        note_store_enabled,
-    );
+    apply_resize_end_to_selected(delta_tick, snap_precision, selected, notes);
     *last_tick = snapped_tick;
 
     if let Some((min_t, max_te, max_k, min_k)) = selected_bounds.get() {

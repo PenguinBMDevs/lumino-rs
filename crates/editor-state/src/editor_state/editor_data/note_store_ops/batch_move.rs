@@ -1,15 +1,14 @@
-//! 批量移动音符操作（NoteStore 并行热路径 + 冷路径回退）
+//! 批量移动音符操作（降级兼容层）
+//!
+//! NoteStore 并行热路径已删除，统一走 im::Vector 冷路径。
+//! 保留全部签名兼容下游调用；第二阶段由 MidiDocument 分块接管批量移动。
 
 use super::super::EditorData;
-use super::sync::bitvec_to_bitset;
 use crate::DragState;
 use lumino_note_core::note_store::BitSet;
 
 impl EditorData {
-    /// 批量移动选中音符（NoteStore 并行热路径）
-    ///
-    /// 当 NoteStore 启用时走 `batch_move_parallel`（8 线程并行，16M 50% 18ms），
-    /// 否则回退到直接遍历 notes。
+    /// 批量移动选中音符
     ///
     /// 返回实际修改的音符数。调用方需在调用前 `push_history()`。
     pub fn batch_move_notes(
@@ -23,49 +22,31 @@ impl EditorData {
             return 0;
         }
 
-        if self.note_store_enabled {
-            let modified = self
-                .note_store
-                .batch_move_parallel(selected, delta_tick, delta_key, max_key);
-            self.sync_notes_from_store();
-            // 增量对账：记录事件（selected 等长）+ 整轨同步（内部 mark 置 dirty 后清除）
-            let selected_indices: Vec<usize> =
-                (0..selected.len()).filter(|&i| selected.get(i)).collect();
-            self.record_update_ranges(&selected_indices);
-            tracing::debug!(
-                "NoteStore 批量移动: 修改 {} 音符, 选中 {}",
-                modified,
-                selected.count_ones()
-            );
-            modified
-        } else {
-            let mut modified = 0usize;
-            let mut modified_indices: Vec<usize> = Vec::new();
-            for note_idx in 0..self.notes.len() {
-                if selected.get(note_idx)
-                    && let Some(note) = self.notes.get_mut(note_idx)
-                {
-                    let new_tick = (note.tick + delta_tick).max(0.0);
-                    let new_key =
-                        (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
-                    if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                        note.tick = new_tick;
-                        note.key = new_key;
-                        modified += 1;
-                        modified_indices.push(note_idx);
-                    }
+        let mut modified = 0usize;
+        let mut modified_indices: Vec<usize> = Vec::new();
+        for note_idx in 0..self.notes.len() {
+            if selected.get(note_idx)
+                && let Some(note) = self.notes.get_mut(note_idx)
+            {
+                let new_tick = (note.tick + delta_tick).max(0.0);
+                let new_key = (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
+                if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+                    note.tick = new_tick;
+                    note.key = new_key;
+                    modified += 1;
+                    modified_indices.push(note_idx);
                 }
             }
-            if modified > 0 {
-                self.record_update_ranges(&modified_indices);
-            }
-            modified
         }
+        if modified > 0 {
+            self.record_update_ranges(&modified_indices);
+        }
+        modified
     }
 
-    /// 批量移动选中音符——**不同步 im::Vector**（NoteStore 热路径专用）
+    /// 批量移动选中音符——**不同步 track_notes**（热路径专用）
     ///
-    /// 调用方必须在**渲染前**手动调用 `sync_notes_from_store()` 确保一致性。
+    /// 调用方必须自行保证后续一致性（如显式 `sync_track_notes`）。
     pub fn batch_move_notes_no_sync(
         &mut self,
         selected: &BitSet,
@@ -77,27 +58,21 @@ impl EditorData {
             return 0;
         }
 
-        if self.note_store_enabled {
-            self.note_store
-                .batch_move_parallel(selected, delta_tick, delta_key, max_key)
-        } else {
-            let mut modified = 0usize;
-            for note_idx in 0..self.notes.len() {
-                if selected.get(note_idx)
-                    && let Some(note) = self.notes.get_mut(note_idx)
-                {
-                    let new_tick = (note.tick + delta_tick).max(0.0);
-                    let new_key =
-                        (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
-                    if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                        note.tick = new_tick;
-                        note.key = new_key;
-                        modified += 1;
-                    }
+        let mut modified = 0usize;
+        for note_idx in 0..self.notes.len() {
+            if selected.get(note_idx)
+                && let Some(note) = self.notes.get_mut(note_idx)
+            {
+                let new_tick = (note.tick + delta_tick).max(0.0);
+                let new_key = (note.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u16;
+                if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+                    note.tick = new_tick;
+                    note.key = new_key;
+                    modified += 1;
                 }
             }
-            modified
         }
+        modified
     }
 
     /// 从 DragState 批量移动选中音符（集成层适配）
@@ -111,7 +86,7 @@ impl EditorData {
         if drag_state.is_delta_zero() || !drag_state.has_selection() {
             return 0;
         }
-        let bitset = bitvec_to_bitset(&drag_state.selected);
+        let bitset = sync_bitvec_to_bitset(&drag_state.selected);
         self.batch_move_notes(
             &bitset,
             drag_state.delta_tick as f32,
@@ -120,9 +95,7 @@ impl EditorData {
         )
     }
 
-    /// 从 DragState 批量移动选中音符——**不同步 im::Vector**
-    ///
-    /// 适用场景：`commit_pending_drag` 等高频热路径。
+    /// 从 DragState 批量移动选中音符——**不同步 track_notes**
     pub fn batch_move_notes_from_drag_state_no_sync(
         &mut self,
         drag_state: &DragState,
@@ -131,7 +104,7 @@ impl EditorData {
         if drag_state.is_delta_zero() || !drag_state.has_selection() {
             return 0;
         }
-        let bitset = bitvec_to_bitset(&drag_state.selected);
+        let bitset = sync_bitvec_to_bitset(&drag_state.selected);
         self.batch_move_notes_no_sync(
             &bitset,
             drag_state.delta_tick as f32,
@@ -151,31 +124,44 @@ impl EditorData {
         if drag_state.is_delta_zero() || !drag_state.has_selection() {
             return 0;
         }
-        if self.note_store_enabled {
-            self.note_store.batch_move_parallel_from_bitvec(
-                &drag_state.selected,
-                drag_state.delta_tick as f32,
-                drag_state.delta_key,
-                max_key,
-            )
-        } else {
-            let mut modified = 0usize;
-            for (note_idx, selected) in drag_state.selected.iter().enumerate() {
-                if !selected || note_idx >= self.notes.len() {
-                    continue;
-                }
-                if let Some(note) = self.notes.get_mut(note_idx) {
-                    let new_tick = (note.tick + drag_state.delta_tick as f32).max(0.0);
-                    let new_key = (note.key as i32 + drag_state.delta_key as i32)
-                        .clamp(0, max_key as i32) as u16;
-                    if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                        note.tick = new_tick;
-                        note.key = new_key;
-                        modified += 1;
-                    }
+        let mut modified = 0usize;
+        for (note_idx, selected) in drag_state.selected.iter().enumerate() {
+            if !selected || note_idx >= self.notes.len() {
+                continue;
+            }
+            if let Some(note) = self.notes.get_mut(note_idx) {
+                let new_tick = (note.tick + drag_state.delta_tick as f32).max(0.0);
+                let new_key =
+                    (note.key as i32 + drag_state.delta_key as i32).clamp(0, max_key as i32) as u16;
+                if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
+                    note.tick = new_tick;
+                    note.key = new_key;
+                    modified += 1;
                 }
             }
-            modified
+        }
+        modified
+    }
+}
+
+/// BitVec → BitSet 转换（原 sync.rs，迁入本文件避免模块循环）
+pub(super) fn sync_bitvec_to_bitset(bv: &bit_vec::BitVec) -> BitSet {
+    let len = bv.len();
+    let mut selected_bits = BitSet::new(len);
+    for (block_idx, block) in bv.blocks().enumerate() {
+        if block == 0 {
+            continue;
+        }
+        let base = block_idx * 64;
+        let mut bits = block;
+        while bits != 0 {
+            let tz = bits.trailing_zeros() as usize;
+            let idx = base + tz;
+            if idx < len {
+                selected_bits.set(idx);
+            }
+            bits &= bits - 1;
         }
     }
+    selected_bits
 }

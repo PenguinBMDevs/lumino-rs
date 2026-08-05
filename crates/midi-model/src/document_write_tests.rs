@@ -207,3 +207,36 @@ fn test_insert_after_remove_consistency() {
     let starts: Vec<u32> = doc.notes[0].iter().map(|n| n.start_tick).collect();
     assert_eq!(starts, vec![100, 250, 300]);
 }
+
+#[test]
+fn test_replace_track_notes() {
+    let mut doc = make_doc(vec![make_track(&[(100, 200, 60)]), make_track(&[])]);
+
+    // 整轨替换：新轨道数据（乱序输入由调用方负责排序，这里直接验证赋值）
+    let new_notes = vec![
+        NoteEvent::new(50, 100, 62, 90, 0),
+        NoteEvent::new(200, 300, 64, 80, 0),
+    ];
+    assert!(doc.replace_track_notes(0, new_notes.clone()));
+    assert_eq!(doc.notes[0], new_notes);
+    assert_eq!(doc.notes[0].len(), 2);
+
+    // 其他轨道不受影响
+    assert!(doc.notes[1].is_empty());
+
+    // track_id 越界返回 false，数据不变
+    assert!(!doc.replace_track_notes(99, vec![NoteEvent::new(1, 2, 60, 100, 0)]));
+    assert_eq!(doc.notes.len(), 2);
+}
+
+#[test]
+fn test_clear_track_notes() {
+    let mut doc = make_doc(vec![make_track(&[(100, 200, 60), (200, 300, 61)])]);
+
+    assert!(doc.clear_track_notes(0));
+    assert!(doc.notes[0].is_empty());
+    assert_eq!(doc.notes.len(), 1);
+
+    // track_id 越界返回 false
+    assert!(!doc.clear_track_notes(99));
+}

@@ -199,31 +199,6 @@ impl Editor {
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
-        // NoteStore 热路径：用 `push_history()` O(1) 快照替代 `move_ops_from_drag_state` 的 8M MoveOp 分配
-        // 直接接受 `&BitVec` 消除 BitVec→BitSet 转换，操作后同步到 im::Vector 供 undo 快照使用。
-        if self.editor_state.data.is_note_store_enabled() {
-            // 先保存快照（im::Vector::clone() O(1) 结构共享）
-            self.editor_state.data.push_history();
-            // 直接走 &BitVec 路径，省去 bitvec_to_bitset 转换
-            let modified = self
-                .editor_state
-                .data
-                .batch_move_notes_from_bitvec_no_sync(drag_state, max_key);
-            if modified > 0 {
-                // 跳过 O(N) sync_notes_from_store() — 渲染层直读 NoteStore，undo 快照在
-                // 下次 push_history() 时通过 note_store_dirty 延迟同步，避免每次拖动提交
-                // 都做 O(N) to_im_vector()（16M 音符 ~3.5s）。
-                self.editor_state.data.note_store_dirty = true;
-                self.mark_notes_changed();
-                tracing::info!("Editor: NoteStore 批量移动完成, 修改 {} 个音符", modified);
-            } else {
-                // 无实际修改，丢弃空快照
-                self.editor_state.data.discard_last_history();
-            }
-            self.pending_drag_state = None;
-            return true;
-        }
-
         let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
         match self.editor_state.data.apply_move_ops_async(ops, max_key) {
             Ok(true) => {

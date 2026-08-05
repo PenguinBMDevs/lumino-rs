@@ -16,7 +16,6 @@ use lumino_note_core::event::{
 use lumino_note_core::history::History;
 use lumino_note_core::midi_types::{CcData, TempoPoint};
 use lumino_note_core::note::Note;
-use lumino_note_core::note_store::NoteStore;
 
 mod accessors;
 pub(crate) mod async_commit;
@@ -86,20 +85,6 @@ pub struct EditorData {
     pub chords: Vec<ChordEvent>,
     /// 音色变换事件列表
     pub program_changes: Vec<ProgramChangeEvent>,
-    /// 高性能 SoA 音符存储（与 `notes` 并存，用于批量操作热路径）
-    ///
-    /// 当音符数超过 `NOTE_STORE_THRESHOLD` 时自动启用：
-    /// - 批量移动走 `batch_move_parallel`（8 线程并行，16M 50% 18ms）
-    /// - 批量删除走 `delete_selected`（O(N) 单次遍历）
-    /// - 批量插入走 `insert_bulk`（无 realloc，1ms/1000 音符）
-    ///
-    /// 启用后 `notes` 仍作为权威源，`note_store` 通过 `sync_note_store()` 同步。
-    /// 后续迁移完成后 `notes` 将退化为 `note_store` 的视图。
-    pub note_store: NoteStore,
-    /// note_store 启用阈值（音符数低于此值时不启用，避免小数据量开销）
-    pub note_store_enabled: bool,
-    /// note_store 被修改后尚未同步到 `notes`（避免每次拖动提交都做 O(N) to_im_vector）
-    pub note_store_dirty: bool,
     /// 工程走带视图的选择范围
     pub arrange_selection: ArrangeSelection,
     /// 主音轨 GPU 增量事件队列（自上次 UI 消费以来的编辑操作）

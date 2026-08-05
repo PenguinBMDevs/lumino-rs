@@ -122,10 +122,8 @@ impl Editor {
                     snapped_tick,
                     snap_precision,
                     &sel,
-                    &mut self.editor_state.data.note_store,
                     &mut self.editor_state.data.notes,
                     &self.selected_bounds,
-                    self.editor_state.data.note_store_enabled,
                 ) {
                     self.mark_ghost_dirty();
                 }
@@ -136,10 +134,8 @@ impl Editor {
                     snapped_tick,
                     snap_precision,
                     &sel,
-                    &mut self.editor_state.data.note_store,
                     &mut self.editor_state.data.notes,
                     &self.selected_bounds,
-                    self.editor_state.data.note_store_enabled,
                 ) {
                     self.mark_ghost_dirty();
                 }

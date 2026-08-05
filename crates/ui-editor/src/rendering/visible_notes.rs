@@ -49,8 +49,6 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending = &self.pending_drag_state;
-        let data = &self.editor_state.data;
-        let note_store_enabled = data.is_note_store_enabled();
 
         // 渲染路径：仅在索引干净（!dirty 且已存在）时复用，否则线性扫描。
         // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。
@@ -73,7 +71,6 @@ impl Editor {
                 edit_state,
                 pending,
                 needs_ghost,
-                note_store_enabled,
             );
         } else {
             self.collect_via_linear_scan(
@@ -87,7 +84,6 @@ impl Editor {
                 edit_state,
                 pending,
                 needs_ghost,
-                note_store_enabled,
             );
         }
 
@@ -114,7 +110,6 @@ impl Editor {
         edit_state: &EditState,
         pending: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
-        note_store_enabled: bool,
     ) {
         let index = self.spatial.note_index.borrow();
         let index = match index.as_ref() {
@@ -137,57 +132,28 @@ impl Editor {
         if needs_ghost {
             // 只有 pending 或 Dragging（单音符）会进入此分支。
             // DraggingSelection 不走此路径——变化量只在松开鼠标时计算一次。
-            if note_store_enabled {
-                for &i in &indices_buf {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    if let Some(view) = data.note_store.get_ref(i) {
-                        let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                            apply_ghost_delta(
-                                view.tick, view.key, drag_dt, drag_dk, pending, i, max_key,
-                            )
-                        } else {
-                            (view.tick, view.key)
-                        };
-                        result.push((tick, key, view.length));
-                    }
+            for &i in &indices_buf {
+                if let Some(idx_out) = indices.as_deref_mut() {
+                    idx_out.push(i);
                 }
-            } else {
-                for &i in &indices_buf {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    if let Some(note) = data.notes.get(i) {
-                        let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                            apply_ghost_delta(
-                                note.tick, note.key, drag_dt, drag_dk, pending, i, max_key,
-                            )
-                        } else {
-                            (note.tick, note.key)
-                        };
-                        result.push((tick, key, note.length));
-                    }
+                if let Some(note) = data.notes.get(i) {
+                    let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
+                        apply_ghost_delta(
+                            note.tick, note.key, drag_dt, drag_dk, pending, i, max_key,
+                        )
+                    } else {
+                        (note.tick, note.key)
+                    };
+                    result.push((tick, key, note.length));
                 }
             }
         } else {
-            if note_store_enabled {
-                for &i in &indices_buf {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    if let Some(view) = data.note_store.get_ref(i) {
-                        result.push((view.tick, view.key, view.length));
-                    }
+            for &i in &indices_buf {
+                if let Some(idx_out) = indices.as_deref_mut() {
+                    idx_out.push(i);
                 }
-            } else {
-                for &i in &indices_buf {
-                    if let Some(idx_out) = indices.as_deref_mut() {
-                        idx_out.push(i);
-                    }
-                    if let Some(note) = data.notes.get(i) {
-                        result.push((note.tick, note.key, note.length));
-                    }
+                if let Some(note) = data.notes.get(i) {
+                    result.push((note.tick, note.key, note.length));
                 }
             }
         }
@@ -211,83 +177,41 @@ impl Editor {
         edit_state: &EditState,
         pending: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
-        note_store_enabled: bool,
     ) {
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
         let data = &self.editor_state.data;
 
         if needs_ghost {
-            if note_store_enabled {
-                for (i, view) in data.note_store.iter_refs().enumerate() {
-                    let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                        apply_ghost_delta(
-                            view.tick, view.key, drag_dt, drag_dk, pending, i, max_key,
-                        )
-                    } else {
-                        (view.tick, view.key)
-                    };
-                    let note_end = tick + view.length;
-                    if key >= visible_key_min
-                        && key <= visible_key_max
-                        && note_end >= visible_tick_start
-                        && tick <= visible_tick_end
-                    {
-                        if let Some(idx_out) = indices.as_deref_mut() {
-                            idx_out.push(i);
-                        }
-                        result.push((tick, key, view.length));
+            for (i, note) in data.notes.iter().enumerate() {
+                let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
+                    apply_ghost_delta(note.tick, note.key, drag_dt, drag_dk, pending, i, max_key)
+                } else {
+                    (note.tick, note.key)
+                };
+                let note_end = tick + note.length;
+                if key >= visible_key_min
+                    && key <= visible_key_max
+                    && note_end >= visible_tick_start
+                    && tick <= visible_tick_end
+                {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
                     }
-                }
-            } else {
-                for (i, note) in data.notes.iter().enumerate() {
-                    let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                        apply_ghost_delta(
-                            note.tick, note.key, drag_dt, drag_dk, pending, i, max_key,
-                        )
-                    } else {
-                        (note.tick, note.key)
-                    };
-                    let note_end = tick + note.length;
-                    if key >= visible_key_min
-                        && key <= visible_key_max
-                        && note_end >= visible_tick_start
-                        && tick <= visible_tick_end
-                    {
-                        if let Some(idx_out) = indices.as_deref_mut() {
-                            idx_out.push(i);
-                        }
-                        result.push((tick, key, note.length));
-                    }
+                    result.push((tick, key, note.length));
                 }
             }
         } else {
-            if note_store_enabled {
-                for (i, view) in data.note_store.iter_refs().enumerate() {
-                    let note_end = view.tick + view.length;
-                    if view.key >= visible_key_min
-                        && view.key <= visible_key_max
-                        && note_end >= visible_tick_start
-                        && view.tick <= visible_tick_end
-                    {
-                        if let Some(idx_out) = indices.as_deref_mut() {
-                            idx_out.push(i);
-                        }
-                        result.push((view.tick, view.key, view.length));
+            for (i, note) in data.notes.iter().enumerate() {
+                let note_end = note.tick + note.length;
+                if note.key >= visible_key_min
+                    && note.key <= visible_key_max
+                    && note_end >= visible_tick_start
+                    && note.tick <= visible_tick_end
+                {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
                     }
-                }
-            } else {
-                for (i, note) in data.notes.iter().enumerate() {
-                    let note_end = note.tick + note.length;
-                    if note.key >= visible_key_min
-                        && note.key <= visible_key_max
-                        && note_end >= visible_tick_start
-                        && note.tick <= visible_tick_end
-                    {
-                        if let Some(idx_out) = indices.as_deref_mut() {
-                            idx_out.push(i);
-                        }
-                        result.push((note.tick, note.key, note.length));
-                    }
+                    result.push((note.tick, note.key, note.length));
                 }
             }
         }
@@ -343,13 +267,9 @@ impl Editor {
             if !is_note_ghosted(note_idx, pending, edit_state) {
                 continue;
             }
-            let Some((tick, key, length)) = (if data.is_note_store_enabled() {
-                data.note_store
-                    .get_ref(note_idx)
-                    .map(|v| (v.tick, v.key, v.length))
-            } else {
+            let Some((tick, key, length)) =
                 data.notes.get(note_idx).map(|n| (n.tick, n.key, n.length))
-            }) else {
+            else {
                 continue;
             };
             let (tick, key) =

@@ -5,7 +5,6 @@
 use super::*;
 use crate::Note;
 use crate::editor_state::ViewState;
-use lumino_note_core::NoteStore;
 
 // ===== Velocity 测试 =====
 
@@ -46,48 +45,6 @@ fn test_build_velocity_points_multiple_notes() {
     assert_eq!(points[2].note_index, 3);
     assert_eq!(points[3].tick, 960.0);
     assert_eq!(points[3].note_index, 2);
-}
-
-#[test]
-fn test_build_velocity_points_from_store_empty() {
-    let store = NoteStore::new();
-    let points = VelocityPanel::build_velocity_points_from_store(&store);
-    assert!(points.is_empty());
-}
-
-#[test]
-fn test_build_velocity_points_from_store_single_note() {
-    let mut notes = im::Vector::new();
-    notes.push_back(Note::new(0.0, 60, 480.0).with_velocity(100));
-    let store = NoteStore::from_im_vector(&notes);
-
-    let points = VelocityPanel::build_velocity_points_from_store(&store);
-    assert_eq!(points.len(), 1);
-    assert_eq!(points[0].note_index, 0);
-    assert_eq!(points[0].tick, 0.0);
-    assert_eq!(points[0].velocity, 100);
-}
-
-/// 验证 NoteStore 路径与 im::Vector 路径产出等价结果
-#[test]
-fn test_build_velocity_points_from_store_equivalent() {
-    let mut notes = im::Vector::new();
-    notes.push_back(Note::new(480.0, 64, 240.0).with_velocity(80));
-    notes.push_back(Note::new(0.0, 60, 480.0).with_velocity(100));
-    notes.push_back(Note::new(960.0, 67, 240.0).with_velocity(120));
-    notes.push_back(Note::new(480.0, 72, 120.0).with_velocity(60));
-
-    let store = NoteStore::from_im_vector(&notes);
-    let points_vec = VelocityPanel::build_velocity_points(&notes);
-    let points_store = VelocityPanel::build_velocity_points_from_store(&store);
-
-    assert_eq!(points_vec.len(), points_store.len());
-    for (a, b) in points_vec.iter().zip(points_store.iter()) {
-        assert_eq!(a.note_index, b.note_index);
-        assert_eq!(a.tick, b.tick);
-        assert_eq!(a.velocity, b.velocity);
-        assert_eq!(a.length, b.length);
-    }
 }
 
 // ===== CC 数据测试 =====

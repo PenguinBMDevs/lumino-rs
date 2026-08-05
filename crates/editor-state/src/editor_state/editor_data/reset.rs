@@ -27,8 +27,6 @@ impl EditorData {
         self.lyrics.clear();
         self.chords.clear();
         self.program_changes.clear();
-        self.note_store.clear();
-        self.note_store_enabled = false;
         self.arrange_selection.clear();
         // 主音轨增量对账：重置 = 全量重建（事件队列不可信）
         self.note_delta_events.clear();

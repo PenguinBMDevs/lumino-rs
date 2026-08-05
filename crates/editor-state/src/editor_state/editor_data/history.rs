@@ -30,21 +30,12 @@ impl EditorData {
 
     // ── 向后兼容的 push / undo / redo ───────────────────────
 
-    /// 如果 `note_store_dirty`，先同步 NoteStore 到 `notes`，确保快照捕获最新状态
-    fn sync_from_store_if_dirty(&mut self) {
-        if self.note_store_dirty {
-            self.sync_notes_from_store();
-            self.note_store_dirty = false;
-        }
-    }
-
     /// 将当前状态快照推入历史记录（O(lane 数) Arc clone，真共享）
     ///
     /// 向后兼容版本：op_kind = Other，每个 push 独立 group。
     /// **新代码应使用 `push_history_with_op_kind` 或 `push_history_mergeable`**
     /// 以获得逻辑撤销链 / 合并窗口能力。
     pub fn push_history(&mut self) {
-        self.sync_from_store_if_dirty();
         self.history.push(self.make_snapshot());
     }
 
@@ -53,7 +44,6 @@ impl EditorData {
     /// 适用：NoteMove / NoteDelete / NoteTransform / VelocityEdit / AutomationEdit / Recording
     /// 这些操作不走合并窗口，但需要 group_id 以支持未来扩展（如批量操作的逻辑分组）。
     pub fn push_history_with_op_kind(&mut self, op_kind: OpKind) {
-        self.sync_from_store_if_dirty();
         self.history
             .push_with_op_kind(self.make_snapshot(), op_kind);
     }
@@ -64,7 +54,6 @@ impl EditorData {
     /// 合并规则：栈顶 op_kind 相同 + 在合并窗口内 + 未超 entry 上限 → 合并。
     /// 返回 `true` 表示合并到上一条，`false` 表示新增/分割。
     pub fn push_history_mergeable(&mut self, op_kind: OpKind) -> bool {
-        self.sync_from_store_if_dirty();
         self.history.push_mergeable(self.make_snapshot(), op_kind)
     }
 
@@ -78,14 +67,10 @@ impl EditorData {
     // ── 单步 undo / redo ────────────────────────────────────
 
     /// 撤销上一步操作（单步，不跨 chain）
-    ///
-    /// 恢复快照后同步 `note_store`，确保 NoteStore 热路径不因 `notes` 回退而不同步。
     pub fn undo(&mut self) -> bool {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.undo(current) {
             self.apply_history_entry(entry, true);
-            // 恢复快照后同步 note_store（快照只存 notes，不存 note_store）
-            self.sync_note_store();
             true
         } else {
             false
@@ -93,14 +78,10 @@ impl EditorData {
     }
 
     /// 重做上一步撤销的操作（单步，不跨 chain）
-    ///
-    /// 恢复快照后同步 `note_store`，确保 NoteStore 热路径不因 `notes` 回退而不同步。
     pub fn redo(&mut self) -> bool {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.redo(current) {
             self.apply_history_entry(entry, false);
-            // 恢复快照后同步 note_store
-            self.sync_note_store();
             true
         } else {
             false
@@ -117,7 +98,6 @@ impl EditorData {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.undo_logical(current) {
             self.apply_history_entry(entry, true);
-            self.sync_note_store();
             true
         } else {
             false
@@ -129,7 +109,6 @@ impl EditorData {
         let current = self.make_snapshot();
         if let Some(entry) = self.history.redo_logical(current) {
             self.apply_history_entry(entry, false);
-            self.sync_note_store();
             true
         } else {
             false
@@ -303,19 +282,11 @@ impl EditorData {
         let mut range_start = indices[0];
         let mut prev = indices[0];
 
-        // NoteStore 启用时用 range_ticks_keys（顺序扫描，O(N) 一次二分查找），
-        // 否则用 notes.get（clone Note）
+        // 直接遍历 notes 提取原始 tick/key（NoteStore 已删除）
         let make_op = |start: usize, end: usize, seq: u16| {
-            let (ticks, keys): (Vec<f32>, Vec<u16>) = if self.note_store_enabled {
-                self.note_store
-                    .range_ticks_keys(start, end + 1)
-                    .into_iter()
-                    .unzip()
-            } else {
-                (start..=end)
-                    .filter_map(|idx| self.notes.get(idx).map(|note| (note.tick, note.key)))
-                    .unzip()
-            };
+            let (ticks, keys): (Vec<f32>, Vec<u16>) = (start..=end)
+                .filter_map(|idx| self.notes.get(idx).map(|note| (note.tick, note.key)))
+                .unzip();
             MoveOp {
                 track_id,
                 range_start: start as u32,

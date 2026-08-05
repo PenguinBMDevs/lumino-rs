@@ -7,7 +7,6 @@ use super::EditorData;
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::history::History;
 use lumino_note_core::midi_types::{CcData, TempoPoint};
-use lumino_note_core::note_store::NoteStore;
 
 impl Default for EditorData {
     fn default() -> Self {
@@ -40,9 +39,6 @@ impl EditorData {
             lyrics: Vec::new(),
             chords: Vec::new(),
             program_changes: Vec::new(),
-            note_store: NoteStore::new(),
-            note_store_enabled: false,
-            note_store_dirty: false,
             arrange_selection: ArrangeSelection::new(),
             note_delta_events: Vec::new(),
             note_delta_dirty: false,
