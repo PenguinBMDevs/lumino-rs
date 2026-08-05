@@ -42,6 +42,8 @@ impl Host {
 
         let note_renderer = needs_renderers
             .then(|| lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format));
+        let onion_skin_renderer = needs_renderers
+            .then(|| lumino_gfx::NoteRenderer::new_onion_skin(&gfx.device, &gfx.queue, gfx.format));
         let grid_renderer =
             needs_renderers.then(|| lumino_gfx::GridRenderer::new(&gfx.device, gfx.format));
 
@@ -55,6 +57,7 @@ impl Host {
             &wgpu_resources,
             viewport,
             note_renderer,
+            onion_skin_renderer,
             grid_renderer,
             font,
             &window,

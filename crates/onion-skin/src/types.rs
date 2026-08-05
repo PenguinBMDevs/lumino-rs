@@ -16,7 +16,7 @@ pub struct OnionSkinNote {
     pub start_ms: f32,
     /// 结束毫秒
     pub end_ms: f32,
-    /// MIDI key (0-127)
+    /// MIDI key (0-255，支持 256 键，与 NoteInstance u8 编码一致)
     pub key: u8,
     /// RGBA 颜色
     pub color: [u8; 4],

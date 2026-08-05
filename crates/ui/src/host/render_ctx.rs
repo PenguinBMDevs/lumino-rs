@@ -51,6 +51,10 @@ pub(crate) struct RenderContext {
     pub viewport: Viewport,
     /// 音符渲染器（仅主窗口需要）
     pub note_renderer: Option<NoteRenderer>,
+    /// 洋葱皮渲染器（半透明背景层，全量上传 + GPU culling）
+    pub onion_skin_renderer: Option<NoteRenderer>,
+    /// 洋葱皮状态缓存（跟踪 track_notes_gen + 音轨开关变化）
+    pub onion_skin_state: crate::host::render::onion_skin::OnionSkinState,
     /// 网格渲染器（仅主窗口需要）
     pub grid_renderer: Option<GridRenderer>,
     /// 渲染缓存
@@ -88,6 +92,7 @@ impl RenderContext {
         wgpu: &WgpuResources,
         viewport: Viewport,
         note_renderer: Option<NoteRenderer>,
+        onion_skin_renderer: Option<NoteRenderer>,
         grid_renderer: Option<GridRenderer>,
         font: Font,
         window: &Arc<iced_winit::winit::window::Window>,
@@ -129,6 +134,8 @@ impl RenderContext {
             cache: Cache::new(),
             viewport,
             note_renderer,
+            onion_skin_renderer,
+            onion_skin_state: Default::default(),
             grid_renderer,
             render_cache: RenderCache::new(),
             last_edit_state: crate::editor::EditState::default(),

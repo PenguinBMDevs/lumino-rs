@@ -50,6 +50,8 @@ impl NoteRenderer {
     const INITIAL_CAPACITY: usize = crate::constants::rendering::INITIAL_INSTANCE_CAPACITY;
     /// 顶点着色器代码 (WGSL)
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
+    /// 洋葱皮顶点着色器代码 (WGSL) — 半透明 alpha=0.3，无边框
+    const ONION_SHADER: &'static str = include_str!("shaders/onion_note.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
 
@@ -78,7 +80,7 @@ mod tests {
     #[test]
     fn test_note_instance_creation() {
         // border_width = 4（wasabi 风格）
-        let instance = NoteInstance::new(100.0, 60.0, 200.0, [1.0, 0.5, 0.0, 0.8], 4);
+        let instance = NoteInstance::new(100.0, 60u8, 200.0, [1.0, 0.5, 0.0, 0.8], 4);
 
         assert_eq!(instance.start_length, [100.0, 200.0]);
         assert_eq!(instance.border_width, 4);
@@ -101,7 +103,7 @@ mod tests {
     /// 测试预览音符哨兵值
     #[test]
     fn test_preview_sentinel() {
-        let preview = NoteInstance::new_preview(0.0, 0.0, 100.0, [1.0; 4]);
+        let preview = NoteInstance::new_preview(0.0, 0u8, 100.0, [1.0; 4]);
         assert_eq!(preview.border_width, PREVIEW_BORDER_SENTINEL);
     }
 

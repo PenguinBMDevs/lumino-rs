@@ -19,20 +19,64 @@ impl NoteRenderer {
         Self::new_with_depth(device, queue, format, false)
     }
 
+    /// 创建洋葱皮音符渲染器
+    ///
+    /// 与主音轨 NoteRenderer 的差异：
+    /// - 使用 `onion_note.wgsl`（半透明 alpha=0.3，无边框）
+    /// - 无 depth attachment（洋葱皮是背景层，在主音轨之前绘制，不参与深度测试）
+    /// - 复用 cull.wgsl（GPU culling + indirect draw 零修改）
+    ///
+    /// 性能范式（照搬 wasabi 精神 + lumino 现有基础设施）：
+    /// - 全量上传一次（MIDI 加载时，非每帧重写）—— 比 wasabi 每帧重写更优
+    /// - GPU culling 每帧（复用 cull.wgsl 的 workgroup 批量原子 + LOD 剔除）
+    /// - Indirect draw（CPU 零参与绘制提交）
+    pub fn new_onion_skin(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_shader(
+            device,
+            queue,
+            format,
+            false,
+            Self::ONION_SHADER,
+            Self::CULL_SHADER,
+        )
+    }
+
     fn new_with_depth(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
+        Self::new_with_shader(
+            device,
+            queue,
+            format,
+            needs_depth,
+            Self::VERTEX_SHADER,
+            Self::CULL_SHADER,
+        )
+    }
+
+    fn new_with_shader(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+        vertex_shader: &'static str,
+        cull_shader: &'static str,
+    ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("note_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::VERTEX_SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(vertex_shader.into()),
         });
 
         let cull_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("cull_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::CULL_SHADER.into()),
+            source: wgpu::ShaderSource::Wgsl(cull_shader.into()),
         });
 
         // 创建渲染 bind group layout

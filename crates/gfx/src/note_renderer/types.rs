@@ -49,30 +49,27 @@ pub fn unpack_key_color(packed: u32) -> (u8, [f32; 4]) {
 
 impl NoteInstance {
     /// 创建新的音符逻辑实例（普通音符）
+    /// `key` 为 u8（0-255，支持 256 键，与 wasabi `NoteVertex::new` 一致）
     /// `border_width` 由 `calculate_border_width` 算出，主音轨所有音符共享同一值
     #[must_use]
-    pub fn new(tick: f32, key: f32, length: f32, color: [f32; 4], border_width: u32) -> Self {
+    pub fn new(tick: f32, key: u8, length: f32, color: [f32; 4], border_width: u32) -> Self {
         Self {
             start_length: [tick, length],
-            key_color: pack_key_color(key_to_u8(key), color),
+            key_color: pack_key_color(key, color),
             border_width,
         }
     }
 
     /// 创建预览音符（`border_width = PREVIEW_BORDER_SENTINEL`，FS 走预览分支）
+    /// `key` 为 u8（0-255，与 wasabi 一致）
     #[must_use]
-    pub fn new_preview(tick: f32, key: f32, length: f32, color: [f32; 4]) -> Self {
+    pub fn new_preview(tick: f32, key: u8, length: f32, color: [f32; 4]) -> Self {
         Self {
             start_length: [tick, length],
-            key_color: pack_key_color(key_to_u8(key), color),
+            key_color: pack_key_color(key, color),
             border_width: PREVIEW_BORDER_SENTINEL,
         }
     }
-}
-
-/// 将 f32 key（浮点索引）钳制到 u8 范围
-fn key_to_u8(key: f32) -> u8 {
-    key.round().clamp(0.0, 255.0) as u8
 }
 
 /// 计算音符边框像素宽度（复刻 wasabi `utils::calculate_border_width`）

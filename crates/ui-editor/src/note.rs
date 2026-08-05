@@ -35,7 +35,7 @@ impl NoteExt for Note {
     fn to_instance(&self, color: Color, border_width: u32) -> NoteInstance {
         NoteInstance::new(
             self.tick,
-            self.key as f32,
+            self.key as u8,
             self.length,
             color_to_array(color),
             border_width,

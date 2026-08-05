@@ -50,6 +50,8 @@ impl Host {
 
         // 准备相机和深度纹理
         let camera = self.build_camera_uniform(&viewport);
+        // 洋葱皮：全量上传 + GPU cull（在主音轨之前，半透明背景层）
+        self.prepare_onion_skin(gfx, &mut encoder, camera);
         self.prepare_note_renderer(gfx, &mut encoder, notes_changed, camera);
         self.ensure_depth_texture(gfx, &viewport.physical_size);
 

@@ -331,6 +331,16 @@ impl Host {
                 grid_renderer.draw(&mut render_pass, 1);
             }
 
+            // 绘制洋葱皮（半透明背景层，在主音轨之前）
+            // 注意：grid_renderer 的可变借用已离开作用域，此处可安全借用 onion_skin_renderer
+            if scissor.has_valid_region
+                && let Some(onion_renderer) = self.render_ctx.onion_skin_renderer.as_ref()
+            {
+                render_pass.set_scissor_rect(scissor.x, scissor.y, scissor.width, scissor.height);
+                let has_instances = onion_renderer.last_upload_count() > 0;
+                onion_renderer.draw(&mut render_pass, has_instances, None);
+            }
+
             // 绘制音符（本帧已在 prepare 时 acquire 接管，此处 peek 复用同一槽位）
             let note_instances = unsafe {
                 self.render_ctx

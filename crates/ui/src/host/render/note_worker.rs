@@ -116,7 +116,7 @@ pub(super) fn build_main_note_instances(
     if visible_notes.len() >= PARALLEL_THRESHOLD {
         instances.resize(
             visible_notes.len(),
-            lumino_gfx::NoteInstance::new(0.0, 0.0, 0.0, [0.0; 4], border_width),
+            lumino_gfx::NoteInstance::new(0.0, 0u8, 0.0, [0.0; 4], border_width),
         );
         instances
             .par_iter_mut()
@@ -125,7 +125,7 @@ pub(super) fn build_main_note_instances(
                 let (tick, key, length) = visible_notes[i];
                 *instance = lumino_gfx::NoteInstance::new(
                     tick,
-                    key as f32,
+                    key as u8,
                     length,
                     fixed_note_color,
                     border_width,
@@ -136,7 +136,7 @@ pub(super) fn build_main_note_instances(
         instances.extend(visible_notes.iter().map(|(tick, key, length)| {
             lumino_gfx::NoteInstance::new(
                 *tick,
-                *key as f32,
+                *key as u8,
                 *length,
                 fixed_note_color,
                 border_width,
@@ -164,7 +164,7 @@ pub(super) fn build_main_note_instances(
         };
         instances.push(lumino_gfx::NoteInstance::new_preview(
             tick,
-            *key as f32,
+            *key as u8,
             length.max(snap_precision),
             MAIN_TRACK_NOTE_COLOR,
         ));
@@ -172,7 +172,7 @@ pub(super) fn build_main_note_instances(
         // hover 预览音符（铅笔工具 + Idle 状态，跟随鼠标指针）
         instances.push(lumino_gfx::NoteInstance::new_preview(
             preview_ctx.cursor_tick,
-            preview_ctx.cursor_key as f32,
+            preview_ctx.cursor_key as u8,
             preview_default_length.max(snap_precision),
             MAIN_TRACK_NOTE_COLOR,
         ));
