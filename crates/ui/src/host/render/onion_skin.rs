@@ -1,12 +1,20 @@
-//! 洋葱皮渲染 — MIDI 加载后全量上传所有音轨音符，GPU culling + indirect draw
+//! 洋葱皮渲染 — MIDI 加载后全量构建所有音轨音符，通过 RenderParams 传到 WGPU 线程
+//!
+//! 架构（分离渲染线程模式）：
+//! - UI 线程：collect_onion_skin_instances 检测 track_notes_gen/mute/current_track 变化
+//!   - 变化时重建实例 → RenderParams.onion_skin_instances + onion_skin_dirty=true
+//!   - 未变化时 → onion_skin_dirty=false（WGPU 线程复用上一帧 GPU buffer）
+//! - WGPU 线程：prepare_renderers 中 dirty=true 时 upload_instances；
+//!   execute_render_pass 中每帧 prepare_pass（compute cull）+ draw
 //!
 //! 性能范式（照搬 wasabi 精神 + lumino 现有基础设施）：
 //! - 全量上传一次（MIDI 加载时，非每帧重写）—— 比 wasabi 每帧重写更优
 //! - GPU culling 每帧（复用 cull.wgsl 的 workgroup 批量原子 + LOD 剔除）
 //! - Indirect draw（CPU 零参与绘制提交）
-//! - 音轨开关变化时重建（O(N_notes) 但不频繁）
+//! - rayon 并行构建实例（模仿 wasabi mod.rs:130-193）
 //!
-//! 渲染顺序：洋葱皮（半透明 alpha=0.3）→ 主音轨（不透明）→ UI
+//! 渲染顺序：洋葱皮（不透明 alpha=1.0）→ 主音轨（不透明）→ UI
+//! 深度测试：洋葱皮先绘制 depth=0.0，主音轨后绘制 LessEqual 0.0<=0.0 覆盖
 
 use crate::host::Host;
 use lumino_gfx::{NoteInstance, calculate_border_width};
@@ -76,8 +84,8 @@ impl OnionSkinState {
             || current_track != self.last_current_track
     }
 
-    /// 标记已构建（在 upload 后调用）
-    fn mark_built(&mut self, track_gen: u64, mute_fp: u64, current_track: usize) {
+    /// 标记已构建（在重建后调用）
+    pub(super) fn mark_built(&mut self, track_gen: u64, mute_fp: u64, current_track: usize) {
         self.last_track_notes_gen = track_gen;
         self.last_mute_fingerprint = mute_fp;
         self.last_current_track = current_track;
@@ -159,50 +167,37 @@ impl Host {
         instances
     }
 
-    /// 准备洋葱皮渲染（全量上传 + GPU cull）
+    /// 收集洋葱皮实例（分离渲染线程模式，由 collect_render_data 调用）
     ///
-    /// 调用时机：每帧（内部自动判断是否需要重建）
-    ///
-    /// 性能：仅在 needs_rebuild 为 true 时重建，否则只跑 compute cull
-    pub(super) fn prepare_onion_skin(
-        &mut self,
-        gfx: &lumino_gfx::Context,
-        encoder: &mut iced_wgpu::wgpu::CommandEncoder,
-        camera: lumino_gfx::CameraUniform,
-    ) {
-        puffin::profile_function!();
-
-        // 走带模式或无 renderer 时跳过
+    /// 返回 `(instances, dirty)`：
+    /// - `dirty=true`：实例已重建，WGPU 线程需重上传 GPU buffer
+    /// - `dirty=false`：实例未变化，WGPU 线程复用上一帧的 GPU buffer（instances 为空）
+    pub(super) fn collect_onion_skin_instances(&mut self) -> (Vec<NoteInstance>, bool) {
+        // 走带模式跳过
         if self.root.is_arrangement_mode() {
-            return;
+            return (Vec::new(), false);
         }
 
-        // 收集指纹（不可变借用，提前释放）
         let (track_gen, mute_fp, current_track) = OnionSkinState::collect_fingerprint(self);
-
-        // 检查是否需要重建（可变借用 render_ctx）
         let needs_rebuild =
             self.render_ctx
                 .onion_skin_state
                 .needs_rebuild(track_gen, mute_fp, current_track);
 
         if needs_rebuild {
-            // 构建实例（不可变借用 root）
             let instances = self.build_onion_skin_instances();
-            // 上传到 GPU（可变借用 render_ctx）
-            if let Some(onion_renderer) = self.render_ctx.onion_skin_renderer.as_mut() {
-                onion_renderer.upload_instances(&instances, &gfx.device, &gfx.queue);
-                tracing::debug!("Onion skin rebuilt: {} instances uploaded", instances.len());
-            }
-            // 标记已构建（可变借用 render_ctx）
             self.render_ctx
                 .onion_skin_state
                 .mark_built(track_gen, mute_fp, current_track);
-        }
-
-        // 每帧跑 compute cull（视口变化时重新裁剪）
-        if let Some(onion_renderer) = self.render_ctx.onion_skin_renderer.as_mut() {
-            onion_renderer.prepare_pass(encoder, camera, &gfx.queue);
+            tracing::debug!(
+                "[onion-skin] 重建 {} 个实例 (track_gen={}, current_track={})",
+                instances.len(),
+                track_gen,
+                current_track
+            );
+            (instances, true)
+        } else {
+            (Vec::new(), false)
         }
     }
 }

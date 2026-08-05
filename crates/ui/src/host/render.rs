@@ -1,17 +1,14 @@
 //! Host 渲染子模块 - 处理 UI、网格和音符渲染
 //!
-//! 支持三种渲染模式：
-//! 1. 单线程模式：UI更新和WGPU渲染在同一个线程
-//! 2. 多线程模式（旧）：WGPU渲染在独立线程，UI线程只生成渲染命令
-//! 3. 分离渲染模式（新）：UI线程和WGPU渲染线程完全分离，零拷贝数据共享
+//! 渲染架构（分离渲染线程模式）：
+//! - 主窗口：UI 线程只负责状态更新和参数生成，WGPU 渲染在独立线程中（零拷贝数据共享）
+//! - 轻量窗口（dialog/progress）：无 wgpu_render_thread，直接渲染 iced UI
 //!
 //! 子模块组织：
 //! - `data`: 渲染数据类型定义
 //! - `frame`: 帧准备逻辑（FPS计算、播放状态）
 //! - `notes`: 音符实例更新
 //! - `viewport`: 视口信息收集
-//! - `encoder`: 渲染编码器管理
-//! - `single_thread`: 单线程渲染模式
 //! - `separate_thread`: 分离渲染线程模式
 //! - `ui`: iced UI 渲染
 
@@ -21,12 +18,10 @@ use crate::host::Host;
 
 // 子模块声明
 mod data;
-mod encoder;
 mod frame;
 pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;
-mod single_thread;
 mod ui;
 mod viewport;
 
@@ -35,10 +30,9 @@ mod viewport;
 impl Host {
     /// 主渲染入口
     ///
-    /// 根据配置选择渲染模式：
-    /// - 单线程模式：直接在当前线程执行所有渲染
-    /// - 多线程模式（旧）：发送渲染命令到独立渲染线程
-    /// - 分离渲染模式（新）：UI线程只更新数据，WGPU线程独立渲染
+    /// 根据是否启用 wgpu_render_thread 选择渲染路径：
+    /// - 主窗口（已 `enable_separate_render_thread`）：走分离渲染线程，UI 线程只更新数据
+    /// - 轻量窗口（dialog/progress）：直接渲染 iced UI（无音符/网格渲染器）
     pub fn redraw_requested(
         &mut self,
         frame: &wgpu::SurfaceTexture,
@@ -56,11 +50,14 @@ impl Host {
         // 更新光标位置（用于音符预览）
         self.update_cursor_for_preview();
 
-        // 根据渲染模式选择不同的渲染路径
-        if self.render_ctx.use_separate_render_thread {
+        if self.render_ctx.wgpu_render_thread.is_some() {
+            // 主窗口：分离渲染线程模式
             self.render_with_separate_thread(frame, gfx);
         } else {
-            self.render_single_thread(frame, view, gfx);
+            // 轻量窗口（dialog/progress）：直接渲染 iced UI
+            if !self.skip_ui_rendering {
+                self.render_iced_ui(frame, view);
+            }
         }
     }
 

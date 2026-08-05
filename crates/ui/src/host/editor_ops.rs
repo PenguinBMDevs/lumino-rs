@@ -84,6 +84,35 @@ impl Host {
             .collect();
         // 同步拍号变化到编辑器
         self.root.editor.editor_state.data.time_signatures = doc.time_signatures.clone();
+
+        // 预加载所有音轨音符到 track_notes（洋葱皮渲染所需）
+        // set_midi_document 只存文档不填充 track_notes；钢琴卷帘模式需要预加载
+        // 所有音轨的音符，否则洋葱皮遍历 track_notes 时无数据可渲染
+        let preloaded_track_notes: Vec<(usize, im::Vector<lumino_note_core::Note>)> = {
+            let track_count = doc.track_count();
+            let mut result = Vec::with_capacity(track_count);
+            for track_idx in 0..track_count {
+                let doc_notes = doc.track_notes(track_idx);
+                if doc_notes.is_empty() {
+                    continue;
+                }
+                let loaded: im::Vector<lumino_note_core::Note> = doc_notes
+                    .iter()
+                    .map(|ne| {
+                        lumino_note_core::Note::from_raw(
+                            ne.start_tick as f32,
+                            ne.key as u16,
+                            (ne.end_tick - ne.start_tick) as f32,
+                            ne.velocity,
+                            ne.channel,
+                        )
+                    })
+                    .collect();
+                result.push((track_idx, loaded));
+            }
+            result
+        };
+
         self.root.editor.editor_state.data.document = Some(doc);
         // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
         self.root.editor.grid_cache.clear();
@@ -91,6 +120,19 @@ impl Host {
         self.render_ctx.render_cache.grid_viewport_hash = 0;
         // 标记音符数据变化，触发走带缓存重建
         self.root.editor.spatial.note_index_dirty.set(true);
+
+        // 写入预加载的 track_notes 并标记变化（触发洋葱皮重建）
+        if !preloaded_track_notes.is_empty() {
+            let editor_data = &mut self.root.editor.editor_state.data;
+            for (track_idx, notes) in preloaded_track_notes {
+                editor_data.track_notes.insert(track_idx, notes);
+            }
+            editor_data.mark_track_notes_changed();
+            tracing::info!(
+                "[onion-skin] 预加载 {} 个音轨的音符到 track_notes",
+                editor_data.track_notes.len()
+            );
+        }
     }
 
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）

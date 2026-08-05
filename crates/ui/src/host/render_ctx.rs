@@ -8,7 +8,7 @@ use iced_core::{Font, Pixels};
 use iced_wgpu::wgpu;
 use iced_wgpu::{Engine, Renderer, graphics::Viewport};
 use iced_winit::runtime::user_interface::Cache;
-use lumino_gfx::{GridRenderer, NoteRenderer};
+use lumino_gfx::NoteRenderer;
 
 use super::RenderCache;
 
@@ -51,22 +51,14 @@ pub(crate) struct RenderContext {
     pub viewport: Viewport,
     /// 音符渲染器（仅主窗口需要）
     pub note_renderer: Option<NoteRenderer>,
-    /// 洋葱皮渲染器（半透明背景层，全量上传 + GPU culling）
-    pub onion_skin_renderer: Option<NoteRenderer>,
     /// 洋葱皮状态缓存（跟踪 track_notes_gen + 音轨开关变化）
     pub onion_skin_state: crate::host::render::onion_skin::OnionSkinState,
-    /// 网格渲染器（仅主窗口需要）
-    pub grid_renderer: Option<GridRenderer>,
     /// 渲染缓存
     pub render_cache: RenderCache,
-    /// 上次编辑状态
-    pub last_edit_state: crate::editor::EditState,
     /// 上次光标位置
     pub last_cursor_position: Option<iced_core::Point>,
     /// 渲染线程
     pub wgpu_render_thread: Option<crate::WgpuRenderThread>,
-    /// 分离渲染架构标识
-    pub use_separate_render_thread: bool,
     /// 首次渲染标识
     pub has_rendered_ui: bool,
     // WGPU 资源
@@ -78,7 +70,7 @@ pub(crate) struct RenderContext {
 impl RenderContext {
     /// 创建渲染上下文
     ///
-    /// `note_renderer` 与 `grid_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
+    /// `note_renderer` 为 `None` 时，表示该窗口仅渲染 iced UI，
     /// 不进入音符/网格管线（用于 dialog、progress 等轻量窗口）。
     ///
     /// `window` 用于创建通知器：当 iced_wgpu 后台完成图像上传后，
@@ -92,8 +84,6 @@ impl RenderContext {
         wgpu: &WgpuResources,
         viewport: Viewport,
         note_renderer: Option<NoteRenderer>,
-        onion_skin_renderer: Option<NoteRenderer>,
-        grid_renderer: Option<GridRenderer>,
         font: Font,
         window: &Arc<iced_winit::winit::window::Window>,
         use_shared_engine: bool,
@@ -134,14 +124,10 @@ impl RenderContext {
             cache: Cache::new(),
             viewport,
             note_renderer,
-            onion_skin_renderer,
             onion_skin_state: Default::default(),
-            grid_renderer,
             render_cache: RenderCache::new(),
-            last_edit_state: crate::editor::EditState::default(),
             last_cursor_position: None,
             wgpu_render_thread: None,
-            use_separate_render_thread: false,
             has_rendered_ui: false,
             device: wgpu.device.clone(),
             queue: wgpu.queue.clone(),

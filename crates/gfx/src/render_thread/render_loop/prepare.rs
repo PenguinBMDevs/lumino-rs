@@ -81,6 +81,14 @@ pub fn prepare_renderers(
             .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
     }
 
+    // 洋葱皮：实例变化时重上传 GPU buffer（全量上传）
+    // prepare_pass（compute cull）在 execute_render_pass 中每帧调用
+    if params.onion_skin_dirty && !params.is_arrangement_mode {
+        renderers
+            .onion_skin
+            .upload_instances(&params.onion_skin_instances, device, queue);
+    }
+
     // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv
     if !is_video_export {
         renderers.note.process_events(note_events_rx, device, queue);

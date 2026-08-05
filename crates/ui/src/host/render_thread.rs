@@ -30,7 +30,6 @@ impl Host {
         ) {
             Ok(thread) => {
                 self.render_ctx.wgpu_render_thread = Some(thread);
-                self.render_ctx.use_separate_render_thread = true;
                 tracing::info!("Host: Separate WGPU render thread enabled");
             }
             Err(e) => {
@@ -43,7 +42,6 @@ impl Host {
     pub fn disable_separate_render_thread(&mut self) {
         if let Some(thread) = self.render_ctx.wgpu_render_thread.take() {
             thread.shutdown();
-            self.render_ctx.use_separate_render_thread = false;
             tracing::info!("Host: Separate WGPU render thread disabled");
         }
     }

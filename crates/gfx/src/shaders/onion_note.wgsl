@@ -1,14 +1,14 @@
-// 洋葱皮音符渲染着色器 — 基于 note.wgsl，半透明 + 无边框
+// 洋葱皮音符渲染着色器 — 基于 note.wgsl，不透明 + 无边框
 //
 // 与 note.wgsl 的差异：
-//   - alpha = ONION_SKIN_ALPHA（0.3，半透明参考层）
+//   - alpha = 1.0（不透明参考层，用户要求改为不透明以便清晰查看）
 //   - 无边框绘制（洋葱皮是背景参考，不需要边框强调）
 //   - 无预览哨兵分支（洋葱皮无预览音符）
 //
 // 复用 NoteInstance 16 bytes 布局（与 wasabi NoteVertex 严格对齐）
 // VS 用 instancing + 4 顶点 quad 复刻 wasabi GS「点扩展为 quad」逻辑
 
-const ONION_SKIN_ALPHA: f32 = 0.3;
+const ONION_SKIN_ALPHA: f32 = 1.0;
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -87,6 +87,6 @@ fn vs_main(
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // 洋葱皮：半透明，无边框，无 gamma（背景参考层不需要强调）
+    // 洋葱皮：不透明，无边框，无 gamma（背景参考层）
     return vec4<f32>(input.color.rgb, ONION_SKIN_ALPHA);
 }

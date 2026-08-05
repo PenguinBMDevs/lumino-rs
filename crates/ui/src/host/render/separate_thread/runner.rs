@@ -197,6 +197,10 @@ impl Host {
                 self.build_cc_bar_instances()
             };
 
+        // 洋葱皮实例：检测 track_notes_gen / mute / current_track 变化时重建，
+        // 否则返回空 Vec + dirty=false（WGPU 线程复用上一帧 GPU buffer）
+        let (onion_skin_instances, onion_skin_dirty) = self.collect_onion_skin_instances();
+
         RenderData {
             scroll,
             zoom,
@@ -205,6 +209,8 @@ impl Host {
             ruler_instances,
             arrangement_note_instances,
             cc_bar_instances,
+            onion_skin_instances,
+            onion_skin_dirty,
         }
     }
 
@@ -620,6 +626,8 @@ impl Host {
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
+            .onion_skin_instances(data.onion_skin_instances)
+            .onion_skin_dirty(data.onion_skin_dirty)
             .build()
     }
 }

@@ -22,9 +22,15 @@ impl NoteRenderer {
     /// 创建洋葱皮音符渲染器
     ///
     /// 与主音轨 NoteRenderer 的差异：
-    /// - 使用 `onion_note.wgsl`（半透明 alpha=0.3，无边框）
-    /// - 无 depth attachment（洋葱皮是背景层，在主音轨之前绘制，不参与深度测试）
+    /// - 使用 `onion_note.wgsl`（不透明 alpha=1.0，无边框）
     /// - 复用 cull.wgsl（GPU culling + indirect draw 零修改）
+    ///
+    /// depth 配置：与主音轨一致（needs_depth=true）
+    /// 原因：encoder.rs 的 render_pass 带 depth_stencil_attachment，根据
+    /// `constants::is_depth_stencil_compatible`，pipeline 必须携带匹配的
+    /// depth-stencil 状态，否则 wgpu 验证层拒绝 draw call（洋葱皮不显示）。
+    /// 洋葱皮先于主音轨绘制，depth=0.0 通过 LessEqual < 1.0（clear），
+    /// 写入 depth=0.0 后主音轨 LessEqual 0.0<=0.0 通过并覆盖，视觉正确。
     ///
     /// 性能范式（照搬 wasabi 精神 + lumino 现有基础设施）：
     /// - 全量上传一次（MIDI 加载时，非每帧重写）—— 比 wasabi 每帧重写更优
@@ -39,7 +45,7 @@ impl NoteRenderer {
             device,
             queue,
             format,
-            false,
+            true,
             Self::ONION_SHADER,
             Self::CULL_SHADER,
         )

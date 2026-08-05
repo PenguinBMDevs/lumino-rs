@@ -1,4 +1,5 @@
 use iced_core::Size;
+use lumino_gfx::NoteInstance;
 
 /// 渲染数据
 pub struct RenderData {
@@ -9,24 +10,16 @@ pub struct RenderData {
     pub ruler_instances: Vec<lumino_gfx::RulerTickInstance>,
     pub arrangement_note_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
     pub cc_bar_instances: Vec<lumino_gfx::CcBarInstance>,
+    /// 洋葱皮实例（重建时填入，未变化时为空 Vec）
+    pub onion_skin_instances: Vec<NoteInstance>,
+    /// 洋葱皮是否变化（true 时 WGPU 线程需重上传 GPU buffer）
+    pub onion_skin_dirty: bool,
 }
 
 /// 视口信息
 pub struct ViewportInfo {
-    pub logical_size: Size,
-    pub physical_size: (u32, u32),
-    pub scale: f32,
     pub canvas_offset: iced_core::Point,
     pub canvas_size: iced_core::Point,
-}
-
-/// 裁剪矩形
-pub struct ScissorRect {
-    pub x: u32,
-    pub y: u32,
-    pub width: u32,
-    pub height: u32,
-    pub has_valid_region: bool,
 }
 
 /// 从主题提取的网格渲染颜色

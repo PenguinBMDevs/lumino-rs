@@ -100,6 +100,11 @@ pub fn execute_render_pass(
         .renderers
         .note
         .prepare_pass(encoder, camera, &ctx.queue);
+    // 洋葱皮 compute cull（每帧，与主音轨共享同一 camera）
+    frame
+        .renderers
+        .onion_skin
+        .prepare_pass(encoder, camera, &ctx.queue);
 
     {
         puffin::profile_scope!("render_pass");
@@ -131,6 +136,14 @@ pub fn execute_render_pass(
         // 绘制背景网格
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         frame.renderers.grid.draw(&mut render_pass, 1);
+
+        // 绘制洋葱皮（不透明背景层，网格之上、主音轨之前）
+        render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
+        let onion_has_instances = frame.renderers.onion_skin.last_upload_count() > 0;
+        frame
+            .renderers
+            .onion_skin
+            .draw(&mut render_pass, onion_has_instances, None);
 
         // 绘制高精度洋葱皮贴图（网格之上、低精度洋葱皮之下，半透明叠加）
         if let Some(hires) = frame.hires_renderer.as_ref() {
