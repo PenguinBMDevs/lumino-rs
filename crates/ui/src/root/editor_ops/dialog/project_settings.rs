@@ -95,7 +95,8 @@ impl Root {
         let time_signatures = self.editor.editor_state.data.time_signatures.clone();
 
         // 从 MIDI 文档获取标题和版权（如果有）
-        let (title, copyright) = if let Some(_doc) = &self.midi.document {
+        // 2026-08 单一权威源：以 EditorData.document 是否存在判断（midi_state 不再持有）。
+        let (title, copyright) = if self.editor.editor_state.data.document.is_some() {
             // 尝试从文件名获取标题
             let title = if dialog.title.is_empty() {
                 // 使用默认标题

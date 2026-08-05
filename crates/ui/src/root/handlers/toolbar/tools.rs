@@ -100,7 +100,7 @@ impl ToolbarHandler {
         let ppq = root.editor.editor_state.view.ppq as f32;
         let grid_size = crate::editor::grid::utils::adaptive_grid_gap(zoom_x, ppq);
 
-        if root.editor.editor_state.data.notes.is_empty() {
+        if root.editor.editor_state.data.current_track_note_count() == 0 {
             tracing::debug!("Root: 没有音符需要量化");
             return;
         }
@@ -111,7 +111,7 @@ impl ToolbarHandler {
         let selected_indices: Vec<usize> = {
             let selected = &root.editor.editor_state.interaction.selected_notes;
             if selected.is_empty() {
-                (0..root.editor.editor_state.data.notes.len()).collect()
+                (0..root.editor.editor_state.data.current_track_note_count()).collect()
             } else {
                 let mut v: Vec<usize> = selected.iter().copied().collect();
                 v.sort();
@@ -127,7 +127,7 @@ impl ToolbarHandler {
         );
 
         let snapshot = crate::editor::history::EditorSnapshot::new(
-            root.editor.editor_state.data.notes.clone(),
+            std::sync::Arc::new(root.editor.editor_state.data.current_track_notes().to_vec()),
             root.editor.editor_state.data.current_track,
             root.editor.editor_state.data.automation_lanes.clone(),
         );
@@ -137,8 +137,11 @@ impl ToolbarHandler {
             selected_indices
                 .iter()
                 .map(|&i| {
-                    let note = &root.editor.editor_state.data.notes[i];
-                    lumino_midi_loader::quantize::QuantizableNote::new(note.tick, note.length)
+                    let note = &root.editor.editor_state.data.current_track_notes()[i];
+                    lumino_midi_loader::quantize::QuantizableNote::new(
+                        note.start_tick as f32,
+                        (note.end_tick - note.start_tick) as f32,
+                    )
                 })
                 .collect();
 
@@ -147,9 +150,22 @@ impl ToolbarHandler {
 
         if modified_count > 0 {
             for (pos, &i) in selected_indices.iter().enumerate() {
-                if let Some(note) = root.editor.editor_state.data.notes.get_mut(i) {
-                    note.tick = quantizable_notes[pos].tick;
-                    note.length = quantizable_notes[pos].length;
+                if let Some(note) = root
+                    .editor
+                    .editor_state
+                    .data
+                    .document
+                    .as_mut()
+                    .and_then(|doc| {
+                        doc.track_notes_mut(root.editor.editor_state.data.current_track)
+                    })
+                    .and_then(|track| track.get_mut(i))
+                {
+                    let new_tick = lumino_editor_state::f32_to_tick(quantizable_notes[pos].tick);
+                    let new_length =
+                        lumino_editor_state::f32_to_tick(quantizable_notes[pos].length);
+                    note.end_tick = new_tick.saturating_add(new_length.max(1));
+                    note.start_tick = new_tick;
                 }
             }
 
@@ -213,10 +229,9 @@ impl ToolbarHandler {
             }
         } else {
             // ---------- 钢琴卷帘模式：基于 selected_notes（HashSet 选中索引） ----------
-            let notes = &root.editor.editor_state.data.notes;
             let selected = &root.editor.editor_state.interaction.selected_notes;
 
-            if notes.is_empty() {
+            if root.editor.editor_state.data.current_track_note_count() == 0 {
                 tracing::debug!("Root: 没有音符需要变速");
                 return;
             }
@@ -387,8 +402,10 @@ impl ToolbarHandler {
                 root.editor.push_history();
 
                 for &idx in &indices {
-                    if let Some(note) = root.editor.editor_state.data.notes.get(idx) {
-                        let split_tick = note.tick + note.length / 2.0;
+                    if let Some(note) = root.editor.editor_state.data.current_track_notes().get(idx)
+                    {
+                        let split_tick =
+                            note.start_tick as f32 + (note.end_tick - note.start_tick) as f32 / 2.0;
                         root.editor.split_note(idx, split_tick);
                         split_count += 1;
                     }

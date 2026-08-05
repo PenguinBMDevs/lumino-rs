@@ -14,6 +14,7 @@ use crate::EditState;
 use crate::Editor;
 use crate::HitType;
 use crate::note::Note;
+use crate::tests::test_helpers;
 use iced_core::Point;
 
 /// 在选择框中心位置返回 Point（确保 Inside 命中）
@@ -43,12 +44,13 @@ fn pos_at_right_edge(editor: &Editor, _note_idx: usize) -> Point {
 }
 
 /// 选择框外，指定音符上的 Point
+///
+/// 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick f32/key u16）。
 fn pos_on_note_outside_selection(editor: &Editor, note_idx: usize) -> Point {
     let note = editor
         .editor_state
         .data
-        .notes
-        .get(note_idx)
+        .get_note_view(note_idx)
         .expect("note 应存在");
     let view = &editor.editor_state.view;
     Point::new(
@@ -64,15 +66,11 @@ fn test_selection_inside_overrides_note_edge_hit() {
     // 有选中音符 + hit_result 命中音符 Start 边缘 + pos 在选择框内部
     // 应进入 DraggingSelection（不是 ResizingStart）
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.notes[0].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(0).unwrap().tick;
 
     // hit_result 模拟命中音符 Start 边缘（旧逻辑会走 ResizingStart）
     editor.handle_pointer_pressed(pos, Some((0, HitType::Start)), snapped_tick);
@@ -91,15 +89,11 @@ fn test_selection_inside_overrides_note_middle_hit() {
     // 有选中音符 + hit_result 命中音符 Middle + pos 在选择框内部
     // 应进入 DraggingSelection（不是 PendingDrag）
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.notes[0].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(0).unwrap().tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 
@@ -119,15 +113,11 @@ fn test_selection_left_edge_overrides_note_hit() {
     // 有选中音符 + pos 在选择框左边缘 + hit_result 命中音符
     // 应进入 ResizingSelectionStart（不是单音符 ResizingStart）
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_at_left_edge(&editor, 0);
-    let snapped_tick = editor.editor_state.data.notes[0].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(0).unwrap().tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Start)), snapped_tick);
 
@@ -145,16 +135,12 @@ fn test_selection_right_edge_overrides_note_hit() {
     // 有选中音符 + pos 在选择框右边缘 + hit_result 命中音符
     // 应进入 ResizingSelectionEnd
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_at_right_edge(&editor, 0);
-    let snapped_tick =
-        editor.editor_state.data.notes[0].tick + editor.editor_state.data.notes[0].length;
+    let note_view = editor.editor_state.data.get_note_view(0).unwrap();
+    let snapped_tick = note_view.tick + note_view.length;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::End)), snapped_tick);
 
@@ -174,20 +160,19 @@ fn test_note_hit_outside_selection_box_switches_selection() {
     // 有选中音符 0 + 点击音符 1（在选择框外）+ hit_result 命中音符 1
     // 应切换选区到音符 1，进入单音符编辑
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0)); // 音符 0
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(1000.0, 72, 200.0)); // 音符 1，在音符 0 的选择框外
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[
+            Note::new(100.0, 60, 200.0),  // 音符 0
+            Note::new(1000.0, 72, 200.0), // 音符 1，在音符 0 的选择框外
+        ],
+    );
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_on_note_outside_selection(&editor, 1);
-    let snapped_tick = editor.editor_state.data.notes[1].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(1).unwrap().tick;
 
     editor.handle_pointer_pressed(pos, Some((1, HitType::Middle)), snapped_tick);
 
@@ -216,15 +201,11 @@ fn test_note_hit_outside_selection_box_switches_selection() {
 fn test_note_hit_when_no_selection() {
     // 无选中音符 + hit_result 命中音符 → 单音符编辑
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     // 不设置 selected_notes（为空）
 
     let pos = pos_on_note_outside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.notes[0].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(0).unwrap().tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 
@@ -244,11 +225,7 @@ fn test_blank_click_with_selection_commits_pending_and_starts_new_selection() {
     // 有选中音符 + 点击空白处（未命中选择框也未命中音符）
     // 应提交 pending（如果有）+ 清空选区 + 开始新框选
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     // 点击在远离音符的空白处
@@ -281,11 +258,7 @@ fn test_selection_inside_keeps_pending_drag_state() {
     // pending_drag_state 存在 + 点击选择框内部（累积模式）
     // 应保留 pending（不清空），进入 DraggingSelection
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 200.0)]);
     editor.editor_state.interaction.selected_notes.insert(0);
 
     // 设置 pending_drag_state（模拟之前拖动过且未提交）
@@ -294,7 +267,7 @@ fn test_selection_inside_keeps_pending_drag_state() {
     editor.pending_drag_state = Some(pending);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.notes[0].tick;
+    let snapped_tick = editor.editor_state.data.get_note_view(0).unwrap().tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 

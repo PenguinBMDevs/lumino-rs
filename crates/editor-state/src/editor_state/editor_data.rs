@@ -5,7 +5,7 @@
 //! - `notes`：音符 CRUD、分割、合并、选择框
 //! - `history`：Undo/Redo 历史记录
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use lumino_note_core::arrange_selection::ArrangeSelection;
@@ -17,7 +17,7 @@ use lumino_note_core::history::History;
 use lumino_note_core::midi_types::{CcData, TempoPoint};
 use lumino_note_core::note::Note;
 
-mod accessors;
+pub(crate) mod accessors;
 pub(crate) mod async_commit;
 pub(crate) mod async_commit_streaming;
 mod automation;
@@ -46,10 +46,8 @@ mod tests_note_ops;
 /// 编辑器数据
 #[derive(Debug)]
 pub struct EditorData {
-    pub notes: im::Vector<Note>,
     pub current_track: usize,
-    pub track_notes: HashMap<usize, im::Vector<Note>>,
-    /// 递增版本号，track_notes 每次变化时 bump。
+    /// 递增版本号，音符数据每次变化时 bump。
     /// 用于 NoteWorker 快照的 Arc 缓存失效检测，避免每帧全量克隆 HashMap。
     pub track_notes_gen: u64,
     /// 被编辑过的音轨集合（用于协作同步，记录需要广播变更的所有音轨）
@@ -63,7 +61,13 @@ pub struct EditorData {
     /// 洋葱皮跳过范围内时，`stream_onion_skin_instances` 可豁免全量重建上传，
     /// 避免编辑主音轨（最常见热路径，拖动音符每帧触发）导致其他音轨全量重传。
     pub onion_dirty_tracks: Option<HashSet<usize>>,
-    pub document: Option<Arc<lumino_midi_model::MidiDocument>>,
+    /// 音符唯一权威源（独占所有权，2026-08 单一权威源改造）
+    ///
+    /// 原 `notes` / `track_notes` 冗余层已删除，音符数据只存在于 `document`。
+    /// - 读取：`current_track_notes()` / `track_notes(track_id)`（见 accessors.rs）
+    /// - 写入：`insert_note` / `remove_note` / `update_note` / `replace_track_notes`
+    /// - tick 精度：UI 编辑用 f32，写回时无损转换（fract==0 → as u32）
+    pub document: Option<lumino_midi_model::MidiDocument>,
     pub history: History,
     /// 异步提交的待完成状态（MoveOp 后台应用）
     pub(crate) pending_commit: Option<async_commit::PendingCommit>,

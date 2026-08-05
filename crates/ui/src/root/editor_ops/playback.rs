@@ -7,7 +7,7 @@ use std::sync::Arc;
 impl Root {
     /// 更新播放管理器中的音符数据
     ///
-    /// 当前轨从 `editor.notes` 实时读取发送到引擎；
+    /// 当前轨从 `editor_state.data`（document 单一权威源）实时读取发送到引擎；
     /// 其他音轨靠引擎直接从 document 流式读取，零额外内存。
     pub fn update_playback_notes(&mut self) {
         let Some(manager) = &mut self.playback.manager else {
@@ -15,6 +15,8 @@ impl Root {
         };
 
         // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
+        // 单一权威源：文档由 EditorData 独占持有；播放引擎的跨线程 Arc 视图
+        // 由 midi_state.document 提供（当前仅在引擎层适配后填充）。
         if let Some(doc) = &self.midi.document {
             manager.set_document(
                 Arc::clone(doc),
@@ -22,19 +24,19 @@ impl Root {
             );
         }
 
-        // 当前音轨音符（编辑过的，从 editor.notes 实时送）。
+        // 当前音轨音符（编辑过的，从 document 实时送）。
         // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
-        // NoteStore 冗余层已删除，统一从 notes 读取。
+        // NoteStore 冗余层已删除，统一从 document 读取（current_track_notes 访问器）。
         let editor_data = &self.editor.editor_state.data;
         let current_notes: Vec<NoteEvent> = editor_data
-            .notes
+            .current_track_notes()
             .iter()
-            .map(|note| NoteEvent {
-                tick: note.tick,
-                channel: note.channel,
-                key: note.key as u8,
-                velocity: note.velocity,
-                length: note.length,
+            .map(|event| NoteEvent {
+                tick: event.start_tick as f32,
+                channel: event.channel,
+                key: event.key,
+                velocity: event.velocity,
+                length: (event.end_tick - event.start_tick) as f32,
             })
             .collect();
         manager.set_current_track_notes(current_notes);
@@ -92,7 +94,8 @@ impl Root {
         // ProgramChange 不存储在 automation_lanes 中（无对应 variant），
         // 必须直接从 doc.control_events 提取，否则当前音轨无法切换乐器。
         // （其他音轨的 PC 事件由 PlaybackEngine::process_other_tracks 直接读取）
-        if let Some(doc) = &self.midi.document {
+        // 2026-08 单一权威源：从 EditorData.document 读取（不再经 midi_state 的 Arc 视图）。
+        if let Some(doc) = self.editor.editor_state.data.document.as_ref() {
             for ev in &doc.control_events {
                 if ev.kind == 1 && ev.track == current_track {
                     let program = ev.as_program_change();

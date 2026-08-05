@@ -223,30 +223,19 @@ impl Host {
 
     /// 获取指定音轨的音符列表（用于高精度贴图重生成）
     ///
-    /// 当前音轨从 editor.notes 取，其他音轨从 track_notes 缓存取。
+    /// 2026-08 单一权威源：一律从 document 读取（track_notes 缓存已删除）。
     pub fn get_track_notes_for_hires(&self, track_idx: u16) -> Vec<lumino_gfx::OnionSkinNote> {
         let editor = &self.root.editor;
-        let current_track = editor.current_track();
-        let notes = if current_track as u16 == track_idx {
-            &editor.editor_state.data.notes
-        } else {
-            match editor
-                .editor_state
-                .data
-                .track_notes
-                .get(&(track_idx as usize))
-            {
-                Some(n) => n,
-                None => return Vec::new(),
-            }
-        };
-        notes
+        editor
+            .editor_state
+            .data
+            .track_notes(track_idx as usize)
             .iter()
-            .map(|n| {
+            .map(|ne| {
                 lumino_gfx::OnionSkinNote::from_ms(
-                    n.tick,
-                    n.tick + n.length,
-                    n.key as u8,
+                    ne.start_tick as f32,
+                    ne.end_tick as f32,
+                    ne.key,
                     super::onion_track_color(track_idx as usize),
                 )
             })

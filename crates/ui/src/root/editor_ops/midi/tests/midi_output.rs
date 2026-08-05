@@ -91,11 +91,11 @@ fn test_clear_midi_output_clears_pending() {
     );
 
     // 有管理器时
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
     root.set_midi_output(create_mock_output());
     root.update(Message::Toolbar(toolbar::Event::Play));
     root.clear_midi_output();
@@ -114,21 +114,19 @@ fn test_full_playback_lifecycle() {
     let mut root = create_root();
 
     // 添加多个音符
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(480.0, 64, 240.0));
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(720.0, 67, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(480.0, 64, 240.0),
+    );
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(720.0, 67, 480.0),
+    );
 
     // 设置 MIDI 输出
     root.set_midi_output(create_mock_output());
@@ -178,11 +176,11 @@ fn test_update_playback_notes_after_note_change() {
     assert!(root.playback.manager.is_some());
 
     // 添加音符并标记变更
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
     root.editor.mark_notes_changed();
 
     // 触发音符更新
@@ -212,11 +210,11 @@ fn test_tempo_changes_cached_when_no_manager() {
     );
 
     // 播放时应消费缓存的 tempo changes
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
     root.set_midi_output(create_mock_output());
     root.update(Message::Toolbar(toolbar::Event::Play));
 
@@ -336,11 +334,11 @@ fn test_update_playback_bpm_overwrites_stale_cache() {
 #[test]
 fn test_host_set_playback_midi_output_flow() {
     let mut root = create_root();
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
 
     // Host::set_playback_midi_output → Root::set_midi_output
     root.set_midi_output(create_mock_output());
@@ -359,11 +357,12 @@ fn test_cc_events_reach_midi_output() {
     let mut root = create_root();
 
     // 给当前音轨 (track 0) 添加一个音符（音轨 0 需要有音符才能被选中）
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.current_track = 0;
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
 
     // 直接在 automation_lanes 中添加 CC 事件（模拟 MIDI 加载后的状态）
     // CC 7 = Volume, value=100, at tick 0
@@ -489,7 +488,7 @@ fn test_cc_via_set_midi_document() {
         PackedControlEvent::control_change(0, 1, 1, 7, 80),
     ];
 
-    let doc = Arc::new(MidiDocument {
+    let doc = MidiDocument {
         notes: vec![
             // track 0: 1 note on channel 0
             vec![lumino_midi_loader::NoteEvent {
@@ -521,10 +520,13 @@ fn test_cc_via_set_midi_document() {
         tracks: TrackManager::new(2),
         division: 480,
         track_ports: vec![],
-    });
+    };
+
+    // 加载 track 0 的音符（模拟 import 流程）
+    let track0_notes = doc.get_track_notes(0);
 
     // 模拟 MIDI 加载流程
-    root.set_midi_document(Arc::clone(&doc));
+    root.set_midi_document(doc);
 
     // 此时 automation_lanes 应该已包含 CC 事件
     let lane_count = root.editor.editor_state.data.automation_lanes.len();
@@ -534,18 +536,6 @@ fn test_cc_via_set_midi_document() {
         "应创建 3 个 automation lane (CC7/t0 + CC10/t0 + CC7/t1)"
     );
 
-    // 验证 lane 的 track 索引
-    for lane in &root.editor.editor_state.data.automation_lanes {
-        tracing::info!(
-            "  lane: track={} target={:?} events={}",
-            lane.track,
-            lane.target,
-            lane.events.len(),
-        );
-    }
-
-    // 加载 track 0 的音符（模拟 import 流程）
-    let track0_notes = doc.get_track_notes(0);
     root.load_track_notes(0, &track0_notes);
     assert_eq!(
         root.editor.editor_state.data.current_track, 0,

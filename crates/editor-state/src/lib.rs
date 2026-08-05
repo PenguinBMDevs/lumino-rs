@@ -5,6 +5,7 @@
 pub mod editor_state;
 pub mod editor_transform;
 
+pub use editor_state::editor_data::accessors::{event_to_note, f32_to_tick, note_to_event};
 pub use editor_state::{
     CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData,
     EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent,

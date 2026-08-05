@@ -11,16 +11,16 @@
 //! - MoveOp inverse / push_move_op / 混合 undo-redo
 
 use super::*;
-use im::Vector;
+use std::sync::Arc;
 
-use crate::note::Note;
+use lumino_midi_model::NoteEvent;
 
 fn make_snapshot(notes_len: usize) -> EditorSnapshot {
-    let mut notes: Vector<Note> = Vector::new();
+    let mut notes: Vec<NoteEvent> = Vec::with_capacity(notes_len);
     for i in 0..notes_len {
-        notes.push_back(Note::new(i as f32, 60, 1.0));
+        notes.push(NoteEvent::new(i as u32, i as u32 + 1, 60, 100, 0));
     }
-    EditorSnapshot::new(notes, 0, Vec::new())
+    EditorSnapshot::new(Arc::new(notes), 0, Vec::new())
 }
 
 fn assert_snapshot(entry: &HistoryEntry) -> &EditorSnapshot {

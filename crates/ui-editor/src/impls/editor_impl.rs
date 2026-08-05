@@ -46,17 +46,20 @@ impl Editor {
         let d = &self.editor_state.data;
         let note_size = std::mem::size_of::<Note>();
 
-        // editor.notes
-        let notes_len = d.notes.len();
+        // 2026-08 单一权威源：`notes` / `track_notes` 缓存已删除，
+        // 音符统计全部从 document（唯一权威）读取。
+        let notes_len = d.current_track_note_count();
         let notes_bytes = notes_len * note_size;
 
-        // track_notes
-        let track_notes_entries = d.track_notes.len();
+        // 全量音符统计（document 各轨之和）
+        let track_notes_entries = d.document.as_ref().map(|doc| doc.notes.len()).unwrap_or(0);
         let mut track_notes_count = 0usize;
         let mut track_notes_bytes = 0usize;
-        for notes in d.track_notes.values() {
-            track_notes_count += notes.len();
-            track_notes_bytes += notes.len() * note_size;
+        if let Some(doc) = &d.document {
+            for notes in &doc.notes {
+                track_notes_count += notes.len();
+                track_notes_bytes += notes.len() * note_size;
+            }
         }
 
         // document notes (NoteEvent=16B, (u32,f32)=8B)
@@ -171,7 +174,7 @@ impl Editor {
         self.pending_drag_state.is_some() || self.editor_state.data.has_pending_commit()
     }
 
-    /// 提交 pending 批量拖动到 `data.notes`
+    /// 提交 pending 批量拖动到 document（音符唯一权威）
     ///
     /// 在以下场景调用：
     /// - 用户点击空白处取消框选时
@@ -271,7 +274,7 @@ impl Editor {
 
     /// 提交当前编辑（Save/Play/Export 前自动调用）
     ///
-    /// 如果用户正在编辑（ghost 拖动/绘制/调整大小），先提交到 `data.notes`。
+    /// 如果用户正在编辑（ghost 拖动/绘制/调整大小），先提交到 document。
     /// 等价于"模拟用户松开鼠标"。返回 `true` 表示有数据被提交。
     ///
     /// **延迟提交方案**：`DraggingSelection` 的 `handle_released` 只把 delta 保存到
@@ -283,14 +286,14 @@ impl Editor {
         if !self.is_editing() {
             return false;
         }
-        let before = self.editor_state.data.notes.len();
+        let before = self.editor_state.data.current_track_note_count();
         // handle_released: Dragging/Drawing/Resizing 直接 apply；DraggingSelection 保存到 pending
         self.handle_released();
         // 延迟提交方案：如果 handle_released 产生了 pending_drag_state，启动异步提交
         let pending_committed = self.commit_pending_drag();
         // Save/Play/Export 前必须等待异步提交完成
         let drained = self.drain_async_commit();
-        let after = self.editor_state.data.notes.len();
+        let after = self.editor_state.data.current_track_note_count();
         tracing::debug!(
             "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}, drained={}",
             before,

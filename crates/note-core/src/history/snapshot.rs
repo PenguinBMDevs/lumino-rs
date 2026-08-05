@@ -1,23 +1,30 @@
 //! 编辑器状态快照
 //!
 //! 用于撤销/重做时保存/恢复编辑器状态。
+//!
+//! 2026-08 单一权威源改造：音符快照从 `im::Vector<Note>` 改为 `Arc<Vec<NoteEvent>>`。
+//! - `Arc` 共享：未修改的轨道数据在所有快照间物理共址，快照克隆为 O(1) 指针拷贝
+//! - `NoteEvent`（midi-model）：与 MidiDocument 轨道存储同构，恢复时零转换写回
+//! - 与 `automation_lanes` 的 `Vec<Arc<AutomationLane>>` 模式一致
 
 use std::sync::Arc;
 use std::time::Instant;
 
-use im::Vector;
+use lumino_midi_model::NoteEvent;
 
 use crate::automation::AutomationLane;
 use crate::event::{ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent};
 use crate::midi_types::TempoPoint;
-use crate::note::Note;
 
 use super::OpKind;
 
 /// 编辑器状态快照
 #[derive(Debug, Clone)]
 pub struct EditorSnapshot {
-    pub notes: Vector<Note>,
+    /// 音符快照（按 start_tick 升序，与 MidiDocument 轨道同构）。
+    /// `Arc` 共享：未修改的轨道数据在所有快照间物理共址，
+    /// 快照克隆为 O(1) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。
+    pub notes: Arc<Vec<NoteEvent>>,
     pub current_track: usize,
     /// 自动化 lane 快照。`Arc` 共享：未修改的 lane 在所有快照间物理共址，
     /// 快照克隆为 O(lane 数) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。
@@ -51,7 +58,7 @@ pub struct EditorSnapshot {
 impl EditorSnapshot {
     /// 创建快照（向后兼容，事件字段用 None 表示不恢复）
     pub fn new(
-        notes: Vector<Note>,
+        notes: Arc<Vec<NoteEvent>>,
         current_track: usize,
         automation_lanes: Vec<Arc<AutomationLane>>,
     ) -> Self {
@@ -76,7 +83,7 @@ impl EditorSnapshot {
 
     /// 创建带元数据的快照（事件字段用 None）
     pub fn with_metadata(
-        notes: Vector<Note>,
+        notes: Arc<Vec<NoteEvent>>,
         current_track: usize,
         automation_lanes: Vec<Arc<AutomationLane>>,
         op_kind: OpKind,

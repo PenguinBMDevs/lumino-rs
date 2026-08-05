@@ -132,20 +132,18 @@ mod tests {
     fn test_editor_state_new() {
         let state = EditorState::new();
         assert_eq!(state.tool, Tool::Pointer);
-        assert!(state.data.notes.is_empty());
+        assert_eq!(state.data.current_track_note_count(), 0);
     }
 
     #[test]
     fn test_editor_state_reset() {
         let mut state = EditorState::new();
         state.tool = Tool::Eraser;
-        state
-            .data
-            .notes
-            .push_back(lumino_note_core::note::Note::new(0.0, 60, 1.0));
+        state.data =
+            EditorData::with_f32_notes(0, &[lumino_note_core::note::Note::new(0.0, 60, 1.0)]);
         state.reset();
         assert_eq!(state.tool, Tool::Pointer);
-        assert!(state.data.notes.is_empty());
+        assert_eq!(state.data.current_track_note_count(), 0);
     }
 
     #[test]

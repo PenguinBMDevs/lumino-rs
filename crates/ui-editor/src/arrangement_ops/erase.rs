@@ -3,7 +3,6 @@
 //! 删除矩形范围 (tick_start..tick_end, track_lo..=track_hi) 内的所有音符。
 
 use super::Editor;
-use super::helpers::note_in_rect;
 
 impl Editor {
     /// 擦除工程走带矩形范围内的音符。
@@ -40,7 +39,9 @@ impl Editor {
             return 0;
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
@@ -63,12 +64,21 @@ impl Editor {
         tracks_to_clean: Vec<usize>,
     ) -> usize {
         let mut deleted_count = 0usize;
-        let editor_data = &mut self.editor_state.data;
         for track_idx in tracks_to_clean {
-            if let Some(notes) = editor_data.track_notes.get_mut(&track_idx) {
-                let before = notes.len();
-                notes.retain(|note| !note_in_rect(note, tick_start, tick_end));
-                deleted_count += before - notes.len();
+            // 2026-08 单一权威源：先从 document 收集命中索引，再降序逐个删除
+            let indices: Vec<usize> = self
+                .editor_state
+                .data
+                .track_notes(track_idx)
+                .iter()
+                .enumerate()
+                .filter(|(_, note)| super::helpers::note_event_in_rect(note, tick_start, tick_end))
+                .map(|(i, _)| i)
+                .collect();
+            for idx in indices.into_iter().rev() {
+                if self.editor_state.data.remove_note(track_idx, idx).is_some() {
+                    deleted_count += 1;
+                }
             }
         }
         deleted_count
@@ -85,13 +95,13 @@ impl Editor {
         let editor_data = &self.editor_state.data;
         let mut tracks_to_clean: Vec<usize> = Vec::new();
         for track_idx in track_lo..=track_hi {
-            if let Some(notes) = editor_data.track_notes.get(&track_idx) {
-                let has_any = notes
-                    .iter()
-                    .any(|note| note_in_rect(note, tick_start, tick_end));
-                if has_any {
-                    tracks_to_clean.push(track_idx);
-                }
+            // 2026-08 单一权威源：直接从 document 读取判断
+            let has_any = editor_data
+                .track_notes(track_idx)
+                .iter()
+                .any(|note| super::helpers::note_event_in_rect(note, tick_start, tick_end));
+            if has_any {
+                tracks_to_clean.push(track_idx);
             }
         }
         tracks_to_clean

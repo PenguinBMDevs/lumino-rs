@@ -93,7 +93,7 @@ impl Editor {
             match sel_hit_type {
                 crate::SelectionHitType::Inside => {
                     // ghost 方案（累积模式）：从选中集合构建 DragState
-                    let note_count = self.editor_state.data.notes.len();
+                    let note_count = self.editor_state.data.current_track_note_count();
                     let drag_state = DragState::from_indices(
                         self.get_selected_indices(),
                         note_count,

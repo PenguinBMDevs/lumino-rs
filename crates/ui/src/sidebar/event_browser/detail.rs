@@ -10,16 +10,14 @@
 
 use std::sync::Arc;
 
+use crate::sidebar::core::Track;
 use lumino_extras::i18n::MainTranslations;
 use lumino_note_core::automation::AutomationLane;
 use lumino_note_core::event::{
     ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent,
 };
 use lumino_note_core::midi_types::TempoPoint;
-use lumino_note_core::note::Note;
 use lumino_ui_core::sidebar_event::{EditRequest, JumpRequest, TextEventKind};
-
-use crate::sidebar::core::Track;
 
 use super::bar_lookup::{BarLookup, ts_changes};
 use super::state::SelectedItem;
@@ -33,8 +31,8 @@ mod rows;
 pub struct EventBrowserData<'a> {
     /// 工程中的所有音轨。
     pub tracks: &'a [Track],
-    /// 当前选中音轨的音符集合。
-    pub current_track_notes: &'a im::Vector<Note>,
+    /// 当前选中音轨的音符集合（document 唯一权威，NoteEvent 切片）。
+    pub current_track_notes: &'a [lumino_midi_loader::NoteEvent],
     /// 每四分音符 tick 数。
     pub ppq: u16,
     /// 拍号变化列表 `(tick, numerator, denominator)`。

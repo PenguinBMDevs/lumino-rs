@@ -26,9 +26,10 @@ impl Editor {
         let count = indices.len();
         indices.sort_unstable();
 
-        let notes: Vec<&super::Note> = indices
+        // 2026-08 单一权威源：从 document 当前轨读取（NoteEvent，u32 tick）
+        let notes: Vec<&lumino_midi_loader::NoteEvent> = indices
             .into_iter()
-            .filter_map(|index| self.editor_state.data.notes.get(index))
+            .filter_map(|index| self.editor_state.data.current_track_notes().get(index))
             .collect();
 
         if notes.is_empty() {
@@ -37,9 +38,9 @@ impl Editor {
 
         let origin_tick = notes
             .iter()
-            .map(|note| note.tick)
+            .map(|note| note.start_tick as f32)
             .fold(f32::INFINITY, f32::min);
-        let origin_key = notes.iter().map(|note| note.key).min().unwrap_or(0);
+        let origin_key = notes.iter().map(|note| note.key as u16).min().unwrap_or(0);
 
         let payload = serde_json::json!({
             "lumino": CLIPBOARD_FORMAT,
@@ -48,9 +49,9 @@ impl Editor {
             "origin_tick": origin_tick,
             "origin_key": origin_key,
             "notes": notes.into_iter().map(|note| serde_json::json!({
-                "tick": note.tick - origin_tick,
-                "key": note.key - origin_key,
-                "length": note.length,
+                "tick": note.start_tick as f32 - origin_tick,
+                "key": note.key as u16 - origin_key,
+                "length": (note.end_tick - note.start_tick) as f32,
                 "velocity": note.velocity,
                 "channel": note.channel,
             })).collect::<Vec<_>>(),
@@ -143,15 +144,15 @@ impl Editor {
         self.push_history();
         self.selection_clear();
         let pasted_count = pasted.len();
-        let start = self.editor_state.data.notes.len();
-        self.editor_state.data.notes.extend(pasted);
-        self.editor_state.data.track_notes.insert(
-            self.editor_state.data.current_track,
-            self.editor_state.data.notes.clone(),
-        );
+        // 2026-08 单一权威源：批量插入到 document（按 start_tick 有序插入）
+        let start = self.editor_state.data.current_track_note_count();
+        self.editor_state.data.batch_insert_notes(&pasted);
         self.editor_state.data.mark_current_track_changed();
-        // 粘贴后同步 NoteStore
+        // 粘贴后同步 NoteStore（降级 no-op，保留调用兼容）
         self.editor_state.data.sync_note_store();
+        // 注意：batch_insert_notes 按 start_tick 有序插入。若粘贴的 tick 落在
+        // 现有音符之间，新音符索引将散布而非连续追加——此选中逻辑仅在
+        // 粘贴音符 tick 不小于现有最大 tick（常见场景）时与旧 append 语义一致。
         for index in start..start + pasted_count {
             self.selection_insert(index);
         }

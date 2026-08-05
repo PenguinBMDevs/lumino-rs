@@ -128,6 +128,8 @@ impl Editor {
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
 
         let data = &self.editor_state.data;
+        // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
+        let track_notes = data.current_track_notes();
 
         if needs_ghost {
             // 只有 pending 或 Dragging（单音符）会进入此分支。
@@ -136,15 +138,21 @@ impl Editor {
                 if let Some(idx_out) = indices.as_deref_mut() {
                     idx_out.push(i);
                 }
-                if let Some(note) = data.notes.get(i) {
+                if let Some(note) = track_notes.get(i) {
                     let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                         apply_ghost_delta(
-                            note.tick, note.key, drag_dt, drag_dk, pending, i, max_key,
+                            note.start_tick as f32,
+                            note.key as u16,
+                            drag_dt,
+                            drag_dk,
+                            pending,
+                            i,
+                            max_key,
                         )
                     } else {
-                        (note.tick, note.key)
+                        (note.start_tick as f32, note.key as u16)
                     };
-                    result.push((tick, key, note.length));
+                    result.push((tick, key, (note.end_tick - note.start_tick) as f32));
                 }
             }
         } else {
@@ -152,8 +160,12 @@ impl Editor {
                 if let Some(idx_out) = indices.as_deref_mut() {
                     idx_out.push(i);
                 }
-                if let Some(note) = data.notes.get(i) {
-                    result.push((note.tick, note.key, note.length));
+                if let Some(note) = track_notes.get(i) {
+                    result.push((
+                        note.start_tick as f32,
+                        note.key as u16,
+                        (note.end_tick - note.start_tick) as f32,
+                    ));
                 }
             }
         }
@@ -180,15 +192,25 @@ impl Editor {
     ) {
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
         let data = &self.editor_state.data;
+        // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
+        let track_notes = data.current_track_notes();
 
         if needs_ghost {
-            for (i, note) in data.notes.iter().enumerate() {
+            for (i, note) in track_notes.iter().enumerate() {
                 let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
-                    apply_ghost_delta(note.tick, note.key, drag_dt, drag_dk, pending, i, max_key)
+                    apply_ghost_delta(
+                        note.start_tick as f32,
+                        note.key as u16,
+                        drag_dt,
+                        drag_dk,
+                        pending,
+                        i,
+                        max_key,
+                    )
                 } else {
-                    (note.tick, note.key)
+                    (note.start_tick as f32, note.key as u16)
                 };
-                let note_end = tick + note.length;
+                let note_end = note.end_tick as f32;
                 if key >= visible_key_min
                     && key <= visible_key_max
                     && note_end >= visible_tick_start
@@ -197,21 +219,25 @@ impl Editor {
                     if let Some(idx_out) = indices.as_deref_mut() {
                         idx_out.push(i);
                     }
-                    result.push((tick, key, note.length));
+                    result.push((tick, key, (note.end_tick - note.start_tick) as f32));
                 }
             }
         } else {
-            for (i, note) in data.notes.iter().enumerate() {
-                let note_end = note.tick + note.length;
-                if note.key >= visible_key_min
-                    && note.key <= visible_key_max
+            for (i, note) in track_notes.iter().enumerate() {
+                let note_end = note.end_tick as f32;
+                if note.key as u16 >= visible_key_min
+                    && note.key as u16 <= visible_key_max
                     && note_end >= visible_tick_start
-                    && note.tick <= visible_tick_end
+                    && note.start_tick as f32 <= visible_tick_end
                 {
                     if let Some(idx_out) = indices.as_deref_mut() {
                         idx_out.push(i);
                     }
-                    result.push((note.tick, note.key, note.length));
+                    result.push((
+                        note.start_tick as f32,
+                        note.key as u16,
+                        (note.end_tick - note.start_tick) as f32,
+                    ));
                 }
             }
         }
@@ -245,7 +271,7 @@ impl Editor {
 
     /// 构建 ghost 拖动增量的可见位置数据（仅「选中 ∩ 可见」的索引）
     ///
-    /// 卷帘拖动增量（2026-08-05）：拖动期间 `data.notes` 未变（ghost 方案），
+    /// 卷帘拖动增量（2026-08-05）：拖动期间 document 未变（ghost 方案），
     /// 只有被拖动的音符需要更新渲染位置。本方法返回
     /// `(可见列表位置, ghost 后位置 (tick, key, length))`（按可见位置升序），
     /// UI 层据此生成 UpdateMany 增量发送——替代每帧全量 collect+build+上传。
@@ -267,8 +293,9 @@ impl Editor {
             if !is_note_ghosted(note_idx, pending, edit_state) {
                 continue;
             }
-            let Some((tick, key, length)) =
-                data.notes.get(note_idx).map(|n| (n.tick, n.key, n.length))
+            let Some((tick, key, length)) = data
+                .get_note_view(note_idx)
+                .map(|n| (n.tick, n.key, n.length))
             else {
                 continue;
             };

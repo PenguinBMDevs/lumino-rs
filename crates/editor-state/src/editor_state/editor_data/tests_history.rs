@@ -9,20 +9,29 @@ use super::EditorData;
 
 #[test]
 fn test_undo_redo_basic() {
-    let mut data = EditorData::new();
+    // 用空 document 构造（track 1），快照空状态后经 insert_note 写入
+    let mut data = EditorData::with_f32_notes(1, &[]);
     data.push_history();
-    data.notes.push_back(Note::new(0.0, 60, 1.0));
-    assert_eq!(data.notes.len(), 1);
+    data.insert_note(data.current_track, Note::new(0.0, 60, 1.0));
+    assert_eq!(data.current_track_note_count(), 1);
     assert!(data.can_undo());
 
     let undone = data.undo();
     assert!(undone);
-    assert!(data.notes.is_empty(), "undo should restore empty notes");
+    assert_eq!(
+        data.current_track_note_count(),
+        0,
+        "undo should restore empty notes"
+    );
     assert!(data.can_redo());
 
     let redone = data.redo();
     assert!(redone);
-    assert_eq!(data.notes.len(), 1, "redo should restore the note");
+    assert_eq!(
+        data.current_track_note_count(),
+        1,
+        "redo should restore the note"
+    );
 }
 
 #[test]

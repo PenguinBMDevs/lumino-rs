@@ -62,7 +62,9 @@ impl Editor {
             return false;
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data
@@ -139,39 +141,23 @@ impl Editor {
         }
     }
 
-    /// 从 track_notes 和 MidiDocument 收集所有选中音符。
+    /// 从 MidiDocument 收集所有选中音符（track_notes 缓存已删除，统一读 document）。
     fn collect_selected_notes_for_clipboard(&self) -> Vec<(usize, Note)> {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;
         let mut all_notes: Vec<(usize, Note)> = Vec::new();
 
-        // 1. 从 track_notes 缓存收集
-        for (&track_idx, notes) in &editor_data.track_notes {
+        let Some(doc) = &editor_data.document else {
+            return all_notes;
+        };
+        for track_idx in 0..doc.track_count() {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
-            for note in notes {
-                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
-                    all_notes.push((track_idx, note.clone()));
-                }
-            }
-        }
-
-        // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
-        if let Some(doc) = &editor_data.document {
-            for track_idx in 0..doc.notes.len() {
-                if editor_data.track_notes.contains_key(&track_idx) {
-                    continue;
-                }
-                let visual_pos = editor_data
-                    .visual_position_of(track_idx)
-                    .unwrap_or(track_idx);
-                for note_event in doc.track_notes(track_idx) {
-                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
-                    {
-                        let note = note_event_to_note(note_event);
-                        all_notes.push((track_idx, note));
-                    }
+            for note_event in editor_data.track_notes(track_idx) {
+                if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
+                    let note = note_event_to_note(note_event);
+                    all_notes.push((track_idx, note));
                 }
             }
         }
@@ -222,14 +208,15 @@ impl Editor {
             let note_key = origin_key.saturating_add(*key_offset).min(127);
             let note = Note::from_raw(note_tick, note_key, *length, *velocity, *channel);
 
+            // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
             let editor_data = &mut self.editor_state.data;
-            let track_entry = editor_data.track_notes.entry(dest_track).or_default();
-            track_entry.push_back(note);
-            affected_tracks.insert(dest_track);
-            if dest_track == current_track {
-                current_track_touched = true;
+            if editor_data.insert_note(dest_track, note) {
+                affected_tracks.insert(dest_track);
+                if dest_track == current_track {
+                    current_track_touched = true;
+                }
+                inserted_count += 1;
             }
-            inserted_count += 1;
         }
 
         (inserted_count, current_track_touched, affected_tracks)
@@ -271,7 +258,13 @@ impl Editor {
         let anchor_track = self.compute_anchor_track();
 
         let editor_data = &self.editor_state.data;
-        let max_track_count = editor_data.track_notes.len().max(1);
+        // 2026-08 单一权威源：音轨数从 document 统计（track_notes 缓存已删除）
+        let max_track_count = editor_data
+            .document
+            .as_ref()
+            .map(|doc| doc.track_count())
+            .unwrap_or(0)
+            .max(1);
         let mut pasted: Vec<ClipboardNoteEntry> = Vec::with_capacity(notes_value.len());
 
         for item in notes_value {

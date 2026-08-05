@@ -1,7 +1,8 @@
 //! 工程走带视图音符操作（跨音轨）
 //!
-//! 提供 arrange_move_notes / arrange_erase / arrange_razor 等操作，
-//! 直接修改 EditorData::track_notes，并在当前音轨受影响时同步 editor_data.notes。
+//! 提供 arrange_move_notes / arrange_erase / arrange_razor 等操作。
+//! 2026-08 单一权威源：直接读写 MidiDocument（音符唯一权威），
+//! track_notes 缓存已删除，不再需要同步 editor_data.notes。
 //!
 //! # 子模块
 //! - `helpers`: 共享辅助函数与类型

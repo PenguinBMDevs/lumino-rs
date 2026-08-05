@@ -257,7 +257,10 @@ impl RunnerInner {
     }
 
     /// 将 MIDI 数据导入到编辑器
-    pub(super) fn import_midi_to_editor(&mut self, parsed: &lumino_midi_loader::ParsedMidi) {
+    ///
+    /// 2026-08 单一权威源改造：`parsed` 以所有权传入，`MidiDocument` 在
+    /// midi_handler 内零拷贝拆出（Arc::try_unwrap）并移入 UI 的 EditorData.document。
+    pub(super) fn import_midi_to_editor(&mut self, parsed: lumino_midi_loader::ParsedMidi) {
         {
             let ui = self.window_state.window.ui_mut();
             self.midi_state

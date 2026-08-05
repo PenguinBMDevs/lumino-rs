@@ -10,14 +10,10 @@ use super::EditorData;
 use crate::editor_state::editor_data::NoteDeltaEvent;
 
 fn make_data(note_count: usize) -> EditorData {
-    let mut data = EditorData::new();
-    data.current_track = 1;
-    for i in 0..note_count {
-        data.notes
-            .push_back(Note::new((i * 10) as f32, 60 + i as u16, 1.0));
-    }
-    data.track_notes.insert(1, data.notes.clone());
-    data
+    let notes: Vec<Note> = (0..note_count)
+        .map(|i| Note::new((i * 10) as f32, 60 + i as u16, 1.0))
+        .collect();
+    EditorData::with_f32_notes(1, &notes)
 }
 
 /// 提取事件中的 (start_index, len) 列表（断言辅助）
@@ -87,9 +83,9 @@ fn test_drag_records_update_range_event() {
         assert_eq!(notes[0].tick, 15.0, "notes[1] 拖动后 +5");
         assert_eq!(notes[0].key, 59, "notes[1] 原 key 61 → 61-2");
     }
-    // track_notes 同步生效
-    let track = data.track_notes.get(&1).unwrap();
-    assert_eq!(track[1].tick, 15.0);
+    // document 同步生效（唯一权威源）
+    let track = data.track_notes(1);
+    assert_eq!(track[1].start_tick as f32, 15.0);
 }
 
 #[test]
@@ -130,9 +126,9 @@ fn test_delete_sets_dirty_full_fallback() {
 
 #[test]
 fn test_scattered_edit_sets_dirty_full_fallback() {
-    // 绕过事件 API 的散改（如 apply_note_edit 直接 get_mut）→ dirty 兜底
+    // 绕过事件 API 的散改（直接 update_note 写 document，不记录事件）→ dirty 兜底
     let mut data = make_data(3);
-    data.notes[0].tick = 99.0;
+    data.update_note(data.current_track, 0, Note::new(99.0, 60, 1.0));
     data.mark_current_track_changed();
     assert!(data.note_delta_dirty, "散改未记录事件 → 全量兜底");
 }

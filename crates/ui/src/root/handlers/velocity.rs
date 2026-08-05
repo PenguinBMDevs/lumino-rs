@@ -7,6 +7,7 @@ use crate::editor::velocity::EditMode;
 use crate::message::{EditorAction, Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
+use lumino_note_core::note::Note;
 
 /// 力度编辑面板消息处理器
 pub struct VelocityHandler;
@@ -188,12 +189,24 @@ impl VelocityHandler {
     /// 应用力度值到指定音符，仅在力度实际变化时标记音符变更
     fn apply_velocity(editor: &mut crate::editor::Editor, note_index: usize, velocity: u8) {
         let data = &mut editor.editor_state.data;
-        if note_index < data.notes.len()
-            && let Some(note) = data.notes.get_mut(note_index)
-        {
+        let track_idx = data.current_track;
+        // 2026-08 单一权威源：从 document 读取并更新（track_notes 缓存已删除）
+        // NoteEvent 为 Copy：先取值再写回，避免借用冲突
+        if let Some(note) = data.current_track_notes().get(note_index) {
             let clamped = velocity.clamp(0, 127);
             if note.velocity != clamped {
-                note.velocity = clamped;
+                let note_copy = *note;
+                data.update_note(
+                    track_idx,
+                    note_index,
+                    Note::from_raw(
+                        note_copy.start_tick as f32,
+                        note_copy.key as u16,
+                        (note_copy.end_tick - note_copy.start_tick) as f32,
+                        clamped,
+                        note_copy.channel,
+                    ),
+                );
                 editor.mark_notes_changed();
                 tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
             }

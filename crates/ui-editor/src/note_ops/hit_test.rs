@@ -60,7 +60,7 @@ impl Editor {
         let pending = &self.pending_drag_state;
 
         // 1. 先检查 ghost 偏移影响的音符（pending / 当前 drag）。
-        //    这些音符视觉上已移动，但 data.notes 和空间索引仍是旧位置，
+        //    这些音符视觉上已移动，但 document 和空间索引仍是旧位置，
         //    必须按 ghost 位置命中，否则触控判定区域会停留在原地。
         //    从后向前遍历，优先命中视觉上靠上的音符（与原逻辑一致）。
         let ghost_indices = collect_ghost_indices(edit_state, pending);
@@ -100,15 +100,23 @@ impl Editor {
             //
             // 此 fallback 路径仅在 spatial.note_index 为 None 时进入（小数据量
             // < SPATIAL_INDEX_BUILD_THRESHOLD = 50000），此时 NoteStore 也未启用
-            // （阈值 10000），直接走 im::Vector iter 最快——无需构造 NoteView。
+            // （阈值 10000），直接走 document 切片 iter 最快——无需构造 NoteView。
             let mut best_idx = None;
-            for (i, note) in self.editor_state.data.notes.iter().enumerate().rev() {
+            // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
+            for (i, note) in self
+                .editor_state
+                .data
+                .current_track_notes()
+                .iter()
+                .enumerate()
+                .rev()
+            {
                 if ghost_set.contains(&i) {
                     continue;
                 }
-                if note.key == key
-                    && tick >= note.tick
-                    && tick <= note.tick + note.length
+                if note.key as u16 == key
+                    && tick >= note.start_tick as f32
+                    && tick <= note.end_tick as f32
                     && best_idx.is_none_or(|b| i > b)
                 {
                     best_idx = Some(i);

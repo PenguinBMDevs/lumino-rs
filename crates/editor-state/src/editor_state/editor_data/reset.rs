@@ -6,8 +6,6 @@ use lumino_note_core::midi_types::{CcData, TempoPoint};
 impl EditorData {
     /// 重置编辑器数据到初始状态（释放所有内存）
     pub fn reset(&mut self) {
-        self.notes.clear();
-        self.track_notes.clear();
         self.edited_tracks.clear();
         self.onion_dirty_tracks = None;
         self.mark_track_notes_changed();

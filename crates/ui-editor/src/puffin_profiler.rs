@@ -47,7 +47,7 @@ pub fn released_dragging_selection() {
     puffin::profile_scope!("selection_move::released_dragging_selection");
 }
 
-/// 提交 pending 批量拖动到 data.notes（`editor_impl.rs` → `commit_pending_drag`）
+/// 提交 pending 批量拖动到 document（`editor_impl.rs` → `commit_pending_drag`）
 pub fn commit_pending_drag() {
     puffin::profile_scope!("selection_move::commit_pending_drag");
 }

@@ -191,9 +191,7 @@ impl Host {
     ///   WGPU 线程的 streaming channel，最后 send `Done`
     /// - `Delta`：事件级增量——只构建被编辑的洋葱皮音轨，send `TrackDelta`
     ///
-    /// 数据源融合（与 arrangement_ops/clipboard.rs + selection.rs 范式一致）：
-    /// 1. 优先从 `track_notes` 缓存读（已编辑的音轨，含 undo/redo 状态）
-    /// 2. `track_notes` 未缓存的音轨从 `Arc<MidiDocument>` 读（未编辑的原始音轨）
+    /// 2026-08 单一权威源：音符数据一律从 `document` 读取（track_notes 缓存已删除）。
     pub(super) fn stream_onion_skin_instances(&mut self) {
         // 走带模式跳过
         if self.root.is_arrangement_mode() {
@@ -257,36 +255,11 @@ impl Host {
                 });
             };
 
-        // 1. 从 track_notes 缓存构建（已编辑的音轨）
-        for (track_id, notes) in data.track_notes.iter() {
-            if *track_id == current_track || is_track_muted(*track_id) {
-                continue;
-            }
-            let color = lumino_extras::palette::current_track_color_f32(*track_id);
-            for note in notes.iter() {
-                chunk.push(NoteInstance::new(
-                    note.tick,
-                    note.key as u8,
-                    note.length,
-                    color,
-                    border_width,
-                ));
-                if chunk.len() >= STREAMING_CHUNK_SIZE {
-                    flush_chunk(&mut chunk, *track_id, wgpu_thread);
-                }
-            }
-            flush_chunk(&mut chunk, *track_id, wgpu_thread);
-        }
-
-        // 2. 从 MidiDocument 构建未缓存到 track_notes 的音轨（未编辑的原始音轨）
+        // 从 MidiDocument 构建所有洋葱皮音轨（单一权威源）
         if let Some(doc) = data.document.as_ref() {
             let track_count = doc.track_count();
             for track_idx in 0..track_count {
                 if track_idx == current_track || is_track_muted(track_idx) {
-                    continue;
-                }
-                // 已在 track_notes 缓存中的音轨跳过（避免重复）
-                if data.track_notes.contains_key(&track_idx) {
                     continue;
                 }
                 let doc_notes = doc.track_notes(track_idx);
@@ -350,24 +323,16 @@ impl Host {
     }
 }
 
-/// 构建单音轨的完整 NoteInstance 列表（数据源融合）
+/// 构建单音轨的完整 NoteInstance 列表（数据源：document 单一权威源）
 ///
-/// 1. `track_notes` 缓存优先（已编辑的音轨，含 undo/redo 状态）
-/// 2. 未缓存的音轨从 `MidiDocument` 读（未编辑的原始音轨）
-/// 3. 两者皆无（无文档）→ 空列表
+/// 2026-08 改造：track_notes 缓存已删除，一律从 `MidiDocument` 读。
+/// 无文档 → 空列表。
 fn build_track_instances(
     data: &EditorData,
     track_id: usize,
     border_width: u32,
 ) -> Vec<NoteInstance> {
     let color = lumino_extras::palette::current_track_color_f32(track_id);
-
-    if let Some(notes) = data.track_notes.get(&track_id) {
-        return notes
-            .iter()
-            .map(|n| NoteInstance::new(n.tick, n.key as u8, n.length, color, border_width))
-            .collect();
-    }
 
     if let Some(doc) = data.document.as_ref() {
         let doc_notes = doc.track_notes(track_id);

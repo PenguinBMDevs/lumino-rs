@@ -11,7 +11,6 @@ use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
 use lumino_midi_loader::MidiDocument;
-use std::sync::Arc;
 
 pub use lumino_ui_core::visual_state::VisualState;
 
@@ -237,18 +236,24 @@ impl Root {
 
     /// 获取工程走带视图的最大 tick 终点（缓存，按 track_notes_gen 失效）
     ///
-    /// 播放时每帧需要计算最大滚动范围，全量扫描 track_notes 在大型 MIDI 下会导致主线程卡顿。
+    /// 播放时每帧需要计算最大滚动范围，全量扫描音符在大型 MIDI 下会导致主线程卡顿。
     /// 使用 EditorData::track_notes_gen 作为缓存版本号，只在音符数据变化时重新计算。
+    /// 2026-08 单一权威源：音符数据从 document 读取（track_notes 缓存已删除）。
     pub fn arrangement_max_tick_end(&mut self) -> f32 {
         let editor_data = &self.editor.editor_state.data;
         let vp = &mut self.arrangement_view.viewport;
         let current_gen = editor_data.track_notes_gen;
         if vp.cached_track_notes_gen != current_gen {
             vp.cached_max_tick_end = editor_data
-                .track_notes
-                .values()
-                .flat_map(|notes| notes.iter().map(|n| n.tick + n.length))
-                .fold(0.0_f32, f32::max);
+                .document
+                .as_ref()
+                .map(|doc| {
+                    (0..doc.track_count())
+                        .flat_map(|track_idx| doc.track_notes(track_idx).iter())
+                        .map(|n| n.end_tick as f32)
+                        .fold(0.0_f32, f32::max)
+                })
+                .unwrap_or(0.0);
             vp.cached_track_notes_gen = current_gen;
         }
         vp.cached_max_tick_end
@@ -312,10 +317,12 @@ impl Root {
             .unwrap_or_default()
     }
 
-    /// 设置 MIDI 文档引用（供懒加载使用）
+    /// 设置 MIDI 文档（独占所有权，供编辑/渲染/保存）
     ///
-    /// 将控制事件（CC / PitchBend）按音轨导入 automation_lanes，与 Yinhe 的自动化数据模型对齐。
-    pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
+    /// 2026-08 单一权威源改造：`EditorData.document` 独占持有 `MidiDocument`，
+    /// 不再以 `Arc` 共享。控制事件（CC / PitchBend）按音轨导入 automation_lanes，
+    /// 与 Yinhe 的自动化数据模型对齐。
+    pub fn set_midi_document(&mut self, doc: MidiDocument) {
         use lumino_note_core::{AutomationEdit, AutomationTarget, SegmentShape};
 
         // 每次加载新文档时重建自动化 lane，避免旧数据残留。
@@ -353,7 +360,8 @@ impl Root {
             }
         }
 
-        self.midi.document = Some(doc);
+        // 单一权威源：文档独占存入 EditorData
+        self.editor.editor_state.data.document = Some(doc);
     }
 
     /// 收集各组件的内存占用快照

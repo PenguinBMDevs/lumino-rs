@@ -113,27 +113,20 @@ impl Root {
             // 转换协作音符为编辑器音符
             let editor_note = crate::editor::note::Note::new(note.tick, note.key, note.length);
 
-            // 添加到对应的音轨
+            // 2026-08 单一权威源：直接写入 document 指定音轨（track_notes 缓存已删除）
             let track_idx = note.track_index;
-            if track_idx == self.editor.editor_state.data.current_track {
-                // 如果是当前音轨，直接添加到编辑器
-                self.editor
-                    .editor_state
-                    .data
-                    .notes
-                    .push_back(editor_note.clone());
-            }
-
-            // 更新 track_notes
-            let track_notes = self
-                .editor
+            self.editor
                 .editor_state
                 .data
-                .track_notes
-                .entry(track_idx)
-                .or_default();
-            track_notes.push_back(editor_note);
+                .insert_note(track_idx, editor_note);
         }
+        // 精确标记受影响音轨（洋葱皮事件级增量）
+        let affected: std::collections::HashSet<usize> =
+            operation.notes.iter().map(|n| n.track_index).collect();
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected));
         // 音符由 wgpu 渲染，不需要清 grid cache
         tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
     }
@@ -144,22 +137,35 @@ impl Root {
     ) {
         // 更新操作：根据位置匹配现有音符
         for note in &operation.notes {
-            if let Some(track_notes) = self
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .get_mut(&note.track_index)
-            {
-                for editor_note in track_notes.iter_mut() {
-                    // 基于 tick 和 key 匹配（简化匹配）
-                    if (editor_note.tick - note.tick).abs() < 1.0 && editor_note.key == note.key {
-                        editor_note.length = note.length;
-                        break;
-                    }
-                }
-            }
+            let track_idx = note.track_index;
+            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
+            let notes = self.editor.editor_state.data.track_notes(track_idx);
+            let Some(match_idx) = notes.iter().position(|n| {
+                (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+            }) else {
+                continue;
+            };
+            // 保持其他字段不变，仅更新长度（NoteEvent 为 Copy，先取值再写回）
+            let current = notes[match_idx];
+            self.editor.editor_state.data.update_note(
+                track_idx,
+                match_idx,
+                crate::editor::note::Note::from_raw(
+                    current.start_tick as f32,
+                    current.key as u16,
+                    note.length,
+                    current.velocity,
+                    current.channel,
+                ),
+            );
         }
+        // 精确标记受影响音轨（洋葱皮事件级增量）
+        let affected: std::collections::HashSet<usize> =
+            operation.notes.iter().map(|n| n.track_index).collect();
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected));
         // 音符由 wgpu 渲染，不需要清 grid cache
         tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
     }
@@ -168,31 +174,31 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 删除操作：根据位置匹配删除音符
+        // 删除操作：根据位置匹配删除音符（索引从大到小删除，避免索引偏移）
         for note in &operation.notes {
-            if let Some(track_notes) = self
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .get_mut(&note.track_index)
-            {
-                track_notes.retain(|n| !((n.tick - note.tick).abs() < 1.0 && n.key == note.key));
+            let track_idx = note.track_index;
+            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
+            let notes = self.editor.editor_state.data.track_notes(track_idx);
+            let mut match_indices: Vec<usize> = notes
+                .iter()
+                .enumerate()
+                .filter(|(_, n)| {
+                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                })
+                .map(|(i, _)| i)
+                .collect();
+            match_indices.sort_unstable_by(|a, b| b.cmp(a));
+            for idx in match_indices {
+                self.editor.editor_state.data.remove_note(track_idx, idx);
             }
         }
-        // 同时更新当前显示的音符
-        if let Some(source_track) = operation.source_track
-            && source_track == self.editor.editor_state.data.current_track
-        {
-            self.editor.editor_state.data.notes = self
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .get(&source_track)
-                .cloned()
-                .unwrap_or_default();
-        }
+        // 精确标记受影响音轨（洋葱皮事件级增量）
+        let affected: std::collections::HashSet<usize> =
+            operation.notes.iter().map(|n| n.track_index).collect();
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected));
         // 音符由 wgpu 渲染，不需要清 grid cache
         tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
     }
@@ -218,46 +224,52 @@ impl Root {
                 note.key,
                 note.track_index
             );
-            if let Some(track_notes) = self
-                .editor
-                .editor_state
-                .data
-                .track_notes
-                .get_mut(&note.track_index)
-            {
-                tracing::trace!("协作: track_notes 中有 {} 个音符", track_notes.len());
-                for (i, editor_note) in track_notes.iter_mut().enumerate() {
-                    tracing::trace!(
-                        "协作:   [{}] tick={}, key={}",
-                        i,
-                        editor_note.tick,
-                        editor_note.key
-                    );
-                    if (editor_note.tick - note.tick).abs() < 1.0 && editor_note.key == note.key {
-                        tracing::debug!(
-                            "协作:   匹配成功! 更新: tick {} -> {}, key {} -> {}",
-                            editor_note.tick,
-                            editor_note.tick + tick_offset,
-                            editor_note.key,
-                            (editor_note.key as i16 + key_offset).max(0) as u16
-                        );
-                        editor_note.tick += tick_offset;
-                        editor_note.key = (editor_note.key as i16 + key_offset).max(0) as u16;
-                        matched_count += 1;
-                        break;
-                    }
-                }
-            } else {
-                tracing::warn!("协作: track {} 不存在", note.track_index);
-            }
+            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
+            let track_idx = note.track_index;
+            let notes = self.editor.editor_state.data.track_notes(track_idx);
+            let Some(match_idx) = notes.iter().position(|n| {
+                (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+            }) else {
+                tracing::warn!("协作: track {} 不存在或音符未匹配", track_idx);
+                continue;
+            };
+            tracing::trace!(
+                "协作:   [{}] tick={}, key={}",
+                match_idx,
+                notes[match_idx].start_tick,
+                notes[match_idx].key
+            );
+            // NoteEvent 为 Copy：先取值再写回，避免借用冲突
+            let current = notes[match_idx];
+            let new_tick = current.start_tick as f32 + tick_offset;
+            let new_key = (current.key as i16 + key_offset).max(0) as u16;
+            tracing::debug!(
+                "协作:   匹配成功! 更新: tick {} -> {}, key {} -> {}",
+                current.start_tick,
+                new_tick,
+                current.key,
+                new_key
+            );
+            self.editor.editor_state.data.update_note(
+                track_idx,
+                match_idx,
+                crate::editor::note::Note::from_raw(
+                    new_tick,
+                    new_key,
+                    current.length() as f32,
+                    current.velocity,
+                    current.channel,
+                ),
+            );
+            matched_count += 1;
         }
-        // 同时更新当前显示的音符
-        if let Some(source_track) = operation.source_track
-            && source_track == self.editor.editor_state.data.current_track
-            && let Some(track_notes) = self.editor.editor_state.data.track_notes.get(&source_track)
-        {
-            self.editor.editor_state.data.notes = track_notes.clone();
-        }
+        // 精确标记受影响音轨（洋葱皮事件级增量）
+        let affected: std::collections::HashSet<usize> =
+            operation.notes.iter().map(|n| n.track_index).collect();
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected));
         // 音符由 wgpu 渲染，不需要清 grid cache
         tracing::info!(
             "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}",

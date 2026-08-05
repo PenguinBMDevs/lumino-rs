@@ -23,7 +23,6 @@ impl Host {
         puffin::profile_scope!("collect_arrangement_instances");
 
         let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
-        let track_notes = &self.root.editor.editor_state.data.track_notes;
         let viewport_info = self.collect_viewport_info();
         let av = &self.root.arrangement_view.viewport;
 
@@ -106,8 +105,7 @@ impl Host {
             track_order: &track_order,
             track_colors: &ARRANGEMENT_PALETTE,
             track_visible: &track_visible,
-            midi_doc: self.root.midi.document.as_deref(),
-            track_notes,
+            midi_doc: self.root.editor.editor_state.data.document.as_ref(),
             playback_position: self.root.editor.playback_position,
             colors: &colors,
             ghost_notes: &self.root.arrangement_view.ghost_notes,
@@ -229,9 +227,10 @@ impl Host {
         };
 
         // Velocity 模式从 notes 获取力度点
+        // 2026-08 单一权威源：从 document 读取（track_notes 缓存已删除）
         let velocity_points = if is_velocity {
             crate::editor::velocity::VelocityPanel::build_velocity_points(
-                &editor.editor_state.data.notes,
+                editor.editor_state.data.current_track_notes(),
             )
         } else {
             Vec::new()

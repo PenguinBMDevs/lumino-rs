@@ -96,23 +96,6 @@ pub struct Host {
 }
 
 impl Host {
-    /// 预加载所有音轨音符到 track_notes 缓存
-    ///
-    /// MIDI 加载后立即调用，确保后续重生成时能从缓存取到完整音轨数据，
-    /// 避免预生成贴图被不完整数据覆盖。
-    pub fn preload_track_notes(&mut self, track_notes: Vec<Vec<lumino_note_core::Note>>) {
-        let editor_data = &mut self.root.editor.editor_state.data;
-        for (track_idx, notes) in track_notes.into_iter().enumerate() {
-            editor_data.track_notes.insert(track_idx, notes.into());
-        }
-        // 预加载覆盖全部音轨 → 保守全量标记（onion_dirty_tracks = None）
-        editor_data.mark_track_notes_changed();
-        tracing::info!(
-            "[onion-dirty] 预加载 track_notes: {} 个音轨",
-            editor_data.track_notes.len()
-        );
-    }
-
     /// 获取 root 引用
     pub fn root(&self) -> &root::Root {
         &self.root

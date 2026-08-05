@@ -2,6 +2,9 @@
 //!
 //! 支持 delta_ticks 和 delta_tracks 偏移。
 //! 移动后调用方需自行同步选择矩形。
+//!
+//! 2026-08 单一权威源：音符唯一权威是 document，本模块所有读写直接操作
+//! MidiDocument，不再维护 track_notes 缓存。
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,7 +23,6 @@ impl Editor {
             return 0;
         }
 
-        self.load_missing_tracks_from_document();
         let selection = self.editor_state.data.arrange_selection.clone();
 
         let (indices_by_source, moved_by_dest) =
@@ -42,7 +44,9 @@ impl Editor {
             return 0;
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
@@ -66,30 +70,32 @@ impl Editor {
         let mut current_track_touched = false;
         let mut moved_count = 0usize;
 
-        let editor_data = &mut self.editor_state.data;
+        // 2026-08 单一权威源：源音轨索引降序逐个删除（document remove_note）
         for (source_track, indices) in indices_by_source {
             if source_track == current_track {
                 current_track_touched = true;
             }
-            if let Some(notes) = editor_data.track_notes.get_mut(&source_track) {
-                let before = notes.len();
-                let mut idx = 0usize;
-                notes.retain(|_| {
-                    let keep = !indices.contains(&idx);
-                    idx += 1;
-                    keep
-                });
-                moved_count += before - notes.len();
+            let mut sorted: Vec<usize> = indices.into_iter().collect();
+            sorted.sort_unstable_by(|a, b| b.cmp(a));
+            for idx in sorted {
+                if self
+                    .editor_state
+                    .data
+                    .remove_note(source_track, idx)
+                    .is_some()
+                {
+                    moved_count += 1;
+                }
             }
         }
 
+        // 目标音轨有序插入（insert_note 按 start_tick 升序）
         for (dest_track, notes_to_add) in moved_by_dest {
             if dest_track == current_track {
                 current_track_touched = true;
             }
-            let track_entry = editor_data.track_notes.entry(dest_track).or_default();
             for note in notes_to_add {
-                track_entry.push_back(note);
+                self.editor_state.data.insert_note(dest_track, note);
             }
         }
 
@@ -107,21 +113,30 @@ impl Editor {
         let mut moved_by_dest: HashMap<usize, Vec<Note>> = HashMap::new();
 
         let editor_data = &self.editor_state.data;
-        for (&track_idx, notes) in &editor_data.track_notes {
+        // 2026-08 单一权威源：直接遍历 document 全部音轨（track_notes 缓存已删除）
+        let Some(doc) = &editor_data.document else {
+            return (indices_by_source, moved_by_dest);
+        };
+        for track_idx in 0..doc.track_count() {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
-            for (i, note) in notes.iter().enumerate() {
-                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+            for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
+                if selection.contains(visual_pos as u16, note.start_tick, note.key) {
                     let dest_visual = (visual_pos as i32 + delta_tracks).max(0) as usize;
                     let dest_track = editor_data
                         .track_visual_order
                         .get(dest_visual)
                         .copied()
                         .unwrap_or(dest_visual);
-                    let new_tick = (note.tick as f64 + delta_ticks as f64).max(0.0) as f32;
-                    let mut moved = note.clone();
-                    moved.tick = new_tick;
+                    let new_tick = (note.start_tick as f64 + delta_ticks as f64).max(0.0) as f32;
+                    let moved = Note::from_raw(
+                        new_tick,
+                        note.key as u16,
+                        (note.end_tick - note.start_tick) as f32,
+                        note.velocity,
+                        note.channel,
+                    );
                     indices_by_source.entry(track_idx).or_default().insert(i);
                     moved_by_dest.entry(dest_track).or_default().push(moved);
                 }

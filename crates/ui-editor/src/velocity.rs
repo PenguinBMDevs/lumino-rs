@@ -237,16 +237,19 @@ impl VelocityPanel {
 
     /// 构建力度点数据
     ///
-    /// 直接遍历 notes 构建 VelocityPoint，避免创建 EditorData 及 notes.clone()。
+    /// 直接遍历 document 当前轨的 NoteEvent 构建 VelocityPoint，
+    /// 避免创建 EditorData 及 notes.clone()。
     /// 10M 音符场景下，clone 开销可达百毫秒级。
-    pub fn build_velocity_points(notes: &im::Vector<crate::Note>) -> Vec<VelocityPoint> {
+    ///
+    /// 2026-08 单一权威源：输入为 `&[NoteEvent]`（document 零拷贝切片）。
+    pub fn build_velocity_points(notes: &[lumino_midi_loader::NoteEvent]) -> Vec<VelocityPoint> {
         let mut points: Vec<VelocityPoint> = Vec::with_capacity(notes.len());
         for (i, n) in notes.iter().enumerate() {
             points.push(VelocityPoint {
                 note_index: i,
-                tick: n.tick,
+                tick: n.start_tick as f32,
                 velocity: n.velocity,
-                length: n.length,
+                length: (n.end_tick - n.start_tick) as f32,
             });
         }
         points.sort_by(|a, b| {

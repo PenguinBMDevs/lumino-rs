@@ -1,6 +1,6 @@
 //! 批量删除音符操作（降级兼容层）
 //!
-//! NoteStore O(N) 热路径已删除，统一走 im::Vector retain 冷路径。
+//! NoteStore O(N) 热路径已删除，统一走 document 当前轨删除。
 //! 保留签名兼容下游调用。
 
 use std::collections::HashSet;
@@ -17,22 +17,12 @@ impl EditorData {
             return 0;
         }
 
-        let indices: HashSet<usize> = (0..self.notes.len())
+        let indices: HashSet<usize> = (0..self.current_track_note_count())
             .filter(|&idx| selected.get(idx))
             .collect();
-        let before = self.notes.len();
-        let mut idx = 0usize;
-        self.notes.retain(|_| {
-            let keep = !indices.contains(&idx);
-            idx += 1;
-            keep
-        });
-        let deleted = before - self.notes.len();
-
-        if deleted > 0 {
-            self.sync_track_notes();
-        }
-        deleted
+        let before = self.current_track_note_count();
+        self.delete_selected_notes(&indices);
+        before - self.current_track_note_count()
     }
 
     /// 从 HashSet 批量删除选中音符（集成层适配）
@@ -43,7 +33,7 @@ impl EditorData {
         if selected.is_empty() {
             return 0;
         }
-        let bitset = BitSet::from_iter(self.notes.len(), selected.iter().copied());
+        let bitset = BitSet::from_iter(self.current_track_note_count(), selected.iter().copied());
         self.batch_delete_notes(&bitset)
     }
 }

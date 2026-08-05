@@ -20,18 +20,13 @@ type ControlChangeMap = HashMap<u16, Vec<lumino_export::midi::MidiControlChangeE
 
 /// 从当前加载的文档或编辑器构建一个临时 `MidiDocument`
 ///
-/// 优先使用已加载的 `MidiDocument`；若已释放，则尝试从编辑器音符重建。
+/// 优先使用 UI 中已加载的 `MidiDocument`（单一权威源，零拷贝借用）；
+/// 若已释放，则尝试从编辑器音符重建。
 /// 返回 `None` 表示既没有已加载文档也没有编辑器内容。
 pub(super) fn build_editor_midi_document(runner: &RunnerInner) -> Option<MidiDocument> {
-    if let Some(doc) = runner
-        .midi_state
-        .current_midi
-        .as_ref()
-        .and_then(|pm| pm.document.as_deref().cloned())
-    {
-        return Some(doc);
-    }
-
+    // 2026-08 单一权威源改造：不再从 runner.midi_state 深拷贝 document，
+    // 优先借用 UI 的 EditorData.document；调用方需要所有权时（如 LMPJ 保存）
+    // 由 save.rs 直接借用，本函数仅作为「无文档时从编辑器重建」的回退路径。
     let export_data = build_midi_export_data_from_editor(runner, true)?;
     let midi_bytes = export_midi_to_bytes(&export_data)?;
     match MidiDocument::from_notes_bytes(&midi_bytes, None) {
@@ -46,14 +41,16 @@ pub(super) fn build_editor_midi_document(runner: &RunnerInner) -> Option<MidiDoc
 /// 编辑器音符表示
 pub(super) type EditorNotes = Vec<(usize, Vec<(f32, u8, f32, u8, u8)>)>;
 
-/// 从当前已加载文档提取 PC/CC 事件
+/// 从当前已加载文档提取 PC/CC 事件（经 UI 只读借用，零拷贝）
 fn extract_current_pc_cc(runner: &RunnerInner) -> Option<(ProgramChangeMap, ControlChangeMap)> {
-    runner
-        .midi_state
-        .current_midi
+    let ui = runner.window_state.window.ui();
+    ui.root()
+        .editor
+        .editor_state
+        .data
+        .document
         .as_ref()
-        .and_then(|pm| pm.document.as_ref())
-        .map(|doc| extract_pc_cc_events(std::sync::Arc::as_ref(doc)))
+        .map(extract_pc_cc_events)
 }
 
 /// 读取编辑器中的音符与 tempo 点

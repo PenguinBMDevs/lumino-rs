@@ -7,6 +7,28 @@ fn create_root() -> Root {
     Root::new(&UiConfig::default())
 }
 
+/// 挂载测试 document 到 Root（当前轨 = 1，音符写入 document 单一权威源）
+fn attach_test_document(root: &mut Root) {
+    let doc = lumino_midi_loader::MidiDocument {
+        notes: vec![Vec::new(), Vec::new()],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![],
+        control_events: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
+        total_ticks: 0,
+        track_count: 2,
+        tracks: lumino_midi_loader::TrackManager::new(2),
+        division: 480,
+        track_ports: vec![0, 0],
+    };
+    root.set_midi_document(doc);
+    root.editor.editor_state.data.current_track = 1;
+}
+
 #[test]
 fn test_message_router_consumes_message() {
     struct ConsumingHandler;
@@ -103,12 +125,12 @@ fn test_toolbar_handler_play_creates_manager() {
     let mut handler = ToolbarHandler::new();
     let mut root = create_root();
 
-    // 添加一个音符，使播放管理器能够初始化
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(crate::editor::note::Note::new(0.0, 60, 480.0));
+    // 添加一个音符，使播放管理器能够初始化（document 唯一权威源）
+    attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        crate::editor::note::Note::new(0.0, 60, 480.0),
+    );
 
     assert!(root.playback.manager.is_none());
     handler.handle(&mut root, Message::Toolbar(crate::toolbar::Event::Play));
@@ -201,12 +223,12 @@ fn test_piano_roll_context_menu_item_click_closes_and_dispatches() {
     ));
     assert!(root.editor.context_menu.open);
 
-    // 添加一个音符，使全选有意义
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(crate::editor::note::Note::new(0.0, 60, 480.0));
+    // 添加一个音符，使全选有意义（document 唯一权威源）
+    attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        crate::editor::note::Note::new(0.0, 60, 480.0),
+    );
 
     // 点击全选：菜单关闭且音符被选中
     root.update(Message::PianoRollContextMenu(

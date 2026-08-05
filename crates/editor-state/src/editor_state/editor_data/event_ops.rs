@@ -318,15 +318,15 @@ impl EditorData {
 
     /// 删除当前音轨中 tick 位于集合中的音符
     pub fn delete_notes_at_ticks(&mut self, ticks: &HashSet<u32>) {
-        if self.current_track == 0 || ticks.is_empty() || self.notes.is_empty() {
+        if self.current_track == 0 || ticks.is_empty() {
             return;
         }
 
         let indices: HashSet<usize> = self
-            .notes
+            .current_track_notes()
             .iter()
             .enumerate()
-            .filter(|(_, note)| note.tick >= 0.0 && ticks.contains(&(note.tick as u32)))
+            .filter(|(_, note)| ticks.contains(&note.start_tick))
             .map(|(idx, _)| idx)
             .collect();
 
@@ -335,12 +335,12 @@ impl EditorData {
         }
 
         self.push_history();
-        self.batch_delete_notes_from_set(&indices);
+        self.delete_selected_notes(&indices);
     }
 
     /// 在当前音轨指定 tick 插入默认 C4 音符
     ///
-    /// 返回创建的音符；若当前音轨为 0（Conductor）则返回 None。
+    /// 返回创建的音符；若当前音轨为 0（Conductor）或无 document 则返回 None。
     pub fn insert_note_at_tick(&mut self, tick: f32) -> Option<Note> {
         if self.current_track == 0 {
             return None;
@@ -348,7 +348,11 @@ impl EditorData {
 
         self.push_history();
         let note = Note::new(tick, 60, 480.0);
-        self.push_note(note.clone());
+        if !self.insert_note(self.current_track, note.clone()) {
+            self.history.discard_last();
+            return None;
+        }
+        self.mark_current_track_changed();
         Some(note)
     }
 }

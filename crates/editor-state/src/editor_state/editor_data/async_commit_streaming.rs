@@ -6,15 +6,15 @@
 //!
 //! 内存增量：16M 音符全选时仅 BitVec ~2 MB，无 Vec<usize> 或 MoveOp 中间分配。
 //! 速度优化：后台线程直接遍历 BitVec，跳过 `selected_indices()` 和 `move_ops_from_drag_state()`。
+//!
+//! 2026-08 单一权威源改造：后台线程克隆当前音轨 `Vec<NoteEvent>`，完成后整轨写回。
 
 use super::EditorData;
 use super::async_commit::AsyncCommitResult;
 use crate::DragState;
 use bit_vec::BitVec;
-use im::Vector;
 use lumino_core::error::{CoreError, Result};
-use lumino_note_core::note::Note;
-use std::collections::HashMap;
+use lumino_midi_model::NoteEvent;
 use std::sync::mpsc;
 
 impl EditorData {
@@ -32,8 +32,7 @@ impl EditorData {
             ));
         }
 
-        let notes = self.notes.clone();
-        let track_notes = self.track_notes.clone();
+        let notes = self.current_track_notes().to_vec();
         let selected = drag_state.selected.clone(); // BitVec clone = O(N/8) = 2 MB for 16M
         let delta_tick = drag_state.delta_tick;
         let delta_key = drag_state.delta_key;
@@ -42,13 +41,7 @@ impl EditorData {
 
         std::thread::spawn(move || {
             let drag_result = apply_drag_state_to_clones(
-                notes,
-                track_notes,
-                &selected,
-                delta_tick,
-                delta_key,
-                track_id,
-                max_key,
+                notes, &selected, delta_tick, delta_key, track_id, max_key,
             );
             let _ = tx.send(drag_result);
         });
@@ -61,32 +54,23 @@ impl EditorData {
     }
 }
 
-/// 将 DragState 应用到 notes/track_notes 的克隆副本（流式，不构造 MoveOp）
+/// 将 DragState 应用到当前音轨音符的克隆副本（流式，不构造 MoveOp）
 pub(crate) fn apply_drag_state_to_clones(
-    mut notes: Vector<Note>,
-    mut track_notes: HashMap<usize, Vector<Note>>,
+    mut notes: Vec<NoteEvent>,
     selected: &BitVec,
     delta_tick: i64,
     delta_key: i16,
-    track_id: usize,
+    _track_id: usize,
     max_key: u16,
 ) -> Result<AsyncCommitResult> {
     let total_bits = selected.len();
     let start_time = std::time::Instant::now();
-    let dt = delta_tick as f32;
+    let dt = delta_tick as i32;
     let dk = delta_key as i32;
 
     let selected_count = selected.iter().filter(|&selected| selected).count();
     if selected_count == 0 {
-        return Ok(AsyncCommitResult {
-            notes,
-            track_notes,
-            modified: 0,
-        });
-    }
-
-    if !track_notes.contains_key(&track_id) && !notes.is_empty() {
-        track_notes.insert(track_id, notes.clone());
+        return Ok(AsyncCommitResult { notes, modified: 0 });
     }
 
     let mut modified = 0usize;
@@ -99,25 +83,15 @@ pub(crate) fn apply_drag_state_to_clones(
             continue;
         }
 
-        // 修改 notes
         if let Some(note) = notes.get_mut(i) {
-            let new_tick = (note.tick + dt).max(0.0);
-            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-            if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                note.tick = new_tick;
+            let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+            if note.start_tick != new_tick || note.key != new_key {
+                note.start_tick = new_tick;
+                note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
                 note.key = new_key;
                 modified += 1;
             }
-        }
-
-        // 同步修改 track_notes
-        if let Some(track_notes) = track_notes.get_mut(&track_id)
-            && let Some(note) = track_notes.get_mut(i)
-        {
-            let new_tick = (note.tick + dt).max(0.0);
-            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-            note.tick = new_tick;
-            note.key = new_key;
         }
 
         processed += 1;
@@ -139,11 +113,7 @@ pub(crate) fn apply_drag_state_to_clones(
         start_time.elapsed()
     );
 
-    Ok(AsyncCommitResult {
-        notes,
-        track_notes,
-        modified,
-    })
+    Ok(AsyncCommitResult { notes, modified })
 }
 
 #[cfg(test)]
@@ -154,13 +124,14 @@ mod tests {
     use lumino_note_core::note::Note;
 
     fn make_data_with_notes() -> EditorData {
-        let mut editor_data = EditorData::new();
-        editor_data.current_track = 1;
-        editor_data.notes.push_back(Note::new(0.0, 60, 1.0));
-        editor_data.notes.push_back(Note::new(10.0, 62, 1.0));
-        editor_data.notes.push_back(Note::new(20.0, 64, 1.0));
-        editor_data.track_notes.insert(1, editor_data.notes.clone());
-        editor_data
+        EditorData::with_f32_notes(
+            1,
+            &[
+                Note::new(0.0, 60, 1.0),
+                Note::new(10.0, 62, 1.0),
+                Note::new(20.0, 64, 1.0),
+            ],
+        )
     }
 
     #[test]
@@ -180,10 +151,10 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(editor_data.notes[0].tick, 5.0);
-        assert_eq!(editor_data.notes[0].key, 58);
-        assert_eq!(editor_data.notes[2].tick, 25.0);
-        assert_eq!(editor_data.notes[2].key, 62);
+        assert_eq!(editor_data.get_note_view(0).unwrap().tick, 5.0);
+        assert_eq!(editor_data.get_note_view(0).unwrap().key, 58);
+        assert_eq!(editor_data.get_note_view(2).unwrap().tick, 25.0);
+        assert_eq!(editor_data.get_note_view(2).unwrap().key, 62);
     }
 
     #[test]
@@ -206,16 +177,13 @@ mod tests {
 
     #[test]
     fn test_streaming_speed_large_scale() {
-        // 创建 1600 万音符，测试流式提交性能
+        // 创建 1600 万音符，测试流式提交性能。
+        // 2026-08：直接构造 Vec<NoteEvent> 克隆副本（不经 EditorData/document），
+        // 与 apply_drag_state_to_clones 的输入同构，避免 1600 万次 document 插入开销。
         let note_count = 16_000_000;
-        let mut editor_data = EditorData::new();
-        editor_data.current_track = 1;
-        for i in 0..note_count {
-            editor_data
-                .notes
-                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
-        }
-        editor_data.track_notes.insert(1, editor_data.notes.clone());
+        let notes: Vec<NoteEvent> = (0..note_count)
+            .map(|i| NoteEvent::new((i * 10) as u32, (i * 10 + 5) as u32, 60, 127, 0))
+            .collect();
 
         // 选中 50% 的音符（800 万个）
         let mut bv = BitVec::from_elem(note_count, false);
@@ -232,15 +200,8 @@ mod tests {
         );
         let start = std::time::Instant::now();
 
-        let drag_result = apply_drag_state_to_clones(
-            editor_data.notes.clone(),
-            editor_data.track_notes.clone(),
-            &ds.selected,
-            ds.delta_tick,
-            ds.delta_key,
-            editor_data.current_track,
-            127,
-        );
+        let drag_result =
+            apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
 
         let elapsed = start.elapsed();
         let drag_result = drag_result.unwrap();
@@ -258,23 +219,18 @@ mod tests {
 
         assert_eq!(drag_result.modified, note_count / 2);
         // 未选中的音符不变
-        assert_eq!(drag_result.notes[1].tick, 10.0);
+        assert_eq!(drag_result.notes[1].start_tick, 10);
         // 选中的音符已偏移
-        assert_eq!(drag_result.notes[0].tick, 10.0);
+        assert_eq!(drag_result.notes[0].start_tick, 10);
     }
 
     #[test]
     fn test_streaming_speed_100_percent_selected() {
         // 1600 万音符全选，测试最坏情况
         let note_count = 16_000_000;
-        let mut editor_data = EditorData::new();
-        editor_data.current_track = 1;
-        for i in 0..note_count {
-            editor_data
-                .notes
-                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
-        }
-        editor_data.track_notes.insert(1, editor_data.notes.clone());
+        let notes: Vec<NoteEvent> = (0..note_count)
+            .map(|i| NoteEvent::new((i * 10) as u32, (i * 10 + 5) as u32, 60, 127, 0))
+            .collect();
 
         let bv = BitVec::from_elem(note_count, true);
         let mut ds = DragState::new(bv, 0, 60);
@@ -283,15 +239,8 @@ mod tests {
         eprintln!("流式提交测试（全选）: {} 音符", note_count);
         let start = std::time::Instant::now();
 
-        let drag_result = apply_drag_state_to_clones(
-            editor_data.notes.clone(),
-            editor_data.track_notes.clone(),
-            &ds.selected,
-            ds.delta_tick,
-            ds.delta_key,
-            editor_data.current_track,
-            127,
-        );
+        let drag_result =
+            apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
 
         let elapsed = start.elapsed();
         let drag_result = drag_result.unwrap();
@@ -314,14 +263,9 @@ mod tests {
     fn test_compare_old_vs_new_approach() {
         // 对比新旧两种方案在 1000 万音符下的性能
         let note_count = 10_000_000;
-        let mut editor_data = EditorData::new();
-        editor_data.current_track = 1;
-        for i in 0..note_count {
-            editor_data
-                .notes
-                .push_back(Note::new(i as f32 * 10.0, 60, 5.0));
-        }
-        editor_data.track_notes.insert(1, editor_data.notes.clone());
+        let notes: Vec<NoteEvent> = (0..note_count)
+            .map(|i| NoteEvent::new((i * 10) as u32, (i * 10 + 5) as u32, 60, 127, 0))
+            .collect();
 
         // 选中 50% 的音符
         let mut bv = BitVec::from_elem(note_count, false);
@@ -332,7 +276,10 @@ mod tests {
         ds.set_delta(10, 3);
 
         // 旧方案：move_ops_from_drag_state + selected_indices()
+        // 对比的是构造开销，EditorData 无需持有音符数据（original_ticks 提取
+        // 仅影响 inverse 还原，不参与本次耗时对比的主体路径）
         eprintln!("\n--- 对比测试: {} 音符, 50% 选中 ---", note_count);
+        let editor_data = EditorData::new();
         let start_old = std::time::Instant::now();
         let ops = editor_data.move_ops_from_drag_state(&ds);
         let elapsed_old = start_old.elapsed();
@@ -345,15 +292,8 @@ mod tests {
 
         // 新方案：直接遍历 BitVec
         let start_new = std::time::Instant::now();
-        let drag_result = apply_drag_state_to_clones(
-            editor_data.notes.clone(),
-            editor_data.track_notes.clone(),
-            &ds.selected,
-            ds.delta_tick,
-            ds.delta_key,
-            editor_data.current_track,
-            127,
-        );
+        let drag_result =
+            apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
         let elapsed_new = start_new.elapsed();
         let drag_result = drag_result.unwrap();
         eprintln!("[新] 流式提交: {:?}", elapsed_new);

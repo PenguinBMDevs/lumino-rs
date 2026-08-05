@@ -3,7 +3,8 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
-use lumino_note_core::note::{Note, note_name};
+use lumino_midi_loader::NoteEvent;
+use lumino_note_core::note::note_name;
 use lumino_ui_core::sidebar_event::{EditRequest, NoteRef};
 
 use crate::sidebar::event_browser::bar_lookup::BarLookup;
@@ -21,16 +22,17 @@ pub(super) fn collect_note_rows(
         .iter()
         .enumerate()
         .map(|(idx, note)| {
-            let start_tick = note.tick as u32;
-            let end_tick = (note.tick + note.length) as u32;
+            let start_tick = note.start_tick;
+            let end_tick = note.end_tick;
+            let length = (end_tick - start_tick) as f32;
             let note_ref = note_ref(note, track);
-            let key_name = note_name(note.key);
+            let key_name = note_name(note.key as u16);
             let cells = vec![
                 String::new(),
                 note_ref.id.to_string(),
                 start_tick.to_string(),
                 bl.format(start_tick),
-                format!("{:.2}", note.length),
+                format!("{:.2}", length),
                 end_tick.to_string(),
                 bl.format(end_tick),
                 key_name,
@@ -49,7 +51,7 @@ pub(super) fn collect_note_rows(
                 Some(EditRequest::NoteVelocity { note: note_ref }),
                 None,
             ];
-            let note_jump = make_jump(start_tick, Some((track, note.key as u8)));
+            let note_jump = make_jump(start_tick, Some((track, note.key)));
             let jumps = vec![
                 None,
                 None,
@@ -74,19 +76,19 @@ pub(super) fn collect_note_rows(
 }
 
 /// 构造音符引用：以字段哈希作为稳定 id。
-fn note_ref(note: &Note, track: u16) -> NoteRef {
+fn note_ref(note: &NoteEvent, track: u16) -> NoteRef {
     let mut hasher = DefaultHasher::new();
-    note.tick.to_bits().hash(&mut hasher);
+    note.start_tick.hash(&mut hasher);
     note.key.hash(&mut hasher);
-    note.length.to_bits().hash(&mut hasher);
+    note.end_tick.hash(&mut hasher);
     note.velocity.hash(&mut hasher);
     note.channel.hash(&mut hasher);
     track.hash(&mut hasher);
     NoteRef {
         id: hasher.finish(),
-        start_tick: note.tick as u32,
-        end_tick: (note.tick + note.length) as u32,
-        key: note.key as u8,
+        start_tick: note.start_tick,
+        end_tick: note.end_tick,
+        key: note.key,
         velocity: note.velocity,
         track,
     }

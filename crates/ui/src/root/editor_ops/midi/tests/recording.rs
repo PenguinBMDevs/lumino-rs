@@ -1,4 +1,4 @@
-use super::common::create_root;
+use super::common::{attach_test_document, create_root};
 
 /// 测试 RecordingState 的状态切换
 #[test]
@@ -32,6 +32,7 @@ fn test_recording_state_toggle() {
 #[test]
 fn test_poll_midi_input_note_on() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = true;
     root.recording.started_at = Some(std::time::Instant::now());
 
@@ -49,11 +50,15 @@ fn test_poll_midi_input_note_on() {
     root.poll_midi_input();
 
     // 验证创建了一个音符（tick 基于墙钟时间，接近 0）
-    assert_eq!(root.editor.editor_state.data.notes.len(), 1);
-    let note = &root.editor.editor_state.data.notes[0];
+    assert_eq!(root.editor.editor_state.data.current_track_note_count(), 1);
+    let note = &root.editor.editor_state.data.current_track_notes()[0];
     assert_eq!(note.key, 60);
     assert_eq!(note.velocity, 100);
-    assert!(note.tick >= 0.0, "音符 tick 应 >= 0，实际 {}", note.tick);
+    assert!(
+        note.start_tick as f32 >= 0.0,
+        "音符 tick 应 >= 0，实际 {}",
+        note.start_tick
+    );
 
     // 验证 pending_notes 追踪
     assert!(
@@ -66,6 +71,7 @@ fn test_poll_midi_input_note_on() {
 #[test]
 fn test_poll_midi_input_note_on_off() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = true;
     root.recording.started_at = Some(std::time::Instant::now());
 
@@ -92,9 +98,13 @@ fn test_poll_midi_input_note_on_off() {
     root.poll_midi_input();
 
     // 验证音符长度已更新（基于墙钟时间，length > 0）
-    assert_eq!(root.editor.editor_state.data.notes.len(), 1);
-    let note = &root.editor.editor_state.data.notes[0];
-    assert!(note.length > 0.0, "音符长度应大于 0，实际 {}", note.length);
+    assert_eq!(root.editor.editor_state.data.current_track_note_count(), 1);
+    let note = &root.editor.editor_state.data.current_track_notes()[0];
+    assert!(
+        note.end_tick > note.start_tick,
+        "音符长度应大于 0，实际 {}",
+        note.end_tick - note.start_tick
+    );
 
     // 验证 pending_notes 已清除
     assert!(
@@ -107,6 +117,7 @@ fn test_poll_midi_input_note_on_off() {
 #[test]
 fn test_note_on_with_velocity_zero_treated_as_note_off() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = true;
     root.recording.started_at = Some(std::time::Instant::now());
 
@@ -134,9 +145,9 @@ fn test_note_on_with_velocity_zero_treated_as_note_off() {
     }
     root.poll_midi_input();
 
-    let note = &root.editor.editor_state.data.notes[0];
+    let note = &root.editor.editor_state.data.current_track_notes()[0];
     assert!(
-        note.length > 0.0,
+        note.end_tick > note.start_tick,
         "velocity=0 的 NoteOn 应被当作 NoteOff 处理"
     );
     assert!(!root.recording.pending_notes.contains_key(&60));
@@ -146,6 +157,7 @@ fn test_note_on_with_velocity_zero_treated_as_note_off() {
 #[test]
 fn test_no_duplicate_note_on_while_pending() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = true;
     root.editor.playback_position = 0.0;
 
@@ -163,7 +175,7 @@ fn test_no_duplicate_note_on_while_pending() {
 
     // 验证只创建了一个音符（重复 NoteOn 被忽略）
     assert_eq!(
-        root.editor.editor_state.data.notes.len(),
+        root.editor.editor_state.data.current_track_note_count(),
         1,
         "重复 NoteOn 不应插入第二个音符"
     );
@@ -173,6 +185,7 @@ fn test_no_duplicate_note_on_while_pending() {
 #[test]
 fn test_poll_midi_input_no_op_when_not_recording() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = false;
 
     {
@@ -187,7 +200,7 @@ fn test_poll_midi_input_no_op_when_not_recording() {
     root.poll_midi_input();
 
     assert!(
-        root.editor.editor_state.data.notes.is_empty(),
+        root.editor.editor_state.data.current_track_note_count() == 0,
         "未录制时不应处理 MIDI 输入"
     );
 }
@@ -196,22 +209,33 @@ fn test_poll_midi_input_no_op_when_not_recording() {
 #[test]
 fn test_stop_recording_handles_pending_notes_internal() {
     let mut root = create_root();
+    attach_test_document(&mut root);
     root.recording.is_recording = true;
     root.editor.playback_position = 100.0;
 
     // 手动模拟 note_on: 直接插入音符并追踪
     let note = crate::editor::note::Note::new(100.0, 60, 0.0);
-    root.editor.editor_state.data.notes.push_back(note);
+    root.editor
+        .editor_state
+        .data
+        .insert_note(root.editor.editor_state.data.current_track, note);
     root.recording.pending_notes.insert(60, 0);
 
     // 手动停止录制（不通过 start_recording - 需要 MIDI API）
     // 这里直接模拟 stop_recording 的核心逻辑：处理残留音符
     let default_length = root.editor.editor_state.view.default_note_length.max(1.0);
     for (_, note_idx) in root.recording.pending_notes.iter() {
-        if let Some(note) = root.editor.editor_state.data.notes.get_mut(*note_idx)
-            && note.length <= 0.0
+        if let Some(note) = root
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(root.editor.editor_state.data.current_track))
+            .and_then(|track| track.get_mut(*note_idx))
+            && note.end_tick <= note.start_tick
         {
-            note.length = default_length;
+            note.end_tick = note.start_tick + default_length as u32;
         }
     }
     root.recording.pending_notes.clear();
@@ -219,10 +243,10 @@ fn test_stop_recording_handles_pending_notes_internal() {
 
     // 验证残留音符被设置了默认长度
     assert!(root.recording.pending_notes.is_empty());
-    let note = &root.editor.editor_state.data.notes[0];
+    let note = &root.editor.editor_state.data.current_track_notes()[0];
     assert!(
-        note.length > 0.0,
+        note.end_tick > note.start_tick,
         "残留音符长度应被设置为默认长度，实际 {}",
-        note.length
+        note.end_tick - note.start_tick
     );
 }

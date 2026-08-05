@@ -26,7 +26,7 @@ impl Editor {
         }
 
         // ghost 方案：拖动期间数据不动，仅维护 DragState 偏移
-        let note_count = self.editor_state.data.notes.len();
+        let note_count = self.editor_state.data.current_track_note_count();
         let drag_state = DragState::from_single(
             note_index,
             note_count,
@@ -77,11 +77,11 @@ impl Editor {
                 drag_state,
                 last_played_key,
             } => {
+                // 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick f32/key u16）
                 let orig = self
                     .editor_state
                     .data
-                    .notes
-                    .get(*note_index)
+                    .get_note_view(*note_index)
                     .map(|n| (n.tick, n.key));
                 note_to_play = handle_dragging(
                     drag_state,
@@ -107,7 +107,7 @@ impl Editor {
             }
             EditState::ResizingEnd { note_index, .. } => {
                 new_length = handle_resizing_end(
-                    &self.editor_state.data.notes,
+                    self.editor_state.data.current_track_notes(),
                     *note_index,
                     snapped_tick,
                     snap_precision,
@@ -117,26 +117,42 @@ impl Editor {
                 handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
             }
             EditState::ResizingSelectionStart { last_tick } => {
-                if handle_resizing_selection_start(
-                    last_tick,
-                    snapped_tick,
-                    snap_precision,
-                    &sel,
-                    &mut self.editor_state.data.notes,
-                    &self.selected_bounds,
-                ) {
+                // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
+                if let Some(track) = self
+                    .editor_state
+                    .data
+                    .document
+                    .as_mut()
+                    .and_then(|doc| doc.track_notes_mut(self.editor_state.data.current_track))
+                    && handle_resizing_selection_start(
+                        last_tick,
+                        snapped_tick,
+                        snap_precision,
+                        &sel,
+                        track,
+                        &self.selected_bounds,
+                    )
+                {
                     self.mark_ghost_dirty();
                 }
             }
             EditState::ResizingSelectionEnd { last_tick } => {
-                if handle_resizing_selection_end(
-                    last_tick,
-                    snapped_tick,
-                    snap_precision,
-                    &sel,
-                    &mut self.editor_state.data.notes,
-                    &self.selected_bounds,
-                ) {
+                // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
+                if let Some(track) = self
+                    .editor_state
+                    .data
+                    .document
+                    .as_mut()
+                    .and_then(|doc| doc.track_notes_mut(self.editor_state.data.current_track))
+                    && handle_resizing_selection_end(
+                        last_tick,
+                        snapped_tick,
+                        snap_precision,
+                        &sel,
+                        track,
+                        &self.selected_bounds,
+                    )
+                {
                     self.mark_ghost_dirty();
                 }
             }
@@ -215,22 +231,22 @@ impl Editor {
             cache.iter().copied().collect()
         } else {
             puffin::profile_scope!("diag::selection_linear_scan");
-            let note_count = self.editor_state.data.notes.len();
+            let note_count = self.editor_state.data.current_track_note_count();
             tracing::debug!(
                 "diag::selection_linear_scan — 音符数={}（无空间索引，线性回退）",
                 note_count
             );
             self.editor_state
                 .data
-                .notes
+                .current_track_notes()
                 .iter()
                 .enumerate()
                 .filter(|&(_, note)| {
-                    let note_end = note.tick + note.length;
+                    let note_end = note.end_tick as f32;
                     note_end >= min_tick
-                        && note.tick <= max_tick
-                        && note.key >= min_key
-                        && note.key <= max_key
+                        && note.start_tick as f32 <= max_tick
+                        && note.key as u16 >= min_key
+                        && note.key as u16 <= max_key
                 })
                 .map(|(i, _)| i)
                 .collect()
@@ -409,7 +425,7 @@ impl Editor {
 
     /// 完成单音符拖动（ghost 方案）
     ///
-    /// 松手时一次性将 `drag_state.delta` 应用到 `data.notes`，并发送 `LocalNoteMoved` 协作同步事件。
+    /// 松手时一次性将 `drag_state.delta` 应用到 document（音符唯一权威），并发送 `LocalNoteMoved` 协作同步事件。
     /// 返回 `true` 表示音符位置确实发生了变化。
     pub(crate) fn finalize_dragging(&mut self, note_index: usize, drag_state: DragState) -> bool {
         crate::puffin_profiler::finalize_dragging();
@@ -419,9 +435,9 @@ impl Editor {
         }
 
         // 读取原始位置（apply 前的状态，用于协作同步事件）
+        // 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick f32/key u16/length f32）
         let (original_tick, original_key, length, current_track) = {
-            let notes = &self.editor_state.data.notes;
-            let Some(original_note) = notes.get(note_index) else {
+            let Some(original_note) = self.editor_state.data.get_note_view(note_index) else {
                 return false;
             };
             (

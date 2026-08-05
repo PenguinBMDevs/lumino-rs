@@ -3895,6 +3895,7 @@ dependencies = [
  "font-kit",
  "im",
  "lumino-core",
+ "lumino-midi-model",
  "puffin",
  "serde",
  "serde_json",

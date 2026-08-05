@@ -2,6 +2,8 @@
 //!
 //! 从 EditorData 中提取的变换方法：翻转、移调、变速。
 //! 这些操作不直接属于 EditorData 的核心职责，因此提取为 trait 扩展。
+//!
+//! 2026-08 单一权威源改造：直接操作 document 当前轨（NoteEvent）。
 
 use std::collections::HashSet;
 
@@ -32,10 +34,11 @@ impl EditorTransform for EditorData {
         if selected_indices.is_empty() {
             return 0;
         }
-        let mut min_key = u16::MAX;
-        let mut max_key = u16::MIN;
+        let track = self.current_track_notes();
+        let mut min_key = u8::MAX;
+        let mut max_key = u8::MIN;
         for &note_idx in &selected_indices {
-            if let Some(note) = self.notes.get(note_idx) {
+            if let Some(note) = track.get(note_idx) {
                 min_key = min_key.min(note.key);
                 max_key = max_key.max(note.key);
             }
@@ -46,19 +49,25 @@ impl EditorTransform for EditorData {
         let center = (min_key as f32 + max_key as f32) / 2.0;
         self.push_history();
         let mut modified = 0;
-        for &note_idx in &selected_indices {
-            if let Some(note) = self.notes.get_mut(note_idx) {
-                let new_key = (2.0 * center - note.key as f32)
-                    .round()
-                    .clamp(0.0, max_key_index) as u16;
-                if new_key != note.key {
-                    note.key = new_key;
-                    modified += 1;
+        if let Some(track) = self
+            .document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(self.current_track))
+        {
+            for &note_idx in &selected_indices {
+                if let Some(note) = track.get_mut(note_idx) {
+                    let new_key = (2.0 * center - note.key as f32)
+                        .round()
+                        .clamp(0.0, max_key_index) as u8;
+                    if new_key != note.key {
+                        note.key = new_key;
+                        modified += 1;
+                    }
                 }
             }
         }
         if modified > 0 {
-            // 增量对账：等长修改记录事件（内部整轨同步 + 清 dirty）
+            // 增量对账：等长修改记录事件（内部 mark 置 dirty 后清除）
             self.record_update_ranges(&selected_indices);
         } else {
             self.history.discard_last();
@@ -73,12 +82,23 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
-        for &note_idx in &selected_indices {
-            if let Some(note) = self.notes.get_mut(note_idx) {
-                let new_tick = (2.0 * axis_tick - (note.tick + note.length)).max(0.0);
-                if (new_tick - note.tick).abs() > f32::EPSILON {
-                    note.tick = new_tick;
-                    modified += 1;
+        if let Some(track) = self
+            .document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(self.current_track))
+        {
+            for &note_idx in &selected_indices {
+                if let Some(note) = track.get_mut(note_idx) {
+                    let tick = note.start_tick as f32;
+                    let length = (note.end_tick - note.start_tick) as f32;
+                    let new_tick = (2.0 * axis_tick - (tick + length)).max(0.0);
+                    let new_tick_u =
+                        crate::editor_state::editor_data::accessors::f32_to_tick(new_tick);
+                    if new_tick_u != note.start_tick {
+                        note.end_tick = note.end_tick.max(new_tick_u.saturating_add(1));
+                        note.start_tick = new_tick_u;
+                        modified += 1;
+                    }
                 }
             }
         }
@@ -91,7 +111,7 @@ impl EditorTransform for EditorData {
     }
 
     fn transpose(&mut self, selected: &HashSet<usize>, semitones: i16) -> usize {
-        let notes_len = self.notes.len();
+        let notes_len = self.current_track_note_count();
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
         } else {
@@ -102,12 +122,18 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
-        for &note_idx in &indices {
-            if let Some(note) = self.notes.get_mut(note_idx) {
-                let new_key = (note.key as i16 + semitones).clamp(0, 255) as u16;
-                if new_key != note.key {
-                    note.key = new_key;
-                    modified += 1;
+        if let Some(track) = self
+            .document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(self.current_track))
+        {
+            for &note_idx in &indices {
+                if let Some(note) = track.get_mut(note_idx) {
+                    let new_key = (note.key as i16 + semitones).clamp(0, 255) as u8;
+                    if new_key != note.key {
+                        note.key = new_key;
+                        modified += 1;
+                    }
                 }
             }
         }
@@ -120,11 +146,12 @@ impl EditorTransform for EditorData {
     }
 
     fn apply_speed_change(&mut self, selected: &HashSet<usize>, speed_factor: f32) -> usize {
-        if self.notes.is_empty() {
+        let notes_len = self.current_track_note_count();
+        if notes_len == 0 {
             return 0;
         }
         let indices: Vec<usize> = if selected.is_empty() {
-            (0..self.notes.len()).collect()
+            (0..notes_len).collect()
         } else {
             let mut v: Vec<usize> = selected.iter().copied().collect();
             v.sort();
@@ -133,9 +160,10 @@ impl EditorTransform for EditorData {
         if indices.is_empty() {
             return 0;
         }
+        let track = self.current_track_notes();
         let min_tick = indices
             .iter()
-            .filter_map(|idx| self.notes.get(*idx).map(|note| note.tick))
+            .filter_map(|idx| track.get(*idx).map(|note| note.start_tick as f32))
             .fold(f32::INFINITY, f32::min);
         if min_tick.is_infinite() {
             return 0;
@@ -143,16 +171,27 @@ impl EditorTransform for EditorData {
         self.push_history();
         let mut modified = 0;
         const MIN_LEN: f32 = 1.0;
-        for &note_idx in &indices {
-            if let Some(note) = self.notes.get_mut(note_idx) {
-                let new_tick = min_tick + (note.tick - min_tick) * speed_factor;
-                let new_length = (note.length * speed_factor).max(MIN_LEN);
-                if (new_tick - note.tick).abs() > f32::EPSILON
-                    || (new_length - note.length).abs() > f32::EPSILON
-                {
-                    note.tick = new_tick;
-                    note.length = new_length;
-                    modified += 1;
+        if let Some(track) = self
+            .document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(self.current_track))
+        {
+            for &note_idx in &indices {
+                if let Some(note) = track.get_mut(note_idx) {
+                    let tick = note.start_tick as f32;
+                    let length = (note.end_tick - note.start_tick) as f32;
+                    let new_tick = min_tick + (tick - min_tick) * speed_factor;
+                    let new_length = (length * speed_factor).max(MIN_LEN);
+                    let new_tick_u =
+                        crate::editor_state::editor_data::accessors::f32_to_tick(new_tick);
+                    let new_end_u = crate::editor_state::editor_data::accessors::f32_to_tick(
+                        new_tick + new_length,
+                    );
+                    if new_tick_u != note.start_tick || new_end_u != note.end_tick {
+                        note.start_tick = new_tick_u;
+                        note.end_tick = new_end_u.max(new_tick_u.saturating_add(1));
+                        modified += 1;
+                    }
                 }
             }
         }
@@ -166,14 +205,14 @@ impl EditorTransform for EditorData {
 
     fn build_velocity_points(&self) -> Vec<VelocityPoint> {
         let mut points: Vec<VelocityPoint> = self
-            .notes
+            .current_track_notes()
             .iter()
             .enumerate()
             .map(|(note_idx, note)| VelocityPoint {
                 note_index: note_idx,
-                tick: note.tick,
+                tick: note.start_tick as f32,
                 velocity: note.velocity,
-                length: note.length,
+                length: (note.end_tick - note.start_tick) as f32,
             })
             .collect();
         points.sort_by(|a, b| {

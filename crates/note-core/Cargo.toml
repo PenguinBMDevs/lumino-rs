@@ -16,6 +16,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }
 lumino-core = { workspace = true }
+lumino-midi-model = { workspace = true }
 thiserror = { workspace = true }
 font-kit = "0.14"
 im = { version = "15.1.0", features = ["rayon"] }

@@ -101,21 +101,35 @@ impl RunnerInner {
 
     /// 保存为 LMPJ 文件（默认使用新格式：按音轨拆分 + 归档）
     ///
-    /// 从内存中 `MidiDocument` 构建 LuminoProject，保证工程自包含——原始文件可删除后仍能完整加载。
+    /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建 LuminoProject；
+    /// 无文档时从编辑器音符重建。保证工程自包含——原始文件可删除后仍能完整加载。
     fn save_as_lmpj_project(&mut self, save_path: PathBuf) {
-        let document = match editor_midi::build_editor_midi_document(self) {
-            Some(doc) => doc,
-            None => {
-                tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
-                return;
+        let project = {
+            let ui = self.window_state.window.ui();
+            let data = &ui.root().editor.editor_state.data;
+            if let Some(doc) = data.document.as_ref() {
+                let mut project = lumino_export::LuminoProject::from_midi_document(doc);
+                // 使用实际保存路径的文件名作为工程名
+                if let Some(stem) = save_path.file_stem() {
+                    project.metadata.project.name = stem.to_string_lossy().into_owned();
+                }
+                Some(project)
+            } else {
+                // 无文档时从编辑器音符重建（不再深拷贝 runner 侧 document）
+                editor_midi::build_editor_midi_document(self).map(|doc| {
+                    let mut project = lumino_export::LuminoProject::from_midi_document(&doc);
+                    if let Some(stem) = save_path.file_stem() {
+                        project.metadata.project.name = stem.to_string_lossy().into_owned();
+                    }
+                    project
+                })
             }
         };
 
-        let mut project = lumino_export::LuminoProject::from_midi_document(&document);
-        // 使用实际保存路径的文件名作为工程名
-        if let Some(stem) = save_path.file_stem() {
-            project.metadata.project.name = stem.to_string_lossy().into_owned();
-        }
+        let Some(project) = project else {
+            tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
+            return;
+        };
 
         let cb = self.window_state.progress_cb.clone();
         let save_path2 = save_path.clone();

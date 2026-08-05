@@ -43,7 +43,7 @@ fn test_keyboard_colors_binary_search_at_mid_note() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // 设置播放位置为 tick 240（在第一个音符中间）
     editor.playback_position = 240.0;
@@ -73,7 +73,7 @@ fn test_keyboard_colors_at_note_boundary() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // 在 tick 480：C4 刚结束 (end=480)，E4 刚开 始 (start=480)
     // 活动音符判断：start <= 480 < end
@@ -104,7 +104,7 @@ fn test_keyboard_colors_with_disable() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = false; // 功能关闭
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     editor.playback_position = 240.0;
     editor.update_playback_key_colors();
@@ -131,7 +131,7 @@ fn test_keyboard_colors_tick_0() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // 播放位置为 0（停止状态）
     editor.playback_position = 0.0;
@@ -146,7 +146,7 @@ fn test_keyboard_colors_tick_after_all_notes_end() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // tick 2000：所有音符已结束（最大 end=1920）
     editor.playback_position = 2000.0;
@@ -169,7 +169,7 @@ fn test_keyboard_colors_incremental_scan() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // === 阶段 1：tick=240，首次调用 → 全量重建路径 ===
     // C4(0..480) 和 G4(0..1920) 活跃，E4(480..960) 未开始
@@ -255,7 +255,7 @@ fn test_keyboard_colors_incremental_no_growth() {
     let doc = make_test_doc();
     let mut editor = Editor::new();
     editor.playback_key_colors_enabled = true;
-    editor.editor_state.data.document = Some(std::sync::Arc::new(doc));
+    editor.editor_state.data.document = Some(doc);
 
     // 从 tick=0 开始连续推进到 tick=2000，每步 10 tick
     let mut last_active_len = 0usize;

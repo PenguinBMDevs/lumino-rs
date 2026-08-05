@@ -1,14 +1,19 @@
-//! 访问器 —— 快捷 getter / setter 方法
+//! 访问器 —— 音符读写访问器 + 增量事件记录
+//!
+//! 2026-08 单一权威源改造：音符数据唯一权威是 `document`（MidiDocument），
+//! 所有读取/写入经本模块访问器。tick 精度：UI 编辑用 f32，写回时
+//! 无损转换（`fract() == 0.0` 直接 as u32），异常亚 tick 才 round + warn。
 
 use std::collections::HashSet;
 
 use super::EditorData;
+use lumino_midi_model::NoteEvent;
 use lumino_note_core::note::Note;
 
 impl EditorData {
-    /// 标记 track_notes 已变化（递增版本号）
+    /// 标记音符数据已变化（递增版本号）
     ///
-    /// 所有直接修改 `self.track_notes` 的地方都必须在操作后调用此方法，
+    /// 所有直接修改音符数据的地方都必须在操作后调用此方法，
     /// 否则 NoteWorker 快照缓存无法感知数据变化。
     ///
     /// 变化来源未知或影响全部音轨（`onion_dirty_tracks = None`），
@@ -19,7 +24,7 @@ impl EditorData {
         self.mark_track_notes_changed_for(None);
     }
 
-    /// 标记 track_notes 已变化，并记录明确受影响的音轨集合
+    /// 标记音符数据已变化，并记录明确受影响的音轨集合
     ///
     /// `tracks` 为本次操作实际修改的音轨 id 集合。当集合全部落在
     /// 洋葱皮跳过范围（当前音轨 / 静音音轨）时，可豁免全量重建上传。
@@ -38,7 +43,7 @@ impl EditorData {
         }
     }
 
-    /// 标记当前音轨的 track_notes 已变化（热路径专用）
+    /// 标记当前音轨的音符已变化（热路径专用）
     ///
     /// 编辑操作绝大多数作用于当前音轨（拖动音符、增删改），而洋葱皮
     /// 不显示当前音轨——精确记录音轨 id 后，洋葱皮可豁免全量重建上传，
@@ -69,11 +74,74 @@ impl EditorData {
         std::mem::take(&mut self.note_delta_events)
     }
 
+    // ── 音符读取（document 唯一权威） ─────────────────────────
+
+    /// 获取当前轨道音符的只读切片（零拷贝，直接借自 document）
+    ///
+    /// 无 document 或音轨不存在时返回空切片。
+    #[inline]
+    pub fn current_track_notes(&self) -> &[NoteEvent] {
+        self.track_notes(self.current_track)
+    }
+
+    /// 获取指定音轨音符的只读切片（零拷贝，直接借自 document）
+    #[inline]
+    pub fn track_notes(&self, track_id: usize) -> &[NoteEvent] {
+        self.document
+            .as_ref()
+            .map(|doc| doc.track_notes(track_id))
+            .unwrap_or(&[])
+    }
+
+    /// 当前轨道音符数量（无 document 时为 0）
+    #[inline]
+    pub fn current_track_note_count(&self) -> usize {
+        self.document
+            .as_ref()
+            .map(|doc| doc.track_note_count(self.current_track as u16) as usize)
+            .unwrap_or(0)
+    }
+
+    // ── 音符写入（document 唯一权威） ─────────────────────────
+
+    /// 在指定音轨按 start_tick 升序插入音符（f32 tick 无损转换写回）。
+    ///
+    /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
+    pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        let event = note_to_event(note);
+        doc.insert_note(track_id, event)
+    }
+
+    /// 在指定音轨指定索引处删除音符。返回被删除的音符。
+    pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
+        self.document.as_mut()?.remove_note(track_id, index)
+    }
+
+    /// 替换指定音轨指定索引处的音符（内部按序重新插入，保持升序不变式）。
+    pub fn update_note(&mut self, track_id: usize, index: usize, note: Note) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        doc.update_note(track_id, index, note_to_event(note))
+    }
+
+    /// 整轨替换音符（undo/redo 快照恢复专用）。
+    pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        doc.replace_track_notes(track_id, notes)
+    }
+
+    // ── 增量事件记录 ─────────────────────────────────────────
+
     /// 记录等长修改增量事件（整轨同步版）
     ///
     /// 将 `indices`（修改的 notes 索引，无序可重复）合并为连续区间
-    /// `UpdateRange` 事件，随后整轨同步 `track_notes`（内部 mark，置 dirty）
-    /// 并清除 dirty（事件已完整记录）。
+    /// `UpdateRange` 事件，随后标记变化并清除 dirty（事件已完整记录）。
     ///
     /// 供 EditorTransform（变速/翻转/移调/批量编辑）等整轨同步路径使用。
     pub fn record_update_ranges(&mut self, indices: &[usize]) {
@@ -81,21 +149,20 @@ impl EditorData {
             return;
         }
         self.push_update_range_events(indices);
-        self.sync_track_notes();
+        self.mark_current_track_changed();
         self.note_delta_dirty = false;
     }
 
     /// 记录等长修改增量事件（流式同步版，拖动热路径）
     ///
-    /// 与 [`Self::record_update_ranges`] 相同的事件记录，但用
-    /// `sync_track_notes_at_indices` 流式同步（避免整轨克隆，
-    /// 1600W 音符拖动热路径）。供 `apply_drag_state_streaming` 使用。
+    /// 与 [`Self::record_update_ranges`] 相同的事件记录，供
+    /// `apply_drag_state_streaming` 使用。
     pub fn record_update_ranges_streamed(&mut self, indices: &[usize]) {
         if indices.is_empty() {
             return;
         }
         self.push_update_range_events(indices);
-        self.sync_track_notes_at_indices(indices);
+        self.mark_current_track_changed();
         self.note_delta_dirty = false;
     }
 
@@ -123,8 +190,12 @@ impl EditorData {
 
     /// 推送单个连续区间事件（越界索引防御性过滤）
     fn push_update_range(&mut self, start: usize, end: usize) {
-        let notes: Vec<Note> = (start..=end)
-            .filter_map(|k| self.notes.get(k).cloned())
+        let notes: Vec<Note> = self
+            .current_track_notes()
+            .iter()
+            .skip(start)
+            .take(end - start + 1)
+            .map(event_to_note)
             .collect();
         if !notes.is_empty() {
             self.note_delta_events.push(
@@ -135,15 +206,44 @@ impl EditorData {
             );
         }
     }
+}
 
-    /// 获取当前轨道音符集合的零拷贝引用。
-    ///
-    /// 优先从 `track_notes` 中读取当前选中的音轨；若不存在则返回空 `Vector`，
-    /// 避免构造第二份拷贝。
-    pub fn current_track_notes(&self) -> &im::Vector<Note> {
-        static EMPTY: std::sync::OnceLock<im::Vector<Note>> = std::sync::OnceLock::new();
-        self.track_notes
-            .get(&self.current_track)
-            .unwrap_or_else(|| EMPTY.get_or_init(im::Vector::new))
+/// Note（f32 tick）→ NoteEvent（u32 tick）无损转换
+///
+/// UI 编辑的 tick 全部来自 `snap_tick`（整数网格吸附），正常路径 `fract() == 0.0`。
+/// 异常亚 tick（防御性）使用 round 并记录 warn——不引入架构性精度损失。
+#[inline]
+pub fn note_to_event(note: Note) -> NoteEvent {
+    let start_tick = f32_to_tick(note.tick);
+    let end_tick = f32_to_tick(note.tick + note.length);
+    NoteEvent::new(
+        start_tick,
+        end_tick,
+        note.key as u8,
+        note.velocity,
+        note.channel,
+    )
+}
+
+/// NoteEvent（u32 tick）→ Note（f32 tick）无损转换
+#[inline]
+pub fn event_to_note(event: &NoteEvent) -> Note {
+    Note::from_raw(
+        event.start_tick as f32,
+        event.key as u16,
+        (event.end_tick - event.start_tick) as f32,
+        event.velocity,
+        event.channel,
+    )
+}
+
+/// f32 tick → u32 tick：无损优先（fract==0），异常亚 tick round + warn
+#[inline]
+pub fn f32_to_tick(tick: f32) -> u32 {
+    if tick.fract() == 0.0 {
+        tick as u32
+    } else {
+        tracing::warn!("非整数 tick 写回 MIDI: {tick}，已四舍五入");
+        tick.round() as u32
     }
 }

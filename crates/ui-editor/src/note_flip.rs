@@ -24,15 +24,16 @@ impl Editor {
 
     pub fn flip_selected_notes_horizontal(&mut self, mode: FlipHorizontalMode) -> usize {
         let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
-        let notes = &self.editor_state.data.notes;
         let indices: Vec<usize> = selected.iter().copied().collect();
         if indices.is_empty() {
             return 0;
         }
+        // 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick f32/length f32）
+        let data = &self.editor_state.data;
         let mut min_tick = f32::INFINITY;
         let mut max_tick_end = f32::NEG_INFINITY;
         for &i in &indices {
-            if let Some(n) = notes.get(i) {
+            if let Some(n) = data.get_note_view(i) {
                 min_tick = min_tick.min(n.tick);
                 max_tick_end = max_tick_end.max(n.tick + n.length);
             }

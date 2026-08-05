@@ -1,8 +1,11 @@
 //! 状态相关测试（内存、远程、音频、撤销、音符变速等）
+//!
+//! 2026-08 单一权威源：测试种子经 `test_helpers::seed_notes` 写入 document。
 
 use crate::CacheInvalidation;
 use crate::Editor;
 use crate::note::Note;
+use crate::tests::test_helpers;
 use lumino_ui_core::message::AudioAction;
 use std::sync::Arc;
 
@@ -38,23 +41,8 @@ fn test_memory_breakdown_empty_editor() {
 #[test]
 fn test_memory_breakdown_with_notes() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    editor
-        .editor_state
-        .data
-        .track_notes
-        .insert(0, im::Vector::new());
-    editor
-        .editor_state
-        .data
-        .track_notes
-        .get_mut(&0)
-        .expect("轨道 0 应已插入空 Vector，get_mut 应返回 Some")
-        .push_back(Note::new(0.0, 62, 240.0));
+    // 2026-08 单一权威源：音符存入 document（track_notes 缓存已删除）
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 62, 240.0)]);
 
     let mem = editor.memory_breakdown();
     let note_size = std::mem::size_of::<Note>();
@@ -184,49 +172,40 @@ fn test_speed_change_all_notes() {
     let mut editor = Editor::new();
     // 音符A: tick=0, length=480
     // 音符B: tick=600, length=240
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(600.0, 62, 240.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(0.0, 60, 480.0), Note::new(600.0, 62, 240.0)],
+    );
 
     let modified = editor.apply_speed_change(0.5);
     assert_eq!(modified, 2);
 
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // 以最早 tick(0) 为锚点缩放
     // A: tick'=0+(0-0)*0.5=0, length'=240
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 240.0).abs() < f32::EPSILON);
     // B: tick'=0+(600-0)*0.5=300, length'=120
-    assert!((notes[1].tick - 300.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 120.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 300.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 120.0).abs() < f32::EPSILON);
 }
 
 /// 测试仅选中的音符变速
 #[test]
 fn test_speed_change_selected_notes_only() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(600.0, 62, 240.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(1200.0, 64, 120.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[
+            Note::new(0.0, 60, 480.0),
+            Note::new(600.0, 62, 240.0),
+            Note::new(1200.0, 64, 120.0),
+        ],
+    );
 
     // 只选中第 1 和第 3 个音符
     editor.editor_state.interaction.selected_notes.insert(0);
@@ -235,89 +214,77 @@ fn test_speed_change_selected_notes_only() {
     let modified = editor.apply_speed_change(2.0);
     assert_eq!(modified, 2);
 
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // A 选中: tick'=0, length'=960
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 960.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 960.0).abs() < f32::EPSILON);
     // B 未选中: 不变
-    assert!((notes[1].tick - 600.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 600.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 240.0).abs() < f32::EPSILON);
     // C 选中: tick'=0+(1200-0)*2=2400, length'=240
-    assert!((notes[2].tick - 2400.0).abs() < f32::EPSILON);
-    assert!((notes[2].length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(2).unwrap().tick - 2400.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(2).unwrap().length - 240.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速时最小长度限制
 #[test]
 fn test_speed_change_clamp_to_min_length() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 10.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(100.0, 60, 10.0)]);
 
     let modified = editor.apply_speed_change(0.01);
     assert_eq!(modified, 1);
 
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // tick 缩放: 100+(100-100)*0.01=100
-    assert!((notes[0].tick - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().tick - 100.0).abs() < f32::EPSILON);
     // 最小长度为 1 tick
-    assert!((notes[0].length - 1.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 1.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速因子为 1 时无变化
 #[test]
 fn test_speed_change_no_op_when_factor_is_one() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
 
     let modified = editor.apply_speed_change(1.0);
     assert_eq!(modified, 0);
 
-    let notes = &editor.editor_state.data.notes;
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 480.0).abs() < f32::EPSILON);
+    let data = &editor.editor_state.data;
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 480.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速后撤销/重做
 #[test]
 fn test_speed_change_undo_redo() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(600.0, 62, 240.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(0.0, 60, 480.0), Note::new(600.0, 62, 240.0)],
+    );
 
     let modified = editor.apply_speed_change(0.5);
     assert_eq!(modified, 2);
 
-    let notes = &editor.editor_state.data.notes;
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 240.0).abs() < f32::EPSILON);
-    assert!((notes[1].tick - 300.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 120.0).abs() < f32::EPSILON);
+    let data = &editor.editor_state.data;
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 300.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 120.0).abs() < f32::EPSILON);
 
     // 撤销
     let undo_result = editor.undo();
     assert!(undo_result);
 
-    let notes = &editor.editor_state.data.notes;
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 480.0).abs() < f32::EPSILON);
-    assert!((notes[1].tick - 600.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 240.0).abs() < f32::EPSILON);
+    let data = &editor.editor_state.data;
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 480.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 600.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 240.0).abs() < f32::EPSILON);
 }
 
 /// 关键测试：尾部贴合的音符变速后仍然贴合
@@ -327,31 +294,27 @@ fn test_speed_change_preserves_adjacent_notes() {
     // A: tick=100, length=200 → 结束于 300
     // B: tick=300, length=150 → 开始于 300
     // A 和 B 尾部贴合
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(100.0, 60, 200.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(300.0, 62, 150.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(100.0, 60, 200.0), Note::new(300.0, 62, 150.0)],
+    );
 
     let modified = editor.apply_speed_change(0.5);
     assert_eq!(modified, 2);
 
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // A: tick'=100+(100-100)*0.5=100, length'=100 → 结束于 200
-    assert!((notes[0].tick - 100.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().tick - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 100.0).abs() < f32::EPSILON);
     // B: tick'=100+(300-100)*0.5=200, length'=75 → 开始于 200
-    assert!((notes[1].tick - 200.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 75.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 75.0).abs() < f32::EPSILON);
 
     // 验证贴合: A.end == B.start
-    let a_end = notes[0].tick + notes[0].length;
-    let b_start = notes[1].tick;
+    let a_end = data.get_note_view(0).unwrap().tick + data.get_note_view(0).unwrap().length;
+    let b_start = data.get_note_view(1).unwrap().tick;
     assert!(
         (a_end - b_start).abs() < f32::EPSILON,
         "尾部贴合关系被破坏: A.end={}, B.start={}",
@@ -367,31 +330,28 @@ fn test_speed_change_preserves_gap_ratio() {
     // A: tick=0, length=100 → 结束于 100
     // B: tick=200, length=100 → 开始于 200
     // 间隙 = 100 ticks
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 100.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(200.0, 62, 100.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(0.0, 60, 100.0), Note::new(200.0, 62, 100.0)],
+    );
 
     let modified = editor.apply_speed_change(2.0);
     assert_eq!(modified, 2);
 
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // A: tick'=0, length'=200 → 结束于 200
-    assert!((notes[0].tick - 0.0).abs() < f32::EPSILON);
-    assert!((notes[0].length - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).unwrap().length - 200.0).abs() < f32::EPSILON);
     // B: tick'=0+(200-0)*2=400, length'=200
-    assert!((notes[1].tick - 400.0).abs() < f32::EPSILON);
-    assert!((notes[1].length - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().tick - 400.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).unwrap().length - 200.0).abs() < f32::EPSILON);
 
     // 验证间隙比例: 原始间隙=100, 缩放后间隙=200
     let original_gap = 200.0 - (0.0 + 100.0); // B.start - A.end
-    let new_gap = notes[1].tick - (notes[0].tick + notes[0].length);
+    let new_gap = data.get_note_view(1).unwrap().tick
+        - (data.get_note_view(0).unwrap().tick + data.get_note_view(0).unwrap().length);
     assert!(
         (new_gap - original_gap * 2.0).abs() < f32::EPSILON,
         "间隙比例被破坏: 原始={}, 新={}",

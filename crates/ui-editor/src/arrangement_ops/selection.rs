@@ -4,6 +4,9 @@
 //! - `arrangement_selected_notes`: 获取选中音符列表（用于 ghost 预览）
 //! - `arrange_delete_selected_notes`: 删除选中音符
 //! - `arrange_apply_speed_change`: 选中音符批量变速
+//!
+//! 2026-08 单一权威源：音符唯一权威是 document，本模块直接读写 MidiDocument，
+//! 不再维护 track_notes 缓存。
 
 use std::collections::HashMap;
 
@@ -24,42 +27,22 @@ impl Editor {
 
         let mut result = Vec::new();
 
-        // 1. 从 track_notes 缓存收集
-        for (&track_idx, notes) in &editor_data.track_notes {
+        // 2026-08 单一权威源：直接从 document 遍历全部音轨（track_notes 缓存已删除）
+        let Some(doc) = &editor_data.document else {
+            return result;
+        };
+        for track_idx in 0..doc.track_count() {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
-            for note in notes {
-                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+            for note_event in editor_data.track_notes(track_idx) {
+                if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
                     result.push((
-                        note.tick as f64,
-                        (note.tick + note.length) as f64,
+                        note_event.start_tick as f64,
+                        note_event.end_tick as f64,
                         visual_pos,
-                        note.key as u8,
+                        note_event.key,
                     ));
-                }
-            }
-        }
-
-        // 2. 从 MidiDocument 收集未加载到 track_notes 的音轨中的音符
-        if let Some(doc) = &editor_data.document {
-            for track_idx in 0..doc.notes.len() {
-                if editor_data.track_notes.contains_key(&track_idx) {
-                    continue;
-                }
-                let visual_pos = editor_data
-                    .visual_position_of(track_idx)
-                    .unwrap_or(track_idx);
-                for note_event in doc.track_notes(track_idx) {
-                    if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key)
-                    {
-                        result.push((
-                            note_event.start_tick as f64,
-                            note_event.end_tick as f64,
-                            visual_pos,
-                            note_event.key,
-                        ));
-                    }
                 }
             }
         }
@@ -74,8 +57,6 @@ impl Editor {
         if self.editor_state.data.arrange_selection.is_empty() {
             return 0;
         }
-
-        self.load_missing_tracks_from_document();
 
         let indices_by_track = self.collect_delete_targets();
 
@@ -93,18 +74,15 @@ impl Editor {
         let mut current_track_touched = false;
         let mut deleted_count = 0usize;
 
-        {
-            let editor_data = &mut self.editor_state.data;
-            for (track_idx, mut indices) in indices_by_track {
-                if track_idx == current_track {
-                    current_track_touched = true;
-                }
-                indices.sort_unstable_by(|a, b| b.cmp(a));
-                if let Some(notes) = editor_data.track_notes.get_mut(&track_idx) {
-                    for idx in indices {
-                        notes.remove(idx);
-                        deleted_count += 1;
-                    }
+        for (track_idx, mut indices) in indices_by_track {
+            if track_idx == current_track {
+                current_track_touched = true;
+            }
+            // 2026-08 单一权威源：索引降序逐个删除 document 音符
+            indices.sort_unstable_by(|a, b| b.cmp(a));
+            for idx in indices {
+                if self.editor_state.data.remove_note(track_idx, idx).is_some() {
+                    deleted_count += 1;
                 }
             }
         }
@@ -114,7 +92,9 @@ impl Editor {
             return 0;
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
@@ -131,8 +111,6 @@ impl Editor {
         if self.editor_state.data.arrange_selection.is_empty() {
             return 0;
         }
-
-        self.load_missing_tracks_from_document();
 
         let selection = self.editor_state.data.arrange_selection.clone();
         let (track_indices, min_tick) = self.collect_speed_change_targets(&selection);
@@ -153,7 +131,9 @@ impl Editor {
             return 0;
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
@@ -170,12 +150,16 @@ impl Editor {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;
         let mut indices_by_track: HashMap<usize, Vec<usize>> = HashMap::new();
-        for (&track_idx, notes) in &editor_data.track_notes {
+        // 2026-08 单一权威源：从 document 收集（track_notes 缓存已删除）
+        let Some(doc) = &editor_data.document else {
+            return indices_by_track;
+        };
+        for track_idx in 0..doc.track_count() {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
-            for (i, note) in notes.iter().enumerate() {
-                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+            for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
+                if selection.contains(visual_pos as u16, note.start_tick, note.key) {
                     indices_by_track.entry(track_idx).or_default().push(i);
                 }
             }
@@ -196,21 +180,28 @@ impl Editor {
         let mut modified_count = 0usize;
         const MIN_LEN: f32 = 1.0;
 
-        let editor_data = &mut self.editor_state.data;
+        // 2026-08 单一权威源：直接修改 document 各轨音符（track_notes_mut）
         for (track_idx, indices) in &track_indices {
             if *track_idx == current_track {
                 current_track_touched = true;
             }
-            if let Some(notes) = editor_data.track_notes.get_mut(track_idx) {
+            if let Some(notes) = self
+                .editor_state
+                .data
+                .document
+                .as_mut()
+                .and_then(|doc| doc.track_notes_mut(*track_idx))
+            {
                 for &i in indices {
                     if let Some(note) = notes.get_mut(i) {
-                        let nt = min_tick + (note.tick - min_tick) * speed_factor;
-                        let nl = (note.length * speed_factor).max(MIN_LEN);
-                        if (nt - note.tick).abs() > f32::EPSILON
-                            || (nl - note.length).abs() > f32::EPSILON
-                        {
-                            note.tick = nt;
-                            note.length = nl;
+                        let tick = note.start_tick as f32;
+                        let length = (note.end_tick - note.start_tick) as f32;
+                        let nt = min_tick + (tick - min_tick) * speed_factor;
+                        let nl = (length * speed_factor).max(MIN_LEN);
+                        if (nt - tick).abs() > f32::EPSILON || (nl - length).abs() > f32::EPSILON {
+                            let new_start = nt.max(0.0);
+                            note.start_tick = new_start as u32;
+                            note.end_tick = note.start_tick + nl as u32;
                             modified_count += 1;
                         }
                     }
@@ -230,14 +221,18 @@ impl Editor {
         let mut min_tick = f32::INFINITY;
 
         let editor_data = &self.editor_state.data;
-        for (&track_idx, notes) in &editor_data.track_notes {
+        // 2026-08 单一权威源：从 document 收集（track_notes 缓存已删除）
+        let Some(doc) = &editor_data.document else {
+            return (track_indices, min_tick);
+        };
+        for track_idx in 0..doc.track_count() {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
-            for (i, note) in notes.iter().enumerate() {
-                if selection.contains(visual_pos as u16, note.tick as u32, note.key as u8) {
+            for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
+                if selection.contains(visual_pos as u16, note.start_tick, note.key) {
                     track_indices.entry(track_idx).or_default().push(i);
-                    min_tick = min_tick.min(note.tick);
+                    min_tick = min_tick.min(note.start_tick as f32);
                 }
             }
         }

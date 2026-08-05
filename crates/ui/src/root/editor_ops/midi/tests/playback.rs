@@ -13,11 +13,11 @@ fn test_end_to_end_note_actually_plays() {
     let mut root = create_root();
 
     // 添加一个在 tick 0 的音符
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
 
     // 设置 MIDI 输出（使用可计数的 mock）
     let note_on_count = Arc::new(AtomicU32::new(0));
@@ -90,11 +90,11 @@ fn test_draw_note_then_play() {
     );
 
     // 步骤2：用户画一个音符
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
     root.editor.mark_notes_changed();
 
     if root.editor.notes_changed() {
@@ -163,11 +163,11 @@ fn test_play_then_draw_then_play() {
     root.set_midi_output(mock_output);
 
     // 步骤1：先添加一个音符并播放（创建播放管理器）
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
     root.update(Message::Toolbar(toolbar::Event::Play));
     assert!(root.playback.manager.is_some(), "第一次播放应创建管理器");
 
@@ -175,12 +175,11 @@ fn test_play_then_draw_then_play() {
     root.update(Message::Toolbar(toolbar::Event::Stop));
     thread::sleep(Duration::from_millis(50));
 
-    // 步骤2：再画一个音符
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(480.0, 64, 480.0));
+    // 步骤2：再画一个音符（document 已挂载，直接插入）
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(480.0, 64, 480.0),
+    );
     root.editor.mark_notes_changed();
 
     if root.editor.notes_changed() {

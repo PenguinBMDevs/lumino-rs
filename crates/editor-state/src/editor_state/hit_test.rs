@@ -103,60 +103,63 @@ mod tests {
     use crate::editor_state::interaction_state::HitType;
     use lumino_note_core::note::Note;
 
+    /// 构造单音符的 im::Vector（hit_test_note 仍为 im::Vector 签名，测试保持同构输入）
+    fn single_note_notes() -> im::Vector<Note> {
+        std::iter::once(Note::new(0.0, 60, 400.0)).collect()
+    }
+
     #[test]
     fn test_hit_test_note_middle() {
-        let mut state = EditorState::new();
+        let state = EditorState::new();
         // 使用足够长的音符，使边缘阈值不会覆盖整个音符
-        state.data.notes.push_back(Note::new(0.0, 60, 400.0));
+        let notes = single_note_notes();
         let x = state.view.tick_to_x(200.0);
         let y = state.view.key_to_y(60);
-        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        let hit_result = hit_test_note(&notes, &state.view, (x, y), 4.0);
         assert_eq!(hit_result, Some((0, HitType::Middle)));
     }
 
     #[test]
     fn test_hit_test_note_start() {
-        let mut state = EditorState::new();
-        state.data.notes.push_back(Note::new(0.0, 60, 400.0));
+        let state = EditorState::new();
+        let notes = single_note_notes();
         let x = state.view.tick_to_x(10.0);
         let y = state.view.key_to_y(60);
-        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        let hit_result = hit_test_note(&notes, &state.view, (x, y), 4.0);
         assert_eq!(hit_result, Some((0, HitType::Start)));
     }
 
     #[test]
     fn test_hit_test_note_end() {
-        let mut state = EditorState::new();
-        state.data.notes.push_back(Note::new(0.0, 60, 400.0));
+        let state = EditorState::new();
+        let notes = single_note_notes();
         let x = state.view.tick_to_x(390.0);
         let y = state.view.key_to_y(60);
-        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        let hit_result = hit_test_note(&notes, &state.view, (x, y), 4.0);
         assert_eq!(hit_result, Some((0, HitType::End)));
     }
 
     #[test]
     fn test_hit_test_note_miss() {
-        let mut state = EditorState::new();
-        state.data.notes.push_back(Note::new(0.0, 60, 400.0));
+        let state = EditorState::new();
+        let notes = single_note_notes();
         let x = state.view.tick_to_x(500.0);
         let y = state.view.key_to_y(60);
-        let hit_result = hit_test_note(&state.data.notes, &state.view, (x, y), 4.0);
+        let hit_result = hit_test_note(&notes, &state.view, (x, y), 4.0);
         assert!(hit_result.is_none());
     }
 
     #[test]
     fn test_get_selection_box_bounds() {
         let mut state = EditorState::new();
-        state.data.notes.push_back(Note::new(0.0, 60, 2.0));
-        state.data.notes.push_back(Note::new(4.0, 62, 2.0));
+        let notes: im::Vector<Note> = [Note::new(0.0, 60, 2.0), Note::new(4.0, 62, 2.0)]
+            .into_iter()
+            .collect();
         state.interaction.selected_notes.insert(0);
         state.interaction.selected_notes.insert(1);
 
-        let bounds = get_selection_box_bounds(
-            &state.data.notes,
-            &state.view,
-            &state.interaction.selected_notes,
-        );
+        let bounds =
+            get_selection_box_bounds(&notes, &state.view, &state.interaction.selected_notes);
         assert!(bounds.is_some());
         let (min_x, max_x, min_y, max_y) =
             bounds.expect("选中了 2 个音符，get_selection_box_bounds 应返回 Some");
@@ -167,11 +170,9 @@ mod tests {
     #[test]
     fn test_get_selection_box_bounds_empty() {
         let state = EditorState::new();
-        let bounds = get_selection_box_bounds(
-            &state.data.notes,
-            &state.view,
-            &state.interaction.selected_notes,
-        );
+        let notes: im::Vector<Note> = std::iter::empty().collect();
+        let bounds =
+            get_selection_box_bounds(&notes, &state.view, &state.interaction.selected_notes);
         assert!(bounds.is_none());
     }
 

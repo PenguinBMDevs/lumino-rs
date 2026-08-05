@@ -265,7 +265,8 @@ fn test_set_automation_preserves_curve_tension() {
 
 #[test]
 fn test_insert_note_on_nonzero_track() {
-    let mut data = EditorData::new();
+    // document 唯一权威：需要先构造含 track 1 的 document
+    let mut data = EditorData::with_f32_notes(1, &[]);
     data.current_track = 0;
     assert!(data.insert_note_at_tick(100.0).is_none());
 
@@ -275,25 +276,25 @@ fn test_insert_note_on_nonzero_track() {
     assert_eq!(note.key, 60);
     assert_eq!(note.length, 480.0);
     assert_eq!(note.velocity, 100);
-    assert_eq!(data.notes.len(), 1);
+    assert_eq!(data.current_track_note_count(), 1);
 }
 
 #[test]
 fn test_delete_notes_at_ticks() {
-    let mut data = EditorData::new();
+    let mut data = EditorData::with_f32_notes(1, &[]);
     data.current_track = 1;
     data.insert_note_at_tick(100.0);
     data.insert_note_at_tick(200.0);
     data.insert_note_at_tick(300.0);
-    assert_eq!(data.notes.len(), 3);
+    assert_eq!(data.current_track_note_count(), 3);
 
     let mut ticks = HashSet::new();
     ticks.insert(100);
     ticks.insert(300);
     data.delete_notes_at_ticks(&ticks);
 
-    assert_eq!(data.notes.len(), 1);
-    assert_eq!(data.notes[0].tick, 200.0);
+    assert_eq!(data.current_track_note_count(), 1);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 200.0);
 }
 
 #[test]

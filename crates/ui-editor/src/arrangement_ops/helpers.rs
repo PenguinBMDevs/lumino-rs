@@ -4,10 +4,11 @@
 //! - `note_event_to_note`: MIDI NoteEvent → 编辑器 Note
 //! - `note_in_rect`: 音符与擦除矩形相交判断
 //! - `ClipboardNoteEntry`: 剪贴板音符元组类型别名
-//! - `sync_current_track_after_arrange_op`: 音轨同步
-//! - `load_missing_tracks_from_document`: 延迟加载音轨
+//!
+//! 2026-08 单一权威源：`track_notes` 缓存已删除，arrangement 操作直接读写
+//! document（MidiDocument 唯一权威）。`sync_current_track_after_arrange_op` /
+//! `load_missing_tracks_from_document` 的缓存同步语义不复存在，已移除。
 
-use super::Editor;
 use crate::note::Note;
 use lumino_midi_loader::NoteEvent;
 
@@ -23,72 +24,18 @@ pub(super) fn note_event_to_note(event: &NoteEvent) -> Note {
 }
 
 /// 判断音符是否与擦除矩形相交（tick 半开区间 [tick_start, tick_end)）。
+#[allow(dead_code)]
 pub(super) fn note_in_rect(note: &Note, tick_start: f64, tick_end: f64) -> bool {
     let ne = note.tick + note.length;
     note.tick < tick_end as f32 && ne > tick_start as f32
 }
 
+/// 判断 NoteEvent 是否与擦除矩形相交（document 版本，u32 tick）
+pub(super) fn note_event_in_rect(note: &NoteEvent, tick_start: f64, tick_end: f64) -> bool {
+    let s = note.start_tick as f32;
+    let e = note.end_tick as f32;
+    s < (tick_end as f32) && e > (tick_start as f32)
+}
+
 /// 剪贴板音符元组：(track_offset, tick_offset, key_offset, length, velocity, channel)
 pub(super) type ClipboardNoteEntry = (u16, f32, u16, f32, u8, u8);
-
-impl Editor {
-    /// 工程走带操作后，若当前音轨受影响则同步 editor_data.notes 与 NoteStore。
-    pub(super) fn sync_current_track_after_arrange_op(&mut self, touched: bool) {
-        if !touched {
-            return;
-        }
-        let editor_data = &mut self.editor_state.data;
-        editor_data.notes = editor_data
-            .track_notes
-            .get(&editor_data.current_track)
-            .cloned()
-            .unwrap_or_default();
-        if editor_data.is_note_store_enabled() {
-            editor_data.sync_note_store();
-        }
-        self.mark_notes_changed();
-    }
-
-    /// 从 MidiDocument 加载尚未被 track_notes 缓存的音轨。
-    ///
-    /// 加载所有音轨而非仅 selection 覆盖的音轨，因为 ArrangeSelection 存储的是
-    /// 视觉音轨位置（侧边栏顺序），而 track_notes 使用文档音轨索引。
-    /// 全量加载后由主循环中的 selection.contains 做 tick/key 层面筛选。
-    pub(super) fn load_missing_tracks_from_document(&mut self) {
-        let tracks_to_load: Vec<usize> = {
-            let editor_data = &self.editor_state.data;
-            let Some(doc) = &editor_data.document else {
-                return;
-            };
-            let mut result = Vec::new();
-            for track_idx in 0..doc.notes.len() {
-                if !editor_data.track_notes.contains_key(&track_idx) {
-                    result.push(track_idx);
-                }
-            }
-            result
-        };
-
-        if tracks_to_load.is_empty() {
-            return;
-        }
-
-        // 精确记录受影响音轨（洋葱皮事件级增量，在消费前捕获）
-        let affected_tracks: std::collections::HashSet<usize> =
-            tracks_to_load.iter().copied().collect();
-
-        let editor_data = &mut self.editor_state.data;
-        for track_idx in tracks_to_load {
-            let Some(doc) = &editor_data.document else {
-                continue;
-            };
-            let doc_notes = doc.track_notes(track_idx);
-            let mut loaded: im::Vector<Note> = im::Vector::new();
-            for ne in doc_notes {
-                loaded.push_back(note_event_to_note(ne));
-            }
-            editor_data.track_notes.insert(track_idx, loaded);
-        }
-        editor_data.mark_track_notes_changed_for(Some(affected_tracks));
-    }
-}

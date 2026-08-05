@@ -5,7 +5,7 @@
 //! 拆分原因：`editor_impl.rs` 接近 400 行限制，按职责拆分。
 
 use crate::{Editor, onion_track_color};
-use std::sync::Arc;
+use lumino_midi_loader::MidiDocument;
 
 /// 播放键色增量扫描状态
 ///
@@ -80,7 +80,7 @@ impl Editor {
         let track_count = doc.track_count();
 
         // 检测 MIDI 文档切换：缓存地址变化即视为新文档
-        let current_doc_addr = Arc::as_ptr(doc) as *const () as usize;
+        let current_doc_addr = doc as *const MidiDocument as usize;
         let doc_changed = self.playback_scan_state.doc_addr != Some(current_doc_addr);
 
         // 检测 tick 跳跃：回退或大幅前跳都触发全量重建

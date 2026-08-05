@@ -1,10 +1,13 @@
 //! 编辑器操作 - 音轨管理
+//!
+//! 2026-08 单一权威源改造：音符数据唯一权威是 `EditorData.document`，
+//! 加载/删除/恢复音轨直接整轨替换 document（`replace_track_notes`）。
 
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::editor::note::Note;
 use crate::root::Root;
 use lumino_event::window::track::{TrackDeletionNote, TrackDeletionPayload};
+use lumino_midi_loader::NoteEvent;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）
@@ -43,19 +46,31 @@ impl Root {
         self.editor.ruler_cache.clear();
     }
 
-    /// 加载音符到编辑器
+    /// 加载音符到编辑器（整轨替换 document 当前轨）
     /// notes: (tick, key, length, velocity, channel)
     pub fn load_notes(&mut self, notes: &[(f32, u8, f32, u8, u8)]) {
-        self.editor.editor_state.data.notes.clear();
-        for &(tick, key, length, velocity, channel) in notes {
-            self.editor
-                .editor_state
-                .data
-                .notes
-                .push_back(Note::from_raw(tick, key as u16, length, velocity, channel));
-        }
-        // 音符加载后同步 NoteStore，确保后续批量操作走热路径
-        self.editor.editor_state.data.sync_note_store();
+        let track_idx = self.editor.editor_state.data.current_track;
+        let events: Vec<NoteEvent> = notes
+            .iter()
+            .map(|&(tick, key, length, velocity, channel)| {
+                NoteEvent::new(
+                    tick.max(0.0) as u32,
+                    (tick + length).max(0.0) as u32,
+                    key,
+                    velocity,
+                    channel,
+                )
+            })
+            .collect();
+        self.editor
+            .editor_state
+            .data
+            .replace_track_notes(track_idx, events);
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track_idx])));
         self.editor.mark_notes_changed();
     }
 
@@ -88,22 +103,24 @@ impl Root {
         }
     }
 
-    /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
+    /// 加载指定音轨的音符到编辑器（用于 MIDI 文件，整轨替换 document）
     pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8, u8)]) {
-        self.editor.editor_state.data.notes.clear();
-        let mut track_notes: im::Vector<Note> = im::Vector::new();
-
-        for &(tick, key, length, velocity, channel) in notes {
-            let note = Note::from_raw(tick, key as u16, length, velocity, channel);
-            self.editor.editor_state.data.notes.push_back(note.clone());
-            track_notes.push_back(note);
-        }
-
+        let events: Vec<NoteEvent> = notes
+            .iter()
+            .map(|&(tick, key, length, velocity, channel)| {
+                NoteEvent::new(
+                    tick.max(0.0) as u32,
+                    (tick + length).max(0.0) as u32,
+                    key,
+                    velocity,
+                    channel,
+                )
+            })
+            .collect();
         self.editor
             .editor_state
             .data
-            .track_notes
-            .insert(track_idx, track_notes);
+            .replace_track_notes(track_idx, events);
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor
             .editor_state
@@ -111,9 +128,6 @@ impl Root {
             .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track_idx])));
 
         self.editor.editor_state.data.current_track = track_idx;
-        // 音符加载后同步 NoteStore，确保后续批量操作走热路径
-        // 必须在 current_track 设置后调用，因 switch_to_track 中 current_track==track_idx 时会跳过
-        self.editor.editor_state.data.sync_note_store();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
     }
@@ -164,12 +178,7 @@ impl Root {
     /// 由 `handle_sidebar_event` 在 sidebar.update 后调用。pending_track_deletion
     /// 仅携带 track_id——元数据（名称/port/channel）从 `sidebar.tracks` 中查询
     /// （此时 tracks 中该音轨已 remove，故需在 remove 前缓存元数据），
-    /// 音符列表从 `editor_state.data.track_notes` 或 `notes`（当前音轨）查询。
-    ///
-    /// 由于 sidebar.handle_track_context_menu_item_clicked 在设置 pending 前
-    /// 已经从 tracks 中移除，这里改为：在 context_menu.rs 中保留一份
-    /// `pending_track_deletion_meta` 缓存（名称/port/channel/original_index），
-    /// 由本方法消费。
+    /// 音符列表从 `EditorData.document` 查询（单一权威源）。
     pub(crate) fn forward_pending_track_deletion(&mut self) {
         let track_id = match self.sidebar.take_pending_track_deletion() {
             Some(id) => id,
@@ -188,7 +197,7 @@ impl Root {
             }
         };
 
-        // 从 editor_state.data 提取音符（包括当前音轨 + track_notes 缓存）
+        // 从 EditorData.document 提取音符（单一权威源）
         let notes = self.collect_track_notes_for_deletion(track_id);
         let note_count = notes.len() as u64;
         let max_tick = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
@@ -228,39 +237,26 @@ impl Root {
         }
     }
 
-    /// 从 editor_state.data 提取指定音轨的所有音符（用于删除缓存）
-    ///
-    /// 优先从 `track_notes` 缓存取（含其他音轨），fallback 到 `notes`（当前音轨）。
+    /// 从 EditorData.document 提取指定音轨的所有音符（用于删除缓存）
     fn collect_track_notes_for_deletion(&self, track_id: usize) -> Vec<TrackDeletionNote> {
         let data = &self.editor.editor_state.data;
-        let source: Vec<Note> = if data.current_track == track_id {
-            data.notes.iter().cloned().collect()
-        } else {
-            data.track_notes
-                .get(&track_id)
-                .map(|v| v.iter().cloned().collect())
-                .unwrap_or_default()
-        };
+        let source: Vec<NoteEvent> = data.track_notes(track_id).to_vec();
 
         let mut notes: Vec<TrackDeletionNote> = source
             .into_iter()
-            .map(|n| {
-                let start_tick = n.tick.max(0.0) as u32;
-                let end_tick = ((n.tick + n.length).max(0.0)) as u32;
-                TrackDeletionNote {
-                    start_tick,
-                    end_tick,
-                    key: n.key as u8,
-                    velocity: n.velocity,
-                    channel: n.channel,
-                    port: self
-                        .sidebar
-                        .tracks
-                        .iter()
-                        .find(|t| t.id == track_id)
-                        .map(|t| t.port)
-                        .unwrap_or(0),
-                }
+            .map(|n| TrackDeletionNote {
+                start_tick: n.start_tick,
+                end_tick: n.end_tick,
+                key: n.key,
+                velocity: n.velocity,
+                channel: n.channel,
+                port: self
+                    .sidebar
+                    .tracks
+                    .iter()
+                    .find(|t| t.id == track_id)
+                    .map(|t| t.port)
+                    .unwrap_or(0),
             })
             .collect();
         // 按 start_tick 排序，便于恢复时直接使用
@@ -320,26 +316,16 @@ impl Root {
         let insert_idx = payload.original_index.min(self.sidebar.tracks.len());
         self.sidebar.tracks.insert(insert_idx, new_track);
 
-        // 恢复 editor_state.data.track_notes
-        let restored_notes: im::Vector<Note> = payload
+        // 恢复音符到 EditorData.document（整轨替换，单一权威源）
+        let restored_notes: Vec<NoteEvent> = payload
             .notes
             .iter()
-            .map(|n| {
-                let length = n.end_tick.saturating_sub(n.start_tick) as f32;
-                Note::from_raw(
-                    n.start_tick as f32,
-                    n.key as u16,
-                    length,
-                    n.velocity,
-                    n.channel,
-                )
-            })
+            .map(|n| NoteEvent::new(n.start_tick, n.end_tick, n.key, n.velocity, n.channel))
             .collect();
         self.editor
             .editor_state
             .data
-            .track_notes
-            .insert(track_id, restored_notes);
+            .replace_track_notes(track_id, restored_notes);
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor
             .editor_state

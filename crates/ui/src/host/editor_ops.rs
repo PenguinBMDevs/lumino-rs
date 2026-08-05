@@ -1,7 +1,5 @@
 //! Host 编辑器操作子模块 - 处理音符和洋葱皮相关操作
 
-use std::sync::Arc;
-
 use crate::host::{Host, types::NoteData};
 use crate::message;
 use lumino_midi_loader::MidiDocument;
@@ -70,20 +68,17 @@ impl Host {
         self.root.load_tempo_changes(tempo_changes);
     }
 
-    /// 设置 MIDI 文档引用（供懒加载非当前音轨的音符使用）
+    /// 设置 MIDI 文档（独占所有权，2026-08 单一权威源改造）
     ///
-    /// 设计意图（见 midi_handler.rs:26-29）：
-    /// - 只存 Arc<MidiDocument> 引用，不预加载全量音符到 track_notes
-    /// - 当前音轨由 load_track_notes 写入 track_notes（用于编辑 + undo/redo）
-    /// - 其他音轨由 switch_to_track / arrangement_ops/helpers 懒加载
-    /// - 洋葱皮渲染通过 build_onion_skin_instances 遍历 document + track_notes
+    /// 设计意图（见 midi_handler.rs）：
+    /// - 文档所有权移入 EditorData.document（唯一权威源），不再保存 Arc 引用
+    /// - 当前音轨与其他音轨一律从 document 读取（访问器 current_track_notes / track_notes）
+    /// - 洋葱皮渲染通过 build_onion_skin_instances 遍历 document
     ///
-    /// 用户硬约束：删除全量预加载循环，避免 track_notes + MidiDocument
-    /// 双份数据共存导致 5GB MIDI 加载后 CPU 内存暴涨到 30-40GB。
-    pub fn set_midi_document(&mut self, doc: Arc<MidiDocument>) {
-        self.root.set_midi_document(doc.clone());
-        // 同步 tempo 点到编辑器（用于速度编辑）
-        self.root.editor.editor_state.data.tempo_points = doc
+    /// 用户硬约束：避免 track_notes + MidiDocument 双份数据共存导致内存暴涨。
+    pub fn set_midi_document(&mut self, doc: MidiDocument) {
+        // 先读取 tempo/拍号（doc 随后 move 进 root，借用必须在此之前结束）
+        let tempo_points: Vec<TempoPoint> = doc
             .tempo_changes
             .iter()
             .map(|&(tick, bpm)| TempoPoint {
@@ -91,10 +86,14 @@ impl Host {
                 bpm: bpm as f64,
             })
             .collect();
-        // 同步拍号变化到编辑器
-        self.root.editor.editor_state.data.time_signatures = doc.time_signatures.clone();
+        let time_signatures = doc.time_signatures.clone();
 
-        self.root.editor.editor_state.data.document = Some(doc);
+        self.root.set_midi_document(doc);
+        // 同步 tempo 点到编辑器（用于速度编辑）
+        self.root.editor.editor_state.data.tempo_points = tempo_points;
+        // 同步拍号变化到编辑器
+        self.root.editor.editor_state.data.time_signatures = time_signatures;
+
         // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
         self.root.editor.grid_cache.clear();
         self.root.editor.ruler_cache.clear();
@@ -102,7 +101,7 @@ impl Host {
         // 标记音符数据变化，触发走带缓存重建
         self.root.editor.spatial.note_index_dirty.set(true);
         // 注意：不再预加载全量音符到 track_notes——
-        // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 Arc<MidiDocument>。
+        // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 document。
     }
 
     /// 加载音轨 MIDI 控制事件（CC/PC/PB）
@@ -201,54 +200,43 @@ impl Host {
 
     /// 获取编辑器中的所有音符数据（用于保存）
     ///
-    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length, velocity, channel)
+    /// 返回 (track_idx, notes) 列表，其中 notes 格式为 (tick, key, length, velocity, channel)。
+    /// 单一权威源：音符一律从 document 读取（2026-08 改造）。
     pub fn get_editor_notes(&self) -> Vec<(usize, Vec<NoteData>)> {
         let mut result = Vec::new();
-
-        // 先保存当前音轨的音符
-        if !self.root.editor.editor_state.data.notes.is_empty() {
-            let current_notes: Vec<NoteData> = self
-                .root
-                .editor
-                .editor_state
-                .data
-                .notes
-                .iter()
-                .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
-                .collect();
-            result.push((
-                self.root.editor.editor_state.data.current_track,
-                current_notes,
-            ));
-        }
-
-        // 添加其他音轨的音符
-        for (&track_idx, notes) in &self.root.editor.editor_state.data.track_notes {
-            if track_idx != self.root.editor.editor_state.data.current_track {
-                let track_notes: Vec<NoteData> = notes
-                    .iter()
-                    .map(|n| (n.tick, n.key as u8, n.length, n.velocity, n.channel))
-                    .collect();
-                result.push((track_idx, track_notes));
+        let Some(doc) = self.root.editor.editor_state.data.document.as_ref() else {
+            return result;
+        };
+        for track_idx in 0..doc.track_count() {
+            let notes = doc.track_notes(track_idx);
+            if notes.is_empty() {
+                continue;
             }
+            let track_notes: Vec<NoteData> = notes
+                .iter()
+                .map(|n| {
+                    (
+                        n.start_tick as f32,
+                        n.key,
+                        (n.end_tick - n.start_tick) as f32,
+                        n.velocity,
+                        n.channel,
+                    )
+                })
+                .collect();
+            result.push((track_idx, track_notes));
         }
-
         result
     }
 
     /// 获取编辑器中的音符数量（用于判断是否有内容）
     pub fn get_editor_note_count(&self) -> usize {
-        let current_count = self.root.editor.editor_state.data.notes.len();
-        let track_notes_count: usize = self
-            .root
-            .editor
-            .editor_state
-            .data
-            .track_notes
-            .values()
-            .map(|v| v.len())
-            .sum();
-        current_count + track_notes_count
+        let Some(doc) = self.root.editor.editor_state.data.document.as_ref() else {
+            return 0;
+        };
+        (0..doc.track_count())
+            .map(|track_idx| doc.track_notes(track_idx).len())
+            .sum()
     }
 
     /// 检查音符数据是否已变化

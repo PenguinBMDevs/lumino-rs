@@ -14,10 +14,10 @@ use crate::velocity::widget::TempoPoint;
 impl super::super::VelocityCanvas<'_> {
     /// 获取所有力度点
     ///
-    /// 直接遍历 notes 构建力度点（NoteStore 冗余层已删除）。
+    /// 直接遍历 document 当前轨音符构建力度点（NoteStore 冗余层已删除）。
     pub(super) fn points(&self) -> Vec<VelocityPoint> {
         let editor_data = &self.editor.editor_state.data;
-        super::super::super::VelocityPanel::build_velocity_points(&editor_data.notes)
+        super::super::super::VelocityPanel::build_velocity_points(editor_data.current_track_notes())
     }
 
     /// 将力度值映射到 Y 坐标

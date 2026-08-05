@@ -49,6 +49,7 @@ mod tests {
     mod pressed_priority;
     mod scroll;
     mod state;
+    mod test_helpers;
 }
 
 use iced_core::Point;
@@ -122,7 +123,8 @@ pub struct Editor {
 
     /// 批量拖动待提交状态（ghost 方案 - 延迟提交）
     ///
-    /// `DraggingSelection` 松手后不立即 apply 到 `data.notes`，而是保存到此字段。
+    /// `DraggingSelection` 松手后不立即 apply 到 document（音符唯一权威），
+    /// 而是保存到此字段。
     /// 用户点击空白处取消框选时才真正 apply，避免连续拖动期间触发空间索引重建。
     ///
     /// **累积模式**：再次拖动同一选区时，新 delta 会叠加到此字段的 delta 上。
@@ -186,12 +188,12 @@ pub struct SelectionBoxAnimState {
 /// 编辑器各组件的内存占用快照（字节）
 #[derive(Debug, Clone, Default)]
 pub struct EditorMemory {
-    /// editor.notes 的估算内存（len × sizeof(Note) + 树形结构开销）
+    /// 当前音轨音符的估算内存（len × sizeof(Note)）
     pub notes_bytes: usize,
-    /// track_notes HashMap 中所有 im::Vector 的音符总量
+    /// document 中全部音轨的音符总量
     pub track_notes_count: usize,
     pub track_notes_bytes: usize,
-    /// track_notes 的条目数
+    /// document 的音轨条数
     pub track_notes_entries: usize,
     /// document Arc 指向事件的 Vec 内存
     pub document_events_bytes: usize,

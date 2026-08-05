@@ -2,22 +2,21 @@
 //!
 //! 批量拖动（DraggingSelection）松手时，将实际数据更新放到后台线程，
 //! UI 层每帧轮询 `poll_async_commit` 获取结果并推入历史记录。
+//!
+//! 2026-08 单一权威源改造：后台线程克隆当前音轨的 `Vec<NoteEvent>` 副本
+//! （而非 im::Vector + track_notes 双份克隆），完成后经 `replace_track_notes` 写回。
 
 use super::EditorData;
-use im::Vector;
 use lumino_core::error::{CoreError, Result};
+use lumino_midi_model::NoteEvent;
 use lumino_note_core::history::MoveOp;
-use lumino_note_core::note::Note;
-use std::collections::HashMap;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 /// 后台线程完成的异步提交结果
 #[derive(Debug)]
 pub struct AsyncCommitResult {
-    /// 更新后的全局音符列表
-    pub notes: Vector<Note>,
-    /// 更新后的音轨缓存
-    pub track_notes: HashMap<usize, Vector<Note>>,
+    /// 更新后的当前音轨音符（NoteEvent，与 document 轨道同构）
+    pub notes: Vec<NoteEvent>,
     /// 实际修改的音符数
     pub modified: usize,
 }
@@ -46,13 +45,12 @@ impl EditorData {
             ));
         }
 
-        let notes = self.notes.clone();
-        let track_notes = self.track_notes.clone();
+        let notes = self.current_track_notes().to_vec();
         let ops_for_thread = ops.clone();
         let (tx, rx) = mpsc::channel();
 
         std::thread::spawn(move || {
-            let result = apply_move_ops_to_clones(notes, track_notes, &ops_for_thread, max_key);
+            let result = apply_move_ops_to_clone(notes, &ops_for_thread, max_key);
             // 发送结果；如果接收端已关闭，忽略错误
             let _ = tx.send(result);
         });
@@ -69,22 +67,18 @@ impl EditorData {
         let pending = self.pending_commit.take()?;
         match pending.receiver.try_recv() {
             Ok(Ok(result)) => {
-                self.notes = result.notes;
-                self.track_notes = result.track_notes;
+                let modified = result.modified;
+                // 写回 document（当前音轨整轨替换，单一权威源）
+                self.replace_track_notes(self.current_track, result.notes.clone());
                 // 记录增量事件：MoveOp 区间 = notes 索引（等长），
                 // 数据来自替换后的 result.notes（最终状态，重叠区间幂等）。
-                // 注意：im::Vector::slice 是 mutating（split_off 移除区间），
-                // 必须用不可变迭代提取。
                 for op in &pending.ops {
                     let start = op.range_start as usize;
-                    let end = (op.range_end as usize).min(self.notes.len());
+                    let end = (op.range_end as usize).min(result.notes.len());
                     if start < end {
-                        let notes: Vec<Note> = self
-                            .notes
+                        let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
                             .iter()
-                            .skip(start)
-                            .take(end - start)
-                            .cloned()
+                            .map(super::accessors::event_to_note)
                             .collect();
                         self.note_delta_events.push(
                             crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
@@ -99,7 +93,6 @@ impl EditorData {
                 // 事件已完整记录（对应 ops 区间）→ 清除 dirty
                 self.note_delta_dirty = false;
                 self.edited_tracks.insert(self.current_track);
-                let modified = result.modified;
                 self.push_move_op(pending.ops);
                 Some(Ok(modified))
             }
@@ -127,10 +120,9 @@ impl EditorData {
     }
 }
 
-/// 将 MoveOp 应用到 notes/track_notes 的克隆副本
-fn apply_move_ops_to_clones(
-    mut notes: Vector<Note>,
-    mut track_notes: HashMap<usize, Vector<Note>>,
+/// 将 MoveOp 应用到当前音轨音符的克隆副本
+fn apply_move_ops_to_clone(
+    mut notes: Vec<NoteEvent>,
     ops: &[MoveOp],
     max_key: u16,
 ) -> Result<AsyncCommitResult> {
@@ -153,33 +145,21 @@ fn apply_move_ops_to_clones(
     }
 
     for op in ops {
-        let track_id = op.track_id as usize;
-        let dt = op.delta_tick as f32;
+        let dt = op.delta_tick;
         let dk = op.delta_key as i32;
-
-        if !track_notes.contains_key(&track_id) && !notes.is_empty() {
-            track_notes.insert(track_id, notes.clone());
-        }
 
         let start = op.range_start as usize;
         let end = op.range_end as usize;
         for i in start..end {
             if let Some(note) = notes.get_mut(i) {
-                let new_tick = (note.tick + dt).max(0.0);
-                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                    note.tick = new_tick;
+                let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+                if note.start_tick != new_tick || note.key != new_key {
+                    note.start_tick = new_tick;
+                    note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
                     note.key = new_key;
                     modified += 1;
                 }
-            }
-            if let Some(track_notes) = track_notes.get_mut(&track_id)
-                && let Some(note) = track_notes.get_mut(i)
-            {
-                let new_tick = (note.tick + dt).max(0.0);
-                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                note.tick = new_tick;
-                note.key = new_key;
             }
 
             processed += 1;
@@ -205,11 +185,7 @@ fn apply_move_ops_to_clones(
         start_time.elapsed()
     );
 
-    Ok(AsyncCommitResult {
-        notes,
-        track_notes,
-        modified,
-    })
+    Ok(AsyncCommitResult { notes, modified })
 }
 
 #[cfg(test)]
@@ -218,15 +194,17 @@ mod tests {
     use bit_vec::BitVec;
 
     use crate::DragState;
+    use lumino_note_core::note::Note;
 
     fn make_data_with_notes() -> EditorData {
-        let mut data = EditorData::new();
-        data.current_track = 1;
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
-        data.notes.push_back(Note::new(10.0, 62, 1.0));
-        data.notes.push_back(Note::new(20.0, 64, 1.0));
-        data.track_notes.insert(1, data.notes.clone());
-        data
+        EditorData::with_f32_notes(
+            1,
+            &[
+                Note::new(0.0, 60, 1.0),
+                Note::new(10.0, 62, 1.0),
+                Note::new(20.0, 64, 1.0),
+            ],
+        )
     }
 
     #[test]
@@ -249,15 +227,15 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(data.notes[0].tick, 5.0);
-        assert_eq!(data.notes[0].key, 58);
-        assert_eq!(data.notes[2].tick, 25.0);
-        assert_eq!(data.notes[2].key, 62);
+        assert_eq!(data.get_note_view(0).unwrap().tick, 5.0);
+        assert_eq!(data.get_note_view(0).unwrap().key, 58);
+        assert_eq!(data.get_note_view(2).unwrap().tick, 25.0);
+        assert_eq!(data.get_note_view(2).unwrap().key, 62);
         assert!(data.history.can_undo());
         // undo 应还原
         assert!(data.undo());
-        assert_eq!(data.notes[0].tick, 0.0);
-        assert_eq!(data.notes[0].key, 60);
+        assert_eq!(data.get_note_view(0).unwrap().tick, 0.0);
+        assert_eq!(data.get_note_view(0).unwrap().key, 60);
     }
 
     #[test]
@@ -349,6 +327,6 @@ mod tests {
         data.cancel_async_commit();
         assert!(!data.has_pending_commit());
         // 数据不应被修改
-        assert_eq!(data.notes[0].tick, 0.0);
+        assert_eq!(data.get_note_view(0).unwrap().tick, 0.0);
     }
 }

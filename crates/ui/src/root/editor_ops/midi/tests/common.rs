@@ -155,16 +155,41 @@ pub fn create_mock_output() -> Box<MockOutput> {
     Box::new(MockOutput::new())
 }
 
-/// 添加两个测试音符
+/// 构造最小 2 轨 MidiDocument（音符写入 document，单一权威源）
+fn make_test_document() -> lumino_midi_loader::MidiDocument {
+    lumino_midi_loader::MidiDocument {
+        notes: vec![Vec::new(), Vec::new()],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![],
+        control_events: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
+        total_ticks: 0,
+        track_count: 2,
+        tracks: lumino_midi_loader::TrackManager::new(2),
+        division: 480,
+        track_ports: vec![0, 0],
+    }
+}
+
+/// 挂载测试 document 到 Root（当前轨 = 1）
+pub fn attach_test_document(root: &mut Root) {
+    let doc = make_test_document();
+    root.set_midi_document(doc);
+    root.editor.editor_state.data.current_track = 1;
+}
+
+/// 添加两个测试音符（写入 document 当前轨，单一权威源）
 pub fn add_two_test_notes(root: &mut Root) {
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    root.editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(480.0, 64, 480.0));
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(480.0, 64, 480.0),
+    );
 }

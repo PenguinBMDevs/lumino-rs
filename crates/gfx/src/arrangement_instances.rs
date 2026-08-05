@@ -2,12 +2,9 @@
 //!
 //! 所有实例用屏幕坐标，每帧重建。音符从 MidiDocument 通过二分查找
 //! 定位可见范围起点，只扫描 O(log N + K) 个事件。
+//! 2026-08 单一权威源：音符一律从 `midi_doc`（MidiDocument）读取。
 
 use crate::ArrangementNoteInstance;
-use lumino_note_core::note::Note;
-use std::collections::HashMap;
-
-type TrackNotesMap = HashMap<usize, im::Vector<Note>>;
 
 /// 走带视图颜色配置
 #[derive(Debug, Clone)]
@@ -29,7 +26,6 @@ pub struct ArrangementSceneParams<'a> {
     pub track_colors: &'a [[f32; 3]],
     pub track_visible: &'a [bool],
     pub midi_doc: Option<&'a lumino_midi_loader::MidiDocument>,
-    pub track_notes: &'a TrackNotesMap,
     pub playback_position: f32,
     pub colors: &'a ArrangementViewColors,
     /// ghost 音符预览（tick_start, tick_end, track）
@@ -134,10 +130,8 @@ pub fn build_arrangement_all(
         };
         out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, c));
 
-        // 音符
-        if let Some(notes) = params.track_notes.get(tid) {
-            collect_notes_cache(out, notes, color, viewport, cox, lane_y);
-        } else if let Some(doc) = params.midi_doc {
+        // 音符（2026-08 单一权威源：一律从 document 读取）
+        if let Some(doc) = params.midi_doc {
             collect_notes_doc(out, doc, *tid, color, viewport, cox, lane_y);
         }
     }
@@ -246,42 +240,6 @@ pub fn collect_arrangement_instances(
 }
 
 // ─── 音符读取 ──────────────────────────────────────────────
-
-fn collect_notes_cache(
-    out: &mut Vec<ArrangementNoteInstance>,
-    notes: &im::Vector<Note>,
-    color: [f32; 3],
-    viewport: &ArrangementViewport,
-    cox: f32,
-    lane_y: f32,
-) {
-    let ppu = viewport.zoom_x.max(0.001);
-    let w = viewport.canvas_size[0];
-    let ts = (viewport.scroll_x / ppu) as f64;
-    let te = ((viewport.scroll_x + w) / ppu) as f64;
-    let lh = viewport.track_height * viewport.zoom_y;
-    let key_h = lh / 128.0;
-    let scroll_x = viewport.scroll_x;
-
-    for note in notes {
-        let s = note.tick as f64;
-        let e = (note.tick + note.length) as f64;
-        if s > te || e < ts {
-            continue;
-        }
-        let sx = cox + s as f32 * ppu - scroll_x;
-        let sw = (e - s) as f32 * ppu;
-        let sy = lane_y + (127.0 - note.key as f32) * key_h;
-        out.push(ArrangementNoteInstance::note(
-            sx,
-            sy,
-            sw.max(2.0),
-            4.0,
-            color,
-            note.velocity,
-        ));
-    }
-}
 
 fn collect_notes_doc(
     out: &mut Vec<ArrangementNoteInstance>,

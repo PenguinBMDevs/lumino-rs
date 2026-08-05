@@ -104,11 +104,30 @@ impl Root {
         // 处理残留的 pending 音符（设置一个默认长度）
         if !self.recording.pending_notes.is_empty() {
             let default_length = self.editor.editor_state.view.default_note_length.max(1.0);
+            let track_idx = self.editor.editor_state.data.current_track;
             for (_, note_idx) in self.recording.pending_notes.iter() {
-                if let Some(note) = self.editor.editor_state.data.notes.get_mut(*note_idx)
-                    && note.length <= 0.0
+                // 2026-08 单一权威源：从 document 读取并更新（track_notes 缓存已删除）
+                // NoteEvent 为 Copy：先取值再写回，避免借用冲突
+                if let Some(note) = self
+                    .editor
+                    .editor_state
+                    .data
+                    .current_track_notes()
+                    .get(*note_idx)
+                    && note.length() == 0
                 {
-                    note.length = default_length;
+                    let note_copy = *note;
+                    self.editor.editor_state.data.update_note(
+                        track_idx,
+                        *note_idx,
+                        Note::from_raw(
+                            note_copy.start_tick as f32,
+                            note_copy.key as u16,
+                            default_length,
+                            note_copy.velocity,
+                            note_copy.channel,
+                        ),
+                    );
                 }
             }
             self.recording.pending_notes.clear();
@@ -116,7 +135,7 @@ impl Root {
         }
 
         // 推入 undo 历史
-        if !self.editor.editor_state.data.notes.is_empty() {
+        if self.editor.editor_state.data.current_track_note_count() > 0 {
             self.editor.push_history();
         }
 
@@ -196,8 +215,29 @@ impl Root {
 
         let note = Note::from_raw(tick, key as u16, 0.0, velocity, 0);
 
-        self.editor.editor_state.data.notes.push_back(note);
-        let note_idx = self.editor.editor_state.data.notes.len() - 1;
+        // 2026-08 单一权威源：直接写入 document 当前轨（track_notes 缓存已删除）
+        let track_idx = self.editor.editor_state.data.current_track;
+        if !self.editor.editor_state.data.insert_note(track_idx, note) {
+            // 音轨不存在（无 document）→ 录制失败
+            tracing::warn!("录制: document 不存在，无法写入音符");
+            return false;
+        }
+        // insert_note 按 start_tick 稳定插入（不一定是末尾），
+        // 通过 key + tick 定位新音符的实际索引，供 NoteOff 更新长度
+        let note_idx = self
+            .editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .position(|n| n.key == key && (n.start_tick as f32 - tick).abs() < 1.0)
+            .unwrap_or_else(|| {
+                self.editor
+                    .editor_state
+                    .data
+                    .current_track_note_count()
+                    .saturating_sub(1)
+            });
         self.recording.pending_notes.insert(key, note_idx);
 
         tracing::debug!(
@@ -217,21 +257,40 @@ impl Root {
             None => return false,
         };
 
-        if let Some(note) = self.editor.editor_state.data.notes.get_mut(note_idx) {
-            let length = (tick - note.tick).max(1.0);
-            note.length = length;
-
-            tracing::debug!(
-                "录制: NoteOff key={}, tick={:.2}, length={:.2}, idx={}",
-                key,
-                tick,
+        // 2026-08 单一权威源：从 document 读取并更新（track_notes 缓存已删除）
+        let track_idx = self.editor.editor_state.data.current_track;
+        let Some(note) = self
+            .editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .get(note_idx)
+        else {
+            return false;
+        };
+        // NoteEvent 为 Copy：先取值再写回，避免借用冲突
+        let note_copy = *note;
+        let length = (tick - note_copy.start_tick as f32).max(1.0);
+        self.editor.editor_state.data.update_note(
+            track_idx,
+            note_idx,
+            Note::from_raw(
+                note_copy.start_tick as f32,
+                note_copy.key as u16,
                 length,
-                note_idx
-            );
-            true
-        } else {
-            false
-        }
+                note_copy.velocity,
+                note_copy.channel,
+            ),
+        );
+
+        tracing::debug!(
+            "录制: NoteOff key={}, tick={:.2}, length={:.2}, idx={}",
+            key,
+            tick,
+            length,
+            note_idx
+        );
+        true
     }
 
     /// 设置 MIDI API（供外部调用，如 MidiManager 初始化完成后）

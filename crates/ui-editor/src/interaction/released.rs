@@ -46,7 +46,8 @@ impl Editor {
                 original_tick,
                 original_length,
             } => {
-                if let Some(note) = self.editor_state.data.notes.get(note_index)
+                // 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick/length f32）
+                if let Some(note) = self.editor_state.data.get_note_view(note_index)
                     && (note.tick != original_tick || note.length != original_length)
                 {
                     self.mark_notes_changed();
@@ -56,7 +57,7 @@ impl Editor {
                 note_index,
                 original_length,
             } => {
-                if let Some(note) = self.editor_state.data.notes.get(note_index)
+                if let Some(note) = self.editor_state.data.get_note_view(note_index)
                     && note.length != original_length
                 {
                     self.mark_notes_changed();
@@ -90,27 +91,24 @@ impl Editor {
                 }
                 // 保留 selected_notes 不清空（pending 状态下仍显示框选）
                 // edit_state 切换到 Idle（std::mem::take 已处理）
-                // 不调用 mark_notes_changed（data.notes 未变）
+                // 不调用 mark_notes_changed（document 未变）
             }
             EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
                 // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
-                // notes 已在 drag.rs 每帧被改，此处只把发生变更的选中音符流式同步到
-                // track_notes，避免整轨克隆。
+                // 2026-08 单一权威源：resize 期间已直接修改 document（track_notes_mut），
+                // 松手时只需标记变化，无需任何缓存同步。
                 //
                 // 清除 selected_bounds 缓存：拉伸期间虽增量更新，但有个别音符可能因
                 // new_length < snap_precision 被跳过，导致缓存与实际不完全一致。
                 // 松手后强制 O(N) 回退路径重新计算，确保正确性。
                 self.selected_bounds.set(None);
-                // NoteStore 启用时，拉伸期间修改的是 note_store 而非 notes，
-                // 需要同步回 notes 确保一致性（sync_track_notes_at_indices 读取 notes）。
+                // NoteStore 已删除（降级 no-op，保留调用兼容）
                 if self.editor_state.data.is_note_store_enabled() {
                     self.editor_state.data.sync_notes_from_store();
                 }
                 tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
-                let selected = self.get_selected_indices();
-                self.editor_state
-                    .data
-                    .sync_track_notes_at_indices(&selected);
+                // 标记当前轨变化（document 已被直接修改）
+                self.editor_state.data.mark_current_track_changed();
                 self.mark_notes_changed();
             }
             _ => {}

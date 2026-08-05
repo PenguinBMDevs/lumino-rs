@@ -1,8 +1,10 @@
 //! Undo/Redo 历史记录操作
 //!
-//! `EditorData` 与 `EditorSnapshot` 均使用 `Vec<Arc<AutomationLane>>`，
-//! 快照克隆为 O(lane 数) 的 Arc 指针拷贝，未修改的 lane 物理共享。
-//! 编辑路径通过 `Arc::make_mut` 写时复制（见 editor_data/automation.rs）。
+//! 2026-08 单一权威源改造：音符快照为 `Arc<Vec<NoteEvent>>`（从 document 轨道
+//! 克隆，COW 共享）。恢复时经 `replace_track_notes` 写回 document。
+//! `automation_lanes` 仍为 `Vec<Arc<AutomationLane>>`，编辑路径经 `Arc::make_mut` 写时复制。
+
+use std::sync::Arc;
 
 use super::EditorData;
 use crate::DragState;
@@ -13,8 +15,9 @@ impl EditorData {
 
     /// 构造当前状态的 EditorSnapshot（不带元数据）
     fn make_snapshot(&self) -> EditorSnapshot {
+        let notes = Arc::new(self.current_track_notes().to_vec());
         EditorSnapshot {
-            notes: self.notes.clone(),
+            notes,
             current_track: self.current_track,
             automation_lanes: self.automation_lanes.clone(),
             time_signatures: Some(self.time_signatures.clone()),
@@ -24,7 +27,7 @@ impl EditorData {
             chords: Some(self.chords.clone()),
             program_changes: Some(self.program_changes.clone()),
             tempo_points: Some(self.tempo_points.clone()),
-            ..EditorSnapshot::new(im::Vector::new(), 0, Vec::new())
+            ..EditorSnapshot::new(Arc::new(Vec::new()), 0, Vec::new())
         }
     }
 
@@ -131,7 +134,9 @@ impl EditorData {
 
     /// 应用快照到当前状态（undo / redo 后调用）
     fn apply_snapshot(&mut self, snapshot: EditorSnapshot) {
-        self.notes = snapshot.notes;
+        // 音符快照写回 document（整轨替换，单一权威源）
+        let notes = snapshot.notes.as_ref().clone();
+        self.replace_track_notes(snapshot.current_track, notes);
         self.current_track = snapshot.current_track;
         self.automation_lanes = snapshot.automation_lanes.clone();
         if let Some(v) = snapshot.time_signatures {
@@ -184,7 +189,7 @@ impl EditorData {
 
     // ── MoveOp 应用与构造 ────────────────────────────────────
 
-    /// 应用 MoveOp 列表到 notes 和对应 track_notes。
+    /// 应用 MoveOp 列表到 document 对应音轨（单一权威源）。
     ///
     /// `inverse=true` 时按记录的原始位置恢复（用于 undo）。
     /// `max_key` 用于 clamp key 范围（通常传 `visible_key_count - 1`）。
@@ -200,10 +205,13 @@ impl EditorData {
             let start = op.range_start as usize;
             let end = op.range_end as usize;
 
-            // 确保 track_notes 中存在该 track 的缓存
-            if !self.track_notes.contains_key(&track_id) && !self.notes.is_empty() {
-                self.track_notes.insert(track_id, self.notes.clone());
-            }
+            let Some(track) = self
+                .document
+                .as_mut()
+                .and_then(|doc| doc.track_notes_mut(track_id))
+            else {
+                continue;
+            };
 
             if inverse {
                 // 按原始位置恢复，确保 clamp 后的音符也能精确还原
@@ -213,40 +221,31 @@ impl EditorData {
                     }
                     let orig_tick = op.original_ticks[idx];
                     let orig_key = op.original_keys[idx];
-                    if let Some(note) = self.notes.get_mut(i)
-                        && ((note.tick - orig_tick).abs() > f32::EPSILON || note.key != orig_key)
+                    if let Some(note) = track.get_mut(i)
+                        && (note.start_tick as f32 != orig_tick || note.key != orig_key as u8)
                     {
-                        note.tick = orig_tick;
-                        note.key = orig_key;
+                        note.start_tick = super::accessors::f32_to_tick(orig_tick);
+                        note.end_tick = note
+                            .end_tick
+                            .saturating_sub(0)
+                            .max(note.start_tick.saturating_add(1));
+                        note.key = orig_key as u8;
                         modified += 1;
-                    }
-                    if let Some(track_notes) = self.track_notes.get_mut(&track_id)
-                        && let Some(note) = track_notes.get_mut(i)
-                    {
-                        note.tick = orig_tick;
-                        note.key = orig_key;
                     }
                 }
             } else {
-                let dt = op.delta_tick as f32;
+                let dt = op.delta_tick;
                 let dk = op.delta_key as i32;
                 for i in start..end {
-                    if let Some(note) = self.notes.get_mut(i) {
-                        let new_tick = (note.tick + dt).max(0.0);
-                        let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                        if (note.tick - new_tick).abs() > f32::EPSILON || note.key != new_key {
-                            note.tick = new_tick;
+                    if let Some(note) = track.get_mut(i) {
+                        let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+                        let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+                        if note.start_tick != new_tick || note.key != new_key {
+                            note.start_tick = new_tick;
+                            note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
                             note.key = new_key;
                             modified += 1;
                         }
-                    }
-                    if let Some(track_notes) = self.track_notes.get_mut(&track_id)
-                        && let Some(note) = track_notes.get_mut(i)
-                    {
-                        let new_tick = (note.tick + dt).max(0.0);
-                        let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u16;
-                        note.tick = new_tick;
-                        note.key = new_key;
                     }
                 }
             }
@@ -282,11 +281,18 @@ impl EditorData {
         let mut range_start = indices[0];
         let mut prev = indices[0];
 
-        // 直接遍历 notes 提取原始 tick/key（NoteStore 已删除）
+        // 直接遍历 document 当前轨提取原始 tick/key（单一权威源）
+        let track_notes = self.current_track_notes();
         let make_op = |start: usize, end: usize, seq: u16| {
-            let (ticks, keys): (Vec<f32>, Vec<u16>) = (start..=end)
-                .filter_map(|idx| self.notes.get(idx).map(|note| (note.tick, note.key)))
-                .unzip();
+            let (ticks, keys): (Vec<f32>, Vec<u16>) = track_notes
+                .get(start..=end)
+                .map(|slice| {
+                    slice
+                        .iter()
+                        .map(|note| (note.start_tick as f32, note.key as u16))
+                        .unzip()
+                })
+                .unwrap_or_default();
             MoveOp {
                 track_id,
                 range_start: start as u32,

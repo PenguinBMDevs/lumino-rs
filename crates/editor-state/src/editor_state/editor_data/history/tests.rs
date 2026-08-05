@@ -2,7 +2,7 @@
 //!
 //! 覆盖：
 //! - `apply_move_ops` 正向/反向应用
-//! - key clamp、缺失 track_notes 自动创建
+//! - key clamp、跨轨操作（document 轨道构造时固定）
 //! - `move_ops_from_drag_state` 连续区间拆分、delta 饱和
 //! - 基于 MoveOp 的 undo/redo 往返
 
@@ -11,13 +11,14 @@ use bit_vec::BitVec;
 use lumino_note_core::note::Note;
 
 fn make_data_with_notes() -> EditorData {
-    let mut data = EditorData::new();
-    data.current_track = 1;
-    data.notes.push_back(Note::new(0.0, 60, 1.0));
-    data.notes.push_back(Note::new(10.0, 62, 1.0));
-    data.notes.push_back(Note::new(20.0, 64, 1.0));
-    data.track_notes.insert(1, data.notes.clone());
-    data
+    EditorData::with_f32_notes(
+        1,
+        &[
+            Note::new(0.0, 60, 1.0),
+            Note::new(10.0, 62, 1.0),
+            Note::new(20.0, 64, 1.0),
+        ],
+    )
 }
 
 #[test]
@@ -35,17 +36,21 @@ fn test_apply_move_ops_forward() {
     }];
     let modified = data.apply_move_ops(&ops, false, 127);
     assert_eq!(modified, 2);
-    assert_eq!(data.notes[0].tick, 5.0);
-    assert_eq!(data.notes[0].key, 58);
-    assert_eq!(data.notes[1].tick, 15.0);
-    assert_eq!(data.notes[1].key, 60);
-    assert_eq!(data.notes[2].tick, 20.0, "未在范围内的音符不变");
-    assert_eq!(data.notes[2].key, 64);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 5.0);
+    assert_eq!(data.get_note_view(0).unwrap().key, 58);
+    assert_eq!(data.get_note_view(1).unwrap().tick, 15.0);
+    assert_eq!(data.get_note_view(1).unwrap().key, 60);
+    assert_eq!(
+        data.get_note_view(2).unwrap().tick,
+        20.0,
+        "未在范围内的音符不变"
+    );
+    assert_eq!(data.get_note_view(2).unwrap().key, 64);
 
-    // track_notes 同步更新
-    let track = data.track_notes.get(&1).expect("track 1 应存在");
-    assert_eq!(track[0].tick, 5.0);
-    assert_eq!(track[1].tick, 15.0);
+    // document 同步更新（唯一权威源）
+    let track = data.track_notes(1);
+    assert_eq!(track[0].start_tick as f32, 5.0);
+    assert_eq!(track[1].start_tick as f32, 15.0);
 }
 
 #[test]
@@ -66,12 +71,12 @@ fn test_apply_move_ops_inverse() {
     // 再 inverse 应还原
     let modified = data.apply_move_ops(&ops, true, 127);
     assert_eq!(modified, 3);
-    assert_eq!(data.notes[0].tick, 0.0);
-    assert_eq!(data.notes[0].key, 60);
-    assert_eq!(data.notes[1].tick, 10.0);
-    assert_eq!(data.notes[1].key, 62);
-    assert_eq!(data.notes[2].tick, 20.0);
-    assert_eq!(data.notes[2].key, 64);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 0.0);
+    assert_eq!(data.get_note_view(0).unwrap().key, 60);
+    assert_eq!(data.get_note_view(1).unwrap().tick, 10.0);
+    assert_eq!(data.get_note_view(1).unwrap().key, 62);
+    assert_eq!(data.get_note_view(2).unwrap().tick, 20.0);
+    assert_eq!(data.get_note_view(2).unwrap().key, 64);
 }
 
 #[test]
@@ -88,7 +93,7 @@ fn test_apply_move_ops_clamps_key() {
         original_keys: vec![],
     }];
     data.apply_move_ops(&ops, false, 20);
-    assert_eq!(data.notes[0].key, 0, "key 应 clamp 到 0");
+    assert_eq!(data.get_note_view(0).unwrap().key, 0, "key 应 clamp 到 0");
 
     let ops2 = vec![MoveOp {
         track_id: 1,
@@ -101,15 +106,19 @@ fn test_apply_move_ops_clamps_key() {
         original_keys: vec![],
     }];
     data.apply_move_ops(&ops2, false, 20);
-    assert_eq!(data.notes[1].key, 20, "key 应 clamp 到 max_key");
+    assert_eq!(
+        data.get_note_view(1).unwrap().key,
+        20,
+        "key 应 clamp 到 max_key"
+    );
 }
 
 #[test]
 fn test_apply_move_ops_creates_missing_track_notes() {
-    let mut data = EditorData::new();
-    data.current_track = 2;
-    data.notes.push_back(Note::new(0.0, 60, 1.0));
-    // track_notes 中无 track 2
+    // 语义替代（2026-08）：apply_move_ops 不再自动创建缺失音轨（document 轨道
+    // 构造时固定）。原测试意图「操作指定轨数据」改为：构造含 track 2 的 document，
+    // 验证 apply_move_ops 可作用于非当前轨（track_id=2）。
+    let mut data = EditorData::with_f32_notes(2, &[Note::new(0.0, 60, 1.0)]);
     let ops = vec![MoveOp {
         track_id: 2,
         range_start: 0,
@@ -121,19 +130,22 @@ fn test_apply_move_ops_creates_missing_track_notes() {
         original_keys: vec![],
     }];
     data.apply_move_ops(&ops, false, 127);
-    assert!(data.track_notes.contains_key(&2));
-    assert_eq!(data.track_notes[&2][0].tick, 3.0);
-    assert_eq!(data.track_notes[&2][0].key, 61);
+    let track = data.track_notes(2);
+    assert_eq!(track[0].start_tick as f32, 3.0);
+    assert_eq!(track[0].key as u16, 61);
 }
 
 #[test]
 fn test_move_ops_from_drag_state_splits_ranges() {
-    let mut data = EditorData::new();
-    data.current_track = 1;
-    data.notes.push_back(Note::new(0.0, 60, 1.0));
-    data.notes.push_back(Note::new(10.0, 62, 1.0));
-    data.notes.push_back(Note::new(20.0, 64, 1.0));
-    data.notes.push_back(Note::new(30.0, 66, 1.0));
+    let data = EditorData::with_f32_notes(
+        1,
+        &[
+            Note::new(0.0, 60, 1.0),
+            Note::new(10.0, 62, 1.0),
+            Note::new(20.0, 64, 1.0),
+            Note::new(30.0, 66, 1.0),
+        ],
+    );
 
     let mut bv = BitVec::from_elem(4, false);
     bv.set(0, true);
@@ -159,11 +171,9 @@ fn test_move_ops_from_drag_state_splits_ranges() {
 
 #[test]
 fn test_move_ops_from_drag_state_saturates_delta_tick() {
-    let mut data = EditorData::new();
-    data.current_track = 1;
-    data.notes.push_back(Note::new(0.0, 60, 1.0));
+    let data = EditorData::with_f32_notes(1, &[Note::new(0.0, 60, 1.0)]);
 
-    let mut drag_state = DragState::from_single(0, 1, 0, 60);
+    let mut drag_state = DragState::from_single(0, data.current_track_note_count(), 0, 60);
     drag_state.set_delta(i64::MAX, 0);
 
     let ops = data.move_ops_from_drag_state(&drag_state);
@@ -190,15 +200,15 @@ fn test_undo_redo_with_move_op_entry() {
 
     // undo 应还原
     assert!(data.undo());
-    assert_eq!(data.notes[0].tick, 0.0);
-    assert_eq!(data.notes[0].key, 60);
-    assert_eq!(data.notes[2].tick, 20.0);
-    assert_eq!(data.notes[2].key, 64);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 0.0);
+    assert_eq!(data.get_note_view(0).unwrap().key, 60);
+    assert_eq!(data.get_note_view(2).unwrap().tick, 20.0);
+    assert_eq!(data.get_note_view(2).unwrap().key, 64);
 
     // redo 应再次应用
     assert!(data.redo());
-    assert_eq!(data.notes[0].tick, 5.0);
-    assert_eq!(data.notes[0].key, 58);
-    assert_eq!(data.notes[2].tick, 25.0);
-    assert_eq!(data.notes[2].key, 62);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 5.0);
+    assert_eq!(data.get_note_view(0).unwrap().key, 58);
+    assert_eq!(data.get_note_view(2).unwrap().tick, 25.0);
+    assert_eq!(data.get_note_view(2).unwrap().key, 62);
 }

@@ -16,7 +16,7 @@ impl Sidebar {
         language: Language,
         current_mode: AppMode,
         editor_data: &'a lumino_editor_state::EditorData,
-        current_track_notes: &'a im::Vector<lumino_note_core::Note>,
+        current_track_notes: &'a [lumino_midi_loader::NoteEvent],
         ppq: u16,
         _snap_precision: f32,
         program_font_name: &'a str,
@@ -54,10 +54,10 @@ impl Sidebar {
                     project_division: ppq,
                     project_track_count: self.tracks.len() as u16,
                     project_note_count: editor_data
-                        .track_notes
-                        .values()
-                        .map(|v| v.len() as u64)
-                        .sum(),
+                        .document
+                        .as_ref()
+                        .map(|doc| doc.notes.iter().map(|v| v.len() as u64).sum::<u64>())
+                        .unwrap_or(0),
                     project_created: "",
                     project_modified: "",
                     project_format_version: 1,

@@ -57,7 +57,9 @@ impl Editor {
 
     pub fn select_all_notes(&mut self) {
         if self.editor_state.data.is_note_store_enabled() {
-            let count = self.editor_state.data.notes.len();
+            // 2026-08 单一权威源：NoteStore 已删除（is_note_store_enabled 恒 false），
+            // 此分支为历史兼容，实际走下方全量选择路径。
+            let count = self.editor_state.data.current_track_note_count();
             if count > 0 {
                 let bounds = self.editor_state.data.compute_all_notes_bounds();
                 // 用 `BitSet` 替代 16M 条目 HashSet（512MB 表 + 16M SipHash 插入）

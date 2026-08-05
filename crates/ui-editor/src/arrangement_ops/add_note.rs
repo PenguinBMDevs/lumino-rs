@@ -29,13 +29,15 @@ impl Editor {
         let current_track = self.editor_state.data.current_track;
         let current_track_touched = track == current_track;
 
+        // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
         {
             let editor_data = &mut self.editor_state.data;
-            let track_entry = editor_data.track_notes.entry(track).or_default();
-            track_entry.push_back(note);
+            editor_data.insert_note(track, note);
         }
 
-        self.sync_current_track_after_arrange_op(current_track_touched);
+        if current_track_touched {
+            self.mark_notes_changed();
+        }
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data

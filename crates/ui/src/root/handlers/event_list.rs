@@ -109,7 +109,7 @@ impl Root {
             }
         }
         // 编辑后刷新侧边栏音符数据
-        self.editor.editor_state.data.sync_track_notes();
+        // 2026-08 单一权威源：音符数据实时写入 document，无需再同步 track_notes 缓存
         self.editor.spatial.note_index_dirty.set(true);
     }
 

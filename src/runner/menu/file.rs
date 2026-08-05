@@ -36,18 +36,27 @@ impl RunnerInner {
                 lumino_extras::palette::set_current_palette_by_name("Random");
                 lumino_extras::palette::lock_palette();
 
-                // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
-                self.import_midi_to_editor(&parsed);
+                // 拆出所有权（事件传递路径上 Arc 唯一；极端情况有额外引用时
+                // 浅拷贝 ParsedMidi——其 document 为 Arc 浅 clone，代价可忽略）
+                let parsed = match std::sync::Arc::try_unwrap(parsed) {
+                    Ok(parsed) => parsed,
+                    Err(arc) => (*arc).clone(),
+                };
 
-                tracing::debug!("MIDI 文档已导入编辑器，MidiDocument 保留供懒加载使用");
+                // 在 move 之前保存 info 相关数据（import 后 parsed.document 已移出）
+                let source_path = std::path::PathBuf::from(&parsed.info.path);
+
+                // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
+                self.import_midi_to_editor(parsed);
+
+                tracing::debug!("MIDI 文档已导入编辑器（MidiDocument 已移入 UI 单一权威源）");
 
                 self.log_memory_usage_after_import();
 
-                // 保留 current_midi 使 MidiDocument 存活（编辑器通过 Arc 引用它做懒加载）
-                // 不再需要保存一份全量 track_notes，所以总内存从 (events+notes) 降到 (events)
-                self.midi_state.current_midi_source =
-                    Some(std::path::PathBuf::from(&parsed.info.path));
-                self.midi_state.current_midi = Some(parsed);
+                // 保留 source 路径；document 已通过 import_midi_to_editor 移入 UI
+                // （EditorData.document 独占），runner 不再持有文档副本，避免双份数据。
+                self.midi_state.current_midi_source = Some(source_path);
+                self.midi_state.current_midi = None;
 
                 // 设置工程创建时间（从文件系统获取）
                 self.session_tracker.created_at = self

@@ -8,6 +8,7 @@ use crate::EditState;
 use crate::Editor;
 use crate::note::Note;
 use crate::rendering::ghost_delta_for_index;
+use crate::tests::test_helpers;
 use lumino_editor_state::DragState;
 
 // ===== is_editing 判定测试 =====
@@ -124,13 +125,9 @@ fn test_is_editing_resizing_selection_end_returns_true() {
 #[test]
 fn test_commit_current_edit_when_idle_returns_false() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     assert!(!editor.commit_current_edit());
-    assert_eq!(editor.editor_state.data.notes.len(), 1);
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
     assert!(matches!(
         editor.editor_state.interaction.edit_state,
         EditState::Idle
@@ -141,11 +138,7 @@ fn test_commit_current_edit_when_idle_returns_false() {
 fn test_commit_current_edit_when_selecting_does_not_commit() {
     // Selecting 不是数据编辑状态，commit 应返回 false（不触发 handle_released 提交数据）
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.editor_state.interaction.edit_state = EditState::Selecting {
         start_tick: 0.0,
         start_key: 60,
@@ -160,11 +153,7 @@ fn test_commit_current_edit_when_selecting_does_not_commit() {
 #[test]
 fn test_commit_current_edit_when_dragging_commits_and_returns_true() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
 
     let mut drag = DragState::from_single(0, 1, 0, 60);
     drag.set_delta(100, 5);
@@ -176,8 +165,11 @@ fn test_commit_current_edit_when_dragging_commits_and_returns_true() {
 
     assert!(editor.commit_current_edit());
     // delta 应已被应用到 notes
-    assert_eq!(editor.editor_state.data.notes[0].tick, 100.0);
-    assert_eq!(editor.editor_state.data.notes[0].key, 65);
+    assert_eq!(
+        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        100.0
+    );
+    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 65);
     // edit_state 应被重置为 Idle
     assert!(matches!(
         editor.editor_state.interaction.edit_state,
@@ -188,21 +180,16 @@ fn test_commit_current_edit_when_dragging_commits_and_returns_true() {
 #[test]
 fn test_commit_current_edit_when_dragging_selection_commits_all_selected() {
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(240.0, 62, 240.0));
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(480.0, 64, 240.0));
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[
+            Note::new(0.0, 60, 480.0),
+            Note::new(240.0, 62, 240.0),
+            Note::new(480.0, 64, 240.0),
+        ],
+    );
 
     // 选中索引 0 和 2
     let mut drag = DragState::from_indices([0, 2], 3, 0, 60);
@@ -210,16 +197,16 @@ fn test_commit_current_edit_when_dragging_selection_commits_all_selected() {
     editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };
 
     assert!(editor.commit_current_edit());
-    let notes = &editor.editor_state.data.notes;
+    let data = &editor.editor_state.data;
     // note 0: 0,60 -> 200,67
-    assert_eq!(notes[0].tick, 200.0);
-    assert_eq!(notes[0].key, 67);
+    assert_eq!(data.get_note_view(0).unwrap().tick, 200.0);
+    assert_eq!(data.get_note_view(0).unwrap().key, 67);
     // note 1: 未选中，不变
-    assert_eq!(notes[1].tick, 240.0);
-    assert_eq!(notes[1].key, 62);
+    assert_eq!(data.get_note_view(1).unwrap().tick, 240.0);
+    assert_eq!(data.get_note_view(1).unwrap().key, 62);
     // note 2: 480,64 -> 680,71
-    assert_eq!(notes[2].tick, 680.0);
-    assert_eq!(notes[2].key, 71);
+    assert_eq!(data.get_note_view(2).unwrap().tick, 680.0);
+    assert_eq!(data.get_note_view(2).unwrap().key, 71);
     assert!(matches!(
         editor.editor_state.interaction.edit_state,
         EditState::Idle
@@ -231,11 +218,7 @@ fn test_commit_current_edit_with_zero_delta_returns_true_but_no_change() {
     // 即使 delta 为零，commit_current_edit 仍然返回 true（因为 is_editing() 为 true）
     // 但 notes 不会被修改
     let mut editor = Editor::new();
-    editor
-        .editor_state
-        .data
-        .notes
-        .push_back(Note::new(0.0, 60, 480.0));
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
 
     let drag = DragState::from_single(0, 1, 0, 60); // delta = (0, 0)
     editor.editor_state.interaction.edit_state = EditState::Dragging {
@@ -246,8 +229,8 @@ fn test_commit_current_edit_with_zero_delta_returns_true_but_no_change() {
 
     assert!(editor.commit_current_edit(), "is_editing=true 应返回 true");
     // notes 不变
-    assert_eq!(editor.editor_state.data.notes[0].tick, 0.0);
-    assert_eq!(editor.editor_state.data.notes[0].key, 60);
+    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().tick, 0.0);
+    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 60);
     // edit_state 已被重置为 Idle（handle_released 已执行）
     assert!(matches!(
         editor.editor_state.interaction.edit_state,

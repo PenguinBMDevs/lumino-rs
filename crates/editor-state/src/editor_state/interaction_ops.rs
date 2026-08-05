@@ -19,33 +19,38 @@ pub fn start_note_edit(
     hit_type: HitType,
     pos: (f32, f32),
 ) {
+    // 先复制音符数据（NoteEvent 是 Copy），释放 data 借用后再执行写入操作
+    let note: Option<lumino_midi_model::NoteEvent> = data.current_track_notes().get(index).copied();
     match hit_type {
         HitType::Start => {
             data.push_history();
-            let note = &data.notes[index];
-            interaction.edit_state = EditState::ResizingStart {
-                note_index: index,
-                original_tick: note.tick,
-                original_length: note.length,
-            };
+            if let Some(note) = note {
+                interaction.edit_state = EditState::ResizingStart {
+                    note_index: index,
+                    original_tick: note.start_tick as f32,
+                    original_length: (note.end_tick - note.start_tick) as f32,
+                };
+            }
         }
         HitType::End => {
             data.push_history();
-            let note = &data.notes[index];
-            interaction.edit_state = EditState::ResizingEnd {
-                note_index: index,
-                original_length: note.length,
-            };
+            if let Some(note) = note {
+                interaction.edit_state = EditState::ResizingEnd {
+                    note_index: index,
+                    original_length: (note.end_tick - note.start_tick) as f32,
+                };
+            }
         }
         HitType::Middle => {
-            let note = &data.notes[index];
-            interaction.edit_state = EditState::PendingDrag {
-                note_index: index,
-                start_pos: pos,
-                original_tick: note.tick,
-                original_key: note.key,
-            };
-            interaction.play_note_audio(note.key, DEFAULT_PREVIEW_VELOCITY);
+            if let Some(note) = note {
+                interaction.edit_state = EditState::PendingDrag {
+                    note_index: index,
+                    start_pos: pos,
+                    original_tick: note.start_tick as f32,
+                    original_key: note.key as u16,
+                };
+                interaction.play_note_audio(note.key as u16, DEFAULT_PREVIEW_VELOCITY);
+            }
         }
     }
 }
@@ -83,19 +88,35 @@ pub fn apply_note_changes(
         _ => return false,
     };
 
-    if let Some(note) = data.notes.get_mut(note_index) {
+    if let Some(note) = data.current_track_notes().get(note_index).cloned() {
         let mut changed = false;
-        if let Some(t) = new_tick {
-            note.tick = t;
+        if let Some(t) = new_tick
+            && note.start_tick != super::editor_data::accessors::f32_to_tick(t)
+        {
             changed = true;
         }
-        if let Some(k) = new_key {
-            note.key = k;
+        if let Some(k) = new_key
+            && note.key != k as u8
+        {
             changed = true;
         }
-        if let Some(l) = new_length {
-            note.length = l;
+        if let Some(l) = new_length
+            && (note.end_tick - note.start_tick) as f32 != l
+        {
             changed = true;
+        }
+        if changed && data.document.is_some() {
+            let mut note_f = super::editor_data::accessors::event_to_note(&note);
+            if let Some(t) = new_tick {
+                note_f.tick = t;
+            }
+            if let Some(k) = new_key {
+                note_f.key = k;
+            }
+            if let Some(l) = new_length {
+                note_f.length = l;
+            }
+            data.update_note(data.current_track, note_index, note_f);
         }
         return changed;
     }
@@ -128,7 +149,7 @@ mod tests {
     #[test]
     fn test_start_note_edit_start() {
         let (mut data, mut interaction) = setup_state();
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         start_note_edit(&mut data, &mut interaction, 0, HitType::Start, (0.0, 0.0));
         assert!(matches!(
             interaction.edit_state,
@@ -139,7 +160,7 @@ mod tests {
     #[test]
     fn test_start_note_edit_middle() {
         let (mut data, mut interaction) = setup_state();
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         start_note_edit(&mut data, &mut interaction, 0, HitType::Middle, (0.0, 0.0));
         assert!(matches!(
             interaction.edit_state,
@@ -167,10 +188,10 @@ mod tests {
     fn test_apply_note_changes_dragging_is_noop() {
         // ghost 方案：Dragging 期间 apply_note_changes 不再写入 notes
         let (mut data, mut interaction) = setup_state();
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         interaction.edit_state = EditState::Dragging {
             note_index: 0,
-            drag_state: DragState::from_single(0, 1, 0, 60),
+            drag_state: DragState::from_single(0, data.current_track_note_count(), 0, 60),
             last_played_key: 60,
         };
         assert!(!apply_note_changes(
@@ -180,16 +201,16 @@ mod tests {
             Some(64),
             Some(3.0)
         ));
-        let note = &data.notes[0];
-        assert_eq!(note.tick, 0.0, "Dragging 期间 notes 不应被修改");
-        assert_eq!(note.key, 60);
-        assert_eq!(note.length, 1.0);
+        let view = data.get_note_view(0).unwrap();
+        assert_eq!(view.tick, 0.0, "Dragging 期间 notes 不应被修改");
+        assert_eq!(view.key, 60);
+        assert_eq!(view.length, 1.0);
     }
 
     #[test]
     fn test_apply_note_changes_non_edit_state() {
         let (mut data, _interaction) = setup_state();
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         assert!(!apply_note_changes(
             &mut data,
             &EditState::Idle,
@@ -202,10 +223,10 @@ mod tests {
     #[test]
     fn test_handle_delete_pressed() {
         let (mut data, _) = setup_state();
-        data.notes.push_back(Note::new(0.0, 60, 1.0));
+        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         let result = handle_delete_pressed(&mut data, Some((0, HitType::Middle)));
         assert_eq!(result, Some(0));
-        assert!(data.notes.is_empty());
+        assert_eq!(data.current_track_note_count(), 0);
     }
 
     #[test]

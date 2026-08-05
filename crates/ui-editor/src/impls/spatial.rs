@@ -39,7 +39,7 @@ impl Editor {
 
     /// 仅标记 ghost 位置变化（不触发空间索引重建）
     ///
-    /// 用于 ghost 拖动方案：`DraggingSelection` 期间 `data.notes` 未变，
+    /// 用于 ghost 拖动方案：`DraggingSelection` 期间 document 未变，
     /// 只是 `DragState.delta` 变了。此时只需 wgpu 重绘 + Canvas 缓存失效，
     /// 不需要重建空间索引。
     ///
@@ -62,7 +62,8 @@ impl Editor {
             return;
         }
 
-        let notes = &self.editor_state.data.notes;
+        // 2026-08 单一权威源：从 document 当前轨切片收集 NoteRef（NoteEvent → NoteRef）
+        let notes = self.editor_state.data.current_track_notes();
         if notes.len() <= SPATIAL_INDEX_BUILD_THRESHOLD {
             // 小数据量：直接标记为已更新，使用线性扫描路径
             self.spatial.note_index_dirty.set(false);
@@ -70,14 +71,14 @@ impl Editor {
             return;
         }
 
-        // 从 im::Vector 收集 NoteRef 构建空间索引（NoteStore 冗余层已删除）
+        // 从 &[NoteEvent] 收集 NoteRef 构建空间索引（NoteStore 冗余层已删除）
         let note_refs: Vec<lumino_note_core::NoteRef> = notes
             .iter()
             .enumerate()
             .map(|(i, n)| lumino_note_core::NoteRef {
-                tick: n.tick,
-                key: n.key,
-                length: n.length,
+                tick: n.start_tick as f32,
+                key: n.key as u16,
+                length: (n.end_tick - n.start_tick) as f32,
                 index: i,
             })
             .collect();
