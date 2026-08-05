@@ -365,6 +365,16 @@ pub fn is_palette_locked() -> bool {
     PALETTE_LOCKED.load(Ordering::Relaxed)
 }
 
+/// 获取当前调色板索引（用于变更检测）
+///
+/// 返回 `u8` 索引值。如果调色板未初始化，返回 0。
+/// 调用方可以缓存此值并在下次比较，不同则表示调色板已切换，需要重建依赖项
+///（如洋葱皮实例）。
+#[inline]
+pub fn current_palette_idx() -> u8 {
+    CURRENT_PALETTE_IDX.load(Ordering::Relaxed)
+}
+
 /// 获取洋葱皮音轨颜色（RGBA [u8;4]）
 ///
 /// 从当前调色板的第一个颜色开始取色，

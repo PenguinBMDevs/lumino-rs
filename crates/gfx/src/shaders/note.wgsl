@@ -1,21 +1,18 @@
 // 音符渲染着色器 — 16 bytes NoteInstance（严格对齐 wasabi NoteVertex）
-// 字段布局：start_length[2] + key_color + border_width（与 wasabi 一致）
-// 单位差异：start/length 保留 tick（lumino 是 DAW 编辑器），wasabi 用秒
+// 字段布局：start_length[2] + key_color + border_width
+//
+// 渲染风格（用户要求）：
+//   - 纯色填充（无 cos 渐变、无 SRGB gamma 平方）
+//   - 2 像素同色加深描边（border_width 字段传 2，加深系数 0.4）
+//   - 预览音符：border_width 哨兵值检测，70% alpha
 //
 // VS 用 instancing + 4 顶点 quad 复刻 wasabi 的 GS「点扩展为 quad」逻辑
-// （wgpu 不支持 Geometry Shader，这是 D3=A 决策的等价实现）
-//
-// FS 边框算法完全照搬 wasabi notes.frag：
-//   - UV 边距判定（替换原像素距离判定）
-//   - 边框色 = 原色 × 0.2（5 倍变暗，与 wasabi 一致）
-//   - 水平方向 cos(pi*0.5*uv.x) 渐变
-//   - SRGB 平方 gamma
 
 const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFFFFFFu;
 const PREVIEW_ALPHA: f32 = 0.7;
 
-/// 边框颜色加深因子（与 wasabi notes.frag:35 一致：color * 0.2）
-const BORDER_DARKEN_FACTOR: f32 = 0.2;
+/// 边框颜色加深因子（同色系深色：color * 0.4，比 wasabi 0.2 略亮，视觉更协调）
+const BORDER_DARKEN_FACTOR: f32 = 0.4;
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -34,7 +31,7 @@ var<uniform> camera: CameraUniform;
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
-    @location(1) uv: vec2<f32>,           // [0,1]² UV，复刻 wasabi frag_tex_coord
+    @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
     @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
     @location(3) border_width: u32,       // 透传到 FS
 };
@@ -61,7 +58,7 @@ fn vs_main(
     instance: NoteInstance,
 ) -> VertexOutput {
     // 根据顶点索引生成矩形的四个角（三角形带顺序）
-    // local_offset 同时作为 UV 使用（复刻 wasabi frag_tex_coord）
+    // local_offset 同时作为 UV 使用
     var local_offset: vec2<f32>;
     switch vertex_index {
         case 0u: { local_offset = vec2<f32>(0.0, 0.0); }
@@ -72,17 +69,14 @@ fn vs_main(
     }
 
     // 将逻辑坐标 (tick, key) 转换为屏幕像素坐标
-    // start_length.x = start_tick, start_length.y = length_tick
     let tick = instance.start_length.x;
     let length = instance.start_length.y;
-    // key 从 key_color 低 8 位解码（与 wasabi 一致）
     let key = f32(instance.key_color & 0xFFu);
 
     let screen_x = tick * camera.zoom.x - camera.scroll.x
                    + camera.keyboard_width + camera.canvas_offset.x;
     let screen_y = (camera.max_key_index - key) * camera.zoom.y
                    - camera.scroll.y + camera.ruler_height + camera.canvas_offset.y;
-    // size_y 固定为 1.0，通过 zoom_y 展开
     let screen_size = vec2<f32>(length * camera.zoom.x, camera.zoom.y);
 
     let screen_pos = vec2<f32>(screen_x, screen_y) + local_offset * screen_size;
@@ -108,19 +102,13 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
         return vec4<f32>(input.color.rgb, input.color.a * PREVIEW_ALPHA);
     }
 
-    // 非预览音符：照搬 wasabi notes.frag 边框算法
+    // 纯色填充（用户要求：去掉 cos 渐变和 gamma 平方）
     var color = input.color.rgb;
 
-    // 水平方向余弦渐变（wasabi notes.frag:19）
-    // 中间亮、两边暗，让音符左右边缘自然过渡
-    color = color * (1.0 + cos(3.14159265359 * 0.5 * input.uv.x)) * 0.5;
-
-    // UV 边距判定（wasabi notes.frag:21-31）
-    // 注意：wasabi 用 NDC note_size 反算像素半宽，lumino 直接有屏幕像素尺寸
+    // 2 像素同色加深描边（UV 边距判定算法）
     let half_width_pixels = input.screen_size.x * 0.5;
     let half_height_pixels = input.screen_size.y * 0.5;
 
-    // 防止零除（小音符退化为无边框）
     var is_border = false;
     if (half_width_pixels > 0.0 && half_height_pixels > 0.0) {
         let horiz_margin = 1.0 / half_width_pixels * f32(input.border_width);
@@ -132,12 +120,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     if (is_border) {
-        // 边框色 = 原色 × 0.2（wasabi notes.frag:35）
+        // 边框色 = 原色 × 0.4（同色系加深，比 wasabi 0.2 略亮）
         color = color * BORDER_DARKEN_FACTOR;
     }
-
-    // SRGB 平方 gamma（wasabi notes.frag:39）
-    color = color * color;
 
     return vec4<f32>(color, input.color.a);
 }

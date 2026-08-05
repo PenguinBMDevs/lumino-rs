@@ -22,7 +22,7 @@ impl NoteRenderer {
     /// 创建洋葱皮音符渲染器
     ///
     /// 与主音轨 NoteRenderer 的差异：
-    /// - 使用 `onion_note.wgsl`（不透明 alpha=1.0，无边框）
+    /// - 使用 `onion_note.wgsl`（不透明 alpha=1.0，2 像素同色加深描边）
     /// - 复用 cull.wgsl（GPU culling + indirect draw 零修改）
     ///
     /// depth 配置：与主音轨一致（needs_depth=true）

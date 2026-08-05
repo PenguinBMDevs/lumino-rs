@@ -451,13 +451,9 @@ impl Host {
                 OVERSCAN_FACTOR,
             );
             let visible_notes = &self.render_ctx.render_cache.visible_notes_buffer;
-            // wasabi 风格 border_width：键轴方向像素长度 / 可见键数
-            // lumino 钢琴卷帘键轴垂直 → 用画布高度（减标尺）映射 wasabi 的 width_pixels
-            let view = &self.root.editor.editor_state.view;
-            let canvas = &self.root.editor.editor_state.canvas;
-            let key_axis_pixels = (canvas.size_y - view.ruler_height).max(1.0);
-            let border_width =
-                lumino_gfx::calculate_border_width(key_axis_pixels, view.visible_key_count as f32);
+            // 主音轨音符描边：固定 1 像素（用户要求）
+            const MAIN_TRACK_BORDER_WIDTH: u32 = 1;
+            let border_width = MAIN_TRACK_BORDER_WIDTH;
             note_worker::build_main_note_instances(
                 &self.render_ctx.render_cache.note_instances_buffer,
                 visible_notes,

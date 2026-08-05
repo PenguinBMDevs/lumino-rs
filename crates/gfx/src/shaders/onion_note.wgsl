@@ -1,14 +1,16 @@
-// 洋葱皮音符渲染着色器 — 基于 note.wgsl，不透明 + 无边框
+// 洋葱皮音符渲染着色器 — 基于 note.wgsl
 //
-// 与 note.wgsl 的差异：
-//   - alpha = 1.0（不透明参考层，用户要求改为不透明以便清晰查看）
-//   - 无边框绘制（洋葱皮是背景参考，不需要边框强调）
+// 渲染风格（用户要求）：
+//   - alpha = 1.0（不透明参考层）
+//   - 2 像素同色加深描边（border_width 字段传 2，加深系数 0.4）
 //   - 无预览哨兵分支（洋葱皮无预览音符）
 //
-// 复用 NoteInstance 16 bytes 布局（与 wasabi NoteVertex 严格对齐）
-// VS 用 instancing + 4 顶点 quad 复刻 wasabi GS「点扩展为 quad」逻辑
+// 与 note.wgsl 共用 NoteInstance 16 bytes 布局和边框算法
 
 const ONION_SKIN_ALPHA: f32 = 1.0;
+
+/// 边框颜色加深因子（同色系深色：color * 0.4，与主音轨 note.wgsl 保持一致）
+const BORDER_DARKEN_FACTOR: f32 = 0.4;
 
 struct CameraUniform {
     scroll: vec2<f32>,
@@ -27,16 +29,19 @@ var<uniform> camera: CameraUniform;
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
+    @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
+    @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
+    @location(3) border_width: u32,       // 透传到 FS
 };
 
 // 实例数据（16 bytes，与 wasabi NoteVertex 字段对齐）
 struct NoteInstance {
     @location(0) start_length: vec2<f32>,  // [start_tick, length_tick]
     @location(1) key_color: u32,           // 低8位=key, 高24位=RGB
-    @location(2) border_width: u32,        // 洋葱皮不使用（保留字段对齐）
+    @location(2) border_width: u32,        // 边框像素宽
 };
 
-/// 解包 key_color → vec4 RGBA（alpha 恒为 1.0，与 wasabi 一致）
+/// 解包 key_color → vec4 RGBA（alpha 恒为 1.0）
 fn unpack_key_color(packed: u32) -> vec4<f32> {
     let rgb = packed >> 8u;
     let r = f32((rgb >> 16u) & 0xFFu) / 255.0;
@@ -63,7 +68,6 @@ fn vs_main(
     // 将逻辑坐标 (tick, key) 转换为屏幕像素坐标
     let tick = instance.start_length.x;
     let length = instance.start_length.y;
-    // key 从 key_color 低 8 位解码（与 wasabi 一致）
     let key = f32(instance.key_color & 0xFFu);
 
     let screen_x = tick * camera.zoom.x - camera.scroll.x
@@ -81,12 +85,36 @@ fn vs_main(
     var output: VertexOutput;
     output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
     output.color = unpack_key_color(instance.key_color);
+    output.uv = local_offset;
+    output.screen_size = screen_size;
+    output.border_width = instance.border_width;
 
     return output;
 }
 
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
-    // 洋葱皮：不透明，无边框，无 gamma（背景参考层）
-    return vec4<f32>(input.color.rgb, ONION_SKIN_ALPHA);
+    // 纯色填充（不透明）
+    var color = input.color.rgb;
+
+    // 2 像素同色加深描边（与 note.wgsl 共用 UV 边距判定算法）
+    let half_width_pixels = input.screen_size.x * 0.5;
+    let half_height_pixels = input.screen_size.y * 0.5;
+
+    var is_border = false;
+    if (half_width_pixels > 0.0 && half_height_pixels > 0.0) {
+        let horiz_margin = 1.0 / half_width_pixels * f32(input.border_width);
+        let vert_margin = 1.0 / half_height_pixels * f32(input.border_width);
+        is_border = input.uv.x < horiz_margin
+                 || input.uv.x > 1.0 - horiz_margin
+                 || input.uv.y < vert_margin
+                 || input.uv.y > 1.0 - vert_margin;
+    }
+
+    if (is_border) {
+        // 边框色 = 原色 × 0.4（同色系加深，与主音轨一致）
+        color = color * BORDER_DARKEN_FACTOR;
+    }
+
+    return vec4<f32>(color, ONION_SKIN_ALPHA);
 }
