@@ -53,6 +53,11 @@ pub enum NoteEvent {
     },
     /// 移除音符
     Remove(usize),
+    /// 保序删除区间：删除 `[index, index+count)`，后续段 GPU 内部左移
+    ///
+    /// 主音轨事件级增量（卷帘编辑）专用——区别于 `Remove`（swap-remove 乱序），
+    /// 保持 GPU buffer 顺序与 `notes` 索引一致。
+    RemoveAt { index: usize, count: usize },
     /// 清空所有音符
     Clear,
 }

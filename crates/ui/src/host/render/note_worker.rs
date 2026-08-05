@@ -76,7 +76,7 @@ impl Default for ScrollVelocityTracker {
 // ─── 主音轨主音符实例构建（主线程同步执行） ─────────────────────────────────
 
 /// 主音轨已放置音符的固定蓝色（与洋葱皮取色区分）
-const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
+pub(super) const MAIN_TRACK_NOTE_COLOR: [f32; 4] = [0.2, 0.55, 1.0, 1.0];
 
 /// 预览音符渲染上下文
 ///

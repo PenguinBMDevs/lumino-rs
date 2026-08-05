@@ -44,6 +44,8 @@ impl EditorData {
             note_store_enabled: false,
             note_store_dirty: false,
             arrange_selection: ArrangeSelection::new(),
+            note_delta_events: Vec::new(),
+            note_delta_dirty: false,
             track_visual_order: Vec::new(),
         }
     }

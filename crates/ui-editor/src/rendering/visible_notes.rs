@@ -19,6 +19,10 @@ impl Editor {
     /// `overscan_factor` 用于扩展查询范围，减少频繁重建。0.0 表示精确视口。
     /// 返回可见音符数量，结果写入传入的 buffer。
     ///
+    /// `indices`（可选）：并行收集可见音符的 notes 索引（升序输出前需调用方
+    /// 排序——索引路径按空间索引查询顺序，线性路径按遍历顺序，均天然升序）。
+    /// 供主音轨事件级增量映射（notes 索引 → GPU 位置）使用。
+    ///
     /// **ghost 方案**：返回的数据已应用 `pending_drag_state` 与当前 `drag_state`
     /// 的偏移，确保拖动期间主音轨音符（蓝色）的渲染位置与视觉反馈一致。
     ///
@@ -30,10 +34,14 @@ impl Editor {
     pub fn collect_visible_note_data(
         &self,
         result: &mut Vec<(f32, u16, f32)>,
+        mut indices: Option<&mut Vec<usize>>,
         overscan_factor: f32,
     ) -> usize {
         crate::puffin_profiler::collect_visible_note_data();
         result.clear();
+        if let Some(idx) = indices.as_deref_mut() {
+            idx.clear();
+        }
 
         let (visible_tick_start, visible_tick_end, visible_key_min, visible_key_max) =
             self.compute_visible_range(overscan_factor);
@@ -56,6 +64,7 @@ impl Editor {
         if has_clean_index {
             self.collect_via_index(
                 result,
+                indices,
                 visible_tick_start,
                 visible_tick_end,
                 visible_key_min,
@@ -69,6 +78,7 @@ impl Editor {
         } else {
             self.collect_via_linear_scan(
                 result,
+                indices,
                 visible_tick_start,
                 visible_tick_end,
                 visible_key_min,
@@ -95,6 +105,7 @@ impl Editor {
     fn collect_via_index(
         &self,
         result: &mut Vec<(f32, u16, f32)>,
+        mut indices: Option<&mut Vec<usize>>,
         visible_tick_start: f32,
         visible_tick_end: f32,
         visible_key_min: u16,
@@ -110,13 +121,13 @@ impl Editor {
             Some(idx) => idx,
             None => return,
         };
-        let mut indices = Vec::new();
+        let mut indices_buf = Vec::new();
         index.update_query(
             visible_tick_start,
             visible_tick_end,
             visible_key_min,
             visible_key_max,
-            &mut indices,
+            &mut indices_buf,
         );
 
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
@@ -127,7 +138,10 @@ impl Editor {
             // 只有 pending 或 Dragging（单音符）会进入此分支。
             // DraggingSelection 不走此路径——变化量只在松开鼠标时计算一次。
             if note_store_enabled {
-                for &i in &indices {
+                for &i in &indices_buf {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
+                    }
                     if let Some(view) = data.note_store.get_ref(i) {
                         let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                             apply_ghost_delta(
@@ -140,7 +154,10 @@ impl Editor {
                     }
                 }
             } else {
-                for &i in &indices {
+                for &i in &indices_buf {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
+                    }
                     if let Some(note) = data.notes.get(i) {
                         let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                             apply_ghost_delta(
@@ -155,13 +172,19 @@ impl Editor {
             }
         } else {
             if note_store_enabled {
-                for &i in &indices {
+                for &i in &indices_buf {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
+                    }
                     if let Some(view) = data.note_store.get_ref(i) {
                         result.push((view.tick, view.key, view.length));
                     }
                 }
             } else {
-                for &i in &indices {
+                for &i in &indices_buf {
+                    if let Some(idx_out) = indices.as_deref_mut() {
+                        idx_out.push(i);
+                    }
                     if let Some(note) = data.notes.get(i) {
                         result.push((note.tick, note.key, note.length));
                     }
@@ -179,6 +202,7 @@ impl Editor {
     fn collect_via_linear_scan(
         &self,
         result: &mut Vec<(f32, u16, f32)>,
+        mut indices: Option<&mut Vec<usize>>,
         visible_tick_start: f32,
         visible_tick_end: f32,
         visible_key_min: u16,
@@ -208,6 +232,9 @@ impl Editor {
                         && note_end >= visible_tick_start
                         && tick <= visible_tick_end
                     {
+                        if let Some(idx_out) = indices.as_deref_mut() {
+                            idx_out.push(i);
+                        }
                         result.push((tick, key, view.length));
                     }
                 }
@@ -226,30 +253,39 @@ impl Editor {
                         && note_end >= visible_tick_start
                         && tick <= visible_tick_end
                     {
+                        if let Some(idx_out) = indices.as_deref_mut() {
+                            idx_out.push(i);
+                        }
                         result.push((tick, key, note.length));
                     }
                 }
             }
         } else {
             if note_store_enabled {
-                for view in data.note_store.iter_refs() {
+                for (i, view) in data.note_store.iter_refs().enumerate() {
                     let note_end = view.tick + view.length;
                     if view.key >= visible_key_min
                         && view.key <= visible_key_max
                         && note_end >= visible_tick_start
                         && view.tick <= visible_tick_end
                     {
+                        if let Some(idx_out) = indices.as_deref_mut() {
+                            idx_out.push(i);
+                        }
                         result.push((view.tick, view.key, view.length));
                     }
                 }
             } else {
-                for note in data.notes.iter() {
+                for (i, note) in data.notes.iter().enumerate() {
                     let note_end = note.tick + note.length;
                     if note.key >= visible_key_min
                         && note.key <= visible_key_max
                         && note_end >= visible_tick_start
                         && note.tick <= visible_tick_end
                     {
+                        if let Some(idx_out) = indices.as_deref_mut() {
+                            idx_out.push(i);
+                        }
                         result.push((note.tick, note.key, note.length));
                     }
                 }
@@ -269,6 +305,58 @@ fn current_drag_delta(edit_state: &EditState) -> (i64, i16) {
             (drag_state.delta_tick, drag_state.delta_key)
         }
         _ => (0i64, 0i16),
+    }
+}
+
+impl Editor {
+    /// 是否存在活跃的 ghost 拖动（拖动中 / pending 异步提交）
+    ///
+    /// UI 层（渲染线程）判断是否走 ghost 增量路径。
+    pub fn has_active_ghost_delta_state(&self) -> bool {
+        has_active_ghost_delta(
+            &self.pending_drag_state,
+            &self.editor_state.interaction.edit_state,
+        )
+    }
+
+    /// 构建 ghost 拖动增量的可见位置数据（仅「选中 ∩ 可见」的索引）
+    ///
+    /// 卷帘拖动增量（2026-08-05）：拖动期间 `data.notes` 未变（ghost 方案），
+    /// 只有被拖动的音符需要更新渲染位置。本方法返回
+    /// `(可见列表位置, ghost 后位置 (tick, key, length))`（按可见位置升序），
+    /// UI 层据此生成 UpdateMany 增量发送——替代每帧全量 collect+build+上传。
+    ///
+    /// 调用前提：`has_active_ghost_delta` 为 true 且 `visible_indices` 与
+    /// 上次全量构建的可见索引一致（GPU 位置 = 列表下标）。
+    pub fn build_ghost_delta_positions(
+        &self,
+        visible_indices: &[usize],
+    ) -> Vec<(usize, (f32, u16, f32))> {
+        let edit_state = &self.editor_state.interaction.edit_state;
+        let pending = &self.pending_drag_state;
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let data = &self.editor_state.data;
+        let (drag_dt, drag_dk) = current_drag_delta(edit_state);
+
+        let mut out = Vec::new();
+        for (pos, &note_idx) in visible_indices.iter().enumerate() {
+            if !is_note_ghosted(note_idx, pending, edit_state) {
+                continue;
+            }
+            let Some((tick, key, length)) = (if data.is_note_store_enabled() {
+                data.note_store
+                    .get_ref(note_idx)
+                    .map(|v| (v.tick, v.key, v.length))
+            } else {
+                data.notes.get(note_idx).map(|n| (n.tick, n.key, n.length))
+            }) else {
+                continue;
+            };
+            let (tick, key) =
+                apply_ghost_delta(tick, key, drag_dt, drag_dk, pending, note_idx, max_key);
+            out.push((pos, (tick, key, length)));
+        }
+        out
     }
 }
 

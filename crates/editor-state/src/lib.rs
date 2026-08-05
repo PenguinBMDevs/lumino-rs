@@ -7,7 +7,7 @@ pub mod editor_transform;
 
 pub use editor_state::{
     CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData,
-    EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, SELECTION_BOX_EDGE_THRESHOLD,
-    SelectionHitType,
+    EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent,
+    SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType,
 };
 pub use editor_transform::EditorTransform;

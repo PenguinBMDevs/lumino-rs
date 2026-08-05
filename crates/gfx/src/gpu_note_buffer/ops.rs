@@ -252,6 +252,36 @@ impl GpuNoteBuffer {
         self.instances.truncate(self.instance_count);
     }
 
+    /// 保序删除：删除 `[index, index+count)` 区间，后续段 GPU 内部左移
+    ///
+    /// 主音轨事件级增量专用（`NoteEvent::RemoveAt`）：GPU buffer 顺序与
+    /// `notes` 顺序一致，删除后**保持顺序**（区别于 [`Self::remove_note`]
+    /// 的 swap-remove 乱序语义）。搬移复用 [`Self::move_range`]
+    /// （staging 分块，支持重叠——此处前移不重叠）。
+    ///
+    /// CPU 镜像（`self.instances`，主音轨模式存在）同步 drain；
+    /// 流式模式（洋葱皮）镜像为空时跳过镜像操作。
+    pub fn remove_at(&mut self, index: usize, count: usize) {
+        if count == 0 || index >= self.instance_count {
+            return;
+        }
+        let count = count.min(self.instance_count - index);
+        let tail = index + count;
+        let remaining = self.instance_count - tail;
+
+        // CPU 镜像同步（流式模式镜像为空则跳过）
+        if !self.instances.is_empty() {
+            self.instances.drain(index..tail);
+        }
+
+        // GPU：后续段左移 count（无后续则仅计数变化）
+        if remaining > 0 {
+            self.move_range(tail, index, remaining);
+        }
+
+        self.instance_count -= count;
+    }
+
     /// 清空所有音符
     pub fn clear(&mut self) {
         self.instance_count = 0;

@@ -24,10 +24,18 @@ impl EditorData {
     /// `tracks` 为本次操作实际修改的音轨 id 集合。当集合全部落在
     /// 洋葱皮跳过范围（当前音轨 / 静音音轨）时，可豁免全量重建上传。
     /// `None` 表示未知或影响全部音轨（保守语义，同 [`Self::mark_track_notes_changed`]）。
+    ///
+    /// 主音轨增量对账（2026-08-05）：当前音轨变化默认置 `note_delta_dirty = true`
+    /// （未记录事件 → 渲染层全量兜底）。仅其他音轨变化不影响主音轨数据，
+    /// 不置 dirty（洋葱皮编辑不牵连主音轨增量路径）。
     #[inline]
     pub fn mark_track_notes_changed_for(&mut self, tracks: Option<HashSet<usize>>) {
         self.onion_dirty_tracks = tracks;
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
+        match &self.onion_dirty_tracks {
+            Some(t) if !t.contains(&self.current_track) => {}
+            _ => self.note_delta_dirty = true,
+        }
     }
 
     /// 标记当前音轨的 track_notes 已变化（热路径专用）
@@ -51,6 +59,81 @@ impl EditorData {
         self.track_visual_order
             .iter()
             .position(|&id| id == track_id)
+    }
+
+    /// 取走主音轨增量事件队列（UI 层每帧消费）
+    #[inline]
+    pub fn take_note_delta_events(
+        &mut self,
+    ) -> Vec<crate::editor_state::editor_data::NoteDeltaEvent> {
+        std::mem::take(&mut self.note_delta_events)
+    }
+
+    /// 记录等长修改增量事件（整轨同步版）
+    ///
+    /// 将 `indices`（修改的 notes 索引，无序可重复）合并为连续区间
+    /// `UpdateRange` 事件，随后整轨同步 `track_notes`（内部 mark，置 dirty）
+    /// 并清除 dirty（事件已完整记录）。
+    ///
+    /// 供 EditorTransform（变速/翻转/移调/批量编辑）等整轨同步路径使用。
+    pub fn record_update_ranges(&mut self, indices: &[usize]) {
+        if indices.is_empty() {
+            return;
+        }
+        self.push_update_range_events(indices);
+        self.sync_track_notes();
+        self.note_delta_dirty = false;
+    }
+
+    /// 记录等长修改增量事件（流式同步版，拖动热路径）
+    ///
+    /// 与 [`Self::record_update_ranges`] 相同的事件记录，但用
+    /// `sync_track_notes_at_indices` 流式同步（避免整轨克隆，
+    /// 1600W 音符拖动热路径）。供 `apply_drag_state_streaming` 使用。
+    pub fn record_update_ranges_streamed(&mut self, indices: &[usize]) {
+        if indices.is_empty() {
+            return;
+        }
+        self.push_update_range_events(indices);
+        self.sync_track_notes_at_indices(indices);
+        self.note_delta_dirty = false;
+    }
+
+    /// 将升序去重后的索引合并为连续区间事件（纯数据操作，不同步）
+    fn push_update_range_events(&mut self, indices: &[usize]) {
+        let mut sorted: Vec<usize> = indices.to_vec();
+        sorted.sort_unstable();
+        sorted.dedup();
+        if sorted.is_empty() {
+            return;
+        }
+        let mut start = sorted[0];
+        let mut prev = sorted[0];
+        for &i in &sorted[1..] {
+            if i == prev + 1 {
+                prev = i;
+                continue;
+            }
+            self.push_update_range(start, prev);
+            start = i;
+            prev = i;
+        }
+        self.push_update_range(start, prev);
+    }
+
+    /// 推送单个连续区间事件（越界索引防御性过滤）
+    fn push_update_range(&mut self, start: usize, end: usize) {
+        let notes: Vec<Note> = (start..=end)
+            .filter_map(|k| self.notes.get(k).cloned())
+            .collect();
+        if !notes.is_empty() {
+            self.note_delta_events.push(
+                crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                    start_index: start,
+                    notes,
+                },
+            );
+        }
     }
 
     /// 获取当前轨道音符集合的零拷贝引用。

@@ -40,6 +40,8 @@ mod tests_event_ops;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
+mod tests_note_delta;
+#[cfg(test)]
 mod tests_note_ops;
 
 /// 编辑器数据
@@ -100,6 +102,20 @@ pub struct EditorData {
     pub note_store_dirty: bool,
     /// 工程走带视图的选择范围
     pub arrange_selection: ArrangeSelection,
+    /// 主音轨 GPU 增量事件队列（自上次 UI 消费以来的编辑操作）
+    ///
+    /// 卷帘编辑增量（2026-08-05）：等长修改操作（拖动/变速/翻转/批量编辑）在
+    /// 数据层 API 内记录索引级增量事件，UI 层每帧消费并转 `NoteEvent` 增量发送，
+    /// 避免每帧全量重建上传可见音符。
+    ///
+    /// 索引语义：`start_index` 基于「前序事件已应用后的 notes 状态」，
+    /// 事件按记录顺序应用，GPU buffer 顺序与 notes 顺序一致。
+    pub note_delta_events: Vec<NoteDeltaEvent>,
+    /// 是否有「未记录事件」的当前音轨变化（散改/undo/加载/切轨）
+    ///
+    /// `true` = 渲染层必须全量兜底重建（事件队列不可信）。由 `mark_*` 默认置位，
+    /// 事件记录 API 在记录完成后显式清除（见 `record_update_ranges`）。
+    pub note_delta_dirty: bool,
     /// 视觉位置 → 文档音轨索引 映射
     ///
     /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
@@ -107,6 +123,22 @@ pub struct EditorData {
     /// 此映射仍保留供 arrangement 操作统一使用。若将来侧边栏顺序与文档顺序
     /// 不一致（如拖动排序），只需更新此映射即可。
     pub track_visual_order: Vec<usize>,
+}
+
+/// 主音轨 GPU 增量事件（数据层 → UI 渲染层）
+///
+/// 仅支持**等长**修改（不增删音符）：拖动/变速/翻转/批量编辑。
+/// 增删音符、undo/redo、切轨、未知变化走 `note_delta_dirty` 全量兜底——
+/// 等长修改是卷帘高频热路径（拖动每帧），增量收益最大。
+#[derive(Debug, Clone)]
+pub enum NoteDeltaEvent {
+    /// 等长区间更新：从 `start_index` 起逐个替换为 `notes` 中的音符
+    ///
+    /// `notes` 顺序 = notes 索引顺序（连续区间）。合并连续索引后生成。
+    UpdateRange {
+        start_index: usize,
+        notes: Vec<Note>,
+    },
 }
 
 /// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作

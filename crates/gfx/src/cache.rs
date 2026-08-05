@@ -51,6 +51,11 @@ pub struct RenderCache {
     pub note_render_viewport: Option<NoteRenderViewport>,
     /// 可见音符数据临时缓冲（避免每帧重新分配）
     pub visible_notes_buffer: Vec<(f32, u16, f32)>,
+    /// 上次全量构建的可见音符 notes 索引（升序），GPU 位置 = 列表下标
+    ///
+    /// 主音轨事件级增量（2026-08-05）：全量构建时填充，等长增量事件
+    /// 据此映射 notes 索引 → GPU 位置，实现局部更新（拖动/变速/翻转）。
+    pub note_visible_indices: Vec<usize>,
     /// 缓存的深度纹理 (宽, 高, view)
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
     /// 走带视图实例缓存（避免每帧重建）
@@ -66,6 +71,7 @@ impl RenderCache {
             note_viewport_hash: 0,
             note_render_viewport: None,
             visible_notes_buffer: Vec::new(),
+            note_visible_indices: Vec::new(),
             depth_texture: None,
             arrangement_instances: Vec::new(),
         }

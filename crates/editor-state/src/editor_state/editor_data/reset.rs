@@ -30,6 +30,9 @@ impl EditorData {
         self.note_store.clear();
         self.note_store_enabled = false;
         self.arrange_selection.clear();
+        // 主音轨增量对账：重置 = 全量重建（事件队列不可信）
+        self.note_delta_events.clear();
+        self.note_delta_dirty = true;
         self.track_visual_order.clear();
     }
 }

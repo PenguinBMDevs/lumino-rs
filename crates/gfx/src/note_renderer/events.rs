@@ -31,6 +31,9 @@ impl NoteRenderer {
                 crate::NoteEvent::Remove(index) => {
                     self.gpu_note_buffer.remove_note(index);
                 }
+                crate::NoteEvent::RemoveAt { index, count } => {
+                    self.gpu_note_buffer.remove_at(index, count);
+                }
                 crate::NoteEvent::Clear => {
                     self.gpu_note_buffer.clear();
                 }

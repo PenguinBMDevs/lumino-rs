@@ -19,6 +19,7 @@ use crate::host::Host;
 // 子模块声明
 mod data;
 mod frame;
+pub(crate) mod note_delta;
 pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;

@@ -71,8 +71,33 @@ impl EditorData {
             Ok(Ok(result)) => {
                 self.notes = result.notes;
                 self.track_notes = result.track_notes;
+                // 记录增量事件：MoveOp 区间 = notes 索引（等长），
+                // 数据来自替换后的 result.notes（最终状态，重叠区间幂等）。
+                // 注意：im::Vector::slice 是 mutating（split_off 移除区间），
+                // 必须用不可变迭代提取。
+                for op in &pending.ops {
+                    let start = op.range_start as usize;
+                    let end = (op.range_end as usize).min(self.notes.len());
+                    if start < end {
+                        let notes: Vec<Note> = self
+                            .notes
+                            .iter()
+                            .skip(start)
+                            .take(end - start)
+                            .cloned()
+                            .collect();
+                        self.note_delta_events.push(
+                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                                start_index: start,
+                                notes,
+                            },
+                        );
+                    }
+                }
                 // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
                 self.mark_current_track_changed();
+                // 事件已完整记录（对应 ops 区间）→ 清除 dirty
+                self.note_delta_dirty = false;
                 self.edited_tracks.insert(self.current_track);
                 let modified = result.modified;
                 self.push_move_op(pending.ops);

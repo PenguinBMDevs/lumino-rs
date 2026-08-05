@@ -28,7 +28,10 @@ impl EditorData {
                 .note_store
                 .batch_move_parallel(selected, delta_tick, delta_key, max_key);
             self.sync_notes_from_store();
-            self.sync_track_notes();
+            // 增量对账：记录事件（selected 等长）+ 整轨同步（内部 mark 置 dirty 后清除）
+            let selected_indices: Vec<usize> =
+                (0..selected.len()).filter(|&i| selected.get(i)).collect();
+            self.record_update_ranges(&selected_indices);
             tracing::debug!(
                 "NoteStore 批量移动: 修改 {} 音符, 选中 {}",
                 modified,
@@ -37,6 +40,7 @@ impl EditorData {
             modified
         } else {
             let mut modified = 0usize;
+            let mut modified_indices: Vec<usize> = Vec::new();
             for note_idx in 0..self.notes.len() {
                 if selected.get(note_idx)
                     && let Some(note) = self.notes.get_mut(note_idx)
@@ -48,11 +52,12 @@ impl EditorData {
                         note.tick = new_tick;
                         note.key = new_key;
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
             if modified > 0 {
-                self.sync_track_notes();
+                self.record_update_ranges(&modified_indices);
             }
             modified
         }

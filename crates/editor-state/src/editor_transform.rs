@@ -58,7 +58,8 @@ impl EditorTransform for EditorData {
             }
         }
         if modified > 0 {
-            self.sync_track_notes();
+            // 增量对账：等长修改记录事件（内部整轨同步 + 清 dirty）
+            self.record_update_ranges(&selected_indices);
         } else {
             self.history.discard_last();
         }
@@ -82,7 +83,7 @@ impl EditorTransform for EditorData {
             }
         }
         if modified > 0 {
-            self.sync_track_notes();
+            self.record_update_ranges(&selected_indices);
         } else {
             self.history.discard_last();
         }
@@ -111,7 +112,7 @@ impl EditorTransform for EditorData {
             }
         }
         if modified > 0 {
-            self.sync_track_notes();
+            self.record_update_ranges(&indices);
         } else {
             self.history.discard_last();
         }
@@ -156,7 +157,7 @@ impl EditorTransform for EditorData {
             }
         }
         if modified > 0 {
-            self.sync_track_notes();
+            self.record_update_ranges(&indices);
         } else {
             self.history.discard_last();
         }

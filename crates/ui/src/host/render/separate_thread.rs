@@ -5,4 +5,5 @@
 //! - `runner`: 渲染数据收集与参数构建
 
 mod core;
+mod note_incremental;
 mod runner;

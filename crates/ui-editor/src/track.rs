@@ -66,6 +66,11 @@ impl super::Editor {
         // 导致高精度洋葱皮覆盖层/重生被误触发。
         self.spatial.note_index_dirty.set(true);
         self.grid_cache.clear();
+
+        // 主音轨增量对账：切轨后 GPU 布局将重建为新轨，
+        // 旧轨残留的增量事件不可用 → 清队列 + 强制全量兜底
+        self.editor_state.data.note_delta_events.clear();
+        self.editor_state.data.note_delta_dirty = true;
     }
 
     /// 获取当前音轨索引

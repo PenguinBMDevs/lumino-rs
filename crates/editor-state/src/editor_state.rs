@@ -29,7 +29,7 @@ pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
 pub use drag_state::DragState;
-pub use editor_data::EditorData;
+pub use editor_data::{EditorData, NoteDeltaEvent};
 pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitType};
 
 use std::collections::HashSet;
