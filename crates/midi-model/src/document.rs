@@ -533,4 +533,50 @@ impl MidiDocument {
             .map(|v| v.as_slice())
             .unwrap_or(&[])
     }
+
+    /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
+    /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
+    /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
+    pub fn insert_note(&mut self, track_id: usize, note: NoteEvent) -> bool {
+        let Some(track_notes) = self.notes.get_mut(track_id) else {
+            return false;
+        };
+        // 二分定位稳定插入点：分区谓词 <= 保证同 tick 音符插到已存在同 tick 之后
+        let idx = track_notes.partition_point(|n| n.start_tick <= note.start_tick);
+        track_notes.insert(idx, note);
+        true
+    }
+
+    /// 删除指定音轨指定索引处的音符，返回被删除的音符副本。
+    /// track_id 越界或 index 越界返回 None。
+    pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
+        let track_notes = self.notes.get_mut(track_id)?;
+        if index >= track_notes.len() {
+            return None;
+        }
+        Some(track_notes.remove(index))
+    }
+
+    /// 替换指定音轨指定索引处的音符：删除旧音符后按 start_tick 升序重新插入新音符，
+    /// 保持每轨有序不变式。track_id 或 index 越界返回 false。
+    pub fn update_note(&mut self, track_id: usize, index: usize, note: NoteEvent) -> bool {
+        // 先删除旧音符；删除失败（track_id/index 越界）直接返回 false
+        if self.remove_note(track_id, index).is_none() {
+            return false;
+        }
+        // 删除成功已证明音轨存在，插入必然成功，不会出现中间不一致状态
+        self.insert_note(track_id, note)
+    }
+
+    /// 返回指定音轨的可变音符引用（供批量编辑/排序场景使用）。
+    /// track_id 越界返回 None。
+    /// 注意：调用方必须保持 start_tick 升序不变式，本方法不校验。
+    pub fn track_notes_mut(&mut self, track_id: usize) -> Option<&mut Vec<NoteEvent>> {
+        self.notes.get_mut(track_id)
+    }
 }
+
+/// MidiDocument 可写 API 单元测试（独立文件，保持本文件 < 400 行）
+#[cfg(test)]
+#[path = "document_write_tests.rs"]
+mod tests;
