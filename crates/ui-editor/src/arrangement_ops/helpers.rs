@@ -73,6 +73,10 @@ impl Editor {
             return;
         }
 
+        // 精确记录受影响音轨（洋葱皮事件级增量，在消费前捕获）
+        let affected_tracks: std::collections::HashSet<usize> =
+            tracks_to_load.iter().copied().collect();
+
         let editor_data = &mut self.editor_state.data;
         for track_idx in tracks_to_load {
             let Some(doc) = &editor_data.document else {
@@ -85,6 +89,6 @@ impl Editor {
             }
             editor_data.track_notes.insert(track_idx, loaded);
         }
-        editor_data.mark_track_notes_changed();
+        editor_data.mark_track_notes_changed_for(Some(affected_tracks));
     }
 }

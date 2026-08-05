@@ -12,6 +12,7 @@ use super::context::{
 };
 use super::deferred::handle_deferred_command;
 use super::hires::drain_hires_stream;
+use super::onion_segments::{OnionSegment, apply_onion_track_delta};
 use super::preview::{ensure_offscreen_textures_and_upload_notes, render_offscreen_pass};
 use super::types::HiResStreamMsg;
 use super::video_export::advance_export_inflight;
@@ -51,6 +52,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
 
     // 洋葱皮流式上传状态：true 表示正在接收 chunk（已 begin_streaming_upload）
     let mut onion_skin_streaming_in_progress = false;
+    // 洋葱皮 GPU 布局段表（全量会话构建，增量替换时更新）
+    let mut onion_segments: Vec<OnionSegment> = Vec::new();
 
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
@@ -109,12 +112,16 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
 
         // ★ 洋葱皮流式上传：drain channel，逐块 streaming_append 到 GPU ★
         // UI 线程分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），通过 sync_channel(3) 传输。
-        // 空 Vec 表示流式上传完成，收到后调用 finish_streaming_upload 更新 cull info。
-        // 性能：消除旧方案 RenderParams.onion_skin_instances 全量 Vec 的 9.6 GB CPU 峰值。
+        // 消息协议（事件级增量 2026-08-05）：
+        // - Chunk{track_id}：全量会话数据块，按到达顺序构建段表（同轨续写、异轨新段）
+        // - Done：全量会话完成 → finish_streaming_upload 更新 cull info + 清空段表
+        // - TrackDelta：单音轨增量替换 → 等长 write_segment / 变长 GPU 搬移后续段
+        // 性能：消除旧方案 RenderParams.onion_skin_instances 全量 Vec 的 9.6 GB CPU 峰值；
+        // 黑乐谱编辑非主音轨时不再全量重传。
         loop {
             match channels.onion_skin_streaming_rx.try_recv() {
-                Ok(chunk) if chunk.is_empty() => {
-                    // 流式上传完成
+                Ok(crate::OnionSkinStreamMsg::Done) => {
+                    // 全量会话结束（无论是否有块：0 音轨会话也需清空段表）
                     if onion_skin_streaming_in_progress {
                         renderers
                             .onion_skin
@@ -125,15 +132,60 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             renderers.onion_skin.last_upload_count()
                         );
                     }
+                    onion_segments.clear();
                     break;
                 }
-                Ok(chunk) => {
-                    // 首次收到块时 begin_streaming_upload
+                Ok(crate::OnionSkinStreamMsg::Chunk {
+                    track_id,
+                    instances,
+                }) => {
+                    // 首次收到块时 begin_streaming_upload + 清空段表
                     if !onion_skin_streaming_in_progress {
                         renderers.onion_skin.begin_streaming_upload();
+                        onion_segments.clear();
                         onion_skin_streaming_in_progress = true;
                     }
-                    renderers.onion_skin.streaming_append(&chunk);
+                    // 段表：同轨续写 len，异轨新开段（offset = 追加前实例数）
+                    let count_before_append = renderers.onion_skin.gpu_instance_count();
+                    if let Some(last) = onion_segments.last_mut() {
+                        if last.track_id == track_id {
+                            last.len += instances.len();
+                        } else {
+                            onion_segments.push(OnionSegment {
+                                track_id,
+                                offset: count_before_append,
+                                len: instances.len(),
+                            });
+                        }
+                    } else {
+                        onion_segments.push(OnionSegment {
+                            track_id,
+                            offset: count_before_append,
+                            len: instances.len(),
+                        });
+                    }
+                    renderers.onion_skin.streaming_append(&instances);
+                }
+                Ok(crate::OnionSkinStreamMsg::TrackDelta {
+                    track_id,
+                    instances,
+                }) => {
+                    if onion_skin_streaming_in_progress {
+                        // UI 不应在全量会话中夹带增量（防御性：状态不一致时跳过）
+                        tracing::warn!(
+                            "OnionSkin: TrackDelta(track={}) 与全量流式会话交错，跳过该增量",
+                            track_id
+                        );
+                    } else {
+                        apply_onion_track_delta(
+                            &mut renderers,
+                            &mut onion_segments,
+                            track_id,
+                            &instances,
+                            &ctx.device,
+                            &ctx.queue,
+                        );
+                    }
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {

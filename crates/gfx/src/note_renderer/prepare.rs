@@ -42,6 +42,42 @@ impl NoteRenderer {
         self.update_cull_info(device, queue);
     }
 
+    // ── 洋葱皮事件级增量专用（流式模式安全，无 CPU 缓存） ────────────────────
+    //
+    // 薄封装 GpuNoteBuffer 的流式安全操作，供渲染线程的 OnionSegment 段表增量使用。
+    // 流式模式下 update_note/update_notes 会索引已清空的 CPU 缓存而 panic，
+    // 因此段替换必须走以下纯 GPU 方法。
+
+    /// 当前 GPU 实例数（段表偏移计算用）
+    pub fn gpu_instance_count(&self) -> usize {
+        self.gpu_note_buffer.len()
+    }
+
+    /// 当前 GPU 容量（实例数）
+    pub fn gpu_capacity(&self) -> usize {
+        self.gpu_note_buffer.capacity()
+    }
+
+    /// 扩容（grow 会重建 buffer 并 GPU 内部复制现有数据）
+    pub fn grow_gpu(&mut self, required: usize) -> bool {
+        self.gpu_note_buffer.grow(required)
+    }
+
+    /// 段内写（不更新计数，不触碰 CPU 缓存）
+    pub fn write_segment(&mut self, offset: usize, instances: &[crate::NoteInstance]) {
+        self.gpu_note_buffer.write_segment(offset, instances);
+    }
+
+    /// 设置实例计数（变长段替换后更新）
+    pub fn set_gpu_instance_count(&mut self, count: usize) {
+        self.gpu_note_buffer.set_instance_count(count);
+    }
+
+    /// GPU 内部搬移（staging 分块，支持重叠）
+    pub fn move_gpu_range(&mut self, src: usize, dst: usize, count: usize) {
+        self.gpu_note_buffer.move_range(src, dst, count);
+    }
+
     /// 上传音符实例并准备渲染（推荐的替代方案，替代 `prepare_old`）
     pub fn prepare_notes(
         &mut self,

@@ -33,7 +33,7 @@ pub use cc_bar_renderer::{
     build_cc_bar_instances,
 };
 pub use context::{Context, ContextError, Result};
-pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent};
+pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
 pub use keyboard_renderer::renderer::KeyboardPrepareParams;

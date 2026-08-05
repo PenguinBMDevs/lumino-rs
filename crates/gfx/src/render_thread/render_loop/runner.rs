@@ -1,6 +1,7 @@
 pub mod context;
 pub(crate) mod deferred;
 pub mod hires;
+pub(crate) mod onion_segments;
 pub(crate) mod preview;
 pub mod run;
 pub mod types;

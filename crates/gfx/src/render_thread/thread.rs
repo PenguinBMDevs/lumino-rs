@@ -35,7 +35,7 @@ pub struct WgpuRenderThread {
     /// 新方案用 sync_channel(32) 分块流式传输，每块 ≤ 10 万实例（1.6 MB），
     /// UI 线程峰值 < 2 MB，GPU 最终持有全量数据。
     /// 空 Vec 表示流式上传完成。
-    onion_skin_streaming_sender: Option<std::sync::mpsc::SyncSender<Vec<crate::NoteInstance>>>,
+    onion_skin_streaming_sender: Option<std::sync::mpsc::SyncSender<crate::OnionSkinStreamMsg>>,
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
     /// 渲染完成的离屏纹理，供主线程读取
@@ -74,7 +74,7 @@ impl WgpuRenderThread {
 
         // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
         let (onion_skin_streaming_tx, onion_skin_streaming_rx) =
-            std::sync::mpsc::sync_channel::<Vec<crate::NoteInstance>>(3);
+            std::sync::mpsc::sync_channel::<crate::OnionSkinStreamMsg>(3);
 
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
@@ -211,17 +211,20 @@ impl WgpuRenderThread {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
-    /// 发送洋葱皮流式上传块（UI 线程分块构建后调用）
+    /// 发送洋葱皮上传消息（全量会话：Chunk + Done；事件级增量：TrackDelta）
     ///
-    /// 每块 ≤ 800 万实例（128 MB），sync_channel(3) 背压：
-    /// channel 满时阻塞 UI 线程，等渲染线程消费后继续。
-    /// 空 Vec 表示流式上传完成（渲染线程收到后调用 finish_streaming_upload）。
-    pub fn send_onion_skin_chunk(&self, chunk: Vec<crate::NoteInstance>) {
+    /// 全量会话：UI 线程分块构建后发送若干 `Chunk{track_id, instances}`，
+    /// 最后发送 `Done`。sync_channel(3) 背压：channel 满时阻塞 UI 线程，
+    /// 等渲染线程消费后继续。
+    ///
+    /// 事件级增量：编辑非当前/非静音音轨时，只发送
+    /// `TrackDelta{track_id, instances}`（该音轨段整体替换）。
+    pub fn send_onion_skin_msg(&self, msg: crate::OnionSkinStreamMsg) {
         if let Some(ref sender) = self.onion_skin_streaming_sender
-            && let Err(e) = sender.send(chunk)
+            && let Err(e) = sender.send(msg)
         {
             tracing::warn!(
-                "Failed to send onion skin chunk (render thread closed?): {}",
+                "Failed to send onion skin msg (render thread closed?): {}",
                 e
             );
         }

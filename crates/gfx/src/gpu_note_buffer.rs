@@ -11,6 +11,29 @@ pub mod internal;
 pub mod ops;
 pub mod types;
 
+/// 洋葱皮流式 / 增量上传消息（UI 线程 → WGPU 渲染线程）
+///
+/// 事件级增量优化（2026-08-05）：黑乐谱（单轨海量音符）场景下，
+/// 旧协议只能整轨全量重传。新协议携带音轨边界 + 单音轨增量替换：
+/// - `Chunk`：全量会话数据块（携带 track_id，WGPU 侧据此构建音轨段表）
+/// - `Done`：全量会话结束（finish + 清空段表）
+/// - `TrackDelta`：单音轨整段替换（等长 = 音符级增量；变长 = GPU 内部搬移后续段）
+#[derive(Debug)]
+pub enum OnionSkinStreamMsg {
+    /// 全量会话数据块：属于 `track_id` 音轨的实例（连续同轨块续写同一段）
+    Chunk {
+        track_id: usize,
+        instances: Vec<crate::NoteInstance>,
+    },
+    /// 全量会话结束（WGPU 侧 finish_streaming_upload + 重置段表）
+    Done,
+    /// 单音轨增量替换：该音轨段整体替换为新内容
+    TrackDelta {
+        track_id: usize,
+        instances: Vec<crate::NoteInstance>,
+    },
+}
+
 /// 音符编辑事件
 #[derive(Debug, Clone)]
 pub enum NoteEvent {

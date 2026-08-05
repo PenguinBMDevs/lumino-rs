@@ -54,7 +54,7 @@ impl Editor {
 
         self.push_history();
 
-        let (inserted_count, current_track_touched) =
+        let (inserted_count, current_track_touched, affected_tracks) =
             self.apply_paste_internal(anchor_tick, anchor_track, origin_key, &pasted);
 
         if inserted_count == 0 {
@@ -63,7 +63,10 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 已粘贴 {} 个音符 (anchor_tick={}, anchor_track={})",
             inserted_count,
@@ -199,17 +202,19 @@ impl Editor {
     }
 
     /// 执行粘贴：将剪贴板音符插入目标音轨。
-    /// 返回 (inserted_count, current_track_touched)。
+    /// 返回 (inserted_count, current_track_touched, affected_tracks)。
     fn apply_paste_internal(
         &mut self,
         anchor_tick: f32,
         anchor_track: usize,
         origin_key: u16,
         pasted: &[ClipboardNoteEntry],
-    ) -> (usize, bool) {
+    ) -> (usize, bool, std::collections::HashSet<usize>) {
         let current_track = self.editor_state.data.current_track;
         let mut current_track_touched = false;
         let mut inserted_count = 0usize;
+        let mut affected_tracks: std::collections::HashSet<usize> =
+            std::collections::HashSet::new();
 
         for (track_offset, tick_offset, key_offset, length, velocity, channel) in pasted {
             let dest_track = (anchor_track as i32 + *track_offset as i32).max(0) as usize;
@@ -220,13 +225,14 @@ impl Editor {
             let editor_data = &mut self.editor_state.data;
             let track_entry = editor_data.track_notes.entry(dest_track).or_default();
             track_entry.push_back(note);
+            affected_tracks.insert(dest_track);
             if dest_track == current_track {
                 current_track_touched = true;
             }
             inserted_count += 1;
         }
 
-        (inserted_count, current_track_touched)
+        (inserted_count, current_track_touched, affected_tracks)
     }
 
     /// 计算粘贴锚点音轨：优先使用选区最小音轨，为空则用当前音轨。

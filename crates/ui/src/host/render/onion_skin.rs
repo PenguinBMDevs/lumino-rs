@@ -1,27 +1,28 @@
-//! 洋葱皮渲染 — MIDI 加载后流式分块构建所有音轨音符，通过 streaming channel 传到 WGPU 线程
+//! 洋葱皮渲染 — 全量流式分块 + 事件级增量上传（UI 线程 → WGPU 线程）
 //!
-//! 架构（分离渲染线程模式 + 流式分块上传，2026-08-05 优化）：
-//! - UI 线程：stream_onion_skin_instances 检测 track_notes_gen/mute/current_track/palette 变化
-//!   - 变化时分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB）
-//!   - 每块构建完立即 send 到 WGPU 线程的 sync_channel(3)，不积累全量 Vec
-//!   - 全部构建完后 send 空 Vec（完成标志）
+//! 架构（2026-08-05 两轮优化：流式分块 + 事件级增量）：
+//! - UI 线程：`stream_onion_skin_instances` 每帧由 `decide_action` 三态决策
+//!   - `Full`：全量流式会话（首次 / 音轨进出洋葱皮 / mute / 调色板）——
+//!     分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），逐块 send，
+//!     每轨末尾强制 flush（空块 = 段表占位），最后 send `Done`
+//!   - `Delta`：事件级增量（编辑洋葱皮音轨）——只构建被编辑音轨，send `TrackDelta`
+//!   - `None`：无操作（只改当前/静音音轨 → 豁免）
 //! - WGPU 线程：render loop 每帧 drain streaming channel
-//!   - 首块触发 begin_streaming_upload
-//!   - 每块调用 streaming_append 直接 write_buffer 到 GPU（不维护 CPU 副本）
-//!   - 空 Vec 触发 finish_streaming_upload（更新 cull info）
-//!   - GPU 最终持有全量数据（6 亿音符 = 9.6 GB GPU 显存）
+//!   - `Chunk` 流构建音轨段表（track_id → offset/len），`Done` 触发
+//!     finish_streaming_upload（更新 cull info）
+//!   - `TrackDelta`：等长 → 段内音符级替换；变长 → GPU 内部搬移后续段
+//!     （无 CPU 镜像，黑乐谱单音轨海量音符场景不再全量重传）
+//!   - GPU 最终持有全量数据（6 亿音符 = 9.6 GB GPU 显存），CPU 无镜像
 //!
-//! 性能范式：
-//! - CPU 峰值 ~256-384 MB（旧方案 33 GB：collected 14.4 GB + instances Vec 9.6 GB + GpuNoteBuffer.instances 9.6 GB）
-//! - GPU 全量常驻（一次性上传，非每帧重写）
-//! - GPU culling 每帧（复用 cull.wgsl 的 workgroup 批量原子剔除）
-//! - Indirect draw（CPU 零参与绘制提交）
+//! 性能范式：CPU 峰值 ~256-384 MB（旧方案 33 GB）；GPU 全量常驻一次性上传；
+//! GPU culling 每帧（cull.wgsl 批量原子剔除）+ Indirect draw（CPU 零参与）
 //!
 //! 渲染顺序：洋葱皮（不透明 alpha=1.0）→ 主音轨（不透明）→ UI
 //! 深度测试：洋葱皮先绘制 depth=0.0，主音轨后绘制 LessEqual 0.0<=0.0 覆盖
 
 use crate::host::Host;
-use lumino_gfx::NoteInstance;
+use lumino_editor_state::EditorData;
+use lumino_gfx::{NoteInstance, OnionSkinStreamMsg, WgpuRenderThread};
 
 /// 洋葱皮描边宽度（固定 1 像素，与主音轨一致）
 const ONION_SKIN_BORDER_WIDTH: u32 = 1;
@@ -48,6 +49,19 @@ pub(crate) struct OnionSkinState {
     last_palette_idx: u8,
     /// 是否已初始化（首次上传）
     initialized: bool,
+}
+
+/// 洋葱皮构建动作（事件级增量，2026-08-05）
+///
+/// 由 [`OnionSkinState::decide_action`] 决策：
+/// - `None`：无需任何操作（数据未变，或变化全部豁免——只改当前/静音音轨）
+/// - `Delta(tracks)`：仅这些音轨需要事件级增量替换（段级替换，只传被编辑音轨）
+/// - `Full`：全量重建（首次上传 / 音轨进出洋葱皮 / mute / 调色板 / 未知脏音轨）
+#[derive(Debug)]
+pub(super) enum OnionSkinAction {
+    None,
+    Delta(Vec<usize>),
+    Full,
 }
 
 /// 洋葱皮指纹信息（用于 needs_rebuild 比较）
@@ -116,29 +130,45 @@ impl OnionSkinState {
         }
     }
 
-    /// 检查是否需要重建洋葱皮实例
-    pub(super) fn needs_rebuild(&self, fp: &OnionSkinFingerprint) -> bool {
+    /// 决策本次洋葱皮构建动作（三态，事件级增量）
+    /// - 布局变化（mute/current/palette）→ `Full`（音轨进出洋葱皮，段表失效）
+    /// - 音符数据变化：脏音轨全豁免 → `None`；含洋葱皮音轨 → `Delta(洋葱皮音轨)`；
+    ///   未知来源 → `Full`（保守正确性）
+    /// - 无变化 → `None`
+    pub(super) fn decide_action(&self, fp: &OnionSkinFingerprint) -> OnionSkinAction {
         if !self.initialized {
-            return true;
+            return OnionSkinAction::Full;
+        }
+
+        // 布局变化 → 全量重建（段表失效，增量无法安全应用）
+        if fp.mute_fp != self.last_mute_fingerprint
+            || fp.current_track != self.last_current_track
+            || fp.palette_idx != self.last_palette_idx
+        {
+            return OnionSkinAction::Full;
         }
 
         if fp.track_gen != self.last_track_notes_gen {
-            // 音符数据变化：仅当变化明确落在洋葱皮不显示的音轨（当前音轨/静音音轨）时豁免，
-            // 否则全量重建上传。None（未知）或空集合均保守重建，保证正确性。
-            let affects_onion_skin = match &fp.onion_dirty_tracks {
-                Some(dirty) if !dirty.is_empty() => dirty
-                    .iter()
-                    .any(|t| *t != fp.current_track && !fp.muted_tracks.contains(t)),
-                _ => true,
-            };
-            if affects_onion_skin {
-                return true;
+            match &fp.onion_dirty_tracks {
+                Some(dirty) if !dirty.is_empty() => {
+                    // 从脏音轨中挑出洋葱皮音轨（非当前、非静音）
+                    let targets: Vec<usize> = dirty
+                        .iter()
+                        .filter(|t| **t != fp.current_track && !fp.muted_tracks.contains(t))
+                        .copied()
+                        .collect();
+                    if targets.is_empty() {
+                        // 变化全部豁免（只改当前/静音音轨）→ 无操作
+                        return OnionSkinAction::None;
+                    }
+                    return OnionSkinAction::Delta(targets);
+                }
+                // None（未知来源）或空集合 → 保守全量重建
+                _ => return OnionSkinAction::Full,
             }
         }
 
-        fp.mute_fp != self.last_mute_fingerprint
-            || fp.current_track != self.last_current_track
-            || fp.palette_idx != self.last_palette_idx
+        OnionSkinAction::None
     }
 
     /// 标记已构建（在重建后调用）
@@ -152,14 +182,14 @@ impl OnionSkinState {
 }
 
 impl Host {
-    /// 流式分块构建洋葱皮 NoteInstance 并 send 到 WGPU 线程
+    /// 洋葱皮实例构建入口（流式分块 / 事件级增量）
     ///
-    /// 检测到 needs_rebuild 时，遍历所有音轨（除当前主音轨），分块构建 NoteInstance，
-    /// 每块 ≤ `STREAMING_CHUNK_SIZE`（800 万实例 = 128 MB），立即 send 到 WGPU 线程的
-    /// streaming channel。全部构建完后 send 空 Vec（完成标志）。
-    ///
-    /// CPU 峰值 = STREAMING_CHUNK_SIZE × 16 B + channel 在途 = ~256-384 MB（旧方案 33 GB）。
-    /// sync_channel(3) 背压：channel 满时阻塞 UI 线程，等 WGPU 线程消费。
+    /// 每帧调用，由 [`OnionSkinState::decide_action`] 决策三种路径：
+    /// - `None`：无操作（主音轨编辑豁免 + 未变化）
+    /// - `Full`：全量流式会话（首次 / 布局变化）——分块构建 NoteInstance
+    ///   每块 ≤ `STREAMING_CHUNK_SIZE`（800 万实例 = 128 MB），立即 send 到
+    ///   WGPU 线程的 streaming channel，最后 send `Done`
+    /// - `Delta`：事件级增量——只构建被编辑的洋葱皮音轨，send `TrackDelta`
     ///
     /// 数据源融合（与 arrangement_ops/clipboard.rs + selection.rs 范式一致）：
     /// 1. 优先从 `track_notes` 缓存读（已编辑的音轨，含 undo/redo 状态）
@@ -171,18 +201,35 @@ impl Host {
         }
 
         let fp = OnionSkinState::collect_fingerprint(self);
-        let needs_rebuild = self.render_ctx.onion_skin_state.needs_rebuild(&fp);
+        let action = self.render_ctx.onion_skin_state.decide_action(&fp);
 
-        if !needs_rebuild {
+        if matches!(action, OnionSkinAction::None) {
             return;
         }
 
-        // 获取 WGPU 线程引用（用于 send chunk）
-        let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread else {
+        // 获取 WGPU 线程引用（用于 send 消息）
+        let Some(wgpu_thread) = self.render_ctx.wgpu_render_thread.as_ref() else {
             tracing::warn!("stream_onion_skin_instances: wgpu_render_thread is None");
             return;
         };
 
+        match action {
+            OnionSkinAction::None => {}
+            OnionSkinAction::Full => self.stream_onion_skin_full(&fp, wgpu_thread),
+            OnionSkinAction::Delta(tracks) => {
+                self.stream_onion_skin_delta(&fp, wgpu_thread, &tracks)
+            }
+        }
+
+        // 标记已构建（None / Full / Delta 三路都更新指纹，防止重复构建）
+        self.render_ctx.onion_skin_state.mark_built(&fp);
+    }
+
+    /// 全量流式会话：分块构建所有洋葱皮音轨实例并 send
+    /// 每块 ≤ 800 万实例（128 MB），sync_channel(3) 背压；CPU 峰值 ~256-384 MB。
+    /// 每轨末尾强制 flush（空块 = 段表占位）：WGPU 侧据此构建音轨段表，
+    /// 事件级增量（TrackDelta）依赖它定位段。
+    fn stream_onion_skin_full(&self, fp: &OnionSkinFingerprint, wgpu_thread: &WgpuRenderThread) {
         let data = &self.root.editor.editor_state.data;
         let current_track = data.current_track;
         let tracks = &self.root.sidebar.tracks;
@@ -196,19 +243,19 @@ impl Host {
                 .is_some_and(|t| t.is_muted)
         };
 
-        // 分块构建 + send 的辅助闭包
+        // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
         let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
         let total_counter = std::cell::Cell::new(0usize);
 
-        let flush_chunk = |chunk: &mut Vec<NoteInstance>,
-                           wgpu_thread: &lumino_gfx::WgpuRenderThread| {
-            if chunk.is_empty() {
-                return;
-            }
-            let chunk_to_send = std::mem::replace(chunk, Vec::with_capacity(STREAMING_CHUNK_SIZE));
-            total_counter.set(total_counter.get() + chunk_to_send.len());
-            wgpu_thread.send_onion_skin_chunk(chunk_to_send);
-        };
+        let flush_chunk =
+            |chunk: &mut Vec<NoteInstance>, track_id: usize, wgpu_thread: &WgpuRenderThread| {
+                let instances = std::mem::replace(chunk, Vec::with_capacity(STREAMING_CHUNK_SIZE));
+                total_counter.set(total_counter.get() + instances.len());
+                wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Chunk {
+                    track_id,
+                    instances,
+                });
+            };
 
         // 1. 从 track_notes 缓存构建（已编辑的音轨）
         for (track_id, notes) in data.track_notes.iter() {
@@ -225,9 +272,10 @@ impl Host {
                     border_width,
                 ));
                 if chunk.len() >= STREAMING_CHUNK_SIZE {
-                    flush_chunk(&mut chunk, wgpu_thread);
+                    flush_chunk(&mut chunk, *track_id, wgpu_thread);
                 }
             }
+            flush_chunk(&mut chunk, *track_id, wgpu_thread);
         }
 
         // 2. 从 MidiDocument 构建未缓存到 track_notes 的音轨（未编辑的原始音轨）
@@ -242,9 +290,6 @@ impl Host {
                     continue;
                 }
                 let doc_notes = doc.track_notes(track_idx);
-                if doc_notes.is_empty() {
-                    continue;
-                }
                 let color = lumino_extras::palette::current_track_color_f32(track_idx);
                 for ne in doc_notes.iter() {
                     chunk.push(NoteInstance::new(
@@ -255,20 +300,15 @@ impl Host {
                         border_width,
                     ));
                     if chunk.len() >= STREAMING_CHUNK_SIZE {
-                        flush_chunk(&mut chunk, wgpu_thread);
+                        flush_chunk(&mut chunk, track_idx, wgpu_thread);
                     }
                 }
+                flush_chunk(&mut chunk, track_idx, wgpu_thread);
             }
         }
 
-        // 发送最后一块
-        flush_chunk(&mut chunk, wgpu_thread);
-
-        // 发送完成标志（空 Vec）
-        wgpu_thread.send_onion_skin_chunk(Vec::new());
-
-        // 标记已构建
-        self.render_ctx.onion_skin_state.mark_built(&fp);
+        // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
+        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done);
 
         tracing::info!(
             "[onion-skin] 流式上传完成：{} 个实例 (track_gen={}, current_track={}, palette_idx={})",
@@ -278,166 +318,77 @@ impl Host {
             fp.palette_idx
         );
     }
+
+    /// 事件级增量：只构建被编辑的洋葱皮音轨并 send `TrackDelta`
+    /// 黑乐谱核心路径：编辑非主音轨只重传该音轨（等长=音符级增量；
+    /// 变长=WGPU 侧 GPU 搬移后续段），不再全量重建。
+    /// `tracks` 来自 decide_action，已过滤为洋葱皮音轨且布局未变，
+    /// 保证 WGPU 段表与集合一致，TrackDelta 必然命中段。
+    fn stream_onion_skin_delta(
+        &self,
+        fp: &OnionSkinFingerprint,
+        wgpu_thread: &WgpuRenderThread,
+        tracks: &[usize],
+    ) {
+        let data = &self.root.editor.editor_state.data;
+        let border_width = ONION_SKIN_BORDER_WIDTH;
+
+        for &track_id in tracks {
+            let instances = build_track_instances(data, track_id, border_width);
+            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta {
+                track_id,
+                instances,
+            });
+        }
+
+        tracing::debug!(
+            "[onion-skin] 事件级增量：更新 {} 个音轨 {:?} (track_gen={})",
+            tracks.len(),
+            tracks,
+            fp.track_gen
+        );
+    }
 }
 
+/// 构建单音轨的完整 NoteInstance 列表（数据源融合）
+///
+/// 1. `track_notes` 缓存优先（已编辑的音轨，含 undo/redo 状态）
+/// 2. 未缓存的音轨从 `MidiDocument` 读（未编辑的原始音轨）
+/// 3. 两者皆无（无文档）→ 空列表
+fn build_track_instances(
+    data: &EditorData,
+    track_id: usize,
+    border_width: u32,
+) -> Vec<NoteInstance> {
+    let color = lumino_extras::palette::current_track_color_f32(track_id);
+
+    if let Some(notes) = data.track_notes.get(&track_id) {
+        return notes
+            .iter()
+            .map(|n| NoteInstance::new(n.tick, n.key as u8, n.length, color, border_width))
+            .collect();
+    }
+
+    if let Some(doc) = data.document.as_ref() {
+        let doc_notes = doc.track_notes(track_id);
+        return doc_notes
+            .iter()
+            .map(|ne| {
+                NoteInstance::new(
+                    ne.start_tick as f32,
+                    ne.key,
+                    (ne.end_tick - ne.start_tick) as f32,
+                    color,
+                    border_width,
+                )
+            })
+            .collect();
+    }
+
+    Vec::new()
+}
+
+/// 状态机三态决策测试（独立文件，保持本文件 < 400 行）
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 辅助函数：构造测试用指纹
-    fn make_fp(
-        track_gen: u64,
-        mute_fp: u64,
-        current_track: usize,
-        palette_idx: u8,
-    ) -> OnionSkinFingerprint {
-        OnionSkinFingerprint {
-            track_gen,
-            mute_fp,
-            current_track,
-            palette_idx,
-            onion_dirty_tracks: None,
-            muted_tracks: Vec::new(),
-        }
-    }
-
-    /// 构造带音轨级脏标记的指纹
-    fn make_fp_dirty(
-        track_gen: u64,
-        current_track: usize,
-        dirty_tracks: std::collections::HashSet<usize>,
-        muted_tracks: Vec<usize>,
-    ) -> OnionSkinFingerprint {
-        OnionSkinFingerprint {
-            track_gen,
-            mute_fp: 0,
-            current_track,
-            palette_idx: 0,
-            onion_dirty_tracks: Some(dirty_tracks),
-            muted_tracks,
-        }
-    }
-
-    #[test]
-    fn onion_skin_state_default_uninitialized() {
-        let state = OnionSkinState::default();
-        assert!(!state.initialized);
-        assert_eq!(state.last_track_notes_gen, 0);
-        assert_eq!(state.last_mute_fingerprint, 0);
-        assert_eq!(state.last_current_track, usize::MAX);
-        assert_eq!(state.last_palette_idx, u8::MAX);
-    }
-
-    #[test]
-    fn onion_skin_state_needs_rebuild_on_first_run() {
-        let state = OnionSkinState::default();
-        assert!(state.needs_rebuild(&make_fp(0, 0, 0, 0)));
-    }
-
-    #[test]
-    fn onion_skin_state_no_rebuild_after_mark_built() {
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0b1010, 3, 1));
-        assert!(!state.needs_rebuild(&make_fp(42, 0b1010, 3, 1)));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_on_gen_change() {
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 0, 0));
-        assert!(state.needs_rebuild(&make_fp(43, 0, 0, 0)));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_on_mute_change() {
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0b0000, 0, 0));
-        assert!(state.needs_rebuild(&make_fp(42, 0b0001, 0, 0)));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_on_track_switch() {
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        assert!(state.needs_rebuild(&make_fp(42, 0, 2, 0)));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_on_palette_switch() {
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 0, 1));
-        assert!(state.needs_rebuild(&make_fp(42, 0, 0, 2)));
-    }
-
-    // ── 增量豁免测试（编辑主音轨不再全量重建上传） ──────────────────────────
-
-    #[test]
-    fn onion_skin_state_skip_rebuild_when_only_current_track_dirty() {
-        // 编辑当前音轨 → 洋葱皮不显示该音轨 → 数据未变 → 豁免全量重建上传
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
-        assert!(!state.needs_rebuild(&fp));
-    }
-
-    #[test]
-    fn onion_skin_state_skip_rebuild_consecutive_edits_same_track() {
-        // 连续编辑当前音轨（拖动热路径每帧触发）应持续豁免，不累积重建
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        for g in 43..48 {
-            let fp = make_fp_dirty(g, 1, std::collections::HashSet::from([1]), vec![]);
-            assert!(!state.needs_rebuild(&fp), "gen={g} 不应触发重建");
-        }
-    }
-
-    #[test]
-    fn onion_skin_state_skip_rebuild_when_dirty_track_muted() {
-        // 变化音轨是静音音轨 → 洋葱皮不显示 → 豁免
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 2, 0));
-        let fp = make_fp_dirty(43, 2, std::collections::HashSet::from([0]), vec![0]);
-        assert!(!state.needs_rebuild(&fp));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_when_other_track_dirty() {
-        // 编辑了非当前音轨 → 洋葱皮显示它 → 必须重建
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([3]), vec![]);
-        assert!(state.needs_rebuild(&fp));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_when_dirty_unknown() {
-        // 变化来源未知（None）→ 保守全量重建
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        assert!(state.needs_rebuild(&make_fp(43, 0, 1, 0)));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_on_track_switch_after_skipped_dirty() {
-        // 豁免后切换当前音轨 → 音轨切换本身必须触发重建（用最新数据兜底被豁免的编辑）
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        // 豁免一次（编辑音轨1，当前也是1）
-        let fp_skip = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
-        assert!(!state.needs_rebuild(&fp_skip));
-        // 切换到音轨2 → 必须重建（旧被豁免的编辑此时成为洋葱皮数据）
-        let fp_switch = make_fp_dirty(43, 2, std::collections::HashSet::from([1]), vec![]);
-        assert!(state.needs_rebuild(&fp_switch));
-    }
-
-    #[test]
-    fn onion_skin_state_rebuild_when_mute_changes_after_skipped_dirty() {
-        // 豁免 gen 变更后 mute 状态变化 → 仍须重建
-        let mut state = OnionSkinState::default();
-        state.mark_built(&make_fp(42, 0, 1, 0));
-        let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
-        let mut rebuilt = fp;
-        rebuilt.mute_fp = 999; // 模拟 mute 状态变化
-        assert!(state.needs_rebuild(&rebuilt));
-    }
-}
+#[path = "onion_skin/tests.rs"]
+mod tests;

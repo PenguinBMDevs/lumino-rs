@@ -83,6 +83,10 @@ impl Editor {
             return 0;
         }
 
+        // 精确记录受影响音轨（洋葱皮事件级增量：只重传这些音轨）
+        let affected_tracks: std::collections::HashSet<usize> =
+            indices_by_track.keys().copied().collect();
+
         self.push_history();
 
         let current_track = self.editor_state.data.current_track;
@@ -111,7 +115,9 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!("Arrangement: 删除 {} 个音符", deleted_count);
         deleted_count
     }
@@ -135,6 +141,10 @@ impl Editor {
             return 0;
         }
 
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        let affected_tracks: std::collections::HashSet<usize> =
+            track_indices.keys().copied().collect();
+
         let (modified_count, current_track_touched) =
             self.apply_speed_change_internal(track_indices, min_tick, speed_factor);
 
@@ -144,7 +154,9 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 变速 {} 个音符 (factor={})",
             modified_count,

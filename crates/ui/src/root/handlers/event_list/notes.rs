@@ -39,6 +39,7 @@ impl Root {
         if let Some(note) = data.notes.get_mut(idx) {
             f(note);
         }
-        data.mark_track_notes_changed();
+        // 事件列表只编辑当前音轨（data.notes 即当前音轨）→ 精确标记（洋葱皮豁免）
+        data.mark_current_track_changed();
     }
 }

@@ -104,7 +104,11 @@ impl Root {
             .data
             .track_notes
             .insert(track_idx, track_notes);
-        self.editor.editor_state.data.mark_track_notes_changed();
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track_idx])));
 
         self.editor.editor_state.data.current_track = track_idx;
         // 音符加载后同步 NoteStore，确保后续批量操作走热路径
@@ -336,7 +340,11 @@ impl Root {
             .data
             .track_notes
             .insert(track_id, restored_notes);
-        self.editor.editor_state.data.mark_track_notes_changed();
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        self.editor
+            .editor_state
+            .data
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track_id])));
 
         // 释放 reserved_track_id（音轨重新出现，不再占用）
         self.sidebar.release_reserved_track_id(track_id);

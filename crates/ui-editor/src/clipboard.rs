@@ -149,7 +149,7 @@ impl Editor {
             self.editor_state.data.current_track,
             self.editor_state.data.notes.clone(),
         );
-        self.editor_state.data.mark_track_notes_changed();
+        self.editor_state.data.mark_current_track_changed();
         // 粘贴后同步 NoteStore
         self.editor_state.data.sync_note_store();
         for index in start..start + pasted_count {

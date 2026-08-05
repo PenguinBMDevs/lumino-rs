@@ -29,7 +29,10 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        // 精确记录受影响音轨（洋葱皮事件级增量）
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track])));
         tracing::info!(
             "Arrangement: 分割 {} 个音符 (tick={}, track={})",
             split_count,

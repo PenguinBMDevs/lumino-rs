@@ -282,4 +282,116 @@ impl GpuNoteBuffer {
     pub fn gpu_memory_usage(&self) -> usize {
         self.instance_buffer.size() as usize
     }
+
+    // ── 洋葱皮事件级增量专用（流式模式安全：不触碰已清空的 CPU 缓存）──
+    // 流式模式 instances 已清空：update_notes 等会索引空 Vec panic，且按 count 截断。
+
+    /// 段内写：将 `instances` 写入 `offset` 处（不更新计数、不触碰 CPU 缓存）
+    /// 写前调用方需保证容量充足（grow 后）且目标区间不与未搬移的后续段重叠。
+    pub fn write_segment(&mut self, offset: usize, instances: &[crate::NoteInstance]) {
+        if instances.is_empty() {
+            return;
+        }
+        let offset_bytes = offset * std::mem::size_of::<crate::NoteInstance>();
+        self.queue.write_buffer(
+            &self.instance_buffer,
+            offset_bytes as wgpu::BufferAddress,
+            bytemuck::cast_slice(instances),
+        );
+    }
+
+    /// 设置实例计数（变长段替换完成后更新，供 cull uniform / 段表使用）
+    pub fn set_instance_count(&mut self, count: usize) {
+        self.instance_count = count;
+    }
+
+    /// GPU 内部搬移：`[src, src+count)` → `dst`（同 buffer，支持重叠与任意方向）
+    /// 无 CPU 镜像下的后续段移动（COPY_SRC/DST 已声明）。staging 分块 + 方向序
+    /// （后移从尾向前、前移从头向后），规避 copy 重叠 UB；块 = 100 万实例(16MB)。
+    pub fn move_range(&mut self, src: usize, dst: usize, count: usize) {
+        const MOVE_BLOCK: usize = 1_000_000;
+
+        if count == 0 || src == dst {
+            return;
+        }
+
+        // 分块序列（纯函数，逻辑已单测）
+        let blocks = compute_move_blocks(src, dst, count, MOVE_BLOCK);
+        if blocks.is_empty() {
+            return;
+        }
+
+        let instance_size = std::mem::size_of::<crate::NoteInstance>() as u64;
+        let staging_size = (MOVE_BLOCK as u64) * instance_size;
+        let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("gpu_note_buffer_move_staging"),
+            size: staging_size,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: false,
+        });
+
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("gpu_note_buffer_move"),
+            });
+
+        for (b_src, b_dst, n) in blocks {
+            let n_bytes = (n as u64) * instance_size;
+            let src_off = (b_src as u64) * instance_size;
+            let dst_off = (b_dst as u64) * instance_size;
+            encoder.copy_buffer_to_buffer(&self.instance_buffer, src_off, &staging, 0, n_bytes);
+            encoder.copy_buffer_to_buffer(&staging, 0, &self.instance_buffer, dst_off, n_bytes);
+        }
+
+        self.queue.submit(std::iter::once(encoder.finish()));
+    }
 }
+
+/// 计算搬移分块序列（纯函数，可单测）
+///
+/// 返回按执行顺序的 `(src, dst, n)` 列表：每块源/目标区间互不重叠
+/// （staging 中转后安全）；方向序保证不覆盖未搬源块（后移从尾向前、前移从头向后）。
+/// 正确性由测试用 `Vec::copy_within`（标准 memmove 语义）对照验证。
+pub fn compute_move_blocks(
+    src: usize,
+    dst: usize,
+    count: usize,
+    max_block: usize,
+) -> Vec<(usize, usize, usize)> {
+    if count == 0 || src == dst || max_block == 0 {
+        return Vec::new();
+    }
+
+    let mut blocks = Vec::new();
+    if dst > src {
+        // 后移：从尾部向前（目标区在源区之后，先搬最后块不会覆盖未搬的源）
+        let mut remaining = count;
+        let mut s_end = src + count;
+        let mut d_end = dst + count;
+        while remaining > 0 {
+            let n = remaining.min(max_block);
+            s_end -= n;
+            d_end -= n;
+            blocks.push((s_end, d_end, n));
+            remaining -= n;
+        }
+    } else {
+        // 前移：从头部向后（目标区在源区之前，先搬最前块不会覆盖未搬的源）
+        let mut s = src;
+        let mut d = dst;
+        let mut remaining = count;
+        while remaining > 0 {
+            let n = remaining.min(max_block);
+            blocks.push((s, d, n));
+            s += n;
+            d += n;
+            remaining -= n;
+        }
+    }
+    blocks
+}
+
+#[cfg(test)]
+#[path = "ops_tests.rs"]
+mod tests;

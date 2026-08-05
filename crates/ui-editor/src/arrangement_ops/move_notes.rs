@@ -30,6 +30,10 @@ impl Editor {
             return 0;
         }
 
+        // 精确记录受影响音轨（源 + 目标，洋葱皮事件级增量）
+        let mut affected_tracks: HashSet<usize> = indices_by_source.keys().copied().collect();
+        affected_tracks.extend(moved_by_dest.keys().copied());
+
         let (moved_count, current_track_touched) =
             self.apply_move_internal(indices_by_source, moved_by_dest);
 
@@ -39,7 +43,9 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 移动 {} 个音符 (delta_ticks={}, delta_tracks={})",
             moved_count,

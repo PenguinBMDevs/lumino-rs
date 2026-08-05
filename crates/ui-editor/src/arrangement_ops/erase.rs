@@ -30,6 +30,9 @@ impl Editor {
         self.push_history();
 
         let current_track_touched = tracks_to_clean.contains(&current_track);
+        // 精确记录受影响音轨（洋葱皮事件级增量，在 move 前捕获）
+        let affected_tracks: std::collections::HashSet<usize> =
+            tracks_to_clean.iter().copied().collect();
         let deleted_count = self.apply_erase_internal(tick_start, tick_end, tracks_to_clean);
 
         if deleted_count == 0 {
@@ -38,7 +41,9 @@ impl Editor {
         }
 
         self.sync_current_track_after_arrange_op(current_track_touched);
-        self.editor_state.data.mark_track_notes_changed();
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 擦除 {} 个音符 (tick {}..{}, track {}..={})",
             deleted_count,

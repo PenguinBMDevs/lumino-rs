@@ -61,8 +61,11 @@ pub struct RenderThreadChannels {
     pub onion_progress: Arc<Mutex<Vec<(String, f32)>>>,
     /// 洋葱皮流式上传接收端（UI 线程分块构建 → 渲染线程 streaming_append）
     ///
-    /// 空 Vec 表示流式上传完成。
-    pub onion_skin_streaming_rx: std::sync::mpsc::Receiver<Vec<crate::NoteInstance>>,
+    /// 消息协议见 [`crate::OnionSkinStreamMsg`]：
+    /// - `Chunk`：数据块（携带音轨 id，构建段表）
+    /// - `Done`：全量会话结束
+    /// - `TrackDelta`：单音轨增量替换（等长/变长段替换）
+    pub onion_skin_streaming_rx: std::sync::mpsc::Receiver<crate::OnionSkinStreamMsg>,
 }
 
 /// 可变的每帧渲染状态。
