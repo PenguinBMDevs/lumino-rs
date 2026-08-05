@@ -30,6 +30,10 @@ pub struct NoteRenderer {
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
     /// 最大缓冲区容量（受 GPU max_storage_buffer_binding_size 限制）
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用——不再用于截断/封顶，
+    /// 保留字段用于诊断/统计（记录硬件限制信息）。
+    #[allow(dead_code)]
     max_capacity: usize,
     /// 上次实际上传的实例数量（用于 prepare_pass 调度 compute）
     last_upload_count: u32,
@@ -50,7 +54,7 @@ impl NoteRenderer {
     const INITIAL_CAPACITY: usize = crate::constants::rendering::INITIAL_INSTANCE_CAPACITY;
     /// 顶点着色器代码 (WGSL)
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
-    /// 洋葱皮顶点着色器代码 (WGSL) — 半透明 alpha=0.3，无边框
+    /// 洋葱皮顶点着色器代码 (WGSL)
     const ONION_SHADER: &'static str = include_str!("shaders/onion_note.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");

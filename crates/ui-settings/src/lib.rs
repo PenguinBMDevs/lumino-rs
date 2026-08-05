@@ -263,7 +263,8 @@ impl SettingsPanel {
             }
             Event::HiresGpuMemLimitChanged(s) => {
                 if let Ok(v) = s.parse::<u32>() {
-                    self.hires_gpu_mem_limit_mb = v.clamp(128, 4096);
+                    // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
+                    self.hires_gpu_mem_limit_mb = v;
                 }
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {

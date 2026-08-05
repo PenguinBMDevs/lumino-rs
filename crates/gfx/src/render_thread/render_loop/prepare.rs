@@ -81,13 +81,8 @@ pub fn prepare_renderers(
             .prepare(device, queue, &params.cc_bar_instances, params.logical_size);
     }
 
-    // 洋葱皮：实例变化时重上传 GPU buffer（全量上传）
-    // prepare_pass（compute cull）在 execute_render_pass 中每帧调用
-    if params.onion_skin_dirty && !params.is_arrangement_mode {
-        renderers
-            .onion_skin
-            .upload_instances(&params.onion_skin_instances, device, queue);
-    }
+    // 洋葱皮流式上传：由 render_loop 主循环 drain onion_skin_streaming_rx 驱动，
+    // 不在 prepare_renderers 中处理（避免与 RenderParams 全量传输耦合）。
 
     // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv
     if !is_video_export {

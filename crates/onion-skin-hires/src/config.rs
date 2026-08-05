@@ -16,7 +16,10 @@ pub const DEFAULT_MEASURES_PER_GROUP: u32 = 4;
 pub const DEFAULT_COOLDOWN_SECS: u64 = 10;
 
 /// 默认 GPU 显存上限（MB）
-pub const DEFAULT_GPU_MEM_LIMIT_MB: u32 = 512;
+///
+/// 用户硬约束：不得限制 GPU 内存使用。设为 u32::MAX 表示无限制，
+/// 所有贴图常驻 GPU 显存，避免洋葱皮音符因显存淘汰而消失。
+pub const DEFAULT_GPU_MEM_LIMIT_MB: u32 = u32::MAX;
 
 /// 默认整合组内存缓冲上限（MB）
 pub const DEFAULT_GROUP_TILE_MEM_LIMIT_MB: u32 = 256;
@@ -40,8 +43,7 @@ pub enum ConfigError {
     TileWidthOutOfRange(u32),
     #[error("冷静期必须在 3..=60 秒之间，当前为 {0}")]
     CooldownOutOfRange(u64),
-    #[error("GPU 显存上限必须在 128..=4096 MB 之间，当前为 {0}")]
-    GpuMemLimitOutOfRange(u32),
+    // GPU 显存上限校验已删除——用户硬约束：不得限制 GPU 内存使用
 }
 
 /// 高精度贴图运行时配置
@@ -124,9 +126,7 @@ impl HiResConfig {
         if !(3..=60).contains(&self.cooldown_secs) {
             return Err(ConfigError::CooldownOutOfRange(self.cooldown_secs));
         }
-        if !(128..=4096).contains(&self.gpu_mem_limit_mb) {
-            return Err(ConfigError::GpuMemLimitOutOfRange(self.gpu_mem_limit_mb));
-        }
+        // GPU 显存上限校验已删除——用户硬约束：不得限制 GPU 内存使用
         Ok(())
     }
 }
@@ -147,7 +147,8 @@ mod tests {
         assert_eq!(cfg.measures_per_group, 4);
         assert_eq!(cfg.tile_width_px, 1920);
         assert_eq!(cfg.cooldown_secs, 10);
-        assert_eq!(cfg.gpu_mem_limit_mb, 512);
+        // GPU 显存上限已改为无限制（u32::MAX）
+        assert_eq!(cfg.gpu_mem_limit_mb, u32::MAX);
         assert_eq!(cfg.group_tile_mem_limit_mb, 256);
         assert!(cfg.cache_dir.ends_with("onion-cache"));
     }
@@ -233,10 +234,11 @@ mod tests {
         };
         assert!(cfg.validate().is_err());
 
+        // GPU 显存上限校验已删除——任意值都应通过
         let cfg = HiResConfig {
             gpu_mem_limit_mb: 64,
             ..HiResConfig::default()
         };
-        assert!(cfg.validate().is_err());
+        assert!(cfg.validate().is_ok());
     }
 }

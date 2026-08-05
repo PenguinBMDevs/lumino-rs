@@ -40,12 +40,14 @@ impl NoteRenderer {
         buffer
     }
 
-    /// 扩容缓冲区（受 max_capacity 限制）
+    /// 扩容缓冲区
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用——移除 .min(self.max_capacity) 封顶，
+    /// 实际容量仅受 wgpu 硬件限制。
     pub(super) fn grow_visible_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
         puffin::profile_function!();
         let growth_factor = crate::constants::rendering::BUFFER_GROWTH_FACTOR;
-        let new_capacity = ((self.capacity.saturating_mul(growth_factor)).max(required_capacity))
-            .min(self.max_capacity);
+        let new_capacity = (self.capacity.saturating_mul(growth_factor)).max(required_capacity);
         if new_capacity <= self.capacity {
             return;
         }

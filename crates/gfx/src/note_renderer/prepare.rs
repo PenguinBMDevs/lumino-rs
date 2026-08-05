@@ -17,6 +17,31 @@ impl NoteRenderer {
         self.update_cull_info(device, queue);
     }
 
+    /// 流式上传：开始一次流式上传会话（用于 6 亿音符场景控制 CPU 峰值）
+    ///
+    /// 调用方应在 UI 线程分块构建 NoteInstance，逐块调用 `streaming_append`，
+    /// 最后调用 `finish_streaming_upload`。避免 `upload_instances` 的 CPU 全量副本。
+    ///
+    /// 详见 `GpuNoteBuffer::begin_streaming_upload`。
+    pub fn begin_streaming_upload(&mut self) {
+        self.gpu_note_buffer.begin_streaming_upload();
+    }
+
+    /// 流式上传：追加一块音符实例到 GPU buffer
+    ///
+    /// 每块大小建议 ≤ 10 万实例（1.6 MB）控制单次 write_buffer 内存峰值。
+    pub fn streaming_append(&mut self, chunk: &[crate::NoteInstance]) {
+        self.gpu_note_buffer.streaming_append(chunk);
+    }
+
+    /// 流式上传：结束会话并更新 cull info
+    ///
+    /// 必须在所有 `streaming_append` 完成后调用，以更新 bind group / uniform。
+    pub fn finish_streaming_upload(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        self.gpu_note_buffer.finish_streaming_upload();
+        self.update_cull_info(device, queue);
+    }
+
     /// 上传音符实例并准备渲染（推荐的替代方案，替代 `prepare_old`）
     pub fn prepare_notes(
         &mut self,

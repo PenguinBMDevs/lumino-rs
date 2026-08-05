@@ -59,6 +59,10 @@ pub struct RenderThreadChannels {
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
     pub onion_progress: Arc<Mutex<Vec<(String, f32)>>>,
+    /// 洋葱皮流式上传接收端（UI 线程分块构建 → 渲染线程 streaming_append）
+    ///
+    /// 空 Vec 表示流式上传完成。
+    pub onion_skin_streaming_rx: std::sync::mpsc::Receiver<Vec<crate::NoteInstance>>,
 }
 
 /// 可变的每帧渲染状态。

@@ -49,6 +49,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut waterfall_renderer: Option<crate::WaterfallRenderer> = None;
     let mut miditrail_renderer: Option<crate::MiditrailRenderer> = None;
 
+    // 洋葱皮流式上传状态：true 表示正在接收 chunk（已 begin_streaming_upload）
+    let mut onion_skin_streaming_in_progress = false;
+
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
     // 防止无界积压导致 CPU 内存峰值（对应"装袋期间工人等着"）
@@ -103,6 +106,42 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             &mut hires_renderer,
             &channels.onion_progress,
         );
+
+        // ★ 洋葱皮流式上传：drain channel，逐块 streaming_append 到 GPU ★
+        // UI 线程分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），通过 sync_channel(3) 传输。
+        // 空 Vec 表示流式上传完成，收到后调用 finish_streaming_upload 更新 cull info。
+        // 性能：消除旧方案 RenderParams.onion_skin_instances 全量 Vec 的 9.6 GB CPU 峰值。
+        loop {
+            match channels.onion_skin_streaming_rx.try_recv() {
+                Ok(chunk) if chunk.is_empty() => {
+                    // 流式上传完成
+                    if onion_skin_streaming_in_progress {
+                        renderers
+                            .onion_skin
+                            .finish_streaming_upload(&ctx.device, &ctx.queue);
+                        onion_skin_streaming_in_progress = false;
+                        tracing::debug!(
+                            "Onion skin streaming upload finished: {} instances on GPU",
+                            renderers.onion_skin.last_upload_count()
+                        );
+                    }
+                    break;
+                }
+                Ok(chunk) => {
+                    // 首次收到块时 begin_streaming_upload
+                    if !onion_skin_streaming_in_progress {
+                        renderers.onion_skin.begin_streaming_upload();
+                        onion_skin_streaming_in_progress = true;
+                    }
+                    renderers.onion_skin.streaming_append(&chunk);
+                }
+                Err(std::sync::mpsc::TryRecvError::Empty) => break,
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                    // UI 线程关闭 channel（shutdown），停止 drain
+                    break;
+                }
+            }
+        }
 
         if should_shutdown {
             break;

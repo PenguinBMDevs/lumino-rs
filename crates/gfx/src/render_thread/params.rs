@@ -62,13 +62,6 @@ pub struct RenderParams {
     pub arrangement_uniform: ArrangementUniform,
     /// CC 柱状条实例（力度面板所有模式：Velocity/CC/Bend）
     pub cc_bar_instances: Vec<CcBarInstance>,
-    /// 洋葱皮音符实例（全量上传，WGPU 线程负责 upload + cull + draw）
-    ///
-    /// UI 线程在 track_notes_gen / mute / current_track 变化时重建，
-    /// 否则复用上一帧的实例数据（通过 `onion_skin_dirty` 标记是否需重上传）。
-    pub onion_skin_instances: Vec<NoteInstance>,
-    /// 洋葱皮实例是否变化（true 时 WGPU 线程重上传 GPU buffer）
-    pub onion_skin_dirty: bool,
     /// 力度面板区域 (x, y, width, height) — 屏幕坐标，用于 scissor
     pub velocity_panel_rect: Option<(f32, f32, f32, f32)>,
     /// 是否为瀑布流渲染模式
@@ -131,8 +124,6 @@ impl Default for RenderParams {
             arrangement_note_instances: Vec::new(),
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
-            onion_skin_instances: Vec::new(),
-            onion_skin_dirty: false,
             velocity_panel_rect: None,
             time_signatures: vec![(0, 4, 4)],
             is_waterfall_mode: false,
@@ -194,8 +185,6 @@ pub struct RenderParamsBuilder {
     arrangement_note_instances: Vec<ArrangementNoteInstance>,
     arrangement_uniform: ArrangementUniform,
     cc_bar_instances: Vec<CcBarInstance>,
-    onion_skin_instances: Vec<NoteInstance>,
-    onion_skin_dirty: bool,
     canvas_offset: (f32, f32),
     canvas_size: (f32, f32),
     velocity_panel_rect: Option<(f32, f32, f32, f32)>,
@@ -240,8 +229,6 @@ impl Default for RenderParamsBuilder {
             arrangement_note_instances: Vec::new(),
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
-            onion_skin_instances: Vec::new(),
-            onion_skin_dirty: false,
             canvas_offset: (0.0, 0.0),
             canvas_size: (800.0, 600.0),
             velocity_panel_rect: None,
@@ -424,18 +411,6 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置洋葱皮音符实例（全量上传，WGPU 线程负责 upload + cull + draw）
-    pub fn onion_skin_instances(mut self, instances: Vec<NoteInstance>) -> Self {
-        self.onion_skin_instances = instances;
-        self
-    }
-
-    /// 标记洋葱皮实例是否变化（true 时 WGPU 线程重上传 GPU buffer）
-    pub fn onion_skin_dirty(mut self, dirty: bool) -> Self {
-        self.onion_skin_dirty = dirty;
-        self
-    }
-
     /// 设置拍号变化列表
     pub fn time_signatures(mut self, time_signatures: Vec<(u32, u8, u8)>) -> Self {
         self.time_signatures = time_signatures;
@@ -487,8 +462,6 @@ impl RenderParamsBuilder {
             arrangement_note_instances: self.arrangement_note_instances,
             arrangement_uniform: self.arrangement_uniform,
             cc_bar_instances: self.cc_bar_instances,
-            onion_skin_instances: self.onion_skin_instances,
-            onion_skin_dirty: self.onion_skin_dirty,
             velocity_panel_rect: self.velocity_panel_rect,
             time_signatures: self.time_signatures,
             is_waterfall_mode: self.is_waterfall_mode,

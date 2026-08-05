@@ -23,6 +23,10 @@ pub struct HiResRenderer {
     /// GPU 显存占用（字节）
     pub(super) gpu_mem_used: usize,
     /// 配置（含显存上限等）
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用——gpu_mem_limit() 已改为返回 usize::MAX，
+    /// config 不再用于显存限制决策，保留字段用于其他配置项（tile_width_px 等）的潜在读取。
+    #[allow(dead_code)]
     pub(super) config: HiResConfig,
     /// 贴图上传顺序（用于 FIFO 逐出，最早上传的先被逐出）
     tile_order: VecDeque<TileCoord>,
@@ -242,7 +246,8 @@ impl HiResRenderer {
         );
         self.gpu_mem_used += byte_size;
         self.tile_order.push_back(coord);
-        self.evict_if_over_limit();
+        // 用户硬约束：不得限制 GPU 内存使用——删除 evict_if_over_limit 淘汰逻辑，
+        // 所有上传的贴图常驻 GPU 显存，避免滚动到已淘汰时段时洋葱皮音符消失。
     }
 
     /// 移除一张贴图（释放显存）
@@ -396,30 +401,27 @@ impl HiResRenderer {
     }
 
     /// GPU 显存上限（字节）
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用。返回 usize::MAX 表示无限制。
     pub fn gpu_mem_limit(&self) -> usize {
-        (self.config.gpu_mem_limit_mb as usize) * 1024 * 1024
+        usize::MAX
     }
 
     /// 显存是否超限
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用。此函数始终返回 false，
+    /// 保留方法以兼容外部查询接口（如统计面板显示）。
     pub fn is_over_limit(&self) -> bool {
-        self.gpu_mem_used > self.gpu_mem_limit()
+        false
     }
 
-    /// 超出显存上限时，按 FIFO 顺序逐出最早上传的贴图
+    /// 显存淘汰逻辑（已禁用）
     ///
-    /// 调度器按时间顺序生成贴图，逐出旧时间段的贴图不会影响当前可见区域。
-    /// 若用户滚动到已逐出的时间段，调度器会重新生成对应贴图。
+    /// 用户硬约束：不得限制 GPU 内存使用，不得淘汰已上传贴图。
+    /// 保留为空实现以维持 API 兼容（外部可能有调用）。
+    #[allow(dead_code)]
     fn evict_if_over_limit(&mut self) {
-        while self.is_over_limit() {
-            match self.tile_order.pop_front() {
-                None => break,
-                Some(coord) => {
-                    if self.tiles.contains_key(&coord) {
-                        self.remove_tile(&coord);
-                    }
-                }
-            }
-        }
+        // no-op：贴图常驻 GPU 显存
     }
 
     /// 更新渲染目标格式（surface 格式变化时重建 pipeline）

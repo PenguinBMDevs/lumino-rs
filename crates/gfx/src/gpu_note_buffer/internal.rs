@@ -21,10 +21,13 @@ impl GpuNoteBuffer {
     }
 
     /// 扩容缓冲区
+    ///
+    /// 用户硬约束：不得限制 GPU 内存使用——移除 .min(self.max_capacity) 封顶，
+    /// 实际容量仅受 wgpu 硬件限制（max_storage_buffer_binding_size）。
+    /// 若超出硬件限制，create_buffer 会返回错误。
     pub(crate) fn grow(&mut self, required_capacity: usize) -> bool {
         puffin::profile_function!();
-        let new_capacity =
-            ((self.capacity * Self::GROWTH_FACTOR).max(required_capacity)).min(self.max_capacity);
+        let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(required_capacity);
 
         if new_capacity <= self.capacity {
             return false;

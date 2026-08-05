@@ -27,6 +27,15 @@ pub struct WgpuRenderThread {
     /// `_tx` 立即 dropped 导致 `rx` 永远收到 Disconnected，`process_events()` 死信。
     /// 修复：sender 存储在此，通过 `send_note_event()` 暴露给 UI 线程。
     note_event_sender: Option<std::sync::mpsc::Sender<crate::NoteEvent>>,
+    /// 洋葱皮流式上传发送端（UI 线程分块构建 → 渲染线程 streaming_append 到 GPU）
+    ///
+    /// 性能优化（6 亿音符 CPU 峰值 2026-08-05）：
+    /// 旧方案通过 RenderParams.onion_skin_instances 全量传输（9.6 GB @ 6 亿音符），
+    /// UI 线程构建临时峰值 14.4 GB（collected）+ 9.6 GB（instances Vec）。
+    /// 新方案用 sync_channel(32) 分块流式传输，每块 ≤ 10 万实例（1.6 MB），
+    /// UI 线程峰值 < 2 MB，GPU 最终持有全量数据。
+    /// 空 Vec 表示流式上传完成。
+    onion_skin_streaming_sender: Option<std::sync::mpsc::SyncSender<Vec<crate::NoteInstance>>>,
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
     /// 渲染完成的离屏纹理，供主线程读取
@@ -63,6 +72,10 @@ impl WgpuRenderThread {
         let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
         let onion_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
 
+        // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
+        let (onion_skin_streaming_tx, onion_skin_streaming_rx) =
+            std::sync::mpsc::sync_channel::<Vec<crate::NoteInstance>>(3);
+
         let stats_clone = Arc::clone(&stats);
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
@@ -80,6 +93,7 @@ impl WgpuRenderThread {
                 note_events_rx,
                 note_instances_buffer: note_instances_buffer_clone,
                 onion_progress: onion_progress_clone,
+                onion_skin_streaming_rx,
             };
             run_render_thread(ctx, channels);
         });
@@ -89,6 +103,7 @@ impl WgpuRenderThread {
             running,
             command_sender: Some(command_sender),
             note_event_sender: Some(note_event_sender),
+            onion_skin_streaming_sender: Some(onion_skin_streaming_tx),
             thread_handle: Some(thread_handle),
             latest_texture,
             note_instances_buffer,
@@ -196,12 +211,30 @@ impl WgpuRenderThread {
         queue.submit(std::iter::once(encoder.finish()));
     }
 
+    /// 发送洋葱皮流式上传块（UI 线程分块构建后调用）
+    ///
+    /// 每块 ≤ 800 万实例（128 MB），sync_channel(3) 背压：
+    /// channel 满时阻塞 UI 线程，等渲染线程消费后继续。
+    /// 空 Vec 表示流式上传完成（渲染线程收到后调用 finish_streaming_upload）。
+    pub fn send_onion_skin_chunk(&self, chunk: Vec<crate::NoteInstance>) {
+        if let Some(ref sender) = self.onion_skin_streaming_sender
+            && let Err(e) = sender.send(chunk)
+        {
+            tracing::warn!(
+                "Failed to send onion skin chunk (render thread closed?): {}",
+                e
+            );
+        }
+    }
+
     /// 关闭渲染线程
     pub fn shutdown(mut self) {
         self.running.store(false, Ordering::Relaxed);
 
         // 关闭音符事件通道（drop sender 让渲染线程的 try_recv 收到 Disconnected 退出循环）
         self.note_event_sender.take();
+        // 关闭洋葱皮流式通道
+        self.onion_skin_streaming_sender.take();
 
         // 发送关闭命令
         if let Some(ref sender) = self.command_sender {
