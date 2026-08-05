@@ -105,7 +105,8 @@ impl Host {
         for (track_idx, notes) in track_notes.into_iter().enumerate() {
             editor_data.track_notes.insert(track_idx, notes.into());
         }
-        editor_data.track_notes_gen += 1;
+        // 预加载覆盖全部音轨 → 保守全量标记（onion_dirty_tracks = None）
+        editor_data.mark_track_notes_changed();
         tracing::info!(
             "[onion-dirty] 预加载 track_notes: {} 个音轨",
             editor_data.track_notes.len()

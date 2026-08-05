@@ -9,6 +9,7 @@ impl EditorData {
         self.notes.clear();
         self.track_notes.clear();
         self.edited_tracks.clear();
+        self.onion_dirty_tracks = None;
         self.mark_track_notes_changed();
         self.current_track = 0;
         self.history.clear();

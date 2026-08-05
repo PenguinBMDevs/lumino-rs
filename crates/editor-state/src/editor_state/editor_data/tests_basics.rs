@@ -38,6 +38,40 @@ fn test_mark_track_notes_changed() {
     let mut data = EditorData::new();
     data.mark_track_notes_changed();
     assert_eq!(data.track_notes_gen, 1);
+    // 未知来源 → onion_dirty_tracks = None（洋葱皮保守全量重建）
+    assert!(data.onion_dirty_tracks.is_none());
+}
+
+#[test]
+fn test_mark_track_notes_changed_for_records_tracks() {
+    let mut data = EditorData::new();
+    data.current_track = 3;
+    data.mark_current_track_changed();
+    assert_eq!(data.track_notes_gen, 1);
+    assert_eq!(
+        data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([3]))
+    );
+}
+
+#[test]
+fn test_mark_track_notes_changed_for_multi_track() {
+    let mut data = EditorData::new();
+    data.mark_track_notes_changed_for(Some(std::collections::HashSet::from([1, 2])));
+    assert_eq!(data.track_notes_gen, 1);
+    assert_eq!(
+        data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([1, 2]))
+    );
+}
+
+#[test]
+fn test_mark_track_notes_changed_for_none_after_some() {
+    // None 覆盖 Some：未知变化必须压制之前的明确豁免信息
+    let mut data = EditorData::new();
+    data.mark_current_track_changed();
+    data.mark_track_notes_changed();
+    assert!(data.onion_dirty_tracks.is_none());
 }
 
 #[test]

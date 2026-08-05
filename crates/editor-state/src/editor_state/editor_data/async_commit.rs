@@ -71,7 +71,8 @@ impl EditorData {
             Ok(Ok(result)) => {
                 self.notes = result.notes;
                 self.track_notes = result.track_notes;
-                self.mark_track_notes_changed();
+                // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
+                self.mark_current_track_changed();
                 self.edited_tracks.insert(self.current_track);
                 let modified = result.modified;
                 self.push_move_op(pending.ops);

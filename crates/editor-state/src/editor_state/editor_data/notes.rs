@@ -18,7 +18,7 @@ impl EditorData {
             self.track_notes
                 .insert(self.current_track, self.notes.clone());
         }
-        self.mark_track_notes_changed();
+        self.mark_current_track_changed();
     }
 
     /// 流式同步指定索引的音符到当前 track_notes 缓存。
@@ -39,7 +39,7 @@ impl EditorData {
             // 缓存不存在时回退为完整克隆（仅在首次需要同步时发生）
             self.track_notes.insert(current_track, self.notes.clone());
         }
-        self.mark_track_notes_changed();
+        self.mark_current_track_changed();
     }
 
     /// 流式应用拖动状态到当前音轨。
@@ -84,7 +84,7 @@ impl EditorData {
         }
 
         if modified > 0 {
-            self.mark_track_notes_changed();
+            self.mark_current_track_changed();
         }
         modified
     }

@@ -274,7 +274,11 @@ impl EditorData {
         }
 
         if modified > 0 {
-            self.mark_track_notes_changed();
+            // 记录所有受影响音轨：若全部是当前音轨（洋葱皮不显示），
+            // stream_onion_skin_instances 可豁免全量重建上传。
+            let dirty_tracks: std::collections::HashSet<usize> =
+                ops.iter().map(|op| op.track_id as usize).collect();
+            self.mark_track_notes_changed_for(Some(dirty_tracks));
         }
         modified
     }

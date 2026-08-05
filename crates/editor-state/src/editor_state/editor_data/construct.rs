@@ -24,6 +24,7 @@ impl EditorData {
             track_notes: HashMap::new(),
             track_notes_gen: 0,
             edited_tracks: HashSet::new(),
+            onion_dirty_tracks: None,
             document: None,
             history: History::new(),
             pending_commit: None,

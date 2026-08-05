@@ -53,6 +53,15 @@ pub struct EditorData {
     pub track_notes_gen: u64,
     /// 被编辑过的音轨集合（用于协作同步，记录需要广播变更的所有音轨）
     pub edited_tracks: HashSet<usize>,
+    /// 最近一次 `track_notes_gen` 变化明确影响的音轨集合（洋葱皮增量判断用）
+    ///
+    /// - `Some(set)`：本次变化明确只影响这些音轨（如 `mark_current_track_changed`）
+    /// - `None`：变化来源未知或影响全部音轨（保守，触发洋葱皮全量重建）
+    ///
+    /// 洋葱皮只显示「非当前音轨 + 非静音音轨」：当 `Some(set)` 且集合全部落在
+    /// 洋葱皮跳过范围内时，`stream_onion_skin_instances` 可豁免全量重建上传，
+    /// 避免编辑主音轨（最常见热路径，拖动音符每帧触发）导致其他音轨全量重传。
+    pub onion_dirty_tracks: Option<HashSet<usize>>,
     pub document: Option<Arc<lumino_midi_model::MidiDocument>>,
     pub history: History,
     /// 异步提交的待完成状态（MoveOp 后台应用）
