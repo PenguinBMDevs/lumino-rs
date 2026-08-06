@@ -17,6 +17,10 @@ pub struct PlaybackState {
     pub pending_midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
     /// 每个音轨的 MIDI 控制事件（CC/PC/PB），播放時使用
     pub track_midi_events: std::collections::HashMap<usize, Vec<MidiTrackEvent>>,
+    /// 上次同步到播放管理器的 `track_notes_gen`，`None` 表示尚未同步。
+    pub last_synced_track_notes_gen: Option<u64>,
+    /// 上次同步到播放管理器的当前音轨索引，仅在 `last_synced_track_notes_gen` 为 Some 时有效。
+    pub last_synced_current_track: usize,
 }
 
 impl PlaybackState {
@@ -26,6 +30,8 @@ impl PlaybackState {
             pending_tempo_changes: None,
             pending_midi_output: None,
             track_midi_events: std::collections::HashMap::new(),
+            last_synced_track_notes_gen: None,
+            last_synced_current_track: 0,
         }
     }
 }

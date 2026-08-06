@@ -26,18 +26,15 @@ impl Editor {
 
         self.push_history();
 
-        let current_track = self.editor_state.data.current_track;
-        let current_track_touched = track == current_track;
-
         // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
         {
             let editor_data = &mut self.editor_state.data;
             editor_data.insert_note(track, note);
         }
 
-        if current_track_touched {
-            self.mark_notes_changed();
-        }
+        // 2026-08-06 音频修复：无论编辑哪个音轨都需要触发播放同步，
+        // update_playback_notes 会发送完整 document 快照到播放引擎。
+        self.mark_notes_changed();
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data

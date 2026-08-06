@@ -1,7 +1,6 @@
 //! 位置/跳转/同步
 
 use super::core::{PendingNoteOff, PlaybackEngine};
-use lumino_midi_loader::MidiDocument;
 
 impl PlaybackEngine {
     /// 获取当前tick
@@ -21,7 +20,7 @@ impl PlaybackEngine {
 
     /// 将各音轨读取状态定位到指定 tick 位置
     pub(crate) fn reset_cursors_to(&mut self, tick: f32) {
-        let Some(doc) = self.document.clone() else {
+        let Some(doc) = self.document.as_ref() else {
             return;
         };
         let seek_tick = tick as u32;
@@ -29,7 +28,20 @@ impl PlaybackEngine {
             if track_idx == self.current_track as usize {
                 continue;
             }
-            self.reset_track_state_to(track_idx, seek_tick, &doc);
+            let notes = doc.track_notes(track_idx);
+            let state = &mut self.track_states[track_idx];
+            state.pending_offs.clear();
+            // ChunkedList::partition_point(tick) = 第一个 tick >= seek_tick 的索引
+            // （等价于旧 `notes.partition_point(|n| n.start_tick < seek_tick)`）
+            state.note_cursor = notes.partition_point(seek_tick);
+            for (note_idx, note) in notes.iter().enumerate().take(state.note_cursor) {
+                if note.end_tick >= seek_tick {
+                    state.pending_offs.push(PendingNoteOff {
+                        end_tick: note.end_tick,
+                        note_index: note_idx,
+                    });
+                }
+            }
         }
         // 重置控制事件游标（ChunkedList 分块二分）
         self.control_event_cursor = doc.control_events.partition_point(seek_tick);
@@ -38,32 +50,5 @@ impl PlaybackEngine {
             .midi_events
             .partition_point(|event| event.tick < seek_tick as f32);
         self.last_processed_tick = tick;
-    }
-
-    /// 将指定音轨的读取状态重置到 `seek_tick` 位置。
-    ///
-    /// `note_cursor` 指向第一颗 `start_tick >= seek_tick` 的音符；`pending_offs`
-    /// 收集所有在 `seek_tick` 之前已经开始、但在 `seek_tick` 仍未结束的音符，
-    /// 保证循环回绕或 seek 后这些音符的 NoteOff 能被正确发出。
-    pub(crate) fn reset_track_state_to(
-        &mut self,
-        track: usize,
-        seek_tick: u32,
-        doc: &MidiDocument,
-    ) {
-        let notes = doc.track_notes(track);
-        let state = &mut self.track_states[track];
-        state.pending_offs.clear();
-        // ChunkedList::partition_point(tick) = 第一个 tick >= seek_tick 的索引
-        // （等价于旧 `notes.partition_point(|n| n.start_tick < seek_tick)`）
-        state.note_cursor = notes.partition_point(seek_tick);
-        for (note_idx, note) in notes.iter().enumerate().take(state.note_cursor) {
-            if note.end_tick >= seek_tick {
-                state.pending_offs.push(PendingNoteOff {
-                    end_tick: note.end_tick,
-                    note_index: note_idx,
-                });
-            }
-        }
     }
 }

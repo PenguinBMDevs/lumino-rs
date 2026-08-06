@@ -110,13 +110,38 @@ impl PlaybackEngine {
     /// 不再预先把所有音符转换成 CompactEvent 并排序，而是直接保存 `MidiDocument`
     /// 的 `Arc` 引用，并为每个音轨初始化一个读取状态。播放时按需从 document
     /// 的音符切片中读取，消除播放前的大块拷贝与排序开销。
+    ///
+    /// 2026-08-06 音频修复：编辑后更新文档快照时保留播放游标，避免播放中
+    /// 其他音轨跳回开头。仅首次设置或音轨数变化时才全量初始化 track_states。
+    /// ChunkedList 内部 Arc 块级共享使 clone 退化为 O(块数) 指针拷贝，
+    /// 每次编辑后发送快照的开销可忽略。
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
         let track_count = doc.track_count();
-        self.track_states = (0..track_count)
-            .map(|_| TrackEventState::default())
-            .collect();
-        self.control_event_cursor = 0;
-        self.midi_event_cursor = 0;
+        let needs_full_reset = self.document.is_none() || self.track_states.len() != track_count;
+
+        if needs_full_reset {
+            // 首次设置或音轨数变化：复用/扩展 Vec，避免每次重新分配。
+            if self.track_states.len() < track_count {
+                self.track_states
+                    .resize_with(track_count, TrackEventState::default);
+            } else {
+                self.track_states.truncate(track_count);
+            }
+            self.control_event_cursor = 0;
+            self.midi_event_cursor = 0;
+        } else {
+            // 编辑后更新快照：保留播放游标，仅钳制越界 cursor
+            // process_other_tracks 使用 get() 安全访问，不会 panic；
+            // 下次 seek/play 会通过 reset_cursors_to 精确重定位。
+            for track_idx in 0..track_count {
+                let notes_len = doc.track_notes(track_idx).len();
+                let state = &mut self.track_states[track_idx];
+                if state.note_cursor > notes_len {
+                    state.note_cursor = notes_len;
+                }
+            }
+        }
+
         self.current_track = current_track;
         self.document = Some(doc);
     }
@@ -161,6 +186,8 @@ impl PlaybackEngine {
     /// 重建当前音轨的事件队列
     pub(crate) fn rebuild_queue_from_current_track(&mut self, seek_tick: Option<f32>) {
         self.event_queue.clear();
+        // 每颗音符最多产生 NoteOn + NoteOff 两个事件，预分配避免反复扩容。
+        self.event_queue.reserve(self.notes.len() * 2);
         let mut seq: u64 = 0;
 
         for note in &self.notes {

@@ -1,8 +1,7 @@
 //! 编辑器操作 - 播放管理
 
-use crate::playback::{MidiMessage, MidiTrackEvent, NoteEvent};
+use crate::playback::{MidiMessage, MidiTrackEvent};
 use crate::root::Root;
-use std::sync::Arc;
 
 impl Root {
     /// 更新播放管理器中的音符数据
@@ -14,32 +13,48 @@ impl Root {
             return;
         };
 
-        // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
-        // 单一权威源：文档由 EditorData 独占持有；播放引擎的跨线程 Arc 视图
-        // 由 midi_state.document 提供（当前仅在引擎层适配后填充）。
-        if let Some(doc) = &self.midi.document {
-            manager.set_document(
-                Arc::clone(doc),
-                self.editor.editor_state.data.current_track as u16,
-            );
+        let editor_data = &self.editor.editor_state.data;
+        let notes_unchanged = !self.editor.notes_changed()
+            && self
+                .playback
+                .last_synced_track_notes_gen
+                .is_some_and(|g| g == editor_data.track_notes_gen)
+            && self.playback.last_synced_current_track == editor_data.current_track;
+
+        // 只有音符数据或当前音轨变化时才重新发送 document 与当前轨音符，
+        // 避免每次小操作（如力度调整、BPM 变更）都重复 clone document。
+        if !notes_unchanged {
+            use crate::playback::NoteEvent;
+            use std::sync::Arc;
+
+            // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
+            // 2026-08-06 音频修复：从 EditorData.document 克隆快照（ChunkedList
+            // 内部 Arc 块级共享，clone 退化为 O(块数) 指针拷贝），包装为 Arc
+            // 发送给播放引擎。引擎在 process_other_tracks 中流式读取其他音轨音符。
+            if let Some(doc) = editor_data.document.as_ref() {
+                manager.set_document(Arc::new(doc.clone()), editor_data.current_track as u16);
+            }
+
+            // 当前音轨音符（编辑过的，从 document 实时送）。
+            // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
+            // NoteStore 冗余层已删除，统一从 document 读取（current_track_notes 访问器）。
+            let current_notes: Vec<NoteEvent> = editor_data
+                .current_track_notes()
+                .iter()
+                .map(|event| NoteEvent {
+                    tick: event.start_tick as f32,
+                    channel: event.channel,
+                    key: event.key,
+                    velocity: event.velocity,
+                    length: (event.end_tick - event.start_tick) as f32,
+                })
+                .collect();
+            manager.set_current_track_notes(current_notes);
+
+            self.playback.last_synced_track_notes_gen = Some(editor_data.track_notes_gen);
+            self.playback.last_synced_current_track = editor_data.current_track;
         }
 
-        // 当前音轨音符（编辑过的，从 document 实时送）。
-        // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
-        // NoteStore 冗余层已删除，统一从 document 读取（current_track_notes 访问器）。
-        let editor_data = &self.editor.editor_state.data;
-        let current_notes: Vec<NoteEvent> = editor_data
-            .current_track_notes()
-            .iter()
-            .map(|event| NoteEvent {
-                tick: event.start_tick as f32,
-                channel: event.channel,
-                key: event.key,
-                velocity: event.velocity,
-                length: (event.end_tick - event.start_tick) as f32,
-            })
-            .collect();
-        manager.set_current_track_notes(current_notes);
         manager.set_velocity_filter_threshold(self.visual.velocity_filter_threshold);
 
         // 同步 MIDI 控制事件

@@ -37,9 +37,15 @@ impl DialogHandler {
             }
             V::StartExport => {
                 let st = &root.state.video_export_dialog;
-                // 内存模式优先：若当前工程已加载 MidiDocument 则零拷贝使用；
+                // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；
                 // 否则若指定了 MIDI 路径，进入流式读取模式。
-                let document = root.midi.document.as_ref().map(std::sync::Arc::clone);
+                let document = root
+                    .editor
+                    .editor_state
+                    .data
+                    .document
+                    .as_ref()
+                    .map(|doc| std::sync::Arc::new(doc.clone()));
                 let midi_source = if document.is_some() {
                     tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
                     "内存模式".to_string()

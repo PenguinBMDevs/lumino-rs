@@ -295,7 +295,7 @@ fn test_track_max_end_tick_cache_incremental_and_per_track() {
     // 且插入应增量更新、删除/替换应置脏惰性重算。
     let mut doc = make_doc(vec![
         make_track(&[(100, 200, 60), (300, 900, 62)]), // track 0: max end = 900
-        make_track(&[(50, 500, 64)]),                   // track 1: max end = 500
+        make_track(&[(50, 500, 64)]),                  // track 1: max end = 500
     ]);
 
     // 首次查询惰性重算
@@ -306,13 +306,21 @@ fn test_track_max_end_tick_cache_incremental_and_per_track() {
     // 在 track 1 插入更长音符（end=1200），应增量更新为 1200；track 0 不受影响
     assert!(doc.insert_note(1, NoteEvent::new(600, 1200, 66, 100, 0)));
     assert_eq!(doc.track_max_end_tick(1), 1200);
-    assert_eq!(doc.track_max_end_tick(0), 900, "track 0 缓存不应被 track 1 串号");
+    assert_eq!(
+        doc.track_max_end_tick(0),
+        900,
+        "track 0 缓存不应被 track 1 串号"
+    );
     assert_eq!(doc.tracks_max_end_tick(), 1200);
 
     // 删除 track 1 的最大音符（index 1，end=1200），缓存置脏后应重算为 500
     assert_eq!(doc.notes[1][1].end_tick, 1200);
     assert!(doc.remove_note(1, 1).is_some());
-    assert_eq!(doc.track_max_end_tick(1), 500, "删除原 max 后应惰性重算为次大值");
+    assert_eq!(
+        doc.track_max_end_tick(1),
+        500,
+        "删除原 max 后应惰性重算为次大值"
+    );
 
     // track 0 仍独立正确
     assert_eq!(doc.track_max_end_tick(0), 900);

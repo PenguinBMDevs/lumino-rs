@@ -72,10 +72,10 @@ impl DialogHandler {
                 // 从 dialog state 读取配置，发送事件到 runner
                 let st = &root.state.audio_export_dialog;
 
-                // 检查内存中是否有 MidiDocument
-                let document = root.midi.document.as_ref().map(|doc| {
-                    tracing::info!("使用内存中的 MidiDocument 进行音频导出（零拷贝模式）");
-                    std::sync::Arc::clone(doc)
+                // 从 EditorData.document 克隆快照（ChunkedList Arc 块级共享，O(块数) 指针拷贝）
+                let document = root.editor.editor_state.data.document.as_ref().map(|doc| {
+                    tracing::info!("使用内存中的 MidiDocument 进行音频导出（快照模式）");
+                    std::sync::Arc::new(doc.clone())
                 });
 
                 if document.is_none() {
