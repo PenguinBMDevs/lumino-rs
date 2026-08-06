@@ -174,6 +174,15 @@ impl Editor {
         self.pending_drag_state.is_some() || self.editor_state.data.has_pending_commit()
     }
 
+    /// 丢弃未提交的批量拖动（不含异步提交中的 pending commit）
+    ///
+    /// 图片转 MIDI √ 写入后调用：写入改变了 document 音符数量与顺序，
+    /// 残留的 `pending_drag_state.selected` 是写入前的全局索引，继续保留会
+    /// 导致后续 resize/拖动按旧索引取位、误伤周围音符（连带改变长度）。
+    pub fn clear_pending_drag(&mut self) {
+        self.pending_drag_state = None;
+    }
+
     /// 提交 pending 批量拖动到 document（音符唯一权威）
     ///
     /// 在以下场景调用：

@@ -2,7 +2,7 @@
 //!
 //! 负责协调播放引擎和MIDI输出
 
-use crate::engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
+use crate::engine::{MidiMessage, MidiTrackEvent, PlaybackEngine};
 use crate::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
 use crossbeam_channel::{Receiver, Sender, bounded};
 use parking_lot::Mutex;
@@ -36,7 +36,7 @@ pub type PlaybackCallback = Box<dyn FnMut(PlaybackFrame) + Send>;
 enum Command {
     SetMidiOutput(Box<dyn lumino_midi_io::OutputConnection>),
     ClearMidiOutput,
-    SetCurrentTrackNotes(Vec<NoteEvent>),
+    RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
@@ -186,7 +186,7 @@ impl PlaybackManager {
         match cmd {
             Command::SetMidiOutput(output) => *midi_output = Some(output),
             Command::ClearMidiOutput => *midi_output = None,
-            Command::SetCurrentTrackNotes(notes) => engine.set_current_track_notes(notes),
+            Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),
             Command::SetDocument(doc, track) => engine.set_document(doc, track),
             Command::SetMidiEvents(events) => engine.set_midi_events(events),
             Command::SetTempoChanges(changes) => {
@@ -333,9 +333,10 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::ClearMidiOutput);
     }
 
-    /// 设置当前音轨音符列表（用于编辑后的当前轨更新）
-    pub fn set_current_track_notes(&mut self, notes: Vec<NoteEvent>) {
-        let _ = self.sender.send(Command::SetCurrentTrackNotes(notes));
+    /// 从当前 MIDI 文档重建当前音轨播放队列（当前轨与其他轨一致从 document 流式读取，
+    /// 不再经 Vec<NoteEvent> 中转，避免每次编辑后全量克隆当前轨音符的 CPU 阻塞）
+    pub fn rebuild_current_track_queue(&mut self) {
+        let _ = self.sender.send(Command::RebuildCurrentTrackQueue);
     }
 
     /// 设置 MIDI 文档引用（其他音轨从此流式读取）

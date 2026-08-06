@@ -510,14 +510,20 @@ impl Host {
             );
 
             // 图片转 MIDI 预览音符：主轨实色 + 其他轨洋葱皮颜色
+            // Placing 阶段（预览非空）：整体重写主轨 buffer 为预览（内部先 clear，
+            // 覆盖上方 build_main_note_instances 的 document 音符），避免三缓冲轮转下
+            // 在旧预览实例上追加导致"拖一次多一批"的重复绘制。
+            // Selecting 阶段（预览为空）：保持 document 主轨音符，走 main 路径。
             if i2m_active {
                 let (main_preview, onion_preview) =
                     note_worker::collect_i2m_preview_notes(&self.root.editor);
-                note_worker::build_i2m_preview_instances(
-                    &self.render_ctx.render_cache.note_instances_buffer,
-                    &main_preview,
-                    &onion_preview,
-                );
+                if !main_preview.is_empty() || !onion_preview.is_empty() {
+                    note_worker::build_i2m_preview_instances(
+                        &self.render_ctx.render_cache.note_instances_buffer,
+                        &main_preview,
+                        &onion_preview,
+                    );
+                }
             }
             tracing::debug!(
                 "WGPU thread: built {} visible note instances from expanded query",

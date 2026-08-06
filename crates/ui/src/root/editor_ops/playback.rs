@@ -1,5 +1,7 @@
 //! 编辑器操作 - 播放管理
 
+use std::sync::Arc;
+
 use crate::playback::{MidiMessage, MidiTrackEvent};
 use crate::root::Root;
 
@@ -24,32 +26,16 @@ impl Root {
         // 只有音符数据或当前音轨变化时才重新发送 document 与当前轨音符，
         // 避免每次小操作（如力度调整、BPM 变更）都重复 clone document。
         if !notes_unchanged {
-            use crate::playback::NoteEvent;
-            use std::sync::Arc;
-
             // 更新 MIDI 文档引用（让引擎直接读 document 事件流）
             // 2026-08-06 音频修复：从 EditorData.document 克隆快照（ChunkedList
             // 内部 Arc 块级共享，clone 退化为 O(块数) 指针拷贝），包装为 Arc
-            // 发送给播放引擎。引擎在 process_other_tracks 中流式读取其他音轨音符。
+            // 发送给播放引擎。引擎在 process_other_tracks 中流式读取其他音轨音符，
+            // 当前轨队列在 set_document 内从 document 直接重建——不再经
+            // Vec<NoteEvent> 中转，消除编辑后全量克隆当前轨音符的 CPU 内存阻塞
+            // （1600W 音符工程每次编辑 ~150MB + 200ms 卡顿的根因）。
             if let Some(doc) = editor_data.document.as_ref() {
                 manager.set_document(Arc::new(doc.clone()), editor_data.current_track as u16);
             }
-
-            // 当前音轨音符（编辑过的，从 document 实时送）。
-            // 力度过滤现在在 PlaybackEngine 内部统一处理，避免当前轨与其他轨行为不一致。
-            // NoteStore 冗余层已删除，统一从 document 读取（current_track_notes 访问器）。
-            let current_notes: Vec<NoteEvent> = editor_data
-                .current_track_notes()
-                .iter()
-                .map(|event| NoteEvent {
-                    tick: event.start_tick as f32,
-                    channel: event.channel,
-                    key: event.key,
-                    velocity: event.velocity,
-                    length: (event.end_tick - event.start_tick) as f32,
-                })
-                .collect();
-            manager.set_current_track_notes(current_notes);
 
             self.playback.last_synced_track_notes_gen = Some(editor_data.track_notes_gen);
             self.playback.last_synced_current_track = editor_data.current_track;

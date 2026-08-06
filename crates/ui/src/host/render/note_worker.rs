@@ -235,7 +235,17 @@ pub(super) fn build_i2m_preview_instances(
     if total == 0 {
         return;
     }
+    // 关键：先清空 buffer 中已存在的实例（i2m 路径会替换主轨实例为预览实例），
+    // 避免移动/拉伸/框选确认等 bump_preview_generation 触发的每帧重建在已存在
+    // 的实例上追加，导致音符"拖一次多一批"的重复绘制。
+    //
+    // 调用方约束：本函数由 `update_note_data_for_wgpu_thread` 在 i2m_active 分支
+    // 调用，调用前已 `build_main_note_instances` 重建主轨（清空→写入），
+    // 此处再次清空后仅保留本帧 i2m 预览（主轨音符被预览音符覆盖，UI 上仍是
+    // "主轨 i2m 预览实色 + 其他轨洋葱皮"）。若要保留主轨已存在音符，
+    // 调用方应在调用本函数前不重建 main 路径并直接消费 main_notes。
     let instances = unsafe { buffer.write_buffer() };
+    instances.clear();
     instances.reserve(total);
     for (tick, key, length) in main_notes {
         instances.push(lumino_gfx::NoteInstance::new(

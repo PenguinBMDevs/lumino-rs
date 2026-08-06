@@ -80,7 +80,7 @@ impl ToolbarHandler {
         let mut manager = PlaybackManager::new(division);
 
         // 先创建空的 manager，让 update_playback_notes 能工作
-        manager.set_current_track_notes(Vec::new());
+        manager.rebuild_current_track_queue();
         root.playback.manager = Some(manager);
 
         // 通过 update_playback_notes 填充所有音轨的音符（含 document 懒加载）

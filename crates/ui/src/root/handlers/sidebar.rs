@@ -377,6 +377,11 @@ impl Root {
             self.toolbar.current_tool = tool;
             self.editor.set_tool(tool);
         }
+        // 清理放置前残留的交互状态：写入改变了音符索引，残留的选中集合与
+        // pending_drag_state 仍指向写入前的索引，保留会导致后续调整音符长度时
+        // 触发批量 ResizingSelection（连带周围音符长度改变）或 ghost 误偏移。
+        self.editor.editor_state.interaction.selected_notes.clear();
+        self.editor.clear_pending_drag();
         self.editor.mark_notes_changed();
         self.update_playback_notes();
         self.editor.clear_notes_changed();

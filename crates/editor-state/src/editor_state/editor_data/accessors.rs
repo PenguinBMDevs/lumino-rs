@@ -265,13 +265,17 @@ pub fn event_to_note(event: &NoteEvent) -> Note {
     )
 }
 
-/// f32 tick → u32 tick：无损优先（fract==0），异常亚 tick round + warn
+/// f32 tick → u32 tick：无损优先（fract==0），异常亚 tick round + trace
+///
+/// 注意：非整数 tick 是**设计内预期行为**（图片转 MIDI 区域等比映射会生成
+/// 亚 tick 数值），round 是防御性兜底而非异常，因此仅 trace 不 warn——
+/// 否则 i2m 批量写入时每音符一条 WARN，高频日志格式化 + 终端 I/O 阻塞主线程。
 #[inline]
 pub fn f32_to_tick(tick: f32) -> u32 {
     if tick.fract() == 0.0 {
         tick as u32
     } else {
-        tracing::warn!("非整数 tick 写回 MIDI: {tick}，已四舍五入");
+        tracing::trace!("非整数 tick 写回 MIDI: {tick}，已四舍五入");
         tick.round() as u32
     }
 }

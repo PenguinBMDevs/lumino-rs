@@ -1,33 +1,51 @@
 use super::PlaybackEngine;
 use crate::Playback;
-use crate::engine::{MidiMessage, NoteEvent};
+use crate::engine::MidiMessage;
 use parking_lot::Mutex;
 use std::sync::Arc;
 use std::time::Duration;
 
 use lumino_midi_loader::{MidiDocument, NoteEvent as DocNoteEvent, TrackManager};
 
+/// 构造单轨（track 0 = 当前轨）文档，避免每个测试重复全字段构造。
+/// 当前轨统一从 document 流式读取（2026-08 改造后不再有 set_current_track_notes）。
+fn doc_with_current_track(notes: Vec<DocNoteEvent>) -> Arc<MidiDocument> {
+    let mut max_end = 0u32;
+    for n in &notes {
+        max_end = max_end.max(n.end_tick);
+    }
+    Arc::new(MidiDocument {
+        notes: vec![lumino_midi_loader::ChunkedList::from_sorted(notes)],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![None],
+        total_ticks: max_end,
+        track_count: 1,
+        tracks: TrackManager::new(1),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    })
+}
+
 #[test]
 fn test_event_scheduling() {
     let playback = Arc::new(Mutex::new(Playback::new(480)));
     let mut engine = PlaybackEngine::new(playback);
 
-    engine.set_current_track_notes(vec![
-        NoteEvent {
-            tick: 0.0,
-            channel: 0,
-            key: 60,
-            velocity: 100,
-            length: 480.0,
-        },
-        NoteEvent {
-            tick: 480.0,
-            channel: 0,
-            key: 64,
-            velocity: 100,
-            length: 480.0,
-        },
-    ]);
+    // 当前轨（track 0）2 个音符：tick 0/480，长度 480
+    engine.set_document(
+        doc_with_current_track(vec![
+            DocNoteEvent::new(0, 480, 60, 100, 0),
+            DocNoteEvent::new(480, 960, 64, 100, 0),
+        ]),
+        0,
+    );
 
     // 当前轨有 2 个音符 = 4 个事件（NoteOn + NoteOff）
     assert_eq!(engine.event_queue.len(), 4);
@@ -39,22 +57,13 @@ fn test_loop_wrapping_seek_back() {
     let mut engine = PlaybackEngine::new(Arc::clone(&playback));
 
     // 设置从 tick 50 开始的 2 个音符（覆盖循环范围内）
-    engine.set_current_track_notes(vec![
-        NoteEvent {
-            tick: 60.0,
-            channel: 0,
-            key: 60,
-            velocity: 100,
-            length: 10.0,
-        },
-        NoteEvent {
-            tick: 90.0,
-            channel: 0,
-            key: 64,
-            velocity: 100,
-            length: 10.0,
-        },
-    ]);
+    engine.set_document(
+        doc_with_current_track(vec![
+            DocNoteEvent::new(60, 70, 60, 100, 0),
+            DocNoteEvent::new(90, 100, 64, 100, 0),
+        ]),
+        0,
+    );
 
     // 循环范围 [50, 100)
     engine.set_looping(true);
@@ -126,13 +135,10 @@ fn test_loop_wrapping_disabled() {
     let playback = Arc::new(Mutex::new(Playback::new(480)));
     let mut engine = PlaybackEngine::new(Arc::clone(&playback));
 
-    engine.set_current_track_notes(vec![NoteEvent {
-        tick: 50.0,
-        channel: 0,
-        key: 60,
-        velocity: 100,
-        length: 10.0,
-    }]);
+    engine.set_document(
+        doc_with_current_track(vec![DocNoteEvent::new(50, 60, 60, 100, 0)]),
+        0,
+    );
 
     // 设置循环范围但未启用 looping
     engine.set_looping(false);

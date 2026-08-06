@@ -157,7 +157,7 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
 #[test]
 fn test_loop_synced_to_new_playback_manager() {
     let mut manager = PlaybackManager::new(480);
-    manager.set_current_track_notes(Vec::new());
+    manager.rebuild_current_track_queue();
 
     // 模拟：Editor 中循环已开启但 manager 不存在
     let mut editor = Editor::new();
@@ -202,7 +202,7 @@ fn test_loop_synced_to_new_playback_manager() {
 #[test]
 fn test_loop_not_synced_no_wrap() {
     let mut manager = PlaybackManager::new(480);
-    manager.set_current_track_notes(Vec::new());
+    manager.rebuild_current_track_queue();
 
     manager.play();
     wait_for_engine_start(&manager);

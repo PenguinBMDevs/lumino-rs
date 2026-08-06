@@ -4,9 +4,7 @@ use parking_lot::Mutex;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use crate::{
-    EventType, MidiMessage, MidiTrackEvent, NoteEvent, Playback, PlaybackAccessor, ScheduledEvent,
-};
+use crate::{EventType, MidiMessage, MidiTrackEvent, Playback, PlaybackAccessor, ScheduledEvent};
 use lumino_midi_loader::MidiDocument;
 
 /// 其他音轨的事件读取状态。
@@ -53,15 +51,13 @@ pub struct PlaybackEngine {
     /// 当前音轨的待播放事件队列（优先队列，按tick排序）
     /// 仅有当前轨（可能有编辑），其他轨直接从 document 流式读取
     pub(crate) event_queue: BinaryHeap<ScheduledEvent>,
-    /// 当前音轨音符（仅编辑过的音轨，小数据量）
-    pub(crate) notes: Vec<NoteEvent>,
     /// 非音符MIDI事件（CC/PC/PB等）
     pub(crate) midi_events: Vec<MidiTrackEvent>,
-    /// MIDI 文档（其他音轨从此流式读取）
+    /// MIDI 文档（当前轨与其他轨统一从此流式读取）
     pub(crate) document: Option<Arc<MidiDocument>>,
     /// 每个非当前音轨的事件读取状态
     pub(crate) track_states: Vec<TrackEventState>,
-    /// 当前音轨索引（此轨从 self.notes 读，不从 document 读）
+    /// 当前音轨索引（当前轨从 document 流式读取，与 self.notes 解耦）
     pub(crate) current_track: u16,
     /// 单位：tick
     pub(crate) last_processed_tick: f32,
@@ -85,7 +81,6 @@ impl PlaybackEngine {
         Self {
             playback,
             event_queue: BinaryHeap::new(),
-            notes: Vec::new(),
             midi_events: Vec::new(),
             document: None,
             track_states: Vec::new(),
@@ -144,13 +139,13 @@ impl PlaybackEngine {
 
         self.current_track = current_track;
         self.document = Some(doc);
+        // 当前轨队列统一从 document 重建（UI 侧不再传 Vec<NoteEvent> 中转，
+        // 消除编辑后全量克隆当前轨音符的 CPU 内存阻塞）
+        self.rebuild_queue_from_current_track(None);
     }
 
-    /// 设置当前音轨音符列表（仅编辑过的音轨，小数据量）
-    /// 当前轨不从 document 读取，而从此队列播放
-    pub fn set_current_track_notes(&mut self, notes: Vec<NoteEvent>) {
-        self.notes = notes;
-        // 重排当前轨的 event_queue
+    /// 从当前 MIDI 文档重建当前音轨播放队列（与其他轨一致从 document 流式读取）
+    pub fn rebuild_current_track_queue(&mut self) {
         self.rebuild_queue_from_current_track(None);
     }
 
@@ -183,39 +178,45 @@ impl PlaybackEngine {
         self.loop_range = None;
     }
 
-    /// 重建当前音轨的事件队列
+    /// 重建当前音轨的事件队列（从 document 流式读取，无 Vec<NoteEvent> 中转）
     pub(crate) fn rebuild_queue_from_current_track(&mut self, seek_tick: Option<f32>) {
         self.event_queue.clear();
+        let Some(doc) = self.document.as_ref() else {
+            return;
+        };
+        let notes = doc.track_notes(self.current_track as usize);
         // 每颗音符最多产生 NoteOn + NoteOff 两个事件，预分配避免反复扩容。
-        self.event_queue.reserve(self.notes.len() * 2);
+        self.event_queue.reserve(notes.len() * 2);
         let mut seq: u64 = 0;
 
-        for note in &self.notes {
+        for ne in notes.iter() {
+            let tick = ne.start_tick as f32;
+            let length = (ne.end_tick - ne.start_tick) as f32;
             if let Some(st) = seek_tick
-                && note.tick + note.length <= st
+                && tick + length <= st
             {
                 continue;
             }
             // 力度过滤：低于等于阈值的音符不加入播放队列。
             // 这是用户配置的语义过滤，不是性能节流；默认阈值 1 只过滤 velocity=0。
-            if note.velocity <= self.velocity_filter_threshold {
+            if ne.velocity <= self.velocity_filter_threshold {
                 continue;
             }
             self.event_queue.push(ScheduledEvent {
-                tick: note.tick,
+                tick,
                 event_type: EventType::NoteOn {
-                    channel: note.channel,
-                    key: note.key,
-                    velocity: note.velocity,
+                    channel: ne.channel,
+                    key: ne.key,
+                    velocity: ne.velocity,
                 },
                 seq,
             });
             seq += 1;
             self.event_queue.push(ScheduledEvent {
-                tick: note.tick + note.length,
+                tick: tick + length,
                 event_type: EventType::NoteOff {
-                    channel: note.channel,
-                    key: note.key,
+                    channel: ne.channel,
+                    key: ne.key,
                 },
                 seq,
             });
