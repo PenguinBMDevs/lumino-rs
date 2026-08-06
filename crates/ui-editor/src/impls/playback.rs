@@ -103,9 +103,11 @@ impl Editor {
                     continue;
                 }
                 let color = onion_track_color(track_idx);
-                let end = notes.partition_point(|n| n.start_tick <= tick_u32);
+                // ChunkedList::partition_point(tick+1) = 第一个 tick > tick_u32 的索引
+                // （等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`）
+                let end = notes.partition_point(tick_u32.wrapping_add(1));
                 self.playback_scan_state.scan_idx[track_idx] = end;
-                for n in &notes[..end] {
+                for n in notes.iter().take(end) {
                     if n.end_tick() > tick_u32 {
                         let offset = (n.key as usize) * 4;
                         self.playback_scan_state
@@ -128,10 +130,11 @@ impl Editor {
                 }
                 let color = onion_track_color(track_idx);
                 let start = self.playback_scan_state.scan_idx[track_idx];
-                let end = notes.partition_point(|n| n.start_tick <= tick_u32);
+                // 等价于旧 `partition_point(|n| n.start_tick <= tick_u32)`
+                let end = notes.partition_point(tick_u32.wrapping_add(1));
                 self.playback_scan_state.scan_idx[track_idx] = end;
                 // 仅扫描 [start, end) 区间——新进入活跃的音符
-                for n in &notes[start..end] {
+                for n in notes.iter().skip(start).take(end.saturating_sub(start)) {
                     if n.end_tick() > tick_u32 {
                         let offset = (n.key as usize) * 4;
                         self.playback_scan_state

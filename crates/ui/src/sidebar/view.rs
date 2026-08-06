@@ -16,7 +16,7 @@ impl Sidebar {
         language: Language,
         current_mode: AppMode,
         editor_data: &'a lumino_editor_state::EditorData,
-        current_track_notes: &'a [lumino_midi_loader::NoteEvent],
+        current_track_notes: &'a lumino_midi_loader::ChunkedList<lumino_midi_loader::NoteEvent>,
         ppq: u16,
         _snap_precision: f32,
         program_font_name: &'a str,

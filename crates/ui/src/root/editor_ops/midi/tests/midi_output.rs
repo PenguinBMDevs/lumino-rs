@@ -479,33 +479,33 @@ fn test_cc_via_set_midi_document() {
     // 构造一个 MidiDocument，包含 CC 事件
     use midly::loader::PackedControlEvent;
 
-    let control_events = vec![
+    let control_events = lumino_midi_loader::ChunkedList::from_sorted(vec![
         // track 0, ch 0, CC 7 (Volume), val=100, at tick 0
         PackedControlEvent::control_change(0, 0, 0, 7, 100),
         // track 0, ch 0, CC 10 (Pan), val=64, at tick 480
         PackedControlEvent::control_change(480, 0, 0, 10, 64),
         // track 1, ch 1, CC 7, val=80, at tick 0
         PackedControlEvent::control_change(0, 1, 1, 7, 80),
-    ];
+    ]);
 
     let doc = MidiDocument {
         notes: vec![
             // track 0: 1 note on channel 0
-            vec![lumino_midi_loader::NoteEvent {
+            lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
                 start_tick: 0,
                 end_tick: 960,
                 key: 60,
                 velocity: 100,
                 channel: 0,
-            }],
+            }]),
             // track 1: 1 note on channel 1
-            vec![lumino_midi_loader::NoteEvent {
+            lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
                 start_tick: 0,
                 end_tick: 960,
                 key: 64,
                 velocity: 100,
                 channel: 1,
-            }],
+            }]),
         ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],

@@ -241,8 +241,10 @@ impl VelocityPanel {
     /// 避免创建 EditorData 及 notes.clone()。
     /// 10M 音符场景下，clone 开销可达百毫秒级。
     ///
-    /// 2026-08 单一权威源：输入为 `&[NoteEvent]`（document 零拷贝切片）。
-    pub fn build_velocity_points(notes: &[lumino_midi_loader::NoteEvent]) -> Vec<VelocityPoint> {
+    /// 2026-08 单一权威源 + 分块：输入为 `&ChunkedList<NoteEvent>`（document 零拷贝分块容器）。
+    pub fn build_velocity_points(
+        notes: &lumino_midi_loader::ChunkedList<lumino_midi_loader::NoteEvent>,
+    ) -> Vec<VelocityPoint> {
         let mut points: Vec<VelocityPoint> = Vec::with_capacity(notes.len());
         for (i, n) in notes.iter().enumerate() {
             points.push(VelocityPoint {

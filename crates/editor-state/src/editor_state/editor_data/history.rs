@@ -285,7 +285,7 @@ impl EditorData {
         let track_notes = self.current_track_notes();
         let make_op = |start: usize, end: usize, seq: u16| {
             let (ticks, keys): (Vec<f32>, Vec<u16>) = track_notes
-                .get(start..=end)
+                .get_range(start..=end)
                 .map(|slice| {
                     slice
                         .iter()

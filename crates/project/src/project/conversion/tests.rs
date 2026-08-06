@@ -3,13 +3,15 @@ use lumino_midi_model::compact::{CompactEvent, EventKind};
 
 fn make_test_document() -> MidiDocument {
     MidiDocument {
-        notes: vec![vec![NoteEvent::new(0, 480, 60, 100, 0)]],
+        notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
+            NoteEvent::new(0, 480, 60, 100, 0),
+        ])],
         time_signatures: vec![(0, 4, 4)],
         tempo_changes: vec![(0, 120.0)],
         key_signatures: vec![(0, 0, false)],
-        control_events: vec![midly::loader::PackedControlEvent::control_change(
-            0, 0, 0, 7, 100,
-        )],
+        control_events: lumino_midi_model::ChunkedList::from_sorted(vec![
+            midly::loader::PackedControlEvent::control_change(0, 0, 0, 7, 100),
+        ]),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],
@@ -85,15 +87,15 @@ fn test_compact_event_roundtrip() {
 #[test]
 fn test_to_midi_document_roundtrip_overlapping_notes() {
     let doc = MidiDocument {
-        notes: vec![vec![
+        notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
             NoteEvent::new(120, 600, 64, 80, 0),
             NoteEvent::new(480, 960, 60, 90, 0),
-        ]],
+        ])],
         time_signatures: vec![(0, 4, 4)],
         tempo_changes: vec![(0, 120.0)],
         key_signatures: vec![(0, 0, false)],
-        control_events: vec![],
+        control_events: lumino_midi_model::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],
@@ -108,7 +110,7 @@ fn test_to_midi_document_roundtrip_overlapping_notes() {
     let rebuilt = project.to_midi_document().expect("重叠音符重建失败");
 
     assert_eq!(rebuilt.notes[0].len(), 3);
-    let mut sorted = rebuilt.notes[0].clone();
+    let mut sorted = rebuilt.notes[0].to_vec();
     sorted.sort_by_key(|n| (n.start_tick, n.key));
     assert_eq!(sorted[0].start_tick, 0);
     assert_eq!(sorted[0].end_tick, 480);

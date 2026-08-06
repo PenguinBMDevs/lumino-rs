@@ -132,7 +132,9 @@ impl LuminoProject {
     /// 将 `LuminoProject` 重建为 `MidiDocument`
     pub fn to_midi_document(&self) -> Result<MidiDocument> {
         let track_count = self.tracks.len().max(1) as u16;
-        let mut notes: Vec<Vec<NoteEvent>> = vec![Vec::new(); track_count as usize];
+        let mut notes: Vec<lumino_midi_model::ChunkedList<NoteEvent>> = (0..track_count)
+            .map(|_| lumino_midi_model::ChunkedList::new())
+            .collect();
         let mut total_ticks: u32 = 0;
         let mut track_names = Vec::with_capacity(track_count as usize);
 
@@ -165,7 +167,7 @@ impl LuminoProject {
                     || (kind == lumino_midi_model::compact::EventKind::NoteOn && velocity == 0))
                     && let Some((start_tick, note_velocity)) = active.remove(&(key, channel))
                 {
-                    notes[idx].push(NoteEvent::new(
+                    notes[idx].push_back(NoteEvent::new(
                         start_tick,
                         current_tick,
                         key,
@@ -181,7 +183,7 @@ impl LuminoProject {
                 (track_data.meta.max_tick > 0).then_some(track_data.meta.max_tick)
             {
                 for ((key, channel), (start_tick, note_velocity)) in active {
-                    notes[idx].push(NoteEvent::new(
+                    notes[idx].push_back(NoteEvent::new(
                         start_tick,
                         max_tick,
                         key,
@@ -226,7 +228,7 @@ impl LuminoProject {
             tempo_changes: self.tempo_changes.clone(),
             time_signatures: self.time_signatures.clone(),
             key_signatures: self.key_signatures.clone(),
-            control_events,
+            control_events: lumino_midi_model::ChunkedList::from_sorted(control_events),
             lyrics: self.lyrics.clone(),
             markers: self.markers.clone(),
             sys_ex: self.sys_ex.clone(),

@@ -361,9 +361,8 @@ mod tests {
         assert_eq!(document.notes[0].len(), 1);
         assert_eq!(document.notes[1].len(), 2);
 
-        // 验证重叠音符被正确重建
-        let mut track1_notes = document.notes[1].clone();
-        track1_notes.sort_by_key(|n| n.start_tick);
+        // 验证重叠音符被正确重建（ChunkedList 已保证有序，无需再排序）
+        let track1_notes = &document.notes[1];
         assert_eq!(track1_notes[0].start_tick, 0);
         assert_eq!(track1_notes[0].end_tick, 480);
         assert_eq!(track1_notes[0].key, 64);

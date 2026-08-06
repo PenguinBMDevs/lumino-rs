@@ -8,6 +8,7 @@
 //! - `lumino-midi-loader`（加载器）：重新导出所有模型类型，并实现加载/解析/流式/量化逻辑。
 //! - `lumino-core`：仅依赖 `lumino-midi-model` 而非 `lumino-midi-loader`。
 
+pub mod chunked_list;
 pub mod compact;
 pub mod document;
 pub mod error;
@@ -15,6 +16,7 @@ pub mod note_event;
 pub mod note_info;
 pub mod track;
 
+pub use chunked_list::{ChunkedList, EVENT_CHUNK_CAPACITY, EVENT_CHUNK_SPLIT, EventTick};
 pub use compact::{CompactEvent, EventKind};
 pub use document::{MidiDocument, TICK_SEARCH_BUFFER};
 pub use error::{LoaderError, LoaderResult};

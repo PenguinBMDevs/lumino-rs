@@ -53,11 +53,13 @@ impl EditorData {
         let mut data = Self::new();
         data.current_track = track_id;
         let mut doc = lumino_midi_model::MidiDocument {
-            notes: vec![Vec::new(); track_id + 1],
+            notes: (0..=track_id)
+                .map(|_| lumino_midi_model::ChunkedList::new())
+                .collect(),
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
             key_signatures: vec![],
-            control_events: vec![],
+            control_events: lumino_midi_model::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
             sys_ex: vec![],

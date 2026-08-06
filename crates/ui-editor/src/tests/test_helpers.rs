@@ -15,11 +15,13 @@ use lumino_midi_loader::{MidiDocument, NoteEvent, TrackManager};
 pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]) -> MidiDocument {
     let track_count = track_count.max(track_id + 1);
     let mut doc = MidiDocument {
-        notes: vec![Vec::new(); track_count],
+        notes: (0..track_count)
+            .map(|_| lumino_midi_loader::ChunkedList::new())
+            .collect(),
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![],
-        control_events: vec![],
+        control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],
@@ -46,7 +48,7 @@ pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]
         .collect();
     // 与 MidiDocument::insert_note 一致：保持每轨 start_tick 升序不变式
     events.sort_by_key(|e| e.start_tick);
-    doc.notes[track_id] = events;
+    doc.notes[track_id] = lumino_midi_loader::ChunkedList::from_sorted(events);
     doc
 }
 

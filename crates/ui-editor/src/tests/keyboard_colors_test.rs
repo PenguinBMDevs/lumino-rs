@@ -21,11 +21,14 @@ fn make_test_doc() -> MidiDocument {
 
     let track_count = 2u16;
     MidiDocument {
-        notes: vec![track0, track1],
+        notes: vec![
+            lumino_midi_loader::ChunkedList::from_sorted(track0),
+            lumino_midi_loader::ChunkedList::from_sorted(track1),
+        ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![(0, 0, false)],
-        control_events: Vec::new(),
+        control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],

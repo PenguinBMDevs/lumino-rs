@@ -127,8 +127,8 @@ fn build_note_rectangle_render_params(
         if track_notes.is_empty() {
             continue;
         }
-        let (search_start, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in &track_notes[search_start..search_end] {
+        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+        for n in track_notes.iter().take(search_end) {
             if n.end_tick >= tick_start && n.start_tick <= tick_end {
                 visible_notes.push(SortableNote {
                     key: n.key,
@@ -340,8 +340,8 @@ fn collect_visible_notes_for_gpu(
         if track_notes.is_empty() {
             continue;
         }
-        let (search_start, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in &track_notes[search_start..search_end] {
+        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+        for n in track_notes.iter().take(search_end) {
             if n.end_tick > tick_start && n.start_tick < tick_end && n.key < key_count as u8 {
                 out.push(GpuVisibleNote {
                     key: n.key,
@@ -368,13 +368,14 @@ fn collect_visible_notes_for_gpu(
 /// 上界仍通过二分查找定位，避免扫描文件末尾的未开始音符。
 /// `pub(super)`：供 waterfall_frame.rs（CPU 瀑布流）复用同一窗口逻辑。
 pub(super) fn note_search_bounds(
-    track_notes: &[NoteEvent],
+    track_notes: &lumino_midi_loader::ChunkedList<NoteEvent>,
     _tick_start: u32,
     tick_end: u32,
 ) -> (usize, usize) {
     // 下界固定为 0：超长音符的 start_tick 可能远早于 tick_start - TICK_SEARCH_BUFFER，
     // 但 end_tick 仍在当前 tick 之后，必须被纳入搜索窗口。
-    let search_end = track_notes.partition_point(|n| n.start_tick <= tick_end);
+    // 上界：第一个 start_tick > tick_end 的索引（等价于旧 partition_point(|n| n.start_tick <= tick_end)）
+    let search_end = track_notes.partition_point(tick_end.wrapping_add(1));
     (0, search_end)
 }
 
@@ -415,7 +416,8 @@ mod tests {
         }
 
         // 视口：tick 5_000_000 起，窗口 4 小节（ppq=480 → 7680 ticks）
-        let (start, end) = note_search_bounds(&track, 5_000_000, 5_007_680);
+        let chunked = lumino_midi_loader::ChunkedList::from_sorted(track);
+        let (start, end) = note_search_bounds(&chunked, 5_000_000, 5_007_680);
         let window_len = end - start;
 
         // 下界为 0，窗口从文件头开始
@@ -424,9 +426,17 @@ mod tests {
         assert!(window_len < TOTAL, "窗口不应覆盖全部音符");
         assert!(window_len > 0, "窗口不应为空");
         // 窗口应包含所有 start_tick <= tick_end 的音符
-        assert!(track[end - 1].start_tick <= 5_007_680);
+        assert!(chunked
+            .get(end - 1)
+            .expect("窗口内应有音符")
+            .start_tick
+            <= 5_007_680);
         if end < TOTAL {
-            assert!(track[end].start_tick > 5_007_680);
+            assert!(chunked
+                .get(end)
+                .expect("end < TOTAL 时 end 处应有音符")
+                .start_tick
+                > 5_007_680);
         }
     }
 
@@ -441,20 +451,22 @@ mod tests {
     fn test_visible_notes_collection_matches_full_scan() {
         let doc = MidiDocument {
             notes: vec![
-                make_track(&[
+                lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
                     (0, 480, 40),               // 视口前很远，已结束
                     (4_985_000, 5_001_000, 50), // 跨视口长音符（时长 16000 < BUFFER）
                     (5_000_100, 5_001_000, 60), // 视口内
                     (5_007_000, 5_009_000, 62), // 跨视口右边界
                     (5_007_680, 5_008_000, 64), // 视口上界恰好开始
                     (6_000_000, 6_000_480, 70), // 视口后很远，未开始
-                ]),
-                make_track(&[(5_000_200, 5_000_700, 65)]),
+                ])),
+                lumino_midi_loader::ChunkedList::from_sorted(make_track(&[(
+                    5_000_200, 5_000_700, 65,
+                )])),
             ],
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
             key_signatures: vec![(0, 0, false)],
-            control_events: Vec::new(),
+            control_events: lumino_midi_loader::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
             sys_ex: vec![],

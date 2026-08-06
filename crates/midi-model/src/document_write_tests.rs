@@ -20,11 +20,14 @@ fn make_track(notes: &[(u32, u32, u8)]) -> Vec<NoteEvent> {
 fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
     let track_count = tracks.len() as u16;
     MidiDocument {
-        notes: tracks,
+        notes: tracks
+            .into_iter()
+            .map(crate::chunked_list::ChunkedList::from_sorted)
+            .collect(),
         tempo_changes: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
-        control_events: vec![],
+        control_events: crate::chunked_list::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],
@@ -92,7 +95,7 @@ fn test_insert_note_same_tick_stable() {
 #[test]
 fn test_insert_note_track_out_of_range() {
     let mut doc = make_doc(vec![make_track(&[(100, 200, 60)])]);
-    let before: Vec<NoteEvent> = doc.notes[0].clone();
+    let before: Vec<NoteEvent> = doc.notes[0].to_vec();
 
     // track_id = 999 越界：返回 false，数据不变
     assert!(!doc.insert_note(999, NoteEvent::new(300, 400, 61, 100, 0)));
@@ -125,7 +128,7 @@ fn test_remove_note_middle() {
 #[test]
 fn test_remove_note_out_of_range() {
     let mut doc = make_doc(vec![make_track(&[(100, 200, 60), (200, 300, 61)])]);
-    let before: Vec<NoteEvent> = doc.notes[0].clone();
+    let before: Vec<NoteEvent> = doc.notes[0].to_vec();
 
     // index 越界
     assert!(doc.remove_note(0, 5).is_none());
@@ -172,10 +175,10 @@ fn test_update_note_out_of_range() {
 fn test_track_notes_mut() {
     let mut doc = make_doc(vec![make_track(&[(100, 200, 60), (200, 300, 61)])]);
 
-    // 拿到可变引用后 push 一个音符，len 增加
+    // 拿到可变引用后插入一个音符，len 增加
     {
         let track = doc.track_notes_mut(0).expect("轨道 0 应存在");
-        track.push(NoteEvent::new(300, 400, 62, 100, 0));
+        track.insert(NoteEvent::new(300, 400, 62, 100, 0));
     }
     assert_eq!(doc.notes[0].len(), 3);
 

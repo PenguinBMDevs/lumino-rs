@@ -102,15 +102,13 @@ impl Editor {
             // < SPATIAL_INDEX_BUILD_THRESHOLD = 50000），此时 NoteStore 也未启用
             // （阈值 10000），直接走 document 切片 iter 最快——无需构造 NoteView。
             let mut best_idx = None;
-            // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
-            for (i, note) in self
-                .editor_state
-                .data
-                .current_track_notes()
-                .iter()
-                .enumerate()
-                .rev()
-            {
+            // 2026-08 单一权威源：current_track_notes 返回分块容器（u32 tick/u8 key）
+            // 反序遍历：分块容器不支持 DoubleEndedIterator，改用全局索引倒序
+            let track_notes = self.editor_state.data.current_track_notes();
+            for i in (0..track_notes.len()).rev() {
+                let Some(note) = track_notes.get(i) else {
+                    break;
+                };
                 if ghost_set.contains(&i) {
                     continue;
                 }

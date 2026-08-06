@@ -171,17 +171,17 @@ fn test_document_streaming_emits_events_in_order() {
     // 其他轨的音符故意交错，验证 NoteOn/NoteOff 按时间顺序合并输出。
     let doc = Arc::new(MidiDocument {
         notes: vec![
-            vec![],
-            vec![
+            lumino_midi_loader::ChunkedList::new(),
+            lumino_midi_loader::ChunkedList::from_sorted(vec![
                 DocNoteEvent::new(0, 5, 60, 100, 0),
                 DocNoteEvent::new(3, 8, 64, 100, 0),
                 DocNoteEvent::new(6, 10, 67, 100, 0),
-            ],
+            ]),
         ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![(0, 0, false)],
-        control_events: vec![],
+        control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],

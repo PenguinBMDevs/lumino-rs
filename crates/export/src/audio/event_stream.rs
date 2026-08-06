@@ -235,11 +235,14 @@ mod tests {
     fn make_doc(notes: Vec<Vec<NoteEvent>>, total_ticks: u32) -> MidiDocument {
         let track_count = notes.len() as u16;
         MidiDocument {
-            notes,
+            notes: notes
+                .into_iter()
+                .map(lumino_midi_model::ChunkedList::from_sorted)
+                .collect(),
             time_signatures: vec![(0, 4, 4)],
             tempo_changes: vec![(0, 120.0)],
             key_signatures: vec![(0, 0, false)],
-            control_events: vec![],
+            control_events: lumino_midi_model::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
             sys_ex: vec![],

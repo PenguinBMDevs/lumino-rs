@@ -158,11 +158,14 @@ pub fn create_mock_output() -> Box<MockOutput> {
 /// 构造最小 2 轨 MidiDocument（音符写入 document，单一权威源）
 fn make_test_document() -> lumino_midi_loader::MidiDocument {
     lumino_midi_loader::MidiDocument {
-        notes: vec![Vec::new(), Vec::new()],
+        notes: vec![
+            lumino_midi_loader::ChunkedList::new(),
+            lumino_midi_loader::ChunkedList::new(),
+        ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![],
-        control_events: vec![],
+        control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],

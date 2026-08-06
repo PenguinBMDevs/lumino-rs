@@ -227,8 +227,8 @@ pub fn render_waterfall_frame(
         if track_notes.is_empty() {
             continue;
         }
-        let (search_start, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in &track_notes[search_start..search_end] {
+        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+        for n in track_notes.iter().take(search_end) {
             if n.end_tick > tick_start && n.start_tick < tick_end {
                 notes.push(WaterfallNote {
                     key: n.key,

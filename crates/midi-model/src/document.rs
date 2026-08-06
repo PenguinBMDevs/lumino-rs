@@ -27,12 +27,13 @@ pub const TICK_SEARCH_BUFFER: u32 = 19200;
 
 /// 解析后的 MIDI 文档（全内存紧凑存放）
 ///
-/// 音符按音轨存放为 `Vec<Vec<NoteEvent>>`，每轨内按 `start_tick` 升序排列。
+/// 音符按音轨存放为 `Vec<ChunkedList<NoteEvent>>`，每轨内按 `start_tick` 升序排列，
+/// 分块存储（50 万事件/块）保证插入不阻塞（O(块内) 而非 O(整轨)）。
 /// 控制事件和速度变化仍保留，用于播放、导出和工程保存。
 #[derive(Clone)]
 pub struct MidiDocument {
-    /// 每轨的音符列表，按 `start_tick` 升序排列
-    pub notes: Vec<Vec<NoteEvent>>,
+    /// 每轨的音符列表，按 `start_tick` 升序排列，分块存储
+    pub notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>>,
     /// 预提取的 tempo 变化（tick, bpm）
     pub tempo_changes: Vec<(u32, f32)>,
     /// 预提取的拍号变化（tick, 分子, 分母）。
@@ -41,8 +42,9 @@ pub struct MidiDocument {
     /// 预提取的调号变化（tick, 升降号数, 是否小调）。
     /// 正数表示升号数量，负数表示降号数量。
     pub key_signatures: Vec<(u32, i8, bool)>,
-    /// MIDI 控制事件（CC / PC / PB），以 midly PackedControlEvent 紧凑存储
-    pub control_events: Vec<midly::loader::PackedControlEvent>,
+    /// MIDI 控制事件（CC / PC / PB），以 midly PackedControlEvent 紧凑存储，
+    /// 分块（50 万事件/块）保证大量 CC 事件插入不阻塞
+    pub control_events: crate::chunked_list::ChunkedList<midly::loader::PackedControlEvent>,
     /// 歌词文本事件（tick, track_id, 原始字节）
     pub lyrics: Vec<(u32, u16, Vec<u8>)>,
     /// 标记文本事件（tick, track_id, 原始字节）
@@ -114,7 +116,7 @@ impl MidiDocument {
                 (cb)(0.15);
             }
 
-            let mut notes: Vec<Vec<NoteEvent>> = Vec::new();
+            let mut notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>> = Vec::new();
             let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
             let mut all_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
             let mut all_key_signatures: Vec<(u32, i8, bool)> = Vec::new();
@@ -129,7 +131,7 @@ impl MidiDocument {
                 file_bytes,
                 |track_idx, events| {
                     if track_idx >= notes.len() {
-                        notes.resize_with(track_idx + 1, Vec::new);
+                        notes.resize_with(track_idx + 1, crate::chunked_list::ChunkedList::new);
                     }
 
                     let mut track_notes: Vec<NoteEvent> =
@@ -142,7 +144,8 @@ impl MidiDocument {
                         track_notes.sort_unstable_by_key(|n| n.start_tick);
                     }
                     total_notes += track_notes.len() as u64;
-                    notes[track_idx] = track_notes;
+                    // 2026-08-06 分块存储：构建后按 50 万事件/块切分
+                    notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted(track_notes);
 
                     all_tempo_changes.extend(events.tempo_changes);
                     control_events.extend(events.control_events);
@@ -243,7 +246,7 @@ impl MidiDocument {
                     tempo_changes: all_tempo_changes,
                     time_signatures: all_time_signatures,
                     key_signatures: all_key_signatures,
-                    control_events,
+                    control_events: crate::chunked_list::ChunkedList::from_sorted(control_events),
                     lyrics,
                     markers,
                     sys_ex,
@@ -372,20 +375,10 @@ impl MidiDocument {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
-        let search_start = notes
-            .partition_point(|n| n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER));
-        let search_end = notes.len().min(
-            search_start + notes[search_start..].partition_point(|n| n.start_tick <= tick_end_u),
-        );
-
-        if search_start >= search_end {
-            return Vec::new();
-        }
-
-        let slice = &notes[search_start..search_end];
-        let mut result = Vec::with_capacity(slice.len());
-
-        for n in slice {
+        // 分块二分：从 tick_start - TICK_SEARCH_BUFFER 开始扫描（跨视口长音符）
+        let search_start_tick = tick_start_u.saturating_sub(TICK_SEARCH_BUFFER);
+        let mut result = Vec::with_capacity(256);
+        for n in notes.range(search_start_tick, tick_end_u + 1) {
             if n.end_tick() >= tick_start_u && n.start_tick <= tick_end_u {
                 result.push((
                     n.start_tick as f32,
@@ -484,19 +477,8 @@ impl MidiDocument {
                 continue;
             }
 
-            let search_start = notes.partition_point(|n| {
-                n.start_tick < tick_start_u.saturating_sub(TICK_SEARCH_BUFFER)
-            });
-            let search_end = notes.len().min(
-                search_start
-                    + notes[search_start..].partition_point(|n| n.start_tick <= tick_end_u),
-            );
-
-            if search_start >= search_end {
-                continue;
-            }
-
-            for n in &notes[search_start..search_end] {
+            let search_start_tick = tick_start_u.saturating_sub(TICK_SEARCH_BUFFER);
+            for n in notes.range(search_start_tick, tick_end_u + 1) {
                 if n.end_tick() >= tick_start_u && n.start_tick <= tick_end_u {
                     all_notes.push((
                         n.start_tick as f32,
@@ -525,13 +507,12 @@ impl MidiDocument {
         self.track_names.get(track_id).and_then(|n| n.as_deref())
     }
 
-    /// 获取指定音轨的预解析音符引用。
+    /// 获取指定音轨的预解析音符引用（分块容器）。
     #[inline]
-    pub fn track_notes(&self, track_id: usize) -> &[NoteEvent] {
-        self.notes
-            .get(track_id)
-            .map(|v| v.as_slice())
-            .unwrap_or(&[])
+    pub fn track_notes(&self, track_id: usize) -> &crate::chunked_list::ChunkedList<NoteEvent> {
+        static EMPTY: crate::chunked_list::ChunkedList<NoteEvent> =
+            crate::chunked_list::ChunkedList::EMPTY;
+        self.notes.get(track_id).unwrap_or(&EMPTY)
     }
 
     /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
@@ -541,9 +522,8 @@ impl MidiDocument {
         let Some(track_notes) = self.notes.get_mut(track_id) else {
             return false;
         };
-        // 二分定位稳定插入点：分区谓词 <= 保证同 tick 音符插到已存在同 tick 之后
-        let idx = track_notes.partition_point(|n| n.start_tick <= note.start_tick);
-        track_notes.insert(idx, note);
+        // 分块插入：只移动目标块内元素（O(块内)），满块自动分裂
+        track_notes.insert(note);
         true
     }
 
@@ -551,10 +531,7 @@ impl MidiDocument {
     /// track_id 越界或 index 越界返回 None。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
         let track_notes = self.notes.get_mut(track_id)?;
-        if index >= track_notes.len() {
-            return None;
-        }
-        Some(track_notes.remove(index))
+        track_notes.remove(index)
     }
 
     /// 替换指定音轨指定索引处的音符：删除旧音符后按 start_tick 升序重新插入新音符，
@@ -571,7 +548,10 @@ impl MidiDocument {
     /// 返回指定音轨的可变音符引用（供批量编辑/排序场景使用）。
     /// track_id 越界返回 None。
     /// 注意：调用方必须保持 start_tick 升序不变式，本方法不校验。
-    pub fn track_notes_mut(&mut self, track_id: usize) -> Option<&mut Vec<NoteEvent>> {
+    pub fn track_notes_mut(
+        &mut self,
+        track_id: usize,
+    ) -> Option<&mut crate::chunked_list::ChunkedList<NoteEvent>> {
         self.notes.get_mut(track_id)
     }
 
@@ -583,7 +563,7 @@ impl MidiDocument {
         let Some(track) = self.notes.get_mut(track_id) else {
             return false;
         };
-        *track = notes;
+        *track = crate::chunked_list::ChunkedList::from_sorted(notes);
         true
     }
 

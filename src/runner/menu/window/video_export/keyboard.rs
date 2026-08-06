@@ -86,9 +86,10 @@ pub fn update_playback_key_colors(
                 continue;
             }
             let color = track_color_rgba(track_idx);
-            let end = notes.partition_point(|n| n.start_tick <= tick);
+            // ChunkedList::partition_point(tick+1) = 第一个 tick > tick 的索引
+            let end = notes.partition_point(tick.wrapping_add(1));
             state.scan_idx[track_idx] = end;
-            for n in &notes[..end] {
+            for n in notes.iter().take(end) {
                 if n.end_tick > tick {
                     state
                         .active_notes
@@ -107,9 +108,10 @@ pub fn update_playback_key_colors(
             }
             let color = track_color_rgba(track_idx);
             let start = state.scan_idx[track_idx];
-            let end = notes.partition_point(|n| n.start_tick <= tick);
+            // ChunkedList::partition_point(tick+1) = 第一个 tick > tick 的索引
+            let end = notes.partition_point(tick.wrapping_add(1));
             state.scan_idx[track_idx] = end;
-            for n in &notes[start..end] {
+            for n in notes.iter().skip(start).take(end.saturating_sub(start)) {
                 if n.end_tick > tick {
                     state
                         .active_notes
@@ -344,11 +346,14 @@ mod tests {
         let track1 = vec![NoteEvent::new(0, 1920, 67, 100, 1)]; // G4
 
         MidiDocument {
-            notes: vec![track0, track1],
+            notes: vec![
+                lumino_midi_loader::ChunkedList::from_sorted(track0),
+                lumino_midi_loader::ChunkedList::from_sorted(track1),
+            ],
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
             key_signatures: vec![(0, 0, false)],
-            control_events: Vec::new(),
+            control_events: lumino_midi_loader::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
             sys_ex: vec![],
@@ -418,11 +423,13 @@ mod tests {
     fn test_playback_key_colors_no_overflow() {
         // 验证 key 索引在 127 以上时不会越界写入
         let doc = MidiDocument {
-            notes: vec![vec![NoteEvent::new(0, 100, 200, 100, 0)]],
+            notes: vec![lumino_midi_loader::ChunkedList::from_sorted(vec![
+                NoteEvent::new(0, 100, 200, 100, 0),
+            ])],
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
             key_signatures: vec![(0, 0, false)],
-            control_events: Vec::new(),
+            control_events: lumino_midi_loader::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
             sys_ex: vec![],

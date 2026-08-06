@@ -263,16 +263,14 @@ fn collect_notes_doc(
         return;
     }
 
-    // 二分查找起点（退 TICK_SEARCH_BUFFER 以捕获跨范围音符）
+    // 分块二分范围查询（含 TICK_SEARCH_BUFFER 捕获跨范围音符）
     let ts_u = ts as u32;
     let te_u = te as u32;
     const TICK_BUF: u32 = 19200;
 
-    let search_start =
-        notes.partition_point(|note_info| note_info.start_tick < ts_u.saturating_sub(TICK_BUF));
-    let slice = &notes[search_start..];
+    let range_start = ts_u.saturating_sub(TICK_BUF);
 
-    for note_info in slice {
+    for note_info in notes.range(range_start, te_u + 1) {
         if note_info.start_tick > te_u {
             break;
         }

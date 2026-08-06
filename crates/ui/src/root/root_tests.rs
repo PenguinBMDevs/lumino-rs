@@ -220,11 +220,14 @@ fn test_arrangement_max_tick_end_caches_by_gen() {
     // 必须超过 DEFAULT_MIN_TICKS（3840），否则会被最小值覆盖
     // 单一权威源：先挂载 document（音符写入 document）
     let doc = lumino_midi_loader::MidiDocument {
-        notes: vec![Vec::new(), Vec::new()],
+        notes: vec![
+            lumino_midi_loader::ChunkedList::new(),
+            lumino_midi_loader::ChunkedList::new(),
+        ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![],
-        control_events: vec![],
+        control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
         sys_ex: vec![],

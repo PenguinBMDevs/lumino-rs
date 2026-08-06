@@ -7,6 +7,7 @@
 //! `&mut [NoteEvent]`（`track_notes_mut` 借用），不再操作 `im::Vector<Note>`。
 
 use lumino_editor_state::DragState;
+use lumino_midi_loader::ChunkedList;
 use lumino_midi_loader::NoteEvent;
 use std::cell::Cell;
 
@@ -70,7 +71,7 @@ pub(super) fn handle_resizing_start(
 // ──────────────────────────────────────────────
 
 pub(super) fn handle_resizing_end(
-    notes: &[NoteEvent],
+    notes: &ChunkedList<NoteEvent>,
     note_index: usize,
     snapped_tick: f32,
     snap_precision: f32,
@@ -110,7 +111,7 @@ fn apply_resize_start_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    notes: &mut [NoteEvent],
+    notes: &mut ChunkedList<NoteEvent>,
 ) {
     for &i in selected {
         if let Some(note) = notes.get_mut(i) {
@@ -130,7 +131,7 @@ fn apply_resize_end_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    notes: &mut [NoteEvent],
+    notes: &mut ChunkedList<NoteEvent>,
 ) {
     for &i in selected {
         if let Some(note) = notes.get_mut(i) {
@@ -149,7 +150,7 @@ pub(super) fn handle_resizing_selection_start(
     snapped_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    notes: &mut [NoteEvent],
+    notes: &mut ChunkedList<NoteEvent>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
 ) -> bool {
     let delta_tick = snapped_tick - *last_tick;
@@ -172,7 +173,7 @@ pub(super) fn handle_resizing_selection_end(
     snapped_tick: f32,
     snap_precision: f32,
     selected: &[usize],
-    notes: &mut [NoteEvent],
+    notes: &mut ChunkedList<NoteEvent>,
     selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
 ) -> bool {
     let delta_tick = snapped_tick - *last_tick;

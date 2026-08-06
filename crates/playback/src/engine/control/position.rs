@@ -31,10 +31,8 @@ impl PlaybackEngine {
             }
             self.reset_track_state_to(track_idx, seek_tick, &doc);
         }
-        // 重置控制事件游标
-        self.control_event_cursor = doc
-            .control_events
-            .partition_point(|event| event.tick < seek_tick);
+        // 重置控制事件游标（ChunkedList 分块二分）
+        self.control_event_cursor = doc.control_events.partition_point(seek_tick);
         // 重置额外 MIDI 事件游标
         self.midi_event_cursor = self
             .midi_events
@@ -56,7 +54,9 @@ impl PlaybackEngine {
         let notes = doc.track_notes(track);
         let state = &mut self.track_states[track];
         state.pending_offs.clear();
-        state.note_cursor = notes.partition_point(|note_info| note_info.start_tick < seek_tick);
+        // ChunkedList::partition_point(tick) = 第一个 tick >= seek_tick 的索引
+        // （等价于旧 `notes.partition_point(|n| n.start_tick < seek_tick)`）
+        state.note_cursor = notes.partition_point(seek_tick);
         for (note_idx, note) in notes.iter().enumerate().take(state.note_cursor) {
             if note.end_tick >= seek_tick {
                 state.pending_offs.push(PendingNoteOff {

@@ -76,21 +76,23 @@ impl EditorData {
 
     // ── 音符读取（document 唯一权威） ─────────────────────────
 
-    /// 获取当前轨道音符的只读切片（零拷贝，直接借自 document）
+    /// 获取当前轨道音符的分块引用（零拷贝，直接借自 document）
     ///
-    /// 无 document 或音轨不存在时返回空切片。
+    /// 无 document 或音轨不存在时返回空容器引用。
     #[inline]
-    pub fn current_track_notes(&self) -> &[NoteEvent] {
+    pub fn current_track_notes(&self) -> &lumino_midi_model::ChunkedList<NoteEvent> {
         self.track_notes(self.current_track)
     }
 
-    /// 获取指定音轨音符的只读切片（零拷贝，直接借自 document）
+    /// 获取指定音轨音符的分块引用（零拷贝，直接借自 document）
     #[inline]
-    pub fn track_notes(&self, track_id: usize) -> &[NoteEvent] {
+    pub fn track_notes(&self, track_id: usize) -> &lumino_midi_model::ChunkedList<NoteEvent> {
+        static EMPTY: lumino_midi_model::ChunkedList<NoteEvent> =
+            lumino_midi_model::ChunkedList::EMPTY;
         self.document
             .as_ref()
             .map(|doc| doc.track_notes(track_id))
-            .unwrap_or(&[])
+            .unwrap_or(&EMPTY)
     }
 
     /// 当前轨道音符数量（无 document 时为 0）

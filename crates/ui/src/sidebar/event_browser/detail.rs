@@ -31,8 +31,8 @@ mod rows;
 pub struct EventBrowserData<'a> {
     /// 工程中的所有音轨。
     pub tracks: &'a [Track],
-    /// 当前选中音轨的音符集合（document 唯一权威，NoteEvent 切片）。
-    pub current_track_notes: &'a [lumino_midi_loader::NoteEvent],
+    /// 当前选中音轨的音符集合（document 唯一权威，分块容器）。
+    pub current_track_notes: &'a lumino_midi_loader::ChunkedList<lumino_midi_loader::NoteEvent>,
     /// 每四分音符 tick 数。
     pub ppq: u16,
     /// 拍号变化列表 `(tick, numerator, denominator)`。

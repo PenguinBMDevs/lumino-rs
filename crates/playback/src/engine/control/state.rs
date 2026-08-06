@@ -206,8 +206,7 @@ impl PlaybackEngine {
                     self.reset_track_state_to(track_idx, seek_tick_u, &doc);
                 }
                 let ctrl_events = &doc.control_events;
-                self.control_event_cursor =
-                    ctrl_events.partition_point(|ctrl_event| ctrl_event.tick < seek_tick_u);
+                self.control_event_cursor = ctrl_events.partition_point(seek_tick_u);
                 self.midi_event_cursor = self
                     .midi_events
                     .partition_point(|midi_event| midi_event.tick < loop_start);
