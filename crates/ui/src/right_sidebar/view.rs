@@ -45,16 +45,80 @@ pub fn view<'a>(
 
     // 如果面板可见，渲染内容面板 + 调整手柄
     if right_sidebar.panel_visible {
-        // 面板内容（当前只有占位空间，后续可以扩展更多功能）
-        let content = container(Space::new().height(Length::Fill))
-            .width(Length::Fixed(
-                right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
-            ))
-            .height(Length::Fill)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default().background(palette.background.weakest.color)
-            });
+        // 面板内"选择图片文件"按钮
+        let select_btn = button(
+            Row::new()
+                .push(icon::view_with_size_and_theme(
+                    Icon::ImageToMidi,
+                    16,
+                    16,
+                    Some(&window.theme),
+                ))
+                .push(iced_widget::text("选择图片文件").size(13))
+                .spacing(6)
+                .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(6)
+        .style(move |theme: &Theme, status| {
+            let p = theme.extended_palette();
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed => p.background.base.color,
+                _ => p.background.weak.color,
+            };
+            button::Style {
+                text_color: p.background.base.text,
+                border: iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            }
+            .with_background(bg)
+        })
+        .on_press(Message::RightSidebar(RightSidebarAction::SelectImageFile));
+
+        // 面板内容：文件选择按钮 + 已选图片路径标注
+        let file_info: Element<'a> = if let Some(path) = &right_sidebar.selected_image_path {
+            let name = path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string());
+            iced_widget::column![
+                iced_widget::text(format!("文件: {name}")).size(13),
+                iced_widget::text(format!("路径: {}", path.display()))
+                    .size(11)
+                    .style(|theme: &Theme| iced_widget::text::Style {
+                        color: Some(theme.extended_palette().background.strong.text),
+                    }),
+            ]
+            .spacing(4)
+            .into()
+        } else {
+            iced_widget::text("尚未选择图片文件")
+                .size(12)
+                .style(|theme: &Theme| iced_widget::text::Style {
+                    color: Some(theme.extended_palette().background.strong.text),
+                })
+                .into()
+        };
+        let content = container(
+            Column::new()
+                .spacing(8)
+                .padding(8)
+                .push(panel_header("图片转 MIDI", window))
+                .push(select_btn)
+                .push(file_info),
+        )
+        .width(Length::Fixed(
+            right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
+        ))
+        .height(Length::Fill)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style::default().background(palette.background.weakest.color)
+        });
 
         // 调整大小手柄（放在面板右侧，紧贴图标列）
         let resize_handle = mouse_area(
@@ -94,7 +158,25 @@ pub fn view<'a>(
     }
 }
 
-/// 与左侧栏统一的按钮样式：48x48，左侧2px指示条（激活时亮灯），图标+间距12px
+/// 面板标题行（带左侧竖线 + 标题文本）
+fn panel_header<'a>(title: &'a str, window: &'a window::Window) -> Element<'a> {
+    let palette = window.theme.extended_palette();
+    Row::new()
+        .push(
+            container(Space::new())
+                .width(3)
+                .height(Length::Fixed(16.0))
+                .style(move |_theme: &Theme| {
+                    container::Style::default().background(palette.primary.base.color)
+                }),
+        )
+        .push(iced_widget::text(title).size(14))
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// 与左侧栏统一的按钮样式：48x48，右侧2px指示条（激活时亮灯），图标+间距12px
 fn sidebar_button<'a>(
     icon_enum: Icon,
     tooltip_text: &'a str,
@@ -103,7 +185,7 @@ fn sidebar_button<'a>(
     window: &'a window::Window,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
-    // 左侧2px指示条：激活时亮灯（与左侧栏同理），否则透明
+    // 右侧2px指示条：激活时亮灯（与左侧栏同理，但位置在右侧），否则透明
     let split =
         container(Space::new())
             .width(2)
@@ -119,14 +201,19 @@ fn sidebar_button<'a>(
 
     let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
 
-    // 与左侧栏一致的布局：指示条 + 图标，间距12px
-    let inner = Row::new()
-        .push(split)
-        .push(icon_img)
-        .spacing(12)
+    // 图标容器占满除去右侧指示条外的宽度，使图标在按钮内水平居中
+    let icon_holder = container(icon_img)
         .width(Length::Fill)
         .height(Length::Fill)
-        .align_y(Alignment::Center);
+        .center_x(Length::Fill)
+        .center_y(Length::Fill);
+
+    // 镜像布局：图标居中，指示条固定在右侧
+    let inner = Row::new()
+        .push(icon_holder)
+        .push(split)
+        .width(Length::Fill)
+        .height(Length::Fill);
 
     let btn = button(inner)
         .width(48)

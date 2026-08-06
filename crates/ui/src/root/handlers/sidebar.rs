@@ -177,7 +177,7 @@ impl Root {
         use lumino_message::RightSidebarAction::*;
         match action {
             ImageToMidiClicked => {
-                // 点击按钮自动展开/收起面板（面板展开方向向左），面板状态决定按钮亮灯
+                // 点击按钮展开/收起面板（面板展开方向向左），面板状态决定按钮亮灯
                 self.right_sidebar.toggle_panel();
                 tracing::info!(
                     "右侧栏图片转MIDI按钮被点击，面板{}",
@@ -187,6 +187,29 @@ impl Root {
                         "收起"
                     }
                 );
+                true
+            }
+            SelectImageFile => {
+                // 面板内文件选择按钮：弹出对话框，让用户选择 i2m-rs 支持的图片文件
+                // （PNG/JPEG/BMP/GIF/WebP/SVG），选中后标注路径。
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_title("选择要转换为 MIDI 的图片")
+                    .add_filter(
+                        "图片文件",
+                        &["png", "jpg", "jpeg", "bmp", "gif", "webp", "svg"],
+                    )
+                    .add_filter("PNG 图片", &["png"])
+                    .add_filter("JPEG 图片", &["jpg", "jpeg"])
+                    .add_filter("BMP 图片", &["bmp"])
+                    .add_filter("GIF 图片", &["gif"])
+                    .add_filter("WebP 图片", &["webp"])
+                    .add_filter("SVG 矢量图", &["svg"])
+                    .add_filter("所有文件", &["*"])
+                    .pick_file()
+                {
+                    self.right_sidebar.set_selected_image_path(path.clone());
+                    tracing::info!("已选择图片转 MIDI 源文件: {}", path.display());
+                }
                 true
             }
             ResizeDragStarted => {

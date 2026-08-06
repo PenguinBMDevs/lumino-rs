@@ -24,6 +24,8 @@ pub struct RightSidebar {
     pub resize_start_x: f32,
     /// 拖拽开始时的面板宽度
     pub resize_start_width: f32,
+    /// 用户通过文件对话框选中的待转换图片路径
+    pub selected_image_path: Option<std::path::PathBuf>,
 }
 
 impl RightSidebar {
@@ -34,6 +36,7 @@ impl RightSidebar {
             is_resizing: false,
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
+            selected_image_path: None,
         }
     }
 
@@ -50,6 +53,12 @@ impl RightSidebar {
     /// 切换面板显示/隐藏
     pub fn toggle_panel(&mut self) {
         self.panel_visible = !self.panel_visible;
+    }
+
+    /// 设置选中的图片路径（并确保面板展开以便查看结果）
+    pub fn set_selected_image_path(&mut self, path: std::path::PathBuf) {
+        self.selected_image_path = Some(path);
+        self.panel_visible = true;
     }
 
     /// 开始拖拽调整面板宽度
