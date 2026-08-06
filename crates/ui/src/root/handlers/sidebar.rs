@@ -339,6 +339,12 @@ impl Root {
                 continue;
             }
             for &(tick, key, length) in notes {
+                // 批量归一化：i2m 区域等比映射产生亚 tick 数值（如 12418.724），
+                // 写入前统一 round 为整数 tick/长度——既保证 note_to_event 对
+                // tick 与 tick+length 的 round 结果一致（长度不变形），也从源头
+                // 消除非整数 tick（f32_to_tick 因此走快速路径，零日志、零阻塞）。
+                let tick = tick.round();
+                let length = length.round().max(1.0);
                 let note = lumino_note_core::note::Note::new(tick, u16::from(key), length);
                 let event = lumino_editor_state::note_to_event(note.clone());
                 if self
