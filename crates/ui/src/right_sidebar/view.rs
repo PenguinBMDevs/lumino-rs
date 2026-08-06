@@ -87,11 +87,20 @@ pub fn view<'a>(
                 .unwrap_or_else(|| path.display().to_string());
             iced_widget::column![
                 iced_widget::text(format!("文件: {name}")).size(13),
-                iced_widget::text(format!("路径: {}", path.display()))
-                    .size(11)
-                    .style(|theme: &Theme| iced_widget::text::Style {
-                        color: Some(theme.extended_palette().background.strong.text),
-                    }),
+                // 路径文字用横向滚动容器包裹，避免超出面板区域
+                iced_widget::scrollable(
+                    iced_widget::text(format!("路径: {}", path.display()))
+                        .size(11)
+                        .style(|theme: &Theme| iced_widget::text::Style {
+                            color: Some(theme.extended_palette().background.strong.text),
+                        }),
+                )
+                .direction(iced_widget::scrollable::Direction::Horizontal(
+                    iced_widget::scrollable::Scrollbar::new()
+                        .width(4)
+                        .scroller_width(4),
+                ))
+                .height(Length::Shrink),
             ]
             .spacing(4)
             .into()
@@ -158,22 +167,9 @@ pub fn view<'a>(
     }
 }
 
-/// 面板标题行（带左侧竖线 + 标题文本）
-fn panel_header<'a>(title: &'a str, window: &'a window::Window) -> Element<'a> {
-    let palette = window.theme.extended_palette();
-    Row::new()
-        .push(
-            container(Space::new())
-                .width(3)
-                .height(Length::Fixed(16.0))
-                .style(move |_theme: &Theme| {
-                    container::Style::default().background(palette.primary.base.color)
-                }),
-        )
-        .push(iced_widget::text(title).size(14))
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .into()
+/// 面板标题文本（无装饰小条）
+fn panel_header<'a>(title: &'a str, _window: &'a window::Window) -> Element<'a> {
+    iced_widget::text(title).size(14).into()
 }
 
 /// 与左侧栏统一的按钮样式：48x48，右侧2px指示条（激活时亮灯），图标+间距12px
