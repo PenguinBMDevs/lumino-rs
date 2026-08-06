@@ -26,6 +26,8 @@ pub struct RightSidebar {
     pub resize_start_width: f32,
     /// 用户通过文件对话框选中的待转换图片路径
     pub selected_image_path: Option<std::path::PathBuf>,
+    /// 是否正在后台执行图片转 MIDI 转换
+    pub converting: bool,
 }
 
 impl RightSidebar {
@@ -37,6 +39,7 @@ impl RightSidebar {
             resize_start_x: 0.0,
             resize_start_width: DEFAULT_PANEL_WIDTH,
             selected_image_path: None,
+            converting: false,
         }
     }
 

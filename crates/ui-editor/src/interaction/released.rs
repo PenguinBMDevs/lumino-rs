@@ -10,6 +10,13 @@ impl Editor {
     pub(crate) fn handle_released(&mut self) {
         crate::puffin_profiler::released_handle();
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
+
+        // 图片转 MIDI 放置模式：框选完成/移动拉伸结束优先处理
+        if self.editor_state.image_to_midi.is_active() {
+            self.handle_i2m_released(edit_state);
+            return;
+        }
+
         match edit_state {
             EditState::Selecting { .. } => {
                 if self.editor_state.tool == Tool::Eraser {

@@ -67,6 +67,10 @@ pub struct Root {
     pub toast: crate::toast::ToastManager,
     /// 窗口最大化/还原保护标志，阻止路由意外切换
     pub window_resize_guard: bool,
+    /// 图片转 MIDI 后台转换结果接收端（`right_sidebar::ConvertResult`）
+    pub(crate) pending_i2m: Option<std::sync::mpsc::Receiver<crate::right_sidebar::ConvertResult>>,
+    /// 图片转 MIDI 转换前的工具，√ 写入成功后还原
+    pub(crate) i2m_restore_tool: Option<lumino_message::Tool>,
 }
 
 /// Root 构造参数
@@ -119,6 +123,8 @@ impl Root {
                 recording: editor::recording::RecordingState::new(),
                 toast: crate::toast::ToastManager::new(),
                 window_resize_guard: false,
+                pending_i2m: None,
+                i2m_restore_tool: None,
             }
         })
     }

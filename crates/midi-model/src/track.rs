@@ -72,6 +72,11 @@ impl TrackManager {
         Self { tracks }
     }
 
+    /// 追加一条音轨视图（图片转 MIDI 自动建轨用）
+    pub fn push(&mut self, track: TrackView) {
+        self.tracks.push(track);
+    }
+
     /// 获取音轨视图
     pub fn get(&self, track_id: u16) -> Option<&TrackView> {
         self.tracks.get(track_id as usize)

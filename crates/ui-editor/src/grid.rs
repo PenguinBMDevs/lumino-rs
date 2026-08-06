@@ -15,6 +15,7 @@
 //! - `program_impl`: Program trait 实现（事件处理、绘制）
 
 pub mod bars;
+pub mod i2m_box;
 pub mod keyboard;
 pub mod keys;
 pub mod loop_range;

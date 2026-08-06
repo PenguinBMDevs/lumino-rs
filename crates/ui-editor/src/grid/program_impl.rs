@@ -53,6 +53,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos =
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 图片转 MIDI 放置模式：优先响应悬浮 √× 按钮
+                    if self.editor.editor_state.image_to_midi.mode
+                        == lumino_editor_state::ImageToMidiMode::Placing
+                        && let Some(btns) = crate::grid::i2m_box::i2m_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::RightSidebar(
+                                lumino_message::RightSidebarAction::PlacementConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::RightSidebar(
+                                lumino_message::RightSidebarAction::PlacementCancel,
+                            )));
+                        }
+                    }
                     return self.handle_left_press(state, local_pos);
                 }
             }
@@ -148,10 +164,38 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
     fn mouse_interaction(
         &self,
         state: &Self::State,
-        _bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
     ) -> mouse::Interaction {
         puffin::profile_function!();
+
+        // 图片转 MIDI 放置模式：光标反馈
+        let i2m = &self.editor.editor_state.image_to_midi;
+        if i2m.is_active() {
+            use lumino_editor_state::I2mInteraction;
+            return match i2m.interaction {
+                I2mInteraction::Selecting => mouse::Interaction::Crosshair,
+                I2mInteraction::Dragging => mouse::Interaction::Grabbing,
+                I2mInteraction::StretchLeft | I2mInteraction::StretchRight => {
+                    mouse::Interaction::ResizingHorizontally
+                }
+                I2mInteraction::None => {
+                    if let Some(pos) = cursor.position() {
+                        let local_pos = iced_core::Point::new(pos.x - bounds.x, pos.y - bounds.y);
+                        if let Some(hit) = self.editor.hit_test_i2m_region(local_pos) {
+                            return match hit {
+                                crate::SelectionHitType::LeftEdge
+                                | crate::SelectionHitType::RightEdge => {
+                                    mouse::Interaction::ResizingHorizontally
+                                }
+                                crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
+                            };
+                        }
+                    }
+                    mouse::Interaction::Crosshair
+                }
+            };
+        }
 
         if self.editor.current_tool() == Tool::Eraser {
             return mouse::Interaction::Crosshair;
@@ -203,11 +247,9 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                 // 先检查是否悬停在选择框上
                 {
                     puffin::profile_scope!("selection_box_hit_test");
-                    if let Some(cursor_pos) = _cursor.position() {
-                        let local_pos = iced_core::Point::new(
-                            cursor_pos.x - _bounds.x,
-                            cursor_pos.y - _bounds.y,
-                        );
+                    if let Some(cursor_pos) = cursor.position() {
+                        let local_pos =
+                            iced_core::Point::new(cursor_pos.x - bounds.x, cursor_pos.y - bounds.y);
                         if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
                             return match sel_hit {
                                 crate::SelectionHitType::LeftEdge
@@ -299,6 +341,14 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             if let Some(selection_geom) = selection_box::draw(self.editor, renderer, theme, bounds)
             {
                 geometries.push(selection_geom);
+            }
+        }
+
+        {
+            puffin::profile_scope!("draw::i2m_box");
+            if let Some(i2m_geom) = crate::grid::i2m_box::draw(self.editor, renderer, theme, bounds)
+            {
+                geometries.push(i2m_geom);
             }
         }
 

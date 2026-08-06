@@ -117,6 +117,18 @@ impl EditorData {
         doc.insert_note(track_id, event)
     }
 
+    /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
+    /// document 为空时返回 false。
+    pub fn ensure_track(&mut self, track_id: usize) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        while doc.track_count() <= track_id {
+            doc.add_empty_track();
+        }
+        true
+    }
+
     /// 在指定音轨指定索引处删除音符。返回被删除的音符。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
         self.document.as_mut()?.remove_note(track_id, index)

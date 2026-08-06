@@ -11,4 +11,7 @@ pub use editor_state::{
     EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent,
     SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType,
 };
+pub use editor_state::{
+    I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
+};
 pub use editor_transform::EditorTransform;

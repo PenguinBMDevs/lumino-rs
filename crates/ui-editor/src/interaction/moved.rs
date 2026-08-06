@@ -13,6 +13,16 @@ impl Editor {
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
 
+        // 图片转 MIDI 放置模式：移动/拉伸（框选 Selecting 复用下方 EditState::Selecting 逻辑）
+        let i2m_interaction = self.editor_state.image_to_midi.interaction;
+        if self.editor_state.image_to_midi.is_active()
+            && i2m_interaction != lumino_editor_state::I2mInteraction::Selecting
+            && i2m_interaction != lumino_editor_state::I2mInteraction::None
+        {
+            self.handle_i2m_moved(snapped_tick);
+            return;
+        }
+
         // 框选/拖拽过程中 hover 判定无意义，且会触发空间索引重建/线性扫描或
         // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
         // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，

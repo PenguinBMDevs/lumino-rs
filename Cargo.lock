@@ -4058,6 +4058,7 @@ version = "0.2.0-crates-io-preview1"
 dependencies = [
  "anyhow",
  "arboard",
+ "i2m-rs",
  "iced_aw",
  "iced_core",
  "iced_renderer",

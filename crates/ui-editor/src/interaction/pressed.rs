@@ -32,6 +32,12 @@ impl Editor {
         snapped_tick: f32,
         key: u16,
     ) {
+        // 图片转 MIDI 放置模式：拦截全部按下交互
+        if self.editor_state.image_to_midi.is_active() {
+            self.handle_i2m_pressed(pos, snapped_tick);
+            return;
+        }
+
         let hit_result = self.hit_test_note(pos);
 
         match self.editor_state.tool {

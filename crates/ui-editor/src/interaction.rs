@@ -7,6 +7,7 @@
 //! - edit_ops:  编辑操作入口（占位，实现分散在 clipboard / note_ops / editor 中）
 
 mod edit_ops;
+mod i2m;
 mod moved;
 mod pressed;
 mod released;

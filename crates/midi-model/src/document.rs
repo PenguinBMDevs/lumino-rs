@@ -545,6 +545,22 @@ impl MidiDocument {
         self.track_count as usize
     }
 
+    /// 追加一条空音轨（图片转 MIDI 自动建轨用），返回新音轨 id
+    ///
+    /// 同步维护全部音轨相关字段：notes / track_names / track_ports /
+    /// track_max_end_ticks / tracks / track_count。
+    pub fn add_empty_track(&mut self) -> u16 {
+        let new_id = self.track_count;
+        self.notes.push(crate::chunked_list::ChunkedList::new());
+        self.track_names.push(None);
+        self.track_ports.push(0);
+        self.track_max_end_ticks
+            .push(std::sync::Arc::new(std::sync::Mutex::new(None)));
+        self.tracks.push(crate::track::TrackView::new(new_id));
+        self.track_count = self.track_count.saturating_add(1);
+        new_id
+    }
+
     /// 获取指定音轨的名称
     #[inline]
     pub fn track_name(&self, track_id: usize) -> Option<&str> {

@@ -225,6 +225,209 @@ impl Root {
                 self.right_sidebar.end_resize();
                 true
             }
+            ConvertClicked => {
+                // 面板内转换按钮：后台线程执行 i2m-rs 转换，
+                // 完成后由 poll_pending_i2m 轮询接收并强制切换到 Y 向选择工具。
+                let Some(path) = self.right_sidebar.selected_image_path.clone() else {
+                    self.toast.push(
+                        crate::toast::ToastLevel::Warning,
+                        "请先选择图片文件再执行转换",
+                    );
+                    return true;
+                };
+                // 标记转换中：面板按钮禁用 + 编辑器进入等待框选阶段
+                self.right_sidebar.converting = true;
+                // 记录转换前的工具，√ 写入成功后还原
+                self.i2m_restore_tool = Some(self.toolbar.current_tool);
+                self.editor.editor_state.image_to_midi.begin_converting();
+                // 后台线程执行转换，结果通过 channel 回传
+                let thread_path = path.clone();
+                let (tx, rx) = std::sync::mpsc::channel();
+                std::thread::spawn(move || {
+                    let result = crate::right_sidebar::convert::run_conversion(&thread_path);
+                    let _ = tx.send(result);
+                });
+                self.pending_i2m = Some(rx);
+                tracing::info!("已启动图片转 MIDI 后台转换: {}", path.display());
+                true
+            }
+            PlacementConfirm => {
+                // 确认生成：调用 i2m-rs 逻辑在内存中写入数据（m8 实现）
+                self.handle_i2m_placement_confirm();
+                true
+            }
+            PlacementCancel => {
+                // 取消生成：仅清除区域框（保留预览，可重新框选）
+                self.editor.editor_state.image_to_midi.clear_region();
+                self.right_sidebar.converting = false;
+                self.editor
+                    .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
+                tracing::info!("图片转 MIDI 放置已取消（保留预览，可重新框选）");
+                true
+            }
+        }
+    }
+
+    /// 确认图片转 MIDI 生成：按逐轨写入/自动建轨策略写入 document
+    ///
+    /// - 颜色 0 写入当前音轨；
+    /// - 颜色 1+ 自动创建新音轨（sidebar + document 同步扩轨）；
+    /// - 使用 `CreateOp` 操作日志记录（跨轨撤销/重做）。
+    fn handle_i2m_placement_confirm(&mut self) {
+        use lumino_editor_state::ImageToMidiMode;
+
+        // 快照放置状态（避免与后续 &mut self 借用冲突）
+        let i2m = self.editor.editor_state.image_to_midi.clone();
+        if i2m.mode != ImageToMidiMode::Placing {
+            self.toast
+                .push(crate::toast::ToastLevel::Warning, "请先框选生成区域");
+            return;
+        }
+        let Some(preview) = &i2m.preview else {
+            self.toast
+                .push(crate::toast::ToastLevel::Warning, "没有可写入的转换数据");
+            return;
+        };
+
+        let current_track = self.editor.editor_state.data.current_track;
+        // 收集每轨音符（区域映射后的屏幕 tick/key/length）
+        let mut tracks_data: Vec<Vec<(f32, u8, f32)>> = Vec::with_capacity(preview.tracks.len());
+        let mut total_notes = 0usize;
+        for (idx, _) in preview.tracks.iter().enumerate() {
+            let notes = i2m.track_screen_notes(idx);
+            total_notes += notes.len();
+            tracks_data.push(notes);
+        }
+        if total_notes == 0 {
+            self.toast.push(
+                crate::toast::ToastLevel::Warning,
+                "转换结果为空，未写入任何音符",
+            );
+            return;
+        }
+
+        // 自动建轨：颜色 1+ 各分配一条新音轨（sidebar + document 同步）
+        let before: std::collections::HashSet<usize> =
+            self.sidebar.tracks.iter().map(|t| t.id).collect();
+        for _ in 0..preview.tracks.len().saturating_sub(1) {
+            self.sidebar.update(sidebar::Event::AddTrack);
+        }
+        let new_track_ids: Vec<usize> = self
+            .sidebar
+            .tracks
+            .iter()
+            .filter(|t| !before.contains(&t.id))
+            .map(|t| t.id)
+            .collect();
+
+        // 逐轨写入（颜色 0 → 当前轨，颜色 1+ → 新音轨）
+        let mut create_ops: Vec<lumino_note_core::history::CreateOp> = Vec::new();
+        let mut affected = std::collections::HashSet::new();
+        for (color_idx, notes) in tracks_data.iter().enumerate() {
+            if notes.is_empty() {
+                continue;
+            }
+            let target_track = if color_idx == 0 {
+                current_track
+            } else {
+                new_track_ids
+                    .get(color_idx - 1)
+                    .copied()
+                    .unwrap_or(current_track)
+            };
+            if !self.editor.editor_state.data.ensure_track(target_track) {
+                continue;
+            }
+            for &(tick, key, length) in notes {
+                let note = lumino_note_core::note::Note::new(tick, u16::from(key), length);
+                let event = lumino_editor_state::note_to_event(note.clone());
+                if self
+                    .editor
+                    .editor_state
+                    .data
+                    .insert_note(target_track, note)
+                {
+                    create_ops.push(lumino_note_core::history::CreateOp {
+                        track_id: target_track as u32,
+                        note: event,
+                    });
+                }
+            }
+            affected.insert(target_track);
+        }
+
+        // 历史记录（跨轨撤销）+ 标记变化（洋葱皮增量：明确受影响音轨）
+        if !create_ops.is_empty() {
+            self.editor
+                .editor_state
+                .data
+                .history
+                .push_note_create(create_ops);
+            self.editor
+                .editor_state
+                .data
+                .mark_track_notes_changed_for(Some(affected));
+        }
+
+        // 清除放置模式，还原显示区域
+        self.editor.editor_state.image_to_midi.cancel();
+        self.right_sidebar.converting = false;
+        // 完全还原工具：切回转换前的工具（√ 写入成功后流程结束）
+        if let Some(tool) = self.i2m_restore_tool.take() {
+            self.toolbar.current_tool = tool;
+            self.editor.set_tool(tool);
+        }
+        self.editor.mark_notes_changed();
+        self.update_playback_notes();
+        self.editor.clear_notes_changed();
+        self.editor
+            .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
+
+        self.toast.push(
+            crate::toast::ToastLevel::Success,
+            format!("已生成 {total_notes} 个音符"),
+        );
+        tracing::info!("图片转 MIDI 写入完成：{} 个音符", total_notes);
+    }
+
+    /// 轮询图片转 MIDI 后台转换结果（每帧 / 每次消息路由时调用）
+    ///
+    /// 转换完成后：填充预览数据 → 强制切换到 Y 向选择工具进入放置模式。
+    pub(crate) fn poll_pending_i2m(&mut self) {
+        let rx = match self.pending_i2m.as_ref() {
+            Some(rx) => rx,
+            None => return,
+        };
+        let result = match rx.try_recv() {
+            Ok(result) => result,
+            Err(_) => return, // Empty / Disconnected
+        };
+        self.pending_i2m = None;
+        match result {
+            Ok(preview) => {
+                self.editor.editor_state.image_to_midi.set_preview(preview);
+                self.right_sidebar.converting = false;
+                // 强制切换到 Y 向选择工具，用户用其框选生成区域
+                let tool = crate::toolbar::Tool::PointerYSelect;
+                self.toolbar.current_tool = tool;
+                self.editor.set_tool(tool);
+                self.editor
+                    .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
+                self.toast
+                    .push(crate::toast::ToastLevel::Info, "转换完成：请框选生成区域");
+                tracing::info!("图片转 MIDI 转换完成，已强制切换到 Y 向选择工具");
+            }
+            Err(err) => {
+                self.editor.editor_state.image_to_midi.cancel();
+                self.right_sidebar.converting = false;
+                // 转换失败：流程结束，清除原工具记录
+                self.i2m_restore_tool = None;
+                self.toast.push(
+                    crate::toast::ToastLevel::Error,
+                    format!("图片转 MIDI 转换失败: {err}"),
+                );
+                tracing::error!("图片转 MIDI 转换失败: {err}");
+            }
         }
     }
 }

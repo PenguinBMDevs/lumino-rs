@@ -79,7 +79,7 @@ pub fn view<'a>(
         })
         .on_press(Message::RightSidebar(RightSidebarAction::SelectImageFile));
 
-        // 面板内容：文件选择按钮 + 已选图片路径标注
+        // 面板内容：文件选择按钮 + 已选图片路径标注 + 转换按钮
         let file_info: Element<'a> = if let Some(path) = &right_sidebar.selected_image_path {
             let name = path
                 .file_name()
@@ -112,13 +112,64 @@ pub fn view<'a>(
                 })
                 .into()
         };
+
+        // 转换按钮：有图片时可用；转换中显示状态文本
+        let convert_btn = button(
+            Row::new()
+                .push(icon::view_with_size_and_theme(
+                    Icon::ImageToMidi,
+                    16,
+                    16,
+                    Some(&window.theme),
+                ))
+                .push(
+                    iced_widget::text(if right_sidebar.converting {
+                        "转换中..."
+                    } else {
+                        "转换为 MIDI"
+                    })
+                    .size(13),
+                )
+                .spacing(6)
+                .align_y(Alignment::Center),
+        )
+        .width(Length::Fill)
+        .padding(6)
+        .style(move |theme: &Theme, status| {
+            let p = theme.extended_palette();
+            let disabled = right_sidebar.selected_image_path.is_none() || right_sidebar.converting;
+            let bg = match status {
+                button::Status::Hovered | button::Status::Pressed if !disabled => {
+                    p.primary.base.color
+                }
+                _ => p.background.weak.color,
+            };
+            let text_color = if disabled {
+                p.background.strong.text
+            } else {
+                p.background.base.text
+            };
+            button::Style {
+                text_color,
+                border: iced_core::Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: Color::TRANSPARENT,
+                },
+                ..Default::default()
+            }
+            .with_background(bg)
+        })
+        .on_press(Message::RightSidebar(RightSidebarAction::ConvertClicked));
+
         let content = container(
             Column::new()
                 .spacing(8)
                 .padding(8)
                 .push(panel_header("图片转 MIDI", window))
                 .push(select_btn)
-                .push(file_info),
+                .push(file_info)
+                .push(convert_btn),
         )
         .width(Length::Fixed(
             right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,

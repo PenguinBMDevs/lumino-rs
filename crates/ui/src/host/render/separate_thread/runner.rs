@@ -357,6 +357,14 @@ impl Host {
             crate::editor::EditState::Dragging { .. }
         ) || self.root.editor.has_pending_drag();
 
+        // 图片转 MIDI 预览：代际变化（含取消重置）时强制重建主音符实例
+        let (i2m_active, i2m_generation) = {
+            let i2m = &self.root.editor.editor_state.image_to_midi;
+            (i2m.is_active(), i2m.preview_generation)
+        };
+        let i2m_changed =
+            i2m_generation != self.render_ctx.render_cache.last_i2m_preview_generation;
+
         // 计算视口哈希（提前提取 Copy 值，避免借用跨过 Phase 0 的 &mut self 调用）
         let (
             editor_scroll_x,
@@ -400,7 +408,8 @@ impl Host {
             || self.render_ctx.render_cache.note_instances_is_empty()
             || is_drawing
             || is_ghost_dragging
-            || (is_hover_preview && cursor_changed);
+            || (is_hover_preview && cursor_changed)
+            || i2m_changed;
 
         // 计算当前精确视口范围
         let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
@@ -426,13 +435,16 @@ impl Host {
         // 1. 数据事件：拖动 release / 变速 / 翻转 / 异步提交
         // 2. ghost 拖动：拖动中 notes 未变，只更新被拖动音符的渲染位置
         // 兜底：dirty（undo/加载/切轨/散改）或事件含不可见索引 → 全量重建。
-        if self.try_note_incremental_update(
-            note_index_dirty,
-            viewport_changed,
-            is_drawing,
-            is_hover_preview,
-            is_ghost_dragging,
-        ) {
+        if !i2m_active
+            && !i2m_changed
+            && self.try_note_incremental_update(
+                note_index_dirty,
+                viewport_changed,
+                is_drawing,
+                is_hover_preview,
+                is_ghost_dragging,
+            )
+        {
             self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
             return;
         }
@@ -496,6 +508,17 @@ impl Host {
                 &preview_ctx,
                 border_width,
             );
+
+            // 图片转 MIDI 预览音符：主轨实色 + 其他轨洋葱皮颜色
+            if i2m_active {
+                let (main_preview, onion_preview) =
+                    note_worker::collect_i2m_preview_notes(&self.root.editor);
+                note_worker::build_i2m_preview_instances(
+                    &self.render_ctx.render_cache.note_instances_buffer,
+                    &main_preview,
+                    &onion_preview,
+                );
+            }
             tracing::debug!(
                 "WGPU thread: built {} visible note instances from expanded query",
                 visible_count
@@ -515,6 +538,9 @@ impl Host {
                 key_min: render_key_min,
                 key_max: render_key_max,
             });
+
+        // 更新图片转 MIDI 预览代际缓存（本次已重建，后续帧据此判断）
+        self.render_ctx.render_cache.last_i2m_preview_generation = i2m_generation;
 
         // 滚动速度追踪保留，供未来 overscan 预测使用
         let _velocity = self.scroll_tracker.update(editor_scroll_x, editor_zoom_x);

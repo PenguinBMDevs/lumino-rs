@@ -60,6 +60,8 @@ pub struct RenderCache {
     pub depth_texture: Option<(u32, u32, wgpu::TextureView)>,
     /// 走带视图实例缓存（避免每帧重建）
     pub arrangement_instances: Vec<ArrangementNoteInstance>,
+    /// 图片转 MIDI 预览代际缓存（变化时强制重建主音符实例）
+    pub last_i2m_preview_generation: u64,
 }
 
 impl RenderCache {
@@ -74,6 +76,7 @@ impl RenderCache {
             note_visible_indices: Vec::new(),
             depth_texture: None,
             arrangement_instances: Vec::new(),
+            last_i2m_preview_generation: 0,
         }
     }
 

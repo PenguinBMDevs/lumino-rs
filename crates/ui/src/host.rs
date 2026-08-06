@@ -171,6 +171,7 @@ impl Host {
     /// 路由消息：先检查直接处理，未处理则通过路由器分发
     pub(crate) fn route_message(&mut self, msg: message::Message) {
         self.root.poll_midi_input();
+        self.root.poll_pending_i2m();
         if let message::Message::Batch(messages) = msg {
             for m in messages {
                 self.route_message(m);
