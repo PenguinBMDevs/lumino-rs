@@ -100,8 +100,6 @@ impl Host {
             last_gpu_frame_time_ms: 0.0,
             scroll_tracker: ScrollVelocityTracker::new(),
             hires_dirty_tracks: std::collections::HashSet::new(),
-            hires_dirty_regions: std::collections::HashMap::new(),
-            hires_dirty_time_groups: std::collections::HashMap::new(),
             hires_config: Some(hires_config),
             hires_midi_hash: Some(midi_hash),
             hires_gen_info: Some((ppq, key_count, total_ticks)),

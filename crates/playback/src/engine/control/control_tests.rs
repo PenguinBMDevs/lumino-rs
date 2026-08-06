@@ -191,6 +191,8 @@ fn test_document_streaming_emits_events_in_order() {
         tracks: TrackManager::new(2),
         division: 480,
         track_ports: vec![],
+
+        track_max_end_ticks: vec![],
     });
 
     engine.set_document(doc, 0);

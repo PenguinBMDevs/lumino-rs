@@ -237,8 +237,10 @@ impl Root {
     /// 获取工程走带视图的最大 tick 终点（缓存，按 track_notes_gen 失效）
     ///
     /// 播放时每帧需要计算最大滚动范围，全量扫描音符在大型 MIDI 下会导致主线程卡顿。
-    /// 使用 EditorData::track_notes_gen 作为缓存版本号，只在音符数据变化时重新计算。
-    /// 2026-08 单一权威源：音符数据从 document 读取（track_notes 缓存已删除）。
+    /// 2026-08-06 性能修复：改由 `MidiDocument::tracks_max_end_tick()` 提供
+    /// 每轨增量缓存（插入 O(1) 更新、删除置脏惰性重算），不再全量扫描——
+    /// 1600W 工程编辑后首帧全量扫描 ≈ 29.8ms → O(音轨数)。
+    /// 保留 track_notes_gen 缓存作为二次保险（跨 document 替换时避免重复查询）。
     pub fn arrangement_max_tick_end(&mut self) -> f32 {
         let editor_data = &self.editor.editor_state.data;
         let vp = &mut self.arrangement_view.viewport;
@@ -247,12 +249,7 @@ impl Root {
             vp.cached_max_tick_end = editor_data
                 .document
                 .as_ref()
-                .map(|doc| {
-                    (0..doc.track_count())
-                        .flat_map(|track_idx| doc.track_notes(track_idx).iter())
-                        .map(|n| n.end_tick as f32)
-                        .fold(0.0_f32, f32::max)
-                })
+                .map(|doc| doc.tracks_max_end_tick() as f32)
                 .unwrap_or(0.0);
             vp.cached_track_notes_gen = current_gen;
         }

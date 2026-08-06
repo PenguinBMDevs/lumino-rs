@@ -363,6 +363,7 @@ mod tests {
             tracks: TrackManager::new(2),
             division: 480,
             track_ports: vec![],
+            track_max_end_ticks: vec![],
         }
     }
 
@@ -439,6 +440,7 @@ mod tests {
             tracks: TrackManager::new(1),
             division: 480,
             track_ports: vec![],
+            track_max_end_ticks: vec![],
         };
         let mut state = PlaybackKeyColorState::default();
         let mut colors = [0u8; KEY_COLOR_BYTES];

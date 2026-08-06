@@ -69,6 +69,8 @@ impl EditorData {
             tracks: lumino_midi_model::TrackManager::new((track_id + 1) as u16),
             division: 480,
             track_ports: vec![0; track_id + 1],
+
+            track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(track_id + 1),
         };
         for note in notes {
             doc.insert_note(track_id, *note);

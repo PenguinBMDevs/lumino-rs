@@ -238,6 +238,10 @@ impl LuminoProject {
             tracks: TrackManager::new(track_count),
             division: self.metadata.audio.division,
             track_ports: vec![0u8; track_count as usize],
+
+            track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(
+                track_count as usize,
+            ),
         })
     }
 

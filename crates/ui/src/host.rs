@@ -79,12 +79,6 @@ pub struct Host {
     pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
     /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
     pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
-    /// 高精度贴图：脏区域追踪（track_idx → 脏音符列表），用于临时贴图覆层
-    pub(crate) hires_dirty_regions: std::collections::HashMap<u16, Vec<lumino_gfx::OnionSkinNote>>,
-    /// 高精度贴图：每个脏音轨受影响的 time_group 集合
-    ///（保留供后续按需重生成使用）
-    pub(crate) hires_dirty_time_groups:
-        std::collections::HashMap<u16, std::collections::HashSet<u32>>,
     /// 高精度贴图：全量配置（重生成时直接使用副本）
     pub(crate) hires_config: Option<lumino_gfx::HiResConfig>,
     /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）

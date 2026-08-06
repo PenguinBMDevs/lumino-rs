@@ -27,6 +27,8 @@ fn attach_test_document(root: &mut Root) {
         tracks: lumino_midi_loader::TrackManager::new(2),
         division: 480,
         track_ports: vec![0, 0],
+
+        track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(2),
     };
     root.set_midi_document(doc);
     root.editor.editor_state.data.current_track = 1;

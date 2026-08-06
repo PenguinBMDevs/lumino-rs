@@ -520,6 +520,8 @@ fn test_cc_via_set_midi_document() {
         tracks: TrackManager::new(2),
         division: 480,
         track_ports: vec![],
+
+        track_max_end_ticks: vec![],
     };
 
     // 加载 track 0 的音符（模拟 import 流程）

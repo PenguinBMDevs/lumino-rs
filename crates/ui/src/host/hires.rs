@@ -42,8 +42,6 @@ impl Host {
             thread.send_control(lumino_gfx::render_thread::ControlCommand::DisposeHiResOnionSkin);
         }
         self.hires_dirty_tracks.clear();
-        self.hires_dirty_regions.clear();
-        self.hires_dirty_time_groups.clear();
         self.init_default_hires_context();
     }
 
@@ -113,44 +111,13 @@ impl Host {
 
     /// 标记当前音轨高精度贴图为脏（音符编辑后调用）
     ///
-    /// 同时收集该音轨的脏区域音符快照，用于后续按需重生成。
+    /// 2026-08-06 性能修复：此前在此全轨克隆音符快照（`get_track_notes_for_hires`
+    /// 1600W 工程 ≈ 320MB Vec）+ 全量计算 time_group HashSet（~780ms/次），
+    /// 而产物（`hires_dirty_regions` / `hires_dirty_time_groups`）全仓**只写不读**
+    /// ——`force_hires_regen` 重生成时实时从 document 收集，从不消费快照。
+    /// 死数据已删除，此处仅保留 O(1) 脏标记（供未来按需重生成接线使用）。
     pub fn mark_hires_dirty(&mut self, track_idx: u16) {
         self.hires_dirty_tracks.insert(track_idx);
-        // 收集当前音轨的所有音符作为脏区域快照
-        let notes = self.get_track_notes_for_hires(track_idx);
-
-        // 基于当前音符所在 time_group 计算脏 time_group 集合
-        let time_groups = self.compute_dirty_time_groups(&notes);
-        self.hires_dirty_time_groups.insert(track_idx, time_groups);
-
-        self.hires_dirty_regions.insert(track_idx, notes);
-    }
-
-    /// 根据音符列表和当前 hires 配置计算脏 time_group 集合
-    ///
-    /// `OnionSkinNote.start_ms` 在 hires 路径中实为 tick 单位，
-    /// 与 `ticks_per_group` 相除得到 time_group 索引。
-    fn compute_dirty_time_groups(
-        &self,
-        notes: &[lumino_gfx::OnionSkinNote],
-    ) -> std::collections::HashSet<u32> {
-        let mut set = std::collections::HashSet::new();
-        let Some(config) = &self.hires_config else {
-            return set;
-        };
-        let Some((ppq, _, _)) = self.hires_gen_info else {
-            return set;
-        };
-        let ticks_per_group = config.ticks_per_group(ppq);
-        if ticks_per_group == 0 {
-            return set;
-        }
-        for note in notes {
-            // start_ms 在 hires 路径中实为 tick，使用 start_ms 兼容毫秒路径
-            let time_g = (note.start_ms.max(0.0) as u32) / ticks_per_group;
-            set.insert(time_g);
-        }
-        set
     }
 
     /// 获取高精度贴图配置引用（供 runner 构建重生成上下文时使用）
@@ -173,8 +140,6 @@ impl Host {
         if !self.hires_dirty_tracks.remove(&track_idx) {
             return; // 该音轨不脏，不触发
         }
-        self.hires_dirty_regions.remove(&track_idx);
-        self.hires_dirty_time_groups.remove(&track_idx);
 
         let Some(cfg) = self.hires_config.clone() else {
             return;

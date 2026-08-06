@@ -63,6 +63,13 @@ pub struct MidiDocument {
     pub division: u16,
     /// 每轨 MIDI 端口（从 MidiPort meta FF 21 提取，默认 0）
     pub track_ports: Vec<u8>,
+    /// 每轨最大音符结束 tick 缓存（None = 脏，惰性重算）。
+    ///
+    /// 2026-08-06 性能修复：走带视图滚动范围（`arrangement_max_tick_end`）在编辑后
+    /// 全量扫描 1600W 音符 ≈ 29.8ms/次。本缓存由所有写入入口增量维护：
+    /// 插入 O(1)（与当前 max 取大），删除/整轨替换/可变引用保守置脏（查询时
+    /// 惰性重算一次 O(N)）。用 Mutex 而非 Cell 保证 Send（loader 跨线程传递）。
+    pub track_max_end_ticks: Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>>,
 }
 
 impl std::fmt::Debug for MidiDocument {
@@ -110,6 +117,7 @@ impl MidiDocument {
             tracks: crate::track::TrackManager::new(track_count),
             division: 480,
             track_ports: vec![0; track_count as usize],
+            track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
         }
     }
 
@@ -290,6 +298,8 @@ impl MidiDocument {
                     tracks: tracks_manager,
                     division,
                     track_ports,
+                    // max_end_tick 缓存：初始 None（脏），首次查询惰性重算
+                    track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
                 },
                 division,
                 total_notes,
@@ -549,6 +559,16 @@ impl MidiDocument {
         self.notes.get(track_id).unwrap_or(&EMPTY)
     }
 
+    /// 构造每轨 max_end_tick 缓存（N 个**独立** Arc<Mutex>）。
+    ///
+    /// 注意：不能用 `vec![Arc::new(Mutex::new(None)); N]` —— 该写法把同一个 Arc
+    /// 克隆 N 次，导致所有音轨共享**同一个** Mutex（缓存串号）。必须逐个构造。
+    pub fn new_track_max_ticks(n: usize) -> Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>> {
+        (0..n)
+            .map(|_| std::sync::Arc::new(std::sync::Mutex::new(None)))
+            .collect()
+    }
+
     /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
     /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
     /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
@@ -558,14 +578,28 @@ impl MidiDocument {
         };
         // 分块插入：只移动目标块内元素（O(块内)），满块自动分裂
         track_notes.insert(note);
+        // 增量更新 max 缓存（脏时保持脏，查询时惰性重算）
+        if let Some(cell) = self.track_max_end_ticks.get(track_id)
+            && let Some(cur) = cell.lock().ok().and_then(|g| *g)
+            && note.end_tick > cur
+        {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = Some(note.end_tick);
+        }
         true
     }
 
     /// 删除指定音轨指定索引处的音符，返回被删除的音符副本。
     /// track_id 越界或 index 越界返回 None。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
-        let track_notes = self.notes.get_mut(track_id)?;
-        track_notes.remove(index)
+        let removed = {
+            let track_notes = self.notes.get_mut(track_id)?;
+            track_notes.remove(index)
+        };
+        // 保守置脏：被删音符可能是当前 max，查询时惰性重算
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
+        removed
     }
 
     /// 替换指定音轨指定索引处的音符：删除旧音符后按 start_tick 升序重新插入新音符，
@@ -582,10 +616,15 @@ impl MidiDocument {
     /// 返回指定音轨的可变音符引用（供批量编辑/排序场景使用）。
     /// track_id 越界返回 None。
     /// 注意：调用方必须保持 start_tick 升序不变式，本方法不校验。
+    /// 返回后 max 缓存被置脏，下次 `track_max_end_tick` 查询时惰性重算。
     pub fn track_notes_mut(
         &mut self,
         track_id: usize,
     ) -> Option<&mut crate::chunked_list::ChunkedList<NoteEvent>> {
+        // 可变引用逃逸后无法感知修改内容，保守置脏
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
         self.notes.get_mut(track_id)
     }
 
@@ -598,6 +637,9 @@ impl MidiDocument {
             return false;
         };
         *track = crate::chunked_list::ChunkedList::from_sorted(notes);
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
         true
     }
 
@@ -615,6 +657,9 @@ impl MidiDocument {
             return false;
         };
         *track = notes.clone();
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
         true
     }
 
@@ -624,7 +669,42 @@ impl MidiDocument {
             return false;
         };
         track.clear();
+        // 空轨缓存置脏（None），与 recompute 的空轨处理一致，避免残留 Some(0) 误判
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
         true
+    }
+
+    /// 指定音轨的最大音符结束 tick（O(1) 缓存命中；缓存脏时惰性重算一次 O(N)）。
+    #[inline]
+    pub fn track_max_end_tick(&self, track_id: usize) -> u32 {
+        let Some(cell) = self.track_max_end_ticks.get(track_id) else {
+            return 0;
+        };
+        if let Some(v) = cell.lock().ok().and_then(|g| *g) {
+            return v;
+        }
+        // 惰性重算：end_tick 与 start_tick 排序无关，需全轨扫描取最大
+        let max = self
+            .notes
+            .get(track_id)
+            .map(|n| n.iter().map(|note| note.end_tick).max().unwrap_or(0))
+            .unwrap_or(0);
+        // 空轨 max=0 不缓存为 Some(0)（避免与"脏"语义混淆），保持脏（None），
+        // 下次查询继续惰性重算（空轨重算成本为 0）。
+        *cell.lock().expect("track_max_end_ticks lock poisoned") =
+            if max == 0 { None } else { Some(max) };
+        max
+    }
+
+    /// 所有音轨的最大音符结束 tick（走带视图滚动范围用，O(音轨数)）。
+    #[inline]
+    pub fn tracks_max_end_tick(&self) -> u32 {
+        (0..self.track_count())
+            .map(|t| self.track_max_end_tick(t))
+            .max()
+            .unwrap_or(0)
     }
 }
 

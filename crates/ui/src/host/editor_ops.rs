@@ -196,8 +196,6 @@ impl Host {
 
         // 清空高精度脏标记，避免新建工程/关闭文件后残留脏状态误触发
         self.hires_dirty_tracks.clear();
-        self.hires_dirty_regions.clear();
-        self.hires_dirty_time_groups.clear();
 
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");

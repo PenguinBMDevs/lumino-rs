@@ -33,6 +33,8 @@ pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]
         tracks: TrackManager::new(track_count as u16),
         division: 480,
         track_ports: vec![0; track_count],
+
+        track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(track_count),
     };
     let mut events: Vec<NoteEvent> = notes
         .iter()

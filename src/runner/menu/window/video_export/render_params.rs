@@ -474,6 +474,7 @@ mod tests {
             tracks: TrackManager::new(2),
             division: 480,
             track_ports: vec![],
+            track_max_end_ticks: vec![],
         };
 
         let tick_start = 5_000_000;
