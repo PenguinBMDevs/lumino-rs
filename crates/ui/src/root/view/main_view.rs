@@ -115,8 +115,16 @@ impl Root {
                 );
                 column![
                     toolbar,
-                    column![container(editor_view).height(Length::Fill), velocity_panel,]
-                        .height(Length::Fill),
+                    row![
+                        column![container(editor_view).height(Length::Fill), velocity_panel,]
+                            .height(Length::Fill),
+                        right_sidebar::view::view(
+                            &self.right_sidebar,
+                            &self.window,
+                            self.settings.language,
+                        ),
+                    ]
+                    .height(Length::Fill),
                 ]
                 .width(Length::Fill)
                 .height(Length::Fill)
@@ -124,14 +132,10 @@ impl Root {
             })
         };
 
-        // 右侧栏视图
-        let right_sidebar_view =
-            right_sidebar::view::view(&self.right_sidebar, &self.window, self.settings.language);
-
         puffin::profile_scope!("root_view_main_content");
         let main_content = if cfg!(target_os = "macos") {
             column![
-                row![left_bar, right_content, right_sidebar_view].height(Length::Fill),
+                row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),
             ]
         } else {
@@ -143,7 +147,7 @@ impl Root {
                     self.state.toggle_animation.position,
                     self.settings.language,
                 ),
-                row![left_bar, right_content, right_sidebar_view].height(Length::Fill),
+                row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),
             ]
         };
@@ -353,7 +357,15 @@ impl Root {
                 available_width,
                 true,
             ),
-            arrangement_row.height(Length::Fill),
+            row![
+                arrangement_row.height(Length::Fill),
+                right_sidebar::view::view(
+                    &self.right_sidebar,
+                    &self.window,
+                    self.settings.language,
+                ),
+            ]
+            .height(Length::Fill),
             bottom_row,
         ]
         .width(Length::Fill)
