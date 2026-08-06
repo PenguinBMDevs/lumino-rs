@@ -8,6 +8,7 @@ use iced_widget::{button, column, container, row, scrollable, text};
 use super::right_content;
 use crate::message;
 use crate::resources::icon::{self, Icon};
+use crate::right_sidebar;
 use crate::root::Root;
 use crate::sidebar::Event as SidebarEvent;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
@@ -123,10 +124,14 @@ impl Root {
             })
         };
 
+        // 右侧栏视图
+        let right_sidebar_view =
+            right_sidebar::view::view(&self.right_sidebar, &self.window, self.settings.language);
+
         puffin::profile_scope!("root_view_main_content");
         let main_content = if cfg!(target_os = "macos") {
             column![
-                row![left_bar, right_content].height(Length::Fill),
+                row![left_bar, right_content, right_sidebar_view].height(Length::Fill),
                 self.view_status_section(),
             ]
         } else {
@@ -138,7 +143,7 @@ impl Root {
                     self.state.toggle_animation.position,
                     self.settings.language,
                 ),
-                row![left_bar, right_content].height(Length::Fill),
+                row![left_bar, right_content, right_sidebar_view].height(Length::Fill),
                 self.view_status_section(),
             ]
         };

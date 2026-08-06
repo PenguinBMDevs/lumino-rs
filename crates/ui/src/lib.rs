@@ -12,6 +12,7 @@ pub mod playback;
 pub(crate) use lumino_ui_core::resources;
 pub mod root;
 pub use lumino_ui_settings as settings;
+pub mod right_sidebar;
 mod sidebar;
 pub mod state;
 mod statusbar;

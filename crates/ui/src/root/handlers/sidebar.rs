@@ -167,3 +167,37 @@ impl Root {
         needs_redraw
     }
 }
+
+/// 处理右侧栏动作
+impl Root {
+    pub(crate) fn handle_right_sidebar_action(
+        &mut self,
+        action: lumino_message::RightSidebarAction,
+    ) -> bool {
+        use lumino_message::RightSidebarAction::*;
+        match action {
+            TogglePanel => {
+                self.right_sidebar.toggle_panel();
+                true
+            }
+            ImageToMidiClicked => {
+                // 图片转MIDI功能将在这里处理，后续实现
+                tracing::info!("右侧栏图片转MIDI按钮被点击");
+                true
+            }
+            ResizeDragStarted => {
+                // 拖拽开始由鼠标位置判断，这里只是标记开始
+                self.right_sidebar.is_resizing = true;
+                true
+            }
+            ResizeDragged => {
+                // 拖拽中更新宽度
+                true
+            }
+            ResizeDragEnded => {
+                self.right_sidebar.end_resize();
+                true
+            }
+        }
+    }
+}

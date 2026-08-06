@@ -125,6 +125,10 @@ impl Root {
                 self.handle_piano_roll_context_menu(action.clone());
                 true
             }
+            Message::RightSidebar(action) => {
+                self.handle_right_sidebar_action(action.clone());
+                true
+            }
             _ => self.try_handle_simple_state(msg),
         }
     }

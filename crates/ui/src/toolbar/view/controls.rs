@@ -316,15 +316,6 @@ impl Toolbar {
                     Some(Event::button_hovered(Some(ButtonId::Tie))),
                 ),
                 space().width(8),
-                // 图片转 MIDI 占位按钮（功能开发中）
-                tool_button(
-                    icon::ImageToMidi,
-                    t.tool_image_to_midi,
-                    Event::image_to_midi_clicked(),
-                    window,
-                    Some(Event::button_hovered(Some(ButtonId::ImageToMidi))),
-                ),
-                space().width(4),
                 self.render_precision_selector(content_height, palette, language, t),
             ]
             .align_y(Alignment::Center),

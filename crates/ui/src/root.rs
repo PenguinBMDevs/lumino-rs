@@ -8,7 +8,7 @@
 
 use crate::Theme;
 use crate::state::root_state::{DialogType, RootState};
-use crate::{editor, settings, sidebar, statusbar, titlebar, toolbar, window};
+use crate::{editor, right_sidebar, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
 use lumino_midi_loader::MidiDocument;
 
@@ -40,6 +40,7 @@ mod view;
 /// 应用程序根组件
 pub struct Root {
     pub(crate) sidebar: sidebar::Sidebar,
+    pub right_sidebar: right_sidebar::RightSidebar,
     pub(crate) titlebar: titlebar::Titlebar,
     pub(crate) statusbar: statusbar::StatusBar,
     pub toolbar: toolbar::Toolbar,
@@ -97,6 +98,7 @@ impl Root {
 
             Self {
                 sidebar: sidebar::Sidebar::new(),
+                right_sidebar: right_sidebar::RightSidebar::new(),
                 titlebar: titlebar::Titlebar::new(),
                 statusbar: statusbar::StatusBar::new(),
                 toolbar,

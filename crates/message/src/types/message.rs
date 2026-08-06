@@ -13,6 +13,7 @@ use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::project_settings::ProjectSettingsAction;
 use crate::recover_track::RecoverTrackAction;
+use crate::right_sidebar::RightSidebarAction;
 use crate::settings_dialog::SettingsDialogAction;
 use crate::speed_change::SpeedChangeAction;
 use crate::types::editor::EditorAction;
@@ -120,6 +121,8 @@ pub enum Message<W, S, Se, T> {
     Batch(Vec<Message<W, S, Se, T>>),
     /// 钢琴卷帘右键上下文菜单动作
     PianoRollContextMenu(PianoRollContextMenuAction),
+    /// 右侧栏动作
+    RightSidebar(RightSidebarAction),
     /// 工程走带：设置演奏指示线位置
     ArrangementCursorSet(f64),
     /// 工程走带：选择矩形变更（tick_start, tick_end, track_lo, track_hi）
