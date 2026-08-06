@@ -344,6 +344,60 @@ impl<T: EventTick> ChunkedList<T> {
         self.iter().skip(start).take(end.saturating_sub(start))
     }
 
+    /// 视窗定位：返回 tick 在 `[start_tick - lookback_ticks, end_tick)` 的全局索引区间 `(lo, hi)`
+    ///
+    /// 与 [`Self::range`]（严格 `start_tick` 窗口）不同，本方法额外向左扩展
+    /// `lookback_ticks`，用于「跨入查询」——钢琴卷帘可见性/点选需要
+    /// `start_tick <= 查询位置 <= start_tick + length` 的音符，而容器按
+    /// `start_tick` 排序，命中一个长音符可能从其起点向左横跨很远。向前看
+    /// 一个安全上界（lookback）即可在 O(log 块数) 内框出含跨入音符的考察区间。
+    ///
+    /// 注意：lookback 为近似。极端超长音符（长度超过 lookback 的跨度）仍会
+    /// 落在区间之外——调用方应结合业务约束选择足够大的 lookback。
+    ///
+    /// 复杂度 O(log 块数)（两个 `partition_point`）。
+    #[inline]
+    pub fn window_range(
+        &self,
+        start_tick: u32,
+        end_tick: u32,
+        lookback_ticks: u32,
+    ) -> (usize, usize) {
+        let lo_tick = start_tick.saturating_sub(lookback_ticks);
+        (
+            self.partition_point(lo_tick),
+            self.partition_point(end_tick),
+        )
+    }
+
+    /// 在含全局索引的跨块窗口 `[lo, hi)` 上惰性迭代（替代 `iter().skip(lo)`，后者 O(N) 扫描）
+    ///
+    /// `skip(lo)` 在 1600W 前的块上跳过 O(lo) 平铺搜集，代价 O(N)。本迭代器经
+    /// `chunk_offsets` 块级跳变直接定位 lo 所在块，只访问窗口内的元素，
+    /// 总计 O(log 块数 + 窗口长度)。供钢琴卷帘视口/命中查询使用。
+    pub fn iter_window<'a>(&'a self, lo: usize, hi: usize) -> WindowIter<'a, T> {
+        let hi = hi.min(self.total_len);
+        let lo = lo.min(hi);
+        let (cur_ci, cur_local) = if self.chunks.is_empty() {
+            // 空容器：迭代器立即终止（next 检查 cur_global >= end）
+            (0, 0)
+        } else {
+            let ci = self
+                .chunk_offsets
+                .partition_point(|&o| o <= lo)
+                .saturating_sub(1);
+            (ci, lo.saturating_sub(self.chunk_offsets[ci]))
+        };
+        WindowIter {
+            chunks: &self.chunks,
+            cur_ci,
+            cur_local,
+            cur_global: lo,
+            end: hi,
+            done: false,
+        }
+    }
+
     /// 按值查找事件全局索引（O(log 块数 + 同 tick 事件数)）
     ///
     /// 定位目标 tick 所在块后，从块内首段顺序扫描精确匹配（`PartialEq` 全字段）。
@@ -445,6 +499,61 @@ impl<T: EventTick> ChunkedList<T> {
     }
 }
 
+/// 跨块惰性窗口迭代器：产出含全局索引的 `(index, &T)` 对，仅访问 `[lo, hi)` 窗口
+///
+/// 由 [`ChunkedList::iter_window`] 创建。经 `chunk_offsets` 块级跳变直接
+/// 定位起始块，规避 `iter().skip(lo)` 在窗口前的 O(lo) 平铺扫描。
+pub struct WindowIter<'a, T> {
+    chunks: &'a [Arc<Vec<T>>],
+    /// 当前块索引
+    cur_ci: usize,
+    /// 当前块内偏移
+    cur_local: usize,
+    /// 当前全局索引
+    cur_global: usize,
+    /// 窗口上界（全局索引，含）
+    end: usize,
+    /// 迭代终止标记（防止 end == total_len 时继续越过）
+    done: bool,
+}
+
+impl<'a, T: EventTick> Iterator for WindowIter<'a, T> {
+    type Item = (usize, &'a T);
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        if self.done {
+            return None;
+        }
+        // 前跳空块（lo 边界可能落在某块被清空后的缺口）
+        while self.cur_ci < self.chunks.len() && self.cur_local >= self.chunks[self.cur_ci].len() {
+            self.cur_ci += 1;
+            self.cur_local = 0;
+        }
+        if self.cur_ci >= self.chunks.len() || self.cur_global >= self.end {
+            self.done = true;
+            return None;
+        }
+        let chunk = &self.chunks[self.cur_ci];
+        let item = (self.cur_global, &chunk[self.cur_local]);
+        self.cur_global += 1;
+        self.cur_local += 1;
+        if self.cur_global >= self.end {
+            self.done = true;
+        }
+        Some(item)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        if self.done {
+            return (0, Some(0));
+        }
+        let remain = self.end.saturating_sub(self.cur_global);
+        (remain, Some(remain))
+    }
+}
+
 /// 浅拷贝 O(块数)：块 Arc 共享，未修改块物理共址（undo 快照依赖此特性）
 impl<T: EventTick> Clone for ChunkedList<T> {
     fn clone(&self) -> Self {
@@ -537,10 +646,88 @@ mod tests {
         (0..count as u32).map(|i| ev(i * 10, i)).collect()
     }
 
+    /// 直接构造多块 ChunkedList（测试窗口跨块迭代，避免依赖 50 万真实容量）
+    fn multi_chunk(list_sizes: &[usize]) -> ChunkedList<TestEvent> {
+        let mut list: ChunkedList<TestEvent> = ChunkedList::new();
+        let mut next_tick = 0u32;
+        for &size in list_sizes {
+            let chunk: Vec<TestEvent> = (0..size)
+                .map(|i| ev(next_tick + i as u32, next_tick + i as u32))
+                .collect();
+            list.chunks.push(Arc::new(chunk));
+            next_tick += size as u32;
+        }
+        list.total_len = next_tick as usize;
+        list.rebuild_index();
+        list
+    }
+
     /// 参照实现：普通 Vec + partition_point（验证 ChunkedList 行为等价）
     fn reference_insert(sorted: &mut Vec<TestEvent>, e: TestEvent) {
         let idx = sorted.partition_point(|x| x.tick <= e.tick);
         sorted.insert(idx, e);
+    }
+
+    // ── window_range：lookback 窗口定位 ─────────────────────────
+
+    #[test]
+    fn test_window_range_basic() {
+        let list = ChunkedList::from_sorted(sorted_events(10));
+        // event ticks: 0,10,..,90；partition_point(t) = tick<t 的事件数
+        // [30, 60) 无 lookback → 全局索引 [3, 6)（事件 30,40,50）
+        assert_eq!(list.window_range(30, 60, 0), (3, 6));
+        // lookback=15 → 起点 tick=15 → 分区 2（事件 0,10）→ [2, 6)
+        assert_eq!(list.window_range(30, 60, 15), (2, 6));
+        // lookback 超首 → 起点 0
+        assert_eq!(list.window_range(0, 30, u32::MAX), (0, 3));
+        // end < start → (pp(end), pp(start)) 即 lo>hi，由调用方保证不越界
+        assert_eq!(list.window_range(60, 30, 0), (6, 3));
+    }
+
+    // ── iter_window：跨块惰性迭代 ───────────────────────────────
+
+    #[test]
+    fn test_iter_window_single_chunk() {
+        let list = ChunkedList::from_sorted(sorted_events(10));
+        let got: Vec<(usize, u32)> = list.iter_window(2, 5).map(|(i, e)| (i, e.tick)).collect();
+        assert_eq!(got, vec![(2, 20), (3, 30), (4, 40)]);
+    }
+
+    #[test]
+    fn test_iter_window_cross_chunks() {
+        let list = multi_chunk(&[3, 4, 3]); // tick: 0..30 → 三块 [0,3) [3,7) [7,10)
+        // 跨两块：从块 0 采样 [2, 5) → 块 0 的 index 2 和块 1 的 index 3,4
+        let got: Vec<(usize, u32)> = list.iter_window(2, 5).map(|(i, e)| (i, e.tick)).collect();
+        assert_eq!(got, vec![(2, 2), (3, 3), (4, 4)]);
+        // 全跨三块
+        let got: Vec<(usize, u32)> = list.iter_window(0, 10).map(|(i, e)| (i, e.tick)).collect();
+        assert_eq!(got.len(), 10);
+        assert_eq!(got.first().unwrap(), &(0, 0));
+        assert_eq!(got.last().unwrap(), &(9, 9));
+    }
+
+    #[test]
+    fn test_iter_window_bounds_and_empty() {
+        let list = ChunkedList::from_sorted(sorted_events(10));
+        // 越界 clamp：hi 超 len
+        let got: Vec<(usize, u32)> = list.iter_window(8, 999).map(|(i, e)| (i, e.tick)).collect();
+        assert_eq!(got, vec![(8, 80), (9, 90)]);
+        // lo > len → 空
+        assert_eq!(list.iter_window(10, 20).count(), 0);
+        // 空窗口
+        assert_eq!(list.iter_window(5, 5).count(), 0);
+        // 空容器
+        let empty: ChunkedList<TestEvent> = ChunkedList::new();
+        assert_eq!(empty.iter_window(0, 10).count(), 0);
+    }
+
+    #[test]
+    fn test_iter_window_size_hint() {
+        let list = multi_chunk(&[3, 4, 3]);
+        let mut it = list.iter_window(2, 7);
+        assert_eq!(it.size_hint(), (5, Some(5)));
+        it.next();
+        assert_eq!(it.size_hint(), (4, Some(4)));
     }
 
     #[test]

@@ -2,7 +2,13 @@
 //!
 //! **性能关键**：1000W 音符场景下，原 O(N) 全量扫描 ~168ms/帧。
 //! 改用空间索引 `update_query` 剪枝 + key 二分查找，降到 O(log N + K)。
-//! 空间索引未建（None）时 fallback 到 O(N) 扫描保证准确性。
+//!
+//! 2026-08-06 性能修复：空间索引在 1600W 下每次编辑需 O(N log N) 全量重建
+//! （collect NoteRef + sort + 递归建树，2-4s）——用户「编辑中间插入 4s」的主因。
+//! 本模块改为「ChunkedList 窗口扫描」：`window_range` 块级二分框出命中点
+//! tick 邻域（含 lookback 跨入长音符），窗口内过滤 key/start/end。O(log N + K)
+//! 与总音符量无关，且**无需建任何索引**。空间索引（NoteSpatialIndex）不再为
+//! 命中路径服务，作为冗余层退役。
 
 use std::collections::HashSet;
 
@@ -10,6 +16,9 @@ use iced_core::Point;
 
 use super::super::{EditState, Editor, HitType};
 use lumino_ui_core::constants::editor::NOTE_EDGE_THRESHOLD_PX;
+
+/// 命中查询 lookback 上界：向命中点左侧回溯的 tick 跨度（覆盖「跨入」长音符）
+const HIT_WINDOW_LOOKBACK: u32 = 1_000_000;
 
 /// 收集当前 ghost 偏移影响的所有音符索引，按索引降序返回
 ///
@@ -48,9 +57,6 @@ impl Editor {
     /// Resizing 期间空间索引可能滞后一帧（dirty 未重建），hover 位置略旧可接受；
     /// pressed 通常在 Idle 状态触发，空间索引是最新的，准确性有保证。
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
-        // 按需重建空间索引；小数据量时直接走线性扫描，避免百毫秒级建树开销。
-        self.ensure_spatial_index();
-
         let view = &self.editor_state.view;
         let tick = view.x_to_tick(pos.x);
         let key = view.y_to_key(pos.y);
@@ -83,48 +89,38 @@ impl Editor {
             }
         }
 
-        // 2. 非 ghost 音符命中判定。
-        //    - 大数据量：使用空间索引 O(log N + K)。
-        //    - 小数据量：线性扫描 O(N)，避免构建索引的固定开销。
+        // 2. 非 ghost 音符命中判定：ChunkedList 窗口扫描。
+        //    块级二分框出命中点 tick 邻域（起点 ≤ 命中点，含 lookback 跨入），
+        //    窗口内过滤 key/start/end——O(log 块数 + 窗口长度)，免空间索引重建。
         //    排除 ghost 受影响的音符，避免视觉上已移走的音符仍在原位置被命中。
-        if let Some(index) = self.spatial.note_index.borrow().as_ref() {
-            let mut buf = Vec::new();
-            index.update_query(tick, tick, key, key, &mut buf);
-            let best_idx = *buf.iter().filter(|&&i| !ghost_set.contains(&i)).max()?;
-            let note = self.editor_state.data.get_note_view(best_idx)?;
-            Self::note_hit_type(tick, note.tick, note.length, edge_threshold)
-                .map(|hit_type| (best_idx, hit_type))
-        } else {
-            // 小数据量线性扫描：排除 ghost 音符后，剩余音符均无 ghost 偏移，
-            // 直接使用原始 tick/key 判定，避免重复调用 ghost_delta_for_index。
-            //
-            // 此 fallback 路径仅在 spatial.note_index 为 None 时进入（小数据量
-            // < SPATIAL_INDEX_BUILD_THRESHOLD = 50000），此时 NoteStore 也未启用
-            // （阈值 10000），直接走 document 切片 iter 最快——无需构造 NoteView。
-            let mut best_idx = None;
-            // 2026-08 单一权威源：current_track_notes 返回分块容器（u32 tick/u8 key）
-            // 反序遍历：分块容器不支持 DoubleEndedIterator，改用全局索引倒序
-            let track_notes = self.editor_state.data.current_track_notes();
-            for i in (0..track_notes.len()).rev() {
-                let Some(note) = track_notes.get(i) else {
-                    break;
-                };
-                if ghost_set.contains(&i) {
-                    continue;
-                }
-                if note.key as u16 == key
-                    && tick >= note.start_tick as f32
-                    && tick <= note.end_tick as f32
-                    && best_idx.is_none_or(|b| i > b)
-                {
-                    best_idx = Some(i);
-                }
+        let tick_u32 = tick.max(0.0) as u32;
+        let (lo, hi) = self.editor_state.data.current_track_notes().window_range(
+            tick_u32,
+            tick_u32 + 1,
+            HIT_WINDOW_LOOKBACK,
+        );
+        let mut best_idx = None;
+        for (i, note) in self
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter_window(lo, hi)
+        {
+            if ghost_set.contains(&i) {
+                continue;
             }
-            let i = best_idx?;
-            let note = self.editor_state.data.get_note_view(i)?;
-            Self::note_hit_type(tick, note.tick, note.length, edge_threshold)
-                .map(|hit_type| (i, hit_type))
+            if note.key as u16 == key
+                && tick >= note.start_tick as f32
+                && tick <= note.end_tick as f32
+                && best_idx.is_none_or(|b| i > b)
+            {
+                best_idx = Some(i);
+            }
         }
+        let i = best_idx?;
+        let note = self.editor_state.data.get_note_view(i)?;
+        Self::note_hit_type(tick, note.tick, note.length, edge_threshold)
+            .map(|hit_type| (i, hit_type))
     }
 
     /// 根据点击位置相对音符起止点的距离判定命中类型

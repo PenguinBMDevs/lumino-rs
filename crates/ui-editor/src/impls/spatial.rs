@@ -11,6 +11,15 @@ use std::cell::{Cell, RefCell};
 /// 高于此阈值时，空间索引的 O(log N + K) 查询优势才能抵消建树成本。
 pub(crate) const SPATIAL_INDEX_BUILD_THRESHOLD: usize = 50_000;
 
+/// 空间索引**上限**：超过此规模不再构建空间索引
+///
+/// 2026-08-06 性能修复：1600W 音符工程每次编辑后重建空间索引需 O(N log N)
+/// （collect NoteRef + sort + 递归建树 ≈ 2-4s + 数百 MB 临时内存），是「编辑
+/// 中间插入 4s + 内存 2-3G」的主因。超大工程改由 `ChunkedList::window_range`
+/// 块级二分窗口查询（O(log 块数 + 窗口长度)，免建索引）兜底，见
+/// `visible_notes.rs::collect_via_window` 与 `note_ops/hit_test.rs`。
+pub(crate) const SPATIAL_INDEX_MAX_BUILD: usize = 2_000_000;
+
 impl Default for SpatialIndexState {
     fn default() -> Self {
         Self {
@@ -53,10 +62,15 @@ impl Editor {
     /// 若空间索引已脏且音符数量达到阈值，立即重建
     ///
     /// 使用内部可变性，允许在 `&self` 的 hit-test/渲染路径中调用。
-    /// 小数据量时跳过建树，直接走线性扫描，避免不必要的百毫秒级开销。
+    /// 小数据量时跳过建树，直接走线性扫描/窗口扫描，避免不必要的百毫秒级开销。
     ///
     /// **性能优化**：当 NoteStore 启用时走 `from_note_store` 直接消费 SoA 数据，
     /// 16M 音符场景下避免 ~80ms 的 Note 结构体 clone 开销。
+    ///
+    /// 2026-08-06 超大工程保护：音符量超过 [`SPATIAL_INDEX_MAX_BUILD`] 时不再
+    /// 构建空间索引——改为清除索引（`None`），由 `collect_via_window` /
+    /// `hit_test_note` 的 ChunkedList 窗口扫描兜底（O(log N + K) 同量级，
+    /// 免 O(N log N) 全量重建 ≈ 2-4s）。保证该量级下查询不建树、不卡顿。
     pub(crate) fn ensure_spatial_index(&self) {
         if !self.spatial.note_index_dirty.get() {
             return;
@@ -68,6 +82,16 @@ impl Editor {
             // 小数据量：直接标记为已更新，使用线性扫描路径
             self.spatial.note_index_dirty.set(false);
             *self.spatial.note_index.borrow_mut() = None;
+            return;
+        }
+        if notes.len() > SPATIAL_INDEX_MAX_BUILD {
+            // 超大型工程：不建索引，查询走 ChunkedList 窗口扫描（见 hit_test.rs）
+            self.spatial.note_index_dirty.set(false);
+            *self.spatial.note_index.borrow_mut() = None;
+            tracing::debug!(
+                "Editor: 超大型工程（{} 音符）跳过空间索引构建，走窗口查询",
+                notes.len(),
+            );
             return;
         }
 

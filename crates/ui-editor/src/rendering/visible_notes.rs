@@ -13,6 +13,14 @@ use super::Editor;
 use super::ghost::{has_active_ghost_delta, is_note_ghosted};
 use crate::EditState;
 
+/// 视口窗口查询的 lookback 上界（tick）
+///
+/// `ChunkedList` 按 `start_tick` 排序，视口查询需向前回溯以覆盖「跨入」
+/// 长音符（起点在视口左侧、长度延伸进视口）。取 1M tick（≈ 2600 小节 @
+/// 1920ppq 或 34 分钟 @ 120bpm 480ppq）——工程上音符长度不超过此值，
+/// 超出则视口外左侧部分本就不渲染，影响可忽略。
+const NOTES_WINDOW_LOOKBACK: u32 = 1_000_000;
+
 impl Editor {
     /// 收集当前视口内可见的音符数据（tick, key, length）
     ///
@@ -73,7 +81,8 @@ impl Editor {
                 needs_ghost,
             );
         } else {
-            self.collect_via_linear_scan(
+            // 索引脏 / 未建（1600W 超大型工程不建索引）→ 窗口扫描
+            self.collect_via_window(
                 result,
                 indices,
                 visible_tick_start,
@@ -171,13 +180,20 @@ impl Editor {
         }
     }
 
-    /// 线性扫描路径：索引脏或不存在时使用
+    /// 窗口扫描路径：空间索引不可用（脏 / 超大型不建索引）时使用
     ///
-    /// 参数较多是因为 hot path 避免参数打包结构体的 Clone/copy 开销，
-    /// 全部为只读引用或 Copy 类型，直接传参零成本。
+    /// 普通线性扫描 O(N)——1600W 音符工程插入后每帧全扫 ~160ms，正是「编辑
+    /// 中间插入 4s + 内存 2-3G」的渲染侧大本营。本方法经 `ChunkedList::window_range`
+    /// 块级二分框出视口 tick 窗口（向左 lookback 回溯「跨入」长音符），只遍历
+    /// 窗口内音符，复杂度 O(log 块数 + 窗口长度) 与总音符量无关。
+    ///
+    /// 正确性：窗口下界 = 视口起点 - `NOTES_WINDOW_LOOKBACK`。音符起点早于
+    /// 下界且长度超过 lookback 的极端超长音符会漏出（工程上音符长度
+    /// < 1M tick ≈ 2600 小节 @ 1920ppq，可忽略）。原语义完整保留：过滤条件
+    /// 仍签名结束判定（`end >= visible_tick_start`），窗口仅做剪枝。
     #[allow(clippy::too_many_arguments)]
     #[inline]
-    fn collect_via_linear_scan(
+    fn collect_via_window(
         &self,
         result: &mut Vec<(f32, u16, f32)>,
         mut indices: Option<&mut Vec<usize>>,
@@ -192,11 +208,17 @@ impl Editor {
     ) {
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
         let data = &self.editor_state.data;
-        // 2026-08 单一权威源：current_track_notes 返回 &[NoteEvent]（u32 tick/u8 key）
+        // 2026-08 单一权威源：current_track_notes 返回分块容器（u32 tick/u8 key）
         let track_notes = data.current_track_notes();
+        let start_tick = visible_tick_start.max(0.0) as u32;
+        let end_tick = visible_tick_end.max(0.0) as u32;
+        if end_tick + 1 <= start_tick {
+            return;
+        }
+        let (lo, hi) = track_notes.window_range(start_tick, end_tick + 1, NOTES_WINDOW_LOOKBACK);
 
         if needs_ghost {
-            for (i, note) in track_notes.iter().enumerate() {
+            for (i, note) in track_notes.iter_window(lo, hi) {
                 let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                     apply_ghost_delta(
                         note.start_tick as f32,
@@ -223,7 +245,7 @@ impl Editor {
                 }
             }
         } else {
-            for (i, note) in track_notes.iter().enumerate() {
+            for (i, note) in track_notes.iter_window(lo, hi) {
                 let note_end = note.end_tick as f32;
                 if note.key as u16 >= visible_key_min
                     && note.key as u16 <= visible_key_max

@@ -7,6 +7,10 @@ use compute_state_changes::*;
 use iced_core::Point;
 use lumino_editor_state::DragState;
 
+/// 框选窗口查询的 lookback 上界（tick），覆盖「跨入」长音符（同
+/// `rendering/visible_notes.rs::NOTES_WINDOW_LOOKBACK` 的工程假设）
+const SELECTION_WINDOW_LOOKBACK: u32 = 1_000_000;
+
 impl Editor {
     /// 检查是否应从 PendingDrag 转换到 Dragging 状态
     pub(crate) fn try_transition_to_dragging(&mut self, pos: iced_core::Point) {
@@ -230,17 +234,21 @@ impl Editor {
             index.update_query(min_tick, max_tick, min_key, max_key, &mut cache);
             cache.iter().copied().collect()
         } else {
-            puffin::profile_scope!("diag::selection_linear_scan");
+            // 1600W 超大型工程（ensure_spatial_index 跳过构建 → None）→ 窗口扫描
+            // 块级二分框出框选 tick 范围（含 lookback 跨入），替代 O(N) 线性回退。
+            puffin::profile_scope!("diag::selection_window_scan");
             let note_count = self.editor_state.data.current_track_note_count();
             tracing::debug!(
-                "diag::selection_linear_scan — 音符数={}（无空间索引，线性回退）",
+                "diag::selection_window_scan — 音符数={}（无空间索引，窗口回退）",
                 note_count
             );
-            self.editor_state
-                .data
-                .current_track_notes()
-                .iter()
-                .enumerate()
+            let track_notes = self.editor_state.data.current_track_notes();
+            let start_u32 = min_tick.max(0.0) as u32;
+            let end_u32 = max_tick.max(0.0) as u32;
+            let (lo, hi) =
+                track_notes.window_range(start_u32, end_u32 + 1, SELECTION_WINDOW_LOOKBACK);
+            track_notes
+                .iter_window(lo, hi)
                 .filter(|&(_, note)| {
                     let note_end = note.end_tick as f32;
                     note_end >= min_tick
