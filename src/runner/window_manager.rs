@@ -70,6 +70,12 @@ impl WindowManager {
         // 启用分离渲染线程：将 wgpu 渲染从 UI 线程分离到独立线程
         ui.enable_separate_render_thread();
 
+        // 启动即初始化空白工程（默认 2 轨：Conductor + Setup）。
+        // 2026-08 根因修复：EditorData::new 时 document=None + current_track=0，
+        // 启动后直接画音符会被 current_track==0 拦截（Conductor 禁止放置）。
+        // 此处与菜单新建/关闭文件共用 init_blank_project，逻辑一致且幂等。
+        ui.init_blank_project();
+
         // 在 Windows 上设置自定义拉伸区域（仅自定义标题栏模式）
         #[cfg(target_os = "windows")]
         if !ui_config.use_native_titlebar {

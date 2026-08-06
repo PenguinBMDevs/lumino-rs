@@ -12,7 +12,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 mod entry;
-pub use entry::{HistoryEntry, MoveOp, OperationEntry};
+pub use entry::{CreateEntry, CreateOp, HistoryEntry, MoveOp, OperationEntry};
 
 mod event_list;
 pub use event_list::{EventListDelta, EventListItem, EventListTarget, UndoAction};
@@ -244,6 +244,13 @@ impl History {
                     .push_back(HistoryEntry::Operation(inverse.clone()));
                 Some(HistoryEntry::Operation(inverse))
             }
+            HistoryEntry::Create(entry) => {
+                // Create 原样搬移：undo 时 editor 按 inverse=true 删除音符，
+                // redo 栈保存同一 entry（重做时按 inverse=false 重新插入）。
+                self.redo_stack
+                    .push_back(HistoryEntry::Create(entry.clone()));
+                Some(HistoryEntry::Create(entry))
+            }
         }
     }
 
@@ -264,6 +271,12 @@ impl History {
                 self.undo_stack
                     .push_back(HistoryEntry::Operation(forward.clone()));
                 Some(HistoryEntry::Operation(forward))
+            }
+            HistoryEntry::Create(entry) => {
+                // Create 原样搬移：redo 时 editor 按 inverse=false 重新插入音符。
+                self.undo_stack
+                    .push_back(HistoryEntry::Create(entry.clone()));
+                Some(HistoryEntry::Create(entry))
             }
         }
     }
@@ -328,6 +341,10 @@ impl Default for History {
 }
 
 mod logical;
+mod note_create;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod tests_note_create;

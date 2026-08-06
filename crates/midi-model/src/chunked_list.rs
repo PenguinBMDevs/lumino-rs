@@ -4,11 +4,18 @@
 //! 按 tick 有序的事件序列（音符 / CC/PC/PB 控制事件）统一使用本容器：
 //! 每块最多 50 万事件，满块插入时动态分裂为两个 25 万块。
 //!
+//! 2026-08-06 内存修复：块级 `Arc<Vec<T>>` 写时复制（COW）。
+//! - `clone()` 退化为 O(块数) 指针拷贝，块数据物理共享（未修改的块在所有快照间共址）
+//! - 修改路径（insert/remove/get_mut/push_back/split）经 `Arc::make_mut` 只复制目标块
+//! - 撤销/重做快照从此不拷贝整轨数据，1600W 音符工程快照内存 O(块数) 而非 O(N)
+//!
 //! 设计要点：
 //! - 块间与块内均按 tick 升序，块级二分（`chunk_first_ticks`）+ 块内二分（`partition_point`）
 //! - `insert` 只移动目标块内元素（≤ 25 万），跨块 O(log 块数) 定位
 //! - `partition_point` 为真二分（块级 + 块内），播放引擎 seek 热路径依赖
 //! - 泛型 T 只需实现 `EventTick`（提供 `tick()`）
+
+use std::sync::Arc;
 
 /// 单块容量：50 万事件
 pub const EVENT_CHUNK_CAPACITY: usize = 500_000;
@@ -28,11 +35,12 @@ impl EventTick for midly::loader::PackedControlEvent {
     }
 }
 
-/// 泛型分块有序事件容器
-#[derive(Clone, Debug)]
+/// 泛型分块有序事件容器（块级 Arc 写时复制）
 pub struct ChunkedList<T> {
-    /// 分块，块间按首事件 tick 升序，块内按 tick 升序
-    chunks: Vec<Vec<T>>,
+    /// 分块，块间按首事件 tick 升序，块内按 tick 升序。
+    /// `Arc` 共享：clone 为 O(块数) 指针拷贝，未修改块在快照间物理共址，
+    /// 修改路径经 `Arc::make_mut` 写时复制（只复制目标块）。
+    chunks: Vec<Arc<Vec<T>>>,
     /// 每块首事件 tick（块级二分索引）
     chunk_first_ticks: Vec<u32>,
     /// 前缀和：chunk_offsets[i] = 前 i 块的事件总数
@@ -50,7 +58,7 @@ impl<T: EventTick> ChunkedList<T> {
         if events.is_empty() {
             return Self::new();
         }
-        let mut chunks: Vec<Vec<T>> =
+        let mut chunks: Vec<Arc<Vec<T>>> =
             Vec::with_capacity(events.len().div_ceil(EVENT_CHUNK_CAPACITY));
         let mut chunk_first_ticks = Vec::with_capacity(chunks.capacity());
         let mut chunk_offsets = Vec::with_capacity(chunks.capacity() + 1);
@@ -65,7 +73,7 @@ impl<T: EventTick> ChunkedList<T> {
             }
             let first_tick = chunk.first().map(EventTick::tick).unwrap_or(0);
             let chunk_len = chunk.len();
-            chunks.push(chunk);
+            chunks.push(Arc::new(chunk));
             chunk_first_ticks.push(first_tick);
             total_len += chunk_len;
             chunk_offsets.push(total_len);
@@ -131,7 +139,7 @@ impl<T: EventTick> ChunkedList<T> {
     /// 返回所有块已分配容量之和；快满时会略高于 `len()`（预留增长空间）。
     #[inline]
     pub fn capacity(&self) -> usize {
-        self.chunks.iter().map(Vec::capacity).sum()
+        self.chunks.iter().map(|c| c.capacity()).sum()
     }
 
     /// 全局索引访问（O(log 块数)）
@@ -148,18 +156,23 @@ impl<T: EventTick> ChunkedList<T> {
         self.chunks[ci].get(local)
     }
 
-    /// 全局索引可变访问（O(log 块数)）
+    /// 全局索引可变访问（O(log 块数) + 目标块 COW 拷贝）
     ///
-    /// 返回目标块内的可变引用。越界返回 None。
+    /// 返回目标块内的可变引用，必要时经 `Arc::make_mut` 复制目标块
+    /// （快照共享时只复制该块）。越界返回 None。
     /// 注意：修改事件 tick 会破坏排序不变式，调用方需自行保证（与旧 `&mut Vec` 语义一致）。
     #[inline]
-    pub fn get_mut(&mut self, index: usize) -> Option<&mut T> {
+    pub fn get_mut(&mut self, index: usize) -> Option<&mut T>
+    where
+        T: Clone,
+    {
         if index >= self.total_len {
             return None;
         }
         let ci = self.chunk_offsets.partition_point(|&o| o <= index) - 1;
         let local = index - self.chunk_offsets[ci];
-        self.chunks[ci].get_mut(local)
+        let chunk = Arc::make_mut(&mut self.chunks[ci]);
+        chunk.get_mut(local)
     }
 
     /// 首事件（O(1)）
@@ -184,16 +197,19 @@ impl<T: EventTick> ChunkedList<T> {
     /// 调用方需保证 `event.tick >= 当前末事件 tick`（升序追加语义，
     /// 与旧 `Vec::push` 在有序轨道上的用法一致）。不满足时行为等价于
     /// `insert`（自动定位正确位置，但代价更高）。
-    pub fn push_back(&mut self, event: T) {
+    pub fn push_back(&mut self, event: T)
+    where
+        T: Clone,
+    {
         // 快速路径：末尾块存在、非空、未满、且事件 tick 不早于末事件
-        if let Some(last) = self.chunks.last_mut()
-            && let Some(last_ev) = last.last()
-            && last_ev.tick() <= event.tick()
-            && last.len() < EVENT_CHUNK_CAPACITY
-        {
+        let fast_path = self.chunks.last().is_some_and(|last| {
+            last.last().is_some_and(|e| e.tick() <= event.tick())
+                && last.len() < EVENT_CHUNK_CAPACITY
+        });
+        if fast_path {
+            let last = Arc::make_mut(self.chunks.last_mut().expect("fast_path 已证明非空"));
             last.push(event);
             self.total_len += 1;
-            // 更新末尾前缀和（chunk_offsets 末项 = 更新后的总数）
             if let Some(last_offset) = self.chunk_offsets.last_mut() {
                 *last_offset = self.total_len;
             }
@@ -206,12 +222,14 @@ impl<T: EventTick> ChunkedList<T> {
     /// 按 tick 升序插入事件（O(块内) + O(log 块数)）
     ///
     /// 定位目标块后块内二分插入；若目标块已满（50 万），先分裂为两个
-    /// 25 万块，再插入目标半块。
-    pub fn insert(&mut self, event: T) {
+    /// 25 万块，再插入目标半块。必要时经 `Arc::make_mut` 只复制目标块。
+    pub fn insert(&mut self, event: T)
+    where
+        T: Clone,
+    {
         let tick = event.tick();
         if self.chunks.is_empty() {
-            let mut chunk = Vec::with_capacity(EVENT_CHUNK_CAPACITY);
-            chunk.push(event);
+            let chunk = Arc::new(vec![event]);
             self.chunks.push(chunk);
             self.chunk_first_ticks.push(tick);
             self.chunk_offsets = vec![0, 1];
@@ -220,16 +238,16 @@ impl<T: EventTick> ChunkedList<T> {
         }
 
         let ci = self.locate_chunk(tick);
-        let chunk = &mut self.chunks[ci];
 
-        if chunk.len() >= EVENT_CHUNK_CAPACITY {
+        if self.chunks[ci].len() >= EVENT_CHUNK_CAPACITY {
             // 满块分裂：切成两个 25 万块，插入目标半块
             self.split_chunk(ci);
             let ci = self.locate_chunk(tick);
-            let chunk = &mut self.chunks[ci];
+            let chunk = Arc::make_mut(&mut self.chunks[ci]);
             let local = chunk.partition_point(|e| e.tick() <= tick);
             chunk.insert(local, event);
         } else {
+            let chunk = Arc::make_mut(&mut self.chunks[ci]);
             let local = chunk.partition_point(|e| e.tick() <= tick);
             chunk.insert(local, event);
         }
@@ -263,10 +281,11 @@ impl<T: EventTick> ChunkedList<T> {
         }
         let ci = self.chunk_offsets.partition_point(|&o| o <= index) - 1;
         let local = index - self.chunk_offsets[ci];
-        let removed = self.chunks[ci].remove(local);
+        let chunk = Arc::make_mut(&mut self.chunks[ci]);
+        let removed = chunk.remove(local);
         self.total_len -= 1;
         // 空块清理（保留至少一个块用于索引一致性）
-        if self.chunks[ci].is_empty() && self.chunks.len() > 1 {
+        if chunk.is_empty() && self.chunks.len() > 1 {
             self.chunks.remove(ci);
         }
         self.rebuild_index();
@@ -282,11 +301,20 @@ impl<T: EventTick> ChunkedList<T> {
             return None;
         }
         let ci = self.locate_chunk(tick);
-        let local = self.chunks[ci].partition_point(|e| e.tick() < tick);
-        if self.chunks[ci].get(local).map(EventTick::tick) == Some(tick) {
-            let removed = self.chunks[ci].remove(local);
+        let target = {
+            let chunk = &self.chunks[ci];
+            let local = chunk.partition_point(|e| e.tick() < tick);
+            if chunk.get(local).map(EventTick::tick) == Some(tick) {
+                Some(local)
+            } else {
+                None
+            }
+        };
+        if let Some(local) = target {
+            let chunk = Arc::make_mut(&mut self.chunks[ci]);
+            let removed = chunk.remove(local);
             self.total_len -= 1;
-            if self.chunks[ci].is_empty() && self.chunks.len() > 1 {
+            if chunk.is_empty() && self.chunks.len() > 1 {
                 self.chunks.remove(ci);
             }
             self.rebuild_index();
@@ -314,6 +342,37 @@ impl<T: EventTick> ChunkedList<T> {
         let end = self.partition_point(end_tick);
         // 惰性跨块切片：start..end 可能跨块，用 flat_map + skip/take
         self.iter().skip(start).take(end.saturating_sub(start))
+    }
+
+    /// 按值查找事件全局索引（O(log 块数 + 同 tick 事件数)）
+    ///
+    /// 定位目标 tick 所在块后，从块内首段顺序扫描精确匹配（`PartialEq` 全字段）。
+    /// 用于 NoteCreate 增量日志 undo 时按值精确删除（无需记录插入索引，
+    /// 不受后续同轨操作导致的索引漂移影响）。未找到返回 None。
+    pub fn position_of(&self, event: &T) -> Option<usize>
+    where
+        T: PartialEq,
+    {
+        if self.total_len == 0 {
+            return None;
+        }
+        let ci = self.locate_chunk(event.tick());
+        let mut local_begin = self.chunks[ci].partition_point(|e| e.tick() < event.tick());
+        let mut global = self.chunk_offsets[ci] + local_begin;
+        // 从起始块扫到末尾（同 tick 事件通常极少，跨块续扫极少发生）
+        for chunk in &self.chunks[ci..] {
+            for e in &chunk[local_begin..] {
+                if e.tick() > event.tick() {
+                    return None;
+                }
+                if e == event {
+                    return Some(global);
+                }
+                global += 1;
+            }
+            local_begin = 0;
+        }
+        None
     }
 
     /// 小规模兼容：转换为 Vec（仅测试/低频路径使用）
@@ -353,12 +412,15 @@ impl<T: EventTick> ChunkedList<T> {
     }
 
     /// 将 `ci` 块分裂为两个 25 万块（O(块内)）
-    fn split_chunk(&mut self, ci: usize) {
-        let chunk = &mut self.chunks[ci];
-        let right: Vec<T> = chunk.split_off(EVENT_CHUNK_SPLIT);
+    fn split_chunk(&mut self, ci: usize)
+    where
+        T: Clone,
+    {
+        let left = Arc::make_mut(&mut self.chunks[ci]);
+        let right: Vec<T> = left.split_off(EVENT_CHUNK_SPLIT);
         let right_first = right.first().map(EventTick::tick).unwrap_or(0);
         // 插入右块（ci+1 位置）
-        self.chunks.insert(ci + 1, right);
+        self.chunks.insert(ci + 1, Arc::new(right));
         // 右块首 tick 索引：原 first_tick 不变（左块），右块首 tick 插入 ci+1
         self.chunk_first_ticks.insert(ci + 1, right_first);
         // chunk_offsets 在 rebuild_index 中重建
@@ -383,6 +445,29 @@ impl<T: EventTick> ChunkedList<T> {
     }
 }
 
+/// 浅拷贝 O(块数)：块 Arc 共享，未修改块物理共址（undo 快照依赖此特性）
+impl<T: EventTick> Clone for ChunkedList<T> {
+    fn clone(&self) -> Self {
+        Self {
+            chunks: self.chunks.clone(),
+            chunk_first_ticks: self.chunk_first_ticks.clone(),
+            chunk_offsets: self.chunk_offsets.clone(),
+            total_len: self.total_len,
+        }
+    }
+}
+
+impl<T: EventTick> std::fmt::Debug for ChunkedList<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChunkedList")
+            .field("len", &self.total_len)
+            .field("chunks", &self.chunks.len())
+            .field("first", &self.first().map(EventTick::tick))
+            .field("last", &self.last().map(EventTick::tick))
+            .finish()
+    }
+}
+
 impl<T: EventTick> Default for ChunkedList<T> {
     fn default() -> Self {
         Self::new()
@@ -393,13 +478,16 @@ impl<T: EventTick> Default for ChunkedList<T> {
 impl<'a, T: EventTick> IntoIterator for &'a ChunkedList<T> {
     type Item = &'a T;
     type IntoIter = std::iter::FlatMap<
-        std::slice::Iter<'a, Vec<T>>,
+        std::slice::Iter<'a, Arc<Vec<T>>>,
         std::slice::Iter<'a, T>,
-        fn(&'a Vec<T>) -> std::slice::Iter<'a, T>,
+        fn(&'a Arc<Vec<T>>) -> std::slice::Iter<'a, T>,
     >;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.chunks.iter().flat_map(|c| c.iter())
+        fn flat_map<'b, U: EventTick>(c: &'b Arc<Vec<U>>) -> std::slice::Iter<'b, U> {
+            c.iter()
+        }
+        self.chunks.iter().flat_map(flat_map::<T>)
     }
 }
 
@@ -496,6 +584,66 @@ mod tests {
         let ticks: Vec<u32> = list.iter().map(EventTick::tick).collect();
         assert_eq!(ticks, vec![0, 10, 20, 30, 40, 45, 45, 50, 60, 70, 80, 90]);
         assert_eq!(list.len(), 12);
+    }
+
+    #[test]
+    fn test_position_of_finds_exact_value() {
+        let mut list = ChunkedList::from_sorted(sorted_events(10));
+        // 同 tick 多事件：按值精确匹配（id 区分）
+        list.insert(ev(50, 100));
+        list.insert(ev(50, 101));
+        assert_eq!(
+            list.position_of(&ev(50, 100)),
+            Some(6),
+            "同 tick 事件插到 id=5 之后"
+        );
+        assert_eq!(list.position_of(&ev(50, 101)), Some(7));
+        assert_eq!(
+            list.position_of(&ev(50, 5)),
+            Some(5),
+            "原始 id=5 事件仍在 index 5"
+        );
+        assert_eq!(list.position_of(&ev(20, 2)), Some(2));
+        assert_eq!(
+            list.position_of(&ev(90, 9)),
+            Some(11),
+            "尾部事件 index 顺延 2"
+        );
+
+        // 不存在的值 → None
+        assert_eq!(list.position_of(&ev(55, 999)), None);
+        assert_eq!(list.position_of(&ev(50, 999)), None, "同 tick 但 id 不匹配");
+    }
+
+    #[test]
+    fn test_position_of_empty_and_removal_roundtrip() {
+        let mut list: ChunkedList<TestEvent> = ChunkedList::new();
+        assert_eq!(list.position_of(&ev(0, 0)), None);
+
+        list.insert(ev(10, 1));
+        list.insert(ev(40, 4));
+        list.insert(ev(20, 2));
+        assert_eq!(list.position_of(&ev(20, 2)), Some(1));
+
+        // 删除后定位正确
+        let idx = list.position_of(&ev(20, 2)).unwrap();
+        let removed = list.remove(idx).unwrap();
+        assert_eq!(removed, ev(20, 2));
+        assert_eq!(list.position_of(&ev(20, 2)), None);
+        assert_eq!(list.position_of(&ev(40, 4)), Some(1));
+    }
+
+    #[test]
+    fn test_position_of_across_chunk_boundary() {
+        // 用小块容量强制跨块：VENT_CHUNK_CAPACITY 是 const，这里用手工多事件验证
+        let mut list = ChunkedList::from_sorted(sorted_events(60));
+        for i in 60..70u32 {
+            list.insert(ev(i * 10, i));
+        }
+        // 找尾部事件（跨块续扫路径）
+        assert_eq!(list.position_of(&ev(690, 69)), Some(69));
+        assert_eq!(list.position_of(&ev(300, 30)), Some(30));
+        assert_eq!(list.position_of(&ev(0, 0)), Some(0));
     }
 
     #[test]
@@ -661,5 +809,81 @@ mod tests {
         assert_eq!(back.len(), 700_000);
         assert_eq!(back[0].tick, 0);
         assert_eq!(back[699_999].tick, 6_999_990);
+    }
+
+    /// COW 语义验证：clone 后修改互不干扰，且快照 clone 不拷贝数据
+    #[test]
+    fn test_clone_is_shallow_cow() {
+        let mut original = ChunkedList::from_sorted(sorted_events(1000));
+        let snapshot = original.clone(); // 浅拷贝：块 Arc 共享
+
+        // 修改原容器（模拟 insert 到已快照的轨道）
+        original.insert(ev(5, 999));
+        assert_eq!(original.len(), 1001);
+        // 快照不受影响，且 token 顺序仍正确
+        assert_eq!(snapshot.len(), 1000);
+        assert_eq!(snapshot.first().unwrap().tick, 0);
+        let snapshot_ticks: Vec<u32> = snapshot.iter().map(EventTick::tick).collect();
+        assert_eq!(
+            snapshot_ticks,
+            (0..1000).map(|i| i * 10).collect::<Vec<_>>()
+        );
+    }
+
+    /// COW 语义验证：快照间相互修改互不影响
+    #[test]
+    fn test_two_snapshots_do_not_interfere() {
+        let list = ChunkedList::from_sorted(sorted_events(1000));
+        let snap_a = list.clone();
+        let mut snap_b = list.clone();
+
+        // 仅修改 snap_b，snap_a 与 list 都应保持
+        snap_b.insert(ev(15, 42));
+        assert_eq!(list.len(), 1000);
+        assert_eq!(snap_a.len(), 1000);
+        assert_eq!(snap_b.len(), 1001);
+        assert_eq!(list.to_vec(), snap_a.to_vec());
+    }
+
+    /// 内存回归验证：快照 clone 不复制数据（块 Arc 物理共享）。
+    ///
+    /// Bug 1 根因：`make_snapshot` 曾全量 `to_vec()` 拷贝整轨为单一 Vec，
+    /// 1600W 音符工程快照 = 原始(256MB) + 快照(256MB) = 内存翻倍。
+    /// 修复后 `clone()` 为 O(块数) 指针拷贝——用 `Arc::strong_count` 直接断言
+    /// 快照与原始共享同一块分配，杜绝整轨数据复制。
+    #[test]
+    fn test_snapshot_clone_shares_blocks_no_copy() {
+        // 覆盖多块场景（70 万事件 = 2 块），模拟 1600W 工程分块
+        let mut original = ChunkedList::from_sorted(sorted_events(700_000));
+        assert_eq!(original.chunk_count(), 2);
+
+        // 记录每块的 Arc 引用计数基线（原始独占 → 均为 1）
+        for arc in &original.chunks {
+            assert_eq!(Arc::strong_count(arc), 1, "原始独占时块计数应为 1");
+        }
+
+        // 快照 = 浅拷贝（O(块数)），不复制任何音符数据
+        let snapshot = original.clone();
+        assert_eq!(snapshot.len(), 700_000);
+        for arc in &original.chunks {
+            assert_eq!(Arc::strong_count(arc), 2, "快照后块被共享而非复制");
+        }
+
+        // 修改原容器只复制目标块（COW）：其余块仍共享。
+        // tick=5_000_001 落在尾块（范围 5_000_000..6_999_990）且尾块未满 → 只复制尾块
+        original.insert(ev(5_000_001, 999_999));
+        assert_eq!(original.len(), 700_001);
+        assert_eq!(snapshot.len(), 700_000, "快照不受修改影响");
+
+        // 首块未修改 → 仍与快照物理共享（计数 = 2）
+        assert_eq!(Arc::strong_count(&original.chunks[0]), 2);
+        // 尾块被 make_mut 复制 → 计数回落为 1（COW 生效）
+        assert_eq!(Arc::strong_count(&original.chunks[1]), 1);
+        // 快照数据完整不受影响
+        assert_eq!(snapshot.get(0).unwrap().tick, 0);
+        assert_eq!(
+            snapshot.iter().map(EventTick::tick).last().unwrap(),
+            6_999_990
+        );
     }
 }

@@ -426,17 +426,15 @@ mod tests {
         assert!(window_len < TOTAL, "窗口不应覆盖全部音符");
         assert!(window_len > 0, "窗口不应为空");
         // 窗口应包含所有 start_tick <= tick_end 的音符
-        assert!(chunked
-            .get(end - 1)
-            .expect("窗口内应有音符")
-            .start_tick
-            <= 5_007_680);
+        assert!(chunked.get(end - 1).expect("窗口内应有音符").start_tick <= 5_007_680);
         if end < TOTAL {
-            assert!(chunked
-                .get(end)
-                .expect("end < TOTAL 时 end 处应有音符")
-                .start_tick
-                > 5_007_680);
+            assert!(
+                chunked
+                    .get(end)
+                    .expect("end < TOTAL 时 end 处应有音符")
+                    .start_tick
+                    > 5_007_680
+            );
         }
     }
 

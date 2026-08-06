@@ -280,6 +280,28 @@ fn test_insert_note_on_nonzero_track() {
 }
 
 #[test]
+fn test_blank_project_can_insert_note() {
+    // 2026-08 回归：空白工程（新建文件）必须立即可创建音符。
+    // 模拟 init_blank_project 后的状态：空 document（默认 2 轨）+ 当前轨 = Setup(1)。
+    let mut data = EditorData::new();
+    let doc = lumino_midi_model::MidiDocument::empty_with_tracks(2);
+    data.document = Some(doc);
+    data.current_track = 1;
+
+    // 直接插入（arrange_add_note 路径：insert_note）
+    let note = lumino_note_core::note::Note::new(0.0, 60, 480.0);
+    assert!(data.insert_note(1, note.clone()));
+    assert_eq!(data.current_track_note_count(), 1);
+
+    // insert_note_at_tick 路径（钢琴卷帘）
+    let n2 = data
+        .insert_note_at_tick(100.0)
+        .expect("空白工程应能创建音符");
+    assert_eq!(n2.tick, 100.0);
+    assert_eq!(data.current_track_note_count(), 2);
+}
+
+#[test]
 fn test_delete_notes_at_ticks() {
     let mut data = EditorData::with_f32_notes(1, &[]);
     data.current_track = 1;

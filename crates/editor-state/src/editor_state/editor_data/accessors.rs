@@ -138,6 +138,20 @@ impl EditorData {
         doc.replace_track_notes(track_id, notes)
     }
 
+    /// 整轨替换音符（undo/redo 快照恢复专用，O(块数) 浅拷贝版）。
+    ///
+    /// 直接共享快照块 Arc，不做数据复制（1600W 音符工程 undo/redo 免整轨拷贝）。
+    pub fn replace_track_notes_chunked(
+        &mut self,
+        track_id: usize,
+        notes: &lumino_midi_model::ChunkedList<NoteEvent>,
+    ) -> bool {
+        let Some(doc) = self.document.as_mut() else {
+            return false;
+        };
+        doc.replace_track_notes_chunked(track_id, notes)
+    }
+
     // ── 增量事件记录 ─────────────────────────────────────────
 
     /// 记录等长修改增量事件（整轨同步版）

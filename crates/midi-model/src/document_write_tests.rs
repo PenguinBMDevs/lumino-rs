@@ -243,3 +243,46 @@ fn test_clear_track_notes() {
     // track_id 越界返回 false
     assert!(!doc.clear_track_notes(99));
 }
+
+#[test]
+fn test_empty_with_tracks_blank_project_can_insert() {
+    // 2026-08 回归：空白工程（新建文件）必须立即可编辑——
+    // empty_with_tracks 构造的空白文档插入音符应成功，且保持有序。
+    let mut doc = MidiDocument::empty_with_tracks(2);
+    assert_eq!(doc.track_count(), 2);
+    assert!(doc.notes.iter().all(|t| t.is_empty()));
+    assert_eq!(doc.track_name(0), Some("Conductor"));
+    assert_eq!(doc.track_name(1), Some("Setup"));
+
+    // 在 Setup 轨（track 1）创建音符，等价于空白工程走带添加
+    assert!(doc.insert_note(1, NoteEvent::new(100, 200, 60, 100, 0)));
+    assert!(doc.insert_note(1, NoteEvent::new(50, 150, 62, 100, 0)));
+    // 保持升序不变式
+    assert_eq!(doc.notes[1][0].start_tick, 50);
+    assert_eq!(doc.notes[1][1].start_tick, 100);
+
+    // track 0（Conductor）也能插入（空白工程语义不阻塞）
+    assert!(doc.insert_note(0, NoteEvent::new(10, 20, 40, 100, 0)));
+    assert_eq!(doc.notes[0].len(), 1);
+}
+
+#[test]
+fn test_replace_track_notes_chunked_shares_blocks() {
+    // 2026-08 回归：undo/redo 快照恢复走 replace_track_notes_chunked，
+    // 必须保持块级 Arc 共享（O(块数) 浅拷贝，不复制音符数据）。
+    let mut doc = make_doc(vec![make_track(&[(100, 200, 60), (300, 400, 62)])]);
+    let snapshot = doc.notes[0].clone();
+    assert_eq!(snapshot.len(), 2);
+
+    assert!(doc.replace_track_notes_chunked(0, &snapshot));
+    assert_eq!(doc.notes[0].len(), 2);
+    assert_eq!(doc.notes[0].to_vec(), snapshot.to_vec());
+    assert_eq!(doc.notes[0][0], NoteEvent::new(100, 200, 60, 100, 0));
+
+    // 替换不改变快照；再次替换保持一致性
+    assert!(doc.replace_track_notes_chunked(0, &snapshot));
+    assert_eq!(doc.notes[0][1], NoteEvent::new(300, 400, 62, 100, 0));
+
+    // track_id 越界返回 false
+    assert!(!doc.replace_track_notes_chunked(99, &snapshot));
+}

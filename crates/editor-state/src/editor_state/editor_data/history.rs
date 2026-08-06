@@ -8,14 +8,17 @@ use std::sync::Arc;
 
 use super::EditorData;
 use crate::DragState;
-use lumino_note_core::history::{EditorSnapshot, HistoryEntry, MoveOp, OpKind};
+use lumino_note_core::history::{CreateOp, EditorSnapshot, HistoryEntry, MoveOp, OpKind};
 
 impl EditorData {
     // ── 快照构造 ─────────────────────────────────────────────
 
     /// 构造当前状态的 EditorSnapshot（不带元数据）
+    ///
+    /// `ChunkedList::clone` 为 O(块数) 浅拷贝（块 Arc COW），快照与 document
+    /// 物理共享未修改块——1600W 音符工程快照不再复制整轨数据。
     fn make_snapshot(&self) -> EditorSnapshot {
-        let notes = Arc::new(self.current_track_notes().to_vec());
+        let notes = Arc::new(self.current_track_notes().clone());
         EditorSnapshot {
             notes,
             current_track: self.current_track,
@@ -27,7 +30,11 @@ impl EditorData {
             chords: Some(self.chords.clone()),
             program_changes: Some(self.program_changes.clone()),
             tempo_points: Some(self.tempo_points.clone()),
-            ..EditorSnapshot::new(Arc::new(Vec::new()), 0, Vec::new())
+            ..EditorSnapshot::new(
+                Arc::new(lumino_midi_model::ChunkedList::new()),
+                0,
+                Vec::new(),
+            )
         }
     }
 
@@ -65,6 +72,15 @@ impl EditorData {
     /// 拖动提交路径使用：用轻量 MoveOp 替代完整快照。
     pub fn push_move_op(&mut self, ops: Vec<MoveOp>) -> u64 {
         self.history.push_move_op(ops)
+    }
+
+    /// 推入音符创建操作日志（NoteCreate 增量、极简化）
+    ///
+    /// 铅笔绘制路径使用：每 op 仅 20 字节，替代整轨快照克隆——
+    /// 1600W 音符工程在合并窗口内连续绘制不再复制音符数据。
+    /// 返回 `true` 表示合并到上一条（300ms 窗口内）。
+    pub fn push_note_create(&mut self, ops: Vec<CreateOp>) -> bool {
+        self.history.push_note_create(ops)
     }
 
     // ── 单步 undo / redo ────────────────────────────────────
@@ -129,14 +145,53 @@ impl EditorData {
                 // redo 时 inverse=false 按 delta 前进。
                 let _ = self.apply_move_ops(&op.ops, inverse, self.max_key_for_move_op());
             }
+            HistoryEntry::Create(entry) => {
+                let _ = self.apply_create_ops(&entry.ops, inverse);
+            }
         }
+    }
+
+    /// 应用音符创建日志到 document（增量恢复，单一权威源）
+    ///
+    /// - `inverse=true`（undo）：按值精确定位（`position_of`）后删除音符，
+    ///   顺序无关——不受同轨后续操作导致的索引漂移影响。
+    /// - `inverse=false`（redo）：按 tick 有序重新插入，恢复到创建时的位置。
+    ///
+    /// 返回实际处理的音符数。
+    pub fn apply_create_ops(&mut self, ops: &[CreateOp], inverse: bool) -> usize {
+        if ops.is_empty() {
+            return 0;
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return 0;
+        };
+
+        let mut count = 0usize;
+        for op in ops {
+            let track_id = op.track_id as usize;
+            if inverse {
+                // undo：按值匹配删除（精确，与合并窗口内插入顺序无关）
+                let Some(idx) = doc.track_notes(track_id).position_of(&op.note) else {
+                    continue;
+                };
+                if doc.remove_note(track_id, idx).is_some() {
+                    count += 1;
+                }
+            } else {
+                // redo：按 tick 有序插入，恢复创建时的位置
+                if doc.insert_note(track_id, op.note) {
+                    count += 1;
+                }
+            }
+        }
+        count
     }
 
     /// 应用快照到当前状态（undo / redo 后调用）
     fn apply_snapshot(&mut self, snapshot: EditorSnapshot) {
-        // 音符快照写回 document（整轨替换，单一权威源）
-        let notes = snapshot.notes.as_ref().clone();
-        self.replace_track_notes(snapshot.current_track, notes);
+        // 音符快照写回 document（整轨替换，单一权威源）。
+        // O(块数) 浅拷贝：直接共享快照块 Arc，不复制音符数据。
+        self.replace_track_notes_chunked(snapshot.current_track, snapshot.notes.as_ref());
         self.current_track = snapshot.current_track;
         self.automation_lanes = snapshot.automation_lanes.clone();
         if let Some(v) = snapshot.time_signatures {

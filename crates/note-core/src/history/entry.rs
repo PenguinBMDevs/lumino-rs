@@ -75,6 +75,34 @@ impl OperationEntry {
     }
 }
 
+/// 音符创建操作日志（NoteCreate 用轻量 op 替代完整快照）
+///
+/// 每个 op 仅记录一次铅笔绘制的音符（16 字节 + track_id），
+/// undo 时按值精确定位删除，redo 时按 tick 有序重新插入——
+/// 与音符总量解耦，1600W 音符工程不再因合并窗口克隆整轨快照。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CreateOp {
+    /// 音轨 ID
+    pub track_id: u32,
+    /// 创建的音符（tick/key/velocity/channel 全字段，undo 精确匹配）
+    pub note: lumino_midi_model::NoteEvent,
+}
+
+/// 音符创建日志条目（合并窗口内连续绘制的音符）
+#[derive(Debug, Clone)]
+pub struct CreateEntry {
+    /// 创建操作列表（按时间正序追加）
+    pub ops: Vec<CreateOp>,
+    /// 分组 ID
+    pub group_id: Option<u64>,
+    /// 父分组 ID（分割链）
+    pub parent_group_id: Option<u64>,
+    /// 操作时间戳
+    pub timestamp: Instant,
+    /// 该分组内已合并的条目数
+    pub entry_count: u32,
+}
+
 /// 历史记录条目：完整快照或轻量操作日志
 ///
 /// `Snapshot` 使用 `Box` 包装：`EditorSnapshot` 含大量事件字段（>300B），
@@ -83,4 +111,6 @@ impl OperationEntry {
 pub enum HistoryEntry {
     Snapshot(Box<super::EditorSnapshot>),
     Operation(OperationEntry),
+    /// 音符创建日志（增量、极简化，替代 NoteCreate 快照）
+    Create(CreateEntry),
 }

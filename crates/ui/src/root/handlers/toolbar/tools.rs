@@ -127,7 +127,7 @@ impl ToolbarHandler {
         );
 
         let snapshot = crate::editor::history::EditorSnapshot::new(
-            std::sync::Arc::new(root.editor.editor_state.data.current_track_notes().to_vec()),
+            std::sync::Arc::new(root.editor.editor_state.data.current_track_notes().clone()),
             root.editor.editor_state.data.current_track,
             root.editor.editor_state.data.automation_lanes.clone(),
         );

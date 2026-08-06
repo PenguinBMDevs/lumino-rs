@@ -183,6 +183,11 @@ impl Host {
         self.render_ctx.render_cache.note_viewport_hash = 0;
         self.render_ctx.render_cache.note_render_viewport = None;
 
+        // 初始化空白工程：空 document（默认 2 轨 Conductor + Setup）+ 重建 sidebar.tracks。
+        // 2026-08 修复：此前 reset() 置 document=None 且 sidebar.tracks 清空，
+        // 导致空白工程创建音符被三重拦截（track_count=0 / document=None / current_track=0）。
+        self.init_blank_project();
+
         // UI 缓存
         self.clear_cache();
 
@@ -196,6 +201,56 @@ impl Host {
 
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
+    }
+
+    /// 初始化空白工程（新建文件 / 关闭文件 / 应用启动后调用）。
+    ///
+    /// 2026-08 修复：此前 `clear_editor` 清空 `sidebar.tracks` 且 `reset()`
+    /// 置 `document = None`，导致空白工程创建音符被三重拦截
+    /// （`track_count=0` / `document=None` / `current_track==0` 均失败）。
+    /// 本方法重建空 `MidiDocument`（默认 2 轨：Conductor + Setup）并同步
+    /// sidebar.tracks，使空白工程立即可编辑。
+    ///
+    /// 应用启动路径（`WindowManager::new`）也会调用本方法，保证
+    /// "启动后直接画音符"验收链路成立（根因：`EditorData::new` 时
+    /// `document = None` + `current_track = 0`，铅笔音符被 `current_track == 0`
+    /// 拦截）。幂等：重复调用每次都重建 2 轨空白文档。
+    pub fn init_blank_project(&mut self) {
+        let doc = MidiDocument::empty_with_tracks(2);
+
+        // 空轨道信息（名称/音符数=0/通道/端口），与 midi_handler 导入路径一致
+        let track_infos: Vec<(usize, Option<String>, u64, u8, u8)> = (0..doc.track_count())
+            .map(|i| {
+                (
+                    i,
+                    doc.track_name(i).map(|s| s.to_string()),
+                    doc.track_note_count(i as u16),
+                    doc.track_channel(i as u16),
+                    doc.track_port(i as u16),
+                )
+            })
+            .collect();
+
+        // 先重建 sidebar.tracks（update_tracks 内部同步 track_visual_order）
+        self.update_tracks(&track_infos);
+        // 再将空文档设为当前文档（set_midi_document 内部同步 tempo/拍号等）
+        self.set_midi_document(doc);
+
+        // 将当前轨道切到一条可编辑轨（跳过 Conductor 轨道 0，insert_note_at_tick 限制）
+        let editable = self
+            .root
+            .sidebar
+            .tracks
+            .iter()
+            .find(|t| !t.is_conductor)
+            .map(|t| t.id)
+            .unwrap_or(1);
+        self.root.editor.editor_state.data.current_track = editable;
+        self.root.sidebar.selected_track = editable;
+        tracing::info!(
+            "UI: 空白工程已初始化（document 2 轨，当前轨 {} 可编辑）",
+            editable
+        );
     }
 
     /// 获取编辑器中的所有音符数据（用于保存）

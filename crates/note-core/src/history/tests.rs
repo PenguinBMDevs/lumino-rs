@@ -13,20 +13,21 @@
 use super::*;
 use std::sync::Arc;
 
-use lumino_midi_model::NoteEvent;
+use lumino_midi_model::{ChunkedList, NoteEvent};
 
 fn make_snapshot(notes_len: usize) -> EditorSnapshot {
     let mut notes: Vec<NoteEvent> = Vec::with_capacity(notes_len);
     for i in 0..notes_len {
         notes.push(NoteEvent::new(i as u32, i as u32 + 1, 60, 100, 0));
     }
-    EditorSnapshot::new(Arc::new(notes), 0, Vec::new())
+    EditorSnapshot::new(Arc::new(ChunkedList::from_sorted(notes)), 0, Vec::new())
 }
 
 fn assert_snapshot(entry: &HistoryEntry) -> &EditorSnapshot {
     match entry {
         HistoryEntry::Snapshot(bx) => &*bx,
         HistoryEntry::Operation(_) => panic!("期望 Snapshot，得到 Operation"),
+        HistoryEntry::Create(_) => panic!("期望 Snapshot，得到 Create"),
     }
 }
 
@@ -34,6 +35,7 @@ fn assert_operation(entry: &HistoryEntry) -> &OperationEntry {
     match entry {
         HistoryEntry::Snapshot(_) => panic!("期望 Operation，得到 Snapshot"),
         HistoryEntry::Operation(o) => o,
+        HistoryEntry::Create(_) => panic!("期望 Operation，得到 Create"),
     }
 }
 
@@ -41,6 +43,7 @@ fn op_kind_of(entry: &HistoryEntry) -> OpKind {
     match entry {
         HistoryEntry::Snapshot(bx) => bx.op_kind,
         HistoryEntry::Operation(o) => o.op_kind,
+        HistoryEntry::Create(_) => OpKind::NoteCreate,
     }
 }
 

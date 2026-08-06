@@ -79,6 +79,40 @@ impl std::fmt::Debug for MidiDocument {
 }
 
 impl MidiDocument {
+    /// 构造空白文档（N 条空轨道，供新建工程初始化为可编辑空白工程）。
+    ///
+    /// 2026-08 修复：新建工程/关闭文件后 `clear_editor` 复用本构造重建空文档，
+    /// 使 `insert_note` 不再因 `document = None` 拦截音符创建（空白工程可直接编辑）。
+    ///
+    /// 轨道命名与 `Sidebar::new()` 默认轨道一致：轨道 0 = "Conductor"，轨道 1 = "Setup"，
+    /// 其余为 "Track {i}"。division 取 480（四分音符）。
+    pub fn empty_with_tracks(track_count: u16) -> Self {
+        Self {
+            notes: (0..track_count)
+                .map(|_| crate::chunked_list::ChunkedList::new())
+                .collect(),
+            tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
+            key_signatures: Vec::new(),
+            control_events: crate::chunked_list::ChunkedList::new(),
+            lyrics: Vec::new(),
+            markers: Vec::new(),
+            sys_ex: Vec::new(),
+            track_names: (0..track_count)
+                .map(|i| match i {
+                    0 => Some("Conductor".to_string()),
+                    1 => Some("Setup".to_string()),
+                    _ => Some(format!("Track {i}")),
+                })
+                .collect(),
+            total_ticks: 0,
+            track_count,
+            tracks: crate::track::TrackManager::new(track_count),
+            division: 480,
+            track_ports: vec![0; track_count as usize],
+        }
+    }
+
     /// 使用 midly 从 MIDI 文件加载并构建紧凑内存文档。
     pub fn from_notes_file<P: AsRef<Path>>(
         midi_path: P,
@@ -564,6 +598,23 @@ impl MidiDocument {
             return false;
         };
         *track = crate::chunked_list::ChunkedList::from_sorted(notes);
+        true
+    }
+
+    /// 整轨替换音符（undo/redo 快照恢复专用，O(块数) 浅拷贝版）。
+    ///
+    /// 直接共享 `notes` 的块 Arc（`ChunkedList::clone` 为 O(块数) 指针拷贝），
+    /// 不做数据复制——1600W 音符工程 undo/redo 恢复不再产生整轨拷贝。
+    /// track_id 越界返回 false。
+    pub fn replace_track_notes_chunked(
+        &mut self,
+        track_id: usize,
+        notes: &crate::chunked_list::ChunkedList<NoteEvent>,
+    ) -> bool {
+        let Some(track) = self.notes.get_mut(track_id) else {
+            return false;
+        };
+        *track = notes.clone();
         true
     }
 

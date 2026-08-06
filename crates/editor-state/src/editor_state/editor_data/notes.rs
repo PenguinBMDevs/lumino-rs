@@ -10,7 +10,7 @@ use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::note_grouping::{self, NoteTuple};
 use super::EditorData;
 use crate::DragState;
-use lumino_note_core::history::OpKind;
+use lumino_note_core::history::CreateOp;
 use lumino_note_core::note::Note;
 
 impl EditorData {
@@ -273,14 +273,22 @@ impl EditorData {
             (start_tick, default_note_length)
         };
         let length = length.max(snap_precision);
-        // 合并窗口：300ms 内连续放置音符合并为一个 NoteCreate 日志，
-        // 单条日志超过 entry_limit 条目时自动分割为新日志（parent_group_id 串联）
-        let merged = self.push_history_mergeable(OpKind::NoteCreate);
-        if merged {
-            tracing::debug!("编辑器: 音符放置已合并到当前 NoteCreate 日志");
-        }
         let note = Note::new(tick, key, length);
-        self.insert_note(self.current_track, note.clone());
+        if self.insert_note(self.current_track, note.clone()) {
+            // 增量、极简操作日志：每 op 记录单个音符（20 字节）替代整轨快照克隆。
+            // 合并窗口语义不变（300ms 内连续放置合并为一条 CreateEntry），
+            // 但 undo/redo 恢复是 O(op 数) 精确位置操作，与音符总量解耦——
+            // 1600W 音符工程铅笔绘制不再触发整轨快照（原 `push_history_mergeable` 路径
+            // 每条都 `..top.clone()` 复制整个 EditorSnapshot）。
+            let op = CreateOp {
+                track_id: self.current_track as u32,
+                note: super::accessors::note_to_event(note.clone()),
+            };
+            let merged = self.push_note_create(vec![op]);
+            if merged {
+                tracing::debug!("编辑器: 音符放置已合并到当前 NoteCreate 日志");
+            }
+        }
         self.mark_current_track_changed();
         tracing::debug!("编辑器: 已保存 1 个音符到音轨 {}", self.current_track);
         Some(note)
