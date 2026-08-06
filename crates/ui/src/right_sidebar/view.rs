@@ -10,7 +10,7 @@ use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSide
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 
-/// 渲染右侧栏视图（图标按钮列 + 展开面板）
+/// 渲染右侧栏视图（图标按钮列 + 向左展开的面板）
 pub fn view<'a>(
     right_sidebar: &'a RightSidebar,
     window: &'a window::Window,
@@ -20,41 +20,19 @@ pub fn view<'a>(
     let t = main_translations(language);
 
     // 图标列（垂直排列按钮）
-    let mut col = Column::new()
+    let col = Column::new()
         .spacing(2)
         .width(ROUTE_BAR_WIDTH)
-        .height(Length::Fill);
-
-    // 切换面板按钮
-    let toggle_btn = if right_sidebar.panel_visible {
-        sidebar_button(
-            Icon::AngleRight,
-            t.right_sidebar_hide,
-            Message::RightSidebar(RightSidebarAction::TogglePanel),
-            window,
-        )
-    } else {
-        sidebar_button(
-            Icon::AngleRight,
-            t.right_sidebar_show,
-            Message::RightSidebar(RightSidebarAction::TogglePanel),
-            window,
-        )
-    };
-    col = col.push(toggle_btn);
-
-    // 图片转 MIDI 按钮（仅在面板展开后可见）
-    if right_sidebar.panel_visible {
-        col = col.push(sidebar_button(
+        .height(Length::Fill)
+        // 图片转 MIDI 按钮：始终可见，点击自动展开/收起面板并亮灯
+        .push(sidebar_button(
             Icon::ImageToMidi,
             t.tool_image_to_midi,
             Message::RightSidebar(RightSidebarAction::ImageToMidiClicked),
+            right_sidebar.panel_visible,
             window,
-        ));
-    }
-
-    // 弹性空间占据剩余高度
-    col = col.push(Space::new().height(Length::Fill));
+        ))
+        .push(Space::new().height(Length::Fill));
 
     // 图标列容器
     let route_bar = container(col)
@@ -78,7 +56,7 @@ pub fn view<'a>(
                 container::Style::default().background(palette.background.weakest.color)
             });
 
-        // 调整大小手柄（放在面板右侧，与左侧栏一致）
+        // 调整大小手柄（放在面板右侧，紧贴图标列）
         let resize_handle = mouse_area(
             container(
                 Space::new()
@@ -98,16 +76,16 @@ pub fn view<'a>(
         .on_press(Message::RightSidebar(RightSidebarAction::ResizeDragStarted))
         .on_release(Message::RightSidebar(RightSidebarAction::ResizeDragEnded));
 
-        // 面板内容 + 调整手柄（调整手柄在右侧）
+        // 面板内容 + 调整手柄（手柄在面板右侧）
         let panel_with_handle = Row::new().push(content).push(resize_handle);
         let panel_container = container(panel_with_handle)
             .width(Length::Fixed(right_sidebar.panel_width))
             .height(Length::Fill);
 
-        // 顺序：图标列 → 面板内容（包含右侧调整手柄）
+        // 顺序：面板内容（向左展开）→ 图标列（固定在右侧）
         Row::new()
-            .push(route_bar)
             .push(panel_container)
+            .push(route_bar)
             .height(Length::Fill)
             .into()
     } else {
@@ -116,18 +94,28 @@ pub fn view<'a>(
     }
 }
 
-/// 与左侧栏统一的按钮样式：48x48，左侧2px指示条，图标+间距12px
+/// 与左侧栏统一的按钮样式：48x48，左侧2px指示条（激活时亮灯），图标+间距12px
 fn sidebar_button<'a>(
     icon_enum: Icon,
     tooltip_text: &'a str,
     on_press: Message,
+    active: bool,
     window: &'a window::Window,
 ) -> Element<'a> {
-    // 左侧2px指示条（始终透明，保持视觉一致性）
-    let split = container(Space::new())
-        .width(2)
-        .height(Length::Fill)
-        .style(|_theme: &Theme| container::Style::default().background(Color::TRANSPARENT));
+    let palette = window.theme.extended_palette();
+    // 左侧2px指示条：激活时亮灯（与左侧栏同理），否则透明
+    let split =
+        container(Space::new())
+            .width(2)
+            .height(Length::Fill)
+            .style(move |_theme: &Theme| {
+                let background = if active {
+                    palette.primary.base.color
+                } else {
+                    Color::TRANSPARENT
+                };
+                container::Style::default().background(background)
+            });
 
     let icon_img = icon::view_with_size_and_theme(icon_enum, 20, 20, Some(&window.theme));
 

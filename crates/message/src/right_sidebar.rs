@@ -3,9 +3,7 @@
 /// 右侧栏动作
 #[derive(Debug, Clone)]
 pub enum RightSidebarAction {
-    /// 切换面板显示/隐藏
-    TogglePanel,
-    /// 点击图片转 MIDI 按钮
+    /// 点击图片转 MIDI 按钮（自动展开/收起面板并亮灯）
     ImageToMidiClicked,
     /// 开始拖拽调整面板宽度
     ResizeDragStarted,
