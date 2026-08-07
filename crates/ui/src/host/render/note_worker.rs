@@ -221,32 +221,40 @@ pub(super) fn collect_i2m_preview_notes(
     (main_notes, onion_notes)
 }
 
-/// 构建图片转 MIDI 预览音符实例（追加到主音轨 buffer）
+/// 构建图片转 MIDI 预览音符实例（真实主轨音符 + 预览音符合并写入）
 ///
-/// - 主轨音符（`main_notes`）：实色（`MAIN_TRACK_NOTE_COLOR`）
-/// - 其他轨音符（`onion_notes`）：洋葱皮调色板颜色（调用方按音轨取色）
+/// - `existing_notes`：主音轨 document 中已存在的真实音符（保持可见，不被预览覆盖）
+/// - `main_notes`（主轨预览）：实色（`MAIN_TRACK_NOTE_COLOR`）
+/// - `onion_notes`（其他轨预览）：洋葱皮调色板颜色（调用方按音轨取色）
 /// - `tick/key/length` 已由调用方完成区域 X 向等比映射
+///
+/// 关键设计：每次 i2m 的新音符都是独立个体——预览期间真实主轨音符与预览音符
+/// 共存，互不覆盖（修复第二次 i2m 时第一次已放置的主轨音符从视野消失、
+/// 看起来像被"移入"预览区的问题）。单次 clear + 写入 + swap，
+/// 不依赖调用方先前构建的主轨 buffer 内容。
 pub(super) fn build_i2m_preview_instances(
     buffer: &SwappableBuffer<lumino_gfx::NoteInstance>,
+    existing_notes: &[(f32, u16, f32)],
+    border_width: u32,
     main_notes: &[(f32, u8, f32)],
     onion_notes: &[(f32, u8, f32, [f32; 4])],
 ) {
-    let total = main_notes.len() + onion_notes.len();
+    let total = existing_notes.len() + main_notes.len() + onion_notes.len();
     if total == 0 {
         return;
     }
-    // 关键：先清空 buffer 中已存在的实例（i2m 路径会替换主轨实例为预览实例），
-    // 避免移动/拉伸/框选确认等 bump_preview_generation 触发的每帧重建在已存在
-    // 的实例上追加，导致音符"拖一次多一批"的重复绘制。
-    //
-    // 调用方约束：本函数由 `update_note_data_for_wgpu_thread` 在 i2m_active 分支
-    // 调用，调用前已 `build_main_note_instances` 重建主轨（清空→写入），
-    // 此处再次清空后仅保留本帧 i2m 预览（主轨音符被预览音符覆盖，UI 上仍是
-    // "主轨 i2m 预览实色 + 其他轨洋葱皮"）。若要保留主轨已存在音符，
-    // 调用方应在调用本函数前不重建 main 路径并直接消费 main_notes。
     let instances = unsafe { buffer.write_buffer() };
     instances.clear();
     instances.reserve(total);
+    for (tick, key, length) in existing_notes {
+        instances.push(lumino_gfx::NoteInstance::new(
+            *tick,
+            *key as u8,
+            *length,
+            MAIN_TRACK_NOTE_COLOR,
+            border_width,
+        ));
+    }
     for (tick, key, length) in main_notes {
         instances.push(lumino_gfx::NoteInstance::new(
             *tick,

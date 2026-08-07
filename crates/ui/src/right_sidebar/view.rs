@@ -144,7 +144,8 @@ pub fn view<'a>(
             container::Style::default().background(palette.background.weakest.color)
         });
 
-        // 调整大小手柄（放在面板右侧，紧贴图标列）
+        // 调整大小手柄（放在面板左侧边缘，紧贴主内容区——面板向右栏图标列方向
+        // 展开，左侧边界才是用户肉眼可见的可拖拽边缘）
         let resize_handle = mouse_area(
             container(
                 Space::new()
@@ -164,8 +165,8 @@ pub fn view<'a>(
         .on_press(Message::RightSidebar(RightSidebarAction::ResizeDragStarted))
         .on_release(Message::RightSidebar(RightSidebarAction::ResizeDragEnded));
 
-        // 面板内容 + 调整手柄（手柄在面板右侧）
-        let panel_with_handle = Row::new().push(content).push(resize_handle);
+        // 调整手柄 + 面板内容（手柄在面板左侧）
+        let panel_with_handle = Row::new().push(resize_handle).push(content);
         let panel_container = container(panel_with_handle)
             .width(Length::Fixed(right_sidebar.panel_width))
             .height(Length::Fill);

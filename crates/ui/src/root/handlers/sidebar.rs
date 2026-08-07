@@ -295,7 +295,8 @@ impl Root {
     /// 确认图片转 MIDI 生成：按逐轨写入/自动建轨策略写入 document
     ///
     /// - 颜色 0 写入当前音轨；
-    /// - 颜色 1+ 自动创建新音轨（sidebar + document 同步扩轨）；
+    /// - 颜色 1+ 优先复用现有非当前音轨，数量不足时才新建缺失数量的音轨
+    ///   （sidebar + document 同步扩轨）；
     /// - 使用 `CreateOp` 操作日志记录（跨轨撤销/重做）。
     fn handle_i2m_placement_confirm(&mut self) {
         use lumino_editor_state::ImageToMidiMode;
@@ -322,10 +323,24 @@ impl Root {
             return;
         }
 
-        // 自动建轨：颜色 1+ 各分配一条新音轨（sidebar + document 同步）
+        // 音轨分配策略：颜色 0 始终写入当前音轨；颜色 1+ 优先复用现有非当前音轨
+        // （按侧边栏顺序取用），数量不足时才新建缺失数量的音轨——避免每次 i2m
+        // 都无脑新建 N-1 条轨道，导致多次转换后音轨无限膨胀。
+        let needed_extra = preview.tracks.len().saturating_sub(1);
+        let reused_tracks: Vec<usize> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|t| t.id)
+            .filter(|id| *id != current_track)
+            .take(needed_extra)
+            .collect();
+        let deficit = needed_extra.saturating_sub(reused_tracks.len());
+
+        // 自动建轨：仅为不足的数量新建音轨（sidebar + document 同步）
         let before: std::collections::HashSet<usize> =
             self.sidebar.tracks.iter().map(|t| t.id).collect();
-        for _ in 0..preview.tracks.len().saturating_sub(1) {
+        for _ in 0..deficit {
             self.sidebar.update(sidebar::Event::AddTrack);
         }
         let new_track_ids: Vec<usize> = self
@@ -336,7 +351,7 @@ impl Root {
             .map(|t| t.id)
             .collect();
 
-        // 逐轨写入（颜色 0 → 当前轨，颜色 1+ → 新音轨）
+        // 逐轨写入（颜色 0 → 当前轨，颜色 1+ → 复用的现有轨或新建轨）
         let mut create_ops: Vec<lumino_note_core::history::CreateOp> = Vec::new();
         let mut affected = std::collections::HashSet::new();
         for (color_idx, notes) in tracks_data.iter().enumerate() {
@@ -346,9 +361,11 @@ impl Root {
             let target_track = if color_idx == 0 {
                 current_track
             } else {
-                new_track_ids
-                    .get(color_idx - 1)
+                let reuse_idx = color_idx - 1;
+                reused_tracks
+                    .get(reuse_idx)
                     .copied()
+                    .or_else(|| new_track_ids.get(reuse_idx - reused_tracks.len()).copied())
                     .unwrap_or(current_track)
             };
             if !self.editor.editor_state.data.ensure_track(target_track) {

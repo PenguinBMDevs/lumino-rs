@@ -15,6 +15,7 @@ impl Host {
         if self.window_ctx.cursor_position == Some(logical_pos)
             && !self.window_ctx.is_toolbar_resizing
             && !self.root.sidebar.is_resizing()
+            && !self.root.right_sidebar.is_resizing
         {
             return;
         }
@@ -38,6 +39,17 @@ impl Host {
             self.root
                 .editor
                 .set_canvas_offset(iced_core::Point::new(sidebar_width, current_offset_y));
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+        }
+
+        // 如果正在调整右侧栏宽度，更新右侧栏宽度
+        // （拖拽方向与左侧相反：手柄在面板左缘，左移增大面板，逻辑在
+        //   RightSidebar::update_resize_position 内处理）
+        if self.root.right_sidebar.is_resizing {
+            self.root
+                .right_sidebar
+                .update_resize_position(logical_pos.x);
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }

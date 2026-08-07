@@ -499,31 +499,42 @@ impl Host {
             // 主音轨音符描边：固定 1 像素（用户要求）
             const MAIN_TRACK_BORDER_WIDTH: u32 = 1;
             let border_width = MAIN_TRACK_BORDER_WIDTH;
-            note_worker::build_main_note_instances(
-                &self.render_ctx.render_cache.note_instances_buffer,
-                visible_notes,
-                &edit_state_clone,
-                default_note_length,
-                snap_precision,
-                &preview_ctx,
-                border_width,
-            );
 
             // 图片转 MIDI 预览音符：主轨实色 + 其他轨洋葱皮颜色
-            // Placing 阶段（预览非空）：整体重写主轨 buffer 为预览（内部先 clear，
-            // 覆盖上方 build_main_note_instances 的 document 音符），避免三缓冲轮转下
-            // 在旧预览实例上追加导致"拖一次多一批"的重复绘制。
-            // Selecting 阶段（预览为空）：保持 document 主轨音符，走 main 路径。
-            if i2m_active {
+            // Placing 阶段（预览非空）：真实主轨音符与预览音符合并写入同一 buffer，
+            // 预览不覆盖已存在音符——每次 i2m 的新音符都是独立个体（修复第二次
+            // i2m 时第一次已放置的主轨音符从视野消失、看起来像被"移入"预览区的
+            // 问题）。Selecting 阶段（预览为空）：保持 document 主轨音符走 main 路径。
+            let i2m_preview = if i2m_active {
                 let (main_preview, onion_preview) =
                     note_worker::collect_i2m_preview_notes(&self.root.editor);
-                if !main_preview.is_empty() || !onion_preview.is_empty() {
-                    note_worker::build_i2m_preview_instances(
-                        &self.render_ctx.render_cache.note_instances_buffer,
-                        &main_preview,
-                        &onion_preview,
-                    );
+                if main_preview.is_empty() && onion_preview.is_empty() {
+                    None
+                } else {
+                    Some((main_preview, onion_preview))
                 }
+            } else {
+                None
+            };
+
+            if let Some((main_preview, onion_preview)) = &i2m_preview {
+                note_worker::build_i2m_preview_instances(
+                    &self.render_ctx.render_cache.note_instances_buffer,
+                    visible_notes,
+                    border_width,
+                    main_preview,
+                    onion_preview,
+                );
+            } else {
+                note_worker::build_main_note_instances(
+                    &self.render_ctx.render_cache.note_instances_buffer,
+                    visible_notes,
+                    &edit_state_clone,
+                    default_note_length,
+                    snap_precision,
+                    &preview_ctx,
+                    border_width,
+                );
             }
             tracing::debug!(
                 "WGPU thread: built {} visible note instances from expanded query",
