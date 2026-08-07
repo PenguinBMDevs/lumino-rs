@@ -1,5 +1,4 @@
 use crate::resources::icon;
-use crate::sidebar::event_browser;
 use iced_core::Color;
 use std::collections::HashSet;
 
@@ -52,7 +51,7 @@ pub enum RouteConfig {
     Space,
 }
 
-pub const ROUTES: [RouteConfig; 10] = [
+pub const ROUTES: [RouteConfig; 9] = [
     // ── 钢琴卷帘组（红色） ──
     RouteConfig::GroupParent {
         group: GroupId::PianoRoll,
@@ -66,11 +65,6 @@ pub const ROUTES: [RouteConfig; 10] = [
     RouteConfig::Item {
         route: Route::Automation,
         icon: icon::WaveForm,
-        group: Some(GroupId::PianoRoll),
-    },
-    RouteConfig::Item {
-        route: Route::EventList,
-        icon: icon::EventList,
         group: Some(GroupId::PianoRoll),
     },
     // ── 工程走带组（绿色） ──
@@ -202,18 +196,6 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
-    /// 事件浏览器状态
-    pub event_browser_state: event_browser::EventBrowserState,
-    /// 事件列表上下文菜单当前关联的 tick（None 表示未打开）
-    pub event_list_context_menu_tick: Option<u32>,
-    /// 事件列表待应用到 editor 的操作（由 Root 在 update 后消费）
-    pub pending_event_list_action: Option<event_browser::EventListAction>,
-    /// 事件列表 popup 待解析的原始编辑请求（由 Root 在 update 后消费）
-    pub pending_event_list_edit: Option<(event_browser::EditRequest, String)>,
-    /// 事件列表垂直滚动偏移
-    pub event_list_scroll_y: f32,
-    /// 事件列表可视区域高度（用于虚拟滚动）
-    pub event_list_viewport_height: f32,
     /// 单调递增的音轨 ID 计数器（删除后复用 ID 会导致选中冲突）
     pub(crate) next_track_id: usize,
     /// 已删除音轨的 ID 占用集合（新建音轨时跳过这些 ID）
@@ -288,12 +270,6 @@ impl Sidebar {
             panel_context_menu: PanelContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
-            event_browser_state: event_browser::EventBrowserState::default(),
-            event_list_context_menu_tick: None,
-            pending_event_list_action: None,
-            pending_event_list_edit: None,
-            event_list_scroll_y: 0.0,
-            event_list_viewport_height: 0.0,
             next_track_id: 2,
             reserved_track_ids: HashSet::new(),
             pending_track_deletion: None,
@@ -395,16 +371,6 @@ impl Sidebar {
             self.panel_visible = true;
         }
     }
-    /// 取出并清空待执行的 editor 数据操作。
-    pub fn take_event_list_action(&mut self) -> Option<event_browser::EventListAction> {
-        self.pending_event_list_action.take()
-    }
-
-    /// 取出并清空待解析的 popup 编辑请求。
-    pub fn take_event_list_edit(&mut self) -> Option<(event_browser::EditRequest, String)> {
-        self.pending_event_list_edit.take()
-    }
-
     /// 取出并清空待 Root 消费的音轨删除请求
     pub fn take_pending_track_deletion(&mut self) -> Option<usize> {
         self.pending_track_deletion.take()

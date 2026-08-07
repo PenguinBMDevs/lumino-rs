@@ -75,27 +75,7 @@ impl Root {
         };
 
         // 更新 sidebar，获取是否需要重新渲染
-        let mut needs_redraw = self.sidebar.update(event.clone());
-
-        // 事件列表跳转：直接切换到目标位置
-        if let sidebar::Event::EventListJump(ref req) = event {
-            self.handle_event_list_jump(req);
-            needs_redraw = true;
-        }
-
-        // 消费 sidebar 缓存的 editor 操作
-        if let Some(action) = self.sidebar.take_event_list_action() {
-            self.apply_event_list_action(action);
-            needs_redraw = true;
-        }
-
-        // 解析需要 EditorData 访问的 popup / 编辑请求
-        if let Some((req, value)) = self.sidebar.take_event_list_edit() {
-            if let Some(action) = self.parse_event_list_edit(req, value) {
-                self.apply_event_list_action(action);
-            }
-            needs_redraw = true;
-        }
+        let needs_redraw = self.sidebar.update(event.clone());
 
         // 消费 sidebar 中待删除音轨请求，构造 payload 转发给 Runner 写入 .lmdeltrack
         // 必须在 sidebar.update 之后调用——此时 pending_track_deletion 才被设置。

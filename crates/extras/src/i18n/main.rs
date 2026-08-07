@@ -28,9 +28,6 @@ mod tests {
         assert_eq!(t.pause, "暂停");
         assert_eq!(t.menu_file, "文件");
         assert_eq!(t.status_ready, "就绪");
-        assert_eq!(t.eb_archive, "存档");
-        assert_eq!(t.eb_position, "位置");
-        assert_eq!(t.eb_major, "大调");
     }
 
     #[test]
@@ -40,9 +37,6 @@ mod tests {
         assert_eq!(t.pause, "Pause");
         assert_eq!(t.menu_file, "File");
         assert_eq!(t.status_ready, "Ready");
-        assert_eq!(t.eb_archive, "Archive");
-        assert_eq!(t.eb_position, "position");
-        assert_eq!(t.eb_major, "Major");
     }
 
     #[test]
@@ -54,9 +48,6 @@ mod tests {
             assert!(!t.undo.is_empty());
             assert!(!t.sidebar_add_track.is_empty());
             assert!(!t.project_title.is_empty());
-            assert!(!t.eb_archive.is_empty());
-            assert!(!t.eb_position.is_empty());
-            assert!(!t.eb_shape.is_empty());
         }
     }
 }

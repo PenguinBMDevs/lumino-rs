@@ -4,7 +4,6 @@
 
 mod color;
 mod context_menu;
-mod event_list;
 mod group;
 mod rename;
 mod resize;
@@ -23,8 +22,6 @@ impl Sidebar {
         let prev_context_menu_target = self.track_context_menu.target_track_id;
         let prev_renaming = self.renaming_track.as_ref().map(|(id, _)| *id);
         let prev_color_picking = self.color_picking_track;
-        let prev_event_browser_state = self.event_browser_state.clone();
-        let prev_event_list_context_menu_tick = self.event_list_context_menu_tick;
         let prev_panel_context_menu_open = self.panel_context_menu.is_open;
         match event {
             // ── 分组切换（核心逻辑） ──
@@ -62,23 +59,6 @@ impl Sidebar {
             TrackColorSelected(id, color) => self.handle_track_color_selected(id, color),
             TrackColorReset(id) => self.handle_track_color_reset(id),
             TrackColorPickerClosed(id) => self.handle_track_color_picker_closed(id),
-            // ── 事件列表 ──
-            EventListScrolled(offset, viewport_height) => {
-                self.handle_event_list_scrolled(offset, viewport_height)
-            }
-            EventListRowClicked(tick) => self.handle_event_list_row_clicked(tick),
-            EventListContextMenuOpened(tick) => self.handle_event_list_context_menu_opened(tick),
-            EventListContextMenuClosed => self.handle_event_list_context_menu_closed(),
-            EventListContextMenuItemClicked(item) => {
-                self.handle_event_list_context_menu_item_clicked(item)
-            }
-            EventListJump(req) => self.handle_event_list_jump(req),
-            EventListEdit(req) => self.handle_event_list_edit(req),
-            EventListPopupConfirm(req, value) => self.handle_event_list_popup_confirm(req, value),
-            EventListPopupCancel => self.handle_event_list_popup_cancel(),
-            EventListTreeToggled(key) => self.handle_event_list_tree_toggled(key),
-            EventListItemSelected(item) => self.handle_event_list_item_selected(item),
-            EventListPageChanged(page) => self.handle_event_list_page_changed(page),
             // ── 调整宽度 ──
             ResizeDragStarted(_) => self.handle_resize_drag_started(),
             ResizeDragged(_) => self.handle_resize_dragged(),
@@ -98,8 +78,6 @@ impl Sidebar {
             || self.track_context_menu.target_track_id != prev_context_menu_target
             || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
             || self.color_picking_track != prev_color_picking
-            || self.event_browser_state != prev_event_browser_state
-            || self.event_list_context_menu_tick != prev_event_list_context_menu_tick
             || self.panel_context_menu.is_open != prev_panel_context_menu_open
     }
 }

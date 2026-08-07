@@ -14,9 +14,6 @@ use std::time::Instant;
 mod entry;
 pub use entry::{CreateEntry, CreateOp, HistoryEntry, MoveOp, OperationEntry};
 
-mod event_list;
-pub use event_list::{EventListDelta, EventListItem, EventListTarget, UndoAction};
-
 mod snapshot;
 pub use snapshot::EditorSnapshot;
 

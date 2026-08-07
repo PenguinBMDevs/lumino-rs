@@ -22,20 +22,16 @@ pub(crate) mod async_commit;
 pub(crate) mod async_commit_streaming;
 mod automation;
 mod construct;
-mod event_ops;
 mod history;
 mod note_store_ops;
 mod notes;
 mod reset;
-mod shape_convert;
 #[cfg(test)]
 mod tests_automation;
 #[cfg(test)]
 mod tests_basics;
 #[cfg(test)]
 mod tests_build_points;
-#[cfg(test)]
-mod tests_event_ops;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]

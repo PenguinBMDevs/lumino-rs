@@ -7,7 +7,7 @@ use lumino_extras::i18n::{Language, main_translations};
 use crate::{
     Element, Theme,
     resources::icon::{self, Icon},
-    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track, event_browser},
+    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track},
     window,
 };
 
@@ -28,14 +28,6 @@ pub struct SidebarViewParams<'a> {
     pub panel_context_menu_open: bool,
     /// 面板右键菜单位置（窗口逻辑坐标，打开时有效）
     pub panel_context_menu_pos: Option<(f32, f32)>,
-    /// 事件浏览器状态
-    pub event_browser_state: &'a event_browser::EventBrowserState,
-    /// 事件浏览器渲染数据
-    pub event_browser_data: event_browser::EventBrowserData<'a>,
-    /// 事件列表上下文菜单当前关联的 tick（None 表示未打开）
-    pub event_list_context_menu_tick: Option<u32>,
-    /// 程序字体名称（来自设置）
-    pub program_font_name: &'a str,
 }
 
 pub fn view<'a>(
@@ -99,16 +91,6 @@ pub fn view<'a>(
 
             col = col.push(add_track_container);
             container(col).into()
-        }
-        Route::EventList => {
-            // 事件浏览器
-            event_browser::view_event_browser(
-                params.event_browser_state,
-                params.event_browser_data,
-                params.event_list_context_menu_tick,
-                t,
-                params.program_font_name,
-            )
         }
         Route::File => {
             // 全量渲染所有音轨——由 iced scrollable 原生处理滚动。

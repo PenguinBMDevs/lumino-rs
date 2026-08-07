@@ -2,7 +2,6 @@ use iced_widget::{container, row};
 use lumino_extras::i18n::Language;
 
 use super::core::{ROUTE_BAR_WIDTH, Sidebar};
-use super::event_browser;
 use super::{panel, route};
 use crate::titlebar::mode_toggle::AppMode;
 use crate::{Element, window};
@@ -15,11 +14,7 @@ impl Sidebar {
         window: &'a window::Window,
         language: Language,
         current_mode: AppMode,
-        editor_data: &'a lumino_editor_state::EditorData,
-        current_track_notes: &'a lumino_midi_loader::ChunkedList<lumino_midi_loader::NoteEvent>,
-        ppq: u16,
         _snap_precision: f32,
-        program_font_name: &'a str,
     ) -> Element<'a> {
         let panel = if self.panel_visible {
             let sidebar_params = panel::SidebarViewParams {
@@ -31,39 +26,6 @@ impl Sidebar {
                 context_menu_target_id: self.track_context_menu.target_track_id,
                 renaming_track: self.renaming_track.as_ref(),
                 color_picking_track: self.color_picking_track,
-                event_browser_state: &self.event_browser_state,
-                event_browser_data: event_browser::EventBrowserData {
-                    tracks: &self.tracks,
-                    current_track_notes,
-                    ppq,
-                    time_signatures: &editor_data.time_signatures,
-                    tempo_points: &editor_data.tempo_points,
-                    key_signatures: &editor_data.key_signatures,
-                    markers: &editor_data.markers,
-                    lyrics: &editor_data.lyrics,
-                    chords: &editor_data.chords,
-                    program_changes: &editor_data.program_changes,
-                    automation_lanes: &editor_data.automation_lanes,
-                    project_name: "",
-                    project_author: "",
-                    project_bpm: editor_data
-                        .tempo_points
-                        .first()
-                        .map(|p| p.bpm)
-                        .unwrap_or(120.0),
-                    project_division: ppq,
-                    project_track_count: self.tracks.len() as u16,
-                    project_note_count: editor_data
-                        .document
-                        .as_ref()
-                        .map(|doc| doc.notes.iter().map(|v| v.len() as u64).sum::<u64>())
-                        .unwrap_or(0),
-                    project_created: "",
-                    project_modified: "",
-                    project_format_version: 1,
-                },
-                event_list_context_menu_tick: self.event_list_context_menu_tick,
-                program_font_name,
                 panel_context_menu_open: self.panel_context_menu.is_open,
                 panel_context_menu_pos: self.panel_context_menu.mouse_pos,
             };

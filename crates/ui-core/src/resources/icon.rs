@@ -74,7 +74,6 @@ define_icons! {
     (Download, "../../../../resources/icons/sidebar/export-group.svg"),
     (PlayCircle, "../../../../resources/icons/sidebar/waterfall-record.svg"),
     (EllipsisVertical, "../../../../resources/icons/sidebar/toolbar-overflow-trigger.svg"),
-    (EventList, "../../../../resources/icons/sidebar/event-browser-panel.svg"),
     (Users, "../../../../resources/icons/toolbar/collaboration.svg"),
     // 工具栏图标
     (Play, "../../../../resources/icons/toolbar/playback-start.svg"),

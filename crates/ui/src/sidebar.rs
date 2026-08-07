@@ -2,7 +2,6 @@
 mod color_picker;
 mod context_menu;
 mod core;
-pub(crate) mod event_browser;
 mod handling;
 mod panel;
 mod panel_context_menu;
