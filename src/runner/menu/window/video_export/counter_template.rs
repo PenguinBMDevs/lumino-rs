@@ -197,7 +197,7 @@ mod tests {
     }
 
     fn make_doc() -> MidiDocument {
-        let notes = vec![(0u32, 480u32, 60u8), (480, 960, 62), (960, 1920, 64)];
+        let notes = [(0u32, 480u32, 60u8), (480, 960, 62), (960, 1920, 64)];
         let mut list: Vec<NoteEvent> = notes
             .iter()
             .map(|&(s, e, k)| NoteEvent::new(s, e, k, 100, 0))

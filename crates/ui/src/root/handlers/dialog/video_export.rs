@@ -19,6 +19,41 @@ fn reset_video_export_overlay(root: &mut Root) {
     }
 }
 
+/// 解析 hex 颜色字符串为 RGBA（移植自 MIDIGraphRenderer 的 hexToRGB）。
+///
+/// 支持 `#RRGGBB`（alpha=255）与 `#RRGGBBAA` 两种格式；解析失败返回 `None`。
+fn hex_to_rgba(hex: &str) -> Option<[u8; 4]> {
+    let hex = hex.trim().trim_start_matches('#');
+    let bytes = match hex.len() {
+        6 => u32::from_str_radix(hex, 16).ok()?,
+        8 => u32::from_str_radix(hex, 16).ok()?,
+        _ => return None,
+    };
+    match hex.len() {
+        6 => Some([
+            ((bytes >> 16) & 0xFF) as u8,
+            ((bytes >> 8) & 0xFF) as u8,
+            (bytes & 0xFF) as u8,
+            255,
+        ]),
+        _ => Some([
+            ((bytes >> 24) & 0xFF) as u8,
+            ((bytes >> 16) & 0xFF) as u8,
+            ((bytes >> 8) & 0xFF) as u8,
+            (bytes & 0xFF) as u8,
+        ]),
+    }
+}
+
+/// 将数值格式化为设置面板回显字符串（整数类字段不带小数位）。
+fn fmt_num(value: f32, decimals: usize) -> String {
+    if decimals == 0 {
+        format!("{}", value as i64)
+    } else {
+        format!("{value:.decimals$}")
+    }
+}
+
 impl DialogHandler {
     pub(super) fn handle_video_export(
         &self,
@@ -90,6 +125,29 @@ impl DialogHandler {
                 let counter_ticks_pad = st.counter_ticks_pad;
                 let counter_bars_pad = st.counter_bars_pad;
                 let counter_frames_pad = st.counter_frames_pad;
+                // 数据曲线设置
+                let dc_metric = st.dc_metric.clone();
+                let dc_graph_duration = st.dc_graph_duration.clone();
+                let dc_zoom_smoothness = st.dc_zoom_smoothness.clone();
+                let dc_graph_smoothness = st.dc_graph_smoothness.clone();
+                let dc_padding_mul = st.dc_padding_mul.clone();
+                let dc_bg_color = st.dc_bg_color.clone();
+                let dc_line_color = st.dc_line_color.clone();
+                let dc_text_color = st.dc_text_color.clone();
+                let dc_bar_color = st.dc_bar_color.clone();
+                let dc_line_thickness = st.dc_line_thickness.clone();
+                let dc_bar_thickness = st.dc_bar_thickness.clone();
+                let dc_font_size = st.dc_font_size;
+                let dc_font_mode = st.dc_font_mode.clone();
+                let dc_font_family = st.dc_font_family.clone();
+                let dc_font_path = st.dc_font_path.clone();
+                let dc_text_x_offset = st.dc_text_x_offset.clone();
+                let dc_text_y_offset = st.dc_text_y_offset.clone();
+                let dc_milestone_scale_mul = st.dc_milestone_scale_mul.clone();
+                let dc_abbreviate = st.dc_abbreviate;
+                let dc_abbreviate_digits = st.dc_abbreviate_digits.clone();
+                let dc_show_text = st.dc_show_text;
+                let dc_show_bars = st.dc_show_bars;
 
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
@@ -154,6 +212,64 @@ impl DialogHandler {
                         save_csv: counter_save_csv,
                         csv_output: counter_csv_output,
                         csv_format: counter_csv_format,
+                    },
+                    data_curve: lumino_event::window::video::DataCurveConfig {
+                        metric: lumino_event::window::video::DataCurveMetric::from_str(&dc_metric)
+                            .unwrap_or_default(),
+                        graph_duration: dc_graph_duration
+                            .parse::<f32>()
+                            .unwrap_or(2.0)
+                            .clamp(0.5, 30.0),
+                        zoom_smoothness: dc_zoom_smoothness
+                            .parse::<f32>()
+                            .unwrap_or(8.0)
+                            .clamp(1.0, 64.0),
+                        graph_smoothness: dc_graph_smoothness
+                            .parse::<f32>()
+                            .unwrap_or(0.0)
+                            .clamp(0.0, 32.0) as u32,
+                        padding_mul: dc_padding_mul.parse::<f32>().unwrap_or(0.1).clamp(0.0, 1.0),
+                        bg_color: hex_to_rgba(&dc_bg_color).unwrap_or([0, 0, 0, 255]),
+                        line_color: hex_to_rgba(&dc_line_color).unwrap_or([0, 255, 255, 255]),
+                        text_color: hex_to_rgba(&dc_text_color).unwrap_or([255, 255, 255, 127]),
+                        bar_color: hex_to_rgba(&dc_bar_color).unwrap_or([255, 255, 255, 127]),
+                        line_thickness: dc_line_thickness
+                            .parse::<f32>()
+                            .unwrap_or(3.0)
+                            .clamp(1.0, 20.0) as u32,
+                        bar_thickness: dc_bar_thickness
+                            .parse::<f32>()
+                            .unwrap_or(1.0)
+                            .clamp(1.0, 10.0) as u32,
+                        font_size: dc_font_size,
+                        font: match dc_font_mode.as_str() {
+                            "系统字体" => lumino_event::window::video::CounterFont::System {
+                                family: dc_font_family,
+                            },
+                            "自定义字体" => lumino_event::window::video::CounterFont::File {
+                                path: dc_font_path,
+                            },
+                            _ => lumino_event::window::video::CounterFont::Bitmap,
+                        },
+                        text_x_offset: dc_text_x_offset
+                            .parse::<f32>()
+                            .unwrap_or(2.0)
+                            .clamp(0.0, 100.0) as u32,
+                        text_y_offset: dc_text_y_offset
+                            .parse::<f32>()
+                            .unwrap_or(2.0)
+                            .clamp(0.0, 100.0) as u32,
+                        milestone_scale_mul: dc_milestone_scale_mul
+                            .parse::<f32>()
+                            .unwrap_or(1.5)
+                            .clamp(1.0, 5.0),
+                        abbreviate: dc_abbreviate,
+                        abbreviate_digits: dc_abbreviate_digits
+                            .parse::<f32>()
+                            .unwrap_or(3.0)
+                            .clamp(0.0, 10.0) as u32,
+                        show_text: dc_show_text,
+                        show_bars: dc_show_bars,
                     },
                 };
                 let ev = crate::event::window::Event::start_video_export(video_config, document);
@@ -299,6 +415,59 @@ impl DialogHandler {
                     .save_file()
                 {
                     root.state.video_export_dialog.counter_csv_output =
+                        path.to_string_lossy().to_string();
+                }
+            }
+            V::DataCurveNumberChanged { field, value } => {
+                let st = &mut root.state.video_export_dialog;
+                match field.as_str() {
+                    "graph_duration" => st.dc_graph_duration = fmt_num(value, 2),
+                    "zoom_smoothness" => st.dc_zoom_smoothness = fmt_num(value, 2),
+                    "graph_smoothness" => st.dc_graph_smoothness = fmt_num(value, 0),
+                    "padding_mul" => st.dc_padding_mul = fmt_num(value, 2),
+                    "line_thickness" => st.dc_line_thickness = fmt_num(value, 0),
+                    "bar_thickness" => st.dc_bar_thickness = fmt_num(value, 0),
+                    "text_x_offset" => st.dc_text_x_offset = fmt_num(value, 0),
+                    "text_y_offset" => st.dc_text_y_offset = fmt_num(value, 0),
+                    "milestone_scale_mul" => st.dc_milestone_scale_mul = fmt_num(value, 2),
+                    "abbreviate_digits" => st.dc_abbreviate_digits = fmt_num(value, 0),
+                    _ => {}
+                }
+            }
+            V::DataCurveBoolChanged { field, value } => {
+                let st = &mut root.state.video_export_dialog;
+                match field.as_str() {
+                    "abbreviate" => st.dc_abbreviate = value,
+                    "show_text" => st.dc_show_text = value,
+                    "show_bars" => st.dc_show_bars = value,
+                    _ => {}
+                }
+            }
+            V::DataCurveTextChanged { field, value } => {
+                let st = &mut root.state.video_export_dialog;
+                match field.as_str() {
+                    "metric" => st.dc_metric = value,
+                    "bg_color" => st.dc_bg_color = value,
+                    "line_color" => st.dc_line_color = value,
+                    "text_color" => st.dc_text_color = value,
+                    "bar_color" => st.dc_bar_color = value,
+                    "font_family" => st.dc_font_family = value,
+                    "font_path" => st.dc_font_path = value,
+                    _ => {}
+                }
+            }
+            V::DataCurveFontSizeChanged(v) => {
+                root.state.video_export_dialog.dc_font_size = v.clamp(7, 256);
+            }
+            V::DataCurveFontModeChanged(v) => {
+                root.state.video_export_dialog.dc_font_mode = v;
+            }
+            V::DataCurveBrowseFont => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                    .pick_file()
+                {
+                    root.state.video_export_dialog.dc_font_path =
                         path.to_string_lossy().to_string();
                 }
             }

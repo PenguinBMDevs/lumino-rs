@@ -73,6 +73,7 @@ pub fn build_video_export_render_params(
             note_instances_out,
         ),
         RenderMode::NoteCounter => unreachable!("NoteCounter 应走 CPU 渲染路径"),
+        RenderMode::DataCurve => unreachable!("DataCurve 应走 CPU 渲染路径"),
     }
 }
 

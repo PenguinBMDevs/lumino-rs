@@ -206,6 +206,72 @@ impl TtfFontRenderer {
         }
         cur_x.saturating_sub(x as i64).min(u32::MAX as i64) as u32
     }
+
+    /// 绘制单行文本（带最近邻放大倍率），返回绘制宽度。
+    ///
+    /// 数据曲线模式里程碑刻度文字放大用：每个光栅化像素绘制为
+    /// `extra_scale × extra_scale` 方块（与点阵后端的整倍放大语义一致）。
+    #[allow(clippy::too_many_arguments)]
+    pub(super) fn draw_line_scaled(
+        &mut self,
+        frame: &mut [u8],
+        frame_width: u32,
+        line: &str,
+        x: u32,
+        y: u32,
+        color: [u8; 4],
+        extra_scale: u32,
+    ) -> u32 {
+        let extra = extra_scale.max(1) as i64;
+        let frame_w = frame_width as usize;
+        let row_bytes = frame_w * 4;
+        let frame_len = frame.len();
+        let mut cur_x = x as i64;
+
+        for ch in line.chars() {
+            self.ensure_glyph(ch);
+            let Some(g) = self.glyph(ch) else { continue };
+            let dst_x = cur_x + g.offset_x as i64;
+            let dst_y = y as i64 + g.offset_y as i64;
+            let (w, h) = (g.width as i64, g.height as i64);
+            if g.width > 0 && g.height > 0 {
+                for row in 0..h {
+                    let fy = dst_y + row * extra;
+                    if fy < 0 || fy >= frame_len as i64 / row_bytes as i64 {
+                        continue;
+                    }
+                    let row_off = (row as usize) * g.width as usize;
+                    let alpha_row = &g.alpha[row_off..row_off + g.width as usize];
+                    for col in 0..w {
+                        let a = alpha_row[col as usize] as u32;
+                        if a == 0 {
+                            continue;
+                        }
+                        // 最近邻放大：alpha 像素扩展为 extra×extra 方块
+                        for sy in 0..extra {
+                            let fx_y = fy + sy;
+                            if fx_y >= frame_len as i64 / row_bytes as i64 {
+                                break;
+                            }
+                            let px_row = (fx_y as usize) * row_bytes;
+                            for sx in 0..extra {
+                                let fx = dst_x + col * extra + sx;
+                                if fx < 0 || fx >= frame_w as i64 {
+                                    continue;
+                                }
+                                let px = px_row + (fx as usize) * 4;
+                                if px + 4 <= frame_len {
+                                    blend_pixel(&mut frame[px..px + 4], color, a);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            cur_x += g.advance as i64 * extra;
+        }
+        cur_x.saturating_sub(x as i64).min(u32::MAX as i64) as u32
+    }
 }
 
 /// 将 `color` 按 `alpha`（0-255）混合到 BGRA 像素上（保留背景透明度不变）。
@@ -342,7 +408,8 @@ mod tests {
         .expect("加载微软雅黑");
         let mut frame = vec![0u8; 64 * 32 * 4];
         r.draw_line(&mut frame, 64, "𠀀", 0, 0, [255, 255, 255, 255]);
-        assert!(r.measure_line("𠀀") >= 0);
+        // 缺失 glyph 按空格宽度推进（>0），不 panic
+        assert!(r.measure_line("𠀀") > 0);
     }
 
     /// 越界绘制不 panic（行顶为负/超出帧高）

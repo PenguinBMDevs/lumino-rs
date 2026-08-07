@@ -81,6 +81,51 @@ pub struct VideoExportDialogState {
     pub counter_csv_output: String,
     /// 计数器 CSV 行格式
     pub counter_csv_format: String,
+    // ── 数据曲线设置（参考 MIDIGraphRenderer graph 设置面板） ──
+    /// 数据来源指标（"NPS（每秒音符数）"/"复音数"/"累计音符数"/"BPM（速度）"）
+    pub dc_metric: String,
+    /// 曲线窗口时长（秒）
+    pub dc_graph_duration: String,
+    /// 缩放动画平滑度
+    pub dc_zoom_smoothness: String,
+    /// 折线平滑窗口（0=关闭）
+    pub dc_graph_smoothness: String,
+    /// 纵轴缩放 padding 放大系数
+    pub dc_padding_mul: String,
+    /// 背景颜色（hex 字符串，如 "#000000"，支持 8 位 hex 带 alpha）
+    pub dc_bg_color: String,
+    /// 折线颜色（hex 字符串）
+    pub dc_line_color: String,
+    /// 刻度文字颜色（hex 字符串）
+    pub dc_text_color: String,
+    /// 水平网格线颜色（hex 字符串）
+    pub dc_bar_color: String,
+    /// 折线宽度（像素）
+    pub dc_line_thickness: String,
+    /// 水平网格线宽度（像素）
+    pub dc_bar_thickness: String,
+    /// 刻度文字字号（像素）
+    pub dc_font_size: u32,
+    /// 刻度文字字体来源（"内置点阵"/"系统字体"/"自定义字体"）
+    pub dc_font_mode: String,
+    /// 系统字体名称
+    pub dc_font_family: String,
+    /// 自定义字体文件路径
+    pub dc_font_path: String,
+    /// 刻度文字 X 偏移（像素）
+    pub dc_text_x_offset: String,
+    /// 刻度文字 Y 偏移（像素）
+    pub dc_text_y_offset: String,
+    /// 里程碑文字放大倍数
+    pub dc_milestone_scale_mul: String,
+    /// 刻度数字缩写（1,000 → 1K）
+    pub dc_abbreviate: bool,
+    /// 缩写保留小数位数
+    pub dc_abbreviate_digits: String,
+    /// 显示刻度文字
+    pub dc_show_text: bool,
+    /// 显示水平网格线
+    pub dc_show_bars: bool,
     /// BPM 整数部分补零宽度
     pub counter_bpm_int_pad: u32,
     /// BPM 小数部分位数
@@ -160,6 +205,28 @@ impl VideoExportDialogState {
             counter_save_csv: false,
             counter_csv_output: String::new(),
             counter_csv_format: COUNTER_DEFAULT_CSV_FORMAT.to_string(),
+            dc_metric: "NPS（每秒音符数）".to_string(),
+            dc_graph_duration: "2.0".to_string(),
+            dc_zoom_smoothness: "8.0".to_string(),
+            dc_graph_smoothness: "0".to_string(),
+            dc_padding_mul: "0.1".to_string(),
+            dc_bg_color: "#000000".to_string(),
+            dc_line_color: "#00FFFF".to_string(),
+            dc_text_color: "#FFFFFF7F".to_string(),
+            dc_bar_color: "#FFFFFF7F".to_string(),
+            dc_line_thickness: "3".to_string(),
+            dc_bar_thickness: "1".to_string(),
+            dc_font_size: 24,
+            dc_font_mode: "内置点阵".to_string(),
+            dc_font_family: "微软雅黑".to_string(),
+            dc_font_path: String::new(),
+            dc_text_x_offset: "2".to_string(),
+            dc_text_y_offset: "2".to_string(),
+            dc_milestone_scale_mul: "1.5".to_string(),
+            dc_abbreviate: false,
+            dc_abbreviate_digits: "3".to_string(),
+            dc_show_text: true,
+            dc_show_bars: true,
             counter_bpm_int_pad: 3,
             counter_bpm_dec_pad: 2,
             counter_note_count_pad: 5,

@@ -11,12 +11,18 @@ mod counter_frame;
 mod counter_frame_layout;
 mod counter_stats;
 mod counter_template;
+mod data_curve_draw;
+mod data_curve_frame;
+mod data_curve_math;
 mod render_params;
 mod waterfall_frame;
 
 pub(super) use counter_font::CounterFontRenderer;
 pub(super) use counter_frame::render_counter_frame;
-pub(super) use counter_stats::{CounterRenderConfig, CounterStats};
+pub(super) use counter_stats::{CounterRenderConfig, CounterStats, current_bpm};
+pub(super) use data_curve_frame::{
+    DataCurveRenderConfig, DataCurveRenderer, render_data_curve_frame,
+};
 pub use render_params::SortableNote;
 pub(super) use render_params::build_video_export_render_params;
 pub use waterfall_frame::render_waterfall_frame;

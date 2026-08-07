@@ -14,6 +14,8 @@
 
 pub mod counter_settings;
 pub mod counter_settings_font;
+pub mod data_curve_settings;
+pub mod data_curve_settings_style;
 pub mod handlers;
 pub mod helpers;
 pub mod layout;

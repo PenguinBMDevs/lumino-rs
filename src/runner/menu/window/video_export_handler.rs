@@ -40,6 +40,7 @@ impl RunnerInner {
             waterfall_scroll_speed,
             miditrail_z_far,
             note_counter,
+            data_curve,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -147,6 +148,7 @@ impl RunnerInner {
                 let is_cpu_renderer = matches!(
                     render_mode,
                     lumino_event::window::video::RenderMode::NoteCounter
+                        | lumino_event::window::video::RenderMode::DataCurve
                 );
                 // GPU compute / 3D 渲染输出为 rgba8unorm storage texture，
                 // 因此编码器输入像素格式必须为 "rgba"；
@@ -160,9 +162,23 @@ impl RunnerInner {
                     surface_pix_fmt
                 };
                 // 计数器渲染配置（仅 NoteCounter 模式有效）
-                let counter_config = if is_cpu_renderer {
+                let counter_config = if matches!(
+                    render_mode,
+                    lumino_event::window::video::RenderMode::NoteCounter
+                ) {
                     Some(super::video_export::CounterRenderConfig::from(
                         &note_counter,
+                    ))
+                } else {
+                    None
+                };
+                // 数据曲线渲染配置（仅 DataCurve 模式有效）
+                let data_curve_config = if matches!(
+                    render_mode,
+                    lumino_event::window::video::RenderMode::DataCurve
+                ) {
+                    Some(super::video_export::DataCurveRenderConfig::from(
+                        &data_curve,
                     ))
                 } else {
                     None
@@ -187,12 +203,13 @@ impl RunnerInner {
                         miditrail_z_far,
                         render_mode,
                         counter_config,
+                        data_curve_config,
                     );
                 } else if !midi_path.is_empty() {
                     if is_cpu_renderer {
-                        tracing::error!("计数器模式需要完整 MIDI 数据，流式读取不支持");
+                        tracing::error!("计数器/数据曲线模式需要完整 MIDI 数据，流式读取不支持");
                         let _ = progress_tx.send((
-                            "导出失败：计数器模式需要完整 MIDI 数据，请先加载工程或指定 MIDI 数据源"
+                            "导出失败：计数器/数据曲线模式需要完整 MIDI 数据，请先加载工程或指定 MIDI 数据源"
                                 .to_string(),
                             -1.0,
                             0,
@@ -247,6 +264,7 @@ fn run_video_export_task(
     miditrail_z_far: f32,
     render_mode: lumino_event::window::video::RenderMode,
     counter_config: Option<super::video_export::CounterRenderConfig>,
+    data_curve_config: Option<super::video_export::DataCurveRenderConfig>,
 ) {
     let start = std::time::Instant::now();
 
@@ -290,13 +308,18 @@ fn run_video_export_task(
     let total_frames = config.total_frames(duration_secs);
 
     // 计数器模式：统计状态 + 字体渲染器 + CSV 写入器
+    // 数据曲线模式：统计状态（共用 CounterStats）+ 数据曲线渲染器
     let mut counter_stats: Option<super::video_export::CounterStats> = None;
     let mut counter_renderer: Option<super::video_export::CounterFontRenderer> = None;
     let mut csv_writer: Option<std::io::BufWriter<std::fs::File>> = None;
-    if let Some(cfg) = &counter_config {
+    let mut data_curve_renderer: Option<super::video_export::DataCurveRenderer> = None;
+    // 统计状态：计数器与数据曲线共用同一数据源
+    if counter_config.is_some() || data_curve_config.is_some() {
         let mut stats = super::video_export::CounterStats::default();
         stats.reset(&document);
         counter_stats = Some(stats);
+    }
+    if let Some(cfg) = &counter_config {
         // 字体渲染器：TTF 加载失败时回退内置点阵（导出流程不中断）
         match super::video_export::CounterFontRenderer::new(&cfg.font, cfg.font_size) {
             Ok(r) => {
@@ -318,6 +341,26 @@ fn run_video_export_task(
             match std::fs::File::create(&cfg.csv_output) {
                 Ok(f) => csv_writer = Some(std::io::BufWriter::new(f)),
                 Err(e) => tracing::warn!("计数器 CSV 文件创建失败: {e}"),
+            }
+        }
+    }
+    if let Some(cfg) = &data_curve_config {
+        let fps_u32 = fps_f64.max(1.0) as u32;
+        match super::video_export::DataCurveRenderer::new(cfg, fps_u32) {
+            Ok(r) => {
+                tracing::info!("数据曲线渲染器就绪（窗口 {} 帧）", r.window_cap());
+                data_curve_renderer = Some(r);
+            }
+            Err(e) => {
+                tracing::warn!("数据曲线字体加载失败（回退内置点阵）: {e}");
+                let fallback = super::video_export::DataCurveRenderConfig {
+                    font: lumino_event::window::video::CounterFont::Bitmap,
+                    ..cfg.clone()
+                };
+                data_curve_renderer = Some(
+                    super::video_export::DataCurveRenderer::new(&fallback, fps_u32)
+                        .expect("内置点阵字体渲染器不会失败"),
+                );
             }
         }
     }
@@ -454,6 +497,49 @@ fn run_video_export_task(
                 }
                 RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
                 RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
+                RenderMode::DataCurve => {
+                    // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
+                    let cfg = data_curve_config
+                        .as_ref()
+                        .expect("数据曲线模式必须有渲染配置");
+                    let stats = counter_stats.as_mut().expect("数据曲线模式必须有统计状态");
+                    let renderer = data_curve_renderer
+                        .as_mut()
+                        .expect("数据曲线模式必须有渲染器");
+                    let value = match cfg.metric {
+                        lumino_event::window::video::DataCurveMetric::Nps => stats.nps as f64,
+                        lumino_event::window::video::DataCurveMetric::Polyphony => {
+                            stats.polyphony as f64
+                        }
+                        lumino_event::window::video::DataCurveMetric::NoteCount => {
+                            stats.note_count as f64
+                        }
+                        lumino_event::window::video::DataCurveMetric::Bpm => {
+                            super::video_export::current_bpm(&document.tempo_changes, tick)
+                        }
+                    };
+                    renderer.push_value(value);
+                    let out = super::video_export::render_data_curve_frame(
+                        &mut frame_data,
+                        width,
+                        height,
+                        renderer,
+                        cfg,
+                    );
+                    // 首帧诊断：确认指标值与缩放状态
+                    static DATA_CURVE_DIAG: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(0);
+                    let diag_idx =
+                        DATA_CURVE_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if diag_idx < 3 {
+                        tracing::info!(
+                            "数据曲线模式诊断[{diag_idx}]: tick={tick} value={} zoom=({}, {})",
+                            out.value,
+                            out.min,
+                            out.max,
+                        );
+                    }
+                }
             }
 
             // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径

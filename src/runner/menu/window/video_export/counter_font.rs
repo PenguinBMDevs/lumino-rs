@@ -112,6 +112,41 @@ impl CounterFontRenderer {
         }
     }
 
+    /// 绘制单行文本（带额外放大倍率），返回绘制宽度。
+    ///
+    /// 数据曲线模式里程碑刻度（1k/10k/100k…）文字放大用；
+    /// 点阵后端将放大倍率乘入位图 scale，TTF 后端做最近邻放大。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn draw_line_scaled(
+        &mut self,
+        frame: &mut [u8],
+        frame_width: u32,
+        line: &str,
+        x: u32,
+        y: u32,
+        color: [u8; 4],
+        extra_scale: u32,
+    ) -> u32 {
+        let extra = extra_scale.max(1);
+        match &mut self.backend {
+            FontBackend::Bitmap { scale } => {
+                let scale = (*scale).max(1) * extra;
+                let mut cur_x = x;
+                for ch in line.chars() {
+                    // 非 ASCII 字符点阵不支持：按空格宽度推进（不 panic）
+                    if ch.is_ascii() {
+                        draw_char(frame, frame_width, ch as u8, cur_x, y, scale, color);
+                    }
+                    cur_x = cur_x.saturating_add((CHAR_BITMAP_W + CHAR_SPACING) * scale);
+                }
+                cur_x.saturating_sub(x)
+            }
+            FontBackend::Ttf(ttf) => {
+                ttf.draw_line_scaled(frame, frame_width, line, x, y, color, extra)
+            }
+        }
+    }
+
     /// 测量单行文本的像素宽度。
     pub(crate) fn measure_line(&mut self, line: &str) -> u32 {
         match &mut self.backend {
@@ -229,8 +264,8 @@ mod tests {
         let color = [0, 0, 255, 255]; // BGRA 红
         let mut r = CounterFontRenderer::new(&CounterFont::Bitmap, 7).expect("点阵渲染器");
         r.draw_line(&mut frame, 10, "1", 0, 0, color);
-        // (2, 0) 处应有像素
-        let idx = (0 * 10 + 2) * 4;
+        // (2, 0) 处应有像素（行 0 × 宽 10 + 列 2）
+        let idx = 2 * 4;
         assert_eq!(&frame[idx..idx + 4], &color);
         // (0, 0) 处应无像素
         let idx0 = 0;
@@ -251,8 +286,8 @@ mod tests {
                 assert_eq!(&frame[idx..idx + 4], &color, "({x},{y}) 应有像素");
             }
         }
-        // 空白处无像素
-        let idx = (0 * 20 + 0) * 4;
+        // 空白处无像素（原点应为空）
+        let idx = 0;
         assert_eq!(&frame[idx..idx + 4], &[0, 0, 0, 0]);
     }
 
@@ -264,14 +299,14 @@ mod tests {
         let mut r = CounterFontRenderer::new(&CounterFont::Bitmap, 7).expect("点阵渲染器");
         r.draw_line(&mut frame, 64, "1", 0, 0, color);
         r.draw_line(&mut frame, 64, "2", 0, 8, color);
-        // 第一行 '1' 在 (2,0)
-        let idx = (0 * 64 + 2) * 4;
+        // 第一行 '1' 在 (2,0)（行 0 × 宽 64 + 列 2）
+        let idx = 2 * 4;
         assert_eq!(&frame[idx..idx + 4], &color, "第一行 '1' 应有像素");
         // 第二行 '2' 第一行 0b01110 → bit3..bit1 → col1..3 有像素
         let idx2 = (8 * 64 + 1) * 4;
         assert_eq!(&frame[idx2..idx2 + 4], &color, "第二行 '2' 应有像素");
-        // 第二行 '2' 左端 col0 无像素
-        let idx3 = (8 * 64 + 0) * 4;
+        // 第二行 '2' 左端 col0 无像素（行 8 × 宽 64）
+        let idx3 = (8 * 64) * 4;
         assert_eq!(
             &frame[idx3..idx3 + 4],
             &[0, 0, 0, 0],

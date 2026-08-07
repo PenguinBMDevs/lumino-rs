@@ -163,7 +163,7 @@ impl CounterStats {
 }
 
 /// 当前 tick 处的 BPM（tempo_changes 二分；空列表回退 120）。
-pub(super) fn current_bpm(tempo_changes: &[(u32, f32)], tick: u32) -> f64 {
+pub(crate) fn current_bpm(tempo_changes: &[(u32, f32)], tick: u32) -> f64 {
     match tempo_changes.binary_search_by_key(&tick, |&(t, _)| t) {
         Ok(i) => tempo_changes[i].1 as f64,
         Err(0) => tempo_changes

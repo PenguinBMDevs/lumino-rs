@@ -83,6 +83,38 @@ pub enum VideoExportAction {
     /// 恢复计数器默认文本模板
     CounterResetText,
 
+    // ── 数据曲线设置变更（参考 MIDIGraphRenderer graph 设置面板） ──
+    /// 数据曲线数值型设置变更（field 见下方注释，value 为解析后的数值）
+    DataCurveNumberChanged {
+        /// field：graph_duration / zoom_smoothness / graph_smoothness / padding_mul /
+        /// line_thickness / bar_thickness / text_x_offset / text_y_offset /
+        /// milestone_scale_mul / abbreviate_digits
+        field: String,
+        /// 数值（整数类字段自动取整）
+        value: f32,
+    },
+    /// 数据曲线开关型设置变更
+    DataCurveBoolChanged {
+        /// field：abbreviate / show_text / show_bars
+        field: String,
+        /// 开关值
+        value: bool,
+    },
+    /// 数据曲线文本型设置变更（field 见下方注释）
+    DataCurveTextChanged {
+        /// field：metric（数据来源指标）/ bg_color / line_color / text_color / bar_color /
+        /// font_family / font_path / abbreviate_digits（以文本输入）
+        field: String,
+        /// 文本值
+        value: String,
+    },
+    /// 数据曲线刻度文字字号变更
+    DataCurveFontSizeChanged(u32),
+    /// 数据曲线字体来源变更（"内置点阵"/"系统字体"/"自定义字体"）
+    DataCurveFontModeChanged(String),
+    /// 浏览数据曲线自定义字体文件（rfd 文件对话框）
+    DataCurveBrowseFont,
+
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）
     StartExport,

@@ -112,6 +112,8 @@ pub enum RenderMode {
     MIDITrail,
     /// 计数器渲染（不绘制卷帘，仅在画面上显示变化的统计数据文本）
     NoteCounter,
+    /// 数据曲线渲染（绘制统计数据随时间的折线图，参考 MIDIGraphRenderer 移植）
+    DataCurve,
 }
 
 impl RenderMode {
@@ -122,6 +124,7 @@ impl RenderMode {
             RenderMode::NoteRectangle => "note_rectangle",
             RenderMode::MIDITrail => "miditrail",
             RenderMode::NoteCounter => "note_counter",
+            RenderMode::DataCurve => "data_curve",
         }
     }
 }
@@ -133,6 +136,7 @@ impl std::fmt::Display for RenderMode {
             RenderMode::NoteRectangle => f.write_str("音符矩形"),
             RenderMode::MIDITrail => f.write_str("MIDITrail"),
             RenderMode::NoteCounter => f.write_str("计数器"),
+            RenderMode::DataCurve => f.write_str("数据曲线"),
         }
     }
 }
@@ -145,7 +149,61 @@ impl std::str::FromStr for RenderMode {
             "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
             "miditrail" | "MIDITrail" => Ok(RenderMode::MIDITrail),
             "note_counter" | "计数器" | "NoteCounter" => Ok(RenderMode::NoteCounter),
+            "data_curve" | "数据曲线" | "DataCurve" => Ok(RenderMode::DataCurve),
             _ => Err(format!("未知渲染模式: {input}")),
+        }
+    }
+}
+
+/// 数据曲线模式的数据来源指标。
+///
+/// 原版 MIDIGraphRenderer 从 CSV 文件读入任意列数据；
+/// lumino 版直接由内部统计状态按帧传入，可选四种内置指标。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum DataCurveMetric {
+    /// 每秒新开始音符数（NPS，原版默认展示数据）
+    #[default]
+    Nps,
+    /// 当前复音数（正在发声的音符数）
+    Polyphony,
+    /// 累计已开始音符数
+    NoteCount,
+    /// 当前速度（BPM）
+    Bpm,
+}
+
+impl DataCurveMetric {
+    /// 设置面板用的规范字符串（与 `FromStr` 对应）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            DataCurveMetric::Nps => "nps",
+            DataCurveMetric::Polyphony => "polyphony",
+            DataCurveMetric::NoteCount => "note_count",
+            DataCurveMetric::Bpm => "bpm",
+        }
+    }
+}
+
+impl std::fmt::Display for DataCurveMetric {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            DataCurveMetric::Nps => f.write_str("NPS（每秒音符数）"),
+            DataCurveMetric::Polyphony => f.write_str("复音数"),
+            DataCurveMetric::NoteCount => f.write_str("累计音符数"),
+            DataCurveMetric::Bpm => f.write_str("BPM（速度）"),
+        }
+    }
+}
+
+impl std::str::FromStr for DataCurveMetric {
+    type Err = String;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "nps" | "NPS" | "NPS（每秒音符数）" => Ok(DataCurveMetric::Nps),
+            "polyphony" | "复音数" => Ok(DataCurveMetric::Polyphony),
+            "note_count" | "累计音符数" => Ok(DataCurveMetric::NoteCount),
+            "bpm" | "BPM" | "BPM（速度）" => Ok(DataCurveMetric::Bpm),
+            _ => Err(format!("未知数据曲线指标: {input}")),
         }
     }
 }
@@ -374,6 +432,83 @@ impl Default for NoteCounterConfig {
     }
 }
 
+/// 数据曲线渲染配置（事件层传输结构）。
+///
+/// 移植自 MIDIGraphRenderer（LÖVE2D）的 graph 设置模型：
+/// 自动缩放折线 + 水平刻度网格 + 里程碑文字放大 + 数字缩写。
+/// 数据源由内部统计状态按帧直传（见 [`DataCurveMetric`]），不走文件 IO。
+/// 颜色均为 RGBA 顺序（UI 层 hex 字符串解析后传入）。
+#[derive(Debug, Clone)]
+pub struct DataCurveConfig {
+    /// 数据来源指标
+    pub metric: DataCurveMetric,
+    /// 曲线窗口时长（秒，默认 2.0，原版 `graph_duration`）
+    pub graph_duration: f32,
+    /// 缩放动画平滑度（EMA 分母，越大越平滑，默认 8，原版 `zoom_smoothness`）
+    pub zoom_smoothness: f32,
+    /// 折线前向滑动平均窗口（0=关闭，默认 0，原版 `graph_smoothness`）
+    pub graph_smoothness: u32,
+    /// 纵轴缩放 padding 放大系数（默认 0.1，原版 `padding_mul`）
+    pub padding_mul: f32,
+    /// 背景颜色（RGBA）
+    pub bg_color: [u8; 4],
+    /// 折线颜色（RGBA）
+    pub line_color: [u8; 4],
+    /// 刻度文字颜色（RGBA）
+    pub text_color: [u8; 4],
+    /// 水平网格线颜色（RGBA）
+    pub bar_color: [u8; 4],
+    /// 折线宽度（像素，默认 3）
+    pub line_thickness: u32,
+    /// 水平网格线宽度（像素，默认 1）
+    pub bar_thickness: u32,
+    /// 刻度文字字号（像素，默认 24）
+    pub font_size: u32,
+    /// 刻度文字字体来源（复用计数器字体渲染器）
+    pub font: CounterFont,
+    /// 刻度文字 X 偏移（像素，默认 2）
+    pub text_x_offset: u32,
+    /// 刻度文字 Y 偏移（像素，默认 2）
+    pub text_y_offset: u32,
+    /// 里程碑文字（1k/10k/100k…）放大倍数（默认 1.5）
+    pub milestone_scale_mul: f32,
+    /// 刻度数字缩写（1,000 → 1K，默认关闭）
+    pub abbreviate: bool,
+    /// 缩写保留小数位数（默认 3）
+    pub abbreviate_digits: u32,
+    /// 是否显示刻度文字（默认 true）
+    pub show_text: bool,
+    /// 是否显示水平网格线（默认 true）
+    pub show_bars: bool,
+}
+
+impl Default for DataCurveConfig {
+    fn default() -> Self {
+        Self {
+            metric: DataCurveMetric::Nps,
+            graph_duration: 2.0,
+            zoom_smoothness: 8.0,
+            graph_smoothness: 0,
+            padding_mul: 0.1,
+            bg_color: [0, 0, 0, 255],
+            line_color: [0, 255, 255, 255],
+            text_color: [255, 255, 255, 127],
+            bar_color: [255, 255, 255, 127],
+            line_thickness: 3,
+            bar_thickness: 1,
+            font_size: 24,
+            font: CounterFont::Bitmap,
+            text_x_offset: 2,
+            text_y_offset: 2,
+            milestone_scale_mul: 1.5,
+            abbreviate: false,
+            abbreviate_digits: 3,
+            show_text: true,
+            show_bars: true,
+        }
+    }
+}
+
 /// 视频导出配置（事件层传输结构）。
 #[derive(Debug, Clone)]
 pub struct VideoExportConfig {
@@ -399,7 +534,7 @@ pub struct VideoExportConfig {
     pub backend: EncoderBackend,
     /// 质量预设
     pub quality: QualityPreset,
-    /// 渲染模式（瀑布流/音符矩形/MIDITrail/计数器）
+    /// 渲染模式（瀑布流/音符矩形/MIDITrail/计数器/数据曲线）
     pub render_mode: RenderMode,
     /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
     pub waterfall_scroll_speed: f32,
@@ -407,4 +542,6 @@ pub struct VideoExportConfig {
     pub miditrail_z_far: f32,
     /// 计数器渲染配置（仅 `render_mode == NoteCounter` 时生效）
     pub note_counter: NoteCounterConfig,
+    /// 数据曲线渲染配置（仅 `render_mode == DataCurve` 时生效）
+    pub data_curve: DataCurveConfig,
 }

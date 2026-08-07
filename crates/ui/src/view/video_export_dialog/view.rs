@@ -55,6 +55,16 @@ fn render_settings_section<'a>(
         .width(Length::Fill)
         .into();
     }
+    // 数据曲线模式附加设置（参考 MIDIGraphRenderer graph 设置面板）
+    if state.render_mode == "数据曲线" {
+        content = column![
+            content,
+            space().height(12),
+            super::data_curve_settings::data_curve_settings_section(state, palette),
+        ]
+        .width(Length::Fill)
+        .into();
+    }
     content
 }
 
@@ -132,6 +142,7 @@ fn render_quality_mode_options<'a>(
                 "音符矩形".to_string(),
                 "MIDITrail".to_string(),
                 "计数器".to_string(),
+                "数据曲线".to_string(),
             ],
             Some(state.render_mode.clone()),
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),

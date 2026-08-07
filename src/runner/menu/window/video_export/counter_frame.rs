@@ -100,7 +100,7 @@ mod tests {
     use lumino_midi_loader::{NoteEvent, TrackManager};
 
     fn make_doc() -> MidiDocument {
-        let notes = vec![(0u32, 480u32, 60u8), (480, 960, 62), (960, 1920, 64)];
+        let notes = [(0u32, 480u32, 60u8), (480, 960, 62), (960, 1920, 64)];
         let mut list: Vec<NoteEvent> = notes
             .iter()
             .map(|&(s, e, k)| NoteEvent::new(s, e, k, 100, 0))
@@ -179,7 +179,7 @@ mod tests {
         let corner = ((39 * 200 + 199) * 4) as usize;
         assert_eq!(&frame[corner..corner + 4], &[0, 0, 0, 255]);
         // 文本像素存在（白色）
-        assert!(frame.chunks_exact(4).any(|p| p == &[255, 255, 255, 255]));
+        assert!(frame.chunks_exact(4).any(|p| p == [255, 255, 255, 255]));
         // 统计推进
         assert_eq!(stats.frames, 1);
         assert_eq!(stats.note_count, 2);
