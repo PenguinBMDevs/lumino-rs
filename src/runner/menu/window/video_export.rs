@@ -2,9 +2,17 @@
 //!
 //! 包含视频帧渲染参数构建、键盘贴图生成、标尺小节号合成等工具函数。
 
+mod counter_font;
+mod counter_font_data;
+mod counter_format;
+mod counter_frame;
+mod counter_stats;
+mod counter_template;
 mod render_params;
 mod waterfall_frame;
 
+pub(super) use counter_frame::render_counter_frame;
+pub(super) use counter_stats::{CounterRenderConfig, CounterStats};
 pub use render_params::SortableNote;
 pub(super) use render_params::build_video_export_render_params;
 pub use waterfall_frame::render_waterfall_frame;

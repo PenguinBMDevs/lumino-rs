@@ -23,5 +23,6 @@ pub use recover_track_state::{RecoverTrackDialogState, RecoverTrackEntry};
 pub use speed_change_state::SpeedChangeDialogState;
 pub use toggle_animation::ToggleAnimationState;
 pub use video_export_state::{
-    MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState,
+    COUNTER_DEFAULT_CSV_FORMAT, COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, MIDITRAIL_Z_FAR_DEFAULT,
+    MIDITRAIL_Z_FAR_MAX, VideoExportDialogState, VideoExportOverlayState,
 };

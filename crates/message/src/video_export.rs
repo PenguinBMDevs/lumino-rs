@@ -35,12 +35,45 @@ pub enum VideoExportAction {
     MidiPathChanged(String),
     /// 浏览 MIDI 路径
     BrowseMidi,
-    /// 渲染模式变更（"Lumino瀑布流"/"音符矩形"/"MIDITrail"）
+    /// 渲染模式变更（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
     RenderModeChanged(String),
     /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
     WaterfallSpeedChanged(f32),
     /// MIDITrail Z 方向显示距离变更（0.1~15.0，精度 0.1）
     MiditrailZFarChanged(f32),
+
+    // ── 计数器设置变更（参考 Zenith-MIDI NoteCountRender 设置面板） ──
+    /// 计数器文本模板编辑（iced text_editor 动作，Handler 内 perform 并同步文本）
+    CounterTextAction(iced_widget::text_editor::Action),
+    /// 加载预设文本模板（"default"/"full"），整体替换编辑器内容
+    CounterLoadTemplate(String),
+    /// 计数器对齐方式变更（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）
+    CounterAlignmentChanged(String),
+    /// 计数器字号变更
+    CounterFontSizeChanged(u32),
+    /// 计数器千分位变更（true=逗号，false=无）
+    CounterUseCommasChanged(bool),
+    /// 计数器补零开关变更
+    CounterPaddingZeroesChanged(bool),
+    /// 计数器 CSV 导出开关变更
+    CounterSaveCsvChanged(bool),
+    /// 计数器 CSV 输出路径变更
+    CounterCsvPathChanged(String),
+    /// 计数器 CSV 行格式变更
+    CounterCsvFormatChanged(String),
+    /// 计数器补零宽度变更（field 为 pad 标识，value 为宽度）
+    CounterPadChanged {
+        /// pad 标识（"bpm_int"/"bpm_dec"/"nc"/"plph"/"nps"/"ticks"/"bars"/"frames"）
+        field: String,
+        /// 宽度值
+        value: u32,
+    },
+    /// 恢复计数器默认补零宽度
+    CounterResetPadding,
+    /// 浏览计数器 CSV 输出路径
+    CounterBrowseCsv,
+    /// 恢复计数器默认文本模板
+    CounterResetText,
 
     // ── 导出控制 ──
     /// 开始导出（点击「开始导出」按钮，由 handler 发射 StartVideoExport 事件）

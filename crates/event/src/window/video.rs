@@ -110,6 +110,8 @@ pub enum RenderMode {
     NoteRectangle,
     /// MIDITrail 风格（3D MIDI 轨迹可视化）
     MIDITrail,
+    /// 计数器渲染（不绘制卷帘，仅在画面上显示变化的统计数据文本）
+    NoteCounter,
 }
 
 impl RenderMode {
@@ -119,6 +121,7 @@ impl RenderMode {
             RenderMode::Waterfall => "waterfall",
             RenderMode::NoteRectangle => "note_rectangle",
             RenderMode::MIDITrail => "miditrail",
+            RenderMode::NoteCounter => "note_counter",
         }
     }
 }
@@ -129,6 +132,7 @@ impl std::fmt::Display for RenderMode {
             RenderMode::Waterfall => f.write_str("Lumino瀑布流"),
             RenderMode::NoteRectangle => f.write_str("音符矩形"),
             RenderMode::MIDITrail => f.write_str("MIDITrail"),
+            RenderMode::NoteCounter => f.write_str("计数器"),
         }
     }
 }
@@ -140,7 +144,170 @@ impl std::str::FromStr for RenderMode {
             "waterfall" | "瀑布流" | "Lumino瀑布流" => Ok(RenderMode::Waterfall),
             "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
             "miditrail" | "MIDITrail" => Ok(RenderMode::MIDITrail),
+            "note_counter" | "计数器" | "NoteCounter" => Ok(RenderMode::NoteCounter),
             _ => Err(format!("未知渲染模式: {input}")),
+        }
+    }
+}
+
+/// 计数器文本对齐方式（参考 Zenith-MIDI NoteCountRender 的六种对齐）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CounterAlignment {
+    /// 左上角
+    #[default]
+    TopLeft,
+    /// 右上角
+    TopRight,
+    /// 左下角
+    BottomLeft,
+    /// 右下角
+    BottomRight,
+    /// 顶部垂直均匀分布
+    TopSpread,
+    /// 底部垂直均匀分布
+    BottomSpread,
+}
+
+impl CounterAlignment {
+    /// 设置面板用的规范字符串
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CounterAlignment::TopLeft => "top_left",
+            CounterAlignment::TopRight => "top_right",
+            CounterAlignment::BottomLeft => "bottom_left",
+            CounterAlignment::BottomRight => "bottom_right",
+            CounterAlignment::TopSpread => "top_spread",
+            CounterAlignment::BottomSpread => "bottom_spread",
+        }
+    }
+}
+
+impl std::fmt::Display for CounterAlignment {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CounterAlignment::TopLeft => f.write_str("左上"),
+            CounterAlignment::TopRight => f.write_str("右上"),
+            CounterAlignment::BottomLeft => f.write_str("左下"),
+            CounterAlignment::BottomRight => f.write_str("右下"),
+            CounterAlignment::TopSpread => f.write_str("顶部分散"),
+            CounterAlignment::BottomSpread => f.write_str("底部分散"),
+        }
+    }
+}
+
+impl std::str::FromStr for CounterAlignment {
+    type Err = String;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "top_left" | "左上" => Ok(CounterAlignment::TopLeft),
+            "top_right" | "右上" => Ok(CounterAlignment::TopRight),
+            "bottom_left" | "左下" => Ok(CounterAlignment::BottomLeft),
+            "bottom_right" | "右下" => Ok(CounterAlignment::BottomRight),
+            "top_spread" | "顶部分散" => Ok(CounterAlignment::TopSpread),
+            "bottom_spread" | "底部分散" => Ok(CounterAlignment::BottomSpread),
+            _ => Err(format!("未知对齐方式: {input}")),
+        }
+    }
+}
+
+/// 千分位分隔符。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum CounterSeparator {
+    /// 逗号分隔（1,234,567）
+    #[default]
+    Comma,
+    /// 无分隔符
+    Nothing,
+}
+
+impl CounterSeparator {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CounterSeparator::Comma => "comma",
+            CounterSeparator::Nothing => "nothing",
+        }
+    }
+}
+
+impl std::fmt::Display for CounterSeparator {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CounterSeparator::Comma => f.write_str("逗号"),
+            CounterSeparator::Nothing => f.write_str("无"),
+        }
+    }
+}
+
+impl std::str::FromStr for CounterSeparator {
+    type Err = String;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "comma" | "逗号" => Ok(CounterSeparator::Comma),
+            "nothing" | "无" => Ok(CounterSeparator::Nothing),
+            _ => Err(format!("未知千分位分隔符: {input}")),
+        }
+    }
+}
+
+/// 计数器渲染配置（事件层传输结构）。
+///
+/// 参考 Zenith-MIDI NoteCountRender / fmr NoteCounter 的设置模型：
+/// 文本模板 + 对齐 + 字号 + 千分位 + 补零 + CSV 导出 + 数字补零宽度。
+#[derive(Debug, Clone)]
+pub struct NoteCounterConfig {
+    /// 文本模板（支持 `{nc}` `{nps}` `{bpm}` 等占位符，`\n` 换行）
+    pub text: String,
+    /// 文本对齐方式
+    pub alignment: CounterAlignment,
+    /// 字体大小（像素）
+    pub font_size: u32,
+    /// 千分位分隔符
+    pub separator: CounterSeparator,
+    /// 数字补零（启用后按各 pad 宽度左补零）
+    pub padding_zeroes: bool,
+    /// BPM 整数部分补零宽度
+    pub bpm_int_pad: u32,
+    /// BPM 小数部分位数
+    pub bpm_dec_pad: u32,
+    /// 音符数补零宽度
+    pub note_count_pad: u32,
+    /// 复音数补零宽度
+    pub polyphony_pad: u32,
+    /// NPS 补零宽度
+    pub nps_pad: u32,
+    /// 时钟 tick 补零宽度
+    pub ticks_pad: u32,
+    /// 小节数补零宽度
+    pub bars_pad: u32,
+    /// 帧数补零宽度
+    pub frames_pad: u32,
+    /// 是否将每帧统计数据写入 CSV 文件
+    pub save_csv: bool,
+    /// CSV 输出路径
+    pub csv_output: String,
+    /// CSV 每行格式（支持与文本模板相同的占位符）
+    pub csv_format: String,
+}
+
+impl Default for NoteCounterConfig {
+    fn default() -> Self {
+        Self {
+            text: "Notes: {nc} / {tn}\nBPM: {bpm}\nNPS: {nps}\nPPQ: {ppq}\nPolyphony: {plph}\nTime: {currtime}".to_string(),
+            alignment: CounterAlignment::TopLeft,
+            font_size: 40,
+            separator: CounterSeparator::Comma,
+            padding_zeroes: false,
+            bpm_int_pad: 3,
+            bpm_dec_pad: 2,
+            note_count_pad: 5,
+            polyphony_pad: 3,
+            nps_pad: 3,
+            ticks_pad: 5,
+            bars_pad: 3,
+            frames_pad: 5,
+            save_csv: false,
+            csv_output: String::new(),
+            csv_format: "{nps},{plph},{bpm},{nc}".to_string(),
         }
     }
 }
@@ -170,10 +337,12 @@ pub struct VideoExportConfig {
     pub backend: EncoderBackend,
     /// 质量预设
     pub quality: QualityPreset,
-    /// 渲染模式（瀑布流/音符矩形）
+    /// 渲染模式（瀑布流/音符矩形/MIDITrail/计数器）
     pub render_mode: RenderMode,
     /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
     pub waterfall_scroll_speed: f32,
     /// MIDITrail Z 方向显示距离（0.1~15.0，默认 7.5，精度 0.1）
     pub miditrail_z_far: f32,
+    /// 计数器渲染配置（仅 `render_mode == NoteCounter` 时生效）
+    pub note_counter: NoteCounterConfig,
 }

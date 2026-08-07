@@ -19,7 +19,7 @@ fn render_settings_section<'a>(
     state: &'a VideoExportDialogState,
     palette: &'a iced_core::theme::palette::Extended,
 ) -> crate::Element<'a> {
-    column![
+    let mut content: crate::Element<'a> = column![
         text("渲染设置")
             .size(16)
             .font(iced_core::Font::with_name("Microsoft YaHei"))
@@ -43,7 +43,19 @@ fn render_settings_section<'a>(
         ),
     ]
     .width(Length::Fill)
-    .into()
+    .into();
+
+    // 计数器模式附加设置（参考 Zenith-MIDI NoteCountRender 设置面板）
+    if state.render_mode == "计数器" {
+        content = column![
+            content,
+            space().height(12),
+            super::counter_settings::counter_settings_section(state, palette),
+        ]
+        .width(Length::Fill)
+        .into();
+    }
+    content
 }
 
 /// 渲染格式选项（容器格式、编码器、加速后端）
@@ -119,6 +131,7 @@ fn render_quality_mode_options<'a>(
                 "Lumino瀑布流".to_string(),
                 "音符矩形".to_string(),
                 "MIDITrail".to_string(),
+                "计数器".to_string(),
             ],
             Some(state.render_mode.clone()),
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),

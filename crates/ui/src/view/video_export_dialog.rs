@@ -12,6 +12,7 @@
 //!
 //! 主文件保留公开 API 入口，具体实现在子模块中。
 
+pub mod counter_settings;
 pub mod handlers;
 pub mod helpers;
 pub mod layout;

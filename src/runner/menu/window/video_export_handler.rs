@@ -39,6 +39,7 @@ impl RunnerInner {
             render_mode,
             waterfall_scroll_speed,
             miditrail_z_far,
+            note_counter,
         } = config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -142,15 +143,30 @@ impl RunnerInner {
                     lumino_event::window::video::RenderMode::Waterfall
                         | lumino_event::window::video::RenderMode::MIDITrail
                 );
+                // 计数器模式：CPU 端渲染（无卷帘/键盘/标尺），帧数据为 BGRA 直出。
+                let is_cpu_renderer = matches!(
+                    render_mode,
+                    lumino_event::window::video::RenderMode::NoteCounter
+                );
                 // GPU compute / 3D 渲染输出为 rgba8unorm storage texture，
                 // 因此编码器输入像素格式必须为 "rgba"；
-                // 非 compute 样式（NoteRectangle）使用 UI 表面纹理，按表面格式选择。
+                // 计数器 CPU 渲染直出 BGRA → "bgra"；
+                // 其余（NoteRectangle）使用 UI 表面纹理，按表面格式选择。
                 let input_pix_fmt = if is_gpu_compute_style {
                     "rgba"
+                } else if is_cpu_renderer {
+                    "bgra"
                 } else {
                     surface_pix_fmt
                 };
-                let is_cpu_renderer = false;
+                // 计数器渲染配置（仅 NoteCounter 模式有效）
+                let counter_config = if is_cpu_renderer {
+                    Some(super::video_export::CounterRenderConfig::from(
+                        &note_counter,
+                    ))
+                } else {
+                    None
+                };
                 if let Some(document) = document {
                     run_video_export_task(
                         config,
@@ -170,21 +186,34 @@ impl RunnerInner {
                         waterfall_scroll_speed,
                         miditrail_z_far,
                         render_mode,
+                        counter_config,
                     );
                 } else if !midi_path.is_empty() {
-                    run_streaming_video_export_task(
-                        config,
-                        cmd_sender,
-                        progress_tx,
-                        preview_tx,
-                        midi_path,
-                        fps_f64,
-                        key_count,
-                        width,
-                        height,
-                        cancel_flag,
-                        surface_pix_fmt,
-                    );
+                    if is_cpu_renderer {
+                        tracing::error!("计数器模式需要完整 MIDI 数据，流式读取不支持");
+                        let _ = progress_tx.send((
+                            "导出失败：计数器模式需要完整 MIDI 数据，请先加载工程或指定 MIDI 数据源"
+                                .to_string(),
+                            -1.0,
+                            0,
+                            0.0,
+                            0.0,
+                        ));
+                    } else {
+                        run_streaming_video_export_task(
+                            config,
+                            cmd_sender,
+                            progress_tx,
+                            preview_tx,
+                            midi_path,
+                            fps_f64,
+                            key_count,
+                            width,
+                            height,
+                            cancel_flag,
+                            surface_pix_fmt,
+                        );
+                    }
                 } else {
                     tracing::error!("视频导出失败：无 MidiDocument 且未指定 MIDI 路径");
                     let _ =
@@ -217,6 +246,7 @@ fn run_video_export_task(
     waterfall_scroll_speed: f32,
     miditrail_z_far: f32,
     render_mode: lumino_event::window::video::RenderMode,
+    counter_config: Option<super::video_export::CounterRenderConfig>,
 ) {
     let start = std::time::Instant::now();
 
@@ -258,6 +288,21 @@ fn run_video_export_task(
     let total_ticks = document.total_ticks;
     let duration_secs = super::video_export::compute_duration_secs(tempo_changes, total_ticks, ppq);
     let total_frames = config.total_frames(duration_secs);
+
+    // 计数器模式：统计状态 + CSV 写入器
+    let mut counter_stats: Option<super::video_export::CounterStats> = None;
+    let mut csv_writer: Option<std::io::BufWriter<std::fs::File>> = None;
+    if let Some(cfg) = &counter_config {
+        let mut stats = super::video_export::CounterStats::default();
+        stats.reset(&document);
+        counter_stats = Some(stats);
+        if cfg.save_csv && !cfg.csv_output.as_os_str().is_empty() {
+            match std::fs::File::create(&cfg.csv_output) {
+                Ok(f) => csv_writer = Some(std::io::BufWriter::new(f)),
+                Err(e) => tracing::warn!("计数器 CSV 文件创建失败: {e}"),
+            }
+        }
+    }
 
     let mut render_bar = CliProgressBar::new(30, "视频渲染");
     render_bar.update(
@@ -328,7 +373,7 @@ fn run_video_export_task(
             tick,
         ));
 
-        // 瀑布流模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
+        // 瀑布流/计数器模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
         // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
         // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
         // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
@@ -347,6 +392,43 @@ fn run_video_export_task(
                         key_count,
                         waterfall_scroll_speed,
                     );
+                }
+                RenderMode::NoteCounter => {
+                    // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
+                    let cfg = counter_config.as_ref().expect("计数器模式必须有渲染配置");
+                    let stats = counter_stats.as_mut().expect("计数器模式必须有统计状态");
+                    let out = super::video_export::render_counter_frame(
+                        &mut frame_data,
+                        width,
+                        height,
+                        &document,
+                        tick,
+                        ppq,
+                        fps_f64 as u32,
+                        duration_secs,
+                        cfg,
+                        stats,
+                    );
+                    // CSV 行写入（失败仅告警，不中断渲染）
+                    if let (Some(line), Some(writer)) = (out.csv_line, csv_writer.as_mut()) {
+                        use std::io::Write;
+                        if let Err(e) = writeln!(writer, "{line}") {
+                            tracing::warn!("计数器 CSV 写入失败: {e}");
+                        }
+                    }
+                    // 首帧诊断：确认模板渲染内容（与流式模式诊断风格一致）
+                    static COUNTER_DIAG: std::sync::atomic::AtomicU32 =
+                        std::sync::atomic::AtomicU32::new(0);
+                    let diag_idx = COUNTER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                    if diag_idx < 3 {
+                        tracing::info!(
+                            "计数器模式诊断[{diag_idx}]: tick={tick} stats=({},poly {},nps {}) text=\"{}\"",
+                            stats.note_count,
+                            stats.polyphony,
+                            stats.nps,
+                            out.text.replace('\n', "\\n"),
+                        );
+                    }
                 }
                 RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
                 RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
@@ -428,7 +510,9 @@ fn run_video_export_task(
         let frame_params = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, stats) = if is_gpu_compute_style {
+        let (should_stop, stats) = if is_gpu_compute_style || is_cpu_renderer {
+            // GPU compute（瀑布流/MIDITrail）帧已完整渲染；
+            // CPU 渲染（计数器）帧也不含键盘/标尺，均直接编码。
             composite_waterfall_and_encode_frame(
                 frame_data,
                 &mut encoder,
@@ -549,7 +633,7 @@ fn run_video_export_task(
         let drain_params = param_queue
             .pop_front()
             .unwrap_or((0.0, 1.0, 60.0, ppq, [0u8; 1024], 0));
-        let (should_stop, _stats) = if is_gpu_compute_style {
+        let (should_stop, _stats) = if is_gpu_compute_style || is_cpu_renderer {
             composite_waterfall_and_encode_frame(
                 drain_frame,
                 &mut encoder,
@@ -593,6 +677,16 @@ fn run_video_export_task(
     // 否则 FFmpeg 收不到 EOF，视频文件头未写入导致损坏。
     // 用户取消时已写入的帧仍可生成可播放的部分视频。
     let elapsed = start.elapsed().as_secs_f64();
+    // 释放 enqueue_frame 闭包（持有 csv_writer 可变借用），flush 计数器 CSV。
+    // clippy：drop 非 Drop 类型的闭包仅用于结束其持有的借用，属有意的生命周期管理。
+    #[allow(clippy::drop_non_drop)]
+    drop(enqueue_frame);
+    if let Some(mut writer) = csv_writer {
+        use std::io::Write;
+        if let Err(e) = writer.flush() {
+            tracing::warn!("计数器 CSV 收尾失败: {e}");
+        }
+    }
     if cancelled {
         render_bar.finish(&format!(
             "已取消 | 已处理 {}/{} 帧 | 耗时 {:.1}s",

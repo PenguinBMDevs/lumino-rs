@@ -117,7 +117,7 @@ pub(super) fn draw_digit(
 }
 
 /// 将 BGRA 帧数据填充为黑色背景（使用 bulk fill + alpha 修复）
-fn fill_bgra_black(frame: &mut [u8]) {
+pub(super) fn fill_bgra_black(frame: &mut [u8]) {
     frame.fill(0);
     for a in frame.iter_mut().skip(3).step_by(4) {
         *a = 255;

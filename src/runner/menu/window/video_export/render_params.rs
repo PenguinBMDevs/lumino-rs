@@ -72,6 +72,7 @@ pub fn build_video_export_render_params(
             visible_notes,
             note_instances_out,
         ),
+        RenderMode::NoteCounter => unreachable!("NoteCounter 应走 CPU 渲染路径"),
     }
 }
 

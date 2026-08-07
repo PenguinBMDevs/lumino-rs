@@ -70,6 +70,23 @@ impl DialogHandler {
                 let render_mode = st.render_mode.clone();
                 let waterfall_speed = st.waterfall_speed;
                 let miditrail_z_far = st.miditrail_z_far;
+                // 计数器设置
+                let counter_text = st.counter_text.clone();
+                let counter_alignment = st.counter_alignment.clone();
+                let counter_font_size = st.counter_font_size;
+                let counter_use_commas = st.counter_use_commas;
+                let counter_padding_zeroes = st.counter_padding_zeroes;
+                let counter_save_csv = st.counter_save_csv;
+                let counter_csv_output = st.counter_csv_output.clone();
+                let counter_csv_format = st.counter_csv_format.clone();
+                let counter_bpm_int_pad = st.counter_bpm_int_pad;
+                let counter_bpm_dec_pad = st.counter_bpm_dec_pad;
+                let counter_note_count_pad = st.counter_note_count_pad;
+                let counter_polyphony_pad = st.counter_polyphony_pad;
+                let counter_nps_pad = st.counter_nps_pad;
+                let counter_ticks_pad = st.counter_ticks_pad;
+                let counter_bars_pad = st.counter_bars_pad;
+                let counter_frames_pad = st.counter_frames_pad;
 
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
@@ -101,6 +118,31 @@ impl DialogHandler {
                         .unwrap_or_default(),
                     waterfall_scroll_speed: waterfall_speed,
                     miditrail_z_far,
+                    note_counter: lumino_event::window::video::NoteCounterConfig {
+                        text: counter_text,
+                        alignment: lumino_event::window::video::CounterAlignment::from_str(
+                            &counter_alignment,
+                        )
+                        .unwrap_or_default(),
+                        font_size: counter_font_size,
+                        separator: if counter_use_commas {
+                            lumino_event::window::video::CounterSeparator::Comma
+                        } else {
+                            lumino_event::window::video::CounterSeparator::Nothing
+                        },
+                        padding_zeroes: counter_padding_zeroes,
+                        bpm_int_pad: counter_bpm_int_pad,
+                        bpm_dec_pad: counter_bpm_dec_pad,
+                        note_count_pad: counter_note_count_pad,
+                        polyphony_pad: counter_polyphony_pad,
+                        nps_pad: counter_nps_pad,
+                        ticks_pad: counter_ticks_pad,
+                        bars_pad: counter_bars_pad,
+                        frames_pad: counter_frames_pad,
+                        save_csv: counter_save_csv,
+                        csv_output: counter_csv_output,
+                        csv_format: counter_csv_format,
+                    },
                 };
                 let ev = crate::event::window::Event::start_video_export(video_config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
@@ -153,6 +195,81 @@ impl DialogHandler {
             }
             V::MiditrailZFarChanged(v) => {
                 root.state.video_export_dialog.miditrail_z_far = v;
+            }
+            V::CounterTextAction(action) => {
+                let st = &mut root.state.video_export_dialog;
+                st.counter_editor.perform(action);
+                st.counter_text = st.counter_editor.text();
+            }
+            V::CounterAlignmentChanged(v) => {
+                root.state.video_export_dialog.counter_alignment = v;
+            }
+            V::CounterFontSizeChanged(v) => {
+                root.state.video_export_dialog.counter_font_size = v.clamp(7, 512);
+            }
+            V::CounterUseCommasChanged(v) => {
+                root.state.video_export_dialog.counter_use_commas = v;
+            }
+            V::CounterPaddingZeroesChanged(v) => {
+                root.state.video_export_dialog.counter_padding_zeroes = v;
+            }
+            V::CounterSaveCsvChanged(v) => {
+                root.state.video_export_dialog.counter_save_csv = v;
+            }
+            V::CounterCsvPathChanged(v) => {
+                root.state.video_export_dialog.counter_csv_output = v;
+            }
+            V::CounterCsvFormatChanged(v) => {
+                root.state.video_export_dialog.counter_csv_format = v;
+            }
+            V::CounterPadChanged { field, value } => {
+                let st = &mut root.state.video_export_dialog;
+                match field.as_str() {
+                    "bpm_int" => st.counter_bpm_int_pad = value,
+                    "bpm_dec" => st.counter_bpm_dec_pad = value.min(12),
+                    "nc" => st.counter_note_count_pad = value,
+                    "plph" => st.counter_polyphony_pad = value,
+                    "nps" => st.counter_nps_pad = value,
+                    "ticks" => st.counter_ticks_pad = value,
+                    "bars" => st.counter_bars_pad = value,
+                    "frames" => st.counter_frames_pad = value,
+                    _ => {}
+                }
+            }
+            V::CounterResetPadding => {
+                let st = &mut root.state.video_export_dialog;
+                st.counter_bpm_int_pad = 3;
+                st.counter_bpm_dec_pad = 2;
+                st.counter_note_count_pad = 5;
+                st.counter_polyphony_pad = 3;
+                st.counter_nps_pad = 3;
+                st.counter_ticks_pad = 5;
+                st.counter_bars_pad = 3;
+                st.counter_frames_pad = 5;
+            }
+            V::CounterLoadTemplate(name) => {
+                let st = &mut root.state.video_export_dialog;
+                let template = match name.as_str() {
+                    "full" => crate::state::root_state::COUNTER_FULL_TEXT,
+                    _ => crate::state::root_state::COUNTER_DEFAULT_TEXT,
+                };
+                st.counter_text = template.to_string();
+                st.counter_editor = iced_widget::text_editor::Content::with_text(template);
+            }
+            V::CounterResetText => {
+                let st = &mut root.state.video_export_dialog;
+                st.counter_text = crate::state::root_state::COUNTER_DEFAULT_TEXT.to_string();
+                st.counter_editor = iced_widget::text_editor::Content::with_text(&st.counter_text);
+            }
+            V::CounterBrowseCsv => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .set_file_name("notecounter.csv")
+                    .add_filter("CSV 数据文件", &["csv"])
+                    .save_file()
+                {
+                    root.state.video_export_dialog.counter_csv_output =
+                        path.to_string_lossy().to_string();
+                }
             }
             V::FpsChanged(v) => {
                 root.state.video_export_dialog.fps = v;

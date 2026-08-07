@@ -3833,6 +3833,7 @@ dependencies = [
 name = "lumino-message"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
+ "iced_widget",
  "lumino-core",
  "lumino-event",
  "lumino-note-core",

@@ -5,6 +5,14 @@ pub const MIDITRAIL_Z_FAR_DEFAULT: f32 = 7.5;
 /// MIDITrail Z 方向显示距离最大值（也是滑杆上限）。
 pub const MIDITRAIL_Z_FAR_MAX: f32 = 15.0;
 
+/// 计数器默认文本模板（参考 Zenith-MIDI NoteCountRender 的 default 模板）。
+pub const COUNTER_DEFAULT_TEXT: &str =
+    "Notes: {nc} / {tn}\nBPM: {bpm}\nNPS: {nps}\nPPQ: {ppq}\nPolyphony: {plph}\nTime: {currtime}";
+/// 计数器完整文本模板（全部占位符演示）。
+pub const COUNTER_FULL_TEXT: &str = "Notes: {nc} / {tn} / {nr}\nBPM: {bpm}\nNPS: {nps} (Max: {mnps})\nPolyphony: {plph} (Max: {mplph})\nSeconds: {currsec} / {totalsec} / {remsec}\nTime: {currtime} / {totaltime} / {remtime}\nTicks: {currticks} / {totalticks} / {remticks}\nBars: {currbars} / {totalbars} / {rembars}\nFrames: {currframes} / {totalframes} / {remframes}\nPPQ: {ppq}\nTime Signature: {tsn}/{tsd}\nAverage NPS: {avgnps}\n\n-----Progress-----\nNotes: {notep}%\nTicks: {tickp}%\nTime: {timep}%";
+/// 计数器默认 CSV 行格式。
+pub const COUNTER_DEFAULT_CSV_FORMAT: &str = "{nps},{plph},{bpm},{nc}";
+
 /// 视频导出覆盖层状态（参照 nezha ExportState）
 #[derive(Debug, Clone, Default)]
 pub enum VideoExportOverlayState {
@@ -42,12 +50,47 @@ pub struct VideoExportDialogState {
     pub backend: String,
     /// 质量预设（"高"/"中"/"低"）
     pub quality: String,
-    /// 渲染模式（"瀑布流"/"音符矩形"）
+    /// 渲染模式（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
     pub render_mode: String,
     /// 瀑布流滚动速度（默认 1.0）
     pub waterfall_speed: f32,
     /// MIDITrail Z 方向显示距离（默认 7.5，精度 0.1）
     pub miditrail_z_far: f32,
+    // ── 计数器设置（参考 Zenith-MIDI NoteCountRender 设置面板） ──
+    /// 计数器文本模板
+    pub counter_text: String,
+    /// 计数器文本模板多行编辑器内容（iced text_editor 状态，绑定 wgpu 渲染器）
+    pub counter_editor: iced_widget::text_editor::Content<iced_wgpu::Renderer>,
+    /// 计数器对齐方式（"左上"/"右上"/"左下"/"右下"/"顶部分散"/"底部分散"）
+    pub counter_alignment: String,
+    /// 计数器字号（像素）
+    pub counter_font_size: u32,
+    /// 计数器千分位（true=逗号，false=无）
+    pub counter_use_commas: bool,
+    /// 计数器数字补零
+    pub counter_padding_zeroes: bool,
+    /// 计数器 CSV 导出开关
+    pub counter_save_csv: bool,
+    /// 计数器 CSV 输出路径
+    pub counter_csv_output: String,
+    /// 计数器 CSV 行格式
+    pub counter_csv_format: String,
+    /// BPM 整数部分补零宽度
+    pub counter_bpm_int_pad: u32,
+    /// BPM 小数部分位数
+    pub counter_bpm_dec_pad: u32,
+    /// 音符数补零宽度
+    pub counter_note_count_pad: u32,
+    /// 复音数补零宽度
+    pub counter_polyphony_pad: u32,
+    /// NPS 补零宽度
+    pub counter_nps_pad: u32,
+    /// 时钟 tick 补零宽度
+    pub counter_ticks_pad: u32,
+    /// 小节数补零宽度
+    pub counter_bars_pad: u32,
+    /// 帧数补零宽度
+    pub counter_frames_pad: u32,
     /// 分辨率宽度
     pub width: u32,
     /// 分辨率高度
@@ -99,6 +142,23 @@ impl VideoExportDialogState {
             render_mode: "Lumino瀑布流".to_string(),
             waterfall_speed: 1.0,
             miditrail_z_far: MIDITRAIL_Z_FAR_DEFAULT,
+            counter_text: COUNTER_DEFAULT_TEXT.to_string(),
+            counter_editor: iced_widget::text_editor::Content::<iced_wgpu::Renderer>::default(),
+            counter_alignment: "左上".to_string(),
+            counter_font_size: 40,
+            counter_use_commas: true,
+            counter_padding_zeroes: false,
+            counter_save_csv: false,
+            counter_csv_output: String::new(),
+            counter_csv_format: COUNTER_DEFAULT_CSV_FORMAT.to_string(),
+            counter_bpm_int_pad: 3,
+            counter_bpm_dec_pad: 2,
+            counter_note_count_pad: 5,
+            counter_polyphony_pad: 3,
+            counter_nps_pad: 3,
+            counter_ticks_pad: 5,
+            counter_bars_pad: 3,
+            counter_frames_pad: 5,
             width: 1920,
             height: 1080,
             fps: 60,

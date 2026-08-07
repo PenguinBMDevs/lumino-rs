@@ -2,7 +2,8 @@
 
 // 保持路径不变：crate::state::root_state::Xxx 通过 core 重导出
 pub use lumino_ui_core::state::{
-    AudioExportDialogState, BatchEditDialogState, CollaborationDialogState, CollaborationViewState,
+    AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT, COUNTER_DEFAULT_TEXT,
+    COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
     ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SpeedChangeDialogState,
