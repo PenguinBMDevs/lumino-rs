@@ -182,9 +182,14 @@ pub fn view<'a>(
     }
 }
 
-/// 面板标题文本（无装饰小条）
+/// 面板标题文本（跟随主题：暗色白、亮色黑）
 fn panel_header<'a>(title: &'a str, _window: &'a window::Window) -> Element<'a> {
-    iced_widget::text(title).size(14).into()
+    iced_widget::text(title)
+        .size(14)
+        .style(|theme: &Theme| iced_widget::text::Style {
+            color: Some(theme.extended_palette().background.neutral.text),
+        })
+        .into()
 }
 
 /// 转换参数配置区：key 范围、目标高度、每像素 tick、颜色数、调色板算法
@@ -220,7 +225,11 @@ fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Element<'a> {
             "Key 范围",
             Row::new()
                 .push(config_input(&cfg.start_key_text, I2mConfigField::StartKey))
-                .push(iced_widget::text("~").size(12))
+                .push(iced_widget::text("~").size(12).style(|theme: &Theme| {
+                    iced_widget::text::Style {
+                        color: Some(theme.extended_palette().background.strong.text),
+                    }
+                }))
                 .push(config_input(&cfg.end_key_text, I2mConfigField::EndKey))
                 .spacing(4)
                 .align_y(Alignment::Center)
@@ -242,20 +251,26 @@ fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Element<'a> {
         .into()
 }
 
-/// 小节标题（主色强调）
+/// 小节标题（跟随主题：暗色白、亮色黑，与项目内面板标题一致）
 fn section_label<'a>(title: &'a str) -> Element<'a> {
     iced_widget::text(title)
         .size(12)
         .style(|theme: &Theme| iced_widget::text::Style {
-            color: Some(theme.extended_palette().primary.strong.color),
+            color: Some(theme.extended_palette().background.neutral.text),
         })
         .into()
 }
 
-/// 单行配置：标签居左，控件居右
+/// 单行配置：标签居左（文字色跟随主题），控件居右
 fn config_row<'a>(label: &'a str, control: Element<'a>) -> Element<'a> {
     Row::new()
-        .push(iced_widget::text(label).size(12))
+        .push(
+            iced_widget::text(label)
+                .size(12)
+                .style(|theme: &Theme| iced_widget::text::Style {
+                    color: Some(theme.extended_palette().background.strong.text),
+                }),
+        )
         .push(Space::new().width(Length::Fill))
         .push(control)
         .spacing(4)
