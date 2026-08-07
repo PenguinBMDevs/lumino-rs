@@ -45,140 +45,94 @@ pub fn view<'a>(
 
     // 如果面板可见，渲染内容面板 + 调整手柄
     if right_sidebar.panel_visible {
-        // 面板内"选择图片文件"按钮
-        let select_btn = button(
-            Row::new()
-                .push(icon::view_with_size_and_theme(
-                    Icon::ImageToMidi,
-                    16,
-                    16,
-                    Some(&window.theme),
-                ))
-                .push(iced_widget::text("选择图片文件").size(13))
-                .spacing(6)
-                .align_y(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .padding(6)
-        .style(move |theme: &Theme, status| {
-            let p = theme.extended_palette();
-            let bg = match status {
-                button::Status::Hovered | button::Status::Pressed => p.background.base.color,
-                _ => p.background.weak.color,
-            };
-            button::Style {
-                text_color: p.background.base.text,
-                border: iced_core::Border {
-                    radius: 4.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            }
-            .with_background(bg)
-        })
-        .on_press(Message::RightSidebar(RightSidebarAction::SelectImageFile));
-
-        // 面板内容：文件选择按钮 + 已选图片路径标注 + 转换按钮
-        let file_info: Element<'a> = if let Some(path) = &right_sidebar.selected_image_path {
-            let name = path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string());
-            iced_widget::column![
-                iced_widget::text(format!("文件: {name}")).size(13),
-                // 路径文字用横向滚动容器包裹，避免超出面板区域
-                iced_widget::scrollable(
-                    iced_widget::text(format!("路径: {}", path.display()))
-                        .size(11)
-                        .style(|theme: &Theme| iced_widget::text::Style {
-                            color: Some(theme.extended_palette().background.strong.text),
-                        }),
-                )
-                .direction(iced_widget::scrollable::Direction::Horizontal(
-                    iced_widget::scrollable::Scrollbar::new()
-                        .width(4)
-                        .scroller_width(4),
-                ))
-                .height(Length::Shrink),
-            ]
-            .spacing(4)
-            .into()
-        } else {
-            iced_widget::text("尚未选择图片文件")
-                .size(12)
-                .style(|theme: &Theme| iced_widget::text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
-                })
-                .into()
-        };
-
-        // 转换按钮：有图片时可用；转换中显示状态文本
-        let convert_btn = button(
-            Row::new()
-                .push(icon::view_with_size_and_theme(
-                    Icon::ImageToMidi,
-                    16,
-                    16,
-                    Some(&window.theme),
-                ))
-                .push(
-                    iced_widget::text(if right_sidebar.converting {
-                        "转换中..."
-                    } else {
-                        "转换为 MIDI"
-                    })
-                    .size(13),
-                )
-                .spacing(6)
-                .align_y(Alignment::Center),
-        )
-        .width(Length::Fill)
-        .padding(6)
-        .style(move |theme: &Theme, status| {
-            let p = theme.extended_palette();
-            let disabled = right_sidebar.selected_image_path.is_none() || right_sidebar.converting;
-            let bg = match status {
-                button::Status::Hovered | button::Status::Pressed if !disabled => {
-                    p.primary.base.color
+        // 面板内"选择图片文件"按钮：标准 iced 按钮（无图标），居左放置
+        let select_btn = button(iced_widget::text("选择图片文件").size(13))
+            .padding(6)
+            .style(move |theme: &Theme, status| {
+                let p = theme.extended_palette();
+                let bg = match status {
+                    button::Status::Hovered | button::Status::Pressed => p.background.base.color,
+                    _ => p.background.weak.color,
+                };
+                button::Style {
+                    text_color: p.background.base.text,
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    ..Default::default()
                 }
-                _ => p.background.weak.color,
-            };
-            let text_color = if disabled {
-                p.background.strong.text
-            } else {
-                p.background.base.text
-            };
-            button::Style {
-                text_color,
-                border: iced_core::Border {
-                    radius: 4.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                ..Default::default()
-            }
-            .with_background(bg)
-        })
-        .on_press(Message::RightSidebar(RightSidebarAction::ConvertClicked));
+                .with_background(bg)
+            })
+            .on_press(Message::RightSidebar(RightSidebarAction::SelectImageFile));
 
-        let content = container(
-            Column::new()
-                .spacing(8)
-                .padding(8)
-                .push(panel_header("图片转 MIDI", window))
-                .push(select_btn)
-                .push(file_info)
-                .push(convert_btn),
-        )
-        .width(Length::Fixed(
-            right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
-        ))
-        .height(Length::Fill)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.weakest.color)
-        });
+        // 文件选择按钮居左，选中文件后在按钮右侧提示
+        let mut select_row = Row::new().spacing(6).align_y(Alignment::Center);
+        select_row = select_row.push(select_btn);
+        if right_sidebar.selected_image_path.is_some() {
+            select_row = select_row.push(iced_widget::text("选择了一个图片文件").size(12).style(
+                |theme: &Theme| iced_widget::text::Style {
+                    color: Some(theme.extended_palette().background.strong.text),
+                },
+            ));
+        }
+
+        // 转换按钮：仅在选中文件后出现（标准 iced 按钮，无图标）
+        let mut content_col = Column::new()
+            .spacing(8)
+            .padding(8)
+            .push(panel_header("图片转 MIDI", window))
+            .push(select_row);
+        if right_sidebar.selected_image_path.is_some() {
+            let convert_btn = button(
+                iced_widget::text(if right_sidebar.converting {
+                    "转换中..."
+                } else {
+                    "转换为 MIDI"
+                })
+                .size(13),
+            )
+            .width(Length::Fill)
+            .padding(6)
+            .style(move |theme: &Theme, status| {
+                let p = theme.extended_palette();
+                let disabled = right_sidebar.converting;
+                let bg = match status {
+                    button::Status::Hovered | button::Status::Pressed if !disabled => {
+                        p.primary.base.color
+                    }
+                    _ => p.background.weak.color,
+                };
+                let text_color = if disabled {
+                    p.background.strong.text
+                } else {
+                    p.background.base.text
+                };
+                button::Style {
+                    text_color,
+                    border: iced_core::Border {
+                        radius: 4.0.into(),
+                        width: 0.0,
+                        color: Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .on_press(Message::RightSidebar(RightSidebarAction::ConvertClicked));
+            content_col = content_col.push(convert_btn);
+        }
+
+        let content = container(content_col)
+            .width(Length::Fixed(
+                right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
+            ))
+            .height(Length::Fill)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(palette.background.weakest.color)
+            });
 
         // 调整大小手柄（放在面板右侧，紧贴图标列）
         let resize_handle = mouse_area(

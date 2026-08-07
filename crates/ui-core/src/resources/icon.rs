@@ -233,6 +233,18 @@ pub fn view_with_size_and_theme(
     }
 }
 
+/// 将任意 SVG 数据光栅化为 iced 图像句柄（供 canvas 等非 widget 场景复用）
+///
+/// 复用 `usvg + resvg` 渲染管线，与内置图标一致；尺寸为正方形画布。
+pub fn svg_handle(svg_data: &[u8], size: u32) -> Result<iced_core::image::Handle, IconError> {
+    let data = render_svg(svg_data, size, size)?;
+    Ok(iced_core::image::Handle::from_rgba(
+        data.width,
+        data.height,
+        data.rgba,
+    ))
+}
+
 /// 安全地渲染指定尺寸和主题的图标，返回 Result
 pub fn view_with_size_and_theme_safe(
     icon: Icon,
@@ -432,6 +444,29 @@ mod tests {
             56,
             "存在无法解析/渲染的 SVG 图标，请检查 resources/icons"
         );
+    }
+
+    /// 新增的 i2m 悬浮按钮图标（不注册进 Icon 枚举，直接验证 SVG 可解析且输出 32x32 RGBA 纹理）
+    #[test]
+    fn test_i2m_button_icons_parse() {
+        let check_svg = include_bytes!("../../../../resources/icons/toolbar/confirm-check.svg");
+        let cross_svg = include_bytes!("../../../../resources/icons/toolbar/cancel-cross.svg");
+        for svg in [check_svg.as_slice(), cross_svg.as_slice()] {
+            let handle = super::svg_handle(svg, 32).expect("i2m 按钮图标应能光栅化");
+            match handle {
+                iced_core::image::Handle::Rgba {
+                    width,
+                    height,
+                    pixels,
+                    ..
+                } => {
+                    assert_eq!(width, 32);
+                    assert_eq!(height, 32);
+                    assert_eq!(pixels.len(), 32 * 32 * 4);
+                }
+                other => panic!("应为 RGBA 纹理，实际为 {other:?}"),
+            }
+        }
     }
 
     /// viewBox 扩大 1.5 倍后，内容线性缩小 1/3 且在画布中居中

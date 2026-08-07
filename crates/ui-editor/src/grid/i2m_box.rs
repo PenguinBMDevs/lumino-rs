@@ -3,13 +3,16 @@
 //! 放置模式（Placing）下：
 //! - 区域框常驻绘制（边框 + 淡填充），表示生成区域；
 //! - 区域框右侧空白处绘制 √（确认）/ ×（取消）两个悬浮按钮，
-//!   使用 30-40 像素圆角矩形。
+//!   使用 30-40 像素圆角矩形，按钮内容为居中 SVG 图标纹理
+//!   （iced canvas 绘制，wgpu 不参与这两个按钮的绘制）。
 
 use crate::Editor;
-use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path, Stroke, Text};
+use iced_core::image::Handle;
+use iced_core::{Image, Point, Rectangle, Size};
+use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::ImageToMidiMode;
 use lumino_ui_core::Renderer;
+use once_cell::sync::Lazy;
 
 /// 悬浮按钮边长（用户要求 30-40 像素，取 36）
 pub const I2M_BUTTON_SIZE: f32 = 36.0;
@@ -19,6 +22,32 @@ const I2M_BUTTON_SPACING: f32 = 8.0;
 const I2M_BUTTON_RADIUS: f32 = 8.0;
 /// 区域框描边宽度
 const I2M_REGION_STROKE: f32 = 2.0;
+/// 图标占按钮边长的比例（留白保证图标居中不贴边）
+const I2M_ICON_INSET_RATIO: f32 = 0.25;
+
+/// √ 确认按钮图标（首次访问时由 SVG 光栅化，之后复用句柄 → iced_wgpu 纹理缓存命中）
+static CONFIRM_ICON: Lazy<Handle> = Lazy::new(|| {
+    build_icon_handle(include_bytes!(
+        "../../../../resources/icons/toolbar/confirm-check.svg"
+    ))
+});
+/// × 取消按钮图标
+static CANCEL_ICON: Lazy<Handle> = Lazy::new(|| {
+    build_icon_handle(include_bytes!(
+        "../../../../resources/icons/toolbar/cancel-cross.svg"
+    ))
+});
+
+/// 将内置 SVG 光栅化为图像句柄；失败时回退为空纹理并记录错误
+fn build_icon_handle(svg: &[u8]) -> Handle {
+    match lumino_ui_core::resources::icon::svg_handle(svg, 32) {
+        Ok(handle) => handle,
+        Err(e) => {
+            tracing::error!("加载 i2m 悬浮按钮图标失败: {e}");
+            Handle::from_rgba(1, 1, vec![0, 0, 0, 0])
+        }
+    }
+}
 
 /// 悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -87,16 +116,14 @@ pub fn draw(
         draw_button(
             &mut frame,
             btns.confirm,
-            "\u{221A}",
+            &CONFIRM_ICON,
             iced_core::Color::from_rgb8(46, 125, 50),
-            iced_core::Color::from_rgb8(200, 255, 200),
         );
         draw_button(
             &mut frame,
             btns.cancel,
-            "\u{00D7}",
+            &CANCEL_ICON,
             iced_core::Color::from_rgb8(198, 40, 40),
-            iced_core::Color::from_rgb8(255, 200, 200),
         );
         has_content = true;
     }
@@ -108,13 +135,12 @@ pub fn draw(
     }
 }
 
-/// 绘制单个悬浮按钮（圆角矩形 + 居中字符）
+/// 绘制单个悬浮按钮（圆角矩形 + 居中 SVG 图标）
 fn draw_button(
     frame: &mut canvas::Frame<Renderer>,
     rect: Rectangle,
-    glyph: &str,
+    icon: &Handle,
     bg: iced_core::Color,
-    fg: iced_core::Color,
 ) {
     let path = Path::rounded_rectangle(
         rect.position(),
@@ -127,17 +153,11 @@ fn draw_button(
         .with_color(iced_core::Color::from_rgba(1.0, 1.0, 1.0, 0.6));
     frame.stroke(&path, stroke);
 
-    let text = Text {
-        content: glyph.to_string(),
-        position: Point::new(rect.x + rect.width * 0.5, rect.y + rect.height * 0.5),
-        max_width: rect.width,
-        line_height: iced_core::text::LineHeight::Relative(1.0),
-        size: iced_core::Pixels(24.0),
-        color: fg,
-        font: iced_core::Font::DEFAULT,
-        align_x: iced_core::alignment::Horizontal::Center.into(),
-        align_y: iced_core::alignment::Vertical::Center,
-        shaping: iced_core::text::Shaping::Basic,
-    };
-    frame.fill_text(text);
+    // 图标以按钮中心为基准等比内缩，保证水平/垂直居中
+    let inset = rect.width * I2M_ICON_INSET_RATIO;
+    let icon_bounds = Rectangle::new(
+        Point::new(rect.x + inset, rect.y + inset),
+        Size::new(rect.width - inset * 2.0, rect.height - inset * 2.0),
+    );
+    frame.draw_image(icon_bounds, Image::new(icon.clone()));
 }
