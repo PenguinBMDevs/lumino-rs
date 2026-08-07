@@ -2,12 +2,16 @@ MIDIGraphRenderer
 ==================
 
 The data-curve rendering mode in this directory (video_export) is ported from
-MIDIGraphRenderer by Augustin900:
+MIDIGraphRenderer, originally created by Danidanijr.
+
+The original work was distributed as a .love package without an explicit
+license. The source was later unpacked and uploaded to GitHub by Augustin900
+(uploader, not the original author) at:
 
     https://github.com/Augustin900/MIDIGraphRenderer
 
-The original software is licensed under the MIT License, reproduced below
-as required by its terms:
+That GitHub mirror carries an MIT License text, reproduced below for
+completeness as it accompanied the source this port was based on:
 
 ---
 

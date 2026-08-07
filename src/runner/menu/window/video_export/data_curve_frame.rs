@@ -1,5 +1,6 @@
-// Ported from MIDIGraphRenderer (https://github.com/Augustin900/MIDIGraphRenderer)
-// Copyright (c) 2025 Augustin900, MIT License. See NOTICE in this directory.
+// Ported from MIDIGraphRenderer, originally created by Danidanijr.
+// Source: https://github.com/Augustin900/MIDIGraphRenderer (GitHub mirror with MIT License)
+// See NOTICE in this directory for full attribution and license text.
 
 //! 数据曲线模式帧渲染（移植自 MIDIGraphRenderer 的 graph 渲染逻辑）
 //!
