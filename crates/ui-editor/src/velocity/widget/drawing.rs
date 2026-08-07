@@ -18,7 +18,7 @@ mod notes;
 pub use background::{draw_background, draw_resize_handle};
 pub use grid::{draw_horizontal_lines, draw_vertical_lines};
 pub use labels::draw_scale_labels;
-pub use notes::{draw_curve_paint_feedback, draw_tempo_graph};
+pub use notes::{draw_curve_paint_feedback, draw_tempo_graph, tempo_extension_end};
 
 use iced_core::{Color, Point, Rectangle, Size, alignment, mouse};
 use iced_widget::canvas::{self, Frame, path};
@@ -112,25 +112,26 @@ pub fn automation_node_color() -> Color {
 
 // ── Tempo 常量 ──
 
-const TEMPO_BPM_MIN: f64 = 20.0;
-const TEMPO_BPM_MAX: f64 = 10000.0;
+/// Tempo BPM 显示下限（固定）
+pub const TEMPO_BPM_MIN: f64 = 20.0;
 
 /// 将 BPM 值映射到面板 Y 坐标
 ///
 /// 采用线性映射，保证 `generate_tempo_levels` 生成的等差刻度在 Y 轴上均匀分布。
-pub fn tempo_bpm_to_y(bpm: f64, bounds_height: f32) -> f32 {
+/// `max_bpm` 为当前设置的 BPM 绘制上限（默认 512，可配置）。
+pub fn tempo_bpm_to_y(bpm: f64, max_bpm: f64, bounds_height: f32) -> f32 {
     let max_y = bounds_height;
     let min_y = PANEL_PADDING_Y + RESIZE_HANDLE_HEIGHT;
-    let normalized = ((bpm - TEMPO_BPM_MIN) / (TEMPO_BPM_MAX - TEMPO_BPM_MIN)) as f32;
+    let normalized = ((bpm - TEMPO_BPM_MIN) / (max_bpm - TEMPO_BPM_MIN)) as f32;
     max_y - normalized * (max_y - min_y)
 }
 
 /// 生成 BPM 标尺刻度值
 ///
 /// 使用等差分布，让参考线在 Y 轴上以相同间隔均匀分布。
-pub fn generate_tempo_levels() -> Vec<f64> {
+pub fn generate_tempo_levels(max_bpm: f64) -> Vec<f64> {
     let count = 9;
-    let step = (TEMPO_BPM_MAX - TEMPO_BPM_MIN) / (count - 1) as f64;
+    let step = (max_bpm - TEMPO_BPM_MIN) / (count - 1) as f64;
     (0..count)
         .map(|i| TEMPO_BPM_MIN + step * i as f64)
         .collect()
@@ -147,16 +148,15 @@ pub fn bend_value_to_y(value: i16, bounds_height: f32) -> f32 {
 /// 计算 Tempo 控制点屏幕位置
 ///
 /// 使用与 `tempo_bpm_to_y` 相同的线性映射，保证数据点与参考线对齐。
+/// `max_bpm` 为当前设置的 BPM 绘制上限。
 pub fn tempo_point_screen_pos(
     point: &TempoPoint,
-    _bounds_width: f32,
     bounds_height: f32,
     view: &ViewState,
-    _min_bpm: f64,
-    _bpm_range: f64,
+    max_bpm: f64,
 ) -> Point {
     let point_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
-    let point_y = tempo_bpm_to_y(point.bpm, bounds_height);
+    let point_y = tempo_bpm_to_y(point.bpm, max_bpm, bounds_height);
     Point::new(point_x, point_y)
 }
 

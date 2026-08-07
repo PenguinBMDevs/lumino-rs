@@ -50,6 +50,7 @@ impl RunnerInner {
             || new.merge_window_ms != old.merge_window_ms
             || new.intercept_notification_enabled != old.intercept_notification_enabled
             || new.automation_line_thickness != old.automation_line_thickness
+            || new.tempo_max_bpm != old.tempo_max_bpm
             || new.monitor_refresh_interval_ms != old.monitor_refresh_interval_ms;
         if theme_changed
             || synth_changed
@@ -191,6 +192,7 @@ impl RunnerInner {
             config.ui.merge_window_ms = new.merge_window_ms;
             config.ui.intercept_notification_enabled = new.intercept_notification_enabled;
             config.ui.automation_line_thickness = new.automation_line_thickness;
+            config.ui.tempo_max_bpm = new.tempo_max_bpm;
             config.ui.monitor_refresh_interval_ms = new.monitor_refresh_interval_ms;
             config.ui.log_retention_count = new.log_retention_count;
         });

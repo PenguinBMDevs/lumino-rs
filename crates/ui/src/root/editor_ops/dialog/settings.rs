@@ -95,6 +95,15 @@ impl Root {
             );
             self.editor.velocity_panel.automation_line_thickness = new.automation_line_thickness;
         }
+
+        if old.tempo_max_bpm != new.tempo_max_bpm {
+            tracing::info!(
+                "同步 Tempo BPM 上限: {} -> {}",
+                old.tempo_max_bpm,
+                new.tempo_max_bpm
+            );
+            self.editor.velocity_panel.tempo_max_bpm = new.tempo_max_bpm;
+        }
     }
 
     /// 同步自动滚动配置

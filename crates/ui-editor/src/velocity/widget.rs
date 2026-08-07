@@ -9,8 +9,8 @@ mod state;
 pub use drawing::{
     bend_value_to_y, draw_background, draw_curve_paint_feedback, draw_horizontal_lines,
     draw_resize_handle, draw_scale_labels, draw_tempo_graph, draw_vertical_lines,
-    generate_tempo_levels, tempo_bpm_to_y, tempo_point_screen_pos, velocity_bg_color,
-    velocity_border_color, velocity_grab_bar_color, velocity_grid_line_color,
+    generate_tempo_levels, tempo_bpm_to_y, tempo_extension_end, tempo_point_screen_pos,
+    velocity_bg_color, velocity_border_color, velocity_grab_bar_color, velocity_grid_line_color,
     velocity_handle_bg_color, velocity_text_color,
 };
 pub use state::VelocityCanvasState;

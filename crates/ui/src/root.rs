@@ -154,6 +154,8 @@ impl Root {
             .set_playback_key_colors_enabled(ui_config.playback_key_colors_enabled);
         // 同步自动化曲线连线粗细
         root.editor.velocity_panel.automation_line_thickness = ui_config.automation_line_thickness;
+        // 同步 Tempo 面板 BPM 绘制上限
+        root.editor.velocity_panel.tempo_max_bpm = ui_config.tempo_max_bpm;
         // 初始音轨 0 是指挥轨道 → 速度面板应为 Tempo 模式
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root

@@ -79,6 +79,12 @@ pub struct SettingsPanel {
     pub intercept_notification_enabled: bool,
     /// 自动化曲线连线粗细（像素，1-10）
     pub automation_line_thickness: f32,
+    /// Tempo 面板 BPM 绘制上限（默认 512）
+    pub tempo_max_bpm: f64,
+    /// 自定义 BPM 上限输入面板是否打开
+    pub tempo_custom_open: bool,
+    /// 自定义 BPM 上限输入框内容
+    pub tempo_custom_input: String,
     /// 日志文件保留份数
     pub log_retention_count: usize,
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
@@ -135,6 +141,9 @@ impl SettingsPanel {
             merge_window_ms: ui_config.merge_window_ms,
             intercept_notification_enabled: ui_config.intercept_notification_enabled,
             automation_line_thickness: ui_config.automation_line_thickness,
+            tempo_max_bpm: ui_config.tempo_max_bpm,
+            tempo_custom_open: false,
+            tempo_custom_input: String::new(),
             log_retention_count: ui_config.log_retention_count,
             monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
         }
@@ -301,6 +310,32 @@ impl SettingsPanel {
             Event::AutomationLineThicknessChanged(v) => {
                 self.automation_line_thickness = v.clamp(1.0, 10.0);
             }
+            Event::TempoMaxBpmChanged(v) => {
+                self.tempo_max_bpm = v;
+                self.tempo_custom_open = false;
+            }
+            Event::TempoMaxBpmCustomOpen => {
+                // 打开面板时预填当前值，方便微调
+                if self.tempo_custom_input.is_empty() {
+                    self.tempo_custom_input = format!("{:.0}", self.tempo_max_bpm);
+                }
+                self.tempo_custom_open = true;
+            }
+            Event::TempoMaxBpmCustomClose => {
+                self.tempo_custom_open = false;
+            }
+            Event::TempoMaxBpmCustomInput(value) => {
+                self.tempo_custom_input = value;
+            }
+            Event::TempoMaxBpmCustomConfirm => {
+                if let Ok(v) = self.tempo_custom_input.trim().parse::<f64>() {
+                    self.tempo_max_bpm = v;
+                    self.tempo_custom_open = false;
+                    tracing::info!("设置: 自定义 Tempo BPM 上限为 {:.0}", v);
+                } else {
+                    tracing::warn!("设置: 自定义 Tempo BPM 上限输入无效");
+                }
+            }
             Event::LogRetentionCountChanged(s) => {
                 if let Ok(v) = s.parse::<usize>() {
                     self.log_retention_count = v;
@@ -422,4 +457,69 @@ fn render_placeholder<'a>(
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::storage::config::UiConfig;
+
+    fn panel_with_tempo(max_bpm: f64) -> SettingsPanel {
+        let mut config = UiConfig::default();
+        config.tempo_max_bpm = max_bpm;
+        SettingsPanel::new(&config)
+    }
+
+    #[test]
+    fn test_tempo_max_bpm_default_from_config() {
+        let panel = panel_with_tempo(512.0);
+        assert_eq!(panel.tempo_max_bpm, 512.0);
+        assert!(!panel.tempo_custom_open);
+    }
+
+    #[test]
+    fn test_tempo_preset_selected_closes_custom_panel() {
+        let mut panel = panel_with_tempo(512.0);
+        panel.tempo_custom_open = true;
+        panel.update(Event::TempoMaxBpmChanged(2048.0));
+        assert_eq!(panel.tempo_max_bpm, 2048.0);
+        assert!(!panel.tempo_custom_open);
+    }
+
+    #[test]
+    fn test_tempo_custom_open_prefills_current_value() {
+        let mut panel = panel_with_tempo(700.0);
+        panel.update(Event::TempoMaxBpmCustomOpen);
+        assert!(panel.tempo_custom_open);
+        assert_eq!(panel.tempo_custom_input, "700");
+    }
+
+    #[test]
+    fn test_tempo_custom_input_and_confirm() {
+        let mut panel = panel_with_tempo(512.0);
+        panel.update(Event::TempoMaxBpmCustomOpen);
+        panel.update(Event::TempoMaxBpmCustomInput("1234".to_string()));
+        panel.update(Event::TempoMaxBpmCustomConfirm);
+        assert_eq!(panel.tempo_max_bpm, 1234.0);
+        assert!(!panel.tempo_custom_open);
+    }
+
+    #[test]
+    fn test_tempo_custom_confirm_invalid_keeps_value() {
+        let mut panel = panel_with_tempo(512.0);
+        panel.update(Event::TempoMaxBpmCustomOpen);
+        panel.update(Event::TempoMaxBpmCustomInput("abc".to_string()));
+        panel.update(Event::TempoMaxBpmCustomConfirm);
+        // 无效输入不生效，面板保持打开以便修正
+        assert_eq!(panel.tempo_max_bpm, 512.0);
+        assert!(panel.tempo_custom_open);
+    }
+
+    #[test]
+    fn test_tempo_custom_close() {
+        let mut panel = panel_with_tempo(512.0);
+        panel.update(Event::TempoMaxBpmCustomOpen);
+        panel.update(Event::TempoMaxBpmCustomClose);
+        assert!(!panel.tempo_custom_open);
+    }
 }

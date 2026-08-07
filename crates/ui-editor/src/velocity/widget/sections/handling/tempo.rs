@@ -10,6 +10,7 @@ use lumino_ui_core::Message;
 use lumino_ui_core::message::VelocityAction;
 
 use super::super::super::super::{RESIZE_HANDLE_HEIGHT, VelocityPanel};
+use super::super::super::drawing::TEMPO_BPM_MIN;
 use super::super::super::state::VelocityCanvasState;
 use super::publish_velocity;
 
@@ -23,12 +24,14 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) -> Option<canvas::Action<Message>> {
         let tempo_points = VelocityPanel::build_tempo_points(self.editor);
         let view = &self.editor.editor_state.view;
+        let max_bpm = self.editor.velocity_panel.tempo_max_bpm;
         let hit_idx = Self::hit_test_tempo_point(
             &tempo_points,
             cursor_pos,
             bounds_size.width,
             bounds_size.height,
             view,
+            max_bpm,
         );
 
         // 检查是否在绘制区域内
@@ -61,7 +64,9 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                 } else {
                     // 空白处创建新点（吸附到网格）
                     let tick = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
-                    let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height);
+                    let max_bpm = self.editor.velocity_panel.tempo_max_bpm;
+                    let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height, max_bpm)
+                        .clamp(TEMPO_BPM_MIN, max_bpm);
                     Some(publish_velocity(VelocityAction::TempoAdd(tick, bpm)))
                 }
             }
@@ -87,7 +92,9 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) -> Option<canvas::Action<Message>> {
         let tempo_points = VelocityPanel::build_tempo_points(self.editor);
         if drag_idx < tempo_points.len() {
-            let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height).clamp(20.0, 10000.0);
+            let max_bpm = self.editor.velocity_panel.tempo_max_bpm;
+            let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height, max_bpm)
+                .clamp(TEMPO_BPM_MIN, max_bpm);
             return Some(publish_velocity(VelocityAction::TempoDragMove(
                 drag_idx, bpm,
             )));

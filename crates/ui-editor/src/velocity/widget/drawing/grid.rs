@@ -85,11 +85,14 @@ pub fn draw_vertical_lines(
 }
 
 /// 绘制横向参考线（Velocity/CC/Bend/Tempo 模式）
+///
+/// `tempo_max_bpm` 为 Tempo 模式的 BPM 绘制上限（其他模式忽略）。
 pub fn draw_horizontal_lines(
     frame: &mut Frame<Renderer>,
     theme: &Theme,
     size: Size,
     edit_mode: EditMode,
+    tempo_max_bpm: f64,
 ) {
     let width = size.width;
     let line_color = velocity_grid_line_color(theme);
@@ -126,9 +129,9 @@ pub fn draw_horizontal_lines(
             }
         }
         EditMode::Tempo => {
-            let bpm_levels = generate_tempo_levels();
+            let bpm_levels = generate_tempo_levels(tempo_max_bpm);
             for &bpm in &bpm_levels {
-                let velocity_y = tempo_bpm_to_y(bpm, size.height);
+                let velocity_y = tempo_bpm_to_y(bpm, tempo_max_bpm, size.height);
                 let mut line_builder = path::Builder::new();
                 line_builder.move_to(Point::new(PANEL_PADDING_X, velocity_y));
                 line_builder.line_to(Point::new(width - PANEL_PADDING_X, velocity_y));

@@ -244,6 +244,9 @@ pub struct UiConfig {
     /// 自动化曲线连线粗细（像素，1-10，默认 2）
     #[serde(default = "default_automation_line_thickness")]
     pub automation_line_thickness: f32,
+    /// Tempo 面板 BPM 绘制上限（默认 512，可配置 256~65536 或自定义）
+    #[serde(default = "default_tempo_max_bpm")]
+    pub tempo_max_bpm: f64,
     /// 日志文件保留份数（默认 10，0 = 不限制）
     #[serde(default = "default_log_retention_count")]
     pub log_retention_count: usize,
@@ -277,6 +280,11 @@ fn default_max_voices_per_key() -> Option<usize> {
 }
 fn default_automation_line_thickness() -> f32 {
     2.0
+}
+
+/// Tempo 面板 BPM 绘制上限默认值
+fn default_tempo_max_bpm() -> f64 {
+    512.0
 }
 
 fn default_monitor_refresh_interval_ms() -> f32 {
@@ -352,6 +360,7 @@ impl Default for UiConfig {
             merge_window_ms: default_merge_window_ms(),
             intercept_notification_enabled: true,
             automation_line_thickness: default_automation_line_thickness(),
+            tempo_max_bpm: default_tempo_max_bpm(),
             log_retention_count: default_log_retention_count(),
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
         }

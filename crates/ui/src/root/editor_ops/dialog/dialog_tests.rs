@@ -210,6 +210,31 @@ fn test_apply_settings_automation_line_thickness_changed() {
     assert_eq!(root.editor.velocity_panel.automation_line_thickness, 5.5);
 }
 
+#[test]
+fn test_apply_settings_tempo_max_bpm_changed() {
+    let mut root = create_test_root();
+    let old_settings = root.settings.clone();
+
+    let mut new_settings = old_settings.clone();
+    new_settings.tempo_max_bpm = 1024.0;
+
+    root.apply_settings(new_settings.clone());
+
+    assert_eq!(root.settings.tempo_max_bpm, 1024.0);
+    assert_eq!(root.editor.velocity_panel.tempo_max_bpm, 1024.0);
+}
+
+#[test]
+fn test_apply_settings_tempo_max_bpm_unchanged_keeps_default() {
+    let mut root = create_test_root();
+    let old_settings = root.settings.clone();
+
+    root.apply_settings(old_settings.clone());
+
+    // 未修改时保持默认 512
+    assert_eq!(root.editor.velocity_panel.tempo_max_bpm, 512.0);
+}
+
 fn create_test_root() -> Root {
     let ui_config = UiConfig::default();
     Root::new(&ui_config)

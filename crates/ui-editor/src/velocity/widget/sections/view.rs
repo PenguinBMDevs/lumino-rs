@@ -76,9 +76,22 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             EditMode::Tempo => {
                 let mut frame = Frame::new(renderer, bounds.size());
                 let view = &self.editor.editor_state.view;
-                draw_horizontal_lines(&mut frame, theme, bounds.size(), self.edit_mode);
+                let tempo_max_bpm = self.editor.velocity_panel.tempo_max_bpm;
+                draw_horizontal_lines(
+                    &mut frame,
+                    theme,
+                    bounds.size(),
+                    self.edit_mode,
+                    tempo_max_bpm,
+                );
                 draw_vertical_lines(&mut frame, theme, bounds.size(), view);
-                draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
+                draw_scale_labels(
+                    &mut frame,
+                    theme,
+                    bounds.size(),
+                    self.edit_mode,
+                    tempo_max_bpm,
+                );
                 let tempo_points = VelocityPanel::build_tempo_points(self.editor);
                 if !tempo_points.is_empty() {
                     draw_tempo_graph(
@@ -87,6 +100,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                         bounds.size(),
                         view,
                         self.editor.velocity_panel.automation_line_thickness,
+                        tempo_max_bpm,
                     );
                 }
                 vec![frame.into_geometry()]
@@ -95,8 +109,20 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 let mut frame = Frame::new(renderer, bounds.size());
                 let view = &self.editor.editor_state.view;
                 draw_vertical_lines(&mut frame, theme, bounds.size(), view);
-                draw_horizontal_lines(&mut frame, theme, bounds.size(), self.edit_mode);
-                draw_scale_labels(&mut frame, theme, bounds.size(), self.edit_mode);
+                draw_horizontal_lines(
+                    &mut frame,
+                    theme,
+                    bounds.size(),
+                    self.edit_mode,
+                    self.editor.velocity_panel.tempo_max_bpm,
+                );
+                draw_scale_labels(
+                    &mut frame,
+                    theme,
+                    bounds.size(),
+                    self.edit_mode,
+                    self.editor.velocity_panel.tempo_max_bpm,
+                );
 
                 // 绘制自动化拖拽 ghost 反馈（参考 yinhe 模式）
                 if let Some(drag) = &state.automation_drag

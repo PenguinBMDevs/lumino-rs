@@ -79,12 +79,14 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) {
         let tempo_points = VelocityPanel::build_tempo_points(self.editor);
         let view = &self.editor.editor_state.view;
+        let max_bpm = self.editor.velocity_panel.tempo_max_bpm;
         if let Some(idx) = Self::hit_test_tempo_point(
             &tempo_points,
             cursor_pos,
             bounds_size.width,
             bounds_size.height,
             view,
+            max_bpm,
         ) {
             state.tempo_hover_idx = Some(idx);
         } else {

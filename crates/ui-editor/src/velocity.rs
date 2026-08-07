@@ -52,6 +52,8 @@ pub struct VelocityPanel {
     pub value_scroll: f32,
     /// 自动化曲线连线粗细（像素，1-10，默认 2）。
     pub automation_line_thickness: f32,
+    /// Tempo 面板 BPM 绘制上限（默认 512，范围 256~65536，可自定义）。
+    pub tempo_max_bpm: f64,
 }
 
 impl VelocityPanel {
@@ -62,6 +64,7 @@ impl VelocityPanel {
             value_zoom: 1.0,
             value_scroll: 0.0,
             automation_line_thickness: 2.0,
+            tempo_max_bpm: 512.0,
         }
     }
 

@@ -1,13 +1,48 @@
 //! 音符/曲线绘制函数
 use super::*;
 
+/// 计算 Tempo 折线"向后无限水平延伸"的终点
+///
+/// 取全局最后一个 tempo 点（tick 最大者），若其屏幕 X 坐标仍在视口
+/// 右边缘（含 50px 边距）之内，返回从该点水平延伸至视口右边缘之外的
+/// 终点；最后一个点已在视口右侧之外时返回 `None`（延伸段不可见，
+/// 无需绘制）。
+///
+/// 单点（仅默认 tick=0 控制点）时同样生效：从第一个点起即向右无限
+/// 水平延伸，满足"开头第一个 tempo 点后也附带 tempo 链接折线"。
+pub fn tempo_extension_end(
+    points: &[TempoPoint],
+    width: f32,
+    height: f32,
+    view: &ViewState,
+    max_bpm: f64,
+) -> Option<Point> {
+    let last_point = points.iter().max_by(|a, b| {
+        a.tick
+            .partial_cmp(&b.tick)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    })?;
+    let last_x = last_point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
+    if last_x < width + 50.0 {
+        let last_y = tempo_bpm_to_y(last_point.bpm, max_bpm, height);
+        Some(Point::new(width + 50.0, last_y))
+    } else {
+        None
+    }
+}
+
 /// 绘制速度（Tempo）折线图
+///
+/// 折线从第一个可见点开始连接所有控制点；最后一个 tempo 点之后
+/// 水平无限延伸（保持该点的 BPM 值恒定），视口右边缘之外的部分
+/// 由 Canvas 自动裁剪。
 pub fn draw_tempo_graph(
     frame: &mut Frame<Renderer>,
     points: &[TempoPoint],
     size: Size,
     view: &ViewState,
     line_thickness: f32,
+    max_bpm: f64,
 ) {
     if points.is_empty() {
         return;
@@ -19,14 +54,12 @@ pub fn draw_tempo_graph(
     let node_color = automation_node_color();
     let line_color = node_color;
     let point_color = node_color;
-    let min_bpm = TEMPO_BPM_MIN;
-    let bpm_range = TEMPO_BPM_MAX - TEMPO_BPM_MIN;
 
     let mut screen_points: Vec<(Point, f64)> = Vec::new();
     for point in points {
         let point_screen_x = point.tick * view.zoom_x - view.scroll_x + view.keyboard_width;
         if point_screen_x >= -50.0 && point_screen_x <= width + 50.0 {
-            let pos = tempo_point_screen_pos(point, width, height, view, min_bpm, bpm_range);
+            let pos = tempo_point_screen_pos(point, height, view, max_bpm);
             screen_points.push((pos, point.bpm));
         }
     }
@@ -46,6 +79,14 @@ pub fn draw_tempo_graph(
     for &(pos, _) in screen_points.iter().skip(1) {
         line_builder.line_to(pos);
     }
+
+    // 无限水平延伸：取全局最后一个 tempo 点（不受视口裁剪影响），
+    // 若其屏幕位置仍在视口内，则从该点水平延伸至视口右边缘之外，
+    // 表示最后一个 tempo 点之后的 BPM 保持恒定。
+    if let Some(end) = tempo_extension_end(points, width, height, view, max_bpm) {
+        line_builder.line_to(end);
+    }
+
     frame.stroke(
         &line_builder.build(),
         canvas::Stroke::default()

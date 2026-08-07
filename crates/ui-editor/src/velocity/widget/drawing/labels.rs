@@ -2,11 +2,14 @@
 use super::*;
 
 /// 绘制刻度标签文字
+///
+/// `tempo_max_bpm` 为 Tempo 模式的 BPM 绘制上限（其他模式忽略）。
 pub fn draw_scale_labels(
     frame: &mut Frame<Renderer>,
     theme: &Theme,
     size: Size,
     edit_mode: EditMode,
+    tempo_max_bpm: f64,
 ) {
     let text_color = velocity_text_color(theme);
     let width = size.width;
@@ -55,9 +58,9 @@ pub fn draw_scale_labels(
             }
         }
         EditMode::Tempo => {
-            let bpm_levels = generate_tempo_levels();
+            let bpm_levels = generate_tempo_levels(tempo_max_bpm);
             for &bpm in &bpm_levels {
-                let label_y = tempo_bpm_to_y(bpm, size.height);
+                let label_y = tempo_bpm_to_y(bpm, tempo_max_bpm, size.height);
                 frame.fill_text(canvas::Text {
                     content: format!("{:.0}", bpm),
                     position: Point::new(4.0, label_y - 6.0),
