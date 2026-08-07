@@ -639,7 +639,41 @@ fn build_video_render_params_from_notes(
             });
         }
     }
-    temp.sort_unstable_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
+    // 按 key 计数分桶（O(N)），替代 O(N log N) 全量排序：
+    // 高密集度段落（单帧 10W+ 音符）排序是每帧 CPU 热点，key 范围固定时
+    // 用计数分桶省去 log 因子。桶内按 (start_tick, track 倒序) 稳定排序，
+    // 与原 (key, start_tick, u16::MAX - track_idx) 排序键去掉 key 维度后等价。
+    const KEY_BUCKETS: usize = 256;
+    let mut counts = [0u32; KEY_BUCKETS];
+    for n in temp.iter() {
+        counts[n.key as usize] += 1;
+    }
+    let mut offsets = [0u32; KEY_BUCKETS + 1];
+    for k in 0..KEY_BUCKETS {
+        offsets[k + 1] = offsets[k] + counts[k];
+    }
+    let mut sorted_temp = vec![
+        SortableNote {
+            key: 0,
+            start_tick: 0,
+            length: 0,
+            track_idx: 0,
+        };
+        temp.len()
+    ];
+    let mut cursor = offsets[..KEY_BUCKETS].to_vec();
+    for n in temp.iter() {
+        let k = n.key as usize;
+        sorted_temp[cursor[k] as usize] = n.clone();
+        cursor[k] += 1;
+    }
+    let mut seg_start = 0usize;
+    for k in 0..KEY_BUCKETS {
+        let seg_end = offsets[k + 1] as usize;
+        sorted_temp[seg_start..seg_end].sort_by_key(|n| (n.start_tick, u16::MAX - n.track_idx));
+        seg_start = seg_end;
+    }
+    let temp = sorted_temp;
 
     let note_instances: Vec<NoteInstance> = temp
         .into_iter()

@@ -139,7 +139,41 @@ fn build_note_rectangle_render_params(
             }
         }
     }
-    visible_notes.sort_by_key(|n| (n.key, n.start_tick, u16::MAX - n.track_idx));
+    // 按 key 计数分桶（O(N)），替代 O(N log N) 全量排序：
+    // 高密集度段落（单帧 10W+ 音符）排序是每帧 CPU 热点，key 范围固定时
+    // 用计数分桶省去 log 因子。桶内按 (start_tick, track 倒序) 稳定排序，
+    // 与原 (key, start_tick, u16::MAX - track_idx) 排序键去掉 key 维度后等价。
+    const KEY_BUCKETS: usize = 256;
+    let mut counts = [0u32; KEY_BUCKETS];
+    for n in visible_notes.iter() {
+        counts[n.key as usize] += 1;
+    }
+    let mut offsets = [0u32; KEY_BUCKETS + 1];
+    for k in 0..KEY_BUCKETS {
+        offsets[k + 1] = offsets[k] + counts[k];
+    }
+    let mut sorted_notes = vec![
+        SortableNote {
+            key: 0,
+            start_tick: 0,
+            length: 0,
+            track_idx: 0,
+        };
+        visible_notes.len()
+    ];
+    let mut cursor = offsets[..KEY_BUCKETS].to_vec();
+    for n in visible_notes.iter() {
+        let k = n.key as usize;
+        sorted_notes[cursor[k] as usize] = n.clone();
+        cursor[k] += 1;
+    }
+    let mut seg_start = 0usize;
+    for k in 0..KEY_BUCKETS {
+        let seg_end = offsets[k + 1] as usize;
+        sorted_notes[seg_start..seg_end].sort_by_key(|n| (n.start_tick, u16::MAX - n.track_idx));
+        seg_start = seg_end;
+    }
+    *visible_notes = sorted_notes;
     note_instances_out.clear();
     note_instances_out.reserve(visible_notes.len());
     // wasabi 风格 border_width：CPU 端算一次填所有音符（D2=C 决策）
@@ -213,22 +247,44 @@ fn build_waterfall_render_params(
         });
     }
 
-    // 按 (key, start_tick) 稳定排序，生成动态 key 桶偏移表。
-    // shader 每像素 O(1) 定位所在 key 的桶，桶内二分回溯扫描，
-    // 避免 10W+ 密集音符时全量遍历（O(N×P) → O(P×log(N/K))）。
-    // 偏移表语义：`offsets[k]` = 第一个 `key >= k` 的音符索引，
+    // 按 key 计数分桶（O(N)），替代 O(N log N) 全量排序：
+    // 高密集度段落（单帧 10W+ 音符）排序是每帧 CPU 热点，分桶省去 log 因子。
+    // 偏移表语义与原实现一致：`offsets[k]` = 第一个 `key >= k` 的音符索引，
     // 桶 k 的区间为 `[offsets[k], offsets[k+1])`，空桶区间自然为空。
-    waterfall_notes.sort_by(|a, b| a.key.cmp(&b.key).then(a.start_tick.cmp(&b.start_tick)));
-    let mut waterfall_key_offsets = vec![0u32; key_count as usize + 1];
-    {
-        let mut idx = 0usize;
-        for (k, slot) in waterfall_key_offsets.iter_mut().enumerate() {
-            while idx < waterfall_notes.len() && waterfall_notes[idx].key < k as u32 {
-                idx += 1;
-            }
-            *slot = idx as u32;
-        }
+    // 桶内按 start_tick 稳定排序（保持同轨收集顺序，叠音颜色与旧实现一致），
+    // 满足 shader 桶内二分回溯的前提。
+    let key_count_usize = key_count as usize;
+    let mut counts = vec![0u32; key_count_usize];
+    for n in &waterfall_notes {
+        counts[n.key as usize] += 1;
     }
+    let mut waterfall_key_offsets = vec![0u32; key_count_usize + 1];
+    for k in 0..key_count_usize {
+        waterfall_key_offsets[k + 1] = waterfall_key_offsets[k] + counts[k];
+    }
+    // 稳定分发（保持同轨内 start_tick 序），桶内再按 start_tick 稳定排序
+    let mut sorted_notes = vec![
+        lumino_gfx::WaterfallNoteGpu {
+            key: 0,
+            start_tick: 0,
+            end_tick: 0,
+            color_packed: 0,
+        };
+        waterfall_notes.len()
+    ];
+    let mut cursor = waterfall_key_offsets[..key_count_usize].to_vec();
+    for n in &waterfall_notes {
+        let k = n.key as usize;
+        sorted_notes[cursor[k] as usize] = *n;
+        cursor[k] += 1;
+    }
+    let mut seg_start = 0usize;
+    for k in 0..key_count_usize {
+        let seg_end = waterfall_key_offsets[k + 1] as usize;
+        sorted_notes[seg_start..seg_end].sort_by_key(|n| n.start_tick);
+        seg_start = seg_end;
+    }
+    waterfall_notes = sorted_notes;
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),
@@ -595,5 +651,212 @@ mod tests {
         // 前面的 key 全部为空桶
         assert_eq!(offsets[0], 0);
         assert_eq!(offsets[59], 0);
+    }
+
+    /// 等价性护栏：计数分桶排序 + 偏移表必须与旧 O(N log N) 全量排序 + 扫描偏移完全一致。
+    /// 覆盖：多 key 交错、同 key 乱序 start_tick、空 key 桶、叠音。
+    #[test]
+    fn test_waterfall_bucket_sort_matches_full_sort() {
+        const KEY_COUNT: u16 = 128;
+        // 确定性伪随机（xorshift64*），避免依赖外部 rng crate
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        };
+
+        // 构造乱序输入：key 0-127 稀疏分布，start_tick 乱序，含叠音（同 key 同 start）
+        let input: Vec<lumino_gfx::WaterfallNoteGpu> = (0..20_000)
+            .map(|i| {
+                let key = (next() % KEY_COUNT as u64) as u32;
+                let start_tick = if i % 997 == 0 {
+                    // 人为制造叠音：同 key 同 start_tick
+                    (next() % 50_000) as u32
+                } else {
+                    (next() % 100_000) as u32
+                };
+                lumino_gfx::WaterfallNoteGpu {
+                    key,
+                    start_tick,
+                    end_tick: start_tick + 240,
+                    color_packed: 0,
+                }
+            })
+            .collect();
+
+        // 旧实现：全量稳定排序
+        let expected = {
+            let mut v = input.clone();
+            v.sort_by(|a, b| a.key.cmp(&b.key).then(a.start_tick.cmp(&b.start_tick)));
+            v
+        };
+        // 新实现：计数分桶 + 桶内稳定排序
+        let key_count_usize = KEY_COUNT as usize;
+        let mut counts = vec![0u32; key_count_usize];
+        for n in input.iter() {
+            counts[n.key as usize] += 1;
+        }
+        let mut offsets = vec![0u32; key_count_usize + 1];
+        for k in 0..key_count_usize {
+            offsets[k + 1] = offsets[k] + counts[k];
+        }
+        let mut sorted = vec![
+            lumino_gfx::WaterfallNoteGpu {
+                key: 0,
+                start_tick: 0,
+                end_tick: 0,
+                color_packed: 0,
+            };
+            input.len()
+        ];
+        let mut cursor = offsets[..key_count_usize].to_vec();
+        for n in input.iter() {
+            let k = n.key as usize;
+            sorted[cursor[k] as usize] = *n;
+            cursor[k] += 1;
+        }
+        let mut seg_start = 0usize;
+        for k in 0..key_count_usize {
+            let seg_end = offsets[k + 1] as usize;
+            sorted[seg_start..seg_end].sort_by_key(|n| n.start_tick);
+            seg_start = seg_end;
+        }
+
+        assert_eq!(
+            tuple_of(&sorted),
+            tuple_of(&expected),
+            "计数分桶排序结果与全量稳定排序不一致"
+        );
+
+        // 偏移表语义：offsets[k] = 第一个 key >= k 的音符索引（与扫描实现一致）
+        let mut ref_offsets = vec![0u32; key_count_usize + 1];
+        {
+            let mut idx = 0usize;
+            for (k, slot) in ref_offsets.iter_mut().enumerate() {
+                while idx < expected.len() && (expected[idx].key as usize) < k {
+                    idx += 1;
+                }
+                *slot = idx as u32;
+            }
+        }
+        assert_eq!(offsets, ref_offsets, "计数分桶偏移表与扫描偏移表不一致");
+
+        // 桶区间不重叠且覆盖全部音符（哨兵校验）
+        for k in 0..KEY_COUNT as u32 {
+            let start = offsets[k as usize] as usize;
+            let end = offsets[k as usize + 1] as usize;
+            for n in &sorted[start..end] {
+                assert_eq!(n.key, k, "桶 {k} 包含错误 key 的音符");
+            }
+        }
+        assert_eq!(offsets[KEY_COUNT as usize] as usize, sorted.len());
+
+        // 确保输入未被意外修改（函数应只排序，不改变元素内容）
+        let mut reconstituted = sorted.clone();
+        reconstituted.sort_by_key(|n| (n.key, n.start_tick));
+        let mut input_sorted = input.clone();
+        input_sorted.sort_by_key(|n| (n.key, n.start_tick));
+        assert_eq!(
+            tuple_of(&reconstituted),
+            tuple_of(&input_sorted),
+            "元素内容在排序中被改变"
+        );
+    }
+
+    /// WaterfallNoteGpu 无 PartialEq，转为字段元组比较
+    fn tuple_of(v: &[lumino_gfx::WaterfallNoteGpu]) -> Vec<(u32, u32, u32, u32)> {
+        v.iter()
+            .map(|n| (n.key, n.start_tick, n.end_tick, n.color_packed))
+            .collect()
+    }
+
+    /// 性能对比：计数分桶 vs 全量排序 + 扫描偏移（高密集度段落，release 下运行）
+    /// 运行：`cargo test --release test_waterfall_bucket_sort_bench -- --nocapture`
+    #[test]
+    fn test_waterfall_bucket_sort_bench() {
+        use std::time::Instant;
+        const KEY_COUNT: u16 = 128;
+        // 10 万音符密集段（模拟高密度段落的视口负载）
+        const N: usize = 100_000;
+        let mut state = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = move || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            state.wrapping_mul(0x2545_F491_4F6C_DD1D)
+        };
+        let input: Vec<lumino_gfx::WaterfallNoteGpu> = (0..N)
+            .map(|_| lumino_gfx::WaterfallNoteGpu {
+                key: (next() % KEY_COUNT as u64) as u32,
+                start_tick: (next() % 1_000_000) as u32,
+                end_tick: 0,
+                color_packed: 0,
+            })
+            .collect();
+
+        let mut t_sort = 0u64;
+        let mut t_bucket = 0u64;
+        const ITERS: u32 = 20;
+        for _ in 0..ITERS {
+            // 旧实现：全量稳定排序 + 扫描偏移表
+            let mut v = input.clone();
+            let t0 = Instant::now();
+            v.sort_by(|a, b| a.key.cmp(&b.key).then(a.start_tick.cmp(&b.start_tick)));
+            let mut offsets = vec![0u32; KEY_COUNT as usize + 1];
+            let mut idx = 0usize;
+            for (k, slot) in offsets.iter_mut().enumerate() {
+                while idx < v.len() && v[idx].key < k as u32 {
+                    idx += 1;
+                }
+                *slot = idx as u32;
+            }
+            t_sort += t0.elapsed().as_micros() as u64;
+            std::hint::black_box((v, offsets));
+        }
+        for _ in 0..ITERS {
+            // 新实现：计数分桶 + 桶内排序（偏移表即分桶结果）
+            let v = input.clone();
+            let t0 = Instant::now();
+            let key_count_usize = KEY_COUNT as usize;
+            let mut counts = vec![0u32; key_count_usize];
+            for n in v.iter() {
+                counts[n.key as usize] += 1;
+            }
+            let mut offsets = vec![0u32; key_count_usize + 1];
+            for k in 0..key_count_usize {
+                offsets[k + 1] = offsets[k] + counts[k];
+            }
+            let mut sorted = vec![
+                lumino_gfx::WaterfallNoteGpu {
+                    key: 0,
+                    start_tick: 0,
+                    end_tick: 0,
+                    color_packed: 0,
+                };
+                v.len()
+            ];
+            let mut cursor = offsets[..key_count_usize].to_vec();
+            for n in v.iter() {
+                let k = n.key as usize;
+                sorted[cursor[k] as usize] = *n;
+                cursor[k] += 1;
+            }
+            let mut seg_start = 0usize;
+            for k in 0..key_count_usize {
+                let seg_end = offsets[k + 1] as usize;
+                sorted[seg_start..seg_end].sort_by_key(|n| n.start_tick);
+                seg_start = seg_end;
+            }
+            t_bucket += t0.elapsed().as_micros() as u64;
+            std::hint::black_box((sorted, offsets));
+        }
+        eprintln!(
+            "[waterfall_bench] N={N} 全量排序+扫描 {:.2}ms | 计数分桶 {:.2}ms | 加速 {:.1}x",
+            t_sort as f64 / ITERS as f64 / 1000.0,
+            t_bucket as f64 / ITERS as f64 / 1000.0,
+            t_sort as f64 / t_bucket as f64
+        );
     }
 }

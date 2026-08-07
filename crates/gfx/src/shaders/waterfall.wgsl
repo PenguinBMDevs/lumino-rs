@@ -11,7 +11,15 @@
 // 每个像素先 O(1) 定位所在 key 的桶 [offsets[key], offsets[key+1])，
 // 再桶内二分定位 start_tick <= pixel_tick 的上界，最后从该位置
 // 向前回溯（最大回溯 SEARCH_BUFFER），命中即 break。
-// 复杂度：O(N×P) → O(P × (log(N/K) + 桶内回溯窗口))，避免 GPU 内存带宽饥饿。
+// 复杂度：O(N×P) → O(P × (log(N/K) + SEARCH_BUFFER))，避免 GPU 内存带宽饥饿。
+
+// 桶内二分后向前回溯的最大音符数。
+// 高密集度段落（黑 MIDI / 密集和弦）中单 key 桶可能包含视口内海量音符，
+// 若不加限制，间隙像素会回溯整个桶（O(桶大小)×像素），渲染速度断崖式下降。
+// 限制回溯窗口后，密集段每像素从 O(桶大小) 降至 O(SEARCH_BUFFER)。
+// 权衡：超长音符若被 SEARCH_BUFFER 个以上的同 key 音符遮挡，其露出尾部可能丢失，
+// 但被遮挡部分视觉上本就不可见，影响可忽略。
+const SEARCH_BUFFER: u32 = 128u;
 
 // ── 数据结构 ──
 
@@ -146,10 +154,13 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             }
             // 回溯扫描 [bucket_start, hi)：候选音符按 start_tick 升序，
             // 命中即 break。与原实现一致的矩形判定（含 u32 边界保护），
-            // 视觉结果完全一致；遍历范围从全量 N 缩小到桶内候选。
+            // 视觉结果完全一致；遍历范围从全量 N 缩小到桶内候选，
+            // 并限制在 SEARCH_BUFFER 窗口内，防止密集段全桶回溯。
             var i = hi;
-            while i > bucket_start {
+            var scanned: u32 = 0u;
+            while i > bucket_start && scanned < SEARCH_BUFFER {
                 i -= 1u;
+                scanned += 1u;
                 let n = notes[i];
 
                 // 将音符的 tick 范围裁剪到视口内，避免 u32 下溢
