@@ -2,11 +2,12 @@
 //!
 //! 包含操作历史（撤销/重做日志上限、合并窗口）、编辑拦截（Toast 提示）
 //! 以及 Tempo 面板 BPM 绘制上限（预设下拉 + 自定义输入弹窗）。
+//!
+//! 注意：自定义 BPM 输入弹窗作为悬浮层渲染在设置对话框顶层
+//! （`crates/ui/src/view/settings_dialog.rs`），本页面只负责内容与事件。
 
-use iced_core::{Alignment, Color, Length};
-use iced_widget::{
-    Space, Stack, button, column, container, mouse_area, pick_list, row, space, text, text_input,
-};
+use iced_core::{Alignment, Length};
+use iced_widget::{column, pick_list, row, text, text_input};
 use lumino_extras::i18n::settings_translations;
 use lumino_ui_core::{Element, Message};
 
@@ -207,83 +208,5 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT);
 
-    if settings.tempo_custom_open {
-        // 自定义 BPM 上限弹窗：遮罩 + 居中输入卡片
-        Stack::new()
-            .push(custom_bpm_overlay(settings))
-            .push(
-                container(custom_bpm_card(settings))
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .align_x(iced_core::alignment::Horizontal::Center)
-                    .align_y(iced_core::alignment::Vertical::Center),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    } else {
-        content.into()
-    }
-}
-
-/// 自定义 BPM 上限弹窗的遮罩层：点击外部区域关闭
-fn custom_bpm_overlay<'a>(_settings: &SettingsPanel) -> Element<'a> {
-    container(
-        mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
-            .on_press(Message::Settings(crate::Event::TempoMaxBpmCustomClose)),
-    )
-    .width(Length::Fill)
-    .height(Length::Fill)
-    .style(|_theme: &lumino_ui_core::Theme| container::Style {
-        background: Some(iced_core::Background::Color(Color::from_rgba(
-            0.0, 0.0, 0.0, 0.45,
-        ))),
-        ..Default::default()
-    })
-    .into()
-}
-
-/// 自定义 BPM 上限弹窗的输入卡片
-fn custom_bpm_card<'a>(settings: &SettingsPanel) -> Element<'a> {
-    let t = settings_translations(settings.language);
-
-    let confirm_btn = button(text(t.confirm).size(13))
-        .on_press(Message::Settings(crate::Event::TempoMaxBpmCustomConfirm))
-        .padding([6, 20]);
-    let cancel_btn = button(text(t.cancel).size(13))
-        .on_press(Message::Settings(crate::Event::TempoMaxBpmCustomClose))
-        .padding([6, 20]);
-
-    container(
-        column![
-            text(t.editing_tempo_custom_title)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().height(12),
-            text_input(
-                t.editing_tempo_custom_placeholder,
-                &settings.tempo_custom_input
-            )
-            .on_input(|v| Message::Settings(crate::Event::TempoMaxBpmCustomInput(v)))
-            .padding([6, 10])
-            .width(Length::Fixed(220.0)),
-            iced_widget::space().height(16),
-            row![confirm_btn, space().width(8), cancel_btn]
-                .spacing(SPACING_ICON_LABEL)
-                .align_y(Alignment::Center),
-        ]
-        .align_x(Alignment::Start),
-    )
-    .padding(20)
-    .style(|theme: &lumino_ui_core::Theme| container::Style {
-        background: Some(iced_core::Background::Color(
-            theme.extended_palette().background.base.color,
-        )),
-        border: iced_core::Border::default()
-            .rounded(8)
-            .width(1)
-            .color(theme.extended_palette().background.strong.color),
-        ..Default::default()
-    })
-    .into()
+    content.into()
 }

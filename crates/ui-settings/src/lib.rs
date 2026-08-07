@@ -480,7 +480,8 @@ mod tests {
     #[test]
     fn test_tempo_preset_selected_closes_custom_panel() {
         let mut panel = panel_with_tempo(512.0);
-        panel.tempo_custom_open = true;
+        panel.update(Event::TempoMaxBpmCustomOpen);
+        assert!(panel.tempo_custom_open);
         panel.update(Event::TempoMaxBpmChanged(2048.0));
         assert_eq!(panel.tempo_max_bpm, 2048.0);
         assert!(!panel.tempo_custom_open);
