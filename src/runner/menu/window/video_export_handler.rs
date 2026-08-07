@@ -506,6 +506,9 @@ fn run_video_export_task(
                     let renderer = data_curve_renderer
                         .as_mut()
                         .expect("数据曲线模式必须有渲染器");
+                    // 关键：推进统计到当前 tick（与计数器分支一致）。
+                    // 缺失此调用会导致 NPS/复音数/音符数永远停留在 0 → 曲线为 0 值直线。
+                    stats.advance(&document, tick, fps_f64 as u32);
                     let value = match cfg.metric {
                         lumino_event::window::video::DataCurveMetric::Nps => stats.nps as f64,
                         lumino_event::window::video::DataCurveMetric::Polyphony => {
