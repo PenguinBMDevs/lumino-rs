@@ -257,12 +257,28 @@ impl Root {
                 true
             }
             PlacementCancel => {
-                // 取消生成：仅清除区域框（保留预览，可重新框选）
-                self.editor.editor_state.image_to_midi.clear_region();
+                // 取消生成：彻底退出放置模式，清除预览并还原显示区域
+                // （× 按钮语义 = 完全退出；"仅清除区域框重新框选"由
+                //   按下空白处 / 切换工具 的 clear_region 路径承担）
+                self.editor.editor_state.image_to_midi.cancel();
                 self.right_sidebar.converting = false;
+                // 还原工具：切回转换前的工具（与 √ 写入成功后行为一致）
+                if let Some(tool) = self.i2m_restore_tool.take() {
+                    self.toolbar.current_tool = tool;
+                    self.editor.set_tool(tool);
+                }
+                // 清理交互残留并强制刷新渲染：预览实例需由渲染线程全量
+                // 重建清除（invalidate_caches 仅清网格缓存，不驱动音符实例）
+                self.editor.editor_state.interaction.selected_notes.clear();
+                self.editor.clear_pending_drag();
+                self.editor.mark_notes_changed();
+                self.update_playback_notes();
+                self.editor.clear_notes_changed();
                 self.editor
                     .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
-                tracing::info!("图片转 MIDI 放置已取消（保留预览，可重新框选）");
+                self.toast
+                    .push(crate::toast::ToastLevel::Info, "已取消图片转 MIDI 放置");
+                tracing::info!("图片转 MIDI 放置已取消");
                 true
             }
         }
