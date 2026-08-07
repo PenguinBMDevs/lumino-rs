@@ -3,10 +3,12 @@
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{Column, Row, Space, button, container, mouse_area, tooltip};
 use lumino_extras::i18n::{Language, main_translations};
-use lumino_message::RightSidebarAction;
+use lumino_message::{I2mConfigField, RightSidebarAction};
 
 use crate::resources::icon::{self, Icon};
-use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar};
+use crate::right_sidebar::core::{
+    PALETTE_ALGORITHMS, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, RightSidebar,
+};
 use crate::widget;
 use crate::{Element, Message, Theme, window};
 
@@ -78,12 +80,17 @@ pub fn view<'a>(
             ));
         }
 
+        // 转换参数配置区（始终显示，便于预设参数）
+        let config_section = build_config_section(right_sidebar);
+
         // 转换按钮：仅在选中文件后出现（标准 iced 按钮，无图标）
         let mut content_col = Column::new()
             .spacing(8)
             .padding(8)
+            .width(Length::Fill)
             .push(panel_header("图片转 MIDI", window))
-            .push(select_row);
+            .push(select_row)
+            .push(config_section);
         if right_sidebar.selected_image_path.is_some() {
             let convert_btn = button(
                 iced_widget::text(if right_sidebar.converting {
@@ -124,15 +131,18 @@ pub fn view<'a>(
             content_col = content_col.push(convert_btn);
         }
 
-        let content = container(content_col)
-            .width(Length::Fixed(
-                right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
-            ))
-            .height(Length::Fill)
-            .style(|theme: &Theme| {
-                let palette = theme.extended_palette();
-                container::Style::default().background(palette.background.weakest.color)
-            });
+        let content = container(
+            // 面板内容可能超出可视高度（参数区），包滚动容器
+            iced_widget::scrollable(content_col).height(Length::Fill),
+        )
+        .width(Length::Fixed(
+            right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
+        ))
+        .height(Length::Fill)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style::default().background(palette.background.weakest.color)
+        });
 
         // 调整大小手柄（放在面板右侧，紧贴图标列）
         let resize_handle = mouse_area(
@@ -175,6 +185,108 @@ pub fn view<'a>(
 /// 面板标题文本（无装饰小条）
 fn panel_header<'a>(title: &'a str, _window: &'a window::Window) -> Element<'a> {
     iced_widget::text(title).size(14).into()
+}
+
+/// 转换参数配置区：key 范围、目标高度、每像素 tick、颜色数、调色板算法
+fn build_config_section<'a>(right_sidebar: &'a RightSidebar) -> Element<'a> {
+    let cfg = &right_sidebar.config;
+
+    // 调色板算法下拉（选项为中文名，选中后回传索引）
+    let palette_names: Vec<&'static str> =
+        PALETTE_ALGORITHMS.iter().map(|(name, _)| *name).collect();
+    let palette_current = palette_names
+        .get(cfg.palette_index)
+        .copied()
+        .unwrap_or(palette_names[0]);
+    let palette_control = iced_widget::pick_list(
+        palette_names,
+        Some(palette_current),
+        |name: &'static str| {
+            let idx = PALETTE_ALGORITHMS
+                .iter()
+                .position(|(n, _)| *n == name)
+                .unwrap_or(0);
+            Message::RightSidebar(RightSidebarAction::I2mPaletteChanged(idx))
+        },
+    )
+    .text_size(12)
+    .padding([3, 6])
+    .width(Length::Fixed(118.0));
+
+    Column::new()
+        .spacing(4)
+        .push(section_label("转换参数"))
+        .push(config_row(
+            "Key 范围",
+            Row::new()
+                .push(config_input(&cfg.start_key_text, I2mConfigField::StartKey))
+                .push(iced_widget::text("~").size(12))
+                .push(config_input(&cfg.end_key_text, I2mConfigField::EndKey))
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into(),
+        ))
+        .push(config_row(
+            "目标高度",
+            config_input(&cfg.target_height_text, I2mConfigField::TargetHeight),
+        ))
+        .push(config_row(
+            "每像素 tick",
+            config_input(&cfg.ticks_per_pixel_text, I2mConfigField::TicksPerPixel),
+        ))
+        .push(config_row(
+            "颜色数",
+            config_input(&cfg.color_count_text, I2mConfigField::ColorCount),
+        ))
+        .push(config_row("调色板", palette_control.into()))
+        .into()
+}
+
+/// 小节标题（主色强调）
+fn section_label<'a>(title: &'a str) -> Element<'a> {
+    iced_widget::text(title)
+        .size(12)
+        .style(|theme: &Theme| iced_widget::text::Style {
+            color: Some(theme.extended_palette().primary.strong.color),
+        })
+        .into()
+}
+
+/// 单行配置：标签居左，控件居右
+fn config_row<'a>(label: &'a str, control: Element<'a>) -> Element<'a> {
+    Row::new()
+        .push(iced_widget::text(label).size(12))
+        .push(Space::new().width(Length::Fill))
+        .push(control)
+        .spacing(4)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// 小型数字输入框（带边框，仅接受数字）
+fn config_input<'a>(value: &'a str, field: I2mConfigField) -> Element<'a> {
+    container(
+        iced_widget::text_input("", value)
+            .on_input(move |text| {
+                Message::RightSidebar(RightSidebarAction::I2mConfigTextChanged { field, text })
+            })
+            .padding([3, 6])
+            .size(iced_core::Pixels(12.0))
+            .width(Length::Fixed(42.0)),
+    )
+    .style(|theme: &Theme| {
+        let palette = theme.extended_palette();
+        container::Style {
+            background: Some(palette.background.weak.color.into()),
+            border: iced_core::Border {
+                radius: 4.0.into(),
+                width: 1.0,
+                color: palette.background.strong.color,
+            },
+            ..Default::default()
+        }
+    })
+    .into()
 }
 
 /// 与左侧栏统一的按钮样式：48x48，右侧2px指示条（激活时亮灯），图标+间距12px

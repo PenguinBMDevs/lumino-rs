@@ -32,7 +32,7 @@ pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use project_settings::ProjectSettingsAction;
 pub use recover_track::RecoverTrackAction;
-pub use right_sidebar::RightSidebarAction;
+pub use right_sidebar::{I2mConfigField, RightSidebarAction};
 pub use settings_dialog::SettingsDialogAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;

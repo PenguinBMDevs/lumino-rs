@@ -4,6 +4,7 @@
 //! `load_image → generate_palette → convert`，并将 `ConversionResult` 的
 //! NoteOn/NoteOff 事件流解析为每色一轨的预览音符（`ImageToMidiPreview`）。
 
+use crate::right_sidebar::core::I2mConfig;
 use lumino_editor_state::{ImageToMidiPreview, PreviewNote};
 use std::path::Path;
 use std::sync::atomic::AtomicBool;
@@ -13,15 +14,16 @@ pub type ConvertResult = Result<ImageToMidiPreview, String>;
 
 /// 执行图片转 MIDI 转换（可在线程内调用）
 ///
-/// 使用 i2m-rs `ConverterConfig::default()`（预留配置项，后续迭代可在面板提供参数 UI）。
-pub fn run_conversion(path: &Path) -> ConvertResult {
+/// 使用用户面板配置（key 范围、目标高度、ticks_per_pixel、调色板算法、
+/// 颜色数），其余沿用 i2m-rs 默认值。
+pub fn run_conversion(path: &Path, ui_config: &I2mConfig) -> ConvertResult {
     use i2m_rs::cluster::generate_palette;
 
     // 1. 加载图片（PNG/JPEG/BMP/GIF/WebP/SVG）
     let image = i2m_rs::load_image(path).map_err(|e| format!("图片解码失败: {e}"))?;
 
-    // 2. 默认配置 + 生成调色板（默认 KMeans++，16 色 = 16 轨）
-    let config = i2m_rs::ConverterConfig::default();
+    // 2. 用户配置 + 生成调色板（算法与颜色数来自面板）
+    let config = ui_config.to_converter_config();
     let (palette, _dithered) = generate_palette(&image, &config.palette, config.color_count)
         .map_err(|e| format!("调色板生成失败: {e}"))?;
 
@@ -97,7 +99,7 @@ mod tests {
             img.save(&img_path).expect("保存测试图片失败");
         }
 
-        let preview = run_conversion(&img_path).expect("转换应成功");
+        let preview = run_conversion(&img_path, &I2mConfig::default()).expect("转换应成功");
         // 单色图 → 至少 1 轨，且每轨音符数 > 0（每列一个音符）
         assert!(!preview.tracks.is_empty());
         assert!(preview.tracks.iter().any(|t| !t.is_empty()));

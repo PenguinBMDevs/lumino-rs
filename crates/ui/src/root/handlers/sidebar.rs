@@ -238,9 +238,11 @@ impl Root {
                 self.editor.editor_state.image_to_midi.begin_converting();
                 // 后台线程执行转换，结果通过 channel 回传
                 let thread_path = path.clone();
+                let thread_config = self.right_sidebar.config.clone();
                 let (tx, rx) = std::sync::mpsc::channel();
                 std::thread::spawn(move || {
-                    let result = crate::right_sidebar::convert::run_conversion(&thread_path);
+                    let result =
+                        crate::right_sidebar::convert::run_conversion(&thread_path, &thread_config);
                     let _ = tx.send(result);
                 });
                 self.pending_i2m = Some(rx);
@@ -273,6 +275,18 @@ impl Root {
                 self.editor
                     .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
                 tracing::info!("图片转 MIDI 放置已取消");
+                true
+            }
+            I2mConfigTextChanged { field, text } => {
+                // 面板参数输入：仅接受数字，apply_text 内部 clamp 并同步文本缓冲
+                self.right_sidebar.config.apply_text(field, &text);
+                true
+            }
+            I2mPaletteChanged(index) => {
+                // 面板调色板算法切换（索引指向 PALETTE_ALGORITHMS）
+                if index < crate::right_sidebar::PALETTE_ALGORITHMS.len() {
+                    self.right_sidebar.config.palette_index = index;
+                }
                 true
             }
         }
