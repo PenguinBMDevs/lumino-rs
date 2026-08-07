@@ -1,12 +1,17 @@
 //! Build script: 自动检测 resources/palettes/ 目录下的调色板文件并嵌入
 //!
 //! 扫描 `CARGO_MANIFEST_DIR/../../resources/palettes/` 下的所有 .png 文件，
-//! 生成 `$OUT_DIR/palettes.rs`，其中包含所有文件的名称列表和 `include_bytes!` 引用。
+//! 将每个 PNG **复制到 $OUT_DIR**，并生成 `$OUT_DIR/palettes.rs`，
+//! 其中以**相对文件名**（`include_bytes!("xxx.png")`）引用它们。
 //!
 //! 关键设计决策：
-//! - 不硬编码路径：build.rs 在编译时动态扫描目录
+//! - **不硬编码绝对路径**：include_bytes! 相对路径相对于生成文件
+//!   （$OUT_DIR/palettes.rs）解析，指向同目录下的 PNG —— 任何机器、
+//!   任何平台编译都指向自己 checkout 里的资源，构建产物可移植。
+//!   此前用 canonicalize() 绝对路径，Windows 会生成 `\\?\`/`//?/` verbatim
+//!   前缀的编译机专属路径，跨平台/缓存复用场景必然失效（CI 挂过的坑）。
+//! - cargo:rerun-if-changed 声明目录与文件，资源变化时自动重编译
 //! - 不嵌入文件名列表：生成的代码包含文件名字符串常量
-//! - cargo:rerun-if-changed 确保目录变化时自动重编译
 
 use std::fs;
 use std::io;
@@ -51,9 +56,10 @@ fn main() -> io::Result<()> {
     // 稳定排序：按文件名排序（确保编译结果确定性）
     entries.sort_by_key(|e| e.file_name());
 
-    // ── 生成 Rust 代码 ─────────────────────────────────────────────────────
+    // ── 复制 PNG 到 OUT_DIR 并生成 Rust 代码 ─────────────────────────────
     let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR 未设置");
-    let output_path = Path::new(&out_dir).join("palettes.rs");
+    let out_path = Path::new(&out_dir);
+    let output_path = out_path.join("palettes.rs");
 
     let mut output = String::new();
     output.push_str("// !!! 自动生成 - 请勿手动修改 !!!\n");
@@ -61,31 +67,31 @@ fn main() -> io::Result<()> {
     output.push_str("[\n");
 
     for entry in &entries {
-        // 获取文件名（不含扩展名）
         let path = entry.path();
+        let file_name = entry.file_name();
         let name_stem = path
             .file_stem()
             .and_then(|s| s.to_str())
             .unwrap_or("unknown")
             .to_string();
 
-        // 使用绝对路径用于 include_bytes!（因为 include_bytes! 相对于编译的文件解析，
-        // 而 OUT_DIR 中的文件是生成的位置，所以必须用绝对路径）
-        let canonical_path = path.canonicalize().unwrap_or_else(|_| path.clone());
-        let include_path = canonical_path.to_string_lossy().replace('\\', "/");
+        // 复制到 OUT_DIR：include_bytes! 相对路径（相对于本生成文件）
+        // 直接指向 OUT_DIR 根下的同名文件，与任何绝对路径解耦
+        fs::copy(&path, out_path.join(&file_name))?;
+        println!("cargo:rerun-if-changed={}", path.display());
 
         output.push_str("    EmbeddedPalette {\n");
-        output.push_str(&format!("        name: \"{}\",\n", name_stem));
+        output.push_str(&format!("        name: \"{}\",\n", escape_str(&name_stem)));
         output.push_str(&format!(
             "        data: include_bytes!(\"{}\"),\n",
-            include_path
+            escape_str(&file_name.to_string_lossy())
         ));
         output.push_str("    },\n");
     }
 
     output.push_str("]\n");
 
-    fs::write(&output_path, &output)?;
+    fs::write(&output_path, output)?;
 
     // ── 打印状态 ───────────────────────────────────────────────────────────
     println!("cargo:info=palettes: 检测到 {} 个调色板文件", entries.len());
@@ -95,6 +101,11 @@ fn main() -> io::Result<()> {
     }
 
     Ok(())
+}
+
+/// 转义字符串字面量中的特殊字符，防止文件名含 `"` / `\` 时生成非法代码
+fn escape_str(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// 当目录不存在或为空时，生成空的调色板列表

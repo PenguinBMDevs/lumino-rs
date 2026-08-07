@@ -66,7 +66,6 @@ pub fn settings_translations(lang: Language) -> &'static SettingsTranslations {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use lumino_core::types::Language;
 
     #[test]
