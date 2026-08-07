@@ -92,6 +92,9 @@ rustc-hash = "2.1"
 rayon = "1"
 png = "0.17"
 
+# 视频导出计数器模式：TTF/OTF 字体光栅化（中文字符支持）
+ab_glyph = "0.2"
+
 [package]
 name = "lumino-rs"
 version.workspace = true
@@ -142,6 +145,7 @@ iced = { workspace = true }
 puffin = { workspace = true }
 puffin_http = { workspace = true }
 png = { workspace = true }
+ab_glyph = { workspace = true }
 anyhow = { workspace = true }
 parking_lot = { workspace = true }
 chrono = { workspace = true }

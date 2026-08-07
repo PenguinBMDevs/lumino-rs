@@ -179,6 +179,7 @@ mod tests {
             text: String::new(),
             alignment: CounterAlignment::TopLeft,
             font_size: 40,
+            font: lumino_event::window::video::CounterFont::Bitmap,
             separator: CounterSeparator::Comma,
             padding_zeroes: true,
             bpm_int_pad: 3,

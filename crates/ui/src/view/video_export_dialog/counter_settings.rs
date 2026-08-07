@@ -90,7 +90,7 @@ fn template_section<'a>(
     .into()
 }
 
-/// 外观区：对齐、字号、千分位、补零
+/// 外观区：字体（见 `counter_settings_font.rs`）、对齐、字号、千分位、补零
 fn appearance_section<'a>(
     state: &'a VideoExportDialogState,
     palette: &'a iced_core::theme::palette::Extended,
@@ -101,6 +101,8 @@ fn appearance_section<'a>(
     };
 
     column![
+        super::counter_settings_font::font_section(state, palette),
+        space().height(8),
         row![
             text("对齐:").size(14).style(label_style).width(100),
             pick_list(

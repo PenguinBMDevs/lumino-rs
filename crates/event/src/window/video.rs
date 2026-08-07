@@ -249,6 +249,65 @@ impl std::str::FromStr for CounterSeparator {
     }
 }
 
+/// 计数器文本字体来源。
+///
+/// - [`CounterFont::Bitmap`]：内置 5x7 点阵字体（无外部依赖，仅支持 ASCII）
+/// - [`CounterFont::System`]：操作系统自带字体（如微软雅黑，支持中文等 Unicode）
+/// - [`CounterFont::File`]：用户指定的 TTF/OTF/TTC 字体文件
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub enum CounterFont {
+    /// 内置 5x7 点阵字体（仅 ASCII，默认）
+    #[default]
+    Bitmap,
+    /// 系统字体（按名称查系统字体路径表）
+    System {
+        /// 字体名称（如 "微软雅黑"）
+        family: String,
+    },
+    /// 自定义字体文件（TTF/OTF/TTC）
+    File {
+        /// 字体文件路径
+        path: String,
+    },
+}
+
+impl CounterFont {
+    /// 设置面板用的规范字符串（与 `FromStr` 对应）
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            CounterFont::Bitmap => "bitmap",
+            CounterFont::System { .. } => "system",
+            CounterFont::File { .. } => "file",
+        }
+    }
+}
+
+impl std::fmt::Display for CounterFont {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CounterFont::Bitmap => f.write_str("内置点阵（5x7）"),
+            CounterFont::System { family } => write!(f, "系统字体：{family}"),
+            CounterFont::File { path } => write!(f, "自定义字体：{path}"),
+        }
+    }
+}
+
+impl std::str::FromStr for CounterFont {
+    type Err = String;
+    fn from_str(input: &str) -> Result<Self, Self::Err> {
+        match input {
+            "bitmap" | "内置点阵" => Ok(CounterFont::Bitmap),
+            "system" | "系统字体" => Ok(CounterFont::System {
+                family: "微软雅黑".to_string(),
+            }),
+            "file" | "自定义字体" => Ok(CounterFont::File {
+                path: String::new(),
+            }),
+            _ => Err(format!("未知字体来源: {input}")),
+        }
+    }
+}
+
 /// 计数器渲染配置（事件层传输结构）。
 ///
 /// 参考 Zenith-MIDI NoteCountRender / fmr NoteCounter 的设置模型：
@@ -261,6 +320,8 @@ pub struct NoteCounterConfig {
     pub alignment: CounterAlignment,
     /// 字体大小（像素）
     pub font_size: u32,
+    /// 字体来源（内置点阵 / 系统字体 / 自定义字体文件）
+    pub font: CounterFont,
     /// 千分位分隔符
     pub separator: CounterSeparator,
     /// 数字补零（启用后按各 pad 宽度左补零）
@@ -295,6 +356,7 @@ impl Default for NoteCounterConfig {
             text: "Notes: {nc} / {tn}\nBPM: {bpm}\nNPS: {nps}\nPPQ: {ppq}\nPolyphony: {plph}\nTime: {currtime}".to_string(),
             alignment: CounterAlignment::TopLeft,
             font_size: 40,
+            font: CounterFont::Bitmap,
             separator: CounterSeparator::Comma,
             padding_zeroes: false,
             bpm_int_pad: 3,

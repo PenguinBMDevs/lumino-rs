@@ -51,6 +51,14 @@ pub enum VideoExportAction {
     CounterAlignmentChanged(String),
     /// 计数器字号变更
     CounterFontSizeChanged(u32),
+    /// 计数器字体来源变更（"bitmap"/"system"/"file"）
+    CounterFontModeChanged(String),
+    /// 计数器系统字体选择变更（如 "微软雅黑"）
+    CounterFontFamilyChanged(String),
+    /// 计数器自定义字体文件路径变更
+    CounterFontPathChanged(String),
+    /// 浏览计数器自定义字体文件（rfd 文件对话框）
+    CounterBrowseFont,
     /// 计数器千分位变更（true=逗号，false=无）
     CounterUseCommasChanged(bool),
     /// 计数器补零开关变更

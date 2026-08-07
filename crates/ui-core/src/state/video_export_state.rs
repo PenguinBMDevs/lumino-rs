@@ -65,6 +65,12 @@ pub struct VideoExportDialogState {
     pub counter_alignment: String,
     /// 计数器字号（像素）
     pub counter_font_size: u32,
+    /// 计数器字体来源（"bitmap"/"system"/"file"）
+    pub counter_font_mode: String,
+    /// 计数器系统字体名称（如 "微软雅黑"）
+    pub counter_font_family: String,
+    /// 计数器自定义字体文件路径
+    pub counter_font_path: String,
     /// 计数器千分位（true=逗号，false=无）
     pub counter_use_commas: bool,
     /// 计数器数字补零
@@ -146,6 +152,9 @@ impl VideoExportDialogState {
             counter_editor: iced_widget::text_editor::Content::<iced_wgpu::Renderer>::default(),
             counter_alignment: "左上".to_string(),
             counter_font_size: 40,
+            counter_font_mode: "内置点阵".to_string(),
+            counter_font_family: "微软雅黑".to_string(),
+            counter_font_path: String::new(),
             counter_use_commas: true,
             counter_padding_zeroes: false,
             counter_save_csv: false,

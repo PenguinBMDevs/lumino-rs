@@ -289,13 +289,31 @@ fn run_video_export_task(
     let duration_secs = super::video_export::compute_duration_secs(tempo_changes, total_ticks, ppq);
     let total_frames = config.total_frames(duration_secs);
 
-    // 计数器模式：统计状态 + CSV 写入器
+    // 计数器模式：统计状态 + 字体渲染器 + CSV 写入器
     let mut counter_stats: Option<super::video_export::CounterStats> = None;
+    let mut counter_renderer: Option<super::video_export::CounterFontRenderer> = None;
     let mut csv_writer: Option<std::io::BufWriter<std::fs::File>> = None;
     if let Some(cfg) = &counter_config {
         let mut stats = super::video_export::CounterStats::default();
         stats.reset(&document);
         counter_stats = Some(stats);
+        // 字体渲染器：TTF 加载失败时回退内置点阵（导出流程不中断）
+        match super::video_export::CounterFontRenderer::new(&cfg.font, cfg.font_size) {
+            Ok(r) => {
+                tracing::info!("计数器字体加载成功：{}", r.describe());
+                counter_renderer = Some(r);
+            }
+            Err(e) => {
+                tracing::warn!("计数器字体加载失败（回退内置点阵）: {e}");
+                counter_renderer = Some(
+                    super::video_export::CounterFontRenderer::new(
+                        &lumino_event::window::video::CounterFont::Bitmap,
+                        cfg.font_size,
+                    )
+                    .expect("内置点阵字体渲染器不会失败"),
+                );
+            }
+        }
         if cfg.save_csv && !cfg.csv_output.as_os_str().is_empty() {
             match std::fs::File::create(&cfg.csv_output) {
                 Ok(f) => csv_writer = Some(std::io::BufWriter::new(f)),
@@ -397,6 +415,9 @@ fn run_video_export_task(
                     // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
                     let cfg = counter_config.as_ref().expect("计数器模式必须有渲染配置");
                     let stats = counter_stats.as_mut().expect("计数器模式必须有统计状态");
+                    let renderer = counter_renderer
+                        .as_mut()
+                        .expect("计数器模式必须有字体渲染器");
                     let out = super::video_export::render_counter_frame(
                         &mut frame_data,
                         width,
@@ -408,6 +429,7 @@ fn run_video_export_task(
                         duration_secs,
                         cfg,
                         stats,
+                        renderer,
                     );
                     // CSV 行写入（失败仅告警，不中断渲染）
                     if let (Some(line), Some(writer)) = (out.csv_line, csv_writer.as_mut()) {

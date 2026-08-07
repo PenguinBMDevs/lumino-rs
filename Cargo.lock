@@ -4000,6 +4000,7 @@ dependencies = [
 name = "lumino-rs"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "bytemuck",
  "chrono",

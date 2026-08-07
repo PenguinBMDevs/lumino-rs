@@ -74,6 +74,9 @@ impl DialogHandler {
                 let counter_text = st.counter_text.clone();
                 let counter_alignment = st.counter_alignment.clone();
                 let counter_font_size = st.counter_font_size;
+                let counter_font_mode = st.counter_font_mode.clone();
+                let counter_font_family = st.counter_font_family.clone();
+                let counter_font_path = st.counter_font_path.clone();
                 let counter_use_commas = st.counter_use_commas;
                 let counter_padding_zeroes = st.counter_padding_zeroes;
                 let counter_save_csv = st.counter_save_csv;
@@ -125,6 +128,15 @@ impl DialogHandler {
                         )
                         .unwrap_or_default(),
                         font_size: counter_font_size,
+                        font: match counter_font_mode.as_str() {
+                            "系统字体" => lumino_event::window::video::CounterFont::System {
+                                family: counter_font_family,
+                            },
+                            "自定义字体" => lumino_event::window::video::CounterFont::File {
+                                path: counter_font_path,
+                            },
+                            _ => lumino_event::window::video::CounterFont::Bitmap,
+                        },
                         separator: if counter_use_commas {
                             lumino_event::window::video::CounterSeparator::Comma
                         } else {
@@ -206,6 +218,25 @@ impl DialogHandler {
             }
             V::CounterFontSizeChanged(v) => {
                 root.state.video_export_dialog.counter_font_size = v.clamp(7, 512);
+            }
+            V::CounterFontModeChanged(v) => {
+                root.state.video_export_dialog.counter_font_mode = v;
+            }
+            V::CounterFontFamilyChanged(v) => {
+                root.state.video_export_dialog.counter_font_family = v;
+            }
+            V::CounterFontPathChanged(v) => {
+                root.state.video_export_dialog.counter_font_path = v;
+            }
+            V::CounterBrowseFont => {
+                // 浏览字体文件（TTF/OTF/TTC），选择后写入路径
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                    .pick_file()
+                {
+                    root.state.video_export_dialog.counter_font_path =
+                        path.to_string_lossy().to_string();
+                }
             }
             V::CounterUseCommasChanged(v) => {
                 root.state.video_export_dialog.counter_use_commas = v;

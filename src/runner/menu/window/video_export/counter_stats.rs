@@ -10,7 +10,9 @@
 
 use std::collections::{BinaryHeap, VecDeque};
 
-use lumino_event::window::video::{CounterAlignment, CounterSeparator, NoteCounterConfig};
+use lumino_event::window::video::{
+    CounterAlignment, CounterFont, CounterSeparator, NoteCounterConfig,
+};
 use lumino_midi_loader::MidiDocument;
 
 /// 计数器渲染配置（后台渲染线程使用，由事件层配置转换而来）。
@@ -19,6 +21,7 @@ pub struct CounterRenderConfig {
     pub text: String,
     pub alignment: CounterAlignment,
     pub font_size: u32,
+    pub font: CounterFont,
     pub separator: CounterSeparator,
     pub padding_zeroes: bool,
     pub bpm_int_pad: u32,
@@ -40,6 +43,7 @@ impl From<&NoteCounterConfig> for CounterRenderConfig {
             text: cfg.text.clone(),
             alignment: cfg.alignment,
             font_size: cfg.font_size.max(1),
+            font: cfg.font.clone(),
             separator: cfg.separator,
             padding_zeroes: cfg.padding_zeroes,
             bpm_int_pad: cfg.bpm_int_pad.max(1),

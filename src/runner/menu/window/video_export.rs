@@ -4,13 +4,17 @@
 
 mod counter_font;
 mod counter_font_data;
+mod counter_font_ttf;
+mod counter_font_ttf_load;
 mod counter_format;
 mod counter_frame;
+mod counter_frame_layout;
 mod counter_stats;
 mod counter_template;
 mod render_params;
 mod waterfall_frame;
 
+pub(super) use counter_font::CounterFontRenderer;
 pub(super) use counter_frame::render_counter_frame;
 pub(super) use counter_stats::{CounterRenderConfig, CounterStats};
 pub use render_params::SortableNote;

@@ -4,15 +4,15 @@
 //! - 黑色背景（fmr 用 `FillRectangle(Black)` 清屏）
 //! - 统计数值 + 模板替换（Zenith 全套占位符，见 `counter_template.rs`）
 //! - 六种对齐方式（Zenith `Alignments`：TopLeft/TopRight/BottomLeft/BottomRight/
-//!   TopSpread/BottomSpread），其中 TopSpread/BottomSpread 按 Zenith 语义实现
-//!   为"行水平分散 + 顶部/底部对齐"
+//!   TopSpread/BottomSpread），对齐布局见 `counter_frame_layout.rs`
 //! - 白色前景文本（fmr 用 `DrawString(text, White)`），字号可配置
 //!
 //! 本模式不需要卷帘/键盘/标尺，仅绘制变化的数据文本。
 
 use lumino_midi_loader::MidiDocument;
 
-use super::counter_font::{CHAR_BITMAP_H, CHAR_ROW_SPACING, draw_line, measure_line};
+use super::counter_font::CounterFontRenderer;
+use super::counter_frame_layout::draw_aligned_text;
 use super::counter_stats::{CounterRenderConfig, CounterStats};
 use super::counter_template::{TemplateContext, render_template};
 use super::waterfall_frame::fill_bgra_black;
@@ -25,14 +25,10 @@ pub struct CounterFrameOutput {
     pub csv_line: Option<String>,
 }
 
-/// 字号 → 位图缩放倍数（7px 基础行高）。
-fn font_scale(font_size: u32) -> u32 {
-    (font_size / CHAR_BITMAP_H).max(1)
-}
-
 /// 绘制一个计数器帧（BGRA 像素，in-place 修改）。
 ///
 /// 返回渲染文本与可选的 CSV 行；统计状态 `stats` 每帧推进一次。
+/// `renderer` 为字体渲染器（TTF 后端内置 glyph 缓存，跨帧复用）。
 #[allow(clippy::too_many_arguments)]
 pub fn render_counter_frame(
     frame: &mut [u8],
@@ -45,6 +41,7 @@ pub fn render_counter_frame(
     duration_secs: f64,
     config: &CounterRenderConfig,
     stats: &mut CounterStats,
+    renderer: &mut CounterFontRenderer,
 ) -> CounterFrameOutput {
     stats.advance(document, tick, fps);
 
@@ -83,94 +80,17 @@ pub fn render_counter_frame(
 
     // 白色前景（fmr：DrawString(text, White)），BGRA 白 = [255, 255, 255, 255]
     const WHITE: [u8; 4] = [255, 255, 255, 255];
-    let scale = font_scale(config.font_size);
     draw_aligned_text(
         frame,
         frame_width,
         frame_height,
         &text,
-        scale,
         config,
+        renderer,
         WHITE,
     );
 
     CounterFrameOutput { text, csv_line }
-}
-
-/// 按对齐方式绘制多行文本（Zenith `Alignments` 六种语义）。
-fn draw_aligned_text(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    text: &str,
-    scale: u32,
-    config: &CounterRenderConfig,
-    color: [u8; 4],
-) {
-    let lines: Vec<&str> = text.split('\n').collect();
-    if lines.is_empty() {
-        return;
-    }
-    let line_h = (CHAR_BITMAP_H + CHAR_ROW_SPACING) * scale;
-    let n = lines.len() as u32;
-    let w = frame_width;
-    let h = frame_height;
-
-    use lumino_event::window::video::CounterAlignment as A;
-    match config.alignment {
-        // 左上：每行从 (0, i*line_h) 开始
-        A::TopLeft => {
-            for (i, line) in lines.iter().enumerate() {
-                draw_line(frame, frame_width, line, 0, i as u32 * line_h, scale, color);
-            }
-        }
-        // 右上：每行右对齐
-        A::TopRight => {
-            for (i, line) in lines.iter().enumerate() {
-                let lw = measure_line(line, scale);
-                let x = w.saturating_sub(lw);
-                draw_line(frame, frame_width, line, x, i as u32 * line_h, scale, color);
-            }
-        }
-        // 左下：从底部向上
-        A::BottomLeft => {
-            for (i, line) in lines.iter().enumerate() {
-                let y = h.saturating_sub((n - i as u32) * line_h);
-                draw_line(frame, frame_width, line, 0, y, scale, color);
-            }
-        }
-        // 右下
-        A::BottomRight => {
-            for (i, line) in lines.iter().enumerate() {
-                let lw = measure_line(line, scale);
-                let x = w.saturating_sub(lw);
-                let y = h.saturating_sub((n - i as u32) * line_h);
-                draw_line(frame, frame_width, line, x, y, scale, color);
-            }
-        }
-        // 顶部分散（Zenith 语义）：行从原始末行开始（p=1..n），
-        // 水平中心分散于 dist*p*W 处，全部顶部对齐
-        A::TopSpread => {
-            let dist = 1.0f64 / (n as f64 + 1.0);
-            for (i, line) in lines.iter().enumerate() {
-                let p = (n - i as u32) as f64; // 原始末行 p=1
-                let lw = measure_line(line, scale) as f64;
-                let x = (dist * p * w as f64 - lw / 2.0).max(0.0) as u32;
-                draw_line(frame, frame_width, line, x, 0, scale, color);
-            }
-        }
-        // 底部分散（Zenith 语义）：行水平分散，全部底部对齐
-        A::BottomSpread => {
-            let dist = 1.0f64 / (n as f64 + 1.0);
-            for (i, line) in lines.iter().enumerate() {
-                let p = (n - i as u32) as f64;
-                let lw = measure_line(line, scale) as f64;
-                let x = (dist * p * w as f64 - lw / 2.0).max(0.0) as u32;
-                let y = h.saturating_sub(line_h);
-                draw_line(frame, frame_width, line, x, y, scale, color);
-            }
-        }
-    }
 }
 
 #[cfg(test)]
@@ -210,6 +130,7 @@ mod tests {
             text: "Notes: {nc} / {tn}".to_string(),
             alignment: CounterAlignment::TopLeft,
             font_size: 14,
+            font: lumino_event::window::video::CounterFont::Bitmap,
             separator: CounterSeparator::Nothing,
             padding_zeroes: false,
             bpm_int_pad: 3,
@@ -235,8 +156,20 @@ mod tests {
         stats.reset(&doc);
 
         let mut frame = vec![0u8; 200 * 40 * 4];
+        let mut renderer =
+            CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
         let out = render_counter_frame(
-            &mut frame, 200, 40, &doc, 480, 480, 60, 2.0, &config, &mut stats,
+            &mut frame,
+            200,
+            40,
+            &doc,
+            480,
+            480,
+            60,
+            2.0,
+            &config,
+            &mut stats,
+            &mut renderer,
         );
         // tick=480：0/480 两个音符已开始；test_config 未启用补零
         assert!(out.text.contains("Notes: 2 / 3"), "out={}", out.text);
@@ -264,8 +197,20 @@ mod tests {
         let mut stats = CounterStats::default();
         stats.reset(&doc);
         let mut frame = vec![0u8; 200 * 40 * 4];
+        let mut renderer =
+            CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
         let out = render_counter_frame(
-            &mut frame, 200, 40, &doc, 480, 480, 60, 2.0, &config, &mut stats,
+            &mut frame,
+            200,
+            40,
+            &doc,
+            480,
+            480,
+            60,
+            2.0,
+            &config,
+            &mut stats,
+            &mut renderer,
         );
         let line = out.csv_line.expect("启用 CSV 应输出行");
         // 未补零：nc=2, nps=2
@@ -283,6 +228,8 @@ mod tests {
         let mut config = test_config();
         config.alignment = CounterAlignment::TopLeft;
         let mut frame_l = vec![0u8; 200 * 40 * 4];
+        let mut renderer =
+            CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
         render_counter_frame(
             &mut frame_l,
             200,
@@ -294,6 +241,7 @@ mod tests {
             2.0,
             &config,
             &mut stats,
+            &mut renderer,
         );
 
         // TopRight
@@ -310,6 +258,7 @@ mod tests {
             2.0,
             &config,
             &mut stats,
+            &mut renderer,
         );
 
         // 右上对齐：右侧区域应有像素，左上区域无
@@ -317,7 +266,6 @@ mod tests {
             frame_r[0..4] == [0, 0, 0, 255] || frame_r[0..4] == [0, 0, 0, 0],
             "右上对齐时左上角应为背景"
         );
-        let right_col_start = (0 * 200 + 190) * 4;
         let right_has_pixel = (0..8).any(|y| {
             let idx = (y * 200 + 190) * 4;
             frame_r[idx..idx + 4] == [255, 255, 255, 255]
@@ -334,9 +282,75 @@ mod tests {
         let mut stats = CounterStats::default();
         stats.reset(&doc);
         let mut frame = vec![0u8; 64 * 64 * 4];
+        let mut renderer =
+            CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
         let out = render_counter_frame(
-            &mut frame, 64, 64, &doc, 0, 480, 60, 2.0, &config, &mut stats,
+            &mut frame,
+            64,
+            64,
+            &doc,
+            0,
+            480,
+            60,
+            2.0,
+            &config,
+            &mut stats,
+            &mut renderer,
         );
         assert!(out.text.is_empty());
+    }
+
+    /// TTF 字体渲染中文模板端到端（系统微软雅黑；跳过条件：无系统字体）
+    #[test]
+    fn test_render_counter_frame_chinese_ttf() {
+        let msyh = std::path::Path::new("C:\\Windows\\Fonts\\msyh.ttc");
+        if !msyh.is_file() {
+            eprintln!("跳过：系统缺少 msyh.ttc");
+            return;
+        }
+        let doc = make_doc();
+        let mut config = test_config();
+        config.text = "音符: {nc} / {tn}".to_string();
+        config.font = lumino_event::window::video::CounterFont::System {
+            family: "微软雅黑".to_string(),
+        };
+        let mut stats = CounterStats::default();
+        stats.reset(&doc);
+
+        let mut frame = vec![0u8; 200 * 40 * 4];
+        let mut renderer =
+            CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
+        let out = render_counter_frame(
+            &mut frame,
+            200,
+            40,
+            &doc,
+            480,
+            480,
+            60,
+            2.0,
+            &config,
+            &mut stats,
+            &mut renderer,
+        );
+        assert!(out.text.contains("音符: 2 / 3"), "out={}", out.text);
+        // 中文模板渲染后应有非零前景像素
+        assert!(
+            frame.chunks_exact(4).any(|p| p[0] > 0),
+            "TTF 渲染中文应有像素"
+        );
+    }
+
+    /// TTF 字体文件不存在：渲染器构造失败（调用方回退）
+    #[test]
+    fn test_renderer_invalid_font_fails() {
+        let missing = std::env::temp_dir().join("__lumino_no_such_font_9f3a.ttf");
+        let res = CounterFontRenderer::new(
+            &lumino_event::window::video::CounterFont::File {
+                path: missing.to_string_lossy().to_string(),
+            },
+            40,
+        );
+        assert!(res.is_err(), "无效字体路径应报错");
     }
 }
