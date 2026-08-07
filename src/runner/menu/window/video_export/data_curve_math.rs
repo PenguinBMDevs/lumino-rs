@@ -1,3 +1,6 @@
+// Ported from MIDIGraphRenderer (https://github.com/Augustin900/MIDIGraphRenderer)
+// Copyright (c) 2025 Augustin900, MIT License. See NOTICE in this directory.
+
 //! 数据曲线模式数值工具（原版 MIDIGraphRenderer 函数移植）
 //!
 //! - `is_milestone`：里程碑刻度判定（0 或 >=1000 的 10 的整数次幂）
