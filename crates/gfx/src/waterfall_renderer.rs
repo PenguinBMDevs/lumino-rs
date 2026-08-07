@@ -329,7 +329,7 @@ impl WaterfallRenderer {
     /// - `key_offsets` — 分桶偏移表（len = key_count + 1），桶 k 区间为
     ///   `[key_offsets[k], key_offsets[k+1])`。动态分桶：支持任意 key 数量。
     ///   为空时回退为单桶（全部音符），shader 仍可工作。
-    /// - `active_key_colors` — 活跃键颜色数组（128 个 u32，packed BGRA，0 表示无高亮）
+    /// - `active_key_colors` — 活跃键颜色数组（128 个 u32，packed RGBA `0xRRGGBBAA`，0 表示无高亮）
     #[allow(clippy::too_many_arguments)]
     pub fn render(
         &mut self,

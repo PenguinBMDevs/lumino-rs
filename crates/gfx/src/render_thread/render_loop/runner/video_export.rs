@@ -232,12 +232,14 @@ fn handle_waterfall_frame(
             let key = note.key as usize;
             if key < 128 {
                 // 使用音符颜色作为活跃键高亮（混合 60% 透明度）
+                // color_packed 为 0xRRGGBBAA（调色板颜色，由 pack_color 打包），
+                // 与 shader 中 unpack_color 的 RRGGBBAA 解包保持一致
                 let c = note.color_packed;
-                let b = c & 0xFF;
-                let g = (c >> 8) & 0xFF;
-                let r = (c >> 16) & 0xFF;
-                // 存储 BGRA，alpha=153 表示 60% 混合（与 shader 中 blend_key_color 的 alpha 参数匹配）
-                active_key_colors[key] = b | (g << 8) | (r << 16) | (153u32 << 24);
+                let r = (c >> 24) & 0xFF;
+                let g = (c >> 16) & 0xFF;
+                let b = (c >> 8) & 0xFF;
+                // 存储 0xRRGGBBAA，alpha=153 表示 60% 混合（与 shader 中 blend_key_color 的 alpha 参数匹配）
+                active_key_colors[key] = (r << 24) | (g << 16) | (b << 8) | 153u32;
             }
         }
     }

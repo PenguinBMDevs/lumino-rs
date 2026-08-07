@@ -48,27 +48,31 @@ fn is_black_key(key: u32) -> bool {
     return k == 1 || k == 3 || k == 6 || k == 8 || k == 10;
 }
 
+// 颜色解包与 miditrail_3d.wgsl 完全一致：`pack_color` 打包为 0xRRGGBBAA，
+// 按 (r, g, b, a) 解包，保证瀑布流音符与 MIDITrail 使用相同的调色板颜色处理逻辑。
 fn unpack_color(packed: u32) -> vec4<u32> {
-    let b = packed & 0xFFu;
-    let g = (packed >> 8u) & 0xFFu;
-    let r = (packed >> 16u) & 0xFFu;
-    let a = (packed >> 24u) & 0xFFu;
-    return vec4<u32>(b, g, r, a);
+    let r = (packed >> 24u) & 0xFFu;
+    let g = (packed >> 16u) & 0xFFu;
+    let b = (packed >> 8u) & 0xFFu;
+    let a = packed & 0xFFu;
+    return vec4<u32>(r, g, b, a);
 }
 
+// 通道顺序语义为 (r, g, b, a)，与 unpack_color 保持一致。
 fn blend_key_color(base: vec4<u32>, overlay: vec4<u32>, alpha: u32) -> vec4<u32> {
     if overlay.a == 0u || alpha == 0u {
         return base;
     }
     let a = alpha;
-    let b = (base.x * (255u - a) + overlay.x * a) / 255u;
+    let r = (base.x * (255u - a) + overlay.x * a) / 255u;
     let g = (base.y * (255u - a) + overlay.y * a) / 255u;
-    let r = (base.z * (255u - a) + overlay.z * a) / 255u;
-    return vec4<u32>(b, g, r, 255u);
+    let b = (base.z * (255u - a) + overlay.z * a) / 255u;
+    return vec4<u32>(r, g, b, 255u);
 }
 
-fn pack_u32(b: u32, g: u32, r: u32, a: u32) -> u32 {
-    return b | (g << 8u) | (r << 16u) | (a << 24u);
+// 第一参数为 R 通道（低 8 位），对应 textureStore 输出的 R 分量。
+fn pack_u32(r: u32, g: u32, b: u32, a: u32) -> u32 {
+    return r | (g << 8u) | (b << 16u) | (a << 24u);
 }
 
 // ── 主函数 ──
