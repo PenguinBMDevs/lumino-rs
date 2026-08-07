@@ -229,10 +229,6 @@ impl Root {
                 // 面板内转换按钮：后台线程执行 i2m-rs 转换，
                 // 完成后由 poll_pending_i2m 轮询接收并强制切换到 Y 向选择工具。
                 let Some(path) = self.right_sidebar.selected_image_path.clone() else {
-                    self.toast.push(
-                        crate::toast::ToastLevel::Warning,
-                        "请先选择图片文件再执行转换",
-                    );
                     return true;
                 };
                 // 标记转换中：面板按钮禁用 + 编辑器进入等待框选阶段
@@ -276,8 +272,6 @@ impl Root {
                 self.editor.clear_notes_changed();
                 self.editor
                     .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
-                self.toast
-                    .push(crate::toast::ToastLevel::Info, "已取消图片转 MIDI 放置");
                 tracing::info!("图片转 MIDI 放置已取消");
                 true
             }
@@ -295,13 +289,9 @@ impl Root {
         // 快照放置状态（避免与后续 &mut self 借用冲突）
         let i2m = self.editor.editor_state.image_to_midi.clone();
         if i2m.mode != ImageToMidiMode::Placing {
-            self.toast
-                .push(crate::toast::ToastLevel::Warning, "请先框选生成区域");
             return;
         }
         let Some(preview) = &i2m.preview else {
-            self.toast
-                .push(crate::toast::ToastLevel::Warning, "没有可写入的转换数据");
             return;
         };
 
@@ -315,10 +305,6 @@ impl Root {
             tracks_data.push(notes);
         }
         if total_notes == 0 {
-            self.toast.push(
-                crate::toast::ToastLevel::Warning,
-                "转换结果为空，未写入任何音符",
-            );
             return;
         }
 
@@ -410,10 +396,6 @@ impl Root {
         self.editor
             .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
 
-        self.toast.push(
-            crate::toast::ToastLevel::Success,
-            format!("已生成 {total_notes} 个音符"),
-        );
         tracing::info!("图片转 MIDI 写入完成：{} 个音符", total_notes);
     }
 
@@ -440,8 +422,6 @@ impl Root {
                 self.editor.set_tool(tool);
                 self.editor
                     .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
-                self.toast
-                    .push(crate::toast::ToastLevel::Info, "转换完成：请框选生成区域");
                 tracing::info!("图片转 MIDI 转换完成，已强制切换到 Y 向选择工具");
             }
             Err(err) => {
@@ -449,10 +429,6 @@ impl Root {
                 self.right_sidebar.converting = false;
                 // 转换失败：流程结束，清除原工具记录
                 self.i2m_restore_tool = None;
-                self.toast.push(
-                    crate::toast::ToastLevel::Error,
-                    format!("图片转 MIDI 转换失败: {err}"),
-                );
                 tracing::error!("图片转 MIDI 转换失败: {err}");
             }
         }
