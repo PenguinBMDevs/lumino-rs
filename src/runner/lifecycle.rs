@@ -296,7 +296,13 @@ impl crate::runner::inner::RunnerInner {
                     } else {
                         self.window_state
                             .dialog_manager
-                            .forward_video_export_progress(msg, progress, total_frames, render_fps);
+                            .forward_video_export_progress(
+                                msg,
+                                progress,
+                                total_frames,
+                                render_fps,
+                                elapsed_secs,
+                            );
                     }
                 } else {
                     // 音频导出

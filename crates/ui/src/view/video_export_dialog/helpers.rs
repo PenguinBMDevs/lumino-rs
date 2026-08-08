@@ -18,23 +18,18 @@ pub fn render_progress_detail<'a>(
     let fps = state.fps.max(1) as f64;
     let current_sec = state.current_frame as f64 / fps;
     let total_sec = state.total_frames as f64 / fps;
-    let speedup = if current_sec > 0.0 && state.render_fps > 0.0 {
-        current_sec / (state.current_frame as f64 / state.render_fps)
+    let speedup = if current_sec > 0.0 && state.elapsed_secs > 0.0 {
+        current_sec / state.elapsed_secs
     } else {
         0.0
     };
 
-    let elapsed_str = if state.current_frame > 0 && state.render_fps > 0.0 {
-        let elapsed = state.current_frame as f64 / state.render_fps;
-        let remaining = (state.total_frames - state.current_frame) as f64 / state.render_fps;
-        format!(
-            "已用: {} / 剩余: {}",
-            format_duration(elapsed),
-            format_duration(remaining)
-        )
-    } else {
-        format!("已用: {}", format_duration(0.0))
-    };
+    let elapsed_str = elapsed_remaining_text(
+        state.elapsed_secs,
+        state.current_frame,
+        state.total_frames,
+        state.render_fps,
+    );
 
     column![
         text(format!(
@@ -88,6 +83,28 @@ pub fn format_duration(secs: f64) -> String {
     }
 }
 
+/// 生成"已用: X / 剩余: Y"文本。
+///
+/// 已用时间使用导出线程测量的墙钟真实时间（`elapsed_secs`）；
+/// 剩余时间为基于渲染速度的估算（瞬时速度，仅作预测参考）。
+pub fn elapsed_remaining_text(
+    elapsed_secs: f64,
+    current_frame: u64,
+    total_frames: u64,
+    render_fps: f64,
+) -> String {
+    if elapsed_secs > 0.0 && render_fps > 0.0 {
+        let remaining = total_frames.saturating_sub(current_frame) as f64 / render_fps;
+        format!(
+            "已用: {} / 剩余: {}",
+            format_duration(elapsed_secs),
+            format_duration(remaining)
+        )
+    } else {
+        format!("已用: {}", format_duration(elapsed_secs))
+    }
+}
+
 /// 返回当前平台可用的加速后端列表
 pub fn available_backends() -> Vec<String> {
     let mut list = vec!["Software (CPU)".to_string()];
@@ -106,4 +123,45 @@ pub fn available_backends() -> Vec<String> {
         list.push("VAAPI (Linux)".to_string());
     }
     list
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_format_duration_basic() {
+        assert_eq!(format_duration(0.0), "0:00.0");
+        assert_eq!(format_duration(-1.0), "0:00.0");
+        assert_eq!(format_duration(1.5), "0:01.5");
+        assert_eq!(format_duration(59.9), "0:59.9");
+        assert_eq!(format_duration(60.0), "1:00.0");
+        assert_eq!(format_duration(3599.9), "59:59.9");
+        assert_eq!(format_duration(3600.0), "1:00:00.0");
+        assert_eq!(format_duration(3661.25), "1:01:01.2");
+    }
+
+    /// 已用时间必须使用真实 elapsed_secs，不能由 current_frame/render_fps 反推。
+    #[test]
+    fn test_elapsed_text_uses_real_wall_clock() {
+        // 速度波动场景：真实已用 42.5s，但瞬时 render_fps 高达 200（当前帧 6000 帧）
+        let text = elapsed_remaining_text(42.5, 6000, 12000, 200.0);
+        assert!(text.starts_with("已用: 0:42.5"), "实际: {text}");
+        // 剩余 = (12000-6000)/200 = 30s
+        assert!(text.ends_with("剩余: 0:30.0"), "实际: {text}");
+    }
+
+    /// elapsed 为 0 时（初始阶段）不显示剩余，避免瞬时速度误导。
+    #[test]
+    fn test_elapsed_text_zero_fallback() {
+        let text = elapsed_remaining_text(0.0, 0, 1000, 60.0);
+        assert_eq!(text, "已用: 0:00.0");
+    }
+
+    /// render_fps 为 0 时剩余估算不可用，只显示已用。
+    #[test]
+    fn test_elapsed_text_no_render_fps() {
+        let text = elapsed_remaining_text(10.0, 500, 1000, 0.0);
+        assert_eq!(text, "已用: 0:10.0");
+    }
 }

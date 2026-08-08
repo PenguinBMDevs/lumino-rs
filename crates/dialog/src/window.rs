@@ -214,7 +214,7 @@ impl DialogWindow {
                 ui.set_export_progress_dialog_open(true);
             }
             DialogType::VideoExport => {
-                ui.update_video_export_progress("正在初始化...".to_string(), 0.0, 0, 0.0);
+                ui.update_video_export_progress("正在初始化...".to_string(), 0.0, 0, 0.0, 0.0);
             }
             DialogType::MemoryMonitor => {
                 ui.set_memory_monitor_dialog_open(true);

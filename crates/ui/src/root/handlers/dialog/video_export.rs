@@ -286,7 +286,7 @@ impl DialogHandler {
                 let st = &root.state.video_export_dialog;
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Completed {
                     total_frames: st.total_frames,
-                    elapsed_secs: 0.0,
+                    elapsed_secs: st.elapsed_secs,
                     avg_fps: st.render_fps,
                 };
             }

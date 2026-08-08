@@ -196,6 +196,7 @@ impl DialogManager {
         progress: f64,
         total_frames: u64,
         render_fps: f64,
+        elapsed_secs: f64,
     ) {
         for dialog in self.dialogs.values_mut() {
             if dialog.dialog_type == DialogType::VideoExport
@@ -206,6 +207,7 @@ impl DialogManager {
                     progress,
                     total_frames,
                     render_fps,
+                    elapsed_secs,
                 );
                 dialog.request_redraw();
             }

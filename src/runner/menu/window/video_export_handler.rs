@@ -718,7 +718,8 @@ fn run_video_export_task(
                 progress,
                 total_frames,
                 smoothed_fps,
-                0.0, // 进度更新中不传递 elapsed
+                // 真实已用时间（墙钟），供 UI 显示"已用时间"
+                start.elapsed().as_secs_f64(),
             ));
             last_stat_time = Instant::now();
             frames_since_stat = 0;
@@ -1137,7 +1138,8 @@ fn run_streaming_video_export_task(
                     progress,
                     total_frames,
                     smoothed_fps,
-                    0.0,
+                    // 真实已用时间（墙钟），供 UI 显示"已用时间"
+                    start.elapsed().as_secs_f64(),
                 ));
                 last_stat_time = Instant::now();
                 frames_since_stat = 0;

@@ -325,6 +325,7 @@ impl Host {
         progress: f64,
         total_frames: u64,
         render_fps: f64,
+        elapsed_secs: f64,
     ) {
         let dialog_state = &mut self.root.state.video_export_dialog;
         // 如果 overlay 尚未激活（e.g. 对话框窗口刚打开时），触发 Exporting 状态
@@ -335,6 +336,7 @@ impl Host {
         dialog_state.progress = progress;
         dialog_state.total_frames = total_frames;
         dialog_state.render_fps = render_fps;
+        dialog_state.elapsed_secs = elapsed_secs;
         dialog_state.current_frame =
             (progress * total_frames as f64).min(total_frames as f64) as u64;
         self.ui_dirty = true;
