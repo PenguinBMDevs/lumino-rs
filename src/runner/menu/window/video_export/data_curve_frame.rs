@@ -1,3 +1,7 @@
+// Ported from MIDIGraphRenderer, originally created by Danidanijr.
+// Source: https://github.com/Augustin900/MIDIGraphRenderer (GitHub mirror with MIT License)
+// See NOTICE in this directory for full attribution and license text.
+
 //! 数据曲线模式帧渲染（移植自 MIDIGraphRenderer 的 graph 渲染逻辑）
 //!
 //! 原版（LÖVE2D Lua）核心视觉：
