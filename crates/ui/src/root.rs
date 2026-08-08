@@ -69,10 +69,6 @@ pub struct Root {
     pub window_resize_guard: bool,
     /// 图片转 MIDI 后台转换结果接收端（`right_sidebar::ConvertResult`）
     pub(crate) pending_i2m: Option<std::sync::mpsc::Receiver<crate::right_sidebar::ConvertResult>>,
-    /// 素材拖出加载结果接收端（`Option<(素材名, 放置预览)>`）
-    pub(crate) pending_material_load: Option<
-        std::sync::mpsc::Receiver<Option<(String, lumino_editor_state::ImageToMidiPreview)>>,
-    >,
     /// 素材扫描结果接收端（后台扫描完成后的素材列表）
     pub(crate) pending_material_scan:
         Option<std::sync::mpsc::Receiver<Vec<crate::right_sidebar::MaterialEntry>>>,
@@ -131,7 +127,6 @@ impl Root {
                 toast: crate::toast::ToastManager::new(),
                 window_resize_guard: false,
                 pending_i2m: None,
-                pending_material_load: None,
                 pending_material_scan: None,
                 i2m_restore_tool: None,
             }

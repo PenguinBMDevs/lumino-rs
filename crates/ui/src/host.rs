@@ -172,7 +172,6 @@ impl Host {
     pub(crate) fn route_message(&mut self, msg: message::Message) {
         self.root.poll_midi_input();
         self.root.poll_pending_i2m();
-        self.root.poll_pending_material_load();
         self.root.poll_material_scan();
         // 素材拖出跟随：鼠标已释放且未在卷帘内确认放置 → 兜底取消（避免预览残留）
         if !self.window_ctx.is_mouse_pressed {

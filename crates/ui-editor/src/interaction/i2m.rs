@@ -25,6 +25,11 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         match self.editor_state.image_to_midi.mode {
             ImageToMidiMode::Selecting => {
+                // 素材拖出跟随中（drag_follow 存在）：按下不进入框选，
+                // 避免覆盖素材放置语义（放置由松手确认 / × 取消驱动）
+                if self.editor_state.image_to_midi.drag_follow.is_some() {
+                    return;
+                }
                 // 开始框选：复用 EditState::Selecting 绘制框选矩形
                 self.editor_state
                     .image_to_midi

@@ -35,6 +35,8 @@ pub struct MaterialEntry {
     pub track_count: usize,
     /// 解析是否有效（无效素材置灰显示）
     pub valid: bool,
+    /// 放置预览缓存（扫描时预解析；拖出时同步使用，零延迟）
+    pub preview: Option<ImageToMidiPreview>,
 }
 
 impl MaterialEntry {
@@ -48,6 +50,7 @@ impl MaterialEntry {
             multi_track: false,
             track_count: 0,
             valid: true,
+            preview: None,
         }
     }
 
@@ -65,6 +68,7 @@ impl MaterialEntry {
             multi_track: false,
             track_count: 0,
             valid: true,
+            preview: None,
         }
     }
 
@@ -80,6 +84,7 @@ impl MaterialEntry {
                 self.valid = false;
                 self.multi_track = false;
                 self.track_count = 0;
+                self.preview = None;
                 return;
             }
         };
@@ -98,13 +103,14 @@ impl MaterialEntry {
                 self.valid = false;
                 self.multi_track = false;
                 self.track_count = 0;
+                self.preview = None;
                 return;
             }
         };
         self.apply_project_meta(&project);
     }
 
-    /// 应用工程元数据（名称 / 多轨标记 / 音轨数）
+    /// 应用工程元数据（名称 / 多轨标记 / 音轨数）并预解析放置预览
     fn apply_project_meta(&mut self, project: &lumino_project::LuminoProject) {
         let meta = &project.metadata;
         // 名称优先使用素材 metadata 中的名字
@@ -123,6 +129,8 @@ impl MaterialEntry {
             self.track_count = project.loaded_track_count();
         }
         self.valid = true;
+        // 预解析放置预览：拖出时同步使用，避免异步加载导致的拖放时序缺陷
+        self.preview = Some(project_to_material_preview(project));
     }
 }
 
@@ -216,26 +224,6 @@ pub fn project_to_material_preview(project: &lumino_project::LuminoProject) -> I
         tracks,
         orig_width: orig_width.max(1.0),
     }
-}
-
-/// 加载素材为放置预览（内置字节 / 用户路径）
-///
-/// 返回 `(素材名, 预览)`；解析失败返回 `None`。
-pub fn load_material_preview(entry: &MaterialEntry) -> Option<(String, ImageToMidiPreview)> {
-    let project = if let Some(data) = entry.data {
-        lumino_project::project::load::load_project_from_bytes(data).ok()
-    } else {
-        let path = entry.path.as_ref()?;
-        lumino_export::load_project(path).ok()
-    };
-    let project = project?;
-    if !project.metadata.is_material_file() {
-        tracing::warn!("{} 不是素材文件（缺少 material 标记）", entry.name);
-        return None;
-    }
-    let name = project.metadata.project.name.clone();
-    let preview = project_to_material_preview(&project);
-    Some((name, preview))
 }
 
 /// 获取用户素材目录（应用程序配置文件目录下的 Materials 文件夹）

@@ -1,7 +1,7 @@
 //! 右侧栏素材库面板视图渲染
 
 use iced_core::{Alignment, Color, Length};
-use iced_widget::{button, column, container, row, scrollable, text, tooltip};
+use iced_widget::{button, column, container, mouse_area, row, scrollable, text, tooltip};
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::RightSidebarAction;
 
@@ -209,36 +209,35 @@ fn material_item<'a>(
             }),
     );
 
-    // 有效素材：按下即开始拖出流程（进入卷帘松手放置）；无效素材：不可交互置灰
-    let btn = button(info_row)
-        .width(Length::Fill)
+    // 有效素材：按下即开始拖出（进入卷帘松手放置）；无效素材：不可交互置灰
+    //
+    // ⚠️ 不能用 button.on_press：iced 0.14 的 button 在【释放时】才触发 on_press
+    // 且要求光标仍在按钮内——拖出素材（释放时鼠标已在卷帘）永不触发。
+    // mouse_area.on_press 在【按下时】触发且不捕获后续事件，拖动链路完整。
+    let content = container(info_row)
         .padding([6, 8])
-        .style(move |theme: &Theme, status| {
+        .width(Length::Fill)
+        .style(move |theme: &Theme| {
             let palette = theme.extended_palette();
-            let bg = if entry.valid {
-                match status {
-                    button::Status::Hovered => palette.background.weak.color,
-                    button::Status::Pressed => palette.background.base.color,
-                    _ => palette.background.weaker.color,
-                }
-            } else {
-                palette.background.weaker.color
-            };
-            button::Style {
-                border: iced_core::Border {
-                    radius: 4.0.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
+            container::Style {
+                background: Some(palette.background.weaker.color.into()),
+                border: iced_core::Border::default().rounded(4),
                 ..Default::default()
             }
-            .with_background(bg)
-        })
-        .on_press_maybe(entry.valid.then_some(Message::RightSidebar(
-            RightSidebarAction::MaterialDragStarted(index),
-        )));
+        });
 
-    tooltip::Tooltip::new(btn, entry.name.as_str(), tooltip::Position::Right)
+    let item: Element<'a> = if entry.valid {
+        mouse_area(content)
+            .on_press(Message::RightSidebar(
+                RightSidebarAction::MaterialDragStarted(index),
+            ))
+            .into()
+    } else {
+        content.into()
+    };
+
+    // tooltip 显示在按钮左侧（右侧为素材列表区域，避免遮挡其他素材项）
+    tooltip::Tooltip::new(item, entry.name.as_str(), tooltip::Position::Left)
         .style(|_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(Color::from_rgba(
                 0.08, 0.08, 0.10, 0.96,
@@ -303,6 +302,7 @@ mod tests {
             multi_track: true,
             track_count: 4,
             valid: true,
+            preview: None,
         };
         let _element = material_item(&entry, 0, Language::ZhCn);
     }
@@ -317,6 +317,7 @@ mod tests {
             multi_track: false,
             track_count: 0,
             valid: false,
+            preview: None,
         };
         let _element = material_item(&entry, 1, Language::ZhCn);
     }

@@ -16,5 +16,5 @@ pub use core::{
 };
 pub use material::{
     MaterialEntry, MaterialLibrary, MaterialSource, copy_material_to_user_dir,
-    load_material_preview, project_to_material_preview, scan_materials, user_materials_dir,
+    project_to_material_preview, scan_materials, user_materials_dir,
 };

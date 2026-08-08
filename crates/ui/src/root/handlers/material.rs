@@ -9,56 +9,26 @@ use crate::root::Root;
 use crate::sidebar;
 
 impl Root {
-    /// 素材项按下：后台加载素材到内存临时区域
+    /// 素材项按下：立即进入拖出跟随模式（预览跟随鼠标）
     ///
-    /// 加载完成后由 `poll_pending_material_load` 轮询接收并进入拖出跟随模式。
+    /// 素材预览在扫描时已预解析缓存（`MaterialEntry.preview`），
+    /// 此处**同步**启动——按下即生效，不依赖异步轮询（修复拖放失效：
+    /// 此前异步加载 + 消息驱动 poll，素材就绪时无消息触发轮询，拖放无响应）。
     pub(super) fn start_material_drag(&mut self, index: usize) {
-        let Some(entry) = self.right_sidebar.materials.entries.get(index).cloned() else {
+        let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
             return;
         };
-        if !entry.valid {
+        let Some(preview) = entry.preview.clone() else {
+            tracing::warn!("素材 {} 无可用的放置预览，拖出已忽略", entry.name);
             return;
-        }
-        let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let result = crate::right_sidebar::load_material_preview(&entry);
-            let _ = tx.send(result);
-        });
-        self.pending_material_load = Some(rx);
-    }
-
-    /// 轮询素材拖出加载结果（素材项按下后后台解析素材）
-    ///
-    /// 加载完成后进入素材跟随模式：预览音符跟随鼠标移动（X 向位置 + Y 向音高）。
-    pub(crate) fn poll_pending_material_load(&mut self) {
-        let rx = match self.pending_material_load.as_ref() {
-            Some(rx) => rx,
-            None => return,
         };
-        let result = match rx.try_recv() {
-            Ok(result) => result,
-            Err(_) => return, // Empty / Disconnected
-        };
-        self.pending_material_load = None;
-        match result {
-            Some((_name, preview)) => {
-                // 素材预览立即加载到内存临时区域（跟随鼠标位置由 moved 事件更新）
-                self.editor
-                    .editor_state
-                    .image_to_midi
-                    .begin_material_follow(preview, 0.0);
-                self.editor
-                    .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
-                tracing::info!("素材已加载到内存临时区域，进入拖出跟随模式");
-            }
-            None => {
-                tracing::warn!("素材加载失败，拖出已取消");
-                self.editor
-                    .editor_state
-                    .image_to_midi
-                    .cancel_material_follow();
-            }
-        }
+        self.editor
+            .editor_state
+            .image_to_midi
+            .begin_material_follow(preview, 0.0);
+        self.editor
+            .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
+        tracing::info!("素材 {} 已进入拖出跟随模式", entry.name);
     }
 
     /// 清理过期的素材拖出跟随（鼠标已释放且未在卷帘内确认放置）
