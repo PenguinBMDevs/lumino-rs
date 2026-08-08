@@ -110,6 +110,16 @@ impl RegionRect {
     pub fn set_right(&mut self, tick: f32) {
         self.tick_end = tick.max(self.tick_start + 1.0);
     }
+
+    /// Y 向整体平移（素材放置移动音高）
+    ///
+    /// 允许 key 范围越界（0-127 之外），由 `note_screen_key` 渲染时 clamp，
+    /// 保证素材在键盘上下两端都能自由移动。
+    pub fn offset_keys(&mut self, delta: i32) {
+        let d = delta.clamp(-128, 127) as i8;
+        self.key_lo = self.key_lo.wrapping_add_signed(d);
+        self.key_hi = self.key_hi.wrapping_add_signed(d);
+    }
 }
 
 /// 图片转 MIDI 放置状态
@@ -127,6 +137,13 @@ pub struct ImageToMidiState {
     pub interaction: I2mInteraction,
     /// 框选/移动/拉伸的起点 tick（X 向操作基准）
     pub drag_start_tick: f32,
+    /// 拖拽起点 key（Y 向操作基准；素材放置整体上下移动用）
+    pub drag_start_key: f32,
+    /// 素材拖出时的跟随区域（素材预览跟随鼠标移动，松手前生效；
+    /// 与 `region` 互斥——`region` 确认后 `drag_follow` 清空）
+    pub drag_follow: Option<RegionRect>,
+    /// 是否允许 Y 向整体移动（素材放置 = true；i2m 区域框保持原语义 = false）
+    pub allow_y_drag: bool,
     /// 预览渲染代际：区域确认/移动/拉伸/取消时递增，
     /// 渲染线程据此判断是否需要重建预览音符实例
     pub preview_generation: u64,
@@ -138,25 +155,35 @@ impl ImageToMidiState {
         self.mode != ImageToMidiMode::Inactive
     }
 
+    /// 当前生效的区域（region 优先；素材拖出跟随阶段用 drag_follow）
+    pub fn active_region(&self) -> Option<RegionRect> {
+        self.region.or(self.drag_follow)
+    }
+
     /// 标记开始后台转换
     pub fn begin_converting(&mut self) {
+        self.preview = None;
+        self.reset_placement_fields();
         self.converting = true;
         self.mode = ImageToMidiMode::Selecting;
-        self.preview = None;
-        self.region = None;
-        self.interaction = I2mInteraction::None;
-        self.drag_start_tick = 0.0;
-        self.preview_generation = 0;
     }
 
     /// 设置转换结果（进入等待框选阶段）
     pub fn set_preview(&mut self, preview: ImageToMidiPreview) {
         self.preview = Some(preview);
-        self.converting = false;
+        self.reset_placement_fields();
         self.mode = ImageToMidiMode::Selecting;
+    }
+
+    /// 重置放置过程字段（预览保留）
+    fn reset_placement_fields(&mut self) {
+        self.converting = false;
         self.region = None;
         self.interaction = I2mInteraction::None;
         self.drag_start_tick = 0.0;
+        self.drag_start_key = 0.0;
+        self.drag_follow = None;
+        self.allow_y_drag = false;
         self.preview_generation = 0;
     }
 
@@ -177,6 +204,7 @@ impl ImageToMidiState {
     /// 清空当前区域（回到等待框选阶段，预览隐藏）
     pub fn clear_region(&mut self) {
         self.region = None;
+        self.drag_follow = None;
         self.interaction = I2mInteraction::None;
         if self.preview.is_some() {
             self.mode = ImageToMidiMode::Selecting;
@@ -197,7 +225,7 @@ impl ImageToMidiState {
 
     /// X 向缩放比例（区域框宽度 / 预览原始宽度）
     pub fn scale_x(&self) -> f32 {
-        let Some(region) = self.region else {
+        let Some(region) = self.active_region() else {
             return 1.0;
         };
         let Some(preview) = &self.preview else {
@@ -211,7 +239,7 @@ impl ImageToMidiState {
 
     /// 预览音符在区域内的显示起点 tick（X 向等比映射）
     pub fn note_screen_tick(&self, orig_tick: f32) -> f32 {
-        let Some(region) = self.region else {
+        let Some(region) = self.active_region() else {
             return orig_tick;
         };
         let Some(preview) = &self.preview else {
@@ -241,7 +269,7 @@ impl ImageToMidiState {
             .map(|n| {
                 (
                     self.note_screen_tick(n.tick),
-                    n.key,
+                    self.note_screen_key(n.key),
                     self.note_screen_length(n.length),
                 )
             })

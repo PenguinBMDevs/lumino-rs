@@ -23,6 +23,18 @@ pub enum RightSidebarAction {
     ResizeDragged,
     /// 结束拖拽调整面板宽度
     ResizeDragEnded,
+    /// 点击素材库按钮（展开/收起面板并亮灯）
+    MaterialLibraryClicked,
+    /// 面板内点击"添加素材"按钮（展开/收起下拉菜单）
+    MaterialAddClicked,
+    /// 下拉菜单："从 web 下载"（占位实现，仅记录日志）
+    MaterialDownloadFromWeb,
+    /// 下拉菜单："从本地选取"（文件对话框导入 .lmmaterial 并复制到配置目录）
+    MaterialImportFromLocal,
+    /// 关闭素材添加下拉菜单
+    MaterialAddMenuClosed,
+    /// 素材项按下（开始拖出：加载素材到内存并显示跟随预览）
+    MaterialDragStarted(usize),
 }
 
 /// i2m 转换配置中的数字编辑字段

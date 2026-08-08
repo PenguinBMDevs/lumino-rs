@@ -45,6 +45,19 @@ pub fn load_project(path: impl AsRef<Path>) -> Result<LuminoProject> {
     }
 }
 
+/// 从归档字节加载工程（内存加载，用于编译期嵌入的素材文件）
+///
+/// 校验 LMPJ 魔数后直接走 `load_from_archive` 解析路径，
+/// 供嵌入式素材（include_bytes! 数据）在运行时解析使用。
+pub fn load_project_from_bytes(bytes: &[u8]) -> Result<LuminoProject> {
+    if bytes.len() < 4 || &bytes[0..4] != b"LMPJ" {
+        return Err(CoreError::FileFormat(
+            "不是有效的 Lumino 工程归档（缺少 LMPJ 魔数）".into(),
+        ));
+    }
+    load_from_archive(bytes)
+}
+
 /// 从文件夹加载
 fn load_from_folder(path: &Path) -> Result<LuminoProject> {
     // 读取 metadata.toml

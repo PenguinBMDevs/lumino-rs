@@ -77,7 +77,7 @@ pub fn format_duration(secs: f64) -> String {
     let mins = total_mins % 60;
     let hours = total_mins / 60;
     if hours > 0 {
-        format!("{}:{}:{:02}.{}", hours, mins, secs, tenths)
+        format!("{}:{:02}:{:02}.{}", hours, mins, secs, tenths)
     } else {
         format!("{}:{:02}.{}", mins, secs, tenths)
     }

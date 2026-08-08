@@ -125,6 +125,78 @@ pub(super) fn build_midi_export_data_from_editor(
     })
 }
 
+/// 根据选中音符构造 `MidiExportData`（导出为素材专用）
+///
+/// - 仅包含选中音符对应的音轨（跨轨，原始音轨号保留在元数据中）；
+/// - tempo / 拍号放在第一轨；
+/// - PC/CC 事件按原始音轨号从文档提取——自动化等工程数据随素材保留。
+pub(super) fn build_midi_export_data_from_selection(
+    runner: &RunnerInner,
+    selected: &EditorNotes,
+) -> Option<MidiExportData> {
+    let time_signatures = editor_time_signatures(runner);
+    let pc_cc = extract_current_pc_cc(runner);
+    let tempo_points = runner
+        .window_state
+        .window
+        .ui()
+        .root()
+        .editor
+        .editor_state
+        .data
+        .tempo_points
+        .clone();
+
+    let tracks: Vec<MidiTrackData> = selected
+        .iter()
+        .enumerate()
+        .map(|(i, (track_id, notes))| {
+            let midi_notes: Vec<MidiNoteEvent> = notes
+                .iter()
+                .map(|&(tick, key, length, velocity, channel)| MidiNoteEvent {
+                    tick: (tick as u32).max(1),
+                    channel,
+                    key,
+                    velocity,
+                    duration: (length as u32).max(1),
+                })
+                .collect();
+            let src_track_id = *track_id as u16;
+            let (program_changes, control_changes) = match &pc_cc {
+                Some((pc, cc)) => (
+                    pc.get(&src_track_id).cloned().unwrap_or_default(),
+                    cc.get(&src_track_id).cloned().unwrap_or_default(),
+                ),
+                None => (Vec::new(), Vec::new()),
+            };
+            MidiTrackData {
+                notes: midi_notes,
+                tempos: if i == 0 {
+                    tempo_events_from_points(&tempo_points)
+                } else {
+                    Vec::new()
+                },
+                time_signatures: if i == 0 {
+                    time_signatures.clone()
+                } else {
+                    Vec::new()
+                },
+                program_changes,
+                control_changes,
+                ..Default::default()
+            }
+        })
+        .collect();
+
+    Some(MidiExportData {
+        options: MidiExportOptions {
+            format: 1,
+            ppqn: DEFAULT_PPQN,
+        },
+        tracks,
+    })
+}
+
 /// 读取编辑器中的拍号变化列表
 fn editor_time_signatures(runner: &RunnerInner) -> Vec<MidiTimeSignatureEvent> {
     let ui = runner.window_state.window.ui();

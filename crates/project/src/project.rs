@@ -25,7 +25,7 @@ pub use track::{LmtrackData, LmtrackHeader, TrackMeta, TrackVisibilitySer};
 use std::path::PathBuf;
 
 /// 工程数据（内存中表示）
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct LuminoProject {
     /// 元数据
     pub metadata: ProjectMetadata,
@@ -56,7 +56,7 @@ pub struct LuminoProject {
 }
 
 /// 音轨槽（支持懒加载）
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TrackSlot {
     /// 未加载（仅在文件中有数据）
     Unloaded { track_id: u16, path: PathBuf },

@@ -29,6 +29,37 @@ pub struct LoadedFileMetadataEntry {
     pub original_info: Option<toml::Table>,
 }
 
+/// 素材元数据（.lmmaterial 素材文件专用）
+///
+/// 仅素材文件填写本段，标准 `.lmpj` 工程文件省略（向后兼容）。
+/// 加载时依据 `is_material` 分辨素材文件与标准工程文件。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct MaterialMetadata {
+    /// 素材文件标记（true = .lmmaterial 素材文件）
+    pub is_material: bool,
+    /// 是否多轨素材（true = 多轨，false = 单轨）
+    pub multi_track: bool,
+    /// 音轨数量（仅多轨素材填写；单轨素材省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub track_count: Option<u16>,
+}
+
+impl MaterialMetadata {
+    /// 创建素材标记（按音轨数量自动推导单/多轨形态）
+    pub fn for_track_count(track_count: usize) -> Self {
+        let multi_track = track_count > 1;
+        Self {
+            is_material: true,
+            multi_track,
+            track_count: if multi_track {
+                Some(track_count as u16)
+            } else {
+                None
+            },
+        }
+    }
+}
+
 /// 作品元数据
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProjectMetadata {
@@ -52,6 +83,9 @@ pub struct ProjectMetadata {
     /// 高精度洋葱皮贴图配置（导出为文件夹时生成）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub image: Option<ImageMetadata>,
+    /// 素材标记（仅 .lmmaterial 素材文件填写；标准工程省略）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub material: Option<MaterialMetadata>,
 }
 
 /// 工程基本信息
@@ -160,6 +194,27 @@ impl ProjectMetadata {
             settings: None,
             stats: None,
             image: None,
+            material: None,
+        }
+    }
+
+    /// 是否为素材文件（依据 material 段判断，而非文件扩展名）
+    pub fn is_material_file(&self) -> bool {
+        self.material
+            .as_ref()
+            .map(|m| m.is_material)
+            .unwrap_or(false)
+    }
+
+    /// 素材音轨数量（多轨素材返回 track_count，单轨素材返回 1，非素材返回 0）
+    pub fn material_track_count(&self) -> usize {
+        let Some(material) = &self.material else {
+            return 0;
+        };
+        if material.multi_track {
+            material.track_count.map(|c| c as usize).unwrap_or(0)
+        } else {
+            1
         }
     }
 
@@ -220,5 +275,71 @@ mod tests {
         assert_eq!(meta.format_version, 1);
         assert_eq!(meta.project.name, "Untitled");
         assert_eq!(meta.audio.division, 480);
+        assert!(!meta.is_material_file());
+        assert_eq!(meta.material_track_count(), 0);
+    }
+
+    #[test]
+    fn test_material_metadata_roundtrip() {
+        let mut meta = ProjectMetadata::default_with_name("My Material");
+        meta.material = Some(MaterialMetadata::for_track_count(4));
+
+        let toml_str = meta.to_toml_str().expect("序列化素材元数据失败");
+        let decoded = ProjectMetadata::from_toml_str(&toml_str).expect("反序列化素材元数据失败");
+
+        assert!(decoded.is_material_file());
+        assert!(
+            matches!(decoded.material, Some(ref m) if m.multi_track && m.track_count == Some(4))
+        );
+        assert_eq!(decoded.material_track_count(), 4);
+    }
+
+    #[test]
+    fn test_single_track_material_omits_track_count() {
+        let meta = MaterialMetadata::for_track_count(1);
+        assert!(meta.is_material);
+        assert!(!meta.multi_track);
+        assert!(meta.track_count.is_none());
+
+        let mut project = ProjectMetadata::default_with_name("Single");
+        project.material = Some(meta);
+        assert_eq!(project.material_track_count(), 1);
+        // 单轨素材的 [material] 段不序列化 track_count 字段
+        // （audio.track_count 是工程统计字段，始终存在，需截取 [material] 段后断言）
+        let toml_str = project.to_toml_str().expect("序列化失败");
+        let material_section = toml_str
+            .split("[material]")
+            .nth(1)
+            .expect("应包含 [material] 段");
+        assert!(!material_section.contains("track_count"));
+    }
+
+    #[test]
+    fn test_legacy_metadata_without_material_parses() {
+        // 旧版工程文件没有 material 段，必须能正常解析（向后兼容）
+        let legacy = r#"
+format_version = 1
+
+[project]
+name = "Legacy"
+author = "Anonymous"
+created_at = "2026-01-01T00:00:00+00:00"
+modified_at = "2026-01-01T00:00:00+00:00"
+lumino_version = "0.1.0"
+
+[audio]
+division = 480
+total_ticks = 1000
+track_count = 1
+total_notes = 10
+default_bpm = 120.0
+
+[tracks]
+entries = []
+"#;
+        let decoded = ProjectMetadata::from_toml_str(legacy).expect("旧版元数据解析失败");
+        assert!(!decoded.is_material_file());
+        assert!(decoded.material.is_none());
+        assert_eq!(decoded.project.name, "Legacy");
     }
 }

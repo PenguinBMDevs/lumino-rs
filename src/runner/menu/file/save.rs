@@ -8,6 +8,102 @@ use super::editor_midi;
 use super::helpers::{get_file_extension, get_file_stem};
 
 impl RunnerInner {
+    /// 导出为素材（.lmmaterial）
+    ///
+    /// 前置条件：存在音符框选（卷帘选中音符 / 走带跨音轨框选），
+    /// 菜单项在无框选时置灰禁用，此处做兜底校验。
+    ///
+    /// 素材内容 = 选中音符（跨轨）+ 工程级数据（tempo/拍号/自动化 CC/PC/弯音），
+    /// 保存为带 `[material]` 元数据标记的单文件 LMPJ 归档；
+    /// 素材名以保存对话框中设置的文件名为准（二次导出用新名字）。
+    pub(super) fn handle_export_material(&mut self) {
+        // 自动提交当前编辑（ghost 方案：松手即提交）
+        let committed = self
+            .window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .editor
+            .commit_current_edit();
+        if committed {
+            tracing::debug!("导出素材前自动提交编辑");
+        }
+
+        // 提取选中音符（卷帘 selected_notes / 走带 arrange_selection 跨轨）
+        let selected = {
+            let ui = self.window_state.window.ui();
+            ui.get_selected_notes()
+        };
+        if selected.is_empty() {
+            tracing::warn!("导出为素材：没有选中的音符，已忽略");
+            return;
+        }
+
+        // 保存对话框（仅支持 .lmmaterial）
+        let Some(save_path) = rfd::FileDialog::new()
+            .add_filter(
+                crate::constants::filters::LUMINO_MATERIAL.0,
+                crate::constants::filters::LUMINO_MATERIAL.1,
+            )
+            .set_file_name("untitled.lmmaterial")
+            .save_file()
+        else {
+            return;
+        };
+
+        let Some(material_name) = save_path
+            .file_stem()
+            .map(|s| s.to_string_lossy().into_owned())
+        else {
+            return;
+        };
+
+        // 构建含选中音符的 MIDI 数据 → MidiDocument → LuminoProject
+        let Some(export_data) = editor_midi::build_midi_export_data_from_selection(self, &selected)
+        else {
+            tracing::error!("导出为素材：构建 MIDI 数据失败");
+            return;
+        };
+        let Some(midi_bytes) = lumino_export::midi::export_midi_to_bytes(&export_data).ok() else {
+            tracing::error!("导出为素材：编码 MIDI 字节失败");
+            return;
+        };
+        let Ok((doc, _, _)) = lumino_midi_loader::MidiDocument::from_notes_bytes(&midi_bytes, None)
+        else {
+            tracing::error!("导出为素材：重建 MidiDocument 失败");
+            return;
+        };
+        let project = lumino_export::LuminoProject::from_midi_document(&doc);
+
+        // 后台写入素材文件（进度条）
+        let cb = self.window_state.progress_cb.clone();
+        let save_path2 = save_path.clone();
+        let material_name2 = material_name.clone();
+        tokio::spawn(async move {
+            cb("正在导出素材", 0.3);
+            match tokio::task::spawn_blocking(move || {
+                lumino_export::save_material(&project, &material_name2, &save_path2)
+            })
+            .await
+            {
+                Ok(Ok(())) => {
+                    cb("素材导出成功", 1.0);
+                    tracing::info!("素材导出成功: {:?}（名称: {}）", save_path, material_name);
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("素材导出失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+                Err(e) => {
+                    let msg = format!("素材导出任务失败: {e}");
+                    cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                }
+            }
+        });
+    }
+
     /// 将编辑器内容保存为新的 MIDI 文件
     ///
     /// 用于从空白状态（未加载任何 MIDI/DMS 文件）保存用户编辑的音符。

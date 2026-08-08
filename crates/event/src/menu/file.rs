@@ -22,6 +22,8 @@ pub enum Event {
     ExportProjectArchive,
     /// 导出工程为文件夹 (.lmpj)
     ExportProjectFolder,
+    /// 导出选中音符为素材 (.lmmaterial)
+    ExportMaterial,
     /// 工程设置
     ProjectSettings,
     /* */
@@ -84,6 +86,9 @@ impl Event {
     }
     pub const fn export_project_folder() -> Self {
         Self::ExportProjectFolder
+    }
+    pub const fn export_material() -> Self {
+        Self::ExportMaterial
     }
     pub const fn project_settings() -> Self {
         Self::ProjectSettings

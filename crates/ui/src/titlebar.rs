@@ -31,10 +31,11 @@ impl Titlebar {
         _current_mode: AppMode,
         _toggle_progress: f32,
         language: Language,
+        export_material_enabled: bool,
     ) -> Element<'a> {
         // 如果使用经典系统标题栏，只显示菜单（在最左侧）
         if use_native_titlebar {
-            return self.view_native_titlebar(window, language);
+            return self.view_native_titlebar(window, language, export_material_enabled);
         }
 
         // 自定义标题栏模式
@@ -42,7 +43,11 @@ impl Titlebar {
         let menu_row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![logo::view(window), menu::view(language)].align_y(Alignment::Center)
+            row![
+                logo::view(window),
+                menu::view(language, export_material_enabled)
+            ]
+            .align_y(Alignment::Center)
         };
 
         // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
@@ -131,12 +136,13 @@ impl Titlebar {
         &'a self,
         window: &'a window::Window,
         language: Language,
+        export_material_enabled: bool,
     ) -> Element<'a> {
         // 菜单在最左侧，没有 logo 和窗口控制按钮
         let row = if cfg!(target_os = "macos") {
             row![]
         } else {
-            row![menu::view(language)]
+            row![menu::view(language, export_material_enabled)]
         };
 
         let inner = container(row)

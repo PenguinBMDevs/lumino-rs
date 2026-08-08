@@ -3,7 +3,10 @@
 //! 提供多语言支持和调色板管理等扩展功能。
 
 pub mod i18n;
+pub mod material;
 pub mod palette;
+
+pub use material::{EmbeddedMaterial, embedded_materials};
 
 pub use i18n::{
     Language, MainTranslations, SettingsTranslations, dot_type_name, eraser_behavior_name,

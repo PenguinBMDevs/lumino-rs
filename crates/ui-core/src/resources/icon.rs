@@ -105,6 +105,8 @@ define_icons! {
     (Tie, "../../../../resources/icons/toolbar/note-tie.svg"),
     // 图片转 MIDI 占位图标
     (ImageToMidi, "../../../../resources/icons/toolbar/image-to-midi-converter.svg"),
+    // 素材库图标（右侧栏）
+    (MaterialLibrary, "../../../../resources/icons/toolbar/material-library.svg"),
     // 标题栏图标
     (PencilOutline, "../../../../resources/icons/titlebar/editor-mode.svg"),
     (Keys, "../../../../resources/icons/titlebar/piano-roll.svg"),

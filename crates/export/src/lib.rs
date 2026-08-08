@@ -19,6 +19,7 @@ pub mod audio;
 pub mod converter;
 pub mod error;
 pub mod format;
+pub mod material;
 pub mod midi;
 pub mod onion_skin_export;
 pub mod project;
@@ -64,6 +65,8 @@ pub use onion_skin_export::export_onion_skin_tiles;
 
 // ── 工程文件 ──
 
+/// 素材文件（.lmmaterial）保存 / 路径判断
+pub use material::{is_material_path, save_material};
 /// 文件夹工程入口文件
 pub use project::LuminoEntryFile;
 /// 读取 `.lmpj` 入口文件对应的高精度洋葱皮元数据

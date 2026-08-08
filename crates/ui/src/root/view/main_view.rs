@@ -134,6 +134,9 @@ impl Root {
                 self.view_status_section(),
             ]
         } else {
+            // 导出为素材的启用条件：卷帘选中音符 或 走带视图跨音轨框选
+            let export_material_enabled = self.editor.selected_notes_count() > 0
+                || !self.editor.editor_state.data.arrange_selection.is_empty();
             column![
                 self.titlebar.view(
                     &self.window,
@@ -141,6 +144,7 @@ impl Root {
                     self.state.current_mode,
                     self.state.toggle_animation.position,
                     self.settings.language,
+                    export_material_enabled,
                 ),
                 row![left_bar, right_content].height(Length::Fill),
                 self.view_status_section(),

@@ -3,6 +3,8 @@
 use lumino_message::I2mConfigField;
 use once_cell::sync::Lazy;
 
+use crate::right_sidebar::material::MaterialLibrary;
+
 /// 右侧栏图标栏宽度（固定，与左侧栏路由栏一致）
 pub const ROUTE_BAR_WIDTH: f32 = 48.0;
 /// 右侧栏面板默认宽度（与左侧栏面板一致）
@@ -13,6 +15,16 @@ pub const MIN_PANEL_WIDTH: f32 = 150.0;
 pub const MAX_PANEL_WIDTH: f32 = 900.0;
 /// 右侧栏调整大小手柄宽度
 pub const RESIZE_HANDLE_WIDTH: f32 = 6.0;
+
+/// 右侧栏面板路由（互斥切换：同一时刻只显示一个面板）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum RightSidebarPanel {
+    /// 图片转 MIDI 面板
+    #[default]
+    ImageToMidi,
+    /// 素材库面板
+    Materials,
+}
 
 /// 可选调色板算法（中文名 + i2m-rs `PaletteSource`）
 ///
@@ -187,6 +199,8 @@ impl I2mConfig {
 pub struct RightSidebar {
     /// 面板是否可见
     pub panel_visible: bool,
+    /// 当前激活的面板（I2M / 素材库，互斥切换）
+    pub active_panel: RightSidebarPanel,
     /// 面板宽度
     pub panel_width: f32,
     /// 是否正在拖拽调整宽度
@@ -201,12 +215,15 @@ pub struct RightSidebar {
     pub converting: bool,
     /// i2m 转换配置（用户自定义项）
     pub config: I2mConfig,
+    /// 素材库状态（素材列表 / 添加菜单）
+    pub materials: MaterialLibrary,
 }
 
 impl RightSidebar {
     pub fn new() -> Self {
         Self {
             panel_visible: false,
+            active_panel: RightSidebarPanel::ImageToMidi,
             panel_width: DEFAULT_PANEL_WIDTH,
             is_resizing: false,
             resize_start_x: 0.0,
@@ -214,6 +231,7 @@ impl RightSidebar {
             selected_image_path: None,
             converting: false,
             config: I2mConfig::default(),
+            materials: MaterialLibrary::default(),
         }
     }
 
@@ -230,6 +248,17 @@ impl RightSidebar {
     /// 切换面板显示/隐藏
     pub fn toggle_panel(&mut self) {
         self.panel_visible = !self.panel_visible;
+    }
+
+    /// 切换面板路由并确保面板展开（互斥：仅显示目标面板）
+    pub fn switch_panel(&mut self, panel: RightSidebarPanel) {
+        self.active_panel = panel;
+        self.panel_visible = true;
+    }
+
+    /// 当前按钮是否亮灯（面板可见且路由匹配）
+    pub fn is_panel_active(&self, panel: RightSidebarPanel) -> bool {
+        self.panel_visible && self.active_panel == panel
     }
 
     /// 设置选中的图片路径（并确保面板展开以便查看结果）

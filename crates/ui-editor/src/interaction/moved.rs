@@ -19,7 +19,7 @@ impl Editor {
             && i2m_interaction != lumino_editor_state::I2mInteraction::Selecting
             && i2m_interaction != lumino_editor_state::I2mInteraction::None
         {
-            self.handle_i2m_moved(snapped_tick);
+            self.handle_i2m_moved(snapped_tick, key as f32);
             return;
         }
 

@@ -1,9 +1,8 @@
 //! 工程文件格式兼容层
 //!
-//! 核心类型已迁移到 `lumino-core`，本模块仅保留：
-//! - 旧版 LMPJ 文件兼容加载
-//! - 文件夹工程 `.lmpj` 入口文件读写
-//! - 供 Runner 使用的便捷扩展（`LuminoProject -> ParsedMidi`）
+//! 核心类型已迁移到 `lumino-core`，本模块保留旧版 LMPJ 兼容加载、
+//! 文件夹工程 `.lmpj` 入口读写与 Runner 便捷扩展
+//! （`LuminoProject -> ParsedMidi`）。素材（.lmmaterial）见 `material` 模块。
 
 use std::path::{Path, PathBuf};
 
@@ -37,8 +36,7 @@ impl LuminoEntryFile {
 
 /// 保存工程为文件夹形态，并生成 `.lmpj` 入口文件
 ///
-/// - `entry_path`：入口文件路径（如 `/path/to/project_name.lmpj`）
-/// - 数据文件夹为入口文件去除 `.lmpj` 扩展名后的目录（如 `/path/to/project_name/`）
+/// `entry_path`：入口文件路径；数据文件夹为入口去除扩展名后的目录。
 pub fn save_project_to_folder_with_entry(
     project: &LuminoProject,
     entry_path: impl AsRef<Path>,
@@ -83,10 +81,7 @@ pub fn save_project_to_folder_with_entry(
     Ok(())
 }
 
-/// 计算项目级缓存哈希
-///
-/// 基于工程名称、音频规格与已加载音轨事件数据，使用稳定 xxhash3，
-/// 保证同一工程内容每次导出得到相同的缓存分桶名。
+/// 计算项目级缓存哈希（xxhash3，工程内容稳定分桶）
 fn compute_project_cache_hash(project: &LuminoProject) -> String {
     let mut hasher_input = Vec::new();
     hasher_input.extend_from_slice(project.metadata.project.name.as_bytes());
@@ -108,9 +103,7 @@ fn compute_project_cache_hash(project: &LuminoProject) -> String {
     format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&hasher_input))
 }
 
-/// 尝试从 `.lmpj` 入口文件路径读取高精度洋葱皮缓存元数据
-///
-/// 仅对文件夹入口文件有效；二进制归档或旧版 LMPJ 返回 `None`。
+/// 从 `.lmpj` 入口文件路径读取高精度洋葱皮缓存元数据（仅文件夹入口有效）
 pub fn load_project_image_metadata(
     entry_path: impl AsRef<Path>,
 ) -> Option<lumino_project::project::metadata::ImageMetadata> {
@@ -191,14 +184,10 @@ pub fn load_project(path: impl AsRef<Path>) -> crate::ExportResult<LuminoProject
 /// 尝试解析入口文件内容
 fn try_parse_entry_file(text: &str) -> Option<LuminoEntryFile> {
     let entry: LuminoEntryFile = toml::from_str(text).ok()?;
-    if entry.version == 1 && entry.format == "folder" {
-        Some(entry)
-    } else {
-        None
-    }
+    (entry.version == 1 && entry.format == "folder").then_some(entry)
 }
 
-/// 加载旧版 LMPJ 文件（bincode + zstd），仅保留基本信息。
+/// 加载旧版 LMPJ 文件（bincode + zstd），仅保留基本信息
 fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     let lmpj_data: lumino_midi_loader::LmpjData = crate::format::decode_lmpj(bytes)?;
     let parsed = lmpj_data.to_parsed_midi();
@@ -218,8 +207,7 @@ fn load_legacy_lmpj(bytes: &[u8]) -> crate::ExportResult<LuminoProject> {
     project.metadata.audio.total_ticks = parsed.info.duration_ticks;
     project.metadata.audio.division = parsed.info.division;
 
-    // 旧版 LMPJ 不包含分轨数据，需要重新解析 MIDI 才能获取
-    // 这里仅创建占位符
+    // 旧版 LMPJ 不包含分轨数据，创建占位符
     for track_id in 0..parsed.info.track_count {
         project.tracks.push(TrackSlot::Unloaded {
             track_id,
@@ -248,8 +236,7 @@ impl From<lumino_core::CoreError> for crate::ExportError {
 mod tests {
     use super::*;
     use lumino_midi_model::compact::{CompactEvent, EventKind};
-    use lumino_project::project::TrackVisibilitySer;
-    use lumino_project::project::track::{LmtrackData, TrackMeta};
+    use lumino_project::project::track::{LmtrackData, TrackMeta, TrackVisibilitySer};
     use tempfile::tempdir;
 
     fn make_test_project() -> LuminoProject {

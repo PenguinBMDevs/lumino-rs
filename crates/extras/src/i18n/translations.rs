@@ -52,6 +52,7 @@ pub struct MainTranslations {
     pub file_export_project: &'static str,
     pub file_export_archive: &'static str,
     pub file_export_folder: &'static str,
+    pub file_export_material: &'static str,
     pub file_export_audio: &'static str,
     pub file_project_settings: &'static str,
     pub file_settings: &'static str,
@@ -100,6 +101,18 @@ pub struct MainTranslations {
     pub project_editing_time_label: &'static str,
     pub project_ok: &'static str,
     pub project_cancel: &'static str,
+
+    // ── 素材库面板 ──
+    pub material_library: &'static str,
+    pub material_add: &'static str,
+    pub material_download_web: &'static str,
+    pub material_import_local: &'static str,
+    pub material_section_builtin: &'static str,
+    pub material_section_user: &'static str,
+    pub material_tracks_fmt: &'static str,
+    pub material_invalid: &'static str,
+    pub material_import_ok: &'static str,
+    pub material_import_failed: &'static str,
 }
 
 pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
@@ -152,6 +165,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     file_export_project: "导出工程",
     file_export_archive: "导出为单文件",
     file_export_folder: "导出为文件夹",
+    file_export_material: "导出为素材",
     file_export_audio: "导出音频",
     file_project_settings: "工程设置",
     file_settings: "设置",
@@ -199,6 +213,17 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     project_editing_time_label: "累计创作时间",
     project_ok: "确定",
     project_cancel: "取消",
+
+    material_library: "素材库",
+    material_add: "添加素材",
+    material_download_web: "从 web 下载",
+    material_import_local: "从本地选取",
+    material_section_builtin: "内置素材",
+    material_section_user: "本地素材",
+    material_tracks_fmt: "{} 轨",
+    material_invalid: "素材无效",
+    material_import_ok: "素材已导入",
+    material_import_failed: "素材导入失败",
 };
 
 pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
@@ -251,6 +276,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     file_export_project: "Export Project",
     file_export_archive: "Export as Single File",
     file_export_folder: "Export as Folder",
+    file_export_material: "Export as Material",
     file_export_audio: "Export Audio",
     file_project_settings: "Project Settings",
     file_settings: "Settings",
@@ -298,4 +324,15 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     project_editing_time_label: "Total Editing Time",
     project_ok: "OK",
     project_cancel: "Cancel",
+
+    material_library: "Material Library",
+    material_add: "Add Material",
+    material_download_web: "Download from Web",
+    material_import_local: "Import from Local",
+    material_section_builtin: "Built-in",
+    material_section_user: "Local",
+    material_tracks_fmt: "{} tracks",
+    material_invalid: "Invalid material",
+    material_import_ok: "Material imported",
+    material_import_failed: "Failed to import material",
 };

@@ -21,7 +21,7 @@ impl Editor {
     ///
     /// - Selecting：开始框选（Y 全键、X snap）
     /// - Placing：命中区域框 → 移动/拉伸；命中空白 → 取消放置并还原显示区域
-    pub(super) fn handle_i2m_pressed(&mut self, pos: Point, snapped_tick: f32) {
+    pub(super) fn handle_i2m_pressed(&mut self, pos: Point, snapped_tick: f32, key: f32) {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         match self.editor_state.image_to_midi.mode {
             ImageToMidiMode::Selecting => {
@@ -55,6 +55,8 @@ impl Editor {
                     Some(SelectionHitType::Inside) => {
                         i2m.interaction = I2mInteraction::Dragging;
                         i2m.drag_start_tick = snapped_tick;
+                        // 素材放置：记录 Y 向拖拽基准（区域框整体上下移动）
+                        i2m.drag_start_key = key;
                     }
                     None => {
                         // 按下空白处：仅清除区域框（保留预览，可重新框选）
@@ -69,9 +71,18 @@ impl Editor {
         }
     }
 
-    /// 放置模式移动处理（整体移动 / 左右边框拉伸，仅 X 向）
-    pub(super) fn handle_i2m_moved(&mut self, snapped_tick: f32) {
+    /// 放置模式移动处理
+    ///
+    /// - 素材拖出跟随（Selecting + drag_follow）：预览整体跟随鼠标（X 向 + Y 向）；
+    /// - Dragging：整体移动——X 向平移；素材（`allow_y_drag`）同时 Y 向平移；
+    /// - StretchLeft/StretchRight：仅 X 向拉伸左右边框。
+    pub(super) fn handle_i2m_moved(&mut self, snapped_tick: f32, cursor_key: f32) {
         let i2m = &mut self.editor_state.image_to_midi;
+        // 素材拖出跟随：更新跟随区域（X/Y 同步）
+        if i2m.mode == ImageToMidiMode::Selecting && i2m.drag_follow.is_some() {
+            i2m.update_drag_follow(snapped_tick, cursor_key);
+            return;
+        }
         let changed = match i2m.interaction {
             I2mInteraction::Dragging => {
                 // 整体 X 向平移：以鼠标 snap tick 的位移为准（累积式）
@@ -79,6 +90,14 @@ impl Editor {
                 let changed = delta != 0.0;
                 if let Some(region) = i2m.region.as_mut() {
                     region.offset_x(delta);
+                    // 素材放置：整体 Y 向平移（累积式，与 X 同理）
+                    if i2m.allow_y_drag {
+                        let delta_key = (cursor_key - i2m.drag_start_key).round() as i32;
+                        if delta_key != 0 {
+                            region.offset_keys(delta_key);
+                            i2m.drag_start_key = cursor_key;
+                        }
+                    }
                 }
                 i2m.drag_start_tick = snapped_tick;
                 changed
@@ -111,9 +130,16 @@ impl Editor {
     /// 放置模式释放处理
     ///
     /// - Selecting 结束 → 用框选范围确认生成区域（进入 Placing，显示预览）
+    /// - 素材拖出跟随（Selecting + drag_follow）→ 确认放置（进入 Placing）
     /// - Dragging/Stretch 结束 → 复位交互阶段
     pub(super) fn handle_i2m_released(&mut self, edit_state: EditState) {
         let i2m = &mut self.editor_state.image_to_midi;
+        // 素材拖出跟随：松手确认放置（幂等：Root 侧 MaterialDragEnded 也可能确认）
+        if i2m.mode == ImageToMidiMode::Selecting && i2m.drag_follow.is_some() {
+            i2m.confirm_material_follow();
+            self.mark_ghost_dirty();
+            return;
+        }
         match i2m.interaction {
             I2mInteraction::Selecting => {
                 if let EditState::Selecting {

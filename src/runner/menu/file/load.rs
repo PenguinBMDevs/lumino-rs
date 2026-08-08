@@ -191,6 +191,10 @@ impl RunnerInner {
             self.load_lmpj_project(path);
             return;
         }
+        if lumino_export::is_material_path(&path) {
+            self.load_material_project(path);
+            return;
+        }
 
         tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
         let progress_cb = self.window_state.progress_cb.clone();
@@ -211,6 +215,58 @@ impl RunnerInner {
                 },
             )
             .await;
+        });
+    }
+
+    /// 加载素材文件（.lmmaterial，后台异步加载）
+    ///
+    /// 素材内部使用 lmpj 归档形式存储，加载后通过 metadata 的
+    /// `[material]` 段分辨素材文件与标准工程文件（非素材则拒绝加载）。
+    fn load_material_project(&self, path: PathBuf) {
+        tracing::info!("开始后台加载素材文件：{:?}", path);
+        let progress_cb = self.window_state.progress_cb.clone();
+        tokio::spawn(async move {
+            progress_cb("正在加载素材", 0.3);
+            let path_for_blocking = path.clone();
+            let load_result = tokio::task::spawn_blocking(move || {
+                let project = lumino_export::load_project(&path_for_blocking)?;
+                // 从 metadata 分辨素材/工程：非素材文件拒绝按素材加载
+                if !project.metadata.is_material_file() {
+                    return Err(lumino_export::ExportError::FileFormat(format!(
+                        "{} 不是素材文件（.lmmaterial）",
+                        path_for_blocking.display()
+                    )));
+                }
+                lumino_export::project_to_parsed_midi(&project, path_for_blocking)
+            })
+            .await;
+
+            match load_result {
+                Ok(Ok(parsed)) => {
+                    progress_cb("素材加载成功", 1.0);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
+                            parsed,
+                        )),
+                    ));
+                }
+                Ok(Err(e)) => {
+                    let msg = format!("加载素材失败: {e}");
+                    progress_cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
+                    ));
+                }
+                Err(e) => {
+                    let msg = format!("加载素材任务失败: {e}");
+                    progress_cb(&msg, 1.0);
+                    tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::MidiParseError(msg),
+                    ));
+                }
+            }
         });
     }
 

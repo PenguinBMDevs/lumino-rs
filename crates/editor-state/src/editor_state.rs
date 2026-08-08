@@ -20,6 +20,7 @@ pub mod drag_state;
 pub mod editor_data;
 pub mod hit_test;
 pub mod image_to_midi;
+pub mod image_to_midi_material;
 pub mod interaction_ops;
 pub mod interaction_state;
 pub mod note_grouping;

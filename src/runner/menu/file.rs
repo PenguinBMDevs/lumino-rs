@@ -158,6 +158,9 @@ impl RunnerInner {
             ExportProjectFolder => {
                 self.handle_export_project_folder();
             }
+            ExportMaterial => {
+                self.handle_export_material();
+            }
             _ => {
                 tracing::debug!("未处理的文件事件：{:?}", file_event);
             }

@@ -11,6 +11,9 @@ pub mod filters {
     /// Lumino 项目文件过滤器
     pub const LUMINO_PROJECT: (&str, &[&str]) = ("Lumino 项目", &["lmpj"]);
 
+    /// Lumino 素材文件过滤器 (.lmmaterial)
+    pub const LUMINO_MATERIAL: (&str, &[&str]) = ("Lumino 素材", &["lmmaterial"]);
+
     /// 压缩包文件过滤器
     pub const ARCHIVE_FILES: (&str, &[&str]) = (
         "压缩包文件",

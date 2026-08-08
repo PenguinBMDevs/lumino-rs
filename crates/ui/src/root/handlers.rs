@@ -22,6 +22,7 @@ pub mod core_window;
 pub mod dialog;
 pub mod editor_action;
 pub mod loop_range;
+pub mod material;
 pub mod settings;
 pub mod sidebar;
 pub mod state_update;

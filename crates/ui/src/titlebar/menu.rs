@@ -41,6 +41,8 @@ impl std::fmt::Display for MenuKind {
 pub enum MenuItem {
     // 用于 i18n 的 Action(Event, Fn) 或类似结构
     Action(Event),
+    /// 置灰禁用的菜单项（保留事件用于显示名，但不可点击）
+    ActionDisabled(Event),
     Separator,
     // 子菜单(Vec<MenuItem>, Fn)
     Submenu(Vec<MenuItem>, String),
@@ -52,7 +54,7 @@ pub struct MenuConfig {
     pub items: Vec<MenuItem>,
 }
 
-pub fn file_menu(lang: Language) -> MenuConfig {
+pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
     let translations = main_translations(lang);
     use crate::event::menu::file;
     use MenuItem::*;
@@ -77,6 +79,16 @@ pub fn file_menu(lang: Language) -> MenuConfig {
                 ],
                 translations.file_export_project.to_string(),
             ),
+            // 导出为素材：仅在存在音符框选时可用（走带视图跨音轨框选 / 卷帘选中音符）
+            if export_material_enabled {
+                Action(crate::event::Event::menu_file(
+                    file::Event::export_material(),
+                ))
+            } else {
+                ActionDisabled(crate::event::Event::menu_file(
+                    file::Event::export_material(),
+                ))
+            },
             Separator,
             Action(crate::event::Event::menu_file(
                 file::Event::project_settings(),
@@ -130,17 +142,17 @@ pub fn help_menu(_lang: Language) -> MenuConfig {
     }
 }
 
-pub fn menus(lang: Language) -> [MenuConfig; 4] {
+pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
     [
-        file_menu(lang),
+        file_menu(lang, export_material_enabled),
         edit_menu(lang),
         view_menu(lang),
         help_menu(lang),
     ]
 }
 
-pub fn view<'a>(language: Language) -> Element<'a> {
-    let menus = menus(language)
+pub fn view<'a>(language: Language, export_material_enabled: bool) -> Element<'a> {
+    let menus = menus(language, export_material_enabled)
         .iter()
         .map(|cfg| {
             Item::with_menu(
@@ -179,6 +191,10 @@ fn menu_items<'a>(items: &[MenuItem], lang: Language) -> Vec<Item<'a, Message, T
                     // 点击菜单项时发送菜单关闭消息
                     let msg = Message::Core(r.clone());
                     base_button(event_display_name(r, lang), Some(msg))
+                }
+                MenuItem::ActionDisabled(r) => {
+                    // 置灰禁用：不可点击，仅展示显示名
+                    disabled_button(event_display_name(r, lang))
                 }
                 MenuItem::Separator => base_split(),
                 MenuItem::Submenu(r, n) => {
@@ -233,6 +249,23 @@ fn base_button<'a>(label: impl Into<String>, msg: Option<Message>) -> Element<'a
     let inner = text(label.into()).size(14.0).into();
     button_template(inner, msg.unwrap_or(message::null()))
         .width(Length::Fill)
+        .into()
+}
+
+/// 置灰禁用的菜单按钮（无 on_press，文字颜色调暗）
+fn disabled_button<'a>(label: impl Into<String>) -> Element<'a> {
+    button(text(label.into()).size(14.0))
+        .width(Length::Fill)
+        .style(|theme: &Theme, _status| {
+            let palette = theme.extended_palette();
+            button::Style {
+                border: Border::default().rounded(4),
+                // 调暗文字表示禁用
+                text_color: palette.background.strongest.text,
+                ..Default::default()
+            }
+            .with_background(Color::TRANSPARENT)
+        })
         .into()
 }
 
@@ -297,6 +330,7 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
                 FileEvent::ImportFiles => translations.file_import.to_string(),
                 FileEvent::ExportProjectArchive => translations.file_export_archive.to_string(),
                 FileEvent::ExportProjectFolder => translations.file_export_folder.to_string(),
+                FileEvent::ExportMaterial => translations.file_export_material.to_string(),
                 FileEvent::ProjectSettings => translations.file_project_settings.to_string(),
                 FileEvent::Settings => translations.file_settings.to_string(),
                 FileEvent::Exit => translations.file_exit.to_string(),

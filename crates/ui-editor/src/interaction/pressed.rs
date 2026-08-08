@@ -34,7 +34,7 @@ impl Editor {
     ) {
         // 图片转 MIDI 放置模式：拦截全部按下交互
         if self.editor_state.image_to_midi.is_active() {
-            self.handle_i2m_pressed(pos, snapped_tick);
+            self.handle_i2m_pressed(pos, snapped_tick, key as f32);
             return;
         }
 
