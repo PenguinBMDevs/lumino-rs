@@ -72,7 +72,11 @@ impl LuminoProject {
                 track_events.push(on);
                 track_events.push(off);
             }
-            track_events.sort_unstable_by_key(|e| e.delta_tick());
+            // 稳定排序（保持音符声明顺序）：同 tick 的 NoteOff 必然排在 NoteOn 前
+            // （同一音符的 off 先于后续音符的 on 插入），配合回读端 FIFO 配对，
+            // 保证同 key 相接/重叠音符的 NoteOn/NoteOff 配对一致。
+            // sort_unstable 会打乱同 tick 顺序 → 音符长度偶发错乱。
+            track_events.sort_by_key(|e| e.delta_tick());
 
             // 将绝对 tick 转换为相对 delta_tick，保证 CompactEvent 语义一致
             let mut last_tick = 0_u32;
@@ -150,8 +154,12 @@ impl LuminoProject {
             track_names.push(Some(track_data.meta.name.clone()));
 
             let compact_events = track_data.compact_events()?;
-            let mut active: std::collections::HashMap<(u8, u8), (u32, u8)> =
-                std::collections::HashMap::new();
+            // FIFO 配对：同 key 重叠音符按 NoteOn 顺序匹配 NoteOff
+            // （HashMap 单槽会互相覆盖，导致重叠音符长度错乱——变短/变长）
+            let mut active: std::collections::HashMap<
+                (u8, u8),
+                std::collections::VecDeque<(u32, u8)>,
+            > = std::collections::HashMap::new();
             let mut current_tick = 0_u32;
 
             for ev in compact_events {
@@ -162,10 +170,14 @@ impl LuminoProject {
                 let velocity = ev.param2() as u8;
 
                 if kind == lumino_midi_model::compact::EventKind::NoteOn && velocity > 0 {
-                    active.insert((key, channel), (current_tick, velocity));
+                    active
+                        .entry((key, channel))
+                        .or_default()
+                        .push_back((current_tick, velocity));
                 } else if (kind == lumino_midi_model::compact::EventKind::NoteOff
                     || (kind == lumino_midi_model::compact::EventKind::NoteOn && velocity == 0))
-                    && let Some((start_tick, note_velocity)) = active.remove(&(key, channel))
+                    && let Some(queue) = active.get_mut(&(key, channel))
+                    && let Some((start_tick, note_velocity)) = queue.pop_front()
                 {
                     notes[idx].push_back(NoteEvent::new(
                         start_tick,
@@ -182,15 +194,17 @@ impl LuminoProject {
             if let Some(max_tick) =
                 (track_data.meta.max_tick > 0).then_some(track_data.meta.max_tick)
             {
-                for ((key, channel), (start_tick, note_velocity)) in active {
-                    notes[idx].push_back(NoteEvent::new(
-                        start_tick,
-                        max_tick,
-                        key,
-                        note_velocity,
-                        channel,
-                    ));
-                    total_ticks = total_ticks.max(max_tick);
+                for ((key, channel), queue) in active {
+                    for (start_tick, note_velocity) in queue {
+                        notes[idx].push_back(NoteEvent::new(
+                            start_tick,
+                            max_tick,
+                            key,
+                            note_velocity,
+                            channel,
+                        ));
+                        total_ticks = total_ticks.max(max_tick);
+                    }
                 }
             }
         }

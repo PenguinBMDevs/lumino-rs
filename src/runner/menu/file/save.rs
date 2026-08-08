@@ -58,22 +58,16 @@ impl RunnerInner {
             return;
         };
 
-        // 构建含选中音符的 MIDI 数据 → MidiDocument → LuminoProject
-        let Some(export_data) = editor_midi::build_midi_export_data_from_selection(self, &selected)
-        else {
-            tracing::error!("导出为素材：构建 MIDI 数据失败");
-            return;
+        // 直接从 UI 文档构建素材工程（不走 MIDI 字节中转，避免截断与配对错乱）
+        let project = {
+            let ui = self.window_state.window.ui();
+            let data = &ui.root().editor.editor_state.data;
+            let Some(doc) = data.document.as_ref() else {
+                tracing::error!("导出为素材：文档不可用");
+                return;
+            };
+            editor_midi::build_material_project_from_selection(doc, &selected)
         };
-        let Some(midi_bytes) = lumino_export::midi::export_midi_to_bytes(&export_data).ok() else {
-            tracing::error!("导出为素材：编码 MIDI 字节失败");
-            return;
-        };
-        let Ok((doc, _, _)) = lumino_midi_loader::MidiDocument::from_notes_bytes(&midi_bytes, None)
-        else {
-            tracing::error!("导出为素材：重建 MidiDocument 失败");
-            return;
-        };
-        let project = lumino_export::LuminoProject::from_midi_document(&doc);
 
         // 后台写入素材文件（进度条）
         let cb = self.window_state.progress_cb.clone();
