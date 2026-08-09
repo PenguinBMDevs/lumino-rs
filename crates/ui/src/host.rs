@@ -110,6 +110,11 @@ impl Host {
         self.root.settings()
     }
 
+    /// 获取设置面板引用（可变，供 runner 注入云管理快照）
+    pub fn settings_mut(&mut self) -> &mut settings::SettingsPanel {
+        &mut self.root.settings
+    }
+
     /// 获取云存储 UI 状态
     pub fn cloud_state(&self) -> &crate::state::cloud_state::CloudUiState {
         &self.root.cloud

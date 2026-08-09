@@ -61,6 +61,25 @@ pub enum Event {
         /// 新文件夹名称
         name: String,
     },
+    /// 打开云连接面板（设置面板"添加连接"）
+    OpenConnectPanel,
+    /// 打开云文件浏览面板（设置面板"管理文件"）
+    OpenBrowserPanel {
+        /// 入口意图（"import"/"save"/"material"）
+        intent: String,
+    },
+    /// 连接已保存的指定连接
+    ConnectExisting {
+        /// 连接 ID
+        id: String,
+    },
+    /// 删除已保存的连接配置
+    DeleteConnection {
+        /// 连接 ID
+        id: String,
+    },
+    /// 关闭断连提醒面板
+    DismissAlert,
     /// 重命名请求
     RenameRequest {
         /// 连接 ID

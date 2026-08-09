@@ -179,6 +179,31 @@ impl Root {
                     },
                 ));
             }
+
+            // ── 云管理（设置面板入口） ──
+            CloudAction::OpenConnectPanel => {
+                event::emit(event::Event::cloud(cloud_event::Event::OpenConnectPanel));
+            }
+            CloudAction::OpenBrowserPanel => {
+                event::emit(event::Event::cloud(cloud_event::Event::OpenBrowserPanel {
+                    intent: "import".to_string(),
+                }));
+            }
+            CloudAction::ConnectExisting(id) => {
+                self.cloud.connecting = true;
+                event::emit(event::Event::cloud(cloud_event::Event::ConnectExisting {
+                    id,
+                }));
+            }
+            CloudAction::DeleteConnection(id) => {
+                event::emit(event::Event::cloud(cloud_event::Event::DeleteConnection {
+                    id,
+                }));
+            }
+            CloudAction::DismissAlert => {
+                self.cloud.alert_message = None;
+                event::emit(event::Event::cloud(cloud_event::Event::DismissAlert));
+            }
         }
     }
 

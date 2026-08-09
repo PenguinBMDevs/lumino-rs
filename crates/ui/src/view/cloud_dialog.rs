@@ -20,8 +20,39 @@ const PRIVACY_HINT: &str = "Lumino 无权且不会收集您的个人信息，所
 pub fn view_cloud_dialog<'a>(root: &'a Root, theme: &Theme) -> Element<'a> {
     match root.state.dialog_type {
         DialogType::CloudConnect => view_connect_panel(&root.cloud, theme),
+        DialogType::CloudNotice => view_cloud_notice(&root.cloud, theme),
         _ => crate::view::cloud_browser::view_cloud_browser(&root.cloud, theme),
     }
+}
+
+/// 断连/失败提醒面板（每次会话只弹一次，之后仅设置面板显示标志）
+fn view_cloud_notice<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a> {
+    let message = state.alert_message.as_deref().unwrap_or("云存储连接异常");
+
+    container(
+        column![
+            text("云存储提醒").size(16),
+            text(message).size(13).style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.strong.text),
+            }),
+            row![
+                button(text("知道了").size(13))
+                    .padding([6, 20])
+                    .on_press(Message::Cloud(CloudAction::DismissAlert)),
+            ]
+            .align_y(Alignment::Center),
+        ]
+        .spacing(14)
+        .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .padding(20)
+    .style(|theme: &Theme| container::Style {
+        background: Some(iced_core::Background::Color(theme.palette().background)),
+        ..Default::default()
+    })
+    .into()
 }
 
 /// 云连接面板

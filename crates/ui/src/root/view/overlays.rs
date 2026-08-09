@@ -151,7 +151,7 @@ impl Root {
                 view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
             }
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
-            DialogType::CloudConnect | DialogType::CloudBrowser => {
+            DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)
             }
         };

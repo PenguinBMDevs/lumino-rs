@@ -21,6 +21,7 @@ pub(super) fn create_menu_items(lang: Language) -> Vec<(&'static str, Icon)> {
         (translations.onion_skin, Icon::Eye),
         (translations.palette, Icon::Arrangement),
         (translations.editing, Icon::Pencil),
+        (translations.cloud_manage, Icon::Download),
         (translations.about, Icon::LogoInApp),
     ]
 }

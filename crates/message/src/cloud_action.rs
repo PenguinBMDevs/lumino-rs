@@ -87,4 +87,16 @@ pub enum CloudAction {
     NewFolder(String),
     /// 保存到此处（保存模式：上传当前工程归档到当前目录）
     SaveHere,
+
+    // ── 云管理（设置面板入口） ──
+    /// 打开云连接面板（设置面板"添加连接"）
+    OpenConnectPanel,
+    /// 打开云文件浏览面板（设置面板"管理文件"）
+    OpenBrowserPanel,
+    /// 连接已保存的指定连接
+    ConnectExisting(String),
+    /// 删除已保存的连接配置
+    DeleteConnection(String),
+    /// 关闭断连提醒面板
+    DismissAlert,
 }

@@ -14,6 +14,7 @@ pub struct SettingsTranslations {
     pub onion_skin: &'static str,
     pub palette: &'static str,
     pub editing: &'static str,
+    pub cloud_manage: &'static str,
 
     // ── 通用 ──
     pub confirm: &'static str,
@@ -133,6 +134,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     onion_skin: "洋葱皮",
     palette: "调色板",
     editing: "编辑",
+    cloud_manage: "云管理",
     confirm: "确认",
     cancel: "取消",
     ok: "确定",
@@ -230,6 +232,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     onion_skin: "Onion Skin",
     palette: "Palette",
     editing: "Editing",
+    cloud_manage: "Cloud Storage",
     confirm: "Confirm",
     cancel: "Cancel",
     ok: "OK",

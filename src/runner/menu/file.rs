@@ -150,6 +150,8 @@ impl RunnerInner {
                     .open_project_settings(title);
             }
             Settings => {
+                // 打开设置面板前刷新云存储快照（云管理页显示最新状态）
+                self.refresh_cloud_connections();
                 self.window_state
                     .dialog_manager
                     .open_dialog(crate::runner::dialog_manager::DialogType::Settings);

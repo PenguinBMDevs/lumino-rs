@@ -70,10 +70,47 @@ impl RunnerInner {
                 self.run_cloud_new_folder(id, parent, name);
             }
             cloud_event::Event::RenameRequest { .. } => {
-                // 云管理面板操作（Phase 4 支持）
+                // 云管理面板操作（后续扩展）
             }
             cloud_event::Event::DeleteRequest { .. } => {}
             cloud_event::Event::MoveRequest { .. } => {}
+            cloud_event::Event::OpenConnectPanel => {
+                self.window_state
+                    .dialog_manager
+                    .open_dialog(crate::runner::dialog_manager::DialogType::CloudConnect);
+            }
+            cloud_event::Event::OpenBrowserPanel { intent } => {
+                let intent = match intent.as_str() {
+                    "save" => CloudIntent::Save,
+                    "material" => CloudIntent::Material,
+                    _ => CloudIntent::Import,
+                };
+                self.refresh_cloud_connections();
+                self.open_cloud_browser(intent);
+            }
+            cloud_event::Event::ConnectExisting { id } => {
+                self.run_cloud_connect_existing(id);
+            }
+            cloud_event::Event::DeleteConnection { id } => {
+                let mgr = self.cloud.clone();
+                let id_for_ui = id.clone();
+                std::thread::spawn(move || {
+                    let mut mgr = lock_cloud(&mgr);
+                    if let Err(e) = mgr.remove_connection(&id) {
+                        tracing::warn!("删除云连接失败 {id}: {e}");
+                    }
+                });
+                // 立即刷新 UI 快照
+                self.window_state.window.ui_mut().cloud_state_mut().notice =
+                    Some("连接已删除".to_string());
+                self.refresh_cloud_connections();
+                let _ = id_for_ui;
+            }
+            cloud_event::Event::DismissAlert => {
+                self.window_state
+                    .dialog_manager
+                    .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudNotice);
+            }
 
             // ── 结果回传（后台线程 → 本函数 → UI 注入） ──
             cloud_event::Event::ConnectResult { id, ok, error } => {
@@ -178,24 +215,28 @@ impl RunnerInner {
 
     /// 注入连接结果：成功 → 关闭面板并打开浏览面板；失败 → 面板内显示原因
     fn apply_cloud_connect_result(&mut self, id: String, ok: bool, error: Option<String>) {
-        {
+        let failed = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.connecting = false;
             if ok {
                 state.connect_error = None;
                 state.selected_id = Some(id);
+                false
             } else {
-                state.connect_error = Some(error.unwrap_or_else(|| "未知错误".to_string()));
+                state.connect_error = Some(error.clone().unwrap_or_else(|| "未知错误".to_string()));
+                true
             }
+        };
+        if failed {
+            self.notify_cloud_failure(format!("云存储连接失败（{}）", error.unwrap_or_default()));
+            return;
         }
-        if ok {
-            self.refresh_cloud_connections();
-            self.window_state
-                .dialog_manager
-                .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudConnect);
-            let intent = self.cloud_intent.take().unwrap_or(CloudIntent::Import);
-            self.open_cloud_browser(intent);
-        }
+        self.refresh_cloud_connections();
+        self.window_state
+            .dialog_manager
+            .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudConnect);
+        let intent = self.cloud_intent.take().unwrap_or(CloudIntent::Import);
+        self.open_cloud_browser(intent);
     }
 
     /// 断开连接（后台执行）
@@ -208,9 +249,43 @@ impl RunnerInner {
         self.refresh_cloud_connections();
     }
 
+    /// 后台连接已保存的指定连接，结果回传
+    fn run_cloud_connect_existing(&mut self, id: String) {
+        let mgr = self.cloud.clone();
+        std::thread::spawn(move || {
+            let mut mgr = lock_cloud(&mgr);
+            let result = mgr.connect(&id);
+            event::emit(event::Event::cloud(cloud_event::Event::ConnectResult {
+                id,
+                ok: result.is_ok(),
+                error: result.err().map(|e| e.to_string()),
+            }));
+        });
+    }
+
+    // ── 断连提醒 ──
+
+    /// 云操作失败统一提醒入口（需求 6 + Q5）：
+    /// 每次会话**只弹一次**独立提醒面板，之后仅在设置面板云管理页显示状态标志。
+    pub(super) fn notify_cloud_failure(&mut self, reason: String) {
+        // 更新设置面板标志（始终显示，实时更新）
+        {
+            let ui = self.window_state.window.ui_mut();
+            ui.cloud_state_mut().alert_message = Some(reason.clone());
+            ui.settings_mut().cloud_alert = Some(reason);
+        }
+        // 只弹一次独立提醒面板
+        if !self.cloud_alert_shown {
+            self.cloud_alert_shown = true;
+            self.window_state
+                .dialog_manager
+                .open_dialog(crate::runner::dialog_manager::DialogType::CloudNotice);
+        }
+    }
+
     // ── 连接快照 ──
 
-    /// 将 CloudManager 的连接快照注入 UI（设备下拉 + 在线状态）
+    /// 将 CloudManager 的连接快照注入 UI（设备下拉 + 在线状态 + 设置面板云管理页）
     pub(super) fn refresh_cloud_connections(&mut self) {
         let snapshot = {
             let mgr = lock_cloud(&self.cloud);
@@ -221,30 +296,50 @@ impl RunnerInner {
                         c.id.clone(),
                         c.name.clone(),
                         c.protocol.display_name().to_string(),
+                        c.address.clone(),
                         mgr.status(&c.id).is_online(),
                     )
                 })
                 .collect::<Vec<_>>()
         };
         let ui = self.window_state.window.ui_mut();
-        let state = ui.cloud_state_mut();
-        state.connections = snapshot
-            .into_iter()
-            .map(|(id, name, protocol, online)| CloudConnInfo {
-                id,
-                name,
-                protocol,
-                online,
-            })
-            .collect();
-        // 当前选中不在线 → 自动切换到第一个在线连接
-        let selected_online = state.selected().map(|c| c.online).unwrap_or(false);
-        if !selected_online {
-            state.selected_id = state
-                .connections
+        // 文件浏览面板的设备下拉
+        {
+            let state = ui.cloud_state_mut();
+            state.connections = snapshot
                 .iter()
-                .find(|c| c.online)
-                .map(|c| c.id.clone());
+                .map(|(id, name, protocol, _, online)| CloudConnInfo {
+                    id: id.clone(),
+                    name: name.clone(),
+                    protocol: protocol.clone(),
+                    online: *online,
+                })
+                .collect();
+            // 当前选中不在线 → 自动切换到第一个在线连接
+            let selected_online = state.selected().map(|c| c.online).unwrap_or(false);
+            if !selected_online {
+                state.selected_id = state
+                    .connections
+                    .iter()
+                    .find(|c| c.online)
+                    .map(|c| c.id.clone());
+            }
+        }
+        // 设置面板云管理页
+        {
+            let settings = ui.settings_mut();
+            settings.cloud_connections = snapshot
+                .into_iter()
+                .map(
+                    |(id, name, protocol, address, online)| lumino_ui::settings::CloudConnItem {
+                        id,
+                        name,
+                        protocol,
+                        address,
+                        online,
+                    },
+                )
+                .collect();
         }
     }
 }

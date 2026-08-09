@@ -4684,6 +4684,7 @@ dependencies = [
  "iced_widget",
  "lumino-core",
  "lumino-extras",
+ "lumino-message",
  "lumino-note-core",
  "lumino-ui-core",
  "rfd",

@@ -52,21 +52,28 @@ impl RunnerInner {
         entries: Vec<cloud_event::RemoteEntry>,
         error: Option<String>,
     ) {
-        let state = self.window_state.window.ui_mut().cloud_state_mut();
-        state.busy = false;
-        if let Some(err) = error {
-            state.notice = Some(format!("加载失败：{err}"));
-        } else {
-            state.entries = entries
-                .into_iter()
-                .map(|e| CloudEntryUi {
-                    name: e.name,
-                    path: e.path,
-                    is_dir: e.is_dir,
-                    size: e.size,
-                    modified: None,
-                })
-                .collect();
+        let failed = {
+            let state = self.window_state.window.ui_mut().cloud_state_mut();
+            state.busy = false;
+            if let Some(err) = error {
+                state.notice = Some(format!("加载失败：{err}"));
+                true
+            } else {
+                state.entries = entries
+                    .into_iter()
+                    .map(|e| CloudEntryUi {
+                        name: e.name,
+                        path: e.path,
+                        is_dir: e.is_dir,
+                        size: e.size,
+                        modified: None,
+                    })
+                    .collect();
+                false
+            }
+        };
+        if failed {
+            self.notify_cloud_failure("云存储连接异常".to_string());
         }
     }
 
@@ -107,13 +114,19 @@ impl RunnerInner {
         error: Option<String>,
         local_path: Option<String>,
     ) {
-        {
+        let failed = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
-            if !ok {
-                state.notice = Some(format!("下载失败：{}", error.unwrap_or_default()));
-                return;
+            if ok {
+                false
+            } else {
+                state.notice = Some(format!("下载失败：{}", error.clone().unwrap_or_default()));
+                true
             }
+        };
+        if failed {
+            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+            return;
         }
         let Some(local) = local_path else { return };
         let path = Path::new(&local);
@@ -213,13 +226,20 @@ impl RunnerInner {
 
     /// 注入保存结果
     pub(super) fn apply_cloud_save_result(&mut self, ok: bool, error: Option<String>) {
-        let state = self.window_state.window.ui_mut().cloud_state_mut();
-        state.busy = false;
-        state.notice = Some(if ok {
-            "已保存到云存储".to_string()
-        } else {
-            format!("保存失败：{}", error.unwrap_or_default())
-        });
+        let failed = {
+            let state = self.window_state.window.ui_mut().cloud_state_mut();
+            state.busy = false;
+            if ok {
+                state.notice = Some("已保存到云存储".to_string());
+                false
+            } else {
+                state.notice = Some(format!("保存失败：{}", error.clone().unwrap_or_default()));
+                true
+            }
+        };
+        if failed {
+            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+        }
     }
 
     // ── 新建文件夹 ──
@@ -244,16 +264,20 @@ impl RunnerInner {
 
     /// 注入通用操作结果：成功刷新列表，失败提示
     pub(super) fn apply_cloud_operation_result(&mut self, ok: bool, error: Option<String>) {
-        {
+        let failed = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
-            state.notice = Some(if ok {
-                "操作成功".to_string()
+            if ok {
+                state.notice = Some("操作成功".to_string());
+                false
             } else {
-                format!("操作失败：{}", error.unwrap_or_default())
-            });
-        }
-        if ok {
+                state.notice = Some(format!("操作失败：{}", error.clone().unwrap_or_default()));
+                true
+            }
+        };
+        if failed {
+            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+        } else {
             // 刷新当前目录列表
             let id = self
                 .window_state

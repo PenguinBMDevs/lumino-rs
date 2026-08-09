@@ -112,6 +112,8 @@ pub(crate) struct RunnerInner {
     pub(crate) cloud: std::sync::Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
     /// 云入口意图（记录用户从哪里进入，连接成功后按意图打开对应面板）
     pub(crate) cloud_intent: Option<crate::runner::cloud::CloudIntent>,
+    /// 断连提醒面板是否已弹出（每次会话只弹一次）
+    pub(crate) cloud_alert_shown: bool,
     /// 找回删除音轨对话框的待填充条目列表
     ///
     /// 用户请求打开对话框时，Runner 先扫描缓存目录得到条目列表存于此字段，
@@ -241,6 +243,7 @@ impl Runner {
                     .expect("云存储管理器初始化失败（无法创建异步运行时）"),
             )),
             cloud_intent: None,
+            cloud_alert_shown: false,
         };
 
         Ok(runner)

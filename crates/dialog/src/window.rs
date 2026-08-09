@@ -55,6 +55,7 @@ impl DialogWindow {
             DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
             DialogType::CloudConnect => (480.0, 420.0, "连接云存储", false),
             DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
+            DialogType::CloudNotice => (440.0, 200.0, "云存储提醒", false),
         };
 
         let mut attributes = WindowAttributes::default()
@@ -232,7 +233,7 @@ impl DialogWindow {
             DialogType::RecoverTrack => {
                 ui.set_recover_track_dialog_open(true);
             }
-            DialogType::CloudConnect | DialogType::CloudBrowser => {
+            DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 // 状态已在 Root 构造时按 dialog_type 设置，无需额外初始化
             }
         }

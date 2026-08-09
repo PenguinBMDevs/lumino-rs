@@ -33,6 +33,8 @@ pub enum DialogType {
     CloudConnect,
     /// 云文件浏览面板（仿资源管理器）
     CloudBrowser,
+    /// 云存储断连/失败提醒面板（每次会话只弹一次）
+    CloudNotice,
 }
 
 /// Root 组件的状态

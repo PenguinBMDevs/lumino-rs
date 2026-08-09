@@ -46,6 +46,8 @@ pub struct CloudUiState {
     pub save_mode: bool,
     /// 新建文件夹输入框内容
     pub new_folder_input: String,
+    /// 断连提醒内容（CloudNotice 面板与设置面板标志共用）
+    pub alert_message: Option<String>,
 }
 
 impl CloudUiState {

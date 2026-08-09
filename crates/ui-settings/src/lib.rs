@@ -89,6 +89,25 @@ pub struct SettingsPanel {
     pub log_retention_count: usize,
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
     pub monitor_refresh_interval_ms: f32,
+    /// 云存储连接列表（云管理页，由 runner 注入快照）
+    pub cloud_connections: Vec<CloudConnItem>,
+    /// 云存储断连/失败提醒（始终显示，实时更新）
+    pub cloud_alert: Option<String>,
+}
+
+/// 云存储连接条目（设置面板云管理页展示）
+#[derive(Debug, Clone)]
+pub struct CloudConnItem {
+    /// 连接 ID
+    pub id: String,
+    /// 显示名称
+    pub name: String,
+    /// 协议显示名
+    pub protocol: String,
+    /// 服务器地址
+    pub address: String,
+    /// 是否在线
+    pub online: bool,
 }
 
 impl SettingsPanel {
@@ -146,6 +165,8 @@ impl SettingsPanel {
             tempo_custom_input: String::new(),
             log_retention_count: ui_config.log_retention_count,
             monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
+            cloud_connections: Vec::new(),
+            cloud_alert: None,
         }
     }
 
@@ -388,6 +409,7 @@ fn render_content_area<'a>(
         5 => palette_view(settings),
         6 => editing_view(settings),
         7 => about_view(settings),
+        8 => cloud_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 
