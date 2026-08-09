@@ -245,11 +245,6 @@ impl RightSidebar {
             }) as u32
     }
 
-    /// 切换面板显示/隐藏
-    pub fn toggle_panel(&mut self) {
-        self.panel_visible = !self.panel_visible;
-    }
-
     /// 切换面板路由并确保面板展开（互斥：仅显示目标面板）
     pub fn switch_panel(&mut self, panel: RightSidebarPanel) {
         self.active_panel = panel;

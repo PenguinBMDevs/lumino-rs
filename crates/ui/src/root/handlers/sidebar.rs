@@ -157,8 +157,19 @@ impl Root {
         use lumino_message::RightSidebarAction::*;
         match action {
             ImageToMidiClicked => {
-                // 点击按钮展开/收起面板（面板展开方向向左），面板状态决定按钮亮灯
-                self.right_sidebar.toggle_panel();
+                use crate::right_sidebar::RightSidebarPanel;
+                // 互斥路由：已在图片转 MIDI 面板 → 收起；否则切换到图片转 MIDI 面板。
+                // 与素材库按钮对称——避免素材库打开后本按钮只收起面板、
+                // active_panel 仍指向素材库导致无法切回。
+                if self
+                    .right_sidebar
+                    .is_panel_active(RightSidebarPanel::ImageToMidi)
+                {
+                    self.right_sidebar.panel_visible = false;
+                } else {
+                    self.right_sidebar
+                        .switch_panel(RightSidebarPanel::ImageToMidi);
+                }
                 tracing::info!(
                     "右侧栏图片转MIDI按钮被点击，面板{}",
                     if self.right_sidebar.panel_visible {
