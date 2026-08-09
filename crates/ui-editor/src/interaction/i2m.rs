@@ -81,6 +81,11 @@ impl Editor {
     /// - 素材拖出跟随（Selecting + drag_follow）：预览整体跟随鼠标（X 向 + Y 向）；
     /// - Dragging：整体移动——X 向平移；素材（`allow_y_drag`）同时 Y 向平移；
     /// - StretchLeft/StretchRight：仅 X 向拉伸左右边框。
+    ///
+    /// 拉伸采用**增量式** snap（与音符 `ResizingSelectionStart/End` 一致）：
+    /// 以按下时的 snap tick 为锚点累加增量，避免直接对区域边界赋全局 snap
+    /// 值导致窄素材（宽度 < snap 精度）拉伸时被吸附到同一网格点而不变化，
+    /// 或向左拉伸时瞬间塌缩到最小宽度。
     pub(super) fn handle_i2m_moved(&mut self, snapped_tick: f32, cursor_key: f32) {
         let i2m = &mut self.editor_state.image_to_midi;
         // 素材拖出跟随：更新跟随区域（X/Y 同步）
@@ -108,20 +113,35 @@ impl Editor {
                 changed
             }
             I2mInteraction::StretchLeft => {
+                // 增量式：左边界 += 当前与锚点的 snap 增量（相对区域自身，避免全局 snap 塌缩）
+                // clamp 生效（边界未变化）时保持锚点不动，保证回拖能恢复
+                let delta = snapped_tick - i2m.drag_start_tick;
                 let mut changed = false;
-                if let Some(region) = i2m.region.as_mut() {
+                if delta != 0.0
+                    && let Some(region) = i2m.region.as_mut()
+                {
                     let old = region.tick_start;
-                    region.set_left(snapped_tick);
+                    region.set_left(region.tick_start + delta);
                     changed = region.tick_start != old;
+                    if changed {
+                        i2m.drag_start_tick = snapped_tick;
+                    }
                 }
                 changed
             }
             I2mInteraction::StretchRight => {
+                // 增量式：右边界 += 当前与锚点的 snap 增量
+                let delta = snapped_tick - i2m.drag_start_tick;
                 let mut changed = false;
-                if let Some(region) = i2m.region.as_mut() {
+                if delta != 0.0
+                    && let Some(region) = i2m.region.as_mut()
+                {
                     let old = region.tick_end;
-                    region.set_right(snapped_tick);
+                    region.set_right(region.tick_end + delta);
                     changed = region.tick_end != old;
+                    if changed {
+                        i2m.drag_start_tick = snapped_tick;
+                    }
                 }
                 changed
             }
@@ -177,7 +197,14 @@ impl Editor {
     }
 
     /// 区域框命中测试（屏幕坐标）
+    ///
+    /// 仅接受卷帘内容区内的点击：选框超出内容区（键盘列/标尺上方）的部分
+    /// 已做视觉裁剪，不可见即不可交互，避免用户点击到键盘列上的"隐形选框"。
     pub fn hit_test_i2m_region(&self, pos: Point) -> Option<SelectionHitType> {
+        let view = &self.editor_state.view;
+        if pos.x < view.keyboard_width || pos.y < view.ruler_height {
+            return None;
+        }
         let bounds = self.i2m_region_screen_bounds()?;
         hit_test::hit_test_selection_box(bounds, (pos.x, pos.y))
     }
@@ -194,3 +221,6 @@ impl Editor {
         Some((left, right, top, bottom))
     }
 }
+
+#[cfg(test)]
+mod tests;

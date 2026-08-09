@@ -58,11 +58,68 @@ pub struct I2mButtonRects {
     pub cancel: Rectangle,
 }
 
+/// 卷帘内容区（选框/按钮的可见范围）：键盘列右侧、标尺下方的网格区域
+fn content_bounds(editor: &Editor) -> Rectangle {
+    let view = &editor.editor_state.view;
+    let canvas = &editor.editor_state.canvas;
+    Rectangle::new(
+        Point::new(view.keyboard_width, view.ruler_height),
+        Size::new(
+            (canvas.size_x - view.keyboard_width).max(0.0),
+            (canvas.size_y - view.ruler_height).max(0.0),
+        ),
+    )
+}
+
+/// 将区域框屏幕边界裁剪到卷帘内容区（视觉裁剪，数据不动）
+///
+/// 素材放置允许区域框 Y 向越界（`offset_keys` 可回绕 u8 key）、X 向超出
+/// 歌曲范围，直接按原始边界绘制会让选框显示到键盘列/标尺/窗口之外。
+/// 此处仅对**显示**求交集裁剪，区域框数据（tick/key 范围）保持不变。
+///
+/// 返回裁剪后的 `(left, right, top, bottom)`；选框完全在内容区外时返回 `None`。
+fn clip_region_bounds(
+    region: (f32, f32, f32, f32),
+    content: Rectangle,
+) -> Option<(f32, f32, f32, f32)> {
+    let (left, right, top, bottom) = region;
+    let rect = Rectangle::new(
+        Point::new(left, top),
+        Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
+    );
+    let clipped = rect.intersection(&content)?;
+    Some((
+        clipped.x,
+        clipped.x + clipped.width,
+        clipped.y,
+        clipped.y + clipped.height,
+    ))
+}
+
 /// 计算区域框右侧悬浮按钮位置（垂直居中于区域框）
+///
+/// 按钮组钳制到卷帘内容区内：区域框移出/越界时按钮仍保持完整可见可点
+/// （用户拖回区域框后按钮自动回到其右侧）。
 pub fn i2m_button_rects(editor: &Editor) -> Option<I2mButtonRects> {
     let (_, right, top, bottom) = editor.i2m_region_screen_bounds()?;
-    let center_y = (top + bottom) * 0.5;
-    let x0 = right + I2M_BUTTON_SPACING;
+    let content = content_bounds(editor);
+    // 内容区高度不足以容纳单个按钮时（异常布局）不显示按钮
+    if content.height < I2M_BUTTON_SIZE {
+        return None;
+    }
+    let group_w = I2M_BUTTON_SIZE * 2.0 + I2M_BUTTON_SPACING;
+    // 垂直中心钳制到内容区内，避免区域框 Y 向越界时按钮悬浮到键盘/标尺上方
+    let center_y = ((top + bottom) * 0.5).clamp(
+        content.y + I2M_BUTTON_SIZE * 0.5,
+        content.y + content.height - I2M_BUTTON_SIZE * 0.5,
+    );
+    // 水平位置：优先区域框右侧，超出内容区右边缘时钳制到右边缘
+    let x0 =
+        (right + I2M_BUTTON_SPACING).min(content.x + content.width - group_w - I2M_BUTTON_SPACING);
+    // 内容区过窄无法容纳按钮组时（异常布局）不显示按钮
+    if x0 < content.x + I2M_BUTTON_SPACING {
+        return None;
+    }
     let y0 = center_y - I2M_BUTTON_SIZE * 0.5;
     let confirm = Rectangle::new(
         Point::new(x0, y0),
@@ -91,9 +148,12 @@ pub fn draw(
     let palette = theme.extended_palette();
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let mut has_content = false;
+    let content = content_bounds(editor);
 
-    // 区域框（常驻显示）
-    if let Some((left, right, top, bottom)) = editor.i2m_region_screen_bounds() {
+    // 区域框（常驻显示）：超出卷帘内容区的部分强制裁剪（数据不动）
+    if let Some(region) = editor.i2m_region_screen_bounds()
+        && let Some((left, right, top, bottom)) = clip_region_bounds(region, content)
+    {
         let rect = Rectangle::new(
             Point::new(left, top),
             Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
@@ -160,4 +220,56 @@ fn draw_button(
         Size::new(rect.width - inset * 2.0, rect.height - inset * 2.0),
     );
     frame.draw_image(icon_bounds, Image::new(icon.clone()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 构造默认卷帘内容区（键盘列 120px + 标尺 24px，画布 800x600）
+    fn default_content() -> Rectangle {
+        Rectangle::new(Point::new(120.0, 24.0), Size::new(680.0, 576.0))
+    }
+
+    #[test]
+    fn test_clip_region_bounds_fully_inside() {
+        let clipped = clip_region_bounds((200.0, 500.0, 100.0, 300.0), default_content());
+        assert_eq!(clipped, Some((200.0, 500.0, 100.0, 300.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_top_overflow() {
+        // 素材 Y 向越界（key 回绕/上移），选框顶部超出标尺 → 裁剪到内容区顶边
+        let clipped = clip_region_bounds((200.0, 500.0, -50.0, 100.0), default_content());
+        assert_eq!(clipped, Some((200.0, 500.0, 24.0, 100.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_left_overflow() {
+        // 素材 X 向越界（负 tick），选框左侧超出键盘列 → 裁剪到内容区左边
+        let clipped = clip_region_bounds((50.0, 200.0, 100.0, 300.0), default_content());
+        assert_eq!(clipped, Some((120.0, 200.0, 100.0, 300.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_corner_overflow() {
+        // 素材超出卷帘右/下边缘 → 裁剪到内容区右下角
+        let clipped = clip_region_bounds((500.0, 900.0, 300.0, 700.0), default_content());
+        assert_eq!(clipped, Some((500.0, 800.0, 300.0, 600.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_fully_outside() {
+        // 选框完全在内容区外（键盘列上方）→ 不绘制
+        let clipped = clip_region_bounds((50.0, 100.0, -50.0, -10.0), default_content());
+        assert_eq!(clipped, None);
+    }
+
+    #[test]
+    fn test_clip_region_bounds_zero_content() {
+        // 异常布局：内容区尺寸为 0 → 不绘制
+        let empty = Rectangle::new(Point::new(120.0, 24.0), Size::new(0.0, 0.0));
+        let clipped = clip_region_bounds((200.0, 500.0, 100.0, 300.0), empty);
+        assert_eq!(clipped, None);
+    }
 }

@@ -174,4 +174,48 @@ mod tests {
         state.confirm_region(RegionRect::new(0.0, 100.0, 40, 80));
         assert_eq!(state.note_screen_key(60), 60);
     }
+
+    #[test]
+    fn test_material_stretch_updates_all_track_note_lengths() {
+        // 复现验证：多轨素材放置后拉伸区域框，所有轨道的音符长度必须等比变化
+        let mut state = ImageToMidiState::default();
+        let preview = ImageToMidiPreview {
+            tracks: vec![
+                vec![PreviewNote {
+                    tick: 0.0,
+                    length: 100.0,
+                    key: 60,
+                }],
+                vec![PreviewNote {
+                    tick: 50.0,
+                    length: 200.0,
+                    key: 72,
+                }],
+            ],
+            orig_width: 300.0,
+        };
+        state.begin_material_follow(preview, 0.0);
+        // 拖到 tick 1000 处并确认放置
+        state.update_drag_follow(1000.0, 60.0);
+        state.confirm_material_follow();
+        assert_eq!(state.mode, ImageToMidiMode::Placing);
+        assert_eq!(state.region.expect("应有区域").width(), 300.0);
+
+        // 拉伸前：scale_x = 1
+        let before: Vec<(f32, u8, f32)> = state.track_screen_notes(0);
+        let before1: Vec<(f32, u8, f32)> = state.track_screen_notes(1);
+        assert_eq!(before[0].2, 100.0);
+        assert_eq!(before1[0].2, 200.0);
+
+        // 拉伸右边界到 1600 → width = 600 → scale_x = 2
+        state.region.as_mut().expect("区域存在").set_right(1600.0);
+        state.bump_preview_generation();
+
+        let after: Vec<(f32, u8, f32)> = state.track_screen_notes(0);
+        let after1: Vec<(f32, u8, f32)> = state.track_screen_notes(1);
+        assert_eq!(after[0].2, 200.0, "轨 0 音符长度应变等比变化");
+        assert_eq!(after1[0].2, 400.0, "轨 1 音符长度应变等比变化");
+        assert_eq!(after[0].0, 1000.0, "轨 0 音符起点 tick 保持区域左边界");
+        assert_eq!(after1[0].0, 1100.0, "轨 1 音符起点 tick 等比映射");
+    }
 }
