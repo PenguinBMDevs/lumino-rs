@@ -53,6 +53,46 @@ pub(crate) fn join_remote(base: &str, name: &str) -> String {
     }
 }
 
+/// 规范化远程路径为**绝对路径**（统一根起点）
+///
+/// 部分 FTP 服务器 LIST 输出带 `./` 前缀的相对名字（如 `./Moyingjun`），
+/// 若直接透传会污染后续导航与上传路径（`./Moyingjun/...` 在部分服务器
+/// 上导致 "No such file"）。本函数：
+/// - 丢弃空段与 `.` 段（`//`、`./`、结尾 `/`）
+/// - 处理 `..` 段（弹栈）
+/// - 相对路径（不以 `/` 开头）按服务器根（登录后目录）拼接
+pub(crate) fn normalize_remote(path: &str) -> String {
+    let mut stack: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => {
+                stack.pop();
+            }
+            seg => stack.push(seg),
+        }
+    }
+    if stack.is_empty() {
+        "/".to_string()
+    } else {
+        format!("/{}", stack.join("/"))
+    }
+}
+
+/// FTP 命令参数安全化：含空格时用引号包裹（RFC 959 允许 pathname 带引号）
+///
+/// suppaftp 的 `Command::Store/Retr/Cwd` 直接拼命令（`STOR {p}`），
+/// 文件名含空格会拆断命令（如 `STOR Parallel Universe Shifter.lmpj` 被
+/// 服务器解析为两个参数 → 550 No such file）。仅在含空格时加引号，
+/// 最大化服务器兼容性。
+pub(crate) fn quote_path(path: &str) -> String {
+    if path.contains(' ') {
+        format!("\"{path}\"")
+    } else {
+        path.to_string()
+    }
+}
+
 /// 从远程完整路径提取条目名称
 pub(crate) fn basename(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
@@ -81,6 +121,40 @@ mod tests {
         assert_eq!(basename("/dav/a.txt"), "a.txt");
         assert_eq!(basename("/dav/dir/"), "dir");
         assert_eq!(basename("http://h/dav/a.txt"), "a.txt");
+    }
+
+    #[test]
+    fn test_normalize_remote() {
+        assert_eq!(normalize_remote(""), "/");
+        assert_eq!(normalize_remote("/"), "/");
+        assert_eq!(normalize_remote("./Moyingjun"), "/Moyingjun");
+        assert_eq!(
+            normalize_remote("/./Moyingjun/./Lumino-Archive"),
+            "/Moyingjun/Lumino-Archive"
+        );
+        assert_eq!(
+            normalize_remote("./Moyingjun/Lumino-Archive/"),
+            "/Moyingjun/Lumino-Archive"
+        );
+        assert_eq!(
+            normalize_remote("//Moyingjun//Lumino-Archive"),
+            "/Moyingjun/Lumino-Archive"
+        );
+        assert_eq!(normalize_remote("/a/./b/../c"), "/a/c");
+        assert_eq!(
+            normalize_remote("/Moyingjun/Lumino-Archive/Parallel Unit.lmpj"),
+            "/Moyingjun/Lumino-Archive/Parallel Unit.lmpj"
+        );
+    }
+
+    #[test]
+    fn test_quote_path() {
+        assert_eq!(quote_path("/a/b.txt"), "/a/b.txt");
+        assert_eq!(
+            quote_path("/a/Parallel Unit.lmpj"),
+            "\"/a/Parallel Unit.lmpj\""
+        );
+        assert_eq!(quote_path("Parallel Unit.lmpj"), "\"Parallel Unit.lmpj\"");
     }
 
     #[test]

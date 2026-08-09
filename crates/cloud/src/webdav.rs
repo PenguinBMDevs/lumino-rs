@@ -12,7 +12,7 @@ use reqwest_dav::types::Auth;
 use reqwest_dav::types::list_cmd::ListEntity;
 use reqwest_dav::{Client as DavClient, ClientBuilder, Depth};
 
-use crate::client::{CloudClient, basename, join_remote};
+use crate::client::{CloudClient, basename, join_remote, normalize_remote};
 use crate::crypto::decrypt;
 use crate::error::{CloudError, Result};
 use crate::model::{CloudConnection, CloudEntry};
@@ -120,36 +120,37 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let target = if path.is_empty() { "/" } else { path };
+        // 统一规范化为绝对路径（消除 ./ 残留）
+        let target = normalize_remote(path);
 
         let entities = client
-            .list(target, Depth::Number(1))
+            .list(&target, Depth::Number(1))
             .await
             .map_err(dav_err)?;
         let mut entries = Vec::new();
         for entity in entities {
             match entity {
                 ListEntity::File(f) => {
-                    if is_self(&f.href, target) {
+                    if is_self(&f.href, &target) {
                         continue;
                     }
                     let remote = normalize_href(&f.href);
                     entries.push(CloudEntry {
                         name: basename(&remote),
-                        path: remote,
+                        path: normalize_remote(&remote),
                         is_dir: false,
                         size: f.content_length.max(0) as u64,
                         modified: Some(f.last_modified.timestamp().max(0) as u64),
                     });
                 }
                 ListEntity::Folder(f) => {
-                    if is_self(&f.href, target) {
+                    if is_self(&f.href, &target) {
                         continue;
                     }
                     let remote = normalize_href(&f.href);
                     entries.push(CloudEntry {
                         name: basename(&remote),
-                        path: remote,
+                        path: normalize_remote(&remote),
                         is_dir: true,
                         size: 0,
                         modified: Some(f.last_modified.timestamp().max(0) as u64),
@@ -166,8 +167,9 @@ impl CloudClient for WebdavClient {
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
         let bytes = std::fs::read(local).map_err(CloudError::Io)?;
+        let remote_path = normalize_remote(remote_path);
         client
-            .put(remote_path, bytes)
+            .put(&remote_path, bytes)
             .await
             .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
         Ok(())
@@ -178,8 +180,9 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+        let remote_path = normalize_remote(remote_path);
         let resp = client
-            .get(remote_path)
+            .get(&remote_path)
             .await
             .map_err(|e| CloudError::Protocol(format!("下载失败 {remote_path}: {e}")))?;
         let bytes = resp
@@ -195,8 +198,10 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+        let from = normalize_remote(from);
+        let to = normalize_remote(to);
         client
-            .mv(from, to)
+            .mv(&from, &to)
             .await
             .map_err(|e| CloudError::Protocol(format!("重命名失败 {from} → {to}: {e}")))?;
         Ok(())
@@ -207,8 +212,9 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+        let path = normalize_remote(path);
         client
-            .delete(path)
+            .delete(&path)
             .await
             .map_err(|e| CloudError::Protocol(format!("删除失败 {path}: {e}")))?;
         Ok(())
@@ -219,9 +225,10 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let to = join_remote(to_dir, &basename(from));
+        let from = normalize_remote(from);
+        let to = normalize_remote(join_remote(to_dir, &basename(&from)).as_str());
         client
-            .mv(from, &to)
+            .mv(&from, &to)
             .await
             .map_err(|e| CloudError::Protocol(format!("移动失败 {from} → {to}: {e}")))?;
         Ok(())
@@ -232,8 +239,9 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
+        let path = normalize_remote(path);
         client
-            .mkcol(path)
+            .mkcol(&path)
             .await
             .map_err(|e| CloudError::Protocol(format!("创建目录失败 {path}: {e}")))?;
         Ok(())

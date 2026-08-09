@@ -11,7 +11,7 @@ use russh::client::{AuthResult, Config as SshConfig, Handle, Handler, connect};
 use russh::keys::ssh_key::PublicKey;
 use russh_sftp::client::SftpSession;
 
-use crate::client::{CloudClient, basename, join_remote};
+use crate::client::{CloudClient, basename, join_remote, normalize_remote};
 use crate::crypto::decrypt;
 use crate::error::{CloudError, Result};
 use crate::model::{CloudConnection, CloudEntry};
@@ -112,9 +112,10 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
-        let target = if path.is_empty() { "." } else { path };
+        // 统一规范化为绝对路径（消除 ./ 残留）
+        let target = normalize_remote(path);
 
-        let entries = sftp.read_dir(target).await.map_err(sftp_err)?;
+        let entries = sftp.read_dir(&target).await.map_err(sftp_err)?;
         let mut result = Vec::new();
         for entry in entries {
             let name = entry.file_name();
@@ -124,7 +125,7 @@ impl CloudClient for SftpClient {
             let meta = entry.metadata();
             result.push(CloudEntry {
                 name: name.clone(),
-                path: join_remote(target, &name),
+                path: normalize_remote(&join_remote(&target, &name)),
                 is_dir: meta.is_dir(),
                 size: meta.size.unwrap_or(0),
                 modified: meta.mtime.map(|t| t as u64),
@@ -139,7 +140,8 @@ impl CloudClient for SftpClient {
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
         let bytes = std::fs::read(local).map_err(CloudError::Io)?;
-        sftp.write(remote_path, &bytes)
+        let remote_path = normalize_remote(remote_path);
+        sftp.write(&remote_path, &bytes)
             .await
             .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
         Ok(())
@@ -150,8 +152,9 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
+        let remote_path = normalize_remote(remote_path);
         let bytes = sftp
-            .read(remote_path)
+            .read(&remote_path)
             .await
             .map_err(|e| CloudError::Protocol(format!("下载失败 {remote_path}: {e}")))?;
         std::fs::write(local, &bytes).map_err(CloudError::Io)?;
@@ -163,7 +166,9 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
-        sftp.rename(from, to)
+        let from = normalize_remote(from);
+        let to = normalize_remote(to);
+        sftp.rename(&from, &to)
             .await
             .map_err(|e| CloudError::Protocol(format!("重命名失败 {from} → {to}: {e}")))?;
         Ok(())
@@ -174,12 +179,13 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
+        let path = normalize_remote(path);
         if is_dir {
-            sftp.remove_dir(path)
+            sftp.remove_dir(&path)
                 .await
                 .map_err(|e| CloudError::Protocol(format!("删除目录失败 {path}: {e}")))?;
         } else {
-            sftp.remove_file(path)
+            sftp.remove_file(&path)
                 .await
                 .map_err(|e| CloudError::Protocol(format!("删除文件失败 {path}: {e}")))?;
         }
@@ -191,8 +197,9 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
-        let to = join_remote(to_dir, basename(from).as_str());
-        sftp.rename(from, &to)
+        let from = normalize_remote(from);
+        let to = normalize_remote(join_remote(to_dir, &basename(&from)).as_str());
+        sftp.rename(&from, &to)
             .await
             .map_err(|e| CloudError::Protocol(format!("移动失败 {from} → {to}: {e}")))?;
         Ok(())
@@ -203,7 +210,8 @@ impl CloudClient for SftpClient {
             .sftp
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
-        sftp.create_dir(path)
+        let path = normalize_remote(path);
+        sftp.create_dir(&path)
             .await
             .map_err(|e| CloudError::Protocol(format!("创建目录失败 {path}: {e}")))?;
         Ok(())
