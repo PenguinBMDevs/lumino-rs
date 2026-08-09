@@ -204,7 +204,8 @@ impl Root {
                 true
             }
             ResizeDragStarted => {
-                // 拖拽开始由鼠标位置判断，这里只是标记开始
+                // 运行时拖拽锚点初始化由 Host 层拦截处理（用当前光标位置调用
+                // start_resize）；此处仅为测试/内部直达路径的防御性兜底。
                 self.right_sidebar.is_resizing = true;
                 true
             }

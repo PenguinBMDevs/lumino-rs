@@ -47,6 +47,22 @@ impl Host {
                 self.root.sidebar.end_resize();
                 Some(true)
             }
+            // 处理右侧栏调整大小事件
+            // 必须在 Host 层用当前光标位置初始化拖拽锚点（与左侧栏对称）：
+            // 若落入 Root handler 则只有 is_resizing 标记、锚点保持初始值
+            // 0.0/200.0，增量计算深度为负导致面板回撤并卡死在最小宽度。
+            message::Message::RightSidebar(
+                lumino_message::RightSidebarAction::ResizeDragStarted,
+            ) => {
+                if let Some(pos) = self.window_ctx.cursor_position {
+                    self.root.right_sidebar.start_resize(pos.x);
+                }
+                Some(true) // 右侧栏大小改变需要 UI 重建
+            }
+            message::Message::RightSidebar(lumino_message::RightSidebarAction::ResizeDragEnded) => {
+                self.root.right_sidebar.end_resize();
+                Some(true)
+            }
             _ => None,
         }
     }

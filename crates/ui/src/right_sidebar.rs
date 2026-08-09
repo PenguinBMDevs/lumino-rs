@@ -6,6 +6,7 @@ pub mod convert;
 mod core;
 pub mod material;
 mod materials_view;
+mod resize;
 pub mod view;
 
 pub use convert::{ConvertResult, run_conversion};

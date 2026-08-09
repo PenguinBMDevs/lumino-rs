@@ -261,29 +261,10 @@ impl RightSidebar {
         self.selected_image_path = Some(path);
         self.panel_visible = true;
     }
-
-    /// 开始拖拽调整面板宽度
-    pub fn start_resize(&mut self, cursor_x: f32) {
-        self.is_resizing = true;
-        self.resize_start_x = cursor_x;
-        self.resize_start_width = self.panel_width;
-    }
-
-    /// 更新拖拽位置
-    pub fn update_resize_position(&mut self, cursor_x: f32) {
-        if self.is_resizing {
-            // 右侧栏的拖拽方向与左侧相反：鼠标左移增大面板
-            let delta_x = self.resize_start_x - cursor_x;
-            let new_width = self.resize_start_width + delta_x;
-            self.panel_width = new_width.clamp(MIN_PANEL_WIDTH, MAX_PANEL_WIDTH);
-        }
-    }
-
-    /// 结束拖拽
-    pub fn end_resize(&mut self) {
-        self.is_resizing = false;
-    }
 }
+
+// 面板宽度拖拽调整（start_resize / update_resize_position / end_resize）
+// 实现在 `resize` 子模块，按下手柄时由 Host 层以当前光标位置初始化锚点。
 
 impl Default for RightSidebar {
     fn default() -> Self {

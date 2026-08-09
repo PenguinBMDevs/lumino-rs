@@ -68,6 +68,18 @@ impl Host {
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }
+
+        // 全局监听鼠标释放事件，结束右侧栏拖拽状态
+        // （拖拽过程中面板变宽、手柄左移，鼠标可能落在面板内容区上，
+        //   iced 的 on_release 不再投递给手柄，必须由全局释放兜底收尾）
+        if button == winit::event::MouseButton::Left
+            && state == ElementState::Released
+            && self.root.right_sidebar.is_resizing
+        {
+            self.root.right_sidebar.end_resize();
+            self.ui_dirty = true;
+            self.window_ctx.window.request_redraw();
+        }
     }
 
     fn handle_modifiers_changed_event(&mut self, new_modifiers: &winit::event::Modifiers) {
