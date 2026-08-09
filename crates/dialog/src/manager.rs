@@ -178,6 +178,38 @@ impl DialogManager {
         self.dialogs.values().any(|d| d.dialog_type == dialog_type)
     }
 
+    /// 将主窗口的云存储 UI 状态广播到所有相关对话框
+    ///
+    /// 云存储唯一数据源是主窗口 Root（连接快照/目录列表/提醒由 runner 注入），
+    /// 设置面板云管理页与云文件浏览器为独立 Root，需在此同步最新快照，
+    /// 否则对话框内看不到已连接的设备。
+    pub fn sync_cloud_to_dialogs(&mut self, main_ui: &lumino_ui::Host) {
+        for dialog in self.dialogs.values_mut() {
+            let relevant = matches!(
+                dialog.dialog_type,
+                DialogType::Settings
+                    | DialogType::CloudConnect
+                    | DialogType::CloudBrowser
+                    | DialogType::CloudNotice
+            );
+            if relevant && let Some(ui) = dialog.ui_mut() {
+                ui.sync_cloud_state_from(main_ui);
+            }
+        }
+    }
+
+    /// 将主题同步到所有已打开的对话框窗口
+    ///
+    /// 对话框主题在创建时从配置快照读取，运行中切换主题后若不广播，
+    /// 对话框仍使用旧主题渲染（背景与文字可能与新主题不一致）。
+    pub fn update_theme_all(&mut self, theme: String) {
+        for dialog in self.dialogs.values_mut() {
+            if let Some(ui) = dialog.ui_mut() {
+                ui.update_theme(theme.clone());
+            }
+        }
+    }
+
     /// 查找指定类型的第一个对话框窗口 ID
     ///
     /// 用于 Runner 在对话框 UI 就绪后注入数据（如 RecoverTrack 对话框的条目列表）。

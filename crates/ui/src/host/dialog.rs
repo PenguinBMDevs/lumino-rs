@@ -458,4 +458,14 @@ impl Host {
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
+
+    /// 从另一个 Host 同步云存储 UI 状态（对话框窗口同步主窗口快照）。
+    ///
+    /// 云存储唯一数据源是主窗口 Root：连接快照/目录条目/提示信息均注入主窗口，
+    /// 设置面板云管理页与云文件浏览器通过本方法获取最新状态。
+    pub fn sync_cloud_state_from(&mut self, other: &Host) {
+        self.root.sync_cloud_state_from(&other.root);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
 }

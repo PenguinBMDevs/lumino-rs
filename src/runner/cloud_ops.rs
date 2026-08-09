@@ -74,6 +74,9 @@ impl RunnerInner {
         };
         if failed {
             self.notify_cloud_failure("云存储连接异常".to_string());
+        } else {
+            // 目录列表已更新：广播到已打开的云文件浏览器对话框
+            self.sync_cloud_to_dialogs();
         }
     }
 
@@ -150,6 +153,8 @@ impl RunnerInner {
                     Some(format!("已下载到 {}", path.display()));
             }
         }
+        // 广播到已打开的设置/云对话框
+        self.sync_cloud_to_dialogs();
     }
 
     // ── 保存到云 ──
@@ -239,6 +244,8 @@ impl RunnerInner {
         };
         if failed {
             self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+        } else {
+            self.sync_cloud_to_dialogs();
         }
     }
 
@@ -296,6 +303,7 @@ impl RunnerInner {
             if let Some(id) = id {
                 self.run_cloud_list(id, path);
             }
+            self.sync_cloud_to_dialogs();
         }
     }
 }

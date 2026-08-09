@@ -164,13 +164,21 @@ impl RunnerInner {
             CloudIntent::Save => (None, true),
             CloudIntent::Import => (None, false),
         };
-        {
+        let auto_list_id = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.filter = filter;
             state.save_mode = save_mode;
             state.notice = None;
             state.entries.clear();
             state.current_path = String::new();
+            // 自动列出当前选中（在线）设备的根目录，避免打开后空目录
+            state.selected_id.clone()
+        };
+        if let Some(id) = auto_list_id {
+            event::emit(event::Event::cloud(cloud_event::Event::ListDirRequest {
+                id,
+                path: String::new(),
+            }));
         }
         self.window_state
             .dialog_manager
@@ -306,6 +314,8 @@ impl RunnerInner {
             ui.cloud_state_mut().alert_message = Some(reason.clone());
             ui.settings_mut().cloud_alert = Some(reason);
         }
+        // 广播到已打开的设置/云对话框
+        self.sync_cloud_to_dialogs();
         // 只弹一次独立提醒面板
         if !self.cloud_alert_shown {
             self.cloud_alert_shown = true;
@@ -316,6 +326,14 @@ impl RunnerInner {
     }
 
     // ── 连接快照 ──
+
+    /// 将主窗口云存储快照广播到已打开的设置/云对话框（独立 Root 需同步）
+    pub(super) fn sync_cloud_to_dialogs(&mut self) {
+        let main_ui = self.window_state.window.ui();
+        self.window_state
+            .dialog_manager
+            .sync_cloud_to_dialogs(main_ui);
+    }
 
     /// 将 CloudManager 的连接快照注入 UI（设备下拉 + 在线状态 + 设置面板云管理页）
     pub(super) fn refresh_cloud_connections(&mut self) {
@@ -373,5 +391,7 @@ impl RunnerInner {
                 )
                 .collect();
         }
+        // 广播到已打开的设置/云对话框（独立 Root 同步快照）
+        self.sync_cloud_to_dialogs();
     }
 }

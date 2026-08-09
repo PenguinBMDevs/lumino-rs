@@ -1,36 +1,50 @@
 //! 云存储管理器 — 连接池 + 配置 + 状态 + 操作分发
 //!
-//! `CloudManager` 持有 tokio Runtime，所有方法为**同步阻塞**接口，
+//! `CloudManager` 持有 tokio `Handle`，所有方法为**同步阻塞**接口，
 //! 内部通过 `block_on` 执行异步协议客户端。调用方应将耗时操作
 //! 放到后台线程执行（如 runner 中的 std::thread::spawn），避免阻塞 UI。
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
-use tokio::runtime::Runtime;
+use tokio::runtime::{Handle, Runtime};
 
 use crate::client::{CloudClient, create_client};
 use crate::config::CloudConfigStore;
 use crate::error::{CloudError, Result};
 use crate::model::{CloudConnection, CloudEntry, ConnState};
 
+/// 获取可用于 `block_on` 的运行时 Handle。
+///
+/// 若当前线程已在 tokio 运行时内（`#[tokio::main]` 主线程），直接复用；
+/// 否则（后台/测试线程）创建并**泄漏**一个全局运行时（进程退出时由
+/// OS 回收内存）。绝不在线程内持有并 drop 自己的 `Runtime`——主线程
+/// 运行在 tokio 上下文中，drop 任何 `Runtime` 都会触发
+/// "Cannot drop a runtime in a context where blocking is not allowed" panic。
+fn runtime_handle() -> Handle {
+    if let Ok(handle) = Handle::try_current() {
+        return handle;
+    }
+    static GLOBAL_RT: OnceLock<&'static Runtime> = OnceLock::new();
+    let rt = GLOBAL_RT
+        .get_or_init(|| Box::leak(Box::new(Runtime::new().expect("创建全局 tokio 运行时失败"))));
+    rt.handle().clone()
+}
+
 /// 云存储管理器
 pub struct CloudManager {
-    rt: Runtime,
+    rt: Handle,
     config: CloudConfigStore,
     clients: HashMap<String, Box<dyn CloudClient>>,
     status: HashMap<String, ConnState>,
 }
 
 impl CloudManager {
-    /// 创建管理器（加载配置 + 创建异步运行时）
+    /// 创建管理器（加载配置 + 获取异步运行时句柄）
     pub fn new(config_path: PathBuf) -> Result<Self> {
-        let rt = match Runtime::new() {
-            Ok(rt) => rt,
-            Err(e) => return Err(CloudError::Operation(format!("创建异步运行时失败: {e}"))),
-        };
         Ok(Self {
-            rt,
+            rt: runtime_handle(),
             config: CloudConfigStore::new(config_path)?,
             clients: HashMap::new(),
             status: HashMap::new(),

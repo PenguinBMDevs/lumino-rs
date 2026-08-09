@@ -53,7 +53,7 @@ impl DialogWindow {
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
             DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
-            DialogType::CloudConnect => (480.0, 420.0, "连接云存储", false),
+            DialogType::CloudConnect => (480.0, 515.0, "连接云存储", false),
             DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
             DialogType::CloudNotice => (440.0, 200.0, "云存储提醒", false),
         };
@@ -214,6 +214,8 @@ impl DialogWindow {
             }
             DialogType::Settings => {
                 ui.set_settings_dialog_open(true);
+                // 云管理页需要主窗口的连接快照（设置面板为独立 Root）
+                ui.sync_cloud_state_from(main_ui);
             }
             DialogType::SpeedChange => {
                 ui.set_speed_change_dialog_open(true);
@@ -234,7 +236,9 @@ impl DialogWindow {
                 ui.set_recover_track_dialog_open(true);
             }
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
-                // 状态已在 Root 构造时按 dialog_type 设置，无需额外初始化
+                // 同步主窗口的云存储快照（连接列表/表单回显/提醒内容）。
+                // 云存储唯一数据源是主窗口 Root，对话框为独立 Root 需拉取。
+                ui.sync_cloud_state_from(main_ui);
             }
         }
 

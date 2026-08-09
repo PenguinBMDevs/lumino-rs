@@ -232,6 +232,18 @@ impl Root {
         &self.settings
     }
 
+    /// 从另一个 Root 同步云存储 UI 状态（用于对话框窗口同步主窗口状态）。
+    ///
+    /// 云存储的**唯一数据源**是主窗口 Root：连接快照/目录列表/结果提示均由
+    /// runner 注入主窗口；对话框（连接/浏览/提醒/设置）打开时及状态变化后
+    /// 通过本方法拉取最新快照，保证"已连接设备"在设置面板与文件浏览器中可见。
+    pub fn sync_cloud_state_from(&mut self, other: &Root) {
+        self.cloud = other.cloud.clone();
+        // 设置面板云管理页（连接列表 + 断连提醒标志）
+        self.settings.cloud_connections = other.settings.cloud_connections.clone();
+        self.settings.cloud_alert = other.settings.cloud_alert.clone();
+    }
+
     /// 请求重新扫描素材库（云下载素材后由 runner 调用）
     pub fn request_material_scan(&mut self) {
         self.start_material_scan();

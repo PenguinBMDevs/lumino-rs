@@ -408,8 +408,8 @@ fn render_content_area<'a>(
         4 => onion_skin_view(settings),
         5 => palette_view(settings),
         6 => editing_view(settings),
-        7 => about_view(settings),
-        8 => cloud_view(settings),
+        7 => cloud_view(settings),
+        8 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

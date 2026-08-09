@@ -33,7 +33,7 @@ fn view_cloud_notice<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a>
         column![
             text("云存储提醒").size(16),
             text(message).size(13).style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().background.strong.text),
+                color: Some(theme.extended_palette().background.base.text),
             }),
             row![
                 button(text("知道了").size(13))
@@ -50,6 +50,7 @@ fn view_cloud_notice<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a>
     .padding(20)
     .style(|theme: &Theme| container::Style {
         background: Some(iced_core::Background::Color(theme.palette().background)),
+        text_color: Some(theme.palette().text),
         ..Default::default()
     })
     .into()
@@ -111,7 +112,6 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
                 .into()
         })
         .unwrap_or_else(|| Space::new().height(4).into());
-
     let connect_btn = button(
         text(if state.connecting {
             "连接中..."
@@ -157,10 +157,11 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
             text("连接云存储").size(18),
             form,
             error_hint,
+            // 隐私提示（需求 8）：显式跟随主题色，保证深色/浅色主题下均可读
             text(PRIVACY_HINT)
                 .size(12)
                 .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
+                    color: Some(theme.palette().text),
                 }),
             row![cancel_btn, connect_btn]
                 .spacing(12)
@@ -174,6 +175,8 @@ fn view_connect_panel<'a>(state: &'a CloudUiState, _theme: &Theme) -> Element<'a
     .padding(24)
     .style(|theme: &Theme| container::Style {
         background: Some(iced_core::Background::Color(theme.palette().background)),
+        // 容器级文本色：所有子 text 未显式设置时继承，确保与背景同源跟随主题
+        text_color: Some(theme.palette().text),
         ..Default::default()
     })
     .into()

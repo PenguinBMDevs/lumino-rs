@@ -159,17 +159,19 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
         .padding(16)
         .style(|theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(theme.palette().background)),
+            // 容器级文本色：所有子 text 未显式设置时继承，跟随主题保证可读
+            text_color: Some(theme.palette().text),
             ..Default::default()
         })
         .into()
 }
 
-/// 弱化提示文本
+/// 弱化提示文本（跟随主题）
 fn placeholder_text<'a>(content: &'a str) -> Element<'a> {
     text(content)
         .size(12)
         .style(|theme: &Theme| text::Style {
-            color: Some(theme.extended_palette().background.strong.text),
+            color: Some(theme.extended_palette().background.base.text),
         })
         .into()
 }
