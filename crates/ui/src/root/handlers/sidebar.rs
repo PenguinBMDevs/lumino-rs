@@ -314,9 +314,13 @@ impl Root {
                 true
             }
             MaterialDownloadFromWeb => {
-                // 占位实现：保留 tracing info 日志，后续接入素材下载服务
+                // 云存储入口（素材模式）：无连接时 runner 会弹出连接面板引导
                 self.right_sidebar.materials.add_menu_open = false;
-                tracing::info!("素材库：从 web 下载（占位实现，待接入下载服务）");
+                crate::event::emit(crate::event::Event::cloud(
+                    crate::event::cloud::Event::OpenCloudPanel {
+                        intent: "material".to_string(),
+                    },
+                ));
                 true
             }
             MaterialImportFromLocal => {

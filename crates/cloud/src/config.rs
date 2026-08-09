@@ -27,13 +27,27 @@ pub struct CloudConfigStore {
 }
 
 impl CloudConfigStore {
-    /// 从指定路径加载配置（文件不存在则使用空配置）
+    /// 从指定路径加载配置（文件不存在或解析失败时回退空配置，
+    /// 与主配置 ConfigWrapper 的容错行为一致）
     pub fn new(path: std::path::PathBuf) -> Result<Self> {
         let inner = if path.exists() {
-            let bytes = fs::read(&path)
-                .map_err(|e| CloudError::Config(format!("读取配置失败 {}: {e}", path.display())))?;
-            serde_json::from_slice::<CloudConfigFile>(&bytes)
-                .map_err(|e| CloudError::Config(format!("解析配置失败 {}: {e}", path.display())))?
+            let bytes = match fs::read(&path) {
+                Ok(b) => b,
+                Err(e) => {
+                    tracing::warn!("读取云配置失败 {}: {e}，使用空配置", path.display());
+                    return Ok(Self {
+                        inner: CloudConfigFile::default(),
+                        path,
+                    });
+                }
+            };
+            match serde_json::from_slice::<CloudConfigFile>(&bytes) {
+                Ok(cfg) => cfg,
+                Err(e) => {
+                    tracing::warn!("解析云配置失败 {}: {e}，使用空配置", path.display());
+                    CloudConfigFile::default()
+                }
+            }
         } else {
             CloudConfigFile::default()
         };

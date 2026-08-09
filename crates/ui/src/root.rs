@@ -74,6 +74,8 @@ pub struct Root {
         Option<std::sync::mpsc::Receiver<Vec<crate::right_sidebar::MaterialEntry>>>,
     /// 图片转 MIDI 转换前的工具，√ 写入成功后还原
     pub(crate) i2m_restore_tool: Option<lumino_message::Tool>,
+    /// 云存储 UI 状态（连接表单 / 文件浏览）
+    pub cloud: crate::state::cloud_state::CloudUiState,
 }
 
 /// Root 构造参数
@@ -129,6 +131,7 @@ impl Root {
                 pending_i2m: None,
                 pending_material_scan: None,
                 i2m_restore_tool: None,
+                cloud: crate::state::cloud_state::CloudUiState::default(),
             }
         })
     }
@@ -227,6 +230,11 @@ impl Root {
     /// 获取设置面板引用
     pub fn settings(&self) -> &settings::SettingsPanel {
         &self.settings
+    }
+
+    /// 请求重新扫描素材库（云下载素材后由 runner 调用）
+    pub fn request_material_scan(&mut self) {
+        self.start_material_scan();
     }
 
     /// 获取编辑器引用

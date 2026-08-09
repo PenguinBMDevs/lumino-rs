@@ -363,5 +363,6 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
             },
         },
         Event::Window(window_event) => format!("{window_event:?}"),
+        Event::Cloud(cloud_event) => format!("{cloud_event:?}"),
     }
 }

@@ -224,7 +224,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
 
     material_library: "素材库",
     material_add: "添加素材",
-    material_download_web: "从 web 下载",
+    material_download_web: "从云导入",
     material_import_local: "从本地选取",
     material_section_builtin: "内置素材",
     material_section_user: "本地素材",
@@ -339,7 +339,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
 
     material_library: "Material Library",
     material_add: "Add Material",
-    material_download_web: "Download from Web",
+    material_download_web: "Import from Cloud",
     material_import_local: "Import from Local",
     material_section_builtin: "Built-in",
     material_section_user: "Local",

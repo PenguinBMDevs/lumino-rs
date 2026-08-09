@@ -4538,6 +4538,7 @@ dependencies = [
  "iced_wgpu",
  "iced_widget",
  "iced_winit",
+ "lumino-cloud",
  "lumino-collaboration",
  "lumino-core",
  "lumino-dialog",

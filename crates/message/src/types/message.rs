@@ -7,6 +7,7 @@ use lumino_event::Event;
 
 use crate::audio_export::AudioExportAction;
 use crate::batch_edit::BatchEditAction;
+use crate::cloud_action::CloudAction;
 use crate::collaboration::CollaborationAction;
 use crate::custom_precision::CustomPrecisionAction;
 use crate::load_confirm::LoadConfirmAction;
@@ -123,6 +124,8 @@ pub enum Message<W, S, Se, T> {
     PianoRollContextMenu(PianoRollContextMenuAction),
     /// 右侧栏动作
     RightSidebar(RightSidebarAction),
+    /// 云存储动作
+    Cloud(CloudAction),
     /// 工程走带：设置演奏指示线位置
     ArrangementCursorSet(f64),
     /// 工程走带：选择矩形变更（tick_start, tick_end, track_lo, track_hi）

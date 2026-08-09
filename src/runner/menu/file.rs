@@ -23,12 +23,11 @@ impl RunnerInner {
             New => self.handle_new_file(),
             Open => self.handle_open_file(),
             ImportFiles => self.handle_import_files(),
-            ImportFromCloud | SaveToCloud => {
-                // 云存储入口：打开云连接面板（已连接时由连接面板/浏览面板接管，
-                // Phase 3 完善为"已连接直接打开文件浏览面板"）
-                self.window_state
-                    .dialog_manager
-                    .open_dialog(crate::runner::dialog_manager::DialogType::CloudConnect);
+            ImportFromCloud => {
+                self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Import);
+            }
+            SaveToCloud => {
+                self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Save);
             }
             Save => self.handle_save_file(),
             MidiLoaded(info) => {

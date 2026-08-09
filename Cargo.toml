@@ -136,6 +136,7 @@ lumino-extras = { workspace = true }
 lumino-project = { workspace = true }
 lumino-collaboration = { workspace = true }
 lumino-dialog = { workspace = true }
+lumino-cloud = { workspace = true }
 # crates.io
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

@@ -65,6 +65,9 @@ impl RunnerInner {
             Event::Window(window_event) => {
                 self.handle_window_event(window_event);
             }
+            Event::Cloud(cloud_event) => {
+                self.handle_cloud_event(cloud_event);
+            }
         }
     }
 

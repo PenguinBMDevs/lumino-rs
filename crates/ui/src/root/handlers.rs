@@ -17,6 +17,7 @@ use crate::root::Root;
 
 // 重新导出子模块
 pub mod arrangement;
+pub mod cloud;
 pub mod collaboration;
 pub mod core_window;
 pub mod dialog;
@@ -30,6 +31,7 @@ pub mod toolbar;
 pub mod velocity;
 
 // 重新导出处理器类型
+pub use cloud::CloudHandler;
 pub use collaboration::CollaborationHandler;
 pub use dialog::DialogHandler;
 pub use loop_range::LoopRangeHandler;
@@ -92,6 +94,7 @@ impl Default for MessageRouter {
 pub fn create_message_router() -> MessageRouter {
     let mut router = MessageRouter::new();
     router.register(Box::new(CollaborationHandler::new()));
+    router.register(Box::new(CloudHandler::new()));
     router.register(Box::new(DialogHandler::new()));
     router.register(Box::new(SettingsHandler::new()));
     router.register(Box::new(VelocityHandler::new()));

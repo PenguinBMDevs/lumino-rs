@@ -6,6 +6,7 @@
 
 pub mod audio_export;
 pub mod batch_edit;
+pub mod cloud_action;
 pub mod collaboration;
 pub mod context_menu;
 pub mod custom_precision;
@@ -22,6 +23,7 @@ pub mod video_export;
 
 pub use audio_export::AudioExportAction;
 pub use batch_edit::{BatchEditAction, BatchEditField};
+pub use cloud_action::{CloudAction, CloudProtocolUi};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
     PanelContextMenuItem, PianoRollContextMenuAction, PianoRollContextMenuItem,

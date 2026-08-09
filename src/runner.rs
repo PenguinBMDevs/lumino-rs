@@ -1,4 +1,6 @@
 mod async_helper;
+mod cloud;
+mod cloud_ops;
 mod dialog_manager;
 mod file_handler;
 mod inner;
@@ -9,6 +11,5 @@ mod midi_manager;
 mod midi_parser;
 mod progress_manager;
 mod window_manager;
-
 pub use inner::Runner;
 pub(crate) use inner::{CollaborationStatus, RunnerInner};

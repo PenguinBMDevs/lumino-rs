@@ -50,7 +50,7 @@ impl Root {
     }
 
     /// 开始后台扫描素材列表（内置 + 用户配置目录），完成后刷新面板
-    pub(super) fn start_material_scan(&mut self) {
+    pub(crate) fn start_material_scan(&mut self) {
         self.right_sidebar.materials.scanning = true;
         let user_dir = crate::right_sidebar::user_materials_dir();
         let (tx, rx) = std::sync::mpsc::channel();

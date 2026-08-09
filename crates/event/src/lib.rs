@@ -3,6 +3,7 @@ use std::{
     sync::{Mutex, MutexGuard, OnceLock},
 };
 
+pub mod cloud;
 pub mod menu;
 pub mod window;
 
@@ -18,6 +19,7 @@ pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
 pub enum Event {
     Menu(menu::Event),     // 菜单事件
     Window(window::Event), // 窗口事件
+    Cloud(cloud::Event),   // 云存储事件
 }
 
 impl Event {
@@ -41,6 +43,10 @@ impl Event {
 
     pub fn window(event: window::Event) -> Self {
         Self::Window(event)
+    }
+
+    pub fn cloud(event: cloud::Event) -> Self {
+        Self::Cloud(event)
     }
 }
 

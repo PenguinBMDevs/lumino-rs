@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use winit::event_loop::ControlFlow;
 
@@ -107,6 +108,10 @@ pub(crate) struct RunnerInner {
     pub(crate) collab_state: CollabState,
     pub(crate) test_state: TestState,
     pub(crate) session_tracker: SessionTracker,
+    /// 云存储管理器（后台线程锁内执行耗时操作）
+    pub(crate) cloud: std::sync::Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
+    /// 云入口意图（记录用户从哪里进入，连接成功后按意图打开对应面板）
+    pub(crate) cloud_intent: Option<crate::runner::cloud::CloudIntent>,
     /// 找回删除音轨对话框的待填充条目列表
     ///
     /// 用户请求打开对话框时，Runner 先扫描缓存目录得到条目列表存于此字段，
@@ -228,6 +233,14 @@ impl Runner {
             },
             session_tracker: SessionTracker::new(),
             pending_recover_track_entries: None,
+            // 云存储管理器：配置与 config.json 同目录（cloud.json）
+            // 配置解析失败已在 CloudConfigStore 内回退默认，此处失败仅剩
+            // tokio Runtime 创建失败（内存不足等不可恢复错误）。
+            cloud: Arc::new(Mutex::new(
+                lumino_cloud::CloudManager::new(crate::storage::config_dir().join("cloud.json"))
+                    .expect("云存储管理器初始化失败（无法创建异步运行时）"),
+            )),
+            cloud_intent: None,
         };
 
         Ok(runner)

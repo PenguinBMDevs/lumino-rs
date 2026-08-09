@@ -110,6 +110,21 @@ impl Host {
         self.root.settings()
     }
 
+    /// 获取云存储 UI 状态
+    pub fn cloud_state(&self) -> &crate::state::cloud_state::CloudUiState {
+        &self.root.cloud
+    }
+
+    /// 获取云存储 UI 状态（可变，供 runner 注入连接/列表/操作结果）
+    pub fn cloud_state_mut(&mut self) -> &mut crate::state::cloud_state::CloudUiState {
+        &mut self.root.cloud
+    }
+
+    /// 请求重新扫描素材库（云下载素材后调用）
+    pub fn request_material_scan(&mut self) {
+        self.root.request_material_scan();
+    }
+
     /// 获取当前 wgpu 纹理格式（用于视频导出时匹配 ffmpeg `-pix_fmt`）
     pub fn texture_format(&self) -> lumino_gfx::TextureFormat {
         self.render_ctx.format
