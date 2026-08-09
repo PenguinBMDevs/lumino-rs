@@ -145,6 +145,12 @@ impl RunnerInner {
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
                     Some("素材已导入素材库".to_string());
             }
+            "lmpj" => {
+                // 工程归档（单文件 LMPJ）→ 自动加载到编辑器
+                self.load_midi_file(path.to_path_buf());
+                self.window_state.window.ui_mut().cloud_state_mut().notice =
+                    Some("已下载并导入工程".to_string());
+            }
             "mid" | "midi" => {
                 self.load_midi_file(path.to_path_buf());
             }
@@ -176,11 +182,6 @@ impl RunnerInner {
                 }
             }
         };
-        let key_count = if self.window_state.storage.config.get().ui.enable_256key {
-            256
-        } else {
-            128
-        };
         let file_stem = self
             .midi_state
             .current_midi_source
@@ -194,12 +195,11 @@ impl RunnerInner {
 
         let mgr = self.cloud.clone();
         std::thread::spawn(move || {
-            // 导出归档到临时文件
-            if let Err(e) = lumino_export::save_project_to_folder_with_entry(
-                &project,
-                local_path.clone(),
-                key_count,
-            ) {
+            // 导出工程为**单文件归档**（LMPJ 魔数开头，完整包含全部音轨数据）。
+            // 注意：不得使用 save_project_to_folder_with_entry——它生成 67 字节
+            // 入口文件 + 同目录数据文件夹，云上传只有单文件通道，
+            // 数据文件夹不会上传，下载后工程无法加载（曾引发 67 字节 bug）。
+            if let Err(e) = lumino_export::save_to_archive(&project, local_path.clone()) {
                 event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
                     ok: false,
                     error: Some(format!("导出工程失败：{e}")),
