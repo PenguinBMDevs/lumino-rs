@@ -55,6 +55,7 @@ pub fn handle_eraser_event(
                         viewport,
                         ctx.precision,
                         ctx.ppq,
+                        ctx.time_signatures,
                     );
                     output.push(Message::ArrangementDragSelectionRect(Some((
                         t_start, t_end, track_lo, track_hi,
@@ -92,6 +93,7 @@ pub fn handle_eraser_event(
                         viewport,
                         ctx.precision,
                         ctx.ppq,
+                        ctx.time_signatures,
                     );
                     output.push(Message::ArrangementErase {
                         tick_start: t_start,

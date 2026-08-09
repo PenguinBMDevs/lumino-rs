@@ -10,6 +10,8 @@ pub struct ProjectSettingsDialogState {
     pub tempo: String,
     /// 版权信息
     pub copyright: String,
+    /// 作者
+    pub author: String,
     /// 创建日期 (格式化后的字符串)
     pub created_display: String,
     /// 累计创作时间 (秒)
@@ -27,6 +29,7 @@ impl Default for ProjectSettingsDialogState {
             title: String::new(),
             tempo: "120".to_string(),
             copyright: String::new(),
+            author: String::new(),
             created_display: String::new(),
             total_editing_time_seconds: 0.0,
             time_signature_numerator: "4".to_string(),

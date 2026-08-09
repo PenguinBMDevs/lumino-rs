@@ -130,12 +130,14 @@ impl Event {
         title: String,
         tempo: f64,
         copyright: String,
+        author: String,
         time_signatures: Vec<(u32, u8, u8)>,
     ) -> Self {
         Self::Dialog(dialog::Event::ApplyProjectSettings {
             title,
             tempo,
             copyright,
+            author,
             time_signatures,
         })
     }

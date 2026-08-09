@@ -280,6 +280,7 @@ impl Root {
             selected_notes: self.editor.arrangement_selected_notes(),
             ppq: self.editor.editor_state.view.ppq,
             precision: self.toolbar.note_precision,
+            time_signatures: self.editor.editor_state.data.time_signatures.clone(),
             ctrl_pressed: self.toolbar.ctrl_pressed,
             shift_pressed: self.toolbar.shift_pressed,
         };

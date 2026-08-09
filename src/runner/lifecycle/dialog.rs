@@ -97,13 +97,15 @@ impl RunnerInner {
                 title,
                 tempo,
                 copyright,
+                author,
                 time_signatures,
             } => {
                 tracing::info!(
-                    "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}, 拍号变化数={}",
+                    "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
                     title,
                     tempo,
                     copyright,
+                    author,
                     time_signatures.len()
                 );
                 let main_ui = self.window_state.window.ui_mut();
@@ -111,6 +113,7 @@ impl RunnerInner {
                     title.clone(),
                     *tempo,
                     copyright.clone(),
+                    author.clone(),
                     time_signatures.clone(),
                 );
                 // 更新主窗口标题

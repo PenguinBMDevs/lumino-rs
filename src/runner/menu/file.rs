@@ -4,6 +4,7 @@ mod editor_midi;
 mod export;
 mod helpers;
 mod load;
+mod material;
 mod save;
 
 use crate::runner::RunnerInner;
@@ -109,7 +110,7 @@ impl RunnerInner {
                 let total_editing_time_seconds = self.session_tracker.current_editing_secs();
 
                 // 从编辑器获取当前 BPM 和拍号
-                let (tempo, time_signatures) = {
+                let (tempo, time_signatures, copyright, author) = {
                     let ui = self.window_state.window.ui();
                     let root = ui.root();
                     let tempo = root
@@ -121,14 +122,18 @@ impl RunnerInner {
                         .map(|tp| format!("{:.1}", tp.bpm))
                         .unwrap_or_else(|| "120.0".to_string());
                     let time_signatures = root.editor.editor_state.data.time_signatures.clone();
-                    (tempo, time_signatures)
+                    // 保留用户已填写的版权/作者（不随菜单打开而重置）
+                    let copyright = ui.get_project_copyright();
+                    let author = ui.get_project_author();
+                    (tempo, time_signatures, copyright, author)
                 };
 
                 // 将真实数据设置到 UI 状态中
                 self.window_state.window.ui_mut().set_project_settings_data(
                     display_title.clone(),
                     tempo,
-                    String::new(), // copyright 保持默认
+                    copyright,
+                    author,
                     created_display,
                     total_editing_time_seconds,
                     time_signatures,

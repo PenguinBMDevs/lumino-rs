@@ -76,12 +76,20 @@ pub fn handle_pointer_event(
                 let current_tick = viewport.x_to_tick(local.x + viewport.scroll_x);
                 let current_track_f = (local.y + viewport.scroll_y) / viewport.lane_height();
                 state.move_drag = Some((origin, (current_tick, current_track_f)));
-                let ghosts = compute_ghost_notes(state, ctx.selected_notes, ctx.ppq, ctx.precision);
+                let ghosts = compute_ghost_notes(
+                    state,
+                    ctx.selected_notes,
+                    ctx.ppq,
+                    ctx.precision,
+                    ctx.time_signatures,
+                );
                 output.push(Message::ArrangementGhostNotesUpdated(ghosts));
 
                 // 计算移动拖拽中的偏移选择矩形（GPU 渲染用）
-                let snapped_origin = snap_tick(origin.0, ctx.precision, ctx.ppq);
-                let snapped_current = snap_tick(current_tick, ctx.precision, ctx.ppq);
+                let snapped_origin =
+                    snap_tick(origin.0, ctx.precision, ctx.ppq, ctx.time_signatures);
+                let snapped_current =
+                    snap_tick(current_tick, ctx.precision, ctx.ppq, ctx.time_signatures);
                 let dt = (snapped_current - snapped_origin).round() as i64;
                 let dtr = (current_track_f - origin.1).round() as i32;
                 if let Some((t_start, t_end, track_lo, track_hi)) = state.move_orig_sel {
@@ -132,6 +140,7 @@ pub fn handle_pointer_event(
                         viewport,
                         ctx.precision,
                         ctx.ppq,
+                        ctx.time_signatures,
                     );
                     output.push(Message::ArrangementDragSelectionRect(Some((
                         t_start, t_end, track_lo, track_hi,
@@ -158,8 +167,10 @@ pub fn handle_pointer_event(
                 state.move_drag = None;
                 output.push(Message::ArrangementGhostNotesUpdated(Vec::new()));
                 output.push(Message::ArrangementDragSelectionRect(None));
-                let snapped_origin = snap_tick(origin_t, ctx.precision, ctx.ppq);
-                let snapped_current = snap_tick(current_t, ctx.precision, ctx.ppq);
+                let snapped_origin =
+                    snap_tick(origin_t, ctx.precision, ctx.ppq, ctx.time_signatures);
+                let snapped_current =
+                    snap_tick(current_t, ctx.precision, ctx.ppq, ctx.time_signatures);
                 let delta_ticks = (snapped_current - snapped_origin).round() as i64;
                 let delta_tracks = (current_tr - origin_tr).round() as i32;
 
@@ -191,7 +202,8 @@ pub fn handle_pointer_event(
                 if drag_dist < 3.0 {
                     // 点击：设置光标、清空选择并选中对应音轨
                     let tick = viewport.x_to_tick(start_pixel.x + viewport.scroll_x);
-                    let snapped = snap_tick(tick, ctx.precision, ctx.ppq).max(0.0);
+                    let snapped =
+                        snap_tick(tick, ctx.precision, ctx.ppq, ctx.time_signatures).max(0.0);
                     output.push(Message::ArrangementSelectionCleared);
                     output.push(Message::ArrangementCursorSet(snapped));
 
@@ -208,6 +220,7 @@ pub fn handle_pointer_event(
                         viewport,
                         ctx.precision,
                         ctx.ppq,
+                        ctx.time_signatures,
                     );
                     output.push(Message::ArrangementSelectionChanged(Some((
                         t_start, t_end, track_lo, track_hi,
@@ -223,11 +236,13 @@ pub fn handle_pointer_event(
 }
 
 /// 根据当前 move_drag 偏移生成 ghost 音符列表。
+#[allow(clippy::too_many_arguments)]
 fn compute_ghost_notes(
     state: &ArrangementInteractionState,
     selected_notes: &[(f64, f64, usize, u8)],
     ppq: u16,
     precision: NotePrecision,
+    time_signatures: &[(u32, u8, u8)],
 ) -> Vec<(f64, f64, usize)> {
     let mut ghosts = Vec::new();
 
@@ -238,8 +253,8 @@ fn compute_ghost_notes(
         return ghosts;
     };
 
-    let snapped_origin = snap_tick(origin_t, precision, ppq);
-    let snapped_current = snap_tick(current_t, precision, ppq);
+    let snapped_origin = snap_tick(origin_t, precision, ppq, time_signatures);
+    let snapped_current = snap_tick(current_t, precision, ppq, time_signatures);
     let dt = (snapped_current - snapped_origin).round() as i64;
     let dtr = (current_tr - origin_tr).round() as i32;
 

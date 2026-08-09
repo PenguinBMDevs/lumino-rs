@@ -121,6 +121,7 @@ impl Host {
                     (ts as f64, te as f64, tl as usize, th as usize)
                 }),
             drag_sel_rect: self.root.arrangement_view.drag_sel_rect,
+            time_signatures: &self.root.editor.editor_state.data.time_signatures,
         };
 
         lumino_gfx::collect_arrangement_instances(&scene_params)

@@ -50,16 +50,18 @@ impl RunnerInner {
                 title,
                 tempo,
                 copyright,
+                author,
                 time_signatures,
             } => {
                 tracing::info!(
-                    "应用工程设置: 标题={}, BPM={}, 版权={}, 拍号变化数={}",
+                    "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
                     title,
                     tempo,
                     copyright,
+                    author,
                     time_signatures.len()
                 );
-                ui.apply_project_settings(title, tempo, copyright, time_signatures);
+                ui.apply_project_settings(title, tempo, copyright, author, time_signatures);
             }
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置，主题: {}", theme);

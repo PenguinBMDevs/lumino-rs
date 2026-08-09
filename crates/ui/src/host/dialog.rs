@@ -133,6 +133,7 @@ impl Host {
         title: String,
         tempo: String,
         copyright: String,
+        author: String,
         created_display: String,
         total_editing_time_seconds: f64,
         time_signatures: Vec<(u32, u8, u8)>,
@@ -141,6 +142,7 @@ impl Host {
             title,
             tempo,
             copyright,
+            author,
             created_display,
             total_editing_time_seconds,
             time_signatures,
@@ -155,10 +157,11 @@ impl Host {
         title: String,
         tempo: f64,
         copyright: String,
+        author: String,
         time_signatures: Vec<(u32, u8, u8)>,
     ) {
         self.root
-            .apply_project_settings(title, tempo, copyright, time_signatures);
+            .apply_project_settings(title, tempo, copyright, author, time_signatures);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
@@ -186,13 +189,31 @@ impl Host {
     #[allow(clippy::type_complexity)]
     pub fn get_project_settings_data(
         &self,
-    ) -> (String, String, String, String, f64, Vec<(u32, u8, u8)>) {
+    ) -> (
+        String,
+        String,
+        String,
+        String,
+        String,
+        f64,
+        Vec<(u32, u8, u8)>,
+    ) {
         self.root.get_project_settings_data()
     }
 
     /// 获取已保存的项目标题（不含"无标题"回退，用于对话框窗口标题）
     pub fn get_project_settings_title(&self) -> String {
         self.root.state.project_settings_dialog.title.clone()
+    }
+
+    /// 获取当前工程的作者（工程设置对话框填写，保存 LMPJ/素材时写入 metadata）
+    pub fn get_project_author(&self) -> String {
+        self.root.state.project_settings_dialog.author.clone()
+    }
+
+    /// 获取当前工程的版权信息（工程设置对话框填写）
+    pub fn get_project_copyright(&self) -> String {
+        self.root.state.project_settings_dialog.copyright.clone()
     }
 
     /// 获取并清空对话框结果

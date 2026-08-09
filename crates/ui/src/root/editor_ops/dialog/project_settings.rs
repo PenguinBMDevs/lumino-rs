@@ -9,6 +9,7 @@ impl Root {
         title: String,
         tempo: String,
         copyright: String,
+        author: String,
         created_display: String,
         total_editing_time_seconds: f64,
         time_signatures: Vec<(u32, u8, u8)>,
@@ -16,6 +17,7 @@ impl Root {
         self.state.project_settings_dialog.title = title;
         self.state.project_settings_dialog.tempo = tempo;
         self.state.project_settings_dialog.copyright = copyright;
+        self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.created_display = created_display;
         self.state
             .project_settings_dialog
@@ -36,19 +38,22 @@ impl Root {
         title: String,
         tempo: f64,
         copyright: String,
+        author: String,
         time_signatures: Vec<(u32, u8, u8)>,
     ) {
         tracing::info!(
-            "应用工程设置: 标题={}, BPM={}, 版权={}, 拍号变化数={}",
+            "应用工程设置: 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
             title,
             tempo,
             copyright,
+            author,
             time_signatures.len()
         );
 
-        // 持久化标题和版权
+        // 持久化标题、版权和作者
         self.state.project_settings_dialog.title = title.clone();
         self.state.project_settings_dialog.copyright = copyright;
+        self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.tempo = format!("{:.0}", tempo);
 
         // 同步到编辑器 tempo 数据（用户编辑的源）
@@ -75,11 +80,19 @@ impl Root {
     }
 
     /// 获取当前项目设置数据（用于填充工程设置对话框）
-    /// 返回 (title, tempo, copyright, created_display, total_editing_time_seconds, time_signatures)
+    /// 返回 (title, tempo, copyright, author, created_display, total_editing_time_seconds, time_signatures)
     #[allow(clippy::type_complexity)]
     pub fn get_project_settings_data(
         &self,
-    ) -> (String, String, String, String, f64, Vec<(u32, u8, u8)>) {
+    ) -> (
+        String,
+        String,
+        String,
+        String,
+        String,
+        f64,
+        Vec<(u32, u8, u8)>,
+    ) {
         let dialog = &self.state.project_settings_dialog;
         // 从编辑器 tempo_points 读取当前 BPM（反映工程设置和指挥轨道编辑的变更）
         let tempo = self
@@ -113,6 +126,7 @@ impl Root {
             title,
             tempo,
             copyright,
+            dialog.author.clone(),
             created_display,
             editing_time,
             time_signatures,

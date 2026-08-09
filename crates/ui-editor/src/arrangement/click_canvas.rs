@@ -33,6 +33,8 @@ pub struct ArrangementClickCanvas {
     pub ppq: u16,
     /// 网格对齐精度
     pub precision: NotePrecision,
+    /// 拍号变化列表 (tick, 分子, 分母)：框选/移动吸附按真实小节边界对齐
+    pub time_signatures: Vec<(u32, u8, u8)>,
     /// Ctrl 键按下状态
     pub ctrl_pressed: bool,
     /// Shift 键按下状态
@@ -186,6 +188,7 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
             selected_notes: &self.selected_notes,
             ppq: self.ppq,
             precision: self.precision,
+            time_signatures: &self.time_signatures,
             ctrl_pressed: self.ctrl_pressed,
             shift_pressed: self.shift_pressed,
         };
@@ -221,9 +224,13 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
             }
             Tool::Curve => {
                 // Curve 拖拽时绘制音符长度预览（仍在 CPU Canvas，轻量反馈）
-                if let Some((t_start, t_end, track)) =
-                    curve_preview_note(state, &self.viewport, self.ppq, self.precision)
-                {
+                if let Some((t_start, t_end, track)) = curve_preview_note(
+                    state,
+                    &self.viewport,
+                    self.ppq,
+                    self.precision,
+                    &self.time_signatures,
+                ) {
                     draw_ghost_note(
                         &mut frame,
                         &self.viewport,

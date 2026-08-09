@@ -83,6 +83,17 @@ pub fn view_project_settings_dialog<'a>(
     .width(Length::Fill)
     .style(input_style);
 
+    // 作者
+    let author_label = text(t.project_author_label).size(14).style(label_style);
+    let author_input = container(
+        text_input(t.project_author_placeholder, &state.author)
+            .on_input(|s| Message::ProjectSettings(ProjectSettingsAction::AuthorChanged(s)))
+            .padding([6, 10])
+            .width(Length::Fill),
+    )
+    .width(Length::Fill)
+    .style(input_style);
+
     // 拍号（单拍号编辑，tick 固定为 0）
     let time_signature_label = text("拍号").size(14).style(label_style);
     let numerator_input = container(
@@ -189,6 +200,9 @@ pub fn view_project_settings_dialog<'a>(
         space().height(12),
         copyright_label,
         copyright_input,
+        space().height(12),
+        author_label,
+        author_input,
         space().height(12),
         time_signature_label,
         time_signature_row,

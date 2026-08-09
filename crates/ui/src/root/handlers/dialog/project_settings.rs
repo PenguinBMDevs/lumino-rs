@@ -35,6 +35,9 @@ impl DialogHandler {
             ProjectSettingsAction::CopyrightChanged(value) => {
                 root.state.project_settings_dialog.copyright = value;
             }
+            ProjectSettingsAction::AuthorChanged(value) => {
+                root.state.project_settings_dialog.author = value;
+            }
             ProjectSettingsAction::TimeSignatureNumeratorChanged(value) => {
                 if value.chars().all(|c| c.is_ascii_digit()) {
                     root.state.project_settings_dialog.time_signature_numerator = value;
@@ -58,6 +61,7 @@ impl DialogHandler {
         if let Some(tempo) = dialog.parse_tempo() {
             let title = dialog.title.clone();
             let copyright = dialog.copyright.clone();
+            let author = dialog.author.clone();
 
             // 验证拍号
             let Some((numerator, denominator)) = dialog.parse_time_signature() else {
@@ -74,6 +78,7 @@ impl DialogHandler {
                 title,
                 tempo,
                 copyright,
+                author,
                 time_signatures: vec![(0, numerator, denominator)],
             });
             root.state.project_settings_dialog.is_open = false;

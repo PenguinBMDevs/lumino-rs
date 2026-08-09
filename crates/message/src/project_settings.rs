@@ -15,6 +15,8 @@ pub enum ProjectSettingsAction {
     TempoChanged(String),
     /// 版权信息变更
     CopyrightChanged(String),
+    /// 作者变更
+    AuthorChanged(String),
     /// 拍号分子变更
     TimeSignatureNumeratorChanged(String),
     /// 拍号分母变更

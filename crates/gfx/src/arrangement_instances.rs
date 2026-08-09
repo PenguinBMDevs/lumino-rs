@@ -34,6 +34,9 @@ pub struct ArrangementSceneParams<'a> {
     pub sel_rect: Option<(f64, f64, usize, usize)>,
     /// 拖拽中的框选矩形（tick_start, tick_end, track_lo, track_hi）
     pub drag_sel_rect: Option<(f64, f64, usize, usize)>,
+    /// 拍号变化列表 (tick, 分子, 分母)，小节线按真实小节边界绘制；
+    /// 空列表回退到固定 4/4（与旧行为一致）。
+    pub time_signatures: &'a [(u32, u8, u8)],
 }
 
 /// 走带视口状态（GFX 版，纯数据，与 UI 版字段兼容）
@@ -136,11 +139,14 @@ pub fn build_arrangement_all(
         }
     }
 
-    // ── 3. 小节线 ──
-    let tpb = viewport.ppq as f64 * 4.0;
-    for bar in ((ts / tpb).floor() as i32).max(0)..=(te / tpb).ceil() as i32 {
-        let tick = bar as f64 * tpb;
-        let screen_x = tick_to_x(viewport, tick);
+    // ── 3. 小节线（按拍号变化，与标尺/真实小节边界一致）──
+    for tick in crate::grid::measure_line_ticks(
+        ts as u32,
+        te as u32,
+        viewport.ppq as u32,
+        params.time_signatures,
+    ) {
+        let screen_x = tick_to_x(viewport, tick as f64);
         if screen_x >= cox && screen_x <= cox + w {
             out.push(ArrangementNoteInstance::grid_line(
                 screen_x,
@@ -148,7 +154,7 @@ pub fn build_arrangement_all(
                 1.0,
                 h,
                 colors.measure_line,
-                tick as u32,
+                tick,
             ));
         }
     }

@@ -205,6 +205,73 @@ fn generate_segment_lines(
     }
 }
 
+/// 按拍号变化生成可见范围内的小节边界 tick（升序去重）
+///
+/// 走带视图网格线使用：拍号中途变化时（如 2/4 → 4/4），小节线必须
+/// 跟随真实小节边界，否则网格线与音符/框选矩形错位。
+/// `time_signatures` 为空时回退到固定 4/4（与旧行为一致）。
+pub fn measure_line_ticks(
+    visible_start: u32,
+    visible_end: u32,
+    ppq: u32,
+    time_signatures: &[(u32, u8, u8)],
+) -> Vec<u32> {
+    let mut out = Vec::new();
+    if time_signatures.is_empty() {
+        // 回退：固定 4/4（与旧逻辑 tpb = ppq * 4 完全一致）
+        let tpb = ppq.saturating_mul(4).max(1);
+        let mut tick = visible_start / tpb * tpb;
+        while tick <= visible_end {
+            out.push(tick);
+            tick = tick.saturating_add(tpb);
+        }
+        return out;
+    }
+
+    // 定位可见起点之前最后一个拍号段（避免遗漏跨段的小节线）
+    let first_ts = time_signatures
+        .iter()
+        .rposition(|(tick, _, _)| *tick <= visible_start)
+        .unwrap_or(0);
+    let mut ts_index = first_ts;
+    let mut current = visible_start;
+
+    while current <= visible_end {
+        // 推进到 current 所在拍号段
+        while let Some(&(next_tick, _, _)) = time_signatures.get(ts_index + 1)
+            && next_tick <= current
+        {
+            ts_index += 1;
+        }
+        let (seg_start, numerator, denominator) = time_signatures[ts_index];
+        let beat = (ppq as f32 * 4.0 / denominator.max(1) as f32).max(1.0) as u32;
+        let measure = beat.saturating_mul(numerator.max(1) as u32).max(1);
+        let seg_end = time_signatures
+            .get(ts_index + 1)
+            .map(|&(next_tick, _, _)| next_tick)
+            .unwrap_or(visible_end);
+
+        // 段起点（拍号变化点）本身就是小节边界；与上一段末尾重合时去重
+        if seg_start >= visible_start && seg_start <= visible_end && out.last() != Some(&seg_start)
+        {
+            out.push(seg_start);
+        }
+        // 段内后续小节边界（从段起点按 measure 对齐，排除段起点本身）
+        let offset = current.max(seg_start).saturating_sub(seg_start);
+        let mut boundary = seg_start + offset / measure * measure;
+        if boundary <= seg_start {
+            boundary = seg_start.saturating_add(measure);
+        }
+        while boundary <= seg_end.min(visible_end) {
+            out.push(boundary);
+            boundary = boundary.saturating_add(measure);
+        }
+        // 越过本段末尾，下一轮 while 推进 ts_index
+        current = seg_end.saturating_add(1);
+    }
+    out
+}
+
 /// 将一条刻度线加入实例列表
 #[allow(clippy::too_many_arguments)]
 fn push_tick_instance(
@@ -278,5 +345,29 @@ mod tests {
         assert!(measure_ticks.contains(&0));
         assert!(measure_ticks.contains(&960));
         assert!(measure_ticks.contains(&(960 + 1920)));
+    }
+
+    #[test]
+    fn test_measure_line_ticks_fixed_4_4() {
+        // 空拍号回退固定 4/4：ppq=480 → 每小节 1920
+        let ticks = measure_line_ticks(0, 7680, 480, &[]);
+        assert_eq!(ticks, vec![0, 1920, 3840, 5760, 7680]);
+    }
+
+    #[test]
+    fn test_measure_line_ticks_short_first_measure() {
+        // 第一个小节 2/4（960 ticks），后续 4/4（1920 ticks）：
+        // 小节边界 0, 960, 2880, 4800 ...
+        let time_signatures = vec![(0, 2, 4), (960, 4, 4)];
+        let ticks = measure_line_ticks(0, 6000, 480, &time_signatures);
+        assert_eq!(ticks, vec![0, 960, 2880, 4800]);
+    }
+
+    #[test]
+    fn test_measure_line_ticks_mid_segment_visible() {
+        // 可见范围不从 0 开始：3/4 段（0..1920 每小节 1440）→ 4/4 段
+        let time_signatures = vec![(0, 3, 4), (1920, 4, 4)];
+        let ticks = measure_line_ticks(1000, 6000, 480, &time_signatures);
+        assert_eq!(ticks, vec![1440, 1920, 3840, 5760]);
     }
 }

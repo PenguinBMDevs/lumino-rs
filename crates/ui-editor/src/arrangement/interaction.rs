@@ -90,6 +90,8 @@ pub struct ArrangementInteractionContext<'a> {
     pub ppq: u16,
     /// 网格对齐精度
     pub precision: NotePrecision,
+    /// 拍号变化列表 (tick, 分子, 分母)：框选/移动吸附按真实小节边界对齐
+    pub time_signatures: &'a [(u32, u8, u8)],
     /// Ctrl 键按下状态
     pub ctrl_pressed: bool,
     /// Shift 键按下状态

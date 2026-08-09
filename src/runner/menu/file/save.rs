@@ -6,6 +6,7 @@ use crate::runner::RunnerInner;
 
 use super::editor_midi;
 use super::helpers::{get_file_extension, get_file_stem};
+use super::material;
 
 impl RunnerInner {
     /// 导出为素材（.lmmaterial）
@@ -66,7 +67,10 @@ impl RunnerInner {
                 tracing::error!("导出为素材：文档不可用");
                 return;
             };
-            editor_midi::build_material_project_from_selection(doc, &selected)
+            let mut project = material::build_material_project_from_selection(doc, &selected);
+            // 作者栏：素材文件继承工程设置对话框中填写的作者
+            project.metadata.project.author = ui.get_project_author();
+            project
         };
 
         // 后台写入素材文件（进度条）
@@ -220,6 +224,11 @@ impl RunnerInner {
             tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
             return;
         };
+
+        // 工程设置对话框中填写的作者写入工程元数据（.lmpj / metadata.toml）
+        let mut project = project;
+        let author = self.window_state.window.ui().get_project_author();
+        project.metadata.project.author = author;
 
         let cb = self.window_state.progress_cb.clone();
         let save_path2 = save_path.clone();
