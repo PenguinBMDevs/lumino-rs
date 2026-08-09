@@ -26,7 +26,8 @@ pub enum RecoverTrackAction {
     /// 永久销毁选中条目
     ///
     /// 由对话框视图在用户点击"永久删除"按钮时发出。Root 接收后转换为
-    /// `DialogResult::RecoverTrackPermanentlyDelete` 并关闭对话框。
+    /// `DialogResult::RecoverTrackPermanentlyDelete` 转交 Runner；对话框**保持开启**，
+    /// Runner 销毁缓存文件后重新扫描缓存目录刷新条目列表，支持连续操作。
     PermanentlyDelete {
         /// 缓存文件路径
         path: PathBuf,

@@ -329,8 +329,13 @@ impl DialogWindow {
         if let Some(ui) = self.ui.as_mut()
             && let Some(result) = ui.take_dialog_result()
         {
+            // 永久删除音轨缓存后对话框保持开启（Runner 会刷新条目列表，支持连续操作）；
+            // 其余结果沿用"取到结果即关闭"的默认行为。
+            let keep_open = matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });
             self.result_data = Some(result);
-            self.should_close = true;
+            if !keep_open {
+                self.should_close = true;
+            }
             return self.result_data.take();
         }
         None
