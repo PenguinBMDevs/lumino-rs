@@ -151,7 +151,19 @@ impl CloudClient for SftpClient {
             .ok_or_else(|| CloudError::NotConnected("SFTP 未连接".into()))?;
         let bytes = std::fs::read(local).map_err(CloudError::Io)?;
         let remote_path = resolve_remote(&self.base, remote_path);
-        sftp.write(&remote_path, &bytes)
+        // 必须用 create（CREATE|TRUNCATE|WRITE）而非 write：
+        // session::write 只带 WRITE 标志，OpenSSH sftp-server 对 WRITE-only
+        // 打开不存在的文件返回 NoSuchFile——上传新文件必然失败。
+        use tokio::io::AsyncWriteExt;
+        let mut file = sftp
+            .create(&remote_path)
+            .await
+            .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
+        file.write_all(&bytes)
+            .await
+            .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
+        // 等待全部写入确认与 CLOSE 完成，确保数据落盘
+        file.close()
             .await
             .map_err(|e| CloudError::Protocol(format!("上传失败 {remote_path}: {e}")))?;
         Ok(())
