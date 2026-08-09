@@ -2,7 +2,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{button, column, container, mouse_area, row, scrollable, text, tooltip};
-use lumino_extras::i18n::{Language, main_translations};
+use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 use lumino_message::RightSidebarAction;
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
@@ -154,24 +154,14 @@ fn material_list<'a>(right_sidebar: &'a RightSidebar, language: Language) -> Ele
     col.into()
 }
 
-/// 单个素材项：名称 + 音轨数 + 来源标记；按下开始拖出（长按拖动到卷帘）
+/// 单个素材项：列表仅显示名称；轨道数与来源标记移入悬停提示悬浮面板
 fn material_item<'a>(
     entry: &'a crate::right_sidebar::MaterialEntry,
     index: usize,
     language: Language,
 ) -> Element<'a> {
     let t = main_translations(language);
-    let track_label = if entry.valid {
-        if entry.track_count > 0 {
-            // i18n 格式化字符串为静态字段，用 replace 填充（format! 需要字面量）
-            t.material_tracks_fmt
-                .replace("{}", &entry.track_count.to_string())
-        } else {
-            String::new()
-        }
-    } else {
-        t.material_invalid.to_string()
-    };
+    let track_label = track_label_text(entry, t);
     let source_label = match entry.source {
         MaterialSource::BuiltIn => t.material_section_builtin,
         MaterialSource::User => t.material_section_user,
@@ -188,26 +178,10 @@ fn material_item<'a>(
         text::Style { color: Some(color) }
     });
 
-    let mut info_row = row![name_text]
+    let info_row = row![name_text]
         .spacing(4)
         .align_y(Alignment::Center)
         .width(Length::Fill);
-    if !track_label.is_empty() {
-        info_row = info_row.push(
-            text(track_label)
-                .size(10)
-                .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
-                }),
-        );
-    }
-    info_row = info_row.push(
-        text(format!("· {source_label}"))
-            .size(10)
-            .style(|theme: &Theme| text::Style {
-                color: Some(theme.extended_palette().background.strongest.text),
-            }),
-    );
 
     // 有效素材：按下即开始拖出（进入卷帘松手放置）；无效素材：不可交互置灰
     //
@@ -236,17 +210,60 @@ fn material_item<'a>(
         content.into()
     };
 
-    // tooltip 显示在按钮左侧（右侧为素材列表区域，避免遮挡其他素材项）
-    tooltip::Tooltip::new(item, entry.name.as_str(), tooltip::Position::Left)
-        .style(|_theme: &Theme| container::Style {
-            background: Some(iced_core::Background::Color(Color::from_rgba(
-                0.08, 0.08, 0.10, 0.96,
-            ))),
-            border: iced_core::Border::default().rounded(4),
-            text_color: Some(Color::from_rgba(0.95, 0.95, 0.95, 1.0)),
-            ..Default::default()
-        })
-        .into()
+    // 外部提示悬浮面板：名称 + 轨道数 + 来源标记（代替原内联提示文字）
+    // 显示在按钮左侧（右侧为素材列表区域，避免遮挡其他素材项）
+    tooltip::Tooltip::new(
+        item,
+        tooltip_content(entry, track_label, source_label),
+        tooltip::Position::Left,
+    )
+    .style(tooltip_style)
+    .into()
+}
+
+/// 素材轨道信息文案（None = 无轨道数可显示；无效素材显示"素材无效"）
+fn track_label_text(
+    entry: &crate::right_sidebar::MaterialEntry,
+    t: &MainTranslations,
+) -> Option<String> {
+    if !entry.valid {
+        return Some(t.material_invalid.to_string());
+    }
+    if entry.track_count > 0 {
+        // i18n 格式化字符串为静态字段，用 replace 填充（format! 需要字面量）
+        Some(
+            t.material_tracks_fmt
+                .replace("{}", &entry.track_count.to_string()),
+        )
+    } else {
+        None
+    }
+}
+
+/// 悬停提示悬浮面板内容：名称、轨道数、来源标记（多行文本）
+fn tooltip_content<'a>(
+    entry: &'a crate::right_sidebar::MaterialEntry,
+    track_label: Option<String>,
+    source_label: &'a str,
+) -> Element<'a> {
+    let mut col = column![text(&entry.name).size(12)].spacing(2);
+    if let Some(label) = track_label {
+        col = col.push(text(label).size(10));
+    }
+    col = col.push(text(source_label).size(10));
+    col.into()
+}
+
+/// Tooltip 样式：深色背景 + 浅色文字
+fn tooltip_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(iced_core::Background::Color(Color::from_rgba(
+            0.08, 0.08, 0.10, 0.96,
+        ))),
+        border: iced_core::Border::default().rounded(4),
+        text_color: Some(Color::from_rgba(0.95, 0.95, 0.95, 1.0)),
+        ..Default::default()
+    }
 }
 
 /// 添加按钮样式（主色）
@@ -292,33 +309,56 @@ mod tests {
     use super::*;
     use crate::right_sidebar::material::MaterialEntry;
 
-    #[test]
-    fn test_material_item_builds_element() {
-        let entry = MaterialEntry {
+    fn make_entry(valid: bool, track_count: usize) -> MaterialEntry {
+        MaterialEntry {
             name: "测试素材".into(),
             source: MaterialSource::BuiltIn,
             path: None,
             data: None,
-            multi_track: true,
-            track_count: 4,
-            valid: true,
+            multi_track: track_count > 1,
+            track_count,
+            valid,
             preview: None,
-        };
+        }
+    }
+
+    #[test]
+    fn test_track_label_text_valid_with_tracks() {
+        let entry = make_entry(true, 4);
+        let t = main_translations(Language::ZhCn);
+        assert_eq!(track_label_text(&entry, t).as_deref(), Some("4 轨"));
+    }
+
+    #[test]
+    fn test_track_label_text_valid_without_tracks() {
+        let entry = make_entry(true, 0);
+        let t = main_translations(Language::ZhCn);
+        assert_eq!(track_label_text(&entry, t), None);
+    }
+
+    #[test]
+    fn test_track_label_text_invalid() {
+        let entry = make_entry(false, 0);
+        let t = main_translations(Language::ZhCn);
+        assert_eq!(track_label_text(&entry, t).as_deref(), Some("素材无效"));
+    }
+
+    #[test]
+    fn test_track_label_text_english() {
+        let entry = make_entry(true, 3);
+        let t = main_translations(Language::EnUs);
+        assert_eq!(track_label_text(&entry, t).as_deref(), Some("3 tracks"));
+    }
+
+    #[test]
+    fn test_material_item_builds_element() {
+        let entry = make_entry(true, 4);
         let _element = material_item(&entry, 0, Language::ZhCn);
     }
 
     #[test]
     fn test_material_item_invalid_greyed() {
-        let entry = MaterialEntry {
-            name: "损坏素材".into(),
-            source: MaterialSource::User,
-            path: None,
-            data: None,
-            multi_track: false,
-            track_count: 0,
-            valid: false,
-            preview: None,
-        };
+        let entry = make_entry(false, 0);
         let _element = material_item(&entry, 1, Language::ZhCn);
     }
 
