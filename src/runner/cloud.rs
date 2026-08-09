@@ -56,6 +56,18 @@ impl RunnerInner {
             } => self.run_cloud_connect(name, protocol, address, port, username, password),
             cloud_event::Event::DisconnectRequest(id) => self.run_cloud_disconnect(id),
             cloud_event::Event::ListDirRequest { id, path } => {
+                // 云浏览状态唯一数据源为主窗口 Root：对话框的导航操作
+                // （切设备/进目录/返回/刷新）经事件回传并更新主窗口，
+                // 保证后续广播（snapshot 覆盖）值与对话框一致——
+                // 否则保存模式切换文件夹后会被广播覆盖回根目录。
+                {
+                    let state = self.window_state.window.ui_mut().cloud_state_mut();
+                    state.selected_id = Some(id.clone());
+                    state.current_path = path.clone();
+                    state.busy = true;
+                    state.notice = None;
+                    state.entries.clear();
+                }
                 self.run_cloud_list(id, path);
             }
             cloud_event::Event::DownloadRequest {

@@ -468,4 +468,14 @@ impl Host {
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }
+
+    /// 从另一个 Host 同步云存储**共享快照**（运行期广播用）。
+    ///
+    /// 只同步共享/浏览数据，**排除连接表单字段**，避免用户在连接面板
+    /// 输入时被后台状态广播覆盖。
+    pub fn sync_cloud_snapshot_from(&mut self, other: &Host) {
+        self.root.sync_cloud_snapshot_from(&other.root);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
 }

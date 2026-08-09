@@ -183,6 +183,7 @@ impl DialogManager {
     /// 云存储唯一数据源是主窗口 Root（连接快照/目录列表/提醒由 runner 注入），
     /// 设置面板云管理页与云文件浏览器为独立 Root，需在此同步最新快照，
     /// 否则对话框内看不到已连接的设备。
+    /// 使用**共享快照**同步（排除连接表单字段），避免覆盖用户正在输入的内容。
     pub fn sync_cloud_to_dialogs(&mut self, main_ui: &lumino_ui::Host) {
         for dialog in self.dialogs.values_mut() {
             let relevant = matches!(
@@ -193,7 +194,7 @@ impl DialogManager {
                     | DialogType::CloudNotice
             );
             if relevant && let Some(ui) = dialog.ui_mut() {
-                ui.sync_cloud_state_from(main_ui);
+                ui.sync_cloud_snapshot_from(main_ui);
             }
         }
     }
