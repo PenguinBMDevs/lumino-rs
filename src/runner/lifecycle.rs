@@ -34,6 +34,11 @@ impl winit::application::ApplicationHandler for Runner {
                     this.window_state.window.request_redraw();
                 }
 
+                // 启动自动连接云存储（后台静默执行，失败不打扰用户）
+                if let Some(this) = self.inner.as_mut() {
+                    this.startup_auto_connect();
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()

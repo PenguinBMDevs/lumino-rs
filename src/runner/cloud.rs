@@ -111,6 +111,10 @@ impl RunnerInner {
                     .dialog_manager
                     .mark_dialog_for_close(crate::runner::dialog_manager::DialogType::CloudNotice);
             }
+            cloud_event::Event::AutoConnectFinished => {
+                // 启动自动连接完成：静默刷新 UI 快照（不弹提醒，仅显示状态标志）
+                self.refresh_cloud_connections();
+            }
 
             // ── 结果回传（后台线程 → 本函数 → UI 注入） ──
             cloud_event::Event::ConnectResult { id, ok, error } => {
@@ -231,6 +235,12 @@ impl RunnerInner {
             self.notify_cloud_failure(format!("云存储连接失败（{}）", error.unwrap_or_default()));
             return;
         }
+        // 连接成功：清除历史提醒标志（状态实时更新）
+        {
+            let ui = self.window_state.window.ui_mut();
+            ui.cloud_state_mut().alert_message = None;
+            ui.settings_mut().cloud_alert = None;
+        }
         self.refresh_cloud_connections();
         self.window_state
             .dialog_manager
@@ -260,6 +270,28 @@ impl RunnerInner {
                 ok: result.is_ok(),
                 error: result.err().map(|e| e.to_string()),
             }));
+        });
+    }
+
+    // ── 启动自动连接 ──
+
+    /// 应用启动后自动连接用户配置的云存储（需求 4 + Q8）
+    ///
+    /// 后台线程执行，逐个尝试 auto_connect 标记的连接；
+    /// 失败仅记录日志并显示离线标志，**不弹提醒面板**（用户主动操作才提醒）。
+    pub(super) fn startup_auto_connect(&self) {
+        let mgr = self.cloud.clone();
+        std::thread::spawn(move || {
+            let mut mgr = lock_cloud(&mgr);
+            let results = mgr.connect_all_auto();
+            for (id, result) in &results {
+                match result {
+                    Ok(()) => tracing::info!("启动自动连接成功: {id}"),
+                    Err(e) => tracing::warn!("启动自动连接失败 {id}: {e}"),
+                }
+            }
+            // 全部尝试完成后通知主线程刷新 UI 快照（静默，不弹提醒）
+            event::emit(event::Event::cloud(cloud_event::Event::AutoConnectFinished));
         });
     }
 

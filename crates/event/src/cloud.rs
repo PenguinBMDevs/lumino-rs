@@ -80,6 +80,8 @@ pub enum Event {
     },
     /// 关闭断连提醒面板
     DismissAlert,
+    /// 启动自动连接完成（后台线程执行完毕，通知 runner 刷新 UI 快照）
+    AutoConnectFinished,
     /// 重命名请求
     RenameRequest {
         /// 连接 ID
