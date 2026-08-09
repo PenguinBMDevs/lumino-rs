@@ -1,29 +1,45 @@
 //! 选择框渲染
 
 use crate::Editor;
+use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_ui_core::Renderer;
-use lumino_ui_core::constants::editor::SELECTION_BOX_FILL_ALPHA;
+use lumino_ui_core::constants::editor::{
+    SELECTION_BOX_FILL_COLOR, SELECTION_BOX_STROKE_COLOR, SELECTION_BOX_STROKE_WIDTH,
+};
+
+/// 绘制单个框选框（填充 + 描边）
+///
+/// 所有框选框统一样式：灰色边框（3px）+ 比边框浅一点的灰色半透明填充。
+/// 绘制发生在 canvas 层，音符由 GPU NoteInstance 通道叠加在 canvas 之上，
+/// 因此框选框与填充永远位于音符下方，不会遮挡音符显示。
+fn draw_box(frame: &mut canvas::Frame<Renderer>, rect: Rectangle) {
+    let path = Path::rectangle(rect.position(), rect.size());
+    frame.fill(&path, SELECTION_BOX_FILL_COLOR);
+    let stroke = Stroke::default()
+        .with_width(SELECTION_BOX_STROKE_WIDTH)
+        .with_color(SELECTION_BOX_STROKE_COLOR);
+    frame.stroke(&path, stroke);
+}
 
 /// 绘制选择框
 ///
 /// 两种情况会绘制选择框：
 /// 1. 正在拖拽框选时（`EditState::Selecting`）——绘制半透明填充的选择框
 /// 2. 有已选中的音符时——绘制围绕所有选中音符的方形边界框
+///
+/// 两类选框均裁剪到卷帘内容区（键盘列右侧、标尺下方）内绘制：
+/// 框选/拖拽允许越过内容区边界（负 tick、键盘列上方），
+/// 但选框不得显示到键盘列/标尺之上。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
-    theme: &lumino_ui_core::Theme,
+    _theme: &lumino_ui_core::Theme,
     bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
     crate::puffin_profiler::selection_box_draw();
-    let palette = theme.extended_palette();
-    let selection_stroke_color = palette.secondary.strong.color;
-    let selection_fill_color = iced_core::Color {
-        a: SELECTION_BOX_FILL_ALPHA,
-        ..palette.secondary.weak.color
-    };
+    let content = content_bounds(editor);
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let mut has_content = false;
 
@@ -48,20 +64,14 @@ pub fn draw(
         let min_y = start_pos.y.min(current_pos.y);
         let max_y = start_pos.y.max(current_pos.y);
 
-        let width = (max_x - min_x).max(1.0);
-        let height = (max_y - min_y).max(1.0);
-
-        let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
-        let path = Path::rectangle(rect.position(), rect.size());
-
-        frame.fill(&path, selection_fill_color);
-
-        let stroke = Stroke::default()
-            .with_width(1.0)
-            .with_color(selection_stroke_color);
-        frame.stroke(&path, stroke);
-
-        has_content = true;
+        let rect = Rectangle::new(
+            Point::new(min_x, min_y),
+            Size::new((max_x - min_x).max(1.0), (max_y - min_y).max(1.0)),
+        );
+        if let Some(clipped) = clip_rect(rect, content) {
+            draw_box(&mut frame, clipped);
+            has_content = true;
+        }
     }
 
     // 情况 2：有已选中的音符——绘制围绕所有选中音符的方形边界框。
@@ -90,26 +100,14 @@ pub fn draw(
             crate::EditState::Selecting { .. }
         ) {
             // 跳过：Selecting 状态下仅由情况 1 绘制平滑框选框
-        } else {
-            // 非 Selecting 状态：使用 get_selection_box_bounds（O(1) 缓存、O(N) 兜底、
-            // 或 ghost 路径带 delta），确保框选框在 DraggingSelection 时跟随音符拖动，
-            // 且在二次框选完成后使用正确的音符位置。
-            if let Some((min_x, max_x, min_y, max_y)) = editor.get_selection_box_bounds() {
-                let width = max_x - min_x;
-                let height = max_y - min_y;
-
-                if width >= 1.0 && height >= 1.0 {
-                    let rect = Rectangle::new(Point::new(min_x, min_y), Size::new(width, height));
-                    let path = Path::rectangle(rect.position(), rect.size());
-
-                    // 只绘制边框，不填充
-                    let stroke = Stroke::default()
-                        .with_width(3.0)
-                        .with_color(selection_stroke_color);
-                    frame.stroke(&path, stroke);
-
-                    has_content = true;
-                }
+        } else if let Some((min_x, max_x, min_y, max_y)) = editor.get_selection_box_bounds() {
+            let rect = Rectangle::new(
+                Point::new(min_x, min_y),
+                Size::new(max_x - min_x, max_y - min_y),
+            );
+            if let Some(clipped) = clip_rect(rect, content) {
+                draw_box(&mut frame, clipped);
+                has_content = true;
             }
         }
     }

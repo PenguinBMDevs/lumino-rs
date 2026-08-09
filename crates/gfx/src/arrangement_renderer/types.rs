@@ -172,14 +172,17 @@ impl ArrangementNoteInstance {
     }
 
     /// 创建框选矩形实例（屏幕坐标，带半透明填充和描边）
+    ///
+    /// 与钢琴卷帘框选框统一样式：灰色填充（alpha 0.35）+ 3px 边框，
+    /// 边框色由 shader 按 `BORDER_DARKEN_FACTOR` 自动加深（比填充深）。
     pub fn selection_rect(x: f32, y: f32, w: f32, h: f32, color: [f32; 3]) -> Self {
         Self {
             x,
             y,
             w: w.max(1.0),
             h: h.max(1.0),
-            rgba_packed: pack_rgba(color[0], color[1], color[2], 0.15),
-            props_packed: pack_props(0.0, 1.0),
+            rgba_packed: pack_rgba(color[0], color[1], color[2], 0.35),
+            props_packed: pack_props(0.0, 3.0),
             velocity: 0,
             tag: 6,
         }

@@ -1,5 +1,52 @@
 //! 工具函数
 
+use crate::Editor;
+use iced_core::{Point, Rectangle, Size};
+
+/// 卷帘内容区（选框/按钮的可见范围）：键盘列右侧、标尺下方的网格区域
+pub(crate) fn content_bounds(editor: &Editor) -> Rectangle {
+    let view = &editor.editor_state.view;
+    let canvas = &editor.editor_state.canvas;
+    Rectangle::new(
+        Point::new(view.keyboard_width, view.ruler_height),
+        Size::new(
+            (canvas.size_x - view.keyboard_width).max(0.0),
+            (canvas.size_y - view.ruler_height).max(0.0),
+        ),
+    )
+}
+
+/// 将屏幕矩形裁剪到卷帘内容区（视觉裁剪，数据不动）
+///
+/// 框选框/素材区域框允许越界（素材 Y 向 key 回绕、负 tick、框选拖入键盘列/标尺），
+/// 直接按原始边界绘制会让选框显示到键盘列/标尺/窗口之外。
+/// 此处仅对**显示**求交集裁剪，数据（tick/key 范围）保持不变。
+///
+/// 返回裁剪后的矩形；完全在内容区外或宽/高不足 1 像素时返回 `None`。
+pub(crate) fn clip_rect(rect: Rectangle, content: Rectangle) -> Option<Rectangle> {
+    let clipped = rect.intersection(&content)?;
+    if clipped.width < 1.0 || clipped.height < 1.0 {
+        return None;
+    }
+    Some(clipped)
+}
+
+/// 将区域框屏幕边界 `(left, right, top, bottom)` 裁剪到卷帘内容区
+///
+/// 与 [`clip_rect`] 等价，仅输入输出为四元组（素材区域框使用习惯）。
+/// 返回裁剪后的 `(left, right, top, bottom)`；完全在内容区外时返回 `None`。
+pub(crate) fn clip_region_bounds(
+    region: (f32, f32, f32, f32),
+    content: Rectangle,
+) -> Option<(f32, f32, f32, f32)> {
+    let (left, right, top, bottom) = region;
+    let rect = Rectangle::new(
+        Point::new(left, top),
+        Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
+    );
+    clip_rect(rect, content).map(|r| (r.x, r.x + r.width, r.y, r.y + r.height))
+}
+
 /// 判断琴键是否为黑键（12平均律）
 pub fn is_key_dark(key: isize) -> bool {
     let note_in_octave = key.rem_euclid(12);
@@ -68,6 +115,64 @@ pub fn adaptive_grid_gap(zoom_x: f32, ppq: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 构造默认卷帘内容区（键盘列 120px + 标尺 24px，画布 800x600）
+    fn default_content() -> Rectangle {
+        Rectangle::new(Point::new(120.0, 24.0), Size::new(680.0, 576.0))
+    }
+
+    #[test]
+    fn test_clip_region_bounds_fully_inside() {
+        let clipped = clip_region_bounds((200.0, 500.0, 100.0, 300.0), default_content());
+        assert_eq!(clipped, Some((200.0, 500.0, 100.0, 300.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_top_overflow() {
+        // 素材 Y 向越界（key 回绕/上移），选框顶部超出标尺 → 裁剪到内容区顶边
+        let clipped = clip_region_bounds((200.0, 500.0, -50.0, 100.0), default_content());
+        assert_eq!(clipped, Some((200.0, 500.0, 24.0, 100.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_left_overflow() {
+        // 素材 X 向越界（负 tick），选框左侧超出键盘列 → 裁剪到内容区左边
+        let clipped = clip_region_bounds((50.0, 200.0, 100.0, 300.0), default_content());
+        assert_eq!(clipped, Some((120.0, 200.0, 100.0, 300.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_corner_overflow() {
+        // 素材超出卷帘右/下边缘 → 裁剪到内容区右下角
+        let clipped = clip_region_bounds((500.0, 900.0, 300.0, 700.0), default_content());
+        assert_eq!(clipped, Some((500.0, 800.0, 300.0, 600.0)));
+    }
+
+    #[test]
+    fn test_clip_region_bounds_fully_outside() {
+        // 选框完全在内容区外（键盘列上方）→ 不绘制
+        let clipped = clip_region_bounds((50.0, 100.0, -50.0, -10.0), default_content());
+        assert_eq!(clipped, None);
+    }
+
+    #[test]
+    fn test_clip_region_bounds_zero_content() {
+        // 异常布局：内容区尺寸为 0 → 不绘制
+        let empty = Rectangle::new(Point::new(120.0, 24.0), Size::new(0.0, 0.0));
+        let clipped = clip_region_bounds((200.0, 500.0, 100.0, 300.0), empty);
+        assert_eq!(clipped, None);
+    }
+
+    #[test]
+    fn test_clip_rect_near_zero_size() {
+        // 普通框选框拖拽出 0/负尺寸矩形（起点=终点）→ 裁剪后不绘制
+        let content = default_content();
+        let zero = Rectangle::new(Point::new(200.0, 100.0), Size::new(0.0, 0.0));
+        assert_eq!(clip_rect(zero, content), None);
+        // 负尺寸（起点在终点右下）→ 构造失败语义：无有效交集则不绘制
+        let neg = Rectangle::new(Point::new(200.0, 100.0), Size::new(-50.0, -30.0));
+        assert_eq!(clip_rect(neg, content), None);
+    }
 
     /// 验证 note_name 与 C# 项目 PianoRollCalculations.GetNoteName 输出一致
     #[test]

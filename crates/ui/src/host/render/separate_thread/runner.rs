@@ -94,9 +94,9 @@ impl Host {
                 lumino_gfx::colors::AR_PLAYHEAD_COLOR.3,
             ],
             sel_rect: [
-                theme.extended_palette().secondary.strong.color.r,
-                theme.extended_palette().secondary.strong.color.g,
-                theme.extended_palette().secondary.strong.color.b,
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.r,
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.g,
+                lumino_ui_core::constants::editor::SELECTION_BOX_FILL_COLOR.b,
             ],
         };
 

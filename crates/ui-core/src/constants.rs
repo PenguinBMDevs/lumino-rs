@@ -117,8 +117,16 @@ pub mod editor {
     /// 选择框最小尺寸
     pub const SELECTION_BOX_MIN_SIZE: f32 = 1.0;
 
-    /// 选择框填充透明度
-    pub const SELECTION_BOX_FILL_ALPHA: f32 = 0.2;
+    /// 框选框统一边框宽度（像素）
+    pub const SELECTION_BOX_STROKE_WIDTH: f32 = 3.0;
+
+    /// 框选框统一边框颜色（灰色）
+    pub const SELECTION_BOX_STROKE_COLOR: iced_core::Color =
+        iced_core::Color::from_rgb(0.62, 0.62, 0.62);
+
+    /// 框选框统一填充颜色（比边框颜色浅一点的灰色 + 半透明）
+    pub const SELECTION_BOX_FILL_COLOR: iced_core::Color =
+        iced_core::Color::from_rgba(0.78, 0.78, 0.78, 0.35);
 
     /// 时间轴标尺高度（小节号显示区域）
     pub const RULER_HEIGHT: f32 = 24.0;
