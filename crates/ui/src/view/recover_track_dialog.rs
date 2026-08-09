@@ -211,6 +211,8 @@ pub fn view_recover_track_dialog<'a>(
         let mut btn = button(
             text("恢复")
                 .size(14)
+                .width(Length::Fill)
+                .align_x(iced_core::alignment::Horizontal::Center)
                 .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(if enabled {
                         iced_core::Color::WHITE
@@ -251,56 +253,61 @@ pub fn view_recover_track_dialog<'a>(
         })
     };
 
-    let permanently_delete_button =
-        {
-            let entry = selected_entry;
-            let enabled = can_act && entry.is_some();
-            let mut btn = button(text("永久删除").size(14).style(
-                move |_theme: &iced_core::Theme| text::Style {
+    let permanently_delete_button = {
+        let entry = selected_entry;
+        let enabled = can_act && entry.is_some();
+        let mut btn = button(
+            text("永久删除")
+                .size(14)
+                .width(Length::Fill)
+                .align_x(iced_core::alignment::Horizontal::Center)
+                .style(move |_theme: &iced_core::Theme| text::Style {
                     color: Some(if enabled {
                         iced_core::Color::WHITE
                     } else {
                         palette.background.weak.text
                     }),
+                }),
+        )
+        .padding([8, 24])
+        .width(Length::Fixed(110.0));
+        if let Some(e) = entry {
+            btn = btn.on_press(Message::RecoverTrack(
+                RecoverTrackAction::PermanentlyDelete {
+                    path: e.path.clone(),
+                    track_id: e.track_id,
                 },
-            ))
-            .padding([8, 24])
-            .width(Length::Fixed(110.0));
-            if let Some(e) = entry {
-                btn = btn.on_press(Message::RecoverTrack(
-                    RecoverTrackAction::PermanentlyDelete {
-                        path: e.path.clone(),
-                        track_id: e.track_id,
-                    },
-                ));
+            ));
+        }
+        btn.style(move |_theme: &iced_core::Theme, status| {
+            let bg = match status {
+                button::Status::Hovered if enabled => palette.danger.strong.color,
+                _ if enabled => palette.danger.base.color,
+                _ => palette.background.weak.color,
+            };
+            button::Style {
+                background: Some(bg.into()),
+                text_color: if enabled {
+                    iced_core::Color::WHITE
+                } else {
+                    palette.background.weak.text
+                },
+                border: Border {
+                    radius: 4.0.into(),
+                    width: 0.0,
+                    color: iced_core::Color::TRANSPARENT,
+                },
+                snap: false,
+                shadow: Default::default(),
             }
-            btn.style(move |_theme: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered if enabled => palette.danger.strong.color,
-                    _ if enabled => palette.danger.base.color,
-                    _ => palette.background.weak.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: if enabled {
-                        iced_core::Color::WHITE
-                    } else {
-                        palette.background.weak.text
-                    },
-                    border: Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    snap: false,
-                    shadow: Default::default(),
-                }
-            })
-        };
+        })
+    };
 
     let close_button = button(
         text("关闭")
             .size(14)
+            .width(Length::Fill)
+            .align_x(iced_core::alignment::Horizontal::Center)
             .style(move |_theme: &iced_core::Theme| text::Style {
                 color: Some(text_color),
             }),
