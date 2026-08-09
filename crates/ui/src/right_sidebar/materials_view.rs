@@ -210,11 +210,11 @@ fn material_item<'a>(
         content.into()
     };
 
-    // 外部提示悬浮面板：名称 + 轨道数 + 来源标记（代替原内联提示文字）
+    // 外部提示悬浮面板：轨道数 + 来源标记（代替原内联提示文字）
     // 显示在按钮左侧（右侧为素材列表区域，避免遮挡其他素材项）
     tooltip::Tooltip::new(
         item,
-        tooltip_content(entry, track_label, source_label),
+        tooltip_content(track_label, source_label),
         tooltip::Position::Left,
     )
     .style(tooltip_style)
@@ -240,13 +240,9 @@ fn track_label_text(
     }
 }
 
-/// 悬停提示悬浮面板内容：名称、轨道数、来源标记（多行文本）
-fn tooltip_content<'a>(
-    entry: &'a crate::right_sidebar::MaterialEntry,
-    track_label: Option<String>,
-    source_label: &'a str,
-) -> Element<'a> {
-    let mut col = column![text(&entry.name).size(12)].spacing(2);
+/// 悬停提示悬浮面板内容：轨道数、来源标记（多行文本；名称已在列表项显示，不重复）
+fn tooltip_content<'a>(track_label: Option<String>, source_label: &'a str) -> Element<'a> {
+    let mut col = column![].spacing(2);
     if let Some(label) = track_label {
         col = col.push(text(label).size(10));
     }
