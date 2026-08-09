@@ -29,6 +29,20 @@ impl Root {
         }
     }
 
+    /// 右侧栏是否应随钢琴卷帘编辑区一起渲染
+    ///
+    /// 右侧栏只属于钢琴卷帘编辑区：进入工程走带 / 瀑布流 / 音频视频导出面板
+    /// 或关闭钢琴卷帘（钢琴卷帘 UI 隐藏）时，右侧栏跟随隐藏。
+    /// 视图层调用此函数决定是否渲染右侧栏组件——所有"非钢琴卷帘"视图
+    /// （走带、瀑布流、导出面板、卷帘关闭）均不得渲染右侧栏。
+    pub(crate) fn right_sidebar_visible(&self) -> bool {
+        self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+            && self.sidebar.piano_roll_visible
+            && !self.sidebar.is_arrangement_route()
+            && !self.sidebar.audio_export_visible
+            && !self.sidebar.video_export_visible
+    }
+
     /// 渲染主窗口
     pub(super) fn view_main(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_main");
@@ -78,6 +92,10 @@ impl Root {
             })
             .into()
         } else {
+            // 钢琴卷帘编辑区 —— 右侧栏唯一渲染位置。
+            // 右侧栏跟随钢琴卷帘 UI 显隐（right_sidebar_visible 收口）：
+            // 离开钢琴卷帘（工程走带/瀑布流/导出面板/卷帘关闭）时由上方
+            // 各分支接管，不渲染右侧栏。
             let has_selection = self.editor.selected_notes_count() > 0;
             right_content::wrap_right_content(self, has_selection, false, move |available_width| {
                 let velocity_panel = if self.sidebar.automation_panel_visible {
@@ -108,16 +126,23 @@ impl Root {
                     available_width,
                     false,
                 );
+                // 右侧栏渲染条件收口：仅钢琴卷帘编辑区渲染（防御性兜底，
+                // 正常情况下该分支即满足 right_sidebar_visible）
+                let right_bar = if self.right_sidebar_visible() {
+                    right_sidebar::view::view(
+                        &self.right_sidebar,
+                        &self.window,
+                        self.settings.language,
+                    )
+                } else {
+                    iced_widget::Space::new().into()
+                };
                 column![
                     toolbar,
                     row![
                         column![container(editor_view).height(Length::Fill), velocity_panel,]
                             .height(Length::Fill),
-                        right_sidebar::view::view(
-                            &self.right_sidebar,
-                            &self.window,
-                            self.settings.language,
-                        ),
+                        right_bar,
                     ]
                     .height(Length::Fill),
                 ]
@@ -357,15 +382,9 @@ impl Root {
                 available_width,
                 true,
             ),
-            row![
-                arrangement_row.height(Length::Fill),
-                right_sidebar::view::view(
-                    &self.right_sidebar,
-                    &self.window,
-                    self.settings.language,
-                ),
-            ]
-            .height(Length::Fill),
+            // 走带视图不渲染右侧栏：右侧栏只属于钢琴卷帘编辑区，
+            // 跟随钢琴卷帘 UI 显隐（见 right_sidebar_visible）。
+            arrangement_row.height(Length::Fill),
             bottom_row,
         ]
         .width(Length::Fill)
