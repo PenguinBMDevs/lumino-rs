@@ -93,6 +93,24 @@ pub(crate) fn quote_path(path: &str) -> String {
     }
 }
 
+/// 将"用户视角路径"（相对浏览根的 `/xxx` 形式）解析为**服务器真实路径**
+///
+/// 用户在 UI 中始终从浏览根（root_path，如 `/home/user`）开始导航，
+/// 路径显示为 `/Moyingjun/...`。但 SFTP 无"当前目录"概念（操作必须用
+/// 绝对路径），若直接把 `/Moyingjun` 发给服务器，会被解析为**服务器
+/// 文件系统根**下的目录——真实位置其实是 `base + /Moyingjun`。
+/// 本函数负责拼接基准目录：
+/// - `user_path == "/"` → 返回 base 本身
+/// - 否则 → `base` + 去掉前导 `/` 的用户路径
+pub(crate) fn resolve_remote(base: &str, user_path: &str) -> String {
+    let rel = normalize_remote(user_path);
+    if rel == "/" {
+        base.to_string()
+    } else {
+        join_remote(base, rel.trim_start_matches('/'))
+    }
+}
+
 /// 从远程完整路径提取条目名称
 pub(crate) fn basename(path: &str) -> String {
     let trimmed = path.trim_end_matches('/');
@@ -155,6 +173,25 @@ mod tests {
             "\"/a/Parallel Unit.lmpj\""
         );
         assert_eq!(quote_path("Parallel Unit.lmpj"), "\"Parallel Unit.lmpj\"");
+    }
+
+    #[test]
+    fn test_resolve_remote() {
+        assert_eq!(resolve_remote("/home/user", "/"), "/home/user");
+        assert_eq!(resolve_remote("/", "/"), "/");
+        assert_eq!(
+            resolve_remote("/home/user", "/Moyingjun"),
+            "/home/user/Moyingjun"
+        );
+        assert_eq!(
+            resolve_remote("/home/user", "/Moyingjun/file.lmpj"),
+            "/home/user/Moyingjun/file.lmpj"
+        );
+        assert_eq!(resolve_remote("/", "/Moyingjun"), "/Moyingjun");
+        assert_eq!(
+            resolve_remote("/home/user", "./Moyingjun"),
+            "/home/user/Moyingjun"
+        );
     }
 
     #[test]
