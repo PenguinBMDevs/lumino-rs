@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/note-core", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state"]
+members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/note-core", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state", "crates/cloud"]
 resolver = "3"
 
 # xsynth-realtime 使用本地 vendor 分支：
@@ -45,6 +45,19 @@ lumino-note-core = { path = "crates/note-core", version = "0.2.0-crates-io-previ
 lumino-editor-state = { path = "crates/editor-state", version = "0.2.0-crates-io-preview1" }
 lumino-project = { path = "crates/project", version = "0.2.0-crates-io-preview1" }
 lumino-extras = { path = "crates/extras", version = "0.2.0-crates-io-preview1" }
+lumino-cloud = { path = "crates/cloud", version = "0.2.0-crates-io-preview1" }
+# 云存储（FTP / SFTP / WebDAV）
+suppaftp = "10.0.1"
+# SFTP 使用 russh（纯 Rust，ring 后端无系统依赖；ssh2 vendored-openssl 需 perl 编译 OpenSSL 故弃用）
+russh = { version = "0.62.5", default-features = false, features = ["ring", "flate2", "rsa"] }
+russh-sftp = "2.4.0"
+reqwest_dav = "0.3.3"
+reqwest = "0.13"
+# 密码加密（AES-256-GCM）
+aes-gcm = "0.10.3"
+rand = "0.8"
+base64 = "0.22"
+async-trait = "0.1"
 # crates.io
 iced_renderer = { version = "0.14.0", features = ["wgpu", "tiny-skia", "x11", "wayland"] }
 iced_core = "0.14.0"

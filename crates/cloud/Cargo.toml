@@ -1,0 +1,30 @@
+[package]
+name = "lumino-cloud"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# crates.io
+suppaftp = { workspace = true }
+russh = { workspace = true }
+russh-sftp = { workspace = true }
+reqwest_dav = { workspace = true }
+reqwest = { workspace = true }
+tokio = { workspace = true }
+aes-gcm = { workspace = true }
+rand = { workspace = true }
+base64 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }
+async-trait = { workspace = true }
