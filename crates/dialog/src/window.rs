@@ -53,6 +53,8 @@ impl DialogWindow {
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
             DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
+            DialogType::CloudConnect => (480.0, 420.0, "连接云存储", false),
+            DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
         };
 
         let mut attributes = WindowAttributes::default()
@@ -229,6 +231,9 @@ impl DialogWindow {
             }
             DialogType::RecoverTrack => {
                 ui.set_recover_track_dialog_open(true);
+            }
+            DialogType::CloudConnect | DialogType::CloudBrowser => {
+                // 状态已在 Root 构造时按 dialog_type 设置，无需额外初始化
             }
         }
 

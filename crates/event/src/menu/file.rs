@@ -9,6 +9,10 @@ pub enum Event {
     Close,
     /* */
     ImportFiles,
+    /// 从云存储导入
+    ImportFromCloud,
+    /// 保存当前工程到云存储
+    SaveToCloud,
     MidiLoaded(lumino_midi_loader::MidiInfo),
     MidiLoadError(String),
     MidiParsed(Arc<lumino_midi_loader::ParsedMidi>),
@@ -59,6 +63,12 @@ impl Event {
     }
     pub const fn import_files() -> Self {
         Self::ImportFiles
+    }
+    pub const fn import_from_cloud() -> Self {
+        Self::ImportFromCloud
+    }
+    pub const fn save_to_cloud() -> Self {
+        Self::SaveToCloud
     }
     pub fn midi_loaded(info: lumino_midi_loader::MidiInfo) -> Self {
         Self::MidiLoaded(info)

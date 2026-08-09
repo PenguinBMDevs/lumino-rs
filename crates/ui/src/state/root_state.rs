@@ -29,6 +29,10 @@ pub enum DialogType {
     MemoryMonitor,
     /// 找回删除音轨
     RecoverTrack,
+    /// 云存储连接面板（地址/协议/用户名/密码）
+    CloudConnect,
+    /// 云文件浏览面板（仿资源管理器）
+    CloudBrowser,
 }
 
 /// Root 组件的状态

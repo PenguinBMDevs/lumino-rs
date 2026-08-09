@@ -67,6 +67,11 @@ pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
             Action(crate::event::Event::menu_file(file::Event::close())),
             Separator,
             Action(crate::event::Event::menu_file(file::Event::import_files())),
+            // 云存储导入/保存（无连接时由 runner 弹出连接面板引导）
+            Action(crate::event::Event::menu_file(
+                file::Event::import_from_cloud(),
+            )),
+            Action(crate::event::Event::menu_file(file::Event::save_to_cloud())),
             Separator,
             Submenu(
                 vec![
@@ -328,6 +333,8 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
                 FileEvent::Save => translations.file_save.to_string(),
                 FileEvent::Close => translations.file_close.to_string(),
                 FileEvent::ImportFiles => translations.file_import.to_string(),
+                FileEvent::ImportFromCloud => translations.file_import_from_cloud.to_string(),
+                FileEvent::SaveToCloud => translations.file_save_to_cloud.to_string(),
                 FileEvent::ExportProjectArchive => translations.file_export_archive.to_string(),
                 FileEvent::ExportProjectFolder => translations.file_export_folder.to_string(),
                 FileEvent::ExportMaterial => translations.file_export_material.to_string(),
