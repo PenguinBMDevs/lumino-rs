@@ -350,7 +350,9 @@ impl GridRenderer {
                 unclipped_depth: false,
                 conservative: false,
             },
-            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
+            depth_stencil: crate::constants::rendering::depth_stencil_state_read_only_for(
+                needs_depth,
+            ),
             multisample: wgpu::MultisampleState::default(),
             multiview: None,
             cache: None,

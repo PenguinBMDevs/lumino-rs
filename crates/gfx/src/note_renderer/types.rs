@@ -9,7 +9,9 @@ pub const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFF_FFFF;
 /// 字段布局完全复刻 wasabi（参考 `wasabi/src/gui/window/scene/note_list_system/notes_render_pass.rs:41-50`）：
 ///   - `start_length`: `[f32; 2]` — `[start, length]`，单位 tick（保留 lumino 编辑器语义）
 ///   - `key_color`: `u32` — 低 8 位 = MIDI key，高 24 位 = RGB（无 alpha，与 wasabi 一致）
-///   - `border_width`: `u32` — 边框像素宽度，CPU 端 `calculate_border_width` 算出
+///   - `border_width`: `u32` — 低 16 位 = 边框像素宽度，高 16 位 = 轨道深度编码
+///     （洋葱皮 track_idx+1，VS 据此输出稳定深度解决重叠音符闪烁；
+///     主音轨高 16 位为 0 → z=0.0 最前；`PREVIEW_BORDER_SENTINEL` 表示预览音符）
 ///
 /// 与 wasabi 的唯一差异：`start`/`length` 单位保留 tick（lumino 是 DAW 编辑器，tick 是底层语义），
 /// 其余 GPU 侧数据存放逻辑完全一致。
@@ -50,7 +52,8 @@ pub fn unpack_key_color(packed: u32) -> (u8, [f32; 4]) {
 impl NoteInstance {
     /// 创建新的音符逻辑实例（普通音符）
     /// `key` 为 u8（0-255，支持 256 键，与 wasabi `NoteVertex::new` 一致）
-    /// `border_width` 由 `calculate_border_width` 算出，主音轨所有音符共享同一值
+    /// `border_width` 低 16 位由 `calculate_border_width` 算出，主音轨所有音符共享同一值；
+    /// 高 16 位为轨道深度编码（洋葱皮由 `onion_border_width` 编码，主音轨为 0）
     #[must_use]
     pub fn new(tick: f32, key: u8, length: f32, color: [f32; 4], border_width: u32) -> Self {
         Self {

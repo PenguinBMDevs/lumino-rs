@@ -47,6 +47,20 @@ pub mod rendering {
         })
     }
 
+    /// 只读深度状态（仅比较、不写深度）：供网格等底层绘制使用。
+    ///
+    /// 音符（含洋葱皮）通过深度编码轨道优先级解决重叠闪烁；若网格仍写深度
+    /// （z=0.0），会遮挡后绘制且 z>0 的洋葱皮音符。
+    pub fn depth_stencil_state_read_only_for(needs_depth: bool) -> Option<wgpu::DepthStencilState> {
+        needs_depth.then_some(wgpu::DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: false,
+            depth_compare: wgpu::CompareFunction::LessEqual,
+            stencil: wgpu::StencilState::default(),
+            bias: wgpu::DepthBiasState::default(),
+        })
+    }
+
     /// 判断渲染管线深度/模板状态与 RenderPass 是否兼容。
     ///
     /// 当 RenderPass 不带 depth attachment 时，管线必须也没有 depth-stencil 状态；
