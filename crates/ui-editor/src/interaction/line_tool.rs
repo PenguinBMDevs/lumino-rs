@@ -1,181 +1,290 @@
-//! 曲线工具直线模式交互：两点拉直线 → √ 批量生成音符
+//! 曲线工具贝塞尔路径交互：两点拉线 → 插入锚点弯曲 → √ 批量生成音符
 //!
 //! 交互流程：
-//! - 第一次左键按下：设置起点锚点（snap tick, key）；
-//! - 第二次左键按下：设置终点锚点，直线完整（显示 √ × 按钮）；
-//! - 直线完整后：拖动锚点可独立移动；拖动连线整体平移；
-//!   按下空白处重新开始（清空后设置新起点锚点）；
-//! - √ 按钮：按直线经过的网格格点批量生成音符（Bresenham）；
-//! - × 按钮：清空直线状态。
+//! - 前两次左键按下：设置首尾端点（tick 吸附、key 整数格）；
+//! - 路径完整后：
+//!   - 点击曲线段（原地松开）：在该段中间插入锚点（**不吸附网格**）；
+//!   - 按下曲线段 + 拖动（超过 4px）：整条路径平移；
+//!   - 拖动锚点：端点吸附网格、中间锚点自由移动；
+//!   - 拖动控制柄：自由弯曲对应贝塞尔段；
+//!   - 双击中间锚点：删除；
+//!   - 空白处按下：清空并开始新路径；
+//! - √ 按钮：按曲线经过的网格格点批量生成音符（贝塞尔离散化，见 `geom`）；
+//! - × 按钮：清空路径状态。
 //!
 //! 交互状态独立于 `EditState`（`LineToolInteraction`），不耦合音符选择机制。
+//! 纯几何算法（贝塞尔求值/距离/格点离散化）在 `line_tool/geom.rs`。
+
+mod geom;
+
+#[cfg(test)]
+mod tests;
 
 use crate::{Editor, Note};
 use iced_core::Point;
-use lumino_editor_state::{LineAnchor, LineToolInteraction};
+use lumino_editor_state::{HandleSide, LineToolInteraction};
 use lumino_note_core::history::CreateOp;
 
 /// 锚点命中半径（像素）
 const ANCHOR_HIT_RADIUS: f32 = 12.0;
-/// 连线命中阈值（像素）
+/// 控制柄命中半径（像素）
+const HANDLE_HIT_RADIUS: f32 = 10.0;
+/// 控制柄与锚点重合判定阈值（像素）：重合时柄不参与命中（点击拖动锚点）
+const HANDLE_COINCIDE_THRESHOLD_PX: f32 = 6.0;
+/// 曲线段命中阈值（像素）
 const LINE_HIT_THRESHOLD: f32 = 8.0;
+/// 曲线段按下 → 拖动判定阈值（像素）：未超阈值松开视为点击插入锚点
+const PRESS_DRAG_THRESHOLD_PX: f32 = 4.0;
 
-/// 直线命中类型
+/// 路径命中类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum LineHitType {
-    /// 命中起点锚点
-    AnchorStart,
-    /// 命中终点锚点
-    AnchorEnd,
-    /// 命中连线
-    Line,
+pub enum LineToolHit {
+    /// 命中指定锚点
+    Anchor(usize),
+    /// 命中控制柄
+    Handle { anchor_idx: usize, side: HandleSide },
+    /// 命中曲线段（索引 = anchors[i] → anchors[i+1]）
+    Segment(usize),
 }
 
 impl Editor {
-    /// 直线模式按下处理
+    /// 路径按下处理
     ///
-    /// - 直线未完整：设置下一个锚点（起点 → 终点）；
-    /// - 直线完整：优先锚点/连线命中（进入拖动），未命中则清空并从此点开始新直线。
-    pub(super) fn handle_line_tool_pressed(&mut self, pos: Point, snapped_tick: f32, key: u16) {
+    /// - 未完整：设置下一个端点（调用方已吸附 tick，key 为整数格）；
+    /// - 完整：按 控制柄 > 锚点 > 曲线段 > 空白 的优先级分发。
+    pub(super) fn handle_line_tool_pressed(
+        &mut self,
+        pos: Point,
+        snapped_tick: f32,
+        snapped_key: f32,
+    ) {
+        let raw = (self.x_to_tick(pos.x), self.raw_y_to_key(pos.y));
+        // 未完整：设置端点
         if !self.editor_state.line_tool.is_complete() {
-            // 未完整：设置下一个锚点
             self.editor_state
                 .line_tool
-                .set_next_anchor(snapped_tick, key);
+                .push_anchor((snapped_tick, snapped_key));
             return;
         }
-        // 完整直线：先检测锚点/连线命中（可拖动）
+        // 完整路径：命中分发
         let hit = self.line_tool_hit_test(pos);
         let line = &mut self.editor_state.line_tool;
-        if let Some(hit) = hit {
-            let (Some(a), Some(b)) = (line.anchor_start, line.anchor_end) else {
-                return;
-            };
-            line.drag_start_snap = (snapped_tick, key);
-            match hit {
-                LineHitType::AnchorStart => {
-                    line.drag_anchor_orig = a;
-                    line.interaction = LineToolInteraction::DraggingAnchorStart;
-                }
-                LineHitType::AnchorEnd => {
-                    line.drag_anchor_orig = b;
-                    line.interaction = LineToolInteraction::DraggingAnchorEnd;
-                }
-                LineHitType::Line => {
-                    line.drag_line_orig_start = a;
-                    line.drag_line_orig_end = b;
-                    line.interaction = LineToolInteraction::DraggingLine;
-                }
+        match hit {
+            Some(LineToolHit::Handle { anchor_idx, side }) => {
+                let anchor = &line.anchors[anchor_idx];
+                line.drag_handle_orig = match side {
+                    HandleSide::In => anchor.in_handle,
+                    HandleSide::Out => anchor.out_handle,
+                };
+                line.drag_start_raw = raw;
+                line.drag_confirmed = true;
+                line.interaction = LineToolInteraction::DraggingHandle { anchor_idx, side };
             }
-        } else {
-            // 按下空白处：清空并从此点开始新直线
-            line.reset();
-            line.anchor_start = Some((snapped_tick, key));
+            Some(LineToolHit::Anchor(idx)) => {
+                line.drag_start_snap = (snapped_tick, snapped_key);
+                line.drag_start_raw = raw;
+                line.drag_anchor_orig = line.anchors[idx];
+                line.drag_confirmed = true;
+                line.interaction = LineToolInteraction::DraggingAnchor(idx);
+            }
+            Some(LineToolHit::Segment(segment)) => {
+                // 按下待定：移动超阈值 = 平移；原地松开 = 插入锚点
+                line.drag_start_snap = (snapped_tick, snapped_key);
+                line.drag_start_raw = raw;
+                line.drag_line_orig = line.anchors.clone();
+                line.drag_confirmed = false;
+                line.interaction = LineToolInteraction::DraggingLine { segment };
+            }
+            None => {
+                // 空白处：清空并从此点开始新路径
+                line.reset();
+                line.push_anchor((snapped_tick, snapped_key));
+            }
         }
     }
 
-    /// 直线模式移动处理（增量式拖动，锚点始终落在网格上）
+    /// 路径移动处理（增量式拖动）
     ///
-    /// 以按下时的吸附值为锚点累加增量（与 i2m 区域框拖动语义一致），
-    /// 避免直接对锚点赋全局吸附值导致的抖动。
-    pub(super) fn handle_line_tool_moved(&mut self, snapped_tick: f32, key: u16) {
-        let max_key = self.editor_state.view.key_count.saturating_sub(1);
+    /// - 端点锚点/整条平移：以按下时吸附值为基准累加增量（保持网格对齐）；
+    /// - 中间锚点/控制柄：以按下时原始值为基准（自由精确定位）。
+    pub(super) fn handle_line_tool_moved(
+        &mut self,
+        snapped_tick: f32,
+        snapped_key: f32,
+        raw_tick: f32,
+        raw_key: f32,
+    ) {
+        let max_key = self.editor_state.view.key_count.saturating_sub(1) as f32;
         let line = &mut self.editor_state.line_tool;
-        let (start_tick, start_key) = line.drag_start_snap;
-        let delta_tick = snapped_tick - start_tick;
-        let delta_key = i32::from(key) - i32::from(start_key);
+        let snap_delta = (
+            snapped_tick - line.drag_start_snap.0,
+            snapped_key - line.drag_start_snap.1,
+        );
+        let raw_delta = (
+            raw_tick - line.drag_start_raw.0,
+            raw_key - line.drag_start_raw.1,
+        );
         match line.interaction {
-            LineToolInteraction::DraggingAnchorStart => {
-                line.anchor_start = Some(Self::offset_anchor(
-                    line.drag_anchor_orig,
-                    delta_tick,
-                    delta_key,
-                    max_key,
-                ));
+            LineToolInteraction::DraggingAnchor(idx) => {
+                // 端点吸附、中间锚点自由
+                let is_endpoint = idx == 0 || idx + 1 >= line.anchors.len();
+                let delta = if is_endpoint { snap_delta } else { raw_delta };
+                let orig = line.drag_anchor_orig;
+                if let Some(a) = line.anchors.get_mut(idx) {
+                    a.pos = (
+                        (orig.pos.0 + delta.0).max(0.0),
+                        (orig.pos.1 + delta.1).clamp(0.0, max_key),
+                    );
+                }
             }
-            LineToolInteraction::DraggingAnchorEnd => {
-                line.anchor_end = Some(Self::offset_anchor(
-                    line.drag_anchor_orig,
-                    delta_tick,
-                    delta_key,
-                    max_key,
-                ));
+            LineToolInteraction::DraggingLine { .. } => {
+                // 阈值确认：未确认前不应用平移（点击插入由 released 判定）
+                if !line.drag_confirmed {
+                    let v = &self.editor_state.view;
+                    let dist_px = ((raw_delta.0 * v.zoom_x).powi(2)
+                        + (raw_delta.1 * v.zoom_y).powi(2))
+                    .sqrt();
+                    if dist_px >= PRESS_DRAG_THRESHOLD_PX {
+                        line.drag_confirmed = true;
+                    } else {
+                        return;
+                    }
+                }
+                // 平移整条路径（吸附增量：端点保持落格）
+                let origs = line.drag_line_orig.clone();
+                for (i, a) in line.anchors.iter_mut().enumerate() {
+                    let orig = origs.get(i).copied().unwrap_or(*a);
+                    a.pos = (
+                        (orig.pos.0 + snap_delta.0).max(0.0),
+                        (orig.pos.1 + snap_delta.1).clamp(0.0, max_key),
+                    );
+                }
             }
-            LineToolInteraction::DraggingLine => {
-                line.anchor_start = Some(Self::offset_anchor(
-                    line.drag_line_orig_start,
-                    delta_tick,
-                    delta_key,
-                    max_key,
-                ));
-                line.anchor_end = Some(Self::offset_anchor(
-                    line.drag_line_orig_end,
-                    delta_tick,
-                    delta_key,
-                    max_key,
-                ));
+            LineToolInteraction::DraggingHandle { anchor_idx, side } => {
+                let orig = line.drag_handle_orig;
+                let new_handle = (orig.0 + raw_delta.0, orig.1 + raw_delta.1);
+                if let Some(a) = line.anchors.get_mut(anchor_idx) {
+                    match side {
+                        HandleSide::In => a.in_handle = new_handle,
+                        HandleSide::Out => a.out_handle = new_handle,
+                    }
+                }
             }
             LineToolInteraction::None => {}
         }
     }
 
-    /// 直线模式释放处理：结束锚点/连线拖动
+    /// 路径释放处理
+    ///
+    /// 曲线段按下且未确认拖动（未超阈值）→ 视为点击 → 在该段中间插入锚点。
     pub(super) fn handle_line_tool_released(&mut self) {
-        self.editor_state.line_tool.interaction = LineToolInteraction::None;
+        let line = &mut self.editor_state.line_tool;
+        if let LineToolInteraction::DraggingLine { segment } = line.interaction {
+            // 未确认拖动 → 点击插入锚点（位置 = 按下处，不吸附网格）
+            if !line.drag_confirmed {
+                line.insert_anchor_at(segment + 1, line.drag_start_raw);
+            }
+        }
+        line.interaction = LineToolInteraction::None;
+        line.drag_confirmed = false;
     }
 
-    /// 按增量偏移锚点（tick 不小于 0，key 限制在琴键范围内）
-    fn offset_anchor(
-        orig: LineAnchor,
-        delta_tick: f32,
-        delta_key: i32,
-        max_key: u16,
-    ) -> LineAnchor {
-        let tick = (orig.0 + delta_tick).max(0.0);
-        let key = (i32::from(orig.1) + delta_key).clamp(0, i32::from(max_key)) as u16;
-        (tick, key)
+    /// 双击处理：命中锚点（含与其重合的控制柄）→ 删除中间锚点（端点不可删）
+    pub(super) fn handle_line_tool_double_clicked(&mut self, pos: Point) {
+        match self.line_tool_hit_test(pos) {
+            Some(LineToolHit::Anchor(idx))
+            | Some(LineToolHit::Handle {
+                anchor_idx: idx, ..
+            }) => {
+                self.editor_state.line_tool.delete_anchor(idx);
+            }
+            _ => {}
+        }
     }
 
-    /// 锚点屏幕位置（key 格中心）
-    pub fn line_anchor_screen_pos(&self, anchor: LineAnchor) -> Point {
-        let view = &self.editor_state.view;
+    /// y 坐标 → key（f32 原始值，不取整；中间锚点自由定位用）
+    pub(super) fn raw_y_to_key(&self, y: f32) -> f32 {
+        let v = &self.editor_state.view;
+        let max_key_index = (v.visible_key_count - 1) as f32;
+        max_key_index - (y - v.ruler_height + v.scroll_y) / v.zoom_y
+    }
+
+    /// 锚点/控制柄屏幕位置（key 支持 f32 自由值）
+    pub fn line_pos_screen_pos(&self, pos: (f32, f32)) -> Point {
+        let v = &self.editor_state.view;
+        let max_key_index = (v.visible_key_count - 1) as f32;
         Point::new(
-            view.tick_to_x(anchor.0),
-            view.key_to_y(anchor.1) + view.zoom_y * 0.5,
+            v.tick_to_x(pos.0),
+            (max_key_index - pos.1) * v.zoom_y - v.scroll_y + v.ruler_height,
         )
     }
 
-    /// 直线命中测试（锚点优先，其次连线；仅直线完整时有效）
-    pub fn line_tool_hit_test(&self, pos: Point) -> Option<LineHitType> {
+    /// 路径命中测试（控制柄 > 锚点 > 曲线段；仅路径完整时有效）
+    pub fn line_tool_hit_test(&self, pos: Point) -> Option<LineToolHit> {
         let line = &self.editor_state.line_tool;
-        let (a, b) = (line.anchor_start?, line.anchor_end?);
-        for (anchor, hit) in [(a, LineHitType::AnchorStart), (b, LineHitType::AnchorEnd)] {
-            let ap = self.line_anchor_screen_pos(anchor);
-            let dist = (pos.x - ap.x).hypot(pos.y - ap.y);
-            if dist <= ANCHOR_HIT_RADIUS {
-                return Some(hit);
+        let anchors = &line.anchors;
+        if anchors.len() < 2 {
+            return None;
+        }
+        // 1. 控制柄（首锚点 out、尾锚点 in、中间 in+out）
+        //    柄与锚点重合（未弯曲）时不参与命中——此时点击拖动锚点
+        for (i, anchor) in anchors.iter().enumerate() {
+            let ap = self.line_pos_screen_pos(anchor.pos);
+            for side in line.visible_handle_sides(i) {
+                let h_abs = match side {
+                    HandleSide::In => anchor.in_handle_abs(),
+                    HandleSide::Out => anchor.out_handle_abs(),
+                };
+                let hp = self.line_pos_screen_pos(h_abs);
+                if (hp.x - ap.x).hypot(hp.y - ap.y) < HANDLE_COINCIDE_THRESHOLD_PX {
+                    continue;
+                }
+                if (pos.x - hp.x).hypot(pos.y - hp.y) <= HANDLE_HIT_RADIUS {
+                    return Some(LineToolHit::Handle {
+                        anchor_idx: i,
+                        side,
+                    });
+                }
             }
         }
-        let pa = self.line_anchor_screen_pos(a);
-        let pb = self.line_anchor_screen_pos(b);
-        if point_segment_distance(pos, pa, pb) <= LINE_HIT_THRESHOLD {
-            return Some(LineHitType::Line);
+        // 2. 锚点
+        for (i, anchor) in anchors.iter().enumerate() {
+            let ap = self.line_pos_screen_pos(anchor.pos);
+            if (pos.x - ap.x).hypot(pos.y - ap.y) <= ANCHOR_HIT_RADIUS {
+                return Some(LineToolHit::Anchor(i));
+            }
+        }
+        // 3. 曲线段（采样折线逼近）
+        for (i, pair) in anchors.windows(2).enumerate() {
+            let (a, b) = (pair[0], pair[1]);
+            let pa = self.line_pos_screen_pos(a.pos);
+            let p1 = self.line_pos_screen_pos(a.out_handle_abs());
+            let p2 = self.line_pos_screen_pos(b.in_handle_abs());
+            let pb = self.line_pos_screen_pos(b.pos);
+            if geom::point_curve_distance(pos, pa, p1, p2, pb) <= LINE_HIT_THRESHOLD {
+                return Some(LineToolHit::Segment(i));
+            }
         }
         None
     }
 
-    /// 确认直线：按直线经过的网格格点批量生成音符（√ 按钮）
+    /// 确认路径：按曲线经过的网格格点批量生成音符（√ 按钮）
     ///
-    /// 生成规则：每个格点一个音符，长度 = 当前吸附精度（首尾相接成连续旋律），
-    /// 写入当前音轨并使用 `CreateOp` 操作日志（跨轨撤销/重做）。
-    /// 成功后清空直线状态；返回是否生成了音符。
+    /// 生成规则：每段贝塞尔离散化后取格点，每个格点一个音符、
+    /// 长度 = 当前吸附精度；写入当前音轨并使用 `CreateOp` 操作日志。
+    /// 成功后清空路径状态；返回是否生成了音符。
     pub(crate) fn confirm_line_tool(&mut self) -> bool {
-        let line = &self.editor_state.line_tool;
-        let (Some(a), Some(b)) = (line.anchor_start, line.anchor_end) else {
-            return false;
-        };
         let snap = self.editor_state.view.snap_precision;
-        let points = line_cell_points(a, b, snap);
+        let anchors = self.editor_state.line_tool.anchors.clone();
+        if anchors.len() < 2 {
+            return false;
+        }
+        // 逐段离散化收集格点（段间连接点相邻重复，整体去重）
+        let mut points = Vec::new();
+        for pair in anchors.windows(2) {
+            points.extend(geom::curve_cell_points(pair[0], pair[1], snap));
+        }
+        points.dedup();
         if points.is_empty() {
             return false;
         }
@@ -198,251 +307,14 @@ impl Editor {
         // 批量创建操作日志（撤销/重做）+ 标记当前轨变化
         self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
-        // 清空直线状态并驱动渲染刷新
+        // 清空路径状态并驱动渲染刷新
         self.editor_state.line_tool.reset();
         self.mark_notes_changed();
         true
     }
 
-    /// 取消直线（× 按钮）
+    /// 取消路径（× 按钮）
     pub(crate) fn cancel_line_tool(&mut self) {
         self.editor_state.line_tool.reset();
-    }
-}
-
-/// 点到线段的最短距离
-fn point_segment_distance(p: Point, a: Point, b: Point) -> f32 {
-    let ab_x = b.x - a.x;
-    let ab_y = b.y - a.y;
-    let len_sq = ab_x * ab_x + ab_y * ab_y;
-    if len_sq <= f32::EPSILON {
-        return (p.x - a.x).hypot(p.y - a.y);
-    }
-    let t = (((p.x - a.x) * ab_x + (p.y - a.y) * ab_y) / len_sq).clamp(0.0, 1.0);
-    let proj_x = a.x + t * ab_x;
-    let proj_y = a.y + t * ab_y;
-    (p.x - proj_x).hypot(p.y - proj_y)
-}
-
-/// Bresenham 直线算法：生成直线经过的所有网格格点
-///
-/// tick 方向按 `snap` 分格，key 方向每个 key 一格；
-/// 结果按路径顺序排列（tick/key 单调，无重复格点）。
-pub(crate) fn line_cell_points(a: LineAnchor, b: LineAnchor, snap: f32) -> Vec<LineAnchor> {
-    let snap = snap.max(1.0);
-    let x0 = (a.0 / snap).round() as i64;
-    let y0 = i64::from(a.1);
-    let x1 = (b.0 / snap).round() as i64;
-    let y1 = i64::from(b.1);
-    let dx = (x1 - x0).abs();
-    let dy = (y1 - y0).abs();
-    let sx = if x0 < x1 { 1 } else { -1 };
-    let sy = if y0 < y1 { 1 } else { -1 };
-    let mut err = dx - dy;
-    let mut x = x0;
-    let mut y = y0;
-    let mut points = Vec::with_capacity((dx + dy + 1) as usize);
-    loop {
-        points.push((x as f32 * snap, y as u16));
-        if x == x1 && y == y1 {
-            break;
-        }
-        let e2 = 2 * err;
-        if e2 > -dy {
-            err -= dy;
-            x += sx;
-        }
-        if e2 < dx {
-            err += dx;
-            y += sy;
-        }
-    }
-    points
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::tests::test_helpers::seed_notes;
-    use lumino_core::Tool;
-
-    #[test]
-    fn test_line_cell_points_horizontal() {
-        let pts = line_cell_points((0.0, 60), (3840.0, 60), 1920.0);
-        assert_eq!(pts.len(), 3);
-        assert_eq!(pts[0], (0.0, 60));
-        assert_eq!(pts[1], (1920.0, 60));
-        assert_eq!(pts[2], (3840.0, 60));
-    }
-
-    #[test]
-    fn test_line_cell_points_vertical() {
-        let pts = line_cell_points((1920.0, 60), (1920.0, 64), 1920.0);
-        assert_eq!(pts.len(), 5);
-        assert_eq!(pts[0], (1920.0, 60));
-        assert_eq!(pts[4], (1920.0, 64));
-    }
-
-    #[test]
-    fn test_line_cell_points_diagonal() {
-        // 45° 斜线：5 个格点（含端点）
-        let pts = line_cell_points((0.0, 60), (1920.0, 64), 1920.0);
-        assert_eq!(pts.len(), 5);
-        assert_eq!(pts[0], (0.0, 60));
-        assert_eq!(pts[4], (1920.0, 64));
-    }
-
-    #[test]
-    fn test_line_cell_points_reverse_order() {
-        // 反向（从右到左、低到高）同样覆盖全部格点
-        let mut pts = line_cell_points((3840.0, 60), (0.0, 64), 1920.0);
-        pts.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
-        pts.dedup();
-        assert_eq!(pts.len(), 5, "反向直线应覆盖 5 个格点");
-    }
-
-    #[test]
-    fn test_line_cell_points_single() {
-        let pts = line_cell_points((0.0, 60), (0.0, 60), 1920.0);
-        assert_eq!(pts, vec![(0.0, 60)]);
-    }
-
-    #[test]
-    fn test_point_segment_distance() {
-        let a = Point::new(0.0, 0.0);
-        let b = Point::new(20.0, 0.0);
-        // 线段上
-        assert!((point_segment_distance(Point::new(10.0, 0.0), a, b)).abs() < 1e-6);
-        // 线段上方
-        assert!((point_segment_distance(Point::new(10.0, 5.0), a, b) - 5.0).abs() < 1e-6);
-        // 端点之外：最近距离到端点
-        assert!((point_segment_distance(Point::new(30.0, 0.0), a, b) - 10.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn test_confirm_line_creates_notes() {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        // 单一权威源：音符写入 document，测试需先构造（与 tests/test_helpers 一致）
-        seed_notes(&mut editor, 1, 0, &[]);
-        editor.editor_state.line_tool.anchor_start = Some((0.0, 60));
-        editor.editor_state.line_tool.anchor_end = Some((1920.0, 64));
-        assert!(editor.confirm_line_tool());
-        // 45° 线：5 个格点 → 5 个音符
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 5);
-        // 直线状态已清空
-        assert!(editor.editor_state.line_tool.anchor_start.is_none());
-    }
-
-    #[test]
-    fn test_confirm_line_incomplete_noop() {
-        let mut editor = Editor::new();
-        editor.editor_state.line_tool.anchor_start = Some((0.0, 60));
-        assert!(!editor.confirm_line_tool());
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
-        // 未完整时确认不改变状态
-        assert!(editor.editor_state.line_tool.anchor_start.is_some());
-    }
-
-    #[test]
-    fn test_cancel_line_clears() {
-        let mut editor = Editor::new();
-        editor.editor_state.line_tool.anchor_start = Some((0.0, 60));
-        editor.editor_state.line_tool.anchor_end = Some((1920.0, 64));
-        editor.cancel_line_tool();
-        assert!(editor.editor_state.line_tool.anchor_start.is_none());
-        assert!(editor.editor_state.line_tool.anchor_end.is_none());
-    }
-
-    #[test]
-    fn test_line_tool_drag_anchor_moves_only_one() {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        {
-            let line = &mut editor.editor_state.line_tool;
-            line.anchor_start = Some((0.0, 60));
-            line.anchor_end = Some((1920.0, 64));
-        }
-        let a_pos = editor.line_anchor_screen_pos((0.0, 60));
-
-        // 按下起点锚点 → 进入 DraggingAnchorStart
-        editor.handle_line_tool_pressed(a_pos, 0.0, 60);
-        assert_eq!(
-            editor.editor_state.line_tool.interaction,
-            LineToolInteraction::DraggingAnchorStart
-        );
-        // 移动到 (+1920, +4)：仅起点锚点移动，终点锚点不动
-        editor.handle_line_tool_moved(1920.0, 64);
-        assert_eq!(
-            editor.editor_state.line_tool.anchor_start,
-            Some((1920.0, 64))
-        );
-        assert_eq!(editor.editor_state.line_tool.anchor_end, Some((1920.0, 64)));
-        // 释放后结束拖动
-        editor.handle_line_tool_released();
-        assert_eq!(
-            editor.editor_state.line_tool.interaction,
-            LineToolInteraction::None
-        );
-    }
-
-    #[test]
-    fn test_line_tool_drag_line_translates_both_anchors() {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        {
-            let line = &mut editor.editor_state.line_tool;
-            line.anchor_start = Some((0.0, 60));
-            line.anchor_end = Some((1920.0, 64));
-        }
-        let a_pos = editor.line_anchor_screen_pos((0.0, 60));
-        let b_pos = editor.line_anchor_screen_pos((1920.0, 64));
-        let mid = Point::new((a_pos.x + b_pos.x) * 0.5, (a_pos.y + b_pos.y) * 0.5);
-
-        // 按下连线中点 → 进入 DraggingLine（连线只能平移）
-        editor.handle_line_tool_pressed(mid, 0.0, 60);
-        assert_eq!(
-            editor.editor_state.line_tool.interaction,
-            LineToolInteraction::DraggingLine
-        );
-        // 平移 (+1920, -4)：两个锚点同步偏移，相对位置不变
-        editor.handle_line_tool_moved(1920.0, 56);
-        assert_eq!(
-            editor.editor_state.line_tool.anchor_start,
-            Some((1920.0, 56))
-        );
-        assert_eq!(editor.editor_state.line_tool.anchor_end, Some((3840.0, 60)));
-        editor.handle_line_tool_released();
-    }
-
-    #[test]
-    fn test_line_tool_press_blank_restarts() {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        {
-            let line = &mut editor.editor_state.line_tool;
-            line.anchor_start = Some((0.0, 60));
-            line.anchor_end = Some((1920.0, 64));
-        }
-
-        // 远处空白按下 → 清空旧直线并从该点开始新直线
-        editor.handle_line_tool_pressed(Point::new(800.0, 500.0), 1920.0, 30);
-        let line = &editor.editor_state.line_tool;
-        assert!(line.anchor_end.is_none(), "旧终点锚点应被清空");
-        assert_eq!(line.anchor_start, Some((1920.0, 30)));
-    }
-
-    #[test]
-    fn test_line_tool_two_clicks_set_anchors() {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        // 第一次点击：设置起点锚点
-        editor.handle_line_tool_pressed(Point::new(120.0, 24.0), 0.0, 60);
-        assert_eq!(editor.editor_state.line_tool.anchor_start, Some((0.0, 60)));
-        assert!(!editor.editor_state.line_tool.is_complete());
-        // 第二次点击：设置终点锚点，直线完整
-        editor.handle_line_tool_pressed(Point::new(312.0, 24.0), 1920.0, 64);
-        assert_eq!(editor.editor_state.line_tool.anchor_end, Some((1920.0, 64)));
-        assert!(editor.editor_state.line_tool.is_complete());
     }
 }

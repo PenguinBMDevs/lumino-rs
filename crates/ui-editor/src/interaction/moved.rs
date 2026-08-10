@@ -24,11 +24,16 @@ impl Editor {
             return;
         }
 
-        // 曲线工具直线模式：锚点/连线拖动中
+        // 曲线工具贝塞尔路径模式：锚点/控制柄拖动中
         if self.editor_state.tool == lumino_message::Tool::Curve
             && self.editor_state.line_tool.interaction != LineToolInteraction::None
         {
-            self.handle_line_tool_moved(snapped_tick, key);
+            self.handle_line_tool_moved(
+                snapped_tick,
+                key as f32,
+                self.x_to_tick(pos.x),
+                self.raw_y_to_key(pos.y),
+            );
             return;
         }
 

@@ -126,6 +126,11 @@ impl Editor {
 
     /// 处理双击事件
     pub(crate) fn handle_double_clicked(&mut self, pos: iced_core::Point) {
+        // 曲线工具路径模式：双击中间锚点删除（端点不可删）
+        if self.editor_state.tool == lumino_message::Tool::Curve {
+            self.handle_line_tool_double_clicked(pos);
+            return;
+        }
         if self.is_inside_canvas(pos)
             && let Some((index, _)) = self.hit_test_note(pos)
         {

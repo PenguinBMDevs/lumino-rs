@@ -46,9 +46,9 @@ impl Editor {
             Tool::PointerYSelect => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
             Tool::Curve => {
-                // 曲线工具在钢琴卷帘：两点拉直线（锚点 + 粗连线），
-                // 直线未完整时点击设置锚点；完整后拖动锚点/连线，空白处重新开始。
-                self.handle_line_tool_pressed(pos, snapped_tick, key);
+                // 曲线工具在钢琴卷帘：两点拉出路径（直线/贝塞尔），
+                // 点击曲线段插入锚点弯曲，√ 批量生成音符。
+                self.handle_line_tool_pressed(pos, snapped_tick, key as f32);
             }
             Tool::Eraser => self.handle_eraser_pressed(pos, shift, hit_result),
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),

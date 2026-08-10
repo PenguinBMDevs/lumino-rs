@@ -95,11 +95,7 @@ impl<'a> PianoRollGrid<'a> {
             )));
         }
 
-        // 曲线工具直线模式：两次点击为设置锚点，双击语义（删除音符）无意义，
-        // 抑制双击检测，保证第二击正常走 Pressed 设置终点锚点。
-        if self.editor.current_tool() != lumino_message::Tool::Curve
-            && self.detect_double_click(state, local_pos)
-        {
+        if self.detect_double_click(state, local_pos) {
             Some(canvas::Action::publish(Message::EditorAction(
                 EditorAction::DoubleClicked(lumino_ui_core::message::Point2::new(
                     local_pos.x,
