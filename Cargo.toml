@@ -2,10 +2,15 @@
 members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/note-core", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state", "crates/cloud"]
 resolver = "3"
 
-# xsynth-realtime 使用本地 vendor 分支：
-# 支持音频设备拔出/更换后，在 stream owner 线程内原地重定向 cpal 流（合成管线不动）。
+# xsynth 系列使用 GitHub fork（PenguinBMDevs/xsynth-Lumino，LGPL-3.0）：
+# - 许可边界：LGPL 代码独立存放于 fork 仓库，不混入本仓库（AGPL-3.0）
+# - fork 含定制修改：音频设备拔出/更换后，在 stream owner 线程内原地重定向 cpal 流（合成管线不动）
+# - ⚠️ 必须三包一起 patch：fork 的 realtime/soundfonts 通过 workspace path 依赖 fork 内 core，
+#   若只 patch 单个包，会产生 crates.io 与 git 双实例类型分裂（E0308）
 [patch.crates-io]
-xsynth-realtime = { path = "vendor/xsynth-realtime" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
+xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
 
 [workspace.package]
 version = "0.2.0-crates-io-preview1"
