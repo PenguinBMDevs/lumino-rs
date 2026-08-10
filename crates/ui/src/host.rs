@@ -130,6 +130,14 @@ impl Host {
         self.root.request_material_scan();
     }
 
+    /// 设置底部状态栏左侧状态消息（如保存成功后的"文件已经保存"）。
+    ///
+    /// `Some(msg)` 显示消息，`None` 恢复默认"就绪"。悬停工具栏按钮时
+    /// 优先显示按钮解释文字，悬停离开后恢复显示此消息。
+    pub fn set_status_message(&mut self, msg: Option<String>) {
+        self.root.statusbar.set_status_message(msg);
+    }
+
     /// 获取当前 wgpu 纹理格式（用于视频导出时匹配 ffmpeg `-pix_fmt`）
     pub fn texture_format(&self) -> lumino_gfx::TextureFormat {
         self.render_ctx.format

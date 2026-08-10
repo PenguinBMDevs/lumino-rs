@@ -150,8 +150,14 @@ impl RunnerInner {
         let ui_state = self.window_state.storage.ui_state.get();
         let config = self.window_state.storage.config.get();
 
-        // 创建新的窗口管理器
-        match WindowManager::new(event_loop, ui_state, &config.ui) {
+        // 创建新的窗口管理器（共享保存进行中标志，关闭拦截逻辑保持一致）
+        match WindowManager::new(
+            event_loop,
+            ui_state,
+            &config.ui,
+            self.saving.clone(),
+            self.cloud_saving.clone(),
+        ) {
             Ok(new_window) => {
                 // 替换窗口管理器
                 self.window_state.window = new_window;

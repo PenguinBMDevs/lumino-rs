@@ -1,6 +1,7 @@
 //! Runner 文件菜单：保存
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::Ordering;
 
 use crate::runner::RunnerInner;
 
@@ -139,9 +140,48 @@ impl RunnerInner {
         Some(save_path)
     }
 
-    /// 保存文件（统一入口：显示格式选择对话框，支持 lmpj/mid/midi）
+    /// 保存文件（统一入口：Ctrl+S / 菜单保存）
+    ///
+    /// **智能分流**：
+    /// - 已有 .lmpj 工程文件路径（`current_midi_source`）→ 直接覆盖保存原文件（无对话框）
+    /// - 无工程路径（空白工程 / 从 .mid 打开 / 从未保存过）→ 弹出格式选择对话框
     pub(super) fn handle_save_file(&mut self) {
+        // 串行限制：保存/云上传进行中，新保存请求直接拒绝
+        // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
+        if self.is_saving() || self.is_cloud_saving() {
+            tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
+            return;
+        }
+
+        // 自动提交当前编辑（ghost 方案：松手即提交）
+        let committed = self
+            .window_state
+            .window
+            .ui_mut()
+            .root_mut()
+            .editor
+            .commit_current_edit();
+        if committed {
+            tracing::debug!("保存前自动提交编辑");
+        }
+
+        // 已有 .lmpj 工程路径 → 覆盖保存原文件（无对话框）
+        if let Some(path) = self.current_lmpj_source() {
+            self.save_lmpj_project_to(path);
+            return;
+        }
+
+        // 首次保存：弹对话框选择路径/格式
         self.handle_save_single_file();
+    }
+
+    /// 当前工程文件路径（仅 .lmpj，Ctrl+S 覆盖保存适用）
+    fn current_lmpj_source(&self) -> Option<PathBuf> {
+        self.midi_state
+            .current_midi_source
+            .as_ref()
+            .filter(|p| get_file_extension(p) == "lmpj")
+            .cloned()
     }
 
     /// 统一保存/导出为单文件：显示格式选择对话框，支持 lmpj/mid/midi
@@ -187,7 +227,7 @@ impl RunnerInner {
         let extension = get_file_extension(&save_path);
 
         match extension.as_str() {
-            "lmpj" => self.save_as_lmpj_project(save_path),
+            "lmpj" => self.save_lmpj_project_to(save_path),
             "mid" | "midi" => self.save_as_midi_with_edits(save_path),
             _ => tracing::warn!("不支持的保存格式: {}", extension),
         }
@@ -197,7 +237,22 @@ impl RunnerInner {
     ///
     /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建 LuminoProject；
     /// 无文档时从编辑器音符重建。保证工程自包含——原始文件可删除后仍能完整加载。
-    fn save_as_lmpj_project(&mut self, save_path: PathBuf) {
+    ///
+    /// 保存成功后（经 `SaveCompleted` 事件回主线程）：
+    /// - 记录保存路径到 `current_midi_source`（后续 Ctrl+S 覆盖保存）
+    /// - 底边栏显示"文件已经保存"（3 秒后自动恢复"就绪"）
+    /// - 若文件来自云端，自动上传回云端原路径
+    ///
+    /// 保存期间 `saving` 标志置位：禁止关闭软件，关闭请求转为 `pending_close`
+    /// 延迟处理，保存完成后自动退出。
+    fn save_lmpj_project_to(&mut self, save_path: PathBuf) {
+        // 串行限制：保存/云上传进行中，新保存请求直接拒绝
+        // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
+        if self.is_saving() || self.is_cloud_saving() {
+            tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
+            return;
+        }
+
         let project = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
@@ -230,28 +285,44 @@ impl RunnerInner {
         let author = self.window_state.window.ui().get_project_author();
         project.metadata.project.author = author;
 
+        // 标记保存进行中（保存期间禁止关闭软件）
+        self.saving.store(true, Ordering::SeqCst);
+        let saving = self.saving.clone();
         let cb = self.window_state.progress_cb.clone();
-        let save_path2 = save_path.clone();
         tokio::spawn(async move {
             cb("正在保存 LMPJ 文件", 0.3);
-            match tokio::task::spawn_blocking(move || {
-                lumino_export::save_to_archive(&project, &save_path2)
+            let save_path_for_task = save_path.clone();
+            let result = tokio::task::spawn_blocking(move || {
+                lumino_export::save_to_archive(&project, &save_path_for_task)
             })
-            .await
-            {
+            .await;
+
+            // 无论成败均清除保存标志（解除关闭限制）
+            saving.store(false, Ordering::SeqCst);
+
+            match result {
                 Ok(Ok(())) => {
                     cb("工程保存成功", 1.0);
                     tracing::info!("工程保存成功: {:?}", save_path);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::save_completed(save_path),
+                    ));
                 }
                 Ok(Err(e)) => {
                     let msg = format!("保存失败: {e}");
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::save_failed(msg),
+                    ));
                 }
                 Err(e) => {
                     let msg = format!("保存任务失败: {e}");
                     cb(&msg, 1.0);
                     tracing::error!("{}", msg);
+                    lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                        lumino_ui::event::menu::file::Event::save_failed(msg),
+                    ));
                 }
             }
         });

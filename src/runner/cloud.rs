@@ -148,11 +148,12 @@ impl RunnerInner {
                 error,
             } => self.apply_cloud_list_result(entries, error),
             cloud_event::Event::DownloadResult {
-                remote_path: _,
+                id,
+                remote_path,
                 ok,
                 error,
                 local_path,
-            } => self.apply_cloud_download_result(ok, error, local_path),
+            } => self.apply_cloud_download_result(id, remote_path, ok, error, local_path),
             cloud_event::Event::SaveToCloudResult { ok, error } => {
                 self.apply_cloud_save_result(ok, error);
             }

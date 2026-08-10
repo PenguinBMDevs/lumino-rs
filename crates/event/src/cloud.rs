@@ -144,6 +144,8 @@ pub enum Event {
     },
     /// 下载结果
     DownloadResult {
+        /// 连接 ID（回传来源连接，供保存回传定位）
+        id: String,
         /// 远程路径
         remote_path: String,
         /// 是否成功

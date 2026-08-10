@@ -208,6 +208,15 @@ impl winit::application::ApplicationHandler for Runner {
             this.restart_window(event_loop);
         }
 
+        // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
+        // 本地保存与云端上传均结束后自动退出
+        if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
+            tracing::info!("保存完成，执行延迟的退出请求");
+            this.window_state.window.close_pending = false;
+            event_loop.exit();
+            return;
+        }
+
         // 控制循环休眠策略
         puffin::profile_scope!("runner_about_to_wait_control_flow");
         this.handle_control_flow(event_loop);

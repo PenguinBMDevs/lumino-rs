@@ -28,6 +28,7 @@ mod tests {
         assert_eq!(t.pause, "暂停");
         assert_eq!(t.menu_file, "文件");
         assert_eq!(t.status_ready, "就绪");
+        assert_eq!(t.status_file_saved, "文件已经保存");
     }
 
     #[test]
@@ -37,6 +38,7 @@ mod tests {
         assert_eq!(t.pause, "Pause");
         assert_eq!(t.menu_file, "File");
         assert_eq!(t.status_ready, "Ready");
+        assert_eq!(t.status_file_saved, "File saved");
     }
 
     #[test]

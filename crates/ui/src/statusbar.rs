@@ -59,6 +59,17 @@ impl StatusBar {
         self.hover_label = label;
     }
 
+    /// 设置左侧状态消息（如"文件已经保存"），`None` 恢复默认"就绪"。
+    ///
+    /// 悬停工具栏按钮时仍优先显示按钮解释文字（`set_hover_label`），
+    /// 悬停离开后恢复显示此消息。
+    pub fn set_status_message(&mut self, msg: Option<String>) {
+        match msg {
+            Some(msg) => self.info.left_text = msg,
+            None => self.info.left_text.clear(),
+        }
+    }
+
     /// 是否处于 FPS 高亮样式（仅当左侧无描述文字且存在 FPS 值时）
     pub fn use_fps_style(&self) -> bool {
         self.hover_label.is_none() && self.info.left_text.is_empty() && self.fps.is_some()
@@ -186,4 +197,22 @@ fn metric_clickable_value<'a>(value: String, on_press: crate::Message) -> Elemen
         }
     })
     .into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::StatusBar;
+
+    /// 状态消息：设置后显示，清除后恢复空（view 回退"就绪"）
+    #[test]
+    fn test_set_status_message() {
+        let mut bar = StatusBar::new();
+        assert!(bar.info.left_text.is_empty());
+
+        bar.set_status_message(Some("文件已经保存".to_string()));
+        assert_eq!(bar.info.left_text, "文件已经保存");
+
+        bar.set_status_message(None);
+        assert!(bar.info.left_text.is_empty());
+    }
 }

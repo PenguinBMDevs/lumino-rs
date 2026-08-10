@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -7,6 +8,12 @@ pub enum Event {
     Open,
     Save,
     Close,
+    /// 保存完成（本地写入成功，`path` 为实际保存路径）
+    SaveCompleted(PathBuf),
+    /// 保存失败（`String` 为错误原因）
+    SaveFailed(String),
+    /// 保存完成提示超时（3 秒后清除底边栏"文件已经保存"提示）
+    SaveHintTimeout,
     /* */
     ImportFiles,
     /// 从云存储导入
@@ -57,6 +64,15 @@ impl Event {
     }
     pub const fn save() -> Self {
         Self::Save
+    }
+    pub fn save_completed(path: PathBuf) -> Self {
+        Self::SaveCompleted(path)
+    }
+    pub fn save_failed(err: String) -> Self {
+        Self::SaveFailed(err)
+    }
+    pub const fn save_hint_timeout() -> Self {
+        Self::SaveHintTimeout
     }
     pub const fn close() -> Self {
         Self::Close

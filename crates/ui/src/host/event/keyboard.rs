@@ -60,6 +60,11 @@ impl Host {
         }
     }
 
+    /// 匹配保存快捷键（Ctrl+S / Cmd+S）：返回是否命中
+    fn match_save_shortcut(key: winit::keyboard::KeyCode, ctrl: bool) -> bool {
+        key == winit::keyboard::KeyCode::KeyS && ctrl
+    }
+
     /// 处理 Ctrl+Q：量化弹窗
     fn handle_ctrl_q_shortcut(&mut self) {
         self.route_message(message::Message::Toolbar(toolbar::Event::Quantize));
@@ -116,6 +121,14 @@ impl Host {
             return;
         }
 
+        // Ctrl+S：保存工程文件（Runner 侧分流：已有 .lmpj 源则覆盖保存）
+        if Self::match_save_shortcut(key, ctrl) {
+            crate::event::emit(crate::event::Event::menu_file(
+                crate::event::menu::file::Event::save(),
+            ));
+            return;
+        }
+
         // Ctrl+Q：单独处理
         if key == winit::keyboard::KeyCode::KeyQ && ctrl {
             self.handle_ctrl_q_shortcut();
@@ -138,5 +151,20 @@ impl Host {
             // 通过 Host::handle_action 处理，确保高精度贴图脏标记被正确设置
             self.handle_action(action);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Host;
+    use winit::keyboard::KeyCode;
+
+    /// Ctrl+S 命中，无 Ctrl 不命中，其他键不命中
+    #[test]
+    fn test_match_save_shortcut() {
+        assert!(Host::match_save_shortcut(KeyCode::KeyS, true));
+        assert!(!Host::match_save_shortcut(KeyCode::KeyS, false));
+        assert!(!Host::match_save_shortcut(KeyCode::KeyA, true));
+        assert!(!Host::match_save_shortcut(KeyCode::Space, true));
     }
 }

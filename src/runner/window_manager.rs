@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 
 use lumino_core::storage::ui_state::UiState;
@@ -20,6 +21,12 @@ pub struct WindowManager {
     resized: bool,
     /// 是否请求关闭窗口
     close_requested: bool,
+    /// 本地保存进行中标志（与 RunnerInner 共享：保存期间禁止关闭）
+    saving: Arc<AtomicBool>,
+    /// 云端上传进行中标志（与 RunnerInner 共享）
+    cloud_saving: Arc<AtomicBool>,
+    /// 待关闭标志：保存期间用户请求关闭 → 保存完成后自动退出
+    pub(crate) close_pending: bool,
 }
 
 impl WindowManager {
@@ -28,6 +35,8 @@ impl WindowManager {
         event_loop: &winit::event_loop::ActiveEventLoop,
         ui_state: &UiState,
         ui_config: &lumino_core::storage::config::UiConfig,
+        saving: Arc<AtomicBool>,
+        cloud_saving: Arc<AtomicBool>,
     ) -> Result<Self, String> {
         let attributes = Self::build_window_attributes(ui_state, ui_config.use_native_titlebar);
 
@@ -89,6 +98,9 @@ impl WindowManager {
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
             close_requested: false,
+            saving,
+            cloud_saving,
+            close_pending: false,
         })
     }
 
@@ -193,12 +205,24 @@ impl WindowManager {
         self.close_requested = false;
     }
 
+    /// 本地保存/云端上传是否进行中（与 RunnerInner 共享的标志）
+    fn is_saving(&self) -> bool {
+        self.saving.load(Ordering::SeqCst) || self.cloud_saving.load(Ordering::SeqCst)
+    }
+
     /// 处理窗口动作（最小化、最大化、关闭）
     pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // 检查系统关闭请求
         if self.close_requested {
-            self.quick_close();
-            event_loop.exit();
+            // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
+            if self.is_saving() {
+                tracing::info!("保存进行中，关闭请求延迟到保存完成");
+                self.close_pending = true;
+                self.close_requested = false;
+            } else {
+                self.quick_close();
+                event_loop.exit();
+            }
             return;
         }
 
@@ -213,8 +237,14 @@ impl WindowManager {
                     self.window.set_maximized(!is_maximized);
                 }
                 TrafficAction::Close => {
-                    self.quick_close();
-                    event_loop.exit();
+                    // 保存期间禁止关闭软件：延迟到保存完成自动退出
+                    if self.is_saving() {
+                        tracing::info!("保存进行中，关闭请求延迟到保存完成");
+                        self.close_pending = true;
+                    } else {
+                        self.quick_close();
+                        event_loop.exit();
+                    }
                 }
             }
         }

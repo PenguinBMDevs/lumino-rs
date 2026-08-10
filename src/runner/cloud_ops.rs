@@ -103,6 +103,7 @@ impl RunnerInner {
             let ok = result.is_ok();
             let error = result.err().map(|e| e.to_string());
             event::emit(event::Event::cloud(cloud_event::Event::DownloadResult {
+                id,
                 remote_path,
                 ok,
                 error,
@@ -114,6 +115,8 @@ impl RunnerInner {
     /// 注入下载结果：素材 → 重新扫描素材库；MIDI → 导入工程；其他 → 提示
     pub(super) fn apply_cloud_download_result(
         &mut self,
+        id: String,
+        remote_path: String,
         ok: bool,
         error: Option<String>,
         local_path: Option<String>,
@@ -147,7 +150,12 @@ impl RunnerInner {
                     Some("素材已导入素材库".to_string());
             }
             "lmpj" => {
-                // 工程归档（单文件 LMPJ）→ 自动加载到编辑器
+                // 工程归档（单文件 LMPJ）→ 自动加载到编辑器，并记录云端来源：
+                // 保存后自动上传回原远程路径
+                self.midi_state.cloud_source = Some(super::inner::CloudSource {
+                    conn_id: id,
+                    remote_path,
+                });
                 self.load_midi_file(path.to_path_buf());
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
                     Some("已下载并导入工程".to_string());
@@ -168,6 +176,16 @@ impl RunnerInner {
 
     /// 后台执行：导出当前工程归档到临时目录 → 上传到云目标目录
     pub(super) fn run_cloud_save(&mut self, id: String, dir_path: String) {
+        // 云上传串行限制：已有上传进行中则忽略（避免并发写云导致文件混乱）
+        if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::warn!("云上传进行中，忽略保存到云请求");
+            self.window_state.window.ui_mut().cloud_state_mut().notice =
+                Some("正在上传中，请稍候再试".to_string());
+            return;
+        }
+        // 上传进行中：禁止关闭软件（完成后在 apply_cloud_save_result 清除）
+        self.cloud_saving
+            .store(true, std::sync::atomic::Ordering::SeqCst);
         // 构建工程（借 UI document，与导出工程一致）
         let project = {
             let ui = self.window_state.window.ui();
@@ -230,8 +248,84 @@ impl RunnerInner {
         });
     }
 
+    /// 自动回传：将已保存的本地工程文件安全上传回云端原路径
+    ///
+    /// **三步走防冲突**（避免直接覆盖时传输中断损坏云端文件）：
+    /// 1. 上传到临时名（原路径 + `.saving` 后缀，如 `project.lmpj.saving`）
+    /// 2. 上传成功后删除云端原文件（旧版本）
+    /// 3. 将临时文件重命名为正确的原路径
+    ///
+    /// **失败分级处理**：
+    /// - 上传/删除阶段失败：清理临时文件，云端原文件完好保留
+    /// - 重命名阶段失败：**保留临时文件**（此时原文件已删除，临时文件是云端唯一副本，避免数据丢失）
+    ///
+    /// **串行限制**：上传期间 `cloud_saving` 置位，其他保存/上传请求被忽略；
+    /// 结果经 `SaveToCloudResult` 回传，由 `apply_cloud_save_result` 清除标志。
+    pub(super) fn run_cloud_upload_overwrite(
+        &mut self,
+        id: String,
+        remote_path: String,
+        local_path: std::path::PathBuf,
+    ) {
+        // 云上传串行限制：已有上传进行中则忽略本次回传
+        if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::warn!("云上传进行中，忽略本次自动回传");
+            return;
+        }
+        self.cloud_saving
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // 临时名：原路径追加 `.saving`（同目录内，重命名无需跨目录）
+        let tmp_remote = overwrite_tmp_path(&remote_path);
+
+        let mgr = self.cloud.clone();
+        std::thread::spawn(move || {
+            let mut mgr = lock_cloud(&mgr);
+            // 失败阶段标记：0=上传失败 / 1=删除失败 / 2=重命名失败
+            let mut stage: u8 = 0;
+            let result = (|| {
+                // 1. 上传到临时名
+                mgr.upload(&id, &local_path, &tmp_remote)?;
+                // 2. 删除云端原文件（旧版本）
+                if let Err(e) = mgr.delete(&id, &remote_path, false) {
+                    tracing::warn!("删除云端旧文件失败（保留原文件）: {e}");
+                    stage = 1;
+                    return Err(e);
+                }
+                // 3. 重命名为正确的文件名
+                match mgr.rename(&id, &tmp_remote, &remote_path) {
+                    Ok(()) => Ok(()),
+                    Err(e) => {
+                        stage = 2;
+                        Err(e)
+                    }
+                }
+            })();
+
+            // 失败清理：仅在上传/删除阶段失败时删除临时文件；
+            // 重命名失败时保留临时文件（云端唯一副本，防数据丢失）
+            if result.is_err() && stage != 2 {
+                let _ = mgr.delete(&id, &tmp_remote, false);
+            }
+
+            let error = match (&result, stage) {
+                (Err(e), 2) => Some(format!("上传后重命名失败，文件已保留为 {tmp_remote}：{e}")),
+                (Err(e), 1) => Some(format!("删除云端旧文件失败：{e}")),
+                (Err(e), _) => Some(format!("上传到云端失败：{e}")),
+                (Ok(()), _) => None,
+            };
+            event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
+                ok: result.is_ok(),
+                error,
+            }));
+        });
+    }
+
     /// 注入保存结果
     pub(super) fn apply_cloud_save_result(&mut self, ok: bool, error: Option<String>) {
+        // 云上传结束（手动保存到云 / Ctrl+S 自动回传共用同一结果事件）
+        self.cloud_saving
+            .store(false, std::sync::atomic::Ordering::SeqCst);
         let failed = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
             state.busy = false;
@@ -269,5 +363,28 @@ impl RunnerInner {
                 kind: "new_folder".to_string(),
             }));
         });
+    }
+}
+
+/// 覆盖上传的临时远程路径：原路径追加 `.saving` 后缀（同目录，重命名不跨目录）
+///
+/// 示例：`/dir/project.lmpj` → `/dir/project.lmpj.saving`；`project.lmpj` → `project.lmpj.saving`
+fn overwrite_tmp_path(remote_path: &str) -> String {
+    format!("{remote_path}.saving")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overwrite_tmp_path;
+
+    /// 临时名生成：保留目录结构，仅追加后缀
+    #[test]
+    fn test_overwrite_tmp_path() {
+        assert_eq!(
+            overwrite_tmp_path("/dir/project.lmpj"),
+            "/dir/project.lmpj.saving"
+        );
+        assert_eq!(overwrite_tmp_path("project.lmpj"), "project.lmpj.saving");
+        assert_eq!(overwrite_tmp_path("/"), "/.saving");
     }
 }

@@ -19,7 +19,15 @@ impl RunnerInner {
         use lumino_ui::event::menu::file::Event::*;
 
         match file_event {
-            Exit => event_loop.exit(),
+            Exit => {
+                // 保存期间禁止关闭软件：退出请求转为待关闭，保存完成后自动退出
+                if self.is_saving() || self.is_cloud_saving() {
+                    tracing::info!("保存进行中，退出请求延迟到保存完成");
+                    self.window_state.window.close_pending = true;
+                } else {
+                    event_loop.exit();
+                }
+            }
             New => self.handle_new_file(),
             Open => self.handle_open_file(),
             ImportFiles => self.handle_import_files(),
@@ -30,6 +38,12 @@ impl RunnerInner {
                 self.ensure_cloud_ready(crate::runner::cloud::CloudIntent::Save);
             }
             Save => self.handle_save_file(),
+            SaveCompleted(path) => self.handle_save_completed(path),
+            SaveFailed(msg) => self.handle_save_failed(msg),
+            SaveHintTimeout => {
+                // 3 秒提示超时：恢复底边栏默认"就绪"
+                self.window_state.window.ui_mut().set_status_message(None);
+            }
             MidiLoaded(info) => {
                 tracing::info!("MIDI 文件加载完成：{}", info);
             }
@@ -92,6 +106,7 @@ impl RunnerInner {
             Close => {
                 self.midi_state.current_midi = None;
                 self.midi_state.current_midi_source = None;
+                self.midi_state.cloud_source = None;
                 lumino_extras::palette::unlock_palette();
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
                 self.window_state.window.ui_mut().clear_editor();
@@ -185,12 +200,64 @@ impl RunnerInner {
         // 清空当前工程
         self.midi_state.current_midi = None;
         self.midi_state.current_midi_source = None;
+        self.midi_state.cloud_source = None;
         lumino_extras::palette::unlock_palette();
 
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();
 
         tracing::info!("已创建新工程");
+    }
+
+    /// 保存完成：记录路径 + 底边栏提示（3 秒）+ 云端自动回传
+    fn handle_save_completed(&mut self, path: std::path::PathBuf) {
+        // 记录保存路径（后续 Ctrl+S 直接覆盖保存原文件）
+        self.midi_state.current_midi_source = Some(path.clone());
+        tracing::info!("工程保存完成，路径已记录：{:?}", path);
+
+        // 底边栏显示"文件已经保存"，3 秒后自动恢复"就绪"
+        let language = self.window_state.window.ui().settings().language;
+        let saved_msg = lumino_extras::i18n::main_translations(language)
+            .status_file_saved
+            .to_string();
+        self.window_state
+            .window
+            .ui_mut()
+            .set_status_message(Some(saved_msg));
+        self.spawn_status_hint_timeout();
+
+        // 从云端打开的文件：自动上传回云端原路径
+        // （若已有上传进行中，run_cloud_upload_overwrite 会直接拒绝本次回传，
+        //   不排队不补传——用户可待上传完成后再次 Ctrl+S）
+        if let Some(src) = self.midi_state.cloud_source.clone() {
+            tracing::info!("工程来自云端，自动上传回原路径：{}", src.remote_path);
+            self.run_cloud_upload_overwrite(src.conn_id, src.remote_path, path);
+        }
+    }
+
+    /// 保存失败：底边栏提示错误原因（3 秒后自动恢复）
+    fn handle_save_failed(&mut self, msg: String) {
+        tracing::error!("保存失败：{msg}");
+        let language = self.window_state.window.ui().settings().language;
+        let fail_msg = format!(
+            "{}：{msg}",
+            lumino_extras::i18n::main_translations(language).status_save_failed
+        );
+        self.window_state
+            .window
+            .ui_mut()
+            .set_status_message(Some(fail_msg));
+        self.spawn_status_hint_timeout();
+    }
+
+    /// 3 秒后发送提示超时事件，清除底边栏状态消息
+    fn spawn_status_hint_timeout(&self) {
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
+                lumino_ui::event::menu::file::Event::save_hint_timeout(),
+            ));
+        });
     }
 }
 

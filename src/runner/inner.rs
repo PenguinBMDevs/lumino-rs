@@ -76,6 +76,18 @@ pub(crate) struct MidiState {
     pub(crate) current_midi: Option<Arc<ParsedMidi>>,
     pub(crate) current_midi_source: Option<std::path::PathBuf>,
     pub(crate) midi_handler: MidiHandler,
+    /// 云端来源（从云面板下载的 .lmpj 工程：连接 id + 远程路径）。
+    /// 覆盖保存后自动上传回原远程路径；打开新文件/关闭工程时清空。
+    pub(crate) cloud_source: Option<CloudSource>,
+}
+
+/// 云端来源记录：定位"文件从哪里下载的"，供保存后自动回传
+#[derive(Debug, Clone)]
+pub(crate) struct CloudSource {
+    /// 云连接 ID
+    pub(crate) conn_id: String,
+    /// 云端原始路径（含文件名）
+    pub(crate) remote_path: String,
 }
 
 /// 文件操作状态
@@ -122,6 +134,11 @@ pub(crate) struct RunnerInner {
     /// 此字段作为缓冲。
     pub(crate) pending_recover_track_entries:
         Option<Vec<lumino_ui::event::window::track::RecoverTrackEntryPayload>>,
+    /// 本地保存进行中标志（异步保存任务开始时置 true，结束置 false）。
+    /// 保存期间禁止关闭软件，关闭请求转为 `pending_close` 延迟处理。
+    pub(crate) saving: std::sync::Arc<AtomicBool>,
+    /// 云端上传进行中标志（保存到云/自动回传期间置 true）
+    pub(crate) cloud_saving: std::sync::Arc<AtomicBool>,
 }
 
 // ── impl Runner ─────────────────────────────────────────────────────────
@@ -154,9 +171,19 @@ impl Runner {
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 
+        // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
+        let saving = Arc::new(AtomicBool::new(false));
+        let cloud_saving = Arc::new(AtomicBool::new(false));
+
         // 创建主窗口管理器
-        let mut window = WindowManager::new(event_loop, ui_state, &config.ui)
-            .map_err(|e| InitError::Window(e.to_string()))?;
+        let mut window = WindowManager::new(
+            event_loop,
+            ui_state,
+            &config.ui,
+            saving.clone(),
+            cloud_saving.clone(),
+        )
+        .map_err(|e| InitError::Window(e.to_string()))?;
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
@@ -217,6 +244,7 @@ impl Runner {
                 current_midi: None,
                 current_midi_source: None,
                 midi_handler,
+                cloud_source: None,
             },
             file_state: FileState {
                 file_handler,
@@ -244,8 +272,22 @@ impl Runner {
             )),
             cloud_intent: None,
             cloud_alert_shown: false,
+            saving,
+            cloud_saving,
         };
 
         Ok(runner)
+    }
+}
+
+impl RunnerInner {
+    /// 本地保存是否进行中
+    pub(crate) fn is_saving(&self) -> bool {
+        self.saving.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
+    /// 云端上传是否进行中
+    pub(crate) fn is_cloud_saving(&self) -> bool {
+        self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst)
     }
 }

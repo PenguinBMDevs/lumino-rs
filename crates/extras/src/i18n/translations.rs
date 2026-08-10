@@ -75,6 +75,10 @@ pub struct MainTranslations {
     pub mode_switch_to_editor: &'static str,
     pub mode_switch_to_waterfall: &'static str,
     pub status_ready: &'static str,
+    /// 保存成功后的底边栏提示
+    pub status_file_saved: &'static str,
+    /// 保存失败后的底边栏提示前缀
+    pub status_save_failed: &'static str,
     pub sidebar_file: &'static str,
     pub sidebar_arrangement: &'static str,
     pub sidebar_automation: &'static str,
@@ -192,6 +196,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     mode_switch_to_editor: "切换到编辑器模式",
     mode_switch_to_waterfall: "切换到瀑布流模式",
     status_ready: "就绪",
+    status_file_saved: "文件已经保存",
+    status_save_failed: "保存失败",
     sidebar_file: "音轨列表",
     sidebar_arrangement: "音轨总览",
     sidebar_automation: "自动化面板",
@@ -307,6 +313,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     mode_switch_to_editor: "Switch to Editor Mode",
     mode_switch_to_waterfall: "Switch to Waterfall Mode",
     status_ready: "Ready",
+    status_file_saved: "File saved",
+    status_save_failed: "Save failed",
     sidebar_file: "Track List",
     sidebar_arrangement: "Track Overview",
     sidebar_automation: "Automation",
