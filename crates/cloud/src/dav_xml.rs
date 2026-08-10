@@ -147,6 +147,35 @@ pub(crate) fn parse_list_multi_status(
     serde_xml_rs::from_str(&sanitize_dav_xml(xml))
 }
 
+/// 判断响应内容是否为 HTML 页面（而非 WebDAV XML 响应）
+///
+/// 部分服务器/反向代理对 PROPFIND 请求返回 200 + 登录页或错误页
+/// （`<!DOCTYPE html>` / `<html>` 开头），解析必然失败且报错晦涩。
+pub(crate) fn is_html_response(text: &str) -> bool {
+    let trimmed = text.trim_start();
+    let trimmed = trimmed.strip_prefix('\u{feff}').unwrap_or(trimmed);
+    let head: String = trimmed
+        .chars()
+        .take(64)
+        .collect::<String>()
+        .to_ascii_lowercase();
+    head.starts_with("<!doctype html") || head.starts_with("<html")
+}
+
+/// 生成响应内容预览（用于解析失败时的诊断信息）
+///
+/// 压缩空白后截取前 200 字符，超长部分以 `…` 省略。
+pub(crate) fn response_preview(text: &str) -> String {
+    let compact: String = text.split_whitespace().collect();
+    let mut chars = compact.chars();
+    let head: String = chars.by_ref().take(200).collect();
+    if chars.next().is_some() {
+        format!("{head}…")
+    } else {
+        head
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -243,5 +272,37 @@ mod tests {
         let parsed = parse_list_multi_status(xml).expect("含未知实体的脏 XML 应能解析");
         // `&` 被转义后解析还原为字面文本，未知实体原文保留
         assert_eq!(parsed.responses[0].href, "/dav/foo&baz;/f.txt");
+    }
+
+    #[test]
+    fn test_is_html_response() {
+        assert!(is_html_response("<!DOCTYPE html><html><head>"));
+        assert!(is_html_response("<!doctype html>\n<html lang=\"zh\">"));
+        assert!(is_html_response(
+            "<html><head><meta charset=\"utf-8\"></head></html>"
+        ));
+        // BOM 前缀也应识别
+        assert!(is_html_response("\u{feff}<html><body>"));
+        // 前导空白不应影响识别
+        assert!(is_html_response("  \n  <HTML><head>"));
+        // XML 响应不应误判
+        assert!(!is_html_response(
+            "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n<D:multistatus"
+        ));
+        assert!(!is_html_response("<D:multistatus xmlns:D=\"DAV:\">"));
+        // 空响应与任意文本不应误判
+        assert!(!is_html_response(""));
+        assert!(!is_html_response("hello world"));
+    }
+
+    #[test]
+    fn test_response_preview() {
+        assert_eq!(response_preview("  a   b  c "), "abc");
+        let long = "x".repeat(500);
+        let preview = response_preview(&long);
+        assert_eq!(preview.chars().count(), 201);
+        assert!(preview.ends_with('…'));
+        let short = response_preview("short");
+        assert_eq!(short, "short");
     }
 }
