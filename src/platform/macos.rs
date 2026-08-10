@@ -71,6 +71,12 @@ fn build_submenu(
                 map.insert(id, core_event.clone());
                 elements.push(MenuElement::Action(muda_item));
             }
+            UiMenuItem::ActionDisabled(core_event) => {
+                // 禁用项：仅展示显示名，不可点击，也不注册事件映射
+                let display_name = event_display_name(core_event, lang);
+                let muda_item = MudaMenuItem::new(display_name, false, None);
+                elements.push(MenuElement::Action(muda_item));
+            }
             UiMenuItem::Separator => {
                 elements.push(MenuElement::Separator(PMI::separator()));
             }
@@ -98,7 +104,9 @@ fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
 
     let app = app_menu()?;
 
-    let ui_configs = ui_menus(lang);
+    // 原生菜单在启动时静态构建，无法感知 UI 的选中状态，
+    // 因此导出素材等条件菜单项保持禁用（false）
+    let ui_configs = ui_menus(lang, false);
     let file = build_submenu(
         &ui_configs[0].kind.to_string(),
         &ui_configs[0].items,
