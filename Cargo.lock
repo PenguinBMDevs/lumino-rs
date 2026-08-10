@@ -4366,14 +4366,11 @@ dependencies = [
 name = "lumino-midi-io"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
- "cpal",
- "crossbeam-channel",
  "libloading 0.9.0",
  "lumino-memtrace",
  "lumino-midi-model",
  "lumino-realtime",
  "midir",
- "spin_sleep",
  "thiserror 2.0.20",
  "tracing",
  "windows 0.62.2",
@@ -4509,10 +4506,6 @@ dependencies = [
 name = "lumino-realtime"
 version = "0.2.0-crates-io-preview1"
 dependencies = [
- "cpal",
- "crossbeam-channel",
- "lumino-memtrace",
- "thiserror 2.0.20",
  "tracing",
  "xsynth-core",
  "xsynth-realtime",

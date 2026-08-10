@@ -5,8 +5,6 @@
 //! - 复制 = 下载到本地临时 + 上传（不依赖服务器端 COPY 支持）
 //! - 结果统一经 `OperationResult`（带 kind）回传注入
 
-use std::path::Path;
-
 use lumino_ui::event::{self, cloud as cloud_event};
 
 use crate::runner::RunnerInner;
