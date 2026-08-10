@@ -35,7 +35,23 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
     })
     .placeholder("选择云存储");
 
-    // 顶部：设备切换 + 刷新 + 断开
+    // 顶部：设备切换 + 刷新 + 断开 + 粘贴（剪贴板非空时）
+    let clipboard = state.clipboard.as_ref();
+    let paste_btn = button(
+        text(if clipboard.map(|c| c.is_cut).unwrap_or(false) {
+            "粘贴（剪切）"
+        } else {
+            "粘贴"
+        })
+        .size(12),
+    )
+    .padding([4, 10])
+    .on_press_maybe(clipboard.map(|_| Message::Cloud(CloudAction::Paste)));
+
+    let clear_clip_btn = button(text("清空剪贴板").size(12))
+        .padding([4, 10])
+        .on_press_maybe(clipboard.map(|_| Message::Cloud(CloudAction::ClearClipboard)));
+
     let tool_row = row![
         device_pick.width(Length::Fill),
         button(text("刷新").size(12))
@@ -49,6 +65,8 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
                     .as_ref()
                     .map(|id| Message::Cloud(CloudAction::Disconnect(id.clone()))),
             ),
+        paste_btn,
+        clear_clip_btn,
     ]
     .spacing(8)
     .align_y(Alignment::Center);
@@ -189,28 +207,44 @@ impl std::fmt::Display for CloudDeviceOption {
     }
 }
 
-/// 单行条目：名称 + 大小 + 操作按钮
+/// 单行条目：名称 + 大小 + 操作按钮（复制/剪切/重命名/删除）
 fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
-    let name_btn = if entry.is_dir {
-        // 目录：点击进入
-        button(
-            text(format!("📁 {}", entry.name))
-                .size(13)
+    // 重命名编辑态：名称替换为输入框
+    let is_renaming = state.renaming.as_deref() == Some(entry.path.as_str());
+    let name_area: Element<'static> = if is_renaming {
+        row![
+            text_input("新名称", &state.rename_input)
+                .on_input(|s| Message::Cloud(CloudAction::RenameInputChanged(s)))
                 .width(Length::Fill),
-        )
-        .padding([3, 8])
-        .style(|_theme: &Theme, _status| button::Style::default())
-        .on_press(Message::Cloud(CloudAction::EnterDir(entry.path.clone())))
+            small_btn("确定", Message::Cloud(CloudAction::RenameConfirm)),
+            small_btn("取消", Message::Cloud(CloudAction::RenameCancel)),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
     } else {
-        // 文件：不可点击（无直接打开语义），仅展示
-        button(
-            text(format!("📄 {}", entry.name))
-                .size(13)
-                .width(Length::Fill),
+        let name_btn = button(
+            text(format!(
+                "{} {}",
+                if entry.is_dir { "📁" } else { "📄" },
+                entry.name
+            ))
+            .size(13)
+            .width(Length::Fill),
         )
         .padding([3, 8])
-        .style(|_theme: &Theme, _status| button::Style::default())
-        .on_press(Message::Null)
+        // 修复：button::Style::default() 的 text_color 固定黑色，
+        // 暗色主题下文字不可见——显式跟随主题文字色
+        .style(|theme: &Theme, _status| button::Style {
+            text_color: theme.palette().text,
+            ..Default::default()
+        })
+        .on_press(if entry.is_dir {
+            Message::Cloud(CloudAction::EnterDir(entry.path.clone()))
+        } else {
+            Message::Null
+        });
+        name_btn.into()
     };
 
     let size_text = text(if entry.is_dir {
@@ -221,28 +255,117 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
     .size(12)
     .width(Length::Fixed(80.0));
 
-    let action_btn: Element<'static> = if !state.save_mode && !entry.is_dir {
-        button(text("下载").size(12))
-            .padding([2, 8])
-            .on_press_maybe(
-                state
-                    .filter
-                    .as_ref()
-                    .map(|f| entry.name.to_lowercase().ends_with(&format!(".{f}")))
-                    .unwrap_or(true)
-                    .then(|| {
-                        Message::Cloud(CloudAction::Download {
-                            path: entry.path.clone(),
-                        })
-                    }),
-            )
-            .into()
-    } else {
-        Space::new().width(60.0).into()
-    };
+    // 删除确认态：操作区替换为确认提示
+    let pending_delete = state
+        .pending_delete
+        .as_ref()
+        .map(|(path, _, _)| path.as_str() == entry.path.as_str())
+        .unwrap_or(false);
 
-    row![name_btn, size_text, action_btn]
+    let action_area: Element<'static> = if pending_delete {
+        row![
+            text("确认删除？").size(12),
+            small_btn(
+                "删除",
+                Message::Cloud(CloudAction::DeleteEntry {
+                    path: entry.path.clone(),
+                    is_dir: entry.is_dir,
+                })
+            ),
+            small_btn("取消", Message::Cloud(CloudAction::DeleteCancel)),
+        ]
         .spacing(6)
         .align_y(Alignment::Center)
+        .into()
+    } else {
+        let mut actions = Vec::<Element<'static>>::new();
+        if !state.save_mode && !entry.is_dir {
+            // 文件行：下载
+            actions.push(
+                small_btn(
+                    "下载",
+                    Message::Cloud(CloudAction::Download {
+                        path: entry.path.clone(),
+                    }),
+                )
+                .into(),
+            );
+        }
+        if !state.save_mode {
+            if entry.is_dir {
+                // 目录：复制不支持（提示），支持剪切
+                actions.push(
+                    small_btn(
+                        "剪切",
+                        Message::Cloud(CloudAction::CutEntry {
+                            path: entry.path.clone(),
+                            is_dir: true,
+                        }),
+                    )
+                    .into(),
+                );
+            } else {
+                actions.push(
+                    small_btn(
+                        "复制",
+                        Message::Cloud(CloudAction::CopyEntry {
+                            path: entry.path.clone(),
+                            is_dir: false,
+                        }),
+                    )
+                    .into(),
+                );
+                actions.push(
+                    small_btn(
+                        "剪切",
+                        Message::Cloud(CloudAction::CutEntry {
+                            path: entry.path.clone(),
+                            is_dir: false,
+                        }),
+                    )
+                    .into(),
+                );
+            }
+            actions.push(
+                small_btn(
+                    "重命名",
+                    Message::Cloud(CloudAction::StartRename(entry.path.clone())),
+                )
+                .into(),
+            );
+            actions.push(
+                small_btn(
+                    "删除",
+                    Message::Cloud(CloudAction::RequestDelete {
+                        path: entry.path.clone(),
+                        is_dir: entry.is_dir,
+                    }),
+                )
+                .into(),
+            );
+        }
+        if actions.is_empty() {
+            Space::new().width(60.0).into()
+        } else {
+            row(actions).spacing(6).align_y(Alignment::Center).into()
+        }
+    };
+
+    row![name_area, size_text, action_area]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// 小尺寸操作按钮（跟随主题文字色）
+fn small_btn<'a>(label: &'a str, msg: Message) -> Element<'a> {
+    button(text(label).size(12))
+        .padding([2, 8])
+        .style(|theme: &Theme, _status| button::Style {
+            // 修复：默认 text_color 为固定黑色，暗色主题不可见
+            text_color: theme.palette().text,
+            ..Default::default()
+        })
+        .on_press(msg)
         .into()
 }

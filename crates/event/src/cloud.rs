@@ -100,7 +100,7 @@ pub enum Event {
         /// 是否为目录
         is_dir: bool,
     },
-    /// 移动请求
+    /// 移动请求（剪切到目标目录，云内部）
     MoveRequest {
         /// 连接 ID
         id: String,
@@ -108,6 +108,17 @@ pub enum Event {
         from: String,
         /// 目标目录
         to_dir: String,
+    },
+    /// 复制/剪切请求（is_cut=false 复制，is_cut=true 剪切）
+    CopyRequest {
+        /// 连接 ID
+        id: String,
+        /// 源文件路径（仅文件；目录复制暂不支持，用剪切移动）
+        from: String,
+        /// 目标目录
+        to_dir: String,
+        /// 是否剪切（剪切 = 云内部移动；复制 = 下载临时 + 上传）
+        is_cut: bool,
     },
 
     // ── 结果回传（Runner → UI） ──
@@ -149,12 +160,14 @@ pub enum Event {
         /// 错误原因
         error: Option<String>,
     },
-    /// 通用操作结果（新建/重命名/删除/移动/断开）
+    /// 通用操作结果（新建/重命名/删除/移动/复制粘贴）
     OperationResult {
         /// 是否成功
         ok: bool,
         /// 错误原因
         error: Option<String>,
+        /// 操作类型（"new_folder"/"rename"/"delete"/"move"/"paste_cut"/"paste_copy"）
+        kind: String,
     },
 }
 

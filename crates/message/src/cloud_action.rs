@@ -88,6 +88,50 @@ pub enum CloudAction {
     /// 保存到此处（保存模式：上传当前工程归档到当前目录）
     SaveHere,
 
+    // ── 文件操作（复制/剪切/粘贴/重命名/删除） ──
+    /// 复制条目到剪贴板（远程路径 + 是否为目录）
+    CopyEntry {
+        /// 远程路径
+        path: String,
+        /// 是否为目录
+        is_dir: bool,
+    },
+    /// 剪切条目到剪贴板（远程路径 + 是否为目录）
+    CutEntry {
+        /// 远程路径
+        path: String,
+        /// 是否为目录
+        is_dir: bool,
+    },
+    /// 粘贴剪贴板内容到当前目录
+    Paste,
+    /// 清空剪贴板
+    ClearClipboard,
+    /// 请求删除条目（进入行内确认态，路径 + 是否为目录）
+    RequestDelete {
+        /// 远程路径
+        path: String,
+        /// 是否为目录
+        is_dir: bool,
+    },
+    /// 确认删除条目（路径 + 是否为目录）
+    DeleteEntry {
+        /// 远程路径
+        path: String,
+        /// 是否为目录
+        is_dir: bool,
+    },
+    /// 取消删除确认
+    DeleteCancel,
+    /// 开始重命名条目（路径）
+    StartRename(String),
+    /// 重命名输入框内容变更
+    RenameInputChanged(String),
+    /// 确认重命名
+    RenameConfirm,
+    /// 取消重命名
+    RenameCancel,
+
     // ── 云管理（设置面板入口） ──
     /// 打开云连接面板（设置面板"添加连接"）
     OpenConnectPanel,

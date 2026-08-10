@@ -8,6 +8,7 @@
 use crate::event::{self, cloud as cloud_event};
 use crate::message::Message;
 use crate::root::Root;
+use crate::state::cloud_state::CloudClipboard;
 
 use lumino_message::{CloudAction, CloudProtocolUi};
 
@@ -180,6 +181,107 @@ impl Root {
                 ));
             }
 
+            // ── 文件操作（复制/剪切/粘贴/重命名/删除） ──
+            CloudAction::CopyEntry { path, is_dir } => {
+                if is_dir {
+                    self.cloud.notice = Some("复制目录暂不支持，请使用剪切移动".to_string());
+                    return;
+                }
+                self.cloud.clipboard = Some(CloudClipboard::new(path.clone(), false, false));
+                self.cloud.notice = Some(format!("已复制：{}", basename_of(&path)));
+            }
+            CloudAction::CutEntry { path, is_dir } => {
+                self.cloud.clipboard = Some(CloudClipboard::new(path.clone(), is_dir, true));
+                self.cloud.notice = Some(format!("已剪切：{}", basename_of(&path)));
+            }
+            CloudAction::Paste => {
+                let Some(clip) = self.cloud.clipboard.clone() else {
+                    self.cloud.notice = Some("剪贴板为空".to_string());
+                    return;
+                };
+                let Some(id) = self.cloud.selected_id.clone() else {
+                    self.cloud.notice = Some("未选择云存储".to_string());
+                    return;
+                };
+                event::emit(event::Event::cloud(cloud_event::Event::CopyRequest {
+                    id,
+                    from: clip.source_path,
+                    to_dir: self.cloud.current_path.clone(),
+                    is_cut: clip.is_cut,
+                }));
+            }
+            CloudAction::ClearClipboard => {
+                self.cloud.clipboard = None;
+                self.cloud.notice = None;
+            }
+            CloudAction::RequestDelete { path, is_dir } => {
+                // 进入行内确认态（不立即删除）
+                self.cloud.pending_delete = Some((path.clone(), is_dir, basename_of(&path)));
+                self.cloud.notice = None;
+            }
+            CloudAction::DeleteEntry { path, is_dir } => {
+                let Some(id) = self.cloud.selected_id.clone() else {
+                    self.cloud.notice = Some("未选择云存储".to_string());
+                    return;
+                };
+                self.cloud.busy = true;
+                self.cloud.pending_delete = None;
+                self.cloud.notice = None;
+                event::emit(event::Event::cloud(cloud_event::Event::DeleteRequest {
+                    id,
+                    path,
+                    is_dir,
+                }));
+            }
+            CloudAction::DeleteCancel => {
+                self.cloud.pending_delete = None;
+                self.cloud.notice = None;
+            }
+            CloudAction::StartRename(path) => {
+                self.cloud.renaming = Some(path.clone());
+                self.cloud.rename_input = basename_of(&path);
+                self.cloud.notice = None;
+            }
+            CloudAction::RenameInputChanged(name) => {
+                self.cloud.rename_input = name;
+            }
+            CloudAction::RenameConfirm => {
+                let Some(from) = self.cloud.renaming.clone() else {
+                    return;
+                };
+                let new_name = self.cloud.rename_input.trim().to_string();
+                if new_name.is_empty() {
+                    self.cloud.notice = Some("名称不能为空".to_string());
+                    return;
+                }
+                let Some(id) = self.cloud.selected_id.clone() else {
+                    self.cloud.notice = Some("未选择云存储".to_string());
+                    return;
+                };
+                // 目标路径 = 源目录 + 新名称
+                let parent = match from.rfind('/') {
+                    Some(0) => String::new(),
+                    Some(idx) => from[..idx].to_string(),
+                    None => String::new(),
+                };
+                let to = if parent.is_empty() {
+                    format!("/{new_name}")
+                } else {
+                    format!("{parent}/{new_name}")
+                };
+                self.cloud.renaming = None;
+                self.cloud.notice = None;
+                event::emit(event::Event::cloud(cloud_event::Event::RenameRequest {
+                    id,
+                    from,
+                    to,
+                }));
+            }
+            CloudAction::RenameCancel => {
+                self.cloud.renaming = None;
+                self.cloud.notice = None;
+            }
+
             // ── 云管理（设置面板入口） ──
             CloudAction::OpenConnectPanel => {
                 event::emit(event::Event::cloud(cloud_event::Event::OpenConnectPanel));
@@ -225,4 +327,30 @@ impl Root {
 /// 默认连接名称（用户未填时按协议+地址生成）
 fn default_conn_name(protocol: CloudProtocolUi, address: &str) -> String {
     format!("{} - {}", protocol.display_name(), address)
+}
+
+/// 从远程完整路径提取条目名（与 cloud 客户端 basename 语义一致）
+fn basename_of(path: &str) -> String {
+    let trimmed = path.trim_end_matches('/');
+    match trimmed.rfind('/') {
+        Some(idx) => trimmed[idx + 1..].to_string(),
+        None => trimmed.to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_basename_of() {
+        assert_eq!(basename_of("/Moyingjun/file.lmpj"), "file.lmpj");
+        assert_eq!(basename_of("/file.lmpj"), "file.lmpj");
+        assert_eq!(basename_of("file.lmpj"), "file.lmpj");
+        assert_eq!(basename_of("/Moyingjun/dir/"), "dir");
+        assert_eq!(
+            basename_of("/Moyingjun/Parallel Unit.lmpj"),
+            "Parallel Unit.lmpj"
+        );
+    }
 }

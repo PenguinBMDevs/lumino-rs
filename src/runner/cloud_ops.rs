@@ -12,6 +12,7 @@ use crate::runner::RunnerInner;
 use crate::storage;
 
 use super::cloud::lock_cloud;
+use super::cloud_files::{download_dir, remote_file_name};
 
 impl RunnerInner {
     // ── 目录列表 ──
@@ -265,61 +266,8 @@ impl RunnerInner {
             event::emit(event::Event::cloud(cloud_event::Event::OperationResult {
                 ok: result.is_ok(),
                 error: result.err().map(|e| e.to_string()),
+                kind: "new_folder".to_string(),
             }));
         });
-    }
-
-    /// 注入通用操作结果：成功刷新列表，失败提示
-    pub(super) fn apply_cloud_operation_result(&mut self, ok: bool, error: Option<String>) {
-        let failed = {
-            let state = self.window_state.window.ui_mut().cloud_state_mut();
-            state.busy = false;
-            if ok {
-                state.notice = Some("操作成功".to_string());
-                false
-            } else {
-                state.notice = Some(format!("操作失败：{}", error.clone().unwrap_or_default()));
-                true
-            }
-        };
-        if failed {
-            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
-        } else {
-            // 刷新当前目录列表
-            let id = self
-                .window_state
-                .window
-                .ui()
-                .cloud_state()
-                .selected_id
-                .clone();
-            let path = self
-                .window_state
-                .window
-                .ui()
-                .cloud_state()
-                .current_path
-                .clone();
-            if let Some(id) = id {
-                self.run_cloud_list(id, path);
-            }
-            self.sync_cloud_to_dialogs();
-        }
-    }
-}
-
-/// 系统下载目录（回退到配置目录 Downloads）
-fn download_dir() -> std::path::PathBuf {
-    directories::UserDirs::new()
-        .and_then(|d| d.download_dir().map(|p| p.to_path_buf()))
-        .unwrap_or_else(|| storage::config_dir().join("Downloads"))
-}
-
-/// 从远程路径提取文件名
-fn remote_file_name(path: &str) -> String {
-    let trimmed = path.trim_end_matches('/');
-    match trimmed.rfind('/') {
-        Some(idx) => trimmed[idx + 1..].to_string(),
-        None => trimmed.to_string(),
     }
 }

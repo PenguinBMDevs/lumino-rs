@@ -1,6 +1,8 @@
 mod async_helper;
 mod cloud;
+mod cloud_files;
 mod cloud_ops;
+mod cloud_status;
 mod dialog_manager;
 mod file_handler;
 mod inner;

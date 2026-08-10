@@ -48,6 +48,38 @@ pub struct CloudUiState {
     pub new_folder_input: String,
     /// 断连提醒内容（CloudNotice 面板与设置面板标志共用）
     pub alert_message: Option<String>,
+
+    // ── 文件操作（复制/剪切/重命名/删除） ──
+    /// 剪贴板内容（源路径 + 是否为目录 + 是否剪切）
+    pub clipboard: Option<CloudClipboard>,
+    /// 正在重命名的条目路径（行内编辑）
+    pub renaming: Option<String>,
+    /// 重命名输入框内容
+    pub rename_input: String,
+    /// 等待删除确认的条目（路径 + 是否为目录 + 显示名）
+    pub pending_delete: Option<(String, bool, String)>,
+}
+
+/// 云剪贴板（文件操作复制/剪切）
+#[derive(Debug, Clone)]
+pub struct CloudClipboard {
+    /// 源路径
+    pub source_path: String,
+    /// 是否为目录
+    pub is_dir: bool,
+    /// 剪切（true=粘贴后移动；false=复制）
+    pub is_cut: bool,
+}
+
+impl CloudClipboard {
+    /// 创建剪贴板项
+    pub fn new(source_path: impl Into<String>, is_dir: bool, is_cut: bool) -> Self {
+        Self {
+            source_path: source_path.into(),
+            is_dir,
+            is_cut,
+        }
+    }
 }
 
 impl CloudUiState {
