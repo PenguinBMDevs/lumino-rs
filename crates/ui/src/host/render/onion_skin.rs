@@ -18,7 +18,10 @@
 //! GPU culling 每帧（cull.wgsl 批量原子剔除）+ Indirect draw（CPU 零参与）
 //!
 //! 渲染顺序：洋葱皮（不透明 alpha=1.0）→ 主音轨（不透明）→ UI
-//! 深度测试：洋葱皮先绘制 depth=0.0，主音轨后绘制 LessEqual 0.0<=0.0 覆盖
+//! 深度测试：洋葱皮按轨道索引编码 depth>0（索引越大越靠后），主音轨 depth=0.0
+//! （最近）。LessEqual 保证主音轨始终覆盖洋葱皮；洋葱皮重叠音符由稳定深度
+//! 决定先后，消除 GPU cull 并行重打包顺序随机导致的重叠音符随机闪烁。
+//! 编码方式：border_width 低 16 位 = 边框像素宽，高 16 位 = track_idx+1。
 
 use crate::host::Host;
 use lumino_editor_state::EditorData;
@@ -26,6 +29,13 @@ use lumino_gfx::{NoteInstance, OnionSkinStreamMsg, WgpuRenderThread};
 
 /// 洋葱皮描边宽度（固定 1 像素，与主音轨一致）
 const ONION_SKIN_BORDER_WIDTH: u32 = 1;
+
+/// 编码洋葱皮实例的 border_width：低 16 位 = 边框像素宽，
+/// 高 16 位 = track_idx+1（VS 据此输出稳定深度，解决重叠音符闪烁）。
+#[inline]
+fn onion_border_width(track_idx: usize) -> u32 {
+    ONION_SKIN_BORDER_WIDTH | (((track_idx as u32) + 1) << 16)
+}
 
 /// 流式上传分块大小（每块 ≤ 800 万实例 = 128 MB，大块减少传输次数）
 const STREAMING_CHUNK_SIZE: usize = 8_000_000;
@@ -231,7 +241,6 @@ impl Host {
         let data = &self.root.editor.editor_state.data;
         let current_track = data.current_track;
         let tracks = &self.root.sidebar.tracks;
-        let border_width = ONION_SKIN_BORDER_WIDTH;
 
         // 辅助闭包：判断音轨是否静音
         let is_track_muted = |track_id: usize| -> bool {
@@ -264,6 +273,8 @@ impl Host {
                 }
                 let doc_notes = doc.track_notes(track_idx);
                 let color = lumino_extras::palette::current_track_color_f32(track_idx);
+                // 轨道索引编码进 border_width 高 16 位（稳定深度优先级）
+                let border_width = onion_border_width(track_idx);
                 for ne in doc_notes.iter() {
                     chunk.push(NoteInstance::new(
                         ne.start_tick as f32,
@@ -304,10 +315,9 @@ impl Host {
         tracks: &[usize],
     ) {
         let data = &self.root.editor.editor_state.data;
-        let border_width = ONION_SKIN_BORDER_WIDTH;
 
         for &track_id in tracks {
-            let instances = build_track_instances(data, track_id, border_width);
+            let instances = build_track_instances(data, track_id);
             wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta {
                 track_id,
                 instances,
@@ -327,12 +337,10 @@ impl Host {
 ///
 /// 2026-08 改造：track_notes 缓存已删除，一律从 `MidiDocument` 读。
 /// 无文档 → 空列表。
-fn build_track_instances(
-    data: &EditorData,
-    track_id: usize,
-    border_width: u32,
-) -> Vec<NoteInstance> {
+fn build_track_instances(data: &EditorData, track_id: usize) -> Vec<NoteInstance> {
     let color = lumino_extras::palette::current_track_color_f32(track_id);
+    // 轨道索引编码进 border_width 高 16 位（稳定深度优先级）
+    let border_width = onion_border_width(track_id);
 
     if let Some(doc) = data.document.as_ref() {
         let doc_notes = doc.track_notes(track_id);

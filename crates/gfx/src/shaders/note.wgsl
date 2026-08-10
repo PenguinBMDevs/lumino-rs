@@ -6,6 +6,13 @@
 //   - 2 像素同色加深描边（border_width 字段传 2，加深系数 0.4）
 //   - 预览音符：border_width 哨兵值检测，70% alpha
 //
+// 深度语义（修复重叠音符随机闪烁，2026-08）：
+//   cull.wgsl 并行重打包可见实例，重叠实例的绘制顺序每帧随机；
+//   因此用 border_width 高 16 位编码轨道索引，VS 输出稳定深度：
+//   - 主音轨（track==0）与预览音符 → z = 0.0（最近，永远覆盖洋葱皮）
+//   - 洋葱皮轨道 i → z = (i+1) / 65536.0（索引越大越靠后）
+//   深度测试 LessEqual 与绘制顺序无关，重叠处深度小者稳定胜出，不闪烁。
+//
 // VS 用 instancing + 4 顶点 quad 复刻 wasabi 的 GS「点扩展为 quad」逻辑
 
 const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFFFFFFu;
@@ -85,8 +92,18 @@ fn vs_main(
     let ndc_x = (screen_pos.x / camera.viewport_size.x) * 2.0 - 1.0;
     let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
 
+    // 稳定深度：主音轨（高 16 位=0）与预览哨兵 → 0.0（最近）；
+    // 洋葱皮轨道 i（高 16 位=i+1）→ (i+1)/65536.0（索引越大越靠后）
+    let track = instance.border_width >> 16u;
+    let is_preview = instance.border_width == PREVIEW_BORDER_SENTINEL;
+    let depth = select(
+        f32(track + 1u) / 65536.0,
+        0.0,
+        is_preview || track == 0u,
+    );
+
     var output: VertexOutput;
-    output.position = vec4<f32>(ndc_x, ndc_y, 0.0, 1.0);
+    output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
     output.color = unpack_key_color(instance.key_color);
     output.uv = local_offset;
     output.screen_size = screen_size;
@@ -111,8 +128,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     var is_border = false;
     if (half_width_pixels > 0.0 && half_height_pixels > 0.0) {
-        let horiz_margin = 1.0 / half_width_pixels * f32(input.border_width);
-        let vert_margin = 1.0 / half_height_pixels * f32(input.border_width);
+        // 边框宽 = 低 16 位（高 16 位被深度编码占用）
+        let border_px = f32(input.border_width & 0xFFFFu);
+        let horiz_margin = 1.0 / half_width_pixels * border_px;
+        let vert_margin = 1.0 / half_height_pixels * border_px;
         is_border = input.uv.x < horiz_margin
                  || input.uv.x > 1.0 - horiz_margin
                  || input.uv.y < vert_margin
