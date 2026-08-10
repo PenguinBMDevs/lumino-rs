@@ -50,13 +50,14 @@ pub(super) fn point_curve_distance(p: Point, a: Point, p1: Point, p2: Point, b: 
 
 /// 贝塞尔曲线离散化：生成曲线经过的所有网格格点
 ///
-/// - 控制柄与锚点重合（直线退化）：走 Bresenham 精确格点（历史行为一致）；
-/// - 弯曲段：按 `snap`（tick 方向）/ 1（key 方向）分格采样，
+/// - 两端控制柄均为自动维护（未自定义，柄 = 段方向 1/3 = 精确直线）：
+///   走 Bresenham 精确格点（历史行为一致）；
+/// - 任一端为自定义弯曲柄：按 `snap`（tick 方向）/ 1（key 方向）分格采样，
 ///   采样数 = max(tick 格数, key 格数) × 4（过采样保证每格至少命中，
 ///   竖直段不漏格）；结果按路径顺序去重。
 pub(super) fn curve_cell_points(a: BezierAnchor, b: BezierAnchor, snap: f32) -> Vec<(f32, u16)> {
-    // 直线退化：与直线 Bresenham 结果完全一致
-    if a.out_handle == (0.0, 0.0) && b.in_handle == (0.0, 0.0) {
+    // 自动柄（未弯曲）= 贝塞尔直线段 → Bresenham 精确格点
+    if a.handles_auto && b.handles_auto {
         return line_cell_points(a.pos, b.pos, snap);
     }
     let snap = snap.max(1.0);

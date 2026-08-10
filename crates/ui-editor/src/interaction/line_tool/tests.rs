@@ -30,11 +30,11 @@ fn test_curve_cell_points_vertical_no_gaps() {
 
 #[test]
 fn test_curve_cell_points_bent_curve() {
-    // 弯曲曲线：出向柄拉高 → 曲线经过中间格点
+    // 弯曲曲线：出向柄拉高（标记自定义）→ 曲线经过中间格点
     let mut a = BezierAnchor::new((0.0, 60.0));
-    a.out_handle = (960.0, 20.0);
+    a.set_out_handle((960.0, 20.0));
     let mut b = BezierAnchor::new((1920.0, 60.0));
-    b.in_handle = (-960.0, 20.0);
+    b.set_in_handle((-960.0, 20.0));
     let pts = curve_cell_points(a, b, 1920.0);
     assert_eq!(pts.first(), Some(&(0.0, 60)));
     assert_eq!(pts.last(), Some(&(1920.0, 60)));
@@ -166,7 +166,7 @@ fn test_drag_handle_curves() {
         line.push_anchor((0.0, 60.0));
         line.push_anchor((1920.0, 64.0));
         // 先拖开柄（模拟已弯曲）：柄不再与锚点重合，参与命中
-        line.anchors[0].out_handle = (300.0, -30.0);
+        line.anchors[0].set_out_handle((300.0, -30.0));
     }
     // 柄屏幕位置（绝对坐标 300, 30）
     let h_pos = editor.line_pos_screen_pos((300.0, 30.0));
@@ -284,10 +284,10 @@ fn test_confirm_bent_curve_creates_more_notes() {
         let line = &mut editor.editor_state.line_tool;
         line.push_anchor((0.0, 60.0));
         line.push_anchor((1920.0, 64.0));
-        // 插入中间锚点并弯曲
+        // 插入中间锚点并弯曲（标记自定义）
         line.insert_anchor_at(1, (960.0, 62.0));
-        line.anchors[1].out_handle = (480.0, 12.0);
-        line.anchors[1].in_handle = (-480.0, 12.0);
+        line.anchors[1].set_out_handle((480.0, 12.0));
+        line.anchors[1].set_in_handle((-480.0, 12.0));
     }
     assert!(editor.confirm_line_tool());
     // 弯曲路径覆盖更多格点（> 5）

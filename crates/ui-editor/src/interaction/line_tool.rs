@@ -136,6 +136,8 @@ impl Editor {
                         (orig.pos.1 + delta.1).clamp(0.0, max_key),
                     );
                 }
+                // 锚点移动后重算自动柄：未弯曲的段保持精确直线
+                line.recompute_auto_handles();
             }
             LineToolInteraction::DraggingLine { .. } => {
                 // 阈值确认：未确认前不应用平移（点击插入由 released 判定）
@@ -164,9 +166,10 @@ impl Editor {
                 let orig = line.drag_handle_orig;
                 let new_handle = (orig.0 + raw_delta.0, orig.1 + raw_delta.1);
                 if let Some(a) = line.anchors.get_mut(anchor_idx) {
+                    // 用户自定义柄：标记后不再被自动重算覆盖
                     match side {
-                        HandleSide::In => a.in_handle = new_handle,
-                        HandleSide::Out => a.out_handle = new_handle,
+                        HandleSide::In => a.set_in_handle(new_handle),
+                        HandleSide::Out => a.set_out_handle(new_handle),
                     }
                 }
             }
