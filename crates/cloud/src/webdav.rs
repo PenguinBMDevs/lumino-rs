@@ -8,6 +8,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use percent_encoding::{AsciiSet, CONTROLS, percent_decode_str, utf8_percent_encode};
 use reqwest_dav::types::Auth;
 use reqwest_dav::types::list_cmd::ListEntity;
 use reqwest_dav::{Client as DavClient, ClientBuilder, Depth};
@@ -39,14 +40,35 @@ impl WebdavClient {
     }
 }
 
+/// 路径段编码集合：保留 RFC 3986 pchar（unreserved + sub-delims + `:` `@`），
+/// 编码空格、`#`、`?`、`%`、中文等其余字符（`/` 由调用方分段保留）
+const PATH_SEGMENT_ENCODE_SET: &AsciiSet = &CONTROLS
+    .add(b' ')
+    .add(b'"')
+    .add(b'<')
+    .add(b'>')
+    .add(b'`')
+    .add(b'?')
+    .add(b'#')
+    .add(b'%')
+    .add(b'{')
+    .add(b'}')
+    .add(b'|')
+    .add(b'\\')
+    .add(b'^')
+    .add(b'[')
+    .add(b']');
+
 /// 将服务器返回的 href 规范化为相对路径
 ///
 /// - 完整 URL（含 `scheme://`）→ 提取 path 部分
 /// - 相对路径 → 原样返回（去除查询参数与 fragment）
+/// - 服务器 href 为 URL 编码形式（RFC 4918，如 `%20`），解码为原始文件名
 fn normalize_href(href: &str) -> String {
     let cleaned = href.split(['?', '#']).next().unwrap_or(href);
-    if let Some(pos) = cleaned.find("://") {
-        let after = &cleaned[pos + 3..];
+    let decoded = percent_decode_str(cleaned).decode_utf8_lossy();
+    if let Some(pos) = decoded.find("://") {
+        let after = &decoded[pos + 3..];
         match after.find('/') {
             Some(slash) => {
                 let path = &after[slash..];
@@ -59,8 +81,19 @@ fn normalize_href(href: &str) -> String {
             None => "/".to_string(),
         }
     } else {
-        cleaned.to_string()
+        decoded.into_owned()
     }
+}
+
+/// 对远程路径做 URL 编码（WebDAV 请求路径必须编码，保留 `/` 分隔符）
+///
+/// 与 `normalize_href` 的解码互为往返：列表拿到的解码路径可直接用于
+/// 上传/下载/重命名等操作，不会二次编码。
+fn encode_remote_path(path: &str) -> String {
+    path.split('/')
+        .map(|seg| utf8_percent_encode(seg, PATH_SEGMENT_ENCODE_SET).to_string())
+        .collect::<Vec<_>>()
+        .join("/")
 }
 
 /// 判断条目是否为目录自身（PROPFIND depth=1 会包含自身条目）
@@ -135,7 +168,7 @@ fn build_host(address: &str, port: Option<u16>) -> String {
     } else {
         trimmed.to_string()
     };
-    let mut host = if bracketed.contains("://") {
+    let host = if bracketed.contains("://") {
         bracketed
     } else {
         format!("http://{bracketed}")
@@ -202,8 +235,9 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        // 统一规范化为绝对路径（消除 ./ 残留）
-        let target = normalize_remote(path);
+        // 统一规范化为绝对路径（消除 ./ 残留）；请求用编码形式，is_self 比较用原始形式
+        let target_raw = normalize_remote(path);
+        let target = encode_remote_path(&target_raw);
 
         // 使用 list_raw 拿原始响应，绕开 reqwest_dav 内置的严格 XML 解析：
         // 部分服务器会在 PROPFIND 响应中输出 `&nbsp;` 等 HTML 实体，
@@ -254,7 +288,7 @@ impl CloudClient for WebdavClient {
         for entity in entities {
             match entity {
                 ListEntity::File(f) => {
-                    if is_self(&f.href, &target) {
+                    if is_self(&f.href, &target_raw) {
                         continue;
                     }
                     let remote = normalize_href(&f.href);
@@ -267,7 +301,7 @@ impl CloudClient for WebdavClient {
                     });
                 }
                 ListEntity::Folder(f) => {
-                    if is_self(&f.href, &target) {
+                    if is_self(&f.href, &target_raw) {
                         continue;
                     }
                     let remote = normalize_href(&f.href);
@@ -290,7 +324,7 @@ impl CloudClient for WebdavClient {
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
         let bytes = std::fs::read(local).map_err(CloudError::Io)?;
-        let remote_path = normalize_remote(remote_path);
+        let remote_path = encode_remote_path(&normalize_remote(remote_path));
         client
             .put(&remote_path, bytes)
             .await
@@ -303,7 +337,7 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let remote_path = normalize_remote(remote_path);
+        let remote_path = encode_remote_path(&normalize_remote(remote_path));
         let resp = client
             .get(&remote_path)
             .await
@@ -321,8 +355,8 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let from = normalize_remote(from);
-        let to = normalize_remote(to);
+        let from = encode_remote_path(&normalize_remote(from));
+        let to = encode_remote_path(&normalize_remote(to));
         client
             .mv(&from, &to)
             .await
@@ -335,7 +369,7 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let path = normalize_remote(path);
+        let path = encode_remote_path(&normalize_remote(path));
         client
             .delete(&path)
             .await
@@ -348,8 +382,12 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let from = normalize_remote(from);
-        let to = normalize_remote(join_remote(to_dir, &basename(&from)).as_str());
+        // basename 必须先于编码提取，避免已编码的 %20 被二次编码为 %25
+        let from_norm = normalize_remote(from);
+        let from = encode_remote_path(&from_norm);
+        let to = encode_remote_path(&normalize_remote(
+            join_remote(to_dir, &basename(&from_norm)).as_str(),
+        ));
         client
             .mv(&from, &to)
             .await
@@ -362,7 +400,7 @@ impl CloudClient for WebdavClient {
             .client
             .as_ref()
             .ok_or_else(|| CloudError::NotConnected("WebDAV 未连接".into()))?;
-        let path = normalize_remote(path);
+        let path = encode_remote_path(&normalize_remote(path));
         client
             .mkcol(&path)
             .await
@@ -392,6 +430,56 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_href_percent_decode() {
+        // 空格 %20 → 空格（用户报告的显示 bug）
+        assert_eq!(normalize_href("/dav/My%20Song.lmpj"), "/dav/My Song.lmpj");
+        assert_eq!(
+            normalize_href("http://example.com/dav/My%20Song.lmpj"),
+            "/dav/My Song.lmpj"
+        );
+        // UTF-8 中文（%E4%B8%AD 等）
+        assert_eq!(
+            normalize_href("/dav/%E6%96%87%E4%BB%B6.txt"),
+            "/dav/文件.txt"
+        );
+        // %23（#）解码后为字面 #，不再截断
+        assert_eq!(normalize_href("/dav/a%23b.txt"), "/dav/a#b.txt");
+        // 字面 + 不误转（path 中 + 就是 +，不是空格）
+        assert_eq!(normalize_href("/dav/a+b.txt"), "/dav/a+b.txt");
+    }
+
+    #[test]
+    fn test_encode_remote_path() {
+        // 空格 → %20
+        assert_eq!(
+            encode_remote_path("/dav/My Song.lmpj"),
+            "/dav/My%20Song.lmpj"
+        );
+        // 中文 → UTF-8 百分号编码
+        assert_eq!(
+            encode_remote_path("/dav/文件.txt"),
+            "/dav/%E6%96%87%E4%BB%B6.txt"
+        );
+        // # ? 必须编码（否则被当 fragment/query）
+        assert_eq!(encode_remote_path("/dav/a#b?c.txt"), "/dav/a%23b%3Fc.txt");
+        // 分隔符 / 保留
+        assert_eq!(encode_remote_path("/a/b/c"), "/a/b/c");
+        // 字面 % 编码为 %25
+        assert_eq!(encode_remote_path("/dav/100%.txt"), "/dav/100%25.txt");
+        // 根路径
+        assert_eq!(encode_remote_path("/"), "/");
+    }
+
+    #[test]
+    fn test_remote_path_roundtrip() {
+        // 解码 ↔ 编码往返：服务器 href → 显示 → 操作路径 一致
+        let href = "/dav/%E6%96%87%E4%BB%B6%20%E5%90%8D.txt";
+        let decoded = normalize_href(href);
+        assert_eq!(decoded, "/dav/文件 名.txt");
+        assert_eq!(encode_remote_path(&decoded), href);
+    }
+
+    #[test]
     fn test_normalize_href_relative() {
         assert_eq!(normalize_href("/dav/file.txt"), "/dav/file.txt");
         assert_eq!(normalize_href("file.txt"), "file.txt");
@@ -407,6 +495,9 @@ mod tests {
         assert!(is_self("/dav/dir/", "/dav/dir"));
         assert!(!is_self("/dav/dir/file.txt", "/dav/dir"));
         assert!(!is_self("/dav/other", "/dav/dir"));
+        // 编码 href 解码后与原始路径比较（空格目录不应误判为自身/非自身）
+        assert!(is_self("/dav/My%20Song/", "/dav/My Song"));
+        assert!(!is_self("/dav/My%20Song/file.txt", "/dav/My Song"));
     }
 
     #[test]

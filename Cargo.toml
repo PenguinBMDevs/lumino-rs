@@ -59,6 +59,7 @@ russh-sftp = "2.4.0"
 reqwest_dav = "0.3.3"
 reqwest = "0.13"
 serde-xml-rs = "0.6"
+percent-encoding = "2.3.1"
 # 密码加密（AES-256-GCM）
 aes-gcm = "0.10.3"
 rand = "0.8"
