@@ -3,6 +3,7 @@
 //! 包含：释放事件的匹配分发、绘制完成的收尾工作
 
 use crate::{EditState, Editor};
+use lumino_editor_state::LineToolInteraction;
 use lumino_message::Tool;
 
 impl Editor {
@@ -14,6 +15,14 @@ impl Editor {
         // 图片转 MIDI 放置模式：框选完成/移动拉伸结束优先处理
         if self.editor_state.image_to_midi.is_active() {
             self.handle_i2m_released(edit_state);
+            return;
+        }
+
+        // 曲线工具直线模式：结束锚点/连线拖动
+        if self.editor_state.tool == Tool::Curve
+            && self.editor_state.line_tool.interaction != LineToolInteraction::None
+        {
+            self.handle_line_tool_released();
             return;
         }
 

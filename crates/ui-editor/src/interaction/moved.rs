@@ -3,6 +3,7 @@
 //! 包含：鼠标移动时的状态更新、编辑变化计算、变化值应用
 
 use crate::{EditState, Editor};
+use lumino_editor_state::LineToolInteraction;
 use lumino_editor_state::editor_state::interaction_ops;
 
 impl Editor {
@@ -20,6 +21,14 @@ impl Editor {
             && i2m_interaction != lumino_editor_state::I2mInteraction::None
         {
             self.handle_i2m_moved(snapped_tick, key as f32);
+            return;
+        }
+
+        // 曲线工具直线模式：锚点/连线拖动中
+        if self.editor_state.tool == lumino_message::Tool::Curve
+            && self.editor_state.line_tool.interaction != LineToolInteraction::None
+        {
+            self.handle_line_tool_moved(snapped_tick, key);
             return;
         }
 

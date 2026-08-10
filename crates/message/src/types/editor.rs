@@ -43,6 +43,10 @@ pub enum EditorAction {
     IndicatorDragMove {
         x: f32,
     },
+    /// 曲线工具直线：确认并按直线经过的区域生成音符（√ 按钮）
+    LineToolConfirm,
+    /// 曲线工具直线：取消并清空（× 按钮）
+    LineToolCancel,
 }
 
 #[cfg(test)]

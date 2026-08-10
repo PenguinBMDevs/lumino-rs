@@ -23,6 +23,7 @@ pub mod image_to_midi;
 pub mod image_to_midi_material;
 pub mod interaction_ops;
 pub mod interaction_state;
+pub mod line_tool;
 pub mod note_grouping;
 pub mod viewport;
 
@@ -36,6 +37,7 @@ pub use image_to_midi::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
 pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitType};
+pub use line_tool::{LineAnchor, LineToolInteraction, LineToolState};
 
 use std::collections::HashSet;
 
@@ -55,6 +57,8 @@ pub struct EditorState {
     pub data: EditorData,
     /// 图片转 MIDI 放置模式状态
     pub image_to_midi: image_to_midi::ImageToMidiState,
+    /// 曲线工具直线绘制状态
+    pub line_tool: line_tool::LineToolState,
 }
 
 impl Default for EditorState {
@@ -79,6 +83,7 @@ impl EditorState {
             tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
             image_to_midi: image_to_midi::ImageToMidiState::default(),
+            line_tool: line_tool::LineToolState::default(),
         }
     }
 
@@ -90,6 +95,7 @@ impl EditorState {
         self.tool = Tool::Pointer;
         self.auto_scroll = AutoScrollConfig::default();
         self.image_to_midi = image_to_midi::ImageToMidiState::default();
+        self.line_tool = line_tool::LineToolState::default();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);
@@ -106,6 +112,10 @@ impl EditorState {
             self.image_to_midi.clear_region();
             self.interaction.edit_state = interaction_state::EditState::Idle;
             self.interaction.selected_notes.clear();
+        }
+        // 曲线工具直线模式：切换工具清除直线状态（避免残留干扰其他工具）
+        if tool != Tool::Curve {
+            self.line_tool.reset();
         }
     }
 

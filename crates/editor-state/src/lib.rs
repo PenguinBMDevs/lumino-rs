@@ -14,4 +14,5 @@ pub use editor_state::{
 pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
+pub use editor_state::{LineAnchor, LineToolInteraction, LineToolState};
 pub use editor_transform::EditorTransform;

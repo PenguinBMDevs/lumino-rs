@@ -49,7 +49,7 @@ mod tests {
     mod pressed_priority;
     mod scroll;
     mod state;
-    mod test_helpers;
+    pub(crate) mod test_helpers;
 }
 
 use iced_core::Point;

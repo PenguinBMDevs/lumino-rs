@@ -3,53 +3,22 @@
 //! 放置模式（Placing）下：
 //! - 区域框常驻绘制（边框 + 淡填充），表示生成区域；
 //! - 区域框右侧空白处绘制 √（确认）/ ×（取消）两个悬浮按钮，
-//!   使用 30-40 像素圆角矩形，按钮内容为居中 SVG 图标纹理
+//!   按钮视觉与曲线工具直线共用 `confirm_buttons` 模块
 //!   （iced canvas 绘制，wgpu 不参与这两个按钮的绘制）。
 
 use crate::Editor;
+use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::{clip_region_bounds, content_bounds};
-use iced_core::image::Handle;
-use iced_core::{Image, Point, Rectangle, Size};
+use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::ImageToMidiMode;
 use lumino_ui_core::Renderer;
 use lumino_ui_core::constants::editor::{
     SELECTION_BOX_FILL_COLOR, SELECTION_BOX_STROKE_COLOR, SELECTION_BOX_STROKE_WIDTH,
 };
-use once_cell::sync::Lazy;
 
-/// 悬浮按钮边长（用户要求 30-40 像素，取 36）
-pub const I2M_BUTTON_SIZE: f32 = 36.0;
 /// 按钮与区域框的间距
 const I2M_BUTTON_SPACING: f32 = 8.0;
-/// 按钮圆角半径
-const I2M_BUTTON_RADIUS: f32 = 8.0;
-/// 图标占按钮边长的比例（留白保证图标居中不贴边）
-const I2M_ICON_INSET_RATIO: f32 = 0.25;
-
-/// √ 确认按钮图标（首次访问时由 SVG 光栅化，之后复用句柄 → iced_wgpu 纹理缓存命中）
-static CONFIRM_ICON: Lazy<Handle> = Lazy::new(|| {
-    build_icon_handle(include_bytes!(
-        "../../../../resources/icons/toolbar/confirm-check.svg"
-    ))
-});
-/// × 取消按钮图标
-static CANCEL_ICON: Lazy<Handle> = Lazy::new(|| {
-    build_icon_handle(include_bytes!(
-        "../../../../resources/icons/toolbar/cancel-cross.svg"
-    ))
-});
-
-/// 将内置 SVG 光栅化为图像句柄；失败时回退为空纹理并记录错误
-fn build_icon_handle(svg: &[u8]) -> Handle {
-    match lumino_ui_core::resources::icon::svg_handle(svg, 32) {
-        Ok(handle) => handle,
-        Err(e) => {
-            tracing::error!("加载 i2m 悬浮按钮图标失败: {e}");
-            Handle::from_rgba(1, 1, vec![0, 0, 0, 0])
-        }
-    }
-}
 
 /// 悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -68,14 +37,14 @@ pub fn i2m_button_rects(editor: &Editor) -> Option<I2mButtonRects> {
     let (_, right, top, bottom) = editor.i2m_region_screen_bounds()?;
     let content = content_bounds(editor);
     // 内容区高度不足以容纳单个按钮时（异常布局）不显示按钮
-    if content.height < I2M_BUTTON_SIZE {
+    if content.height < BUTTON_SIZE {
         return None;
     }
-    let group_w = I2M_BUTTON_SIZE * 2.0 + I2M_BUTTON_SPACING;
+    let group_w = BUTTON_SIZE * 2.0 + I2M_BUTTON_SPACING;
     // 垂直中心钳制到内容区内，避免区域框 Y 向越界时按钮悬浮到键盘/标尺上方
     let center_y = ((top + bottom) * 0.5).clamp(
-        content.y + I2M_BUTTON_SIZE * 0.5,
-        content.y + content.height - I2M_BUTTON_SIZE * 0.5,
+        content.y + BUTTON_SIZE * 0.5,
+        content.y + content.height - BUTTON_SIZE * 0.5,
     );
     // 水平位置：优先区域框右侧，超出内容区右边缘时钳制到右边缘
     let x0 =
@@ -84,14 +53,11 @@ pub fn i2m_button_rects(editor: &Editor) -> Option<I2mButtonRects> {
     if x0 < content.x + I2M_BUTTON_SPACING {
         return None;
     }
-    let y0 = center_y - I2M_BUTTON_SIZE * 0.5;
-    let confirm = Rectangle::new(
-        Point::new(x0, y0),
-        Size::new(I2M_BUTTON_SIZE, I2M_BUTTON_SIZE),
-    );
+    let y0 = center_y - BUTTON_SIZE * 0.5;
+    let confirm = Rectangle::new(Point::new(x0, y0), Size::new(BUTTON_SIZE, BUTTON_SIZE));
     let cancel = Rectangle::new(
-        Point::new(x0 + I2M_BUTTON_SIZE + I2M_BUTTON_SPACING, y0),
-        Size::new(I2M_BUTTON_SIZE, I2M_BUTTON_SIZE),
+        Point::new(x0 + BUTTON_SIZE + I2M_BUTTON_SPACING, y0),
+        Size::new(BUTTON_SIZE, BUTTON_SIZE),
     );
     Some(I2mButtonRects { confirm, cancel })
 }
@@ -155,33 +121,6 @@ pub fn draw(
     }
 }
 
-/// 绘制单个悬浮按钮（圆角矩形 + 居中 SVG 图标）
-fn draw_button(
-    frame: &mut canvas::Frame<Renderer>,
-    rect: Rectangle,
-    icon: &Handle,
-    bg: iced_core::Color,
-) {
-    let path = Path::rounded_rectangle(
-        rect.position(),
-        rect.size(),
-        iced_core::border::Radius::from(I2M_BUTTON_RADIUS),
-    );
-    frame.fill(&path, bg);
-    let stroke = Stroke::default()
-        .with_width(1.0)
-        .with_color(iced_core::Color::from_rgba(1.0, 1.0, 1.0, 0.6));
-    frame.stroke(&path, stroke);
-
-    // 图标以按钮中心为基准等比内缩，保证水平/垂直居中
-    let inset = rect.width * I2M_ICON_INSET_RATIO;
-    let icon_bounds = Rectangle::new(
-        Point::new(rect.x + inset, rect.y + inset),
-        Size::new(rect.width - inset * 2.0, rect.height - inset * 2.0),
-    );
-    frame.draw_image(icon_bounds, Image::new(icon.clone()));
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,7 +166,7 @@ mod tests {
         let content = content_bounds(&editor);
 
         // 垂直居中于区域框
-        let btn_center_y = btns.confirm.y + I2M_BUTTON_SIZE * 0.5;
+        let btn_center_y = btns.confirm.y + BUTTON_SIZE * 0.5;
         let region_center_y = (top + bottom) * 0.5;
         assert!(
             (btn_center_y - region_center_y).abs() < 1.0,

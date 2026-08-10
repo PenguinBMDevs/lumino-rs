@@ -69,6 +69,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             )));
                         }
                     }
+                    // 曲线工具直线模式：优先响应悬浮 √× 按钮
+                    if self.editor.current_tool() == Tool::Curve
+                        && let Some(btns) =
+                            crate::grid::line_tool_box::line_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::LineToolCancel,
+                            )));
+                        }
+                    }
                     return self.handle_left_press(state, local_pos);
                 }
             }
@@ -198,6 +214,16 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         }
 
         if self.editor.current_tool() == Tool::Eraser {
+            return mouse::Interaction::Crosshair;
+        }
+
+        // 曲线工具直线模式：悬停锚点/连线可拖动（Pointer），其余区域十字光标
+        if self.editor.current_tool() == Tool::Curve {
+            if let Some(local_pos) = state.position
+                && self.editor.line_tool_hit_test(local_pos).is_some()
+            {
+                return mouse::Interaction::Pointer;
+            }
             return mouse::Interaction::Crosshair;
         }
 
@@ -349,6 +375,15 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
             if let Some(i2m_geom) = crate::grid::i2m_box::draw(self.editor, renderer, theme, bounds)
             {
                 geometries.push(i2m_geom);
+            }
+        }
+
+        {
+            puffin::profile_scope!("draw::line_tool_box");
+            if let Some(line_geom) =
+                crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds)
+            {
+                geometries.push(line_geom);
             }
         }
 

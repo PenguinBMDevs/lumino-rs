@@ -8,6 +8,7 @@
 
 mod edit_ops;
 mod i2m;
+mod line_tool;
 mod moved;
 mod pressed;
 mod released;
@@ -75,6 +76,12 @@ impl Editor {
                 let tick = self.x_to_tick(x);
                 let snapped_tick = self.snap_tick(tick).max(0.0);
                 self.playback_position = snapped_tick;
+            }
+            EditorAction::LineToolConfirm => {
+                self.confirm_line_tool();
+            }
+            EditorAction::LineToolCancel => {
+                self.cancel_line_tool();
             }
         }
     }
