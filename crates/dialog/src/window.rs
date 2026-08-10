@@ -253,6 +253,11 @@ impl DialogWindow {
         self.window.id()
     }
 
+    /// 获取底层 winit 窗口引用（用于定位悬浮窗/获取窗口位置）
+    pub fn window(&self) -> &Arc<Window> {
+        &self.window
+    }
+
     /// 设置窗口标题
     pub fn set_window_title(&self, title: &str) {
         self.window.set_title(title);

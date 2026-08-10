@@ -116,6 +116,16 @@ impl winit::application::ApplicationHandler for Runner {
             return;
         }
 
+        // 检查是否是云传输进度悬浮窗口
+        if this
+            .window_state
+            .cloud_progress
+            .is_cloud_progress_window(window_id)
+        {
+            this.window_state.cloud_progress.handle_event(event);
+            return;
+        }
+
         // 检查是否是对话框窗口
         if this.handle_dialog_event(event_loop, window_id, event.clone()) {
             return;
@@ -155,6 +165,21 @@ impl winit::application::ApplicationHandler for Runner {
         puffin::profile_scope!("runner_about_to_wait_progress_update");
         let ui_config = this.window_state.storage.config.get().ui.clone();
         this.window_state.progress.update(event_loop, &ui_config);
+
+        // 云传输进度悬浮窗：覆盖定位在云浏览对话框（无则主窗口）上
+        puffin::profile_scope!("runner_about_to_wait_cloud_progress_update");
+        this.window_state.cloud_progress.process_messages();
+        let cloud_anchor: Option<&winit::window::Window> = match this
+            .window_state
+            .dialog_manager
+            .dialog_window_of_type(DialogType::CloudBrowser)
+        {
+            Some(w) => Some(w.as_ref()),
+            None => Some(this.window_state.window.window().as_ref()),
+        };
+        this.window_state
+            .cloud_progress
+            .update(event_loop, &ui_config, cloud_anchor);
 
         // 处理窗口动作
         puffin::profile_scope!("runner_about_to_wait_window_actions");

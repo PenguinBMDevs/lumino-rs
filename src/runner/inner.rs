@@ -59,6 +59,10 @@ pub(crate) struct WindowState {
     pub(crate) needs_window_restart: bool,
     pub(crate) dialog_manager: DialogManager,
     pub(crate) progress: ProgressManager,
+    /// 云传输（上传/下载）进度悬浮窗口（覆盖在云浏览对话框上）
+    pub(crate) cloud_progress: super::cloud_progress::CloudProgressManager,
+    /// 云传输进度发送端（后台线程推送阶段进度）
+    pub(crate) cloud_progress_tx: tokio::sync::mpsc::UnboundedSender<(String, f64)>,
     pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
     /// 视频导出进度接收器（(message, progress, total_frames, render_fps, elapsed_secs)）
     #[allow(clippy::type_complexity)]
@@ -189,6 +193,10 @@ impl Runner {
         let (progress, progress_tx) = ProgressManager::new();
         let progress_cb = lumino_midi_loader::loader::progress_from_sender(progress_tx);
 
+        // 创建云传输进度悬浮窗口管理器
+        let (cloud_progress, cloud_progress_tx) =
+            super::cloud_progress::CloudProgressManager::new();
+
         // 创建 MIDI 管理器
         let mut midi = MidiManager::from_config(&config.ui);
 
@@ -233,6 +241,8 @@ impl Runner {
                 storage,
                 dialog_manager,
                 progress,
+                cloud_progress,
+                cloud_progress_tx,
                 progress_cb,
                 needs_window_restart: false,
                 export_progress_rx: None,

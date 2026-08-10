@@ -222,6 +222,19 @@ impl DialogManager {
             .map(|d| d.window_id())
     }
 
+    /// 获取指定类型对话框的窗口引用（若已就绪）
+    ///
+    /// 用于悬浮窗定位（如云传输进度窗覆盖在云浏览对话框上）。
+    pub fn dialog_window_of_type(
+        &self,
+        dialog_type: DialogType,
+    ) -> Option<&std::sync::Arc<winit::window::Window>> {
+        self.dialogs
+            .values()
+            .find(|d| d.dialog_type == dialog_type)
+            .map(|d| d.window())
+    }
+
     /// 转发视频导出进度到 VideoExport 对话框
     pub fn forward_video_export_progress(
         &mut self,
