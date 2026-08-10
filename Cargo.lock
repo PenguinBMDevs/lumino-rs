@@ -4265,6 +4265,7 @@ dependencies = [
  "russh",
  "russh-sftp",
  "serde",
+ "serde-xml-rs",
  "serde_json",
  "suppaftp",
  "thiserror 2.0.20",

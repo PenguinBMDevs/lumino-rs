@@ -18,6 +18,7 @@ russh = { workspace = true }
 russh-sftp = { workspace = true }
 reqwest_dav = { workspace = true }
 reqwest = { workspace = true }
+serde-xml-rs = { workspace = true }
 tokio = { workspace = true }
 aes-gcm = { workspace = true }
 rand = { workspace = true }

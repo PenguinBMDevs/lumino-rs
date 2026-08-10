@@ -13,6 +13,7 @@
 pub mod client;
 pub mod config;
 pub mod crypto;
+mod dav_xml;
 pub mod error;
 pub mod ftp;
 pub mod manager;

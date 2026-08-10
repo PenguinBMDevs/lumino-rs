@@ -14,6 +14,7 @@ use reqwest_dav::{Client as DavClient, ClientBuilder, Depth};
 
 use crate::client::{CloudClient, basename, join_remote, normalize_remote};
 use crate::crypto::decrypt;
+use crate::dav_xml::parse_list_multi_status;
 use crate::error::{CloudError, Result};
 use crate::model::{CloudConnection, CloudEntry};
 
@@ -123,10 +124,32 @@ impl CloudClient for WebdavClient {
         // 统一规范化为绝对路径（消除 ./ 残留）
         let target = normalize_remote(path);
 
-        let entities = client
-            .list(&target, Depth::Number(1))
+        // 使用 list_raw 拿原始响应，绕开 reqwest_dav 内置的严格 XML 解析：
+        // 部分服务器会在 PROPFIND 响应中输出 `&nbsp;` 等 HTML 实体，
+        // 内置 serde_xml_rs 解析直接报 `Unexpected entity: nbsp`，导致列表整体失败。
+        let resp = client
+            .list_raw(&target, Depth::Number(1))
             .await
             .map_err(dav_err)?;
+        if !resp.status().is_success() {
+            return Err(CloudError::Protocol(format!(
+                "PROPFIND 失败: HTTP {}",
+                resp.status()
+            )));
+        }
+        let text = resp
+            .text()
+            .await
+            .map_err(|e| CloudError::Protocol(format!("读取 PROPFIND 响应失败: {e}")))?;
+        let parsed = parse_list_multi_status(&text)
+            .map_err(|e| CloudError::Protocol(format!("解析 PROPFIND 响应失败: {e}")))?;
+        let entities: Vec<ListEntity> = parsed
+            .responses
+            .into_iter()
+            .map(ListEntity::try_from)
+            .collect::<std::result::Result<_, _>>()
+            .map_err(dav_err)?;
+
         let mut entries = Vec::new();
         for entity in entities {
             match entity {
