@@ -58,24 +58,12 @@ impl Toolbar {
                 ),
                 space().width(4),
                 tool_selector(
-                    icon::Curve,
-                    t.tool_curve,
-                    Tool::Curve,
+                    icon::MousePointerYSelect,
+                    t.tool_pointer_y_select,
+                    Tool::PointerYSelect,
                     self.current_tool,
                     window,
-                    Some(Event::button_hovered(Some(ButtonId::Curve))),
-                ),
-                space().width(4),
-                // 颜料桶（启用式开关）：仅曲线工具激活时可操作；
-                // 选中高亮 = 填充模式开启，点击切换开/关
-                toggle_button(
-                    icon::PaintBucket,
-                    t.tool_fill,
-                    Event::fill_toggled(!self.fill_enabled),
-                    self.current_tool == Tool::Curve,
-                    self.fill_enabled,
-                    window,
-                    Some(Event::button_hovered(Some(ButtonId::Fill))),
+                    Some(Event::button_hovered(Some(ButtonId::PointerYSelect))),
                 ),
                 space().width(4),
                 tool_selector(
@@ -103,6 +91,18 @@ impl Toolbar {
                     self.current_tool,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Curve))),
+                ),
+                space().width(4),
+                // 颜料桶（启用式开关）：仅曲线工具激活时可操作；
+                // 选中高亮 = 填充模式开启，点击切换开/关
+                toggle_button(
+                    icon::PaintBucket,
+                    t.tool_fill,
+                    Event::fill_toggled(!self.fill_enabled),
+                    self.current_tool == Tool::Curve,
+                    self.fill_enabled,
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::Fill))),
                 ),
                 space().width(4),
                 tool_button(

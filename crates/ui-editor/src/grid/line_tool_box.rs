@@ -1,10 +1,12 @@
-//! 曲线工具贝塞尔路径渲染：多路径锚点 + 曲线段 + 控制柄 + 共享 √× 按钮
+//! 曲线工具贝塞尔路径渲染：多路径锚点 + 曲线段 + 控制柄 + 实心填充 + 共享 √× 按钮
 //!
 //! 支持多条路径同时存在（批量绘制）：
 //! - 锚点：实心圆（醒目标注，端点可拖动、中间锚点自由移动）；
 //! - 曲线段：3-4 像素粗三次贝塞尔（控制柄与锚点重合时退化为直线）；
 //! - 控制柄：方块 + 锚点间辅助线（首锚点 out、尾锚点 in、中间 in+out），
 //!   拖动控制柄弯曲曲线；
+//! - 实心填充：颜料桶点击封闭区域后，内部格点以半透明色块显示
+//!   （√ 确认时合并生成实心音符）；
 //! - 按钮：全部路径包围盒右侧的一组 √（批量确认生成音符）/ ×（批量取消）
 //!   悬浮按钮，与 i2m 区域框按钮共用同一套视觉（`confirm_buttons` 模块）。
 
@@ -28,6 +30,8 @@ const HANDLE_SIZE: f32 = 8.0;
 const HANDLE_LINE_WIDTH: f32 = 1.0;
 /// 按钮组与路径包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
+/// 填充色块透明度（半透明色块叠在网格上，√ 确认后成为实心音符）
+const FILL_ALPHA: f32 = 0.35;
 
 /// 悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -188,6 +192,26 @@ pub fn draw(
             frame.stroke(&path, ring);
             has_content = true;
         }
+    }
+
+    // 颜料桶实心填充：已填充格点以半透明色块显示（√ 确认后成为实心音符）
+    if line.has_fill() {
+        let v = &editor.editor_state.view;
+        let fill_color =
+            iced_core::Color::from_rgba(anchor_color.r, anchor_color.g, anchor_color.b, FILL_ALPHA);
+        // 色块尺寸 = 网格单元：tick 方向一格 = snap × zoom_x（zoom_x 为 像素/tick，
+        // 一格含 snap 个 tick），key 方向一行 = zoom_y
+        let cell_w = (v.snap_precision.max(1.0) * v.zoom_x).max(1.0);
+        let cell_h = v.zoom_y.max(1.0);
+        for &(tick, key) in &line.fill {
+            let p = editor.line_pos_screen_pos((tick, key as f32));
+            let rect = Rectangle::new(
+                Point::new(p.x - cell_w * 0.5, p.y - cell_h * 0.5),
+                Size::new(cell_w, cell_h),
+            );
+            frame.fill(&Path::rectangle(rect.position(), rect.size()), fill_color);
+        }
+        has_content = true;
     }
 
     // 共享悬浮按钮（存在完整路径后显示）

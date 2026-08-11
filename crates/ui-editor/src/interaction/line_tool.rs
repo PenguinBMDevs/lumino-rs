@@ -298,14 +298,18 @@ impl Editor {
         }
     }
 
-    /// 确认全部路径：按各路径曲线经过的网格格点批量生成音符（√ 按钮）
+    /// 确认全部路径与填充：按路径曲线经过的格点 + 颜料桶已填充格点
+    /// 批量生成音符（√ 按钮）
     ///
-    /// 生成规则：每条完整路径逐段贝塞尔离散化取格点，每个格点一个音符、
-    /// 长度 = 当前吸附精度；写入当前音轨并使用 `CreateOp` 操作日志。
-    /// 成功后清空全部路径与编辑历史；返回是否生成了音符。
+    /// 生成规则：每条完整路径逐段贝塞尔离散化取格点，合并颜料桶填充的
+    /// 封闭区域内部格点，去重后每格一个音符、长度 = 当前吸附精度；
+    /// 写入当前音轨并使用 `CreateOp` 操作日志。
+    /// 成功后清空全部路径、填充与编辑历史；返回是否生成了音符。
     pub(crate) fn confirm_line_tool(&mut self) -> bool {
         let snap = self.editor_state.view.snap_precision;
-        let paths = self.editor_state.line_tool.paths.clone();
+        let line = &self.editor_state.line_tool;
+        let paths = line.paths.clone();
+        let fill_cells = line.fill.clone();
         // 逐路径逐段离散化收集格点（段间连接点相邻重复，整体去重）
         let mut points = Vec::new();
         for path in &paths {
@@ -316,7 +320,12 @@ impl Editor {
                 points.extend(geom::curve_cell_points(pair[0], pair[1], snap));
             }
         }
-        points.dedup();
+        // 合并颜料桶已填充格点（封闭区域内部 → 实心），整体去重
+        // （tick 转格索引去重，f32 不实现 Hash 不能直接做 key）
+        points.extend(fill_cells);
+        let snap_key = snap.max(1.0);
+        let mut seen = std::collections::HashSet::new();
+        points.retain(|p| seen.insert(((p.0 / snap_key).round() as i64, p.1)));
         if points.is_empty() {
             return false;
         }

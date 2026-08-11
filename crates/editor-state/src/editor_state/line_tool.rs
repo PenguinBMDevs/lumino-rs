@@ -100,14 +100,29 @@ impl BezierAnchor {
 
 /// 单条路径（有序锚点链）
 pub type LinePath = Vec<BezierAnchor>;
-/// 路径编辑历史快照（全部路径）
-pub type PathSnapshot = Vec<LinePath>;
+
+/// 路径编辑历史快照（全部路径 + 颜料桶已填充格点）
+///
+/// 填充格点与路径同属"待确认编辑内容"：√ 确认时合并生成音符，
+/// × 清空，Ctrl+Z 一并撤销。
+#[derive(Debug, Clone, PartialEq, Default)]
+pub struct PathSnapshot {
+    /// 全部路径（每条 = 锚点链）
+    pub paths: Vec<LinePath>,
+    /// 已填充格点（逻辑坐标：tick = snap 倍数、key 整数格）
+    pub fill: Vec<(f32, u16)>,
+}
 
 /// 曲线工具贝塞尔路径状态
 #[derive(Debug, Clone, PartialEq)]
 pub struct LineToolState {
     /// 全部路径（每条 = 锚点链，>= 2 个锚点为完整路径）
     pub paths: Vec<LinePath>,
+    /// 颜料桶已填充的封闭区域格点（逻辑坐标：tick = snap 倍数、key 整数）
+    ///
+    /// 由颜料桶点击封闭区域内部生成，**不直接生成音符**；与路径一起
+    /// 在 √ 确认时合并生成实心音符，× 清空，Ctrl+Z 可撤销。
+    pub fill: Vec<(f32, u16)>,
     /// 当前交互阶段
     pub interaction: LineToolInteraction,
     /// 拖拽基准：按下时的吸附（tick, key）——端点锚点/整条平移的增量基准
@@ -141,6 +156,7 @@ impl Default for LineToolState {
     fn default() -> Self {
         Self {
             paths: Vec::new(),
+            fill: Vec::new(),
             interaction: LineToolInteraction::None,
             drag_start_snap: (0.0, 0.0),
             drag_start_raw: (0.0, 0.0),
@@ -151,7 +167,7 @@ impl Default for LineToolState {
             last_push_path: None,
             fill_enabled: false,
             // 历史栈初始含空状态（撤销基准）
-            path_history: vec![Vec::new()],
+            path_history: vec![PathSnapshot::default()],
             path_history_index: 0,
         }
     }
@@ -246,9 +262,12 @@ impl LineToolState {
 
     // ── 路径编辑历史（撤销/重做） ─────────────────────────
 
-    /// 当前全部路径快照
+    /// 当前全部路径 + 填充格点快照
     pub fn snapshot(&self) -> PathSnapshot {
-        self.paths.clone()
+        PathSnapshot {
+            paths: self.paths.clone(),
+            fill: self.fill.clone(),
+        }
     }
 
     /// 记录当前状态（操作完成后调用）：截断重做分支后入栈
@@ -272,7 +291,9 @@ impl LineToolState {
             return false;
         }
         self.path_history_index -= 1;
-        self.paths = self.path_history[self.path_history_index].clone();
+        let snap = &self.path_history[self.path_history_index];
+        self.paths = snap.paths.clone();
+        self.fill = snap.fill.clone();
         true
     }
 
@@ -282,7 +303,9 @@ impl LineToolState {
             return false;
         }
         self.path_history_index += 1;
-        self.paths = self.path_history[self.path_history_index].clone();
+        let snap = &self.path_history[self.path_history_index];
+        self.paths = snap.paths.clone();
+        self.fill = snap.fill.clone();
         true
     }
 
@@ -299,6 +322,32 @@ impl LineToolState {
     /// 重置整个路径状态（含历史）
     pub fn reset(&mut self) {
         *self = Self::default();
+    }
+
+    // ── 颜料桶填充 ─────────────────────────
+
+    /// 是否已有填充格点
+    pub fn has_fill(&self) -> bool {
+        !self.fill.is_empty()
+    }
+
+    /// 合并新填充格点（去重）；返回新增数量
+    pub fn add_fill_cells(&mut self, cells: &[(f32, u16)]) -> usize {
+        let mut added = 0;
+        for &cell in cells {
+            if !self.fill.contains(&cell) {
+                self.fill.push(cell);
+                added += 1;
+            }
+        }
+        added
+    }
+
+    /// 清除全部填充格点；返回是否清除了内容
+    pub fn clear_fill(&mut self) -> bool {
+        let had = self.has_fill();
+        self.fill.clear();
+        had
     }
 }
 

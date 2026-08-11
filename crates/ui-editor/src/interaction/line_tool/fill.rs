@@ -1,20 +1,22 @@
-//! 颜料桶填充：泛洪填充曲线围成的封闭区域，生成实心音符
+//! 颜料桶填充：泛洪填充曲线围成的封闭区域为**实心**
 //!
 //! ## 算法
 //! 1. 收集全部完整路径的格点离散化（`curve_cell_points`）作为**边界**；
+//!    弯曲段相邻采样格点间 Bresenham 补连，保证边界 8 连通（无跳格缝隙，
+//!    泛洪不会漏穿——等同矢量编辑器"描边连续"）；
 //! 2. 从点击格点出发 BFS 4 邻域泛洪（网格索引运算，整数无精度问题）；
-//! 3. 被边界包围的内部格点 → 每格生成一个音符（长度 = 当前吸附精度）。
+//! 3. 被边界包围的内部格点 → 存入曲线工具编辑层（`LineToolState.fill`），
+//!    与路径一起 √ 确认时生成实心音符（**不直接写入音符**）。
 //!
 //! 路径未封闭时填充会蔓延到视图可见范围边界（与绘图软件"填充到画布
-//! 边缘"行为一致），Undo 可撤销。
+//! 边缘"行为一致），Ctrl+Z 可撤销。
 //!
 //! 内部格点用 `(i64 格索引, u16 key)` 表示（tick = 索引 × snap），
 //! 避免浮点加减误差导致边界匹配失败。
 
 use super::geom;
-use crate::{Editor, Note};
+use crate::Editor;
 use iced_core::Point;
-use lumino_note_core::history::CreateOp;
 use std::collections::{HashSet, VecDeque};
 
 /// 泛洪填充纯函数：从 `start` 出发 4 邻域扩散，遇 `boundary` 格点停止；
@@ -58,10 +60,15 @@ pub fn fill_cells(
 }
 
 impl Editor {
-    /// 颜料桶填充处理：点击封闭区域内部 → 泛洪填充生成实心音符
+    /// 颜料桶填充处理：点击封闭区域内部 → 泛洪计算内部格点，
+    /// **存入曲线工具编辑层**（`line_tool.fill`），不直接生成音符。
+    ///
+    /// - 新填充：格点合并进 `fill`（去重），记录一次路径历史（Ctrl+Z 可撤销）；
+    /// - 点击已填充格点：清除**全部**填充（再点一次取消，也记录历史）；
+    /// - √ 确认时 `confirm_line_tool` 将路径格点 + 填充格点合并生成实心音符；
+    /// - × 清空时一并丢弃。
     ///
     /// 边界 = 全部完整路径格点；范围 = 画布可见 tick 区间 + 全键盘 key。
-    /// 成功后写入当前音轨并记录批量创建操作（Ctrl+Z 可撤销）；
     /// 填充模式保持开启（开关式，可连续填充多个区域）。
     ///
     /// `pub(crate)`：pressed.rs（interaction 父模块）在 Curve 工具 + 填充
@@ -69,14 +76,29 @@ impl Editor {
     pub(crate) fn handle_fill_pressed(&mut self, _pos: Point, snapped_tick: f32, key: u16) {
         let snap = self.editor_state.view.snap_precision.max(1.0);
         // 1. 边界格点（全部完整路径）
+        //
+        //    弯曲段 `curve_cell_points` 是采样取整：贝塞尔陡峭处相邻采样点
+        //    可能一次跳多个 key，边界格点在 4 邻域意义下出现缝隙，泛洪会
+        //    从缝隙漏穿（封闭图形填不上、背景反而被填）。与矢量编辑器
+        //    "描边是连续像素"对齐：相邻采样格点间用 Bresenham 补连，
+        //    补连后边界 8 连通，4 邻域泛洪无法穿过。
         let mut boundary: HashSet<(i64, u16)> = HashSet::new();
         for path in &self.editor_state.line_tool.paths {
             if path.len() < 2 {
                 continue;
             }
+            let mut prev: Option<(f32, u16)> = None;
             for pair in path.windows(2) {
                 for (tick, k) in geom::curve_cell_points(pair[0], pair[1], snap) {
+                    if let Some((pt, pk)) = prev {
+                        for (t, kk) in
+                            geom::line_cell_points((pt, pk as f32), (tick, k as f32), snap)
+                        {
+                            boundary.insert(((t / snap).round() as i64, kk));
+                        }
+                    }
                     boundary.insert(((tick / snap).round() as i64, k));
+                    prev = Some((tick, k));
                 }
             }
         }
@@ -88,7 +110,7 @@ impl Editor {
         let key_count = self.editor_state.view.key_count;
         let start = ((snapped_tick / snap).round() as i64, key);
 
-        // 3. 泛洪填充
+        // 3. 泛洪填充 → 逻辑坐标格点
         let cells = fill_cells(
             &boundary,
             start,
@@ -96,33 +118,36 @@ impl Editor {
                 (tick_lo / snap).floor() as i64,
                 (tick_hi / snap).ceil() as i64,
             ),
-            (0, key_count.saturating_sub(1) as u16),
+            (0, key_count.saturating_sub(1)),
         );
+        let cells: Vec<(f32, u16)> = cells
+            .into_iter()
+            .map(|(ti, k)| (ti as f32 * snap, k))
+            .collect();
         if cells.is_empty() {
             tracing::debug!("颜料桶: 点击位置在边界上或无可用格点，未填充");
             return;
         }
 
-        // 4. 每格一个音符（长度 = 吸附精度），写入当前音轨 + 操作日志
-        let cell_count = cells.len();
-        let track = self.editor_state.data.current_track;
-        let mut create_ops = Vec::with_capacity(cell_count);
-        for (ti, k) in cells {
-            let note = Note::new(ti as f32 * snap, k, snap);
-            if self.editor_state.data.insert_note(track, note.clone()) {
-                create_ops.push(CreateOp {
-                    track_id: track as u32,
-                    note: lumino_editor_state::note_to_event(note),
-                });
-            }
-        }
-        if create_ops.is_empty() {
+        // 4. 点击已填充格点 → 取消全部填充；否则合并新格点。均记录历史。
+        let line = &mut self.editor_state.line_tool;
+        let click_on_fill = line.fill.contains(&(snapped_tick, key));
+        let changed = if click_on_fill {
+            line.clear_fill()
+        } else {
+            line.add_fill_cells(&cells) > 0
+        };
+        if !changed {
             return;
         }
-        self.editor_state.data.history.push_note_create(create_ops);
-        self.editor_state.data.mark_current_track_changed();
-        self.mark_notes_changed();
-        tracing::info!("颜料桶: 填充 {} 个格点", cell_count);
+        line.push_path_history();
+        line.last_push_path = None;
+        tracing::info!(
+            "颜料桶: {} 个格点（累计 {}），累计填充 {} 格",
+            cells.len(),
+            line.fill.len(),
+            line.fill.len()
+        );
     }
 }
 
