@@ -1,26 +1,26 @@
-//! 颜料桶填充：几何泛洪填充曲线围成的封闭区域为**实心**
+//! 颜料桶填充：几何填充曲线围成的封闭区域为**实心**
 //!
 //! ## 算法（矢量颜料桶）
 //! 1. 收集全部路径段的贝塞尔折线（自动柄 = 直线段；自定义柄 = 16 段
-//!    折线逼近）作为**几何边界**；
-//! 2. 点击格点中心做绕数判定（winding number，半开区间）：
-//!    - 在封闭曲线内部（绕数 ≠ 0）→ 填充该轮廓内部；
-//!    - 在外部（绕数 = 0）→ 背景蔓延填充（到画布可见范围边界）；
-//! 3. 范围内每个格点中心做绕数测试，与点击点绕数相同的格点构成候选集，
-//!    再 BFS 连通剪枝（只填与点击点连通的同绕数区域，不跨图形边界）；
-//! 4. 结果存入曲线工具编辑层（`LineToolState.fill`），√ 确认时与路径
+//!    折线逼近）作为**几何边界**，端点容差闭合后组装成闭环；
+//! 2. 区域身份 = 格点中心的"环包含集合"（被哪些闭环包含）。点击格点
+//!    的身份决定填充区域：
+//!    - 在封闭曲线内部 → 填充该轮廓内部全部格点；
+//!    - 在外部（环外）→ 背景蔓延填充（到画布可见范围边界）；
+//! 3. 结果存入曲线工具编辑层（`LineToolState.fill`），√ 确认时与路径
 //!    一起生成实心音符（**不直接写入音符**）。
 //!
-//! 几何判定不依赖栅格化：曲线采样跳格/缝隙不会导致漏穿，填充由曲线
-//! 几何决定（"完全铺满封闭轮廓内部"），与网格泛洪无关。未封闭路径
-//! 填充会蔓延到视图可见范围边界（与绘图软件"填充到画布边缘"行为
-//! 一致），Ctrl+Z 可撤销。
+//! 填充判定是纯几何的（格点中心 vs 闭环绕数），**不依赖网格连通性**：
+//! 曲线采样跳格/边界格点裂缝/窄通道不会造成区域空缺——视觉（矢量
+//! 填充渲染）与音符（格点）始终一致。未封闭路径填充会蔓延到视图
+//! 可见范围边界（与绘图软件"填充到画布边缘"行为一致），Ctrl+Z 可撤销。
 
 use super::geom;
 use crate::Editor;
 use iced_core::Point;
+use loops::{assemble_loops, loop_contains_point};
 use lumino_editor_state::LinePath;
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 /// 渲染层闭环组装/环内判定（assemble_loops、loop_contains_point）
 pub(crate) mod loops;
@@ -82,34 +82,33 @@ fn collect_edges(paths: &[LinePath], snap: f32) -> Vec<Edge> {
     edges
 }
 
-/// 绕数（winding number，半开区间规则）：点在边**上**时不翻转——
-/// 浮点边界歧义归入"下方"区域，保证闭区间一致性。
-fn winding_number(px: f32, py: f32, edges: &[Edge]) -> i32 {
-    let mut wn = 0;
-    for &((ax, ay), (bx, by)) in edges {
-        let cross = (bx - ax) * (py - ay) - (px - ax) * (by - ay);
-        if ay <= py {
-            if by > py && cross > 0.0 {
-                wn += 1;
-            }
-        } else if by <= py && cross < 0.0 {
-            wn -= 1;
+/// 格点的区域身份：被哪些闭环包含（位 i = 被第 i 个环包含）。
+/// 区域 = 环包含集合；背景区域 = 0。与渲染层 `loop_contains_point`
+/// （绕数 ≠ 0）同规则 → 语义与视觉永远一致。
+fn region_key(loops: &[Vec<(f32, f32)>], px: f32, py: f32) -> u128 {
+    let mut key = 0u128;
+    for (i, lp) in loops.iter().enumerate().take(128) {
+        if loop_contains_point(lp, px, py) {
+            key |= 1u128 << i;
         }
     }
-    wn
+    key
 }
 
-/// 几何泛洪填充纯函数（矢量颜料桶核心）：
+/// 几何填充纯函数（矢量颜料桶核心）：
 ///
-/// 1. 点击格点中心绕数 `w0`；候选集 = 范围内**所有**绕数与 `w0` 相同的格点
-///    （几何内部判定——曲线缝隙/采样跳格不影响结果，完全铺满轮廓内部）；
-/// 2. BFS 从点击格点出发只走候选集 → 与点击点连通的同绕数区域
-///    （不跨曲线边界、不跨其他图形的内部）。
+/// 1. 全部边组装成闭环（`assemble_loops`；开放链不成环 → 全部区域
+///    身份 = 背景，蔓延行为不变）；
+/// 2. 候选 = 与点击格点**同一区域身份**（环包含集合）的全部格点——
+///    纯几何判定，不依赖网格连通性：边界格点裂缝/窄通道不会造成
+///    区域空缺（"完全铺满封闭轮廓内部"）。
 ///
-/// - 点击封闭曲线内部（w0 ≠ 0）→ 该轮廓内部全部格点；
-/// - 点击外部（w0 = 0）→ 背景蔓延到范围边界（遇轮廓停止）。
+/// - 点击封闭曲线内部 → 该轮廓内部全部格点；
+/// - 点击外部 → 背景（全部环外格点）蔓延到范围边界；
+/// - 多个独立图形：点击其中一个只填它所在环（区域身份不同）；
+/// - 嵌套图形：内层环内点身份 = {外, 内}，与外层（{外}）区分，洞保留。
 ///
-/// 格点归属判定 = 格点**中心**是否在轮廓内（snap 网格是唯一精度）。
+/// 格点归属判定 = 格点**中心**是否在环内（snap 网格是唯一精度）。
 pub fn fill_cells(
     edges: &[Edge],
     snap: f32,
@@ -117,45 +116,20 @@ pub fn fill_cells(
     tick_idx_range: (i64, i64),
     key_range: (u16, u16),
 ) -> Vec<(i64, u16)> {
+    let loops = assemble_loops(edges);
     let (si, sk) = start;
     let s_center = ((si as f32 + 0.5) * snap, sk as f32 + 0.5);
-    let w0 = winding_number(s_center.0, s_center.1, edges);
-    // 1. 候选集：与点击点同绕数的全部格点
-    let mut candidates = HashSet::new();
+    let s_region = region_key(&loops, s_center.0, s_center.1);
+    let mut cells = Vec::new();
     for ti in tick_idx_range.0..=tick_idx_range.1 {
         for k in key_range.0..=key_range.1 {
             let c = ((ti as f32 + 0.5) * snap, k as f32 + 0.5);
-            if winding_number(c.0, c.1, edges) == w0 {
-                candidates.insert((ti, k));
+            if region_key(&loops, c.0, c.1) == s_region {
+                cells.push((ti, k));
             }
         }
     }
-    // 2. BFS 连通剪枝：候选集外的格点不可走（曲线边界天然隔断）
-    let mut visited = HashSet::new();
-    let mut queue = VecDeque::new();
-    visited.insert(start);
-    queue.push_back(start);
-    while let Some((ti, k)) = queue.pop_front() {
-        for (dti, dk) in [(1, 0), (-1, 0), (0, 1), (0, -1)] {
-            let nti = ti + dti;
-            let nk = k as i64 + dk;
-            if nti < tick_idx_range.0
-                || nti > tick_idx_range.1
-                || nk < key_range.0 as i64
-                || nk > key_range.1 as i64
-            {
-                continue;
-            }
-            let next = (nti, nk as u16);
-            if !candidates.contains(&next) {
-                continue;
-            }
-            if visited.insert(next) {
-                queue.push_back(next);
-            }
-        }
-    }
-    visited.into_iter().collect()
+    cells
 }
 
 impl Editor {
@@ -294,5 +268,88 @@ mod tests {
         // 邻居 (3,4) 超 key 界被裁剪，只填起点
         let cells = fill_cells(&rect_edges(), 1.0, (3, 3), (3, 3), (3, 3));
         assert_eq!(cells, vec![(3, 3)], "超界邻居被裁剪");
+    }
+
+    /// 沙漏形环：上/下两个全宽矩形由宽 0.8 的窄腰连接（x ∈ (3.6, 4.4)），
+    /// 腰部没有格点中心落入（且不压边界线）→ 4-连通被完全隔断。
+    fn waist_edges() -> Vec<Edge> {
+        vec![
+            ((0.0, 0.0), (8.0, 0.0)),
+            ((8.0, 0.0), (8.0, 3.0)),
+            ((8.0, 3.0), (4.4, 3.0)),
+            ((4.4, 3.0), (4.4, 5.0)),
+            ((4.4, 5.0), (8.0, 5.0)),
+            ((8.0, 5.0), (8.0, 8.0)),
+            ((8.0, 8.0), (0.0, 8.0)),
+            ((0.0, 8.0), (0.0, 5.0)),
+            ((0.0, 5.0), (3.6, 5.0)),
+            ((3.6, 5.0), (3.6, 3.0)),
+            ((3.6, 3.0), (0.0, 3.0)),
+            ((0.0, 3.0), (0.0, 0.0)),
+        ]
+    }
+
+    #[test]
+    fn test_fill_no_gap_across_narrow_waist() {
+        // 同一闭环内：腰部隔断 4-连通，但上下两瓣区域身份相同（同一环）
+        // → 必须全部填充（回归：网格泛洪在此处造成音符空缺）
+        let edges = waist_edges();
+        let cells = fill_cells(&edges, 1.0, (4, 0), (0, 7), (0, 7));
+        assert_eq!(cells.len(), 48, "上 3 行 + 下 3 行 × 8 列全部填充");
+        assert!(cells.contains(&(7, 7)), "腰部另一侧最远角点可达");
+        assert!(cells.contains(&(7, 0)), "起点侧最远角点可达");
+    }
+
+    #[test]
+    fn test_fill_background_waist_region() {
+        // 点击腰部环外格点 → 背景 = 全部环外（腰部 2 行 × 8 列 = 16）
+        let edges = waist_edges();
+        let cells = fill_cells(&edges, 1.0, (5, 4), (0, 7), (0, 7));
+        assert_eq!(cells.len(), 16, "背景 = 全部环外格点");
+        assert!(!cells.contains(&(4, 0)), "环内格点不可达");
+    }
+
+    #[test]
+    fn test_fill_two_loops_click_inside_fills_only_that_loop() {
+        // 两个独立矩形环：点击 A 内 → 只填 A（B 区域身份不同）
+        let edges: Vec<Edge> = vec![
+            ((0.0, 0.0), (4.0, 0.0)),
+            ((4.0, 0.0), (4.0, 4.0)),
+            ((4.0, 4.0), (0.0, 4.0)),
+            ((0.0, 4.0), (0.0, 0.0)),
+            ((10.0, 0.0), (14.0, 0.0)),
+            ((14.0, 0.0), (14.0, 4.0)),
+            ((14.0, 4.0), (10.0, 4.0)),
+            ((10.0, 4.0), (10.0, 0.0)),
+        ];
+        let cells = fill_cells(&edges, 1.0, (2, 2), (0, 15), (0, 5));
+        assert_eq!(cells.len(), 16, "点击 A 内只填 A（4x4=16）");
+        assert!(cells.iter().all(|&(ti, _)| ti <= 3), "不跨到 B");
+        // 点击背景 → 全部环外（范围 16x6=96 − 两环 32 = 64）
+        let cells = fill_cells(&edges, 1.0, (7, 2), (0, 15), (0, 5));
+        assert_eq!(cells.len(), 64, "背景 = 全部环外格点");
+        assert!(!cells.contains(&(2, 2)), "A 内格点不可达");
+        assert!(!cells.contains(&(12, 2)), "B 内格点不可达");
+    }
+
+    #[test]
+    fn test_fill_nested_loop_keeps_hole() {
+        // 外环 (0,0)-(8,8) + 内环 (3,3)-(5,5)：
+        // 点击外层内部 → 外层除内层（洞保留）；点击内层 → 只填内层
+        let edges: Vec<Edge> = vec![
+            ((0.0, 0.0), (8.0, 0.0)),
+            ((8.0, 0.0), (8.0, 8.0)),
+            ((8.0, 8.0), (0.0, 8.0)),
+            ((0.0, 8.0), (0.0, 0.0)),
+            ((3.0, 3.0), (5.0, 3.0)),
+            ((5.0, 3.0), (5.0, 5.0)),
+            ((5.0, 5.0), (3.0, 5.0)),
+            ((3.0, 5.0), (3.0, 3.0)),
+        ];
+        let cells = fill_cells(&edges, 1.0, (1, 1), (0, 7), (0, 7));
+        assert_eq!(cells.len(), 60, "外层填充保留内层洞（64-4）");
+        assert!(!cells.contains(&(4, 4)), "洞内格点不填");
+        let cells = fill_cells(&edges, 1.0, (4, 4), (0, 7), (0, 7));
+        assert_eq!(cells.len(), 4, "点击内层 → 只填内层");
     }
 }
