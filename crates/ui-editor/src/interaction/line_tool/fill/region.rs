@@ -5,11 +5,12 @@
 //! （标记在环外）= 可见范围矩形减去全部闭环（NonZero 填充规则下
 //! 反向环构成洞）。
 //!
-//! 环内判定 = 标记/格点**中心** vs 闭环绕数，与 √ 确认时的音符计算
-//! （`confirm_fill_cells`）同规则 → 填充显示与音符覆盖永远一致。
+//! 环覆盖判定 = 标记/格点**中心** vs 闭环绕数（中心在环内 ∨ 距边
+//! < 半格），与 √ 确认时的音符计算（`confirm_fill_cells`）同规则 →
+//! 填充显示与音符覆盖永远一致。
 
 use super::collect_edges;
-use super::loops::{assemble_loops, loop_contains_point};
+use super::loops::{assemble_loops, loop_covers_cell};
 use crate::Editor;
 
 /// 填充区域的矢量几何（逻辑坐标 (tick, key)）
@@ -35,21 +36,19 @@ pub(crate) fn fill_region(editor: &Editor) -> Option<FillRegion> {
     let edges = collect_edges(&line.paths, snap);
     let all_loops = assemble_loops(&edges);
     // 格点中心判定（与 √ 计算同规则 → 边框一致）
-    let center = |(t, k): (f32, u16)| (t + snap * 0.5, k as f32 + 0.5);
-    let contains = |lp: &Vec<(f32, f32)>, m: (f32, u16)| -> bool {
-        let (cx, cy) = center(m);
-        loop_contains_point(lp, cx, cy)
+    let covered = |lp: &Vec<(f32, f32)>, m: (f32, u16)| -> bool {
+        loop_covers_cell(lp, m.0 + snap * 0.5, m.1 as f32 + 0.5, snap)
     };
-    // 背景判定：存在不被任何闭环包含的标记（无闭环时全部是背景）
+    // 背景判定：存在不被任何闭环覆盖的标记（无闭环时全部是背景）
     let has_background = all_loops.is_empty()
         || line
             .fill
             .iter()
-            .any(|&m| all_loops.iter().all(|lp| !contains(lp, m)));
-    // 需要显示的内部闭环：包含 ≥1 个标记
+            .any(|&m| all_loops.iter().all(|lp| !covered(lp, m)));
+    // 需要显示的内部闭环：覆盖 ≥1 个标记
     let filled_loops = all_loops
         .iter()
-        .filter(|lp| line.fill.iter().any(|&m| contains(lp, m)))
+        .filter(|lp| line.fill.iter().any(|&m| covered(lp, m)))
         .cloned()
         .collect();
     // 背景矩形 = 画布可见 tick 区间 × 全键盘 key（与 confirm_fill_cells 范围一致）

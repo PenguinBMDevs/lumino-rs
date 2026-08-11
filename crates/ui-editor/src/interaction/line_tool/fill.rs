@@ -13,7 +13,7 @@
 use super::geom;
 use crate::Editor;
 use iced_core::Point;
-use loops::{assemble_loops, loop_contains_point};
+use loops::{assemble_loops, loop_covers_cell};
 use lumino_editor_state::LinePath;
 use std::collections::HashSet;
 
@@ -77,13 +77,14 @@ pub(crate) fn collect_edges(paths: &[LinePath], snap: f32) -> Vec<Edge> {
     edges
 }
 
-/// 格点的区域身份：被哪些闭环包含（位 i = 被第 i 个环包含）。
-/// 区域 = 环包含集合；背景区域 = 0。与渲染层 `loop_contains_point`
-/// （绕数 ≠ 0）同规则 → 语义与视觉永远一致。
-fn region_key(loops: &[Vec<(f32, f32)>], px: f32, py: f32) -> u128 {
+/// 格点的区域身份：被哪些闭环**覆盖**（位 i = 被第 i 个环覆盖）。
+/// 区域 = 环覆盖集合；背景区域 = 0。与渲染层 `loop_covers_cell`
+/// （中心在环内 ∨ 距边 < 半格）同规则 → 语义与视觉永远一致，
+/// 且消除斜边/弯曲边界处的边缘格点空缺。
+fn region_key(loops: &[Vec<(f32, f32)>], cx: f32, cy: f32, snap: f32) -> u128 {
     let mut key = 0u128;
     for (i, lp) in loops.iter().enumerate().take(128) {
-        if loop_contains_point(lp, px, py) {
+        if loop_covers_cell(lp, cx, cy, snap) {
             key |= 1u128 << i;
         }
     }
@@ -94,7 +95,7 @@ fn region_key(loops: &[Vec<(f32, f32)>], px: f32, py: f32) -> u128 {
 ///
 /// 1. 全部边组装成闭环（`assemble_loops`；开放链不成环 → 全部区域
 ///    身份 = 背景，蔓延行为不变）；
-/// 2. 每个填充标记确定一个区域（环包含集合），返回该区域在范围内
+/// 2. 每个填充标记确定一个区域（环覆盖集合），返回该区域在范围内
 ///    的全部格点；多个标记 = 区域并集（去重）。
 ///
 /// - 标记在封闭曲线内部 → 该轮廓内部全部格点；
@@ -118,13 +119,13 @@ pub fn confirm_fill_cells(
     // 标记区域身份集合（去重：同一区域多次点击只算一次）
     let mut regions = HashSet::new();
     for &(t, k) in marks {
-        regions.insert(region_key(&loops, t + snap * 0.5, k as f32 + 0.5));
+        regions.insert(region_key(&loops, t + snap * 0.5, k as f32 + 0.5, snap));
     }
     let mut cells = Vec::new();
     for ti in tick_idx_range.0..=tick_idx_range.1 {
         for k in key_range.0..=key_range.1 {
             let c = ((ti as f32 + 0.5) * snap, k as f32 + 0.5);
-            if regions.contains(&region_key(&loops, c.0, c.1)) {
+            if regions.contains(&region_key(&loops, c.0, c.1, snap)) {
                 cells.push((ti, k));
             }
         }
@@ -257,21 +258,26 @@ mod tests {
 
     #[test]
     fn test_fill_no_gap_across_narrow_waist() {
-        // 同一闭环内：腰部隔断 4-连通，但上下两瓣区域身份相同（同一环）
-        // → √ 时按覆盖范围必须全部填充（回归：网格泛洪曾造成音符空缺）
+        // 同一闭环内：腰部宽 0.8，格点中心无法落入（旧中心判定隔断
+        // → 音符空缺）；半格容差让腰部两侧格点（距腰边 0.1）被覆盖
+        // → 上下两瓣全部填充（回归：网格泛洪曾造成音符空缺）
         let edges = waist_edges();
         let cells = confirm_fill_cells(&edges, 1.0, &[(4.0, 0)], (0, 7), (0, 7));
-        assert_eq!(cells.len(), 48, "上 3 行 + 下 3 行 × 8 列全部填充");
+        assert_eq!(
+            cells.len(),
+            52,
+            "上 3 行 + 下 3 行 × 8 列 + 腰部 4 格全部填充"
+        );
         assert!(cells.contains(&(7, 7)), "腰部另一侧最远角点可达");
         assert!(cells.contains(&(7, 0)), "起点侧最远角点可达");
     }
 
     #[test]
     fn test_fill_background_waist_region() {
-        // 标记腰部环外格点 → 背景 = 全部环外（腰部 2 行 × 8 列 = 16）
+        // 标记腰部环外格点 → 背景 = 全部环外（范围 64 − 覆盖 52 = 12）
         let edges = waist_edges();
         let cells = confirm_fill_cells(&edges, 1.0, &[(5.0, 4)], (0, 7), (0, 7));
-        assert_eq!(cells.len(), 16, "背景 = 全部环外格点");
+        assert_eq!(cells.len(), 12, "背景 = 全部环外格点");
         assert!(!cells.contains(&(4, 0)), "环内格点不可达");
     }
 
@@ -320,5 +326,32 @@ mod tests {
         assert!(!cells.contains(&(4, 4)), "洞内格点不填");
         let cells = confirm_fill_cells(&edges, 1.0, &[(4.0, 4)], (0, 7), (0, 7));
         assert_eq!(cells.len(), 4, "标记内层 → 只填内层");
+    }
+
+    /// 五边形斜边 (1920,62)→(960,64) 恰好经过格点 (960,63) 中心 (1200,63.5)：
+    /// 旧中心判定压线格点判外 → 边缘单格空缺；半格容差覆盖修复。
+    #[test]
+    fn test_fill_slanted_edge_no_gaps() {
+        let edges: Vec<Edge> = vec![
+            ((0.0, 60.0), (1920.0, 60.0)),
+            ((1920.0, 60.0), (1920.0, 62.0)),
+            ((1920.0, 62.0), (960.0, 64.0)),
+            ((960.0, 64.0), (0.0, 62.0)),
+            ((0.0, 62.0), (0.0, 60.0)),
+        ];
+        let cells = confirm_fill_cells(&edges, 480.0, &[(480.0, 61)], (0, 10), (0, 127));
+        // tick=960 列（中心 x=1200，斜边 y=63.5）：压线格点 (960,63) 必须覆盖
+        assert!(
+            cells.contains(&(2, 63)),
+            "斜边压线格点 (960,63) 覆盖（旧判定缺失）"
+        );
+        // tick=1440 列（中心 x=1680，斜边 y=62.5）：近线格点 (1440,62) 必须覆盖
+        assert!(
+            cells.contains(&(3, 62)),
+            "斜边近线格点 (1440,62) 覆盖（旧判定缺失）"
+        );
+        // 内部格点正常
+        assert!(cells.contains(&(2, 60)), "内部格点 (960,60) 覆盖");
+        assert!(cells.contains(&(0, 62)), "左边缘内部格点 (0,62) 覆盖");
     }
 }

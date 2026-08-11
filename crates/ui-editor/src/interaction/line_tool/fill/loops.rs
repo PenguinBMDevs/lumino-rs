@@ -90,9 +90,42 @@ pub(crate) fn loop_contains_point(loop_pts: &[(f32, f32)], px: f32, py: f32) -> 
     wn != 0
 }
 
+/// 格点是否被环**覆盖**（填充判定）：中心在环内 ∨ 中心距环任一边
+/// < 半格（snap 方向按 snap 归一、key 方向按 1 归一）。
+///
+/// 消除"边缘小空缺"：斜边/弯曲边界恰好穿过格点中心附近时，
+/// 中心判定会把这些格点排除（压线归外 + 图形内近线格点可能判外），
+/// 视觉上边缘出现单格缺口；半格容差把这些格点归入填充，
+/// 使填充边缘 = 图形覆盖的格点（与路径格点/渲染闭环一致）。
+pub(crate) fn loop_covers_cell(loop_pts: &[(f32, f32)], cx: f32, cy: f32, snap: f32) -> bool {
+    if loop_contains_point(loop_pts, cx, cy) {
+        return true;
+    }
+    let inv_snap = 1.0 / snap.max(1.0);
+    for w in loop_pts.windows(2) {
+        let (ax, ay) = w[0];
+        let (bx, by) = w[1];
+        let dx = bx - ax;
+        let dy = by - ay;
+        let len2 = dx * dx + dy * dy;
+        let t = if len2 <= f32::EPSILON {
+            0.0
+        } else {
+            (((cx - ax) * dx + (cy - ay) * dy) / len2).clamp(0.0, 1.0)
+        };
+        let px = ax + t * dx;
+        let py = ay + t * dy;
+        let d2 = ((cx - px) * inv_snap).powi(2) + (cy - py).powi(2);
+        if d2 < 0.25 {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{assemble_loops, loop_contains_point};
+    use super::{assemble_loops, loop_contains_point, loop_covers_cell};
     use crate::interaction::line_tool::fill::Edge;
 
     #[test]
@@ -162,5 +195,32 @@ mod tests {
         assert!(loop_contains_point(&lp, 2.0, 2.0), "环内点");
         assert!(!loop_contains_point(&lp, 5.0, 2.0), "环外点");
         assert!(!loop_contains_point(&lp, 2.0, -1.0), "环上方外点");
+    }
+
+    /// 斜边经过格点中心（压线）：中心判定排除，覆盖判定归入填充
+    #[test]
+    fn test_loop_covers_cell_edge_pressure() {
+        // 斜边 (4,0)→(0,4)（y = 4-x）：格点中心 (2,2) 恰在边上
+        let lp = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)];
+        // 斜边 = (4,0)→(4,4)？不，用五边形场景：斜边 (2,2)→(0,4)？简化：
+        // 三角形 (0,0)-(4,0)-(0,4)：斜边 (4,0)→(0,4)，中心 (2,2) 压线
+        let tri = vec![(0.0, 0.0), (4.0, 0.0), (0.0, 4.0), (0.0, 0.0)];
+        // 压线点 (2,2)：中心判定 = false（线上，绕数 0 边界歧义）
+        assert!(!loop_contains_point(&tri, 2.0, 2.0), "压线点中心判定为外");
+        assert!(
+            loop_covers_cell(&tri, 2.0, 2.0, 1.0),
+            "压线格点被覆盖判定归入填充"
+        );
+        // 距边 0.4 格的环外点 → 覆盖（半格容差内）
+        assert!(loop_covers_cell(&tri, 2.4, 0.4, 1.0), "距边 0.4 格在容差内");
+        // 距斜边超过半格的点 → 不覆盖（(4.5,0.5) 到斜边 ≈ 0.71）
+        assert!(!loop_covers_cell(&tri, 4.5, 0.5, 1.0), "距边超过半格不覆盖");
+        // 内部格点中心 → 覆盖（中心判定分支）
+        assert!(loop_covers_cell(&tri, 0.6, 0.6, 1.0), "内部格点覆盖");
+        let lp = vec![(0.0, 0.0), (4.0, 0.0), (4.0, 4.0), (0.0, 4.0), (0.0, 0.0)];
+        assert!(
+            loop_covers_cell(&lp, 2.0, 2.0, 1.0) && !loop_covers_cell(&lp, 4.5, 2.0, 1.0),
+            "矩形：内部覆盖、远处不覆盖"
+        );
     }
 }
