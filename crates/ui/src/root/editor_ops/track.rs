@@ -74,6 +74,24 @@ impl Root {
         self.editor.mark_notes_changed();
     }
 
+    /// 确保 document 包含 sidebar 中全部音轨（新建音轨后同步扩展，幂等）
+    ///
+    /// 2026-08 修复：`AddTrack` 等只更新 `sidebar.tracks`（UI 列表），
+    /// `MidiDocument.notes` 未同步扩轨，新音轨 `insert_note` 越界静默返回
+    /// false——音符被丢弃（"只能在第一个音轨放置音符"）。本方法遍历 sidebar
+    /// 音轨 id 逐轨 `ensure_track`，保证 document 轨数 ≥ sidebar 最大 id。
+    pub fn ensure_sidebar_tracks_in_document(&mut self) {
+        let ids: Vec<usize> = self.sidebar.tracks.iter().map(|t| t.id).collect();
+        let data = &mut self.editor.editor_state.data;
+        for id in ids {
+            data.ensure_track(id);
+        }
+        tracing::debug!(
+            "Root: document 音轨已同步（sidebar {} 轨）",
+            self.sidebar.tracks.len()
+        );
+    }
+
     /// 设置当前音轨
     ///
     /// `open_panel` 控制是否在非 Arrangement 模式下强制打开侧边栏面板：
@@ -167,6 +185,9 @@ impl Root {
                 is_soloed: false,
                 color: None,
             });
+            // 2026-08 修复：同步扩展 document，否则远程音轨无法放置音符
+            // （insert_note 越界静默失败，与 AddTrack 同类问题）
+            self.editor.editor_state.data.ensure_track(track_idx);
             tracing::info!("协作: 已添加远程音轨 - track_index={}", track_idx);
         } else {
             tracing::warn!("协作: 远程音轨 track_index={} 已存在", track_idx);
@@ -315,6 +336,10 @@ impl Root {
         // 把音轨放回原位置（若索引越界则追加）
         let insert_idx = payload.original_index.min(self.sidebar.tracks.len());
         self.sidebar.tracks.insert(insert_idx, new_track);
+
+        // 2026-08 修复：恢复轨 id 可能大于当前 document 轨数，先扩轨再写入，
+        // 否则 replace_track_notes 越界静默失败，恢复的音符丢失。
+        self.editor.editor_state.data.ensure_track(track_id);
 
         // 恢复音符到 EditorData.document（整轨替换，单一权威源）
         let restored_notes: Vec<NoteEvent> = payload

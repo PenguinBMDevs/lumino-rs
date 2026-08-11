@@ -77,6 +77,19 @@ impl Root {
         // 更新 sidebar，获取是否需要重新渲染
         let needs_redraw = self.sidebar.update(event.clone());
 
+        // 音轨新增类事件：同步扩展 document（单一权威源）。
+        // 2026-08 修复：sidebar 新建音轨只更新 UI 列表，document 未扩轨，
+        // 导致新音轨 insert_note 越界静默失败（音符无法放置）。
+        // 必须在发射 TrackSelected 之前完成，保证切换后立即可编辑。
+        if matches!(
+            &event,
+            sidebar::Event::AddTrack
+                | sidebar::Event::TrackAddAbove(_)
+                | sidebar::Event::TrackAddBelow(_)
+        ) {
+            self.ensure_sidebar_tracks_in_document();
+        }
+
         // 消费 sidebar 中待删除音轨请求，构造 payload 转发给 Runner 写入 .lmdeltrack
         // 必须在 sidebar.update 之后调用——此时 pending_track_deletion 才被设置。
         self.forward_pending_track_deletion();
