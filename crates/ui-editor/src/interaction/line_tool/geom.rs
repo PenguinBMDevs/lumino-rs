@@ -117,3 +117,56 @@ pub(super) fn line_cell_points(a: (f32, f32), b: (f32, f32), snap: f32) -> Vec<(
     }
     points
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_editor_state::BezierAnchor;
+
+    #[test]
+    fn test_curve_cell_points_degenerate_equals_line() {
+        // 自动柄（未自定义）= 精确直线 → Bresenham 结果
+        let a = BezierAnchor::new((0.0, 60.0));
+        let b = BezierAnchor::new((3840.0, 60.0));
+        let pts = curve_cell_points(a, b, 1920.0);
+        assert_eq!(pts, vec![(0.0, 60), (1920.0, 60), (3840.0, 60)]);
+    }
+
+    #[test]
+    fn test_curve_cell_points_vertical_no_gaps() {
+        // 竖直段（tick 跨度 0）：Bresenham 不漏格
+        let a = BezierAnchor::new((1920.0, 60.0));
+        let b = BezierAnchor::new((1920.0, 64.0));
+        let pts = curve_cell_points(a, b, 1920.0);
+        assert_eq!(pts.len(), 5);
+        assert_eq!(pts[0], (1920.0, 60));
+        assert_eq!(pts[4], (1920.0, 64));
+    }
+
+    #[test]
+    fn test_curve_cell_points_bent_curve() {
+        // 弯曲曲线：出向柄拉高（标记自定义）→ 曲线经过中间格点
+        let mut a = BezierAnchor::new((0.0, 60.0));
+        a.set_out_handle((960.0, 20.0));
+        let mut b = BezierAnchor::new((1920.0, 60.0));
+        b.set_in_handle((-960.0, 20.0));
+        let pts = curve_cell_points(a, b, 1920.0);
+        assert_eq!(pts.first(), Some(&(0.0, 60)));
+        assert_eq!(pts.last(), Some(&(1920.0, 60)));
+        assert!(
+            pts.iter().any(|&(_, k)| k > 60),
+            "弯曲曲线应经过更高 key 格点"
+        );
+    }
+
+    #[test]
+    fn test_point_curve_distance() {
+        // 直线退化：点到曲线距离 ≈ 点到线段距离
+        let a = Point::new(0.0, 0.0);
+        let p1 = Point::new(10.0, 0.0);
+        let p2 = Point::new(20.0, 0.0);
+        let b = Point::new(30.0, 0.0);
+        let d = point_curve_distance(Point::new(15.0, 5.0), a, p1, p2, b);
+        assert!((d - 5.0).abs() < 0.1, "直线退化距离应接近 5，实际 {d}");
+    }
+}

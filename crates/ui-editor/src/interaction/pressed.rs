@@ -46,9 +46,14 @@ impl Editor {
             Tool::PointerYSelect => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
             Tool::Curve => {
-                // 曲线工具在钢琴卷帘：两点拉出路径（直线/贝塞尔），
-                // 点击曲线段插入锚点弯曲，√ 批量生成音符。
-                self.handle_line_tool_pressed(pos, snapped_tick, key as f32);
+                if self.editor_state.line_tool.fill_enabled {
+                    // 颜料桶模式：点击封闭区域内部 → 泛洪填充生成实心音符
+                    self.handle_fill_pressed(pos, snapped_tick, key);
+                } else {
+                    // 正常模式：两点拉出路径（直线/贝塞尔），
+                    // 点击曲线段插入锚点弯曲，√ 批量生成音符。
+                    self.handle_line_tool_pressed(pos, snapped_tick, key as f32);
+                }
             }
             Tool::Eraser => self.handle_eraser_pressed(pos, shift, hit_result),
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),

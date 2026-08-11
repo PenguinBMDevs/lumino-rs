@@ -71,6 +71,8 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
+    /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
+    pub fill_enabled: bool,
 }
 
 impl Toolbar {
@@ -94,6 +96,7 @@ impl Toolbar {
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
+            fill_enabled: false,
         }
     }
 
@@ -126,7 +129,17 @@ impl Toolbar {
             Event::Redo => {
                 tracing::debug!("工具栏: 重做操作");
             }
-            Event::ToolSelected(tool) => self.current_tool = tool,
+            Event::ToolSelected(tool) => {
+                self.current_tool = tool;
+                // 颜料桶仅曲线工具附属：切到其他工具自动关闭
+                if tool != Tool::Curve {
+                    self.fill_enabled = false;
+                }
+            }
+            Event::FillToggled(enabled) => {
+                self.fill_enabled = enabled;
+                tracing::debug!("工具栏: 颜料桶填充模式切换为 {}", enabled);
+            }
             Event::Quantize => {
                 tracing::debug!("工具栏: 量化操作");
             }

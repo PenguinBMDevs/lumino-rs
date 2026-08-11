@@ -19,6 +19,8 @@ pub enum Event {
     Undo,
     Redo,
     ToolSelected(Tool),
+    /// 颜料桶填充模式开关（仅曲线工具激活时可用）
+    FillToggled(bool),
     /// 量化音符
     Quantize,
     /// 精度设置变更
@@ -136,6 +138,10 @@ impl Event {
 
     pub fn tool_selected(tool: Tool) -> Message {
         Message::Toolbar(Self::ToolSelected(tool))
+    }
+
+    pub const fn fill_toggled(enabled: bool) -> Message {
+        Message::Toolbar(Self::FillToggled(enabled))
     }
 
     pub const fn quantize() -> Message {

@@ -10,3 +10,4 @@ mod controls;
 mod detection_dashboard;
 mod status;
 mod toolbar_view;
+mod tools;

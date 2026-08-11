@@ -1,9 +1,12 @@
 //! Editor 核心方法
 //!
-//! 包含：构造函数、内存分析、远端光标、音频动作、撤销重做拦截。
+//! 包含构造函数、内存统计、远程光标、音频动作、编辑状态、提交相关。
+//! 撤销/重做（路径历史优先）在 `impls::editor_impl::history`。
 //!
-//! 注：`update_playback_key_colors` 见 `impls::playback`，
-//! `update_selection_box_animation` 见 `impls::selection_box_anim`。
+//! 注意：`update_playback_key_colors` 在 `impls::playback`，
+//! `update_selection_box_animation` 在 `impls::selection_box_anim`。
+
+mod history;
 
 use crate::note::Note;
 use crate::velocity::VelocityPanel;
@@ -151,11 +154,14 @@ impl Editor {
     /// 检查当前是否处于编辑状态（拦截 Undo/Redo/Save/Play/Export 用）
     ///
     /// 返回 `true` 当用户正在进行音符编辑（拖动/绘制/调整大小），
-    /// 或有未提交的批量拖动（pending_drag_state）。
+    /// 或有未提交的批量拖动（pending_drag_state），
+    /// 或正在进行曲线路径编辑（锚点/控制柄拖动）。
     pub fn is_editing(&self) -> bool {
         use crate::EditState;
         self.pending_drag_state.is_some()
             || self.editor_state.data.has_pending_commit()
+            || self.editor_state.line_tool.interaction
+                != lumino_editor_state::LineToolInteraction::None
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::Dragging { .. }
@@ -311,65 +317,6 @@ impl Editor {
             drained
         );
         true
-    }
-
-    /// Undo the last action
-    ///
-    /// **拦截策略**：如果当前正在主动编辑（Dragging/Drawing/Resizing 等），拦截并返回 `false`。
-    /// 若存在未完成的 pending 批量拖动（异步提交中），先阻塞等待其完成，再执行 undo，
-    /// 否则 undo 会操作旧数据并提示"未退出编辑状态"。
-    pub fn undo(&mut self) -> bool {
-        // 先排空异步提交，避免 pending 状态阻塞 undo
-        if self.has_pending_drag() {
-            tracing::info!("Editor: Undo 前发现 pending 异步提交，先 drain");
-            self.drain_async_commit();
-        }
-        if self.is_editing() {
-            tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
-            return false;
-        }
-        if self.editor_state.data.undo() {
-            self.grid_cache.clear();
-            self.mark_notes_changed();
-            tracing::info!("Editor: Undo 成功");
-            true
-        } else {
-            tracing::info!("Editor: 没有可撤销的操作");
-            false
-        }
-    }
-
-    /// Redo the last undone action
-    ///
-    /// **拦截策略**：同 `undo()`，编辑中拦截；存在 pending 时先 drain。
-    pub fn redo(&mut self) -> bool {
-        if self.has_pending_drag() {
-            tracing::info!("Editor: Redo 前发现 pending 异步提交，先 drain");
-            self.drain_async_commit();
-        }
-        if self.is_editing() {
-            tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
-            return false;
-        }
-        if self.editor_state.data.redo() {
-            self.grid_cache.clear();
-            self.mark_notes_changed();
-            tracing::info!("Editor: Redo 成功");
-            true
-        } else {
-            tracing::info!("Editor: 没有可重做的操作");
-            false
-        }
-    }
-
-    /// Check if undo is available
-    pub fn can_undo(&self) -> bool {
-        self.editor_state.data.history.can_undo()
-    }
-
-    /// Check if redo is available
-    pub fn can_redo(&self) -> bool {
-        self.editor_state.data.history.can_redo()
     }
 }
 

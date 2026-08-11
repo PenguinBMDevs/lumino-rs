@@ -1,0 +1,105 @@
+//! 曲线工具批量确认/取消测试：多条路径一次 √ 全部生成、× 全部取消
+
+use super::*;
+use crate::tests::test_helpers::seed_notes;
+use lumino_core::Tool;
+
+/// 构造曲线工具 + 一条完整路径 (0,60)-(3840,60) 的编辑器
+///
+/// 路径记录为历史基准（模拟正常交互创建后的状态），后续操作
+/// undo 恢复到该基准而非空状态。
+fn line_editor() -> Editor {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (3840.0, 60.0));
+        line.push_path_history();
+    }
+    editor
+}
+
+// ── 确认生成（批量） ──
+
+#[test]
+fn test_confirm_line_creates_notes() {
+    let mut editor = line_editor();
+    seed_notes(&mut editor, 1, 0, &[]);
+    assert!(editor.confirm_line_tool());
+    // 水平线：3 个格点 → 3 个音符
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 3);
+    assert!(editor.editor_state.line_tool.paths.is_empty(), "确认后清空");
+}
+
+#[test]
+fn test_confirm_multiple_paths_batch() {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 1, 0, &[]);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        // 路径 1：水平 3 格
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (3840.0, 60.0));
+        // 路径 2：垂直 5 格（tick 相同）
+        line.paths.push(Vec::new());
+        line.push_anchor(1, (3840.0, 64.0));
+        line.push_anchor(1, (3840.0, 68.0));
+    }
+    assert!(editor.confirm_line_tool());
+    // 3 + 5 = 8 个格点（无重叠）
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 8);
+    assert!(editor.editor_state.line_tool.paths.is_empty());
+}
+
+#[test]
+fn test_confirm_incomplete_paths_skipped() {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 1, 0, &[]);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        // 完整路径
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (1920.0, 60.0));
+        // 未完整路径（单锚点，应被跳过）
+        line.paths
+            .push(vec![lumino_editor_state::BezierAnchor::new((0.0, 70.0))]);
+    }
+    assert!(editor.confirm_line_tool());
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
+    assert!(editor.editor_state.line_tool.paths.is_empty());
+}
+
+#[test]
+fn test_confirm_line_incomplete_noop() {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths
+            .push(vec![lumino_editor_state::BezierAnchor::new((0.0, 60.0))]);
+    }
+    assert!(!editor.confirm_line_tool());
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+    assert_eq!(
+        editor.editor_state.line_tool.paths.len(),
+        1,
+        "未完整不改变状态"
+    );
+}
+
+#[test]
+fn test_cancel_line_clears() {
+    let mut editor = line_editor();
+    editor.cancel_line_tool();
+    assert!(editor.editor_state.line_tool.paths.is_empty());
+    assert!(
+        !editor.editor_state.line_tool.can_undo_path(),
+        "取消应清空历史"
+    );
+}

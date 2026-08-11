@@ -1,13 +1,16 @@
-//! 曲线工具贝塞尔路径绘制状态
+//! 曲线工具贝塞尔路径绘制状态（支持多条路径批量绘制）
 //!
-//! 曲线工具在钢琴卷帘上通过点击拉出一条路径（初始为直线）：
+//! 曲线工具在钢琴卷帘上通过点击拉出路径（初始为直线）：
 //! - 前两次点击设置首尾端点（tick 按网格吸附、key 为整数格）；
 //! - 点击线段中间可插入锚点（**不吸附网格**，自由精确定位）；
 //! - 每段为三次贝塞尔曲线，锚点带 in/out 两个控制柄（首尾各显示一个），
-//!   拖动控制柄弯曲曲线；
-//! - 端点拖动保持吸附，中间锚点自由移动；
-//! - 双击中间锚点删除（端点不可删）；
-//! - 确认后按曲线经过的网格格点批量生成音符。
+//!   拖动控制柄弯曲曲线；自动柄（1/3 段长）保证未弯曲时为精确直线；
+//! - 端点拖动保持吸附，中间锚点自由移动；双击中间锚点删除；
+//! - **多条路径可同时存在**（空白处按下开始新路径，不清空已有），
+//!   共享一组 √（批量确认）/ ×（批量取消）按钮；
+//! - **路径编辑历史**：创建曲线（合并为一次）、插入/删除锚点、拖动锚点/
+//!   控制柄/平移均为一次撤销操作（Ctrl+Z / Ctrl+Y），与 document 历史
+//!   互不干扰（√ 确认后才写入 document 生成音符）。
 
 /// 直线工具交互阶段
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -15,13 +18,17 @@ pub enum LineToolInteraction {
     /// 无交互
     #[default]
     None,
-    /// 拖动指定锚点
-    DraggingAnchor(usize),
-    /// 整体平移整条路径（segment = 按下时命中的曲线段索引，
+    /// 拖动指定路径的锚点
+    DraggingAnchor { path: usize, idx: usize },
+    /// 整体平移指定路径（segment = 按下时命中的曲线段索引，
     /// 用于未拖动（视为点击插入锚点）时定位插入位置）
-    DraggingLine { segment: usize },
+    DraggingLine { path: usize, segment: usize },
     /// 拖动控制柄
-    DraggingHandle { anchor_idx: usize, side: HandleSide },
+    DraggingHandle {
+        path: usize,
+        anchor_idx: usize,
+        side: HandleSide,
+    },
 }
 
 /// 控制柄方位
@@ -37,6 +44,11 @@ pub enum HandleSide {
 ///
 /// 位置与控制柄均为 (tick, key) 逻辑坐标；key 为 f32——
 /// 中间锚点不吸附网格，可自由精确定位。
+///
+/// 控制柄初始为**自动维护**（`handles_auto`）：重算时取相邻段方向 1/3
+/// 长度——三次贝塞尔在 cp1 = A + (B-A)/3、cp2 = B - (B-A)/3 时为**精确直线**，
+/// 保证路径初始外观为直线，同时控制柄可见可交互（可随时拖动弯曲）。
+/// 用户拖动控制柄后标记为自定义，不再被自动重算覆盖。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct BezierAnchor {
     /// 锚点位置（tick, key）
@@ -86,11 +98,16 @@ impl BezierAnchor {
     }
 }
 
+/// 单条路径（有序锚点链）
+pub type LinePath = Vec<BezierAnchor>;
+/// 路径编辑历史快照（全部路径）
+pub type PathSnapshot = Vec<LinePath>;
+
 /// 曲线工具贝塞尔路径状态
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LineToolState {
-    /// 锚点路径（有序，>= 2 个为完整状态）
-    pub anchors: Vec<BezierAnchor>,
+    /// 全部路径（每条 = 锚点链，>= 2 个锚点为完整路径）
+    pub paths: Vec<LinePath>,
     /// 当前交互阶段
     pub interaction: LineToolInteraction,
     /// 拖拽基准：按下时的吸附（tick, key）——端点锚点/整条平移的增量基准
@@ -99,217 +116,191 @@ pub struct LineToolState {
     pub drag_start_raw: (f32, f32),
     /// 拖拽基准：按下时被拖锚点的原始值
     pub drag_anchor_orig: BezierAnchor,
-    /// 拖拽基准：平移时整条路径的原始值
-    pub drag_line_orig: Vec<BezierAnchor>,
+    /// 拖拽基准：平移时被拖路径的原始值
+    pub drag_line_orig: LinePath,
     /// 拖拽基准：按下时被拖控制柄的原始偏移
     pub drag_handle_orig: (f32, f32),
     /// 按下待定标志：曲线段按下后移动超过阈值才确认拖动；
     /// 未确认松开视为点击（插入锚点）
     pub drag_confirmed: bool,
+    /// 上次追加锚点的路径索引（连续创建同一路径时合并历史用）；
+    /// None = 无创建中连续追加
+    pub last_push_path: Option<usize>,
+    /// 颜料桶填充模式（启用式开关）：开启后曲线工具点击画布 =
+    /// 填充封闭区域，不再绘制锚点；仅曲线工具激活时有效
+    pub fill_enabled: bool,
+    /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
+    ///
+    /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
+    /// 连续追加锚点（创建同一路径）时更新栈顶合并为一次撤销。
+    pub path_history: Vec<PathSnapshot>,
+    pub path_history_index: usize,
+}
+
+impl Default for LineToolState {
+    fn default() -> Self {
+        Self {
+            paths: Vec::new(),
+            interaction: LineToolInteraction::None,
+            drag_start_snap: (0.0, 0.0),
+            drag_start_raw: (0.0, 0.0),
+            drag_anchor_orig: BezierAnchor::default(),
+            drag_line_orig: Vec::new(),
+            drag_handle_orig: (0.0, 0.0),
+            drag_confirmed: false,
+            last_push_path: None,
+            fill_enabled: false,
+            // 历史栈初始含空状态（撤销基准）
+            path_history: vec![Vec::new()],
+            path_history_index: 0,
+        }
+    }
 }
 
 impl LineToolState {
     /// 是否已有至少一个锚点
     pub fn has_anchor(&self) -> bool {
-        !self.anchors.is_empty()
+        self.paths.iter().any(|p| !p.is_empty())
     }
 
-    /// 路径是否完整（>= 2 个锚点）
+    /// 是否存在完整路径（>= 2 个锚点）
     pub fn is_complete(&self) -> bool {
-        self.anchors.len() >= 2
+        self.paths.iter().any(|p| p.len() >= 2)
     }
 
-    /// 追加锚点（未完整时设置端点用）
-    pub fn push_anchor(&mut self, pos: (f32, f32)) {
-        self.anchors.push(BezierAnchor::new(pos));
+    /// 当前创建中的路径索引：最后一条未完整（< 2 锚点）的路径
+    pub fn creating_path(&self) -> Option<usize> {
+        self.paths.iter().rposition(|p| p.len() < 2)
+    }
+
+    /// 追加锚点到指定路径（未完整时设置端点用）
+    pub fn push_anchor(&mut self, path_idx: usize, pos: (f32, f32)) {
+        let Some(path) = self.paths.get_mut(path_idx) else {
+            return;
+        };
+        path.push(BezierAnchor::new(pos));
         self.recompute_auto_handles();
     }
 
-    /// 在段 [index-1, index] 之间插入锚点（index ∈ 1..=len），
+    /// 在指定路径的段 [index-1, index] 之间插入锚点（index ∈ 1..=len），
     /// 位置为点击处（不吸附网格）。越界返回 false。
-    pub fn insert_anchor_at(&mut self, index: usize, pos: (f32, f32)) -> bool {
-        if index == 0 || index > self.anchors.len() {
+    pub fn insert_anchor_at(&mut self, path_idx: usize, index: usize, pos: (f32, f32)) -> bool {
+        let Some(path) = self.paths.get_mut(path_idx) else {
+            return false;
+        };
+        if index == 0 || index > path.len() {
             return false;
         }
-        self.anchors.insert(index, BezierAnchor::new(pos));
+        path.insert(index, BezierAnchor::new(pos));
         self.recompute_auto_handles();
         true
     }
 
-    /// 删除指定锚点；仅中间锚点可删（端点不可删，保留至少 2 个锚点）。
-    pub fn delete_anchor(&mut self, index: usize) -> bool {
-        if index == 0 || index + 1 >= self.anchors.len() {
+    /// 删除指定路径的锚点；仅中间锚点可删（端点不可删，保留至少 2 个锚点）。
+    pub fn delete_anchor(&mut self, path_idx: usize, index: usize) -> bool {
+        let Some(path) = self.paths.get_mut(path_idx) else {
+            return false;
+        };
+        if index == 0 || index + 1 >= path.len() {
             return false;
         }
-        self.anchors.remove(index);
+        path.remove(index);
         self.recompute_auto_handles();
         true
     }
 
-    /// 重算自动维护的控制柄：相邻锚点间的柄取段方向 1/3 长度
-    /// （三次贝塞尔直线条件，保证路径初始外观为直线）。
-    ///
-    /// 仅重算 `handles_auto`（未被用户自定义）的柄；
-    /// 用户拖动过的柄保持原值不被覆盖。
-    pub fn recompute_auto_handles(&mut self) {
-        for i in 0..self.anchors.len().saturating_sub(1) {
-            let a = self.anchors[i];
-            let b = self.anchors[i + 1];
-            if a.handles_auto {
-                self.anchors[i].out_handle = ((b.pos.0 - a.pos.0) / 3.0, (b.pos.1 - a.pos.1) / 3.0);
-            }
-            if b.handles_auto {
-                self.anchors[i + 1].in_handle =
-                    ((a.pos.0 - b.pos.0) / 3.0, (a.pos.1 - b.pos.1) / 3.0);
-            }
-        }
-    }
-
-    /// 指定锚点可见的控制柄（首锚点只显示 out、尾锚点只显示 in、
+    /// 指定路径锚点可见的控制柄（首锚点只显示 out、尾锚点只显示 in、
     /// 中间锚点显示 in + out 两个）
-    pub fn visible_handle_sides(&self, index: usize) -> Vec<HandleSide> {
+    pub fn visible_handle_sides(&self, path_idx: usize, index: usize) -> Vec<HandleSide> {
+        let Some(path) = self.paths.get(path_idx) else {
+            return Vec::new();
+        };
         if index == 0 {
             vec![HandleSide::Out]
-        } else if index + 1 >= self.anchors.len() {
+        } else if index + 1 >= path.len() {
             vec![HandleSide::In]
         } else {
             vec![HandleSide::In, HandleSide::Out]
         }
     }
 
-    /// 重置整个路径状态
+    /// 重算全部路径的自动控制柄：相邻锚点间的柄取段方向 1/3 长度
+    /// （三次贝塞尔直线条件，保证路径初始外观为直线）。
+    ///
+    /// 仅重算 `handles_auto`（未被用户自定义）的柄；
+    /// 用户拖动过的柄保持原值不被覆盖。
+    pub fn recompute_auto_handles(&mut self) {
+        for path in &mut self.paths {
+            for i in 0..path.len().saturating_sub(1) {
+                let a = path[i];
+                let b = path[i + 1];
+                if a.handles_auto {
+                    path[i].out_handle = ((b.pos.0 - a.pos.0) / 3.0, (b.pos.1 - a.pos.1) / 3.0);
+                }
+                if b.handles_auto {
+                    path[i + 1].in_handle = ((a.pos.0 - b.pos.0) / 3.0, (a.pos.1 - b.pos.1) / 3.0);
+                }
+            }
+        }
+    }
+
+    // ── 路径编辑历史（撤销/重做） ─────────────────────────
+
+    /// 当前全部路径快照
+    pub fn snapshot(&self) -> PathSnapshot {
+        self.paths.clone()
+    }
+
+    /// 记录当前状态（操作完成后调用）：截断重做分支后入栈
+    pub fn push_path_history(&mut self) {
+        self.path_history.truncate(self.path_history_index + 1);
+        self.path_history.push(self.snapshot());
+        self.path_history_index = self.path_history.len() - 1;
+    }
+
+    /// 更新栈顶为当前状态（合并连续操作——创建同一路径的锚点追加）
+    pub fn update_top_path_history(&mut self) {
+        let snap = self.snapshot();
+        if let Some(top) = self.path_history.last_mut() {
+            *top = snap;
+        }
+    }
+
+    /// 撤销一次路径编辑；无可撤销返回 false
+    pub fn undo_path(&mut self) -> bool {
+        if self.path_history_index == 0 {
+            return false;
+        }
+        self.path_history_index -= 1;
+        self.paths = self.path_history[self.path_history_index].clone();
+        true
+    }
+
+    /// 重做一次路径编辑；无可重做返回 false
+    pub fn redo_path(&mut self) -> bool {
+        if self.path_history_index + 1 >= self.path_history.len() {
+            return false;
+        }
+        self.path_history_index += 1;
+        self.paths = self.path_history[self.path_history_index].clone();
+        true
+    }
+
+    /// 是否有可撤销的路径编辑
+    pub fn can_undo_path(&self) -> bool {
+        self.path_history_index > 0
+    }
+
+    /// 是否有可重做的路径编辑
+    pub fn can_redo_path(&self) -> bool {
+        self.path_history_index + 1 < self.path_history.len()
+    }
+
+    /// 重置整个路径状态（含历史）
     pub fn reset(&mut self) {
         *self = Self::default();
     }
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_anchor_chain_flow() {
-        let mut state = LineToolState::default();
-        assert!(!state.has_anchor());
-        assert!(!state.is_complete());
-
-        state.push_anchor((0.0, 60.0));
-        assert!(state.has_anchor());
-        assert_eq!(state.anchors.len(), 1);
-        assert!(!state.is_complete());
-
-        state.push_anchor((1920.0, 64.0));
-        assert!(state.is_complete());
-        assert_eq!(state.anchors.len(), 2);
-    }
-
-    #[test]
-    fn test_insert_anchor_at_segment() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        // 在段 0（锚点 0→1）之间插入：插入到索引 1
-        assert!(state.insert_anchor_at(1, (960.0, 62.0)));
-        assert_eq!(state.anchors.len(), 3);
-        assert_eq!(state.anchors[1].pos, (960.0, 62.0));
-        // 新锚点控制柄自动维护（非自定义）
-        assert!(state.anchors[1].handles_auto);
-    }
-
-    #[test]
-    fn test_insert_anchor_rejects_invalid_index() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        assert!(!state.insert_anchor_at(0, (1.0, 1.0)), "索引 0 非法");
-        assert!(!state.insert_anchor_at(3, (1.0, 1.0)), "索引越界非法");
-        assert_eq!(state.anchors.len(), 2);
-    }
-
-    #[test]
-    fn test_delete_anchor_only_middle() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((960.0, 62.0));
-        state.push_anchor((1920.0, 64.0));
-
-        // 端点不可删
-        assert!(!state.delete_anchor(0));
-        assert!(!state.delete_anchor(2));
-        assert_eq!(state.anchors.len(), 3);
-
-        // 中间锚点可删
-        assert!(state.delete_anchor(1));
-        assert_eq!(state.anchors.len(), 2);
-        assert_eq!(state.anchors[0].pos, (0.0, 60.0));
-        assert_eq!(state.anchors[1].pos, (1920.0, 64.0));
-    }
-
-    #[test]
-    fn test_handle_abs_positions() {
-        let mut anchor = BezierAnchor::new((100.0, 50.0));
-        anchor.set_out_handle((30.0, -10.0));
-        anchor.set_in_handle((-20.0, 5.0));
-        assert_eq!(anchor.out_handle_abs(), (130.0, 40.0));
-        assert_eq!(anchor.in_handle_abs(), (80.0, 55.0));
-        // 设置柄后标记为自定义
-        assert!(!anchor.handles_auto);
-    }
-
-    #[test]
-    fn test_auto_handles_keep_line_after_push() {
-        // 两个端点：自动柄 = 段方向 1/3 长度（贝塞尔直线条件）
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        assert_eq!(state.anchors[0].out_handle, (640.0, 4.0 / 3.0));
-        assert_eq!(state.anchors[1].in_handle, (-640.0, -4.0 / 3.0));
-        assert!(state.anchors[0].handles_auto);
-        assert!(state.anchors[1].handles_auto);
-    }
-
-    #[test]
-    fn test_auto_handles_update_after_insert_and_delete() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        // 插入中间锚点：受影响段的自动柄重新指向相邻锚点
-        state.insert_anchor_at(1, (960.0, 62.0));
-        assert_eq!(state.anchors[0].out_handle, (320.0, 2.0 / 3.0));
-        assert_eq!(state.anchors[1].in_handle, (-320.0, -2.0 / 3.0));
-        assert_eq!(state.anchors[1].out_handle, (320.0, 2.0 / 3.0));
-        assert_eq!(state.anchors[2].in_handle, (-320.0, -2.0 / 3.0));
-        // 删除中间锚点：两端柄重新指向对方
-        state.delete_anchor(1);
-        assert_eq!(state.anchors[0].out_handle, (640.0, 4.0 / 3.0));
-        assert_eq!(state.anchors[1].in_handle, (-640.0, -4.0 / 3.0));
-    }
-
-    #[test]
-    fn test_recompute_keeps_custom_handles() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        // 用户自定义中间锚点前的端点柄：不被重算覆盖
-        state.anchors[0].set_out_handle((500.0, 50.0));
-        state.insert_anchor_at(1, (960.0, 62.0));
-        assert_eq!(
-            state.anchors[0].out_handle,
-            (500.0, 50.0),
-            "自定义柄不被自动重算覆盖"
-        );
-        // 新插入锚点柄仍自动维护
-        assert!(state.anchors[1].handles_auto);
-    }
-
-    #[test]
-    fn test_reset_clears_all() {
-        let mut state = LineToolState::default();
-        state.push_anchor((0.0, 60.0));
-        state.push_anchor((1920.0, 64.0));
-        state.interaction = LineToolInteraction::DraggingLine { segment: 0 };
-        state.drag_confirmed = true;
-        state.reset();
-        assert_eq!(state, LineToolState::default());
-    }
-}
+mod tests;

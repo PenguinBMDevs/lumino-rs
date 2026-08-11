@@ -37,7 +37,9 @@ pub use image_to_midi::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
 pub use interaction_state::{EditState, HitType, InteractionState, SelectionHitType};
-pub use line_tool::{BezierAnchor, HandleSide, LineToolInteraction, LineToolState};
+pub use line_tool::{
+    BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
+};
 
 use std::collections::HashSet;
 

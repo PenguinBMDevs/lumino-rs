@@ -11,6 +11,11 @@ impl ToolbarHandler {
         if let crate::toolbar::Event::ToolSelected(tool) = event {
             root.editor.set_tool(*tool);
         }
+        // 颜料桶填充模式开关（仅曲线工具激活时可操作，非 Curve 时按钮禁用）
+        if let crate::toolbar::Event::FillToggled(enabled) = event {
+            root.editor.set_fill_enabled(*enabled);
+            tracing::info!("Root: 颜料桶填充模式切换为 {}", enabled);
+        }
     }
 
     /// 同步精度设置到编辑器
