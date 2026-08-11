@@ -18,7 +18,7 @@
 //! 纯几何算法（贝塞尔求值/距离/格点离散化）在 `line_tool/geom.rs`，
 //! 命中测试/坐标转换/放置吸附在 `line_tool/hit_test.rs`。
 
-mod fill;
+pub(crate) mod fill;
 mod geom;
 mod hit_test;
 
@@ -310,14 +310,26 @@ impl Editor {
         let line = &self.editor_state.line_tool;
         let paths = line.paths.clone();
         let fill_cells = line.fill.clone();
-        // 逐路径逐段离散化收集格点（段间连接点相邻重复，整体去重）
+        // 逐路径逐段离散化收集格点（段间连接点相邻重复，整体去重）。
+        // 每条路径**最后一段的终点格点** = 路径终点锚点：其音符尾部对齐
+        // 锚点（tick - snap 后与相邻格点去重合并 → 最后一个音符
+        // [tick-snap, tick)，而非原行为的 [tick, tick+snap) 头部对齐）。
+        // tick < snap 时保持原样（避免负 tick）。
         let mut points = Vec::new();
         for path in &paths {
             if path.len() < 2 {
                 continue;
             }
-            for pair in path.windows(2) {
-                points.extend(geom::curve_cell_points(pair[0], pair[1], snap));
+            let last_seg = path.len() - 2;
+            for (si, pair) in path.windows(2).enumerate() {
+                let mut seg_points = geom::curve_cell_points(pair[0], pair[1], snap);
+                if si == last_seg
+                    && let Some((tick, _)) = seg_points.last_mut()
+                    && *tick >= snap
+                {
+                    *tick -= snap;
+                }
+                points.extend(seg_points);
             }
         }
         // 合并颜料桶已填充格点（封闭区域内部 → 实心），整体去重

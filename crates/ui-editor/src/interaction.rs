@@ -8,7 +8,7 @@
 
 mod edit_ops;
 mod i2m;
-mod line_tool;
+pub(crate) mod line_tool;
 mod moved;
 mod pressed;
 mod released;

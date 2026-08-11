@@ -28,9 +28,33 @@ fn test_confirm_line_creates_notes() {
     let mut editor = line_editor();
     seed_notes(&mut editor, 1, 0, &[]);
     assert!(editor.confirm_line_tool());
-    // 水平线：3 个格点 → 3 个音符
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 3);
+    // 水平线 (0,60)-(3840,60)：终点锚点对齐最后一个音符尾部 →
+    // 格点 (0,1920,3840) 中终点格点 -snap 与相邻格点去重 → 2 个音符
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
     assert!(editor.editor_state.line_tool.paths.is_empty(), "确认后清空");
+}
+
+#[test]
+fn test_confirm_last_anchor_aligns_note_tail() {
+    // 最后一个锚点对齐最后一个音符**尾部**（原行为头部对齐：曲线终点
+    // 处会多出 [tick, tick+snap) 半格音符，尾部超出曲线终点）
+    let mut editor = line_editor();
+    seed_notes(&mut editor, 1, 0, &[]);
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 2, "曲线 (0,60)-(3840,60) 铺满 2 个音符");
+    let max_end = notes
+        .iter()
+        .map(|n| n.end_tick)
+        .max()
+        .expect("确认后应有音符");
+    assert_eq!(max_end, 3840, "最后一个音符尾部对齐终点锚点");
+    let max_start = notes
+        .iter()
+        .map(|n| n.start_tick)
+        .max()
+        .expect("确认后应有音符");
+    assert_eq!(max_start, 1920, "最后一个音符头部 = 锚点 - snap");
 }
 
 #[test]
@@ -50,8 +74,9 @@ fn test_confirm_multiple_paths_batch() {
         line.push_anchor(1, (3840.0, 68.0));
     }
     assert!(editor.confirm_line_tool());
-    // 3 + 5 = 8 个格点（无重叠）
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 8);
+    // 路径 1 水平 3 格 → 终点去重后 2；路径 2 垂直 5 格 → 终点 -snap 新增 1
+    // → 总 2 + 5 = 7 个音符
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 7);
     assert!(editor.editor_state.line_tool.paths.is_empty());
 }
 
@@ -71,7 +96,8 @@ fn test_confirm_incomplete_paths_skipped() {
             .push(vec![lumino_editor_state::BezierAnchor::new((0.0, 70.0))]);
     }
     assert!(editor.confirm_line_tool());
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
+    // 路径 (0,60)-(1920,60)：2 格点 → 终点 -snap 与起点去重 → 1 个音符
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
     assert!(editor.editor_state.line_tool.paths.is_empty());
 }
 

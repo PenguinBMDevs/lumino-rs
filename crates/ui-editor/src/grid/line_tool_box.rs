@@ -13,6 +13,7 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::content_bounds;
+use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_message::Tool;
@@ -194,23 +195,12 @@ pub fn draw(
         }
     }
 
-    // 颜料桶实心填充：已填充格点以半透明色块显示（√ 确认后成为实心音符）
-    if line.has_fill() {
-        let v = &editor.editor_state.view;
+    // 颜料桶矢量填充：闭环几何（边缘 = 实际曲线轮廓，与精度/key 网格无关）
+    if let Some(region) = fill_region(editor) {
         let fill_color =
             iced_core::Color::from_rgba(anchor_color.r, anchor_color.g, anchor_color.b, FILL_ALPHA);
-        // 色块尺寸 = 网格单元：tick 方向一格 = snap × zoom_x（zoom_x 为 像素/tick，
-        // 一格含 snap 个 tick），key 方向一行 = zoom_y
-        let cell_w = (v.snap_precision.max(1.0) * v.zoom_x).max(1.0);
-        let cell_h = v.zoom_y.max(1.0);
-        for &(tick, key) in &line.fill {
-            let p = editor.line_pos_screen_pos((tick, key as f32));
-            let rect = Rectangle::new(
-                Point::new(p.x - cell_w * 0.5, p.y - cell_h * 0.5),
-                Size::new(cell_w, cell_h),
-            );
-            frame.fill(&Path::rectangle(rect.position(), rect.size()), fill_color);
-        }
+        let path = build_fill_path(editor, &region);
+        frame.fill(&path, fill_color);
         has_content = true;
     }
 
@@ -238,70 +228,67 @@ pub fn draw(
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use lumino_core::Tool;
-
-    /// 构造曲线工具 + 两条完整路径的编辑器（默认视图 128 键 × 20px、画布 800x600）
-    ///
-    /// 路径 1：key 105..110（y 364..464）与 tick 5000..5300（x 620..650）；
-    /// 路径 2：key 90..95（y 764..864——超出画布但几何计算不受影响）。
-    fn multi_curve_editor() -> Editor {
-        let mut editor = Editor::new();
-        editor.editor_state.tool = Tool::Curve;
-        {
-            let line = &mut editor.editor_state.line_tool;
-            line.paths.push(Vec::new());
-            line.push_anchor(0, (5000.0, 105.0));
-            line.push_anchor(0, (5300.0, 110.0));
-            line.paths.push(Vec::new());
-            line.push_anchor(1, (5400.0, 90.0));
-            line.push_anchor(1, (5700.0, 95.0));
+/// 构建填充路径（画布坐标）：填充边缘 = 闭环几何轮廓本身
+///
+/// iced canvas 填充默认 NonZero（绕数）规则，与填充判定的 winding 一致：
+/// - 背景模式：顺时针范围矩形 + 全部闭环**反向**（洞）+ 已填闭环原方向
+///   （矩形 +1、反向环 -1 → 未填环内为 0 = 洞；已填环再 +1 → 填充）；
+/// - 内部模式：只画已填闭环（原方向）。
+fn build_fill_path(editor: &Editor, region: &FillRegion) -> Path {
+    Path::new(|p| {
+        if region.has_background {
+            let (min_t, min_k, max_t, max_k) = region.bounds;
+            let a = editor.line_pos_screen_pos((min_t, min_k));
+            let b = editor.line_pos_screen_pos((max_t, max_k));
+            // 背景范围矩形（顺时针 → 内部绕数 +1）
+            p.move_to(Point::new(a.x, a.y));
+            p.line_to(Point::new(b.x, a.y));
+            p.line_to(Point::new(b.x, b.y));
+            p.line_to(Point::new(a.x, b.y));
+            // 全部闭环反向 → 洞（未填图形内部不显示填充）
+            for lp in &region.all_loops {
+                draw_loop(p, lp, true, editor);
+            }
+            // 已填闭环原方向 → 与洞抵消后内部绕数 +1 → 显示填充
+            for lp in &region.filled_loops {
+                draw_loop(p, lp, false, editor);
+            }
+        } else {
+            for lp in &region.filled_loops {
+                draw_loop(p, lp, false, editor);
+            }
         }
-        editor.editor_state.canvas.size_x = 800.0;
-        editor.editor_state.canvas.size_y = 600.0;
-        editor
-    }
+    })
+}
 
-    #[test]
-    fn test_button_rects_centered_on_all_paths() {
-        // 两条路径：按钮垂直中心 = 两条路径包围盒中心
-        let editor = multi_curve_editor();
-        let btns = line_button_rects(&editor).expect("按钮应存在");
-        let (min_x, max_x, min_y, max_y) = paths_bounds(&editor).expect("包围盒应存在");
-
-        let mid_y = (min_y + max_y) * 0.5;
-        let btn_center_y = btns.confirm.y + BUTTON_SIZE * 0.5;
-        assert!(
-            (btn_center_y - mid_y).abs() < 1.0,
-            "按钮应垂直居中于全部路径包围盒（mid_y {mid_y} vs center {btn_center_y}）"
-        );
-        let mid_x = (min_x + max_x) * 0.5;
-        assert!(btns.confirm.x >= mid_x, "按钮应在包围盒右侧");
-        // 按钮完整位于内容区内
-        let content = content_bounds(&editor);
-        for rect in [btns.confirm, btns.cancel] {
-            assert!(rect.x >= content.x);
-            assert!(rect.y >= content.y);
-            assert!(rect.x + rect.width <= content.x + content.width);
-            assert!(rect.y + rect.height <= content.y + content.height);
+/// 画一个环（逻辑坐标 → 画布坐标），reversed = 反向作为洞（NonZero 规则下
+/// 矩形 +1 与反向环 -1 抵消 → 环内绕数 0 = 洞）
+fn draw_loop(p: &mut canvas::path::Builder, pts: &[(f32, f32)], reversed: bool, editor: &Editor) {
+    let n = pts.len();
+    let mut idx = if reversed { n.saturating_sub(1) } else { 0 };
+    let mut first = true;
+    loop {
+        let (tx, ty) = pts[idx];
+        let s = editor.line_pos_screen_pos((tx, ty));
+        if first {
+            p.move_to(Point::new(s.x, s.y));
+            first = false;
+        } else {
+            p.line_to(Point::new(s.x, s.y));
         }
-    }
-
-    #[test]
-    fn test_button_rects_none_for_other_tool() {
-        let mut editor = multi_curve_editor();
-        editor.editor_state.tool = Tool::Pencil;
-        assert!(line_button_rects(&editor).is_none());
-    }
-
-    #[test]
-    fn test_button_rects_none_without_complete_path() {
-        // 只有一条未完整路径 → 不显示按钮
-        let mut editor = multi_curve_editor();
-        editor.editor_state.line_tool.paths[1].clear();
-        editor.editor_state.line_tool.paths[0].truncate(1);
-        assert!(line_button_rects(&editor).is_none());
+        if reversed {
+            if idx == 0 {
+                break;
+            }
+            idx -= 1;
+        } else {
+            idx += 1;
+            if idx >= n {
+                break;
+            }
+        }
     }
 }
+
+#[cfg(test)]
+mod tests;
