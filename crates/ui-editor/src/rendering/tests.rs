@@ -113,10 +113,13 @@ fn copy_ghost_idle_with_pending_copy_marks_selected() {
     assert!(!is_copy_ghosted(0, &pending_copy, &edit_state));
     // 副本偏移来自 pending_copy
     assert_eq!(
-        copy_delta_for_index(1, &pending_copy, &edit_state),
+        copy_delta_for_index(1, &pending_copy, &None, &edit_state),
         Some((120, 3))
     );
-    assert_eq!(copy_delta_for_index(0, &pending_copy, &edit_state), None);
+    assert_eq!(
+        copy_delta_for_index(0, &pending_copy, &None, &edit_state),
+        None
+    );
 }
 
 #[test]
@@ -128,7 +131,7 @@ fn copy_ghost_dragging_copy_state_marks_selected() {
     assert!(is_copy_ghosted(2, &pending_copy, &edit_state));
     assert!(!is_copy_ghosted(0, &pending_copy, &edit_state));
     assert_eq!(
-        copy_delta_for_index(2, &pending_copy, &edit_state),
+        copy_delta_for_index(2, &pending_copy, &None, &edit_state),
         Some((240, -5))
     );
 }
@@ -141,10 +144,13 @@ fn copy_ghost_merges_pending_copy_and_current_drag() {
     let edit_state = EditState::DraggingSelectionCopy { drag_state };
 
     assert_eq!(
-        copy_delta_for_index(1, &pending_copy, &edit_state),
+        copy_delta_for_index(1, &pending_copy, &None, &edit_state),
         Some((150, 5))
     );
-    assert_eq!(copy_delta_for_index(0, &pending_copy, &edit_state), None);
+    assert_eq!(
+        copy_delta_for_index(0, &pending_copy, &None, &edit_state),
+        None
+    );
 }
 
 #[test]
@@ -183,4 +189,54 @@ fn has_active_ghost_delta_includes_copy_states() {
     assert!(has_active_ghost_delta(&None, &None, &copy_state));
     // 无任何 ghost 状态 → false
     assert!(!has_active_ghost_delta(&None, &None, &EditState::Idle));
+}
+
+// ===== 复制副本跟随原件移动（move delta 叠加） =====
+
+#[test]
+fn copy_delta_stacks_move_delta_pending_drag() {
+    // 场景：复制松手（pending_copy=100）→ 普通拖动移动原件（pending_drag=50）
+    // 副本应跟随原件移动：副本位置 = 原件 + 100 + 50 = 150
+    let pending_copy = Some(drag_state_with_selected(&[1], 4, 100, 2));
+    let pending_drag = Some(drag_state_with_selected(&[1], 4, 50, 3));
+    let edit_state = EditState::Idle;
+
+    assert_eq!(
+        copy_delta_for_index(1, &pending_copy, &pending_drag, &edit_state),
+        Some((150, 5))
+    );
+}
+
+#[test]
+fn copy_delta_stacks_move_delta_dragging_selection() {
+    // 场景：复制松手（pending_copy=100）→ 用户正在普通拖动（DraggingSelection，drag=50）
+    let pending_copy = Some(drag_state_with_selected(&[0], 4, 100, 0));
+    let move_state = EditState::DraggingSelection {
+        drag_state: drag_state_with_selected(&[0], 4, 50, 0),
+    };
+
+    assert_eq!(
+        copy_delta_for_index(0, &pending_copy, &None, &move_state),
+        Some((150, 0))
+    );
+    // 未选中的音符无副本偏移
+    assert_eq!(
+        copy_delta_for_index(2, &pending_copy, &None, &move_state),
+        None
+    );
+}
+
+#[test]
+fn copy_delta_merges_all_three_sources() {
+    // 极端组合：pending_drag + pending_copy + DraggingSelectionCopy 同时生效
+    let pending_copy = Some(drag_state_with_selected(&[0], 2, 100, 0));
+    let pending_drag = Some(drag_state_with_selected(&[0], 2, 10, 0));
+    let copy_state = EditState::DraggingSelectionCopy {
+        drag_state: drag_state_with_selected(&[0], 2, 5, 0),
+    };
+
+    assert_eq!(
+        copy_delta_for_index(0, &pending_copy, &pending_drag, &copy_state),
+        Some((115, 0))
+    );
 }

@@ -117,19 +117,34 @@ pub(crate) fn is_copy_ghosted(
 
 /// 计算复制副本的偏移量（`DraggingSelectionCopy` 拖动中 / `pending_copy` 待提交）
 ///
-/// 返回 `None` 表示音符不在复制选中集合中。合并规则与
-/// `ghost_delta_for_index`（移动）对称：pending_copy 与当前 drag_state
-/// 的 delta 相加（再次复制拖动期间，旧副本与新副本同时可见）。
+/// 返回 `None` 表示音符不在复制选中集合中。合并规则：
+/// - 移动 delta（`pending_drag` + `Dragging`/`DraggingSelection`）：副本跟随
+///   原件一起移动——复制松手后用户普通拖动选区，副本应保持在原件旁
+/// - 复制 delta（`pending_copy` + `DraggingSelectionCopy`）：副本相对原件的偏移
+///
+/// 总偏移 = 移动 delta + 复制 delta。再次复制拖动期间，旧副本（pending_copy）
+/// 与新副本（drag_state）同时可见。
 #[inline]
 pub(crate) fn copy_delta_for_index(
     i: usize,
     pending_copy: &Option<lumino_editor_state::DragState>,
+    pending_drag: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
 ) -> Option<(i64, i16)> {
     let mut delta_tick = 0i64;
     let mut delta_key = 0i16;
     let mut has_delta = false;
 
+    // 移动 delta（原件移动 → 副本跟随）
+    if let Some(drag) = pending_drag
+        && i < drag.selected.len()
+        && drag.selected[i]
+    {
+        delta_tick = delta_tick.saturating_add(drag.delta_tick);
+        delta_key = delta_key.saturating_add(drag.delta_key);
+        has_delta = true;
+    }
+    // 复制 delta（pending_copy + 当前复制拖动的 drag_state）
     if let Some(copy) = pending_copy
         && i < copy.selected.len()
         && copy.selected[i]
@@ -138,13 +153,19 @@ pub(crate) fn copy_delta_for_index(
         delta_key = delta_key.saturating_add(copy.delta_key);
         has_delta = true;
     }
-    if let EditState::DraggingSelectionCopy { drag_state } = edit_state
-        && i < drag_state.selected.len()
-        && drag_state.selected[i]
-    {
-        delta_tick = delta_tick.saturating_add(drag_state.delta_tick);
-        delta_key = delta_key.saturating_add(drag_state.delta_key);
-        has_delta = true;
+    match edit_state {
+        // 移动拖动（Dragging / DraggingSelection）：副本跟随原件实时移动
+        // 复制拖动（DraggingSelectionCopy）：副本相对原件的新偏移（含累积）
+        EditState::Dragging { drag_state, .. }
+        | EditState::DraggingSelection { drag_state }
+        | EditState::DraggingSelectionCopy { drag_state }
+            if i < drag_state.selected.len() && drag_state.selected[i] =>
+        {
+            delta_tick = delta_tick.saturating_add(drag_state.delta_tick);
+            delta_key = delta_key.saturating_add(drag_state.delta_key);
+            has_delta = true;
+        }
+        _ => {}
     }
 
     has_delta.then_some((delta_tick, delta_key))

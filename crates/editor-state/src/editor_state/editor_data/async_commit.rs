@@ -156,7 +156,10 @@ fn apply_move_ops_to_clone(
                 let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
                 if note.start_tick != new_tick || note.key != new_key {
                     note.start_tick = new_tick;
-                    note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
+                    // 移动不改变长度：end_tick 跟随 start_tick 平移（旧实现右移时长度被压缩）
+                    let new_end =
+                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                    note.end_tick = new_end;
                     note.key = new_key;
                     modified += 1;
                 }
@@ -236,6 +239,41 @@ mod tests {
         assert!(data.undo());
         assert_eq!(data.get_note_view(0).unwrap().tick, 0.0);
         assert_eq!(data.get_note_view(0).unwrap().key, 60);
+    }
+
+    #[test]
+    fn test_async_commit_preserves_note_length() {
+        let mut data = make_data_with_notes();
+        let ops = data.move_ops_from_drag_state(&{
+            let mut bv = BitVec::from_elem(3, false);
+            bv.set(0, true);
+            let mut ds = DragState::new(bv, 0, 60);
+            ds.set_delta(100, 0);
+            ds
+        });
+
+        assert!(data.apply_move_ops_async(ops.clone(), 127).unwrap());
+        let modified = loop {
+            if let Some(result) = data.poll_async_commit() {
+                break result.unwrap();
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        };
+        assert_eq!(modified, 1);
+        // 右移 100：tick 0 → 100，长度必须保持
+        let view = data.get_note_view(0).unwrap();
+        assert_eq!(view.tick, 100.0);
+        assert_eq!(view.length, 1.0, "移动后长度必须保持 1.0");
+        // undo 恢复原位置，长度同样保持
+        assert!(data.undo());
+        let view = data.get_note_view(0).unwrap();
+        assert_eq!(view.tick, 0.0);
+        assert_eq!(view.length, 1.0, "undo 后长度必须保持 1.0");
+        // redo 再次应用，长度依旧保持
+        assert!(data.redo());
+        let view = data.get_note_view(0).unwrap();
+        assert_eq!(view.tick, 100.0);
+        assert_eq!(view.length, 1.0, "redo 后长度必须保持 1.0");
     }
 
     #[test]

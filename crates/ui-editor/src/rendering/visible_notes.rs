@@ -175,7 +175,7 @@ impl Editor {
                     // 复制模式：原始位置保留，副本在偏移位置追加一条实例
                     if is_copy_ghosted(i, pending_copy, edit_state)
                         && let Some((copy_dt, copy_dk)) =
-                            copy_delta_for_index(i, pending_copy, edit_state)
+                            copy_delta_for_index(i, pending_copy, pending, edit_state)
                     {
                         let copy_tick = (note.start_tick as f32 + copy_dt as f32).max(0.0);
                         let copy_key =
@@ -267,7 +267,7 @@ impl Editor {
                     // 复制模式：原始位置保留，副本在偏移位置追加一条实例
                     if is_copy_ghosted(i, pending_copy, edit_state)
                         && let Some((copy_dt, copy_dk)) =
-                            copy_delta_for_index(i, pending_copy, edit_state)
+                            copy_delta_for_index(i, pending_copy, pending, edit_state)
                     {
                         let copy_tick = (note.start_tick as f32 + copy_dt as f32).max(0.0);
                         let copy_key =

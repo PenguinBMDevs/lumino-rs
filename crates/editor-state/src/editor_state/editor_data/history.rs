@@ -279,11 +279,11 @@ impl EditorData {
                     if let Some(note) = track.get_mut(i)
                         && (note.start_tick as f32 != orig_tick || note.key != orig_key as u8)
                     {
+                        // 移动不改变长度：恢复 start 时按当前 length 平移 end
+                        // （forward 保证 end 跟随 start 平移，length 不变式成立）
+                        let length = note.end_tick.saturating_sub(note.start_tick).max(1);
                         note.start_tick = super::accessors::f32_to_tick(orig_tick);
-                        note.end_tick = note
-                            .end_tick
-                            .saturating_sub(0)
-                            .max(note.start_tick.saturating_add(1));
+                        note.end_tick = note.start_tick.saturating_add(length);
                         note.key = orig_key as u8;
                         modified += 1;
                     }
@@ -297,7 +297,10 @@ impl EditorData {
                         let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
                         if note.start_tick != new_tick || note.key != new_key {
                             note.start_tick = new_tick;
-                            note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
+                            // 移动不改变长度：end_tick 跟随 start_tick 平移
+                            let new_end =
+                                (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                            note.end_tick = new_end;
                             note.key = new_key;
                             modified += 1;
                         }

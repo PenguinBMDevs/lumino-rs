@@ -40,7 +40,12 @@ impl EditorData {
                     let mut note_f = super::accessors::event_to_note(note);
                     if drag_state.apply_to_note(&mut note_f, max_key) {
                         note.start_tick = super::accessors::f32_to_tick(note_f.tick);
-                        note.end_tick = note.end_tick.max(note.start_tick.saturating_add(1));
+                        // 移动不改变长度：end_tick 跟随 start_tick 平移。
+                        // 旧实现 end_tick 仅取 max(start+1)，右移时长度被压缩。
+                        let new_end = (note.end_tick as i64 + drag_state.delta_tick)
+                            .max(note.start_tick as i64 + 1)
+                            as u32;
+                        note.end_tick = new_end;
                         note.key = note_f.key as u8;
                         modified += 1;
                         modified_indices.push(note_idx);

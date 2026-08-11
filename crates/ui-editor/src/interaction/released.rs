@@ -115,8 +115,21 @@ impl Editor {
                 // 保存到 pending_copy_drag_state——副本持续显示在 UI 层。
                 // 用户点击空白处退出框选时才真正写入内存层
                 // （flush_pending_drag → commit_pending_copy）。
+                //
+                // **累积模式**：再次 Ctrl 拖动复制时，新 delta 叠加到旧副本
+                // delta 上——副本从"上次副本位置"继续偏移（新件也拥有
+                // Ctrl+拖动的复制能力）。渲染时副本位置 = note + pending_copy.delta。
                 if drag_state.is_delta_zero() {
                     tracing::debug!("Editor: 复制拖动 delta 为零，取消复制");
+                } else if let Some(mut pending) = self.pending_copy_drag_state.take() {
+                    pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
+                    pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
+                    tracing::debug!(
+                        "Editor: 累积 pending 复制 - 累积 delta=({}, {})",
+                        pending.delta_tick,
+                        pending.delta_key
+                    );
+                    self.pending_copy_drag_state = Some(pending);
                 } else {
                     tracing::debug!(
                         "Editor: 保存 pending 复制 - delta=({}, {})",

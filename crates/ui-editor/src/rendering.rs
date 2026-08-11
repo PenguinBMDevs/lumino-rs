@@ -10,7 +10,7 @@ mod ghost;
 mod tests;
 mod visible_notes;
 
-pub(crate) use ghost::ghost_delta_for_index;
+pub(crate) use ghost::{copy_delta_for_index, ghost_delta_for_index, is_copy_ghosted};
 
 use iced_core::{Length, Point};
 use iced_widget::canvas::Canvas;

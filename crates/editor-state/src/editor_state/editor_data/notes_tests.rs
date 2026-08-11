@@ -92,3 +92,33 @@ fn test_sync_track_notes_at_indices_creates_entry_when_missing() {
     assert_eq!(track[0].start_tick as f32, 5.0);
     assert_eq!(data.track_notes_gen, 0);
 }
+
+#[test]
+fn test_apply_drag_state_streaming_preserves_note_length() {
+    // 移动不改变长度：start 平移时 end 必须跟随，length = end - start 保持不变
+    let mut data = EditorData::with_f32_notes(1, &[Note::new(0.0, 60, 480.0)]);
+
+    let mut drag_state = DragState::from_single(0, 1, 0, 60);
+    drag_state.set_delta(200, 0); // 右移 200 tick
+    let modified = data.apply_drag_state_streaming(&drag_state, 127);
+    assert_eq!(modified, 1);
+
+    let view = data.get_note_view(0).unwrap();
+    assert_eq!(view.tick, 200.0);
+    assert_eq!(view.length, 480.0, "右移后长度必须保持 480");
+}
+
+#[test]
+fn test_apply_drag_state_streaming_preserves_length_on_left_move() {
+    // 左移（delta 为负）同样保持长度
+    let mut data = EditorData::with_f32_notes(1, &[Note::new(300.0, 60, 480.0)]);
+
+    let mut drag_state = DragState::from_single(0, 1, 300, 60);
+    drag_state.set_delta(-100, 0);
+    let modified = data.apply_drag_state_streaming(&drag_state, 127);
+    assert_eq!(modified, 1);
+
+    let view = data.get_note_view(0).unwrap();
+    assert_eq!(view.tick, 200.0);
+    assert_eq!(view.length, 480.0, "左移后长度必须保持 480");
+}

@@ -8,6 +8,7 @@
 use iced_core::Point;
 
 use super::super::{EditState, Editor, SelectionHitType};
+use crate::rendering::{copy_delta_for_index, is_copy_ghosted};
 use lumino_editor_state::editor_state::hit_test;
 
 impl Editor {
@@ -20,6 +21,7 @@ impl Editor {
         let max_key = view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending = &self.pending_drag_state;
+        let pending_copy = &self.pending_copy_drag_state;
 
         let has_selection_bitset = self.editor_state.interaction.selection_bitset.is_some();
         if selected.is_empty() && !has_selection_bitset {
@@ -28,9 +30,16 @@ impl Editor {
 
         // 判断是否需要 ghost delta（拖拽中或松手后待提交状态）
         // 注意：DraggingSelection 也需要 ghost，否则 selection_box 不跟随拖动
+        // 复制模式（DraggingSelectionCopy / pending_copy）同样需要：选择框要
+        // 覆盖副本位置（union 原件 ∪ 副本），否则副本没有"框选"视觉反馈
         let needs_ghost = pending.is_some()
-            || matches!(edit_state, EditState::Dragging { .. })
-            || matches!(edit_state, EditState::DraggingSelection { .. });
+            || pending_copy.is_some()
+            || matches!(
+                edit_state,
+                EditState::Dragging { .. }
+                    | EditState::DraggingSelection { .. }
+                    | EditState::DraggingSelectionCopy { .. }
+            );
 
         // 非 ghost 路径：使用增量维护的 selected_bounds，O(1)
         if !needs_ghost && let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
@@ -57,10 +66,10 @@ impl Editor {
         // 导致松手后每帧走 O(N) 的 ghost_on 回退（5.2s/帧 × 6帧 = 31s）。
         if needs_ghost && let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
             puffin::profile_scope!("get_selection_box_bounds::ghost_o1");
-            // 合并 pending delta 和当前 drag_state delta
+            // 移动 delta：pending_drag + 当前 Dragging/DraggingSelection drag
             // 当 pending 存在时（已松手但未提交），当前 drag_state 的 delta 仍需叠加，
             // 否则第二次拖动时选择框不跟随鼠标移动。
-            let (drag_dt, drag_dk) = {
+            let (move_dt, move_dk) = {
                 // 初始值：从 pending 获取（如果有）
                 let (mut dt, mut dk) = if let Some(pending) = pending {
                     (pending.delta_tick, pending.delta_key)
@@ -78,16 +87,68 @@ impl Editor {
                 }
                 (dt, dk)
             };
-            let min_t = (min_t + drag_dt as f32).max(0.0);
-            let max_te = max_te + drag_dt as f32;
-            let max_k = (max_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
-            let min_k = (min_k as i32 + drag_dk as i32).clamp(0, max_key as i32) as u16;
+            // 复制 delta：pending_copy + DraggingSelectionCopy drag
+            let (copy_dt, copy_dk) = {
+                let (mut dt, mut dk) = if let Some(copy) = pending_copy {
+                    (copy.delta_tick, copy.delta_key)
+                } else {
+                    (0i64, 0i16)
+                };
+                if let EditState::DraggingSelectionCopy { drag_state } = edit_state {
+                    dt = dt.saturating_add(drag_state.delta_tick);
+                    dk = dk.saturating_add(drag_state.delta_key);
+                }
+                (dt, dk)
+            };
+
+            let move_active = pending.is_some()
+                || matches!(
+                    edit_state,
+                    EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+                );
+            let copy_active = pending_copy.is_some()
+                || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
+
+            // 选择框包围盒 = 所有渲染位置：
+            // - 移动 ghost（原件被移走的位置）
+            // - 原件位置（复制模式且未移动时保留）
+            // - 复制 ghost（副本位置 = 原件 + 移动 delta + 复制 delta）
+            let mut rects: [(f32, f32, u16, u16); 3] = [(0.0, 0.0, 0, 0); 3];
+            let mut n = 0usize;
+            if move_active {
+                rects[n] = ghost_rect(min_t, max_te, max_k, min_k, move_dt, move_dk, max_key);
+                n += 1;
+            }
+            if copy_active {
+                if !move_active {
+                    rects[n] = (min_t, max_te, max_k, min_k);
+                    n += 1;
+                }
+                rects[n] = ghost_rect(
+                    min_t,
+                    max_te,
+                    max_k,
+                    min_k,
+                    move_dt.saturating_add(copy_dt),
+                    move_dk.saturating_add(copy_dk),
+                    max_key,
+                );
+                n += 1;
+            }
+            let (mut r_min_t, mut r_max_te, mut r_max_k, mut r_min_k) =
+                (f32::INFINITY, f32::NEG_INFINITY, u16::MIN, u16::MAX);
+            for &(t0, t1, k0, k1) in &rects[..n] {
+                r_min_t = r_min_t.min(t0);
+                r_max_te = r_max_te.max(t1);
+                r_max_k = r_max_k.max(k0);
+                r_min_k = r_min_k.min(k1);
+            }
             // 不缓存 ghost 结果（delta 每帧变化）
             return Some((
-                view.tick_to_x(min_t),
-                view.tick_to_x(max_te),
-                view.key_to_y(max_k),
-                view.key_to_y(min_k) + view.zoom_y,
+                view.tick_to_x(r_min_t),
+                view.tick_to_x(r_max_te),
+                view.key_to_y(r_max_k),
+                view.key_to_y(r_min_k) + view.zoom_y,
             ));
         }
         // 缓存失效时回退到 O(N) 计算（理论上不应发生，兜底）
@@ -116,11 +177,19 @@ impl Editor {
                 _ => (0i64, 0i16),
             };
 
-            // 同时计算 raw_bounds（用于恢复缓存）和 ghost_bounds（用于返回结果）
+            // 同时计算 raw_bounds（用于恢复缓存）和渲染 bounds（用于返回结果）
             let mut raw_min_t = f32::INFINITY;
             let mut raw_max_te = f32::NEG_INFINITY;
             let mut raw_max_k = u16::MIN;
             let mut raw_min_k = u16::MAX;
+
+            let move_active = pending.is_some()
+                || matches!(
+                    edit_state,
+                    EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+                );
+            let copy_active = pending_copy.is_some()
+                || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
 
             for &i in selected.iter() {
                 let Some(n) = data.get_note_view(i) else {
@@ -132,7 +201,14 @@ impl Editor {
                 raw_max_te = raw_max_te.max(n.tick + n.length);
                 raw_max_k = raw_max_k.max(n.key);
                 raw_min_k = raw_min_k.min(n.key);
-                // ghost bounds（有 delta）
+                // 复制模式且未移动：原件位置保留在框选内
+                if copy_active && !move_active {
+                    min_t = min_t.min(n.tick);
+                    max_te = max_te.max(n.tick + n.length);
+                    max_k = max_k.max(n.key);
+                    min_k = min_k.min(n.key);
+                }
+                // 移动 ghost bounds（有 delta）
                 let mut dt = drag_dt;
                 let mut dk = drag_dk;
                 if let Some(pending) = pending
@@ -142,12 +218,26 @@ impl Editor {
                     dt = dt.saturating_add(pending.delta_tick);
                     dk = dk.saturating_add(pending.delta_key);
                 }
-                let tick = (n.tick + dt as f32).max(0.0);
-                let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
-                min_t = min_t.min(tick);
-                max_te = max_te.max(tick + n.length);
-                max_k = max_k.max(key);
-                min_k = min_k.min(key);
+                if move_active {
+                    let tick = (n.tick + dt as f32).max(0.0);
+                    let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
+                    min_t = min_t.min(tick);
+                    max_te = max_te.max(tick + n.length);
+                    max_k = max_k.max(key);
+                    min_k = min_k.min(key);
+                }
+                // 复制 ghost bounds（副本位置 = 原件 + 移动 delta + 复制 delta）
+                if is_copy_ghosted(i, pending_copy, edit_state)
+                    && let Some((cdt, cdk)) =
+                        copy_delta_for_index(i, pending_copy, pending, edit_state)
+                {
+                    let tick = (n.tick + cdt as f32).max(0.0);
+                    let key = (n.key as i32 + cdk as i32).clamp(0, max_key as i32) as u16;
+                    min_t = min_t.min(tick);
+                    max_te = max_te.max(tick + n.length);
+                    max_k = max_k.max(key);
+                    min_k = min_k.min(key);
+                }
             }
 
             // 恢复 raw bounds 缓存，后续帧走 O(1) ghost 路径
@@ -190,4 +280,23 @@ impl Editor {
         let bounds = self.get_selection_box_bounds()?;
         hit_test::hit_test_selection_box(bounds, (pos.x, pos.y))
     }
+}
+
+/// 对 (min_t, max_te, max_k, min_k) 边界应用 ghost delta（tick 平移 + key clamp）
+#[inline]
+fn ghost_rect(
+    min_t: f32,
+    max_te: f32,
+    max_k: u16,
+    min_k: u16,
+    dt: i64,
+    dk: i16,
+    max_key: u16,
+) -> (f32, f32, u16, u16) {
+    (
+        (min_t + dt as f32).max(0.0),
+        max_te + dt as f32,
+        (max_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+        (min_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
+    )
 }

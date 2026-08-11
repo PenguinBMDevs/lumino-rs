@@ -42,7 +42,10 @@ impl EditorData {
                 let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
                 if note.start_tick != new_tick || note.key != new_key {
                     note.start_tick = new_tick;
-                    note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
+                    // 移动不改变长度：end_tick 跟随 start_tick 平移
+                    let new_end =
+                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                    note.end_tick = new_end;
                     note.key = new_key;
                     modified += 1;
                     modified_indices.push(note_idx);
@@ -88,7 +91,10 @@ impl EditorData {
                 let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
                 if note.start_tick != new_tick || note.key != new_key {
                     note.start_tick = new_tick;
-                    note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
+                    // 移动不改变长度：end_tick 跟随 start_tick 平移
+                    let new_end =
+                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                    note.end_tick = new_end;
                     note.key = new_key;
                     modified += 1;
                 }
@@ -166,7 +172,10 @@ impl EditorData {
                 let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
                 if note.start_tick != new_tick || note.key != new_key {
                     note.start_tick = new_tick;
-                    note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
+                    // 移动不改变长度：end_tick 跟随 start_tick 平移
+                    let new_end =
+                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                    note.end_tick = new_end;
                     note.key = new_key;
                     modified += 1;
                 }
