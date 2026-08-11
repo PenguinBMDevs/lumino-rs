@@ -1,25 +1,17 @@
-//! 颜料桶填充集成测试：填充封闭区域为实心（编辑层格点，不直接生成音符）
+//! 颜料桶填充集成测试：点击记录标记，√ 确认时按图形覆盖范围生成音符
 //!
-//! 填充语义：点击封闭区域内部 → 内部格点存入 `line_tool.fill`，
-//! √ 确认时与路径格点合并生成实心音符；× 清空；Ctrl+Z 撤销。
+//! 填充语义（基本矢量绘制软件模式）：点击封闭区域内部 → `line_tool.fill`
+//! 记录**标记**；√ 确认时按封闭图形覆盖范围计算全部格点，与路径格点
+//! 合并生成实心音符；× 清空；Ctrl+Z 撤销。
 
 use super::*;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::Tool;
 
-/// 按 (tick, key) 排序（tick 相同时按 key，保证断言稳定）
-fn sort_fill(fill: &mut Vec<(f32, u16)>) {
-    fill.sort_by(|a, b| {
-        a.0.partial_cmp(&b.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.cmp(&b.1))
-    });
-}
-
 /// 构造封闭矩形（两条路径围成，snap 固定 480）：
 /// P1: (0,60) → (960,60) → (960,62) → (0,62)（顶 + 右 + 底）
 /// P2: (0,62) → (0,60)（左侧竖线）
-/// 内部格点 = 仅 (480, 61)
+/// 内部格点 = tick 格 0..1 × key 60..61 = 4 格
 fn rect_editor() -> Editor {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
@@ -40,30 +32,21 @@ fn rect_editor() -> Editor {
 }
 
 #[test]
-fn test_fill_stores_cells_not_notes() {
+fn test_fill_stores_mark_not_notes() {
     let mut editor = rect_editor();
     seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
-    // 填充进入编辑层：不直接生成音符
+    // 点击只记录标记：不直接生成音符、不做区域计算
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
         0,
         "填充不应直接生成音符"
     );
-    // 几何填充：格点中心 ∈ (0,960)×(60,62) → tick 格 0..1 × key 60..61 = 4 格
-    let mut fill = editor.editor_state.line_tool.fill.clone();
-    sort_fill(&mut fill);
     assert_eq!(
-        fill,
-        vec![
-            (0.0f32, 60u16),
-            (0.0f32, 61u16),
-            (480.0f32, 60u16),
-            (480.0f32, 61u16)
-        ],
-        "矩形轮廓内部格点完全铺满"
+        editor.editor_state.line_tool.fill,
+        vec![(480.0f32, 61u16)],
+        "fill = 点击标记（非预计算格点集）"
     );
-    assert!(editor.editor_state.line_tool.has_fill());
 }
 
 #[test]
@@ -74,7 +57,7 @@ fn test_fill_undoable() {
     assert!(editor.undo(), "填充操作可撤销");
     assert!(
         !editor.editor_state.line_tool.has_fill(),
-        "撤销后填充格点清空"
+        "撤销后填充标记清空"
     );
     assert!(editor.redo(), "可重做");
     assert!(editor.editor_state.line_tool.has_fill(), "重做后填充恢复");
@@ -85,7 +68,7 @@ fn test_fill_click_again_clears() {
     let mut editor = rect_editor();
     seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
-    // 再点已填充格点 → 取消全部填充
+    // 再点已标记格点 → 取消全部填充
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert!(
         !editor.editor_state.line_tool.has_fill(),
@@ -97,14 +80,14 @@ fn test_fill_click_again_clears() {
 fn test_fill_boundary_click_fills_side() {
     let mut editor = rect_editor();
     seed_notes(&mut editor, 1, 0, &[]);
-    // 点击边界格点 (0,60)：格点中心 (240,60.5) 在矩形内 → 填内部（矢量颜料桶语义）
+    // 点击边界格点 (0,60)：标记记录（归属由 √ 时几何判定决定）
     editor.handle_fill_pressed(Point::new(0.0, 0.0), 0.0, 60);
     assert!(editor.editor_state.line_tool.has_fill());
-    // 点击外部 (1440,61) → 背景蔓延填充（非封闭方向），同样进入编辑层
+    // 点击外部 (1440,61) → 背景蔓延标记，同样进入编辑层
     editor.handle_fill_pressed(Point::new(0.0, 0.0), 1440.0, 61);
     assert!(
         editor.editor_state.line_tool.has_fill(),
-        "外部区域蔓延填充存入编辑层"
+        "外部区域标记存入编辑层"
     );
 }
 
@@ -114,7 +97,7 @@ fn test_confirm_merges_path_and_fill() {
     seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     // 路径格点（矩形四边：顶 3 + 右 3 + 底 3 去重连接点 = 7，左竖线新增 1 = 8）
-    // + 填充 1 格 = 9 格（无重叠）
+    // + 填充覆盖范围（矩形内部 4 格，与路径重叠 3）→ 去重后 9 格
     assert!(editor.confirm_line_tool());
     assert_eq!(editor.editor_state.data.current_track_note_count(), 9);
     assert!(
@@ -167,7 +150,7 @@ fn test_fill_enabled_state_lives_on_line_tool() {
 #[test]
 fn test_fill_full_ui_flow_default_snap() {
     // 真实 UI 链路（默认 snap=1920）：工具栏开关 → 画布点击（handle_pressed 入口）
-    // → 填充存入编辑层（不生成音符）→ √ 确认合并生成实心音符
+    // → 标记存入编辑层（不生成音符）→ √ 确认按覆盖范围生成实心音符
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
     // 视图参数使矩形 (0,60)-(5760,62) 位于画布可见区域：
@@ -195,25 +178,26 @@ fn test_fill_full_ui_flow_default_snap() {
     // 画布点击矩形内部格点 (1920,61)（handle_pressed 完整入口：snap_tick floor）
     let p = editor.line_pos_screen_pos((1920.0, 61.0));
     editor.handle_pressed(p, false);
-    let mut fill = editor.editor_state.line_tool.fill.clone();
-    sort_fill(&mut fill);
-    // 几何填充：格点中心 ∈ (0,5760)×(60,62) → tick 格 0..=2 × key 60..61 = 6 格
     assert_eq!(
-        fill,
-        vec![
-            (0.0f32, 60u16),
-            (0.0f32, 61u16),
-            (1920.0f32, 60u16),
-            (1920.0f32, 61u16),
-            (3840.0f32, 60u16),
-            (3840.0f32, 61u16),
-        ],
-        "矩形轮廓内部 6 格完全铺满，且不直接生成音符"
+        editor.editor_state.line_tool.fill,
+        vec![(1920.0f32, 61u16)],
+        "点击只记录一个标记"
     );
     assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
-    // √ 确认：路径格点 + 填充格点合并生成实心音符
+    // √ 确认：路径格点 + 填充覆盖范围（矩形内部 6 格）合并生成实心音符
     assert!(editor.confirm_line_tool());
-    assert!(editor.editor_state.data.current_track_note_count() >= 3);
+    let notes = editor.editor_state.data.current_track_notes();
+    // 内部格点（含与路径重叠的边界格点）全部覆盖
+    for t in [0.0, 1920.0, 3840.0] {
+        for k in [60u16, 61] {
+            assert!(
+                notes
+                    .iter()
+                    .any(|n| n.start_tick as f32 == t && n.key == k as u8),
+                "填充覆盖格点 ({t},{k})"
+            );
+        }
+    }
 }
 
 /// 弯曲封闭图形（左侧竖线带自定义柄向上拱起 → 采样格点跳格产生边界缝隙）
@@ -251,33 +235,35 @@ fn bent_rect_editor() -> Editor {
 fn test_fill_bent_curve_sealed_no_leak() {
     // 弯曲封闭图形内部可填：网格泛洪时代采样跳格导致漏穿
     // （表现为"封闭图形填不上、背景被填"）；几何绕数判定由曲线几何
-    // 决定内部，缝隙从根上不存在 → 轮廓内部 8 格完全铺满。
+    // 决定内部，缝隙从根上不存在 → √ 后轮廓内部 8 格完全铺满。
     let mut editor = bent_rect_editor();
+    seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
-    let mut fill = editor.editor_state.line_tool.fill.clone();
-    sort_fill(&mut fill);
-    // 矩形 (0,60)-(1920,62)：内部 = tick 格 0..=3 × key 60..61（左边界 x=0 曲线不侵占）
     assert_eq!(
-        fill,
-        vec![
-            (0.0f32, 60u16),
-            (0.0f32, 61u16),
-            (480.0f32, 60u16),
-            (480.0f32, 61u16),
-            (960.0f32, 60u16),
-            (960.0f32, 61u16),
-            (1440.0f32, 60u16),
-            (1440.0f32, 61u16),
-        ],
-        "弯曲封闭图形轮廓内部 8 格完全铺满"
+        editor.editor_state.line_tool.fill,
+        vec![(480.0f32, 61u16)],
+        "点击记录标记"
     );
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    // 矩形 (0,60)-(1920,62)：内部 = tick 格 0..=3 × key 60..61 全部覆盖
+    for t in [0.0, 480.0, 960.0, 1440.0] {
+        for k in [60u16, 61] {
+            assert!(
+                notes
+                    .iter()
+                    .any(|n| n.start_tick as f32 == t && n.key == k as u8),
+                "弯曲封闭图形内部格点 ({t},{k}) 覆盖"
+            );
+        }
+    }
 }
 
 #[test]
 fn test_fill_all_bent_closed_shape_sealed() {
     // 纯弯曲闭合图形（顶弧 + 底弧，无直线段）：两弧采样均跳格，
     // 缺口链直接通向外部。修复前内部点击泛洪从弧线缺口漏穿
-    // （"封闭图形填不上、背景被填"）；修复后 Bresenham 补连密封。
+    // （"封闭图形填不上、背景被填"）；几何绕数判定从根上密封。
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
     editor.editor_state.view.snap_precision = 1920.0;
@@ -303,19 +289,29 @@ fn test_fill_all_bent_closed_shape_sealed() {
         line.paths[1][1].set_in_handle((2880.0, -30.0));
     }
     // 点击两弧之间内部 (1920,61)
+    seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 1920.0, 61);
-    let fill = &editor.editor_state.line_tool.fill;
-    assert!(!fill.is_empty(), "封闭图形内部可填充");
+    assert_eq!(
+        editor.editor_state.line_tool.fill,
+        vec![(1920.0f32, 61u16)],
+        "点击记录标记"
+    );
+    assert!(editor.confirm_line_tool(), "封闭图形内部可生成音符");
+    let notes = editor.editor_state.data.current_track_notes();
     // 完全铺满：顶弧/底弧之间（x=1920 列顶弧高约 82、底弧低约 38）
     assert!(
-        fill.contains(&(1920.0, 61)) && fill.contains(&(1920.0, 75)),
+        notes.iter().any(|n| n.start_tick == 1920 && n.key == 61)
+            && notes.iter().any(|n| n.start_tick == 1920 && n.key == 75),
         "两弧之间内部格点完全铺满（不只填点击处）"
     );
     assert!(
-        !fill.contains(&(1920.0, 113)),
+        !notes.iter().any(|n| n.start_tick == 1920 && n.key == 113),
         "不得填充到弧线上方外部（背景不能被填）"
     );
-    assert!(!fill.contains(&(1920.0, 20)), "不得填充到弧线下方外部");
+    assert!(
+        !notes.iter().any(|n| n.start_tick == 1920 && n.key == 20),
+        "不得填充到弧线下方外部"
+    );
 }
 
 #[test]
@@ -346,12 +342,19 @@ fn test_fill_two_curves_nearly_closed() {
         line.paths[1][1].set_in_handle((2880.0, -30.0));
     }
     // 点击两弧之间内部 (1920,61)
+    seed_notes(&mut editor, 1, 0, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 1920.0, 61);
-    let fill = &editor.editor_state.line_tool.fill;
-    assert!(!fill.is_empty(), "接缝差 1 key 的封闭图形内部可填充");
-    assert!(fill.contains(&(1920.0, 61)), "内部格点被填充");
     assert!(
-        !fill.contains(&(1920.0, 113)),
+        editor.confirm_line_tool(),
+        "接缝差 1 key 的封闭图形内部可填"
+    );
+    let notes = editor.editor_state.data.current_track_notes();
+    assert!(
+        notes.iter().any(|n| n.start_tick == 1920 && n.key == 61),
+        "内部格点被填充"
+    );
+    assert!(
+        !notes.iter().any(|n| n.start_tick == 1920 && n.key == 113),
         "不得蔓延到背景（弧线上方外部）"
     );
 }

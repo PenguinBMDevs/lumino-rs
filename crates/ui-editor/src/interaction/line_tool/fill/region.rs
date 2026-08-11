@@ -1,9 +1,12 @@
 //! 填充区域的矢量几何（渲染层）：把填充状态转换为可绘制的闭环
 //!
 //! 填充的视觉由**曲线几何轮廓**决定（边缘贴合实际封闭图形），与
-//! snap 精度/key 间隔无关：内部填充 = 含已填格点的闭环；背景填充
-//! （点击外部蔓延）= 范围矩形减去全部闭环（NonZero 填充规则下
+//! snap 精度/key 间隔无关：内部填充 = 含标记格点的闭环；背景填充
+//! （标记在环外）= 可见范围矩形减去全部闭环（NonZero 填充规则下
 //! 反向环构成洞）。
+//!
+//! 环内判定 = 标记/格点**中心** vs 闭环绕数，与 √ 确认时的音符计算
+//! （`confirm_fill_cells`）同规则 → 填充显示与音符覆盖永远一致。
 
 use super::collect_edges;
 use super::loops::{assemble_loops, loop_contains_point};
@@ -14,15 +17,15 @@ use crate::Editor;
 pub(crate) struct FillRegion {
     /// 全部闭环（点序首尾重复；背景模式作为矩形洞）
     pub all_loops: Vec<Vec<(f32, f32)>>,
-    /// 含 ≥1 个已填格点的闭环（需要显示的内部填充）
+    /// 含 ≥1 个标记格点的闭环（需要显示的内部填充）
     pub filled_loops: Vec<Vec<(f32, f32)>>,
-    /// 是否存在背景填充（蔓延到范围边界）
+    /// 是否存在背景填充（蔓延到可见范围边界）
     pub has_background: bool,
-    /// 已填格点外接范围（半格扩边，背景矩形边界）
+    /// 背景矩形范围（tick/key 逻辑坐标；= 画布可见范围，与 √ 计算一致）
     pub bounds: (f32, f32, f32, f32),
 }
 
-/// 计算填充区域的矢量几何（渲染层用；点击判定/音符生成仍走 `fill_cells`）
+/// 计算填充区域的矢量几何（渲染层用；标记来自 `line_tool.fill`）
 pub(crate) fn fill_region(editor: &Editor) -> Option<FillRegion> {
     let line = &editor.editor_state.line_tool;
     if !line.has_fill() {
@@ -31,47 +34,36 @@ pub(crate) fn fill_region(editor: &Editor) -> Option<FillRegion> {
     let snap = editor.editor_state.view.snap_precision.max(1.0);
     let edges = collect_edges(&line.paths, snap);
     let all_loops = assemble_loops(&edges);
-    // 背景判定：存在不被任何闭环包含的已填格点（无闭环时全部是背景）
+    // 格点中心判定（与 √ 计算同规则 → 边框一致）
+    let center = |(t, k): (f32, u16)| (t + snap * 0.5, k as f32 + 0.5);
+    let contains = |lp: &Vec<(f32, f32)>, m: (f32, u16)| -> bool {
+        let (cx, cy) = center(m);
+        loop_contains_point(lp, cx, cy)
+    };
+    // 背景判定：存在不被任何闭环包含的标记（无闭环时全部是背景）
     let has_background = all_loops.is_empty()
-        || line.fill.iter().any(|&(t, k)| {
-            all_loops
-                .iter()
-                .all(|lp| !loop_contains_point(lp, t, k as f32))
-        });
-    // 需要显示的内部闭环：包含 ≥1 个已填格点
+        || line
+            .fill
+            .iter()
+            .any(|&m| all_loops.iter().all(|lp| !contains(lp, m)));
+    // 需要显示的内部闭环：包含 ≥1 个标记
     let filled_loops = all_loops
         .iter()
-        .filter(|lp| {
-            line.fill
-                .iter()
-                .any(|&(t, k)| loop_contains_point(lp, t, k as f32))
-        })
+        .filter(|lp| line.fill.iter().any(|&m| contains(lp, m)))
         .cloned()
         .collect();
-    // 已填格点外接范围（半格扩边）
-    let mut min_t = f32::MAX;
-    let mut max_t = f32::MIN;
-    let mut min_k = f32::MAX;
-    let mut max_k = f32::MIN;
-    for &(t, k) in &line.fill {
-        min_t = min_t.min(t);
-        max_t = max_t.max(t);
-        min_k = min_k.min(k as f32);
-        max_k = max_k.max(k as f32);
-    }
-    if min_t == f32::MAX {
-        return None;
-    }
+    // 背景矩形 = 画布可见 tick 区间 × 全键盘 key（与 confirm_fill_cells 范围一致）
+    let tick_lo = editor.x_to_tick(0.0).max(0.0);
+    let tick_hi = editor
+        .x_to_tick(editor.editor_state.canvas.size_x)
+        .max(tick_lo + snap);
+    let key_count = editor.editor_state.view.key_count;
+    let bounds = (tick_lo, 0.0, tick_hi, key_count.saturating_sub(1) as f32);
     Some(FillRegion {
         all_loops,
         filled_loops,
         has_background,
-        bounds: (
-            min_t - snap * 0.5,
-            min_k - 0.5,
-            max_t + snap * 0.5,
-            max_k + 0.5,
-        ),
+        bounds,
     })
 }
 
@@ -84,10 +76,16 @@ mod tests {
     /// 构造两条路径围合成的"近闭合矩形"（接缝差 1 key，由端点容差补边闭合）：
     /// 路径 1：key 60 顶边 (0,60)→(4,60)；路径 2：key 61 底边 (4,61)→(0,61)。
     /// 端点 (4,60)-(4,61) 差 1 key、(0,60)-(0,61) 差 1 key → 补边成环。
+    /// 视图固定：snap=1、zoom_x=0.25、画布 800x600、128 键
+    /// → 可见 tick 范围 [0, (800-120)/0.25 = 2720]。
     fn rect_editor(fill: &[(f32, u16)]) -> Editor {
         let mut editor = Editor::new();
         editor.editor_state.tool = Tool::Curve;
         editor.editor_state.view.snap_precision = 1.0;
+        editor.editor_state.view.zoom_x = 0.25;
+        editor.editor_state.view.zoom_y = 4.0;
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
         {
             let line = &mut editor.editor_state.line_tool;
             line.paths.push(Vec::new());
@@ -96,18 +94,18 @@ mod tests {
             line.paths.push(Vec::new());
             line.push_anchor(1, (4.0, 61.0));
             line.push_anchor(1, (0.0, 61.0));
-            line.add_fill_cells(fill);
+            line.add_fill_marks(fill);
         }
         editor
     }
 
     #[test]
     fn test_fill_region_interior_loop() {
-        // 填充格点在环内 → 内部模式：filled 环 = 该闭环，无背景
+        // 标记在环内 → 内部模式：filled 环 = 该闭环，无背景
         let editor = rect_editor(&[(2.0, 60)]);
         let region = fill_region(&editor).expect("有填充");
         assert_eq!(region.all_loops.len(), 1, "接缝补边闭合为一个环");
-        assert_eq!(region.filled_loops.len(), 1, "环包含已填格点 → 显示");
+        assert_eq!(region.filled_loops.len(), 1, "环含标记 → 显示");
         assert!(!region.has_background, "内部填充无背景");
         // 起点取决于组装顺序，断言顶点集合
         let mut verts = region.all_loops[0].clone();
@@ -124,12 +122,17 @@ mod tests {
 
     #[test]
     fn test_fill_region_background_spread() {
-        // 填充格点在环外 → 背景模式：filled 环为空，has_background
+        // 标记在环外 → 背景模式：filled 环为空，has_background
+        // 背景矩形 = 可见范围（[0,0]-[3200,127]），与 √ 计算一致
         let editor = rect_editor(&[(100.0, 100)]);
         let region = fill_region(&editor).expect("有填充");
-        assert!(region.has_background, "环外格点 = 背景蔓延");
+        assert!(region.has_background, "环外标记 = 背景蔓延");
         assert!(region.filled_loops.is_empty(), "无内部环需要显示");
-        assert_eq!(region.bounds, (99.5, 99.5, 100.5, 100.5), "外接范围扩半格");
+        assert_eq!(
+            region.bounds,
+            (0.0, 0.0, 2720.0, 127.0),
+            "背景矩形 = 可见范围"
+        );
     }
 
     #[test]
@@ -140,10 +143,10 @@ mod tests {
 
     #[test]
     fn test_fill_region_mixed_interior_and_background() {
-        // 混合：环内 + 环外格点 → 背景 + 内部环同时显示
+        // 混合：环内 + 环外标记 → 背景 + 内部环同时显示
         let editor = rect_editor(&[(2.0, 60), (100.0, 100)]);
         let region = fill_region(&editor).expect("有填充");
-        assert!(region.has_background, "存在环外格点 → 有背景");
-        assert_eq!(region.filled_loops.len(), 1, "环内格点 → 内部环显示");
+        assert!(region.has_background, "存在环外标记 → 有背景");
+        assert_eq!(region.filled_loops.len(), 1, "环内标记 → 内部环显示");
     }
 }

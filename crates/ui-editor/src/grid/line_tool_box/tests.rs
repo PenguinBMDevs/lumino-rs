@@ -30,6 +30,8 @@ fn two_rects_editor(fill: &[(f32, u16)]) -> Editor {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
     editor.editor_state.view.snap_precision = 1.0;
+    editor.editor_state.canvas.size_x = 800.0;
+    editor.editor_state.canvas.size_y = 600.0;
     {
         let line = &mut editor.editor_state.line_tool;
         // A
@@ -46,7 +48,7 @@ fn two_rects_editor(fill: &[(f32, u16)]) -> Editor {
         line.paths.push(Vec::new());
         line.push_anchor(3, (14.0, 61.0));
         line.push_anchor(3, (10.0, 61.0));
-        line.add_fill_cells(fill);
+        line.add_fill_marks(fill);
     }
     editor
 }

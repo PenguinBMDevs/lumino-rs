@@ -307,9 +307,10 @@ impl Editor {
     /// 成功后清空全部路径、填充与编辑历史；返回是否生成了音符。
     pub(crate) fn confirm_line_tool(&mut self) -> bool {
         let snap = self.editor_state.view.snap_precision;
+        let snap_max = snap.max(1.0);
         let line = &self.editor_state.line_tool;
         let paths = line.paths.clone();
-        let fill_cells = line.fill.clone();
+        let fill_marks = line.fill.clone();
         // 逐路径逐段离散化收集格点（段间连接点相邻重复，整体去重）。
         // 每条路径**最后一段的终点格点** = 路径终点锚点：其音符尾部对齐
         // 锚点（tick - snap 后与相邻格点去重合并 → 最后一个音符
@@ -332,9 +333,28 @@ impl Editor {
                 points.extend(seg_points);
             }
         }
-        // 合并颜料桶已填充格点（封闭区域内部 → 实心），整体去重
-        // （tick 转格索引去重，f32 不实现 Hash 不能直接做 key）
-        points.extend(fill_cells);
+        // 填充音符：√ 确认时按**图形覆盖范围**计算（标记 → 区域 → 全部格点）。
+        // 范围 = 画布可见 tick 区间 + 全键盘 key（与渲染背景矩形一致）。
+        if !fill_marks.is_empty() {
+            let tick_lo = self.x_to_tick(0.0).max(0.0);
+            let tick_hi = self
+                .x_to_tick(self.editor_state.canvas.size_x)
+                .max(tick_lo + snap_max);
+            let key_count = self.editor_state.view.key_count;
+            let edges = fill::collect_edges(&paths, snap_max);
+            let cells = fill::confirm_fill_cells(
+                &edges,
+                snap_max,
+                &fill_marks,
+                (
+                    (tick_lo / snap_max).floor() as i64,
+                    (tick_hi / snap_max).ceil() as i64,
+                ),
+                (0, key_count.saturating_sub(1)),
+            );
+            points.extend(cells.iter().map(|&(ti, k)| (ti as f32 * snap_max, k)));
+        }
+        // 整体去重（tick 转格索引去重，f32 不实现 Hash 不能直接做 key）
         let snap_key = snap.max(1.0);
         let mut seen = std::collections::HashSet::new();
         points.retain(|p| seen.insert(((p.0 / snap_key).round() as i64, p.1)));

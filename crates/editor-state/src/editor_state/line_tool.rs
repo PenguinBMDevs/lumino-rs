@@ -118,10 +118,10 @@ pub struct PathSnapshot {
 pub struct LineToolState {
     /// 全部路径（每条 = 锚点链，>= 2 个锚点为完整路径）
     pub paths: Vec<LinePath>,
-    /// 颜料桶已填充的封闭区域格点（逻辑坐标：tick = snap 倍数、key 整数）
+    /// 颜料桶填充标记（逻辑坐标：tick = snap 倍数、key 整数；每次点击一格）
     ///
-    /// 由颜料桶点击封闭区域内部生成，**不直接生成音符**；与路径一起
-    /// 在 √ 确认时合并生成实心音符，× 清空，Ctrl+Z 可撤销。
+    /// 标记不直接生成音符：√ 确认时按封闭图形覆盖范围计算全部格点
+    /// （`confirm_fill_cells`），× 清空，Ctrl+Z 可撤销。
     pub fill: Vec<(f32, u16)>,
     /// 当前交互阶段
     pub interaction: LineToolInteraction,
@@ -326,24 +326,24 @@ impl LineToolState {
 
     // ── 颜料桶填充 ─────────────────────────
 
-    /// 是否已有填充格点
+    /// 是否已有填充标记
     pub fn has_fill(&self) -> bool {
         !self.fill.is_empty()
     }
 
-    /// 合并新填充格点（去重）；返回新增数量
-    pub fn add_fill_cells(&mut self, cells: &[(f32, u16)]) -> usize {
+    /// 添加填充标记（去重）；返回新增数量
+    pub fn add_fill_marks(&mut self, marks: &[(f32, u16)]) -> usize {
         let mut added = 0;
-        for &cell in cells {
-            if !self.fill.contains(&cell) {
-                self.fill.push(cell);
+        for &mark in marks {
+            if !self.fill.contains(&mark) {
+                self.fill.push(mark);
                 added += 1;
             }
         }
         added
     }
 
-    /// 清除全部填充格点；返回是否清除了内容
+    /// 清除全部填充标记；返回是否清除了内容
     pub fn clear_fill(&mut self) -> bool {
         let had = self.has_fill();
         self.fill.clear();
