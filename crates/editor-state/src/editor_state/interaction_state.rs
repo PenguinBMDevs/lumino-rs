@@ -59,6 +59,15 @@ pub enum EditState {
     DraggingSelection {
         drag_state: DragState,
     },
+    /// 多音符批量复制拖动（Ctrl+拖动，ghost 方案）
+    ///
+    /// 与 `DraggingSelection` 的区别：原始音符保持原位不动，
+    /// 副本在 `note + drag_state.delta` 位置渲染预览（UI 层）。
+    /// 松手后保存到 `pending_copy_drag_state`，用户点击空白处退出
+    /// 框选时才真正 `batch_insert_notes` 写入内存层。
+    DraggingSelectionCopy {
+        drag_state: DragState,
+    },
     ResizingSelectionStart {
         last_tick: f32,
     },
@@ -149,6 +158,20 @@ mod tests {
                 assert_ne!(variants[i], variants[j]);
             }
         }
+    }
+
+    #[test]
+    fn test_dragging_selection_copy_variant() {
+        use crate::editor_state::drag_state::DragState;
+        // 复制拖动变体携带独立 DragState，可区分于移动拖动
+        let copy_state = EditState::DraggingSelectionCopy {
+            drag_state: DragState::default(),
+        };
+        let move_state = EditState::DraggingSelection {
+            drag_state: DragState::default(),
+        };
+        assert_ne!(copy_state, move_state);
+        assert_ne!(copy_state, EditState::default());
     }
 
     #[test]

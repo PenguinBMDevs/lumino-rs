@@ -33,6 +33,7 @@ impl Editor {
                 loop_range: Some(grid::LoopRange::new()),
                 notes_changed: false,
                 pending_drag_state: None,
+                pending_copy_drag_state: None,
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
                 cached_selection_bounds: Cell::new(None),
@@ -154,11 +155,12 @@ impl Editor {
     /// 检查当前是否处于编辑状态（拦截 Undo/Redo/Save/Play/Export 用）
     ///
     /// 返回 `true` 当用户正在进行音符编辑（拖动/绘制/调整大小），
-    /// 或有未提交的批量拖动（pending_drag_state），
+    /// 或有未提交的批量拖动/批量复制（pending_drag_state / pending_copy_drag_state），
     /// 或正在进行曲线路径编辑（锚点/控制柄拖动）。
     pub fn is_editing(&self) -> bool {
         use crate::EditState;
         self.pending_drag_state.is_some()
+            || self.pending_copy_drag_state.is_some()
             || self.editor_state.data.has_pending_commit()
             || self.editor_state.line_tool.interaction
                 != lumino_editor_state::LineToolInteraction::None
@@ -166,6 +168,7 @@ impl Editor {
                 self.editor_state.interaction.edit_state,
                 EditState::Dragging { .. }
                     | EditState::DraggingSelection { .. }
+                    | EditState::DraggingSelectionCopy { .. }
                     | EditState::PendingDrag { .. }
                     | EditState::Drawing { .. }
                     | EditState::ResizingStart { .. }
@@ -175,18 +178,22 @@ impl Editor {
             )
     }
 
-    /// 是否有未提交的批量拖动（pending commit 状态）
+    /// 是否有未提交的批量拖动（pending commit 状态，含批量复制）
     pub fn has_pending_drag(&self) -> bool {
-        self.pending_drag_state.is_some() || self.editor_state.data.has_pending_commit()
+        self.pending_drag_state.is_some()
+            || self.pending_copy_drag_state.is_some()
+            || self.editor_state.data.has_pending_commit()
     }
 
-    /// 丢弃未提交的批量拖动（不含异步提交中的 pending commit）
+    /// 丢弃未提交的批量拖动/批量复制（不含异步提交中的 pending commit）
     ///
     /// 图片转 MIDI √ 写入后调用：写入改变了 document 音符数量与顺序，
-    /// 残留的 `pending_drag_state.selected` 是写入前的全局索引，继续保留会
-    /// 导致后续 resize/拖动按旧索引取位、误伤周围音符（连带改变长度）。
+    /// 残留的 `pending_drag_state.selected` / `pending_copy_drag_state.selected`
+    /// 是写入前的全局索引，继续保留会导致后续 resize/拖动按旧索引取位、
+    /// 误伤周围音符（连带改变长度）。
     pub fn clear_pending_drag(&mut self) {
         self.pending_drag_state = None;
+        self.pending_copy_drag_state = None;
     }
 
     /// 提交 pending 批量拖动到 document（音符唯一权威）
@@ -233,6 +240,82 @@ impl Editor {
                 false
             }
         }
+    }
+
+    /// 提交 pending 批量复制到 document（音符唯一权威）
+    ///
+    /// 在以下场景调用：
+    /// - 用户点击空白处取消框选时（`flush_pending_drag`）
+    /// - `commit_current_edit()` 自动提交（Save/Play/Export 前的 fallback）
+    ///
+    /// 复制模式：将选中音符按 `pending_copy_drag_state.delta` 偏移后
+    /// `batch_insert_notes` 写入内存层，并选中新插入的副本（与粘贴
+    /// `commit_pasted_notes` 语义一致）。返回 `true` 表示已写入。
+    /// 如果 pending 为 None 或 delta 为零，返回 false。
+    pub fn commit_pending_copy(&mut self) -> bool {
+        crate::puffin_profiler::commit_pending_copy();
+        let Some(drag_state) = self.pending_copy_drag_state.as_ref() else {
+            return false;
+        };
+        if drag_state.is_delta_zero() {
+            tracing::debug!("Editor: pending 复制 delta 为零，跳过提交");
+            self.pending_copy_drag_state = None;
+            return false;
+        }
+
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        // 构造副本音符列表（原始位置 + delta，tick/key clamp 到合法范围）
+        let notes: Vec<Note> = drag_state
+            .selected_indices_fast()
+            .into_iter()
+            .filter_map(|i| self.editor_state.data.get_note_view(i))
+            .map(|n| {
+                let tick = (n.tick + drag_state.delta_tick as f32).max(0.0);
+                let key =
+                    (n.key as i32 + drag_state.delta_key as i32).clamp(0, max_key as i32) as u16;
+                Note::from_raw(tick, key, n.length, n.velocity, n.channel)
+            })
+            .collect();
+        if notes.is_empty() {
+            self.pending_copy_drag_state = None;
+            return false;
+        }
+
+        // 与粘贴提交（commit_pasted_notes）一致：push history → batch insert → 选中新副本
+        self.push_history();
+        self.selection_clear();
+        let inserted = self.editor_state.data.batch_insert_notes(&notes);
+        self.editor_state.data.mark_current_track_changed();
+        // 插入后同步 NoteStore（降级 no-op，保留调用兼容）
+        self.editor_state.data.sync_note_store();
+        // batch_insert_notes 按 start_tick 有序插入：副本 tick 可能落在现有音符
+        // 之间，索引散布而非连续追加。因此不能用 `start..start+inserted` 连续
+        // 区间选中（会误选未复制的原始音符）——改用窗口查询按参数全等精确匹配
+        // 每个副本，与 hit_test 的 ChunkedList 窗口扫描同机制（O(log N + K)）。
+        let mut new_indices: Vec<usize> = Vec::with_capacity(inserted);
+        let track_notes = self.editor_state.data.current_track_notes();
+        for note in &notes {
+            let tick_u32 = note.tick.max(0.0) as u32;
+            let (lo, hi) = track_notes.window_range(tick_u32, tick_u32 + 1, 0);
+            for (i, ev) in track_notes.iter_window(lo, hi) {
+                if ev.start_tick as f32 == note.tick
+                    && ev.key == note.key as u8
+                    && (ev.end_tick - ev.start_tick) as f32 == note.length
+                    && ev.velocity == note.velocity
+                    && ev.channel == note.channel
+                {
+                    new_indices.push(i);
+                    break;
+                }
+            }
+        }
+        for i in new_indices {
+            self.selection_insert(i);
+        }
+        self.mark_notes_changed();
+        self.pending_copy_drag_state = None;
+        tracing::info!("Editor: 已复制 {} 个音符", inserted);
+        true
     }
 
     /// 轮询异步提交结果
@@ -294,7 +377,8 @@ impl Editor {
     ///
     /// **延迟提交方案**：`DraggingSelection` 的 `handle_released` 只把 delta 保存到
     /// `pending_drag_state`，不真正 apply。这里必须再调 `commit_pending_drag`，
-    /// 否则 Save/Play/Export 时数据会丢失。
+    /// 否则 Save/Play/Export 时数据会丢失。`DraggingSelectionCopy` 同理
+    /// （`pending_copy_drag_state` → `commit_pending_copy`）。
     ///
     /// **异步提交**：Save/Play/Export 前会调用 `drain_async_commit` 确保数据已落盘。
     pub fn commit_current_edit(&mut self) -> bool {
@@ -308,12 +392,16 @@ impl Editor {
         let pending_committed = self.commit_pending_drag();
         // Save/Play/Export 前必须等待异步提交完成
         let drained = self.drain_async_commit();
+        // 复制模式：未写入的副本在保存/播放/导出前必须写入内存层。
+        // 必须在 drain 之后（异步提交整轨替换音符，先插入副本会被覆盖）
+        let copy_committed = self.commit_pending_copy();
         let after = self.editor_state.data.current_track_note_count();
         tracing::debug!(
-            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}, drained={}",
+            "Editor: 自动提交编辑（commit_current_edit），notes len {} -> {}, pending_committed={}, copy_committed={}, drained={}",
             before,
             after,
             pending_committed,
+            copy_committed,
             drained
         );
         true

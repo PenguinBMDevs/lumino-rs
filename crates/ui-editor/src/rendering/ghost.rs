@@ -65,20 +65,89 @@ pub(crate) fn ghost_delta_for_index(
 
 /// 检查是否存在需要 ghost delta 的活跃状态
 ///
-/// 检查 `pending_drag_state`、单音符 `Dragging` 和批量拖动 `DraggingSelection`。
-/// `DraggingSelection` 也纳入检查，确保第二次拖动（已有 pending 时）当前 drag delta
-/// 能正确渲染，避免音符视觉位置不随鼠标移动。性能方面：此函数在 hot loop 之外调用，
+/// 检查 `pending_drag_state`、`pending_copy_drag_state`、单音符 `Dragging`、
+/// 批量拖动 `DraggingSelection` 和复制拖动 `DraggingSelectionCopy`。
+/// `DraggingSelectionCopy` 也纳入检查，确保复制副本（原位置 + 偏移位置）
+/// 能正确渲染。性能方面：此函数在 hot loop 之外调用，
 /// 仅用于判断是否走 ghost 路径，开销可忽略。
 #[inline]
 pub(crate) fn has_active_ghost_delta(
     pending: &Option<lumino_editor_state::DragState>,
+    pending_copy: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
 ) -> bool {
     pending.is_some()
+        || pending_copy.is_some()
         || matches!(
             edit_state,
-            EditState::Dragging { .. } | EditState::DraggingSelection { .. }
+            EditState::Dragging { .. }
+                | EditState::DraggingSelection { .. }
+                | EditState::DraggingSelectionCopy { .. }
         )
+}
+
+/// 判断音符是否处于「复制 ghost」状态（Ctrl+拖动复制模式）
+///
+/// 与 `is_note_ghosted`（移动语义：音符从原位置"移走"）不同，复制模式下
+/// 原始音符**保留在原位置**，副本在 `note + delta` 位置额外渲染一份。
+/// 渲染层调用方在 push 原音符后，对 `is_copy_ghosted == true` 的音符
+/// 再追加一条副本实例。
+#[inline]
+pub(crate) fn is_copy_ghosted(
+    i: usize,
+    pending_copy: &Option<lumino_editor_state::DragState>,
+    edit_state: &EditState,
+) -> bool {
+    match edit_state {
+        EditState::DraggingSelectionCopy { drag_state }
+            if i < drag_state.selected.len() && drag_state.selected[i] =>
+        {
+            return true;
+        }
+        _ => {}
+    }
+    if let Some(copy) = pending_copy
+        && i < copy.selected.len()
+        && copy.selected[i]
+    {
+        return true;
+    }
+    false
+}
+
+/// 计算复制副本的偏移量（`DraggingSelectionCopy` 拖动中 / `pending_copy` 待提交）
+///
+/// 返回 `None` 表示音符不在复制选中集合中。合并规则与
+/// `ghost_delta_for_index`（移动）对称：pending_copy 与当前 drag_state
+/// 的 delta 相加（再次复制拖动期间，旧副本与新副本同时可见）。
+#[inline]
+pub(crate) fn copy_delta_for_index(
+    i: usize,
+    pending_copy: &Option<lumino_editor_state::DragState>,
+    edit_state: &EditState,
+) -> Option<(i64, i16)> {
+    let mut delta_tick = 0i64;
+    let mut delta_key = 0i16;
+    let mut has_delta = false;
+
+    if let Some(copy) = pending_copy
+        && i < copy.selected.len()
+        && copy.selected[i]
+    {
+        delta_tick = delta_tick.saturating_add(copy.delta_tick);
+        delta_key = delta_key.saturating_add(copy.delta_key);
+        has_delta = true;
+    }
+    if let EditState::DraggingSelectionCopy { drag_state } = edit_state
+        && i < drag_state.selected.len()
+        && drag_state.selected[i]
+    {
+        delta_tick = delta_tick.saturating_add(drag_state.delta_tick);
+        delta_key = delta_key.saturating_add(drag_state.delta_key);
+        has_delta = true;
+    }
+
+    has_delta.then_some((delta_tick, delta_key))
 }
 
 /// 检查音符在当前状态下是否处于"幽灵"位置（即被拖动或 pending）

@@ -47,11 +47,13 @@ impl Editor {
         // 构建 HashSet + 排序，1600W 场景下 ~6.7s/帧。此时 hover 无实际意义
         //（用户未在交互），直接跳过。
         let hover = if self.pending_drag_state.is_some()
+            || self.pending_copy_drag_state.is_some()
             || matches!(
                 self.editor_state.interaction.edit_state,
                 EditState::Selecting { .. }
                     | EditState::Dragging { .. }
                     | EditState::DraggingSelection { .. }
+                    | EditState::DraggingSelectionCopy { .. }
             ) {
             None
         } else {

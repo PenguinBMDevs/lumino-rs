@@ -52,6 +52,11 @@ pub fn commit_pending_drag() {
     puffin::profile_scope!("selection_move::commit_pending_drag");
 }
 
+/// 提交 pending 批量复制到 document（`editor_impl.rs` → `commit_pending_copy`）
+pub fn commit_pending_copy() {
+    puffin::profile_scope!("selection_move::commit_pending_copy");
+}
+
 /// 轮询异步提交结果（`editor_impl.rs` → `poll_async_commit`）
 pub fn poll_async_commit() {
     puffin::profile_scope!("selection_move::poll_async_commit");

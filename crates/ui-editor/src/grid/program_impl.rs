@@ -229,9 +229,9 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
 
         let interaction = &self.editor.editor_state.interaction;
         match interaction.edit_state {
-            EditState::Dragging { .. } | EditState::DraggingSelection { .. } => {
-                mouse::Interaction::Grabbing
-            }
+            EditState::Dragging { .. }
+            | EditState::DraggingSelection { .. }
+            | EditState::DraggingSelectionCopy { .. } => mouse::Interaction::Grabbing,
             EditState::PendingDrag { .. } => mouse::Interaction::Pointer,
             EditState::ResizingStart { .. }
             | EditState::ResizingEnd { .. }

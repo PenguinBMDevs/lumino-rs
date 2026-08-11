@@ -356,6 +356,7 @@ impl Host {
         let is_ghost_dragging = matches!(
             current_edit_state,
             crate::editor::EditState::Dragging { .. }
+                | crate::editor::EditState::DraggingSelectionCopy { .. }
         ) || self.root.editor.has_pending_drag();
 
         // 图片转 MIDI 预览：代际变化（含取消重置）时强制重建主音符实例

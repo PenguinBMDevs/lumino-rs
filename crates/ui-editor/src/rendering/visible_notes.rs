@@ -10,7 +10,9 @@
 //! - 索引重建交给交互路径（hit_test_note / update_selection）按需触发
 
 use super::Editor;
-use super::ghost::{has_active_ghost_delta, is_note_ghosted};
+use super::ghost::{
+    copy_delta_for_index, has_active_ghost_delta, is_copy_ghosted, is_note_ghosted,
+};
 use crate::EditState;
 
 /// 视口窗口查询的 lookback 上界（tick）
@@ -33,6 +35,9 @@ impl Editor {
     ///
     /// **ghost 方案**：返回的数据已应用 `pending_drag_state` 与当前 `drag_state`
     /// 的偏移，确保拖动期间主音轨音符（蓝色）的渲染位置与视觉反馈一致。
+    ///
+    /// **复制模式**（`DraggingSelectionCopy` / `pending_copy_drag_state`）：
+    /// 原始音符在原位置渲染，副本在偏移位置额外追加一条实例。
     ///
     /// 性能优化：
     /// - 渲染路径**不触发** `ensure_spatial_index`，避免移动提交后 133ms 全量重建
@@ -57,6 +62,7 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending = &self.pending_drag_state;
+        let pending_copy = &self.pending_copy_drag_state;
 
         // 渲染路径：仅在索引干净（!dirty 且已存在）时复用，否则线性扫描。
         // 避免渲染帧触发 133ms 的全量重建——重建交给交互路径按需完成。
@@ -65,7 +71,7 @@ impl Editor {
 
         // 性能优化：当没有活跃拖动时，ghost_delta_for_index 对每个音符都返回 None，
         // 避免 200 万次函数调用开销。先判断再决定走哪条路径。
-        let needs_ghost = has_active_ghost_delta(pending, edit_state);
+        let needs_ghost = has_active_ghost_delta(pending, pending_copy, edit_state);
 
         if has_clean_index {
             self.collect_via_index(
@@ -78,6 +84,7 @@ impl Editor {
                 max_key,
                 edit_state,
                 pending,
+                pending_copy,
                 needs_ghost,
             );
         } else {
@@ -92,6 +99,7 @@ impl Editor {
                 max_key,
                 edit_state,
                 pending,
+                pending_copy,
                 needs_ghost,
             );
         }
@@ -118,6 +126,7 @@ impl Editor {
         max_key: u16,
         edit_state: &EditState,
         pending: &Option<lumino_editor_state::DragState>,
+        pending_copy: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
     ) {
         let index = self.spatial.note_index.borrow();
@@ -148,6 +157,7 @@ impl Editor {
                     idx_out.push(i);
                 }
                 if let Some(note) = track_notes.get(i) {
+                    let length = (note.end_tick - note.start_tick) as f32;
                     let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                         apply_ghost_delta(
                             note.start_tick as f32,
@@ -161,7 +171,17 @@ impl Editor {
                     } else {
                         (note.start_tick as f32, note.key as u16)
                     };
-                    result.push((tick, key, (note.end_tick - note.start_tick) as f32));
+                    result.push((tick, key, length));
+                    // 复制模式：原始位置保留，副本在偏移位置追加一条实例
+                    if is_copy_ghosted(i, pending_copy, edit_state)
+                        && let Some((copy_dt, copy_dk)) =
+                            copy_delta_for_index(i, pending_copy, edit_state)
+                    {
+                        let copy_tick = (note.start_tick as f32 + copy_dt as f32).max(0.0);
+                        let copy_key =
+                            (note.key as i32 + copy_dk as i32).clamp(0, max_key as i32) as u16;
+                        result.push((copy_tick, copy_key, length));
+                    }
                 }
             }
         } else {
@@ -204,6 +224,7 @@ impl Editor {
         max_key: u16,
         edit_state: &EditState,
         pending: &Option<lumino_editor_state::DragState>,
+        pending_copy: &Option<lumino_editor_state::DragState>,
         needs_ghost: bool,
     ) {
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
@@ -219,6 +240,7 @@ impl Editor {
 
         if needs_ghost {
             for (i, note) in track_notes.iter_window(lo, hi) {
+                let length = (note.end_tick - note.start_tick) as f32;
                 let (tick, key) = if is_note_ghosted(i, pending, edit_state) {
                     apply_ghost_delta(
                         note.start_tick as f32,
@@ -241,7 +263,22 @@ impl Editor {
                     if let Some(idx_out) = indices.as_deref_mut() {
                         idx_out.push(i);
                     }
-                    result.push((tick, key, (note.end_tick - note.start_tick) as f32));
+                    result.push((tick, key, length));
+                    // 复制模式：原始位置保留，副本在偏移位置追加一条实例
+                    if is_copy_ghosted(i, pending_copy, edit_state)
+                        && let Some((copy_dt, copy_dk)) =
+                            copy_delta_for_index(i, pending_copy, edit_state)
+                    {
+                        let copy_tick = (note.start_tick as f32 + copy_dt as f32).max(0.0);
+                        let copy_key =
+                            (note.key as i32 + copy_dk as i32).clamp(0, max_key as i32) as u16;
+                        if copy_key >= visible_key_min
+                            && copy_key <= visible_key_max
+                            && copy_tick <= visible_tick_end
+                        {
+                            result.push((copy_tick, copy_key, length));
+                        }
+                    }
                 }
             }
         } else {
@@ -281,12 +318,13 @@ fn current_drag_delta(edit_state: &EditState) -> (i64, i16) {
 }
 
 impl Editor {
-    /// 是否存在活跃的 ghost 拖动（拖动中 / pending 异步提交）
+    /// 是否存在活跃的 ghost 拖动（拖动中 / pending 异步提交 / 复制待提交）
     ///
     /// UI 层（渲染线程）判断是否走 ghost 增量路径。
     pub fn has_active_ghost_delta_state(&self) -> bool {
         has_active_ghost_delta(
             &self.pending_drag_state,
+            &self.pending_copy_drag_state,
             &self.editor_state.interaction.edit_state,
         )
     }
@@ -300,15 +338,28 @@ impl Editor {
     ///
     /// 调用前提：`has_active_ghost_delta` 为 true 且 `visible_indices` 与
     /// 上次全量构建的可见索引一致（GPU 位置 = 列表下标）。
+    ///
+    /// **复制模式例外**：`DraggingSelectionCopy` / `pending_copy_drag_state`
+    /// 会在可见列表中**追加副本实例**（原位置 + 偏移位置两条），破坏
+    /// 「GPU 位置 = 列表下标」的增量前提。此状态下返回空列表，
+    /// 调用方回退全量重建（正确性无损）。
     pub fn build_ghost_delta_positions(
         &self,
         visible_indices: &[usize],
     ) -> Vec<(usize, (f32, u16, f32))> {
         let edit_state = &self.editor_state.interaction.edit_state;
         let pending = &self.pending_drag_state;
+        let pending_copy = &self.pending_copy_drag_state;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let data = &self.editor_state.data;
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
+
+        // 复制模式：副本实例使 GPU 布局 ≠ visible_indices 下标，禁用增量
+        let any_copy =
+            pending_copy.is_some() || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
+        if any_copy {
+            return Vec::new();
+        }
 
         let mut out = Vec::new();
         for (pos, &note_idx) in visible_indices.iter().enumerate() {

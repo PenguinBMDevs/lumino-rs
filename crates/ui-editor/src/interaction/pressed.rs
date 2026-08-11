@@ -113,14 +113,24 @@ impl Editor {
                         snapped_tick as i64,
                         key as i16,
                     );
-                    // NoteMove 操作日志化：批量拖动期间不 push 快照，
-                    // 松手时构造 MoveOp 异步提交。
-                    self.editor_state.interaction.edit_state =
-                        crate::EditState::DraggingSelection { drag_state };
+                    // Ctrl + 拖动 → 复制模式：原始音符不动，副本跟随鼠标预览
+                    // （DraggingSelectionCopy），松手后待点击空白处才写入内存层
+                    if self.ctrl_pressed() {
+                        self.editor_state.interaction.edit_state =
+                            crate::EditState::DraggingSelectionCopy { drag_state };
+                    } else {
+                        // NoteMove 操作日志化：批量拖动期间不 push 快照，
+                        // 松手时构造 MoveOp 异步提交。
+                        self.editor_state.interaction.edit_state =
+                            crate::EditState::DraggingSelection { drag_state };
+                    }
                 }
                 crate::SelectionHitType::LeftEdge => {
                     // 框选左边缘拉伸：先提交 pending 拖动（保留选区，要在当前选区上拉伸）
                     // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
+                    // 未提交的复制（pending_copy）与新操作冲突：直接丢弃（不写入），
+                    // 否则 commit_pending_copy 会替换选中集合，导致拉伸作用到副本上。
+                    self.pending_copy_drag_state = None;
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
                         // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
@@ -136,6 +146,8 @@ impl Editor {
                 }
                 crate::SelectionHitType::RightEdge => {
                     // 框选右边缘拉伸：同 LeftEdge，提交 pending 但保留选区
+                    // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
+                    self.pending_copy_drag_state = None;
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
                         // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
@@ -187,14 +199,27 @@ impl Editor {
         }
     }
 
-    /// 提交 pending 批量拖动并清空选区（非累积场景调用）
+    /// 提交 pending 批量拖动/复制并清空选区（非累积场景调用）
     ///
     /// 在用户开始新操作（点击音符/调整大小/点击空白处）时调用。
     /// 累积拖动场景（框选内部命中）不调用此方法，保留 pending。
+    ///
+    /// **提交顺序（正确性关键）**：移动（pending_drag）走异步提交，完成时
+    /// 会整轨替换音符——若复制（pending_copy）先插入副本，会被异步结果覆盖。
+    /// 因此当两者并存时：先启动移动异步提交 → `drain_async_commit` 等待完成
+    /// （document 回到一致状态）→ 再基于最新索引写入副本。
     fn flush_pending_drag(&mut self) {
         if self.pending_drag_state.is_some() {
             self.commit_pending_drag();
+            // 移动 + 复制并存：必须等移动异步提交完成（整轨替换），
+            // 否则 replace_track_notes 会覆盖刚插入的副本
+            if self.pending_copy_drag_state.is_some() {
+                self.drain_async_commit();
+            }
             self.selection_clear();
+        }
+        if self.pending_copy_drag_state.is_some() {
+            self.commit_pending_copy();
         }
     }
 

@@ -120,6 +120,10 @@ impl Editor {
             EditState::DraggingSelection { drag_state } => {
                 handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
             }
+            EditState::DraggingSelectionCopy { drag_state } => {
+                // 复制拖动：偏移计算与移动拖动一致（原始音符不动，副本按 delta 渲染）
+                handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
+            }
             EditState::ResizingSelectionStart { last_tick } => {
                 // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
                 if let Some(track) = self

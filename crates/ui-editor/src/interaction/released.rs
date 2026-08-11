@@ -109,6 +109,26 @@ impl Editor {
                 // edit_state 切换到 Idle（std::mem::take 已处理）
                 // 不调用 mark_notes_changed（document 未变）
             }
+            EditState::DraggingSelectionCopy { drag_state } => {
+                crate::puffin_profiler::released_dragging_selection();
+                // 复制模式（ghost 方案，延迟提交）：松手不写入 document，
+                // 保存到 pending_copy_drag_state——副本持续显示在 UI 层。
+                // 用户点击空白处退出框选时才真正写入内存层
+                // （flush_pending_drag → commit_pending_copy）。
+                if drag_state.is_delta_zero() {
+                    tracing::debug!("Editor: 复制拖动 delta 为零，取消复制");
+                } else {
+                    tracing::debug!(
+                        "Editor: 保存 pending 复制 - delta=({}, {})",
+                        drag_state.delta_tick,
+                        drag_state.delta_key
+                    );
+                    self.pending_copy_drag_state = Some(drag_state);
+                }
+                // 保留 selected_notes 不清空（pending 状态下仍显示框选）
+                // edit_state 切换到 Idle（std::mem::take 已处理）
+                // 不调用 mark_notes_changed（document 未变）
+            }
             EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
                 // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
                 // 2026-08 单一权威源：resize 期间已直接修改 document（track_notes_mut），

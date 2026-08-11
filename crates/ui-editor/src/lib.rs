@@ -45,6 +45,7 @@ mod tests {
     mod interaction;
     mod interception;
     mod keyboard_colors_test;
+    mod pending_copy;
     mod pending_drag;
     mod pressed_priority;
     mod scroll;
@@ -132,6 +133,16 @@ pub struct Editor {
     ///
     /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
     pub(crate) pending_drag_state: Option<lumino_editor_state::DragState>,
+
+    /// 批量复制待提交状态（Ctrl+拖动 ghost 方案 - 延迟提交）
+    ///
+    /// `DraggingSelectionCopy` 松手后不立即写入 document（音符唯一权威），
+    /// 而是保存到此字段——副本持续在 UI 层显示（原始位置 + 偏移位置）。
+    /// 用户点击空白处退出框选时才真正 `batch_insert_notes` 写入内存层
+    /// （`commit_pending_copy`），与 `pending_drag_state` 延迟提交方案对称。
+    ///
+    /// `None` 表示无待提交的复制；`Some(drag_state)` 表示有待写入的副本偏移。
+    pub(crate) pending_copy_drag_state: Option<lumino_editor_state::DragState>,
 
     /// 统一状态管理
     pub editor_state: editor_state::EditorState,

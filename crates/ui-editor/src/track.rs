@@ -28,6 +28,10 @@ impl super::Editor {
         self.selection_clear();
         self.editor_state.interaction.hover_state = None;
         self.editor_state.interaction.edit_state = super::EditState::Idle;
+        // 丢弃未提交的批量拖动/复制：pending 的 selected 位图是旧轨的全局索引，
+        // 换轨后继续保留会导致 ghost 渲染错位、提交时误伤新轨音符。
+        self.pending_drag_state = None;
+        self.pending_copy_drag_state = None;
         // 切轨只是切换当前显示的音轨（current_track_notes 换轨），
         // 并非用户编辑。需要重建空间索引并失效渲染缓存，
         // 但不能设置 notes_changed，否则会被 handle_action 误判为脏音轨，
