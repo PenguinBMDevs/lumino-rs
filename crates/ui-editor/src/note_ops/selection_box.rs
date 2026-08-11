@@ -109,47 +109,38 @@ impl Editor {
             let copy_active = pending_copy.is_some()
                 || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
 
-            // 选择框包围盒 = 所有渲染位置：
-            // - 移动 ghost（原件被移走的位置）
-            // - 原件位置（复制模式且未移动时保留）
-            // - 复制 ghost（副本位置 = 原件 + 移动 delta + 复制 delta）
-            let mut rects: [(f32, f32, u16, u16); 3] = [(0.0, 0.0, 0, 0); 3];
-            let mut n = 0usize;
-            if move_active {
-                rects[n] = ghost_rect(min_t, max_te, max_k, min_k, move_dt, move_dk, max_key);
-                n += 1;
-            }
+            // 复制模式：**独立框选**——选择框只覆盖副本位置
+            // （原件 + 移动 delta + 复制 delta），不包含原件位置。
+            // 原件保持选中（selected_notes 不动，内存层一致），
+            // 副本拥有自己的框选，可从副本位置继续 Ctrl+拖动复制。
             if copy_active {
-                if !move_active {
-                    rects[n] = (min_t, max_te, max_k, min_k);
-                    n += 1;
-                }
-                rects[n] = ghost_rect(
-                    min_t,
-                    max_te,
-                    max_k,
-                    min_k,
+                let (dt, dk) = (
                     move_dt.saturating_add(copy_dt),
                     move_dk.saturating_add(copy_dk),
-                    max_key,
                 );
-                n += 1;
+                let (g_min_t, g_max_te, g_max_k, g_min_k) =
+                    ghost_rect(min_t, max_te, max_k, min_k, dt, dk, max_key);
+                // 不缓存 ghost 结果（delta 每帧变化）
+                return Some((
+                    view.tick_to_x(g_min_t),
+                    view.tick_to_x(g_max_te),
+                    view.key_to_y(g_max_k),
+                    view.key_to_y(g_min_k) + view.zoom_y,
+                ));
             }
-            let (mut r_min_t, mut r_max_te, mut r_max_k, mut r_min_k) =
-                (f32::INFINITY, f32::NEG_INFINITY, u16::MIN, u16::MAX);
-            for &(t0, t1, k0, k1) in &rects[..n] {
-                r_min_t = r_min_t.min(t0);
-                r_max_te = r_max_te.max(t1);
-                r_max_k = r_max_k.max(k0);
-                r_min_k = r_min_k.min(k1);
+            // 移动模式（无复制）：选择框跟随移动 ghost（原件 + move delta）
+            if move_active {
+                let (g_min_t, g_max_te, g_max_k, g_min_k) =
+                    ghost_rect(min_t, max_te, max_k, min_k, move_dt, move_dk, max_key);
+                // 不缓存 ghost 结果（delta 每帧变化）
+                return Some((
+                    view.tick_to_x(g_min_t),
+                    view.tick_to_x(g_max_te),
+                    view.key_to_y(g_max_k),
+                    view.key_to_y(g_min_k) + view.zoom_y,
+                ));
             }
-            // 不缓存 ghost 结果（delta 每帧变化）
-            return Some((
-                view.tick_to_x(r_min_t),
-                view.tick_to_x(r_max_te),
-                view.key_to_y(r_max_k),
-                view.key_to_y(r_min_k) + view.zoom_y,
-            ));
+            // needs_ghost 为 true 时必有 move 或 copy 活跃，此处理论不可达
         }
         // 缓存失效时回退到 O(N) 计算（理论上不应发生，兜底）
 
@@ -201,38 +192,32 @@ impl Editor {
                 raw_max_te = raw_max_te.max(n.tick + n.length);
                 raw_max_k = raw_max_k.max(n.key);
                 raw_min_k = raw_min_k.min(n.key);
-                // 复制模式且未移动：原件位置保留在框选内
-                if copy_active && !move_active {
-                    min_t = min_t.min(n.tick);
-                    max_te = max_te.max(n.tick + n.length);
-                    max_k = max_k.max(n.key);
-                    min_k = min_k.min(n.key);
-                }
-                // 移动 ghost bounds（有 delta）
-                let mut dt = drag_dt;
-                let mut dk = drag_dk;
-                if let Some(pending) = pending
-                    && i < pending.selected.len()
-                    && pending.selected[i]
-                {
-                    dt = dt.saturating_add(pending.delta_tick);
-                    dk = dk.saturating_add(pending.delta_key);
-                }
-                if move_active {
+                if copy_active {
+                    // 独立框选：只算副本位置（原件 + 移动 delta + 复制 delta）
+                    if is_copy_ghosted(i, pending_copy, edit_state)
+                        && let Some((cdt, cdk)) =
+                            copy_delta_for_index(i, pending_copy, pending, edit_state)
+                    {
+                        let tick = (n.tick + cdt as f32).max(0.0);
+                        let key = (n.key as i32 + cdk as i32).clamp(0, max_key as i32) as u16;
+                        min_t = min_t.min(tick);
+                        max_te = max_te.max(tick + n.length);
+                        max_k = max_k.max(key);
+                        min_k = min_k.min(key);
+                    }
+                } else if move_active {
+                    // 移动 ghost bounds（原件 + 移动 delta）
+                    let mut dt = drag_dt;
+                    let mut dk = drag_dk;
+                    if let Some(pending) = pending
+                        && i < pending.selected.len()
+                        && pending.selected[i]
+                    {
+                        dt = dt.saturating_add(pending.delta_tick);
+                        dk = dk.saturating_add(pending.delta_key);
+                    }
                     let tick = (n.tick + dt as f32).max(0.0);
                     let key = (n.key as i32 + dk as i32).clamp(0, max_key as i32) as u16;
-                    min_t = min_t.min(tick);
-                    max_te = max_te.max(tick + n.length);
-                    max_k = max_k.max(key);
-                    min_k = min_k.min(key);
-                }
-                // 复制 ghost bounds（副本位置 = 原件 + 移动 delta + 复制 delta）
-                if is_copy_ghosted(i, pending_copy, edit_state)
-                    && let Some((cdt, cdk)) =
-                        copy_delta_for_index(i, pending_copy, pending, edit_state)
-                {
-                    let tick = (n.tick + cdt as f32).max(0.0);
-                    let key = (n.key as i32 + cdk as i32).clamp(0, max_key as i32) as u16;
                     min_t = min_t.min(tick);
                     max_te = max_te.max(tick + n.length);
                     max_k = max_k.max(key);

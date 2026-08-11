@@ -490,10 +490,10 @@ fn test_commit_current_edit_with_move_and_copy_keeps_both() {
     assert!(editor.pending_copy_drag_state.is_none());
 }
 
-// ===== 复制后选择框覆盖原件∪副本（新框选覆盖复制对象） =====
+// ===== 复制后选择框独立覆盖副本（不含原件） =====
 
 #[test]
-fn test_selection_box_covers_origin_and_copy() {
+fn test_selection_box_independent_covers_copy_only() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
@@ -503,59 +503,58 @@ fn test_selection_box_covers_origin_and_copy() {
     drag.set_delta(100, 0);
     editor.pending_copy_drag_state = Some(drag);
 
-    // 选择框必须覆盖原件 [0, 480] ∪ 副本 [100, 580]
+    // 独立框选：只覆盖副本 [100, 580]，不包含原件 [0, 480]
     let (x1, x2, _, _) = editor.get_selection_box_bounds().expect("应有选择框");
     let v = &editor.editor_state.view;
     let origin_x = v.tick_to_x(0.0);
-    let origin_end_x = v.tick_to_x(480.0);
     let copy_x = v.tick_to_x(100.0);
     let copy_end_x = v.tick_to_x(580.0);
     assert!(
-        (x1 - origin_x).abs() < 0.001,
-        "选择框左边界应覆盖原件起点（实际 x1={}, 期望 {}）",
+        (x1 - copy_x).abs() < 0.001,
+        "选择框左边界应等于副本起点（实际 x1={}, 期望 {}）",
         x1,
-        origin_x
+        copy_x
     );
     assert!(
         (x2 - copy_end_x).abs() < 0.001,
-        "选择框右边界应覆盖副本终点（实际 x2={}, 期望 {}）",
+        "选择框右边界应等于副本终点（实际 x2={}, 期望 {}）",
         x2,
         copy_end_x
     );
     assert!(
-        x2 > origin_end_x,
-        "选择框应超出原件右边界以覆盖副本（x2={}, origin_end={}）",
-        x2,
-        origin_end_x
-    );
-    assert!(
-        x1 <= copy_x,
-        "选择框应覆盖副本起点（x1={}, copy_x={}）",
+        x1 > origin_x,
+        "选择框应独立于原件（x1={} 应大于原件起点 {}）",
         x1,
-        copy_x
+        origin_x
     );
 }
 
 #[test]
-fn test_selection_box_hit_test_inside_copy_area() {
+fn test_selection_box_hit_test_copy_area_inside_origin_outside() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
 
-    // 复制松手：副本在 tick 100（delta=100）
+    // 复制松手：delta=600 → 副本位于 tick [600, 1080]，与原件 [0, 480] 完全分离
     let mut drag = DragState::from_indices([0], 1, 0, 60);
-    drag.set_delta(100, 0);
+    drag.set_delta(600, 0);
     editor.pending_copy_drag_state = Some(drag);
 
-    // 点击副本中心位置（tick 340, key 60）→ 应命中选择框 Inside
     let v = &editor.editor_state.view;
-    let copy_center_x = v.tick_to_x(340.0);
+    // 副本中心（tick 840）→ Inside
+    let copy_center_x = v.tick_to_x(840.0);
     let copy_center_y = v.key_to_y(60) + v.zoom_y / 2.0;
-    let hit = editor.hit_test_selection_box(iced_core::Point::new(copy_center_x, copy_center_y));
     assert_eq!(
-        hit,
+        editor.hit_test_selection_box(iced_core::Point::new(copy_center_x, copy_center_y)),
         Some(crate::SelectionHitType::Inside),
-        "副本位置应命中选择框内部（新框选覆盖复制对象）"
+        "副本位置应命中选择框内部（独立框选覆盖复制对象）"
+    );
+    // 原件中心（tick 240）→ 不命中（独立框选不含原件）
+    let origin_center_x = v.tick_to_x(240.0);
+    assert_eq!(
+        editor.hit_test_selection_box(iced_core::Point::new(origin_center_x, copy_center_y)),
+        None,
+        "原件位置不应命中选择框（独立框选不含原件）"
     );
 
     // 从副本位置 Ctrl+拖动 → 进入复制拖拽（新件拥有复制能力）
@@ -563,7 +562,7 @@ fn test_selection_box_hit_test_inside_copy_area() {
     editor.handle_tool_pressed(
         iced_core::Point::new(copy_center_x, copy_center_y),
         false,
-        340.0,
+        840.0,
         60,
     );
     match editor.editor_state.interaction.edit_state {
