@@ -3,7 +3,7 @@
 //! 从 rendering.rs 主文件拆出，因为主文件接近 400 行限制。
 
 use super::ghost::{
-    copy_delta_for_index, ghost_delta_for_index, has_active_ghost_delta, is_copy_ghosted,
+    copy_deltas_for_index, ghost_delta_for_index, has_active_ghost_delta, is_copy_ghosted,
     is_note_ghosted,
 };
 use crate::EditState;
@@ -111,15 +111,13 @@ fn copy_ghost_idle_with_pending_copy_marks_selected() {
     assert!(is_copy_ghosted(1, &pending_copy, &edit_state));
     assert!(is_copy_ghosted(3, &pending_copy, &edit_state));
     assert!(!is_copy_ghosted(0, &pending_copy, &edit_state));
-    // 副本偏移来自 pending_copy
-    assert_eq!(
-        copy_delta_for_index(1, &pending_copy, &None, &edit_state),
-        Some((120, 3))
-    );
-    assert_eq!(
-        copy_delta_for_index(0, &pending_copy, &None, &edit_state),
-        None
-    );
+    // Idle + pending_copy：仅旧副本（new 副本 = None）
+    let (old, new) = copy_deltas_for_index(1, &pending_copy, &None, &edit_state);
+    assert_eq!(old, Some((120, 3)));
+    assert_eq!(new, None);
+    let (old, new) = copy_deltas_for_index(0, &pending_copy, &None, &edit_state);
+    assert_eq!(old, None);
+    assert_eq!(new, None);
 }
 
 #[test]
@@ -130,27 +128,30 @@ fn copy_ghost_dragging_copy_state_marks_selected() {
 
     assert!(is_copy_ghosted(2, &pending_copy, &edit_state));
     assert!(!is_copy_ghosted(0, &pending_copy, &edit_state));
-    assert_eq!(
-        copy_delta_for_index(2, &pending_copy, &None, &edit_state),
-        Some((240, -5))
-    );
+    // 首次复制（无 pending_copy）：仅新副本
+    let (old, new) = copy_deltas_for_index(2, &pending_copy, &None, &edit_state);
+    assert_eq!(old, None);
+    assert_eq!(new, Some((240, -5)));
 }
 
 #[test]
 fn copy_ghost_merges_pending_copy_and_current_drag() {
-    // 再次复制拖动期间：旧副本（pending_copy）与新副本（drag_state）同时可见
+    // 连续复制拖动中：旧副本（pending_copy=100）保持原位 + 新副本（=150）跟手——
+    // 两条副本并存（"复制下一份"，旧副本不再被吞并）
     let pending_copy = Some(drag_state_with_selected(&[1], 4, 100, 2));
     let drag_state = drag_state_with_selected(&[1], 4, 50, 3);
     let edit_state = EditState::DraggingSelectionCopy { drag_state };
 
+    let (old, new) = copy_deltas_for_index(1, &pending_copy, &None, &edit_state);
     assert_eq!(
-        copy_delta_for_index(1, &pending_copy, &None, &edit_state),
-        Some((150, 5))
+        old,
+        Some((100, 2)),
+        "旧副本保持在上次复制位置（不含当前拖动）"
     );
-    assert_eq!(
-        copy_delta_for_index(0, &pending_copy, &None, &edit_state),
-        None
-    );
+    assert_eq!(new, Some((150, 5)), "新副本从旧副本位置继续偏移");
+    let (old, new) = copy_deltas_for_index(0, &pending_copy, &None, &edit_state);
+    assert_eq!(old, None);
+    assert_eq!(new, None);
 }
 
 #[test]
@@ -201,29 +202,32 @@ fn copy_delta_stacks_move_delta_pending_drag() {
     let pending_drag = Some(drag_state_with_selected(&[1], 4, 50, 3));
     let edit_state = EditState::Idle;
 
-    assert_eq!(
-        copy_delta_for_index(1, &pending_copy, &pending_drag, &edit_state),
-        Some((150, 5))
-    );
+    // Idle：仅旧副本（唯一副本跟随移动），无新副本
+    let (old, new) = copy_deltas_for_index(1, &pending_copy, &pending_drag, &edit_state);
+    assert_eq!(old, Some((150, 5)));
+    assert_eq!(new, None);
 }
 
 #[test]
 fn copy_delta_stacks_move_delta_dragging_selection() {
     // 场景：复制松手（pending_copy=100）→ 用户正在普通拖动（DraggingSelection，drag=50）
+    // 副本跟随原件移动：唯一副本（old）位置 = 原件 + 100 + 50 = 150
     let pending_copy = Some(drag_state_with_selected(&[0], 4, 100, 0));
     let move_state = EditState::DraggingSelection {
         drag_state: drag_state_with_selected(&[0], 4, 50, 0),
     };
 
+    let (old, new) = copy_deltas_for_index(0, &pending_copy, &None, &move_state);
     assert_eq!(
-        copy_delta_for_index(0, &pending_copy, &None, &move_state),
-        Some((150, 0))
+        old,
+        Some((150, 0)),
+        "移动中副本跟随原件（旧副本 + 移动 delta）"
     );
+    assert_eq!(new, None, "移动状态无新副本");
     // 未选中的音符无副本偏移
-    assert_eq!(
-        copy_delta_for_index(2, &pending_copy, &None, &move_state),
-        None
-    );
+    let (old, new) = copy_deltas_for_index(2, &pending_copy, &None, &move_state);
+    assert_eq!(old, None);
+    assert_eq!(new, None);
 }
 
 #[test]
@@ -235,8 +239,14 @@ fn copy_delta_merges_all_three_sources() {
         drag_state: drag_state_with_selected(&[0], 2, 5, 0),
     };
 
+    // 旧副本 = 移动 + 旧复制（不含当前复制拖动）
     assert_eq!(
-        copy_delta_for_index(0, &pending_copy, &pending_drag, &copy_state),
+        copy_deltas_for_index(0, &pending_copy, &pending_drag, &copy_state).0,
+        Some((110, 0))
+    );
+    // 新副本 = 移动 + 旧复制 + 当前复制拖动
+    assert_eq!(
+        copy_deltas_for_index(0, &pending_copy, &pending_drag, &copy_state).1,
         Some((115, 0))
     );
 }

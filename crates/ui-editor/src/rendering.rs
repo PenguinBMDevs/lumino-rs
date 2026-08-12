@@ -6,11 +6,12 @@
 //! - `tests`：单元测试
 
 mod ghost;
+mod ghost_positions;
 #[cfg(test)]
 mod tests;
 mod visible_notes;
 
-pub(crate) use ghost::{copy_delta_for_index, ghost_delta_for_index, is_copy_ghosted};
+pub(crate) use ghost::{copy_deltas_for_index, ghost_delta_for_index, is_copy_ghosted};
 
 use iced_core::{Length, Point};
 use iced_widget::canvas::Canvas;

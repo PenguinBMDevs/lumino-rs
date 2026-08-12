@@ -8,6 +8,9 @@
 
 use crate::EditState;
 
+/// 副本偏移对：`(旧副本偏移, 新副本偏移)`（连续复制时两条并存）
+pub(crate) type CopyDeltaPair = (Option<(i64, i16)>, Option<(i64, i16)>);
+
 /// 计算音符 i 在当前编辑状态下的 ghost 偏移量
 ///
 /// 合并规则（延迟提交方案）：
@@ -115,60 +118,114 @@ pub(crate) fn is_copy_ghosted(
     false
 }
 
-/// 计算复制副本的偏移量（`DraggingSelectionCopy` 拖动中 / `pending_copy` 待提交）
+/// 计算音符 i 的**所有副本偏移**（连续复制时旧副本与新副本并存）
 ///
-/// 返回 `None` 表示音符不在复制选中集合中。合并规则：
-/// - 移动 delta（`pending_drag` + `Dragging`/`DraggingSelection`）：副本跟随
-///   原件一起移动——复制松手后用户普通拖动选区，副本应保持在原件旁
-/// - 复制 delta（`pending_copy` + `DraggingSelectionCopy`）：副本相对原件的偏移
+/// 返回 `(旧副本偏移, 新副本偏移)`：
+/// - **旧副本**（`pending_copy` 命中的音符）：`移动 delta + pending_copy.delta`
+///   ——复制未提交时保持在上次副本位置（不含当前 `DraggingSelectionCopy` 的
+///   `drag_state.delta`）。连续复制（第二次 Ctrl+拖动副本框）拖动中，旧副本
+///   必须**保持原位**，用户才能看到"复制出下一份"而不是旧副本被吞并。
+/// - **新副本**（`DraggingSelectionCopy` 拖动中，`drag_state.selected` 命中的
+///   音符）：`移动 delta + pending_copy.delta + drag_state.delta`——从旧副本
+///   位置继续偏移，跟随鼠标。
 ///
-/// 总偏移 = 移动 delta + 复制 delta。再次复制拖动期间，旧副本（pending_copy）
-/// 与新副本（drag_state）同时可见。
+/// 组合语义：
+/// - `Idle + pending_copy`：仅旧副本（`Some, None`）——松手后副本保持
+/// - `DraggingSelectionCopy`（首次复制，无 pending_copy）：仅新副本（`None, Some`）
+/// - `DraggingSelectionCopy + pending_copy`（连续复制拖动中）：两条并存（`Some, Some`）
+///
+/// 性能：仅对副本选中的音符调用（外层已用 `is_copy_ghosted` 过滤），
+/// 复制场景帧率要求低，双 Option 元组零分配。
 #[inline]
-pub(crate) fn copy_delta_for_index(
+pub(crate) fn copy_deltas_for_index(
     i: usize,
     pending_copy: &Option<lumino_editor_state::DragState>,
     pending_drag: &Option<lumino_editor_state::DragState>,
     edit_state: &EditState,
-) -> Option<(i64, i16)> {
-    let mut delta_tick = 0i64;
-    let mut delta_key = 0i16;
-    let mut has_delta = false;
-
-    // 移动 delta（原件移动 → 副本跟随）
+) -> CopyDeltaPair {
+    // 移动 delta（原件移动 → 副本跟随）：pending_drag + Dragging/DraggingSelection
+    let mut m_dt = 0i64;
+    let mut m_dk = 0i16;
     if let Some(drag) = pending_drag
         && i < drag.selected.len()
         && drag.selected[i]
     {
-        delta_tick = delta_tick.saturating_add(drag.delta_tick);
-        delta_key = delta_key.saturating_add(drag.delta_key);
-        has_delta = true;
-    }
-    // 复制 delta（pending_copy + 当前复制拖动的 drag_state）
-    if let Some(copy) = pending_copy
-        && i < copy.selected.len()
-        && copy.selected[i]
-    {
-        delta_tick = delta_tick.saturating_add(copy.delta_tick);
-        delta_key = delta_key.saturating_add(copy.delta_key);
-        has_delta = true;
+        m_dt = drag.delta_tick;
+        m_dk = drag.delta_key;
     }
     match edit_state {
-        // 移动拖动（Dragging / DraggingSelection）：副本跟随原件实时移动
-        // 复制拖动（DraggingSelectionCopy）：副本相对原件的新偏移（含累积）
-        EditState::Dragging { drag_state, .. }
-        | EditState::DraggingSelection { drag_state }
-        | EditState::DraggingSelectionCopy { drag_state }
+        EditState::Dragging { drag_state, .. } | EditState::DraggingSelection { drag_state }
             if i < drag_state.selected.len() && drag_state.selected[i] =>
         {
-            delta_tick = delta_tick.saturating_add(drag_state.delta_tick);
-            delta_key = delta_key.saturating_add(drag_state.delta_key);
-            has_delta = true;
+            m_dt = m_dt.saturating_add(drag_state.delta_tick);
+            m_dk = m_dk.saturating_add(drag_state.delta_key);
         }
         _ => {}
     }
+    // 复制 delta（pending_copy 的旧副本偏移）
+    let mut c_dt = 0i64;
+    let mut c_dk = 0i16;
+    let has_old = if let Some(copy) = pending_copy
+        && i < copy.selected.len()
+        && copy.selected[i]
+    {
+        c_dt = copy.delta_tick;
+        c_dk = copy.delta_key;
+        true
+    } else {
+        false
+    };
+    // 旧副本：保持原位（移动 + 旧复制偏移，不含当前复制拖动）
+    let old = has_old.then_some((m_dt.saturating_add(c_dt), m_dk.saturating_add(c_dk)));
+    // 新副本：从旧副本位置继续偏移（移动 + 旧复制 + 当前复制拖动）
+    let new = match edit_state {
+        EditState::DraggingSelectionCopy { drag_state }
+            if i < drag_state.selected.len() && drag_state.selected[i] =>
+        {
+            Some((
+                m_dt.saturating_add(c_dt)
+                    .saturating_add(drag_state.delta_tick),
+                m_dk.saturating_add(c_dk)
+                    .saturating_add(drag_state.delta_key),
+            ))
+        }
+        _ => None,
+    };
+    (old, new)
+}
 
-    has_delta.then_some((delta_tick, delta_key))
+/// 将音符 i 的所有副本实例位置推入渲染结果（连续复制时旧副本 + 新副本）
+///
+/// 在 `collect_visible_note_data` 的 hot loop 中调用，仅对副本选中的音符生效
+/// （内部先过 `is_copy_ghosted`，非副本音符零开销）。
+///
+/// `visible` 闭包做视口过滤（窗口扫描路径需要；索引路径直接放行——原行为）。
+/// 参数多为避免 hot path 分配结构体（与 collect_via_index/window 的既有约定一致）。
+#[allow(clippy::too_many_arguments)]
+#[inline]
+pub(crate) fn push_copy_instances<F: Fn(f32, u16) -> bool>(
+    result: &mut Vec<(f32, u16, f32)>,
+    note_tick: f32,
+    note_key: u16,
+    length: f32,
+    max_key: u16,
+    i: usize,
+    pending_copy: &Option<lumino_editor_state::DragState>,
+    pending_drag: &Option<lumino_editor_state::DragState>,
+    edit_state: &EditState,
+    visible: F,
+) {
+    if !is_copy_ghosted(i, pending_copy, edit_state) {
+        return;
+    }
+    let (old_copy, new_copy) = copy_deltas_for_index(i, pending_copy, pending_drag, edit_state);
+    for (copy_dt, copy_dk) in [old_copy, new_copy].into_iter().flatten() {
+        let copy_tick = (note_tick + copy_dt as f32).max(0.0);
+        let copy_key = (note_key as i32 + copy_dk as i32).clamp(0, max_key as i32) as u16;
+        if visible(copy_tick, copy_key) {
+            result.push((copy_tick, copy_key, length));
+        }
+    }
 }
 
 /// 检查音符在当前状态下是否处于"幽灵"位置（即被拖动或 pending）

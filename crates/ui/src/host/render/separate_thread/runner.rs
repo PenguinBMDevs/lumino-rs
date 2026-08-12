@@ -350,12 +350,16 @@ impl Host {
         let note_index_dirty = self.root.editor.spatial.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
         let is_drawing = matches!(current_edit_state, crate::editor::EditState::Drawing { .. });
-        // DraggingSelection 期间 has_active_ghost_delta 返回 false（ghost 方案设计如此），
-        // 音符不会被 ghost，渲染结果与无拖拽时完全相同。因此不将其标记为 ghost_dragging，
-        // 避免每帧触发 collect_visible_note_data 和 note instances 重建。
+        // DraggingSelection（批量移动）必须标记为 ghost_dragging：ui-editor 的
+        // `has_active_ghost_delta` 已包含 DraggingSelection（ghost 方案下批量移动
+        // 拖动中 document 不变、音符渲染位置依赖每帧 ghost 偏移），若此处漏判
+        // 则 `note_data_changed=false` → 每帧跳过音符渲染更新 → 拖动中原件
+        // 不跟随鼠标（只有框选框在动）。通过 ghost 增量（UpdateMany）按需更新
+        // 被拖动音符段，避免整轨全量重建。
         let is_ghost_dragging = matches!(
             current_edit_state,
             crate::editor::EditState::Dragging { .. }
+                | crate::editor::EditState::DraggingSelection { .. }
                 | crate::editor::EditState::DraggingSelectionCopy { .. }
         ) || self.root.editor.has_pending_drag();
 

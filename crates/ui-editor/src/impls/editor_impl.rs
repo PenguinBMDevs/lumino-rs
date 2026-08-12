@@ -249,8 +249,8 @@ impl Editor {
     /// - `commit_current_edit()` 自动提交（Save/Play/Export 前的 fallback）
     ///
     /// 复制模式：将选中音符按 `pending_copy_drag_state.delta` 偏移后
-    /// `batch_insert_notes` 写入内存层，并选中新插入的副本（与粘贴
-    /// `commit_pasted_notes` 语义一致）。返回 `true` 表示已写入。
+    /// `batch_insert_notes` 写入内存层，并选中「原件 ∪ 副本」（原件保持
+    /// 框选状态——复制后原件仍处于选中）。返回 `true` 表示已写入。
     /// 如果 pending 为 None 或 delta 为零，返回 false。
     pub fn commit_pending_copy(&mut self) -> bool {
         crate::puffin_profiler::commit_pending_copy();
@@ -264,6 +264,14 @@ impl Editor {
         }
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        // 原件快照（插入前）：插入会位移全局索引，提交后须按原件参数
+        // 全等重新匹配新索引——原件保持框选状态（复制后原件仍被选中）。
+        let originals: Vec<Note> = drag_state
+            .selected_indices_fast()
+            .into_iter()
+            .filter_map(|i| self.editor_state.data.get_note_view(i))
+            .map(|n| Note::from_raw(n.tick, n.key, n.length, n.velocity, n.channel))
+            .collect();
         // 构造副本音符列表（原始位置 + delta，tick/key clamp 到合法范围）
         let notes: Vec<Note> = drag_state
             .selected_indices_fast()
@@ -283,35 +291,16 @@ impl Editor {
 
         // 与粘贴提交（commit_pasted_notes）一致：push history → batch insert → 选中新副本
         self.push_history();
-        self.selection_clear();
         let inserted = self.editor_state.data.batch_insert_notes(&notes);
         self.editor_state.data.mark_current_track_changed();
         // 插入后同步 NoteStore（降级 no-op，保留调用兼容）
         self.editor_state.data.sync_note_store();
-        // batch_insert_notes 按 start_tick 有序插入：副本 tick 可能落在现有音符
-        // 之间，索引散布而非连续追加。因此不能用 `start..start+inserted` 连续
-        // 区间选中（会误选未复制的原始音符）——改用窗口查询按参数全等精确匹配
-        // 每个副本，与 hit_test 的 ChunkedList 窗口扫描同机制（O(log N + K)）。
-        let mut new_indices: Vec<usize> = Vec::with_capacity(inserted);
-        let track_notes = self.editor_state.data.current_track_notes();
-        for note in &notes {
-            let tick_u32 = note.tick.max(0.0) as u32;
-            let (lo, hi) = track_notes.window_range(tick_u32, tick_u32 + 1, 0);
-            for (i, ev) in track_notes.iter_window(lo, hi) {
-                if ev.start_tick as f32 == note.tick
-                    && ev.key == note.key as u8
-                    && (ev.end_tick - ev.start_tick) as f32 == note.length
-                    && ev.velocity == note.velocity
-                    && ev.channel == note.channel
-                {
-                    new_indices.push(i);
-                    break;
-                }
-            }
-        }
-        for i in new_indices {
-            self.selection_insert(i);
-        }
+        // 插入位移了既有音符索引，旧选中索引全部失效：清空后按参数全等
+        // 重选「原件 ∪ 副本」（副本 tick 可能落在现有音符之间，索引散布
+        // 而非连续追加，不能按 start..start+inserted 连续区间选中）。
+        self.selection_clear();
+        self.select_notes_by_params(&originals);
+        self.select_notes_by_params(&notes);
         self.mark_notes_changed();
         self.pending_copy_drag_state = None;
         tracing::info!("Editor: 已复制 {} 个音符", inserted);

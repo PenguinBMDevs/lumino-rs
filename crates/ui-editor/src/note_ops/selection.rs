@@ -6,6 +6,7 @@
 use std::collections::HashSet;
 
 use super::Editor;
+use crate::Note;
 
 impl Editor {
     /// 向选中集合添加音符，并增量更新选择框边界。
@@ -113,5 +114,35 @@ impl Editor {
         } else {
             None
         });
+    }
+
+    /// 按参数全等（tick/key/length/velocity/channel）匹配并选中音符
+    ///
+    /// 用于批量插入后重新定位选中：插入会位移既有音符的全局索引，旧索引
+    /// 失效，改按音符参数精确匹配新索引。与 hit_test 的 ChunkedList 窗口
+    /// 扫描同机制（O(log N + K)）。
+    ///
+    /// **匹配全部命中**（不 break）：副本 key 被 clamp 后可能与原件参数
+    /// 完全相同（重叠场景），此时原件与副本须全部选中——两者都合法。
+    pub(crate) fn select_notes_by_params(&mut self, notes: &[Note]) {
+        let track_notes = self.editor_state.data.current_track_notes();
+        let mut indices: Vec<usize> = Vec::with_capacity(notes.len());
+        for note in notes {
+            let tick_u32 = note.tick.max(0.0) as u32;
+            let (lo, hi) = track_notes.window_range(tick_u32, tick_u32 + 1, 0);
+            for (i, ev) in track_notes.iter_window(lo, hi) {
+                if ev.start_tick as f32 == note.tick
+                    && ev.key == note.key as u8
+                    && (ev.end_tick - ev.start_tick) as f32 == note.length
+                    && ev.velocity == note.velocity
+                    && ev.channel == note.channel
+                {
+                    indices.push(i);
+                }
+            }
+        }
+        for i in indices {
+            self.selection_insert(i);
+        }
     }
 }

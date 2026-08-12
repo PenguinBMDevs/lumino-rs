@@ -113,9 +113,18 @@ impl Editor {
                         snapped_tick as i64,
                         key as i16,
                     );
-                    // Ctrl + 拖动 → 复制模式：原始音符不动，副本跟随鼠标预览
-                    // （DraggingSelectionCopy），松手后待点击空白处才写入内存层
-                    if self.ctrl_pressed() {
+                    // 复制模式判定（BUG 修复：拖动原件框 = 移动原件，即使 Ctrl 按着）：
+                    // - 无副本框（首次复制）：Ctrl + 拖动 = 复制（原件不动、副本跟手）
+                    // - 已有副本框（复制未提交）：
+                    //   · Ctrl + 拖动**副本框** = 从副本继续复制下一份
+                    //     （DraggingSelectionCopy，松手后旧副本提交、新副本累积）
+                    //   · 拖动**原件框**（无论 Ctrl）= 移动原件（DraggingSelection，
+                    //     副本作为 ghost 跟随平移，见 copy_deltas_for_index）
+                    let has_copy_box = self.pending_copy_drag_state.is_some();
+                    let hit_copy_box = has_copy_box && self.hit_test_copy_box(pos);
+                    if self.ctrl_pressed() && (!has_copy_box || hit_copy_box) {
+                        // Ctrl + 拖动（首次复制 / 从副本框继续复制）：
+                        // 原始音符不动，副本跟随鼠标预览，松手后待点击空白处才写入内存层
                         self.editor_state.interaction.edit_state =
                             crate::EditState::DraggingSelectionCopy { drag_state };
                     } else {

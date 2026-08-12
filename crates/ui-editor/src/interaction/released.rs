@@ -3,6 +3,7 @@
 //! 包含：释放事件的匹配分发、绘制完成的收尾工作
 
 use crate::{EditState, Editor};
+use lumino_editor_state::DragState;
 use lumino_editor_state::LineToolInteraction;
 use lumino_message::Tool;
 
@@ -116,20 +117,45 @@ impl Editor {
                 // 用户点击空白处退出框选时才真正写入内存层
                 // （flush_pending_drag → commit_pending_copy）。
                 //
-                // **累积模式**：再次 Ctrl 拖动复制时，新 delta 叠加到旧副本
-                // delta 上——副本从"上次副本位置"继续偏移（新件也拥有
-                // Ctrl+拖动的复制能力）。渲染时副本位置 = note + pending_copy.delta。
+                // **连续复制（复制下一份，BUG 修复）**：已有 pending_copy 时
+                // （第二次及以后 Ctrl+拖动副本框），旧副本**提交入内存**（真实化，
+                // 选中 = 原件 ∪ 旧副本），新副本以「相对原件的累积 delta」成为新
+                // pending——旧副本保持原位，新副本从旧副本位置继续偏移，两份副本
+                // 并存（不再被吞并）。渲染验证见 copy_deltas_for_index。
                 if drag_state.is_delta_zero() {
                     tracing::debug!("Editor: 复制拖动 delta 为零，取消复制");
-                } else if let Some(mut pending) = self.pending_copy_drag_state.take() {
-                    pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
-                    pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
-                    tracing::debug!(
-                        "Editor: 累积 pending 复制 - 累积 delta=({}, {})",
-                        pending.delta_tick,
-                        pending.delta_key
-                    );
+                } else if let Some(pending) = self.pending_copy_drag_state.take() {
+                    // 提交前记录原件参数：batch_insert 会位移全局索引，
+                    // 提交后须按参数全等重选原件（新索引），下次复制的
+                    // pending.selected 才能指向正确的原件。
+                    let originals: Vec<crate::Note> = pending
+                        .selected_indices_fast()
+                        .into_iter()
+                        .filter_map(|i| self.editor_state.data.get_note_view(i))
+                        .map(|n| {
+                            crate::Note::from_raw(n.tick, n.key, n.length, n.velocity, n.channel)
+                        })
+                        .collect();
+                    // 新 pending delta = 旧副本 delta + 本次拖动 delta（相对原件累积）
+                    let accum_delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
+                    let accum_delta_key = pending.delta_key.saturating_add(drag_state.delta_key);
+                    // 旧副本提交入内存（pending 放回供 commit 读取；commit 内部清空）
                     self.pending_copy_drag_state = Some(pending);
+                    self.commit_pending_copy();
+                    // 提交后按参数重选原件（新索引），保持原件框选状态
+                    self.selection_clear();
+                    self.select_notes_by_params(&originals);
+                    // 新 pending：selected = 原件（新索引），delta = 累积偏移
+                    let note_count = self.editor_state.data.current_track_note_count();
+                    let mut new_pending =
+                        DragState::from_indices(self.get_selected_indices(), note_count, 0, 0);
+                    new_pending.set_delta(accum_delta_tick, accum_delta_key);
+                    self.pending_copy_drag_state = Some(new_pending);
+                    tracing::debug!(
+                        "Editor: 连续复制 - 旧副本已提交，新副本累积 delta=({}, {})",
+                        accum_delta_tick,
+                        accum_delta_key
+                    );
                 } else {
                     tracing::debug!(
                         "Editor: 保存 pending 复制 - delta=({}, {})",
