@@ -52,9 +52,16 @@ impl Editor {
                 let start_pos = Point::new(start_x, start_y);
 
                 // 计算吸附后的目标位置
+                // 与 Selecting.current_tick 保持一致：正向拖动用"1/4 提前"吸附
+                //（鼠标进入精度单元的前 1/4 处即扩展），反向拖动保持 floor 吸附
                 let snapped_tick = if let Some(pos) = mouse_pos {
                     let tick = self.x_to_tick(pos.x);
-                    self.snap_tick(tick)
+                    let view = &self.editor_state.view;
+                    if tick >= start_tick {
+                        view.snap_tick_forward(tick)
+                    } else {
+                        view.snap_tick(tick)
+                    }
                 } else {
                     current_tick
                 };

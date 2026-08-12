@@ -103,22 +103,106 @@ fn test_pointer_direct_moved_snapped_to_precision_and_key() {
         view.key_to_y(60) + view.zoom_y / 2.0,
     );
 
-    // 移动到：tick=5000（非网格点，snap 后 = 3840）；key=56（像素级 y 在 key 内偏移）
+    // 移动到：tick=5000（正向 1/4 提前吸附 → 5760）；key=56（像素级 y 在 key 内偏移）
     let target_x = view.tick_to_x(5000.0);
     let target_y = view.key_to_y(56) + view.zoom_y * 0.3;
     editor.handle_moved(Point::new(target_x, target_y));
 
     let (_, current_tick, _, current_key, _, current_y) = selecting_state(&editor);
-    let snapped_5000 = view.snap_tick(5000.0);
+    // 正向拖动：1/4 提前吸附。5000 = 单元 [3840, 5760) 的前 1/4 内 → 吸附到 5760
+    //（原 floor 吸附为 3840，需鼠标移动整个精度单元才扩展）
     assert_eq!(
-        current_tick, snapped_5000,
-        "移动中 current_tick 应吸附到用户精度 {snapped_5000}，而非像素级 5000"
+        current_tick, 5760.0,
+        "移动中 current_tick 应 1/4 提前吸附到 5760，而非 floor 的 3840"
     );
     assert_eq!(current_key, 56);
     assert_eq!(
         current_y,
         view.key_to_y(56) + view.zoom_y,
         "移动中 current_y 应对齐 key 56 底线，而非像素 pos.y"
+    );
+}
+
+// ===== 1/4 提前吸附（横向扩展提前） =====
+
+#[test]
+fn test_snap_tick_forward_quarter_cell_threshold() {
+    // 公式边界验证：默认精度 1920（四分音符），跳变阈值 = 单元前 1/4 = 480
+    let editor = Editor::new();
+    let view = &editor.editor_state.view;
+    assert_eq!(view.snap_precision, 1920.0);
+
+    assert_eq!(view.snap_tick_forward(0.0), 0.0);
+    assert_eq!(view.snap_tick_forward(479.0), 0.0, "1/4 前不扩展");
+    assert_eq!(
+        view.snap_tick_forward(480.0),
+        1920.0,
+        "1/4 处即扩展一个单元"
+    );
+    assert_eq!(view.snap_tick_forward(1000.0), 1920.0);
+    assert_eq!(view.snap_tick_forward(1919.0), 1920.0, "单元末尾仍在本单元");
+    assert_eq!(
+        view.snap_tick_forward(1920.0),
+        1920.0,
+        "网格点本身 = 本单元末尾"
+    );
+    assert_eq!(
+        view.snap_tick_forward(2400.0),
+        3840.0,
+        "下一单元 1/4 处继续提前扩展"
+    );
+}
+
+#[test]
+fn test_selection_expands_at_quarter_cell() {
+    // 框选正向拖动：鼠标进入精度单元的 1/4 处（start + 0.25*I）即扩展，
+    // 无需移动整个精度单元（原 floor 行为）
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+
+    let view = editor.editor_state.view.clone();
+    // 按下在 tick 2200（floor 吸附 → start = 1920），单元 [1920, 3840) 的 1/4 处 = 2400
+    start_selection_at(
+        &mut editor,
+        view.tick_to_x(2200.0),
+        view.key_to_y(60) + view.zoom_y / 2.0,
+    );
+    let (start_tick, _, ..) = selecting_state(&editor);
+    assert_eq!(start_tick, 1920.0, "按下位置仍按 floor 吸附");
+
+    // 1/4 处之前（tick 2350）：不扩展，current_tick 仍等于起点（宽度 0）
+    editor.handle_moved(Point::new(view.tick_to_x(2350.0), view.key_to_y(60)));
+    let (_, current_tick, ..) = selecting_state(&editor);
+    assert_eq!(current_tick, 1920.0, "单元 1/4 前不应扩展");
+
+    // 到达 1/4 处（tick 2400）：扩展一个精度单元 → current_tick = 3840
+    editor.handle_moved(Point::new(view.tick_to_x(2400.0), view.key_to_y(60)));
+    let (_, current_tick, ..) = selecting_state(&editor);
+    assert_eq!(
+        current_tick, 3840.0,
+        "鼠标到达单元 1/4 处即扩展一个精度单元（无需移动整个单元）"
+    );
+}
+
+#[test]
+fn test_selection_reverse_drag_keeps_floor() {
+    // 反向拖动（向左）：保持 floor 吸附（跨过网格点才扩展），与修改前一致
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+
+    let view = editor.editor_state.view.clone();
+    // 按下在 tick 2400（start = 1920），向左拖到 tick 1500（跨过网格点 0）
+    start_selection_at(
+        &mut editor,
+        view.tick_to_x(2400.0),
+        view.key_to_y(60) + view.zoom_y / 2.0,
+    );
+    editor.handle_moved(Point::new(view.tick_to_x(1500.0), view.key_to_y(60)));
+
+    let (_, current_tick, ..) = selecting_state(&editor);
+    assert_eq!(
+        current_tick, 0.0,
+        "反向拖动保持 floor 吸附：鼠标 1500 → 0（跨过网格点才扩展）"
     );
 }
 
