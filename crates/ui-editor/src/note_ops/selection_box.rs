@@ -5,9 +5,9 @@
 //! 2. ghost 路径：O(1) 缓存 + delta（拖拽中或松手后待提交）
 //! 3. O(N) 回退路径：缓存失效兜底，同时恢复缓存供后续帧走 O(1)
 //!
-//! **复制模式双框**：复制（`pending_copy` / `DraggingSelectionCopy`）时返回
-//! **两个独立框**——原件框（选中音符原位）与副本框（选中音符 + 复制 delta），
-//! 渲染与命中测试各自独立；非复制模式返回单个框。
+//! **复制模式单框**：复制（`pending_copy` / `DraggingSelectionCopy`）时返回
+//! **副本框**（选中音符 + 复制 delta）——**只保留最新件（副本）的框选**，
+//! 原件不再框选（用户要求）；非复制模式返回选中音符的单框。
 
 use iced_core::Point;
 
@@ -21,8 +21,8 @@ type ScreenRect = (f32, f32, f32, f32);
 impl Editor {
     /// 选择框矩形集合（屏幕坐标）
     ///
-    /// - 复制模式（`pending_copy` / `DraggingSelectionCopy`）：返回两个独立框
-    ///   ——原件框（仅移动 delta）与副本框（移动 + 复制 delta）
+    /// - 复制模式（`pending_copy` / `DraggingSelectionCopy`）：只返回**副本框**
+    ///   （移动 + 复制 delta）——只保留最新件（副本）的框选，原件不再框选
     /// - 其他状态：返回单个框（选中音符的包围盒）
     /// - 无选中：返回空 Vec
     ///
@@ -120,16 +120,9 @@ impl Editor {
             let copy_active = pending_copy.is_some()
                 || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
 
-            // 复制模式：**双独立框选**——原件框与副本框各自独立。
-            // 原件框 = 选中音符 + 移动 delta；副本框 = 选中音符 + 移动 + 复制 delta。
-            // 原件保持框选状态（修复 BUG 1），且从原件框再次 Ctrl+拖动可继续
-            // 生成新副本（修复 BUG 2，不触发空白提交）。
+            // 复制模式：**只保留最新件（副本）框选**——原件不再框选。
+            // 副本框 = 选中音符 + 移动 + 复制 delta（用户要求）。
             if copy_active {
-                let mut rects = Vec::with_capacity(2);
-                // 原件框（仅移动 delta）
-                let (o_min_t, o_max_te, o_max_k, o_min_k) =
-                    ghost_rect(min_t, max_te, max_k, min_k, move_dt, move_dk, max_key);
-                rects.push(rect_from_bounds(view, o_min_t, o_max_te, o_max_k, o_min_k));
                 // 副本框（移动 + 复制 delta）
                 let (dt, dk) = (
                     move_dt.saturating_add(copy_dt),
@@ -137,9 +130,8 @@ impl Editor {
                 );
                 let (g_min_t, g_max_te, g_max_k, g_min_k) =
                     ghost_rect(min_t, max_te, max_k, min_k, dt, dk, max_key);
-                rects.push(rect_from_bounds(view, g_min_t, g_max_te, g_max_k, g_min_k));
                 // 不缓存 ghost 结果（delta 每帧变化）
-                return rects;
+                return vec![rect_from_bounds(view, g_min_t, g_max_te, g_max_k, g_min_k)];
             }
             // 移动模式（无复制）：选择框跟随移动 ghost（原件 + move delta）
             if move_active {
@@ -190,11 +182,7 @@ impl Editor {
             let copy_active = pending_copy.is_some()
                 || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
 
-            // 复制模式：原件框与副本框各自独立收集边界
-            let mut o_min_t = f32::INFINITY;
-            let mut o_max_te = f32::NEG_INFINITY;
-            let mut o_max_k = u16::MIN;
-            let mut o_min_k = u16::MAX;
+            // 复制模式：只收集副本框边界（原件不再框选，用户要求）
             let mut c_min_t = f32::INFINITY;
             let mut c_max_te = f32::NEG_INFINITY;
             let mut c_max_k = u16::MIN;
@@ -211,32 +199,6 @@ impl Editor {
                 raw_max_k = raw_max_k.max(n.key);
                 raw_min_k = raw_min_k.min(n.key);
                 if copy_active {
-                    // 原件 ghost = note + (pending_drag + 移动 drag) delta
-                    let mut m_dt = 0i64;
-                    let mut m_dk = 0i16;
-                    if let Some(pending) = pending
-                        && i < pending.selected.len()
-                        && pending.selected[i]
-                    {
-                        m_dt = pending.delta_tick;
-                        m_dk = pending.delta_key;
-                    }
-                    match edit_state {
-                        EditState::Dragging { drag_state, .. }
-                        | EditState::DraggingSelection { drag_state }
-                            if i < drag_state.selected.len() && drag_state.selected[i] =>
-                        {
-                            m_dt = m_dt.saturating_add(drag_state.delta_tick);
-                            m_dk = m_dk.saturating_add(drag_state.delta_key);
-                        }
-                        _ => {}
-                    }
-                    let o_tick = (n.tick + m_dt as f32).max(0.0);
-                    let o_key = (n.key as i32 + m_dk as i32).clamp(0, max_key as i32) as u16;
-                    o_min_t = o_min_t.min(o_tick);
-                    o_max_te = o_max_te.max(o_tick + n.length);
-                    o_max_k = o_max_k.max(o_key);
-                    o_min_k = o_min_k.min(o_key);
                     // 副本 ghost = note + (移动 + 复制) delta；
                     // 连续复制（pending_copy + DraggingSelectionCopy）时旧副本与新
                     // 副本并存，两条都计入副本框边界。
@@ -278,15 +240,11 @@ impl Editor {
                     .set(Some((raw_min_t, raw_max_te, raw_max_k, raw_min_k)));
             }
             if copy_active {
-                // 双独立框：原件框 + 副本框
-                let mut rects = Vec::with_capacity(2);
-                if o_min_t.is_finite() {
-                    rects.push(rect_from_bounds(view, o_min_t, o_max_te, o_max_k, o_min_k));
-                }
+                // 只保留最新件（副本）框选：单框返回
                 if c_min_t.is_finite() {
-                    rects.push(rect_from_bounds(view, c_min_t, c_max_te, c_max_k, c_min_k));
+                    return vec![rect_from_bounds(view, c_min_t, c_max_te, c_max_k, c_min_k)];
                 }
-                return rects;
+                return Vec::new();
             }
             if !any {
                 return Vec::new();
@@ -319,7 +277,8 @@ impl Editor {
 
     /// 兼容入口：返回所有选择框的并集（覆盖所有选中与副本）
     ///
-    /// 语义与旧版 `get_selection_box_bounds` 一致；复制模式的独立双框请使用
+    /// 语义与旧版 `get_selection_box_bounds` 一致；复制模式的副本框（最新件
+    /// 框选）请使用 `get_selection_box_rects`。
     /// `get_selection_box_rects`。
     pub fn get_selection_box_bounds(&self) -> Option<ScreenRect> {
         let mut rects = self.get_selection_box_rects().into_iter();
@@ -331,7 +290,7 @@ impl Editor {
         Some((min_x, max_x, min_y, max_y))
     }
 
-    /// 命中检测：遍历所有选择框（复制模式含原件框 + 副本框），返回第一个命中
+    /// 命中检测：遍历所有选择框（复制模式 = 副本框），返回第一个命中
     pub fn hit_test_selection_box(&self, pos: Point) -> Option<SelectionHitType> {
         for bounds in self.get_selection_box_rects() {
             if let Some(hit) = hit_test::hit_test_selection_box(bounds, (pos.x, pos.y)) {
@@ -339,17 +298,6 @@ impl Editor {
             }
         }
         None
-    }
-
-    /// 检测位置是否命中**副本框**（第二个及以后的选择框）
-    ///
-    /// 复制模式双框：index 0 = 原件框，index ≥ 1 = 副本框。
-    /// Ctrl+拖动副本框 = 从副本继续复制下一份；拖动原件框 = 移动原件。
-    pub fn hit_test_copy_box(&self, pos: Point) -> bool {
-        self.get_selection_box_rects()
-            .into_iter()
-            .skip(1)
-            .any(|bounds| hit_test::hit_test_selection_box(bounds, (pos.x, pos.y)).is_some())
     }
 }
 

@@ -112,8 +112,8 @@ fn test_commit_pending_copy_inserts_copies_and_selects_them() {
     // 副本被选中（按参数精确匹配，不误选未选中的原始音符）
     assert!(editor.editor_state.interaction.selected_notes.contains(&1));
     assert!(
-        editor.editor_state.interaction.selected_notes.contains(&0),
-        "原件应保持选中（框选状态）"
+        !editor.editor_state.interaction.selected_notes.contains(&0),
+        "原件不应保持选中（只保留最新件框选，用户要求）"
     );
     assert!(!editor.editor_state.interaction.selected_notes.contains(&2));
     // pending 已清空
@@ -169,7 +169,7 @@ fn test_commit_pending_copy_multiple_notes() {
         580.0
     );
     assert_eq!(data.get_note_view(5).expect("note should exist").key, 67);
-    // 副本（散布索引 1/3/5）与原件（0/2/4）全部选中（原件保持框选状态）
+    // 副本（散布索引 1/3/5）选中；原件（0/2/4）不再框选（只保留最新件框选）
     for i in [1usize, 3, 5] {
         assert!(
             editor.editor_state.interaction.selected_notes.contains(&i),
@@ -179,8 +179,8 @@ fn test_commit_pending_copy_multiple_notes() {
     }
     for i in [0usize, 2, 4] {
         assert!(
-            editor.editor_state.interaction.selected_notes.contains(&i),
-            "原件索引 {} 应保持选中",
+            !editor.editor_state.interaction.selected_notes.contains(&i),
+            "原件索引 {} 不应保持选中（只保留最新件框选）",
             i
         );
     }
@@ -493,10 +493,10 @@ fn test_commit_current_edit_with_move_and_copy_keeps_both() {
     assert!(editor.pending_copy_drag_state.is_none());
 }
 
-// ===== 复制后双独立框选（原件框 + 副本框） =====
+// ===== 复制后只保留最新件（副本）框选（原件不再框选，用户要求） =====
 
 #[test]
-fn test_selection_box_rects_two_independent_boxes() {
+fn test_selection_box_rects_only_copy_box() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
@@ -506,28 +506,13 @@ fn test_selection_box_rects_two_independent_boxes() {
     drag.set_delta(600, 0);
     editor.pending_copy_drag_state = Some(drag);
 
-    // 双独立框：原件框 [0, 480]，副本框 [600, 1080]（各自独立，不融合）
+    // 单框 = 副本框 [600, 1080]（最新件框选；原件不再框选）
     let rects = editor.get_selection_box_rects();
-    assert_eq!(rects.len(), 2, "复制模式应返回两个独立框");
+    assert_eq!(rects.len(), 1, "复制模式应只返回一个副本框（最新件框选）");
     let v = &editor.editor_state.view;
-    let origin_x = v.tick_to_x(0.0);
-    let origin_end_x = v.tick_to_x(480.0);
     let copy_x = v.tick_to_x(600.0);
     let copy_end_x = v.tick_to_x(1080.0);
-    let (o_x1, o_x2, _, _) = rects[0];
-    let (c_x1, c_x2, _, _) = rects[1];
-    assert!(
-        (o_x1 - origin_x).abs() < 0.001,
-        "原件框左边界 = 原件起点（实际 {}, 期望 {}）",
-        o_x1,
-        origin_x
-    );
-    assert!(
-        (o_x2 - origin_end_x).abs() < 0.001,
-        "原件框右边界 = 原件终点（实际 {}, 期望 {}）",
-        o_x2,
-        origin_end_x
-    );
+    let (c_x1, c_x2, _, _) = rects[0];
     assert!(
         (c_x1 - copy_x).abs() < 0.001,
         "副本框左边界 = 副本起点（实际 {}, 期望 {}）",
@@ -540,18 +525,12 @@ fn test_selection_box_rects_two_independent_boxes() {
         c_x2,
         copy_end_x
     );
-    assert!(
-        c_x1 > o_x2,
-        "两框应分离：副本框起点 {} 应大于原件框终点 {}",
-        c_x1,
-        o_x2
-    );
-    // 兼容入口返回并集（覆盖全部选中与副本）
+    // 兼容入口返回并集（此时 = 副本框本身）
     let (u_x1, u_x2, _, _) = editor.get_selection_box_bounds().expect("应有并集框");
     assert!(
-        (u_x1 - origin_x).abs() < 0.001 && (u_x2 - copy_end_x).abs() < 0.001,
-        "兼容入口 bounds 应为并集 [{}, {}]，实际 [{}, {}]",
-        origin_x,
+        (u_x1 - copy_x).abs() < 0.001 && (u_x2 - copy_end_x).abs() < 0.001,
+        "兼容入口 bounds 应为副本框 [{}, {}]，实际 [{}, {}]",
+        copy_x,
         copy_end_x,
         u_x1,
         u_x2
@@ -559,7 +538,7 @@ fn test_selection_box_rects_two_independent_boxes() {
 }
 
 #[test]
-fn test_selection_box_hit_test_two_boxes_inside() {
+fn test_selection_box_hit_test_copy_box_only() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
@@ -571,56 +550,23 @@ fn test_selection_box_hit_test_two_boxes_inside() {
 
     let v = &editor.editor_state.view;
     let copy_center_y = v.key_to_y(60) + v.zoom_y / 2.0;
-    // 副本中心（tick 840）→ Inside（副本框命中）
+    // 副本中心（tick 840）→ Inside（副本框命中 = 最新件框选）
     let copy_center_x = v.tick_to_x(840.0);
     assert_eq!(
         editor.hit_test_selection_box(iced_core::Point::new(copy_center_x, copy_center_y)),
         Some(crate::SelectionHitType::Inside),
         "副本位置应命中副本框内部"
     );
-    // 原件中心（tick 240）→ Inside（原件框命中，原件保持框选状态）
+    // 原件中心（tick 240）→ 不命中任何框（原件不再框选，用户要求）
     let origin_center_x = v.tick_to_x(240.0);
     assert_eq!(
         editor.hit_test_selection_box(iced_core::Point::new(origin_center_x, copy_center_y)),
-        Some(crate::SelectionHitType::Inside),
-        "原件位置应命中原件框内部"
-    );
-    // 两框之间的空隙（tick 540，位于 [480, 600] 之间）→ 不命中
-    let gap_x = v.tick_to_x(540.0);
-    assert_eq!(
-        editor.hit_test_selection_box(iced_core::Point::new(gap_x, copy_center_y)),
         None,
-        "两框之间不应命中任何框"
+        "原件位置不应命中任何选择框（原件不保留框选）"
     );
 
-    // 从原件框内 Ctrl+拖动（复制未提交，副本框存在）→ 拖动原件框 = 移动原件
-    // （BUG 修复：即使 Ctrl 按着，拖动原件框也不进入复制模式）
+    // 副本框内 Ctrl+拖动 → 复制下一份（DraggingSelectionCopy）
     editor.set_ctrl_pressed(true);
-    editor.handle_tool_pressed(
-        iced_core::Point::new(origin_center_x, copy_center_y),
-        false,
-        240.0,
-        60,
-    );
-    match editor.editor_state.interaction.edit_state {
-        EditState::DraggingSelection { .. } => {}
-        other => panic!(
-            "Ctrl+拖动原件框应进入 DraggingSelection（移动原件），实际 {:?}",
-            other
-        ),
-    }
-    // 内存未写入：pending 保留、document 未变（先 UI 后内存）
-    assert!(
-        editor.pending_copy_drag_state.is_some(),
-        "拖动原件框不应提交 pending 复制"
-    );
-    assert_eq!(
-        editor.editor_state.data.current_track_note_count(),
-        1,
-        "document 不应被写入"
-    );
-
-    // 副本框位置 Ctrl+按下 → 复制下一份（DraggingSelectionCopy）
     editor.handle_tool_pressed(
         iced_core::Point::new(copy_center_x, copy_center_y),
         false,
@@ -633,6 +579,28 @@ fn test_selection_box_hit_test_two_boxes_inside() {
             "Ctrl+拖动副本框应进入 DraggingSelectionCopy（复制下一份），实际 {:?}",
             other
         ),
+    }
+    // 内存未写入：pending 保留、document 未变（先 UI 后内存）
+    assert!(
+        editor.pending_copy_drag_state.is_some(),
+        "再次 Ctrl 拖动不应提交 pending 复制"
+    );
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        1,
+        "document 不应被写入"
+    );
+
+    // 原件位置（无框）Ctrl+按下 → priority 2 单音符命中 → 单音符编辑（移动原件）
+    editor.handle_tool_pressed(
+        iced_core::Point::new(origin_center_x, copy_center_y),
+        false,
+        240.0,
+        60,
+    );
+    match editor.editor_state.interaction.edit_state {
+        EditState::Dragging { .. } | EditState::PendingDrag { .. } => {}
+        other => panic!("原件位置应进入单音符编辑（移动原件），实际 {:?}", other),
     }
 }
 
@@ -695,8 +663,9 @@ fn test_released_copy_drag_accumulates_delta_across_axes() {
     assert_eq!(pending.delta_key, 7, "累积 key: 5 + 2");
 }
 
-// ===== BUG 复现：pending_copy 存在时，无 Ctrl 在原件框内拖动（移动模式） =====
+// ===== BUG 复现：pending_copy 存在时，无 Ctrl 在副本框内拖动（移动模式） =====
 // 期望：原件跟随鼠标移动（drag delta 生效），副本跟随原件同步平移
+//（原件不再框选——用户要求；移动入口 = 副本框）
 
 #[test]
 fn test_move_drag_from_original_with_pending_copy_moves_both() {
@@ -713,12 +682,12 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
     d1.set_delta(100, 0);
     release_copy_drag(&mut editor, d1);
 
-    // 无 Ctrl，在原件中心（tick 240）按下 → 应为 DraggingSelection（移动模式）
-    let origin_x = editor.editor_state.view.tick_to_x(240.0);
-    let origin_y = editor.editor_state.view.key_to_y(60) + editor.editor_state.view.zoom_y / 2.0;
-    let origin_center = iced_core::Point::new(origin_x, origin_y);
+    // 无 Ctrl，在副本框内（tick 340 中心）按下 → DraggingSelection（移动模式）
+    let copy_x = editor.editor_state.view.tick_to_x(340.0);
+    let copy_y = editor.editor_state.view.key_to_y(60) + editor.editor_state.view.zoom_y / 2.0;
+    let copy_center = iced_core::Point::new(copy_x, copy_y);
     editor.set_ctrl_pressed(false);
-    editor.handle_tool_pressed(origin_center, false, 240.0, 60);
+    editor.handle_tool_pressed(copy_center, false, 340.0, 60);
 
     match &editor.editor_state.interaction.edit_state {
         EditState::DraggingSelection { drag_state } => {
@@ -731,9 +700,9 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
         other => panic!("应进入 DraggingSelection（移动），实际 {:?}", other),
     }
 
-    // 拖动 +50 tick：240 → 290
-    let moved_x = editor.editor_state.view.tick_to_x(290.0);
-    editor.handle_moved(iced_core::Point::new(moved_x, origin_y));
+    // 拖动 +50 tick：340 → 390
+    let moved_x = editor.editor_state.view.tick_to_x(390.0);
+    editor.handle_moved(iced_core::Point::new(moved_x, copy_y));
 
     if let EditState::DraggingSelection { drag_state } = &editor.editor_state.interaction.edit_state
     {
@@ -828,7 +797,7 @@ fn test_build_ghost_delta_positions_disabled_when_copy_pending() {
 }
 
 // ===== BUG 修复回归：连续复制「复制下一份」完整交互序列 =====
-// - 拖动原件框（Ctrl 按着）= 移动原件（BUG 1 修复）
+// - 复制后只保留最新件（副本）框选，原件不再框选（用户要求）
 // - Ctrl+拖动副本框 = 复制下一份：拖动中旧副本保持 + 新副本跟手（双副本），
 //   松手时旧副本提交入内存、新副本累积（BUG 2 修复，不再被吞并）
 
@@ -909,8 +878,27 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
         2,
         "旧副本应已提交入内存（真实化）"
     );
-    // 原件仍处于框选状态（提交后按参数重选原件）
-    assert!(editor.has_selection());
+    // 只保留最新件框选：选择框应位于副本2（tick 150）位置，原件不再框选
+    let rects = editor.get_selection_box_rects();
+    assert_eq!(rects.len(), 1, "复制模式只显示一个副本框（最新件框选）");
+    let v = &editor.editor_state.view;
+    let (r_x1, r_x2, _, _) = rects[0];
+    assert!(
+        (r_x1 - v.tick_to_x(150.0)).abs() < 0.001 && (r_x2 - v.tick_to_x(630.0)).abs() < 0.001,
+        "选择框应覆盖最新副本 [150, 630]，实际 [{}, {}]",
+        r_x1,
+        r_x2
+    );
+    // 原件位置不再命中任何框（原件不保留框选）；
+    // 原件独有区域 tick 50（原件 [0,480]，副本 [150,630]，重叠区 150-480）
+    assert_eq!(
+        editor.hit_test_selection_box(iced_core::Point::new(
+            v.tick_to_x(50.0),
+            v.key_to_y(60) + v.zoom_y / 2.0
+        )),
+        None,
+        "原件独有区域不应命中选择框（原件不再框选）"
+    );
 
     // 连续第三次：Ctrl+拖动副本2 框（tick 150 中心 → 390）→ 从副本2 继续复制
     editor.handle_tool_pressed(

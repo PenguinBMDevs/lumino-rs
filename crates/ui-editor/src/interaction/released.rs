@@ -142,7 +142,9 @@ impl Editor {
                     // 旧副本提交入内存（pending 放回供 commit 读取；commit 内部清空）
                     self.pending_copy_drag_state = Some(pending);
                     self.commit_pending_copy();
-                    // 提交后按参数重选原件（新索引），保持原件框选状态
+                    // 提交后按参数重选原件（新索引）：作为**复制锚点**
+                    // （pending.selected 决定下次副本渲染基于哪些音符），
+                    // 视觉上原件不再框选（复制模式只显示副本框——最新件框选）
                     self.selection_clear();
                     self.select_notes_by_params(&originals);
                     // 新 pending：selected = 原件（新索引），delta = 累积偏移

@@ -79,8 +79,8 @@ pub fn draw(
     // 拖动期间使用 ghost 位置，使选择框跟随被拖动的音符一起移动。
     //
     // 复制模式（pending_copy / DraggingSelectionCopy）：`get_selection_box_rects`
-    // 返回**两个独立框**（原件框 + 副本框），逐个绘制——原件与副本各自拥有
-    // 自己的框选，不融合成一个大框。
+    // 只返回**副本框**（最新件框选）——原件不再框选（用户要求）。
+    // 连续复制拖动中副本框覆盖「旧副本 ∪ 新副本」边界。
     //
     // 性能优化：
     // - 非 Selecting 状态，使用 `get_selection_box_rects()`（增量维护的 O(1) 缓存，
