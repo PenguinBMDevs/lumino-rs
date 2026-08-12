@@ -70,7 +70,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     client_b
         .join_room_and_connect(room_invite_code.clone())
         .await
-        .expect("加入房间失败");
+        .unwrap_or_else(|e| panic!("加入房间失败: {e}"));
 
     // 等待 B 的 RoomJoined 事件
     let mut joined = false;
