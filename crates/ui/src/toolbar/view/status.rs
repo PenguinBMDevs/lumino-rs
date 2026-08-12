@@ -50,7 +50,7 @@ impl Toolbar {
     pub fn render_precision_selector<'a>(
         &'a self,
         _content_height: f32,
-        _palette: &'a iced_core::theme::palette::Extended,
+        palette: &'a iced_core::theme::palette::Extended,
         language: Language,
         t: &'static MainTranslations,
     ) -> Element<'a> {
@@ -63,7 +63,12 @@ impl Toolbar {
         let current_precision = LocalizedPrecision::new(self.note_precision, language);
 
         row![
-            text(t.precision_label).size(14),
+            // 精度解释文字颜色必须跟随主题：容器背景为 palette.background.weak，
+            // 取同一 pair 的 text 色（iced 保证其在弱背景上可读——暗色主题白字/亮色主题黑字），
+            // 否则 text 默认使用固定黑色，暗色主题下不可见。
+            text(t.precision_label)
+                .size(14)
+                .color(palette.background.weak.text),
             space().width(8),
             pick_list(precision_options, Some(current_precision), |lp| {
                 if lp.inner == NotePrecision::Custom {
