@@ -46,8 +46,14 @@ impl VelocityHandler {
             }
             VA::ToggleMode => {
                 let panel = &mut root.editor.velocity_panel;
+                // 按 id 判定（拖动排序后 conductor 可能不在首位）
                 let is_conductor = root.sidebar.selected_track == 0
-                    && root.sidebar.tracks.first().is_some_and(|t| t.is_conductor);
+                    && root
+                        .sidebar
+                        .tracks
+                        .iter()
+                        .find(|t| t.id == 0)
+                        .is_some_and(|t| t.is_conductor);
                 panel.edit_mode =
                     Self::next_edit_mode(panel.edit_mode, is_conductor, panel.selected_cc);
                 tracing::debug!("力度面板: 切换模式为 {:?}", panel.edit_mode);

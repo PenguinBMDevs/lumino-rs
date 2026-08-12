@@ -2,6 +2,7 @@ use crate::resources::icon;
 use iced_core::Color;
 use std::collections::HashSet;
 
+use super::track_reorder::TrackReorderState;
 pub use lumino_ui_core::sidebar_event::{GroupId, Route};
 
 /// 路由栏宽度（固定）
@@ -219,6 +220,8 @@ pub struct Sidebar {
     ///
     /// Root 取出后转发给 Runner，由 Runner 调用 `DialogManager::open_recover_track`。
     pub pending_recover_track_dialog: bool,
+    /// 音轨拖拽排序状态（None = 无拖拽进行中）
+    pub track_reorder: Option<TrackReorderState>,
 }
 
 impl Sidebar {
@@ -275,6 +278,7 @@ impl Sidebar {
             pending_track_deletion: None,
             pending_track_deletion_meta: None,
             pending_recover_track_dialog: false,
+            track_reorder: None,
         }
     }
 

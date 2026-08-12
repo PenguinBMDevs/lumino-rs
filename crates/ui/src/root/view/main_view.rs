@@ -242,7 +242,14 @@ impl Root {
         )
         .with_labels(track_labels)
         .with_channels(track_channels)
-        .with_conductors(track_conductors);
+        .with_conductors(track_conductors)
+        // 长按激活拖拽排序（Sidebar 统一计时），驱动走带指示线与遮罩绘制
+        .with_drag_active(
+            self.sidebar
+                .track_reorder
+                .as_ref()
+                .is_some_and(|r| r.active),
+        );
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);

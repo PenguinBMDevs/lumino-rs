@@ -7,7 +7,7 @@ use lumino_extras::i18n::{Language, main_translations};
 use crate::{
     Element, Theme,
     resources::icon::{self, Icon},
-    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track},
+    sidebar::{Event, RESIZE_HANDLE_WIDTH, Route, Track, TrackReorderState},
     window,
 };
 
@@ -28,6 +28,8 @@ pub struct SidebarViewParams<'a> {
     pub panel_context_menu_open: bool,
     /// 面板右键菜单位置（窗口逻辑坐标，打开时有效）
     pub panel_context_menu_pos: Option<(f32, f32)>,
+    /// 音轨拖拽排序状态（None = 无拖拽进行中）
+    pub track_reorder: Option<&'a TrackReorderState>,
 }
 
 pub fn view<'a>(
@@ -102,14 +104,35 @@ pub fn view<'a>(
                 }
             }));
 
-            for track in params.tracks {
+            let reorder = params.track_reorder;
+            let reorder_track_id = reorder.filter(|r| r.active).map(|r| r.track_id);
+
+            // 拖拽激活时渲染插入位置指示分割线
+            let insert_divider = || {
+                container(space().width(Length::Fill).height(Length::Fixed(3.0))).style(
+                    |theme: &Theme| {
+                        let palette = theme.extended_palette();
+                        container::Style::default().background(palette.primary.strong.color)
+                    },
+                )
+            };
+
+            for (idx, track) in params.tracks.iter().enumerate() {
+                if reorder.is_some_and(|r| r.active && r.hover_index == Some(idx)) {
+                    col = col.push(insert_divider());
+                }
+                let is_dragging = reorder_track_id == Some(track.id);
                 let track_container = view_track_item(
                     track,
                     track.id == params.selected_track,
                     window,
                     params.renaming_track,
+                    is_dragging,
                 );
                 col = col.push(track_container);
+            }
+            if reorder.is_some_and(|r| r.active && r.hover_index == Some(params.tracks.len())) {
+                col = col.push(insert_divider());
             }
 
             // 添加音轨按钮
@@ -171,8 +194,14 @@ pub fn view<'a>(
             // 音轨行本身的 mouse_area（on_right_press TrackContextMenuOpened）会先
             // `capture_event()` 阻止冒泡，因此只有点击非音轨行的空白区域才会
             // 触发本层的 PanelContextMenuOpened。
+            // 拖拽排序：本层 on_move 跟踪鼠标位置更新插入指示；
+            // on_release 兜底结束拖拽（行级 mouse_area 不处理释放，不捕获该事件）；
+            // on_exit 兜底取消：拖出面板的候选不残留（避免持续驱动每帧重绘）。
             let base_content = mouse_area(container(scrollable_content))
-                .on_right_press(Event::panel_context_menu_opened());
+                .on_right_press(Event::panel_context_menu_opened())
+                .on_move(|pos| Event::track_reorder_moved(pos.x, pos.y))
+                .on_release(Event::track_reorder_ended(None))
+                .on_exit(Event::track_reorder_cancelled());
 
             // 浮动菜单优先级：颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
             // base_content 作为 Stack 最底层，按需叠加浮动覆盖层。
@@ -254,6 +283,7 @@ fn view_track_item<'a>(
     is_selected: bool,
     window: &'a window::Window,
     renaming_track: Option<&'a (usize, String)>,
+    is_dragging: bool,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let is_renaming = renaming_track.map(|(id, _)| *id) == Some(track.id);
@@ -344,26 +374,43 @@ fn view_track_item<'a>(
         .align_y(Alignment::Center)
         .padding(4);
 
+    // 选中与静音/独奏交互不依赖 button 的 on_press：行级 mouse_area 按下时
+    // 同时发出"选中 + 拖拽候选开始"（Batch）。保留 button 仅用于视觉样式。
     let track_button = button(track_row)
         .width(Length::Fill)
-        .on_press(Event::track_selected(track.id))
         .style(move |theme: &Theme, status| {
             let bg = color::track_button_background(track_color, is_selected, status, theme);
-            button::Style {
-                text_color,
-                border: iced_core::Border {
+            let border = if is_dragging {
+                iced_core::Border {
+                    radius: 6.0.into(),
+                    width: 1.5,
+                    color: palette.primary.strong.color,
+                }
+            } else {
+                iced_core::Border {
                     radius: 6.0.into(),
                     width: 0.0,
                     color: iced_core::Color::TRANSPARENT,
-                },
+                }
+            };
+            button::Style {
+                text_color,
+                border,
                 ..Default::default()
             }
             .with_background(bg)
         });
 
-    // 右键点击按钮打开上下文菜单
-    let track_button_with_menu =
-        mouse_area(track_button).on_right_press(Event::track_context_menu_opened(track.id));
+    // 左键按下：选中音轨 + 注册拖拽排序候选（长按计时起点）。
+    // 右键点击打开上下文菜单。
+    // 注意：button 已去除 on_press（否则会捕获 press 事件阻断本层 mouse_area），
+    // 选中与静音/独奏交互由行内各控件的 on_press 各自处理。
+    let track_button_with_menu = mouse_area(track_button)
+        .on_press(crate::Message::Batch(vec![
+            Event::track_selected(track.id),
+            Event::track_reorder_started(track.id),
+        ]))
+        .on_right_press(Event::track_context_menu_opened(track.id));
 
     column![track_button_with_menu].spacing(2).into()
 }

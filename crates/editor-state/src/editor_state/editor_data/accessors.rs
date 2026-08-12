@@ -66,6 +66,19 @@ impl EditorData {
             .position(|&id| id == track_id)
     }
 
+    /// 返回视觉位置对应的文档音轨索引（与 [`Self::visual_position_of`] 互逆）
+    ///
+    /// 侧边栏顺序即视觉顺序（拖动排序后 `track_visual_order` 同步更新）。
+    /// 音轨不在映射中时回退到恒等映射（视觉位置即文档索引），
+    /// 保证未初始化/部分同步状态下不会越界访问。
+    #[inline]
+    pub fn document_track_at(&self, visual_pos: usize) -> usize {
+        self.track_visual_order
+            .get(visual_pos)
+            .copied()
+            .unwrap_or(visual_pos)
+    }
+
     /// 取走主音轨增量事件队列（UI 层每帧消费）
     #[inline]
     pub fn take_note_delta_events(

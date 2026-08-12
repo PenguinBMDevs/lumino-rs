@@ -23,6 +23,7 @@ impl Sidebar {
         let prev_renaming = self.renaming_track.as_ref().map(|(id, _)| *id);
         let prev_color_picking = self.color_picking_track;
         let prev_panel_context_menu_open = self.panel_context_menu.is_open;
+        let prev_reorder_hover = self.track_reorder.as_ref().and_then(|r| r.hover_index);
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => self.handle_group_toggle(group),
@@ -39,6 +40,22 @@ impl Sidebar {
             TrackAddBelow(id) => self.handle_track_add_below(id),
             TrackMoveUp(id) => self.handle_track_move_up(id),
             TrackMoveDown(id) => self.handle_track_move_down(id),
+            // ── 音轨拖拽排序 ──
+            // 侧边栏无法获取按下坐标，传 (0,0) 使"按下后移动任意距离即激活"；
+            // 移动激活/插入指示更新由每帧 AnimationTick 驱动重绘。
+            TrackReorderStarted(id) => {
+                self.handle_track_reorder_started(id, iced_core::Point::new(0.0, 0.0));
+            }
+            TrackReorderMoved { x, y } => {
+                self.handle_track_reorder_moved(iced_core::Point::new(x, y));
+            }
+            TrackReorderEnded(insert_index) => {
+                self.handle_track_reorder_ended(insert_index);
+            }
+            TrackReorderCancelled => {
+                // 鼠标移出音轨列表面板（on_exit 兜底）等场景：清除候选，不排序
+                self.track_reorder = None;
+            }
             // ── 音轨选项卡右键菜单 ──
             TrackContextMenuOpened(id) => self.handle_track_context_menu_opened(id),
             TrackContextMenuClosed => self.handle_track_context_menu_closed(),
@@ -79,5 +96,7 @@ impl Sidebar {
             || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
             || self.color_picking_track != prev_color_picking
             || self.panel_context_menu.is_open != prev_panel_context_menu_open
+            // 拖拽排序状态变化（开始/移动/激活/结束）需要重绘
+            || self.track_reorder.as_ref().and_then(|r| r.hover_index) != prev_reorder_hover
     }
 }

@@ -16,6 +16,17 @@ impl Root {
         self.sidebar.update_tracks_from_midi(track_infos);
         // 同步视觉位置到文档音轨索引的映射
         // sidebar.tracks 的顺序就是视觉位置，每个 track.id 是文档音轨索引
+        self.sync_track_visual_order();
+    }
+
+    /// 同步视觉位置 → 文档音轨索引 映射（`track_visual_order`）
+    ///
+    /// 侧边栏音轨顺序（视觉顺序）变化时调用：拖拽排序、新增音轨、删除音轨、
+    /// 恢复音轨。映射用于走带交互层把视觉位置（行索引）转换为 document
+    /// 音轨索引，保证排序后点击/框选/移动/擦除/切割落在正确的音轨上。
+    ///
+    /// 幂等，O(n)。仅在音轨结构变化时调用（避免每帧 6 万轨开销）。
+    pub fn sync_track_visual_order(&mut self) {
         self.editor.editor_state.data.track_visual_order =
             self.sidebar.tracks.iter().map(|t| t.id).collect();
     }
@@ -103,12 +114,14 @@ impl Root {
         self.editor.switch_to_track(track_idx);
         self.update_playback_notes();
 
-        // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity
+        // Conductor 轨道自动进入 Tempo 模式，普通轨道切回 Velocity。
+        // 按 id 查找（拖动排序后 conductor 可能不在首位）
         let is_conductor = self
             .sidebar
             .tracks
-            .first()
-            .is_some_and(|t| t.id == track_idx && t.is_conductor);
+            .iter()
+            .find(|t| t.id == track_idx)
+            .is_some_and(|t| t.is_conductor);
         let panel = &mut self.editor.velocity_panel;
         if is_conductor {
             if !matches!(panel.edit_mode, crate::editor::velocity::EditMode::Tempo) {
@@ -333,8 +346,13 @@ impl Root {
             color: None,
         };
 
-        // 把音轨放回原位置（若索引越界则追加）
-        let insert_idx = payload.original_index.min(self.sidebar.tracks.len());
+        // 把音轨放回原位置（若索引越界则追加）。
+        // Conductor 首位不变量：不允许插到 conductor 之前（original_index=0 时改为其后）
+        let conductor_idx = self.sidebar.tracks.iter().position(|t| t.is_conductor);
+        let mut insert_idx = payload.original_index.min(self.sidebar.tracks.len());
+        if let Some(ci) = conductor_idx {
+            insert_idx = insert_idx.max(ci + 1).min(self.sidebar.tracks.len());
+        }
         self.sidebar.tracks.insert(insert_idx, new_track);
 
         // 2026-08 修复：恢复轨 id 可能大于当前 document 轨数，先扩轨再写入，
@@ -359,6 +377,9 @@ impl Root {
 
         // 释放 reserved_track_id（音轨重新出现，不再占用）
         self.sidebar.release_reserved_track_id(track_id);
+
+        // 恢复音轨改变了 sidebar 顺序 → 同步视觉位置映射（走带交互依赖）
+        self.sync_track_visual_order();
 
         // 如果当前选中音轨已不存在（被删除时 selected_track 可能改向其他音轨），
         // 切换到恢复的音轨

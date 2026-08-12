@@ -293,6 +293,9 @@ impl Root {
 
         self.editor.update_selection_box_animation(None);
 
+        // 音轨拖拽排序长按计时：候选按下后超过阈值自动激活拖拽
+        self.sidebar.update_track_reorder_timer(Instant::now());
+
         // 轮询异步 MoveOp 提交结果（每帧一次，将后台线程结果应用到 data 并 push history）
         if self.editor.poll_async_commit().is_some() {
             self.editor

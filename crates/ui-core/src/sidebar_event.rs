@@ -167,6 +167,14 @@ pub enum Event {
     TrackColorReset(usize),
     /// 关闭颜色选择器
     TrackColorPickerClosed(usize),
+    /// 音轨拖拽排序候选开始（左键按下，用于长按计时与移动跟踪）
+    TrackReorderStarted(usize),
+    /// 音轨拖拽排序中鼠标移动（列表局部坐标，用于更新插入指示位置）
+    TrackReorderMoved { x: f32, y: f32 },
+    /// 音轨拖拽排序结束（携带插入索引；`None` 表示未激活拖拽，不排序）
+    TrackReorderEnded(Option<usize>),
+    /// 取消音轨拖拽排序（不执行排序，仅清除候选状态）
+    TrackReorderCancelled,
 }
 
 impl Event {
@@ -295,6 +303,22 @@ impl Event {
 
     pub fn track_color_picker_closed(track_id: usize) -> Message {
         Message::Sidebar(Self::TrackColorPickerClosed(track_id))
+    }
+
+    pub const fn track_reorder_started(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackReorderStarted(track_id))
+    }
+
+    pub const fn track_reorder_moved(x: f32, y: f32) -> Message {
+        Message::Sidebar(Self::TrackReorderMoved { x, y })
+    }
+
+    pub const fn track_reorder_ended(insert_index: Option<usize>) -> Message {
+        Message::Sidebar(Self::TrackReorderEnded(insert_index))
+    }
+
+    pub const fn track_reorder_cancelled() -> Message {
+        Message::Sidebar(Self::TrackReorderCancelled)
     }
 }
 

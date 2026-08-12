@@ -39,6 +39,7 @@ mod track;
 
 #[cfg(test)]
 mod tests {
+    mod arrangement_track_mapping;
     mod drawing;
     mod flow;
     mod ghost;

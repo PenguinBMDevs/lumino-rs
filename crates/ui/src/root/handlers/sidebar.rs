@@ -90,6 +90,25 @@ impl Root {
             self.ensure_sidebar_tracks_in_document();
         }
 
+        // 音轨结构变化（拖拽排序 / 新增 / 删除）→ 同步视觉位置映射。
+        // sidebar.tracks 顺序即视觉顺序，track_visual_order 是走带交互层
+        // 把视觉位置转换为 document 音轨索引的依据，不同步会导致排序后
+        // 走带编辑（添加/框选/移动/擦除/切割）落在错误的音轨上。
+        let track_structure_changed = matches!(
+            &event,
+            sidebar::Event::AddTrack
+                | sidebar::Event::TrackAddAbove(_)
+                | sidebar::Event::TrackAddBelow(_)
+                | sidebar::Event::TrackReorderEnded(_)
+                | sidebar::Event::TrackContextMenuItemClicked(
+                    _,
+                    lumino_message::TrackContextMenuItem::Delete
+                )
+        ) || self.sidebar.pending_track_deletion.is_some();
+        if track_structure_changed {
+            self.sync_track_visual_order();
+        }
+
         // 消费 sidebar 中待删除音轨请求，构造 payload 转发给 Runner 写入 .lmdeltrack
         // 必须在 sidebar.update 之后调用——此时 pending_track_deletion 才被设置。
         self.forward_pending_track_deletion();

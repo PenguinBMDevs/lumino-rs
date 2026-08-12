@@ -286,9 +286,10 @@ impl CollaborationClient {
                     ServerMessage::Error { error } => Err(crate::CollaborationError::Other(
                         format!("认证失败: {}", error),
                     )),
-                    _ => Err(crate::CollaborationError::Other(
-                        "意外的认证响应".to_string(),
-                    )),
+                    _ => Err(crate::CollaborationError::Other(format!(
+                        "意外的认证响应: {}",
+                        text
+                    ))),
                 }
             }
             Ok(None) => Err(crate::CollaborationError::Other("连接已关闭".to_string())),

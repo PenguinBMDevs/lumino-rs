@@ -256,3 +256,23 @@ fn onion_skin_state_full_when_mute_changes_after_delta() {
     rebuilt.mute_fp = 999;
     assert_full(&state.decide_action(&rebuilt));
 }
+
+#[test]
+fn mute_fingerprint_is_order_independent() {
+    // 音轨拖拽排序只改变 sidebar.tracks 顺序，不改变静音集合。
+    // 指纹必须顺序无关，否则排序会触发洋葱皮全量重建（不必要的 GPU 开销）。
+    let fp1 = mute_fingerprint_of(&mut vec![3, 1, 5]);
+    let fp2 = mute_fingerprint_of(&mut vec![1, 5, 3]);
+    let fp3 = mute_fingerprint_of(&mut vec![3, 1, 5]);
+    assert_eq!(fp1, fp2, "同一集合不同排列应产生相同指纹");
+    assert_eq!(fp1, fp3);
+}
+
+#[test]
+fn mute_fingerprint_distinguishes_sets() {
+    let fp_empty = mute_fingerprint_of(&mut vec![]);
+    let fp_one = mute_fingerprint_of(&mut vec![0]);
+    let fp_two = mute_fingerprint_of(&mut vec![0, 1]);
+    assert_ne!(fp_empty, fp_one);
+    assert_ne!(fp_one, fp_two);
+}

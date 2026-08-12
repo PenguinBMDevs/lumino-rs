@@ -5,6 +5,7 @@ mod core;
 mod handling;
 mod panel;
 mod panel_context_menu;
+mod track_reorder;
 mod view;
 
 pub mod event;
@@ -12,6 +13,7 @@ mod route;
 
 pub use core::{GroupId, RESIZE_HANDLE_WIDTH, ROUTES, Route, RouteConfig, Sidebar, Track};
 pub use event::Event;
+pub use track_reorder::TrackReorderState;
 
 #[cfg(test)]
 mod tests {

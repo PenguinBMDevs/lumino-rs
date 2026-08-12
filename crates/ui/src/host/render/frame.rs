@@ -81,6 +81,13 @@ impl Host {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
         }
+
+        // 音轨拖拽排序候选进行中：每帧触发 AnimationTick 驱动长按计时，
+        // 并持续重绘以刷新插入位置指示线（长按激活后同样需要逐帧重绘）。
+        if self.root.sidebar.track_reorder_pending() {
+            self.route_message(Message::AnimationTick);
+            self.window_ctx.window.request_redraw();
+        }
     }
 
     /// 更新播放状态

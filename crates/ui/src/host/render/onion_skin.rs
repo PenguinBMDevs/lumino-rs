@@ -108,15 +108,21 @@ impl OnionSkinState {
     /// 用户硬约束：不得限制 GPU 内存使用 / 不得限制音轨数量。
     /// 旧实现用 u64 位掩码仅支持 64 轨（超出 break 截断），
     /// 新实现用 hash 支持任意音轨数量。
+    ///
+    /// 顺序无关：仅对「静音音轨 id 集合」哈希（集合先排序再哈希）。
+    /// 音轨拖拽排序只改变 sidebar.tracks 顺序、不改变静音集合与
+    /// document 绑定，排序不应触发洋葱皮全量重建（洋葱皮显示与
+    /// sidebar 顺序无关，按 track_id 组织段表）。
     fn compute_mute_fingerprint(host: &Host) -> u64 {
-        use std::collections::hash_map::DefaultHasher;
-        use std::hash::{Hash, Hasher};
-
-        let mut hasher = DefaultHasher::new();
-        for track in host.root.sidebar.tracks.iter() {
-            track.is_muted.hash(&mut hasher);
-        }
-        hasher.finish()
+        let mut muted_ids: Vec<usize> = host
+            .root
+            .sidebar
+            .tracks
+            .iter()
+            .filter(|t| t.is_muted)
+            .map(|t| t.id)
+            .collect();
+        mute_fingerprint_of(&mut muted_ids)
     }
 
     /// 收集当前重建所需的指纹信息（避免在 needs_rebuild 中持有 Host 借用）
@@ -359,6 +365,22 @@ fn build_track_instances(data: &EditorData, track_id: usize) -> Vec<NoteInstance
     }
 
     Vec::new()
+}
+
+/// 计算静音音轨集合的指纹（顺序无关）
+///
+/// 排序后哈希：同一集合无论侧边栏排列顺序如何，指纹一致。
+/// 音轨拖拽排序因此不会触发洋葱皮全量重建。
+fn mute_fingerprint_of(muted_ids: &mut [usize]) -> u64 {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    muted_ids.sort_unstable();
+    let mut hasher = DefaultHasher::new();
+    for id in muted_ids.iter() {
+        id.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 /// 状态机三态决策测试（独立文件，保持本文件 < 400 行）

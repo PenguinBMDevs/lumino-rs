@@ -7,6 +7,9 @@ use super::Editor;
 impl Editor {
     /// 擦除工程走带矩形范围内的音符。
     ///
+    /// `track_lo..=track_hi` 为视觉位置区间（侧边栏顺序），内部映射为
+    /// 文档音轨索引，保证拖动排序后擦除落在正确的音轨上。
+    ///
     /// 返回实际删除的音符数。
     pub fn arrange_erase(
         &mut self,
@@ -46,7 +49,7 @@ impl Editor {
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
-            "Arrangement: 擦除 {} 个音符 (tick {}..{}, track {}..={})",
+            "Arrangement: 擦除 {} 个音符 (tick {}..{}, visual {}..={})",
             deleted_count,
             tick_start,
             tick_end,
@@ -85,6 +88,8 @@ impl Editor {
     }
 
     /// 收集擦除范围内包含音符的音轨列表。
+    ///
+    /// 返回文档音轨索引列表（已由视觉位置映射）。
     fn collect_erase_targets(
         &self,
         tick_start: f64,
@@ -94,14 +99,16 @@ impl Editor {
     ) -> Vec<usize> {
         let editor_data = &self.editor_state.data;
         let mut tracks_to_clean: Vec<usize> = Vec::new();
-        for track_idx in track_lo..=track_hi {
+        for visual in track_lo..=track_hi {
+            // 视觉位置 → 文档音轨索引（拖动排序后二者不一致）
+            let doc_track = editor_data.document_track_at(visual);
             // 2026-08 单一权威源：直接从 document 读取判断
             let has_any = editor_data
-                .track_notes(track_idx)
+                .track_notes(doc_track)
                 .iter()
                 .any(|note| super::helpers::note_event_in_rect(note, tick_start, tick_end));
             if has_any {
-                tracks_to_clean.push(track_idx);
+                tracks_to_clean.push(doc_track);
             }
         }
         tracks_to_clean

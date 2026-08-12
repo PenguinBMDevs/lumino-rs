@@ -8,6 +8,9 @@ use crate::note::Note;
 impl Editor {
     /// 在工程走带指定音轨 tick 处添加一个音符。
     ///
+    /// `track` 为视觉位置（侧边栏顺序），内部映射为文档音轨索引后写入，
+    /// 保证拖动排序后点击添加落在正确的音轨上。
+    ///
     /// 返回是否实际添加。
     pub fn arrange_add_note(
         &mut self,
@@ -27,9 +30,11 @@ impl Editor {
         self.push_history();
 
         // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
+        // 视觉位置 → 文档音轨索引（拖动排序后二者不一致）
+        let doc_track = self.editor_state.data.document_track_at(track);
         {
             let editor_data = &mut self.editor_state.data;
-            editor_data.insert_note(track, note);
+            editor_data.insert_note(doc_track, note);
         }
 
         // 2026-08-06 音频修复：无论编辑哪个音轨都需要触发播放同步，
@@ -38,12 +43,13 @@ impl Editor {
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data
-            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track])));
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([doc_track])));
         tracing::info!(
-            "Arrangement: 添加音符 (tick={}, duration={}, track={}, key={}, velocity={})",
+            "Arrangement: 添加音符 (tick={}, duration={}, visual={}, track={}, key={}, velocity={})",
             tick,
             duration,
             track,
+            doc_track,
             key,
             velocity
         );

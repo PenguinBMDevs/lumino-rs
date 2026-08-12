@@ -8,11 +8,17 @@ use crate::note::Note;
 impl Editor {
     /// 在指定 tick/音轨处分割音符（Razor 工具）。
     ///
+    /// `track` 为视觉位置（侧边栏顺序），内部映射为文档音轨索引，
+    /// 保证拖动排序后切割落在正确的音轨上。
+    ///
     /// 返回实际分割的音符数。
     pub fn arrange_razor(&mut self, tick: f64, track: usize) -> usize {
         let tick_f = tick as f32;
 
-        let indices_to_split = self.collect_razor_targets(tick_f, track);
+        // 视觉位置 → 文档音轨索引（拖动排序后二者不一致）
+        let doc_track = self.editor_state.data.document_track_at(track);
+
+        let indices_to_split = self.collect_razor_targets(tick_f, doc_track);
         if indices_to_split.is_empty() {
             return 0;
         }
@@ -20,8 +26,8 @@ impl Editor {
         self.push_history();
 
         let current_track = self.editor_state.data.current_track;
-        let current_track_touched = track == current_track;
-        let split_count = self.apply_razor_split(track, tick_f, indices_to_split);
+        let current_track_touched = doc_track == current_track;
+        let split_count = self.apply_razor_split(doc_track, tick_f, indices_to_split);
 
         if split_count == 0 {
             self.editor_state.data.discard_last_history();
@@ -34,12 +40,13 @@ impl Editor {
         // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data
-            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([track])));
+            .mark_track_notes_changed_for(Some(std::collections::HashSet::from([doc_track])));
         tracing::info!(
-            "Arrangement: 分割 {} 个音符 (tick={}, track={})",
+            "Arrangement: 分割 {} 个音符 (tick={}, visual={}, track={})",
             split_count,
             tick,
-            track
+            track,
+            doc_track
         );
         split_count
     }
