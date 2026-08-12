@@ -73,21 +73,16 @@ impl Editor {
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            // Y 向框选工具：X 维度强制按用户精度 snap，Y 维度保持全范围不动
+            // Y 向框选工具：X 维度按用户精度 snap，Y 维度保持全范围不动
             let is_y_select = self.editor_state.tool == lumino_message::Tool::PointerYSelect;
-            *current_tick = if is_y_select {
-                snapped_tick
-            } else if self.editor_state.view.selection_box_mode
-                == lumino_core::storage::config::SelectionBoxMode::Direct
-            {
-                // 直接跟随模式：框选框使用原始坐标，不吸附到网格
-                tick
-            } else {
-                snapped_tick
-            };
+            // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）
+            *current_tick = snapped_tick;
             if !is_y_select {
+                // 上下精度 = 单个 key：current_y 对齐到 key 线
+                //（key_to_y(key) + zoom_y 为该 key 的底边，覆盖完整整数 key 范围）
                 *current_key = key;
-                *current_y = pos.y;
+                let view = &self.editor_state.view;
+                *current_y = view.key_to_y(key) + view.zoom_y;
             }
         }
 

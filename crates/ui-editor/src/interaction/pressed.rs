@@ -4,7 +4,7 @@
 //!       音符编辑开始、绘制开始、音符音频播放、音符添加事件发射
 
 use crate::{Editor, HitType, Note};
-use lumino_core::storage::config::{EraserBehavior, SelectionBoxMode};
+use lumino_core::storage::config::EraserBehavior;
 use lumino_editor_state::DragState;
 use lumino_editor_state::editor_state::interaction_ops;
 use lumino_message::Tool;
@@ -80,17 +80,11 @@ impl Editor {
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
-        let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        // Y 向框选工具强制 X 维度按用户精度 snap（忽略 Direct 模式）
+        // Y 向框选工具：X 维度同普通框选按用户精度 snap，Y 维度自动覆盖全部可见键
         let is_y_select = self.editor_state.tool == Tool::PointerYSelect;
-        let selection_start_tick = if is_y_select {
-            snapped_tick
-        } else if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
-            tick
-        } else {
-            snapped_tick
-        };
+        // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）
+        let selection_start_tick = snapped_tick;
 
         // 优先级 1：有选中音符时，先检测选择框命中
         // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
@@ -194,7 +188,11 @@ impl Editor {
                 let bottom_y = self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
                 (max_key, 0, top_y, bottom_y)
             } else {
-                (key, key, pos.y, pos.y)
+                // 上下精度 = 单个 key：起点/终点对齐到 key 线
+                let view = &self.editor_state.view;
+                let top_y = view.key_to_y(key);
+                let bottom_y = top_y + view.zoom_y;
+                (key, key, top_y, bottom_y)
             };
             self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                 start_tick: selection_start_tick,
@@ -256,12 +254,8 @@ impl Editor {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
         let snapped_tick = self.snap_tick(tick);
-        let selection_start_tick =
-            if self.editor_state.view.selection_box_mode == SelectionBoxMode::Direct {
-                tick
-            } else {
-                snapped_tick
-            };
+        // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）
+        let selection_start_tick = snapped_tick;
 
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
@@ -272,8 +266,10 @@ impl Editor {
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
-                        start_y: pos.y,
-                        current_y: pos.y,
+                        // 上下精度 = 单个 key：起点/终点对齐到 key 线
+                        start_y: self.editor_state.view.key_to_y(key),
+                        current_y: self.editor_state.view.key_to_y(key)
+                            + self.editor_state.view.zoom_y,
                     };
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
@@ -289,8 +285,10 @@ impl Editor {
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
-                        start_y: pos.y,
-                        current_y: pos.y,
+                        // 上下精度 = 单个 key：起点/终点对齐到 key 线
+                        start_y: self.editor_state.view.key_to_y(key),
+                        current_y: self.editor_state.view.key_to_y(key)
+                            + self.editor_state.view.zoom_y,
                     };
                 }
             }

@@ -49,6 +49,7 @@ mod tests {
     mod pending_drag;
     mod pressed_priority;
     mod scroll;
+    mod selection_precision;
     mod state;
     pub(crate) mod test_helpers;
 }
