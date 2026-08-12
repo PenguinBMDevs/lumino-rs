@@ -287,11 +287,20 @@ fn push_velocity_curve_instances(
     ctx: &VelocityCurveContext<'_>,
 ) {
     const TOOLBAR_HEIGHT: f32 = 28.0;
-    const CURVE_ANCHOR_RADIUS: f32 = 3.0;
-    const LINE_ALPHA: f32 = 0.85;
+    /// 锚点半径（像素）。直径 = 半径 * 2，较原 3.0 增大 2 像素（6px → 8px）。
+    const CURVE_ANCHOR_RADIUS: f32 = 4.0;
+    /// 连线透明度（1.0 = 100% 不透明）。
+    const LINE_ALPHA: f32 = 1.0;
+    /// 锚点透明度（1.0 = 100% 不透明）。
+    const ANCHOR_ALPHA: f32 = 1.0;
     const VELOCITY_MAX: f32 = 127.0;
 
-    let anchor_color = [ctx.bar_color[0], ctx.bar_color[1], ctx.bar_color[2], 1.0];
+    let anchor_color = [
+        ctx.bar_color[0],
+        ctx.bar_color[1],
+        ctx.bar_color[2],
+        ANCHOR_ALPHA,
+    ];
     let line_color = [
         ctx.bar_color[0],
         ctx.bar_color[1],
