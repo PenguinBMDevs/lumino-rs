@@ -4,6 +4,7 @@
 
 use iced_core::{Point, Size};
 use iced_widget::canvas;
+use lumino_core::Tool;
 
 use lumino_ui_core::Message;
 use lumino_ui_core::message::VelocityAction;
@@ -20,6 +21,13 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         cursor_pos: Point,
         bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
+        // 力度面板的编辑交互统一由 Curve 工具负责：
+        // 命中力度点 → 拖拽移动；未命中 → 曲线绘制。
+        // Pencil/Pointer 等其他工具不操作力度面板（仅在钢琴卷帘使用）。
+        if self.editor.current_tool() != Tool::Curve {
+            return None;
+        }
+
         let points = self.points();
         let view = &self.editor.editor_state.view;
         if points.is_empty() {

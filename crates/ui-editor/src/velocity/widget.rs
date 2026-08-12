@@ -13,7 +13,7 @@ pub use drawing::{
     velocity_bg_color, velocity_border_color, velocity_grab_bar_color, velocity_grid_line_color,
     velocity_handle_bg_color, velocity_text_color,
 };
-pub use state::VelocityCanvasState;
+pub use state::{AutomationDrag, VelocityCanvasState};
 
 /// 速度控制点
 #[derive(Debug, Clone, Copy, PartialEq)]

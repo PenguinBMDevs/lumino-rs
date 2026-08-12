@@ -12,7 +12,7 @@ pub const AUTOMATION_NODE_COLOR: [f32; 3] = [0.2, 0.55, 1.0];
 
 /// 曲线子采样像素步长。Linear/Curve 段按此步长采样并连成多条短线。
 const CURVE_SUBSAMPLE_PX: f32 = 2.0;
-/// 锚点半径（像素）。Pencil/Curve 工具下显示。
+/// 锚点半径（像素）。自动化锚点由 Curve 工具编辑。
 const ANCHOR_RADIUS: f32 = 3.0;
 /// 线段不透明度。
 const LINE_ALPHA: f32 = 0.85;

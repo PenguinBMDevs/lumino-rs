@@ -40,8 +40,8 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         let lane_ref =
             lane_idx.and_then(|idx| self.editor.editor_state.data.automation_lanes.get(idx));
 
-        // 双击切换 shape
-        if state.detect_double_click(cursor_pos) {
+        // 双击切换 shape（仅 Curve 工具可编辑自动化面板）
+        if self.editor.current_tool() == Tool::Curve && state.detect_double_click(cursor_pos) {
             if let Some(lane) = lane_ref
                 && let Some(tick) =
                     Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val)
@@ -84,10 +84,12 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             Tool::Eraser => self.handle_automation_eraser_delete(
                 lane_ref, lane_idx, track_idx, view, cursor_pos, max_val,
             ),
-            Tool::Pencil | Tool::Pointer => {
-                self.handle_automation_anchor_drag_start(state, lane_ref, view, cursor_pos, max_val)
-            }
-            Tool::Curve => self.handle_automation_curve_start(state, view, cursor_pos, max_val),
+            // 自动化面板的编辑交互统一由 Curve 工具负责：
+            // 命中锚点 → 拖拽移动；未命中 → 曲线绘制。
+            // Pencil/Pointer 等其他工具不操作自动化面板（仅在钢琴卷帘使用）。
+            Tool::Curve => self
+                .handle_automation_anchor_drag_start(state, lane_ref, view, cursor_pos, max_val)
+                .or_else(|| self.handle_automation_curve_start(state, view, cursor_pos, max_val)),
             _ => None,
         }
     }
@@ -117,7 +119,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         None
     }
 
-    /// Pencil/Pointer 工具：开始拖拽命中的自动化锚点
+    /// Curve 工具：开始拖拽命中的自动化锚点
     fn handle_automation_anchor_drag_start(
         &self,
         state: &mut VelocityCanvasState,

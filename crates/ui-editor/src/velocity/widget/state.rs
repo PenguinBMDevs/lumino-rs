@@ -4,9 +4,9 @@ use std::collections::HashMap;
 use std::time::Instant;
 
 /// 自动化编辑拖拽状态。
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutomationDrag {
-    /// Pencil 工具：拖拽锚点，`old_tick` 为原始 tick。
+    /// Curve 工具：拖拽锚点，`old_tick` 为原始 tick。
     MoveAnchor { old_tick: u32 },
     /// Curve 工具：从起点绘制到当前点。
     CurveDraw { start_tick: u32, start_value: u16 },
@@ -39,7 +39,7 @@ pub struct VelocityCanvasState {
     pub curve_start_velocity: u8,
     /// 当前笔触影响的音符索引 → 新力度值
     pub curve_affected: HashMap<usize, u8>,
-    /// 自动化编辑拖拽状态（Pencil/Curve 工具）。
+    /// 自动化编辑拖拽状态（Curve 工具）。
     pub automation_drag: Option<AutomationDrag>,
     /// 当前悬停的自动化锚点 tick。
     pub hover_anchor_tick: Option<u32>,
@@ -121,7 +121,7 @@ impl VelocityCanvasState {
         self.automation_curve_current = None;
     }
 
-    /// 设置 Pencil 工具移动锚点拖拽。
+    /// 设置 Curve 工具移动锚点拖拽。
     pub fn start_move_anchor(&mut self, old_tick: u32) {
         self.automation_drag = Some(AutomationDrag::MoveAnchor { old_tick });
     }

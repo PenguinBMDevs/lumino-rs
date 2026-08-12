@@ -285,3 +285,12 @@ impl Default for VelocityPanel {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod automation_tests;
+
+#[cfg(test)]
+mod tempo_tests;
+
+#[cfg(test)]
+mod velocity_tool_tests;

@@ -4,6 +4,7 @@
 
 use iced_core::{Point, Size};
 use iced_widget::canvas;
+use lumino_core::Tool;
 use lumino_note_core::{AutomationEdit, SegmentShape};
 
 use crate::editor_state::ViewState;
@@ -31,12 +32,16 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                 self.update_tempo_hover(state, cursor_pos, bounds_size);
             }
             _ => {
-                // CC / Bend 模式
-                if let Some((view, _target, max_val)) = self.automation_view_params(bounds_size)
+                // CC / Bend 模式：仅 Curve/Eraser 工具提供锚点悬停反馈
+                //（Pencil/Pointer 不操作自动化面板，悬停不高亮锚点）
+                if matches!(self.editor.current_tool(), Tool::Curve | Tool::Eraser)
+                    && let Some((view, _target, max_val)) = self.automation_view_params(bounds_size)
                     && let Some(lane) = self.current_automation_lane()
                 {
                     state.hover_anchor_tick =
                         Self::hit_test_automation_anchor(lane, &view, cursor_pos, max_val);
+                } else {
+                    state.hover_anchor_tick = None;
                 }
                 state.hover_point_idx = None;
             }
@@ -50,6 +55,14 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         cursor_pos: Point,
         bounds_size: Size,
     ) {
+        // 仅 Curve 工具提供力度点悬停反馈
+        //（Pencil/Pointer 不操作力度面板，悬停不高亮力度点）
+        if self.editor.current_tool() != Tool::Curve {
+            state.hover_point_idx = None;
+            state.hover_anchor_tick = None;
+            return;
+        }
+
         let points = self.points();
         let view = &self.editor.editor_state.view;
         if points.is_empty() {
@@ -77,6 +90,15 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         cursor_pos: Point,
         bounds_size: Size,
     ) {
+        // 仅 Curve/Eraser 工具提供速度点悬停反馈
+        //（Pencil/Pointer 不操作 Tempo 面板，悬停不高亮速度点）
+        if !matches!(self.editor.current_tool(), Tool::Curve | Tool::Eraser) {
+            state.tempo_hover_idx = None;
+            state.hover_point_idx = None;
+            state.hover_anchor_tick = None;
+            return;
+        }
+
         let tempo_points = VelocityPanel::build_tempo_points(self.editor);
         let view = &self.editor.editor_state.view;
         let max_bpm = self.editor.velocity_panel.tempo_max_bpm;

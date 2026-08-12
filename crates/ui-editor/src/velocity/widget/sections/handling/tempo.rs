@@ -56,7 +56,10 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
             Tool::Eraser => hit_idx.map(|idx| publish_velocity(VelocityAction::TempoDelete(idx))),
-            Tool::Pencil => {
+            // Tempo 面板的编辑交互统一由 Curve 工具负责：
+            // 命中速度点 → 拖拽移动；未命中 → 创建新速度点。
+            // Pencil/Pointer 等其他工具不操作 Tempo 面板（仅在钢琴卷帘使用）。
+            Tool::Curve => {
                 if let Some(idx) = hit_idx {
                     // 点击已有锚点：开始拖拽
                     state.tempo_drag_idx = Some(idx);
@@ -68,14 +71,6 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                     let bpm = Self::y_to_bpm(cursor_pos.y, bounds_size.height, max_bpm)
                         .clamp(TEMPO_BPM_MIN, max_bpm);
                     Some(publish_velocity(VelocityAction::TempoAdd(tick, bpm)))
-                }
-            }
-            Tool::Pointer => {
-                if let Some(idx) = hit_idx {
-                    state.tempo_drag_idx = Some(idx);
-                    Some(publish_velocity(VelocityAction::TempoDragStart(idx)))
-                } else {
-                    None
                 }
             }
             _ => None,
