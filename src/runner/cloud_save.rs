@@ -36,7 +36,14 @@ impl RunnerInner {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
             match data.document.as_ref() {
-                Some(doc) => lumino_export::LuminoProject::from_midi_document(doc),
+                Some(doc) => {
+                    let mut project = lumino_export::LuminoProject::from_midi_document(doc);
+                    // 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo，
+                    // 保证用户修改的 BPM（工程设置/速度面板）随云保存持久化
+                    project
+                        .apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
+                    project
+                }
                 None => {
                     self.apply_cloud_save_result(
                         false,

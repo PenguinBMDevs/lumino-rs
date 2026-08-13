@@ -158,6 +158,19 @@ impl LuminoProject {
         }
     }
 
+    /// 用速度点列表覆盖全局速度变化（tick, BPM）
+    ///
+    /// UI 中速度编辑的权威源是 `tempo_points`（工程设置对话框 / 速度面板），
+    /// 而保存链路 `from_midi_document` 只读 `doc.tempo_changes`（加载时的原始值）。
+    /// 两者不同步会导致用户修改的 tempo 保存后丢失（回落到默认 120 BPM），
+    /// 因此所有保存/导出出口在构建 `LuminoProject` 后必须调用本方法覆盖。
+    pub fn apply_tempo_points(&mut self, points: impl IntoIterator<Item = (f32, f64)>) {
+        self.tempo_changes = points
+            .into_iter()
+            .map(|(tick, bpm)| (tick.max(0.0) as u32, bpm as f32))
+            .collect();
+    }
+
     /// 添加音轨
     pub fn add_track(&mut self, data: LmtrackData) {
         let track_id = data.meta.track_id;
@@ -225,5 +238,23 @@ mod tests {
 
         assert!(project.get_track(0).is_some());
         assert!(project.get_track(99).is_none());
+    }
+
+    #[test]
+    fn test_apply_tempo_points() {
+        let mut project = LuminoProject::new("Test");
+        assert!(project.tempo_changes.is_empty());
+
+        // 覆盖速度点：tick / BPM
+        project.apply_tempo_points([(0.0, 140.0), (480.0, 90.5)]);
+        assert_eq!(project.tempo_changes, vec![(0, 140.0), (480, 90.5)]);
+
+        // 负 tick 收敛为 0，避免 u32 转换溢出
+        project.apply_tempo_points([(-10.0, 100.0)]);
+        assert_eq!(project.tempo_changes, vec![(0, 100.0)]);
+
+        // 空列表清空速度变化
+        project.apply_tempo_points(std::iter::empty());
+        assert!(project.tempo_changes.is_empty());
     }
 }

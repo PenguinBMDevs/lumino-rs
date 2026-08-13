@@ -68,7 +68,8 @@ impl RunnerInner {
                 tracing::error!("导出为素材：文档不可用");
                 return;
             };
-            let mut project = material::build_material_project_from_selection(doc, &selected);
+            let mut project =
+                material::build_material_project_from_selection(doc, &selected, &data.tempo_points);
             // 作者栏：素材文件继承工程设置对话框中填写的作者
             project.metadata.project.author = ui.get_project_author();
             project
@@ -258,6 +259,11 @@ impl RunnerInner {
             let data = &ui.root().editor.editor_state.data;
             if let Some(doc) = data.document.as_ref() {
                 let mut project = lumino_export::LuminoProject::from_midi_document(doc);
+                // 用编辑器 tempo_points 覆盖 doc 中的原始 tempo：
+                // doc.tempo_changes 是加载文件时的值，用户经工程设置/速度面板
+                // 修改的 BPM 只写入 tempo_points，不回写 doc——不覆盖会保存旧值
+                // （新工程保存后 tempo 丢失，回落到默认 120 BPM 的 BUG 根因）。
+                project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
                 // 使用实际保存路径的文件名作为工程名
                 if let Some(stem) = save_path.file_stem() {
                     project.metadata.project.name = stem.to_string_lossy().into_owned();
