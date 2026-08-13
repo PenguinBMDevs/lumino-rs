@@ -182,3 +182,120 @@ fn test_apply_automation_edit_move_wrong_track_returns_false() {
     });
     assert!(!moved, "should reject move with mismatched track");
 }
+
+#[test]
+fn test_apply_automation_edit_add_recomputes_auto_handles() {
+    // 两个连续事件：自动柄 = 1/3 段长（直线语义）
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 0,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 960,
+        value: 10000,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    let lane = &data.automation_lanes[0];
+    assert!(lane.events[0].handles_auto);
+    assert_eq!(lane.events[0].out_handle, (320.0, 602.6667));
+    assert_eq!(lane.events[1].in_handle, (-320.0, -602.6667));
+}
+
+#[test]
+fn test_apply_automation_edit_update_handles() {
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 100,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 100,
+        out_handle: (300.0, 500.0),
+        in_handle: (0.0, 0.0),
+    });
+    assert!(changed);
+    let evt = &data.automation_lanes[0].events[0];
+    assert_eq!(evt.out_handle, (300.0, 500.0));
+    assert!(!evt.handles_auto, "拖柄后标记为自定义");
+
+    // 后续编辑（Add 相邻事件）不覆盖自定义柄
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 960,
+        value: 9000,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    assert_eq!(
+        data.automation_lanes[0].events[0].out_handle,
+        (300.0, 500.0)
+    );
+}
+
+#[test]
+fn test_apply_automation_edit_clear() {
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 100,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    let cleared = data.apply_automation_edit(AutomationEdit::Clear {
+        track_idx: 0,
+        lane_idx: 0,
+    });
+    assert!(cleared);
+    assert!(data.automation_lanes[0].events.is_empty());
+
+    // 空 lane 再次 Clear 返回 false
+    let cleared2 = data.apply_automation_edit(AutomationEdit::Clear {
+        track_idx: 0,
+        lane_idx: 0,
+    });
+    assert!(!cleared2);
+
+    // lane 保留（不删除 lane 本身）
+    assert_eq!(data.automation_lanes.len(), 1);
+}
+
+#[test]
+fn test_apply_automation_edit_delete_recomputes_handles() {
+    // 三事件：删除中间事件后，首尾事件自动柄重算为新的 1/3 段
+    let mut data = EditorData::new();
+    for (tick, value) in [(0u32, 8192u16), (480, 9000), (960, 10000)] {
+        data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::PitchBend,
+            channel: 0,
+            tick,
+            value,
+            shape: SegmentShape::Curve { tension: 0 },
+        });
+    }
+    data.apply_automation_edit(AutomationEdit::Delete {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 480,
+    });
+    let lane = &data.automation_lanes[0];
+    assert_eq!(lane.events.len(), 2);
+    assert_eq!(lane.events[0].out_handle, (320.0, 602.6667));
+}

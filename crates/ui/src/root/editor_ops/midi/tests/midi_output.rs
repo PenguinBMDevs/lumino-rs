@@ -375,11 +375,7 @@ fn test_cc_events_reach_midi_output() {
             target: AutomationTarget::CC { controller: 7 },
             track: 0,
             channel: 0,
-            events: vec![AutomationEvent {
-                tick: 0,
-                value: 100,
-                shape: SegmentShape::Step,
-            }],
+            events: vec![AutomationEvent::new(0, 100, SegmentShape::Step)],
         }));
     root.editor
         .editor_state
@@ -389,11 +385,7 @@ fn test_cc_events_reach_midi_output() {
             target: AutomationTarget::CC { controller: 10 },
             track: 0,
             channel: 0,
-            events: vec![AutomationEvent {
-                tick: 480,
-                value: 64,
-                shape: SegmentShape::Step,
-            }],
+            events: vec![AutomationEvent::new(480, 64, SegmentShape::Step)],
         }));
 
     // 添加 PitchBend 事件
@@ -405,11 +397,7 @@ fn test_cc_events_reach_midi_output() {
             target: AutomationTarget::PitchBend,
             track: 0,
             channel: 0,
-            events: vec![AutomationEvent {
-                tick: 240,
-                value: 8192, // center
-                shape: SegmentShape::Step,
-            }],
+            events: vec![AutomationEvent::new(240, 8192, SegmentShape::Step)], // center
         }));
 
     // 设置带 CC/PB 计数器的模拟 MIDI 输出

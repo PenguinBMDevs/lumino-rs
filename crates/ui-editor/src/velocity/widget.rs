@@ -2,9 +2,13 @@
 //!
 //! 包含 Canvas Program trait 实现和事件处理逻辑。
 
+pub mod bend_path;
+
 mod drawing;
 mod sections;
 mod state;
+
+pub use bend_path::{BendAnchor, BendInteraction, BendPathState, HandleSide};
 
 pub use drawing::{
     TEMPO_BPM_MIN, bend_value_to_y, draw_background, draw_curve_paint_feedback,

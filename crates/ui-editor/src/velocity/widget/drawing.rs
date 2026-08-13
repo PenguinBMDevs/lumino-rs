@@ -11,6 +11,7 @@
 //! - `labels` — 标签绘制函数
 
 mod background;
+pub mod bend;
 mod grid;
 mod labels;
 mod notes;

@@ -2,6 +2,10 @@
 //!
 //! 从 yinhe 项目移植的 AutomationLane 数据模型，统一描述 CC、PitchBend、RPN、NRPN
 //! 等可自动化参数的时序事件，并支持 Step / Curve 两种插值形状。
+//!
+//! 贝塞尔曲线几何（控制柄重算、插值求值、密集采样）见 [`curve`] 子模块。
+
+pub mod curve;
 
 use crate::midi_types::PITCH_BEND_CENTER;
 use serde::{Deserialize, Serialize};
@@ -212,7 +216,14 @@ fn cc_name(cc: u8) -> &'static str {
 /// 单个自动化事件：某个时间点的值。
 ///
 /// channel 与 track 不存储在此，由所属的 `AutomationLane` 隐含。
-#[derive(Clone, Copy, Debug, Default, Serialize, Deserialize)]
+///
+/// 事件带贝塞尔控制柄（与卷帘曲线工具的 `BezierAnchor` 同构）：
+/// - `handles_auto = true`（默认）：柄由 `AutomationLane::recompute_auto_handles`
+///   自动维护（取相邻段方向 1/3 = 三次贝塞尔精确直线），段外观为直线；
+/// - 用户拖动控制柄后标记自定义（`handles_auto = false`），段按实际柄弯曲。
+///
+/// 旧数据（无柄字段）反序列化时自动回退为自动柄，语义不变。
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub struct AutomationEvent {
     /// tick 位置（MIDI 脉冲）。
     pub tick: u32,
@@ -221,16 +232,72 @@ pub struct AutomationEvent {
     /// 描述"从本事件到下一事件"的插值形状。
     #[serde(default)]
     pub shape: SegmentShape,
+    /// 出向控制柄偏移（相对 tick/value，控制"到下一事件"的贝塞尔段）。
+    #[serde(default)]
+    pub out_handle: (f32, f32),
+    /// 入向控制柄偏移（相对 tick/value，控制"来自上一事件"的贝塞尔段）。
+    #[serde(default)]
+    pub in_handle: (f32, f32),
+    /// 控制柄是否自动维护（未被用户自定义）：`true` 时重算覆盖柄为直线。
+    #[serde(default = "default_true")]
+    pub handles_auto: bool,
+}
+
+impl Default for AutomationEvent {
+    /// 默认事件为自动柄（直线段语义），与 `AutomationEvent::new` 一致。
+    fn default() -> Self {
+        Self::new(0, 0, SegmentShape::default())
+    }
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl AutomationEvent {
-    /// 构造一个使用目标默认 shape 的事件。
-    pub fn with_default_shape(tick: u32, value: u16, target: &AutomationTarget) -> Self {
+    /// 构造事件（控制柄自动维护，偏移为 0——由 lane 重算填充）。
+    pub fn new(tick: u32, value: u16, shape: SegmentShape) -> Self {
         Self {
             tick,
             value,
-            shape: target.default_shape(),
+            shape,
+            out_handle: (0.0, 0.0),
+            in_handle: (0.0, 0.0),
+            handles_auto: true,
         }
+    }
+
+    /// 构造一个使用目标默认 shape 的事件。
+    pub fn with_default_shape(tick: u32, value: u16, target: &AutomationTarget) -> Self {
+        Self::new(tick, value, target.default_shape())
+    }
+
+    /// 出向控制柄绝对坐标（逻辑坐标：tick, value）。
+    pub fn out_handle_abs(&self) -> (f32, f32) {
+        (
+            self.tick as f32 + self.out_handle.0,
+            self.value as f32 + self.out_handle.1,
+        )
+    }
+
+    /// 入向控制柄绝对坐标（逻辑坐标：tick, value）。
+    pub fn in_handle_abs(&self) -> (f32, f32) {
+        (
+            self.tick as f32 + self.in_handle.0,
+            self.value as f32 + self.in_handle.1,
+        )
+    }
+
+    /// 设置出向控制柄（标记为自定义，不再自动维护）。
+    pub fn set_out_handle(&mut self, offset: (f32, f32)) {
+        self.out_handle = offset;
+        self.handles_auto = false;
+    }
+
+    /// 设置入向控制柄（标记为自定义，不再自动维护）。
+    pub fn set_in_handle(&mut self, offset: (f32, f32)) {
+        self.in_handle = offset;
+        self.handles_auto = false;
     }
 }
 
@@ -325,6 +392,19 @@ pub enum AutomationEdit {
         lane_idx: usize,
         tick: u32,
     },
+    /// 更新已有事件的贝塞尔控制柄（实时拖柄用）。
+    ///
+    /// `handles_auto` 传入 `false`（拖柄 = 自定义柄）；如需恢复自动柄
+    /// 由调用方用 `SetHandlesAuto`（当前未暴露，拖柄即标记自定义）。
+    UpdateHandles {
+        track_idx: u16,
+        lane_idx: usize,
+        tick: u32,
+        out_handle: (f32, f32),
+        in_handle: (f32, f32),
+    },
+    /// 清空指定 lane 的全部事件（√× 确认模式全量重建用）。
+    Clear { track_idx: u16, lane_idx: usize },
 }
 
 #[cfg(test)]
@@ -338,11 +418,7 @@ mod tests {
             channel: 0,
             events: ticks
                 .iter()
-                .map(|&t| AutomationEvent {
-                    tick: t,
-                    value: 64,
-                    shape: SegmentShape::Step,
-                })
+                .map(|&t| AutomationEvent::new(t, 64, SegmentShape::Step))
                 .collect(),
         }
     }
@@ -372,21 +448,9 @@ mod tests {
             track: 0,
             channel: 0,
             events: vec![
-                AutomationEvent {
-                    tick: 100,
-                    value: 80,
-                    shape: SegmentShape::Step,
-                },
-                AutomationEvent {
-                    tick: 200,
-                    value: 100,
-                    shape: SegmentShape::Step,
-                },
-                AutomationEvent {
-                    tick: 300,
-                    value: 60,
-                    shape: SegmentShape::Step,
-                },
+                AutomationEvent::new(100, 80, SegmentShape::Step),
+                AutomationEvent::new(200, 100, SegmentShape::Step),
+                AutomationEvent::new(300, 60, SegmentShape::Step),
             ],
         };
         assert_eq!(lane.chase_value(250), Some(100));

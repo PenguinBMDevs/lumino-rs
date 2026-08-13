@@ -54,6 +54,9 @@ pub struct VelocityPanel {
     pub automation_line_thickness: f32,
     /// Tempo 面板 BPM 绘制上限（默认 512，范围 256~65536，可自定义）。
     pub tempo_max_bpm: f64,
+    /// 弯音面板贝塞尔路径确认模式：`false` = 实时生效（默认）；
+    /// `true` = √× 确认（路径编辑在本地，√ 确认后写入 lane）。
+    pub bend_confirm_mode: bool,
 }
 
 impl VelocityPanel {
@@ -65,6 +68,7 @@ impl VelocityPanel {
             value_scroll: 0.0,
             automation_line_thickness: 2.0,
             tempo_max_bpm: 512.0,
+            bend_confirm_mode: false,
         }
     }
 
@@ -98,6 +102,8 @@ impl VelocityPanel {
                 self.build_mode_button(is_tempo, is_velocity, language, t),
                 space().width(8),
                 self.build_cc_selector(),
+                space().width(8),
+                self.build_bend_confirm_toggle(),
                 space().width(iced_core::Length::Fill),
                 text(self.build_info_text(language))
                     .size(11)
@@ -162,6 +168,48 @@ impl VelocityPanel {
             .style(move |theme: &lumino_ui_core::Theme, status| {
                 let palette = theme.extended_palette();
                 let bg = if is_tempo || is_velocity {
+                    palette.primary.base.color
+                } else if status == iced_widget::button::Status::Hovered {
+                    palette.background.weak.color
+                } else {
+                    palette.background.weakest.color
+                };
+                iced_widget::button::Style {
+                    border: iced_core::Border {
+                        radius: 3.0.into(),
+                        width: 0.0,
+                        color: iced_core::Color::TRANSPARENT,
+                    },
+                    ..Default::default()
+                }
+                .with_background(bg)
+            })
+            .into()
+    }
+
+    /// 构建弯音贝塞尔路径确认模式切换按钮（仅 Bend 模式显示）
+    ///
+    /// `实时` = 操作即写入 lane（默认）；`√×` = 本地编辑，确认后写入。
+    fn build_bend_confirm_toggle<'a>(&'a self) -> Element<'a> {
+        use iced_widget::{button, space, text};
+
+        if self.edit_mode != EditMode::Bend {
+            return space().width(0).into();
+        }
+        let label = if self.bend_confirm_mode {
+            "√×"
+        } else {
+            "实时"
+        };
+        let active = self.bend_confirm_mode;
+        button(text(label).size(11))
+            .on_press(lumino_ui_core::message::Message::Velocity(
+                lumino_ui_core::message::VelocityAction::ToggleBendConfirmMode,
+            ))
+            .padding([2, 6])
+            .style(move |theme: &lumino_ui_core::Theme, status| {
+                let palette = theme.extended_palette();
+                let bg = if active {
                     palette.primary.base.color
                 } else if status == iced_widget::button::Status::Hovered {
                     palette.background.weak.color

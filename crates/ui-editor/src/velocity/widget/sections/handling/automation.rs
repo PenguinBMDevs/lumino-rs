@@ -31,6 +31,13 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             return None;
         }
 
+        // Bend 模式 Curve 工具：贝塞尔路径交互（√× 按钮/双击删除/绘制编辑）
+        if self.edit_mode == crate::velocity::EditMode::Bend
+            && self.editor.current_tool() == Tool::Curve
+        {
+            return self.handle_bend_curve_pressed(state, cursor_pos, bounds_size);
+        }
+
         let track_idx = self.editor.editor_state.data.current_track as u16;
         let lane_idx = self
             .editor

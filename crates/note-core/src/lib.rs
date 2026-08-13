@@ -15,6 +15,7 @@ pub mod pattern;
 pub mod spatial_index;
 
 pub use arrange_selection::ArrangeSelection;
+pub use automation::curve::{MAX_BEND_SAMPLE_EVENTS, bezier_value};
 pub use automation::{
     AutomationEdit, AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };

@@ -6,7 +6,7 @@ use iced_core::Point;
 use lumino_editor_state::BezierAnchor;
 
 /// 点到线段的最短距离
-pub(super) fn point_segment_distance(p: Point, a: Point, b: Point) -> f32 {
+pub(crate) fn point_segment_distance(p: Point, a: Point, b: Point) -> f32 {
     let ab_x = b.x - a.x;
     let ab_y = b.y - a.y;
     let len_sq = ab_x * ab_x + ab_y * ab_y;
@@ -20,7 +20,7 @@ pub(super) fn point_segment_distance(p: Point, a: Point, b: Point) -> f32 {
 }
 
 /// 三次贝塞尔曲线点（多项式形式）
-pub(super) fn bezier_point(
+pub(crate) fn bezier_point(
     a: (f32, f32),
     cp1: (f32, f32),
     cp2: (f32, f32),
@@ -34,7 +34,7 @@ pub(super) fn bezier_point(
 }
 
 /// 点到贝塞尔曲线的近似距离（16 段折线逼近）
-pub(super) fn point_curve_distance(p: Point, a: Point, p1: Point, p2: Point, b: Point) -> f32 {
+pub(crate) fn point_curve_distance(p: Point, a: Point, p1: Point, p2: Point, b: Point) -> f32 {
     const SAMPLES: usize = 16;
     let mut min = f32::INFINITY;
     let mut prev = a;
@@ -55,7 +55,7 @@ pub(super) fn point_curve_distance(p: Point, a: Point, p1: Point, p2: Point, b: 
 /// - 任一端为自定义弯曲柄：按 `snap`（tick 方向）/ 1（key 方向）分格采样，
 ///   采样数 = max(tick 格数, key 格数) × 4（过采样保证每格至少命中，
 ///   竖直段不漏格）；结果按路径顺序去重。
-pub(super) fn curve_cell_points(a: BezierAnchor, b: BezierAnchor, snap: f32) -> Vec<(f32, u16)> {
+pub(crate) fn curve_cell_points(a: BezierAnchor, b: BezierAnchor, snap: f32) -> Vec<(f32, u16)> {
     // 自动柄（未弯曲）= 贝塞尔直线段 → Bresenham 精确格点
     if a.handles_auto && b.handles_auto {
         return line_cell_points(a.pos, b.pos, snap);
@@ -86,7 +86,7 @@ pub(super) fn curve_cell_points(a: BezierAnchor, b: BezierAnchor, snap: f32) -> 
 ///
 /// tick 方向按 `snap` 分格，key 方向每个 key 一格；
 /// 结果按路径顺序排列（tick/key 单调，无重复格点）。
-pub(super) fn line_cell_points(a: (f32, f32), b: (f32, f32), snap: f32) -> Vec<(f32, u16)> {
+pub(crate) fn line_cell_points(a: (f32, f32), b: (f32, f32), snap: f32) -> Vec<(f32, u16)> {
     let snap = snap.max(1.0);
     let x0 = (a.0 / snap).round() as i64;
     let y0 = a.1.round() as i64;

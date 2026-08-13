@@ -19,7 +19,7 @@
 //! 命中测试/坐标转换/放置吸附在 `line_tool/hit_test.rs`。
 
 pub(crate) mod fill;
-mod geom;
+pub(crate) mod geom;
 mod hit_test;
 
 #[cfg(test)]

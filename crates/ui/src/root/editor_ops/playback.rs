@@ -68,11 +68,15 @@ impl Root {
                     }
                 }
                 lumino_note_core::automation::AutomationTarget::PitchBend => {
-                    for ev in &lane.events {
+                    // 弯音应用：按 tick 密集采样（贝塞尔曲线正确插值）。
+                    // 采样不写入 lane（只读计算），避免事件数爆炸污染数据模型。
+                    // 相邻同值合并 + 上限保护见 `AutomationLane::sample_curve`。
+                    let samples = lane.sample_curve(lumino_note_core::MAX_BEND_SAMPLE_EVENTS);
+                    for (tick, value) in samples {
                         // AutomationEvent.value 范围 0-16383，中心 8192
-                        let pb_value = (ev.value as f32 - 8192.0) / 8192.0;
+                        let pb_value = (value as f32 - 8192.0) / 8192.0;
                         midi_events.push(MidiTrackEvent {
-                            tick: ev.tick as f32,
+                            tick: tick as f32,
                             message: MidiMessage::PitchBend {
                                 channel: lane.channel,
                                 value: pb_value.clamp(-1.0, 1.0),

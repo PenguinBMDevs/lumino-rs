@@ -38,6 +38,8 @@ impl EditorData {
     /// 应用单个自动化编辑操作到数据模型。
     ///
     /// 返回是否实际修改了数据。
+    /// 增删移事件后自动重算自动控制柄（未弯曲段保持直线），
+    /// 保证弯音面板贝塞尔路径与卷帘曲线工具语义一致。
     pub fn apply_automation_edit(&mut self, edit: AutomationEdit) -> bool {
         match edit {
             AutomationEdit::Add {
@@ -55,8 +57,11 @@ impl EditorData {
                 // 移除同一 tick 的已有事件，保证唯一性。
                 lane.events.retain(|e| e.tick != tick);
                 lane.events
-                    .push(lumino_note_core::automation::AutomationEvent { tick, value, shape });
+                    .push(lumino_note_core::automation::AutomationEvent::new(
+                        tick, value, shape,
+                    ));
                 lane.events.sort_by_key(|e| e.tick);
+                lane.recompute_auto_handles();
                 true
             }
             AutomationEdit::Move {
@@ -81,6 +86,7 @@ impl EditorData {
                 lane.events[pos].tick = new_tick;
                 lane.events[pos].value = new_value;
                 lane.events.sort_by_key(|e| e.tick);
+                lane.recompute_auto_handles();
                 true
             }
             AutomationEdit::CycleShape {
@@ -118,6 +124,48 @@ impl EditorData {
                 }
                 let old_len = lane.events.len();
                 lane.events.retain(|e| e.tick != tick);
+                let changed = lane.events.len() != old_len;
+                if changed {
+                    lane.recompute_auto_handles();
+                }
+                changed
+            }
+            AutomationEdit::UpdateHandles {
+                track_idx,
+                lane_idx,
+                tick,
+                out_handle,
+                in_handle,
+            } => {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+                    return false;
+                };
+                let lane = Arc::make_mut(arc_lane);
+                if lane.track != track_idx {
+                    return false;
+                }
+                let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
+                    return false;
+                };
+                evt.out_handle = out_handle;
+                evt.in_handle = in_handle;
+                // 拖柄即标记自定义（不再被自动重算覆盖）
+                evt.handles_auto = false;
+                true
+            }
+            AutomationEdit::Clear {
+                track_idx,
+                lane_idx,
+            } => {
+                let Some(arc_lane) = self.automation_lanes.get_mut(lane_idx) else {
+                    return false;
+                };
+                let lane = Arc::make_mut(arc_lane);
+                if lane.track != track_idx {
+                    return false;
+                }
+                let old_len = lane.events.len();
+                lane.events.clear();
                 lane.events.len() != old_len
             }
         }

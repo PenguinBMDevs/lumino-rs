@@ -2,7 +2,7 @@
 //!
 //! 从 yinhe 项目移植：将 Step / Curve 插值的事件序列转换为 2px 线段与圆角锚点实例。
 
-use lumino_note_core::automation::{AutomationLane, SegmentShape};
+use lumino_note_core::automation::{AutomationEvent, AutomationLane, SegmentShape};
 
 use crate::cc_bar_renderer::CcBarInstance;
 
@@ -89,6 +89,10 @@ struct SegSpan {
     shape: SegmentShape,
     x2: f32,
     y2: f32,
+    /// 贝塞尔控制柄（屏幕坐标）：前事件出向柄 + 后事件入向柄。
+    /// 仅两端事件存在自定义柄时填充（None = 按 shape 插值渲染）。
+    cp1: Option<(f32, f32)>,
+    cp2: Option<(f32, f32)>,
 }
 
 /// 单条线段渲染上下文。
@@ -103,6 +107,9 @@ struct SegmentContext {
     y2: f32,
     /// 线段形状
     shape: SegmentShape,
+    /// 贝塞尔控制柄（屏幕坐标）
+    cp1: Option<(f32, f32)>,
+    cp2: Option<(f32, f32)>,
     /// 线条颜色
     color: [f32; 3],
     /// 线条粗细
@@ -157,6 +164,8 @@ fn collect_segments(
                 shape: SegmentShape::Step,
                 x2: width,
                 y2: screen_y,
+                cp1: None,
+                cp2: None,
             });
         }
         return segs;
@@ -181,26 +190,50 @@ fn collect_segments(
             shape: SegmentShape::Step,
             x2: first_x,
             y2: chase_y,
+            cp1: None,
+            cp2: None,
         });
     }
 
     let mut prev_x = first_x;
     let mut prev_y = chase_y;
     let mut prev_shape = SegmentShape::Step;
+    let mut prev_evt: Option<AutomationEvent> = None;
 
     for evt in visible_events {
         let x2 = view.tick_to_x(evt.tick);
         let y2 = view.value_to_y(evt.value as f32, max_val);
+        // 贝塞尔控制柄：两端事件任一为自定义柄 → 携带柄渲染（否则按 shape）
+        let (cp1, cp2) = match prev_evt {
+            Some(prev) if !prev.handles_auto || !evt.handles_auto => {
+                let p1 = prev.out_handle_abs();
+                let p2 = evt.in_handle_abs();
+                (
+                    Some((
+                        view.tick_to_x(p1.0.round() as u32),
+                        view.value_to_y(p1.1, max_val),
+                    )),
+                    Some((
+                        view.tick_to_x(p2.0.round() as u32),
+                        view.value_to_y(p2.1, max_val),
+                    )),
+                )
+            }
+            _ => (None, None),
+        };
         segs.push(SegSpan {
             x1: prev_x,
             y1: prev_y,
             shape: prev_shape,
             x2,
             y2,
+            cp1,
+            cp2,
         });
         prev_shape = evt.shape;
         prev_x = x2;
         prev_y = y2;
+        prev_evt = Some(*evt);
     }
 
     let last_visible_tick = visible_events.last().map_or(pad_end, |event| event.tick);
@@ -219,6 +252,8 @@ fn collect_segments(
             shape: SegmentShape::Step,
             x2: right_bound,
             y2: prev_y,
+            cp1: None,
+            cp2: None,
         });
     }
 
@@ -258,6 +293,8 @@ pub fn build_lane_instances(
                 x2: seg.x2,
                 y2: seg.y2,
                 shape: seg.shape,
+                cp1: seg.cp1,
+                cp2: seg.cp2,
                 color,
                 thickness: lt,
             },
@@ -328,20 +365,81 @@ fn render_segment(out: &mut Vec<CcBarInstance>, ctx: &SegmentContext) {
             }
         }
         SegmentShape::Curve { .. } => {
-            let shape = ctx.shape;
-            push_polyline(
-                out,
-                |t| shape.interpolate(t),
-                &PolylineContext {
-                    x1: ctx.x1,
-                    y1: ctx.y1,
-                    x2: ctx.x2,
-                    y2: ctx.y2,
-                    color: ctx.color,
-                    thickness: ctx.thickness,
-                },
-            );
+            if let (Some(cp1), Some(cp2)) = (ctx.cp1, ctx.cp2) {
+                // 贝塞尔控制柄：按控制多边形子采样（弯音面板贝塞尔路径）
+                push_bezier_polyline(out, ctx, cp1, cp2);
+            } else {
+                let shape = ctx.shape;
+                push_polyline(
+                    out,
+                    |t| shape.interpolate(t),
+                    &PolylineContext {
+                        x1: ctx.x1,
+                        y1: ctx.y1,
+                        x2: ctx.x2,
+                        y2: ctx.y2,
+                        color: ctx.color,
+                        thickness: ctx.thickness,
+                    },
+                );
+            }
         }
+    }
+}
+
+/// 沿三次贝塞尔控制柄子采样并画折线（x/y 均按贝塞尔曲线，非线性插值）
+fn push_bezier_polyline(
+    out: &mut Vec<CcBarInstance>,
+    ctx: &SegmentContext,
+    cp1: (f32, f32),
+    cp2: (f32, f32),
+) {
+    // 控制多边形长度估算像素步数（过采样保证曲线平滑）
+    let c1 = (cp1.0 - ctx.x1).hypot(cp1.1 - ctx.y1);
+    let c2 = (cp2.0 - cp1.0).hypot(cp2.1 - cp1.1);
+    let c3 = (ctx.x2 - cp2.0).hypot(ctx.y2 - cp2.1);
+    let pixel_len = c1 + c2 + c3;
+    if pixel_len < 1.0 {
+        return;
+    }
+    let steps = ((pixel_len / CURVE_SUBSAMPLE_PX).ceil() as usize).max(1);
+    let mut px = ctx.x1;
+    let mut py = ctx.y1;
+    for step in 1..=steps {
+        let t = step as f32 / steps as f32;
+        let u = 1.0 - t;
+        let nx = u * u * u * ctx.x1
+            + 3.0 * u * u * t * cp1.0
+            + 3.0 * u * t * t * cp2.0
+            + t * t * t * ctx.x2;
+        let ny = u * u * u * ctx.y1
+            + 3.0 * u * u * t * cp1.1
+            + 3.0 * u * t * t * cp2.1
+            + t * t * t * ctx.y2;
+        let seg_dx = nx - px;
+        let seg_dy = ny - py;
+        let len = seg_dx.hypot(seg_dy);
+        if len > 0.5 {
+            if seg_dx.abs() >= seg_dy.abs() {
+                out.push(CcBarInstance::new(
+                    px.min(nx),
+                    py - ctx.thickness * 0.5,
+                    seg_dx.abs().max(ctx.thickness),
+                    ctx.thickness,
+                    [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
+                ));
+            } else {
+                out.push(CcBarInstance::new(
+                    px - ctx.thickness * 0.5,
+                    py.min(ny),
+                    ctx.thickness,
+                    seg_dy.abs().max(ctx.thickness),
+                    [ctx.color[0], ctx.color[1], ctx.color[2], LINE_ALPHA],
+                ));
+            }
+        }
+        px = nx;
+        py = ny;
     }
 }
 
@@ -406,11 +504,7 @@ mod tests {
             events: ticks
                 .iter()
                 .zip(values.iter())
-                .map(|(&tick, &value)| AutomationEvent {
-                    tick,
-                    value,
-                    shape: SegmentShape::Step,
-                })
+                .map(|(&tick, &value)| AutomationEvent::new(tick, value, SegmentShape::Step))
                 .collect(),
         }
     }

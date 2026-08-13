@@ -40,6 +40,14 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             Point::new(pos.x - bounds.x, pos.y - bounds.y)
         };
 
+        // 面板 √× 确认模式切换检测：模式变化时重置本地贝塞尔路径，
+        // 避免两种模式共享过期编辑状态。
+        let confirm_mode = self.editor.velocity_panel.bend_confirm_mode;
+        if confirm_mode != state.bend_confirm_mode_known {
+            state.bend_confirm_mode_known = confirm_mode;
+            state.bend_path.reset();
+        }
+
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 self.handle_button_pressed(state, cursor_pos, &cursor, bounds_size)
@@ -51,7 +59,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 self.handle_cursor_moved(state, cursor_pos, &cursor, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
-                self.handle_button_released(state)
+                self.handle_button_released(state, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
                 self.handle_wheel_scrolled(state, *delta)
@@ -124,28 +132,52 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                     self.editor.velocity_panel.tempo_max_bpm,
                 );
 
+                let view_params = AutomationViewParams {
+                    panel_height: bounds.size().height + TOOLBAR_HEIGHT,
+                    pixels_per_tick: view.zoom_x,
+                    scroll_x: view.scroll_x,
+                    keyboard_width: view.keyboard_width,
+                    value_zoom: self.editor.velocity_panel.value_zoom,
+                    value_scroll: self.editor.velocity_panel.value_scroll,
+                    panel_offset_x: 0.0,
+                    panel_offset_y: 0.0,
+                    toolbar_height: TOOLBAR_HEIGHT,
+                    line_thickness: self.editor.velocity_panel.automation_line_thickness,
+                };
+                let max_val = match self.edit_mode {
+                    EditMode::Bend => 16383.0,
+                    EditMode::Cc(_) => 127.0,
+                    _ => 127.0,
+                };
+
+                // Bend 模式 Curve 工具：绘制贝塞尔路径（√× 模式全量；
+                // 实时模式仅绘制中 ghost，已提交曲线由 host 层 gfx 渲染）
+                if self.edit_mode == EditMode::Bend
+                    && self.editor.current_tool() == lumino_core::Tool::Curve
+                {
+                    super::super::drawing::bend::draw_bend_path(
+                        &mut frame,
+                        theme,
+                        &state.bend_path,
+                        &view_params,
+                        max_val,
+                        self.editor.velocity_panel.bend_confirm_mode,
+                        self.editor.velocity_panel.automation_line_thickness,
+                    );
+                    super::super::drawing::bend::draw_bend_confirm_buttons(
+                        &mut frame,
+                        theme,
+                        &state.bend_path,
+                        &view_params,
+                        max_val,
+                        bounds.size(),
+                    );
+                }
+
                 // 绘制自动化拖拽 ghost 反馈（参考 yinhe 模式）
                 if let Some(drag) = &state.automation_drag
                     && let Some((cur_tick, cur_value)) = state.automation_curve_current
                 {
-                    let view_params = AutomationViewParams {
-                        panel_height: bounds.size().height + TOOLBAR_HEIGHT,
-                        pixels_per_tick: view.zoom_x,
-                        scroll_x: view.scroll_x,
-                        keyboard_width: view.keyboard_width,
-                        value_zoom: self.editor.velocity_panel.value_zoom,
-                        value_scroll: self.editor.velocity_panel.value_scroll,
-                        panel_offset_x: 0.0,
-                        panel_offset_y: 0.0,
-                        toolbar_height: TOOLBAR_HEIGHT,
-                        line_thickness: self.editor.velocity_panel.automation_line_thickness,
-                    };
-                    let max_val = match self.edit_mode {
-                        EditMode::Bend => 16383.0,
-                        EditMode::Cc(_) => 127.0,
-                        _ => 127.0,
-                    };
-
                     let cur_x = view_params.tick_to_x(cur_tick);
                     let cur_y = view_params.value_to_y(cur_value as f32, max_val);
 

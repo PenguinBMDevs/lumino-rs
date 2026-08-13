@@ -3,6 +3,8 @@
 //! 按编辑模式（Velocity/Tempo/Automation）将处理逻辑拆分为子模块。
 
 pub(super) mod automation;
+pub mod bend;
+mod bend_hit;
 pub(super) mod events;
 pub(super) mod hover;
 pub(super) mod tempo;

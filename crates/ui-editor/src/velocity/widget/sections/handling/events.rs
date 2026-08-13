@@ -143,6 +143,14 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
 
         state.hover_resize_handle = Self::is_in_resize_zone(cursor_pos);
 
+        // Bend 模式 Curve 工具：贝塞尔路径拖拽优先
+        if self.edit_mode == crate::velocity::EditMode::Bend
+            && self.editor.current_tool() == lumino_core::Tool::Curve
+            && state.bend_path.is_interacting()
+        {
+            return self.handle_bend_curve_moved(state, cursor_pos, bounds_size);
+        }
+
         // 自动化拖拽优先处理
         if let Some(drag) = state.automation_drag {
             return self.handle_automation_cursor_moved(state, drag, cursor_pos, bounds_size);
@@ -171,10 +179,20 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     pub(crate) fn handle_button_released(
         &self,
         state: &mut VelocityCanvasState,
+        bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
         if state.resize_dragging {
             state.resize_dragging = false;
             return None;
+        }
+
+        // Bend 模式 Curve 工具：松开完成两点绘制
+        if self.edit_mode == crate::velocity::EditMode::Bend
+            && self.editor.current_tool() == lumino_core::Tool::Curve
+            && state.bend_path.interaction
+                != crate::velocity::widget::bend_path::BendInteraction::None
+        {
+            return self.handle_bend_curve_released(state, bounds_size);
         }
 
         if state.automation_drag.is_some() {

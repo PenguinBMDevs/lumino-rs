@@ -50,6 +50,15 @@ pub enum VelocityAction {
     /// 单条消息携带双轴分量，支持「同时向上+向左」等对角线滚动。
     /// 参数: (水平增量, 垂直增量)，单位为滚轮档位（Pixels 源 ÷50 换算）。
     WheelScrolled { delta_x: f32, delta_y: f32 },
+    /// 切换弯音面板贝塞尔路径的编辑确认模式：
+    /// `false` = 实时生效（操作即写入 lane）；`true` = √× 确认（编辑在
+    /// 本地路径，√ 确认后才写入 lane）。
+    ToggleBendConfirmMode,
+    /// 弯音贝塞尔路径 √ 确认：以路径锚点全量重建 Bend lane
+    /// （先清空 lane 再按锚点重建，每个锚点一个 PitchBend 事件）。
+    BendPathConfirm(Vec<lumino_note_core::automation::AutomationEvent>),
+    /// 弯音贝塞尔路径 × 取消：丢弃本地路径，不修改 lane。
+    BendPathCancel,
 }
 
 #[cfg(test)]
