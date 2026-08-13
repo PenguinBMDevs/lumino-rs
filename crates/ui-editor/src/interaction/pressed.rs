@@ -80,11 +80,14 @@ impl Editor {
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
+        let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        // Y 向框选工具：X 维度同普通框选按用户精度 snap，Y 维度自动覆盖全部可见键
+        // Y 向框选工具：X 维度同普通框选，Y 维度自动覆盖全部可见键
         let is_y_select = self.editor_state.tool == Tool::PointerYSelect;
-        // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）
-        let selection_start_tick = snapped_tick;
+        // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）：
+        // 起点若吸附到网格点，选区左边界会比鼠标按下位置多延伸最多一个精度单元，
+        // 与移动时的精确 current_tick 不对称，必须保持两边一致的精确语义。
+        let selection_start_tick = tick;
 
         // 优先级 1：有选中音符时，先检测选择框命中
         // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
@@ -253,9 +256,8 @@ impl Editor {
     ) {
         let tick = self.x_to_tick(pos.x);
         let key = self.y_to_key(pos.y);
-        let snapped_tick = self.snap_tick(tick);
-        // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）
-        let selection_start_tick = snapped_tick;
+        // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附，与指针工具框选一致）
+        let selection_start_tick = tick;
 
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {

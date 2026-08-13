@@ -67,24 +67,20 @@ impl Editor {
         }
 
         if let EditState::Selecting {
-            start_tick,
             current_tick,
             current_key,
             current_y,
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            // Y 向框选工具：X 维度按用户精度 snap，Y 维度保持全范围不动
+            // Y 向框选工具：X 维度同普通框选，Y 维度保持全范围不动
             let is_y_select = self.editor_state.tool == lumino_message::Tool::PointerYSelect;
             let view = &self.editor_state.view;
-            // 左右精度 = 用户设置的音符放置精度（Direct/Spring 模式统一）；
-            // 正向拖动使用"1/4 提前"吸附（鼠标进入精度单元的前 1/4 处即扩展，
-            // 避免粗精度下框选框扩展滞后于鼠标），反向拖动保持 floor 吸附
-            *current_tick = if tick >= *start_tick {
-                view.snap_tick_forward(tick)
-            } else {
-                snapped_tick
-            };
+            // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）。
+            // 曾用 snap_tick_forward（1/4 提前吸附）/ floor 吸附，导致选框边界
+            // 相对鼠标位置多延伸出最多一个精度单元（正向 0.75 单元、反向 1 单元），
+            // 且会选中鼠标未扫过的音符。框选边界必须精确跟随鼠标扫过的范围。
+            *current_tick = tick;
             if !is_y_select {
                 // 上下精度 = 单个 key：current_y 对齐到 key 线
                 //（key_to_y(key) + zoom_y 为该 key 的底边，覆盖完整整数 key 范围）

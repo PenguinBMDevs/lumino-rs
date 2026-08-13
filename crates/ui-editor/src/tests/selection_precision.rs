@@ -1,9 +1,12 @@
-//! 框选框精度测试：上下以单个 key 为标准，左右以用户设置的音符放置精度为标准
+//! 框选框精度测试：上下以单个 key 为标准，左右以鼠标精确 tick 位置为标准
 //!
 //! 背景：`SelectionBoxMode::Direct`（默认模式）下，框选（Selecting）过程
 //! 原先 X 方向使用像素级原始 tick（不吸附用户精度）、Y 方向使用像素级
 //! `pos.y`（不对齐 key 线）。修改后（Direct/Spring 统一）：
-//! - 左右（X/tick）：始终按用户精度（`snap_precision`）吸附
+//! - 左右（X/tick）：始终精确跟随鼠标 tick 位置（像素级，不吸附）。
+//!   曾引入吸附（`snap_tick_forward` 1/4 提前吸附 / floor 吸附），导致选框
+//!   边界相对鼠标位置多延伸出最多一个精度单元（正向 0.75 单元、反向 1 单元）
+//!   且选中鼠标未扫过的音符，属 BUG，已回退为精确跟随。
 //! - 上下（Y/key）：视觉坐标对齐到单个 key 线（`key_to_y(key)` + `zoom_y` 底边）
 //!
 //! 测试直接调用 `handle_pointer_pressed` / `handle_moved` / `handle_eraser_pressed`
@@ -49,10 +52,10 @@ fn selecting_state(editor: &Editor) -> (f32, f32, u16, u16, f32, f32) {
     )
 }
 
-// ===== Direct 模式（默认）：左右按用户精度、上下按单个 key =====
+// ===== Direct 模式（默认）：左右精确跟随鼠标 tick、上下对齐单个 key =====
 
 #[test]
-fn test_pointer_direct_start_snapped_to_precision_and_key() {
+fn test_pointer_direct_start_precise_tick_and_key() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
     assert_eq!(
@@ -62,20 +65,19 @@ fn test_pointer_direct_start_snapped_to_precision_and_key() {
     );
 
     let view = editor.editor_state.view.clone();
-    // 点击空白处：tick=2400（非网格点，snap 后 = 用户精度 1920）；y 在 key 60 中间（像素级）
+    // 点击空白处：tick=2400（非网格点，不吸附）；y 在 key 60 中间（像素级）
     let x = view.tick_to_x(2400.0);
     let y = view.key_to_y(60) + view.zoom_y / 2.0;
     start_selection_at(&mut editor, x, y);
 
     let (start_tick, current_tick, start_key, current_key, start_y, current_y) =
         selecting_state(&editor);
-    // 左右：以用户设置的音符放置精度为准，而非像素级 2400
-    let snapped_2400 = view.snap_tick(2400.0);
+    // 左右：精确跟随鼠标 tick 位置（像素级），不吸附到用户精度
     assert_eq!(
-        start_tick, snapped_2400,
-        "起点 tick 应吸附到用户精度 {snapped_2400}，而非像素级 2400"
+        start_tick, 2400.0,
+        "起点 tick 应为鼠标精确位置 2400，而非吸附后的网格点"
     );
-    assert_eq!(current_tick, snapped_2400);
+    assert_eq!(current_tick, 2400.0);
     // 上下：单个 key
     assert_eq!(start_key, 60);
     assert_eq!(current_key, 60);
@@ -92,7 +94,7 @@ fn test_pointer_direct_start_snapped_to_precision_and_key() {
 }
 
 #[test]
-fn test_pointer_direct_moved_snapped_to_precision_and_key() {
+fn test_pointer_direct_moved_precise_tick_and_key() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
 
@@ -103,17 +105,16 @@ fn test_pointer_direct_moved_snapped_to_precision_and_key() {
         view.key_to_y(60) + view.zoom_y / 2.0,
     );
 
-    // 移动到：tick=5000（正向 1/4 提前吸附 → 5760）；key=56（像素级 y 在 key 内偏移）
+    // 移动到：tick=5000（非网格点）；key=56（像素级 y 在 key 内偏移）
     let target_x = view.tick_to_x(5000.0);
     let target_y = view.key_to_y(56) + view.zoom_y * 0.3;
     editor.handle_moved(Point::new(target_x, target_y));
 
     let (_, current_tick, _, current_key, _, current_y) = selecting_state(&editor);
-    // 正向拖动：1/4 提前吸附。5000 = 单元 [3840, 5760) 的前 1/4 内 → 吸附到 5760
-    //（原 floor 吸附为 3840，需鼠标移动整个精度单元才扩展）
+    // 左右：精确跟随鼠标 tick，选区右边界不越过鼠标位置（不多延伸）
     assert_eq!(
-        current_tick, 5760.0,
-        "移动中 current_tick 应 1/4 提前吸附到 5760，而非 floor 的 3840"
+        current_tick, 5000.0,
+        "移动中 current_tick 应精确等于鼠标 tick 5000，不吸附、不越界"
     );
     assert_eq!(current_key, 56);
     assert_eq!(
@@ -123,75 +124,46 @@ fn test_pointer_direct_moved_snapped_to_precision_and_key() {
     );
 }
 
-// ===== 1/4 提前吸附（横向扩展提前） =====
+// ===== 精确跟随：选框边界永远不越过鼠标位置 =====
 
 #[test]
-fn test_snap_tick_forward_quarter_cell_threshold() {
-    // 公式边界验证：默认精度 1920（四分音符），跳变阈值 = 单元前 1/4 = 480
-    let editor = Editor::new();
-    let view = &editor.editor_state.view;
-    assert_eq!(view.snap_precision, 1920.0);
-
-    assert_eq!(view.snap_tick_forward(0.0), 0.0);
-    assert_eq!(view.snap_tick_forward(479.0), 0.0, "1/4 前不扩展");
-    assert_eq!(
-        view.snap_tick_forward(480.0),
-        1920.0,
-        "1/4 处即扩展一个单元"
-    );
-    assert_eq!(view.snap_tick_forward(1000.0), 1920.0);
-    assert_eq!(view.snap_tick_forward(1919.0), 1920.0, "单元末尾仍在本单元");
-    assert_eq!(
-        view.snap_tick_forward(1920.0),
-        1920.0,
-        "网格点本身 = 本单元末尾"
-    );
-    assert_eq!(
-        view.snap_tick_forward(2400.0),
-        3840.0,
-        "下一单元 1/4 处继续提前扩展"
-    );
-}
-
-#[test]
-fn test_selection_expands_at_quarter_cell() {
-    // 框选正向拖动：鼠标进入精度单元的 1/4 处（start + 0.25*I）即扩展，
-    // 无需移动整个精度单元（原 floor 行为）
+fn test_selection_follows_mouse_precisely_forward() {
+    // 正向（向右）拖动：current_tick 精确跟随鼠标，不多延伸一个精度单元
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
 
     let view = editor.editor_state.view.clone();
-    // 按下在 tick 2200（floor 吸附 → start = 1920），单元 [1920, 3840) 的 1/4 处 = 2400
+    // 按下在 tick 2200（精确起点，不再 floor 吸附）
     start_selection_at(
         &mut editor,
         view.tick_to_x(2200.0),
         view.key_to_y(60) + view.zoom_y / 2.0,
     );
     let (start_tick, _, ..) = selecting_state(&editor);
-    assert_eq!(start_tick, 1920.0, "按下位置仍按 floor 吸附");
+    assert_eq!(start_tick, 2200.0, "按下位置即精确起点，不吸附");
 
-    // 1/4 处之前（tick 2350）：不扩展，current_tick 仍等于起点（宽度 0）
+    // 移动到 tick 2350（仍在单元 [0, 1920) 内）：精确跟随
     editor.handle_moved(Point::new(view.tick_to_x(2350.0), view.key_to_y(60)));
     let (_, current_tick, ..) = selecting_state(&editor);
-    assert_eq!(current_tick, 1920.0, "单元 1/4 前不应扩展");
+    assert_eq!(current_tick, 2350.0, "选框右边界应精确在鼠标位置，不多延伸");
 
-    // 到达 1/4 处（tick 2400）：扩展一个精度单元 → current_tick = 3840
-    editor.handle_moved(Point::new(view.tick_to_x(2400.0), view.key_to_y(60)));
+    // 移动到 tick 3000（跨过网格点 2880）：仍精确跟随，不吸附到 3840
+    editor.handle_moved(Point::new(view.tick_to_x(3000.0), view.key_to_y(60)));
     let (_, current_tick, ..) = selecting_state(&editor);
     assert_eq!(
-        current_tick, 3840.0,
-        "鼠标到达单元 1/4 处即扩展一个精度单元（无需移动整个单元）"
+        current_tick, 3000.0,
+        "跨网格点后仍精确跟随鼠标，不 1/4 提前吸附到 3840"
     );
 }
 
 #[test]
-fn test_selection_reverse_drag_keeps_floor() {
-    // 反向拖动（向左）：保持 floor 吸附（跨过网格点才扩展），与修改前一致
+fn test_selection_follows_mouse_precisely_reverse() {
+    // 反向（向左）拖动：current_tick 精确跟随鼠标，不 floor 回拉到单元起点
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
 
     let view = editor.editor_state.view.clone();
-    // 按下在 tick 2400（start = 1920），向左拖到 tick 1500（跨过网格点 0）
+    // 按下在 tick 2400（精确起点），向左拖到 tick 1500
     start_selection_at(
         &mut editor,
         view.tick_to_x(2400.0),
@@ -199,17 +171,21 @@ fn test_selection_reverse_drag_keeps_floor() {
     );
     editor.handle_moved(Point::new(view.tick_to_x(1500.0), view.key_to_y(60)));
 
-    let (_, current_tick, ..) = selecting_state(&editor);
+    let (start_tick, current_tick, ..) = selecting_state(&editor);
     assert_eq!(
-        current_tick, 0.0,
-        "反向拖动保持 floor 吸附：鼠标 1500 → 0（跨过网格点才扩展）"
+        start_tick, 2400.0,
+        "起点 tick 应为鼠标按下位置 2400，而非 floor 吸附的 1920"
+    );
+    assert_eq!(
+        current_tick, 1500.0,
+        "反向拖动 current_tick 应精确等于鼠标 tick 1500，向左不多延伸"
     );
 }
 
 // ===== Spring 模式：行为与 Direct 统一（回归） =====
 
 #[test]
-fn test_pointer_spring_start_snapped_to_precision_and_key() {
+fn test_pointer_spring_start_precise_tick_and_key() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
     editor.editor_state.view.selection_box_mode = SelectionBoxMode::Spring;
@@ -221,9 +197,8 @@ fn test_pointer_spring_start_snapped_to_precision_and_key() {
 
     let (start_tick, _, start_key, _, start_y, current_y) = selecting_state(&editor);
     assert_eq!(
-        start_tick,
-        view.snap_tick(2400.0),
-        "Spring 模式起点 tick 同样按用户精度"
+        start_tick, 2400.0,
+        "Spring 模式起点 tick 同样精确跟随鼠标位置"
     );
     assert_eq!(start_key, 60);
     assert_eq!(
@@ -234,10 +209,10 @@ fn test_pointer_spring_start_snapped_to_precision_and_key() {
     assert_eq!(current_y, view.key_to_y(60) + view.zoom_y);
 }
 
-// ===== 橡皮擦 Shift 框选：同样统一精度 =====
+// ===== 橡皮擦 Shift 框选：同样精确跟随 =====
 
 #[test]
-fn test_eraser_shift_selection_snapped_to_precision_and_key() {
+fn test_eraser_shift_selection_precise_tick_and_key() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[]);
     editor.editor_state.tool = Tool::Eraser; // 默认 EraserBehavior::Default
@@ -250,9 +225,8 @@ fn test_eraser_shift_selection_snapped_to_precision_and_key() {
 
     let (start_tick, _, start_key, _, start_y, current_y) = selecting_state(&editor);
     assert_eq!(
-        start_tick,
-        view.snap_tick(2400.0),
-        "橡皮擦框选起点 tick 按用户精度"
+        start_tick, 2400.0,
+        "橡皮擦框选起点 tick 精确跟随鼠标位置，不吸附"
     );
     assert_eq!(start_key, 60);
     assert_eq!(start_y, view.key_to_y(60), "橡皮擦框选起点 Y 对齐 key 线");
@@ -273,14 +247,13 @@ fn test_y_select_tool_full_key_range_unchanged() {
     start_selection_at(&mut editor, x, y);
 
     let (start_tick, _, start_key, current_key, start_y, current_y) = selecting_state(&editor);
-    // Y 维度自动覆盖全部可见键（0..=127），X 仍按用户精度
+    // Y 维度自动覆盖全部可见键（0..=127），X 仍精确跟随鼠标
     assert_eq!(start_key, 127);
     assert_eq!(current_key, 0);
     assert_eq!(start_y, view.key_to_y(127));
     assert_eq!(current_y, view.key_to_y(0) + view.zoom_y);
     assert_eq!(
-        start_tick,
-        view.snap_tick(2400.0),
-        "Y 向工具 X 维度同样按用户精度"
+        start_tick, 2400.0,
+        "Y 向工具 X 维度同样精确跟随鼠标位置，不吸附"
     );
 }

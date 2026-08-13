@@ -51,17 +51,12 @@ impl Editor {
                 let start_y = self.key_to_y(start_key);
                 let start_pos = Point::new(start_x, start_y);
 
-                // 计算吸附后的目标位置
-                // 与 Selecting.current_tick 保持一致：正向拖动用"1/4 提前"吸附
-                //（鼠标进入精度单元的前 1/4 处即扩展），反向拖动保持 floor 吸附
+                // 计算弹簧目标位置
+                // 与 Selecting.current_tick 保持一致：目标 = 鼠标精确 tick 位置
+                //（像素级，不吸附——吸附语义会让选框边界多延伸一个精度单元，
+                // 且动画目标与选区边界不一致导致视觉与实际选中范围不符）
                 let snapped_tick = if let Some(pos) = mouse_pos {
-                    let tick = self.x_to_tick(pos.x);
-                    let view = &self.editor_state.view;
-                    if tick >= start_tick {
-                        view.snap_tick_forward(tick)
-                    } else {
-                        view.snap_tick(tick)
-                    }
+                    self.x_to_tick(pos.x)
                 } else {
                     current_tick
                 };

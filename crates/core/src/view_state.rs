@@ -132,17 +132,4 @@ impl ViewState {
     pub fn snap_tick(&self, tick: f32) -> f32 {
         (tick / self.snap_precision).floor() * self.snap_precision
     }
-
-    /// 提前吸附（正向扩展）：鼠标进入精度单元的前 1/4 处即吸附到下一网格点。
-    ///
-    /// `snap_tick` 的 `floor` 语义要求鼠标移动整个精度单元才跳变到下一网格点，
-    /// 粗精度下（如全音符 = 1 小节）框选框横向扩展明显滞后于鼠标。
-    /// 本方法将跳变阈值提前到单元的 1/4 处：鼠标位置满足
-    /// `tick % interval >= interval / 4` 时，吸附到下一网格点。
-    ///
-    /// 用于框选（Selecting）的正向拖动，反向拖动仍使用 `snap_tick`。
-    pub fn snap_tick_forward(&self, tick: f32) -> f32 {
-        let precision = self.snap_precision.max(1.0);
-        ((tick + precision * 0.75) / precision).floor() * precision
-    }
 }
