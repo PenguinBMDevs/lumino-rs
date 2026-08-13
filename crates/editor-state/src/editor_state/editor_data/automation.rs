@@ -150,10 +150,14 @@ impl EditorData {
                 let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
                     return false;
                 };
-                // 走 setter：钳制柄不越过锚点垂直切线（防曲线回环），
+                // 走 setter：钳制柄不越过自身锚点垂直切线（防曲线回环），
                 // 并标记自定义（不再被自动重算覆盖）
                 evt.set_out_handle(out_handle);
                 evt.set_in_handle(in_handle);
+                // 相邻锚点钳制：柄的 tick 不能越过相邻锚点（否则控制柄 x
+                // 超出段端点，贝塞尔 x(t) 非单调 → 曲线回环 → 同一 tick
+                // 多个弯音值 / 视觉多条曲线）。
+                clamp_handles_to_neighbors(lane, tick);
                 true
             }
             AutomationEdit::Clear {
@@ -206,5 +210,31 @@ impl EditorData {
                 value: (event.value as i16 - 8192).clamp(-8192, 8191),
             })
             .collect()
+    }
+}
+
+/// 按相邻事件钳制指定事件的控制柄 tick 偏移。
+///
+/// 规则（防贝塞尔曲线回环）：
+/// - 出向柄 tick 偏移 ∈ [0, 下一事件 tick 差]（不能越过自身与下一锚点）；
+/// - 入向柄 tick 偏移 ∈ [上一事件 tick 差, 0]（不能越过自身与上一锚点）。
+///
+/// 满足后控制柄 x 均落在段端点 [A.x, B.x] 内，贝塞尔 x(t) 严格单调，
+/// 曲线为单值函数（同一 tick 不会出现多个弯音值）。
+fn clamp_handles_to_neighbors(lane: &mut lumino_note_core::automation::AutomationLane, tick: u32) {
+    let Some(pos) = lane.events.iter().position(|e| e.tick == tick) else {
+        return;
+    };
+    let evt_tick = lane.events[pos].tick as f32;
+    // 出向柄：不能超过下一事件
+    if let Some(next) = lane.events.get(pos + 1) {
+        let max_x = (next.tick as f32 - evt_tick).max(0.0);
+        lane.events[pos].out_handle.0 = lane.events[pos].out_handle.0.clamp(0.0, max_x);
+    }
+    // 入向柄：不能超过上一事件
+    if pos > 0 {
+        let prev_tick = lane.events[pos - 1].tick as f32;
+        let min_x = (prev_tick - evt_tick).min(0.0);
+        lane.events[pos].in_handle.0 = lane.events[pos].in_handle.0.clamp(min_x, 0.0);
     }
 }

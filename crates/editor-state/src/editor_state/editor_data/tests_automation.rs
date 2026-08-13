@@ -375,6 +375,68 @@ fn test_apply_automation_edit_update_handles_clamps_loopback() {
 }
 
 #[test]
+fn test_apply_automation_edit_update_handles_clamps_to_neighbors() {
+    // 出向柄拉到下一锚点之外 / 入向柄拉到上一锚点之外 → 钳制到相邻锚点
+    // （防贝塞尔 x(t) 非单调导致曲线回环）
+    let mut data = EditorData::new();
+    for (tick, value) in [(0u32, 8192u16), (960, 8192), (1920, 9000)] {
+        data.apply_automation_edit(AutomationEdit::Add {
+            track_idx: 0,
+            target: AutomationTarget::PitchBend,
+            channel: 0,
+            tick,
+            value,
+            shape: SegmentShape::Curve { tension: 0 },
+        });
+    }
+    // 事件 0 的出向柄拉到 tick 5000（远超下一事件 960）
+    let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 0,
+        out_handle: (5000.0, 4000.0),
+        in_handle: (0.0, 0.0),
+    });
+    assert!(changed);
+    assert_eq!(
+        data.automation_lanes[0].events[0].out_handle.0, 960.0,
+        "出向柄不能越过下一锚点（tick 差 960）"
+    );
+    assert_eq!(data.automation_lanes[0].events[0].out_handle.1, 4000.0);
+
+    // 事件 2 的入向柄拉到 tick -5000（远超上一事件 960）
+    data.apply_automation_edit(AutomationEdit::UpdateHandles {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 1920,
+        out_handle: (0.0, 0.0),
+        in_handle: (-5000.0, -3000.0),
+    });
+    assert_eq!(
+        data.automation_lanes[0].events[2].in_handle.0, -960.0,
+        "入向柄不能越过上一锚点（tick 差 -960）"
+    );
+    assert_eq!(data.automation_lanes[0].events[2].in_handle.1, -3000.0);
+
+    // 中间事件 1：两端都钳制
+    data.apply_automation_edit(AutomationEdit::UpdateHandles {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 960,
+        out_handle: (5000.0, 0.0),
+        in_handle: (-5000.0, 0.0),
+    });
+    assert_eq!(
+        data.automation_lanes[0].events[1].out_handle.0, 960.0,
+        "中间锚点出向柄钳制到下一锚点"
+    );
+    assert_eq!(
+        data.automation_lanes[0].events[1].in_handle.0, -960.0,
+        "中间锚点入向柄钳制到上一锚点"
+    );
+}
+
+#[test]
 fn test_apply_automation_edit_delete_recomputes_handles() {
     // 三事件：删除中间事件后，首尾事件自动柄重算为新的 1/3 段
     let mut data = EditorData::new();

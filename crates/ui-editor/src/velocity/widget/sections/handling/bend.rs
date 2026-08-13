@@ -164,13 +164,30 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             BendInteraction::DraggingHandle { idx, side } => {
                 // 控制柄绝对位置直接跟随鼠标（按下时柄距锚点 < 命中半径，跳变可忽略）
                 let h_abs = raw;
+                // 先复制相邻锚点位置（避免与可变借用冲突）
+                let prev_tick = (idx > 0).then(|| state.bend_path.anchors[idx - 1].pos.0);
+                let next_tick = (idx + 1 < state.bend_path.anchors.len())
+                    .then(|| state.bend_path.anchors[idx + 1].pos.0);
                 if let Some(anchor) = state.bend_path.anchors.get_mut(idx) {
+                    let offset = (h_abs.0 - anchor.pos.0, h_abs.1 - anchor.pos.1);
                     match side {
                         HandleSide::In => {
-                            anchor.set_in_handle((h_abs.0 - anchor.pos.0, h_abs.1 - anchor.pos.1))
+                            // 入向柄钳制：不能越过自身（>0 无效）与上一锚点
+                            let mut offset = offset;
+                            if let Some(prev_tick) = prev_tick {
+                                let min_x = (prev_tick - anchor.pos.0).min(0.0);
+                                offset.0 = offset.0.clamp(min_x, 0.0);
+                            }
+                            anchor.set_in_handle(offset);
                         }
                         HandleSide::Out => {
-                            anchor.set_out_handle((h_abs.0 - anchor.pos.0, h_abs.1 - anchor.pos.1))
+                            // 出向柄钳制：不能越过自身（<0 无效）与下一锚点
+                            let mut offset = offset;
+                            if let Some(next_tick) = next_tick {
+                                let max_x = (next_tick - anchor.pos.0).max(0.0);
+                                offset.0 = offset.0.clamp(0.0, max_x);
+                            }
+                            anchor.set_out_handle(offset);
                         }
                     }
                 }

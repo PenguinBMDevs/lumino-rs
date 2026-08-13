@@ -145,6 +145,17 @@ fn collect_segments(
     pad_start: u32,
     pad_end: u32,
 ) -> Vec<SegSpan> {
+    // 可见事件窗口扩展：贝塞尔控制柄可能把曲线延伸到事件范围之外
+    // （柄 tick 偏移越大延伸越远）。若只按事件 tick 裁剪，锚点（事件）
+    // 都在视口外但曲线穿过视口时，段不会生成 → 曲线消失/变成水平线。
+    let handle_buffer = lane
+        .events
+        .iter()
+        .map(|e| e.out_handle.0.abs().max(e.in_handle.0.abs()))
+        .fold(0.0_f32, f32::max);
+    let pad_start = pad_start.saturating_sub(handle_buffer.ceil() as u32);
+    let pad_end = pad_end.saturating_add(handle_buffer.ceil() as u32);
+
     let visible_events = lane.events_in_range(pad_start, pad_end);
     let mut segs = Vec::new();
     let grid_left_x = view.keyboard_width;
@@ -548,5 +559,73 @@ mod tests {
         let mut out = Vec::new();
         build_lane_instances(&mut out, 200.0, &view, &lane, [1.0, 1.0, 1.0], false);
         assert!(!out.is_empty(), "应生成 Step 线段");
+    }
+
+    #[test]
+    fn test_lane_instances_visible_when_anchors_off_viewport() {
+        // 回归：锚点（事件）在视口外、但贝塞尔控制柄把曲线延伸到视口内时，
+        // 曲线必须仍然渲染（事件窗口需按柄的 tick 偏移扩展）。
+        // 场景：事件在 tick 10000（视口外右侧），入向柄向左拉 9000 tick，
+        // 曲线延伸到 tick 1000（视口内）。
+        let view = AutomationViewParams {
+            panel_height: 100.0,
+            pixels_per_tick: 1.0,
+            scroll_x: 0.0,
+            keyboard_width: 0.0,
+            value_zoom: 1.0,
+            value_scroll: 0.0,
+            panel_offset_x: 0.0,
+            panel_offset_y: 0.0,
+            toolbar_height: 28.0,
+            line_thickness: 2.0,
+        };
+        let mut evt = AutomationEvent::new(10_000, 8192, SegmentShape::Curve { tension: 0 });
+        evt.set_in_handle((-9000.0, -3000.0)); // 入向柄向左延伸 9000 tick
+        let mut lane = AutomationLane {
+            target: AutomationTarget::PitchBend,
+            track: 0,
+            channel: 0,
+            events: vec![evt],
+        };
+        lane.recompute_auto_handles();
+        // 视口 0..200 tick（事件在 10000，远超视口）
+        let mut out = Vec::new();
+        build_lane_instances(&mut out, 200.0, &view, &lane, [1.0, 1.0, 1.0], false);
+        assert!(
+            !out.is_empty(),
+            "柄延伸进视口的曲线必须渲染（事件窗口已扩展）"
+        );
+        // 生成的线段应覆盖视口区域（有 x < 200 的实例）
+        assert!(
+            out.iter().any(|i| i.position[0] < 200.0),
+            "曲线应包含视口内的线段"
+        );
+    }
+
+    #[test]
+    fn test_lane_instances_off_viewport_no_handle_still_hidden() {
+        // 无柄延伸时：事件全部在视口外 → 只渲染 chase 水平线（保持前一事件值），
+        // 不产生任何曲线段（斜线/竖线）
+        let view = AutomationViewParams {
+            panel_height: 100.0,
+            pixels_per_tick: 1.0,
+            scroll_x: 0.0,
+            keyboard_width: 0.0,
+            value_zoom: 1.0,
+            value_scroll: 0.0,
+            panel_offset_x: 0.0,
+            panel_offset_y: 0.0,
+            toolbar_height: 28.0,
+            line_thickness: 2.0,
+        };
+        let lane = make_lane(&[10_000, 10_100], &[8192, 9000]);
+        let mut out = Vec::new();
+        build_lane_instances(&mut out, 200.0, &view, &lane, [1.0, 1.0, 1.0], false);
+        assert!(!out.is_empty(), "chase 水平线应存在（保持前一事件值 8192）");
+        // 全部为水平线（高度 = 线粗 2px）；无斜线/竖线（高度 > 2）
+        assert!(
+            out.iter().all(|i| i.size[1] <= 2.0 + 0.01),
+            "视口外事件只应有 chase 水平线: {out:?}"
+        );
     }
 }
