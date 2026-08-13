@@ -87,6 +87,7 @@ mod tests {
 
     fn view() -> AutomationViewParams {
         AutomationViewParams {
+            // 与面板约定一致：panel_height = canvas 高度、toolbar_height = 0
             panel_height: 150.0,
             pixels_per_tick: 1.0,
             scroll_x: 0.0,
@@ -95,7 +96,7 @@ mod tests {
             value_scroll: 0.0,
             panel_offset_x: 0.0,
             panel_offset_y: 0.0,
-            toolbar_height: 28.0,
+            toolbar_height: 0.0,
             line_thickness: 2.0,
         }
     }

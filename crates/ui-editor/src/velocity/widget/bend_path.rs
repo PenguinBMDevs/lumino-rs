@@ -86,8 +86,6 @@ pub enum BendInteraction {
     /// 无交互
     #[default]
     None,
-    /// 正在从起点绘制到当前点（两点路径：按下起点 → 拖动 → 松开完成）
-    Drawing,
     /// 拖动锚点
     DraggingAnchor { idx: usize },
     /// 拖动控制柄
@@ -106,18 +104,16 @@ pub enum HandleSide {
 /// 弯音路径编辑状态（Canvas 状态的一部分，跨帧保留）
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct BendPathState {
-    /// 路径锚点（<2 个 = 绘制中；>=2 个 = 完整路径）
+    /// 路径锚点（每次点击追加一个锚点，立即生效）
     pub anchors: Vec<BendAnchor>,
     /// 当前交互阶段
     pub interaction: BendInteraction,
+    /// 当前选中的锚点索引（点击锚点选中，点击空白追加新锚点并选中它）
+    pub selected: Option<usize>,
     /// 拖拽基准：按下时被拖锚点的原始值
     pub drag_anchor_orig: BendAnchor,
     /// 拖拽基准：按下时被拖控制柄的原始偏移
     pub drag_handle_orig: (f32, f32),
-    /// 绘制起点（Drawing 用）
-    pub draw_start: (f32, f32),
-    /// 当前鼠标逻辑位置（ghost 绘制反馈用）
-    pub current: Option<(f32, f32)>,
 }
 
 impl BendPathState {

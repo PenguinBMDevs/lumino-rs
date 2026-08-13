@@ -42,10 +42,11 @@ fn automation_editor_with_cc1() -> crate::Editor {
 /// 自动化锚点 (tick=480, value=64) 在默认视图下的屏幕坐标
 ///
 /// 默认视图：keyboard_width=120, zoom_x=0.1, scroll_x=0；
-/// bounds_size=(800, 300) → panel_height=328, h=300。
-/// x = 120 + 480*0.1 = 168；y = 28 + 300 - (64/127)*300 ≈ 176.8。
+/// bounds_size=(800, 300) → panel_height=300（canvas 局部坐标，toolbar_height=0，
+/// 局部 Y=0 = 数据区顶部，与 host 渲染对齐）。
+/// x = 120 + 480*0.1 = 168；y = 300 - (64/127)*300 ≈ 148.8。
 fn automation_anchor_pos() -> Point {
-    Point::new(168.0, 176.8)
+    Point::new(168.0, 148.8)
 }
 
 /// 自动化面板点击测试的默认 bounds

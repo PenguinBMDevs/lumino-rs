@@ -5,7 +5,7 @@ use lumino_gfx::automation::AutomationViewParams;
 use lumino_note_core::{AutomationLane, AutomationTarget};
 
 use super::super::super::{
-    HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPoint,
+    HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPoint,
 };
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
@@ -91,6 +91,11 @@ impl super::super::VelocityCanvas<'_> {
     }
 
     /// 构造 Canvas 局部坐标系的自动化视图参数。
+    ///
+    /// 注意：Canvas 的 bounds 已在工具栏下方（局部 Y=0 = 数据区顶部），
+    /// 因此 `panel_height = bounds 高度`、`toolbar_height = 0`——
+    /// 与 host 层渲染（cc_bar_renderer，窗口绝对坐标）保持一致，
+    /// 避免本地绘制的锚点/控制柄与曲线错位（多算一次工具栏高度）。
     pub(super) fn automation_view_params(
         &self,
         bounds_size: Size,
@@ -99,7 +104,7 @@ impl super::super::VelocityCanvas<'_> {
         let view = &self.editor.editor_state.view;
         let panel = &self.editor.velocity_panel;
         let params = AutomationViewParams {
-            panel_height: bounds_size.height + TOOLBAR_HEIGHT,
+            panel_height: bounds_size.height,
             pixels_per_tick: view.zoom_x,
             scroll_x: view.scroll_x,
             keyboard_width: view.keyboard_width,
@@ -107,7 +112,7 @@ impl super::super::VelocityCanvas<'_> {
             value_scroll: panel.value_scroll,
             panel_offset_x: 0.0,
             panel_offset_y: 0.0,
-            toolbar_height: TOOLBAR_HEIGHT,
+            toolbar_height: 0.0,
             line_thickness: panel.automation_line_thickness,
         };
         let max_val = target.max_value() as f32;

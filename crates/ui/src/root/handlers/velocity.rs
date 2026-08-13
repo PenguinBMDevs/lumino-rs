@@ -155,62 +155,6 @@ impl VelocityHandler {
                 tracing::debug!("自动化面板: 拖拽开始");
                 return;
             }
-            VA::ToggleBendConfirmMode => {
-                let panel = &mut root.editor.velocity_panel;
-                panel.bend_confirm_mode = !panel.bend_confirm_mode;
-                tracing::debug!(
-                    "弯音面板: 贝塞尔路径确认模式切换为 {}",
-                    if panel.bend_confirm_mode {
-                        "√× 确认"
-                    } else {
-                        "实时生效"
-                    }
-                );
-                return;
-            }
-            VA::BendPathConfirm(anchors) => {
-                use lumino_note_core::automation::{AutomationEdit, AutomationTarget};
-                // √ 确认：清空 Bend lane 后按路径锚点全量重建（贝塞尔路径语义）
-                let track_idx = root.editor.editor_state.data.current_track as u16;
-                let target = AutomationTarget::PitchBend;
-                let Some(lane_idx) = root
-                    .editor
-                    .editor_state
-                    .data
-                    .find_automation_lane(track_idx, &target)
-                else {
-                    return;
-                };
-                let anchor_count = anchors.len();
-                root.editor.push_history();
-                root.editor
-                    .editor_state
-                    .data
-                    .apply_automation_edit(AutomationEdit::Clear {
-                        track_idx,
-                        lane_idx,
-                    });
-                for anchor in anchors {
-                    root.editor
-                        .editor_state
-                        .data
-                        .apply_automation_edit(AutomationEdit::Add {
-                            track_idx,
-                            target: target.clone(),
-                            channel: 0,
-                            tick: anchor.tick,
-                            value: anchor.value,
-                            shape: anchor.shape,
-                        });
-                }
-                root.update_playback_notes();
-                tracing::debug!("弯音面板: √ 确认贝塞尔路径（{} 锚点）", anchor_count);
-                return;
-            }
-            VA::BendPathCancel => {
-                tracing::debug!("弯音面板: × 取消贝塞尔路径");
-                return;
-            }
             VA::AutomationZoom(factor) => {
                 let panel = &mut root.editor.velocity_panel;
                 let max_val = Self::automation_max_value(panel.edit_mode);

@@ -6,9 +6,7 @@ use iced_widget::canvas::{self, Frame, Program, path};
 
 use crate::{Message, Renderer, Theme};
 
-use super::super::super::{
-    EditMode, PANEL_PADDING_X, RESIZE_HANDLE_HEIGHT, TOOLBAR_HEIGHT, VelocityPanel,
-};
+use super::super::super::{EditMode, PANEL_PADDING_X, RESIZE_HANDLE_HEIGHT, VelocityPanel};
 use super::super::drawing::{
     automation_node_color, draw_horizontal_lines, draw_scale_labels, draw_tempo_graph,
     draw_vertical_lines,
@@ -39,14 +37,6 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
             let pos = cursor.position()?;
             Point::new(pos.x - bounds.x, pos.y - bounds.y)
         };
-
-        // 面板 √× 确认模式切换检测：模式变化时重置本地贝塞尔路径，
-        // 避免两种模式共享过期编辑状态。
-        let confirm_mode = self.editor.velocity_panel.bend_confirm_mode;
-        if confirm_mode != state.bend_confirm_mode_known {
-            state.bend_confirm_mode_known = confirm_mode;
-            state.bend_path.reset();
-        }
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
@@ -133,7 +123,9 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 );
 
                 let view_params = AutomationViewParams {
-                    panel_height: bounds.size().height + TOOLBAR_HEIGHT,
+                    // Canvas 局部坐标（bounds 已在工具栏下方）：
+                    // 与 automation_view_params 一致，保证与 host 渲染对齐
+                    panel_height: bounds.size().height,
                     pixels_per_tick: view.zoom_x,
                     scroll_x: view.scroll_x,
                     keyboard_width: view.keyboard_width,
@@ -141,7 +133,7 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                     value_scroll: self.editor.velocity_panel.value_scroll,
                     panel_offset_x: 0.0,
                     panel_offset_y: 0.0,
-                    toolbar_height: TOOLBAR_HEIGHT,
+                    toolbar_height: 0.0,
                     line_thickness: self.editor.velocity_panel.automation_line_thickness,
                 };
                 let max_val = match self.edit_mode {
@@ -150,8 +142,8 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                     _ => 127.0,
                 };
 
-                // Bend 模式 Curve 工具：绘制贝塞尔路径（√× 模式全量；
-                // 实时模式仅绘制中 ghost，已提交曲线由 host 层 gfx 渲染）
+                // Bend 模式 Curve 工具：绘制控制柄 + 选中锚点高亮
+                // （曲线本体由 host 层 gfx 渲染，实时生效）
                 if self.edit_mode == EditMode::Bend
                     && self.editor.current_tool() == lumino_core::Tool::Curve
                 {
@@ -161,16 +153,6 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                         &state.bend_path,
                         &view_params,
                         max_val,
-                        self.editor.velocity_panel.bend_confirm_mode,
-                        self.editor.velocity_panel.automation_line_thickness,
-                    );
-                    super::super::drawing::bend::draw_bend_confirm_buttons(
-                        &mut frame,
-                        theme,
-                        &state.bend_path,
-                        &view_params,
-                        max_val,
-                        bounds.size(),
                     );
                 }
 

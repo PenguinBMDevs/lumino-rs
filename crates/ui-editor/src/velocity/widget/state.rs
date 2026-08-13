@@ -55,10 +55,8 @@ pub struct VelocityCanvasState {
     pub tempo_drag_idx: Option<usize>,
     /// 当前悬停的 tempo 点索引
     pub tempo_hover_idx: Option<usize>,
-    /// 弯音贝塞尔路径编辑状态（Bend 模式 Curve 工具，支持实时/√× 两种模式）
+    /// 弯音贝塞尔路径编辑状态（Bend 模式 Curve 工具，全部操作实时生效）
     pub bend_path: BendPathState,
-    /// 上次已知的 √× 确认模式（检测面板模式切换时重置本地路径）
-    pub bend_confirm_mode_known: bool,
 }
 
 impl Default for VelocityCanvasState {
@@ -91,7 +89,6 @@ impl VelocityCanvasState {
             tempo_drag_idx: None,
             tempo_hover_idx: None,
             bend_path: BendPathState::default(),
-            bend_confirm_mode_known: false,
         }
     }
 

@@ -81,10 +81,13 @@ impl EditorData {
                 let Some(pos) = lane.events.iter().position(|e| e.tick == old_tick) else {
                     return false;
                 };
-                // 若移动到的 tick 已存在其他事件，先移除。
+                // 先取出旧事件（避免 old_tick == new_tick 时 retain 删除自身导致
+                // 后续按 pos 索引越界），再移除目标 tick 的冲突事件，最后写回。
+                let mut evt = lane.events.remove(pos);
+                evt.tick = new_tick;
+                evt.value = new_value;
                 lane.events.retain(|e| e.tick != new_tick);
-                lane.events[pos].tick = new_tick;
-                lane.events[pos].value = new_value;
+                lane.events.push(evt);
                 lane.events.sort_by_key(|e| e.tick);
                 lane.recompute_auto_handles();
                 true

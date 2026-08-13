@@ -151,10 +151,11 @@ fn collect_segments(
 
     if visible_events.is_empty() {
         let idx = lane.events.partition_point(|event| event.tick < pad_start);
+        // 无前事件时使用目标默认值：PitchBend 默认 8192（弯音 0 = 居中）
         let val = if idx > 0 {
             lane.events[idx - 1].value
         } else {
-            0
+            lane.target.default_value()
         };
         let screen_y = view.value_to_y(val as f32, max_val);
         if width > grid_left_x {
@@ -174,10 +175,11 @@ fn collect_segments(
     let prev_idx = lane
         .events
         .partition_point(|event| event.tick < visible_events[0].tick);
+    // 无前事件时使用目标默认值（PitchBend → 8192 居中）
     let chase_val = if prev_idx > 0 {
         lane.events[prev_idx - 1].value
     } else {
-        0
+        lane.target.default_value()
     };
     let first_tick = visible_events[0].tick;
     let first_x = view.tick_to_x(first_tick);

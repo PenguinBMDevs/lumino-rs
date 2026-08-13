@@ -277,6 +277,77 @@ fn test_apply_automation_edit_clear() {
 }
 
 #[test]
+fn test_apply_automation_edit_move_same_tick_no_panic() {
+    // 回归：old_tick == new_tick（拖拽时 tick 吸附后未变，仅改 value）
+    // 旧实现 retain 删除自身导致 pos 越界 panic
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 100,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 200,
+        value: 9000,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    let moved = data.apply_automation_edit(AutomationEdit::Move {
+        track_idx: 0,
+        lane_idx: 0,
+        old_tick: 200,
+        new_tick: 200, // 同 tick：仅更新 value
+        new_value: 9500,
+    });
+    assert!(moved);
+    let lane = &data.automation_lanes[0];
+    assert_eq!(lane.events.len(), 2, "同 tick 移动不应丢事件");
+    assert_eq!(lane.events[1].tick, 200);
+    assert_eq!(lane.events[1].value, 9500);
+    // shape 与柄保留（Copy 语义）
+    assert_eq!(lane.events[1].shape, SegmentShape::Curve { tension: 0 });
+}
+
+#[test]
+fn test_apply_automation_edit_move_to_existing_tick_replaces() {
+    // 移动到已存在的 tick：删除冲突事件后写入
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 100,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 200,
+        value: 9000,
+        shape: SegmentShape::Step,
+    });
+    let moved = data.apply_automation_edit(AutomationEdit::Move {
+        track_idx: 0,
+        lane_idx: 0,
+        old_tick: 100,
+        new_tick: 200, // 与已有事件冲突
+        new_value: 7000,
+    });
+    assert!(moved);
+    let lane = &data.automation_lanes[0];
+    assert_eq!(lane.events.len(), 1, "冲突事件应被替换");
+    assert_eq!(lane.events[0].tick, 200);
+    assert_eq!(lane.events[0].value, 7000);
+}
+
+#[test]
 fn test_apply_automation_edit_delete_recomputes_handles() {
     // 三事件：删除中间事件后，首尾事件自动柄重算为新的 1/3 段
     let mut data = EditorData::new();
