@@ -82,7 +82,7 @@ fn in_place_parallel_modify(
         }
         let mut total = 0;
         for h in handles {
-            total += h.join().unwrap();
+            total += h.join().expect("工作线程 join 应成功");
         }
         total
     })
@@ -128,7 +128,7 @@ fn in_place_batched_modify(
         }
         let mut total = 0;
         for h in handles {
-            total += h.join().unwrap();
+            total += h.join().expect("工作线程 join 应成功");
         }
         total
     })

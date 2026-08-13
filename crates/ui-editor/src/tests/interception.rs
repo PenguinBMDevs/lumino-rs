@@ -203,7 +203,7 @@ fn test_dragging_commit_clamps_key_to_visible_range() {
     };
 
     assert!(editor.commit_current_edit());
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 127);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 127);
 }
 
 #[test]
@@ -220,7 +220,7 @@ fn test_dragging_commit_clamps_negative_tick_to_zero() {
     };
 
     assert!(editor.commit_current_edit());
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().tick, 0.0);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
 }
 
 #[test]
@@ -239,15 +239,15 @@ fn test_dragging_selection_commit_only_modifies_selected() {
     assert!(editor.commit_current_edit());
     let data = &editor.editor_state.data;
     // 选中：0,2,4 -> +50, +1
-    assert_eq!(data.get_note_view(0).unwrap().tick, 50.0);
-    assert_eq!(data.get_note_view(0).unwrap().key, 61);
-    assert_eq!(data.get_note_view(2).unwrap().tick, 250.0);
-    assert_eq!(data.get_note_view(2).unwrap().key, 63);
-    assert_eq!(data.get_note_view(4).unwrap().tick, 450.0);
-    assert_eq!(data.get_note_view(4).unwrap().key, 65);
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 50.0);
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 61);
+    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 250.0);
+    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 63);
+    assert_eq!(data.get_note_view(4).expect("第 5 个音符视图应存在").tick, 450.0);
+    assert_eq!(data.get_note_view(4).expect("第 5 个音符视图应存在").key, 65);
     // 未选中：1,3 不变
-    assert_eq!(data.get_note_view(1).unwrap().tick, 100.0);
-    assert_eq!(data.get_note_view(1).unwrap().key, 61);
-    assert_eq!(data.get_note_view(3).unwrap().tick, 300.0);
-    assert_eq!(data.get_note_view(3).unwrap().key, 63);
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 100.0);
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 61);
+    assert_eq!(data.get_note_view(3).expect("第 4 个音符视图应存在").tick, 300.0);
+    assert_eq!(data.get_note_view(3).expect("第 4 个音符视图应存在").key, 63);
 }

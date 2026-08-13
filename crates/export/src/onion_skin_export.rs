@@ -183,7 +183,7 @@ mod tests {
     #[test]
     fn test_export_onion_skin_tiles_empty_project() {
         let project = LuminoProject::new("Empty");
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let meta = export_onion_skin_tiles(&project, dir.path(), "empty_hash", 128)
             .expect("空项目应返回默认元数据");
         assert_eq!(meta.cache_hash, "empty_hash");

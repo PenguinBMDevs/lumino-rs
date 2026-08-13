@@ -14,10 +14,10 @@ fn test_split_note_success() {
     let result = data.split_note(0, 2.0);
     assert!(result, "split at middle should succeed");
     assert_eq!(data.current_track_note_count(), 2, "one note becomes two");
-    let left = data.get_note_view(0).unwrap();
+    let left = data.get_note_view(0).expect("第 1 个音符视图应存在");
     assert_eq!(left.tick, 0.0, "left half start tick");
     assert_eq!(left.length, 2.0, "left half length");
-    let right = data.get_note_view(1).unwrap();
+    let right = data.get_note_view(1).expect("第 2 个音符视图应存在");
     assert_eq!(right.tick, 2.0, "right half start tick");
     assert_eq!(right.length, 2.0, "right half length");
 }
@@ -44,7 +44,7 @@ fn test_glue_selected_notes_adjacent() {
     let merged = data.glue_selected_notes(&HashSet::from([0, 1]));
     assert_eq!(merged, 1, "should merge one pair");
     assert_eq!(data.current_track_note_count(), 1, "two notes become one");
-    let view = data.get_note_view(0).unwrap();
+    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
     assert_eq!(view.tick, 0.0);
     assert_eq!(view.length, 5.0, "merged length = sum");
 }
@@ -74,12 +74,12 @@ fn test_tie_selected_notes_same_key_adjacent() {
     assert_eq!(tied, 1, "should tie one pair");
     assert_eq!(data.current_track_note_count(), 2, "notes count unchanged");
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         3.0,
         "first note extends to second's start"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         3.0,
         "last note unchanged"
     );
@@ -98,17 +98,17 @@ fn test_tie_selected_notes_three_notes() {
     let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2]));
     assert_eq!(tied, 2, "should tie two pairs");
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         4.0,
         "first note extends to second"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         4.0,
         "second note extends to third"
     );
     assert_eq!(
-        data.get_note_view(2).unwrap().length,
+        data.get_note_view(2).expect("第 3 个音符视图应存在").length,
         3.0,
         "last note unchanged"
     );
@@ -121,12 +121,12 @@ fn test_tie_selected_notes_different_key_still_ties() {
     let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
     assert_eq!(tied, 1, "different keys should still tie by tick order");
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         3.0,
         "first note extends to second's start"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         3.0,
         "last note unchanged"
     );
@@ -141,12 +141,12 @@ fn test_tie_selected_notes_overlapping_notes_not_shortened() {
     let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
     assert_eq!(tied, 0, "overlapping notes should not be tied");
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         10.0,
         "first note not shortened"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         10.0,
         "second note unchanged"
     );
@@ -181,22 +181,22 @@ fn test_tie_selected_notes_mixed_keys() {
     // 3 ties: note0→note1, note1→note2, note2→note3
     assert_eq!(tied, 3, "should tie all consecutive pairs by tick order");
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         3.0,
         "note0 extends to note1"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         3.0,
         "note1 extends to note2"
     );
     assert_eq!(
-        data.get_note_view(2).unwrap().length,
+        data.get_note_view(2).expect("第 3 个音符视图应存在").length,
         3.0,
         "note2 extends to note3"
     );
     assert_eq!(
-        data.get_note_view(3).unwrap().length,
+        data.get_note_view(3).expect("第 4 个音符视图应存在").length,
         3.0,
         "last note unchanged"
     );
@@ -227,32 +227,32 @@ fn test_tie_selected_notes_same_tick_group_extends_to_next_tick() {
         "all measure-1 notes should extend to measure-3 start"
     );
     assert_eq!(
-        data.get_note_view(0).unwrap().length,
+        data.get_note_view(0).expect("第 1 个音符视图应存在").length,
         8.0,
         "note0 extends to tick 8"
     );
     assert_eq!(
-        data.get_note_view(1).unwrap().length,
+        data.get_note_view(1).expect("第 2 个音符视图应存在").length,
         8.0,
         "note1 extends to tick 8"
     );
     assert_eq!(
-        data.get_note_view(2).unwrap().length,
+        data.get_note_view(2).expect("第 3 个音符视图应存在").length,
         8.0,
         "note2 extends to tick 8"
     );
     assert_eq!(
-        data.get_note_view(3).unwrap().length,
+        data.get_note_view(3).expect("第 4 个音符视图应存在").length,
         4.0,
         "measure-3 note0 unchanged"
     );
     assert_eq!(
-        data.get_note_view(4).unwrap().length,
+        data.get_note_view(4).expect("第 5 个音符视图应存在").length,
         4.0,
         "measure-3 note1 unchanged"
     );
     assert_eq!(
-        data.get_note_view(5).unwrap().length,
+        data.get_note_view(5).expect("第 6 个音符视图应存在").length,
         4.0,
         "measure-3 note2 unchanged"
     );

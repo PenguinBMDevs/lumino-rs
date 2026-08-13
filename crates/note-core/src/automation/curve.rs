@@ -301,7 +301,7 @@ mod tests {
             "同 tick 跳变点必须输出: {samples:?}"
         );
         // 跳变点位置：紧跟 (0,100) 之后
-        let pos = samples.iter().position(|&s| s == (0, 200)).unwrap();
+        let pos = samples.iter().position(|&s| s == (0, 200)).expect("采样中应存在目标点");
         assert_eq!(samples[pos - 1], (0, 100), "跳变点紧跟旧值之后");
         // 尾部曲线到达终点值（去重语义下生效 tick 可能略早于终点）
         assert_eq!(samples.last().map(|&(_, v)| v), Some(150));

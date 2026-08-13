@@ -8,8 +8,6 @@
 //!
 //! 运行: cargo test --release -p lumino-core --test architecture_segmented_bench -- --nocapture
 
-#![allow(clippy::unwrap_used)]
-
 use std::time::Instant;
 
 // ═══════════════════════════════════════════════════

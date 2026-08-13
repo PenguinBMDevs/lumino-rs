@@ -1,7 +1,5 @@
 //! NoteStore 单元测试
 
-#![allow(clippy::unwrap_used)]
-
 use super::super::note_store::BitSet;
 use super::{CHUNK_SIZE, Chunk, NoteStore};
 use crate::note::Note;
@@ -23,11 +21,11 @@ fn test_push_back_and_get() {
     assert_eq!(store.len(), 2);
     assert!(!store.is_empty());
 
-    let note0 = store.get(0).unwrap();
+    let note0 = store.get(0).expect("第 1 个音符应存在");
     assert_eq!(note0.tick, 100.0);
     assert_eq!(note0.key, 60);
 
-    let note1 = store.get(1).unwrap();
+    let note1 = store.get(1).expect("第 2 个音符应存在");
     assert_eq!(note1.tick, 200.0);
     assert_eq!(note1.key, 62);
 }
@@ -42,13 +40,13 @@ fn test_cross_chunk_boundary() {
     assert_eq!(store.len(), CHUNK_SIZE + 10);
 
     // 检查跨块边界
-    let n_last_in_chunk = store.get(CHUNK_SIZE - 1).unwrap();
+    let n_last_in_chunk = store.get(CHUNK_SIZE - 1).expect("块尾音符应存在");
     assert_eq!(n_last_in_chunk.tick, (CHUNK_SIZE - 1) as f32);
 
-    let n_first_in_next = store.get(CHUNK_SIZE).unwrap();
+    let n_first_in_next = store.get(CHUNK_SIZE).expect("下一块首音符应存在");
     assert_eq!(n_first_in_next.tick, CHUNK_SIZE as f32);
 
-    let n_last = store.get(CHUNK_SIZE + 9).unwrap();
+    let n_last = store.get(CHUNK_SIZE + 9).expect("跨块音符应存在");
     assert_eq!(n_last.tick, (CHUNK_SIZE + 9) as f32);
 }
 
@@ -88,34 +86,34 @@ fn test_modify() {
         note.key = 100;
     });
     assert!(modified);
-    assert_eq!(store.get(1).unwrap().tick, 999.0);
-    assert_eq!(store.get(1).unwrap().key, 100);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 999.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").key, 100);
 }
 
 #[test]
 fn test_get_mut() {
     let mut store = make_test_store(3);
     {
-        let mut nm = store.get_mut(1).unwrap();
+        let mut nm = store.get_mut(1).expect("第 2 个音符应存在");
         nm.set_tick(500.0);
         nm.set_key(80);
     }
-    assert_eq!(store.get(1).unwrap().tick, 500.0);
-    assert_eq!(store.get(1).unwrap().key, 80);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 500.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").key, 80);
 }
 
 #[test]
 fn test_remove() {
     let mut store = make_test_store(5);
-    let removed = store.remove(2).unwrap();
+    let removed = store.remove(2).expect("第 3 个音符应存在");
     assert_eq!(removed.tick, 20.0);
 
     assert_eq!(store.len(), 4);
     // 后续元素前移
-    assert_eq!(store.get(0).unwrap().tick, 0.0);
-    assert_eq!(store.get(1).unwrap().tick, 10.0);
-    assert_eq!(store.get(2).unwrap().tick, 30.0);
-    assert_eq!(store.get(3).unwrap().tick, 40.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 0.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 10.0);
+    assert_eq!(store.get(2).expect("第 3 个音符应存在").tick, 30.0);
+    assert_eq!(store.get(3).expect("第 4 个音符应存在").tick, 40.0);
 }
 
 #[test]
@@ -124,10 +122,10 @@ fn test_insert() {
     store.insert(1, Note::new(500.0, 70, 2.0));
 
     assert_eq!(store.len(), 4);
-    assert_eq!(store.get(0).unwrap().tick, 0.0);
-    assert_eq!(store.get(1).unwrap().tick, 500.0);
-    assert_eq!(store.get(2).unwrap().tick, 10.0);
-    assert_eq!(store.get(3).unwrap().tick, 20.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 0.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 500.0);
+    assert_eq!(store.get(2).expect("第 3 个音符应存在").tick, 10.0);
+    assert_eq!(store.get(3).expect("第 4 个音符应存在").tick, 20.0);
 }
 
 #[test]
@@ -136,8 +134,8 @@ fn test_retain() {
     store.retain(|note| note.tick < 50.0);
 
     assert_eq!(store.len(), 5);
-    assert_eq!(store.get(0).unwrap().tick, 0.0);
-    assert_eq!(store.get(4).unwrap().tick, 40.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 0.0);
+    assert_eq!(store.get(4).expect("第 5 个音符应存在").tick, 40.0);
 }
 
 #[test]
@@ -160,11 +158,11 @@ fn test_batch_move_parallel() {
     assert_eq!(modified, 500);
 
     // 检查选中音符已移动
-    assert_eq!(store.get(0).unwrap().tick, 10.0);
-    assert_eq!(store.get(0).unwrap().key, 63);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 10.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").key, 63);
     // 未选中音符不变
-    assert_eq!(store.get(1).unwrap().tick, 10.0);
-    assert_eq!(store.get(1).unwrap().key, 61);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 10.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").key, 61);
 }
 
 #[test]
@@ -174,13 +172,13 @@ fn test_delete_indices() {
     assert_eq!(deleted, 3);
     assert_eq!(store.len(), 7);
     // 保留: 0,1,3,4,6,7,9
-    assert_eq!(store.get(0).unwrap().tick, 0.0);
-    assert_eq!(store.get(1).unwrap().tick, 10.0);
-    assert_eq!(store.get(2).unwrap().tick, 30.0);
-    assert_eq!(store.get(3).unwrap().tick, 40.0);
-    assert_eq!(store.get(4).unwrap().tick, 60.0);
-    assert_eq!(store.get(5).unwrap().tick, 70.0);
-    assert_eq!(store.get(6).unwrap().tick, 90.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 0.0);
+    assert_eq!(store.get(1).expect("第 2 个音符应存在").tick, 10.0);
+    assert_eq!(store.get(2).expect("第 3 个音符应存在").tick, 30.0);
+    assert_eq!(store.get(3).expect("第 4 个音符应存在").tick, 40.0);
+    assert_eq!(store.get(4).expect("第 5 个音符应存在").tick, 60.0);
+    assert_eq!(store.get(5).expect("第 6 个音符应存在").tick, 70.0);
+    assert_eq!(store.get(6).expect("第 7 个音符应存在").tick, 90.0);
 }
 
 #[test]
@@ -191,7 +189,7 @@ fn test_from_to_im_vector() {
 
     let store = NoteStore::from_im_vector(&notes_im);
     assert_eq!(store.len(), 2);
-    assert_eq!(store.get(0).unwrap().tick, 1.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 1.0);
 
     let v2 = store.to_im_vector();
     assert_eq!(v2.len(), 2);
@@ -207,8 +205,8 @@ fn test_clone() {
 
     // 修改原存储不影响克隆
     store.modify(0, |note| note.tick = 999.0);
-    assert_eq!(store.get(0).unwrap().tick, 999.0);
-    assert_eq!(s2.get(0).unwrap().tick, 0.0);
+    assert_eq!(store.get(0).expect("第 1 个音符应存在").tick, 999.0);
+    assert_eq!(s2.get(0).expect("克隆存储第 1 个音符应存在").tick, 0.0);
 }
 
 #[test]

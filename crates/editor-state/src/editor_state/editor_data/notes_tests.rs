@@ -22,13 +22,13 @@ fn test_apply_drag_state_streaming_moves_selected_and_syncs_track() {
     assert_eq!(modified, 2);
 
     // notes 已更新（document 唯一权威源）
-    let view0 = data.get_note_view(0).unwrap();
+    let view0 = data.get_note_view(0).expect("第 1 个音符视图应存在");
     assert_eq!(view0.tick, 5.0);
     assert_eq!(view0.key, 58);
-    let view1 = data.get_note_view(1).unwrap();
+    let view1 = data.get_note_view(1).expect("第 2 个音符视图应存在");
     assert_eq!(view1.tick, 10.0, "未选中音符不变");
     assert_eq!(view1.key, 62);
-    let view2 = data.get_note_view(2).unwrap();
+    let view2 = data.get_note_view(2).expect("第 3 个音符视图应存在");
     assert_eq!(view2.tick, 25.0);
     assert_eq!(view2.key, 62);
 
@@ -103,7 +103,7 @@ fn test_apply_drag_state_streaming_preserves_note_length() {
     let modified = data.apply_drag_state_streaming(&drag_state, 127);
     assert_eq!(modified, 1);
 
-    let view = data.get_note_view(0).unwrap();
+    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
     assert_eq!(view.tick, 200.0);
     assert_eq!(view.length, 480.0, "右移后长度必须保持 480");
 }
@@ -118,7 +118,7 @@ fn test_apply_drag_state_streaming_preserves_length_on_left_move() {
     let modified = data.apply_drag_state_streaming(&drag_state, 127);
     assert_eq!(modified, 1);
 
-    let view = data.get_note_view(0).unwrap();
+    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
     assert_eq!(view.tick, 200.0);
     assert_eq!(view.length, 480.0, "左移后长度必须保持 480");
 }

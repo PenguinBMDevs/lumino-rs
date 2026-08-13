@@ -15,5 +15,4 @@ mod insert;
 mod sync;
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests;

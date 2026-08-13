@@ -214,7 +214,7 @@ fn apply_bitvec_parallel_chunks(
 
         let mut total = 0;
         for h in handles {
-            total += h.join().unwrap();
+            total += h.join().expect("工作线程 join 应成功");
         }
         total
     })
@@ -654,7 +654,7 @@ fn background_vec_commit_pipeline(
         }
         let mut total = 0;
         for h in handles {
-            total += h.join().unwrap();
+            total += h.join().expect("工作线程 join 应成功");
         }
         total
     });
@@ -713,7 +713,7 @@ fn bench_vec_commit_pipeline() {
             }
             let mut total = 0;
             for h in handles {
-                total += h.join().unwrap();
+                total += h.join().expect("工作线程 join 应成功");
             }
             total
         })
@@ -835,7 +835,7 @@ fn bench_arc_vec_alternative() {
             }));
         }
         for h in handles {
-            h.join().unwrap();
+            h.join().expect("工作线程 join 应成功");
         }
     });
     let arc_parallel_modify = t5.elapsed();

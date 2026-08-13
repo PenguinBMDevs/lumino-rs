@@ -110,7 +110,7 @@ impl NoteStoreV1 {
                 }));
             }
             for h in handles {
-                h.join().unwrap();
+                h.join().expect("工作线程 join 应成功");
             }
         });
         undo

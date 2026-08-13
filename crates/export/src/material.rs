@@ -98,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_material_roundtrip() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let material_path = dir.path().join("my_material.lmmaterial");
         let project = make_two_track_project();
 
@@ -124,7 +124,7 @@ mod tests {
 
     #[test]
     fn test_save_material_single_track_marks_single() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let material_path = dir.path().join("single.lmmaterial");
         let project = make_test_project(); // 单轨
 
@@ -138,7 +138,7 @@ mod tests {
     #[test]
     fn test_material_renamed_lmpj_still_detected_by_metadata() {
         // 即使把 .lmmaterial 重命名为 .lmpj，也应通过 metadata 识别为素材
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let src = dir.path().join("mat.lmmaterial");
         save_material(&make_test_project(), "Mat", &src).expect("保存素材失败");
 
@@ -152,7 +152,7 @@ mod tests {
     #[test]
     fn test_save_material_keeps_archive_compatible() {
         // 素材归档与标准 lmpj 归档同格式（LMPJ 魔数 + bincode），可被普通工程加载器解析
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let material_path = dir.path().join("compat.lmmaterial");
         save_material(&make_test_project(), "Compat", &material_path).expect("保存素材失败");
 
@@ -168,7 +168,7 @@ mod tests {
     #[test]
     fn test_archive_save_still_works() {
         // 回归：save_to_archive 不受素材改造影响
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let path = dir.path().join("normal.lmpj");
         save_to_archive(&make_test_project(), &path).expect("保存归档失败");
         let loaded = load_project(&path).expect("加载归档失败");

@@ -259,7 +259,7 @@ mod tests {
         s.handle_track_reorder_moved(iced_core::Point::new(50.0, 100.0)); // 校准
         // 拖到列表顶部（conductor 上方）→ hover 钳制到 1
         s.handle_track_reorder_moved(iced_core::Point::new(60.0, 2.0));
-        assert_eq!(s.track_reorder.as_ref().unwrap().hover_index, Some(1));
+        assert_eq!(s.track_reorder.as_ref().expect("拖拽候选应存在").hover_index, Some(1));
     }
 
     #[test]
@@ -296,9 +296,9 @@ mod tests {
         // 首个移动事件校准按下位置（侧边栏 on_press 无坐标），随后移动激活
         s.handle_track_reorder_moved(iced_core::Point::new(100.0, 40.0));
         s.handle_track_reorder_moved(iced_core::Point::new(150.0, 5.0)); // 拖到列表顶部
-        assert!(s.track_reorder.as_ref().unwrap().active);
+        assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // Conductor 首位保护：顶部 hover 钳制到 1
-        assert_eq!(s.track_reorder.as_ref().unwrap().hover_index, Some(1));
+        assert_eq!(s.track_reorder.as_ref().expect("拖拽候选应存在").hover_index, Some(1));
         s.handle_track_reorder_ended(None); // 使用内部 hover_index
         assert_eq!(ids(&s), vec![0, 2, 1, 3]);
     }
@@ -309,11 +309,11 @@ mod tests {
         s.handle_track_reorder_started(2, iced_core::Point::new(0.0, 0.0));
         // 未超时：不激活
         s.update_track_reorder_timer(Instant::now());
-        assert!(!s.track_reorder.as_ref().unwrap().active);
+        assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 模拟 500ms 前的按下
-        s.track_reorder.as_mut().unwrap().started_at = Instant::now() - Duration::from_millis(500);
+        s.track_reorder.as_mut().expect("拖拽候选应存在").started_at = Instant::now() - Duration::from_millis(500);
         s.update_track_reorder_timer(Instant::now());
-        assert!(s.track_reorder.as_ref().unwrap().active);
+        assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
     }
 
     #[test]
@@ -322,15 +322,15 @@ mod tests {
         s.handle_track_reorder_started(1, iced_core::Point::new(0.0, 0.0));
         // 首次移动仅校准：不激活（防止点击闪烁指示线）
         s.handle_track_reorder_moved(iced_core::Point::new(3.0, 3.0));
-        let state = s.track_reorder.as_ref().unwrap();
+        let state = s.track_reorder.as_ref().expect("拖拽候选应存在");
         assert!(!state.active);
         assert_eq!(state.press_pos, iced_core::Point::new(3.0, 3.0));
         // 校准后微小移动仍不激活
         s.handle_track_reorder_moved(iced_core::Point::new(4.0, 4.0));
-        assert!(!s.track_reorder.as_ref().unwrap().active);
+        assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 超过阈值（距校准点 > 8px）激活
         s.handle_track_reorder_moved(iced_core::Point::new(20.0, 4.0));
-        assert!(s.track_reorder.as_ref().unwrap().active);
+        assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
     }
 
     #[test]
@@ -339,10 +339,10 @@ mod tests {
         s.handle_track_reorder_started(1, iced_core::Point::new(0.0, 0.0));
         // 微小移动不激活也不更新 hover
         s.handle_track_reorder_moved(iced_core::Point::new(2.0, 2.0));
-        assert!(!s.track_reorder.as_ref().unwrap().active);
+        assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 超阈值移动激活并更新 hover（行高 34，起点 28）
         s.handle_track_reorder_moved(iced_core::Point::new(50.0, 100.0));
-        let state = s.track_reorder.as_ref().unwrap();
+        let state = s.track_reorder.as_ref().expect("拖拽候选应存在");
         assert!(state.active);
         // (100-28)/34 ≈ 2.12 → round 2
         assert_eq!(state.hover_index, Some(2));

@@ -112,7 +112,6 @@ pub fn prewarm_font_cache() {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 

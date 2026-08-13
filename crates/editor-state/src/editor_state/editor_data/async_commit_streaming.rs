@@ -143,18 +143,18 @@ mod tests {
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, -2);
 
-        assert!(editor_data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
         let modified = loop {
             if let Some(result) = editor_data.poll_async_commit() {
-                break result.unwrap();
+                break result.expect("异步提交应成功");
             }
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(editor_data.get_note_view(0).unwrap().tick, 5.0);
-        assert_eq!(editor_data.get_note_view(0).unwrap().key, 58);
-        assert_eq!(editor_data.get_note_view(2).unwrap().tick, 25.0);
-        assert_eq!(editor_data.get_note_view(2).unwrap().key, 62);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").key, 58);
+        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 25.0);
+        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").key, 62);
     }
 
     #[test]
@@ -163,7 +163,7 @@ mod tests {
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
         let ds = DragState::new(bv, 0, 60);
-        assert!(!editor_data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(!editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
     }
 
     #[test]
@@ -172,7 +172,7 @@ mod tests {
         let bv = BitVec::from_elem(3, false);
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, 0);
-        assert!(!editor_data.apply_drag_state_async(&ds, 127).unwrap());
+        assert!(!editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
     }
 
     #[test]
@@ -204,7 +204,7 @@ mod tests {
             apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
 
         let elapsed = start.elapsed();
-        let drag_result = drag_result.unwrap();
+        let drag_result = drag_result.expect("异步拖拽结果应成功");
         let rate = if elapsed.as_secs_f64() > 0.0 {
             (drag_result.modified as f64 / elapsed.as_secs_f64()) as u64
         } else {
@@ -243,7 +243,7 @@ mod tests {
             apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
 
         let elapsed = start.elapsed();
-        let drag_result = drag_result.unwrap();
+        let drag_result = drag_result.expect("异步拖拽结果应成功");
         let rate = if elapsed.as_secs_f64() > 0.0 {
             (drag_result.modified as f64 / elapsed.as_secs_f64()) as u64
         } else {
@@ -295,7 +295,7 @@ mod tests {
         let drag_result =
             apply_drag_state_to_clones(notes, &ds.selected, ds.delta_tick, ds.delta_key, 1, 127);
         let elapsed_new = start_new.elapsed();
-        let drag_result = drag_result.unwrap();
+        let drag_result = drag_result.expect("异步拖拽结果应成功");
         eprintln!("[新] 流式提交: {:?}", elapsed_new);
         eprintln!(
             "[新] 修改: {} 音符, 内存增量: ~2 MB (BitVec)",

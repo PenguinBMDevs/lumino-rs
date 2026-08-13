@@ -90,7 +90,7 @@ mod tests {
         // 可见索引 [0,1,2,3]，事件更新 [0..2) → 命中 GPU 0,1 → 合并为 [0, 2)
         let visible = vec![0usize, 1, 2, 3];
         let events = vec![update_event(0, 2)];
-        let segments = map_events_to_segments(&events, &visible, build).unwrap();
+        let segments = map_events_to_segments(&events, &visible, build).expect("事件分段构建应成功");
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].0, 0);
         assert_eq!(segments[0].1.len(), 2);
@@ -101,7 +101,7 @@ mod tests {
         // 可见 [1,3,5]，事件更新 notes 1 和 5 → GPU 0 和 2 → 两个段
         let visible = vec![1usize, 3, 5];
         let events = vec![update_event(1, 1), update_event(5, 1)];
-        let segments = map_events_to_segments(&events, &visible, build).unwrap();
+        let segments = map_events_to_segments(&events, &visible, build).expect("事件分段构建应成功");
         assert_eq!(segments.len(), 2);
         assert_eq!(segments[0].0, 0);
         assert_eq!(segments[1].0, 2);
@@ -128,7 +128,7 @@ mod tests {
         // 两个事件 [0..2) 和 [2..4)，命中 GPU 0..4 → 合并为单段
         let visible = vec![0usize, 1, 2, 3];
         let events = vec![update_event(0, 2), update_event(2, 2)];
-        let segments = map_events_to_segments(&events, &visible, build).unwrap();
+        let segments = map_events_to_segments(&events, &visible, build).expect("事件分段构建应成功");
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].0, 0);
         assert_eq!(segments[0].1.len(), 4);
@@ -137,7 +137,7 @@ mod tests {
     #[test]
     fn test_empty_events_produce_no_segments() {
         let visible = vec![0usize, 1];
-        let segments = map_events_to_segments(&[], &visible, build).unwrap();
+        let segments = map_events_to_segments(&[], &visible, build).expect("空事件分段构建应成功");
         assert!(segments.is_empty());
     }
 
@@ -147,7 +147,7 @@ mod tests {
         // binary_search 要求升序——测试确认升序输入的正确性
         let visible = vec![5usize, 6, 7, 8];
         let events = vec![update_event(6, 2)];
-        let segments = map_events_to_segments(&events, &visible, build).unwrap();
+        let segments = map_events_to_segments(&events, &visible, build).expect("事件分段构建应成功");
         assert_eq!(segments.len(), 1);
         assert_eq!(segments[0].0, 1);
     }

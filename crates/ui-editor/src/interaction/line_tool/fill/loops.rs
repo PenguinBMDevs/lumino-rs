@@ -145,7 +145,7 @@ mod tests {
         // 起点取决于组装顺序，断言顶点集合
         let mut verts = lp.clone();
         verts.pop();
-        verts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        verts.sort_by(|a, b| a.partial_cmp(b).expect("顶点坐标比较不应为 NaN"));
         assert_eq!(
             verts,
             vec![(0.0, 0.0), (0.0, 1.0), (4.0, 0.0), (4.0, 1.0)],

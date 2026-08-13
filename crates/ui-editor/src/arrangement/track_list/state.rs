@@ -174,11 +174,11 @@ mod tests {
 
         // 微小移动不激活
         assert!(!s.update_drag(Point::new(12.0, 62.0), 48.0, 4));
-        assert!(!s.drag.as_ref().unwrap().active);
+        assert!(!s.drag.as_ref().expect("拖拽候选应存在").active);
 
         // 超过阈值激活，且 hover 更新
         assert!(s.update_drag(Point::new(30.0, 130.0), 48.0, 4));
-        let d = s.drag.as_ref().unwrap();
+        let d = s.drag.as_ref().expect("拖拽候选应存在");
         assert!(d.active);
         assert_eq!(d.hover_index, 3); // 130/48 ≈ 2.7 → round 3
     }
@@ -188,7 +188,7 @@ mod tests {
         let mut s = state_with(4);
         s.begin_drag(2, Point::new(0.0, 0.0), 1);
         s.update_drag(Point::new(100.0, 1000.0), 48.0, 4);
-        assert_eq!(s.drag.as_ref().unwrap().hover_index, 4);
+        assert_eq!(s.drag.as_ref().expect("拖拽候选应存在").hover_index, 4);
     }
 
     #[test]

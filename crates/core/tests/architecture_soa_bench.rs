@@ -5,8 +5,6 @@
 //!
 //! 运行: cargo test --release -p lumino-core --test architecture_soa_bench -- --nocapture
 
-#![allow(clippy::unwrap_used)]
-
 use std::sync::Arc;
 use std::time::Instant;
 

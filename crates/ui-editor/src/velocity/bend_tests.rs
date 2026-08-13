@@ -113,7 +113,7 @@ fn test_bend_click_appends_anchor() {
     assert_eq!(state.bend_path.anchors.len(), 1);
     assert_eq!(state.bend_path.selected, Some(0));
     assert!(matches!(
-        velocity_action(action.unwrap()),
+        velocity_action(action.expect("弯音操作应存在")),
         Some(VelocityAction::AutomationEdit(_))
     ));
 
@@ -220,7 +220,7 @@ fn test_bend_double_click_deletes_middle_anchor() {
     assert_eq!(state.bend_path.anchors.len(), 2, "中间锚点应被删除");
     assert!(
         matches!(
-            velocity_action(action.unwrap()),
+            velocity_action(action.expect("弯音操作应存在")),
             Some(VelocityAction::AutomationEdit(_))
         ),
         "删除应发 AutomationEdit::Delete"
@@ -571,8 +571,8 @@ fn test_bend_drag_jump_pair_anchor_continuous() {
             other => panic!("应发 AutomationBatch，实际 {other:?}"),
         }
     }
-    let (ov1, nv1) = extract_move(move1.unwrap());
-    let (ov2, nv2) = extract_move(move2.unwrap());
+    let (ov1, nv1) = extract_move(move1.expect("移动事件 1 应存在"));
+    let (ov2, nv2) = extract_move(move2.expect("移动事件 2 应存在"));
     // Move#1: old_value = C 更新前值（原值 0），new_value = 拖到的新值
     assert_eq!(ov1, c0.1.round() as u16);
     assert_ne!(nv1, ov1, "Move#1 应更新 value");
@@ -730,7 +730,7 @@ fn test_bend_drag_anchor_locks_tick() {
     assert_eq!(state.bend_path.anchors[0].pos.1, expected_value);
 
     // Move 消息 tick 不变（new_tick == old_tick）
-    let action = action.unwrap();
+    let action = action.expect("应存在待处理动作");
     match velocity_action(action) {
         Some(VelocityAction::AutomationBatch(edits)) => {
             assert_eq!(edits.len(), 1);

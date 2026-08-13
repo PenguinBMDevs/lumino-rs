@@ -375,7 +375,7 @@ fn bench_hires_memory_100m() {
     let received_tiles = Arc::new(Mutex::new(Vec::new()));
     let rx = received_tiles.clone();
     let cb = move |time_group: u32, tile: GroupTile| {
-        rx.lock().unwrap().push((time_group, tile));
+        rx.lock().expect("互斥锁应可获取").push((time_group, tile));
     };
 
     let rss_before2 = current_rss_bytes();
@@ -391,7 +391,7 @@ fn bench_hires_memory_100m() {
     let dur2 = start2.elapsed();
     let rss_after2 = current_rss_bytes();
 
-    let received = received_tiles.lock().unwrap();
+    let received = received_tiles.lock().expect("互斥锁应可获取");
     eprintln!(
         "流式:   {} tiles in {:.2}s | RSS Δ {} MB",
         received.len(),
@@ -447,7 +447,7 @@ fn bench_hires_memory_1b() {
     let received_tiles = Arc::new(Mutex::new(Vec::new()));
     let rx = received_tiles.clone();
     let cb = move |time_group: u32, tile: GroupTile| {
-        rx.lock().unwrap().push((time_group, tile));
+        rx.lock().expect("互斥锁应可获取").push((time_group, tile));
     };
 
     let start = std::time::Instant::now();
@@ -461,7 +461,7 @@ fn bench_hires_memory_1b() {
     generate_all_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
     let dur = start.elapsed();
 
-    let received = received_tiles.lock().unwrap();
+    let received = received_tiles.lock().expect("互斥锁应可获取");
     eprintln!(
         "流式:   {} tiles in {:.2}s",
         received.len(),

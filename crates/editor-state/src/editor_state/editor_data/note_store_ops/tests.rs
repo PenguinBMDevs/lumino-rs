@@ -1,4 +1,3 @@
-#[allow(clippy::unwrap_used)]
 mod tests {
     use crate::EditorData;
     use lumino_note_core::note::Note;
@@ -26,14 +25,14 @@ mod tests {
 
         let modified = editor_data.batch_move_notes(&sel, 10.0, 3, 127);
         assert_eq!(modified, 2);
-        assert_eq!(editor_data.get_note_view(0).unwrap().tick, 10.0);
-        assert_eq!(editor_data.get_note_view(0).unwrap().key, 63);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 10.0);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").key, 63);
         assert_eq!(
-            editor_data.get_note_view(1).unwrap().tick,
+            editor_data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
             10.0,
             "未选中不变"
         );
-        assert_eq!(editor_data.get_note_view(2).unwrap().tick, 30.0);
+        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 30.0);
     }
 
     #[test]
@@ -54,9 +53,9 @@ mod tests {
         let modified = editor_data.batch_move_notes(&sel, 5.0, 2, 127);
         assert_eq!(modified, (note_count + 1) / 2);
 
-        assert_eq!(editor_data.get_note_view(0).unwrap().tick, 5.0);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
         assert_eq!(
-            editor_data.get_note_view(1).unwrap().tick,
+            editor_data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
             1.0,
             "未选中不变"
         );
@@ -77,9 +76,9 @@ mod tests {
         let deleted = editor_data.batch_delete_notes(&sel);
         assert_eq!(deleted, 3);
         assert_eq!(editor_data.current_track_note_count(), 7);
-        assert_eq!(editor_data.get_note_view(0).unwrap().tick, 0.0);
-        assert_eq!(editor_data.get_note_view(1).unwrap().tick, 10.0);
-        assert_eq!(editor_data.get_note_view(2).unwrap().tick, 30.0);
+        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
+        assert_eq!(editor_data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 10.0);
+        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 30.0);
     }
 
     #[test]
@@ -95,7 +94,7 @@ mod tests {
         let inserted = editor_data.batch_insert_notes(&new_notes);
         assert_eq!(inserted, 3);
         assert_eq!(editor_data.current_track_note_count(), 4);
-        assert_eq!(editor_data.get_note_view(1).unwrap().tick, 100.0);
-        assert_eq!(editor_data.get_note_view(3).unwrap().tick, 300.0);
+        assert_eq!(editor_data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 100.0);
+        assert_eq!(editor_data.get_note_view(3).expect("第 4 个音符视图应存在").tick, 300.0);
     }
 }

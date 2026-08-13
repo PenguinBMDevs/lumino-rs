@@ -83,7 +83,6 @@ pub fn parse_batch_edit_input(input: &str) -> Option<BatchEditOperation> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
 
@@ -95,28 +94,28 @@ mod tests {
 
     #[test]
     fn test_parse_set() {
-        let operation = parse_batch_edit_input("64").unwrap();
+        let operation = parse_batch_edit_input("64").expect("输入 64 应可解析");
         assert_eq!(operation, BatchEditOperation::Set(64.0));
         assert!((operation.apply(10.0) - 64.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_add() {
-        let operation = parse_batch_edit_input("+20").unwrap();
+        let operation = parse_batch_edit_input("+20").expect("输入 +20 应可解析");
         assert_eq!(operation, BatchEditOperation::Add(20.0));
         assert!((operation.apply(50.0) - 70.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_subtract() {
-        let operation = parse_batch_edit_input("-15").unwrap();
+        let operation = parse_batch_edit_input("-15").expect("输入 -15 应可解析");
         assert_eq!(operation, BatchEditOperation::Subtract(15.0));
         assert!((operation.apply(50.0) - 35.0).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_parse_multiply_ceil() {
-        let operation = parse_batch_edit_input("*1.5").unwrap();
+        let operation = parse_batch_edit_input("*1.5").expect("输入 *1.5 应可解析");
         assert_eq!(operation, BatchEditOperation::Multiply(1.5));
         assert!((operation.apply(10.0) - 15.0).abs() < f32::EPSILON);
         assert!((operation.apply(3.0) - 5.0).abs() < f32::EPSILON);
@@ -124,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_parse_divide_ceil() {
-        let operation = parse_batch_edit_input("/2").unwrap();
+        let operation = parse_batch_edit_input("/2").expect("输入 /2 应可解析");
         assert_eq!(operation, BatchEditOperation::Divide(2.0));
         assert!((operation.apply(10.0) - 5.0).abs() < f32::EPSILON);
         assert!((operation.apply(7.0) - 4.0).abs() < f32::EPSILON);

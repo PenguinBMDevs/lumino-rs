@@ -124,7 +124,7 @@ fn test_history_max_size() {
     }
     assert_eq!(history.undo_len(), 3, "栈应被裁剪到 max_size");
     // 最早的 1、2 被弹出，栈顶是 5
-    assert_eq!(assert_snapshot(history.undo_back().unwrap()).notes.len(), 5);
+    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(), 5);
 }
 
 #[test]
@@ -161,14 +161,14 @@ fn test_history_undo_redo_roundtrip() {
     history.push(make_snapshot(1));
     history.push(make_snapshot(2));
 
-    let snap1 = history.undo(make_snapshot(3)).unwrap();
+    let snap1 = history.undo(make_snapshot(3)).expect("撤销应成功");
     assert_eq!(assert_snapshot(&snap1).notes.len(), 2);
 
-    let snap2 = history.redo(make_snapshot(2)).unwrap();
+    let snap2 = history.redo(make_snapshot(2)).expect("重做应成功");
     assert_eq!(assert_snapshot(&snap2).notes.len(), 3);
 
     // 再次 undo 应能回到 snap2
-    let snap3 = history.undo(make_snapshot(3)).unwrap();
+    let snap3 = history.undo(make_snapshot(3)).expect("撤销应成功");
     assert_eq!(assert_snapshot(&snap3).notes.len(), 2);
 }
 
@@ -191,7 +191,7 @@ fn test_push_with_op_kind_assigns_group_id() {
     let mut history = History::new();
     history.push_with_op_kind(make_snapshot(1), OpKind::NoteDelete);
 
-    let back = assert_snapshot(history.undo_back().unwrap());
+    let back = assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"));
     assert_eq!(back.op_kind, OpKind::NoteDelete);
     assert_eq!(back.entry_count, 1);
     assert!(back.parent_group_id.is_none(), "首次 push 无 parent");
@@ -199,9 +199,9 @@ fn test_push_with_op_kind_assigns_group_id() {
 
     // 第二次 push 应分配不同的 group_id
     history.push_with_op_kind(make_snapshot(2), OpKind::NoteDelete);
-    let back2 = assert_snapshot(history.undo_back().unwrap());
+    let back2 = assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"));
     assert_ne!(
-        back2.group_id.unwrap(),
+        back2.group_id.expect("快照应属于某分组"),
         gid,
         "不同 push 必须分配不同 group_id"
     );
@@ -235,20 +235,20 @@ fn test_push_mergeable_within_window_merges() {
     let merged = history.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     assert!(!merged, "首次 push 不应合并");
     assert_eq!(history.undo_len(), 1);
-    assert_eq!(assert_snapshot(history.undo_back().unwrap()).entry_count, 1);
+    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 1);
 
     // 第二次 push：合并到栈顶，entry_count + 1，notes 保留 snap1
     let merged = history.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
     assert!(merged, "同 op_kind + 窗口内 + 未超限应合并");
     assert_eq!(history.undo_len(), 1, "合并后栈大小不变");
-    assert_eq!(assert_snapshot(history.undo_back().unwrap()).entry_count, 2);
+    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 2);
 
     // 第三次 push：继续合并
     history.push_mergeable(make_snapshot(3), OpKind::NoteCreate);
     assert_eq!(history.undo_len(), 1);
-    assert_eq!(assert_snapshot(history.undo_back().unwrap()).entry_count, 3);
+    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 3);
     assert_eq!(
-        assert_snapshot(history.undo_back().unwrap()).notes.len(),
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(),
         1,
         "合并后快照内容应保留 chain 中最早操作之前的状态（snap1）"
     );
@@ -262,32 +262,32 @@ fn test_push_mergeable_exceeds_limit_splits_with_parent() {
     history.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     history.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
     assert_eq!(
-        assert_snapshot(history.undo_back().unwrap()).entry_count,
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count,
         2,
         "应已合并到上限"
     );
-    let old_group_id = assert_snapshot(history.undo_back().unwrap())
+    let old_group_id = assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"))
         .group_id
-        .unwrap();
+        .expect("撤销快照的 group_id 应存在");
 
     // 第三次 push：应分割为新 group，parent 指向旧 group
     let merged = history.push_mergeable(make_snapshot(3), OpKind::NoteCreate);
     assert!(!merged, "超限分割不算合并");
     assert_eq!(history.undo_len(), 2, "分割后栈大小 +1");
 
-    let top = assert_snapshot(history.undo_back().unwrap());
+    let top = assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"));
     assert_eq!(top.entry_count, 1, "新分割组 entry_count 重置为 1");
     assert!(
         top.parent_group_id.is_some(),
         "分割组必须有 parent_group_id 指向被分割的旧 group"
     );
     assert_eq!(
-        top.parent_group_id.unwrap(),
+        top.parent_group_id.expect("顶层条目应有父分组"),
         old_group_id,
         "parent_group_id 必须指向被分割的旧 group_id"
     );
     assert_ne!(
-        top.group_id.unwrap(),
+        top.group_id.expect("顶层条目应属于某分组"),
         old_group_id,
         "新分割组必须分配新 group_id"
     );
@@ -460,7 +460,7 @@ fn test_set_config_trims_stack() {
     assert_eq!(history.undo_len(), 5, "set_config 应立即裁剪栈");
     // 最早的 1-5 被弹出，栈顶是 10
     assert_eq!(
-        assert_snapshot(history.undo_back().unwrap()).notes.len(),
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(),
         10
     );
 }

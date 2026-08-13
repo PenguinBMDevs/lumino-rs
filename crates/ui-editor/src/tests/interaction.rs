@@ -51,7 +51,7 @@ fn test_note_deletion() {
     editor.delete_note_by_index(0);
 
     assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 64); // 第二个音符变成第一个
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 64); // 第二个音符变成第一个
 }
 
 /// 测试音轨切换
@@ -78,7 +78,7 @@ fn test_track_switching() {
     editor.switch_to_track(0);
 
     assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 60); // 应该恢复原来的音符
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60); // 应该恢复原来的音符
 }
 
 /// 测试音轨切换不会误设 notes_changed

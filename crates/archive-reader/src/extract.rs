@@ -235,14 +235,14 @@ mod tests {
 
     #[test]
     fn test_collect_entries_recursive() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = tempfile::tempdir().expect("临时目录应创建成功");
         let sub = dir.path().join("sub");
-        std::fs::create_dir_all(&sub).unwrap();
-        std::fs::write(sub.join("a.txt"), b"hello").unwrap();
-        std::fs::write(dir.path().join("b.txt"), b"world").unwrap();
+        std::fs::create_dir_all(&sub).expect("子目录应创建成功");
+        std::fs::write(sub.join("a.txt"), b"hello").expect("写入测试文件应成功");
+        std::fs::write(dir.path().join("b.txt"), b"world").expect("写入测试文件应成功");
 
         let mut entries = Vec::new();
-        collect_entries_recursive(dir.path(), "", &mut entries).unwrap();
+        collect_entries_recursive(dir.path(), "", &mut entries).expect("递归收集条目应成功");
         assert_eq!(entries.len(), 3); // sub dir + a.txt + b.txt
     }
 }

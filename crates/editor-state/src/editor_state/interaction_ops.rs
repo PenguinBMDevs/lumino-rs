@@ -201,7 +201,7 @@ mod tests {
             Some(64),
             Some(3.0)
         ));
-        let view = data.get_note_view(0).unwrap();
+        let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
         assert_eq!(view.tick, 0.0, "Dragging 期间 notes 不应被修改");
         assert_eq!(view.key, 60);
         assert_eq!(view.length, 1.0);

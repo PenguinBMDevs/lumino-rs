@@ -185,11 +185,11 @@ fn test_speed_change_all_notes() {
     let data = &editor.editor_state.data;
     // 以最早 tick(0) 为锚点缩放
     // A: tick'=0+(0-0)*0.5=0, length'=240
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 240.0).abs() < f32::EPSILON);
     // B: tick'=0+(600-0)*0.5=300, length'=120
-    assert!((data.get_note_view(1).unwrap().tick - 300.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 120.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 300.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 120.0).abs() < f32::EPSILON);
 }
 
 /// 测试仅选中的音符变速
@@ -216,14 +216,14 @@ fn test_speed_change_selected_notes_only() {
 
     let data = &editor.editor_state.data;
     // A 选中: tick'=0, length'=960
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 960.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 960.0).abs() < f32::EPSILON);
     // B 未选中: 不变
-    assert!((data.get_note_view(1).unwrap().tick - 600.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 600.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 240.0).abs() < f32::EPSILON);
     // C 选中: tick'=0+(1200-0)*2=2400, length'=240
-    assert!((data.get_note_view(2).unwrap().tick - 2400.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(2).unwrap().length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(2).expect("第 3 个音符视图应存在").tick - 2400.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(2).expect("第 3 个音符视图应存在").length - 240.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速时最小长度限制
@@ -237,9 +237,9 @@ fn test_speed_change_clamp_to_min_length() {
 
     let data = &editor.editor_state.data;
     // tick 缩放: 100+(100-100)*0.01=100
-    assert!((data.get_note_view(0).unwrap().tick - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 100.0).abs() < f32::EPSILON);
     // 最小长度为 1 tick
-    assert!((data.get_note_view(0).unwrap().length - 1.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 1.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速因子为 1 时无变化
@@ -252,8 +252,8 @@ fn test_speed_change_no_op_when_factor_is_one() {
     assert_eq!(modified, 0);
 
     let data = &editor.editor_state.data;
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 480.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 480.0).abs() < f32::EPSILON);
 }
 
 /// 测试变速后撤销/重做
@@ -271,20 +271,20 @@ fn test_speed_change_undo_redo() {
     assert_eq!(modified, 2);
 
     let data = &editor.editor_state.data;
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 240.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().tick - 300.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 120.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 300.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 120.0).abs() < f32::EPSILON);
 
     // 撤销
     let undo_result = editor.undo();
     assert!(undo_result);
 
     let data = &editor.editor_state.data;
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 480.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().tick - 600.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 240.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 480.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 600.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 240.0).abs() < f32::EPSILON);
 }
 
 /// 关键测试：尾部贴合的音符变速后仍然贴合
@@ -306,15 +306,15 @@ fn test_speed_change_preserves_adjacent_notes() {
 
     let data = &editor.editor_state.data;
     // A: tick'=100+(100-100)*0.5=100, length'=100 → 结束于 200
-    assert!((data.get_note_view(0).unwrap().tick - 100.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 100.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 100.0).abs() < f32::EPSILON);
     // B: tick'=100+(300-100)*0.5=200, length'=75 → 开始于 200
-    assert!((data.get_note_view(1).unwrap().tick - 200.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 75.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 75.0).abs() < f32::EPSILON);
 
     // 验证贴合: A.end == B.start
-    let a_end = data.get_note_view(0).unwrap().tick + data.get_note_view(0).unwrap().length;
-    let b_start = data.get_note_view(1).unwrap().tick;
+    let a_end = data.get_note_view(0).expect("第 1 个音符视图应存在").tick + data.get_note_view(0).expect("第 1 个音符视图应存在").length;
+    let b_start = data.get_note_view(1).expect("第 2 个音符视图应存在").tick;
     assert!(
         (a_end - b_start).abs() < f32::EPSILON,
         "尾部贴合关系被破坏: A.end={}, B.start={}",
@@ -342,16 +342,16 @@ fn test_speed_change_preserves_gap_ratio() {
 
     let data = &editor.editor_state.data;
     // A: tick'=0, length'=200 → 结束于 200
-    assert!((data.get_note_view(0).unwrap().tick - 0.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(0).unwrap().length - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").tick - 0.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(0).expect("第 1 个音符视图应存在").length - 200.0).abs() < f32::EPSILON);
     // B: tick'=0+(200-0)*2=400, length'=200
-    assert!((data.get_note_view(1).unwrap().tick - 400.0).abs() < f32::EPSILON);
-    assert!((data.get_note_view(1).unwrap().length - 200.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").tick - 400.0).abs() < f32::EPSILON);
+    assert!((data.get_note_view(1).expect("第 2 个音符视图应存在").length - 200.0).abs() < f32::EPSILON);
 
     // 验证间隙比例: 原始间隙=100, 缩放后间隙=200
     let original_gap = 200.0 - (0.0 + 100.0); // B.start - A.end
-    let new_gap = data.get_note_view(1).unwrap().tick
-        - (data.get_note_view(0).unwrap().tick + data.get_note_view(0).unwrap().length);
+    let new_gap = data.get_note_view(1).expect("第 2 个音符视图应存在").tick
+        - (data.get_note_view(0).expect("第 1 个音符视图应存在").tick + data.get_note_view(0).expect("第 1 个音符视图应存在").length);
     assert!(
         (new_gap - original_gap * 2.0).abs() < f32::EPSILON,
         "间隙比例被破坏: 原始={}, 新={}",

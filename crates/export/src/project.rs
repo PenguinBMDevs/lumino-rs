@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_folder_entry() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let entry_path = dir.path().join("test_project.lmpj");
         let project = make_test_project();
 
@@ -289,7 +289,7 @@ mod tests {
 
     #[test]
     fn test_save_and_load_folder_entry_multi_track_overlapping() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let entry_path = dir.path().join("multi_project.lmpj");
         let mut project = LuminoProject::new("MultiTrackOverlap");
 
@@ -360,7 +360,7 @@ mod tests {
 
     #[test]
     fn test_load_project_image_metadata() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let entry_path = dir.path().join("img_project.lmpj");
         let project = make_test_project();
 
@@ -376,7 +376,7 @@ mod tests {
 
     #[test]
     fn test_load_legacy_and_archive_not_image_metadata() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let non_entry = dir.path().join("not_entry.lmpj");
         std::fs::write(&non_entry, b"LMPJ\x00\x01").expect("写入测试文件失败");
         assert!(load_project_image_metadata(&non_entry).is_none());
@@ -384,7 +384,7 @@ mod tests {
 
     #[test]
     fn test_load_project_from_plain_folder() {
-        let dir = tempdir().unwrap();
+        let dir = tempdir().expect("临时目录应创建成功");
         let data_folder = dir.path().join("plain_folder");
         let project = make_test_project();
         lumino_project::project::save::save_to_folder(&project, &data_folder)

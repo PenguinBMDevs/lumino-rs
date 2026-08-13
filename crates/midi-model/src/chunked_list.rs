@@ -702,8 +702,8 @@ mod tests {
         // 全跨三块
         let got: Vec<(usize, u32)> = list.iter_window(0, 10).map(|(i, e)| (i, e.tick)).collect();
         assert_eq!(got.len(), 10);
-        assert_eq!(got.first().unwrap(), &(0, 0));
-        assert_eq!(got.last().unwrap(), &(9, 9));
+        assert_eq!(got.first().expect("首元素应存在"), &(0, 0));
+        assert_eq!(got.last().expect("末元素应存在"), &(9, 9));
     }
 
     #[test]
@@ -734,10 +734,10 @@ mod tests {
     fn test_from_sorted_basic() {
         let list = ChunkedList::from_sorted(sorted_events(10));
         assert_eq!(list.len(), 10);
-        assert_eq!(list.first().unwrap().tick, 0);
-        assert_eq!(list.last().unwrap().tick, 90);
-        assert_eq!(list.get(5).unwrap().tick, 50);
-        assert_eq!(list.get(9).unwrap().tick, 90);
+        assert_eq!(list.first().expect("列表首元素应存在").tick, 0);
+        assert_eq!(list.last().expect("列表末元素应存在").tick, 90);
+        assert_eq!(list.get(5).expect("索引 5 的事件应存在").tick, 50);
+        assert_eq!(list.get(9).expect("索引 9 的事件应存在").tick, 90);
         assert_eq!(list.get(10), None);
     }
 
@@ -756,7 +756,7 @@ mod tests {
         let mut list: ChunkedList<TestEvent> = ChunkedList::new();
         list.insert(ev(50, 0));
         assert_eq!(list.len(), 1);
-        assert_eq!(list.first().unwrap().tick, 50);
+        assert_eq!(list.first().expect("列表首元素应存在").tick, 50);
     }
 
     #[test]
@@ -813,8 +813,8 @@ mod tests {
         assert_eq!(list.position_of(&ev(20, 2)), Some(1));
 
         // 删除后定位正确
-        let idx = list.position_of(&ev(20, 2)).unwrap();
-        let removed = list.remove(idx).unwrap();
+        let idx = list.position_of(&ev(20, 2)).expect("应定位到目标事件");
+        let removed = list.remove(idx).expect("目标事件应存在");
         assert_eq!(removed, ev(20, 2));
         assert_eq!(list.position_of(&ev(20, 2)), None);
         assert_eq!(list.position_of(&ev(40, 4)), Some(1));
@@ -896,7 +896,7 @@ mod tests {
         assert!(list.chunks.iter().all(|c| c.len() <= EVENT_CHUNK_CAPACITY));
         // get 跨块索引正确
         assert_eq!(
-            list.get(EVENT_CHUNK_SPLIT).unwrap().tick,
+            list.get(EVENT_CHUNK_SPLIT).expect("分裂点事件应存在").tick,
             (EVENT_CHUNK_SPLIT as u32) * 10
         );
     }
@@ -929,14 +929,14 @@ mod tests {
     fn test_remove_and_remove_by_tick() {
         let mut list = ChunkedList::from_sorted(sorted_events(1000));
         // 移除中间
-        let removed = list.remove(500).unwrap();
+        let removed = list.remove(500).expect("索引 500 的事件应存在");
         assert_eq!(removed.tick, 5000);
         assert_eq!(list.len(), 999);
-        assert_eq!(list.get(499).unwrap().tick, 4990);
-        assert_eq!(list.get(500).unwrap().tick, 5010);
+        assert_eq!(list.get(499).expect("索引 499 的事件应存在").tick, 4990);
+        assert_eq!(list.get(500).expect("索引 500 的事件应存在").tick, 5010);
 
         // 按 tick 删除
-        let removed = list.remove_by_tick(5010).unwrap();
+        let removed = list.remove_by_tick(5010).expect("tick 5010 的事件应存在");
         assert_eq!(removed.tick, 5010);
         assert_eq!(list.len(), 998);
 
@@ -972,8 +972,8 @@ mod tests {
         list.insert(ev(3, 1));
         list.insert(ev(3, 2));
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY + 2);
-        assert_eq!(list.first().unwrap().tick, 0);
-        assert_eq!(list.get(2).unwrap().tick, 3);
+        assert_eq!(list.first().expect("列表首元素应存在").tick, 0);
+        assert_eq!(list.get(2).expect("索引 2 的事件应存在").tick, 3);
     }
 
     #[test]
@@ -1009,7 +1009,7 @@ mod tests {
         assert_eq!(original.len(), 1001);
         // 快照不受影响，且 token 顺序仍正确
         assert_eq!(snapshot.len(), 1000);
-        assert_eq!(snapshot.first().unwrap().tick, 0);
+        assert_eq!(snapshot.first().expect("快照首元素应存在").tick, 0);
         let snapshot_ticks: Vec<u32> = snapshot.iter().map(EventTick::tick).collect();
         assert_eq!(
             snapshot_ticks,
@@ -1067,9 +1067,9 @@ mod tests {
         // 尾块被 make_mut 复制 → 计数回落为 1（COW 生效）
         assert_eq!(Arc::strong_count(&original.chunks[1]), 1);
         // 快照数据完整不受影响
-        assert_eq!(snapshot.get(0).unwrap().tick, 0);
+        assert_eq!(snapshot.get(0).expect("快照索引 0 的事件应存在").tick, 0);
         assert_eq!(
-            snapshot.iter().map(EventTick::tick).last().unwrap(),
+            snapshot.iter().map(EventTick::tick).last().expect("快照末元素应存在"),
             6_999_990
         );
     }

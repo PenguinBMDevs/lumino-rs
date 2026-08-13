@@ -258,10 +258,10 @@ mod tests {
         let track_id = sidebar.tracks[1].id;
 
         sidebar.update(Event::TrackRenameStarted(track_id));
-        assert_eq!(sidebar.renaming_track.as_ref().unwrap().1, "Setup");
+        assert_eq!(sidebar.renaming_track.as_ref().expect("重命名中的音轨应存在").1, "Setup");
 
         sidebar.update(Event::TrackRenameChanged(track_id, "New Name".to_string()));
-        assert_eq!(sidebar.renaming_track.as_ref().unwrap().1, "New Name");
+        assert_eq!(sidebar.renaming_track.as_ref().expect("重命名中的音轨应存在").1, "New Name");
 
         sidebar.update(Event::TrackRenameConfirmed(track_id));
         assert_eq!(
@@ -269,7 +269,7 @@ mod tests {
                 .tracks
                 .iter()
                 .find(|t| t.id == track_id)
-                .unwrap()
+                .expect("应找到目标音轨")
                 .name,
             "New Name"
         );
@@ -292,7 +292,7 @@ mod tests {
                 .tracks
                 .iter()
                 .find(|t| t.id == track_id)
-                .unwrap()
+                .expect("应找到目标音轨")
                 .name,
             original_name
         );
@@ -317,7 +317,7 @@ mod tests {
                 .tracks
                 .iter()
                 .find(|t| t.id == track_id)
-                .unwrap()
+                .expect("应找到目标音轨")
                 .color,
             Some(color)
         );
@@ -342,7 +342,7 @@ mod tests {
                 .tracks
                 .iter()
                 .find(|t| t.id == track_id)
-                .unwrap()
+                .expect("应找到目标音轨")
                 .color
                 .is_some()
         );
@@ -354,7 +354,7 @@ mod tests {
                 .tracks
                 .iter()
                 .find(|t| t.id == track_id)
-                .unwrap()
+                .expect("应找到目标音轨")
                 .color
                 .is_none()
         );

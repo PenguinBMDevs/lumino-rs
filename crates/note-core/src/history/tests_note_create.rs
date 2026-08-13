@@ -56,7 +56,7 @@ fn test_push_note_create_within_window_merges() {
     assert!(merged, "窗口内应合并");
     assert_eq!(history.undo_len(), 1);
 
-    let entry = assert_create(history.undo_back().unwrap());
+    let entry = assert_create(history.undo_back().expect("应存在可撤销的历史条目"));
     assert_eq!(entry.ops.len(), 2);
     assert_eq!(entry.entry_count, 2);
     assert_eq!(entry.ops[0].note.start_tick, 0);
@@ -74,7 +74,7 @@ fn test_push_note_create_split_on_limit() {
     assert_eq!(history.undo_len(), 2);
 
     // 栈顶（最新）分组的 parent_group_id 指向旧分组
-    let top = assert_create(history.undo_back().unwrap());
+    let top = assert_create(history.undo_back().expect("应存在可撤销的历史条目"));
     assert_eq!(top.entry_count, 1);
     let parent = top.parent_group_id.expect("分割组应有 parent");
     let first = assert_create(&history.undo_stack[0]);

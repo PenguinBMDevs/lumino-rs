@@ -83,8 +83,8 @@ fn test_commit_pending_drag_with_zero_delta_returns_false_and_clears() {
     );
     assert!(editor.pending_drag_state.is_none(), "pending 应被清空");
     // notes 未被修改
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 60);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
 }
 
 #[test]
@@ -104,11 +104,11 @@ fn test_commit_pending_drag_applies_delta_to_notes() {
 
     assert!(commit_pending_drag_and_drain(&mut editor));
     let data = &editor.editor_state.data;
-    assert_eq!(data.get_note_view(0).unwrap().tick, 200.0);
-    assert_eq!(data.get_note_view(0).unwrap().key, 67);
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 200.0);
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 67);
     // note 1 未选中，不变
-    assert_eq!(data.get_note_view(1).unwrap().tick, 240.0);
-    assert_eq!(data.get_note_view(1).unwrap().key, 62);
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 240.0);
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 62);
     // pending 已清空
     assert!(editor.pending_drag_state.is_none());
 }
@@ -124,7 +124,7 @@ fn test_commit_pending_drag_clamps_negative_tick_to_zero() {
 
     assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         0.0,
         "应 clamp 到 0"
     );
@@ -181,8 +181,8 @@ fn test_dragging_selection_release_saves_to_pending_not_notes() {
     editor.handle_released();
 
     // notes 未被修改（延迟提交）
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 60);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
     // pending 已保存
     assert!(editor.has_pending_drag());
     let pending = editor
@@ -254,16 +254,16 @@ fn test_accumulated_delta_two_drags_sum_up() {
     assert_eq!(pending.delta_key, 8, "delta_key 应累积");
 
     // notes 仍未被修改（延迟提交）
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 60);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
 
     // 提交累积 delta
     assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         150.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 68); // 60 + 8
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 68); // 60 + 8
     assert!(!editor.has_pending_drag());
 }
 
@@ -293,10 +293,10 @@ fn test_accumulated_delta_three_drags_with_negative() {
     // 提交：100 + (-50) = 50
     assert!(commit_pending_drag_and_drain(&mut editor));
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         50.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 62); // 60 + 2
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 62); // 60 + 2
 }
 
 #[test]
@@ -342,10 +342,10 @@ fn test_commit_current_edit_commits_pending_drag() {
     // 模拟用户按 Save：commit_current_edit 应提交 pending
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         100.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 65);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 65);
     assert!(!editor.has_pending_drag(), "commit 后 pending 应清空");
     assert!(!editor.is_editing(), "commit 后应退出编辑状态");
 }
@@ -368,10 +368,10 @@ fn test_commit_current_edit_when_pending_only_returns_true() {
 
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).unwrap().tick,
+        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         80.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).unwrap().key, 64);
+    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 64);
     assert!(!editor.has_pending_drag());
 }
 
@@ -395,9 +395,9 @@ fn test_idle_with_pending_then_commit_clears_pending() {
     // 模拟点击空白处：commit_pending_drag
     assert!(commit_pending_drag_and_drain(&mut editor));
     let data = &editor.editor_state.data;
-    assert_eq!(data.get_note_view(0).unwrap().tick, 50.0);
-    assert_eq!(data.get_note_view(0).unwrap().key, 62); // 60 + 2
-    assert_eq!(data.get_note_view(1).unwrap().tick, 150.0); // 100 + 50
-    assert_eq!(data.get_note_view(1).unwrap().key, 64); // 62 + 2
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 50.0);
+    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 62); // 60 + 2
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 150.0); // 100 + 50
+    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 64); // 62 + 2
     assert!(!editor.has_pending_drag());
 }
