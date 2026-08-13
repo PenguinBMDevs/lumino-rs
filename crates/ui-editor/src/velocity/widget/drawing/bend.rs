@@ -1,7 +1,9 @@
 //! 弯音贝塞尔路径绘制
 //!
 //! 曲线本体由 host 层 gfx `build_lane_instances` 渲染（实时生效），
-//! 本地绘制补充交互视觉：
+//! 本地绘制补充交互视觉（全部基于本地 `bend_path` 状态，不依赖
+//! lane 异步同步，保证锚点立即可见）：
+//! - 全部锚点小圆（未选中 3px）；
 //! - 全部锚点的控制柄（方块 + 锚点→柄辅助线，选中锚点的柄高亮）；
 //! - 选中锚点高亮（大圆 + 白色描边）。
 
@@ -13,7 +15,9 @@ use crate::{Renderer, Theme};
 
 use lumino_gfx::automation::AutomationViewParams;
 
-/// 选中锚点半径（像素，比 gfx 普通锚点 3px 大）
+/// 未选中锚点半径（像素，与 gfx 层 `ANCHOR_RADIUS` 一致）
+const ANCHOR_RADIUS: f32 = 3.0;
+/// 选中锚点半径（像素，比普通锚点大）
 const SELECTED_ANCHOR_RADIUS: f32 = 6.0;
 /// 选中锚点描边宽度（像素）
 const ANCHOR_STROKE_WIDTH: f32 = 2.0;
@@ -45,6 +49,17 @@ pub fn draw_bend_path(
     }
     let anchor_color = theme.extended_palette().primary.strong.color;
     let white = Color::WHITE;
+
+    // 全部锚点小圆：未选中 3px（gfx 层基于 lane 异步渲染，本地先画保证
+    // 可见且不闪烁）；选中锚点最后画（大圆覆盖小圆）
+    for (idx, anchor) in state.anchors.iter().enumerate() {
+        if state.selected == Some(idx) {
+            continue;
+        }
+        let ap = bend_screen_pos(view, anchor.pos, max_val);
+        let path = Path::circle(ap, ANCHOR_RADIUS);
+        frame.fill(&path, anchor_color);
+    }
 
     // 控制柄（辅助线 + 方块；选中锚点的柄高亮加粗）
     for (idx, anchor) in state.anchors.iter().enumerate() {
