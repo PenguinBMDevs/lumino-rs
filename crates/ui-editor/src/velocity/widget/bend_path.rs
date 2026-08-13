@@ -119,6 +119,9 @@ pub struct BendPathState {
     pub drag_anchor_orig: BendAnchor,
     /// 拖拽基准：按下时被拖控制柄的原始偏移
     pub drag_handle_orig: (f32, f32),
+    /// 按下锚点时的屏幕位置（点击 vs 拖动判定：移动距离低于阈值视为
+    /// 纯点击选中，不改变锚点高度）
+    pub drag_press_screen: Option<(f32, f32)>,
 }
 
 impl BendPathState {

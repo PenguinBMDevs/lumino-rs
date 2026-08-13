@@ -1,7 +1,9 @@
 //! 自动化事件操作 —— CC/Bend/RPN/NRPN 的 lane 管理、编辑与导出
 
 use super::EditorData;
-use lumino_note_core::automation::{AutomationEdit, AutomationLane, SegmentShape};
+use lumino_note_core::automation::{
+    AutomationEdit, AutomationLane, AutomationTarget, SegmentShape,
+};
 use std::sync::Arc;
 
 impl EditorData {
@@ -50,12 +52,17 @@ impl EditorData {
                 value,
                 shape,
             } => {
+                // 弯音跳变对（同 tick 两事件形成直角突变）：PitchBend 允许
+                // 同 tick 多事件；其他 target（CC 等）保持同 tick 唯一（替换）。
+                // 排序为稳定排序，同 tick 保持创建顺序（与本地 anchors 一致）。
+                let is_pitchbend = target == AutomationTarget::PitchBend;
                 let idx = self.find_or_create_automation_lane(track_idx, target);
                 let lane = Arc::make_mut(&mut self.automation_lanes[idx]);
                 // 如果 lane 尚未设置 channel，更新为事件的 channel
                 lane.channel = channel;
-                // 移除同一 tick 的已有事件，保证唯一性。
-                lane.events.retain(|e| e.tick != tick);
+                if !is_pitchbend {
+                    lane.events.retain(|e| e.tick != tick);
+                }
                 lane.events
                     .push(lumino_note_core::automation::AutomationEvent::new(
                         tick, value, shape,
@@ -68,6 +75,7 @@ impl EditorData {
                 track_idx,
                 lane_idx,
                 old_tick,
+                old_value,
                 new_tick,
                 new_value,
             } => {
@@ -78,17 +86,35 @@ impl EditorData {
                 if lane.track != track_idx {
                     return false;
                 }
-                let Some(pos) = lane.events.iter().position(|e| e.tick == old_tick) else {
+                // 精确匹配：弯音跳变对（同 tick 两事件）用 old_value 区分
+                // 目标；其他场景仅按 tick（同 tick 唯一）
+                let Some(pos) = lane
+                    .events
+                    .iter()
+                    .position(|e| e.tick == old_tick && old_value.is_none_or(|v| e.value == v))
+                else {
                     return false;
                 };
-                // 先取出旧事件（避免 old_tick == new_tick 时 retain 删除自身导致
-                // 后续按 pos 索引越界），再移除目标 tick 的冲突事件，最后写回。
+                if new_tick == old_tick {
+                    // 同 tick 移动（弯音拖动 tick 锁定）：原地更新 value，
+                    // 顺序不变（跳变对组内顺序保持）
+                    lane.events[pos].value = new_value;
+                    lane.recompute_auto_handles();
+                    return true;
+                }
+                // 先取出旧事件（避免 retain 删除自身导致索引越界），
+                // 再移除目标 tick 的冲突事件，最后写回。
                 let mut evt = lane.events.remove(pos);
                 evt.tick = new_tick;
                 evt.value = new_value;
-                lane.events.retain(|e| e.tick != new_tick);
-                lane.events.push(evt);
-                lane.events.sort_by_key(|e| e.tick);
+                // 弯音跳变对：移动不替换同 tick 已有事件（保持跳变对）；
+                // 其他 target（CC 等）保持同 tick 唯一（替换）
+                if lane.target != AutomationTarget::PitchBend {
+                    lane.events.retain(|e| e.tick != new_tick);
+                }
+                // 插入到排序位置：同 tick 组末尾（作为组内后建事件）
+                let insert_pos = lane.events.partition_point(|e| e.tick <= new_tick);
+                lane.events.insert(insert_pos, evt);
                 lane.recompute_auto_handles();
                 true
             }
@@ -147,13 +173,20 @@ impl EditorData {
                 if lane.track != track_idx {
                     return false;
                 }
-                let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
-                    return false;
-                };
                 // 走 setter：钳制柄不越过自身锚点垂直切线（防曲线回环），
-                // 并标记自定义（不再被自动重算覆盖）
-                evt.set_out_handle(out_handle);
-                evt.set_in_handle(in_handle);
+                // 并标记自定义（不再被自动重算覆盖）。
+                // 弯音跳变对（同 tick 两事件）：更新全部同 tick 事件的柄——
+                // 竖直段（span 0）的柄无视觉/播放效果，更新全部保证本地
+                // 拖动的柄（可能是同 tick 第二个锚点）在 lane 中生效。
+                let mut found = false;
+                for evt in lane.events.iter_mut().filter(|e| e.tick == tick) {
+                    evt.set_out_handle(out_handle);
+                    evt.set_in_handle(in_handle);
+                    found = true;
+                }
+                if !found {
+                    return false;
+                }
                 // 相邻锚点钳制：柄的 tick 不能越过相邻锚点（否则控制柄 x
                 // 超出段端点，贝塞尔 x(t) 非单调 → 曲线回环 → 同一 tick
                 // 多个弯音值 / 视觉多条曲线）。

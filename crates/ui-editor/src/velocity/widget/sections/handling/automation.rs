@@ -242,6 +242,8 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             track_idx,
             lane_idx,
             old_tick,
+            // 非弯音场景：同 tick 唯一，按 tick 匹配即可
+            old_value: None,
             new_tick,
             new_value,
         };

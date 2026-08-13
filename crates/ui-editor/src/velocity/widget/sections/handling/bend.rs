@@ -24,6 +24,10 @@ use super::super::super::state::VelocityCanvasState;
 use super::bend_hit::{BendHit, bend_hit_test};
 use super::publish_velocity;
 
+/// 点击 vs 拖动判定阈值（像素）：移动距离低于此值视为纯点击（选中），
+/// 不改变锚点高度；超过才进入拖动（高度改变必须手动拖动）
+const CLICK_DRAG_THRESHOLD_PX: f32 = 4.0;
+
 impl<'a> super::super::super::VelocityCanvas<'a> {
     /// Bend 模式 Curve 工具按下入口（双击删除 / 命中分发 / 空白追加）
     pub(super) fn handle_bend_curve_pressed(
@@ -49,7 +53,12 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             {
                 let tick = state.bend_path.anchors[idx].pos.0.round() as u32;
                 let (track_idx, lane_idx) = self.bend_lane_indices();
-                state.bend_path.anchors.remove(idx);
+                // 跳变对（同 tick 两个锚点）整体删除：lane 侧 Delete 按
+                // tick 移除全部同 tick 事件，本地保持一致（竖直段整体消失）
+                state
+                    .bend_path
+                    .anchors
+                    .retain(|a| a.pos.0.round() as u32 != tick);
                 state.bend_path.recompute_auto_handles();
                 state.bend_path.selected = None;
                 state.bend_path.interaction = BendInteraction::None;
@@ -82,6 +91,9 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                 state.bend_path.drag_anchor_orig = state.bend_path.anchors[idx];
                 state.bend_path.selected = Some(idx);
                 state.bend_path.interaction = BendInteraction::DraggingAnchor { idx };
+                // 记录按下屏幕位置：移动距离低于阈值视为纯点击（选中），
+                // 不改变锚点高度——高度改变必须手动拖动
+                state.bend_path.drag_press_screen = Some((cursor_pos.x, cursor_pos.y));
                 Some(publish_velocity(VelocityAction::AutomationDragStart))
             }
             Some(BendHit::Segment { segment }) => {
@@ -90,8 +102,15 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                     self.x_to_tick(cursor_pos.x).max(0.0),
                     view.y_to_value(cursor_pos.y, max_val).clamp(0.0, max_val),
                 );
-                // 插入位置与已有锚点完全重合 → 不创建（防御）
-                if Self::anchor_at_pos(&state.bend_path, (tx, ty)).is_some() {
+                // 同一 tick 最多 2 个锚点（直角弯音跳变对）：已满则拒绝
+                if Self::same_tick_anchor_count(&state.bend_path, tx) >= 2 {
+                    return None;
+                }
+                // 插入位置必须在段端点 tick 区间内：竖直段（同 tick 跳变对）
+                // 没有中间 tick，点击其上的插入会乱序（raw tick 必然越界）
+                let a_tick = state.bend_path.anchors[segment].pos.0;
+                let b_tick = state.bend_path.anchors[segment + 1].pos.0;
+                if tx < a_tick || tx > b_tick {
                     return None;
                 }
                 let idx = segment + 1;
@@ -118,19 +137,29 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             None => {
                 // 空白处：追加锚点（从第一个锚点起连续追加，立即生效）
                 let (tx, ty) = self.bend_snap_pos(&view, cursor_pos, max_val);
-                // 已有锚点处不能重复创建：吸附后位置与已有锚点完全重合
-                // （同一网格点）→ 不创建，改为选中该锚点。
-                // 屏幕重合（<=HIT_RADIUS）已由 hit test 的 Anchor 命中处理；
-                // 这里补网格吸附重合——点击远离锚点但吸附后落到同一网格点
-                // （如四分音符网格下点击锚点右侧 50px 内空白）。
-                if let Some(existing) = Self::anchor_at_pos(&state.bend_path, (tx, ty)) {
-                    state.bend_path.selected = Some(existing);
+                // 同一 tick 最多 2 个锚点（直角弯音跳变对）：已满则拒绝。
+                // 注意：允许与已有锚点完全重合（同 tick 同 value）——这是
+                // 跳变对的初始状态：用户点击同一高度创建第二个锚点（与
+                // 第一个重叠显示），随后拖动它上行/下行分离形成突变。
+                // 屏幕重合（<=HIT_RADIUS）由 hit test 的 Anchor 命中处理
+                // （选中+拖动），此处处理网格吸附后的重合创建。
+                if Self::same_tick_anchor_count(&state.bend_path, tx) >= 2 {
                     return None;
                 }
-                let idx = state.bend_path.anchors.len();
-                state.bend_path.anchors.push(BendAnchor::new((tx, ty)));
+                // 按 tick 有序插入（不能 push）：吸附后的 tick 可能小于
+                // 已有锚点（点击偏左落入前一个网格），push 会造成锚点
+                // 乱序——渲染（B→C 段倒退）与采样全部错误，连线视觉上
+                // "绕过中间锚点"。有序插入保持 tick 升序不变式；
+                // 用 `<=` 使同 tick 新锚点排在同 tick 已有锚点之后
+                // （保持创建顺序 = 播放跳变方向：先建的高值在下行跳变中
+                // 在前）。
+                let insert_idx = state.bend_path.anchors.partition_point(|a| a.pos.0 <= tx);
+                state
+                    .bend_path
+                    .anchors
+                    .insert(insert_idx, BendAnchor::new((tx, ty)));
                 state.bend_path.recompute_auto_handles();
-                state.bend_path.selected = Some(idx);
+                state.bend_path.selected = Some(insert_idx);
                 state.bend_path.interaction = BendInteraction::None;
                 Some(publish_velocity(VelocityAction::AutomationEdit(
                     AutomationEdit::Add {
@@ -162,6 +191,13 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         match state.bend_path.interaction {
             BendInteraction::None => None,
             BendInteraction::DraggingAnchor { idx } => {
+                // 拖动阈值：移动距离低于阈值 = 纯点击（选中），不改变高度。
+                // 锚点高度改变必须手动拖动（超过阈值）
+                if let Some((px, py)) = state.bend_path.drag_press_screen
+                    && (cursor_pos.x - px).hypot(cursor_pos.y - py) < CLICK_DRAG_THRESHOLD_PX
+                {
+                    return None;
+                }
                 // 锚点 tick 锁定：只能上下调整 value，不能左右拖动
                 // （锚点时间位置由创建时的点击决定）
                 let (_tx, ty) = self.bend_snap_pos(&view, cursor_pos, max_val);
@@ -177,6 +213,8 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                     track_idx,
                     lane_idx,
                     old_tick,
+                    // 精确匹配：跳变对（同 tick 两事件）按原值定位目标
+                    old_value: Some(state.bend_path.drag_anchor_orig.pos.1.round() as u16),
                     new_tick: old_tick,
                     new_value: ty.round() as u16,
                 };
@@ -240,6 +278,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         _bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
         state.bend_path.interaction = BendInteraction::None;
+        state.bend_path.drag_press_screen = None;
         None
     }
 
@@ -254,18 +293,15 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         (track_idx, lane_idx)
     }
 
-    /// 逻辑位置是否与已有锚点完全重合（tick 与 value 均相同）。
+    /// 与指定 tick 相同的锚点数量。
     ///
-    /// 防止网格吸附导致重复创建重叠锚点：锚点吸附后落在同一网格点
-    /// （同 tick 同 value），视觉上完全重叠。
-    fn anchor_at_pos(
+    /// 同一 tick 最多允许 2 个锚点（直角弯音跳变对：值瞬间从旧值跳到
+    /// 新值）。超过 2 个会形成无法表达的重复跳变，禁止创建。
+    fn same_tick_anchor_count(
         state: &crate::velocity::widget::bend_path::BendPathState,
-        pos: (f32, f32),
-    ) -> Option<usize> {
-        state
-            .anchors
-            .iter()
-            .position(|a| a.pos.0 == pos.0 && a.pos.1 == pos.1)
+        tick: f32,
+    ) -> usize {
+        state.anchors.iter().filter(|a| a.pos.0 == tick).count()
     }
 
     /// 吸附逻辑位置：(tick 吸附网格, value 取整)

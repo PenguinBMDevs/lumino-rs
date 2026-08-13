@@ -56,6 +56,8 @@ impl AutomationLane {
     /// - `Step` 段：值保持到下一事件（不产生中间事件，合成器保持语义）；
     /// - `Curve` 段：**按 tick 逐点采样**三次贝塞尔曲线（自动柄 = 直线，
     ///   自定义柄 = 实际弯曲），每个 tick 一个事件；
+    /// - 同一 tick 双事件（直角弯音跳变对）：输出 `(tick, 新值)` 跳变点
+    ///   ——播放时同 tick 两消息按序消费，值瞬间跳变；
     /// - 相邻同值合并（值未变化不重复发送事件）；
     /// - 末尾事件必定包含；
     /// - 超过 `max_events` 时均匀降采样（保留首尾），防御极端数据。
@@ -81,6 +83,10 @@ impl AutomationLane {
                             let y = bezier_value(a, b, t).round().clamp(0.0, 16383.0) as u16;
                             out.push((a.tick + dt, y));
                         }
+                    } else if a.value != b.value {
+                        // 同一 tick 双事件：直角弯音跳变（无中间 tick 可采样，
+                        // 值在瞬间跳变）。播放时同 tick 按序消费两消息。
+                        out.push((b.tick, b.value));
                     }
                 }
             }
@@ -278,5 +284,59 @@ mod tests {
         // 钳制后出向柄在锚点垂直切线上：t=0 附近曲线可能仍非单调（大 value 偏移），
         // 但 tick 必须严格单调
         assert!(samples.windows(2).all(|w| w[0].0 < w[1].0));
+    }
+
+    #[test]
+    fn test_sample_curve_same_tick_jump_pair() {
+        // 同一 tick 双事件（直角弯音跳变对）：输出 (tick, 旧值) 后输出
+        // (tick, 新值)——播放时同 tick 按序消费，值瞬间跳变
+        let mut l = lane(vec![event(0, 100), event(0, 200), event(960, 150)]);
+        l.recompute_auto_handles();
+        let samples = l.sample_curve(10_000);
+        // 开头输出首个事件 (0,100)
+        assert_eq!(samples[0], (0, 100));
+        // 同 tick 跳变点 (0,200) 必须出现（旧的实现会丢失第二个同 tick 值）
+        assert!(
+            samples.contains(&(0, 200)),
+            "同 tick 跳变点必须输出: {samples:?}"
+        );
+        // 跳变点位置：紧跟 (0,100) 之后
+        let pos = samples.iter().position(|&s| s == (0, 200)).unwrap();
+        assert_eq!(samples[pos - 1], (0, 100), "跳变点紧跟旧值之后");
+        // 尾部曲线到达终点值（去重语义下生效 tick 可能略早于终点）
+        assert_eq!(samples.last().map(|&(_, v)| v), Some(150));
+        assert!(samples.last().is_some_and(|&(t, _)| t <= 960));
+    }
+
+    #[test]
+    fn test_sample_curve_same_tick_same_value_no_jump() {
+        // 同 tick 同值事件对：不产生跳变点（值未变化）
+        let mut l = lane(vec![event(0, 100), event(0, 100), event(960, 100)]);
+        l.recompute_auto_handles();
+        let samples = l.sample_curve(10_000);
+        assert_eq!(samples.len(), 1, "全段同值 → 只输出一个事件");
+        assert_eq!(samples[0], (0, 100));
+    }
+
+    #[test]
+    fn test_sample_curve_three_same_tick_events() {
+        // 同 tick 三事件（历史数据防御）：跳变对语义仍输出 旧值→新值，
+        // 中间重复值被去重
+        let mut l = lane(vec![
+            event(0, 100),
+            event(0, 150),
+            event(0, 200),
+            event(960, 150),
+        ]);
+        l.recompute_auto_handles();
+        let samples = l.sample_curve(10_000);
+        assert_eq!(samples[0], (0, 100));
+        // 最终跳变到 200（150 被去重或作为中间跳变，但 100→200 跳变存在）
+        assert!(
+            samples.iter().any(|&(t, v)| t == 0 && v == 200),
+            "跳变到最终值: {samples:?}"
+        );
+        // 尾部曲线到达终点值
+        assert_eq!(samples.last().map(|&(_, v)| v), Some(150));
     }
 }

@@ -384,6 +384,10 @@ pub enum AutomationEdit {
         track_idx: u16,
         lane_idx: usize,
         old_tick: u32,
+        /// 旧值（精确匹配用）：弯音跳变对（同 tick 两事件）场景传
+        /// `Some(原值)` 按 tick+value 定位目标；其他场景传 `None`
+        /// 仅按 tick 匹配（同 tick 唯一）。
+        old_value: Option<u16>,
         new_tick: u32,
         new_value: u16,
     },
