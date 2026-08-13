@@ -532,3 +532,70 @@ fn test_apply_track_restored_expands_document() {
         "恢复的音符应写入 document"
     );
 }
+
+// ── Tempo 面板 BPM 上限（BUG 回归：硬编码 10000 截断） ──────────────────
+
+/// BUG 复现：用户把 Tempo 面板绘制上限（tempo_max_bpm，设置里可调至 65536）
+/// 调高后，拖拽速度点仍被旧硬编码 `clamp(20.0, 10000.0)` 截断，
+/// 曲线永远无法到达面板顶部，表现为"最大绘制值只能到 10000"。
+///
+/// 修复前：面板上限 20000 时，拖到 30000 只能得到 10000。
+#[test]
+fn test_tempo_drag_move_uses_panel_max_bpm() {
+    let mut root = create_root();
+    root.editor.velocity_panel.tempo_max_bpm = 20000.0;
+
+    VelocityHandler::handle_action(&mut root, VelocityAction::TempoDragMove(0, 30000.0));
+
+    let bpm = root.editor.editor_state.data.tempo_points[0].bpm;
+    assert_eq!(
+        bpm, 20000.0,
+        "拖拽值应截断到面板绘制上限，而非旧硬编码 10000"
+    );
+}
+
+/// 同类路径：新建速度点同样按面板绘制上限截断
+#[test]
+fn test_tempo_add_uses_panel_max_bpm() {
+    let mut root = create_root();
+    root.editor.velocity_panel.tempo_max_bpm = 20000.0;
+
+    VelocityHandler::handle_action(&mut root, VelocityAction::TempoAdd(480.0, 50000.0));
+
+    let bpm = root
+        .editor
+        .editor_state
+        .data
+        .tempo_points
+        .iter()
+        .find(|p| (p.tick - 480.0).abs() < f32::EPSILON)
+        .map(|p| p.bpm)
+        .expect("TempoAdd 后应存在 tick=480 的速度点");
+    assert_eq!(bpm, 20000.0, "新建点应截断到面板绘制上限");
+}
+
+/// 默认上限 512 时行为保持不变：超出上限的值截断到 512
+#[test]
+fn test_tempo_clamp_uses_default_max_bpm() {
+    let mut root = create_root();
+
+    VelocityHandler::handle_action(&mut root, VelocityAction::TempoDragMove(0, 600.0));
+
+    assert_eq!(
+        root.editor.editor_state.data.tempo_points[0].bpm, 512.0,
+        "默认上限 512 下 600 应截断到 512"
+    );
+}
+
+/// 下限保持 TEMPO_BPM_MIN（20）：低于下限的值截断到 20
+#[test]
+fn test_tempo_clamp_min_bpm() {
+    let mut root = create_root();
+
+    VelocityHandler::handle_action(&mut root, VelocityAction::TempoDragMove(0, 5.0));
+
+    assert_eq!(
+        root.editor.editor_state.data.tempo_points[0].bpm, 20.0,
+        "低于下限的值应截断到 20"
+    );
+}

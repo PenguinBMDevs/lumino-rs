@@ -4,6 +4,7 @@
 
 use crate::editor::editor_state::TempoPoint;
 use crate::editor::velocity::EditMode;
+use crate::editor::velocity::widget::TEMPO_BPM_MIN;
 use crate::message::{EditorAction, Message, VelocityAction};
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
@@ -89,7 +90,8 @@ impl VelocityHandler {
                 return;
             }
             VA::TempoDragMove(idx, new_bpm) => {
-                let bpm = new_bpm.clamp(20.0, 10000.0);
+                let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
+                let bpm = Self::clamp_tempo_bpm(new_bpm, max_bpm);
                 if let Some(point) = root.editor.editor_state.data.tempo_points.get_mut(idx) {
                     point.bpm = bpm;
                     root.update_playback_bpm();
@@ -102,7 +104,8 @@ impl VelocityHandler {
             }
             VA::TempoAdd(tick, bpm) => {
                 root.editor.push_history();
-                let bpm = bpm.clamp(20.0, 10000.0);
+                let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
+                let bpm = Self::clamp_tempo_bpm(bpm, max_bpm);
                 root.editor
                     .editor_state
                     .data
@@ -190,6 +193,16 @@ impl VelocityHandler {
             root.update_playback_notes();
             root.editor.clear_notes_changed();
         }
+    }
+
+    /// 将 BPM 值限制在 Tempo 面板合法绘制范围内。
+    ///
+    /// 上限必须与 `velocity_panel.tempo_max_bpm`（Tempo 面板 BPM 绘制上限）
+    /// 保持一致：绘制刻度线/速度点均按该值做 Y 轴线性映射。若此处沿用
+    /// 旧硬编码上限（10000），用户把绘制上限调高后，拖拽/新建的速度点
+    /// 仍会被截断在 10000，曲线永远无法到达面板顶部。
+    fn clamp_tempo_bpm(bpm: f64, max_bpm: f64) -> f64 {
+        bpm.clamp(TEMPO_BPM_MIN, max_bpm)
     }
 
     /// 应用力度值到指定音符，仅在力度实际变化时标记音符变更
