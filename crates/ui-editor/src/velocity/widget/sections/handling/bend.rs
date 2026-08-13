@@ -44,7 +44,10 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         // 永不进入拖拽状态 —— 锚点只能点击创建，创建后不跟随鼠标。
         state.bend_path.interaction = BendInteraction::None;
 
-        // 双击中间锚点 → 删除（端点不可删）
+        // 双击中间锚点 → 删除（端点不可删）。
+        // 双击其他位置（首/尾锚点、柄、段、空白）→ 与单击语义相同
+        // （允许拖动刚创建的锚点——否则创建后 300ms 内点击会被双击
+        // 判定拦截，无法拖动）。
         if state.detect_double_click(cursor_pos) {
             if let Some(BendHit::Anchor { idx }) =
                 bend_hit_test(&state.bend_path, &view, cursor_pos, max_val)
@@ -72,7 +75,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                     )));
                 }
             }
-            return None;
+            // 双击但非中间锚点：继续正常命中分发（不 return）
         }
 
         // 命中分发：控制柄 > 锚点 > 曲线段 > 空白（追加锚点）
@@ -201,20 +204,26 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
                 // 锚点 tick 锁定：只能上下调整 value，不能左右拖动
                 // （锚点时间位置由创建时的点击决定）
                 let (_tx, ty) = self.bend_snap_pos(&view, cursor_pos, max_val);
+                // old_value 必须用【本地当前值】（更新前读取）：拖动中
+                // 每次 moved 都发 Move，若用按下时原值，第一次 Move 成功
+                // 后 lane 值已变，后续 Move 的 tick+value 匹配全部失败
+                // （本地锚点跟鼠标走、连线却不动）。本地当前值与 lane
+                // 同步成功时始终匹配。
+                let old_value = state.bend_path.anchors[idx].pos.1.round() as u16;
                 if let Some(anchor) = state.bend_path.anchors.get_mut(idx) {
                     anchor.pos = (anchor.pos.0, ty);
                 }
                 state.bend_path.recompute_auto_handles();
                 // 实时：更新 lane 锚点 value（tick 不变）
-                let old_tick = state.bend_path.drag_anchor_orig.pos.0.round() as u32;
+                let old_tick = state.bend_path.anchors[idx].pos.0.round() as u32;
                 let (track_idx, lane_idx) = self.bend_lane_indices();
                 let lane_idx = lane_idx?;
                 let edit = AutomationEdit::Move {
                     track_idx,
                     lane_idx,
                     old_tick,
-                    // 精确匹配：跳变对（同 tick 两事件）按原值定位目标
-                    old_value: Some(state.bend_path.drag_anchor_orig.pos.1.round() as u16),
+                    // 精确匹配：跳变对（同 tick 两事件）按值定位目标
+                    old_value: Some(old_value),
                     new_tick: old_tick,
                     new_value: ty.round() as u16,
                 };
