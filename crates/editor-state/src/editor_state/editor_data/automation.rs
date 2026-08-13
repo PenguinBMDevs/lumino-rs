@@ -150,10 +150,10 @@ impl EditorData {
                 let Some(evt) = lane.events.iter_mut().find(|e| e.tick == tick) else {
                     return false;
                 };
-                evt.out_handle = out_handle;
-                evt.in_handle = in_handle;
-                // 拖柄即标记自定义（不再被自动重算覆盖）
-                evt.handles_auto = false;
+                // 走 setter：钳制柄不越过锚点垂直切线（防曲线回环），
+                // 并标记自定义（不再被自动重算覆盖）
+                evt.set_out_handle(out_handle);
+                evt.set_in_handle(in_handle);
                 true
             }
             AutomationEdit::Clear {

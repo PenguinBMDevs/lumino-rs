@@ -348,6 +348,33 @@ fn test_apply_automation_edit_move_to_existing_tick_replaces() {
 }
 
 #[test]
+fn test_apply_automation_edit_update_handles_clamps_loopback() {
+    // 越界柄（出向柄越过锚点垂直切线）→ 应用后被钳制，防曲线回环
+    let mut data = EditorData::new();
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick: 100,
+        value: 8192,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+    let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
+        track_idx: 0,
+        lane_idx: 0,
+        tick: 100,
+        out_handle: (-300.0, 5000.0), // 越界：柄在锚点左侧
+        in_handle: (300.0, -5000.0),  // 越界：柄在锚点右侧
+    });
+    assert!(changed);
+    let evt = &data.automation_lanes[0].events[0];
+    assert_eq!(evt.out_handle.0, 0.0, "出向柄被钳制在锚点垂直切线");
+    assert_eq!(evt.in_handle.0, 0.0, "入向柄被钳制在锚点垂直切线");
+    assert_eq!(evt.out_handle.1, 5000.0, "value 偏移不受限");
+    assert!(!evt.handles_auto, "拖柄后标记为自定义");
+}
+
+#[test]
 fn test_apply_automation_edit_delete_recomputes_handles() {
     // 三事件：删除中间事件后，首尾事件自动柄重算为新的 1/3 段
     let mut data = EditorData::new();

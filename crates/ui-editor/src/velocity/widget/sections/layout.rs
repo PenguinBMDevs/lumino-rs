@@ -4,9 +4,7 @@ use iced_core::{Point, Size};
 use lumino_gfx::automation::AutomationViewParams;
 use lumino_note_core::{AutomationLane, AutomationTarget};
 
-use super::super::super::{
-    HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPoint,
-};
+use super::super::super::{HIT_RADIUS, PANEL_PADDING_Y, RESIZE_HANDLE_HEIGHT, VelocityPoint};
 use crate::editor_state::ViewState;
 use crate::velocity::EditMode;
 use crate::velocity::widget::TempoPoint;

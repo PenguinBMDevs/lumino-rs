@@ -37,15 +37,20 @@ impl BendAnchor {
         }
     }
 
-    /// 设置出向控制柄（标记为自定义）
+    /// 设置出向控制柄（标记为自定义）。
+    ///
+    /// 钳制：出向柄 tick 偏移不允许 < 0（不能越过锚点垂直切线），
+    /// 防止曲线回环导致同一 tick 多个弯音值。
     pub fn set_out_handle(&mut self, offset: (f32, f32)) {
-        self.out_handle = offset;
+        self.out_handle = (offset.0.max(0.0), offset.1);
         self.handles_auto = false;
     }
 
-    /// 设置入向控制柄（标记为自定义）
+    /// 设置入向控制柄（标记为自定义）。
+    ///
+    /// 钳制：入向柄 tick 偏移不允许 > 0（不能越过锚点垂直切线）。
     pub fn set_in_handle(&mut self, offset: (f32, f32)) {
-        self.in_handle = offset;
+        self.in_handle = (offset.0.min(0.0), offset.1);
         self.handles_auto = false;
     }
 
@@ -182,6 +187,20 @@ mod tests {
         a.set_out_handle((320.0, 500.0));
         assert!(!a.handles_auto);
         assert_eq!(a.out_handle_abs(), (320.0, 500.0));
+    }
+
+    #[test]
+    fn test_set_handle_clamps_loopback() {
+        // 出向柄 tick 偏移不允许 < 0（越过锚点垂直切线 = 曲线回环）
+        let mut a = BendAnchor::new((0.0, 8192.0));
+        a.set_out_handle((-500.0, 3000.0));
+        assert_eq!(a.out_handle.0, 0.0, "出向柄被钳制在垂直切线");
+        assert_eq!(a.out_handle.1, 3000.0, "value 偏移不受限");
+        // 入向柄 tick 偏移不允许 > 0
+        let mut b = BendAnchor::new((960.0, 8192.0));
+        b.set_in_handle((500.0, -3000.0));
+        assert_eq!(b.in_handle.0, 0.0, "入向柄被钳制在垂直切线");
+        assert_eq!(b.in_handle.1, -3000.0);
     }
 
     #[test]

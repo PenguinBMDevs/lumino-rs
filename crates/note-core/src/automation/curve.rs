@@ -239,4 +239,44 @@ mod tests {
         let e = AutomationEvent::default();
         assert!(e.handles_auto);
     }
+
+    #[test]
+    fn test_sample_curve_loopback_no_duplicate_tick() {
+        // 防御：旧数据可能绕过 setter 直接构造回环柄（出向柄越过锚点）。
+        // 采样层必须保证 tick 严格单调——单个 tick 绝不包含多个弯音事件。
+        let mut a = event(0, 8192);
+        a.out_handle = (-500.0, 8000.0); // 直接字段赋值模拟历史坏数据
+        a.handles_auto = false;
+        let mut b = event(960, 8192);
+        b.in_handle = (500.0, 8000.0);
+        b.handles_auto = false;
+        let mut l = lane(vec![a, b]);
+        l.recompute_auto_handles(); // 自定义柄不被覆盖（handles_auto=false）
+        let samples = l.sample_curve(10_000);
+        assert!(samples.len() > 1);
+        // tick 严格单调递增（去重后仍保持）
+        assert!(
+            samples.windows(2).all(|w| w[0].0 < w[1].0),
+            "回环曲线采样不得产生重复 tick 事件: {samples:?}"
+        );
+        // 值全部钳制在 14-bit 范围内
+        assert!(samples.iter().all(|&(_, v)| v <= 16383));
+    }
+
+    #[test]
+    fn test_set_handle_prevents_loopback_in_sampling() {
+        // 新数据经 setter 钳制后：出向柄 tick 偏移 >= 0 → 曲线无回环
+        let mut a = event(0, 8192);
+        a.set_out_handle((-500.0, 8000.0)); // 越界输入被钳制
+        let mut b = event(960, 8192);
+        b.set_in_handle((500.0, 8000.0));
+        assert_eq!(a.out_handle.0, 0.0);
+        assert_eq!(b.in_handle.0, 0.0);
+        let mut l = lane(vec![a, b]);
+        l.recompute_auto_handles();
+        let samples = l.sample_curve(10_000);
+        // 钳制后出向柄在锚点垂直切线上：t=0 附近曲线可能仍非单调（大 value 偏移），
+        // 但 tick 必须严格单调
+        assert!(samples.windows(2).all(|w| w[0].0 < w[1].0));
+    }
 }

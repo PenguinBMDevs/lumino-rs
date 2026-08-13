@@ -289,14 +289,21 @@ impl AutomationEvent {
     }
 
     /// 设置出向控制柄（标记为自定义，不再自动维护）。
+    ///
+    /// **钳制规则**：出向柄的 tick 偏移不允许 < 0（不能越过锚点垂直切线），
+    /// 防止贝塞尔曲线回环——回环会导致同一 tick 区间内曲线上下往返
+    /// （视觉多条弯音曲线、播放弯音错乱）。
     pub fn set_out_handle(&mut self, offset: (f32, f32)) {
-        self.out_handle = offset;
+        self.out_handle = (offset.0.max(0.0), offset.1);
         self.handles_auto = false;
     }
 
     /// 设置入向控制柄（标记为自定义，不再自动维护）。
+    ///
+    /// **钳制规则**：入向柄的 tick 偏移不允许 > 0（不能越过锚点垂直切线），
+    /// 防止贝塞尔曲线回环（同 [`AutomationEvent::set_out_handle`]）。
     pub fn set_in_handle(&mut self, offset: (f32, f32)) {
-        self.in_handle = offset;
+        self.in_handle = (offset.0.min(0.0), offset.1);
         self.handles_auto = false;
     }
 }
@@ -523,5 +530,28 @@ mod tests {
         let evt2 =
             AutomationEvent::with_default_shape(100, 0, &AutomationTarget::CC { controller: 64 });
         assert_eq!(evt2.shape, SegmentShape::Step);
+    }
+
+    #[test]
+    fn test_set_handle_clamps_tick_offset() {
+        // 出向柄：tick 偏移不允许 < 0（越过锚点垂直切线 = 曲线回环）
+        let mut a = AutomationEvent::new(0, 8192, SegmentShape::Curve { tension: 0 });
+        a.set_out_handle((-500.0, 3000.0));
+        assert_eq!(a.out_handle.0, 0.0, "出向柄 tick 偏移被钳制为 0");
+        assert_eq!(a.out_handle.1, 3000.0, "value 偏移不受限");
+
+        // 入向柄：tick 偏移不允许 > 0
+        let mut b = AutomationEvent::new(960, 8192, SegmentShape::Curve { tension: 0 });
+        b.set_in_handle((500.0, -3000.0));
+        assert_eq!(b.in_handle.0, 0.0, "入向柄 tick 偏移被钳制为 0");
+        assert_eq!(b.in_handle.1, -3000.0);
+
+        // 合法偏移不受影响
+        let mut c = AutomationEvent::new(0, 8192, SegmentShape::Curve { tension: 0 });
+        c.set_out_handle((320.0, 3000.0));
+        assert_eq!(c.out_handle.0, 320.0);
+        let mut d = AutomationEvent::new(960, 8192, SegmentShape::Curve { tension: 0 });
+        d.set_in_handle((-320.0, -3000.0));
+        assert_eq!(d.in_handle.0, -320.0);
     }
 }
