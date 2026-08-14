@@ -52,6 +52,13 @@ impl Program<Message, Theme, Renderer> for super::super::VelocityCanvas<'_> {
                 self.handle_button_released(state, bounds_size)
             }
             canvas::Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                // 命中检查：iced 全树分发鼠标事件（Canvas 不拦截），鼠标不在
+                // 本面板范围内时不得处理滚轮——否则在钢琴卷帘标尺/网格上滚动
+                // 会连带自动化面板缩放/滚动（与 click_canvas/track_list 一致）。
+                let pos = cursor.position()?;
+                if !bounds.contains(pos) {
+                    return None;
+                }
                 self.handle_wheel_scrolled(state, *delta)
             }
             canvas::Event::Keyboard(keyboard::Event::ModifiersChanged(modifiers)) => {

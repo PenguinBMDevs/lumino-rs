@@ -67,6 +67,11 @@ impl<'a> Viewport<'a> {
         self.update_max_scroll(self.view.total_ticks);
         let max_scroll = (self.max_scroll.0 - viewport_width).max(0.0);
         self.view.scroll_x = self.view.scroll_x.max(0.0).min(max_scroll);
+        // 缩放是精确视图操作：终止遗留的平滑滚动动画，避免动画继续把
+        // scroll_x 拉向旧目标、覆盖缩放锚点补偿（表现为"Ctrl+滚轮缩放时
+        // 卷帘还在左右滚动"）。与 set_scroll_x 的动画终止语义保持一致。
+        self.view.smooth_scroll.target_x = self.view.scroll_x;
+        self.view.smooth_scroll.active = false;
     }
 
     /// 设置垂直缩放
@@ -90,6 +95,10 @@ impl<'a> Viewport<'a> {
         self.update_max_scroll(self.view.total_ticks);
         let max_scroll = (self.max_scroll.1 - viewport_height).max(0.0);
         self.view.scroll_y = self.view.scroll_y.max(0.0).min(max_scroll);
+        // 缩放是精确视图操作：终止遗留的平滑滚动动画，避免动画继续把
+        // scroll_y 拉向旧目标、覆盖缩放锚点补偿。与 set_scroll_y 一致。
+        self.view.smooth_scroll.target_y = self.view.scroll_y;
+        self.view.smooth_scroll.active = false;
     }
 
     /// 设置可见键数量
