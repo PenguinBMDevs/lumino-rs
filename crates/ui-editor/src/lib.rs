@@ -48,6 +48,7 @@ mod tests {
     mod pending_copy;
     mod pending_drag;
     mod pressed_priority;
+    mod preview_sequence;
     mod scroll;
     mod selection_precision;
     mod state;

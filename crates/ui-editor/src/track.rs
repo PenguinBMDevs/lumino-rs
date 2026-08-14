@@ -28,6 +28,8 @@ impl super::Editor {
         self.selection_clear();
         self.editor_state.interaction.hover_state = None;
         self.editor_state.interaction.edit_state = super::EditState::Idle;
+        // 切轨中断拖动：丢弃未弹出的批量拖动预览序列（发声反馈）
+        self.editor_state.interaction.clear_preview_sequence();
         // 丢弃未提交的批量拖动/复制：pending 的 selected 位图是旧轨的全局索引，
         // 换轨后继续保留会导致 ghost 渲染错位、提交时误伤新轨音符。
         self.pending_drag_state = None;

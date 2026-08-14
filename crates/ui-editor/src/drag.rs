@@ -6,6 +6,7 @@ use super::{EditState, Editor};
 use compute_state_changes::*;
 use iced_core::Point;
 use lumino_editor_state::DragState;
+use lumino_editor_state::PreviewSequenceNote;
 
 /// 框选窗口查询的 lookback 上界（tick），覆盖「跨入」长音符（同
 /// `rendering/visible_notes.rs::NOTES_WINDOW_LOOKBACK` 的工程假设）
@@ -74,6 +75,9 @@ impl Editor {
             }
         };
         let (mut new_tick, mut new_length, mut note_to_play) = (None, None, None);
+        // 批量拖动预览序列信号：None=key 偏移无变化；Some(空)=回到原位需清空；
+        // Some(非空)=按 tick 顺序 + ghost key 构建的新序列。
+        let mut preview_signal: Option<Vec<PreviewSequenceNote>> = None;
         match &mut self.editor_state.interaction.edit_state {
             EditState::Drawing { current_tick, .. } => handle_drawing(current_tick, snapped_tick),
             EditState::Dragging {
@@ -117,12 +121,27 @@ impl Editor {
                     snap_precision,
                 );
             }
-            EditState::DraggingSelection { drag_state } => {
-                handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
-            }
-            EditState::DraggingSelectionCopy { drag_state } => {
-                // 复制拖动：偏移计算与移动拖动一致（原始音符不动，副本按 delta 渲染）
-                handle_dragging_selection(drag_state, key, snapped_tick, snap_precision);
+            EditState::DraggingSelection { drag_state }
+            | EditState::DraggingSelectionCopy { drag_state } => {
+                // 复制拖动：偏移计算与移动拖动一致（原始音符不动，副本按 delta 渲染）。
+                // key 偏移变化 → 触发/停止批量拖动预览序列（发声反馈）：
+                // 按选中音符的 tick 顺序 + 当前 ghost key 位置 + BPM 时序构建。
+                if let Some(new_delta_key) =
+                    handle_dragging_selection(drag_state, key, snapped_tick, snap_precision)
+                {
+                    preview_signal = Some(if new_delta_key == 0 {
+                        Vec::new()
+                    } else {
+                        build_preview_sequence(
+                            &self.editor_state.data,
+                            drag_state,
+                            new_delta_key,
+                            visible_key_count.saturating_sub(1),
+                            std::time::Instant::now(),
+                            DEFAULT_NOTE_VELOCITY,
+                        )
+                    });
+                }
             }
             EditState::ResizingSelectionStart { last_tick } => {
                 // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
@@ -165,6 +184,15 @@ impl Editor {
                 }
             }
             _ => {}
+        }
+        // match 借用结束后统一处理预览序列（避免与 edit_state 的可变借用冲突）
+        if let Some(signal) = preview_signal {
+            let interaction = &mut self.editor_state.interaction;
+            if signal.is_empty() {
+                interaction.clear_preview_sequence();
+            } else {
+                interaction.set_preview_sequence(signal);
+            }
         }
         (new_tick, None, new_length, note_to_play)
     }
@@ -506,4 +534,4 @@ impl Editor {
     // `commit_current_edit` 时触发）。详见 `interaction/released.rs`。
 }
 
-use lumino_ui_core::constants::editor::DRAG_START_THRESHOLD_RATIO;
+use lumino_ui_core::constants::editor::{DEFAULT_NOTE_VELOCITY, DRAG_START_THRESHOLD_RATIO};

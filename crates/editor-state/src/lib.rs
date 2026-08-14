@@ -12,7 +12,7 @@ pub use editor_state::{
 pub use editor_state::{
     CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData,
     EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent,
-    SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType,
+    PreviewSequenceNote, SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType,
 };
 pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,

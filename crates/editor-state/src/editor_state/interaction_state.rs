@@ -1,11 +1,26 @@
 //! 交互状态机
 
-use std::collections::HashSet;
+use std::collections::{HashSet, VecDeque};
+use std::time::Instant;
 
 use lumino_core::AudioAction;
 use lumino_note_core::note_store::BitSet;
 
 use crate::editor_state::drag_state::DragState;
+
+/// 批量拖动预览序列中的单个音符。
+///
+/// `play_at` 是该音符的绝对播放时刻（按工程 BPM 与 tick 间隔换算），
+/// `drain_preview_sequence` 在 `play_at` 到达时才把音符弹入音频动作队列。
+#[derive(Debug, Clone, Copy)]
+pub struct PreviewSequenceNote {
+    /// 绝对播放时刻（tick 间隔 × BPM 换算）
+    pub play_at: Instant,
+    /// 音符 key（拖动后的 ghost 位置）
+    pub key: u8,
+    /// 播放力度
+    pub velocity: u8,
+}
 
 /// 编辑状态
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -109,6 +124,13 @@ pub struct InteractionState {
     pub selection_bitset: Option<BitSet>,
     /// 待处理的音频动作
     pub pending_audio_actions: Vec<AudioAction>,
+    /// 批量拖动预览序列：按工程 BPM 时序排列的待播放音符。
+    ///
+    /// 批量拖动（`DraggingSelection` / `DraggingSelectionCopy`）中 key 上下移动时，
+    /// 由交互层按选中音符的 tick 顺序 + 当前 ghost key 位置 + BPM 换算的
+    /// 播放时刻构建该序列，`drain_preview_sequence` 在各自 `play_at` 时刻
+    /// 到达时逐个弹出发声——真实时序预览，而非固定间隔琶音。
+    pub preview_sequence: VecDeque<PreviewSequenceNote>,
 }
 
 impl InteractionState {
@@ -128,6 +150,35 @@ impl InteractionState {
             key: key as u8,
             velocity,
         });
+    }
+
+    /// 替换为新的批量拖动预览序列。
+    ///
+    /// 覆盖旧的未播完序列。条目必须按 `play_at` 升序排列
+    /// （由调用方按 tick 顺序 + BPM 换算生成，首个条目 `play_at` 为当前时刻）。
+    pub fn set_preview_sequence(&mut self, notes: Vec<PreviewSequenceNote>) {
+        self.preview_sequence.clear();
+        self.preview_sequence.extend(notes);
+    }
+
+    /// 清空批量拖动预览序列（拖动回到原位 / 松手时调用）
+    pub fn clear_preview_sequence(&mut self) {
+        self.preview_sequence.clear();
+    }
+
+    /// 弹出所有到达播放时刻的预览序列音符到待处理音频动作。
+    ///
+    /// 以 `now` 为当前时刻（调用方注入，便于测试）：`play_at <= now` 的
+    /// 条目全部弹出（同帧内到期的音符合并弹出，保证按 BPM 真实时序发声）。
+    pub fn drain_preview_sequence(&mut self, now: Instant) {
+        while let Some(note) = self.preview_sequence.front().copied() {
+            if note.play_at > now {
+                break;
+            }
+            self.preview_sequence.pop_front();
+            self.pending_audio_actions
+                .push(AudioAction::PlayNote { key: note.key, velocity: note.velocity });
+        }
     }
 }
 
@@ -191,5 +242,151 @@ mod tests {
         let mut state = InteractionState::default();
         state.play_note_audio(72, 80);
         assert_eq!(state.pending_audio_actions.len(), 1);
+    }
+
+    #[test]
+    fn test_set_preview_sequence_replaces_old() {
+        let mut state = InteractionState::default();
+        let now = Instant::now();
+        let note = |play_at: Instant, key: u8| PreviewSequenceNote {
+            play_at,
+            key,
+            velocity: 100,
+        };
+        state.set_preview_sequence(vec![note(now, 60), note(now, 62)]);
+        // 替换旧序列：旧序列被清空
+        state.set_preview_sequence(vec![note(now, 64)]);
+        assert_eq!(state.preview_sequence.len(), 1);
+        assert_eq!(state.preview_sequence[0].key, 64);
+    }
+
+    #[test]
+    fn test_drain_preview_sequence_by_play_time() {
+        let mut state = InteractionState::default();
+        let t0 = Instant::now();
+        // 按 BPM 时序：0ms、500ms、1000ms 各一个音符
+        state.set_preview_sequence(vec![
+            PreviewSequenceNote {
+                play_at: t0,
+                key: 60,
+                velocity: 100,
+            },
+            PreviewSequenceNote {
+                play_at: t0 + std::time::Duration::from_millis(500),
+                key: 62,
+                velocity: 100,
+            },
+            PreviewSequenceNote {
+                play_at: t0 + std::time::Duration::from_millis(1000),
+                key: 64,
+                velocity: 100,
+            },
+        ]);
+
+        // t=0：第一个音符立即弹出
+        assert_eq!(drain_at(&mut state, t0), Some(60));
+        // t=100ms：第二个还没到
+        assert_eq!(
+            drain_at(&mut state, t0 + std::time::Duration::from_millis(100)),
+            None,
+            "未到 play_at 的音符不应弹出"
+        );
+        // t=500ms：第二个到达
+        assert_eq!(
+            drain_at(&mut state, t0 + std::time::Duration::from_millis(500)),
+            Some(62)
+        );
+        // t=900ms：第三个还没到
+        assert_eq!(
+            drain_at(&mut state, t0 + std::time::Duration::from_millis(900)),
+            None
+        );
+        // t=1000ms：第三个到达，且同帧到期的可合并弹出
+        assert_eq!(
+            drain_at(&mut state, t0 + std::time::Duration::from_millis(1000)),
+            Some(64)
+        );
+        assert!(state.preview_sequence.is_empty(), "序列应播放完毕");
+    }
+
+    #[test]
+    fn test_drain_preview_sequence_merges_due_notes() {
+        let mut state = InteractionState::default();
+        let t0 = Instant::now();
+        // 两个音符同一时刻到期：一次 drain 应全部弹出（保持正确时序，不丢帧）
+        state.set_preview_sequence(vec![
+            PreviewSequenceNote {
+                play_at: t0,
+                key: 60,
+                velocity: 100,
+            },
+            PreviewSequenceNote {
+                play_at: t0 + std::time::Duration::from_millis(100),
+                key: 62,
+                velocity: 100,
+            },
+        ]);
+        let now = t0 + std::time::Duration::from_millis(500);
+        state.drain_preview_sequence(now);
+        let keys: Vec<u8> = state
+            .pending_audio_actions
+            .iter()
+            .filter_map(|a| match a {
+                AudioAction::PlayNote { key, .. } => Some(*key),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(keys, vec![60, 62], "到期的音符应按序全部弹出");
+        assert!(state.preview_sequence.is_empty());
+    }
+
+    #[test]
+    fn test_drain_preview_sequence_after_clear_noop() {
+        let mut state = InteractionState::default();
+        let now = Instant::now();
+        state.set_preview_sequence(vec![PreviewSequenceNote {
+            play_at: now,
+            key: 60,
+            velocity: 100,
+        }]);
+        state.clear_preview_sequence();
+        assert!(state.preview_sequence.is_empty());
+        assert_eq!(drain_at(&mut state, now), None);
+        assert!(state.pending_audio_actions.is_empty());
+    }
+
+    #[test]
+    fn test_clear_preview_sequence_discards_pending() {
+        let mut state = InteractionState::default();
+        let now = Instant::now();
+        state.set_preview_sequence(vec![PreviewSequenceNote {
+            play_at: now,
+            key: 60,
+            velocity: 100,
+        }]);
+        // 弹出第一个后清空，再设置新序列：新序列按自身 play_at 播放
+        let _ = drain_at(&mut state, now);
+        state.clear_preview_sequence();
+        state.set_preview_sequence(vec![PreviewSequenceNote {
+            play_at: now + std::time::Duration::from_millis(200),
+            key: 70,
+            velocity: 100,
+        }]);
+        assert_eq!(drain_at(&mut state, now), None, "未到 play_at 不应弹出");
+        assert_eq!(
+            drain_at(&mut state, now + std::time::Duration::from_millis(200)),
+            Some(70)
+        );
+    }
+
+    /// 单次弹出辅助：在 `now` 时刻调用 `drain_preview_sequence`，
+    /// 取出并清空音频动作，返回本次弹出的第一个音符 key（无弹出则 None）。
+    fn drain_at(state: &mut InteractionState, now: Instant) -> Option<u8> {
+        state.drain_preview_sequence(now);
+        let action = state.pending_audio_actions.drain(..).next();
+        match action {
+            Some(AudioAction::PlayNote { key, .. }) => Some(key),
+            _ => None,
+        }
     }
 }

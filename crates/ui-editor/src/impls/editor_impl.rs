@@ -10,7 +10,7 @@ mod history;
 
 use crate::note::Note;
 use crate::velocity::VelocityPanel;
-use crate::{Editor, EditorMemory, SpatialIndexState, grid};
+use crate::{EditState, Editor, EditorMemory, SpatialIndexState, grid};
 use iced_widget::canvas;
 use lumino_ui_core::message::AudioAction;
 use std::cell::Cell;
@@ -140,7 +140,19 @@ impl Editor {
 
     /// 获取并清空待处理的音频动作
     pub fn take_audio_actions(&mut self) -> Vec<AudioAction> {
-        let actions = self.editor_state.interaction.take_audio_actions();
+        let interaction = &mut self.editor_state.interaction;
+        if matches!(
+            interaction.edit_state,
+            EditState::DraggingSelection { .. } | EditState::DraggingSelectionCopy { .. }
+        ) {
+            // 批量拖动中：预览序列按 BPM 时序弹出（play_at 到达的音符逐个发声）
+            interaction.drain_preview_sequence(std::time::Instant::now());
+        } else {
+            // 中断兜底：非批量拖动状态仍残留序列（切轨/切工具等未走 released 的
+            // 中断路径）→ 直接丢弃，避免松手后继续发声
+            interaction.clear_preview_sequence();
+        }
+        let actions = interaction.take_audio_actions();
         if !actions.is_empty() {
             tracing::debug!("Editor: 取出了 {} 个音频动作", actions.len());
         }
@@ -158,7 +170,6 @@ impl Editor {
     /// 或有未提交的批量拖动/批量复制（pending_drag_state / pending_copy_drag_state），
     /// 或正在进行曲线路径编辑（锚点/控制柄拖动）。
     pub fn is_editing(&self) -> bool {
-        use crate::EditState;
         self.pending_drag_state.is_some()
             || self.pending_copy_drag_state.is_some()
             || self.editor_state.data.has_pending_commit()

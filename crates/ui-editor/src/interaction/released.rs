@@ -82,6 +82,8 @@ impl Editor {
             }
             EditState::DraggingSelection { drag_state } => {
                 crate::puffin_profiler::released_dragging_selection();
+                // 松手：停止批量拖动预览序列（剩余未弹出的试听音符作废）
+                self.editor_state.interaction.clear_preview_sequence();
                 // ghost 方案（延迟提交）：松手不 apply，保存到 pending_drag_state。
                 // 用户点击空白处取消框选时才 apply（commit_pending_drag）。
                 //
@@ -112,6 +114,8 @@ impl Editor {
             }
             EditState::DraggingSelectionCopy { drag_state } => {
                 crate::puffin_profiler::released_dragging_selection();
+                // 松手：停止批量拖动预览序列（复制拖动同样有发声反馈）
+                self.editor_state.interaction.clear_preview_sequence();
                 // 复制模式（ghost 方案，延迟提交）：松手不写入 document，
                 // 保存到 pending_copy_drag_state——副本持续显示在 UI 层。
                 // 用户点击空白处退出框选时才真正写入内存层
