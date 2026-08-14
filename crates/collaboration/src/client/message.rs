@@ -119,6 +119,30 @@ pub enum ServerMessage {
     },
 }
 
+impl ServerMessage {
+    /// 返回协议中的消息类型标签（与 `#[serde(tag = "type")]` 的 camelCase 一致）
+    pub fn type_name(&self) -> &'static str {
+        match self {
+            ServerMessage::Authenticated { .. } => "authenticated",
+            ServerMessage::AuthSuccess { .. } => "authSuccess",
+            ServerMessage::AuthError { .. } => "authError",
+            ServerMessage::RoomCreated { .. } => "roomCreated",
+            ServerMessage::RoomJoined { .. } => "roomJoined",
+            ServerMessage::RoomError { .. } => "roomError",
+            ServerMessage::UserJoined { .. } => "userJoined",
+            ServerMessage::UserLeft { .. } => "userLeft",
+            ServerMessage::MouseUpdate { .. } => "mouseUpdate",
+            ServerMessage::NoteBatchUpdate { .. } => "noteBatchUpdate",
+            ServerMessage::MidiEventUpdate { .. } => "midiEventUpdate",
+            ServerMessage::MidiEventBatchUpdate { .. } => "midiEventBatchUpdate",
+            ServerMessage::ProjectStateUpdate { .. } => "projectStateUpdate",
+            ServerMessage::FullSync { .. } => "fullSync",
+            ServerMessage::Pong { .. } => "pong",
+            ServerMessage::Error { .. } => "error",
+        }
+    }
+}
+
 /// 认证响应中的房间信息
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct AuthRoomInfo {
@@ -132,4 +156,26 @@ pub struct AuthRoomInfo {
     pub user_count: u32,
     #[serde(rename = "maxUsers")]
     pub max_users: u32,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ServerMessage;
+
+    /// type_name 必须与 serde 协议标签一致（`#[serde(tag = "type")]` camelCase），
+    /// 否则兜底日志会输出与线上协议不一致的标签
+    #[test]
+    fn test_server_message_type_name_matches_serde_tag() {
+        let cases = [
+            (r#"{"type":"pong","timestamp":1,"serverTime":2}"#, "pong"),
+            (r#"{"type":"userLeft","userId":"u1"}"#, "userLeft"),
+            (r#"{"type":"roomError","error":"boom"}"#, "roomError"),
+            (r#"{"type":"error","error":"boom"}"#, "error"),
+        ];
+        for (json, expected) in cases {
+            let msg: ServerMessage =
+                serde_json::from_str(json).expect("测试 JSON 应可反序列化");
+            assert_eq!(msg.type_name(), expected, "JSON: {json}");
+        }
+    }
 }

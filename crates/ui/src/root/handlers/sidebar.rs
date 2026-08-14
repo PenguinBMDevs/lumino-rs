@@ -37,7 +37,8 @@ impl Root {
 
     /// 处理侧边栏事件
     ///
-    /// 返回是否需要重新渲染
+    /// 返回是否需要重新渲染（仅供调用方决策；`Root::update` 始终将
+    /// Sidebar 消息视为已处理，不会因无需重绘而把消息继续路由）
     pub(crate) fn handle_sidebar_event(&mut self, event: sidebar::Event) -> bool {
         // 窗口最大化/还原期间阻止路由被意外切换
         if self.window_resize_guard

@@ -88,6 +88,31 @@ fn test_message_router_falls_through_when_not_consumed() {
     assert!(*received.borrow(), "消息应透传到第二个处理器");
 }
 
+/// BUG 回归：无需重绘的 Sidebar 消息必须被判定为"已处理"。
+///
+/// 修复前 `try_handle_direct` 把 `handle_sidebar_event` 的"是否需要重绘"
+/// 返回值当作"是否已处理"，导致 hover 移动（TrackReorderMoved）、重命名
+/// 输入（TrackRenameChanged）等无状态变化事件误落入 MessageRouter，
+/// 在 router 尾部刷"未处理的消息"噪音 WARN。
+#[test]
+fn test_sidebar_message_always_handled_directly() {
+    let mut root = create_root();
+
+    // 典型高频噪音源：音轨列表 hover 移动（未按下时 track_reorder 为 None，
+    // 状态零变化 → 无需重绘）
+    assert!(root.try_handle_direct(&Message::Sidebar(
+        crate::sidebar::Event::TrackReorderMoved { x: 1.0, y: 1.0 },
+    )));
+    // 典型高频噪音源：重命名输入（只改 buffer，不触发重绘判定）
+    assert!(root.try_handle_direct(&Message::Sidebar(
+        crate::sidebar::Event::TrackRenameChanged(0, "New Name".into()),
+    )));
+    // 正常 Sidebar 事件同样必须已处理
+    assert!(root.try_handle_direct(&Message::Sidebar(
+        crate::sidebar::Event::TrackSelected(0),
+    )));
+}
+
 #[test]
 fn test_collaboration_handler_opens_dialog() {
     let mut handler = CollaborationHandler::new();

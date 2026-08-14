@@ -5,7 +5,7 @@
 //! - DialogHandler: 对话框管理
 //! - ToolbarHandler: 工具栏事件（播放控制统一通过此路径）
 //! - ArrangementHandler: 工程走带视图滚动/缩放/编辑
-//! - SidebarHandler: 侧边栏路由与模式切换
+//! - Sidebar 事件由 Root::handle_sidebar_event 直接处理（不走 router）
 //! - EditorActionHandler: 编辑器动作与钢琴卷帘上下文菜单
 //! - StateUpdateHandler: 简单状态更新与动画帧
 //! - CoreWindowHandler: 核心/窗口事件转发
@@ -77,9 +77,11 @@ impl MessageRouter {
             }
         }
 
-        // 如果还有未处理的消息，记录警告
+        // 如果还有未处理的消息，记录警告。
+        // 打印完整消息（历史版本只打印 Discriminant(n)，无法区分是哪个
+        // 变体，噪音告警完全不可诊断）
         if let Some(unhandled) = current_msg {
-            tracing::warn!("未处理的消息: {:?}", std::mem::discriminant(&unhandled));
+            tracing::warn!("未处理的消息: {:?}", unhandled);
         }
     }
 }
@@ -117,8 +119,12 @@ impl Root {
                 true
             }
             Message::Sidebar(event) => {
-                // 返回 handle_sidebar_event 的结果，让调用者知道是否需要重新渲染
-                self.handle_sidebar_event(event.clone())
+                // 已处理：Sidebar 事件在 handle_sidebar_event 中执行完毕。
+                // 注意不能把"是否需要重绘"当作"是否已处理"——否则无需重绘的
+                // Sidebar 消息（如音轨列表 hover 移动、重命名输入）会误落入
+                // MessageRouter 并在尾部刷"未处理的消息"噪音 WARN。
+                self.handle_sidebar_event(event.clone());
+                true
             }
             Message::EditorAction(action) => {
                 self.handle_editor_action(action.clone());

@@ -153,7 +153,7 @@ pub async fn handle_server_message(
         }
 
         _ => {
-            debug!("收到未处理的消息类型");
+            debug!("收到未处理的服务器消息: type={}", msg.type_name());
         }
     }
 
