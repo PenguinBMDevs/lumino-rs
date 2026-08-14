@@ -92,8 +92,9 @@ impl MidiDocument {
     /// 使 `insert_note` 不再因 `document = None` 拦截音符创建（空白工程可直接编辑）。
     ///
     /// 轨道命名与 `Sidebar::new()` 默认轨道一致：轨道 0 = "Conductor"，轨道 1 = "Setup"，
-    /// 其余为 "Track {i}"。division 取 480（四分音符）。
-    pub fn empty_with_tracks(track_count: u16) -> Self {
+    /// 其余为 "Track {i}"。`division` 为文档头 PPQ（调用方传入，通常是编辑器当前 PPQ，
+    /// 避免新建工程落盘时回退到硬编码 480）。
+    pub fn empty_with_tracks(track_count: u16, division: u16) -> Self {
         Self {
             notes: (0..track_count)
                 .map(|_| crate::chunked_list::ChunkedList::new())
@@ -115,7 +116,7 @@ impl MidiDocument {
             total_ticks: 0,
             track_count,
             tracks: crate::track::TrackManager::new(track_count),
-            division: 480,
+            division,
             track_ports: vec![0; track_count as usize],
             track_max_end_ticks: Self::new_track_max_ticks(track_count as usize),
         }

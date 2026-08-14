@@ -534,7 +534,6 @@ fn test_apply_track_restored_expands_document() {
 }
 
 // ── Tempo 面板 BPM 上限（BUG 回归：硬编码 10000 截断） ──────────────────
-
 /// BUG 复现：用户把 Tempo 面板绘制上限（tempo_max_bpm，设置里可调至 65536）
 /// 调高后，拖拽速度点仍被旧硬编码 `clamp(20.0, 10000.0)` 截断，
 /// 曲线永远无法到达面板顶部，表现为"最大绘制值只能到 10000"。
@@ -598,4 +597,46 @@ fn test_tempo_clamp_min_bpm() {
         root.editor.editor_state.data.tempo_points[0].bpm, 20.0,
         "低于下限的值应截断到 20"
     );
+}
+
+// ── PPQ 修改贯穿保存链路（BUG 回归：工程文件落盘旧值 480） ──────────────
+
+/// BUG 复现：工具栏修改 PPQ 只更新视图状态，`document.division`（单一权威源）
+/// 保持旧值 480；保存工程时 `from_midi_document` 读取 document.division，
+/// 导致新工程 PPQ 丢失、工程文件永远落盘 480。
+#[test]
+fn test_set_ppq_syncs_document_division() {
+    let mut root = create_root();
+    attach_test_document(&mut root);
+
+    // 初始：视图默认 1920，测试文档构造为 480（真实场景下新工程空文档
+    // 与视图同源，此处故意制造不一致以验证 set_ppq 能把 document 拉齐）
+    assert_eq!(root.editor.editor_state.view.ppq, 1920);
+    assert_eq!(
+        root.editor.editor_state.data.document.as_ref().unwrap().division,
+        480
+    );
+
+    // 用户经工具栏把 PPQ 改为 960
+    root.set_ppq(960);
+
+    // 视图状态同步
+    assert_eq!(root.editor.editor_state.view.ppq, 960);
+    // 保存链路权威源必须同步——修复前此处保持 480，工程文件落盘错误
+    assert_eq!(
+        root.editor.editor_state.data.document.as_ref().unwrap().division,
+        960,
+        "document.division 应随 PPQ 修改同步，保证工程文件保存新 PPQ"
+    );
+}
+
+/// 无 document 时（编辑器已重置、空白工程未初始化）set_ppq 不应 panic
+#[test]
+fn test_set_ppq_without_document_no_panic() {
+    let mut root = create_root();
+
+    root.set_ppq(960);
+
+    assert_eq!(root.editor.editor_state.view.ppq, 960);
+    assert!(root.editor.editor_state.data.document.is_none());
 }

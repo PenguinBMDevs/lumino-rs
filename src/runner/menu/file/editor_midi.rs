@@ -7,7 +7,7 @@ use lumino_export::midi::{
     MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTimeSignatureEvent,
     MidiTrackData, extract_pc_cc_events,
 };
-use lumino_midi_loader::{MidiDocument, bpm_to_tempo, constants::DEFAULT_PPQN};
+use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
 use lumino_note_core::midi_types::TempoPoint;
 use std::collections::HashMap;
 
@@ -72,6 +72,9 @@ pub(super) fn build_midi_export_data_from_editor(
     tempos_on_first_track: bool,
 ) -> Option<MidiExportData> {
     let (notes, tempo_points) = editor_notes_and_tempos(runner)?;
+    // 使用编辑器当前 PPQ（用户可在工具栏修改），不硬编码默认值——
+    // 否则新工程保存的 MIDI/工程文件 PPQ 与 UI 显示不一致（同类 BUG 一并修复）。
+    let ppq = runner.window_state.window.ui().ppq();
     let time_signatures = editor_time_signatures(runner);
     let pc_cc = extract_current_pc_cc(runner);
 
@@ -119,7 +122,7 @@ pub(super) fn build_midi_export_data_from_editor(
     Some(MidiExportData {
         options: MidiExportOptions {
             format: 1,
-            ppqn: DEFAULT_PPQN,
+            ppqn: ppq,
         },
         tracks,
     })

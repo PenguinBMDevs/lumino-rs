@@ -250,11 +250,12 @@ fn test_clear_track_notes() {
 fn test_empty_with_tracks_blank_project_can_insert() {
     // 2026-08 回归：空白工程（新建文件）必须立即可编辑——
     // empty_with_tracks 构造的空白文档插入音符应成功，且保持有序。
-    let mut doc = MidiDocument::empty_with_tracks(2);
+    let mut doc = MidiDocument::empty_with_tracks(2, 1920);
     assert_eq!(doc.track_count(), 2);
     assert!(doc.notes.iter().all(|t| t.is_empty()));
     assert_eq!(doc.track_name(0), Some("Conductor"));
     assert_eq!(doc.track_name(1), Some("Setup"));
+    assert_eq!(doc.division, 1920);
 
     // 在 Setup 轨（track 1）创建音符，等价于空白工程走带添加
     assert!(doc.insert_note(1, NoteEvent::new(100, 200, 60, 100, 0)));

@@ -40,6 +40,11 @@ impl Root {
 
     pub fn set_ppq(&mut self, ppq: u16) {
         self.editor.set_ppq(ppq);
+        // 同步到单一权威源 document 的 division，保证保存/导出工程时
+        // 写入用户设置的 PPQ（此前只更新视图状态，工程文件永远落盘旧值 480）。
+        if let Some(doc) = self.editor.editor_state.data.document.as_mut() {
+            doc.division = ppq;
+        }
         // 按用户当前选择的精度换算 tick，而非无条件重置为四分音符（PPQ）。
         // 旧逻辑每次都把 data 层 snap_precision 硬编码为 ppq，导致：
         //   1) 默认状态下 UI 显示"全音符"而实际吸附是四分音符；

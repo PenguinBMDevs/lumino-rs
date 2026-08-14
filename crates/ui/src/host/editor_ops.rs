@@ -212,7 +212,9 @@ impl Host {
     /// `document = None` + `current_track = 0`，铅笔音符被 `current_track == 0`
     /// 拦截）。幂等：重复调用每次都重建 2 轨空白文档。
     pub fn init_blank_project(&mut self) {
-        let doc = MidiDocument::empty_with_tracks(2);
+        // 空白文档的 division 取编辑器当前 PPQ（默认 1920），
+        // 与视图状态保持一致，保证新工程保存的 PPQ 正确（不再硬编码 480）。
+        let doc = MidiDocument::empty_with_tracks(2, self.root.editor.editor_state.view.ppq);
 
         // 空轨道信息（名称/音符数=0/通道/端口），与 midi_handler 导入路径一致
         let track_infos: Vec<(usize, Option<String>, u64, u8, u8)> = (0..doc.track_count())
