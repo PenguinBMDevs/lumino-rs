@@ -107,7 +107,128 @@ fn test_track_switching_does_not_set_notes_changed() {
     );
 }
 
-/// 测试工具设置
+/// BUG 复现：批量框选后按 Delete 键应删除所有选中音符
+///
+/// 模拟完整用户操作流：指针工具 → 空白处按下（开始框选）→ 拖动（选中覆盖音符）
+/// → 松手 → 按 Delete。验证框选后 Delete 能删除全部选中音符。
+#[test]
+fn test_delete_after_box_select() {
+    let mut editor = Editor::new();
+    use iced_core::Point;
+    use lumino_ui_core::message::EditorAction;
+
+    // 3 个音符：tick 0/480/960，key 60/64/67
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[
+            Note::new(0.0, 60, 480.0),
+            Note::new(480.0, 64, 480.0),
+            Note::new(960.0, 67, 480.0),
+        ],
+    );
+
+    let view = editor.editor_state.view.clone();
+    // 空白处按下开始框选（key 70 区域无音符）
+    let start_x = view.tick_to_x(100.0);
+    let start_y = view.key_to_y(70) + view.zoom_y / 2.0;
+    let tick = editor.x_to_tick(start_x);
+    let snapped_tick = editor.snap_tick(tick);
+    editor.handle_pointer_pressed(Point::new(start_x, start_y), None, snapped_tick);
+    assert!(
+        matches!(
+            editor.editor_state.interaction.edit_state,
+            crate::EditState::Selecting { .. }
+        ),
+        "按下空白处应进入框选状态"
+    );
+
+    // 拖动覆盖全部 3 个音符（tick 0~1440，key 50~70）
+    let end_x = view.tick_to_x(1440.0);
+    let end_y = view.key_to_y(50) + view.zoom_y / 2.0;
+    editor.handle_moved(Point::new(end_x, end_y));
+
+    // 松手结束框选
+    editor.handle_released();
+    assert!(
+        matches!(
+            editor.editor_state.interaction.edit_state,
+            crate::EditState::Idle
+        ),
+        "框选松手后应回到 Idle"
+    );
+    assert_eq!(editor.selected_notes_count(), 3, "框选应选中全部 3 个音符");
+
+    // 按 Delete 键 → 删除选中音符
+    editor.handle_action(EditorAction::DeletePressed);
+
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        0,
+        "框选后按 Delete 应删除全部选中音符，实际剩余 {}",
+        editor.editor_state.data.current_track_note_count()
+    );
+}
+
+/// BUG 复现（精确场景）：框选后鼠标悬停在选中音符上，按 Delete 应删除全部选中音符
+///
+/// 用户真实操作：框选完成后鼠标通常停在框选终点（很可能落在选中音符上）。
+/// 此时 hover_state 有值，`handle_delete_pressed` 的 hover 优先分支只删除
+/// 悬停的那 1 个音符，批量选中的其余音符保留——Delete 键"不能删除(批量)音符"。
+#[test]
+fn test_delete_after_box_select_with_hover_on_selected_note() {
+    let mut editor = Editor::new();
+    use iced_core::Point;
+    use lumino_ui_core::message::EditorAction;
+
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[
+            Note::new(0.0, 60, 480.0),
+            Note::new(480.0, 64, 480.0),
+            Note::new(960.0, 67, 480.0),
+        ],
+    );
+
+    let view = editor.editor_state.view.clone();
+    // 空白处按下开始框选
+    let start_x = view.tick_to_x(100.0);
+    let start_y = view.key_to_y(70) + view.zoom_y / 2.0;
+    let tick = editor.x_to_tick(start_x);
+    let snapped_tick = editor.snap_tick(tick);
+    editor.handle_pointer_pressed(Point::new(start_x, start_y), None, snapped_tick);
+    // 拖动覆盖全部 3 个音符
+    let end_x = view.tick_to_x(1440.0);
+    let end_y = view.key_to_y(50) + view.zoom_y / 2.0;
+    editor.handle_moved(Point::new(end_x, end_y));
+    // 松手结束框选
+    editor.handle_released();
+    assert_eq!(editor.selected_notes_count(), 3, "框选应选中全部 3 个音符");
+
+    // 框选后鼠标悬停到第一个选中音符上（模拟用户操作后鼠标停在选区内）
+    let hover_x = view.tick_to_x(240.0);
+    let hover_y = view.key_to_y(60) + view.zoom_y / 2.0;
+    editor.handle_moved(Point::new(hover_x, hover_y));
+    assert!(
+        editor.editor_state.interaction.hover_state.is_some(),
+        "鼠标应悬停在选中音符上"
+    );
+
+    // 按 Delete → 应删除全部选中音符
+    editor.handle_action(EditorAction::DeletePressed);
+
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        0,
+        "存在选中集合时按 Delete 应删除全部选中音符，实际剩余 {}",
+        editor.editor_state.data.current_track_note_count()
+    );
+}
+
+/// 工具设置
 #[test]
 fn test_tool_setting() {
     let mut editor = Editor::new();

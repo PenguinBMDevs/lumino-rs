@@ -140,13 +140,18 @@ impl Editor {
 
     /// 处理删除键按下事件
     ///
-    /// 优先删除悬停音符，若无悬停则删除选中的音符。
+    /// 优先删除选中的音符，若无选中则删除悬停音符。
     /// 使用 Editor 层方法以触发协作同步事件。
+    ///
+    /// **修复历史**：旧实现 hover 优先于选中集合——批量框选后鼠标通常停在
+    /// 框选终点（往往落在选中音符上），此时按 Delete 只删除悬停的那 1 个音符，
+    /// 其余选中音符保留，用户感知为"Delete 键不能删除批量音符"。
+    /// 标准 DAW 语义：有选中集合 → 删除整个选中集合；无选中 → 删除悬停音符。
     pub(crate) fn handle_delete_pressed(&mut self) {
-        if let Some((index, _)) = self.editor_state.interaction.hover_state {
-            self.delete_note_by_index(index);
-        } else if self.has_selection() {
+        if self.has_selection() {
             self.delete_selected_notes();
+        } else if let Some((index, _)) = self.editor_state.interaction.hover_state {
+            self.delete_note_by_index(index);
         }
     }
 }

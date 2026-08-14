@@ -55,6 +55,10 @@ pub struct TrackListCanvas {
     pub track_height: f32,
     /// 总高度
     pub total_height: f32,
+    /// 垂直缩放倍率（1.0 = 默认高度），Ctrl+滚轮垂直缩放时用于计算新 zoom_y
+    pub zoom_y: f32,
+    /// Ctrl 键按下状态（窗口级 CtrlKeyChanged 可靠通道，用于 Ctrl+滚轮垂直缩放）
+    pub ctrl_pressed: bool,
     /// 外部长按激活的拖拽排序标记（Sidebar 计时，None 表示无拖拽）
     pub drag_active: bool,
 }
@@ -82,6 +86,8 @@ impl TrackListCanvas {
             scroll_y,
             track_height,
             total_height,
+            zoom_y: 1.0,
+            ctrl_pressed: false,
             drag_active: false,
         }
     }
@@ -125,6 +131,18 @@ impl TrackListCanvas {
     /// 设置外部长按激活的拖拽排序标记（来自 Sidebar 统一计时）
     pub fn with_drag_active(mut self, active: bool) -> Self {
         self.drag_active = active;
+        self
+    }
+
+    /// 设置垂直缩放倍率（1.0 = 默认高度），与右侧走带视口 zoom_y 保持一致
+    pub fn with_zoom_y(mut self, zoom_y: f32) -> Self {
+        self.zoom_y = zoom_y;
+        self
+    }
+
+    /// 设置 Ctrl 键按下状态（窗口级 CtrlKeyChanged 可靠通道）
+    pub fn with_ctrl_pressed(mut self, pressed: bool) -> Self {
+        self.ctrl_pressed = pressed;
         self
     }
 
@@ -330,6 +348,21 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
             }
             canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) => {
                 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+
+                // Ctrl + 滚轮：垂直缩放（与钢琴卷帘键盘区一致：平滑步进 + 指针锚点）
+                if self.ctrl_pressed {
+                    let pos = cursor.position()?;
+                    let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+                    return Some(canvas::Action::publish(Message::ArrangementZoomY {
+                        zoom: self.zoom_y * factor,
+                        fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
+                            pos.y - bounds.y,
+                            0.0,
+                            bounds.height,
+                        ),
+                    }));
+                }
+
                 let (_, dy) = match delta {
                     iced_core::mouse::ScrollDelta::Lines { x, y } => {
                         (x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)
@@ -380,5 +413,125 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
     ) -> Vec<Geometry<Renderer>> {
         puffin::profile_function!();
         draw::draw(self, state, renderer, theme, bounds)
+    }
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced_core::Size;
+    use iced_core::mouse::Cursor;
+
+    fn bounds() -> Rectangle {
+        Rectangle::new(Point::new(0.0, 0.0), Size::new(160.0, 600.0))
+    }
+
+    fn canvas(ctrl: bool, zoom_y: f32) -> TrackListCanvas {
+        TrackListCanvas::new(vec![(0, "A".into()), (1, "B".into())], 0, 0.0, 48.0, 96.0)
+            .with_zoom_y(zoom_y)
+            .with_ctrl_pressed(ctrl)
+    }
+
+    fn wheel(delta: iced_core::mouse::ScrollDelta) -> canvas::Event {
+        canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta })
+    }
+
+    /// Ctrl+滚轮：垂直缩放，倍率按卷帘式平滑步进（每刻度 ±10%），
+    /// 锚点比例为鼠标在列表内的纵向相对位置。
+    #[test]
+    fn test_ctrl_wheel_zooms_y_around_pointer() {
+        let canvas = canvas(true, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(80.0, 300.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &wheel(iced_core::mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+                bounds(),
+                cursor,
+            )
+            .expect("Ctrl+滚轮应产生垂直缩放动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ArrangementZoomY { zoom, fixed_ratio }) => {
+                // zoom_y(1.0) * 因子(1 + 1*0.1) = 1.1
+                assert!((zoom - 1.1).abs() < f32::EPSILON, "zoom = {zoom}");
+                // 鼠标位于列表纵向中点（300/600）
+                assert!(
+                    (fixed_ratio - 0.5).abs() < f32::EPSILON,
+                    "fixed_ratio = {fixed_ratio}"
+                );
+            }
+            other => panic!("Ctrl+滚轮音轨列表应发 ArrangementZoomY，实际为: {other:?}"),
+        }
+    }
+
+    /// Ctrl+滚轮向下滚动（y < 0）→ 缩小
+    #[test]
+    fn test_ctrl_wheel_zooms_y_out() {
+        let canvas = canvas(true, 2.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(80.0, 150.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &wheel(iced_core::mouse::ScrollDelta::Lines { x: 0.0, y: -1.0 }),
+                bounds(),
+                cursor,
+            )
+            .expect("Ctrl+滚轮应产生垂直缩放动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ArrangementZoomY { zoom, fixed_ratio }) => {
+                // zoom_y(2.0) * 因子(1 - 1*0.1) = 1.8
+                assert!((zoom - 1.8).abs() < f32::EPSILON, "zoom = {zoom}");
+                assert!(
+                    (fixed_ratio - 0.25).abs() < f32::EPSILON,
+                    "fixed_ratio = {fixed_ratio}"
+                );
+            }
+            other => panic!("Ctrl+滚轮音轨列表应发 ArrangementZoomY，实际为: {other:?}"),
+        }
+    }
+
+    /// Ctrl+滚轮但增量为 0 → 无操作（避免旧式 dy<=0 误判缩小的缺陷）
+    #[test]
+    fn test_ctrl_wheel_zero_delta_is_noop() {
+        let canvas = canvas(true, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(80.0, 300.0));
+        assert!(
+            canvas
+                .update(
+                    &mut state,
+                    &wheel(iced_core::mouse::ScrollDelta::Lines { x: 1.0, y: 0.0 }),
+                    bounds(),
+                    cursor
+                )
+                .is_none()
+        );
+    }
+
+    /// 未按 Ctrl：普通滚轮仍为垂直滚动（既有行为不变）
+    #[test]
+    fn test_plain_wheel_still_scrolls_y() {
+        let canvas = canvas(false, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(80.0, 300.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &wheel(iced_core::mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+                bounds(),
+                cursor,
+            )
+            .expect("普通滚轮应产生滚动动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ArrangementScrollY(y)) => {
+                // scroll_y(0.0) - dy(1 * SCROLL_LINES_SCALE = 30) = -30（由 Root 钳制）
+                assert!((y - -30.0).abs() < f32::EPSILON, "y = {y}");
+            }
+            other => panic!("普通滚轮音轨列表应发 ArrangementScrollY，实际为: {other:?}"),
+        }
     }
 }

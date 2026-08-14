@@ -8,11 +8,6 @@ use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
 
-/// 滚轮缩放步进系数：每滚动一个刻度（line），缩放倍率变化 10%
-const ZOOM_WHEEL_STEP: f32 = 0.1;
-/// Pixel 增量换算为刻度线的除数（与力度面板 Automation 缩放的换算保持一致）
-const PIXEL_TO_LINE_SCALE: f32 = 50.0;
-
 pub struct PianoRollGrid<'a> {
     pub editor: &'a Editor,
 }
@@ -151,13 +146,13 @@ impl<'a> PianoRollGrid<'a> {
         use lumino_ui_core::message::EditorAction;
 
         if control_pressed {
-            let factor = Self::zoom_factor_from_delta(delta)?;
+            let factor = crate::zoom::zoom_factor_from_delta(delta)?;
             let view = &self.editor.editor_state.view;
             let canvas = &self.editor.editor_state.canvas;
             let viewport_w = (canvas.size_x - view.keyboard_width).max(0.0);
             return Some(canvas::Action::publish(Message::ZoomXChanged {
                 zoom: view.zoom_x * factor,
-                fixed_ratio: Self::fixed_ratio_from_viewport(
+                fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
                     local_pos.x,
                     view.keyboard_width,
                     viewport_w,
@@ -193,13 +188,13 @@ impl<'a> PianoRollGrid<'a> {
         if !control_pressed {
             return None;
         }
-        let factor = Self::zoom_factor_from_delta(delta)?;
+        let factor = crate::zoom::zoom_factor_from_delta(delta)?;
         let view = &self.editor.editor_state.view;
         let canvas = &self.editor.editor_state.canvas;
         let viewport_h = (canvas.size_y - view.ruler_height).max(0.0);
         Some(canvas::Action::publish(Message::ZoomYChanged {
             zoom: view.zoom_y * factor,
-            fixed_ratio: Self::fixed_ratio_from_viewport(
+            fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
                 local_pos.y,
                 view.ruler_height,
                 viewport_h,
@@ -214,31 +209,6 @@ impl<'a> PianoRollGrid<'a> {
                 (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
             }
             iced_core::mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-        }
-    }
-
-    /// 计算缩放因子：向上滚动（delta > 0）放大、向下滚动（delta < 0）缩小。
-    /// 返回 None 表示无需缩放（增量为 0）。
-    fn zoom_factor_from_delta(delta: &iced_core::mouse::ScrollDelta) -> Option<f32> {
-        let line_delta = match delta {
-            iced_core::mouse::ScrollDelta::Lines { y, .. } => *y,
-            iced_core::mouse::ScrollDelta::Pixels { y, .. } => *y / PIXEL_TO_LINE_SCALE,
-        };
-        let step = line_delta.clamp(-1.0, 1.0);
-        if step.abs() < f32::EPSILON {
-            None
-        } else {
-            Some(1.0 + step * ZOOM_WHEEL_STEP)
-        }
-    }
-
-    /// 计算鼠标在视口内的锚点比例（0.0 贴左/上，1.0 贴右/下）。
-    /// 视口尺寸过小时回退到中心锚点（0.5）。
-    fn fixed_ratio_from_viewport(position: f32, origin: f32, viewport_size: f32) -> f32 {
-        if viewport_size > 0.0 {
-            ((position - origin) / viewport_size).clamp(0.0, 1.0)
-        } else {
-            0.5
         }
     }
 
@@ -269,58 +239,8 @@ mod tests {
         assert_eq!(dy, -25.0);
     }
 
-    #[test]
-    fn test_zoom_factor_zoom_in_on_scroll_up() {
-        // 向上滚动（y > 0）→ 放大
-        let factor = PianoRollGrid::zoom_factor_from_delta(&ScrollDelta::Lines { x: 0.0, y: 1.0 });
-        assert_eq!(factor, Some(1.1));
-    }
-
-    #[test]
-    fn test_zoom_factor_zoom_out_on_scroll_down() {
-        // 向下滚动（y < 0）→ 缩小
-        let factor = PianoRollGrid::zoom_factor_from_delta(&ScrollDelta::Lines { x: 0.0, y: -1.0 });
-        assert_eq!(factor, Some(0.9));
-    }
-
-    #[test]
-    fn test_zoom_factor_zero_delta_returns_none() {
-        assert_eq!(
-            PianoRollGrid::zoom_factor_from_delta(&ScrollDelta::Lines { x: 0.0, y: 0.0 }),
-            None
-        );
-    }
-
-    #[test]
-    fn test_zoom_factor_pixels_converted_and_clamped() {
-        // 像素增量换算：y=50 → 1 个刻度
-        let factor =
-            PianoRollGrid::zoom_factor_from_delta(&ScrollDelta::Pixels { x: 0.0, y: 50.0 });
-        assert_eq!(factor, Some(1.1));
-        // 大增量被钳制为单个刻度（单步缩放，防止跳变）
-        let factor =
-            PianoRollGrid::zoom_factor_from_delta(&ScrollDelta::Pixels { x: 0.0, y: -500.0 });
-        assert_eq!(factor, Some(0.9));
-    }
-
-    #[test]
-    fn test_fixed_ratio_from_viewport() {
-        // 锚点比例：视口 [60, 800) 内，60 → 0.0（贴左），430 → 0.5（中心），800 → 1.0（贴右）
-        let ratio = PianoRollGrid::fixed_ratio_from_viewport(60.0, 60.0, 740.0);
-        assert!((ratio - 0.0).abs() < f32::EPSILON);
-        let ratio = PianoRollGrid::fixed_ratio_from_viewport(430.0, 60.0, 740.0);
-        assert!((ratio - 0.5).abs() < f32::EPSILON);
-        let ratio = PianoRollGrid::fixed_ratio_from_viewport(800.0, 60.0, 740.0);
-        assert!((ratio - 1.0).abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_fixed_ratio_from_viewport_degenerate_falls_back_to_center() {
-        // 视口退化（尺寸为 0）时回退到中心锚点
-        let ratio = PianoRollGrid::fixed_ratio_from_viewport(0.0, 0.0, 0.0);
-        assert_eq!(ratio, 0.5);
-    }
-
+    /// 缩放因子/锚点比例的公共逻辑已迁移至 crate::zoom（见 zoom.rs 测试），
+    /// 此处仅保留钢琴卷帘网格自身的滚轮行为测试。
     #[test]
     fn test_keyboard_wheel_without_ctrl_is_noop() {
         // 键盘区域未按 Ctrl 时滚轮不产生任何动作（保持原有行为）

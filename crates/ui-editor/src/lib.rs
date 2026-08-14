@@ -17,6 +17,7 @@ pub mod scrollbar_widget;
 pub mod smooth_scroll;
 pub mod spatial_index;
 pub mod velocity;
+pub mod zoom;
 
 // 子模块
 mod arrangement_ops;

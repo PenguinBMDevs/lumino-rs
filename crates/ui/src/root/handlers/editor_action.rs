@@ -73,9 +73,18 @@ impl Root {
     pub(crate) fn handle_piano_roll_context_menu(&mut self, action: PianoRollContextMenuAction) {
         match action {
             PianoRollContextMenuAction::Open { position } => {
-                self.editor
-                    .context_menu
-                    .open(iced_core::Point::new(position.x, position.y));
+                let pos = iced_core::Point::new(position.x, position.y);
+                // 右键点击音符且该音符不在选中集合时，先将其设为唯一选中。
+                // 使菜单的 删除/剪切/复制 作用于"右键目标"，与 Delete 键
+                // "有选中集合即删除选中集合"的语义一致——否则右键一个未选中的
+                // 音符，菜单"删除"会删掉旧的批量选区。
+                if let Some((index, _)) = self.editor.hit_test_note(pos)
+                    && !self.editor.is_note_selected(index)
+                {
+                    self.editor.selection_clear();
+                    self.editor.selection_insert(index);
+                }
+                self.editor.context_menu.open(pos);
             }
             PianoRollContextMenuAction::Close => {
                 self.editor.context_menu.close();

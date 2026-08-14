@@ -249,7 +249,10 @@ impl Root {
                 .track_reorder
                 .as_ref()
                 .is_some_and(|r| r.active),
-        );
+        )
+        // Ctrl+滚轮垂直缩放：同步走带视口 zoom_y 与窗口级 Ctrl 键状态
+        .with_zoom_y(vp.zoom_y)
+        .with_ctrl_pressed(self.toolbar.ctrl_pressed);
         let track_list = iced_widget::canvas::Canvas::new(track_list_canvas)
             .width(Length::Fixed(TRACK_LIST_WIDTH))
             .height(Length::Fill);

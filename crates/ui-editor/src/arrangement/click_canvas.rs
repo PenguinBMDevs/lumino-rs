@@ -98,6 +98,19 @@ impl ArrangementClickCanvas {
                 }
                 let local = crate::arrangement::interaction::geometry::local_pos(pos, bounds);
 
+                if self.ctrl_pressed {
+                    // Ctrl + 滚轮：水平缩放（与钢琴卷帘标尺区一致：平滑步进 + 指针锚点）
+                    let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+                    return Some(canvas::Action::publish(Message::ArrangementZoomX {
+                        zoom: self.viewport.zoom_x * factor,
+                        fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
+                            local.x,
+                            0.0,
+                            bounds.width,
+                        ),
+                    }));
+                }
+
                 let (mut dx, mut dy) = match delta {
                     mouse::ScrollDelta::Lines { x, y } => {
                         (x * SCROLL_LINES_SCALE, y * SCROLL_LINES_SCALE)
@@ -107,23 +120,7 @@ impl ArrangementClickCanvas {
                 dx = dx.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
                 dy = dy.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
 
-                if self.ctrl_pressed {
-                    // Ctrl + 滚轮：水平缩放
-                    let factor = if dy > 0.0 { 1.1 } else { 0.9 };
-                    let new_zoom = (self.viewport.zoom_x * factor).clamp(
-                        crate::constants::editor::zoom::MIN_ARRANGEMENT_ZOOM_X,
-                        crate::constants::editor::zoom::MAX_ARRANGEMENT_ZOOM_X,
-                    );
-                    let fixed_ratio = if bounds.width > 0.0 {
-                        local.x / bounds.width
-                    } else {
-                        0.0
-                    };
-                    Some(canvas::Action::publish(Message::ArrangementZoomX {
-                        zoom: new_zoom,
-                        fixed_ratio,
-                    }))
-                } else if self.shift_pressed {
+                if self.shift_pressed {
                     // Shift + 滚轮：水平滚动
                     Some(canvas::Action::publish(Message::ArrangementScrollX(
                         self.viewport.scroll_x + dx,
@@ -290,4 +287,104 @@ fn draw_ghost_note(
 
     let fill = color.scale_alpha(0.4);
     frame.fill_rectangle(rect.position(), rect.size(), fill);
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use iced_core::{Point, Size, mouse};
+
+    fn bounds() -> Rectangle {
+        Rectangle::new(Point::new(0.0, 0.0), Size::new(800.0, 600.0))
+    }
+
+    fn canvas(ctrl: bool) -> ArrangementClickCanvas {
+        ArrangementClickCanvas {
+            viewport: ArrangementViewport::default(),
+            current_tool: Tool::Pointer,
+            track_count: 1,
+            arr_sel_rect: None,
+            selected_notes: Vec::new(),
+            ppq: lumino_core::view_state::DEFAULT_PPQ,
+            precision: NotePrecision::Quarter,
+            time_signatures: Vec::new(),
+            ctrl_pressed: ctrl,
+            shift_pressed: false,
+        }
+    }
+
+    fn wheel(delta: mouse::ScrollDelta) -> canvas::Event {
+        canvas::Event::Mouse(mouse::Event::WheelScrolled { delta })
+    }
+
+    /// Ctrl+滚轮：水平缩放（与钢琴卷帘标尺区一致：平滑步进 + 指针锚点）。
+    /// Pixel 增量 y=50 换算为 1 个刻度 → 1.1 倍，锚点为鼠标横向位置。
+    #[test]
+    fn test_ctrl_wheel_zooms_x_with_smooth_step() {
+        let canvas = canvas(true);
+        let mut state = ArrangementInteractionState::default();
+        let cursor = mouse::Cursor::Available(Point::new(400.0, 300.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &wheel(mouse::ScrollDelta::Pixels { x: 0.0, y: 50.0 }),
+                bounds(),
+                cursor,
+            )
+            .expect("Ctrl+滚轮应产生水平缩放动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ArrangementZoomX { zoom, fixed_ratio }) => {
+                let expect_zoom = ArrangementViewport::default().zoom_x * 1.1;
+                assert!((zoom - expect_zoom).abs() < f32::EPSILON, "zoom = {zoom}");
+                assert!(
+                    (fixed_ratio - 0.5).abs() < f32::EPSILON,
+                    "fixed_ratio = {fixed_ratio}"
+                );
+            }
+            other => panic!("Ctrl+滚轮音符区应发 ArrangementZoomX，实际为: {other:?}"),
+        }
+    }
+
+    /// Ctrl+滚轮但垂直增量为 0 → 无操作
+    /// （旧实现 dy=0 时误判为缩小 0.9 倍，新逻辑与卷帘一致：增量为 0 不缩放）
+    #[test]
+    fn test_ctrl_wheel_zero_delta_is_noop() {
+        let canvas = canvas(true);
+        let mut state = ArrangementInteractionState::default();
+        let cursor = mouse::Cursor::Available(Point::new(400.0, 300.0));
+        assert!(
+            canvas
+                .update(
+                    &mut state,
+                    &wheel(mouse::ScrollDelta::Lines { x: 1.0, y: 0.0 }),
+                    bounds(),
+                    cursor,
+                )
+                .is_none()
+        );
+    }
+
+    /// 未按 Ctrl：普通滚轮仍为垂直滚动（既有行为不变）
+    #[test]
+    fn test_plain_wheel_still_scrolls_y() {
+        let canvas = canvas(false);
+        let mut state = ArrangementInteractionState::default();
+        let cursor = mouse::Cursor::Available(Point::new(400.0, 300.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &wheel(mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+                bounds(),
+                cursor,
+            )
+            .expect("普通滚轮应产生滚动动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::ArrangementScrollY(y)) => {
+                // scroll_y(0.0) - dy(1 * SCROLL_LINES_SCALE = 30) = -30（由 Root 钳制）
+                assert!((y - -30.0).abs() < f32::EPSILON, "y = {y}");
+            }
+            other => panic!("普通滚轮音符区应发 ArrangementScrollY，实际为: {other:?}"),
+        }
+    }
 }
