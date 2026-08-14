@@ -349,9 +349,19 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
             canvas::Event::Mouse(iced_core::mouse::Event::WheelScrolled { delta }) => {
                 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
 
+                // iced 0.14 事件会分发到整棵 widget 树（无 hover 过滤）：
+                // 鼠标在右侧音符区滚轮时本列表也会收到同一事件，必须先确认
+                // 鼠标在本 Canvas 范围内，否则 Ctrl+滚轮会与音符区缩放双触发、
+                // 普通滚轮会双倍滚动（与 click_canvas 的位置检查保持一致）。
+                let Some(pos) = cursor.position() else {
+                    return None;
+                };
+                if !bounds.contains(pos) {
+                    return None;
+                }
+
                 // Ctrl + 滚轮：垂直缩放（与钢琴卷帘键盘区一致：平滑步进 + 指针锚点）
                 if self.ctrl_pressed {
-                    let pos = cursor.position()?;
                     let factor = crate::zoom::zoom_factor_from_delta(delta)?;
                     return Some(canvas::Action::publish(Message::ArrangementZoomY {
                         zoom: self.zoom_y * factor,
@@ -377,7 +387,11 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
             canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
                 iced_core::mouse::Button::Left,
             )) => {
-                if let Some(pos) = cursor.position() {
+                // 同 WheelScrolled：iced 全树分发事件，鼠标不在列表范围内时
+                // 不得执行选择/拖拽逻辑（否则点击音符区会误选中列表音轨）。
+                if let Some(pos) = cursor.position()
+                    && bounds.contains(pos)
+                {
                     let local_pos = Point::new(pos.x - bounds.x, pos.y - bounds.y);
                     self.handle_left_press(state, local_pos, bounds.width)
                 } else {
@@ -532,6 +546,103 @@ mod tests {
                 assert!((y - -30.0).abs() < f32::EPSILON, "y = {y}");
             }
             other => panic!("普通滚轮音轨列表应发 ArrangementScrollY，实际为: {other:?}"),
+        }
+    }
+
+    /// BUG 回归：鼠标在右侧音符区（本 Canvas bounds 之外）时，
+    /// Ctrl+滚轮不得触发本列表的 Y 向缩放——
+    /// iced 0.14 事件全树分发，无位置检查会与音符区 X 向缩放双触发。
+    #[test]
+    fn test_ctrl_wheel_outside_bounds_does_not_zoom_y() {
+        let canvas = canvas(true, 1.0);
+        let mut state = TrackListState::default();
+        // 鼠标在音符区（x = 400 超出列表宽度 160）
+        let cursor = Cursor::Available(Point::new(400.0, 300.0));
+        assert!(
+            canvas
+                .update(
+                    &mut state,
+                    &wheel(iced_core::mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+                    bounds(),
+                    cursor,
+                )
+                .is_none(),
+            "鼠标在列表外时 Ctrl+滚轮不应产生任何缩放动作"
+        );
+    }
+
+    /// BUG 回归（同类根因）：鼠标在音符区普通滚轮时，本列表不得
+    /// 再发 ArrangementScrollY（否则与音符区滚动双触发、滚动量翻倍）。
+    #[test]
+    fn test_plain_wheel_outside_bounds_does_not_scroll() {
+        let canvas = canvas(false, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(400.0, 300.0));
+        assert!(
+            canvas
+                .update(
+                    &mut state,
+                    &wheel(iced_core::mouse::ScrollDelta::Lines { x: 0.0, y: 1.0 }),
+                    bounds(),
+                    cursor,
+                )
+                .is_none(),
+            "鼠标在列表外时普通滚轮不应产生滚动动作"
+        );
+    }
+
+    /// BUG 回归（同类根因）：鼠标在音符区按下左键时，本列表不得
+    /// 误选音轨/注册拖拽排序（iced 全树分发 + 无位置检查的既有缺陷）。
+    #[test]
+    fn test_left_press_outside_bounds_is_noop() {
+        let canvas = canvas(false, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(400.0, 300.0));
+        assert!(
+            canvas
+                .update(
+                    &mut state,
+                    &canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
+                        iced_core::mouse::Button::Left,
+                    )),
+                    bounds(),
+                    cursor,
+                )
+                .is_none(),
+            "鼠标在列表外按下左键不应产生选择/拖拽动作"
+        );
+        assert!(state.drag.is_none(), "列表外按下不应注册拖拽候选");
+    }
+
+    /// 列表内按下左键仍正常选中（既有行为回归保护）
+    #[test]
+    fn test_left_press_inside_bounds_selects_track() {
+        let canvas = canvas(false, 1.0);
+        let mut state = TrackListState::default();
+        let cursor = Cursor::Available(Point::new(80.0, 60.0));
+        let action = canvas
+            .update(
+                &mut state,
+                &canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
+                    iced_core::mouse::Button::Left,
+                )),
+                bounds(),
+                cursor,
+            )
+            .expect("列表内按下左键应产生选择动作");
+        let (message, _, _) = action.into_inner();
+        match message {
+            Some(Message::Batch(messages)) => {
+                // 按下发布的是 Batch[TrackSelected, TracksSelected, TrackReorderStarted]
+                assert!(
+                    messages.iter().any(|m| matches!(
+                        m,
+                        Message::Sidebar(lumino_ui_core::sidebar_event::Event::TrackSelected(..))
+                    )),
+                    "Batch 应包含 TrackSelected，实际为: {messages:?}"
+                );
+            }
+            other => panic!("列表内按下应发 Batch(TrackSelected)，实际为: {other:?}"),
         }
     }
 }
