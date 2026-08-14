@@ -136,12 +136,12 @@ pub struct Editor {
     /// `None` 表示无待提交的拖动；`Some(drag_state)` 表示有待提交的累积偏移。
     pub(crate) pending_drag_state: Option<lumino_editor_state::DragState>,
 
-    /// 批量复制待提交状态（Ctrl+拖动 ghost 方案 - 延迟提交）
+    /// 批量复制待提交状态（Ctrl+拖动 ghost 方案）
     ///
-    /// `DraggingSelectionCopy` 松手后不立即写入 document（音符唯一权威），
-    /// 而是保存到此字段——副本持续在 UI 层显示（原始位置 + 偏移位置）。
-    /// 用户点击空白处退出框选时才真正 `batch_insert_notes` 写入内存层
-    /// （`commit_pending_copy`），与 `pending_drag_state` 延迟提交方案对称。
+    /// `DraggingSelectionCopy` **松手即提交**：副本立即 `batch_insert_notes`
+    /// 写入 document（音符唯一权威），副本真实化并只选中副本。
+    /// 本字段仅在复制拖动**过程中**（`DraggingSelectionCopy`）与提交失败
+    /// 兜底（`commit_pending_copy` 内部）短暂存在；正常松手后即清空。
     ///
     /// `None` 表示无待提交的复制；`Some(drag_state)` 表示有待写入的副本偏移。
     pub(crate) pending_copy_drag_state: Option<lumino_editor_state::DragState>,

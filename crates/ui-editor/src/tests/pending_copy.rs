@@ -211,10 +211,10 @@ fn test_commit_pending_copy_clamps_key_range() {
     );
 }
 
-// ===== handle_released 松手行为 =====
+// ===== handle_released 松手行为（松手即提交） =====
 
 #[test]
-fn test_released_copy_drag_saves_pending_copy() {
+fn test_released_copy_drag_commits_immediately() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(
         &mut editor,
@@ -230,12 +230,13 @@ fn test_released_copy_drag_saves_pending_copy() {
     drag.set_delta(200, 7);
     release_copy_drag(&mut editor, drag);
 
-    // 松手后：不写入 document，保存到 pending_copy_drag_state
+    // 松手后：**立即写入 document**（松手即提交，副本真实化）
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
-        2,
-        "document 未变"
+        3,
+        "副本应已写入内存"
     );
+    // 原件不变
     assert_eq!(
         editor
             .editor_state
@@ -245,13 +246,27 @@ fn test_released_copy_drag_saves_pending_copy() {
             .tick,
         0.0
     );
-    let pending = editor
-        .pending_copy_drag_state
-        .as_ref()
-        .expect("pending_copy 应已保存");
-    assert_eq!(pending.delta_tick, 200);
-    assert_eq!(pending.delta_key, 7);
-    // 选中集合保留（pending 状态下仍显示框选）
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("note should exist")
+            .key,
+        60
+    );
+    // 副本在偏移位置（tick 200, key 67）
+    let copy = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .find(|n| n.start_tick == 200)
+        .expect("副本应存在");
+    assert_eq!(copy.key, 67);
+    // pending 已清空（提交完成）
+    assert!(editor.pending_copy_drag_state.is_none());
+    // 副本被选中（最新件框选）
     assert!(editor.has_selection());
     // 编辑状态回到 Idle
     assert_eq!(editor.editor_state.interaction.edit_state, EditState::Idle);
@@ -262,7 +277,7 @@ fn test_released_copy_drag_zero_delta_does_not_save() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
 
-    // 未拖动（delta 零）直接松手 → 不产生 pending
+    // 未拖动（delta 零）直接松手 → 不产生副本
     let zero_drag = DragState::from_single(0, 1, 0, 60);
     release_copy_drag(&mut editor, zero_drag);
 
@@ -271,7 +286,7 @@ fn test_released_copy_drag_zero_delta_does_not_save() {
 }
 
 #[test]
-fn test_released_copy_drag_keeps_selection() {
+fn test_released_copy_drag_selects_copies() {
     let mut editor = Editor::new();
     test_helpers::seed_notes(
         &mut editor,
@@ -287,11 +302,22 @@ fn test_released_copy_drag_keeps_selection() {
     drag.set_delta(50, 0);
     release_copy_drag(&mut editor, drag);
 
-    assert!(editor.pending_copy_drag_state.is_some());
+    // 松手即提交：document 4 个音符（原件 + 副本），副本选中
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 4);
+    assert!(editor.pending_copy_drag_state.is_none());
     assert!(
         editor.has_selection(),
-        "pending 状态下选区应保留（副本仍显示在 UI 层）"
+        "提交后副本应保持选中（最新件框选）"
     );
+    // 只选中副本（tick 50 / 290），原件不选中
+    let selected: Vec<usize> = editor.get_selected_indices();
+    let mut ticks: Vec<f32> = selected
+        .iter()
+        .filter_map(|&i| editor.editor_state.data.get_note_view(i))
+        .map(|n| n.tick)
+        .collect();
+    ticks.sort_by(|a, b| a.total_cmp(b));
+    assert_eq!(ticks, vec![50.0, 290.0], "应只选中副本");
 }
 
 // ===== handle_pointer_pressed Ctrl + 选择框内部 → 复制拖拽 =====
@@ -604,7 +630,7 @@ fn test_selection_box_hit_test_copy_box_only() {
     }
 }
 
-// ===== pending_copy 累积模式（新件/原件均可再次复制） =====
+// ===== 连续复制（松手即提交：每次复制独立真实化，从副本继续复制） =====
 
 #[test]
 fn test_released_copy_drag_accumulates_delta() {
@@ -612,32 +638,45 @@ fn test_released_copy_drag_accumulates_delta() {
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
 
-    // 第一次复制：副本偏移 100
+    // 第一次复制：副本偏移 100 → 立即提交
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 0);
     release_copy_drag(&mut editor, d1);
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
+    assert!(editor.pending_copy_drag_state.is_none());
+
+    // 第二次复制（连续复制）：副本已真实化并选中（selected = 副本索引），
+    // 从副本位置（tick 100）继续拖动 50 → 新副本 = 副本 + 50 = 原件 + 150
+    // 直接以「选中索引」构造 drag（模拟 pressed 时 get_selected_indices() = 副本）
+    let copy_idx = editor
+        .get_selected_indices()
+        .first()
+        .copied()
+        .expect("复制提交后副本应选中");
     assert_eq!(
         editor
-            .pending_copy_drag_state
-            .as_ref()
+            .editor_state
+            .data
+            .get_note_view(copy_idx)
             .expect("note should exist")
-            .delta_tick,
-        100
+            .tick,
+        100.0,
+        "提交后选中应指向副本（tick 100）"
     );
-
-    // 第二次复制：从副本位置（tick 100）继续拖动 50 → 副本偏移 150
-    let mut d2 = DragState::from_indices([0], 1, 100, 60);
+    let mut d2 = DragState::from_indices([copy_idx], 2, 100, 60);
     d2.set_delta(50, 0);
     release_copy_drag(&mut editor, d2);
-    let pending = editor
-        .pending_copy_drag_state
-        .as_ref()
-        .expect("note should exist");
-    assert_eq!(
-        pending.delta_tick, 150,
-        "累积模式：副本从上次副本位置继续偏移"
-    );
-    assert_eq!(pending.delta_key, 0);
+
+    // 松手即提交：内存 = 原件 + 副本1(100) + 副本2(150)
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 3);
+    let ticks: Vec<u32> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|n| n.start_tick)
+        .collect();
+    assert_eq!(ticks, vec![0, 100, 150], "连续复制：100 + 50 = 150");
 }
 
 #[test]
@@ -646,26 +685,36 @@ fn test_released_copy_drag_accumulates_delta_across_axes() {
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.selection_insert(0);
 
-    // 第一次复制：tick+100, key+5
+    // 第一次复制：tick+100, key+5 → 立即提交
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 5);
     release_copy_drag(&mut editor, d1);
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
 
-    // 第二次复制：从副本位置再拖 tick-30, key+2
-    let mut d2 = DragState::from_indices([0], 1, 100, 65);
+    // 第二次复制：从副本位置（tick 100, key 65）再拖 tick-30, key+2
+    // → 新副本 = 副本 + (-30, +2) = 原件 + (70, 7)
+    let copy_idx = editor
+        .get_selected_indices()
+        .first()
+        .copied()
+        .expect("复制提交后副本应选中");
+    let mut d2 = DragState::from_indices([copy_idx], 2, 100, 65);
     d2.set_delta(-30, 2);
     release_copy_drag(&mut editor, d2);
-    let pending = editor
-        .pending_copy_drag_state
-        .as_ref()
-        .expect("note should exist");
-    assert_eq!(pending.delta_tick, 70, "累积 tick: 100 + (-30)");
-    assert_eq!(pending.delta_key, 7, "累积 key: 5 + 2");
+
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 3);
+    let copy2 = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .find(|n| n.start_tick == 70)
+        .expect("副本2（tick 70）应存在");
+    assert_eq!(copy2.key, 67, "累积 key: 5 + 2 = 7");
 }
 
-// ===== BUG 复现：pending_copy 存在时，无 Ctrl 在副本框内拖动（移动模式） =====
-// 期望：原件跟随鼠标移动（drag delta 生效），副本跟随原件同步平移
-//（原件不再框选——用户要求；移动入口 = 副本框）
+// ===== BUG 复现：复制提交后，无 Ctrl 在副本框内拖动（移动模式） =====
+// 期望：副本（最新件）跟随鼠标移动，原件不受影响（原件不再框选）
 
 #[test]
 fn test_move_drag_from_original_with_pending_copy_moves_both() {
@@ -677,12 +726,13 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
     editor.editor_state.view.set_snap_precision(10.0);
     editor.selection_insert(0);
 
-    // 先 Ctrl+复制：delta=(100, 0)，副本位于 tick 100（UI 层，未提交）
+    // 先 Ctrl+复制：delta=(100, 0)，副本立即真实化并选中（tick 100）
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 0);
     release_copy_drag(&mut editor, d1);
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
 
-    // 无 Ctrl，在副本框内（tick 340 中心）按下 → DraggingSelection（移动模式）
+    // 无 Ctrl，在副本框内（tick 340 中心）按下 → DraggingSelection（移动副本）
     let copy_x = editor.editor_state.view.tick_to_x(340.0);
     let copy_y = editor.editor_state.view.key_to_y(60) + editor.editor_state.view.zoom_y / 2.0;
     let copy_center = iced_core::Point::new(copy_x, copy_y);
@@ -693,8 +743,8 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
         EditState::DraggingSelection { drag_state } => {
             assert_eq!(drag_state.delta_tick, 0, "按下时 delta 应为 0");
             assert!(
-                !drag_state.selected.is_empty() && drag_state.selected[0],
-                "原件索引应被选中参与拖动"
+                !drag_state.selected.is_empty() && drag_state.selected[1],
+                "副本索引（1）应被选中参与拖动"
             );
         }
         other => panic!("应进入 DraggingSelection（移动），实际 {:?}", other),
@@ -709,15 +759,15 @@ fn test_move_drag_from_original_with_pending_copy_moves_both() {
         assert_eq!(drag_state.delta_tick, 50, "拖动后 drag_state.delta 应为 50");
     }
 
-    // 渲染层验证：原件 ghost 应在 tick 50，副本 ghost 应在 tick 150
+    // 渲染层验证：原件(0) 不动，副本 ghost 在 tick 150
     let mut visible: Vec<(f32, u16, f32)> = Vec::new();
     editor.collect_visible_note_data(&mut visible, None, 0.0);
     let mut ticks: Vec<f32> = visible.iter().map(|(t, _, _)| *t).collect();
     ticks.sort_by(|a, b| a.total_cmp(b));
     assert_eq!(
         ticks,
-        vec![50.0, 150.0],
-        "原件(50)与副本(150)都应跟随拖动偏移，实际 {:?}",
+        vec![0.0, 150.0],
+        "原件(0)保持、副本(150)跟随拖动，实际 {:?}",
         ticks
     );
 }
@@ -783,10 +833,11 @@ fn test_build_ghost_delta_positions_disabled_when_copy_pending() {
     editor.editor_state.view.set_snap_precision(10.0);
     editor.selection_insert(0);
 
-    // pending_copy 存在（复制未提交）→ ghost 增量必须禁用（副本实例破坏 GPU 布局）
+    // pending_copy 存在（拖动中 DraggingSelectionCopy / 提交失败兜底场景）
+    // → ghost 增量必须禁用（副本实例破坏 GPU 布局）
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 0);
-    release_copy_drag(&mut editor, d1);
+    editor.pending_copy_drag_state = Some(d1);
 
     let positions = editor.build_ghost_delta_positions(&[0usize]);
     assert!(
@@ -797,11 +848,11 @@ fn test_build_ghost_delta_positions_disabled_when_copy_pending() {
 }
 
 // ===== BUG 修复回归：连续复制「复制下一份」完整交互序列 =====
-// - 复制后只保留最新件（副本）框选，原件不再框选（用户要求）
+// - 松手即提交：每次复制副本立即真实化并只保留最新件（副本）框选
 // - Ctrl+拖动副本框 = 复制下一份：拖动中旧副本保持 + 新副本跟手（双副本），
-//   松手时旧副本提交入内存、新副本累积（BUG 2 修复，不再被吞并）
+//   松手时新副本提交入内存（从副本位置继续偏移）
 
-/// 模拟完整交互序列：复制松手（pending）→ Ctrl+拖动副本框 → 拖动 → 松手
+/// 模拟完整交互序列：复制（松手即提交）→ Ctrl+拖动副本框 → 拖动 → 松手
 #[test]
 fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     let mut editor = Editor::new();
@@ -812,15 +863,16 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     editor.editor_state.view.set_snap_precision(10.0);
     editor.selection_insert(0);
 
-    // 第一次复制：delta=(100, 0) → 副本位于 tick 100（UI 层，未写内存）
+    // 第一次复制：delta=(100, 0) → 松手即提交，副本真实化（tick 100）
     let mut d1 = DragState::from_indices([0], 1, 0, 60);
     d1.set_delta(100, 0);
     release_copy_drag(&mut editor, d1);
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
-        1,
-        "第一次复制松手后 document 不应变"
+        2,
+        "第一次复制松手后副本应已写入内存"
     );
+    assert!(editor.pending_copy_drag_state.is_none());
 
     // 保持 Ctrl，在副本框位置（tick 100 中心，音符长度 480 → 中心 340）再次按下
     // 预计算所有屏幕坐标（避免借用跨越可变调用）
@@ -845,8 +897,8 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
             other
         ),
     }
-    // 按下不提交：document 未写入（先 UI 后内存）
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
+    // 拖动中 document 未写入（ghost 方案：松手才提交）
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
 
     // 拖动 +50 tick：340 → 390，副本2 从副本1 位置继续偏移
     editor.handle_moved(iced_core::Point::new(moved_x, copy_center_y));
@@ -863,20 +915,13 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
         ticks
     );
 
-    // 松手：旧副本提交入内存（count=2），新副本累积 delta=150
+    // 松手：新副本提交入内存（count=3），选中副本2（tick 150）
     editor.handle_released();
-    let pending = editor
-        .pending_copy_drag_state
-        .as_ref()
-        .expect("累积后 pending 应存在");
-    assert_eq!(
-        pending.delta_tick, 150,
-        "累积模式：100 + 50 = 150（新副本相对原件的总偏移）"
-    );
+    assert!(editor.pending_copy_drag_state.is_none());
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
-        2,
-        "旧副本应已提交入内存（真实化）"
+        3,
+        "松手即提交：内存 = 原件 + 副本1 + 副本2"
     );
     // 只保留最新件框选：选择框应位于副本2（tick 150）位置，原件不再框选
     let rects = editor.get_selection_box_rects();
@@ -917,14 +962,167 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     );
     editor.handle_moved(iced_core::Point::new(moved_x_2, copy_center_y));
     editor.handle_released();
-    let pending = editor
-        .pending_copy_drag_state
-        .as_ref()
-        .expect("note should exist");
-    assert_eq!(pending.delta_tick, 200, "连续复制：150 + 50 = 200");
+    assert!(editor.pending_copy_drag_state.is_none());
     assert_eq!(
         editor.editor_state.data.current_track_note_count(),
-        3,
-        "第二次连续复制：副本2 提交入内存，内存 = 原件 + 副本1 + 副本2"
+        4,
+        "第三次复制：内存 = 原件 + 副本1 + 副本2 + 副本3"
+    );
+}
+
+// ===== BUG 复现：Ctrl+拖动复制时「上下拖动」（key 偏移）复制不生效 =====
+// 用户报告：按住 Ctrl 拖动批量框选内容时，上下拖动的复制不起作用——
+// 音符表面上成功放置了（UI ghost 显示），但滚动一下又消失，内存没有数据。
+// 根因：复制采用「延迟提交」（松手只保存 pending_copy_drag_state，点击
+// 空白处才写入内存），用户复制后未点击空白处即滚动/查看 → 副本只在 UI 层、
+// 内存无数据。
+// 修复：复制改为**松手即提交**——副本立即写入 document（真实化），
+// 滚动/切换视图后副本作为真实音符持续存在。
+// 本测试模拟完整交互：按下 → 上下移动 → 松手，验证副本已真实化。
+
+/// 完整交互模拟：seed → 选中 → Ctrl+按下选择框内部 → 上下移动 → 松手
+fn full_ctrl_drag_vertical_copy(
+    editor: &mut Editor,
+    delta_keys: i16,
+) -> Option<lumino_editor_state::DragState> {
+    let (center_x, center_y, moved_y) = {
+        let v = &editor.editor_state.view;
+        let center_x = v.tick_to_x(240.0);
+        let center_y = v.key_to_y(60) + v.zoom_y / 2.0;
+        let moved_y = v.key_to_y((60 + delta_keys).clamp(0, 127) as u16) + v.zoom_y / 2.0;
+        (center_x, center_y, moved_y)
+    };
+
+    // Ctrl+按下选择框内部 → DraggingSelectionCopy
+    editor.set_ctrl_pressed(true);
+    editor.handle_pressed(iced_core::Point::new(center_x, center_y), false);
+    assert!(
+        matches!(
+            editor.editor_state.interaction.edit_state,
+            EditState::DraggingSelectionCopy { .. }
+        ),
+        "Ctrl+按下应进入 DraggingSelectionCopy，实际 {:?}",
+        editor.editor_state.interaction.edit_state
+    );
+
+    // 上下移动：key 60 → 60 + delta_keys
+    editor.handle_moved(iced_core::Point::new(center_x, moved_y));
+
+    // 拖动中 delta_key 应已更新
+    if let EditState::DraggingSelectionCopy { drag_state } =
+        &editor.editor_state.interaction.edit_state
+    {
+        assert_eq!(
+            drag_state.delta_key, delta_keys,
+            "拖动中 delta_key 应为 {}，实际 {}",
+            delta_keys, drag_state.delta_key
+        );
+    }
+
+    // 松手：副本立即写入内存（松手即提交）
+    editor.handle_released();
+    editor.pending_copy_drag_state.clone()
+}
+
+#[test]
+fn test_repro_ctrl_drag_vertical_copy_up() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.editor_state.view.set_snap_precision(10.0);
+    editor.selection_insert(0);
+
+    let pending = full_ctrl_drag_vertical_copy(&mut editor, 3);
+    // 松手即提交：pending 已清空，document 已有副本
+    assert!(pending.is_none(), "松手即提交后 pending 应清空");
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        2,
+        "副本应已写入内存（上下拖动复制生效）"
+    );
+    // 副本在 key 63、tick 不变
+    let notes: Vec<_> = editor.editor_state.data.current_track_notes().iter().collect();
+    let copy = notes
+        .iter()
+        .find(|n| n.key == 63)
+        .expect("副本（key 63）应已写入内存");
+    assert_eq!(copy.start_tick, 0, "纯上下拖动 tick 不变");
+    // 原件保留在 key 60
+    assert!(notes.iter().any(|n| n.key == 60), "原件应保留");
+}
+
+#[test]
+fn test_repro_ctrl_drag_vertical_copy_down() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.editor_state.view.set_snap_precision(10.0);
+    editor.selection_insert(0);
+
+    let pending = full_ctrl_drag_vertical_copy(&mut editor, -3);
+    assert!(pending.is_none(), "松手即提交后 pending 应清空");
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        2,
+        "向下拖动复制应写入内存"
+    );
+    let notes: Vec<_> = editor.editor_state.data.current_track_notes().iter().collect();
+    assert!(notes.iter().any(|n| n.key == 57), "副本（key 57）应已写入");
+    assert!(notes.iter().any(|n| n.key == 60), "原件应保留");
+}
+
+/// 复现：上下拖动复制松手后，渲染层应仍能看到副本（滚动后不消失）
+#[test]
+fn test_repro_ctrl_drag_vertical_copy_visible_after_release() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.editor_state.view.set_snap_precision(10.0);
+    editor.selection_insert(0);
+
+    full_ctrl_drag_vertical_copy(&mut editor, 3);
+    // 松手即提交后：pending 清空，副本是真实音符 → collect 走正常路径仍可见
+    assert!(editor.pending_copy_drag_state.is_none());
+    let mut visible: Vec<(f32, u16, f32)> = Vec::new();
+    editor.collect_visible_note_data(&mut visible, None, 0.0);
+    let keys: Vec<u16> = visible.iter().map(|(_, k, _)| *k).collect();
+    assert!(
+        keys.contains(&60),
+        "原件（key 60）应仍可见，实际 {:?}",
+        keys
+    );
+    assert!(
+        keys.contains(&63),
+        "副本（key 63）应仍可见（滚动后不消失），实际 {:?}",
+        keys
+    );
+}
+
+/// 复现：复制松手后滚动视口（scroll_y 变化），副本应保持可见
+#[test]
+fn test_repro_ctrl_drag_vertical_copy_visible_after_scroll() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.editor_state.view.set_snap_precision(10.0);
+    editor.selection_insert(0);
+
+    full_ctrl_drag_vertical_copy(&mut editor, 3);
+    assert!(editor.pending_copy_drag_state.is_none());
+
+    // 模拟滚动：垂直滚动 1 个 key 距离（副本 key 63 仍在视口内）
+    editor.editor_state.view.scroll_y = editor.editor_state.view.zoom_y;
+
+    let mut visible: Vec<(f32, u16, f32)> = Vec::new();
+    editor.collect_visible_note_data(&mut visible, None, 0.0);
+    let keys: Vec<u16> = visible.iter().map(|(_, k, _)| *k).collect();
+    assert!(
+        keys.contains(&63),
+        "滚动后副本（key 63）应仍可见，实际 {:?}",
+        keys
     );
 }

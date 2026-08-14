@@ -256,7 +256,8 @@ impl Editor {
     /// 提交 pending 批量复制到 document（音符唯一权威）
     ///
     /// 在以下场景调用：
-    /// - 用户点击空白处取消框选时（`flush_pending_drag`）
+    /// - 复制拖动松手时（`handle_released` 的 `DraggingSelectionCopy` 分支，松手即提交）
+    /// - `flush_pending_drag`（点击空白处，兜底）
     /// - `commit_current_edit()` 自动提交（Save/Play/Export 前的 fallback）
     ///
     /// 复制模式：将选中音符按 `pending_copy_drag_state.delta` 偏移后

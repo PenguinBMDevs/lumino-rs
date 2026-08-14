@@ -78,8 +78,8 @@ pub enum EditState {
     ///
     /// 与 `DraggingSelection` 的区别：原始音符保持原位不动，
     /// 副本在 `note + drag_state.delta` 位置渲染预览（UI 层）。
-    /// 松手后保存到 `pending_copy_drag_state`，用户点击空白处退出
-    /// 框选时才真正 `batch_insert_notes` 写入内存层。
+    /// 松手时**立即** `batch_insert_notes` 写入内存层（松手即提交，
+    /// 副本真实化；连续复制从副本框继续 Ctrl+拖动）。
     DraggingSelectionCopy {
         drag_state: DragState,
     },

@@ -613,7 +613,13 @@ fn test_set_ppq_syncs_document_division() {
     // 与视图同源，此处故意制造不一致以验证 set_ppq 能把 document 拉齐）
     assert_eq!(root.editor.editor_state.view.ppq, 1920);
     assert_eq!(
-        root.editor.editor_state.data.document.as_ref().unwrap().division,
+        root.editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .expect("测试文档应已挂载")
+            .division,
         480
     );
 
@@ -624,7 +630,13 @@ fn test_set_ppq_syncs_document_division() {
     assert_eq!(root.editor.editor_state.view.ppq, 960);
     // 保存链路权威源必须同步——修复前此处保持 480，工程文件落盘错误
     assert_eq!(
-        root.editor.editor_state.data.document.as_ref().unwrap().division,
+        root.editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .expect("测试文档应已挂载")
+            .division,
         960,
         "document.division 应随 PPQ 修改同步，保证工程文件保存新 PPQ"
     );

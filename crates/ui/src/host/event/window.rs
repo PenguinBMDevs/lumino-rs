@@ -80,6 +80,44 @@ impl Host {
             self.ui_dirty = true;
             self.window_ctx.window.request_redraw();
         }
+
+        // 全局兜底：画布内按下、画布外释放（力度面板/滚动条/窗口外）时，
+        // iced 画布收不到 ButtonReleased，编辑状态（拖动/批量移动/批量复制/
+        // 框选/绘制/调整大小）卡死无法收尾——pending 复制/拖动不保存、
+        // ghost 卡在屏幕上、后续点击会吞掉未完成的操作。
+        // 典型场景：Ctrl+拖动批量复制时把选区向下拖出键盘底部（力度面板区）
+        // 松手，副本"表面上放置成功"，但复制从未写入 pending/内存，
+        // 滚动后副本消失、内存无数据。
+        // handle_released 幂等（Idle 时 noop）：正常画布内释放时兜底先于
+        // iced 画布转发执行，画布稍后的 Released 变为 noop，重复执行无害。
+        if button == winit::event::MouseButton::Left
+            && state == ElementState::Released
+            && self.editor_has_incomplete_pointer_edit()
+        {
+            self.handle_action(crate::message::EditorAction::Released);
+            self.ui_dirty = true;
+        }
+    }
+
+    /// 编辑器是否处于「鼠标按下中」的编辑状态（等待释放收尾）
+    ///
+    /// 用于全局左键释放兜底：画布内按下后移到画布外释放时，iced 画布
+    /// 收不到 ButtonReleased，这些状态会卡死。host 层监听到左键释放时，
+    /// 若编辑器仍处于按下中状态，补发 `EditorAction::Released` 完成收尾。
+    fn editor_has_incomplete_pointer_edit(&self) -> bool {
+        matches!(
+            self.root.editor.editor_state.interaction.edit_state,
+            crate::editor::EditState::Selecting { .. }
+                | crate::editor::EditState::Drawing { .. }
+                | crate::editor::EditState::PendingDrag { .. }
+                | crate::editor::EditState::Dragging { .. }
+                | crate::editor::EditState::DraggingSelection { .. }
+                | crate::editor::EditState::DraggingSelectionCopy { .. }
+                | crate::editor::EditState::ResizingStart { .. }
+                | crate::editor::EditState::ResizingEnd { .. }
+                | crate::editor::EditState::ResizingSelectionStart { .. }
+                | crate::editor::EditState::ResizingSelectionEnd { .. }
+        )
     }
 
     fn handle_modifiers_changed_event(&mut self, new_modifiers: &winit::event::Modifiers) {
