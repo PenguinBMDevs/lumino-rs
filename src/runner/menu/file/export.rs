@@ -43,10 +43,14 @@ impl RunnerInner {
                 }
                 // 阻塞加载刚保存的 MIDI 文件，并把 document 移入 UI（单一权威源）
                 if let Some(ref source) = self.midi_state.current_midi_source.clone() {
+                    // 看门狗在加载前确保已启动，并标记加载状态（导出自动重载同样是加载 MIDI）
+                    lumino_memory_monitor::watchdog::spawn_watchdog();
+                    lumino_memory_monitor::midi_guard::set_midi_load_active(true);
                     match futures::executor::block_on(lumino_midi_loader::loader::load_midi(
                         source.clone(),
                     )) {
                         Ok(parsed) => {
+                            lumino_memory_monitor::midi_guard::set_midi_load_active(false);
                             // Arc::try_unwrap 零拷贝拆出（自动保存路径上 Arc 唯一）
                             let Some(doc) =
                                 parsed.document.and_then(|arc| Arc::try_unwrap(arc).ok())
@@ -58,6 +62,7 @@ impl RunnerInner {
                             ui.set_midi_document(doc);
                         }
                         Err(e) => {
+                            lumino_memory_monitor::midi_guard::set_midi_load_active(false);
                             tracing::error!("自动保存后加载 MIDI 失败: {}", e);
                             return;
                         }

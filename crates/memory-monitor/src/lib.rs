@@ -48,7 +48,9 @@
 //! # 子模块
 //! - [`platform`]: 平台专属内存信息获取（Linux: /proc, macOS: sysctl/task_info, Windows: WinAPI）
 //! - [`watchdog`]: 完全独立的看门狗线程（Linux: SIGKILL, macOS: SIGKILL, Windows: TerminateProcess）
+//! - [`midi_guard`]: MIDI 加载状态标志（看门狗只在加载 MIDI 期间监控内存）
 
+pub mod midi_guard;
 pub mod platform;
 pub mod watchdog;
 

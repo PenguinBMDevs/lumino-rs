@@ -10,6 +10,13 @@
 //! - 主监控在 95% soft_limit abort，触发时有 backtrace
 //! - 看门狗在 100% soft_limit 或系统内存 ≤ 350MB 时 SIGKILL
 //! - 50ms 轮询确保在突发分配瞬间吞掉最后 350MB 之前拦截
+//!
+//! 生效范围（Lumino 定制）：**只监控 MIDI 加载期间的内存**。
+//! - 加载路径（`runner::menu::file::load` 等）在加载前确保看门狗已启动，
+//!   加载开始前置位 `midi_guard::set_midi_load_active(true)`；
+//! - 看门狗每轮检查该标志：非加载状态一律不检查、不终止；
+//! - 加载结束（成功或失败）清除标志，看门狗恢复休眠。
+//! - 除加载 MIDI 之外的场景一律不监控。
 
 use std::sync::OnceLock;
 
@@ -200,6 +207,13 @@ pub fn spawn_watchdog() -> bool {
         .spawn(move || {
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(WATCHDOG_INTERVAL_MS));
+
+                // 只监控 MIDI 加载期间的内存：非加载状态一律不检查、不终止。
+                // 看门狗在加载路径（load_midi_file 等）加载前确保已启动，
+                // 加载开始前置位 MIDI_LOAD_ACTIVE，加载结束（成功/失败）后清除。
+                if !crate::midi_guard::midi_load_active() {
+                    continue;
+                }
 
                 let rss = watchdog_get_process_rss(pid);
                 let available = watchdog_get_available_memory();
