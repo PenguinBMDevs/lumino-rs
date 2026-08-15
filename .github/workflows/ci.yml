@@ -1,4 +1,3 @@
-# .github/workflows/ci.yml
 name: CI Check
 
 on:
@@ -38,7 +37,8 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Cache
+      # 优化后的缓存配置：支持降级匹配
+      - name: Cache cargo & target
         uses: actions/cache@v4
         with:
           path: |
@@ -46,9 +46,15 @@ jobs:
             ~/.cargo/git
             target
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
 
+      # 先检查（会利用缓存编译依赖）
       - name: Cargo check
         run: cargo check --workspace
 
+      # 测试（链接时使用修复的环境变量，仅 Windows 生效）
       - name: Cargo test
         run: cargo test --workspace
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
