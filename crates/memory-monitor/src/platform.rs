@@ -107,25 +107,39 @@ pub fn get_current_rss() -> u64 {
     0
 }
 
+/// macOS `task_basic_info_64` 结构体（与系统 ABI 一致，48 字节）。
+///
+/// 必须完整保留全部字段：XNU 的 `task_info_internal` 要求调用方提供
+/// `TASK_BASIC_INFO_64_COUNT`（12 个字）大小的缓冲区，否则直接返回
+/// `KERN_INSUFFICIENT_SPACE` 且不写入任何数据。libc crate 未导出该类型，
+/// 故按 XNU `mach/task_info.h` 手写。
+#[cfg(target_os = "macos")]
+#[repr(C)]
+struct TaskBasicInfo64 {
+    virtual_size: u64, // 偏移 0
+    resident_size: u64, // 偏移 8 —— 即 RSS
+    resident_size_max: u64, // 偏移 16
+    user_time_seconds: i32, // time_value_t
+    user_time_microseconds: i32,
+    system_time_seconds: i32,
+    system_time_microseconds: i32,
+    policy: i32,
+    suspend_count: i32,
+}
+
 #[cfg(target_os = "macos")]
 pub fn get_current_rss() -> u64 {
-    const MACH_TASK_BASIC_INFO: u32 = 20;
+    const MACH_TASK_BASIC_INFO_64: u32 = 33;
+    const TASK_BASIC_INFO_64_COUNT: u32 = 12;
     const KERN_SUCCESS: i32 = 0;
 
-    #[repr(C)]
-    struct MachTaskBasicInfo {
-        virtual_size: u64,
-        resident_size: u64,
-        resident_size_max: u64,
-    }
-
-    let mut info = std::mem::MaybeUninit::<MachTaskBasicInfo>::uninit();
-    let mut count = (std::mem::size_of::<MachTaskBasicInfo>() / std::mem::size_of::<u32>()) as u32;
+    let mut info = std::mem::MaybeUninit::<TaskBasicInfo64>::uninit();
+    let mut count = TASK_BASIC_INFO_64_COUNT;
 
     let task_result = unsafe {
         libc::task_info(
             libc::mach_task_self(),
-            MACH_TASK_BASIC_INFO,
+            MACH_TASK_BASIC_INFO_64,
             info.as_mut_ptr() as libc::task_info_t,
             &mut count,
         )
@@ -137,6 +151,24 @@ pub fn get_current_rss() -> u64 {
         tracing::warn!("MemoryMonitor: task_info 失败 (result={task_result}), 跳过检查");
         0
     }
+}
+
+/// 回归测试：`TaskBasicInfo64` 必须与系统 ABI 完全一致，
+/// 否则 `task_info` 会返回 `KERN_INSUFFICIENT_SPACE` 或读到错位字段。
+#[cfg(target_os = "macos")]
+#[test]
+fn test_macos_task_basic_info_layout() {
+    assert_eq!(std::mem::size_of::<TaskBasicInfo64>(), 48, "应为 48 字节（12 个字）");
+    assert_eq!(
+        std::mem::offset_of!(TaskBasicInfo64, resident_size),
+        8,
+        "resident_size 应位于偏移 8"
+    );
+    assert_eq!(
+        std::mem::offset_of!(TaskBasicInfo64, virtual_size),
+        0,
+        "virtual_size 应位于偏移 0"
+    );
 }
 
 #[cfg(target_os = "windows")]
