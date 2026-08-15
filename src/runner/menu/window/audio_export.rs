@@ -115,7 +115,23 @@ impl RunnerInner {
             progress_callback: Some(progress_cb),
         };
 
-        // 2. 在后台线程执行音频渲染，避免阻塞主线程 UI
+        // 2. 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo（与保存/云存/工程导出一致）：
+        //    doc.tempo_changes 是加载文件时的值，用户经工程设置/速度面板修改的 BPM
+        //    只写入 tempo_points、不回写 doc——不覆盖会按旧 tempo 导出（BPM 修改不生效）。
+        let editor_tempos: Vec<(u32, f32)> = self
+            .window_state
+            .window
+            .ui()
+            .root()
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .map(|tp| (tp.tick.max(0.0) as u32, tp.bpm as f32))
+            .collect();
+
+        // 3. 在后台线程执行音频渲染，避免阻塞主线程 UI
         let output_path_display = config.output_path.display().to_string();
         let doc_clone = document.clone();
         let _ = std::thread::Builder::new()
@@ -123,7 +139,15 @@ impl RunnerInner {
             .spawn(move || {
                 let start = Instant::now();
                 let render_result = match &doc_clone {
-                    Some(doc) => lumino_export::audio::render_audio_from_document(&config, doc),
+                    Some(doc) => {
+                        // Arc 快照不可变：克隆 owned 副本后覆盖 tempo。
+                        // ChunkedList 为块级浅拷贝（O(块数) 指针拷贝），不复制音符数据。
+                        let mut snapshot = (**doc).clone();
+                        if !editor_tempos.is_empty() {
+                            snapshot.tempo_changes = editor_tempos;
+                        }
+                        lumino_export::audio::render_audio_from_document(&config, &snapshot)
+                    }
                     None => lumino_export::audio::render_audio(&config),
                 };
 

@@ -119,6 +119,26 @@ mod tests {
     }
 
     #[test]
+    fn test_1920ppq_constant() {
+        // 120 BPM, PPQN=1920（编辑器默认 PPQ）→ 每秒 4 拍 = 3840 ticks/s。
+        // 回归保护：渲染模块必须用文档真实 PPQ（doc.division）换算，
+        // 此前硬编码 480 导致 1920 PPQ 文档 tick→秒放大 4 倍（时长/速度错误）。
+        let tempos = vec![(0, 120.0)];
+        let conv = TickToTime::new(tempos.clone(), 1920);
+        let secs = conv.tick_to_seconds(3840);
+        assert!(
+            (secs - 1.0).abs() < 0.001,
+            "120BPM 3840ticks = 1s, got {secs}"
+        );
+        // 同一 tick 数按 480 换算应是 4 秒（验证两者语义差异）
+        let conv480 = TickToTime::new(tempos, 480);
+        assert!(
+            (conv480.tick_to_seconds(3840) - 4.0).abs() < 0.001,
+            "同 tick 按 480 PPQ 换算应为 4s"
+        );
+    }
+
+    #[test]
     fn test_tempo_change() {
         // tick 0: 120 BPM, tick 480: 60 BPM
         // 0-480 ticks @120BPM = 0.5s

@@ -85,7 +85,11 @@ pub fn render_audio_from_document(
     let mut sink = create_output_sink(config)?;
     let mut engine = AudioEngine::new(config.clone())?;
     let tempos = doc.tempo_changes.clone();
-    let ppqn = 480;
+    // PPQ 分辨率必须与文档一致：音符/事件 tick 基于 `doc.division`
+    // （MIDI 文件头 PPQ，或编辑器当前 PPQ）。此前硬编码 480 导致
+    // 非 480 PPQ 文档（如 192/960/1920）的 tick→秒换算被放大
+    // （division/480 倍），导出音频时长错误、速度减慢但音调正常。
+    let ppqn = u32::from(doc.division.max(1));
     let mut tick_conv = TickToTime::new(tempos, ppqn);
     let mut processor =
         MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);
