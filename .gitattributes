@@ -1,4 +1,6 @@
-* text eol=lf
+# Lumino: 文本文件统一 LF；二进制文件交给 git 自动探测（text=auto），
+# 避免文本转换破坏 PNG/ICO/素材归档等二进制资源（曾导致 CI 调色板测试全挂）。
+* text=auto eol=lf
 # These settings are for any web project
 
 # Handle line endings automatically for files detected as text
@@ -106,3 +108,10 @@ AUTHORS text
 *.woff binary
 *.pyc binary
 *.pdf binary
+
+# Lumino 编译期嵌入的二进制资源（build.rs 扫描，禁止文本换行转换）
+*.lmmaterial binary
+*.lmpj binary
+*.webp binary
+*.bmp binary
+*.woff2 binary
