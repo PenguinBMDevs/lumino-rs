@@ -140,7 +140,7 @@ pub struct SettingsMetadata {
 }
 
 /// 统计信息
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct StatsMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub edit_count: Option<u64>,

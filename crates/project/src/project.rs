@@ -171,6 +171,28 @@ impl LuminoProject {
             .collect();
     }
 
+    /// 设置累计创作时间（秒），写入 `metadata.stats.working_time_seconds`
+    ///
+    /// 所有保存/导出出口在构建 `LuminoProject` 后必须调用本方法，
+    /// 否则累计创作时间不会随工程文件持久化（跨会话丢失）。
+    pub fn set_working_time_seconds(&mut self, secs: f64) {
+        self.metadata.stats = Some(crate::project::metadata::StatsMetadata {
+            working_time_seconds: Some(secs.max(0.0).round() as u64),
+            ..Default::default()
+        });
+    }
+
+    /// 读取累计创作时间（秒）
+    ///
+    /// 未保存过（stats 缺失）时返回 0。
+    pub fn working_time_seconds(&self) -> f64 {
+        self.metadata
+            .stats
+            .as_ref()
+            .and_then(|s| s.working_time_seconds)
+            .unwrap_or(0) as f64
+    }
+
     /// 添加音轨
     pub fn add_track(&mut self, data: LmtrackData) {
         let track_id = data.meta.track_id;
@@ -195,6 +217,37 @@ mod tests {
         assert_eq!(project.metadata.project.name, "Test");
         assert!(project.tracks.is_empty());
         assert!(project.tempo_changes.is_empty());
+    }
+
+    #[test]
+    fn test_working_time_seconds_roundtrip() {
+        let mut project = LuminoProject::new("Test");
+        // 未设置时返回 0
+        assert_eq!(project.working_time_seconds(), 0.0);
+
+        // 写入后读取（四舍五入取整）
+        project.set_working_time_seconds(3661.7);
+        assert_eq!(project.working_time_seconds(), 3662.0);
+
+        // TOML 序列化包含 [stats] 段，反序列化保留
+        let toml_str = project.metadata.to_toml_str().expect("序列化失败");
+        assert!(
+            toml_str.contains("[stats]"),
+            "stats 段应被序列化: {toml_str}"
+        );
+        assert!(
+            toml_str.contains("working_time_seconds = 3662"),
+            "{toml_str}"
+        );
+        let decoded = ProjectMetadata::from_toml_str(&toml_str).expect("反序列化失败");
+        assert_eq!(
+            decoded.stats.expect("应有 stats 段").working_time_seconds,
+            Some(3662)
+        );
+
+        // 负数钳制为 0
+        project.set_working_time_seconds(-5.0);
+        assert_eq!(project.working_time_seconds(), 0.0);
     }
 
     #[test]

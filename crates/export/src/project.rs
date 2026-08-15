@@ -144,6 +144,9 @@ pub fn project_to_parsed_midi(
     Ok(lumino_midi_loader::ParsedMidi {
         info,
         document: Some(std::sync::Arc::new(document)),
+        // 历史累计创作时间随工程文件传递，供 Runner 注入会话计时器
+        // （常规 MIDI 文件加载路径为 0，此处从 .lmpj metadata.stats 读取）
+        accumulated_editing_secs: project.working_time_seconds(),
     })
 }
 
@@ -356,6 +359,31 @@ mod tests {
         assert_eq!(track1_notes[1].start_tick, 120);
         assert_eq!(track1_notes[1].end_tick, 600);
         assert_eq!(track1_notes[1].key, 67);
+    }
+
+    #[test]
+    fn test_working_time_survives_save_load_roundtrip() {
+        let dir = tempdir().expect("临时目录应创建成功");
+        let mut project = make_test_project();
+        project.set_working_time_seconds(12345.6);
+
+        // 归档形态：保存 → 加载 → 累计时间保留（四舍五入取整）
+        let archive_path = dir.path().join("stats_project.lmpj");
+        save_to_archive(&project, &archive_path).expect("保存归档失败");
+        let loaded = load_project(&archive_path).expect("加载归档失败");
+        assert_eq!(loaded.working_time_seconds(), 12346.0);
+
+        // Runner 的加载路径：project_to_parsed_midi 必须把累计时间传给 ParsedMidi
+        let parsed = project_to_parsed_midi(&loaded, &archive_path).expect("重建 ParsedMidi 失败");
+        assert_eq!(parsed.accumulated_editing_secs, 12346.0);
+
+        // 文件夹形态同样保留（入口路径需带扩展名：内部 with_extension("") 推导数据目录，
+        // 无扩展名路径在 Windows 上会生成带尾点的非法目录名）
+        let folder_entry = dir.path().join("stats_folder.lmpj");
+        save_project_to_folder_with_entry(&project, &folder_entry, 128)
+            .expect("保存文件夹工程失败");
+        let loaded2 = load_project(&folder_entry).expect("加载文件夹工程失败");
+        assert_eq!(loaded2.working_time_seconds(), 12346.0);
     }
 
     #[test]

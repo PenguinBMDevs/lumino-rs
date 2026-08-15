@@ -55,6 +55,8 @@ impl LmpjData {
         ParsedMidi {
             info: self.info,
             document: None,
+            // 旧版 LMPJ 格式无 stats 段，历史累计时间按 0 处理
+            accumulated_editing_secs: 0.0,
         }
     }
 }
@@ -69,6 +71,13 @@ pub struct ParsedMidi {
     /// 共享同一份事件数据而无需深拷贝 `document.clone()`（后者会复制 `Vec<CompactEvent>`，
     /// 对 10M 事件的黑乐谱来说就是额外 120MB）。
     pub document: Option<Arc<MidiDocument>>,
+    /// 历史累计创作时间（秒）
+    ///
+    /// 从 `.lmpj` 工程文件 `metadata.stats.working_time_seconds` 加载，
+    /// 供 Runner 注入 `SessionTracker.accumulated_editing_secs`，实现跨会话累计；
+    /// 常规 MIDI 文件加载时为 0。
+    /// 不参与序列化（旧格式兼容：反序列化后为 0）。
+    pub accumulated_editing_secs: f64,
 }
 
 impl serde::Serialize for ParsedMidi {
@@ -91,6 +100,8 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
         Ok(ParsedMidi {
             info: helper.info,
             document: None,
+            // 旧数据没有该字段，反序列化后按 0 处理
+            accumulated_editing_secs: 0.0,
         })
     }
 }

@@ -291,6 +291,11 @@ impl RunnerInner {
         let author = self.window_state.window.ui().get_project_author();
         project.metadata.project.author = author;
 
+        // 累计创作时间写入工程元数据：历史累计 + 本次会话编辑时长。
+        // 保存时取实时值（current_editing_secs = accumulated + 会话已流逝），
+        // 重新加载时从 metadata.stats.working_time_seconds 恢复，跨会话不丢。
+        project.set_working_time_seconds(self.session_tracker.current_editing_secs());
+
         // 标记保存进行中（保存期间禁止关闭软件）
         self.saving.store(true, Ordering::SeqCst);
         let saving = self.saving.clone();

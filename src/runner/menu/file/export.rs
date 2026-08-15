@@ -92,6 +92,8 @@ impl RunnerInner {
             // 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo，
             // 保证用户修改的 BPM（工程设置/速度面板）随导出持久化
             project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
+            // 累计创作时间随导出持久化（与本地保存一致）
+            project.set_working_time_seconds(self.session_tracker.current_editing_secs());
             project
         };
 
