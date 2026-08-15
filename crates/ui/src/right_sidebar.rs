@@ -5,6 +5,7 @@
 pub mod convert;
 mod core;
 pub mod material;
+mod material_context_menu;
 mod materials_view;
 mod resize;
 pub mod view;

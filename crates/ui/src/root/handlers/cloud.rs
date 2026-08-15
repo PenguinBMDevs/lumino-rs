@@ -173,12 +173,26 @@ impl Root {
                 };
                 self.cloud.busy = true;
                 self.cloud.notice = None;
-                event::emit(event::Event::cloud(
-                    cloud_event::Event::SaveToCloudRequest {
-                        id,
-                        dir_path: self.cloud.current_path.clone(),
-                    },
-                ));
+                // 素材上传待办存在 → 上传素材文件（素材库右键"上传到云"）；
+                // 否则上传当前工程归档（文件菜单"保存到云"）。
+                if let Some(pending) = self.cloud.pending_upload.take() {
+                    event::emit(event::Event::cloud(
+                        cloud_event::Event::UploadMaterialRequest {
+                            id,
+                            dir_path: self.cloud.current_path.clone(),
+                            local_path: pending.local_path,
+                            file_name: pending.file_name,
+                            is_tmp: pending.is_tmp,
+                        },
+                    ));
+                } else {
+                    event::emit(event::Event::cloud(
+                        cloud_event::Event::SaveToCloudRequest {
+                            id,
+                            dir_path: self.cloud.current_path.clone(),
+                        },
+                    ));
+                }
             }
 
             // ── 文件操作（复制/剪切/粘贴/重命名/删除） ──

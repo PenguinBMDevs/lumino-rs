@@ -26,8 +26,8 @@ pub use batch_edit::{BatchEditAction, BatchEditField};
 pub use cloud_action::{CloudAction, CloudProtocolUi};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
-    PanelContextMenuItem, PianoRollContextMenuAction, PianoRollContextMenuItem,
-    TrackContextMenuItem,
+    MaterialContextMenuItem, PanelContextMenuItem, PianoRollContextMenuAction,
+    PianoRollContextMenuItem, TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;
 pub use load_confirm::LoadConfirmAction;

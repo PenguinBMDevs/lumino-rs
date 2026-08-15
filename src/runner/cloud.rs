@@ -22,6 +22,8 @@ pub enum CloudIntent {
     Save,
     /// 素材库"从云导入"（仅 .lmmaterial）
     Material,
+    /// 素材库"上传到云"（上传指定素材文件到目标目录）
+    UploadMaterial,
 }
 
 /// 锁并获取 CloudManager 可变引用（恢复 poisoned 锁）
@@ -41,6 +43,7 @@ impl RunnerInner {
                 let intent = match intent.as_str() {
                     "save" => CloudIntent::Save,
                     "material" => CloudIntent::Material,
+                    "material_upload" => CloudIntent::UploadMaterial,
                     _ => CloudIntent::Import,
                 };
                 self.ensure_cloud_ready(intent);
@@ -77,6 +80,13 @@ impl RunnerInner {
             cloud_event::Event::SaveToCloudRequest { id, dir_path } => {
                 self.run_cloud_save(id, dir_path);
             }
+            cloud_event::Event::UploadMaterialRequest {
+                id,
+                dir_path,
+                local_path,
+                file_name,
+                is_tmp,
+            } => self.run_cloud_upload_material(id, dir_path, local_path, file_name, is_tmp),
             cloud_event::Event::NewFolderRequest { id, parent, name } => {
                 self.run_cloud_new_folder(id, parent, name);
             }
@@ -104,6 +114,7 @@ impl RunnerInner {
                 let intent = match intent.as_str() {
                     "save" => CloudIntent::Save,
                     "material" => CloudIntent::Material,
+                    "material_upload" => CloudIntent::UploadMaterial,
                     _ => CloudIntent::Import,
                 };
                 self.refresh_cloud_connections();
@@ -157,6 +168,9 @@ impl RunnerInner {
             cloud_event::Event::SaveToCloudResult { ok, error } => {
                 self.apply_cloud_save_result(ok, error);
             }
+            cloud_event::Event::UploadMaterialResult { ok, error } => {
+                self.apply_cloud_upload_result(ok, error);
+            }
             cloud_event::Event::OperationResult { ok, error, kind } => {
                 self.apply_cloud_operation_result(ok, error, kind);
             }
@@ -183,11 +197,17 @@ impl RunnerInner {
     fn open_cloud_browser(&mut self, intent: CloudIntent) {
         let (filter, save_mode) = match intent {
             CloudIntent::Material => (Some("lmmaterial".to_string()), false),
-            CloudIntent::Save => (None, true),
+            // 保存模式：文件菜单"保存到云"（工程）与素材库"上传到云"（素材文件）
+            CloudIntent::Save | CloudIntent::UploadMaterial => (None, true),
             CloudIntent::Import => (None, false),
         };
         let auto_list_id = {
             let state = self.window_state.window.ui_mut().cloud_state_mut();
+            // 非素材上传入口：清除素材上传待办（防止残留导致"保存到云"
+            // 误把上一次未完成的素材上传当成当前上传目标）
+            if intent != CloudIntent::UploadMaterial {
+                state.pending_upload = None;
+            }
             state.filter = filter;
             state.save_mode = save_mode;
             state.notice = None;

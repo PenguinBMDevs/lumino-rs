@@ -207,6 +207,116 @@ impl RunnerInner {
         });
     }
 
+    // ── 上传素材到云（素材库右键"上传到云"） ──
+
+    /// 后台上传素材文件到云目标目录
+    ///
+    /// 与 `run_cloud_save`（导出工程归档）区分：本方法直接上传指定本地
+    /// 素材文件（.lmmaterial）。`is_tmp` 表示临时文件（内置素材），
+    /// 上传完成后删除。
+    pub(super) fn run_cloud_upload_material(
+        &mut self,
+        id: String,
+        dir_path: String,
+        local_path: String,
+        file_name: String,
+        is_tmp: bool,
+    ) {
+        // 云上传串行限制：已有上传进行中则忽略（避免并发写云导致文件混乱）
+        if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
+            tracing::warn!("云上传进行中，忽略素材上传请求");
+            self.window_state.window.ui_mut().cloud_state_mut().notice =
+                Some("正在上传中，请稍候再试".to_string());
+            return;
+        }
+        // 上传进行中：禁止关闭软件（完成后在 apply_cloud_upload_result 清除）
+        self.cloud_saving
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
+        // 云进度悬浮窗：开始上传
+        let progress_tx = self.window_state.cloud_progress_tx.clone();
+        let _ = progress_tx.send((format!("正在上传素材 {file_name}"), 0.2));
+
+        let mgr = self.cloud.clone();
+        std::thread::spawn(move || {
+            // 远程路径 = 目标目录 / 文件名
+            let remote = if dir_path.is_empty() {
+                file_name.clone()
+            } else {
+                format!("{}/{}", dir_path.trim_end_matches('/'), file_name)
+            };
+            let mut mgr = lock_cloud(&mgr);
+            let result = mgr.upload(&id, Path::new(&local_path), &remote);
+            // 临时文件（内置素材）上传后清理
+            if is_tmp {
+                let _ = std::fs::remove_file(&local_path);
+            }
+            let done_msg = if result.is_ok() {
+                format!("素材 {file_name} 已上传到云存储")
+            } else {
+                format!(
+                    "素材 {file_name} 上传失败：{}",
+                    result
+                        .as_ref()
+                        .err()
+                        .map(|e| e.to_string())
+                        .unwrap_or_default()
+                )
+            };
+            let _ = progress_tx.send((done_msg, 1.0));
+            event::emit(event::Event::cloud(
+                cloud_event::Event::UploadMaterialResult {
+                    ok: result.is_ok(),
+                    error: result.err().map(|e| e.to_string()),
+                },
+            ));
+        });
+    }
+
+    /// 注入素材上传结果
+    pub(super) fn apply_cloud_upload_result(&mut self, ok: bool, error: Option<String>) {
+        // 云上传结束（与保存到云共用串行标志）
+        self.cloud_saving
+            .store(false, std::sync::atomic::Ordering::SeqCst);
+        let failed = {
+            let state = self.window_state.window.ui_mut().cloud_state_mut();
+            state.busy = false;
+            if ok {
+                state.notice = Some("素材已上传到云存储".to_string());
+                false
+            } else {
+                state.notice = Some(format!(
+                    "素材上传失败：{}",
+                    error.clone().unwrap_or_default()
+                ));
+                true
+            }
+        };
+        if failed {
+            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+        } else {
+            // 刷新当前目录列表（显示新上传的素材文件）
+            let id = self
+                .window_state
+                .window
+                .ui()
+                .cloud_state()
+                .selected_id
+                .clone();
+            let path = self
+                .window_state
+                .window
+                .ui()
+                .cloud_state()
+                .current_path
+                .clone();
+            if let Some(id) = id {
+                self.run_cloud_list(id, path);
+            }
+            self.sync_cloud_to_dialogs();
+        }
+    }
+
     // ── 保存结果注入 ──
 
     /// 注入保存结果

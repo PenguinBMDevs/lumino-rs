@@ -151,12 +151,25 @@ pub struct MaterialLibrary {
     pub add_menu_open: bool,
     /// 是否正在扫描/解析素材
     pub scanning: bool,
+    /// 右键菜单打开的素材列表索引（None = 菜单关闭）
+    pub context_menu_target: Option<usize>,
+    /// 右键菜单弹出位置（窗口逻辑坐标，由 Host 在消息处理时注入）
+    pub context_menu_pos: Option<(f32, f32)>,
+    /// 正在重命名的素材（列表索引 + 当前输入值）
+    pub renaming_material: Option<(usize, String)>,
+    /// 等待删除确认的素材列表索引
+    pub pending_delete: Option<usize>,
 }
 
 impl MaterialLibrary {
     /// 是否已初始化（首次打开素材库面板时惰性扫描）
     pub fn is_initialized(&self) -> bool {
         !self.entries.is_empty() || self.scanning
+    }
+
+    /// 设置右键菜单弹出位置（Host 捕获鼠标坐标后注入）
+    pub fn set_context_menu_pos(&mut self, x: f32, y: f32) {
+        self.context_menu_pos = Some((x, y));
     }
 }
 

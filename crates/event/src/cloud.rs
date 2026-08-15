@@ -52,6 +52,22 @@ pub enum Event {
         /// 目标目录
         dir_path: String,
     },
+    /// 上传素材到云请求（素材库右键"上传到云"）
+    ///
+    /// 与 `SaveToCloudRequest` 区分：本请求上传指定的本地素材文件
+    /// （.lmmaterial），而非当前工程归档。
+    UploadMaterialRequest {
+        /// 连接 ID
+        id: String,
+        /// 目标目录
+        dir_path: String,
+        /// 本地素材文件路径（内置素材为临时文件）
+        local_path: String,
+        /// 远程文件名
+        file_name: String,
+        /// 是否为临时文件（上传完成后删除）
+        is_tmp: bool,
+    },
     /// 新建文件夹请求
     NewFolderRequest {
         /// 连接 ID
@@ -160,6 +176,13 @@ pub enum Event {
         /// 是否成功
         ok: bool,
         /// 错误原因
+        error: Option<String>,
+    },
+    /// 上传素材结果（素材库"上传到云"）
+    UploadMaterialResult {
+        /// 是否成功
+        ok: bool,
+        /// 错误原因（失败时）
         error: Option<String>,
     },
     /// 通用操作结果（新建/重命名/删除/移动/复制粘贴）

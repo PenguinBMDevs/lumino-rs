@@ -3,10 +3,14 @@
 //! 素材（.lmmaterial）的完整生命周期：
 //! - 列表扫描（内置 + 用户配置目录）；
 //! - 本地导入（复制到用户素材目录）；
-//! - 拖出放置（加载到内存 → 预览跟随鼠标 → √/× 确认写入）。
+//! - 拖出放置（加载到内存 → 预览跟随鼠标 → √/× 确认写入）；
+//! - 右键菜单（重命名 / 删除 / 上传到云）。
+
+use lumino_message::MaterialContextMenuItem;
 
 use crate::root::Root;
 use crate::sidebar;
+use crate::toast::ToastLevel;
 
 impl Root {
     /// 素材项按下：立即进入拖出跟随模式（预览跟随鼠标）
@@ -264,5 +268,464 @@ impl Root {
             .invalidate_caches(lumino_ui_editor::CacheInvalidation::ALL);
 
         tracing::info!("放置写入完成：{} 个音符", total_notes);
+    }
+
+    // ── 素材右键菜单 ──
+
+    /// 处理打开素材右键菜单
+    pub(super) fn open_material_context_menu(&mut self, index: usize) {
+        if self.right_sidebar.materials.entries.get(index).is_none() {
+            return;
+        }
+        // 互斥：关闭其他浮动状态
+        self.right_sidebar.materials.add_menu_open = false;
+        self.right_sidebar.materials.renaming_material = None;
+        self.right_sidebar.materials.pending_delete = None;
+        self.right_sidebar.materials.context_menu_target = Some(index);
+    }
+
+    /// 处理关闭素材右键菜单
+    pub(super) fn close_material_context_menu(&mut self) {
+        self.right_sidebar.materials.context_menu_target = None;
+    }
+
+    /// 处理点击素材右键菜单项
+    pub(super) fn handle_material_context_menu_item_clicked(
+        &mut self,
+        index: usize,
+        item: MaterialContextMenuItem,
+    ) {
+        self.right_sidebar.materials.context_menu_target = None;
+        match item {
+            MaterialContextMenuItem::Rename => {
+                // 仅用户素材可重命名（内置素材的按钮已置灰，此处为防御）
+                if let Some(entry) = self.right_sidebar.materials.entries.get(index)
+                    && entry.path.is_some()
+                {
+                    self.right_sidebar.materials.renaming_material =
+                        Some((index, entry.name.clone()));
+                }
+            }
+            MaterialContextMenuItem::Delete => {
+                // 进入行内确认态（不立即删除）
+                if let Some(entry) = self.right_sidebar.materials.entries.get(index)
+                    && entry.path.is_some()
+                {
+                    self.right_sidebar.materials.pending_delete = Some(index);
+                }
+            }
+            MaterialContextMenuItem::UploadToCloud => {
+                self.upload_material_to_cloud(index);
+            }
+        }
+    }
+
+    /// 处理素材重命名输入变化
+    pub(super) fn handle_material_rename_input_changed(&mut self, value: String) {
+        if let Some((_, buffer)) = &mut self.right_sidebar.materials.renaming_material {
+            *buffer = value;
+        }
+    }
+
+    /// 处理取消素材重命名
+    pub(super) fn cancel_material_rename(&mut self) {
+        self.right_sidebar.materials.renaming_material = None;
+    }
+
+    /// 处理确认素材重命名
+    ///
+    /// 流程：加载工程 → 写入新名称（文件 + metadata 同步）→ 删除旧文件 → 重新扫描。
+    /// 与素材显示名规则一致：`metadata.project.name` 优先，故必须双改。
+    pub(super) fn confirm_material_rename(&mut self) {
+        let Some((index, buffer)) = self.right_sidebar.materials.renaming_material.take() else {
+            return;
+        };
+        let new_name = buffer.trim().replace(['/', '\\'], "_");
+        if new_name.is_empty() || new_name == "." || new_name == ".." {
+            self.toast.push(ToastLevel::Error, "素材名称不能为空");
+            return;
+        }
+        let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
+            return;
+        };
+        let Some(old_path) = &entry.path else {
+            self.toast.push(ToastLevel::Error, "内置素材不可重命名");
+            return;
+        };
+        // 新路径 = 用户素材目录 / 新名称.lmmaterial（与导入落点一致）
+        let user_dir = crate::right_sidebar::user_materials_dir();
+        let new_path = user_dir.join(format!("{new_name}.lmmaterial"));
+        if new_path.exists() {
+            self.toast.push(ToastLevel::Error, "已存在同名素材");
+            return;
+        }
+        // 加载工程 → 以新名称重新保存（同步 metadata.project.name）→ 删除旧文件
+        match lumino_export::load_project(old_path) {
+            Ok(project) => {
+                if let Err(e) = lumino_export::save_material(&project, &new_name, &new_path) {
+                    self.toast
+                        .push(ToastLevel::Error, format!("素材重命名失败：{e}"));
+                    return;
+                }
+                if let Err(e) = std::fs::remove_file(old_path) {
+                    // 新文件已保存；旧文件删除失败会导致列表出现两份，提示用户处理
+                    tracing::warn!("素材重命名后旧文件删除失败: {e}");
+                    self.toast.push(
+                        ToastLevel::Error,
+                        format!("素材已保存为新名称，但旧文件删除失败：{e}"),
+                    );
+                } else {
+                    self.toast.push(ToastLevel::Success, "素材已重命名");
+                }
+                self.start_material_scan();
+            }
+            Err(e) => {
+                self.toast.push(
+                    ToastLevel::Error,
+                    format!("素材重命名失败：无法读取原文件 {e}"),
+                );
+            }
+        }
+    }
+
+    /// 处理取消素材删除确认
+    pub(super) fn cancel_material_delete(&mut self) {
+        self.right_sidebar.materials.pending_delete = None;
+    }
+
+    /// 处理确认素材删除（删除本地文件并重新扫描）
+    ///
+    /// `index` 必须与当前待确认索引一致（防御：只允许确认当前高亮的素材项）。
+    pub(super) fn confirm_material_delete(&mut self, index: usize) {
+        if self.right_sidebar.materials.pending_delete != Some(index) {
+            return;
+        }
+        self.right_sidebar.materials.pending_delete = None;
+        let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
+            return;
+        };
+        let Some(path) = &entry.path else {
+            self.toast.push(ToastLevel::Error, "内置素材不可删除");
+            return;
+        };
+        match std::fs::remove_file(path) {
+            Ok(()) => {
+                tracing::info!("素材已删除: {}", path.display());
+                self.toast.push(ToastLevel::Success, "素材已删除");
+                self.start_material_scan();
+            }
+            Err(e) => {
+                tracing::error!("素材删除失败: {e}");
+                self.toast
+                    .push(ToastLevel::Error, format!("素材删除失败：{e}"));
+            }
+        }
+    }
+
+    /// 上传素材到云：设置待办并打开云存储文件管理面板（选择上传位置）
+    ///
+    /// - 无在线连接：runner 分流弹出云存储连接面板引导配置；
+    /// - 有在线连接：打开云浏览面板（保存模式），用户选择目录后点"保存到此处"。
+    ///
+    /// 内置素材无磁盘路径，先写临时文件再上传（上传完成后由 runner 清理）。
+    pub(super) fn upload_material_to_cloud(&mut self, index: usize) {
+        let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
+            return;
+        };
+        if !entry.valid {
+            self.toast.push(ToastLevel::Error, "素材无效，无法上传");
+            return;
+        }
+        // 确定本地文件与远程文件名
+        let (local_path, is_tmp) = match (&entry.path, entry.data) {
+            // 用户素材：直接上传原文件
+            (Some(path), _) => (path.clone(), false),
+            // 内置素材：写入临时文件（系统临时目录），上传后删除
+            (None, Some(data)) => {
+                let tmp_path = std::env::temp_dir().join(format!(
+                    "lumino_upload_{}.lmmaterial",
+                    std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_nanos())
+                        .unwrap_or(0)
+                ));
+                if let Err(e) = std::fs::write(&tmp_path, data) {
+                    self.toast
+                        .push(ToastLevel::Error, format!("素材上传失败：无法创建临时文件 {e}"));
+                    return;
+                }
+                (tmp_path, true)
+            }
+            (None, None) => {
+                self.toast.push(ToastLevel::Error, "素材数据缺失，无法上传");
+                return;
+            }
+        };
+        // 远程文件名：素材显示名 + 扩展名；过滤路径分隔符（防止创建子路径）
+        let file_name = format!("{}.lmmaterial", entry.name.replace(['/', '\\'], "_"));
+
+        // 设置上传待办（云浏览面板"保存到此处"时消费）
+        self.cloud.pending_upload = Some(crate::state::cloud_state::PendingUpload {
+            local_path: local_path.to_string_lossy().into_owned(),
+            file_name,
+            is_tmp,
+        });
+        // 云入口分流：无连接 → runner 弹出连接面板；已连接 → 浏览面板（保存模式）
+        crate::event::emit(crate::event::Event::cloud(
+            crate::event::cloud::Event::OpenCloudPanel {
+                intent: "material_upload".to_string(),
+            },
+        ));
+        tracing::info!("素材 {} 上传到云流程已启动", entry.name);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::*;
+    use crate::right_sidebar::MaterialSource;
+    use crate::root::Root;
+    use lumino_core::storage::config::UiConfig;
+
+    fn create_root() -> Root {
+        Root::new(&UiConfig::default())
+    }
+
+    /// 创建唯一临时目录（无 tempfile 依赖，测试后由操作系统清理）
+    fn make_tmp_dir() -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "lumino_mat_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&dir).expect("临时目录应创建成功");
+        dir
+    }
+
+    /// 构造用户素材条目（可指定磁盘路径）
+    fn user_entry(path: Option<PathBuf>) -> crate::right_sidebar::MaterialEntry {
+        crate::right_sidebar::MaterialEntry {
+            name: "测试素材".into(),
+            author: String::new(),
+            source: MaterialSource::User,
+            path,
+            data: None,
+            multi_track: false,
+            track_count: 1,
+            valid: true,
+            preview: None,
+        }
+    }
+
+    #[test]
+    fn test_open_context_menu_sets_target_and_clears_others() {
+        let mut root = create_root();
+        root.right_sidebar.materials.entries.push(user_entry(None));
+        root.right_sidebar.materials.renaming_material = Some((0, "旧名".into()));
+        root.right_sidebar.materials.pending_delete = Some(0);
+        root.right_sidebar.materials.add_menu_open = true;
+
+        root.open_material_context_menu(0);
+        assert_eq!(root.right_sidebar.materials.context_menu_target, Some(0));
+        assert!(root.right_sidebar.materials.renaming_material.is_none());
+        assert!(root.right_sidebar.materials.pending_delete.is_none());
+        assert!(!root.right_sidebar.materials.add_menu_open);
+    }
+
+    #[test]
+    fn test_open_context_menu_ignores_invalid_index() {
+        let mut root = create_root();
+        root.open_material_context_menu(99);
+        assert!(root.right_sidebar.materials.context_menu_target.is_none());
+    }
+
+    #[test]
+    fn test_context_menu_rename_starts_inline_edit() {
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(PathBuf::from("C:/tmp/a.lmmaterial"))));
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Rename);
+        assert!(root.right_sidebar.materials.context_menu_target.is_none());
+        assert_eq!(
+            root.right_sidebar.materials.renaming_material,
+            Some((0, "测试素材".into()))
+        );
+    }
+
+    #[test]
+    fn test_context_menu_rename_ignored_for_builtin() {
+        // 内置素材无磁盘路径：菜单按钮已置灰，此处验证防御逻辑
+        let mut root = create_root();
+        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
+            name: "内置".into(),
+            author: String::new(),
+            source: MaterialSource::BuiltIn,
+            path: None,
+            data: None,
+            multi_track: false,
+            track_count: 1,
+            valid: true,
+            preview: None,
+        });
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Rename);
+        assert!(root.right_sidebar.materials.renaming_material.is_none());
+    }
+
+    #[test]
+    fn test_rename_input_updates_buffer() {
+        let mut root = create_root();
+        root.right_sidebar.materials.renaming_material = Some((0, "旧名".into()));
+        root.handle_material_rename_input_changed("新名".into());
+        assert_eq!(
+            root.right_sidebar.materials.renaming_material,
+            Some((0, "新名".into()))
+        );
+    }
+
+    #[test]
+    fn test_rename_confirmed_empty_name_rejected() {
+        let mut root = create_root();
+        root.right_sidebar.materials.renaming_material = Some((0, "   ".into()));
+        root.confirm_material_rename();
+        // 空名被拒绝：不 panic，编辑态已清除
+        assert!(root.right_sidebar.materials.renaming_material.is_none());
+    }
+
+    #[test]
+    fn test_confirm_rename_missing_entry_noop() {
+        let mut root = create_root();
+        root.right_sidebar.materials.renaming_material = Some((99, "新名".into()));
+        root.confirm_material_rename();
+        assert!(root.right_sidebar.materials.renaming_material.is_none());
+    }
+
+    #[test]
+    fn test_context_menu_delete_enters_confirm_state() {
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(PathBuf::from("C:/tmp/a.lmmaterial"))));
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Delete);
+        assert!(root.right_sidebar.materials.context_menu_target.is_none());
+        assert_eq!(root.right_sidebar.materials.pending_delete, Some(0));
+    }
+
+    #[test]
+    fn test_confirm_delete_removes_file() {
+        let dir = make_tmp_dir();
+        let file = dir.join("a.lmmaterial");
+        std::fs::write(&file, b"lmpj").expect("写入临时素材失败");
+
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(file.clone())));
+        root.right_sidebar.materials.pending_delete = Some(0);
+
+        root.confirm_material_delete(0);
+        assert!(!file.exists(), "素材文件应被删除");
+        assert!(root.right_sidebar.materials.pending_delete.is_none());
+    }
+
+    #[test]
+    fn test_confirm_delete_wrong_index_ignored() {
+        let dir = make_tmp_dir();
+        let file = dir.join("a.lmmaterial");
+        std::fs::write(&file, b"lmpj").expect("写入临时素材失败");
+
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(file.clone())));
+        root.right_sidebar.materials.pending_delete = Some(0);
+
+        // 索引不匹配：防御性忽略（不删除）
+        root.confirm_material_delete(1);
+        assert!(file.exists(), "索引不匹配时不应删除文件");
+        assert_eq!(root.right_sidebar.materials.pending_delete, Some(0));
+    }
+
+    #[test]
+    fn test_upload_to_cloud_sets_pending_upload_for_user_material() {
+        let mut root = create_root();
+        let path = PathBuf::from("C:/tmp/素材.lmmaterial");
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(path.clone())));
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
+        let pending = root.cloud.pending_upload.expect("应设置上传待办");
+        assert_eq!(pending.local_path, path.to_string_lossy());
+        assert_eq!(pending.file_name, "测试素材.lmmaterial");
+        assert!(!pending.is_tmp);
+    }
+
+    #[test]
+    fn test_upload_to_cloud_builtin_writes_tmp_file() {
+        let mut root = create_root();
+        // 内置素材：无路径但有字节 → 写临时文件上传
+        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
+            name: "内置素材".into(),
+            author: String::new(),
+            source: MaterialSource::BuiltIn,
+            path: None,
+            data: Some(&[0x4C, 0x4D, 0x50, 0x4A]), // LMPJ
+            multi_track: false,
+            track_count: 1,
+            valid: true,
+            preview: None,
+        });
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
+        let pending = root.cloud.pending_upload.expect("应设置上传待办");
+        assert_eq!(pending.file_name, "内置素材.lmmaterial");
+        assert!(pending.is_tmp, "内置素材应标记为临时文件");
+        // 临时文件应真实存在且内容为素材字节
+        assert!(PathBuf::from(&pending.local_path).exists());
+        assert_eq!(
+            std::fs::read(&pending.local_path).expect("临时文件应可读"),
+            vec![0x4C, 0x4D, 0x50, 0x4A]
+        );
+        // 清理临时文件
+        let _ = std::fs::remove_file(&pending.local_path);
+    }
+
+    #[test]
+    fn test_upload_to_cloud_invalid_material_rejected() {
+        let mut root = create_root();
+        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
+            name: "坏素材".into(),
+            author: String::new(),
+            source: MaterialSource::BuiltIn,
+            path: None,
+            data: None,
+            multi_track: false,
+            track_count: 0,
+            valid: false,
+            preview: None,
+        });
+        root.open_material_context_menu(0);
+
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
+        assert!(root.cloud.pending_upload.is_none(), "无效素材不应设置上传待办");
     }
 }

@@ -2,7 +2,7 @@
 
 use iced_core::{Alignment, Color, Length};
 use iced_core::widget::text::Wrapping;
-use iced_widget::{button, column, container, mouse_area, row, scrollable, text, tooltip};
+use iced_widget::{Stack, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip};
 use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 use lumino_message::RightSidebarAction;
 
@@ -37,7 +37,30 @@ pub(super) fn panel<'a>(
             container::Style::default().background(palette.background.weakest.color)
         });
 
-    content.into()
+    // 右键菜单叠加：菜单打开时在面板上覆盖关闭背景 + 悬浮菜单
+    let materials = &right_sidebar.materials;
+    let Some(target) = materials.context_menu_target else {
+        return content.into();
+    };
+    if materials.entries.get(target).is_none() {
+        return content.into();
+    }
+    // 重命名/删除仅对用户素材可用（内置素材为程序资产，置灰禁用）
+    let can_edit = materials
+        .entries
+        .get(target)
+        .map(|e| e.source == MaterialSource::User)
+        .unwrap_or(false);
+
+    Stack::new()
+        .push(content)
+        .push(super::material_context_menu::background_close_overlay())
+        .push(super::material_context_menu::positioned_menu(
+            target,
+            can_edit,
+            materials.context_menu_pos,
+        ))
+        .into()
 }
 
 /// 面板标题文本（跟随主题：暗色白、亮色黑）
@@ -124,7 +147,7 @@ fn material_list<'a>(right_sidebar: &'a RightSidebar, language: Language) -> Ele
     let mut builtin_items: Vec<Element<'a>> = Vec::new();
     let mut user_items: Vec<Element<'a>> = Vec::new();
     for (idx, entry) in materials.entries.iter().enumerate() {
-        let item = material_item(entry, idx, language);
+        let item = material_item(right_sidebar, entry, idx, language);
         match entry.source {
             MaterialSource::BuiltIn => builtin_items.push(item),
             MaterialSource::User => user_items.push(item),
@@ -157,12 +180,24 @@ fn material_list<'a>(right_sidebar: &'a RightSidebar, language: Language) -> Ele
 
 /// 单个素材项：列表仅显示名称；文件描述（名称/作者/位置/轨道数/来源）
 /// 移入悬停提示悬浮面板
+///
+/// 交互状态（由 `RightSidebar.materials` 驱动）：
+/// - 重命名中：名称替换为输入框（回车确认）；
+/// - 删除确认中：行内显示"确认删除？[删除][取消]"（禁用拖出）。
 fn material_item<'a>(
+    right_sidebar: &'a RightSidebar,
     entry: &'a crate::right_sidebar::MaterialEntry,
     index: usize,
     language: Language,
 ) -> Element<'a> {
     let t = main_translations(language);
+    let materials = &right_sidebar.materials;
+    let is_renaming = materials
+        .renaming_material
+        .as_ref()
+        .map(|(i, _)| *i)
+        == Some(index);
+    let is_pending_delete = materials.pending_delete == Some(index);
 
     // 名称（有效实色 / 无效置灰）
     let name_text = text(&entry.name).size(12).style(move |theme: &Theme| {
@@ -175,7 +210,29 @@ fn material_item<'a>(
         text::Style { color: Some(color) }
     });
 
-    let info_row = row![name_text]
+    // 重命名编辑态：名称替换为输入框（回车确认）
+    let name_area: Element<'a> = if is_renaming {
+        let buffer = materials
+            .renaming_material
+            .as_ref()
+            .map(|(_, b)| b.clone())
+            .unwrap_or_default();
+        text_input("素材名称", &buffer)
+            .on_input(|value| {
+                Message::RightSidebar(RightSidebarAction::MaterialRenameInputChanged(value))
+            })
+            .on_submit(Message::RightSidebar(
+                RightSidebarAction::MaterialRenameConfirmed,
+            ))
+            .padding([2, 4])
+            .size(12)
+            .width(Length::Fill)
+            .into()
+    } else {
+        name_text.into()
+    };
+
+    let info_row = row![name_area]
         .spacing(4)
         .align_y(Alignment::Center)
         .width(Length::Fill);
@@ -190,17 +247,51 @@ fn material_item<'a>(
         .width(Length::Fill)
         .style(move |theme: &Theme| {
             let palette = theme.extended_palette();
+            let bg = if is_pending_delete {
+                palette.danger.weak.color
+            } else {
+                palette.background.weaker.color
+            };
             container::Style {
-                background: Some(palette.background.weaker.color.into()),
+                background: Some(bg.into()),
                 border: iced_core::Border::default().rounded(4),
                 ..Default::default()
             }
         });
 
-    let item: Element<'a> = if entry.valid {
+    // 删除确认态：行内确认条（替换拖出交互，防误删）
+    let item: Element<'a> = if is_pending_delete {
+        row![
+            text(format!("{}？", t.material_delete_confirm))
+                .size(11)
+                .style(|theme: &Theme| text::Style {
+                    color: Some(theme.extended_palette().background.neutral.text),
+                }),
+            button(text(t.material_delete).size(11))
+                .padding([2, 6])
+                .style(danger_button_style)
+                .on_press(Message::RightSidebar(
+                    RightSidebarAction::MaterialDeleteConfirmed(index),
+                )),
+            button(text(t.material_delete_cancel).size(11))
+                .padding([2, 6])
+                .style(menu_item_style)
+                .on_press(Message::RightSidebar(
+                    RightSidebarAction::MaterialDeleteCancelled,
+                )),
+        ]
+        .spacing(6)
+        .align_y(Alignment::Center)
+        .padding([4, 8])
+        .width(Length::Fill)
+        .into()
+    } else if entry.valid {
         mouse_area(content)
             .on_press(Message::RightSidebar(
                 RightSidebarAction::MaterialDragStarted(index),
+            ))
+            .on_right_press(Message::RightSidebar(
+                RightSidebarAction::MaterialContextMenuOpened(index),
             ))
             .into()
     } else {
@@ -336,6 +427,25 @@ fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
     .with_background(bg)
 }
 
+/// 危险操作按钮样式（删除确认）
+fn danger_button_style(theme: &Theme, status: button::Status) -> button::Style {
+    let palette = theme.extended_palette();
+    let bg = match status {
+        button::Status::Hovered | button::Status::Pressed => palette.danger.base.color,
+        _ => palette.danger.weak.color,
+    };
+    button::Style {
+        text_color: palette.background.base.text,
+        border: iced_core::Border {
+            radius: 4.0.into(),
+            width: 0.0,
+            color: Color::TRANSPARENT,
+        },
+        ..Default::default()
+    }
+    .with_background(bg)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -359,14 +469,38 @@ mod tests {
 
     #[test]
     fn test_material_item_builds_element() {
-        let entry = make_entry(true, 4);
-        let _element = material_item(&entry, 0, Language::ZhCn);
+        let mut sidebar = RightSidebar::new();
+        sidebar.materials.entries.push(make_entry(true, 4));
+        let entry = &sidebar.materials.entries[0];
+        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
     }
 
     #[test]
     fn test_material_item_invalid_greyed() {
-        let entry = make_entry(false, 0);
-        let _element = material_item(&entry, 1, Language::ZhCn);
+        let mut sidebar = RightSidebar::new();
+        sidebar.materials.entries.push(make_entry(false, 0));
+        let entry = &sidebar.materials.entries[0];
+        let _element = material_item(&sidebar, entry, 1, Language::ZhCn);
+    }
+
+    #[test]
+    fn test_material_item_renaming_state() {
+        // 重命名态：名称替换为输入框，仍可构建元素
+        let mut sidebar = RightSidebar::new();
+        sidebar.materials.entries.push(make_entry(true, 1));
+        sidebar.materials.renaming_material = Some((0, "新名称".into()));
+        let entry = &sidebar.materials.entries[0];
+        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
+    }
+
+    #[test]
+    fn test_material_item_delete_confirm_state() {
+        // 删除确认态：行内确认条替换拖出交互
+        let mut sidebar = RightSidebar::new();
+        sidebar.materials.entries.push(make_entry(true, 1));
+        sidebar.materials.pending_delete = Some(0);
+        let entry = &sidebar.materials.entries[0];
+        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
     }
 
     #[test]

@@ -56,6 +56,20 @@ pub enum PanelContextMenuItem {
     RecoverDeletedTrack,
 }
 
+/// 素材库右键上下文菜单项
+///
+/// 与 `TrackContextMenuItem` 对应：针对右侧栏素材库面板中的单个素材项
+/// 触发的右键菜单，提供素材级管理动作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MaterialContextMenuItem {
+    /// 重命名素材（行内编辑：同步文件与 metadata 名称）
+    Rename,
+    /// 删除素材（本地文件，需二次确认）
+    Delete,
+    /// 上传到云（打开云存储文件管理面板选择上传位置）
+    UploadToCloud,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +98,15 @@ mod tests {
     #[test]
     fn test_panel_menu_item_variants() {
         let _items = [PanelContextMenuItem::RecoverDeletedTrack];
+    }
+
+    #[test]
+    fn test_material_menu_item_variants() {
+        let _items = [
+            MaterialContextMenuItem::Rename,
+            MaterialContextMenuItem::Delete,
+            MaterialContextMenuItem::UploadToCloud,
+        ];
     }
 
     #[test]

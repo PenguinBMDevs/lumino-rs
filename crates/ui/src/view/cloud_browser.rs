@@ -125,17 +125,29 @@ pub fn view_cloud_browser<'a>(state: &'a CloudUiState, _theme: &Theme) -> Elemen
 
     // 保存模式面板（选择上传目标目录）
     let save_panel: Element<'static> = if state.save_mode {
+        // 素材上传待办存在 → 上传素材；否则保存当前工程
+        let title = match &state.pending_upload {
+            Some(p) => format!(
+                "将上传素材 {} 到：{}",
+                p.file_name,
+                if state.current_path.is_empty() {
+                    "/"
+                } else {
+                    &state.current_path
+                }
+            ),
+            None => format!(
+                "将保存当前工程到：{}",
+                if state.current_path.is_empty() {
+                    "/"
+                } else {
+                    &state.current_path
+                }
+            ),
+        };
         container(
             column![
-                text(format!(
-                    "将保存当前工程到：{}",
-                    if state.current_path.is_empty() {
-                        "/"
-                    } else {
-                        &state.current_path
-                    }
-                ))
-                .size(13),
+                text(title).size(13),
                 button(
                     text(if state.busy {
                         "上传中..."

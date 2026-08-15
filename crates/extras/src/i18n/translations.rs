@@ -131,6 +131,12 @@ pub struct MainTranslations {
     pub material_invalid: &'static str,
     pub material_import_ok: &'static str,
     pub material_import_failed: &'static str,
+    /// 删除素材确认文案（行内确认条）
+    pub material_delete_confirm: &'static str,
+    /// 删除素材确认按钮
+    pub material_delete: &'static str,
+    /// 删除素材取消按钮
+    pub material_delete_cancel: &'static str,
 }
 
 pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
@@ -253,6 +259,9 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     material_invalid: "素材无效",
     material_import_ok: "素材已导入",
     material_import_failed: "素材导入失败",
+    material_delete_confirm: "确认删除该素材",
+    material_delete: "删除",
+    material_delete_cancel: "取消",
 };
 
 pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
@@ -375,4 +384,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     material_invalid: "Invalid material",
     material_import_ok: "Material imported",
     material_import_failed: "Failed to import material",
+    material_delete_confirm: "Delete this material",
+    material_delete: "Delete",
+    material_delete_cancel: "Cancel",
 };

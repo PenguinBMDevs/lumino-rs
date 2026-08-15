@@ -1,5 +1,7 @@
 //! 右侧栏动作
 
+use crate::context_menu::MaterialContextMenuItem;
+
 /// 右侧栏动作
 #[derive(Debug, Clone)]
 pub enum RightSidebarAction {
@@ -35,6 +37,22 @@ pub enum RightSidebarAction {
     MaterialAddMenuClosed,
     /// 素材项按下（开始拖出：加载素材到内存并显示跟随预览）
     MaterialDragStarted(usize),
+    /// 素材项右键（打开素材右键菜单，index 为素材列表索引）
+    MaterialContextMenuOpened(usize),
+    /// 关闭素材右键菜单
+    MaterialContextMenuClosed,
+    /// 点击素材右键菜单项
+    MaterialContextMenuItemClicked(usize, MaterialContextMenuItem),
+    /// 素材重命名输入框内容变更
+    MaterialRenameInputChanged(String),
+    /// 确认素材重命名（同步文件与 metadata 名称）
+    MaterialRenameConfirmed,
+    /// 取消素材重命名
+    MaterialRenameCancelled,
+    /// 确认删除素材（删除本地文件并重新扫描）
+    MaterialDeleteConfirmed(usize),
+    /// 取消删除素材确认
+    MaterialDeleteCancelled,
 }
 
 /// i2m 转换配置中的数字编辑字段

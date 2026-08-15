@@ -370,6 +370,38 @@ impl Root {
                 self.start_material_drag(index);
                 true
             }
+            MaterialContextMenuOpened(index) => {
+                self.open_material_context_menu(index);
+                true
+            }
+            MaterialContextMenuClosed => {
+                self.close_material_context_menu();
+                true
+            }
+            MaterialContextMenuItemClicked(index, item) => {
+                self.handle_material_context_menu_item_clicked(index, item);
+                true
+            }
+            MaterialRenameInputChanged(text) => {
+                self.handle_material_rename_input_changed(text);
+                true
+            }
+            MaterialRenameConfirmed => {
+                self.confirm_material_rename();
+                true
+            }
+            MaterialRenameCancelled => {
+                self.cancel_material_rename();
+                true
+            }
+            MaterialDeleteConfirmed(index) => {
+                self.confirm_material_delete(index);
+                true
+            }
+            MaterialDeleteCancelled => {
+                self.cancel_material_delete();
+                true
+            }
         }
     }
 

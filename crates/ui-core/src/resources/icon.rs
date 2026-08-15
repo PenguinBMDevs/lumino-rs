@@ -122,6 +122,8 @@ define_icons! {
     (ContextMenuColorPalette, "../../../../resources/icons/context-menu/set-track-color.svg"),
     (ContextMenuChannel, "../../../../resources/icons/context-menu/set-midi-channel.svg"),
     (ContextMenuRecoverTrack, "../../../../resources/icons/context-menu/recover-deleted-track.svg"),
+    // 素材库右键菜单图标
+    (ContextMenuUploadToCloud, "../../../../resources/icons/context-menu/upload-to-cloud.svg"),
 }
 
 #[derive(Clone)]

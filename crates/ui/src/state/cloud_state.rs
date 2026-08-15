@@ -44,6 +44,8 @@ pub struct CloudUiState {
     pub filter: Option<String>,
     /// 保存模式（true = 面板用于"保存到云"目标选择）
     pub save_mode: bool,
+    /// 素材上传待办（素材库右键"上传到云"设置；"保存到此处"时消费）
+    pub pending_upload: Option<PendingUpload>,
     /// 新建文件夹输入框内容
     pub new_folder_input: String,
     /// 断连提醒内容（CloudNotice 面板与设置面板标志共用）
@@ -80,6 +82,17 @@ impl CloudClipboard {
             is_cut,
         }
     }
+}
+
+/// 素材上传待办（云浏览面板保存模式下"保存到此处"时消费）
+#[derive(Debug, Clone)]
+pub struct PendingUpload {
+    /// 本地素材文件路径（内置素材为临时文件）
+    pub local_path: String,
+    /// 远程文件名
+    pub file_name: String,
+    /// 是否为临时文件（上传完成后由 runner 删除）
+    pub is_tmp: bool,
 }
 
 impl CloudUiState {
