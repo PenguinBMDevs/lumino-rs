@@ -101,12 +101,22 @@ fn test_render_real_note_tie_icon_is_centered() {
 fn test_all_icon_svgs_parse_and_render() {
     // 直接触发宏生成的缓存构建：任一 SVG 解析失败会缺失条目（构建函数内部只打日志不 panic）
     let cache = build_icon_cache();
-    // 当前 define_icons! 宏内共 57 个图标；若宏新增条目此处需同步更新
-    assert_eq!(
-        cache.len(),
-        57,
-        "存在无法解析/渲染的 SVG 图标，请检查 resources/icons"
+
+    // 枚举驱动断言（与 define_icons! 宏同源，新增图标自动纳入检查）：
+    // 逐个变体验证，失败时精确定位到具体图标，不再依赖手工维护的数量魔法数。
+    // （修复背景：新增 upload-to-cloud 图标后数量断言 57→58 未同步导致误报）
+    let missing: Vec<Icon> = ALL_ICONS
+        .iter()
+        .copied()
+        .filter(|icon| !cache.contains_key(icon))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "存在无法解析/渲染的 SVG 图标: {missing:?}"
     );
+
+    // 数量兜底：缓存条目必须与枚举条目一致（防止重复路径覆盖等异常产生假阴性）
+    assert_eq!(cache.len(), ALL_ICONS.len(), "缓存条目数与图标枚举数不一致");
 }
 
 /// 新增的 i2m 悬浮按钮图标（不注册进 Icon 枚举，直接验证 SVG 可解析且输出 32x32 RGBA 纹理）

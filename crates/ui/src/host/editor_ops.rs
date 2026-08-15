@@ -146,6 +146,10 @@ impl Host {
         // 使用 EditorState::reset() 统一重置核心状态
         root.editor.editor_state.reset();
 
+        // 工程设置（标题/作者/版权/BPM/拍号）属于工程级数据，
+        // 关闭工程/新建工程后必须恢复默认值，不得残留到下一个工程
+        root.reset_project_settings();
+
         // 编辑器私有内部状态（播放位置等）
         root.editor.velocity_panel.edit_mode = crate::editor::velocity::EditMode::Tempo;
         root.editor.reset_internal_state();

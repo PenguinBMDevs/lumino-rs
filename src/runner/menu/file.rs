@@ -79,6 +79,12 @@ impl RunnerInner {
                 self.midi_state.current_midi_source = Some(source_path);
                 self.midi_state.current_midi = None;
 
+                // 工程级数据随新文件加载一起归零：编辑计时/累计时间
+                // （创建时间随后从文件系统重新设置；工程设置对话框的
+                //   标题/作者/版权同样重置，防止上一工程的设置残留）
+                self.session_tracker.reset();
+                self.window_state.window.ui_mut().reset_project_settings();
+
                 // 设置工程创建时间（从文件系统获取）
                 self.session_tracker.created_at = self
                     .midi_state
@@ -109,7 +115,12 @@ impl RunnerInner {
                 self.midi_state.cloud_source = None;
                 lumino_extras::palette::unlock_palette();
                 self.window_state.window.ui_mut().dispose_hires_onion_skin();
+                // 工程级数据必须随工程关闭一起归零：编辑计时/创建时间
+                // （clear_editor 内部已重置工程设置对话框状态）
+                self.session_tracker.reset();
                 self.window_state.window.ui_mut().clear_editor();
+                // 恢复主窗口默认标题（工程设置确认时设置的 "{标题} - Lumino"）
+                self.window_state.window.window().set_title("Lumino");
                 tracing::info!("工程已关闭");
             }
             ProjectSettings => {
@@ -143,7 +154,8 @@ impl RunnerInner {
                         .map(|tp| format!("{:.1}", tp.bpm))
                         .unwrap_or_else(|| "120.0".to_string());
                     let time_signatures = root.editor.editor_state.data.time_signatures.clone();
-                    // 保留用户已填写的版权/作者（不随菜单打开而重置）
+                    // 版权/作者来自对话框状态：同一工程内多次打开保留已填写的值；
+                    // 跨工程（关闭/新建/加载新文件）时状态已重置为空，不会残留。
                     let copyright = ui.get_project_copyright();
                     let author = ui.get_project_author();
                     (tempo, time_signatures, copyright, author)
@@ -203,8 +215,15 @@ impl RunnerInner {
         self.midi_state.cloud_source = None;
         lumino_extras::palette::unlock_palette();
 
+        // 工程级数据随新工程一起归零：编辑计时/创建时间
+        // （clear_editor 内部已重置工程设置对话框状态）
+        self.session_tracker.reset();
+
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();
+
+        // 恢复主窗口默认标题（工程设置确认时设置的 "{标题} - Lumino"）
+        self.window_state.window.window().set_title("Lumino");
 
         tracing::info!("已创建新工程");
     }

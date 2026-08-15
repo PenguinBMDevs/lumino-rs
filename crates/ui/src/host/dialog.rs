@@ -127,6 +127,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 重置工程设置对话框状态到默认值（关闭工程 / 新建工程 / 加载新文件时调用）
+    pub fn reset_project_settings(&mut self) {
+        self.root.reset_project_settings();
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置工程设置对话框数据（用于独立对话框窗口）
     pub fn set_project_settings_data(
         &mut self,

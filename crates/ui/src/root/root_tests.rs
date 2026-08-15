@@ -386,6 +386,60 @@ fn test_right_sidebar_hides_with_piano_roll_and_restores() {
 }
 
 // ================================================================
+// 工程设置重置测试
+//
+// 修复背景：工程设置（标题/作者/版权/BPM/拍号）属于工程级数据，
+// 但存放在程序全局 Root 状态中。关闭工程/新建工程只调用
+// clear_editor()，曾遗漏重置 project_settings_dialog，导致旧工程的
+// 数据残留到下一个工程。以下测试锁定 reset 行为。
+// ================================================================
+
+#[test]
+fn test_reset_project_settings_restores_defaults() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    // 模拟用户在工程设置面板填写了数据
+    root.set_project_settings_data(
+        "我的工程".to_string(),
+        "96".to_string(),
+        "© 2026".to_string(),
+        "张三".to_string(),
+        "2026-07-01 10:00:00".to_string(),
+        3600.0,
+        vec![(0, 6, 8)],
+    );
+    assert_eq!(root.state.project_settings_dialog.title, "我的工程");
+    assert_eq!(root.state.project_settings_dialog.tempo, "96");
+    assert_eq!(root.state.project_settings_dialog.author, "张三");
+
+    // 关闭工程：工程设置必须恢复默认值，不得残留
+    root.reset_project_settings();
+
+    let dialog = &root.state.project_settings_dialog;
+    assert!(dialog.title.is_empty(), "关闭工程后标题应为空");
+    assert_eq!(dialog.tempo, "120", "关闭工程后 BPM 应恢复默认 120");
+    assert!(dialog.copyright.is_empty(), "关闭工程后版权应为空");
+    assert!(dialog.author.is_empty(), "关闭工程后作者应为空");
+    assert!(
+        dialog.created_display.is_empty(),
+        "关闭工程后创建日期应为空"
+    );
+    assert_eq!(
+        dialog.total_editing_time_seconds, 0.0,
+        "关闭工程后累计创作时间应为 0"
+    );
+    assert_eq!(
+        dialog.time_signature_numerator, "4",
+        "关闭工程后拍号分子应恢复默认 4"
+    );
+    assert_eq!(
+        dialog.time_signature_denominator, "4",
+        "关闭工程后拍号分母应恢复默认 4"
+    );
+}
+
+// ================================================================
 // 云存储快照同步 —— 保存到云切换文件夹不弹回根目录
 //
 // 修复背景：对话框（CloudBrowser/CloudConnect/设置）为独立 Root，

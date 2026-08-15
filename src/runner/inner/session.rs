@@ -28,6 +28,14 @@ impl SessionTracker {
         }
     }
 
+    /// 重置为默认值（关闭工程 / 新建工程 / 加载新文件时调用）。
+    ///
+    /// 创建时间与累计编辑时间是工程级数据，不得跨工程残留——
+    /// 关闭工程后工程设置面板的"创建日期/累计创作时间"必须归零。
+    pub(crate) fn reset(&mut self) {
+        *self = Self::new();
+    }
+
     /// 获取当前累计编辑时间（秒）
     ///
     /// 计算逻辑：
@@ -42,5 +50,31 @@ impl SessionTracker {
             self.session_start_time.elapsed().as_secs_f64()
         };
         self.accumulated_editing_secs + elapsed
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_tracker_reset_clears_project_data() {
+        let mut tracker = SessionTracker::new();
+        tracker.editing_start_time = Some(std::time::Instant::now());
+        tracker.accumulated_editing_secs = 12345.0;
+        tracker.created_at = Some("2026-07-01 10:00:00".to_string());
+
+        tracker.reset();
+
+        // 创建时间/累计编辑时间是工程级数据，关闭工程后必须归零
+        assert!(tracker.created_at.is_none());
+        assert_eq!(tracker.accumulated_editing_secs, 0.0);
+        assert!(tracker.editing_start_time.is_none());
+        // 重置后编辑时间从 0 附近开始累计（不残留旧工程的 12345 秒）
+        assert!(
+            tracker.current_editing_secs() < 60.0,
+            "重置后累计编辑时间应从 0 开始，实际 {}",
+            tracker.current_editing_secs()
+        );
     }
 }

@@ -3,6 +3,15 @@
 use crate::root::Root;
 
 impl Root {
+    /// 重置工程设置对话框状态到默认值。
+    ///
+    /// 工程设置（标题/作者/版权/BPM/拍号）属于工程级数据，关闭工程、
+    /// 新建工程或加载新文件时必须重置，防止旧工程数据残留在
+    /// 程序全局状态中（修复：关闭工程后工程设置面板仍显示旧工程数据）。
+    pub fn reset_project_settings(&mut self) {
+        self.state.project_settings_dialog.reset();
+    }
+
     /// 设置工程设置对话框数据
     pub fn set_project_settings_data(
         &mut self,

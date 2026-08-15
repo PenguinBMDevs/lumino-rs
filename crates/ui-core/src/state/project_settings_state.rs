@@ -43,6 +43,11 @@ impl ProjectSettingsDialogState {
         Self::default()
     }
 
+    /// 重置为默认值（关闭工程 / 新建工程时调用，工程设置不得跨工程残留）
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+
     /// 格式化累计创作时间 (自适应单位)
     pub fn format_editing_time(&self) -> String {
         let total_seconds = self.total_editing_time_seconds;
@@ -84,5 +89,37 @@ impl ProjectSettingsDialogState {
             return None;
         }
         Some((numerator, denominator))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_project_settings_dialog_reset_restores_defaults() {
+        let mut state = ProjectSettingsDialogState::new();
+        state.is_open = true;
+        state.title = "我的工程".to_string();
+        state.tempo = "96".to_string();
+        state.copyright = "© 2026".to_string();
+        state.author = "张三".to_string();
+        state.created_display = "2026-07-01 10:00:00".to_string();
+        state.total_editing_time_seconds = 3600.0;
+        state.time_signature_numerator = "6".to_string();
+        state.time_signature_denominator = "8".to_string();
+
+        state.reset();
+
+        // 工程设置属于工程级数据，关闭工程后必须恢复默认值，不得残留
+        assert!(!state.is_open);
+        assert_eq!(state.title, "");
+        assert_eq!(state.tempo, "120");
+        assert_eq!(state.copyright, "");
+        assert_eq!(state.author, "");
+        assert_eq!(state.created_display, "");
+        assert_eq!(state.total_editing_time_seconds, 0.0);
+        assert_eq!(state.time_signature_numerator, "4");
+        assert_eq!(state.time_signature_denominator, "4");
     }
 }

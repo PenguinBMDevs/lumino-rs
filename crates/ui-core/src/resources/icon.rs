@@ -36,6 +36,9 @@ macro_rules! define_icons {
             $($name,)*
         }
 
+        /// 全部图标枚举（与宏定义同源，供测试/遍历使用）
+        pub const ALL_ICONS: &[Icon] = &[$($name,)*];
+
         fn build_icon_cache() -> HashMap<Icon, IconData> {
             let mut map = HashMap::new();
             $(
