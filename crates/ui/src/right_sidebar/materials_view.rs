@@ -1,6 +1,7 @@
 //! 右侧栏素材库面板视图渲染
 
 use iced_core::{Alignment, Color, Length};
+use iced_core::widget::text::Wrapping;
 use iced_widget::{button, column, container, mouse_area, row, scrollable, text, tooltip};
 use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 use lumino_message::RightSidebarAction;
@@ -154,18 +155,14 @@ fn material_list<'a>(right_sidebar: &'a RightSidebar, language: Language) -> Ele
     col.into()
 }
 
-/// 单个素材项：列表仅显示名称；轨道数与来源标记移入悬停提示悬浮面板
+/// 单个素材项：列表仅显示名称；文件描述（名称/作者/位置/轨道数/来源）
+/// 移入悬停提示悬浮面板
 fn material_item<'a>(
     entry: &'a crate::right_sidebar::MaterialEntry,
     index: usize,
     language: Language,
 ) -> Element<'a> {
     let t = main_translations(language);
-    let track_label = track_label_text(entry, t);
-    let source_label = match entry.source {
-        MaterialSource::BuiltIn => t.material_section_builtin,
-        MaterialSource::User => t.material_section_user,
-    };
 
     // 名称（有效实色 / 无效置灰）
     let name_text = text(&entry.name).size(12).style(move |theme: &Theme| {
@@ -210,44 +207,83 @@ fn material_item<'a>(
         content.into()
     };
 
-    // 外部提示悬浮面板：轨道数 + 来源标记（代替原内联提示文字）
+    // 悬停提示悬浮面板：文件描述（名称/作者/位置/轨道数/来源，均带描述标头）
     // 显示在按钮左侧（右侧为素材列表区域，避免遮挡其他素材项）
-    tooltip::Tooltip::new(
-        item,
-        tooltip_content(track_label, source_label),
-        tooltip::Position::Left,
-    )
-    .style(tooltip_style)
-    .into()
+    tooltip::Tooltip::new(item, tooltip_content(entry, t), tooltip::Position::Left)
+        .style(tooltip_style)
+        .into()
 }
 
-/// 素材轨道信息文案（None = 无轨道数可显示；无效素材显示"素材无效"）
-fn track_label_text(
-    entry: &crate::right_sidebar::MaterialEntry,
-    t: &MainTranslations,
-) -> Option<String> {
-    if !entry.valid {
-        return Some(t.material_invalid.to_string());
-    }
-    if entry.track_count > 0 {
-        // i18n 格式化字符串为静态字段，用 replace 填充（format! 需要字面量）
-        Some(
-            t.material_tracks_fmt
-                .replace("{}", &entry.track_count.to_string()),
-        )
-    } else {
-        None
-    }
-}
+/// 悬停提示悬浮面板宽度（文本行固定宽度，超宽内容自动换行）
+const TOOLTIP_WIDTH: f32 = 280.0;
 
-/// 悬停提示悬浮面板内容：轨道数、来源标记（多行文本；名称已在列表项显示，不重复）
-fn tooltip_content<'a>(track_label: Option<String>, source_label: &'a str) -> Element<'a> {
+/// 悬停提示悬浮面板内容：文件描述信息，每行均带描述标头
+///
+/// 显示项：
+/// - 名称（metadata.project.name）
+/// - 作者（metadata.project.author，素材导出时跟随工程设置面板署名；非空才显示）
+/// - 位置（磁盘路径，仅本地素材）
+/// - 轨道数（解析到音轨数时显示）
+/// - 来源（内置 / 本地）
+/// - 无效素材仅显示"素材无效"
+fn tooltip_content<'a>(
+    entry: &'a crate::right_sidebar::MaterialEntry,
+    t: &'static MainTranslations,
+) -> Element<'a> {
     let mut col = column![].spacing(2);
-    if let Some(label) = track_label {
-        col = col.push(text(label).size(10));
+
+    if !entry.valid {
+        col = col.push(text(t.material_invalid).size(10));
+        return col.into();
     }
-    col = col.push(text(source_label).size(10));
+
+    // 名称
+    col = col.push(tooltip_line(format!("{}{}", t.material_name_label, entry.name)));
+    // 作者（跟随工程设置面板的作者栏目在 metadata 中署名）
+    if !entry.author.is_empty() {
+        col = col.push(tooltip_line(format!("{}{}", t.material_author_label, entry.author)));
+    }
+    // 位置（仅本地素材有磁盘路径；长路径自动换行）
+    if let Some(path) = &entry.path {
+        col = col.push(tooltip_line(format!(
+            "{}{}",
+            t.material_location_label,
+            path.display()
+        )));
+    }
+    // 轨道数
+    if entry.track_count > 0 {
+        col = col.push(tooltip_line(format!(
+            "{}{}",
+            t.material_track_label,
+            entry.track_count
+        )));
+    }
+    // 来源
+    let source_label = match entry.source {
+        MaterialSource::BuiltIn => t.material_section_builtin,
+        MaterialSource::User => t.material_section_user,
+    };
+    col = col.push(tooltip_line(format!(
+        "{}{}",
+        t.material_source_label,
+        source_label
+    )));
+
     col.into()
+}
+
+/// 悬浮窗文本行：固定宽度 + 换行策略
+///
+/// iced 默认 `Wrapping::Word` 只按单词边界断行，磁盘路径等无空格长文本
+/// 视为单个单词永不换行，会撑破悬浮窗——改用 `WordOrGlyph`：
+/// 有空格按词断行，超长单词回退到字形级断行。
+fn tooltip_line<'a>(content: String) -> Element<'a> {
+    text(content)
+        .size(10)
+        .width(Length::Fixed(TOOLTIP_WIDTH))
+        .wrapping(Wrapping::WordOrGlyph)
+        .into()
 }
 
 /// Tooltip 样式：深色背景 + 浅色文字
@@ -302,12 +338,15 @@ fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::right_sidebar::material::MaterialEntry;
 
     fn make_entry(valid: bool, track_count: usize) -> MaterialEntry {
         MaterialEntry {
             name: "测试素材".into(),
+            author: "测试作者".into(),
             source: MaterialSource::BuiltIn,
             path: None,
             data: None,
@@ -316,34 +355,6 @@ mod tests {
             valid,
             preview: None,
         }
-    }
-
-    #[test]
-    fn test_track_label_text_valid_with_tracks() {
-        let entry = make_entry(true, 4);
-        let t = main_translations(Language::ZhCn);
-        assert_eq!(track_label_text(&entry, t).as_deref(), Some("4 轨"));
-    }
-
-    #[test]
-    fn test_track_label_text_valid_without_tracks() {
-        let entry = make_entry(true, 0);
-        let t = main_translations(Language::ZhCn);
-        assert_eq!(track_label_text(&entry, t), None);
-    }
-
-    #[test]
-    fn test_track_label_text_invalid() {
-        let entry = make_entry(false, 0);
-        let t = main_translations(Language::ZhCn);
-        assert_eq!(track_label_text(&entry, t).as_deref(), Some("素材无效"));
-    }
-
-    #[test]
-    fn test_track_label_text_english() {
-        let entry = make_entry(true, 3);
-        let t = main_translations(Language::EnUs);
-        assert_eq!(track_label_text(&entry, t).as_deref(), Some("3 tracks"));
     }
 
     #[test]
@@ -356,6 +367,30 @@ mod tests {
     fn test_material_item_invalid_greyed() {
         let entry = make_entry(false, 0);
         let _element = material_item(&entry, 1, Language::ZhCn);
+    }
+
+    #[test]
+    fn test_tooltip_content_builds_full_description() {
+        // 有效素材：名称/作者/轨道数/来源均带描述标头；无路径不显示位置
+        let entry = make_entry(true, 4);
+        let t = main_translations(Language::ZhCn);
+        let _element = tooltip_content(&entry, t);
+
+        // 本地素材：额外显示位置（磁盘路径）
+        let mut user_entry = MaterialEntry {
+            path: Some(PathBuf::from("C:/Materials/demo.lmmaterial")),
+            ..make_entry(true, 2)
+        };
+        user_entry.source = MaterialSource::User;
+        let _element = tooltip_content(&user_entry, t);
+    }
+
+    #[test]
+    fn test_tooltip_content_invalid_shows_invalid() {
+        // 无效素材：仅显示"素材无效"
+        let entry = make_entry(false, 0);
+        let t = main_translations(Language::ZhCn);
+        let _element = tooltip_content(&entry, t);
     }
 
     #[test]

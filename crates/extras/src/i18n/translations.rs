@@ -118,7 +118,16 @@ pub struct MainTranslations {
     pub material_import_local: &'static str,
     pub material_section_builtin: &'static str,
     pub material_section_user: &'static str,
-    pub material_tracks_fmt: &'static str,
+    /// 素材描述悬浮窗标头：名称
+    pub material_name_label: &'static str,
+    /// 素材描述悬浮窗标头：作者
+    pub material_author_label: &'static str,
+    /// 素材描述悬浮窗标头：位置（磁盘路径）
+    pub material_location_label: &'static str,
+    /// 素材描述悬浮窗标头：轨道数
+    pub material_track_label: &'static str,
+    /// 素材描述悬浮窗标头：来源
+    pub material_source_label: &'static str,
     pub material_invalid: &'static str,
     pub material_import_ok: &'static str,
     pub material_import_failed: &'static str,
@@ -236,7 +245,11 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     material_import_local: "从本地选取",
     material_section_builtin: "内置素材",
     material_section_user: "本地素材",
-    material_tracks_fmt: "{} 轨",
+    material_name_label: "名称：",
+    material_author_label: "作者：",
+    material_location_label: "位置：",
+    material_track_label: "轨道数：",
+    material_source_label: "来源：",
     material_invalid: "素材无效",
     material_import_ok: "素材已导入",
     material_import_failed: "素材导入失败",
@@ -354,7 +367,11 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     material_import_local: "Import from Local",
     material_section_builtin: "Built-in",
     material_section_user: "Local",
-    material_tracks_fmt: "{} tracks",
+    material_name_label: "Name: ",
+    material_author_label: "Author: ",
+    material_location_label: "Location: ",
+    material_track_label: "Tracks: ",
+    material_source_label: "Source: ",
     material_invalid: "Invalid material",
     material_import_ok: "Material imported",
     material_import_failed: "Failed to import material",

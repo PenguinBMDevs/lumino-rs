@@ -166,6 +166,20 @@ mod tests {
     }
 
     #[test]
+    fn test_save_material_keeps_author_from_metadata() {
+        // 素材署名链路：工程设置面板的作者 → metadata.project.author → 素材库悬浮窗
+        // 导出素材时作者必须原样保留（runner 在导出前从工程设置对话框写入）
+        let dir = tempdir().expect("临时目录应创建成功");
+        let material_path = dir.path().join("authored.lmmaterial");
+        let mut project = make_test_project();
+        project.metadata.project.author = "Lumino 用户".into();
+
+        save_material(&project, "Authored", &material_path).expect("保存素材失败");
+        let loaded = load_project(&material_path).expect("加载素材失败");
+        assert_eq!(loaded.metadata.project.author, "Lumino 用户");
+    }
+
+    #[test]
     fn test_archive_save_still_works() {
         // 回归：save_to_archive 不受素材改造影响
         let dir = tempdir().expect("临时目录应创建成功");

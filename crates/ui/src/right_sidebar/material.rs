@@ -23,6 +23,8 @@ pub enum MaterialSource {
 pub struct MaterialEntry {
     /// 素材名称（metadata.project.name，无则用文件名）
     pub name: String,
+    /// 作者（metadata.project.author；素材导出时跟随工程设置面板填写署名）
+    pub author: String,
     /// 素材来源（内置 / 本地）
     pub source: MaterialSource,
     /// 用户素材的磁盘路径（内置素材为 None）
@@ -44,6 +46,7 @@ impl MaterialEntry {
     pub fn built_in(embedded: &lumino_extras::EmbeddedMaterial) -> Self {
         Self {
             name: embedded.name.to_string(),
+            author: String::new(),
             source: MaterialSource::BuiltIn,
             path: None,
             data: Some(embedded.data),
@@ -62,6 +65,7 @@ impl MaterialEntry {
             .unwrap_or_else(|| "未知素材".into());
         Self {
             name,
+            author: String::new(),
             source: MaterialSource::User,
             path: Some(path),
             data: None,
@@ -82,6 +86,7 @@ impl MaterialEntry {
             Err(e) => {
                 tracing::warn!("内置素材 {} 解析失败: {e}", self.name);
                 self.valid = false;
+                self.author.clear();
                 self.multi_track = false;
                 self.track_count = 0;
                 self.preview = None;
@@ -101,6 +106,7 @@ impl MaterialEntry {
             Err(e) => {
                 tracing::warn!("本地素材 {} 解析失败: {e}", path.display());
                 self.valid = false;
+                self.author.clear();
                 self.multi_track = false;
                 self.track_count = 0;
                 self.preview = None;
@@ -110,9 +116,11 @@ impl MaterialEntry {
         self.apply_project_meta(&project);
     }
 
-    /// 应用工程元数据（名称 / 多轨标记 / 音轨数）并预解析放置预览
+    /// 应用工程元数据（名称 / 作者 / 多轨标记 / 音轨数）并预解析放置预览
     fn apply_project_meta(&mut self, project: &lumino_project::LuminoProject) {
         let meta = &project.metadata;
+        // 作者：跟随工程设置面板填写（素材导出时已写入 metadata.project.author）
+        self.author = meta.project.author.clone();
         // 名称优先使用素材 metadata 中的名字
         if meta.is_material_file() {
             self.name = meta.project.name.clone();
@@ -288,6 +296,8 @@ mod tests {
     fn test_user_entry_name_from_stem() {
         let entry = MaterialEntry::user(PathBuf::from("/tmp/foo.lmmaterial"));
         assert_eq!(entry.name, "foo");
+        // 作者初始为空，解析元数据后填充（跟随工程设置面板署名）
+        assert_eq!(entry.author, "");
         assert_eq!(entry.source, MaterialSource::User);
         assert_eq!(
             entry.path.as_deref(),
