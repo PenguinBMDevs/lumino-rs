@@ -20,7 +20,6 @@ pub enum ArchiveFormat {
     Xz,
     Lzh,
     Iso,
-    Zpaq,
 }
 
 impl ArchiveFormat {
@@ -37,7 +36,6 @@ impl ArchiveFormat {
             ArchiveFormat::Xz => &["xz"],
             ArchiveFormat::Lzh => &["lzh", "lha"],
             ArchiveFormat::Iso => &["iso"],
-            ArchiveFormat::Zpaq => &["zpaq", "zpq"],
         }
     }
 }
@@ -81,7 +79,6 @@ pub fn detect_format(path: &Path) -> Option<ArchiveFormat> {
         "xz" => Some(ArchiveFormat::Xz),
         "lzh" | "lha" => Some(ArchiveFormat::Lzh),
         "iso" => Some(ArchiveFormat::Iso),
-        "zpaq" | "zpq" => Some(ArchiveFormat::Zpaq),
         _ => None,
     }
 }
@@ -210,14 +207,6 @@ mod tests {
     }
 
     #[test]
-    fn test_detect_zpaq() {
-        assert_eq!(
-            detect_format(&PathBuf::from("test.zpaq")),
-            Some(ArchiveFormat::Zpaq)
-        );
-    }
-
-    #[test]
     fn test_is_midi_extension() {
         assert!(is_midi_extension("song.mid"));
         assert!(is_midi_extension("song.MID"));
@@ -234,7 +223,6 @@ mod tests {
         assert!(is_archive(&PathBuf::from("test.rar")));
         assert!(is_archive(&PathBuf::from("test.7z")));
         assert!(is_archive(&PathBuf::from("test.iso")));
-        assert!(is_archive(&PathBuf::from("test.zpaq")));
         assert!(!is_archive(&PathBuf::from("test.mid")));
         assert!(!is_archive(&PathBuf::from("test.lmpj")));
     }

@@ -4248,7 +4248,6 @@ dependencies = [
  "unarc-rs",
  "xz2",
  "zip 2.4.2",
- "zpaq_rs",
 ]
 
 [[package]]
@@ -10802,15 +10801,6 @@ dependencies = [
  "crc32fast",
  "log",
  "simd-adler32",
-]
-
-[[package]]
-name = "zpaq_rs"
-version = "1.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f6e6e20f814ac75e2f98d6916ca65cece82ffe9f61ed1b222ea81dacd86c27d"
-dependencies = [
- "cc",
 ]
 
 [[package]]

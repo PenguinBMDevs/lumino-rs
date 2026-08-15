@@ -18,7 +18,7 @@ pub mod filters {
     pub const ARCHIVE_FILES: (&str, &[&str]) = (
         "压缩包文件",
         &[
-            "zip", "zipx", "rar", "7z", "tar", "gz", "tgz", "xz", "lzh", "lha", "iso", "zpaq",
+            "zip", "zipx", "rar", "7z", "tar", "gz", "tgz", "xz", "lzh", "lha", "iso",
         ],
     );
 
@@ -27,7 +27,7 @@ pub mod filters {
         "MIDI 与压缩包文件",
         &[
             "mid", "midi", "lmpj", "zip", "zipx", "rar", "7z", "tar", "gz", "tgz", "xz", "lzh",
-            "lha", "iso", "zpaq",
+            "lha", "iso",
         ],
     );
 
@@ -63,7 +63,6 @@ mod tests {
         assert!(ARCHIVE_FILES.1.contains(&"7z"));
         assert!(ARCHIVE_FILES.1.contains(&"tar"));
         assert!(ARCHIVE_FILES.1.contains(&"iso"));
-        assert!(ARCHIVE_FILES.1.contains(&"zpaq"));
     }
 
     #[test]

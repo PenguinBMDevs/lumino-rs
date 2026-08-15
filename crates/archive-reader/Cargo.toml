@@ -24,8 +24,6 @@ flate2 = "1"
 xz2 = "0.1"
 # ISO 9660 镜像文件
 iso9660 = "0.1"
-# ZPAQ 压缩格式
-zpaq_rs = "1.0"
 
 # 公用
 tracing = { workspace = true }

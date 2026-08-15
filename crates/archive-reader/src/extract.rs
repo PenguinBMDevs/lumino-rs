@@ -7,7 +7,6 @@
 //! - flate2 + 内容检测: 纯 GZ 压缩（单文件 MIDI）
 //! - xz2 + 内容检测: 纯 XZ 压缩（单文件 MIDI）
 //! - iso9660 + 原始扫描回退: ISO 镜像文件
-//! - zpaq_rs: ZPAQ 压缩格式
 
 use std::path::{Path, PathBuf};
 
@@ -17,7 +16,6 @@ use crate::{ArchiveEntry, ArchiveError, format::ArchiveFormat};
 mod backends;
 mod iso;
 mod tar;
-mod zpaq;
 
 use backends::{
     extract_all_gz, extract_all_unarc, extract_all_xz, extract_all_zip, extract_entry_data_gz,
@@ -71,7 +69,6 @@ pub fn list_entries(path: &Path) -> Result<Vec<ArchiveEntry>, ArchiveError> {
         ArchiveFormat::Gz => list_entries_gz_with_content_check(path),
         ArchiveFormat::Xz => list_entries_xz_with_content_check(path),
         ArchiveFormat::Iso => iso::list_entries(path),
-        ArchiveFormat::Zpaq => zpaq::list_entries(path),
     }
 }
 
@@ -107,7 +104,6 @@ pub fn extract_entry_data(path: &Path, entry_name: &str) -> Result<EntryData, Ar
         ArchiveFormat::Gz => extract_entry_data_gz(path),
         ArchiveFormat::Xz => extract_entry_data_xz(path),
         ArchiveFormat::Iso => iso::extract_entry_data(path, entry_name),
-        ArchiveFormat::Zpaq => zpaq::extract_entry_data(path, entry_name),
     }?;
 
     Ok(EntryData {
@@ -160,7 +156,6 @@ pub fn extract_all_to_dir(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>
         ArchiveFormat::Gz => extract_all_gz(path, output_dir),
         ArchiveFormat::Xz => extract_all_xz(path, output_dir),
         ArchiveFormat::Iso => iso::extract_all(path, output_dir),
-        ArchiveFormat::Zpaq => zpaq::extract_all(path, output_dir),
     }
 }
 

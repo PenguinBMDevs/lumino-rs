@@ -1,6 +1,6 @@
 //! 各后端提取实现（unarc-rs、zip crate、GZ/XZ 内容检测）
 //!
-//! TAR / ISO / ZPAQ 在独立的子模块中。
+//! TAR / ISO 在独立的子模块中。
 
 use std::io::Read;
 use std::path::{Path, PathBuf};

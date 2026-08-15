@@ -9,7 +9,6 @@
 //! - XZ (unarc-rs)
 //! - LZH (unarc-rs)
 //! - ISO 9660 (iso9660)
-//! - ZPAQ (zpaq_rs)
 
 mod extract;
 mod format;
