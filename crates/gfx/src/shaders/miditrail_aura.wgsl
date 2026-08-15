@@ -1,6 +1,9 @@
 //! 3D MIDITrail Aura 光环渲染管线
 //!
 //! 在琴键前缘（Z 方向头部）围绕音符立方体绘制一个光环，使用附加混合实现发光效果。
+//! 光环半径随音符事件实时变化（按下闪光放大 + 临近结束收缩，见
+//! `miditrail_renderer/instances.rs` 的 `build_aura_instances`），
+//! 每实例的 `size` 字段即当前帧的动画半径。
 
 struct Camera {
     view_proj: mat4x4<f32>,

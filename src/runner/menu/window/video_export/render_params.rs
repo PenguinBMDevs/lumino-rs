@@ -341,6 +341,12 @@ fn build_miditrail_render_params(
         &mut notes,
     );
 
+    // 光晕环动画时间基准：当前 tick 处每秒 tick 数（BPM × ppq / 60）。
+    // 参考 Zenith-MIDI MidiTrailRender 的 tempoFrameStep（每帧 tick 数），
+    // 使光晕的按下闪光/收缩动画只随真实时间变化，与滚动速度/帧率无关。
+    let ticks_per_second = (ppq as f64 * super::current_bpm(&document.tempo_changes, tick) / 60.0)
+        .max(1.0) as f32;
+
     let mut miditrail_notes = Vec::with_capacity(notes.len());
     for n in &notes {
         let color_packed = pack_color(current_track_color_f32(n.track_idx as usize));
@@ -368,6 +374,7 @@ fn build_miditrail_render_params(
         miditrail_notes,
         miditrail_current_tick: tick,
         miditrail_z_far: miditrail_z_far.max(0.1),
+        miditrail_ticks_per_second: ticks_per_second,
         fps,
         time_signatures: document.time_signatures.clone(),
         ..Default::default()

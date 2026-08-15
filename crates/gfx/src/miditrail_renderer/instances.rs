@@ -15,6 +15,21 @@ const BLACK_KEY_ELEVATION: f32 = 0.0;
 const BLACK_KEY_HEIGHT: f32 = 0.024;
 const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
+// ── Aura 光晕环动画参数（参考 Zenith-MIDI MidiTrailRender/Render.cs）──
+
+/// 光环半径 = 键宽 × 该系数 × 光晕系数（Zenith `circleRadius * 12 * auraSize`）。
+const AURA_RING_SCALE: f32 = 12.0;
+/// 按下闪光在起始后多少帧内二次衰减到 0（Zenith 硬编码 10）。
+const AURA_FLASH_FRAMES: f32 = 10.0;
+/// 闪光分量缩放系数：起始峰值 = 100 / 600 ≈ 0.167。
+const AURA_FLASH_DIVISOR: f32 = 600.0;
+/// 常态/收缩分量的时间基准（秒）：剩余时长超过该值时光环保持常态尺寸。
+const AURA_TAIL_SECONDS: f32 = 1.0;
+/// 收缩分量幂指数：`(剩余时长 / 音符时长) ^ 0.3`。
+const AURA_TAIL_POWER: f32 = 0.3;
+/// 长音符保持期（剩余时长 ≥ 1s）的光环系数。
+const AURA_HELD_FACTOR: f32 = 0.5;
+
 /// 当前 tick 下被按下的键信息（同一键多个音符时取最后一个音符颜色）。
 #[derive(Debug, Clone, Copy)]
 pub struct ActiveKeys {
@@ -262,12 +277,22 @@ pub fn build_key_instances(
     }
 }
 
-/// 构建 Aura 实例。
+/// 构建 Aura 实例（音符光晕环放大动画）。
 ///
-/// 当某个键在当前 tick 有音符激活时，在对应键下方生成一个光环。
-/// `active_keys` 由 `compute_active_keys` 预先计算。
+/// 参考 Zenith-MIDI `MidiTrailRender/Render.cs` 的 `auraSize` 累加逻辑，
+/// 每个键的光晕尺寸由该键上**正在发声**的音符实时驱动：
+/// - **按下闪光**：音符起始后 `AURA_FLASH_FRAMES` 帧内二次衰减的冲击分量
+///   `(max(10 - 起始帧数, 0))² / 600`，按下瞬间光环放大到最大再回落到常态；
+/// - **常态/收缩**：`(min(剩余时长, 1s) / min(音符时长, 1s))^0.3 / 2`，
+///   长音符保持 0.5，临近结束时（最后 1 秒）光环收缩到 0，平滑消失；
+/// - 光环半径 = 键宽 × `AURA_RING_SCALE` × 光晕系数（与 Zenith 的
+///   `circleRadius * 12 * auraSize` 一致）。
+///
+/// 同键多个音符取光晕系数最大值；环颜色沿用 `active_keys` 的按下键颜色。
+/// 每帧完全由 (tick, notes) 重算，不依赖跨帧状态，seek/变速均自洽。
 pub fn build_aura_instances(
     uniform: &MiditrailUniformGpu,
+    notes: &[MiditrailNoteGpu],
     active_keys: &ActiveKeys,
     key_positions: &[f32],
     key_widths: &[f32],
@@ -277,15 +302,32 @@ pub fn build_aura_instances(
         .min(key_positions.len())
         .min(128);
 
+    // 每键光晕系数：该键正在发声的音符贡献的最大值（Zenith `auraSize[k]`）
+    let mut aura_sizes = [0.0f32; 128];
+    for note in notes {
+        let key = note.key as usize;
+        if key >= key_count {
+            continue;
+        }
+        let factor = aura_factor_for_note(uniform, note);
+        if factor > aura_sizes[key] {
+            aura_sizes[key] = factor;
+        }
+    }
+
     for key_idx in 0..key_count {
+        // 颜色仅来自当前按下的键（与 compute_active_keys 一致）；
+        // aura_sizes[key] > 0 等价于该键有正在发声的音符。
         if !active_keys.pressed[key_idx] {
             continue;
         }
-        let left = key_positions[key_idx];
+        let aura = aura_sizes[key_idx];
+        if aura <= 0.0 {
+            continue;
+        }
         let width = key_widths[key_idx];
-        let center = left + width * 0.5;
-        // 光环半径要足够大，以环绕音符立方体（音符宽约键宽、高约 0.007）
-        let size = (width * 4.0).max(0.04);
+        let center = key_positions[key_idx] + width * 0.5;
+        let size = (width * AURA_RING_SCALE * aura).max(0.001);
         out.push(MiditrailAuraInstanceGpu {
             size,
             pos: center,
@@ -293,6 +335,42 @@ pub fn build_aura_instances(
             _padding: 0,
         });
     }
+}
+
+/// 单个音符对所在键光晕系数的贡献（Zenith `factor + factor2`）。
+///
+/// 仅当音符当前正在发声（`start_tick <= tick < end_tick`）且已开始时有贡献；
+/// 未开始的音符（Zenith `n.start < midiTime` 才累加）与已结束的音符直接返回 0。
+fn aura_factor_for_note(uniform: &MiditrailUniformGpu, note: &MiditrailNoteGpu) -> f32 {
+    let tick = uniform.tick;
+    if note.start_tick > tick || !note.is_active_at(tick) {
+        return 0.0;
+    }
+    let ticks_per_second = uniform.ticks_per_second.max(0.1);
+    // Zenith `tempoFrameStep`：每帧 tick 数 = 每秒 tick 数 / fps
+    let frame_ticks = (ticks_per_second / uniform.fps.max(1.0)).max(0.001);
+
+    // 按下闪光：起始后 AURA_FLASH_FRAMES 帧内二次衰减到 0
+    let frames_since_start = (tick - note.start_tick) as f32 / frame_ticks;
+    let flash = (AURA_FLASH_FRAMES - frames_since_start)
+        .max(0.0)
+        .powi(2)
+        / AURA_FLASH_DIVISOR;
+
+    // 常态/收缩：长音符保持 AURA_HELD_FACTOR，最后 AURA_TAIL_SECONDS 内收缩到 0。
+    // Zenith `maxAuraLen = tempoFrameStep * fps` 即每秒 tick 数，作为收缩窗口。
+    let aura_len = ticks_per_second * AURA_TAIL_SECONDS;
+    let length = (note.end_tick - note.start_tick).max(1) as f32;
+    let remaining = (note.end_tick - tick) as f32;
+    let offset = remaining.min(aura_len);
+    let len = length.min(aura_len);
+    let tail = if len > 0.0 {
+        (offset / len).powf(AURA_TAIL_POWER) * AURA_HELD_FACTOR
+    } else {
+        0.0
+    };
+
+    tail + flash
 }
 
 #[cfg(test)]

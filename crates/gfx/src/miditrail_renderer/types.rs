@@ -66,6 +66,12 @@ pub struct MiditrailUniformGpu {
     pub fps: f32,
     /// Z 方向显示距离（决定音符在多远被截断）。
     pub z_far_distance: f32,
+    /// 当前 tick 处每秒 tick 数（BPM × ppq / 60）。
+    ///
+    /// 作为 Aura 光晕环动画的时间基准（参考 Zenith-MIDI 的
+    /// `tempoFrameStep = 每帧 tick 数` 与 `maxAuraLen = 每秒 tick 数`），
+    /// 使光晕的放大/收缩速度与速度/帧率无关，仅取决于真实时间。
+    pub ticks_per_second: f32,
     /// 对齐填充
     pub _padding1: u32,
 }
@@ -85,6 +91,8 @@ impl Default for MiditrailUniformGpu {
             param2: 0.0,
             fps: 60.0,
             z_far_distance: 7.5,
+            // 默认按 ppq=480 @ 120 BPM（480 × 2）
+            ticks_per_second: 960.0,
             _padding1: 0,
         }
     }

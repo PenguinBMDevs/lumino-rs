@@ -320,6 +320,14 @@ fn handle_miditrail_frame(
     let kb_height = ((height as f64) * 0.12).round() as u32;
     let kb_height = kb_height.max(20).min(height / 3);
 
+    // 光晕环动画时间基准：导出参数已按当前 BPM 计算；
+    // 0（未知，如默认参数）回退到 120 BPM（ppq × 2）。
+    let ticks_per_second = if params.miditrail_ticks_per_second > 0.0 {
+        params.miditrail_ticks_per_second
+    } else {
+        params.ppq.max(1.0) * 2.0
+    };
+
     let uniform = MiditrailUniformGpu {
         tick: params.miditrail_current_tick,
         ppq: params.ppq as u32,
@@ -333,6 +341,7 @@ fn handle_miditrail_frame(
         param2: 0.0,
         fps: params.fps.max(1.0),
         z_far_distance: params.miditrail_z_far.max(0.1),
+        ticks_per_second,
         _padding1: 0,
     };
 

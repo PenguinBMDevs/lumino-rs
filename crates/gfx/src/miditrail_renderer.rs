@@ -223,6 +223,7 @@ impl MiditrailRenderer {
         let mut aura_instances = Vec::new();
         build_aura_instances(
             uniform,
+            notes,
             &active_keys,
             &self.key_positions,
             &self.key_widths,

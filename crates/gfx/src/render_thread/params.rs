@@ -87,6 +87,10 @@ pub struct RenderParams {
     pub miditrail_current_tick: u32,
     /// Miditrail Z 方向显示距离（音符在多远被截断）。
     pub miditrail_z_far: f32,
+    /// Miditrail 光晕环动画时间基准：当前 tick 处每秒 tick 数（BPM × ppq / 60）。
+    ///
+    /// 0 表示未知（由渲染线程回退到 120 BPM 估算），供非导出路径的默认参数使用。
+    pub miditrail_ticks_per_second: f32,
     /// Miditrail / 视频导出目标帧率（用于按键动画时间步长）。
     pub fps: f32,
 }
@@ -136,6 +140,7 @@ impl Default for RenderParams {
             miditrail_notes: Vec::new(),
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,
+            miditrail_ticks_per_second: 0.0,
             fps: 60.0,
         }
     }
@@ -199,6 +204,7 @@ pub struct RenderParamsBuilder {
     miditrail_notes: Vec<MiditrailNoteGpu>,
     miditrail_current_tick: u32,
     miditrail_z_far: f32,
+    miditrail_ticks_per_second: f32,
     fps: f32,
 }
 
@@ -243,6 +249,7 @@ impl Default for RenderParamsBuilder {
             miditrail_notes: Vec::new(),
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,
+            miditrail_ticks_per_second: 0.0,
             fps: 60.0,
         }
     }
@@ -423,6 +430,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置 Miditrail 光晕环动画时间基准（每秒 tick 数；0 表示由渲染线程回退估算）。
+    pub fn miditrail_ticks_per_second(mut self, ticks_per_second: f32) -> Self {
+        self.miditrail_ticks_per_second = ticks_per_second;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -474,6 +487,7 @@ impl RenderParamsBuilder {
             miditrail_notes: self.miditrail_notes,
             miditrail_current_tick: self.miditrail_current_tick,
             miditrail_z_far: self.miditrail_z_far,
+            miditrail_ticks_per_second: self.miditrail_ticks_per_second,
             fps: self.fps,
         }
     }
