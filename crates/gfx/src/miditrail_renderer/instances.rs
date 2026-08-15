@@ -17,8 +17,11 @@ const BLACK_KEY_WIDTH_RATIO: f32 = 0.58;
 
 // ── Aura 光晕环动画参数（参考 Zenith-MIDI MidiTrailRender/Render.cs）──
 
-/// 光环半径 = 键宽 × 该系数 × 光晕系数（Zenith `circleRadius * 12 * auraSize`）。
-const AURA_RING_SCALE: f32 = 12.0;
+/// 光环半径 = 键宽 × 该系数 × 光晕系数。
+///
+/// Zenith 原式为 `circleRadius * 12 * auraSize`；按视觉反馈缩到其 2/3（12 → 8）：
+/// 常态尺寸回到 4 倍键宽（与动画化之前一致），按下闪光峰值 = 8 × 2/3 ≈ 5.33 倍键宽。
+const AURA_RING_SCALE: f32 = 8.0;
 /// 按下闪光在起始后多少帧内二次衰减到 0（Zenith 硬编码 10）。
 const AURA_FLASH_FRAMES: f32 = 10.0;
 /// 闪光分量缩放系数：起始峰值 = 100 / 600 ≈ 0.167。
@@ -285,8 +288,8 @@ pub fn build_key_instances(
 ///   `(max(10 - 起始帧数, 0))² / 600`，按下瞬间光环放大到最大再回落到常态；
 /// - **常态/收缩**：`(min(剩余时长, 1s) / min(音符时长, 1s))^0.3 / 2`，
 ///   长音符保持 0.5，临近结束时（最后 1 秒）光环收缩到 0，平滑消失；
-/// - 光环半径 = 键宽 × `AURA_RING_SCALE` × 光晕系数（与 Zenith 的
-///   `circleRadius * 12 * auraSize` 一致）。
+/// - 光环半径 = 键宽 × `AURA_RING_SCALE` × 光晕系数（Zenith 的
+///   `circleRadius * 12 * auraSize` 按视觉反馈缩到 2/3）。
 ///
 /// 同键多个音符取光晕系数最大值；环颜色沿用 `active_keys` 的按下键颜色。
 /// 每帧完全由 (tick, notes) 重算，不依赖跨帧状态，seek/变速均自洽。
