@@ -212,15 +212,13 @@ impl RunnerInner {
     /// 后台上传素材文件到云目标目录
     ///
     /// 与 `run_cloud_save`（导出工程归档）区分：本方法直接上传指定本地
-    /// 素材文件（.lmmaterial）。`is_tmp` 表示临时文件（内置素材），
-    /// 上传完成后删除。
+    /// 素材文件（.lmmaterial）。仅用户素材可上传（内置素材不支持）。
     pub(super) fn run_cloud_upload_material(
         &mut self,
         id: String,
         dir_path: String,
         local_path: String,
         file_name: String,
-        is_tmp: bool,
     ) {
         // 云上传串行限制：已有上传进行中则忽略（避免并发写云导致文件混乱）
         if self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst) {
@@ -247,10 +245,6 @@ impl RunnerInner {
             };
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.upload(&id, Path::new(&local_path), &remote);
-            // 临时文件（内置素材）上传后清理
-            if is_tmp {
-                let _ = std::fs::remove_file(&local_path);
-            }
             let done_msg = if result.is_ok() {
                 format!("素材 {file_name} 已上传到云存储")
             } else {

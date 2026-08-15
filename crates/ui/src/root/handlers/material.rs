@@ -281,12 +281,17 @@ impl Root {
         self.right_sidebar.materials.add_menu_open = false;
         self.right_sidebar.materials.renaming_material = None;
         self.right_sidebar.materials.pending_delete = None;
+        // 快照当前鼠标位置（面板局部坐标）作为菜单弹出位置；
+        // 菜单打开期间该位置冻结，不跟随鼠标移动
+        self.right_sidebar.materials.context_menu_pos =
+            self.right_sidebar.materials.context_cursor_pos;
         self.right_sidebar.materials.context_menu_target = Some(index);
     }
 
     /// 处理关闭素材右键菜单
     pub(super) fn close_material_context_menu(&mut self) {
         self.right_sidebar.materials.context_menu_target = None;
+        self.right_sidebar.materials.context_menu_pos = None;
     }
 
     /// 处理点击素材右键菜单项
@@ -307,15 +312,22 @@ impl Root {
                 }
             }
             MaterialContextMenuItem::Delete => {
-                // 进入行内确认态（不立即删除）
+                // 仅用户素材可删除（内置素材的按钮已置灰，此处为防御）
                 if let Some(entry) = self.right_sidebar.materials.entries.get(index)
                     && entry.path.is_some()
                 {
+                    // 进入删除确认态：主窗口叠加覆盖层弹窗展示确认卡片
                     self.right_sidebar.materials.pending_delete = Some(index);
+                    self.right_sidebar.materials.pending_delete_name = Some(entry.name.clone());
                 }
             }
             MaterialContextMenuItem::UploadToCloud => {
-                self.upload_material_to_cloud(index);
+                // 仅用户素材可上传到云（内置素材为程序资产，按钮已置灰，此处为防御）
+                if let Some(entry) = self.right_sidebar.materials.entries.get(index)
+                    && entry.path.is_some()
+                {
+                    self.upload_material_to_cloud(index);
+                }
             }
         }
     }
@@ -389,18 +401,23 @@ impl Root {
     }
 
     /// 处理取消素材删除确认
+    ///
+    /// 覆盖层确认卡片的[取消]按钮/点击遮罩调用，清除确认态。
     pub(super) fn cancel_material_delete(&mut self) {
         self.right_sidebar.materials.pending_delete = None;
+        self.right_sidebar.materials.pending_delete_name = None;
     }
 
     /// 处理确认素材删除（删除本地文件并重新扫描）
     ///
-    /// `index` 必须与当前待确认索引一致（防御：只允许确认当前高亮的素材项）。
+    /// `index` 必须与当前待确认索引一致（防御：只允许确认当前卡片对应的素材项）。
+    /// 覆盖层确认卡片的[删除]按钮调用。
     pub(super) fn confirm_material_delete(&mut self, index: usize) {
         if self.right_sidebar.materials.pending_delete != Some(index) {
             return;
         }
         self.right_sidebar.materials.pending_delete = None;
+        self.right_sidebar.materials.pending_delete_name = None;
         let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
             return;
         };
@@ -427,7 +444,7 @@ impl Root {
     /// - 无在线连接：runner 分流弹出云存储连接面板引导配置；
     /// - 有在线连接：打开云浏览面板（保存模式），用户选择目录后点"保存到此处"。
     ///
-    /// 内置素材无磁盘路径，先写临时文件再上传（上传完成后由 runner 清理）。
+    /// 仅用户素材可上传（调用方已做防御门；内置素材无磁盘路径，不可上传）。
     pub(super) fn upload_material_to_cloud(&mut self, index: usize) {
         let Some(entry) = self.right_sidebar.materials.entries.get(index) else {
             return;
@@ -436,39 +453,17 @@ impl Root {
             self.toast.push(ToastLevel::Error, "素材无效，无法上传");
             return;
         }
-        // 确定本地文件与远程文件名
-        let (local_path, is_tmp) = match (&entry.path, entry.data) {
-            // 用户素材：直接上传原文件
-            (Some(path), _) => (path.clone(), false),
-            // 内置素材：写入临时文件（系统临时目录），上传后删除
-            (None, Some(data)) => {
-                let tmp_path = std::env::temp_dir().join(format!(
-                    "lumino_upload_{}.lmmaterial",
-                    std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .map(|d| d.as_nanos())
-                        .unwrap_or(0)
-                ));
-                if let Err(e) = std::fs::write(&tmp_path, data) {
-                    self.toast
-                        .push(ToastLevel::Error, format!("素材上传失败：无法创建临时文件 {e}"));
-                    return;
-                }
-                (tmp_path, true)
-            }
-            (None, None) => {
-                self.toast.push(ToastLevel::Error, "素材数据缺失，无法上传");
-                return;
-            }
+        let Some(path) = &entry.path else {
+            self.toast.push(ToastLevel::Error, "内置素材不可上传");
+            return;
         };
         // 远程文件名：素材显示名 + 扩展名；过滤路径分隔符（防止创建子路径）
         let file_name = format!("{}.lmmaterial", entry.name.replace(['/', '\\'], "_"));
 
         // 设置上传待办（云浏览面板"保存到此处"时消费）
         self.cloud.pending_upload = Some(crate::state::cloud_state::PendingUpload {
-            local_path: local_path.to_string_lossy().into_owned(),
+            local_path: path.to_string_lossy().into_owned(),
             file_name,
-            is_tmp,
         });
         // 云入口分流：无连接 → runner 弹出连接面板；已连接 → 浏览面板（保存模式）
         crate::event::emit(crate::event::Event::cloud(
@@ -621,7 +616,43 @@ mod tests {
 
         root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Delete);
         assert!(root.right_sidebar.materials.context_menu_target.is_none());
+        // 确认态 + 素材名快照（独立对话框窗口展示用）
         assert_eq!(root.right_sidebar.materials.pending_delete, Some(0));
+        assert_eq!(
+            root.right_sidebar.materials.pending_delete_name.as_deref(),
+            Some("测试素材")
+        );
+    }
+
+    #[test]
+    fn test_delete_sets_confirm_snapshot() {
+        // 右键删除：确认态 + 素材名快照（覆盖层确认卡片展示用）
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(PathBuf::from("C:/tmp/a.lmmaterial"))));
+        root.open_material_context_menu(0);
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Delete);
+        assert_eq!(root.right_sidebar.materials.pending_delete, Some(0));
+        assert_eq!(
+            root.right_sidebar.materials.pending_delete_name.as_deref(),
+            Some("测试素材")
+        );
+    }
+
+    #[test]
+    fn test_cancel_delete_clears_snapshot() {
+        let mut root = create_root();
+        root.right_sidebar
+            .materials
+            .entries
+            .push(user_entry(Some(PathBuf::from("C:/tmp/a.lmmaterial"))));
+        root.open_material_context_menu(0);
+        root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Delete);
+        root.cancel_material_delete();
+        assert!(root.right_sidebar.materials.pending_delete.is_none());
+        assert!(root.right_sidebar.materials.pending_delete_name.is_none());
     }
 
     #[test]
@@ -662,6 +693,43 @@ mod tests {
     }
 
     #[test]
+    fn test_open_context_menu_snapshots_cursor_pos() {
+        let mut root = create_root();
+        root.right_sidebar.materials.entries.push(user_entry(None));
+        root.right_sidebar.materials.update_cursor_pos(120.0, 80.0);
+
+        root.open_material_context_menu(0);
+        // 菜单位置 = 打开瞬间的光标位置快照（面板局部坐标）
+        assert_eq!(
+            root.right_sidebar.materials.context_menu_pos,
+            Some((120.0, 80.0))
+        );
+        // 菜单打开期间光标移动：弹出位置保持冻结，不跟随鼠标漂移
+        root.right_sidebar.materials.update_cursor_pos(300.0, 200.0);
+        assert_eq!(
+            root.right_sidebar.materials.context_menu_pos,
+            Some((120.0, 80.0))
+        );
+    }
+
+    #[test]
+    fn test_close_context_menu_clears_snapshot() {
+        let mut root = create_root();
+        root.right_sidebar.materials.entries.push(user_entry(None));
+        root.right_sidebar.materials.update_cursor_pos(10.0, 20.0);
+        root.open_material_context_menu(0);
+
+        root.close_material_context_menu();
+        assert!(root.right_sidebar.materials.context_menu_target.is_none());
+        assert!(root.right_sidebar.materials.context_menu_pos.is_none());
+        // 实时光标位置保留，供下次打开菜单使用
+        assert_eq!(
+            root.right_sidebar.materials.context_cursor_pos,
+            Some((10.0, 20.0))
+        );
+    }
+
+    #[test]
     fn test_upload_to_cloud_sets_pending_upload_for_user_material() {
         let mut root = create_root();
         let path = PathBuf::from("C:/tmp/素材.lmmaterial");
@@ -675,13 +743,12 @@ mod tests {
         let pending = root.cloud.pending_upload.expect("应设置上传待办");
         assert_eq!(pending.local_path, path.to_string_lossy());
         assert_eq!(pending.file_name, "测试素材.lmmaterial");
-        assert!(!pending.is_tmp);
     }
 
     #[test]
-    fn test_upload_to_cloud_builtin_writes_tmp_file() {
+    fn test_upload_to_cloud_builtin_rejected() {
+        // 内置素材不支持上传到云（按钮已置灰，此处验证防御逻辑）
         let mut root = create_root();
-        // 内置素材：无路径但有字节 → 写临时文件上传
         root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
             name: "内置素材".into(),
             author: String::new(),
@@ -696,17 +763,10 @@ mod tests {
         root.open_material_context_menu(0);
 
         root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
-        let pending = root.cloud.pending_upload.expect("应设置上传待办");
-        assert_eq!(pending.file_name, "内置素材.lmmaterial");
-        assert!(pending.is_tmp, "内置素材应标记为临时文件");
-        // 临时文件应真实存在且内容为素材字节
-        assert!(PathBuf::from(&pending.local_path).exists());
-        assert_eq!(
-            std::fs::read(&pending.local_path).expect("临时文件应可读"),
-            vec![0x4C, 0x4D, 0x50, 0x4A]
+        assert!(
+            root.cloud.pending_upload.is_none(),
+            "内置素材不应设置上传待办"
         );
-        // 清理临时文件
-        let _ = std::fs::remove_file(&pending.local_path);
     }
 
     #[test]

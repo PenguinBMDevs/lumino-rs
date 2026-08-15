@@ -182,7 +182,6 @@ impl Root {
                             dir_path: self.cloud.current_path.clone(),
                             local_path: pending.local_path,
                             file_name: pending.file_name,
-                            is_tmp: pending.is_tmp,
                         },
                     ));
                 } else {

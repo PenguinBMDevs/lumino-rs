@@ -6,6 +6,7 @@ pub mod convert;
 mod core;
 pub mod material;
 mod material_context_menu;
+pub(crate) mod material_delete_dialog;
 mod materials_view;
 mod resize;
 pub mod view;

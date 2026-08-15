@@ -61,12 +61,10 @@ pub enum Event {
         id: String,
         /// 目标目录
         dir_path: String,
-        /// 本地素材文件路径（内置素材为临时文件）
+        /// 本地素材文件路径
         local_path: String,
         /// 远程文件名
         file_name: String,
-        /// 是否为临时文件（上传完成后删除）
-        is_tmp: bool,
     },
     /// 新建文件夹请求
     NewFolderRequest {

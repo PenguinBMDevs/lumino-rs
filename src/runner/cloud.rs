@@ -85,8 +85,7 @@ impl RunnerInner {
                 dir_path,
                 local_path,
                 file_name,
-                is_tmp,
-            } => self.run_cloud_upload_material(id, dir_path, local_path, file_name, is_tmp),
+            } => self.run_cloud_upload_material(id, dir_path, local_path, file_name),
             cloud_event::Event::NewFolderRequest { id, parent, name } => {
                 self.run_cloud_new_folder(id, parent, name);
             }

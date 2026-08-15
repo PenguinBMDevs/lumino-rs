@@ -4,13 +4,13 @@
 //! 视觉风格参考音轨选项卡右键菜单（`sidebar/context_menu.rs`）：
 //! 垂直图标栏 + tooltip，深色圆角背景。
 //!
-//! 菜单项：
-//! - 重命名（仅用户素材可用，内置素材置灰）
-//! - 删除（仅用户素材可用，内置素材置灰）
-//! - 上传到云（全部素材可用）
+//! 菜单项（仅用户素材可用；内置素材为程序资产，全部置灰不可用）：
+//! - 重命名
+//! - 删除
+//! - 上传到云
 
-use iced_core::{Alignment, Color, Length, Padding};
-use iced_widget::{Space, button, column, container, mouse_area, tooltip};
+use iced_core::{Alignment, Color, Length, Padding, Size};
+use iced_widget::{Space, button, column, container, mouse_area, responsive, tooltip};
 use lumino_message::{MaterialContextMenuItem, RightSidebarAction};
 
 use crate::resources::icon::{self, Icon};
@@ -26,7 +26,9 @@ const BUTTON_SPACING: f32 = 4.0;
 const PANEL_PADDING: f32 = 8.0;
 /// 面板宽度
 const PANEL_WIDTH: f32 = BUTTON_SIZE + PANEL_PADDING * 2.0;
-/// 面板与触发位置的偏移
+/// 面板高度（3 个按钮 + 间距 + 内边距）
+const MENU_HEIGHT: f32 = BUTTON_SIZE * 3.0 + BUTTON_SPACING * 2.0 + PANEL_PADDING * 2.0;
+/// 菜单与触发位置的偏移
 const MENU_OFFSET_X: f32 = 4.0;
 const MENU_OFFSET_Y: f32 = 4.0;
 
@@ -40,15 +42,18 @@ const HOVER_BACKGROUND: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.12);
 const PRESSED_BACKGROUND: Color = Color::from_rgba(1.0, 1.0, 1.0, 0.22);
 /// 浅色文字
 const TOOLTIP_TEXT_COLOR: Color = Color::from_rgba(0.95, 0.95, 0.95, 1.0);
+/// 禁用态图标遮罩：半透明面板底色覆盖图标，呈现置灰效果
+const DISABLED_ICON_MASK: Color = Color::from_rgba(0.06, 0.06, 0.08, 0.55);
 
 /// 构建可直接嵌入 Stack 覆盖层的菜单面板内容
 ///
-/// `index` 为素材列表索引；`can_edit` 表示是否可重命名/删除（用户素材 = true）。
+/// `index` 为素材列表索引；`can_edit` 表示菜单项是否可用（用户素材 = true，
+/// 内置素材 = false，全部按钮置灰）。
 pub fn panel(index: usize, can_edit: bool) -> Element<'static> {
     let buttons = [
         menu_button(index, MaterialContextMenuItem::Rename, can_edit),
         menu_button(index, MaterialContextMenuItem::Delete, can_edit),
-        menu_button(index, MaterialContextMenuItem::UploadToCloud, true),
+        menu_button(index, MaterialContextMenuItem::UploadToCloud, can_edit),
     ];
 
     let total_height = buttons.len() as f32 * BUTTON_SIZE
@@ -76,14 +81,35 @@ pub fn panel(index: usize, can_edit: bool) -> Element<'static> {
 
 /// 构建单个菜单按钮（图标 + tooltip）
 ///
-/// `enabled = false` 时按钮不响应点击（内置素材的重命名/删除）。
+/// `enabled = false` 时按钮不响应点击且图标置灰（内置素材的全部菜单项）。
 fn menu_button(
     index: usize,
     item: MaterialContextMenuItem,
     enabled: bool,
 ) -> Element<'static> {
-    let icon_view =
-        icon::view_with_size_and_theme(item_icon(item), ICON_SIZE, ICON_SIZE, Some(&Theme::Dark));
+    let icon_view: Element<'static> =
+        icon::view_with_size_and_theme(item_icon(item), ICON_SIZE, ICON_SIZE, Some(&Theme::Dark))
+            .into();
+
+    // 禁用态：图标上叠加半透明面板底色遮罩，呈现置灰效果
+    let icon_view = if enabled {
+        icon_view
+    } else {
+        iced_widget::Stack::new()
+            .push(icon_view)
+            .push(
+                container(Space::new())
+                    .width(Length::Fixed(ICON_SIZE as f32))
+                    .height(Length::Fixed(ICON_SIZE as f32))
+                    .style(|_theme: &Theme| container::Style {
+                        background: Some(iced_core::Background::Color(DISABLED_ICON_MASK)),
+                        ..Default::default()
+                    }),
+            )
+            .width(Length::Fixed(ICON_SIZE as f32))
+            .height(Length::Fixed(ICON_SIZE as f32))
+            .into()
+    };
 
     let tooltip_text = item_label(item);
 
@@ -163,28 +189,43 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
 
 /// 将菜单面板定位在鼠标位置附近
 ///
-/// `pos` 为鼠标在窗口中的逻辑坐标（由 Host 在消息处理时注入）。
-/// 菜单以鼠标位置的 Y 坐标为基准，贴面板右缘显示（素材库面板位于屏幕右侧）。
-/// 若无位置信息，则默认显示在面板右上角。
+/// `pos` 为鼠标在素材面板内的局部坐标（由面板级 `on_move` 事件持续追踪，
+/// 打开菜单时快照）。菜单默认在鼠标右下方展开；贴近面板右/下边缘时
+/// 自动翻转到鼠标另一侧，避免菜单溢出面板。无位置信息时默认在面板左上角。
 pub fn positioned_menu<'a>(
     index: usize,
     can_edit: bool,
     pos: Option<(f32, f32)>,
 ) -> Element<'a> {
-    let top = pos.map_or(MENU_OFFSET_Y, |(_, y)| y + MENU_OFFSET_Y);
+    let (x, y) = pos.unwrap_or((0.0, 0.0));
+    responsive(move |size: Size| {
+        // 菜单在鼠标右下方展开；贴近面板右缘时翻转到鼠标左侧
+        let left = if x + PANEL_WIDTH + MENU_OFFSET_X * 2.0 <= size.width {
+            x + MENU_OFFSET_X
+        } else {
+            (x - PANEL_WIDTH - MENU_OFFSET_X).max(0.0)
+        };
+        // 贴近面板底缘时翻转到鼠标上方
+        let top = if y + MENU_HEIGHT + MENU_OFFSET_Y * 2.0 <= size.height {
+            y + MENU_OFFSET_Y
+        } else {
+            (y - MENU_HEIGHT - MENU_OFFSET_Y).max(0.0)
+        };
 
-    container(panel(index, can_edit))
-        .padding(Padding {
-            top,
-            right: MENU_OFFSET_X,
-            bottom: 0.0,
-            left: 0.0,
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(iced_core::alignment::Horizontal::Right)
-        .align_y(iced_core::alignment::Vertical::Top)
-        .into()
+        container(panel(index, can_edit))
+            .padding(Padding {
+                top,
+                right: 0.0,
+                bottom: 0.0,
+                left,
+            })
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .align_x(iced_core::alignment::Horizontal::Left)
+            .align_y(iced_core::alignment::Vertical::Top)
+            .into()
+    })
+    .into()
 }
 
 #[cfg(test)]

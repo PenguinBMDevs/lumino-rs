@@ -153,12 +153,17 @@ pub struct MaterialLibrary {
     pub scanning: bool,
     /// 右键菜单打开的素材列表索引（None = 菜单关闭）
     pub context_menu_target: Option<usize>,
-    /// 右键菜单弹出位置（窗口逻辑坐标，由 Host 在消息处理时注入）
+    /// 鼠标在素材面板内的实时位置（面板局部坐标，由面板 on_move 事件持续更新）
+    pub context_cursor_pos: Option<(f32, f32)>,
+    /// 右键菜单弹出位置（面板局部坐标；打开菜单时从 `context_cursor_pos` 快照，
+    /// 菜单打开期间保持冻结，避免菜单跟随鼠标漂移）
     pub context_menu_pos: Option<(f32, f32)>,
     /// 正在重命名的素材（列表索引 + 当前输入值）
     pub renaming_material: Option<(usize, String)>,
-    /// 等待删除确认的素材列表索引
+    /// 等待删除确认的素材列表索引（删除确认对话框打开中）
     pub pending_delete: Option<usize>,
+    /// 待删除素材的显示名（删除确认对话框展示；不依赖列表条目，独立窗口可用）
+    pub pending_delete_name: Option<String>,
 }
 
 impl MaterialLibrary {
@@ -167,9 +172,9 @@ impl MaterialLibrary {
         !self.entries.is_empty() || self.scanning
     }
 
-    /// 设置右键菜单弹出位置（Host 捕获鼠标坐标后注入）
-    pub fn set_context_menu_pos(&mut self, x: f32, y: f32) {
-        self.context_menu_pos = Some((x, y));
+    /// 更新鼠标在面板内的实时位置（面板级 on_move 事件注入，面板局部坐标）
+    pub fn update_cursor_pos(&mut self, x: f32, y: f32) {
+        self.context_cursor_pos = Some((x, y));
     }
 }
 

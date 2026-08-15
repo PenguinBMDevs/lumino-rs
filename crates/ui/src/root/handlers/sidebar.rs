@@ -374,6 +374,11 @@ impl Root {
                 self.open_material_context_menu(index);
                 true
             }
+            MaterialCursorMoved(x, y) => {
+                // 记录鼠标在素材面板内的实时位置（右键菜单弹出位置的数据源）
+                self.right_sidebar.materials.update_cursor_pos(x, y);
+                true
+            }
             MaterialContextMenuClosed => {
                 self.close_material_context_menu();
                 true

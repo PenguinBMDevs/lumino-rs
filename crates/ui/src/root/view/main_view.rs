@@ -176,17 +176,44 @@ impl Root {
             ]
         };
 
-        // 叠加 Toast 通知层（右下角）
+        // 叠加层（自下而上）：Toast 通知层（右下角）→ 素材删除确认对话框（覆盖层样式）
+        let mut stack = iced_widget::Stack::new()
+            .push(main_content)
+            .width(Length::Fill)
+            .height(Length::Fill);
         if let Some(toast_overlay) = self.toast.view(&self.window.theme) {
-            iced_widget::Stack::new()
-                .push(main_content)
-                .push(toast_overlay)
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-        } else {
-            main_content.into()
+            stack = stack.push(toast_overlay);
         }
+        if let Some(dialog) = self.view_material_delete_dialog() {
+            stack = stack.push(dialog);
+        }
+        stack.into()
+    }
+
+    /// 素材删除确认对话框（主窗口覆盖层：全屏遮罩 + 居中卡片）
+    ///
+    /// 由 `right_sidebar.materials.pending_delete` 驱动；无待确认项时返回 None。
+    /// 素材名优先取快照（列表刷新后仍可正确展示），回退到列表条目。
+    fn view_material_delete_dialog(&self) -> Option<Element<'static>> {
+        let index = self.right_sidebar.materials.pending_delete?;
+        let name = self
+            .right_sidebar
+            .materials
+            .pending_delete_name
+            .clone()
+            .or_else(|| {
+                self.right_sidebar
+                    .materials
+                    .entries
+                    .get(index)
+                    .map(|e| e.name.clone())
+            })
+            .unwrap_or_default();
+        Some(crate::right_sidebar::material_delete_dialog::view(
+            name,
+            index,
+            self.settings.language,
+        ))
     }
 
     /// 渲染工程走带视图
@@ -480,5 +507,64 @@ impl Root {
             ..Default::default()
         })
         .into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::storage::config::UiConfig;
+
+    fn create_root() -> Root {
+        Root::new(&UiConfig::default())
+    }
+
+    fn push_entry(root: &mut Root, name: &str) {
+        root.right_sidebar.materials.entries.push(
+            crate::right_sidebar::MaterialEntry {
+                name: name.into(),
+                author: String::new(),
+                source: crate::right_sidebar::MaterialSource::User,
+                path: None,
+                data: None,
+                multi_track: false,
+                track_count: 1,
+                valid: true,
+                preview: None,
+            },
+        );
+    }
+
+    #[test]
+    fn test_material_delete_dialog_hidden_when_no_pending() {
+        let root = create_root();
+        assert!(root.view_material_delete_dialog().is_none());
+    }
+
+    #[test]
+    fn test_material_delete_dialog_shown_when_pending() {
+        let mut root = create_root();
+        push_entry(&mut root, "测试素材");
+        root.right_sidebar.materials.pending_delete = Some(0);
+        assert!(root.view_material_delete_dialog().is_some());
+    }
+
+    #[test]
+    fn test_material_delete_dialog_name_fallback_to_entry() {
+        // 无快照名时回退到列表条目名称
+        let mut root = create_root();
+        push_entry(&mut root, "回退名");
+        root.right_sidebar.materials.pending_delete = Some(0);
+        let element = root.view_material_delete_dialog();
+        assert!(element.is_some());
+    }
+
+    #[test]
+    fn test_main_view_builds_with_delete_dialog() {
+        // view_main 整体构建（含对话框叠加层路径）不 panic
+        let mut root = create_root();
+        push_entry(&mut root, "测试素材");
+        root.right_sidebar.materials.pending_delete = Some(0);
+        let _element = root.view_main();
     }
 }

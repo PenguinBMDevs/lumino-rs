@@ -87,12 +87,10 @@ impl CloudClipboard {
 /// 素材上传待办（云浏览面板保存模式下"保存到此处"时消费）
 #[derive(Debug, Clone)]
 pub struct PendingUpload {
-    /// 本地素材文件路径（内置素材为临时文件）
+    /// 本地素材文件路径
     pub local_path: String,
     /// 远程文件名
     pub file_name: String,
-    /// 是否为临时文件（上传完成后由 runner 删除）
-    pub is_tmp: bool,
 }
 
 impl CloudUiState {

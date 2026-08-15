@@ -39,6 +39,8 @@ pub enum RightSidebarAction {
     MaterialDragStarted(usize),
     /// 素材项右键（打开素材右键菜单，index 为素材列表索引）
     MaterialContextMenuOpened(usize),
+    /// 素材面板内鼠标移动（面板局部坐标，右键菜单按此位置弹出）
+    MaterialCursorMoved(f32, f32),
     /// 关闭素材右键菜单
     MaterialContextMenuClosed,
     /// 点击素材右键菜单项

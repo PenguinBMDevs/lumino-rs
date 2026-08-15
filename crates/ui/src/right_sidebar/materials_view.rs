@@ -37,6 +37,21 @@ pub(super) fn panel<'a>(
             container::Style::default().background(palette.background.weakest.color)
         });
 
+    // 面板级鼠标追踪：on_move 上报鼠标相对本面板的局部坐标，
+    // 作为右键菜单的弹出位置数据源（无需窗口坐标系换算）。
+    //
+    // 右键兜底：素材项的 mouse_area 会先捕获右键事件（on_right_press 打开
+    // 该素材的菜单），空白区域右键落空后由本层兜底关闭菜单——保证菜单
+    // 只会在素材项上右键时出现，空白处右键不会打开菜单。
+    let content: Element<'a> = mouse_area(content)
+        .on_move(|pos| {
+            Message::RightSidebar(RightSidebarAction::MaterialCursorMoved(pos.x, pos.y))
+        })
+        .on_right_press(Message::RightSidebar(
+            RightSidebarAction::MaterialContextMenuClosed,
+        ))
+        .into();
+
     // 右键菜单叠加：菜单打开时在面板上覆盖关闭背景 + 悬浮菜单
     let materials = &right_sidebar.materials;
     let Some(target) = materials.context_menu_target else {
@@ -183,7 +198,7 @@ fn material_list<'a>(right_sidebar: &'a RightSidebar, language: Language) -> Ele
 ///
 /// 交互状态（由 `RightSidebar.materials` 驱动）：
 /// - 重命名中：名称替换为输入框（回车确认）；
-/// - 删除确认中：行内显示"确认删除？[删除][取消]"（禁用拖出）。
+/// - 删除确认：由独立弹窗（`material_delete_dialog`）承接，素材行保持原交互。
 fn material_item<'a>(
     right_sidebar: &'a RightSidebar,
     entry: &'a crate::right_sidebar::MaterialEntry,
@@ -197,7 +212,6 @@ fn material_item<'a>(
         .as_ref()
         .map(|(i, _)| *i)
         == Some(index);
-    let is_pending_delete = materials.pending_delete == Some(index);
 
     // 名称（有效实色 / 无效置灰）
     let name_text = text(&entry.name).size(12).style(move |theme: &Theme| {
@@ -247,45 +261,14 @@ fn material_item<'a>(
         .width(Length::Fill)
         .style(move |theme: &Theme| {
             let palette = theme.extended_palette();
-            let bg = if is_pending_delete {
-                palette.danger.weak.color
-            } else {
-                palette.background.weaker.color
-            };
             container::Style {
-                background: Some(bg.into()),
+                background: Some(palette.background.weaker.color.into()),
                 border: iced_core::Border::default().rounded(4),
                 ..Default::default()
             }
         });
 
-    // 删除确认态：行内确认条（替换拖出交互，防误删）
-    let item: Element<'a> = if is_pending_delete {
-        row![
-            text(format!("{}？", t.material_delete_confirm))
-                .size(11)
-                .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.neutral.text),
-                }),
-            button(text(t.material_delete).size(11))
-                .padding([2, 6])
-                .style(danger_button_style)
-                .on_press(Message::RightSidebar(
-                    RightSidebarAction::MaterialDeleteConfirmed(index),
-                )),
-            button(text(t.material_delete_cancel).size(11))
-                .padding([2, 6])
-                .style(menu_item_style)
-                .on_press(Message::RightSidebar(
-                    RightSidebarAction::MaterialDeleteCancelled,
-                )),
-        ]
-        .spacing(6)
-        .align_y(Alignment::Center)
-        .padding([4, 8])
-        .width(Length::Fill)
-        .into()
-    } else if entry.valid {
+    let item: Element<'a> = if entry.valid {
         mouse_area(content)
             .on_press(Message::RightSidebar(
                 RightSidebarAction::MaterialDragStarted(index),
@@ -427,25 +410,6 @@ fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
     .with_background(bg)
 }
 
-/// 危险操作按钮样式（删除确认）
-fn danger_button_style(theme: &Theme, status: button::Status) -> button::Style {
-    let palette = theme.extended_palette();
-    let bg = match status {
-        button::Status::Hovered | button::Status::Pressed => palette.danger.base.color,
-        _ => palette.danger.weak.color,
-    };
-    button::Style {
-        text_color: palette.background.base.text,
-        border: iced_core::Border {
-            radius: 4.0.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
-        },
-        ..Default::default()
-    }
-    .with_background(bg)
-}
-
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
@@ -489,16 +453,6 @@ mod tests {
         let mut sidebar = RightSidebar::new();
         sidebar.materials.entries.push(make_entry(true, 1));
         sidebar.materials.renaming_material = Some((0, "新名称".into()));
-        let entry = &sidebar.materials.entries[0];
-        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
-    }
-
-    #[test]
-    fn test_material_item_delete_confirm_state() {
-        // 删除确认态：行内确认条替换拖出交互
-        let mut sidebar = RightSidebar::new();
-        sidebar.materials.entries.push(make_entry(true, 1));
-        sidebar.materials.pending_delete = Some(0);
         let entry = &sidebar.materials.entries[0];
         let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
     }

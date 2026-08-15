@@ -136,20 +136,6 @@ impl Host {
             self.root.sidebar.set_panel_context_menu_pos(pos.x, pos.y);
         }
 
-        // 素材库右键菜单打开时同样注入鼠标位置（菜单按鼠标位置定位）
-        if matches!(
-            &message,
-            message::Message::RightSidebar(
-                lumino_message::RightSidebarAction::MaterialContextMenuOpened(_)
-            )
-        ) && let Some(pos) = self.window_ctx.cursor_position
-        {
-            self.root
-                .right_sidebar
-                .materials
-                .set_context_menu_pos(pos.x, pos.y);
-        }
-
         // 其他消息交给 root 处理，假设可能有状态变更
         {
             puffin::profile_scope!("process_message::route_message");

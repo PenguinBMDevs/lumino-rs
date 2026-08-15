@@ -71,7 +71,7 @@ cargo clippy --fix
 ### Naming Conventions
 - Crate names: `lumino-{module}` (kebab-case)
 - Module directories: use flat structure (`{module}.rs` + `{module}/`)
-- Avoid `mod.rs` files
+- NO `mod.rs` files
 - Types: PascalCase
 - Functions/variables: snake_case
 - Constants: UPPER_SNAKE_CASE
