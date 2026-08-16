@@ -38,17 +38,21 @@ jobs:
             extension: ""
             linker: x86_64-linux-gnu-gcc
             cross_packages: ""
+            deb_arch: amd64
           - target: aarch64-unknown-linux-gnu
             arch: aarch64
             extension: ""
             linker: aarch64-linux-gnu-gcc
             cross_packages: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
+            deb_arch: arm64
           - target: armv7-unknown-linux-gnueabihf
             arch: armv7
             extension: ""
             linker: arm-linux-gnueabihf-gcc
             cross_packages: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
+            deb_arch: armhf
     env:
+      # 动态设置链接器
       CARGO_TARGET_${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'AARCH64_UNKNOWN_LINUX_GNU' || matrix.target == 'armv7-unknown-linux-gnueabihf' && 'ARMV7_UNKNOWN_LINUX_GNUEABIHF' || 'X86_64_UNKNOWN_LINUX_GNU' }}_LINKER: ${{ matrix.linker }}
     steps:
       - name: Checkout repository
@@ -61,52 +65,109 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      # 替换为 actions/cache 以支持降级复用
+      - name: Cache cargo & target
+        uses: actions/cache@v4
         with:
-          key: ${{ matrix.target }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
 
-      - name: Install system dependencies
+      - name: Install system dependencies (including cross-compile libs)
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            build-essential \
-            cmake \
-            pkg-config \
-            nasm \
-            libclang-dev \
-            clang \
-            libasound2-dev \
-            libfreetype6-dev \
-            libfontconfig1-dev \
-            libgtk-3-dev \
-            libx11-dev \
-            libxcb1-dev \
-            libxcb-render0-dev \
-            libxcb-shape0-dev \
-            libxcb-xfixes0-dev \
-            libwayland-dev \
-            libxkbcommon-dev \
-            libvulkan-dev \
-            libssl-dev \
-            libzstd-dev \
-            libtiff-dev \
-            libpng-dev \
-            libjpeg-dev \
-            libwebp-dev \
-            libgif-dev \
-            libpulse-dev \
-            libdbus-1-dev \
-            libxi-dev \
-            libxtst-dev \
-            libxrandr-dev \
-            libxinerama-dev \
-            libxcursor-dev \
-            libxcomposite-dev \
-            libxdamage-dev \
-            libpq-dev \
-            libsqlite3-dev \
-            ${{ matrix.cross_packages }}
+          if [ "${{ matrix.arch }}" != "x86_64" ]; then
+            # 启用目标架构的多架构支持
+            sudo dpkg --add-architecture ${{ matrix.deb_arch }}
+            sudo apt-get update
+            # 安装目标架构的系统库（关键包含 fontconfig）
+            sudo apt-get install -y --no-install-recommends \
+              libasound2-dev:${{ matrix.deb_arch }} \
+              libfreetype6-dev:${{ matrix.deb_arch }} \
+              libfontconfig1-dev:${{ matrix.deb_arch }} \
+              libgtk-3-dev:${{ matrix.deb_arch }} \
+              libx11-dev:${{ matrix.deb_arch }} \
+              libxcb1-dev:${{ matrix.deb_arch }} \
+              libxcb-render0-dev:${{ matrix.deb_arch }} \
+              libxcb-shape0-dev:${{ matrix.deb_arch }} \
+              libxcb-xfixes0-dev:${{ matrix.deb_arch }} \
+              libwayland-dev:${{ matrix.deb_arch }} \
+              libxkbcommon-dev:${{ matrix.deb_arch }} \
+              libvulkan-dev:${{ matrix.deb_arch }} \
+              libssl-dev:${{ matrix.deb_arch }} \
+              libzstd-dev:${{ matrix.deb_arch }} \
+              libtiff-dev:${{ matrix.deb_arch }} \
+              libpng-dev:${{ matrix.deb_arch }} \
+              libjpeg-dev:${{ matrix.deb_arch }} \
+              libwebp-dev:${{ matrix.deb_arch }} \
+              libgif-dev:${{ matrix.deb_arch }} \
+              libpulse-dev:${{ matrix.deb_arch }} \
+              libdbus-1-dev:${{ matrix.deb_arch }} \
+              libxi-dev:${{ matrix.deb_arch }} \
+              libxtst-dev:${{ matrix.deb_arch }} \
+              libxrandr-dev:${{ matrix.deb_arch }} \
+              libxinerama-dev:${{ matrix.deb_arch }} \
+              libxcursor-dev:${{ matrix.deb_arch }} \
+              libxcomposite-dev:${{ matrix.deb_arch }} \
+              libxdamage-dev:${{ matrix.deb_arch }} \
+              libpq-dev:${{ matrix.deb_arch }} \
+              libsqlite3-dev:${{ matrix.deb_arch }}
+          else
+            # x86_64 主机库
+            sudo apt-get install -y --no-install-recommends \
+              build-essential \
+              cmake \
+              pkg-config \
+              nasm \
+              libclang-dev \
+              clang \
+              libasound2-dev \
+              libfreetype6-dev \
+              libfontconfig1-dev \
+              libgtk-3-dev \
+              libx11-dev \
+              libxcb1-dev \
+              libxcb-render0-dev \
+              libxcb-shape0-dev \
+              libxcb-xfixes0-dev \
+              libwayland-dev \
+              libxkbcommon-dev \
+              libvulkan-dev \
+              libssl-dev \
+              libzstd-dev \
+              libtiff-dev \
+              libpng-dev \
+              libjpeg-dev \
+              libwebp-dev \
+              libgif-dev \
+              libpulse-dev \
+              libdbus-1-dev \
+              libxi-dev \
+              libxtst-dev \
+              libxrandr-dev \
+              libxinerama-dev \
+              libxcursor-dev \
+              libxcomposite-dev \
+              libxdamage-dev \
+              libpq-dev \
+              libsqlite3-dev
+          fi
+          # 安装交叉编译工具链（对于 x86_64 cross_packages 为空）
+          sudo apt-get install -y --no-install-recommends ${{ matrix.cross_packages }}
+
+      - name: Setup cross-compilation environment
+        if: matrix.arch != 'x86_64'
+        run: |
+          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
+          # 添加目标架构的 pkgconfig 搜索路径
+          echo "PKG_CONFIG_PATH=/usr/lib/${{ matrix.deb_arch }}-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
+          # 可选：设置 sysroot（通常不需要）
+          # echo "PKG_CONFIG_SYSROOT_DIR=/" >> $GITHUB_ENV
 
       - name: Build
         run: |
@@ -157,10 +218,18 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      # 统一使用 actions/cache
+      - name: Cache cargo & target
+        uses: actions/cache@v4
         with:
-          key: ${{ matrix.target }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
 
       - name: Install LLVM (for bindgen)
         uses: KyleMayes/install-llvm-action@v2
@@ -219,10 +288,18 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
+      # 统一使用 actions/cache
+      - name: Cache cargo & target
+        uses: actions/cache@v4
         with:
-          key: ${{ matrix.target }}
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.target }}-cargo-
+            ${{ runner.os }}-cargo-
 
       - name: Install dependencies
         run: |
