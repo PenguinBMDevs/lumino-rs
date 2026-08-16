@@ -18,7 +18,7 @@ tracing = { workspace = true }
 lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 thiserror = { workspace = true }
-font-kit = "0.14"
-im = { version = "15.1.0", features = ["rayon"] }
-bit-vec = "0.8"
+font-kit = { workspace = true }
+im = { workspace = true }
+bit-vec = { workspace = true }
 puffin = { workspace = true }

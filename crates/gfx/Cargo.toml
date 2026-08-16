@@ -15,16 +15,16 @@ workspace = true
 default = []
 
 [dependencies]
-wgpu = "27.0"
+wgpu = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
-bytemuck = { version = "1.21", features = ["derive"] }
+bytemuck = { workspace = true, features = ["derive"] }
 puffin = { workspace = true }
-half = "2.4"
+half = { workspace = true }
 futures = { workspace = true }
 anyhow = { workspace = true }
-im = { version = "15.1.0", features = ["rayon"] }
-rayon = "1.10"
+im = { workspace = true }
+rayon = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-editor-state = { workspace = true }
@@ -33,5 +33,5 @@ lumino-midiplayer = { workspace = true }
 lumino-memtrace = { workspace = true }
 
 [dev-dependencies]
-naga = "27.0"
+naga = { workspace = true }
 png = { workspace = true }

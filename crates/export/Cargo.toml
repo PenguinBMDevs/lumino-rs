@@ -24,10 +24,10 @@ lumino-midiplayer = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 midly = { workspace = true }
-bytes = "1.9"
+bytes = { workspace = true }
 encoding_rs = { workspace = true }
 num-bigint = { workspace = true }
-tokio = { version = "1.42", features = ["fs", "rt"] }
+tokio = { workspace = true }
 zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }
@@ -37,8 +37,8 @@ xxhash-rust = { workspace = true }
 # 音频渲染依赖
 xsynth-core = { workspace = true }
 xsynth-soundfonts = { workspace = true }
-hound = "3.5"
-memmap2 = "0.9"
+hound = { workspace = true }
+memmap2 = { workspace = true }
 
 [dev-dependencies]
-tempfile = "3.0"
+tempfile = { workspace = true }

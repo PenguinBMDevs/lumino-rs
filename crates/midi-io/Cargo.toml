@@ -13,8 +13,8 @@ workspace = true
 
 [dependencies]
 lumino-midi-model = { workspace = true }
-libloading = "0.9.0"
-midir = "0.10.3"
+libloading = { workspace = true }
+midir = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 xsynth-core = { workspace = true }
@@ -23,4 +23,4 @@ lumino-realtime = { workspace = true }
 lumino-memtrace = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.62.2", features = ["Win32_Media_Audio"] }
+windows = { workspace = true, features = ["Win32_Media_Audio"] }

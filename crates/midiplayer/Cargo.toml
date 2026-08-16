@@ -15,10 +15,10 @@ workspace = true
 lumino-memory-monitor = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-note-core = { workspace = true }
-rayon = "1.10"
+rayon = { workspace = true }
 xxhash-rust = { workspace = true }
-wgpu = "27.0"
-bytemuck = { version = "1.21", features = ["derive"] }
+wgpu = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
 zstd = { workspace = true }
 bincode = { workspace = true }
 serde = { workspace = true }

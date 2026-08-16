@@ -21,23 +21,23 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 
 # WebSocket客户端（非Windows用rustls，Windows用native-tls）
-futures = "0.3"
-url = "2.5"
+futures = { workspace = true }
+url = { workspace = true }
 
 # 异步运行时工具
-tokio-util = "0.7"
+tokio-util = { workspace = true }
 
 # HTTP 客户端（非Windows用rustls，Windows用native-tls）
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
-tokio-tungstenite = { version = "0.28", features = ["rustls-tls-native-roots"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls"] }
+tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
+reqwest = { workspace = true, features = ["json", "rustls"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
-tokio-tungstenite = { version = "0.28", features = ["native-tls"] }
-reqwest = { version = "0.12", features = ["json", "native-tls"] }
+tokio-tungstenite = { workspace = true, features = ["native-tls"] }
+reqwest = { workspace = true, features = ["json", "native-tls"] }
 
 [dev-dependencies]
-tokio-test = "0.4"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-chrono = "0.4"
+tokio-test = { workspace = true }
+tracing-subscriber = { workspace = true }
+chrono = { workspace = true }
