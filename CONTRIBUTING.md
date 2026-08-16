@@ -2,7 +2,13 @@
 
 ## 项目结构
 
-项目使用私有 crates 进行模块化开发，位于 `crates/{module}`
+项目使用私有 crates 进行模块化开发，位于 `crates/{domain}/{module}`，按功能域分 5 组：
+
+- `core/` — 基础数据与基础设施（core、event、message、memtrace、memory-monitor、project）
+- `audio/` — MIDI / 音频 / 播放（midi-io、midi-loader、midi-model、midiplayer、note-core、playback、realtime）
+- `editor/` — UI / 渲染 / 编辑（dialog、editor-state、gfx、ui、ui-core、ui-editor、ui-settings）
+- `network/` — 协作 / 云（cloud、collaboration）
+- `tools/` — 工具 / 导出（archive-reader、export、extras）
 
 - 对于该模块的目录，应当命名为其在项目中的地位，例：`core`
 - 对于该模块的 crate 名称，应当附加上项目名称，例：`lumino-core`

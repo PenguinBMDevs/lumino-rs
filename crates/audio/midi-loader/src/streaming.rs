@@ -284,7 +284,7 @@ mod tests {
 
     const TEST_MIDI_PATH: &str = concat!(
         env!("CARGO_MANIFEST_DIR"),
-        "/../../test-file/test_note_worker_bench_assets/Erosoul.mid",
+        "/../../../test-file/test_note_worker_bench_assets/Erosoul.mid",
     );
 
     // ── 测试数据自举 ──────────────────────────────────────

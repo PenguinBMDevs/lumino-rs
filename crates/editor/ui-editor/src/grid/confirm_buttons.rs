@@ -19,13 +19,13 @@ pub const ICON_INSET_RATIO: f32 = 0.25;
 /// √ 确认按钮图标（首次访问时由 SVG 光栅化，之后复用句柄 → iced_wgpu 纹理缓存命中）
 pub(crate) static CONFIRM_ICON: Lazy<Handle> = Lazy::new(|| {
     build_icon_handle(include_bytes!(
-        "../../../../resources/icons/toolbar/confirm-check.svg"
+        "../../../../../resources/icons/toolbar/confirm-check.svg"
     ))
 });
 /// × 取消按钮图标
 pub(crate) static CANCEL_ICON: Lazy<Handle> = Lazy::new(|| {
     build_icon_handle(include_bytes!(
-        "../../../../resources/icons/toolbar/cancel-cross.svg"
+        "../../../../../resources/icons/toolbar/cancel-cross.svg"
     ))
 });
 

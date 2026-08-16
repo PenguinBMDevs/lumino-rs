@@ -15,6 +15,7 @@ fn main() -> io::Result<()> {
     let resources_dir = Path::new(&manifest_dir)
         .join("..")
         .join("..")
+        .join("..")
         .join("resources");
 
     build_palettes(&resources_dir)?;

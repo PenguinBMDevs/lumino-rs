@@ -122,8 +122,8 @@ fn test_all_icon_svgs_parse_and_render() {
 /// 新增的 i2m 悬浮按钮图标（不注册进 Icon 枚举，直接验证 SVG 可解析且输出 32x32 RGBA 纹理）
 #[test]
 fn test_i2m_button_icons_parse() {
-    let check_svg = include_bytes!("../../../../../resources/icons/toolbar/confirm-check.svg");
-    let cross_svg = include_bytes!("../../../../../resources/icons/toolbar/cancel-cross.svg");
+    let check_svg = include_bytes!("../../../../../../resources/icons/toolbar/confirm-check.svg");
+    let cross_svg = include_bytes!("../../../../../../resources/icons/toolbar/cancel-cross.svg");
     for svg in [check_svg.as_slice(), cross_svg.as_slice()] {
         let handle = super::svg_handle(svg, 32).expect("i2m 按钮图标应能光栅化");
         match handle {
