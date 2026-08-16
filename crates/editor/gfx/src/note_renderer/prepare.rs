@@ -1,6 +1,19 @@
-use super::buffer::CullBuffers;
-use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
+use super::chunk::MAX_CHUNKS;
+use super::types::{CameraUniform, CullUniform};
 use crate::note_renderer::NoteRenderer;
+
+/// u32 溢出防御：实例数超过 u32::MAX 时截断并报错
+fn clamp_count(count: usize) -> u32 {
+    if count > u32::MAX as usize {
+        tracing::error!(
+            "NoteRenderer: instance count {} exceeds u32::MAX, culling truncated",
+            count
+        );
+        u32::MAX
+    } else {
+        count as u32
+    }
+}
 
 impl NoteRenderer {
     /// 从外部 slice 上传音符实例到 GPU（不含 compute pass）
@@ -109,9 +122,8 @@ impl NoteRenderer {
 
     /// 仅在音符数据真正变化时调用：负责更新 uniform
     ///
-    /// 优化：bind group 在 count 不变且未扩容时 SKIP 创建。
-    /// 因为 data 写入 GPU 后通过同一 buffer 句柄可见，无需新 bind group。
-    /// 火焰图显示 create_cull_bind_group 是每帧瓶颈之一，此优化消除它。
+    /// 优化：bind group 仅在扩容（容量变化）时重建；数据量变化只重写
+    /// cull uniform 的 chunk 条目（chunk 绑定切片基于 buffer 容量，不变）。
     pub fn update_cull_info(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         puffin::profile_function!();
         let current_count = self.gpu_note_buffer.len();
@@ -121,41 +133,35 @@ impl NoteRenderer {
             return;
         }
 
-        // 上传 cull uniform（write_buffer 开销极小，每次更新）
-        let cull_info = CullUniform {
-            instance_count: current_count as u32,
-            _padding: [0; 3],
-        };
-        queue.write_buffer(
-            &self.cull_uniform_buffer,
-            0,
-            bytemuck::cast_slice(&[cull_info]),
-        );
+        // 每 chunk 写入 uniform 条目（chunk_start / chunk_count）
+        self.write_cull_uniforms(queue, current_count);
 
-        // 扩容 + 按需重建 bind group
-        let required_capacity = current_count;
-        let did_grow = required_capacity > self.capacity;
-        if did_grow {
-            self.grow_visible_buffer(device, required_capacity);
+        // 扩容 + 按需重建 bind groups（仅可见 buffer 容量不足时）
+        if current_count > self.capacity {
+            self.grow_visible_buffer(device, current_count);
         }
 
-        let count_changed = current_count != self.last_upload_count as usize;
-        if did_grow || count_changed {
-            // 实例数变化或扩容 → 绑定的 buffer size 变了 → 必须重建 bind group
-            let cull_buffers = CullBuffers {
-                layout: &self.cull_bind_group_layout,
-                viewport_buffer: &self.viewport_buffer,
-                cull_uniform_buffer: &self.cull_uniform_buffer,
-                instance_buffer: self.gpu_note_buffer.buffer(),
-                visible_instance_buffer: &self.visible_instance_buffer,
-                indirect_buffer: &self.indirect_buffer,
-                instance_count: current_count,
+        self.last_upload_count = clamp_count(current_count);
+    }
+
+    /// 写入每 chunk 的 cull uniform 条目到槽位 buffer
+    fn write_cull_uniforms(&self, queue: &wgpu::Queue, current_count: usize) {
+        let chunk_count = self.chunk_layout.chunk_count(current_count).min(MAX_CHUNKS);
+        for idx in 0..chunk_count {
+            let (chunk_start, chunk_len) = self.chunk_layout.chunk_range(current_count, idx);
+            let uniform = CullUniform {
+                instance_count: clamp_count(current_count),
+                chunk_start: clamp_count(chunk_start),
+                chunk_count: clamp_count(chunk_len),
+                _padding: 0,
             };
-            self.cull_bind_group = Self::create_cull_bind_group(device, &cull_buffers);
+            let slot_offset = self.chunk_layout.chunk_offset_bytes(idx);
+            queue.write_buffer(
+                &self.cull_uniform_buffer,
+                slot_offset,
+                bytemuck::cast_slice(&[uniform]),
+            );
         }
-        // else: 实例数相同且未扩容 → 旧 bind group 仍有效，跳过重建
-
-        self.last_upload_count = current_count as u32;
     }
 
     /// 滚动/缩放等视口变化时调用：只更新 camera 并重跑 compute cull
@@ -166,56 +172,36 @@ impl NoteRenderer {
         queue: &wgpu::Queue,
     ) {
         puffin::profile_function!();
+        // 全量清零间接缓冲：避免上一帧旧绘制参数残留（幽灵音符）
+        let indirect_zero = vec![0u8; self.indirect_buffer.size() as usize];
+        queue.write_buffer(&self.indirect_buffer, 0, &indirect_zero);
+
         if self.last_upload_count == 0 {
-            // 仍有 0 个实例要绘制，但必须重置间接缓冲，
-            // 否则 draw_indirect 会使用上一帧的旧绘制参数（旧 instance_count）
-            // 导致 GPU 从实例缓冲中读取陈旧的音符数据并渲染出幽灵音符。
-            let indirect_args = DrawIndirectArgs {
-                vertex_count: 4,
-                instance_count: 0,
-                first_vertex: 0,
-                first_instance: 0,
-                _padding: [0; 4],
-            };
-            queue.write_buffer(
-                &self.indirect_buffer,
-                0,
-                bytemuck::cast_slice(&[indirect_args]),
-            );
             return;
         }
         // 上传 viewport uniform
         queue.write_buffer(&self.viewport_buffer, 0, bytemuck::cast_slice(&[camera]));
 
-        // 重置间接绘制参数 (instance_count = 0)
-        let indirect_args = DrawIndirectArgs {
-            vertex_count: 4,
-            instance_count: 0,
-            first_vertex: 0,
-            first_instance: 0,
-            _padding: [0; 4],
-        };
-        queue.write_buffer(
-            &self.indirect_buffer,
-            0,
-            bytemuck::cast_slice(&[indirect_args]),
-        );
-
-        // 执行 Compute Culling
+        // 执行 Compute Culling：每 chunk 一次 dispatch
+        let count = self.last_upload_count as usize;
+        let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
             label: Some("note_cull_pass"),
             timestamp_writes: None,
         });
         compute_pass.set_pipeline(&self.cull_pipeline);
-        compute_pass.set_bind_group(0, &self.cull_bind_group, &[]);
 
         // 计算工作组数量 (每组 256 个线程，与 shader 中的 workgroup_size 匹配)
         // 使用 256 可以更好地利用 modern GPU 的 warp/wavefront 大小
         const WORKGROUP_SIZE: u32 = 256;
         const MAX_DISPATCH_X: u32 = 65535;
-        let workgroup_count = self.last_upload_count.div_ceil(WORKGROUP_SIZE);
-        let dispatch_x = workgroup_count.min(MAX_DISPATCH_X);
-        let dispatch_y = workgroup_count.div_ceil(MAX_DISPATCH_X);
-        compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+        for idx in 0..chunk_count {
+            compute_pass.set_bind_group(0, &self.cull_bind_groups[idx], &[]);
+            let (_, chunk_len) = self.chunk_layout.chunk_range(count, idx);
+            let workgroup_count = clamp_count(chunk_len).div_ceil(WORKGROUP_SIZE);
+            let dispatch_x = workgroup_count.min(MAX_DISPATCH_X);
+            let dispatch_y = workgroup_count.div_ceil(MAX_DISPATCH_X);
+            compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
+        }
     }
 }

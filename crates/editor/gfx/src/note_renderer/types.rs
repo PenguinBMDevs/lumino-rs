@@ -94,27 +94,6 @@ pub fn calculate_border_width(width_pixels: f32, keys_len: f32) -> u32 {
     raw as u32
 }
 
-/// 洋葱皮背景瓦片引用 — 16 bytes，与 NoteInstance 对齐
-///
-/// 每个实例代表一个音轨在某个 tick×key 格子中的可见区域，
-/// GPU 通过 `track_index` 从 color LUT 中查找颜色进行渲染。
-///
-/// 设计说明：
-/// - `track_index` 解耦颜色：颜色/透明度变化只需更新 LUT，无需重建 buffer
-/// - `bytemuck::Pod + Zeroable` 直接 upload 到 GPU storage buffer
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct OnionBgTileRef {
-    /// 逻辑位置: [tick_start, key]
-    pub position: [f32; 2],
-    /// 逻辑尺寸: [tick_span, key_span] — 瓦片覆盖的范围
-    pub size: [f32; 2],
-    /// 音轨索引（GPU 从 color LUT 中查找颜色）
-    pub track_index: u32,
-    /// 保留字段（未来扩展用）
-    pub _padding: u32,
-}
-
 /// 摄像机/视口 uniform 数据
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
@@ -170,12 +149,18 @@ impl Default for CameraUniform {
     }
 }
 
-/// 裁剪 uniform 数据
+/// 裁剪 uniform 数据（每 chunk 一份，16 bytes）
+///
+/// storage binding 有 `max_storage_buffer_binding_size`（2GB-1）硬限制，
+/// 超大数据按 chunk 切片绑定；`chunk_start`/`chunk_count` 描述本 chunk
+/// 在全局实例数组中的范围，`instance_count` 为全局实例数（冗余诊断）。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CullUniform {
     pub instance_count: u32,
-    pub _padding: [u32; 3],
+    pub chunk_start: u32,
+    pub chunk_count: u32,
+    pub _padding: u32,
 }
 
 /// 合并的渲染 uniform 数据（Camera + Cull）

@@ -115,14 +115,12 @@ impl GpuNoteBuffer {
         let new_count = self.instance_count + chunk.len();
 
         // 检查是否需要扩容
-        if new_count > self.capacity {
-            if !self.grow(new_count) {
-                tracing::error!(
-                    "GpuNoteBuffer: streaming_append grow failed, dropping {} instances",
-                    chunk.len()
-                );
-                return;
-            }
+        if new_count > self.capacity && !self.grow(new_count) {
+            tracing::error!(
+                "GpuNoteBuffer: streaming_append grow failed, dropping {} instances",
+                chunk.len()
+            );
+            return;
         }
 
         // 直接上传到 GPU buffer 的对应 offset——不维护 CPU 副本

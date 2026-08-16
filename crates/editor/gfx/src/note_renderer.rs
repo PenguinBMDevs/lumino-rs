@@ -3,16 +3,17 @@ pub mod types;
 use crate::gpu_resource_tracker;
 
 pub use types::{
-    CameraParams, CameraUniform, CullUniform, NoteInstance, OnionBgTileRef,
-    PREVIEW_BORDER_SENTINEL, RenderUniform, calculate_border_width, pack_key_color,
-    unpack_key_color,
+    CameraParams, CameraUniform, CullUniform, NoteInstance, PREVIEW_BORDER_SENTINEL, RenderUniform,
+    calculate_border_width, pack_key_color, unpack_key_color,
 };
 
 // 子模块
 mod buffer;
+mod chunk;
 mod draw;
 mod events;
 mod init;
+mod pipeline;
 mod prepare;
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
@@ -39,14 +40,18 @@ pub struct NoteRenderer {
     last_upload_count: u32,
     /// 视口 uniform 缓冲区
     viewport_buffer: wgpu::Buffer,
-    /// 裁剪 uniform 缓冲区
+    /// 裁剪 uniform 缓冲区（MAX_CHUNKS × slot_align 槽位，每 chunk 一条）
     cull_uniform_buffer: wgpu::Buffer,
+    /// cull uniform 缓冲区总字节数（绑定 offset 越界断言用）
+    cull_uniform_buffer_size: u64,
     /// 渲染 Bind group
     render_bind_group: wgpu::BindGroup,
-    /// 计算 Bind group
-    cull_bind_group: wgpu::BindGroup,
+    /// 计算 Bind groups（每 chunk 一个，storage binding 2GB 上限分块规避）
+    cull_bind_groups: Vec<wgpu::BindGroup>,
     /// 计算 Bind group layout
     cull_bind_group_layout: wgpu::BindGroupLayout,
+    /// storage binding 分块布局（跨硬件自适应）
+    chunk_layout: chunk::ChunkLayout,
 }
 
 impl NoteRenderer {
@@ -135,10 +140,14 @@ mod tests {
     fn test_cull_uniform_creation() {
         let cull = CullUniform {
             instance_count: 1000,
-            _padding: [0; 3],
+            chunk_start: 0,
+            chunk_count: 1000,
+            _padding: 0,
         };
 
         assert_eq!(cull.instance_count, 1000);
+        assert_eq!(cull.chunk_start, 0);
+        assert_eq!(cull.chunk_count, 1000);
     }
 
     /// 测试常量配置

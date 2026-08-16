@@ -20,9 +20,9 @@ struct CameraUniform {
 
 struct CullUniform {
     instance_count: u32,
-    _padding0: u32,
-    _padding1: u32,
-    _padding2: u32,
+    chunk_start: u32,
+    chunk_count: u32,
+    _padding: u32,
 };
 
 struct DrawIndirectArgs {
@@ -51,8 +51,12 @@ fn main(
     @builtin(local_invocation_id) local_id: vec3<u32>,
 ) {
     let MAX_X_THREADS: u32 = 65535u * 256u;
-    let index = global_id.x + global_id.y * MAX_X_THREADS;
-    let in_range = index < cull_info.instance_count && index < arrayLength(&all_instances);
+    // 本 chunk 内的线性 id → 全局实例索引（chunk_start 偏移）
+    let local_index = global_id.x + global_id.y * MAX_X_THREADS;
+    let index = cull_info.chunk_start + local_index;
+    let in_range = local_index < cull_info.chunk_count
+                && index < cull_info.instance_count
+                && index < arrayLength(&all_instances);
 
     // 可见性判定（不提前 return，所有线程必须到达 barrier）
     var is_visible = false;
