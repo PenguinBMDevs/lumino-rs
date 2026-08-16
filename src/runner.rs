@@ -12,7 +12,6 @@ mod lifecycle;
 mod menu;
 mod midi_handler;
 mod midi_manager;
-mod midi_parser;
 mod progress_manager;
 mod window_manager;
 pub use inner::Runner;

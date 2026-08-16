@@ -566,8 +566,20 @@ impl StreamingNoteSource {
                 return Err(format!("读取音符缓存失败: {e}"));
             }
 
+            // SAFETY:
+            // - `read_buf` 刚经 `read_exact` 读满 `expected_bytes = note_count * NOTE_RECORD_SIZE`，
+            //   长度恰好容纳 `note_count` 个 `NoteRecord`，`from_raw_parts` 不越界。
+            // - `NoteRecord` 为 `#[repr(C)]` + `bytemuck::Pod`（全 u32/u16 字段），无 padding、
+            //   无 Drop、无非法值表示，字节序列合法。
+            // - 对齐：`read_buf` 由 `Vec<u8>` 经全局分配器分配，返回指针满足 max_align_t
+            //   （≥ align_of::<NoteRecord>() = 4）；下方 debug_assert 在 debug 构建兜底验证。
             unsafe {
                 let ptr = self.read_buf.as_ptr() as *const NoteRecord;
+                debug_assert_eq!(
+                    ptr as usize % std::mem::align_of::<NoteRecord>(),
+                    0,
+                    "read_buf 未满足 NoteRecord 对齐要求"
+                );
                 notes.extend_from_slice(std::slice::from_raw_parts(ptr, entry.note_count as usize));
             }
         }

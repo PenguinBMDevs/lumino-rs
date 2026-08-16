@@ -54,7 +54,11 @@ impl Host {
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件）
     /// 这会同时更新当前显示的音符和音轨存储，以便洋葱皮能显示
-    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8, u8)]) {
+    pub fn load_track_notes(
+        &mut self,
+        track_idx: usize,
+        notes: &[lumino_midi_loader::TrackNoteView],
+    ) {
         self.root.load_track_notes(track_idx, notes);
         // 仅请求重绘，不重建UI树（音符数据由WGPU层处理）
         self.window_ctx.window.request_redraw();

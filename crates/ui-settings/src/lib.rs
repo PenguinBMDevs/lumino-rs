@@ -110,6 +110,19 @@ pub struct CloudConnItem {
     pub online: bool,
 }
 
+/// 解析设置输入字符串并应用；解析失败记录 warn 并忽略（保持旧行为不变）。
+///
+/// 收敛 `update()` 中大量 `if let Ok(v) = s.parse::<T>()` 样板。
+fn parse_setting<T>(raw: &str, apply: impl FnOnce(T))
+where
+    T: std::str::FromStr,
+{
+    match raw.parse::<T>() {
+        Ok(v) => apply(v),
+        Err(_) => tracing::warn!("设置输入非法，已忽略: '{}'", raw),
+    }
+}
+
 impl SettingsPanel {
     pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
         let palette_mgr = &*lumino_extras::palette::PALETTE_MANAGER;
@@ -235,25 +248,17 @@ impl SettingsPanel {
             }
             // 自动滚动配置事件
             Event::AutoScrollFixedPositionChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    self.auto_scroll_fixed_position = val;
-                }
+                parse_setting(&value, |val| self.auto_scroll_fixed_position = val);
             }
             Event::AutoScrollPageTriggerOffsetChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    self.auto_scroll_page_trigger_offset = val;
-                }
+                parse_setting(&value, |val| self.auto_scroll_page_trigger_offset = val);
             }
             Event::AutoScrollPageReturnPositionChanged(value) => {
-                if let Ok(val) = value.parse::<u32>() {
-                    self.auto_scroll_page_return_position = val;
-                }
+                parse_setting(&value, |val| self.auto_scroll_page_return_position = val);
             }
             // 力度过滤
             Event::VelocityFilterThresholdChanged(value) => {
-                if let Ok(val) = value.parse::<u8>() {
-                    self.velocity_filter_threshold = val;
-                }
+                parse_setting(&value, |val| self.velocity_filter_threshold = val);
             }
             Event::IconHiDPIChanged(enabled) => {
                 self.icon_hidpi = enabled;
@@ -277,25 +282,17 @@ impl SettingsPanel {
                 self.hires_onion_enabled = v;
             }
             Event::HiresMeasuresPerGroupChanged(s) => {
-                if let Ok(v) = s.parse::<u32>() {
-                    self.hires_measures_per_group = v.clamp(1, 16);
-                }
+                parse_setting(&s, |v: u32| self.hires_measures_per_group = v.clamp(1, 16));
             }
             Event::HiresTileWidthChanged(s) => {
-                if let Ok(v) = s.parse::<u32>() {
-                    self.hires_tile_width_px = v.clamp(480, 7680);
-                }
+                parse_setting(&s, |v: u32| self.hires_tile_width_px = v.clamp(480, 7680));
             }
             Event::HiresCooldownChanged(s) => {
-                if let Ok(v) = s.parse::<u64>() {
-                    self.hires_cooldown_secs = v.clamp(3, 60);
-                }
+                parse_setting(&s, |v: u64| self.hires_cooldown_secs = v.clamp(3, 60));
             }
             Event::HiresGpuMemLimitChanged(s) => {
-                if let Ok(v) = s.parse::<u32>() {
-                    // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
-                    self.hires_gpu_mem_limit_mb = v;
-                }
+                // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
+                parse_setting(&s, |v: u32| self.hires_gpu_mem_limit_mb = v);
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {
                 self.playback_key_colors_enabled = v;
@@ -311,19 +308,13 @@ impl SettingsPanel {
             }
             // 编辑设置
             Event::HistoryTotalLimitChanged(s) => {
-                if let Ok(v) = s.parse::<usize>() {
-                    self.history_total_limit = v.clamp(10, 1000);
-                }
+                parse_setting(&s, |v: usize| self.history_total_limit = v.clamp(10, 1000));
             }
             Event::HistoryEntryLimitChanged(s) => {
-                if let Ok(v) = s.parse::<usize>() {
-                    self.history_entry_limit = v.clamp(100, 10000);
-                }
+                parse_setting(&s, |v: usize| self.history_entry_limit = v.clamp(100, 10000));
             }
             Event::MergeWindowMsChanged(s) => {
-                if let Ok(v) = s.parse::<u64>() {
-                    self.merge_window_ms = v.min(5000);
-                }
+                parse_setting(&s, |v: u64| self.merge_window_ms = v.min(5000));
             }
             Event::InterceptNotificationChanged(enabled) => {
                 self.intercept_notification_enabled = enabled;
@@ -358,9 +349,7 @@ impl SettingsPanel {
                 }
             }
             Event::LogRetentionCountChanged(s) => {
-                if let Ok(v) = s.parse::<usize>() {
-                    self.log_retention_count = v;
-                }
+                parse_setting(&s, |v: usize| self.log_retention_count = v);
             }
             Event::MonitorRefreshIntervalChanged(v) => {
                 self.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);

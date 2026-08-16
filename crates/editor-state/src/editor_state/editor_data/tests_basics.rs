@@ -1,7 +1,6 @@
 //! 基础构造/重置/访问器测试
 
 use crate::editor_state::constants::DEFAULT_BPM;
-use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShape};
 use lumino_note_core::note::Note;
 
 use super::EditorData;

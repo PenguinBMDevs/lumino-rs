@@ -22,8 +22,8 @@ pub mod waterfall_renderer;
 mod swappable_buffer;
 
 pub use arrangement_instances::{
-    ARRANGEMENT_PALETTE, ArrangementSceneParams, ArrangementViewColors, ArrangementViewport,
-    build_arrangement_all, collect_arrangement_instances,
+    ArrangementSceneParams, ArrangementViewColors, ArrangementViewport, build_arrangement_all,
+    collect_arrangement_instances,
 };
 pub use arrangement_renderer::{
     ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,

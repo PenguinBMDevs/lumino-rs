@@ -7,6 +7,14 @@ use crate::automation::{AutomationViewParams, build_lane_instances};
 use crate::gpu_resource_tracker;
 use lumino_note_core::EditMode;
 
+// ─── CC 面板布局常量（单一来源，各函数共用，禁止局部重定义） ────────
+const PANEL_PADDING_Y: f32 = 12.0;
+const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
+const TOOLBAR_HEIGHT: f32 = 28.0;
+const H_SCROLLBAR_HEIGHT: f32 = 20.0;
+/// 力度/CC 数值上限（MIDI 7-bit）
+const VELOCITY_MAX: f32 = 127.0;
+
 impl CcBarRenderer {
     /// 准备渲染数据
     ///
@@ -64,11 +72,6 @@ pub fn build_cc_bar_instances(
         EditMode::Velocity => (false, true),
         EditMode::Tempo => (false, false),
     };
-
-    const PANEL_PADDING_Y: f32 = 12.0;
-    const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
-    const TOOLBAR_HEIGHT: f32 = 28.0;
-    const H_SCROLLBAR_HEIGHT: f32 = 20.0;
 
     let panel_x = view_params.canvas_offset_x;
     let panel_y = view_params.canvas_offset_y + view_params.canvas_size_y;
@@ -217,10 +220,6 @@ fn push_base_overlay_instances(
     panel_height: f32,
     colors: &CcBarColors,
 ) {
-    const PANEL_PADDING_Y: f32 = 12.0;
-    const RESIZE_HANDLE_HEIGHT: f32 = 5.0;
-    const TOOLBAR_HEIGHT: f32 = 28.0;
-
     // 1. Background
     let bg_height = panel_height + PANEL_PADDING_Y + 10.0;
     instances.push(CcBarInstance::new(
@@ -286,14 +285,12 @@ fn push_velocity_curve_instances(
     instances: &mut Vec<CcBarInstance>,
     ctx: &VelocityCurveContext<'_>,
 ) {
-    const TOOLBAR_HEIGHT: f32 = 28.0;
     /// 锚点半径（像素）。直径 = 半径 * 2，较原 3.0 增大 2 像素（6px → 8px）。
     const CURVE_ANCHOR_RADIUS: f32 = 4.0;
     /// 连线透明度（1.0 = 100% 不透明）。
     const LINE_ALPHA: f32 = 1.0;
     /// 锚点透明度（1.0 = 100% 不透明）。
     const ANCHOR_ALPHA: f32 = 1.0;
-    const VELOCITY_MAX: f32 = 127.0;
 
     let anchor_color = [
         ctx.bar_color[0],
@@ -395,7 +392,6 @@ struct VelocityBarContext<'a> {
 fn push_velocity_bar_instances(instances: &mut Vec<CcBarInstance>, ctx: &VelocityBarContext<'_>) {
     const MIN_BAR_WIDTH: f32 = 2.0;
     const BAR_MARGIN: f32 = 1.0;
-    const VELOCITY_MAX: f32 = 127.0;
 
     for point in ctx.velocity_points {
         let normalized = point.velocity as f32 / VELOCITY_MAX;
@@ -455,7 +451,6 @@ fn push_value_bars<I: IntoIterator<Item = (f32, f32)>>(
     ctx: ValueBarContext<I>,
 ) {
     const BAR_WIDTH: f32 = 2.0;
-    const TOOLBAR_HEIGHT: f32 = 28.0;
 
     for (tick, normalized) in ctx.points {
         let bar_h = normalized * ctx.graph_height;

@@ -54,6 +54,130 @@ fn fmt_num(value: f32, decimals: usize) -> String {
     }
 }
 
+/// 解析带日志回退的枚举（失败不再静默：记录 warn 便于诊断非法输入）。
+fn parse_enum_or_log<T>(raw: &str, name: &str) -> T
+where
+    T: FromStr + Default,
+{
+    match raw.parse::<T>() {
+        Ok(v) => v,
+        Err(_) => {
+            tracing::warn!("视频导出配置 {name} 非法值 '{raw}'，回退默认");
+            T::default()
+        }
+    }
+}
+
+/// 解析带日志回退的 f32（默认值随调用点语义）。
+fn parse_f32_or_log(raw: &str, name: &str, default: f32) -> f32 {
+    match raw.parse::<f32>() {
+        Ok(v) => v,
+        Err(_) => {
+            tracing::warn!("视频导出配置 {name} 非法值 '{raw}'，回退 {default}");
+            default
+        }
+    }
+}
+
+/// 从对话框状态组装视频导出配置（纯函数，可单测）。
+///
+/// `ppq`/`key_count` 来自编辑器视图；非法输入回退默认值并记录 warn（见 `parse_enum_or_log`）。
+fn build_video_config(
+    st: &crate::view::video_export_dialog::state::VideoExportDialogState,
+    ppq: u16,
+    key_count: u16,
+) -> lumino_event::window::dialog::VideoExportConfig {
+    use lumino_event::window::video::*;
+    let counter_font = |mode: &str, family: String, path: String| match mode {
+        "系统字体" => CounterFont::System { family },
+        "自定义字体" => CounterFont::File { path },
+        _ => CounterFont::Bitmap,
+    };
+    VideoExportConfig {
+        output_path: st.output_path.clone(),
+        midi_path: st.midi_path.clone(),
+        width: st.width,
+        height: st.height,
+        fps: st.fps,
+        ppq,
+        key_count,
+        container: parse_enum_or_log(&st.container, "container"),
+        codec: parse_enum_or_log(&st.codec, "codec"),
+        backend: parse_enum_or_log(&st.backend, "backend"),
+        quality: parse_enum_or_log(&st.quality, "quality"),
+        render_mode: parse_enum_or_log(&st.render_mode, "render_mode"),
+        waterfall_scroll_speed: st.waterfall_speed,
+        miditrail_z_far: st.miditrail_z_far,
+        note_counter: NoteCounterConfig {
+            text: st.counter_text.clone(),
+            alignment: parse_enum_or_log(&st.counter_alignment, "counter_alignment"),
+            font_size: st.counter_font_size,
+            font: counter_font(
+                &st.counter_font_mode,
+                st.counter_font_family.clone(),
+                st.counter_font_path.clone(),
+            ),
+            separator: if st.counter_use_commas {
+                CounterSeparator::Comma
+            } else {
+                CounterSeparator::Nothing
+            },
+            padding_zeroes: st.counter_padding_zeroes,
+            bpm_int_pad: st.counter_bpm_int_pad,
+            bpm_dec_pad: st.counter_bpm_dec_pad,
+            note_count_pad: st.counter_note_count_pad,
+            polyphony_pad: st.counter_polyphony_pad,
+            nps_pad: st.counter_nps_pad,
+            ticks_pad: st.counter_ticks_pad,
+            bars_pad: st.counter_bars_pad,
+            frames_pad: st.counter_frames_pad,
+            save_csv: st.counter_save_csv,
+            csv_output: st.counter_csv_output.clone(),
+            csv_format: st.counter_csv_format.clone(),
+        },
+        data_curve: DataCurveConfig {
+            metric: parse_enum_or_log(&st.dc_metric, "dc_metric"),
+            graph_duration: parse_f32_or_log(&st.dc_graph_duration, "dc_graph_duration", 2.0)
+                .clamp(0.5, 30.0),
+            zoom_smoothness: parse_f32_or_log(&st.dc_zoom_smoothness, "dc_zoom_smoothness", 8.0)
+                .clamp(1.0, 64.0),
+            graph_smoothness: parse_f32_or_log(&st.dc_graph_smoothness, "dc_graph_smoothness", 0.0)
+                .clamp(0.0, 32.0) as u32,
+            padding_mul: parse_f32_or_log(&st.dc_padding_mul, "dc_padding_mul", 0.1)
+                .clamp(0.0, 1.0),
+            bg_color: hex_to_rgba(&st.dc_bg_color).unwrap_or([0, 0, 0, 255]),
+            line_color: hex_to_rgba(&st.dc_line_color).unwrap_or([0, 255, 255, 255]),
+            text_color: hex_to_rgba(&st.dc_text_color).unwrap_or([255, 255, 255, 127]),
+            bar_color: hex_to_rgba(&st.dc_bar_color).unwrap_or([255, 255, 255, 127]),
+            line_thickness: parse_f32_or_log(&st.dc_line_thickness, "dc_line_thickness", 3.0)
+                .clamp(1.0, 20.0) as u32,
+            bar_thickness: parse_f32_or_log(&st.dc_bar_thickness, "dc_bar_thickness", 1.0)
+                .clamp(1.0, 10.0) as u32,
+            font_size: st.dc_font_size,
+            font: counter_font(
+                &st.dc_font_mode,
+                st.dc_font_family.clone(),
+                st.dc_font_path.clone(),
+            ),
+            text_x_offset: parse_f32_or_log(&st.dc_text_x_offset, "dc_text_x_offset", 2.0)
+                .clamp(0.0, 100.0) as u32,
+            text_y_offset: parse_f32_or_log(&st.dc_text_y_offset, "dc_text_y_offset", 2.0)
+                .clamp(0.0, 100.0) as u32,
+            milestone_scale_mul: parse_f32_or_log(
+                &st.dc_milestone_scale_mul,
+                "dc_milestone_scale_mul",
+                1.5,
+            )
+            .clamp(1.0, 5.0),
+            abbreviate: st.dc_abbreviate,
+            abbreviate_digits: parse_f32_or_log(&st.dc_abbreviate_digits, "dc_abbreviate_digits", 3.0)
+                .clamp(0.0, 10.0) as u32,
+            show_text: st.dc_show_text,
+            show_bars: st.dc_show_bars,
+        },
+    }
+}
+
 impl DialogHandler {
     pub(super) fn handle_video_export(
         &self,
@@ -71,7 +195,6 @@ impl DialogHandler {
                 root.sidebar.route = crate::sidebar::Route::Arrangement;
             }
             V::StartExport => {
-                let st = &root.state.video_export_dialog;
                 // 内存模式优先：从 EditorData.document 克隆快照（ChunkedList Arc 共享）；
                 // 否则若指定了 MIDI 路径，进入流式读取模式。
                 let document = root
@@ -81,73 +204,19 @@ impl DialogHandler {
                     .document
                     .as_ref()
                     .map(|doc| std::sync::Arc::new(doc.clone()));
-                let midi_source = if document.is_some() {
-                    tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
-                    "内存模式".to_string()
-                } else if !st.midi_path.is_empty() {
-                    tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
-                    "流式读取".to_string()
-                } else {
-                    tracing::warn!("视频导出未配置 MIDI 数据源");
-                    "未配置".to_string()
+                let midi_source = {
+                    let st = &root.state.video_export_dialog;
+                    if document.is_some() {
+                        tracing::info!("视频导出使用内存 MidiDocument（零拷贝模式）");
+                        "内存模式".to_string()
+                    } else if !st.midi_path.is_empty() {
+                        tracing::info!("视频导出使用 MIDI 文件流式读取: {}", st.midi_path);
+                        "流式读取".to_string()
+                    } else {
+                        tracing::warn!("视频导出未配置 MIDI 数据源");
+                        "未配置".to_string()
+                    }
                 };
-
-                // 先 clone 配置值，避免借用冲突
-                let output_path = st.output_path.clone();
-                let midi_path = st.midi_path.clone();
-                let width = st.width;
-                let height = st.height;
-                let fps = st.fps;
-                let container = st.container.clone();
-                let codec = st.codec.clone();
-                let backend = st.backend.clone();
-                let quality = st.quality.clone();
-                let render_mode = st.render_mode.clone();
-                let waterfall_speed = st.waterfall_speed;
-                let miditrail_z_far = st.miditrail_z_far;
-                // 计数器设置
-                let counter_text = st.counter_text.clone();
-                let counter_alignment = st.counter_alignment.clone();
-                let counter_font_size = st.counter_font_size;
-                let counter_font_mode = st.counter_font_mode.clone();
-                let counter_font_family = st.counter_font_family.clone();
-                let counter_font_path = st.counter_font_path.clone();
-                let counter_use_commas = st.counter_use_commas;
-                let counter_padding_zeroes = st.counter_padding_zeroes;
-                let counter_save_csv = st.counter_save_csv;
-                let counter_csv_output = st.counter_csv_output.clone();
-                let counter_csv_format = st.counter_csv_format.clone();
-                let counter_bpm_int_pad = st.counter_bpm_int_pad;
-                let counter_bpm_dec_pad = st.counter_bpm_dec_pad;
-                let counter_note_count_pad = st.counter_note_count_pad;
-                let counter_polyphony_pad = st.counter_polyphony_pad;
-                let counter_nps_pad = st.counter_nps_pad;
-                let counter_ticks_pad = st.counter_ticks_pad;
-                let counter_bars_pad = st.counter_bars_pad;
-                let counter_frames_pad = st.counter_frames_pad;
-                // 数据曲线设置
-                let dc_metric = st.dc_metric.clone();
-                let dc_graph_duration = st.dc_graph_duration.clone();
-                let dc_zoom_smoothness = st.dc_zoom_smoothness.clone();
-                let dc_graph_smoothness = st.dc_graph_smoothness.clone();
-                let dc_padding_mul = st.dc_padding_mul.clone();
-                let dc_bg_color = st.dc_bg_color.clone();
-                let dc_line_color = st.dc_line_color.clone();
-                let dc_text_color = st.dc_text_color.clone();
-                let dc_bar_color = st.dc_bar_color.clone();
-                let dc_line_thickness = st.dc_line_thickness.clone();
-                let dc_bar_thickness = st.dc_bar_thickness.clone();
-                let dc_font_size = st.dc_font_size;
-                let dc_font_mode = st.dc_font_mode.clone();
-                let dc_font_family = st.dc_font_family.clone();
-                let dc_font_path = st.dc_font_path.clone();
-                let dc_text_x_offset = st.dc_text_x_offset.clone();
-                let dc_text_y_offset = st.dc_text_y_offset.clone();
-                let dc_milestone_scale_mul = st.dc_milestone_scale_mul.clone();
-                let dc_abbreviate = st.dc_abbreviate;
-                let dc_abbreviate_digits = st.dc_abbreviate_digits.clone();
-                let dc_show_text = st.dc_show_text;
-                let dc_show_bars = st.dc_show_bars;
 
                 // 设置导出中状态
                 root.state.video_export_dialog.overlay = VideoExportOverlayState::Exporting;
@@ -159,119 +228,12 @@ impl DialogHandler {
                 root.state.video_export_dialog.render_fps = 0.0;
                 root.state.video_export_dialog.cached_image_handle = None;
 
-                let video_config = lumino_event::window::dialog::VideoExportConfig {
-                    output_path,
-                    midi_path,
-                    width,
-                    height,
-                    fps,
-                    ppq: root.editor.editor_state.view.ppq,
-                    key_count: root.editor.editor_state.view.visible_key_count,
-                    container: lumino_event::window::video::Container::from_str(&container)
-                        .unwrap_or_default(),
-                    codec: lumino_event::window::video::VideoCodec::from_str(&codec)
-                        .unwrap_or_default(),
-                    backend: lumino_event::window::video::EncoderBackend::from_str(&backend)
-                        .unwrap_or_default(),
-                    quality: lumino_event::window::video::QualityPreset::from_str(&quality)
-                        .unwrap_or_default(),
-                    render_mode: lumino_event::window::video::RenderMode::from_str(&render_mode)
-                        .unwrap_or_default(),
-                    waterfall_scroll_speed: waterfall_speed,
-                    miditrail_z_far,
-                    note_counter: lumino_event::window::video::NoteCounterConfig {
-                        text: counter_text,
-                        alignment: lumino_event::window::video::CounterAlignment::from_str(
-                            &counter_alignment,
-                        )
-                        .unwrap_or_default(),
-                        font_size: counter_font_size,
-                        font: match counter_font_mode.as_str() {
-                            "系统字体" => lumino_event::window::video::CounterFont::System {
-                                family: counter_font_family,
-                            },
-                            "自定义字体" => lumino_event::window::video::CounterFont::File {
-                                path: counter_font_path,
-                            },
-                            _ => lumino_event::window::video::CounterFont::Bitmap,
-                        },
-                        separator: if counter_use_commas {
-                            lumino_event::window::video::CounterSeparator::Comma
-                        } else {
-                            lumino_event::window::video::CounterSeparator::Nothing
-                        },
-                        padding_zeroes: counter_padding_zeroes,
-                        bpm_int_pad: counter_bpm_int_pad,
-                        bpm_dec_pad: counter_bpm_dec_pad,
-                        note_count_pad: counter_note_count_pad,
-                        polyphony_pad: counter_polyphony_pad,
-                        nps_pad: counter_nps_pad,
-                        ticks_pad: counter_ticks_pad,
-                        bars_pad: counter_bars_pad,
-                        frames_pad: counter_frames_pad,
-                        save_csv: counter_save_csv,
-                        csv_output: counter_csv_output,
-                        csv_format: counter_csv_format,
-                    },
-                    data_curve: lumino_event::window::video::DataCurveConfig {
-                        metric: lumino_event::window::video::DataCurveMetric::from_str(&dc_metric)
-                            .unwrap_or_default(),
-                        graph_duration: dc_graph_duration
-                            .parse::<f32>()
-                            .unwrap_or(2.0)
-                            .clamp(0.5, 30.0),
-                        zoom_smoothness: dc_zoom_smoothness
-                            .parse::<f32>()
-                            .unwrap_or(8.0)
-                            .clamp(1.0, 64.0),
-                        graph_smoothness: dc_graph_smoothness
-                            .parse::<f32>()
-                            .unwrap_or(0.0)
-                            .clamp(0.0, 32.0) as u32,
-                        padding_mul: dc_padding_mul.parse::<f32>().unwrap_or(0.1).clamp(0.0, 1.0),
-                        bg_color: hex_to_rgba(&dc_bg_color).unwrap_or([0, 0, 0, 255]),
-                        line_color: hex_to_rgba(&dc_line_color).unwrap_or([0, 255, 255, 255]),
-                        text_color: hex_to_rgba(&dc_text_color).unwrap_or([255, 255, 255, 127]),
-                        bar_color: hex_to_rgba(&dc_bar_color).unwrap_or([255, 255, 255, 127]),
-                        line_thickness: dc_line_thickness
-                            .parse::<f32>()
-                            .unwrap_or(3.0)
-                            .clamp(1.0, 20.0) as u32,
-                        bar_thickness: dc_bar_thickness
-                            .parse::<f32>()
-                            .unwrap_or(1.0)
-                            .clamp(1.0, 10.0) as u32,
-                        font_size: dc_font_size,
-                        font: match dc_font_mode.as_str() {
-                            "系统字体" => lumino_event::window::video::CounterFont::System {
-                                family: dc_font_family,
-                            },
-                            "自定义字体" => lumino_event::window::video::CounterFont::File {
-                                path: dc_font_path,
-                            },
-                            _ => lumino_event::window::video::CounterFont::Bitmap,
-                        },
-                        text_x_offset: dc_text_x_offset
-                            .parse::<f32>()
-                            .unwrap_or(2.0)
-                            .clamp(0.0, 100.0) as u32,
-                        text_y_offset: dc_text_y_offset
-                            .parse::<f32>()
-                            .unwrap_or(2.0)
-                            .clamp(0.0, 100.0) as u32,
-                        milestone_scale_mul: dc_milestone_scale_mul
-                            .parse::<f32>()
-                            .unwrap_or(1.5)
-                            .clamp(1.0, 5.0),
-                        abbreviate: dc_abbreviate,
-                        abbreviate_digits: dc_abbreviate_digits
-                            .parse::<f32>()
-                            .unwrap_or(3.0)
-                            .clamp(0.0, 10.0) as u32,
-                        show_text: dc_show_text,
-                        show_bars: dc_show_bars,
-                    },
-                };
+                let st = &root.state.video_export_dialog;
+                let video_config = build_video_config(
+                    st,
+                    root.editor.editor_state.view.ppq,
+                    root.editor.editor_state.view.visible_key_count,
+                );
                 let ev = crate::event::window::Event::start_video_export(video_config, document);
                 crate::event::emit(crate::event::Event::Window(ev));
             }

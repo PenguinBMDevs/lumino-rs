@@ -12,9 +12,30 @@ use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::host::render::note_worker;
 use lumino_gfx::{
-    ARRANGEMENT_PALETTE, ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
+    ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
     ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
 };
+
+/// 音符数据更新决策（只读阶段计算结果，见 `Host::compute_note_update_decision`）。
+#[derive(Debug, Clone, Copy)]
+struct NoteUpdateDecision {
+    note_index_dirty: bool,
+    viewport_changed: bool,
+    is_drawing: bool,
+    is_ghost_dragging: bool,
+    is_hover_preview: bool,
+    i2m_active: bool,
+    i2m_changed: bool,
+    note_data_changed: bool,
+    current_viewport_hash: u64,
+    /// 扩展可见范围（含 overscan，供渲染视口缓存写回）
+    render_tick_start: f32,
+    render_tick_end: f32,
+    render_key_min: u16,
+    render_key_max: u16,
+    /// 数据未变且视口在缓存范围内 → 跳过重建
+    skip_rebuild: bool,
+}
 
 impl Host {
     /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
@@ -100,10 +121,17 @@ impl Host {
             ],
         };
 
+        // 走带视图轨道颜色：统一使用当前调色板（与 ArrangementUniform 一致），
+        // 避免与 gfx 硬编码 ARRANGEMENT_PALETTE 双轨制造成颜色不同步。
+        let track_colors: [[f32; 3]; 12] = std::array::from_fn(|i| {
+            let c = lumino_extras::palette::current_track_color_f32(i);
+            [c[0], c[1], c[2]]
+        });
+
         let scene_params = ArrangementSceneParams {
             viewport: &viewport,
             track_order: &track_order,
-            track_colors: &ARRANGEMENT_PALETTE,
+            track_colors: &track_colors,
             track_visible: &track_visible,
             midi_doc: self.root.editor.editor_state.data.document.as_ref(),
             playback_position: self.root.editor.playback_position,
@@ -333,19 +361,10 @@ impl Host {
         lumino_gfx::build_cc_bar_instances(&panel.edit_mode, &cc_view_params, &cc_data, &cc_colors)
     }
 
-    /// 更新 WGPU 渲染线程的音符数据（双缓冲 + 异步计算）
-    ///
-    /// 优化策略：
-    /// 1. CPU 端可见性裁剪：仅构建视口内（含 overscan）的音符实例
-    /// 2. Overscan 缓存：若当前视口仍在上一次渲染的扩展视口内且数据未变，跳过重建
-    pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
-        puffin::profile_scope!("update_note_data");
+    /// 计算音符数据更新决策：编辑状态 / ghost 拖动 / i2m 代际 / 视口哈希 /
+    /// hover 预览 / 缓存命中。纯只读，可单测。
+    fn compute_note_update_decision(&self) -> NoteUpdateDecision {
         const OVERSCAN_FACTOR: f32 = 0.5;
-
-        // 走带模式使用 arrangement_renderer，不需要音符实例
-        if self.root.is_arrangement_mode() {
-            return;
-        }
 
         let note_index_dirty = self.root.editor.spatial.note_index_dirty.get();
         let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
@@ -421,19 +440,95 @@ impl Host {
         let (tick_start, tick_end, key_min, key_max) = self.root.editor.compute_visible_range(0.0);
 
         // 若数据未变且当前视口在缓存的渲染视口内，跳过重建
-        if !note_data_changed
+        let skip_rebuild = !note_data_changed
             && !viewport_changed
             && self
                 .render_ctx
                 .render_cache
                 .note_render_viewport
                 .as_ref()
-                .is_some_and(|vp| vp.contains(tick_start, tick_end, key_min, key_max))
-        {
+                .is_some_and(|vp| vp.contains(tick_start, tick_end, key_min, key_max));
+
+        // 扩展视口（含 overscan，供缓存写回）
+        let (render_tick_start, render_tick_end, render_key_min, render_key_max) =
+            self.root.editor.compute_visible_range(OVERSCAN_FACTOR);
+
+        NoteUpdateDecision {
+            note_index_dirty,
+            viewport_changed,
+            is_drawing,
+            is_ghost_dragging,
+            is_hover_preview,
+            i2m_active,
+            i2m_changed,
+            note_data_changed,
+            current_viewport_hash,
+            render_tick_start,
+            render_tick_end,
+            render_key_min,
+            render_key_max,
+            skip_rebuild,
+        }
+    }
+
+    /// 构建预览音符上下文（铅笔 hover 预览）。
+    fn build_preview_note_context(
+        &self,
+        current_edit_state: &crate::editor::EditState,
+    ) -> note_worker::PreviewNoteContext {
+        let editor = &self.root.editor;
+        let view = &editor.editor_state.view;
+        let canvas = &editor.editor_state.canvas;
+        let is_idle = matches!(current_edit_state, crate::editor::EditState::Idle);
+        let is_pencil = editor.current_tool() == crate::message::Tool::Pencil;
+        let should_render = self.root.should_render_preview_note();
+
+        let (cursor_tick, cursor_key, cursor_in_canvas) =
+            if let Some((cx, cy)) = canvas.cursor_position {
+                let local_x = cx - canvas.offset_x;
+                let local_y = cy - canvas.offset_y;
+                let in_canvas = local_x >= view.keyboard_width
+                    && local_y >= view.ruler_height
+                    && local_x < canvas.size_x
+                    && local_y < canvas.size_y;
+                let tick = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
+                let key = view.y_to_key(local_y);
+                (tick, key, in_canvas)
+            } else {
+                (0.0, 0u16, false)
+            };
+
+        let hover_preview = is_idle && is_pencil && should_render && cursor_in_canvas;
+
+        note_worker::PreviewNoteContext {
+            hover_preview,
+            cursor_tick,
+            cursor_key,
+            last_note_length: view.last_note_length,
+        }
+    }
+
+    /// 更新 WGPU 渲染线程的音符数据（双缓冲 + 异步计算）
+    ///
+    /// 优化策略：
+    /// 1. CPU 端可见性裁剪：仅构建视口内（含 overscan）的音符实例
+    /// 2. Overscan 缓存：若当前视口仍在上一次渲染的扩展视口内且数据未变，跳过重建
+    pub(super) fn update_note_data_for_wgpu_thread(&mut self) {
+        puffin::profile_scope!("update_note_data");
+        const OVERSCAN_FACTOR: f32 = 0.5;
+
+        // 走带模式使用 arrangement_renderer，不需要音符实例
+        if self.root.is_arrangement_mode() {
             return;
         }
 
-        self.render_ctx.render_cache.note_viewport_hash = current_viewport_hash;
+        // 阶段 0：只读决策（编辑状态 / 视口哈希 / 缓存命中判定）
+        let d = self.compute_note_update_decision();
+        if d.skip_rebuild {
+            return;
+        }
+
+        self.render_ctx.render_cache.note_viewport_hash = d.current_viewport_hash;
 
         // ── Phase 0：事件级增量（主音轨，2026-08-05）────────────────────────
         // GPU 布局 = 上次全量构建的可见音符（note_visible_indices 列表）。
@@ -441,14 +536,14 @@ impl Host {
         // 1. 数据事件：拖动 release / 变速 / 翻转 / 异步提交
         // 2. ghost 拖动：拖动中 notes 未变，只更新被拖动音符的渲染位置
         // 兜底：dirty（undo/加载/切轨/散改）或事件含不可见索引 → 全量重建。
-        if !i2m_active
-            && !i2m_changed
+        if !d.i2m_active
+            && !d.i2m_changed
             && self.try_note_incremental_update(
-                note_index_dirty,
-                viewport_changed,
-                is_drawing,
-                is_hover_preview,
-                is_ghost_dragging,
+                d.note_index_dirty,
+                d.viewport_changed,
+                d.is_drawing,
+                d.is_hover_preview,
+                d.is_ghost_dragging,
             )
         {
             self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
@@ -456,45 +551,14 @@ impl Host {
         }
 
         // Phase 1: 主音符实例构建（仅构建可见音符）
-        if note_data_changed || viewport_changed {
+        if d.note_data_changed || d.viewport_changed {
             puffin::profile_scope!("phase1_main_notes_sync");
-            let edit_state_clone = self.root.editor.editor_state.interaction.edit_state.clone();
+            let current_edit_state = self.root.editor.editor_state.interaction.edit_state.clone();
             let default_note_length = self.root.editor.editor_state.view.default_note_length;
             let snap_precision = self.root.editor.editor_state.view.snap_precision;
 
             // 构建预览音符上下文
-            let preview_ctx = {
-                let editor = &self.root.editor;
-                let view = &editor.editor_state.view;
-                let canvas = &editor.editor_state.canvas;
-                let is_idle = matches!(current_edit_state, crate::editor::EditState::Idle);
-                let is_pencil = editor.current_tool() == crate::message::Tool::Pencil;
-                let should_render = self.root.should_render_preview_note();
-
-                let (cursor_tick, cursor_key, cursor_in_canvas) =
-                    if let Some((cx, cy)) = canvas.cursor_position {
-                        let local_x = cx - canvas.offset_x;
-                        let local_y = cy - canvas.offset_y;
-                        let in_canvas = local_x >= view.keyboard_width
-                            && local_y >= view.ruler_height
-                            && local_x < canvas.size_x
-                            && local_y < canvas.size_y;
-                        let tick = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
-                        let key = view.y_to_key(local_y);
-                        (tick, key, in_canvas)
-                    } else {
-                        (0.0, 0u16, false)
-                    };
-
-                let hover_preview = is_idle && is_pencil && should_render && cursor_in_canvas;
-
-                note_worker::PreviewNoteContext {
-                    hover_preview,
-                    cursor_tick,
-                    cursor_key,
-                    last_note_length: view.last_note_length,
-                }
-            };
+            let preview_ctx = self.build_preview_note_context(&current_edit_state);
 
             let visible_count = self.root.editor.collect_visible_note_data(
                 &mut self.render_ctx.render_cache.visible_notes_buffer,
@@ -511,7 +575,7 @@ impl Host {
             // 预览不覆盖已存在音符——每次 i2m 的新音符都是独立个体（修复第二次
             // i2m 时第一次已放置的主轨音符从视野消失、看起来像被"移入"预览区的
             // 问题）。Selecting 阶段（预览为空）：保持 document 主轨音符走 main 路径。
-            let i2m_preview = if i2m_active {
+            let i2m_preview = if d.i2m_active {
                 let (main_preview, onion_preview) =
                     note_worker::collect_i2m_preview_notes(&self.root.editor);
                 if main_preview.is_empty() && onion_preview.is_empty() {
@@ -535,7 +599,7 @@ impl Host {
                 note_worker::build_main_note_instances(
                     &self.render_ctx.render_cache.note_instances_buffer,
                     visible_notes,
-                    &edit_state_clone,
+                    &current_edit_state,
                     default_note_length,
                     snap_precision,
                     &preview_ctx,
@@ -552,21 +616,25 @@ impl Host {
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;
 
         // 更新缓存的渲染视口为本次使用的扩展视口
-        let (render_tick_start, render_tick_end, render_key_min, render_key_max) =
-            self.root.editor.compute_visible_range(OVERSCAN_FACTOR);
         self.render_ctx.render_cache.note_render_viewport =
             Some(crate::host::cache::NoteRenderViewport {
-                tick_start: render_tick_start,
-                tick_end: render_tick_end,
-                key_min: render_key_min,
-                key_max: render_key_max,
+                tick_start: d.render_tick_start,
+                tick_end: d.render_tick_end,
+                key_min: d.render_key_min,
+                key_max: d.render_key_max,
             });
 
         // 更新图片转 MIDI 预览代际缓存（本次已重建，后续帧据此判断）
-        self.render_ctx.render_cache.last_i2m_preview_generation = i2m_generation;
+        self.render_ctx.render_cache.last_i2m_preview_generation = {
+            let i2m = &self.root.editor.editor_state.image_to_midi;
+            i2m.preview_generation
+        };
 
         // 滚动速度追踪保留，供未来 overscan 预测使用
-        let _velocity = self.scroll_tracker.update(editor_scroll_x, editor_zoom_x);
+        let _velocity = self.scroll_tracker.update(
+            self.root.editor.editor_state.view.scroll_x,
+            self.root.editor.editor_state.view.zoom_x,
+        );
         let _ = _velocity;
     }
 

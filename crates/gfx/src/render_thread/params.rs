@@ -44,8 +44,6 @@ pub struct RenderParams {
     pub ticks_per_beat: u32,
     /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,
-    /// 是否需要重新生成网格
-    pub regenerate_grid: bool,
     /// Canvas 偏移
     pub canvas_offset: (f32, f32),
     /// Canvas 大小
@@ -68,7 +66,7 @@ pub struct RenderParams {
     pub is_waterfall_mode: bool,
     /// 瀑布流滚动速度
     pub waterfall_speed: f32,
-    /// 瀑布�?GPU 音符数据（仅在瀑布流模式下使用�?
+    /// 瀑布流 GPU 音符数据（仅在瀑布流模式下使用）
     pub waterfall_notes: Vec<WaterfallNoteGpu>,
     /// 瀑布流音符按 key 分桶的偏移表（129 个 u32：key i 的起始索引为
     /// `waterfall_key_offsets[i]`，结束为 `waterfall_key_offsets[i+1]`）。
@@ -119,7 +117,6 @@ impl Default for RenderParams {
             keyboard_instances: Vec::new(),
             ticks_per_measure: 7680,
             ticks_per_beat: 1920,
-            regenerate_grid: true,
             canvas_offset: (0.0, 0.0),
             canvas_size: (800.0, 600.0),
             ppq: 1920.0,
@@ -209,48 +206,51 @@ pub struct RenderParamsBuilder {
 }
 
 impl Default for RenderParamsBuilder {
+    /// 默认值单一来源：从 [`RenderParams::default`] 拷贝，
+    /// 避免与主类型的手写默认值漂移（新增字段只需改主类型一处）。
     fn default() -> Self {
+        let base = RenderParams::default();
         Self {
-            viewport_size: (800, 600),
-            logical_size: (800.0, 600.0),
-            scale_factor: 1.0,
-            scroll: (0.0, 0.0),
-            zoom: (0.1, 20.0),
-            keyboard_width: 60.0,
-            ruler_height: 30.0,
-            background_color: [0.1, 0.1, 0.1, 1.0],
-            color_bg: [0.1, 0.1, 0.1, 1.0],
-            color_bg_black_key: [0.07, 0.07, 0.07, 1.0],
-            color_bar: [0.3, 0.3, 0.3, 1.0],
-            color_beat: [0.2, 0.2, 0.2, 1.0],
-            color_half_beat: [0.15, 0.15, 0.15, 1.0],
-            color_grid: [0.15, 0.15, 0.15, 1.0],
-            color_key_line: [0.4, 0.4, 0.4, 1.0],
-            grid_instances: Vec::new(),
-            ruler_instances: Vec::new(),
-            keyboard_instances: Vec::new(),
-            ppq: 1920.0,
-            max_key_index: 127.0,
-            is_arrangement_mode: false,
-            arrangement_note_instances: Vec::new(),
-            arrangement_uniform: ArrangementUniform::default(),
-            cc_bar_instances: Vec::new(),
-            canvas_offset: (0.0, 0.0),
-            canvas_size: (800.0, 600.0),
-            velocity_panel_rect: None,
-            time_signatures: vec![(0, 4, 4)],
-            is_waterfall_mode: false,
-            waterfall_speed: 1.0,
-            waterfall_notes: Vec::new(),
-            waterfall_key_offsets: Vec::new(),
-            waterfall_current_tick: 0,
-            miditrail_enabled: false,
-            miditrail_speed: 1.0,
-            miditrail_notes: Vec::new(),
-            miditrail_current_tick: 0,
-            miditrail_z_far: 7.5,
-            miditrail_ticks_per_second: 0.0,
-            fps: 60.0,
+            viewport_size: base.viewport_size,
+            logical_size: base.logical_size,
+            scale_factor: base.scale_factor,
+            scroll: base.scroll,
+            zoom: base.zoom,
+            keyboard_width: base.keyboard_width,
+            ruler_height: base.ruler_height,
+            background_color: base.background_color,
+            color_bg: base.color_bg,
+            color_bg_black_key: base.color_bg_black_key,
+            color_bar: base.color_bar,
+            color_beat: base.color_beat,
+            color_half_beat: base.color_half_beat,
+            color_grid: base.color_grid,
+            color_key_line: base.color_key_line,
+            grid_instances: base.grid_instances,
+            ruler_instances: base.ruler_instances,
+            keyboard_instances: base.keyboard_instances,
+            ppq: base.ppq,
+            max_key_index: base.max_key_index,
+            is_arrangement_mode: base.is_arrangement_mode,
+            arrangement_note_instances: base.arrangement_note_instances,
+            arrangement_uniform: base.arrangement_uniform,
+            cc_bar_instances: base.cc_bar_instances,
+            canvas_offset: base.canvas_offset,
+            canvas_size: base.canvas_size,
+            velocity_panel_rect: base.velocity_panel_rect,
+            time_signatures: base.time_signatures,
+            is_waterfall_mode: base.is_waterfall_mode,
+            waterfall_speed: base.waterfall_speed,
+            waterfall_notes: base.waterfall_notes,
+            waterfall_key_offsets: base.waterfall_key_offsets,
+            waterfall_current_tick: base.waterfall_current_tick,
+            miditrail_enabled: base.miditrail_enabled,
+            miditrail_speed: base.miditrail_speed,
+            miditrail_notes: base.miditrail_notes,
+            miditrail_current_tick: base.miditrail_current_tick,
+            miditrail_z_far: base.miditrail_z_far,
+            miditrail_ticks_per_second: base.miditrail_ticks_per_second,
+            fps: base.fps,
         }
     }
 }
@@ -440,7 +440,7 @@ impl RenderParamsBuilder {
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
     ///（供背景 shader 使用；变化拍号由 CPU 标尺实例处理）。
-    /// `note_instances` 和 `regenerate_grid` 使用默认值。
+    /// `note_instances` 使用默认值（builder 不暴露该字段）。
     pub fn build(self) -> RenderParams {
         let (ticks_per_measure, ticks_per_beat) =
             compute_ticks_from_first_time_signature(self.ppq, &self.time_signatures);
@@ -466,7 +466,6 @@ impl RenderParamsBuilder {
             keyboard_instances: self.keyboard_instances,
             ticks_per_measure,
             ticks_per_beat,
-            regenerate_grid: false,
             canvas_offset: self.canvas_offset,
             canvas_size: self.canvas_size,
             ppq: self.ppq,

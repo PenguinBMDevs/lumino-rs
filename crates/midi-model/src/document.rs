@@ -25,6 +25,46 @@ use std::path::Path;
 /// 避免各模块魔法数漂移。
 pub const TICK_SEARCH_BUFFER: u32 = 19200;
 
+/// 音轨音符只读投影（替代裸 5 元组 `(start_tick, key, length, velocity, channel)`，
+/// 调用端无需记忆字段顺序）。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TrackNoteView {
+    /// 起始 tick
+    pub start_tick: f32,
+    /// 键位（0-127 或 0-255，取决于键盘模式）
+    pub key: u8,
+    /// 时长（tick）
+    pub length: f32,
+    /// 力度（0-127）
+    pub velocity: u8,
+    /// MIDI 通道（0-15）
+    pub channel: u8,
+}
+
+impl TrackNoteView {
+    fn from_event(n: &NoteEvent) -> Self {
+        Self {
+            start_tick: n.start_tick as f32,
+            key: n.key,
+            length: n.length() as f32,
+            velocity: n.velocity,
+            channel: n.channel,
+        }
+    }
+}
+
+/// 按 tick 排序去重；若首项 tick != 0，在头部插入 tick=0 的默认事件。
+///
+/// 收敛 `from_notes_bytes` 中 tempo/time_sig/key_sig 三处同构的
+/// "sort → dedup → 首项补默认" 模板。
+fn finalize_sorted_events<T>(events: &mut Vec<T>, get_tick: impl Fn(&T) -> u32, default_at_zero: T) {
+    events.sort_unstable_by_key(&get_tick);
+    events.dedup_by(|a, b| get_tick(a) == get_tick(b));
+    if events.first().is_none_or(|e| get_tick(e) != 0) {
+        events.insert(0, default_at_zero);
+    }
+}
+
 /// 解析后的 MIDI 文档（全内存紧凑存放）
 ///
 /// 音符按音轨存放为 `Vec<ChunkedList<NoteEvent>>`，每轨内按 `start_tick` 升序排列，
@@ -227,23 +267,9 @@ impl MidiDocument {
             )
             .map_err(|e| LoaderError::MidiParse(format!("提取音符失败: {e}")))?;
 
-            all_tempo_changes.sort_unstable_by_key(|&(t, _)| t);
-            all_tempo_changes.dedup_by(|a, b| a.0 == b.0);
-            if all_tempo_changes.first().is_none_or(|&(t, _)| t != 0) {
-                all_tempo_changes.insert(0, (0u32, 120.0f32));
-            }
-
-            all_time_signatures.sort_unstable_by_key(|&(t, _, _)| t);
-            all_time_signatures.dedup_by(|a, b| a.0 == b.0);
-            if all_time_signatures.first().is_none_or(|&(t, _, _)| t != 0) {
-                all_time_signatures.insert(0, (0u32, 4u8, 4u8));
-            }
-
-            all_key_signatures.sort_unstable_by_key(|&(t, _, _)| t);
-            all_key_signatures.dedup_by(|a, b| a.0 == b.0);
-            if all_key_signatures.first().is_none_or(|&(t, _, _)| t != 0) {
-                all_key_signatures.insert(0, (0u32, 0i8, false));
-            }
+            finalize_sorted_events(&mut all_tempo_changes, |&(t, _)| t, (0u32, 120.0f32));
+            finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));
+            finalize_sorted_events(&mut all_key_signatures, |&(t, _, _)| t, (0u32, 0i8, false));
 
             control_events.sort_unstable_by_key(|e| e.tick);
             lyrics.sort_unstable_by_key(|e| e.0);
@@ -410,7 +436,7 @@ impl MidiDocument {
         track_id: u16,
         tick_start: f32,
         tick_end: f32,
-    ) -> Vec<(f32, u8, f32, u8, u8)> {
+    ) -> Vec<TrackNoteView> {
         let tid = track_id as usize;
         let notes = match self.notes.get(tid) {
             Some(n) if !n.is_empty() => n,
@@ -425,13 +451,7 @@ impl MidiDocument {
         let mut result = Vec::with_capacity(256);
         for n in notes.range(search_start_tick, tick_end_u + 1) {
             if n.end_tick() >= tick_start_u && n.start_tick <= tick_end_u {
-                result.push((
-                    n.start_tick as f32,
-                    n.key,
-                    n.length() as f32,
-                    n.velocity,
-                    n.channel,
-                ));
+                result.push(TrackNoteView::from_event(n));
             }
         }
 
@@ -439,19 +459,13 @@ impl MidiDocument {
     }
 
     /// 获取指定音轨的所有音符。
-    pub fn get_track_notes(&self, track_id: u16) -> Vec<(f32, u8, f32, u8, u8)> {
+    pub fn get_track_notes(&self, track_id: u16) -> Vec<TrackNoteView> {
         let tid = track_id as usize;
         match self.notes.get(tid) {
             Some(notes) if !notes.is_empty() => {
                 let mut result = Vec::with_capacity(notes.len());
                 for n in notes {
-                    result.push((
-                        n.start_tick as f32,
-                        n.key,
-                        n.length() as f32,
-                        n.velocity,
-                        n.channel,
-                    ));
+                    result.push(TrackNoteView::from_event(n));
                 }
                 result
             }
@@ -502,7 +516,7 @@ impl MidiDocument {
         exclude_track: usize,
         tick_start: f32,
         tick_end: f32,
-    ) -> Vec<(f32, u8, f32, u8, u8)> {
+    ) -> Vec<TrackNoteView> {
         let tick_start_u = tick_start as u32;
         let tick_end_u = tick_end as u32;
 
@@ -525,18 +539,12 @@ impl MidiDocument {
             let search_start_tick = tick_start_u.saturating_sub(TICK_SEARCH_BUFFER);
             for n in notes.range(search_start_tick, tick_end_u + 1) {
                 if n.end_tick() >= tick_start_u && n.start_tick <= tick_end_u {
-                    all_notes.push((
-                        n.start_tick as f32,
-                        n.key,
-                        n.length() as f32,
-                        n.velocity,
-                        n.channel,
-                    ));
+                    all_notes.push(TrackNoteView::from_event(n));
                 }
             }
         }
 
-        all_notes.sort_by(|a, b| a.0.total_cmp(&b.0));
+        all_notes.sort_by(|a, b| a.start_tick.total_cmp(&b.start_tick));
         all_notes
     }
 
@@ -605,6 +613,13 @@ impl MidiDocument {
         true
     }
 
+    /// 使指定音轨的 max_end_tick 缓存失效（置脏），下次查询时惰性重算。
+    fn invalidate_track_max_tick(&self, track_id: usize) {
+        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
+            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+        }
+    }
+
     /// 删除指定音轨指定索引处的音符，返回被删除的音符副本。
     /// track_id 越界或 index 越界返回 None。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
@@ -613,9 +628,7 @@ impl MidiDocument {
             track_notes.remove(index)
         };
         // 保守置脏：被删音符可能是当前 max，查询时惰性重算
-        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
-        }
+        self.invalidate_track_max_tick(track_id);
         removed
     }
 
@@ -639,9 +652,7 @@ impl MidiDocument {
         track_id: usize,
     ) -> Option<&mut crate::chunked_list::ChunkedList<NoteEvent>> {
         // 可变引用逃逸后无法感知修改内容，保守置脏
-        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
-        }
+        self.invalidate_track_max_tick(track_id);
         self.notes.get_mut(track_id)
     }
 
@@ -654,9 +665,7 @@ impl MidiDocument {
             return false;
         };
         *track = crate::chunked_list::ChunkedList::from_sorted(notes);
-        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
-        }
+        self.invalidate_track_max_tick(track_id);
         true
     }
 
@@ -674,9 +683,7 @@ impl MidiDocument {
             return false;
         };
         *track = notes.clone();
-        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
-        }
+        self.invalidate_track_max_tick(track_id);
         true
     }
 
@@ -687,9 +694,7 @@ impl MidiDocument {
         };
         track.clear();
         // 空轨缓存置脏（None），与 recompute 的空轨处理一致，避免残留 Some(0) 误判
-        if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
-        }
+        self.invalidate_track_max_tick(track_id);
         true
     }
 

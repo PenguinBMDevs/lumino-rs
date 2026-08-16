@@ -18,7 +18,7 @@ pub mod track;
 
 pub use chunked_list::{ChunkedList, EVENT_CHUNK_CAPACITY, EVENT_CHUNK_SPLIT, EventTick};
 pub use compact::{CompactEvent, EventKind};
-pub use document::{MidiDocument, TICK_SEARCH_BUFFER};
+pub use document::{MidiDocument, TICK_SEARCH_BUFFER, TrackNoteView};
 pub use error::{LoaderError, LoaderResult};
 pub use note_event::NoteEvent;
 pub use note_info::NoteInfo;

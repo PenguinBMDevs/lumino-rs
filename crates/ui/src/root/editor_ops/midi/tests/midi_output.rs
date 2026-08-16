@@ -3,7 +3,6 @@ use crate::editor::note::Note;
 use crate::message::Message;
 use crate::playback::PlaybackState;
 use crate::toolbar;
-use lumino_midi_loader::{MidiDocument, TrackManager};
 use lumino_note_core::automation::{
     AutomationEvent, AutomationLane, AutomationTarget, SegmentShape,
 };
@@ -476,41 +475,29 @@ fn test_cc_via_set_midi_document() {
         PackedControlEvent::control_change(0, 1, 1, 7, 80),
     ]);
 
-    let doc = MidiDocument {
-        notes: vec![
-            // track 0: 1 note on channel 0
-            lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
-                start_tick: 0,
-                end_tick: 960,
-                key: 60,
-                velocity: 100,
-                channel: 0,
-            }]),
-            // track 1: 1 note on channel 1
-            lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
-                start_tick: 0,
-                end_tick: 960,
-                key: 64,
-                velocity: 100,
-                channel: 1,
-            }]),
-        ],
-        tempo_changes: vec![(0, 120.0)],
-        time_signatures: vec![(0, 4, 4)],
-        key_signatures: vec![(0, 0, false)],
-        control_events,
-        lyrics: vec![],
-        markers: vec![],
-        sys_ex: vec![],
-        track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
-        total_ticks: 960,
-        track_count: 2,
-        tracks: TrackManager::new(2),
-        division: 480,
-        track_ports: vec![],
-
-        track_max_end_ticks: vec![],
-    };
+    let mut doc = crate::test_helpers::make_test_document();
+    // 定制：双轨各 1 音符（不同通道）+ 控制事件 + 总 tick
+    doc.notes = vec![
+        // track 0: 1 note on channel 0
+        lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
+            start_tick: 0,
+            end_tick: 960,
+            key: 60,
+            velocity: 100,
+            channel: 0,
+        }]),
+        // track 1: 1 note on channel 1
+        lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
+            start_tick: 0,
+            end_tick: 960,
+            key: 64,
+            velocity: 100,
+            channel: 1,
+        }]),
+    ];
+    doc.key_signatures = vec![(0, 0, false)];
+    doc.control_events = control_events;
+    doc.total_ticks = 960;
 
     // 加载 track 0 的音符（模拟 import 流程）
     let track0_notes = doc.get_track_notes(0);

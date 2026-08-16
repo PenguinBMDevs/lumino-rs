@@ -23,6 +23,8 @@ pub mod util;
 mod view;
 pub mod wgpu_render_thread;
 pub(crate) mod widget;
+#[cfg(test)]
+mod test_helpers;
 pub use lumino_ui_core::window;
 
 pub use host::{Host, NoteData, TrackNotes, prewarm_dialog_shared_engine};

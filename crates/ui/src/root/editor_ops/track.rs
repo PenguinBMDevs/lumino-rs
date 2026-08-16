@@ -140,16 +140,20 @@ impl Root {
     }
 
     /// 加载指定音轨的音符到编辑器（用于 MIDI 文件，整轨替换 document）
-    pub fn load_track_notes(&mut self, track_idx: usize, notes: &[(f32, u8, f32, u8, u8)]) {
+    pub fn load_track_notes(
+        &mut self,
+        track_idx: usize,
+        notes: &[lumino_midi_loader::TrackNoteView],
+    ) {
         let events: Vec<NoteEvent> = notes
             .iter()
-            .map(|&(tick, key, length, velocity, channel)| {
+            .map(|n| {
                 NoteEvent::new(
-                    tick.max(0.0) as u32,
-                    (tick + length).max(0.0) as u32,
-                    key,
-                    velocity,
-                    channel,
+                    n.start_tick.max(0.0) as u32,
+                    (n.start_tick + n.length).max(0.0) as u32,
+                    n.key,
+                    n.velocity,
+                    n.channel,
                 )
             })
             .collect();

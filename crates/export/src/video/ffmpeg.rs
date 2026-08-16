@@ -294,12 +294,16 @@ fn build_ffmpeg_args(config: &VideoExportConfig, input_pix_fmt: &str) -> Vec<Str
         EncoderBackend::VideoToolbox => {
             build_videotoolbox_args(&mut args, &config.codec, &config.quality)
         }
-        EncoderBackend::Nvenc => build_nvenc_args(&mut args, &config.codec, &config.quality),
-        EncoderBackend::Amf => build_amf_args(&mut args, &config.codec, &config.quality),
-        EncoderBackend::Qsv => build_qsv_args(&mut args, &config.codec, &config.quality),
-        EncoderBackend::MediaFoundation => build_mf_args(&mut args, &config.codec, &config.quality),
-        EncoderBackend::Vaapi => build_vaapi_args(&mut args, &config.codec, &config.quality),
+        EncoderBackend::Nvenc => build_nvenc_args(&mut args, &config.quality),
+        EncoderBackend::Amf => build_amf_args(&mut args, &config.quality),
+        EncoderBackend::Qsv => build_qsv_args(&mut args, &config.quality),
+        EncoderBackend::MediaFoundation => build_mf_args(&mut args, &config.quality),
+        EncoderBackend::Vaapi => build_vaapi_args(&mut args, &config.quality),
     }
+
+    // ── 输出像素格式（全部后端统一，ProRes 为 yuv422p，其余 yuv420p） ──
+    args.push("-pix_fmt".to_string());
+    args.push(config.codec.ffmpeg_pix_fmt().to_string());
 
     // ── 封装格式 ──
     args.push("-f".to_string());
@@ -323,6 +327,8 @@ fn build_ffmpeg_args(config: &VideoExportConfig, input_pix_fmt: &str) -> Vec<Str
 // ---------------------------------------------------------------------------
 
 /// 软件编码器：libx264 / libx265 / prores_ks / libvpx-vp9 / libsvtav1
+///
+/// 像素格式由调用方统一追加（`build_ffmpeg_args` 末尾）。
 fn build_software_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
     match codec {
         VideoCodec::H264 | VideoCodec::H265 => {
@@ -330,16 +336,12 @@ fn build_software_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &Qua
             args.push(quality.crf().to_string());
             args.push("-preset".to_string());
             args.push(quality.preset().to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
         }
         VideoCodec::Vp9 => {
             args.push("-crf".to_string());
             args.push(quality.crf().to_string());
             args.push("-b:v".to_string());
             args.push("0".to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
             // VP9 多线程
             args.push("-row-mt".to_string());
             args.push("1".to_string());
@@ -349,8 +351,6 @@ fn build_software_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &Qua
         VideoCodec::Av1 => {
             args.push("-crf".to_string());
             args.push(quality.crf().to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
             // SVT-AV1 多线程
             args.push("-svtav1-params".to_string());
             args.push(format!("lp={}", num_cpus()));
@@ -358,8 +358,6 @@ fn build_software_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &Qua
         VideoCodec::ProRes => {
             args.push("-profile:v".to_string());
             args.push("3".to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv422p".to_string());
             args.push("-qscale:v".to_string());
             args.push("9".to_string());
         }
@@ -381,8 +379,6 @@ fn build_videotoolbox_args(args: &mut Vec<String>, codec: &VideoCodec, quality: 
             args.push(bitrate.to_string());
             args.push("-quality".to_string());
             args.push(vt_q.to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv420p".to_string());
         }
         VideoCodec::ProRes => {
             let bitrate = match quality {
@@ -392,8 +388,6 @@ fn build_videotoolbox_args(args: &mut Vec<String>, codec: &VideoCodec, quality: 
             };
             args.push("-b:v".to_string());
             args.push(bitrate.to_string());
-            args.push("-pix_fmt".to_string());
-            args.push("yuv422p".to_string());
         }
         _ => {
             // 不支持的 编码器/后端 组合 —— ffmpeg 会报错，但仍尝试
@@ -403,15 +397,19 @@ fn build_videotoolbox_args(args: &mut Vec<String>, codec: &VideoCodec, quality: 
     }
 }
 
-/// NVIDIA NVENC：h264_nvenc / hevc_nvenc / av1_nvenc（Windows & Linux）
-///
-/// 使用 -cq 恒定质量 + VBR 码率控制 + preset (p1-p7)。
-fn build_nvenc_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
-    let cq = match quality {
+/// 恒定质量档位（NVENC -cq / QSV -global_quality / VAAPI -qp 共用）
+fn quality_cq(quality: &QualityPreset) -> &'static str {
+    match quality {
         QualityPreset::High => "18",
         QualityPreset::Medium => "23",
         QualityPreset::Low => "28",
-    };
+    }
+}
+
+/// NVIDIA NVENC：h264_nvenc / hevc_nvenc / av1_nvenc（Windows & Linux）
+///
+/// 使用 -cq 恒定质量 + VBR 码率控制 + preset (p1-p7)。
+fn build_nvenc_args(args: &mut Vec<String>, quality: &QualityPreset) {
     let preset = match quality {
         // p1=最快, p7=最慢
         QualityPreset::High => "p5",
@@ -420,17 +418,15 @@ fn build_nvenc_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &Qualit
     };
 
     args.push("-cq".to_string());
-    args.push(cq.to_string());
+    args.push(quality_cq(quality).to_string());
     args.push("-rc".to_string());
     args.push("vbr".to_string());
     args.push("-preset".to_string());
     args.push(preset.to_string());
-    args.push("-pix_fmt".to_string());
-    args.push(codec.ffmpeg_pix_fmt().to_string());
 }
 
 /// AMD AMF：h264_amf / hevc_amf / av1_amf（Windows）
-fn build_amf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
+fn build_amf_args(args: &mut Vec<String>, quality: &QualityPreset) {
     let (bitrate, amf_q) = match quality {
         QualityPreset::High => ("15M", "quality"),
         QualityPreset::Medium => ("8M", "balanced"),
@@ -440,17 +436,10 @@ fn build_amf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityP
     args.push(bitrate.to_string());
     args.push("-quality".to_string());
     args.push(amf_q.to_string());
-    args.push("-pix_fmt".to_string());
-    args.push(codec.ffmpeg_pix_fmt().to_string());
 }
 
 /// Intel QuickSync：h264_qsv / hevc_qsv / av1_qsv / vp9_qsv（Windows & Linux）
-fn build_qsv_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
-    let global_q = match quality {
-        QualityPreset::High => "18",
-        QualityPreset::Medium => "23",
-        QualityPreset::Low => "28",
-    };
+fn build_qsv_args(args: &mut Vec<String>, quality: &QualityPreset) {
     let preset = match quality {
         QualityPreset::High => "medium",
         QualityPreset::Medium => "fast",
@@ -458,15 +447,13 @@ fn build_qsv_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityP
     };
 
     args.push("-global_quality".to_string());
-    args.push(global_q.to_string());
+    args.push(quality_cq(quality).to_string());
     args.push("-preset".to_string());
     args.push(preset.to_string());
-    args.push("-pix_fmt".to_string());
-    args.push(codec.ffmpeg_pix_fmt().to_string());
 }
 
 /// Windows MediaFoundation：h264_mf / hevc_mf（Windows DXVA/D3D11）
-fn build_mf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
+fn build_mf_args(args: &mut Vec<String>, quality: &QualityPreset) {
     let bitrate = match quality {
         QualityPreset::High => "30M",
         QualityPreset::Medium => "15M",
@@ -474,21 +461,12 @@ fn build_mf_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPr
     };
     args.push("-b:v".to_string());
     args.push(bitrate.to_string());
-    args.push("-pix_fmt".to_string());
-    args.push(codec.ffmpeg_pix_fmt().to_string());
 }
 
 /// VAAPI：h264_vaapi / hevc_vaapi / av1_vaapi / vp9_vaapi（Linux）
-fn build_vaapi_args(args: &mut Vec<String>, codec: &VideoCodec, quality: &QualityPreset) {
-    let qp = match quality {
-        QualityPreset::High => "18",
-        QualityPreset::Medium => "23",
-        QualityPreset::Low => "28",
-    };
+fn build_vaapi_args(args: &mut Vec<String>, quality: &QualityPreset) {
     args.push("-qp".to_string());
-    args.push(qp.to_string());
-    args.push("-pix_fmt".to_string());
-    args.push(codec.ffmpeg_pix_fmt().to_string());
+    args.push(quality_cq(quality).to_string());
 }
 
 // ---------------------------------------------------------------------------

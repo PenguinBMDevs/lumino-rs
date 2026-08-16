@@ -49,7 +49,6 @@ fn test_render_params_clone() {
         keyboard_instances: Vec::new(),
         ticks_per_measure: 960,
         ticks_per_beat: 240,
-        regenerate_grid: true,
         canvas_offset: (10.0, 20.0),
         canvas_size: (1000.0, 800.0),
         ppq: 960.0,

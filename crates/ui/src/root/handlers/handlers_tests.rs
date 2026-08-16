@@ -9,27 +9,7 @@ fn create_root() -> Root {
 
 /// 挂载测试 document 到 Root（当前轨 = 1，音符写入 document 单一权威源）
 fn attach_test_document(root: &mut Root) {
-    let doc = lumino_midi_loader::MidiDocument {
-        notes: vec![
-            lumino_midi_loader::ChunkedList::new(),
-            lumino_midi_loader::ChunkedList::new(),
-        ],
-        tempo_changes: vec![(0, 120.0)],
-        time_signatures: vec![(0, 4, 4)],
-        key_signatures: vec![],
-        control_events: lumino_midi_loader::ChunkedList::new(),
-        lyrics: vec![],
-        markers: vec![],
-        sys_ex: vec![],
-        track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
-        total_ticks: 0,
-        track_count: 2,
-        tracks: lumino_midi_loader::TrackManager::new(2),
-        division: 480,
-        track_ports: vec![0, 0],
-
-        track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(2),
-    };
+    let doc = crate::test_helpers::make_test_document();
     root.set_midi_document(doc);
     root.editor.editor_state.data.current_track = 1;
 }
