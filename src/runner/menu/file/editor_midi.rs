@@ -166,12 +166,17 @@ fn human_denominator_to_power_of_two(denominator: u8) -> u8 {
 
 /// 将内部 tempo 点类型转换为导出用 `MidiTempoEvent`
 fn tempo_events_from_points(points: &[TempoPoint]) -> Vec<MidiTempoEvent> {
-    points
-        .iter()
-        .map(|tp| MidiTempoEvent {
-            tick: tp.tick as u32,
-            tempo: bpm_to_tempo(tp.bpm) as u32,
-        })
+    // 注意：不要合并为单个混合类型（f32 tick + f64 bpm）的 map 循环——
+    // SLP 向量化器对该模式生成非法 shufflevector（f32 与 f64 操作数互插），
+    // 在 AArch64/ARMv7 后端触发 "Do not know how to split this operator's operand!"
+    // 崩溃（LLVM 22.1，rustc 1.97；x86_64 因 AVX 恰好不炸）。拆成两个同质循环后
+    // zip，逐元素运算完全等价。
+    let ticks: Vec<u32> = points.iter().map(|tp| tp.tick as u32).collect();
+    let tempos: Vec<u32> = points.iter().map(|tp| bpm_to_tempo(tp.bpm)).collect();
+    ticks
+        .into_iter()
+        .zip(tempos)
+        .map(|(tick, tempo)| MidiTempoEvent { tick, tempo })
         .collect()
 }
 
