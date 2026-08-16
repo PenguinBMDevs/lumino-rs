@@ -28,7 +28,7 @@ pub fn export_waterfall_tiles(
     let image_dir = image_dir.as_ref();
     std::fs::create_dir_all(image_dir)?;
 
-    let mut notes = collect_onion_skin_notes(project);
+    let mut notes = collect_waterfall_notes(project);
     let config = TextureWaterfallConfig::default();
 
     if notes.is_empty() {
@@ -70,7 +70,7 @@ pub fn export_waterfall_tiles(
 }
 
 /// 收集所有已加载或已修改音轨的贴图瀑布流音符
-fn collect_onion_skin_notes(project: &LuminoProject) -> Vec<Vec<WaterfallNote>> {
+fn collect_waterfall_notes(project: &LuminoProject) -> Vec<Vec<WaterfallNote>> {
     project
         .tracks
         .iter()

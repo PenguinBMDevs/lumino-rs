@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.0] - 2026-08-16
 
+### midiplayer 与贴图瀑布流
+
+- **贴图瀑布流提取** — 将高精度贴图洋葱皮系统从 gfx 依赖链中剥离，新建 `midiplayer` crate（`lumino-midiplayer`）；贴图瀑布流作为其首个功能模块（`texture_waterfall`），为后续 MIDI 播放、实时可视化等功能预留扩展空间（`abd4a78c`）
+- **全面改名** — 贴图瀑布流公共 API 全面改名：`HiRes*` → `TextureWaterfall*`、`TileCoord/GroupTile` → `WaterfallTileCoord/WaterfallGroupTile` 等；`OnionSkinNote` 迁入改名 `WaterfallNote` 并删除 `onion-skin` crate（`6f9ab06c`）
+- **gfx 薄化** — 命令适配层迁入 midiplayer（`WaterfallCommand`/`WaterfallGpuCtx` 与宿主解耦），`ControlCommand` 五条命令合并为单变体转发，删除 gfx 侧 695 行适配代码与全部 `HiRes*` 内部类型（`29eb7e21`）
+- **兼容性说明** — 设置持久化字段（`hires_onion_enabled` 等）与对应设置事件保留原名，保证既有用户配置文件与设置面板兼容
+
 ### 云存储
 
 - **云存储基础设施** — 新增 `cloud-storage` crate，支持 FTP/SFTP/WebDAV 协议（`dce6ab8b`）
