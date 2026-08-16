@@ -94,7 +94,14 @@ fn test_build_aura_instances() {
     }];
     let active_keys = compute_active_keys(uniform.tick, &notes);
     let mut auras = Vec::new();
-    build_aura_instances(&uniform, &notes, &active_keys, &positions, &widths, &mut auras);
+    build_aura_instances(
+        &uniform,
+        &notes,
+        &active_keys,
+        &positions,
+        &widths,
+        &mut auras,
+    );
     assert_eq!(auras.len(), 1);
     assert!(auras[0].size > 0.0);
     // 光环位于键中心
@@ -134,7 +141,14 @@ fn test_aura_flash_decays_after_press() {
         let uniform = MiditrailUniformGpu { tick, ..uniform };
         let active_keys = compute_active_keys(tick, &notes);
         let mut auras = Vec::new();
-        build_aura_instances(&uniform, &notes, &active_keys, &positions, &widths, &mut auras);
+        build_aura_instances(
+            &uniform,
+            &notes,
+            &active_keys,
+            &positions,
+            &widths,
+            &mut auras,
+        );
         auras[0].size
     };
 
@@ -147,9 +161,15 @@ fn test_aura_flash_decays_after_press() {
     assert!((aura_size_at(16) - f1).abs() < 1e-4, "第 1 帧闪光应衰减");
     // 10 帧后（160 tick）：闪光归零，回到常态 AURA_RING_SCALE × 键宽 × 0.5
     let held = width * AURA_RING_SCALE * 0.5;
-    assert!((aura_size_at(160) - held).abs() < 1e-4, "10 帧后应回到常态尺寸");
+    assert!(
+        (aura_size_at(160) - held).abs() < 1e-4,
+        "10 帧后应回到常态尺寸"
+    );
     // 保持期（剩余时长 > 1s，tick < 1920-960）：仍为常态
-    assert!((aura_size_at(800) - held).abs() < 1e-4, "保持期内应维持常态尺寸");
+    assert!(
+        (aura_size_at(800) - held).abs() < 1e-4,
+        "保持期内应维持常态尺寸"
+    );
 }
 
 /// 临近结束收缩：最后 1 秒内光环按 (剩余/时长)^0.3 收缩到 0，音符结束后消失。
@@ -183,13 +203,23 @@ fn test_aura_shrinks_toward_note_end() {
         let uniform = MiditrailUniformGpu { tick, ..uniform };
         let active_keys = compute_active_keys(tick, &notes);
         let mut auras = Vec::new();
-        build_aura_instances(&uniform, &notes, &active_keys, &positions, &widths, &mut auras);
+        build_aura_instances(
+            &uniform,
+            &notes,
+            &active_keys,
+            &positions,
+            &widths,
+            &mut auras,
+        );
         auras.first().map_or(0.0, |a| a.size)
     };
 
     // 剩余 840/960s：系数 = (840/960)^0.3 × 0.5（闪光已归零）
     let expected = width * AURA_RING_SCALE * (840.0f32 / 960.0).powf(0.3) * 0.5;
-    assert!((size_at(3000) - expected).abs() < 1e-4, "最后 1 秒应开始收缩");
+    assert!(
+        (size_at(3000) - expected).abs() < 1e-4,
+        "最后 1 秒应开始收缩"
+    );
     // 收缩单调递减
     assert!(size_at(3000) < size_at(2000), "临近结束光环应小于常态");
     // 音符结束后光环消失
@@ -238,7 +268,14 @@ fn test_aura_takes_max_over_notes_on_key() {
     let tick = 480; // 第二个音符刚按下
     let active_keys = compute_active_keys(tick, &notes);
     let mut auras = Vec::new();
-    build_aura_instances(&uniform, &notes, &active_keys, &positions, &widths, &mut auras);
+    build_aura_instances(
+        &uniform,
+        &notes,
+        &active_keys,
+        &positions,
+        &widths,
+        &mut auras,
+    );
     assert_eq!(auras.len(), 1);
     let width = widths[60];
     // 第一个音符常态 0.5，第二个刚按下 0.5 + 100/600 → 取最大
@@ -298,7 +335,14 @@ fn test_aura_skips_future_and_ended_notes() {
     ];
     let active_keys = compute_active_keys(uniform.tick, &notes);
     let mut auras = Vec::new();
-    build_aura_instances(&uniform, &notes, &active_keys, &positions, &widths, &mut auras);
+    build_aura_instances(
+        &uniform,
+        &notes,
+        &active_keys,
+        &positions,
+        &widths,
+        &mut auras,
+    );
     assert_eq!(auras.len(), 1, "仅正在发声的音符产生光环");
     assert_eq!(auras[0].pos, positions[64] + widths[64] * 0.5);
 }

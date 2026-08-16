@@ -520,8 +520,10 @@ mod tests {
     }
 
     fn push_entry(root: &mut Root, name: &str) {
-        root.right_sidebar.materials.entries.push(
-            crate::right_sidebar::MaterialEntry {
+        root.right_sidebar
+            .materials
+            .entries
+            .push(crate::right_sidebar::MaterialEntry {
                 name: name.into(),
                 author: String::new(),
                 source: crate::right_sidebar::MaterialSource::User,
@@ -531,8 +533,7 @@ mod tests {
                 track_count: 1,
                 valid: true,
                 preview: None,
-            },
-        );
+            });
     }
 
     #[test]

@@ -258,10 +258,24 @@ mod tests {
         let track_id = sidebar.tracks[1].id;
 
         sidebar.update(Event::TrackRenameStarted(track_id));
-        assert_eq!(sidebar.renaming_track.as_ref().expect("重命名中的音轨应存在").1, "Setup");
+        assert_eq!(
+            sidebar
+                .renaming_track
+                .as_ref()
+                .expect("重命名中的音轨应存在")
+                .1,
+            "Setup"
+        );
 
         sidebar.update(Event::TrackRenameChanged(track_id, "New Name".to_string()));
-        assert_eq!(sidebar.renaming_track.as_ref().expect("重命名中的音轨应存在").1, "New Name");
+        assert_eq!(
+            sidebar
+                .renaming_track
+                .as_ref()
+                .expect("重命名中的音轨应存在")
+                .1,
+            "New Name"
+        );
 
         sidebar.update(Event::TrackRenameConfirmed(track_id));
         assert_eq!(

@@ -21,7 +21,7 @@ pub mod render_loop;
 pub mod stats;
 pub mod thread;
 
-pub use commands::{ControlCommand, FrameSender, HiResTrackParams, RenderCommand};
+pub use commands::{ControlCommand, FrameSender, RenderCommand};
 pub use export_pipeline::ExportPipeline;
 pub use params::RenderParams;
 pub use stats::RenderStats;

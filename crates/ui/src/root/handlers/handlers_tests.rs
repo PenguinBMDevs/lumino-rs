@@ -108,9 +108,7 @@ fn test_sidebar_message_always_handled_directly() {
         crate::sidebar::Event::TrackRenameChanged(0, "New Name".into()),
     )));
     // 正常 Sidebar 事件同样必须已处理
-    assert!(root.try_handle_direct(&Message::Sidebar(
-        crate::sidebar::Event::TrackSelected(0),
-    )));
+    assert!(root.try_handle_direct(&Message::Sidebar(crate::sidebar::Event::TrackSelected(0),)));
 }
 
 #[test]

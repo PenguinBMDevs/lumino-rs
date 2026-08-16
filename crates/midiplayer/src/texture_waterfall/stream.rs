@@ -1,14 +1,4 @@
-/// 贴图瀑布流元数据（无像素数据，用于视口计算）
-#[allow(dead_code)]
-#[derive(Clone, Debug)]
-pub struct HiResMeta {
-    pub track_count: u16,
-    /// 音轨组数（= ceil(track_count / WATERFALL_TRACKS_PER_GROUP)），用于判断 time_group 贴图是否收齐
-    pub track_groups: u32,
-    pub key_count: u16,
-    pub time_groups: u32,
-    pub ticks_per_group: u32,
-}
+//! 贴图瀑布流流式生成消息
 
 /// 后台生成线程流式输出的消息
 ///
@@ -18,18 +8,24 @@ pub struct HiResMeta {
 ///
 /// 使用 `sync_channel(1)` 有界通道：channel 满时后台 send 阻塞，
 /// 强制后台线程等待渲染线程消费——背压机制，防止无界积压导致 CPU 内存峰值。
-pub(crate) enum HiResStreamMsg {
+#[derive(Debug)]
+pub enum WaterfallStreamMsg {
     /// 某个 (track_group, time_group) 已合并的整合组像素缓冲（width × height × 4 字节）
     TimeGroupMerged {
+        /// 音轨组索引
         track_group: u32,
+        /// 时间组索引
         time_group: u32,
+        /// RGBA8 像素缓冲
         pixels: Vec<u8>,
+        /// 贴图宽度
         width: u32,
+        /// 贴图高度
         height: u32,
     },
     /// 单组重生已完成，清理该 track_group 的临时脏区域覆层
     ///
-    /// 仅 `RegenerateHiResTrack` 路径发送，必须在所有 `TimeGroupMerged` 之后发送，
+    /// 仅 `RegenerateTrack` 路径发送，必须在所有 `TimeGroupMerged` 之后发送，
     /// 渲染线程按 FIFO 处理，确保新底贴图全部上传后才清理覆层。
     ClearDirtyOverlay(u32),
     /// 所有贴图生成完毕

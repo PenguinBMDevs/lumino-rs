@@ -194,10 +194,10 @@ impl Host {
         self.clear_cache();
 
         // 清空后重新初始化默认高精度洋葱皮上下文，确保后续编辑仍能生成贴图
-        self.init_default_hires_context();
+        self.init_default_waterfall_context();
 
         // 清空高精度脏标记，避免新建工程/关闭文件后残留脏状态误触发
-        self.hires_dirty_tracks.clear();
+        self.waterfall_dirty_tracks.clear();
 
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
@@ -370,7 +370,7 @@ impl Host {
 
     /// 处理编辑器动作
     ///
-    /// 仅在音符数据确实发生变化时才标记当前音轨高精度贴图为脏。
+    /// 仅在音符数据确实发生变化时才标记当前音轨贴图瀑布流为脏。
     /// 先按动作类型过滤：只有可能修改音符的动作才检查 `notes_changed()`，
     /// 避免 Moved/Released/Copy/SelectAll 等不会改音符的动作被误判为脏音轨。
     pub fn handle_action(&mut self, action: message::EditorAction) {
@@ -397,8 +397,8 @@ impl Host {
         );
         let notes_changed = self.root.handle_editor_action(action);
         if is_definite_mutation || (is_possible_mutation && notes_changed) {
-            // 编辑动作确实改变了音符 → 标记当前音轨高精度贴图为脏
-            self.mark_hires_dirty(track_idx);
+            // 编辑动作确实改变了音符 → 标记当前音轨贴图瀑布流为脏
+            self.mark_waterfall_dirty(track_idx);
         }
         // 仅请求重绘，不重建UI树（编辑器动作由canvas/WGPU层处理）
         self.window_ctx.window.request_redraw();

@@ -82,11 +82,7 @@ pub fn panel(index: usize, can_edit: bool) -> Element<'static> {
 /// 构建单个菜单按钮（图标 + tooltip）
 ///
 /// `enabled = false` 时按钮不响应点击且图标置灰（内置素材的全部菜单项）。
-fn menu_button(
-    index: usize,
-    item: MaterialContextMenuItem,
-    enabled: bool,
-) -> Element<'static> {
+fn menu_button(index: usize, item: MaterialContextMenuItem, enabled: bool) -> Element<'static> {
     let icon_view: Element<'static> =
         icon::view_with_size_and_theme(item_icon(item), ICON_SIZE, ICON_SIZE, Some(&Theme::Dark))
             .into();
@@ -192,11 +188,7 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
 /// `pos` 为鼠标在素材面板内的局部坐标（由面板级 `on_move` 事件持续追踪，
 /// 打开菜单时快照）。菜单默认在鼠标右下方展开；贴近面板右/下边缘时
 /// 自动翻转到鼠标另一侧，避免菜单溢出面板。无位置信息时默认在面板左上角。
-pub fn positioned_menu<'a>(
-    index: usize,
-    can_edit: bool,
-    pos: Option<(f32, f32)>,
-) -> Element<'a> {
+pub fn positioned_menu<'a>(index: usize, can_edit: bool, pos: Option<(f32, f32)>) -> Element<'a> {
     let (x, y) = pos.unwrap_or((0.0, 0.0));
     responsive(move |size: Size| {
         // 菜单在鼠标右下方展开；贴近面板右缘时翻转到鼠标左侧

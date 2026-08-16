@@ -87,7 +87,7 @@ impl Host {
             puffin::profile_scope!("process_message::arrangement_op");
             self.route_message(message);
         }
-        self.mark_hires_dirty(track_idx);
+        self.mark_waterfall_dirty(track_idx);
         self.window_ctx.window.request_redraw();
         true
     }

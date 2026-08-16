@@ -1,16 +1,14 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
-use crate::WaterfallNote;
-
 use crate::render_thread::commands::{FrameSender, RenderCommand};
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::Renderers;
-use crate::render_thread::render_loop::runner::types::{HiResMeta, HiResStreamMsg};
 use crate::render_thread::stats::RenderStats;
 use crate::{
-    WaterfallGroupTile, TextureWaterfallConfig, TextureWaterfallRenderer, MiditrailRenderer, SwappableBuffer, WaterfallRenderer,
+    MiditrailRenderer, SwappableBuffer, TextureWaterfallConfig, TextureWaterfallRenderer,
+    WaterfallMeta, WaterfallRenderer, WaterfallStreamMsg,
 };
 
 /// 不可变 GPU 基础设施。
@@ -58,7 +56,7 @@ pub struct RenderThreadChannels {
     /// 双缓冲音符实例数据（UI 线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 贴图瀑布流生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
-    pub onion_progress: Arc<Mutex<Vec<(String, f32)>>>,
+    pub waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
     /// 贴图瀑布流流式上传接收端（UI 线程分块构建 → 渲染线程 streaming_append）
     ///
     /// 消息协议见 [`crate::OnionSkinStreamMsg`]：
@@ -91,12 +89,12 @@ pub struct RenderFrameState<'a> {
     pub last_note_version: &'a mut u64,
     /// 离屏纹理共享引用（ensure_textures 中设置为最新纹理给主线程）
     pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
-    /// 高精度贴图瀑布流渲染器
-    pub hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
+    /// 贴图瀑布流渲染器
+    pub texture_waterfall_renderer: &'a mut Option<TextureWaterfallRenderer>,
     /// 贴图瀑布流元数据（视口计算用）
-    pub hires_meta: &'a mut Option<HiResMeta>,
+    pub texture_waterfall_meta: &'a mut Option<WaterfallMeta>,
     /// 贴图瀑布流配置
-    pub hires_config: &'a mut Option<TextureWaterfallConfig>,
+    pub texture_waterfall_config: &'a mut Option<TextureWaterfallConfig>,
     /// 视频导出读回管线
     pub export_pipeline: &'a mut Option<ExportPipeline>,
     /// 视频帧数据发送器
@@ -105,25 +103,6 @@ pub struct RenderFrameState<'a> {
     pub waterfall_renderer: &'a mut Option<crate::WaterfallRenderer>,
     /// Miditrail 3D GPU 渲染器（视频导出使用）
     pub miditrail_renderer: &'a mut Option<crate::MiditrailRenderer>,
-}
-
-/// 视频导出贴图瀑布流上传参数。
-///
-/// 将 `upload_hires_video_tiles` 中 6 个命令来源的参数打包为一个结构体，
-/// 使函数签名降至 3 个参数（ctx + frame + params）。
-pub struct UploadHiResTileParams {
-    /// 整合组贴图列表
-    pub tiles: Vec<WaterfallGroupTile>,
-    /// 贴图瀑布流配置
-    pub config: TextureWaterfallConfig,
-    /// 音轨总数
-    pub track_count: u16,
-    /// 键位数量（128 或 256）
-    pub key_count: u16,
-    /// 全曲总 tick
-    pub total_ticks: u32,
-    /// MIDI ppq
-    pub ppq: u16,
 }
 
 /// 预览帧纹理上传阶段上下文。
@@ -177,12 +156,12 @@ pub(crate) struct PreviewPassContext<'a> {
     pub(crate) current_size: &'a mut (u32, u32),
     /// 上次上传的音符版本
     pub(crate) last_note_version: &'a mut u64,
-    /// 高精度贴图瀑布流渲染器
-    pub(crate) hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
+    /// 贴图瀑布流渲染器
+    pub(crate) texture_waterfall_renderer: &'a mut Option<TextureWaterfallRenderer>,
     /// 贴图瀑布流元数据
-    pub(crate) hires_meta: &'a mut Option<HiResMeta>,
+    pub(crate) texture_waterfall_meta: &'a mut Option<WaterfallMeta>,
     /// 贴图瀑布流配置
-    pub(crate) hires_config: &'a mut Option<TextureWaterfallConfig>,
+    pub(crate) texture_waterfall_config: &'a mut Option<TextureWaterfallConfig>,
     /// 视频导出读回管线
     pub(crate) export_pipeline: &'a mut Option<ExportPipeline>,
     /// 视频帧发送器
@@ -237,12 +216,12 @@ pub(crate) struct VideoExportFrameContext<'a> {
     pub(crate) current_size: &'a mut (u32, u32),
     /// 上次上传的音符版本
     pub(crate) last_note_version: &'a mut u64,
-    /// 高精度贴图瀑布流渲染器
-    pub(crate) hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
+    /// 贴图瀑布流渲染器
+    pub(crate) texture_waterfall_renderer: &'a mut Option<TextureWaterfallRenderer>,
     /// 贴图瀑布流元数据
-    pub(crate) hires_meta: &'a mut Option<HiResMeta>,
+    pub(crate) texture_waterfall_meta: &'a mut Option<WaterfallMeta>,
     /// 贴图瀑布流配置
-    pub(crate) hires_config: &'a mut Option<TextureWaterfallConfig>,
+    pub(crate) texture_waterfall_config: &'a mut Option<TextureWaterfallConfig>,
     /// 视频导出读回管线
     pub(crate) export_pipeline: &'a mut Option<ExportPipeline>,
     /// 视频帧发送器
@@ -251,51 +230,6 @@ pub(crate) struct VideoExportFrameContext<'a> {
     pub(crate) waterfall_renderer: &'a mut Option<WaterfallRenderer>,
     /// Miditrail 渲染器
     pub(crate) miditrail_renderer: &'a mut Option<MiditrailRenderer>,
-}
-
-/// 高精度视频贴图上传上下文。
-///
-/// 聚合 `upload_hires_video_tiles_command` 中需要的高精度渲染状态。
-pub(crate) struct HiResUploadContext<'a> {
-    /// 不可变 GPU 基础设施
-    pub(crate) ctx: &'a RenderContext,
-    /// 高精度贴图瀑布流渲染器
-    pub(crate) hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
-    /// 贴图瀑布流元数据
-    pub(crate) hires_meta: &'a mut Option<HiResMeta>,
-    /// 贴图瀑布流配置
-    pub(crate) hires_config: &'a mut Option<TextureWaterfallConfig>,
-}
-
-/// 高精度后台生成上下文。
-///
-/// 聚合 `handle_generate_hires` 中后台线程生成贴图瀑布流所需的全部参数。
-/// owned 字段在生成前被移入后台线程；引用字段在生成前完成初始化。
-pub(crate) struct HiResGenerateContext<'a> {
-    /// 不可变 GPU 基础设施
-    pub(crate) ctx: &'a RenderContext,
-    /// 每轨音符列表
-    pub(crate) notes: Vec<Vec<WaterfallNote>>,
-    /// MIDI ppq
-    pub(crate) ppq: u16,
-    /// 键位数量
-    pub(crate) key_count: u16,
-    /// 全曲总 tick
-    pub(crate) total_ticks: u32,
-    /// 贴图瀑布流配置
-    pub(crate) config: TextureWaterfallConfig,
-    /// MIDI 内容哈希
-    pub(crate) midi_hash: String,
-    /// 高精度结果发送通道
-    pub(crate) hires_result_tx: &'a std::sync::mpsc::SyncSender<HiResStreamMsg>,
-    /// 贴图瀑布流进度缓冲
-    pub(crate) onion_progress: &'a Arc<Mutex<Vec<(String, f32)>>>,
-    /// 高精度贴图瀑布流渲染器
-    pub(crate) hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
-    /// 贴图瀑布流元数据
-    pub(crate) hires_meta: &'a mut Option<HiResMeta>,
-    /// 贴图瀑布流配置
-    pub(crate) hires_config: &'a mut Option<TextureWaterfallConfig>,
 }
 
 /// 延迟控制命令处理上下文。
@@ -323,12 +257,12 @@ pub(crate) struct DeferredCommandContext<'a> {
     pub(crate) current_size: &'a mut (u32, u32),
     /// 上次上传的音符版本
     pub(crate) last_note_version: &'a mut u64,
-    /// 高精度贴图瀑布流渲染器
-    pub(crate) hires_renderer: &'a mut Option<TextureWaterfallRenderer>,
+    /// 贴图瀑布流渲染器
+    pub(crate) texture_waterfall_renderer: &'a mut Option<TextureWaterfallRenderer>,
     /// 贴图瀑布流元数据
-    pub(crate) hires_meta: &'a mut Option<HiResMeta>,
+    pub(crate) texture_waterfall_meta: &'a mut Option<WaterfallMeta>,
     /// 贴图瀑布流配置
-    pub(crate) hires_config: &'a mut Option<TextureWaterfallConfig>,
+    pub(crate) texture_waterfall_config: &'a mut Option<TextureWaterfallConfig>,
     /// 视频导出读回管线
     pub(crate) export_pipeline: &'a mut Option<ExportPipeline>,
     /// 视频帧发送器
@@ -338,5 +272,5 @@ pub(crate) struct DeferredCommandContext<'a> {
     /// Miditrail 渲染器
     pub(crate) miditrail_renderer: &'a mut Option<MiditrailRenderer>,
     /// 高精度结果发送通道
-    pub(crate) hires_result_tx: &'a std::sync::mpsc::SyncSender<HiResStreamMsg>,
+    pub(crate) texture_waterfall_result_tx: &'a std::sync::mpsc::SyncSender<WaterfallStreamMsg>,
 }

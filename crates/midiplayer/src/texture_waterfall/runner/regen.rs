@@ -1,17 +1,26 @@
+//! 贴图瀑布流音轨重生成
+
+use std::sync::mpsc::SyncSender;
 use std::sync::{Arc, Mutex};
 
-use crate::render_thread::HiResTrackParams;
-use crate::{TextureWaterfallConfig, TextureWaterfallRenderer, WATERFALL_TRACKS_PER_GROUP, generate_waterfall_track_tile};
-use crate::WaterfallNote;
-use crate::{WaterfallCacheMeta, merge_waterfall_track_tile_into, read_waterfall_track_tile_cache};
-
-use super::super::context::RenderContext;
-use super::super::types::{HiResMeta, HiResStreamMsg};
 use super::common::ensure_renderer_for_config;
+use crate::texture_waterfall::WATERFALL_TRACKS_PER_GROUP;
+use crate::texture_waterfall::cache::{WaterfallCacheMeta, read_waterfall_track_tile_cache};
+use crate::texture_waterfall::config::TextureWaterfallConfig;
+use crate::texture_waterfall::generate::{
+    generate_waterfall_track_tile, merge_waterfall_track_tile_into,
+};
+use crate::texture_waterfall::gpu_ctx::WaterfallGpuCtx;
+use crate::texture_waterfall::meta::WaterfallMeta;
+use crate::texture_waterfall::note::WaterfallNote;
+use crate::texture_waterfall::renderer::TextureWaterfallRenderer;
+use crate::texture_waterfall::stream::WaterfallStreamMsg;
+use crate::texture_waterfall::track_params::WaterfallTrackParams;
 
 /// 合并单个 time_group 中所有音轨组的像素缓冲到 `output` 中
 ///
 /// `output` 长度必须为 `width × key_count × 4`，函数会用 `fill(0)` 重置。
+#[allow(clippy::too_many_arguments)] // 渲染合并参数显式传递，保持热路径可读性
 fn regen_time_group_merged_pixels_into(
     output: &mut [u8],
     time_g: u32,
@@ -39,8 +48,9 @@ fn regen_time_group_merged_pixels_into(
         if tg == track_group {
             for (local_idx, notes) in sorted_notes.iter().enumerate() {
                 let t = track_start + local_idx as u16;
-                let tile =
-                    generate_waterfall_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
+                let tile = generate_waterfall_track_tile(
+                    notes, t, time_g, tick_start, tick_end, width, key_count,
+                );
                 merge_waterfall_track_tile_into(output, &tile);
             }
         } else {
@@ -66,16 +76,16 @@ fn regen_time_group_merged_pixels_into(
     }
 }
 
-/// 处理 RegenerateHiResTrack：重生成指定音轨的贴图瀑布流
-pub(crate) fn handle_regenerate_hires_track(
-    params: HiResTrackParams,
-    ctx: &RenderContext,
-    hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
-    hires_renderer: &mut Option<TextureWaterfallRenderer>,
-    hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<TextureWaterfallConfig>,
+/// 处理 `WaterfallCommand::RegenerateTrack`：重生成指定音轨的贴图瀑布流
+pub fn handle_regenerate_waterfall_track(
+    params: WaterfallTrackParams,
+    gpu: &WaterfallGpuCtx<'_>,
+    result_tx: &SyncSender<WaterfallStreamMsg>,
+    renderer: &mut Option<TextureWaterfallRenderer>,
+    meta: &mut Option<WaterfallMeta>,
+    renderer_config: &mut Option<TextureWaterfallConfig>,
 ) {
-    let HiResTrackParams {
+    let WaterfallTrackParams {
         track_idx,
         group_notes,
         dirty_time_groups: _,
@@ -88,10 +98,10 @@ pub(crate) fn handle_regenerate_hires_track(
     } = params;
     let track_group = (track_idx / WATERFALL_TRACKS_PER_GROUP) as u32;
 
-    ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
+    ensure_renderer_for_config(gpu, renderer, renderer_config, &config);
 
-    if hires_meta.is_none() {
-        *hires_meta = Some(HiResMeta {
+    if meta.is_none() {
+        *meta = Some(WaterfallMeta {
             track_count,
             track_groups: 1,
             key_count,
@@ -113,7 +123,7 @@ pub(crate) fn handle_regenerate_hires_track(
         config.measures_per_group,
     );
     let (cache_dir, mh) = (config.cache_dir.clone(), midi_hash.clone());
-    let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
+    let tx = Arc::new(Mutex::new(result_tx.clone()));
 
     std::thread::spawn(move || {
         let mut notes = group_notes;
@@ -141,7 +151,7 @@ pub(crate) fn handle_regenerate_hires_track(
                 &cache_dir,
             );
             if let Ok(guard) = tx.lock() {
-                let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
+                let _ = guard.send(WaterfallStreamMsg::TimeGroupMerged {
                     track_group,
                     time_group: time_g,
                     pixels: merged_pixels,
@@ -152,10 +162,10 @@ pub(crate) fn handle_regenerate_hires_track(
         }
 
         if let Ok(guard) = tx.lock() {
-            let _ = guard.send(HiResStreamMsg::ClearDirtyOverlay(track_group));
+            let _ = guard.send(WaterfallStreamMsg::ClearDirtyOverlay(track_group));
         }
         if let Ok(guard) = tx.lock() {
-            let _ = guard.send(HiResStreamMsg::Finished);
+            let _ = guard.send(WaterfallStreamMsg::Finished);
         }
     });
 }

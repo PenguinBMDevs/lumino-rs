@@ -355,10 +355,7 @@ fn aura_factor_for_note(uniform: &MiditrailUniformGpu, note: &MiditrailNoteGpu) 
 
     // 按下闪光：起始后 AURA_FLASH_FRAMES 帧内二次衰减到 0
     let frames_since_start = (tick - note.start_tick) as f32 / frame_ticks;
-    let flash = (AURA_FLASH_FRAMES - frames_since_start)
-        .max(0.0)
-        .powi(2)
-        / AURA_FLASH_DIVISOR;
+    let flash = (AURA_FLASH_FRAMES - frames_since_start).max(0.0).powi(2) / AURA_FLASH_DIVISOR;
 
     // 常态/收缩：长音符保持 AURA_HELD_FACTOR，最后 AURA_TAIL_SECONDS 内收缩到 0。
     // Zenith `maxAuraLen = tempoFrameStep * fps` 即每秒 tick 数，作为收缩窗口。

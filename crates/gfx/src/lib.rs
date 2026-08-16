@@ -42,12 +42,14 @@ pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUnifo
 pub use lumino_midiplayer::texture_waterfall::WaterfallNote;
 /// 贴图瀑布流渲染器（从 lumino-midiplayer 重导出）
 pub use lumino_midiplayer::texture_waterfall::{
-    WATERFALL_TRACKS_PER_GROUP, WaterfallCacheMeta, WaterfallGenerateError, WaterfallGenContext,
-    WaterfallGroupTile, WaterfallTileCoord, WaterfallTrackTile, TextureWaterfallConfig,
-    TextureWaterfallProgressCallback, TextureWaterfallRenderMode, TextureWaterfallRenderer,
-    TextureWaterfallUniform, compute_waterfall_cache_hash, generate_waterfall_tiles,
-    generate_waterfall_tiles_streaming, generate_waterfall_track_tile, merge_waterfall_group_tiles,
-    merge_waterfall_track_tile_into, read_waterfall_track_tile_cache,
+    TextureWaterfallConfig, TextureWaterfallProgressCallback, TextureWaterfallRenderMode,
+    TextureWaterfallRenderer, TextureWaterfallUniform, WATERFALL_TRACKS_PER_GROUP,
+    WaterfallCacheMeta, WaterfallCommand, WaterfallGenContext, WaterfallGenerateError,
+    WaterfallGpuCtx, WaterfallGroupTile, WaterfallMeta, WaterfallStreamMsg, WaterfallTileCoord,
+    WaterfallTrackParams, WaterfallTrackTile, WaterfallViewportParams,
+    compute_waterfall_cache_hash, generate_waterfall_tiles, generate_waterfall_tiles_streaming,
+    generate_waterfall_track_tile, merge_waterfall_group_tiles, merge_waterfall_track_tile_into,
+    read_waterfall_track_tile_cache,
 };
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, OnionBgTileRef,

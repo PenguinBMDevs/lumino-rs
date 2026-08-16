@@ -63,7 +63,7 @@ impl Host {
 
     /// 创建 Host 公共字段（三个构造函数的公共 Self 初始化）
     ///
-    /// 干净启动时即初始化默认高精度贴图瀑布流上下文，确保无 MIDI 文件时
+    /// 干净启动时即初始化默认贴图瀑布流瀑布流上下文，确保无 MIDI 文件时
     /// 编辑音符也能触发贴图生成。
     fn new_common_fields(
         render_ctx: RenderContext,
@@ -72,7 +72,7 @@ impl Host {
         ui_config: &config::UiConfig,
     ) -> Self {
         let key_count = if ui_config.enable_256key { 256 } else { 128 };
-        let hires_config = lumino_gfx::TextureWaterfallConfig {
+        let waterfall_config = lumino_gfx::TextureWaterfallConfig {
             enabled: ui_config.hires_onion_enabled,
             measures_per_group: ui_config.hires_measures_per_group,
             tile_width_px: ui_config.hires_tile_width_px,
@@ -99,10 +99,10 @@ impl Host {
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
             scroll_tracker: ScrollVelocityTracker::new(),
-            hires_dirty_tracks: std::collections::HashSet::new(),
-            hires_config: Some(hires_config),
-            hires_midi_hash: Some(midi_hash),
-            hires_gen_info: Some((ppq, key_count, total_ticks)),
+            waterfall_dirty_tracks: std::collections::HashSet::new(),
+            waterfall_config: Some(waterfall_config),
+            waterfall_midi_hash: Some(midi_hash),
+            waterfall_gen_info: Some((ppq, key_count, total_ticks)),
             message_router: handlers::create_message_router(),
         }
     }

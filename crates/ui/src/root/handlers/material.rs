@@ -560,17 +560,20 @@ mod tests {
     fn test_context_menu_rename_ignored_for_builtin() {
         // 内置素材无磁盘路径：菜单按钮已置灰，此处验证防御逻辑
         let mut root = create_root();
-        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
-            name: "内置".into(),
-            author: String::new(),
-            source: MaterialSource::BuiltIn,
-            path: None,
-            data: None,
-            multi_track: false,
-            track_count: 1,
-            valid: true,
-            preview: None,
-        });
+        root.right_sidebar
+            .materials
+            .entries
+            .push(crate::right_sidebar::MaterialEntry {
+                name: "内置".into(),
+                author: String::new(),
+                source: MaterialSource::BuiltIn,
+                path: None,
+                data: None,
+                multi_track: false,
+                track_count: 1,
+                valid: true,
+                preview: None,
+            });
         root.open_material_context_menu(0);
 
         root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::Rename);
@@ -749,17 +752,20 @@ mod tests {
     fn test_upload_to_cloud_builtin_rejected() {
         // 内置素材不支持上传到云（按钮已置灰，此处验证防御逻辑）
         let mut root = create_root();
-        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
-            name: "内置素材".into(),
-            author: String::new(),
-            source: MaterialSource::BuiltIn,
-            path: None,
-            data: Some(&[0x4C, 0x4D, 0x50, 0x4A]), // LMPJ
-            multi_track: false,
-            track_count: 1,
-            valid: true,
-            preview: None,
-        });
+        root.right_sidebar
+            .materials
+            .entries
+            .push(crate::right_sidebar::MaterialEntry {
+                name: "内置素材".into(),
+                author: String::new(),
+                source: MaterialSource::BuiltIn,
+                path: None,
+                data: Some(&[0x4C, 0x4D, 0x50, 0x4A]), // LMPJ
+                multi_track: false,
+                track_count: 1,
+                valid: true,
+                preview: None,
+            });
         root.open_material_context_menu(0);
 
         root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
@@ -772,20 +778,26 @@ mod tests {
     #[test]
     fn test_upload_to_cloud_invalid_material_rejected() {
         let mut root = create_root();
-        root.right_sidebar.materials.entries.push(crate::right_sidebar::MaterialEntry {
-            name: "坏素材".into(),
-            author: String::new(),
-            source: MaterialSource::BuiltIn,
-            path: None,
-            data: None,
-            multi_track: false,
-            track_count: 0,
-            valid: false,
-            preview: None,
-        });
+        root.right_sidebar
+            .materials
+            .entries
+            .push(crate::right_sidebar::MaterialEntry {
+                name: "坏素材".into(),
+                author: String::new(),
+                source: MaterialSource::BuiltIn,
+                path: None,
+                data: None,
+                multi_track: false,
+                track_count: 0,
+                valid: false,
+                preview: None,
+            });
         root.open_material_context_menu(0);
 
         root.handle_material_context_menu_item_clicked(0, MaterialContextMenuItem::UploadToCloud);
-        assert!(root.cloud.pending_upload.is_none(), "无效素材不应设置上传待办");
+        assert!(
+            root.cloud.pending_upload.is_none(),
+            "无效素材不应设置上传待办"
+        );
     }
 }

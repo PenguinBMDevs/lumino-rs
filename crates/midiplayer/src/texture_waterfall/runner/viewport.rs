@@ -1,10 +1,16 @@
-use super::super::super::super::params::RenderParams;
-use super::super::types::HiResMeta;
-use crate::{TextureWaterfallConfig, TextureWaterfallRenderMode, TextureWaterfallRenderer, TextureWaterfallUniform, WaterfallTileCoord};
+//! 贴图瀑布流视口驱动
+
+use crate::texture_waterfall::config::{TextureWaterfallConfig, TextureWaterfallRenderMode};
+use crate::texture_waterfall::gpu_ctx::WaterfallGpuCtx;
+use crate::texture_waterfall::meta::WaterfallMeta;
+use crate::texture_waterfall::renderer::{TextureWaterfallRenderer, TextureWaterfallUniform};
+use crate::texture_waterfall::types::WaterfallTileCoord;
+use crate::texture_waterfall::viewport::WaterfallViewportParams;
 
 // ── 贴图瀑布流视口驱动 ────────────────────────────────────
 
 /// 计算单个 tile coordinate 对应的 uniform（若不可见则返回 None）
+#[allow(clippy::too_many_arguments)] // 视口数学参数显式传递，保持计算逻辑直白
 fn compute_tile_uniform(
     coord: &WaterfallTileCoord,
     time_g: u32,
@@ -45,11 +51,11 @@ fn compute_tile_uniform(
 }
 
 /// 收集当前视口内所有可见的贴图瀑布流坐标与 uniform
-fn collect_visible_hires_coords(
+fn collect_visible_coords(
     renderer: &TextureWaterfallRenderer,
     config: &TextureWaterfallConfig,
-    meta: &HiResMeta,
-    params: &RenderParams,
+    meta: &WaterfallMeta,
+    params: &WaterfallViewportParams,
 ) -> Vec<(WaterfallTileCoord, TextureWaterfallUniform)> {
     let scale = params.scale_factor;
     let zoom_x = params.zoom.0;
@@ -97,13 +103,15 @@ fn collect_visible_hires_coords(
 }
 
 /// 贴图瀑布流视口驱动：准备 uniform
-pub(crate) fn update_hires_viewport(
+///
+/// 返回当前视口内所有可见贴图的坐标与 uniform，宿主渲染线程
+/// 用该列表驱动每帧绘制。
+pub fn update_waterfall_viewport(
     renderer: &mut Option<TextureWaterfallRenderer>,
-    meta: &Option<HiResMeta>,
+    meta: &Option<WaterfallMeta>,
     config: &Option<TextureWaterfallConfig>,
-    params: &RenderParams,
-    _device: &wgpu::Device,
-    queue: &wgpu::Queue,
+    params: &WaterfallViewportParams,
+    gpu: &WaterfallGpuCtx<'_>,
 ) -> Vec<(WaterfallTileCoord, TextureWaterfallUniform)> {
     let (Some(renderer), Some(config), Some(meta)) = (renderer, config, meta) else {
         return Vec::new();
@@ -118,8 +126,8 @@ pub(crate) fn update_hires_viewport(
         return Vec::new();
     }
 
-    let visible = collect_visible_hires_coords(renderer, config, meta, params);
-    renderer.prepare(queue, &visible);
-    renderer.prepare_dirty_overlays(queue, &visible);
+    let visible = collect_visible_coords(renderer, config, meta, params);
+    renderer.prepare(gpu.queue, &visible);
+    renderer.prepare_dirty_overlays(gpu.queue, &visible);
     visible
 }

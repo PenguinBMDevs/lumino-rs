@@ -100,8 +100,8 @@ pub(super) fn handle_video_frame(
     };
     ensure_textures(&mut tex_resources, false);
 
-    // 视频导出始终使用音符矩形渲染模式：不上传 HiRes 贴图
-    let hires_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
+    // 视频导出始终使用音符矩形渲染模式：不上传 贴图瀑布流
+    let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
     // 2. 上传视频导出帧的音符实例
     if !params.note_instances.is_empty() {
@@ -147,7 +147,7 @@ pub(super) fn handle_video_frame(
         &mut encoder,
         ctx,
         &params,
-        &hires_visible_coords,
+        &waterfall_visible_coords,
         true,
         frame,
     );

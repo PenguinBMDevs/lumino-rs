@@ -161,12 +161,12 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
         // 同时检测洋葱皮生成完成，设置编辑开始时间
-        this.about_to_wait_onion_progress();
+        this.about_to_wait_waterfall_progress();
 
         // 注意：脏区域临时覆层只在 set_current_track 中发送，
         // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
         // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
-        // 直到 force_hires_regen 后台重生完成并清理覆层。
+        // 直到 force_waterfall_regen 后台重生完成并清理覆层。
 
         // 更新进度窗口
         puffin::profile_scope!("runner_about_to_wait_progress_update");
@@ -261,12 +261,12 @@ impl winit::application::ApplicationHandler for Runner {
 
 impl crate::runner::inner::RunnerInner {
     /// 转发洋葱皮生成进度到进度窗口，并检测生成完成以设置编辑开始时间。
-    fn about_to_wait_onion_progress(&mut self) {
-        puffin::profile_scope!("runner_about_to_wait_onion_progress");
-        let onion_progress = self.window_state.window.ui().drain_onion_progress();
-        if !onion_progress.is_empty() {
+    fn about_to_wait_waterfall_progress(&mut self) {
+        puffin::profile_scope!("runner_about_to_wait_waterfall_progress");
+        let waterfall_progress = self.window_state.window.ui().drain_waterfall_progress();
+        if !waterfall_progress.is_empty() {
             let cb = self.window_state.progress_cb.clone();
-            for (msg, pct) in onion_progress {
+            for (msg, pct) in waterfall_progress {
                 // 检测洋葱皮贴图生成完成（progress >= 1.0）
                 if pct >= 1.0 && self.session_tracker.editing_start_time.is_none() {
                     self.session_tracker.editing_start_time = Some(std::time::Instant::now());

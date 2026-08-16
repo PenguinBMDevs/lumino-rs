@@ -1,8 +1,13 @@
+use lumino_midiplayer::texture_waterfall::{
+    WaterfallGpuCtx, WaterfallViewportParams, update_waterfall_viewport,
+};
+
+use crate::RenderParams;
+
 use super::super::prepare::prepare_renderers;
 use super::super::render_pass::execute_render_pass;
 use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{PreviewPassContext, PreviewUploadContext, RenderFrameState};
-use super::hires::update_hires_viewport;
 
 /// 确保离屏纹理已创建，并在主音符实例版本变化时上传。
 pub(super) fn ensure_offscreen_textures_and_upload_notes(context: &mut PreviewUploadContext<'_>) {
@@ -44,7 +49,22 @@ pub(super) fn ensure_offscreen_textures_and_upload_notes(context: &mut PreviewUp
     }
 }
 
-/// 执行离屏渲染通道（在离屏纹理就绪时）：准备渲染器、更新高精度视口、提交命令。
+/// 将宿主 `RenderParams` 转换为贴图瀑布流视口参数（仅提取所需字段子集）
+fn waterfall_viewport_params(params: &RenderParams) -> WaterfallViewportParams {
+    WaterfallViewportParams {
+        viewport_size: params.viewport_size,
+        scale_factor: params.scale_factor,
+        scroll: params.scroll,
+        zoom: params.zoom,
+        keyboard_width: params.keyboard_width,
+        ruler_height: params.ruler_height,
+        canvas_offset: params.canvas_offset,
+        canvas_size: params.canvas_size,
+        is_arrangement_mode: params.is_arrangement_mode,
+    }
+}
+
+/// 执行离屏渲染通道（在离屏纹理就绪时）：准备渲染器、更新贴图瀑布流视口、提交命令。
 pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
     if let (Some(_texture), Some(_depth_view)) =
         (&*context.current_texture, &*context.depth_texture_view)
@@ -66,16 +86,20 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
             false,
         );
 
-        let hires_visible = update_hires_viewport(
-            &mut *context.hires_renderer,
-            &*context.hires_meta,
-            &*context.hires_config,
-            context.params,
-            &context.ctx.device,
-            &context.ctx.queue,
+        let gpu = WaterfallGpuCtx {
+            device: &context.ctx.device,
+            queue: &context.ctx.queue,
+            texture_format: context.ctx.texture_format,
+        };
+        let waterfall_visible = update_waterfall_viewport(
+            &mut *context.texture_waterfall_renderer,
+            &*context.texture_waterfall_meta,
+            &*context.texture_waterfall_config,
+            &waterfall_viewport_params(context.params),
+            &gpu,
         );
-        let hires_visible_coords: Vec<crate::WaterfallTileCoord> =
-            hires_visible.iter().map(|(c, _)| *c).collect();
+        let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> =
+            waterfall_visible.iter().map(|(c, _)| *c).collect();
 
         let mut frame = RenderFrameState {
             renderers: context.renderers,
@@ -86,9 +110,9 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
             current_size: context.current_size,
             last_note_version: context.last_note_version,
             latest_texture_clone: &context.channels.latest_texture_clone,
-            hires_renderer: context.hires_renderer,
-            hires_meta: context.hires_meta,
-            hires_config: context.hires_config,
+            texture_waterfall_renderer: context.texture_waterfall_renderer,
+            texture_waterfall_meta: context.texture_waterfall_meta,
+            texture_waterfall_config: context.texture_waterfall_config,
             export_pipeline: context.export_pipeline,
             export_frame_tx: context.export_frame_tx,
             waterfall_renderer: &mut None,
@@ -98,7 +122,7 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
             &mut encoder,
             context.ctx,
             context.params,
-            &hires_visible_coords,
+            &waterfall_visible_coords,
             true,
             &mut frame,
         );

@@ -29,12 +29,12 @@ pub fn view(name: String, index: usize, language: Language) -> Element<'static> 
 
     // 全屏半透明遮罩：点击取消（关闭对话框）
     let mask: Element<'static> = mouse_area(
-        container(Space::new().width(Length::Fill).height(Length::Fill)).style(
-            |_theme: &Theme| container::Style {
+        container(Space::new().width(Length::Fill).height(Length::Fill)).style(|_theme: &Theme| {
+            container::Style {
                 background: Some(iced_core::Background::Color(MASK_BACKGROUND)),
                 ..Default::default()
-            },
-        ),
+            }
+        }),
     )
     .on_press(Message::RightSidebar(
         RightSidebarAction::MaterialDeleteCancelled,

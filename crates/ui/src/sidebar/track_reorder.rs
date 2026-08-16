@@ -259,7 +259,13 @@ mod tests {
         s.handle_track_reorder_moved(iced_core::Point::new(50.0, 100.0)); // 校准
         // 拖到列表顶部（conductor 上方）→ hover 钳制到 1
         s.handle_track_reorder_moved(iced_core::Point::new(60.0, 2.0));
-        assert_eq!(s.track_reorder.as_ref().expect("拖拽候选应存在").hover_index, Some(1));
+        assert_eq!(
+            s.track_reorder
+                .as_ref()
+                .expect("拖拽候选应存在")
+                .hover_index,
+            Some(1)
+        );
     }
 
     #[test]
@@ -298,7 +304,13 @@ mod tests {
         s.handle_track_reorder_moved(iced_core::Point::new(150.0, 5.0)); // 拖到列表顶部
         assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // Conductor 首位保护：顶部 hover 钳制到 1
-        assert_eq!(s.track_reorder.as_ref().expect("拖拽候选应存在").hover_index, Some(1));
+        assert_eq!(
+            s.track_reorder
+                .as_ref()
+                .expect("拖拽候选应存在")
+                .hover_index,
+            Some(1)
+        );
         s.handle_track_reorder_ended(None); // 使用内部 hover_index
         assert_eq!(ids(&s), vec![0, 2, 1, 3]);
     }
@@ -311,7 +323,8 @@ mod tests {
         s.update_track_reorder_timer(Instant::now());
         assert!(!s.track_reorder.as_ref().expect("拖拽候选应存在").active);
         // 模拟 500ms 前的按下
-        s.track_reorder.as_mut().expect("拖拽候选应存在").started_at = Instant::now() - Duration::from_millis(500);
+        s.track_reorder.as_mut().expect("拖拽候选应存在").started_at =
+            Instant::now() - Duration::from_millis(500);
         s.update_track_reorder_timer(Instant::now());
         assert!(s.track_reorder.as_ref().expect("拖拽候选应存在").active);
     }

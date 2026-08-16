@@ -11,11 +11,12 @@ use super::context::{
     RenderThreadChannels,
 };
 use super::deferred::handle_deferred_command;
-use super::hires::drain_hires_stream;
 use super::onion_segments::{OnionSegment, apply_onion_track_delta};
 use super::preview::{ensure_offscreen_textures_and_upload_notes, render_offscreen_pass};
-use super::types::HiResStreamMsg;
 use super::video_export::advance_export_inflight;
+use lumino_midiplayer::texture_waterfall::{
+    WaterfallGpuCtx, WaterfallStreamMsg, drain_waterfall_stream,
+};
 
 /// 运行渲染线程主循环
 pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
@@ -37,9 +38,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut last_note_version: u64 = 0;
 
     // 高精度贴图瀑布流渲染器状态
-    let mut hires_renderer: Option<crate::TextureWaterfallRenderer> = None;
-    let mut hires_meta = None;
-    let mut hires_config = None;
+    let mut texture_waterfall_renderer: Option<crate::TextureWaterfallRenderer> = None;
+    let mut texture_waterfall_meta = None;
+    let mut texture_waterfall_config = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
 
     // 视频导出读回管线状态
@@ -58,7 +59,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
     // 防止无界积压导致 CPU 内存峰值（对应"装袋期间工人等着"）
-    let (hires_result_tx, hires_result_rx) = std::sync::mpsc::sync_channel::<HiResStreamMsg>(1);
+    let (texture_waterfall_result_tx, texture_waterfall_result_rx) =
+        std::sync::mpsc::sync_channel::<WaterfallStreamMsg>(1);
 
     while channels.running.load(Ordering::Relaxed) {
         // 处理命令
@@ -85,14 +87,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 texture_view: &mut texture_view,
                 current_size: &mut current_size,
                 last_note_version: &mut last_note_version,
-                hires_renderer: &mut hires_renderer,
-                hires_meta: &mut hires_meta,
-                hires_config: &mut hires_config,
+                texture_waterfall_renderer: &mut texture_waterfall_renderer,
+                texture_waterfall_meta: &mut texture_waterfall_meta,
+                texture_waterfall_config: &mut texture_waterfall_config,
                 export_pipeline: &mut export_pipeline,
                 export_frame_tx: &mut export_frame_tx,
                 waterfall_renderer: &mut waterfall_renderer,
                 miditrail_renderer: &mut miditrail_renderer,
-                hires_result_tx: &hires_result_tx,
+                texture_waterfall_result_tx: &texture_waterfall_result_tx,
             },
             &mut deferred,
         );
@@ -103,11 +105,16 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         advance_export_inflight(&mut export_pipeline, &export_frame_tx);
 
         // ★ 流式接收：每帧循环 try_recv，收到已合并像素立即 upload（GPU DMA，非阻塞）★
-        drain_hires_stream(
-            &hires_result_rx,
-            &ctx,
-            &mut hires_renderer,
-            &channels.onion_progress,
+        let gpu = WaterfallGpuCtx {
+            device: &ctx.device,
+            queue: &ctx.queue,
+            texture_format: ctx.texture_format,
+        };
+        drain_waterfall_stream(
+            &texture_waterfall_result_rx,
+            &gpu,
+            &mut texture_waterfall_renderer,
+            &channels.waterfall_progress,
         );
 
         // ★ 贴图瀑布流流式上传：drain channel，逐块 streaming_append 到 GPU ★
@@ -228,9 +235,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 texture_view: &mut texture_view,
                 current_size: &mut current_size,
                 last_note_version: &mut last_note_version,
-                hires_renderer: &mut hires_renderer,
-                hires_meta: &mut hires_meta,
-                hires_config: &mut hires_config,
+                texture_waterfall_renderer: &mut texture_waterfall_renderer,
+                texture_waterfall_meta: &mut texture_waterfall_meta,
+                texture_waterfall_config: &mut texture_waterfall_config,
                 export_pipeline: &mut export_pipeline,
                 export_frame_tx: &mut export_frame_tx,
             });
@@ -251,7 +258,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     tracing::info!("Render thread stopped");
 }
 
-/// 处理延迟队列中的控制命令（视频导出 / 贴图瀑布流 / HiRes 控制）。
+/// 处理延迟队列中的控制命令（视频导出 / 贴图瀑布流控制）。
 fn process_deferred_commands(
     context: &mut DeferredCommandContext<'_>,
     deferred: &mut Vec<ControlCommand>,

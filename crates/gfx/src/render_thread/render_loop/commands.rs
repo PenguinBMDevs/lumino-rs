@@ -5,8 +5,8 @@ use super::super::commands::{ControlCommand, RenderCommand};
 use super::super::params::RenderParams;
 
 /// 命令接收阻塞超时：防止渲染线程在 `recv()` 上无限阻塞，
-/// 导致后台 hires 贴图 channel 不被消费（死锁）。
-/// 超时后醒来检查 hires channel + 渲染帧，然后重新进入等待。
+/// 导致后台 贴图瀑布流 channel 不被消费（死锁）。
+/// 超时后醒来检查 贴图瀑布流 channel + 渲染帧，然后重新进入等待。
 const COMMAND_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 
 /// 处理渲染命令
@@ -25,7 +25,7 @@ const COMMAND_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 /// 因此收集到 `deferred` 供主循环在拥有 GPU 资源时处理。
 ///
 /// 使用 `recv_timeout` 而非 `recv`：防止渲染线程在无命令时无限阻塞，
-/// 确保定期返回主循环以消费后台 hires 贴图 channel（避免死锁）。
+/// 确保定期返回主循环以消费后台 贴图瀑布流 channel（避免死锁）。
 pub fn process_commands(
     command_receiver: &Receiver<RenderCommand>,
     latest_params: &mut Option<RenderParams>,
@@ -87,21 +87,11 @@ fn classify_command(
             tracing::debug!("Render thread: resize to {}x{}", width, height);
             false
         }
-        // 贴图瀑布流控制命令需要 GPU 资源上下文，延迟到主循环处理
+        // 贴图瀑布流/视频导出控制命令需要 GPU 资源上下文，延迟到主循环处理
         RenderCommand::Control(
-            cmd @ (ControlCommand::GenerateHiResOnionSkin { .. }
-            | ControlCommand::DisposeHiResOnionSkin
-            | ControlCommand::RegenerateHiResTrack { .. }
-            | ControlCommand::ShowHiResDirtyOverlay { .. }),
-        ) => {
-            deferred.push(cmd);
-            false
-        }
-        // 视频导出命令需要 GPU 资源上下文，延迟到主循环处理
-        RenderCommand::Control(
-            cmd @ (ControlCommand::StartVideoExport { .. }
+            cmd @ (ControlCommand::Waterfall(..)
+            | ControlCommand::StartVideoExport { .. }
             | ControlCommand::RenderVideoFrame { .. }
-            | ControlCommand::UploadHiResVideoTiles { .. }
             | ControlCommand::FinishVideoExport),
         ) => {
             deferred.push(cmd);

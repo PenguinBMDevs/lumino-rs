@@ -43,7 +43,7 @@ pub struct WgpuRenderThread {
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
-    onion_progress: Arc<Mutex<Vec<(String, f32)>>>,
+    waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
 }
 
 impl WgpuRenderThread {
@@ -70,7 +70,7 @@ impl WgpuRenderThread {
         let running = Arc::new(AtomicBool::new(true));
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
         let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
-        let onion_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
+        let waterfall_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
 
         // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
         let (onion_skin_streaming_tx, onion_skin_streaming_rx) =
@@ -80,7 +80,7 @@ impl WgpuRenderThread {
         let running_clone = Arc::clone(&running);
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
-        let onion_progress_clone = Arc::clone(&onion_progress);
+        let waterfall_progress_clone = Arc::clone(&waterfall_progress);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -92,7 +92,7 @@ impl WgpuRenderThread {
                 stats_clone,
                 note_events_rx,
                 note_instances_buffer: note_instances_buffer_clone,
-                onion_progress: onion_progress_clone,
+                waterfall_progress: waterfall_progress_clone,
                 onion_skin_streaming_rx,
             };
             run_render_thread(ctx, channels);
@@ -107,7 +107,7 @@ impl WgpuRenderThread {
             thread_handle: Some(thread_handle),
             latest_texture,
             note_instances_buffer,
-            onion_progress,
+            waterfall_progress,
         })
     }
 
@@ -166,8 +166,8 @@ impl WgpuRenderThread {
     }
 
     /// 取出并清空洋葱皮生成进度缓冲（UI 线程每帧调用）
-    pub fn drain_onion_progress(&self) -> Vec<(String, f32)> {
-        self.onion_progress
+    pub fn drain_waterfall_progress(&self) -> Vec<(String, f32)> {
+        self.waterfall_progress
             .lock()
             .map(|mut buf| std::mem::take(&mut *buf))
             .unwrap_or_default()

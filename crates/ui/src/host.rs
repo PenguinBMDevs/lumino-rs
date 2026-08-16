@@ -7,7 +7,7 @@
 //! - `editor_ops`: 编辑器操作（音符、洋葱皮）
 //! - `dialog`: 对话框和协作功能
 //! - `builder`: 构造方法（创建渲染/窗口上下文、初始化公共字段）
-//! - `hires`: 高精度贴图（生成、重生成、脏区域追踪、冷静期控制）
+//! - `waterfall`: 贴图瀑布流（生成、重生成、脏区域追踪、冷静期控制）
 //! - `render_thread`: 分离渲染线程管理（启停、事件通道、统计）
 //!
 //! 架构说明：
@@ -29,11 +29,11 @@ mod cache;
 mod dialog;
 mod editor_ops;
 mod event;
-mod hires;
 mod render;
 mod render_ctx;
 mod render_thread;
 pub mod types;
+mod waterfall;
 mod window_ctx;
 
 use render_ctx::RenderContext;
@@ -77,14 +77,14 @@ pub struct Host {
     pub(crate) last_gpu_frame_time_ms: f32,
     /// 滚动速度追踪器（用于 overscan 计算）
     pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
-    /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
-    pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
-    /// 高精度贴图：全量配置（重生成时直接使用副本）
-    pub(crate) hires_config: Option<lumino_gfx::TextureWaterfallConfig>,
-    /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
-    pub(crate) hires_midi_hash: Option<String>,
-    /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
-    pub(crate) hires_gen_info: Option<(u16, u16, u32)>,
+    /// 贴图瀑布流：有脏标记的音轨集合（编辑后需重生成）
+    pub(crate) waterfall_dirty_tracks: std::collections::HashSet<u16>,
+    /// 贴图瀑布流：全量配置（重生成时直接使用副本）
+    pub(crate) waterfall_config: Option<lumino_gfx::TextureWaterfallConfig>,
+    /// 贴图瀑布流：生成时的 MIDI 哈希（重生成时复用缓存分桶）
+    pub(crate) waterfall_midi_hash: Option<String>,
+    /// 贴图瀑布流：生成时的 (ppq, key_count, total_ticks)（重生成时复用）
+    pub(crate) waterfall_gen_info: Option<(u16, u16, u32)>,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
 }
@@ -100,7 +100,7 @@ impl Host {
         &mut self.root
     }
 
-    /// 获取当前侧边栏音轨数量（用于推断高精度贴图音轨组范围）
+    /// 获取当前侧边栏音轨数量（用于推断贴图瀑布流音轨组范围）
     pub fn track_count(&self) -> usize {
         self.root.sidebar.tracks.len()
     }

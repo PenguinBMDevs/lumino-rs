@@ -23,18 +23,26 @@
 //! 按可见时间组上传 GPU，不可见贴图 LRU 淘汰。
 
 mod cache;
+mod command;
 mod config;
 mod generate;
+mod gpu_ctx;
+mod meta;
 mod note;
 mod renderer;
+mod runner;
 mod scheduler;
+mod stream;
+mod track_params;
 mod types;
+mod viewport;
 
 pub use cache::{
     WaterfallCacheError, WaterfallCacheMeta, clear_all_waterfall_cache, clear_midi_waterfall_cache,
     compute_waterfall_cache_hash, read_waterfall_track_tile_cache, waterfall_cache_path,
     write_waterfall_track_tile_cache,
 };
+pub use command::WaterfallCommand;
 pub use config::{
     TextureWaterfallConfig, TextureWaterfallRenderMode, WATERFALL_TRACKS_PER_GROUP,
     WaterfallConfigError,
@@ -42,13 +50,24 @@ pub use config::{
 pub use generate::{
     generate_waterfall_track_tile, merge_waterfall_group_tiles, merge_waterfall_track_tile_into,
 };
+pub use gpu_ctx::WaterfallGpuCtx;
+pub use meta::WaterfallMeta;
 pub use note::WaterfallNote;
 pub use renderer::{TextureWaterfallRenderer, TextureWaterfallUniform};
+pub use runner::{
+    WaterfallGenerateContext, WaterfallUploadTileParams, drain_waterfall_stream,
+    ensure_renderer_for_config, handle_regenerate_waterfall_track, handle_waterfall_dirty_overlay,
+    handle_waterfall_dispose, handle_waterfall_generate, push_waterfall_progress,
+    update_waterfall_viewport, upload_waterfall_video_tiles,
+};
 pub use scheduler::{
     TextureWaterfallProgressCallback, WaterfallGenContext, WaterfallGenerateError,
     generate_waterfall_tiles, generate_waterfall_tiles_streaming,
 };
+pub use stream::WaterfallStreamMsg;
+pub use track_params::WaterfallTrackParams;
 pub use types::{
     WaterfallDirtyKind, WaterfallDirtyRegion, WaterfallGroupTile, WaterfallTileCoord,
     WaterfallTrackTile,
 };
+pub use viewport::WaterfallViewportParams;

@@ -11,7 +11,7 @@ pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
     ctx: &RenderContext,
     params: &RenderParams,
-    hires_visible_coords: &[WaterfallTileCoord],
+    waterfall_visible_coords: &[WaterfallTileCoord],
     render_notes: bool,
     frame: &mut RenderFrameState,
 ) {
@@ -145,16 +145,16 @@ pub fn execute_render_pass(
             .onion_skin
             .draw(&mut render_pass, onion_has_instances, None);
 
-        // 绘制贴图瀑布流（网格之上、低精度贴图瀑布流之下，半透明叠加）
-        if let Some(hires) = frame.hires_renderer.as_ref() {
+        // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
+        if let Some(waterfall) = frame.texture_waterfall_renderer.as_ref() {
             let has_depth = depth_view.is_some();
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            hires.render(&mut render_pass, hires_visible_coords, has_depth);
+            waterfall.render(&mut render_pass, waterfall_visible_coords, has_depth);
             // 绘制编辑后的临时脏区域覆层（在正常贴图之上，颜色与当前音轨一致）
-            hires.render_dirty_overlays(&mut render_pass, hires_visible_coords, has_depth);
+            waterfall.render_dirty_overlays(&mut render_pass, waterfall_visible_coords, has_depth);
         }
 
-        // 绘制音符（HiRes 贴图模式下音符已包含在贴图中，跳过）
+        // 绘制音符（贴图瀑布流模式下音符已包含在贴图中，跳过）
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             frame.renderers.note.draw(

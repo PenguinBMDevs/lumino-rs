@@ -1,8 +1,10 @@
 //! 右侧栏素材库面板视图渲染
 
-use iced_core::{Alignment, Color, Length};
 use iced_core::widget::text::Wrapping;
-use iced_widget::{Stack, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip};
+use iced_core::{Alignment, Color, Length};
+use iced_widget::{
+    Stack, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip,
+};
 use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 use lumino_message::RightSidebarAction;
 
@@ -44,9 +46,7 @@ pub(super) fn panel<'a>(
     // 该素材的菜单），空白区域右键落空后由本层兜底关闭菜单——保证菜单
     // 只会在素材项上右键时出现，空白处右键不会打开菜单。
     let content: Element<'a> = mouse_area(content)
-        .on_move(|pos| {
-            Message::RightSidebar(RightSidebarAction::MaterialCursorMoved(pos.x, pos.y))
-        })
+        .on_move(|pos| Message::RightSidebar(RightSidebarAction::MaterialCursorMoved(pos.x, pos.y)))
         .on_right_press(Message::RightSidebar(
             RightSidebarAction::MaterialContextMenuClosed,
         ))
@@ -207,11 +207,7 @@ fn material_item<'a>(
 ) -> Element<'a> {
     let t = main_translations(language);
     let materials = &right_sidebar.materials;
-    let is_renaming = materials
-        .renaming_material
-        .as_ref()
-        .map(|(i, _)| *i)
-        == Some(index);
+    let is_renaming = materials.renaming_material.as_ref().map(|(i, _)| *i) == Some(index);
 
     // 名称（有效实色 / 无效置灰）
     let name_text = text(&entry.name).size(12).style(move |theme: &Theme| {
@@ -312,10 +308,16 @@ fn tooltip_content<'a>(
     }
 
     // 名称
-    col = col.push(tooltip_line(format!("{}{}", t.material_name_label, entry.name)));
+    col = col.push(tooltip_line(format!(
+        "{}{}",
+        t.material_name_label, entry.name
+    )));
     // 作者（跟随工程设置面板的作者栏目在 metadata 中署名）
     if !entry.author.is_empty() {
-        col = col.push(tooltip_line(format!("{}{}", t.material_author_label, entry.author)));
+        col = col.push(tooltip_line(format!(
+            "{}{}",
+            t.material_author_label, entry.author
+        )));
     }
     // 位置（仅本地素材有磁盘路径；长路径自动换行）
     if let Some(path) = &entry.path {
@@ -329,8 +331,7 @@ fn tooltip_content<'a>(
     if entry.track_count > 0 {
         col = col.push(tooltip_line(format!(
             "{}{}",
-            t.material_track_label,
-            entry.track_count
+            t.material_track_label, entry.track_count
         )));
     }
     // 来源
@@ -340,8 +341,7 @@ fn tooltip_content<'a>(
     };
     col = col.push(tooltip_line(format!(
         "{}{}",
-        t.material_source_label,
-        source_label
+        t.material_source_label, source_label
     )));
 
     col.into()
