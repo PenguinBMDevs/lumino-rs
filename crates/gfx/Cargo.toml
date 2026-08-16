@@ -29,8 +29,8 @@ lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-editor-state = { workspace = true }
 lumino-midi-loader = { workspace = true }
+lumino-midiplayer = { workspace = true }
 lumino-onion-skin = { workspace = true }
-lumino-onion-skin-hires = { workspace = true }
 lumino-memtrace = { workspace = true }
 
 [dev-dependencies]

@@ -41,7 +41,7 @@ pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUnifo
 /// 洋葱皮音符类型（从 lumino-onion-skin 重导出）
 pub use lumino_onion_skin::OnionSkinNote;
 /// 高精度洋葱皮贴图渲染器（从 lumino-onion-skin-hires 重导出）
-pub use lumino_onion_skin_hires::{
+pub use lumino_midiplayer::{
     CacheMeta, GenerateError, GroupTile, HiResConfig, HiResProgressCallback, HiResRenderMode,
     HiResRenderer, HiResUniform, TRACKS_PER_GROUP, TileCoord, TrackTile, compute_midi_hash,
     generate_all_tiles, generate_track_tile, merge_group_tiles, read_track_tile_cache,

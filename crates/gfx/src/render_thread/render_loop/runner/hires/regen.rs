@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex};
 use crate::render_thread::HiResTrackParams;
 use crate::{HiResConfig, HiResRenderer, TRACKS_PER_GROUP, generate_track_tile};
 use lumino_onion_skin::OnionSkinNote;
-use lumino_onion_skin_hires::{CacheMeta, merge_track_tile_into, read_track_tile_cache};
+use lumino_midiplayer::{CacheMeta, merge_track_tile_into, read_track_tile_cache};
 
 use super::super::context::RenderContext;
 use super::super::types::{HiResMeta, HiResStreamMsg};

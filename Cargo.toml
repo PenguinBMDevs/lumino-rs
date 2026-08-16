@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/note-core", "crates/onion-skin", "crates/onion-skin-hires", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state", "crates/cloud"]
+members = ["crates/core", "crates/dialog", "crates/event", "crates/export", "crates/extras", "crates/gfx", "crates/memtrace", "crates/midi-io", "crates/midi-loader", "crates/memory-monitor", "crates/midi-model", "crates/message", "crates/midiplayer", "crates/note-core", "crates/onion-skin", "crates/playback", "crates/project", "crates/realtime", "crates/ui", "crates/ui-core", "crates/ui-editor", "crates/ui-settings", "crates/collaboration", "crates/archive-reader", "crates/editor-state", "crates/cloud"]
 resolver = "3"
 
 # xsynth 系列使用 GitHub fork（PenguinBMDevs/xsynth-Lumino，LGPL-3.0）：
@@ -28,8 +28,8 @@ lumino-export = { path = "crates/export", version = "0.2.0-crates-io-preview1" }
 lumino-gfx = { path = "crates/gfx", version = "0.2.0-crates-io-preview1" }
 lumino-midi-io = { path = "crates/midi-io", version = "0.2.0-crates-io-preview1" }
 lumino-midi-loader = { path = "crates/midi-loader", version = "0.2.0-crates-io-preview1" }
+lumino-midiplayer = { path = "crates/midiplayer", version = "0.2.0-crates-io-preview1" }
 lumino-onion-skin = { path = "crates/onion-skin", version = "0.2.0-crates-io-preview1" }
-lumino-onion-skin-hires = { path = "crates/onion-skin-hires", version = "0.2.0-crates-io-preview1" }
 lumino-memory-monitor = { path = "crates/memory-monitor", version = "0.2.0-crates-io-preview1" }
 lumino-memtrace = { path = "crates/memtrace", version = "0.2.0-crates-io-preview1" }
 lumino-midi-model = { path = "crates/midi-model", version = "0.2.0-crates-io-preview1" }

@@ -9,7 +9,7 @@ use std::path::Path;
 use lumino_extras::palette::onion_track_color;
 use lumino_midi_model::compact::{CompactEvent, EventKind};
 use lumino_onion_skin::OnionSkinNote;
-use lumino_onion_skin_hires::{HiResConfig, generate_all_tiles};
+use lumino_midiplayer::{HiResConfig, generate_all_tiles};
 use lumino_project::project::metadata::ImageMetadata;
 use lumino_project::project::{LuminoProject, TrackSlot};
 

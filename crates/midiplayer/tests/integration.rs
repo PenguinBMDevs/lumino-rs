@@ -3,7 +3,7 @@
 //! 验证 generate → cache → merge 完整流程，跨模块串联。
 
 use lumino_onion_skin::OnionSkinNote;
-use lumino_onion_skin_hires::{
+use lumino_midiplayer::{
     CacheMeta, HiResConfig, TileCoord, compute_midi_hash, generate_track_tile, merge_group_tiles,
     read_track_tile_cache, write_track_tile_cache,
 };

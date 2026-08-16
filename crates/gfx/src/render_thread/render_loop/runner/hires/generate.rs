@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use crate::{GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer};
-use lumino_onion_skin_hires::StreamingGenContext;
+use lumino_midiplayer::StreamingGenContext;
 
 use super::super::context::HiResGenerateContext;
 use super::super::types::{HiResMeta, HiResStreamMsg};
@@ -76,7 +76,7 @@ fn spawn_streaming_generation(
             total_ticks,
             midi_hash: &midi_hash,
         };
-        lumino_onion_skin_hires::generate_all_tiles_streaming(
+        lumino_midiplayer::generate_all_tiles_streaming(
             &mut notes,
             &stream_ctx,
             Some(cb),

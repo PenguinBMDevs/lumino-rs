@@ -20,8 +20,8 @@ lumino-midi-model = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-memory-monitor = { workspace = true }
 lumino-memtrace = { workspace = true }
+lumino-midiplayer = { workspace = true }
 lumino-onion-skin = { workspace = true }
-lumino-onion-skin-hires = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 midly = { workspace = true }
