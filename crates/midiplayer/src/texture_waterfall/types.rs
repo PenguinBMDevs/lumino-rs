@@ -1,4 +1,4 @@
-//! 高精度贴图系统类型定义
+//! 贴图瀑布流系统类型定义
 
 use std::sync::Arc;
 
@@ -6,18 +6,18 @@ use serde::{Deserialize, Serialize};
 
 /// 贴图坐标（矩阵位置）
 ///
-/// 全曲高精度贴图矩阵由音轨组 × 时间组二维索引定位。
+/// 全曲贴图瀑布流矩阵由音轨组 × 时间组二维索引定位。
 /// - `track_group`：音轨组索引（每 8 轨一组）
 /// - `time_group`：时间组索引（每 `measures_per_group` 小节一组）
 #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug, Serialize, Deserialize)]
-pub struct TileCoord {
+pub struct WaterfallTileCoord {
     /// 音轨组索引
     pub track_group: u32,
     /// 时间组索引
     pub time_group: u32,
 }
 
-impl TileCoord {
+impl WaterfallTileCoord {
     pub fn new(track_group: u32, time_group: u32) -> Self {
         Self {
             track_group,
@@ -28,7 +28,7 @@ impl TileCoord {
 
 /// 脏区域类型（编辑后标记受影响的贴图）
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum DirtyKind {
+pub enum WaterfallDirtyKind {
     /// 新增音符
     Added,
     /// 删除音符
@@ -41,17 +41,21 @@ pub enum DirtyKind {
 ///
 /// 记录某音轨在哪些时间组贴图上发生了编辑，用于增量重生成。
 #[derive(Clone, Debug)]
-pub struct DirtyRegion {
+pub struct WaterfallDirtyRegion {
     /// 受影响的音轨索引
     pub track_idx: u16,
     /// 受影响的时间组坐标列表
-    pub tile_coords: Vec<TileCoord>,
+    pub tile_coords: Vec<WaterfallTileCoord>,
     /// 脏类型
-    pub dirty_kind: DirtyKind,
+    pub dirty_kind: WaterfallDirtyKind,
 }
 
-impl DirtyRegion {
-    pub fn new(track_idx: u16, tile_coords: Vec<TileCoord>, dirty_kind: DirtyKind) -> Self {
+impl WaterfallDirtyRegion {
+    pub fn new(
+        track_idx: u16,
+        tile_coords: Vec<WaterfallTileCoord>,
+        dirty_kind: WaterfallDirtyKind,
+    ) -> Self {
         Self {
             track_idx,
             tile_coords,
@@ -68,7 +72,7 @@ impl DirtyRegion {
 /// `pixels` 使用 `Arc<Vec<u8>>` 共享，避免缓存写入与贴图合并时
 /// 同一份像素数据被反复 clone，显著降低大 MIDI 场景下的内存峰值。
 #[derive(Clone, Debug)]
-pub struct TrackTile {
+pub struct WaterfallTrackTile {
     /// 音轨索引
     pub track_idx: u16,
     /// 时间组索引
@@ -87,7 +91,7 @@ pub struct TrackTile {
     pub tick_end: u32,
 }
 
-impl TrackTile {
+impl WaterfallTrackTile {
     /// 创建新的单音轨贴图块
     pub fn new(
         track_idx: u16,
@@ -131,9 +135,9 @@ impl TrackTile {
 /// 后轨覆盖前轨的重叠区，非重叠区各自保留。
 /// 规格（宽高）与单音轨贴图完全相同。
 #[derive(Clone, Debug)]
-pub struct GroupTile {
+pub struct WaterfallGroupTile {
     /// 矩阵坐标
-    pub coord: TileCoord,
+    pub coord: WaterfallTileCoord,
     /// RGBA8 像素数据（8 轨叠加后）
     pub pixels: Vec<u8>,
     /// 贴图宽度（像素）
@@ -148,7 +152,7 @@ pub struct GroupTile {
     pub track_range: (u16, u16),
 }
 
-impl GroupTile {
+impl WaterfallGroupTile {
     /// 像素数据字节数
     pub fn byte_len(&self) -> usize {
         self.pixels.len()
@@ -176,16 +180,16 @@ mod tests {
 
     #[test]
     fn test_tile_coord_new() {
-        let coord = TileCoord::new(2, 5);
+        let coord = WaterfallTileCoord::new(2, 5);
         assert_eq!(coord.track_group, 2);
         assert_eq!(coord.time_group, 5);
     }
 
     #[test]
     fn test_tile_coord_eq_hash() {
-        let a = TileCoord::new(1, 3);
-        let b = TileCoord::new(1, 3);
-        let c = TileCoord::new(1, 4);
+        let a = WaterfallTileCoord::new(1, 3);
+        let b = WaterfallTileCoord::new(1, 3);
+        let c = WaterfallTileCoord::new(1, 4);
         assert_eq!(a, b);
         assert_ne!(a, c);
         // 用于 HashMap/HashSet 键
@@ -197,21 +201,21 @@ mod tests {
 
     #[test]
     fn test_dirty_region_new() {
-        let coords = vec![TileCoord::new(0, 1), TileCoord::new(0, 2)];
-        let region = DirtyRegion::new(5, coords, DirtyKind::Modified);
+        let coords = vec![WaterfallTileCoord::new(0, 1), WaterfallTileCoord::new(0, 2)];
+        let region = WaterfallDirtyRegion::new(5, coords, WaterfallDirtyKind::Modified);
         assert_eq!(region.track_idx, 5);
         assert_eq!(region.tile_coords.len(), 2);
-        assert_eq!(region.dirty_kind, DirtyKind::Modified);
+        assert_eq!(region.dirty_kind, WaterfallDirtyKind::Modified);
     }
 
     #[test]
     fn test_track_tile_validate() {
-        let tile = TrackTile::new(0, 0, vec![0u8; 1920 * 128 * 4], 1920, 128, 0, 30720);
+        let tile = WaterfallTrackTile::new(0, 0, vec![0u8; 1920 * 128 * 4], 1920, 128, 0, 30720);
         assert!(tile.validate());
         assert_eq!(tile.byte_len(), 1920 * 128 * 4);
         assert_eq!(tile.expected_byte_len(), 1920 * 128 * 4);
 
-        let bad = TrackTile {
+        let bad = WaterfallTrackTile {
             pixels: Arc::new(vec![0u8; 100]),
             ..tile
         };
@@ -220,8 +224,8 @@ mod tests {
 
     #[test]
     fn test_group_tile_validate_and_track_count() {
-        let tile = GroupTile {
-            coord: TileCoord::new(0, 0),
+        let tile = WaterfallGroupTile {
+            coord: WaterfallTileCoord::new(0, 0),
             pixels: vec![0u8; 1920 * 256 * 4],
             width: 1920,
             height: 256,
@@ -232,7 +236,7 @@ mod tests {
         assert!(tile.validate());
         assert_eq!(tile.track_count(), 8);
 
-        let partial = GroupTile {
+        let partial = WaterfallGroupTile {
             track_range: (16, 19),
             ..tile
         };

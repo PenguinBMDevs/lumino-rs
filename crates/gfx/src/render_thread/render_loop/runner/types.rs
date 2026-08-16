@@ -1,9 +1,9 @@
-/// 高精度贴图元数据（无像素数据，用于视口计算）
+/// 贴图瀑布流元数据（无像素数据，用于视口计算）
 #[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct HiResMeta {
     pub track_count: u16,
-    /// 音轨组数（= ceil(track_count / TRACKS_PER_GROUP)），用于判断 time_group 贴图是否收齐
+    /// 音轨组数（= ceil(track_count / WATERFALL_TRACKS_PER_GROUP)），用于判断 time_group 贴图是否收齐
     pub track_groups: u32,
     pub key_count: u16,
     pub time_groups: u32,

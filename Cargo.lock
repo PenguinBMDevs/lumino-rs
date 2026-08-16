@@ -4360,7 +4360,6 @@ dependencies = [
  "lumino-midiplayer",
  "lumino-midly",
  "lumino-note-core",
- "lumino-onion-skin",
  "lumino-project",
  "memmap2",
  "num-bigint",
@@ -4403,7 +4402,6 @@ dependencies = [
  "lumino-midi-loader",
  "lumino-midiplayer",
  "lumino-note-core",
- "lumino-onion-skin",
  "naga",
  "png 0.17.16",
  "puffin",
@@ -4502,7 +4500,8 @@ dependencies = [
  "bytemuck",
  "futures",
  "lumino-memory-monitor",
- "lumino-onion-skin",
+ "lumino-midi-loader",
+ "lumino-note-core",
  "rayon",
  "serde",
  "thiserror 2.0.20",
@@ -4536,19 +4535,6 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tracing",
-]
-
-[[package]]
-name = "lumino-onion-skin"
-version = "0.2.0"
-dependencies = [
- "bytemuck",
- "lumino-core",
- "lumino-midi-loader",
- "lumino-note-core",
- "thiserror 2.0.20",
- "tracing",
- "wgpu",
 ]
 
 [[package]]

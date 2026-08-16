@@ -1,18 +1,18 @@
-//! 高精度贴图 —— 从 Host 拆出的高精度贴图相关方法
+//! 贴图瀑布流 —— 从 Host 拆出的贴图瀑布流相关方法
 //!
-//! 管理高精度贴图的生成、重生成、脏区域追踪等。
+//! 管理贴图瀑布流的生成、重生成、脏区域追踪等。
 
 use super::Host;
 
 impl Host {
-    /// 启动高精度贴图生成（播放器音符显示用）
+    /// 启动贴图瀑布流生成（播放器音符显示用）
     pub fn generate_hires_onion_skin(
         &mut self,
-        notes: Vec<Vec<lumino_gfx::OnionSkinNote>>,
+        notes: Vec<Vec<lumino_gfx::WaterfallNote>>,
         ppq: u16,
         key_count: u16,
         total_ticks: u32,
-        config: lumino_gfx::HiResConfig,
+        config: lumino_gfx::TextureWaterfallConfig,
         midi_hash: String,
     ) {
         // 存下上下文供重生成使用
@@ -54,8 +54,8 @@ impl Host {
         let ppq = view.ppq;
         let total_ticks = view.total_ticks;
         let ui_cfg = self.hires_config.clone().unwrap_or_else(|| {
-            let default = lumino_gfx::HiResConfig::default();
-            lumino_gfx::HiResConfig {
+            let default = lumino_gfx::TextureWaterfallConfig::default();
+            lumino_gfx::TextureWaterfallConfig {
                 enabled: default.enabled,
                 measures_per_group: default.measures_per_group,
                 tile_width_px: default.tile_width_px,
@@ -66,7 +66,7 @@ impl Host {
                 cache_dir: default.cache_dir,
             }
         });
-        let config = lumino_gfx::HiResConfig {
+        let config = lumino_gfx::TextureWaterfallConfig {
             enabled: ui_cfg.enabled,
             measures_per_group: ui_cfg.measures_per_group,
             tile_width_px: ui_cfg.tile_width_px,
@@ -76,13 +76,13 @@ impl Host {
             render_mode: ui_cfg.render_mode,
             cache_dir: ui_cfg.cache_dir,
         };
-        let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");
+        let midi_hash = lumino_gfx::compute_waterfall_cache_hash(b"empty-project");
         self.hires_config = Some(config);
         self.hires_midi_hash = Some(midi_hash);
         self.hires_gen_info = Some((ppq, key_count, total_ticks));
     }
 
-    /// 发送高精度贴图重生命令（冷静期到期后由 runner 调用）
+    /// 发送贴图瀑布流重生命令（冷静期到期后由 runner 调用）
     ///
     /// `group_notes` 需包含该 `track_idx` 所在 track_group 的所有音轨音符，
     /// runner 将使用这些最新数据重新合并 group tile，避免读取过期缓存。
@@ -99,17 +99,17 @@ impl Host {
         }
     }
 
-    /// 获取高精度贴图生成时的 MIDI 哈希（供 runner 冷静期检查使用）
+    /// 获取贴图瀑布流生成时的 MIDI 哈希（供 runner 冷静期检查使用）
     pub fn hires_midi_hash(&self) -> Option<&str> {
         self.hires_midi_hash.as_deref()
     }
 
-    /// 获取高精度贴图生成时的 (ppq, key_count, total_ticks)（供 runner 冷静期检查使用）
+    /// 获取贴图瀑布流生成时的 (ppq, key_count, total_ticks)（供 runner 冷静期检查使用）
     pub fn hires_gen_info(&self) -> Option<(u16, u16, u32)> {
         self.hires_gen_info
     }
 
-    /// 标记当前音轨高精度贴图为脏（音符编辑后调用）
+    /// 标记当前音轨贴图瀑布流为脏（音符编辑后调用）
     ///
     /// 2026-08-06 性能修复：此前在此全轨克隆音符快照（`get_track_notes_for_hires`
     /// 1600W 工程 ≈ 320MB Vec）+ 全量计算 time_group HashSet（~780ms/次），
@@ -120,8 +120,8 @@ impl Host {
         self.hires_dirty_tracks.insert(track_idx);
     }
 
-    /// 获取高精度贴图配置引用（供 runner 构建重生成上下文时使用）
-    pub fn hires_config_ref(&self) -> Option<&lumino_gfx::HiResConfig> {
+    /// 获取贴图瀑布流配置引用（供 runner 构建重生成上下文时使用）
+    pub fn hires_config_ref(&self) -> Option<&lumino_gfx::TextureWaterfallConfig> {
         self.hires_config.as_ref()
     }
 
@@ -177,19 +177,19 @@ impl Host {
         &self,
         track_idx: u16,
         track_count: u16,
-    ) -> Vec<Vec<lumino_gfx::OnionSkinNote>> {
-        let track_group = (track_idx / lumino_gfx::TRACKS_PER_GROUP) as u32;
-        let track_start = (track_group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
-        let track_end = (track_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
+    ) -> Vec<Vec<lumino_gfx::WaterfallNote>> {
+        let track_group = (track_idx / lumino_gfx::WATERFALL_TRACKS_PER_GROUP) as u32;
+        let track_start = (track_group * lumino_gfx::WATERFALL_TRACKS_PER_GROUP as u32) as u16;
+        let track_end = (track_start + lumino_gfx::WATERFALL_TRACKS_PER_GROUP).min(track_count);
         (track_start..track_end)
             .map(|t| self.get_track_notes_for_hires(t))
             .collect()
     }
 
-    /// 获取指定音轨的音符列表（用于高精度贴图重生成）
+    /// 获取指定音轨的音符列表（用于贴图瀑布流重生成）
     ///
     /// 2026-08 单一权威源：一律从 document 读取（track_notes 缓存已删除）。
-    pub fn get_track_notes_for_hires(&self, track_idx: u16) -> Vec<lumino_gfx::OnionSkinNote> {
+    pub fn get_track_notes_for_hires(&self, track_idx: u16) -> Vec<lumino_gfx::WaterfallNote> {
         let editor = &self.root.editor;
         editor
             .editor_state
@@ -197,7 +197,7 @@ impl Host {
             .track_notes(track_idx as usize)
             .iter()
             .map(|ne| {
-                lumino_gfx::OnionSkinNote::from_ms(
+                lumino_gfx::WaterfallNote::from_ms(
                     ne.start_tick as f32,
                     ne.end_tick as f32,
                     ne.key,
@@ -207,7 +207,7 @@ impl Host {
             .collect()
     }
 
-    /// 取出洋葱皮生成进度（runner 每帧调用并转发到进度窗口）
+    /// 取出贴图瀑布流生成进度（runner 每帧调用并转发到进度窗口）
     pub fn drain_onion_progress(&self) -> Vec<(String, f32)> {
         self.render_ctx
             .wgpu_render_thread

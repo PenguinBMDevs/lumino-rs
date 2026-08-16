@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{HiResConfig, HiResRenderer};
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderer};
 
 use super::super::context::RenderContext;
 
@@ -18,12 +18,12 @@ pub(crate) fn push_onion_progress(
 /// 确保高精度渲染器与配置已初始化（懒初始化）。
 pub(crate) fn ensure_renderer_for_config(
     ctx: &RenderContext,
-    hires_renderer: &mut Option<HiResRenderer>,
-    hires_config: &mut Option<HiResConfig>,
-    config: &HiResConfig,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
+    config: &TextureWaterfallConfig,
 ) {
     if hires_renderer.is_none() {
-        *hires_renderer = Some(HiResRenderer::new(
+        *hires_renderer = Some(TextureWaterfallRenderer::new(
             &ctx.device,
             config.clone(),
             ctx.texture_format,

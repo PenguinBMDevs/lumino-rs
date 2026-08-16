@@ -4,10 +4,13 @@
 
 use std::path::Path;
 
-use super::core::CacheError;
+use super::core::WaterfallCacheError;
 
 /// 清理指定 MIDI 的所有缓存文件，返回删除数量
-pub fn clear_midi_cache(cache_dir: &Path, midi_hash: &str) -> Result<u32, CacheError> {
+pub fn clear_midi_waterfall_cache(
+    cache_dir: &Path,
+    midi_hash: &str,
+) -> Result<u32, WaterfallCacheError> {
     let prefix = format!("{midi_hash}_");
     let mut count = 0;
     if cache_dir.exists() {
@@ -26,7 +29,7 @@ pub fn clear_midi_cache(cache_dir: &Path, midi_hash: &str) -> Result<u32, CacheE
 }
 
 /// 清理缓存目录下全部 `.lmocache` 文件，返回删除数量
-pub fn clear_all_cache(cache_dir: &Path) -> Result<u32, CacheError> {
+pub fn clear_all_waterfall_cache(cache_dir: &Path) -> Result<u32, WaterfallCacheError> {
     let mut count = 0;
     if cache_dir.exists() {
         for entry in std::fs::read_dir(cache_dir)? {

@@ -80,7 +80,7 @@ pub struct Host {
     /// 高精度贴图：有脏标记的音轨集合（编辑后需重生成）
     pub(crate) hires_dirty_tracks: std::collections::HashSet<u16>,
     /// 高精度贴图：全量配置（重生成时直接使用副本）
-    pub(crate) hires_config: Option<lumino_gfx::HiResConfig>,
+    pub(crate) hires_config: Option<lumino_gfx::TextureWaterfallConfig>,
     /// 高精度贴图：生成时的 MIDI 哈希（重生成时复用缓存分桶）
     pub(crate) hires_midi_hash: Option<String>,
     /// 高精度贴图：生成时的 (ppq, key_count, total_ticks)（重生成时复用）

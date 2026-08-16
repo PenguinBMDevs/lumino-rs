@@ -1,8 +1,8 @@
-//! 高精度贴图并行生成调度
+//! 贴图瀑布流并行生成调度
 //!
 //! 提供两个生成模式：
-//! - `generate_all_tiles`：按音轨组 rayon 并行，返回完整 HashMap，适合小 MIDI。
-//! - `generate_all_tiles_streaming`：按 time_group 串行推进，每生成一张整合组贴图
+//! - `generate_waterfall_tiles`：按音轨组 rayon 并行，返回完整 HashMap，适合小 MIDI。
+//! - `generate_waterfall_tiles_streaming`：按 time_group 串行推进，每生成一张整合组贴图
 //!   立即回调上传，不累积 Vec，适合大 MIDI 低内存峰值场景。
 //!
 //! 进度回调线程安全，多线程并发上报（与项目现有 ProgressManager 行为一致）。
@@ -15,42 +15,42 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use rayon::prelude::*;
 use tracing::{info, warn};
 
-use crate::cache;
-use crate::config::HiResConfig;
-use crate::scheduler::generate::{
+use crate::texture_waterfall::cache;
+use crate::texture_waterfall::config::TextureWaterfallConfig;
+use crate::texture_waterfall::note::WaterfallNote;
+use crate::texture_waterfall::scheduler::generate::{
     CacheWriteJob, TileGenContext, TrackGroupRequest, generate_one_time_group_tile_into,
     generate_one_track_group, sort_notes_per_track,
 };
-use crate::types::{GroupTile, TileCoord};
+use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord};
 use lumino_memory_monitor::MemoryMonitor;
-use lumino_onion_skin::OnionSkinNote;
 
 mod generate;
 
 /// 进度回调（线程安全，f32 百分比 0.0~1.0）
-pub type HiResProgressCallback = Arc<dyn Fn(&str, f32) + Send + Sync>;
+pub type TextureWaterfallProgressCallback = Arc<dyn Fn(&str, f32) + Send + Sync>;
 
 /// 生成错误
 #[derive(Debug, thiserror::Error)]
-pub enum GenerateError {
+pub enum WaterfallGenerateError {
     #[error("缓存 IO 错误: {0}")]
     CacheIo(String),
 }
 
-/// 流式高精度贴图生成配置参数
+/// 流式贴图瀑布流生成配置参数
 ///
-/// 聚合 `generate_all_tiles_streaming` 中不随回调变化的静态配置，
+/// 聚合 `generate_waterfall_tiles_streaming` 中不随回调变化的静态配置，
 /// 将函数签名降到 7 个参数以下，同时保持 `progress_cb` 与 `time_group_cb` 独立。
 #[derive(Debug)]
-pub struct StreamingGenContext<'a> {
-    pub config: &'a HiResConfig,
+pub struct WaterfallGenContext<'a> {
+    pub config: &'a TextureWaterfallConfig,
     pub ppq: u16,
     pub key_count: u16,
     pub total_ticks: u32,
     pub midi_hash: &'a str,
 }
 
-/// 高精度贴图缓存写入线程 + 共享上下文创建。
+/// 贴图瀑布流缓存写入线程 + 共享上下文创建。
 ///
 /// 创建一个独立后台线程从 `cache_rx` 接收 `CacheWriteJob` 并逐条写入硬盘，
 /// 避免 zstd 压缩 + 文件 I/O 阻塞主生成路径。
@@ -69,14 +69,17 @@ fn spawn_cache_writer(
     let cache_dir_for_thread = cache_dir.clone();
     let cache_handle = std::thread::spawn(move || {
         while let Ok(job) = cache_rx.recv() {
-            if let Err(e) =
-                cache::write_track_tile_cache(&job.cache_dir, &job.midi_hash, &job.tile, &job.meta)
-            {
+            if let Err(e) = cache::write_waterfall_track_tile_cache(
+                &job.cache_dir,
+                &job.midi_hash,
+                &job.tile,
+                &job.meta,
+            ) {
                 warn!("缓存写入失败（不影响生成）: {e}");
             }
         }
         tracing::debug!(
-            "高精度贴图缓存写入线程结束，目录: {:?}",
+            "贴图瀑布流缓存写入线程结束，目录: {:?}",
             cache_dir_for_thread
         );
     });
@@ -94,7 +97,7 @@ fn join_cache_thread(
     }
 }
 
-/// 生成全曲高精度贴图（rayon 并行）
+/// 生成全曲贴图瀑布流（rayon 并行）
 ///
 /// # 参数
 /// - `notes`: per-track 音符列表（外层 Vec 索引 = track_idx），函数会原地按 `start_ms` 排序
@@ -105,16 +108,16 @@ fn join_cache_thread(
 /// - `midi_hash`: MIDI 内容哈希（缓存分桶）
 /// - `progress_cb`: 可选进度回调
 ///
-/// 返回 `TileCoord → GroupTile` 的 HashMap，调用方负责管理内存缓冲与 GPU 上传。
-pub fn generate_all_tiles(
-    notes: &mut [Vec<OnionSkinNote>],
-    config: &HiResConfig,
+/// 返回 `WaterfallTileCoord → WaterfallGroupTile` 的 HashMap，调用方负责管理内存缓冲与 GPU 上传。
+pub fn generate_waterfall_tiles(
+    notes: &mut [Vec<WaterfallNote>],
+    config: &TextureWaterfallConfig,
     ppq: u16,
     key_count: u16,
     total_ticks: u32,
     midi_hash: &str,
-    progress_cb: Option<HiResProgressCallback>,
-) -> HashMap<TileCoord, GroupTile> {
+    progress_cb: Option<TextureWaterfallProgressCallback>,
+) -> HashMap<WaterfallTileCoord, WaterfallGroupTile> {
     sort_notes_per_track(notes);
     let track_count = notes.len() as u16;
     let track_groups = config.track_group_count(track_count);
@@ -124,13 +127,13 @@ pub fn generate_all_tiles(
 
     if total_tiles == 0 {
         if let Some(cb) = &progress_cb {
-            cb("高精度贴图：无内容需生成", 1.0);
+            cb("贴图瀑布流：无内容需生成", 1.0);
         }
         return HashMap::new();
     }
 
     info!(
-        "高精度贴图生成开始：{} 轨 / {} 音轨组 × {} 时间组 = {} 贴图",
+        "贴图瀑布流生成开始：{} 轨 / {} 音轨组 × {} 时间组 = {} 贴图",
         track_count, track_groups, time_groups, total_tiles
     );
 
@@ -153,7 +156,7 @@ pub fn generate_all_tiles(
     };
 
     // rayon 并行：音轨组维度（每组 8 轨）
-    let group_results: Vec<Vec<(TileCoord, GroupTile)>> = (0..track_groups)
+    let group_results: Vec<Vec<(WaterfallTileCoord, WaterfallGroupTile)>> = (0..track_groups)
         .into_par_iter()
         .map(|track_group| {
             generate_one_track_group(
@@ -183,30 +186,30 @@ pub fn generate_all_tiles(
     }
 
     if let Some(cb) = &progress_cb {
-        cb("高精度贴图生成完成", 1.0);
+        cb("贴图瀑布流生成完成", 1.0);
     }
 
-    info!("高精度贴图生成完成：{} 张整合组贴图", buffer.len());
+    info!("贴图瀑布流生成完成：{} 张整合组贴图", buffer.len());
     buffer
 }
 
-/// 流式生成全曲高精度贴图（单 tile 流式回调模型）
+/// 流式生成全曲贴图瀑布流（单 tile 流式回调模型）
 ///
 /// 模型：按 time_group 串行推进，每个 track_group 的整合组贴图一生成完毕
 /// 立即通过回调输出，调用方直接上传 GPU 并释放 CPU 缓冲，再生成下一张。
 /// 避免一个 time_group 的所有贴图在内存中累积成 Vec 后再统一上传。
 ///
 /// # 参数
-/// 除与 `generate_all_tiles` 相同的参数外：
-/// - `time_group_cb`: 每生成一张整合组贴图立即回调，参数为 `(time_group, GroupTile)`。
+/// 除与 `generate_waterfall_tiles` 相同的参数外：
+/// - `time_group_cb`: 每生成一张整合组贴图立即回调，参数为 `(time_group, WaterfallGroupTile)`。
 ///   回调返回后该贴图的 CPU 像素缓冲即可释放，才继续生成下一张。
-pub fn generate_all_tiles_streaming<F>(
-    notes: &mut [Vec<OnionSkinNote>],
-    ctx: &StreamingGenContext<'_>,
-    progress_cb: Option<HiResProgressCallback>,
+pub fn generate_waterfall_tiles_streaming<F>(
+    notes: &mut [Vec<WaterfallNote>],
+    ctx: &WaterfallGenContext<'_>,
+    progress_cb: Option<TextureWaterfallProgressCallback>,
     time_group_cb: &F,
 ) where
-    F: Fn(u32, GroupTile) + Sync,
+    F: Fn(u32, WaterfallGroupTile) + Sync,
 {
     sort_notes_per_track(notes);
     let track_count = notes.len() as u16;
@@ -217,13 +220,13 @@ pub fn generate_all_tiles_streaming<F>(
 
     if total_tiles == 0 {
         if let Some(cb) = &progress_cb {
-            cb("高精度贴图：无内容需生成", 1.0);
+            cb("贴图瀑布流：无内容需生成", 1.0);
         }
         return;
     }
 
     info!(
-        "高精度贴图流式生成开始（time_group 同步推进）：{} 轨 / {} 音轨组 × {} 时间组 = {} 贴图",
+        "贴图瀑布流流式生成开始（time_group 同步推进）：{} 轨 / {} 音轨组 × {} 时间组 = {} 贴图",
         track_count, track_groups, time_groups, total_tiles
     );
 
@@ -245,7 +248,7 @@ pub fn generate_all_tiles_streaming<F>(
         cache_tx: &cache_tx,
     };
 
-    // ★ 跨 track_group 合并：一个 time_group 内所有 track_group 的 GroupTile 合并为一张 ★
+    // ★ 跨 track_group 合并：一个 time_group 内所有 track_group 的 WaterfallGroupTile 合并为一张 ★
     // 避免 104 × 101 = 10504 张零散贴图塞进 GPU 显存。
     // GPU 最终只持有 time_groups 张合并贴图（用户预期：~101 张而非 10504 张）。
     for time_group in 0..time_groups {
@@ -259,7 +262,7 @@ pub fn generate_all_tiles_streaming<F>(
         let mut merged_pixels = vec![0u8; buf_size];
 
         for track_group in 0..track_groups {
-            // 直接写入 merged_pixels，不创建中间 GroupTile，省去一次完整贴图分配
+            // 直接写入 merged_pixels，不创建中间 WaterfallGroupTile，省去一次完整贴图分配
             generate_one_time_group_tile_into(
                 track_group,
                 time_group,
@@ -271,8 +274,8 @@ pub fn generate_all_tiles_streaming<F>(
             );
         }
 
-        let merged = GroupTile {
-            coord: TileCoord::new(0, time_group),
+        let merged = WaterfallGroupTile {
+            coord: WaterfallTileCoord::new(0, time_group),
             pixels: merged_pixels,
             width,
             height: ctx.key_count as u32,
@@ -287,7 +290,7 @@ pub fn generate_all_tiles_streaming<F>(
         if let Some(cb) = &progress_cb {
             let pct = done as f32 / time_groups as f32;
             cb(
-                &format!("高精度贴图 time_group {}/{}", done, time_groups),
+                &format!("贴图瀑布流 time_group {}/{}", done, time_groups),
                 pct,
             );
         }
@@ -297,10 +300,10 @@ pub fn generate_all_tiles_streaming<F>(
     join_cache_thread(cache_tx, cache_handle);
 
     if let Some(cb) = &progress_cb {
-        cb("高精度贴图流式生成完成", 1.0);
+        cb("贴图瀑布流流式生成完成", 1.0);
     }
 
-    info!("高精度贴图流式生成完成：{} 个 time_group", time_groups);
+    info!("贴图瀑布流流式生成完成：{} 个 time_group", time_groups);
 }
 
 #[cfg(test)]

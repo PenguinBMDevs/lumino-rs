@@ -1,16 +1,16 @@
 use super::super::super::super::params::RenderParams;
 use super::super::types::HiResMeta;
-use crate::{HiResConfig, HiResRenderMode, HiResRenderer, HiResUniform, TileCoord};
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderMode, TextureWaterfallRenderer, TextureWaterfallUniform, WaterfallTileCoord};
 
-// ── 高精度贴图视口驱动 ────────────────────────────────────
+// ── 贴图瀑布流视口驱动 ────────────────────────────────────
 
 /// 计算单个 tile coordinate 对应的 uniform（若不可见则返回 None）
 fn compute_tile_uniform(
-    coord: &TileCoord,
+    coord: &WaterfallTileCoord,
     time_g: u32,
     ticks_per_group: u32,
-    config: &HiResConfig,
-    renderer: &HiResRenderer,
+    config: &TextureWaterfallConfig,
+    renderer: &TextureWaterfallRenderer,
     base_x: f32,
     area_y: f32,
     area_h: f32,
@@ -19,38 +19,38 @@ fn compute_tile_uniform(
     zoom_x: f32,
     scroll_x: f32,
     scale: f32,
-) -> Option<(TileCoord, HiResUniform)> {
+) -> Option<(WaterfallTileCoord, TextureWaterfallUniform)> {
     if !renderer.has_tile_or_dirty_overlay(coord) {
         return None;
     }
 
     let tick_start = time_g * ticks_per_group;
     let (area_x, area_w) = match config.render_mode {
-        HiResRenderMode::Native => {
+        TextureWaterfallRenderMode::Native => {
             let texture_zoom = config.tile_width_px as f32 / ticks_per_group as f32;
             let tick_offset = scroll_x / zoom_x;
             let area_x = base_x + (tick_start as f32 - tick_offset) * texture_zoom * scale;
             let area_w = config.tile_width_px as f32 * scale;
             (area_x, area_w)
         }
-        HiResRenderMode::Stretch => {
+        TextureWaterfallRenderMode::Stretch => {
             let area_x = base_x + (tick_start as f32 * zoom_x - scroll_x) * scale;
             let area_w = ticks_per_group as f32 * zoom_x * scale;
             (area_x, area_w)
         }
     };
 
-    let uniform = HiResUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
+    let uniform = TextureWaterfallUniform::new(area_x, area_y, area_w, area_h, canvas_w, canvas_h);
     Some((*coord, uniform))
 }
 
-/// 收集当前视口内所有可见的高精度贴图坐标与 uniform
+/// 收集当前视口内所有可见的贴图瀑布流坐标与 uniform
 fn collect_visible_hires_coords(
-    renderer: &HiResRenderer,
-    config: &HiResConfig,
+    renderer: &TextureWaterfallRenderer,
+    config: &TextureWaterfallConfig,
     meta: &HiResMeta,
     params: &RenderParams,
-) -> Vec<(TileCoord, HiResUniform)> {
+) -> Vec<(WaterfallTileCoord, TextureWaterfallUniform)> {
     let scale = params.scale_factor;
     let zoom_x = params.zoom.0;
     let zoom_y = params.zoom.1;
@@ -73,7 +73,7 @@ fn collect_visible_hires_coords(
     let mut visible = Vec::new();
     for track_g in 0..meta.track_groups {
         for time_g in g_start..g_end {
-            let coord = TileCoord::new(track_g, time_g);
+            let coord = WaterfallTileCoord::new(track_g, time_g);
             if let Some(result) = compute_tile_uniform(
                 &coord,
                 time_g,
@@ -96,15 +96,15 @@ fn collect_visible_hires_coords(
     visible
 }
 
-/// 高精度贴图视口驱动：准备 uniform
+/// 贴图瀑布流视口驱动：准备 uniform
 pub(crate) fn update_hires_viewport(
-    renderer: &mut Option<HiResRenderer>,
+    renderer: &mut Option<TextureWaterfallRenderer>,
     meta: &Option<HiResMeta>,
-    config: &Option<HiResConfig>,
+    config: &Option<TextureWaterfallConfig>,
     params: &RenderParams,
     _device: &wgpu::Device,
     queue: &wgpu::Queue,
-) -> Vec<(TileCoord, HiResUniform)> {
+) -> Vec<(WaterfallTileCoord, TextureWaterfallUniform)> {
     let (Some(renderer), Some(config), Some(meta)) = (renderer, config, meta) else {
         return Vec::new();
     };

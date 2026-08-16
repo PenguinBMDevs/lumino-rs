@@ -1,6 +1,6 @@
 //! 缓存核心结构体、错误类型与工具函数
 //!
-//! 包含 `CacheMeta`、`CacheError`、哈希计算和路径生成。
+//! 包含 `WaterfallCacheMeta`、`WaterfallCacheError`、哈希计算和路径生成。
 //! 不涉及磁盘 IO（见 `super::io`）和清理逻辑（见 `super::cleanup`）。
 
 use std::path::{Path, PathBuf};
@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::types::TrackTile;
+use crate::texture_waterfall::types::WaterfallTrackTile;
 
 /// 缓存文件 magic 标识
 pub(super) const MAGIC: &[u8; 8] = b"LMOCache";
@@ -21,7 +21,7 @@ pub(super) const ZSTD_LEVEL: i32 = 3;
 
 /// 缓存元数据（随像素一起落盘，用于失效校验）
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
-pub struct CacheMeta {
+pub struct WaterfallCacheMeta {
     pub track_idx: u16,
     pub time_group: u32,
     pub width: u32,
@@ -33,9 +33,14 @@ pub struct CacheMeta {
     pub measures_per_group: u32,
 }
 
-impl CacheMeta {
+impl WaterfallCacheMeta {
     /// 从贴图块与当前规格构造元数据
-    pub fn from_tile(tile: &TrackTile, key_count: u16, ppq: u16, measures_per_group: u32) -> Self {
+    pub fn from_tile(
+        tile: &WaterfallTrackTile,
+        key_count: u16,
+        ppq: u16,
+        measures_per_group: u32,
+    ) -> Self {
         Self {
             track_idx: tile.track_idx,
             time_group: tile.time_group,
@@ -68,7 +73,7 @@ impl CacheMeta {
 
 /// 缓存读写错误
 #[derive(Debug, Error)]
-pub enum CacheError {
+pub enum WaterfallCacheError {
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
     #[error("magic 不匹配: 期望 {expected:?}, 实际 {actual:?}")]
@@ -87,7 +92,7 @@ pub enum CacheError {
 ///
 /// 非加密哈希，碰撞概率极低且 `.lmocache` 仅是缓存可容忍偶发碰撞。
 /// 使用 xxh3 默认种子（0），保证跨进程、跨会话哈希稳定，使磁盘缓存真正生效。
-pub fn compute_midi_hash(data: &[u8]) -> String {
+pub fn compute_waterfall_cache_hash(data: &[u8]) -> String {
     format!("{:016x}", xxhash_rust::xxh3::xxh3_64(data))
 }
 
@@ -97,6 +102,11 @@ fn cache_file_name(midi_hash: &str, track_idx: u16, time_group: u32) -> String {
 }
 
 /// 生成缓存文件完整路径
-pub fn cache_path(cache_dir: &Path, midi_hash: &str, track_idx: u16, time_group: u32) -> PathBuf {
+pub fn waterfall_cache_path(
+    cache_dir: &Path,
+    midi_hash: &str,
+    track_idx: u16,
+    time_group: u32,
+) -> PathBuf {
     cache_dir.join(cache_file_name(midi_hash, track_idx, time_group))
 }

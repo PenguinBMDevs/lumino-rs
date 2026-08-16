@@ -1,19 +1,19 @@
-use crate::{HiResConfig, HiResRenderer};
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderer};
 
 use super::super::context::{HiResUploadContext, RenderContext, UploadHiResTileParams};
 use super::super::types::HiResMeta;
 
-// ── 视频导出高精度贴图上传 ──────────────────────────────────
+// ── 视频导出贴图瀑布流上传 ──────────────────────────────────
 
-/// 上传视频导出预生成的高精度贴图，并初始化渲染器与元数据
+/// 上传视频导出预生成的贴图瀑布流，并初始化渲染器与元数据
 pub(crate) fn upload_hires_video_tiles(
     ctx: &RenderContext,
-    hires_renderer: &mut Option<HiResRenderer>,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
     hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
     params: UploadHiResTileParams,
 ) {
-    let mut renderer = HiResRenderer::new(&ctx.device, params.config.clone(), ctx.texture_format);
+    let mut renderer = TextureWaterfallRenderer::new(&ctx.device, params.config.clone(), ctx.texture_format);
     for tile in params.tiles {
         renderer.upload_tile(
             &ctx.device,
@@ -49,7 +49,7 @@ pub(crate) fn upload_hires_video_tiles(
     });
 }
 
-/// 将 UploadHiResVideoTiles 命令中的字段打包并上传高精度贴图。
+/// 将 UploadHiResVideoTiles 命令中的字段打包并上传贴图瀑布流。
 pub(crate) fn upload_hires_video_tiles_command(
     context: &mut HiResUploadContext<'_>,
     params: UploadHiResTileParams,

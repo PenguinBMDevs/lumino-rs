@@ -74,7 +74,7 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
             &context.ctx.device,
             &context.ctx.queue,
         );
-        let hires_visible_coords: Vec<crate::TileCoord> =
+        let hires_visible_coords: Vec<crate::WaterfallTileCoord> =
             hires_visible.iter().map(|(c, _)| *c).collect();
 
         let mut frame = RenderFrameState {

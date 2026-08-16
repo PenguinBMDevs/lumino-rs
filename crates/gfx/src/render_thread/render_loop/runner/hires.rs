@@ -1,6 +1,6 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{HiResConfig, HiResRenderer};
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderer};
 
 use super::super::super::commands::ControlCommand;
 use super::context::{HiResGenerateContext, RenderContext};
@@ -19,15 +19,15 @@ pub(crate) use stream::drain_hires_stream;
 pub(crate) use video::upload_hires_video_tiles_command;
 pub(crate) use viewport::update_hires_viewport;
 
-/// 处理高精度洋葱皮控制命令（分发器，各命令逻辑在独立模块中）
+/// 处理高精度贴图瀑布流控制命令（分发器，各命令逻辑在独立模块中）
 pub(super) fn handle_hires_control(
     cmd: ControlCommand,
     ctx: &RenderContext,
     hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
-    hires_renderer: &mut Option<HiResRenderer>,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
     hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
 ) {
     match cmd {
         ControlCommand::GenerateHiResOnionSkin {

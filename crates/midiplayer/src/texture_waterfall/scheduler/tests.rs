@@ -1,26 +1,28 @@
-//! 高精度贴图调度器单元测试
+//! 贴图瀑布流调度器单元测试
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
-use crate::compute_midi_hash;
-use crate::config::HiResConfig;
-use crate::scheduler::{HiResProgressCallback, generate_all_tiles, generate_all_tiles_streaming};
-use crate::types::{GroupTile, TileCoord};
-use lumino_onion_skin::OnionSkinNote;
+use crate::texture_waterfall::compute_waterfall_cache_hash;
+use crate::texture_waterfall::config::TextureWaterfallConfig;
+use crate::texture_waterfall::note::WaterfallNote;
+use crate::texture_waterfall::scheduler::{
+    TextureWaterfallProgressCallback, generate_waterfall_tiles, generate_waterfall_tiles_streaming,
+};
+use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord};
 
-fn make_note(start: u32, end: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
-    OnionSkinNote::from_ms(start as f32, end as f32, key, color)
+fn make_note(start: u32, end: u32, key: u8, color: [u8; 4]) -> WaterfallNote {
+    WaterfallNote::from_ms(start as f32, end as f32, key, color)
 }
 
-fn test_config() -> (HiResConfig, String) {
-    let mut config = HiResConfig::default();
+fn test_config() -> (TextureWaterfallConfig, String) {
+    let mut config = TextureWaterfallConfig::default();
     let dir = std::env::temp_dir()
-        .join("lumino-hires-sched-test")
+        .join("lumino-TextureWaterfall-sched-test")
         .join(format!("{}-{}", std::process::id(), unique_id()));
     let _ = std::fs::remove_dir_all(&dir);
     config.cache_dir = dir.clone();
-    (config, compute_midi_hash(b"sched-test"))
+    (config, compute_waterfall_cache_hash(b"sched-test"))
 }
 
 fn unique_id() -> u64 {
@@ -29,7 +31,7 @@ fn unique_id() -> u64 {
     COUNTER.fetch_add(1, Ordering::SeqCst)
 }
 
-fn cleanup(config: &HiResConfig) {
+fn cleanup(config: &TextureWaterfallConfig) {
     let _ = std::fs::remove_dir_all(&config.cache_dir);
 }
 
@@ -46,7 +48,7 @@ fn pixel_at(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
 #[test]
 fn test_generate_empty_notes() {
     let (config, hash) = test_config();
-    let result = generate_all_tiles(&mut [], &config, 1920, 128, 30720, &hash, None);
+    let result = generate_waterfall_tiles(&mut [], &config, 1920, 128, 30720, &hash, None);
     assert!(result.is_empty());
     cleanup(&config);
 }
@@ -55,7 +57,7 @@ fn test_generate_empty_notes() {
 fn test_generate_empty_ticks() {
     let (config, hash) = test_config();
     let mut notes = vec![vec![make_note(0, 100, 60, [255, 0, 0, 255])]];
-    let result = generate_all_tiles(&mut notes, &config, 1920, 128, 0, &hash, None);
+    let result = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 0, &hash, None);
     assert!(result.is_empty());
     cleanup(&config);
 }
@@ -70,11 +72,11 @@ fn test_generate_single_group() {
         vec![make_note(15360, 30720, 60, [0, 0, 255, 255])],
     ];
 
-    let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
+    let result = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
 
     // 1 音轨组 × 1 时间组 = 1 贴图
     assert_eq!(result.len(), 1);
-    let coord = TileCoord::new(0, 0);
+    let coord = WaterfallTileCoord::new(0, 0);
     let tile = result.get(&coord).expect("应有 (0,0) 贴图");
     assert_eq!(tile.track_range, (0, 3));
     assert_eq!(tile.track_count(), 3);
@@ -92,16 +94,16 @@ fn test_generate_single_group() {
 fn test_generate_multi_track_groups() {
     // 10 轨 → 2 音轨组（8+2），1 时间组
     let (config, hash) = test_config();
-    let mut notes: Vec<Vec<OnionSkinNote>> = (0..10)
+    let mut notes: Vec<Vec<WaterfallNote>> = (0..10)
         .map(|i| vec![make_note(0, 100, i, [i, 0, 0, 255])])
         .collect();
 
-    let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
+    let result = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
 
     // 2 音轨组 × 1 时间组 = 2 贴图
     assert_eq!(result.len(), 2);
-    let g0 = result.get(&TileCoord::new(0, 0)).expect("音轨组0");
-    let g1 = result.get(&TileCoord::new(1, 0)).expect("音轨组1");
+    let g0 = result.get(&WaterfallTileCoord::new(0, 0)).expect("音轨组0");
+    let g1 = result.get(&WaterfallTileCoord::new(1, 0)).expect("音轨组1");
     assert_eq!(g0.track_range, (0, 8));
     assert_eq!(g1.track_range, (8, 10));
     assert_eq!(g0.track_count(), 8);
@@ -119,12 +121,12 @@ fn test_generate_multi_time_groups() {
         make_note(40000, 50000, 64, [0, 0, 255, 255]), // 组1
     ]];
 
-    let result = generate_all_tiles(&mut notes, &config, 1920, 128, 61440, &hash, None);
+    let result = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 61440, &hash, None);
 
     // 1 音轨组 × 2 时间组 = 2 贴图
     assert_eq!(result.len(), 2);
-    let g0 = result.get(&TileCoord::new(0, 0)).expect("时间组0");
-    let g1 = result.get(&TileCoord::new(0, 1)).expect("时间组1");
+    let g0 = result.get(&WaterfallTileCoord::new(0, 0)).expect("时间组0");
+    let g1 = result.get(&WaterfallTileCoord::new(0, 1)).expect("时间组1");
 
     // 组0 key=60 有红色
     assert_eq!(pixel_at(&g0.pixels, 1920, 0, 60), [255, 0, 0, 255]);
@@ -141,14 +143,14 @@ fn test_cache_hit_skips_generation() {
     let (config, hash) = test_config();
     let mut notes = vec![vec![make_note(0, 15360, 60, [255, 0, 0, 255])]];
 
-    let first = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
-    let second = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
+    let first = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
+    let second = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 30720, &hash, None);
 
     let t1 = first
-        .get(&TileCoord::new(0, 0))
+        .get(&WaterfallTileCoord::new(0, 0))
         .expect("第一次生成应有 Tile (0,0)");
     let t2 = second
-        .get(&TileCoord::new(0, 0))
+        .get(&WaterfallTileCoord::new(0, 0))
         .expect("第二次生成应有 Tile (0,0)");
     assert_eq!(*t1.pixels, *t2.pixels, "缓存命中应产生相同像素");
 
@@ -167,12 +169,12 @@ fn test_progress_callback_invoked() {
     let final_pct = Arc::new(Mutex::new(0.0f32));
     let cb_count = call_count.clone();
     let cb_pct = final_pct.clone();
-    let cb: HiResProgressCallback = Arc::new(move |_msg, pct| {
+    let cb: TextureWaterfallProgressCallback = Arc::new(move |_msg, pct| {
         cb_count.fetch_add(1, Ordering::SeqCst);
         *cb_pct.lock().expect("Mutex 未 poison") = pct;
     });
 
-    let result = generate_all_tiles(&mut notes, &config, 1920, 128, 30720, &hash, Some(cb));
+    let result = generate_waterfall_tiles(&mut notes, &config, 1920, 128, 30720, &hash, Some(cb));
 
     assert_eq!(result.len(), 1);
     // 至少调用：1 次进度 + 1 次完成
@@ -188,7 +190,7 @@ fn test_progress_callback_invoked() {
 fn test_streaming_callback_per_tile() {
     // ★ 跨 track_group 合并：2 个 time_group 各生成一张全轨合并贴图，共 2 张 ★
     let (config, hash) = test_config();
-    let mut notes: Vec<Vec<OnionSkinNote>> = (0..10)
+    let mut notes: Vec<Vec<WaterfallNote>> = (0..10)
         .map(|i| {
             let key = i as u8;
             // 轨 i 在 time_group 0 和 1 各放一个音符
@@ -201,7 +203,7 @@ fn test_streaming_callback_per_tile() {
 
     let received = Arc::new(Mutex::new(Vec::new()));
     let received_cb = received.clone();
-    let cb = move |time_group: u32, tile: GroupTile| {
+    let cb = move |time_group: u32, tile: WaterfallGroupTile| {
         received_cb.lock().expect("Mutex 未 poison").push((
             time_group,
             tile.coord,
@@ -209,14 +211,14 @@ fn test_streaming_callback_per_tile() {
         ));
     };
 
-    let stream_ctx = crate::scheduler::StreamingGenContext {
+    let stream_ctx = crate::texture_waterfall::scheduler::WaterfallGenContext {
         config: &config,
         ppq: 1920,
         key_count: 128,
         total_ticks: 61440,
         midi_hash: &hash,
     };
-    generate_all_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
+    generate_waterfall_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
 
     let guard = received.lock().expect("Mutex 未 poison");
     assert_eq!(
@@ -227,8 +229,8 @@ fn test_streaming_callback_per_tile() {
 
     // 坐标：跨 track_group 合并后只用 (0, 0) 和 (0, 1)
     let coords: std::collections::HashSet<_> = guard.iter().map(|(_, c, _)| *c).collect();
-    assert!(coords.contains(&TileCoord::new(0, 0)));
-    assert!(coords.contains(&TileCoord::new(0, 1)));
+    assert!(coords.contains(&WaterfallTileCoord::new(0, 0)));
+    assert!(coords.contains(&WaterfallTileCoord::new(0, 1)));
     assert_eq!(coords.len(), 2);
 
     // 每张合并贴图应包含全部 10 轨的音符（跨 track_group 合并验证）
@@ -252,28 +254,27 @@ fn test_streaming_callback_per_tile() {
 
 // ── 大规模音符集 Benchmark（策略 C 评估） ────────────────────
 //
-// 目标：比较非流式（generate_one_track_group，累积 Vec<TrackTile>）
+// 目标：比较非流式（generate_one_track_group，累积 Vec<WaterfallTrackTile>）
 // 与流式 merge（generate_one_time_group_tile_into）的内存/时间差异。
 //
 // 100M 音符：每轨 ~12.5M × 8 轨，单 time_group 生成
 // 1B 音符：每轨 ~125M × 8 轨，单 time_group 生成
 //
 // 峰值内存理论：
-//   非流式：Vec<TrackTile> × 8 轨 + GroupTile = 8 × 1MB + 1MB = ~9MB
-//   流式：  merged_pixels × 1     + TrackTile × 1 = 1MB + 1MB = ~2MB
+//   非流式：Vec<WaterfallTrackTile> × 8 轨 + WaterfallGroupTile = 8 × 1MB + 1MB = ~9MB
+//   流式：  merged_pixels × 1     + WaterfallTrackTile × 1 = 1MB + 1MB = ~2MB
 //
-// 运行：cargo test bench_hires_memory -- --ignored --nocapture
+// 运行：cargo test bench_texture_waterfall_memory -- --ignored --nocapture
 
 /// 构造大规模音符测试集
 fn create_large_noteset(
     track_count: u16,
     notes_per_track: usize,
     total_ticks: u32,
-    width: u32,
     key_count: u16,
-) -> Vec<Vec<OnionSkinNote>> {
+) -> Vec<Vec<WaterfallNote>> {
     let note_len = 10u32; // 每个音符 10 tick 长度
-    let mut all_notes: Vec<Vec<OnionSkinNote>> = Vec::with_capacity(track_count as usize);
+    let mut all_notes: Vec<Vec<WaterfallNote>> = Vec::with_capacity(track_count as usize);
 
     for t in 0..track_count {
         let color = [
@@ -288,7 +289,7 @@ fn create_large_noteset(
         for i in 0..notes_per_track {
             let tick = ((i as u64 * total_ticks as u64) / notes_per_track as u64) as u32;
             let key = (i % key_count as usize) as u8;
-            track_notes.push(OnionSkinNote::from_ms(
+            track_notes.push(WaterfallNote::from_ms(
                 tick as f32,
                 (tick + note_len).min(total_ticks - 1) as f32,
                 key,
@@ -327,7 +328,7 @@ fn current_rss_bytes() -> u64 {
 
 #[test]
 #[ignore]
-fn bench_hires_memory_100m() {
+fn bench_texture_waterfall_memory_100m() {
     let tracks = 8u16;
     let notes_per_track = 12_500_000; // 100M total
     let ppq = 1920;
@@ -336,16 +337,16 @@ fn bench_hires_memory_100m() {
     let width = 1920u32;
 
     let (config, hash) = test_config();
-    let mut notes = create_large_noteset(tracks, notes_per_track, total_ticks, width, key_count);
+    let mut notes = create_large_noteset(tracks, notes_per_track, total_ticks, key_count);
     let note_mb = (notes.iter().map(|t| t.len()).sum::<usize>()
-        * std::mem::size_of::<OnionSkinNote>()) as f64
+        * std::mem::size_of::<WaterfallNote>()) as f64
         / 1_048_576.0;
     eprintln!("═══ Benchmark: 100M 音符（{:.0} MB 音符数据）═══", note_mb);
 
     // ── 非流式路径 ──
     let rss_before = current_rss_bytes();
     let start = std::time::Instant::now();
-    let tiles = generate_all_tiles(
+    let tiles = generate_waterfall_tiles(
         &mut notes,
         &config,
         ppq,
@@ -371,23 +372,23 @@ fn bench_hires_memory_100m() {
     assert!(!tiles.is_empty(), "应生成至少 1 张贴图");
 
     // ── 流式路径 ──
-    // generate_all_tiles 已对 notes 排序，可直接复用
+    // generate_waterfall_tiles 已对 notes 排序，可直接复用
     let received_tiles = Arc::new(Mutex::new(Vec::new()));
     let rx = received_tiles.clone();
-    let cb = move |time_group: u32, tile: GroupTile| {
+    let cb = move |time_group: u32, tile: WaterfallGroupTile| {
         rx.lock().expect("互斥锁应可获取").push((time_group, tile));
     };
 
     let rss_before2 = current_rss_bytes();
     let start2 = std::time::Instant::now();
-    let stream_ctx = crate::scheduler::StreamingGenContext {
+    let stream_ctx = crate::texture_waterfall::scheduler::WaterfallGenContext {
         config: &config,
         ppq,
         key_count,
         total_ticks,
         midi_hash: &hash,
     };
-    generate_all_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
+    generate_waterfall_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
     let dur2 = start2.elapsed();
     let rss_after2 = current_rss_bytes();
 
@@ -428,37 +429,36 @@ fn bench_hires_memory_100m() {
 
 #[test]
 #[ignore]
-fn bench_hires_memory_1b() {
+fn bench_texture_waterfall_memory_1b() {
     let tracks = 8u16;
     let notes_per_track = 125_000_000; // 1B total
     let ppq = 1920;
     let key_count = 128u16;
     let total_ticks = 30720u32; // 1 time_group
-    let width = 1920u32;
 
     let (config, hash) = test_config();
-    let mut notes = create_large_noteset(tracks, notes_per_track, total_ticks, width, key_count);
+    let mut notes = create_large_noteset(tracks, notes_per_track, total_ticks, key_count);
     let note_mb = (notes.iter().map(|t| t.len()).sum::<usize>()
-        * std::mem::size_of::<OnionSkinNote>()) as f64
+        * std::mem::size_of::<WaterfallNote>()) as f64
         / 1_048_576.0;
     eprintln!("═══ Benchmark: 1B 音符（{:.0} MB 音符数据）═══", note_mb);
 
     // 仅运行流式路径（非流式路径预计 OOM 或极慢）
     let received_tiles = Arc::new(Mutex::new(Vec::new()));
     let rx = received_tiles.clone();
-    let cb = move |time_group: u32, tile: GroupTile| {
+    let cb = move |time_group: u32, tile: WaterfallGroupTile| {
         rx.lock().expect("互斥锁应可获取").push((time_group, tile));
     };
 
     let start = std::time::Instant::now();
-    let stream_ctx = crate::scheduler::StreamingGenContext {
+    let stream_ctx = crate::texture_waterfall::scheduler::WaterfallGenContext {
         config: &config,
         ppq,
         key_count,
         total_ticks,
         midi_hash: &hash,
     };
-    generate_all_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
+    generate_waterfall_tiles_streaming(&mut notes, &stream_ctx, None, &cb);
     let dur = start.elapsed();
 
     let received = received_tiles.lock().expect("互斥锁应可获取");

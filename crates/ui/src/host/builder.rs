@@ -63,7 +63,7 @@ impl Host {
 
     /// 创建 Host 公共字段（三个构造函数的公共 Self 初始化）
     ///
-    /// 干净启动时即初始化默认高精度洋葱皮上下文，确保无 MIDI 文件时
+    /// 干净启动时即初始化默认高精度贴图瀑布流上下文，确保无 MIDI 文件时
     /// 编辑音符也能触发贴图生成。
     fn new_common_fields(
         render_ctx: RenderContext,
@@ -72,17 +72,17 @@ impl Host {
         ui_config: &config::UiConfig,
     ) -> Self {
         let key_count = if ui_config.enable_256key { 256 } else { 128 };
-        let hires_config = lumino_gfx::HiResConfig {
+        let hires_config = lumino_gfx::TextureWaterfallConfig {
             enabled: ui_config.hires_onion_enabled,
             measures_per_group: ui_config.hires_measures_per_group,
             tile_width_px: ui_config.hires_tile_width_px,
             cooldown_secs: ui_config.hires_cooldown_secs,
             gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            render_mode: lumino_gfx::HiResRenderMode::default(),
+            render_mode: lumino_gfx::TextureWaterfallRenderMode::default(),
             group_tile_mem_limit_mb: crate::constants::memory::DEFAULT_GROUP_TILE_MEM_LIMIT_MB,
-            cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
+            cache_dir: lumino_gfx::TextureWaterfallConfig::default().cache_dir,
         };
-        let midi_hash = lumino_gfx::compute_midi_hash(b"empty-project");
+        let midi_hash = lumino_gfx::compute_waterfall_cache_hash(b"empty-project");
         let ppq = lumino_core::view_state::DEFAULT_PPQ;
         let total_ticks = lumino_core::view_state::DEFAULT_TOTAL_TICKS;
 

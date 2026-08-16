@@ -1,12 +1,12 @@
-//! 高精度贴图生成逻辑
+//! 贴图瀑布流生成逻辑
 //!
 //! 复用 P1 onion-skin 的坐标映射约定（key 0 = row 0，tick→X 线性），
 //! 增加时间组裁剪：音符跨越组边界时只取组内部分。
 
-use crate::types::{GroupTile, TileCoord, TrackTile};
-use lumino_onion_skin::OnionSkinNote;
+use crate::texture_waterfall::note::WaterfallNote;
+use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord, WaterfallTrackTile};
 
-/// 生成单音轨在一个时间组的高精度贴图
+/// 生成单音轨在一个时间组的贴图瀑布流
 ///
 /// # 参数
 /// - `notes`: 该音轨的音符列表，**必须按 `start_ms` 升序排列**；调用方负责排序
@@ -17,24 +17,24 @@ use lumino_onion_skin::OnionSkinNote;
 /// - `width`: 贴图宽度（像素）
 /// - `key_count`: key 数量（= 贴图高度，1 key = 1 px）
 ///
-/// 注意：`OnionSkinNote` 的 `start_ms`/`end_ms` 字段实为 tick 值
+/// 注意：`WaterfallNote` 的 `start_ms`/`end_ms` 字段实为 tick 值
 /// （与 P1 file.rs 的 `from_ms(tick, tick, ...)` 构造方式一致）。
-pub fn generate_track_tile(
-    notes: &[OnionSkinNote],
+pub fn generate_waterfall_track_tile(
+    notes: &[WaterfallNote],
     track_idx: u16,
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
     width: u32,
     key_count: u16,
-) -> TrackTile {
+) -> WaterfallTrackTile {
     let height = key_count as u32;
     let pixel_count = (width * height) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
 
     // tick 范围为 0 或无效时直接返回空贴图
     if tick_end <= tick_start {
-        return TrackTile::new(
+        return WaterfallTrackTile::new(
             track_idx, time_group, pixels, width, height, tick_start, tick_end,
         );
     }
@@ -81,7 +81,7 @@ pub fn generate_track_tile(
         row_pixels.fill(color_u32);
     }
 
-    TrackTile::new(
+    WaterfallTrackTile::new(
         track_idx, time_group, pixels, width, height, tick_start, tick_end,
     )
 }
@@ -90,7 +90,7 @@ pub fn generate_track_tile(
 ///
 /// 后轨覆盖前轨的非透明重叠区。`group_pixels` 必须已初始化为零或
 /// 包含前序轨道的合并结果，且长度与 `tile.pixels` 相同。
-pub fn merge_track_tile_into(group_pixels: &mut [u8], tile: &TrackTile) {
+pub fn merge_waterfall_track_tile_into(group_pixels: &mut [u8], tile: &WaterfallTrackTile) {
     debug_assert_eq!(group_pixels.len(), tile.pixels.len(), "贴图像素长度不一致");
     debug_assert_eq!(tile.pixels.len() % 4, 0, "贴图像素长度不是 4 的倍数");
 
@@ -118,15 +118,15 @@ pub fn merge_pixels_into(dst: &mut [u8], src: &[u8]) {
 /// 后轨覆盖前轨的重叠区，非重叠区各自保留：
 /// 遍历 tiles（从前到后），后轨的非透明像素覆盖前轨。
 /// 所有 tiles 的规格（width/height）必须一致。
-pub fn merge_group_tiles(
-    tiles: &[TrackTile],
-    coord: TileCoord,
+pub fn merge_waterfall_group_tiles(
+    tiles: &[WaterfallTrackTile],
+    coord: WaterfallTileCoord,
     tick_start: u32,
     tick_end: u32,
     width: u32,
     key_count: u16,
     track_range: (u16, u16),
-) -> GroupTile {
+) -> WaterfallGroupTile {
     let height = key_count as u32;
     let pixel_count = (width * height) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
@@ -134,10 +134,10 @@ pub fn merge_group_tiles(
     for tile in tiles {
         debug_assert_eq!(tile.width, width, "贴图宽度不一致");
         debug_assert_eq!(tile.height, height, "贴图高度不一致");
-        merge_track_tile_into(&mut pixels, tile);
+        merge_waterfall_track_tile_into(&mut pixels, tile);
     }
 
-    GroupTile {
+    WaterfallGroupTile {
         coord,
         pixels,
         width,
@@ -152,8 +152,8 @@ pub fn merge_group_tiles(
 mod tests {
     use super::*;
 
-    fn make_note(start_tick: u32, end_tick: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
-        OnionSkinNote::from_ms(start_tick as f32, end_tick as f32, key, color)
+    fn make_note(start_tick: u32, end_tick: u32, key: u8, color: [u8; 4]) -> WaterfallNote {
+        WaterfallNote::from_ms(start_tick as f32, end_tick as f32, key, color)
     }
 
     fn pixel_at(pixels: &[u8], width: u32, x: u32, y: u32) -> [u8; 4] {
@@ -173,7 +173,7 @@ mod tests {
 
     #[test]
     fn test_generate_empty_notes() {
-        let tile = generate_track_tile(&[], 0, 0, 0, 30720, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&[], 0, 0, 0, 30720, WIDTH, KEYS);
         assert!(tile.pixels.iter().all(|&b| b == 0));
         assert_eq!(tile.pixels.len(), 1920 * 128 * 4);
     }
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn test_generate_invalid_tick_range() {
         let notes = vec![make_note(0, 100, 60, RED)];
-        let tile = generate_track_tile(&notes, 0, 0, 100, 100, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&notes, 0, 0, 100, 100, WIDTH, KEYS);
         assert!(tile.pixels.iter().all(|&b| b == 0));
     }
 
@@ -189,7 +189,7 @@ mod tests {
     fn test_generate_single_note() {
         // tick 0-15360 在 [0, 30720) 组内，占左半边
         let notes = vec![make_note(0, 15360, 60, RED)];
-        let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
 
         // x=0, y=60 应为红色
         assert_eq!(pixel_at(&tile.pixels, WIDTH, 0, 60), RED);
@@ -204,7 +204,7 @@ mod tests {
         // 音符跨越组边界：tick 25000-35000，组范围 [0, 30720)
         // 有效部分 25000-30720
         let notes = vec![make_note(25000, 35000, 60, RED)];
-        let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
 
         // 25000/30720 * 1920 ≈ 1562.5 → x_start≈1562
         let x_start = (25000.0 / 30720.0 * 1920.0) as u32;
@@ -219,7 +219,7 @@ mod tests {
     fn test_generate_note_outside_group() {
         // 音符完全在组外
         let notes = vec![make_note(40000, 50000, 60, RED)];
-        let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
         assert!(tile.pixels.iter().all(|&b| b == 0));
     }
 
@@ -227,15 +227,23 @@ mod tests {
     fn test_generate_key_clamp() {
         // key=200 超出 128，应 clamp 到 127
         let notes = vec![make_note(0, 100, 200, RED)];
-        let tile = generate_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
+        let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, 30720, WIDTH, KEYS);
         assert_eq!(pixel_at(&tile.pixels, WIDTH, 0, 127), RED);
     }
 
     #[test]
     fn test_merge_non_overlapping_tracks() {
         // 轨0: key=60 红色，轨1: key=61 蓝色，不重叠
-        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
-        let t1 = generate_track_tile(
+        let t0 = generate_waterfall_track_tile(
+            &[make_note(0, 15360, 60, RED)],
+            0,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
+        let t1 = generate_waterfall_track_tile(
             &[make_note(0, 15360, 61, BLUE)],
             1,
             0,
@@ -245,9 +253,9 @@ mod tests {
             KEYS,
         );
 
-        let group = merge_group_tiles(
+        let group = merge_waterfall_group_tiles(
             &[t0, t1],
-            TileCoord::new(0, 0),
+            WaterfallTileCoord::new(0, 0),
             0,
             30720,
             WIDTH,
@@ -264,12 +272,28 @@ mod tests {
     fn test_merge_overlapping_tracks() {
         // 轨0: key=60 红色 [0, 15360)，轨1: key=60 蓝色 [0, 7680)
         // 重叠区 [0, 7680) 后轨（蓝）覆盖前轨（红）
-        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
-        let t1 = generate_track_tile(&[make_note(0, 7680, 60, BLUE)], 1, 0, 0, 30720, WIDTH, KEYS);
+        let t0 = generate_waterfall_track_tile(
+            &[make_note(0, 15360, 60, RED)],
+            0,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
+        let t1 = generate_waterfall_track_tile(
+            &[make_note(0, 7680, 60, BLUE)],
+            1,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
 
-        let group = merge_group_tiles(
+        let group = merge_waterfall_group_tiles(
             &[t0, t1],
-            TileCoord::new(0, 0),
+            WaterfallTileCoord::new(0, 0),
             0,
             30720,
             WIDTH,
@@ -285,7 +309,15 @@ mod tests {
 
     #[test]
     fn test_merge_empty_tiles() {
-        let group = merge_group_tiles(&[], TileCoord::new(0, 0), 0, 30720, WIDTH, KEYS, (0, 0));
+        let group = merge_waterfall_group_tiles(
+            &[],
+            WaterfallTileCoord::new(0, 0),
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+            (0, 0),
+        );
         assert!(group.pixels.iter().all(|&b| b == 0));
         assert_eq!(group.track_count(), 0);
     }
@@ -293,9 +325,17 @@ mod tests {
     #[test]
     fn test_merge_preserves_lower_track() {
         // 轨0 有音符，轨1 该位置无音符 → 保留轨0
-        let t0 = generate_track_tile(&[make_note(0, 15360, 60, RED)], 0, 0, 0, 30720, WIDTH, KEYS);
+        let t0 = generate_waterfall_track_tile(
+            &[make_note(0, 15360, 60, RED)],
+            0,
+            0,
+            0,
+            30720,
+            WIDTH,
+            KEYS,
+        );
         // 轨1 在不同 key 有音符
-        let t1 = generate_track_tile(
+        let t1 = generate_waterfall_track_tile(
             &[make_note(0, 15360, 70, BLUE)],
             1,
             0,
@@ -305,9 +345,9 @@ mod tests {
             KEYS,
         );
 
-        let group = merge_group_tiles(
+        let group = merge_waterfall_group_tiles(
             &[t0, t1],
-            TileCoord::new(0, 0),
+            WaterfallTileCoord::new(0, 0),
             0,
             30720,
             WIDTH,

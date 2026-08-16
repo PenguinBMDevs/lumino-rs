@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
-use crate::{GroupTile, HiResConfig, HiResProgressCallback, HiResRenderer};
-use lumino_midiplayer::StreamingGenContext;
+use crate::{WaterfallGroupTile, TextureWaterfallConfig, TextureWaterfallProgressCallback, TextureWaterfallRenderer};
+use crate::WaterfallGenContext;
 
 use super::super::context::HiResGenerateContext;
 use super::super::types::{HiResMeta, HiResStreamMsg};
@@ -38,15 +38,15 @@ fn spawn_streaming_generation(
     hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
     tile_width: u32,
     tile_height: u32,
-    mut notes: Vec<Vec<lumino_onion_skin::OnionSkinNote>>,
-    config: HiResConfig,
+    mut notes: Vec<Vec<crate::WaterfallNote>>,
+    config: TextureWaterfallConfig,
     midi_hash: String,
     ppq: u16,
     key_count: u16,
     total_ticks: u32,
 ) {
     let tx = Arc::new(Mutex::new(hires_result_tx.clone()));
-    let cb: HiResProgressCallback = Arc::new(move |msg, pct| {
+    let cb: TextureWaterfallProgressCallback = Arc::new(move |msg, pct| {
         if let Ok(mut buf) = progress_buf.lock() {
             buf.push((msg.to_string(), pct.clamp(0.0, 1.0)));
         }
@@ -56,7 +56,7 @@ fn spawn_streaming_generation(
         let time_group_cb = {
             let tx = tx.clone();
             let (tw, th) = (tile_width, tile_height);
-            move |time_group: u32, tile: GroupTile| {
+            move |time_group: u32, tile: WaterfallGroupTile| {
                 if let Ok(guard) = tx.lock() {
                     let _ = guard.send(HiResStreamMsg::TimeGroupMerged {
                         track_group: tile.coord.track_group,
@@ -69,14 +69,14 @@ fn spawn_streaming_generation(
             }
         };
 
-        let stream_ctx = StreamingGenContext {
+        let stream_ctx = WaterfallGenContext {
             config: &config,
             ppq,
             key_count,
             total_ticks,
             midi_hash: &midi_hash,
         };
-        lumino_midiplayer::generate_all_tiles_streaming(
+        crate::generate_waterfall_tiles_streaming(
             &mut notes,
             &stream_ctx,
             Some(cb),
@@ -94,7 +94,7 @@ pub(crate) fn handle_generate_hires(mut context: HiResGenerateContext<'_>) {
     setup_generate_context(&mut context);
     push_onion_progress(
         context.onion_progress,
-        "正在后台生成高精度洋葱皮贴图\u{2026}",
+        "正在后台生成贴图瀑布流\u{2026}",
         0.0,
     );
 
@@ -112,17 +112,17 @@ pub(crate) fn handle_generate_hires(mut context: HiResGenerateContext<'_>) {
     );
 }
 
-// ── 释放高精度洋葱皮资源 ──────────────────────────────────
+// ── 释放高精度贴图瀑布流资源 ──────────────────────────────────
 
 /// 处理 DisposeHiResOnionSkin
 pub(crate) fn handle_dispose_hires(
-    hires_renderer: &mut Option<HiResRenderer>,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
     hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
 ) {
     *hires_renderer = None;
     *hires_meta = None;
     *hires_config = None;
-    push_onion_progress(onion_progress, "高精度洋葱皮资源已释放", 1.0);
+    push_onion_progress(onion_progress, "高精度贴图瀑布流资源已释放", 1.0);
 }

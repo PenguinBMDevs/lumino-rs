@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use crate::render_thread::HiResTrackParams;
-use crate::{HiResConfig, HiResRenderer, TRACKS_PER_GROUP, generate_track_tile};
-use lumino_onion_skin::OnionSkinNote;
-use lumino_midiplayer::{CacheMeta, merge_track_tile_into, read_track_tile_cache};
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderer, WATERFALL_TRACKS_PER_GROUP, generate_waterfall_track_tile};
+use crate::WaterfallNote;
+use crate::{WaterfallCacheMeta, merge_waterfall_track_tile_into, read_waterfall_track_tile_cache};
 
 use super::super::context::RenderContext;
 use super::super::types::{HiResMeta, HiResStreamMsg};
@@ -18,7 +18,7 @@ fn regen_time_group_merged_pixels_into(
     ticks_per_group: u32,
     track_group: u32,
     all_track_groups: u32,
-    sorted_notes: &[Vec<OnionSkinNote>],
+    sorted_notes: &[Vec<WaterfallNote>],
     track_count: u16,
     track_start: u16,
     mh: &str,
@@ -33,19 +33,19 @@ fn regen_time_group_merged_pixels_into(
     let tick_end = tick_start + ticks_per_group;
 
     for tg in 0..all_track_groups {
-        let tg_start = (tg * TRACKS_PER_GROUP as u32) as u16;
-        let tg_end = ((tg + 1) * TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
+        let tg_start = (tg * WATERFALL_TRACKS_PER_GROUP as u32) as u16;
+        let tg_end = ((tg + 1) * WATERFALL_TRACKS_PER_GROUP as u32).min(track_count as u32) as u16;
 
         if tg == track_group {
             for (local_idx, notes) in sorted_notes.iter().enumerate() {
                 let t = track_start + local_idx as u16;
                 let tile =
-                    generate_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
-                merge_track_tile_into(output, &tile);
+                    generate_waterfall_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
+                merge_waterfall_track_tile_into(output, &tile);
             }
         } else {
             for t in tg_start..tg_end {
-                let expected_meta = CacheMeta {
+                let expected_meta = WaterfallCacheMeta {
                     track_idx: t,
                     time_group: time_g,
                     width,
@@ -57,23 +57,23 @@ fn regen_time_group_merged_pixels_into(
                     measures_per_group,
                 };
                 if let Ok(Some(tile)) =
-                    read_track_tile_cache(cache_dir, mh, t, time_g, &expected_meta)
+                    read_waterfall_track_tile_cache(cache_dir, mh, t, time_g, &expected_meta)
                 {
-                    merge_track_tile_into(output, &tile);
+                    merge_waterfall_track_tile_into(output, &tile);
                 }
             }
         }
     }
 }
 
-/// 处理 RegenerateHiResTrack：重生成指定音轨的高精度贴图
+/// 处理 RegenerateHiResTrack：重生成指定音轨的贴图瀑布流
 pub(crate) fn handle_regenerate_hires_track(
     params: HiResTrackParams,
     ctx: &RenderContext,
     hires_result_tx: &std::sync::mpsc::SyncSender<HiResStreamMsg>,
-    hires_renderer: &mut Option<HiResRenderer>,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
     hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
 ) {
     let HiResTrackParams {
         track_idx,
@@ -86,7 +86,7 @@ pub(crate) fn handle_regenerate_hires_track(
         config,
         midi_hash,
     } = params;
-    let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
+    let track_group = (track_idx / WATERFALL_TRACKS_PER_GROUP) as u32;
 
     ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
@@ -102,7 +102,7 @@ pub(crate) fn handle_regenerate_hires_track(
 
     let (width, track_start) = (
         config.tile_width_px,
-        (track_group * TRACKS_PER_GROUP as u32) as u16,
+        (track_group * WATERFALL_TRACKS_PER_GROUP as u32) as u16,
     );
     let (ticks_per_group, time_groups) = (
         config.ticks_per_group(ppq),

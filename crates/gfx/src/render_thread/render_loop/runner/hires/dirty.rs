@@ -1,9 +1,9 @@
 use std::sync::{Arc, Mutex};
 
 use crate::render_thread::HiResTrackParams;
-use crate::{HiResConfig, HiResRenderer, TRACKS_PER_GROUP, TileCoord, generate_track_tile};
-use lumino_onion_skin::OnionSkinNote;
-use lumino_midiplayer::merge_track_tile_into;
+use crate::{TextureWaterfallConfig, TextureWaterfallRenderer, WATERFALL_TRACKS_PER_GROUP, WaterfallTileCoord, generate_waterfall_track_tile};
+use crate::WaterfallNote;
+use crate::merge_waterfall_track_tile_into;
 
 use super::super::context::RenderContext;
 use super::super::types::HiResMeta;
@@ -11,12 +11,12 @@ use super::common::{ensure_renderer_for_config, push_onion_progress};
 
 /// 对所有目标 time_group 生成并上传脏区域覆层贴图
 ///
-/// 使用流式 merge：单缓冲 + 逐轨生成合并，避免 Vec<TrackTile> 累积
-///（原实现同时持有 8 张 TrackTile = 8MB，现降至 ~2MB 峰值）。
+/// 使用流式 merge：单缓冲 + 逐轨生成合并，避免 Vec<WaterfallTrackTile> 累积
+///（原实现同时持有 8 张 WaterfallTrackTile = 8MB，现降至 ~2MB 峰值）。
 fn generate_and_upload_dirty_overlays(
-    renderer: &mut HiResRenderer,
+    renderer: &mut TextureWaterfallRenderer,
     ctx: &RenderContext,
-    sorted_notes: &[Vec<OnionSkinNote>],
+    sorted_notes: &[Vec<WaterfallNote>],
     target_time_groups: &[u32],
     ticks_per_group: u32,
     width: u32,
@@ -31,7 +31,7 @@ fn generate_and_upload_dirty_overlays(
     for &time_g in target_time_groups {
         let tick_start = time_g * ticks_per_group;
         let tick_end = tick_start + ticks_per_group;
-        let merged_coord = TileCoord::new(track_group, time_g);
+        let merged_coord = WaterfallTileCoord::new(track_group, time_g);
 
         // 重置缓冲（只清空已使用的行，避免全量 1MB memset）
         merged_pixels.fill(0);
@@ -39,8 +39,8 @@ fn generate_and_upload_dirty_overlays(
         for (local_idx, notes) in sorted_notes.iter().enumerate() {
             let t = track_start + local_idx as u16;
             let tile =
-                generate_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
-            merge_track_tile_into(&mut merged_pixels, &tile);
+                generate_waterfall_track_tile(notes, t, time_g, tick_start, tick_end, width, key_count);
+            merge_waterfall_track_tile_into(&mut merged_pixels, &tile);
             // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放（不累积）
         }
 
@@ -59,9 +59,9 @@ fn generate_and_upload_dirty_overlays(
 pub(crate) fn handle_show_dirty_overlay(
     params: HiResTrackParams,
     ctx: &RenderContext,
-    hires_renderer: &mut Option<HiResRenderer>,
+    hires_renderer: &mut Option<TextureWaterfallRenderer>,
     hires_meta: &mut Option<HiResMeta>,
-    hires_config: &mut Option<HiResConfig>,
+    hires_config: &mut Option<TextureWaterfallConfig>,
     onion_progress: &Arc<Mutex<Vec<(String, f32)>>>,
 ) {
     let HiResTrackParams {
@@ -75,7 +75,7 @@ pub(crate) fn handle_show_dirty_overlay(
         config,
         midi_hash: _,
     } = params;
-    let track_group = (track_idx / TRACKS_PER_GROUP) as u32;
+    let track_group = (track_idx / WATERFALL_TRACKS_PER_GROUP) as u32;
 
     ensure_renderer_for_config(ctx, hires_renderer, hires_config, &config);
 
@@ -93,7 +93,7 @@ pub(crate) fn handle_show_dirty_overlay(
     let ticks_per_group = config.ticks_per_group(ppq);
     let time_groups = config.time_group_count(total_ticks, ppq);
     let width = config.tile_width_px;
-    let track_start = (track_group * TRACKS_PER_GROUP as u32) as u16;
+    let track_start = (track_group * WATERFALL_TRACKS_PER_GROUP as u32) as u16;
 
     let mut sorted_notes = group_notes;
     for notes in &mut sorted_notes {

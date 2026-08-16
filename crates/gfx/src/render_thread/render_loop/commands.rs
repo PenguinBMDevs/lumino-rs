@@ -19,9 +19,9 @@ const COMMAND_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 /// 导致渲染线程 `while running` 每轮都执行离屏渲染，且因 `is_some()` 跳过
 /// `recv_timeout` 阻塞，循环内无任何阻塞点 → 忙循环空转 → GPU 100% 满载。
 /// 现改为"仅在有新 `Render` 命令时才渲染"，空闲时阻塞在 `recv_timeout` 休眠，
-/// 既消除忙循环空转，又保留每 16ms 周期检查导出/洋葱皮后台通道（避免死锁）。
+/// 既消除忙循环空转，又保留每 16ms 周期检查导出/贴图瀑布流后台通道（避免死锁）。
 ///
-/// 洋葱皮控制命令（Generate/Dispose）需要 device/queue 上下文，无法在此处理，
+/// 贴图瀑布流控制命令（Generate/Dispose）需要 device/queue 上下文，无法在此处理，
 /// 因此收集到 `deferred` 供主循环在拥有 GPU 资源时处理。
 ///
 /// 使用 `recv_timeout` 而非 `recv`：防止渲染线程在无命令时无限阻塞，
@@ -87,7 +87,7 @@ fn classify_command(
             tracing::debug!("Render thread: resize to {}x{}", width, height);
             false
         }
-        // 洋葱皮控制命令需要 GPU 资源上下文，延迟到主循环处理
+        // 贴图瀑布流控制命令需要 GPU 资源上下文，延迟到主循环处理
         RenderCommand::Control(
             cmd @ (ControlCommand::GenerateHiResOnionSkin { .. }
             | ControlCommand::DisposeHiResOnionSkin

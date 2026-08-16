@@ -21,9 +21,9 @@ pub mod error;
 pub mod format;
 pub mod material;
 pub mod midi;
-pub mod onion_skin_export;
 pub mod project;
 pub mod video;
+pub mod waterfall_export;
 
 // ── 音频渲染 ──
 
@@ -60,8 +60,8 @@ pub use midi::export_midi;
 /// MIDI 文件导出到内存字节流
 pub use midi::export_midi_to_bytes;
 
-/// 高精度洋葱皮贴图导出
-pub use onion_skin_export::export_onion_skin_tiles;
+/// 贴图瀑布流导出
+pub use waterfall_export::export_waterfall_tiles;
 
 // ── 工程文件 ──
 
@@ -69,7 +69,7 @@ pub use onion_skin_export::export_onion_skin_tiles;
 pub use material::{is_material_path, save_material};
 /// 文件夹工程入口文件
 pub use project::LuminoEntryFile;
-/// 读取 `.lmpj` 入口文件对应的高精度洋葱皮元数据
+/// 读取 `.lmpj` 入口文件对应的贴图瀑布流元数据
 pub use project::load_project_image_metadata;
 /// 保存工程为文件夹并生成 `.lmpj` 入口文件
 pub use project::save_project_to_folder_with_entry;

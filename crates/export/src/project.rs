@@ -53,10 +53,10 @@ pub fn save_project_to_folder_with_entry(
     lumino_project::project::save::save_to_folder(project, &data_folder)
         .map_err(crate::ExportError::from)?;
 
-    // 计算项目级缓存哈希，并导出高精度洋葱皮贴图到 data/image
+    // 计算项目级缓存哈希，并导出贴图瀑布流到 data/image
     let cache_hash = compute_project_cache_hash(project);
     let image_dir = data_folder.join("data").join("image");
-    let image_meta = crate::onion_skin_export::export_onion_skin_tiles(
+    let image_meta = crate::waterfall_export::export_waterfall_tiles(
         project,
         &image_dir,
         &cache_hash,
@@ -103,7 +103,7 @@ fn compute_project_cache_hash(project: &LuminoProject) -> String {
     format!("{:016x}", xxhash_rust::xxh3::xxh3_64(&hasher_input))
 }
 
-/// 从 `.lmpj` 入口文件路径读取高精度洋葱皮缓存元数据（仅文件夹入口有效）
+/// 从 `.lmpj` 入口文件路径读取贴图瀑布流缓存元数据（仅文件夹入口有效）
 pub fn load_project_image_metadata(
     entry_path: impl AsRef<Path>,
 ) -> Option<lumino_project::project::metadata::ImageMetadata> {

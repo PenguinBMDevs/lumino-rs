@@ -1,9 +1,9 @@
-use crate::types::TileCoord;
+use crate::texture_waterfall::types::WaterfallTileCoord;
 
-use super::core_impl::HiResRenderer;
-use super::uniform::HiResUniform;
+use super::core_impl::TextureWaterfallRenderer;
+use super::uniform::TextureWaterfallUniform;
 
-impl HiResRenderer {
+impl TextureWaterfallRenderer {
     /// 绘制可见贴图（在 render_pass 内调用）
     ///
     /// 基础贴图始终绘制。脏区域覆层在其之上用 Alpha 混合叠加，
@@ -13,7 +13,7 @@ impl HiResRenderer {
     pub fn render<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
-        visible_coords: &[TileCoord],
+        visible_coords: &[WaterfallTileCoord],
         render_pass_has_depth: bool,
     ) {
         render_pass.set_pipeline(self.pipeline_for(render_pass_has_depth));
@@ -31,7 +31,7 @@ impl HiResRenderer {
     pub fn prepare_dirty_overlays(
         &self,
         queue: &wgpu::Queue,
-        visible: &[(TileCoord, HiResUniform)],
+        visible: &[(WaterfallTileCoord, TextureWaterfallUniform)],
     ) {
         for (coord, uniform) in visible {
             if let Some(gpu) = self.dirty_overlays.get(coord) {
@@ -44,11 +44,11 @@ impl HiResRenderer {
     ///
     /// 利用管线 ALPHA_BLENDING：覆层中的透明像素让基础贴图透出，
     /// 不透明像素（已修改音轨）覆盖基础贴图。因删除导致的不透明像素残留
-    /// 会在 `RegenerateHiResTrack` 全轨合并后由新合并贴图替代。
+    /// 会在 `RegenerateTextureWaterfallTrack` 全轨合并后由新合并贴图替代。
     pub fn render_dirty_overlays<'a>(
         &'a self,
         render_pass: &mut wgpu::RenderPass<'a>,
-        visible_coords: &[TileCoord],
+        visible_coords: &[WaterfallTileCoord],
         render_pass_has_depth: bool,
     ) {
         render_pass.set_pipeline(self.pipeline_for(render_pass_has_depth));

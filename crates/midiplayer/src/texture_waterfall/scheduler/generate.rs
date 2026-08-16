@@ -10,18 +10,20 @@ use std::sync::mpsc::SyncSender;
 
 use tracing::warn;
 
-use crate::cache::{self, CacheMeta, cache_path};
-use crate::generate::{generate_track_tile, merge_group_tiles, merge_track_tile_into};
-use crate::scheduler::HiResProgressCallback;
-use crate::types::{GroupTile, TileCoord, TrackTile};
-use lumino_onion_skin::OnionSkinNote;
+use crate::texture_waterfall::cache::{self, WaterfallCacheMeta, waterfall_cache_path};
+use crate::texture_waterfall::generate::{
+    generate_waterfall_track_tile, merge_waterfall_group_tiles, merge_waterfall_track_tile_into,
+};
+use crate::texture_waterfall::note::WaterfallNote;
+use crate::texture_waterfall::scheduler::TextureWaterfallProgressCallback;
+use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord, WaterfallTrackTile};
 
 /// 待写入硬盘的单音轨缓存任务
 pub(super) struct CacheWriteJob {
     pub(super) cache_dir: PathBuf,
     pub(super) midi_hash: String,
-    pub(super) tile: TrackTile,
-    pub(super) meta: CacheMeta,
+    pub(super) tile: WaterfallTrackTile,
+    pub(super) meta: WaterfallCacheMeta,
 }
 
 /// 贴图生成共享上下文（替代 7 个重复参数）
@@ -44,16 +46,16 @@ pub(super) struct TileGenContext<'a> {
 /// 与共享的 `TileGenContext` 配合，将函数签名降到 7 个参数以下。
 pub(super) struct TrackGroupRequest<'a> {
     pub track_group: u32,
-    pub notes: &'a [Vec<OnionSkinNote>],
+    pub notes: &'a [Vec<WaterfallNote>],
     pub ticks_per_group: u32,
     pub time_groups: u32,
     pub completed: &'a Arc<AtomicUsize>,
     pub total_tiles: usize,
-    pub progress_cb: &'a Option<HiResProgressCallback>,
+    pub progress_cb: &'a Option<TextureWaterfallProgressCallback>,
 }
 
 /// 对每轨音符按 `start_ms` 升序排序，供后续二分剪枝使用。
-pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
+pub(super) fn sort_notes_per_track(notes: &mut [Vec<WaterfallNote>]) {
     for track in notes.iter_mut() {
         // total_cmp 对 NaN 也按 IEEE 754 totalOrder 给出稳定顺序，无需 unwrap
         track.sort_by(|a, b| a.start_ms.total_cmp(&b.start_ms));
@@ -65,20 +67,22 @@ pub(super) fn sort_notes_per_track(notes: &mut [Vec<OnionSkinNote>]) {
 /// 内部：逐轨生成单音轨贴图（缓存优先），边生成边合并到整合组缓冲，
 /// 合并后立即释放单轨贴图，避免 8 张完整尺寸贴图同时堆积在内存中。
 ///
-/// 直接写入外部 `output` 缓冲，不额外分配中间 GroupTile。
+/// 直接写入外部 `output` 缓冲，不额外分配中间 WaterfallGroupTile。
 /// `output` 长度必须为 `width × key_count × 4`，调用方负责初始化为零。
 pub(super) fn generate_one_time_group_tile_into(
     track_group: u32,
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
-    notes: &[Vec<OnionSkinNote>],
+    notes: &[Vec<WaterfallNote>],
     ctx: &TileGenContext<'_>,
     output: &mut [u8],
 ) {
-    let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
-    let track_end =
-        ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
+    let track_start =
+        (track_group * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32) as u16;
+    let track_end = ((track_group + 1)
+        * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32)
+        .min(notes.len() as u32) as u16;
 
     for track_idx in track_start..track_end {
         let tile = generate_or_load_track_tile(
@@ -89,14 +93,14 @@ pub(super) fn generate_one_time_group_tile_into(
             tick_end,
             ctx,
         );
-        merge_track_tile_into(output, &tile);
+        merge_waterfall_track_tile_into(output, &tile);
         // tile 在此作用域结束时 drop，CPU 像素缓冲立即释放
     }
 }
 
-/// 生成单个音轨组在指定 time_group 的整合组贴图（返回 owned GroupTile）
+/// 生成单个音轨组在指定 time_group 的整合组贴图（返回 owned WaterfallGroupTile）
 ///
-/// 内部分配自己的像素缓冲，适合需要返回 GroupTile 的场景（非流式路径）。
+/// 内部分配自己的像素缓冲，适合需要返回 WaterfallGroupTile 的场景（非流式路径）。
 /// 流式路径请使用 [`generate_one_time_group_tile_into`] 以避免中间分配。
 ///
 /// 当前未被直接调用，保留作为公共 API 供外部非流式场景使用。
@@ -106,14 +110,16 @@ pub(super) fn generate_one_time_group_tile(
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
-    notes: &[Vec<OnionSkinNote>],
+    notes: &[Vec<WaterfallNote>],
     ctx: &TileGenContext<'_>,
-) -> GroupTile {
-    let track_start = (track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
-    let track_end =
-        ((track_group + 1) * crate::config::TRACKS_PER_GROUP as u32).min(notes.len() as u32) as u16;
+) -> WaterfallGroupTile {
+    let track_start =
+        (track_group * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32) as u16;
+    let track_end = ((track_group + 1)
+        * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32)
+        .min(notes.len() as u32) as u16;
 
-    let coord = TileCoord::new(track_group, time_group);
+    let coord = WaterfallTileCoord::new(track_group, time_group);
     let pixel_count = (ctx.width * ctx.key_count as u32) as usize;
     let mut pixels = vec![0u8; pixel_count * 4];
 
@@ -127,7 +133,7 @@ pub(super) fn generate_one_time_group_tile(
         &mut pixels,
     );
 
-    GroupTile {
+    WaterfallGroupTile {
         coord,
         pixels,
         width: ctx.width,
@@ -142,9 +148,12 @@ pub(super) fn generate_one_time_group_tile(
 pub(super) fn generate_one_track_group(
     req: &TrackGroupRequest<'_>,
     ctx: &TileGenContext<'_>,
-) -> Vec<(TileCoord, GroupTile)> {
-    let track_start = (req.track_group * crate::config::TRACKS_PER_GROUP as u32) as u16;
-    let track_end = ((req.track_group + 1) * crate::config::TRACKS_PER_GROUP as u32)
+) -> Vec<(WaterfallTileCoord, WaterfallGroupTile)> {
+    let track_start = (req.track_group
+        * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32)
+        as u16;
+    let track_end = ((req.track_group + 1)
+        * crate::texture_waterfall::config::WATERFALL_TRACKS_PER_GROUP as u32)
         .min(req.notes.len() as u32) as u16;
     let mut group_tiles = Vec::with_capacity(req.time_groups as usize);
 
@@ -167,8 +176,8 @@ pub(super) fn generate_one_track_group(
         }
 
         // 合并为整合组贴图（后轨覆盖前轨重叠区）
-        let coord = TileCoord::new(req.track_group, time_group);
-        let group_tile = merge_group_tiles(
+        let coord = WaterfallTileCoord::new(req.track_group, time_group);
+        let group_tile = merge_waterfall_group_tiles(
             &track_tiles,
             coord,
             tick_start,
@@ -183,7 +192,7 @@ pub(super) fn generate_one_track_group(
         let done = req.completed.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cb) = req.progress_cb {
             let pct = done as f32 / req.total_tiles as f32;
-            cb(&format!("高精度贴图 {}/{}", done, req.total_tiles), pct);
+            cb(&format!("贴图瀑布流 {}/{}", done, req.total_tiles), pct);
         }
     }
 
@@ -192,14 +201,14 @@ pub(super) fn generate_one_track_group(
 
 /// 生成或从缓存加载单音轨贴图
 pub(super) fn generate_or_load_track_tile(
-    notes: &[OnionSkinNote],
+    notes: &[WaterfallNote],
     track_idx: u16,
     time_group: u32,
     tick_start: u32,
     tick_end: u32,
     ctx: &TileGenContext<'_>,
-) -> TrackTile {
-    let expected_meta = CacheMeta {
+) -> WaterfallTrackTile {
+    let expected_meta = WaterfallCacheMeta {
         track_idx,
         time_group,
         width: ctx.width,
@@ -212,7 +221,7 @@ pub(super) fn generate_or_load_track_tile(
     };
 
     // 先查缓存
-    match cache::read_track_tile_cache(
+    match cache::read_waterfall_track_tile_cache(
         ctx.cache_dir,
         ctx.midi_hash,
         track_idx,
@@ -223,13 +232,13 @@ pub(super) fn generate_or_load_track_tile(
         Ok(None) => {}                 // 缓存未命中，生成
         Err(e) => {
             warn!("缓存读取失败（将重生成）: {e}");
-            let path = cache_path(ctx.cache_dir, ctx.midi_hash, track_idx, time_group);
+            let path = waterfall_cache_path(ctx.cache_dir, ctx.midi_hash, track_idx, time_group);
             let _ = std::fs::remove_file(path);
         }
     }
 
     // 生成单音轨贴图
-    let tile = generate_track_tile(
+    let tile = generate_waterfall_track_tile(
         notes,
         track_idx,
         time_group,
@@ -243,7 +252,7 @@ pub(super) fn generate_or_load_track_tile(
     // 使用有界 channel + try_send：队列满时直接丢弃缓存任务，避免无界堆积导致 OOM。
     // 缓存是性能优化，跳过不影响生成正确性。
     //
-    // ★ TrackTile.pixels 已改为 Arc<Vec<u8>>，tile.clone() 仅增加引用计数，
+    // ★ WaterfallTrackTile.pixels 已改为 Arc<Vec<u8>>，tile.clone() 仅增加引用计数，
     // 不再复制整张贴图像素，显著降低大 MIDI 场景下缓存队列的内存峰值。
     match ctx.cache_tx.try_send(CacheWriteJob {
         cache_dir: ctx.cache_dir.to_path_buf(),
@@ -257,9 +266,12 @@ pub(super) fn generate_or_load_track_tile(
         }
         Err(std::sync::mpsc::TrySendError::Disconnected(job)) => {
             warn!("缓存写入通道已关闭，退化同步写入");
-            if let Err(e) =
-                cache::write_track_tile_cache(&job.cache_dir, &job.midi_hash, &job.tile, &job.meta)
-            {
+            if let Err(e) = cache::write_waterfall_track_tile_cache(
+                &job.cache_dir,
+                &job.midi_hash,
+                &job.tile,
+                &job.meta,
+            ) {
                 warn!("缓存同步写入失败（不影响生成）: {e}");
             }
         }

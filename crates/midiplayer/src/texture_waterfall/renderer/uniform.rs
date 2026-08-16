@@ -3,7 +3,7 @@ use bytemuck::{Pod, Zeroable};
 /// 每张贴图的 uniform（32 字节，满足 16 字节对齐）
 #[repr(C)]
 #[derive(Clone, Copy, Pod, Zeroable)]
-pub struct HiResUniform {
+pub struct TextureWaterfallUniform {
     /// area 矩形在 framebuffer 中的 X（左上角）
     pub area_x: f32,
     /// area 矩形在 framebuffer 中的 Y（左上角）
@@ -20,7 +20,7 @@ pub struct HiResUniform {
     _pad1: f32,
 }
 
-impl HiResUniform {
+impl TextureWaterfallUniform {
     pub fn new(
         area_x: f32,
         area_y: f32,

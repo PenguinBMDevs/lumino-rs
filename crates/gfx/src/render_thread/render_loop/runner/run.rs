@@ -36,8 +36,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut current_size = (0, 0);
     let mut last_note_version: u64 = 0;
 
-    // 高精度洋葱皮渲染器状态
-    let mut hires_renderer: Option<crate::HiResRenderer> = None;
+    // 高精度贴图瀑布流渲染器状态
+    let mut hires_renderer: Option<crate::TextureWaterfallRenderer> = None;
     let mut hires_meta = None;
     let mut hires_config = None;
     let mut deferred: Vec<ControlCommand> = Vec::new();
@@ -50,9 +50,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut waterfall_renderer: Option<crate::WaterfallRenderer> = None;
     let mut miditrail_renderer: Option<crate::MiditrailRenderer> = None;
 
-    // 洋葱皮流式上传状态：true 表示正在接收 chunk（已 begin_streaming_upload）
+    // 贴图瀑布流流式上传状态：true 表示正在接收 chunk（已 begin_streaming_upload）
     let mut onion_skin_streaming_in_progress = false;
-    // 洋葱皮 GPU 布局段表（全量会话构建，增量替换时更新）
+    // 贴图瀑布流 GPU 布局段表（全量会话构建，增量替换时更新）
     let mut onion_segments: Vec<OnionSegment> = Vec::new();
 
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
@@ -110,7 +110,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             &channels.onion_progress,
         );
 
-        // ★ 洋葱皮流式上传：drain channel，逐块 streaming_append 到 GPU ★
+        // ★ 贴图瀑布流流式上传：drain channel，逐块 streaming_append 到 GPU ★
         // UI 线程分块构建 NoteInstance（每块 ≤ 800 万实例 = 128 MB），通过 sync_channel(3) 传输。
         // 消息协议（事件级增量 2026-08-05）：
         // - Chunk{track_id}：全量会话数据块，按到达顺序构建段表（同轨续写、异轨新段）
@@ -251,7 +251,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     tracing::info!("Render thread stopped");
 }
 
-/// 处理延迟队列中的控制命令（视频导出 / 高精度贴图 / HiRes 控制）。
+/// 处理延迟队列中的控制命令（视频导出 / 贴图瀑布流 / HiRes 控制）。
 fn process_deferred_commands(
     context: &mut DeferredCommandContext<'_>,
     deferred: &mut Vec<ControlCommand>,

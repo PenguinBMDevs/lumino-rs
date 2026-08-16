@@ -1,11 +1,11 @@
-//! 高精度贴图系统端到端集成测试
+//! 贴图瀑布流端到端集成测试
 //!
 //! 验证 generate → cache → merge 完整流程，跨模块串联。
 
-use lumino_onion_skin::OnionSkinNote;
-use lumino_midiplayer::{
-    CacheMeta, HiResConfig, TileCoord, compute_midi_hash, generate_track_tile, merge_group_tiles,
-    read_track_tile_cache, write_track_tile_cache,
+use lumino_midiplayer::texture_waterfall::{
+    TextureWaterfallConfig, WaterfallCacheMeta, WaterfallNote, WaterfallTileCoord,
+    compute_waterfall_cache_hash, generate_waterfall_track_tile, merge_waterfall_group_tiles,
+    read_waterfall_track_tile_cache, write_waterfall_track_tile_cache,
 };
 use std::path::PathBuf;
 
@@ -15,8 +15,8 @@ const PPQ: u16 = 1920;
 /// 4 小节 × ppq × 4 = 30720 tick
 const TICKS_PER_GROUP: u32 = 30720;
 
-fn note(start: u32, end: u32, key: u8, color: [u8; 4]) -> OnionSkinNote {
-    OnionSkinNote::from_ms(start as f32, end as f32, key, color)
+fn note(start: u32, end: u32, key: u8, color: [u8; 4]) -> WaterfallNote {
+    WaterfallNote::from_ms(start as f32, end as f32, key, color)
 }
 
 fn test_cache_dir() -> PathBuf {
@@ -24,7 +24,7 @@ fn test_cache_dir() -> PathBuf {
     static COUNTER: AtomicU64 = AtomicU64::new(0);
     let id = COUNTER.fetch_add(1, Ordering::SeqCst);
     let dir = std::env::temp_dir()
-        .join("lumino-onion-hires-integ")
+        .join("lumino-midiplayer-integ")
         .join(format!("{}-{id}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     dir
@@ -33,20 +33,20 @@ fn test_cache_dir() -> PathBuf {
 #[test]
 fn test_generate_cache_roundtrip() {
     let dir = test_cache_dir();
-    let cfg = HiResConfig::default();
-    let hash = compute_midi_hash(b"integration-test-midi");
+    let cfg = TextureWaterfallConfig::default();
+    let hash = compute_waterfall_cache_hash(b"integration-test-midi");
     let notes = vec![
         note(0, 15360, 60, [255, 0, 0, 255]),
         note(15360, 30720, 64, [0, 255, 0, 255]),
     ];
 
     // 生成单音轨贴图
-    let tile = generate_track_tile(&notes, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
-    let meta = CacheMeta::from_tile(&tile, KEYS, PPQ, cfg.measures_per_group);
+    let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let meta = WaterfallCacheMeta::from_tile(&tile, KEYS, PPQ, cfg.measures_per_group);
 
     // 写缓存 → 读缓存 → 像素一致
-    write_track_tile_cache(&dir, &hash, &tile, &meta).expect("写缓存应成功");
-    let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta)
+    write_waterfall_track_tile_cache(&dir, &hash, &tile, &meta).expect("写缓存应成功");
+    let read = read_waterfall_track_tile_cache(&dir, &hash, 0, 0, &meta)
         .expect("读缓存应返回 Ok")
         .expect("缓存应存在");
     assert_eq!(*read.pixels, *tile.pixels);
@@ -66,13 +66,13 @@ fn test_generate_merge_full_pipeline() {
     let track1 = vec![note(0, 15360, 61, [0, 255, 0, 255])];
     let track2 = vec![note(15360, 30720, 60, [0, 0, 255, 255])];
 
-    let t0 = generate_track_tile(&track0, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
-    let t1 = generate_track_tile(&track1, 1, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
-    let t2 = generate_track_tile(&track2, 2, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let t0 = generate_waterfall_track_tile(&track0, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let t1 = generate_waterfall_track_tile(&track1, 1, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let t2 = generate_waterfall_track_tile(&track2, 2, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
 
-    let group = merge_group_tiles(
+    let group = merge_waterfall_group_tiles(
         &[t0, t1, t2],
-        TileCoord::new(0, 0),
+        WaterfallTileCoord::new(0, 0),
         0,
         TICKS_PER_GROUP,
         WIDTH,
@@ -104,20 +104,21 @@ fn test_generate_merge_full_pipeline() {
 #[test]
 fn test_cache_invalidation_on_spec_change() {
     let dir = test_cache_dir();
-    let hash = compute_midi_hash(b"spec-change-test");
+    let hash = compute_waterfall_cache_hash(b"spec-change-test");
     let notes = vec![note(0, 100, 60, [255, 0, 0, 255])];
 
-    let tile = generate_track_tile(&notes, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
-    let meta = CacheMeta::from_tile(&tile, KEYS, PPQ, 4);
-    write_track_tile_cache(&dir, &hash, &tile, &meta).expect("写缓存应成功");
+    let tile = generate_waterfall_track_tile(&notes, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let meta = WaterfallCacheMeta::from_tile(&tile, KEYS, PPQ, 4);
+    write_waterfall_track_tile_cache(&dir, &hash, &tile, &meta).expect("写缓存应成功");
 
     // 用不同 ppq 读 → 规格失效
-    let wrong_meta = CacheMeta { ppq: 480, ..meta };
-    let result = read_track_tile_cache(&dir, &hash, 0, 0, &wrong_meta);
+    let wrong_meta = WaterfallCacheMeta { ppq: 480, ..meta };
+    let result = read_waterfall_track_tile_cache(&dir, &hash, 0, 0, &wrong_meta);
     assert!(result.is_err());
 
     // 原规格仍可读
-    let read = read_track_tile_cache(&dir, &hash, 0, 0, &meta).expect("读原规格缓存应成功");
+    let read =
+        read_waterfall_track_tile_cache(&dir, &hash, 0, 0, &meta).expect("读原规格缓存应成功");
     assert!(read.is_some());
 
     let _ = std::fs::remove_dir_all(&dir);
@@ -126,16 +127,16 @@ fn test_cache_invalidation_on_spec_change() {
 #[test]
 fn test_multi_time_group_layout() {
     // 验证多个时间组的贴图矩阵：音轨 0 在组 0 和组 1 各有音符
-    let cfg = HiResConfig::default();
-    let hash = compute_midi_hash(b"multi-group");
+    let cfg = TextureWaterfallConfig::default();
+    let hash = compute_waterfall_cache_hash(b"multi-group");
     let dir = test_cache_dir();
 
     // 组0 [0, 30720)，组1 [30720, 61440)
     let notes_group0 = vec![note(0, 15360, 60, [255, 0, 0, 255])];
     let notes_group1 = vec![note(40000, 50000, 64, [0, 0, 255, 255])];
 
-    let tile0 = generate_track_tile(&notes_group0, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
-    let tile1 = generate_track_tile(
+    let tile0 = generate_waterfall_track_tile(&notes_group0, 0, 0, 0, TICKS_PER_GROUP, WIDTH, KEYS);
+    let tile1 = generate_waterfall_track_tile(
         &notes_group1,
         0,
         1,
@@ -146,16 +147,16 @@ fn test_multi_time_group_layout() {
     );
 
     // 分别写缓存
-    let meta0 = CacheMeta::from_tile(&tile0, KEYS, PPQ, cfg.measures_per_group);
-    let meta1 = CacheMeta::from_tile(&tile1, KEYS, PPQ, cfg.measures_per_group);
-    write_track_tile_cache(&dir, &hash, &tile0, &meta0).expect("写 tile0 缓存应成功");
-    write_track_tile_cache(&dir, &hash, &tile1, &meta1).expect("写 tile1 缓存应成功");
+    let meta0 = WaterfallCacheMeta::from_tile(&tile0, KEYS, PPQ, cfg.measures_per_group);
+    let meta1 = WaterfallCacheMeta::from_tile(&tile1, KEYS, PPQ, cfg.measures_per_group);
+    write_waterfall_track_tile_cache(&dir, &hash, &tile0, &meta0).expect("写 tile0 缓存应成功");
+    write_waterfall_track_tile_cache(&dir, &hash, &tile1, &meta1).expect("写 tile1 缓存应成功");
 
     // 分别读缓存
-    let read0 = read_track_tile_cache(&dir, &hash, 0, 0, &meta0)
+    let read0 = read_waterfall_track_tile_cache(&dir, &hash, 0, 0, &meta0)
         .expect("读 tile0 缓存应返回 Ok")
         .expect("tile0 缓存应存在");
-    let read1 = read_track_tile_cache(&dir, &hash, 0, 1, &meta1)
+    let read1 = read_waterfall_track_tile_cache(&dir, &hash, 0, 1, &meta1)
         .expect("读 tile1 缓存应返回 Ok")
         .expect("tile1 缓存应存在");
 

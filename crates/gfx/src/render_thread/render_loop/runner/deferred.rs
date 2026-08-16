@@ -6,7 +6,7 @@ use super::context::{
 use super::hires::{handle_hires_control, upload_hires_video_tiles_command};
 use super::video_export::{render_video_frame_command, start_video_export};
 
-/// 处理单个延迟控制命令（视频导出 / 高精度贴图 / HiRes 控制）。
+/// 处理单个延迟控制命令（视频导出 / 贴图瀑布流 / HiRes 控制）。
 pub(super) fn handle_deferred_command(
     cmd: ControlCommand,
     context: &mut DeferredCommandContext<'_>,

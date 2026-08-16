@@ -4,14 +4,14 @@ use std::time::{Duration, Instant};
 use super::super::params::RenderParams;
 use super::super::stats::RenderStats;
 use super::runner::context::{RenderContext, RenderFrameState};
-use crate::{CameraParams, CameraUniform, TileCoord};
+use crate::{CameraParams, CameraUniform, WaterfallTileCoord};
 
 /// 执行渲染通道（含走带/钢琴卷帘/CC 柱状条）
 pub fn execute_render_pass(
     encoder: &mut wgpu::CommandEncoder,
     ctx: &RenderContext,
     params: &RenderParams,
-    hires_visible_coords: &[TileCoord],
+    hires_visible_coords: &[WaterfallTileCoord],
     render_notes: bool,
     frame: &mut RenderFrameState,
 ) {
@@ -100,7 +100,7 @@ pub fn execute_render_pass(
         .renderers
         .note
         .prepare_pass(encoder, camera, &ctx.queue);
-    // 洋葱皮 compute cull（每帧，与主音轨共享同一 camera）
+    // 贴图瀑布流 compute cull（每帧，与主音轨共享同一 camera）
     frame
         .renderers
         .onion_skin
@@ -137,7 +137,7 @@ pub fn execute_render_pass(
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         frame.renderers.grid.draw(&mut render_pass, 1);
 
-        // 绘制洋葱皮（不透明背景层，网格之上、主音轨之前）
+        // 绘制贴图瀑布流（不透明背景层，网格之上、主音轨之前）
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         let onion_has_instances = frame.renderers.onion_skin.last_upload_count() > 0;
         frame
@@ -145,7 +145,7 @@ pub fn execute_render_pass(
             .onion_skin
             .draw(&mut render_pass, onion_has_instances, None);
 
-        // 绘制高精度洋葱皮贴图（网格之上、低精度洋葱皮之下，半透明叠加）
+        // 绘制贴图瀑布流（网格之上、低精度贴图瀑布流之下，半透明叠加）
         if let Some(hires) = frame.hires_renderer.as_ref() {
             let has_depth = depth_view.is_some();
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);

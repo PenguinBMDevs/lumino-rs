@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 
 /// 编辑区域的坐标标识
 ///
-/// 对应 onion-skin-hires 的 TileCoord 概念：
+/// 对应 lumino-midiplayer 贴图瀑布流的 WaterfallTileCoord 概念：
 /// - `track_group`：音轨组（每 8 轨一组）
 /// - `time_group`：时间组（每 N 小节一组）
 /// - 单个区域内只比较该区域的增量，不扫描全音轨

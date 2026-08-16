@@ -1,25 +1,25 @@
 use std::collections::{HashMap, VecDeque};
 
-use crate::config::HiResConfig;
-use crate::types::TileCoord;
+use crate::texture_waterfall::config::TextureWaterfallConfig;
+use crate::texture_waterfall::types::WaterfallTileCoord;
 
 use super::texture::TileGpuResource;
-use super::uniform::HiResUniform;
+use super::uniform::TextureWaterfallUniform;
 
 /// 着色器源码
-const SHADER_SOURCE: &str = include_str!("../shaders/hires_tile.wgsl");
+const SHADER_SOURCE: &str = include_str!("../shaders/texture_waterfall.wgsl");
 
-/// 高精度贴图渲染器
-pub struct HiResRenderer {
+/// 贴图瀑布流渲染器
+pub struct TextureWaterfallRenderer {
     pub(super) pipeline: wgpu::RenderPipeline,
     /// 视频导出等无 depth attachment 的 RenderPass 使用的管线
     pub(super) pipeline_no_depth: wgpu::RenderPipeline,
     pub(super) bind_group_layout: wgpu::BindGroupLayout,
     pub(super) sampler: wgpu::Sampler,
-    /// 已上传的贴图纹理（TileCoord → GPU 资源）
-    pub(super) tiles: HashMap<TileCoord, TileGpuResource>,
+    /// 已上传的贴图纹理（WaterfallTileCoord → GPU 资源）
+    pub(super) tiles: HashMap<WaterfallTileCoord, TileGpuResource>,
     /// 编辑后的临时脏区域贴图覆层（叠加在正常贴图之上）
-    pub(super) dirty_overlays: HashMap<TileCoord, TileGpuResource>,
+    pub(super) dirty_overlays: HashMap<WaterfallTileCoord, TileGpuResource>,
     /// GPU 显存占用（字节）
     pub(super) gpu_mem_used: usize,
     /// 配置（含显存上限等）
@@ -27,20 +27,20 @@ pub struct HiResRenderer {
     /// 用户硬约束：不得限制 GPU 内存使用——gpu_mem_limit() 已改为返回 usize::MAX，
     /// config 不再用于显存限制决策，保留字段用于其他配置项（tile_width_px 等）的潜在读取。
     #[allow(dead_code)]
-    pub(super) config: HiResConfig,
+    pub(super) config: TextureWaterfallConfig,
     /// 贴图上传顺序（用于 FIFO 逐出，最早上传的先被逐出）
-    tile_order: VecDeque<TileCoord>,
+    tile_order: VecDeque<WaterfallTileCoord>,
 }
 
-impl HiResRenderer {
+impl TextureWaterfallRenderer {
     /// 创建渲染器（pipeline + sampler + layout）
     pub fn new(
         device: &wgpu::Device,
-        config: HiResConfig,
+        config: TextureWaterfallConfig,
         texture_format: wgpu::TextureFormat,
     ) -> Self {
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
-            label: Some("hires_tile_sampler"),
+            label: Some("texture_waterfall_sampler"),
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
@@ -51,7 +51,7 @@ impl HiResRenderer {
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            label: Some("hires_tile_bind_group_layout"),
+            label: Some("texture_waterfall_bind_group_layout"),
             entries: &[
                 wgpu::BindGroupLayoutEntry {
                     binding: 0,
@@ -106,18 +106,18 @@ impl HiResRenderer {
         needs_depth: bool,
     ) -> wgpu::RenderPipeline {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("hires_tile_shader"),
+            label: Some("texture_waterfall_shader"),
             source: wgpu::ShaderSource::Wgsl(SHADER_SOURCE.into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("hires_tile_pipeline_layout"),
+            label: Some("texture_waterfall_pipeline_layout"),
             bind_group_layouts: &[layout],
             push_constant_ranges: &[],
         });
 
         device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("hires_tile_pipeline"),
+            label: Some("texture_waterfall_pipeline"),
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &shader,
@@ -154,7 +154,7 @@ impl HiResRenderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        coord: TileCoord,
+        coord: WaterfallTileCoord,
         pixels: &[u8],
         width: u32,
         height: u32,
@@ -163,16 +163,16 @@ impl HiResRenderer {
         if self.tiles.contains_key(&coord) {
             self.remove_tile(&coord);
         }
-        // 注意：不移除 dirty_overlays！这是有意为之——后台流式接收（GenerateHiResOnionSkin
-        // 或 RegenerateHiResTrack）与 ShowHiResDirtyOverlay 在同一帧循环中先后执行，
+        // 注意：不移除 dirty_overlays！这是有意为之——后台流式接收（GenerateTextureWaterfall
+        // 或 RegenerateTextureWaterfallTrack）与 ShowTextureWaterfallDirtyOverlay 在同一帧循环中先后执行，
         // 若在此处清除覆层，新上传的覆盖层会在同一帧被后台贴图流误清除，导致用户
         // 永远看不到临时脏区域覆层。脏覆层在 upload_dirty_overlay 替换同坐标覆层时
-        // 自然清理，或在 dispose_hires_onion_skin 全量释放。
+        // 自然清理，或在 dispose_TextureWaterfall_onion_skin 全量释放。
 
         let byte_size = pixels.len();
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("hires_tile_{coord:?}")),
+            label: Some(&format!("texture_waterfall_{coord:?}")),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -209,14 +209,14 @@ impl HiResRenderer {
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("hires_tile_uniform"),
-            size: std::mem::size_of::<HiResUniform>() as wgpu::BufferAddress,
+            label: Some("texture_waterfall_uniform"),
+            size: std::mem::size_of::<TextureWaterfallUniform>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hires_tile_bind_group"),
+            label: Some("texture_waterfall_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -247,11 +247,11 @@ impl HiResRenderer {
         self.gpu_mem_used += byte_size;
         self.tile_order.push_back(coord);
         // 用户硬约束：不得限制 GPU 内存使用——删除 evict_if_over_limit 淘汰逻辑，
-        // 所有上传的贴图常驻 GPU 显存，避免滚动到已淘汰时段时洋葱皮音符消失。
+        // 所有上传的贴图常驻 GPU 显存，避免滚动到已淘汰时段时贴图瀑布流音符消失。
     }
 
     /// 移除一张贴图（释放显存）
-    pub fn remove_tile(&mut self, coord: &TileCoord) {
+    pub fn remove_tile(&mut self, coord: &WaterfallTileCoord) {
         if let Some(gpu) = self.tiles.remove(coord) {
             self.gpu_mem_used = self.gpu_mem_used.saturating_sub(gpu.byte_size);
         }
@@ -277,7 +277,7 @@ impl HiResRenderer {
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        coord: TileCoord,
+        coord: WaterfallTileCoord,
         pixels: &[u8],
         width: u32,
         height: u32,
@@ -288,7 +288,7 @@ impl HiResRenderer {
 
         let byte_size = pixels.len();
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some(&format!("hires_dirty_overlay_{coord:?}")),
+            label: Some(&format!("TextureWaterfall_dirty_overlay_{coord:?}")),
             size: wgpu::Extent3d {
                 width,
                 height,
@@ -324,13 +324,13 @@ impl HiResRenderer {
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("hires_dirty_overlay_uniform"),
-            size: std::mem::size_of::<HiResUniform>() as wgpu::BufferAddress,
+            label: Some("TextureWaterfall_dirty_overlay_uniform"),
+            size: std::mem::size_of::<TextureWaterfallUniform>() as wgpu::BufferAddress,
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("hires_dirty_overlay_bind_group"),
+            label: Some("TextureWaterfall_dirty_overlay_bind_group"),
             layout: &self.bind_group_layout,
             entries: &[
                 wgpu::BindGroupEntry {
@@ -362,7 +362,11 @@ impl HiResRenderer {
     }
 
     /// 准备可见贴图的 uniform（在 render_pass 开始前调用）
-    pub fn prepare(&self, queue: &wgpu::Queue, visible: &[(TileCoord, HiResUniform)]) {
+    pub fn prepare(
+        &self,
+        queue: &wgpu::Queue,
+        visible: &[(WaterfallTileCoord, TextureWaterfallUniform)],
+    ) {
         for (coord, uniform) in visible {
             if let Some(gpu) = self.tiles.get(coord) {
                 queue.write_buffer(&gpu.uniform_buffer, 0, bytemuck::bytes_of(uniform));
@@ -371,17 +375,17 @@ impl HiResRenderer {
     }
 
     /// 检查贴图是否已上传
-    pub fn has_tile(&self, coord: &TileCoord) -> bool {
+    pub fn has_tile(&self, coord: &WaterfallTileCoord) -> bool {
         self.tiles.contains_key(coord)
     }
 
     /// 检查临时脏区域覆层是否已上传
-    pub fn has_dirty_overlay(&self, coord: &TileCoord) -> bool {
+    pub fn has_dirty_overlay(&self, coord: &WaterfallTileCoord) -> bool {
         self.dirty_overlays.contains_key(coord)
     }
 
     /// 检查贴图或临时脏区域覆层是否已上传
-    pub fn has_tile_or_dirty_overlay(&self, coord: &TileCoord) -> bool {
+    pub fn has_tile_or_dirty_overlay(&self, coord: &WaterfallTileCoord) -> bool {
         self.tiles.contains_key(coord) || self.dirty_overlays.contains_key(coord)
     }
 
