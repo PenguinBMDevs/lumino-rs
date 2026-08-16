@@ -240,7 +240,7 @@ impl RunnerInner {
         tracing::info!("工程保存完成，路径已记录：{:?}", path);
 
         // 底边栏显示"文件已经保存"，3 秒后自动恢复"就绪"
-        let language = self.window_state.window.ui().settings().language;
+        let language = self.window_state.window.ui().settings().display.language;
         let saved_msg = lumino_extras::i18n::main_translations(language)
             .status_file_saved
             .to_string();
@@ -262,7 +262,7 @@ impl RunnerInner {
     /// 保存失败：底边栏提示错误原因（3 秒后自动恢复）
     fn handle_save_failed(&mut self, msg: String) {
         tracing::error!("保存失败：{msg}");
-        let language = self.window_state.window.ui().settings().language;
+        let language = self.window_state.window.ui().settings().display.language;
         let fail_msg = format!(
             "{}：{msg}",
             lumino_extras::i18n::main_translations(language).status_save_failed

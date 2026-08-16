@@ -4,6 +4,23 @@
 //! 但事件层不依赖导出实现层（依赖方向：export < event），故在此独立定义，
 //! 由 runner 做 1:1 映射到导出层枚举。
 
+/// 生成 unit-variant 枚举的 `FromStr` 实现（收敛手写样板，别名表与错误消息保留）。
+///
+/// `$err_fmt` 为错误消息格式串，支持 `{input}` 占位（与原手写实现一致）。
+macro_rules! impl_unit_enum_from_str {
+    ($ty:ident, $err_fmt:literal, { $($variant:ident => [$($alias:literal),+ $(,)?]),+ $(,)? }) => {
+        impl std::str::FromStr for $ty {
+            type Err = String;
+            fn from_str(input: &str) -> Result<Self, Self::Err> {
+                match input {
+                    $($($alias => Ok($ty::$variant),)+)*
+                    _ => Err(format!($err_fmt, input = input)),
+                }
+            }
+        }
+    };
+}
+
 /// 输出容器格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Container {
@@ -14,18 +31,12 @@ pub enum Container {
     Avi,
 }
 
-impl std::str::FromStr for Container {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "MP4" => Ok(Container::Mp4),
-            "MOV" => Ok(Container::Mov),
-            "MKV" => Ok(Container::Mkv),
-            "AVI" => Ok(Container::Avi),
-            _ => Err(format!("未知容器格式: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(Container, "未知容器格式: {input}", {
+    Mp4 => ["MP4"],
+    Mov => ["MOV"],
+    Mkv => ["MKV"],
+    Avi => ["AVI"],
+});
 
 /// 视频编码器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -38,19 +49,13 @@ pub enum VideoCodec {
     Av1,
 }
 
-impl std::str::FromStr for VideoCodec {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "H.264" => Ok(VideoCodec::H264),
-            "H.265 / HEVC" => Ok(VideoCodec::H265),
-            "ProRes" => Ok(VideoCodec::ProRes),
-            "VP9" => Ok(VideoCodec::Vp9),
-            "AV1" => Ok(VideoCodec::Av1),
-            _ => Err(format!("未知视频编码器: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(VideoCodec, "未知视频编码器: {input}", {
+    H264 => ["H.264"],
+    H265 => ["H.265 / HEVC"],
+    ProRes => ["ProRes"],
+    Vp9 => ["VP9"],
+    Av1 => ["AV1"],
+});
 
 /// 硬件加速后端。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -64,20 +69,14 @@ pub enum EncoderBackend {
     Vaapi,
 }
 
-impl std::str::FromStr for EncoderBackend {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "Software (CPU)" => Ok(EncoderBackend::Software),
-            "VideoToolbox (macOS)" => Ok(EncoderBackend::VideoToolbox),
-            "NVENC (NVIDIA)" => Ok(EncoderBackend::Nvenc),
-            "AMF (AMD)" => Ok(EncoderBackend::Amf),
-            "QSV (Intel)" => Ok(EncoderBackend::Qsv),
-            "VAAPI (Linux)" => Ok(EncoderBackend::Vaapi),
-            _ => Err(format!("未知编码后端: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(EncoderBackend, "未知编码后端: {input}", {
+    Software => ["Software (CPU)"],
+    VideoToolbox => ["VideoToolbox (macOS)"],
+    Nvenc => ["NVENC (NVIDIA)"],
+    Amf => ["AMF (AMD)"],
+    Qsv => ["QSV (Intel)"],
+    Vaapi => ["VAAPI (Linux)"],
+});
 
 /// 质量预设。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -88,17 +87,11 @@ pub enum QualityPreset {
     Low,
 }
 
-impl std::str::FromStr for QualityPreset {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "高" => Ok(QualityPreset::High),
-            "中" => Ok(QualityPreset::Medium),
-            "低" => Ok(QualityPreset::Low),
-            _ => Err(format!("未知质量预设: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(QualityPreset, "未知质量预设: {input}", {
+    High => ["高"],
+    Medium => ["中"],
+    Low => ["低"],
+});
 
 /// 视频导出渲染模式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -141,19 +134,13 @@ impl std::fmt::Display for RenderMode {
     }
 }
 
-impl std::str::FromStr for RenderMode {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "waterfall" | "瀑布流" | "Lumino瀑布流" => Ok(RenderMode::Waterfall),
-            "note_rectangle" | "音符矩形" => Ok(RenderMode::NoteRectangle),
-            "miditrail" | "MIDITrail" => Ok(RenderMode::MIDITrail),
-            "note_counter" | "计数器" | "NoteCounter" => Ok(RenderMode::NoteCounter),
-            "data_curve" | "数据曲线" | "DataCurve" => Ok(RenderMode::DataCurve),
-            _ => Err(format!("未知渲染模式: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(RenderMode, "未知渲染模式: {input}", {
+    Waterfall => ["waterfall", "瀑布流", "Lumino瀑布流"],
+    NoteRectangle => ["note_rectangle", "音符矩形"],
+    MIDITrail => ["miditrail", "MIDITrail"],
+    NoteCounter => ["note_counter", "计数器", "NoteCounter"],
+    DataCurve => ["data_curve", "数据曲线", "DataCurve"],
+});
 
 /// 数据曲线模式的数据来源指标。
 ///
@@ -195,18 +182,12 @@ impl std::fmt::Display for DataCurveMetric {
     }
 }
 
-impl std::str::FromStr for DataCurveMetric {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "nps" | "NPS" | "NPS（每秒音符数）" => Ok(DataCurveMetric::Nps),
-            "polyphony" | "复音数" => Ok(DataCurveMetric::Polyphony),
-            "note_count" | "累计音符数" => Ok(DataCurveMetric::NoteCount),
-            "bpm" | "BPM" | "BPM（速度）" => Ok(DataCurveMetric::Bpm),
-            _ => Err(format!("未知数据曲线指标: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(DataCurveMetric, "未知数据曲线指标: {input}", {
+    Nps => ["nps", "NPS", "NPS（每秒音符数）"],
+    Polyphony => ["polyphony", "复音数"],
+    NoteCount => ["note_count", "累计音符数"],
+    Bpm => ["bpm", "BPM", "BPM（速度）"],
+});
 
 /// 计数器文本对齐方式（参考 Zenith-MIDI NoteCountRender 的六种对齐）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -253,20 +234,14 @@ impl std::fmt::Display for CounterAlignment {
     }
 }
 
-impl std::str::FromStr for CounterAlignment {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "top_left" | "左上" => Ok(CounterAlignment::TopLeft),
-            "top_right" | "右上" => Ok(CounterAlignment::TopRight),
-            "bottom_left" | "左下" => Ok(CounterAlignment::BottomLeft),
-            "bottom_right" | "右下" => Ok(CounterAlignment::BottomRight),
-            "top_spread" | "顶部分散" => Ok(CounterAlignment::TopSpread),
-            "bottom_spread" | "底部分散" => Ok(CounterAlignment::BottomSpread),
-            _ => Err(format!("未知对齐方式: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(CounterAlignment, "未知对齐方式: {input}", {
+    TopLeft => ["top_left", "左上"],
+    TopRight => ["top_right", "右上"],
+    BottomLeft => ["bottom_left", "左下"],
+    BottomRight => ["bottom_right", "右下"],
+    TopSpread => ["top_spread", "顶部分散"],
+    BottomSpread => ["bottom_spread", "底部分散"],
+});
 
 /// 千分位分隔符。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -296,16 +271,10 @@ impl std::fmt::Display for CounterSeparator {
     }
 }
 
-impl std::str::FromStr for CounterSeparator {
-    type Err = String;
-    fn from_str(input: &str) -> Result<Self, Self::Err> {
-        match input {
-            "comma" | "逗号" => Ok(CounterSeparator::Comma),
-            "nothing" | "无" => Ok(CounterSeparator::Nothing),
-            _ => Err(format!("未知千分位分隔符: {input}")),
-        }
-    }
-}
+impl_unit_enum_from_str!(CounterSeparator, "未知千分位分隔符: {input}", {
+    Comma => ["comma", "逗号"],
+    Nothing => ["nothing", "无"],
+});
 
 /// 计数器文本字体来源。
 ///

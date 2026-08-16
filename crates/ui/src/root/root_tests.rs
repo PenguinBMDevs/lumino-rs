@@ -177,7 +177,7 @@ fn test_speed_change_button_always_enabled_in_view() {
     let _element = root.toolbar.toolbar_view(
         &root.window,
         true,
-        root.settings.language,
+        root.settings.display.language,
         &perf_ctx,
         1920.0,
         false,
@@ -187,7 +187,7 @@ fn test_speed_change_button_always_enabled_in_view() {
     let _element = root.toolbar.toolbar_view(
         &root.window,
         false,
-        root.settings.language,
+        root.settings.display.language,
         &perf_ctx,
         1920.0,
         false,

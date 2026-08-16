@@ -4,6 +4,30 @@ use lumino_note_core::automation::{AutomationEdit, AutomationTarget, SegmentShap
 
 use super::EditorData;
 
+/// 在 track 0 添加 CC7 事件（tick=100, value=64, Step 形状）——测试常用种子。
+fn seed_cc(data: &mut EditorData) {
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::CC { controller: 7 },
+        channel: 0,
+        tick: 100,
+        value: 64,
+        shape: SegmentShape::Step,
+    });
+}
+
+/// 在 track 0 添加 PitchBend 事件（Curve 形状）——测试常用种子。
+fn seed_pb(data: &mut EditorData, tick: u32, value: u16) {
+    data.apply_automation_edit(AutomationEdit::Add {
+        track_idx: 0,
+        target: AutomationTarget::PitchBend,
+        channel: 0,
+        tick,
+        value,
+        shape: SegmentShape::Curve { tension: 0 },
+    });
+}
+
 #[test]
 fn test_find_automation_lane_returns_none() {
     let data = EditorData::new();
@@ -56,14 +80,7 @@ fn test_apply_automation_edit_add() {
 #[test]
 fn test_apply_automation_edit_add_duplicate_tick_replaces() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     let replaced = data.apply_automation_edit(AutomationEdit::Add {
         track_idx: 0,
         target: AutomationTarget::CC { controller: 7 },
@@ -84,14 +101,7 @@ fn test_apply_automation_edit_add_duplicate_tick_replaces() {
 #[test]
 fn test_apply_automation_edit_move() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     let moved = data.apply_automation_edit(AutomationEdit::Move {
         track_idx: 0,
         lane_idx: 0,
@@ -108,14 +118,7 @@ fn test_apply_automation_edit_move() {
 #[test]
 fn test_apply_automation_edit_cycle_shape() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     let cycled = data.apply_automation_edit(AutomationEdit::CycleShape {
         track_idx: 0,
         lane_idx: 0,
@@ -139,14 +142,7 @@ fn test_apply_automation_edit_cycle_shape() {
 #[test]
 fn test_apply_automation_edit_delete() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     let deleted = data.apply_automation_edit(AutomationEdit::Delete {
         track_idx: 0,
         lane_idx: 0,
@@ -166,14 +162,7 @@ fn test_apply_automation_edit_delete() {
 #[test]
 fn test_apply_automation_edit_move_wrong_track_returns_false() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     let moved = data.apply_automation_edit(AutomationEdit::Move {
         track_idx: 1,
         lane_idx: 0,
@@ -189,22 +178,8 @@ fn test_apply_automation_edit_move_wrong_track_returns_false() {
 fn test_apply_automation_edit_add_recomputes_auto_handles() {
     // 两个连续事件：自动柄 = 1/3 段长（直线语义）
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 0,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 960,
-        value: 10000,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 0, 8192);
+    seed_pb(&mut data, 960, 10000);
     let lane = &data.automation_lanes[0];
     assert!(lane.events[0].handles_auto);
     assert_eq!(lane.events[0].out_handle, (320.0, 602.6667));
@@ -214,14 +189,7 @@ fn test_apply_automation_edit_add_recomputes_auto_handles() {
 #[test]
 fn test_apply_automation_edit_update_handles() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 100,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 100, 8192);
     let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
         track_idx: 0,
         lane_idx: 0,
@@ -235,14 +203,7 @@ fn test_apply_automation_edit_update_handles() {
     assert!(!evt.handles_auto, "拖柄后标记为自定义");
 
     // 后续编辑（Add 相邻事件）不覆盖自定义柄
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 960,
-        value: 9000,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 960, 9000);
     assert_eq!(
         data.automation_lanes[0].events[0].out_handle,
         (300.0, 500.0)
@@ -252,14 +213,7 @@ fn test_apply_automation_edit_update_handles() {
 #[test]
 fn test_apply_automation_edit_clear() {
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 100,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 100, 8192);
     let cleared = data.apply_automation_edit(AutomationEdit::Clear {
         track_idx: 0,
         lane_idx: 0,
@@ -283,22 +237,8 @@ fn test_apply_automation_edit_move_same_tick_no_panic() {
     // 回归：old_tick == new_tick（拖拽时 tick 吸附后未变，仅改 value）
     // 旧实现 retain 删除自身导致 pos 越界 panic
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 100,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 200,
-        value: 9000,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 100, 8192);
+    seed_pb(&mut data, 200, 9000);
     let moved = data.apply_automation_edit(AutomationEdit::Move {
         track_idx: 0,
         lane_idx: 0,
@@ -321,31 +261,10 @@ fn test_pitchbend_add_same_tick_keeps_both() {
     // 弯音跳变对：同 tick 两个事件（直角突变）必须共存——
     // 旧实现"同 tick 替换"会丢掉先创建的锚点（连线绕过中间锚点）
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 0,
-        value: 10922,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 1920,
-        value: 10922,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 0, 10922);
+    seed_pb(&mut data, 1920, 10922);
     // B 正下方创建 C（同 tick 1920）：不得替换 B
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 1920,
-        value: 0,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 1920, 0);
     let lane = &data.automation_lanes[0];
     assert_eq!(
         lane.events.len(),
@@ -366,14 +285,7 @@ fn test_pitchbend_add_same_tick_keeps_both() {
 fn test_cc_add_same_tick_still_replaces() {
     // CC 语义不变：同 tick Add 仍替换（唯一性）
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     data.apply_automation_edit(AutomationEdit::Add {
         track_idx: 0,
         target: AutomationTarget::CC { controller: 7 },
@@ -393,30 +305,9 @@ fn test_cc_add_same_tick_still_replaces() {
 fn test_pitchbend_move_keeps_same_tick_pair() {
     // 弯音跳变对：移动其中一个锚点（tick 锁定）不得删除同 tick 另一个
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 0,
-        value: 10922,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 1920,
-        value: 10922,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 1920,
-        value: 0,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 0, 10922);
+    seed_pb(&mut data, 1920, 10922);
+    seed_pb(&mut data, 1920, 0);
     assert_eq!(data.automation_lanes[0].events.len(), 3);
     // 拖动 B（tick 1920 高位锚点）向上 → Move 同 tick 仅更新 value，
     // 用 old_value 精确定位（同 tick 两事件）
@@ -464,14 +355,7 @@ fn test_apply_automation_edit_move_to_existing_tick_pitchbend_keeps_both() {
     // 弯音语义：移到已存在的 tick = 创建跳变对（同 tick 两事件共存，
     // 直角突变）——不替换冲突事件
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 100,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 100, 8192);
     data.apply_automation_edit(AutomationEdit::Add {
         track_idx: 0,
         target: AutomationTarget::PitchBend,
@@ -502,14 +386,7 @@ fn test_apply_automation_edit_move_to_existing_tick_pitchbend_keeps_both() {
 fn test_apply_automation_edit_move_to_existing_tick_cc_replaces() {
     // CC 语义保持：移到已存在的 tick 仍替换（同 tick 唯一）
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::CC { controller: 7 },
-        channel: 0,
-        tick: 100,
-        value: 64,
-        shape: SegmentShape::Step,
-    });
+    seed_cc(&mut data);
     data.apply_automation_edit(AutomationEdit::Add {
         track_idx: 0,
         target: AutomationTarget::CC { controller: 7 },
@@ -537,14 +414,7 @@ fn test_apply_automation_edit_move_to_existing_tick_cc_replaces() {
 fn test_apply_automation_edit_update_handles_clamps_loopback() {
     // 越界柄（出向柄越过锚点垂直切线）→ 应用后被钳制，防曲线回环
     let mut data = EditorData::new();
-    data.apply_automation_edit(AutomationEdit::Add {
-        track_idx: 0,
-        target: AutomationTarget::PitchBend,
-        channel: 0,
-        tick: 100,
-        value: 8192,
-        shape: SegmentShape::Curve { tension: 0 },
-    });
+    seed_pb(&mut data, 100, 8192);
     let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
         track_idx: 0,
         lane_idx: 0,
@@ -566,14 +436,7 @@ fn test_apply_automation_edit_update_handles_clamps_to_neighbors() {
     // （防贝塞尔 x(t) 非单调导致曲线回环）
     let mut data = EditorData::new();
     for (tick, value) in [(0u32, 8192u16), (960, 8192), (1920, 9000)] {
-        data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0,
-            target: AutomationTarget::PitchBend,
-            channel: 0,
-            tick,
-            value,
-            shape: SegmentShape::Curve { tension: 0 },
-        });
+        seed_pb(&mut data, tick, value);
     }
     // 事件 0 的出向柄拉到 tick 5000（远超下一事件 960）
     let changed = data.apply_automation_edit(AutomationEdit::UpdateHandles {
@@ -627,14 +490,7 @@ fn test_apply_automation_edit_delete_recomputes_handles() {
     // 三事件：删除中间事件后，首尾事件自动柄重算为新的 1/3 段
     let mut data = EditorData::new();
     for (tick, value) in [(0u32, 8192u16), (480, 9000), (960, 10000)] {
-        data.apply_automation_edit(AutomationEdit::Add {
-            track_idx: 0,
-            target: AutomationTarget::PitchBend,
-            channel: 0,
-            tick,
-            value,
-            shape: SegmentShape::Curve { tension: 0 },
-        });
+        seed_pb(&mut data, tick, value);
     }
     data.apply_automation_edit(AutomationEdit::Delete {
         track_idx: 0,

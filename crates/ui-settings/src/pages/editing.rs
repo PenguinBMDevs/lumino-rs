@@ -84,7 +84,7 @@ impl LocalizedTempoOption {
 
 /// 渲染编辑设置页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
 
     let content = column![
         text(t.editing_title)
@@ -102,7 +102,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("100", &settings.history_total_limit.to_string())
+            text_input("100", &settings.editing.history_total_limit.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HistoryTotalLimitChanged(v)))
                 .width(80.0),
         ]
@@ -119,7 +119,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("1000", &settings.history_entry_limit.to_string())
+            text_input("1000", &settings.editing.history_entry_limit.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HistoryEntryLimitChanged(v)))
                 .width(80.0),
         ]
@@ -136,7 +136,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("300", &settings.merge_window_ms.to_string())
+            text_input("300", &settings.editing.merge_window_ms.to_string())
                 .on_input(|v| Message::Settings(crate::Event::MergeWindowMsChanged(v)))
                 .width(80.0),
         ]
@@ -164,7 +164,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                     .map(|opt| LocalizedTempoOption::new(opt, t.editing_tempo_custom_option))
                     .collect::<Vec<_>>(),
                 Some(LocalizedTempoOption::new(
-                    TempoMaxBpmOption::from_bpm(settings.tempo_max_bpm),
+                    TempoMaxBpmOption::from_bpm(settings.editing.tempo_max_bpm),
                     t.editing_tempo_custom_option,
                 )),
                 |option| match option.inner {
@@ -192,7 +192,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         iced_widget::space().height(SPACING_CONTENT),
         // 拦截时显示 Toast 提示
         row![
-            iced_widget::Checkbox::new(settings.intercept_notification_enabled)
+            iced_widget::Checkbox::new(settings.editing.intercept_notification_enabled)
                 .label(t.editing_intercept_notification)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::InterceptNotificationChanged(enabled))

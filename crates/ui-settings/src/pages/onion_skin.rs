@@ -17,7 +17,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         iced_widget::space().height(20),
         // 启用高精度贴图开关
         row![
-            iced_widget::Checkbox::new(settings.hires_onion_enabled)
+            iced_widget::Checkbox::new(settings.hires.onion_enabled)
                 .label("启用高精度洋葱皮贴图")
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::HiresOnionEnabledChanged(enabled))
@@ -36,7 +36,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("4", &settings.hires_measures_per_group.to_string())
+            text_input("4", &settings.hires.measures_per_group.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HiresMeasuresPerGroupChanged(v)))
                 .width(80.0),
         ]
@@ -53,7 +53,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("1920", &settings.hires_tile_width_px.to_string())
+            text_input("1920", &settings.hires.tile_width_px.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HiresTileWidthChanged(v)))
                 .width(80.0),
         ]
@@ -70,7 +70,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("10", &settings.hires_cooldown_secs.to_string())
+            text_input("10", &settings.hires.cooldown_secs.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HiresCooldownChanged(v)))
                 .width(80.0),
         ]
@@ -87,7 +87,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("512", &settings.hires_gpu_mem_limit_mb.to_string())
+            text_input("512", &settings.hires.gpu_mem_limit_mb.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HiresGpuMemLimitChanged(v)))
                 .width(80.0),
         ]

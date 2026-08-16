@@ -10,7 +10,7 @@ use super::super::components::styles::{create_content_text_style, create_placeho
 
 /// 渲染关于页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
 
     column![
         text(t.about_title)

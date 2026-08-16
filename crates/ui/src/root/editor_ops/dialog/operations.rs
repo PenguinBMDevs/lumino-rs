@@ -25,7 +25,7 @@ impl Root {
             key,
             tick
         );
-        let max_key = if self.settings.enable_256key {
+        let max_key = if self.settings.display.enable_256key {
             255
         } else {
             127

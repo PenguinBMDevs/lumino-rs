@@ -341,7 +341,10 @@ fn apply_selection_delta(
 
     let remove_list = {
         let index = editor.spatial.note_index.borrow();
-        let index = index.as_ref().expect("just checked is_some");
+        // 守卫（L323）已确认非 None；let-else 防御性兜底，避免 panic 路径
+        let Some(index) = index.as_ref() else {
+            return;
+        };
         let mut cache = editor.spatial.query_cache.borrow_mut();
         let mut list = Vec::new();
         for &(t_min, t_max, k_min, k_max) in &delta_rects {
@@ -372,7 +375,10 @@ fn apply_selection_delta(
 
     let added_indices = {
         let index = editor.spatial.note_index.borrow();
-        let index = index.as_ref().expect("just checked is_some");
+        // 守卫（L323）已确认非 None；let-else 防御性兜底，避免 panic 路径
+        let Some(index) = index.as_ref() else {
+            return;
+        };
         let mut cache = editor.spatial.query_cache.borrow_mut();
         let mut list = Vec::new();
         for &(t_min, t_max, k_min, k_max) in &delta_rects {

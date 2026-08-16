@@ -240,8 +240,8 @@ impl Root {
     pub fn sync_cloud_state_from(&mut self, other: &Root) {
         self.cloud = other.cloud.clone();
         // 设置面板云管理页（连接列表 + 断连提醒标志）
-        self.settings.cloud_connections = other.settings.cloud_connections.clone();
-        self.settings.cloud_alert = other.settings.cloud_alert.clone();
+        self.settings.cloud.connections = other.settings.cloud.connections.clone();
+        self.settings.cloud.alert = other.settings.cloud.alert.clone();
     }
 
     /// 从另一个 Root 同步云存储**共享快照**（运行期广播用）。
@@ -262,8 +262,8 @@ impl Root {
         self.cloud.filter = other.cloud.filter.clone();
         self.cloud.save_mode = other.cloud.save_mode;
         // 设置面板云管理页（连接列表 + 断连提醒标志）
-        self.settings.cloud_connections = other.settings.cloud_connections.clone();
-        self.settings.cloud_alert = other.settings.cloud_alert.clone();
+        self.settings.cloud.connections = other.settings.cloud.connections.clone();
+        self.settings.cloud.alert = other.settings.cloud.alert.clone();
     }
 
     /// 请求重新扫描素材库（云下载素材后由 runner 调用）

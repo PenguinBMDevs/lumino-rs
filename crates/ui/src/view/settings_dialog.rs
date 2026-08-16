@@ -18,7 +18,7 @@ pub fn view_settings_dialog<'a>(
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> crate::Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
     let palette = window.theme.extended_palette();
 
     // 设置内容（复用现有的 settings::view）
@@ -65,7 +65,7 @@ pub fn view_settings_dialog<'a>(
             container::Style::default().background(palette.background.base.color)
         });
 
-    if settings.tempo_custom_open {
+    if settings.editing.tempo_custom_open {
         // 自定义 BPM 上限弹窗：悬浮层（遮罩 + 居中输入卡片）
         Stack::new()
             .push(dialog_content)
@@ -99,7 +99,7 @@ fn custom_bpm_backdrop<'a>(_settings: &settings::SettingsPanel) -> crate::Elemen
 
 /// 自定义 BPM 上限弹窗的输入卡片层（居中悬浮）
 fn custom_bpm_card_layer<'a>(settings: &settings::SettingsPanel) -> crate::Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
 
     let confirm_btn = button(text(t.confirm).size(13))
         .on_press(Message::Settings(
@@ -122,7 +122,7 @@ fn custom_bpm_card_layer<'a>(settings: &settings::SettingsPanel) -> crate::Eleme
             space().height(12),
             text_input(
                 t.editing_tempo_custom_placeholder,
-                &settings.tempo_custom_input
+                &settings.editing.tempo_custom_input
             )
             .on_input(|v| Message::Settings(crate::settings::Event::TempoMaxBpmCustomInput(v)))
             .padding([6, 10])

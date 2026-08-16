@@ -42,13 +42,13 @@ impl LocalizedSynth {
 
 /// 渲染音频设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
     let synth_options = vec![
-        LocalizedSynth::new(SynthBackend::XSynth, settings.language),
-        LocalizedSynth::new(SynthBackend::Kdmapi, settings.language),
-        LocalizedSynth::new(SynthBackend::System, settings.language),
+        LocalizedSynth::new(SynthBackend::XSynth, settings.display.language),
+        LocalizedSynth::new(SynthBackend::Kdmapi, settings.display.language),
+        LocalizedSynth::new(SynthBackend::System, settings.display.language),
     ];
-    let current_synth = LocalizedSynth::new(settings.synth_backend, settings.language);
+    let current_synth = LocalizedSynth::new(settings.synth.backend, settings.display.language);
 
     let mut col = column![
         text(t.audio_title)
@@ -75,15 +75,15 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     ];
 
     // 只在 XSynth 模式下显示音色库选择
-    if settings.synth_backend == SynthBackend::XSynth {
+    if settings.synth.backend == SynthBackend::XSynth {
         col = col.push(render_xsynth_options(settings, t));
-    } else if settings.synth_backend == SynthBackend::Kdmapi {
+    } else if settings.synth.backend == SynthBackend::Kdmapi {
         col = col.push(
             text(t.kdmapi_hint)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_placeholder_text_style()),
         );
-    } else if settings.synth_backend == SynthBackend::System {
+    } else if settings.synth.backend == SynthBackend::System {
         col = col.push(
             text(t.system_hint)
                 .size(TEXT_SIZE_CONTENT)
@@ -108,7 +108,7 @@ fn render_xsynth_options<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input(t.soundfont_placeholder, &settings.soundfont_path)
+            text_input(t.soundfont_placeholder, &settings.synth.soundfont_path)
                 .width(Length::Fill)
                 .on_input(|s| Message::Settings(crate::Event::SoundfontPathChanged(s))),
         ]
@@ -126,12 +126,12 @@ fn render_xsynth_options<'a>(
         row![
             text(format!(
                 "{}: {:.1} ms",
-                t.buffer_latency, settings.xsynth_buffer_ms
+                t.buffer_latency, settings.synth.xsynth_buffer_ms
             ))
             .size(TEXT_SIZE_CONTENT)
             .style(create_content_text_style())
             .width(160.0),
-            iced_widget::slider(5.0..=100.0, settings.xsynth_buffer_ms, |ms| {
+            iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
                 Message::Settings(crate::Event::XSynthBufferChanged(ms))
             })
             .step(1.0)
@@ -144,7 +144,7 @@ fn render_xsynth_options<'a>(
 
     // 音符释放淡出
     col = col.push(
-        iced_widget::Checkbox::new(settings.xsynth_fade_out)
+        iced_widget::Checkbox::new(settings.synth.xsynth_fade_out)
             .label(t.fade_out_label)
             .on_toggle(|f| Message::Settings(crate::Event::XSynthFadeOutChanged(f))),
     );
@@ -185,18 +185,18 @@ fn render_xsynth_options<'a>(
         }
     }
     let voice_options = [
-        VoiceOption(Some(1), voice_name(Some(1), settings.language)),
-        VoiceOption(Some(2), voice_name(Some(2), settings.language)),
-        VoiceOption(Some(4), voice_name(Some(4), settings.language)),
-        VoiceOption(Some(8), voice_name(Some(8), settings.language)),
-        VoiceOption(Some(16), voice_name(Some(16), settings.language)),
-        VoiceOption(Some(32), voice_name(Some(32), settings.language)),
-        VoiceOption(Some(64), voice_name(Some(64), settings.language)),
-        VoiceOption(None, voice_name(None, settings.language)),
+        VoiceOption(Some(1), voice_name(Some(1), settings.display.language)),
+        VoiceOption(Some(2), voice_name(Some(2), settings.display.language)),
+        VoiceOption(Some(4), voice_name(Some(4), settings.display.language)),
+        VoiceOption(Some(8), voice_name(Some(8), settings.display.language)),
+        VoiceOption(Some(16), voice_name(Some(16), settings.display.language)),
+        VoiceOption(Some(32), voice_name(Some(32), settings.display.language)),
+        VoiceOption(Some(64), voice_name(Some(64), settings.display.language)),
+        VoiceOption(None, voice_name(None, settings.display.language)),
     ];
     let current_voice = voice_options
         .iter()
-        .find(|o| o.0 == settings.xsynth_max_voices_per_key)
+        .find(|o| o.0 == settings.synth.xsynth_max_voices_per_key)
         .copied()
         .or(Some(voice_options[3]));
 
@@ -227,12 +227,12 @@ fn render_xsynth_options<'a>(
         row![
             text(format!(
                 "{}: {}",
-                t.velocity_filter, settings.velocity_filter_threshold
+                t.velocity_filter, settings.midi.velocity_filter_threshold
             ))
             .size(TEXT_SIZE_CONTENT)
             .style(create_content_text_style())
             .width(180.0),
-            iced_widget::slider(0..=127, settings.velocity_filter_threshold, |v| {
+            iced_widget::slider(0..=127, settings.midi.velocity_filter_threshold, |v| {
                 Message::Settings(crate::Event::VelocityFilterThresholdChanged(v.to_string()))
             })
             .step(1)
@@ -274,7 +274,7 @@ fn render_midi_device_selector<'a>(
     settings: &'a SettingsPanel,
     t: &lumino_extras::i18n::SettingsTranslations,
 ) -> Element<'a> {
-    let device_count = settings.midi_devices.len();
+    let device_count = settings.midi.devices.len();
     if device_count == 0 {
         return row![
             text(t.midi_input_device)
@@ -291,13 +291,15 @@ fn render_midi_device_selector<'a>(
     }
 
     let device_options: Vec<&str> = settings
-        .midi_devices
+        .midi
+        .devices
         .iter()
         .map(|(_, name)| name.as_str())
         .collect();
     let selected_idx = settings
-        .selected_midi_device
-        .and_then(|id| settings.midi_devices.iter().position(|(did, _)| *did == id));
+        .midi
+        .selected_device
+        .and_then(|id| settings.midi.devices.iter().position(|(did, _)| *did == id));
     let selected = selected_idx.map(|i| device_options[i]);
 
     row![
@@ -307,7 +309,8 @@ fn render_midi_device_selector<'a>(
         iced_widget::space().width(SPACING_MAIN),
         pick_list(device_options, selected, move |name| {
             if let Some((id, _)) = settings
-                .midi_devices
+                .midi
+                .devices
                 .iter()
                 .find(|(_, n)| n.as_str() == name)
             {

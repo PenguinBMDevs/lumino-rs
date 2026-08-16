@@ -288,7 +288,7 @@ impl RunnerInner {
         {
             let ui = self.window_state.window.ui_mut();
             ui.cloud_state_mut().alert_message = None;
-            ui.settings_mut().cloud_alert = None;
+            ui.settings_mut().cloud.alert = None;
         }
         self.refresh_cloud_connections();
         self.window_state

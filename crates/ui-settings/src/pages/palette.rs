@@ -20,10 +20,10 @@ const SWATCH_SPACING: f32 = 2.0;
 
 /// 渲染调色板设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
-    let t = lumino_extras::i18n::settings_translations(settings.language);
+    let t = lumino_extras::i18n::settings_translations(settings.display.language);
 
     // 当前调色板名称
-    let current_palette_name = settings.selected_palette.as_str();
+    let current_palette_name = settings.display.selected_palette.as_str();
 
     // 检查调色板是否被锁定
     let palette_locked = lumino_extras::palette::is_palette_locked();
@@ -40,7 +40,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
             .style(create_placeholder_text_style())
             .into()
     } else {
-        let palette_options: Vec<&str> = settings.available_palettes.to_vec();
+        let palette_options: Vec<&str> = settings.display.available_palettes.to_vec();
         pick_list(palette_options, Some(current_palette_name), |name| {
             Message::Settings(Event::PaletteChanged(name.to_string()))
         })

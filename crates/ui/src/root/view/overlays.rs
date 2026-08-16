@@ -81,7 +81,7 @@ impl Root {
             DialogType::ProjectSettings => view_project_settings_dialog(
                 &self.state.project_settings_dialog,
                 &self.window.theme,
-                self.settings.language,
+                self.settings.display.language,
             ),
             DialogType::Settings => {
                 // 字体列表仅在设置对话框中使用（字体下拉菜单），
@@ -102,7 +102,7 @@ impl Root {
             DialogType::CustomPrecision => view_custom_precision_dialog(
                 &self.state.custom_precision_dialog,
                 &self.window.theme,
-                self.settings.language,
+                self.settings.display.language,
             ),
             // DialogType::None: 关闭过程中 dialog_type 可能被复位为 None，
             // 此时渲染空容器避免闪跳到精度面板。实际关闭由 DialogWindow 的 should_close 驱动。

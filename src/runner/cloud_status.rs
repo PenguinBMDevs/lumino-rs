@@ -44,7 +44,7 @@ impl RunnerInner {
         {
             let ui = self.window_state.window.ui_mut();
             ui.cloud_state_mut().alert_message = Some(reason.clone());
-            ui.settings_mut().cloud_alert = Some(reason);
+            ui.settings_mut().cloud.alert = Some(reason);
         }
         // 广播到已打开的设置/云对话框
         self.sync_cloud_to_dialogs();
@@ -110,7 +110,7 @@ impl RunnerInner {
         // 设置面板云管理页
         {
             let settings = ui.settings_mut();
-            settings.cloud_connections = snapshot
+            settings.cloud.connections = snapshot
                 .into_iter()
                 .map(
                     |(id, name, protocol, address, online)| lumino_ui::settings::CloudConnItem {

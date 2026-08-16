@@ -68,14 +68,14 @@ pub fn view<'a>(
     window: &lumino_ui_core::window::Window,
     system_fonts: &[lumino_note_core::font_scanner::FontInfo],
 ) -> Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
 
     // 创建复选框
     let native_titlebar_checkbox = if cfg!(target_os = "macos") {
         row![] // macOS 不需要这个选项
     } else {
         row![
-            iced_widget::Checkbox::new(settings.use_native_titlebar)
+            iced_widget::Checkbox::new(settings.synth.use_native_titlebar)
                 .label(t.native_titlebar)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::NativeTitlebarChanged(enabled))
@@ -103,7 +103,7 @@ pub fn view<'a>(
 
     // 语言选项
     let language_options = Language::all();
-    let current_language = settings.language;
+    let current_language = settings.display.language;
 
     column![
         text(t.ui_title)
@@ -150,7 +150,7 @@ pub fn view<'a>(
             .style(create_placeholder_text_style()),
         // HiDPI 图标渲染选项
         row![
-            iced_widget::Checkbox::new(settings.icon_hidpi)
+            iced_widget::Checkbox::new(settings.display.icon_hidpi)
                 .label(t.hidpi_icon)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::IconHiDPIChanged(enabled))
@@ -174,12 +174,12 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(200.0),
-            iced_widget::slider(1.0..=10.0, settings.automation_line_thickness, |v| {
+            iced_widget::slider(1.0..=10.0, settings.editing.automation_line_thickness, |v| {
                 Message::Settings(crate::Event::AutomationLineThicknessChanged(v))
             })
             .step(0.5_f32)
             .width(200.0),
-            text(format!("{:.1} px", settings.automation_line_thickness))
+            text(format!("{:.1} px", settings.editing.automation_line_thickness))
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(50.0),
@@ -197,12 +197,12 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(200.0),
-            iced_widget::slider(50.0..=2000.0, settings.monitor_refresh_interval_ms, |v| {
+            iced_widget::slider(50.0..=2000.0, settings.logging.monitor_refresh_interval_ms, |v| {
                 Message::Settings(crate::Event::MonitorRefreshIntervalChanged(v))
             })
             .step(1.0_f32)
             .width(200.0),
-            text(format!("{:.0} ms", settings.monitor_refresh_interval_ms))
+            text(format!("{:.0} ms", settings.logging.monitor_refresh_interval_ms))
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(60.0),
@@ -231,14 +231,14 @@ fn build_font_section<'a>(
     // 字体选择下拉菜单
     let font_dropdown = pick_list(
         font_options,
-        Some(settings.program_font_name.clone()).filter(|s| !s.is_empty()),
+        Some(settings.editing.program_font_name.clone()).filter(|s| !s.is_empty()),
         |font_name| Message::Settings(crate::Event::ProgramFontNameChanged(font_name)),
     )
     .width(200.0)
     .placeholder("选择系统字体...");
 
     // 自定义字体路径输入
-    let font_path_input = text_input(t.font_path_placeholder, &settings.program_font_path)
+    let font_path_input = text_input(t.font_path_placeholder, &settings.editing.program_font_path)
         .on_input(|path| Message::Settings(crate::Event::ProgramFontPathChanged(path)));
 
     // 浏览字体文件按钮
@@ -292,7 +292,7 @@ fn build_auto_scroll_section<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input(t.pixel, &settings.auto_scroll_fixed_position.to_string())
+            text_input(t.pixel, &settings.auto_scroll.fixed_position.to_string())
                 .on_input(|v| Message::Settings(crate::Event::AutoScrollFixedPositionChanged(v)))
                 .width(80.0),
             iced_widget::space().width(SPACING_ICON_LABEL),
@@ -311,7 +311,7 @@ fn build_auto_scroll_section<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text_input(
                 t.pixel,
-                &settings.auto_scroll_page_trigger_offset.to_string()
+                &settings.auto_scroll.page_trigger_offset.to_string()
             )
             .on_input(|v| Message::Settings(crate::Event::AutoScrollPageTriggerOffsetChanged(v)))
             .width(80.0),
@@ -331,7 +331,7 @@ fn build_auto_scroll_section<'a>(
             iced_widget::space().width(SPACING_MAIN),
             text_input(
                 t.pixel,
-                &settings.auto_scroll_page_return_position.to_string()
+                &settings.auto_scroll.page_return_position.to_string()
             )
             .on_input(|v| Message::Settings(crate::Event::AutoScrollPageReturnPositionChanged(v)))
             .width(80.0),
@@ -369,12 +369,12 @@ fn build_interaction_section<'a>(
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 vec![
-                    LocalizedSelectionBox::new(SelectionBoxMode::Direct, settings.language),
-                    LocalizedSelectionBox::new(SelectionBoxMode::Spring, settings.language),
+                    LocalizedSelectionBox::new(SelectionBoxMode::Direct, settings.display.language),
+                    LocalizedSelectionBox::new(SelectionBoxMode::Spring, settings.display.language),
                 ],
                 Some(LocalizedSelectionBox::new(
-                    settings.selection_box_mode,
-                    settings.language
+                    settings.editing.selection_box_mode,
+                    settings.display.language
                 )),
                 |ls| Message::Settings(crate::Event::SelectionBoxModeChanged(ls.inner)),
             )
@@ -393,7 +393,7 @@ fn build_interaction_section<'a>(
             .style(create_content_text_style()),
         iced_widget::space().height(12),
         row![
-            iced_widget::Checkbox::new(settings.enable_256key)
+            iced_widget::Checkbox::new(settings.display.enable_256key)
                 .label(t.enable_256key)
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::Enable256keyChanged(enabled))
@@ -408,7 +408,7 @@ fn build_interaction_section<'a>(
         iced_widget::space().height(SPACING_CONTENT),
         // 力度面板显示样式（曲线/柱状图切换）
         row![
-            iced_widget::Checkbox::new(settings.velocity_curve_style)
+            iced_widget::Checkbox::new(settings.display.velocity_curve_style)
                 .label("力度面板曲线显示（默认）")
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::VelocityCurveStyleChanged(enabled))
@@ -423,7 +423,7 @@ fn build_interaction_section<'a>(
         iced_widget::space().height(SPACING_CONTENT),
         // 播放键盘颜色指示
         row![
-            iced_widget::Checkbox::new(settings.playback_key_colors_enabled)
+            iced_widget::Checkbox::new(settings.display.playback_key_colors_enabled)
                 .label("播放时键盘颜色指示（默认关闭）")
                 .on_toggle(|enabled| {
                     Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(enabled))

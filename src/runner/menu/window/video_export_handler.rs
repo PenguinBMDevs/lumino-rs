@@ -126,14 +126,12 @@ impl RunnerInner {
                 _ => "bgra",
             };
 
-        if cmd_sender.is_none() {
+        let Some(cmd_sender) = cmd_sender else {
             tracing::error!("视频导出失败：渲染线程未启动");
             let main_ui = self.window_state.window.ui_mut();
             main_ui.set_video_export_failed("渲染线程未启动".to_string());
             return;
-        }
-
-        let cmd_sender = cmd_sender.expect("已检查");
+        };
 
         // 创建进度通道（复用音频导出的进度通道机制）
         let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
@@ -489,11 +487,19 @@ fn run_video_export_task(
                 }
                 RenderMode::NoteCounter => {
                     // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
-                    let cfg = counter_config.as_ref().expect("计数器模式必须有渲染配置");
-                    let stats = counter_stats.as_mut().expect("计数器模式必须有统计状态");
-                    let renderer = counter_renderer
-                        .as_mut()
-                        .expect("计数器模式必须有字体渲染器");
+                    // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
+                    let Some(cfg) = counter_config.as_ref() else {
+                        send_export_error(&progress_tx, "导出失败：计数器模式缺少渲染配置（内部错误）");
+                        return true;
+                    };
+                    let Some(stats) = counter_stats.as_mut() else {
+                        send_export_error(&progress_tx, "导出失败：计数器模式缺少统计状态（内部错误）");
+                        return true;
+                    };
+                    let Some(renderer) = counter_renderer.as_mut() else {
+                        send_export_error(&progress_tx, "导出失败：计数器模式缺少字体渲染器（内部错误）");
+                        return true;
+                    };
                     let out = super::video_export::render_counter_frame(
                         &mut frame_data,
                         width,
@@ -532,13 +538,19 @@ fn run_video_export_task(
                 RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
                 RenderMode::DataCurve => {
                     // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
-                    let cfg = data_curve_config
-                        .as_ref()
-                        .expect("数据曲线模式必须有渲染配置");
-                    let stats = counter_stats.as_mut().expect("数据曲线模式必须有统计状态");
-                    let renderer = data_curve_renderer
-                        .as_mut()
-                        .expect("数据曲线模式必须有渲染器");
+                    // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
+                    let Some(cfg) = data_curve_config.as_ref() else {
+                        send_export_error(&progress_tx, "导出失败：数据曲线模式缺少渲染配置（内部错误）");
+                        return true;
+                    };
+                    let Some(stats) = counter_stats.as_mut() else {
+                        send_export_error(&progress_tx, "导出失败：数据曲线模式缺少统计状态（内部错误）");
+                        return true;
+                    };
+                    let Some(renderer) = data_curve_renderer.as_mut() else {
+                        send_export_error(&progress_tx, "导出失败：数据曲线模式缺少渲染器（内部错误）");
+                        return true;
+                    };
                     // 关键：推进统计到当前 tick（与计数器分支一致）。
                     // 缺失此调用会导致 NPS/复音数/音符数永远停留在 0 → 曲线为 0 值直线。
                     stats.advance(&document, tick, fps_f64 as u32);

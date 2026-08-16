@@ -138,7 +138,7 @@ impl Root {
         ) && self.sidebar.audio_export_visible
             && self.state.audio_export_dialog.soundfont_path.is_empty()
         {
-            self.state.audio_export_dialog.soundfont_path = self.settings.soundfont_path.clone();
+            self.state.audio_export_dialog.soundfont_path = self.settings.synth.soundfont_path.clone();
         }
 
         // 更新画布偏移
@@ -157,7 +157,7 @@ impl Root {
 
         // 如果是添加音轨，根据用户设置决定是否切换到新音轨
         if matches!(&event, sidebar::Event::AddTrack) {
-            if self.settings.track_add_behavior == TrackAddBehavior::AutoSwitch {
+            if self.settings.editing.track_add_behavior == TrackAddBehavior::AutoSwitch {
                 let track_idx = self
                     .sidebar
                     .tracks

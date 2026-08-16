@@ -21,10 +21,10 @@ use pages::*;
 
 pub use lumino_ui_core::settings_event::Event;
 
+/// 合成器与音频输出设置
 #[derive(Debug, Clone)]
-pub struct SettingsPanel {
-    pub selected_menu_index: usize,
-    pub synth_backend: SynthBackend,
+pub struct SynthSettings {
+    pub backend: SynthBackend,
     pub soundfont_path: String,
     pub use_native_titlebar: bool,
     pub xsynth_buffer_ms: f64,
@@ -32,43 +32,15 @@ pub struct SettingsPanel {
     pub xsynth_threads: i32,
     pub xsynth_fade_out: bool,
     pub xsynth_max_voices_per_key: Option<usize>,
+}
+
+/// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）
+#[derive(Debug, Clone)]
+pub struct EditingSettings {
     pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
     pub selection_box_mode: lumino_core::storage::config::SelectionBoxMode,
     pub program_font_name: String,
     pub program_font_path: String,
-    // 自动滚动配置
-    pub auto_scroll_fixed_position: u32,
-    pub auto_scroll_page_trigger_offset: u32,
-    pub auto_scroll_page_return_position: u32,
-    // 力度过滤
-    pub velocity_filter_threshold: u8,
-    /// HiDPI 图标渲染（true=2x 清晰，false=1x 零额外开销）
-    pub icon_hidpi: bool,
-    /// 256键扩展钢琴卷帘
-    pub enable_256key: bool,
-    /// 力度面板显示样式（true=曲线折线图，false=柱状图）
-    pub velocity_curve_style: bool,
-    /// 可用的 MIDI 输入设备列表
-    pub midi_devices: Vec<(u32, String)>,
-    /// 当前选中的 MIDI 输入设备 ID
-    pub selected_midi_device: Option<u32>,
-    /// 界面语言
-    pub language: Language,
-    // 高精度洋葱皮贴图设置
-    pub hires_onion_enabled: bool,
-    pub hires_measures_per_group: u32,
-    pub hires_tile_width_px: u32,
-    pub hires_cooldown_secs: u64,
-    pub hires_gpu_mem_limit_mb: u32,
-    // 播放键盘颜色指示
-    pub playback_key_colors_enabled: bool,
-    /// 添加音轨行为
-    pub track_add_behavior: TrackAddBehavior,
-    /// 当前选中的调色板名称
-    pub selected_palette: String,
-    /// 可用调色板名称列表
-    pub available_palettes: Vec<&'static str>,
-    // 编辑设置
     /// 操作日志总条数上限（建议 50-200，默认 100）
     pub history_total_limit: usize,
     /// 单条日志条目上限（建议 500-2000，默认 1000）
@@ -85,14 +57,96 @@ pub struct SettingsPanel {
     pub tempo_custom_open: bool,
     /// 自定义 BPM 上限输入框内容
     pub tempo_custom_input: String,
+    /// 添加音轨行为
+    pub track_add_behavior: TrackAddBehavior,
+}
+
+/// 界面显示设置（HiDPI/256键/力度样式/语言/键色/调色板）
+#[derive(Debug, Clone)]
+pub struct DisplaySettings {
+    /// HiDPI 图标渲染（true=2x 清晰，false=1x 零额外开销）
+    pub icon_hidpi: bool,
+    /// 256键扩展钢琴卷帘
+    pub enable_256key: bool,
+    /// 力度面板显示样式（true=曲线折线图，false=柱状图）
+    pub velocity_curve_style: bool,
+    /// 界面语言
+    pub language: Language,
+    /// 播放键盘颜色指示
+    pub playback_key_colors_enabled: bool,
+    /// 当前选中的调色板名称
+    pub selected_palette: String,
+    /// 可用调色板名称列表
+    pub available_palettes: Vec<&'static str>,
+}
+
+/// 自动滚动设置
+#[derive(Debug, Clone)]
+pub struct AutoScrollSettings {
+    pub fixed_position: u32,
+    pub page_trigger_offset: u32,
+    pub page_return_position: u32,
+}
+
+/// MIDI 设备设置
+#[derive(Debug, Clone)]
+pub struct MidiSettings {
+    /// 可用的 MIDI 输入设备列表
+    pub devices: Vec<(u32, String)>,
+    /// 当前选中的 MIDI 输入设备 ID
+    pub selected_device: Option<u32>,
+    /// 力度过滤阈值
+    pub velocity_filter_threshold: u8,
+}
+
+/// 高精度洋葱皮贴图设置
+#[derive(Debug, Clone)]
+pub struct HiresSettings {
+    pub onion_enabled: bool,
+    pub measures_per_group: u32,
+    pub tile_width_px: u32,
+    pub cooldown_secs: u64,
+    pub gpu_mem_limit_mb: u32,
+}
+
+/// 日志与监控设置
+#[derive(Debug, Clone)]
+pub struct LoggingSettings {
     /// 日志文件保留份数
     pub log_retention_count: usize,
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
     pub monitor_refresh_interval_ms: f32,
+}
+
+/// 云存储设置
+#[derive(Debug, Clone)]
+pub struct CloudSettings {
     /// 云存储连接列表（云管理页，由 runner 注入快照）
-    pub cloud_connections: Vec<CloudConnItem>,
+    pub connections: Vec<CloudConnItem>,
     /// 云存储断连/失败提醒（始终显示，实时更新）
-    pub cloud_alert: Option<String>,
+    pub alert: Option<String>,
+}
+
+/// 设置面板状态（按配置类别分组的子结构聚合）。
+#[derive(Debug, Clone)]
+pub struct SettingsPanel {
+    pub selected_menu_index: usize,
+    /// 合成器与音频输出
+    pub synth: SynthSettings,
+    /// 编辑行为（橡皮/框选/字体/历史/自动化/Tempo/音轨）
+    pub editing: EditingSettings,
+    /// 界面显示（HiDPI/256键/力度样式/语言/键色/调色板）
+    pub display: DisplaySettings,
+    /// 自动滚动
+    pub auto_scroll: AutoScrollSettings,
+    /// MIDI 设备
+    pub midi: MidiSettings,
+    /// 高精度洋葱皮
+    pub hires: HiresSettings,
+    /// 日志与监控
+    pub logging: LoggingSettings,
+    /// 云存储
+    pub cloud: CloudSettings,
 }
 
 /// 云存储连接条目（设置面板云管理页展示）
@@ -137,49 +191,65 @@ impl SettingsPanel {
 
         Self {
             selected_menu_index: 0,
-            synth_backend: ui_config.preferred_backend,
-            soundfont_path: ui_config.soundfont_path.clone(),
-            use_native_titlebar: ui_config.use_native_titlebar,
-            xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
-            xsynth_sample_rate: ui_config.xsynth_sample_rate,
-            xsynth_threads: ui_config.xsynth_threads,
-            xsynth_fade_out: ui_config.xsynth_fade_out_killing,
-            xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
-            eraser_behavior: ui_config.eraser_behavior,
-            selection_box_mode: ui_config.selection_box_mode,
-            program_font_name: ui_config.program_font_name.clone(),
-            program_font_path: ui_config.program_font_path.clone(),
-            auto_scroll_fixed_position: ui_config.auto_scroll.fixed_indicator_position,
-            auto_scroll_page_trigger_offset: ui_config.auto_scroll.page_trigger_offset,
-            auto_scroll_page_return_position: ui_config.auto_scroll.page_return_position,
-            velocity_filter_threshold: ui_config.velocity_filter_threshold,
-            icon_hidpi: ui_config.icon_hidpi,
-            enable_256key: ui_config.enable_256key,
-            velocity_curve_style: ui_config.velocity_curve_style,
-            midi_devices: Vec::new(),
-            selected_midi_device: None,
-            language: ui_config.language,
-            hires_onion_enabled: ui_config.hires_onion_enabled,
-            hires_measures_per_group: ui_config.hires_measures_per_group,
-            hires_tile_width_px: ui_config.hires_tile_width_px,
-            hires_cooldown_secs: ui_config.hires_cooldown_secs,
-            hires_gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
-            playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
-            track_add_behavior: ui_config.track_add_behavior,
-            selected_palette,
-            available_palettes,
-            history_total_limit: ui_config.history_total_limit,
-            history_entry_limit: ui_config.history_entry_limit,
-            merge_window_ms: ui_config.merge_window_ms,
-            intercept_notification_enabled: ui_config.intercept_notification_enabled,
-            automation_line_thickness: ui_config.automation_line_thickness,
-            tempo_max_bpm: ui_config.tempo_max_bpm,
-            tempo_custom_open: false,
-            tempo_custom_input: String::new(),
-            log_retention_count: ui_config.log_retention_count,
-            monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
-            cloud_connections: Vec::new(),
-            cloud_alert: None,
+            synth: SynthSettings {
+                backend: ui_config.preferred_backend,
+                soundfont_path: ui_config.soundfont_path.clone(),
+                use_native_titlebar: ui_config.use_native_titlebar,
+                xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
+                xsynth_sample_rate: ui_config.xsynth_sample_rate,
+                xsynth_threads: ui_config.xsynth_threads,
+                xsynth_fade_out: ui_config.xsynth_fade_out_killing,
+                xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+            },
+            editing: EditingSettings {
+                eraser_behavior: ui_config.eraser_behavior,
+                selection_box_mode: ui_config.selection_box_mode,
+                program_font_name: ui_config.program_font_name.clone(),
+                program_font_path: ui_config.program_font_path.clone(),
+                history_total_limit: ui_config.history_total_limit,
+                history_entry_limit: ui_config.history_entry_limit,
+                merge_window_ms: ui_config.merge_window_ms,
+                intercept_notification_enabled: ui_config.intercept_notification_enabled,
+                automation_line_thickness: ui_config.automation_line_thickness,
+                tempo_max_bpm: ui_config.tempo_max_bpm,
+                tempo_custom_open: false,
+                tempo_custom_input: String::new(),
+                track_add_behavior: ui_config.track_add_behavior,
+            },
+            display: DisplaySettings {
+                icon_hidpi: ui_config.icon_hidpi,
+                enable_256key: ui_config.enable_256key,
+                velocity_curve_style: ui_config.velocity_curve_style,
+                language: ui_config.language,
+                playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
+                selected_palette,
+                available_palettes,
+            },
+            auto_scroll: AutoScrollSettings {
+                fixed_position: ui_config.auto_scroll.fixed_indicator_position,
+                page_trigger_offset: ui_config.auto_scroll.page_trigger_offset,
+                page_return_position: ui_config.auto_scroll.page_return_position,
+            },
+            midi: MidiSettings {
+                devices: Vec::new(),
+                selected_device: None,
+                velocity_filter_threshold: ui_config.velocity_filter_threshold,
+            },
+            hires: HiresSettings {
+                onion_enabled: ui_config.hires_onion_enabled,
+                measures_per_group: ui_config.hires_measures_per_group,
+                tile_width_px: ui_config.hires_tile_width_px,
+                cooldown_secs: ui_config.hires_cooldown_secs,
+                gpu_mem_limit_mb: ui_config.hires_gpu_mem_limit_mb,
+            },
+            logging: LoggingSettings {
+                log_retention_count: ui_config.log_retention_count,
+                monitor_refresh_interval_ms: ui_config.monitor_refresh_interval_ms,
+            },
+            cloud: CloudSettings {
+                connections: Vec::new(),
+                alert: None,
+            },
         }
     }
 
@@ -189,10 +259,10 @@ impl SettingsPanel {
                 self.selected_menu_index = idx;
             }
             Event::SynthBackendChanged(backend) => {
-                self.synth_backend = backend;
+                self.synth.backend = backend;
             }
             Event::SoundfontPathChanged(path) => {
-                self.soundfont_path = path;
+                self.synth.soundfont_path = path;
             }
             Event::BrowseSoundfont => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -202,38 +272,38 @@ impl SettingsPanel {
                     .add_filter("所有文件", &["*"])
                     .pick_file()
                 {
-                    self.soundfont_path = path.to_string_lossy().into_owned();
+                    self.synth.soundfont_path = path.to_string_lossy().into_owned();
                 }
             }
             Event::NativeTitlebarChanged(enabled) => {
-                self.use_native_titlebar = enabled;
+                self.synth.use_native_titlebar = enabled;
             }
             Event::XSynthBufferChanged(ms) => {
-                self.xsynth_buffer_ms = ms;
+                self.synth.xsynth_buffer_ms = ms;
             }
             Event::XSynthSampleRateChanged(sr) => {
-                self.xsynth_sample_rate = sr;
+                self.synth.xsynth_sample_rate = sr;
             }
             Event::XSynthFadeOutChanged(f) => {
-                self.xsynth_fade_out = f;
+                self.synth.xsynth_fade_out = f;
             }
             Event::XSynthMaxVoicesChanged(v) => {
-                self.xsynth_max_voices_per_key = v;
+                self.synth.xsynth_max_voices_per_key = v;
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理
             }
             Event::EraserBehaviorChanged(behavior) => {
-                self.eraser_behavior = behavior;
+                self.editing.eraser_behavior = behavior;
             }
             Event::SelectionBoxModeChanged(mode) => {
-                self.selection_box_mode = mode;
+                self.editing.selection_box_mode = mode;
             }
             Event::ProgramFontNameChanged(name) => {
-                self.program_font_name = name;
+                self.editing.program_font_name = name;
             }
             Event::ProgramFontPathChanged(path) => {
-                self.program_font_path = path;
+                self.editing.program_font_path = path;
             }
             Event::BrowseProgramFont => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -243,116 +313,116 @@ impl SettingsPanel {
                     .add_filter("所有文件", &["*"])
                     .pick_file()
                 {
-                    self.program_font_path = path.to_string_lossy().into_owned();
+                    self.editing.program_font_path = path.to_string_lossy().into_owned();
                 }
             }
             // 自动滚动配置事件
             Event::AutoScrollFixedPositionChanged(value) => {
-                parse_setting(&value, |val| self.auto_scroll_fixed_position = val);
+                parse_setting(&value, |val| self.auto_scroll.fixed_position = val);
             }
             Event::AutoScrollPageTriggerOffsetChanged(value) => {
-                parse_setting(&value, |val| self.auto_scroll_page_trigger_offset = val);
+                parse_setting(&value, |val| self.auto_scroll.page_trigger_offset = val);
             }
             Event::AutoScrollPageReturnPositionChanged(value) => {
-                parse_setting(&value, |val| self.auto_scroll_page_return_position = val);
+                parse_setting(&value, |val| self.auto_scroll.page_return_position = val);
             }
             // 力度过滤
             Event::VelocityFilterThresholdChanged(value) => {
-                parse_setting(&value, |val| self.velocity_filter_threshold = val);
+                parse_setting(&value, |val| self.midi.velocity_filter_threshold = val);
             }
             Event::IconHiDPIChanged(enabled) => {
-                self.icon_hidpi = enabled;
+                self.display.icon_hidpi = enabled;
             }
             Event::Enable256keyChanged(enabled) => {
-                self.enable_256key = enabled;
+                self.display.enable_256key = enabled;
             }
             Event::VelocityCurveStyleChanged(enabled) => {
-                self.velocity_curve_style = enabled;
+                self.display.velocity_curve_style = enabled;
             }
             Event::DeviceSelected(id) => {
-                self.selected_midi_device = Some(id);
+                self.midi.selected_device = Some(id);
                 tracing::debug!("设置: MIDI 输入设备选择为 #{}", id);
             }
             Event::LanguageChanged(lang) => {
-                self.language = lang;
+                self.display.language = lang;
                 tracing::debug!("设置: 界面语言切换为 {:?}", lang);
             }
             // 高精度洋葱皮贴图设置
             Event::HiresOnionEnabledChanged(v) => {
-                self.hires_onion_enabled = v;
+                self.hires.onion_enabled = v;
             }
             Event::HiresMeasuresPerGroupChanged(s) => {
-                parse_setting(&s, |v: u32| self.hires_measures_per_group = v.clamp(1, 16));
+                parse_setting(&s, |v: u32| self.hires.measures_per_group = v.clamp(1, 16));
             }
             Event::HiresTileWidthChanged(s) => {
-                parse_setting(&s, |v: u32| self.hires_tile_width_px = v.clamp(480, 7680));
+                parse_setting(&s, |v: u32| self.hires.tile_width_px = v.clamp(480, 7680));
             }
             Event::HiresCooldownChanged(s) => {
-                parse_setting(&s, |v: u64| self.hires_cooldown_secs = v.clamp(3, 60));
+                parse_setting(&s, |v: u64| self.hires.cooldown_secs = v.clamp(3, 60));
             }
             Event::HiresGpuMemLimitChanged(s) => {
                 // 用户硬约束：不得限制 GPU 内存使用——移除 clamp(128, 4096)
-                parse_setting(&s, |v: u32| self.hires_gpu_mem_limit_mb = v);
+                parse_setting(&s, |v: u32| self.hires.gpu_mem_limit_mb = v);
             }
             Event::PlaybackKeyColorsEnabledChanged(v) => {
-                self.playback_key_colors_enabled = v;
+                self.display.playback_key_colors_enabled = v;
             }
             Event::TrackAddBehaviorChanged(v) => {
-                self.track_add_behavior = v;
+                self.editing.track_add_behavior = v;
             }
             Event::PaletteChanged(name) => {
-                if let Some(p) = self.available_palettes.iter().find(|n| **n == name) {
-                    self.selected_palette = p.to_string();
+                if let Some(p) = self.display.available_palettes.iter().find(|n| **n == name) {
+                    self.display.selected_palette = p.to_string();
                     tracing::debug!("设置: 调色板切换为 '{}'", name);
                 }
             }
             // 编辑设置
             Event::HistoryTotalLimitChanged(s) => {
-                parse_setting(&s, |v: usize| self.history_total_limit = v.clamp(10, 1000));
+                parse_setting(&s, |v: usize| self.editing.history_total_limit = v.clamp(10, 1000));
             }
             Event::HistoryEntryLimitChanged(s) => {
-                parse_setting(&s, |v: usize| self.history_entry_limit = v.clamp(100, 10000));
+                parse_setting(&s, |v: usize| self.editing.history_entry_limit = v.clamp(100, 10000));
             }
             Event::MergeWindowMsChanged(s) => {
-                parse_setting(&s, |v: u64| self.merge_window_ms = v.min(5000));
+                parse_setting(&s, |v: u64| self.editing.merge_window_ms = v.min(5000));
             }
             Event::InterceptNotificationChanged(enabled) => {
-                self.intercept_notification_enabled = enabled;
+                self.editing.intercept_notification_enabled = enabled;
             }
             Event::AutomationLineThicknessChanged(v) => {
-                self.automation_line_thickness = v.clamp(1.0, 10.0);
+                self.editing.automation_line_thickness = v.clamp(1.0, 10.0);
             }
             Event::TempoMaxBpmChanged(v) => {
-                self.tempo_max_bpm = v;
-                self.tempo_custom_open = false;
+                self.editing.tempo_max_bpm = v;
+                self.editing.tempo_custom_open = false;
             }
             Event::TempoMaxBpmCustomOpen => {
                 // 打开面板时预填当前值，方便微调
-                if self.tempo_custom_input.is_empty() {
-                    self.tempo_custom_input = format!("{:.0}", self.tempo_max_bpm);
+                if self.editing.tempo_custom_input.is_empty() {
+                    self.editing.tempo_custom_input = format!("{:.0}", self.editing.tempo_max_bpm);
                 }
-                self.tempo_custom_open = true;
+                self.editing.tempo_custom_open = true;
             }
             Event::TempoMaxBpmCustomClose => {
-                self.tempo_custom_open = false;
+                self.editing.tempo_custom_open = false;
             }
             Event::TempoMaxBpmCustomInput(value) => {
-                self.tempo_custom_input = value;
+                self.editing.tempo_custom_input = value;
             }
             Event::TempoMaxBpmCustomConfirm => {
-                if let Ok(v) = self.tempo_custom_input.trim().parse::<f64>() {
-                    self.tempo_max_bpm = v;
-                    self.tempo_custom_open = false;
+                if let Ok(v) = self.editing.tempo_custom_input.trim().parse::<f64>() {
+                    self.editing.tempo_max_bpm = v;
+                    self.editing.tempo_custom_open = false;
                     tracing::info!("设置: 自定义 Tempo BPM 上限为 {:.0}", v);
                 } else {
                     tracing::warn!("设置: 自定义 Tempo BPM 上限输入无效");
                 }
             }
             Event::LogRetentionCountChanged(s) => {
-                parse_setting(&s, |v: usize| self.log_retention_count = v);
+                parse_setting(&s, |v: usize| self.logging.log_retention_count = v);
             }
             Event::MonitorRefreshIntervalChanged(v) => {
-                self.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);
+                self.logging.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);
             }
         }
     }
@@ -364,7 +434,7 @@ pub fn view<'a>(
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> Element<'a> {
-    let menu_items = menu::create_menu_items(settings.language);
+    let menu_items = menu::create_menu_items(settings.display.language);
 
     let menu_list = menu::render_menu_list(settings, window, &menu_items);
     let content_area = render_content_area(settings, window, system_fonts);
@@ -484,26 +554,26 @@ mod tests {
     #[test]
     fn test_tempo_max_bpm_default_from_config() {
         let panel = panel_with_tempo(512.0);
-        assert_eq!(panel.tempo_max_bpm, 512.0);
-        assert!(!panel.tempo_custom_open);
+        assert_eq!(panel.editing.tempo_max_bpm, 512.0);
+        assert!(!panel.editing.tempo_custom_open);
     }
 
     #[test]
     fn test_tempo_preset_selected_closes_custom_panel() {
         let mut panel = panel_with_tempo(512.0);
         panel.update(Event::TempoMaxBpmCustomOpen);
-        assert!(panel.tempo_custom_open);
+        assert!(panel.editing.tempo_custom_open);
         panel.update(Event::TempoMaxBpmChanged(2048.0));
-        assert_eq!(panel.tempo_max_bpm, 2048.0);
-        assert!(!panel.tempo_custom_open);
+        assert_eq!(panel.editing.tempo_max_bpm, 2048.0);
+        assert!(!panel.editing.tempo_custom_open);
     }
 
     #[test]
     fn test_tempo_custom_open_prefills_current_value() {
         let mut panel = panel_with_tempo(700.0);
         panel.update(Event::TempoMaxBpmCustomOpen);
-        assert!(panel.tempo_custom_open);
-        assert_eq!(panel.tempo_custom_input, "700");
+        assert!(panel.editing.tempo_custom_open);
+        assert_eq!(panel.editing.tempo_custom_input, "700");
     }
 
     #[test]
@@ -512,8 +582,8 @@ mod tests {
         panel.update(Event::TempoMaxBpmCustomOpen);
         panel.update(Event::TempoMaxBpmCustomInput("1234".to_string()));
         panel.update(Event::TempoMaxBpmCustomConfirm);
-        assert_eq!(panel.tempo_max_bpm, 1234.0);
-        assert!(!panel.tempo_custom_open);
+        assert_eq!(panel.editing.tempo_max_bpm, 1234.0);
+        assert!(!panel.editing.tempo_custom_open);
     }
 
     #[test]
@@ -523,8 +593,8 @@ mod tests {
         panel.update(Event::TempoMaxBpmCustomInput("abc".to_string()));
         panel.update(Event::TempoMaxBpmCustomConfirm);
         // 无效输入不生效，面板保持打开以便修正
-        assert_eq!(panel.tempo_max_bpm, 512.0);
-        assert!(panel.tempo_custom_open);
+        assert_eq!(panel.editing.tempo_max_bpm, 512.0);
+        assert!(panel.editing.tempo_custom_open);
     }
 
     #[test]
@@ -532,6 +602,6 @@ mod tests {
         let mut panel = panel_with_tempo(512.0);
         panel.update(Event::TempoMaxBpmCustomOpen);
         panel.update(Event::TempoMaxBpmCustomClose);
-        assert!(!panel.tempo_custom_open);
+        assert!(!panel.editing.tempo_custom_open);
     }
 }

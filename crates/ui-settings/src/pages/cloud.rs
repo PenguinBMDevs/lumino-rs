@@ -15,7 +15,8 @@ use lumino_message::CloudAction;
 pub fn view(settings: &SettingsPanel) -> Element<'static> {
     // 断连提醒标志（Q5：失败提醒在设置面板始终可见，实时更新）
     let alert: Element<'static> = settings
-        .cloud_alert
+        .cloud
+        .alert
         .as_deref()
         .map(|msg| {
             container(
@@ -52,7 +53,7 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
         .on_press(Message::Cloud(CloudAction::OpenConnectPanel));
 
     // 连接列表
-    let list: Element<'static> = if settings.cloud_connections.is_empty() {
+    let list: Element<'static> = if settings.cloud.connections.is_empty() {
         text("尚未添加云存储连接。支持 FTP / SFTP / WebDAV，连接信息仅存储在本机。")
             .size(12)
             .style(|theme: &Theme| text::Style {
@@ -63,7 +64,8 @@ pub fn view(settings: &SettingsPanel) -> Element<'static> {
         scrollable(
             column(
                 settings
-                    .cloud_connections
+                    .cloud
+                    .connections
                     .iter()
                     .map(conn_row)
                     .collect::<Vec<_>>(),

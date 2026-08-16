@@ -33,76 +33,76 @@ impl Root {
     pub fn sync_history_config(&mut self) {
         let settings = &self.settings;
         self.editor.editor_state.data.history.set_config(
-            settings.history_total_limit,
-            settings.merge_window_ms,
-            settings.history_entry_limit as u32,
+            settings.editing.history_total_limit,
+            settings.editing.merge_window_ms,
+            settings.editing.history_entry_limit as u32,
         );
     }
 
     /// 是否允许显示编辑拦截 Toast（由 UiConfig 控制）
     pub fn intercept_notification_enabled(&self) -> bool {
-        self.settings.intercept_notification_enabled
+        self.settings.editing.intercept_notification_enabled
     }
 
     // ─── 私有辅助方法 ───────────────────────────────────────
 
     /// 同步编辑器交互设置（橡皮擦、框选、力度过滤、播放键盘颜色、自动化连线粗细）
     fn sync_editor_interaction_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
-        if old.eraser_behavior != new.eraser_behavior {
+        if old.editing.eraser_behavior != new.editing.eraser_behavior {
             tracing::info!(
                 "同步橡皮擦行为: {:?} -> {:?}",
-                old.eraser_behavior,
-                new.eraser_behavior
+                old.editing.eraser_behavior,
+                new.editing.eraser_behavior
             );
-            self.editor.set_eraser_behavior(new.eraser_behavior);
+            self.editor.set_eraser_behavior(new.editing.eraser_behavior);
         }
 
-        if old.selection_box_mode != new.selection_box_mode {
+        if old.editing.selection_box_mode != new.editing.selection_box_mode {
             tracing::info!(
                 "同步框选框模式: {:?} -> {:?}",
-                old.selection_box_mode,
-                new.selection_box_mode
+                old.editing.selection_box_mode,
+                new.editing.selection_box_mode
             );
-            self.editor.set_selection_box_mode(new.selection_box_mode);
+            self.editor.set_selection_box_mode(new.editing.selection_box_mode);
         }
 
-        if old.velocity_filter_threshold != new.velocity_filter_threshold {
+        if old.midi.velocity_filter_threshold != new.midi.velocity_filter_threshold {
             tracing::info!(
                 "同步力度过滤阈值: {} -> {}",
-                old.velocity_filter_threshold,
-                new.velocity_filter_threshold
+                old.midi.velocity_filter_threshold,
+                new.midi.velocity_filter_threshold
             );
-            self.visual.velocity_filter_threshold = new.velocity_filter_threshold;
+            self.visual.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             // 阈值变化会改变哪些音符应当发声，需要重建播放队列
             self.update_playback_notes();
         }
 
-        if old.playback_key_colors_enabled != new.playback_key_colors_enabled {
+        if old.display.playback_key_colors_enabled != new.display.playback_key_colors_enabled {
             tracing::info!(
                 "同步播放键盘颜色: {} -> {}",
-                old.playback_key_colors_enabled,
-                new.playback_key_colors_enabled
+                old.display.playback_key_colors_enabled,
+                new.display.playback_key_colors_enabled
             );
             self.editor
-                .set_playback_key_colors_enabled(new.playback_key_colors_enabled);
+                .set_playback_key_colors_enabled(new.display.playback_key_colors_enabled);
         }
 
-        if old.automation_line_thickness != new.automation_line_thickness {
+        if old.editing.automation_line_thickness != new.editing.automation_line_thickness {
             tracing::info!(
                 "同步自动化曲线连线粗细: {} -> {}",
-                old.automation_line_thickness,
-                new.automation_line_thickness
+                old.editing.automation_line_thickness,
+                new.editing.automation_line_thickness
             );
-            self.editor.velocity_panel.automation_line_thickness = new.automation_line_thickness;
+            self.editor.velocity_panel.automation_line_thickness = new.editing.automation_line_thickness;
         }
 
-        if old.tempo_max_bpm != new.tempo_max_bpm {
+        if old.editing.tempo_max_bpm != new.editing.tempo_max_bpm {
             tracing::info!(
                 "同步 Tempo BPM 上限: {} -> {}",
-                old.tempo_max_bpm,
-                new.tempo_max_bpm
+                old.editing.tempo_max_bpm,
+                new.editing.tempo_max_bpm
             );
-            self.editor.velocity_panel.tempo_max_bpm = new.tempo_max_bpm;
+            self.editor.velocity_panel.tempo_max_bpm = new.editing.tempo_max_bpm;
         }
     }
 
@@ -111,33 +111,33 @@ impl Root {
         let mut changed = false;
         let mut config = *self.editor.auto_scroll_config();
 
-        if old.auto_scroll_fixed_position != new.auto_scroll_fixed_position {
+        if old.auto_scroll.fixed_position != new.auto_scroll.fixed_position {
             tracing::info!(
                 "同步自动滚动固定位置: {} -> {}",
-                old.auto_scroll_fixed_position,
-                new.auto_scroll_fixed_position
+                old.auto_scroll.fixed_position,
+                new.auto_scroll.fixed_position
             );
-            config.fixed_indicator_position = new.auto_scroll_fixed_position;
+            config.fixed_indicator_position = new.auto_scroll.fixed_position;
             changed = true;
         }
 
-        if old.auto_scroll_page_trigger_offset != new.auto_scroll_page_trigger_offset {
+        if old.auto_scroll.page_trigger_offset != new.auto_scroll.page_trigger_offset {
             tracing::info!(
                 "同步自动滚动翻页触发偏移: {} -> {}",
-                old.auto_scroll_page_trigger_offset,
-                new.auto_scroll_page_trigger_offset
+                old.auto_scroll.page_trigger_offset,
+                new.auto_scroll.page_trigger_offset
             );
-            config.page_trigger_offset = new.auto_scroll_page_trigger_offset;
+            config.page_trigger_offset = new.auto_scroll.page_trigger_offset;
             changed = true;
         }
 
-        if old.auto_scroll_page_return_position != new.auto_scroll_page_return_position {
+        if old.auto_scroll.page_return_position != new.auto_scroll.page_return_position {
             tracing::info!(
                 "同步自动滚动翻页返回位置: {} -> {}",
-                old.auto_scroll_page_return_position,
-                new.auto_scroll_page_return_position
+                old.auto_scroll.page_return_position,
+                new.auto_scroll.page_return_position
             );
-            config.page_return_position = new.auto_scroll_page_return_position;
+            config.page_return_position = new.auto_scroll.page_return_position;
             changed = true;
         }
 
@@ -148,18 +148,18 @@ impl Root {
 
     /// 同步显示设置（HiDPI 图标、256 键模式、音轨列表显示模式）
     fn sync_display_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
-        if old.icon_hidpi != new.icon_hidpi {
-            tracing::info!("同步 HiDPI 图标: {} -> {}", old.icon_hidpi, new.icon_hidpi);
-            crate::resources::icon::set_hidpi_enabled(new.icon_hidpi);
+        if old.display.icon_hidpi != new.display.icon_hidpi {
+            tracing::info!("同步 HiDPI 图标: {} -> {}", old.display.icon_hidpi, new.display.icon_hidpi);
+            crate::resources::icon::set_hidpi_enabled(new.display.icon_hidpi);
         }
 
-        if old.enable_256key != new.enable_256key {
+        if old.display.enable_256key != new.display.enable_256key {
             tracing::info!(
                 "同步 256 键模式: {} -> {}",
-                old.enable_256key,
-                new.enable_256key
+                old.display.enable_256key,
+                new.display.enable_256key
             );
-            let new_count: u16 = if new.enable_256key { 256 } else { 128 };
+            let new_count: u16 = if new.display.enable_256key { 256 } else { 128 };
             self.editor.set_visible_key_count(new_count);
             self.editor.editor_state.view.key_count = new_count;
         }
@@ -167,41 +167,41 @@ impl Root {
 
     /// 同步音频相关设置（合成器后端、音色库路径、XSynth 参数）
     fn sync_audio_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
-        if old.synth_backend != new.synth_backend {
+        if old.synth.backend != new.synth.backend {
             tracing::info!(
                 "同步合成器后端: {:?} -> {:?}",
-                old.synth_backend,
-                new.synth_backend
+                old.synth.backend,
+                new.synth.backend
             );
             // 合成器后端变更需要重新初始化，标记为需要重新初始化
             // 实际重新初始化在 save_storage 中处理
         }
 
-        if old.soundfont_path != new.soundfont_path {
+        if old.synth.soundfont_path != new.synth.soundfont_path {
             tracing::info!(
                 "同步音色库路径: '{}' -> '{}'",
-                old.soundfont_path,
-                new.soundfont_path
+                old.synth.soundfont_path,
+                new.synth.soundfont_path
             );
             // 音色库路径变更需要重新初始化，标记为需要重新初始化
         }
 
-        if old.xsynth_buffer_ms != new.xsynth_buffer_ms
-            || old.xsynth_sample_rate != new.xsynth_sample_rate
-            || old.xsynth_threads != new.xsynth_threads
-            || old.xsynth_fade_out != new.xsynth_fade_out
-            || old.xsynth_max_voices_per_key != new.xsynth_max_voices_per_key
+        if old.synth.xsynth_buffer_ms != new.synth.xsynth_buffer_ms
+            || old.synth.xsynth_sample_rate != new.synth.xsynth_sample_rate
+            || old.synth.xsynth_threads != new.synth.xsynth_threads
+            || old.synth.xsynth_fade_out != new.synth.xsynth_fade_out
+            || old.synth.xsynth_max_voices_per_key != new.synth.xsynth_max_voices_per_key
         {
             tracing::info!(
                 "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
-                old.xsynth_buffer_ms,
-                new.xsynth_buffer_ms,
-                old.xsynth_threads,
-                new.xsynth_threads,
-                old.xsynth_fade_out,
-                new.xsynth_fade_out,
-                old.xsynth_max_voices_per_key,
-                new.xsynth_max_voices_per_key
+                old.synth.xsynth_buffer_ms,
+                new.synth.xsynth_buffer_ms,
+                old.synth.xsynth_threads,
+                new.synth.xsynth_threads,
+                old.synth.xsynth_fade_out,
+                new.synth.xsynth_fade_out,
+                old.synth.xsynth_max_voices_per_key,
+                new.synth.xsynth_max_voices_per_key
             );
             // XSynth 参数变更需要重新初始化
         }
@@ -209,11 +209,11 @@ impl Root {
 
     /// 同步 MIDI 输入设备选择
     fn sync_midi_device_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
-        if old.selected_midi_device != new.selected_midi_device {
+        if old.midi.selected_device != new.midi.selected_device {
             tracing::info!(
                 "同步 MIDI 输入设备: {:?} -> {:?}",
-                old.selected_midi_device,
-                new.selected_midi_device
+                old.midi.selected_device,
+                new.midi.selected_device
             );
             // MIDI 设备选择变更需要重新打开设备
         }

@@ -61,7 +61,7 @@ fn with_toolbar_overlay<'a>(
     let menu = root.toolbar.render_overflow_menu(
         &hidden,
         has_selection,
-        root.settings.language,
+        root.settings.display.language,
         panel_background,
         &root.window.theme,
         arrangement_mode,

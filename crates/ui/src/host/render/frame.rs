@@ -34,7 +34,7 @@ impl Host {
         let now = std::time::Instant::now();
         let elapsed = now.duration_since(self.last_fps_update);
 
-        let interval_ms = self.root.settings().monitor_refresh_interval_ms as u128;
+        let interval_ms = self.root.settings().logging.monitor_refresh_interval_ms as u128;
         if elapsed.as_millis() >= interval_ms {
             let fps = self.frame_count as f32 / elapsed.as_secs_f32();
 

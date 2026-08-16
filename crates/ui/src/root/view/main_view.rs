@@ -54,7 +54,7 @@ impl Root {
         let ppq = self.editor.editor_state.view.ppq;
         let left_bar = self.sidebar.view(
             &self.window,
-            self.settings.language,
+            self.settings.display.language,
             self.state.current_mode,
             self.toolbar.note_precision.as_ticks(ppq),
         );
@@ -102,7 +102,7 @@ impl Root {
                     self.editor.velocity_panel.view(
                         &self.editor,
                         self.visual.velocity_panel_height,
-                        self.settings.language,
+                        self.settings.display.language,
                     )
                 } else {
                     iced_widget::Space::new().height(0).into()
@@ -121,7 +121,7 @@ impl Root {
                 let toolbar = self.toolbar.toolbar_view(
                     &self.window,
                     has_selection,
-                    self.settings.language,
+                    self.settings.display.language,
                     &perf_ctx,
                     available_width,
                     false,
@@ -132,7 +132,7 @@ impl Root {
                     right_sidebar::view::view(
                         &self.right_sidebar,
                         &self.window,
-                        self.settings.language,
+                        self.settings.display.language,
                     )
                 } else {
                     iced_widget::Space::new().into()
@@ -165,10 +165,10 @@ impl Root {
             column![
                 self.titlebar.view(
                     &self.window,
-                    self.settings.use_native_titlebar,
+                    self.settings.synth.use_native_titlebar,
                     self.state.current_mode,
                     self.state.toggle_animation.position,
-                    self.settings.language,
+                    self.settings.display.language,
                     export_material_enabled,
                 ),
                 row![left_bar, right_content].height(Length::Fill),
@@ -212,7 +212,7 @@ impl Root {
         Some(crate::right_sidebar::material_delete_dialog::view(
             name,
             index,
-            self.settings.language,
+            self.settings.display.language,
         ))
     }
 
@@ -414,7 +414,7 @@ impl Root {
             self.toolbar.toolbar_view(
                 &self.window,
                 false,
-                self.settings.language,
+                self.settings.display.language,
                 &perf_ctx,
                 available_width,
                 true,

@@ -8,6 +8,6 @@ use crate::root::Root;
 impl Root {
     /// 渲染状态栏（性能面板已交由 Stack 浮动层处理）
     pub(super) fn view_status_section(&self) -> Element<'_> {
-        self.statusbar.view(self.settings.language)
+        self.statusbar.view(self.settings.display.language)
     }
 }

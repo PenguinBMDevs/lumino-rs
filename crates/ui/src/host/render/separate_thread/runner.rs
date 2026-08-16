@@ -355,7 +355,7 @@ impl Host {
             cc_points: &cc_points,
             bend_points: &bend_points,
             automation_lane,
-            velocity_curve_style: self.root.settings.velocity_curve_style,
+            velocity_curve_style: self.root.settings.display.velocity_curve_style,
         };
 
         lumino_gfx::build_cc_bar_instances(&panel.edit_mode, &cc_view_params, &cc_data, &cc_colors)

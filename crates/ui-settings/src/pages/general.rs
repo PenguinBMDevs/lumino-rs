@@ -72,14 +72,14 @@ impl LocalizedTrackAdd {
 
 /// 渲染常规设置页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
-    let t = settings_translations(settings.language);
+    let t = settings_translations(settings.display.language);
 
     // 橡皮擦行为选项（本地化）
     let eraser_options = vec![
-        LocalizedEraser::new(EraserBehavior::Default, settings.language),
-        LocalizedEraser::new(EraserBehavior::DirectSelect, settings.language),
+        LocalizedEraser::new(EraserBehavior::Default, settings.display.language),
+        LocalizedEraser::new(EraserBehavior::DirectSelect, settings.display.language),
     ];
-    let current_eraser = LocalizedEraser::new(settings.eraser_behavior, settings.language);
+    let current_eraser = LocalizedEraser::new(settings.editing.eraser_behavior, settings.display.language);
 
     column![
         text(t.general_title)
@@ -115,12 +115,12 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 vec![
-                    LocalizedTrackAdd::new(TrackAddBehavior::AutoSwitch, settings.language),
-                    LocalizedTrackAdd::new(TrackAddBehavior::StayCurrent, settings.language),
+                    LocalizedTrackAdd::new(TrackAddBehavior::AutoSwitch, settings.display.language),
+                    LocalizedTrackAdd::new(TrackAddBehavior::StayCurrent, settings.display.language),
                 ],
                 Some(LocalizedTrackAdd::new(
-                    settings.track_add_behavior,
-                    settings.language
+                    settings.editing.track_add_behavior,
+                    settings.display.language
                 )),
                 |lt| Message::Settings(crate::Event::TrackAddBehaviorChanged(lt.inner)),
             )
@@ -143,7 +143,7 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            text_input("10", &settings.log_retention_count.to_string())
+            text_input("10", &settings.logging.log_retention_count.to_string())
                 .on_input(|v| Message::Settings(crate::Event::LogRetentionCountChanged(v)))
                 .width(80.0),
         ]

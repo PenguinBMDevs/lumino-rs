@@ -109,6 +109,10 @@ pub struct MidiDocument {
     /// 全量扫描 1600W 音符 ≈ 29.8ms/次。本缓存由所有写入入口增量维护：
     /// 插入 O(1)（与当前 max 取大），删除/整轨替换/可变引用保守置脏（查询时
     /// 惰性重算一次 O(N)）。用 Mutex 而非 Cell 保证 Send（loader 跨线程传递）。
+    ///
+    /// 内部缓存：外部请使用 [`MidiDocument::track_max_end_tick`] 查询，
+    /// 直接读写本字段会绕过置脏逻辑导致缓存失效。
+    #[doc(hidden)]
     pub track_max_end_ticks: Vec<std::sync::Arc<std::sync::Mutex<Option<u32>>>>,
 }
 
@@ -338,6 +342,18 @@ impl MidiDocument {
     #[inline]
     pub fn total_ticks(&self) -> u32 {
         self.total_ticks
+    }
+
+    /// 获取音轨可见性管理（只读视图）。
+    #[inline]
+    pub fn tracks(&self) -> &TrackManager {
+        &self.tracks
+    }
+
+    /// 获取 MIDI 文件头 division（PPQ）。
+    #[inline]
+    pub fn division(&self) -> u16 {
+        self.division
     }
 
     /// 获取所有 CompactEvent（按需从 NoteEvent 实时构造）。
@@ -608,15 +624,18 @@ impl MidiDocument {
             && let Some(cur) = cell.lock().ok().and_then(|g| *g)
             && note.end_tick > cur
         {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = Some(note.end_tick);
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(note.end_tick);
         }
         true
     }
 
     /// 使指定音轨的 max_end_tick 缓存失效（置脏），下次查询时惰性重算。
+    ///
+    /// 毒锁时恢复（`into_inner`）而非 panic：缓存失效是保守操作，
+    /// 即使锁被 panic 污染也不应中断编辑流程。
     fn invalidate_track_max_tick(&self, track_id: usize) {
         if let Some(cell) = self.track_max_end_ticks.get(track_id) {
-            *cell.lock().expect("track_max_end_ticks lock poisoned") = None;
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = None;
         }
     }
 
@@ -715,7 +734,7 @@ impl MidiDocument {
             .unwrap_or(0);
         // 空轨 max=0 不缓存为 Some(0)（避免与"脏"语义混淆），保持脏（None），
         // 下次查询继续惰性重算（空轨重算成本为 0）。
-        *cell.lock().expect("track_max_end_ticks lock poisoned") =
+        *cell.lock().unwrap_or_else(|e| e.into_inner()) =
             if max == 0 { None } else { Some(max) };
         max
     }

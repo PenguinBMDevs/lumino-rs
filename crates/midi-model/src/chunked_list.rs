@@ -207,11 +207,15 @@ impl<T: EventTick> ChunkedList<T> {
                 && last.len() < EVENT_CHUNK_CAPACITY
         });
         if fast_path {
-            let last = Arc::make_mut(self.chunks.last_mut().expect("fast_path 已证明非空"));
-            last.push(event);
-            self.total_len += 1;
-            if let Some(last_offset) = self.chunk_offsets.last_mut() {
-                *last_offset = self.total_len;
+            // fast_path 已保证末尾块非空（is_some_and 前置检查）；
+            // if-let 防御性兜底，避免 expect panic 路径。
+            if let Some(last) = self.chunks.last_mut() {
+                let last = Arc::make_mut(last);
+                last.push(event);
+                self.total_len += 1;
+                if let Some(last_offset) = self.chunk_offsets.last_mut() {
+                    *last_offset = self.total_len;
+                }
             }
             return;
         }
