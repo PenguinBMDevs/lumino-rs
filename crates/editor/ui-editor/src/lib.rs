@@ -202,13 +202,12 @@ pub struct SelectionBoxAnimState {
 /// 编辑器各组件的内存占用快照（字节）
 #[derive(Debug, Clone, Default)]
 pub struct EditorMemory {
-    /// 当前音轨音符的估算内存（len × sizeof(Note)）
-    pub notes_bytes: usize,
     /// document 中全部音轨的音符总量
     pub track_notes_count: usize,
-    pub track_notes_bytes: usize,
     /// document 的音轨条数
     pub track_notes_entries: usize,
-    /// document Arc 指向事件的 Vec 内存
+    /// document 中音符数据的实际占用（cap × sizeof(NoteEvent)，
+    /// 2026-08-15 起为唯一音符字节统计口径；`notes` / `track_notes`
+    /// 冗余缓存已删除，不再重复统计同一份数据）
     pub document_events_bytes: usize,
 }

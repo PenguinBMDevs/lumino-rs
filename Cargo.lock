@@ -4353,6 +4353,7 @@ dependencies = [
  "encoding_rs",
  "lumino-archive-reader",
  "lumino-memory-monitor",
+ "lumino-memtrace",
  "lumino-midi-model",
  "lumino-midly",
  "puffin",
@@ -4402,9 +4403,9 @@ dependencies = [
 
 [[package]]
 name = "lumino-midly"
-version = "0.6.2"
+version = "0.6.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "650c6e02bd888bb5aed747c5349234a7e8155d594432d8bf25fa9fbbad96f05c"
+checksum = "1a01ec599f21ee372541f80b3bbbfa6ec174e2695b15961941afd9b0ce18c7ea"
 dependencies = [
  "memmap2",
  "rayon",

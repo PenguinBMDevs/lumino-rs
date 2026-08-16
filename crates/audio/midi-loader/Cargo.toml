@@ -23,6 +23,7 @@ zstd = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }
 lumino-memory-monitor = { workspace = true }
+lumino-memtrace = { workspace = true }
 lumino-archive-reader = { workspace = true }
 thiserror = { workspace = true }
 puffin = { workspace = true }

@@ -31,10 +31,9 @@ fn test_memory_breakdown_empty_editor() {
     let editor = Editor::new();
     let mem = editor.memory_breakdown();
 
-    assert_eq!(mem.notes_bytes, 0);
     assert_eq!(mem.track_notes_count, 0);
     assert_eq!(mem.track_notes_entries, 0);
-    assert_eq!(mem.track_notes_bytes, 0);
+    assert_eq!(mem.document_events_bytes, 0);
 }
 
 /// 测试有音符时的内存快照
@@ -45,12 +44,13 @@ fn test_memory_breakdown_with_notes() {
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 62, 240.0)]);
 
     let mem = editor.memory_breakdown();
-    let note_size = std::mem::size_of::<Note>();
+    let note_size = std::mem::size_of::<lumino_midi_loader::NoteEvent>();
 
-    assert_eq!(mem.notes_bytes, note_size);
     assert_eq!(mem.track_notes_count, 1);
     assert_eq!(mem.track_notes_entries, 1);
-    assert_eq!(mem.track_notes_bytes, note_size);
+    // 2026-08-15：字节统计统一走 document_events_bytes（唯一真实持有）。
+    // 按 capacity 统计（含 tempo_changes 等），至少覆盖 1 个音符的 16B
+    assert!(mem.document_events_bytes >= note_size);
 }
 
 /// 测试远程光标更新与移除

@@ -47,7 +47,7 @@ lumino-midi-model = { path = "crates/audio/midi-model", version = "0.2.0-crates-
 lumino-message = { path = "crates/core/message", version = "0.2.0-crates-io-preview1" }
 lumino-playback = { path = "crates/audio/playback", version = "0.2.0-crates-io-preview1" }
 lumino-realtime = { path = "crates/audio/realtime", version = "0.2.0-crates-io-preview1" }
-midly = { version = "0.6.2", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
+midly = { version = "0.6.3", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
 lumino-dialog = { path = "crates/editor/dialog", version = "0.2.0-crates-io-preview1" }
 lumino-ui = { path = "crates/editor/ui", version = "0.2.0-crates-io-preview1" }
 # lumino-ui-constants: merged into lumino-ui-core::constants

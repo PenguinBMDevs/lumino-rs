@@ -35,9 +35,8 @@ impl RunnerInner {
                 ┌─ Memory Usage ──────────────────────────────────────────┐\n\
                 │ 进程 RSS:              {:>8} MB                         │\n\
                 ├─────────────────────────────────────────────────────────┤\n\
-                │ MidiDocument.notes:    {:>8} MB  (Vec<NoteEvent>)      │\n\
-                │ editor.notes:          {:>8} MB  (im::Vector<Note>)     │\n\
-                │ track_notes({}条):  {:>8} MB  ({} 音符)              │\n\
+                │ MidiDocument.notes:    {:>8} MB  (16B/音符, 唯一持有)   │\n\
+                │ 音符总数:               {:>8}  ({:>6} 条音轨)          │\n\
                 │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
                 ├─────────────────────────────────────────────────────────┤\n\
                 │ note_instances(三缓冲):                                │\n\
@@ -48,10 +47,8 @@ impl RunnerInner {
                 └─────────────────────────────────────────────────────────┘",
                 rss_mb,
                 mem.editor.document_events_bytes / (1024 * 1024),
-                mem.editor.notes_bytes / (1024 * 1024),
-                mem.editor.track_notes_entries,
-                mem.editor.track_notes_bytes / (1024 * 1024),
                 mem.editor.track_notes_count,
+                mem.editor.track_notes_entries,
                 mem.track_midi_events_bytes / (1024 * 1024),
                 mem.track_midi_events_entries,
                 writer_total / (1024 * 1024),

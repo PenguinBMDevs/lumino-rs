@@ -87,6 +87,46 @@ impl<T: EventTick> ChunkedList<T> {
         }
     }
 
+    /// 从已按 tick 升序排列的迭代器构建分块容器（O(N)）。
+    ///
+    /// 与 [`Self::from_sorted`] 语义一致，但直接消费迭代器分块收集，
+    /// **不产生中间 `Vec<T>`** —— 用于 MIDI 加载路径中
+    /// `PackedNote → NoteEvent` 的转换，避免 `Vec<PackedNote>` 与
+    /// `Vec<NoteEvent>` 同时驻留（2.9 亿音符场景可省 ~4.6GB 峰值）。
+    ///
+    /// 注意：调用方需保证迭代器按 tick 升序（同 [`Self::from_sorted`]）。
+    pub fn from_sorted_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+        let mut iter = iter.into_iter();
+        let mut chunks: Vec<Arc<Vec<T>>> = Vec::new();
+        let mut chunk_first_ticks = Vec::new();
+        let mut chunk_offsets = vec![0];
+        let mut total_len = 0usize;
+
+        loop {
+            let chunk: Vec<T> = iter.by_ref().take(EVENT_CHUNK_CAPACITY).collect();
+            if chunk.is_empty() {
+                break;
+            }
+            debug_assert!(
+                chunk.windows(2).all(|w| w[0].tick() <= w[1].tick()),
+                "from_sorted_iter 要求迭代器按 tick 升序"
+            );
+            let first_tick = chunk.first().map(EventTick::tick).unwrap_or(0);
+            let chunk_len = chunk.len();
+            chunks.push(Arc::new(chunk));
+            chunk_first_ticks.push(first_tick);
+            total_len += chunk_len;
+            chunk_offsets.push(total_len);
+        }
+
+        Self {
+            chunks,
+            chunk_first_ticks,
+            chunk_offsets,
+            total_len,
+        }
+    }
+
     /// 空容器
     pub fn new() -> Self {
         Self {
@@ -743,6 +783,44 @@ mod tests {
         assert_eq!(list.get(5).expect("索引 5 的事件应存在").tick, 50);
         assert_eq!(list.get(9).expect("索引 9 的事件应存在").tick, 90);
         assert_eq!(list.get(10), None);
+    }
+
+    #[test]
+    fn test_from_sorted_iter_basic() {
+        // 与 from_sorted 等价的迭代器构建（零中间 Vec）
+        let list = ChunkedList::from_sorted_iter(sorted_events(10));
+        assert_eq!(list.len(), 10);
+        assert_eq!(list.first().expect("列表首元素应存在").tick, 0);
+        assert_eq!(list.last().expect("列表末元素应存在").tick, 90);
+        assert_eq!(list.get(5).expect("索引 5 的事件应存在").tick, 50);
+        assert_eq!(list.get(10), None);
+        // 与 from_sorted 构建内容完全一致
+        assert_eq!(list.to_vec(), sorted_events(10));
+    }
+
+    #[test]
+    fn test_from_sorted_iter_empty() {
+        let list = ChunkedList::from_sorted_iter(std::iter::empty::<TestEvent>());
+        assert!(list.is_empty());
+        assert_eq!(list.len(), 0);
+        assert_eq!(list.chunk_count(), 0);
+    }
+
+    #[test]
+    fn test_from_sorted_iter_chunk_boundaries() {
+        // 70 万事件 = 2 块（50 万 + 20 万），验证跨块一致性
+        let list = ChunkedList::from_sorted_iter(sorted_events(700_000));
+        assert_eq!(list.len(), 700_000);
+        assert_eq!(list.chunk_count(), 2);
+        assert_eq!(list.get(0).expect("首元素应存在").tick, 0);
+        assert_eq!(list.get(499_999).expect("块 0 末元素应存在").tick, 4_999_990);
+        assert_eq!(list.get(500_000).expect("块 1 首元素应存在").tick, 5_000_000);
+        assert_eq!(
+            list.get(699_999).expect("末元素应存在").tick,
+            6_999_990
+        );
+        // 与 from_sorted 构建内容完全一致（含跨块）
+        assert_eq!(list.to_vec(), sorted_events(700_000));
     }
 
     #[test]

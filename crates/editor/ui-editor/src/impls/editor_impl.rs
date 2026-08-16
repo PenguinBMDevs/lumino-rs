@@ -48,26 +48,23 @@ impl Editor {
     /// 收集编辑器各组件的内存占用快照
     pub fn memory_breakdown(&self) -> EditorMemory {
         let d = &self.editor_state.data;
-        let note_size = std::mem::size_of::<Note>();
 
         // 2026-08 单一权威源：`notes` / `track_notes` 缓存已删除，
         // 音符统计全部从 document（唯一权威）读取。
-        let notes_len = d.current_track_note_count();
-        let notes_bytes = notes_len * note_size;
+        // 2026-08-15 统计口径收敛：删除 `notes_bytes` / `track_notes_bytes`
+        // 两个与 `document_events_bytes` 重复统计同一份数据的字段，
+        // 字节统计只看 `document_events_bytes`（唯一真实持有）。
 
         // 全量音符统计（document 各轨之和）
         let track_notes_entries = d.document.as_ref().map(|doc| doc.notes.len()).unwrap_or(0);
         let mut track_notes_count = 0usize;
-        let mut track_notes_bytes = 0usize;
         if let Some(doc) = &d.document {
             for notes in &doc.notes {
                 track_notes_count += notes.len();
-                track_notes_bytes += notes.len() * note_size;
             }
         }
 
-        // document notes (NoteEvent=16B, (u32,f32)=8B)
-        let doc_is_some = d.document.is_some();
+        // document notes (NoteEvent=16B) 真实占用
         let doc_notes_cap: usize = d
             .document
             .as_ref()
@@ -83,18 +80,15 @@ impl Editor {
             .unwrap_or(0);
 
         tracing::info!(
-            "[MEMORY_DEBUG] document={}, notes_cap={}, notes_len={}, track_notes_entries={}, track_notes_count={}",
-            doc_is_some,
+            "[MEMORY_DEBUG] document={}, notes_cap={}, track_notes_entries={}, track_notes_count={}",
+            d.document.is_some(),
             doc_notes_cap,
-            notes_len,
             track_notes_entries,
             track_notes_count,
         );
 
         EditorMemory {
-            notes_bytes,
             track_notes_count,
-            track_notes_bytes,
             track_notes_entries,
             document_events_bytes: doc_events_bytes,
         }

@@ -204,6 +204,7 @@ impl MidiDocument {
             }
 
             let mut notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>> = Vec::new();
+            let mut track_ports: Vec<u8> = Vec::new();
             let mut all_tempo_changes: Vec<(u32, f32)> = Vec::new();
             let mut all_time_signatures: Vec<(u32, u8, u8)> = Vec::new();
             let mut all_key_signatures: Vec<(u32, i8, bool)> = Vec::new();
@@ -219,20 +220,26 @@ impl MidiDocument {
                 |track_idx, events| {
                     if track_idx >= notes.len() {
                         notes.resize_with(track_idx + 1, crate::chunked_list::ChunkedList::new);
+                        track_ports.resize(track_idx + 1, 0);
                     }
 
-                    let mut track_notes: Vec<NoteEvent> =
-                        events.notes.into_iter().map(NoteEvent::from).collect();
-
-                    if let Some(last) = track_notes.iter().max_by_key(|n| n.end_tick) {
+                    // 2026-08-15 峰值优化：不再经中间 Vec<NoteEvent> 中转，
+                    // PackedNote 直接分块转换进 ChunkedList（省 16B/音符的峰值内存，
+                    // 2.9 亿音符场景 ≈ 4.6GB）。
+                    // midly 保证 notes 按 start_tick 升序（TrackAllEvents 契约），
+                    // from_sorted_iter 内置 debug_assert 校验有序性。
+                    if let Some(last) = events.notes.iter().max_by_key(|n| n.end_tick) {
                         total_ticks = total_ticks.max(last.end_tick);
                     }
-                    if track_notes.len() > 1 {
-                        track_notes.sort_unstable_by_key(|n| n.start_tick);
-                    }
-                    total_notes += track_notes.len() as u64;
-                    // 2026-08-06 分块存储：构建后按 50 万事件/块切分
-                    notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted(track_notes);
+                    total_notes += events.notes.len() as u64;
+                    notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted_iter(
+                        events.notes.into_iter().map(NoteEvent::from),
+                    );
+
+                    // MidiPort meta (FF 21)：流式提取首个出现值（与旧 Smf::parse
+                    // 语义一致），不再对文件做第二次全量解析——2.9 亿音符的
+                    // 黑乐谱此前在此产生 15-18GB 临时峰值。
+                    track_ports[track_idx] = events.midi_port.unwrap_or(0);
 
                     all_tempo_changes.extend(events.tempo_changes);
                     control_events.extend(events.control_events);
@@ -286,28 +293,6 @@ impl MidiDocument {
 
             let track_count = notes.len() as u16;
             let tracks_manager = TrackManager::new(track_count);
-
-            // 从 SMF 提取 MidiPort meta (FF 21) 事件，获取每轨的 MIDI 端口
-            let track_ports: Vec<u8> = {
-                if let Ok(smf) = midly::Smf::parse(file_bytes) {
-                    smf.tracks
-                        .iter()
-                        .map(|track| {
-                            for ev in track {
-                                if let midly::TrackEventKind::Meta(midly::MetaMessage::MidiPort(
-                                    port,
-                                )) = &ev.kind
-                                {
-                                    return port.as_int();
-                                }
-                            }
-                            0u8
-                        })
-                        .collect()
-                } else {
-                    vec![0u8; track_count as usize]
-                }
-            };
 
             if let Some(cb) = progress {
                 (cb)(0.90);

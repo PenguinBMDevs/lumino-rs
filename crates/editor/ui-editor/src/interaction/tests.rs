@@ -22,7 +22,6 @@ mod tests {
     fn test_memory_breakdown_empty() {
         let editor = Editor::new();
         let mem = editor.memory_breakdown();
-        assert_eq!(mem.notes_bytes, 0);
         assert_eq!(mem.track_notes_count, 0);
     }
 

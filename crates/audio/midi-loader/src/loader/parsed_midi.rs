@@ -112,6 +112,9 @@ pub async fn load_parsed_midi(
         })?;
 
         cb("Lumino 工程文件加载完成", 1.0);
+        // 解析临时数据（zstd 解压 + midly 中间态）已全部 drop，
+        // 主动回收 mimalloc 空闲页，避免峰值残留抬高 RSS
+        lumino_memtrace::purge_free_pages();
         return Ok(parsed);
     }
 
@@ -170,6 +173,11 @@ pub async fn load_parsed_midi(
         info.division
     );
 
+    // 解析临时数据（原始字节 + midly 中间态 + 分块构建）已全部 drop，
+    // 主动回收 mimalloc 空闲页，避免加载峰值残留抬高 RSS
+    // （2000W 音符场景实测峰值残留 ~180MB）
+    lumino_memtrace::purge_free_pages();
+
     let rss_mb = MemoryMonitor::global().current_rss() / (1024 * 1024);
     cb(
         &format!("MIDI 加载完成 ({total_notes} 音符, 内存: {rss_mb} MB)"),
@@ -217,6 +225,9 @@ pub async fn load_parsed_midi_from_bytes(
     })
     .await
     .map_err(|e| LoaderError::Other(format!("加载线程 panic: {e}")))??;
+
+    // 解析临时数据已全部 drop，主动回收 mimalloc 空闲页（同 load_parsed_midi）
+    lumino_memtrace::purge_free_pages();
 
     {
         let final_rss = MemoryMonitor::global().current_rss() / (1024 * 1024);
