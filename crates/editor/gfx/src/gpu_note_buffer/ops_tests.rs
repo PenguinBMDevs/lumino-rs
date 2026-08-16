@@ -74,3 +74,65 @@ fn move_blocks_partial_last_block() {
     assert!(blocks.iter().all(|(_, _, n)| *n <= 4));
     assert_move_correct(0, 10, 15, 30);
 }
+
+/// 用标准库 memmove 语义对照验证 `insert_at` 的 GPU 搬移序列
+/// （move_range(index, index+len, tail) + 段写入 → 最终布局）
+fn assert_insert_correct(buf: &mut Vec<u64>, index: usize, new_items: &[u64]) {
+    let mut reference = buf.clone();
+    reference.splice(index..index, new_items.iter().copied());
+
+    // 模拟 GPU buffer 扩容：容量变大但内容长度不变（占位符填充新容量区）
+    let old_len = buf.len();
+    buf.resize(old_len + new_items.len(), u64::MAX);
+    let blocks = compute_move_blocks(index, index + new_items.len(), old_len - index, 7);
+    for (s, d, n) in blocks {
+        buf.copy_within(s..s + n, d);
+    }
+    // 写入新段并收缩到新长度
+    buf[index..index + new_items.len()].copy_from_slice(new_items);
+    buf.truncate(reference.len());
+    assert_eq!(
+        *buf,
+        reference,
+        "insert index={index} items={}",
+        new_items.len()
+    );
+}
+
+#[test]
+fn insert_middle_shifts_tail_right() {
+    let mut buf: Vec<u64> = (0..10).collect();
+    assert_insert_correct(&mut buf, 3, &[100, 101]);
+    assert_eq!(buf, vec![0, 1, 2, 100, 101, 3, 4, 5, 6, 7, 8, 9]);
+}
+
+#[test]
+fn insert_head_shifts_all() {
+    let mut buf: Vec<u64> = (0..5).collect();
+    assert_insert_correct(&mut buf, 0, &[100, 101, 102]);
+    assert_eq!(buf, vec![100, 101, 102, 0, 1, 2, 3, 4]);
+}
+
+#[test]
+fn insert_tail_appends() {
+    let mut buf: Vec<u64> = (0..5).collect();
+    assert_insert_correct(&mut buf, 5, &[100, 101]);
+    assert_eq!(buf, vec![0, 1, 2, 3, 4, 100, 101]);
+}
+
+#[test]
+fn insert_into_empty() {
+    let mut buf: Vec<u64> = Vec::new();
+    assert_insert_correct(&mut buf, 0, &[100, 101, 102]);
+    assert_eq!(buf, vec![100, 101, 102]);
+}
+
+#[test]
+fn insert_single_item_large_tail() {
+    // 插入 1 个元素、尾部 1000 个元素右移（小块强制多分块，模拟 staging 分块）
+    let mut buf: Vec<u64> = (0..1000).collect();
+    assert_insert_correct(&mut buf, 400, &[999]);
+    assert_eq!(buf[400], 999);
+    assert_eq!(buf[401], 400);
+    assert_eq!(buf[1000], 999);
+}

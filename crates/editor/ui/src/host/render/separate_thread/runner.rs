@@ -12,8 +12,8 @@ use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
 use crate::host::render::note_worker;
 use lumino_gfx::{
-    ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform,
-    ArrangementViewColors, CcBarColors, CcBarData, CcBarViewParams,
+    ArrangementNoteInstance, ArrangementSceneParams, ArrangementUniform, ArrangementViewColors,
+    CcBarColors, CcBarData, CcBarViewParams,
 };
 
 /// 音符数据更新决策（只读阶段计算结果，见 `Host::compute_note_update_decision`）。
@@ -610,6 +610,20 @@ impl Host {
                 "WGPU thread: built {} visible note instances from expanded query",
                 visible_count
             );
+
+            // ★ 镜像同步：本次全量构建后，GPU 布局 = 本次可见列表
+            // （预览/i2m 期间 diff 路径不运行，镜像保持上次非预览内容；
+            //   退出预览后下一次全量构建会再次同步，「镜像 == GPU 内容」
+            //   不变式不受影响）
+            if !d.i2m_active && !d.is_drawing && !d.is_hover_preview {
+                let cache = &mut self.render_ctx.render_cache;
+                cache.main_note_instances.clear();
+                cache
+                    .main_note_instances
+                    .extend_from_slice(&cache.visible_notes_buffer);
+                cache.last_note_gen = self.root.editor.editor_state.data.track_notes_gen;
+                cache.last_built_track = self.root.editor.editor_state.data.current_track;
+            }
         }
 
         // 更新光标位置缓存

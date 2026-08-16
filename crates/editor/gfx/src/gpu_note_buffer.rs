@@ -58,6 +58,14 @@ pub enum NoteEvent {
     /// 主音轨事件级增量（卷帘编辑）专用——区别于 `Remove`（swap-remove 乱序），
     /// 保持 GPU buffer 顺序与 `notes` 索引一致。
     RemoveAt { index: usize, count: usize },
+    /// 保序插入区间：在 `index` 处插入 `instances`，后续段 GPU 内部右移
+    ///
+    /// 主音轨可见列表 diff 增量（切轨/增删/undo 兜底）专用——与 `RemoveAt`
+    /// 互为逆操作，保持 GPU buffer 顺序与可见音符列表一致。
+    Insert {
+        index: usize,
+        instances: Vec<crate::NoteInstance>,
+    },
     /// 清空所有音符
     Clear,
 }

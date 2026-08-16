@@ -20,6 +20,7 @@ use crate::host::Host;
 mod data;
 mod frame;
 pub(crate) mod note_delta;
+pub(crate) mod note_diff;
 pub(crate) mod note_worker;
 pub(crate) mod onion_skin;
 mod separate_thread;

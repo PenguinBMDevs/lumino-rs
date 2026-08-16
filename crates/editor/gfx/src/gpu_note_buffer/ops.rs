@@ -314,6 +314,48 @@ impl GpuNoteBuffer {
     // ── 洋葱皮事件级增量专用（流式模式安全：不触碰已清空的 CPU 缓存）──
     // 流式模式 instances 已清空：update_notes 等会索引空 Vec panic，且按 count 截断。
 
+    /// 保序插入：在 `index` 处插入 `instances`，后续段 GPU 内部右移
+    ///
+    /// 主音轨可见列表 diff 增量专用（`NoteEvent::Insert`）：与 [`Self::remove_at`]
+    /// 互为逆操作。搬移复用 [`Self::move_range`]（staging 分块，支持重叠——
+    /// 此处右移从尾向前，安全）。
+    ///
+    /// CPU 镜像（`self.instances`，主音轨模式存在）同步 splice；
+    /// 流式模式（洋葱皮）镜像为空时跳过镜像操作。
+    pub fn insert_at(&mut self, index: usize, instances: &[crate::NoteInstance]) {
+        puffin::profile_function!();
+        if instances.is_empty() {
+            return;
+        }
+        let index = index.min(self.instance_count);
+        let new_count = self.instance_count + instances.len();
+
+        // 检查是否需要扩容
+        if new_count > self.capacity && !self.grow(new_count) {
+            tracing::error!(
+                "GpuNoteBuffer: insert_at grow failed, dropping {} instances",
+                instances.len()
+            );
+            return;
+        }
+
+        // GPU：后续段右移 len（无后续则仅写段）
+        let tail = self.instance_count - index;
+        if tail > 0 {
+            self.move_range(index, index + instances.len(), tail);
+        }
+        // 写入新段（write_buffer 在 move_range 的 submit 之后入队，顺序保证）
+        self.write_segment(index, instances);
+
+        // CPU 镜像同步（流式模式镜像为空则跳过）
+        if !self.instances.is_empty() {
+            self.instances
+                .splice(index..index, instances.iter().copied());
+        }
+
+        self.instance_count = new_count;
+    }
+
     /// 段内写：将 `instances` 写入 `offset` 处（不更新计数、不触碰 CPU 缓存）
     /// 写前调用方需保证容量充足（grow 后）且目标区间不与未搬移的后续段重叠。
     pub fn write_segment(&mut self, offset: usize, instances: &[crate::NoteInstance]) {
@@ -350,7 +392,8 @@ impl GpuNoteBuffer {
         }
 
         let instance_size = std::mem::size_of::<crate::NoteInstance>() as u64;
-        let staging_size = (MOVE_BLOCK as u64) * instance_size;
+        // staging 按实际最大块分配：小搬移（如插入单个音符）不分配 16MB 中转区
+        let staging_size = (count.min(MOVE_BLOCK) as u64) * instance_size;
         let staging = self.device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("gpu_note_buffer_move_staging"),
             size: staging_size,
