@@ -13,7 +13,7 @@ xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
 
 [workspace.package]
-version = "0.2.0-crates-io-preview1"
+version = "0.2.0"
 rust-version = "1.92.0"
 homepage = "https://github.com/PenguinBMDevs/lumino-rs"
 repository = "https://github.com/PenguinBMDevs/lumino-rs"
