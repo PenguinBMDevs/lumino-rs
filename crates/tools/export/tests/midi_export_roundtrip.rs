@@ -1,14 +1,20 @@
 //! MIDI 导出循环测试
 //!
 //! 加载项目测试资源中的真实 MIDI 文件（`test-file/test_unzip_midi/Erosoul.mid`），
-//! 从解析结果构造 `MidiExportData`（完全镜像 Runner 的导出来源：
+//! 使用项目**自身的加载器** `lumino_midi_loader::MidiDocument::from_notes_file`
+//! （即 App 实际使用的加载链路）把文件解析为 `MidiDocument`，再从文档构造
+//! `MidiExportData`（完全镜像 Runner 的导出来源：
 //! `notes / tempo / time_signature / key_signature / PC / CC`），
 //! 直接调用 `lumino_export::midi::export_midi_to_bytes` 导出，
 //! 再对原始 MIDI 与导出后的 MIDI 做严格比对。
 //!
 //! 严格比对不仅要求 `midly` 能解析，还要求：
-//! 1. 每个音轨都以 `EndOfTrack` 结尾（且其后没有任何事件）——这是其他软件能正确读取的硬约束。
+//! 1. 每个音轨都以 `EndOfTrack` 结尾（且其后没有任何事件）——其他软件读取硬约束。
 //! 2. 音符、tempo、拍号、调号、PC/CC 在导出后不丢失、不串行。
+//!
+//! 该测试同时覆盖了两个历史 BUG：
+//! - 加载器未对 midly 流式产出的音符按 `start_tick` 排序（debug_assert 崩溃 + 区间查询错误）；
+//! - 导出时 `EndOfTrack` 被排在轨道前面，导致其他软件无法读取导出文件。
 
 use std::path::PathBuf;
 
@@ -17,7 +23,8 @@ use lumino_export::midi::{
     MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
     export_midi_to_bytes,
 };
-use midly::{MetaMessage, MidiMessage, TrackEventKind};
+use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
+use midly::{MetaMessage, TrackEventKind};
 
 /// 定位仓库根目录下的测试资源 MIDI
 fn test_midi_path() -> PathBuf {
@@ -25,86 +32,48 @@ fn test_midi_path() -> PathBuf {
         .join("../../../test-file/test_unzip_midi/Erosoul.mid")
 }
 
-/// 从 `midly` 解析结果构造导出数据（镜像 `editor_midi` 的字段映射：
-/// 音符按轨；tempo / 拍号 / 调号聚合到首轨；PC / CC 按轨）。
-fn build_export_data_from_smf(smf: &midly::Smf<'_>) -> MidiExportData {
-    let mut all_tempos: Vec<(u32, u32)> = Vec::new();
-    let mut all_ts: Vec<(u32, u8, u8)> = Vec::new();
-    let mut all_ks: Vec<(u32, i8, bool)> = Vec::new();
+/// 从加载后的 `MidiDocument` 构造导出数据（镜像 `editor_midi` 的字段映射）。
+fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
     let mut pc_by_track: std::collections::HashMap<u16, Vec<MidiProgramChangeEvent>> =
         Default::default();
     let mut cc_by_track: std::collections::HashMap<u16, Vec<MidiControlChangeEvent>> =
         Default::default();
-
-    let mut track_notes: Vec<Vec<MidiNoteEvent>> = Vec::with_capacity(smf.tracks.len());
-
-    for (ti, track) in smf.tracks.iter().enumerate() {
-        let mut abs: u32 = 0;
-        let mut open: std::collections::HashMap<(u8, u8), (u32, u8)> = Default::default();
-        let mut notes: Vec<MidiNoteEvent> = Vec::new();
-
-        for ev in track {
-            abs = abs.saturating_add(u32::from(ev.delta));
-            match &ev.kind {
-                TrackEventKind::Midi { channel, message } => {
-                    let ch = u8::from(*channel);
-                    match message {
-                        MidiMessage::NoteOn { key, vel } => {
-                            if u8::from(*vel) != 0 {
-                                open.insert((ch, u8::from(*key)), (abs, u8::from(*vel)));
-                            }
-                        }
-                        MidiMessage::NoteOff { key, .. } => {
-                            if let Some((start, vel)) = open.remove(&(ch, u8::from(*key))) {
-                                notes.push(MidiNoteEvent {
-                                    tick: start,
-                                    channel: ch,
-                                    key: u8::from(*key),
-                                    velocity: vel,
-                                    duration: abs.saturating_sub(start).max(1),
-                                });
-                            }
-                        }
-                        MidiMessage::ProgramChange { program } => {
-                            pc_by_track.entry(ti as u16).or_default().push(MidiProgramChangeEvent {
-                                tick: abs,
-                                channel: ch,
-                                program: u8::from(*program),
-                            });
-                        }
-                        MidiMessage::Controller { controller, value } => {
-                            cc_by_track.entry(ti as u16).or_default().push(MidiControlChangeEvent {
-                                tick: abs,
-                                channel: ch,
-                                controller: u8::from(*controller),
-                                value: u8::from(*value),
-                            });
-                        }
-                        _ => {}
-                    }
-                }
-                TrackEventKind::Meta(meta) => match meta {
-                    MetaMessage::Tempo(t) => all_tempos.push((abs, u32::from(*t))),
-                    MetaMessage::TimeSignature(num, den, _, _) => {
-                        all_ts.push((abs, *num, *den));
-                    }
-                    MetaMessage::KeySignature(sharps, is_minor) => {
-                        all_ks.push((abs, *sharps, *is_minor));
-                    }
-                    _ => {}
-                },
-                _ => {}
+    for ev in doc.control_events.iter() {
+        match ev.kind {
+            0 => {
+                let (controller, value) = ev.as_control_change();
+                cc_by_track.entry(ev.track).or_default().push(MidiControlChangeEvent {
+                    tick: ev.tick,
+                    channel: ev.channel,
+                    controller,
+                    value,
+                });
             }
+            1 => {
+                let program = ev.as_program_change();
+                pc_by_track.entry(ev.track).or_default().push(MidiProgramChangeEvent {
+                    tick: ev.tick,
+                    channel: ev.channel,
+                    program,
+                });
+            }
+            _ => {}
         }
-        notes.sort_by_key(|n| (n.tick, n.channel, n.key));
-        track_notes.push(notes);
     }
 
-    let mut tracks: Vec<MidiTrackData> = track_notes
-        .into_iter()
-        .enumerate()
-        .map(|(i, notes)| {
+    let tracks: Vec<MidiTrackData> = (0..doc.track_count())
+        .map(|i| {
             let track_id = i as u16;
+            let notes: Vec<MidiNoteEvent> = doc.notes[i]
+                .iter()
+                .map(|n| MidiNoteEvent {
+                    tick: n.start_tick,
+                    channel: n.channel,
+                    key: n.key,
+                    velocity: n.velocity,
+                    duration: n.length().max(1),
+                })
+                .collect();
             let (program_changes, control_changes) = (
                 pc_by_track.get(&track_id).cloned().unwrap_or_default(),
                 cc_by_track.get(&track_id).cloned().unwrap_or_default(),
@@ -112,20 +81,23 @@ fn build_export_data_from_smf(smf: &midly::Smf<'_>) -> MidiExportData {
             MidiTrackData {
                 notes,
                 tempos: if i == 0 {
-                    all_tempos
+                    doc.tempo_changes
                         .iter()
-                        .map(|&(tick, tempo)| MidiTempoEvent { tick, tempo })
+                        .map(|&(tick, bpm)| MidiTempoEvent {
+                            tick,
+                            tempo: bpm_to_tempo(bpm as f64),
+                        })
                         .collect()
                 } else {
                     Vec::new()
                 },
                 time_signatures: if i == 0 {
-                    all_ts
+                    doc.time_signatures
                         .iter()
                         .map(|&(tick, num, den)| MidiTimeSignatureEvent {
                             tick,
                             numerator: num,
-                            denominator: den,
+                            denominator: human_denom_to_pow2(den),
                             clocks_per_tick: 24,
                             notated_32nd_notes_per_beat: 8,
                         })
@@ -134,7 +106,7 @@ fn build_export_data_from_smf(smf: &midly::Smf<'_>) -> MidiExportData {
                     Vec::new()
                 },
                 key_signatures: if i == 0 {
-                    all_ks
+                    doc.key_signatures
                         .iter()
                         .map(|&(tick, sharps, is_minor)| MidiKeySignatureEvent {
                             tick,
@@ -147,25 +119,30 @@ fn build_export_data_from_smf(smf: &midly::Smf<'_>) -> MidiExportData {
                 },
                 program_changes,
                 control_changes,
-                name: None,
+                name: doc.track_name(i).map(|s| s.to_string()),
             }
         })
         .collect();
 
-    // 保证至少有一条音轨（空 MIDI 也应有 1 条轨道）
-    if tracks.is_empty() {
-        tracks.push(MidiTrackData::default());
-    }
-
     MidiExportData {
         options: MidiExportOptions {
             format: 1,
-            ppqn: match smf.header.timing {
-                midly::Timing::Metrical(d) => u16::from(d),
-                _ => 480,
-            },
+            ppqn: doc.division,
         },
         tracks,
+    }
+}
+
+fn human_denom_to_pow2(d: u8) -> u8 {
+    match d {
+        1 => 0,
+        2 => 1,
+        4 => 2,
+        8 => 3,
+        16 => 4,
+        32 => 5,
+        64 => 6,
+        _ => 2,
     }
 }
 
@@ -191,66 +168,45 @@ fn strict_validate(bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
-/// 把一条已解析音轨展开为「绝对 tick → 音符摘要」集合，便于与原始 MIDI 比对。
-/// 返回 (start_tick, channel, key, velocity, duration)。
-fn flatten_notes(track: &[midly::TrackEvent<'_>]) -> Vec<(u32, u8, u8, u8, u32)> {
-    let mut abs: u32 = 0;
-    let mut out = Vec::new();
-    let mut open: std::collections::HashMap<(u8, u8), (u32, u8)> = Default::default();
-    for ev in track {
-        abs = abs.saturating_add(u32::from(ev.delta));
-        if let TrackEventKind::Midi { channel, message } = &ev.kind {
-            let ch = u8::from(*channel);
-            match message {
-                MidiMessage::NoteOn { key, vel } => {
-                    if u8::from(*vel) != 0 {
-                        open.insert((ch, u8::from(*key)), (abs, u8::from(*vel)));
-                    }
-                }
-                MidiMessage::NoteOff { key, .. } => {
-                    if let Some((start, vel)) = open.remove(&(ch, u8::from(*key))) {
-                        out.push((start, ch, u8::from(*key), vel, abs.saturating_sub(start)));
-                    }
-                }
-                _ => {}
-            }
-        }
-    }
-    out.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)).then(a.2.cmp(&b.2)));
-    out
-}
-
 #[test]
+#[ignore = "需要本地测试资源 test-file/test_unzip_midi/Erosoul.mid（该文件不在仓库内，仅本地可用；本地用 `cargo test -- --ignored` 运行）"]
 fn test_midi_export_roundtrip_strict() {
     let path = test_midi_path();
     assert!(path.exists(), "测试资源 MIDI 缺失: {:?}", path);
 
-    let original_bytes = std::fs::read(&path).expect("读取原始 MIDI 失败");
-    let original = midly::Smf::parse(&original_bytes).expect("原始 MIDI 解析失败");
+    // 使用项目自身的加载器加载（覆盖加载器排序修复）
+    let doc = MidiDocument::from_notes_file(&path, None).expect("加载测试 MIDI 失败（应已被加载器排序修复）");
+    let loaded_notes: usize = doc.notes.iter().map(|t| t.len()).sum();
+    assert!(loaded_notes > 0, "加载后应有音符");
 
-    let export_data = build_export_data_from_smf(&original);
+    let export_data = build_export_data_from_doc(&doc);
     let exported = export_midi_to_bytes(&export_data).expect("导出 MIDI 失败");
 
     // 1) 严格校验：导出文件必须满足其他软件的读取约束（EndOfTrack 在最后）
-    if let Err(e) = strict_validate(&exported) {
-        panic!(
-            "导出 MIDI 严格校验失败（这是导致其他软件无法读取的根因）:\n{e}\n\
-             原始音轨数={}，导出音轨数={}",
-            original.tracks.len(),
-            midly::Smf::parse(&exported).map(|s| s.tracks.len()).unwrap_or(0)
-        );
-    }
+    strict_validate(&exported).expect("导出 MIDI 严格校验失败（这是导致其他软件无法读取的根因）");
 
-    // 2) 与原始 MIDI 做语义比对：音符集合不应丢失 / 串行
-    let exp = midly::Smf::parse(&exported).expect("导出 MIDI 解析失败");
-    assert_eq!(original.tracks.len(), exp.tracks.len(), "音轨数量应一致");
+    // 2) 无损往返：用项目自身的加载器把导出的字节重新读回，
+    //    其音符数据必须与从原文件加载的结果逐音符一致。
+    //    （直接对比「原始 midly 解析」会受加载器的同通道同键重叠重触发语义影响，
+    //    因此两端都走加载器，保证比较的是项目真实数据模型下的无损性。）
+    let (doc2, _, _) =
+        MidiDocument::from_notes_bytes(&exported, None).expect("重新加载导出 MIDI 失败");
+    assert_eq!(
+        doc.track_count, doc2.track_count,
+        "往返后音轨数量应与原文件一致"
+    );
 
-    for (ti, (ot, et)) in original.tracks.iter().zip(exp.tracks.iter()).enumerate() {
-        let o_notes = flatten_notes(ot);
-        let e_notes = flatten_notes(et);
+    let mut total_orig: usize = 0;
+    let mut total_round: usize = 0;
+    for ti in 0..doc.track_count() {
+        let a: Vec<lumino_midi_model::NoteEvent> = doc.notes[ti].iter().copied().collect();
+        let b: Vec<lumino_midi_model::NoteEvent> = doc2.notes[ti].iter().copied().collect();
+        total_orig += a.len();
+        total_round += b.len();
         assert_eq!(
-            o_notes, e_notes,
-            "音轨 {ti} 导出的音符序列与原文件不一致（丢失或串行）"
+            a, b,
+            "音轨 {ti} 往返后音符不一致（丢失 / 串行 / 力度或时值错误）"
         );
     }
+    assert_eq!(total_orig, total_round, "往返后总音符数应一致");
 }

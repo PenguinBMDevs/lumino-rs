@@ -217,7 +217,7 @@ impl MidiDocument {
 
             midly::loader::extract_all_events_per_track_streaming_from_bytes(
                 file_bytes,
-                |track_idx, events| {
+                |track_idx, mut events| {
                     if track_idx >= notes.len() {
                         notes.resize_with(track_idx + 1, crate::chunked_list::ChunkedList::new);
                         track_ports.resize(track_idx + 1, 0);
@@ -226,12 +226,18 @@ impl MidiDocument {
                     // 2026-08-15 峰值优化：不再经中间 Vec<NoteEvent> 中转，
                     // PackedNote 直接分块转换进 ChunkedList（省 16B/音符的峰值内存，
                     // 2.9 亿音符场景 ≈ 4.6GB）。
-                    // midly 保证 notes 按 start_tick 升序（TrackAllEvents 契约），
-                    // from_sorted_iter 内置 debug_assert 校验有序性。
                     if let Some(last) = events.notes.iter().max_by_key(|n| n.end_tick) {
                         total_ticks = total_ticks.max(last.end_tick);
                     }
                     total_notes += events.notes.len() as u64;
+
+                    // midly 的 TrackAllEvents 按「NoteOff 到达顺序」产出音符（重叠音符中
+                    // 先结束后开始的会排在先开始音符之前），并不保证按 start_tick 升序——
+                    // 其文档注释「sorted by start tick」对该流式路径并不成立。
+                    // ChunkedList 依赖 start_tick 升序做区间查询（range / 走带视图），
+                    // 必须在转换前显式排序。仅对 midly 已物化的本轨 Vec<PackedNote>
+                    // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
+                    events.notes.sort_by_key(|n| n.start_tick);
                     notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted_iter(
                         events.notes.into_iter().map(NoteEvent::from),
                     );
