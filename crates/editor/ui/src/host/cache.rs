@@ -1,1 +1,1 @@
-pub use lumino_gfx::cache::{NoteRenderViewport, RenderCache};
+pub use lumino_gfx::cache::RenderCache;

@@ -91,6 +91,21 @@ impl NoteRenderer {
         self.gpu_note_buffer.move_range(src, dst, count);
     }
 
+    /// 段内保序更新（等长，不改变计数）：主音轨段内增量（index = notes 索引）
+    pub fn update_notes(&mut self, start_index: usize, instances: &[crate::NoteInstance]) {
+        self.gpu_note_buffer.update_notes(start_index, instances);
+    }
+
+    /// 段内保序删除（后续段 GPU 内部左移 + 计数联动）：主音轨段内增量
+    pub fn remove_at(&mut self, index: usize, count: usize) {
+        self.gpu_note_buffer.remove_at(index, count);
+    }
+
+    /// 段内保序插入（后续段 GPU 内部右移 + 计数联动）：主音轨段内增量
+    pub fn insert_at(&mut self, index: usize, instances: &[crate::NoteInstance]) {
+        self.gpu_note_buffer.insert_at(index, instances);
+    }
+
     /// 上传音符实例并准备渲染（推荐的替代方案，替代 `prepare_old`）
     pub fn prepare_notes(
         &mut self,

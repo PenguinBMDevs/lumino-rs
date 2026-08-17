@@ -15,11 +15,18 @@ pub mod types;
 ///
 /// 事件级增量优化（2026-08-05）：黑乐谱（单轨海量音符）场景下，
 /// 旧协议只能整轨全量重传。新协议携带音轨边界 + 单音轨增量替换：
+/// - `Reserve`：全量会话前预分配容量（2026-08-06：消除流式 append 的 2×
+///   倍增余量，2.9 亿音符节省 ~4GB GPU 显存）
 /// - `Chunk`：全量会话数据块（携带 track_id，WGPU 侧据此构建音轨段表）
 /// - `Done`：全量会话结束（finish + 清空段表）
 /// - `TrackDelta`：单音轨整段替换（等长 = 音符级增量；变长 = GPU 内部搬移后续段）
+/// - `SetViewState`：切轨/静音变化（2026-08-06 统一全量渲染：只更新 ViewState
+///   uniform，GPU 音符数据零重传）
+/// - `PreviewInstances`：预览音符（Drawing/hover/i2m）实例替换（独立预览渲染器）
 #[derive(Debug)]
 pub enum OnionSkinStreamMsg {
+    /// 全量会话前预分配实例容量（避免流式 append 2× 倍增的容量余量）
+    Reserve { total: usize },
     /// 全量会话数据块：属于 `track_id` 音轨的实例（连续同轨块续写同一段）
     Chunk {
         track_id: usize,
@@ -32,6 +39,19 @@ pub enum OnionSkinStreamMsg {
         track_id: usize,
         instances: Vec<crate::NoteInstance>,
     },
+    /// 视图状态更新：当前音轨（track_idx+1）+ 静音音轨集合
+    ///
+    /// 统一全量渲染：主音轨 = 全量 buffer 中 `current_track` 段，切轨/静音
+    /// 只更新 uniform（shader 动态主轨着色/静音隐藏），**零数据重传**。
+    SetViewState {
+        current_track: u32,
+        muted_tracks: Vec<usize>,
+    },
+    /// 预览音符实例替换（Drawing / hover / i2m 预览，独立预览渲染器）
+    ///
+    /// 预览音符不在 document 中、不进全量 buffer；每次变化整体替换
+    /// （预览量小，<1K 实例，全量替换开销可忽略）。
+    PreviewInstances(Vec<crate::NoteInstance>),
 }
 
 /// 音符编辑事件

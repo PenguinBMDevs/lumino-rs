@@ -11,7 +11,7 @@ use super::context::{
     RenderThreadChannels,
 };
 use super::deferred::handle_deferred_command;
-use super::onion_segments::{OnionSegment, apply_onion_track_delta};
+use super::onion_segments::{OnionSegment, apply_onion_track_delta, process_main_track_events};
 use super::preview::{ensure_offscreen_textures_and_upload_notes, render_offscreen_pass};
 use super::video_export::advance_export_inflight;
 use lumino_midiplayer::texture_waterfall::{
@@ -55,6 +55,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     let mut onion_skin_streaming_in_progress = false;
     // 贴图瀑布流 GPU 布局段表（全量会话构建，增量替换时更新）
     let mut onion_segments: Vec<OnionSegment> = Vec::new();
+    // 当前音轨编码（track_idx+1，0=无）：统一全量渲染的视图状态（切轨零重传）
+    let mut current_track_encoded: u32 = 0;
 
     // ★ 后台生成线程通过有界同步通道流式传回贴图（容量1，背压）★
     // sync_channel(1)：channel 满时 send 阻塞，强制后台等渲染线程消费，
@@ -142,6 +144,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                     onion_segments.clear();
                     break;
                 }
+                Ok(crate::OnionSkinStreamMsg::Reserve { total }) => {
+                    // 预分配容量：消除流式 append 的 2× 倍增余量
+                    // （2.9 亿音符容量从 ~8.6GB 收到 ~4.6GB）
+                    if total > renderers.onion_skin.gpu_capacity() {
+                        renderers.onion_skin.grow_gpu(total);
+                        tracing::debug!("OnionSkin: 预分配容量 {} 实例（消除倍增余量）", total);
+                    }
+                }
                 Ok(crate::OnionSkinStreamMsg::Chunk {
                     track_id,
                     instances,
@@ -194,6 +204,22 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                         );
                     }
                 }
+                Ok(crate::OnionSkinStreamMsg::SetViewState {
+                    current_track,
+                    muted_tracks,
+                }) => {
+                    // 切轨/静音零重传：只更新 ViewState uniform，GPU 数据不动
+                    current_track_encoded = current_track;
+                    renderers
+                        .onion_skin
+                        .set_view_state(&ctx.queue, current_track, &muted_tracks);
+                }
+                Ok(crate::OnionSkinStreamMsg::PreviewInstances(instances)) => {
+                    // 预览音符（Drawing/hover/i2m）：独立预览渲染器整体替换
+                    renderers
+                        .note
+                        .upload_instances(&instances, &ctx.device, &ctx.queue);
+                }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                     // UI 线程关闭 channel（shutdown），停止 drain
@@ -206,6 +232,20 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             break;
         }
 
+        // ★ 主音轨事件级增量（段内应用）：drain note_events_rx → 当前音轨段
+        // GPU 布局 = 全量轨段，事件 index = notes 索引（保序，无需可见列表映射）。
+        // 段表定位依赖 SetViewState（切轨消息）先于编辑事件到达（mpsc 顺序保证）。
+        if current_track_encoded != 0 {
+            process_main_track_events(
+                &mut renderers,
+                &mut onion_segments,
+                current_track_encoded,
+                &channels.note_events_rx,
+                &ctx.device,
+                &ctx.queue,
+            );
+        }
+
         // 执行渲染（离屏纹理）
         if has_params && let Some(ref params) = latest_params {
             puffin::profile_scope!("wgpu_render_thread_frame");
@@ -214,13 +254,11 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             ensure_offscreen_textures_and_upload_notes(&mut PreviewUploadContext {
                 ctx: &ctx,
                 channels: &channels,
-                renderers: &mut renderers,
                 current_texture: &mut current_texture,
                 depth_texture: &mut depth_texture,
                 depth_texture_view: &mut depth_texture_view,
                 texture_view: &mut texture_view,
                 current_size: &mut current_size,
-                last_note_version: &mut last_note_version,
                 params,
             });
 

@@ -172,6 +172,69 @@ pub struct RenderUniform {
     pub cull: CullUniform,
 }
 
+/// 视图状态 uniform：当前音轨 + 静音位图
+///
+/// 统一全量渲染（2026-08-06）：洋葱皮 buffer 持有所有轨全部音符，
+/// 「哪个轨是主音轨 / 哪些轨静音」由本 uniform 低频更新（切轨/静音变化），
+/// GPU 数据零重传——shader 据 `current_track` 把主音轨染成主轨色、
+/// 深度压到 0，静音轨仅主轨身份时显示。
+///
+/// 布局：`current_track`（track_idx+1，0=无）+ 2048 u32 静音位图（65536 轨上限，
+/// 支持未来大编制工程）。字节布局与 shader `ViewState`（vec4 数组）严格一致：
+/// 2048 u32 == 512 × vec4<u32>。
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ViewState {
+    /// 当前音轨编码：track_idx + 1（0 = 无主音轨）
+    pub current_track: u32,
+    /// 对齐填充（保持 muted_bits 16 字节对齐）
+    pub _padding: [u32; 3],
+    /// 静音音轨位图：`muted_bits[t / 32]` 的 bit `t % 32` = 音轨 t 静音
+    pub muted_bits: [u32; ViewState::MUTED_WORDS],
+}
+
+impl ViewState {
+    /// 静音位图字数量（65536 轨上限，为超大编制工程预留）
+    pub const MUTED_WORDS: usize = 2048;
+
+    /// 空视图状态（无主音轨、无静音）
+    #[must_use]
+    pub fn new() -> Self {
+        Self {
+            current_track: 0,
+            _padding: [0; 3],
+            muted_bits: [0; Self::MUTED_WORDS],
+        }
+    }
+
+    /// 设置音轨静音状态（越界防御：超出位图容量静默忽略）
+    pub fn set_muted(&mut self, track: usize, muted: bool) {
+        let word = track / 32;
+        let bit = track % 32;
+        if let Some(w) = self.muted_bits.get_mut(word) {
+            if muted {
+                *w |= 1 << bit;
+            } else {
+                *w &= !(1 << bit);
+            }
+        }
+    }
+
+    /// 查询音轨静音状态（越界返回 false）
+    #[must_use]
+    pub fn is_muted(&self, track: usize) -> bool {
+        self.muted_bits
+            .get(track / 32)
+            .is_some_and(|w| (w >> (track % 32)) & 1 != 0)
+    }
+}
+
+impl Default for ViewState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// 间接绘制参数
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]

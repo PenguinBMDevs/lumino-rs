@@ -14,7 +14,6 @@ use crate::root;
 use crate::root::handlers;
 use crate::statusbar::performance::CpuMonitor;
 
-use super::render::note_worker::ScrollVelocityTracker;
 use super::render_ctx::WgpuResources;
 use super::{Host, RenderContext, WindowContext};
 
@@ -98,7 +97,6 @@ impl Host {
             ui_dirty: false,
             cpu_monitor: CpuMonitor::new(),
             last_gpu_frame_time_ms: 0.0,
-            scroll_tracker: ScrollVelocityTracker::new(),
             waterfall_dirty_tracks: std::collections::HashSet::new(),
             waterfall_config: Some(waterfall_config),
             waterfall_midi_hash: Some(midi_hash),

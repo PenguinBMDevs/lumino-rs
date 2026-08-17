@@ -1,21 +1,15 @@
-use std::sync::mpsc::Receiver;
-
-use crate::NoteEvent;
-
 use super::super::params::RenderParams;
 use super::Renderers;
 
 /// 准备渲染器实例
 ///
-/// `is_video_export` 为 true 时跳过音符事件处理与 CC 柱状条准备，
-/// 视频导出期间无用户编辑事件，避免每帧空 channel 的 `try_recv` 开销。
+/// 音符事件处理（主音轨段内增量）与洋葱皮流式上传均由 render_loop 主循环
+/// 驱动，不在本函数中处理。
 pub fn prepare_renderers(
     renderers: &mut Renderers,
     params: &RenderParams,
-    note_events_rx: &Receiver<NoteEvent>,
     device: &wgpu::Device,
     queue: &wgpu::Queue,
-    is_video_export: bool,
 ) {
     puffin::profile_scope!("prepare_renderers");
 
@@ -83,9 +77,7 @@ pub fn prepare_renderers(
 
     // 洋葱皮流式上传：由 render_loop 主循环 drain onion_skin_streaming_rx 驱动，
     // 不在 prepare_renderers 中处理（避免与 RenderParams 全量传输耦合）。
-
-    // 视频导出期间无音符编辑事件，跳过空 channel 的 try_recv
-    if !is_video_export {
-        renderers.note.process_events(note_events_rx, device, queue);
-    }
+    //
+    // 主音轨事件级增量：由 render_loop 主循环 process_main_track_events 处理
+    // （段内应用，GPU 布局 = 全量轨段），不在 prepare_renderers 中处理。
 }

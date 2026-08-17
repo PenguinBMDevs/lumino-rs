@@ -123,9 +123,21 @@ impl NoteRenderer {
             cull_uniform_buffer_size,
         ) = Self::create_renderer_buffers(device, queue, slot_align);
 
+        // 视图状态 uniform buffer（当前音轨 + 静音位图，切轨/静音零重传）
+        let view_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("note_view_state_uniform"),
+            contents: bytemuck::cast_slice(&[crate::note_renderer::types::ViewState::new()]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+        gpu_resource_tracker::add_buffer(&view_state_buffer);
+
         // 创建渲染 bind group
-        let render_bind_group =
-            Self::create_render_bind_group(device, &render_bind_group_layout, &viewport_buffer);
+        let render_bind_group = Self::create_render_bind_group(
+            device,
+            &render_bind_group_layout,
+            &viewport_buffer,
+            &view_state_buffer,
+        );
 
         // 创建计算 bind groups（初始无实例数据，绑定切片按 buffer 容量划分）
         let cull_bind_groups = Self::build_cull_bind_groups(
@@ -150,6 +162,7 @@ impl NoteRenderer {
             max_capacity,
             last_upload_count: 0,
             viewport_buffer,
+            view_state_buffer,
             cull_uniform_buffer,
             cull_uniform_buffer_size,
             render_bind_group,
@@ -221,14 +234,21 @@ impl NoteRenderer {
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
         viewport_buffer: &wgpu::Buffer,
+        view_state_buffer: &wgpu::Buffer,
     ) -> wgpu::BindGroup {
         device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("note_render_bind_group"),
             layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: viewport_buffer.as_entire_binding(),
-            }],
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: viewport_buffer.as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: view_state_buffer.as_entire_binding(),
+                },
+            ],
         })
     }
 

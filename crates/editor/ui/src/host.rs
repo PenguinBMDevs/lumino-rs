@@ -75,8 +75,6 @@ pub struct Host {
     pub(crate) cpu_monitor: CpuMonitor,
     /// 上一次 GPU 帧耗时（ms）
     pub(crate) last_gpu_frame_time_ms: f32,
-    /// 滚动速度追踪器（用于 overscan 计算）
-    pub(crate) scroll_tracker: render::note_worker::ScrollVelocityTracker,
     /// 贴图瀑布流：有脏标记的音轨集合（编辑后需重生成）
     pub(crate) waterfall_dirty_tracks: std::collections::HashSet<u16>,
     /// 贴图瀑布流：全量配置（重生成时直接使用副本）

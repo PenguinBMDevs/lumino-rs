@@ -114,8 +114,6 @@ pub(crate) struct PreviewUploadContext<'a> {
     pub(crate) ctx: &'a RenderContext,
     /// 跨线程通信通道
     pub(crate) channels: &'a RenderThreadChannels,
-    /// 主渲染器集合
-    pub(crate) renderers: &'a mut Renderers,
     /// 当前离屏纹理
     pub(crate) current_texture: &'a mut Option<Arc<wgpu::Texture>>,
     /// 当前深度纹理
@@ -126,8 +124,6 @@ pub(crate) struct PreviewUploadContext<'a> {
     pub(crate) texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前纹理尺寸
     pub(crate) current_size: &'a mut (u32, u32),
-    /// 上次上传的音符版本
-    pub(crate) last_note_version: &'a mut u64,
     /// 渲染参数
     pub(crate) params: &'a RenderParams,
 }

@@ -6,7 +6,7 @@
 //! 生成 UpdateMany 增量发送替代每帧全量重建。
 
 use super::Editor;
-use super::ghost::{has_active_ghost_delta, is_note_ghosted};
+use super::ghost::{has_active_ghost_delta, is_note_ghosted, push_copy_instances};
 use crate::EditState;
 
 /// 从 EditState 提取当前 drag delta（Dragging 和 DraggingSelection 均有非零值）
@@ -35,20 +35,29 @@ impl Editor {
         )
     }
 
-    /// 构建 ghost 拖动增量的可见位置数据（仅「选中 ∩ 可见」的索引）
+    /// 是否存在待提交的复制（Ctrl+拖动复制 / 待提交副本）
     ///
-    /// 卷帘拖动增量（2026-08-05）：拖动期间 document 未变（ghost 方案），
-    /// 只有被拖动的音符需要更新渲染位置。本方法返回
-    /// `(可见列表位置, ghost 后位置 (tick, key, length))`（按可见位置升序），
-    /// UI 层据此生成 UpdateMany 增量发送——替代每帧全量 collect+build+上传。
+    /// 副本渲染走预览通道（原件保留在 GPU 段原位），UI 层据此分流。
+    pub fn has_pending_copy_drag(&self) -> bool {
+        self.pending_copy_drag_state.is_some()
+            || matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::DraggingSelectionCopy { .. }
+            )
+    }
+
+    /// 构建 ghost 拖动增量的位置数据（仅「选中 ∩ 可见」的索引）
+    ///
+    /// 统一全量渲染（2026-08-06）：GPU 布局 = 全量轨段，段内位置 = notes 索引，
+    /// 因此返回值第一项为 **notes 索引**（而非旧可见列表下标）。
+    /// 返回 `(notes 索引, ghost 后位置 (tick, key, length))`（按索引升序），
+    /// UI 层据此生成 UpdateMany 增量发送。
     ///
     /// 调用前提：`has_active_ghost_delta` 为 true 且 `visible_indices` 与
-    /// 上次全量构建的可见索引一致（GPU 位置 = 列表下标）。
+    /// 当前视口内索引一致（仅用于过滤被拖音符，无需与 GPU 布局对应）。
     ///
     /// **复制模式例外**：`DraggingSelectionCopy` / `pending_copy_drag_state`
-    /// 会在可见列表中**追加副本实例**（原位置 + 偏移位置两条），破坏
-    /// 「GPU 位置 = 列表下标」的增量前提。此状态下返回空列表，
-    /// 调用方回退全量重建（正确性无损）。
+    /// 副本走预览通道（[`Self::build_copy_ghost_positions`]），本方法返回空列表。
     pub fn build_ghost_delta_positions(
         &self,
         visible_indices: &[usize],
@@ -60,7 +69,7 @@ impl Editor {
         let data = &self.editor_state.data;
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
 
-        // 复制模式：副本实例使 GPU 布局 ≠ visible_indices 下标，禁用增量
+        // 复制模式：副本实例走预览通道，本方法禁用增量
         let any_copy =
             pending_copy.is_some() || matches!(edit_state, EditState::DraggingSelectionCopy { .. });
         if any_copy {
@@ -68,7 +77,7 @@ impl Editor {
         }
 
         let mut out = Vec::new();
-        for (pos, &note_idx) in visible_indices.iter().enumerate() {
+        for &note_idx in visible_indices {
             if !is_note_ghosted(note_idx, pending, edit_state) {
                 continue;
             }
@@ -80,7 +89,43 @@ impl Editor {
             };
             let (tick, key) =
                 apply_ghost_delta(tick, key, drag_dt, drag_dk, pending, note_idx, max_key);
-            out.push((pos, (tick, key, length)));
+            out.push((note_idx, (tick, key, length)));
+        }
+        out
+    }
+
+    /// 构建复制模式副本的可见位置（统一全量渲染：副本 → 预览通道）
+    ///
+    /// 复制模式下原件保留在 GPU 段原位，副本（原位置 + 偏移位置，连续复制
+    /// 时旧副本 + 新副本并存）叠加渲染。返回副本位置列表 `(tick, key, length)`
+    /// （仅视口内），UI 层构建 NoteInstance 发送 `PreviewInstances`。
+    pub fn build_copy_ghost_positions(&self, visible_indices: &[usize]) -> Vec<(f32, u16, f32)> {
+        let edit_state = &self.editor_state.interaction.edit_state;
+        let pending_copy = &self.pending_copy_drag_state;
+        let pending_drag = &self.pending_drag_state;
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let data = &self.editor_state.data;
+
+        let mut out = Vec::new();
+        for &note_idx in visible_indices {
+            let Some((tick, key, length)) = data
+                .get_note_view(note_idx)
+                .map(|n| (n.tick, n.key, n.length))
+            else {
+                continue;
+            };
+            push_copy_instances(
+                &mut out,
+                tick,
+                key,
+                length,
+                max_key,
+                note_idx,
+                pending_copy,
+                pending_drag,
+                edit_state,
+                |_, _| true,
+            );
         }
         out
     }

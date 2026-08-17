@@ -41,10 +41,12 @@ impl super::Editor {
         self.spatial.note_index_dirty.set(true);
         self.grid_cache.clear();
 
-        // 主音轨增量对账：切轨后 GPU 布局将重建为新轨，
-        // 旧轨残留的增量事件不可用 → 清队列 + 强制全量兜底
-        self.editor_state.data.note_delta_events.clear();
-        self.editor_state.data.note_delta_dirty = true;
+        // 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符，
+        // 切轨只更新 ViewState uniform（当前音轨着色，由 onion_skin 决策层
+        // 检测 current_track 变化后发送 SetViewState），**零数据重传**。
+        // 旧轨未消费的编辑事件自然应用到旧轨段（mpsc 顺序：事件先于
+        // SetViewState 到达渲染线程）；不置 note_delta_dirty（数据未变，
+        // 避免触发全量会话兜底）。
     }
 
     /// 获取当前音轨索引

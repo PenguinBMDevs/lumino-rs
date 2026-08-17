@@ -48,6 +48,13 @@ fn assert_full(action: &OnionSkinAction) {
     );
 }
 
+fn assert_view_state(action: &OnionSkinAction) {
+    assert!(
+        matches!(action, OnionSkinAction::ViewState),
+        "期望 ViewState，实际 {action:?}"
+    );
+}
+
 fn assert_delta(action: &OnionSkinAction, expected: &[usize]) {
     match action {
         OnionSkinAction::Delta(tracks) => {
@@ -94,17 +101,19 @@ fn onion_skin_state_full_on_gen_change_unknown() {
 }
 
 #[test]
-fn onion_skin_state_full_on_mute_change() {
+fn onion_skin_state_view_state_on_mute_change() {
+    // 统一全量渲染：静音变化只更新 ViewState uniform（静音轨数据常驻，shader 掩码），零重传
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0b0000, 0, 0));
-    assert_full(&state.decide_action(&make_fp(42, 0b0001, 0, 0)));
+    assert_view_state(&state.decide_action(&make_fp(42, 0b0001, 0, 0)));
 }
 
 #[test]
-fn onion_skin_state_full_on_track_switch() {
+fn onion_skin_state_view_state_on_track_switch() {
+    // 统一全量渲染：切轨只更新 ViewState uniform（当前音轨段常驻，shader 着色），零重传
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
-    assert_full(&state.decide_action(&make_fp(42, 0, 2, 0)));
+    assert_view_state(&state.decide_action(&make_fp(42, 0, 2, 0)));
 }
 
 #[test]
@@ -211,68 +220,68 @@ fn onion_skin_state_full_when_dirty_unknown() {
 }
 
 #[test]
-fn onion_skin_state_full_on_track_switch_after_skipped_dirty() {
-    // 豁免后切换当前音轨 → 音轨切换本身必须触发全量（用最新数据兜底被豁免的编辑）
+fn onion_skin_state_view_state_on_track_switch_after_skipped_dirty() {
+    // 豁免（编辑当前轨，段内事件已同步 GPU）后切换当前音轨 → 只发 ViewState 零重传
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
-    // 豁免一次（编辑音轨1，当前也是1）
+    // 豁免一次（编辑音轨1，当前也是1 — 段内事件已应用 GPU）
     let fp_skip = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
     assert_none(&state.decide_action(&fp_skip));
-    // 切换到音轨2 → 必须全量（旧被豁免的编辑此时成为洋葱皮数据）
+    // 切换到音轨2 → ViewState（全量 buffer 常驻所有轨，切轨零重传）
     let fp_switch = make_fp_dirty(43, 2, std::collections::HashSet::from([1]), vec![]);
-    assert_full(&state.decide_action(&fp_switch));
+    assert_view_state(&state.decide_action(&fp_switch));
 }
 
 #[test]
-fn onion_skin_state_full_on_track_switch_after_delta() {
-    // Delta 后切换当前音轨 → 全量重建段表（段表布局变化，增量无法安全应用）
+fn onion_skin_state_view_state_on_track_switch_after_delta() {
+    // Delta 后切轨 → ViewState（段表数据保持，仅显示语义变化）
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([3]), vec![]);
     assert_delta(&state.decide_action(&fp), &[3]);
     let fp_switch = make_fp_dirty(43, 2, std::collections::HashSet::from([3]), vec![]);
-    assert_full(&state.decide_action(&fp_switch));
+    assert_view_state(&state.decide_action(&fp_switch));
 }
 
 #[test]
-fn onion_skin_state_full_when_mute_changes_after_skipped_dirty() {
-    // 豁免 gen 变更后 mute 状态变化 → 仍须全量（段表布局变化）
+fn onion_skin_state_view_state_when_mute_changes_after_skipped_dirty() {
+    // 豁免 gen 变更后 mute 变化 → ViewState（静音轨数据常驻，仅更新掩码）
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
     let mut rebuilt = fp;
     rebuilt.mute_fp = 999; // 模拟 mute 状态变化
-    assert_full(&state.decide_action(&rebuilt));
+    assert_view_state(&state.decide_action(&rebuilt));
 }
 
 #[test]
-fn onion_skin_state_full_when_mute_changes_after_delta() {
-    // Delta 后 mute 变化 → 全量（静音音轨进出洋葱皮，段表失效）
+fn onion_skin_state_view_state_when_mute_changes_after_delta() {
+    // Delta 后 mute 变化 → ViewState（零重传）
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([3]), vec![]);
     assert_delta(&state.decide_action(&fp), &[3]);
     let mut rebuilt = fp;
     rebuilt.mute_fp = 999;
-    assert_full(&state.decide_action(&rebuilt));
+    assert_view_state(&state.decide_action(&rebuilt));
 }
 
 #[test]
 fn mute_fingerprint_is_order_independent() {
     // 音轨拖拽排序只改变 sidebar.tracks 顺序，不改变静音集合。
     // 指纹必须顺序无关，否则排序会触发洋葱皮全量重建（不必要的 GPU 开销）。
-    let fp1 = mute_fingerprint_of(&mut vec![3, 1, 5]);
-    let fp2 = mute_fingerprint_of(&mut vec![1, 5, 3]);
-    let fp3 = mute_fingerprint_of(&mut vec![3, 1, 5]);
+    let fp1 = mute_fingerprint_of(&mut [3, 1, 5]);
+    let fp2 = mute_fingerprint_of(&mut [1, 5, 3]);
+    let fp3 = mute_fingerprint_of(&mut [3, 1, 5]);
     assert_eq!(fp1, fp2, "同一集合不同排列应产生相同指纹");
     assert_eq!(fp1, fp3);
 }
 
 #[test]
 fn mute_fingerprint_distinguishes_sets() {
-    let fp_empty = mute_fingerprint_of(&mut vec![]);
-    let fp_one = mute_fingerprint_of(&mut vec![0]);
-    let fp_two = mute_fingerprint_of(&mut vec![0, 1]);
+    let fp_empty = mute_fingerprint_of(&mut [] as &mut [usize]);
+    let fp_one = mute_fingerprint_of(&mut [0]);
+    let fp_two = mute_fingerprint_of(&mut [0, 1]);
     assert_ne!(fp_empty, fp_one);
     assert_ne!(fp_one, fp_two);
 }

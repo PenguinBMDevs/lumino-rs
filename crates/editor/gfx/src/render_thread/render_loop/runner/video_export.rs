@@ -42,7 +42,7 @@ pub(super) fn handle_video_frame(
     ctx: &RenderContext,
     params: RenderParams,
     frame: &mut RenderFrameState,
-    channels: &RenderThreadChannels,
+    _channels: &RenderThreadChannels,
 ) {
     // 首帧诊断 tracing：定位音符缺失问题在哪一层
     // 使用静态原子计数器，只输出前 3 帧，避免日志嘈杂
@@ -134,14 +134,7 @@ pub(super) fn handle_video_frame(
             label: Some("video_export_render_encoder"),
         });
 
-    prepare_renderers(
-        frame.renderers,
-        &params,
-        &channels.note_events_rx,
-        &ctx.device,
-        &ctx.queue,
-        true,
-    );
+    prepare_renderers(frame.renderers, &params, &ctx.device, &ctx.queue);
 
     execute_render_pass(
         &mut encoder,

@@ -53,7 +53,7 @@ pub use lumino_midiplayer::texture_waterfall::{
 };
 pub use note_renderer::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, NoteRenderer, PREVIEW_BORDER_SENTINEL,
-    RenderUniform, calculate_border_width, pack_key_color, unpack_key_color,
+    RenderUniform, ViewState, calculate_border_width, pack_key_color, unpack_key_color,
 };
 pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,

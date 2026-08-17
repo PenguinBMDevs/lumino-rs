@@ -9,7 +9,11 @@ use super::super::render_pass::execute_render_pass;
 use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{PreviewPassContext, PreviewUploadContext, RenderFrameState};
 
-/// 确保离屏纹理已创建，并在主音符实例版本变化时上传。
+/// 确保离屏纹理已创建。
+///
+/// 统一全量渲染（2026-08-06）：主音轨不再走「可见列表 + SwappableBuffer 版本
+/// 驱动上传」——GPU buffer 常驻所有轨全部音符（洋葱皮全量会话），主音轨由
+/// ViewState uniform 着色、滚动/切轨零重传。故本函数仅保留纹理确保。
 pub(super) fn ensure_offscreen_textures_and_upload_notes(context: &mut PreviewUploadContext<'_>) {
     let width = context.params.viewport_size.0.max(1);
     let height = context.params.viewport_size.1.max(1);
@@ -29,24 +33,6 @@ pub(super) fn ensure_offscreen_textures_and_upload_notes(context: &mut PreviewUp
     };
     // 普通离屏渲染保留 depth attachment（UI 预览可能需要）
     ensure_textures(&mut tex_resources, true);
-
-    let note_version = context.channels.note_instances_buffer.version();
-    if note_version != *context.last_note_version {
-        *context.last_note_version = note_version;
-
-        // 三缓冲状态机轮换：UI 线程 swap 后 reading 槽位必须被消费，
-        // 否则后续 swap 会反复交换同一槽位。
-        let note_instances =
-            unsafe { context.channels.note_instances_buffer.acquire_read_buffer() };
-        // 将 UI 线程构建的可见音符实例上传到 GPU。
-        // 分离渲染线程模式下，音符数据通过 SwappableBuffer 共享，
-        // 渲染线程在此处负责实际 GPU 上传与剔除信息更新。
-        context.renderers.note.upload_instances(
-            note_instances,
-            &context.ctx.device,
-            &context.ctx.queue,
-        );
-    }
 }
 
 /// 将宿主 `RenderParams` 转换为贴图瀑布流视口参数（仅提取所需字段子集）
@@ -80,10 +66,8 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
         prepare_renderers(
             &mut *context.renderers,
             context.params,
-            &context.channels.note_events_rx,
             &context.ctx.device,
             &context.ctx.queue,
-            false,
         );
 
         let gpu = WaterfallGpuCtx {

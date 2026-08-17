@@ -74,6 +74,17 @@ impl Host {
             .is_some_and(|t| t.is_note_event_channel_alive())
     }
 
+    /// 发送洋葱皮流式消息到渲染线程（全量会话 / TrackDelta / SetViewState / 预览）
+    ///
+    /// 统一全量渲染（2026-08-06）：主音轨与洋葱皮共用此通道——
+    /// - `SetViewState`：切轨/静音零重传
+    /// - `PreviewInstances`：Drawing/hover/i2m 预览实例
+    pub fn send_onion_skin_msg_to_render_thread(&self, msg: lumino_gfx::OnionSkinStreamMsg) {
+        if let Some(ref thread) = self.render_ctx.wgpu_render_thread {
+            thread.send_onion_skin_msg(msg);
+        }
+    }
+
     /// 获取分离渲染线程统计
     pub fn separate_render_stats(&self) -> Option<crate::WgpuRenderStats> {
         self.render_ctx

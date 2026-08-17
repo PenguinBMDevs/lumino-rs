@@ -4,7 +4,7 @@ use crate::gpu_resource_tracker;
 
 pub use types::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, PREVIEW_BORDER_SENTINEL, RenderUniform,
-    calculate_border_width, pack_key_color, unpack_key_color,
+    ViewState, calculate_border_width, pack_key_color, unpack_key_color,
 };
 
 // 子模块
@@ -40,6 +40,8 @@ pub struct NoteRenderer {
     last_upload_count: u32,
     /// 视口 uniform 缓冲区
     viewport_buffer: wgpu::Buffer,
+    /// 视图状态 uniform 缓冲区（当前音轨 + 静音位图，切轨/静音零重传）
+    view_state_buffer: wgpu::Buffer,
     /// 裁剪 uniform 缓冲区（MAX_CHUNKS × slot_align 槽位，每 chunk 一条）
     cull_uniform_buffer: wgpu::Buffer,
     /// cull uniform 缓冲区总字节数（绑定 offset 越界断言用）
@@ -68,6 +70,27 @@ impl NoteRenderer {
     pub fn last_upload_count(&self) -> u32 {
         self.last_upload_count
     }
+
+    /// 更新视图状态（当前音轨 + 静音位图）
+    ///
+    /// 统一全量渲染（2026-08-06）：主音轨 = 洋葱皮 buffer 中 `current_track`
+    /// 编码（track_idx+1）对应的段。切轨/静音变化只更新本 uniform，
+    /// **GPU 音符数据零重传**（颜色/深度由 shader 动态判定）。
+    ///
+    /// `current_track` 为 track_idx+1 编码（0 = 无主音轨），
+    /// `muted_tracks` 为静音音轨索引列表（shader 中静音轨仅主轨身份时显示）。
+    pub fn set_view_state(&self, queue: &wgpu::Queue, current_track: u32, muted_tracks: &[usize]) {
+        let mut state = crate::note_renderer::types::ViewState::new();
+        state.current_track = current_track;
+        for &track in muted_tracks {
+            state.set_muted(track, true);
+        }
+        queue.write_buffer(
+            &self.view_state_buffer,
+            0,
+            bytemuck::cast_slice(std::slice::from_ref(&state)),
+        );
+    }
 }
 
 impl Drop for NoteRenderer {
@@ -76,6 +99,7 @@ impl Drop for NoteRenderer {
         gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
         gpu_resource_tracker::sub_buffer(&self.indirect_buffer);
         gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
+        gpu_resource_tracker::sub_buffer(&self.view_state_buffer);
         gpu_resource_tracker::sub_buffer(&self.cull_uniform_buffer);
     }
 }
@@ -168,6 +192,37 @@ mod tests {
         assert_eq!(args.instance_count, 0);
         assert_eq!(args.first_vertex, 0);
         assert_eq!(args.first_instance, 0);
+    }
+
+    /// 测试 ViewState 与 WGSL 结构体内存布局一致：
+    /// 4 bytes current_track + 12 bytes padding + 2048 u32 静音位图 = 8208 bytes。
+    #[test]
+    fn test_view_state_byte_layout() {
+        assert_eq!(std::mem::size_of::<ViewState>(), 8208);
+        assert_eq!(std::mem::offset_of!(ViewState, current_track), 0);
+        assert_eq!(std::mem::offset_of!(ViewState, muted_bits), 16);
+    }
+
+    /// 测试 ViewState 静音位图与 shader 位索引一致（覆盖跨 vec4 边界）。
+    #[test]
+    fn test_view_state_muted_bit_layout_matches_shader() {
+        let mut state = ViewState::new();
+        // 设置若干边界轨道：0, 31, 32, 127, 128, 4095, 65535
+        for &track in &[0usize, 31, 32, 127, 128, 4095, 65535] {
+            state.set_muted(track, true);
+            assert!(state.is_muted(track), "轨道 {track} 应被标记为静音");
+        }
+        // 未设置的轨道保持非静音
+        assert!(!state.is_muted(1));
+        assert!(!state.is_muted(30));
+        assert!(!state.is_muted(33));
+        assert!(!state.is_muted(126));
+        assert!(!state.is_muted(129));
+        assert!(!state.is_muted(4094));
+        assert!(!state.is_muted(65534));
+        // 越界轨道应被静默忽略（超过 65536）
+        state.set_muted(65536, true);
+        assert!(!state.is_muted(65536));
     }
 
     /// 测试 calculate_border_width 复刻 wasabi `utils::calculate_border_width`

@@ -7,11 +7,18 @@
 //!   - 等长替换 → 仅 write_segment（音符级增量，只传该音轨）
 //!   - 变长替换 → grow（如需）→ GPU 内部搬移后续段 → 写段 → 更新计数与段表
 //!
+//! 主音轨段内增量（2026-08-06 统一全量渲染）：GPU 布局 = 所有轨全部音符，
+//! 主音轨编辑事件（`NoteEvent`，index = notes 索引）映射到「当前音轨段」的
+//! 段内位置（`seg.offset + index`）：
+//! - `UpdateMany` / `Update`：等长原位写（不改变段长）
+//! - `RemoveAt` / `Insert`：段内删/插 → GPU 搬移 + 段表长度/偏移联动
+//!
 //! 正确性保障：
 //! - `compute_move_blocks` 为纯函数，搬移分块序列已用 `Vec::copy_within`
-//!   （标准 memmove 语义）对照单测
+//!   对照单测
 //! - 段表偏移更新为纯计算，单测覆盖前插/删除/尾部增删/无后续段等边界
 
+use crate::NoteEvent;
 use crate::NoteInstance;
 use crate::render_thread::render_loop::Renderers;
 
@@ -24,6 +31,119 @@ pub struct OnionSegment {
     pub track_id: usize,
     pub offset: usize,
     pub len: usize,
+}
+
+/// 主音轨事件级增量：将 `NoteEvent` 应用到当前音轨段（段内位置 = `seg.offset + index`）
+///
+/// 返回 `true` 表示有事件被消费（调用方据此决定是否需要更新 cull info）。
+/// 段不存在（如全量会话尚未到达 / 切轨瞬间事件错位）→ 防御性忽略并记录警告；
+/// 下次全量会话（加载/布局变化）会重建段表兜底。
+///
+/// 事件语义（统一全量渲染后）：
+/// - `UpdateMany` / `Update`：index = 当前轨 document notes 索引（保序）→ 段内原位写
+/// - `RemoveAt` / `Remove`：段内保序删除，段长与后续段偏移联动
+/// - `Insert` / `Add`：段内保序插入，段长与后续段偏移联动
+/// - `Reset` / `Clear`：整段替换 / 清空（防御性兜底，正常路径 UI 不再发送）
+pub fn process_main_track_events(
+    renderers: &mut Renderers,
+    segments: &mut [OnionSegment],
+    current_track_encoded: u32,
+    rx: &std::sync::mpsc::Receiver<NoteEvent>,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> bool {
+    if current_track_encoded == 0 {
+        return false;
+    }
+    let track_id = current_track_encoded as usize - 1;
+    let Some(idx) = segments.iter().position(|s| s.track_id == track_id) else {
+        return false;
+    };
+
+    let mut updated = false;
+    while let Ok(event) = rx.try_recv() {
+        updated = true;
+        // 每轮重新读取段元数据：段长可能被前序事件（删/插）改变
+        let seg = segments[idx];
+        match event {
+            NoteEvent::UpdateMany {
+                start_index,
+                instances,
+            } => {
+                // 等长原位写：不改变段长，无需段表联动
+                renderers
+                    .onion_skin
+                    .update_notes(seg.offset + start_index, &instances);
+            }
+            NoteEvent::Update { index, instance } => {
+                renderers
+                    .onion_skin
+                    .update_notes(seg.offset + index, &[instance]);
+            }
+            NoteEvent::RemoveAt { index, count } => {
+                let count = count.min(seg.len.saturating_sub(index));
+                if count == 0 {
+                    continue;
+                }
+                renderers.onion_skin.remove_at(seg.offset + index, count);
+                shift_segment_len(renderers, segments, idx, -(count as isize), device, queue);
+            }
+            NoteEvent::Remove(index) => {
+                if index >= seg.len {
+                    continue;
+                }
+                renderers.onion_skin.remove_at(seg.offset + index, 1);
+                shift_segment_len(renderers, segments, idx, -1, device, queue);
+            }
+            NoteEvent::Insert { index, instances } => {
+                let index = index.min(seg.len);
+                if instances.is_empty() {
+                    continue;
+                }
+                renderers
+                    .onion_skin
+                    .insert_at(seg.offset + index, &instances);
+                shift_segment_len(
+                    renderers,
+                    segments,
+                    idx,
+                    instances.len() as isize,
+                    device,
+                    queue,
+                );
+            }
+            NoteEvent::Add(instance) => {
+                renderers
+                    .onion_skin
+                    .insert_at(seg.offset + seg.len, &[instance]);
+                shift_segment_len(renderers, segments, idx, 1, device, queue);
+            }
+            NoteEvent::Reset(instances) => {
+                // 防御性兜底：整段替换（正常路径 UI 不再发送 Reset）
+                apply_onion_track_delta(renderers, segments, track_id, &instances, device, queue);
+            }
+            NoteEvent::Clear => {
+                apply_onion_track_delta(renderers, segments, track_id, &[], device, queue);
+            }
+        }
+    }
+    updated
+}
+
+/// 段长变化后的段表联动：更新本段长度 + 后续段偏移平移，并刷新 cull info
+fn shift_segment_len(
+    renderers: &mut Renderers,
+    segments: &mut [OnionSegment],
+    idx: usize,
+    delta: isize,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) {
+    segments[idx].len = (segments[idx].len as isize + delta) as usize;
+    for seg in &mut segments[idx + 1..] {
+        seg.offset = (seg.offset as isize + delta) as usize;
+    }
+    renderers.onion_skin.update_cull_info(device, queue);
 }
 
 /// 应用单音轨增量替换：将 `track_id` 段整体替换为 `instances`

@@ -59,6 +59,9 @@ pub(crate) struct OnionSkinState {
     last_palette_idx: u8,
     /// 是否已初始化（首次上传）
     initialized: bool,
+    /// 强制全量重建标志（未知变化兜底：undo/redo/散改/加载后主音轨段
+    /// 无事件可对账 → 全量会话分块重建，CPU 峰值可控）
+    force_full: bool,
 }
 
 /// 洋葱皮构建动作（事件级增量，2026-08-05）
@@ -66,12 +69,15 @@ pub(crate) struct OnionSkinState {
 /// 由 [`OnionSkinState::decide_action`] 决策：
 /// - `None`：无需任何操作（数据未变，或变化全部豁免——只改当前/静音音轨）
 /// - `Delta(tracks)`：仅这些音轨需要事件级增量替换（段级替换，只传被编辑音轨）
-/// - `Full`：全量重建（首次上传 / 音轨进出洋葱皮 / mute / 调色板 / 未知脏音轨）
+/// - `Full`：全量重建（首次上传 / 调色板 / 未知脏音轨 / force_full 兜底）
+/// - `ViewState`：布局变化（切轨/静音）但 GPU 数据未变——只发 `SetViewState`
+///   uniform（统一全量渲染 2026-08-06：全量 buffer 常驻所有轨，切轨/静音零重传）
 #[derive(Debug)]
 pub(super) enum OnionSkinAction {
     None,
     Delta(Vec<usize>),
     Full,
+    ViewState,
 }
 
 /// 洋葱皮指纹信息（用于 needs_rebuild 比较）
@@ -98,11 +104,17 @@ impl Default for OnionSkinState {
             last_current_track: usize::MAX,
             last_palette_idx: u8::MAX,
             initialized: false,
+            force_full: false,
         }
     }
 }
 
 impl OnionSkinState {
+    /// 标记下一次决策强制全量重建（未知变化兜底，见 `force_full` 字段）
+    pub(super) fn force_full_next(&mut self) {
+        self.force_full = true;
+    }
+
     /// 计算音轨开关指纹（is_muted 状态 hash）
     ///
     /// 用户硬约束：不得限制 GPU 内存使用 / 不得限制音轨数量。
@@ -146,8 +158,10 @@ impl OnionSkinState {
         }
     }
 
-    /// 决策本次洋葱皮构建动作（三态，事件级增量）
-    /// - 布局变化（mute/current/palette）→ `Full`（音轨进出洋葱皮，段表失效）
+    /// 决策本次洋葱皮构建动作（三态 + ViewState，事件级增量）
+    /// - 未初始化 / force_full → `Full`（首次上传 / 未知变化兜底）
+    /// - 布局变化（切轨/静音）→ `ViewState`（全量 buffer 常驻所有轨，只发 uniform
+    ///   零重传；调色板变化 → `Full`，实例颜色固化需重传）
     /// - 音符数据变化：脏音轨全豁免 → `None`；含洋葱皮音轨 → `Delta(洋葱皮音轨)`；
     ///   未知来源 → `Full`（保守正确性）
     /// - 无变化 → `None`
@@ -155,12 +169,17 @@ impl OnionSkinState {
         if !self.initialized {
             return OnionSkinAction::Full;
         }
+        // 未知变化兜底（undo/redo/散改/加载）：全量会话分块重建段表
+        if self.force_full {
+            return OnionSkinAction::Full;
+        }
 
-        // 布局变化 → 全量重建（段表失效，增量无法安全应用）
-        if fp.mute_fp != self.last_mute_fingerprint
-            || fp.current_track != self.last_current_track
-            || fp.palette_idx != self.last_palette_idx
-        {
+        // 布局变化：切轨/静音只影响显示语义（ViewState uniform），数据零重传；
+        // 调色板变化需全量重传（实例颜色固化在数据里）
+        if fp.mute_fp != self.last_mute_fingerprint || fp.current_track != self.last_current_track {
+            return OnionSkinAction::ViewState;
+        }
+        if fp.palette_idx != self.last_palette_idx {
             return OnionSkinAction::Full;
         }
 
@@ -194,6 +213,7 @@ impl OnionSkinState {
         self.last_current_track = fp.current_track;
         self.last_palette_idx = fp.palette_idx;
         self.initialized = true;
+        self.force_full = false;
     }
 }
 
@@ -233,28 +253,36 @@ impl Host {
             OnionSkinAction::Delta(tracks) => {
                 self.stream_onion_skin_delta(&fp, wgpu_thread, &tracks)
             }
+            OnionSkinAction::ViewState => {
+                // 切轨/静音零重传：只发 ViewState uniform（当前音轨 + 静音集合）
+                wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                    current_track: fp.current_track as u32 + 1,
+                    muted_tracks: fp.muted_tracks.clone(),
+                });
+                tracing::debug!(
+                    "[onion-skin] 视图状态更新：current_track={}，静音 {:?}（零数据重传）",
+                    fp.current_track,
+                    fp.muted_tracks
+                );
+            }
         }
 
         // 标记已构建（None / Full / Delta 三路都更新指纹，防止重复构建）
         self.render_ctx.onion_skin_state.mark_built(&fp);
     }
 
-    /// 全量流式会话：分块构建所有洋葱皮音轨实例并 send
+    /// 全量流式会话：分块构建**所有音轨**（含当前轨、静音轨）实例并 send
+    ///
+    /// 统一全量渲染（2026-08-06）：GPU buffer 常驻所有轨全部音符——
+    /// 当前轨（主音轨段，shader 按 ViewState uniform 染主轨色/深度 0）与
+    /// 静音轨（shader 按静音位图隐藏，仅主轨身份时显示）都包含在内。
+    /// 切轨/静音变化因此零重传（只发 ViewState uniform）。
+    ///
     /// 每块 ≤ 800 万实例（128 MB），sync_channel(3) 背压；CPU 峰值 ~256-384 MB。
     /// 每轨末尾强制 flush（空块 = 段表占位）：WGPU 侧据此构建音轨段表，
-    /// 事件级增量（TrackDelta）依赖它定位段。
+    /// 事件级增量（TrackDelta / 段内 NoteEvent）依赖它定位段。
     fn stream_onion_skin_full(&self, fp: &OnionSkinFingerprint, wgpu_thread: &WgpuRenderThread) {
         let data = &self.root.editor.editor_state.data;
-        let current_track = data.current_track;
-        let tracks = &self.root.sidebar.tracks;
-
-        // 辅助闭包：判断音轨是否静音
-        let is_track_muted = |track_id: usize| -> bool {
-            tracks
-                .iter()
-                .find(|t| t.id == track_id)
-                .is_some_and(|t| t.is_muted)
-        };
 
         // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
         let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
@@ -270,16 +298,28 @@ impl Host {
                 });
             };
 
-        // 从 MidiDocument 构建所有洋葱皮音轨（单一权威源）
+        // 预分配：统计所有轨实例总数（ChunkedList len O(1)），
+        // 消除流式 append 2× 倍增的容量余量（2.9 亿音符省 ~4GB GPU 显存）
+        let total: usize = data
+            .document
+            .as_ref()
+            .map(|doc| {
+                (0..doc.track_count())
+                    .map(|t| doc.track_notes(t).len())
+                    .sum()
+            })
+            .unwrap_or(0);
+        if total > 0 {
+            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Reserve { total });
+        }
+
+        // 从 MidiDocument 构建所有音轨（单一权威源；含当前轨与静音轨）
         if let Some(doc) = data.document.as_ref() {
             let track_count = doc.track_count();
             for track_idx in 0..track_count {
-                if track_idx == current_track || is_track_muted(track_idx) {
-                    continue;
-                }
                 let doc_notes = doc.track_notes(track_idx);
                 let color = lumino_extras::palette::current_track_color_f32(track_idx);
-                // 轨道索引编码进 border_width 高 16 位（稳定深度优先级）
+                // 轨道索引编码进 border_width 高 16 位（统一编码：主音轨判定 + 稳定深度）
                 let border_width = onion_border_width(track_idx);
                 for ne in doc_notes.iter() {
                     chunk.push(NoteInstance::new(
