@@ -57,9 +57,9 @@ impl AutomationViewParams {
         if visible_range <= 0.0 {
             return self.panel_offset_y + self.toolbar_height;
         }
-        let h = self.panel_height - self.toolbar_height;
-        self.panel_offset_y + self.toolbar_height + h
-            - ((value - self.value_scroll) / visible_range) * h
+        let available_height = self.panel_height - self.toolbar_height;
+        self.panel_offset_y + self.toolbar_height + available_height
+            - ((value - self.value_scroll) / visible_range) * available_height
     }
 
     /// 将屏幕空间 Y 坐标转换回自动化值。
@@ -69,9 +69,9 @@ impl AutomationViewParams {
         if visible_range <= 0.0 {
             return 0.0;
         }
-        let h = self.panel_height - self.toolbar_height;
+        let available_height = self.panel_height - self.toolbar_height;
         let local_y = y - self.panel_offset_y - self.toolbar_height;
-        self.value_scroll + (1.0 - local_y / h) * visible_range
+        self.value_scroll + (1.0 - local_y / available_height) * visible_range
     }
 
     /// 根据 max_val 限制 value_scroll 的范围。
@@ -419,6 +419,7 @@ fn push_bezier_polyline(
     let mut px = ctx.x1;
     let mut py = ctx.y1;
     for step in 1..=steps {
+        // t: 归一化进度 [0,1]；u = 1 - t 为互补因子（三次贝塞尔插值）
         let t = step as f32 / steps as f32;
         let u = 1.0 - t;
         let nx = u * u * u * ctx.x1
@@ -473,6 +474,7 @@ fn push_polyline(
     let mut px = ctx.x1;
     let mut py = ctx.y1;
     for step in 1..=steps {
+        // t: 归一化插值进度 [0,1]
         let t = step as f32 * inv;
         let f = factor_fn(t);
         let nx = ctx.x1 + dx * t;

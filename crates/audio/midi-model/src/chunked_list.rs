@@ -682,12 +682,12 @@ mod tests {
         }
     }
 
-    fn ev(tick: u32, id: u32) -> TestEvent {
+    fn make_test_event(tick: u32, id: u32) -> TestEvent {
         TestEvent { tick, id }
     }
 
     fn sorted_events(count: usize) -> Vec<TestEvent> {
-        (0..count as u32).map(|i| ev(i * 10, i)).collect()
+        (0..count as u32).map(|i| make_test_event(i * 10, i)).collect()
     }
 
     /// 直接构造多块 ChunkedList（测试窗口跨块迭代，避免依赖 50 万真实容量）
@@ -696,7 +696,7 @@ mod tests {
         let mut next_tick = 0u32;
         for &size in list_sizes {
             let chunk: Vec<TestEvent> = (0..size)
-                .map(|i| ev(next_tick + i as u32, next_tick + i as u32))
+                .map(|i| make_test_event(next_tick + i as u32, next_tick + i as u32))
                 .collect();
             list.chunks.push(Arc::new(chunk));
             next_tick += size as u32;
@@ -836,7 +836,7 @@ mod tests {
     #[test]
     fn test_insert_into_empty() {
         let mut list: ChunkedList<TestEvent> = ChunkedList::new();
-        list.insert(ev(50, 0));
+        list.insert(make_test_event(50, 0));
         assert_eq!(list.len(), 1);
         assert_eq!(list.first().expect("列表首元素应存在").tick, 50);
     }
@@ -845,11 +845,11 @@ mod tests {
     fn test_insert_middle_preserves_order() {
         let mut list = ChunkedList::from_sorted(sorted_events(10));
         // 插到 tick=50 之前（50 前插入 → 稳定插到同 tick 后）
-        list.insert(ev(45, 99));
+        list.insert(make_test_event(45, 99));
         let ticks: Vec<u32> = list.iter().map(EventTick::tick).collect();
         assert_eq!(ticks, vec![0, 10, 20, 30, 40, 45, 50, 60, 70, 80, 90]);
         // 同 tick 稳定插入
-        list.insert(ev(45, 100));
+        list.insert(make_test_event(45, 100));
         let ticks: Vec<u32> = list.iter().map(EventTick::tick).collect();
         assert_eq!(ticks, vec![0, 10, 20, 30, 40, 45, 45, 50, 60, 70, 80, 90]);
         assert_eq!(list.len(), 12);
@@ -859,47 +859,47 @@ mod tests {
     fn test_position_of_finds_exact_value() {
         let mut list = ChunkedList::from_sorted(sorted_events(10));
         // 同 tick 多事件：按值精确匹配（id 区分）
-        list.insert(ev(50, 100));
-        list.insert(ev(50, 101));
+        list.insert(make_test_event(50, 100));
+        list.insert(make_test_event(50, 101));
         assert_eq!(
-            list.position_of(&ev(50, 100)),
+            list.position_of(&make_test_event(50, 100)),
             Some(6),
             "同 tick 事件插到 id=5 之后"
         );
-        assert_eq!(list.position_of(&ev(50, 101)), Some(7));
+        assert_eq!(list.position_of(&make_test_event(50, 101)), Some(7));
         assert_eq!(
-            list.position_of(&ev(50, 5)),
+            list.position_of(&make_test_event(50, 5)),
             Some(5),
             "原始 id=5 事件仍在 index 5"
         );
-        assert_eq!(list.position_of(&ev(20, 2)), Some(2));
+        assert_eq!(list.position_of(&make_test_event(20, 2)), Some(2));
         assert_eq!(
-            list.position_of(&ev(90, 9)),
+            list.position_of(&make_test_event(90, 9)),
             Some(11),
             "尾部事件 index 顺延 2"
         );
 
         // 不存在的值 → None
-        assert_eq!(list.position_of(&ev(55, 999)), None);
-        assert_eq!(list.position_of(&ev(50, 999)), None, "同 tick 但 id 不匹配");
+        assert_eq!(list.position_of(&make_test_event(55, 999)), None);
+        assert_eq!(list.position_of(&make_test_event(50, 999)), None, "同 tick 但 id 不匹配");
     }
 
     #[test]
     fn test_position_of_empty_and_removal_roundtrip() {
         let mut list: ChunkedList<TestEvent> = ChunkedList::new();
-        assert_eq!(list.position_of(&ev(0, 0)), None);
+        assert_eq!(list.position_of(&make_test_event(0, 0)), None);
 
-        list.insert(ev(10, 1));
-        list.insert(ev(40, 4));
-        list.insert(ev(20, 2));
-        assert_eq!(list.position_of(&ev(20, 2)), Some(1));
+        list.insert(make_test_event(10, 1));
+        list.insert(make_test_event(40, 4));
+        list.insert(make_test_event(20, 2));
+        assert_eq!(list.position_of(&make_test_event(20, 2)), Some(1));
 
         // 删除后定位正确
-        let idx = list.position_of(&ev(20, 2)).expect("应定位到目标事件");
+        let idx = list.position_of(&make_test_event(20, 2)).expect("应定位到目标事件");
         let removed = list.remove(idx).expect("目标事件应存在");
-        assert_eq!(removed, ev(20, 2));
-        assert_eq!(list.position_of(&ev(20, 2)), None);
-        assert_eq!(list.position_of(&ev(40, 4)), Some(1));
+        assert_eq!(removed, make_test_event(20, 2));
+        assert_eq!(list.position_of(&make_test_event(20, 2)), None);
+        assert_eq!(list.position_of(&make_test_event(40, 4)), Some(1));
     }
 
     #[test]
@@ -907,19 +907,19 @@ mod tests {
         // 用小块容量强制跨块：VENT_CHUNK_CAPACITY 是 const，这里用手工多事件验证
         let mut list = ChunkedList::from_sorted(sorted_events(60));
         for i in 60..70u32 {
-            list.insert(ev(i * 10, i));
+            list.insert(make_test_event(i * 10, i));
         }
         // 找尾部事件（跨块续扫路径）
-        assert_eq!(list.position_of(&ev(690, 69)), Some(69));
-        assert_eq!(list.position_of(&ev(300, 30)), Some(30));
-        assert_eq!(list.position_of(&ev(0, 0)), Some(0));
+        assert_eq!(list.position_of(&make_test_event(690, 69)), Some(69));
+        assert_eq!(list.position_of(&make_test_event(300, 30)), Some(30));
+        assert_eq!(list.position_of(&make_test_event(0, 0)), Some(0));
     }
 
     #[test]
     fn test_insert_before_first_and_after_last() {
         let mut list = ChunkedList::from_sorted(sorted_events(10));
-        list.insert(ev(5, 98)); // 首元素（tick=0）之后、第二元素之前
-        list.insert(ev(95, 97)); // 末元素（tick=90）之后
+        list.insert(make_test_event(5, 98)); // 首元素（tick=0）之后、第二元素之前
+        list.insert(make_test_event(95, 97)); // 末元素（tick=90）之后
         let ticks: Vec<u32> = list.iter().map(EventTick::tick).collect();
         assert_eq!(ticks, vec![0, 5, 10, 20, 30, 40, 50, 60, 70, 80, 90, 95]);
         assert_eq!(list.len(), 12);
@@ -937,7 +937,7 @@ mod tests {
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             let tick = (seed % 10_000) as u32;
-            let e = ev(tick, i);
+            let e = make_test_event(tick, i);
             list.insert(e);
             reference_insert(&mut reference, e);
         }
@@ -966,7 +966,7 @@ mod tests {
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY);
 
         // 向满块中间插入 → 触发分裂
-        list.insert(ev(EVENT_CHUNK_CAPACITY as u32 * 10 / 2, 999_999));
+        list.insert(make_test_event(EVENT_CHUNK_CAPACITY as u32 * 10 / 2, 999_999));
         assert_eq!(list.chunk_count(), 2, "满块插入应分裂为 2 块");
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY + 1);
 
@@ -995,7 +995,7 @@ mod tests {
                 .wrapping_mul(6364136223846793005)
                 .wrapping_add(1442695040888963407);
             let tick = (seed % (EVENT_CHUNK_CAPACITY as u64 * 2)) as u32;
-            let e = ev(tick, i);
+            let e = make_test_event(tick, i);
             list.insert(e);
             reference_insert(&mut reference, e);
         }
@@ -1033,8 +1033,8 @@ mod tests {
     fn test_range_query() {
         let mut list = ChunkedList::from_sorted(sorted_events(1000));
         // 混入不同 tick
-        list.insert(ev(123, 1));
-        list.insert(ev(456, 2));
+        list.insert(make_test_event(123, 1));
+        list.insert(make_test_event(456, 2));
 
         let range: Vec<u32> = list.range(100, 500).map(EventTick::tick).collect();
         assert_eq!(
@@ -1051,8 +1051,8 @@ mod tests {
     fn test_large_insert_performance_shape() {
         // 验证 50 万规模插入仍是块内操作（不崩、顺序正确）
         let mut list = ChunkedList::from_sorted(sorted_events(EVENT_CHUNK_CAPACITY));
-        list.insert(ev(3, 1));
-        list.insert(ev(3, 2));
+        list.insert(make_test_event(3, 1));
+        list.insert(make_test_event(3, 2));
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY + 2);
         assert_eq!(list.first().expect("列表首元素应存在").tick, 0);
         assert_eq!(list.get(2).expect("索引 2 的事件应存在").tick, 3);
@@ -1066,7 +1066,7 @@ mod tests {
         list.clear();
         assert!(list.is_empty());
         assert_eq!(list.chunk_count(), 0);
-        list.insert(ev(1, 1));
+        list.insert(make_test_event(1, 1));
         assert_eq!(list.len(), 1);
     }
 
@@ -1087,7 +1087,7 @@ mod tests {
         let snapshot = original.clone(); // 浅拷贝：块 Arc 共享
 
         // 修改原容器（模拟 insert 到已快照的轨道）
-        original.insert(ev(5, 999));
+        original.insert(make_test_event(5, 999));
         assert_eq!(original.len(), 1001);
         // 快照不受影响，且 token 顺序仍正确
         assert_eq!(snapshot.len(), 1000);
@@ -1107,7 +1107,7 @@ mod tests {
         let mut snap_b = list.clone();
 
         // 仅修改 snap_b，snap_a 与 list 都应保持
-        snap_b.insert(ev(15, 42));
+        snap_b.insert(make_test_event(15, 42));
         assert_eq!(list.len(), 1000);
         assert_eq!(snap_a.len(), 1000);
         assert_eq!(snap_b.len(), 1001);
@@ -1140,7 +1140,7 @@ mod tests {
 
         // 修改原容器只复制目标块（COW）：其余块仍共享。
         // tick=5_000_001 落在尾块（范围 5_000_000..6_999_990）且尾块未满 → 只复制尾块
-        original.insert(ev(5_000_001, 999_999));
+        original.insert(make_test_event(5_000_001, 999_999));
         assert_eq!(original.len(), 700_001);
         assert_eq!(snapshot.len(), 700_000, "快照不受修改影响");
 

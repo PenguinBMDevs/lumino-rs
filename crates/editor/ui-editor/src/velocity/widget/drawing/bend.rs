@@ -72,18 +72,18 @@ pub fn draw_bend_path(
             };
             let hp = bend_screen_pos(view, h_abs, max_val);
             // 锚点 → 控制柄辅助线
-            let aux = Path::new(|p| {
+            let handle_connector = Path::new(|p| {
                 p.move_to(ap);
                 p.line_to(hp);
             });
-            let aux_width = if selected {
+            let connector_width = if selected {
                 SELECTED_HANDLE_LINE_WIDTH
             } else {
                 HANDLE_LINE_WIDTH
             };
             frame.stroke(
-                &aux,
-                Stroke::default().with_width(aux_width).with_color(Color {
+                &handle_connector,
+                Stroke::default().with_width(connector_width).with_color(Color {
                     a: if selected { 0.9 } else { 0.5 },
                     ..anchor_color
                 }),

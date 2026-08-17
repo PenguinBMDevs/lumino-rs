@@ -71,7 +71,7 @@ pub fn view_memory_monitor_dialog<'a>(
             continue;
         }
         let name = text(tag.name()).size(13).style(label_style);
-        let value = text(format!("{:.1} MB", snapshot.mb(tag)))
+        let value = text(format!("{:.1} MB", snapshot.tracked_mb(tag)))
             .size(13)
             .style(value_style);
         grid_rows = grid_rows.push(

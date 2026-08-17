@@ -21,6 +21,7 @@ pub fn bezier_value(a: &AutomationEvent, b: &AutomationEvent, t: f32) -> f32 {
     let y1 = b.value as f32;
     let cp1 = a.out_handle_abs().1;
     let cp2 = b.in_handle_abs().1;
+    // u: 互补因子 = 1 - t（t 为归一化进度 [0,1]）
     let u = 1.0 - t;
     u * u * u * y0 + 3.0 * u * u * t * cp1 + 3.0 * u * t * t * cp2 + t * t * t * y1
 }

@@ -205,7 +205,8 @@ impl Snapshot {
         self.total_tracked().saturating_add(self.gpu_resources)
     }
 
-    pub fn mb(&self, tag: AllocTag) -> f64 {
+    /// 返回指定 tag 当前追踪的内存用量（单位：MB）。
+    pub fn tracked_mb(&self, tag: AllocTag) -> f64 {
         self.get(tag) as f64 / 1_048_576.0
     }
 

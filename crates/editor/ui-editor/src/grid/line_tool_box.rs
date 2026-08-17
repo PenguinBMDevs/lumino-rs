@@ -161,14 +161,14 @@ pub fn draw(
                 };
                 let hp = editor.line_pos_screen_pos(h_abs);
                 // 锚点 → 控制柄辅助线
-                let aux = Path::new(|p| {
+                let handle_connector = Path::new(|p| {
                     p.move_to(ap);
                     p.line_to(hp);
                 });
-                let aux_stroke = Stroke::default()
+                let connector_stroke = Stroke::default()
                     .with_width(HANDLE_LINE_WIDTH)
                     .with_color(handle_line_color);
-                frame.stroke(&aux, aux_stroke);
+                frame.stroke(&handle_connector, connector_stroke);
                 // 控制柄方块
                 let rect = Rectangle::new(
                     Point::new(hp.x - HANDLE_SIZE * 0.5, hp.y - HANDLE_SIZE * 0.5),

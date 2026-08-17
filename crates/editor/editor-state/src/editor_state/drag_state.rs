@@ -337,15 +337,15 @@ mod tests {
         let (_, ghost_key) = drag_state.ghost_position(100.0, 60, 127);
         assert_eq!(ghost_key, 0, "key 不应小于 0");
 
-        let drag_state_2 = DragState {
+        let other_drag_state = DragState {
             selected: BitVec::new(),
             delta_tick: 0,
             delta_key: 100,
             initial_tick: 0,
             initial_key: 60,
         };
-        let (_, ghost_key_2) = drag_state_2.ghost_position(100.0, 100, 127);
-        assert_eq!(ghost_key_2, 127, "key 不应超过 max_key");
+        let (_, other_ghost_key) = other_drag_state.ghost_position(100.0, 100, 127);
+        assert_eq!(other_ghost_key, 127, "key 不应超过 max_key");
     }
 
     #[test]

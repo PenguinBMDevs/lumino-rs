@@ -881,7 +881,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
     let copy_center_x = editor.editor_state.view.tick_to_x(340.0);
     let moved_x = editor.editor_state.view.tick_to_x(390.0);
     let copy2_center_x = editor.editor_state.view.tick_to_x(390.0);
-    let moved_x_2 = editor.editor_state.view.tick_to_x(440.0);
+    let moved_x_alt = editor.editor_state.view.tick_to_x(440.0);
     editor.set_ctrl_pressed(true);
     editor.handle_tool_pressed(
         iced_core::Point::new(copy_center_x, copy_center_y),
@@ -960,7 +960,7 @@ fn test_continuous_copy_from_copy_box_commits_old_and_accumulates() {
         "Ctrl+拖动副本2 框应继续复制下一份，实际 {:?}",
         editor.editor_state.interaction.edit_state
     );
-    editor.handle_moved(iced_core::Point::new(moved_x_2, copy_center_y));
+    editor.handle_moved(iced_core::Point::new(moved_x_alt, copy_center_y));
     editor.handle_released();
     assert!(editor.pending_copy_drag_state.is_none());
     assert_eq!(

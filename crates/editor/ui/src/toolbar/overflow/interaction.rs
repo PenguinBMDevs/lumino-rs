@@ -14,7 +14,7 @@ use crate::toolbar::{Event, FlipHorizontalMode, Tool, Toolbar};
 type ModifierEvents = (&'static str, Message, &'static str, Message, Message);
 
 /// 快速构造溢出菜单项的辅助函数（消除重复样板代码）
-fn mi(
+fn menu_item(
     icon: icon::Icon,
     tooltip: &'static str,
     on_press: Message,
@@ -107,7 +107,7 @@ impl Toolbar {
                 self.tools_overflow_items(language, has_selection, arrangement_mode)
             }
             ToolbarGroup::AutoScroll => self.auto_scroll_overflow_items(t),
-            ToolbarGroup::Collaboration => vec![mi(
+            ToolbarGroup::Collaboration => vec![menu_item(
                 icon::Users,
                 t.collaboration_tooltip,
                 Event::open_collaboration_dialog(),
@@ -123,7 +123,7 @@ impl Toolbar {
         &self,
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
-        vec![mi(
+        vec![menu_item(
             icon::PlayCircle,
             if self.is_recording {
                 t.record_stop
@@ -145,13 +145,13 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(
+            menu_item(
                 icon::SkipBackward,
                 t.skip_backward,
                 Event::skip_backward(),
                 true,
             ),
-            mi(
+            menu_item(
                 if self.is_playing {
                     icon::Pause
                 } else {
@@ -165,7 +165,7 @@ impl Toolbar {
                 },
                 true,
             ),
-            mi(
+            menu_item(
                 icon::SkipForward,
                 t.skip_forward,
                 Event::skip_forward(),
@@ -179,7 +179,7 @@ impl Toolbar {
         &self,
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
-        vec![mi(
+        vec![menu_item(
             if self.is_looping {
                 icon::ArrowsLeftRight
             } else {
@@ -201,8 +201,8 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::Undo, t.undo, Event::undo(), true),
-            mi(icon::Redo, t.redo, Event::redo(), true),
+            menu_item(icon::Undo, t.undo, Event::undo(), true),
+            menu_item(icon::Redo, t.redo, Event::redo(), true),
         ]
     }
 
@@ -211,7 +211,7 @@ impl Toolbar {
         &self,
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
-        vec![mi(
+        vec![menu_item(
             match self.auto_scroll_mode {
                 AutoScrollMode::FixedIndicatorLeft => icon::ArrowsLeftRight,
                 AutoScrollMode::ScrollingIndicator => icon::Scroll,
@@ -248,19 +248,19 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(
+            menu_item(
                 icon::MousePointer,
                 t.tool_pointer,
                 Event::tool_selected(Tool::Pointer),
                 true,
             ),
-            mi(
+            menu_item(
                 icon::Curve,
                 t.tool_curve,
                 Event::tool_selected(Tool::Curve),
                 true,
             ),
-            mi(
+            menu_item(
                 icon::Eraser,
                 t.tool_eraser,
                 Event::tool_selected(Tool::Eraser),
@@ -275,25 +275,25 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(
+            menu_item(
                 icon::MousePointer,
                 t.tool_pointer,
                 Event::tool_selected(Tool::Pointer),
                 true,
             ),
-            mi(
+            menu_item(
                 icon::Pencil,
                 t.tool_pencil,
                 Event::tool_selected(Tool::Pencil),
                 true,
             ),
-            mi(
+            menu_item(
                 icon::Eraser,
                 t.tool_eraser,
                 Event::tool_selected(Tool::Eraser),
                 true,
             ),
-            mi(
+            menu_item(
                 icon::Curve,
                 t.tool_curve,
                 Event::tool_selected(Tool::Curve),
@@ -308,11 +308,11 @@ impl Toolbar {
         t: &'static lumino_extras::i18n::MainTranslations,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(icon::Quantize, t.tool_quantize, Event::quantize(), true),
-            mi(icon::Speed, t.tool_speed, Event::speed_change(), true),
-            mi(icon::Split, t.tool_split, Event::split(), true),
-            mi(icon::Glue, t.tool_glue, Event::glue(), true),
-            mi(icon::Tie, t.tool_tie, Event::tie(), true),
+            menu_item(icon::Quantize, t.tool_quantize, Event::quantize(), true),
+            menu_item(icon::Speed, t.tool_speed, Event::speed_change(), true),
+            menu_item(icon::Split, t.tool_split, Event::split(), true),
+            menu_item(icon::Glue, t.tool_glue, Event::glue(), true),
+            menu_item(icon::Tie, t.tool_tie, Event::tie(), true),
         ]
     }
 
@@ -359,20 +359,20 @@ impl Toolbar {
         ev: ModifierEvents,
     ) -> Vec<OverflowMenuItem> {
         vec![
-            mi(
+            menu_item(
                 icon::FlipVertical,
                 t.tool_flip_vertical,
                 Event::flip_vertical(),
                 has_selection,
             ),
-            mi(
+            menu_item(
                 icon::FlipHorizontal,
                 t.tool_flip_horizontal,
                 ev.4,
                 has_selection,
             ),
-            mi(icon::TransposeDown, ev.0, ev.1, has_selection),
-            mi(icon::TransposeUp, ev.2, ev.3, has_selection),
+            menu_item(icon::TransposeDown, ev.0, ev.1, has_selection),
+            menu_item(icon::TransposeUp, ev.2, ev.3, has_selection),
         ]
     }
 }

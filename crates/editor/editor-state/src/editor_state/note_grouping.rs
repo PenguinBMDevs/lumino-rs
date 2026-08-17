@@ -47,7 +47,7 @@ pub fn group_adjacent_notes(notes: &[NoteTuple], proximity: f32) -> Vec<Vec<Note
 mod tests {
     use super::*;
 
-    fn nt(index: usize, tick: f32, key: u16, length: f32) -> NoteTuple {
+    fn make_note_tuple(index: usize, tick: f32, key: u16, length: f32) -> NoteTuple {
         (index, tick, key, length, 100, 0)
     }
 
@@ -59,14 +59,14 @@ mod tests {
 
     #[test]
     fn test_single_note() {
-        let notes = vec![nt(0, 0.0, 60, 2.0)];
+        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn test_two_adjacent_same_key() {
-        let notes = vec![nt(0, 0.0, 60, 2.0), nt(1, 2.0, 60, 2.0)];
+        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 2.0, 60, 2.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 2);
@@ -74,21 +74,21 @@ mod tests {
 
     #[test]
     fn test_two_non_adjacent_same_key() {
-        let notes = vec![nt(0, 0.0, 60, 2.0), nt(1, 10.0, 60, 2.0)];
+        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 10.0, 60, 2.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn test_two_adjacent_different_key() {
-        let notes = vec![nt(0, 0.0, 60, 2.0), nt(1, 2.0, 62, 2.0)];
+        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 2.0, 62, 2.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn test_unsorted_input() {
-        let notes = vec![nt(1, 4.0, 60, 2.0), nt(0, 0.0, 60, 4.0)];
+        let notes = vec![make_note_tuple(1, 4.0, 60, 2.0), make_note_tuple(0, 0.0, 60, 4.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0][0].0, 0);
@@ -98,7 +98,7 @@ mod tests {
     #[test]
     fn test_proximity_threshold() {
         // 间隔正好等于阈值时应被合并
-        let notes = vec![nt(0, 0.0, 60, 2.0), nt(1, 3.0, 60, 2.0)];
+        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 3.0, 60, 2.0)];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
     }
@@ -106,10 +106,10 @@ mod tests {
     #[test]
     fn test_multiple_groups() {
         let notes = vec![
-            nt(0, 0.0, 60, 2.0),
-            nt(1, 2.0, 60, 2.0),
-            nt(2, 10.0, 62, 2.0),
-            nt(3, 12.0, 62, 2.0),
+            make_note_tuple(0, 0.0, 60, 2.0),
+            make_note_tuple(1, 2.0, 60, 2.0),
+            make_note_tuple(2, 10.0, 62, 2.0),
+            make_note_tuple(3, 12.0, 62, 2.0),
         ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 2);
