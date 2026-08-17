@@ -22,14 +22,20 @@ use crate::model::{CloudConnection, CloudEntry, ConnState};
 /// OS 回收内存）。绝不在线程内持有并 drop 自己的 `Runtime`——主线程
 /// 运行在 tokio 上下文中，drop 任何 `Runtime` 都会触发
 /// "Cannot drop a runtime in a context where blocking is not allowed" panic。
-fn runtime_handle() -> Handle {
+fn runtime_handle() -> Result<Handle> {
     if let Ok(handle) = Handle::try_current() {
-        return handle;
+        return Ok(handle);
     }
     static GLOBAL_RT: OnceLock<&'static Runtime> = OnceLock::new();
-    let rt = GLOBAL_RT
-        .get_or_init(|| Box::leak(Box::new(Runtime::new().expect("创建全局 tokio 运行时失败"))));
-    rt.handle().clone()
+    if let Some(rt) = GLOBAL_RT.get() {
+        return Ok(rt.handle().clone());
+    }
+    let rt = Runtime::new()
+        .map_err(|e| CloudError::Operation(format!("创建全局 tokio 运行时失败: {e}")))?;
+    let rt = Box::leak(Box::new(rt));
+    // 并发竞争下若已被其他线程写入，复用既有实例（语义等价）
+    let rt = GLOBAL_RT.get_or_init(|| rt);
+    Ok(rt.handle().clone())
 }
 
 /// 云存储管理器
@@ -44,7 +50,7 @@ impl CloudManager {
     /// 创建管理器（加载配置 + 获取异步运行时句柄）
     pub fn new(config_path: PathBuf) -> Result<Self> {
         Ok(Self {
-            rt: runtime_handle(),
+            rt: runtime_handle()?,
             config: CloudConfigStore::new(config_path)?,
             clients: HashMap::new(),
             status: HashMap::new(),
@@ -142,13 +148,26 @@ impl CloudManager {
 
     // ── 文件操作（阻塞，内部 block_on） ──
 
+    /// 取已连接客户端的独占可变引用；未连接则返回 `NotConnected` 错误。
+    ///
+    /// 以关联函数形式接收 `&mut clients`，使调用点的 `&mut self.clients` 走
+    /// 字段级借用，避免与 `self.rt.block_on` 的 `&self.rt` 借用冲突。
+    /// 抽出 7 个文件操作方法共用的「取客户端 + 错误映射」逻辑，消除重复
+    /// （原 list_dir/upload/download/rename/delete/move_file/create_dir 各自
+    /// 重复 `clients.get_mut(id).ok_or_else(NotConnected)`）。
+    fn client_mut<'a>(
+        clients: &'a mut HashMap<String, Box<dyn CloudClient>>,
+        id: &str,
+    ) -> Result<&'a mut Box<dyn CloudClient>> {
+        clients
+            .get_mut(id)
+            .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))
+    }
+
     /// 列出目录内容
     pub fn list_dir(&mut self, id: &str, path: &str) -> Result<Vec<CloudEntry>> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.list_dir(path).await
         });
         self.handle_io_result(id, result)
@@ -157,10 +176,7 @@ impl CloudManager {
     /// 上传本地文件到远程路径
     pub fn upload(&mut self, id: &str, local: &Path, remote_path: &str) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.upload_file(local, remote_path).await
         });
         self.handle_io_result(id, result)
@@ -169,10 +185,7 @@ impl CloudManager {
     /// 下载远程文件到本地路径
     pub fn download(&mut self, id: &str, remote_path: &str, local: &Path) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.download_file(remote_path, local).await
         });
         self.handle_io_result(id, result)
@@ -181,10 +194,7 @@ impl CloudManager {
     /// 重命名（同目录内）
     pub fn rename(&mut self, id: &str, from: &str, to: &str) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.rename(from, to).await
         });
         self.handle_io_result(id, result)
@@ -193,10 +203,7 @@ impl CloudManager {
     /// 删除文件或目录
     pub fn delete(&mut self, id: &str, path: &str, is_dir: bool) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.delete(path, is_dir).await
         });
         self.handle_io_result(id, result)
@@ -205,10 +212,7 @@ impl CloudManager {
     /// 移动文件/目录到目标目录（云内部）
     pub fn move_file(&mut self, id: &str, from: &str, to_dir: &str) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.move_file(from, to_dir).await
         });
         self.handle_io_result(id, result)
@@ -217,10 +221,7 @@ impl CloudManager {
     /// 创建目录
     pub fn create_dir(&mut self, id: &str, path: &str) -> Result<()> {
         let result = self.rt.block_on(async {
-            let client = self
-                .clients
-                .get_mut(id)
-                .ok_or_else(|| CloudError::NotConnected(format!("云存储未连接: {id}")))?;
+            let client = Self::client_mut(&mut self.clients, id)?;
             client.create_dir(path).await
         });
         self.handle_io_result(id, result)

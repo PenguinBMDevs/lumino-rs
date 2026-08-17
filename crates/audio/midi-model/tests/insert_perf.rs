@@ -58,7 +58,7 @@ fn bench_insert_with_snapshot() {
     let mid = (list.len() as u32 / 2) & !1;
     measure_insert("中间插入(持快照Arc)", &mut list, mid);
     // 防止编译期优化掉快照
-    assert!(snapshot.len() > 0);
+    assert!(!snapshot.is_empty());
 }
 
 #[test]

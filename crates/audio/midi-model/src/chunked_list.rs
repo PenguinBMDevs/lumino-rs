@@ -61,8 +61,8 @@ impl<T: EventTick> ChunkedList<T> {
         let mut chunks: Vec<Arc<Vec<T>>> =
             Vec::with_capacity(events.len().div_ceil(EVENT_CHUNK_CAPACITY));
         let mut chunk_first_ticks = Vec::with_capacity(chunks.capacity());
-        let mut chunk_offsets = Vec::with_capacity(chunks.capacity() + 1);
-        chunk_offsets.push(0);
+        let mut chunk_offsets = Vec::with_capacity(chunks.capacity());
+        let mut acc = 0usize;
 
         let mut total_len = 0usize;
         let mut iter = events.into_iter();
@@ -73,10 +73,11 @@ impl<T: EventTick> ChunkedList<T> {
             }
             let first_tick = chunk.first().map(EventTick::tick).unwrap_or(0);
             let chunk_len = chunk.len();
+            chunk_offsets.push(acc); // 第 i 块起始全局索引
+            acc += chunk_len;
             chunks.push(Arc::new(chunk));
             chunk_first_ticks.push(first_tick);
             total_len += chunk_len;
-            chunk_offsets.push(total_len);
         }
 
         Self {
@@ -128,11 +129,16 @@ impl<T: EventTick> ChunkedList<T> {
     }
 
     /// 空容器
+    ///
+    /// 不变式：`chunk_offsets.len() == chunks.len()`，
+    /// `chunk_offsets[i]` 为第 `i` 块起始全局索引（第 0 块恒为 0）。
+    /// 因此 `EMPTY`（双空）天然满足不变式，无需哨兵 `vec![0]`，
+    /// 杜绝了旧不变式下 `EMPTY` 越界减法（release 下 `usize::MAX`）的隐患。
     pub fn new() -> Self {
         Self {
             chunks: Vec::new(),
             chunk_first_ticks: Vec::new(),
-            chunk_offsets: vec![0],
+            chunk_offsets: Vec::new(),
             total_len: 0,
         }
     }
@@ -151,7 +157,7 @@ impl<T: EventTick> ChunkedList<T> {
         Self {
             chunks: Vec::with_capacity(chunk_count),
             chunk_first_ticks: Vec::with_capacity(chunk_count),
-            chunk_offsets: vec![0],
+            chunk_offsets: Vec::new(),
             total_len: 0,
         }
     }
@@ -253,9 +259,6 @@ impl<T: EventTick> ChunkedList<T> {
                 let last = Arc::make_mut(last);
                 last.push(event);
                 self.total_len += 1;
-                if let Some(last_offset) = self.chunk_offsets.last_mut() {
-                    *last_offset = self.total_len;
-                }
             }
             return;
         }
@@ -263,10 +266,12 @@ impl<T: EventTick> ChunkedList<T> {
         self.insert(event);
     }
 
-    /// 按 tick 升序插入事件（O(块内) + O(log 块数)）
+    /// 按 tick 升序插入事件。
     ///
-    /// 定位目标块后块内二分插入；若目标块已满（50 万），先分裂为两个
-    /// 25 万块，再插入目标半块。必要时经 `Arc::make_mut` 只复制目标块。
+    /// 定位目标块后块内二分插入；目标块未满时**增量维护**索引
+    /// （仅 `chunk_offsets[ci+1..]` 各 +1，O(1) 摊还），不再每次全量
+    /// `rebuild_index`。目标块已满（50 万）时先分裂再插入，块数变化故仍全量重建。
+    /// 必要时经 `Arc::make_mut` 只复制目标块。
     pub fn insert(&mut self, event: T)
     where
         T: Clone,
@@ -276,7 +281,7 @@ impl<T: EventTick> ChunkedList<T> {
             let chunk = Arc::new(vec![event]);
             self.chunks.push(chunk);
             self.chunk_first_ticks.push(tick);
-            self.chunk_offsets = vec![0, 1];
+            self.chunk_offsets = vec![0];
             self.total_len = 1;
             return;
         }
@@ -284,20 +289,28 @@ impl<T: EventTick> ChunkedList<T> {
         let ci = self.locate_chunk(tick);
 
         if self.chunks[ci].len() >= EVENT_CHUNK_CAPACITY {
-            // 满块分裂：切成两个 25 万块，插入目标半块
+            // 满块分裂：切成两个 25 万块，插入目标半块（块数变化，全量重建索引）
             self.split_chunk(ci);
             let ci = self.locate_chunk(tick);
             let chunk = Arc::make_mut(&mut self.chunks[ci]);
             let local = chunk.partition_point(|e| e.tick() <= tick);
             chunk.insert(local, event);
-        } else {
-            let chunk = Arc::make_mut(&mut self.chunks[ci]);
-            let local = chunk.partition_point(|e| e.tick() <= tick);
-            chunk.insert(local, event);
+            self.total_len += 1;
+            self.rebuild_index();
+            return;
         }
 
+        let chunk = Arc::make_mut(&mut self.chunks[ci]);
+        let local = chunk.partition_point(|e| e.tick() <= tick);
+        chunk.insert(local, event);
         self.total_len += 1;
-        self.rebuild_index();
+        // 增量维护：插入点之后的块起始索引整体 +1；第 0 块隐含 0，无需调整
+        for off in &mut self.chunk_offsets[ci + 1..] {
+            *off += 1;
+        }
+        if local == 0 {
+            self.chunk_first_ticks[ci] = tick;
+        }
     }
 
     /// 整轨替换（O(N) 重建）
@@ -311,7 +324,7 @@ impl<T: EventTick> ChunkedList<T> {
     pub fn clear(&mut self) {
         self.chunks.clear();
         self.chunk_first_ticks.clear();
-        self.chunk_offsets = vec![0];
+        self.chunk_offsets = Vec::new();
         self.total_len = 0;
     }
 
@@ -524,21 +537,24 @@ impl<T: EventTick> ChunkedList<T> {
         // chunk_offsets 在 rebuild_index 中重建
     }
 
-    /// 重建双索引（O(块数)，插入/删除后调用；块数 ~120 时开销可忽略）
+    /// 重建双索引（O(块数)，块数变化后调用；块数 ~120 时开销可忽略）
+    ///
+    /// 不变式：`chunk_offsets.len() == chunks.len()`，且
+    /// `chunk_offsets[i]` 为第 `i` 块起始全局索引（第 0 块恒为 0）。
     fn rebuild_index(&mut self) {
         self.chunk_first_ticks = self
             .chunks
             .iter()
             .map(|c| c.first().map(EventTick::tick).unwrap_or(0))
             .collect();
-        let mut offsets = Vec::with_capacity(self.chunks.len() + 1);
-        offsets.push(0);
+        let mut offsets = Vec::with_capacity(self.chunks.len());
         let mut acc = 0usize;
         for c in &self.chunks {
-            acc += c.len();
             offsets.push(acc);
+            acc += c.len();
         }
         self.chunk_offsets = offsets;
+        debug_assert_eq!(self.chunk_offsets.len(), self.chunks.len());
         debug_assert_eq!(acc, self.total_len);
     }
 }

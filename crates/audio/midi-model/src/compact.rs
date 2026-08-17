@@ -132,6 +132,8 @@ const OFFSET_DELTA_TICK: usize = 0;
 const OFFSET_TRACK_ID: usize = 4;
 const OFFSET_PARAM1: usize = 6;
 const OFFSET_PARAM2: usize = 8;
+const OFFSET_KIND: usize = 10;
+const OFFSET_CHANNEL: usize = 11;
 
 /// 编译时验证字段偏移常量与实际布局一致。
 /// 若 `CompactEvent` 字段顺序/类型变更导致偏移变化，此处 const assert 将触发编译错误。
@@ -140,6 +142,8 @@ const _: () = {
     assert!(std::mem::offset_of!(CompactEvent, track_id) == OFFSET_TRACK_ID);
     assert!(std::mem::offset_of!(CompactEvent, param1) == OFFSET_PARAM1);
     assert!(std::mem::offset_of!(CompactEvent, param2) == OFFSET_PARAM2);
+    assert!(std::mem::offset_of!(CompactEvent, kind) == OFFSET_KIND);
+    assert!(std::mem::offset_of!(CompactEvent, channel) == OFFSET_CHANNEL);
 };
 
 impl CompactEvent {
@@ -184,13 +188,13 @@ impl CompactEvent {
     /// 获取事件种类
     #[inline]
     pub fn kind(&self) -> EventKind {
-        EventKind::from_u8(packed_field_read!(self, kind, u8, 10)).unwrap_or(EventKind::Other)
+        EventKind::from_u8(packed_field_read!(self, kind, u8, OFFSET_KIND)).unwrap_or(EventKind::Other)
     }
 
     /// 获取 MIDI 通道
     #[inline]
     pub fn channel(&self) -> u8 {
-        packed_field_read!(self, channel, u8, 11)
+        packed_field_read!(self, channel, u8, OFFSET_CHANNEL)
     }
 
     /// 获取参数1（取决于 kind）
