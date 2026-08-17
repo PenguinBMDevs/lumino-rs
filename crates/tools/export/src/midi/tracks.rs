@@ -30,6 +30,11 @@ pub(crate) fn build_midi_smf<'a>(
         let mut combined_track = build_combined_track(data, combined_name)?;
         combined_track.sort_by_key(|e| e.delta);
         convert_to_delta_times(&mut combined_track);
+        // EndOfTrack 必须在轨道末尾，且其后不得有任何事件（其他软件读取硬约束）
+        combined_track.push(TrackEvent {
+            delta: 0.into(),
+            kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
+        });
         tracks.push(combined_track);
     } else {
         // 对于格式 1，每个 MidiTrackData 对应一个 MIDI 轨道
@@ -40,6 +45,11 @@ pub(crate) fn build_midi_smf<'a>(
             let mut track = build_track(track_data, first_track, name)?;
             track.sort_by_key(|e| e.delta);
             convert_to_delta_times(&mut track);
+            // EndOfTrack 必须在轨道末尾，且其后不得有任何事件（其他软件读取硬约束）
+            track.push(TrackEvent {
+                delta: 0.into(),
+                kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
+            });
             tracks.push(track);
             first_track = false;
         }
@@ -68,6 +78,9 @@ fn build_combined_track<'a>(
         collect_track_events(track_data, &mut events, true)?;
     }
 
+    // EndOfTrack 在 build_midi_smf 中统一追加到轨道末尾（排序/转增量后），
+    // 避免此处以 delta=0 加入后被「按绝对 tick 排序」顶到轨道前面，
+    // 导致后续事件写在 EndOfTrack 之后（非法 MIDI，其他软件无法读取）。
     Ok(events)
 }
 
@@ -89,12 +102,9 @@ fn build_track<'a>(
 
     collect_track_events(track_data, &mut events, include_globals)?;
 
-    // 轨道结束
-    events.push(TrackEvent {
-        delta: 0.into(),
-        kind: TrackEventKind::Meta(MetaMessage::EndOfTrack),
-    });
-
+    // EndOfTrack 在 build_midi_smf 中统一追加到轨道末尾（排序/转增量后），
+    // 避免此处以 delta=0 加入后被「按绝对 tick 排序」顶到轨道前面，
+    // 导致后续事件写在 EndOfTrack 之后（非法 MIDI，其他软件无法读取）。
     Ok(events)
 }
 
