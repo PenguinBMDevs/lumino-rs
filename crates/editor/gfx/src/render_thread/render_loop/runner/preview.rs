@@ -112,16 +112,5 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
         );
 
         context.ctx.queue.submit(std::iter::once(encoder.finish()));
-
-        // 回读并记录本帧实际绘制的音符数量（调试用 info 日志）
-        context.renderers.note.schedule_draw_count_log("note");
-        context
-            .renderers
-            .onion_skin
-            .schedule_draw_count_log("onion_skin");
-        let _ = context.ctx.device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(std::time::Duration::from_secs(1)),
-        });
     }
 }

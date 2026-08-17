@@ -16,12 +16,34 @@ fn make_data(note_count: usize) -> EditorData {
     EditorData::with_f32_notes(1, &notes)
 }
 
-/// 提取事件中的 (start_index, len) 列表（断言辅助）
+/// 提取事件中的 (start_index, len) 列表（断言辅助；仅用于 UpdateRange 测试）
 fn event_ranges(events: &[NoteDeltaEvent]) -> Vec<(usize, usize)> {
     events
         .iter()
         .map(|e| match e {
             NoteDeltaEvent::UpdateRange { start_index, notes } => (*start_index, notes.len()),
+            _ => panic!("event_ranges 仅支持 UpdateRange"),
+        })
+        .collect()
+}
+
+/// 从事件列表中提取第一个 RemoveAt 的 (index, count)
+fn first_remove_at(events: &[NoteDeltaEvent]) -> (usize, usize) {
+    for e in events {
+        if let NoteDeltaEvent::RemoveAt { index, count } = e {
+            return (*index, *count);
+        }
+    }
+    panic!("未找到 RemoveAt 事件");
+}
+
+/// 从事件列表中提取所有 InsertAt 的 (index, tick) 摘要
+fn insert_at_summary(events: &[NoteDeltaEvent]) -> Vec<(usize, f32)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            NoteDeltaEvent::InsertAt { index, note } => Some((*index, note.tick)),
+            _ => None,
         })
         .collect()
 }
@@ -118,29 +140,33 @@ fn test_unknown_mark_sets_dirty() {
 }
 
 #[test]
-fn test_delete_triggers_current_track_delta() {
+fn test_delete_records_remove_at_event() {
     let mut data = make_data(4);
     data.delete_note_by_index(1);
-    // 删除走 TrackDelta（整轨替换），不触发全量兜底
-    assert!(!data.note_delta_dirty, "已知 current_track 变化走 Delta，不置 dirty");
+    // 删除当前音轨 → 记录 RemoveAt 增量事件，不再整轨替换
+    assert!(!data.note_delta_dirty, "已知 current_track 变化走事件增量，不置 dirty");
     assert_eq!(
-        data.onion_dirty_tracks,
-        Some(HashSet::from([data.current_track])),
-        "当前音轨被标记为脏，由 Delta(current_track) 同步"
+        first_remove_at(&data.note_delta_events),
+        (1, 1),
+        "删除索引 1 应产生 RemoveAt {{ index: 1, count: 1 }}"
     );
 }
 
 #[test]
-fn test_scattered_edit_triggers_current_track_delta() {
-    // 绕过事件 API 的散改（直接 update_note 写 document，不记录事件）→ 走 Delta
+fn test_scattered_edit_records_update_events() {
+    // update_note 直接写 document，现在记录 RemoveAt + InsertAt 增量事件
     let mut data = make_data(3);
     data.update_note(data.current_track, 0, Note::new(99.0, 60, 1.0));
-    data.mark_current_track_changed();
-    assert!(!data.note_delta_dirty, "已知 current_track 变化走 Delta，不置 dirty");
-    assert_eq!(
-        data.onion_dirty_tracks,
-        Some(HashSet::from([data.current_track])),
-        "当前音轨由 Delta(current_track) 同步"
+    assert!(!data.note_delta_dirty, "已知 current_track 变化走事件增量，不置 dirty");
+    // 事件顺序：RemoveAt(index=0, count=1)，InsertAt(index=2, note)
+    let inserts = insert_at_summary(&data.note_delta_events);
+    assert_eq!(inserts.len(), 1, "update_note 产生一个 InsertAt 事件");
+    assert!(
+        matches!(
+            data.note_delta_events.first(),
+            Some(NoteDeltaEvent::RemoveAt { index: 0, count: 1 })
+        ),
+        "首事件应为 RemoveAt {{ index: 0, count: 1 }}"
     );
 }
 

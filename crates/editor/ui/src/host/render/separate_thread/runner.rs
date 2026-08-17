@@ -380,35 +380,63 @@ impl Host {
         let events = self.root.editor.editor_state.data.take_note_delta_events();
         if !events.is_empty() {
             let color = note_worker::MAIN_TRACK_NOTE_COLOR;
-            // 合并连续段（段元组 (下一个位置, 实例列表)）
-            let mut segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
+            // 合并连续 UpdateRange；遇到 Insert/Remove 时先 flush 当前 UpdateRange
+            let mut update_segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
+            let flush_update = |segments: &mut Vec<(usize, Vec<NoteInstance>)>| {
+                for (next, instances) in segments.drain(..) {
+                    if !instances.is_empty() {
+                        self.send_note_event_to_render_thread(NoteEvent::UpdateMany {
+                            start_index: next - instances.len(),
+                            instances,
+                        });
+                    }
+                }
+            };
             for event in &events {
-                // UpdateRange 是 NoteDeltaEvent 唯一变体（等长区间更新）
-                let lumino_editor_state::NoteDeltaEvent::UpdateRange { start_index, notes } = event;
-                for (offset, note) in notes.iter().enumerate() {
-                    let idx = start_index + offset;
-                    let instance = NoteInstance::new(
-                        note.tick,
-                        note.key as u8,
-                        note.length,
-                        color,
-                        MAIN_TRACK_BORDER_WIDTH,
-                    );
-                    match segments.last_mut() {
-                        Some((next, insts)) if *next == idx => {
-                            insts.push(instance);
-                            *next = idx + 1;
+                match event {
+                    lumino_editor_state::NoteDeltaEvent::UpdateRange { start_index, notes } => {
+                        for (offset, note) in notes.iter().enumerate() {
+                            let idx = start_index + offset;
+                            let instance = NoteInstance::new(
+                                note.tick,
+                                note.key as u8,
+                                note.length,
+                                color,
+                                MAIN_TRACK_BORDER_WIDTH,
+                            );
+                            match update_segments.last_mut() {
+                                Some((next, insts)) if *next == idx => {
+                                    insts.push(instance);
+                                    *next = idx + 1;
+                                }
+                                _ => update_segments.push((idx + 1, vec![instance])),
+                            }
                         }
-                        _ => segments.push((idx + 1, vec![instance])),
+                    }
+                    lumino_editor_state::NoteDeltaEvent::InsertAt { index, note } => {
+                        flush_update(&mut update_segments);
+                        let instance = NoteInstance::new(
+                            note.tick,
+                            note.key as u8,
+                            note.length,
+                            color,
+                            MAIN_TRACK_BORDER_WIDTH,
+                        );
+                        self.send_note_event_to_render_thread(NoteEvent::Insert {
+                            index: *index,
+                            instances: vec![instance],
+                        });
+                    }
+                    lumino_editor_state::NoteDeltaEvent::RemoveAt { index, count } => {
+                        flush_update(&mut update_segments);
+                        self.send_note_event_to_render_thread(NoteEvent::RemoveAt {
+                            index: *index,
+                            count: *count,
+                        });
                     }
                 }
             }
-            for (next, instances) in segments {
-                self.send_note_event_to_render_thread(NoteEvent::UpdateMany {
-                    start_index: next - instances.len(),
-                    instances,
-                });
-            }
+            flush_update(&mut update_segments);
             tracing::trace!(
                 "[note-delta] 段内增量：{} 事件（GPU 布局 = 全量轨段）",
                 events.len()

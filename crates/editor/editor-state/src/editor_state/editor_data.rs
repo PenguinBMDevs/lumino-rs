@@ -124,6 +124,10 @@ pub enum NoteDeltaEvent {
         start_index: usize,
         notes: Vec<Note>,
     },
+    /// 在指定索引处插入单个音符（保持 notes 升序索引语义）
+    InsertAt { index: usize, note: Note },
+    /// 从指定索引起删除连续 `count` 个音符（保持 notes 升序索引语义）
+    RemoveAt { index: usize, count: usize },
 }
 
 /// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作

@@ -187,17 +187,15 @@ impl OnionSkinState {
             match &fp.onion_dirty_tracks {
                 Some(dirty) if !dirty.is_empty() => {
                     // 统一全量渲染：GPU buffer 常驻所有轨，当前音轨也在其中。
-                    // 挑出洋葱皮音轨（非当前、非静音）+ 当前音轨（数据变化必须同步）。
-                    let mut targets: Vec<usize> = dirty
+                    // 挑出洋葱皮音轨（非当前、非静音）。当前音轨由主音轨事件级
+                    // 增量同步，不再走整轨 TrackDelta。
+                    let targets: Vec<usize> = dirty
                         .iter()
                         .filter(|t| **t != fp.current_track && !fp.muted_tracks.contains(t))
                         .copied()
                         .collect();
-                    if dirty.contains(&fp.current_track) {
-                        targets.push(fp.current_track);
-                    }
                     if targets.is_empty() {
-                        // 变化全部豁免（只改静音音轨）→ 无操作
+                        // 变化全部豁免（只改当前/静音音轨）→ 无操作
                         return OnionSkinAction::None;
                     }
                     return OnionSkinAction::Delta(targets);
@@ -357,7 +355,7 @@ impl Host {
         // 发送完成标志（WGPU 侧 finish_streaming_upload + 段表确认）
         wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::Done);
 
-        tracing::info!(
+        tracing::debug!(
             "[onion-skin] 流式上传完成：{} 个实例 (track_gen={}, current_track={}, palette_idx={})",
             total_counter.get(),
             fp.track_gen,

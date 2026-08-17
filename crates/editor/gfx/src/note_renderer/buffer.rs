@@ -37,9 +37,17 @@ impl NoteRenderer {
     pub(super) fn grow_visible_buffer(&mut self, device: &wgpu::Device, required_capacity: usize) {
         puffin::profile_function!();
         let growth_factor = crate::constants::rendering::BUFFER_GROWTH_FACTOR;
-        let new_capacity = (self.capacity.saturating_mul(growth_factor)).max(required_capacity);
+        let mut new_capacity = (self.capacity.saturating_mul(growth_factor)).max(required_capacity);
+
         if new_capacity <= self.capacity {
             return;
+        }
+
+        // 限制容量余量：超大可见 buffer 不因单个增量而翻倍。
+        const MAX_EXTRA_INSTANCES: usize = 1_048_576;
+        let extra = new_capacity.saturating_sub(required_capacity);
+        if extra > MAX_EXTRA_INSTANCES {
+            new_capacity = required_capacity.saturating_add(MAX_EXTRA_INSTANCES);
         }
 
         tracing::debug!(

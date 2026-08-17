@@ -136,10 +136,6 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             .onion_skin
                             .finish_streaming_upload(&ctx.device, &ctx.queue);
                         onion_skin_streaming_in_progress = false;
-                        tracing::info!(
-                            "Onion skin MIDI upload complete: {} instances on GPU",
-                            renderers.onion_skin.last_upload_count()
-                        );
                     }
                     // 段表必须保留：后续 `TrackDelta` 与 `process_main_track_events`
                     // 依赖它定位音轨段。新的全量会话开始时会由首个 `Chunk` 重建段表。
@@ -203,11 +199,6 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             &ctx.device,
                             &ctx.queue,
                         );
-                        tracing::info!(
-                            "Onion skin TrackDelta track={} uploaded {} instances",
-                            track_id,
-                            instances.len()
-                        );
                     }
                 }
                 Ok(crate::OnionSkinStreamMsg::SetViewState {
@@ -225,10 +216,6 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                     renderers
                         .note
                         .upload_instances(&instances, &ctx.device, &ctx.queue);
-                    tracing::info!(
-                        "Preview note instances uploaded: {} instances",
-                        instances.len()
-                    );
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -255,11 +242,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &ctx.queue,
             );
             if updated {
-                tracing::info!(
-                    "Main track events applied: current_track_encoded={} GPU_instances={}",
-                    current_track_encoded,
-                    renderers.onion_skin.gpu_instance_count()
-                );
+                renderers.onion_skin.update_cull_info(&ctx.device, &ctx.queue);
             }
         }
 

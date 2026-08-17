@@ -230,14 +230,5 @@ impl NoteRenderer {
             compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
         }
         drop(compute_pass);
-
-        // 将 cull 后的间接参数复制到回读缓冲，供 schedule_draw_count_log 统计。
-        encoder.copy_buffer_to_buffer(
-            &self.indirect_buffer,
-            0,
-            &self.indirect_readback_buffer,
-            0,
-            self.indirect_buffer.size(),
-        );
     }
 }

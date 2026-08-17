@@ -27,10 +27,17 @@ impl GpuNoteBuffer {
     /// 若超出硬件限制，create_buffer 会返回错误。
     pub(crate) fn grow(&mut self, required_capacity: usize) -> bool {
         puffin::profile_function!();
-        let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(required_capacity);
+        let mut new_capacity = self.capacity.saturating_mul(Self::GROWTH_FACTOR).max(required_capacity);
 
         if new_capacity <= self.capacity {
             return false;
+        }
+
+        // 限制容量余量：超大 buffer 不因单个增量而翻倍，避免 4.6GB → 9.2GB 浪费。
+        const MAX_EXTRA_INSTANCES: usize = 1_048_576;
+        let extra = new_capacity.saturating_sub(required_capacity);
+        if extra > MAX_EXTRA_INSTANCES {
+            new_capacity = required_capacity.saturating_add(MAX_EXTRA_INSTANCES);
         }
 
         tracing::info!(

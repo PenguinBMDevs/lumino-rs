@@ -6,7 +6,7 @@
 
 use std::collections::HashSet;
 
-use super::EditorData;
+use super::{EditorData, NoteDeltaEvent};
 use lumino_midi_model::NoteEvent;
 use lumino_note_core::note::Note;
 
@@ -122,12 +122,26 @@ impl EditorData {
     /// 在指定音轨按 start_tick 升序插入音符（f32 tick 无损转换写回）。
     ///
     /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
+    /// 当前音轨插入会记录 `NoteDeltaEvent::InsertAt`，供 GPU 主音轨段内增量同步。
     pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
-        let event = note_to_event(note);
-        doc.insert_note(track_id, event)
+        let event = note_to_event(note.clone());
+        let start_tick = event.start_tick;
+        if !doc.insert_note(track_id, event) {
+            return false;
+        }
+        if track_id == self.current_track {
+            let track = doc.track_notes(track_id);
+            let index = if start_tick == u32::MAX {
+                track.len()
+            } else {
+                track.partition_point(start_tick.saturating_add(1))
+            };
+            self.note_delta_events.push(NoteDeltaEvent::InsertAt { index, note });
+        }
+        true
     }
 
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
@@ -144,6 +158,10 @@ impl EditorData {
 
     /// 在指定音轨指定索引处删除音符。返回被删除的音符。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
+        if track_id == self.current_track {
+            self.note_delta_events
+                .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
+        }
         self.document.as_mut()?.remove_note(track_id, index)
     }
 
@@ -152,7 +170,31 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
-        doc.update_note(track_id, index, note_to_event(note))
+        let event = note_to_event(note.clone());
+        let start_tick = event.start_tick;
+        if !doc.update_note(track_id, index, event) {
+            return false;
+        }
+        if track_id == self.current_track {
+            let track = doc.track_notes(track_id);
+            let new_index = if start_tick == u32::MAX {
+                track.len().saturating_sub(1)
+            } else {
+                track
+                    .partition_point(start_tick.saturating_add(1))
+                    .saturating_sub(1)
+            };
+            // update 语义 = 删除旧位置 + 按新 tick 插入新位置
+            self.note_delta_events.push(NoteDeltaEvent::RemoveAt {
+                index,
+                count: 1,
+            });
+            self.note_delta_events.push(NoteDeltaEvent::InsertAt {
+                index: new_index,
+                note,
+            });
+        }
+        true
     }
 
     /// 整轨替换音符（undo/redo 快照恢复专用）。
