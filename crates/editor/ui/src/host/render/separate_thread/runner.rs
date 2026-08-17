@@ -19,6 +19,12 @@ use lumino_gfx::{
 /// 主音轨音符描边：固定 1 像素（用户要求）
 const MAIN_TRACK_BORDER_WIDTH: u32 = 1;
 
+/// 编码当前音轨实例的 border_width：低 16 位 = 固定 1 像素描边，
+/// 高 16 位 = track_idx + 1（统一全量渲染中 VS 据此判断主音轨并输出稳定深度）。
+fn main_track_border_width(track_idx: usize) -> u32 {
+    MAIN_TRACK_BORDER_WIDTH | (((track_idx as u32) + 1) << 16)
+}
+
 /// ghost 拖动可见索引收集的 overscan 因子（与历史可见收集一致）
 const GHOST_OVERSCAN: f32 = 0.5;
 
@@ -379,7 +385,9 @@ impl Host {
         // GPU 段内位置 = 段 offset + index，由渲染线程按当前音轨段应用）
         let events = self.root.editor.editor_state.data.take_note_delta_events();
         if !events.is_empty() {
-            let color = note_worker::MAIN_TRACK_NOTE_COLOR;
+            let current_track = self.root.editor.editor_state.data.current_track;
+            let color = lumino_extras::palette::current_track_color_f32(current_track);
+            let border_width = main_track_border_width(current_track);
             // 合并连续 UpdateRange；遇到 Insert/Remove 时先 flush 当前 UpdateRange
             let mut update_segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
             let flush_update = |segments: &mut Vec<(usize, Vec<NoteInstance>)>| {
@@ -402,7 +410,7 @@ impl Host {
                                 note.key as u8,
                                 note.length,
                                 color,
-                                MAIN_TRACK_BORDER_WIDTH,
+                                border_width,
                             );
                             match update_segments.last_mut() {
                                 Some((next, insts)) if *next == idx => {
@@ -420,7 +428,7 @@ impl Host {
                             note.key as u8,
                             note.length,
                             color,
-                            MAIN_TRACK_BORDER_WIDTH,
+                            border_width,
                         );
                         self.send_note_event_to_render_thread(NoteEvent::Insert {
                             index: *index,
@@ -453,10 +461,13 @@ impl Host {
             editor.collect_visible_note_data(&mut scratch, Some(&mut indices), GHOST_OVERSCAN);
 
             let copy_active = editor.has_pending_copy_drag();
-            let color = note_worker::MAIN_TRACK_NOTE_COLOR;
+            let current_track = self.root.editor.editor_state.data.current_track;
+            let track_color = lumino_extras::palette::current_track_color_f32(current_track);
+            let track_border_width = main_track_border_width(current_track);
 
             if copy_active {
                 // 复制副本 → 合并到预览列表（原件已在 GPU 段原位，副本叠加渲染）
+                let copy_color = note_worker::MAIN_TRACK_NOTE_COLOR;
                 let copies = editor.build_copy_ghost_positions(&indices);
                 preview_instances.reserve(copies.len());
                 for &(tick, key, length) in &copies {
@@ -464,7 +475,7 @@ impl Host {
                         tick,
                         key as u8,
                         length,
-                        color,
+                        copy_color,
                         MAIN_TRACK_BORDER_WIDTH,
                     ));
                 }
@@ -479,8 +490,8 @@ impl Host {
                             tick,
                             key as u8,
                             length,
-                            color,
-                            MAIN_TRACK_BORDER_WIDTH,
+                            track_color,
+                            track_border_width,
                         );
                         match segments.last_mut() {
                             Some((next, insts)) if *next == idx => {

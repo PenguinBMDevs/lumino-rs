@@ -146,6 +146,8 @@ impl GpuNoteBuffer {
     }
 
     /// 增量更新单个音符
+    ///
+    /// 流式模式（CPU 镜像已清空）下直接写 GPU；非流式模式同步 CPU 镜像。
     pub fn update_note(&mut self, index: usize, instance: &crate::NoteInstance) {
         puffin::profile_function!();
         if index >= self.instance_count {
@@ -157,21 +159,23 @@ impl GpuNoteBuffer {
             return;
         }
 
-        // 更新 CPU 缓存
-        self.instances[index] = *instance;
-
-        // 计算偏移量
-        let offset = index * std::mem::size_of::<crate::NoteInstance>();
-
         // 上传单个实例
+        let offset = index * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
             &self.instance_buffer,
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(std::slice::from_ref(instance)),
         );
+
+        // 同步 CPU 缓存（非流式模式存在镜像）
+        if !self.instances.is_empty() {
+            self.instances[index] = *instance;
+        }
     }
 
     /// 批量更新音符（用于编辑操作后的批量更新）
+    ///
+    /// 流式模式（CPU 镜像已清空）下直接写 GPU；非流式模式同步 CPU 镜像。
     pub fn update_notes(&mut self, start_index: usize, instances: &[crate::NoteInstance]) {
         puffin::profile_function!();
         if start_index >= self.instance_count || instances.is_empty() {
@@ -181,20 +185,20 @@ impl GpuNoteBuffer {
         let end_index = (start_index + instances.len()).min(self.instance_count);
         let count = end_index - start_index;
 
-        // 更新 CPU 缓存
-        for (index, instance) in instances[..count].iter().enumerate() {
-            self.instances[start_index + index] = *instance;
-        }
-
-        // 计算偏移量
+        // 批量上传 GPU（流式模式安全）
         let offset = start_index * std::mem::size_of::<crate::NoteInstance>();
-
-        // 批量上传
         self.queue.write_buffer(
             &self.instance_buffer,
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(&instances[..count]),
         );
+
+        // 同步 CPU 缓存（非流式模式存在镜像）
+        if !self.instances.is_empty() {
+            for (index, instance) in instances[..count].iter().enumerate() {
+                self.instances[start_index + index] = *instance;
+            }
+        }
     }
 
     /// 添加新音符（在末尾追加）

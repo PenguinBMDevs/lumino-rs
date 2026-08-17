@@ -134,10 +134,15 @@ impl EditorData {
         }
         if track_id == self.current_track {
             let track = doc.track_notes(track_id);
+            // 插入后文档索引：新音符插在同 tick 音符之后（稳定插入），
+            // `partition_point(start_tick+1)` = tick <= start_tick 的音符数，
+            // 含新音符自身 → 需 -1 才等于新音符的文档索引（GPU 布局与文档保序）。
             let index = if start_tick == u32::MAX {
-                track.len()
+                track.len().saturating_sub(1)
             } else {
-                track.partition_point(start_tick.saturating_add(1))
+                track
+                    .partition_point(start_tick.saturating_add(1))
+                    .saturating_sub(1)
             };
             self.note_delta_events.push(NoteDeltaEvent::InsertAt { index, note });
         }

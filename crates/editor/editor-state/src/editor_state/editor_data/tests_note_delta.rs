@@ -178,6 +178,61 @@ fn test_other_track_mark_does_not_dirty_main_track() {
     assert!(!data.note_delta_dirty, "其他轨变化不影响主音轨增量路径");
 }
 
+// ── InsertAt 索引：GPU 布局与文档保序（必须 = 文档索引） ─────────
+
+#[test]
+fn test_insert_middle_records_doc_index() {
+    // 中间插入：文档 [0, 10] 插入 tick=5 → 文档索引 1，InsertAt 索引必须 = 1
+    // （旧实现 = partition_point(6)=2，差 1 → GPU 与文档错位，后续增删改全部偏位）
+    let mut data = make_data(2);
+    assert!(data.insert_note(data.current_track, Note::new(5.0, 60, 1.0)));
+    let inserts = insert_at_summary(&data.note_delta_events);
+    assert_eq!(inserts, vec![(1, 5.0)], "中间插入：InsertAt 索引 = 文档索引 1");
+    // 文档侧验证：新音符确实落在索引 1
+    let track = data.track_notes(1);
+    assert_eq!(track.len(), 3);
+    assert_eq!(track[1].start_tick as f32, 5.0);
+}
+
+#[test]
+fn test_insert_end_records_doc_index() {
+    // 末尾插入：文档 [0, 10] 插入 tick=100 → 文档索引 2（追加），InsertAt 索引 = 2
+    let mut data = make_data(2);
+    assert!(data.insert_note(data.current_track, Note::new(100.0, 60, 1.0)));
+    let inserts = insert_at_summary(&data.note_delta_events);
+    assert_eq!(inserts, vec![(2, 100.0)], "末尾插入：InsertAt 索引 = 文档索引 2");
+}
+
+#[test]
+fn test_insert_same_tick_records_doc_index() {
+    // 同 tick 插入：文档 [0, 10] 插入 tick=10 → 稳定插到同 tick 之后 → 文档索引 2
+    let mut data = make_data(2);
+    assert!(data.insert_note(data.current_track, Note::new(10.0, 61, 1.0)));
+    let inserts = insert_at_summary(&data.note_delta_events);
+    assert_eq!(inserts, vec![(2, 10.0)], "同 tick 插入：稳定插后，InsertAt 索引 = 2");
+    // 事件携带的 note 必须与文档实际音符一致（含 key）
+    if let Some(NoteDeltaEvent::InsertAt { note, .. }) = data.note_delta_events.first() {
+        assert_eq!(note.key, 61);
+    }
+}
+
+#[test]
+fn test_update_note_move_to_middle_records_remove_and_insert() {
+    // 移动音符到中间：update_note 记录 RemoveAt(原索引) + InsertAt(新文档索引)
+    let mut data = make_data(3); // [0, 10, 20]
+    data.update_note(data.current_track, 0, Note::new(15.0, 60, 1.0));
+    // 文档 [10, 15, 20]：新音符索引 1
+    let inserts = insert_at_summary(&data.note_delta_events);
+    assert_eq!(inserts, vec![(1, 15.0)], "移动到中间：InsertAt 索引 = 新文档索引 1");
+    assert!(
+        matches!(
+            data.note_delta_events.first(),
+            Some(NoteDeltaEvent::RemoveAt { index: 0, count: 1 })
+        ),
+        "首事件应为 RemoveAt {{ index: 0, count: 1 }}"
+    );
+}
+
 #[test]
 fn test_dirty_then_recorded_edit_clears() {
     // 散改置 dirty → 之后完整记录的事件操作清 dirty
