@@ -26,20 +26,20 @@ impl EditorData {
 
     /// 标记音符数据已变化，并记录明确受影响的音轨集合
     ///
-    /// `tracks` 为本次操作实际修改的音轨 id 集合。当集合全部落在
-    /// 洋葱皮跳过范围（当前音轨 / 静音音轨）时，可豁免全量重建上传。
-    /// `None` 表示未知或影响全部音轨（保守语义，同 [`Self::mark_track_notes_changed`]）。
-    ///
-    /// 主音轨增量对账（2026-08-05）：当前音轨变化默认置 `note_delta_dirty = true`
-    /// （未记录事件 → 渲染层全量兜底）。仅其他音轨变化不影响主音轨数据，
-    /// 不置 dirty（洋葱皮编辑不牵连主音轨增量路径）。
+    /// `tracks` 为本次操作实际修改的音轨 id 集合：
+    /// - `Some({current_track})`：当前音轨变化。统一全量渲染下 GPU 持有所有轨
+    ///   数据，当前音轨可通过 `TrackDelta` 增量同步，不再 fallback 到全量重建。
+    /// - `Some({other_track})`：其他音轨变化，不影响主音轨增量路径；洋葱皮层
+    ///   通过 `Delta` 同步。
+    /// - `None`：未知或影响全部音轨（保守语义，同 [`Self::mark_track_notes_changed`]），
+    ///   必须全量兜底。
     #[inline]
     pub fn mark_track_notes_changed_for(&mut self, tracks: Option<HashSet<usize>>) {
         self.onion_dirty_tracks = tracks;
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
-        match &self.onion_dirty_tracks {
-            Some(t) if !t.contains(&self.current_track) => {}
-            _ => self.note_delta_dirty = true,
+        // 未知来源才需要全量兜底；已知音轨变化（含当前轨）走 Delta 增量。
+        if self.onion_dirty_tracks.is_none() {
+            self.note_delta_dirty = true;
         }
     }
 
@@ -184,7 +184,8 @@ impl EditorData {
     /// 将 `indices`（修改的 notes 索引，无序可重复）合并为连续区间
     /// `UpdateRange` 事件，随后标记变化并清除 dirty（事件已完整记录）。
     ///
-    /// 供 EditorTransform（变速/翻转/移调/批量编辑）等整轨同步路径使用。
+    /// 等长修改由 `note_delta_events` (UpdateMany) 同步当前音轨段，
+    /// 因此清空 `onion_dirty_tracks` 避免洋葱皮层再发一次 `TrackDelta`。
     pub fn record_update_ranges(&mut self, indices: &[usize]) {
         if indices.is_empty() {
             return;
@@ -192,6 +193,9 @@ impl EditorData {
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;
+        // 等长修改已记录为段内 UpdateMany，当前音轨由事件通道同步，
+        // 不需要洋葱皮层再发 TrackDelta（避免拖动热路径每帧重传整轨）。
+        self.onion_dirty_tracks = Some(HashSet::new());
     }
 
     /// 记录等长修改增量事件（流式同步版，拖动热路径）
@@ -205,6 +209,7 @@ impl EditorData {
         self.push_update_range_events(indices);
         self.mark_current_track_changed();
         self.note_delta_dirty = false;
+        self.onion_dirty_tracks = Some(HashSet::new());
     }
 
     /// 将升序去重后的索引合并为连续区间事件（纯数据操作，不同步）

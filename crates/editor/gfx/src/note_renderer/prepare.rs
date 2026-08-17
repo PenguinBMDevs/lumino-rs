@@ -1,5 +1,5 @@
 use super::chunk::MAX_CHUNKS;
-use super::types::{CameraUniform, CullUniform};
+use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::note_renderer::NoteRenderer;
 
 /// u32 溢出防御：实例数超过 u32::MAX 时截断并报错
@@ -187,9 +187,20 @@ impl NoteRenderer {
         queue: &wgpu::Queue,
     ) {
         puffin::profile_function!();
-        // 全量清零间接缓冲：避免上一帧旧绘制参数残留（幽灵音符）
-        let indirect_zero = vec![0u8; self.indirect_buffer.size() as usize];
-        queue.write_buffer(&self.indirect_buffer, 0, &indirect_zero);
+        // 重置间接绘制参数：每个槽位写入 DrawIndirectArgs 默认值
+        // (vertex_count=4 / first_vertex=0 / first_instance=0，instance_count=0)，
+        // 仅 instance_count 由 cull shader 原子递增；其余字段清零会导致 draw 0 顶点。
+        let slot_align = self.chunk_layout.slot_align;
+        let slot_count = MAX_CHUNKS;
+        let mut indirect_init = vec![0u8; (slot_count as u64 * slot_align) as usize];
+        let default_args = DrawIndirectArgs::default();
+        let default_bytes = bytemuck::bytes_of(&default_args);
+        for idx in 0..slot_count {
+            let offset = (idx as u64) * slot_align;
+            indirect_init[offset as usize..offset as usize + default_bytes.len()]
+                .copy_from_slice(default_bytes);
+        }
+        queue.write_buffer(&self.indirect_buffer, 0, &indirect_init);
 
         if self.last_upload_count == 0 {
             return;
@@ -218,5 +229,15 @@ impl NoteRenderer {
             let dispatch_y = workgroup_count.div_ceil(MAX_DISPATCH_X);
             compute_pass.dispatch_workgroups(dispatch_x, dispatch_y, 1);
         }
+        drop(compute_pass);
+
+        // 将 cull 后的间接参数复制到回读缓冲，供 schedule_draw_count_log 统计。
+        encoder.copy_buffer_to_buffer(
+            &self.indirect_buffer,
+            0,
+            &self.indirect_readback_buffer,
+            0,
+            self.indirect_buffer.size(),
+        );
     }
 }

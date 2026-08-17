@@ -126,22 +126,23 @@ fn onion_skin_state_full_on_palette_switch() {
 // ── 增量豁免测试（编辑主音轨不再全量重建上传） ──────────────────────────
 
 #[test]
-fn onion_skin_state_none_when_only_current_track_dirty() {
-    // 编辑当前音轨 → 洋葱皮不显示该音轨 → 数据未变 → 豁免全量重建上传
+fn onion_skin_state_delta_when_current_track_dirty() {
+    // 统一全量渲染：当前音轨也在 GPU buffer 中，编辑当前音轨 → 段级替换该轨
+    //（不是全量重建，也不是无操作）。
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
-    assert_none(&state.decide_action(&fp));
+    assert_delta(&state.decide_action(&fp), &[1]);
 }
 
 #[test]
-fn onion_skin_state_none_consecutive_edits_same_track() {
-    // 连续编辑当前音轨（拖动热路径每帧触发）应持续豁免，不累积重建
+fn onion_skin_state_delta_consecutive_edits_same_track() {
+    // 连续编辑当前音轨（非等长操作）→ 每次都是段级增量替换该轨，不累积全量
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     for g in 43..48 {
         let fp = make_fp_dirty(g, 1, std::collections::HashSet::from([1]), vec![]);
-        assert_none(&state.decide_action(&fp));
+        assert_delta(&state.decide_action(&fp), &[1]);
     }
 }
 
@@ -166,9 +167,9 @@ fn onion_skin_state_delta_when_other_track_dirty() {
 }
 
 #[test]
-fn onion_skin_state_delta_filters_to_onion_tracks_only() {
+fn onion_skin_state_delta_includes_current_and_onion_tracks() {
     // 脏集合混合：当前音轨(1) + 静音音轨(4) + 洋葱皮音轨(3, 7)
-    // → Delta 只含洋葱皮音轨
+    // → Delta 含当前音轨(1) + 洋葱皮音轨(3, 7)，静音音轨(4) 豁免
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(
@@ -177,7 +178,7 @@ fn onion_skin_state_delta_filters_to_onion_tracks_only() {
         std::collections::HashSet::from([1, 3, 4, 7]),
         vec![4],
     );
-    assert_delta(&state.decide_action(&fp), &[3, 7]);
+    assert_delta(&state.decide_action(&fp), &[1, 3, 7]);
 }
 
 #[test]
@@ -220,13 +221,13 @@ fn onion_skin_state_full_when_dirty_unknown() {
 }
 
 #[test]
-fn onion_skin_state_view_state_on_track_switch_after_skipped_dirty() {
-    // 豁免（编辑当前轨，段内事件已同步 GPU）后切换当前音轨 → 只发 ViewState 零重传
+fn onion_skin_state_view_state_on_track_switch_after_current_delta() {
+    // 当前音轨段级增量后切换当前音轨 → 只发 ViewState 零重传
     let mut state = OnionSkinState::default();
     state.mark_built(&make_fp(42, 0, 1, 0));
-    // 豁免一次（编辑音轨1，当前也是1 — 段内事件已应用 GPU）
+    // 当前音轨 1 发生非等长编辑 → Delta([1]) 同步该轨
     let fp_skip = make_fp_dirty(43, 1, std::collections::HashSet::from([1]), vec![]);
-    assert_none(&state.decide_action(&fp_skip));
+    assert_delta(&state.decide_action(&fp_skip), &[1]);
     // 切换到音轨2 → ViewState（全量 buffer 常驻所有轨，切轨零重传）
     let fp_switch = make_fp_dirty(43, 2, std::collections::HashSet::from([1]), vec![]);
     assert_view_state(&state.decide_action(&fp_switch));

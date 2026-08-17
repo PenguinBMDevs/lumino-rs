@@ -118,19 +118,30 @@ fn test_unknown_mark_sets_dirty() {
 }
 
 #[test]
-fn test_delete_sets_dirty_full_fallback() {
+fn test_delete_triggers_current_track_delta() {
     let mut data = make_data(4);
     data.delete_note_by_index(1);
-    assert!(data.note_delta_dirty, "删除（增删变化）→ 全量兜底");
+    // 删除走 TrackDelta（整轨替换），不触发全量兜底
+    assert!(!data.note_delta_dirty, "已知 current_track 变化走 Delta，不置 dirty");
+    assert_eq!(
+        data.onion_dirty_tracks,
+        Some(HashSet::from([data.current_track])),
+        "当前音轨被标记为脏，由 Delta(current_track) 同步"
+    );
 }
 
 #[test]
-fn test_scattered_edit_sets_dirty_full_fallback() {
-    // 绕过事件 API 的散改（直接 update_note 写 document，不记录事件）→ dirty 兜底
+fn test_scattered_edit_triggers_current_track_delta() {
+    // 绕过事件 API 的散改（直接 update_note 写 document，不记录事件）→ 走 Delta
     let mut data = make_data(3);
     data.update_note(data.current_track, 0, Note::new(99.0, 60, 1.0));
     data.mark_current_track_changed();
-    assert!(data.note_delta_dirty, "散改未记录事件 → 全量兜底");
+    assert!(!data.note_delta_dirty, "已知 current_track 变化走 Delta，不置 dirty");
+    assert_eq!(
+        data.onion_dirty_tracks,
+        Some(HashSet::from([data.current_track])),
+        "当前音轨由 Delta(current_track) 同步"
+    );
 }
 
 #[test]

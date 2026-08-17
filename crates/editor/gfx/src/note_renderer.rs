@@ -28,6 +28,8 @@ pub struct NoteRenderer {
     visible_instance_buffer: wgpu::Buffer,
     /// 间接绘制参数缓冲区
     indirect_buffer: wgpu::Buffer,
+    /// 间接参数回读缓冲区（用于统计实际绘制的可见实例数）
+    indirect_readback_buffer: wgpu::Buffer,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
     /// 最大缓冲区容量（受 GPU max_storage_buffer_binding_size 限制）
@@ -91,6 +93,42 @@ impl NoteRenderer {
             bytemuck::cast_slice(std::slice::from_ref(&state)),
         );
     }
+
+    /// 调度一次回读，记录本渲染器本帧实际被 cull 后绘制的音符数量。
+    ///
+    /// 调用方应在 `queue.submit` 之后统一 `device.poll(wgpu::PollType::Wait)`，
+    /// 以在回调中读到已完成的 GPU 数据。
+    pub fn schedule_draw_count_log(&self, label: &str) {
+        if self.last_upload_count == 0 {
+            return;
+        }
+        let buffer_for_callback = self.indirect_readback_buffer.clone();
+        let uploaded = self.last_upload_count;
+        let label = label.to_string();
+        self.indirect_readback_buffer
+            .slice(..)
+            .map_async(wgpu::MapMode::Read, move |result| {
+                if result.is_err() {
+                    tracing::warn!("NoteRenderer [{}]: 回读失败，跳过绘制计数", label);
+                    return;
+                }
+                let slice = buffer_for_callback.slice(..);
+                let data = slice.get_mapped_range();
+                let args =
+                    bytemuck::cast_slice::<u8, crate::note_renderer::types::DrawIndirectArgs>(
+                        &data,
+                    );
+                let visible: u32 = args.iter().map(|a| a.instance_count).sum();
+                drop(data);
+                buffer_for_callback.unmap();
+                tracing::info!(
+                    "NoteRenderer [{}]: uploaded={} visible_drawn={}",
+                    label,
+                    uploaded,
+                    visible
+                );
+            });
+    }
 }
 
 impl Drop for NoteRenderer {
@@ -98,6 +136,7 @@ impl Drop for NoteRenderer {
         // gpu_note_buffer 在其自身的 Drop 中释放 instance_buffer
         gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
         gpu_resource_tracker::sub_buffer(&self.indirect_buffer);
+        gpu_resource_tracker::sub_buffer(&self.indirect_readback_buffer);
         gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
         gpu_resource_tracker::sub_buffer(&self.view_state_buffer);
         gpu_resource_tracker::sub_buffer(&self.cull_uniform_buffer);

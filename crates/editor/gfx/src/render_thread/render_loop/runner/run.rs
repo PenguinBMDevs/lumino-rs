@@ -136,12 +136,13 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             .onion_skin
                             .finish_streaming_upload(&ctx.device, &ctx.queue);
                         onion_skin_streaming_in_progress = false;
-                        tracing::debug!(
-                            "Onion skin streaming upload finished: {} instances on GPU",
+                        tracing::info!(
+                            "Onion skin MIDI upload complete: {} instances on GPU",
                             renderers.onion_skin.last_upload_count()
                         );
                     }
-                    onion_segments.clear();
+                    // 段表必须保留：后续 `TrackDelta` 与 `process_main_track_events`
+                    // 依赖它定位音轨段。新的全量会话开始时会由首个 `Chunk` 重建段表。
                     break;
                 }
                 Ok(crate::OnionSkinStreamMsg::Reserve { total }) => {
@@ -202,6 +203,11 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             &ctx.device,
                             &ctx.queue,
                         );
+                        tracing::info!(
+                            "Onion skin TrackDelta track={} uploaded {} instances",
+                            track_id,
+                            instances.len()
+                        );
                     }
                 }
                 Ok(crate::OnionSkinStreamMsg::SetViewState {
@@ -219,6 +225,10 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                     renderers
                         .note
                         .upload_instances(&instances, &ctx.device, &ctx.queue);
+                    tracing::info!(
+                        "Preview note instances uploaded: {} instances",
+                        instances.len()
+                    );
                 }
                 Err(std::sync::mpsc::TryRecvError::Empty) => break,
                 Err(std::sync::mpsc::TryRecvError::Disconnected) => {
@@ -236,7 +246,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         // GPU 布局 = 全量轨段，事件 index = notes 索引（保序，无需可见列表映射）。
         // 段表定位依赖 SetViewState（切轨消息）先于编辑事件到达（mpsc 顺序保证）。
         if current_track_encoded != 0 {
-            process_main_track_events(
+            let updated = process_main_track_events(
                 &mut renderers,
                 &mut onion_segments,
                 current_track_encoded,
@@ -244,6 +254,13 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &ctx.device,
                 &ctx.queue,
             );
+            if updated {
+                tracing::info!(
+                    "Main track events applied: current_track_encoded={} GPU_instances={}",
+                    current_track_encoded,
+                    renderers.onion_skin.gpu_instance_count()
+                );
+            }
         }
 
         // 执行渲染（离屏纹理）

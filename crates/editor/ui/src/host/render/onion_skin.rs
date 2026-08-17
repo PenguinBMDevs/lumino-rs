@@ -186,14 +186,18 @@ impl OnionSkinState {
         if fp.track_gen != self.last_track_notes_gen {
             match &fp.onion_dirty_tracks {
                 Some(dirty) if !dirty.is_empty() => {
-                    // 从脏音轨中挑出洋葱皮音轨（非当前、非静音）
-                    let targets: Vec<usize> = dirty
+                    // 统一全量渲染：GPU buffer 常驻所有轨，当前音轨也在其中。
+                    // 挑出洋葱皮音轨（非当前、非静音）+ 当前音轨（数据变化必须同步）。
+                    let mut targets: Vec<usize> = dirty
                         .iter()
                         .filter(|t| **t != fp.current_track && !fp.muted_tracks.contains(t))
                         .copied()
                         .collect();
+                    if dirty.contains(&fp.current_track) {
+                        targets.push(fp.current_track);
+                    }
                     if targets.is_empty() {
-                        // 变化全部豁免（只改当前/静音音轨）→ 无操作
+                        // 变化全部豁免（只改静音音轨）→ 无操作
                         return OnionSkinAction::None;
                     }
                     return OnionSkinAction::Delta(targets);
@@ -249,7 +253,20 @@ impl Host {
 
         match action {
             OnionSkinAction::None => {}
-            OnionSkinAction::Full => self.stream_onion_skin_full(&fp, wgpu_thread),
+            OnionSkinAction::Full => {
+                self.stream_onion_skin_full(&fp, wgpu_thread);
+                // 全量会话重建后必须设置 current_track / 静音位图，否则 shader
+                // 不知道哪个段是主音轨，主音轨事件级增量也找不到段。
+                wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::SetViewState {
+                    current_track: fp.current_track as u32 + 1,
+                    muted_tracks: fp.muted_tracks.clone(),
+                });
+                tracing::debug!(
+                    "[onion-skin] Full 重建后同步 ViewState: current_track={}，静音 {:?}",
+                    fp.current_track,
+                    fp.muted_tracks
+                );
+            }
             OnionSkinAction::Delta(tracks) => {
                 self.stream_onion_skin_delta(&fp, wgpu_thread, &tracks)
             }

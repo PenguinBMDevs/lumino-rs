@@ -118,6 +118,7 @@ impl NoteRenderer {
             gpu_note_buffer,
             visible_instance_buffer,
             indirect_buffer,
+            indirect_readback_buffer,
             viewport_buffer,
             cull_uniform_buffer,
             cull_uniform_buffer_size,
@@ -158,6 +159,7 @@ impl NoteRenderer {
             gpu_note_buffer,
             visible_instance_buffer,
             indirect_buffer,
+            indirect_readback_buffer,
             capacity: Self::INITIAL_CAPACITY,
             max_capacity,
             last_upload_count: 0,
@@ -187,6 +189,7 @@ impl NoteRenderer {
         wgpu::Buffer,
         wgpu::Buffer,
         wgpu::Buffer,
+        wgpu::Buffer,
         u64,
     ) {
         let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue);
@@ -201,9 +204,18 @@ impl NoteRenderer {
             contents: &zeros,
             usage: wgpu::BufferUsages::INDIRECT
                 | wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST,
+                | wgpu::BufferUsages::COPY_DST
+                | wgpu::BufferUsages::COPY_SRC,
         });
         gpu_resource_tracker::add_buffer(&indirect_buffer);
+
+        let indirect_readback_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("note_indirect_readback_buffer"),
+            size: slot_bytes,
+            usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        gpu_resource_tracker::add_buffer(&indirect_readback_buffer);
 
         let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("viewport_uniform"),
@@ -223,6 +235,7 @@ impl NoteRenderer {
             gpu_note_buffer,
             visible_instance_buffer,
             indirect_buffer,
+            indirect_readback_buffer,
             viewport_buffer,
             cull_uniform_buffer,
             slot_bytes,
