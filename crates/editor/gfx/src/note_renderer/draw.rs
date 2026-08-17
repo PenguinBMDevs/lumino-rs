@@ -25,16 +25,17 @@ impl NoteRenderer {
 
         // 绑定管线并绘制
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &self.render_bind_group, &[]);
 
         let count = self.last_upload_count as usize;
         let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
-        let bind_group_count = self.cull_bind_groups.len();
-        let instance_size = std::mem::size_of::<crate::NoteInstance>() as u64;
+        let bind_group_count = self.cull_bind_groups.len().min(self.render_bind_groups.len());
+        // 可见索引缓冲每个元素 4 bytes（u32），与 visible_index_buffer_layout 一致
+        let index_size = std::mem::size_of::<u32>() as u64;
         for idx in 0..chunk_count.min(bind_group_count) {
             let (chunk_start, chunk_len) = self.chunk_layout.chunk_range(count, idx);
-            let chunk_offset = (chunk_start as u64) * instance_size;
-            let chunk_bytes = (chunk_len as u64) * instance_size;
+            let chunk_offset = (chunk_start as u64) * index_size;
+            let chunk_bytes = (chunk_len as u64) * index_size;
+            render_pass.set_bind_group(0, &self.render_bind_groups[idx], &[]);
             render_pass.set_vertex_buffer(
                 0,
                 self.visible_instance_buffer

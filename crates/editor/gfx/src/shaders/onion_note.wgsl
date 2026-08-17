@@ -7,11 +7,12 @@
 //   - 静音轨且非主音轨：NDC z=2.0 裁剪（不渲染）
 //   - 其余（洋葱皮）：实例固化的调色板色、深度 (track_enc+1)/65536
 //
-// 深度语义（修复重叠音符随机闪烁，2026-08）：cull.wgsl 并行重打包可见实例，
-// 重叠实例绘制顺序每帧随机；深度测试 LessEqual 与绘制顺序无关，深度小者
-// 稳定胜出。主音轨 z=0.0 永远覆盖洋葱皮。
+// 深度语义（修复重叠音符随机闪烁，2026-08）：cull.wgsl 输出可见索引，
+// VS 从 all_instances 读取原数据，重叠实例绘制顺序每帧随机；
+// 深度测试 LessEqual 与绘制顺序无关，深度小者稳定胜出。主音轨 z=0.0 永远覆盖洋葱皮。
 //
 // 与旧 note.wgsl 的差异：无预览哨兵分支（预览音符走独立渲染器 note.wgsl）。
+// 2026-08-07：顶点输入从完整 NoteInstance 改为 u32 可见索引。
 
 /// 主音轨固定蓝色（与 UI 层 `MAIN_TRACK_NOTE_COLOR` 一致）
 const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
@@ -45,19 +46,21 @@ var<uniform> camera: CameraUniform;
 @group(0) @binding(1)
 var<uniform> view_state: ViewState;
 
+// 全部音符实例数据（只读 storage）
+struct NoteInstance {
+    start_length: vec2<f32>,
+    key_color: u32,
+    border_width: u32,
+}
+@group(0) @binding(2)
+var<storage, read> all_instances: array<NoteInstance>;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
     @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
     @location(3) border_width: u32,       // 透传到 FS
-};
-
-// 实例数据（16 bytes，与 wasabi NoteVertex 字段对齐）
-struct NoteInstance {
-    @location(0) start_length: vec2<f32>,  // [start_tick, length_tick]
-    @location(1) key_color: u32,           // 低8位=key, 高24位=RGB
-    @location(2) border_width: u32,        // 低16位=边框像素宽, 高16位=track_idx+1
 };
 
 /// 解包 key_color → vec4 RGBA（alpha 恒为 1.0）
@@ -88,8 +91,10 @@ fn is_muted_track(track_enc: u32) -> bool {
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
-    instance: NoteInstance,
+    @location(0) visible_index: u32,
 ) -> VertexOutput {
+    let instance = all_instances[visible_index];
+
     // 根据顶点索引生成矩形的四个角（三角形带顺序）
     var local_offset: vec2<f32>;
     switch vertex_index {

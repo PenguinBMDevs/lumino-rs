@@ -131,12 +131,15 @@ impl NoteRenderer {
         });
         gpu_resource_tracker::add_buffer(&view_state_buffer);
 
-        // 创建渲染 bind group
-        let render_bind_group = Self::create_render_bind_group(
+        // 创建渲染 bind groups（按 chunk 分块，避免大 source buffer 整体绑定超限）
+        let render_bind_groups = Self::create_render_bind_groups(
             device,
             &render_bind_group_layout,
             &viewport_buffer,
             &view_state_buffer,
+            gpu_note_buffer.buffer(),
+            &visible_instance_buffer,
+            &chunk_layout,
         );
 
         // 创建计算 bind groups（初始无实例数据，绑定切片按 buffer 容量划分）
@@ -165,14 +168,19 @@ impl NoteRenderer {
             view_state_buffer,
             cull_uniform_buffer,
             cull_uniform_buffer_size,
-            render_bind_group,
+            render_bind_groups,
             cull_bind_groups,
+            render_bind_group_layout,
             cull_bind_group_layout,
             chunk_layout,
         }
     }
 
-    /// 创建所有 GPU 缓冲区（音符实例缓冲、间接绘制缓冲、视口/剔除 uniform 缓冲）。
+    /// 创建所有 GPU 缓冲区（音符实例缓冲、可见索引缓冲、间接绘制缓冲、
+    /// 视口/剔除 uniform 缓冲）。
+    ///
+    /// 2026-08-07：可见缓冲从完整 NoteInstance 改为 u32 源索引，
+    /// 渲染时顶点着色器通过 storage binding 读取原数据。
     ///
     /// 间接缓冲与 cull uniform 缓冲按 `MAX_CHUNKS × slot_align` 固定槽位分配：
     /// 每 chunk 一个 `DrawIndirectArgs` / `CullUniform` 条目，chunk 数变化
@@ -191,7 +199,7 @@ impl NoteRenderer {
     ) {
         let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue);
         let visible_instance_buffer =
-            Self::create_instance_buffer(device, Self::INITIAL_CAPACITY, true);
+            Self::create_visible_index_buffer(device, Self::INITIAL_CAPACITY);
 
         let slot_count = super::chunk::MAX_CHUNKS as u64;
         let slot_bytes = slot_count * slot_align;
@@ -228,29 +236,6 @@ impl NoteRenderer {
             cull_uniform_buffer,
             slot_bytes,
         )
-    }
-
-    /// 创建渲染 bind group。
-    fn create_render_bind_group(
-        device: &wgpu::Device,
-        layout: &wgpu::BindGroupLayout,
-        viewport_buffer: &wgpu::Buffer,
-        view_state_buffer: &wgpu::Buffer,
-    ) -> wgpu::BindGroup {
-        device.create_bind_group(&wgpu::BindGroupDescriptor {
-            label: Some("note_render_bind_group"),
-            layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: viewport_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: view_state_buffer.as_entire_binding(),
-                },
-            ],
-        })
     }
 
     /// 创建计算 bind groups（分块切片）。

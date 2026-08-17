@@ -137,7 +137,7 @@ impl NoteRenderer {
 
     /// 仅在音符数据真正变化时调用：负责更新 uniform
     ///
-    /// 优化：bind group 仅在扩容（容量变化）时重建；数据量变化只重写
+    /// 优化：bind group 仅在容量变化时重建；数据量变化只重写
     /// cull uniform 的 chunk 条目（chunk 绑定切片基于 buffer 容量，不变）。
     pub fn update_cull_info(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         puffin::profile_function!();
@@ -148,13 +148,36 @@ impl NoteRenderer {
             return;
         }
 
-        // 每 chunk 写入 uniform 条目（chunk_start / chunk_count）
-        self.write_cull_uniforms(queue, current_count);
-
-        // 扩容 + 按需重建 bind groups（仅可见 buffer 容量不足时）
+        // 扩容可见索引 buffer（如需）
         if current_count > self.capacity {
             self.grow_visible_buffer(device, current_count);
         }
+
+        // 重新创建 cull / render bind groups：
+        // source buffer 句柄可能因 GpuNoteBuffer::grow 而改变，必须同步到 bind group。
+        self.cull_bind_groups = Self::create_cull_bind_groups(
+            device,
+            &self.chunk_layout,
+            self.gpu_note_buffer.buffer(),
+            &self.visible_instance_buffer,
+            &self.indirect_buffer,
+            &self.cull_uniform_buffer,
+            &self.viewport_buffer,
+            self.cull_uniform_buffer_size,
+            &self.cull_bind_group_layout,
+        );
+        self.render_bind_groups = Self::create_render_bind_groups(
+            device,
+            &self.render_bind_group_layout,
+            &self.viewport_buffer,
+            &self.view_state_buffer,
+            self.gpu_note_buffer.buffer(),
+            &self.visible_instance_buffer,
+            &self.chunk_layout,
+        );
+
+        // 每 chunk 写入 uniform 条目（chunk_start / chunk_count）
+        self.write_cull_uniforms(queue, current_count);
 
         self.last_upload_count = clamp_count(current_count);
     }

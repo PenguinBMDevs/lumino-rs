@@ -136,6 +136,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                             .onion_skin
                             .finish_streaming_upload(&ctx.device, &ctx.queue);
                         onion_skin_streaming_in_progress = false;
+                        let total_gpu_mb = lumino_memtrace::Snapshot::capture().total_with_gpu_mb();
+                        tracing::debug!(
+                            "OnionSkin: 全量上传完成 instance_count={} instance_buf={}MB visible_index_buf={}MB total_gpu={:.1}MB",
+                            renderers.onion_skin.gpu_instance_count(),
+                            renderers.onion_skin.instance_buffer_size() / 1024 / 1024,
+                            renderers.onion_skin.visible_buffer_size() / 1024 / 1024,
+                            total_gpu_mb
+                        );
                     }
                     // 段表必须保留：后续 `TrackDelta` 与 `process_main_track_events`
                     // 依赖它定位音轨段。新的全量会话开始时会由首个 `Chunk` 重建段表。
@@ -243,6 +251,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             );
             if updated {
                 renderers.onion_skin.update_cull_info(&ctx.device, &ctx.queue);
+                let total_gpu_mb = lumino_memtrace::Snapshot::capture().total_with_gpu_mb();
+                tracing::debug!(
+                    "MainTrack: 事件应用后 instance_count={} instance_buf={}MB visible_index_buf={}MB total_gpu={:.1}MB",
+                    renderers.onion_skin.gpu_instance_count(),
+                    renderers.onion_skin.instance_buffer_size() / 1024 / 1024,
+                    renderers.onion_skin.visible_buffer_size() / 1024 / 1024,
+                    total_gpu_mb
+                );
             }
         }
 

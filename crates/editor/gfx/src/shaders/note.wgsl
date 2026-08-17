@@ -6,14 +6,15 @@
 //   - 2 像素同色加深描边（border_width 字段传 2，加深系数 0.4）
 //   - 预览音符：border_width 哨兵值检测，70% alpha
 //
-// 深度语义（修复重叠音符随机闪烁，2026-08）：
-//   cull.wgsl 并行重打包可见实例，重叠实例的绘制顺序每帧随机；
-//   因此用 border_width 高 16 位编码轨道索引，VS 输出稳定深度：
+// 深度语义（修复重叠音符随机闪烁，2026-08）：cull.wgsl 输出可见实例的源索引，
+// VS 从 all_instances storage buffer 读取原数据，重叠实例的绘制顺序每帧随机；
+// 用 border_width 高 16 位编码轨道索引，VS 输出稳定深度：
 //   - 主音轨（track==0）与预览音符 → z = 0.0（最近，永远覆盖洋葱皮）
 //   - 洋葱皮轨道 i → z = (i+1) / 65536.0（索引越大越靠后）
-//   深度测试 LessEqual 与绘制顺序无关，重叠处深度小者稳定胜出，不闪烁。
+// 深度测试 LessEqual 与绘制顺序无关，重叠处深度小者稳定胜出，不闪烁。
 //
-// VS 用 instancing + 4 顶点 quad 复刻 wasabi 的 GS「点扩展为 quad」逻辑
+// 2026-08-07：顶点输入从完整 NoteInstance 改为 u32 可见索引，
+// 渲染时从 group(0) binding(2) 的 storage buffer 读取原实例数据。
 
 const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFFFFFFu;
 const PREVIEW_ALPHA: f32 = 0.7;
@@ -35,19 +36,21 @@ struct CameraUniform {
 @group(0) @binding(0)
 var<uniform> camera: CameraUniform;
 
+// 全部音符实例数据（只读 storage，与 cull 阶段读取同一份数据）
+struct NoteInstance {
+    start_length: vec2<f32>,
+    key_color: u32,
+    border_width: u32,
+}
+@group(0) @binding(2)
+var<storage, read> all_instances: array<NoteInstance>;
+
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
     @location(0) color: vec4<f32>,
     @location(1) uv: vec2<f32>,           // [0,1]² UV，用于边距判定
     @location(2) screen_size: vec2<f32>,  // 屏幕像素宽高（用于 UV 边距反算）
     @location(3) border_width: u32,       // 透传到 FS
-};
-
-// 实例数据（16 bytes，与 wasabi NoteVertex 字段对齐）
-struct NoteInstance {
-    @location(0) start_length: vec2<f32>,  // [start_tick, length_tick]
-    @location(1) key_color: u32,           // 低8位=key, 高24位=RGB
-    @location(2) border_width: u32,        // 边框像素宽（PREVIEW_BORDER_SENTINEL=预览）
 };
 
 /// 解包 key_color → vec4 RGBA（alpha 恒为 1.0，与 wasabi 一致）
@@ -62,8 +65,10 @@ fn unpack_key_color(packed: u32) -> vec4<f32> {
 @vertex
 fn vs_main(
     @builtin(vertex_index) vertex_index: u32,
-    instance: NoteInstance,
+    @location(0) visible_index: u32,
 ) -> VertexOutput {
+    let instance = all_instances[visible_index];
+
     // 根据顶点索引生成矩形的四个角（三角形带顺序）
     // local_offset 同时作为 UV 使用
     var local_offset: vec2<f32>;

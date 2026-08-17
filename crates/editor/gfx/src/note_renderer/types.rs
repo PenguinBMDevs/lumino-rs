@@ -258,25 +258,10 @@ impl Default for DrawIndirectArgs {
     }
 }
 
-/// 顶点属性布局 — 16 bytes NoteInstance（与 wasabi NoteVertex 字段对齐）
-/// 3 个属性：start_length(vec2) / key_color(u32) / border_width(u32)
-pub const VERTEX_ATTRIBUTES: [wgpu::VertexAttribute; 3] = [
-    wgpu::VertexAttribute {
-        offset: 0,
-        shader_location: 0,
-        format: wgpu::VertexFormat::Float32x2, // start_length: [start, length]
-    },
-    wgpu::VertexAttribute {
-        // start_length(8) = 8
-        offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-        shader_location: 1,
-        format: wgpu::VertexFormat::Uint32, // key_color
-    },
-    wgpu::VertexAttribute {
-        // start_length(8) + key_color(4) = 12
-        offset: (std::mem::size_of::<[f32; 2]>() + std::mem::size_of::<u32>())
-            as wgpu::BufferAddress,
-        shader_location: 2,
-        format: wgpu::VertexFormat::Uint32, // border_width
-    },
-];
+/// 可见索引顶点属性布局 — 4 bytes u32 源实例索引
+/// render pass 用该索引从 all_instances storage buffer 读取完整 NoteInstance。
+pub const VISIBLE_INDEX_ATTRIBUTES: [wgpu::VertexAttribute; 1] = [wgpu::VertexAttribute {
+    offset: 0,
+    shader_location: 0,
+    format: wgpu::VertexFormat::Uint32,
+}];

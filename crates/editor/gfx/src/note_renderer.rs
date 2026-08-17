@@ -46,10 +46,12 @@ pub struct NoteRenderer {
     cull_uniform_buffer: wgpu::Buffer,
     /// cull uniform 缓冲区总字节数（绑定 offset 越界断言用）
     cull_uniform_buffer_size: u64,
-    /// 渲染 Bind group
-    render_bind_group: wgpu::BindGroup,
+    /// 渲染 Bind groups（每 chunk 一个，storage binding 2GB 上限分块规避）
+    render_bind_groups: Vec<wgpu::BindGroup>,
     /// 计算 Bind groups（每 chunk 一个，storage binding 2GB 上限分块规避）
     cull_bind_groups: Vec<wgpu::BindGroup>,
+    /// 渲染 Bind group layout
+    render_bind_group_layout: wgpu::BindGroupLayout,
     /// 计算 Bind group layout
     cull_bind_group_layout: wgpu::BindGroupLayout,
     /// storage binding 分块布局（跨硬件自适应）
@@ -69,6 +71,16 @@ impl NoteRenderer {
     /// 获取上次上传的实例数量（用于诊断）
     pub fn last_upload_count(&self) -> u32 {
         self.last_upload_count
+    }
+
+    /// 获取可见索引缓冲区的 GPU 字节占用（用于诊断）
+    pub fn visible_buffer_size(&self) -> u64 {
+        self.visible_instance_buffer.size()
+    }
+
+    /// 获取实例缓冲区的 GPU 字节占用（用于诊断）
+    pub fn instance_buffer_size(&self) -> u64 {
+        self.gpu_note_buffer.gpu_memory_usage() as u64
     }
 
     /// 更新视图状态（当前音轨 + 静音位图）

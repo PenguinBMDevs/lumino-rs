@@ -36,7 +36,8 @@ struct DrawIndirectArgs {
 @group(0) @binding(0) var<uniform> camera: CameraUniform;
 @group(0) @binding(1) var<uniform> cull_info: CullUniform;
 @group(0) @binding(2) var<storage, read> all_instances: array<NoteInstance>;
-@group(0) @binding(3) var<storage, read_write> visible_instances: array<NoteInstance>;
+// 2026-08-07：可见缓冲不再重包 NoteInstance，只输出 source index（u32），显存占用降为 1/4。
+@group(0) @binding(3) var<storage, read_write> visible_instances: array<u32>;
 @group(0) @binding(4) var<storage, read_write> indirect_args: DrawIndirectArgs;
 
 // workgroup 共享内存：批量原子操作的临时存储
@@ -55,13 +56,13 @@ fn main(
     let local_index = global_id.x + global_id.y * MAX_X_THREADS;
     let index = cull_info.chunk_start + local_index;
     let in_range = local_index < cull_info.chunk_count
-                && index < cull_info.instance_count
-                && index < arrayLength(&all_instances);
+                && index < cull_info.instance_count;
 
     // 可见性判定（不提前 return，所有线程必须到达 barrier）
     var is_visible = false;
     if (in_range) {
-        let instance = all_instances[index];
+        // source buffer 已按 chunk 切片绑定，用 local_index 读取
+        let instance = all_instances[local_index];
 
         let tick = instance.start_length.x;
         let length = instance.start_length.y;
@@ -94,7 +95,8 @@ fn main(
     // Phase 1：workgroup 内本地计数（local atomic，无全局竞争）
     if (is_visible) {
         let slot = atomicAdd(&wg_count, 1u);
-        wg_indices[slot] = index;
+        // 输出 local_index（chunk 内源索引），render pass 绑定同 chunk 的 source 切片
+        wg_indices[slot] = local_index;
     }
     workgroupBarrier();
 
@@ -106,13 +108,12 @@ fn main(
     }
     workgroupBarrier();
 
-    // Phase 3：写入可见实例
+    // Phase 3：写入可见实例索引（render pass 用索引从 all_instances 读取原数据）
     if (local_id.x < wg_total) {
         let src_idx = wg_indices[local_id.x];
-        let instance = all_instances[src_idx];
         let dst = wg_global_base + local_id.x;
         if (dst < arrayLength(&visible_instances)) {
-            visible_instances[dst] = instance;
+            visible_instances[dst] = src_idx;
         }
     }
 }

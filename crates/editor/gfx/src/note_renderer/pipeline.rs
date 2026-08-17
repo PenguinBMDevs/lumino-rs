@@ -31,6 +31,17 @@ impl NoteRenderer {
                     },
                     count: None,
                 },
+                // 全部音符实例数据（只读 storage）：render pass 用可见索引读取原数据
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }
@@ -115,7 +126,7 @@ impl NoteRenderer {
             vertex: wgpu::VertexState {
                 module: shader,
                 entry_point: Some("vs_main"),
-                buffers: &[Self::instance_buffer_layout()],
+                buffers: &[Self::visible_index_buffer_layout()],
                 compilation_options: wgpu::PipelineCompilationOptions::default(),
             },
             fragment: Some(wgpu::FragmentState {
