@@ -1,7 +1,7 @@
 //! 看门狗（Watchdog）— 完全独立的终极防线
 //!
 //! 架构独立性：
-//! - 启动时捕获主进程 PID，用 PID 构造路径（Linux: /proc/{pid}/status, macOS/Win: task_info / GetProcessMemoryInfo）
+//! - 启动时捕获主进程 PID，用 PID 构造路径（Linux: /proc/{pid}/status, Windows: GetProcessMemoryInfo）
 //! - 自己的内存读取函数（watchdog_get_*），不调用 MemoryMonitor 的任何方法
 //! - 自己的阈值逻辑（RSS > 100% soft_limit OR 系统可用 < 350MB）
 //! - 自己的终止手段（SIGKILL / TerminateProcess — 不可阻塞/忽略）
@@ -18,12 +18,17 @@
 //! - 加载结束（成功或失败）清除标志，看门狗恢复休眠。
 //! - 除加载 MIDI 之外的场景一律不监控。
 
+/// 以下三项只在非 macOS 平台使用：macOS 上看门狗被禁用（见 [`spawn_watchdog()`]），
+/// 编译该平台的实现会触发 dead-code 警告。
+#[cfg(not(target_os = "macos"))]
 use std::sync::OnceLock;
 
 /// 看门狗检查间隔（毫秒）— 50ms，只读 /proc 一行，零 CPU 开销
+#[cfg(not(target_os = "macos"))]
 const WATCHDOG_INTERVAL_MS: u64 = 50;
 
 /// 看门狗系统可用内存阈值：低于此值时直接 SIGKILL
+#[cfg(not(target_os = "macos"))]
 const WATCHDOG_MIN_AVAILABLE_BYTES: u64 = 350 * 1024 * 1024; // 350mb 应该够
 
 // ── 平台相关：通过 PID 获取进程 RSS（完全独立，不依赖 /proc/self）──
@@ -46,12 +51,6 @@ fn watchdog_get_process_rss(pid: u32) -> u64 {
         }
     }
     0
-}
-
-#[cfg(target_os = "macos")]
-fn watchdog_get_process_rss(_pid: u32) -> u64 {
-    // macOS 跨进程读取需 entitlement，看门狗在同一进程中运行，用自身 RSS 足够
-    crate::memory_monitor::platform::get_current_rss()
 }
 
 #[cfg(target_os = "windows")]
@@ -98,37 +97,6 @@ fn watchdog_get_available_memory() -> u64 {
     u64::MAX
 }
 
-#[cfg(target_os = "macos")]
-fn watchdog_get_available_memory() -> u64 {
-    unsafe {
-        let host = libc::mach_host_self();
-        let mut stats = std::mem::MaybeUninit::<libc::vm_statistics64>::uninit();
-        let mut count = (std::mem::size_of::<libc::vm_statistics64>()
-            / std::mem::size_of::<libc::integer_t>()) as u32;
-
-        const KERN_SUCCESS: i32 = 0;
-        let host_result = libc::host_statistics64(
-            host,
-            libc::HOST_VM_INFO64,
-            stats.as_mut_ptr() as *mut libc::integer_t,
-            &mut count,
-        );
-
-        if host_result != KERN_SUCCESS {
-            return u64::MAX;
-        }
-
-        let stats = stats.assume_init();
-        let page_size = libc::sysconf(libc::_SC_PAGESIZE) as u64;
-
-        // 可用内存 ≈ 空闲页 + 非活跃页 + 投机页
-        let available_pages =
-            stats.free_count as u64 + stats.inactive_count as u64 + stats.speculative_count as u64;
-
-        available_pages * page_size
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn watchdog_get_available_memory() -> u64 {
     unsafe {
@@ -144,7 +112,8 @@ fn watchdog_get_available_memory() -> u64 {
 
 // ── 平台相关：强制终止进程 ──
 
-#[cfg(unix)]
+// macOS 也是 unix，但 macOS 上整个看门狗被禁用（无调用者），需显式排除以免 dead-code
+#[cfg(all(unix, not(target_os = "macos")))]
 fn watchdog_force_kill(pid: u32) {
     let kill_result = unsafe { libc::kill(pid as i32, libc::SIGKILL) };
     if kill_result != 0 {

@@ -136,6 +136,10 @@ pub fn get_current_rss() -> u64 {
     let mut info = std::mem::MaybeUninit::<TaskBasicInfo64>::uninit();
     let mut count = TASK_BASIC_INFO_64_COUNT;
 
+    // `libc::mach_task_self` 已被 libc crate 标记为 deprecated（建议改用 mach2 crate），
+    // 但为单个调用引入 mach2 依赖不值，且 `mach_task_self` 是 XNU 的标准惯例用法，
+    // 长期稳定。此处按需压制该 lint。
+    #[allow(deprecated)]
     let task_result = unsafe {
         libc::task_info(
             libc::mach_task_self(),

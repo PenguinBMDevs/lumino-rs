@@ -258,9 +258,14 @@ impl MemoryMonitor {
 }
 
 /// 后台监控线程检查间隔（毫秒）
+///
+/// 只在非 macOS 平台使用：macOS 上后台监控被禁用（见 [`spawn_monitor_thread()`]），
+/// 编译该平台的实现会触发 dead-code 警告。
+#[cfg(not(target_os = "macos"))]
 const MONITOR_INTERVAL_MS: u64 = 100;
 
 /// 调用 abort（直接写 stderr，不依赖 tracing）
+#[cfg(not(target_os = "macos"))]
 fn abort_process(report: &str) -> ! {
     use std::io::Write;
     let _ = writeln!(std::io::stderr(), "{}", report);
