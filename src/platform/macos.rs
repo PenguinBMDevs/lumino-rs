@@ -11,10 +11,12 @@ use muda::{
 };
 
 thread_local! {
-    static MENU: OnceLock<AppMenu> = OnceLock::new();
+    static MENU: OnceLock<AppMenu> = const { OnceLock::new() };
 }
 
 struct AppMenu {
+    // 持有 Menu 以维持 NSMenu 生命周期；clippy 会误判为未读字段。
+    #[allow(dead_code)]
     menu: Menu,
     map: HashMap<MenuId, CoreEvent>,
 }
@@ -133,7 +135,7 @@ fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     )?;
 
     let menu = Menu::with_items(&[&app, &file, &edit, &view, &help])?;
-    let _ = menu.init_for_nsapp();
+    menu.init_for_nsapp();
 
     let app_menu = AppMenu { menu, map };
     let _ = cell.set(app_menu);
