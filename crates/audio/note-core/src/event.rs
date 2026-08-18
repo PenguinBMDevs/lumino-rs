@@ -1,71 +1,11 @@
-//! 事件浏览器数据模型
+//! 自动化事件数据模型
 //!
-//! 定义时间签名、调号、标记、歌词、和弦、音色变换以及自动化事件等
-//! 供事件浏览器展示与编辑的数据类型。
-
-/// 拍号事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct TimeSignatureEvent {
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 拍号分子
-    pub numerator: u8,
-    /// 拍号分母（人类可读值，如 4、8）
-    pub denominator: u8,
-}
-
-/// 调号事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct KeySignatureEvent {
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 根音（0-11，C=0）
-    pub root: u8,
-    /// 调式
-    pub scale: ScaleType,
-}
-
-/// 标记事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct MarkerEvent {
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 标记文本
-    pub text: String,
-}
-
-/// 歌词事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct LyricsEvent {
-    /// 所属音轨（0 = Conductor）
-    pub track: u16,
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 歌词文本
-    pub text: String,
-}
-
-/// 和弦事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct ChordEvent {
-    /// 所属音轨（0 = Conductor）
-    pub track: u16,
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 和弦文本
-    pub text: String,
-}
-
-/// 音色变换事件
-#[derive(Debug, Clone, PartialEq)]
-pub struct ProgramChangeEvent {
-    /// 所属音轨（0 = Conductor）
-    pub track: u16,
-    /// 事件所在 tick
-    pub tick: u32,
-    /// 音色编号
-    pub program: u8,
-}
+//! 定义自动化事件、自动化目标与线段插值形状等数据类型。
+//!
+//! 2026-08 事件浏览器类型清理：拍号/调号/标记/歌词/和弦/音色变换的强类型
+//! 事件（TimeSignatureEvent / KeySignatureEvent / MarkerEvent / LyricsEvent /
+//! ChordEvent / ProgramChangeEvent）随 EditorData 孤儿字段删除后全库零使用，
+//! 对应数据以原始格式存储于 MidiDocument / LuminoProject，此处不再定义。
 
 /// 自动化事件
 #[derive(Debug, Clone, PartialEq)]
@@ -104,47 +44,6 @@ impl AutomationTarget {
             AutomationTarget::Tempo => 999.0,
         }
     }
-}
-
-/// 调式
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ScaleType {
-    /// 大调
-    Major,
-    /// 自然小调
-    Minor,
-    /// 多利亚
-    Dorian,
-    /// 弗里几亚
-    Phrygian,
-    /// 利底亚
-    Lydian,
-    /// 混合利底亚
-    Mixolydian,
-    /// 爱奥利亚
-    Aeolian,
-    /// 洛克利亚
-    Locrian,
-    /// 和声小调
-    HarmonicMinor,
-    /// 旋律小调
-    MelodicMinor,
-}
-
-impl ScaleType {
-    /// 所有支持的调式列表
-    pub const ALL: &'static [Self] = &[
-        ScaleType::Major,
-        ScaleType::Minor,
-        ScaleType::Dorian,
-        ScaleType::Phrygian,
-        ScaleType::Lydian,
-        ScaleType::Mixolydian,
-        ScaleType::Aeolian,
-        ScaleType::Locrian,
-        ScaleType::HarmonicMinor,
-        ScaleType::MelodicMinor,
-    ];
 }
 
 /// 自动化线段插值形状

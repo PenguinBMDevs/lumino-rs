@@ -21,9 +21,8 @@ pub use automation::{
 };
 pub use batch_edit::{BatchEditOperation, parse_batch_edit_input};
 pub use event::{
-    AutomationEvent as EventAutomationEvent, AutomationTarget as EventAutomationTarget, ChordEvent,
-    KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent, ScaleType,
-    SegmentShape as EventSegmentShape, TimeSignatureEvent,
+    AutomationEvent as EventAutomationEvent, AutomationTarget as EventAutomationTarget,
+    SegmentShape as EventSegmentShape,
 };
 pub use font_scanner::{FontInfo, get_cached_fonts, prewarm_font_cache, scan_system_fonts};
 pub use history::{EditorSnapshot, History, HistoryEntry, MoveOp, OpKind, OperationEntry};
