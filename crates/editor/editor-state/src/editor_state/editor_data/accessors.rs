@@ -87,6 +87,20 @@ impl EditorData {
         std::mem::take(&mut self.note_delta_events)
     }
 
+    /// 整体替换拍号变化列表并同步到 document（工程设置 / undo 恢复 / 加载）
+    ///
+    /// 与 [`Self::set_tempo_points`] 同构：`time_signatures` 为编辑态权威源，
+    /// `document.time_signatures` 为权威镜像，保证保存/导出链路读到最新值
+    /// （消除"UI 改拍号 → 保存丢失"的脆弱补救模式）。
+    ///
+    /// 调用方需保证输入已按 tick 排序（加载路径天然有序；工程设置路径已排序）。
+    pub fn set_time_signatures(&mut self, time_signatures: Vec<(u32, u8, u8)>) {
+        self.time_signatures = time_signatures;
+        if let Some(doc) = self.document.as_mut() {
+            doc.time_signatures = self.time_signatures.clone();
+        }
+    }
+
     // ── 音符读取（document 唯一权威） ─────────────────────────
 
     /// 获取当前轨道音符的分块引用（零拷贝，直接借自 document）

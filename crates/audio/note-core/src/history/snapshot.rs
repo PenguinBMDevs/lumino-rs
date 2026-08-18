@@ -15,7 +15,6 @@ use std::time::Instant;
 use lumino_midi_model::{ChunkedList, NoteEvent};
 
 use crate::automation::AutomationLane;
-use crate::event::{ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent};
 use crate::midi_types::TempoPoint;
 
 use super::OpKind;
@@ -34,16 +33,6 @@ pub struct EditorSnapshot {
     pub automation_lanes: Vec<Arc<AutomationLane>>,
     /// 拍号变化列表（可选，兼容旧快照）。
     pub time_signatures: Option<Vec<(u32, u8, u8)>>,
-    /// 调号事件列表。
-    pub key_signatures: Option<Vec<KeySignatureEvent>>,
-    /// 标记事件列表。
-    pub markers: Option<Vec<MarkerEvent>>,
-    /// 歌词事件列表。
-    pub lyrics: Option<Vec<LyricsEvent>>,
-    /// 和弦事件列表。
-    pub chords: Option<Vec<ChordEvent>>,
-    /// 音色变换事件列表。
-    pub program_changes: Option<Vec<ProgramChangeEvent>>,
     /// 速度点列表。
     pub tempo_points: Option<Vec<TempoPoint>>,
     /// 操作元数据：分组 ID（同一逻辑操作的所有快照共享 group_id）
@@ -70,11 +59,6 @@ impl EditorSnapshot {
             current_track,
             automation_lanes,
             time_signatures: None,
-            key_signatures: None,
-            markers: None,
-            lyrics: None,
-            chords: None,
-            program_changes: None,
             tempo_points: None,
             group_id: None,
             parent_group_id: None,
@@ -99,11 +83,6 @@ impl EditorSnapshot {
             current_track,
             automation_lanes,
             time_signatures: None,
-            key_signatures: None,
-            markers: None,
-            lyrics: None,
-            chords: None,
-            program_changes: None,
             tempo_points: None,
             group_id,
             parent_group_id,

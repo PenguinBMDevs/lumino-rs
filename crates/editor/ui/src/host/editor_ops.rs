@@ -97,8 +97,12 @@ impl Host {
             .editor_state
             .data
             .set_tempo_points(tempo_points);
-        // 同步拍号变化到编辑器
-        self.root.editor.editor_state.data.time_signatures = time_signatures;
+        // 同步拍号变化到编辑器（经统一入口，与 document.time_signatures 一致）
+        self.root
+            .editor
+            .editor_state
+            .data
+            .set_time_signatures(time_signatures);
 
         // 新 MIDI 文档加载后必须标记音符数据变化，触发洋葱皮全量重建。
         // 否则 `track_notes_gen` 不变，`OnionSkinState` 认为无需重建，导致

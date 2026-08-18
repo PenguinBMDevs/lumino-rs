@@ -24,11 +24,6 @@ impl EditorData {
             current_track: self.current_track,
             automation_lanes: self.automation_lanes.clone(),
             time_signatures: Some(self.time_signatures.clone()),
-            key_signatures: Some(self.key_signatures.clone()),
-            markers: Some(self.markers.clone()),
-            lyrics: Some(self.lyrics.clone()),
-            chords: Some(self.chords.clone()),
-            program_changes: Some(self.program_changes.clone()),
             tempo_points: Some(self.tempo_points.clone()),
             ..EditorSnapshot::new(
                 Arc::new(lumino_midi_model::ChunkedList::new()),
@@ -195,22 +190,8 @@ impl EditorData {
         self.current_track = snapshot.current_track;
         self.automation_lanes = snapshot.automation_lanes.clone();
         if let Some(v) = snapshot.time_signatures {
-            self.time_signatures = v;
-        }
-        if let Some(v) = snapshot.key_signatures {
-            self.key_signatures = v;
-        }
-        if let Some(v) = snapshot.markers {
-            self.markers = v;
-        }
-        if let Some(v) = snapshot.lyrics {
-            self.lyrics = v;
-        }
-        if let Some(v) = snapshot.chords {
-            self.chords = v;
-        }
-        if let Some(v) = snapshot.program_changes {
-            self.program_changes = v;
+            // 经统一入口恢复，保证 document.time_signatures 同步（保存链路读到最新）
+            self.set_time_signatures(v);
         }
         if let Some(v) = snapshot.tempo_points {
             // 经统一入口恢复，保证 document.tempo_changes 同步（保存链路读到最新）

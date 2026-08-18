@@ -130,4 +130,13 @@ mod tests {
         let doc = data.document.as_ref().expect("document 应存在");
         assert_eq!(doc.tempo_changes.len(), 1);
     }
+
+    #[test]
+    fn test_set_time_signatures_syncs_document() {
+        let mut data = make_data_with_document();
+        data.set_time_signatures(vec![(0, 4, 4), (1920, 3, 4)]);
+        assert_eq!(data.time_signatures, vec![(0, 4, 4), (1920, 3, 4)]);
+        let doc = data.document.as_ref().expect("document 应存在");
+        assert_eq!(doc.time_signatures, vec![(0, 4, 4), (1920, 3, 4)]);
+    }
 }

@@ -10,9 +10,6 @@ use std::sync::Arc;
 
 use lumino_note_core::arrange_selection::ArrangeSelection;
 use lumino_note_core::automation::AutomationLane;
-use lumino_note_core::event::{
-    ChordEvent, KeySignatureEvent, LyricsEvent, MarkerEvent, ProgramChangeEvent,
-};
 use lumino_note_core::history::History;
 use lumino_note_core::midi_types::{CcData, TempoPoint};
 use lumino_note_core::note::Note;
@@ -76,16 +73,6 @@ pub struct EditorData {
     pub tempo_points: Vec<TempoPoint>,
     /// 拍号变化列表（tick, 分子, 分母）。分母为人类可读值，如 4、8。
     pub time_signatures: Vec<(u32, u8, u8)>,
-    /// 调号事件列表
-    pub key_signatures: Vec<KeySignatureEvent>,
-    /// 标记事件列表
-    pub markers: Vec<MarkerEvent>,
-    /// 歌词事件列表
-    pub lyrics: Vec<LyricsEvent>,
-    /// 和弦事件列表
-    pub chords: Vec<ChordEvent>,
-    /// 音色变换事件列表
-    pub program_changes: Vec<ProgramChangeEvent>,
     /// 工程走带视图的选择范围
     pub arrange_selection: ArrangeSelection,
     /// 主音轨 GPU 增量事件队列（自上次 UI 消费以来的编辑操作）

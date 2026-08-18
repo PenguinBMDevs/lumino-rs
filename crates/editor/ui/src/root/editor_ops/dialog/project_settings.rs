@@ -77,13 +77,13 @@ impl Root {
             },
         ]);
 
-        // 同步拍号变化到编辑器数据
+        // 同步拍号变化到编辑器数据（经统一入口，同时同步 document.time_signatures）
         let mut sorted_ts = time_signatures;
         sorted_ts.sort_by_key(|(tick, _, _)| *tick);
         if sorted_ts.is_empty() {
             sorted_ts.push((0, 4, 4));
         }
-        self.editor.editor_state.data.time_signatures = sorted_ts;
+        self.editor.editor_state.data.set_time_signatures(sorted_ts);
         // 拍号变化可能影响网格，清空相关缓存
         self.editor.grid_cache.clear();
         self.editor.ruler_cache.clear();
