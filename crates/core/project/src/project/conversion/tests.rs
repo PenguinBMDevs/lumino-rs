@@ -56,6 +56,38 @@ fn test_to_midi_document_roundtrip() {
     assert_eq!(rebuilt.track_names[0], Some("Piano".into()));
 }
 
+/// 编辑后保存回归：UI 编辑 tempo/拍号经统一入口（set_tempo_points /
+/// set_time_signatures）同步 document 后，保存链路 from_midi_document
+/// 必须读到编辑后的值，而非加载时的原始值（阶段 0/1 修复的
+/// "改 BPM/拍号 → 保存丢失回默认 120/4-4" bug 回归测试）。
+#[test]
+fn test_from_midi_document_after_global_events_edited() {
+    let mut doc = make_test_document();
+    // 模拟编辑器同步后的 document 权威值
+    doc.tempo_changes = vec![(0, 150.0), (1920, 90.5)];
+    doc.time_signatures = vec![(0, 4, 4), (1920, 3, 4)];
+
+    let project = LuminoProject::from_midi_document(&doc);
+
+    assert_eq!(project.tempo_changes, vec![(0, 150.0), (1920, 90.5)]);
+    assert_eq!(project.time_signatures, vec![(0, 4, 4), (1920, 3, 4)]);
+}
+
+/// ProgramChange 保存回归：document.control_events 中的 ProgramChange 事件
+/// 必须被 from_midi_document 拆分为 project.program_changes，保证
+/// 导入含音色变换的 MIDI 后保存工程不丢失音色数据。
+#[test]
+fn test_from_midi_document_program_change_preserved() {
+    let mut doc = make_test_document();
+    doc.control_events = lumino_midi_model::ChunkedList::from_sorted(vec![
+        midly::loader::PackedControlEvent::program_change(0, 0, 0, 40),
+    ]);
+
+    let project = LuminoProject::from_midi_document(&doc);
+
+    assert_eq!(project.program_changes, vec![(0, 0, 0, 40)]);
+}
+
 #[test]
 fn test_compact_event_roundtrip() {
     let mut project = LuminoProject::new("Test");
