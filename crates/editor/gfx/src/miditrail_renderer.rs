@@ -26,7 +26,7 @@ use math::build_camera_uniform;
 use pipeline::{
     create_aura_buffers, create_aura_render_pipeline, create_aura_sampler,
     create_bind_group_layout, create_buffers, create_note_render_pipeline, create_render_pipeline,
-    create_shader_module, generate_aura_ring_data,
+    generate_aura_ring_data,
 };
 
 const KEY_PRESS_SPEED_DOWN: f32 = 15.0;
@@ -114,8 +114,9 @@ impl MiditrailRenderer {
 
     /// 创建 Miditrail 渲染器。
     pub fn new(device: &wgpu::Device) -> Self {
-        let shader = create_shader_module(device, Self::SHADER);
-        let aura_shader = create_shader_module(device, Self::AURA_SHADER);
+        let shader = crate::shader::create_shader_module(device, "miditrail_shader", Self::SHADER);
+        let aura_shader =
+            crate::shader::create_shader_module(device, "miditrail_aura_shader", Self::AURA_SHADER);
         let bind_group_layout = create_bind_group_layout(device);
         let render_pipeline = create_render_pipeline(device, &bind_group_layout, &shader);
         let note_pipeline = create_note_render_pipeline(device, &bind_group_layout, &shader);

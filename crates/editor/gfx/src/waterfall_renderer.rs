@@ -61,10 +61,7 @@ impl WaterfallRenderer {
 
     /// 创建瀑布流渲染器。
     pub fn new(device: &wgpu::Device) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("waterfall_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER.into()),
-        });
+        let shader = crate::shader::create_shader_module(device, "waterfall_shader", Self::SHADER);
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("waterfall_bind_group_layout"),
@@ -129,20 +126,13 @@ impl WaterfallRenderer {
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("waterfall_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("waterfall_compute_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
+        let compute_pipeline = crate::pipeline::ComputePipelineBuilder::new(
+            device,
+            "waterfall_compute_pipeline",
+            &shader,
+        )
+        .bind_group(&bind_group_layout)
+        .build();
 
         let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("waterfall_uniform_buffer"),

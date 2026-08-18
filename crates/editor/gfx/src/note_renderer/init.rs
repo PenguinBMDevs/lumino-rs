@@ -74,15 +74,9 @@ impl NoteRenderer {
         vertex_shader: &'static str,
         cull_shader: &'static str,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("note_shader"),
-            source: wgpu::ShaderSource::Wgsl(vertex_shader.into()),
-        });
+        let shader = crate::shader::create_shader_module(device, "note_shader", vertex_shader);
 
-        let cull_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("cull_shader"),
-            source: wgpu::ShaderSource::Wgsl(cull_shader.into()),
-        });
+        let cull_shader = crate::shader::create_shader_module(device, "cull_shader", cull_shader);
 
         // 创建渲染 bind group layout
         let render_bind_group_layout = Self::create_render_bind_group_layout(device);

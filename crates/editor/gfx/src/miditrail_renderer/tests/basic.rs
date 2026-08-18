@@ -42,57 +42,29 @@ fn test_wgpu_basic_red_triangle() {
     });
     let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
-    let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-        label: Some("basic_test_shader"),
-        source: wgpu::ShaderSource::Wgsl(
-            r#"
-                @vertex
-                fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4<f32> {
-                    var pos = array<vec2<f32>, 3>(
-                        vec2(-1.0, -1.0),
-                        vec2(3.0, -1.0),
-                        vec2(-1.0, 3.0),
-                    );
-                    return vec4(pos[idx], 0.0, 1.0);
-                }
-                @fragment
-                fn fs_main() -> @location(0) vec4<f32> {
-                    return vec4(1.0, 0.0, 0.0, 1.0);
-                }
-            "#
-            .into(),
-        ),
-    });
-    let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-        label: Some("basic_test_pipeline_layout"),
-        bind_group_layouts: &[],
-        push_constant_ranges: &[],
-    });
-    let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-        label: Some("basic_test_pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: wgpu::VertexState {
-            module: &shader,
-            entry_point: Some("vs_main"),
-            buffers: &[],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        },
-        fragment: Some(wgpu::FragmentState {
-            module: &shader,
-            entry_point: Some("fs_main"),
-            targets: &[Some(wgpu::ColorTargetState {
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                blend: None,
-                write_mask: wgpu::ColorWrites::ALL,
-            })],
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-        }),
-        primitive: wgpu::PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: wgpu::MultisampleState::default(),
-        multiview: None,
-        cache: None,
-    });
+    let shader = crate::shader::create_shader_module(
+        &device,
+        "basic_test_shader",
+        r#"
+            @vertex
+            fn vs_main(@builtin(vertex_index) idx: u32) -> @builtin(position) vec4<f32> {
+                var pos = array<vec2<f32>, 3>(
+                    vec2(-1.0, -1.0),
+                    vec2(3.0, -1.0),
+                    vec2(-1.0, 3.0),
+                );
+                return vec4(pos[idx], 0.0, 1.0);
+            }
+            @fragment
+            fn fs_main() -> @location(0) vec4<f32> {
+                return vec4(1.0, 0.0, 0.0, 1.0);
+            }
+        "#,
+    );
+    let pipeline =
+        crate::pipeline::RenderPipelineBuilder::new(&device, "basic_test_pipeline", &shader)
+            .opaque_target(wgpu::TextureFormat::Rgba8Unorm)
+            .build();
 
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("basic_test_encoder"),

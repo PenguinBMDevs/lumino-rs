@@ -294,10 +294,8 @@ impl GridRenderer {
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("infinite_grid_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER_SRC.into()),
-        });
+        let shader =
+            crate::shader::create_shader_module(device, "infinite_grid_shader", Self::SHADER_SRC);
 
         // 创建 bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -314,49 +312,17 @@ impl GridRenderer {
             }],
         });
 
-        // 创建 pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("infinite_grid_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
         // 创建渲染管线，按 needs_depth 决定是否携带 depth-stencil 状态
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("infinite_grid_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[], // 放弃 CPU 传递顶点
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: crate::constants::rendering::depth_stencil_state_read_only_for(
-                needs_depth,
-            ),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline =
+            crate::pipeline::RenderPipelineBuilder::new(device, "infinite_grid_pipeline", &shader)
+                .bind_group(&bind_group_layout)
+                // 放弃 CPU 传递顶点（无 vertex buffer）
+                .triangle_strip()
+                .alpha_blended_target(format)
+                .depth_stencil(
+                    crate::constants::rendering::depth_stencil_state_read_only_for(needs_depth),
+                )
+                .build();
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("infinite_grid_camera_uniform"),

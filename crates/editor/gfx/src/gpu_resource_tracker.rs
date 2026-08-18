@@ -36,3 +36,21 @@ pub fn add_buffer(buffer: &wgpu::Buffer) {
 pub fn sub_buffer(buffer: &wgpu::Buffer) {
     lumino_diagnostics::memtrace::sub_gpu_resource(buffer.size());
 }
+
+/// 创建实例缓冲区并自动上报资源（消除各 renderer 重复的创建 + add_buffer 样板）。
+///
+/// 统一用法：`Vertex | CopyDst` 用途、`mapped_at_creation: false`。
+pub fn create_instance_buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    label: &'static str,
+    capacity: usize,
+) -> wgpu::Buffer {
+    let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+        label: Some(label),
+        size: (capacity * std::mem::size_of::<T>()) as wgpu::BufferAddress,
+        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    add_buffer(&buffer);
+    buffer
+}

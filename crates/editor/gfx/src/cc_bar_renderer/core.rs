@@ -3,6 +3,8 @@
 use wgpu::util::DeviceExt;
 
 use crate::gpu_resource_tracker;
+use crate::pipeline::RenderPipelineBuilder;
+use crate::shader::create_shader_module;
 
 /// CC / 自动化曲线实例数据 — 32 bytes
 #[repr(C)]
@@ -108,10 +110,7 @@ impl CcBarRenderer {
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("cc_bar_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER_SRC.into()),
-        });
+        let shader = create_shader_module(device, "cc_bar_shader", Self::SHADER_SRC);
 
         // 创建 bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -128,47 +127,16 @@ impl CcBarRenderer {
             }],
         });
 
-        // 创建 pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("cc_bar_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
         // 创建渲染管线
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("cc_bar_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[Self::instance_buffer_layout()],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline = RenderPipelineBuilder::new(device, "cc_bar_pipeline", &shader)
+            .bind_group(&bind_group_layout)
+            .vertex_buffer(Self::instance_buffer_layout())
+            .triangle_strip()
+            .alpha_blended_target(format)
+            .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
+                needs_depth,
+            ))
+            .build();
 
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY);
@@ -201,14 +169,11 @@ impl CcBarRenderer {
 
     /// 创建实例缓冲区
     pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("cc_bar_instance_buffer"),
-            size: (capacity * std::mem::size_of::<CcBarInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
-        buffer
+        gpu_resource_tracker::create_instance_buffer::<CcBarInstance>(
+            device,
+            "cc_bar_instance_buffer",
+            capacity,
+        )
     }
 
     /// 实例缓冲区布局

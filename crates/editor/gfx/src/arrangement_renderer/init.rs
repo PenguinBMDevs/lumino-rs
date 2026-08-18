@@ -2,6 +2,8 @@ use wgpu::util::DeviceExt;
 
 use super::{ArrangementRenderer, ArrangementUniform, INITIAL_CAPACITY, VERTEX_SHADER};
 use crate::gpu_resource_tracker;
+use crate::pipeline::RenderPipelineBuilder;
+use crate::shader::create_shader_module;
 
 impl ArrangementRenderer {
     /// 创建新的走带渲染器（默认带 depth attachment）
@@ -19,10 +21,7 @@ impl ArrangementRenderer {
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("arrangement_shader"),
-            source: wgpu::ShaderSource::Wgsl(VERTEX_SHADER.into()),
-        });
+        let shader = create_shader_module(device, "arrangement_shader", VERTEX_SHADER);
 
         // 创建 bind group layout - 只绑定 uniform buffer
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -42,67 +41,33 @@ impl ArrangementRenderer {
             ],
         });
 
-        // 创建 pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("arrangement_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
         // 创建渲染管线 - 使用实例化渲染
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("arrangement_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[
-                    // 实例数据作为 vertex buffer，使用 Instance step mode
-                    wgpu::VertexBufferLayout {
-                        array_stride: std::mem::size_of::<super::ArrangementNoteInstance>() as u64,
-                        step_mode: wgpu::VertexStepMode::Instance,
-                        attributes: &[
-                            // location 0: xywh (Float32x4)
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x4,
-                                offset: 0,
-                                shader_location: 0,
-                            },
-                            // location 1: packed (Uint32x4)
-                            wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Uint32x4,
-                                offset: 16,
-                                shader_location: 1,
-                            },
-                        ],
+        let pipeline = RenderPipelineBuilder::new(device, "arrangement_pipeline", &shader)
+            .bind_group(&bind_group_layout)
+            // 实例数据作为 vertex buffer，使用 Instance step mode
+            .vertex_buffer(wgpu::VertexBufferLayout {
+                array_stride: std::mem::size_of::<super::ArrangementNoteInstance>() as u64,
+                step_mode: wgpu::VertexStepMode::Instance,
+                attributes: &[
+                    // location 0: xywh (Float32x4)
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Float32x4,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    // location 1: packed (Uint32x4)
+                    wgpu::VertexAttribute {
+                        format: wgpu::VertexFormat::Uint32x4,
+                        offset: 16,
+                        shader_location: 1,
                     },
                 ],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList, // 6 顶点组成 2 个三角形
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: crate::constants::rendering::depth_stencil_state_for(needs_depth),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+            })
+            .alpha_blended_target(format)
+            .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
+                needs_depth,
+            ))
+            .build();
 
         // 创建 uniform buffer
         let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -113,14 +78,9 @@ impl ArrangementRenderer {
         gpu_resource_tracker::add_buffer(&uniform_buffer);
 
         // 创建 instance buffer（作为 vertex buffer 使用）
-        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("arrangement_instance_buffer"),
-            size: (INITIAL_CAPACITY * std::mem::size_of::<super::ArrangementNoteInstance>())
-                as wgpu::BufferAddress,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&instance_buffer);
+        let instance_buffer = gpu_resource_tracker::create_instance_buffer::<
+            super::ArrangementNoteInstance,
+        >(device, "arrangement_instance_buffer", INITIAL_CAPACITY);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -149,18 +109,13 @@ impl ArrangementRenderer {
         device: &wgpu::Device,
         instance_count: usize,
     ) {
-        let stride = std::mem::size_of::<super::ArrangementNoteInstance>();
         let needed = instance_count.next_power_of_two().max(INITIAL_CAPACITY);
         if needed > *capacity {
             gpu_resource_tracker::sub_buffer(instance_buffer);
             *capacity = needed;
-            *instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("arrangement_instance_buffer"),
-                size: (needed * stride) as wgpu::BufferAddress,
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-            });
-            gpu_resource_tracker::add_buffer(instance_buffer);
+            *instance_buffer = gpu_resource_tracker::create_instance_buffer::<
+                super::ArrangementNoteInstance,
+            >(device, "arrangement_instance_buffer", needed);
         }
     }
 }

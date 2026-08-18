@@ -33,8 +33,5 @@ thiserror = { workspace = true }
 puffin = { workspace = true }
 tempfile = { workspace = true }
 
-[dev-dependencies]
-tokio = { workspace = true }
-
 [features]
 ldms-export = []
