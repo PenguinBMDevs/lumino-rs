@@ -141,10 +141,6 @@ impl Editor {
                 // new_length < snap_precision 被跳过，导致缓存与实际不完全一致。
                 // 松手后强制 O(N) 回退路径重新计算，确保正确性。
                 self.selected_bounds.set(None);
-                // NoteStore 已删除（降级 no-op，保留调用兼容）
-                if self.editor_state.data.is_note_store_enabled() {
-                    self.editor_state.data.sync_notes_from_store();
-                }
                 tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
                 // 标记当前轨变化（document 已被直接修改）
                 self.editor_state.data.mark_current_track_changed();

@@ -3,7 +3,6 @@
 //! 用于在二维的钢琴卷帘中快速筛选出可见的音符。
 
 use crate::note::Note;
-use crate::note_store::NoteStore;
 
 /// 音符的空间索引引用
 #[derive(Debug, Clone, Copy)]
@@ -85,37 +84,6 @@ impl NoteSpatialIndex {
                 .unwrap_or(std::cmp::Ordering::Equal)
         });
         Self::from_sorted_note_refs(sorted)
-    }
-
-    /// 从 NoteStore（SoA 布局）直接构建空间索引
-    ///
-    /// **性能优化**：16M 音符场景下，比 `from_notes(&[Note])` 节省 ~80ms
-    /// 的 Note 结构体 clone 开销——直接遍历 SoA 数组构造 NoteRef。
-    ///
-    /// 调用方需保证 `store` 与 `notes` 一致（NoteStore 启用时）。
-    pub fn from_note_store(store: &NoteStore) -> Self {
-        puffin::profile_function!();
-        if store.is_empty() {
-            return Self::new();
-        }
-
-        let mut note_refs: Vec<NoteRef> = Vec::with_capacity(store.len());
-        store.for_each_ref(|index, view| {
-            note_refs.push(NoteRef {
-                tick: view.tick,
-                key: view.key,
-                length: view.length,
-                index,
-            });
-        });
-
-        // 按 tick 排序后递归建树
-        note_refs.sort_by(|a, b| {
-            a.tick
-                .partial_cmp(&b.tick)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
-        Self::from_sorted_note_refs(note_refs)
     }
 
     /// 从已排序的 `Vec<NoteRef>` 构建空间索引（内部方法，避免重复排序）
@@ -353,7 +321,6 @@ impl NoteSpatialIndex {
 mod tests {
     use super::*;
     use crate::note::Note;
-    use crate::note_store::NoteStore;
     use std::time::Instant;
 
     #[test]
@@ -385,46 +352,5 @@ mod tests {
         }
         println!("1000 queries took: {:?}", start.elapsed());
         assert!(!result.is_empty());
-    }
-
-    /// 验证 from_note_store 与 from_notes 产生等价的查询结果
-    #[test]
-    fn test_from_note_store_equivalent_to_from_notes() {
-        let mut notes = Vec::new();
-        for i in 0..500 {
-            notes.push(Note {
-                tick: (i % 50) as f32 * 10.0,
-                key: (i % 128) as u16,
-                length: 20.0,
-                velocity: 100,
-                channel: 0,
-            });
-        }
-
-        let store = NoteStore::from_im_vector(&im::Vector::from(notes.clone()));
-
-        let idx_notes = NoteSpatialIndex::from_notes(&notes);
-        let idx_store = NoteSpatialIndex::from_note_store(&store);
-
-        // 同一查询条件下结果应一致
-        let mut r1 = Vec::new();
-        let mut r2 = Vec::new();
-        idx_notes.update_query(0.0, 500.0, 40, 80, &mut r1);
-        idx_store.update_query(0.0, 500.0, 40, 80, &mut r2);
-
-        // 排序后比较（不同实现可能返回顺序不同）
-        r1.sort_unstable();
-        r2.sort_unstable();
-        assert_eq!(r1, r2, "from_note_store 与 from_notes 查询结果应一致");
-    }
-
-    /// 验证空 NoteStore 不 panic
-    #[test]
-    fn test_from_note_store_empty() {
-        let store = NoteStore::new();
-        let idx = NoteSpatialIndex::from_note_store(&store);
-        let mut results = Vec::new();
-        idx.update_query(0.0, 100.0, 0, 127, &mut results);
-        assert!(results.is_empty());
     }
 }

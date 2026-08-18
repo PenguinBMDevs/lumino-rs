@@ -32,6 +32,6 @@ pub use midi_types::{
     PITCH_BEND_CENTER, TempoPoint, VelocityPoint,
 };
 pub use note::Note;
-pub use note_store::{BitSet, NoteMut, NoteStore, NoteView};
+pub use note_store::{BitSet, NoteView};
 pub use pattern::Pattern;
 pub use spatial_index::{NoteRef, NoteSpatialIndex};

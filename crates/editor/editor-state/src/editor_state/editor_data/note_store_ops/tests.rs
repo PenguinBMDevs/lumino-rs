@@ -3,15 +3,6 @@ use lumino_note_core::note::Note;
 use lumino_note_core::note_store::BitSet;
 
 #[test]
-fn test_sync_note_store_auto_enable() {
-    let notes: Vec<Note> = (0..100).map(|i| Note::new(i as f32, 60, 1.0)).collect();
-    let mut editor_data = EditorData::with_f32_notes(1, &notes);
-    editor_data.sync_note_store();
-    // NoteStore 已降级：恒不启用
-    assert!(!editor_data.is_note_store_enabled());
-}
-
-#[test]
 fn test_batch_move_cold_path() {
     let notes: Vec<Note> = (0..5)
         .map(|note_idx| Note::new(note_idx as f32 * 10.0, 60, 1.0))
@@ -62,7 +53,6 @@ fn test_batch_move_large() {
         .map(|note_idx| Note::new(note_idx as f32, 60, 1.0))
         .collect();
     let mut editor_data = EditorData::with_f32_notes(1, &notes);
-    editor_data.sync_note_store();
 
     let note_count = editor_data.current_track_note_count();
     let mut sel = BitSet::new(note_count);

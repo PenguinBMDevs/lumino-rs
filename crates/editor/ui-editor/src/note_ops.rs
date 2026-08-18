@@ -56,21 +56,7 @@ impl Editor {
     }
 
     pub fn select_all_notes(&mut self) {
-        if self.editor_state.data.is_note_store_enabled() {
-            // 2026-08 单一权威源：NoteStore 已删除（is_note_store_enabled 恒 false），
-            // 此分支为历史兼容，实际走下方全量选择路径。
-            let count = self.editor_state.data.current_track_note_count();
-            if count > 0 {
-                let bounds = self.editor_state.data.compute_all_notes_bounds();
-                // 用 `BitSet` 替代 16M 条目 HashSet（512MB 表 + 16M SipHash 插入）
-                // BitSet 16M 位仅 256KB，O(N/64) 初始化 ~0.3ms
-                self.editor_state.interaction.selected_notes.clear();
-                self.editor_state.interaction.selection_bitset =
-                    Some(lumino_note_core::BitSet::all_set(count));
-                self.selected_bounds.set(Some(bounds));
-                return;
-            }
-        }
+        // 2026-08 单一权威源：NoteStore 已删除，全量选择直接走 document 访问器。
         self.selection_assign(self.editor_state.data.select_all_notes());
     }
 }

@@ -12,7 +12,6 @@ mod batch_edit;
 mod batch_move;
 mod delete;
 mod insert;
-mod sync;
 
 #[cfg(test)]
 mod tests;
