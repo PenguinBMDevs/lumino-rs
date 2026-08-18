@@ -9,7 +9,7 @@
 use std::collections::HashMap;
 
 use ab_glyph::{Font, FontArc, Point, PxScale, ScaleFont};
-use lumino_event::window::video::CounterFont;
+use lumino_message::events::window::video::CounterFont;
 
 use super::counter_font_ttf_load::load_font;
 

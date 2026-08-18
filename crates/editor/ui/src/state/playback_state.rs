@@ -5,7 +5,7 @@
 //! 注意：此模块从 `lumino-ui-core` 迁移而来（ui-core 是 UI 基础层，
 //! 不应依赖 playback/midi-io 等业务 crate）。
 
-use lumino_playback::{MidiTrackEvent, PlaybackManager, TempoChange};
+use lumino_midi_io::playback::{MidiTrackEvent, PlaybackManager, TempoChange};
 
 /// 播放状态（由 Root 持有）
 pub struct PlaybackState {

@@ -500,7 +500,7 @@ fn test_add_remote_track_expands_document() {
 /// 同类路径：恢复已删除音轨（track_id 可能大于当前 document 轨数）
 #[test]
 fn test_apply_track_restored_expands_document() {
-    use lumino_event::window::track::{TrackDeletionNote, TrackDeletionPayload};
+    use lumino_message::events::window::track::{TrackDeletionNote, TrackDeletionPayload};
 
     let mut root = create_root();
     attach_test_document(&mut root);

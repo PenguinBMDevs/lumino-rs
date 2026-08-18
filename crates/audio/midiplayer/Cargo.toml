@@ -12,7 +12,7 @@ edition.workspace = true
 workspace = true
 
 [dependencies]
-lumino-memory-monitor = { workspace = true }
+lumino-diagnostics = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-note-core = { workspace = true }
 rayon = { workspace = true }

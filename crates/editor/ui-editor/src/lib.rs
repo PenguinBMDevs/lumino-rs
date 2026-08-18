@@ -1,5 +1,5 @@
 // 从依赖 crate 重新导出编辑器内部常用的类型，保持模块拆分前 `crate::` 引用兼容
-pub use lumino_event as event;
+pub use lumino_message::events as event;
 pub use lumino_ui_core::constants;
 pub use lumino_ui_core::message;
 pub use lumino_ui_core::sidebar_event as sidebar;

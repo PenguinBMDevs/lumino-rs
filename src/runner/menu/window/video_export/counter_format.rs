@@ -3,7 +3,7 @@
 //! 格式语义参考 Zenith-MIDI NoteCountRender 的 .NET 复合格式
 //! （`ToString("#,00000")` 千分位 + 补零、`"00.0000"` 百分比等）。
 
-use lumino_event::window::video::CounterSeparator;
+use lumino_message::events::window::video::CounterSeparator;
 
 /// 将整数按 千分位 + 可选补零 格式化为字符串。
 ///

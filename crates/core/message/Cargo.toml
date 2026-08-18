@@ -13,7 +13,8 @@ workspace = true
 
 [dependencies]
 lumino-core = { workspace = true }
+lumino-midi-loader = { workspace = true }
 lumino-note-core = { workspace = true }
-lumino-event = { workspace = true }
+tracing = { workspace = true }
 # 仅引用 iced_widget::text_editor::Action 类型（视频导出计数器模板多行编辑器）
 iced_widget = { workspace = true }

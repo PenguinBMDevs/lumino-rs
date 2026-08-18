@@ -1,6 +1,8 @@
 pub mod api;
 pub mod compact;
 pub mod constants;
+pub mod playback;
+pub mod realtime;
 pub mod soundfont_cache;
 
 pub use constants::*;

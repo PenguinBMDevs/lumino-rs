@@ -8,7 +8,7 @@
 //!
 //! 覆盖 ASCII 0x20-0x7E 全部 95 个可打印字符。字体数据表在 `counter_font_data.rs`。
 
-use lumino_event::window::video::CounterFont;
+use lumino_message::events::window::video::CounterFont;
 
 use super::counter_font_data::FONT5X7;
 use super::counter_font_ttf::TtfFontRenderer;

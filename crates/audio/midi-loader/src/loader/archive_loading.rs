@@ -26,7 +26,7 @@ pub enum ArchiveLoadResult {
 /// 如果文件不是压缩包，返回 `NotArchive`。
 /// 如果是压缩包，扫描其中的 .mid / .midi / .lmpj 文件。
 pub fn scan_file_for_midi(path: &Path) -> ArchiveLoadResult {
-    use lumino_archive_reader::{find_midi_entries, is_archive, is_midi_file};
+    use crate::archive::{find_midi_entries, is_archive, is_midi_file};
 
     // 先检查是否是常规 MIDI 文件
     if is_midi_file(path) {
@@ -74,8 +74,8 @@ pub fn scan_file_for_midi(path: &Path) -> ArchiveLoadResult {
 pub fn extract_and_get_path(
     archive_path: &Path,
     entry_name: &str,
-) -> Result<PathBuf, lumino_archive_reader::ArchiveError> {
-    use lumino_archive_reader::extract_entry_to_dir;
+) -> Result<PathBuf, crate::archive::ArchiveError> {
+    use crate::archive::extract_entry_to_dir;
 
     let temp_dir = tempfile::tempdir()?;
     let output_path = extract_entry_to_dir(archive_path, entry_name, temp_dir.path())?;
@@ -90,8 +90,8 @@ pub fn extract_and_get_path(
 /// 调用方需要保持 TempDir 存活（否则文件会被自动清理）。
 pub fn extract_archive_to_temp_dir(
     archive_path: &Path,
-) -> Result<(tempfile::TempDir, Vec<PathBuf>), lumino_archive_reader::ArchiveError> {
-    use lumino_archive_reader::extract_all_to_temp;
+) -> Result<(tempfile::TempDir, Vec<PathBuf>), crate::archive::ArchiveError> {
+    use crate::archive::extract_all_to_temp;
 
     let (temp_dir, files) = extract_all_to_temp(archive_path)?;
     Ok((temp_dir, files))
@@ -104,8 +104,8 @@ pub fn extract_archive_to_temp_dir(
 pub fn extract_entry_with_tempdir(
     archive_path: &Path,
     entry_name: &str,
-) -> Result<(tempfile::TempDir, PathBuf), lumino_archive_reader::ArchiveError> {
-    use lumino_archive_reader::extract_entry_to_dir;
+) -> Result<(tempfile::TempDir, PathBuf), crate::archive::ArchiveError> {
+    use crate::archive::extract_entry_to_dir;
     use tempfile::tempdir;
 
     let temp_dir = tempdir()?;
@@ -135,9 +135,9 @@ mod tests {
 
     #[test]
     fn test_is_midi_extension_integration() {
-        assert!(lumino_archive_reader::is_midi_file(Path::new("test.mid")));
-        assert!(lumino_archive_reader::is_midi_file(Path::new("test.midi")));
-        assert!(lumino_archive_reader::is_midi_file(Path::new("test.lmpj")));
-        assert!(!lumino_archive_reader::is_midi_file(Path::new("test.zip")));
+        assert!(crate::archive::is_midi_file(Path::new("test.mid")));
+        assert!(crate::archive::is_midi_file(Path::new("test.midi")));
+        assert!(crate::archive::is_midi_file(Path::new("test.lmpj")));
+        assert!(!crate::archive::is_midi_file(Path::new("test.zip")));
     }
 }

@@ -96,7 +96,7 @@ pub fn render_counter_frame(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lumino_event::window::video::{CounterAlignment, CounterSeparator};
+    use lumino_message::events::window::video::{CounterAlignment, CounterSeparator};
     use lumino_midi_loader::{NoteEvent, TrackManager};
 
     fn make_doc() -> MidiDocument {
@@ -130,7 +130,7 @@ mod tests {
             text: "Notes: {nc} / {tn}".to_string(),
             alignment: CounterAlignment::TopLeft,
             font_size: 14,
-            font: lumino_event::window::video::CounterFont::Bitmap,
+            font: lumino_message::events::window::video::CounterFont::Bitmap,
             separator: CounterSeparator::Nothing,
             padding_zeroes: false,
             bpm_int_pad: 3,
@@ -311,7 +311,7 @@ mod tests {
         let doc = make_doc();
         let mut config = test_config();
         config.text = "音符: {nc} / {tn}".to_string();
-        config.font = lumino_event::window::video::CounterFont::System {
+        config.font = lumino_message::events::window::video::CounterFont::System {
             family: "微软雅黑".to_string(),
         };
         let mut stats = CounterStats::default();
@@ -346,7 +346,7 @@ mod tests {
     fn test_renderer_invalid_font_fails() {
         let missing = std::env::temp_dir().join("__lumino_no_such_font_9f3a.ttf");
         let res = CounterFontRenderer::new(
-            &lumino_event::window::video::CounterFont::File {
+            &lumino_message::events::window::video::CounterFont::File {
                 path: missing.to_string_lossy().to_string(),
             },
             40,

@@ -86,8 +86,8 @@ pub fn load_soundfont_cached(
     }
 
     // 缓存未命中，使用音色库标签追踪加载与缓存插入过程中的内存分配
-    let soundfont = lumino_memtrace::with_tag(
-        lumino_memtrace::AllocTag::SoundFont,
+    let soundfont = lumino_diagnostics::memtrace::with_tag(
+        lumino_diagnostics::memtrace::AllocTag::SoundFont,
         || -> Result<Arc<dyn SoundfontBase>, String> {
             tracing::info!(
                 "SoundfontCache: 缓存未命中，加载音色库 {:?} (sr={})",

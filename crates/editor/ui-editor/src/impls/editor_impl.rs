@@ -19,7 +19,7 @@ impl Editor {
     /// 创建新的编辑器实例
     pub fn new() -> Self {
         // 使用 UI 内存标签包裹编辑器初始化，便于内存监控归因
-        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+        lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             Self {
                 editor_state: crate::editor_state::EditorState::new(),
                 grid_cache: canvas::Cache::new(),

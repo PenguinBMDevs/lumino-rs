@@ -31,8 +31,8 @@ impl Editor {
 
         // Emit sync event for deletion
         if let Some((tick, key, length, velocity, channel, track_idx)) = note_info {
-            lumino_event::emit(lumino_event::Event::Window(
-                lumino_event::window::Event::local_note_deleted(
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_deleted(
                     tick, key, length, velocity, channel, track_idx,
                 ),
             ));
@@ -79,8 +79,8 @@ impl Editor {
 
         // Emit sync events for each deleted note
         for (tick, key, length, velocity, channel, track_idx) in deleted_notes {
-            lumino_event::emit(lumino_event::Event::Window(
-                lumino_event::window::Event::local_note_deleted(
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_deleted(
                     tick, key, length, velocity, channel, track_idx,
                 ),
             ));

@@ -23,7 +23,7 @@ use crate::texture_waterfall::scheduler::generate::{
     generate_one_track_group, sort_notes_per_track,
 };
 use crate::texture_waterfall::types::{WaterfallGroupTile, WaterfallTileCoord};
-use lumino_memory_monitor::MemoryMonitor;
+use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 mod generate;
 

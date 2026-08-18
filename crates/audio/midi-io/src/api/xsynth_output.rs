@@ -7,7 +7,7 @@
 
 use std::sync::{Arc, Mutex};
 
-use lumino_realtime::{RealtimeEventSender, SynthEvent};
+use crate::realtime::{RealtimeEventSender, SynthEvent};
 use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
 
 use crate::constants::*;

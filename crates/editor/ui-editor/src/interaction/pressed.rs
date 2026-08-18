@@ -337,8 +337,8 @@ impl Editor {
 
     /// 发送新音符添加的协作同步事件
     pub(super) fn emit_note_added_event(&self, note: &Note) {
-        lumino_event::emit(lumino_event::Event::Window(
-            lumino_event::window::Event::local_note_added(
+        lumino_message::events::emit(lumino_message::events::Event::Window(
+            lumino_message::events::window::Event::local_note_added(
                 note.tick,
                 note.key,
                 note.length,

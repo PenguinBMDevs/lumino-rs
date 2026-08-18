@@ -525,8 +525,8 @@ impl Editor {
             tick_offset,
             key_offset
         );
-        lumino_event::emit(lumino_event::Event::Window(
-            lumino_event::window::Event::local_note_moved(
+        lumino_message::events::emit(lumino_message::events::Event::Window(
+            lumino_message::events::window::Event::local_note_moved(
                 original_tick,
                 original_key,
                 length,

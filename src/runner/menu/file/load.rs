@@ -199,8 +199,8 @@ impl RunnerInner {
         tracing::info!("开始后台加载 MIDI 文件：{:?}", path);
         // 看门狗在加载 MIDI 前确保已启动，并标记加载状态：看门狗只在
         // 加载 MIDI 期间监控内存，内存超限直接终止进程；非加载场景一律不监控。
-        lumino_memory_monitor::watchdog::spawn_watchdog();
-        lumino_memory_monitor::midi_guard::set_midi_load_active(true);
+        lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
 
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
@@ -208,7 +208,7 @@ impl RunnerInner {
                 lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
                 |parsed| {
                     // 加载结束（成功）清除加载状态，看门狗恢复休眠
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::midi_parsed(std::sync::Arc::new(
                             parsed,
@@ -217,7 +217,7 @@ impl RunnerInner {
                 },
                 |e| {
                     // 加载结束（失败）清除加载状态，看门狗恢复休眠
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::midi_parse_error(e),
                     )
@@ -234,8 +234,8 @@ impl RunnerInner {
     fn load_material_project(&self, path: PathBuf) {
         tracing::info!("开始后台加载素材文件：{:?}", path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
-        lumino_memory_monitor::watchdog::spawn_watchdog();
-        lumino_memory_monitor::midi_guard::set_midi_load_active(true);
+        lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             progress_cb("正在加载素材", 0.3);
@@ -256,7 +256,7 @@ impl RunnerInner {
             match load_result {
                 Ok(Ok(parsed)) => {
                     progress_cb("素材加载成功", 1.0);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
                             parsed,
@@ -267,7 +267,7 @@ impl RunnerInner {
                     let msg = format!("加载素材失败: {e}");
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParseError(msg),
                     ));
@@ -276,7 +276,7 @@ impl RunnerInner {
                     let msg = format!("加载素材任务失败: {e}");
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParseError(msg),
                     ));
@@ -289,8 +289,8 @@ impl RunnerInner {
     fn load_lmpj_project(&self, path: PathBuf) {
         tracing::info!("开始后台加载 LMPJ 工程：{:?}", path);
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
-        lumino_memory_monitor::watchdog::spawn_watchdog();
-        lumino_memory_monitor::midi_guard::set_midi_load_active(true);
+        lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+        lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
         let progress_cb = self.window_state.progress_cb.clone();
         tokio::spawn(async move {
             progress_cb("正在加载 LMPJ 工程", 0.3);
@@ -304,7 +304,7 @@ impl RunnerInner {
             match load_result {
                 Ok(Ok(parsed)) => {
                     progress_cb("工程加载成功", 1.0);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParsed(std::sync::Arc::new(
                             parsed,
@@ -315,7 +315,7 @@ impl RunnerInner {
                     let msg = format!("加载 LMPJ 工程失败: {e}");
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParseError(msg),
                     ));
@@ -324,7 +324,7 @@ impl RunnerInner {
                     let msg = format!("加载 LMPJ 工程任务失败: {e}");
                     progress_cb(&msg, 1.0);
                     tracing::error!("{}", msg);
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                     lumino_ui::event::emit(lumino_ui::event::Event::menu_file(
                         lumino_ui::event::menu::file::Event::MidiParseError(msg),
                     ));

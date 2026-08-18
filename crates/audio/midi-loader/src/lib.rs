@@ -1,3 +1,4 @@
+pub mod archive;
 pub mod constants;
 #[cfg(test)]
 pub mod document_tests;

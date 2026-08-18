@@ -4,11 +4,11 @@ use crate::runner::{RunnerInner, dialog_manager::DialogType};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
-use lumino_event::window::video::VideoExportConfig as EventVideoExportConfig;
 use lumino_export::video::{
     Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig,
 };
 use lumino_gfx::TextureFormat;
+use lumino_message::events::window::video::VideoExportConfig as EventVideoExportConfig;
 
 use memory_task::run_video_export_task;
 use streaming_task::run_streaming_video_export_task;
@@ -47,32 +47,34 @@ impl RunnerInner {
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
         let container = match container {
-            lumino_event::window::video::Container::Mp4 => Container::Mp4,
-            lumino_event::window::video::Container::Mov => Container::Mov,
-            lumino_event::window::video::Container::Mkv => Container::Mkv,
-            lumino_event::window::video::Container::Avi => Container::Avi,
+            lumino_message::events::window::video::Container::Mp4 => Container::Mp4,
+            lumino_message::events::window::video::Container::Mov => Container::Mov,
+            lumino_message::events::window::video::Container::Mkv => Container::Mkv,
+            lumino_message::events::window::video::Container::Avi => Container::Avi,
         };
         let codec = match codec {
-            lumino_event::window::video::VideoCodec::H264 => VideoCodec::H264,
-            lumino_event::window::video::VideoCodec::H265 => VideoCodec::H265,
-            lumino_event::window::video::VideoCodec::ProRes => VideoCodec::ProRes,
-            lumino_event::window::video::VideoCodec::Vp9 => VideoCodec::Vp9,
-            lumino_event::window::video::VideoCodec::Av1 => VideoCodec::Av1,
+            lumino_message::events::window::video::VideoCodec::H264 => VideoCodec::H264,
+            lumino_message::events::window::video::VideoCodec::H265 => VideoCodec::H265,
+            lumino_message::events::window::video::VideoCodec::ProRes => VideoCodec::ProRes,
+            lumino_message::events::window::video::VideoCodec::Vp9 => VideoCodec::Vp9,
+            lumino_message::events::window::video::VideoCodec::Av1 => VideoCodec::Av1,
         };
         let backend = match backend {
-            lumino_event::window::video::EncoderBackend::Software => EncoderBackend::Software,
-            lumino_event::window::video::EncoderBackend::VideoToolbox => {
+            lumino_message::events::window::video::EncoderBackend::Software => {
+                EncoderBackend::Software
+            }
+            lumino_message::events::window::video::EncoderBackend::VideoToolbox => {
                 EncoderBackend::VideoToolbox
             }
-            lumino_event::window::video::EncoderBackend::Nvenc => EncoderBackend::Nvenc,
-            lumino_event::window::video::EncoderBackend::Amf => EncoderBackend::Amf,
-            lumino_event::window::video::EncoderBackend::Qsv => EncoderBackend::Qsv,
-            lumino_event::window::video::EncoderBackend::Vaapi => EncoderBackend::Vaapi,
+            lumino_message::events::window::video::EncoderBackend::Nvenc => EncoderBackend::Nvenc,
+            lumino_message::events::window::video::EncoderBackend::Amf => EncoderBackend::Amf,
+            lumino_message::events::window::video::EncoderBackend::Qsv => EncoderBackend::Qsv,
+            lumino_message::events::window::video::EncoderBackend::Vaapi => EncoderBackend::Vaapi,
         };
         let quality = match quality {
-            lumino_event::window::video::QualityPreset::High => QualityPreset::High,
-            lumino_event::window::video::QualityPreset::Medium => QualityPreset::Medium,
-            lumino_event::window::video::QualityPreset::Low => QualityPreset::Low,
+            lumino_message::events::window::video::QualityPreset::High => QualityPreset::High,
+            lumino_message::events::window::video::QualityPreset::Medium => QualityPreset::Medium,
+            lumino_message::events::window::video::QualityPreset::Low => QualityPreset::Low,
         };
 
         tracing::info!(
@@ -154,14 +156,14 @@ impl RunnerInner {
             .spawn(move || {
                 let is_gpu_compute_style = matches!(
                     render_mode,
-                    lumino_event::window::video::RenderMode::Waterfall
-                        | lumino_event::window::video::RenderMode::MIDITrail
+                    lumino_message::events::window::video::RenderMode::Waterfall
+                        | lumino_message::events::window::video::RenderMode::MIDITrail
                 );
                 // 计数器模式：CPU 端渲染（无卷帘/键盘/标尺），帧数据为 BGRA 直出。
                 let is_cpu_renderer = matches!(
                     render_mode,
-                    lumino_event::window::video::RenderMode::NoteCounter
-                        | lumino_event::window::video::RenderMode::DataCurve
+                    lumino_message::events::window::video::RenderMode::NoteCounter
+                        | lumino_message::events::window::video::RenderMode::DataCurve
                 );
                 // GPU compute / 3D 渲染输出为 rgba8unorm storage texture，
                 // 因此编码器输入像素格式必须为 "rgba"；
@@ -177,7 +179,7 @@ impl RunnerInner {
                 // 计数器渲染配置（仅 NoteCounter 模式有效）
                 let counter_config = if matches!(
                     render_mode,
-                    lumino_event::window::video::RenderMode::NoteCounter
+                    lumino_message::events::window::video::RenderMode::NoteCounter
                 ) {
                     Some(super::video_export::CounterRenderConfig::from(&note_counter))
                 } else {
@@ -186,7 +188,7 @@ impl RunnerInner {
                 // 数据曲线渲染配置（仅 DataCurve 模式有效）
                 let data_curve_config = if matches!(
                     render_mode,
-                    lumino_event::window::video::RenderMode::DataCurve
+                    lumino_message::events::window::video::RenderMode::DataCurve
                 ) {
                     Some(super::video_export::DataCurveRenderConfig::from(&data_curve))
                 } else {

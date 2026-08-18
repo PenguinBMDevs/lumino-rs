@@ -10,7 +10,7 @@
 
 use std::collections::{BinaryHeap, VecDeque};
 
-use lumino_event::window::video::{
+use lumino_message::events::window::video::{
     CounterAlignment, CounterFont, CounterSeparator, NoteCounterConfig,
 };
 use lumino_midi_loader::MidiDocument;

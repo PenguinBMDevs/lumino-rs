@@ -1,6 +1,6 @@
 //! GPU 资源内存追踪辅助函数
 //!
-//! 将 wgpu Texture / Buffer 的创建与释放上报到 lumino_memtrace。
+//! 将 wgpu Texture / Buffer 的创建与释放上报到 lumino_diagnostics::memtrace。
 
 /// 计算纹理占用的字节数（含 block-compressed 格式）。
 pub fn texture_size_bytes(texture: &wgpu::Texture) -> u64 {
@@ -19,20 +19,20 @@ pub fn texture_extent_size_bytes(format: wgpu::TextureFormat, size: wgpu::Extent
 
 /// 上报新创建的 Texture。
 pub fn add_texture(texture: &wgpu::Texture) {
-    lumino_memtrace::add_gpu_resource(texture_size_bytes(texture));
+    lumino_diagnostics::memtrace::add_gpu_resource(texture_size_bytes(texture));
 }
 
 /// 上报即将释放的 Texture。
 pub fn sub_texture(texture: &wgpu::Texture) {
-    lumino_memtrace::sub_gpu_resource(texture_size_bytes(texture));
+    lumino_diagnostics::memtrace::sub_gpu_resource(texture_size_bytes(texture));
 }
 
 /// 上报新创建的 Buffer。
 pub fn add_buffer(buffer: &wgpu::Buffer) {
-    lumino_memtrace::add_gpu_resource(buffer.size());
+    lumino_diagnostics::memtrace::add_gpu_resource(buffer.size());
 }
 
 /// 上报即将释放的 Buffer。
 pub fn sub_buffer(buffer: &wgpu::Buffer) {
-    lumino_memtrace::sub_gpu_resource(buffer.size());
+    lumino_diagnostics::memtrace::sub_gpu_resource(buffer.size());
 }

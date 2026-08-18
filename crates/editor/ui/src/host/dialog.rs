@@ -83,7 +83,7 @@ impl Host {
     /// 内部把 `RecoverTrackEntryPayload` 转换为 UI 状态结构并填充对话框。
     pub fn apply_recover_track_entries(
         &mut self,
-        entries: Vec<lumino_event::window::track::RecoverTrackEntryPayload>,
+        entries: Vec<lumino_message::events::window::track::RecoverTrackEntryPayload>,
     ) {
         self.root.apply_recover_track_entries(entries);
         self.ui_dirty = true;
@@ -93,7 +93,7 @@ impl Host {
     /// Runner 加载 `.lmdeltrack` 后，通过此方法把音轨重新加入 sidebar.tracks + editor_state
     pub fn apply_track_restored(
         &mut self,
-        payload: lumino_event::window::track::TrackDeletionPayload,
+        payload: lumino_message::events::window::track::TrackDeletionPayload,
     ) {
         self.root.apply_track_restored(payload);
         self.ui_dirty = true;

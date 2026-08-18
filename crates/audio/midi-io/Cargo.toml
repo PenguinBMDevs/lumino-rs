@@ -13,14 +13,19 @@ workspace = true
 
 [dependencies]
 lumino-midi-model = { workspace = true }
+lumino-midi-loader = { workspace = true }
 libloading = { workspace = true }
 midir = { workspace = true }
+midly = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 xsynth-core = { workspace = true }
 xsynth-soundfonts = { workspace = true }
-lumino-realtime = { workspace = true }
-lumino-memtrace = { workspace = true }
+xsynth-realtime = { workspace = true }
+lumino-diagnostics = { workspace = true }
+parking_lot = { workspace = true }
+puffin = { workspace = true }
+crossbeam-channel = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = ["Win32_Media_Audio"] }

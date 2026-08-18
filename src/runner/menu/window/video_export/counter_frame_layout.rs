@@ -3,7 +3,7 @@
 //! 从 `counter_frame.rs` 拆出，控制文件行数。行高统一由渲染器提供，
 //! 使点阵（整数倍缩放）与 TTF（真实像素行高）两种字体后端行为一致。
 
-use lumino_event::window::video::CounterAlignment as A;
+use lumino_message::events::window::video::CounterAlignment as A;
 
 use super::counter_font::CounterFontRenderer;
 use super::counter_stats::CounterRenderConfig;

@@ -12,12 +12,12 @@ use lumino_export::audio::config::{
 impl RunnerInner {
     pub(crate) fn handle_start_audio_export(
         &mut self,
-        config: lumino_event::window::dialog::AudioExportConfig,
+        config: lumino_message::events::window::dialog::AudioExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) {
         use std::time::Instant;
 
-        let lumino_event::window::dialog::AudioExportConfig {
+        let lumino_message::events::window::dialog::AudioExportConfig {
             midi_path,
             soundfont_path,
             output_path,
@@ -54,30 +54,40 @@ impl RunnerInner {
         let output_path_buf = PathBuf::from(&output_path);
 
         let channel_mode = match channels {
-            lumino_event::window::audio::AudioChannels::Mono => AudioChannelMode::Mono,
-            lumino_event::window::audio::AudioChannels::Stereo => AudioChannelMode::Stereo,
+            lumino_message::events::window::audio::AudioChannels::Mono => AudioChannelMode::Mono,
+            lumino_message::events::window::audio::AudioChannels::Stereo => {
+                AudioChannelMode::Stereo
+            }
         };
         let interpolation_val = match interpolation {
-            lumino_event::window::audio::Interpolation::None => AudioInterpolation::Nearest,
-            lumino_event::window::audio::Interpolation::Linear => AudioInterpolation::Linear,
+            lumino_message::events::window::audio::Interpolation::None => {
+                AudioInterpolation::Nearest
+            }
+            lumino_message::events::window::audio::Interpolation::Linear => {
+                AudioInterpolation::Linear
+            }
         };
         let channel_threading_val = match channel_threading {
-            lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
-            lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
-            lumino_event::window::audio::ThreadingOption::Manual(n) => ThreadMode::Manual(n),
+            lumino_message::events::window::audio::ThreadingOption::None => ThreadMode::None,
+            lumino_message::events::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
+            lumino_message::events::window::audio::ThreadingOption::Manual(n) => {
+                ThreadMode::Manual(n)
+            }
         };
         let key_threading_val = match key_threading {
-            lumino_event::window::audio::ThreadingOption::None => ThreadMode::None,
-            lumino_event::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
-            lumino_event::window::audio::ThreadingOption::Manual(n) => ThreadMode::Manual(n),
+            lumino_message::events::window::audio::ThreadingOption::None => ThreadMode::None,
+            lumino_message::events::window::audio::ThreadingOption::Auto => ThreadMode::Auto,
+            lumino_message::events::window::audio::ThreadingOption::Manual(n) => {
+                ThreadMode::Manual(n)
+            }
         };
 
         let audio_codec = match audio_format {
-            lumino_event::window::audio::AudioFormat::WAV => AudioCodec::Pcm,
-            lumino_event::window::audio::AudioFormat::FLAC => AudioCodec::Flac,
-            lumino_event::window::audio::AudioFormat::MP3 => AudioCodec::Mp3,
-            lumino_event::window::audio::AudioFormat::Ogg => AudioCodec::Vorbis,
-            lumino_event::window::audio::AudioFormat::WavPack => AudioCodec::WavPack,
+            lumino_message::events::window::audio::AudioFormat::WAV => AudioCodec::Pcm,
+            lumino_message::events::window::audio::AudioFormat::FLAC => AudioCodec::Flac,
+            lumino_message::events::window::audio::AudioFormat::MP3 => AudioCodec::Mp3,
+            lumino_message::events::window::audio::AudioFormat::Ogg => AudioCodec::Vorbis,
+            lumino_message::events::window::audio::AudioFormat::WavPack => AudioCodec::WavPack,
         };
 
         // 1. 创建进度通道，将渲染进度发回主线程更新 UI

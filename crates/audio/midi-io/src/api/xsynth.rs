@@ -8,7 +8,7 @@ use xsynth_core::{
     soundfont::SoundfontBase,
 };
 
-use lumino_realtime::{
+use crate::realtime::{
     RealtimeEventSender, RealtimeSynth, StreamRestartError, SynthEvent,
     ThreadCount as LuminoThreadCount, XSynthRealtimeConfig,
 };

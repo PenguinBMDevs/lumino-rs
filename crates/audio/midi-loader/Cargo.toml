@@ -22,9 +22,13 @@ bincode = { workspace = true }
 zstd = { workspace = true }
 encoding_rs = { workspace = true }
 lumino-midi-model = { workspace = true }
-lumino-memory-monitor = { workspace = true }
-lumino-memtrace = { workspace = true }
-lumino-archive-reader = { workspace = true }
+lumino-diagnostics = { workspace = true }
+unarc-rs = { workspace = true }
+zip = { workspace = true }
+tar = { workspace = true }
+flate2 = { workspace = true }
+xz2 = { workspace = true }
+iso9660 = { workspace = true }
 thiserror = { workspace = true }
 puffin = { workspace = true }
 tempfile = { workspace = true }

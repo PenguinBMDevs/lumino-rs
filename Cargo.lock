@@ -4125,21 +4125,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
-name = "lumino-archive-reader"
-version = "0.2.0"
-dependencies = [
- "flate2",
- "iso9660",
- "tar",
- "tempfile",
- "thiserror 2.0.20",
- "tracing",
- "unarc-rs",
- "xz2",
- "zip",
-]
-
-[[package]]
 name = "lumino-cloud"
 version = "0.2.0"
 dependencies = [
@@ -4198,6 +4183,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "lumino-diagnostics"
+version = "0.2.0"
+dependencies = [
+ "libc",
+ "mimalloc",
+ "tikv-jemalloc-ctl",
+ "tikv-jemallocator",
+ "tracing",
+ "winapi",
+]
+
+[[package]]
 name = "lumino-dialog"
 version = "0.2.0"
 dependencies = [
@@ -4225,14 +4222,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumino-event"
-version = "0.2.0"
-dependencies = [
- "lumino-midi-loader",
- "tracing",
-]
-
-[[package]]
 name = "lumino-export"
 version = "0.2.0"
 dependencies = [
@@ -4241,9 +4230,8 @@ dependencies = [
  "encoding_rs",
  "hound",
  "lumino-core",
+ "lumino-diagnostics",
  "lumino-extras",
- "lumino-memory-monitor",
- "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-midi-model",
  "lumino-midiplayer",
@@ -4286,8 +4274,8 @@ dependencies = [
  "half",
  "im",
  "lumino-core",
+ "lumino-diagnostics",
  "lumino-editor-state",
- "lumino-memtrace",
  "lumino-midi-loader",
  "lumino-midiplayer",
  "lumino-note-core",
@@ -4301,47 +4289,34 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumino-memory-monitor"
-version = "0.2.0"
-dependencies = [
- "libc",
- "tracing",
- "winapi",
-]
-
-[[package]]
-name = "lumino-memtrace"
-version = "0.2.0"
-dependencies = [
- "mimalloc",
- "tikv-jemalloc-ctl",
- "tikv-jemallocator",
- "tracing",
-]
-
-[[package]]
 name = "lumino-message"
 version = "0.2.0"
 dependencies = [
  "iced_widget",
  "lumino-core",
- "lumino-event",
+ "lumino-midi-loader",
  "lumino-note-core",
+ "tracing",
 ]
 
 [[package]]
 name = "lumino-midi-io"
 version = "0.2.0"
 dependencies = [
+ "crossbeam-channel",
  "libloading 0.9.0",
- "lumino-memtrace",
+ "lumino-diagnostics",
+ "lumino-midi-loader",
  "lumino-midi-model",
- "lumino-realtime",
+ "lumino-midly",
  "midir",
+ "parking_lot",
+ "puffin",
  "thiserror 2.0.20",
  "tracing",
  "windows 0.62.2",
  "xsynth-core",
+ "xsynth-realtime",
  "xsynth-soundfonts",
 ]
 
@@ -4351,19 +4326,23 @@ version = "0.2.0"
 dependencies = [
  "bincode",
  "encoding_rs",
- "lumino-archive-reader",
- "lumino-memory-monitor",
- "lumino-memtrace",
+ "flate2",
+ "iso9660",
+ "lumino-diagnostics",
  "lumino-midi-model",
  "lumino-midly",
  "puffin",
  "rayon",
  "serde",
  "serde_json",
+ "tar",
  "tempfile",
  "thiserror 2.0.20",
  "tokio",
  "tracing",
+ "unarc-rs",
+ "xz2",
+ "zip",
  "zstd",
 ]
 
@@ -4373,8 +4352,7 @@ version = "0.2.0"
 dependencies = [
  "bincode",
  "encoding_rs",
- "lumino-memory-monitor",
- "lumino-memtrace",
+ "lumino-diagnostics",
  "lumino-midly",
  "serde",
  "serde_json",
@@ -4389,7 +4367,7 @@ dependencies = [
  "bincode",
  "bytemuck",
  "futures",
- "lumino-memory-monitor",
+ "lumino-diagnostics",
  "lumino-midi-loader",
  "lumino-note-core",
  "rayon",
@@ -4428,19 +4406,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lumino-playback"
-version = "0.2.0"
-dependencies = [
- "crossbeam-channel",
- "lumino-midi-io",
- "lumino-midi-loader",
- "lumino-midly",
- "parking_lot",
- "puffin",
- "tracing",
-]
-
-[[package]]
 name = "lumino-project"
 version = "0.2.0"
 dependencies = [
@@ -4456,16 +4421,6 @@ dependencies = [
  "toml 0.9.12+spec-1.1.0",
  "tracing",
  "zstd",
-]
-
-[[package]]
-name = "lumino-realtime"
-version = "0.2.0"
-dependencies = [
- "tracing",
- "xsynth-core",
- "xsynth-realtime",
- "xsynth-soundfonts",
 ]
 
 [[package]]
@@ -4490,13 +4445,12 @@ dependencies = [
  "lumino-cloud",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-diagnostics",
  "lumino-dialog",
- "lumino-event",
  "lumino-export",
  "lumino-extras",
  "lumino-gfx",
- "lumino-memory-monitor",
- "lumino-memtrace",
+ "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-midly",
@@ -4544,19 +4498,16 @@ dependencies = [
  "image",
  "lumino-collaboration",
  "lumino-core",
+ "lumino-diagnostics",
  "lumino-editor-state",
- "lumino-event",
  "lumino-export",
  "lumino-extras",
  "lumino-gfx",
- "lumino-memory-monitor",
- "lumino-memtrace",
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
  "lumino-midly",
  "lumino-note-core",
- "lumino-playback",
  "lumino-project",
  "lumino-ui-core",
  "lumino-ui-editor",
@@ -4586,7 +4537,6 @@ dependencies = [
  "iced_widget",
  "image",
  "lumino-core",
- "lumino-event",
  "lumino-extras",
  "lumino-message",
  "lumino-note-core",
@@ -4608,11 +4558,10 @@ dependencies = [
  "iced_widget",
  "im",
  "lumino-core",
+ "lumino-diagnostics",
  "lumino-editor-state",
- "lumino-event",
  "lumino-extras",
  "lumino-gfx",
- "lumino-memtrace",
  "lumino-message",
  "lumino-midi-loader",
  "lumino-note-core",

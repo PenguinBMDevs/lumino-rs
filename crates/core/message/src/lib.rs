@@ -10,6 +10,7 @@ pub mod cloud_action;
 pub mod collaboration;
 pub mod context_menu;
 pub mod custom_precision;
+pub mod events;
 pub mod load_confirm;
 pub mod loop_range;
 pub mod project_settings;

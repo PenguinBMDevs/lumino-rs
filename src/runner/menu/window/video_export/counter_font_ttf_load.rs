@@ -3,7 +3,7 @@
 //! 与渲染逻辑分离（`counter_font_ttf.rs` 只负责光栅化与缓存），控制文件行数。
 
 use ab_glyph::{FontArc, FontVec};
-use lumino_event::window::video::CounterFont;
+use lumino_message::events::window::video::CounterFont;
 
 /// 系统字体路径表（按名称查找）。
 ///
