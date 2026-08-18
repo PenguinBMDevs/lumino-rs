@@ -27,9 +27,9 @@ impl EventCollector {
     }
 
     pub fn callback(&self) -> impl Fn(CollaborationEvent) + Clone + Send + 'static {
-        let events = self.events.clone();
+        let events = Arc::clone(&self.events);
         move |event| {
-            let events = events.clone();
+            let events = Arc::clone(&events);
             let event_clone = event.clone();
             tokio::spawn(async move {
                 let mut lock = events.lock().await;

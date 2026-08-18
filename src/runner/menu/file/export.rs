@@ -114,7 +114,7 @@ impl RunnerInner {
         } else {
             128
         };
-        let cb = self.window_state.progress_cb.clone();
+        let cb = Arc::clone(&self.window_state.progress_cb);
 
         tokio::spawn(async move {
             cb("准备导出工程", 0.0);

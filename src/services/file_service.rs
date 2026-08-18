@@ -28,11 +28,11 @@ impl FileService {
         log_done_msg: &'static str,
         task: impl FnOnce(ProgressCallback) -> Result<(), String> + Send + 'static,
     ) -> Result<(), String> {
-        let cb: ProgressCallback = (*self.progress_cb).clone();
+        let cb: ProgressCallback = Arc::clone(&(*self.progress_cb));
         cb(start_msg, 0.0);
         cb(active_msg, 0.3);
 
-        let cb_for_blocking = cb.clone();
+        let cb_for_blocking = Arc::clone(&cb);
         match tokio::task::spawn_blocking(move || task(cb_for_blocking)).await {
             Ok(Ok(())) => {
                 cb(done_msg, 1.0);

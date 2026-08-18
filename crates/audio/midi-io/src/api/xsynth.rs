@@ -252,7 +252,7 @@ impl Api for XSynth {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(XSynthOutputConn {
-            sender: self.sender_shared.clone(),
+            sender: Arc::clone(&self.sender_shared),
         }))
     }
 

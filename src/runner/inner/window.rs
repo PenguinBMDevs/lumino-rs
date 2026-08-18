@@ -2,6 +2,8 @@
 //!
 //! RunnerInner 中与窗口操作、对话框结果处理等相关的实现。
 
+use std::sync::Arc;
+
 use super::super::dialog_manager::DialogResult;
 use super::super::midi_manager::{MidiManager, handle_audio_action};
 use super::super::window_manager::WindowManager;
@@ -155,8 +157,8 @@ impl RunnerInner {
             event_loop,
             ui_state,
             &config.ui,
-            self.saving.clone(),
-            self.cloud_saving.clone(),
+            Arc::clone(&self.saving),
+            Arc::clone(&self.cloud_saving),
         ) {
             Ok(new_window) => {
                 // 替换窗口管理器

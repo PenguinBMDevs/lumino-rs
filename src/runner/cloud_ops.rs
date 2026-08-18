@@ -5,6 +5,7 @@
 //! 保存到云 / 自动回传见 `cloud_save` 模块（长度红线拆分）。
 
 use std::path::Path;
+use std::sync::Arc;
 
 use lumino_ui::event::{self, cloud as cloud_event};
 use lumino_ui::state::cloud_state::CloudEntryUi;
@@ -20,7 +21,7 @@ impl RunnerInner {
 
     /// 后台列出目录，结果回传
     pub(super) fn run_cloud_list(&mut self, id: String, path: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.list_dir(&id, &path);
@@ -91,7 +92,7 @@ impl RunnerInner {
         remote_path: String,
         target: cloud_event::DownloadTarget,
     ) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         let local = match target {
             cloud_event::DownloadTarget::Material => storage::config_dir().join("Materials"),
             cloud_event::DownloadTarget::Import => download_dir(),
@@ -189,7 +190,7 @@ impl RunnerInner {
 
     /// 后台新建文件夹，结果回传
     pub(super) fn run_cloud_new_folder(&mut self, id: String, parent: String, name: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let path = if parent.is_empty() || parent == "/" {

@@ -8,6 +8,7 @@
 //! - 进度经 `cloud_progress_tx` 推送到覆盖型悬浮窗
 
 use std::path::Path;
+use std::sync::Arc;
 
 use lumino_ui::event::{self, cloud as cloud_event};
 
@@ -70,7 +71,7 @@ impl RunnerInner {
         let progress_tx = self.window_state.cloud_progress_tx.clone();
         let _ = progress_tx.send((format!("正在导出工程 {file_stem}.lmpj"), 0.1));
 
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             // 导出工程为**单文件归档**（LMPJ 魔数开头，完整包含全部音轨数据）。
             // 注意：不得使用 save_project_to_folder_with_entry——它生成 67 字节
@@ -157,7 +158,7 @@ impl RunnerInner {
         let progress_tx = self.window_state.cloud_progress_tx.clone();
         let _ = progress_tx.send((format!("正在上传 {tmp_remote}"), 0.2));
 
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             // 失败阶段标记：0=上传失败 / 1=删除失败 / 2=重命名失败
@@ -237,7 +238,7 @@ impl RunnerInner {
         let progress_tx = self.window_state.cloud_progress_tx.clone();
         let _ = progress_tx.send((format!("正在上传素材 {file_name}"), 0.2));
 
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             // 远程路径 = 目标目录 / 文件名
             let remote = if dir_path.is_empty() {

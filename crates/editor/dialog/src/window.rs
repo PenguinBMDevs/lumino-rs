@@ -126,7 +126,7 @@ impl DialogWindow {
         }
 
         let gfx = lumino_gfx::Context::new_blocking(
-            self.window.clone(),
+            Arc::clone(&self.window),
             physical_size.width,
             physical_size.height,
         )
@@ -163,14 +163,14 @@ impl DialogWindow {
 
         let mut ui = match self.dialog_type {
             DialogType::Settings => lumino_ui::Host::new_settings_dialog(
-                self.window.clone(),
+                Arc::clone(&self.window),
                 physical_size.width,
                 physical_size.height,
                 ui_config,
                 gfx,
             ),
             _ => lumino_ui::Host::new_dialog(
-                self.window.clone(),
+                Arc::clone(&self.window),
                 physical_size.width,
                 physical_size.height,
                 ui_config,

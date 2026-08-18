@@ -5,6 +5,8 @@
 //! - 复制 = 下载到本地临时 + 上传（不依赖服务器端 COPY 支持）
 //! - 结果统一经 `OperationResult`（带 kind）回传注入
 
+use std::sync::Arc;
+
 use lumino_ui::event::{self, cloud as cloud_event};
 
 use crate::runner::RunnerInner;
@@ -15,7 +17,7 @@ use super::cloud::lock_cloud;
 impl RunnerInner {
     /// 后台重命名（同目录），结果回传
     pub(super) fn run_cloud_rename(&mut self, id: String, from: String, to: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.rename(&id, &from, &to);
@@ -29,7 +31,7 @@ impl RunnerInner {
 
     /// 后台删除文件/目录，结果回传
     pub(super) fn run_cloud_delete(&mut self, id: String, path: String, is_dir: bool) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.delete(&id, &path, is_dir);
@@ -43,7 +45,7 @@ impl RunnerInner {
 
     /// 后台移动（剪切，云内部），结果回传
     pub(super) fn run_cloud_move(&mut self, id: String, from: String, to_dir: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.move_file(&id, &from, &to_dir);
@@ -63,7 +65,7 @@ impl RunnerInner {
         to_dir: String,
         is_cut: bool,
     ) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = if is_cut {

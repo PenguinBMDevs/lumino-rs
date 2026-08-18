@@ -1,4 +1,4 @@
-use super::compute_move_blocks;
+use super::move_blocks::compute_move_blocks;
 
 /// 用标准库 memmove 语义（Vec::copy_within）对照验证搬移序列的最终结果
 fn assert_move_correct(src: usize, dst: usize, count: usize, buf_len: usize) {

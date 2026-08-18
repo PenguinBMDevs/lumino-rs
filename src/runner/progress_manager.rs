@@ -224,7 +224,7 @@ impl ProgressManager {
         let physical_size = window.inner_size();
 
         let gfx = match lumino_gfx::Context::new_blocking(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
         ) {
@@ -236,7 +236,7 @@ impl ProgressManager {
         };
 
         let ui = lumino_ui::Host::new(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
             ui_config,

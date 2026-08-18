@@ -94,7 +94,7 @@ fn spawn_streaming_generation(
 
     std::thread::spawn(move || {
         let time_group_cb = {
-            let tx = tx.clone();
+            let tx = Arc::clone(&tx);
             let (tw, th) = (tile_width, tile_height);
             move |time_group: u32, tile: WaterfallGroupTile| {
                 if let Ok(guard) = tx.lock() {
@@ -130,7 +130,7 @@ pub fn handle_waterfall_generate(mut context: WaterfallGenerateContext<'_>) {
     push_waterfall_progress(context.progress, "正在后台生成贴图瀑布流\u{2026}", 0.0);
 
     spawn_streaming_generation(
-        context.progress.clone(),
+        Arc::clone(context.progress),
         context.result_tx,
         context.config.tile_width_px,
         context.key_count as u32,

@@ -7,6 +7,7 @@
 //! - 多个 MIDI 文件 → 弹出选择对话框（当前自动选择第一个，待完善）
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use lumino_midi_loader::loader::archive_loading::{
     ArchiveLoadResult, extract_entry_with_tempdir, scan_file_for_midi,
@@ -202,7 +203,7 @@ impl RunnerInner {
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
 
-        let progress_cb = self.window_state.progress_cb.clone();
+        let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
             run_async_task(
                 lumino_midi_loader::loader::load_parsed_midi(path, Some(&progress_cb)),
@@ -236,7 +237,7 @@ impl RunnerInner {
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
-        let progress_cb = self.window_state.progress_cb.clone();
+        let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
             progress_cb("正在加载素材", 0.3);
             let path_for_blocking = path.clone();
@@ -291,7 +292,7 @@ impl RunnerInner {
         // 看门狗在加载前确保已启动，并标记加载状态（与 load_midi_file 一致）
         lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
         lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
-        let progress_cb = self.window_state.progress_cb.clone();
+        let progress_cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
             progress_cb("正在加载 LMPJ 工程", 0.3);
             let path_for_blocking = path.clone();

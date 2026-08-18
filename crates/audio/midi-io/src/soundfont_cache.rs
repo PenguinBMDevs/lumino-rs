@@ -36,7 +36,7 @@ fn get_from_cache(path: &Path, sample_rate: u32) -> Option<Arc<dyn SoundfontBase
         && let Ok(modified) = metadata.modified()
         && modified == entry.modified
     {
-        return Some(entry.soundfont.clone());
+        return Some(Arc::clone(&entry.soundfont));
     }
     None
 }
@@ -100,7 +100,7 @@ pub fn load_soundfont_cached(
             let soundfont: Arc<dyn SoundfontBase> = Arc::new(soundfont);
 
             // 添加到缓存
-            add_to_cache(path, sample_rate, soundfont.clone());
+            add_to_cache(path, sample_rate, Arc::clone(&soundfont));
 
             Ok(soundfont)
         },

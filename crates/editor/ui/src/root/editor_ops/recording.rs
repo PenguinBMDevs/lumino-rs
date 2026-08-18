@@ -1,5 +1,7 @@
 //! Root 录制操作子模块
 
+use std::sync::Arc;
+
 use crate::editor::note::Note;
 use crate::editor::recording::RecordingState;
 use crate::root::Root;
@@ -61,7 +63,7 @@ impl Root {
 
         let device_id = device.id;
         let device_name = device.name.clone();
-        let buffer = self.midi.input_buffer.clone();
+        let buffer = Arc::clone(&self.midi.input_buffer);
 
         let callback: lumino_midi_io::MidiInputCallback =
             Box::new(move |_timestamp: u64, data: &[u8]| {

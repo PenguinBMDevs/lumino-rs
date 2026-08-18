@@ -202,7 +202,7 @@ impl Kdmapi {
         {
             tracing::info!("KDMAPI 实例已存在，重用它");
             return Ok(Self {
-                inner: instance.clone(),
+                inner: Arc::clone(instance),
             });
         }
 
@@ -260,7 +260,7 @@ impl Kdmapi {
 
             // 保存到全局实例（后续 open_output 可以创建多个输出连接）
             if let Ok(mut guard) = KDMAPI_INSTANCE.lock() {
-                *guard = Some(inner.clone());
+                *guard = Some(Arc::clone(&inner));
             }
 
             tracing::info!("KDMAPI 已初始化，版本: {}", inner.version);
@@ -294,7 +294,7 @@ impl Api for Kdmapi {
             return Err(Error::DeviceNotFound(id));
         }
         Ok(Box::new(KdmapiOutputConn {
-            bundle: self.inner.bundle.clone(),
+            bundle: Arc::clone(&self.inner.bundle),
         }))
     }
 

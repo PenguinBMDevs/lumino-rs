@@ -67,7 +67,7 @@ impl FfmpegEncoder {
             .stderr
             .take()
             .ok_or_else(|| VideoExportError::PipeSetupFailed("ffmpeg stderr 未 piped".into()))?;
-        let stderr_buf_clone = stderr_buf.clone();
+        let stderr_buf_clone = Arc::clone(&stderr_buf);
         thread::spawn(move || {
             let mut reader = std::io::BufReader::new(stderr);
             let mut line = String::new();

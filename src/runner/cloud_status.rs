@@ -5,6 +5,8 @@
 //! - 断连提醒统一入口（会话只弹一次独立面板）
 //! - 连接快照注入主窗口 + 广播到已打开的设置/云对话框
 
+use std::sync::Arc;
+
 use lumino_ui::event::{self, cloud as cloud_event};
 use lumino_ui::state::cloud_state::CloudConnInfo;
 
@@ -20,7 +22,7 @@ impl RunnerInner {
     /// 后台线程执行，逐个尝试 auto_connect 标记的连接；
     /// 失败仅记录日志并显示离线标志，**不弹提醒面板**（用户主动操作才提醒）。
     pub(super) fn startup_auto_connect(&self) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let results = mgr.connect_all_auto();

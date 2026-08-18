@@ -52,7 +52,7 @@ impl WindowManager {
         let physical_size = window.inner_size();
 
         let gfx = lumino_gfx::Context::new_blocking(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
         )
@@ -68,7 +68,7 @@ impl WindowManager {
         lumino_note_core::font_scanner::prewarm_font_cache();
 
         let mut ui = lumino_ui::Host::new(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
             ui_config,

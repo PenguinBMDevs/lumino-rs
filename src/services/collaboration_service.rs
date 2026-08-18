@@ -90,7 +90,7 @@ impl CollaborationService {
 
         // 将客户端放入 Mutex 后，Spawn 后台任务取出并操作
         *self.lock_client()? = Some(client);
-        let client_arc = self.client.clone();
+        let client_arc = Arc::clone(&self.client);
 
         tokio::spawn(async move {
             let mut rx = rx; // `&mut rx` 需要可变绑定

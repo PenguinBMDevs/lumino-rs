@@ -167,12 +167,12 @@ impl Context {
             .map_err(|e| ContextError::SurfaceCreation(e.to_string()))?;
 
         let shared = match SHARED_GPU.get() {
-            Some(Ok(shared)) => shared.clone(),
+            Some(Ok(shared)) => Arc::clone(shared),
             Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
             None => {
                 let gpu = init_shared_gpu(&instance, &surface).await?;
                 let gpu = Arc::new(gpu);
-                let _ = SHARED_GPU.set(Ok(gpu.clone()));
+                let _ = SHARED_GPU.set(Ok(Arc::clone(&gpu)));
                 gpu
             }
         };

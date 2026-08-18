@@ -13,6 +13,8 @@ mod memory;
 mod midi;
 mod test_mode;
 
+use std::sync::Arc;
+
 use lumino_ui::state::root_state::DialogType;
 
 use super::inner::{Runner, TestModeState};
@@ -45,7 +47,7 @@ impl winit::application::ApplicationHandler for Runner {
                 {
                     tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
                     let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                    let progress_cb = this.window_state.progress_cb.clone();
+                    let progress_cb = Arc::clone(&this.window_state.progress_cb);
                     let test_duration = test_config.test_time;
 
                     this.window_state.window.ui_mut().skip_ui_rendering = true;
@@ -153,7 +155,7 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 处理进度消息
         puffin::profile_scope!("runner_about_to_wait_process_messages");
-        let main_window = this.window_state.window.window().clone();
+        let main_window = Arc::clone(this.window_state.window.window());
         let main_ui = this.window_state.window.ui_mut();
         this.window_state
             .progress
@@ -265,7 +267,7 @@ impl crate::runner::inner::RunnerInner {
         puffin::profile_scope!("runner_about_to_wait_waterfall_progress");
         let waterfall_progress = self.window_state.window.ui().drain_waterfall_progress();
         if !waterfall_progress.is_empty() {
-            let cb = self.window_state.progress_cb.clone();
+            let cb = Arc::clone(&self.window_state.progress_cb);
             for (msg, pct) in waterfall_progress {
                 // 检测洋葱皮贴图生成完成（progress >= 1.0）
                 if pct >= 1.0 && self.session_tracker.editing_start_time.is_none() {

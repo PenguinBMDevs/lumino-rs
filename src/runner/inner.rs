@@ -184,8 +184,8 @@ impl Runner {
             event_loop,
             ui_state,
             &config.ui,
-            saving.clone(),
-            cloud_saving.clone(),
+            Arc::clone(&saving),
+            Arc::clone(&cloud_saving),
         )
         .map_err(|e| InitError::Window(e.to_string()))?;
 
@@ -225,7 +225,7 @@ impl Runner {
         // 创建新的处理器和服务
         let file_handler = FileHandler::new();
         let midi_handler = MidiHandler::new();
-        let file_service = FileService::new(progress_cb.clone());
+        let file_service = FileService::new(Arc::clone(&progress_cb));
         let collaboration_service = CollaborationService::new();
 
         event_loop.set_control_flow(ControlFlow::Wait);

@@ -46,7 +46,7 @@ pub(super) fn run_streaming_video_export_task(
         video_export::cli_progress::CliProgressBar::new(30, "MIDI解析"),
     ));
     let progress_tx_for_parse = progress_tx.clone();
-    let parse_bar_for_cb = parse_bar.clone();
+    let parse_bar_for_cb = Arc::clone(&parse_bar);
     let parse_progress: std::sync::Arc<dyn Fn(String, f64) + Send + Sync> =
         std::sync::Arc::new(move |message: String, value: f64| {
             if let Ok(mut bar) = parse_bar_for_cb.lock() {

@@ -3,7 +3,9 @@
 //! 独立文件引入（document.rs 底部 `#[path] mod tests`），保持 document.rs 行数合理。
 //! 覆盖：插入排序不变式、稳定插入、越界处理、删除/替换一致性。
 
-use super::*;
+use super::MidiDocument;
+use crate::note_event::NoteEvent;
+use crate::track::TrackManager;
 
 /// 构造音轨音符列表：`(start_tick, end_tick, key)` → NoteEvent（velocity=100, channel=0）。
 /// 按 start_tick 升序排序，模拟加载后的有序轨道。

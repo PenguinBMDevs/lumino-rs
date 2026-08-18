@@ -123,7 +123,7 @@ impl RunnerInner {
                 self.run_cloud_connect_existing(id);
             }
             cloud_event::Event::DeleteConnection { id } => {
-                let mgr = self.cloud.clone();
+                let mgr = Arc::clone(&self.cloud);
                 let id_for_ui = id.clone();
                 std::thread::spawn(move || {
                     let mut mgr = lock_cloud(&mgr);
@@ -238,7 +238,7 @@ impl RunnerInner {
         username: String,
         password: String,
     ) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let protocol = match protocol.as_str() {
@@ -300,7 +300,7 @@ impl RunnerInner {
 
     /// 断开连接（后台执行）
     fn run_cloud_disconnect(&mut self, id: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             lock_cloud(&mgr).disconnect(&id);
         });
@@ -310,7 +310,7 @@ impl RunnerInner {
 
     /// 后台连接已保存的指定连接，结果回传
     fn run_cloud_connect_existing(&mut self, id: String) {
-        let mgr = self.cloud.clone();
+        let mgr = Arc::clone(&self.cloud);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.connect(&id);

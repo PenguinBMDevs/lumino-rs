@@ -1,6 +1,7 @@
 //! Runner 文件菜单：保存
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::sync::atomic::Ordering;
 
 use crate::runner::RunnerInner;
@@ -76,7 +77,7 @@ impl RunnerInner {
         };
 
         // 后台写入素材文件（进度条）
-        let cb = self.window_state.progress_cb.clone();
+        let cb = Arc::clone(&self.window_state.progress_cb);
         let save_path2 = save_path.clone();
         let material_name2 = material_name.clone();
         tokio::spawn(async move {
@@ -298,8 +299,8 @@ impl RunnerInner {
 
         // 标记保存进行中（保存期间禁止关闭软件）
         self.saving.store(true, Ordering::SeqCst);
-        let saving = self.saving.clone();
-        let cb = self.window_state.progress_cb.clone();
+        let saving = Arc::clone(&self.saving);
+        let cb = Arc::clone(&self.window_state.progress_cb);
         tokio::spawn(async move {
             cb("正在保存 LMPJ 文件", 0.3);
             let save_path_for_task = save_path.clone();

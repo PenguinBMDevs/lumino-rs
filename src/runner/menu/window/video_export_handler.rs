@@ -148,7 +148,7 @@ impl RunnerInner {
 
         // 创建取消标志
         let cancel_flag = Arc::new(AtomicBool::new(false));
-        self.window_state.video_export_cancel = cancel_flag.clone();
+        self.window_state.video_export_cancel = Arc::clone(&cancel_flag);
 
         // 后台线程：逐帧渲染 + FFmpeg 编码
         let _ = std::thread::Builder::new()

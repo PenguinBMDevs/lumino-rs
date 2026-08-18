@@ -136,8 +136,8 @@ impl CollaborationClient {
         mut message_rx: mpsc::UnboundedReceiver<ClientMessage>,
         mut shutdown_rx: mpsc::Receiver<()>,
     ) {
-        let state = self.state.clone();
-        let session = self.session.clone();
+        let state = Arc::clone(&self.state);
+        let session = Arc::clone(&self.session);
         let event_callback = self.event_callback.clone();
 
         tokio::spawn(async move {

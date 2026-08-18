@@ -106,7 +106,7 @@ impl RenderContext {
                 .clone()
         } else {
             // 主窗口 / progress 窗口：使用独立 Engine + 当前窗口 Notifier。
-            let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(window.clone()));
+            let shell = iced_wgpu::graphics::Shell::new(WindowNotifier(Arc::clone(window)));
             Engine::new(
                 &wgpu.adapter,
                 wgpu.device.clone(),

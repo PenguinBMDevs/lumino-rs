@@ -31,7 +31,7 @@ pub(crate) struct WindowContext {
 impl WindowContext {
     /// 创建窗口上下文
     pub fn new(window: Arc<winit::window::Window>) -> Self {
-        let clipboard = Clipboard::connect(window.clone());
+        let clipboard = Clipboard::connect(Arc::clone(&window));
 
         Self {
             window,
