@@ -188,7 +188,8 @@ impl CompactEvent {
     /// 获取事件种类
     #[inline]
     pub fn kind(&self) -> EventKind {
-        EventKind::from_u8(packed_field_read!(self, kind, u8, OFFSET_KIND)).unwrap_or(EventKind::Other)
+        EventKind::from_u8(packed_field_read!(self, kind, u8, OFFSET_KIND))
+            .unwrap_or(EventKind::Other)
     }
 
     /// 获取 MIDI 通道

@@ -36,16 +36,31 @@ fn test_apply_move_ops_forward() {
     }];
     let modified = data.apply_move_ops(&ops, false, 127);
     assert_eq!(modified, 2);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 58);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 15.0);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 60);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        5.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        58
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
+        15.0
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").key,
+        60
+    );
     assert_eq!(
         data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
         20.0,
         "未在范围内的音符不变"
     );
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 64);
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        64
+    );
 
     // document 同步更新（唯一权威源）
     let track = data.track_notes(1);
@@ -71,12 +86,30 @@ fn test_apply_move_ops_inverse() {
     // 再 inverse 应还原
     let modified = data.apply_move_ops(&ops, true, 127);
     assert_eq!(modified, 3);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 10.0);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 62);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 20.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 64);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        0.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        60
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
+        10.0
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").key,
+        62
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        20.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        64
+    );
 }
 
 #[test]
@@ -93,7 +126,11 @@ fn test_apply_move_ops_clamps_key() {
         original_keys: vec![],
     }];
     data.apply_move_ops(&ops, false, 20);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 0, "key 应 clamp 到 0");
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        0,
+        "key 应 clamp 到 0"
+    );
 
     let ops2 = vec![MoveOp {
         track_id: 1,
@@ -200,15 +237,39 @@ fn test_undo_redo_with_move_op_entry() {
 
     // undo 应还原
     assert!(data.undo());
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 20.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 64);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        0.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        60
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        20.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        64
+    );
 
     // redo 应再次应用
     assert!(data.redo());
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 58);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 25.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 62);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        5.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        58
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        25.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        62
+    );
 }

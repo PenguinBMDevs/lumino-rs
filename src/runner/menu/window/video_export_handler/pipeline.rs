@@ -6,9 +6,9 @@ use std::time::{Duration, Instant};
 
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::super::video_export::cli_progress::CliProgressBar;
 use super::commands::send_export_error;
 use super::frame::{EncodeFrameQueue, FrameParams, FrameStageStats};
-use super::super::video_export::cli_progress::CliProgressBar;
 
 /// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
 type ProgressMsg = (String, f64, u64, f64, f64);
@@ -90,10 +90,7 @@ impl<'a> FramePipeline<'a> {
             let recv_us = recv_start.elapsed().as_micros() as u64;
 
             // 默认值仅在 queue 与帧数据 FIFO 失步时出现（理论不发生），ppq 用 0 无实际影响
-            let frame_params = self
-                .param_queue
-                .pop_front()
-                .unwrap_or_default();
+            let frame_params = self.param_queue.pop_front().unwrap_or_default();
             let (should_stop, stats) = process(frame_data, frame_params);
 
             acc_recv_us += recv_us;
@@ -183,10 +180,7 @@ impl<'a> FramePipeline<'a> {
                 }
             };
 
-            let drain_params = self
-                .param_queue
-                .pop_front()
-                .unwrap_or_default();
+            let drain_params = self.param_queue.pop_front().unwrap_or_default();
             let (should_stop, _stats) = process(drain_frame, drain_params);
 
             if should_stop {

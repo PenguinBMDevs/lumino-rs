@@ -1,21 +1,21 @@
 //! 流式 MIDI 视频导出后台任务（边解析边渲染，无完整文档驻留内存）。
 
+use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::channel;
-use std::sync::Arc;
 use std::time::Instant;
 
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::super::video_export::{
+    self, generate_keyboard_texture, seconds_to_tick, streaming::StreamingNoteSource,
+};
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
 use super::composite::composite_and_encode_frame;
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
-use super::super::video_export::{
-    self, generate_keyboard_texture, seconds_to_tick, streaming::StreamingNoteSource,
-};
 
 /// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
 type ProgressMsg = (String, f64, u64, f64, f64);
@@ -42,9 +42,9 @@ pub(super) fn run_streaming_video_export_task(
     let start = std::time::Instant::now();
 
     // 阶段 1：解析 MIDI → 硬盘缓存（终端进度条）
-    let parse_bar = Arc::new(std::sync::Mutex::new(video_export::cli_progress::CliProgressBar::new(
-        30, "MIDI解析",
-    )));
+    let parse_bar = Arc::new(std::sync::Mutex::new(
+        video_export::cli_progress::CliProgressBar::new(30, "MIDI解析"),
+    ));
     let progress_tx_for_parse = progress_tx.clone();
     let parse_bar_for_cb = parse_bar.clone();
     let parse_progress: std::sync::Arc<dyn Fn(String, f64) + Send + Sync> =
@@ -126,8 +126,7 @@ pub(super) fn run_streaming_video_export_task(
     }
 
     // 生成键盘贴图
-    let (keyboard_pixels, kb_w, kb_h) =
-        generate_keyboard_texture(width, height, key_count);
+    let (keyboard_pixels, kb_w, kb_h) = generate_keyboard_texture(width, height, key_count);
 
     let mut last_preview_time = Instant::now();
     let mut preview_sent = false;
@@ -137,19 +136,15 @@ pub(super) fn run_streaming_video_export_task(
     // 入队闭包：读取流式音符、计算键色、发送渲染命令
     let (processed_frames, cancelled, smoothed_fps) = {
         let mut enqueue_frame = |queue: &mut EncodeFrameQueue, frame_idx: u64| -> bool {
-            let (notes, params) = match source.read_notes_and_params_for_frame(
-                frame_idx,
-                width,
-                height,
-                fps_f64,
-            ) {
-                Ok(v) => v,
-                Err(e) => {
-                    tracing::error!("读取流式音符失败: {e}");
-                    send_export_error(&progress_tx, format!("导出失败: {e}"));
-                    return true;
-                }
-            };
+            let (notes, params) =
+                match source.read_notes_and_params_for_frame(frame_idx, width, height, fps_f64) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::error!("读取流式音符失败: {e}");
+                        send_export_error(&progress_tx, format!("导出失败: {e}"));
+                        return true;
+                    }
+                };
 
             let tick = seconds_to_tick(
                 frame_idx as f64 / fps_f64,
@@ -190,13 +185,8 @@ pub(super) fn run_streaming_video_export_task(
                 .is_err()
             {
                 tracing::error!("发送 RenderVideoFrame 命令失败");
-                let _ = progress_tx.send((
-                    "导出失败：渲染线程通信错误".to_string(),
-                    -1.0,
-                    0,
-                    0.0,
-                    0.0,
-                ));
+                let _ =
+                    progress_tx.send(("导出失败：渲染线程通信错误".to_string(), -1.0, 0, 0.0, 0.0));
                 return true;
             }
             false

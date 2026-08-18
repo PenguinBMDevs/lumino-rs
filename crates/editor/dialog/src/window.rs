@@ -202,15 +202,15 @@ impl DialogWindow {
                     editing_time,
                     time_signatures,
                 ) = main_ui.get_project_settings_data();
-                ui.set_project_settings_data(
+                ui.set_project_settings_data(lumino_ui::root::ProjectSettingsDialogData {
                     title,
                     tempo,
                     copyright,
                     author,
                     created_display,
-                    editing_time,
+                    total_editing_time_seconds: editing_time,
                     time_signatures,
-                );
+                });
             }
             DialogType::Settings => {
                 ui.set_settings_dialog_open(true);

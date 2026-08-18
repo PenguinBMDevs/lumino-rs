@@ -10,6 +10,10 @@ pub type NoteData = (f32, u8, f32, u8, u8);
 pub type TrackNotes = (usize, Vec<NoteData>);
 
 /// 对话框结果
+// TODO(P3): Settings variant 占 416 bytes，建议改为 Box<SettingsPanel>。
+// 当前 SettingsPanel 在多个地方直接构造/匹配，改为 Box 会波及相关调用点。
+// 留待 P3 统一评审对话框结果内存布局后再处理。
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DialogResult {
     CustomPrecision {

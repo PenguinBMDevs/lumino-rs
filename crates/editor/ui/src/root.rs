@@ -37,6 +37,8 @@ mod editor_ops;
 pub mod handlers;
 mod view;
 
+pub use editor_ops::dialog::ProjectSettingsDialogData;
+
 /// 应用程序根组件
 pub struct Root {
     pub(crate) sidebar: sidebar::Sidebar,
@@ -359,9 +361,8 @@ impl Root {
             .manager
             .as_ref()
             .map(|m| {
-                m.last_frame().map_or(false, |f| {
-                    f.state == crate::playback::PlaybackState::Playing
-                })
+                m.last_frame()
+                    .is_some_and(|f| f.state == crate::playback::PlaybackState::Playing)
             })
             .unwrap_or_default()
     }

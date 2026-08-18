@@ -138,7 +138,8 @@ impl Root {
         ) && self.sidebar.audio_export_visible
             && self.state.audio_export_dialog.soundfont_path.is_empty()
         {
-            self.state.audio_export_dialog.soundfont_path = self.settings.synth.soundfont_path.clone();
+            self.state.audio_export_dialog.soundfont_path =
+                self.settings.synth.soundfont_path.clone();
         }
 
         // 更新画布偏移

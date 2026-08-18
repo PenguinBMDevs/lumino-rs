@@ -144,7 +144,10 @@ fn test_delete_records_remove_at_event() {
     let mut data = make_data(4);
     data.delete_note_by_index(1);
     // 删除当前音轨 → 记录 RemoveAt 增量事件，不再整轨替换
-    assert!(!data.note_delta_dirty, "已知 current_track 变化走事件增量，不置 dirty");
+    assert!(
+        !data.note_delta_dirty,
+        "已知 current_track 变化走事件增量，不置 dirty"
+    );
     assert_eq!(
         first_remove_at(&data.note_delta_events),
         (1, 1),
@@ -157,7 +160,10 @@ fn test_scattered_edit_records_update_events() {
     // update_note 直接写 document，现在记录 RemoveAt + InsertAt 增量事件
     let mut data = make_data(3);
     data.update_note(data.current_track, 0, Note::new(99.0, 60, 1.0));
-    assert!(!data.note_delta_dirty, "已知 current_track 变化走事件增量，不置 dirty");
+    assert!(
+        !data.note_delta_dirty,
+        "已知 current_track 变化走事件增量，不置 dirty"
+    );
     // 事件顺序：RemoveAt(index=0, count=1)，InsertAt(index=2, note)
     let inserts = insert_at_summary(&data.note_delta_events);
     assert_eq!(inserts.len(), 1, "update_note 产生一个 InsertAt 事件");
@@ -187,7 +193,11 @@ fn test_insert_middle_records_doc_index() {
     let mut data = make_data(2);
     assert!(data.insert_note(data.current_track, Note::new(5.0, 60, 1.0)));
     let inserts = insert_at_summary(&data.note_delta_events);
-    assert_eq!(inserts, vec![(1, 5.0)], "中间插入：InsertAt 索引 = 文档索引 1");
+    assert_eq!(
+        inserts,
+        vec![(1, 5.0)],
+        "中间插入：InsertAt 索引 = 文档索引 1"
+    );
     // 文档侧验证：新音符确实落在索引 1
     let track = data.track_notes(1);
     assert_eq!(track.len(), 3);
@@ -200,7 +210,11 @@ fn test_insert_end_records_doc_index() {
     let mut data = make_data(2);
     assert!(data.insert_note(data.current_track, Note::new(100.0, 60, 1.0)));
     let inserts = insert_at_summary(&data.note_delta_events);
-    assert_eq!(inserts, vec![(2, 100.0)], "末尾插入：InsertAt 索引 = 文档索引 2");
+    assert_eq!(
+        inserts,
+        vec![(2, 100.0)],
+        "末尾插入：InsertAt 索引 = 文档索引 2"
+    );
 }
 
 #[test]
@@ -209,7 +223,11 @@ fn test_insert_same_tick_records_doc_index() {
     let mut data = make_data(2);
     assert!(data.insert_note(data.current_track, Note::new(10.0, 61, 1.0)));
     let inserts = insert_at_summary(&data.note_delta_events);
-    assert_eq!(inserts, vec![(2, 10.0)], "同 tick 插入：稳定插后，InsertAt 索引 = 2");
+    assert_eq!(
+        inserts,
+        vec![(2, 10.0)],
+        "同 tick 插入：稳定插后，InsertAt 索引 = 2"
+    );
     // 事件携带的 note 必须与文档实际音符一致（含 key）
     if let Some(NoteDeltaEvent::InsertAt { note, .. }) = data.note_delta_events.first() {
         assert_eq!(note.key, 61);
@@ -223,7 +241,11 @@ fn test_update_note_move_to_middle_records_remove_and_insert() {
     data.update_note(data.current_track, 0, Note::new(15.0, 60, 1.0));
     // 文档 [10, 15, 20]：新音符索引 1
     let inserts = insert_at_summary(&data.note_delta_events);
-    assert_eq!(inserts, vec![(1, 15.0)], "移动到中间：InsertAt 索引 = 新文档索引 1");
+    assert_eq!(
+        inserts,
+        vec![(1, 15.0)],
+        "移动到中间：InsertAt 索引 = 新文档索引 1"
+    );
     assert!(
         matches!(
             data.note_delta_events.first(),

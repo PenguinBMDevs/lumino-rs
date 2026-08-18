@@ -143,7 +143,11 @@ mod tests {
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, -2);
 
-        assert!(editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
+        assert!(
+            editor_data
+                .apply_drag_state_async(&ds, 127)
+                .expect("异步拖拽提交应成功")
+        );
         let modified = loop {
             if let Some(result) = editor_data.poll_async_commit() {
                 break result.expect("异步提交应成功");
@@ -151,10 +155,34 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
-        assert_eq!(editor_data.get_note_view(0).expect("第 1 个音符视图应存在").key, 58);
-        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 25.0);
-        assert_eq!(editor_data.get_note_view(2).expect("第 3 个音符视图应存在").key, 62);
+        assert_eq!(
+            editor_data
+                .get_note_view(0)
+                .expect("第 1 个音符视图应存在")
+                .tick,
+            5.0
+        );
+        assert_eq!(
+            editor_data
+                .get_note_view(0)
+                .expect("第 1 个音符视图应存在")
+                .key,
+            58
+        );
+        assert_eq!(
+            editor_data
+                .get_note_view(2)
+                .expect("第 3 个音符视图应存在")
+                .tick,
+            25.0
+        );
+        assert_eq!(
+            editor_data
+                .get_note_view(2)
+                .expect("第 3 个音符视图应存在")
+                .key,
+            62
+        );
     }
 
     #[test]
@@ -163,7 +191,11 @@ mod tests {
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
         let ds = DragState::new(bv, 0, 60);
-        assert!(!editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
+        assert!(
+            !editor_data
+                .apply_drag_state_async(&ds, 127)
+                .expect("异步拖拽提交应成功")
+        );
     }
 
     #[test]
@@ -172,7 +204,11 @@ mod tests {
         let bv = BitVec::from_elem(3, false);
         let mut ds = DragState::new(bv, 0, 60);
         ds.set_delta(5, 0);
-        assert!(!editor_data.apply_drag_state_async(&ds, 127).expect("异步拖拽提交应成功"));
+        assert!(
+            !editor_data
+                .apply_drag_state_async(&ds, 127)
+                .expect("异步拖拽提交应成功")
+        );
     }
 
     #[test]

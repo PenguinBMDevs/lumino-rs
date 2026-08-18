@@ -148,8 +148,8 @@ mod tests {
 
     #[test]
     fn test_start_note_edit_start() {
-        let (mut data, mut interaction) = setup_state();
-        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+        let (_data, mut interaction) = setup_state();
+        let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         start_note_edit(&mut data, &mut interaction, 0, HitType::Start, (0.0, 0.0));
         assert!(matches!(
             interaction.edit_state,
@@ -159,8 +159,8 @@ mod tests {
 
     #[test]
     fn test_start_note_edit_middle() {
-        let (mut data, mut interaction) = setup_state();
-        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+        let (_data, mut interaction) = setup_state();
+        let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         start_note_edit(&mut data, &mut interaction, 0, HitType::Middle, (0.0, 0.0));
         assert!(matches!(
             interaction.edit_state,
@@ -187,8 +187,8 @@ mod tests {
     #[test]
     fn test_apply_note_changes_dragging_is_noop() {
         // ghost 方案：Dragging 期间 apply_note_changes 不再写入 notes
-        let (mut data, mut interaction) = setup_state();
-        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+        let (_data, mut interaction) = setup_state();
+        let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         interaction.edit_state = EditState::Dragging {
             note_index: 0,
             drag_state: DragState::from_single(0, data.current_track_note_count(), 0, 60),
@@ -209,8 +209,8 @@ mod tests {
 
     #[test]
     fn test_apply_note_changes_non_edit_state() {
-        let (mut data, _interaction) = setup_state();
-        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+        let (_data, _interaction) = setup_state();
+        let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         assert!(!apply_note_changes(
             &mut data,
             &EditState::Idle,
@@ -222,8 +222,8 @@ mod tests {
 
     #[test]
     fn test_handle_delete_pressed() {
-        let (mut data, _) = setup_state();
-        data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+        let (_data, _) = setup_state();
+        let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
         let result = handle_delete_pressed(&mut data, Some((0, HitType::Middle)));
         assert_eq!(result, Some(0));
         assert_eq!(data.current_track_note_count(), 0);
@@ -231,7 +231,8 @@ mod tests {
 
     #[test]
     fn test_handle_delete_pressed_no_hover() {
-        let (mut data, _) = setup_state();
+        let (_data, _) = setup_state();
+        let mut data = EditorData::new();
         assert!(handle_delete_pressed(&mut data, None).is_none());
     }
 }

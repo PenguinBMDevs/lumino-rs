@@ -79,7 +79,8 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         LocalizedEraser::new(EraserBehavior::Default, settings.display.language),
         LocalizedEraser::new(EraserBehavior::DirectSelect, settings.display.language),
     ];
-    let current_eraser = LocalizedEraser::new(settings.editing.eraser_behavior, settings.display.language);
+    let current_eraser =
+        LocalizedEraser::new(settings.editing.eraser_behavior, settings.display.language);
 
     column![
         text(t.general_title)
@@ -116,7 +117,10 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             pick_list(
                 vec![
                     LocalizedTrackAdd::new(TrackAddBehavior::AutoSwitch, settings.display.language),
-                    LocalizedTrackAdd::new(TrackAddBehavior::StayCurrent, settings.display.language),
+                    LocalizedTrackAdd::new(
+                        TrackAddBehavior::StayCurrent,
+                        settings.display.language
+                    ),
                 ],
                 Some(LocalizedTrackAdd::new(
                     settings.editing.track_add_behavior,

@@ -12,7 +12,61 @@ use lumino_ui_core::message::VelocityAction;
 
 use super::super::super::super::RESIZE_HANDLE_HEIGHT;
 use super::super::super::state::{AutomationDrag, VelocityCanvasState};
+use super::hover::CurveDrawDragParams;
 use super::publish_velocity;
+
+/// 自动化工具操作参数
+#[derive(Debug, Clone, Copy)]
+struct AutomationToolActionParams<'a> {
+    /// 光标位置
+    cursor_pos: Point,
+    /// 自动化视图参数
+    view: &'a lumino_gfx::automation::AutomationViewParams,
+    /// 最大值
+    max_val: f32,
+    /// 当前自动化 Lane 引用
+    lane_ref: Option<&'a lumino_note_core::AutomationLane>,
+    /// Lane 索引
+    lane_idx: Option<u16>,
+    /// 音轨索引
+    track_idx: u16,
+}
+
+/// 移动锚点拖拽参数
+#[derive(Debug, Clone)]
+struct MoveAnchorDragParams {
+    /// 自动化视图参数
+    view: lumino_gfx::automation::AutomationViewParams,
+    /// 自动化目标
+    target: lumino_note_core::AutomationTarget,
+    /// 最大值
+    max_val: f32,
+    /// 音轨索引
+    track_idx: u16,
+    /// Lane 索引
+    lane_idx: Option<usize>,
+    /// 原始 tick
+    old_tick: u32,
+    /// 光标位置
+    cursor_pos: Point,
+}
+
+/// 锚点位置移动参数
+#[derive(Debug, Clone, Copy)]
+struct AnchorPositionMoveParams<'a> {
+    /// 音轨索引
+    track_idx: u16,
+    /// Lane 索引
+    lane_idx: usize,
+    /// 自动化目标
+    target: &'a lumino_note_core::AutomationTarget,
+    /// 原始 tick
+    old_tick: u32,
+    /// 新 tick
+    new_tick: u32,
+    /// 新值
+    new_value: u16,
+}
 
 impl<'a> super::super::super::VelocityCanvas<'a> {
     /// 处理 CC/Bend 自动化模式下的按钮点击
@@ -67,12 +121,14 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
 
         self.handle_automation_tool_action(
             state,
-            cursor_pos,
-            &view,
-            max_val,
-            lane_ref.map(|v| &**v),
-            lane_idx.map(|v| v as u16),
-            track_idx,
+            &AutomationToolActionParams {
+                cursor_pos,
+                view: &view,
+                max_val,
+                lane_ref: lane_ref.map(|v| &**v),
+                lane_idx: lane_idx.map(|v| v as u16),
+                track_idx,
+            },
         )
     }
 
@@ -80,23 +136,36 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     fn handle_automation_tool_action(
         &self,
         state: &mut VelocityCanvasState,
-        cursor_pos: Point,
-        view: &lumino_gfx::automation::AutomationViewParams,
-        max_val: f32,
-        lane_ref: Option<&lumino_note_core::AutomationLane>,
-        lane_idx: Option<u16>,
-        track_idx: u16,
+        params: &AutomationToolActionParams<'_>,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
             Tool::Eraser => self.handle_automation_eraser_delete(
-                lane_ref, lane_idx, track_idx, view, cursor_pos, max_val,
+                params.lane_ref,
+                params.lane_idx,
+                params.track_idx,
+                params.view,
+                params.cursor_pos,
+                params.max_val,
             ),
             // 自动化面板的编辑交互统一由 Curve 工具负责：
             // 命中锚点 → 拖拽移动；未命中 → 曲线绘制。
             // Pencil/Pointer 等其他工具不操作自动化面板（仅在钢琴卷帘使用）。
             Tool::Curve => self
-                .handle_automation_anchor_drag_start(state, lane_ref, view, cursor_pos, max_val)
-                .or_else(|| self.handle_automation_curve_start(state, view, cursor_pos, max_val)),
+                .handle_automation_anchor_drag_start(
+                    state,
+                    params.lane_ref,
+                    params.view,
+                    params.cursor_pos,
+                    params.max_val,
+                )
+                .or_else(|| {
+                    self.handle_automation_curve_start(
+                        state,
+                        params.view,
+                        params.cursor_pos,
+                        params.max_val,
+                    )
+                }),
             _ => None,
         }
     }
@@ -180,20 +249,31 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
 
         match drag {
             AutomationDrag::MoveAnchor { old_tick } => self.handle_move_anchor_drag(
-                state, view, target, max_val, track_idx, lane_idx, old_tick, cursor_pos,
+                state,
+                &MoveAnchorDragParams {
+                    view,
+                    target,
+                    max_val,
+                    track_idx,
+                    lane_idx,
+                    old_tick,
+                    cursor_pos,
+                },
             ),
             AutomationDrag::CurveDraw {
                 start_tick,
                 start_value,
             } => self.handle_curve_draw_drag(
                 state,
-                view,
-                target,
-                max_val,
-                track_idx,
-                start_tick,
-                start_value,
-                cursor_pos,
+                &CurveDrawDragParams {
+                    view,
+                    target,
+                    max_val,
+                    track_idx,
+                    start_tick,
+                    start_value,
+                    cursor_pos,
+                },
             ),
         }
     }
@@ -202,30 +282,38 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     fn handle_move_anchor_drag(
         &self,
         state: &mut VelocityCanvasState,
-        view: lumino_gfx::automation::AutomationViewParams,
-        target: lumino_note_core::AutomationTarget,
-        max_val: f32,
-        track_idx: u16,
-        lane_idx: Option<usize>,
-        old_tick: u32,
-        cursor_pos: Point,
+        params: &MoveAnchorDragParams,
     ) -> Option<canvas::Action<Message>> {
-        let lane_idx = lane_idx?;
-        let new_tick_f = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
+        let lane_idx = params.lane_idx?;
+        let new_tick_f = self.snap_tick(self.x_to_tick(params.cursor_pos.x)).max(0.0);
         let new_tick = new_tick_f as u32;
-        let new_value = view
-            .y_to_value(cursor_pos.y, max_val)
+        let new_value = params
+            .view
+            .y_to_value(params.cursor_pos.y, params.max_val)
             .round()
-            .clamp(0.0, max_val) as u16;
+            .clamp(0.0, params.max_val) as u16;
         state.automation_curve_current = Some((new_tick, new_value));
 
-        if new_tick == old_tick {
-            return self
-                .handle_anchor_value_update(track_idx, lane_idx, old_tick, new_tick, new_value);
+        if new_tick == params.old_tick {
+            return self.handle_anchor_value_update(
+                params.track_idx,
+                lane_idx,
+                params.old_tick,
+                new_tick,
+                new_value,
+            );
         }
 
         self.handle_anchor_position_move(
-            state, track_idx, lane_idx, &target, old_tick, new_tick, new_value,
+            state,
+            &AnchorPositionMoveParams {
+                track_idx: params.track_idx,
+                lane_idx,
+                target: &params.target,
+                old_tick: params.old_tick,
+                new_tick,
+                new_value,
+            },
         )
     }
 
@@ -256,30 +344,27 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     fn handle_anchor_position_move(
         &self,
         state: &mut VelocityCanvasState,
-        track_idx: u16,
-        lane_idx: usize,
-        target: &lumino_note_core::AutomationTarget,
-        old_tick: u32,
-        new_tick: u32,
-        new_value: u16,
+        params: &AnchorPositionMoveParams<'_>,
     ) -> Option<canvas::Action<Message>> {
         let edits = vec![
             AutomationEdit::Delete {
-                track_idx,
-                lane_idx,
-                tick: old_tick,
+                track_idx: params.track_idx,
+                lane_idx: params.lane_idx,
+                tick: params.old_tick,
             },
             AutomationEdit::Add {
-                track_idx,
-                target: target.clone(),
+                track_idx: params.track_idx,
+                target: params.target.clone(),
                 channel: 0,
-                tick: new_tick,
-                value: new_value,
-                shape: target.default_shape(),
+                tick: params.new_tick,
+                value: params.new_value,
+                shape: params.target.default_shape(),
             },
         ];
         // 拖拽过程中把锚点视为已移动到新位置，便于连续拖拽
-        state.automation_drag = Some(AutomationDrag::MoveAnchor { old_tick: new_tick });
+        state.automation_drag = Some(AutomationDrag::MoveAnchor {
+            old_tick: params.new_tick,
+        });
         Some(publish_velocity(VelocityAction::AutomationBatch(edits)))
     }
 }

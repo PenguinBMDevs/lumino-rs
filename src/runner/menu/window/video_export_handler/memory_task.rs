@@ -1,9 +1,9 @@
 //! 内存模式（完整 MIDI 文档）视频导出后台任务。
 
 use std::io::BufWriter;
-use std::sync::atomic::AtomicBool;
-use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
+use std::sync::atomic::AtomicBool;
+use std::sync::mpsc::{Sender, channel};
 use std::time::Instant;
 
 use lumino_event::window::video::RenderMode;
@@ -11,14 +11,14 @@ use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
 use tokio::sync::mpsc::UnboundedSender;
 
+use super::super::video_export::{
+    self, CounterFontRenderer, CounterRenderConfig, CounterStats, DataCurveRenderConfig,
+    DataCurveRenderer, SortableNote, keyboard,
+};
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
 use super::composite::composite_and_encode_frame;
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
-use super::super::video_export::{
-    self, keyboard, CounterFontRenderer, CounterRenderConfig, CounterStats, DataCurveRenderer,
-    DataCurveRenderConfig, SortableNote,
-};
 
 /// 进度消息载荷：(文本, 进度 0..1, 总帧数, 平滑 FPS, 已用秒)
 type ProgressMsg = (String, f64, u64, f64, f64);
@@ -56,7 +56,11 @@ struct MemoryEnqueueCtx<'a> {
 /// 计算当前 tick 的按键高亮色与标尺偏移并入队 `FrameParams`；CPU 渲染模式
 /// （瀑布流/计数器/数据曲线）在此直接生成帧数据并送入编码通道，跳过 GPU 路径。
 /// 返回 `true` 表示应终止渲染循环（配置缺失/通道关闭/取消）。
-fn enqueue_memory_frame(ctx: &mut MemoryEnqueueCtx, queue: &mut EncodeFrameQueue, frame_idx: u64) -> bool {
+fn enqueue_memory_frame(
+    ctx: &mut MemoryEnqueueCtx,
+    queue: &mut EncodeFrameQueue,
+    frame_idx: u64,
+) -> bool {
     let time_sec = frame_idx as f64 / ctx.fps_f64;
     let tempo_changes = &ctx.document.tempo_changes;
     let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ctx.ppq);
@@ -107,15 +111,24 @@ fn enqueue_memory_frame(ctx: &mut MemoryEnqueueCtx, queue: &mut EncodeFrameQueue
                 // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
                 // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
                 let Some(cfg) = ctx.counter_config.as_ref() else {
-                    send_export_error(ctx.progress_tx, "导出失败：计数器模式缺少渲染配置（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：计数器模式缺少渲染配置（内部错误）",
+                    );
                     return true;
                 };
                 let Some(stats) = ctx.counter_stats.as_mut() else {
-                    send_export_error(ctx.progress_tx, "导出失败：计数器模式缺少统计状态（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：计数器模式缺少统计状态（内部错误）",
+                    );
                     return true;
                 };
                 let Some(renderer) = ctx.counter_renderer.as_mut() else {
-                    send_export_error(ctx.progress_tx, "导出失败：计数器模式缺少字体渲染器（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：计数器模式缺少字体渲染器（内部错误）",
+                    );
                     return true;
                 };
                 let out = video_export::render_counter_frame(
@@ -158,15 +171,24 @@ fn enqueue_memory_frame(ctx: &mut MemoryEnqueueCtx, queue: &mut EncodeFrameQueue
                 // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
                 // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
                 let Some(cfg) = ctx.data_curve_config.as_ref() else {
-                    send_export_error(ctx.progress_tx, "导出失败：数据曲线模式缺少渲染配置（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：数据曲线模式缺少渲染配置（内部错误）",
+                    );
                     return true;
                 };
                 let Some(stats) = ctx.counter_stats.as_mut() else {
-                    send_export_error(ctx.progress_tx, "导出失败：数据曲线模式缺少统计状态（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：数据曲线模式缺少统计状态（内部错误）",
+                    );
                     return true;
                 };
                 let Some(renderer) = ctx.data_curve_renderer.as_mut() else {
-                    send_export_error(ctx.progress_tx, "导出失败：数据曲线模式缺少渲染器（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：数据曲线模式缺少渲染器（内部错误）",
+                    );
                     return true;
                 };
                 // 关键：推进统计到当前 tick（与计数器分支一致）。
@@ -174,8 +196,12 @@ fn enqueue_memory_frame(ctx: &mut MemoryEnqueueCtx, queue: &mut EncodeFrameQueue
                 stats.advance(ctx.document, tick, ctx.fps_f64 as u32);
                 let value = match cfg.metric {
                     lumino_event::window::video::DataCurveMetric::Nps => stats.nps as f64,
-                    lumino_event::window::video::DataCurveMetric::Polyphony => stats.polyphony as f64,
-                    lumino_event::window::video::DataCurveMetric::NoteCount => stats.note_count as f64,
+                    lumino_event::window::video::DataCurveMetric::Polyphony => {
+                        stats.polyphony as f64
+                    }
+                    lumino_event::window::video::DataCurveMetric::NoteCount => {
+                        stats.note_count as f64
+                    }
                     lumino_event::window::video::DataCurveMetric::Bpm => {
                         video_export::current_bpm(&ctx.document.tempo_changes, tick)
                     }
@@ -358,8 +384,7 @@ pub(super) fn run_video_export_task(
                     ..cfg.clone()
                 };
                 data_curve_renderer = Some(
-                    DataCurveRenderer::new(&fallback, fps_u32)
-                        .expect("内置点阵字体渲染器不会失败"),
+                    DataCurveRenderer::new(&fallback, fps_u32).expect("内置点阵字体渲染器不会失败"),
                 );
             }
         }

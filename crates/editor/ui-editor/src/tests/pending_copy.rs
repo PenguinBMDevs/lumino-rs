@@ -305,10 +305,7 @@ fn test_released_copy_drag_selects_copies() {
     // 松手即提交：document 4 个音符（原件 + 副本），副本选中
     assert_eq!(editor.editor_state.data.current_track_note_count(), 4);
     assert!(editor.pending_copy_drag_state.is_none());
-    assert!(
-        editor.has_selection(),
-        "提交后副本应保持选中（最新件框选）"
-    );
+    assert!(editor.has_selection(), "提交后副本应保持选中（最新件框选）");
     // 只选中副本（tick 50 / 290），原件不选中
     let selected: Vec<usize> = editor.get_selected_indices();
     let mut ticks: Vec<f32> = selected
@@ -1042,7 +1039,12 @@ fn test_repro_ctrl_drag_vertical_copy_up() {
         "副本应已写入内存（上下拖动复制生效）"
     );
     // 副本在 key 63、tick 不变
-    let notes: Vec<_> = editor.editor_state.data.current_track_notes().iter().collect();
+    let notes: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .collect();
     let copy = notes
         .iter()
         .find(|n| n.key == 63)
@@ -1068,7 +1070,12 @@ fn test_repro_ctrl_drag_vertical_copy_down() {
         2,
         "向下拖动复制应写入内存"
     );
-    let notes: Vec<_> = editor.editor_state.data.current_track_notes().iter().collect();
+    let notes: Vec<_> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .collect();
     assert!(notes.iter().any(|n| n.key == 57), "副本（key 57）应已写入");
     assert!(notes.iter().any(|n| n.key == 60), "原件应保留");
 }

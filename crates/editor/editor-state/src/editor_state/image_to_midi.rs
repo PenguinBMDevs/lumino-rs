@@ -308,15 +308,17 @@ mod tests {
 
     #[test]
     fn test_region_mapping_scales_notes() {
-        let mut state = ImageToMidiState::default();
-        state.preview = Some(ImageToMidiPreview {
-            tracks: vec![vec![PreviewNote {
-                tick: 50.0,
-                length: 10.0,
-                key: 60,
-            }]],
-            orig_width: 100.0,
-        });
+        let mut state = ImageToMidiState {
+            preview: Some(ImageToMidiPreview {
+                tracks: vec![vec![PreviewNote {
+                    tick: 50.0,
+                    length: 10.0,
+                    key: 60,
+                }]],
+                orig_width: 100.0,
+            }),
+            ..Default::default()
+        };
         state.confirm_region(RegionRect::new(100.0, 300.0, 0, 127));
         // orig 50 / 100 * 200 = 100 → tick_start + 100 = 200
         assert_eq!(state.note_screen_tick(50.0), 200.0);

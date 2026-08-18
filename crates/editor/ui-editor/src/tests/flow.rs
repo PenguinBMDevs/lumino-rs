@@ -73,23 +73,65 @@ fn test_single_note_drag_commit_undo_redo_flow() {
     // 松手提交
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 65);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        65
+    );
 
     // 撤销：恢复原位置
     assert!(editor.undo());
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
+        0.0
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        60
+    );
 
     // 重做：再次应用移动
     assert!(editor.redo());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 65);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        65
+    );
 }
 
 #[test]
@@ -102,16 +144,34 @@ fn test_single_note_drag_with_clamp_undo_restores_original() {
 
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
         127,
         "应 clamp 到 127"
     );
 
     // 撤销应恢复到 key=100（原值），而不是 clamp 前的 200
     assert!(editor.undo());
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 100);
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        100
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         50.0
     );
 }
@@ -137,26 +197,62 @@ fn test_batch_drag_commit_undo_redo_flow() {
 
     assert!(editor.commit_current_edit());
     let data = &editor.editor_state.data;
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 200.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 67);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 240.0); // 未选中，不变
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 62);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 680.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 71);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        200.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        67
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
+        240.0
+    ); // 未选中，不变
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").key,
+        62
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        680.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        71
+    );
 
     // 撤销：所有选中音符恢复原位置
     assert!(editor.undo());
     let data = &editor.editor_state.data;
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 480.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 64);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        0.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        60
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        480.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        64
+    );
 
     // 重做
     assert!(editor.redo());
     let data = &editor.editor_state.data;
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 200.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 680.0);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        200.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        680.0
+    );
 }
 
 // ===== 连续多次拖动：每次拖动是独立的 undo 节点 =====
@@ -170,7 +266,12 @@ fn test_multiple_drags_create_independent_undo_steps() {
     setup_dragging(&mut editor, 0, 100, 5);
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
 
@@ -178,23 +279,65 @@ fn test_multiple_drags_create_independent_undo_steps() {
     setup_dragging(&mut editor, 0, 50, 3);
     assert!(editor.commit_current_edit());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         150.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 68);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        68
+    );
 
     // 第一次撤销：回退第二次拖动
     assert!(editor.undo());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 65);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        65
+    );
 
     // 第二次撤销：回退第一次拖动
     assert!(editor.undo());
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
+        0.0
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        60
+    );
 
     // 无法继续撤销
     assert!(!editor.can_undo());
@@ -202,12 +345,22 @@ fn test_multiple_drags_create_independent_undo_steps() {
     // 两次重做
     assert!(editor.redo());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
     assert!(editor.redo());
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         150.0
     );
 }
@@ -224,14 +377,46 @@ fn test_zero_delta_drag_commit_undo_is_noop() {
 
     // commit 仍然返回 true（is_editing=true），但 notes 不变
     assert!(editor.commit_current_edit());
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
+        0.0
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        60
+    );
 
     // 零 delta 不生成 MoveOp，也不 push 快照，因此没有可撤销的操作
     assert!(!editor.can_undo(), "零 delta 拖动不应产生历史记录");
     assert!(!editor.undo());
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
+        0.0
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        60
+    );
 }
 
 // ===== 跨 group 逻辑撤销（直接调用 data.undo_logical）=====

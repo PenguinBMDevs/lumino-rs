@@ -99,7 +99,11 @@ impl Host {
         // 新 MIDI 文档加载后必须标记音符数据变化，触发洋葱皮全量重建。
         // 否则 `track_notes_gen` 不变，`OnionSkinState` 认为无需重建，导致
         // 加载后洋葱皮缓冲里仍然是旧文档（或空）数据。
-        self.root.editor.editor_state.data.mark_track_notes_changed();
+        self.root
+            .editor
+            .editor_state
+            .data
+            .mark_track_notes_changed();
 
         // 拍号/tempo 变化影响网格与标尺，清空缓存强制重建
         self.root.editor.grid_cache.clear();

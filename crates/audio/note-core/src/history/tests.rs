@@ -25,7 +25,7 @@ fn make_snapshot(notes_len: usize) -> EditorSnapshot {
 
 fn assert_snapshot(entry: &HistoryEntry) -> &EditorSnapshot {
     match entry {
-        HistoryEntry::Snapshot(bx) => &*bx,
+        HistoryEntry::Snapshot(bx) => bx,
         HistoryEntry::Operation(_) => panic!("期望 Snapshot，得到 Operation"),
         HistoryEntry::Create(_) => panic!("期望 Snapshot，得到 Create"),
     }
@@ -124,7 +124,12 @@ fn test_history_max_size() {
     }
     assert_eq!(history.undo_len(), 3, "栈应被裁剪到 max_size");
     // 最早的 1、2 被弹出，栈顶是 5
-    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(), 5);
+    assert_eq!(
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"))
+            .notes
+            .len(),
+        5
+    );
 }
 
 #[test]
@@ -235,20 +240,31 @@ fn test_push_mergeable_within_window_merges() {
     let merged = history.push_mergeable(make_snapshot(1), OpKind::NoteCreate);
     assert!(!merged, "首次 push 不应合并");
     assert_eq!(history.undo_len(), 1);
-    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 1);
+    assert_eq!(
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count,
+        1
+    );
 
     // 第二次 push：合并到栈顶，entry_count + 1，notes 保留 snap1
     let merged = history.push_mergeable(make_snapshot(2), OpKind::NoteCreate);
     assert!(merged, "同 op_kind + 窗口内 + 未超限应合并");
     assert_eq!(history.undo_len(), 1, "合并后栈大小不变");
-    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 2);
+    assert_eq!(
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count,
+        2
+    );
 
     // 第三次 push：继续合并
     history.push_mergeable(make_snapshot(3), OpKind::NoteCreate);
     assert_eq!(history.undo_len(), 1);
-    assert_eq!(assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count, 3);
     assert_eq!(
-        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(),
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).entry_count,
+        3
+    );
+    assert_eq!(
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"))
+            .notes
+            .len(),
         1,
         "合并后快照内容应保留 chain 中最早操作之前的状态（snap1）"
     );
@@ -460,7 +476,9 @@ fn test_set_config_trims_stack() {
     assert_eq!(history.undo_len(), 5, "set_config 应立即裁剪栈");
     // 最早的 1-5 被弹出，栈顶是 10
     assert_eq!(
-        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目")).notes.len(),
+        assert_snapshot(history.undo_back().expect("应存在可撤销的历史条目"))
+            .notes
+            .len(),
         10
     );
 }

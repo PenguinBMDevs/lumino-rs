@@ -12,7 +12,10 @@ pub(super) type ProgressMsg = (String, f64, u64, f64, f64);
 /// 发送导出失败进度消息（progress=-1 表示失败，UI 据此弹出错误）。
 ///
 /// 收敛各处重复的 5 元组 `("导出失败: ..", -1.0, 0, 0.0, 0.0)` 发送。
-pub(super) fn send_export_error(progress_tx: &UnboundedSender<ProgressMsg>, message: impl Into<String>) {
+pub(super) fn send_export_error(
+    progress_tx: &UnboundedSender<ProgressMsg>,
+    message: impl Into<String>,
+) {
     let _ = progress_tx.send((message.into(), -1.0, 0, 0.0, 0.0));
 }
 

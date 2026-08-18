@@ -19,8 +19,8 @@
 use std::path::PathBuf;
 
 use lumino_export::midi::{
-    MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent, MidiNoteEvent,
-    MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
+    MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent,
+    MidiNoteEvent, MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
     export_midi_to_bytes,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
@@ -28,8 +28,7 @@ use midly::{MetaMessage, TrackEventKind};
 
 /// 定位仓库根目录下的测试资源 MIDI
 fn test_midi_path() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../../test-file/test_unzip_midi/Erosoul.mid")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../test-file/test_unzip_midi/Erosoul.mid")
 }
 
 /// 从加载后的 `MidiDocument` 构造导出数据（镜像 `editor_midi` 的字段映射）。
@@ -42,20 +41,26 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
         match ev.kind {
             0 => {
                 let (controller, value) = ev.as_control_change();
-                cc_by_track.entry(ev.track).or_default().push(MidiControlChangeEvent {
-                    tick: ev.tick,
-                    channel: ev.channel,
-                    controller,
-                    value,
-                });
+                cc_by_track
+                    .entry(ev.track)
+                    .or_default()
+                    .push(MidiControlChangeEvent {
+                        tick: ev.tick,
+                        channel: ev.channel,
+                        controller,
+                        value,
+                    });
             }
             1 => {
                 let program = ev.as_program_change();
-                pc_by_track.entry(ev.track).or_default().push(MidiProgramChangeEvent {
-                    tick: ev.tick,
-                    channel: ev.channel,
-                    program,
-                });
+                pc_by_track
+                    .entry(ev.track)
+                    .or_default()
+                    .push(MidiProgramChangeEvent {
+                        tick: ev.tick,
+                        channel: ev.channel,
+                        program,
+                    });
             }
             _ => {}
         }
@@ -155,14 +160,20 @@ fn strict_validate(bytes: &[u8]) -> Result<(), String> {
             .ok_or_else(|| format!("音轨 {ti} 为空（缺少 EndOfTrack）"))?;
         match last.kind {
             TrackEventKind::Meta(MetaMessage::EndOfTrack) => {}
-            _ => return Err(format!("音轨 {ti} 最后一个事件不是 EndOfTrack，而是 {last:?}")),
+            _ => {
+                return Err(format!(
+                    "音轨 {ti} 最后一个事件不是 EndOfTrack，而是 {last:?}"
+                ));
+            }
         }
         let eot_count = track
             .iter()
             .filter(|e| matches!(e.kind, TrackEventKind::Meta(MetaMessage::EndOfTrack)))
             .count();
         if eot_count != 1 {
-            return Err(format!("音轨 {ti} 包含 {eot_count} 条 EndOfTrack（应为 1）"));
+            return Err(format!(
+                "音轨 {ti} 包含 {eot_count} 条 EndOfTrack（应为 1）"
+            ));
         }
     }
     Ok(())
@@ -175,7 +186,8 @@ fn test_midi_export_roundtrip_strict() {
     assert!(path.exists(), "测试资源 MIDI 缺失: {:?}", path);
 
     // 使用项目自身的加载器加载（覆盖加载器排序修复）
-    let doc = MidiDocument::from_notes_file(&path, None).expect("加载测试 MIDI 失败（应已被加载器排序修复）");
+    let doc = MidiDocument::from_notes_file(&path, None)
+        .expect("加载测试 MIDI 失败（应已被加载器排序修复）");
     let loaded_notes: usize = doc.notes.iter().map(|t| t.len()).sum();
     assert!(loaded_notes > 0, "加载后应有音符");
 

@@ -7,11 +7,15 @@ fn test_apply_settings_eraser_behavior_changed() {
     let old_settings = root.settings.clone();
 
     let mut new_settings = old_settings.clone();
-    new_settings.editing.eraser_behavior = lumino_core::storage::config::EraserBehavior::DirectSelect;
+    new_settings.editing.eraser_behavior =
+        lumino_core::storage::config::EraserBehavior::DirectSelect;
 
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.editing.eraser_behavior, new_settings.editing.eraser_behavior);
+    assert_eq!(
+        root.settings.editing.eraser_behavior,
+        new_settings.editing.eraser_behavior
+    );
 }
 
 #[test]
@@ -20,7 +24,8 @@ fn test_apply_settings_selection_box_mode_changed() {
     let old_settings = root.settings.clone();
 
     let mut new_settings = old_settings.clone();
-    new_settings.editing.selection_box_mode = lumino_core::storage::config::SelectionBoxMode::Spring;
+    new_settings.editing.selection_box_mode =
+        lumino_core::storage::config::SelectionBoxMode::Spring;
 
     root.apply_settings(new_settings.clone());
 
@@ -73,7 +78,10 @@ fn test_apply_settings_icon_hidpi_changed() {
 
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.display.icon_hidpi, new_settings.display.icon_hidpi);
+    assert_eq!(
+        root.settings.display.icon_hidpi,
+        new_settings.display.icon_hidpi
+    );
 }
 
 #[test]
@@ -86,7 +94,10 @@ fn test_apply_settings_256key_changed() {
 
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.display.enable_256key, new_settings.display.enable_256key);
+    assert_eq!(
+        root.settings.display.enable_256key,
+        new_settings.display.enable_256key
+    );
 }
 
 #[test]
@@ -98,7 +109,10 @@ fn test_apply_settings_no_changes() {
     // 没有变化时，应该不触发同步
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.editing.eraser_behavior, old_settings.editing.eraser_behavior);
+    assert_eq!(
+        root.settings.editing.eraser_behavior,
+        old_settings.editing.eraser_behavior
+    );
     assert_eq!(
         root.settings.editing.selection_box_mode,
         old_settings.editing.selection_box_mode
@@ -128,7 +142,10 @@ fn test_apply_settings_soundfont_path_changed() {
 
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.synth.soundfont_path, new_settings.synth.soundfont_path);
+    assert_eq!(
+        root.settings.synth.soundfont_path,
+        new_settings.synth.soundfont_path
+    );
 }
 
 #[test]
@@ -167,7 +184,10 @@ fn test_apply_settings_xsynth_fade_out_changed() {
 
     root.apply_settings(new_settings.clone());
 
-    assert_eq!(root.settings.synth.xsynth_fade_out, new_settings.synth.xsynth_fade_out);
+    assert_eq!(
+        root.settings.synth.xsynth_fade_out,
+        new_settings.synth.xsynth_fade_out
+    );
 }
 
 #[test]

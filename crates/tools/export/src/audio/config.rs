@@ -199,25 +199,6 @@ impl AudioRenderConfig {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_audio_channel_mode_channel_count() {
-        assert_eq!(AudioChannelMode::Mono.channel_count(), 1);
-        assert_eq!(AudioChannelMode::Stereo.channel_count(), 2);
-    }
-
-    #[test]
-    fn test_audio_channel_mode_into_channel_count() {
-        let mono = AudioChannelMode::Mono;
-        let stereo = AudioChannelMode::Stereo;
-        assert_eq!(ChannelCount::from(mono).count(), 1);
-        assert_eq!(ChannelCount::from(stereo).count(), 2);
-    }
-}
-
 impl Default for AudioRenderConfig {
     fn default() -> Self {
         Self {
@@ -245,5 +226,24 @@ impl Default for AudioRenderConfig {
             note_force_end_delay: 0,
             progress_callback: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_audio_channel_mode_channel_count() {
+        assert_eq!(AudioChannelMode::Mono.channel_count(), 1);
+        assert_eq!(AudioChannelMode::Stereo.channel_count(), 2);
+    }
+
+    #[test]
+    fn test_audio_channel_mode_into_channel_count() {
+        let mono = AudioChannelMode::Mono;
+        let stereo = AudioChannelMode::Stereo;
+        assert_eq!(ChannelCount::from(mono).count(), 1);
+        assert_eq!(ChannelCount::from(stereo).count(), 2);
     }
 }

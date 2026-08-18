@@ -380,15 +380,15 @@ fn test_reset_project_settings_restores_defaults() {
     let mut root = Root::new(&ui_config);
 
     // 模拟用户在工程设置面板填写了数据
-    root.set_project_settings_data(
-        "我的工程".to_string(),
-        "96".to_string(),
-        "© 2026".to_string(),
-        "张三".to_string(),
-        "2026-07-01 10:00:00".to_string(),
-        3600.0,
-        vec![(0, 6, 8)],
-    );
+    root.set_project_settings_data(crate::root::ProjectSettingsDialogData {
+        title: "我的工程".to_string(),
+        tempo: "96".to_string(),
+        copyright: "© 2026".to_string(),
+        author: "张三".to_string(),
+        created_display: "2026-07-01 10:00:00".to_string(),
+        total_editing_time_seconds: 3600.0,
+        time_signatures: vec![(0, 6, 8)],
+    });
     assert_eq!(root.state.project_settings_dialog.title, "我的工程");
     assert_eq!(root.state.project_settings_dialog.tempo, "96");
     assert_eq!(root.state.project_settings_dialog.author, "张三");

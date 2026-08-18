@@ -353,9 +353,7 @@ impl Program<Message, Theme, Renderer> for TrackListCanvas {
                 // 鼠标在右侧音符区滚轮时本列表也会收到同一事件，必须先确认
                 // 鼠标在本 Canvas 范围内，否则 Ctrl+滚轮会与音符区缩放双触发、
                 // 普通滚轮会双倍滚动（与 click_canvas 的位置检查保持一致）。
-                let Some(pos) = cursor.position() else {
-                    return None;
-                };
+                let pos = cursor.position()?;
                 if !bounds.contains(pos) {
                     return None;
                 }

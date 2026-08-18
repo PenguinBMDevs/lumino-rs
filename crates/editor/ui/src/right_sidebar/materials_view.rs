@@ -55,10 +55,10 @@ pub(super) fn panel<'a>(
     // 右键菜单叠加：菜单打开时在面板上覆盖关闭背景 + 悬浮菜单
     let materials = &right_sidebar.materials;
     let Some(target) = materials.context_menu_target else {
-        return content.into();
+        return content;
     };
     if materials.entries.get(target).is_none() {
-        return content.into();
+        return content;
     }
     // 重命名/删除仅对用户素材可用（内置素材为程序资产，置灰禁用）
     let can_edit = materials

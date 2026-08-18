@@ -15,6 +15,8 @@ pub mod operations;
 pub mod project_settings;
 pub mod settings;
 
+pub use project_settings::ProjectSettingsDialogData;
+
 impl Root {
     /// 设置菜单打开状态（菜单打开时不渲染预览音符）
     pub fn set_menu_open(&mut self, open: bool) {

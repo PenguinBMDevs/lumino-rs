@@ -119,7 +119,10 @@ impl RunnerInner {
                 self.midi_state.current_midi_source = None;
                 self.midi_state.cloud_source = None;
                 lumino_extras::palette::unlock_palette();
-                self.window_state.window.ui_mut().dispose_texture_waterfall();
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .dispose_texture_waterfall();
                 // 工程级数据必须随工程关闭一起归零：编辑计时/创建时间
                 // （clear_editor 内部已重置工程设置对话框状态）
                 self.session_tracker.reset();
@@ -168,13 +171,15 @@ impl RunnerInner {
 
                 // 将真实数据设置到 UI 状态中
                 self.window_state.window.ui_mut().set_project_settings_data(
-                    display_title.clone(),
-                    tempo,
-                    copyright,
-                    author,
-                    created_display,
-                    total_editing_time_seconds,
-                    time_signatures,
+                    lumino_ui::root::ProjectSettingsDialogData {
+                        title: display_title.clone(),
+                        tempo,
+                        copyright,
+                        author,
+                        created_display,
+                        total_editing_time_seconds,
+                        time_signatures,
+                    },
                 );
 
                 self.window_state

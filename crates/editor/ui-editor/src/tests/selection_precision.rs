@@ -139,7 +139,7 @@ fn test_selection_follows_mouse_precisely_forward() {
         view.tick_to_x(2200.0),
         view.key_to_y(60) + view.zoom_y / 2.0,
     );
-    let (start_tick, _, ..) = selecting_state(&editor);
+    let (start_tick, ..) = selecting_state(&editor);
     assert_eq!(start_tick, 2200.0, "按下位置即精确起点，不吸附");
 
     // 移动到 tick 2350（仍在单元 [0, 1920) 内）：精确跟随

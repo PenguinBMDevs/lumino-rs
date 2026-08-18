@@ -63,7 +63,8 @@ impl Root {
                 old.editing.selection_box_mode,
                 new.editing.selection_box_mode
             );
-            self.editor.set_selection_box_mode(new.editing.selection_box_mode);
+            self.editor
+                .set_selection_box_mode(new.editing.selection_box_mode);
         }
 
         if old.midi.velocity_filter_threshold != new.midi.velocity_filter_threshold {
@@ -93,7 +94,8 @@ impl Root {
                 old.editing.automation_line_thickness,
                 new.editing.automation_line_thickness
             );
-            self.editor.velocity_panel.automation_line_thickness = new.editing.automation_line_thickness;
+            self.editor.velocity_panel.automation_line_thickness =
+                new.editing.automation_line_thickness;
         }
 
         if old.editing.tempo_max_bpm != new.editing.tempo_max_bpm {
@@ -149,7 +151,11 @@ impl Root {
     /// 同步显示设置（HiDPI 图标、256 键模式、音轨列表显示模式）
     fn sync_display_settings(&mut self, old: &SettingsPanel, new: &SettingsPanel) {
         if old.display.icon_hidpi != new.display.icon_hidpi {
-            tracing::info!("同步 HiDPI 图标: {} -> {}", old.display.icon_hidpi, new.display.icon_hidpi);
+            tracing::info!(
+                "同步 HiDPI 图标: {} -> {}",
+                old.display.icon_hidpi,
+                new.display.icon_hidpi
+            );
             crate::resources::icon::set_hidpi_enabled(new.display.icon_hidpi);
         }
 

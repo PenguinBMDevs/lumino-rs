@@ -48,35 +48,34 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         // 双击其他位置（首/尾锚点、柄、段、空白）→ 与单击语义相同
         // （允许拖动刚创建的锚点——否则创建后 300ms 内点击会被双击
         // 判定拦截，无法拖动）。
-        if state.detect_double_click(cursor_pos) {
-            if let Some(BendHit::Anchor { idx }) =
+        if state.detect_double_click(cursor_pos)
+            && let Some(BendHit::Anchor { idx }) =
                 bend_hit_test(&state.bend_path, &view, cursor_pos, max_val)
-                && idx > 0
-                && idx + 1 < state.bend_path.anchors.len()
-            {
-                let tick = state.bend_path.anchors[idx].pos.0.round() as u32;
-                let (track_idx, lane_idx) = self.bend_lane_indices();
-                // 跳变对（同 tick 两个锚点）整体删除：lane 侧 Delete 按
-                // tick 移除全部同 tick 事件，本地保持一致（竖直段整体消失）
-                state
-                    .bend_path
-                    .anchors
-                    .retain(|a| a.pos.0.round() as u32 != tick);
-                state.bend_path.recompute_auto_handles();
-                state.bend_path.selected = None;
-                state.bend_path.interaction = BendInteraction::None;
-                if let Some(lane_idx) = lane_idx {
-                    return Some(publish_velocity(VelocityAction::AutomationEdit(
-                        AutomationEdit::Delete {
-                            track_idx,
-                            lane_idx,
-                            tick,
-                        },
-                    )));
-                }
+            && idx > 0
+            && idx + 1 < state.bend_path.anchors.len()
+        {
+            let tick = state.bend_path.anchors[idx].pos.0.round() as u32;
+            let (track_idx, lane_idx) = self.bend_lane_indices();
+            // 跳变对（同 tick 两个锚点）整体删除：lane 侧 Delete 按
+            // tick 移除全部同 tick 事件，本地保持一致（竖直段整体消失）
+            state
+                .bend_path
+                .anchors
+                .retain(|a| a.pos.0.round() as u32 != tick);
+            state.bend_path.recompute_auto_handles();
+            state.bend_path.selected = None;
+            state.bend_path.interaction = BendInteraction::None;
+            if let Some(lane_idx) = lane_idx {
+                return Some(publish_velocity(VelocityAction::AutomationEdit(
+                    AutomationEdit::Delete {
+                        track_idx,
+                        lane_idx,
+                        tick,
+                    },
+                )));
             }
-            // 双击但非中间锚点：继续正常命中分发（不 return）
         }
+        // 双击但非中间锚点：继续正常命中分发（不 return）
 
         // 命中分发：控制柄 > 锚点 > 曲线段 > 空白（追加锚点）
         match bend_hit_test(&state.bend_path, &view, cursor_pos, max_val) {

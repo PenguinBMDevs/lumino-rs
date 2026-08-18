@@ -88,7 +88,9 @@ impl NoteRenderer {
             (visible_instance_buffer.size() / VISIBLE_INDEX_SIZE as u64) as usize;
         let source_capacity_instances = (instance_buffer.size() / instance_size) as usize;
         let capacity_instances = source_capacity_instances.min(visible_capacity_instances);
-        let chunk_count = chunk_layout.chunk_count(capacity_instances).min(super::chunk::MAX_CHUNKS);
+        let chunk_count = chunk_layout
+            .chunk_count(capacity_instances)
+            .min(super::chunk::MAX_CHUNKS);
 
         let mut bind_groups = Vec::with_capacity(chunk_count);
         for idx in 0..chunk_count {
@@ -150,7 +152,8 @@ impl NoteRenderer {
         let instance_size = std::mem::size_of::<NoteInstance>() as u64;
 
         // 可见索引 buffer 按 u32 分区，容量（实例数）= 字节数 / 4
-        let visible_capacity_instances = (visible_instance_buffer.size() / VISIBLE_INDEX_SIZE as u64) as usize;
+        let visible_capacity_instances =
+            (visible_instance_buffer.size() / VISIBLE_INDEX_SIZE as u64) as usize;
         let source_capacity_instances = (instance_buffer.size() / instance_size) as usize;
         let capacity_instances = source_capacity_instances.min(visible_capacity_instances);
         let chunk_count = layout

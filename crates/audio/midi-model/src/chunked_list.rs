@@ -703,7 +703,9 @@ mod tests {
     }
 
     fn sorted_events(count: usize) -> Vec<TestEvent> {
-        (0..count as u32).map(|i| make_test_event(i * 10, i)).collect()
+        (0..count as u32)
+            .map(|i| make_test_event(i * 10, i))
+            .collect()
     }
 
     /// 直接构造多块 ChunkedList（测试窗口跨块迭代，避免依赖 50 万真实容量）
@@ -829,12 +831,15 @@ mod tests {
         assert_eq!(list.len(), 700_000);
         assert_eq!(list.chunk_count(), 2);
         assert_eq!(list.get(0).expect("首元素应存在").tick, 0);
-        assert_eq!(list.get(499_999).expect("块 0 末元素应存在").tick, 4_999_990);
-        assert_eq!(list.get(500_000).expect("块 1 首元素应存在").tick, 5_000_000);
         assert_eq!(
-            list.get(699_999).expect("末元素应存在").tick,
-            6_999_990
+            list.get(499_999).expect("块 0 末元素应存在").tick,
+            4_999_990
         );
+        assert_eq!(
+            list.get(500_000).expect("块 1 首元素应存在").tick,
+            5_000_000
+        );
+        assert_eq!(list.get(699_999).expect("末元素应存在").tick, 6_999_990);
         // 与 from_sorted 构建内容完全一致（含跨块）
         assert_eq!(list.to_vec(), sorted_events(700_000));
     }
@@ -897,7 +902,11 @@ mod tests {
 
         // 不存在的值 → None
         assert_eq!(list.position_of(&make_test_event(55, 999)), None);
-        assert_eq!(list.position_of(&make_test_event(50, 999)), None, "同 tick 但 id 不匹配");
+        assert_eq!(
+            list.position_of(&make_test_event(50, 999)),
+            None,
+            "同 tick 但 id 不匹配"
+        );
     }
 
     #[test]
@@ -911,7 +920,9 @@ mod tests {
         assert_eq!(list.position_of(&make_test_event(20, 2)), Some(1));
 
         // 删除后定位正确
-        let idx = list.position_of(&make_test_event(20, 2)).expect("应定位到目标事件");
+        let idx = list
+            .position_of(&make_test_event(20, 2))
+            .expect("应定位到目标事件");
         let removed = list.remove(idx).expect("目标事件应存在");
         assert_eq!(removed, make_test_event(20, 2));
         assert_eq!(list.position_of(&make_test_event(20, 2)), None);
@@ -982,7 +993,10 @@ mod tests {
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY);
 
         // 向满块中间插入 → 触发分裂
-        list.insert(make_test_event(EVENT_CHUNK_CAPACITY as u32 * 10 / 2, 999_999));
+        list.insert(make_test_event(
+            EVENT_CHUNK_CAPACITY as u32 * 10 / 2,
+            999_999,
+        ));
         assert_eq!(list.chunk_count(), 2, "满块插入应分裂为 2 块");
         assert_eq!(list.len(), EVENT_CHUNK_CAPACITY + 1);
 
@@ -1167,7 +1181,11 @@ mod tests {
         // 快照数据完整不受影响
         assert_eq!(snapshot.get(0).expect("快照索引 0 的事件应存在").tick, 0);
         assert_eq!(
-            snapshot.iter().map(EventTick::tick).last().expect("快照末元素应存在"),
+            snapshot
+                .iter()
+                .map(EventTick::tick)
+                .last()
+                .expect("快照末元素应存在"),
             6_999_990
         );
     }

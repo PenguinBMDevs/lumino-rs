@@ -7,10 +7,10 @@
 //! `&mut [NoteEvent]`（`track_notes_mut` 借用），不再操作 `im::Vector<Note>`。
 
 use lumino_core::view_state::DEFAULT_PPQ;
+use lumino_editor_state::DEFAULT_BPM;
 use lumino_editor_state::DragState;
 use lumino_editor_state::EditorData;
 use lumino_editor_state::PreviewSequenceNote;
-use lumino_editor_state::DEFAULT_BPM;
 use lumino_midi_loader::ChunkedList;
 use lumino_midi_loader::NoteEvent;
 use std::cell::Cell;
@@ -113,11 +113,7 @@ pub(super) fn handle_dragging_selection(
         drag_state.set_delta(delta_tick_i, delta_key_i);
     }
 
-    if key_changed {
-        Some(delta_key_i)
-    } else {
-        None
-    }
+    if key_changed { Some(delta_key_i) } else { None }
 }
 
 /// 构建批量拖动预览序列（发声反馈）。
@@ -151,28 +147,25 @@ pub(super) fn build_preview_sequence(
     };
 
     // 工程 BPM 与 PPQ：取首个音符所在 tick 处生效的 tempo（tempo_changes 按 tick 升序）
-    let (bpm, division) = data.document.as_ref().map_or(
-        (DEFAULT_BPM, u32::from(DEFAULT_PPQ)),
-        |doc| {
-            let bpm = doc
-                .tempo_changes
-                .iter()
-                .rev()
-                .find(|(t, _)| *t as f32 <= first_tick)
-                .map(|(_, b)| f64::from(*b))
-                .unwrap_or(DEFAULT_BPM);
-            (bpm, u32::from(doc.division))
-        },
-    );
+    let (bpm, division) =
+        data.document
+            .as_ref()
+            .map_or((DEFAULT_BPM, u32::from(DEFAULT_PPQ)), |doc| {
+                let bpm = doc
+                    .tempo_changes
+                    .iter()
+                    .rev()
+                    .find(|(t, _)| *t as f32 <= first_tick)
+                    .map(|(_, b)| f64::from(*b))
+                    .unwrap_or(DEFAULT_BPM);
+                (bpm, u32::from(doc.division))
+            });
 
     notes
         .into_iter()
         .map(|(tick, key)| PreviewSequenceNote {
-            play_at: now + Duration::from_millis(tick_delay_millis(
-                tick - first_tick,
-                division,
-                bpm,
-            )),
+            play_at: now
+                + Duration::from_millis(tick_delay_millis(tick - first_tick, division, bpm)),
             key: key as u8,
             velocity,
         })

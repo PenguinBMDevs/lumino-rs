@@ -170,8 +170,12 @@ fn build_video_config(
             )
             .clamp(1.0, 5.0),
             abbreviate: st.dc_abbreviate,
-            abbreviate_digits: parse_f32_or_log(&st.dc_abbreviate_digits, "dc_abbreviate_digits", 3.0)
-                .clamp(0.0, 10.0) as u32,
+            abbreviate_digits: parse_f32_or_log(
+                &st.dc_abbreviate_digits,
+                "dc_abbreviate_digits",
+                3.0,
+            )
+            .clamp(0.0, 10.0) as u32,
             show_text: st.dc_show_text,
             show_bars: st.dc_show_bars,
         },

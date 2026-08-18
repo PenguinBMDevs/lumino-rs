@@ -32,6 +32,10 @@ use crate::context_menu::PianoRollContextMenuAction;
 /// - `S`: 侧边栏事件类型（由 lumino-ui 的 sidebar::Event 实例化）
 /// - `Se`: 设置事件类型（由 lumino-ui 的 settings::Event 实例化）
 /// - `T`: 工具栏事件类型（由 lumino-ui 的 toolbar::Event 实例化）
+// TODO(P3): Core(Event) variant 较大（≥328 bytes），建议改用 Box<Event>。
+// 当前 const fn 构造函数直接构造 Core(Event)，改为 Box 会打破 const 约束。
+// 留待 P3 统一评审消息枚举内存布局后再处理。
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum Message<W, S, Se, T> {
     Core(Event),

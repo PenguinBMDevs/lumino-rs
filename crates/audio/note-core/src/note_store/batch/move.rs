@@ -46,19 +46,14 @@ impl NoteStore {
                             continue;
                         }
                         let chunk_end = chunk_start + chunk.len;
-                        let start_block = chunk_start / 64;
-                        let end_block = (chunk_end - 1) / 64;
-                        process_move_chunk_64(
-                            chunk,
+                        let params = MoveChunkParams::new(
                             chunk_start,
                             chunk_end,
-                            sel,
-                            start_block,
-                            end_block,
                             delta_tick,
                             delta_key_val,
                             max_key_val,
                         );
+                        process_move_chunk_64(chunk, sel, &params);
                     }
                 });
             }
@@ -111,19 +106,14 @@ impl NoteStore {
                         }
                         let chunk_end = chunk_start + chunk.len;
                         // bit-vec 0.8 默认 Block = u32，每块 32 位
-                        let start_block = chunk_start / 32;
-                        let end_block = (chunk_end - 1) / 32;
-                        process_move_chunk_32(
-                            chunk,
+                        let params = MoveChunkParams::new_32(
                             chunk_start,
                             chunk_end,
-                            blocks_ref,
-                            start_block,
-                            end_block,
                             delta_tick,
                             delta_key_val,
                             max_key_val,
                         );
+                        process_move_chunk_32(chunk, blocks_ref, &params);
                     }
                 });
             }
@@ -133,20 +123,60 @@ impl NoteStore {
     }
 }
 
-/// 处理单个 chunk 的 64-bit 块遍历移动（BitSet 路径）
-#[inline]
-fn process_move_chunk_64(
-    chunk: &mut Chunk,
+/// 处理单个 chunk 的移动参数包（将 7 个共享参数收口，避免 `too_many_arguments`）
+#[derive(Clone, Copy)]
+struct MoveChunkParams {
     chunk_start: usize,
     chunk_end: usize,
-    sel: &BitSet,
     start_block: usize,
     end_block: usize,
     delta_tick: f32,
     delta_key_val: i32,
     max_key_val: i32,
-) {
-    for bi in start_block..=end_block {
+}
+
+impl MoveChunkParams {
+    fn new(
+        chunk_start: usize,
+        chunk_end: usize,
+        delta_tick: f32,
+        delta_key_val: i32,
+        max_key_val: i32,
+    ) -> Self {
+        Self {
+            chunk_start,
+            chunk_end,
+            start_block: chunk_start / 64,
+            end_block: (chunk_end - 1) / 64,
+            delta_tick,
+            delta_key_val,
+            max_key_val,
+        }
+    }
+
+    fn new_32(
+        chunk_start: usize,
+        chunk_end: usize,
+        delta_tick: f32,
+        delta_key_val: i32,
+        max_key_val: i32,
+    ) -> Self {
+        Self {
+            chunk_start,
+            chunk_end,
+            start_block: chunk_start / 32,
+            end_block: (chunk_end - 1) / 32,
+            delta_tick,
+            delta_key_val,
+            max_key_val,
+        }
+    }
+}
+
+/// 处理单个 chunk 的 64-bit 块遍历移动（BitSet 路径）
+#[inline]
+fn process_move_chunk_64(chunk: &mut Chunk, sel: &BitSet, params: &MoveChunkParams) {
+    for bi in params.start_block..=params.end_block {
         let block = sel.blocks[bi];
         if block == 0 {
             continue;
@@ -157,11 +187,11 @@ fn process_move_chunk_64(
             let trailing_zeros_count = bits.trailing_zeros() as usize;
             let global_idx = base + trailing_zeros_count;
             bits &= bits - 1;
-            if global_idx >= chunk_start && global_idx < chunk_end {
-                let local = global_idx - chunk_start;
-                let new_tick = (chunk.ticks[local] + delta_tick).max(0.0);
-                let new_key =
-                    (chunk.keys[local] as i32 + delta_key_val).clamp(0, max_key_val) as u16;
+            if global_idx >= params.chunk_start && global_idx < params.chunk_end {
+                let local = global_idx - params.chunk_start;
+                let new_tick = (chunk.ticks[local] + params.delta_tick).max(0.0);
+                let new_key = (chunk.keys[local] as i32 + params.delta_key_val)
+                    .clamp(0, params.max_key_val) as u16;
                 if (chunk.ticks[local] - new_tick).abs() > f32::EPSILON
                     || chunk.keys[local] != new_key
                 {
@@ -175,18 +205,8 @@ fn process_move_chunk_64(
 
 /// 处理单个 chunk 的 32-bit 块遍历移动（BitVec 路径）
 #[inline]
-fn process_move_chunk_32(
-    chunk: &mut Chunk,
-    chunk_start: usize,
-    chunk_end: usize,
-    blocks: &[u32],
-    start_block: usize,
-    end_block: usize,
-    delta_tick: f32,
-    delta_key_val: i32,
-    max_key_val: i32,
-) {
-    for bi in start_block..=end_block {
+fn process_move_chunk_32(chunk: &mut Chunk, blocks: &[u32], params: &MoveChunkParams) {
+    for bi in params.start_block..=params.end_block {
         if bi >= blocks.len() {
             break;
         }
@@ -200,11 +220,11 @@ fn process_move_chunk_32(
             let trailing_zeros_count = bits.trailing_zeros() as usize;
             let global_idx = base + trailing_zeros_count;
             bits &= bits - 1;
-            if global_idx >= chunk_start && global_idx < chunk_end {
-                let local = global_idx - chunk_start;
-                let new_tick = (chunk.ticks[local] + delta_tick).max(0.0);
-                let new_key =
-                    (chunk.keys[local] as i32 + delta_key_val).clamp(0, max_key_val) as u16;
+            if global_idx >= params.chunk_start && global_idx < params.chunk_end {
+                let local = global_idx - params.chunk_start;
+                let new_tick = (chunk.ticks[local] + params.delta_tick).max(0.0);
+                let new_key = (chunk.keys[local] as i32 + params.delta_key_val)
+                    .clamp(0, params.max_key_val) as u16;
                 if (chunk.ticks[local] - new_tick).abs() > f32::EPSILON
                     || chunk.keys[local] != new_key
                 {

@@ -83,10 +83,12 @@ pub fn draw_bend_path(
             };
             frame.stroke(
                 &handle_connector,
-                Stroke::default().with_width(connector_width).with_color(Color {
-                    a: if selected { 0.9 } else { 0.5 },
-                    ..anchor_color
-                }),
+                Stroke::default()
+                    .with_width(connector_width)
+                    .with_color(Color {
+                        a: if selected { 0.9 } else { 0.5 },
+                        ..anchor_color
+                    }),
             );
             // 控制柄方块
             let rect = Rectangle::new(

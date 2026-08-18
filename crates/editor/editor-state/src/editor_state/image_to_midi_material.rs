@@ -162,15 +162,17 @@ mod tests {
     #[test]
     fn test_i2m_note_key_unchanged_with_region() {
         // I2M 语义：区域 key 范围只作显示窗口，音符 key 不随区域变化
-        let mut state = ImageToMidiState::default();
-        state.preview = Some(ImageToMidiPreview {
-            tracks: vec![vec![PreviewNote {
-                tick: 0.0,
-                length: 10.0,
-                key: 60,
-            }]],
-            orig_width: 100.0,
-        });
+        let mut state = ImageToMidiState {
+            preview: Some(ImageToMidiPreview {
+                tracks: vec![vec![PreviewNote {
+                    tick: 0.0,
+                    length: 10.0,
+                    key: 60,
+                }]],
+                orig_width: 100.0,
+            }),
+            ..Default::default()
+        };
         state.confirm_region(RegionRect::new(0.0, 100.0, 40, 80));
         assert_eq!(state.note_screen_key(60), 60);
     }

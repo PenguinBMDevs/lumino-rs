@@ -166,10 +166,23 @@ fn test_commit_current_edit_when_dragging_commits_and_returns_true() {
     assert!(editor.commit_current_edit());
     // delta 应已被应用到 notes
     assert_eq!(
-        editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
         100.0
     );
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 65);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        65
+    );
     // edit_state 应被重置为 Idle
     assert!(matches!(
         editor.editor_state.interaction.edit_state,
@@ -199,14 +212,32 @@ fn test_commit_current_edit_when_dragging_selection_commits_all_selected() {
     assert!(editor.commit_current_edit());
     let data = &editor.editor_state.data;
     // note 0: 0,60 -> 200,67
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 200.0);
-    assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 67);
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+        200.0
+    );
+    assert_eq!(
+        data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+        67
+    );
     // note 1: 未选中，不变
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").tick, 240.0);
-    assert_eq!(data.get_note_view(1).expect("第 2 个音符视图应存在").key, 62);
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").tick,
+        240.0
+    );
+    assert_eq!(
+        data.get_note_view(1).expect("第 2 个音符视图应存在").key,
+        62
+    );
     // note 2: 480,64 -> 680,71
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 680.0);
-    assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 71);
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+        680.0
+    );
+    assert_eq!(
+        data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+        71
+    );
     assert!(matches!(
         editor.editor_state.interaction.edit_state,
         EditState::Idle
@@ -229,8 +260,24 @@ fn test_commit_current_edit_with_zero_delta_returns_true_but_no_change() {
 
     assert!(editor.commit_current_edit(), "is_editing=true 应返回 true");
     // notes 不变
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-    assert_eq!(editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .tick,
+        0.0
+    );
+    assert_eq!(
+        editor
+            .editor_state
+            .data
+            .get_note_view(0)
+            .expect("第 1 个音符视图应存在")
+            .key,
+        60
+    );
     // edit_state 已被重置为 Idle（handle_released 已执行）
     assert!(matches!(
         editor.editor_state.interaction.edit_state,

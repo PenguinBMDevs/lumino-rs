@@ -220,7 +220,10 @@ impl Editor {
                     current_key,
                     ..
                 } => (*start_tick, *start_key, *current_tick, *current_key),
-                _ => unreachable!("confirmed Selecting above"),
+                _ => {
+                    tracing::error!("drag 选择更新：交互状态非 Selecting，跳过（防御性返回）");
+                    return;
+                }
             };
 
         let new_min_t = start_tick.min(current_tick);

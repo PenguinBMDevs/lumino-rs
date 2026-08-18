@@ -293,68 +293,50 @@ fn entry_row(state: &CloudUiState, entry: &CloudEntryUi) -> Element<'static> {
         let mut actions = Vec::<Element<'static>>::new();
         if !state.save_mode && !entry.is_dir {
             // 文件行：下载
-            actions.push(
-                small_btn(
-                    "下载",
-                    Message::Cloud(CloudAction::Download {
-                        path: entry.path.clone(),
-                    }),
-                )
-                .into(),
-            );
+            actions.push(small_btn(
+                "下载",
+                Message::Cloud(CloudAction::Download {
+                    path: entry.path.clone(),
+                }),
+            ));
         }
         if !state.save_mode {
             if entry.is_dir {
                 // 目录：复制不支持（提示），支持剪切
-                actions.push(
-                    small_btn(
-                        "剪切",
-                        Message::Cloud(CloudAction::CutEntry {
-                            path: entry.path.clone(),
-                            is_dir: true,
-                        }),
-                    )
-                    .into(),
-                );
-            } else {
-                actions.push(
-                    small_btn(
-                        "复制",
-                        Message::Cloud(CloudAction::CopyEntry {
-                            path: entry.path.clone(),
-                            is_dir: false,
-                        }),
-                    )
-                    .into(),
-                );
-                actions.push(
-                    small_btn(
-                        "剪切",
-                        Message::Cloud(CloudAction::CutEntry {
-                            path: entry.path.clone(),
-                            is_dir: false,
-                        }),
-                    )
-                    .into(),
-                );
-            }
-            actions.push(
-                small_btn(
-                    "重命名",
-                    Message::Cloud(CloudAction::StartRename(entry.path.clone())),
-                )
-                .into(),
-            );
-            actions.push(
-                small_btn(
-                    "删除",
-                    Message::Cloud(CloudAction::RequestDelete {
+                actions.push(small_btn(
+                    "剪切",
+                    Message::Cloud(CloudAction::CutEntry {
                         path: entry.path.clone(),
-                        is_dir: entry.is_dir,
+                        is_dir: true,
                     }),
-                )
-                .into(),
-            );
+                ));
+            } else {
+                actions.push(small_btn(
+                    "复制",
+                    Message::Cloud(CloudAction::CopyEntry {
+                        path: entry.path.clone(),
+                        is_dir: false,
+                    }),
+                ));
+                actions.push(small_btn(
+                    "剪切",
+                    Message::Cloud(CloudAction::CutEntry {
+                        path: entry.path.clone(),
+                        is_dir: false,
+                    }),
+                ));
+            }
+            actions.push(small_btn(
+                "重命名",
+                Message::Cloud(CloudAction::StartRename(entry.path.clone())),
+            ));
+            actions.push(small_btn(
+                "删除",
+                Message::Cloud(CloudAction::RequestDelete {
+                    path: entry.path.clone(),
+                    is_dir: entry.is_dir,
+                }),
+            ));
         }
         if actions.is_empty() {
             Space::new().width(60.0).into()

@@ -135,9 +135,9 @@ mod tests {
 
     #[test]
     fn test_is_midi_extension_integration() {
-        assert!(lumino_archive_reader::is_midi_file(&Path::new("test.mid")));
-        assert!(lumino_archive_reader::is_midi_file(&Path::new("test.midi")));
-        assert!(lumino_archive_reader::is_midi_file(&Path::new("test.lmpj")));
-        assert!(!lumino_archive_reader::is_midi_file(&Path::new("test.zip")));
+        assert!(lumino_archive_reader::is_midi_file(Path::new("test.mid")));
+        assert!(lumino_archive_reader::is_midi_file(Path::new("test.midi")));
+        assert!(lumino_archive_reader::is_midi_file(Path::new("test.lmpj")));
+        assert!(!lumino_archive_reader::is_midi_file(Path::new("test.zip")));
     }
 }

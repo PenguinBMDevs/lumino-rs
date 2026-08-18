@@ -332,9 +332,11 @@ mod tests {
 
     #[test]
     fn test_to_converter_config_normalizes_key_order() {
-        let mut cfg = I2mConfig::default();
-        cfg.start_key = 100;
-        cfg.end_key = 50;
+        let cfg = I2mConfig {
+            start_key: 100,
+            end_key: 50,
+            ..Default::default()
+        };
         let cc = cfg.to_converter_config();
         assert_eq!(cc.start_key, 50);
         assert_eq!(cc.end_key, 100);

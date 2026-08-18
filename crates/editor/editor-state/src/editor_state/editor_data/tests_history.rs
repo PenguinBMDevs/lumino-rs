@@ -143,7 +143,10 @@ fn test_finish_drawing_incremental_create_log() {
     // redo：按 tick 有序重新插入
     assert!(data.redo());
     assert_eq!(data.current_track_note_count(), 1);
-    let restored = data.current_track_notes().get(0).expect("第 1 个音符应存在");
+    let restored = data
+        .current_track_notes()
+        .get(0)
+        .expect("第 1 个音符应存在");
     assert_eq!(restored.key, 60);
     assert_eq!(restored.start_tick, 0);
 }
@@ -199,7 +202,10 @@ fn test_apply_create_ops_by_value_exact_undo() {
     assert_eq!(data.apply_create_ops(&ops[1..], true), 1);
     assert_eq!(data.current_track_note_count(), 1);
     assert_eq!(
-        data.current_track_notes().get(0).expect("第 1 个音符应存在").key,
+        data.current_track_notes()
+            .get(0)
+            .expect("第 1 个音符应存在")
+            .key,
         60,
         "按值删除必须匹配正确的音符"
     );
@@ -212,6 +218,18 @@ fn test_apply_create_ops_by_value_exact_undo() {
     assert_eq!(data.apply_create_ops(&ops, false), 2);
     assert_eq!(data.current_track_note_count(), 2);
     // 恢复后保持 tick 有序（insert_note 有序插入）
-    assert_eq!(data.current_track_notes().get(0).expect("第 1 个音符应存在").key, 60);
-    assert_eq!(data.current_track_notes().get(1).expect("第 2 个音符应存在").key, 72);
+    assert_eq!(
+        data.current_track_notes()
+            .get(0)
+            .expect("第 1 个音符应存在")
+            .key,
+        60
+    );
+    assert_eq!(
+        data.current_track_notes()
+            .get(1)
+            .expect("第 2 个音符应存在")
+            .key,
+        72
+    );
 }

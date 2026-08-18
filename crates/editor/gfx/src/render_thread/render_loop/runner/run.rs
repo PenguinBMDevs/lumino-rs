@@ -250,7 +250,9 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &ctx.queue,
             );
             if updated {
-                renderers.onion_skin.update_cull_info(&ctx.device, &ctx.queue);
+                renderers
+                    .onion_skin
+                    .update_cull_info(&ctx.device, &ctx.queue);
                 let total_gpu_mb = lumino_memtrace::Snapshot::capture().total_with_gpu_mb();
                 tracing::debug!(
                     "MainTrack: 事件应用后 instance_count={} instance_buf={}MB visible_index_buf={}MB total_gpu={:.1}MB",

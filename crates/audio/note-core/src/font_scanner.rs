@@ -159,7 +159,7 @@ mod tests {
                 path: PathBuf::from("/path/to/bold.ttf"),
             },
         ];
-        fonts.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+        fonts.sort_by_key(|a| a.name.to_lowercase());
         assert_eq!(fonts[0].name, "Arial");
         assert_eq!(fonts[1].name, "bold");
         assert_eq!(fonts[2].name, "Zebra");

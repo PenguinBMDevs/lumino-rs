@@ -70,7 +70,12 @@ fn test_selection_inside_overrides_note_edge_hit() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在")
+        .tick;
 
     // hit_result 模拟命中音符 Start 边缘（旧逻辑会走 ResizingStart）
     editor.handle_pointer_pressed(pos, Some((0, HitType::Start)), snapped_tick);
@@ -93,7 +98,12 @@ fn test_selection_inside_overrides_note_middle_hit() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在")
+        .tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 
@@ -117,7 +127,12 @@ fn test_selection_left_edge_overrides_note_hit() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_at_left_edge(&editor, 0);
-    let snapped_tick = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在")
+        .tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Start)), snapped_tick);
 
@@ -139,7 +154,11 @@ fn test_selection_right_edge_overrides_note_hit() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_at_right_edge(&editor, 0);
-    let note_view = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在");
+    let note_view = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在");
     let snapped_tick = note_view.tick + note_view.length;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::End)), snapped_tick);
@@ -172,7 +191,12 @@ fn test_note_hit_outside_selection_box_switches_selection() {
     editor.editor_state.interaction.selected_notes.insert(0);
 
     let pos = pos_on_note_outside_selection(&editor, 1);
-    let snapped_tick = editor.editor_state.data.get_note_view(1).expect("第 2 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(1)
+        .expect("第 2 个音符视图应存在")
+        .tick;
 
     editor.handle_pointer_pressed(pos, Some((1, HitType::Middle)), snapped_tick);
 
@@ -205,7 +229,12 @@ fn test_note_hit_when_no_selection() {
     // 不设置 selected_notes（为空）
 
     let pos = pos_on_note_outside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在")
+        .tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 
@@ -267,7 +296,12 @@ fn test_selection_inside_keeps_pending_drag_state() {
     editor.pending_drag_state = Some(pending);
 
     let pos = pos_inside_selection(&editor, 0);
-    let snapped_tick = editor.editor_state.data.get_note_view(0).expect("第 1 个音符视图应存在").tick;
+    let snapped_tick = editor
+        .editor_state
+        .data
+        .get_note_view(0)
+        .expect("第 1 个音符视图应存在")
+        .tick;
 
     editor.handle_pointer_pressed(pos, Some((0, HitType::Middle)), snapped_tick);
 

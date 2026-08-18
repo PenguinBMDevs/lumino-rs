@@ -16,6 +16,25 @@ use super::super::super::super::{VelocityPanel, VelocityPoint};
 use super::super::super::state::VelocityCanvasState;
 use super::publish_velocity;
 
+/// 曲线绘制拖拽参数
+#[derive(Debug, Clone)]
+pub(super) struct CurveDrawDragParams {
+    /// 自动化视图参数
+    pub(super) view: lumino_gfx::automation::AutomationViewParams,
+    /// 自动化目标
+    pub(super) target: lumino_note_core::AutomationTarget,
+    /// 最大值
+    pub(super) max_val: f32,
+    /// 音轨索引
+    pub(super) track_idx: u16,
+    /// 起始 tick
+    pub(super) start_tick: u32,
+    /// 起始值
+    pub(super) start_value: u16,
+    /// 光标位置
+    pub(super) cursor_pos: Point,
+}
+
 impl<'a> super::super::super::VelocityCanvas<'a> {
     /// 更新悬停状态
     pub(super) fn update_hover_state(
@@ -171,36 +190,31 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     pub(super) fn handle_curve_draw_drag(
         &self,
         state: &mut VelocityCanvasState,
-        view: lumino_gfx::automation::AutomationViewParams,
-        target: lumino_note_core::AutomationTarget,
-        max_val: f32,
-        track_idx: u16,
-        start_tick: u32,
-        start_value: u16,
-        cursor_pos: Point,
+        params: &CurveDrawDragParams,
     ) -> Option<canvas::Action<Message>> {
-        let current_tick_f = self.snap_tick(self.x_to_tick(cursor_pos.x)).max(0.0);
+        let current_tick_f = self.snap_tick(self.x_to_tick(params.cursor_pos.x)).max(0.0);
         let current_tick = current_tick_f as u32;
-        let current_value = view
-            .y_to_value(cursor_pos.y, max_val)
+        let current_value = params
+            .view
+            .y_to_value(params.cursor_pos.y, params.max_val)
             .round()
-            .clamp(0.0, max_val) as u16;
+            .clamp(0.0, params.max_val) as u16;
         state.automation_curve_current = Some((current_tick, current_value));
 
-        if current_tick == start_tick {
+        if current_tick == params.start_tick {
             return self.handle_single_click_curve_add(
-                track_idx,
-                &target,
+                params.track_idx,
+                &params.target,
                 current_tick,
                 current_value,
             );
         }
 
         self.handle_two_point_curve_add(
-            track_idx,
-            &target,
-            start_tick,
-            start_value,
+            params.track_idx,
+            &params.target,
+            params.start_tick,
+            params.start_value,
             current_tick,
             current_value,
         )

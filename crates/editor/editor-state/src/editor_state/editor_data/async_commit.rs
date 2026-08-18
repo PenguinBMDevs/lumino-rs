@@ -222,7 +222,10 @@ mod tests {
             ds
         });
 
-        assert!(data.apply_move_ops_async(ops.clone(), 127).expect("异步移动提交应成功"));
+        assert!(
+            data.apply_move_ops_async(ops.clone(), 127)
+                .expect("异步移动提交应成功")
+        );
         let modified = loop {
             if let Some(result) = data.poll_async_commit() {
                 break result.expect("异步提交应成功");
@@ -230,15 +233,33 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(1));
         };
         assert_eq!(modified, 2);
-        assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 5.0);
-        assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 58);
-        assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").tick, 25.0);
-        assert_eq!(data.get_note_view(2).expect("第 3 个音符视图应存在").key, 62);
+        assert_eq!(
+            data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+            5.0
+        );
+        assert_eq!(
+            data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+            58
+        );
+        assert_eq!(
+            data.get_note_view(2).expect("第 3 个音符视图应存在").tick,
+            25.0
+        );
+        assert_eq!(
+            data.get_note_view(2).expect("第 3 个音符视图应存在").key,
+            62
+        );
         assert!(data.history.can_undo());
         // undo 应还原
         assert!(data.undo());
-        assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
-        assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").key, 60);
+        assert_eq!(
+            data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+            0.0
+        );
+        assert_eq!(
+            data.get_note_view(0).expect("第 1 个音符视图应存在").key,
+            60
+        );
     }
 
     #[test]
@@ -252,7 +273,10 @@ mod tests {
             ds
         });
 
-        assert!(data.apply_move_ops_async(ops.clone(), 127).expect("异步移动提交应成功"));
+        assert!(
+            data.apply_move_ops_async(ops.clone(), 127)
+                .expect("异步移动提交应成功")
+        );
         let modified = loop {
             if let Some(result) = data.poll_async_commit() {
                 break result.expect("异步提交应成功");
@@ -289,7 +313,11 @@ mod tests {
             original_ticks: vec![],
             original_keys: vec![],
         }];
-        assert!(!data.apply_move_ops_async(ops, 127).expect("异步移动提交应成功"));
+        assert!(
+            !data
+                .apply_move_ops_async(ops, 127)
+                .expect("异步移动提交应成功")
+        );
         assert!(!data.has_pending_commit());
     }
 
@@ -316,7 +344,10 @@ mod tests {
             original_ticks: vec![],
             original_keys: vec![],
         }];
-        assert!(data.apply_move_ops_async(ops1, 127).expect("异步移动提交应成功"));
+        assert!(
+            data.apply_move_ops_async(ops1, 127)
+                .expect("异步移动提交应成功")
+        );
         assert!(data.apply_move_ops_async(ops2, 127).is_err());
     }
 
@@ -333,7 +364,10 @@ mod tests {
             original_ticks: vec![],
             original_keys: vec![],
         }];
-        assert!(data.apply_move_ops_async(ops, 127).expect("异步移动提交应成功"));
+        assert!(
+            data.apply_move_ops_async(ops, 127)
+                .expect("异步移动提交应成功")
+        );
         // 立即轮询可能返回 None（线程尚未完成）
         if data.poll_async_commit().is_none() {
             // 等待完成
@@ -361,10 +395,16 @@ mod tests {
             original_ticks: vec![],
             original_keys: vec![],
         }];
-        assert!(data.apply_move_ops_async(ops, 127).expect("异步移动提交应成功"));
+        assert!(
+            data.apply_move_ops_async(ops, 127)
+                .expect("异步移动提交应成功")
+        );
         data.cancel_async_commit();
         assert!(!data.has_pending_commit());
         // 数据不应被修改
-        assert_eq!(data.get_note_view(0).expect("第 1 个音符视图应存在").tick, 0.0);
+        assert_eq!(
+            data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
+            0.0
+        );
     }
 }

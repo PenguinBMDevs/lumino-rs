@@ -66,7 +66,10 @@ mod tests {
 
     #[test]
     fn test_two_adjacent_same_key() {
-        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 2.0, 60, 2.0)];
+        let notes = vec![
+            make_note_tuple(0, 0.0, 60, 2.0),
+            make_note_tuple(1, 2.0, 60, 2.0),
+        ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0].len(), 2);
@@ -74,21 +77,30 @@ mod tests {
 
     #[test]
     fn test_two_non_adjacent_same_key() {
-        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 10.0, 60, 2.0)];
+        let notes = vec![
+            make_note_tuple(0, 0.0, 60, 2.0),
+            make_note_tuple(1, 10.0, 60, 2.0),
+        ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn test_two_adjacent_different_key() {
-        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 2.0, 62, 2.0)];
+        let notes = vec![
+            make_note_tuple(0, 0.0, 60, 2.0),
+            make_note_tuple(1, 2.0, 62, 2.0),
+        ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert!(groups.is_empty());
     }
 
     #[test]
     fn test_unsorted_input() {
-        let notes = vec![make_note_tuple(1, 4.0, 60, 2.0), make_note_tuple(0, 0.0, 60, 4.0)];
+        let notes = vec![
+            make_note_tuple(1, 4.0, 60, 2.0),
+            make_note_tuple(0, 0.0, 60, 4.0),
+        ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
         assert_eq!(groups[0][0].0, 0);
@@ -98,7 +110,10 @@ mod tests {
     #[test]
     fn test_proximity_threshold() {
         // 间隔正好等于阈值时应被合并
-        let notes = vec![make_note_tuple(0, 0.0, 60, 2.0), make_note_tuple(1, 3.0, 60, 2.0)];
+        let notes = vec![
+            make_note_tuple(0, 0.0, 60, 2.0),
+            make_note_tuple(1, 3.0, 60, 2.0),
+        ];
         let groups = group_adjacent_notes(&notes, 1.0);
         assert_eq!(groups.len(), 1);
     }

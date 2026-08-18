@@ -451,8 +451,10 @@ fn test_wheel_velocity_mode_publishes_for_horizontal() {
 fn test_wheel_ctrl_zoom_preserved() {
     let editor = crate::Editor::new();
     let canvas = make_canvas(&editor, EditMode::Cc(1));
-    let mut state = widget::VelocityCanvasState::default();
-    state.modifiers = Modifiers::CTRL;
+    let state = widget::VelocityCanvasState {
+        modifiers: Modifiers::CTRL,
+        ..Default::default()
+    };
 
     let action = canvas
         .handle_wheel_scrolled(&state, ScrollDelta::Lines { x: 0.0, y: -1.0 })
@@ -474,8 +476,10 @@ fn test_wheel_ctrl_zoom_preserved() {
 fn test_wheel_ctrl_noop_in_velocity_mode() {
     let editor = crate::Editor::new();
     let canvas = make_canvas(&editor, EditMode::Velocity);
-    let mut state = widget::VelocityCanvasState::default();
-    state.modifiers = Modifiers::CTRL;
+    let state = widget::VelocityCanvasState {
+        modifiers: Modifiers::CTRL,
+        ..Default::default()
+    };
 
     let action = canvas.handle_wheel_scrolled(&state, ScrollDelta::Lines { x: 0.0, y: -1.0 });
     assert!(action.is_none(), "Velocity 模式 Ctrl+滚轮应无操作");

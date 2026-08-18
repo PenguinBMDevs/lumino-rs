@@ -174,15 +174,20 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(200.0),
-            iced_widget::slider(1.0..=10.0, settings.editing.automation_line_thickness, |v| {
-                Message::Settings(crate::Event::AutomationLineThicknessChanged(v))
-            })
+            iced_widget::slider(
+                1.0..=10.0,
+                settings.editing.automation_line_thickness,
+                |v| { Message::Settings(crate::Event::AutomationLineThicknessChanged(v)) }
+            )
             .step(0.5_f32)
             .width(200.0),
-            text(format!("{:.1} px", settings.editing.automation_line_thickness))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(50.0),
+            text(format!(
+                "{:.1} px",
+                settings.editing.automation_line_thickness
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(50.0),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
@@ -197,15 +202,20 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style())
                 .width(200.0),
-            iced_widget::slider(50.0..=2000.0, settings.logging.monitor_refresh_interval_ms, |v| {
-                Message::Settings(crate::Event::MonitorRefreshIntervalChanged(v))
-            })
+            iced_widget::slider(
+                50.0..=2000.0,
+                settings.logging.monitor_refresh_interval_ms,
+                |v| { Message::Settings(crate::Event::MonitorRefreshIntervalChanged(v)) }
+            )
             .step(1.0_f32)
             .width(200.0),
-            text(format!("{:.0} ms", settings.logging.monitor_refresh_interval_ms))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(60.0),
+            text(format!(
+                "{:.0} ms",
+                settings.logging.monitor_refresh_interval_ms
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(60.0),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),

@@ -97,16 +97,20 @@ impl Root {
                             crate::event::window::Event::open_batch_edit_dialog(),
                         ));
                     }
-                    _ => {
-                        let editor_action = match item {
-                            PianoRollContextMenuItem::Cut => EditorAction::Cut,
-                            PianoRollContextMenuItem::Copy => EditorAction::Copy,
-                            PianoRollContextMenuItem::Paste => EditorAction::Paste,
-                            PianoRollContextMenuItem::Delete => EditorAction::DeletePressed,
-                            PianoRollContextMenuItem::SelectAll => EditorAction::SelectAll,
-                            PianoRollContextMenuItem::BatchEdit => unreachable!(),
-                        };
-                        self.handle_editor_action(editor_action);
+                    PianoRollContextMenuItem::Cut => {
+                        let _ = self.handle_editor_action(EditorAction::Cut);
+                    }
+                    PianoRollContextMenuItem::Copy => {
+                        let _ = self.handle_editor_action(EditorAction::Copy);
+                    }
+                    PianoRollContextMenuItem::Paste => {
+                        let _ = self.handle_editor_action(EditorAction::Paste);
+                    }
+                    PianoRollContextMenuItem::Delete => {
+                        let _ = self.handle_editor_action(EditorAction::DeletePressed);
+                    }
+                    PianoRollContextMenuItem::SelectAll => {
+                        let _ = self.handle_editor_action(EditorAction::SelectAll);
                     }
                 }
             }

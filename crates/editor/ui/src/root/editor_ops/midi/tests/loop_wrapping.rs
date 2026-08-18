@@ -50,14 +50,14 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
         wrapped_tick = manager.current_tick();
-        if wrapped_tick >= 80.0 && wrapped_tick <= 520.0 && wrapped_tick < 500.0 {
+        if (80.0..=520.0).contains(&wrapped_tick) && wrapped_tick < 500.0 {
             break;
         }
     }
     eprintln!("[DEBUG] tick after seek+wrap: {:.1}", wrapped_tick);
 
     assert!(
-        wrapped_tick >= 80.0 && wrapped_tick <= 300.0,
+        (80.0..=300.0).contains(&wrapped_tick),
         "引擎层回绕失败：current_tick 应接近 loop_start(100)，实际 = {}",
         wrapped_tick,
     );
@@ -185,12 +185,12 @@ fn test_loop_synced_to_new_playback_manager() {
     while Instant::now() < deadline {
         std::thread::sleep(Duration::from_millis(5));
         wrapped_tick = manager.current_tick();
-        if wrapped_tick >= 80.0 && wrapped_tick < 500.0 {
+        if (80.0..500.0).contains(&wrapped_tick) {
             break;
         }
     }
     assert!(
-        wrapped_tick >= 80.0 && wrapped_tick < 500.0,
+        (80.0..500.0).contains(&wrapped_tick),
         "期待回绕到 loop_start(100) 附近，实际 = {}",
         wrapped_tick,
     );

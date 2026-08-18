@@ -2,6 +2,18 @@
 
 use crate::root::Root;
 
+/// 工程设置对话框数据包（消除 `set_project_settings_data` 的 8 个参数）
+#[derive(Debug, Clone, Default)]
+pub struct ProjectSettingsDialogData {
+    pub title: String,
+    pub tempo: String,
+    pub copyright: String,
+    pub author: String,
+    pub created_display: String,
+    pub total_editing_time_seconds: f64,
+    pub time_signatures: Vec<(u32, u8, u8)>,
+}
+
 impl Root {
     /// 重置工程设置对话框状态到默认值。
     ///
@@ -13,25 +25,17 @@ impl Root {
     }
 
     /// 设置工程设置对话框数据
-    pub fn set_project_settings_data(
-        &mut self,
-        title: String,
-        tempo: String,
-        copyright: String,
-        author: String,
-        created_display: String,
-        total_editing_time_seconds: f64,
-        time_signatures: Vec<(u32, u8, u8)>,
-    ) {
-        self.state.project_settings_dialog.title = title;
-        self.state.project_settings_dialog.tempo = tempo;
-        self.state.project_settings_dialog.copyright = copyright;
-        self.state.project_settings_dialog.author = author;
-        self.state.project_settings_dialog.created_display = created_display;
+    pub fn set_project_settings_data(&mut self, data: ProjectSettingsDialogData) {
+        self.state.project_settings_dialog.title = data.title;
+        self.state.project_settings_dialog.tempo = data.tempo;
+        self.state.project_settings_dialog.copyright = data.copyright;
+        self.state.project_settings_dialog.author = data.author;
+        self.state.project_settings_dialog.created_display = data.created_display;
         self.state
             .project_settings_dialog
-            .total_editing_time_seconds = total_editing_time_seconds;
-        let (numerator, denominator) = time_signatures
+            .total_editing_time_seconds = data.total_editing_time_seconds;
+        let (numerator, denominator) = data
+            .time_signatures
             .first()
             .map(|(_, n, d)| (*n, *d))
             .unwrap_or((4, 4));

@@ -227,12 +227,14 @@ mod tests {
 
     #[test]
     fn test_visible_handle_sides() {
-        let mut path = BendPathState::default();
-        path.anchors = vec![
-            BendAnchor::new((0.0, 0.0)),
-            BendAnchor::new((960.0, 0.0)),
-            BendAnchor::new((1920.0, 0.0)),
-        ];
+        let path = BendPathState {
+            anchors: vec![
+                BendAnchor::new((0.0, 0.0)),
+                BendAnchor::new((960.0, 0.0)),
+                BendAnchor::new((1920.0, 0.0)),
+            ],
+            ..Default::default()
+        };
         assert_eq!(path.visible_handle_sides(0), vec![HandleSide::Out]);
         assert_eq!(
             path.visible_handle_sides(1),

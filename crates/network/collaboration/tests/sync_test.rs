@@ -56,12 +56,11 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     let start = std::time::Instant::now();
     while start.elapsed() < Duration::from_secs(5) {
         if let Ok(Some(event)) = tokio::time::timeout(Duration::from_millis(100), rx_a.recv()).await
+            && let CollaborationEvent::RoomCreated { room } = event
         {
-            if let CollaborationEvent::RoomCreated { room } = event {
-                println!("A room created: {:?}", room);
-                room_created = true;
-                break;
-            }
+            println!("A room created: {:?}", room);
+            room_created = true;
+            break;
         }
     }
     assert!(room_created, "A should receive RoomCreated event");

@@ -176,8 +176,10 @@ impl InteractionState {
                 break;
             }
             self.preview_sequence.pop_front();
-            self.pending_audio_actions
-                .push(AudioAction::PlayNote { key: note.key, velocity: note.velocity });
+            self.pending_audio_actions.push(AudioAction::PlayNote {
+                key: note.key,
+                velocity: note.velocity,
+            });
         }
     }
 }

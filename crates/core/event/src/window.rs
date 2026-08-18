@@ -8,6 +8,10 @@ pub mod video;
 
 use std::sync::Arc;
 
+// TODO(P3): Dialog variant 占 328 bytes，建议改用 Box<dialog::Event> 降低栈拷贝。
+// 但当前 const fn 构造函数直接构造 Dialog(dialog::Event)，改为 Box 会打破 const 约束。
+// 留待 P3 统一评审事件枚举内存布局后再处理。
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 /// 窗口事件
 pub enum Event {

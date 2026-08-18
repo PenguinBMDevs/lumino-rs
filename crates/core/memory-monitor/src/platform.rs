@@ -116,8 +116,8 @@ pub fn get_current_rss() -> u64 {
 #[cfg(target_os = "macos")]
 #[repr(C)]
 struct TaskBasicInfo64 {
-    virtual_size: u64, // 偏移 0
-    resident_size: u64, // 偏移 8 —— 即 RSS
+    virtual_size: u64,      // 偏移 0
+    resident_size: u64,     // 偏移 8 —— 即 RSS
     resident_size_max: u64, // 偏移 16
     user_time_seconds: i32, // time_value_t
     user_time_microseconds: i32,
@@ -158,7 +158,11 @@ pub fn get_current_rss() -> u64 {
 #[cfg(target_os = "macos")]
 #[test]
 fn test_macos_task_basic_info_layout() {
-    assert_eq!(std::mem::size_of::<TaskBasicInfo64>(), 48, "应为 48 字节（12 个字）");
+    assert_eq!(
+        std::mem::size_of::<TaskBasicInfo64>(),
+        48,
+        "应为 48 字节（12 个字）"
+    );
     assert_eq!(
         std::mem::offset_of!(TaskBasicInfo64, resident_size),
         8,

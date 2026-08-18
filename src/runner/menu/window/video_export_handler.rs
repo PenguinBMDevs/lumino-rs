@@ -5,17 +5,19 @@ use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 
 use lumino_event::window::video::VideoExportConfig as EventVideoExportConfig;
-use lumino_export::video::{Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig};
+use lumino_export::video::{
+    Container, EncoderBackend, QualityPreset, VideoCodec, VideoExportConfig,
+};
 use lumino_gfx::TextureFormat;
 
 use memory_task::run_video_export_task;
 use streaming_task::run_streaming_video_export_task;
 
-mod frame;
-mod pipeline;
 mod commands;
 mod composite;
+mod frame;
 mod memory_task;
+mod pipeline;
 mod streaming_task;
 
 impl RunnerInner {

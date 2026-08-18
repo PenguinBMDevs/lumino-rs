@@ -135,25 +135,8 @@ impl Host {
     }
 
     /// 设置工程设置对话框数据（用于独立对话框窗口）
-    pub fn set_project_settings_data(
-        &mut self,
-        title: String,
-        tempo: String,
-        copyright: String,
-        author: String,
-        created_display: String,
-        total_editing_time_seconds: f64,
-        time_signatures: Vec<(u32, u8, u8)>,
-    ) {
-        self.root.set_project_settings_data(
-            title,
-            tempo,
-            copyright,
-            author,
-            created_display,
-            total_editing_time_seconds,
-            time_signatures,
-        );
+    pub fn set_project_settings_data(&mut self, data: crate::root::ProjectSettingsDialogData) {
+        self.root.set_project_settings_data(data);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

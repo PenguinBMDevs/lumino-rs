@@ -144,7 +144,8 @@ impl EditorData {
                     .partition_point(start_tick.saturating_add(1))
                     .saturating_sub(1)
             };
-            self.note_delta_events.push(NoteDeltaEvent::InsertAt { index, note });
+            self.note_delta_events
+                .push(NoteDeltaEvent::InsertAt { index, note });
         }
         true
     }
@@ -190,10 +191,8 @@ impl EditorData {
                     .saturating_sub(1)
             };
             // update 语义 = 删除旧位置 + 按新 tick 插入新位置
-            self.note_delta_events.push(NoteDeltaEvent::RemoveAt {
-                index,
-                count: 1,
-            });
+            self.note_delta_events
+                .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
             self.note_delta_events.push(NoteDeltaEvent::InsertAt {
                 index: new_index,
                 note,

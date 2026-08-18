@@ -23,8 +23,8 @@ impl RunnerInner {
         current_theme: &str,
     ) -> Option<ConfigDiff> {
         let theme_changed = current_theme != old.theme;
-        let synth_changed =
-            new.synth.backend != old.preferred_backend || new.synth.soundfont_path != old.soundfont_path;
+        let synth_changed = new.synth.backend != old.preferred_backend
+            || new.synth.soundfont_path != old.soundfont_path;
         let xsynth_changed = new.synth.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.synth.xsynth_sample_rate != old.xsynth_sample_rate
             || new.synth.xsynth_threads != old.xsynth_threads

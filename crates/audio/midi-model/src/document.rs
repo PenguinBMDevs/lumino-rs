@@ -57,7 +57,11 @@ impl TrackNoteView {
 ///
 /// 收敛 `from_notes_bytes` 中 tempo/time_sig/key_sig 三处同构的
 /// "sort → dedup → 首项补默认" 模板。
-fn finalize_sorted_events<T>(events: &mut Vec<T>, get_tick: impl Fn(&T) -> u32, default_at_zero: T) {
+fn finalize_sorted_events<T>(
+    events: &mut Vec<T>,
+    get_tick: impl Fn(&T) -> u32,
+    default_at_zero: T,
+) {
     events.sort_unstable_by_key(&get_tick);
     events.dedup_by(|a, b| get_tick(a) == get_tick(b));
     if events.first().is_none_or(|e| get_tick(e) != 0) {
@@ -725,8 +729,7 @@ impl MidiDocument {
             .unwrap_or(0);
         // 空轨 max=0 不缓存为 Some(0)（避免与"脏"语义混淆），保持脏（None），
         // 下次查询继续惰性重算（空轨重算成本为 0）。
-        *cell.lock().unwrap_or_else(|e| e.into_inner()) =
-            if max == 0 { None } else { Some(max) };
+        *cell.lock().unwrap_or_else(|e| e.into_inner()) = if max == 0 { None } else { Some(max) };
         max
     }
 

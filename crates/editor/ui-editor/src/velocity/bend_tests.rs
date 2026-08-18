@@ -381,41 +381,42 @@ fn test_bend_same_height_click_creates_jump_pair() {
     // 点击 (250,100) → tick 1300 → 吸附仍 0，value 相同。
     let mut editor = crate::Editor::new();
     editor.set_tool(Tool::Curve);
-    let canvas = bend_canvas(&editor);
     let mut state = widget::VelocityCanvasState::default();
 
-    press(&canvas, &mut state, Point::new(300.0, 100.0));
-    assert_eq!(state.bend_path.anchors.len(), 1);
-    assert_eq!(state.bend_path.anchors[0].pos, (0.0, 10922.0));
+    {
+        let canvas = bend_canvas(&editor);
+        press(&canvas, &mut state, Point::new(300.0, 100.0));
+        assert_eq!(state.bend_path.anchors.len(), 1);
+        assert_eq!(state.bend_path.anchors[0].pos, (0.0, 10922.0));
 
-    // 同高度点击（吸附后完全重合）：必须创建第二个锚点
-    let action = press(&canvas, &mut state, Point::new(250.0, 100.0));
-    assert!(action.is_some(), "重合锚点创建应发 Add 消息");
-    assert_eq!(
-        state.bend_path.anchors.len(),
-        2,
-        "同高度点击必须创建第二个锚点（不能放弃）"
-    );
-    assert_eq!(
-        state.bend_path.anchors[1].pos,
-        (0.0, 10922.0),
-        "第二个锚点初始与第一个重合（跳变对初始状态）"
-    );
-    assert_eq!(state.bend_path.selected, Some(1), "新锚点被选中");
+        // 同高度点击（吸附后完全重合）：必须创建第二个锚点
+        let action = press(&canvas, &mut state, Point::new(250.0, 100.0));
+        assert!(action.is_some(), "重合锚点创建应发 Add 消息");
+        assert_eq!(
+            state.bend_path.anchors.len(),
+            2,
+            "同高度点击必须创建第二个锚点（不能放弃）"
+        );
+        assert_eq!(
+            state.bend_path.anchors[1].pos,
+            (0.0, 10922.0),
+            "第二个锚点初始与第一个重合（跳变对初始状态）"
+        );
+        assert_eq!(state.bend_path.selected, Some(1), "新锚点被选中");
 
-    // 同 tick 上限：第三个同 tick 锚点被拒绝（与重合创建不冲突）
-    press(&canvas, &mut state, Point::new(200.0, 100.0));
-    assert_eq!(
-        state.bend_path.anchors.len(),
-        2,
-        "同 tick 超过 2 个仍被拒绝"
-    );
+        // 同 tick 上限：第三个同 tick 锚点被拒绝（与重合创建不冲突）
+        press(&canvas, &mut state, Point::new(200.0, 100.0));
+        assert_eq!(
+            state.bend_path.anchors.len(),
+            2,
+            "同 tick 超过 2 个仍被拒绝"
+        );
+    }
 
     // 拖动锚点上行（y 减小 = value 增大）→ 分离形成上行突变。
     // 重合状态下点击命中第一个锚点（hit test 顺序），拖动它分离即可。
     use lumino_note_core::SegmentShape;
     use lumino_note_core::automation::{AutomationEdit, AutomationTarget};
-    drop(canvas);
     editor
         .editor_state
         .data
@@ -633,7 +634,7 @@ fn test_bend_vertical_jump_segment_no_insert() {
 
     // 点击竖直跳变线（x 略偏，命中 Segment；raw tick 越界）
     let v = view_params(&editor);
-    let x = v.tick_to_x(0) + 5.0; // 距锚点 5px（Segment 阈值 8px 内，Anchor 阈值 10px 内?）
+    let _x = v.tick_to_x(0) + 5.0; // 距锚点 5px（Segment 阈值 8px 内，Anchor 阈值 10px 内?）
     // Anchor 命中半径 10px：5px 会命中锚点，改用 9px
     let x = v.tick_to_x(0) + 9.0;
     let y_mid = (v.value_to_y(10922.0, 16383.0) + v.value_to_y(5461.0, 16383.0)) * 0.5;

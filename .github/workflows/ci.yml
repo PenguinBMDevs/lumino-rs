@@ -10,7 +10,61 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  check:
+  # ── 静态检查：cargo check + cargo clippy（×3 OS 并行）──────────────
+  # check 与 clippy 同机串行，避免重复拉取依赖；test 单独成 job 并行跑。
+  lint:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install system dependencies (Ubuntu)
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libssl-dev \
+            libasound2-dev \
+            libvulkan-dev \
+            libx11-dev \
+            libwayland-dev \
+            libfontconfig-dev \
+            libfreetype6-dev \
+            libxkbcommon-dev \
+            libegl1-mesa-dev
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      # 优化后的缓存配置：支持降级匹配
+      - name: Cache cargo & target
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Cargo check
+        run: cargo check --workspace
+
+      # clippy 门禁（全 workspace，所有 target，-D warnings）
+      # 说明：历史债务清理后 workspace 已可全绿。后续新增代码若触发
+      # too_many_arguments / large_enum_variant，优先参数结构体化或 Box 化，
+      # 禁止无差别 #[allow]。当前临时 allow 的枚举已在源码中标注 TODO(P3)。
+      - name: Cargo clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+  # ── 测试：cargo test（×3 OS 并行）────────────────────────────────
+  test:
     strategy:
       fail-fast: false
       matrix:
@@ -37,7 +91,6 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # 优化后的缓存配置：支持降级匹配
       - name: Cache cargo & target
         uses: actions/cache@v4
         with:
@@ -49,11 +102,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-
 
-      # 先检查（会利用缓存编译依赖）
-      - name: Cargo check
-        run: cargo check --workspace
-
-      # 测试（链接时使用修复的环境变量，仅 Windows 生效）
       - name: Cargo test
         run: cargo test --workspace
         env:

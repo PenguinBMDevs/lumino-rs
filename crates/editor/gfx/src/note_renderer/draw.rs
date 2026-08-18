@@ -28,7 +28,10 @@ impl NoteRenderer {
 
         let count = self.last_upload_count as usize;
         let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
-        let bind_group_count = self.cull_bind_groups.len().min(self.render_bind_groups.len());
+        let bind_group_count = self
+            .cull_bind_groups
+            .len()
+            .min(self.render_bind_groups.len());
         // 可见索引缓冲每个元素 4 bytes（u32），与 visible_index_buffer_layout 一致
         let index_size = std::mem::size_of::<u32>() as u64;
         for idx in 0..chunk_count.min(bind_group_count) {

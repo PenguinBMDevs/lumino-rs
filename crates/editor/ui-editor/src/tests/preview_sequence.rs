@@ -86,7 +86,11 @@ fn test_dragging_selection_sequence_timing_follows_bpm() {
     // 120 BPM：1 个四分音符（480 tick） = 500ms；4 个四分音符（1920 tick） = 2000ms
     let d1 = seq[1].play_at.duration_since(seq[0].play_at);
     let d2 = seq[2].play_at.duration_since(seq[0].play_at);
-    assert_eq!(d1, Duration::from_millis(500), "四分音符间隔应按 120 BPM 换算为 500ms");
+    assert_eq!(
+        d1,
+        Duration::from_millis(500),
+        "四分音符间隔应按 120 BPM 换算为 500ms"
+    );
     assert_eq!(d2, Duration::from_millis(2000), "4 个四分音符应为 2000ms");
 }
 
@@ -127,10 +131,7 @@ fn test_dragging_selection_sequence_timing_uses_tempo_at_first_note() {
         &mut editor,
         1,
         0,
-        &[
-            Note::new(0.0, 60, 100.0),
-            Note::new(960.0, 62, 100.0),
-        ],
+        &[Note::new(0.0, 60, 100.0), Note::new(960.0, 62, 100.0)],
     );
     // 首个音符 tick=0 处 tempo 120，tick 480 后变 240：序列应取首个音符处的 tempo
     editor
@@ -261,7 +262,10 @@ fn test_take_audio_actions_drains_sequence_by_timing() {
     assert!(
         matches!(
             actions.first(),
-            Some(AudioAction::PlayNote { key: 63, velocity: 100 })
+            Some(AudioAction::PlayNote {
+                key: 63,
+                velocity: 100
+            })
         ),
         "第一帧应弹出序列第一个音符（tick 0 的 ghost key）"
     );
@@ -281,7 +285,10 @@ fn test_take_audio_actions_drains_sequence_by_timing() {
     assert!(
         matches!(
             actions.first(),
-            Some(AudioAction::PlayNote { key: 65, velocity: 100 })
+            Some(AudioAction::PlayNote {
+                key: 65,
+                velocity: 100
+            })
         ),
         "play_at 到期后应弹出序列第二个音符"
     );

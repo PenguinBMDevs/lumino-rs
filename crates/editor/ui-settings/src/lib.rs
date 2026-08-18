@@ -378,10 +378,14 @@ impl SettingsPanel {
             }
             // 编辑设置
             Event::HistoryTotalLimitChanged(s) => {
-                parse_setting(&s, |v: usize| self.editing.history_total_limit = v.clamp(10, 1000));
+                parse_setting(&s, |v: usize| {
+                    self.editing.history_total_limit = v.clamp(10, 1000)
+                });
             }
             Event::HistoryEntryLimitChanged(s) => {
-                parse_setting(&s, |v: usize| self.editing.history_entry_limit = v.clamp(100, 10000));
+                parse_setting(&s, |v: usize| {
+                    self.editing.history_entry_limit = v.clamp(100, 10000)
+                });
             }
             Event::MergeWindowMsChanged(s) => {
                 parse_setting(&s, |v: u64| self.editing.merge_window_ms = v.min(5000));
@@ -546,8 +550,10 @@ mod tests {
     use lumino_core::storage::config::UiConfig;
 
     fn panel_with_tempo(max_bpm: f64) -> SettingsPanel {
-        let mut config = UiConfig::default();
-        config.tempo_max_bpm = max_bpm;
+        let config = UiConfig {
+            tempo_max_bpm: max_bpm,
+            ..Default::default()
+        };
         SettingsPanel::new(&config)
     }
 

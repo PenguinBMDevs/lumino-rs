@@ -173,8 +173,7 @@ mod tests {
             (r#"{"type":"error","error":"boom"}"#, "error"),
         ];
         for (json, expected) in cases {
-            let msg: ServerMessage =
-                serde_json::from_str(json).expect("测试 JSON 应可反序列化");
+            let msg: ServerMessage = serde_json::from_str(json).expect("测试 JSON 应可反序列化");
             assert_eq!(msg.type_name(), expected, "JSON: {json}");
         }
     }

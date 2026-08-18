@@ -84,8 +84,7 @@ pub fn panel(index: usize, can_edit: bool) -> Element<'static> {
 /// `enabled = false` 时按钮不响应点击且图标置灰（内置素材的全部菜单项）。
 fn menu_button(index: usize, item: MaterialContextMenuItem, enabled: bool) -> Element<'static> {
     let icon_view: Element<'static> =
-        icon::view_with_size_and_theme(item_icon(item), ICON_SIZE, ICON_SIZE, Some(&Theme::Dark))
-            .into();
+        icon::view_with_size_and_theme(item_icon(item), ICON_SIZE, ICON_SIZE, Some(&Theme::Dark));
 
     // 禁用态：图标上叠加半透明面板底色遮罩，呈现置灰效果
     let icon_view = if enabled {

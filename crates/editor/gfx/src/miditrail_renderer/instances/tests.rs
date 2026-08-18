@@ -639,13 +639,27 @@ fn test_note_instances_sort_key_equivalent() {
 
     // 参考：旧三键闭包排序
     let mut expected_instances = Vec::new();
-    build_note_instances_old_style(&uniform, &notes, &positions, &widths, &mut expected_instances);
+    build_note_instances_old_style(
+        &uniform,
+        &notes,
+        &positions,
+        &widths,
+        &mut expected_instances,
+    );
     // 新实现
     let mut actual_instances = Vec::new();
     build_note_instances(&uniform, &notes, &positions, &widths, &mut actual_instances);
 
-    assert_eq!(expected_instances.len(), actual_instances.len(), "实例数量必须一致");
-    for (i, (a, b)) in expected_instances.iter().zip(actual_instances.iter()).enumerate() {
+    assert_eq!(
+        expected_instances.len(),
+        actual_instances.len(),
+        "实例数量必须一致"
+    );
+    for (i, (a, b)) in expected_instances
+        .iter()
+        .zip(actual_instances.iter())
+        .enumerate()
+    {
         assert_eq!(
             a.translation, b.translation,
             "第 {i} 个实例 translation 不一致"
