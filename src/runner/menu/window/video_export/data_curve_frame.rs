@@ -17,7 +17,7 @@
 
 use std::collections::VecDeque;
 
-use lumino_event::window::video::{CounterFont, DataCurveConfig, DataCurveMetric};
+use lumino_message::events::window::video::{CounterFont, DataCurveConfig, DataCurveMetric};
 
 use super::counter_font::CounterFontRenderer;
 use super::data_curve_draw::{blend_hline, draw_thick_line, fill_bgra};

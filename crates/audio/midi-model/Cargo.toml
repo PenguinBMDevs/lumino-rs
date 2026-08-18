@@ -19,5 +19,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 bincode = { workspace = true }
 encoding_rs = { workspace = true }
-lumino-memory-monitor = { workspace = true }
-lumino-memtrace = { workspace = true }
+lumino-diagnostics = { workspace = true }

@@ -6,28 +6,6 @@
 use super::super::EditorData;
 
 impl EditorData {
-    /// 检查 NoteStore 是否启用（降级恒为 false）
-    pub fn is_note_store_enabled(&self) -> bool {
-        false
-    }
-
-    /// 计算所有音符的边界（顺序扫描 document 当前轨）
-    pub fn compute_all_notes_bounds(&self) -> (f32, f32, u16, u16) {
-        let mut min_t = f32::INFINITY;
-        let mut max_te = f32::NEG_INFINITY;
-        let mut max_k = u16::MIN;
-        let mut min_k = u16::MAX;
-        for note in self.current_track_notes().iter() {
-            let tick = note.start_tick as f32;
-            let end = note.end_tick as f32;
-            min_t = min_t.min(tick);
-            max_te = max_te.max(end);
-            max_k = max_k.max(note.key as u16);
-            min_k = min_k.min(note.key as u16);
-        }
-        (min_t, max_te, max_k, min_k)
-    }
-
     /// 获取音符只读视图（从 document 当前轨转换）
     pub fn get_note_view(&self, idx: usize) -> Option<lumino_note_core::note_store::NoteView> {
         self.current_track_notes()
@@ -58,10 +36,5 @@ impl EditorData {
                 },
             );
         }
-    }
-
-    /// NoteStore 内存占用（降级恒为 0）
-    pub fn note_store_memory_mb(&self) -> f64 {
-        0.0
     }
 }

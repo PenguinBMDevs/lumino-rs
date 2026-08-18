@@ -159,20 +159,20 @@ impl NoteRenderer {
             device,
             &self.chunk_layout,
             self.gpu_note_buffer.buffer(),
-            &self.visible_instance_buffer,
-            &self.indirect_buffer,
-            &self.cull_uniform_buffer,
-            &self.viewport_buffer,
+            self.visible_instance_buffer.inner(),
+            self.indirect_buffer.inner(),
+            self.cull_uniform_buffer.inner(),
+            self.viewport_buffer.inner(),
             self.cull_uniform_buffer_size,
             &self.cull_bind_group_layout,
         );
         self.render_bind_groups = Self::create_render_bind_groups(
             device,
             &self.render_bind_group_layout,
-            &self.viewport_buffer,
-            &self.view_state_buffer,
+            self.viewport_buffer.inner(),
+            self.view_state_buffer.inner(),
             self.gpu_note_buffer.buffer(),
-            &self.visible_instance_buffer,
+            self.visible_instance_buffer.inner(),
             &self.chunk_layout,
         );
 
@@ -195,7 +195,7 @@ impl NoteRenderer {
             };
             let slot_offset = self.chunk_layout.chunk_offset_bytes(idx);
             queue.write_buffer(
-                &self.cull_uniform_buffer,
+                self.cull_uniform_buffer.inner(),
                 slot_offset,
                 bytemuck::cast_slice(&[uniform]),
             );
@@ -223,13 +223,17 @@ impl NoteRenderer {
             indirect_init[offset as usize..offset as usize + default_bytes.len()]
                 .copy_from_slice(default_bytes);
         }
-        queue.write_buffer(&self.indirect_buffer, 0, &indirect_init);
+        queue.write_buffer(self.indirect_buffer.inner(), 0, &indirect_init);
 
         if self.last_upload_count == 0 {
             return;
         }
         // 上传 viewport uniform
-        queue.write_buffer(&self.viewport_buffer, 0, bytemuck::cast_slice(&[camera]));
+        queue.write_buffer(
+            self.viewport_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
 
         // 执行 Compute Culling：每 chunk 一次 dispatch
         let count = self.last_upload_count as usize;

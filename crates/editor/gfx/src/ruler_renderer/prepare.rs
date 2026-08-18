@@ -5,7 +5,6 @@
 use super::{
     GROWTH_FACTOR, RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
-use crate::gpu_resource_tracker;
 use crate::grid::generate_ruler_instances;
 
 impl RulerRenderer {
@@ -72,20 +71,23 @@ impl RulerRenderer {
 
             if instance_count > self.capacity {
                 let new_capacity = (self.capacity * GROWTH_FACTOR).max(instance_count);
-                gpu_resource_tracker::sub_buffer(&self.instance_buffer);
                 self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
                 self.capacity = new_capacity;
             }
 
             if instance_count > 0 {
-                queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+                queue.write_buffer(
+                    self.instance_buffer.inner(),
+                    0,
+                    bytemuck::cast_slice(instances),
+                );
             }
         }
 
         // viewport uniform 每帧更新（体积极小，含 scroll_x 等视口参数）
         let viewport_uniform = RulerViewportUniform::from_params(params);
         queue.write_buffer(
-            &self.viewport_buffer,
+            self.viewport_buffer.inner(),
             0,
             bytemuck::cast_slice(&[viewport_uniform]),
         );

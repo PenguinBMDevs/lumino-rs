@@ -1,0 +1,31 @@
+[package]
+name = "lumino-diagnostics"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+tracing = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+libc = { workspace = true }
+tikv-jemallocator = { workspace = true }
+tikv-jemalloc-ctl = { workspace = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+libc = { workspace = true }
+mimalloc = { workspace = true }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+winapi = { workspace = true, features = ["sysinfoapi", "psapi", "processthreadsapi", "handleapi", "winnt"] }
+

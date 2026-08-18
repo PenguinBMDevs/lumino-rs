@@ -6,9 +6,9 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc::{Sender, channel};
 use std::time::Instant;
 
-use lumino_event::window::video::RenderMode;
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
+use lumino_message::events::window::video::RenderMode;
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::{
@@ -195,14 +195,14 @@ fn enqueue_memory_frame(
                 // 缺失此调用会导致 NPS/复音数/音符数永远停留在 0 → 曲线为 0 值直线。
                 stats.advance(ctx.document, tick, ctx.fps_f64 as u32);
                 let value = match cfg.metric {
-                    lumino_event::window::video::DataCurveMetric::Nps => stats.nps as f64,
-                    lumino_event::window::video::DataCurveMetric::Polyphony => {
+                    lumino_message::events::window::video::DataCurveMetric::Nps => stats.nps as f64,
+                    lumino_message::events::window::video::DataCurveMetric::Polyphony => {
                         stats.polyphony as f64
                     }
-                    lumino_event::window::video::DataCurveMetric::NoteCount => {
+                    lumino_message::events::window::video::DataCurveMetric::NoteCount => {
                         stats.note_count as f64
                     }
-                    lumino_event::window::video::DataCurveMetric::Bpm => {
+                    lumino_message::events::window::video::DataCurveMetric::Bpm => {
                         video_export::current_bpm(&ctx.document.tempo_changes, tick)
                     }
                 };
@@ -356,7 +356,7 @@ pub(super) fn run_video_export_task(
                 tracing::warn!("计数器字体加载失败（回退内置点阵）: {e}");
                 counter_renderer = Some(
                     CounterFontRenderer::new(
-                        &lumino_event::window::video::CounterFont::Bitmap,
+                        &lumino_message::events::window::video::CounterFont::Bitmap,
                         cfg.font_size,
                     )
                     .expect("内置点阵字体渲染器不会失败"),
@@ -380,7 +380,7 @@ pub(super) fn run_video_export_task(
             Err(e) => {
                 tracing::warn!("数据曲线字体加载失败（回退内置点阵）: {e}");
                 let fallback = DataCurveRenderConfig {
-                    font: lumino_event::window::video::CounterFont::Bitmap,
+                    font: lumino_message::events::window::video::CounterFont::Bitmap,
                     ..cfg.clone()
                 };
                 data_curve_renderer = Some(

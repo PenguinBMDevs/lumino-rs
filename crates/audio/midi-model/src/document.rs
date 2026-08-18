@@ -3,7 +3,7 @@
 //! 使用 midly 提取音符后以 NoteEvent（16 bytes/note）紧凑存放。
 //! 每轨独立一个 Vec，按 start_tick 排序，查询时无需 active-table 配对。
 
-use lumino_memory_monitor::MemoryMonitor;
+use lumino_diagnostics::memory_monitor::MemoryMonitor;
 
 use crate::error::{LoaderError, LoaderResult};
 use crate::note_event::NoteEvent;
@@ -200,7 +200,7 @@ impl MidiDocument {
         }
 
         // 使用 MIDI 标签追踪解析过程中的密集内存分配
-        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Midi, || {
+        lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Midi, || {
             let track_names = scan::scan_track_names(file_bytes);
 
             if let Some(cb) = progress {

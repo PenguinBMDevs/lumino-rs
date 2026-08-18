@@ -21,9 +21,6 @@ impl super::Editor {
             track_idx
         );
 
-        // 同步 NoteStore（降级 no-op，保留调用兼容）
-        self.editor_state.data.sync_note_store();
-
         // 切换音轨时清除选中状态（通过 editor_state）
         self.selection_clear();
         self.editor_state.interaction.hover_state = None;

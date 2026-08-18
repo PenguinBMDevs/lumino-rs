@@ -93,7 +93,7 @@ impl Root {
     fn from_params(params: RootInitParams) -> Self {
         puffin::profile_scope!("root_from_params");
         // 使用 UI 内存标签包裹 Root 各子组件初始化，便于内存监控归因
-        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+        lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             let mut state = RootState::new();
             if let Some(dt) = params.dialog_type {
                 state.is_dialog_window = true;

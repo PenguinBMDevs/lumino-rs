@@ -1,6 +1,5 @@
 use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
-use crate::gpu_resource_tracker;
 
 /// 键盘渲染器准备参数
 #[derive(Debug, Clone)]
@@ -49,20 +48,24 @@ impl KeyboardRenderer {
         let instances = &self.cached_instances;
         let instance_count = instances.len();
 
+        // 扩容实例缓冲区（旧缓冲由 TrackedBuffer Drop 自动注销）
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
-            gpu_resource_tracker::sub_buffer(&self.instance_buffer);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
 
         if instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+            queue.write_buffer(
+                self.instance_buffer.inner(),
+                0,
+                bytemuck::cast_slice(instances),
+            );
         }
 
         let viewport_uniform = KeyboardViewportUniform::from_params(params);
         queue.write_buffer(
-            &self.viewport_buffer,
+            self.viewport_buffer.inner(),
             0,
             bytemuck::cast_slice(&[viewport_uniform]),
         );
@@ -77,7 +80,7 @@ impl KeyboardRenderer {
 
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &self.bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        render_pass.set_vertex_buffer(0, self.instance_buffer.inner().slice(..));
         render_pass.draw(0..4, 0..instance_count);
     }
 }

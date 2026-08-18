@@ -19,7 +19,7 @@ impl Editor {
     /// 创建新的编辑器实例
     pub fn new() -> Self {
         // 使用 UI 内存标签包裹编辑器初始化，便于内存监控归因
-        lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+        lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
             Self {
                 editor_state: crate::editor_state::EditorState::new(),
                 grid_cache: canvas::Cache::new(),
@@ -291,8 +291,6 @@ impl Editor {
         self.push_history();
         let inserted = self.editor_state.data.batch_insert_notes(&notes);
         self.editor_state.data.mark_current_track_changed();
-        // 插入后同步 NoteStore（降级 no-op，保留调用兼容）
-        self.editor_state.data.sync_note_store();
         // 插入位移了既有音符索引，旧选中索引全部失效：清空后按参数全等
         // 重选「副本」（最新件框选；副本 tick 可能落在现有音符之间，索引散布
         // 而非连续追加，不能按 start..start+inserted 连续区间选中）。

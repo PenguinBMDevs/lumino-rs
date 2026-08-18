@@ -21,7 +21,6 @@ iced_widget = { workspace = true, features = ["image"] }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
-lumino-event = { workspace = true }
 lumino-message = { workspace = true }
 # 注意：playback / midi-io / midi-loader 依赖已随 midi_state/playback_state
 # 上移至 lumino-ui::state（ui-core 保持为 UI 基础层，不依赖业务 crate）

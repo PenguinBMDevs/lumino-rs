@@ -2,8 +2,8 @@
 //!
 //! 保持与原有 `crate::event::*` 路径完全兼容。
 
-pub use lumino_event::*;
+pub use lumino_message::events::*;
 
 // 重新导出子模块以保持深层路径兼容（如 crate::event::menu::file::Event）
-pub use lumino_event::menu;
-pub use lumino_event::window;
+pub use lumino_message::events::menu;
+pub use lumino_message::events::window;

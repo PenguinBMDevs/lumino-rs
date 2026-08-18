@@ -148,8 +148,6 @@ impl Editor {
         let start = self.editor_state.data.current_track_note_count();
         self.editor_state.data.batch_insert_notes(&pasted);
         self.editor_state.data.mark_current_track_changed();
-        // 粘贴后同步 NoteStore（降级 no-op，保留调用兼容）
-        self.editor_state.data.sync_note_store();
         // 注意：batch_insert_notes 按 start_tick 有序插入。若粘贴的 tick 落在
         // 现有音符之间，新音符索引将散布而非连续追加——此选中逻辑仅在
         // 粘贴音符 tick 不小于现有最大 tick（常见场景）时与旧 append 语义一致。

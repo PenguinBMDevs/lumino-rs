@@ -11,11 +11,11 @@
 use std::ptr;
 use std::sync::mpsc;
 
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 /// GPU→CPU 读回缓冲区
 struct StagingBuffer {
-    buffer: wgpu::Buffer,
+    buffer: TrackedBuffer,
     padded_bytes_per_row: u32,
     unpadded_bytes_per_row: u32,
     width: u32,
@@ -62,13 +62,15 @@ impl StagingRing {
         let padded_bytes_per_row = unpadded_bytes_per_row.div_ceil(align) * align;
         let buffer_size = (padded_bytes_per_row * height) as u64;
 
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("staging_ring"),
-            size: buffer_size,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
+        let buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("staging_ring"),
+                size: buffer_size,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
 
         StagingBuffer {
             buffer,
@@ -93,9 +95,8 @@ impl StagingRing {
                 // 滞留在 channel 中，后续 try_read 的 is_ok() 误判导致
                 // get_mapped_range 在已销毁 buffer 上 panic（wgpu_core.rs:2169）。
                 slot.rx = None;
-                if let Some(old) = slot.buffer.take() {
-                    gpu_resource_tracker::sub_buffer(&old.buffer);
-                }
+                // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数
+                slot.buffer.take();
                 slot.buffer = Some(Self::create_staging_buffer(&self.device, width, height));
                 changed = true;
             }
@@ -133,7 +134,7 @@ impl StagingRing {
     fn map_after_submit(&mut self, slot_idx: usize) {
         let slot = &mut self.slots[slot_idx];
         let buf = slot.buffer.as_ref().expect("staging slot 应有 buffer");
-        let slice = buf.buffer.slice(..);
+        let slice = buf.buffer.inner().slice(..);
         let (tx, rx) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
@@ -176,9 +177,8 @@ impl StagingRing {
             .as_ref()
             .map(|b| (b.width, b.height))
             .unwrap_or((0, 0));
-        if let Some(old) = slot.buffer.take() {
-            gpu_resource_tracker::sub_buffer(&old.buffer);
-        }
+        // 旧缓冲由 Option::take 触发 Drop 自动注销内存计数
+        slot.buffer.take();
         if size.0 > 0 && size.1 > 0 {
             slot.buffer = Some(Self::create_staging_buffer(&self.device, size.0, size.1));
         }
@@ -230,7 +230,7 @@ impl StagingRing {
         slot.rx = None;
         let buf = slot.buffer.as_ref().expect("staging slot 应有 buffer");
 
-        let data = buf.buffer.slice(..).get_mapped_range();
+        let data = buf.buffer.inner().slice(..).get_mapped_range();
         let total_unpadded = (buf.unpadded_bytes_per_row * buf.height) as usize;
 
         // 从对象池取出复用，或新建缓冲区；确保容量足够当前尺寸
@@ -265,7 +265,7 @@ impl StagingRing {
             }
         }
         drop(data);
-        buf.buffer.unmap();
+        buf.buffer.inner().unmap();
 
         self.next_read = (self.next_read + 1) % 4;
         self.inflight -= 1;
@@ -295,9 +295,8 @@ impl Drop for StagingRing {
         for slot in &mut self.slots {
             // 先丢弃 rx，避免 wgpu 在 buffer drop 时同步回调 Err 消息滞留
             slot.rx = None;
-            if let Some(old) = slot.buffer.take() {
-                gpu_resource_tracker::sub_buffer(&old.buffer);
-            }
+            // TrackedBuffer Drop 自动注销内存计数
+            slot.buffer.take();
         }
     }
 }
@@ -369,7 +368,7 @@ impl ExportPipeline {
                 aspect: wgpu::TextureAspect::All,
             },
             wgpu::TexelCopyBufferInfo {
-                buffer: &staging.buffer,
+                buffer: staging.buffer.inner(),
                 layout: wgpu::TexelCopyBufferLayout {
                     offset: 0,
                     bytes_per_row: Some(staging.padded_bytes_per_row),

@@ -1,6 +1,6 @@
 pub mod types;
 
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 pub use types::{
     CameraParams, CameraUniform, CullUniform, NoteInstance, PREVIEW_BORDER_SENTINEL, RenderUniform,
@@ -25,9 +25,9 @@ pub struct NoteRenderer {
     /// 计算管线 (用于裁剪)
     cull_pipeline: wgpu::ComputePipeline,
     /// 可见实例缓冲区 (裁剪后)
-    visible_instance_buffer: wgpu::Buffer,
+    visible_instance_buffer: TrackedBuffer,
     /// 间接绘制参数缓冲区
-    indirect_buffer: wgpu::Buffer,
+    indirect_buffer: TrackedBuffer,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
     /// 最大缓冲区容量（受 GPU max_storage_buffer_binding_size 限制）
@@ -36,14 +36,14 @@ pub struct NoteRenderer {
     /// 保留字段用于诊断/统计（记录硬件限制信息）。
     #[allow(dead_code)]
     max_capacity: usize,
-    /// 上次实际上传的实例数量（用于 prepare_pass 调度 compute）
+    /// 上次实际上传的实例数量（用于准备 pass 调度 compute）
     last_upload_count: u32,
     /// 视口 uniform 缓冲区
-    viewport_buffer: wgpu::Buffer,
+    viewport_buffer: TrackedBuffer,
     /// 视图状态 uniform 缓冲区（当前音轨 + 静音位图，切轨/静音零重传）
-    view_state_buffer: wgpu::Buffer,
+    view_state_buffer: TrackedBuffer,
     /// 裁剪 uniform 缓冲区（MAX_CHUNKS × slot_align 槽位，每 chunk 一条）
-    cull_uniform_buffer: wgpu::Buffer,
+    cull_uniform_buffer: TrackedBuffer,
     /// cull uniform 缓冲区总字节数（绑定 offset 越界断言用）
     cull_uniform_buffer_size: u64,
     /// 渲染 Bind groups（每 chunk 一个，storage binding 2GB 上限分块规避）
@@ -98,21 +98,10 @@ impl NoteRenderer {
             state.set_muted(track, true);
         }
         queue.write_buffer(
-            &self.view_state_buffer,
+            self.view_state_buffer.inner(),
             0,
             bytemuck::cast_slice(std::slice::from_ref(&state)),
         );
-    }
-}
-
-impl Drop for NoteRenderer {
-    fn drop(&mut self) {
-        // gpu_note_buffer 在其自身的 Drop 中释放 instance_buffer
-        gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
-        gpu_resource_tracker::sub_buffer(&self.indirect_buffer);
-        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
-        gpu_resource_tracker::sub_buffer(&self.view_state_buffer);
-        gpu_resource_tracker::sub_buffer(&self.cull_uniform_buffer);
     }
 }
 

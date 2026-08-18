@@ -21,14 +21,11 @@ lumino-extras = { workspace = true }
 lumino-export = { workspace = true }
 lumino-project = { workspace = true }
 lumino-editor-state = { workspace = true }
-lumino-event = { workspace = true }
 lumino-gfx = { workspace = true }
 lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
-lumino-memory-monitor = { workspace = true }
-lumino-memtrace = { workspace = true }
-lumino-playback = { workspace = true }
+lumino-diagnostics = { workspace = true }
 lumino-collaboration = { workspace = true }
 # lumino-ui-constants: merged into lumino-ui-core::constants
 lumino-ui-core = { workspace = true }

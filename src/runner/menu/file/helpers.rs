@@ -26,7 +26,8 @@ impl RunnerInner {
             return;
         }
         let mem = self.window_state.window.ui().memory_breakdown();
-        let rss_mb = lumino_memory_monitor::MemoryMonitor::global().current_rss() / (1024 * 1024);
+        let rss_mb = lumino_diagnostics::memory_monitor::MemoryMonitor::global().current_rss()
+            / (1024 * 1024);
         let writer_total = mem.note_instances_writer_cap as u64 * mem.note_instance_size as u64;
         let ready_total = mem.note_instances_ready_cap as u64 * mem.note_instance_size as u64;
         let reading_total = mem.note_instances_reading_cap as u64 * mem.note_instance_size as u64;

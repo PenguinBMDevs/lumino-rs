@@ -3,7 +3,7 @@
 //! Message 枚举是整个应用的消息中枢。拆分在此文件以保持 lib.rs 精简。
 //! 通过 types.rs → lib.rs 的 pub use 链重新导出到 crate 根路径。
 
-use lumino_event::Event;
+use crate::events::Event;
 
 use crate::audio_export::AudioExportAction;
 use crate::batch_edit::BatchEditAction;

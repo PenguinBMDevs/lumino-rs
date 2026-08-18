@@ -1,6 +1,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex};
 
+use crate::gpu_resource_tracker::TrackedTexture;
 use crate::render_thread::commands::{FrameSender, RenderCommand};
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::params::RenderParams;
@@ -48,7 +49,7 @@ pub struct RenderThreadChannels {
     /// 命令接收端（UI 线程 → 渲染线程）
     pub command_receiver: std::sync::mpsc::Receiver<RenderCommand>,
     /// 离屏纹理共享引用（渲染线程写入最新纹理 → 主线程复制到 Surface）
-    pub latest_texture_clone: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    pub latest_texture_clone: Arc<Mutex<Option<Arc<TrackedTexture>>>>,
     /// 渲染统计共享引用（渲染线程写入 → UI 线程读取）
     pub stats_clone: Arc<Mutex<RenderStats>>,
     /// 音符事件接收端（UI 线程 → 渲染线程增量更新）
@@ -76,9 +77,9 @@ pub struct RenderFrameState<'a> {
     /// 5 个渲染器（网格、音符、标尺、走带、CC 柱状条）
     pub renderers: &'a mut Renderers,
     /// 当前帧的离屏渲染纹理
-    pub current_texture: &'a mut Option<Arc<wgpu::Texture>>,
+    pub current_texture: &'a mut Option<Arc<TrackedTexture>>,
     /// 当前帧的深度纹理
-    pub depth_texture: &'a mut Option<wgpu::Texture>,
+    pub depth_texture: &'a mut Option<TrackedTexture>,
     /// 当前帧的深度纹理视图
     pub depth_texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前帧的离屏渲染纹理视图（缓存，避免每帧 create_view）
@@ -88,7 +89,7 @@ pub struct RenderFrameState<'a> {
     /// 音符实例版本号（检测是否需重上传）
     pub last_note_version: &'a mut u64,
     /// 离屏纹理共享引用（ensure_textures 中设置为最新纹理给主线程）
-    pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<TrackedTexture>>>>,
     /// 贴图瀑布流渲染器
     pub texture_waterfall_renderer: &'a mut Option<TextureWaterfallRenderer>,
     /// 贴图瀑布流元数据（视口计算用）
@@ -115,9 +116,9 @@ pub(crate) struct PreviewUploadContext<'a> {
     /// 跨线程通信通道
     pub(crate) channels: &'a RenderThreadChannels,
     /// 当前离屏纹理
-    pub(crate) current_texture: &'a mut Option<Arc<wgpu::Texture>>,
+    pub(crate) current_texture: &'a mut Option<Arc<TrackedTexture>>,
     /// 当前深度纹理
-    pub(crate) depth_texture: &'a mut Option<wgpu::Texture>,
+    pub(crate) depth_texture: &'a mut Option<TrackedTexture>,
     /// 当前深度纹理视图
     pub(crate) depth_texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前纹理视图
@@ -141,9 +142,9 @@ pub(crate) struct PreviewPassContext<'a> {
     /// 主渲染器集合
     pub(crate) renderers: &'a mut Renderers,
     /// 当前离屏纹理
-    pub(crate) current_texture: &'a mut Option<Arc<wgpu::Texture>>,
+    pub(crate) current_texture: &'a mut Option<Arc<TrackedTexture>>,
     /// 当前深度纹理
-    pub(crate) depth_texture: &'a mut Option<wgpu::Texture>,
+    pub(crate) depth_texture: &'a mut Option<TrackedTexture>,
     /// 当前深度纹理视图
     pub(crate) depth_texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前纹理视图
@@ -201,9 +202,9 @@ pub(crate) struct VideoExportFrameContext<'a> {
     /// 主渲染器集合
     pub(crate) renderers: &'a mut Renderers,
     /// 当前离屏纹理
-    pub(crate) current_texture: &'a mut Option<Arc<wgpu::Texture>>,
+    pub(crate) current_texture: &'a mut Option<Arc<TrackedTexture>>,
     /// 当前深度纹理
-    pub(crate) depth_texture: &'a mut Option<wgpu::Texture>,
+    pub(crate) depth_texture: &'a mut Option<TrackedTexture>,
     /// 当前深度纹理视图
     pub(crate) depth_texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前纹理视图
@@ -242,9 +243,9 @@ pub(crate) struct DeferredCommandContext<'a> {
     /// 视频导出专用渲染器
     pub(crate) export_renderers: &'a mut Option<Renderers>,
     /// 当前离屏纹理
-    pub(crate) current_texture: &'a mut Option<Arc<wgpu::Texture>>,
+    pub(crate) current_texture: &'a mut Option<Arc<TrackedTexture>>,
     /// 当前深度纹理
-    pub(crate) depth_texture: &'a mut Option<wgpu::Texture>,
+    pub(crate) depth_texture: &'a mut Option<TrackedTexture>,
     /// 当前深度纹理视图
     pub(crate) depth_texture_view: &'a mut Option<wgpu::TextureView>,
     /// 当前纹理视图

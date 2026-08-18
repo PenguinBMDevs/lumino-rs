@@ -7,7 +7,7 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container, row, space, text};
-use lumino_memtrace::{AllocTag, Snapshot};
+use lumino_diagnostics::memtrace::{AllocTag, Snapshot};
 
 use crate::message::Message;
 use crate::state::root_state::MemoryMonitorDialogState;
@@ -19,7 +19,8 @@ pub fn view_memory_monitor_dialog<'a>(
 ) -> crate::Element<'a> {
     let palette = theme.extended_palette();
     let snapshot = Snapshot::capture();
-    let rss_mb = lumino_memory_monitor::platform::get_current_rss() as f64 / 1_048_576.0;
+    let rss_mb =
+        lumino_diagnostics::memory_monitor::platform::get_current_rss() as f64 / 1_048_576.0;
 
     let label_style = move |_theme: &iced_core::Theme| text::Style {
         color: Some(palette.background.neutral.text),

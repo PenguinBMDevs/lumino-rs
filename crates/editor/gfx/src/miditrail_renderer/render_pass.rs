@@ -64,9 +64,12 @@ impl MiditrailRenderer {
 
             render_pass.set_pipeline(&self.note_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+            render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
+            render_pass.set_index_buffer(
+                self.index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
 
             // 1. 绘制音符（不写深度缓冲，参考 Comet MIDITrail 的 Painter's algorithm，
             //    琴键后绘制并覆盖音符）
@@ -78,9 +81,12 @@ impl MiditrailRenderer {
             // 3. 绘制琴键，覆盖音符与光环
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.set_bind_group(0, bind_group, &[]);
-            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-            render_pass.set_vertex_buffer(1, instance_buf.slice(..));
-            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+            render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
+            render_pass.set_index_buffer(
+                self.index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
             render_pass.draw_indexed(
                 0..Self::CUBE_INDICES.len() as u32,
                 0,

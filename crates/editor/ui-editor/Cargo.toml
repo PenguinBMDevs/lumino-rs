@@ -27,8 +27,7 @@ lumino-midi-loader = { workspace = true }
 lumino-ui-core = { workspace = true }
 # lumino-ui-constants: merged into lumino-ui-core::constants
 lumino-message = { workspace = true }
-lumino-event = { workspace = true }
-lumino-memtrace = { workspace = true }
+lumino-diagnostics = { workspace = true }
 rayon = { workspace = true }
 tracing = { workspace = true }
 once_cell = { workspace = true }

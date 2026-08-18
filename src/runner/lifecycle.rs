@@ -60,8 +60,8 @@ impl winit::application::ApplicationHandler for Runner {
 
                     // 看门狗在加载 MIDI 前确保已启动，并标记加载状态：
                     // 测试模式同样受"只监控加载 MIDI 期间"约束
-                    lumino_memory_monitor::watchdog::spawn_watchdog();
-                    lumino_memory_monitor::midi_guard::set_midi_load_active(true);
+                    lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
 
                     tokio::spawn(async move {
                         match lumino_midi_loader::loader::load_parsed_midi(
@@ -72,7 +72,7 @@ impl winit::application::ApplicationHandler for Runner {
                         {
                             Ok(parsed) => {
                                 tracing::info!("测试模式：MIDI 加载完成");
-                                lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                                 lumino_ui::event::emit(lumino_ui::event::Event::Menu(
                                     lumino_ui::event::menu::Event::File(
                                         lumino_ui::event::menu::file::Event::MidiParsed(
@@ -83,7 +83,7 @@ impl winit::application::ApplicationHandler for Runner {
                             }
                             Err(e) => {
                                 tracing::error!("测试模式：MIDI 加载失败 - {e}");
-                                lumino_memory_monitor::midi_guard::set_midi_load_active(false);
+                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                                 lumino_ui::event::emit(lumino_ui::event::Event::Menu(
                                     lumino_ui::event::menu::Event::File(
                                         lumino_ui::event::menu::file::Event::MidiParseError(

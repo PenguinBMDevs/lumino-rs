@@ -1,18 +1,15 @@
 use super::super::types::KeyInstance;
 use super::KeyboardRenderer;
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::{self, TrackedBuffer};
 
 impl KeyboardRenderer {
     /// 创建实例缓冲区
-    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("keyboard_instance_buffer"),
-            size: (capacity * std::mem::size_of::<KeyInstance>()) as u64,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
-        buffer
+    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> TrackedBuffer {
+        gpu_resource_tracker::create_instance_buffer::<KeyInstance>(
+            device,
+            "keyboard_instance_buffer",
+            capacity,
+        )
     }
 
     /// 实例缓冲区布局

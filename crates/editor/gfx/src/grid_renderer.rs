@@ -2,9 +2,7 @@
 //!
 //! 使用 GPU Fragment Shader 高效渲染无限网格，实现 O(1) 渲染时间。
 
-use wgpu::util::DeviceExt;
-
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 /// Camera Uniform
 #[repr(C)]
@@ -268,7 +266,7 @@ pub struct GridRenderer {
     /// 渲染管线
     pipeline: wgpu::RenderPipeline,
     /// 视口 uniform 缓冲区
-    camera_buffer: wgpu::Buffer,
+    camera_buffer: TrackedBuffer,
     /// Bind group
     bind_group: wgpu::BindGroup,
     /// 缓存的 uniform 数据（避免每帧重复构建）
@@ -294,10 +292,8 @@ impl GridRenderer {
         format: wgpu::TextureFormat,
         needs_depth: bool,
     ) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("infinite_grid_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER_SRC.into()),
-        });
+        let shader =
+            crate::shader::create_shader_module(device, "infinite_grid_shader", Self::SHADER_SRC);
 
         // 创建 bind group layout
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -314,56 +310,26 @@ impl GridRenderer {
             }],
         });
 
-        // 创建 pipeline layout
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("infinite_grid_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
-
         // 创建渲染管线，按 needs_depth 决定是否携带 depth-stencil 状态
-        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("infinite_grid_pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: Some("vs_main"),
-                buffers: &[], // 放弃 CPU 传递顶点
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: Some("fs_main"),
-                targets: &[Some(wgpu::ColorTargetState {
-                    format,
-                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-                    write_mask: wgpu::ColorWrites::ALL,
-                })],
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleStrip,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: None,
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: crate::constants::rendering::depth_stencil_state_read_only_for(
-                needs_depth,
-            ),
-            multisample: wgpu::MultisampleState::default(),
-            multiview: None,
-            cache: None,
-        });
+        let pipeline =
+            crate::pipeline::RenderPipelineBuilder::new(device, "infinite_grid_pipeline", &shader)
+                .bind_group(&bind_group_layout)
+                // 放弃 CPU 传递顶点（无 vertex buffer）
+                .triangle_strip()
+                .alpha_blended_target(format)
+                .depth_stencil(
+                    crate::constants::rendering::depth_stencil_state_read_only_for(needs_depth),
+                )
+                .build();
 
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("infinite_grid_camera_uniform"),
-            contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&camera_buffer);
+        let camera_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("infinite_grid_camera_uniform"),
+                contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -371,7 +337,7 @@ impl GridRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: camera_buffer.as_entire_binding(),
+                resource: camera_buffer.inner().as_entire_binding(),
             }],
         });
 
@@ -381,12 +347,6 @@ impl GridRenderer {
             bind_group,
             cached_uniform: None,
         }
-    }
-}
-
-impl Drop for GridRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.camera_buffer);
     }
 }
 
@@ -413,7 +373,11 @@ impl GridRenderer {
             .build();
 
         if self.cached_uniform.as_ref() != Some(&viewport) {
-            queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
+            queue.write_buffer(
+                self.camera_buffer.inner(),
+                0,
+                bytemuck::cast_slice(&[viewport]),
+            );
             self.cached_uniform = Some(viewport);
         }
     }

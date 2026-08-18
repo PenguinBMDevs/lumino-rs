@@ -30,7 +30,7 @@ lumino-note-core = { workspace = true }
 lumino-editor-state = { workspace = true }
 lumino-midi-loader = { workspace = true }
 lumino-midiplayer = { workspace = true }
-lumino-memtrace = { workspace = true }
+lumino-diagnostics = { workspace = true }
 
 [dev-dependencies]
 naga = { workspace = true }

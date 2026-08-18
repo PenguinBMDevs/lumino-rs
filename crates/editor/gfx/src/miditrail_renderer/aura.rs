@@ -14,16 +14,16 @@ impl MiditrailRenderer {
             .next_power_of_two()
             .max(Self::INITIAL_INSTANCE_CAPACITY);
         let size = (new_cap * std::mem::size_of::<MiditrailAuraInstanceGpu>()) as u64;
-        if let Some(buf) = self.aura_instance_buffer.take() {
-            crate::gpu_resource_tracker::sub_buffer(&buf);
-        }
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("miditrail_aura_instance_buffer"),
-            size,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        crate::gpu_resource_tracker::add_buffer(&buffer);
+        // 旧缓冲由 Option::take 触发 Drop 自动注销
+        let buffer = crate::gpu_resource_tracker::TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("miditrail_aura_instance_buffer"),
+                size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         self.aura_instance_buffer = Some(buffer);
         self.aura_instance_capacity = new_cap;
     }
@@ -66,9 +66,12 @@ impl MiditrailRenderer {
 
         render_pass.set_pipeline(&self.aura_pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.aura_vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, aura_instance_buf.slice(..));
-        render_pass.set_index_buffer(self.aura_index_buffer.slice(..), wgpu::IndexFormat::Uint16);
+        render_pass.set_vertex_buffer(0, self.aura_vertex_buffer.inner().slice(..));
+        render_pass.set_vertex_buffer(1, aura_instance_buf.inner().slice(..));
+        render_pass.set_index_buffer(
+            self.aura_index_buffer.inner().slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
         render_pass.draw_indexed(0..6, 0, 0..aura_instances.len() as u32);
     }
 }

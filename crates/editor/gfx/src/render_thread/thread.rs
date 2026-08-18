@@ -10,6 +10,7 @@ use super::render_loop::run_render_thread;
 use super::render_loop::runner::context::{RenderContext, RenderThreadChannels};
 use super::stats::RenderStats;
 use crate::SwappableBuffer;
+use crate::gpu_resource_tracker::TrackedTexture;
 
 /// WGPU 渲染线程
 ///
@@ -39,7 +40,7 @@ pub struct WgpuRenderThread {
     /// 线程句柄
     thread_handle: Option<JoinHandle<()>>,
     /// 渲染完成的离屏纹理，供主线程读取
-    pub latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    pub latest_texture: Arc<Mutex<Option<Arc<TrackedTexture>>>>,
     /// 双缓冲音符实例数据（UI线程写入，渲染线程读取）
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
@@ -69,7 +70,7 @@ impl WgpuRenderThread {
         let stats = Arc::new(Mutex::new(RenderStats::default()));
         let running = Arc::new(AtomicBool::new(true));
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
-        let latest_texture: Arc<Mutex<Option<Arc<wgpu::Texture>>>> = Arc::new(Mutex::new(None));
+        let latest_texture: Arc<Mutex<Option<Arc<TrackedTexture>>>> = Arc::new(Mutex::new(None));
         let waterfall_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
 
         // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
@@ -189,7 +190,9 @@ impl WgpuRenderThread {
             return;
         };
 
-        if texture.width() != frame.texture.width() || texture.height() != frame.texture.height() {
+        if texture.inner().width() != frame.texture.width()
+            || texture.inner().height() != frame.texture.height()
+        {
             return;
         }
 
@@ -199,11 +202,11 @@ impl WgpuRenderThread {
         });
 
         encoder.copy_texture_to_texture(
-            texture.as_image_copy(),
+            texture.inner().as_image_copy(),
             frame.texture.as_image_copy(),
             wgpu::Extent3d {
-                width: texture.width(),
-                height: texture.height(),
+                width: texture.inner().width(),
+                height: texture.inner().height(),
                 depth_or_array_layers: 1,
             },
         );

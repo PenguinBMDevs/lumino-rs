@@ -130,9 +130,6 @@ pub enum NoteDeltaEvent {
     RemoveAt { index: usize, count: usize },
 }
 
-/// NoteStore 启用阈值：音符数超过此值时自动启用 SoA 批量操作
-pub const NOTE_STORE_THRESHOLD: usize = 10_000;
-
 // `impl Default` / `impl EditorData` 分散在子模块中：
 // - `construct` — new() + Default
 // - `reset` — reset()

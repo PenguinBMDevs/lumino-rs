@@ -9,7 +9,7 @@
 //! 2. `render()` — 每帧调用：上传音符数据、dispatch compute shader、写入 storage texture
 //! 3. `storage_texture()` — 获取输出纹理，供 export pipeline 读回
 
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
 
 /// 单个瀑布流音符数据（与 waterfall.wgsl 中 WaterfallNote 匹配）
 #[repr(C)]
@@ -41,12 +41,12 @@ pub struct WaterfallRenderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: Option<wgpu::BindGroup>,
 
-    uniform_buffer: wgpu::Buffer,
-    note_buffer: Option<wgpu::Buffer>,
-    active_key_colors_buffer: Option<wgpu::Buffer>,
-    key_offsets_buffer: Option<wgpu::Buffer>,
+    uniform_buffer: TrackedBuffer,
+    note_buffer: Option<TrackedBuffer>,
+    active_key_colors_buffer: Option<TrackedBuffer>,
+    key_offsets_buffer: Option<TrackedBuffer>,
 
-    output_texture: Option<wgpu::Texture>,
+    output_texture: Option<TrackedTexture>,
     output_texture_view: Option<wgpu::TextureView>,
 
     note_capacity: usize,
@@ -61,10 +61,7 @@ impl WaterfallRenderer {
 
     /// 创建瀑布流渲染器。
     pub fn new(device: &wgpu::Device) -> Self {
-        let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
-            label: Some("waterfall_shader"),
-            source: wgpu::ShaderSource::Wgsl(Self::SHADER.into()),
-        });
+        let shader = crate::shader::create_shader_module(device, "waterfall_shader", Self::SHADER);
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: Some("waterfall_bind_group_layout"),
@@ -129,28 +126,23 @@ impl WaterfallRenderer {
             ],
         });
 
-        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: Some("waterfall_pipeline_layout"),
-            bind_group_layouts: &[&bind_group_layout],
-            push_constant_ranges: &[],
-        });
+        let compute_pipeline = crate::pipeline::ComputePipelineBuilder::new(
+            device,
+            "waterfall_compute_pipeline",
+            &shader,
+        )
+        .bind_group(&bind_group_layout)
+        .build();
 
-        let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-            label: Some("waterfall_compute_pipeline"),
-            layout: Some(&pipeline_layout),
-            module: &shader,
-            entry_point: Some("main"),
-            compilation_options: wgpu::PipelineCompilationOptions::default(),
-            cache: None,
-        });
-
-        let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("waterfall_uniform_buffer"),
-            size: std::mem::size_of::<WaterfallUniformGpu>() as u64,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&uniform_buffer);
+        let uniform_buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("waterfall_uniform_buffer"),
+                size: std::mem::size_of::<WaterfallUniformGpu>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
 
         Self {
             compute_pipeline,
@@ -180,27 +172,27 @@ impl WaterfallRenderer {
         {
             return;
         }
-        // 释放旧纹理
-        if let Some(tex) = self.output_texture.take() {
-            gpu_resource_tracker::sub_texture(&tex);
-        }
+        // 释放旧纹理（Option::take 触发 Drop 自动注销）
+        self.output_texture.take();
         self.output_texture_view.take();
 
-        let texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("waterfall_output_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
+        let texture = TrackedTexture::new(
+            device,
+            &wgpu::TextureDescriptor {
+                label: Some("waterfall_output_texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::STORAGE_BINDING | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        gpu_resource_tracker::add_texture(&texture);
+        );
 
         let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
 
@@ -219,16 +211,16 @@ impl WaterfallRenderer {
         }
         let new_cap = count.next_power_of_two().max(Self::INITIAL_NOTE_CAPACITY);
         let size = (new_cap * std::mem::size_of::<WaterfallNoteGpu>()) as u64;
-        if let Some(buf) = self.note_buffer.take() {
-            gpu_resource_tracker::sub_buffer(&buf);
-        }
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("waterfall_note_buffer"),
-            size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
+        // 旧缓冲由 Option::take 触发 Drop 自动注销
+        let buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("waterfall_note_buffer"),
+                size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         self.note_buffer = Some(buffer);
         self.note_capacity = new_cap;
         self.bind_group = None;
@@ -239,13 +231,15 @@ impl WaterfallRenderer {
         if self.active_key_colors_buffer.is_some() {
             return;
         }
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("waterfall_active_key_colors_buffer"),
-            size: (128 * 4) as u64, // 128 u32
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
+        let buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("waterfall_active_key_colors_buffer"),
+                size: (128 * 4) as u64, // 128 u32
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         self.active_key_colors_buffer = Some(buffer);
         self.bind_group = None;
     }
@@ -258,16 +252,16 @@ impl WaterfallRenderer {
         }
         let new_cap = needed.next_power_of_two().max(65); // 至少 64 键 + 1 哨兵
         let size = (new_cap * std::mem::size_of::<u32>()) as u64;
-        if let Some(buf) = self.key_offsets_buffer.take() {
-            gpu_resource_tracker::sub_buffer(&buf);
-        }
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("waterfall_key_offsets_buffer"),
-            size,
-            usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
+        // 旧缓冲由 Option::take 触发 Drop 自动注销
+        let buffer = TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("waterfall_key_offsets_buffer"),
+                size,
+                usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         self.key_offsets_buffer = Some(buffer);
         self.key_offsets_capacity = new_cap;
         self.bind_group = None;
@@ -291,15 +285,15 @@ impl WaterfallRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
+                    resource: self.uniform_buffer.inner().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
-                    resource: note_buf.as_entire_binding(),
+                    resource: note_buf.inner().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 2,
-                    resource: key_colors_buf.as_entire_binding(),
+                    resource: key_colors_buf.inner().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 3,
@@ -311,6 +305,7 @@ impl WaterfallRenderer {
                         .key_offsets_buffer
                         .as_ref()
                         .expect("key_offsets_buffer 未初始化")
+                        .inner()
                         .as_entire_binding(),
                 },
             ],
@@ -359,12 +354,16 @@ impl WaterfallRenderer {
         }
 
         // 上传 uniform
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[*params]));
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[*params]),
+        );
 
         // 上传音符数据
         if let Some(ref buf) = self.note_buffer {
             let note_bytes = bytemuck::cast_slice(notes);
-            queue.write_buffer(buf, 0, note_bytes);
+            queue.write_buffer(buf.inner(), 0, note_bytes);
         }
 
         // 上传分桶偏移表（空时回退单桶：全部音符归入 key 0 桶。
@@ -374,15 +373,15 @@ impl WaterfallRenderer {
                 // 单桶回退：key 0 桶 = [0, len]，其余 key 桶为空
                 let mut offsets = vec![notes.len() as u32; params.key_count as usize + 1];
                 offsets[0] = 0;
-                queue.write_buffer(buf, 0, bytemuck::cast_slice(&offsets));
+                queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&offsets));
             } else {
-                queue.write_buffer(buf, 0, bytemuck::cast_slice(key_offsets));
+                queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(key_offsets));
             }
         }
 
         // 上传活跃键颜色
         if let Some(ref buf) = self.active_key_colors_buffer {
-            queue.write_buffer(buf, 0, bytemuck::cast_slice(active_key_colors));
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(active_key_colors));
         }
 
         // 计算 dispatch 参数
@@ -406,24 +405,6 @@ impl WaterfallRenderer {
 
     /// 获取输出纹理的引用（用于 export pipeline 读回）。
     pub fn output_texture(&self) -> Option<&wgpu::Texture> {
-        self.output_texture.as_ref()
-    }
-}
-
-impl Drop for WaterfallRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.uniform_buffer);
-        if let Some(ref buf) = self.note_buffer {
-            gpu_resource_tracker::sub_buffer(buf);
-        }
-        if let Some(ref buf) = self.active_key_colors_buffer {
-            gpu_resource_tracker::sub_buffer(buf);
-        }
-        if let Some(ref buf) = self.key_offsets_buffer {
-            gpu_resource_tracker::sub_buffer(buf);
-        }
-        if let Some(ref tex) = self.output_texture {
-            gpu_resource_tracker::sub_texture(tex);
-        }
+        self.output_texture.as_ref().map(|t| t.inner())
     }
 }

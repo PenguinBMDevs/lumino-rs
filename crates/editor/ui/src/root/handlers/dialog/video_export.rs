@@ -86,8 +86,8 @@ fn build_video_config(
     st: &crate::view::video_export_dialog::state::VideoExportDialogState,
     ppq: u16,
     key_count: u16,
-) -> lumino_event::window::dialog::VideoExportConfig {
-    use lumino_event::window::video::*;
+) -> lumino_message::events::window::dialog::VideoExportConfig {
+    use lumino_message::events::window::video::*;
     let counter_font = |mode: &str, family: String, path: String| match mode {
         "系统字体" => CounterFont::System { family },
         "自定义字体" => CounterFont::File { path },

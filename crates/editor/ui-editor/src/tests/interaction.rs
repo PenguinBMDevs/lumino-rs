@@ -295,7 +295,6 @@ fn test_select_all_notes_with_notestore() {
         .map(|i| Note::new(i as f32, 60 + (i % 12) as u16, 1.0))
         .collect();
     test_helpers::seed_notes(&mut editor, 1, 0, &notes);
-    assert!(!editor.editor_state.data.is_note_store_enabled());
 
     editor.select_all_notes();
 

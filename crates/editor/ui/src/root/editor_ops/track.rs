@@ -6,7 +6,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::root::Root;
-use lumino_event::window::track::{TrackDeletionNote, TrackDeletionPayload};
+use lumino_message::events::window::track::{TrackDeletionNote, TrackDeletionPayload};
 use lumino_midi_loader::NoteEvent;
 
 impl Root {
@@ -265,8 +265,8 @@ impl Root {
             note_count
         );
 
-        lumino_event::emit(lumino_event::Event::Window(
-            lumino_event::window::Event::delete_track(payload),
+        lumino_message::events::emit(lumino_message::events::Event::Window(
+            lumino_message::events::window::Event::delete_track(payload),
         ));
     }
 
@@ -274,8 +274,8 @@ impl Root {
     pub(crate) fn forward_pending_recover_track_dialog(&mut self) {
         if self.sidebar.take_pending_recover_track_dialog() {
             tracing::info!("Root: 请求打开找回删除音轨对话框");
-            lumino_event::emit(lumino_event::Event::Window(
-                lumino_event::window::Event::open_recover_track_dialog(),
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::open_recover_track_dialog(),
             ));
         }
     }
@@ -310,7 +310,7 @@ impl Root {
     /// Runner 在扫描缓存目录后调用：把条目列表填充到对话框状态
     pub fn apply_recover_track_entries(
         &mut self,
-        entries: Vec<lumino_event::window::track::RecoverTrackEntryPayload>,
+        entries: Vec<lumino_message::events::window::track::RecoverTrackEntryPayload>,
     ) {
         let ui_entries: Vec<crate::state::root_state::RecoverTrackEntry> = entries
             .into_iter()
@@ -336,7 +336,7 @@ impl Root {
     /// 因为音轨重新出现在 sidebar.tracks 中。
     pub fn apply_track_restored(
         &mut self,
-        payload: lumino_event::window::track::TrackDeletionPayload,
+        payload: lumino_message::events::window::track::TrackDeletionPayload,
     ) {
         let track_id = payload.track_id as usize;
 

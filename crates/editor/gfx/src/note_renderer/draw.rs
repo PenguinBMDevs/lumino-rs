@@ -42,10 +42,11 @@ impl NoteRenderer {
             render_pass.set_vertex_buffer(
                 0,
                 self.visible_instance_buffer
+                    .inner()
                     .slice(chunk_offset..chunk_offset + chunk_bytes),
             );
             let offset = self.chunk_layout.chunk_offset_bytes(idx);
-            render_pass.draw_indirect(&self.indirect_buffer, offset);
+            render_pass.draw_indirect(self.indirect_buffer.inner(), offset);
         }
     }
 }

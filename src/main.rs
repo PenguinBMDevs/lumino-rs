@@ -10,7 +10,8 @@ use winit::event_loop::EventLoop;
 
 /// 全局内存追踪分配器，按子系统统计堆分配。
 #[global_allocator]
-static GLOBAL_ALLOC: lumino_memtrace::TaggedAlloc = lumino_memtrace::TaggedAlloc;
+static GLOBAL_ALLOC: lumino_diagnostics::memtrace::TaggedAlloc =
+    lumino_diagnostics::memtrace::TaggedAlloc;
 
 mod cli;
 mod constants;
@@ -108,7 +109,7 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
 
     // 启动内存监控：主监控（95% → abort）+ 看门狗（100% → SIGKILL）
     // 看门狗完全独立，用 /proc/{pid} 而非 /proc/self，系统可用 < 350MB 也触发
-    if !lumino_memory_monitor::spawn_all_monitors() {
+    if !lumino_diagnostics::memory_monitor::spawn_all_monitors() {
         tracing::warn!("内存监控线程启动失败，程序继续运行但缺少 OOM 防护");
     }
 
@@ -139,7 +140,7 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
     // 因此主线程的所有分配（编辑器状态、空间索引、iced 每帧 widget 树等）均归 Ui。
     // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
 
-    lumino_memtrace::with_tag(lumino_memtrace::AllocTag::Ui, || {
+    lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
         event_loop.run_app(&mut runner)
     })
 }
