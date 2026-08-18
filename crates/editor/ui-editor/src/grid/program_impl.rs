@@ -1,9 +1,15 @@
-//! Program trait 实现
+//! Program trait 实现 — 事件处理与绘制
+//!
+//! 按职责拆分为以下子模块：
+//! - `mouse_interaction`: 鼠标交互反馈（光标形态）
+//! - `draw`: 各图层绘制
+
+mod draw;
+mod mouse_interaction;
 
 use super::state::GridInteractionState;
-use super::{keyboard, playback_indicator, remote_cursors, ruler, selection_box};
-use crate::{EditState, HitType};
-use crate::{Message, Renderer, Theme, message::EditorAction};
+use crate::message::EditorAction;
+use crate::{Message, Renderer, Theme};
 use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
 use lumino_message::Tool;
@@ -183,141 +189,7 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         bounds: Rectangle,
         cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        puffin::profile_function!();
-
-        // 图片转 MIDI 放置模式：光标反馈
-        let i2m = &self.editor.editor_state.image_to_midi;
-        if i2m.is_active() {
-            use lumino_editor_state::I2mInteraction;
-            return match i2m.interaction {
-                I2mInteraction::Selecting => mouse::Interaction::Crosshair,
-                I2mInteraction::Dragging => mouse::Interaction::Grabbing,
-                I2mInteraction::StretchLeft | I2mInteraction::StretchRight => {
-                    mouse::Interaction::ResizingHorizontally
-                }
-                I2mInteraction::None => {
-                    if let Some(pos) = cursor.position() {
-                        let local_pos = iced_core::Point::new(pos.x - bounds.x, pos.y - bounds.y);
-                        if let Some(hit) = self.editor.hit_test_i2m_region(local_pos) {
-                            return match hit {
-                                crate::SelectionHitType::LeftEdge
-                                | crate::SelectionHitType::RightEdge => {
-                                    mouse::Interaction::ResizingHorizontally
-                                }
-                                crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
-                            };
-                        }
-                    }
-                    mouse::Interaction::Crosshair
-                }
-            };
-        }
-
-        if self.editor.current_tool() == Tool::Eraser {
-            return mouse::Interaction::Crosshair;
-        }
-
-        // 曲线工具直线模式：悬停锚点/连线可拖动（Pointer），其余区域十字光标
-        if self.editor.current_tool() == Tool::Curve {
-            if let Some(local_pos) = state.position
-                && self.editor.line_tool_hit_test(local_pos).is_some()
-            {
-                return mouse::Interaction::Pointer;
-            }
-            return mouse::Interaction::Crosshair;
-        }
-
-        let interaction = &self.editor.editor_state.interaction;
-        match interaction.edit_state {
-            EditState::Dragging { .. }
-            | EditState::DraggingSelection { .. }
-            | EditState::DraggingSelectionCopy { .. } => mouse::Interaction::Grabbing,
-            EditState::PendingDrag { .. } => mouse::Interaction::Pointer,
-            EditState::ResizingStart { .. }
-            | EditState::ResizingEnd { .. }
-            | EditState::ResizingSelectionStart { .. }
-            | EditState::ResizingSelectionEnd { .. } => mouse::Interaction::ResizingHorizontally,
-            EditState::Drawing { .. } => mouse::Interaction::Crosshair,
-            EditState::Selecting { .. } => mouse::Interaction::Crosshair,
-            EditState::Scrubbing => mouse::Interaction::Grabbing,
-            EditState::Idle => {
-                // 先检查是否悬停在循环区域手柄上
-                {
-                    puffin::profile_scope!("loop_range_hit_test");
-                    if let Some(local_pos) = state.position {
-                        let v = &self.editor.editor_state.view;
-                        if local_pos.y < v.ruler_height
-                            && local_pos.x >= v.keyboard_width
-                            && let Some(loop_range) = self.editor.loop_range.as_ref()
-                        {
-                            let hit = loop_range.hit_test_at(
-                                local_pos.x,
-                                v.keyboard_width,
-                                v.scroll_x,
-                                v.zoom_x,
-                            );
-                            match hit {
-                                crate::grid::LoopHitTest::StartHandle
-                                | crate::grid::LoopHitTest::EndHandle => {
-                                    return mouse::Interaction::ResizingHorizontally;
-                                }
-                                crate::grid::LoopHitTest::Body => {
-                                    return mouse::Interaction::Pointer;
-                                }
-                                crate::grid::LoopHitTest::None => {}
-                            }
-                        }
-                    }
-                }
-
-                // 先检查是否悬停在选择框上
-                {
-                    puffin::profile_scope!("selection_box_hit_test");
-                    if let Some(cursor_pos) = cursor.position() {
-                        let local_pos =
-                            iced_core::Point::new(cursor_pos.x - bounds.x, cursor_pos.y - bounds.y);
-                        if let Some(sel_hit) = self.editor.hit_test_selection_box(local_pos) {
-                            return match sel_hit {
-                                crate::SelectionHitType::LeftEdge
-                                | crate::SelectionHitType::RightEdge => {
-                                    mouse::Interaction::ResizingHorizontally
-                                }
-                                crate::SelectionHitType::Inside => mouse::Interaction::Pointer,
-                            };
-                        }
-                    }
-                }
-
-                // 固定指示线模式下：检测是否悬停在指示线上
-                {
-                    puffin::profile_scope!("playback_indicator_hit_test");
-                    if self.editor.editor_state.auto_scroll.mode
-                        == lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft
-                        && let Some(local_pos) = state.position
-                    {
-                        let v = &self.editor.editor_state.view;
-                        if local_pos.y < v.ruler_height && local_pos.x >= v.keyboard_width {
-                            let indicator_screen_x = self
-                                .editor
-                                .get_playback_indicator_screen_x()
-                                .unwrap_or(v.keyboard_width);
-                            let hit_margin = 8.0;
-                            if (local_pos.x - indicator_screen_x).abs() <= hit_margin {
-                                return mouse::Interaction::ResizingHorizontally;
-                            }
-                        }
-                    }
-                }
-
-                match interaction.hover_state {
-                    Some((_, HitType::Start)) | Some((_, HitType::End)) => {
-                        mouse::Interaction::ResizingHorizontally
-                    }
-                    Some((_, HitType::Middle)) => mouse::Interaction::Pointer,
-                    None => mouse::Interaction::default(),
-                }
-            }
-        }
+        mouse_interaction::handle(self.editor, state, bounds, cursor)
     }
 
     fn draw(
@@ -328,77 +200,6 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        puffin::profile_scope!("grid_widget_draw");
-        crate::puffin_profiler::grid_widget_draw();
-        let mut geometries = Vec::new();
-
-        {
-            puffin::profile_scope!("draw::keyboard");
-            let keyboard_geom = self
-                .editor
-                .keyboard_cache
-                .draw(renderer, bounds.size(), |frame| {
-                    keyboard::draw(self.editor, frame, bounds, theme);
-                });
-            geometries.push(keyboard_geom);
-        }
-
-        // 洋葱皮颜色覆盖层（不使用缓存，每帧独立绘制）
-        {
-            puffin::profile_scope!("draw::onion_overlay");
-            if let Some(onion_geom) = keyboard::draw_onion_overlay(self.editor, renderer, bounds) {
-                geometries.push(onion_geom);
-            }
-        }
-
-        {
-            puffin::profile_scope!("draw::ruler");
-            let ruler_geom = self
-                .editor
-                .ruler_cache
-                .draw(renderer, bounds.size(), |frame| {
-                    ruler::draw(self.editor, frame, bounds, theme);
-                });
-            geometries.push(ruler_geom);
-        }
-
-        {
-            puffin::profile_scope!("draw::selection_box");
-            if let Some(selection_geom) = selection_box::draw(self.editor, renderer, theme, bounds)
-            {
-                geometries.push(selection_geom);
-            }
-        }
-
-        {
-            puffin::profile_scope!("draw::i2m_box");
-            if let Some(i2m_geom) = crate::grid::i2m_box::draw(self.editor, renderer, theme, bounds)
-            {
-                geometries.push(i2m_geom);
-            }
-        }
-
-        {
-            puffin::profile_scope!("draw::line_tool_box");
-            if let Some(line_geom) =
-                crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds)
-            {
-                geometries.push(line_geom);
-            }
-        }
-
-        {
-            puffin::profile_scope!("draw::remote_cursors");
-            let remote_cursor_geometries = remote_cursors::draw(self.editor, renderer, bounds);
-            geometries.extend(remote_cursor_geometries);
-        }
-
-        {
-            puffin::profile_scope!("draw::playback_indicator");
-            let playback_indicator_geom = playback_indicator::draw(self.editor, renderer, bounds);
-            geometries.push(playback_indicator_geom);
-        }
-
-        geometries
+        draw::draw(self.editor, renderer, theme, bounds)
     }
 }

@@ -1,11 +1,18 @@
 //! 右侧栏素材库面板视图渲染
+//!
+//! 悬停提示面板见 `tip` 子模块，单元测试见 `tests` 子模块。
 
-use iced_core::widget::text::Wrapping;
+#[cfg(test)]
+mod tests;
+mod tip;
+
+use tip::*;
+
 use iced_core::{Alignment, Color, Length};
 use iced_widget::{
     Stack, button, column, container, mouse_area, row, scrollable, text, text_input, tooltip,
 };
-use lumino_extras::i18n::{Language, MainTranslations, main_translations};
+use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::RightSidebarAction;
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
@@ -284,94 +291,6 @@ fn material_item<'a>(
         .into()
 }
 
-/// 悬停提示悬浮面板宽度（文本行固定宽度，超宽内容自动换行）
-const TOOLTIP_WIDTH: f32 = 280.0;
-
-/// 悬停提示悬浮面板内容：文件描述信息，每行均带描述标头
-///
-/// 显示项：
-/// - 名称（metadata.project.name）
-/// - 作者（metadata.project.author，素材导出时跟随工程设置面板署名；非空才显示）
-/// - 位置（磁盘路径，仅本地素材）
-/// - 轨道数（解析到音轨数时显示）
-/// - 来源（内置 / 本地）
-/// - 无效素材仅显示"素材无效"
-fn tooltip_content<'a>(
-    entry: &'a crate::right_sidebar::MaterialEntry,
-    t: &'static MainTranslations,
-) -> Element<'a> {
-    let mut col = column![].spacing(2);
-
-    if !entry.valid {
-        col = col.push(text(t.material_invalid).size(10));
-        return col.into();
-    }
-
-    // 名称
-    col = col.push(tooltip_line(format!(
-        "{}{}",
-        t.material_name_label, entry.name
-    )));
-    // 作者（跟随工程设置面板的作者栏目在 metadata 中署名）
-    if !entry.author.is_empty() {
-        col = col.push(tooltip_line(format!(
-            "{}{}",
-            t.material_author_label, entry.author
-        )));
-    }
-    // 位置（仅本地素材有磁盘路径；长路径自动换行）
-    if let Some(path) = &entry.path {
-        col = col.push(tooltip_line(format!(
-            "{}{}",
-            t.material_location_label,
-            path.display()
-        )));
-    }
-    // 轨道数
-    if entry.track_count > 0 {
-        col = col.push(tooltip_line(format!(
-            "{}{}",
-            t.material_track_label, entry.track_count
-        )));
-    }
-    // 来源
-    let source_label = match entry.source {
-        MaterialSource::BuiltIn => t.material_section_builtin,
-        MaterialSource::User => t.material_section_user,
-    };
-    col = col.push(tooltip_line(format!(
-        "{}{}",
-        t.material_source_label, source_label
-    )));
-
-    col.into()
-}
-
-/// 悬浮窗文本行：固定宽度 + 换行策略
-///
-/// iced 默认 `Wrapping::Word` 只按单词边界断行，磁盘路径等无空格长文本
-/// 视为单个单词永不换行，会撑破悬浮窗——改用 `WordOrGlyph`：
-/// 有空格按词断行，超长单词回退到字形级断行。
-fn tooltip_line<'a>(content: String) -> Element<'a> {
-    text(content)
-        .size(10)
-        .width(Length::Fixed(TOOLTIP_WIDTH))
-        .wrapping(Wrapping::WordOrGlyph)
-        .into()
-}
-
-/// Tooltip 样式：深色背景 + 浅色文字
-fn tooltip_style(_theme: &Theme) -> container::Style {
-    container::Style {
-        background: Some(iced_core::Background::Color(Color::from_rgba(
-            0.08, 0.08, 0.10, 0.96,
-        ))),
-        border: iced_core::Border::default().rounded(4),
-        text_color: Some(Color::from_rgba(0.95, 0.95, 0.95, 1.0)),
-        ..Default::default()
-    }
-}
-
 /// 添加按钮样式（主色）
 fn primary_button_style(theme: &Theme, status: button::Status) -> button::Style {
     let palette = theme.extended_palette();
@@ -408,87 +327,4 @@ fn menu_item_style(theme: &Theme, status: button::Status) -> button::Style {
         ..Default::default()
     }
     .with_background(bg)
-}
-
-#[cfg(test)]
-mod tests {
-    use std::path::PathBuf;
-
-    use super::*;
-    use crate::right_sidebar::material::MaterialEntry;
-
-    fn make_entry(valid: bool, track_count: usize) -> MaterialEntry {
-        MaterialEntry {
-            name: "测试素材".into(),
-            author: "测试作者".into(),
-            source: MaterialSource::BuiltIn,
-            path: None,
-            data: None,
-            multi_track: track_count > 1,
-            track_count,
-            valid,
-            preview: None,
-        }
-    }
-
-    #[test]
-    fn test_material_item_builds_element() {
-        let mut sidebar = RightSidebar::new();
-        sidebar.materials.entries.push(make_entry(true, 4));
-        let entry = &sidebar.materials.entries[0];
-        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
-    }
-
-    #[test]
-    fn test_material_item_invalid_greyed() {
-        let mut sidebar = RightSidebar::new();
-        sidebar.materials.entries.push(make_entry(false, 0));
-        let entry = &sidebar.materials.entries[0];
-        let _element = material_item(&sidebar, entry, 1, Language::ZhCn);
-    }
-
-    #[test]
-    fn test_material_item_renaming_state() {
-        // 重命名态：名称替换为输入框，仍可构建元素
-        let mut sidebar = RightSidebar::new();
-        sidebar.materials.entries.push(make_entry(true, 1));
-        sidebar.materials.renaming_material = Some((0, "新名称".into()));
-        let entry = &sidebar.materials.entries[0];
-        let _element = material_item(&sidebar, entry, 0, Language::ZhCn);
-    }
-
-    #[test]
-    fn test_tooltip_content_builds_full_description() {
-        // 有效素材：名称/作者/轨道数/来源均带描述标头；无路径不显示位置
-        let entry = make_entry(true, 4);
-        let t = main_translations(Language::ZhCn);
-        let _element = tooltip_content(&entry, t);
-
-        // 本地素材：额外显示位置（磁盘路径）
-        let mut user_entry = MaterialEntry {
-            path: Some(PathBuf::from("C:/Materials/demo.lmmaterial")),
-            ..make_entry(true, 2)
-        };
-        user_entry.source = MaterialSource::User;
-        let _element = tooltip_content(&user_entry, t);
-    }
-
-    #[test]
-    fn test_tooltip_content_invalid_shows_invalid() {
-        // 无效素材：仅显示"素材无效"
-        let entry = make_entry(false, 0);
-        let t = main_translations(Language::ZhCn);
-        let _element = tooltip_content(&entry, t);
-    }
-
-    #[test]
-    fn test_panel_route_switch() {
-        // 面板路由互斥切换（素材库面板 / I2M 面板）
-        let mut sidebar = RightSidebar::new();
-        assert!(!sidebar.panel_visible);
-        sidebar.switch_panel(crate::right_sidebar::RightSidebarPanel::Materials);
-        assert!(sidebar.panel_visible);
-        assert!(sidebar.is_panel_active(crate::right_sidebar::RightSidebarPanel::Materials));
-        assert!(!sidebar.is_panel_active(crate::right_sidebar::RightSidebarPanel::ImageToMidi));
-    }
 }

@@ -5,12 +5,15 @@
 //! - `collaboration`: 协作功能处理器
 //! - `view`: 视图渲染
 //! - `editor_ops`: 编辑器操作
+//! - `state`: 状态同步（云存储快照、素材扫描、播放帧）
+//! - `arrangement`: 工程走带视图（最大 tick 缓存、自动滚动、播放状态）
+//! - `document`: MIDI 文档挂载（自动化 lane 重建）
+//! - `memory`: 内存占用快照收集
 
 use crate::Theme;
 use crate::state::root_state::{DialogType, RootState};
 use crate::{editor, right_sidebar, settings, sidebar, statusbar, titlebar, toolbar, window};
 use lumino_core::storage::config::UiConfig;
-use lumino_midi_loader::MidiDocument;
 
 pub use lumino_ui_core::visual_state::VisualState;
 
@@ -32,9 +35,13 @@ pub struct MemoryBreakdown {
     pub note_instance_size: usize,
 }
 
+mod arrangement;
 mod collaboration;
+mod document;
 mod editor_ops;
 pub mod handlers;
+mod memory;
+mod state;
 mod view;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;
@@ -233,206 +240,7 @@ impl Root {
     pub fn settings(&self) -> &settings::SettingsPanel {
         &self.settings
     }
-
-    /// 从另一个 Root 同步云存储 UI 状态（用于对话框窗口同步主窗口状态）。
-    ///
-    /// 云存储的**唯一数据源**是主窗口 Root：连接快照/目录列表/结果提示均由
-    /// runner 注入主窗口；对话框（连接/浏览/提醒/设置）打开时及状态变化后
-    /// 通过本方法拉取最新快照，保证"已连接设备"在设置面板与文件浏览器中可见。
-    pub fn sync_cloud_state_from(&mut self, other: &Root) {
-        self.cloud = other.cloud.clone();
-        // 设置面板云管理页（连接列表 + 断连提醒标志）
-        self.settings.cloud.connections = other.settings.cloud.connections.clone();
-        self.settings.cloud.alert = other.settings.cloud.alert.clone();
-    }
-
-    /// 从另一个 Root 同步云存储**共享快照**（运行期广播用）。
-    ///
-    /// 与 `sync_cloud_state_from`（完整拷贝，对话框首次打开时回显）不同，
-    /// 本方法**排除连接表单字段**（协议/名称/地址/端口/用户名/密码/连接中/
-    /// 错误）与本地编辑字段（新建文件夹输入），避免用户正在输入时被后台
-    /// 状态广播覆盖。浏览数据（设备/导航/列表）由事件回传保持主窗口与
-    /// 对话框一致后同步，保存模式切换目录不会弹回根目录。
-    pub fn sync_cloud_snapshot_from(&mut self, other: &Root) {
-        self.cloud.connections = other.cloud.connections.clone();
-        self.cloud.alert_message = other.cloud.alert_message.clone();
-        self.cloud.selected_id = other.cloud.selected_id.clone();
-        self.cloud.current_path = other.cloud.current_path.clone();
-        self.cloud.entries = other.cloud.entries.clone();
-        self.cloud.busy = other.cloud.busy;
-        self.cloud.notice = other.cloud.notice.clone();
-        self.cloud.filter = other.cloud.filter.clone();
-        self.cloud.save_mode = other.cloud.save_mode;
-        // 设置面板云管理页（连接列表 + 断连提醒标志）
-        self.settings.cloud.connections = other.settings.cloud.connections.clone();
-        self.settings.cloud.alert = other.settings.cloud.alert.clone();
-    }
-
-    /// 请求重新扫描素材库（云下载素材后由 runner 调用）
-    pub fn request_material_scan(&mut self) {
-        self.start_material_scan();
-    }
-
-    /// 获取编辑器引用
-    pub fn editor_ref(&self) -> &editor::Editor {
-        &self.editor
-    }
-
-    /// 更新播放状态（应在主循环中定期调用）
-    ///
-    /// 通过无阻塞播放回调（`try_recv_frame`）从播放线程拉取最新帧，
-    /// 不再 `lock(playback)`，消除 UI 帧渲染与播放线程的锁争用。
-    pub fn update_playback(&mut self) -> Option<f32> {
-        if let Some(manager) = &self.playback.manager {
-            // 非阻塞拉取最新播放帧：播放线程每帧 try_send，UI 每帧 try_recv。
-            // 返回 None 表示无新帧（未播放或线程尚未推送），UI 保持原位置。
-            manager.try_recv_frame().map(|frame| frame.tick)
-        } else {
-            None
-        }
-    }
-
-    /// 获取工程走带视图的最大 tick 终点（缓存，按 track_notes_gen 失效）
-    ///
-    /// 播放时每帧需要计算最大滚动范围，全量扫描音符在大型 MIDI 下会导致主线程卡顿。
-    /// 2026-08-06 性能修复：改由 `MidiDocument::tracks_max_end_tick()` 提供每轨增量缓存
-    /// （插入 O(1) 更新、删除置脏惰性重算），1600W 工程首帧全量扫描 29.8ms → O(音轨数)。
-    /// 保留 track_notes_gen 缓存作为二次保险（跨 document 替换时避免重复查询）。
-    pub fn arrangement_max_tick_end(&mut self) -> f32 {
-        let editor_data = &self.editor.editor_state.data;
-        let vp = &mut self.arrangement_view.viewport;
-        let current_gen = editor_data.track_notes_gen;
-        if vp.cached_track_notes_gen != current_gen {
-            vp.cached_max_tick_end = editor_data
-                .document
-                .as_ref()
-                .map(|doc| doc.tracks_max_end_tick() as f32)
-                .unwrap_or(0.0);
-            vp.cached_track_notes_gen = current_gen;
-        }
-        vp.cached_max_tick_end
-            .max(crate::constants::editor::DEFAULT_MIN_TICKS)
-    }
-
-    /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）
-    /// 使演奏指示线的滚动模式在工程走带界面同样适用
-    pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32) {
-        let asc = *self.editor.auto_scroll_config();
-        if asc.mode == lumino_core::storage::config::AutoScrollMode::Off {
-            return;
-        }
-
-        // 先计算缓存的最大 tick（可能扫描 track_notes），再借用 viewport
-        let max_tick = self.arrangement_max_tick_end();
-
-        let vp = &mut self.arrangement_view.viewport;
-        let viewport_width = vp.canvas_size.x.max(1.0);
-        let ppu = vp.zoom_x.max(0.001);
-
-        // 计算最大滚动值（使用视口尺寸和总宽度）
-        let canvas_w = vp.canvas_size.x.max(1.0);
-        let total_w = max_tick * vp.zoom_x;
-        let max_scroll = (total_w - canvas_w).max(0.0);
-
-        match asc.mode {
-            lumino_core::storage::config::AutoScrollMode::FixedIndicatorLeft => {
-                let indicator_pos = asc.fixed_indicator_position as f32;
-                let target_scroll_x = playback_tick * ppu - indicator_pos;
-                // 到达末尾时自动松开固定，滚动停在末尾
-                vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
-            }
-            lumino_core::storage::config::AutoScrollMode::ScrollingIndicator => {
-                let trigger_offset = asc.page_trigger_offset as f32;
-                let return_pos = asc.page_return_position as f32;
-                let indicator_screen_x = playback_tick * ppu - vp.scroll_x;
-
-                if indicator_screen_x >= viewport_width - trigger_offset {
-                    let target_scroll_x = playback_tick * ppu - return_pos;
-                    vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
-                }
-            }
-            lumino_core::storage::config::AutoScrollMode::Off => {}
-        }
-    }
-
-    /// 获取播放状态（通过 `last_frame` 缓存非阻塞读取，避免锁争用）
-    pub fn is_playing(&self) -> bool {
-        self.playback
-            .manager
-            .as_ref()
-            .map(|m| {
-                m.last_frame()
-                    .is_some_and(|f| f.state == crate::playback::PlaybackState::Playing)
-            })
-            .unwrap_or_default()
-    }
-
-    /// 设置 MIDI 文档（独占所有权，供编辑/渲染/保存）
-    ///
-    /// 2026-08 单一权威源改造：`EditorData.document` 独占持有 `MidiDocument`，
-    /// 不再以 `Arc` 共享。控制事件按音轨导入 automation_lanes（与 Yinhe 对齐）。
-    pub fn set_midi_document(&mut self, doc: MidiDocument) {
-        use lumino_note_core::{AutomationEdit, AutomationTarget, SegmentShape};
-
-        // 每次加载新文档时重建自动化 lane，避免旧数据残留
-        self.editor.editor_state.data.automation_lanes.clear();
-
-        for ev in &doc.control_events {
-            match ev.kind {
-                // CC: param 高 8 位为控制器编号，低 8 位为值。
-                0 => {
-                    let controller = (ev.param >> 8) as u8;
-                    let value = ev.param & 0xFF;
-                    let edit = AutomationEdit::Add {
-                        track_idx: ev.track,
-                        target: AutomationTarget::CC { controller },
-                        channel: ev.channel,
-                        tick: ev.tick,
-                        value,
-                        shape: SegmentShape::Step,
-                    };
-                    self.editor.editor_state.data.apply_automation_edit(edit);
-                }
-                // PitchBend: param 为 14-bit 值（0–16383）。
-                2 => {
-                    let edit = AutomationEdit::Add {
-                        track_idx: ev.track,
-                        target: AutomationTarget::PitchBend,
-                        channel: ev.channel,
-                        tick: ev.tick,
-                        value: ev.param,
-                        shape: SegmentShape::Step,
-                    };
-                    self.editor.editor_state.data.apply_automation_edit(edit);
-                }
-                _ => {}
-            }
-        }
-
-        // 单一权威源：文档独占存入 EditorData
-        self.editor.editor_state.data.document = Some(doc);
-    }
-
-    /// 收集各组件的内存占用快照
-    pub fn memory_breakdown(&self) -> MemoryBreakdown {
-        let editor_mem = self.editor.memory_breakdown();
-
-        // track_midi_events: HashMap<usize, Vec<MidiTrackEvent>>
-        let track_midi_events_entries = self.playback.track_midi_events.len();
-        let track_midi_events_bytes = self
-            .playback
-            .track_midi_events
-            .values()
-            .map(|v| v.capacity() * std::mem::size_of::<crate::playback::MidiTrackEvent>())
-            .sum();
-
-        MemoryBreakdown {
-            editor: editor_mem,
-            track_midi_events_entries,
-            track_midi_events_bytes,
-            ..Default::default()
-        }
-    }
 }
+
 #[cfg(test)]
 mod root_tests;

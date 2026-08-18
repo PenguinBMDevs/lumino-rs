@@ -49,10 +49,17 @@
 //! - [`platform`]: 平台专属内存信息获取（Linux: /proc, macOS: sysctl/task_info, Windows: WinAPI）
 //! - [`watchdog`]: 完全独立的看门狗线程（Linux: SIGKILL, macOS: SIGKILL, Windows: TerminateProcess）
 //! - [`midi_guard`]: MIDI 加载状态标志（看门狗只在加载 MIDI 期间监控内存）
+//! - [`background`]: 后台监控线程与看门狗启动函数（spawn_monitor_thread / spawn_all_monitors）
 
 pub mod midi_guard;
 pub mod platform;
 pub mod watchdog;
+
+mod background;
+#[cfg(test)]
+mod tests;
+
+pub use background::{spawn_all_monitors, spawn_monitor_thread};
 
 use std::sync::OnceLock;
 
@@ -254,187 +261,5 @@ impl MemoryMonitor {
     /// 同步检查 + 返回是否超限（不 panic）
     pub fn is_over_limit(&self) -> bool {
         matches!(self.check_inner(""), Some(true))
-    }
-}
-
-/// 后台监控线程检查间隔（毫秒）
-///
-/// 只在非 macOS 平台使用：macOS 上后台监控被禁用（见 [`spawn_monitor_thread()`]），
-/// 编译该平台的实现会触发 dead-code 警告。
-#[cfg(not(target_os = "macos"))]
-const MONITOR_INTERVAL_MS: u64 = 100;
-
-/// 调用 abort（直接写 stderr，不依赖 tracing）
-#[cfg(not(target_os = "macos"))]
-fn abort_process(report: &str) -> ! {
-    use std::io::Write;
-    let _ = writeln!(std::io::stderr(), "{}", report);
-    let _ = std::io::stderr().flush();
-    std::process::abort()
-}
-
-/// 启动后台内存监控线程
-///
-/// 该线程独立于主线程运行，每 100ms 检查一次 RSS。
-/// 即使主线程被大任务阻塞，也能及时检测到 OOM 并终止进程。
-///
-/// 返回 `true` 表示线程已启动（或之前已启动），`false` 表示创建线程失败。
-///
-/// ## 平台说明
-/// - **Linux / Windows**: 正常启动后台监控线程
-/// - **macOS**: 禁用（见 [`spawn_all_monitors()`] 说明）
-#[cfg(not(target_os = "macos"))]
-pub fn spawn_monitor_thread() -> bool {
-    static SPAWNED: OnceLock<std::thread::JoinHandle<()>> = OnceLock::new();
-
-    if SPAWNED.get().is_some() {
-        return true;
-    }
-
-    match std::thread::Builder::new()
-        .name("memory-monitor".into())
-        .spawn(|| {
-            let monitor = MemoryMonitor::global();
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(MONITOR_INTERVAL_MS));
-
-                match monitor.check_inner("bg: ") {
-                    Some(true) => {
-                        abort_process("MemoryMonitor: 内存已达 95% 软限制，主动终止以保护系统稳定");
-                    }
-                    None => {}
-                    Some(false) => {}
-                }
-            }
-        }) {
-        Ok(handle) => {
-            let _ = SPAWNED.set(handle);
-            tracing::info!(
-                "MemoryMonitor: 后台监控线程已启动 (间隔={}ms)",
-                MONITOR_INTERVAL_MS
-            );
-            true
-        }
-        Err(e) => {
-            tracing::error!("MemoryMonitor: 无法创建后台监控线程: {e}");
-            false
-        }
-    }
-}
-
-/// macOS 上禁用后台内存监控线程
-///
-/// TODO: macOS 内存监控 — 当前 macOS 上禁用了后台内存监控线程和看门狗，
-/// 因为 macOS 的内存压力模型与 Linux/Windows 不同（memory pressure + swap 机制更激进），
-/// 且 macOS 的 `task_info` 在后台线程频繁调用时可能引入不必要的性能抖动。
-/// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
-/// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
-#[cfg(target_os = "macos")]
-pub fn spawn_monitor_thread() -> bool {
-    tracing::info!("MemoryMonitor: macOS 上禁用后台内存监控线程（参见 spawn_all_monitors 文档）");
-    true
-}
-
-/// 同时启动主监控和看门狗
-///
-/// 等价于依次调用 `spawn_monitor_thread()` + [`watchdog::spawn_watchdog()`]，
-/// 确保两层防线同时就位。
-///
-/// 返回 `true` 表示所有启用的监控均已成功启动。
-///
-/// ## 平台说明
-/// - **Linux / Windows**: 正常启动后台监控线程 + 看门狗
-/// - **macOS**: 两者均禁用。原因：
-///   1. macOS 的内存压力模型（memory pressure + 激进 swap）与 Linux/Windows 不同，
-///      固定间隔轮询 RSS 的价值有限，反而可能因 `task_info` 频繁调用引入性能抖动。
-///   2. macOS 的 `SIGKILL` 行为与 Linux 一致，但看门狗的轮询模型在 macOS 上
-///      与系统自身的压力管理机制重叠，收益不大。
-///   3. 同步检查 [`MemoryMonitor::check()`] 仍可用——大分配前手动调用。
-///   4. 详见 TODO: macOS 内存监控 — 后续改用 `dispatch_source` 监听 memorypressure 事件。
-#[cfg(not(target_os = "macos"))]
-pub fn spawn_all_monitors() -> bool {
-    spawn_monitor_thread() && watchdog::spawn_watchdog()
-}
-
-/// macOS 上禁用所有内存监控（包括看门狗）
-///
-/// TODO: macOS 内存监控 — 当前 macOS 上禁用了后台内存监控线程和看门狗。
-/// 后续方案：使用 `dispatch_source` 监听 macOS 的 `memorypressure` 事件，
-/// 仅在系统内存压力升高时触发检查，而非固定间隔轮询。
-#[cfg(target_os = "macos")]
-pub fn spawn_all_monitors() -> bool {
-    tracing::info!(
-        "MemoryMonitor: macOS 上禁用后台内存监控和看门狗（参见 spawn_all_monitors 文档）"
-    );
-    true
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_memory_monitor_defaults() {
-        let monitor = MemoryMonitor::new();
-        assert!(monitor.total_physical() > 0);
-        assert!(monitor.soft_limit() > 0);
-        assert_eq!(
-            monitor.soft_limit(),
-            monitor
-                .total_physical()
-                .saturating_sub(DEFAULT_RESERVE_BYTES)
-        );
-        assert_eq!(
-            monitor
-                .rss_fail_count
-                .load(std::sync::atomic::Ordering::Relaxed),
-            0
-        );
-    }
-
-    /// macOS 上跳过：部分受限环境（CI/沙箱）下 `task_info` 调用失败返回 0，
-    /// 导致 RSS 断言必然失败。macOS 的 RSS 读取已由
-    /// [`platform::test_macos_task_basic_info_layout`] 覆盖结构体布局正确性，
-    /// 运行时取值在 macOS 上按「失败返回 0 → 容错跳过」处理。
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn test_current_rss_returns_nonzero() {
-        let rss = platform::get_current_rss();
-        assert!(
-            rss > 0,
-            "RSS 应该 > 0（Linux: /proc/self/status, macOS: task_info, Windows: GetProcessMemoryInfo）"
-        );
-    }
-
-    /// macOS 上跳过：依赖 [`MemoryMonitor::current_rss()`]，RSS 为 0 时
-    /// `usage_ratio()` 返回 0.0，必然不满足 (0, 1) 区间断言，原因同上。
-    #[cfg(not(target_os = "macos"))]
-    #[test]
-    fn test_usage_ratio() {
-        let monitor = MemoryMonitor::new();
-        let ratio = monitor.usage_ratio();
-        assert!(
-            ratio > 0.0 && ratio < 1.0,
-            "内存使用率应该在 0~1 之间，实际值为 {}",
-            ratio
-        );
-    }
-
-    #[test]
-    fn test_global_is_singleton() {
-        let instance_a = MemoryMonitor::global() as *const MemoryMonitor;
-        let instance_b = MemoryMonitor::global() as *const MemoryMonitor;
-        assert_eq!(instance_a, instance_b, "global() 应该返回相同实例");
-    }
-
-    #[test]
-    fn test_check_inner_normal() {
-        let monitor = MemoryMonitor::new();
-        let check_result = monitor.check_inner("test: ");
-        assert_eq!(
-            check_result,
-            Some(false),
-            "正常状态不应超限（若 RSS 读取失败也可能是 None，但不会是 Some(true)）"
-        );
     }
 }

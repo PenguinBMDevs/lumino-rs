@@ -2,9 +2,12 @@
 //!
 //! 负责协调播放引擎和MIDI输出
 
-use crate::playback::engine::{MidiMessage, MidiTrackEvent, PlaybackEngine};
+mod commands;
+
+use crate::playback::engine::{MidiTrackEvent, PlaybackEngine};
 use crate::playback::{Playback, PlaybackAccessor, PlaybackState, TempoChange};
-use crossbeam_channel::{Receiver, Sender, bounded};
+use commands::Command;
+use crossbeam_channel::{Receiver, bounded};
 use parking_lot::Mutex;
 use std::sync::{Arc, mpsc};
 use std::thread;
@@ -32,25 +35,6 @@ pub struct PlaybackFrame {
 /// 回调体在播放线程执行，必须**轻量且非阻塞**（仅做数据拷贝/发 channel），
 /// 严禁执行 UI 渲染、文件 I/O 或任何可能长时间运行的操作。
 pub type PlaybackCallback = Box<dyn FnMut(PlaybackFrame) + Send>;
-
-enum Command {
-    SetMidiOutput(Box<dyn crate::OutputConnection>),
-    ClearMidiOutput,
-    RebuildCurrentTrackQueue,
-    SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
-    SetMidiEvents(Vec<MidiTrackEvent>),
-    SetTempoChanges(Vec<TempoChange>),
-    SetVelocityFilterThreshold(u8),
-    // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
-    Play,
-    Pause,
-    Stop,
-    Seek(f32),
-    SetLooping(bool),
-    SetLoopRange(f32, f32),
-    ClearLoopRange,
-    Quit,
-}
 
 /// 播放管理器
 pub struct PlaybackManager {
@@ -96,7 +80,7 @@ impl PlaybackManager {
                         if matches!(cmd, Command::Quit) {
                             return;
                         }
-                        Self::handle_command(
+                        commands::handle_command(
                             cmd,
                             &mut engine,
                             &mut midi_output,
@@ -110,7 +94,7 @@ impl PlaybackManager {
                     if engine.is_playing() {
                         // 更新引擎并发送 MIDI 消息
                         let messages = engine.update();
-                        Self::flush_midi_messages(messages, &mut midi_output);
+                        commands::flush_midi_messages(messages, &mut midi_output);
 
                         // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
                         // 同时触发用户注册的回调（轻量非阻塞）。
@@ -143,7 +127,7 @@ impl PlaybackManager {
                                 if matches!(cmd, Command::Quit) {
                                     return;
                                 }
-                                Self::handle_command(
+                                commands::handle_command(
                                     cmd,
                                     &mut engine,
                                     &mut midi_output,
@@ -168,142 +152,6 @@ impl PlaybackManager {
             last_frame,
             callback,
             thread_handle: Some(thread_handle),
-        }
-    }
-
-    /// 处理单个播放控制命令。
-    ///
-    /// 从 `new()` 的线程闭包中提取，按命令更新引擎状态和 MIDI 输出连接。
-    /// `frame_tx` / `last_frame` 用于在状态切换（Play/Pause/Stop）后主动推送一帧，
-    /// 保证 UI 能立即感知状态变化（无需等待下一播放循环迭代）。
-    fn handle_command(
-        cmd: Command,
-        engine: &mut PlaybackEngine,
-        midi_output: &mut Option<Box<dyn crate::OutputConnection>>,
-        frame_tx: &Sender<PlaybackFrame>,
-        last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
-    ) {
-        match cmd {
-            Command::SetMidiOutput(output) => *midi_output = Some(output),
-            Command::ClearMidiOutput => *midi_output = None,
-            Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),
-            Command::SetDocument(doc, track) => engine.set_document(doc, track),
-            Command::SetMidiEvents(events) => engine.set_midi_events(events),
-            Command::SetTempoChanges(changes) => {
-                let mut playback_guard = engine.playback().lock();
-                playback_guard.set_tempo_changes(changes);
-            }
-            Command::SetVelocityFilterThreshold(threshold) => {
-                engine.set_velocity_filter_threshold(threshold);
-            }
-            Command::Play => {
-                engine.play();
-                Self::push_state_frame(engine, frame_tx, last_frame);
-            }
-            Command::Pause => {
-                engine.pause();
-                if let Some(out) = midi_output {
-                    for ch in 0..16 {
-                        let _ = out.control_change(ch, 64, 0);
-                    }
-                    let _ = out.all_notes_off();
-                }
-                Self::push_state_frame(engine, frame_tx, last_frame);
-            }
-            Command::Stop => {
-                engine.stop();
-                if let Some(out) = midi_output {
-                    let _ = out.all_notes_off();
-                    let _ = out.reset_control();
-                }
-                Self::push_state_frame(engine, frame_tx, last_frame);
-            }
-            Command::Seek(tick) => {
-                if let Some(out) = midi_output {
-                    let _ = out.all_notes_off();
-                    let _ = out.reset_control();
-                }
-                engine.seek(tick);
-            }
-            Command::SetLooping(looping) => engine.set_looping(looping),
-            Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
-            Command::ClearLoopRange => engine.clear_loop_range(),
-            Command::Quit => {}
-        }
-    }
-
-    /// 主动推送一帧状态快照（用于 Play/Pause/Stop 等状态切换后）。
-    ///
-    /// 状态切换后播放线程可能进入空闲分支（不再每 1ms 推帧），
-    /// 主动 try_send 一帧保证 UI 立即感知状态变化，绝不阻塞。
-    fn push_state_frame(
-        engine: &PlaybackEngine,
-        frame_tx: &Sender<PlaybackFrame>,
-        last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
-    ) {
-        let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
-        let frame = PlaybackFrame {
-            tick: engine.current_tick(),
-            state: engine.state(),
-            bpm,
-        };
-        let _ = frame_tx.try_send(frame);
-        *last_frame.lock() = Some(frame);
-    }
-
-    /// 将引擎输出的 MIDI 消息发送到 MIDI 输出设备。
-    fn flush_midi_messages(
-        messages: &[MidiMessage],
-        midi_output: &mut Option<Box<dyn crate::OutputConnection>>,
-    ) {
-        let Some(out) = midi_output else { return };
-        let msg_count = messages.len();
-
-        for msg in messages {
-            match msg {
-                MidiMessage::NoteOn {
-                    channel,
-                    key,
-                    velocity,
-                } => {
-                    let _ = out.note_on(*channel, *key, *velocity);
-                }
-                MidiMessage::NoteOff { channel, key } => {
-                    let _ = out.note_off(*channel, *key, 0);
-                }
-                MidiMessage::ControlChange {
-                    channel,
-                    controller,
-                    value,
-                } => {
-                    tracing::debug!(
-                        "PlaybackManager: 发送 CC ch={} cc={} val={}",
-                        channel,
-                        controller,
-                        value,
-                    );
-                    let _ = out.control_change(*channel, *controller, *value);
-                }
-                MidiMessage::ProgramChange { channel, program } => {
-                    let _ = out.program_change(*channel, *program);
-                }
-                MidiMessage::PitchBend { channel, value } => {
-                    let _ = out.pitch_bend(*channel, *value);
-                }
-                MidiMessage::ChannelPressure { channel, pressure } => {
-                    let _ = out.channel_pressure(*channel, *pressure);
-                }
-                MidiMessage::PolyPressure {
-                    channel,
-                    key,
-                    pressure,
-                } => {
-                    let _ = out.poly_pressure(*channel, *key, *pressure);
-                }
-            }
-        }
-        if msg_count > 0 {
-            tracing::trace!("PlaybackManager: sent {} MIDI events", msg_count);
         }
     }
 }
