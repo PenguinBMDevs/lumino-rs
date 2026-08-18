@@ -11,7 +11,7 @@ mod init;
 mod prepare;
 mod types;
 
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 pub use types::{ArrangementNoteInstance, ArrangementUniform, colors};
 
@@ -20,9 +20,9 @@ pub struct ArrangementRenderer {
     /// 渲染管线
     pipeline: wgpu::RenderPipeline,
     /// Uniform 缓冲区
-    uniform_buffer: wgpu::Buffer,
+    uniform_buffer: TrackedBuffer,
     /// 音符实例缓冲区（作为 vertex buffer 使用）
-    instance_buffer: wgpu::Buffer,
+    instance_buffer: TrackedBuffer,
     /// Bind group
     bind_group: wgpu::BindGroup,
     /// 当前容量
@@ -36,10 +36,3 @@ const VERTEX_SHADER: &str = include_str!("shaders/arrangement.wgsl");
 
 /// 初始实例缓冲区大小
 const INITIAL_CAPACITY: usize = 4096;
-
-impl Drop for ArrangementRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.uniform_buffer);
-        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
-    }
-}

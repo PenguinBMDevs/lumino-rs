@@ -1,7 +1,5 @@
-use wgpu::util::DeviceExt;
-
 use super::{ArrangementRenderer, ArrangementUniform, INITIAL_CAPACITY, VERTEX_SHADER};
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::{self, TrackedBuffer};
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
 
@@ -70,12 +68,14 @@ impl ArrangementRenderer {
             .build();
 
         // 创建 uniform buffer
-        let uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("arrangement_uniform"),
-            contents: bytemuck::cast_slice(&[ArrangementUniform::default()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&uniform_buffer);
+        let uniform_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("arrangement_uniform"),
+                contents: bytemuck::cast_slice(&[ArrangementUniform::default()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 instance buffer（作为 vertex buffer 使用）
         let instance_buffer = gpu_resource_tracker::create_instance_buffer::<
@@ -88,7 +88,7 @@ impl ArrangementRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: uniform_buffer.as_entire_binding(),
+                resource: uniform_buffer.inner().as_entire_binding(),
             }],
         });
 
@@ -102,16 +102,15 @@ impl ArrangementRenderer {
         }
     }
 
-    /// 确保 instance buffer 容量足够
+    /// 确保 instance buffer 容量足够（旧缓冲由 [`TrackedBuffer`] Drop 自动注销）
     pub(super) fn ensure_capacity(
-        instance_buffer: &mut wgpu::Buffer,
+        instance_buffer: &mut TrackedBuffer,
         capacity: &mut usize,
         device: &wgpu::Device,
         instance_count: usize,
     ) {
         let needed = instance_count.next_power_of_two().max(INITIAL_CAPACITY);
         if needed > *capacity {
-            gpu_resource_tracker::sub_buffer(instance_buffer);
             *capacity = needed;
             *instance_buffer = gpu_resource_tracker::create_instance_buffer::<
                 super::ArrangementNoteInstance,

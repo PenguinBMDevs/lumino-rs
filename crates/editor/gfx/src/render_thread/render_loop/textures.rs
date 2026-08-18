@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use super::super::params::RenderParams;
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedTexture;
 
 /// 离屏纹理资源集合
 pub struct OffscreenTextureResources<'a> {
@@ -10,11 +10,11 @@ pub struct OffscreenTextureResources<'a> {
     pub width: u32,
     pub height: u32,
     pub current_size: &'a mut (u32, u32),
-    pub current_texture: &'a mut Option<Arc<wgpu::Texture>>,
-    pub depth_texture: &'a mut Option<wgpu::Texture>,
+    pub current_texture: &'a mut Option<Arc<TrackedTexture>>,
+    pub depth_texture: &'a mut Option<TrackedTexture>,
     pub depth_texture_view: &'a mut Option<wgpu::TextureView>,
     pub texture_view: &'a mut Option<wgpu::TextureView>,
-    pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<wgpu::Texture>>>>,
+    pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<TrackedTexture>>>>,
     pub params: &'a RenderParams,
 }
 
@@ -38,38 +38,15 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>, needs_dept
         if resources.depth_texture_view.is_some() {
             resources.depth_texture_view.take();
         }
-        // 上报旧纹理释放
-        if let Some(old) = resources.depth_texture.take() {
-            gpu_resource_tracker::sub_texture(&old);
-        }
-        if let Some(old) = resources.current_texture.take() {
-            gpu_resource_tracker::sub_texture(old.as_ref());
-        }
+        // 旧纹理由 Option::take 触发 TrackedBuffer Drop 自动注销内存计数
+        resources.depth_texture.take();
+        resources.current_texture.take();
 
         // 创建离屏渲染纹理
-        let texture = resources.device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("offscreen_render_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: resources.texture_format,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        gpu_resource_tracker::add_texture(&texture);
-
-        *resources.texture_view =
-            Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
-
-        // 按需创建深度纹理
-        if needs_depth {
-            let depth_tex = resources.device.create_texture(&wgpu::TextureDescriptor {
-                label: Some("depth_texture"),
+        let texture = TrackedTexture::new(
+            resources.device,
+            &wgpu::TextureDescriptor {
+                label: Some("offscreen_render_texture"),
                 size: wgpu::Extent3d {
                     width,
                     height,
@@ -78,11 +55,34 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>, needs_dept
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: resources.texture_format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
                 view_formats: &[],
-            });
-            gpu_resource_tracker::add_texture(&depth_tex);
+            },
+        );
+
+        *resources.texture_view =
+            Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
+
+        // 按需创建深度纹理
+        if needs_depth {
+            let depth_tex = TrackedTexture::new(
+                resources.device,
+                &wgpu::TextureDescriptor {
+                    label: Some("depth_texture"),
+                    size: wgpu::Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers: 1,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgpu::TextureDimension::D2,
+                    format: wgpu::TextureFormat::Depth32Float,
+                    usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                    view_formats: &[],
+                },
+            );
 
             resources
                 .depth_texture_view

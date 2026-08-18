@@ -1,6 +1,7 @@
 use super::chunk::ChunkLayout;
 use super::types::{NoteInstance, VISIBLE_INDEX_ATTRIBUTES};
-use crate::{gpu_resource_tracker, note_renderer::NoteRenderer};
+use crate::gpu_resource_tracker::TrackedBuffer;
+use crate::note_renderer::NoteRenderer;
 
 /// 可见索引缓冲每个元素的字节数（u32）
 const VISIBLE_INDEX_SIZE: usize = std::mem::size_of::<u32>();
@@ -13,18 +14,19 @@ impl NoteRenderer {
     pub(super) fn create_visible_index_buffer(
         device: &wgpu::Device,
         capacity: usize,
-    ) -> wgpu::Buffer {
+    ) -> TrackedBuffer {
         let size = (capacity * VISIBLE_INDEX_SIZE) as wgpu::BufferAddress;
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("note_visible_index_buffer"),
-            size,
-            usage: wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::VERTEX
-                | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        gpu_resource_tracker::add_buffer(&buffer);
-        buffer
+        TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("note_visible_index_buffer"),
+                size,
+                usage: wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::VERTEX
+                    | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        )
     }
 
     /// 扩容可见索引缓冲区
@@ -54,7 +56,6 @@ impl NoteRenderer {
             required_capacity
         );
 
-        gpu_resource_tracker::sub_buffer(&self.visible_instance_buffer);
         self.visible_instance_buffer = Self::create_visible_index_buffer(device, new_capacity);
         self.capacity = new_capacity;
     }

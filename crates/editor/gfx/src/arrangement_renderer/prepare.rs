@@ -10,7 +10,11 @@ impl ArrangementRenderer {
         instances: &[super::ArrangementNoteInstance],
     ) {
         // 更新 uniform
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[uniform]));
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[uniform]),
+        );
 
         let instance_count = instances.len();
 
@@ -22,7 +26,11 @@ impl ArrangementRenderer {
                 device,
                 instance_count,
             );
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+            queue.write_buffer(
+                self.instance_buffer.inner(),
+                0,
+                bytemuck::cast_slice(instances),
+            );
         }
 
         self.last_instance_count = instance_count as u32;

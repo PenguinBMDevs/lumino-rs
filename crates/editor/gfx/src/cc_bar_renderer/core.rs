@@ -1,8 +1,6 @@
 //! CC 柱状条渲染器 — 核心结构体与类型定义
 
-use wgpu::util::DeviceExt;
-
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::{self, TrackedBuffer};
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
 
@@ -78,9 +76,9 @@ pub struct CcBarRenderer {
     /// 渲染管线
     pub(crate) pipeline: wgpu::RenderPipeline,
     /// 实例缓冲区
-    pub(crate) instance_buffer: wgpu::Buffer,
+    pub(crate) instance_buffer: TrackedBuffer,
     /// 视口 uniform 缓冲区
-    pub(crate) viewport_buffer: wgpu::Buffer,
+    pub(crate) viewport_buffer: TrackedBuffer,
     /// Bind group
     pub(crate) bind_group: wgpu::BindGroup,
     /// 当前缓冲区容量（实例数量）
@@ -141,12 +139,14 @@ impl CcBarRenderer {
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY);
 
-        let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("cc_bar_viewport_uniform"),
-            contents: bytemuck::cast_slice(&[CcBarViewportUniform::new(800.0, 600.0)]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&viewport_buffer);
+        let viewport_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("cc_bar_viewport_uniform"),
+                contents: bytemuck::cast_slice(&[CcBarViewportUniform::new(800.0, 600.0)]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -154,7 +154,7 @@ impl CcBarRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: viewport_buffer.as_entire_binding(),
+                resource: viewport_buffer.inner().as_entire_binding(),
             }],
         });
 
@@ -168,7 +168,7 @@ impl CcBarRenderer {
     }
 
     /// 创建实例缓冲区
-    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> TrackedBuffer {
         gpu_resource_tracker::create_instance_buffer::<CcBarInstance>(
             device,
             "cc_bar_instance_buffer",
@@ -214,13 +214,6 @@ impl CcBarRenderer {
                 },
             ],
         }
-    }
-}
-
-impl Drop for CcBarRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
-        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
     }
 }
 

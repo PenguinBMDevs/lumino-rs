@@ -78,7 +78,7 @@ impl GpuNoteBuffer {
 
         // 从 CPU 缓存上传 GPU — 此时 self.instances 的数据仍在 L1/L2 cache 中
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             0,
             bytemuck::cast_slice(&self.instances),
         );
@@ -126,7 +126,7 @@ impl GpuNoteBuffer {
         // 直接上传到 GPU buffer 的对应 offset——不维护 CPU 副本
         let offset_bytes = self.instance_count * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             offset_bytes as wgpu::BufferAddress,
             bytemuck::cast_slice(chunk),
         );
@@ -162,7 +162,7 @@ impl GpuNoteBuffer {
         // 上传单个实例
         let offset = index * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(std::slice::from_ref(instance)),
         );
@@ -188,7 +188,7 @@ impl GpuNoteBuffer {
         // 批量上传 GPU（流式模式安全）
         let offset = start_index * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(&instances[..count]),
         );
@@ -215,7 +215,7 @@ impl GpuNoteBuffer {
 
         // 上传单个实例
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             offset as wgpu::BufferAddress,
             bytemuck::cast_slice(std::slice::from_ref(instance)),
         );
@@ -245,7 +245,7 @@ impl GpuNoteBuffer {
 
             let offset = index * std::mem::size_of::<crate::NoteInstance>();
             self.queue.write_buffer(
-                &self.instance_buffer,
+                self.instance_buffer.inner(),
                 offset as wgpu::BufferAddress,
                 bytemuck::cast_slice(std::slice::from_ref(&last)),
             );
@@ -292,7 +292,7 @@ impl GpuNoteBuffer {
 
     /// 获取实例缓冲区引用（用于渲染）
     pub fn buffer(&self) -> &wgpu::Buffer {
-        &self.instance_buffer
+        self.instance_buffer.inner()
     }
 
     /// 获取当前实例数量
@@ -368,7 +368,7 @@ impl GpuNoteBuffer {
         }
         let offset_bytes = offset * std::mem::size_of::<crate::NoteInstance>();
         self.queue.write_buffer(
-            &self.instance_buffer,
+            self.instance_buffer.inner(),
             offset_bytes as wgpu::BufferAddress,
             bytemuck::cast_slice(instances),
         );
@@ -415,8 +415,20 @@ impl GpuNoteBuffer {
             let n_bytes = (n as u64) * instance_size;
             let src_off = (b_src as u64) * instance_size;
             let dst_off = (b_dst as u64) * instance_size;
-            encoder.copy_buffer_to_buffer(&self.instance_buffer, src_off, &staging, 0, n_bytes);
-            encoder.copy_buffer_to_buffer(&staging, 0, &self.instance_buffer, dst_off, n_bytes);
+            encoder.copy_buffer_to_buffer(
+                self.instance_buffer.inner(),
+                src_off,
+                &staging,
+                0,
+                n_bytes,
+            );
+            encoder.copy_buffer_to_buffer(
+                &staging,
+                0,
+                self.instance_buffer.inner(),
+                dst_off,
+                n_bytes,
+            );
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));

@@ -1,8 +1,6 @@
-use wgpu::util::DeviceExt;
-
 use super::super::types::KeyboardViewportUniform;
 use super::KeyboardRenderer;
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
 
@@ -38,21 +36,23 @@ impl KeyboardRenderer {
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, Self::INITIAL_CAPACITY);
 
-        let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("keyboard_viewport_uniform"),
-            contents: bytemuck::cast_slice(&[KeyboardViewportUniform::from_params(
-                &super::KeyboardPrepareParams {
-                    viewport_size: (800.0, 600.0),
-                    keyboard_width: 60.0,
-                    ruler_height: 30.0,
-                    scroll_y: 0.0,
-                    zoom_y: 20.0,
-                    visible_key_count: 128,
-                },
-            )]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&viewport_buffer);
+        let viewport_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("keyboard_viewport_uniform"),
+                contents: bytemuck::cast_slice(&[KeyboardViewportUniform::from_params(
+                    &super::KeyboardPrepareParams {
+                        viewport_size: (800.0, 600.0),
+                        keyboard_width: 60.0,
+                        ruler_height: 30.0,
+                        scroll_y: 0.0,
+                        zoom_y: 20.0,
+                        visible_key_count: 128,
+                    },
+                )]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -60,7 +60,7 @@ impl KeyboardRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: viewport_buffer.as_entire_binding(),
+                resource: viewport_buffer.inner().as_entire_binding(),
             }],
         });
 

@@ -1,15 +1,15 @@
 //! 键盘渲染器实现
 
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 /// 键盘渲染器
 pub struct KeyboardRenderer {
     /// 渲染管线
     pub(super) pipeline: wgpu::RenderPipeline,
     /// 实例缓冲区
-    pub(super) instance_buffer: wgpu::Buffer,
+    pub(super) instance_buffer: TrackedBuffer,
     /// 视口 uniform 缓冲区
-    pub(super) viewport_buffer: wgpu::Buffer,
+    pub(super) viewport_buffer: TrackedBuffer,
     /// Bind group
     pub(super) bind_group: wgpu::BindGroup,
     /// 当前缓冲区容量（实例数量）
@@ -39,13 +39,6 @@ impl KeyboardRenderer {
     pub(super) const GROWTH_FACTOR: usize = 2;
     /// 顶点着色器代码
     pub(super) const VERTEX_SHADER: &'static str = include_str!("../shaders/keyboard.wgsl");
-}
-
-impl Drop for KeyboardRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
-        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
-    }
 }
 
 mod generator;

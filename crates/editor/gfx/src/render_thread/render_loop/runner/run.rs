@@ -14,6 +14,7 @@ use super::deferred::handle_deferred_command;
 use super::onion_segments::{OnionSegment, apply_onion_track_delta, process_main_track_events};
 use super::preview::{ensure_offscreen_textures_and_upload_notes, render_offscreen_pass};
 use super::video_export::advance_export_inflight;
+use crate::gpu_resource_tracker::TrackedTexture;
 use lumino_midiplayer::texture_waterfall::{
     WaterfallGpuCtx, WaterfallStreamMsg, drain_waterfall_stream,
 };
@@ -30,8 +31,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     // 渲染循环状态
     let mut frame_count = 0u64;
     let mut fps_update_time = Instant::now();
-    let mut current_texture: Option<Arc<wgpu::Texture>> = None;
-    let mut depth_texture: Option<wgpu::Texture> = None;
+    let mut current_texture: Option<Arc<TrackedTexture>> = None;
+    let mut depth_texture: Option<TrackedTexture> = None;
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
     let mut texture_view: Option<wgpu::TextureView> = None;
     let mut current_size = (0, 0);

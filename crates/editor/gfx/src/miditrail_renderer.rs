@@ -49,14 +49,14 @@ pub struct MiditrailRenderer {
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: Option<wgpu::BindGroup>,
 
-    uniform_buffer: wgpu::Buffer,
-    vertex_buffer: wgpu::Buffer,
-    index_buffer: wgpu::Buffer,
-    instance_buffer: Option<wgpu::Buffer>,
+    uniform_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    vertex_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    index_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    instance_buffer: Option<crate::gpu_resource_tracker::TrackedBuffer>,
 
-    output_texture: Option<wgpu::Texture>,
+    output_texture: Option<crate::gpu_resource_tracker::TrackedTexture>,
     output_texture_view: Option<wgpu::TextureView>,
-    depth_texture: Option<wgpu::Texture>,
+    depth_texture: Option<crate::gpu_resource_tracker::TrackedTexture>,
     depth_texture_view: Option<wgpu::TextureView>,
 
     instance_capacity: usize,
@@ -70,12 +70,12 @@ pub struct MiditrailRenderer {
 
     // Aura 相关资源
     aura_pipeline: wgpu::RenderPipeline,
-    aura_vertex_buffer: wgpu::Buffer,
-    aura_index_buffer: wgpu::Buffer,
-    aura_instance_buffer: Option<wgpu::Buffer>,
+    aura_vertex_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    aura_index_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    aura_instance_buffer: Option<crate::gpu_resource_tracker::TrackedBuffer>,
     aura_instance_capacity: usize,
     aura_sampler: wgpu::Sampler,
-    aura_texture: Option<wgpu::Texture>,
+    aura_texture: Option<crate::gpu_resource_tracker::TrackedTexture>,
     aura_texture_view: Option<wgpu::TextureView>,
     aura_image_data: Vec<u8>,
     aura_resources_ready: bool,
@@ -215,9 +215,13 @@ impl MiditrailRenderer {
         let note_bytes =
             (note_instances.len() * std::mem::size_of::<MiditrailInstanceGpu>()) as u64;
         if let Some(ref buf) = self.instance_buffer {
-            queue.write_buffer(buf, 0, bytemuck::cast_slice(&note_instances));
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&note_instances));
             if !key_instances.is_empty() {
-                queue.write_buffer(buf, note_bytes, bytemuck::cast_slice(&key_instances));
+                queue.write_buffer(
+                    buf.inner(),
+                    note_bytes,
+                    bytemuck::cast_slice(&key_instances),
+                );
             }
         }
 
@@ -232,13 +236,17 @@ impl MiditrailRenderer {
         );
         self.ensure_aura_instance_buffer(device, aura_instances.len());
         if let Some(ref buf) = self.aura_instance_buffer {
-            queue.write_buffer(buf, 0, bytemuck::cast_slice(&aura_instances));
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
         }
 
         self.ensure_aura_resources(device, queue);
 
         let camera = build_camera_uniform(width, height);
-        queue.write_buffer(&self.uniform_buffer, 0, bytemuck::cast_slice(&[camera]));
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
 
         if self.bind_group.is_none() {
             self.rebuild_bind_group(device);
@@ -249,7 +257,7 @@ impl MiditrailRenderer {
 
     /// 获取输出纹理引用。
     pub fn output_texture(&self) -> Option<&wgpu::Texture> {
-        self.output_texture.as_ref()
+        self.output_texture.as_ref().map(|t| t.inner())
     }
 
     fn ensure_output_texture(&mut self, device: &wgpu::Device, width: u32, height: u32) {
@@ -266,40 +274,44 @@ impl MiditrailRenderer {
 
         self.release_textures();
 
-        let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("miditrail_output_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
+        let color_texture = crate::gpu_resource_tracker::TrackedTexture::new(
+            device,
+            &wgpu::TextureDescriptor {
+                label: Some("miditrail_output_texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Rgba8Unorm,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+                view_formats: &[],
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-            view_formats: &[],
-        });
-        crate::gpu_resource_tracker::add_texture(&color_texture);
+        );
         self.output_texture_view =
             Some(color_texture.create_view(&wgpu::TextureViewDescriptor::default()));
         self.output_texture = Some(color_texture);
 
-        let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-            label: Some("miditrail_depth_texture"),
-            size: wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
+        let depth_texture = crate::gpu_resource_tracker::TrackedTexture::new(
+            device,
+            &wgpu::TextureDescriptor {
+                label: Some("miditrail_depth_texture"),
+                size: wgpu::Extent3d {
+                    width,
+                    height,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format: wgpu::TextureFormat::Depth32Float,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
             },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Depth32Float,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        });
-        crate::gpu_resource_tracker::add_texture(&depth_texture);
+        );
         self.depth_texture_view =
             Some(depth_texture.create_view(&wgpu::TextureViewDescriptor::default()));
         self.depth_texture = Some(depth_texture);
@@ -309,14 +321,11 @@ impl MiditrailRenderer {
         self.bind_group = None;
     }
 
+    /// 释放纹理资源（由 [`TrackedTexture`] Drop 自动注销内存计数）
     fn release_textures(&mut self) {
-        if let Some(tex) = self.output_texture.take() {
-            crate::gpu_resource_tracker::sub_texture(&tex);
-        }
+        self.output_texture.take();
         self.output_texture_view.take();
-        if let Some(tex) = self.depth_texture.take() {
-            crate::gpu_resource_tracker::sub_texture(&tex);
-        }
+        self.depth_texture.take();
         self.depth_texture_view.take();
     }
 
@@ -328,16 +337,16 @@ impl MiditrailRenderer {
             .next_power_of_two()
             .max(Self::INITIAL_INSTANCE_CAPACITY);
         let size = (new_cap * std::mem::size_of::<MiditrailInstanceGpu>()) as u64;
-        if let Some(buf) = self.instance_buffer.take() {
-            crate::gpu_resource_tracker::sub_buffer(&buf);
-        }
-        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("miditrail_instance_buffer"),
-            size,
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
-        crate::gpu_resource_tracker::add_buffer(&buffer);
+        // 旧缓冲由 Option::take 触发 Drop 自动注销
+        let buffer = crate::gpu_resource_tracker::TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("miditrail_instance_buffer"),
+                size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         self.instance_buffer = Some(buffer);
         self.instance_capacity = new_cap;
     }
@@ -353,7 +362,7 @@ impl MiditrailRenderer {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: self.uniform_buffer.as_entire_binding(),
+                    resource: self.uniform_buffer.inner().as_entire_binding(),
                 },
                 wgpu::BindGroupEntry {
                     binding: 1,
@@ -366,27 +375,6 @@ impl MiditrailRenderer {
             ],
         });
         self.bind_group = Some(bind_group);
-    }
-}
-
-impl Drop for MiditrailRenderer {
-    fn drop(&mut self) {
-        crate::gpu_resource_tracker::sub_buffer(&self.uniform_buffer);
-        crate::gpu_resource_tracker::sub_buffer(&self.vertex_buffer);
-        crate::gpu_resource_tracker::sub_buffer(&self.index_buffer);
-        crate::gpu_resource_tracker::sub_buffer(&self.aura_vertex_buffer);
-        crate::gpu_resource_tracker::sub_buffer(&self.aura_index_buffer);
-        if let Some(ref buf) = self.instance_buffer {
-            crate::gpu_resource_tracker::sub_buffer(buf);
-        }
-        if let Some(ref buf) = self.aura_instance_buffer {
-            crate::gpu_resource_tracker::sub_buffer(buf);
-        }
-        self.release_textures();
-        if let Some(tex) = self.aura_texture.take() {
-            crate::gpu_resource_tracker::sub_texture(&tex);
-        }
-        self.aura_texture_view.take();
     }
 }
 

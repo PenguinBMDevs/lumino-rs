@@ -1,7 +1,6 @@
 use super::types::CameraUniform;
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::note_renderer::NoteRenderer;
-use wgpu::util::DeviceExt;
 
 impl NoteRenderer {
     /// 创建新的音符渲染器（默认带 depth attachment）
@@ -118,21 +117,23 @@ impl NoteRenderer {
         ) = Self::create_renderer_buffers(device, queue, slot_align);
 
         // 视图状态 uniform buffer（当前音轨 + 静音位图，切轨/静音零重传）
-        let view_state_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("note_view_state_uniform"),
-            contents: bytemuck::cast_slice(&[crate::note_renderer::types::ViewState::new()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&view_state_buffer);
+        let view_state_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("note_view_state_uniform"),
+                contents: bytemuck::cast_slice(&[crate::note_renderer::types::ViewState::new()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建渲染 bind groups（按 chunk 分块，避免大 source buffer 整体绑定超限）
         let render_bind_groups = Self::create_render_bind_groups(
             device,
             &render_bind_group_layout,
-            &viewport_buffer,
-            &view_state_buffer,
+            viewport_buffer.inner(),
+            view_state_buffer.inner(),
             gpu_note_buffer.buffer(),
-            &visible_instance_buffer,
+            visible_instance_buffer.inner(),
             &chunk_layout,
         );
 
@@ -141,11 +142,11 @@ impl NoteRenderer {
             device,
             &chunk_layout,
             &gpu_note_buffer,
-            &visible_instance_buffer,
-            &indirect_buffer,
-            &cull_uniform_buffer,
+            visible_instance_buffer.inner(),
+            indirect_buffer.inner(),
+            cull_uniform_buffer.inner(),
             &cull_uniform_buffer_size,
-            &viewport_buffer,
+            viewport_buffer.inner(),
             &cull_bind_group_layout,
         );
 
@@ -185,10 +186,10 @@ impl NoteRenderer {
         slot_align: u64,
     ) -> (
         crate::gpu_note_buffer::GpuNoteBuffer,
-        wgpu::Buffer,
-        wgpu::Buffer,
-        wgpu::Buffer,
-        wgpu::Buffer,
+        TrackedBuffer,
+        TrackedBuffer,
+        TrackedBuffer,
+        TrackedBuffer,
         u64,
     ) {
         let gpu_note_buffer = crate::gpu_note_buffer::GpuNoteBuffer::new(device, queue);
@@ -198,29 +199,35 @@ impl NoteRenderer {
         let slot_count = super::chunk::MAX_CHUNKS as u64;
         let slot_bytes = slot_count * slot_align;
         let zeros = vec![0u8; slot_bytes as usize];
-        let indirect_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("note_indirect_buffer"),
-            contents: &zeros,
-            usage: wgpu::BufferUsages::INDIRECT
-                | wgpu::BufferUsages::STORAGE
-                | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
-        });
-        gpu_resource_tracker::add_buffer(&indirect_buffer);
+        let indirect_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("note_indirect_buffer"),
+                contents: &zeros,
+                usage: wgpu::BufferUsages::INDIRECT
+                    | wgpu::BufferUsages::STORAGE
+                    | wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::COPY_SRC,
+            },
+        );
 
-        let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("viewport_uniform"),
-            contents: bytemuck::cast_slice(&[CameraUniform::default()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&viewport_buffer);
+        let viewport_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("viewport_uniform"),
+                contents: bytemuck::cast_slice(&[CameraUniform::default()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
-        let cull_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("cull_uniform"),
-            contents: &zeros,
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&cull_uniform_buffer);
+        let cull_uniform_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("cull_uniform"),
+                contents: &zeros,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         (
             gpu_note_buffer,

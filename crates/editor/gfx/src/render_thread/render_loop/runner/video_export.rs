@@ -167,7 +167,7 @@ pub(super) fn handle_video_frame(
     }
 
     // 6. copy 离屏纹理到 staging buffer + submit + map_async（非阻塞，立即返回）
-    pipeline.copy_and_submit(encoder, &texture_arc, &ctx.queue);
+    pipeline.copy_and_submit(encoder, texture_arc.inner(), &ctx.queue);
 
     // 6. 尝试非阻塞读回已就绪的帧（流水线推进，不阻塞下一帧渲染）
     while let Some(data) = pipeline.try_read() {

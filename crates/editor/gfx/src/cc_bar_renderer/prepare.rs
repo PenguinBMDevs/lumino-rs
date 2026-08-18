@@ -4,7 +4,6 @@ use super::core::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
 };
 use crate::automation::{AutomationViewParams, build_lane_instances};
-use crate::gpu_resource_tracker;
 use lumino_note_core::EditMode;
 
 // ─── CC 面板布局常量（单一来源，各函数共用，禁止局部重定义） ────────
@@ -31,23 +30,26 @@ impl CcBarRenderer {
 
         let instance_count = instances.len();
 
-        // 扩容实例缓冲区
+        // 扩容实例缓冲区（旧缓冲由 TrackedBuffer Drop 自动注销）
         if instance_count > self.capacity {
             let new_capacity = (self.capacity * Self::GROWTH_FACTOR).max(instance_count);
-            gpu_resource_tracker::sub_buffer(&self.instance_buffer);
             self.instance_buffer = Self::create_instance_buffer(device, new_capacity);
             self.capacity = new_capacity;
         }
 
         // 上传实例数据
         if instance_count > 0 {
-            queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(instances));
+            queue.write_buffer(
+                self.instance_buffer.inner(),
+                0,
+                bytemuck::cast_slice(instances),
+            );
         }
 
         // 更新视口 uniform
         let viewport_uniform = CcBarViewportUniform::new(viewport_size.0, viewport_size.1);
         queue.write_buffer(
-            &self.viewport_buffer,
+            self.viewport_buffer.inner(),
             0,
             bytemuck::cast_slice(&[viewport_uniform]),
         );

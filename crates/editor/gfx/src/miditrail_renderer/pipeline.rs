@@ -2,8 +2,8 @@
 
 use super::MiditrailInstanceGpu;
 use super::types::{MiditrailAuraInstanceGpu, MiditrailCameraGpu};
+use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
 use crate::pipeline::RenderPipelineBuilder;
-use wgpu::util::DeviceExt;
 
 pub fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
     device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -231,51 +231,61 @@ pub fn create_buffers(
     device: &wgpu::Device,
     vertices: &[f32],
     indices: &[u16],
-) -> (wgpu::Buffer, wgpu::Buffer, wgpu::Buffer) {
-    let uniform_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("miditrail_camera_uniform_buffer"),
-        size: std::mem::size_of::<MiditrailCameraGpu>() as u64,
-        usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    crate::gpu_resource_tracker::add_buffer(&uniform_buffer);
+) -> (TrackedBuffer, TrackedBuffer, TrackedBuffer) {
+    let uniform_buffer = TrackedBuffer::new(
+        device,
+        &wgpu::BufferDescriptor {
+            label: Some("miditrail_camera_uniform_buffer"),
+            size: std::mem::size_of::<MiditrailCameraGpu>() as u64,
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+    );
 
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("miditrail_cube_vertex_buffer"),
-        contents: bytemuck::cast_slice(vertices),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    crate::gpu_resource_tracker::add_buffer(&vertex_buffer);
+    let vertex_buffer = TrackedBuffer::new_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("miditrail_cube_vertex_buffer"),
+            contents: bytemuck::cast_slice(vertices),
+            usage: wgpu::BufferUsages::VERTEX,
+        },
+    );
 
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("miditrail_cube_index_buffer"),
-        contents: bytemuck::cast_slice(indices),
-        usage: wgpu::BufferUsages::INDEX,
-    });
-    crate::gpu_resource_tracker::add_buffer(&index_buffer);
+    let index_buffer = TrackedBuffer::new_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("miditrail_cube_index_buffer"),
+            contents: bytemuck::cast_slice(indices),
+            usage: wgpu::BufferUsages::INDEX,
+        },
+    );
 
     (uniform_buffer, vertex_buffer, index_buffer)
 }
 
-pub fn create_aura_buffers(device: &wgpu::Device) -> (wgpu::Buffer, wgpu::Buffer) {
+pub fn create_aura_buffers(device: &wgpu::Device) -> (TrackedBuffer, TrackedBuffer) {
     const AURA_VERTICES: [f32; 16] = [
         -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, 1.0,
     ];
     const AURA_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
 
-    let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("miditrail_aura_vertex_buffer"),
-        contents: bytemuck::cast_slice(&AURA_VERTICES),
-        usage: wgpu::BufferUsages::VERTEX,
-    });
-    crate::gpu_resource_tracker::add_buffer(&vertex_buffer);
+    let vertex_buffer = TrackedBuffer::new_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("miditrail_aura_vertex_buffer"),
+            contents: bytemuck::cast_slice(&AURA_VERTICES),
+            usage: wgpu::BufferUsages::VERTEX,
+        },
+    );
 
-    let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some("miditrail_aura_index_buffer"),
-        contents: bytemuck::cast_slice(&AURA_INDICES),
-        usage: wgpu::BufferUsages::INDEX,
-    });
-    crate::gpu_resource_tracker::add_buffer(&index_buffer);
+    let index_buffer = TrackedBuffer::new_init(
+        device,
+        &wgpu::util::BufferInitDescriptor {
+            label: Some("miditrail_aura_index_buffer"),
+            contents: bytemuck::cast_slice(&AURA_INDICES),
+            usage: wgpu::BufferUsages::INDEX,
+        },
+    );
 
     (vertex_buffer, index_buffer)
 }
@@ -296,25 +306,27 @@ pub fn create_aura_texture(
     queue: &wgpu::Queue,
     size: u32,
     data: &[u8],
-) -> wgpu::Texture {
-    let texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("miditrail_aura_texture"),
-        size: wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
+) -> TrackedTexture {
+    let texture = TrackedTexture::new(
+        device,
+        &wgpu::TextureDescriptor {
+            label: Some("miditrail_aura_texture"),
+            size: wgpu::Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgpu::TextureDimension::D2,
+            format: wgpu::TextureFormat::Rgba8Unorm,
+            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
+            view_formats: &[],
         },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: wgpu::TextureFormat::Rgba8Unorm,
-        usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-        view_formats: &[],
-    });
-    crate::gpu_resource_tracker::add_texture(&texture);
+    );
     queue.write_texture(
         wgpu::TexelCopyTextureInfo {
-            texture: &texture,
+            texture: texture.inner(),
             mip_level: 0,
             origin: wgpu::Origin3d::ZERO,
             aspect: wgpu::TextureAspect::All,

@@ -2,9 +2,7 @@
 //!
 //! 使用 GPU Fragment Shader 高效渲染无限网格，实现 O(1) 渲染时间。
 
-use wgpu::util::DeviceExt;
-
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::TrackedBuffer;
 
 /// Camera Uniform
 #[repr(C)]
@@ -268,7 +266,7 @@ pub struct GridRenderer {
     /// 渲染管线
     pipeline: wgpu::RenderPipeline,
     /// 视口 uniform 缓冲区
-    camera_buffer: wgpu::Buffer,
+    camera_buffer: TrackedBuffer,
     /// Bind group
     bind_group: wgpu::BindGroup,
     /// 缓存的 uniform 数据（避免每帧重复构建）
@@ -324,12 +322,14 @@ impl GridRenderer {
                 )
                 .build();
 
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("infinite_grid_camera_uniform"),
-            contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&camera_buffer);
+        let camera_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("infinite_grid_camera_uniform"),
+                contents: bytemuck::cast_slice(&[GridCameraUniform::builder().build()]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -337,7 +337,7 @@ impl GridRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: camera_buffer.as_entire_binding(),
+                resource: camera_buffer.inner().as_entire_binding(),
             }],
         });
 
@@ -347,12 +347,6 @@ impl GridRenderer {
             bind_group,
             cached_uniform: None,
         }
-    }
-}
-
-impl Drop for GridRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.camera_buffer);
     }
 }
 
@@ -379,7 +373,11 @@ impl GridRenderer {
             .build();
 
         if self.cached_uniform.as_ref() != Some(&viewport) {
-            queue.write_buffer(&self.camera_buffer, 0, bytemuck::cast_slice(&[viewport]));
+            queue.write_buffer(
+                self.camera_buffer.inner(),
+                0,
+                bytemuck::cast_slice(&[viewport]),
+            );
             self.cached_uniform = Some(viewport);
         }
     }

@@ -3,10 +3,8 @@
 //! 包含数据类型的定义（RulerTickInstance、RulerViewportUniform、RulerPrepareParams）、
 //! RulerRenderer 的构造函数及 pipeline 相关方法。
 
-use wgpu::util::DeviceExt;
-
 use super::{INITIAL_CAPACITY, RulerRenderer, VERTEX_SHADER};
-use crate::gpu_resource_tracker;
+use crate::gpu_resource_tracker::{self, TrackedBuffer};
 use crate::pipeline::RenderPipelineBuilder;
 use crate::shader::create_shader_module;
 
@@ -147,24 +145,26 @@ impl RulerRenderer {
         // 创建缓冲区
         let instance_buffer = Self::create_instance_buffer(device, INITIAL_CAPACITY);
 
-        let viewport_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("ruler_viewport_uniform"),
-            contents: bytemuck::cast_slice(&[RulerViewportUniform::from_params(
-                &RulerPrepareParams {
-                    viewport_size: (800.0, 600.0),
-                    ruler_height: 30.0,
-                    keyboard_width: 60.0,
-                    scroll_x: 0.0,
-                    zoom_x: 0.1,
-                    ticks_per_measure: 1920,
-                    ticks_per_beat: 480,
-                    ppq: 480,
-                    time_signatures: vec![(0, 4, 4)],
-                },
-            )]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-        gpu_resource_tracker::add_buffer(&viewport_buffer);
+        let viewport_buffer = TrackedBuffer::new_init(
+            device,
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("ruler_viewport_uniform"),
+                contents: bytemuck::cast_slice(&[RulerViewportUniform::from_params(
+                    &RulerPrepareParams {
+                        viewport_size: (800.0, 600.0),
+                        ruler_height: 30.0,
+                        keyboard_width: 60.0,
+                        scroll_x: 0.0,
+                        zoom_x: 0.1,
+                        ticks_per_measure: 1920,
+                        ticks_per_beat: 480,
+                        ppq: 480,
+                        time_signatures: vec![(0, 4, 4)],
+                    },
+                )]),
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+            },
+        );
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -172,7 +172,7 @@ impl RulerRenderer {
             layout: &bind_group_layout,
             entries: &[wgpu::BindGroupEntry {
                 binding: 0,
-                resource: viewport_buffer.as_entire_binding(),
+                resource: viewport_buffer.inner().as_entire_binding(),
             }],
         });
 
@@ -200,7 +200,7 @@ impl RulerRenderer {
     }
 
     /// 创建实例缓冲区
-    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> wgpu::Buffer {
+    pub(super) fn create_instance_buffer(device: &wgpu::Device, capacity: usize) -> TrackedBuffer {
         gpu_resource_tracker::create_instance_buffer::<RulerTickInstance>(
             device,
             "ruler_instance_buffer",
@@ -246,13 +246,6 @@ impl RulerRenderer {
                 },
             ],
         }
-    }
-}
-
-impl Drop for RulerRenderer {
-    fn drop(&mut self) {
-        gpu_resource_tracker::sub_buffer(&self.instance_buffer);
-        gpu_resource_tracker::sub_buffer(&self.viewport_buffer);
     }
 }
 
