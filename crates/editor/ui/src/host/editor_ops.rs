@@ -91,8 +91,12 @@ impl Host {
         let time_signatures = doc.time_signatures.clone();
 
         self.root.set_midi_document(doc);
-        // 同步 tempo 点到编辑器（用于速度编辑）
-        self.root.editor.editor_state.data.tempo_points = tempo_points;
+        // 同步 tempo 点到编辑器（用于速度编辑；经统一入口，与 document.tempo_changes 一致）
+        self.root
+            .editor
+            .editor_state
+            .data
+            .set_tempo_points(tempo_points);
         // 同步拍号变化到编辑器
         self.root.editor.editor_state.data.time_signatures = time_signatures;
 

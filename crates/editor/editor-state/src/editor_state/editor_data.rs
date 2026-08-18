@@ -26,6 +26,7 @@ mod history;
 mod note_store_ops;
 mod notes;
 mod reset;
+mod tempo;
 #[cfg(test)]
 mod tests_automation;
 #[cfg(test)]

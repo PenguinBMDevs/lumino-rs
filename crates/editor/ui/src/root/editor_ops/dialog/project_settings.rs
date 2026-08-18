@@ -69,12 +69,13 @@ impl Root {
         self.state.project_settings_dialog.author = author;
         self.state.project_settings_dialog.tempo = format!("{:.0}", tempo);
 
-        // 同步到编辑器 tempo 数据（用户编辑的源）
-        self.editor.editor_state.data.tempo_points =
-            vec![crate::editor::editor_state::TempoPoint {
+        // 同步到编辑器 tempo 数据（用户编辑的源，同时同步 document.tempo_changes）
+        self.editor.editor_state.data.set_tempo_points(vec![
+            crate::editor::editor_state::TempoPoint {
                 tick: 0.0,
                 bpm: tempo,
-            }];
+            },
+        ]);
 
         // 同步拍号变化到编辑器数据
         let mut sorted_ts = time_signatures;

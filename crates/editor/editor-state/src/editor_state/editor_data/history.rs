@@ -213,7 +213,8 @@ impl EditorData {
             self.program_changes = v;
         }
         if let Some(v) = snapshot.tempo_points {
-            self.tempo_points = v;
+            // 经统一入口恢复，保证 document.tempo_changes 同步（保存链路读到最新）
+            self.set_tempo_points(v);
         }
     }
 

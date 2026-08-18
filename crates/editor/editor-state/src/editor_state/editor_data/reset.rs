@@ -15,10 +15,10 @@ impl EditorData {
         self.document = None;
         self.cc_data = CcData::default();
         self.automation_lanes.clear();
-        self.tempo_points = vec![TempoPoint {
+        self.set_tempo_points(vec![TempoPoint {
             tick: 0.0,
             bpm: 120.0,
-        }];
+        }]);
         self.time_signatures = vec![(0, 4, 4)];
         self.key_signatures.clear();
         self.markers.clear();

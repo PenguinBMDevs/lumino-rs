@@ -2,7 +2,6 @@
 //!
 //! 处理 VelocityAction 相关的消息（力度拖拽、曲线绘制、Tempo 编辑、CC 控制器切换等）。
 
-use crate::editor::editor_state::TempoPoint;
 use crate::editor::velocity::EditMode;
 use crate::editor::velocity::widget::TEMPO_BPM_MIN;
 use crate::message::{EditorAction, Message, VelocityAction};
@@ -92,8 +91,7 @@ impl VelocityHandler {
             VA::TempoDragMove(idx, new_bpm) => {
                 let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
                 let bpm = Self::clamp_tempo_bpm(new_bpm, max_bpm);
-                if let Some(point) = root.editor.editor_state.data.tempo_points.get_mut(idx) {
-                    point.bpm = bpm;
+                if root.editor.editor_state.data.set_tempo_point(idx, bpm) {
                     root.update_playback_bpm();
                 }
                 return;
@@ -106,30 +104,14 @@ impl VelocityHandler {
                 root.editor.push_history();
                 let max_bpm = root.editor.velocity_panel.tempo_max_bpm;
                 let bpm = Self::clamp_tempo_bpm(bpm, max_bpm);
-                root.editor
-                    .editor_state
-                    .data
-                    .tempo_points
-                    .push(TempoPoint { tick, bpm });
-                root.editor.editor_state.data.tempo_points.sort_by(|a, b| {
-                    a.tick
-                        .partial_cmp(&b.tick)
-                        .unwrap_or(std::cmp::Ordering::Equal)
-                });
-                // 去重相同 tick
-                root.editor
-                    .editor_state
-                    .data
-                    .tempo_points
-                    .dedup_by(|a, b| (a.tick - b.tick).abs() < f32::EPSILON);
+                root.editor.editor_state.data.add_tempo_point(tick, bpm);
                 root.update_playback_bpm();
                 tracing::debug!("Tempo: 添加点 tick={} bpm={}", tick, bpm);
                 return;
             }
             VA::TempoDelete(idx) => {
                 root.editor.push_history();
-                if idx < root.editor.editor_state.data.tempo_points.len() {
-                    root.editor.editor_state.data.tempo_points.remove(idx);
+                if root.editor.editor_state.data.remove_tempo_point(idx) {
                     root.update_playback_bpm();
                     tracing::debug!("Tempo: 删除点 {}", idx);
                 }
