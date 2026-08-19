@@ -121,8 +121,8 @@ impl LmtrackData {
         let chunks = self.events.chunks_exact(12);
         if chunks.remainder().is_empty() {
             Ok(chunks.map(|chunk| {
-                // chunks_exact(12) 保证每个 chunk 长度都是 12
-                let bytes: &[u8; 12] = chunk.try_into().expect("chunk length is 12");
+                // safety: remainder 已校验为 0，chunks_exact(12) 的每个 chunk 长度恒为 12
+                let bytes: &[u8; 12] = unsafe { &*(chunk.as_ptr() as *const [u8; 12]) };
                 CompactEvent::from_bytes(bytes)
             }))
         } else {

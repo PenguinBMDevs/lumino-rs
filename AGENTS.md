@@ -86,7 +86,10 @@ use lumino_core::{Event, Result};
 ```
 
 ### Error Handling
-- **NEVER use `unwrap()`** - all errors must be properly handled
+- **NEVER use `unwrap()` in production code** - all errors must be properly handled
+- **NEVER use `expect()` in production code** - propagate errors with `?` instead
+- **测试代码允许使用 `expect()`**：测试断言应使用带上下文的 `expect("...")`（而非裸 `unwrap()`），
+  失败时能快速定位；此豁免仅限测试代码（`#[cfg(test)]` 模块、`tests/` 目录集成测试）
 - **NEVER use mod.rs** - use `{module}.rs` + `{module}/`
 - Use `thiserror` for custom error types
 - Use `Result<T>` type alias for consistency
@@ -104,6 +107,7 @@ use lumino_core::{Event, Result};
 - Integration tests: place in `tests/` directory
 - Use descriptive test names with `test_` prefix
 - Use `tokio::test` for async tests
+- 测试断言优先使用 `expect("上下文说明")` 而非 `unwrap()`（见 Error Handling）
 
 ### Documentation
 - Use Chinese for comments, documentation, code identifiers and commit messages

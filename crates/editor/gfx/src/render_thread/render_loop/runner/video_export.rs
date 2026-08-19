@@ -148,15 +148,13 @@ pub(super) fn handle_video_frame(
     // 5. 流水线模式：inflight 达到上限时阻塞读最早的一帧（背压）
     // 此时从 frame 获取 pipeline / tx 引用，execute_render_pass 已经完成，
     // 不会再与 frame 的借用冲突。
-    // pipeline_ready 已提前保证 export_pipeline / export_frame_tx 不为 None。
-    let pipeline = frame
-        .export_pipeline
-        .as_mut()
-        .expect("export_pipeline 应已通过 pipeline_ready 检查完成初始化，不应为 None");
-    let tx = frame
-        .export_frame_tx
-        .as_ref()
-        .expect("export_frame_tx 应已通过 pipeline_ready 检查完成初始化，不应为 None");
+    // pipeline_ready 已提前保证 export_pipeline / export_frame_tx 不为 None
+    let pipeline = frame.export_pipeline.as_mut().unwrap_or_else(|| {
+        unreachable!("export_pipeline 应已通过 pipeline_ready 检查完成初始化，不应为 None")
+    });
+    let tx = frame.export_frame_tx.as_ref().unwrap_or_else(|| {
+        unreachable!("export_frame_tx 应已通过 pipeline_ready 检查完成初始化，不应为 None")
+    });
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
         let data = pipeline.wait_read();
@@ -192,10 +190,11 @@ fn handle_waterfall_frame(
     if frame.waterfall_renderer.is_none() {
         *frame.waterfall_renderer = Some(WaterfallRenderer::new(&ctx.device));
     }
+    // 不变式：上面 is_none 判断后必然已创建
     let renderer = frame
         .waterfall_renderer
         .as_mut()
-        .expect("waterfall_renderer 应已初始化");
+        .unwrap_or_else(|| unreachable!("waterfall_renderer 应已初始化（is_none 分支已创建）"));
 
     // 键盘高度：帧高的 12%
     let kb_height = ((height as f64) * 0.12).round() as u32;
@@ -255,15 +254,13 @@ fn handle_waterfall_frame(
         &active_key_colors,
     );
 
-    // 获取输出纹理并拷贝到 staging buffer
-    let pipeline = frame
-        .export_pipeline
-        .as_mut()
-        .expect("export_pipeline 应已初始化");
-    let tx = frame
-        .export_frame_tx
-        .as_ref()
-        .expect("export_frame_tx 应已初始化");
+    // 获取输出纹理并拷贝到 staging buffer（流水线模式由 pipeline_ready 保证已初始化）
+    let pipeline = frame.export_pipeline.as_mut().unwrap_or_else(|| {
+        unreachable!("export_pipeline 应已初始化（pipeline_ready 已保证）")
+    });
+    let tx = frame.export_frame_tx.as_ref().unwrap_or_else(|| {
+        unreachable!("export_frame_tx 应已初始化（pipeline_ready 已保证）")
+    });
 
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {
@@ -305,10 +302,11 @@ fn handle_miditrail_frame(
     if frame.miditrail_renderer.is_none() {
         *frame.miditrail_renderer = Some(MiditrailRenderer::new(&ctx.device));
     }
+    // 不变式：上面 is_none 判断后必然已创建
     let renderer = frame
         .miditrail_renderer
         .as_mut()
-        .expect("miditrail_renderer 应已初始化");
+        .unwrap_or_else(|| unreachable!("miditrail_renderer 应已初始化（is_none 分支已创建）"));
 
     let kb_height = ((height as f64) * 0.12).round() as u32;
     let kb_height = kb_height.max(20).min(height / 3);
@@ -348,14 +346,12 @@ fn handle_miditrail_frame(
 
     renderer.render(&ctx.device, &ctx.queue, &mut encoder, &uniform, notes);
 
-    let pipeline = frame
-        .export_pipeline
-        .as_mut()
-        .expect("export_pipeline 应已初始化");
-    let tx = frame
-        .export_frame_tx
-        .as_ref()
-        .expect("export_frame_tx 应已初始化");
+    let pipeline = frame.export_pipeline.as_mut().unwrap_or_else(|| {
+        unreachable!("export_pipeline 应已初始化（pipeline_ready 已保证）")
+    });
+    let tx = frame.export_frame_tx.as_ref().unwrap_or_else(|| {
+        unreachable!("export_frame_tx 应已初始化（pipeline_ready 已保证）")
+    });
 
     pipeline.ensure_size(width, height);
     while !pipeline.can_write() {

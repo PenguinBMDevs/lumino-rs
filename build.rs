@@ -3,9 +3,13 @@ fn main() {
     println!("cargo::rustc-check-cfg=cfg(windows_gui_subsystem)");
 
     // 嵌入 Windows 应用程序图标（.ico 文件，含 16x16~512x512 多分辨率）
-    embed_resource::compile("resources/icons/logo/lumino.rc", embed_resource::NONE)
+    // 构建脚本无法返回 Result，失败时输出明确错误并以非零码退出（等价于 panic，语义更清晰）
+    if let Err(e) = embed_resource::compile("resources/icons/logo/lumino.rc", embed_resource::NONE)
         .manifest_optional()
-        .expect("ICO 资源编译失败");
+    {
+        eprintln!("error: 嵌入 Windows 图标（lumino.rc）失败: {e}");
+        std::process::exit(1);
+    }
 
     let git_hash = std::process::Command::new("git")
         .args(["rev-parse", "HEAD"])

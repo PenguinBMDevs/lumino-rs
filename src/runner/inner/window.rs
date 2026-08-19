@@ -67,7 +67,7 @@ impl RunnerInner {
             }
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置，主题: {}", theme);
-                ui.apply_settings(settings, theme);
+                ui.apply_settings(*settings, theme);
             }
             DialogResult::SpeedChange { factor } => {
                 tracing::info!("应用音符变速: 倍率={}", factor);

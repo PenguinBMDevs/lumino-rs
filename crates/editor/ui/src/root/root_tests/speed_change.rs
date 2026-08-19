@@ -28,9 +28,8 @@ fn test_speed_change_ctrl_click_opens_dialog_event() {
     let has_open_event = events.iter().any(|e| {
         matches!(
             e,
-            crate::event::Event::Window(crate::event::window::Event::Dialog(
-                crate::event::window::dialog::Event::OpenSpeedChangeDialog
-            ))
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(d.as_ref(), crate::event::window::dialog::Event::OpenSpeedChangeDialog)
         )
     });
     assert!(

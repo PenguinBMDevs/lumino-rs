@@ -172,7 +172,9 @@ impl NoteRenderer {
             let slot_offset = layout.chunk_offset_bytes(idx);
 
             // 每 chunk 的 uniform 条目（chunk_start/chunk_count 在 dispatch 前写入）
-            let uniform_size = std::num::NonZeroU64::new(16).expect("CullUniform 16 bytes");
+            // 16 为编译期常量，必非零 → NonZeroU64 必然构造成功
+            let uniform_size = std::num::NonZeroU64::new(16)
+                .unwrap_or_else(|| unreachable!("CullUniform 为编译期常量 16，必非零"));
             debug_assert!(slot_offset + 16 <= cull_uniform_buffer_size);
 
             let instance_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {

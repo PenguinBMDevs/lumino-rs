@@ -5,15 +5,17 @@ use super::WaterfallRenderer;
 impl WaterfallRenderer {
     /// 重建 bind group（当 buffers 或 texture 变化时）。
     pub(crate) fn rebuild_bind_group(&mut self, device: &wgpu::Device) {
-        let note_buf = self.note_buffer.as_ref().expect("note_buffer 未初始化");
-        let key_colors_buf = self
-            .active_key_colors_buffer
+        // 不变式：rebuild 仅在 render() 中 ensure_* 之后调用，各 buffer/texture 已初始化
+        let note_buf = self
+            .note_buffer
             .as_ref()
-            .expect("active_key_colors_buffer 未初始化");
-        let out_view = self
-            .output_texture_view
-            .as_ref()
-            .expect("output_texture_view 未初始化");
+            .unwrap_or_else(|| unreachable!("note_buffer 未初始化（render 前 ensure_note_buffer 已调用）"));
+        let key_colors_buf = self.active_key_colors_buffer.as_ref().unwrap_or_else(|| {
+            unreachable!("active_key_colors_buffer 未初始化（render 前 ensure_active_key_colors_buffer 已调用）")
+        });
+        let out_view = self.output_texture_view.as_ref().unwrap_or_else(|| {
+            unreachable!("output_texture_view 未初始化（render 前 ensure_output_texture 已调用）")
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("waterfall_bind_group"),
@@ -40,7 +42,9 @@ impl WaterfallRenderer {
                     resource: self
                         .key_offsets_buffer
                         .as_ref()
-                        .expect("key_offsets_buffer 未初始化")
+                        .unwrap_or_else(|| {
+                            unreachable!("key_offsets_buffer 未初始化（render 前 ensure_key_offsets_buffer 已调用）")
+                        })
                         .inner()
                         .as_entire_binding(),
                 },

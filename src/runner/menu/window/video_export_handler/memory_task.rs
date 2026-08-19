@@ -354,13 +354,18 @@ pub(super) fn run_video_export_task(
             }
             Err(e) => {
                 tracing::warn!("计数器字体加载失败（回退内置点阵）: {e}");
-                counter_renderer = Some(
-                    CounterFontRenderer::new(
-                        &lumino_message::events::window::video::CounterFont::Bitmap,
-                        cfg.font_size,
-                    )
-                    .expect("内置点阵字体渲染器不会失败"),
-                );
+                counter_renderer = match CounterFontRenderer::new(
+                    &lumino_message::events::window::video::CounterFont::Bitmap,
+                    cfg.font_size,
+                ) {
+                    Ok(r) => Some(r),
+                    Err(fallback_e) => {
+                        // 内置点阵理论上不会失败；若异常（资源/渲染初始化问题），
+                        // 降级为不渲染计数器，避免导出任务崩溃。
+                        tracing::error!("内置点阵字体渲染器也失败（计数器将不渲染）: {fallback_e}");
+                        None
+                    }
+                };
             }
         }
         if cfg.save_csv && !cfg.csv_output.as_os_str().is_empty() {
@@ -383,9 +388,16 @@ pub(super) fn run_video_export_task(
                     font: lumino_message::events::window::video::CounterFont::Bitmap,
                     ..cfg.clone()
                 };
-                data_curve_renderer = Some(
-                    DataCurveRenderer::new(&fallback, fps_u32).expect("内置点阵字体渲染器不会失败"),
-                );
+                data_curve_renderer = match DataCurveRenderer::new(&fallback, fps_u32) {
+                    Ok(r) => Some(r),
+                    Err(fallback_e) => {
+                        // 内置点阵理论上不会失败；异常时降级为不渲染数据曲线。
+                        tracing::error!(
+                            "内置点阵数据曲线渲染器也失败（数据曲线将不渲染）: {fallback_e}"
+                        );
+                        None
+                    }
+                };
             }
         }
     }

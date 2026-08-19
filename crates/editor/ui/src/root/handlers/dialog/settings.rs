@@ -19,7 +19,7 @@ impl DialogHandler {
             SettingsDialogAction::CloseDialog => {
                 // 返回设置结果，将设置同步到主窗口
                 root.state.dialog_result = Some(DialogResult::Settings {
-                    settings: root.settings.clone(),
+                    settings: Box::new(root.settings.clone()),
                     theme: root.window.theme.to_string(),
                 });
             }

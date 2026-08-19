@@ -8,17 +8,15 @@ pub mod video;
 
 use std::sync::Arc;
 
-// TODO(P3): Dialog variant 占 328 bytes，建议改用 Box<dialog::Event> 降低栈拷贝。
-// 但当前 const fn 构造函数直接构造 Dialog(dialog::Event)，改为 Box 会打破 const 约束。
-// 留待 P3 统一评审事件枚举内存布局后再处理。
-#[allow(clippy::large_enum_variant)]
+// Dialog variant 已 Box 化以减小 Event 枚举体积（同 Message 布局评审结论）。
+// const fn 构造函数经由 const helper `Event::dialog()` 使用 `Box::new`（Rust ≥1.85 支持）。
 #[derive(Debug, Clone)]
 /// 窗口事件
 pub enum Event {
     /// 窗口生命周期事件
     Lifecycle(lifecycle::Event),
     /// 对话框事件
-    Dialog(dialog::Event),
+    Dialog(Box<dialog::Event>),
     /// 协作事件
     Collaboration(collaboration::Event),
     /// 同步事件
@@ -28,6 +26,16 @@ pub enum Event {
 }
 
 impl Event {
+    // ── 对话框构造函数 ──
+
+    /// 构造对话框事件（Box 化以减小 `Event` / `Message` 枚举体积）。
+    ///
+    /// 注意：`Box::new` 在稳定版 Rust 中暂非 const，故本函数非 `const fn`；
+    /// 依赖它的对话框构造函数同样为非 const（无实际 const 用途）。
+    pub fn dialog(ev: dialog::Event) -> Self {
+        Self::Dialog(Box::new(ev))
+    }
+
     // ── 生命周期构造函数（直接构造，无需中间函数） ──
 
     /// 构造拖拽窗口事件
@@ -51,55 +59,53 @@ impl Event {
         Self::Lifecycle(lifecycle::Event::Minimize)
     }
 
-    // ── 对话框构造函数（直接构造 dialog::Event） ──
-
     /// 构造打开自定义精度对话框事件
-    pub const fn open_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenCustomPrecisionDialog)
+    pub fn open_custom_precision_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenCustomPrecisionDialog)
     }
     /// 构造关闭自定义精度对话框事件
-    pub const fn close_custom_precision_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseCustomPrecisionDialog)
+    pub fn close_custom_precision_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseCustomPrecisionDialog)
     }
     /// 构造应用自定义精度事件
-    pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
-        Self::Dialog(dialog::Event::ApplyCustomPrecision(numerator, denominator))
+    pub fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
+        Self::dialog(dialog::Event::ApplyCustomPrecision(numerator, denominator))
     }
     /// 构造打开加载确认对话框事件
     pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
-        Self::Dialog(dialog::Event::OpenLoadConfirmDialog { path, size_mb })
+        Self::dialog(dialog::Event::OpenLoadConfirmDialog { path, size_mb })
     }
     /// 构造打开协作对话框事件
-    pub const fn open_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenCollaborationDialog)
+    pub fn open_collaboration_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenCollaborationDialog)
     }
     /// 构造关闭协作对话框事件
-    pub const fn close_collaboration_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseCollaborationDialog)
+    pub fn close_collaboration_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseCollaborationDialog)
     }
     /// 构造打开变速对话框事件
-    pub const fn open_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenSpeedChangeDialog)
+    pub fn open_speed_change_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenSpeedChangeDialog)
     }
     /// 构造关闭变速对话框事件
-    pub const fn close_speed_change_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseSpeedChangeDialog)
+    pub fn close_speed_change_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseSpeedChangeDialog)
     }
     /// 构造确认变速事件
-    pub const fn confirm_speed_change(factor: f32) -> Self {
-        Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
+    pub fn confirm_speed_change(factor: f32) -> Self {
+        Self::dialog(dialog::Event::ConfirmSpeedChange(factor))
     }
     /// 构造打开批量编辑对话框事件
-    pub const fn open_batch_edit_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenBatchEditDialog)
+    pub fn open_batch_edit_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenBatchEditDialog)
     }
     /// 构造关闭批量编辑对话框事件
-    pub const fn close_batch_edit_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseBatchEditDialog)
+    pub fn close_batch_edit_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseBatchEditDialog)
     }
     /// 构造确认批量编辑事件
     pub fn confirm_batch_edit(velocity: String, gate: String, key: String, tick: String) -> Self {
-        Self::Dialog(dialog::Event::ConfirmBatchEdit {
+        Self::dialog(dialog::Event::ConfirmBatchEdit {
             velocity,
             gate,
             key,
@@ -107,36 +113,36 @@ impl Event {
         })
     }
     /// 构造打开视频导出对话框事件
-    pub const fn open_video_export_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenVideoExportDialog)
+    pub fn open_video_export_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenVideoExportDialog)
     }
     /// 构造关闭视频导出对话框事件
-    pub const fn close_video_export_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseVideoExportDialog)
+    pub fn close_video_export_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseVideoExportDialog)
     }
     /// 构造打开工程设置对话框事件
-    pub const fn open_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenProjectSettingsDialog)
+    pub fn open_project_settings_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenProjectSettingsDialog)
     }
     /// 构造关闭工程设置对话框事件
-    pub const fn close_project_settings_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseProjectSettingsDialog)
+    pub fn close_project_settings_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseProjectSettingsDialog)
     }
     /// 构造打开内存监控对话框事件
-    pub const fn open_memory_monitor_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenMemoryMonitorDialog)
+    pub fn open_memory_monitor_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenMemoryMonitorDialog)
     }
     /// 构造关闭内存监控对话框事件
-    pub const fn close_memory_monitor_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseMemoryMonitorDialog)
+    pub fn close_memory_monitor_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseMemoryMonitorDialog)
     }
     /// 构造打开找回音轨对话框事件
-    pub const fn open_recover_track_dialog() -> Self {
-        Self::Dialog(dialog::Event::OpenRecoverTrackDialog)
+    pub fn open_recover_track_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenRecoverTrackDialog)
     }
     /// 构造关闭找回音轨对话框事件
-    pub const fn close_recover_track_dialog() -> Self {
-        Self::Dialog(dialog::Event::CloseRecoverTrackDialog)
+    pub fn close_recover_track_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseRecoverTrackDialog)
     }
     /// 构造删除音轨事件
     pub fn delete_track(payload: track::TrackDeletionPayload) -> Self {
@@ -173,7 +179,7 @@ impl Event {
         author: String,
         time_signatures: Vec<(u32, u8, u8)>,
     ) -> Self {
-        Self::Dialog(dialog::Event::ApplyProjectSettings {
+        Self::dialog(dialog::Event::ApplyProjectSettings {
             title,
             tempo,
             copyright,
@@ -186,7 +192,7 @@ impl Event {
         config: dialog::AudioExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartAudioExport {
+        Self::dialog(dialog::Event::StartAudioExport {
             config: Box::new(config),
             document,
         })
@@ -196,7 +202,7 @@ impl Event {
         config: dialog::VideoExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartVideoExport {
+        Self::dialog(dialog::Event::StartVideoExport {
             config: Box::new(config),
             document,
         })

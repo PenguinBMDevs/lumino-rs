@@ -23,7 +23,7 @@ impl RunnerInner {
     /// 处理窗口事件
     pub(super) fn handle_window_event(&mut self, window_event: WindowEvent) {
         match window_event {
-            WindowEvent::Dialog(e) => self.handle_dialog_events(e),
+            WindowEvent::Dialog(e) => self.handle_dialog_events(*e),
             WindowEvent::Collaboration(e) => self.handle_collaboration_events(e),
             WindowEvent::Sync(e) => self.handle_sync_events(e),
             WindowEvent::Track(e) => self.handle_track_events(e),

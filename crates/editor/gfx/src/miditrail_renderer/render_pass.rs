@@ -15,19 +15,20 @@ impl MiditrailRenderer {
         key_instances: &[MiditrailInstanceGpu],
         aura_instances: &[MiditrailAuraInstanceGpu],
     ) {
-        let color_view = self
-            .output_texture_view
+        // 不变式：execute_render_pass 仅在 render() 中 ensure_* 之后调用
+        let color_view = self.output_texture_view.as_ref().unwrap_or_else(|| {
+            unreachable!("output_texture_view 应已初始化（render 前 ensure_output_texture 已调用）")
+        });
+        let depth_view = self.depth_texture_view.as_ref().unwrap_or_else(|| {
+            unreachable!("depth_texture_view 应已初始化（render 前 ensure_depth_texture 已调用）")
+        });
+        let bind_group = self
+            .bind_group
             .as_ref()
-            .expect("output_texture_view 应已初始化");
-        let depth_view = self
-            .depth_texture_view
-            .as_ref()
-            .expect("depth_texture_view 应已初始化");
-        let bind_group = self.bind_group.as_ref().expect("bind_group 应已初始化");
-        let instance_buf = self
-            .instance_buffer
-            .as_ref()
-            .expect("instance_buffer 应已初始化");
+            .unwrap_or_else(|| unreachable!("bind_group 应已初始化（rebuild_bind_group 已执行）"));
+        let instance_buf = self.instance_buffer.as_ref().unwrap_or_else(|| {
+            unreachable!("instance_buffer 应已初始化（render 前 ensure_instance_buffer 已调用）")
+        });
 
         let note_count = note_instances.len() as u32;
         let key_count = key_instances.len() as u32;

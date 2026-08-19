@@ -117,15 +117,19 @@ impl StagingRing {
     }
 
     pub(crate) fn write_slot_buffer(&self, slot_idx: usize) -> &StagingBuffer {
-        self.slots[slot_idx]
-            .buffer
-            .as_ref()
-            .expect("staging slot 应有 buffer")
+        // 不变式：StagingSlot 创建即含 buffer；ensure_size 重建后立即复填；
+        // rebuild_slot 仅当原 buffer 存在（size>0）时调用且重建为 Some → buffer 恒为 Some。
+        self.slots[slot_idx].buffer.as_ref().unwrap_or_else(|| {
+            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
+        })
     }
 
     pub(crate) fn map_after_submit(&mut self, slot_idx: usize) {
         let slot = &mut self.slots[slot_idx];
-        let buf = slot.buffer.as_ref().expect("staging slot 应有 buffer");
+        // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some
+        let buf = slot.buffer.as_ref().unwrap_or_else(|| {
+            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
+        });
         let slice = buf.buffer.inner().slice(..);
         let (tx, rx) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -220,7 +224,10 @@ impl StagingRing {
     fn finish_read(&mut self) -> Vec<u8> {
         let slot = &mut self.slots[self.next_read];
         slot.rx = None;
-        let buf = slot.buffer.as_ref().expect("staging slot 应有 buffer");
+        // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some
+        let buf = slot.buffer.as_ref().unwrap_or_else(|| {
+            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
+        });
 
         let data = buf.buffer.inner().slice(..).get_mapped_range();
         let total_unpadded = (buf.unpadded_bytes_per_row * buf.height) as usize;

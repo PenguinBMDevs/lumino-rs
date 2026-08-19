@@ -32,9 +32,8 @@ fn test_dialog_handler_opens_custom_precision() {
     let has_open_event = emitted.iter().any(|e| {
         matches!(
             e,
-            crate::event::Event::Window(crate::event::window::Event::Dialog(
-                crate::event::window::dialog::Event::OpenCustomPrecisionDialog
-            ))
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(d.as_ref(), crate::event::window::dialog::Event::OpenCustomPrecisionDialog)
         )
     });
     assert!(has_open_event, "应发射 OpenCustomPrecisionDialog 窗口事件");

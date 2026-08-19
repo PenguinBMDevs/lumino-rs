@@ -295,4 +295,6 @@ incremental = true                 # 启用增量编译（对多次构建友好�
 
 [workspace.lints.clippy]
 mod_module_files = "deny"  # AGENTS.md：禁止 mod.rs，使用 Rust 2018 模块命名
-unwrap_used = "deny"       # AGENTS.md 红线：NEVER use unwrap()
+unwrap_used = "deny"       # AGENTS.md 红线：NEVER use unwrap()（生产 + 测试）
+# 注：expect_used 不设全局 deny——测试代码允许 expect（AGENTS.md 规定），
+# 而 clippy 无法按 test/生产区分；生产代码的 expect 由 AGENTS.md 规范 + code review 守住。

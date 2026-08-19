@@ -352,10 +352,10 @@ impl MiditrailRenderer {
     }
 
     fn rebuild_bind_group(&mut self, device: &wgpu::Device) {
-        let view = self
-            .aura_texture_view
-            .as_ref()
-            .expect("aura 纹理应在创建 bind group 前初始化");
+        // 不变式：rebuild 仅在 aura 纹理已初始化后调用（set_aura_texture 先于 render）
+        let view = self.aura_texture_view.as_ref().unwrap_or_else(|| {
+            unreachable!("aura 纹理应在创建 bind group 前初始化（set_aura_texture 已调用）")
+        });
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("miditrail_bind_group"),
             layout: &self.bind_group_layout,

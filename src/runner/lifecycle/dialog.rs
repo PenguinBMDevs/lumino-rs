@@ -131,7 +131,7 @@ impl RunnerInner {
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置到主窗口，主题: {}", theme);
                 let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_settings(settings.clone(), theme.clone());
+                main_ui.apply_settings((**settings).clone(), theme.clone());
             }
             _ => {
                 let is_permanent_delete =

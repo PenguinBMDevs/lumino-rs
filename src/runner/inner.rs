@@ -38,6 +38,8 @@ pub enum InitError {
     Storage(#[from] std::io::Error),
     #[error("窗口初始化失败: {0}")]
     Window(String),
+    #[error("云存储初始化失败: {0}")]
+    Cloud(#[from] lumino_cloud::CloudError),
 }
 
 // ── Runner 顶层结构 ─────────────────────────────────────────────────────
@@ -275,11 +277,11 @@ impl Runner {
             pending_recover_track_entries: None,
             // 云存储管理器：配置与 config.json 同目录（cloud.json）
             // 配置解析失败已在 CloudConfigStore 内回退默认，此处失败仅剩
-            // tokio Runtime 创建失败（内存不足等不可恢复错误）。
-            cloud: Arc::new(Mutex::new(
-                lumino_cloud::CloudManager::new(crate::storage::config_dir().join("cloud.json"))
-                    .expect("云存储管理器初始化失败（无法创建异步运行时）"),
-            )),
+            // tokio Runtime 创建失败（内存不足等不可恢复错误）——传播为 InitError，
+            // 由上层以启动失败而非运行时 panic 处理。
+            cloud: Arc::new(Mutex::new(lumino_cloud::CloudManager::new(
+                crate::storage::config_dir().join("cloud.json"),
+            )?)),
             cloud_intent: None,
             cloud_alert_shown: false,
             saving,

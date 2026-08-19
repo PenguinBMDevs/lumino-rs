@@ -10,8 +10,18 @@ use std::fs;
 use std::io;
 use std::path::Path;
 
+/// 读取构建环境变量；缺失时返回 io::Error（供 `?` 传播，构建失败由 cargo 报告）。
+fn env_or_err(key: &str) -> io::Result<String> {
+    std::env::var(key).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::NotFound,
+            format!("构建环境变量 {key} 未设置（cargo 应始终注入）"),
+        )
+    })
+}
+
 fn main() -> io::Result<()> {
-    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("CARGO_MANIFEST_DIR 未设置");
+    let manifest_dir = env_or_err("CARGO_MANIFEST_DIR")?;
     let resources_dir = Path::new(&manifest_dir)
         .join("..")
         .join("..")
@@ -57,7 +67,7 @@ fn build_palettes(resources_dir: &Path) -> io::Result<()> {
     entries.sort_by_key(|e| e.file_name());
 
     // ── 复制 PNG 到 OUT_DIR 并生成 Rust 代码 ─────────────────────────────
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR 未设置");
+    let out_dir = env_or_err("OUT_DIR")?;
     let out_path = Path::new(&out_dir);
     let output_path = out_path.join("palettes.rs");
 
@@ -135,7 +145,7 @@ fn build_materials(resources_dir: &Path) -> io::Result<()> {
     // 稳定排序：按文件名排序（确保编译结果确定性）
     entries.sort_by_key(|e| e.file_name());
 
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR 未设置");
+    let out_dir = env_or_err("OUT_DIR")?;
     let out_path = Path::new(&out_dir);
     let output_path = out_path.join("materials.rs");
 
@@ -180,7 +190,7 @@ fn build_materials(resources_dir: &Path) -> io::Result<()> {
 
 /// 当素材目录不存在或为空时，生成空的素材列表
 fn write_empty_materials() -> io::Result<()> {
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR 未设置");
+    let out_dir = env_or_err("OUT_DIR")?;
     let output_path = std::path::Path::new(&out_dir).join("materials.rs");
 
     let output = "// !!! 自动生成 - 请勿手动修改 !!!\n// 由 build.rs 生成（空目录）\n\n#[allow(unused_imports)]\nuse super::EmbeddedMaterial;\n\n&[]\n";
@@ -197,7 +207,7 @@ fn escape_str(s: &str) -> String {
 
 /// 当目录不存在或为空时，生成空的调色板列表
 fn write_empty_palettes() -> io::Result<()> {
-    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR 未设置");
+    let out_dir = env_or_err("OUT_DIR")?;
     let output_path = std::path::Path::new(&out_dir).join("palettes.rs");
 
     let output = "// !!! 自动生成 - 请勿手动修改 !!!\n// 由 build.rs 生成（空目录）\n\n#[allow(unused_imports)]\nuse super::EmbeddedPalette;\n\n&[]\n";
