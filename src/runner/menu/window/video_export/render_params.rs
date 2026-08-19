@@ -113,7 +113,7 @@ pub(crate) use waterfall::build_waterfall_render_params;
 /// - `NoteRectangle`：传统 GPU 音符矩形渲染
 /// - `Waterfall`：瀑布流 compute shader 渲染
 /// - `MIDITrail`：3D MIDI 轨迹渲染
-pub fn build_video_export_render_params(input: RenderParamsInput) -> RenderParams {
+pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<RenderParams> {
     let RenderParamsInput {
         width,
         height,
@@ -129,7 +129,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> RenderParam
         note_instances_out,
     } = input;
     match render_mode {
-        RenderMode::Waterfall => build_waterfall_render_params(WaterfallRenderInput {
+        RenderMode::Waterfall => Some(build_waterfall_render_params(WaterfallRenderInput {
             width,
             height,
             tick,
@@ -137,8 +137,8 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> RenderParam
             ppq,
             key_count,
             waterfall_scroll_speed,
-        }),
-        RenderMode::MIDITrail => build_miditrail_render_params(MiditrailRenderInput {
+        })),
+        RenderMode::MIDITrail => Some(build_miditrail_render_params(MiditrailRenderInput {
             width,
             height,
             tick,
@@ -148,9 +148,9 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> RenderParam
             waterfall_scroll_speed,
             miditrail_z_far,
             fps,
-        }),
+        })),
         RenderMode::NoteRectangle => {
-            build_note_rectangle_render_params(NoteRectangleRenderInput {
+            Some(build_note_rectangle_render_params(NoteRectangleRenderInput {
                 width,
                 height,
                 tick,
@@ -158,10 +158,10 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> RenderParam
                 ppq,
                 visible_notes,
                 note_instances_out,
-            })
+            }))
         }
-        RenderMode::NoteCounter => unreachable!("NoteCounter 应走 CPU 渲染路径"),
-        RenderMode::DataCurve => unreachable!("DataCurve 应走 CPU 渲染路径"),
+        RenderMode::NoteCounter => None,
+        RenderMode::DataCurve => None,
     }
 }
 

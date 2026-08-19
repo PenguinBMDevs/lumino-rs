@@ -116,20 +116,20 @@ impl StagingRing {
         idx
     }
 
-    pub(crate) fn write_slot_buffer(&self, slot_idx: usize) -> &StagingBuffer {
+    pub(crate) fn write_slot_buffer(&self, slot_idx: usize) -> Option<&StagingBuffer> {
         // 不变式：StagingSlot 创建即含 buffer；ensure_size 重建后立即复填；
         // rebuild_slot 仅当原 buffer 存在（size>0）时调用且重建为 Some → buffer 恒为 Some。
-        self.slots[slot_idx].buffer.as_ref().unwrap_or_else(|| {
-            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
-        })
+        // 返回 Option 以在极端异常下让调用方安全跳过，而非令渲染线程 panic 致进程崩溃。
+        self.slots[slot_idx].buffer.as_ref()
     }
 
     pub(crate) fn map_after_submit(&mut self, slot_idx: usize) {
         let slot = &mut self.slots[slot_idx];
         // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some
-        let buf = slot.buffer.as_ref().unwrap_or_else(|| {
-            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
-        });
+        let Some(buf) = slot.buffer.as_ref() else {
+            debug_assert!(false, "staging slot 应有 buffer（创建/重建后恒为 Some）");
+            return;
+        };
         let slice = buf.buffer.inner().slice(..);
         let (tx, rx) = mpsc::channel();
         slice.map_async(wgpu::MapMode::Read, move |result| {
@@ -152,7 +152,7 @@ impl StagingRing {
             // Err(BufferAsyncError::Destroyed/MapAborted)，此时 buffer 已不可读，
             // 直接 finish_read 会 get_mapped_range panic。
             if map_result.is_ok() {
-                return Some(self.finish_read());
+                return self.finish_read();
             }
             // map 失败（buffer 已销毁等）：重建该槽位并跳过，避免 panic
             tracing::warn!("staging ring map 失败：{:?}，重建槽位", map_result.err());
@@ -192,7 +192,7 @@ impl StagingRing {
                     && let Ok(map_result) = rx.try_recv()
                 {
                     if map_result.is_ok() {
-                        return self.finish_read();
+                        return self.finish_read().unwrap_or_default();
                     }
                     // map 失败：重建槽位并跳过（不进入 finish_read，避免 panic）
                     tracing::warn!(
@@ -221,13 +221,14 @@ impl StagingRing {
         }
     }
 
-    fn finish_read(&mut self) -> Vec<u8> {
+    fn finish_read(&mut self) -> Option<Vec<u8>> {
         let slot = &mut self.slots[self.next_read];
         slot.rx = None;
         // 不变式：同 write_slot_buffer，slot.buffer 恒为 Some
-        let buf = slot.buffer.as_ref().unwrap_or_else(|| {
-            unreachable!("staging slot 应有 buffer（创建/重建后恒为 Some）")
-        });
+        let Some(buf) = slot.buffer.as_ref() else {
+            debug_assert!(false, "staging slot 应有 buffer（创建/重建后恒为 Some）");
+            return None;
+        };
 
         let data = buf.buffer.inner().slice(..).get_mapped_range();
         let total_unpadded = (buf.unpadded_bytes_per_row * buf.height) as usize;
@@ -268,7 +269,7 @@ impl StagingRing {
 
         self.next_read = (self.next_read + 1) % 4;
         self.inflight -= 1;
-        result
+        Some(result)
     }
 
     /// 将已写入 ffmpeg 的帧缓冲区归还对象池，供下次读回复用

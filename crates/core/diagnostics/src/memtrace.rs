@@ -1,3 +1,20 @@
+//! # 安全契约（Safety Contract）— DRI: lumino-core 内存诊断负责人
+//!
+//! 本模块实现进程级全局分配器 `TaggedAlloc`，替换默认分配器。
+//! 一旦触发 UB，整个进程内存布局即损坏，属「爆炸半径最大」级别。
+//!
+//! ## 安全不变量
+//! - `OFFSET_BACKUP_SIZE` 与 `Header` 布局必须一致：`alloc` 在用户数据前插入
+//!   `Header` + 备份 offset，`dealloc` 据此逆推原始指针与 Header。
+//! - `BACKEND`（mimalloc/jemalloc）在 `alloc`/`dealloc`/`realloc` 中对称调用，
+//!   且仅经 `#[global_allocator]` 路径使用，禁止手动构造实例。
+//! - `realloc` 先按新布局分配再拷贝，旧指针拷贝完成后才释放。
+//! - 所有 `unsafe` 解引用均假设分配器运行时自身传入合法 `Layout`。
+//!
+//! ## 验证要求
+//! - 任何改动建议在 CI 接入 `cargo +nightly miri test -p lumino-core-diagnostics`
+//!   以捕获数据竞争与 UB，未通过不得合并。
+
 use std::alloc::{GlobalAlloc, Layout};
 use std::cell::Cell;
 use std::sync::atomic::{AtomicIsize, Ordering};

@@ -1,3 +1,5 @@
+//! **DRI（单人负责）**: lumino-core 内存诊断模块负责人。跨平台 `unsafe` 系统 API 调用须经其 review。
+//!
 //! 平台专属内存信息获取函数（跨平台）
 //!
 //! 支持 Linux、macOS、Windows 三平台，分别使用对应平台 API：

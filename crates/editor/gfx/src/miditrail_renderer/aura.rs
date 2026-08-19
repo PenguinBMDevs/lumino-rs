@@ -59,13 +59,17 @@ impl MiditrailRenderer {
             return;
         }
         // 不变式：draw_aura 在 render() 中 rebuild_bind_group 之后调用
-        let bind_group = self
-            .bind_group
-            .as_ref()
-            .unwrap_or_else(|| unreachable!("bind_group 应已初始化（rebuild_bind_group 已执行）"));
-        let aura_instance_buf = self.aura_instance_buffer.as_ref().unwrap_or_else(|| {
-            unreachable!("aura_instance_buffer 应已初始化（render 前 ensure_aura_instance_buffer 已调用）")
-        });
+        let Some(bind_group) = self.bind_group.as_ref() else {
+            debug_assert!(false, "bind_group 应已初始化（rebuild_bind_group 已执行）");
+            return;
+        };
+        let Some(aura_instance_buf) = self.aura_instance_buffer.as_ref() else {
+            debug_assert!(
+                false,
+                "aura_instance_buffer 应已初始化（render 前 ensure_aura_instance_buffer 已调用）"
+            );
+            return;
+        };
 
         render_pass.set_pipeline(&self.aura_pipeline);
         render_pass.set_bind_group(0, bind_group, &[]);

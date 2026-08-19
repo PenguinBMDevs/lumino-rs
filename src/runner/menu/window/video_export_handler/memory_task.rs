@@ -165,8 +165,20 @@ fn enqueue_memory_frame(
                     );
                 }
             }
-            RenderMode::NoteRectangle => unreachable!("NoteRectangle 应走 GPU 路径"),
-            RenderMode::MIDITrail => unreachable!("MIDITrail 应走 GPU 3D 路径"),
+            RenderMode::NoteRectangle => {
+                send_export_error(
+                    ctx.progress_tx,
+                    "导出失败：NoteRectangle 模式不应进入 CPU 渲染分支（内部错误）",
+                );
+                return true;
+            }
+            RenderMode::MIDITrail => {
+                send_export_error(
+                    ctx.progress_tx,
+                    "导出失败：MIDITrail 模式不应进入 CPU 渲染分支（内部错误）",
+                );
+                return true;
+            }
             RenderMode::DataCurve => {
                 // 数据曲线模式：统计推进 → 取指标值 → 环形窗口 → 帧渲染
                 // 配置缺失 = 内部状态不一致：优雅终止导出，不 panic 渲染线程
@@ -236,7 +248,7 @@ fn enqueue_memory_frame(
             return true;
         }
     } else {
-        let params = video_export::build_video_export_render_params(
+        let Some(params) = video_export::build_video_export_render_params(
             video_export::RenderParamsInput {
                 width: ctx.width,
                 height: ctx.height,
@@ -251,7 +263,13 @@ fn enqueue_memory_frame(
                 visible_notes: ctx.visible_note_buf,
                 note_instances_out: ctx.note_instances_buf,
             },
-        );
+        ) else {
+            send_export_error(
+                ctx.progress_tx,
+                "导出失败：当前渲染模式不应进入此分支（内部错误）",
+            );
+            return true;
+        };
 
         if ctx
             .cmd_sender

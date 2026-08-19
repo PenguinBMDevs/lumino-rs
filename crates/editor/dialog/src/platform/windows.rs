@@ -1,3 +1,7 @@
+//! **DRI（单人负责）**: lumino-editor/dialog 平台负责人。所有 Win32 `unsafe`/`transmute` 变更须经其 review。
+//!
+//! 安全不变量：`window_proc` 的 `transmute` 仅在窗口子类化生命周期内有效；
+//! 原始窗口过程在 `SetWindowLongPtrW` 恢复前必须保持存活，否则回调悬垂。
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 

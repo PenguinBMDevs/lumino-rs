@@ -1,3 +1,5 @@
+//! **DRI（单人负责）**: lumino-audio 音频 I/O 负责人。所有 `libloading`/`extern "system"` FFI 变更须经其 review。
+//!
 //! KDMAPI (Keppy's Direct MIDI API) 后端实现
 //!
 //! 使用 `libloading` 动态加载 OmniMIDI.dll，避免 nightly-only 的 kdmapi crate。

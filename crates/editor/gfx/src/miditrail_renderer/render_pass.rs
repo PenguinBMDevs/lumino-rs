@@ -16,19 +16,31 @@ impl MiditrailRenderer {
         aura_instances: &[MiditrailAuraInstanceGpu],
     ) {
         // 不变式：execute_render_pass 仅在 render() 中 ensure_* 之后调用
-        let color_view = self.output_texture_view.as_ref().unwrap_or_else(|| {
-            unreachable!("output_texture_view 应已初始化（render 前 ensure_output_texture 已调用）")
-        });
-        let depth_view = self.depth_texture_view.as_ref().unwrap_or_else(|| {
-            unreachable!("depth_texture_view 应已初始化（render 前 ensure_depth_texture 已调用）")
-        });
-        let bind_group = self
-            .bind_group
-            .as_ref()
-            .unwrap_or_else(|| unreachable!("bind_group 应已初始化（rebuild_bind_group 已执行）"));
-        let instance_buf = self.instance_buffer.as_ref().unwrap_or_else(|| {
-            unreachable!("instance_buffer 应已初始化（render 前 ensure_instance_buffer 已调用）")
-        });
+        let Some(color_view) = self.output_texture_view.as_ref() else {
+            debug_assert!(
+                false,
+                "output_texture_view 应已初始化（render 前 ensure_output_texture 已调用）"
+            );
+            return;
+        };
+        let Some(depth_view) = self.depth_texture_view.as_ref() else {
+            debug_assert!(
+                false,
+                "depth_texture_view 应已初始化（render 前 ensure_depth_texture 已调用）"
+            );
+            return;
+        };
+        let Some(bind_group) = self.bind_group.as_ref() else {
+            debug_assert!(false, "bind_group 应已初始化（rebuild_bind_group 已执行）");
+            return;
+        };
+        let Some(instance_buf) = self.instance_buffer.as_ref() else {
+            debug_assert!(
+                false,
+                "instance_buffer 应已初始化（render 前 ensure_instance_buffer 已调用）"
+            );
+            return;
+        };
 
         let note_count = note_instances.len() as u32;
         let key_count = key_instances.len() as u32;

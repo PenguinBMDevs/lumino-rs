@@ -30,7 +30,10 @@ pub fn execute_render_pass(
         fresh_view = Some(texture.create_view(&wgpu::TextureViewDescriptor::default()));
         match fresh_view {
             Some(ref v) => v,
-            None => unreachable!(),
+            None => {
+                debug_assert!(false, "fresh_view 刚被赋值为 Some，不应为 None");
+                return;
+            }
         }
     };
 

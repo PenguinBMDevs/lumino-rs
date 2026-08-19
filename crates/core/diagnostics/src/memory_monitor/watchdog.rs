@@ -1,3 +1,5 @@
+//! **DRI（单人负责）**: lumino-core 内存诊断模块负责人。所有 `unsafe`/`SIGKILL` 逻辑变更须经其 review。
+//!
 //! 看门狗（Watchdog）— 完全独立的终极防线
 //!
 //! 架构独立性：

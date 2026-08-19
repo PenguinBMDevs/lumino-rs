@@ -71,7 +71,10 @@ impl ExportPipeline {
         queue: &wgpu::Queue,
     ) {
         let slot_idx = self.ring.acquire_write_slot();
-        let staging = self.ring.write_slot_buffer(slot_idx);
+        let Some(staging) = self.ring.write_slot_buffer(slot_idx) else {
+            // 极端异常：staging buffer 缺失，跳过本次拷贝，不令渲染线程崩溃
+            return;
+        };
 
         encoder.copy_texture_to_buffer(
             wgpu::TexelCopyTextureInfo {
