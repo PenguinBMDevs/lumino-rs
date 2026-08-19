@@ -67,6 +67,32 @@ impl Editor {
         let pending_copy = &self.pending_copy_drag_state;
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let data = &self.editor_state.data;
+
+        // 批量框选拉伸：不修改 document，根据 origin/last tick 差值实时预览长度
+        match edit_state {
+            EditState::ResizingSelectionStart {
+                origin_tick,
+                last_tick,
+            } => {
+                return self.build_resize_start_ghost_positions(
+                    visible_indices,
+                    *origin_tick,
+                    *last_tick,
+                );
+            }
+            EditState::ResizingSelectionEnd {
+                origin_tick,
+                last_tick,
+            } => {
+                return self.build_resize_end_ghost_positions(
+                    visible_indices,
+                    *origin_tick,
+                    *last_tick,
+                );
+            }
+            _ => {}
+        }
+
         let (drag_dt, drag_dk) = current_drag_delta(edit_state);
 
         // 复制模式：副本实例走预览通道，本方法禁用增量
@@ -90,6 +116,63 @@ impl Editor {
             let (tick, key) =
                 apply_ghost_delta(tick, key, drag_dt, drag_dk, pending, note_idx, max_key);
             out.push((note_idx, (tick, key, length)));
+        }
+        out
+    }
+
+    /// 批量框选左边缘拉伸 ghost 位置
+    fn build_resize_start_ghost_positions(
+        &self,
+        visible_indices: &[usize],
+        origin_tick: f32,
+        last_tick: f32,
+    ) -> Vec<(usize, (f32, u16, f32))> {
+        let delta_tick = last_tick - origin_tick;
+        if delta_tick == 0.0 {
+            return Vec::new();
+        }
+        let snap_precision = self.editor_state.view.snap_precision;
+        let mut out = Vec::new();
+        for &i in visible_indices {
+            if !self.is_note_selected(i) {
+                continue;
+            }
+            let Some(note) = self.editor_state.data.get_note_view(i) else {
+                continue;
+            };
+            let new_length = note.length - delta_tick;
+            if new_length >= snap_precision {
+                let new_tick = (note.tick + delta_tick).max(0.0);
+                out.push((i, (new_tick, note.key, new_length)));
+            }
+        }
+        out
+    }
+
+    /// 批量框选右边缘拉伸 ghost 位置
+    fn build_resize_end_ghost_positions(
+        &self,
+        visible_indices: &[usize],
+        origin_tick: f32,
+        last_tick: f32,
+    ) -> Vec<(usize, (f32, u16, f32))> {
+        let delta_tick = last_tick - origin_tick;
+        if delta_tick == 0.0 {
+            return Vec::new();
+        }
+        let snap_precision = self.editor_state.view.snap_precision;
+        let mut out = Vec::new();
+        for &i in visible_indices {
+            if !self.is_note_selected(i) {
+                continue;
+            }
+            let Some(note) = self.editor_state.data.get_note_view(i) else {
+                continue;
+            };
+            let new_length = note.length + delta_tick;
+            if new_length >= snap_precision {
+                out.push((i, (note.tick, note.key, new_length)));
+            }
         }
         out
     }

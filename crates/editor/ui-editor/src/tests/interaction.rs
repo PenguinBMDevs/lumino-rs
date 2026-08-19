@@ -299,12 +299,14 @@ fn test_batch_selection_resize_end_records_delta_events() {
 
     // 选中全部音符并进入选择框右边缘拉伸状态
     editor.editor_state.interaction.selected_notes = HashSet::from([0, 1]);
-    editor.editor_state.interaction.edit_state =
-        crate::EditState::ResizingSelectionEnd { last_tick: 0.0 };
+    editor.editor_state.interaction.edit_state = crate::EditState::ResizingSelectionEnd {
+        origin_tick: 0.0,
+        last_tick: 0.0,
+    };
 
-    // 拖动到 tick 960：两个音符长度都增加
+    // 拖动到 tick 1920：两个音符长度都增加
     let view = editor.editor_state.view.clone();
-    let x = view.tick_to_x(960.0);
+    let x = view.tick_to_x(1920.0);
     let y = view.key_to_y(60) + view.zoom_y / 2.0;
     editor.handle_moved(Point::new(x, y));
 

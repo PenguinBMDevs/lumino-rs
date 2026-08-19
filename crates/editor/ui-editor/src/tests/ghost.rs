@@ -107,16 +107,20 @@ fn test_is_editing_resizing_end_returns_true() {
 #[test]
 fn test_is_editing_resizing_selection_start_returns_true() {
     let mut editor = Editor::new();
-    editor.editor_state.interaction.edit_state =
-        EditState::ResizingSelectionStart { last_tick: 100.0 };
+    editor.editor_state.interaction.edit_state = EditState::ResizingSelectionStart {
+        origin_tick: 0.0,
+        last_tick: 100.0,
+    };
     assert!(editor.is_editing());
 }
 
 #[test]
 fn test_is_editing_resizing_selection_end_returns_true() {
     let mut editor = Editor::new();
-    editor.editor_state.interaction.edit_state =
-        EditState::ResizingSelectionEnd { last_tick: 100.0 };
+    editor.editor_state.interaction.edit_state = EditState::ResizingSelectionEnd {
+        origin_tick: 0.0,
+        last_tick: 100.0,
+    };
     assert!(editor.is_editing());
 }
 
@@ -350,8 +354,14 @@ fn test_ghost_delta_applies_pending_across_all_states() {
             note_index: 1,
             original_length: 100.0,
         },
-        EditState::ResizingSelectionStart { last_tick: 10.0 },
-        EditState::ResizingSelectionEnd { last_tick: 10.0 },
+        EditState::ResizingSelectionStart {
+            origin_tick: 0.0,
+            last_tick: 10.0,
+        },
+        EditState::ResizingSelectionEnd {
+            origin_tick: 0.0,
+            last_tick: 10.0,
+        },
         EditState::Scrubbing,
     ];
 

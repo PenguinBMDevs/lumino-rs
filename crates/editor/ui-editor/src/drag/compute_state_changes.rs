@@ -13,7 +13,6 @@ use lumino_editor_state::EditorData;
 use lumino_editor_state::PreviewSequenceNote;
 use lumino_midi_loader::ChunkedList;
 use lumino_midi_loader::NoteEvent;
-use std::cell::Cell;
 use std::time::{Duration, Instant};
 
 // ──────────────────────────────────────────────
@@ -184,7 +183,7 @@ fn tick_delay_millis(delta_ticks: f32, division: u32, bpm: f64) -> u64 {
 ///
 /// 直接修改 document 当前轨的 NoteEvent（u32 tick）。delta 源自 snapped tick
 /// 差值（整数网格），`as u32` 转换无损。
-fn apply_resize_start_to_selected(
+pub(crate) fn apply_resize_start_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
@@ -204,7 +203,7 @@ fn apply_resize_start_to_selected(
 }
 
 /// 对选中的音符应用右边缘调整（length 增加）
-fn apply_resize_end_to_selected(
+pub(crate) fn apply_resize_end_to_selected(
     delta_tick: f32,
     snap_precision: f32,
     selected: &[usize],
@@ -219,50 +218,4 @@ fn apply_resize_end_to_selected(
             }
         }
     }
-}
-
-/// 批量调整左边缘：选中音符 tick 右移 + length 缩减
-pub(super) fn handle_resizing_selection_start(
-    last_tick: &mut f32,
-    snapped_tick: f32,
-    snap_precision: f32,
-    selected: &[usize],
-    notes: &mut ChunkedList<NoteEvent>,
-    selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
-) -> bool {
-    let delta_tick = snapped_tick - *last_tick;
-    if delta_tick == 0.0 {
-        return false;
-    }
-
-    apply_resize_start_to_selected(delta_tick, snap_precision, selected, notes);
-    *last_tick = snapped_tick;
-
-    if let Some((min_t, max_te, max_k, min_k)) = selected_bounds.get() {
-        selected_bounds.set(Some(((min_t + delta_tick).max(0.0), max_te, max_k, min_k)));
-    }
-    true
-}
-
-/// 批量调整右边缘：选中音符 length 增加
-pub(super) fn handle_resizing_selection_end(
-    last_tick: &mut f32,
-    snapped_tick: f32,
-    snap_precision: f32,
-    selected: &[usize],
-    notes: &mut ChunkedList<NoteEvent>,
-    selected_bounds: &Cell<Option<(f32, f32, u16, u16)>>,
-) -> bool {
-    let delta_tick = snapped_tick - *last_tick;
-    if delta_tick == 0.0 {
-        return false;
-    }
-
-    apply_resize_end_to_selected(delta_tick, snap_precision, selected, notes);
-    *last_tick = snapped_tick;
-
-    if let Some((min_t, max_te, max_k, min_k)) = selected_bounds.get() {
-        selected_bounds.set(Some((min_t, max_te + delta_tick, max_k, min_k)));
-    }
-    true
 }

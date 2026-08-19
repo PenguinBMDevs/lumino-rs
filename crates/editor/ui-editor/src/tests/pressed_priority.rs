@@ -139,7 +139,10 @@ fn test_selection_left_edge_overrides_note_hit() {
     assert!(
         matches!(
             editor.editor_state.interaction.edit_state,
-            EditState::ResizingSelectionStart { .. }
+            EditState::ResizingSelectionStart {
+                origin_tick: 100.0,
+                last_tick: 100.0
+            }
         ),
         "选择框左边缘应进入 ResizingSelectionStart"
     );
@@ -166,7 +169,10 @@ fn test_selection_right_edge_overrides_note_hit() {
     assert!(
         matches!(
             editor.editor_state.interaction.edit_state,
-            EditState::ResizingSelectionEnd { .. }
+            EditState::ResizingSelectionEnd {
+                origin_tick: 300.0,
+                last_tick: 300.0
+            }
         ),
         "选择框右边缘应进入 ResizingSelectionEnd"
     );

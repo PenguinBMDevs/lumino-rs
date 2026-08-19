@@ -1,6 +1,6 @@
 //! 拖动和调整大小操作
 
-mod compute_state_changes;
+pub(crate) mod compute_state_changes;
 mod dragging;
 mod selection;
 
@@ -27,16 +27,6 @@ impl Editor {
             self.update_selection();
             return (None, None, None, None);
         }
-        let sel: Vec<usize> = {
-            let i = &self.editor_state.interaction;
-            if let Some(ref bs) = i.selection_bitset {
-                let mut v = Vec::with_capacity(bs.count_ones());
-                bs.for_each_set(|i| v.push(i));
-                v
-            } else {
-                i.selected_notes.iter().copied().collect()
-            }
-        };
         let (mut new_tick, mut new_length, mut note_to_play) = (None, None, None);
         // 批量拖动预览序列信号：None=key 偏移无变化；Some(空)=回到原位需清空；
         // Some(非空)=按 tick 顺序 + ghost key 构建的新序列。
@@ -106,43 +96,38 @@ impl Editor {
                     });
                 }
             }
-            EditState::ResizingSelectionStart { last_tick } => {
-                // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
-                if let Some(track) = self
-                    .editor_state
-                    .data
-                    .document
-                    .as_mut()
-                    .and_then(|doc| doc.track_notes_mut(self.editor_state.data.current_track))
-                    && handle_resizing_selection_start(
-                        last_tick,
-                        snapped_tick,
-                        snap_precision,
-                        &sel,
-                        track,
-                        &self.selected_bounds,
-                    )
-                {
+            EditState::ResizingSelectionStart {
+                origin_tick: _,
+                last_tick,
+            } => {
+                // ghost 方案：拉伸期间不修改 document，仅更新 last_tick 和选择框边界缓存。
+                // 实时视觉由 build_ghost_delta_positions 通过 origin_tick 计算。
+                let delta_tick = snapped_tick - *last_tick;
+                if delta_tick != 0.0 {
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                        self.selected_bounds.set(Some((
+                            (min_t + delta_tick).max(0.0),
+                            max_te,
+                            max_k,
+                            min_k,
+                        )));
+                    }
+                    *last_tick = snapped_tick;
                     self.mark_ghost_dirty();
                 }
             }
-            EditState::ResizingSelectionEnd { last_tick } => {
-                // 2026-08 单一权威源：直接修改 document 当前轨（track_notes_mut）
-                if let Some(track) = self
-                    .editor_state
-                    .data
-                    .document
-                    .as_mut()
-                    .and_then(|doc| doc.track_notes_mut(self.editor_state.data.current_track))
-                    && handle_resizing_selection_end(
-                        last_tick,
-                        snapped_tick,
-                        snap_precision,
-                        &sel,
-                        track,
-                        &self.selected_bounds,
-                    )
-                {
+            EditState::ResizingSelectionEnd {
+                origin_tick: _,
+                last_tick,
+            } => {
+                // ghost 方案：拉伸期间不修改 document，仅更新 last_tick 和选择框边界缓存。
+                let delta_tick = snapped_tick - *last_tick;
+                if delta_tick != 0.0 {
+                    if let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
+                        self.selected_bounds
+                            .set(Some((min_t, max_te + delta_tick, max_k, min_k)));
+                    }
+                    *last_tick = snapped_tick;
                     self.mark_ghost_dirty();
                 }
             }

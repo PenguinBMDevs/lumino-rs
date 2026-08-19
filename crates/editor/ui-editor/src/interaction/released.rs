@@ -2,6 +2,9 @@
 //!
 //! 包含：释放事件的匹配分发、绘制完成的收尾工作
 
+use crate::drag::compute_state_changes::{
+    apply_resize_end_to_selected, apply_resize_start_to_selected,
+};
 use crate::{EditState, Editor};
 use lumino_editor_state::LineToolInteraction;
 use lumino_message::Tool;
@@ -132,19 +135,50 @@ impl Editor {
                 }
                 // 不调用 mark_notes_changed（commit_pending_copy 内部已标记）
             }
-            EditState::ResizingSelectionStart { .. } | EditState::ResizingSelectionEnd { .. } => {
-                // ghost 方案：期间用 mark_ghost_dirty 不重建索引，松手时一次性重建。
-                // 2026-08 单一权威源：resize 期间已直接修改 document（track_notes_mut），
-                // 松手时只需标记变化，无需任何缓存同步。
-                //
-                // 清除 selected_bounds 缓存：拉伸期间虽增量更新，但有个别音符可能因
-                // new_length < snap_precision 被跳过，导致缓存与实际不完全一致。
-                // 松手后强制 O(N) 回退路径重新计算，确保正确性。
+            EditState::ResizingSelectionStart {
+                origin_tick,
+                last_tick,
+            } => {
                 self.selected_bounds.set(None);
-                tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
-                // 记录增量事件，确保 GPU 主音轨段同步刷新。
-                let selected = self.get_selected_indices();
-                if !selected.is_empty() {
+                let delta_tick = last_tick - origin_tick;
+                if delta_tick != 0.0 {
+                    let selected = self.get_selected_indices();
+                    if let Some(track) =
+                        self.editor_state.data.document.as_mut().and_then(|doc| {
+                            doc.track_notes_mut(self.editor_state.data.current_track)
+                        })
+                    {
+                        apply_resize_start_to_selected(
+                            delta_tick,
+                            self.editor_state.view.snap_precision,
+                            &selected,
+                            track,
+                        );
+                    }
+                    self.editor_state.data.record_update_ranges(&selected);
+                }
+                self.mark_notes_changed();
+            }
+            EditState::ResizingSelectionEnd {
+                origin_tick,
+                last_tick,
+            } => {
+                self.selected_bounds.set(None);
+                let delta_tick = last_tick - origin_tick;
+                if delta_tick != 0.0 {
+                    let selected = self.get_selected_indices();
+                    if let Some(track) =
+                        self.editor_state.data.document.as_mut().and_then(|doc| {
+                            doc.track_notes_mut(self.editor_state.data.current_track)
+                        })
+                    {
+                        apply_resize_end_to_selected(
+                            delta_tick,
+                            self.editor_state.view.snap_precision,
+                            &selected,
+                            track,
+                        );
+                    }
                     self.editor_state.data.record_update_ranges(&selected);
                 }
                 self.mark_notes_changed();

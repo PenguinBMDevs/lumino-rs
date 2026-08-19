@@ -86,6 +86,8 @@ pub(crate) fn has_active_ghost_delta(
             EditState::Dragging { .. }
                 | EditState::DraggingSelection { .. }
                 | EditState::DraggingSelectionCopy { .. }
+                | EditState::ResizingSelectionStart { .. }
+                | EditState::ResizingSelectionEnd { .. }
         )
 }
 

@@ -146,6 +146,7 @@ impl Editor {
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionStart {
+                            origin_tick: snapped_tick,
                             last_tick: snapped_tick,
                         };
                 }
@@ -161,6 +162,7 @@ impl Editor {
                     self.push_history();
                     self.editor_state.interaction.edit_state =
                         crate::EditState::ResizingSelectionEnd {
+                            origin_tick: snapped_tick,
                             last_tick: snapped_tick,
                         };
                 }
