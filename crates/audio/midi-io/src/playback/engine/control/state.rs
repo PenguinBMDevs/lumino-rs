@@ -42,6 +42,24 @@ impl PlaybackEngine {
         self.handle_loop_wrap(current_tick, &mut messages);
         self.reused_messages = messages;
 
+        // 轨尾标自动停止：未开启循环且播放头越过（时间）最靠后音符的结束 tick 时，
+        // 播放停止在轨尾标处。与编辑/走带视图共用同一权威值 `tracks_max_end_tick()`，
+        // 编辑期间在最后音符后追加音符会扩展该值，播放停止点随之后移。
+        // 注意：循环播放（looping）由 `handle_loop_wrap` 处理回绕，此处不介入。
+        if !self.looping {
+            let end_tick = self
+                .document
+                .as_ref()
+                .map(|doc| doc.tracks_max_end_tick())
+                .unwrap_or(0);
+            if end_tick > 0 && current_tick >= end_tick as f32 {
+                if let Some(mut playback) = self.lock_playback() {
+                    playback.stop();
+                }
+                self.last_processed_tick = 0.0;
+            }
+        }
+
         &mut self.reused_messages
     }
 

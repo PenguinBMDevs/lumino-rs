@@ -83,9 +83,7 @@ impl Root {
                 self.cloud.clipboard = None;
                 self.cloud.notice = None;
             }
-            CloudAction::RequestDelete { path, is_dir } => {
-                self.cloud_request_delete(path, is_dir)
-            }
+            CloudAction::RequestDelete { path, is_dir } => self.cloud_request_delete(path, is_dir),
             CloudAction::DeleteEntry { path, is_dir } => self.cloud_delete_entry(path, is_dir),
             CloudAction::DeleteCancel => {
                 self.cloud.pending_delete = None;

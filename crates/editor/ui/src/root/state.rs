@@ -59,7 +59,14 @@ impl Root {
         if let Some(manager) = &self.playback.manager {
             // 非阻塞拉取最新播放帧：播放线程每帧 try_send，UI 每帧 try_recv。
             // 返回 None 表示无新帧（未播放或线程尚未推送），UI 保持原位置。
-            manager.try_recv_frame().map(|frame| frame.tick)
+            if let Some(frame) = manager.try_recv_frame() {
+                // 同步工具栏播放按钮状态：引擎在轨尾标处自动停止后会推送 Stopped 帧，
+                // 此处据此复位 `is_playing`，避免按钮停留在"播放中"与实际状态不一致。
+                self.toolbar.is_playing = frame.state == crate::playback::PlaybackState::Playing;
+                Some(frame.tick)
+            } else {
+                None
+            }
         } else {
             None
         }
