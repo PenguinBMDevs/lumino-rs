@@ -29,20 +29,24 @@ pub struct CounterFrameOutput {
 ///
 /// 返回渲染文本与可选的 CSV 行；统计状态 `stats` 每帧推进一次。
 /// `renderer` 为字体渲染器（TTF 后端内置 glyph 缓存，跨帧复用）。
-#[allow(clippy::too_many_arguments)]
-pub fn render_counter_frame(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    document: &MidiDocument,
-    tick: u32,
-    ppq: u32,
-    fps: u32,
-    duration_secs: f64,
-    config: &CounterRenderConfig,
-    stats: &mut CounterStats,
-    renderer: &mut CounterFontRenderer,
-) -> CounterFrameOutput {
+pub struct CounterFrameInput<'a> {
+    pub frame: &'a mut [u8],
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub document: &'a MidiDocument,
+    pub tick: u32,
+    pub ppq: u32,
+    pub fps: u32,
+    pub duration_secs: f64,
+    pub config: &'a CounterRenderConfig,
+    pub stats: &'a mut CounterStats,
+    pub renderer: &'a mut CounterFontRenderer,
+}
+
+pub fn render_counter_frame(input: CounterFrameInput<'_>) -> CounterFrameOutput {
+    let CounterFrameInput {
+        frame, frame_width, frame_height, document, tick, ppq, fps, duration_secs, config, stats, renderer,
+    } = input;
     stats.advance(document, tick, fps);
 
     let ctx = TemplateContext {
@@ -158,19 +162,19 @@ mod tests {
         let mut frame = vec![0u8; 200 * 40 * 4];
         let mut renderer =
             CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
-        let out = render_counter_frame(
-            &mut frame,
-            200,
-            40,
-            &doc,
-            480,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        let out = render_counter_frame(CounterFrameInput {
+            frame: &mut frame,
+            frame_width: 200,
+            frame_height: 40,
+            document: &doc,
+            tick: 480,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
         // tick=480：0/480 两个音符已开始；test_config 未启用补零
         assert!(out.text.contains("Notes: 2 / 3"), "out={}", out.text);
         assert!(out.csv_line.is_none(), "未启用 CSV 时不应输出行");
@@ -199,19 +203,19 @@ mod tests {
         let mut frame = vec![0u8; 200 * 40 * 4];
         let mut renderer =
             CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
-        let out = render_counter_frame(
-            &mut frame,
-            200,
-            40,
-            &doc,
-            480,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        let out = render_counter_frame(CounterFrameInput {
+            frame: &mut frame,
+            frame_width: 200,
+            frame_height: 40,
+            document: &doc,
+            tick: 480,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
         let line = out.csv_line.expect("启用 CSV 应输出行");
         // 未补零：nc=2, nps=2
         assert_eq!(line, "2,2", "line={line}");
@@ -230,36 +234,36 @@ mod tests {
         let mut frame_l = vec![0u8; 200 * 40 * 4];
         let mut renderer =
             CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
-        render_counter_frame(
-            &mut frame_l,
-            200,
-            40,
-            &doc,
-            480,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        render_counter_frame(CounterFrameInput {
+            frame: &mut frame_l,
+            frame_width: 200,
+            frame_height: 40,
+            document: &doc,
+            tick: 480,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
 
         // TopRight
         let mut frame_r = vec![0u8; 200 * 40 * 4];
         config.alignment = CounterAlignment::TopRight;
-        render_counter_frame(
-            &mut frame_r,
-            200,
-            40,
-            &doc,
-            480,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        render_counter_frame(CounterFrameInput {
+            frame: &mut frame_r,
+            frame_width: 200,
+            frame_height: 40,
+            document: &doc,
+            tick: 480,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
 
         // 右上对齐：右侧区域应有像素，左上区域无
         assert!(
@@ -284,19 +288,19 @@ mod tests {
         let mut frame = vec![0u8; 64 * 64 * 4];
         let mut renderer =
             CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
-        let out = render_counter_frame(
-            &mut frame,
-            64,
-            64,
-            &doc,
-            0,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        let out = render_counter_frame(CounterFrameInput {
+            frame: &mut frame,
+            frame_width: 64,
+            frame_height: 64,
+            document: &doc,
+            tick: 0,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
         assert!(out.text.is_empty());
     }
 
@@ -320,19 +324,19 @@ mod tests {
         let mut frame = vec![0u8; 200 * 40 * 4];
         let mut renderer =
             CounterFontRenderer::new(&config.font, config.font_size).expect("渲染器");
-        let out = render_counter_frame(
-            &mut frame,
-            200,
-            40,
-            &doc,
-            480,
-            480,
-            60,
-            2.0,
-            &config,
-            &mut stats,
-            &mut renderer,
-        );
+        let out = render_counter_frame(CounterFrameInput {
+            frame: &mut frame,
+            frame_width: 200,
+            frame_height: 40,
+            document: &doc,
+            tick: 480,
+            ppq: 480,
+            fps: 60,
+            duration_secs: 2.0,
+            config: &config,
+            stats: &mut stats,
+            renderer: &mut renderer,
+        });
         assert!(out.text.contains("音符: 2 / 3"), "out={}", out.text);
         // 中文模板渲染后应有非零前景像素
         assert!(

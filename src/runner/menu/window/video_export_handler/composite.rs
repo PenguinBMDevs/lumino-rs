@@ -20,23 +20,28 @@ type ProgressMsg = (String, f64, u64, f64, f64);
 /// `FrameParams::default()` + 空键盘贴图即可跳过合成（与旧 `composite_waterfall_and_encode_frame` 等价）。
 ///
 /// 返回 `(should_stop, stats)`：`should_stop` 为 true 表示应终止渲染循环（取消或出错）。
-#[allow(clippy::too_many_arguments)]
-pub(super) fn composite_and_encode_frame(
-    mut data: Vec<u8>,
-    params: FrameParams,
-    encoder: &mut FfmpegEncoder,
-    progress_tx: &UnboundedSender<ProgressMsg>,
-    preview_tx: &UnboundedSender<(Vec<u8>, u32, u32)>,
-    cancel_flag: &AtomicBool,
-    last_preview_time: &mut Instant,
-    preview_sent: &mut bool,
-    width: u32,
-    height: u32,
-    keyboard_pixels: &[u8],
-    kb_w: u32,
-    kb_h: u32,
-    recycle_tx: &Sender<Vec<u8>>,
-) -> (bool, FrameStageStats) {
+pub(super) struct CompositeEncodeFrameInput<'a> {
+    pub data: Vec<u8>,
+    pub params: FrameParams,
+    pub encoder: &'a mut FfmpegEncoder,
+    pub progress_tx: &'a UnboundedSender<ProgressMsg>,
+    pub preview_tx: &'a UnboundedSender<(Vec<u8>, u32, u32)>,
+    pub cancel_flag: &'a AtomicBool,
+    pub last_preview_time: &'a mut Instant,
+    pub preview_sent: &'a mut bool,
+    pub width: u32,
+    pub height: u32,
+    pub keyboard_pixels: &'a [u8],
+    pub kb_w: u32,
+    pub kb_h: u32,
+    pub recycle_tx: &'a Sender<Vec<u8>>,
+}
+
+pub(super) fn composite_and_encode_frame(input: CompositeEncodeFrameInput<'_>) -> (bool, FrameStageStats) {
+    let CompositeEncodeFrameInput {
+        mut data, params, encoder, progress_tx, preview_tx, cancel_flag, last_preview_time, preview_sent,
+        width, height, keyboard_pixels, kb_w, kb_h, recycle_tx,
+    } = input;
     let mut stats = FrameStageStats::default();
     let FrameParams {
         scroll_x: sx,

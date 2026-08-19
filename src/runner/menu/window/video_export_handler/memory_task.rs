@@ -16,7 +16,7 @@ use super::super::video_export::{
     DataCurveRenderer, SortableNote, keyboard,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
-use super::composite::composite_and_encode_frame;
+use super::composite::{composite_and_encode_frame, CompositeEncodeFrameInput};
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
 
@@ -96,16 +96,16 @@ fn enqueue_memory_frame(
         let mut frame_data = vec![0u8; (ctx.width as usize) * (ctx.height as usize) * 4];
         match ctx.render_mode {
             RenderMode::Waterfall => {
-                video_export::render_waterfall_frame(
-                    &mut frame_data,
-                    ctx.width,
-                    ctx.height,
-                    ctx.document,
+                video_export::render_waterfall_frame(video_export::WaterfallFrameInput {
+                    frame: &mut frame_data,
+                    frame_width: ctx.width,
+                    frame_height: ctx.height,
+                    document: ctx.document,
                     tick,
-                    ctx.ppq,
-                    ctx.key_count,
-                    ctx.waterfall_scroll_speed,
-                );
+                    ppq: ctx.ppq,
+                    key_count: ctx.key_count,
+                    waterfall_speed: ctx.waterfall_scroll_speed,
+                });
             }
             RenderMode::NoteCounter => {
                 // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）
@@ -131,19 +131,19 @@ fn enqueue_memory_frame(
                     );
                     return true;
                 };
-                let out = video_export::render_counter_frame(
-                    &mut frame_data,
-                    ctx.width,
-                    ctx.height,
-                    ctx.document,
+                let out = video_export::render_counter_frame(video_export::CounterFrameInput {
+                    frame: &mut frame_data,
+                    frame_width: ctx.width,
+                    frame_height: ctx.height,
+                    document: ctx.document,
                     tick,
-                    ctx.ppq,
-                    ctx.fps_f64 as u32,
-                    ctx.duration_secs,
-                    cfg,
+                    ppq: ctx.ppq,
+                    fps: ctx.fps_f64 as u32,
+                    duration_secs: ctx.duration_secs,
+                    config: cfg,
                     stats,
                     renderer,
-                );
+                });
                 // CSV 行写入（失败仅告警，不中断渲染）
                 if let (Some(line), Some(writer)) = (out.csv_line, ctx.csv_writer.as_mut()) {
                     use std::io::Write;
@@ -237,18 +237,20 @@ fn enqueue_memory_frame(
         }
     } else {
         let params = video_export::build_video_export_render_params(
-            ctx.width,
-            ctx.height,
-            tick,
-            ctx.document,
-            ctx.ppq,
-            ctx.key_count,
-            ctx.render_mode,
-            ctx.waterfall_scroll_speed,
-            ctx.miditrail_z_far,
-            ctx.fps_f64 as f32,
-            ctx.visible_note_buf,
-            ctx.note_instances_buf,
+            video_export::RenderParamsInput {
+                width: ctx.width,
+                height: ctx.height,
+                tick,
+                document: ctx.document,
+                ppq: ctx.ppq,
+                key_count: ctx.key_count,
+                render_mode: ctx.render_mode,
+                waterfall_scroll_speed: ctx.waterfall_scroll_speed,
+                miditrail_z_far: ctx.miditrail_z_far,
+                fps: ctx.fps_f64 as f32,
+                visible_notes: ctx.visible_note_buf,
+                note_instances_out: ctx.note_instances_buf,
+            },
         );
 
         if ctx
@@ -270,28 +272,30 @@ fn enqueue_memory_frame(
 ///
 /// 该函数整体等价于原 `handle_start_video_export` 中 `move` 闭包体内的逻辑，
 /// 仅将各阶段进一步拆分成下方私有步骤函数，行为保持一致。
-#[allow(clippy::too_many_arguments)]
-pub(super) fn run_video_export_task(
-    config: VideoExportConfig,
-    cmd_sender: Sender<RenderCommand>,
-    progress_tx: UnboundedSender<ProgressMsg>,
-    preview_tx: UnboundedSender<(Vec<u8>, u32, u32)>,
-    document: Arc<lumino_midi_loader::MidiDocument>,
-    ppq: u32,
-    fps_f64: f64,
-    key_count: u16,
-    width: u32,
-    height: u32,
-    cancel_flag: Arc<AtomicBool>,
-    input_pix_fmt: &'static str,
-    is_cpu_renderer: bool,
-    is_gpu_compute_style: bool,
-    waterfall_scroll_speed: f32,
-    miditrail_z_far: f32,
-    render_mode: RenderMode,
-    counter_config: Option<CounterRenderConfig>,
-    data_curve_config: Option<DataCurveRenderConfig>,
-) {
+pub(super) struct RunVideoExportTaskInput {
+    pub config: VideoExportConfig,
+    pub cmd_sender: Sender<RenderCommand>,
+    pub progress_tx: UnboundedSender<ProgressMsg>,
+    pub preview_tx: UnboundedSender<(Vec<u8>, u32, u32)>,
+    pub document: Arc<lumino_midi_loader::MidiDocument>,
+    pub ppq: u32,
+    pub fps_f64: f64,
+    pub key_count: u16,
+    pub width: u32,
+    pub height: u32,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub input_pix_fmt: &'static str,
+    pub is_cpu_renderer: bool,
+    pub is_gpu_compute_style: bool,
+    pub waterfall_scroll_speed: f32,
+    pub miditrail_z_far: f32,
+    pub render_mode: RenderMode,
+    pub counter_config: Option<CounterRenderConfig>,
+    pub data_curve_config: Option<DataCurveRenderConfig>,
+}
+
+pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
+    let RunVideoExportTaskInput { config, cmd_sender, progress_tx, preview_tx, document, ppq, fps_f64, key_count, width, height, cancel_flag, input_pix_fmt, is_cpu_renderer, is_gpu_compute_style, waterfall_scroll_speed, miditrail_z_far, render_mode, counter_config, data_curve_config } = input;
     let start = Instant::now();
 
     // 按键颜色增量扫描状态（与编辑器 PlaybackScanState 等价）
@@ -474,39 +478,39 @@ pub(super) fn run_video_export_task(
         if is_gpu_compute_style || is_cpu_renderer {
             // GPU compute（瀑布流/MIDITrail）帧已完整渲染；
             // CPU 渲染（计数器）帧也不含键盘/标尺，均直接编码。
-            composite_and_encode_frame(
-                frame_data,
-                FrameParams::default(),
-                &mut encoder,
-                &progress_tx,
-                &preview_tx,
-                &cancel_flag,
-                &mut last_preview_time,
-                &mut preview_sent,
+            composite_and_encode_frame(CompositeEncodeFrameInput {
+                data: frame_data,
+                params: FrameParams::default(),
+                encoder: &mut encoder,
+                progress_tx: &progress_tx,
+                preview_tx: &preview_tx,
+                cancel_flag: &cancel_flag,
+                last_preview_time: &mut last_preview_time,
+                preview_sent: &mut preview_sent,
                 width,
                 height,
-                &[],
-                0,
-                0,
-                &recycle_tx,
-            )
+                keyboard_pixels: &[],
+                kb_w: 0,
+                kb_h: 0,
+                recycle_tx: &recycle_tx,
+            })
         } else {
-            composite_and_encode_frame(
-                frame_data,
-                frame_params,
-                &mut encoder,
-                &progress_tx,
-                &preview_tx,
-                &cancel_flag,
-                &mut last_preview_time,
-                &mut preview_sent,
+            composite_and_encode_frame(CompositeEncodeFrameInput {
+                data: frame_data,
+                params: frame_params,
+                encoder: &mut encoder,
+                progress_tx: &progress_tx,
+                preview_tx: &preview_tx,
+                cancel_flag: &cancel_flag,
+                last_preview_time: &mut last_preview_time,
+                preview_sent: &mut preview_sent,
                 width,
                 height,
-                &keyboard_pixels,
+                keyboard_pixels: &keyboard_pixels,
                 kb_w,
                 kb_h,
-                &recycle_tx,
-            )
+                recycle_tx: &recycle_tx,
+            })
         }
     };
     let (processed_frames, cancelled, smoothed_fps) =

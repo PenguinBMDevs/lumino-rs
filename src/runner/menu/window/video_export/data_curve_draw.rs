@@ -68,18 +68,20 @@ pub(super) fn blend_hline(
 /// 绘制一条粗线段（DDA 步进 + box stamping，越界裁剪）。
 ///
 /// 整数端点输入；每步在端点处画 `thickness × thickness` 实心方块。
-#[allow(clippy::too_many_arguments)]
-pub(super) fn draw_thick_line(
-    frame: &mut [u8],
-    fw: usize,
-    fh: usize,
-    x0: i64,
-    y0: i64,
-    x1: i64,
-    y1: i64,
-    color_bgra: [u8; 4],
-    thickness: u32,
-) {
+pub(super) struct DrawThickLineInput<'a> {
+    pub frame: &'a mut [u8],
+    pub fw: usize,
+    pub fh: usize,
+    pub x0: i64,
+    pub y0: i64,
+    pub x1: i64,
+    pub y1: i64,
+    pub color_bgra: [u8; 4],
+    pub thickness: u32,
+}
+
+pub(super) fn draw_thick_line(input: DrawThickLineInput<'_>) {
+    let DrawThickLineInput { frame, fw, fh, x0, y0, x1, y1, color_bgra, thickness } = input;
     let t = thickness.max(1) as i64;
     let half = t / 2;
     let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);
@@ -125,7 +127,17 @@ mod tests {
     fn test_draw_thick_line_clip() {
         let mut frame = vec![0u8; 64 * 64 * 4];
         let c = [255, 255, 0, 255]; // BGRA 黄色
-        draw_thick_line(&mut frame, 64, 64, -5, 30, 70, 30, c, 3);
+        draw_thick_line(DrawThickLineInput {
+            frame: &mut frame,
+            fw: 64,
+            fh: 64,
+            x0: -5,
+            y0: 30,
+            x1: 70,
+            y1: 30,
+            color_bgra: c,
+            thickness: 3,
+        });
         assert!(
             frame.chunks_exact(4).any(|px| px == c),
             "线段应出现在画面内"

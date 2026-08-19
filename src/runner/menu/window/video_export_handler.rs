@@ -10,8 +10,8 @@ use lumino_export::video::{
 use lumino_gfx::TextureFormat;
 use lumino_message::events::window::video::VideoExportConfig as EventVideoExportConfig;
 
-use memory_task::run_video_export_task;
-use streaming_task::run_streaming_video_export_task;
+use memory_task::{run_video_export_task, RunVideoExportTaskInput};
+use streaming_task::{run_streaming_video_export_task, RunStreamingVideoExportTaskInput};
 
 mod commands;
 mod composite;
@@ -201,12 +201,12 @@ impl RunnerInner {
                     if !editor_tempos.is_empty() {
                         snapshot.tempo_changes = editor_tempos;
                     }
-                    run_video_export_task(
+                    run_video_export_task(RunVideoExportTaskInput {
                         config,
                         cmd_sender,
                         progress_tx,
                         preview_tx,
-                        Arc::new(snapshot),
+                        document: Arc::new(snapshot),
                         ppq,
                         fps_f64,
                         key_count,
@@ -221,7 +221,7 @@ impl RunnerInner {
                         render_mode,
                         counter_config,
                         data_curve_config,
-                    );
+                    });
                 } else if !midi_path.is_empty() {
                     if is_cpu_renderer {
                         tracing::error!("计数器/数据曲线模式需要完整 MIDI 数据，流式读取不支持");
@@ -234,7 +234,7 @@ impl RunnerInner {
                             0.0,
                         ));
                     } else {
-                        run_streaming_video_export_task(
+                        run_streaming_video_export_task(RunStreamingVideoExportTaskInput {
                             config,
                             cmd_sender,
                             progress_tx,
@@ -245,8 +245,8 @@ impl RunnerInner {
                             width,
                             height,
                             cancel_flag,
-                            surface_pix_fmt,
-                        );
+                            input_pix_fmt: surface_pix_fmt,
+                        });
                     }
                 } else {
                     tracing::error!("视频导出失败：无 MidiDocument 且未指定 MIDI 路径");

@@ -13,7 +13,7 @@ use super::super::video_export::{
     self, generate_keyboard_texture, seconds_to_tick, streaming::StreamingNoteSource,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
-use super::composite::composite_and_encode_frame;
+use super::composite::{composite_and_encode_frame, CompositeEncodeFrameInput};
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
 
@@ -25,20 +25,22 @@ type ProgressMsg = (String, f64, u64, f64, f64);
 /// 1. 解析 MIDI 文件并写入硬盘缓存，同时通过 `progress_tx` 回传解析进度。
 /// 2. 打开流式音符数据源，按帧 seek+read 读取可见音符。
 /// 3. 其余渲染/编码/合成流程与内存模式保持一致。
-#[allow(clippy::too_many_arguments)]
-pub(super) fn run_streaming_video_export_task(
-    config: VideoExportConfig,
-    cmd_sender: std::sync::mpsc::Sender<RenderCommand>,
-    progress_tx: UnboundedSender<ProgressMsg>,
-    preview_tx: UnboundedSender<(Vec<u8>, u32, u32)>,
-    midi_path: String,
-    fps_f64: f64,
-    key_count: u16,
-    width: u32,
-    height: u32,
-    cancel_flag: Arc<AtomicBool>,
-    input_pix_fmt: &'static str,
-) {
+pub(super) struct RunStreamingVideoExportTaskInput {
+    pub config: VideoExportConfig,
+    pub cmd_sender: std::sync::mpsc::Sender<RenderCommand>,
+    pub progress_tx: UnboundedSender<ProgressMsg>,
+    pub preview_tx: UnboundedSender<(Vec<u8>, u32, u32)>,
+    pub midi_path: String,
+    pub fps_f64: f64,
+    pub key_count: u16,
+    pub width: u32,
+    pub height: u32,
+    pub cancel_flag: Arc<AtomicBool>,
+    pub input_pix_fmt: &'static str,
+}
+
+pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTaskInput) {
+    let RunStreamingVideoExportTaskInput { config, cmd_sender, progress_tx, preview_tx, midi_path, fps_f64, key_count, width, height, cancel_flag, input_pix_fmt } = input;
     let start = std::time::Instant::now();
 
     // 阶段 1：解析 MIDI → 硬盘缓存（终端进度条）
@@ -205,22 +207,22 @@ pub(super) fn run_streaming_video_export_task(
             progress_map: |raw| 0.3 + raw * 0.7,
         };
         let mut process_frame = |stream_frame: Vec<u8>, stream_params: FrameParams| {
-            composite_and_encode_frame(
-                stream_frame,
-                stream_params,
-                &mut encoder,
-                &progress_tx,
-                &preview_tx,
-                &cancel_flag,
-                &mut last_preview_time,
-                &mut preview_sent,
+            composite_and_encode_frame(CompositeEncodeFrameInput {
+                data: stream_frame,
+                params: stream_params,
+                encoder: &mut encoder,
+                progress_tx: &progress_tx,
+                preview_tx: &preview_tx,
+                cancel_flag: &cancel_flag,
+                last_preview_time: &mut last_preview_time,
+                preview_sent: &mut preview_sent,
                 width,
                 height,
-                &keyboard_pixels,
+                keyboard_pixels: &keyboard_pixels,
                 kb_w,
                 kb_h,
-                &recycle_tx,
-            )
+                recycle_tx: &recycle_tx,
+            })
         };
         pipeline.run(&mut enqueue_frame, &mut process_frame)
     }; // 块结束：enqueue_frame/process_frame/pipeline 释放，后续可访问 source

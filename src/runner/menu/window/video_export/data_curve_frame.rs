@@ -20,7 +20,8 @@ use std::collections::VecDeque;
 use lumino_message::events::window::video::{CounterFont, DataCurveConfig, DataCurveMetric};
 
 use super::counter_font::CounterFontRenderer;
-use super::data_curve_draw::{blend_hline, draw_thick_line, fill_bgra};
+use super::data_curve_draw::{blend_hline, draw_thick_line, fill_bgra, DrawThickLineInput};
+use super::counter_font_ttf::DrawLineScaledInput;
 use super::data_curve_math::{abbreviate, add_commas, is_milestone, rgba_to_bgra, smooth_forward};
 
 /// 数据曲线渲染配置（后台渲染线程使用，由事件层配置转换而来）。
@@ -248,15 +249,15 @@ pub fn render_data_curve_frame(
                 let ty = ((y - font_height as f64 * ts - config.text_y_offset as f64 * ts)
                     .floor()
                     .max(0.0)) as u32;
-                renderer.font.draw_line_scaled(
-                    frame,
+                renderer.font.draw_line_scaled(DrawLineScaledInput {
+                    frame: &mut *frame,
                     frame_width,
-                    &text,
-                    tx,
-                    ty,
-                    config.text_color,
-                    text_scale,
-                );
+                    line: &text,
+                    x: tx,
+                    y: ty,
+                    color: config.text_color,
+                    extra_scale: text_scale,
+                });
             }
         }
     }
@@ -277,17 +278,17 @@ pub fn render_data_curve_frame(
         let px = (x.round() as i64).clamp(0, fw as i64 - 1);
         let py = (y.round() as i64).clamp(0, fh as i64 - 1);
         if let Some((px0, py0)) = prev {
-            draw_thick_line(
-                frame,
+            draw_thick_line(DrawThickLineInput {
+                frame: &mut *frame,
                 fw,
                 fh,
-                px0,
-                py0,
-                px,
-                py,
-                line_bgra,
-                config.line_thickness,
-            );
+                x0: px0,
+                y0: py0,
+                x1: px,
+                y1: py,
+                color_bgra: line_bgra,
+                thickness: config.line_thickness,
+            });
         }
         prev = Some((px, py));
     }

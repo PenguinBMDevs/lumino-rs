@@ -13,6 +13,17 @@ use lumino_message::events::window::video::CounterFont;
 
 use super::counter_font_ttf_load::load_font;
 
+/// `draw_line_scaled` 入参（替代 7 个位置参数，消除 `too_many_arguments`）。
+pub(crate) struct DrawLineScaledInput<'a> {
+    pub frame: &'a mut [u8],
+    pub frame_width: u32,
+    pub line: &'a str,
+    pub x: u32,
+    pub y: u32,
+    pub color: [u8; 4],
+    pub extra_scale: u32,
+}
+
 /// 单个 glyph 的光栅化结果（缓存用）。
 struct GlyphCacheEntry {
     /// 水平推进宽度（像素）
@@ -211,17 +222,8 @@ impl TtfFontRenderer {
     ///
     /// 数据曲线模式里程碑刻度文字放大用：每个光栅化像素绘制为
     /// `extra_scale × extra_scale` 方块（与点阵后端的整倍放大语义一致）。
-    #[allow(clippy::too_many_arguments)]
-    pub(super) fn draw_line_scaled(
-        &mut self,
-        frame: &mut [u8],
-        frame_width: u32,
-        line: &str,
-        x: u32,
-        y: u32,
-        color: [u8; 4],
-        extra_scale: u32,
-    ) -> u32 {
+    pub(super) fn draw_line_scaled(&mut self, input: DrawLineScaledInput<'_>) -> u32 {
+        let DrawLineScaledInput { frame, frame_width, line, x, y, color, extra_scale } = input;
         let extra = extra_scale.max(1) as i64;
         let frame_w = frame_width as usize;
         let row_bytes = frame_w * 4;

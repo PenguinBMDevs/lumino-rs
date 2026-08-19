@@ -125,9 +125,8 @@ pub(super) fn fill_bgra_black(frame: &mut [u8]) {
 }
 
 /// 在 BGRA 帧上绘制一个填充矩形（使用批量行填充）
-#[allow(clippy::too_many_arguments)]
-fn fill_bgra_rect(
-    frame: &mut [u8],
+struct FillRectInput<'a> {
+    frame: &'a mut [u8],
     frame_width: u32,
     frame_height: u32,
     x: u32,
@@ -135,7 +134,10 @@ fn fill_bgra_rect(
     w: u32,
     h: u32,
     color: [u8; 4],
-) {
+}
+
+fn fill_bgra_rect(input: FillRectInput<'_>) {
+    let FillRectInput { frame, frame_width, frame_height, x, y, w, h, color } = input;
     if w == 0 || h == 0 {
         return;
     }
@@ -174,17 +176,21 @@ fn fill_bgra_rect(
 /// - 当前播放时刻（tick）位于帧底部，历史音符向上延伸
 /// - 键盘位于帧底部（钢琴风格：白键等分宽度，黑键 65% 宽 + 60% 高）
 /// - 背景为纯黑色
-#[allow(clippy::too_many_arguments)]
-pub fn render_waterfall_frame(
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    document: &MidiDocument,
-    tick: u32,
-    ppq: u32,
-    key_count: u16,
-    waterfall_speed: f32,
-) {
+pub struct WaterfallFrameInput<'a> {
+    pub frame: &'a mut [u8],
+    pub frame_width: u32,
+    pub frame_height: u32,
+    pub document: &'a MidiDocument,
+    pub tick: u32,
+    pub ppq: u32,
+    pub key_count: u16,
+    pub waterfall_speed: f32,
+}
+
+pub fn render_waterfall_frame(input: WaterfallFrameInput<'_>) {
+    let WaterfallFrameInput {
+        frame, frame_width, frame_height, document, tick, ppq, key_count, waterfall_speed,
+    } = input;
     if frame_width == 0 || frame_height == 0 || key_count == 0 {
         return;
     }
@@ -258,16 +264,16 @@ pub fn render_waterfall_frame(
             ((tick_end.saturating_sub(note.start_tick)) as f32 * zoom_y).round() as u32;
         let note_h = note_bottom.saturating_sub(note_top).max(1);
 
-        fill_bgra_rect(
-            frame,
+        fill_bgra_rect(FillRectInput {
+            frame: &mut *frame,
             frame_width,
-            content_height,
-            note_x,
-            note_top,
-            note_w,
-            note_h,
+            frame_height: content_height,
+            x: note_x,
+            y: note_top,
+            w: note_w,
+            h: note_h,
             color,
-        );
+        });
     }
 
     // ── 钢琴风格键盘渲染（照抄 nezha 方案） ──
@@ -348,16 +354,16 @@ pub fn render_waterfall_frame(
             active_key_colors[key as usize],
             OVERLAY_ALPHA,
         );
-        fill_bgra_rect(
-            frame,
+        fill_bgra_rect(FillRectInput {
+            frame: &mut *frame,
             frame_width,
             frame_height,
-            kx_i,
-            kb_y,
-            kw_i,
-            kb_height,
+            x: kx_i,
+            y: kb_y,
+            w: kw_i,
+            h: kb_height,
             color,
-        );
+        });
     }
 
     // 第二遍：黑键（上层覆盖，高度为键盘的 60%）
@@ -372,15 +378,15 @@ pub fn render_waterfall_frame(
             active_key_colors[key as usize],
             OVERLAY_ALPHA,
         );
-        fill_bgra_rect(
-            frame,
+        fill_bgra_rect(FillRectInput {
+            frame: &mut *frame,
             frame_width,
             frame_height,
-            kx_i,
-            kb_y,
-            kw_i,
-            black_kb_height,
+            x: kx_i,
+            y: kb_y,
+            w: kw_i,
+            h: black_kb_height,
             color,
-        );
+        });
     }
 }
