@@ -63,6 +63,11 @@ pub struct CcBarViewportUniform {
 }
 
 impl CcBarViewportUniform {
+    /// 创建视口 uniform。
+    ///
+    /// # 参数
+    /// * `viewport_width` — 视口宽度（像素）
+    /// * `viewport_height` — 视口高度（像素）
     #[must_use]
     pub const fn new(viewport_width: f32, viewport_height: f32) -> Self {
         Self {
@@ -220,13 +225,21 @@ impl CcBarRenderer {
 /// CC 柱状条视图参数
 #[derive(Debug, Clone)]
 pub struct CcBarViewParams {
+    /// 面板高度（像素）
     pub panel_height: f32,
+    /// 键盘分区宽度（向左偏移基准）
     pub keyboard_width: f32,
+    /// 水平滚动（像素）
     pub scroll_x: f32,
+    /// 水平缩放（像素/tick）
     pub zoom_x: f32,
+    /// 画布水平偏移（像素）
     pub canvas_offset_x: f32,
+    /// 画布垂直偏移（像素）
     pub canvas_offset_y: f32,
+    /// 画布宽度（像素）
     pub canvas_size_x: f32,
+    /// 画布高度（像素）
     pub canvas_size_y: f32,
     /// 自动化曲线垂直缩放（1.0 = 满量程）。
     pub value_zoom: f32,
@@ -239,17 +252,24 @@ pub struct CcBarViewParams {
 /// CC 柱状条颜色配置
 #[derive(Debug, Clone)]
 pub struct CcBarColors {
+    /// 柱状条主体颜色 (RGBA)
     pub bar_color: [f32; 4],
+    /// CC 分区背景色 (RGBA)
     pub bg_color: [f32; 4],
+    /// 自动化曲线手柄/节点颜色 (RGBA)
     pub handle_color: [f32; 4],
+    /// 拖拽选中/抓取中的高亮颜色 (RGBA)
     pub grab_color: [f32; 4],
 }
 
 /// CC 柱状条数据点
 #[derive(Debug, Clone)]
 pub struct CcBarData<'a> {
+    /// 力度点数据切片（柱状图/力度面板用）
     pub velocity_points: &'a [lumino_note_core::VelocityPoint],
+    /// CC（控制器）点数据切片
     pub cc_points: &'a [lumino_note_core::CcPoint],
+    /// 弯音（pitch bend）点数据切片
     pub bend_points: &'a [lumino_note_core::BendPoint],
     /// 可选的自动化 lane（CC / Bend 曲线模式优先使用）。
     pub automation_lane: Option<&'a lumino_note_core::AutomationLane>,

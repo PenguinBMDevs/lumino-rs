@@ -1,7 +1,7 @@
 //! 音频导出对话框
 //!
 //! 所有 widget 使用 row!/column! 宏构建（含类型推断），
-//! 避免手动构造 iced_widget::Row::<M>::new() 等导致的
+//! 避免手动构造 `iced_widget::Row::<M>::new()` 等导致的
 //! 缺少 Theme/Renderer 泛型参数问题。
 //! 类型别名一律使用 crate::Element<'a>（4 泛型参数已对齐）。
 

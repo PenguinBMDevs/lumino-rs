@@ -17,7 +17,12 @@ impl std::fmt::Debug for FrameSender {
 #[derive(Debug)]
 pub enum ControlCommand {
     /// 调整窗口大小
-    Resize { width: u32, height: u32 },
+    Resize {
+        /// 新的窗口宽度（像素）
+        width: u32,
+        /// 新的窗口高度（像素）
+        height: u32,
+    },
     /// 停止渲染线程
     Shutdown,
     /// 贴图瀑布流控制命令（生成/释放/重生成/脏覆层/视频上传）

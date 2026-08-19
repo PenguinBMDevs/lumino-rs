@@ -5,14 +5,22 @@ use crate::Point2;
 /// 编辑器动作
 #[derive(Debug, Clone)]
 pub enum EditorAction {
+    /// 编辑器内鼠标按下
     Pressed {
+        /// 按下位置
         pos: Point2,
+        /// 是否按下 Shift
         shift: bool,
     },
+    /// 编辑器内鼠标移动
     Moved(Point2),
+    /// 鼠标释放
     Released,
+    /// 滚动事件
     Scrolled {
+        /// 横向滚动量
         delta_x: f32,
+        /// 纵向滚动量
         delta_y: f32,
     },
     /// 双击事件
@@ -33,14 +41,17 @@ pub enum EditorAction {
     Redo,
     /// 标尺 scrubbing：设置播放位置（tick 值）
     Scrubbed {
+        /// tick 值
         tick: f32,
     },
     /// 演奏指示线拖拽开始（固定指示线模式下）
     IndicatorDragStart {
+        /// 横向坐标
         x: f32,
     },
     /// 演奏指示线拖拽移动
     IndicatorDragMove {
+        /// 横向坐标
         x: f32,
     },
     /// 曲线工具直线：确认并按直线经过的区域生成音符（√ 按钮）

@@ -23,6 +23,10 @@ impl LoopRange {
     const HANDLE_WIDTH: f32 = 6.0;
     const MIN_RANGE: f32 = 1.0;
 
+    /// 创建一个默认（禁用）的循环区域实例。
+    ///
+    /// # 返回
+    /// 范围固定在 `[0, 1920]` ticks 且未启用的 `LoopRange`。
     pub fn new() -> Self {
         Self {
             enabled: false,
@@ -36,18 +40,34 @@ impl LoopRange {
         }
     }
 
+    /// 循环区域是否启用。
+    ///
+    /// # 返回
+    /// 启用返回 `true`，否则返回 `false`。
     pub fn enabled(&self) -> bool {
         self.enabled
     }
 
+    /// 获取循环区域起始 tick。
+    ///
+    /// # 返回
+    /// 起始 tick 值（浮点数）。
     pub fn start_tick(&self) -> f32 {
         self.start_tick
     }
 
+    /// 获取循环区域结束 tick。
+    ///
+    /// # 返回
+    /// 结束 tick 值（浮点数）。
     pub fn end_tick(&self) -> f32 {
         self.end_tick
     }
 
+    /// 是否正在拖拽循环区域（起始句柄、结束句柄或整体）。
+    ///
+    /// # 返回
+    /// 任一拖拽进行中返回 `true`。
     pub fn is_dragging(&self) -> bool {
         self.is_dragging_start || self.is_dragging_end || self.is_dragging_body
     }
@@ -57,6 +77,11 @@ impl LoopRange {
         tracing::debug!("循环区域启用状态变更为: {}", enabled);
     }
 
+    /// 设置循环区域范围（自动规范化顺序并限制最小范围）。
+    ///
+    /// # 参数
+    /// * `start` — 起始 tick
+    /// * `end` — 结束 tick
     pub fn set_range(&mut self, start: f32, end: f32) {
         let (s, e) = if start < end {
             (start, end)
@@ -97,6 +122,13 @@ impl LoopRange {
         self.set_range(new_start, new_end);
     }
 
+    /// 指定 tick 是否包含在启用的循环区域内。
+    ///
+    /// # 参数
+    /// * `tick` — 待检测的 tick 值
+    ///
+    /// # 返回
+    /// 循环区域启用且 `tick` 落在 `[start, end]` 之间返回 `true`。
     pub fn contains(&self, tick: f32) -> bool {
         if !self.enabled {
             return false;
@@ -104,22 +136,41 @@ impl LoopRange {
         tick >= self.start_tick && tick <= self.end_tick
     }
 
+    /// 获取循环区域长度（结束 tick 减起始 tick）。
+    ///
+    /// # 返回
+    /// 区域的 tick 长度。
     pub fn length(&self) -> f32 {
         self.end_tick - self.start_tick
     }
 
+    /// 切换循环区域的启用状态。
     pub fn toggle(&mut self) {
         self.set_enabled(!self.enabled);
     }
 
+    /// 启用循环区域。
     pub fn enable(&mut self) {
         self.set_enabled(true);
     }
 
+    /// 禁用循环区域。
     pub fn disable(&mut self) {
         self.set_enabled(false);
     }
 
+    /// 处理标尺区域的鼠标按下事件，命中句柄/整体并进入对应拖拽状态。
+    ///
+    /// # 参数
+    /// * `screen_x` — 鼠标的屏幕 X 坐标
+    /// * `keyboard_width` — 键盘栏宽度（像素）
+    /// * `scroll_x` — 水平滚动偏移
+    /// * `zoom_x` — 水平缩放倍率
+    /// * `_ruler_height` — 标尺高度（当前未使用）
+    /// * `snap_precision` — 吸附精度（tick）
+    ///
+    /// # 返回
+    /// 命中的拖拽目标类型（起始句柄/结束句柄/整体/无）。
     pub fn handle_mouse_press(
         &mut self,
         screen_x: f32,
@@ -163,6 +214,14 @@ impl LoopRange {
         LoopHitTest::Body
     }
 
+    /// 处理拖拽过程中的鼠标移动，实时更新循环区域边界或整体位置。
+    ///
+    /// # 参数
+    /// * `screen_x` — 鼠标的屏幕 X 坐标
+    /// * `keyboard_width` — 键盘栏宽度（像素）
+    /// * `scroll_x` — 水平滚动偏移
+    /// * `zoom_x` — 水平缩放倍率
+    /// * `snap_precision` — 吸附精度（tick）
     pub fn handle_mouse_move(
         &mut self,
         screen_x: f32,
@@ -190,6 +249,7 @@ impl LoopRange {
         }
     }
 
+    /// 结束循环区域拖拽，清除所有拖拽状态。
     pub fn handle_mouse_release(&mut self) {
         if self.is_dragging_start {
             tracing::debug!("循环起始点拖拽结束于 {:.2}", self.start_tick);
@@ -209,6 +269,15 @@ impl LoopRange {
         self.is_dragging_body = false;
     }
 
+    /// 将循环区域转换为屏幕 X 坐标区间。
+    ///
+    /// # 参数
+    /// * `keyboard_width` — 键盘栏宽度（像素）
+    /// * `scroll_x` — 水平滚动偏移
+    /// * `zoom_x` — 水平缩放倍率
+    ///
+    /// # 返回
+    /// 启用时返回 `(start_screen_x, end_screen_x)`，禁用时返回 `None`。
     pub fn to_screen_coords(
         &self,
         keyboard_width: f32,
@@ -255,11 +324,16 @@ impl LoopRange {
     }
 }
 
+/// 循环区域的命中检测结果。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum LoopHitTest {
+    /// 未命中循环区域
     None,
+    /// 命中起始句柄
     StartHandle,
+    /// 命中结束句柄
     EndHandle,
+    /// 命中循环区域整体
     Body,
 }
 

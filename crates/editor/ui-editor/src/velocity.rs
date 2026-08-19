@@ -57,6 +57,10 @@ pub struct VelocityPanel {
 }
 
 impl VelocityPanel {
+    /// 创建默认的力度/CC 编辑面板组件。
+    ///
+    /// # 返回
+    /// 处于力度模式、CC 编号为 1 的 `VelocityPanel`。
     pub fn new() -> Self {
         Self {
             edit_mode: EditMode::Velocity,

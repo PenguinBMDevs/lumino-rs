@@ -20,11 +20,17 @@ pub mod rendering {
 
         /// 默认网格颜色（独立线程渲染路径）
         pub mod colors {
+            /// 黑键分隔线颜色 (RGBA)
             pub const BLACK_KEY_LINE: [f32; 4] = [0.15, 0.15, 0.15, 1.0];
+            /// 白键分隔线颜色 (RGBA)
             pub const WHITE_KEY_LINE: [f32; 4] = [0.1, 0.1, 0.1, 1.0];
+            /// 小节线颜色 (RGBA)
             pub const BAR_LINE: [f32; 4] = [0.3, 0.3, 0.3, 1.0];
+            /// 拍子线颜色 (RGBA)
             pub const BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 1.0];
+            /// 半拍线颜色 (RGBA)
             pub const HALF_BEAT_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.5];
+            /// 细分网格线颜色 (RGBA，带透明度)
             pub const GRID_LINE: [f32; 4] = [0.2, 0.2, 0.2, 0.2];
         }
     }

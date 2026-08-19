@@ -13,6 +13,7 @@ use lumino_note_core::note::Note;
 pub struct VelocityHandler;
 
 impl VelocityHandler {
+    /// 创建一个力度编辑面板消息处理器
     pub fn new() -> Self {
         Self
     }

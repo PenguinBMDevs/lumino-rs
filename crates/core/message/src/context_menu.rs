@@ -9,7 +9,10 @@ use crate::Point2;
 #[derive(Debug, Clone)]
 pub enum PianoRollContextMenuAction {
     /// 在指定位置打开菜单（canvas 局部坐标）
-    Open { position: Point2 },
+    Open {
+        /// 菜单弹出位置
+        position: Point2,
+    },
     /// 关闭菜单
     Close,
     /// 点击菜单项

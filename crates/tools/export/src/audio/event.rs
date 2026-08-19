@@ -38,6 +38,9 @@ pub struct MidiEventProcessor<'a> {
 pub type ProgressFn = Arc<dyn Fn(String, f64) + Send + Sync>;
 
 impl<'a> MidiEventProcessor<'a> {
+    /// 创建 MIDI 事件处理器。
+    ///
+    /// 将 MIDI 事件按时间轴播放到给定的合成通道组与采样输出。
     pub fn new(
         config: &'a AudioRenderConfig,
         channel_group: &'a mut ChannelGroup,

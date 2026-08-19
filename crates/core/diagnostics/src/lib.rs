@@ -3,6 +3,7 @@
 //! 合并原 `lumino-memory-monitor` 与 `lumino-memtrace` 的共享运行时诊断设施。
 
 pub mod memory_monitor;
+/// 带分配标签的全局分配器与内存快照
 pub mod memtrace;
 
 // 重新导出常用类型，保持调用方路径简短

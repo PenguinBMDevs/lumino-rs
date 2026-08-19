@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 /// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
+    /// 用户界面配置
     pub ui: UiConfig,
 }
 
@@ -38,11 +39,15 @@ impl Default for Config {
     }
 }
 
+/// 合成器后端类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum SynthBackend {
+    /// 内置 XSynth 合成器（默认）
     #[default]
     XSynth,
+    /// KDMAPI 合成器（调用系统 KDMAPI）
     Kdmapi,
+    /// 系统 MIDI 合成器
     System,
 }
 
@@ -143,6 +148,7 @@ impl std::fmt::Display for AutoScrollMode {
 /// 用户界面配置
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UiConfig {
+    /// 主题名称（例如 "Light"）
     #[serde(default)]
     pub theme: String,
     /// 界面语言

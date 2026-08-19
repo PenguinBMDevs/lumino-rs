@@ -7,6 +7,7 @@ use lumino_extras::i18n::{Language, main_translations};
 
 pub use lumino_ui_core::app_mode::AppMode;
 
+/// 渲染标题栏模式切换视图
 pub fn view(
     theme: &Theme,
     _current_mode: AppMode,

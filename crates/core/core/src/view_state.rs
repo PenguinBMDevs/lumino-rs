@@ -31,22 +31,37 @@ pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
 /// 视图状态（滚动、缩放、显示参数）
 #[derive(Debug, Clone)]
 pub struct ViewState {
+    /// 水平滚动偏移（pixel）
     pub scroll_x: f32,
+    /// 垂直滚动偏移（pixel）
     pub scroll_y: f32,
+    /// 横向缩放（Pixels per Tick）
     pub zoom_x: f32,
+    /// 纵向缩放（Pixels per Key）
     pub zoom_y: f32,
+    /// 歌曲总长度（tick）
     pub total_ticks: u32,
+    /// 键盘总键数
     pub key_count: u16,
+    /// 当前显示的琴键数量
     pub visible_key_count: u16,
+    /// 分辨率（Pulses Per Quarter note）
     pub ppq: u16,
+    /// 键盘宽度（pixel）
     pub keyboard_width: f32,
+    /// 音符对齐精度（tick）
     pub snap_precision: f32,
+    /// 默认音符长度（tick）
     pub default_note_length: f32,
     /// 上一次放置音符的长度（用于预览矩形和下次放置的默认长度）
     pub last_note_length: Option<f32>,
+    /// 时间轴标尺高度（pixel）
     pub ruler_height: f32,
+    /// 橡皮擦行为
     pub eraser_behavior: EraserBehavior,
+    /// 框选框显示模式
     pub selection_box_mode: SelectionBoxMode,
+    /// 平滑滚动动画状态
     pub smooth_scroll: SmoothScrollAnimation,
 }
 

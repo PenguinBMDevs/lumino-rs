@@ -32,6 +32,7 @@ use super::EditMode;
 
 /// 力度/CC Canvas 程序
 pub struct VelocityCanvas<'a> {
+    /// 编辑器实例的引用
     pub editor: &'a crate::Editor,
     /// 当前编辑模式
     pub edit_mode: EditMode,

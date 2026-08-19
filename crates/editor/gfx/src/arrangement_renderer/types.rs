@@ -35,9 +35,11 @@ pub struct ArrangementUniform {
     pub track_colors: [[f32; 4]; 16],
     /// 音轨数量 — offset 352
     pub track_count: f32,
-    /// 对齐填充 — offset 356, 360, 364
+    /// 对齐填充 — offset 356
     pub _pad2: f32,
+    /// 对齐填充 — offset 360
     pub _pad3: f32,
+    /// 对齐填充 — offset 364
     pub _pad4: f32,
 }
 
@@ -71,10 +73,13 @@ impl Default for ArrangementUniform {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ArrangementNoteInstance {
-    /// 屏幕空间坐标: x, y, w, h (像素)
+    /// 屏幕空间坐标: x (横坐标，像素)
     pub x: f32,
+    /// 屏幕空间坐标: y (纵坐标，像素)
     pub y: f32,
+    /// 实例宽度 (像素)
     pub w: f32,
+    /// 实例高度 (像素)
     pub h: f32,
     /// RGBA 打包为 4x UNORM8: R|G<<8|B<<16|A<<24
     pub rgba_packed: u32,

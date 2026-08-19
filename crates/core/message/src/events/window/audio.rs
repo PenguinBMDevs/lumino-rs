@@ -3,7 +3,9 @@
 /// 音频通道数。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioChannels {
+    /// 单声道
     Mono,
+    /// 立体声（默认）
     #[default]
     Stereo,
 }
@@ -30,9 +32,12 @@ impl std::fmt::Display for AudioChannels {
 /// 多线程选项。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ThreadingOption {
+    /// 不启用多线程
     None,
+    /// 自动（默认）
     #[default]
     Auto,
+    /// 手动指定线程数
     Manual(u32),
 }
 
@@ -49,7 +54,9 @@ impl std::fmt::Display for ThreadingOption {
 /// 插值算法。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Interpolation {
+    /// 无插值
     None,
+    /// 线性插值（默认）
     #[default]
     Linear,
 }
@@ -66,11 +73,16 @@ impl std::fmt::Display for Interpolation {
 /// 音频输出格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum AudioFormat {
+    /// WAV（默认）
     #[default]
     WAV,
+    /// FLAC
     FLAC,
+    /// MP3
     MP3,
+    /// Ogg Vorbis
     Ogg,
+    /// WavPack
     WavPack,
 }
 
@@ -87,10 +99,12 @@ impl std::fmt::Display for AudioFormat {
 }
 
 impl AudioFormat {
+    /// 判断该格式是否需要依赖 ffmpeg 编码
     pub fn needs_ffmpeg(self) -> bool {
         matches!(self, Self::MP3 | Self::Ogg | Self::WavPack)
     }
 
+    /// 返回该格式对应的文件扩展名
     pub fn extension(self) -> &'static str {
         match self {
             Self::WAV => "wav",

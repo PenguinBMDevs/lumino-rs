@@ -4,12 +4,15 @@ use std::{
 };
 
 pub mod cloud;
+/// 菜单事件模块
 pub mod menu;
+/// 窗口事件模块
 pub mod window;
 
 static EVENT_BUFFER: OnceLock<Mutex<EventBuffer>> = OnceLock::new(); // 事件缓冲区，用于存储事件
 static EVENT_WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
 
+/// 注册事件唤醒回调，在事件入队时被调用
 pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
     let _ = EVENT_WAKER.set(Box::new(waker));
 }
@@ -17,34 +20,43 @@ pub fn set_waker(waker: impl Fn() + Send + Sync + 'static) {
 #[derive(Debug, Clone)]
 /// 事件
 pub enum Event {
-    Menu(menu::Event),     // 菜单事件
-    Window(window::Event), // 窗口事件
-    Cloud(cloud::Event),   // 云存储事件
+    /// 菜单事件
+    Menu(menu::Event),
+    /// 窗口事件
+    Window(window::Event),
+    /// 云存储事件
+    Cloud(cloud::Event),
 }
 
 impl Event {
     // ── 构造函数（替代 event! 宏，IDE 友好） ──
 
+    /// 构造文件菜单事件
     pub fn menu_file(event: menu::file::Event) -> Self {
         Self::Menu(menu::Event::File(event))
     }
 
+    /// 构造编辑菜单事件
     pub fn menu_edit(event: menu::edit::Event) -> Self {
         Self::Menu(menu::Event::Edit(event))
     }
 
+    /// 构造视图菜单事件
     pub fn menu_view(event: menu::view::Event) -> Self {
         Self::Menu(menu::Event::View(event))
     }
 
+    /// 构造帮助菜单事件
     pub fn menu_help(event: menu::help::Event) -> Self {
         Self::Menu(menu::Event::Help(event))
     }
 
+    /// 构造窗口事件
     pub fn window(event: window::Event) -> Self {
         Self::Window(event)
     }
 
+    /// 构造云存储事件
     pub fn cloud(event: cloud::Event) -> Self {
         Self::Cloud(event)
     }
@@ -62,10 +74,12 @@ impl EventBuffer {
         self.queue.push_back(event);
     }
 
+    /// 取出并清空缓冲区中的全部事件
     pub fn take_all(&mut self) -> Vec<Event> {
         self.queue.drain(..).collect()
     }
 
+    /// 判断缓冲区是否为空
     pub fn is_empty(&self) -> bool {
         self.queue.is_empty()
     }

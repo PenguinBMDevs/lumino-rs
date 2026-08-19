@@ -64,7 +64,7 @@ fn scan_tempos(smf: &MmapSmf) -> ScanResult {
 
 /// 流式 MIDI 播放器——零事件常驻，逐事件按 tick 互锁输出。
 ///
-/// 创建后通过 [`next_event`] 逐次获取事件，事件按全局 tick 升序排列。
+/// 创建后通过 `next_event` 逐次获取事件，事件按全局 tick 升序排列。
 /// 渲染完成后返回 `None`。
 pub struct StreamingMidiPlayer<'a> {
     /// 保持字节数据的生命周期，`TrackCursor` 均借用至此。

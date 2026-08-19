@@ -74,6 +74,7 @@ impl Default for AudioExportDialogState {
 }
 
 impl AudioExportDialogState {
+    /// 创建一个默认的音频导出面板状态
     pub fn new() -> Self {
         Self {
             project_name: String::new(),

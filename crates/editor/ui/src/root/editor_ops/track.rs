@@ -40,6 +40,7 @@ impl Root {
         self.arrangement_view.viewport.total_ticks = total_ticks as u32;
     }
 
+    /// 设置每四分音符的时钟数（PPQ）
     pub fn set_ppq(&mut self, ppq: u16) {
         self.editor.set_ppq(ppq);
         // 同步到单一权威源 document 的 division，保证保存/导出工程时

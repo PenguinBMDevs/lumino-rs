@@ -105,7 +105,9 @@ impl std::fmt::Debug for AudioRenderConfig {
 /// 声道模式（映射到 xsynth ChannelCount）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioChannelMode {
+    /// 单声道
     Mono,
+    /// 双声道（立体声）
     Stereo,
 }
 
@@ -122,15 +124,20 @@ impl AudioChannelMode {
 /// 线程模式（映射到 xsynth ThreadCount）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ThreadMode {
+    /// 不开启多线程
     None,
+    /// 自动选择线程数
     Auto,
+    /// 手动指定线程数
     Manual(u32),
 }
 
 /// 插值算法（映射到 xsynth Interpolator）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AudioInterpolation {
+    /// 最近邻插值
     Nearest,
+    /// 线性插值
     Linear,
 }
 

@@ -1,3 +1,8 @@
+//! MIDI 加载器 crate。
+//!
+//! 负责 MIDI / LMPJ 文件的解析、压缩包解压、流式/全量加载，
+//! 以及工程数据的序列化（`LmpjData`）。`load_parsed_midi` 是主要入口。
+
 pub mod archive;
 pub mod constants;
 #[cfg(test)]
@@ -41,6 +46,7 @@ pub fn tempo_to_bpm(tempo: u32) -> f64 {
 /// 保存时重建 midi_data 从内存 document，加载时从 midi_data 重建 document。
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LmpjData {
+    /// MIDI 元信息（路径、音轨数、音符数、时长等）。
     pub info: MidiInfo,
     /// 从内存 MidiDocument 重建的 MIDI 字节（含用户编辑）。
     /// 保存时由 lumino-export 从 document 导出，加载时由 loader 重建 document。
@@ -65,6 +71,7 @@ impl LmpjData {
 /// 解析后的MIDI数据
 #[derive(Debug, Clone)]
 pub struct ParsedMidi {
+    /// MIDI 元信息（路径、音轨数、音符数、时长等）。
     pub info: MidiInfo,
     /// 紧凑内存解析结果（常规 MIDI 文件使用）
     ///

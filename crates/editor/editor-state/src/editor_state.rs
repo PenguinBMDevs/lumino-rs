@@ -52,12 +52,19 @@ use lumino_core::view_state::ViewState;
 /// 编辑器完整状态
 #[derive(Debug)]
 pub struct EditorState {
+    /// 视图状态
     pub view: ViewState,
+    /// 画布状态
     pub canvas: CanvasState,
+    /// 交互状态机
     pub interaction: InteractionState,
+    /// 当前选中的工具
     pub tool: Tool,
+    /// 自动滚动配置
     pub auto_scroll: AutoScrollConfig,
+    /// 最大滚动范围（横向、纵向）
     pub max_scroll: (f32, f32),
+    /// 编辑器文档与音符数据
     pub data: EditorData,
     /// 图片转 MIDI 放置模式状态
     pub image_to_midi: image_to_midi::ImageToMidiState,

@@ -12,8 +12,10 @@ use crate::playback::timeline::Timeline;
 /// 用于消除 `lock_playback()` 方法的跨文件重复
 /// 使用 parking_lot::Mutex 获得更好的性能（比 std::sync::Mutex 快 2-5 倍）
 pub trait PlaybackAccessor {
+    /// 返回播放器共享引用的 `Arc`
     fn playback(&self) -> &Arc<Mutex<Playback>>;
 
+    /// 获取播放器的互斥锁保护守卫
     fn lock_playback(&self) -> Option<MutexGuard<'_, Playback>> {
         Some(self.playback().lock())
     }

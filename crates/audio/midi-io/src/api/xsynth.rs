@@ -31,14 +31,20 @@ pub struct XSynthStats {
     pub buffer_samples: i64,
 }
 
+/// XSynth 后端打开选项
 #[derive(Debug, Clone)]
 pub struct XSynthOptions {
+    /// 缓冲区时长（毫秒）
     pub buffer_ms: f64,
+    /// 渲染线程数
     pub threads: i32,
+    /// 采样率
     pub sample_rate: u32,
+    /// 是否淡出被杀掉的 voice
     pub fade_out_killing: bool,
 }
 
+/// XSynth 软件合成后端，基于 realtime 合成管线提供实时 MIDI 播放
 pub struct XSynth {
     synth: RealtimeSynth,
     /// 共享事件发送器（全量重建时替换，所有已创建的输出连接自动跟随）
@@ -51,6 +57,7 @@ pub struct XSynth {
 }
 
 impl XSynth {
+    /// 使用指定音色库路径创建 XSynth 后端
     pub fn new(soundfont_path: &Path, options: Option<XSynthOptions>) -> Result<Self, Error> {
         tracing::info!("XSynth: 初始化，音色库路径: {:?}", soundfont_path);
 

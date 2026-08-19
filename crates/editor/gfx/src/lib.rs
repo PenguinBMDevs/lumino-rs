@@ -1,6 +1,13 @@
+//! lumino-gfx：图形渲染层（基于 wgpu）。
+//!
+//! 负责钢琴卷帘、工程走带、CC 柱状条、标尺、键盘、网格、贴图瀑布流
+//! 与 Miditrail 3D 等视图的 GPU 渲染，包含独立的 WGPU 渲染线程、
+//! 视频导出管线以及 GPU 音符缓冲区（支持增量更新）。
+
 #![allow(deprecated)]
 mod arrangement_instances;
 mod arrangement_renderer;
+/// 渲染缓存（双缓冲音符实例 + 视口哈希 + 深度纹理缓存）
 pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;

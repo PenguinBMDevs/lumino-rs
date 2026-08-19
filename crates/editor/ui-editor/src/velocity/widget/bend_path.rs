@@ -92,9 +92,17 @@ pub enum BendInteraction {
     #[default]
     None,
     /// 拖动锚点
-    DraggingAnchor { idx: usize },
+    DraggingAnchor {
+        /// 锚点所在索引
+        idx: usize,
+    },
     /// 拖动控制柄
-    DraggingHandle { idx: usize, side: HandleSide },
+    DraggingHandle {
+        /// 锚点所在索引
+        idx: usize,
+        /// 被拖动的控制柄方位
+        side: HandleSide,
+    },
 }
 
 /// 控制柄方位

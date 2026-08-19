@@ -176,6 +176,7 @@ impl FileEntry {
 /// 文件表
 #[derive(Debug, Clone)]
 pub struct FileTable {
+    /// 文件表条目列表
     pub entries: Vec<FileEntry>,
 }
 

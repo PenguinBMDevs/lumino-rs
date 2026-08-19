@@ -18,33 +18,61 @@ use lumino_extras::i18n::{Language, MainTranslations, main_translations};
 /// 使用中性角色名（见 `button_name`），以保证 i18n 下名称稳定。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ButtonId {
+    /// 跳到上一个位置/开头
     SkipBackward,
+    /// 播放
     Play,
+    /// 暂停
     Pause,
+    /// 跳到下一个位置/末尾
     SkipForward,
+    /// 开始录音
     Record,
+    /// 停止录音
     RecordStop,
+    /// 指针选择工具
     Pointer,
+    /// Y 向框选工具
     PointerYSelect,
+    /// 铅笔工具
     Pencil,
+    /// 橡皮擦工具
     Eraser,
+    /// 曲线工具
     Curve,
+    /// 填充工具
     Fill,
+    /// 量化工具
     Quantize,
+    /// 变速工具
     Speed,
+    /// 垂直翻转
     FlipVertical,
+    /// 水平翻转
     FlipHorizontal,
+    /// 拆分
     Split,
+    /// 粘连/合并
     Glue,
+    /// 连音符
     Tie,
+    /// 向下移调
     TransposeDown,
+    /// 向上移调
     TransposeUp,
+    /// 撤销
     Undo,
+    /// 重做
     Redo,
+    /// 循环开关
     Loop,
+    /// 自动滚动开关
     AutoScroll,
+    /// 协作面板
     Collaboration,
+    /// 更多工具菜单
     More,
+    /// 图片转 MIDI
     ImageToMidi,
 }
 
@@ -172,6 +200,9 @@ const DESC_EN: &[(&str, &str)] = &[
     ("ImageToMidi", "Image to MIDI (coming soon)"),
 ];
 
+/// 获取按钮在指定语言下的名称与说明描述
+///
+/// 返回 `(按钮名, 解释说明)`，名称随语言切换，解释说明来自描述表。
 pub fn button_desc(id: ButtonId, lang: Language) -> (&'static str, &'static str) {
     let name = button_name(id, main_translations(lang));
     let table = match lang {

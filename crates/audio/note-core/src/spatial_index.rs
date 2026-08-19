@@ -7,9 +7,13 @@ use crate::note::Note;
 /// 音符的空间索引引用
 #[derive(Debug, Clone, Copy)]
 pub struct NoteRef {
+    /// 音符起始 tick。
     pub tick: f32,
+    /// 音高（MIDI 音高数字）。
     pub key: u16,
+    /// 音符时长（tick）。
     pub length: f32,
+    /// 在源音符集合中的索引。
     pub index: usize,
 }
 
@@ -41,6 +45,7 @@ impl NoteSpatialIndex {
     /// 每个叶子节点的最大音符数阈值
     const MAX_LEAF_CAPACITY: usize = 128;
 
+    /// 创建一个空的音符空间索引。
     pub fn new() -> Self {
         Self {
             nodes: Vec::new(),

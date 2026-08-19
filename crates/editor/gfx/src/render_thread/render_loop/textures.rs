@@ -5,16 +5,27 @@ use crate::gpu_resource_tracker::TrackedTexture;
 
 /// 离屏纹理资源集合
 pub struct OffscreenTextureResources<'a> {
+    /// 逻辑设备（用于创建纹理）
     pub device: &'a wgpu::Device,
+    /// 渲染目标纹理格式
     pub texture_format: wgpu::TextureFormat,
+    /// 离屏纹理宽度（像素）
     pub width: u32,
+    /// 离屏纹理高度（像素）
     pub height: u32,
+    /// 当前视口尺寸（创建尺寸变化时更新）
     pub current_size: &'a mut (u32, u32),
+    /// 当前帧离屏渲染纹理
     pub current_texture: &'a mut Option<Arc<TrackedTexture>>,
+    /// 当前帧深度纹理
     pub depth_texture: &'a mut Option<TrackedTexture>,
+    /// 当前帧深度纹理视图
     pub depth_texture_view: &'a mut Option<wgpu::TextureView>,
+    /// 当前帧离屏纹理视图（缓存避免每帧 create_view）
     pub texture_view: &'a mut Option<wgpu::TextureView>,
+    /// 最新纹理共享引用（渲染线程 → 主线程）
     pub latest_texture_clone: &'a Arc<Mutex<Option<Arc<TrackedTexture>>>>,
+    /// 当前帧渲染参数
     pub params: &'a RenderParams,
 }
 

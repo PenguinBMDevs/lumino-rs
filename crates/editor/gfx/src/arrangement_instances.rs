@@ -9,10 +9,15 @@ use crate::ArrangementNoteInstance;
 /// 走带视图颜色配置
 #[derive(Debug, Clone)]
 pub struct ArrangementViewColors {
+    /// 画布背景色 (RGB)
     pub bg: [f32; 3],
+    /// 偶数音轨 lane 背景色 (RGB)
     pub lane_even: [f32; 3],
+    /// 奇数音轨 lane 背景色 (RGB)
     pub lane_odd: [f32; 3],
+    /// 小节线颜色 (RGBA)
     pub measure_line: [f32; 4],
+    /// 演奏指示线颜色 (RGBA)
     pub playhead: [f32; 4],
     /// 框选矩形颜色（RGB，alpha 由实例硬编码 0.15）
     pub sel_rect: [f32; 3],
@@ -21,12 +26,19 @@ pub struct ArrangementViewColors {
 /// 走带视图场景参数（聚合所有实例构建所需数据）
 #[derive(Debug, Clone)]
 pub struct ArrangementSceneParams<'a> {
+    /// 当前走带视口（滚动、缩放、画布尺寸等）
     pub viewport: &'a ArrangementViewport,
+    /// 音轨绘制顺序（元素为逻辑轨道 id），决定 lane 与音符的上/下层叠顺序
     pub track_order: &'a [usize],
+    /// 音轨 RGB 颜色数组，按键值 `track_order[i] % colors.len()` 选取颜色
     pub track_colors: &'a [[f32; 3]],
+    /// 音轨可见性标志位数组，`false` 表示该轨道本次不渲染
     pub track_visible: &'a [bool],
+    /// MIDI 文档（音符权威数据源）；为 `None` 时不渲染任何音符
     pub midi_doc: Option<&'a lumino_midi_loader::MidiDocument>,
+    /// 播放位置（tick），用于绘制演奏指示线；`<= 0.0` 时不绘制
     pub playback_position: f32,
+    /// 走带视图颜色配置
     pub colors: &'a ArrangementViewColors,
     /// ghost 音符预览（tick_start, tick_end, track）
     pub ghost_notes: &'a [(f64, f64, usize)],

@@ -11,15 +11,25 @@ pub enum CollaborationAction {
     CloseDialog,
     /// 连接协作服务器
     Connect {
+        /// 服务器主机地址
         host: String,
+        /// 服务器端口
         port: u16,
+        /// 协作用户名
         username: String,
+        /// 邀请码（加入已有房间时提供）
         invite_code: Option<String>,
     },
     /// 创建协作房间
-    CreateRoom { name: String },
+    CreateRoom {
+        /// 房间名称
+        name: String,
+    },
     /// 加入协作房间
-    JoinRoom { invite_code: String },
+    JoinRoom {
+        /// 房间邀请码
+        invite_code: String,
+    },
     /// 断开协作连接
     Disconnect,
     /// 协作服务器地址变更
@@ -36,16 +46,27 @@ pub enum CollaborationAction {
     CopyInviteCode,
     /// 协作远端鼠标移动
     RemoteMouseMoved {
+        /// 远端用户 ID
         user_id: std::sync::Arc<str>,
+        /// 鼠标横向坐标
         x: f32,
+        /// 鼠标纵向坐标
         y: f32,
+        /// 远端用户颜色
         color: std::sync::Arc<str>,
+        /// 远端用户名
         username: std::sync::Arc<str>,
     },
     /// 协作用户离开
-    RemoteUserLeft { user_id: std::sync::Arc<str> },
+    RemoteUserLeft {
+        /// 离开的用户 ID
+        user_id: std::sync::Arc<str>,
+    },
     /// 协作远端音符更新
-    RemoteNoteUpdate { operation: String },
+    RemoteNoteUpdate {
+        /// 更新操作描述
+        operation: String,
+    },
 }
 
 #[cfg(test)]

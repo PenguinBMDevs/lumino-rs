@@ -74,10 +74,15 @@ impl ToastLevel {
 /// 单条 Toast
 #[derive(Debug, Clone)]
 pub struct Toast {
+    /// Toast 唯一标识
     pub id: u64,
+    /// 提示级别
     pub level: ToastLevel,
+    /// 提示内容
     pub message: String,
+    /// 创建时间
     pub created_at: Instant,
+    /// 显示时长
     pub duration: Duration,
 }
 

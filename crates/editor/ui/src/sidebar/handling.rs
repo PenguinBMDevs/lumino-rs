@@ -14,6 +14,7 @@ use crate::sidebar::Event;
 use crate::sidebar::core::{Route, Sidebar};
 
 impl Sidebar {
+    /// 处理一条侧边栏事件，返回面板可见性是否发生变化
     pub fn update(&mut self, event: Event) -> bool {
         use Event::*;
         let prev_visible = self.panel_visible;

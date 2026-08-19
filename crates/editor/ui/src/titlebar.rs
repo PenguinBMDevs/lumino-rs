@@ -1,5 +1,7 @@
 mod logo;
+/// 标题栏菜单模块
 pub mod menu;
+/// 标题栏模式切换模块
 pub mod mode_toggle;
 mod traffic;
 
@@ -11,6 +13,7 @@ use crate::titlebar::mode_toggle::AppMode;
 use crate::{Theme, window};
 use lumino_extras::i18n::Language;
 
+/// 编辑器标题栏
 pub struct Titlebar;
 
 impl Default for Titlebar {
@@ -20,10 +23,12 @@ impl Default for Titlebar {
 }
 
 impl Titlebar {
+    /// 创建一个标题栏实例
     pub fn new() -> Self {
         Self
     }
 
+    /// 渲染标题栏视图
     pub fn view<'a>(
         &'a self,
         window: &'a window::Window,

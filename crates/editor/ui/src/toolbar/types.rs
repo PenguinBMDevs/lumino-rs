@@ -7,6 +7,7 @@ pub use lumino_message::{DotType, NotePrecision, SpeedFactor, Tool, TupletType};
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]
 pub struct CustomPrecisionDialog {
+    /// 是否打开
     pub is_open: bool,
     /// 三连音数量（如 "3"）
     pub tuplet_count: String,

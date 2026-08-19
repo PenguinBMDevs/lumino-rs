@@ -45,6 +45,7 @@ pub use velocity::VelocityHandler;
 /// 如果返回 None，表示消息已处理完毕；
 /// 如果返回 Some(msg)，表示消息需要传递给下一个处理器。
 pub trait MessageHandler {
+    /// 处理一条消息，返回需要继续传递的消息（None 表示已处理完毕）
     fn handle(&mut self, root: &mut Root, msg: Message) -> Option<Message>;
 }
 
@@ -56,16 +57,19 @@ pub struct MessageRouter {
 }
 
 impl MessageRouter {
+    /// 创建一个空的消息路由器
     pub fn new() -> Self {
         Self {
             handlers: Vec::new(),
         }
     }
 
+    /// 注册一个消息处理器
     pub fn register(&mut self, handler: Box<dyn MessageHandler>) {
         self.handlers.push(handler);
     }
 
+    /// 将消息依次传递给所有已注册的处理器
     pub fn route(&mut self, root: &mut Root, msg: Message) {
         let mut current_msg = Some(msg);
 

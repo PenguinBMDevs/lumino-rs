@@ -11,6 +11,7 @@ use crate::root::handlers::MessageHandler;
 pub struct ToolbarHandler;
 
 impl ToolbarHandler {
+    /// 创建一个工具栏消息处理器
     pub fn new() -> Self {
         Self
     }

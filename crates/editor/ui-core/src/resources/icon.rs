@@ -18,12 +18,16 @@ pub use Icon::*;
 /// 图标加载错误类型
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum IconError {
+    /// 图标不在缓存中（至少需先加载一次）
     #[error("图标 {0:?} 不在缓存中")]
     IconNotInCache(Icon),
+    /// SVG 解析错误
     #[error("SVG 解析错误: {0}")]
     SvgParseError(String),
+    /// 无法创建 pixmap
     #[error("无法创建 pixmap")]
     PixmapCreationError,
+    /// 获取缓存锁失败
     #[error("获取缓存锁失败")]
     LockError,
 }
@@ -31,9 +35,11 @@ pub enum IconError {
 // ─── 图标定义宏：一处定义 → 三处生成（枚举 + 缓存构建 + bytes 匹配） ───
 macro_rules! define_icons {
     ($(($name:ident, $path:expr)),* $(,)?) => {
+        /// 图标变体枚举（由 define_icons! 宏生成）
         #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
         pub enum Icon {
-            $($name,)*
+            $(/// 图标变体 `Icon::$name`
+            $name,)*
         }
 
         /// 全部图标枚举（与宏定义同源，供测试/遍历使用）

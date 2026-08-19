@@ -29,8 +29,11 @@ pub use midi::project_to_parsed_midi;
 /// `.lmpj` 文件作为入口，指向同目录下的同名数据文件夹。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LuminoEntryFile {
+    /// 文件格式版本号
     pub version: u32,
+    /// 工程存储格式标识（如 "folder"）
     pub format: String,
+    /// 数据文件夹名称
     pub data_folder: String,
 }
 

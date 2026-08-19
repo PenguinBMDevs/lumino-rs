@@ -16,32 +16,51 @@ pub type TrackNotes = (usize, Vec<NoteData>);
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum DialogResult {
+    /// 自定义精度设置
     CustomPrecision {
+        /// 分子
         numerator: String,
+        /// 分母
         denominator: String,
     },
+    /// 确认加载
     LoadConfirm,
+    /// 取消操作
     Cancel,
+    /// 项目设置
     ProjectSettings {
+        /// 项目标题
         title: String,
+        /// 速度（BPM）
         tempo: f64,
+        /// 版权信息
         copyright: String,
         /// 作者
         author: String,
         /// 拍号变化列表 (tick, 分子, 分母)
         time_signatures: Vec<(u32, u8, u8)>,
     },
+    /// 设置结果
     Settings {
+        /// 设置面板
         settings: crate::settings::SettingsPanel,
+        /// 主题名称
         theme: String,
     },
+    /// 速度变化结果
     SpeedChange {
+        /// 变化倍率
         factor: f32,
     },
+    /// 批量编辑结果
     BatchEdit {
+        /// 力度
         velocity: String,
+        /// 门限
         gate: String,
+        /// 键位
         key: String,
+        /// 节拍
         tick: String,
     },
     /// 找回删除音轨：恢复到原位置

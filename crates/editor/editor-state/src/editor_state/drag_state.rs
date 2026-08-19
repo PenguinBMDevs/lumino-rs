@@ -56,7 +56,7 @@ impl DragState {
         Self::new(selected, initial_tick, initial_key)
     }
 
-    /// 从索引迭代器构造（用于批量拖动：从 HashSet<usize> 等集合构建 BitVec）
+    /// 从索引迭代器构造（用于批量拖动：从 HashSet<`usize`> 等集合构建 BitVec）
     pub fn from_indices<I: IntoIterator<Item = usize>>(
         indices: I,
         note_count: usize,

@@ -59,7 +59,12 @@ pub struct LuminoProject {
 #[derive(Debug, Clone)]
 pub enum TrackSlot {
     /// 未加载（仅在文件中有数据）
-    Unloaded { track_id: u16, path: PathBuf },
+    Unloaded {
+        /// 音轨 ID
+        track_id: u16,
+        /// 数据文件路径
+        path: PathBuf,
+    },
     /// 已加载到内存
     Loaded(LmtrackData),
     /// 已修改（需要保存）
@@ -69,10 +74,15 @@ pub enum TrackSlot {
 /// 导入文件条目
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LoadedFileEntry {
+    /// 文件条目 ID
     pub id: String,
+    /// 原始文件名
     pub original_name: String,
+    /// 导入格式
     pub format: LoadedFormat,
+    /// 导入时间
     pub imported_at: String,
+    /// 存储路径
     pub storage_path: PathBuf,
 }
 
@@ -80,7 +90,9 @@ pub struct LoadedFileEntry {
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum LoadedFormat {
+    /// MIDI 文件
     Mid,
+    /// Lumino 工程文件
     Lmpj,
 }
 

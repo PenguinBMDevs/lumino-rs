@@ -98,27 +98,47 @@ pub fn calculate_border_width(width_pixels: f32, keys_len: f32) -> u32 {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
+    /// 滚动偏移 [scroll_x, scroll_y]
     pub scroll: [f32; 2],
+    /// 缩放 [zoom_x, zoom_y]
     pub zoom: [f32; 2],
+    /// 视口尺寸 [width, height]
     pub viewport_size: [f32; 2],
+    /// 画布偏移 [x, y]
     pub canvas_offset: [f32; 2],
+    /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
+    /// 顶标尺高度（像素）
     pub ruler_height: f32,
+    /// 最大琴键索引
     pub max_key_index: f32,
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding: f32,
 }
 
+/// 相机/视口参数（摄像头 uniform 的友好输入类型）
 pub struct CameraParams {
+    /// 滚动偏移 [scroll_x, scroll_y]
     pub scroll: [f32; 2],
+    /// 缩放 [zoom_x, zoom_y]
     pub zoom: [f32; 2],
+    /// 视口尺寸 [width, height]
     pub viewport: [f32; 2],
+    /// 画布偏移 [x, y]
     pub offset: [f32; 2],
+    /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
+    /// 顶标尺高度（像素）
     pub ruler_height: f32,
+    /// 最大琴键索引
     pub max_key_index: f32,
 }
 
 impl CameraUniform {
+    /// 从 [`CameraParams`] 构建摄像头 uniform。
+    ///
+    /// # 参数
+    /// * `params` — 相机/视口参数集合
     #[must_use]
     pub const fn new(params: CameraParams) -> Self {
         Self {
@@ -157,9 +177,13 @@ impl Default for CameraUniform {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CullUniform {
+    /// 全局实例总数（冗余诊断用）
     pub instance_count: u32,
+    /// 本 chunk 在全局实例数组中的起始索引
     pub chunk_start: u32,
+    /// 本 chunk 包含的实例数量
     pub chunk_count: u32,
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding: u32,
 }
 
@@ -168,7 +192,9 @@ pub struct CullUniform {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RenderUniform {
+    /// 相机/视口 uniform
     pub camera: CameraUniform,
+    /// 裁剪 uniform（chunk 范围描述）
     pub cull: CullUniform,
 }
 
@@ -181,7 +207,7 @@ pub struct RenderUniform {
 ///
 /// 布局：`current_track`（track_idx+1，0=无）+ 2048 u32 静音位图（65536 轨上限，
 /// 支持未来大编制工程）。字节布局与 shader `ViewState`（vec4 数组）严格一致：
-/// 2048 u32 == 512 × vec4<u32>。
+/// 2048 u32 == 512 × vec4<`u32`>。
 #[repr(C)]
 #[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct ViewState {

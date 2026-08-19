@@ -1,3 +1,9 @@
+//! 钢琴卷帘用户界面编辑器 crate。
+//!
+//! 本 crate 提供基于 iced 的钢琴卷帘编辑器主体，涵盖网格、音符编辑、
+//! 滚动、缩放、力度编辑、滚动条控件等 UI 能力，并整合
+//! [`lumino_editor_state`] 与底层文档状态模块。
+
 // 从依赖 crate 重新导出编辑器内部常用的类型，保持模块拆分前 `crate::` 引用兼容
 pub use lumino_message::events as event;
 pub use lumino_ui_core::constants;
@@ -78,10 +84,15 @@ pub fn onion_track_color(track_idx: usize) -> [u8; 4] {
 pub struct CacheInvalidation(u8);
 
 impl CacheInvalidation {
+    /// 无缓存失效
     pub const NONE: Self = Self(0);
+    /// 网格缓存失效
     pub const GRID: Self = Self(1 << 0);
+    /// 键盘缓存失效
     pub const KEYBOARD: Self = Self(1 << 1);
+    /// 标尺缓存失效
     pub const RULER: Self = Self(1 << 2);
+    /// 全部缓存失效
     pub const ALL: Self = Self(0b111);
 }
 
@@ -90,12 +101,15 @@ impl CacheInvalidation {
 pub struct SpatialIndexState {
     /// 音符空间索引（惰性更新）
     pub note_index: RefCell<Option<spatial_index::NoteSpatialIndex>>,
+    /// 空间索引是否已过期（需重建）
     pub note_index_dirty: Cell<bool>,
+    /// 空间索引查询结果的缓存
     pub query_cache: RefCell<Vec<usize>>,
 }
 
 /// 钢琴卷帘编辑器
 pub struct Editor {
+    /// 网格绘制缓存
     pub grid_cache: canvas::Cache<lumino_ui_core::Renderer>,
     /// 键盘缓存（只随垂直滚动变化）
     pub keyboard_cache: canvas::Cache<lumino_ui_core::Renderer>,

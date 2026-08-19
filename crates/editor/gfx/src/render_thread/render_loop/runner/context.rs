@@ -18,8 +18,11 @@ use crate::{
 /// 消除 8 个函数中重复的 wgpu 参数传递。
 #[derive(Debug)]
 pub struct RenderContext {
+    /// WGPU 逻辑设备（创建管线与缓冲）
     pub device: wgpu::Device,
+    /// 命令队列（提交命令缓冲）
     pub queue: wgpu::Queue,
+    /// 渲染目标纹理格式
     pub texture_format: wgpu::TextureFormat,
 }
 

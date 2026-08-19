@@ -186,6 +186,7 @@ impl Default for VideoExportDialogState {
 }
 
 impl VideoExportDialogState {
+    /// 创建一个默认的视频导出对话框状态
     pub fn new() -> Self {
         Self {
             container: "MP4".to_string(),

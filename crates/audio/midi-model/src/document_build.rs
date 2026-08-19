@@ -228,7 +228,7 @@ impl MidiDocument {
         })
     }
 
-    /// 构造每轨 max_end_tick 缓存（N 个**独立** Arc<Mutex>）。
+    /// 构造每轨 max_end_tick 缓存（N 个**独立** `Arc<Mutex>`）。
     ///
     /// 注意：不能用 `vec![Arc::new(Mutex::new(None)); N]` —— 该写法把同一个 Arc
     /// 克隆 N 次，导致所有音轨共享**同一个** Mutex（缓存串号）。必须逐个构造。

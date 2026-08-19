@@ -15,12 +15,15 @@ pub struct LmtempData {
 }
 
 impl LmtempData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMTM";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
@@ -36,12 +39,15 @@ pub struct LmsigData {
 }
 
 impl LmsigData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMSG";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
@@ -59,12 +65,15 @@ pub struct LmctlData {
 }
 
 impl LmctlData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMCT";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
@@ -83,12 +92,15 @@ pub struct LmtxtData {
 }
 
 impl LmtxtData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMTX";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
@@ -106,12 +118,15 @@ pub struct LmsyxData {
 }
 
 impl LmsyxData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMSY";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }
@@ -125,12 +140,15 @@ pub struct LmnamesData {
 }
 
 impl LmnamesData {
+    /// 文件魔数
     pub const MAGIC: &[u8; 4] = b"LMNM";
 
+    /// 编码为二进制文件字节
     pub fn encode(&self) -> Result<Vec<u8>> {
         encode_binary_file(Self::MAGIC, 1, self)
     }
 
+    /// 从二进制字节解码
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         decode_binary_file(bytes, Self::MAGIC)
     }

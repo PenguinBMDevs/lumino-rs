@@ -38,6 +38,7 @@ pub const EVENT_CHUNK_SPLIT: usize = 250_000;
 
 /// 有序事件特征：容器元素必须能取出 tick（排序/二分键）
 pub trait EventTick {
+    /// 返回该事件在容器内使用的排序键（tick）。
     fn tick(&self) -> u32;
 }
 

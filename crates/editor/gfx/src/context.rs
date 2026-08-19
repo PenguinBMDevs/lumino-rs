@@ -119,32 +119,60 @@ async fn init_shared_gpu(
     })
 }
 
+/// 图形上下文创建与帧获取阶段可能发生的错误
 #[derive(Error, Debug)]
 pub enum ContextError {
+    /// 创建 `wgpu::Surface` 失败
     #[error("创建 surface 失败: {0}")]
     SurfaceCreation(String),
+    /// 创建 `wgpu::Adapter` 失败
     #[error("创建 adapter 失败: {0}")]
     AdapterCreation(String),
+    /// 未找到可用的 preferred format
     #[error("获取 preferred format 失败")]
     PreferredFormatNotFound,
+    /// 请求 `wgpu::Device` 失败
     #[error("请求 device 失败: {0}")]
     DeviceRequest(String),
+    /// 获取交换链帧失败（含 `wgpu::SurfaceError`）
     #[error("获取帧失败: {0}")]
     FrameAcquisition(#[from] wgpu::SurfaceError),
 }
 
+/// 图形上下文操作的通用结果类型
 pub type Result<T> = std::result::Result<T, ContextError>;
 
+/// GPU 渲染上下文，封装 surface / adapter / device / queue 等 wgpu 资源
 pub struct Context {
+    /// 渲染目标 surface（窗口或离屏）
     pub surface: wgpu::Surface<'static>,
+    /// 图形适配器（GPU 设备句柄）
     pub adapter: wgpu::Adapter,
+    /// 命令队列（提交命令缓冲）
     pub queue: wgpu::Queue,
+    /// 逻辑 GPU 设备（创建管线与缓冲）
     pub device: wgpu::Device,
+    /// 当前 surface 纹理格式（优先 sRGB）
     pub format: wgpu::TextureFormat,
+    /// 当前呈现模式（同步用，`resize` 时复用）
     present_mode: wgpu::PresentMode,
 }
 
 impl Context {
+    /// 异步创建图形上下文。
+    ///
+    /// 创建 surface、复用或初始化共享 GPU 资源（adapter/device/queue）、
+    /// 选择全局 sRGB 的纹理格式并配置交换链。若共享 GPU 已初始化则复用其中的
+    /// instance 与设备句柄，避免创建重复管线。
+    ///
+    /// # 参数
+    /// * `target` — 渲染目标（窗口句柄 / surface target）
+    /// * `width` — 初始宽度（像素，至少为 1）
+    /// * `height` — 初始高度（像素，至少为 1）
+    ///
+    /// # 返回值
+    /// * `Ok(Context)` — 创建成功
+    /// * `Err(ContextError)` — surface / adapter / format / device 任一步骤失败
     pub async fn new(
         target: impl Into<wgpu::SurfaceTarget<'static>>,
         width: u32,
@@ -229,6 +257,11 @@ impl Context {
         futures::executor::block_on(Self::new(target, width, height))
     }
 
+    /// 调整交换链尺寸并重新配置 surface。
+    ///
+    /// # 参数
+    /// * `width` — 新宽度（像素）
+    /// * `height` — 新高度（像素；任一为 0 时直接忽略本次调整）
     pub fn resize(&mut self, width: u32, height: u32) {
         if width == 0 || height == 0 {
             return;
@@ -248,6 +281,16 @@ impl Context {
         );
     }
 
+    /// 获取当前交换链帧并在其上执行一次绘制。
+    ///
+    /// 若获取帧失败（如 OutOfMemory）则返回对应错误而不调用回调。
+    ///
+    /// # 参数
+    /// * `f` — 接收帧纹理与视图的回调，在其中提交绘制命令
+    ///
+    /// # 返回值
+    /// * `Ok(())` — 回调执行成功
+    /// * `Err(ContextError::FrameAcquisition)` — 获取帧失败
     pub fn with_frame(
         &self,
         f: impl FnOnce(&wgpu::SurfaceTexture, &wgpu::TextureView),

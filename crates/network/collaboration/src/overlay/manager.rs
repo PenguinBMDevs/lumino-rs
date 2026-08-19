@@ -30,6 +30,7 @@ pub struct OverlayManager {
 }
 
 impl OverlayManager {
+    /// 使用指定配置创建覆盖层管理器
     pub fn new(config: OverlayConfig) -> Self {
         let ticks_per_group = config.ticks_per_group;
         Self {

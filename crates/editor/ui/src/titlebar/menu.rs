@@ -10,11 +10,16 @@ use crate::event::Event;
 
 const MENU_WIDTH: f32 = 200.0;
 
+/// 菜单类型
 #[derive(Debug, Clone)]
 pub enum MenuKind {
+    /// 文件菜单
     File,
+    /// 编辑菜单
     Edit,
+    /// 视图菜单
     View,
+    /// 帮助菜单
     Help,
 }
 
@@ -37,23 +42,31 @@ impl std::fmt::Display for MenuKind {
     }
 }
 
+/// 菜单项类型
 #[derive(Debug, Clone)]
 pub enum MenuItem {
     // 用于 i18n 的 Action(Event, Fn) 或类似结构
+    /// 可点击的动作菜单项
     Action(Event),
     /// 置灰禁用的菜单项（保留事件用于显示名，但不可点击）
     ActionDisabled(Event),
+    /// 分隔线
     Separator,
     // 子菜单(Vec<MenuItem>, Fn)
+    /// 子菜单（子项列表与标题）
     Submenu(Vec<MenuItem>, String),
 }
 
+/// 菜单配置（类型 + 菜单项列表）
 #[derive(Debug, Clone)]
 pub struct MenuConfig {
+    /// 菜单类型
     pub kind: MenuKind,
+    /// 菜单项列表
     pub items: Vec<MenuItem>,
 }
 
+/// 构建文件菜单配置
 pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
     let translations = main_translations(lang);
     use crate::event::menu::file;
@@ -106,6 +119,7 @@ pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
     }
 }
 
+/// 构建编辑菜单配置
 pub fn edit_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::edit;
     use MenuItem::*;
@@ -125,6 +139,7 @@ pub fn edit_menu(_lang: Language) -> MenuConfig {
     }
 }
 
+/// 构建视图菜单配置
 pub fn view_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::view;
     use MenuItem::*;
@@ -138,6 +153,7 @@ pub fn view_menu(_lang: Language) -> MenuConfig {
     }
 }
 
+/// 构建帮助菜单配置
 pub fn help_menu(_lang: Language) -> MenuConfig {
     use crate::event::menu::help;
     use MenuItem::*;
@@ -147,6 +163,7 @@ pub fn help_menu(_lang: Language) -> MenuConfig {
     }
 }
 
+/// 构建全部四个菜单（文件/编辑/视图/帮助）的配置数组
 pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
     [
         file_menu(lang, export_material_enabled),
@@ -156,6 +173,7 @@ pub fn menus(lang: Language, export_material_enabled: bool) -> [MenuConfig; 4] {
     ]
 }
 
+/// 渲染标题栏菜单栏视图
 pub fn view<'a>(language: Language, export_material_enabled: bool) -> Element<'a> {
     let menus = menus(language, export_material_enabled)
         .iter()

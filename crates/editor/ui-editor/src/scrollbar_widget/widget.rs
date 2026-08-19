@@ -3,21 +3,41 @@ use iced_core::Rectangle;
 use lumino_ui_core::Message;
 use lumino_ui_core::constants::scrollbar as scrollbar_constants;
 
+/// 滚动条控件，支持滚动与边缘缩放手势。
 pub struct ScrollbarWidget<'a> {
+    /// 当前滚动位置
     pub scroll: f32,
+    /// 最大滚动范围
     pub max_scroll: f32,
+    /// 当前缩放倍率
     pub zoom: f32,
+    /// 滚动条方向
     pub orientation: ScrollbarOrientation,
     /// 视口尺寸（像素）
     ///
     /// 如果设置，则代替 track_size 作为「可见区域」来计算可滚动范围和滑块比例。
     /// 解决 scrollbar 与 editor 之间因 viewport 计算方式不同产生的滚动死区问题。
     pub viewport_size: Option<f32>,
+    /// 滚动回调（`scroll` → `Message`）
     pub on_scroll: Box<dyn Fn(f32) -> Message + 'a>,
+    /// 缩放回调（`zoom, scroll` → `Message`）
     pub on_zoom: Box<dyn Fn(f32, f32) -> Message + 'a>,
 }
 
 impl<'a> ScrollbarWidget<'a> {
+    /// 创建滚动条控件。
+    ///
+    /// # 参数
+    /// * `scroll` — 当前滚动位置
+    /// * `max_scroll` — 最大滚动范围
+    /// * `zoom` — 当前缩放倍率
+    /// * `viewport_size` — 可选视口尺寸
+    /// * `orientation` — 滚动条方向
+    /// * `on_scroll` — 滚动回调
+    /// * `on_zoom` — 缩放回调
+    ///
+    /// # 返回
+    /// 初始化完成的 `ScrollbarWidget`。
     pub fn new(
         scroll: f32,
         max_scroll: f32,
@@ -38,6 +58,18 @@ impl<'a> ScrollbarWidget<'a> {
         }
     }
 
+    /// 创建水平滚动条控件。
+    ///
+    /// # 参数
+    /// * `scroll_x` — 当前水平滚动位置
+    /// * `max_scroll` — 最大滚动范围
+    /// * `zoom_x` — 水平缩放倍率
+    /// * `viewport_size` — 可选视口尺寸
+    /// * `on_scroll` — 滚动回调
+    /// * `on_zoom` — 缩放回调
+    ///
+    /// # 返回
+    /// 初始化完成的水平 `ScrollbarWidget`。
     pub fn horizontal(
         scroll_x: f32,
         max_scroll: f32,
@@ -57,6 +89,18 @@ impl<'a> ScrollbarWidget<'a> {
         )
     }
 
+    /// 创建垂直滚动条控件。
+    ///
+    /// # 参数
+    /// * `scroll_y` — 当前垂直滚动位置
+    /// * `max_scroll` — 最大滚动范围
+    /// * `zoom_y` — 垂直缩放倍率
+    /// * `viewport_size` — 可选视口尺寸
+    /// * `on_scroll` — 滚动回调
+    /// * `on_zoom` — 缩放回调
+    ///
+    /// # 返回
+    /// 初始化完成的垂直 `ScrollbarWidget`。
     pub fn vertical(
         scroll_y: f32,
         max_scroll: f32,

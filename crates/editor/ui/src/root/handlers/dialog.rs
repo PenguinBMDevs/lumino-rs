@@ -18,6 +18,7 @@ use crate::root::handlers::MessageHandler;
 pub struct DialogHandler;
 
 impl DialogHandler {
+    /// 创建一个对话框消息处理器
     pub fn new() -> Self {
         Self
     }

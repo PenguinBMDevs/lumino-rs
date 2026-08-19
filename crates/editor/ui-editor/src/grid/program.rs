@@ -8,11 +8,20 @@ use lumino_ui_core::Message;
 use lumino_ui_core::constants::editor as editor_constants;
 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
 
+/// 钢琴卷帘网格绘制程序，负责处理网格区域的鼠标交互与绘制。
 pub struct PianoRollGrid<'a> {
+    /// 编辑器实例的引用
     pub editor: &'a Editor,
 }
 
 impl<'a> PianoRollGrid<'a> {
+    /// 创建网格绘制程序。
+    ///
+    /// # 参数
+    /// * `editor` — 编辑器实例引用
+    ///
+    /// # 返回
+    /// 绑定到指定编辑器的 `PianoRollGrid`。
     pub fn new(editor: &'a Editor) -> Self {
         Self { editor }
     }

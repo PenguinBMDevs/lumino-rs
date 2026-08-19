@@ -8,11 +8,14 @@
 /// 中立的 2D 点
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point2 {
+    /// 横向坐标
     pub x: f32,
+    /// 纵向坐标
     pub y: f32,
 }
 
 impl Point2 {
+    /// 构造新的 2D 点
     pub const fn new(x: f32, y: f32) -> Self {
         Self { x, y }
     }
@@ -21,11 +24,14 @@ impl Point2 {
 /// 中立的 2D 尺寸
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Size2 {
+    /// 宽度
     pub width: f32,
+    /// 高度
     pub height: f32,
 }
 
 impl Size2 {
+    /// 构造新的 2D 尺寸
     pub const fn new(width: f32, height: f32) -> Self {
         Self { width, height }
     }

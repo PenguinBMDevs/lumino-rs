@@ -17,7 +17,9 @@
 
 pub mod audio;
 pub mod converter;
+/// 导出错误类型
 pub mod error;
+/// `.lmpj` 二进制编码 / 解码
 pub mod format;
 pub mod material;
 pub mod midi;

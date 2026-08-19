@@ -39,7 +39,9 @@ pub struct ToolbarPerfContext<'a> {
 
 /// 工具栏组件
 pub struct Toolbar {
+    /// 当前工具
     pub current_tool: Tool,
+    /// 是否正在播放
     pub is_playing: bool,
     /// 是否启用循环播放
     pub is_looping: bool,

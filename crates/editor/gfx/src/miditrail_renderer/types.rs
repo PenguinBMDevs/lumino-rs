@@ -116,9 +116,11 @@ pub struct MiditrailCameraGpu {
 pub struct MiditrailInstanceGpu {
     /// 模型平移
     pub translation: [f32; 3],
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding0: f32,
     /// 模型缩放（决定立方体大小）
     pub scale: [f32; 3],
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding1: f32,
     /// 打包 RGBA 颜色
     pub color_packed: u32,
@@ -164,6 +166,7 @@ pub struct MiditrailAuraInstanceGpu {
     pub pos: f32,
     /// 打包 RGBA 颜色
     pub color_packed: u32,
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding: u32,
 }
 

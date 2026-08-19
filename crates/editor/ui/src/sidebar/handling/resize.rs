@@ -21,12 +21,14 @@ impl Sidebar {
         self.is_resizing
     }
 
+    /// 开始拖拽调整面板宽度（记录起始坐标与宽度）
     pub fn start_resize(&mut self, cursor_x: f32) {
         self.is_resizing = true;
         self.resize_start_x = cursor_x;
         self.resize_start_width = self.panel_width;
     }
 
+    /// 拖拽过程中更新面板宽度（限制在最小/最大宽度之间）
     pub fn update_resize_position(&mut self, cursor_x: f32) {
         if self.is_resizing {
             let delta_x = cursor_x - self.resize_start_x;
@@ -35,6 +37,7 @@ impl Sidebar {
         }
     }
 
+    /// 结束拖拽调整面板宽度
     pub fn end_resize(&mut self) {
         self.is_resizing = false;
     }

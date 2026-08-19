@@ -22,10 +22,14 @@ macro_rules! impl_unit_enum_from_str {
 /// 输出容器格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Container {
+    /// MP4（默认）
     #[default]
     Mp4,
+    /// QuickTime 电影格式
     Mov,
+    /// Matroska 格式
     Mkv,
+    /// AVI 格式
     Avi,
 }
 
@@ -39,11 +43,16 @@ impl_unit_enum_from_str!(Container, "未知容器格式: {input}", {
 /// 视频编码器。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum VideoCodec {
+    /// H.264（默认）
     #[default]
     H264,
+    /// H.265 / HEVC
     H265,
+    /// ProRes 编码器
     ProRes,
+    /// VP9 编码器
     Vp9,
+    /// AV1 编码器
     Av1,
 }
 
@@ -58,12 +67,18 @@ impl_unit_enum_from_str!(VideoCodec, "未知视频编码器: {input}", {
 /// 硬件加速后端。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum EncoderBackend {
+    /// 软件编码（CPU，默认）
     #[default]
     Software,
+    /// VideoToolbox（macOS）
     VideoToolbox,
+    /// NVENC（NVIDIA）
     Nvenc,
+    /// AMF（AMD）
     Amf,
+    /// QSV（Intel）
     Qsv,
+    /// VAAPI（Linux）
     Vaapi,
 }
 
@@ -79,9 +94,12 @@ impl_unit_enum_from_str!(EncoderBackend, "未知编码后端: {input}", {
 /// 质量预设。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum QualityPreset {
+    /// 高质量
     High,
+    /// 中等质量（默认）
     #[default]
     Medium,
+    /// 低质量
     Low,
 }
 
@@ -252,6 +270,7 @@ pub enum CounterSeparator {
 }
 
 impl CounterSeparator {
+    /// 返回设置面板用的规范字符串
     pub fn as_str(&self) -> &'static str {
         match self {
             CounterSeparator::Comma => "comma",

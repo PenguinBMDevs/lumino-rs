@@ -64,6 +64,7 @@ pub mod editor {
 
     /// 可见琴键数量限制
     pub const MIN_VISIBLE_KEY_COUNT: u16 = 1;
+    /// 最大可见琴键数量
     pub const MAX_VISIBLE_KEY_COUNT: u16 = 256;
 
     /// 双击检测时间阈值（毫秒）

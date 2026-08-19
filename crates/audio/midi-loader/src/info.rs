@@ -1,3 +1,7 @@
+//! MIDI 文件元信息。
+//!
+//! 通过轻量级扫描获取文件的路径、音轨数、音符数等信息，用于列表展示。
+
 use std::path::PathBuf;
 
 use midly::loader::scan_midi_file;
@@ -7,11 +11,17 @@ use crate::LoaderError;
 /// MIDI文件元信息（用于列表显示）
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct MidiInfo {
+    /// 文件路径。
     pub path: PathBuf,
+    /// 音轨数量。
     pub track_count: u16,
+    /// 总音符数。
     pub total_notes: u64,
+    /// 总时长（tick）。
     pub duration_ticks: u32,
+    /// 时基（每四分音符的 tick 数，PPQN）。
     pub division: u16,
+    /// 扫描进度（0.0–1.0，`None` 表示未知/未开始）。
     pub parse_progress: Option<f64>,
 }
 

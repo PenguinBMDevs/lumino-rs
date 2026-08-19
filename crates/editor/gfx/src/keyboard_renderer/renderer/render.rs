@@ -4,11 +4,17 @@ use super::KeyboardRenderer;
 /// 键盘渲染器准备参数
 #[derive(Debug, Clone)]
 pub struct KeyboardPrepareParams {
+    /// 视口尺寸 [width, height]
     pub viewport_size: (f32, f32),
+    /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
+    /// 顶标尺高度（像素）
     pub ruler_height: f32,
+    /// 垂直滚动（像素）
     pub scroll_y: f32,
+    /// 垂直缩放（倍率）
     pub zoom_y: f32,
+    /// 可见琴键数量（决定生成多少键实例）
     pub visible_key_count: u16,
 }
 

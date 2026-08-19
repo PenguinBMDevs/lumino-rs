@@ -33,6 +33,7 @@ pub struct VecSampleSink {
 }
 
 impl VecSampleSink {
+    /// 创建一个空的内存样本接收器
     pub fn new() -> Self {
         VecSampleSink {
             samples: Vec::new(),
@@ -57,6 +58,7 @@ impl VecSampleSink {
         self.samples.len()
     }
 
+    /// 返回当前是否没有样本
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
     }
@@ -86,6 +88,7 @@ pub struct WavFileSink {
 }
 
 impl WavFileSink {
+    /// 创建 WAV 写入器（32-bit float 格式）
     pub fn new(path: &Path, sample_rate: u32, channels: u16) -> ExportResult<Self> {
         let spec = hound::WavSpec {
             channels,
@@ -106,10 +109,12 @@ impl WavFileSink {
         })
     }
 
+    /// 返回采样率
     pub fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
 
+    /// 返回声道数
     pub fn channels(&self) -> u16 {
         self.channels
     }

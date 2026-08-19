@@ -21,6 +21,15 @@ where
 }
 
 impl SettingsPanel {
+    /// 根据给定的 UI 配置创建设置面板状态。
+    ///
+    /// 从 `ui_config` 中初始化各子设置，解析并填充可用/选中的调色板名称。
+    ///
+    /// # 参数
+    /// * `ui_config` — 应用 UI 配置来源
+    ///
+    /// # 返回值
+    /// 返回按配置类别初始化完成的 `SettingsPanel` 实例
     pub fn new(ui_config: &lumino_core::storage::config::UiConfig) -> Self {
         let palette_mgr = &*lumino_extras::palette::PALETTE_MANAGER;
         let available_palettes = palette_mgr.names().to_vec();
@@ -96,6 +105,13 @@ impl SettingsPanel {
         }
     }
 
+    /// 处理来自 UI 的设置变更事件并更新面板状态。
+    ///
+    /// 根据事件类型分发到对应的设置子结构，数值类变化通过字符串解析
+    /// 并自动忽略非法输入。
+    ///
+    /// # 参数
+    /// * `event` — 需要处理的设置变更事件
     pub fn update(&mut self, event: Event) {
         match event {
             Event::MenuSelected(idx) => {

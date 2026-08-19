@@ -71,6 +71,10 @@ pub struct History {
 }
 
 impl History {
+    /// 使用默认配置创建历史记录管理器。
+    ///
+    /// 等价于 `with_config(100, 300, 1000)`（最大 100 条、300ms 合并窗口、
+    /// 每组最多 1000 条）。
     pub fn new() -> Self {
         Self::with_config(100, 300, 1000)
     }

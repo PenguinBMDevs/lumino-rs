@@ -15,7 +15,7 @@ static CURRENT_PALETTE_INIT: AtomicBool = AtomicBool::new(false);
 /// MIDI 加载后调色板是否被锁定（禁止用户修改）
 static PALETTE_LOCKED: AtomicBool = AtomicBool::new(false);
 
-/// 获取当前调色板的轨道颜色（RGBA [u8;4]）
+/// 获取当前调色板的轨道颜色（RGBA \[u8;4\]）
 ///
 /// 如果尚未初始化，返回调色板管理器的默认颜色。
 #[inline]
@@ -31,7 +31,7 @@ pub fn current_track_color(track_idx: usize) -> PaletteColor {
         .unwrap_or_else(|| FALLBACK_PALETTE[track_idx % FALLBACK_PALETTE.len()])
 }
 
-/// 获取当前调色板的轨道颜色（[f32;4]，归一化到 0.0-1.0）
+/// 获取当前调色板的轨道颜色（\[f32;4\]，归一化到 0.0-1.0）
 #[inline]
 pub fn current_track_color_f32(track_idx: usize) -> [f32; 4] {
     let color = current_track_color(track_idx);
@@ -96,7 +96,7 @@ pub fn current_palette_idx() -> u8 {
     CURRENT_PALETTE_IDX.load(Ordering::Relaxed)
 }
 
-/// 获取洋葱皮音轨颜色（RGBA [u8;4]）
+/// 获取洋葱皮音轨颜色（RGBA \[u8;4\]）
 ///
 /// 从当前调色板的第一个颜色开始取色，
 /// 超出调色板颜色数时循环取色。
@@ -119,7 +119,7 @@ pub fn onion_track_color(track_idx: usize) -> PaletteColor {
     }
 }
 
-/// 获取洋葱皮音轨颜色（[f32;4]，归一化到 0.0-1.0）
+/// 获取洋葱皮音轨颜色（\[f32;4\]，归一化到 0.0-1.0）
 #[inline]
 pub fn onion_track_color_f32(track_idx: usize) -> [f32; 4] {
     let color = onion_track_color(track_idx);

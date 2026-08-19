@@ -12,9 +12,13 @@ use std::path::PathBuf;
 /// 输出容器格式
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Container {
+    /// MP4
     Mp4,
+    /// MOV
     Mov,
+    /// MKV
     Mkv,
+    /// AVI
     Avi,
 }
 
@@ -61,10 +65,15 @@ impl std::str::FromStr for Container {
 /// 视频编码器
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum VideoCodec {
+    /// H.264
     H264,
+    /// H.265 / HEVC
     H265,
+    /// ProRes
     ProRes,
+    /// VP9
     Vp9,
+    /// AV1
     Av1,
 }
 
@@ -231,9 +240,12 @@ impl std::str::FromStr for EncoderBackend {
 /// 质量预设（影响 CRF / 码率 / preset）
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum QualityPreset {
+    /// 高质量
     High,
+    /// 中等质量（默认）
     #[default]
     Medium,
+    /// 低质量
     Low,
 }
 

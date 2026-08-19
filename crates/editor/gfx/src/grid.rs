@@ -14,7 +14,9 @@ pub fn is_black_key(key_index: isize) -> bool {
 /// 拍号数据：分子、分母（人类可读）
 #[derive(Debug, Clone, Copy)]
 pub struct TimeSignature {
+    /// 拍号分子（每小节拍数）
     pub numerator: u8,
+    /// 拍号分母（以几分音符为一拍，2/4/8 等）
     pub denominator: u8,
 }
 

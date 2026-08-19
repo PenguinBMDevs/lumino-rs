@@ -209,7 +209,9 @@ impl GridCameraUniformBuilder {
     }
 }
 
-// 兼容旧代码的占位符（已废弃 CPU 实例生成逻辑，保留类型以减少大面积联级修改）
+/// 网格线实例（已废弃，改用 GPU infinite grid 方案）。
+///
+/// 兼容旧代码的占位类型，保留以避免大面积联级修改。
 #[deprecated(
     since = "0.2.0",
     note = "不再使用 CPU 实例生成网格线，GridRenderer 改用 GPU infinite grid 方案"
@@ -217,14 +219,26 @@ impl GridCameraUniformBuilder {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GridLineInstance {
+    /// 线段起点（屏幕坐标）
     pub start: [f32; 2],
+    /// 线段终点（屏幕坐标）
     pub end: [f32; 2],
+    /// 线段颜色 (RGBA)
     pub color: [f32; 4],
+    /// 线段宽度（像素）
     pub width: f32,
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding: [f32; 3],
 }
 
 impl GridLineInstance {
+    /// 创建一条网格线实例。
+    ///
+    /// # 参数
+    /// * `start` — 线段起点（屏幕坐标）
+    /// * `end` — 线段终点（屏幕坐标）
+    /// * `color` — RGBA 颜色
+    /// * `width` — 线宽（像素）
     pub fn new(start: [f32; 2], end: [f32; 2], color: [f32; 4], width: f32) -> Self {
         Self {
             start,
@@ -239,23 +253,41 @@ impl GridLineInstance {
 /// 网格渲染器准备参数（聚合 GridRenderer::prepare 的 18 个参数）
 #[derive(Debug, Clone)]
 pub struct GridPrepareParams {
+    /// 视口尺寸 [width, height]
     pub viewport_size: (f32, f32),
+    /// 水平滚动（像素）
     pub scroll_x: f32,
+    /// 垂直滚动（像素）
     pub scroll_y: f32,
+    /// 水平缩放（像素/tick）
     pub zoom_x: f32,
+    /// 垂直缩放（倍率）
     pub zoom_y: f32,
+    /// 键盘分区宽度（屏宽，渲染起止均偏移量）
     pub keyboard_width: f32,
+    /// 顶标尺高度（像素）
     pub ruler_height: f32,
+    /// 画布背景色 (RGBA)
     pub color_bg: [f32; 4],
+    /// 黑键区域背景色 (RGBA)
     pub color_bg_black_key: [f32; 4],
+    /// 小节线颜色 (RGBA)
     pub color_bar: [f32; 4],
+    /// 拍子线颜色 (RGBA)
     pub color_beat: [f32; 4],
+    /// 半拍线颜色 (RGBA)
     pub color_half_beat: [f32; 4],
+    /// 细分网格线颜色 (RGBA)
     pub color_grid: [f32; 4],
+    /// 琴键分隔线颜色 (RGBA)
     pub color_key_line: [f32; 4],
+    /// 分辨率（每四分音符 tick 数）
     pub ppq: f32,
+    /// 最大琴键索引（决定网格的 keys 范围）
     pub max_key_index: f32,
+    /// 画布水平偏移（像素）
     pub canvas_offset_x: f32,
+    /// 画布垂直偏移（像素）
     pub canvas_offset_y: f32,
     /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,

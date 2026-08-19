@@ -18,6 +18,10 @@ pub struct WaterfallTileCoord {
 }
 
 impl WaterfallTileCoord {
+    /// 用音轨组与时间组索引构造贴图坐标
+    ///
+    /// - `track_group`：音轨组索引（每 8 轨一组）
+    /// - `time_group`：时间组索引（每 `measures_per_group` 小节一组）
     pub fn new(track_group: u32, time_group: u32) -> Self {
         Self {
             track_group,
@@ -51,6 +55,11 @@ pub struct WaterfallDirtyRegion {
 }
 
 impl WaterfallDirtyRegion {
+    /// 构造脏区域标记
+    ///
+    /// - `track_idx`：受影响的音轨索引
+    /// - `tile_coords`：受影响的时间组坐标列表
+    /// - `dirty_kind`：脏类型（新增/删除/修改）
     pub fn new(
         track_idx: u16,
         tile_coords: Vec<WaterfallTileCoord>,

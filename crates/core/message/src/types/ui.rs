@@ -16,6 +16,7 @@ pub struct PerfData {
 }
 
 impl PerfData {
+    /// 构造性能监控数据
     pub fn new(fps: f32, cpu_usage: f32, memory_mb: f32, gpu_frame_time_ms: f32) -> Self {
         Self {
             fps,

@@ -22,12 +22,14 @@ impl From<midir::ConnectError<midir::MidiInput>> for Error {
     }
 }
 
+/// 系统 MIDI 后端，基于 midir 访问操作系统 MIDI 设备
 pub struct System {
     midi_input: std::sync::Mutex<Option<midir::MidiInput>>,
     midi_output: std::sync::Mutex<Option<midir::MidiOutput>>,
 }
 
 impl System {
+    /// 创建并初始化系统 MIDI 后端
     pub fn new() -> Result<Self, Error> {
         Ok(Self {
             midi_input: std::sync::Mutex::new(Some(midir::MidiInput::new(IDENTIFIER)?)),

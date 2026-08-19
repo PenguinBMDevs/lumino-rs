@@ -24,14 +24,21 @@ pub struct MemoryBreakdown {
     pub editor: editor::EditorMemory,
     /// track_midi_events HashMap 中的总条目数和估算字节
     pub track_midi_events_entries: usize,
+    /// track_midi_events 数据的估算字节数
     pub track_midi_events_bytes: usize,
     /// note_instances_buffer 三缓冲信息（由 Host::memory_breakdown 填充）
     pub note_instances_writer_cap: usize,
+    /// 写入缓冲当前占用长度
     pub note_instances_writer_len: usize,
+    /// 就绪缓冲容量
     pub note_instances_ready_cap: usize,
+    /// 就绪缓冲当前占用长度
     pub note_instances_ready_len: usize,
+    /// 读取缓冲容量
     pub note_instances_reading_cap: usize,
+    /// 读取缓冲当前占用长度
     pub note_instances_reading_len: usize,
+    /// 单个音符实例的大小（字节）
     pub note_instance_size: usize,
 }
 
@@ -49,10 +56,13 @@ pub use editor_ops::dialog::ProjectSettingsDialogData;
 /// 应用程序根组件
 pub struct Root {
     pub(crate) sidebar: sidebar::Sidebar,
+    /// 右侧栏
     pub right_sidebar: right_sidebar::RightSidebar,
     pub(crate) titlebar: titlebar::Titlebar,
     pub(crate) statusbar: statusbar::StatusBar,
+    /// 工具栏
     pub toolbar: toolbar::Toolbar,
+    /// 编辑器
     pub editor: editor::Editor,
     /// 音轨总览视图
     pub arrangement_view: editor::arrangement::ArrangementView,

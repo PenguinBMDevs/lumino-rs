@@ -28,11 +28,17 @@ pub struct RenderParams {
     pub background_color: [f64; 4],
     /// 网格相关颜色 (用于 Shader)
     pub color_bg: [f32; 4],
+    /// 黑键区域背景色 (RGBA)
     pub color_bg_black_key: [f32; 4],
+    /// 小节线颜色 (RGBA)
     pub color_bar: [f32; 4],
+    /// 拍子线颜色 (RGBA)
     pub color_beat: [f32; 4],
+    /// 半拍线颜色 (RGBA)
     pub color_half_beat: [f32; 4],
+    /// 细分网格线颜色 (RGBA)
     pub color_grid: [f32; 4],
+    /// 琴键分隔线颜色 (RGBA)
     pub color_key_line: [f32; 4],
     /// 网格线实例
     pub grid_instances: Vec<GridLineInstance>,

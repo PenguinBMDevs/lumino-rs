@@ -3,6 +3,7 @@
 /// 工程设置对话框状态
 #[derive(Debug, Clone)]
 pub struct ProjectSettingsDialogState {
+    /// 对话框是否打开
     pub is_open: bool,
     /// 项目名称
     pub title: String,
@@ -39,6 +40,7 @@ impl Default for ProjectSettingsDialogState {
 }
 
 impl ProjectSettingsDialogState {
+    /// 创建一个默认的工程设置对话框状态
     pub fn new() -> Self {
         Self::default()
     }

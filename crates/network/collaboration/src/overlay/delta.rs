@@ -52,6 +52,9 @@ pub struct RegionDeltaDetector {
 }
 
 impl RegionDeltaDetector {
+    /// 创建一个新的区域增量检测器
+    ///
+    /// `ticks_per_group` 为每个时间组的 tick 数，用于划分区域范围。
     pub fn new(ticks_per_group: u32) -> Self {
         Self {
             snapshots: std::collections::HashMap::new(),

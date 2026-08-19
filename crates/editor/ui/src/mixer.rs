@@ -25,6 +25,7 @@ pub struct MixerTrackState {
 }
 
 impl MixerTrackState {
+    /// 创建一个新的混音音轨状态
     pub fn new(track_id: usize, name: String) -> Self {
         Self {
             track_id,

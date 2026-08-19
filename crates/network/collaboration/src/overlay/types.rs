@@ -12,11 +12,14 @@ use serde::{Deserialize, Serialize};
 /// - 单个区域内只比较该区域的增量，不扫描全音轨
 #[derive(Clone, Copy, Hash, Eq, PartialEq, Debug, Serialize, Deserialize)]
 pub struct RegionCoord {
+    /// 音轨组索引（每 8 轨一组）
     pub track_group: u32,
+    /// 时间组索引（每 N 小节一组）
     pub time_group: u32,
 }
 
 impl RegionCoord {
+    /// 构建区域坐标
     pub const fn new(track_group: u32, time_group: u32) -> Self {
         Self {
             track_group,
@@ -40,6 +43,7 @@ pub struct RegionSnapshot {
 }
 
 impl RegionSnapshot {
+    /// 构建区域快照
     pub fn new(
         note_fingerprints: Vec<(u32, u16, u32)>,
         timestamp_ms: u64,
@@ -81,7 +85,10 @@ pub enum OverlayState {
     /// 已合并为一个大覆盖层
     Merged,
     /// 等待阈值时间后合并到主贴图
-    PendingFlush { start_time_ms: u64 },
+    PendingFlush {
+        /// 开始等待的毫秒时间戳
+        start_time_ms: u64,
+    },
 }
 
 /// 覆盖层数据
@@ -106,10 +113,12 @@ pub struct OverlayTile {
 }
 
 impl OverlayTile {
+    /// 像素数据字节长度
     pub fn byte_len(&self) -> usize {
         self.pixels.len()
     }
 
+    /// 期望的像素数据字节长度（宽×高×4）
     pub fn expected_byte_len(&self) -> usize {
         (self.width as usize) * (self.height as usize) * 4
     }
@@ -138,6 +147,7 @@ pub struct RegionEditState {
 }
 
 impl RegionEditState {
+    /// 构建区域编辑状态
     pub fn new(coord: RegionCoord) -> Self {
         Self {
             coord,

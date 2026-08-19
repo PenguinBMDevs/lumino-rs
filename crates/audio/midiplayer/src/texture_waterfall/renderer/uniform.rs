@@ -21,6 +21,11 @@ pub struct TextureWaterfallUniform {
 }
 
 impl TextureWaterfallUniform {
+    /// 用给定坐标与画布尺寸构造贴图 uniform
+    ///
+    /// - `area_x`/`area_y`：area 矩形在 framebuffer 中的左上角坐标
+    /// - `area_w`/`area_h`：area 矩形宽高
+    /// - `canvas_w`/`canvas_h`：canvas 总宽高（像素）
     pub fn new(
         area_x: f32,
         area_y: f32,

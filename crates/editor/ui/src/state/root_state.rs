@@ -15,17 +15,28 @@ use crate::app_mode::AppMode;
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum DialogType {
+    /// 无对话框
     #[default]
     None,
+    /// 自定义精度对话框
     CustomPrecision,
+    /// 协作对话框
     Collaboration,
+    /// 加载确认对话框
     LoadConfirm,
+    /// 工程设置对话框
     ProjectSettings,
+    /// 设置面板
     Settings,
+    /// 音符变速对话框
     SpeedChange,
+    /// 批量编辑对话框
     BatchEdit,
+    /// 导出进度对话框
     ExportProgress,
+    /// 视频导出对话框
     VideoExport,
+    /// 内存监控对话框
     MemoryMonitor,
     /// 找回删除音轨
     RecoverTrack,
@@ -82,6 +93,7 @@ impl Default for RootState {
 }
 
 impl RootState {
+    /// 创建一个默认的根组件状态
     pub fn new() -> Self {
         puffin::profile_scope!("root_state_new");
         Self {

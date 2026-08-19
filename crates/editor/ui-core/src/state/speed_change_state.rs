@@ -3,12 +3,14 @@
 /// 音符变速对话框状态
 #[derive(Debug, Clone)]
 pub struct SpeedChangeDialogState {
+    /// 对话框是否打开
     pub is_open: bool,
     /// 倍率输入字符串（支持分数格式如 "1/3"）
     pub factor_input: String,
 }
 
 impl SpeedChangeDialogState {
+    /// 创建一个默认的音符变速对话框状态
     pub fn new() -> Self {
         Self {
             is_open: false,

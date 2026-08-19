@@ -19,6 +19,7 @@ pub struct MidiConnectionState {
 }
 
 impl MidiConnectionState {
+    /// 创建一个空的 MIDI 连接状态
     pub fn new() -> Self {
         Self {
             input_connection: None,

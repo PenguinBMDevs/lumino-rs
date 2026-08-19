@@ -27,10 +27,15 @@ const BACKEND: MiMalloc = MiMalloc;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum AllocTag {
+    /// MIDI 数据分配
     Midi = 0,
+    /// 音色库采样数据分配
     SoundFont = 1,
+    /// 音频引擎分配
     Audio = 2,
+    /// GPU 显存/缓冲分配
     Gpu = 3,
+    /// UI / 状态分配
     Ui = 4,
     /// 唯一兜底桶：未显式归类的分配（含 3rd-party crate 在其自有线程上的分配，
     /// 如 xsynth 语音缓冲、iced/wgpu 内部线程）默认落入此处。
@@ -40,6 +45,7 @@ pub enum AllocTag {
 impl AllocTag {
     const COUNT: usize = 6;
 
+    /// 全部分配标签的固定顺序列表（共 `AllocTag::COUNT` 个）
     pub const ALL: [AllocTag; Self::COUNT] = [
         AllocTag::Midi,
         AllocTag::SoundFont,
@@ -49,6 +55,13 @@ impl AllocTag {
         AllocTag::Other,
     ];
 
+    /// 返回该标签可读的中文名称。
+    ///
+    /// # 参数
+    /// * `self` — 需要获取名称的分配标签
+    ///
+    /// # 返回值
+    /// 标签对应的静态字符串描述
     pub fn name(self) -> &'static str {
         match self {
             AllocTag::Midi => "MIDI 数据",
@@ -176,11 +189,19 @@ pub fn purge_free_pages() {
 /// Snapshot of memory attributed to each tag, plus GPU resources.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Snapshot {
+    /// 各分配标签对应的已追踪内存字节数
     pub bytes: [isize; AllocTag::COUNT],
+    /// 未经过全局分配器的 GPU 资源字节数
     pub gpu_resources: isize,
 }
 
 impl Snapshot {
+    /// 捕获当前所有内存计数器的快照。
+    ///
+    /// 读取各分配标签的原子计数器与 GPU 资源计数器。
+    ///
+    /// # 返回值
+    /// 返回代表当前内存状态的一份 `Snapshot`
     pub fn capture() -> Self {
         let mut bytes = [0; AllocTag::COUNT];
         for (i, counter) in COUNTERS.iter().enumerate() {
@@ -192,10 +213,21 @@ impl Snapshot {
         }
     }
 
+    /// 返回指定分配标签已追踪的内存字节数。
+    ///
+    /// # 参数
+    /// * `tag` — 目标分配标签
+    ///
+    /// # 返回值
+    /// 该标签对应的已追踪字节数（可为负，表示释放多于分配的异常情况）
     pub fn get(&self, tag: AllocTag) -> isize {
         self.bytes[tag as usize]
     }
 
+    /// 返回全部分配标签的已追踪字节数总和。
+    ///
+    /// # 返回值
+    /// 各标签已追踪字节数之和（不含 GPU 资源）
     pub fn total_tracked(&self) -> isize {
         self.bytes.iter().sum()
     }
@@ -210,14 +242,26 @@ impl Snapshot {
         self.get(tag) as f64 / 1_048_576.0
     }
 
+    /// 返回所有已追踪内存用量（不含 GPU 资源），单位为 MB。
+    ///
+    /// # 返回值
+    /// 已追踪内存总量的兆字节数
     pub fn total_mb(&self) -> f64 {
         self.total_tracked() as f64 / 1_048_576.0
     }
 
+    /// 返回含 GPU 资源的总内存用量，单位为 MB。
+    ///
+    /// # 返回值
+    /// 已追踪内存与 GPU 资源合计的兆字节数
     pub fn total_with_gpu_mb(&self) -> f64 {
         self.total_with_gpu() as f64 / 1_048_576.0
     }
 
+    /// 返回 GPU 资源内存用量，单位为 MB。
+    ///
+    /// # 返回值
+    /// GPU 资源字节数折算的兆字节数
     pub fn gpu_mb(&self) -> f64 {
         self.gpu_resources as f64 / 1_048_576.0
     }

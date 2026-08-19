@@ -9,6 +9,7 @@ use crate::state::root_state::CollaborationViewState;
 pub struct CollaborationHandler;
 
 impl CollaborationHandler {
+    /// 创建一个协作消息处理器
     pub fn new() -> Self {
         Self
     }

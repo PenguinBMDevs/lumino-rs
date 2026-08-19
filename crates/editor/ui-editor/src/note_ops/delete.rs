@@ -12,6 +12,10 @@ use iced_core::Point;
 use super::Editor;
 
 impl Editor {
+    /// 按索引删除单个音符，并清除悬停状态、标记数据变更、广播删除事件。
+    ///
+    /// # 参数
+    /// * `index` — 待删除的音符索引
     pub fn delete_note_by_index(&mut self, index: usize) {
         // Capture note info before deletion for sync event
         let note_info = self.editor_state.data.get_note_view(index).map(|n| {
@@ -39,6 +43,13 @@ impl Editor {
         }
     }
 
+    /// 删除指定屏幕坐标处命中的音符。
+    ///
+    /// # 参数
+    /// * `pos` — 屏幕坐标
+    ///
+    /// # 返回
+    /// 命中并删除音符返回 `true`，否则返回 `false`。
     pub fn delete_note_at(&mut self, pos: Point) -> bool {
         if let Some((index, _)) = self.hit_test_note(pos) {
             self.delete_note_by_index(index);
@@ -48,6 +59,7 @@ impl Editor {
         }
     }
 
+    /// 删除所有选中的音符，并广播逐个音符的删除事件。
     pub fn delete_selected_notes(&mut self) {
         if !self.has_selection() {
             return;

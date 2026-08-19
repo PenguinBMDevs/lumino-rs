@@ -58,6 +58,9 @@ pub struct RenderCache {
 }
 
 impl RenderCache {
+    /// 创建空缓存，初始化双缓冲与各代际计数。
+    ///
+    /// 默认实例缓冲区容量为 1024*1024，音符版本号与各视口哈希初始为 0。
     pub fn new() -> Self {
         Self {
             note_instances_buffer: Arc::new(SwappableBuffer::new(1024 * 1024)),

@@ -27,6 +27,7 @@ pub struct EditorSnapshot {
     /// 快照克隆为 O(块数) 指针拷贝。编辑路径经 `ChunkedList` 块级 COW 写时复制
     /// （只复制被修改的目标块）。
     pub notes: Arc<ChunkedList<NoteEvent>>,
+    /// 当前激活的音轨索引。
     pub current_track: usize,
     /// 自动化 lane 快照。`Arc` 共享：未修改的 lane 在所有快照间物理共址，
     /// 快照克隆为 O(lane 数) 指针拷贝。编辑路径用 `Arc::make_mut` 写时复制。

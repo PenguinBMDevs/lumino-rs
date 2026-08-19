@@ -39,22 +39,30 @@ impl Default for GroupSubState {
     }
 }
 
+/// 路由配置项（路由栏中的组父按钮或路由项）
 #[derive(Debug, Clone)]
 pub enum RouteConfig {
     /// 组父按钮（定义分组，带颜色指示）
     GroupParent {
+        /// 分组标识
         group: GroupId,
+        /// 图标
         icon: icon::Icon,
     },
     /// 路由项（可关联到某个组作为子按钮）
     Item {
+        /// 路由
         route: Route,
+        /// 图标
         icon: icon::Icon,
+        /// 所属分组（None 表示不属于任何组）
         group: Option<GroupId>,
     },
+    /// 弹性间距
     Space,
 }
 
+/// 路由栏的全部路由配置（9 项）
 pub const ROUTES: [RouteConfig; 9] = [
     // ── 钢琴卷帘组（红色） ──
     RouteConfig::GroupParent {
@@ -102,9 +110,12 @@ pub const ROUTES: [RouteConfig; 9] = [
 
 // ─── 音轨数据 ───
 
+/// 音轨元数据
 #[derive(Debug, Clone)]
 pub struct Track {
+    /// 音轨 ID
     pub id: usize,
+    /// 音轨名称
     pub name: String,
     /// MIDI 端口（0-25 映射到 A-Z，与 yinhe 一致）
     pub port: u8,
@@ -112,9 +123,13 @@ pub struct Track {
     pub channel: u8,
     /// 显示标签：`{端口字母}{通道号+1:02}`，如 A01（port=0, ch=0）
     pub display_label: String,
+    /// 是否为指挥轨
     pub is_conductor: bool,
+    /// 是否允许删除
     pub can_delete: bool,
+    /// 是否静音
     pub is_muted: bool,
+    /// 是否 Solo
     pub is_soloed: bool,
     /// 选项卡颜色（None 表示使用默认颜色）
     pub color: Option<Color>,

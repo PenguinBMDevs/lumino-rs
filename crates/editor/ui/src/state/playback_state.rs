@@ -24,6 +24,7 @@ pub struct PlaybackState {
 }
 
 impl PlaybackState {
+    /// 创建一个空的播放状态
     pub fn new() -> Self {
         Self {
             manager: None,

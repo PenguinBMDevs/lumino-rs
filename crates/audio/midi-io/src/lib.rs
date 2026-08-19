@@ -1,3 +1,8 @@
+//! MIDI 输入 / 输出 `Api` 抽象层。
+//!
+//! 提供统一的 MIDI 设备访问接口，支持多种后端（XSynth、KDMAPI、系统 MIDI），
+//! 以及基于 xsynth 的音频合成与播放管线。
+
 pub mod api;
 pub mod compact;
 pub mod constants;
@@ -15,33 +20,47 @@ use api::Kdmapi;
 use api::System;
 use api::XSynth;
 
+/// MIDI 输入 / 输出错误
 #[derive(Error, Debug)]
 pub enum Error {
+    /// 初始化失败（附原因描述）
     #[error("failed to init: {0}")]
     InitFailed(String),
+    /// 获取输入设备列表失败（附原因描述）
     #[error("failed to get inputs: {0}")]
     InputsFailed(String),
+    /// 获取输出设备列表失败（附原因描述）
     #[error("failed to get outputs: {0}")]
     OutputsFailed(String),
+    /// 未找到指定设备（附设备序号）
     #[error("device#{0} not found.")]
     DeviceNotFound(u32),
+    /// 打开输出端口失败（附原因描述）
     #[error("failed to open output: {0}")]
     OpenOutputFailed(String),
+    /// 发送 MIDI 信号失败（附原因描述）
     #[error("failed to send MIDI signal: {0}")]
     SendFailed(String),
+    /// 打开输入端口失败（附原因描述）
     #[error("failed to open input: {0}")]
     OpenInputFailed(String),
 }
 
+/// MIDI 输入设备描述信息
 #[derive(Debug, Clone)]
 pub struct InputInfo {
+    /// 设备序号
     pub id: u32,
+    /// 设备名称
     pub name: String,
 }
 
+/// MIDI 输出设备描述信息
 #[derive(Debug, Clone)]
 pub struct OutputInfo {
+    /// 设备序号
     pub id: u32,
+    /// 设备名称
     pub name: String,
 }
 
@@ -56,10 +75,15 @@ pub trait InputConnection: Send {
     fn close(self: Box<Self>);
 }
 
+/// MIDI 输入 / 输出接口抽象，供各后端实现
 pub trait Api: Send + Sync {
+    /// 返回后端版本号（若可用）
     fn version(&self) -> Option<String>;
+    /// 列出可用的 MIDI 输入设备
     fn inputs(&self) -> Result<Vec<InputInfo>, Error>;
+    /// 列出可用的 MIDI 输出设备
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error>;
+    /// 打开指定输出端口并返回连接
     fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error>;
     /// 打开 MIDI 输入端口
     ///
@@ -102,6 +126,7 @@ pub trait OutputConnection: Send {
         ])
     }
 
+    /// 发送 Note Off
     fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
         self.send_raw([
@@ -182,20 +207,33 @@ pub trait OutputConnection: Send {
         Ok(())
     }
 
+    /// 关闭输出连接
     fn close(self: Box<Self>);
 }
 
+/// 后端类型描述
 #[derive(Debug)]
 pub enum ApiKind {
-    XSynth { soundfont_path: PathBuf },
-    Kdmapi { path: PathBuf },
+    /// XSynth 软件合成后端
+    XSynth {
+        /// SoundFont 文件路径
+        soundfont_path: PathBuf,
+    },
+    /// KDMAPI 后端
+    Kdmapi {
+        /// 动态库文件路径
+        path: PathBuf,
+    },
+    /// 系统 MIDI 后端
     System,
 }
 
+/// 使用默认选项创建指定类型的后端
 pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
     new_api_with_options(kind, None)
 }
 
+/// 使用自定义选项创建指定类型的后端
 pub fn new_api_with_options(
     kind: &ApiKind,
 

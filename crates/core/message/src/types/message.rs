@@ -38,11 +38,17 @@ use crate::context_menu::PianoRollContextMenuAction;
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone)]
 pub enum Message<W, S, Se, T> {
+    /// 核心事件
     Core(Event),
+    /// 窗口事件
     Window(W),
+    /// 侧边栏事件
     Sidebar(S),
+    /// 进度更新（消息与进度值）
     Progress(Option<(String, f64)>),
+    /// 横向滚动条滚动
     ScrollbarScrolled(f32),
+    /// 纵向滚动条滚动
     ScrollbarScrolledY(f32),
     /// 工程走带水平滚动
     ArrangementScrollX(f32),
@@ -50,30 +56,44 @@ pub enum Message<W, S, Se, T> {
     ArrangementScrollY(f32),
     /// 工程走带水平缩放
     ArrangementZoomX {
+        /// 缩放倍率
         zoom: f32,
+        /// 固定比例基准
         fixed_ratio: f32,
     },
     /// 工程走带垂直缩放
     ArrangementZoomY {
+        /// 缩放倍率
         zoom: f32,
+        /// 固定比例基准
         fixed_ratio: f32,
     },
+    /// 横向缩放变化
     ZoomXChanged {
+        /// 缩放倍率
         zoom: f32,
+        /// 固定比例基准
         fixed_ratio: f32,
     },
+    /// 纵向缩放变化
     ZoomYChanged {
+        /// 缩放倍率
         zoom: f32,
+        /// 固定比例基准
         fixed_ratio: f32,
     },
     /// Canvas 位置和尺寸更新
     CanvasBoundsChanged {
+        /// Canvas 偏移
         offset: Point2,
+        /// Canvas 尺寸
         size: Size2,
     },
     /// 菜单状态更新
     MenuStateChanged(bool),
+    /// 编辑器动作
     EditorAction(EditorAction),
+    /// 音频控制动作
     AudioAction(lumino_core::AudioAction),
     /// 设置面板事件
     Settings(Se),
@@ -101,6 +121,7 @@ pub enum Message<W, S, Se, T> {
     Null,
     /// Ctrl 键状态变更
     CtrlKeyChanged(bool),
+    /// Shift 键状态变更
     ShiftKeyChanged(bool),
     /// 模式切换（编辑器/瀑布流）
     ModeToggled,
@@ -110,6 +131,7 @@ pub enum Message<W, S, Se, T> {
     LoopRange(LoopRangeAction),
     /// MIDI 输入事件（从 MIDI 设备收到的原始数据）
     MidiInputEvent {
+        /// 原始 MIDI 数据字节
         data: Vec<u8>,
     },
     /// 音频导出动作
@@ -138,27 +160,40 @@ pub enum Message<W, S, Se, T> {
     ArrangementSelectionCleared,
     /// 工程走带：移动选中的音符
     ArrangementMoveNotes {
+        /// tick 偏移量
         delta_ticks: i64,
+        /// 音轨偏移量
         delta_tracks: i32,
     },
     /// 工程走带：擦除矩形范围内的音符
     ArrangementErase {
+        /// 起始 tick
         tick_start: f64,
+        /// 结束 tick
         tick_end: f64,
+        /// 起始音轨
         track_lo: usize,
+        /// 结束音轨
         track_hi: usize,
     },
     /// 工程走带：在指定 tick/track 处分割音符
     ArrangementRazor {
+        /// 分割位置 tick
         tick: f64,
+        /// 分割音轨
         track: usize,
     },
     /// 工程走带：在指定音轨 tick 处添加音符
     ArrangementAddNote {
+        /// 音轨索引
         track: usize,
+        /// 起始 tick
         tick: f64,
+        /// 音符持续时间（tick）
         duration: f64,
+        /// 键位
         key: u8,
+        /// 力度
         velocity: u8,
     },
     /// 工程走带：ghost 音符预览列表更新
@@ -175,6 +210,7 @@ pub enum Message<W, S, Se, T> {
     ArrangementDeleteSelection,
 }
 
+/// 构造空消息
 pub const fn null<W, S, Se, T>() -> Message<W, S, Se, T> {
     Message::Null
 }

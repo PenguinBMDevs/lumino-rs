@@ -16,9 +16,12 @@ pub struct HttpClient {
 /// 创建房间请求
 #[derive(Debug, Serialize)]
 pub struct CreateRoomRequest {
+    /// 房间名称
     pub name: String,
+    /// 房主用户 ID
     #[serde(rename = "hostId")]
     pub host_id: String,
+    /// 房主名称（可选）
     #[serde(rename = "hostName", skip_serializing_if = "Option::is_none")]
     pub host_name: Option<String>,
 }
@@ -26,8 +29,11 @@ pub struct CreateRoomRequest {
 /// 创建房间响应
 #[derive(Debug, Deserialize)]
 pub struct CreateRoomResponse {
+    /// 是否创建成功
     pub success: bool,
+    /// 创建的房间信息
     pub room: RoomInfo,
+    /// WebSocket 连接地址
     #[serde(rename = "webSocketUrl")]
     pub web_socket_url: String,
 }
@@ -35,10 +41,14 @@ pub struct CreateRoomResponse {
 /// 房间信息
 #[derive(Debug, Deserialize, Clone)]
 pub struct RoomInfo {
+    /// 房间 ID
     pub id: String,
+    /// 房间邀请码
     #[serde(rename = "inviteCode")]
     pub invite_code: String,
+    /// 房间名称
     pub name: String,
+    /// 房主用户 ID
     #[serde(rename = "hostId")]
     pub host_id: String,
 }

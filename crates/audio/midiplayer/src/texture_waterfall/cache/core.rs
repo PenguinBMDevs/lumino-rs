@@ -22,14 +22,23 @@ pub(super) const ZSTD_LEVEL: i32 = 3;
 /// 缓存元数据（随像素一起落盘，用于失效校验）
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq)]
 pub struct WaterfallCacheMeta {
+    /// 所属音轨索引
     pub track_idx: u16,
+    /// 所属时间组序号
     pub time_group: u32,
+    /// 贴图宽度（像素）
     pub width: u32,
+    /// 贴图高度（像素）
     pub height: u32,
+    /// 组内起始 tick
     pub tick_start: u32,
+    /// 组内结束 tick
     pub tick_end: u32,
+    /// 键盘数量
     pub key_count: u16,
+    /// 每四分音符 tick 数
     pub ppq: u16,
+    /// 每组小节数
     pub measures_per_group: u32,
 }
 
@@ -74,16 +83,32 @@ impl WaterfallCacheMeta {
 /// 缓存读写错误
 #[derive(Debug, Error)]
 pub enum WaterfallCacheError {
+    /// IO 错误
     #[error("IO 错误: {0}")]
     Io(#[from] std::io::Error),
+    /// magic 标识不匹配
     #[error("magic 不匹配: 期望 {expected:?}, 实际 {actual:?}")]
-    MagicMismatch { expected: [u8; 8], actual: [u8; 8] },
+    MagicMismatch {
+        /// 期望的 magic 值
+        expected: [u8; 8],
+        /// 实际读取到的 magic 值
+        actual: [u8; 8],
+    },
+    /// 缓存版本不匹配
     #[error("版本不匹配: 期望 {expected}, 实际 {actual}")]
-    VersionMismatch { expected: u16, actual: u16 },
+    VersionMismatch {
+        /// 期望的版本号
+        expected: u16,
+        /// 实际读取到的版本号
+        actual: u16,
+    },
+    /// 元数据序列化/反序列化失败
     #[error("元数据序列化/反序列化失败: {0}")]
     MetaCodec(String),
+    /// 像素压缩/解压失败
     #[error("像素压缩/解压失败: {0}")]
     PixelCodec(String),
+    /// 规格不匹配（缓存失效）
     #[error("规格不匹配（缓存失效）: {0}")]
     SpecMismatch(String),
 }

@@ -5,10 +5,15 @@ pub use crate::client::state::{ClientState, CollaborationSession};
 /// 客户端配置
 #[derive(Debug, Clone)]
 pub struct ClientConfig {
+    /// 服务器主机地址
     pub server_host: String,
+    /// 服务器端口
     pub server_port: u16,
+    /// 用户名
     pub username: String,
+    /// 是否自动重连
     pub auto_reconnect: bool,
+    /// 最大重连尝试次数
     pub max_reconnect_attempts: u32,
 }
 

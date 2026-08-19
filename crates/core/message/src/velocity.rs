@@ -49,7 +49,12 @@ pub enum VelocityAction {
     /// 双向滚轮滚动：水平分量滚动时间轴（X 轴），垂直分量滚动自动化曲线。
     /// 单条消息携带双轴分量，支持「同时向上+向左」等对角线滚动。
     /// 参数: (水平增量, 垂直增量)，单位为滚轮档位（Pixels 源 ÷50 换算）。
-    WheelScrolled { delta_x: f32, delta_y: f32 },
+    WheelScrolled {
+        /// 水平滚动增量（X 轴）
+        delta_x: f32,
+        /// 垂直滚动增量（自动化曲线）
+        delta_y: f32,
+    },
 }
 
 #[cfg(test)]

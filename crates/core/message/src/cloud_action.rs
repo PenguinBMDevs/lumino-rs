@@ -3,9 +3,12 @@
 /// 云存储协议（UI 层轻量枚举，避免 UI 依赖 lumino-cloud 全量协议实现）
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CloudProtocolUi {
+    /// FTP 协议（默认）
     #[default]
     Ftp,
+    /// SFTP 协议
     Sftp,
+    /// WebDAV 协议
     Webdav,
 }
 
@@ -78,7 +81,10 @@ pub enum CloudAction {
     /// 刷新当前目录
     Refresh,
     /// 下载文件到本地（远程路径）
-    Download { path: String },
+    Download {
+        /// 远程文件路径
+        path: String,
+    },
     /// 断开指定连接（退出登录）
     Disconnect(String),
     /// 新建文件夹输入框内容变更

@@ -16,7 +16,12 @@ pub enum RightSidebarAction {
     /// 放置模式悬浮按钮：× 取消（还原显示区域）
     PlacementCancel,
     /// 更新 i2m 数字配置项（文本仅接受数字；空串仅保留输入缓冲）
-    I2mConfigTextChanged { field: I2mConfigField, text: String },
+    I2mConfigTextChanged {
+        /// 配置字段
+        field: I2mConfigField,
+        /// 编辑文本
+        text: String,
+    },
     /// 切换调色板算法（索引指向 `PALETTE_ALGORITHMS`）
     I2mPaletteChanged(usize),
     /// 开始拖拽调整面板宽度

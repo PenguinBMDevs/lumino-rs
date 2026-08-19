@@ -5,8 +5,11 @@ use std::path::Path;
 /// 支持的压缩包格式枚举
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArchiveFormat {
+    /// ZIP 格式（含 .zip / .zipx）。
     Zip,
+    /// RAR 格式（.rar）。
     Rar,
+    /// 7-Zip 格式（.7z）。
     SevenZ,
     /// 纯 TAR（未压缩）
     Tar,
@@ -18,7 +21,9 @@ pub enum ArchiveFormat {
     Gz,
     /// 纯 XZ 压缩文件（单文件压缩，不是 TAR）
     Xz,
+    /// LZH / LHA 格式（.lzh / .lha）。
     Lzh,
+    /// ISO 光盘镜像格式（.iso）。
     Iso,
 }
 

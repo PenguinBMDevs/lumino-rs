@@ -10,7 +10,9 @@ use lumino_core::view_state::ViewState;
 /// 所有会同时修改 `ViewState` 和 `max_scroll` 的操作都通过此结构进行，
 /// 避免在 `EditorState` 中重复书写联动逻辑。
 pub struct Viewport<'a> {
+    /// 可变引用的视图状态
     pub view: &'a mut ViewState,
+    /// 可变引用的最大滚动范围（横向、纵向）
     pub max_scroll: &'a mut (f32, f32),
 }
 

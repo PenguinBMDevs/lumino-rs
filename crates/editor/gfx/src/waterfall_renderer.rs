@@ -19,9 +19,13 @@ use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct WaterfallNoteGpu {
+    /// MIDI 键号（0-127）
     pub key: u32,
+    /// 起始 tick
     pub start_tick: u32,
+    /// 结束 tick
     pub end_tick: u32,
+    /// 打包 RGBA 颜色
     pub color_packed: u32,
 }
 
@@ -29,13 +33,21 @@ pub struct WaterfallNoteGpu {
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct WaterfallUniformGpu {
+    /// 当前播放 tick（决定瀑布流纵向位置）
     pub tick: u32,
+    /// 分辨率（每四分音符 tick 数）
     pub ppq: u32,
+    /// 琴键数量（决定渲染高度）
     pub key_count: u32,
+    /// 帧宽度（像素）
     pub frame_width: u32,
+    /// 帧高度（像素）
     pub frame_height: u32,
+    /// 键盘分区高度（像素）
     pub kb_height: u32,
+    /// 瀑布流下落速度（倍率）
     pub speed: f32,
+    /// 对齐填充（保持 16 字节对齐）
     pub _padding: u32,
 }
 

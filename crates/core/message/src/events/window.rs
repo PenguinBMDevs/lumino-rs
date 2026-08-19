@@ -15,9 +15,13 @@ use std::sync::Arc;
 #[derive(Debug, Clone)]
 /// 窗口事件
 pub enum Event {
+    /// 窗口生命周期事件
     Lifecycle(lifecycle::Event),
+    /// 对话框事件
     Dialog(dialog::Event),
+    /// 协作事件
     Collaboration(collaboration::Event),
+    /// 同步事件
     Sync(sync::Event),
     /// 音轨删除 / 恢复（与 .lmdeltrack 缓存交互）
     Track(track::Event),
@@ -26,57 +30,74 @@ pub enum Event {
 impl Event {
     // ── 生命周期构造函数（直接构造，无需中间函数） ──
 
+    /// 构造拖拽窗口事件
     pub const fn drag() -> Self {
         Self::Lifecycle(lifecycle::Event::Drag)
     }
+    /// 构造关闭窗口事件
     pub const fn close() -> Self {
         Self::Lifecycle(lifecycle::Event::Close)
     }
+    /// 构造切换最大化事件
     pub const fn toggle_maximize() -> Self {
         Self::Lifecycle(lifecycle::Event::ToggleMaximize)
     }
+    /// 构造最大化事件
     pub const fn maximize() -> Self {
         Self::Lifecycle(lifecycle::Event::Maximize)
     }
+    /// 构造最小化事件
     pub const fn minimize() -> Self {
         Self::Lifecycle(lifecycle::Event::Minimize)
     }
 
     // ── 对话框构造函数（直接构造 dialog::Event） ──
 
+    /// 构造打开自定义精度对话框事件
     pub const fn open_custom_precision_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenCustomPrecisionDialog)
     }
+    /// 构造关闭自定义精度对话框事件
     pub const fn close_custom_precision_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseCustomPrecisionDialog)
     }
+    /// 构造应用自定义精度事件
     pub const fn apply_custom_precision(numerator: u32, denominator: u32) -> Self {
         Self::Dialog(dialog::Event::ApplyCustomPrecision(numerator, denominator))
     }
+    /// 构造打开加载确认对话框事件
     pub fn open_load_confirm_dialog(path: String, size_mb: f64) -> Self {
         Self::Dialog(dialog::Event::OpenLoadConfirmDialog { path, size_mb })
     }
+    /// 构造打开协作对话框事件
     pub const fn open_collaboration_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenCollaborationDialog)
     }
+    /// 构造关闭协作对话框事件
     pub const fn close_collaboration_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseCollaborationDialog)
     }
+    /// 构造打开变速对话框事件
     pub const fn open_speed_change_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenSpeedChangeDialog)
     }
+    /// 构造关闭变速对话框事件
     pub const fn close_speed_change_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseSpeedChangeDialog)
     }
+    /// 构造确认变速事件
     pub const fn confirm_speed_change(factor: f32) -> Self {
         Self::Dialog(dialog::Event::ConfirmSpeedChange(factor))
     }
+    /// 构造打开批量编辑对话框事件
     pub const fn open_batch_edit_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenBatchEditDialog)
     }
+    /// 构造关闭批量编辑对话框事件
     pub const fn close_batch_edit_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseBatchEditDialog)
     }
+    /// 构造确认批量编辑事件
     pub fn confirm_batch_edit(velocity: String, gate: String, key: String, tick: String) -> Self {
         Self::Dialog(dialog::Event::ConfirmBatchEdit {
             velocity,
@@ -85,51 +106,66 @@ impl Event {
             tick,
         })
     }
+    /// 构造打开视频导出对话框事件
     pub const fn open_video_export_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenVideoExportDialog)
     }
+    /// 构造关闭视频导出对话框事件
     pub const fn close_video_export_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseVideoExportDialog)
     }
+    /// 构造打开工程设置对话框事件
     pub const fn open_project_settings_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenProjectSettingsDialog)
     }
+    /// 构造关闭工程设置对话框事件
     pub const fn close_project_settings_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseProjectSettingsDialog)
     }
+    /// 构造打开内存监控对话框事件
     pub const fn open_memory_monitor_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenMemoryMonitorDialog)
     }
+    /// 构造关闭内存监控对话框事件
     pub const fn close_memory_monitor_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseMemoryMonitorDialog)
     }
+    /// 构造打开找回音轨对话框事件
     pub const fn open_recover_track_dialog() -> Self {
         Self::Dialog(dialog::Event::OpenRecoverTrackDialog)
     }
+    /// 构造关闭找回音轨对话框事件
     pub const fn close_recover_track_dialog() -> Self {
         Self::Dialog(dialog::Event::CloseRecoverTrackDialog)
     }
+    /// 构造删除音轨事件
     pub fn delete_track(payload: track::TrackDeletionPayload) -> Self {
         Self::Track(track::Event::DeleteTrack(payload))
     }
+    /// 构造恢复音轨事件
     pub fn restore_track(path: std::path::PathBuf, original_index: usize) -> Self {
         Self::Track(track::Event::RestoreTrack {
             path,
             original_index,
         })
     }
+    /// 构造永久删除音轨事件
     pub fn permanently_delete_track(path: std::path::PathBuf, track_id: u16) -> Self {
         Self::Track(track::Event::PermanentlyDeleteTrack { path, track_id })
     }
+    /// 构造找回音轨对话框扫描完成事件
     pub fn recover_track_dialog_scanned(entries: Vec<track::RecoverTrackEntryPayload>) -> Self {
         Self::Track(track::Event::RecoverTrackDialogScanned(entries))
     }
+    /// 构造音轨已恢复事件
     pub fn track_restored(payload: track::TrackDeletionPayload) -> Self {
         Self::Track(track::Event::TrackRestored(payload))
     }
+    /// 构造音轨已永久删除事件
     pub fn track_permanently_deleted(track_id: u16) -> Self {
         Self::Track(track::Event::TrackPermanentlyDeleted { track_id })
     }
+    /// 构造应用工程设置事件
     pub fn apply_project_settings(
         title: String,
         tempo: f64,
@@ -145,12 +181,14 @@ impl Event {
             time_signatures,
         })
     }
+    /// 构造开始音频导出事件
     pub fn start_audio_export(
         config: dialog::AudioExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
         Self::Dialog(dialog::Event::StartAudioExport { config, document })
     }
+    /// 构造开始视频导出事件
     pub fn start_video_export(
         config: dialog::VideoExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
@@ -160,6 +198,7 @@ impl Event {
 
     // ── 协作构造函数（直接构造 collaboration::Event） ──
 
+    /// 构造协作连接事件
     pub fn collaboration_connect(
         host: String,
         port: u16,
@@ -173,27 +212,33 @@ impl Event {
             invite_code,
         })
     }
+    /// 构造协作创建房间事件
     pub fn collaboration_create_room(name: String) -> Self {
         Self::Collaboration(collaboration::Event::CreateRoom { name })
     }
+    /// 构造协作加入房间事件
     pub fn collaboration_join_room(invite_code: String) -> Self {
         Self::Collaboration(collaboration::Event::JoinRoom { invite_code })
     }
+    /// 构造协作断开事件
     pub const fn collaboration_disconnect() -> Self {
         Self::Collaboration(collaboration::Event::Disconnect)
     }
+    /// 构造协作认证成功事件
     pub fn collaboration_authenticated(user_id: String, invite_code: String) -> Self {
         Self::Collaboration(collaboration::Event::Authenticated {
             user_id,
             invite_code,
         })
     }
+    /// 构造协作房间已创建事件
     pub fn collaboration_room_created(room_name: String, invite_code: String) -> Self {
         Self::Collaboration(collaboration::Event::RoomCreated {
             room_name,
             invite_code,
         })
     }
+    /// 构造协作房间已加入事件
     pub fn collaboration_room_joined(
         room_name: String,
         invite_code: String,
@@ -205,12 +250,15 @@ impl Event {
             user_count,
         })
     }
+    /// 构造协作已断开事件
     pub const fn collaboration_disconnected() -> Self {
         Self::Collaboration(collaboration::Event::Disconnected)
     }
+    /// 构造协作用户离开事件
     pub fn collaboration_user_left(user_id: String) -> Self {
         Self::Collaboration(collaboration::Event::UserLeft { user_id })
     }
+    /// 构造协作远端鼠标移动事件
     pub fn collaboration_mouse_update(
         user_id: String,
         x: f32,
@@ -226,15 +274,18 @@ impl Event {
             username,
         })
     }
+    /// 构造协作音符更新事件
     pub fn collaboration_note_update(user_id: String, operation: String) -> Self {
         Self::Collaboration(collaboration::Event::NoteUpdate { user_id, operation })
     }
+    /// 构造协作工程更新事件
     pub fn collaboration_project_update(user_id: String, update: String) -> Self {
         Self::Collaboration(collaboration::Event::ProjectUpdate { user_id, update })
     }
 
     // ── 同步构造函数（直接构造 sync::Event） ──
 
+    /// 构造本地音符添加同步事件
     pub fn local_note_added(
         tick: f32,
         key: u16,
@@ -252,6 +303,7 @@ impl Event {
             track_index,
         })
     }
+    /// 构造本地音符移动同步事件
     pub fn local_note_moved(
         tick: f32,
         key: u16,
@@ -269,6 +321,7 @@ impl Event {
             track_index,
         })
     }
+    /// 构造本地音符删除同步事件
     pub fn local_note_deleted(
         tick: f32,
         key: u16,
@@ -286,6 +339,7 @@ impl Event {
             track_index,
         })
     }
+    /// 构造本地音轨添加同步事件
     pub fn local_track_added(track_index: usize) -> Self {
         Self::Sync(sync::Event::LocalTrackAdded { track_index })
     }

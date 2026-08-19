@@ -15,9 +15,11 @@ use crate::window::DialogWindow;
 /// 等待创建的对话框配置
 #[derive(Debug, Clone)]
 pub struct PendingDialog {
+    /// 待创建对话框的类型
     pub dialog_type: DialogType,
     /// LoadConfirm 的 pending path
     pub pending_path: Option<String>,
+    /// LoadConfirm 的待显示文件大小（MB）
     pub pending_size_mb: Option<f64>,
     /// ProjectSettings 的窗口标题
     pub pending_title: Option<String>,

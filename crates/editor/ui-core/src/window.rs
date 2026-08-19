@@ -11,9 +11,13 @@ pub use crate::window_event::{Event, TrafficAction};
 /// 窗口状态
 #[derive(Debug, Clone)]
 pub struct Window {
+    /// 当前窗口主题
     pub theme: Theme,
+    /// 窗口是否最大化
     pub is_maximized: bool,
+    /// 窗口是否有焦点
     pub is_focused: bool,
+    /// 最近一次帧率（fps）
     pub fps: Option<f32>,
 }
 
@@ -32,6 +36,7 @@ fn get_theme(theme: &str) -> Theme {
 }
 
 impl Window {
+    /// 根据主题名称创建一个窗口状态（未最大化、聚焦、无帧率数据）
     pub fn new(theme: &str) -> Self {
         Self {
             theme: get_theme(theme),
@@ -43,6 +48,7 @@ impl Window {
     fn default_theme() -> Theme {
         Theme::TokyoNightStorm
     }
+    /// 根据窗口事件更新窗口状态（主题/最大化/焦点/帧率）
     pub fn update(&mut self, event: Event) {
         match event {
             Event::Theme(theme) => self.theme = get_theme(&theme),

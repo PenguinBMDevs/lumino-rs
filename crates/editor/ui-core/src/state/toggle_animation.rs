@@ -35,6 +35,7 @@ impl ToggleAnimationState {
     const VELOCITY_THRESHOLD: f64 = 0.001;
     const POSITION_THRESHOLD: f64 = 0.001;
 
+    /// 创建一个默认的开关动画状态
     pub fn new() -> Self {
         Self::default()
     }

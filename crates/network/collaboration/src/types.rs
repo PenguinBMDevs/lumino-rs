@@ -3,11 +3,17 @@
 //! 所有类型定义在子模块中，此文件仅作为统一入口
 
 // 声明子模块
+/// 别名类型模块
 pub mod alias;
+/// 客户端类型模块
 pub mod client;
+/// 音符类型模块
 pub mod note;
+/// 项目类型模块
 pub mod project;
+/// 用户类型模块
 pub mod user;
+/// 视图类型模块
 pub mod view;
 
 // 从子模块重新导出所有类型

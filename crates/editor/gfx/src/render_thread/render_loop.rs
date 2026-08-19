@@ -1,8 +1,13 @@
+/// 渲染命令定义
 pub mod commands;
+/// Prepare 阶段（上传实例与 uniform）
 pub mod prepare;
+/// 渲染通道执行（现代绘制 pass）
 pub mod render_pass;
+/// 渲染循环 runner（帧调度入口）
 pub mod runner;
 
+/// 离屏纹理创建与复用
 pub mod textures;
 
 pub use runner::run_render_thread;
@@ -14,12 +19,17 @@ mod tests;
 ///
 /// 将 6 个渲染器捆绑为一个结构体，使渲染管线函数签名更清晰。
 pub struct Renderers {
+    /// 背景网格渲染器
     pub grid: crate::GridRenderer,
+    /// 主音符渲染器
     pub note: crate::NoteRenderer,
     /// 洋葱皮渲染器（不透明背景层，在主音轨之前绘制）
     pub onion_skin: crate::NoteRenderer,
+    /// 标尺渲染器
     pub ruler: crate::RulerRenderer,
+    /// 走带（arrangement）渲染器
     pub arrangement: crate::ArrangementRenderer,
+    /// CC 柱状条渲染器
     pub cc_bar: crate::CcBarRenderer,
 }
 

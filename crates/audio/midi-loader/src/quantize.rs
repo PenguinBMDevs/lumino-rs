@@ -92,6 +92,11 @@ pub struct QuantizableNote {
 }
 
 impl QuantizableNote {
+    /// 创建一个新的可量化音符。
+    ///
+    /// # 参数
+    /// * `tick` — 起始时间（tick）
+    /// * `length` — 音符长度（tick）
     pub fn new(tick: f32, length: f32) -> Self {
         Self { tick, length }
     }

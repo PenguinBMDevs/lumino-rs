@@ -10,6 +10,7 @@ use crate::root::handlers::MessageHandler;
 pub struct LoopRangeHandler;
 
 impl LoopRangeHandler {
+    /// 创建一个循环区域消息处理器
     pub fn new() -> Self {
         Self
     }

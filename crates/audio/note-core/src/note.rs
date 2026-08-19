@@ -3,8 +3,11 @@
 /// 音符逻辑表示（纯数据，不含 UI 相关方法）
 #[derive(Debug, Clone)]
 pub struct Note {
+    /// 音符起始 tick。
     pub tick: f32,
+    /// 音高（MIDI 音高数字）。
     pub key: u16,
+    /// 音符时长（tick）。
     pub length: f32,
     /// 音符力度 (0-127)，默认 100
     pub velocity: u8,
@@ -13,6 +16,12 @@ pub struct Note {
 }
 
 impl Note {
+    /// 创建一个音符，力度与通道取默认值（100 / 0）。
+    ///
+    /// # 参数
+    /// * `tick` — 起始 tick
+    /// * `key` — MIDI 音高数字
+    /// * `length` — 时长（tick）
     pub fn new(tick: f32, key: u16, length: f32) -> Self {
         Self {
             tick,
@@ -34,11 +43,19 @@ impl Note {
         }
     }
 
+    /// 设置力度并返回自身（构建器风格）。
+    ///
+    /// # 参数
+    /// * `velocity` — 力度值 0–127
     pub fn with_velocity(mut self, velocity: u8) -> Self {
         self.velocity = velocity;
         self
     }
 
+    /// 设置 MIDI 通道并返回自身（构建器风格）。
+    ///
+    /// # 参数
+    /// * `channel` — 通道号 0–15
     pub fn with_channel(mut self, channel: u8) -> Self {
         self.channel = channel;
         self

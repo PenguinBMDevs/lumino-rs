@@ -14,10 +14,15 @@ use crate::note::Note;
 /// 音符只读视图（避免构造 Note 结构体的开销）
 #[derive(Debug, Clone, Copy)]
 pub struct NoteView {
+    /// 音符起始 tick。
     pub tick: f32,
+    /// 音高（MIDI 音高数字）。
     pub key: u16,
+    /// 音符时长（tick）。
     pub length: f32,
+    /// 音符力度 0-127。
     pub velocity: u8,
+    /// MIDI 通道 0-15。
     pub channel: u8,
 }
 

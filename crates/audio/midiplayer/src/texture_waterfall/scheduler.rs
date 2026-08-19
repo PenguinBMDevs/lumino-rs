@@ -33,6 +33,7 @@ pub type TextureWaterfallProgressCallback = Arc<dyn Fn(&str, f32) + Send + Sync>
 /// 生成错误
 #[derive(Debug, thiserror::Error)]
 pub enum WaterfallGenerateError {
+    /// 缓存 IO 错误
     #[error("缓存 IO 错误: {0}")]
     CacheIo(String),
 }
@@ -43,10 +44,15 @@ pub enum WaterfallGenerateError {
 /// 将函数签名降到 7 个参数以下，同时保持 `progress_cb` 与 `time_group_cb` 独立。
 #[derive(Debug)]
 pub struct WaterfallGenContext<'a> {
+    /// 贴图瀑布流运行配置
     pub config: &'a TextureWaterfallConfig,
+    /// 每四分音符 tick 数
     pub ppq: u16,
+    /// 键盘数量
     pub key_count: u16,
+    /// 整首 MIDI 总 tick 数
     pub total_ticks: u32,
+    /// MIDI 内容哈希（用于缓存失效校验）
     pub midi_hash: &'a str,
 }
 

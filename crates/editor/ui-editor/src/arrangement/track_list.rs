@@ -67,6 +67,17 @@ pub struct TrackListCanvas {
 }
 
 impl TrackListCanvas {
+    /// 创建音轨列表 Canvas 实例。
+    ///
+    /// # 参数
+    /// * `tracks` — 音轨列表 `(id, name)`
+    /// * `selected_track` — 初始选中的音轨 ID
+    /// * `scroll_y` — 初始垂直滚动偏移
+    /// * `track_height` — 每轨高度
+    /// * `total_height` — 内容总高度
+    ///
+    /// # 返回
+    /// 初始化完成的 `TrackListCanvas`。
     pub fn new(
         tracks: Vec<(usize, String)>,
         selected_track: usize,
@@ -95,36 +106,43 @@ impl TrackListCanvas {
         }
     }
 
+    /// 设置每轨显示标签，返回链式调用后的 `Self`。
     pub fn with_labels(mut self, labels: Vec<String>) -> Self {
         self.track_labels = labels;
         self
     }
 
+    /// 设置每轨通道号，返回链式调用后的 `Self`。
     pub fn with_channels(mut self, channels: Vec<u8>) -> Self {
         self.track_channels = channels;
         self
     }
 
+    /// 设置每轨颜色标签，返回链式调用后的 `Self`。
     pub fn with_colors(mut self, colors: Vec<Option<Color>>) -> Self {
         self.track_colors = colors;
         self
     }
 
+    /// 设置每轨主控音轨标记，返回链式调用后的 `Self`。
     pub fn with_conductors(mut self, conductors: Vec<bool>) -> Self {
         self.track_conductors = conductors;
         self
     }
 
+    /// 设置每轨静音状态，返回链式调用后的 `Self`。
     pub fn with_mutes(mut self, muted: Vec<bool>) -> Self {
         self.track_muted = muted;
         self
     }
 
+    /// 设置每轨独奏状态，返回链式调用后的 `Self`。
     pub fn with_solos(mut self, soloed: Vec<bool>) -> Self {
         self.track_soloed = soloed;
         self
     }
 
+    /// 设置多选集合与范围选择锚点，返回链式调用后的 `Self`。
     pub fn with_selection(mut self, selected: HashSet<usize>, anchor: Option<usize>) -> Self {
         self.selected_tracks = selected;
         self.selection_anchor = anchor;

@@ -14,17 +14,29 @@ use core::fmt;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(u8)]
 pub enum EventKind {
+    /// 音符开启（Note On）。
     NoteOn = 0,
+    /// 音符关闭（Note Off）。
     NoteOff = 1,
+    /// 控制变更（Control Change）。
     ControlChange = 2,
+    /// 音色变更（Program Change）。
     ProgramChange = 3,
+    /// 速度变更（Tempo）。
     Tempo = 4,
+    /// 拍号变更（Time Signature）。
     TimeSignature = 5,
+    /// 调号变更（Key Signature）。
     KeySignature = 6,
+    /// 弯音（Pitch Bend）。
     PitchBend = 7,
+    /// 通道触后（Channel Aftertouch）。
     Aftertouch = 8,
+    /// 复音触后（Polyphonic Aftertouch）。
     PolyAftertouch = 9,
+    /// 系统专用消息（SysEx）。
     SysEx = 10,
+    /// 其他未归类的事件。
     Other = 11,
 }
 

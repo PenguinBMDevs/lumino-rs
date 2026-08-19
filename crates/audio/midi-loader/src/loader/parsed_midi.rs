@@ -16,6 +16,17 @@ fn decode_lmpj<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> LoaderResult<T> 
     bincode::deserialize(&decoded).map_err(LoaderError::from)
 }
 
+/// 从磁盘加载 MIDI / LMPJ 文件并解析为 `ParsedMidi`。
+///
+/// 自动识别文件类型：压缩包会被解压后查找内部 MIDI 文件，`.lmpj` 为
+/// Lumino 工程文件，其余按标准 MIDI 解析。
+///
+/// # 参数
+/// * `path` — 待加载的文件路径
+/// * `progress` — 可选的进度回调 `(阶段说明, 进度 0.0–1.0)`，`None` 表示不回调
+///
+/// # 错误
+/// 当文件不存在、无法解压或解析失败时返回 [`LoaderError`]。
 pub async fn load_parsed_midi(
     path: PathBuf,
     progress: Option<&ProgressCallback>,

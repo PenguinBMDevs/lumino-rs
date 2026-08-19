@@ -11,13 +11,21 @@ use crate::button_descs::ButtonId;
 /// 工具栏事件
 #[derive(Debug, Clone)]
 pub enum Event {
+    /// 播放
     Play,
+    /// 暂停
     Pause,
+    /// 停止
     Stop,
+    /// 跳到上个位置/开头
     SkipBackward,
+    /// 跳到下个位置/末尾
     SkipForward,
+    /// 撤销
     Undo,
+    /// 重做
     Redo,
+    /// 选择工具
     ToolSelected(Tool),
     /// 颜料桶填充模式开关（仅曲线工具激活时可用）
     FillToggled(bool),
@@ -108,158 +116,197 @@ pub enum FlipHorizontalMode {
 }
 
 impl Event {
+    /// 构造"播放"的工具栏消息
     pub const fn play() -> Message {
         Message::Toolbar(Self::Play)
     }
 
+    /// 构造"暂停"的工具栏消息
     pub const fn pause() -> Message {
         Message::Toolbar(Self::Pause)
     }
 
+    /// 构造"停止"的工具栏消息
     pub const fn stop() -> Message {
         Message::Toolbar(Self::Stop)
     }
 
+    /// 构造"跳到上个位置"的工具栏消息
     pub const fn skip_backward() -> Message {
         Message::Toolbar(Self::SkipBackward)
     }
 
+    /// 构造"跳到下个位置"的工具栏消息
     pub const fn skip_forward() -> Message {
         Message::Toolbar(Self::SkipForward)
     }
 
+    /// 构造"撤销"的工具栏消息
     pub const fn undo() -> Message {
         Message::Toolbar(Self::Undo)
     }
 
+    /// 构造"重做"的工具栏消息
     pub const fn redo() -> Message {
         Message::Toolbar(Self::Redo)
     }
 
+    /// 构造"选择工具"的工具栏消息
     pub fn tool_selected(tool: Tool) -> Message {
         Message::Toolbar(Self::ToolSelected(tool))
     }
 
+    /// 构造"颜料桶填充模式开关"的工具栏消息
     pub const fn fill_toggled(enabled: bool) -> Message {
         Message::Toolbar(Self::FillToggled(enabled))
     }
 
+    /// 构造"量化音符"的工具栏消息
     pub const fn quantize() -> Message {
         Message::Toolbar(Self::Quantize)
     }
 
+    /// 构造"精度设置变更"的工具栏消息
     pub const fn precision_changed(precision: NotePrecision) -> Message {
         Message::Toolbar(Self::PrecisionChanged(precision))
     }
 
+    /// 构造"打开自定义精度对话框"的工具栏消息
     pub const fn open_custom_precision_dialog() -> Message {
         Message::Toolbar(Self::OpenCustomPrecisionDialog)
     }
 
+    /// 构造"关闭自定义精度对话框"的工具栏消息
     pub const fn close_custom_precision_dialog() -> Message {
         Message::Toolbar(Self::CloseCustomPrecisionDialog)
     }
 
+    /// 构造"确认自定义精度"的工具栏消息
     pub const fn confirm_custom_precision() -> Message {
         Message::Toolbar(Self::ConfirmCustomPrecision)
     }
 
+    /// 构造"三连音数量变更"的工具栏消息
     pub fn custom_precision_tuplet_count_changed(value: String) -> Message {
         Message::Toolbar(Self::CustomPrecisionTupletCountChanged(value))
     }
 
+    /// 构造"三连音类型变更"的工具栏消息
     pub fn custom_precision_tuplet_type_changed(value: TupletType) -> Message {
         Message::Toolbar(Self::CustomPrecisionTupletTypeChanged(value))
     }
 
+    /// 构造"符点类型变更"的工具栏消息
     pub fn custom_precision_dot_type_changed(value: DotType) -> Message {
         Message::Toolbar(Self::CustomPrecisionDotTypeChanged(value))
     }
 
+    /// 构造"基础音符时值变更"的工具栏消息
     pub fn custom_precision_note_value_changed(value: String) -> Message {
         Message::Toolbar(Self::CustomPrecisionNoteValueChanged(value))
     }
 
+    /// 构造"时值除数变更"的工具栏消息
     pub fn custom_precision_divisor_changed(value: String) -> Message {
         Message::Toolbar(Self::CustomPrecisionDivisorChanged(value))
     }
 
+    /// 构造"打开协作对话框"的工具栏消息
     pub const fn open_collaboration_dialog() -> Message {
         Message::Toolbar(Self::OpenCollaborationDialog)
     }
 
+    /// 构造"打开工程设置对话框"的工具栏消息
     pub const fn open_project_settings_dialog() -> Message {
         Message::Toolbar(Self::OpenProjectSettingsDialog)
     }
 
+    /// 构造"打开内存监控对话框"的工具栏消息
     pub const fn open_memory_monitor_dialog() -> Message {
         Message::Toolbar(Self::OpenMemoryMonitorDialog)
     }
 
+    /// 构造"自动滚动模式切换"的工具栏消息
     pub const fn auto_scroll_mode_changed() -> Message {
         Message::Toolbar(Self::AutoScrollModeChanged)
     }
 
+    /// 构造"循环播放切换"的工具栏消息
     pub const fn toggle_loop() -> Message {
         Message::Toolbar(Self::ToggleLoop)
     }
 
+    /// 构造"开始拖拽调整高度"的工具栏消息
     pub fn resize_drag_started() -> Message {
         Message::Toolbar(Self::ResizeDragStarted(Point::new(0.0, 0.0)))
     }
 
+    /// 构造"拖拽中调整高度"的工具栏消息
     pub fn resize_dragged() -> Message {
         Message::Toolbar(Self::ResizeDragged(Point::new(0.0, 0.0)))
     }
 
+    /// 构造"结束拖拽调整高度"的工具栏消息
     pub const fn resize_drag_ended() -> Message {
         Message::Toolbar(Self::ResizeDragEnded)
     }
 
+    /// 构造"录制"的工具栏消息
     pub const fn record() -> Message {
         Message::Toolbar(Self::Record)
     }
 
+    /// 构造"停止录制"的工具栏消息
     pub const fn record_stop() -> Message {
         Message::Toolbar(Self::RecordStop)
     }
 
+    /// 构造"音符变速"的工具栏消息
     pub const fn speed_change() -> Message {
         Message::Toolbar(Self::SpeedChange)
     }
 
+    /// 构造"垂直翻转选中音符"的工具栏消息
     pub const fn flip_vertical() -> Message {
         Message::Toolbar(Self::FlipVertical)
     }
 
+    /// 构造"水平翻转选中音符"的工具栏消息
     pub fn flip_horizontal(mode: FlipHorizontalMode) -> Message {
         Message::Toolbar(Self::FlipHorizontal(mode))
     }
 
+    /// 构造"向上移调"的工具栏消息
     pub const fn transpose_up(semitones: i16) -> Message {
         Message::Toolbar(Self::TransposeUp(semitones))
     }
 
+    /// 构造"向下移调"的工具栏消息
     pub const fn transpose_down(semitones: i16) -> Message {
         Message::Toolbar(Self::TransposeDown(semitones))
     }
 
+    /// 构造"音符分割"的工具栏消息
     pub const fn split() -> Message {
         Message::Toolbar(Self::Split)
     }
 
+    /// 构造"音符合并"的工具栏消息
     pub const fn glue() -> Message {
         Message::Toolbar(Self::Glue)
     }
 
+    /// 构造"音符连奏"的工具栏消息
     pub const fn tie() -> Message {
         Message::Toolbar(Self::Tie)
     }
 
+    /// 构造"切换溢出菜单显示/隐藏"的工具栏消息
     pub const fn toggle_overflow_menu() -> Message {
         Message::Toolbar(Self::ToggleOverflowMenu)
     }
 
+    /// 构造"关闭溢出菜单"的工具栏消息
     pub const fn close_overflow_menu() -> Message {
         Message::Toolbar(Self::CloseOverflowMenu)
     }

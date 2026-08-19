@@ -40,6 +40,7 @@ mod tests_note_ops;
 /// 编辑器数据
 #[derive(Debug)]
 pub struct EditorData {
+    /// 当前音轨索引
     pub current_track: usize,
     /// 递增版本号，音符数据每次变化时 bump。
     /// 用于 NoteWorker 快照的 Arc 缓存失效检测，避免每帧全量克隆 HashMap。
@@ -62,14 +63,17 @@ pub struct EditorData {
     /// - 写入：`insert_note` / `remove_note` / `update_note` / `replace_track_notes`
     /// - tick 精度：UI 编辑用 f32，写回时无损转换（fract==0 → as u32）
     pub document: Option<lumino_midi_model::MidiDocument>,
+    /// 撤销/重做历史
     pub history: History,
     /// 异步提交的待完成状态（MoveOp 后台应用）
     pub(crate) pending_commit: Option<async_commit::PendingCommit>,
+    /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；
     /// 修改 lane 前必须经 `Arc::make_mut`（见 editor_data/automation.rs）。
     /// lane 数量通常 ≤50，`Vec` 索引写 O(1)。
     pub automation_lanes: Vec<Arc<AutomationLane>>,
+    /// 速度变化点列表
     pub tempo_points: Vec<TempoPoint>,
     /// 拍号变化列表（tick, 分子, 分母）。分母为人类可读值，如 4、8。
     pub time_signatures: Vec<(u32, u8, u8)>,
@@ -109,13 +113,25 @@ pub enum NoteDeltaEvent {
     ///
     /// `notes` 顺序 = notes 索引顺序（连续区间）。合并连续索引后生成。
     UpdateRange {
+        /// 替换起始索引
         start_index: usize,
+        /// 用于替换的音符序列
         notes: Vec<Note>,
     },
     /// 在指定索引处插入单个音符（保持 notes 升序索引语义）
-    InsertAt { index: usize, note: Note },
+    InsertAt {
+        /// 插入位置索引
+        index: usize,
+        /// 待插入的音符
+        note: Note,
+    },
     /// 从指定索引起删除连续 `count` 个音符（保持 notes 升序索引语义）
-    RemoveAt { index: usize, count: usize },
+    RemoveAt {
+        /// 删除起始索引
+        index: usize,
+        /// 删除的音符数量
+        count: usize,
+    },
 }
 
 // `impl Default` / `impl EditorData` 分散在子模块中：

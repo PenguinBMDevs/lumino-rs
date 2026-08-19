@@ -24,7 +24,7 @@ pub struct ExportPipeline {
     /// 上次 ensure_size 的尺寸，尺寸不变时跳过迭代检查
     cached_width: u32,
     cached_height: u32,
-    /// 帧缓冲区回收通道：ffmpeg 写入线程归还已用 Vec<u8>
+    /// 帧缓冲区回收通道：ffmpeg 写入线程归还已用 Vec<`u8`>
     recycle_rx: Option<mpsc::Receiver<Vec<u8>>>,
 }
 

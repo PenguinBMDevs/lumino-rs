@@ -12,6 +12,7 @@ use crate::root::handlers::MessageHandler;
 pub struct SettingsHandler;
 
 impl SettingsHandler {
+    /// 创建一个设置消息处理器
     pub fn new() -> Self {
         Self
     }

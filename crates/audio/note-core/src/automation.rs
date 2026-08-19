@@ -24,12 +24,12 @@ use serde::{Deserialize, Serialize};
 pub enum SegmentShape {
     /// 离散：保持当前值直到下个事件才瞬间跳变。与 MIDI CC 原生语义一致。
     Step,
-    /// 曲线：tension 控制曲线弯曲方向与程度。
-    /// - `0` 等价于直线
-    /// - `> 0` 慢起快落（ease-in）
-    /// - `< 0` 快起慢落（ease-out）
-    ///   范围为 -127..=127。
-    Curve { tension: i8 },
+    /// 曲线：`tension` 控制曲线弯曲方向与程度
+    /// （`0` 等价于直线，`> 0` 慢起快落，`< 0` 快起慢落）。
+    Curve {
+        /// 曲线张力，范围 -127..=127。
+        tension: i8,
+    },
 }
 
 impl Default for SegmentShape {
@@ -73,13 +73,22 @@ impl SegmentShape {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub enum AutomationTarget {
     /// MIDI CC 0–127。
-    CC { controller: u8 },
+    CC {
+        /// 控制器编号（0–127）。
+        controller: u8,
+    },
     /// MIDI Pitch Bend (0–16383, 中心 8192)。
     PitchBend,
     /// RPN (Registered Parameter Number)，14-bit 参数地址 0–16383。
-    Rpn { parameter: u16 },
+    Rpn {
+        /// RPN 参数地址（0–16383）。
+        parameter: u16,
+    },
     /// NRPN (Non-Registered Parameter Number)，14-bit 参数地址 0–16383。
-    Nrpn { parameter: u16 },
+    Nrpn {
+        /// NRPN 参数地址（0–16383）。
+        parameter: u16,
+    },
 }
 
 impl AutomationTarget {
@@ -317,6 +326,7 @@ impl AutomationEvent {
 /// 某个 track 上某个参数的一条有序自动化事件 lane。
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AutomationLane {
+    /// 自动化目标（参数标识），标识这条 lane 控制的 MIDI 参数。
     pub target: AutomationTarget,
     /// 音轨索引（与 `EditorData.current_track` 等对应）。
     pub track: u16,

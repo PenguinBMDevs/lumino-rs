@@ -27,7 +27,12 @@ pub enum VideoExportError {
 
     /// 帧数据尺寸不匹配
     #[error("帧数据尺寸不匹配: 实际 {got} 字节, 期望 {expected} 字节")]
-    FrameSizeMismatch { got: usize, expected: usize },
+    FrameSizeMismatch {
+        /// 实际接收的字节数
+        got: usize,
+        /// 期望的字节数
+        expected: usize,
+    },
 }
 
 /// 视频导出结果类型

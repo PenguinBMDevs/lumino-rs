@@ -9,9 +9,17 @@ use super::bend_path::BendPathState;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum AutomationDrag {
     /// Curve 工具：拖拽锚点，`old_tick` 为原始 tick。
-    MoveAnchor { old_tick: u32 },
+    MoveAnchor {
+        /// 拖拽前锚点的原始 tick
+        old_tick: u32,
+    },
     /// Curve 工具：从起点绘制到当前点。
-    CurveDraw { start_tick: u32, start_value: u16 },
+    CurveDraw {
+        /// 绘制起点 tick
+        start_tick: u32,
+        /// 绘制起点力度/数值
+        start_value: u16,
+    },
 }
 
 /// 力度 / CC / Tempo Canvas 状态

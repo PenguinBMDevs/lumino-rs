@@ -28,6 +28,7 @@ impl Default for SmoothScrollAnimation {
 }
 
 impl SmoothScrollAnimation {
+    /// 创建一个默认状态的平滑滚动动画
     pub fn new() -> Self {
         Self::default()
     }

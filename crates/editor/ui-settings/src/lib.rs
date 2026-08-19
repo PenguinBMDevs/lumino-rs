@@ -29,22 +29,34 @@ pub use lumino_ui_core::settings_event::Event;
 /// 合成器与音频输出设置
 #[derive(Debug, Clone)]
 pub struct SynthSettings {
+    /// 合成器后端类型
     pub backend: SynthBackend,
+    /// 音色库文件路径（SF2/SFZ）
     pub soundfont_path: String,
+    /// 是否使用原生系统标题栏
     pub use_native_titlebar: bool,
+    /// xsynth 缓冲时长（毫秒）
     pub xsynth_buffer_ms: f64,
+    /// xsynth 采样率
     pub xsynth_sample_rate: u32,
+    /// xsynth 渲染线程数
     pub xsynth_threads: i32,
+    /// xsynth 是否启用渐弱终止
     pub xsynth_fade_out: bool,
+    /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
 }
 
 /// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）
 #[derive(Debug, Clone)]
 pub struct EditingSettings {
+    /// 橡皮擦行为
     pub eraser_behavior: lumino_core::storage::config::EraserBehavior,
+    /// 框选模式
     pub selection_box_mode: lumino_core::storage::config::SelectionBoxMode,
+    /// 程序界面字体名称
     pub program_font_name: String,
+    /// 程序界面字体文件路径
     pub program_font_path: String,
     /// 操作日志总条数上限（建议 50-200，默认 100）
     pub history_total_limit: usize,
@@ -88,8 +100,11 @@ pub struct DisplaySettings {
 /// 自动滚动设置
 #[derive(Debug, Clone)]
 pub struct AutoScrollSettings {
+    /// 固定指示器位置
     pub fixed_position: u32,
+    /// 翻页触发偏移
     pub page_trigger_offset: u32,
+    /// 翻页返回位置
     pub page_return_position: u32,
 }
 
@@ -107,10 +122,15 @@ pub struct MidiSettings {
 /// 高精度洋葱皮贴图设置
 #[derive(Debug, Clone)]
 pub struct HiresSettings {
+    /// 是否启用高精度洋葱皮贴图
     pub onion_enabled: bool,
+    /// 每组小节数
     pub measures_per_group: u32,
+    /// 贴图瓦片宽度（像素）
     pub tile_width_px: u32,
+    /// 重新生成冷却时间（秒）
     pub cooldown_secs: u64,
+    /// GPU 显存使用上限（MB）
     pub gpu_mem_limit_mb: u32,
 }
 
@@ -135,6 +155,7 @@ pub struct CloudSettings {
 /// 设置面板状态（按配置类别分组的子结构聚合）。
 #[derive(Debug, Clone)]
 pub struct SettingsPanel {
+    /// 当前选中的菜单索引
     pub selected_menu_index: usize,
     /// 合成器与音频输出
     pub synth: SynthSettings,

@@ -5,6 +5,14 @@ use std::collections::HashSet;
 use super::Editor;
 
 impl Editor {
+    /// 在指定 tick 处分割单个音符。
+    ///
+    /// # 参数
+    /// * `index` — 待分割的音符索引
+    /// * `split_tick` — 分割位置 tick
+    ///
+    /// # 返回
+    /// 分割成功返回 `true`。
     pub fn split_note(&mut self, index: usize, split_tick: f32) -> bool {
         let result = self.editor_state.data.split_note(index, split_tick);
         if result {
@@ -15,6 +23,10 @@ impl Editor {
         result
     }
 
+    /// 合并选中的音符（同 key 且首尾相接的音符合并为一个）。
+    ///
+    /// # 返回
+    /// 实际合并的次数。
     pub fn glue_selected_notes(&mut self) -> usize {
         let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let result = self.editor_state.data.glue_selected_notes(&selected);

@@ -11,9 +11,17 @@
 #[derive(Debug, Clone)]
 pub enum AudioAction {
     /// 以指定力度播放音符
-    PlayNote { key: u8, velocity: u8 },
+    PlayNote {
+        /// MIDI 键号（0-127）
+        key: u8,
+        /// 力度（0-127）
+        velocity: u8,
+    },
     /// 停止指定音符
-    StopNote { key: u8 },
+    StopNote {
+        /// MIDI 键号（0-127）
+        key: u8,
+    },
 }
 
 // ─── 工具类型 ───

@@ -109,7 +109,9 @@ pub struct CreateEntry {
 /// 装箱避免枚举体积膨胀（clippy::large_enum_variant）。
 #[derive(Debug, Clone)]
 pub enum HistoryEntry {
+    /// 完整状态快照（用于无需增量还原的任意操作回退）。
     Snapshot(Box<super::EditorSnapshot>),
+    /// 轻量操作日志（可增量应用/回退）。
     Operation(OperationEntry),
     /// 音符创建日志（增量、极简化，替代 NoteCreate 快照）
     Create(CreateEntry),

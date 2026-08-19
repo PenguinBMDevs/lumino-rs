@@ -5,12 +5,19 @@ use crate::root::Root;
 /// 工程设置对话框数据包（消除 `set_project_settings_data` 的 8 个参数）
 #[derive(Debug, Clone, Default)]
 pub struct ProjectSettingsDialogData {
+    /// 项目标题
     pub title: String,
+    /// 速度（BPM）
     pub tempo: String,
+    /// 版权信息
     pub copyright: String,
+    /// 作者
     pub author: String,
+    /// 创建时间显示文本
     pub created_display: String,
+    /// 总编辑时长（秒）
     pub total_editing_time_seconds: f64,
+    /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,
 }
 

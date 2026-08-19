@@ -10,13 +10,28 @@ pub enum LoopRangeAction {
     /// 清除循环范围
     Clear,
     /// 标尺上鼠标按下（用于拖拽循环边界）
-    RulerPressed { x: f32, y: f32 },
+    RulerPressed {
+        /// 横向坐标
+        x: f32,
+        /// 纵向坐标
+        y: f32,
+    },
     /// 标尺上鼠标移动
-    RulerMoved { x: f32, y: f32 },
+    RulerMoved {
+        /// 横向坐标
+        x: f32,
+        /// 纵向坐标
+        y: f32,
+    },
     /// 标尺上鼠标释放
     RulerReleased,
     /// 标尺双击（切换循环）
-    RulerDoubleClicked { x: f32, y: f32 },
+    RulerDoubleClicked {
+        /// 横向坐标
+        x: f32,
+        /// 纵向坐标
+        y: f32,
+    },
 }
 
 #[cfg(test)]

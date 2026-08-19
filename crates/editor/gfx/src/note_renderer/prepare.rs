@@ -122,7 +122,7 @@ impl NoteRenderer {
     }
 
     /// 兼容方法：数据+camera一步准备好（内部仍拆分成两步）
-    /// 请改用 [`prepare_notes`]。
+    /// 请改用 `prepare_notes`。
     #[deprecated(since = "0.1.0", note = "请改用 prepare_notes()")]
     pub fn prepare_old(
         &mut self,

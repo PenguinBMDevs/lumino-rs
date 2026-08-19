@@ -4,15 +4,20 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CollaborationViewState {
     #[default]
+    /// 连接服务器界面（默认）
     Connect, // 连接服务器界面
-    Connecting,  // 正在连接中
+    /// 正在连接中
+    Connecting, // 正在连接中
+    /// 创建/加入房间界面
     RoomActions, // 创建/加入房间界面
-    InRoom,      // 在房间内界面
+    /// 在房间内界面
+    InRoom, // 在房间内界面
 }
 
 /// 协作对话框状态
 #[derive(Debug, Clone)]
 pub struct CollaborationDialogState {
+    /// 对话框是否打开
     pub is_open: bool,
     /// 服务器地址
     pub server_host: String,
@@ -37,6 +42,7 @@ impl Default for CollaborationDialogState {
 }
 
 impl CollaborationDialogState {
+    /// 创建一个默认的协作对话框状态
     pub fn new() -> Self {
         Self {
             is_open: false,
@@ -50,6 +56,7 @@ impl CollaborationDialogState {
         }
     }
 
+    /// 重置对话框状态为初始值（关闭、回到连接界面、清空状态文本）
     pub fn reset(&mut self) {
         self.is_open = false;
         self.view_state = CollaborationViewState::Connect;

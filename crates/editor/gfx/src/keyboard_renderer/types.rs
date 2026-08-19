@@ -19,6 +19,14 @@ pub struct KeyInstance {
 }
 
 impl KeyInstance {
+    /// 创建琴键实例。
+    ///
+    /// # 参数
+    /// * `position` — 位置 [x, y]
+    /// * `size` — 大小 [width, height]
+    /// * `color` — 颜色 (RGBA)
+    /// * `is_black` — 是否为黑键
+    /// * `key_index` — MIDI 键号
     pub fn new(
         position: [f32; 2],
         size: [f32; 2],

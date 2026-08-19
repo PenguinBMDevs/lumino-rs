@@ -15,6 +15,13 @@ const FALLBACK_TOTAL_MEMORY: u64 = 8 * 1024 * 1024 * 1024;
 // =============================================================================
 
 #[cfg(target_os = "linux")]
+/// 获取系统总物理内存大小（字节）。
+///
+/// 通过读取 `/proc/meminfo` 的 `MemTotal` 字段获得；读取失败或未找到该字段时
+/// 记录告警并返回兜底值 [`FALLBACK_TOTAL_MEMORY`]。
+///
+/// # 返回值
+/// 系统总物理内存（字节）；异常时返回兜底值（8 GB）
 pub fn get_total_physical_memory() -> u64 {
     let content = match std::fs::read_to_string("/proc/meminfo") {
         Ok(c) => c,
@@ -40,6 +47,12 @@ pub fn get_total_physical_memory() -> u64 {
 }
 
 #[cfg(target_os = "macos")]
+/// 获取系统总物理内存大小（字节）。
+///
+/// 通过 `sysctl` 读取 `HW_MEMSIZE` 获得；调用失败时记录告警并返回兜底值。
+///
+/// # 返回值
+/// 系统总物理内存（字节）；异常时返回兜底值（8 GB）
 pub fn get_total_physical_memory() -> u64 {
     let mut mib: [libc::c_int; 2] = [libc::CTL_HW, libc::HW_MEMSIZE];
     let mut size: u64 = 0;
@@ -65,6 +78,12 @@ pub fn get_total_physical_memory() -> u64 {
 }
 
 #[cfg(target_os = "windows")]
+/// 获取系统总物理内存大小（字节）。
+///
+/// 通过 WinAPI `GlobalMemoryStatusEx` 获得；调用失败时记录告警并返回兜底值。
+///
+/// # 返回值
+/// 系统总物理内存（字节）；异常时返回兜底值（8 GB）
 pub fn get_total_physical_memory() -> u64 {
     unsafe {
         let mut statex: winapi::um::sysinfoapi::MEMORYSTATUSEX = std::mem::zeroed();
@@ -83,6 +102,12 @@ pub fn get_total_physical_memory() -> u64 {
 // =============================================================================
 
 #[cfg(target_os = "linux")]
+/// 获取当前进程的 RSS（常驻内存集，字节）。
+///
+/// 通过解析 `/proc/self/status` 的 `VmRSS` 字段获得；读取失败时记录告警并返回 0。
+///
+/// # 返回值
+/// 当前进程 RSS（字节）；读取失败时返回 0
 pub fn get_current_rss() -> u64 {
     let content = match std::fs::read_to_string("/proc/self/status") {
         Ok(c) => c,
@@ -128,6 +153,12 @@ struct TaskBasicInfo64 {
 }
 
 #[cfg(target_os = "macos")]
+/// 获取当前进程的 RSS（常驻内存集，字节）。
+///
+/// 通过 Mach `task_info` `MACH_TASK_BASIC_INFO` 获得；读取失败时记录告警并返回 0。
+///
+/// # 返回值
+/// 当前进程 RSS（字节）；读取失败时返回 0
 pub fn get_current_rss() -> u64 {
     const MACH_TASK_BASIC_INFO_64: u32 = 33;
     const TASK_BASIC_INFO_64_COUNT: u32 = 12;
@@ -180,6 +211,13 @@ fn test_macos_task_basic_info_layout() {
 }
 
 #[cfg(target_os = "windows")]
+/// 获取当前进程的 RSS（常驻内存集，字节）。
+///
+/// 通过 WinAPI `GetProcessMemoryInfo` 的 `PrivateUsage` 字段获得；
+/// 该值不包含跨进程共享页面，与任务管理器读数更一致。
+///
+/// # 返回值
+/// 当前进程 RSS（字节）；查询失败时返回 0
 pub fn get_current_rss() -> u64 {
     unsafe {
         // 使用 PROCESS_MEMORY_COUNTERS_EX 获取 PrivateUsage（私有工作集 = 任务管理器显示的"内存"值）。

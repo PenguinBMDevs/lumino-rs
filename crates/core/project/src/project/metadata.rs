@@ -9,23 +9,35 @@ use lumino_core::error::{CoreError, Result};
 /// 音轨元数据条目
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrackMetadataEntry {
+    /// 音轨 ID
     pub track_id: u16,
+    /// 音轨名称
     pub name: String,
+    /// 通道号
     pub channel: u8,
+    /// 可见性字符串
     pub visibility: String,
+    /// 是否独奏
     pub solo: bool,
+    /// 音符数量
     pub note_count: u64,
 }
 
 /// 导入的外部文件条目
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LoadedFileMetadataEntry {
+    /// 文件条目 ID
     pub id: String,
+    /// 原始文件名
     pub original_name: String,
+    /// 导入格式字符串
     pub format: String,
+    /// 导入时间
     pub imported_at: String,
+    /// 存储路径
     pub storage_path: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 原始附加信息
     pub original_info: Option<toml::Table>,
 }
 
@@ -91,34 +103,47 @@ pub struct ProjectMetadata {
 /// 工程基本信息
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ProjectInfo {
+    /// 工程名称
     pub name: String,
+    /// 作者
     pub author: String,
+    /// 创建时间（RFC3339）
     pub created_at: String,
+    /// 修改时间（RFC3339）
     pub modified_at: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 工程描述
     pub description: Option<String>,
+    /// 创建该工程的 lumino 版本
     pub lumino_version: String,
 }
 
 /// 音频信息
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct AudioInfo {
+    /// 每四分音符 tick 数（division）
     pub division: u16,
+    /// 工程总 tick 数
     pub total_ticks: u32,
+    /// 音轨数量
     pub track_count: u16,
+    /// 音符总数
     pub total_notes: u64,
+    /// 默认速度（BPM）
     pub default_bpm: f64,
 }
 
 /// 音轨元数据集合
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TracksMetadata {
+    /// 音轨元数据条目列表
     pub entries: Vec<TrackMetadataEntry>,
 }
 
 /// 导入文件元数据集合
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct LoadedMetadata {
+    /// 导入文件条目列表
     pub files: Vec<LoadedFileMetadataEntry>,
 }
 
@@ -126,16 +151,22 @@ pub struct LoadedMetadata {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct SettingsMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 主题名称
     pub theme: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 合成器后端
     pub synth_backend: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 音色库路径
     pub soundfont_path: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 自动滚动模式
     pub auto_scroll_mode: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 是否启用 256 键位
     pub enable_256key: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 力度过滤阈值
     pub velocity_filter_threshold: Option<u8>,
 }
 
@@ -143,12 +174,16 @@ pub struct SettingsMetadata {
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct StatsMetadata {
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 编辑次数
     pub edit_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 播放次数
     pub playback_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 导出次数
     pub export_count: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    /// 累计创作时间（秒）
     pub working_time_seconds: Option<u64>,
 }
 

@@ -5,6 +5,7 @@ pub use lumino_note_core::batch_edit::{BatchEditOperation, parse_batch_edit_inpu
 /// 批量编辑对话框状态
 #[derive(Debug, Clone)]
 pub struct BatchEditDialogState {
+    /// 对话框是否打开
     pub is_open: bool,
     /// 音符力度输入
     pub velocity_input: String,
@@ -17,6 +18,7 @@ pub struct BatchEditDialogState {
 }
 
 impl BatchEditDialogState {
+    /// 创建一个默认的批量编辑对话框状态
     pub fn new() -> Self {
         Self {
             is_open: false,

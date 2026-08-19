@@ -220,6 +220,7 @@ pub struct RightSidebar {
 }
 
 impl RightSidebar {
+    /// 创建一个默认的右侧栏
     pub fn new() -> Self {
         Self {
             panel_visible: false,

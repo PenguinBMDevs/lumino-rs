@@ -1,3 +1,7 @@
+//! MIDI 加载相关的默认常量。
+//!
+//! 包括默认时基（PPQN）、音高范围、并发音符数以及默认速度等。
+
 /// 默认的 PPQN (Pulses Per Quarter Note) 值
 pub const DEFAULT_PPQN: u16 = 1920;
 

@@ -17,11 +17,15 @@ pub use types::{
 
 // ─── Sidebar 主结构 ───
 
+/// 侧边栏主结构
 pub struct Sidebar {
+    /// 当前路由
     pub route: Route,
     pub(crate) panel_visible: bool,
     pub(crate) panel_route: Route,
+    /// 音轨列表
     pub tracks: Vec<Track>,
+    /// 当前选中的音轨索引
     pub selected_track: usize,
     /// 面板宽度（默认 200）
     pub panel_width: f32,
@@ -84,6 +88,7 @@ pub struct Sidebar {
 }
 
 impl Sidebar {
+    /// 创建一个默认的侧边栏
     pub fn new() -> Self {
         Self {
             route: Route::File,

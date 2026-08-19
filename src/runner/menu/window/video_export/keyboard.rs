@@ -39,7 +39,7 @@ pub struct PlaybackKeyColorState {
     pub active_notes: Vec<(u32, usize, [u8; 4])>,
 }
 
-/// 获取指定音轨的演奏高亮颜色（RGBA [u8;4]）
+/// 获取指定音轨的演奏高亮颜色（RGBA `[u8; 4]`）
 ///
 /// 使用设置面板的调色板样式，保证琴键颜色与音符颜色一致。
 fn track_color_rgba(track_idx: usize) -> [u8; 4] {

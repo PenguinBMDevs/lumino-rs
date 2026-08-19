@@ -5,18 +5,34 @@ use lumino_ui_core::constants::editor::zoom::{MAX_ZOOM_X, MAX_ZOOM_Y, MIN_ZOOM_X
 impl super::Editor {
     // 滚动控制 — 直接通过 viewport 模块操作
 
+    /// 设置水平最大滚动范围。
+    ///
+    /// # 参数
+    /// * `max_scroll` — 水平最大滚动值
     pub fn set_max_scroll_x(&mut self, max_scroll: f32) {
         self.editor_state.max_scroll.0 = max_scroll;
     }
 
+    /// 设置垂直最大滚动范围。
+    ///
+    /// # 参数
+    /// * `max_scroll` — 垂直最大滚动值
     pub fn set_max_scroll_y(&mut self, max_scroll: f32) {
         self.editor_state.max_scroll.1 = max_scroll;
     }
 
+    /// 获取当前水平滚动位置。
+    ///
+    /// # 返回
+    /// 水平滚动值。
     pub fn scroll_x(&self) -> f32 {
         self.editor_state.view.scroll_x
     }
 
+    /// 获取当前垂直滚动位置。
+    ///
+    /// # 返回
+    /// 垂直滚动值。
     pub fn scroll_y(&self) -> f32 {
         self.editor_state.view.scroll_y
     }
@@ -34,14 +50,26 @@ impl super::Editor {
         (self.editor_state.view.zoom_x, self.editor_state.view.zoom_y)
     }
 
+    /// 获取当前水平缩放倍率。
+    ///
+    /// # 返回
+    /// 水平缩放值。
     pub fn zoom_x(&self) -> f32 {
         self.editor_state.view.zoom_x
     }
 
+    /// 获取当前垂直缩放倍率。
+    ///
+    /// # 返回
+    /// 垂直缩放值。
     pub fn zoom_y(&self) -> f32 {
         self.editor_state.view.zoom_y
     }
 
+    /// 设置水平滚动位置（钳位到有效范围并刷新标尺缓存）。
+    ///
+    /// # 参数
+    /// * `scroll_x` — 目标水平滚动值
     pub fn set_scroll_x(&mut self, scroll_x: f32) {
         let keyboard_width = self.editor_state.view.keyboard_width;
         let canvas_width = self.editor_state.canvas.size_x;
@@ -53,6 +81,10 @@ impl super::Editor {
         self.invalidate_caches(CacheInvalidation::RULER);
     }
 
+    /// 设置垂直滚动位置（钳位到有效范围并刷新键盘缓存）。
+    ///
+    /// # 参数
+    /// * `scroll_y` — 目标垂直滚动值
     pub fn set_scroll_y(&mut self, scroll_y: f32) {
         let canvas_height = self.editor_state.canvas.size_y;
         Viewport::new(
@@ -63,6 +95,11 @@ impl super::Editor {
         self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
 
+    /// 设置水平缩放倍率（以固定比例锚定缩放并刷新标尺缓存）。
+    ///
+    /// # 参数
+    /// * `zoom_x` — 目标水平缩放倍率
+    /// * `fixed_ratio` — 缩放锚点在视口中的固定比例
     pub fn set_zoom_x(&mut self, zoom_x: f32, fixed_ratio: f32) {
         let keyboard_width = self.editor_state.view.keyboard_width;
         let canvas_width = self.editor_state.canvas.size_x;
@@ -81,6 +118,13 @@ impl super::Editor {
         self.invalidate_caches(CacheInvalidation::RULER);
     }
 
+    /// 设置垂直缩放倍率（以固定比例锚定缩放并刷新键盘缓存）。
+    ///
+    /// 根据可视键数动态限制最小/最大缩放，防止键盘过度缩放出界。
+    ///
+    /// # 参数
+    /// * `zoom_y` — 目标垂直缩放倍率
+    /// * `fixed_ratio` — 缩放锚点在视口中的固定比例
     pub fn set_zoom_y(&mut self, zoom_y: f32, fixed_ratio: f32) {
         let canvas_height = self.editor_state.canvas.size_y;
         let visible_key_count = self.editor_state.view.visible_key_count;

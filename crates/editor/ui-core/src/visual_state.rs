@@ -13,6 +13,7 @@ pub struct VisualState {
 }
 
 impl VisualState {
+    /// 创建一个视觉渲染状态（洋葱皮）
     pub fn new(velocity_filter_threshold: u8, velocity_panel_height: f32) -> Self {
         Self {
             velocity_filter_threshold,

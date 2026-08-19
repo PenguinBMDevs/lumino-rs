@@ -4,7 +4,7 @@
 //! - `async_commit` 接收 `Vec<MoveOp>`（含 original_ticks/keys），用于 undo 精确还原
 //! - `async_commit_streaming` 接收 `&DragState`（BitVec + delta），不构造中间 Vec
 //!
-//! 内存增量：16M 音符全选时仅 BitVec ~2 MB，无 Vec<usize> 或 MoveOp 中间分配。
+//! 内存增量：16M 音符全选时仅 BitVec ~2 MB，无 Vec<`usize`> 或 MoveOp 中间分配。
 //! 速度优化：后台线程直接遍历 BitVec，跳过 `selected_indices()` 和 `move_ops_from_drag_state()`。
 //!
 //! 2026-08 单一权威源改造：后台线程克隆当前音轨 `Vec<NoteEvent>`，完成后整轨写回。

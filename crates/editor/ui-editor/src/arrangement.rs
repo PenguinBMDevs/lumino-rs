@@ -139,6 +139,10 @@ pub struct ArrangementView {
 }
 
 impl ArrangementView {
+    /// 创建默认的工程走带视图。
+    ///
+    /// # 返回
+    /// 返回使用默认配置初始化的 `ArrangementView`。
     pub fn new() -> Self {
         Self::default()
     }

@@ -125,7 +125,9 @@ pub fn hover_index_at_y(y: f32, track_height: f32, len: usize) -> usize {
 /// 静音/独奏按钮
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MuteSoloButton {
+    /// 静音按钮
     Mute,
+    /// 独奏按钮
     Solo,
 }
 

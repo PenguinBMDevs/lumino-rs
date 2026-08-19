@@ -185,7 +185,9 @@ impl std::fmt::Display for CcDisplay {
 /// 速度控制点
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct TempoPoint {
+    /// 速度点所在位置的 tick。
     pub tick: f32,
+    /// 该点的速度值（BPM）。
     pub bpm: f64,
 }
 

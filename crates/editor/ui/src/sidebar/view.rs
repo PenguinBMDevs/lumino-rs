@@ -54,6 +54,7 @@ impl Sidebar {
         container(inner).into()
     }
 
+    /// 返回侧边栏占据的宽度（像素）
     pub fn width(&self) -> u32 {
         (ROUTE_BAR_WIDTH
             + if self.panel_visible {

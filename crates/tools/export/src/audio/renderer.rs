@@ -33,6 +33,7 @@ struct BatchBuffer {
 }
 
 impl<'a> BatchRenderer<'a> {
+    /// 创建批量渲染器
     pub fn new(channel_group: &'a mut ChannelGroup) -> Self {
         let params = *channel_group.stream_params();
         BatchRenderer {

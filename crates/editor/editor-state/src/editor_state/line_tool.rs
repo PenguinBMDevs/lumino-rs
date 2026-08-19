@@ -19,14 +19,27 @@ pub enum LineToolInteraction {
     #[default]
     None,
     /// 拖动指定路径的锚点
-    DraggingAnchor { path: usize, idx: usize },
+    DraggingAnchor {
+        /// 目标路径索引
+        path: usize,
+        /// 目标锚点索引
+        idx: usize,
+    },
     /// 整体平移指定路径（segment = 按下时命中的曲线段索引，
     /// 用于未拖动（视为点击插入锚点）时定位插入位置）
-    DraggingLine { path: usize, segment: usize },
+    DraggingLine {
+        /// 目标路径索引
+        path: usize,
+        /// 命中曲线段索引
+        segment: usize,
+    },
     /// 拖动控制柄
     DraggingHandle {
+        /// 目标路径索引
         path: usize,
+        /// 目标锚点索引
         anchor_idx: usize,
+        /// 控制柄方位
         side: HandleSide,
     },
 }
@@ -149,6 +162,7 @@ pub struct LineToolState {
     /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
     /// 连续追加锚点（创建同一路径）时更新栈顶合并为一次撤销。
     pub path_history: Vec<PathSnapshot>,
+    /// 当前路径历史状态索引（指向 `path_history` 中的当前状态）
     pub path_history_index: usize,
 }
 

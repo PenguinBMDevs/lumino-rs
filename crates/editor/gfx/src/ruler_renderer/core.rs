@@ -27,6 +27,14 @@ pub struct RulerTickInstance {
 }
 
 impl RulerTickInstance {
+    /// 创建标尺刻度实例。
+    ///
+    /// # 参数
+    /// * `position` — 屏幕位置 [x, y]
+    /// * `size` — 线宽与高度 [width, height]
+    /// * `color` — 线段颜色 (RGBA)
+    /// * `tick_type` — 刻度类型（0 = 小节线，1 = 拍线）
+    /// * `tick_value` — 对应 tick 值（诊断/对齐用）
     pub fn new(
         position: [f32; 2],
         size: [f32; 2],
@@ -70,12 +78,19 @@ pub struct RulerViewportUniform {
 /// 标尺准备参数
 #[derive(Debug, Clone)]
 pub struct RulerPrepareParams {
+    /// 视口尺寸 [width, height]
     pub viewport_size: (f32, f32),
+    /// 标尺高度（像素）
     pub ruler_height: f32,
+    /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
+    /// 水平滚动（像素）
     pub scroll_x: f32,
+    /// 水平缩放（像素/tick）
     pub zoom_x: f32,
+    /// 每小节 tick 数
     pub ticks_per_measure: u32,
+    /// 每拍 tick 数
     pub ticks_per_beat: u32,
     /// PPQN 分辨率
     pub ppq: u32,
@@ -84,6 +99,10 @@ pub struct RulerPrepareParams {
 }
 
 impl RulerViewportUniform {
+    /// 从准备参数构建标尺视口 uniform。
+    ///
+    /// # 参数
+    /// * `params` — 标尺准备参数集合
     pub fn from_params(params: &RulerPrepareParams) -> Self {
         Self {
             viewport_size: [params.viewport_size.0, params.viewport_size.1],

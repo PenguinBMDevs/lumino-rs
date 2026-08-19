@@ -62,7 +62,12 @@ pub enum AudioExportAction {
     /// 开始渲染（UI 立即显示进度条）
     StartRendering,
     /// 更新渲染进度
-    UpdateRenderProgress { message: String, progress: f64 },
+    UpdateRenderProgress {
+        /// 渲染进度消息文本
+        message: String,
+        /// 渲染进度（0.0 到 1.0）
+        progress: f64,
+    },
     /// 渲染完成
     RenderCompleted,
     /// 渲染失败

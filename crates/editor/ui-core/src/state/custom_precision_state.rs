@@ -5,11 +5,17 @@ use lumino_message::{DotType, TupletType};
 /// 自定义精度对话框状态
 #[derive(Debug, Clone)]
 pub struct CustomPrecisionDialogState {
+    /// 对话框是否打开
     pub is_open: bool,
+    /// 连音符分子（如三连音为 3）
     pub tuplet_count: String,
+    /// 基础音符时值（如四分音符为 4）
     pub note_value: String,
+    /// 连音符类型
     pub tuplet_type: TupletType,
+    /// 符点类型
     pub dot_type: DotType,
+    /// 时值除数（额外除以的数值）
     pub divisor: String,
 }
 
@@ -27,6 +33,7 @@ impl Default for CustomPrecisionDialogState {
 }
 
 impl CustomPrecisionDialogState {
+    /// 创建一个默认的自定义精度对话框状态
     pub fn new() -> Self {
         Self::default()
     }

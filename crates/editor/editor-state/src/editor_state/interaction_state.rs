@@ -25,27 +25,42 @@ pub struct PreviewSequenceNote {
 /// 编辑状态
 #[derive(Debug, Clone, Default, PartialEq)]
 pub enum EditState {
+    /// 空闲状态，无进行中的交互
     #[default]
     Idle,
+    /// 框选（拖出选择框）状态
     Selecting {
+        /// 选择框起始 tick
         start_tick: f32,
+        /// 选择框起始 key
         start_key: u16,
+        /// 选择框当前 tick
         current_tick: f32,
+        /// 选择框当前 key
         current_key: u16,
         /// 鼠标起始 Y 像素坐标（直接跟随鼠标，不吸附到键盘格）
         start_y: f32,
         /// 鼠标当前 Y 像素坐标（直接跟随鼠标，不吸附到键盘格）
         current_y: f32,
     },
+    /// 绘制（使用画笔工具）状态
     Drawing {
+        /// 绘制起始 tick
         start_tick: f32,
+        /// 绘制音符的 key
         key: u16,
+        /// 当前 tick
         current_tick: f32,
     },
+    /// 已按下但尚未确认的拖动（等待拖拽阈值）
     PendingDrag {
+        /// 待拖动音符索引
         note_index: usize,
+        /// 拖动起始位置（tick, key）
         start_pos: (f32, f32),
+        /// 音符原始 tick
         original_tick: f32,
+        /// 音符原始 key
         original_key: u16,
     },
     /// 单音符拖动（ghost 方案）
@@ -54,17 +69,27 @@ pub enum EditState {
     /// 渲染时用 `ghost_position = (note.tick + delta_tick, note.key + delta_key)` 计算预览位置。
     /// `note_index` 用于音频播放与渲染高亮；`last_played_key` 用于按键变化时触发新音。
     Dragging {
+        /// 被拖动音符的索引
         note_index: usize,
+        /// 拖动状态（偏移量）
         drag_state: DragState,
+        /// 最近一次触发发音的 key，用于按键变化时触发新音
         last_played_key: u16,
     },
+    /// 调整音符起始点状态
     ResizingStart {
+        /// 被调整音符索引
         note_index: usize,
+        /// 音符原始起始 tick
         original_tick: f32,
+        /// 音符原始长度
         original_length: f32,
     },
+    /// 调整音符结束点状态
     ResizingEnd {
+        /// 被调整音符索引
         note_index: usize,
+        /// 音符原始长度
         original_length: f32,
     },
     /// 多音符批量拖动（ghost 方案）
@@ -72,6 +97,7 @@ pub enum EditState {
     /// 拖动期间 `EditorData.notes` 不变，仅维护 `drag_state` 偏移。
     /// 选中集合以 `BitVec` 形式存于 `drag_state.selected`，与 `InteractionState.selected_notes` 保持同步。
     DraggingSelection {
+        /// 拖动状态（含选中集合）
         drag_state: DragState,
     },
     /// 多音符批量复制拖动（Ctrl+拖动，ghost 方案）
@@ -81,38 +107,53 @@ pub enum EditState {
     /// 松手时**立即** `batch_insert_notes` 写入内存层（松手即提交，
     /// 副本真实化；连续复制从副本框继续 Ctrl+拖动）。
     DraggingSelectionCopy {
+        /// 拖动状态（含选中集合）
         drag_state: DragState,
     },
+    /// 批量调整选中音符起始点状态
     ResizingSelectionStart {
+        /// 上次鼠标 tick 位置
         last_tick: f32,
     },
+    /// 批量调整选中音符结束点状态
     ResizingSelectionEnd {
+        /// 上次鼠标 tick 位置
         last_tick: f32,
     },
+    /// 拖动 scrub 状态（点击时间轴拖动预览播放位置）
     Scrubbing,
 }
 
 /// 点击命中类型
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum HitType {
+    /// 音符起始点
     Start,
+    /// 音符中间位置
     Middle,
+    /// 音符结束点
     End,
 }
 
 /// 选择框命中类型
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum SelectionHitType {
+    /// 位于选择框内部
     Inside,
+    /// 位于选择框左边缘
     LeftEdge,
+    /// 位于选择框右边缘
     RightEdge,
 }
 
 /// 交互状态
 #[derive(Debug, Default)]
 pub struct InteractionState {
+    /// 当前编辑状态
     pub edit_state: EditState,
+    /// 悬停目标（音符索引与命中类型）
     pub hover_state: Option<(usize, HitType)>,
+    /// 当前选中音符索引集合
     pub selected_notes: HashSet<usize>,
     /// 基于位向量的选中集合，用于高效表示"全选"或"大部分选中"。
     ///

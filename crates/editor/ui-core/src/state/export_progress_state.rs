@@ -16,6 +16,7 @@ pub struct ExportProgressDialogState {
 }
 
 impl ExportProgressDialogState {
+    /// 创建一个默认的导出进度对话框状态
     pub fn new() -> Self {
         Self {
             is_open: false,

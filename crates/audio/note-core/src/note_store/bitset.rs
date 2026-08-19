@@ -1,10 +1,10 @@
-//! BitSet — 自实现的 Vec<u64> 位集合
+//! BitSet — 自实现的 `Vec<u64>` 位集合
 //!
 //! 用于 NoteStore 的选中状态 / 墓碑删除标记。
 //! 核心优势：`trailing_zeros` 优化的 `for_each_set` 遍历，
-//! 比 HashSet<usize> 内存紧凑 8x，遍历快 2-3x。
+//! 比 `HashSet<usize>` 内存紧凑 8x，遍历快 2-3x。
 
-/// 简易 BitSet（Vec<u64>），用于墓碑和选中状态
+/// 简易 BitSet（`Vec<u64>`），用于墓碑和选中状态
 #[derive(Debug, Clone, Default)]
 pub struct BitSet {
     pub(crate) blocks: Vec<u64>,

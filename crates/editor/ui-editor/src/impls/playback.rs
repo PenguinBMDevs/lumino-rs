@@ -53,7 +53,7 @@ impl Editor {
     /// 朴素实现遍历 `[0, end)` 区间所有音符，复杂度 O(end)，其中 `end` 随播放时间
     /// 线性增长——百万级音符的 MIDI 播放 6 分钟后，每帧扫描量可达千万级。
     ///
-    /// 本方法维护 [`PlaybackScanState`] 缓存上次扫描位置和当前活跃音符集合：
+    /// 本方法维护 `PlaybackScanState` 缓存上次扫描位置和当前活跃音符集合：
     /// - 正常播放：增量扫描新进入的音符 + retain 清理已结束音符，每帧 O(活跃音符数)
     /// - seek / 循环回绕 / 文档切换：触发全量重建
     pub fn update_playback_key_colors(&mut self) {

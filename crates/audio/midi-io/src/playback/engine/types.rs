@@ -20,16 +20,33 @@ pub struct NoteEvent {
 /// 调度的音符事件（内部使用）
 #[derive(Debug, Clone)]
 pub struct ScheduledEvent {
+    /// 事件时刻（tick）
     pub tick: f32,
+    /// 事件类型
     pub event_type: EventType,
     /// 序列号，用于相同 tick 时保持顺序
     pub seq: u64,
 }
 
+/// 调度事件类型
 #[derive(Debug, Clone)]
 pub enum EventType {
-    NoteOn { channel: u8, key: u8, velocity: u8 },
-    NoteOff { channel: u8, key: u8 },
+    /// Note On 事件
+    NoteOn {
+        /// MIDI 通道
+        channel: u8,
+        /// 音高
+        key: u8,
+        /// 力度
+        velocity: u8,
+    },
+    /// Note Off 事件
+    NoteOff {
+        /// MIDI 通道
+        channel: u8,
+        /// 音高
+        key: u8,
+    },
 }
 
 impl PartialEq for ScheduledEvent {
@@ -59,35 +76,59 @@ impl Ord for ScheduledEvent {
 /// MIDI消息
 #[derive(Debug, Clone)]
 pub enum MidiMessage {
+    /// Note On 消息
     NoteOn {
+        /// MIDI 通道
         channel: u8,
+        /// 音高
         key: u8,
+        /// 力度
         velocity: u8,
     },
+    /// Note Off 消息
     NoteOff {
+        /// MIDI 通道
         channel: u8,
+        /// 音高
         key: u8,
     },
+    /// 控制器变化（CC）消息
     ControlChange {
+        /// MIDI 通道
         channel: u8,
+        /// 控制器编号
         controller: u8,
+        /// 控制值
         value: u8,
     },
+    /// 音色变换（Program Change）消息
     ProgramChange {
+        /// MIDI 通道
         channel: u8,
+        /// 音色编号
         program: u8,
     },
+    /// 弯音消息
     PitchBend {
+        /// MIDI 通道
         channel: u8,
+        /// 弯音值（-1.0 到 1.0）
         value: f32,
     },
+    /// 通道后触消息
     ChannelPressure {
+        /// MIDI 通道
         channel: u8,
+        /// 压力值
         pressure: u8,
     },
+    /// 复音后触消息
     PolyPressure {
+        /// MIDI 通道
         channel: u8,
+        /// 音高
         key: u8,
+        /// 压力值
         pressure: u8,
     },
 }

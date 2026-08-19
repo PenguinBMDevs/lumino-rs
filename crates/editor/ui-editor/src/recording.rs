@@ -26,6 +26,10 @@ impl Default for RecordingState {
 }
 
 impl RecordingState {
+    /// 创建默认的录制状态实例。
+    ///
+    /// # 返回
+    /// 未开始录制的 `RecordingState`。
     pub fn new() -> Self {
         Self {
             is_recording: false,

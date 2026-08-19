@@ -7,6 +7,12 @@ use std::collections::HashSet;
 use lumino_ui_core::toolbar_event::FlipHorizontalMode;
 
 impl Editor {
+    /// 垂直翻转选中的音符（围绕键盘中心镜像 key）。
+    ///
+    /// 翻转后若发生改动，会清空选中并清除悬停状态。
+    ///
+    /// # 返回
+    /// 实际发生翻转的音符数量。
     pub fn flip_selected_notes_vertical(&mut self) -> usize {
         let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let max_key_index = (self.editor_state.view.visible_key_count - 1) as f32;
@@ -22,6 +28,15 @@ impl Editor {
         result
     }
 
+    /// 水平翻转选中的音符（围绕指定轴计算镜像）。
+    ///
+    /// 翻转后若发生改动，会清空选中并清除悬停状态。
+    ///
+    /// # 参数
+    /// * `mode` — 水平翻转模式（居中/左侧/右侧）
+    ///
+    /// # 返回
+    /// 实际发生翻转的音符数量。
     pub fn flip_selected_notes_horizontal(&mut self, mode: FlipHorizontalMode) -> usize {
         let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
         let indices: Vec<usize> = selected.iter().copied().collect();
