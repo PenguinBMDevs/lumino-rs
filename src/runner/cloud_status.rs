@@ -59,6 +59,24 @@ impl RunnerInner {
         }
     }
 
+    /// 格式化云操作错误原因：保留根因；错误为 `None` 时回退"未知错误"。
+    ///
+    /// 用于替代各 `apply_*` 中 `error.unwrap_or_default()` 的静默吞错写法，
+    /// 杜绝线上排障时根因丢失。
+    pub(super) fn cloud_error_text(context: &str, error: Option<&str>) -> String {
+        match error {
+            Some(e) => format!("{context}（{e}）"),
+            None => format!("{context}（未知错误）"),
+        }
+    }
+
+    /// 云操作失败统一提醒（保留根因，避免静默吞错）。
+    ///
+    /// 等价于 `self.notify_cloud_failure(Self::cloud_error_text(context, error))`。
+    pub(super) fn report_cloud_error(&mut self, context: &str, error: Option<&str>) {
+        self.notify_cloud_failure(Self::cloud_error_text(context, error));
+    }
+
     // ── 连接快照 ──
 
     /// 将主窗口云存储快照广播到已打开的设置/云对话框（独立 Root 需同步）

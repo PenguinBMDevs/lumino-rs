@@ -111,7 +111,7 @@ impl RunnerInner {
                         .as_ref()
                         .err()
                         .map(|e| e.to_string())
-                        .unwrap_or_default()
+                        .unwrap_or_else(|| "未知错误".to_string())
                 )
             };
             let _ = progress_tx.send((done_msg, 1.0));
@@ -200,7 +200,7 @@ impl RunnerInner {
             let done_msg = if result.is_ok() {
                 "已保存到云存储".to_string()
             } else {
-                format!("保存到云失败：{}", error.clone().unwrap_or_default())
+                Self::cloud_error_text("保存到云失败", error.as_deref())
             };
             let _ = progress_tx.send((done_msg, 1.0));
             event::emit(event::Event::cloud(cloud_event::Event::SaveToCloudResult {
@@ -257,7 +257,7 @@ impl RunnerInner {
                         .as_ref()
                         .err()
                         .map(|e| e.to_string())
-                        .unwrap_or_default()
+                        .unwrap_or_else(|| "未知错误".to_string())
                 )
             };
             let _ = progress_tx.send((done_msg, 1.0));
@@ -282,15 +282,12 @@ impl RunnerInner {
                 state.notice = Some("素材已上传到云存储".to_string());
                 false
             } else {
-                state.notice = Some(format!(
-                    "素材上传失败：{}",
-                    error.clone().unwrap_or_default()
-                ));
+                state.notice = Some(Self::cloud_error_text("素材上传失败", error.as_deref()));
                 true
             }
         };
         if failed {
-            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+            self.report_cloud_error("云存储连接异常", error.as_deref());
         } else {
             // 刷新当前目录列表（显示新上传的素材文件）
             let id = self
@@ -328,12 +325,12 @@ impl RunnerInner {
                 state.notice = Some("已保存到云存储".to_string());
                 false
             } else {
-                state.notice = Some(format!("保存失败：{}", error.clone().unwrap_or_default()));
+                state.notice = Some(Self::cloud_error_text("保存失败", error.as_deref()));
                 true
             }
         };
         if failed {
-            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+            self.report_cloud_error("云存储连接异常", error.as_deref());
         } else {
             self.sync_cloud_to_dialogs();
         }

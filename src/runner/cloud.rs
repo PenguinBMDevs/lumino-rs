@@ -281,7 +281,7 @@ impl RunnerInner {
             }
         };
         if failed {
-            self.notify_cloud_failure(format!("云存储连接失败（{}）", error.unwrap_or_default()));
+            self.report_cloud_error("云存储连接失败", error.as_deref());
             return;
         }
         // 连接成功：清除历史提醒标志（状态实时更新）

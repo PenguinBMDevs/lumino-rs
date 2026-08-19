@@ -141,12 +141,12 @@ impl RunnerInner {
             if ok {
                 false
             } else {
-                state.notice = Some(format!("下载失败：{}", error.clone().unwrap_or_default()));
+                state.notice = Some(Self::cloud_error_text("下载失败", error.as_deref()));
                 true
             }
         };
         if failed {
-            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+            self.report_cloud_error("云存储连接异常", error.as_deref());
             return;
         }
         let Some(local) = local_path else { return };

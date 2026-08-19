@@ -26,8 +26,10 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) -> Option<canvas::Action<Message>> {
         // 检查 resize 手柄区域
         if Self::is_in_resize_zone(cursor_pos) {
+            // 无光标坐标时无法计算拖拽起点，放弃本次 resize（避免默认 0.0 引发缩放错乱）
+            let pos = cursor.position()?;
             state.resize_dragging = true;
-            state.resize_drag_start_y = cursor.position().unwrap_or_default().y;
+            state.resize_drag_start_y = pos.y;
             state.resize_start_height = bounds_size.height + TOOLBAR_HEIGHT;
             return None;
         }
@@ -128,8 +130,8 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         bounds_size: Size,
     ) -> Option<canvas::Action<Message>> {
         if state.resize_dragging {
-            let abs_cursor_y = cursor.position().unwrap_or_default().y;
-            let delta_y = state.resize_drag_start_y - abs_cursor_y;
+            let pos = cursor.position()?;
+            let delta_y = state.resize_drag_start_y - pos.y;
             let new_height = (state.resize_start_height + delta_y)
                 .clamp(VELOCITY_PANEL_MIN_HEIGHT, VELOCITY_PANEL_MAX_HEIGHT);
             let current_panel_height = bounds_size.height + TOOLBAR_HEIGHT;

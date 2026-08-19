@@ -103,12 +103,12 @@ impl RunnerInner {
                 }
                 false
             } else {
-                state.notice = Some(format!("操作失败：{}", error.clone().unwrap_or_default()));
+                state.notice = Some(Self::cloud_error_text("操作失败", error.as_deref()));
                 true
             }
         };
         if failed {
-            self.notify_cloud_failure(format!("云存储连接异常（{}）", error.unwrap_or_default()));
+            self.report_cloud_error("云存储连接异常", error.as_deref());
         } else {
             // 刷新当前目录列表
             let id = self
