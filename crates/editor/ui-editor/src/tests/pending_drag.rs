@@ -15,6 +15,7 @@
 //! - `deferred`：延迟提交流程、commit_current_edit 与点击空白处提交
 
 mod accumulate;
+mod collab_sync;
 mod commit;
 mod deferred;
 

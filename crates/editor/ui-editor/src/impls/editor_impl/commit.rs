@@ -4,6 +4,7 @@
 
 use crate::note::Note;
 use crate::{EditState, Editor};
+use lumino_editor_state::DragState;
 
 impl Editor {
     /// Push current state to history
@@ -83,6 +84,13 @@ impl Editor {
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
         let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
+        // 广播协作同步事件：批量移动（框选拖动）必须通知其他客户端，
+        // 否则对端音符状态不会改变（B 端收不到任何更新）。
+        // 与单音符拖动 `finalize_dragging` 共用同一套协作同步管线：
+        // 逐音符发射 `LocalNoteMoved`，由 Runner 转换为 `NoteBatchOperation(Move)`
+        // 并广播。此前该路径（commit_pending_drag → apply_move_ops_async）
+        // 完全静默，正是「A 端移动框选音符，B 端不动」的根因。
+        self.broadcast_selection_move(drag_state);
         match self.editor_state.data.apply_move_ops_async(ops, max_key) {
             Ok(true) => {
                 tracing::info!("Editor: 已启动 pending 批量拖动异步提交");
@@ -97,6 +105,37 @@ impl Editor {
                 self.pending_drag_state = None;
                 false
             }
+        }
+    }
+
+    /// 广播批量移动（框选拖动提交）到协作客户端。
+    ///
+    /// 批量移动与单音符拖动（`finalize_dragging`）共用同一套协作同步管线：
+    /// 逐音符发射 `LocalNoteMoved` 同步事件，由 Runner 转换为
+    /// `NoteBatchOperation(Move)` 并广播给其他客户端。`commit_pending_drag`
+    /// 此前完全不广播，导致协作对端无法感知框选移动——表现为「A 端移动了，
+    /// B 端音符状态不变」。本函数补全该缺失的广播，与移动提交一一对应。
+    ///
+    /// 每个被选中音符都发射一次，携带其**原始**位置（移动前 tick/key）与本次
+    /// 拖动的统一偏移，对端据此匹配本地音符并叠加相同偏移完成同步。
+    fn broadcast_selection_move(&self, drag_state: &DragState) {
+        let track_index = self.editor_state.data.current_track;
+        let tick_offset = drag_state.delta_tick as f32;
+        let key_offset = drag_state.delta_key;
+        for idx in drag_state.selected_indices() {
+            let Some(view) = self.editor_state.data.get_note_view(idx) else {
+                continue;
+            };
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_moved(
+                    view.tick,
+                    view.key,
+                    view.length,
+                    tick_offset,
+                    key_offset,
+                    track_index,
+                ),
+            ));
         }
     }
 
