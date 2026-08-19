@@ -110,8 +110,17 @@ impl Host {
                     self.ui_dirty = true;
                 }
                 self.window_ctx.window.request_redraw();
-            } else if self.root.editor.update_auto_scroll(tick) {
-                // 非播放状态：仅当自动滚动触发时才重绘（旧行为）
+            } else {
+                // 播放已停止（手动停止或自然结束）：清空键盘演奏颜色，
+                // 恢复无颜色状态。注意：自然结束时 `playback_position` 仍停在结束
+                // 位置（>0），故不能依赖 `update_playback_key_colors` 的 `== 0` 分支，
+                // 必须在此显式清空。
+                self.root.editor.clear_playback_key_colors();
+                // 停止后仍需按旧行为处理自动滚动触发
+                if self.root.editor.update_auto_scroll(tick) {
+                    self.window_ctx.window.request_redraw();
+                }
+                // 颜色变化需重绘键盘覆盖层
                 self.window_ctx.window.request_redraw();
             }
         }

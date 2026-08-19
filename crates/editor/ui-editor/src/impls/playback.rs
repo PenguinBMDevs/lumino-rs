@@ -160,4 +160,21 @@ impl Editor {
         }
         self.playback_key_colors = new_colors;
     }
+
+    /// 清空播放键色并重置增量扫描状态
+    ///
+    /// 停止播放（手动停止或自然结束）后调用，使键盘恢复为「无颜色」状态。
+    ///
+    /// 仅重置颜色数组与扫描缓存，**不改变** `playback_position`：
+    /// 自然结束时播放指示线应停留在结束位置（而非跳回 0），
+    /// 手动停止由调用方负责复位 `playback_position`。
+    ///
+    /// 当 `playback_key_colors_enabled == false` 时颜色数组本就是全零，调用安全无损。
+    pub fn clear_playback_key_colors(&mut self) {
+        puffin::profile_function!();
+        if self.playback_key_colors != [0u8; 1024] {
+            self.playback_key_colors = [0u8; 1024];
+        }
+        self.playback_scan_state = PlaybackScanState::default();
+    }
 }

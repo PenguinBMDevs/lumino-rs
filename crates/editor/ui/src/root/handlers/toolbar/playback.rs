@@ -60,6 +60,8 @@ impl ToolbarHandler {
             manager.stop();
             root.toolbar.is_playing = false;
             root.editor.playback_position = 0.0;
+            // 停止后清空键盘演奏颜色，恢复无颜色状态
+            root.editor.clear_playback_key_colors();
             tracing::info!("Root: 停止播放");
         }
     }
