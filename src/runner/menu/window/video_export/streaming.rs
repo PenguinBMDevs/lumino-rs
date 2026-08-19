@@ -11,15 +11,15 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use bytemuck;
-use lumino_extras::palette::current_track_color_f32;
-use lumino_gfx::{
-    NoteInstance, RenderParams, calculate_border_width, generate_ruler_instances, pack_key_color,
-};
+use lumino_gfx::{NoteInstance, RenderParams};
 use lumino_midi_loader::TICK_SEARCH_BUFFER;
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, MidiMessage, TrackEventKind};
 use rayon::prelude::*;
 use rustc_hash::FxHashMap;
+
+use super::render_params::{SortableNote, build_note_rectangle_params_from_visible};
+use super::{seconds_to_tick, ticks_to_seconds};
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 数据记录
@@ -380,7 +380,7 @@ fn build_frame_index(
         .into_par_iter()
         .map(|frame_idx| {
             let frame_time = frame_idx as f64 / fps;
-            let center_tick = seconds_to_tick(frame_time, ppqn, tempos);
+            let center_tick = seconds_to_tick(frame_time, tempos, ppqn);
             let vp_start = center_tick;
             let vp_end = vp_start.saturating_add(viewport_tick_span);
 
@@ -412,55 +412,6 @@ fn build_frame_index(
 // ═══════════════════════════════════════════════════════════════════════════════
 // 时间转换（与 demo / video_export.rs 保持一致）
 // ═══════════════════════════════════════════════════════════════════════════════
-
-fn ticks_to_seconds(tick: u64, ppqn: u32, tempos: &[(u32, f32)]) -> f64 {
-    let mut total_secs = 0.0_f64;
-    let mut prev_tick: u32 = 0;
-    let mut prev_bpm: f32 = 120.0;
-
-    for &(t, bpm) in tempos {
-        let segment_ticks = (t.saturating_sub(prev_tick)) as u64;
-        let segment_secs = segment_ticks as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64);
-        total_secs += segment_secs;
-
-        if tick <= t as u64 {
-            let within_ticks = tick.saturating_sub(prev_tick as u64);
-            let within_secs = within_ticks as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64);
-            return total_secs - segment_secs + within_secs;
-        }
-
-        prev_tick = t;
-        prev_bpm = bpm;
-    }
-
-    let remaining = tick.saturating_sub(prev_tick as u64);
-    total_secs + remaining as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64)
-}
-
-fn seconds_to_tick(secs: f64, ppqn: u32, tempos: &[(u32, f32)]) -> u32 {
-    let mut accum_secs = 0.0_f64;
-    let mut prev_tick: u32 = 0;
-    let mut prev_bpm: f32 = 120.0;
-
-    for &(t, bpm) in tempos {
-        let segment_ticks = (t.saturating_sub(prev_tick)) as u64;
-        let segment_secs = segment_ticks as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64);
-
-        if accum_secs + segment_secs >= secs {
-            let within_secs = secs - accum_secs;
-            let within_ticks = (within_secs * prev_bpm as f64 * ppqn as f64 / 60.0) as u32;
-            return prev_tick + within_ticks;
-        }
-
-        accum_secs += segment_secs;
-        prev_tick = t;
-        prev_bpm = bpm;
-    }
-
-    let remaining_secs = secs - accum_secs;
-    let remaining_ticks = (remaining_secs * prev_bpm as f64 * ppqn as f64 / 60.0) as u32;
-    prev_tick + remaining_ticks
-}
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // 阶段 2：按帧流式读取并构建 RenderParams
@@ -585,7 +536,7 @@ impl StreamingNoteSource {
         }
 
         let time_sec = frame_idx as f64 / fps;
-        let tick = seconds_to_tick(time_sec, self.ppqn, &self.tempo_changes);
+        let tick = seconds_to_tick(time_sec, &self.tempo_changes, self.ppqn);
         let params = build_video_render_params_from_notes(
             width,
             height,
@@ -601,7 +552,8 @@ impl StreamingNoteSource {
 
 /// 从内存中的 NoteRecord 列表构建 RenderParams
 ///
-/// 与 video_export.rs 中 `build_video_render_params` 行为一致，但数据源是流式读取的音符。
+/// 与内存模式共享排序分桶 + NoteInstance 构建（见 `render_params::build_note_rectangle_params_from_visible`），
+/// 此处仅负责线性过滤可见音符并保留流式首帧诊断日志。
 fn build_video_render_params_from_notes(
     width: u32,
     height: u32,
@@ -610,40 +562,15 @@ fn build_video_render_params_from_notes(
     ppq: u32,
     time_signatures: &[(u32, u8, u8)],
 ) -> RenderParams {
-    const KEY_COUNT: u16 = 128;
-
-    let keyboard_width = 60.0f32;
-    let ruler_height = 30.0f32;
-    let width_f = width.max(1) as f32;
-    let height_f = height.max(1) as f32;
-
     let viewport_tick_span = (ppq * 16).max(1) as f32;
-    let zoom_x = (width_f - keyboard_width) / viewport_tick_span;
-    let key_count_f = KEY_COUNT as f32;
-    let zoom_y = (height_f - ruler_height) / key_count_f;
-
-    let scroll_x = tick as f32 * zoom_x;
-    let scroll_y = 0.0f32;
-
-    let grid_instances = Vec::new();
-    let ruler_instances = generate_ruler_instances(
-        width_f,
-        keyboard_width,
-        ruler_height,
-        scroll_x,
-        zoom_x,
-        ppq,
-        time_signatures,
-    );
-    let keyboard_instances = Vec::new();
-
     let tick_start = tick;
     let tick_end = tick.saturating_add(viewport_tick_span as u32);
 
-    let mut temp: Vec<SortableNote> = Vec::with_capacity(notes.len());
+    // 线性过滤收集可见音符（流式缓存记录无需二分：单帧窗口内记录数有限）
+    let mut visible: Vec<SortableNote> = Vec::with_capacity(notes.len());
     for n in notes.iter() {
         if n.end_tick >= tick_start && n.start_tick <= tick_end {
-            temp.push(SortableNote {
+            visible.push(SortableNote {
                 key: n.key as u8,
                 start_tick: n.start_tick,
                 length: n.length(),
@@ -651,55 +578,16 @@ fn build_video_render_params_from_notes(
             });
         }
     }
-    // 按 key 计数分桶（O(N)），替代 O(N log N) 全量排序：
-    // 高密集度段落（单帧 10W+ 音符）排序是每帧 CPU 热点，key 范围固定时
-    // 用计数分桶省去 log 因子。桶内按 (start_tick, track 倒序) 稳定排序，
-    // 与原 (key, start_tick, u16::MAX - track_idx) 排序键去掉 key 维度后等价。
-    const KEY_BUCKETS: usize = 256;
-    let mut counts = [0u32; KEY_BUCKETS];
-    for n in temp.iter() {
-        counts[n.key as usize] += 1;
-    }
-    let mut offsets = [0u32; KEY_BUCKETS + 1];
-    for k in 0..KEY_BUCKETS {
-        offsets[k + 1] = offsets[k] + counts[k];
-    }
-    let mut sorted_temp = vec![
-        SortableNote {
-            key: 0,
-            start_tick: 0,
-            length: 0,
-            track_idx: 0,
-        };
-        temp.len()
-    ];
-    let mut cursor = offsets[..KEY_BUCKETS].to_vec();
-    for n in temp.iter() {
-        let k = n.key as usize;
-        sorted_temp[cursor[k] as usize] = n.clone();
-        cursor[k] += 1;
-    }
-    let mut seg_start = 0usize;
-    for k in 0..KEY_BUCKETS {
-        let seg_end = offsets[k + 1] as usize;
-        sorted_temp[seg_start..seg_end].sort_by_key(|n| (n.start_tick, u16::MAX - n.track_idx));
-        seg_start = seg_end;
-    }
-    let temp = sorted_temp;
-
-    let note_instances: Vec<NoteInstance> = temp
-        .into_iter()
-        .map(|n| {
-            let key_color = pack_key_color(n.key, current_track_color_f32(n.track_idx as usize));
-            NoteInstance {
-                start_length: [n.start_tick as f32, (n.length as f32).max(1.0)],
-                key_color,
-                // wasabi 语义：键轴方向像素长度 / 可见键数；
-                // lumino 钢琴卷帘键轴垂直 → 用画布高度（减标尺）映射 wasabi 的 width_pixels
-                border_width: calculate_border_width(height_f - ruler_height, KEY_COUNT as f32),
-            }
-        })
-        .collect();
+    let mut note_instances: Vec<NoteInstance> = Vec::new();
+    let params = build_note_rectangle_params_from_visible(
+        width,
+        height,
+        tick,
+        &mut visible,
+        &mut note_instances,
+        ppq,
+        time_signatures,
+    );
 
     // 首帧诊断：定位音符缺失问题
     static STREAM_DIAG_COUNTER: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
@@ -715,36 +603,7 @@ fn build_video_render_params_from_notes(
             tick_end,
         );
     }
-
-    let max_key_index = (KEY_COUNT.saturating_sub(1)) as f32;
-    let canvas_size = (width_f, height_f);
-
-    RenderParams {
-        viewport_size: (width.max(1), height.max(1)),
-        logical_size: (width_f, height_f),
-        scale_factor: 1.0,
-        scroll: (scroll_x, scroll_y),
-        zoom: (zoom_x, zoom_y),
-        keyboard_width,
-        ruler_height,
-        note_instances,
-        grid_instances,
-        ruler_instances,
-        keyboard_instances,
-        ppq: ppq as f32,
-        max_key_index,
-        canvas_size,
-        time_signatures: time_signatures.to_vec(),
-        ..Default::default()
-    }
-}
-
-#[derive(Clone)]
-struct SortableNote {
-    key: u8,
-    start_tick: u32,
-    length: u32,
-    track_idx: u16,
+    params
 }
 
 #[cfg(test)]
@@ -803,7 +662,7 @@ mod tests {
         let viewport_span = (PPQN as f64 * 16.0) as u32;
         for (frame_idx, entry) in index.iter().enumerate() {
             let frame_time = frame_idx as f64 / FPS;
-            let vp_start = seconds_to_tick(frame_time, PPQN, &TEMPOS);
+            let vp_start = seconds_to_tick(frame_time, &TEMPOS, PPQN);
             let vp_end = vp_start.saturating_add(viewport_span);
             let range = entry.note_offset as usize..(entry.note_offset + entry.note_count) as usize;
 

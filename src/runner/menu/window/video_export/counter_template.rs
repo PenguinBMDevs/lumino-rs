@@ -24,8 +24,9 @@ use super::counter_format::{
     fmt_mmss, fmt_mmss_fff, format_float, format_int, format_percent, use_comma,
 };
 use super::counter_stats::{
-    CounterRenderConfig, CounterStats, current_bpm, current_time_signature, ticks_to_seconds,
+    CounterRenderConfig, CounterStats, current_bpm, current_time_signature,
 };
+use super::ticks_to_seconds;
 
 /// 模板渲染所需的全部上下文值。
 pub(super) struct TemplateContext<'a> {
@@ -58,7 +59,7 @@ pub(super) fn render_template(ctx: &TemplateContext<'_>) -> String {
     let (tsn, tsd) = current_time_signature(&doc.time_signatures, tick);
 
     let total_ticks = doc.total_ticks;
-    let time_secs = ticks_to_seconds(tick, &doc.tempo_changes, ppq);
+    let time_secs = ticks_to_seconds(tick as u64, ppq, &doc.tempo_changes);
     let rem_secs = (duration - time_secs).max(0.0);
 
     // 小节数（按当前拍号计算每小节 tick 数）

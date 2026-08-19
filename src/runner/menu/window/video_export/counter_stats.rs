@@ -187,31 +187,11 @@ pub(super) fn current_time_signature(time_signatures: &[(u32, u8, u8)], tick: u3
     }
 }
 
-/// 将 tick 转换为秒（tempo 分段积分，与 streaming.rs 的 ticks_to_seconds 等价）。
-pub(super) fn ticks_to_seconds(tick: u32, tempo_changes: &[(u32, f32)], ppq: u32) -> f64 {
-    if ppq == 0 {
-        return tick as f64;
-    }
-    let mut total_secs = 0.0_f64;
-    let mut prev_tick = 0u32;
-    let mut prev_bpm = 120.0f64;
-    for &(t, bpm) in tempo_changes {
-        let seg_ticks = t.saturating_sub(prev_tick) as f64;
-        let seg_secs = seg_ticks * 60.0 / (prev_bpm * ppq as f64);
-        total_secs += seg_secs;
-        if tick <= t {
-            let within = tick.saturating_sub(prev_tick) as f64;
-            return total_secs - seg_secs + within * 60.0 / (prev_bpm * ppq as f64);
-        }
-        prev_tick = t;
-        prev_bpm = bpm as f64;
-    }
-    let remaining = tick.saturating_sub(prev_tick) as f64;
-    total_secs + remaining * 60.0 / (prev_bpm * ppq as f64)
-}
+// tempo 换算统一使用 `super::ticks_to_seconds`（video_export.rs 单一实现）
 
 #[cfg(test)]
 mod tests {
+    use super::super::ticks_to_seconds;
     use super::*;
     use lumino_midi_loader::{NoteEvent, TrackManager};
 
@@ -367,11 +347,11 @@ mod tests {
     #[test]
     fn test_ticks_to_seconds() {
         let tempos = vec![(0u32, 120.0f32), (960, 60.0)];
-        assert!((ticks_to_seconds(480, &tempos, 480) - 0.5).abs() < 1e-9);
-        assert!((ticks_to_seconds(960, &tempos, 480) - 1.0).abs() < 1e-9);
+        assert!((ticks_to_seconds(480u64, 480, &tempos) - 0.5).abs() < 1e-9);
+        assert!((ticks_to_seconds(960u64, 480, &tempos) - 1.0).abs() < 1e-9);
         // 60 BPM 段：960→1920 tick = 2 秒；总 1.0 + 2.0 = 3.0 秒
-        assert!((ticks_to_seconds(1920, &tempos, 480) - 3.0).abs() < 1e-9);
+        assert!((ticks_to_seconds(1920u64, 480, &tempos) - 3.0).abs() < 1e-9);
         // 空 tempo 回退 120 BPM：480 tick = 0.5 秒
-        assert!((ticks_to_seconds(480, &[], 480) - 0.5).abs() < 1e-9);
+        assert!((ticks_to_seconds(480u64, 480, &[]) - 0.5).abs() < 1e-9);
     }
 }

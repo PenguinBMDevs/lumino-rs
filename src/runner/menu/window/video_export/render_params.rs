@@ -90,6 +90,60 @@ fn build_note_rectangle_render_params(
     note_instances_out: &mut Vec<NoteInstance>,
 ) -> RenderParams {
     // 视频导出始终使用标准 128 键 MIDI 键盘
+    let viewport_tick_span = (ppq * 16).max(1) as f32;
+    let tick_start = tick;
+    let tick_end = tick.saturating_add(viewport_tick_span as u32);
+
+    // 每轨按 start_tick 有序 → 二分窗口定位，避免每帧 O(N) 全量遍历
+    visible_notes.clear();
+    for (track_idx, track_notes) in document.notes.iter().enumerate() {
+        if track_notes.is_empty() {
+            continue;
+        }
+        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+        for n in track_notes.iter().take(search_end) {
+            if n.end_tick >= tick_start && n.start_tick <= tick_end {
+                visible_notes.push(SortableNote {
+                    key: n.key,
+                    start_tick: n.start_tick,
+                    length: n.length(),
+                    track_idx: track_idx as u16,
+                });
+            }
+        }
+    }
+
+    // 排序分桶 + NoteInstance 构建 + RenderParams 组装（与流式模式共享）
+    build_note_rectangle_params_from_visible(
+        width,
+        height,
+        tick,
+        visible_notes,
+        note_instances_out,
+        ppq,
+        &document.time_signatures,
+    )
+}
+
+/// 从可见音符构建 NoteRectangle 模式 RenderParams（内存模式与流式模式共享）。
+///
+/// 调用方负责收集可见音符（内存模式：轨道二分窗口；流式模式：线性过滤），
+/// 本函数负责：计数分桶排序 + NoteInstance 构建 + RenderParams 组装。
+///
+/// 排序说明：按 key 计数分桶（O(N)），替代 O(N log N) 全量排序——高密集度段落
+/// （单帧 10W+ 音符）排序是每帧 CPU 热点，key 范围固定时用计数分桶省去 log 因子。
+/// 桶内按 (start_tick, track 倒序) 稳定排序，与原 (key, start_tick, u16::MAX - track_idx)
+/// 排序键去掉 key 维度后等价。
+#[allow(clippy::too_many_arguments)]
+pub(super) fn build_note_rectangle_params_from_visible(
+    width: u32,
+    height: u32,
+    tick: u32,
+    visible_notes: &mut Vec<SortableNote>,
+    note_instances_out: &mut Vec<NoteInstance>,
+    ppq: u32,
+    time_signatures: &[(u32, u8, u8)],
+) -> RenderParams {
     const KEY_COUNT: u16 = 128;
 
     let keyboard_width = 60.0f32;
@@ -116,35 +170,11 @@ fn build_note_rectangle_render_params(
         scroll_x,
         zoom_x,
         ppq,
-        &document.time_signatures,
+        time_signatures,
     );
     let keyboard_instances = Vec::new();
 
-    let tick_start = tick;
-    let tick_end = tick.saturating_add(viewport_tick_span as u32);
-
-    // 每轨按 start_tick 有序 → 二分窗口定位，避免每帧 O(N) 全量遍历
-    visible_notes.clear();
-    for (track_idx, track_notes) in document.notes.iter().enumerate() {
-        if track_notes.is_empty() {
-            continue;
-        }
-        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in track_notes.iter().take(search_end) {
-            if n.end_tick >= tick_start && n.start_tick <= tick_end {
-                visible_notes.push(SortableNote {
-                    key: n.key,
-                    start_tick: n.start_tick,
-                    length: n.length(),
-                    track_idx: track_idx as u16,
-                });
-            }
-        }
-    }
-    // 按 key 计数分桶（O(N)），替代 O(N log N) 全量排序：
-    // 高密集度段落（单帧 10W+ 音符）排序是每帧 CPU 热点，key 范围固定时
-    // 用计数分桶省去 log 因子。桶内按 (start_tick, track 倒序) 稳定排序，
-    // 与原 (key, start_tick, u16::MAX - track_idx) 排序键去掉 key 维度后等价。
+    // 按 key 计数分桶（O(N)）：可见音符已由调用方收集，此处只排序
     const KEY_BUCKETS: usize = 256;
     let mut counts = [0u32; KEY_BUCKETS];
     for n in visible_notes.iter() {
@@ -209,7 +239,7 @@ fn build_note_rectangle_render_params(
         ppq: ppq as f32,
         max_key_index,
         canvas_size,
-        time_signatures: document.time_signatures.clone(),
+        time_signatures: time_signatures.to_vec(),
         ..Default::default()
     }
 }

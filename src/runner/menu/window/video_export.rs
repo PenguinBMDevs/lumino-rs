@@ -85,6 +85,37 @@ pub(super) fn seconds_to_tick(secs: f64, tempo_changes: &[(u32, f32)], ppq: u32)
     prev_tick + (remaining * ppq as f64 * prev_bpm / 60.0) as u32
 }
 
+/// 从 tick 转换到秒（tempo 分段积分；默认 120 BPM）
+///
+/// 统一入口：内存模式 / 流式模式 / 计数器渲染共用此实现，
+/// 原 `streaming.rs`、`counter_stats.rs` 中的重复实现已收敛于此。
+pub(super) fn ticks_to_seconds(tick: u64, ppqn: u32, tempos: &[(u32, f32)]) -> f64 {
+    if ppqn == 0 {
+        return tick as f64;
+    }
+    let mut total_secs = 0.0_f64;
+    let mut prev_tick: u32 = 0;
+    let mut prev_bpm: f32 = 120.0;
+
+    for &(t, bpm) in tempos {
+        let segment_ticks = (t.saturating_sub(prev_tick)) as u64;
+        let segment_secs = segment_ticks as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64);
+        total_secs += segment_secs;
+
+        if tick <= t as u64 {
+            let within_ticks = tick.saturating_sub(prev_tick as u64);
+            let within_secs = within_ticks as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64);
+            return total_secs - segment_secs + within_secs;
+        }
+
+        prev_tick = t;
+        prev_bpm = bpm;
+    }
+
+    let remaining = tick.saturating_sub(prev_tick as u64);
+    total_secs + remaining as f64 * 60.0 / (prev_bpm as f64 * ppqn as f64)
+}
+
 // ── 键盘贴图 ──
 
 pub use keyboard::generate_keyboard_texture;
