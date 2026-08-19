@@ -14,11 +14,10 @@
 
 use iced_wgpu::wgpu;
 
-use crate::editor::grid::theme::ThemeExt;
 use crate::host::Host;
 use crate::right_sidebar::core::RESIZE_HANDLE_WIDTH;
 use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
-    KeyboardRenderer, KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING,
+    KeyboardRenderer, KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT,
 };
 
 // 子模块声明
@@ -81,29 +80,26 @@ impl Host {
     /// 渲染产物为 iced `image::Handle`，缓存于 `RightSidebar.piano_waterfall`，
     /// 仅当（宽度 / 高度 / 键数 / 主题）任一参数变化时才重绘，避免每帧 GPU 读回。
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
-        // 先取出主题（拥有所有权，避免与后续可变借用冲突）
-        let theme = self.root.theme();
-
         let active = self.root.right_sidebar.panel_visible
             && self.root.right_sidebar.active_panel
                 == crate::right_sidebar::RightSidebarPanel::PianoWaterfall;
 
-        // 键盘实际绘制内宽 = 面板内容宽 - 两侧内边距
-        let inner_width = (self.root.right_sidebar.panel_width
-            - RESIZE_HANDLE_WIDTH
-            - PANEL_PADDING * 2.0)
-            .max(1.0);
-        let render_height = (inner_width * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
-        let width = inner_width as u32;
-        let height = render_height as u32;
-        let key_count = self.root.right_sidebar.piano_waterfall.key_count as u32;
-        let is_dark = !theme.is_light();
+        // 键数跟随全局设置：开启 256 键扩展则为 256，否则 128
+        let key_count: u32 = if self.root.settings.display.enable_256key {
+            256
+        } else {
+            128
+        };
 
-        // 参数签名（脏判断）：宽度 / 高度 / 键数 / 主题
+        // 键盘实际绘制宽度 = 面板内容宽（与显示宽度一致，无边框/留白，保证清晰不拉伸）
+        let width = (self.root.right_sidebar.panel_width - RESIZE_HANDLE_WIDTH).max(1.0) as u32;
+        let render_height = ((width as f32) * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
+        let height = render_height as u32;
+
+        // 参数签名（脏判断）：宽度 / 高度 / 键数
         let mut sig = width as u64;
         sig = sig.wrapping_mul(31).wrapping_add(height as u64);
         sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
-        sig = sig.wrapping_mul(31).wrapping_add(if is_dark { 1 } else { 0 });
 
         let state = &mut self.root.right_sidebar.piano_waterfall;
         if !active {
@@ -129,7 +125,6 @@ impl Host {
             width,
             height,
             key_count,
-            &theme,
         );
 
         let handle = iced_core::image::Handle::from_rgba(width, height, bytes);

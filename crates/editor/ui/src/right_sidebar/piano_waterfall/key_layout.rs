@@ -4,7 +4,7 @@
 //! - 白键音级：C D E F G A B（0,2,4,5,7,9,11）
 //! - 黑键音级：C# D# F# G# A#（1,3,6,8,10）
 //! - 黑键位于相邻白键边界，中心对齐到「左侧白键数 × 白键宽度」
-//! - 黑键宽度约为白键的 62%，高度约为总高的 62%（经典钢琴外观）
+//! - 黑键宽度约为白键的 58%（与 Miditrail/瀑布流渲染器一致），高度约为总高的 62%（经典钢琴外观）
 //!
 //! 绘制顺序约定：调用方应先画全部白键、再画全部黑键，使黑键覆盖在白键之上。
 
@@ -48,8 +48,8 @@ pub fn build_layout(width: f32, height: f32, key_count: u32) -> Vec<KeyRect> {
         .max(1);
     let white_w = width / white_count as f32;
 
-    // 经典钢琴样式尺寸
-    let black_w = white_w * 0.62;
+    // 经典钢琴样式尺寸（黑键宽度比与瀑布流/Miditrail 渲染器一致）
+    let black_w = white_w * 0.58;
     let black_h = height * 0.62;
 
     let mut rects = Vec::with_capacity(key_count as usize);

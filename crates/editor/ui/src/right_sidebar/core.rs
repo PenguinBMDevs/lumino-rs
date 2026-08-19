@@ -226,8 +226,8 @@ pub struct RightSidebar {
 /// 钢琴瀑布流预览面板状态
 ///
 /// 持有离屏 wgpu 渲染得到的键盘纹理 `Handle`，以及用于脏标记的参数签名，
-/// 仅在面板宽度 / 键数 / 主题变化时重绘，避免每帧 GPU 读回开销。
-#[derive(Debug, Clone)]
+/// 仅在面板宽度 / 键数（由 `enable_256key` 设置决定）/ 主题变化时重绘，避免每帧 GPU 读回开销。
+#[derive(Debug, Clone, Default)]
 pub struct PianoWaterfallState {
     /// 当前键盘纹理（iced `image::Handle`），`None` 表示尚未渲染或面板不可见
     pub handle: Option<iced_core::image::Handle>,
@@ -235,22 +235,8 @@ pub struct PianoWaterfallState {
     pub rendered_width: u32,
     /// 已渲染纹理的像素高度
     pub rendered_height: u32,
-    /// 上次渲染的参数签名（宽度/高度/键数/主题），用于脏判断
+    /// 上次渲染的参数签名（宽度/高度/键数），用于脏判断
     pub cached_signature: Option<u64>,
-    /// 键盘键数（默认 128，可扩展至 256 支持更大音域）
-    pub key_count: u16,
-}
-
-impl Default for PianoWaterfallState {
-    fn default() -> Self {
-        Self {
-            handle: None,
-            rendered_width: 0,
-            rendered_height: 0,
-            cached_signature: None,
-            key_count: 128,
-        }
-    }
 }
 
 impl RightSidebar {

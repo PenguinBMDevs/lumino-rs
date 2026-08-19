@@ -1,26 +1,24 @@
 //! 右侧栏钢琴瀑布流预览面板
 //!
 //! 底部以「离屏 wgpu 渲染 → iced `image::Handle`」的方式绘制标准钢琴键盘
-//! （默认 128 键，可切换至 256 键以拓展更大音域）。键盘纹理由 Host 在 GPU
-//! 上下文持有者处渲染并缓存，面板仅负责展示；此模块负责布局与交互入口
-//! （128/256 键切换）。瀑布流预览主体（音符随播放下落）留待后续迭代接入。
+//! （键数跟随全局 `enable_256key` 设置：开启为 256 键，否则 128 键）。
+//! 键盘纹理由 Host 在 GPU 上下文持有者处渲染并缓存，面板仅负责展示。
+//! 瀑布流预览主体（音符随播放下落）留待后续迭代接入。
 
 pub(crate) mod key_layout;
 pub(crate) mod keyboard_renderer;
 
-use iced_core::{Length, alignment};
-use iced_widget::{Column, button, container, scrollable, text};
+use iced_core::Length;
+use iced_widget::{Column, container, scrollable, text};
+
 use lumino_extras::i18n::{Language, main_translations};
-use lumino_message::RightSidebarAction;
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
-use crate::{Element, Message, Theme, window};
+use crate::{Element, Theme, window};
 
-use self::keyboard_renderer::{
-    KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING,
-};
+use self::keyboard_renderer::{KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING};
 
-/// 渲染钢琴瀑布流预览面板内容（标题 + 说明 + 键数切换 + 键盘图像）
+/// 渲染钢琴瀑布流预览面板内容（标题 + 说明 + 底部键盘图像）
 pub(super) fn panel<'a>(
     right_sidebar: &'a RightSidebar,
     language: Language,
@@ -28,17 +26,6 @@ pub(super) fn panel<'a>(
 ) -> Element<'a> {
     let t = main_translations(language);
     let state = &right_sidebar.piano_waterfall;
-
-    // 键数切换按钮：在 128 / 256 之间切换（拓展更大音域）
-    let toggle = button(
-        text(format!("键数：{}", state.key_count))
-            .size(12)
-            .align_x(alignment::Horizontal::Center),
-    )
-    .width(Length::Fill)
-    .on_press(Message::RightSidebar(
-        RightSidebarAction::PianoWaterfallKeyCountToggled,
-    ));
 
     let top_col = Column::new()
         .spacing(8)
@@ -52,10 +39,9 @@ pub(super) fn panel<'a>(
                 .style(|theme: &Theme| text::Style {
                     color: Some(theme.extended_palette().background.strong.text),
                 }),
-        )
-        .push(toggle);
+        );
 
-    // 键盘固定在面板底部（独立于上方滚动区），随面板宽度同步变更尺寸
+    // 键盘固定在面板底部（独立于上方滚动区，无边框/留白，随面板宽度同步变更尺寸）
     let bottom_section: crate::Element<'a> = if let Some(handle) = &state.handle {
         iced_widget::image::Image::<iced_core::image::Handle>::new(handle.clone())
             .width(Length::Fill)
@@ -69,18 +55,11 @@ pub(super) fn panel<'a>(
             })
             .into()
     };
-    let bottom_bar = container(bottom_section)
-        .width(Length::Fill)
-        .padding(PANEL_PADDING)
-        .style(|theme: &Theme| {
-            let palette = theme.extended_palette();
-            container::Style::default().background(palette.background.weak.color)
-        });
 
     let content_col = Column::new()
         .width(Length::Fill)
         .push(scrollable(top_col).height(Length::Fill))
-        .push(bottom_bar);
+        .push(bottom_section);
 
     let content = container(content_col)
         .width(Length::Fixed(

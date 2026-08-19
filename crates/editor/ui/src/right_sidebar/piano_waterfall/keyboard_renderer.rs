@@ -11,12 +11,9 @@ use wgpu::util::DeviceExt;
 
 use tracing::warn;
 
-use crate::Theme;
-use crate::editor::grid::theme::ThemeExt;
-
 use super::key_layout::{self, KeyRect};
 
-/// 键盘渲染配色（0..1 线性，由主题推导）
+/// 键盘渲染配色（0..1 线性）
 pub struct KeyboardColors {
     /// 键盘背景（缝隙/留白）
     pub bg: [f32; 4],
@@ -27,25 +24,26 @@ pub struct KeyboardColors {
 }
 
 impl KeyboardColors {
-    /// 从主题推导配色（与主编辑器瀑布流键盘一致）
-    pub fn from_theme(theme: &Theme) -> Self {
-        let bg = theme.keyboard_background_color();
-        let white = theme.white_key_color();
-        let black = theme.black_key_color();
+    /// 纯黑白配色（白键/背景纯白，黑键纯黑），无边框/缝隙
+    pub fn pure() -> Self {
         Self {
-            bg: [bg.r, bg.g, bg.b, bg.a],
-            white: [white.r, white.g, white.b, white.a],
-            black: [black.r, black.g, black.b, black.a],
+            bg: [1.0, 1.0, 1.0, 1.0],
+            white: [1.0, 1.0, 1.0, 1.0],
+            black: [0.0, 0.0, 0.0, 1.0],
         }
     }
 }
 
 /// 键盘高度相对宽度的比例（面板宽度变化时高度联动）
-pub(crate) const KEY_HEIGHT_RATIO: f32 = 0.18;
+///
+/// 与视频导出渲染的瀑布流钢琴键盘保持一致：导出默认 1920×1080，
+/// 键盘高 = 帧高 × 12% = 129.6px，键盘宽 = 帧宽 = 1920px，
+/// → 高宽比 = 0.12 × (1080/1920) = 0.0675。
+pub(crate) const KEY_HEIGHT_RATIO: f32 = 0.0675;
 /// 键盘最小高度（像素）
-pub(crate) const MIN_KEY_HEIGHT: f32 = 48.0;
+pub(crate) const MIN_KEY_HEIGHT: f32 = 36.0;
 /// 键盘最大高度（像素）
-pub(crate) const MAX_KEY_HEIGHT: f32 = 180.0;
+pub(crate) const MAX_KEY_HEIGHT: f32 = 140.0;
 /// 面板内容内边距（用于计算键盘实际绘制宽度）
 pub(crate) const PANEL_PADDING: f32 = 8.0;
 
@@ -309,7 +307,7 @@ impl KeyboardRenderer {
         rgba
     }
 
-    /// 便捷方法：按布局与主题渲染并返回可直接用于 `Handle::from_rgba` 的字节
+    /// 便捷方法：按布局渲染（纯黑白）并返回可直接用于 `Handle::from_rgba` 的字节
     pub fn render_keyboard(
         &self,
         device: &wgpu::Device,
@@ -317,10 +315,9 @@ impl KeyboardRenderer {
         width: u32,
         height: u32,
         key_count: u32,
-        theme: &Theme,
     ) -> Vec<u8> {
         let keys = key_layout::build_layout(width as f32, height as f32, key_count);
-        let colors = KeyboardColors::from_theme(theme);
+        let colors = KeyboardColors::pure();
         // 白键在前、黑键在后，保证黑键覆盖在白键之上
         let mut ordered = keys;
         ordered.sort_by_key(|k| k.is_black);
