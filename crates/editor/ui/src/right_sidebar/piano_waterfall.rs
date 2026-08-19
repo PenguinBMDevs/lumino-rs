@@ -1,15 +1,16 @@
 //! 右侧栏钢琴瀑布流预览面板
 //!
-//! 底部以「离屏 wgpu 渲染 → iced `image::Handle`」的方式绘制标准钢琴键盘
-//! （键数跟随全局 `enable_256key` 设置：开启为 256 键，否则 128 键）。
-//! 键盘纹理由 Host 在 GPU 上下文持有者处渲染并缓存，面板仅负责展示。
-//! 瀑布流预览主体（音符随播放下落）留待后续迭代接入。
+//! 以「离屏 wgpu 渲染 → iced `image::Handle`」的方式绘制：
+//! - 底部标准钢琴键盘（键数跟随全局 `enable_256key`：开启 256 键，否则 128 键）；
+//! - 上方下落式音符瀑布流，复用渲染线程活体 GPU 实例缓冲（禁止第二份拷贝），
+//!   配色与卷帘洋葱皮逐位一致，主音轨音符显示为蓝色，滚动与卷帘 X 缩放/滚动同步。
+//! 纹理由 Host 在 GPU 上下文持有者处渲染并缓存，面板仅负责展示。
 
 pub(crate) mod key_layout;
 pub(crate) mod keyboard_renderer;
 
 use iced_core::Length;
-use iced_widget::{Column, container, scrollable, text};
+use iced_widget::{Column, container, text};
 
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -31,21 +32,13 @@ pub(super) fn panel<'a>(
         .spacing(8)
         .padding(PANEL_PADDING)
         .width(Length::Fill)
-        .push(panel_header(format!("{}预览", t.piano_waterfall), _window))
-        .push(
-            text("钢琴瀑布流预览即将在此处呈现：音符将随播放进度自上而下流动，\
-                形成类似瀑布的可视化。当前为功能入口占位，数据接入待后续迭代。")
-                .size(12)
-                .style(|theme: &Theme| text::Style {
-                    color: Some(theme.extended_palette().background.strong.text),
-                }),
-        );
+        .push(panel_header(format!("{}预览", t.piano_waterfall), _window));
 
-    // 键盘固定在面板底部（独立于上方滚动区，无边框/留白，随面板宽度同步变更尺寸）
+    // 瀑布流图像占满面板剩余高度（音符随卷帘滚动下落，底部为钢琴键盘落点）
     let bottom_section: crate::Element<'a> = if let Some(handle) = &state.handle {
         iced_widget::image::Image::<iced_core::image::Handle>::new(handle.clone())
             .width(Length::Fill)
-            .height(Length::Fixed(state.rendered_height as f32))
+            .height(Length::Fill)
             .into()
     } else {
         text("（键盘渲染中或面板不可见）")
@@ -58,7 +51,7 @@ pub(super) fn panel<'a>(
 
     let content_col = Column::new()
         .width(Length::Fill)
-        .push(scrollable(top_col).height(Length::Fill))
+        .push(top_col)
         .push(bottom_section);
 
     let content = container(content_col)

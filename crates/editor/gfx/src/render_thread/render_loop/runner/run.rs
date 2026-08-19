@@ -196,6 +196,14 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 export_frame_tx: &mut export_frame_tx,
             });
 
+            // 发布活体音符实例缓冲给 UI 线程（侧边瀑布流面板复用，禁止第二份拷贝）
+            {
+                let (buf, count) = renderers.onion_skin.gpu_note_buffer_for_sharing();
+                if let Ok(mut guard) = channels.note_data_pub.lock() {
+                    *guard = Some((buf, count));
+                }
+            }
+
             // 更新统计
             let frame_time = frame_start.elapsed();
             update_stats(

@@ -78,7 +78,10 @@ impl Host {
     ///
     /// 仅在面板可见且为钢琴瀑布流面板时渲染；其余情况清空缓存以释放纹理。
     /// 渲染产物为 iced `image::Handle`，缓存于 `RightSidebar.piano_waterfall`，
-    /// 仅当（宽度 / 高度 / 键数 / 主题）任一参数变化时才重绘，避免每帧 GPU 读回。
+    /// 仅当（宽 / 高 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数）任一参数变化时才重绘。
+    ///
+    /// 下落式音符直接复用渲染线程发布的活体 GPU 实例缓冲（只读 storage），
+    /// 不重新上传音符数据——满足「禁止第二份拷贝」约束。
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
         let active = self.root.right_sidebar.panel_visible
             && self.root.right_sidebar.active_panel
@@ -93,13 +96,33 @@ impl Host {
 
         // 键盘实际绘制宽度 = 面板内容宽（与显示宽度一致，无边框/留白，保证清晰不拉伸）
         let width = (self.root.right_sidebar.panel_width - RESIZE_HANDLE_WIDTH).max(1.0) as u32;
-        let render_height = ((width as f32) * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
-        let height = render_height as u32;
+        // 面板内容高 = 窗口逻辑高（瀑布流占满面板纵轴，键盘贴底）
+        let panel_height = self.render_ctx.viewport.logical_size().height.max(1.0);
+        let kb_h = (width as f32 * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
+        let height = (panel_height).max(kb_h + 1.0) as u32;
 
-        // 参数签名（脏判断）：宽度 / 高度 / 键数
-        let mut sig = width as u64;
+        // 视口参数（与钢琴卷帘一致，驱动音符落点 / 时间流 / 主音轨蓝）
+        let zoom_x = self.root.editor.editor_state.view.zoom_x;
+        let scroll_x = self.root.editor.editor_state.view.scroll_x;
+        let current_track =
+            self.root.editor.editor_state.data.current_track as u32 + 1;
+
+        // 复用渲染线程发布的活体 GPU 音符实例缓冲（零拷贝）
+        let note_data = self
+            .render_ctx
+            .wgpu_render_thread
+            .as_ref()
+            .and_then(|t| t.take_note_data());
+        let note_count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
+
+        // 脏判断签名：任意参数变化即重绘（滚动/缩放变化 → 瀑布流实时跟随）
+        let mut sig: u64 = width as u64;
         sig = sig.wrapping_mul(31).wrapping_add(height as u64);
         sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(zoom_x as i64 as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(scroll_x as i64 as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
 
         let state = &mut self.root.right_sidebar.piano_waterfall;
         if !active {
@@ -119,12 +142,16 @@ impl Host {
             KeyboardRenderer::new(&self.render_ctx.device)
         });
 
-        let bytes = renderer.render_keyboard(
+        let bytes = renderer.render_scene(
             &self.render_ctx.device,
             &self.render_ctx.queue,
             width,
             height,
             key_count,
+            note_data,
+            zoom_x,
+            scroll_x,
+            current_track,
         );
 
         let handle = iced_core::image::Handle::from_rgba(width, height, bytes);

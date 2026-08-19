@@ -83,6 +83,14 @@ impl NoteRenderer {
         self.gpu_note_buffer.gpu_memory_usage() as u64
     }
 
+    /// 暴露活体音符实例缓冲与实例数，供侧边瀑布流面板复用（禁止第二份拷贝）。
+    ///
+    /// 返回 `(buffer 克隆, 实例数)`；buffer 为只读 `storage`，与渲染线程同源同缓冲，
+    /// 面板 offscreen 管线直接 bind 该缓冲即可，无需重新上传音符数据。
+    pub fn gpu_note_buffer_for_sharing(&self) -> (wgpu::Buffer, u32) {
+        (self.gpu_note_buffer.buffer().clone(), self.gpu_instance_count() as u32)
+    }
+
     /// 更新视图状态（当前音轨 + 静音位图）
     ///
     /// 统一全量渲染（2026-08-06）：主音轨 = 洋葱皮 buffer 中 `current_track`

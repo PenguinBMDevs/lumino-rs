@@ -45,6 +45,11 @@ pub struct WgpuRenderThread {
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 洋葱皮生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
     waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
+    /// 活体音符实例缓冲发布通道（渲染线程每帧写入 → UI 线程侧边瀑布流面板读取）
+    ///
+    /// 镜像 `latest_texture` 的发布模式：渲染线程每帧把洋葱皮 GPU 实例缓冲的
+    /// 克隆句柄 + 实例数写入此处，UI 线程只读 storage 直接 bind，杜绝第二份拷贝。
+    pub note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>>,
 }
 
 impl WgpuRenderThread {
@@ -82,6 +87,9 @@ impl WgpuRenderThread {
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
         let waterfall_progress_clone = Arc::clone(&waterfall_progress);
+        let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> =
+            Arc::new(Mutex::new(None));
+        let note_data_pub_clone = Arc::clone(&note_data_pub);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -94,6 +102,7 @@ impl WgpuRenderThread {
                 note_events_rx,
                 note_instances_buffer: note_instances_buffer_clone,
                 waterfall_progress: waterfall_progress_clone,
+                note_data_pub: note_data_pub_clone,
                 onion_skin_streaming_rx,
             };
             run_render_thread(ctx, channels);
@@ -109,6 +118,7 @@ impl WgpuRenderThread {
             latest_texture,
             note_instances_buffer,
             waterfall_progress,
+            note_data_pub,
         })
     }
 
@@ -172,6 +182,17 @@ impl WgpuRenderThread {
             .lock()
             .map(|mut buf| std::mem::take(&mut *buf))
             .unwrap_or_default()
+    }
+
+    /// 取出渲染线程发布的活体音符实例缓冲与实例数（UI 线程侧边瀑布流面板调用）。
+    ///
+    /// 返回 `None` 表示渲染线程尚未发布过数据（首帧之前）。返回的 `wgpu::Buffer`
+    /// 为渲染线程缓冲的克隆句柄，二者指向同一份 GPU 数据，binding 不会触发第二份拷贝。
+    pub fn take_note_data(&self) -> Option<(wgpu::Buffer, u32)> {
+        self.note_data_pub
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())
     }
 
     /// 将离屏渲染结果复制到 Surface 纹理

@@ -61,6 +61,8 @@ pub struct RenderThreadChannels {
     pub note_instances_buffer: Arc<SwappableBuffer<crate::NoteInstance>>,
     /// 贴图瀑布流生成进度缓冲（渲染线程写入，UI 线程读取并转发到进度窗口）
     pub waterfall_progress: Arc<Mutex<Vec<(String, f32)>>>,
+    /// 活体音符实例缓冲发布通道（渲染线程每帧写入 → UI 线程侧边瀑布流面板读取）
+    pub note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>>,
     /// 贴图瀑布流流式上传接收端（UI 线程分块构建 → 渲染线程 streaming_append）
     ///
     /// 消息协议见 [`crate::OnionSkinStreamMsg`]：
