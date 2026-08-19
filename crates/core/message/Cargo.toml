@@ -1,0 +1,20 @@
+[package]
+name = "lumino-message"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lumino-core = { workspace = true }
+lumino-midi-loader = { workspace = true }
+lumino-note-core = { workspace = true }
+tracing = { workspace = true }
+# 仅引用 iced_widget::text_editor::Action 类型（视频导出计数器模板多行编辑器）
+iced_widget = { workspace = true }

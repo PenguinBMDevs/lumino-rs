@@ -1,0 +1,195 @@
+//! 异步提交 MoveOp 到后台线程
+//!
+//! 批量拖动（DraggingSelection）松手时，将实际数据更新放到后台线程，
+//! UI 层每帧轮询 `poll_async_commit` 获取结果并推入历史记录。
+//!
+//! 2026-08 单一权威源改造：后台线程克隆当前音轨的 `Vec<NoteEvent>` 副本
+//! （而非 im::Vector + track_notes 双份克隆），完成后经 `replace_track_notes` 写回。
+
+use super::EditorData;
+use lumino_core::error::{CoreError, Result};
+use lumino_midi_model::NoteEvent;
+use lumino_note_core::history::MoveOp;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+
+/// 后台线程完成的异步提交结果
+#[derive(Debug)]
+pub struct AsyncCommitResult {
+    /// 更新后的当前音轨音符（NoteEvent，与 document 轨道同构）
+    pub notes: Vec<NoteEvent>,
+    /// 实际修改的音符数
+    pub modified: usize,
+}
+
+/// 待完成的异步提交
+#[derive(Debug)]
+pub struct PendingCommit {
+    /// 待应用的操作日志
+    pub ops: Vec<MoveOp>,
+    /// 接收后台线程结果的通道
+    pub receiver: Receiver<Result<AsyncCommitResult>>,
+}
+
+impl EditorData {
+    /// 在后台线程异步应用 MoveOp 列表
+    ///
+    /// 返回 `true` 表示已启动新后台任务；`false` 表示 ops 为空或 delta 全为零。
+    /// 同一时刻只允许一个 pending commit。
+    pub fn apply_move_ops_async(&mut self, ops: Vec<MoveOp>, max_key: u16) -> Result<bool> {
+        if ops.is_empty() || ops.iter().all(|op| op.delta_tick == 0 && op.delta_key == 0) {
+            return Ok(false);
+        }
+        if self.pending_commit.is_some() {
+            return Err(CoreError::InvalidArgument(
+                "已存在 pending commit，无法启动新的异步提交".to_string(),
+            ));
+        }
+
+        let notes = self.current_track_notes().to_vec();
+        let ops_for_thread = ops.clone();
+        let (tx, rx) = mpsc::channel();
+
+        std::thread::spawn(move || {
+            let result = apply_move_ops_to_clone(notes, &ops_for_thread, max_key);
+            // 发送结果；如果接收端已关闭，忽略错误
+            let _ = tx.send(result);
+        });
+
+        self.pending_commit = Some(PendingCommit { ops, receiver: rx });
+        Ok(true)
+    }
+
+    /// 轮询异步提交是否完成
+    ///
+    /// 若完成：将结果应用到 data，把 MoveOp 推入历史记录，并返回实际修改数。
+    /// 若未完成：返回 `None`。
+    pub fn poll_async_commit(&mut self) -> Option<Result<usize>> {
+        let pending = self.pending_commit.take()?;
+        match pending.receiver.try_recv() {
+            Ok(Ok(result)) => {
+                let modified = result.modified;
+                // 写回 document（当前音轨整轨替换，单一权威源）
+                self.replace_track_notes(self.current_track, result.notes.clone());
+                // 记录增量事件：MoveOp 区间 = notes 索引（等长），
+                // 数据来自替换后的 result.notes（最终状态，重叠区间幂等）。
+                for op in &pending.ops {
+                    let start = op.range_start as usize;
+                    let end = (op.range_end as usize).min(result.notes.len());
+                    if start < end {
+                        let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
+                            .iter()
+                            .map(super::accessors::event_to_note)
+                            .collect();
+                        self.note_delta_events.push(
+                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                                start_index: start,
+                                notes,
+                            },
+                        );
+                    }
+                }
+                // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
+                self.mark_current_track_changed();
+                // 事件已完整记录（对应 ops 区间）→ 清除 dirty
+                self.note_delta_dirty = false;
+                self.edited_tracks.insert(self.current_track);
+                self.push_move_op(pending.ops);
+                Some(Ok(modified))
+            }
+            Ok(Err(e)) => Some(Err(e)),
+            Err(TryRecvError::Empty) => {
+                self.pending_commit = Some(pending);
+                None
+            }
+            Err(TryRecvError::Disconnected) => {
+                Some(Err(CoreError::Other("异步提交线程异常断开".to_string())))
+            }
+        }
+    }
+
+    /// 是否有正在进行的异步提交
+    pub fn has_pending_commit(&self) -> bool {
+        self.pending_commit.is_some()
+    }
+
+    /// 取消正在进行的异步提交
+    ///
+    /// 仅用于重置或测试；正常流程依赖 `poll_async_commit`。
+    pub fn cancel_async_commit(&mut self) {
+        self.pending_commit = None;
+    }
+}
+
+/// 将 MoveOp 应用到当前音轨音符的克隆副本
+fn apply_move_ops_to_clone(
+    mut notes: Vec<NoteEvent>,
+    ops: &[MoveOp],
+    max_key: u16,
+) -> Result<AsyncCommitResult> {
+    let total_indices: usize = ops
+        .iter()
+        .map(|op| op.range_end.saturating_sub(op.range_start) as usize)
+        .sum();
+    let start_time = std::time::Instant::now();
+    tracing::info!(
+        "异步提交线程启动: {} 个 op, 预计处理 {} 个音符索引",
+        ops.len(),
+        total_indices
+    );
+
+    let mut modified = 0usize;
+    let mut processed = 0usize;
+    let mut next_log_threshold = total_indices / 10; // 每 10% 报告一次
+    if next_log_threshold == 0 {
+        next_log_threshold = total_indices; // 总数很小时只报告一次
+    }
+
+    for op in ops {
+        let dt = op.delta_tick;
+        let dk = op.delta_key as i32;
+
+        let start = op.range_start as usize;
+        let end = op.range_end as usize;
+        for i in start..end {
+            if let Some(note) = notes.get_mut(i) {
+                let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+                if note.start_tick != new_tick || note.key != new_key {
+                    note.start_tick = new_tick;
+                    // 移动不改变长度：end_tick 跟随 start_tick 平移（旧实现右移时长度被压缩）
+                    let new_end =
+                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                    note.end_tick = new_end;
+                    note.key = new_key;
+                    modified += 1;
+                }
+            }
+
+            processed += 1;
+            if processed >= next_log_threshold {
+                let percent = processed
+                    .saturating_mul(100)
+                    .checked_div(total_indices)
+                    .unwrap_or(100);
+                tracing::info!(
+                    "异步提交进度: {}% ({} / {})",
+                    percent,
+                    processed,
+                    total_indices
+                );
+                next_log_threshold += total_indices / 10;
+            }
+        }
+    }
+
+    tracing::info!(
+        "异步提交线程完成: 修改 {} 个音符, 耗时 {:?}",
+        modified,
+        start_time.elapsed()
+    );
+
+    Ok(AsyncCommitResult { notes, modified })
+}
+
+#[cfg(test)]
+mod tests;

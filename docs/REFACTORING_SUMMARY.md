@@ -52,19 +52,17 @@ Successfully refactored the following files following the **flat module structur
 
 8. **`crates/gfx/src/ruler_renderer.rs`** (448 → 11 + 3 submodules)
 
-9. **`crates/gfx/src/keyboard_renderer.rs`** (436 → 9 + 2 submodules)
-
 #### Core & Collaboration Crates (4 files)
-10. **`crates/core/src/midi/loader.rs`** (549 → 10 + 5 submodules)
+9. **`crates/core/src/midi/loader.rs`** (549 → 10 + 5 submodules)
     - MIDI file parsing properly decomposed
 
-11. **`crates/core/src/event_cache.rs`** (413 → 5 + 3 submodules)
+10. **`crates/core/src/event_cache.rs`** (413 → 5 + 3 submodules)
 
-12. **`crates/core/src/midi/event.rs`** (412 → 8 + 4 submodules)
+11. **`crates/core/src/midi/event.rs`** (412 → 8 + 4 submodules)
 
-13. **`crates/collaboration/src/client.rs`** (527 → 19 + 4 submodules)
+12. **`crates/collaboration/src/client.rs`** (527 → 19 + 4 submodules)
 
-14. **`crates/export/src/converter.rs`** (419 → 7 + 3 submodules)
+13. **`crates/export/src/converter.rs`** (419 → 7 + 3 submodules)
 
 ### Phase 2: Module Structure & Warnings (Apr 18, 2026)
 

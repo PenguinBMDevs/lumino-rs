@@ -1,0 +1,29 @@
+[package]
+name = "lumino-midiplayer"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+lumino-diagnostics = { workspace = true }
+lumino-midi-loader = { workspace = true }
+lumino-note-core = { workspace = true }
+rayon = { workspace = true }
+xxhash-rust = { workspace = true }
+wgpu = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+zstd = { workspace = true }
+bincode = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+
+[dev-dependencies]
+futures = { workspace = true }

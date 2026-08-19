@@ -1,0 +1,189 @@
+//! MIDI 相关类型
+
+// ─── CC 或 Bend 下拉选项 ───
+
+/// CC 或 Bend 下拉选项
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CcOption {
+    /// 弯音
+    Bend,
+    /// CC 控制器
+    Cc(u8),
+}
+
+impl std::fmt::Display for CcOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CcOption::Bend => write!(f, "Bend: Pitch Bend (-8192..8191)"),
+            CcOption::Cc(n) => match CC_CONTROLLER_NAMES.iter().find(|(num, _)| *num == *n) {
+                Some((_, name)) => write!(f, "{}: {}", n, name),
+                None => write!(f, "{}", n),
+            },
+        }
+    }
+}
+
+/// CC 控制器名称映射
+pub const CC_CONTROLLER_NAMES: &[(u8, &str)] = &[
+    (0, "Bank Select"),
+    (1, "Modulation"),
+    (2, "Breath Controller"),
+    (3, "Undefined"),
+    (4, "Foot Controller"),
+    (5, "Portamento Time"),
+    (6, "Data Entry MSB"),
+    (7, "Volume"),
+    (8, "Balance"),
+    (9, "Undefined"),
+    (10, "Pan"),
+    (11, "Expression"),
+    (12, "Effect Control 1"),
+    (13, "Effect Control 2"),
+    (14, "Undefined"),
+    (15, "Undefined"),
+    (16, "General Purpose 1"),
+    (17, "General Purpose 2"),
+    (18, "General Purpose 3"),
+    (19, "General Purpose 4"),
+    (20, "Undefined"),
+    (21, "Undefined"),
+    (22, "Undefined"),
+    (23, "Undefined"),
+    (24, "Undefined"),
+    (25, "Undefined"),
+    (26, "Undefined"),
+    (27, "Undefined"),
+    (28, "Undefined"),
+    (29, "Undefined"),
+    (30, "Undefined"),
+    (31, "Undefined"),
+    (32, "Bank Select LSB"),
+    (33, "Modulation LSB"),
+    (34, "Breath Controller LSB"),
+    (35, "Undefined"),
+    (36, "Foot Controller LSB"),
+    (37, "Portamento Time LSB"),
+    (38, "Data Entry LSB"),
+    (39, "Volume LSB"),
+    (40, "Balance LSB"),
+    (41, "Undefined"),
+    (42, "Pan LSB"),
+    (43, "Expression LSB"),
+    (44, "Effect Control 1 LSB"),
+    (45, "Effect Control 2 LSB"),
+    (46, "Undefined"),
+    (47, "Undefined"),
+    (48, "General Purpose 1 LSB"),
+    (49, "General Purpose 2 LSB"),
+    (50, "General Purpose 3 LSB"),
+    (51, "General Purpose 4 LSB"),
+    (52, "Undefined"),
+    (53, "Undefined"),
+    (54, "Undefined"),
+    (55, "Undefined"),
+    (56, "Undefined"),
+    (57, "Undefined"),
+    (58, "Undefined"),
+    (59, "Undefined"),
+    (60, "Undefined"),
+    (61, "Undefined"),
+    (62, "Undefined"),
+    (63, "Undefined"),
+    (64, "Sustain Pedal"),
+    (65, "Portamento"),
+    (66, "Sostenuto"),
+    (67, "Soft Pedal"),
+    (68, "Legato Footswitch"),
+    (69, "Hold 2"),
+    (70, "Sound Controller 1"),
+    (71, "Sound Controller 2"),
+    (72, "Sound Controller 3"),
+    (73, "Sound Controller 4"),
+    (74, "Sound Controller 5"),
+    (75, "Sound Controller 6"),
+    (76, "Sound Controller 7"),
+    (77, "Sound Controller 8"),
+    (78, "Sound Controller 9"),
+    (79, "Sound Controller 10"),
+    (80, "General Purpose 5"),
+    (81, "General Purpose 6"),
+    (82, "General Purpose 7"),
+    (83, "General Purpose 8"),
+    (84, "Portamento Control"),
+    (85, "Undefined"),
+    (86, "Undefined"),
+    (87, "Undefined"),
+    (88, "Undefined"),
+    (89, "Undefined"),
+    (90, "Undefined"),
+    (91, "Effects 1 Depth"),
+    (92, "Effects 2 Depth"),
+    (93, "Effects 3 Depth"),
+    (94, "Effects 4 Depth"),
+    (95, "Effects 5 Depth"),
+    (96, "Data Increment"),
+    (97, "Data Decrement"),
+    (98, "NRPN LSB"),
+    (99, "NRPN MSB"),
+    (100, "RPN LSB"),
+    (101, "RPN MSB"),
+    (102, "Undefined"),
+    (103, "Undefined"),
+    (104, "Undefined"),
+    (105, "Undefined"),
+    (106, "Undefined"),
+    (107, "Undefined"),
+    (108, "Undefined"),
+    (109, "Undefined"),
+    (110, "Undefined"),
+    (111, "Undefined"),
+    (112, "Undefined"),
+    (113, "Undefined"),
+    (114, "Undefined"),
+    (115, "Undefined"),
+    (116, "Undefined"),
+    (117, "Undefined"),
+    (118, "Undefined"),
+    (119, "Undefined"),
+    (120, "All Sound Off"),
+    (121, "Reset All Controllers"),
+    (122, "Local Control"),
+    (123, "All Notes Off"),
+    (124, "Omni Mode Off"),
+    (125, "Omni Mode On"),
+    (126, "Mono Mode"),
+    (127, "Poly Mode"),
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_cc_option_display() {
+        let bend = CcOption::Bend;
+        assert!(bend.to_string().contains("Bend"));
+
+        let cc7 = CcOption::Cc(7);
+        assert!(cc7.to_string().contains("Volume"));
+    }
+
+    #[test]
+    fn test_cc_controller_names_known() {
+        let names = CC_CONTROLLER_NAMES;
+        assert!(names.contains(&(0, "Bank Select")));
+        assert!(names.contains(&(7, "Volume")));
+        assert!(names.contains(&(10, "Pan")));
+        assert!(names.contains(&(64, "Sustain Pedal")));
+        assert!(names.contains(&(127, "Poly Mode")));
+    }
+
+    #[test]
+    fn test_cc_controller_names_all_128() {
+        assert_eq!(CC_CONTROLLER_NAMES.len(), 128);
+        let mut seen = std::collections::HashSet::new();
+        for (num, _) in CC_CONTROLLER_NAMES {
+            assert!(seen.insert(num), "Duplicate CC number: {}", num);
+        }
+    }
+}

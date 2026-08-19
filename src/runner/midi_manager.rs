@@ -94,7 +94,7 @@ impl MidiManager {
         let preferred = ui_config.preferred_backend;
 
         // 快速启动初始后端（不阻塞 UI）
-        let result = match preferred {
+        let init_result = match preferred {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
             // XSynth 模式下先启动 System，然后在后台初始化 XSynth
@@ -102,10 +102,10 @@ impl MidiManager {
         };
 
         let mut manager = Self {
-            api: result.api,
+            api: init_result.api,
             fallback_api: None,
-            output: result.output,
-            active_backend: result.backend,
+            output: init_result.output,
+            active_backend: init_result.backend,
             needs_reinit: false,
             preferred_backend: preferred,
             xsynth_init_rx: None,
@@ -155,14 +155,14 @@ impl MidiManager {
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
 
-            let result = Self::init_xsynth_blocking(&ui_config_clone);
+            let xsynth_result = Self::init_xsynth_blocking(&ui_config_clone);
 
-            match &result {
+            match &xsynth_result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
                 Err(e) => tracing::warn!("XSynth: 后台初始化失败: {}", e),
             }
 
-            let init_result = match result {
+            let init_result = match xsynth_result {
                 Ok((api, output)) => XSynthInitResult::Success { api, output },
                 Err(e) => XSynthInitResult::Failed(e),
             };
@@ -290,6 +290,24 @@ impl MidiManager {
                 // KDMAPI 完全不可用 → 回退到 System 后端
                 Self::init_system_output()
             }
+        }
+    }
+
+    /// 处理音频流恢复（音频设备被拔出/更换后）。
+    ///
+    /// XSynth 底层会自动重定向到系统默认输出设备；仅当自愈失败
+    /// （如新设备参数与管线不一致）时，此方法触发上层重建管线。
+    pub fn handle_stream_recovery(&mut self) {
+        let Some(api) = self.api.as_mut() else {
+            return;
+        };
+        if !api.poll_stream_recovery_needed() {
+            return;
+        }
+        tracing::warn!("音频设备已改变，正在恢复音频流...");
+        match api.recover_stream() {
+            Ok(()) => tracing::info!("音频流已恢复（已重定向/重建到默认输出设备）"),
+            Err(e) => tracing::error!("音频流恢复失败: {e}"),
         }
     }
 
@@ -521,21 +539,21 @@ impl MidiManager {
         // 重新初始化
         if ui_config.preferred_backend == SynthBackend::XSynth {
             // 先快速启动 System，然后后台初始化 XSynth
-            let result = Self::init_system_output();
-            self.api = result.api;
-            self.output = result.output;
-            self.active_backend = result.backend;
+            let system_result = Self::init_system_output();
+            self.api = system_result.api;
+            self.output = system_result.output;
+            self.active_backend = system_result.backend;
             self.start_xsynth_async_init(ui_config);
         } else {
             // 初始化其他后端
-            let result = match ui_config.preferred_backend {
+            let backend_result = match ui_config.preferred_backend {
                 SynthBackend::Kdmapi => Self::init_kdmapi_output(),
                 SynthBackend::System => Self::init_system_output(),
                 _ => Self::init_system_output(),
             };
-            self.api = result.api;
-            self.output = result.output;
-            self.active_backend = result.backend;
+            self.api = backend_result.api;
+            self.output = backend_result.output;
+            self.active_backend = backend_result.backend;
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);

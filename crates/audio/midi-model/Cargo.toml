@@ -1,0 +1,22 @@
+[package]
+name = "lumino-midi-model"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+midly = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+bincode = { workspace = true }
+encoding_rs = { workspace = true }
+lumino-diagnostics = { workspace = true }

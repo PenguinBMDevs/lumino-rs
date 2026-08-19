@@ -1,0 +1,33 @@
+[package]
+name = "lumino-ui-core"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true
+
+[dependencies]
+iced_core = { workspace = true }
+iced_wgpu = { workspace = true, features = ["geometry", "image"] }
+iced_widget = { workspace = true, features = ["image"] }
+lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-message = { workspace = true }
+# 注意：playback / midi-io / midi-loader 依赖已随 midi_state/playback_state
+# 上移至 lumino-ui::state（ui-core 保持为 UI 基础层，不依赖业务 crate）
+image = { workspace = true }
+once_cell = { workspace = true }
+resvg = { workspace = true }
+thiserror = { workspace = true }
+tiny-skia = { workspace = true }
+tracing = { workspace = true }
+usvg = { workspace = true }

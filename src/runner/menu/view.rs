@@ -23,6 +23,10 @@ impl RunnerInner {
                     .window
                     .ui_mut()
                     .update_theme(theme.clone());
+                // 同步所有已打开对话框窗口的主题（对话框主题为创建时快照）
+                self.window_state
+                    .dialog_manager
+                    .update_theme_all(theme.clone());
                 self.window_state.storage.config.patch(|state| {
                     state.ui.theme = theme;
                 });

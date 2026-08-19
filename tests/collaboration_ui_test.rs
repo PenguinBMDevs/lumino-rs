@@ -17,7 +17,7 @@ use tokio::time::sleep;
 
 use lumino_collaboration::client::{CollaborationClient, CollaborationEvent};
 use lumino_collaboration::types::{
-    ClientConfig, MousePosition, Note, NoteAction, NoteBatchOperation,
+    ClientConfig, MousePosition, NoteAction, NoteBatchOperation, SyncNote,
 };
 
 use common::EventCollector;
@@ -258,7 +258,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     println!("步骤4: 测试A->B音符同步");
     println!("----------------------------------------");
 
-    let note_a = Note {
+    let note_a = SyncNote {
         id: format!("note-a-{}", chrono::Utc::now().timestamp_millis()),
         tick: 2880.0,
         key: 65,
@@ -352,7 +352,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     println!("步骤6: 测试B->A音符同步");
     println!("----------------------------------------");
 
-    let note_b = Note {
+    let note_b = SyncNote {
         id: format!("note-b-{}", chrono::Utc::now().timestamp_millis()),
         tick: 3840.0,
         key: 72,
@@ -510,7 +510,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
     println!("----------------------------------------");
 
     let notes = vec![
-        Note {
+        SyncNote {
             id: format!("batch-note-1-{}", chrono::Utc::now().timestamp_millis()),
             tick: 0.0,
             key: 60,
@@ -519,7 +519,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
             channel: 0,
             track_index: 0,
         },
-        Note {
+        SyncNote {
             id: format!("batch-note-2-{}", chrono::Utc::now().timestamp_millis()),
             tick: 480.0,
             key: 64,
@@ -528,7 +528,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
             channel: 0,
             track_index: 0,
         },
-        Note {
+        SyncNote {
             id: format!("batch-note-3-{}", chrono::Utc::now().timestamp_millis()),
             tick: 960.0,
             key: 67,

@@ -1,4 +1,6 @@
-// Windows 子系统控制（由 build.rs 根据 DEBUG env var 自动发射 cfg 标记）：
+//! lumino-rs 主程序入口。
+//!
+//! Windows 子系统控制（由 build.rs 根据 DEBUG env var 自动发射 cfg 标记）：
 //   release profile（DEBUG=false, windows_gui_subsystem 标记激活）→ windows 子系统，隐藏终端
 //   debug / fast-release（DEBUG=true, 无标记）→ console 子系统，显示终端
 #![cfg_attr(
@@ -7,6 +9,11 @@
 )]
 
 use winit::event_loop::EventLoop;
+
+/// 全局内存追踪分配器，按子系统统计堆分配。
+#[global_allocator]
+static GLOBAL_ALLOC: lumino_diagnostics::memtrace::TaggedAlloc =
+    lumino_diagnostics::memtrace::TaggedAlloc;
 
 mod cli;
 mod constants;
@@ -104,7 +111,7 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
 
     // 启动内存监控：主监控（95% → abort）+ 看门狗（100% → SIGKILL）
     // 看门狗完全独立，用 /proc/{pid} 而非 /proc/self，系统可用 < 350MB 也触发
-    if !lumino_memory_monitor::spawn_all_monitors() {
+    if !lumino_diagnostics::memory_monitor::spawn_all_monitors() {
         tracing::warn!("内存监控线程启动失败，程序继续运行但缺少 OOM 防护");
     }
 
@@ -130,5 +137,12 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
         tracing::info!("已启用 memory-usage 日志（每2000ms输出各组件内存占用）");
     }
 
-    event_loop.run_app(&mut runner)
+    // 主线程即 UI 线程：将整个 GUI 生命周期的分配归因到 Ui。
+    // with_tag 是线程局部的，run_app 在调用线程（主线程）上运行，
+    // 因此主线程的所有分配（编辑器状态、空间索引、iced 每帧 widget 树等）均归 Ui。
+    // 其中 MIDI 解析路径在 document.rs 内层已用 Midi 标签覆盖，音频渲染线程在 synth.rs 内单独标 Audio。
+
+    lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Ui, || {
+        event_loop.run_app(&mut runner)
+    })
 }

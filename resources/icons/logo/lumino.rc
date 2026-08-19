@@ -1,4 +1,4 @@
 // lumino.rc — Windows 资源文件
-// 将 lumino.ico 嵌入为应用程序图标
+// 将 app-icon.ico 嵌入为应用程序图标
 
-IDI_APP_ICON ICON "lumino.ico"
+IDI_APP_ICON ICON "app-icon.ico"

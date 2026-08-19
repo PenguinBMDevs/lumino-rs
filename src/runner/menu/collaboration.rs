@@ -123,45 +123,29 @@ impl RunnerInner {
         channel: u8,
         track_index: usize,
     ) {
-        // 检查是否已连接
         if !self.collab_state.collaboration_service.is_connected() {
             return;
         }
 
-        // 生成唯一ID
-        let note_id = format!(
-            "note_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::Note {
-            id: note_id,
+        let location = NoteLocation {
             tick,
             key,
+            track_index,
+            channel,
+        };
+        let modifiers = NoteOperationModifiers {
             length,
             velocity,
-            channel,
-            track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Add,
-            notes: vec![note],
-            source_track: Some(track_index),
             target_track: Some(track_index),
             tick_offset: None,
             key_offset: None,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
         };
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Add,
+            "note",
+            &location,
+            &modifiers,
+        );
 
         if let Err(e) = self
             .collab_state
@@ -188,40 +172,25 @@ impl RunnerInner {
             return;
         }
 
-        // 生成唯一ID
-        let note_id = format!(
-            "note_move_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::Note {
-            id: note_id,
+        let location = NoteLocation {
             tick,
             key,
+            track_index,
+            channel: 0,
+        };
+        let modifiers = NoteOperationModifiers {
             length,
             velocity: 100,
-            channel: 0,
-            track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Move,
-            notes: vec![note],
-            source_track: Some(track_index),
             target_track: Some(track_index),
             tick_offset: Some(tick_offset),
             key_offset: Some(key_offset),
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
         };
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Move,
+            "note_move",
+            &location,
+            &modifiers,
+        );
 
         if let Err(e) = self
             .collab_state
@@ -254,39 +223,25 @@ impl RunnerInner {
             return;
         }
 
-        let note_id = format!(
-            "note_del_{}_{}_{}_{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis(),
-            tick as u64,
-            key,
-            track_index
-        );
-
-        let note = lumino_collaboration::types::Note {
-            id: note_id,
+        let location = NoteLocation {
             tick,
             key,
+            track_index,
+            channel,
+        };
+        let modifiers = NoteOperationModifiers {
             length,
             velocity,
-            channel,
-            track_index,
-        };
-
-        let operation = lumino_collaboration::types::NoteBatchOperation {
-            action: lumino_collaboration::types::NoteAction::Delete,
-            notes: vec![note],
-            source_track: Some(track_index),
             target_track: None,
             tick_offset: None,
             key_offset: None,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis() as u64,
         };
+        let operation = build_sync_note_operation(
+            lumino_collaboration::types::NoteAction::Delete,
+            "note_del",
+            &location,
+            &modifiers,
+        );
 
         if let Err(e) = self
             .collab_state
@@ -385,5 +340,87 @@ impl RunnerInner {
                 tracing::debug!("协作: 未处理的工程更新类型: {:?}", update.update_type);
             }
         }
+    }
+}
+
+// ── Helper functions ─────────────────────────────────────────────────
+
+/// 音符定位信息。
+///
+/// 用于聚合标识一个音符在工程中的位置与所属音轨/通道。
+#[derive(Debug, Clone, Copy)]
+struct NoteLocation {
+    /// 时间刻度（tick）
+    tick: f32,
+    /// 音高键位
+    key: u16,
+    /// 所属音轨索引
+    track_index: usize,
+    /// MIDI 通道
+    channel: u8,
+}
+
+/// 音符操作修饰参数。
+///
+/// 用于聚合构建 `NoteBatchOperation` 时补充的时长、力度、目标音轨及偏移信息。
+#[derive(Debug, Clone, Copy)]
+struct NoteOperationModifiers {
+    /// 音符长度
+    length: f32,
+    /// 音符力度
+    velocity: u8,
+    /// 目标音轨（移动操作时使用）
+    target_track: Option<usize>,
+    /// 时间偏移（移动操作时使用）
+    tick_offset: Option<f32>,
+    /// 键位偏移（移动操作时使用）
+    key_offset: Option<i16>,
+}
+
+/// 根据前缀和音符定位信息生成唯一音符 ID。
+fn generate_note_id(prefix: &str, location: &NoteLocation) -> String {
+    format!(
+        "{}_{}_{}_{}_{}",
+        prefix,
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis(),
+        location.tick as u64,
+        location.key,
+        location.track_index
+    )
+}
+
+/// 根据操作类型、音符定位与修饰参数构建同步操作。
+fn build_sync_note_operation(
+    action: lumino_collaboration::types::NoteAction,
+    note_id_prefix: &str,
+    location: &NoteLocation,
+    modifiers: &NoteOperationModifiers,
+) -> lumino_collaboration::types::NoteBatchOperation {
+    let note_id = generate_note_id(note_id_prefix, location);
+
+    let note = lumino_collaboration::types::SyncNote {
+        id: note_id,
+        tick: location.tick,
+        key: location.key,
+        length: modifiers.length,
+        velocity: modifiers.velocity,
+        channel: location.channel,
+        track_index: location.track_index,
+    };
+
+    lumino_collaboration::types::NoteBatchOperation {
+        action,
+        notes: vec![note],
+        source_track: Some(location.track_index),
+        target_track: modifiers.target_track,
+        tick_offset: modifiers.tick_offset,
+        key_offset: modifiers.key_offset,
+        timestamp: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis() as u64,
     }
 }

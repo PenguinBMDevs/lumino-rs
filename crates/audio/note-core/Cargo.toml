@@ -1,0 +1,24 @@
+[package]
+name = "lumino-note-core"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+lumino-core = { workspace = true }
+lumino-midi-model = { workspace = true }
+thiserror = { workspace = true }
+font-kit = { workspace = true }
+im = { workspace = true }
+bit-vec = { workspace = true }
+puffin = { workspace = true }

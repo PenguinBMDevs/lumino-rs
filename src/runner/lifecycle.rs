@@ -13,6 +13,8 @@ mod memory;
 mod midi;
 mod test_mode;
 
+use std::sync::Arc;
+
 use lumino_ui::state::root_state::DialogType;
 
 use super::inner::{Runner, TestModeState};
@@ -27,13 +29,25 @@ impl winit::application::ApplicationHandler for Runner {
             Ok(inner) => {
                 self.inner = Some(inner);
 
+                // 兜底首帧：显式请求一次主窗口重绘。
+                // Wait 模式下 about_to_wait 不再每轮强制 request_redraw，
+                // 首帧后若无动画/播放，needs_redraw==false 即进入休眠，不会忙循环。
+                if let Some(this) = self.inner.as_mut() {
+                    this.window_state.window.request_redraw();
+                }
+
+                // 启动自动连接云存储（后台静默执行，失败不打扰用户）
+                if let Some(this) = self.inner.as_mut() {
+                    this.startup_auto_connect();
+                }
+
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
                     && let Some(this) = self.inner.as_mut()
                 {
                     tracing::info!("测试模式：准备加载 MIDI - {}", test_config.midi_path);
                     let midi_path = std::path::PathBuf::from(&test_config.midi_path);
-                    let progress_cb = this.window_state.progress_cb.clone();
+                    let progress_cb = Arc::clone(&this.window_state.progress_cb);
                     let test_duration = test_config.test_time;
 
                     this.window_state.window.ui_mut().skip_ui_rendering = true;
@@ -46,6 +60,11 @@ impl winit::application::ApplicationHandler for Runner {
                         frame_count: 0,
                     });
 
+                    // 看门狗在加载 MIDI 前确保已启动，并标记加载状态：
+                    // 测试模式同样受"只监控加载 MIDI 期间"约束
+                    lumino_diagnostics::memory_monitor::watchdog::spawn_watchdog();
+                    lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(true);
+
                     tokio::spawn(async move {
                         match lumino_midi_loader::loader::load_parsed_midi(
                             midi_path,
@@ -55,6 +74,7 @@ impl winit::application::ApplicationHandler for Runner {
                         {
                             Ok(parsed) => {
                                 tracing::info!("测试模式：MIDI 加载完成");
+                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                                 lumino_ui::event::emit(lumino_ui::event::Event::Menu(
                                     lumino_ui::event::menu::Event::File(
                                         lumino_ui::event::menu::file::Event::MidiParsed(
@@ -65,6 +85,7 @@ impl winit::application::ApplicationHandler for Runner {
                             }
                             Err(e) => {
                                 tracing::error!("测试模式：MIDI 加载失败 - {e}");
+                                lumino_diagnostics::memory_monitor::midi_guard::set_midi_load_active(false);
                                 lumino_ui::event::emit(lumino_ui::event::Event::Menu(
                                     lumino_ui::event::menu::Event::File(
                                         lumino_ui::event::menu::file::Event::MidiParseError(
@@ -104,6 +125,16 @@ impl winit::application::ApplicationHandler for Runner {
             return;
         }
 
+        // 检查是否是云传输进度悬浮窗口
+        if this
+            .window_state
+            .cloud_progress
+            .is_cloud_progress_window(window_id)
+        {
+            this.window_state.cloud_progress.handle_event(event);
+            return;
+        }
+
         // 检查是否是对话框窗口
         if this.handle_dialog_event(event_loop, window_id, event.clone()) {
             return;
@@ -124,7 +155,7 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 处理进度消息
         puffin::profile_scope!("runner_about_to_wait_process_messages");
-        let main_window = this.window_state.window.window().clone();
+        let main_window = Arc::clone(this.window_state.window.window());
         let main_ui = this.window_state.window.ui_mut();
         this.window_state
             .progress
@@ -132,114 +163,32 @@ impl winit::application::ApplicationHandler for Runner {
 
         // 转发洋葱皮生成进度到进度窗口（渲染线程 → UI 线程 → ProgressManager）
         // 同时检测洋葱皮生成完成，设置编辑开始时间
-        {
-            puffin::profile_scope!("runner_about_to_wait_onion_progress");
-            let onion_progress = this.window_state.window.ui().drain_onion_progress();
-            if !onion_progress.is_empty() {
-                let cb = this.window_state.progress_cb.clone();
-                for (msg, pct) in onion_progress {
-                    // 检测洋葱皮贴图生成完成（progress >= 1.0）
-                    if pct >= 1.0 && this.session_tracker.editing_start_time.is_none() {
-                        this.session_tracker.editing_start_time = Some(std::time::Instant::now());
-                        tracing::info!(
-                            "洋葱皮贴图生成完成，编辑计时开始（累计 {} 秒）",
-                            this.session_tracker.accumulated_editing_secs
-                        );
-                    }
-                    cb(&msg, pct as f64);
-                }
-            }
-        }
+        this.about_to_wait_waterfall_progress();
 
-        // 高精度贴图冷静期检查：到期后触发脏音轨重生成
-        {
-            puffin::profile_scope!("runner_about_to_wait_hires_regen");
-            let dirty_tracks = this.window_state.window.ui_mut().check_hires_regen();
-            if let Some(tracks) = dirty_tracks {
-                // 收集重生成所需上下文（clone 出来避免循环里反复借用）
-                let regen_context = {
-                    let ui = this.window_state.window.ui();
-                    let hash = ui.hires_midi_hash().map(|s| s.to_string());
-                    let info = ui.hires_gen_info();
-                    let ui_cfg = this.window_state.storage.config.get().ui.clone();
-                    let config = lumino_gfx::HiResConfig {
-                        enabled: ui_cfg.hires_onion_enabled,
-                        measures_per_group: ui_cfg.hires_measures_per_group,
-                        tile_width_px: ui_cfg.hires_tile_width_px,
-                        cooldown_secs: ui_cfg.hires_cooldown_secs,
-                        gpu_mem_limit_mb: ui_cfg.hires_gpu_mem_limit_mb,
-                        render_mode: lumino_gfx::HiResRenderMode::default(),
-                        group_tile_mem_limit_mb: 256,
-                        cache_dir: lumino_gfx::HiResConfig::default().cache_dir,
-                    };
-                    hash.zip(info).map(|(h, i)| (h, i, config))
-                };
-                if let Some((midi_hash, (ppq, key_count, total_ticks), config)) = regen_context {
-                    tracing::info!("高精度贴图冷静期到期，重生 {} 个脏音轨", tracks.len());
-                    // 按音轨组分组，每个 group 只重生一次，避免同组重复生成
-                    let mut tracks_by_group: std::collections::HashMap<u32, Vec<u16>> =
-                        std::collections::HashMap::new();
-                    for track_idx in &tracks {
-                        let group = (*track_idx / lumino_gfx::TRACKS_PER_GROUP) as u32;
-                        tracks_by_group.entry(group).or_default().push(*track_idx);
-                    }
-
-                    for (group, group_tracks) in &tracks_by_group {
-                        let max_track = group_tracks.iter().copied().max().unwrap_or(0);
-                        // 音轨总数取当前侧边栏音轨数与组内最大音轨索引+1 的较大值
-                        let track_count = {
-                            let ui = this.window_state.window.ui();
-                            (ui.track_count() as u16).max(max_track + 1)
-                        };
-
-                        // 收集该 group 内所有音轨的最新音符
-                        let group_start = (group * lumino_gfx::TRACKS_PER_GROUP as u32) as u16;
-                        let group_end =
-                            (group_start + lumino_gfx::TRACKS_PER_GROUP).min(track_count);
-                        let mut group_notes =
-                            Vec::with_capacity((group_end - group_start) as usize);
-                        for t in group_start..group_end {
-                            let notes = this.window_state.window.ui().get_track_notes_for_hires(t);
-                            group_notes.push(notes);
-                        }
-
-                        let representative = group_tracks[0];
-                        tracing::info!(
-                            "高精度贴图冷静期到期重生: group={}, representative_track={}, group_tracks={}",
-                            group,
-                            representative,
-                            group_notes.len()
-                        );
-                        this.window_state.window.ui_mut().send_hires_regen(
-                            lumino_gfx::render_thread::HiResTrackParams::new(
-                                representative,
-                                group_notes,
-                                ppq,
-                                key_count,
-                                total_ticks,
-                                track_count,
-                                config.clone(),
-                                midi_hash.clone(),
-                            ),
-                        );
-                    }
-                }
-            }
-        }
-
-        // 发送高精度洋葱皮脏区域临时覆层（编辑后立即显示，不等冷静期）
-        {
-            puffin::profile_scope!("runner_about_to_wait_hires_dirty_overlay");
-            this.window_state
-                .window
-                .ui_mut()
-                .show_hires_dirty_overlays();
-        }
+        // 注意：脏区域临时覆层只在 set_current_track 中发送，
+        // 不在轮询周期发送——避免编辑当前音轨时立即生成覆层干扰编辑器渲染。
+        // 覆层的目的：切换音轨后让旧音轨的编辑内容立即显示为洋葱皮，
+        // 直到 force_waterfall_regen 后台重生完成并清理覆层。
 
         // 更新进度窗口
         puffin::profile_scope!("runner_about_to_wait_progress_update");
         let ui_config = this.window_state.storage.config.get().ui.clone();
         this.window_state.progress.update(event_loop, &ui_config);
+
+        // 云传输进度悬浮窗：覆盖定位在云浏览对话框（无则主窗口）上
+        puffin::profile_scope!("runner_about_to_wait_cloud_progress_update");
+        this.window_state.cloud_progress.process_messages();
+        let cloud_anchor: Option<&winit::window::Window> = match this
+            .window_state
+            .dialog_manager
+            .dialog_window_of_type(DialogType::CloudBrowser)
+        {
+            Some(w) => Some(w.as_ref()),
+            None => Some(this.window_state.window.window().as_ref()),
+        };
+        this.window_state
+            .cloud_progress
+            .update(event_loop, &ui_config, cloud_anchor);
 
         // 处理窗口动作
         puffin::profile_scope!("runner_about_to_wait_window_actions");
@@ -257,96 +206,19 @@ impl winit::application::ApplicationHandler for Runner {
         this.process_core_events(event_loop);
 
         // 初始化新创建的对话框（同步主窗口的协作状态）
-        {
-            puffin::profile_scope!("runner_about_to_wait_dialog_init");
-            let main_ui = this.window_state.window.ui();
-            // 从主窗口获取当前主题，覆盖 storage 中的主题缓存
-            // 防止 save_storage 尚未持久化时对话框读取到过期主题
-            let mut dialog_config = this.window_state.storage.config.get().ui.clone();
-            dialog_config.theme = main_ui.root().theme().to_string();
-            this.window_state
-                .dialog_manager
-                .initialize_pending_with_collaboration_state(
-                    event_loop,
-                    this.window_state.window.window(),
-                    &dialog_config,
-                    main_ui,
-                );
-        }
+        this.about_to_wait_init_dialogs(event_loop);
+
+        // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
+        // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
+        this.try_fill_recover_track_entries();
 
         // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
         // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的
         // 预览帧/进度会被转发到一个不存在的对话框而丢失。
-        {
-            puffin::profile_scope!("runner_about_to_wait_video_preview");
-            if let Some(rx) = &mut this.window_state.video_preview_rx {
-                while let Ok((data, w, h)) = rx.try_recv() {
-                    tracing::info!(
-                        "Runner: 转发视频导出预览帧 {}x{} ({} bytes)",
-                        w,
-                        h,
-                        data.len()
-                    );
-                    this.window_state
-                        .dialog_manager
-                        .forward_video_export_preview_frame(data, w, h);
-                }
-            }
-        }
+        this.about_to_wait_forward_video_preview();
 
         // 处理导出进度消息（转发到对应的对话框窗口）
-        {
-            puffin::profile_scope!("runner_about_to_wait_export_progress");
-            if let Some(rx) = &mut this.window_state.export_progress_rx {
-                let main_ui = this.window_state.window.ui_mut();
-                while let Ok((msg, progress, total_frames, render_fps, elapsed_secs)) =
-                    rx.try_recv()
-                {
-                    // 判断是视频导出还是音频导出：
-                    // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
-                    // 主窗口的 overlay 不会变化）
-                    let is_video = this
-                        .window_state
-                        .dialog_manager
-                        .has_dialog_type(DialogType::VideoExport);
-                    if is_video {
-                        if progress < 0.0 {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_failed(msg);
-                            // 视频导出失败时关闭对话框
-                            this.window_state
-                                .dialog_manager
-                                .mark_dialog_for_close(DialogType::VideoExport);
-                        } else if progress >= 1.0 {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_completed(elapsed_secs);
-                        } else {
-                            this.window_state
-                                .dialog_manager
-                                .forward_video_export_progress(
-                                    msg,
-                                    progress,
-                                    total_frames,
-                                    render_fps,
-                                );
-                        }
-                    } else {
-                        // 音频导出
-                        if progress < 0.0 {
-                            main_ui.update_export_progress(msg.clone(), 0.0);
-                            main_ui.set_export_render_failed(msg);
-                        } else {
-                            main_ui.update_export_progress(msg, progress);
-                            if progress >= 1.0 {
-                                main_ui.set_export_render_completed();
-                            }
-                        }
-                    }
-                }
-            }
-        }
+        this.about_to_wait_forward_export_progress();
 
         // 更新对话框
         puffin::profile_scope!("runner_about_to_wait_dialog_update");
@@ -370,6 +242,15 @@ impl winit::application::ApplicationHandler for Runner {
             this.restart_window(event_loop);
         }
 
+        // 保存完成后的延迟退出：保存期间用户请求关闭（close_pending），
+        // 本地保存与云端上传均结束后自动退出
+        if this.window_state.window.close_pending && !this.is_saving() && !this.is_cloud_saving() {
+            tracing::info!("保存完成，执行延迟的退出请求");
+            this.window_state.window.close_pending = false;
+            event_loop.exit();
+            return;
+        }
+
         // 控制循环休眠策略
         puffin::profile_scope!("runner_about_to_wait_control_flow");
         this.handle_control_flow(event_loop);
@@ -377,5 +258,113 @@ impl winit::application::ApplicationHandler for Runner {
         // 测试模式 FPS 监测
         puffin::profile_scope!("runner_about_to_wait_test_mode_fps");
         this.handle_test_mode_fps(event_loop);
+    }
+}
+
+impl crate::runner::inner::RunnerInner {
+    /// 转发洋葱皮生成进度到进度窗口，并检测生成完成以设置编辑开始时间。
+    fn about_to_wait_waterfall_progress(&mut self) {
+        puffin::profile_scope!("runner_about_to_wait_waterfall_progress");
+        let waterfall_progress = self.window_state.window.ui().drain_waterfall_progress();
+        if !waterfall_progress.is_empty() {
+            let cb = Arc::clone(&self.window_state.progress_cb);
+            for (msg, pct) in waterfall_progress {
+                // 检测洋葱皮贴图生成完成（progress >= 1.0）
+                if pct >= 1.0 && self.session_tracker.editing_start_time.is_none() {
+                    self.session_tracker.editing_start_time = Some(std::time::Instant::now());
+                    tracing::info!(
+                        "洋葱皮贴图生成完成，编辑计时开始（累计 {} 秒）",
+                        self.session_tracker.accumulated_editing_secs
+                    );
+                }
+                cb(&msg, pct as f64);
+            }
+        }
+    }
+
+    /// 分帧初始化新创建的对话框，并同步主窗口的协作状态与主题。
+    ///
+    /// 每帧只推进一个对话框的一个初始化阶段（窗口 → GFX → UI），
+    /// 避免在 `about_to_wait` 中单帧阻塞 900ms+。
+    fn about_to_wait_init_dialogs(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        puffin::profile_scope!("runner_about_to_wait_dialog_init");
+        let main_ui = self.window_state.window.ui();
+        // 从主窗口获取当前主题，覆盖 storage 中的主题缓存
+        // 防止 save_storage 尚未持久化时对话框读取到过期主题
+        let mut dialog_config = self.window_state.storage.config.get().ui.clone();
+        dialog_config.theme = main_ui.root().theme().to_string();
+        self.window_state
+            .dialog_manager
+            .process_initialization_step(
+                event_loop,
+                self.window_state.window.window(),
+                &dialog_config,
+                main_ui,
+            );
+    }
+
+    /// 将视频导出线程产生的预览帧转发到 VideoExport 对话框窗口。
+    fn about_to_wait_forward_video_preview(&mut self) {
+        puffin::profile_scope!("runner_about_to_wait_video_preview");
+        if let Some(rx) = &mut self.window_state.video_preview_rx {
+            while let Ok((data, w, h)) = rx.try_recv() {
+                self.window_state
+                    .dialog_manager
+                    .forward_video_export_preview_frame(data, w, h);
+            }
+        }
+    }
+
+    /// 消费导出进度通道，按视频/音频分别转发到对话框或主窗口 UI。
+    fn about_to_wait_forward_export_progress(&mut self) {
+        puffin::profile_scope!("runner_about_to_wait_export_progress");
+        if let Some(rx) = &mut self.window_state.export_progress_rx {
+            let main_ui = self.window_state.window.ui_mut();
+            while let Ok((msg, progress, total_frames, render_fps, elapsed_secs)) = rx.try_recv() {
+                // 判断是视频导出还是音频导出：
+                // 检查是否存在 VideoExport 对话框窗口（导出在对话框中启动，
+                // 主窗口的 overlay 不会变化）
+                let is_video = self
+                    .window_state
+                    .dialog_manager
+                    .has_dialog_type(DialogType::VideoExport);
+                if is_video {
+                    if progress < 0.0 {
+                        self.window_state
+                            .dialog_manager
+                            .forward_video_export_failed(msg);
+                        // 视频导出失败时关闭对话框
+                        self.window_state
+                            .dialog_manager
+                            .mark_dialog_for_close(DialogType::VideoExport);
+                    } else if progress >= 1.0 {
+                        self.window_state
+                            .dialog_manager
+                            .forward_video_export_completed(elapsed_secs);
+                    } else {
+                        self.window_state
+                            .dialog_manager
+                            .forward_video_export_progress(
+                                msg,
+                                progress,
+                                total_frames,
+                                render_fps,
+                                elapsed_secs,
+                            );
+                    }
+                } else {
+                    // 音频导出
+                    if progress < 0.0 {
+                        main_ui.update_export_progress(msg.clone(), 0.0);
+                        main_ui.set_export_render_failed(msg);
+                    } else {
+                        main_ui.update_export_progress(msg, progress);
+                        if progress >= 1.0 {
+                            main_ui.set_export_render_completed();
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -1,0 +1,21 @@
+[package]
+name = "lumino-editor-state"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+tracing = { workspace = true }
+lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-midi-model = { workspace = true }
+im = { workspace = true }
+bit-vec = { workspace = true }

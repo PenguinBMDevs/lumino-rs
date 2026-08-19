@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{dpi, event::WindowEvent, window::WindowAttributes};
 
 use lumino_core::storage::ui_state::UiState;
@@ -20,6 +21,12 @@ pub struct WindowManager {
     resized: bool,
     /// 是否请求关闭窗口
     close_requested: bool,
+    /// 本地保存进行中标志（与 RunnerInner 共享：保存期间禁止关闭）
+    saving: Arc<AtomicBool>,
+    /// 云端上传进行中标志（与 RunnerInner 共享）
+    cloud_saving: Arc<AtomicBool>,
+    /// 待关闭标志：保存期间用户请求关闭 → 保存完成后自动退出
+    pub(crate) close_pending: bool,
 }
 
 impl WindowManager {
@@ -28,6 +35,8 @@ impl WindowManager {
         event_loop: &winit::event_loop::ActiveEventLoop,
         ui_state: &UiState,
         ui_config: &lumino_core::storage::config::UiConfig,
+        saving: Arc<AtomicBool>,
+        cloud_saving: Arc<AtomicBool>,
     ) -> Result<Self, String> {
         let attributes = Self::build_window_attributes(ui_state, ui_config.use_native_titlebar);
 
@@ -43,14 +52,23 @@ impl WindowManager {
         let physical_size = window.inner_size();
 
         let gfx = lumino_gfx::Context::new_blocking(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
         )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
+        // 在后台预热对话框共享的 iced Engine，避免首个对话框创建时
+        // 因重新编译 pipeline 阻塞事件循环 900ms+。
+        lumino_ui::prewarm_dialog_shared_engine(&gfx);
+
+        // 在后台预热系统字体缓存，使首次打开设置对话框时字体下拉菜单
+        // 的列表已就绪，不阻塞 UI 线程。字体扫描在后台线程调用
+        // get_cached_fonts() 完成，OnceLock 保证只扫一次。
+        lumino_note_core::font_scanner::prewarm_font_cache();
+
         let mut ui = lumino_ui::Host::new(
-            window.clone(),
+            Arc::clone(&window),
             physical_size.width,
             physical_size.height,
             ui_config,
@@ -60,6 +78,12 @@ impl WindowManager {
 
         // 启用分离渲染线程：将 wgpu 渲染从 UI 线程分离到独立线程
         ui.enable_separate_render_thread();
+
+        // 启动即初始化空白工程（默认 2 轨：Conductor + Setup）。
+        // 2026-08 根因修复：EditorData::new 时 document=None + current_track=0，
+        // 启动后直接画音符会被 current_track==0 拦截（Conductor 禁止放置）。
+        // 此处与菜单新建/关闭文件共用 init_blank_project，逻辑一致且幂等。
+        ui.init_blank_project();
 
         // 在 Windows 上设置自定义拉伸区域（仅自定义标题栏模式）
         #[cfg(target_os = "windows")]
@@ -74,6 +98,9 @@ impl WindowManager {
             modifiers: winit::keyboard::ModifiersState::default(),
             resized: false,
             close_requested: false,
+            saving,
+            cloud_saving,
+            close_pending: false,
         })
     }
 
@@ -167,11 +194,35 @@ impl WindowManager {
         self.resized = true;
     }
 
+    /// 快速关闭：先销毁窗口（隐藏），再退出事件循环
+    ///
+    /// 用户点击关闭按钮时，窗口立即隐藏，让用户感知到"已关闭"，
+    /// 剩余进程清理在 `about_to_wait` 当前迭代结束后自然完成。
+    fn quick_close(&mut self) {
+        // 先隐藏窗口，让用户立即感知到关闭
+        self.window.set_visible(false);
+        // 重置关闭请求标记，防止重复触发
+        self.close_requested = false;
+    }
+
+    /// 本地保存/云端上传是否进行中（与 RunnerInner 共享的标志）
+    fn is_saving(&self) -> bool {
+        self.saving.load(Ordering::SeqCst) || self.cloud_saving.load(Ordering::SeqCst)
+    }
+
     /// 处理窗口动作（最小化、最大化、关闭）
     pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // 检查系统关闭请求
         if self.close_requested {
-            event_loop.exit();
+            // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
+            if self.is_saving() {
+                tracing::info!("保存进行中，关闭请求延迟到保存完成");
+                self.close_pending = true;
+                self.close_requested = false;
+            } else {
+                self.quick_close();
+                event_loop.exit();
+            }
             return;
         }
 
@@ -186,7 +237,14 @@ impl WindowManager {
                     self.window.set_maximized(!is_maximized);
                 }
                 TrafficAction::Close => {
-                    event_loop.exit();
+                    // 保存期间禁止关闭软件：延迟到保存完成自动退出
+                    if self.is_saving() {
+                        tracing::info!("保存进行中，关闭请求延迟到保存完成");
+                        self.close_pending = true;
+                    } else {
+                        self.quick_close();
+                        event_loop.exit();
+                    }
                 }
             }
         }

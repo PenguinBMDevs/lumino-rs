@@ -1,0 +1,38 @@
+[package]
+name = "lumino-ui-editor"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[features]
+default = []
+
+[lints]
+workspace = true
+
+[dependencies]
+iced_core = { workspace = true }
+iced_wgpu = { workspace = true, features = ["geometry", "image"] }
+iced_widget = { workspace = true, features = ["image", "canvas"] }
+lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-editor-state = { workspace = true }
+lumino-gfx = { workspace = true }
+lumino-midi-loader = { workspace = true }
+lumino-ui-core = { workspace = true }
+# lumino-ui-constants: merged into lumino-ui-core::constants
+lumino-message = { workspace = true }
+lumino-diagnostics = { workspace = true }
+rayon = { workspace = true }
+tracing = { workspace = true }
+once_cell = { workspace = true }
+thiserror = { workspace = true }
+im = { workspace = true }
+serde_json = { workspace = true }
+puffin = { workspace = true }
+arboard = { workspace = true }

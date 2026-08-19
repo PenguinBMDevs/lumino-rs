@@ -1,0 +1,169 @@
+mod logo;
+/// 标题栏菜单模块
+pub mod menu;
+/// 标题栏模式切换模块
+pub mod mode_toggle;
+mod traffic;
+
+use iced_core::{Alignment, Length};
+use iced_widget::{container, mouse_area, row, space};
+
+use super::Element;
+use crate::titlebar::mode_toggle::AppMode;
+use crate::{Theme, window};
+use lumino_extras::i18n::Language;
+
+/// 编辑器标题栏
+pub struct Titlebar;
+
+impl Default for Titlebar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Titlebar {
+    /// 创建一个标题栏实例
+    pub fn new() -> Self {
+        Self
+    }
+
+    /// 渲染标题栏视图
+    pub fn view<'a>(
+        &'a self,
+        window: &'a window::Window,
+        use_native_titlebar: bool,
+        _current_mode: AppMode,
+        _toggle_progress: f32,
+        language: Language,
+        export_material_enabled: bool,
+    ) -> Element<'a> {
+        // 如果使用经典系统标题栏，只显示菜单（在最左侧）
+        if use_native_titlebar {
+            return self.view_native_titlebar(window, language, export_material_enabled);
+        }
+
+        // 自定义标题栏模式
+        // 将菜单区域和可拖动区域分离，避免鼠标事件冲突
+        let menu_row = if cfg!(target_os = "macos") {
+            row![]
+        } else {
+            row![
+                logo::view(window),
+                menu::view(language, export_material_enabled)
+            ]
+            .align_y(Alignment::Center)
+        };
+
+        // 构建标题栏内容：左侧菜单 + 中间可拖动区域 + 右侧窗口控制
+
+        if cfg!(target_os = "macos") {
+            // macOS: 标题栏只保留菜单和弹性空间（FPS 在底部状态栏显示）
+            let mut row = menu_row;
+
+            row = row.push(space().width(Length::Fill));
+
+            container(row)
+                .width(Length::Fill)
+                .height(30)
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style::default().background(if window.is_focused {
+                        palette.background.neutral.color
+                    } else {
+                        palette.background.weaker.color
+                    })
+                })
+                .align_y(Alignment::Start)
+                .into()
+        } else {
+            // Windows/Linux: 左侧菜单（不可拖动）+ 中间可拖动区域 + 右侧窗口控制
+            let left_section = container(menu_row)
+                .height(Length::Fill)
+                .align_y(Alignment::Center);
+
+            // 中间可拖动区域
+            let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
+                .on_press(window::Event::drag())
+                .on_double_click(window::Event::toggle_maximize());
+
+            // 右侧：窗口控制按钮（FPS 已移到底部状态栏显示）
+            let right_row = row![traffic::view(window)];
+
+            let right_section = container(right_row)
+                .height(Length::Fill)
+                .align_y(Alignment::Center);
+
+            container(row![left_section, drag_area, right_section])
+                .width(Length::Fill)
+                .height(30)
+                .style(|theme: &Theme| {
+                    let palette = theme.extended_palette();
+                    container::Style::default().background(if window.is_focused {
+                        palette.background.neutral.color
+                    } else {
+                        palette.background.weaker.color
+                    })
+                })
+                .align_y(Alignment::Start)
+                .into()
+        }
+    }
+
+    /// 渲染弹窗专用的自制标题栏。
+    ///
+    /// 弹窗只需要窗口控制和拖动区域，不应携带主窗口的文件、编辑、视图、帮助菜单。
+    pub fn view_popup<'a>(&'a self, window: &'a window::Window) -> Element<'a> {
+        let drag_area = mouse_area(container(space().width(Length::Fill)).height(Length::Fill))
+            .on_press(window::Event::drag())
+            .on_double_click(window::Event::toggle_maximize());
+        let right_section = container(row![traffic::view(window)])
+            .height(Length::Fill)
+            .align_y(Alignment::Center);
+
+        container(row![drag_area, right_section])
+            .width(Length::Fill)
+            .height(30)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(if window.is_focused {
+                    palette.background.neutral.color
+                } else {
+                    palette.background.weaker.color
+                })
+            })
+            .align_y(Alignment::Start)
+            .into()
+    }
+
+    /// 经典系统标题栏模式：只显示菜单，在最左侧
+    fn view_native_titlebar<'a>(
+        &'a self,
+        window: &'a window::Window,
+        language: Language,
+        export_material_enabled: bool,
+    ) -> Element<'a> {
+        // 菜单在最左侧，没有 logo 和窗口控制按钮
+        let row = if cfg!(target_os = "macos") {
+            row![]
+        } else {
+            row![menu::view(language, export_material_enabled)]
+        };
+
+        let inner = container(row)
+            .width(Length::Fill)
+            .height(30)
+            .style(|theme: &Theme| {
+                let palette = theme.extended_palette();
+                container::Style::default().background(if window.is_focused {
+                    palette.background.neutral.color
+                } else {
+                    palette.background.weaker.color
+                })
+            })
+            .align_y(Alignment::Start);
+
+        // 不需要拖动和双击最大化（由系统标题栏处理）
+        inner.into()
+    }
+}

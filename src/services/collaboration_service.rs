@@ -90,7 +90,7 @@ impl CollaborationService {
 
         // 将客户端放入 Mutex 后，Spawn 后台任务取出并操作
         *self.lock_client()? = Some(client);
-        let client_arc = self.client.clone();
+        let client_arc = Arc::clone(&self.client);
 
         tokio::spawn(async move {
             let mut rx = rx; // `&mut rx` 需要可变绑定
@@ -289,17 +289,11 @@ impl CollaborationService {
         let client = guard.take();
         drop(guard);
 
-        let result = match client {
-            Some(ref c) => {
-                // SAFETY: block_in_place 同步执行，client 由外层栈帧持有直到
-                // block_in_place 返回后才被操作，因此指针始终有效。
-                let c_ptr: *const CollaborationClient = c;
-                block_in_place(move || {
-                    let c = unsafe { &*c_ptr };
-                    let handle = tokio::runtime::Handle::current();
-                    handle.block_on(f(c)).map_err(|e| e.to_string())
-                })
-            }
+        let client_result = match client {
+            Some(ref c) => block_in_place(move || {
+                let handle = tokio::runtime::Handle::current();
+                handle.block_on(f(c)).map_err(|e| e.to_string())
+            }),
             None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
         };
 
@@ -311,7 +305,7 @@ impl CollaborationService {
                 messages::CLIENT_LOCK_POISONED
             );
         }
-        result
+        client_result
     }
 
     /// 发送鼠标位置（同步 API）
@@ -336,10 +330,7 @@ impl CollaborationService {
         drop(guard);
 
         if let Some(ref mut c) = client {
-            // SAFETY: block_in_place 同步执行，client 在外作用域存活
-            let c_ptr: *mut CollaborationClient = c;
             block_in_place(move || {
-                let c = unsafe { &mut *c_ptr };
                 let handle = tokio::runtime::Handle::current();
                 let _ = handle.block_on(c.disconnect());
             });

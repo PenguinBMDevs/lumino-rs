@@ -1,0 +1,37 @@
+[package]
+name = "lumino-gfx"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+wgpu = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+puffin = { workspace = true }
+half = { workspace = true }
+futures = { workspace = true }
+anyhow = { workspace = true }
+im = { workspace = true }
+rayon = { workspace = true }
+lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-editor-state = { workspace = true }
+lumino-midi-loader = { workspace = true }
+lumino-midiplayer = { workspace = true }
+lumino-diagnostics = { workspace = true }
+
+[dev-dependencies]
+naga = { workspace = true }
+png = { workspace = true }

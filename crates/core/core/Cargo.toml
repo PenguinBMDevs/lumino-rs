@@ -1,0 +1,24 @@
+[package]
+name = "lumino-core"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+bincode = { workspace = true }
+
+[dev-dependencies]
+bit-vec = { workspace = true }
+im = { workspace = true }

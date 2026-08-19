@@ -1,11 +1,12 @@
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::AtomicBool;
 use winit::event_loop::ControlFlow;
 
-use super::dialog_manager::{DialogManager, DialogResult};
+use super::dialog_manager::DialogManager;
 use super::file_handler::FileHandler;
 use super::midi_handler::MidiHandler;
-use super::midi_manager::{MidiManager, handle_audio_action};
+use super::midi_manager::MidiManager;
 use super::progress_manager::ProgressManager;
 use super::window_manager::WindowManager;
 use crate::services::collaboration_service::CollaborationService;
@@ -14,6 +15,22 @@ use crate::storage;
 
 pub use lumino_midi_loader::ParsedMidi;
 
+// ── 子模块 ──────────────────────────────────────────────────────────────
+
+mod collab;
+mod file;
+mod midi;
+mod persist;
+mod session;
+mod test;
+mod window;
+
+pub(crate) use collab::CollaborationStatus;
+pub(crate) use session::SessionTracker;
+pub(crate) use test::TestModeState;
+
+// ── 错误类型 ────────────────────────────────────────────────────────────
+
 /// Runner 初始化错误
 #[derive(Debug, thiserror::Error)]
 pub enum InitError {
@@ -21,7 +38,11 @@ pub enum InitError {
     Storage(#[from] std::io::Error),
     #[error("窗口初始化失败: {0}")]
     Window(String),
+    #[error("云存储初始化失败: {0}")]
+    Cloud(#[from] lumino_cloud::CloudError),
 }
+
+// ── Runner 顶层结构 ─────────────────────────────────────────────────────
 
 #[derive(Default)]
 pub struct Runner {
@@ -31,6 +52,8 @@ pub struct Runner {
     pub(crate) log_memory_usage: bool,
 }
 
+// ── 领域状态 ────────────────────────────────────────────────────────────
+
 /// 窗口与 UI 状态
 pub(crate) struct WindowState {
     pub(crate) window: WindowManager,
@@ -38,6 +61,10 @@ pub(crate) struct WindowState {
     pub(crate) needs_window_restart: bool,
     pub(crate) dialog_manager: DialogManager,
     pub(crate) progress: ProgressManager,
+    /// 云传输（上传/下载）进度悬浮窗口（覆盖在云浏览对话框上）
+    pub(crate) cloud_progress: super::cloud_progress::CloudProgressManager,
+    /// 云传输进度发送端（后台线程推送阶段进度）
+    pub(crate) cloud_progress_tx: tokio::sync::mpsc::UnboundedSender<(String, f64)>,
     pub(crate) progress_cb: lumino_midi_loader::loader::ProgressCallback,
     /// 视频导出进度接收器（(message, progress, total_frames, render_fps, elapsed_secs)）
     #[allow(clippy::type_complexity)]
@@ -55,6 +82,18 @@ pub(crate) struct MidiState {
     pub(crate) current_midi: Option<Arc<ParsedMidi>>,
     pub(crate) current_midi_source: Option<std::path::PathBuf>,
     pub(crate) midi_handler: MidiHandler,
+    /// 云端来源（从云面板下载的 .lmpj 工程：连接 id + 远程路径）。
+    /// 覆盖保存后自动上传回原远程路径；打开新文件/关闭工程时清空。
+    pub(crate) cloud_source: Option<CloudSource>,
+}
+
+/// 云端来源记录：定位"文件从哪里下载的"，供保存后自动回传
+#[derive(Debug, Clone)]
+pub(crate) struct CloudSource {
+    /// 云连接 ID
+    pub(crate) conn_id: String,
+    /// 云端原始路径（含文件名）
+    pub(crate) remote_path: String,
 }
 
 /// 文件操作状态
@@ -67,7 +106,6 @@ pub(crate) struct FileState {
 /// 协作功能状态
 pub(crate) struct CollabState {
     pub(crate) collaboration_status: CollaborationStatus,
-    pub(crate) pending_invite_code: Option<String>,
     pub(crate) collaboration_service: CollaborationService,
     pub(crate) last_collab_sync: Option<std::time::Instant>,
 }
@@ -79,50 +117,7 @@ pub(crate) struct TestState {
     pub(crate) last_memory_log: Option<std::time::Instant>,
 }
 
-/// 会话计时跟踪器
-///
-/// 用于工程信息面板中"创建时间"和"创作总用时"的真实统计：
-/// - 软件启动时记录 session_start_time
-/// - MIDI 加载完成 + 洋葱皮贴图生成完成后设置 editing_start_time
-/// - 打开工程设置对话框时计算累计编辑时间
-pub(crate) struct SessionTracker {
-    /// 软件启动时间
-    pub(crate) session_start_time: std::time::Instant,
-    /// 编辑开始时间（MIDI 加载 + 洋葱皮贴图生成完成后设置）
-    /// 如果没有加载 MIDI，从启动时间开始计算
-    pub(crate) editing_start_time: Option<std::time::Instant>,
-    /// 累计编辑时间（秒）—— 从 metadata 中加载的历史数据
-    pub(crate) accumulated_editing_secs: f64,
-    /// 工程创建时间（来自 MIDI 文件元数据或文件系统）
-    pub(crate) created_at: Option<String>,
-}
-
-impl SessionTracker {
-    pub(crate) fn new() -> Self {
-        Self {
-            session_start_time: std::time::Instant::now(),
-            editing_start_time: None,
-            accumulated_editing_secs: 0.0,
-            created_at: None,
-        }
-    }
-
-    /// 获取当前累计编辑时间（秒）
-    ///
-    /// 计算逻辑：
-    /// - 如果已加载 MIDI 且洋葱皮生成完成（editing_start_time 已设置）：
-    ///   accumulated + (now - editing_start_time)
-    /// - 如果未加载 MIDI（editing_start_time 未设置）：
-    ///   accumulated + (now - session_start_time)
-    pub(crate) fn current_editing_secs(&self) -> f64 {
-        let elapsed = if let Some(start) = self.editing_start_time {
-            start.elapsed().as_secs_f64()
-        } else {
-            self.session_start_time.elapsed().as_secs_f64()
-        };
-        self.accumulated_editing_secs + elapsed
-    }
-}
+// ── RunnerInner：聚合所有子状态 ─────────────────────────────────────────
 
 pub(crate) struct RunnerInner {
     pub(crate) window_state: WindowState,
@@ -131,23 +126,28 @@ pub(crate) struct RunnerInner {
     pub(crate) collab_state: CollabState,
     pub(crate) test_state: TestState,
     pub(crate) session_tracker: SessionTracker,
+    /// 云存储管理器（后台线程锁内执行耗时操作）
+    pub(crate) cloud: std::sync::Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
+    /// 云入口意图（记录用户从哪里进入，连接成功后按意图打开对应面板）
+    pub(crate) cloud_intent: Option<crate::runner::cloud::CloudIntent>,
+    /// 断连提醒面板是否已弹出（每次会话只弹一次）
+    pub(crate) cloud_alert_shown: bool,
+    /// 找回删除音轨对话框的待填充条目列表
+    ///
+    /// 用户请求打开对话框时，Runner 先扫描缓存目录得到条目列表存于此字段，
+    /// 在 `about_to_wait` 中检测对话框 UI 就绪后填充并清空。对话框分帧
+    /// 初始化（窗口 → GFX → UI）导致打开请求与 UI 就绪之间有数帧延迟，
+    /// 此字段作为缓冲。
+    pub(crate) pending_recover_track_entries:
+        Option<Vec<lumino_ui::event::window::track::RecoverTrackEntryPayload>>,
+    /// 本地保存进行中标志（异步保存任务开始时置 true，结束置 false）。
+    /// 保存期间禁止关闭软件，关闭请求转为 `pending_close` 延迟处理。
+    pub(crate) saving: std::sync::Arc<AtomicBool>,
+    /// 云端上传进行中标志（保存到云/自动回传期间置 true）
+    pub(crate) cloud_saving: std::sync::Arc<AtomicBool>,
 }
 
-pub(crate) struct TestModeState {
-    pub active: bool,
-    pub start_time: Option<std::time::Instant>,
-    pub duration: Option<u64>,
-    pub fps_samples: Vec<f32>,
-    pub last_fps_update: Option<std::time::Instant>,
-    pub frame_count: u32,
-}
-
-#[derive(Debug, Clone, Default)]
-pub(crate) enum CollaborationStatus {
-    #[default]
-    Disconnected,
-    Connecting,
-}
+// ── impl Runner ─────────────────────────────────────────────────────────
 
 impl Runner {
     /// 设置测试配置
@@ -166,16 +166,38 @@ impl Runner {
     ) -> Result<RunnerInner, InitError> {
         let storage = storage::Storage::new()?;
 
+        // 在存储初始化后启动文件日志
+        {
+            let config_dir = storage::config_dir();
+            let log_dir = config_dir.join("logs");
+            let retention = storage.config.get().ui.log_retention_count;
+            crate::logging::start_file_logging(log_dir, retention);
+        }
+
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 
+        // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
+        let saving = Arc::new(AtomicBool::new(false));
+        let cloud_saving = Arc::new(AtomicBool::new(false));
+
         // 创建主窗口管理器
-        let mut window = WindowManager::new(event_loop, ui_state, &config.ui)
-            .map_err(|e| InitError::Window(e.to_string()))?;
+        let mut window = WindowManager::new(
+            event_loop,
+            ui_state,
+            &config.ui,
+            Arc::clone(&saving),
+            Arc::clone(&cloud_saving),
+        )
+        .map_err(|e| InitError::Window(e.to_string()))?;
 
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
         let progress_cb = lumino_midi_loader::loader::progress_from_sender(progress_tx);
+
+        // 创建云传输进度悬浮窗口管理器
+        let (cloud_progress, cloud_progress_tx) =
+            super::cloud_progress::CloudProgressManager::new();
 
         // 创建 MIDI 管理器
         let mut midi = MidiManager::from_config(&config.ui);
@@ -205,7 +227,7 @@ impl Runner {
         // 创建新的处理器和服务
         let file_handler = FileHandler::new();
         let midi_handler = MidiHandler::new();
-        let file_service = FileService::new(progress_cb.clone());
+        let file_service = FileService::new(Arc::clone(&progress_cb));
         let collaboration_service = CollaborationService::new();
 
         event_loop.set_control_flow(ControlFlow::Wait);
@@ -221,6 +243,8 @@ impl Runner {
                 storage,
                 dialog_manager,
                 progress,
+                cloud_progress,
+                cloud_progress_tx,
                 progress_cb,
                 needs_window_restart: false,
                 export_progress_rx: None,
@@ -232,6 +256,7 @@ impl Runner {
                 current_midi: None,
                 current_midi_source: None,
                 midi_handler,
+                cloud_source: None,
             },
             file_state: FileState {
                 file_handler,
@@ -241,7 +266,6 @@ impl Runner {
             collab_state: CollabState {
                 collaboration_status,
                 collaboration_service,
-                pending_invite_code: None,
                 last_collab_sync: None,
             },
             test_state: TestState {
@@ -250,300 +274,32 @@ impl Runner {
                 last_memory_log: None,
             },
             session_tracker: SessionTracker::new(),
+            pending_recover_track_entries: None,
+            // 云存储管理器：配置与 config.json 同目录（cloud.json）
+            // 配置解析失败已在 CloudConfigStore 内回退默认，此处失败仅剩
+            // tokio Runtime 创建失败（内存不足等不可恢复错误）——传播为 InitError，
+            // 由上层以启动失败而非运行时 panic 处理。
+            cloud: Arc::new(Mutex::new(lumino_cloud::CloudManager::new(
+                crate::storage::config_dir().join("cloud.json"),
+            )?)),
+            cloud_intent: None,
+            cloud_alert_shown: false,
+            saving,
+            cloud_saving,
         };
 
         Ok(runner)
     }
 }
 
-/// 配置变更差异摘要（用于 save_storage 日志和副作用触发）
-struct ConfigDiff {
-    synth_changed: bool,
-    xsynth_changed: bool,
-    titlebar_changed: bool,
-    font_changed: bool,
-}
-
-/// 简化空字符串显示（避免重复的三元表达式）
-fn display_or_empty(s: &str) -> &str {
-    if s.is_empty() { "(空)" } else { s }
-}
-
 impl RunnerInner {
-    pub(crate) fn process_audio_actions(window: &mut WindowManager, midi: &mut MidiManager) {
-        let actions = window.ui_mut().take_audio_actions();
-
-        if !actions.is_empty() {
-            tracing::debug!("Runner: 处理 {} 个音频动作", actions.len());
-        }
-
-        for action in actions {
-            if let Some(output) = midi.output_mut() {
-                handle_audio_action(output, action);
-            }
-        }
+    /// 本地保存是否进行中
+    pub(crate) fn is_saving(&self) -> bool {
+        self.saving.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    pub(crate) fn apply_dialog_result_to_ui(ui: &mut lumino_ui::Host, result: DialogResult) {
-        match result {
-            DialogResult::CustomPrecision {
-                numerator,
-                denominator,
-            } => {
-                tracing::info!("应用自定义精度: {}/{}", numerator, denominator);
-
-                // 应用到主窗口的编辑器
-                if let (Ok(num), Ok(den)) = (numerator.parse::<f32>(), denominator.parse::<f32>()) {
-                    // 从编辑器状态获取实际的 PPQ 值
-                    let ppq = ui.ppq();
-                    let ticks = (ppq as f32) * 4.0 * num / den;
-
-                    ui.set_custom_precision(ticks);
-                    tracing::info!("自定义精度已应用: {} ticks (PPQ={})", ticks, ppq);
-                }
-            }
-            DialogResult::LoadConfirm => {
-                // LoadConfirm 由 lifecycle.rs 处理，这里不应到达
-                tracing::warn!("LoadConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
-            }
-            DialogResult::ProjectSettings {
-                title,
-                tempo,
-                copyright,
-            } => {
-                tracing::info!(
-                    "应用工程设置: 标题={}, BPM={}, 版权={}",
-                    title,
-                    tempo,
-                    copyright
-                );
-                ui.apply_project_settings(title, tempo, copyright);
-            }
-            DialogResult::Settings { settings, theme } => {
-                tracing::info!("应用设置面板配置，主题: {}", theme);
-                ui.apply_settings(settings, theme);
-            }
-            DialogResult::SpeedChange { factor } => {
-                tracing::info!("应用音符变速: 倍率={}", factor);
-                ui.apply_speed_change(factor);
-            }
-            DialogResult::Cancel => {
-                tracing::debug!("取消操作，无需处理");
-            }
-        }
-    }
-    /// 计算配置差异（合并 config_dirty 检测 + 差异摘要，消除重复逐字段比较）
-    /// 返回 None 表示无变更，Some(ConfigDiff) 包含副作用所需的差异信息
-    fn config_diff(
-        new: &lumino_ui::settings::SettingsPanel,
-        old: &lumino_core::storage::config::UiConfig,
-        current_theme: &str,
-    ) -> Option<ConfigDiff> {
-        let theme_changed = current_theme != old.theme;
-        let synth_changed =
-            new.synth_backend != old.preferred_backend || new.soundfont_path != old.soundfont_path;
-        let xsynth_changed = new.xsynth_buffer_ms != old.xsynth_buffer_ms
-            || new.xsynth_sample_rate != old.xsynth_sample_rate
-            || new.xsynth_threads != old.xsynth_threads
-            || new.xsynth_fade_out != old.xsynth_fade_out_killing
-            || new.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key;
-        let titlebar_changed = new.use_native_titlebar != old.use_native_titlebar;
-        let font_changed = new.program_font_name != old.program_font_name
-            || new.program_font_path != old.program_font_path;
-        let other_changed = new.language != old.language
-            || new.selection_box_mode != old.selection_box_mode
-            || new.velocity_filter_threshold != old.velocity_filter_threshold
-            || new.eraser_behavior != old.eraser_behavior
-            || new.auto_scroll_fixed_position != old.auto_scroll.fixed_indicator_position
-            || new.auto_scroll_page_trigger_offset != old.auto_scroll.page_trigger_offset
-            || new.auto_scroll_page_return_position != old.auto_scroll.page_return_position
-            || new.icon_hidpi != old.icon_hidpi
-            || new.enable_256key != old.enable_256key
-            || new.velocity_curve_style != old.velocity_curve_style
-            || new.playback_key_colors_enabled != old.playback_key_colors_enabled
-            || new.track_add_behavior != old.track_add_behavior;
-
-        if theme_changed
-            || synth_changed
-            || xsynth_changed
-            || titlebar_changed
-            || font_changed
-            || other_changed
-        {
-            Some(ConfigDiff {
-                synth_changed,
-                xsynth_changed,
-                titlebar_changed,
-                font_changed,
-            })
-        } else {
-            None
-        }
-    }
-
-    pub(crate) fn save_storage(&mut self) {
-        let new = self.window_state.window.ui().settings();
-        let old = &self.window_state.storage.config.get().ui;
-        let current_theme = self.window_state.window.ui().root().theme().to_string();
-
-        // 自动滚动模式（toolbar 上切换）不在 SettingsPanel 中，需要独立检测
-        let auto_scroll_mode = self
-            .window_state
-            .window
-            .ui()
-            .root()
-            .editor
-            .editor_state
-            .auto_scroll
-            .mode;
-        let auto_scroll_mode_changed = auto_scroll_mode != old.auto_scroll.mode;
-
-        let diff = match Self::config_diff(new, old, &current_theme) {
-            Some(d) => d,
-            None if !auto_scroll_mode_changed => return,
-            None => ConfigDiff {
-                synth_changed: false,
-                xsynth_changed: false,
-                titlebar_changed: false,
-                font_changed: false,
-            },
-        };
-
-        // 合成器变更日志
-        if diff.synth_changed {
-            tracing::info!(
-                "合成器设置已改变: backend {} -> {}, soundfont {} -> {}",
-                old.preferred_backend,
-                new.synth_backend,
-                display_or_empty(&old.soundfont_path),
-                display_or_empty(&new.soundfont_path),
-            );
-            self.midi_state.midi.mark_for_reinit();
-        }
-
-        // XSynth 参数变更
-        if diff.xsynth_changed {
-            tracing::info!(
-                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
-                old.xsynth_buffer_ms,
-                new.xsynth_buffer_ms,
-                old.xsynth_sample_rate,
-                new.xsynth_sample_rate,
-                old.xsynth_threads,
-                new.xsynth_threads,
-                old.xsynth_fade_out_killing,
-                new.xsynth_fade_out,
-                old.xsynth_max_voices_per_key,
-                new.xsynth_max_voices_per_key,
-            );
-            self.midi_state.midi.mark_for_reinit();
-        }
-
-        if diff.titlebar_changed {
-            tracing::info!(
-                "标题栏设置已改变: native_titlebar {} -> {}",
-                old.use_native_titlebar,
-                new.use_native_titlebar
-            );
-            self.window_state.needs_window_restart = true;
-        }
-
-        if diff.font_changed {
-            tracing::info!(
-                "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
-                display_or_empty(&old.program_font_name),
-                display_or_empty(&new.program_font_name),
-                display_or_empty(&old.program_font_path),
-                display_or_empty(&new.program_font_path),
-            );
-            self.window_state.needs_window_restart = true;
-        }
-
-        // 主题变更日志
-        if current_theme != old.theme {
-            tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);
-        }
-
-        // 保存配置
-        self.window_state.storage.config.patch(|config| {
-            config.ui.theme.clone_from(&current_theme);
-            config.ui.language = new.language;
-            config.ui.preferred_backend = new.synth_backend;
-            config.ui.soundfont_path = new.soundfont_path.clone();
-            config.ui.use_native_titlebar = new.use_native_titlebar;
-            config.ui.program_font_name = new.program_font_name.clone();
-            config.ui.program_font_path = new.program_font_path.clone();
-            config.ui.selection_box_mode = new.selection_box_mode;
-            config.ui.xsynth_buffer_ms = new.xsynth_buffer_ms;
-            config.ui.xsynth_sample_rate = new.xsynth_sample_rate;
-            config.ui.xsynth_threads = new.xsynth_threads;
-            config.ui.xsynth_fade_out_killing = new.xsynth_fade_out;
-            config.ui.xsynth_max_voices_per_key = new.xsynth_max_voices_per_key;
-            config.ui.velocity_filter_threshold = new.velocity_filter_threshold;
-            config.ui.eraser_behavior = new.eraser_behavior;
-            config.ui.auto_scroll.mode = self
-                .window_state
-                .window
-                .ui()
-                .root()
-                .editor
-                .editor_state
-                .auto_scroll
-                .mode;
-            config.ui.auto_scroll.fixed_indicator_position = new.auto_scroll_fixed_position;
-            config.ui.auto_scroll.page_trigger_offset = new.auto_scroll_page_trigger_offset;
-            config.ui.auto_scroll.page_return_position = new.auto_scroll_page_return_position;
-            config.ui.icon_hidpi = new.icon_hidpi;
-            config.ui.enable_256key = new.enable_256key;
-            config.ui.velocity_curve_style = new.velocity_curve_style;
-            config.ui.hires_onion_enabled = new.hires_onion_enabled;
-            config.ui.hires_measures_per_group = new.hires_measures_per_group;
-            config.ui.hires_tile_width_px = new.hires_tile_width_px;
-            config.ui.hires_cooldown_secs = new.hires_cooldown_secs;
-            config.ui.hires_gpu_mem_limit_mb = new.hires_gpu_mem_limit_mb;
-            config.ui.playback_key_colors_enabled = new.playback_key_colors_enabled;
-            config.ui.track_add_behavior = new.track_add_behavior;
-            config.ui.selected_palette = new.selected_palette.clone();
-        });
-
-        // 同步当前调色板到全局 PaletteManager
-        lumino_core::palette::set_current_palette_by_name(&new.selected_palette);
-
-        if let Err(e) = self.window_state.storage.config.save() {
-            tracing::warn!("保存配置失败: {e}");
-        }
-        if let Err(e) = self.window_state.storage.ui_state.save() {
-            tracing::warn!("保存UI状态失败: {e}");
-        }
-    }
-
-    /// 重启窗口（标题栏设置变更后）
-    pub(crate) fn restart_window(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        tracing::info!("正在重启窗口以应用标题栏设置...");
-
-        // 保存当前窗口状态
-        let is_maximized = self.window_state.window.window().is_maximized();
-
-        // 销毁当前窗口并创建新窗口
-        let ui_state = self.window_state.storage.ui_state.get();
-        let config = self.window_state.storage.config.get();
-
-        // 创建新的窗口管理器
-        match WindowManager::new(event_loop, ui_state, &config.ui) {
-            Ok(new_window) => {
-                // 替换窗口管理器
-                self.window_state.window = new_window;
-
-                // 恢复窗口最大化状态
-                if is_maximized {
-                    self.window_state.window.window().set_maximized(true);
-                }
-
-                tracing::info!("窗口重启完成");
-            }
-            Err(e) => {
-                tracing::error!("重启窗口失败: {}", e);
-            }
-        }
+    /// 云端上传是否进行中
+    pub(crate) fn is_cloud_saving(&self) -> bool {
+        self.cloud_saving.load(std::sync::atomic::Ordering::SeqCst)
     }
 }

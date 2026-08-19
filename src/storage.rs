@@ -1,6 +1,7 @@
 mod config;
 mod ui_state;
 
+use std::path::PathBuf;
 use std::{fs, io};
 
 use directories::ProjectDirs;
@@ -92,6 +93,13 @@ fn copy_dir(src: &std::path::Path, dst: &std::path::Path) -> io::Result<()> {
         }
     }
     Ok(())
+}
+
+/// 获取应用程序配置目录路径
+pub fn config_dir() -> PathBuf {
+    ProjectDirs::from(QUALIFIER, ORGANIZATION, APPLICATION)
+        .map(|d| d.config_dir().to_owned())
+        .unwrap_or_else(|| PathBuf::from("."))
 }
 
 // 存储系统，存一些配置文件和状态文件

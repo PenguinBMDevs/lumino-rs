@@ -36,8 +36,11 @@ impl RunnerInner {
                     "对话框结果（第一次检查）: {:?}",
                     std::mem::discriminant(&result)
                 );
+                // 永久删除音轨缓存：对话框保持开启（Runner 处理完后刷新条目列表），
+                // 其余结果沿用"取到结果即关闭"的默认行为。
+                should_close =
+                    !matches!(result, DialogResult::RecoverTrackPermanentlyDelete { .. });
                 dialog_result = Some(result);
-                should_close = true;
             }
 
             // 请求重绘并处理待处理事件（process_pending_events）
@@ -45,6 +48,9 @@ impl RunnerInner {
             if !should_close {
                 tracing::debug!("调用 dialog.redraw()");
                 dialog.redraw();
+                // 应用自制标题栏产生的窗口动作（关闭 / 最小化 / 拖动）
+                // 必须在 redraw（事件队列已消费）之后调用
+                dialog.apply_window_actions();
             } else {
                 tracing::debug!("跳过 dialog.redraw()，因为 should_close = true");
             }
@@ -57,8 +63,11 @@ impl RunnerInner {
                         "对话框结果（第二次检查）: {:?}",
                         std::mem::discriminant(&result)
                     );
+                    // 永久删除音轨缓存：对话框保持开启（Runner 处理完后刷新条目列表），
+                    // 其余结果沿用"取到结果即关闭"的默认行为。
+                    should_close =
+                        !matches!(result, DialogResult::RecoverTrackPermanentlyDelete { .. });
                     dialog_result = Some(result);
-                    should_close = true;
                 }
             }
         }
@@ -94,15 +103,25 @@ impl RunnerInner {
                 title,
                 tempo,
                 copyright,
+                author,
+                time_signatures,
             } => {
                 tracing::info!(
-                    "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}",
+                    "应用工程设置(对话框结果): 标题={}, BPM={}, 版权={}, 作者={}, 拍号变化数={}",
                     title,
                     tempo,
-                    copyright
+                    copyright,
+                    author,
+                    time_signatures.len()
                 );
                 let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_project_settings(title.clone(), *tempo, copyright.clone());
+                main_ui.apply_project_settings(
+                    title.clone(),
+                    *tempo,
+                    copyright.clone(),
+                    author.clone(),
+                    time_signatures.clone(),
+                );
                 // 更新主窗口标题
                 self.window_state
                     .window
@@ -112,11 +131,23 @@ impl RunnerInner {
             DialogResult::Settings { settings, theme } => {
                 tracing::info!("应用设置面板配置到主窗口，主题: {}", theme);
                 let main_ui = self.window_state.window.ui_mut();
-                main_ui.apply_settings(settings.clone(), theme.clone());
+                main_ui.apply_settings((**settings).clone(), theme.clone());
             }
             _ => {
+                let is_permanent_delete =
+                    matches!(&result, DialogResult::RecoverTrackPermanentlyDelete { .. });
                 let main_ui = self.window_state.window.ui_mut();
                 crate::runner::inner::RunnerInner::apply_dialog_result_to_ui(main_ui, result);
+                // 永久删除音轨缓存后对话框保持开启：重新扫描缓存目录，下一帧
+                // try_fill_recover_track_entries 会把新列表注入对话框，刷新已删除条目。
+                if is_permanent_delete {
+                    let entries = self.scan_recover_track_entries();
+                    tracing::info!(
+                        "找回删除音轨：永久删除后重新扫描，剩余缓存 {} 个",
+                        entries.len()
+                    );
+                    self.pending_recover_track_entries = Some(entries);
+                }
             }
         }
     }

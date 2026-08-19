@@ -1,0 +1,64 @@
+[package]
+name = "lumino-ui"
+version.workspace = true
+rust-version.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+description.workspace = true
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+lumino-core = { workspace = true }
+lumino-note-core = { workspace = true }
+lumino-extras = { workspace = true }
+lumino-export = { workspace = true }
+lumino-project = { workspace = true }
+lumino-editor-state = { workspace = true }
+lumino-gfx = { workspace = true }
+lumino-message = { workspace = true }
+lumino-midi-io = { workspace = true }
+lumino-midi-loader = { workspace = true }
+lumino-diagnostics = { workspace = true }
+lumino-collaboration = { workspace = true }
+# lumino-ui-constants: merged into lumino-ui-core::constants
+lumino-ui-core = { workspace = true }
+# lumino-ui-host: merged into lumino-gfx::cache
+lumino-ui-settings = { workspace = true }
+lumino-ui-editor = { workspace = true }
+# crates.io
+midly = { workspace = true }
+# crates.io
+iced_renderer = { workspace = true }
+iced_aw = { workspace = true }
+iced_wgpu = { workspace = true, features = ["geometry"] }
+iced_winit = { workspace = true }
+iced_widget = { workspace = true, features = ["image"] }
+iced_core = { workspace = true }
+image = { workspace = true }
+once_cell = { workspace = true }
+rfd = { workspace = true }
+tracing = { workspace = true }
+resvg = { workspace = true }
+usvg = { workspace = true }
+tiny-skia = { workspace = true }
+arboard = { workspace = true }
+serde_json = { workspace = true }
+im = { workspace = true }
+puffin = { workspace = true }
+winit = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+rayon = { workspace = true }
+parking_lot = { workspace = true }
+i2m-rs = { workspace = true }
+
+[dev-dependencies]
+wgpu = { workspace = true }
+tokio = { workspace = true }
