@@ -163,6 +163,30 @@ impl Root {
                 );
                 true
             }
+            PianoWaterfallClicked => {
+                use crate::right_sidebar::RightSidebarPanel;
+                // 互斥路由：已在钢琴瀑布流预览面板 → 收起；否则切换到该面板。
+                // 与其他右侧栏按钮对称：避免其他面板打开后本按钮只收起面板、
+                // active_panel 仍指向旧面板导致无法切回。
+                if self
+                    .right_sidebar
+                    .is_panel_active(RightSidebarPanel::PianoWaterfall)
+                {
+                    self.right_sidebar.panel_visible = false;
+                } else {
+                    self.right_sidebar
+                        .switch_panel(RightSidebarPanel::PianoWaterfall);
+                }
+                tracing::info!(
+                    "右侧栏钢琴瀑布流预览按钮被点击，面板{}",
+                    if self.right_sidebar.panel_visible {
+                        "展开"
+                    } else {
+                        "收起"
+                    }
+                );
+                true
+            }
             MaterialAddClicked => {
                 // 展开/收起"添加素材"下拉菜单
                 self.right_sidebar.materials.add_menu_open =

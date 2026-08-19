@@ -8,6 +8,7 @@ pub mod material;
 mod material_context_menu;
 pub(crate) mod material_delete_dialog;
 mod materials_view;
+mod piano_waterfall;
 mod resize;
 pub mod view;
 

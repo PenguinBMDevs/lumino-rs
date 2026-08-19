@@ -32,6 +32,8 @@ pub enum RightSidebarAction {
     ResizeDragEnded,
     /// 点击素材库按钮（展开/收起面板并亮灯）
     MaterialLibraryClicked,
+    /// 点击钢琴瀑布流预览按钮（展开/收起面板并亮灯）
+    PianoWaterfallClicked,
     /// 面板内点击"添加素材"按钮（展开/收起下拉菜单）
     MaterialAddClicked,
     /// 下拉菜单："从 web 下载"（占位实现，仅记录日志）

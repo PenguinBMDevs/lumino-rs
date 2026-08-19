@@ -213,6 +213,8 @@ pub struct MainTranslations {
     // ── 素材库面板 ──
     /// 素材库标题
     pub material_library: &'static str,
+    /// 钢琴瀑布流预览标题
+    pub piano_waterfall: &'static str,
     /// 添加素材
     pub material_add: &'static str,
     /// 从云导入素材
@@ -356,6 +358,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     project_cancel: "取消",
 
     material_library: "素材库",
+    piano_waterfall: "钢琴瀑布流",
     material_add: "添加素材",
     material_download_web: "从云导入",
     material_import_local: "从本地选取",
@@ -482,6 +485,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     project_cancel: "Cancel",
 
     material_library: "Material Library",
+    piano_waterfall: "Piano Waterfall",
     material_add: "Add Material",
     material_download_web: "Import from Cloud",
     material_import_local: "Import from Local",

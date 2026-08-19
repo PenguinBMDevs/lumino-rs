@@ -42,6 +42,14 @@ pub fn view<'a>(
             right_sidebar.is_panel_active(RightSidebarPanel::Materials),
             window,
         ))
+        // 钢琴瀑布流预览按钮：点击切换到钢琴瀑布流预览面板并亮灯
+        .push(sidebar_button(
+            Icon::PianoWaterfall,
+            t.piano_waterfall,
+            Message::RightSidebar(RightSidebarAction::PianoWaterfallClicked),
+            right_sidebar.is_panel_active(RightSidebarPanel::PianoWaterfall),
+            window,
+        ))
         .push(Space::new().height(Length::Fill));
 
     // 图标列容器
@@ -59,6 +67,9 @@ pub fn view<'a>(
         let panel_content: Element<'a> = match right_sidebar.active_panel {
             RightSidebarPanel::Materials => {
                 crate::right_sidebar::materials_view::panel(right_sidebar, language, window)
+            }
+            RightSidebarPanel::PianoWaterfall => {
+                crate::right_sidebar::piano_waterfall::panel(right_sidebar, language, window)
             }
             RightSidebarPanel::ImageToMidi => i2m_panel(right_sidebar, window, language),
         };

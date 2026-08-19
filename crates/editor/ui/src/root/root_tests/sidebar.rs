@@ -113,3 +113,67 @@ fn test_right_sidebar_hides_with_piano_roll_and_restores() {
         "右侧栏面板展开状态应随钢琴卷帘一起恢复"
     );
 }
+
+/// 点击钢琴瀑布流预览按钮：面板互斥切换（展开 → 再点收起）
+#[test]
+fn test_piano_waterfall_panel_toggle() {
+    let mut root = Root::new(&UiConfig::default());
+    use crate::right_sidebar::RightSidebarPanel;
+
+    // 初始未激活
+    assert!(
+        !root
+            .right_sidebar
+            .is_panel_active(RightSidebarPanel::PianoWaterfall),
+        "初始不应处于钢琴瀑布流面板"
+    );
+
+    // 第一次点击：展开并切换到钢琴瀑布流
+    root.handle_right_sidebar_action(RightSidebarAction::PianoWaterfallClicked);
+    assert!(
+        root.right_sidebar.panel_visible,
+        "点击后右侧栏面板应展开"
+    );
+    assert!(
+        root
+            .right_sidebar
+            .is_panel_active(RightSidebarPanel::PianoWaterfall),
+        "点击后应切换到钢琴瀑布流面板"
+    );
+
+    // 第二次点击：互斥收起
+    root.handle_right_sidebar_action(RightSidebarAction::PianoWaterfallClicked);
+    assert!(
+        !root.right_sidebar.panel_visible,
+        "再次点击应互斥收起钢琴瀑布流面板"
+    );
+}
+
+/// 钢琴瀑布流与图片转 MIDI 互斥：打开瀑布流后打开 I2M，active_panel 切换
+#[test]
+fn test_piano_waterfall_exclusive_with_image_to_midi() {
+    let mut root = Root::new(&UiConfig::default());
+    use crate::right_sidebar::RightSidebarPanel;
+
+    root.handle_right_sidebar_action(RightSidebarAction::PianoWaterfallClicked);
+    assert!(
+        root
+            .right_sidebar
+            .is_panel_active(RightSidebarPanel::PianoWaterfall),
+        "先打开应为钢琴瀑布流面板"
+    );
+
+    root.handle_right_sidebar_action(RightSidebarAction::ImageToMidiClicked);
+    assert!(
+        root
+            .right_sidebar
+            .is_panel_active(RightSidebarPanel::ImageToMidi),
+        "再打开图片转 MIDI 应互斥切换到该面板"
+    );
+    assert!(
+        !root
+            .right_sidebar
+            .is_panel_active(RightSidebarPanel::PianoWaterfall),
+        "切换后钢琴瀑布流面板应不再激活"
+    );
+}

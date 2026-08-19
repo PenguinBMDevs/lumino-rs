@@ -117,6 +117,8 @@ define_icons! {
     (ImageToMidi, "../../../../../resources/icons/toolbar/image-to-midi-converter.svg"),
     // 素材库图标（右侧栏）
     (MaterialLibrary, "../../../../../resources/icons/toolbar/material-library.svg"),
+    // 钢琴瀑布流预览图标（右侧栏）
+    (PianoWaterfall, "../../../../../resources/icons/sidebar/piano-waterfall.svg"),
     // 标题栏图标
     (PencilOutline, "../../../../../resources/icons/titlebar/editor-mode.svg"),
     (Keys, "../../../../../resources/icons/titlebar/piano-roll.svg"),

@@ -24,6 +24,8 @@ pub enum RightSidebarPanel {
     ImageToMidi,
     /// 素材库面板
     Materials,
+    /// 钢琴瀑布流预览面板
+    PianoWaterfall,
 }
 
 /// 可选调色板算法（中文名 + i2m-rs `PaletteSource`）
