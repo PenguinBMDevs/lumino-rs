@@ -1,26 +1,48 @@
 //! 右侧栏钢琴瀑布流预览面板
 //!
-//! 入口阶段：仅渲染面板外壳（标题 + 占位说明）。瀑布流预览的实际渲染
-//! （音符随音频下落的时间轴可视化）将在后续迭代中接入数据层。
+//! 底部以「离屏 wgpu 渲染 → iced `image::Handle`」的方式绘制标准钢琴键盘
+//! （默认 128 键，可切换至 256 键以拓展更大音域）。键盘纹理由 Host 在 GPU
+//! 上下文持有者处渲染并缓存，面板仅负责展示；此模块负责布局与交互入口
+//! （128/256 键切换）。瀑布流预览主体（音符随播放下落）留待后续迭代接入。
 
-use iced_core::{Length};
-use iced_widget::{Column, container, scrollable, text};
+pub(crate) mod key_layout;
+pub(crate) mod keyboard_renderer;
+
+use iced_core::{Length, alignment};
+use iced_widget::{Column, button, container, scrollable, text};
 use lumino_extras::i18n::{Language, main_translations};
+use lumino_message::RightSidebarAction;
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
-use crate::{Element, Theme, window};
+use crate::{Element, Message, Theme, window};
 
-/// 渲染钢琴瀑布流预览面板内容（标题 + 占位说明）
+use self::keyboard_renderer::{
+    KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING,
+};
+
+/// 渲染钢琴瀑布流预览面板内容（标题 + 说明 + 键数切换 + 键盘图像）
 pub(super) fn panel<'a>(
     right_sidebar: &'a RightSidebar,
     language: Language,
     _window: &'a window::Window,
 ) -> Element<'a> {
     let t = main_translations(language);
+    let state = &right_sidebar.piano_waterfall;
 
-    let content_col = Column::new()
+    // 键数切换按钮：在 128 / 256 之间切换（拓展更大音域）
+    let toggle = button(
+        text(format!("键数：{}", state.key_count))
+            .size(12)
+            .align_x(alignment::Horizontal::Center),
+    )
+    .width(Length::Fill)
+    .on_press(Message::RightSidebar(
+        RightSidebarAction::PianoWaterfallKeyCountToggled,
+    ));
+
+    let top_col = Column::new()
         .spacing(8)
-        .padding(8)
+        .padding(PANEL_PADDING)
         .width(Length::Fill)
         .push(panel_header(format!("{}预览", t.piano_waterfall), _window))
         .push(
@@ -30,9 +52,37 @@ pub(super) fn panel<'a>(
                 .style(|theme: &Theme| text::Style {
                     color: Some(theme.extended_palette().background.strong.text),
                 }),
-        );
+        )
+        .push(toggle);
 
-    let content = container(scrollable(content_col).height(Length::Fill))
+    // 键盘固定在面板底部（独立于上方滚动区），随面板宽度同步变更尺寸
+    let bottom_section: crate::Element<'a> = if let Some(handle) = &state.handle {
+        iced_widget::image::Image::<iced_core::image::Handle>::new(handle.clone())
+            .width(Length::Fill)
+            .height(Length::Fixed(state.rendered_height as f32))
+            .into()
+    } else {
+        text("（键盘渲染中或面板不可见）")
+            .size(11)
+            .style(|theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.strong.text),
+            })
+            .into()
+    };
+    let bottom_bar = container(bottom_section)
+        .width(Length::Fill)
+        .padding(PANEL_PADDING)
+        .style(|theme: &Theme| {
+            let palette = theme.extended_palette();
+            container::Style::default().background(palette.background.weak.color)
+        });
+
+    let content_col = Column::new()
+        .width(Length::Fill)
+        .push(scrollable(top_col).height(Length::Fill))
+        .push(bottom_bar);
+
+    let content = container(content_col)
         .width(Length::Fixed(
             right_sidebar.panel_width - RESIZE_HANDLE_WIDTH,
         ))
@@ -53,4 +103,12 @@ fn panel_header<'a>(title: String, _window: &'a window::Window) -> Element<'a> {
             color: Some(theme.extended_palette().background.neutral.text),
         })
         .into()
+}
+
+/// 由面板内容宽度推导键盘渲染尺寸（宽度变化时高度按比例联动）
+#[allow(dead_code)]
+pub(crate) fn keyboard_size(content_width: f32) -> (u32, u32) {
+    let w = (content_width - PANEL_PADDING * 2.0).max(1.0);
+    let h = (w * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
+    (w as u32, h as u32)
 }

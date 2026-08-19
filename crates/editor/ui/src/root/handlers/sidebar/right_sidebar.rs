@@ -137,6 +137,15 @@ impl Root {
                 }
                 true
             }
+            PianoWaterfallKeyCountToggled => {
+                // 键数在 128 ⇄ 256 间切换，并清空缓存强制重绘
+                let state = &mut self.right_sidebar.piano_waterfall;
+                state.key_count = if state.key_count <= 128 { 256 } else { 128 };
+                state.handle = None;
+                state.cached_signature = None;
+                tracing::info!("钢琴瀑布流键盘键数切换为 {}", state.key_count);
+                true
+            }
             MaterialLibraryClicked => {
                 use crate::right_sidebar::RightSidebarPanel;
                 // 互斥路由：已在素材库面板 → 收起；否则切换到素材库面板

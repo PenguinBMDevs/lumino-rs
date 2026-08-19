@@ -65,6 +65,8 @@ pub(crate) struct RenderContext {
     pub device: wgpu::Device,
     pub queue: wgpu::Queue,
     pub format: wgpu::TextureFormat,
+    /// 钢琴瀑布流面板键盘离屏渲染器（按需懒创建，跨帧复用管线）
+    pub keyboard_renderer: Option<crate::right_sidebar::piano_waterfall::keyboard_renderer::KeyboardRenderer>,
 }
 
 impl RenderContext {
@@ -132,6 +134,7 @@ impl RenderContext {
             device: wgpu.device.clone(),
             queue: wgpu.queue.clone(),
             format: wgpu.format,
+            keyboard_renderer: None,
         }
     }
 }

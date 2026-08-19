@@ -14,7 +14,12 @@
 
 use iced_wgpu::wgpu;
 
+use crate::editor::grid::theme::ThemeExt;
 use crate::host::Host;
+use crate::right_sidebar::core::RESIZE_HANDLE_WIDTH;
+use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
+    KeyboardRenderer, KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING,
+};
 
 // 子模块声明
 mod data;
@@ -50,6 +55,9 @@ impl Host {
         // 更新光标位置（用于音符预览）
         self.update_cursor_for_preview();
 
+        // 钢琴瀑布流面板键盘：在 GPU 上下文持有者处离屏渲染并缓存（按需）
+        self.ensure_piano_waterfall_keyboard();
+
         if self.render_ctx.wgpu_render_thread.is_some() {
             // 主窗口：分离渲染线程模式
             self.render_with_separate_thread(frame, gfx);
@@ -65,5 +73,69 @@ impl Host {
     #[inline]
     pub(crate) fn clear_cache(&mut self) {
         self.render_ctx.cache = std::mem::take(&mut self.render_ctx.cache);
+    }
+
+    /// 按需离屏渲染钢琴瀑布流面板键盘（真·裸 wgpu）
+    ///
+    /// 仅在面板可见且为钢琴瀑布流面板时渲染；其余情况清空缓存以释放纹理。
+    /// 渲染产物为 iced `image::Handle`，缓存于 `RightSidebar.piano_waterfall`，
+    /// 仅当（宽度 / 高度 / 键数 / 主题）任一参数变化时才重绘，避免每帧 GPU 读回。
+    pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
+        // 先取出主题（拥有所有权，避免与后续可变借用冲突）
+        let theme = self.root.theme();
+
+        let active = self.root.right_sidebar.panel_visible
+            && self.root.right_sidebar.active_panel
+                == crate::right_sidebar::RightSidebarPanel::PianoWaterfall;
+
+        // 键盘实际绘制内宽 = 面板内容宽 - 两侧内边距
+        let inner_width = (self.root.right_sidebar.panel_width
+            - RESIZE_HANDLE_WIDTH
+            - PANEL_PADDING * 2.0)
+            .max(1.0);
+        let render_height = (inner_width * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
+        let width = inner_width as u32;
+        let height = render_height as u32;
+        let key_count = self.root.right_sidebar.piano_waterfall.key_count as u32;
+        let is_dark = !theme.is_light();
+
+        // 参数签名（脏判断）：宽度 / 高度 / 键数 / 主题
+        let mut sig = width as u64;
+        sig = sig.wrapping_mul(31).wrapping_add(height as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
+        sig = sig.wrapping_mul(31).wrapping_add(if is_dark { 1 } else { 0 });
+
+        let state = &mut self.root.right_sidebar.piano_waterfall;
+        if !active {
+            // 面板不可见：释放已渲染纹理与签名，避免陈旧显示与显存占用
+            if state.handle.is_some() {
+                state.handle = None;
+                state.cached_signature = None;
+            }
+            return;
+        }
+
+        if state.cached_signature == Some(sig) {
+            return; // 参数未变，复用已渲染 Handle
+        }
+
+        let renderer = self.render_ctx.keyboard_renderer.get_or_insert_with(|| {
+            KeyboardRenderer::new(&self.render_ctx.device)
+        });
+
+        let bytes = renderer.render_keyboard(
+            &self.render_ctx.device,
+            &self.render_ctx.queue,
+            width,
+            height,
+            key_count,
+            &theme,
+        );
+
+        let handle = iced_core::image::Handle::from_rgba(width, height, bytes);
+        state.handle = Some(handle);
+        state.rendered_width = width;
+        state.rendered_height = height;
+        state.cached_signature = Some(sig);
     }
 }

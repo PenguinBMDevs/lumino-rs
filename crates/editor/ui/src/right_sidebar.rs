@@ -3,12 +3,12 @@
 //! 提供右侧工具栏，用于放置图片转MIDI等扩展功能按钮。
 
 pub mod convert;
-mod core;
+pub(crate) mod core;
 pub mod material;
 mod material_context_menu;
 pub(crate) mod material_delete_dialog;
 mod materials_view;
-mod piano_waterfall;
+pub(crate) mod piano_waterfall;
 mod resize;
 pub mod view;
 
