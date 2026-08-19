@@ -1,6 +1,6 @@
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance,
-    MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
+    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, MiditrailNoteGpu,
+    NoteInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
 mod builder;

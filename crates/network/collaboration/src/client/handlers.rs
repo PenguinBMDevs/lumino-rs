@@ -4,10 +4,12 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use tokio::sync::RwLock;
-use tracing::{debug, error, info};
+use tracing::{debug, error, trace};
 
 use super::event::CollaborationEvent;
-use crate::client::{ClientState, CollaborationSession, EventCallback, ServerMessage};
+use crate::client::{
+    ClientState, ClientStateCell, CollaborationSession, EventCallback, ServerMessage,
+};
 use crate::types::RemoteUser;
 
 /// 统一触发协作事件回调（消除各分支重复的 `if let Some(ref cb) = callback` 样板）。
@@ -29,7 +31,7 @@ fn new_remote_user(info: crate::types::UserInfo) -> RemoteUser {
 /// 处理服务器消息
 pub async fn handle_server_message(
     text: &str,
-    state: &Arc<RwLock<ClientState>>,
+    state: &Arc<ClientStateCell>,
     session: &Arc<RwLock<CollaborationSession>>,
     callback: Option<EventCallback>,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -59,7 +61,7 @@ pub async fn handle_server_message(
             position,
             color,
         } => {
-            info!(
+            trace!(
                 "收到服务器 MouseUpdate: user_id={}, username={}, x={}, y={}, color={}",
                 user_id, username, position.x, position.y, color
             );
@@ -124,7 +126,7 @@ pub async fn handle_server_message(
             sess.current_room = Some(room.clone());
             drop(sess);
 
-            *state.write().await = ClientState::InRoom;
+            state.set(ClientState::InRoom);
 
             emit(&callback, CollaborationEvent::RoomCreated { room });
         }
@@ -142,7 +144,7 @@ pub async fn handle_server_message(
             }
             drop(sess);
 
-            *state.write().await = ClientState::InRoom;
+            state.set(ClientState::InRoom);
 
             emit(&callback, CollaborationEvent::RoomJoined { room, users });
         }

@@ -137,7 +137,16 @@ struct FillRectInput<'a> {
 }
 
 fn fill_bgra_rect(input: FillRectInput<'_>) {
-    let FillRectInput { frame, frame_width, frame_height, x, y, w, h, color } = input;
+    let FillRectInput {
+        frame,
+        frame_width,
+        frame_height,
+        x,
+        y,
+        w,
+        h,
+        color,
+    } = input;
     if w == 0 || h == 0 {
         return;
     }
@@ -189,7 +198,14 @@ pub struct WaterfallFrameInput<'a> {
 
 pub fn render_waterfall_frame(input: WaterfallFrameInput<'_>) {
     let WaterfallFrameInput {
-        frame, frame_width, frame_height, document, tick, ppq, key_count, waterfall_speed,
+        frame,
+        frame_width,
+        frame_height,
+        document,
+        tick,
+        ppq,
+        key_count,
+        waterfall_speed,
     } = input;
     if frame_width == 0 || frame_height == 0 || key_count == 0 {
         return;

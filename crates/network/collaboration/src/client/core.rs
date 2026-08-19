@@ -4,18 +4,22 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use tokio::sync::{RwLock, mpsc};
+use tokio::sync::RwLock;
+use tokio::sync::mpsc;
 use tracing::info;
 
 use crate::Result;
 use crate::http::HttpClient;
 
-use super::{ClientMessage, ClientState, CollaborationEvent, CollaborationSession, EventCallback};
+use super::{
+    ClientMessage, ClientState, ClientStateCell, CollaborationEvent, CollaborationSession,
+    EventCallback,
+};
 
 /// 协作客户端
 pub struct CollaborationClient {
     pub(super) config: crate::types::ClientConfig,
-    pub(super) state: Arc<RwLock<ClientState>>,
+    pub(super) state: Arc<ClientStateCell>,
     pub(super) session: Arc<RwLock<CollaborationSession>>,
     pub(super) message_tx: mpsc::UnboundedSender<ClientMessage>,
     pub(super) message_rx: Option<mpsc::UnboundedReceiver<ClientMessage>>,
@@ -33,7 +37,7 @@ impl CollaborationClient {
 
         Self {
             config,
-            state: Arc::new(RwLock::new(ClientState::Disconnected)),
+            state: Arc::new(ClientStateCell::new()),
             session: Arc::new(RwLock::new(CollaborationSession::default())),
             message_tx,
             message_rx: Some(message_rx),
@@ -53,22 +57,25 @@ impl CollaborationClient {
     }
 
     /// 断开连接
-    pub async fn disconnect(&mut self) -> Result<()> {
+    ///
+    /// `shutdown_tx` 为 `mpsc::Sender`（有界但容量充足），使用 `try_send` 避免异步等待；
+    /// 接收端关闭（任务已退出）时静默忽略即可。
+    pub fn disconnect(&mut self) -> Result<()> {
         if let Some(tx) = self.shutdown_tx.take()
-            && tx.send(()).await.is_err()
+            && tx.try_send(()).is_err()
         {
-            tracing::warn!("发送关闭信号失败");
+            tracing::debug!("协作关闭信号接收端已关闭，忽略");
         }
 
-        *self.state.write().await = ClientState::Disconnected;
+        self.state.set(ClientState::Disconnected);
         info!("已断开连接");
 
         Ok(())
     }
 
-    /// 获取当前状态
-    pub async fn state(&self) -> ClientState {
-        *self.state.read().await
+    /// 获取当前状态（无锁）
+    pub fn state(&self) -> ClientState {
+        self.state.get()
     }
 
     /// 获取当前会话
@@ -76,24 +83,20 @@ impl CollaborationClient {
         self.session.read().await.clone()
     }
 
-    /// 是否已连接
-    pub async fn is_connected(&self) -> bool {
-        matches!(
-            *self.state.read().await,
-            ClientState::Connected | ClientState::Authenticated | ClientState::InRoom
-        )
+    /// 是否已连接（无锁）
+    pub fn is_connected(&self) -> bool {
+        self.state.is_active()
     }
 
-    /// 发送消息（内部方法）
-    pub(super) async fn send_message(&self, msg: ClientMessage) -> Result<()> {
-        let state = *self.state.read().await;
-        if !matches!(
-            state,
-            ClientState::Connected | ClientState::Authenticated | ClientState::InRoom
-        ) {
+    /// 入队业务消息（内部方法，同步）
+    ///
+    /// 仅校验状态是否处于活动态，消息通过 `mpsc` 无界通道转交后台发送循环，
+    /// 不在此处执行任何异步 I/O，因此可以在 UI 线程等任意上下文调用。
+    pub(super) fn enqueue_message(&self, msg: ClientMessage) -> Result<()> {
+        if !self.state.is_active() {
             return Err(crate::CollaborationError::Other(format!(
                 "客户端未连接，当前状态: {:?}",
-                state
+                self.state.get()
             )));
         }
 
@@ -162,8 +165,7 @@ mod tests {
     #[test]
     fn test_client_initial_state() {
         let client = CollaborationClient::new(crate::types::ClientConfig::default());
-        let state = client.state.blocking_read();
-        assert_eq!(*state, ClientState::Disconnected);
+        assert_eq!(client.state(), ClientState::Disconnected);
     }
 
     #[test]

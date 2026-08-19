@@ -26,16 +26,26 @@ impl Root {
     }
 
     /// 从另一个 Root 同步协作状态（用于对话框窗口同步主窗口状态）
+    ///
+    /// 仅同步视图状态与房间信息（view_state / connection_status / invite_code /
+    /// room_name），**刻意排除连接表单字段**（server_host / server_port / username /
+    /// is_open 等）。这样后台状态广播不会覆盖用户正在输入的 host/port/username，
+    /// 同时保证对话框重新打开时能反映最新连接态。
     pub fn sync_collaboration_state_from(&mut self, other: &Root) {
-        // 复制协作对话框状态
-        self.state.collaboration_dialog = other.state.collaboration_dialog.clone();
-        self.state.collaboration_dialog.is_open = true;
+        let src = &other.state.collaboration_dialog;
+        let dst = &mut self.state.collaboration_dialog;
+
+        dst.view_state = src.view_state;
+        dst.connection_status = src.connection_status.clone();
+        dst.invite_code = src.invite_code.clone();
+        dst.room_name = src.room_name.clone();
+        dst.is_open = true;
         self.state.dialog_type = DialogType::Collaboration;
 
         tracing::info!(
             "协作对话框状态已同步: view_state={:?}, invite_code={}",
-            self.state.collaboration_dialog.view_state,
-            self.state.collaboration_dialog.invite_code
+            dst.view_state,
+            dst.invite_code
         );
     }
 

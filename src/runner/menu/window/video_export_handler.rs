@@ -10,8 +10,8 @@ use lumino_export::video::{
 use lumino_gfx::TextureFormat;
 use lumino_message::events::window::video::VideoExportConfig as EventVideoExportConfig;
 
-use memory_task::{run_video_export_task, RunVideoExportTaskInput};
-use streaming_task::{run_streaming_video_export_task, RunStreamingVideoExportTaskInput};
+use memory_task::{RunVideoExportTaskInput, run_video_export_task};
+use streaming_task::{RunStreamingVideoExportTaskInput, run_streaming_video_export_task};
 
 mod commands;
 mod composite;

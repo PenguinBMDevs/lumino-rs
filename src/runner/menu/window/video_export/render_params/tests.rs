@@ -59,9 +59,7 @@ fn test_visible_notes_collection_matches_full_scan() {
                 (5_007_680, 5_008_000, 64), // 视口上界恰好开始
                 (6_000_000, 6_000_480, 70), // 视口后很远，未开始
             ])),
-            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[(
-                5_000_200, 5_000_700, 65,
-            )])),
+            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[(5_000_200, 5_000_700, 65)])),
         ],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],

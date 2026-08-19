@@ -20,8 +20,8 @@ use std::collections::VecDeque;
 use lumino_message::events::window::video::{CounterFont, DataCurveConfig, DataCurveMetric};
 
 use super::counter_font::CounterFontRenderer;
-use super::data_curve_draw::{blend_hline, draw_thick_line, fill_bgra, DrawThickLineInput};
 use super::counter_font_ttf::DrawLineScaledInput;
+use super::data_curve_draw::{DrawThickLineInput, blend_hline, draw_thick_line, fill_bgra};
 use super::data_curve_math::{abbreviate, add_commas, is_milestone, rgba_to_bgra, smooth_forward};
 
 /// 数据曲线渲染配置（后台渲染线程使用，由事件层配置转换而来）。

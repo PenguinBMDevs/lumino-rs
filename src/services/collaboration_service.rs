@@ -1,6 +1,5 @@
 use lumino_collaboration::{ClientConfig, CollaborationClient};
 use std::sync::{Arc, Mutex, MutexGuard};
-use tokio::task::block_in_place;
 
 /// 协作服务错误消息常量
 mod messages {
@@ -19,15 +18,11 @@ mod messages {
 /// 锁设计（2 层）：
 /// - `Arc<std::sync::Mutex<Option<CollaborationClient>>>`
 /// - 外层 `std::sync::Mutex` 提供同步访问
-/// - `CollaborationClient` 内部已使用 `Arc<RwLock<>>`，无需额外异步锁
+/// - `CollaborationClient` 内部使用无锁 `ClientStateCell` 与通道，跨线程调用其
+///   同步方法（如 `send_mouse_position`、`is_connected`、`disconnect`）是安全的。
 ///
-/// 同步 API 桥接异步方法时，临时取出 Client 再放回。
-///
-/// # Runtime 嵌套处理
-///
-/// 主函数使用 `#[tokio::main]`，winit 事件循环在 tokio runtime 内运行。
-/// 同步方法（如 `send_mouse_position`）通过 `block_in_place` +
-/// `Handle::block_on()` 安全调用异步方法，避免 nested runtime panic。
+/// 同步 API 直接借出客户端调用其同步方法，不再需要 `block_in_place` 嵌套 runtime：
+/// 业务消息通过 `mpsc` 通道转交后台发送循环，UI 线程调用不阻塞、不 panic。
 #[derive(Clone)]
 pub struct CollaborationService {
     /// 协作客户端（同步锁 + Option）
@@ -56,6 +51,21 @@ impl CollaborationService {
         self.disconnect_tx
             .lock()
             .map_err(|_| messages::DISCONNECT_LOCK_POISONED.to_string())
+    }
+
+    /// 临时借出客户端执行同步操作；客户端不存在时返回未初始化错误。
+    ///
+    /// 闭包返回协作模块自身的 `Result<(), CollaborationError>`，此处统一转换为
+    /// 服务层的 `Result<(), String>`（内层错误转为字符串），避免调用方双重 `?`。
+    fn with_client<F>(&self, f: F) -> Result<(), String>
+    where
+        F: FnOnce(&CollaborationClient) -> lumino_collaboration::Result<()>,
+    {
+        let guard = self.lock_client()?;
+        match guard.as_ref() {
+            Some(client) => f(client).map_err(|e| e.to_string()),
+            None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
+        }
     }
 
     /// 连接到协作服务器（异步）
@@ -125,9 +135,15 @@ impl CollaborationService {
                     .map(|_| ())
             };
 
-            match result {
+            match &result {
                 Ok(_) => tracing::info!("协作: 连接成功!"),
-                Err(e) => tracing::error!("协作: 连接失败: {}", e),
+                Err(e) => {
+                    tracing::error!("协作: 连接失败: {}", e);
+                    // 向 UI 广播连接失败事件，驱动对话框回到可重试状态
+                    lumino_ui::event::emit(lumino_ui::event::Event::window(
+                        lumino_ui::event::window::Event::collaboration_connect_failed(e.clone()),
+                    ));
+                }
             }
 
             // 将客户端放回（连接成功或失败后都可被后续操作访问）
@@ -165,7 +181,7 @@ impl CollaborationService {
             }
         };
         if let Some(ref mut c) = client {
-            let _ = c.disconnect().await;
+            let _ = c.disconnect();
         }
     }
 
@@ -266,59 +282,15 @@ impl CollaborationService {
         }
     }
 
-    /// 在同步上下文中临时取出客户端，调用异步操作后再放回。
-    ///
-    /// 使用 `tokio::task::block_in_place` + `Handle::block_on()` 驱动异步调用。
-    /// `block_in_place` 会临时释放当前线程的 async 上下文（`ENTERED` 标记），
-    /// 允许 `Handle::block_on()` 安全地 re-enter runtime，避免 nested runtime panic。
-    ///
-    /// # Safety
-    ///
-    /// 当前函数被 `#[tokio::main]` async main 调用（winit 事件循环在 tokio runtime 内），
-    /// 不能直接使用 `Handle::current().block_on()` —— 它会在 `enter()` 时因当前线程
-    /// 已持有 `ENTERED` 标记而 panic。`block_in_place` 是解决此问题的标准 tokio 模式。
-    fn with_client_async<F>(&self, f: F) -> Result<(), String>
-    where
-        F: for<'a> FnOnce(
-            &'a CollaborationClient,
-        ) -> std::pin::Pin<
-            Box<dyn std::future::Future<Output = lumino_collaboration::Result<()>> + 'a>,
-        >,
-    {
-        let mut guard = self.lock_client()?;
-        let client = guard.take();
-        drop(guard);
-
-        let client_result = match client {
-            Some(ref c) => block_in_place(move || {
-                let handle = tokio::runtime::Handle::current();
-                handle.block_on(f(c)).map_err(|e| e.to_string())
-            }),
-            None => Err(messages::CLIENT_NOT_INITIALIZED.to_string()),
-        };
-
-        if let Ok(mut guard) = self.lock_client() {
-            *guard = client;
-        } else {
-            tracing::error!(
-                "协作: 异步调用后无法放回客户端: {}",
-                messages::CLIENT_LOCK_POISONED
-            );
-        }
-        client_result
-    }
-
     /// 发送鼠标位置（同步 API）
     pub fn send_mouse_position(
         &self,
         position: lumino_collaboration::types::MousePosition,
     ) -> Result<(), String> {
-        self.with_client_async(|client| Box::pin(client.send_mouse_position(position)))
+        self.with_client(|client| client.send_mouse_position(position))
     }
 
     /// 断开连接（同步 API）
-    ///
-    /// 同样使用 `block_in_place` 处理 tokio runtime 嵌套问题。
     pub fn disconnect(&self) -> Result<(), String> {
         if let Ok(mut guard) = self.lock_disconnect_tx()
             && let Some(tx) = guard.take()
@@ -330,10 +302,7 @@ impl CollaborationService {
         drop(guard);
 
         if let Some(ref mut c) = client {
-            block_in_place(move || {
-                let handle = tokio::runtime::Handle::current();
-                let _ = handle.block_on(c.disconnect());
-            });
+            let _ = c.disconnect();
         }
         // 连接已终止，不放回客户端
         Ok(())
@@ -344,7 +313,7 @@ impl CollaborationService {
         &self,
         operation: lumino_collaboration::types::NoteBatchOperation,
     ) -> Result<(), String> {
-        self.with_client_async(|client| Box::pin(client.send_note_batch(operation)))
+        self.with_client(|client| client.send_note_batch(operation))
     }
 
     /// 发送工程更新（同步 API）
@@ -352,14 +321,18 @@ impl CollaborationService {
         &self,
         update: lumino_collaboration::types::ProjectUpdate,
     ) -> Result<(), String> {
-        self.with_client_async(|client| Box::pin(client.send_project_update(update)))
+        self.with_client(|client| client.send_project_update(update))
     }
 
-    /// 检查客户端实例是否存在（同步 API）
+    /// 检查客户端是否已连接（同步 API，真值语义）
     ///
-    /// 纯同步操作，无需 `block_in_place`。
+    /// 委托给 `CollaborationClient::is_connected()`，返回真实连接状态而非仅判断
+    /// 客户端对象是否存在。
     pub fn is_connected(&self) -> bool {
-        self.lock_client().is_ok_and(|guard| guard.is_some())
+        match self.lock_client() {
+            Ok(guard) => guard.as_ref().is_some_and(|client| client.is_connected()),
+            Err(_) => false,
+        }
     }
 }
 

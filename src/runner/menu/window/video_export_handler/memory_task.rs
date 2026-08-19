@@ -16,7 +16,7 @@ use super::super::video_export::{
     DataCurveRenderer, SortableNote, keyboard,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
-use super::composite::{composite_and_encode_frame, CompositeEncodeFrameInput};
+use super::composite::{CompositeEncodeFrameInput, composite_and_encode_frame};
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
 
@@ -248,8 +248,8 @@ fn enqueue_memory_frame(
             return true;
         }
     } else {
-        let Some(params) = video_export::build_video_export_render_params(
-            video_export::RenderParamsInput {
+        let Some(params) =
+            video_export::build_video_export_render_params(video_export::RenderParamsInput {
                 width: ctx.width,
                 height: ctx.height,
                 tick,
@@ -262,8 +262,8 @@ fn enqueue_memory_frame(
                 fps: ctx.fps_f64 as f32,
                 visible_notes: ctx.visible_note_buf,
                 note_instances_out: ctx.note_instances_buf,
-            },
-        ) else {
+            })
+        else {
             send_export_error(
                 ctx.progress_tx,
                 "导出失败：当前渲染模式不应进入此分支（内部错误）",
@@ -313,7 +313,27 @@ pub(super) struct RunVideoExportTaskInput {
 }
 
 pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
-    let RunVideoExportTaskInput { config, cmd_sender, progress_tx, preview_tx, document, ppq, fps_f64, key_count, width, height, cancel_flag, input_pix_fmt, is_cpu_renderer, is_gpu_compute_style, waterfall_scroll_speed, miditrail_z_far, render_mode, counter_config, data_curve_config } = input;
+    let RunVideoExportTaskInput {
+        config,
+        cmd_sender,
+        progress_tx,
+        preview_tx,
+        document,
+        ppq,
+        fps_f64,
+        key_count,
+        width,
+        height,
+        cancel_flag,
+        input_pix_fmt,
+        is_cpu_renderer,
+        is_gpu_compute_style,
+        waterfall_scroll_speed,
+        miditrail_z_far,
+        render_mode,
+        counter_config,
+        data_curve_config,
+    } = input;
     let start = Instant::now();
 
     // 按键颜色增量扫描状态（与编辑器 PlaybackScanState 等价）

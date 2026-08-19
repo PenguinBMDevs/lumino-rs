@@ -13,7 +13,7 @@ use super::super::video_export::{
     self, generate_keyboard_texture, seconds_to_tick, streaming::StreamingNoteSource,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
-use super::composite::{composite_and_encode_frame, CompositeEncodeFrameInput};
+use super::composite::{CompositeEncodeFrameInput, composite_and_encode_frame};
 use super::frame::{EncodeFrameQueue, FrameParams};
 use super::pipeline::FramePipeline;
 
@@ -40,7 +40,19 @@ pub(super) struct RunStreamingVideoExportTaskInput {
 }
 
 pub(super) fn run_streaming_video_export_task(input: RunStreamingVideoExportTaskInput) {
-    let RunStreamingVideoExportTaskInput { config, cmd_sender, progress_tx, preview_tx, midi_path, fps_f64, key_count, width, height, cancel_flag, input_pix_fmt } = input;
+    let RunStreamingVideoExportTaskInput {
+        config,
+        cmd_sender,
+        progress_tx,
+        preview_tx,
+        midi_path,
+        fps_f64,
+        key_count,
+        width,
+        height,
+        cancel_flag,
+        input_pix_fmt,
+    } = input;
     let start = std::time::Instant::now();
 
     // 阶段 1：解析 MIDI → 硬盘缓存（终端进度条）

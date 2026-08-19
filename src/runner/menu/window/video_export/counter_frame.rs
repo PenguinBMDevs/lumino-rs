@@ -45,7 +45,17 @@ pub struct CounterFrameInput<'a> {
 
 pub fn render_counter_frame(input: CounterFrameInput<'_>) -> CounterFrameOutput {
     let CounterFrameInput {
-        frame, frame_width, frame_height, document, tick, ppq, fps, duration_secs, config, stats, renderer,
+        frame,
+        frame_width,
+        frame_height,
+        document,
+        tick,
+        ppq,
+        fps,
+        duration_secs,
+        config,
+        stats,
+        renderer,
     } = input;
     stats.advance(document, tick, fps);
 

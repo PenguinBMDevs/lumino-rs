@@ -117,7 +117,15 @@ impl CounterFontRenderer {
     /// 数据曲线模式里程碑刻度（1k/10k/100k…）文字放大用；
     /// 点阵后端将放大倍率乘入位图 scale，TTF 后端做最近邻放大。
     pub(crate) fn draw_line_scaled(&mut self, input: DrawLineScaledInput<'_>) -> u32 {
-        let DrawLineScaledInput { frame, frame_width, line, x, y, color, extra_scale } = input;
+        let DrawLineScaledInput {
+            frame,
+            frame_width,
+            line,
+            x,
+            y,
+            color,
+            extra_scale,
+        } = input;
         let extra = extra_scale.max(1);
         match &mut self.backend {
             FontBackend::Bitmap { scale } => {
@@ -132,17 +140,15 @@ impl CounterFontRenderer {
                 }
                 cur_x.saturating_sub(x)
             }
-            FontBackend::Ttf(ttf) => {
-                ttf.draw_line_scaled(DrawLineScaledInput {
-                    frame,
-                    frame_width,
-                    line,
-                    x,
-                    y,
-                    color,
-                    extra_scale: extra,
-                })
-            }
+            FontBackend::Ttf(ttf) => ttf.draw_line_scaled(DrawLineScaledInput {
+                frame,
+                frame_width,
+                line,
+                x,
+                y,
+                color,
+                extra_scale: extra,
+            }),
         }
     }
 

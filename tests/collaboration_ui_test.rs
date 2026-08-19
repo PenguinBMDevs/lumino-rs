@@ -227,7 +227,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         "  客户端A发送鼠标位置: x={}, y={}",
         mouse_pos_a.x, mouse_pos_a.y
     );
-    client_a.send_mouse_position(mouse_pos_a.clone()).await?;
+    client_a.send_mouse_position(mouse_pos_a.clone())?;
 
     // 客户端B等待接收鼠标位置更新
     let received_mouse_b = collector_b
@@ -282,7 +282,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         "  客户端A发送音符添加: tick={}, key={}",
         note_a.tick, note_a.key
     );
-    client_a.send_note_batch(operation_a).await?;
+    client_a.send_note_batch(operation_a)?;
 
     // 客户端B等待接收音符更新
     let received_note_b = collector_b
@@ -321,7 +321,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         "  客户端B发送鼠标位置: x={}, y={}",
         mouse_pos_b.x, mouse_pos_b.y
     );
-    client_b.send_mouse_position(mouse_pos_b.clone()).await?;
+    client_b.send_mouse_position(mouse_pos_b.clone())?;
 
     // 客户端A等待接收鼠标位置更新
     let received_mouse_a = collector_a
@@ -376,7 +376,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         "  客户端B发送音符添加: tick={}, key={}",
         note_b.tick, note_b.key
     );
-    client_b.send_note_batch(operation_b).await?;
+    client_b.send_note_batch(operation_b)?;
 
     // 客户端A等待接收音符更新
     let received_note_a = collector_a
@@ -550,7 +550,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
     };
 
     println!("  客户端A发送批量音符添加: {} 个音符", notes.len());
-    client_a.send_note_batch(operation).await?;
+    client_a.send_note_batch(operation)?;
 
     // 客户端B等待接收批量音符更新
     let received_batch = collector_b
@@ -710,7 +710,7 @@ async fn test_mouse_movement_sync_internal() -> Result<(), Box<dyn std::error::E
 
     for (i, pos) in positions.iter().enumerate() {
         println!("  发送位置 {}: x={}, y={}", i + 1, pos.x, pos.y);
-        client_a.send_mouse_position(pos.clone()).await?;
+        client_a.send_mouse_position(pos.clone())?;
         sleep(Duration::from_millis(100)).await;
     }
 

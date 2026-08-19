@@ -15,12 +15,15 @@ impl Root {
     }
 
     /// 设置协作视图状态
+    ///
+    /// 返回视图状态是否发生变更（供 runner 决定是否广播），避免无谓的对话框刷新。
     pub fn set_collaboration_view_state(
         &mut self,
         state: CollaborationViewState,
         invite_code: Option<String>,
         room_name: Option<String>,
-    ) {
+    ) -> bool {
+        let changed = self.state.collaboration_dialog.view_state != state;
         self.state.collaboration_dialog.view_state = state;
         if let Some(code) = invite_code {
             self.state.collaboration_dialog.invite_code = code;
@@ -48,6 +51,7 @@ impl Root {
             }
         }
         tracing::info!("协作视图状态已更新: {:?}", state);
+        changed
     }
 
     /// 更新远程光标位置

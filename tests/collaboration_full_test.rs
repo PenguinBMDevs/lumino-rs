@@ -180,7 +180,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("  发送鼠标位置: x={}, y={}", mouse_pos.x, mouse_pos.y);
-    client01.send_mouse_position(mouse_pos.clone()).await?;
+    client01.send_mouse_position(mouse_pos.clone())?;
 
     // 用户02等待接收鼠标位置更新
     let received_mouse = collector02
@@ -232,7 +232,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("  发送音符添加: tick={}, key={}", note.tick, note.key);
-    client01.send_note_batch(operation).await?;
+    client01.send_note_batch(operation)?;
 
     // 用户02等待接收音符更新
     let received_note = collector02

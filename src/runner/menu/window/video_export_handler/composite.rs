@@ -37,10 +37,24 @@ pub(super) struct CompositeEncodeFrameInput<'a> {
     pub recycle_tx: &'a Sender<Vec<u8>>,
 }
 
-pub(super) fn composite_and_encode_frame(input: CompositeEncodeFrameInput<'_>) -> (bool, FrameStageStats) {
+pub(super) fn composite_and_encode_frame(
+    input: CompositeEncodeFrameInput<'_>,
+) -> (bool, FrameStageStats) {
     let CompositeEncodeFrameInput {
-        mut data, params, encoder, progress_tx, preview_tx, cancel_flag, last_preview_time, preview_sent,
-        width, height, keyboard_pixels, kb_w, kb_h, recycle_tx,
+        mut data,
+        params,
+        encoder,
+        progress_tx,
+        preview_tx,
+        cancel_flag,
+        last_preview_time,
+        preview_sent,
+        width,
+        height,
+        keyboard_pixels,
+        kb_w,
+        kb_h,
+        recycle_tx,
     } = input;
     let mut stats = FrameStageStats::default();
     let FrameParams {

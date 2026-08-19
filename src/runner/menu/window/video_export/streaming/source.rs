@@ -6,11 +6,11 @@ use std::path::{Path, PathBuf};
 
 use lumino_gfx::{NoteInstance, RenderParams};
 
-use super::{FrameIndexEntry, NoteRecord, StreamingMidiResult, NOTE_RECORD_SIZE};
-use super::super::{seconds_to_tick, ticks_to_seconds};
 use super::super::render_params::{
-    SortableNote, build_note_rectangle_params_from_visible, NoteRectangleParamsInput,
+    NoteRectangleParamsInput, SortableNote, build_note_rectangle_params_from_visible,
 };
+use super::super::{seconds_to_tick, ticks_to_seconds};
+use super::{FrameIndexEntry, NOTE_RECORD_SIZE, NoteRecord, StreamingMidiResult};
 
 /// 流式音符数据源
 pub struct StreamingNoteSource {

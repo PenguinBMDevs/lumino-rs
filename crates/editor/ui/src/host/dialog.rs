@@ -230,16 +230,20 @@ impl Host {
     }
 
     /// 设置协作视图状态（用于独立对话框窗口）
+    ///
+    /// 返回视图状态是否发生变更（用于 runner 判断是否需要广播）。
     pub fn set_collaboration_view_state(
         &mut self,
         state: CollaborationViewState,
         invite_code: Option<String>,
         room_name: Option<String>,
-    ) {
-        self.root
+    ) -> bool {
+        let changed = self
+            .root
             .set_collaboration_view_state(state, invite_code, room_name);
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
+        changed
     }
 
     /// 更新远端鼠标位置

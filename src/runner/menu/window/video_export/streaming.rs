@@ -24,8 +24,8 @@ mod source;
 mod tests;
 
 pub(crate) use cache::{build_cache_path, send_progress};
-pub(crate) use frame_index::build_frame_index;
 pub use frame_index::FrameIndexEntry;
+pub(crate) use frame_index::build_frame_index;
 pub use source::StreamingNoteSource;
 
 /// 缓存中的单条音符记录（16 bytes）

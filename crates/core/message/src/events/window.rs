@@ -266,6 +266,10 @@ impl Event {
     pub const fn collaboration_disconnected() -> Self {
         Self::Collaboration(collaboration::Event::Disconnected)
     }
+    /// 构造协作连接失败事件
+    pub fn collaboration_connect_failed(reason: String) -> Self {
+        Self::Collaboration(collaboration::Event::ConnectFailed { reason })
+    }
     /// 构造协作用户离开事件
     pub fn collaboration_user_left(user_id: String) -> Self {
         Self::Collaboration(collaboration::Event::UserLeft { user_id })

@@ -35,4 +35,4 @@ pub use core::CollaborationClient;
 pub use event::{CollaborationEvent, EventCallback};
 pub use handlers::handle_server_message;
 pub use message::{ClientMessage, ServerMessage};
-pub use state::{ClientState, CollaborationSession};
+pub use state::{ClientState, ClientStateCell, CollaborationSession};

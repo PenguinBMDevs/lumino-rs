@@ -51,6 +51,11 @@ pub enum Event {
     },
     /// 协作连接断开
     Disconnected,
+    /// 协作连接失败（携带原因，用于驱动对话框回到可重试状态）
+    ConnectFailed {
+        /// 失败原因
+        reason: String,
+    },
     /// 协作用户离开
     UserLeft {
         /// 离开的用户 ID

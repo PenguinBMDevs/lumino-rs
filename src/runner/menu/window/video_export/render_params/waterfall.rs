@@ -1,7 +1,7 @@
 //! 瀑布流模式参数
 
 use lumino_extras::palette::current_track_color_f32;
-use lumino_gfx::{WaterfallNoteGpu, pack_color, RenderParams};
+use lumino_gfx::{RenderParams, WaterfallNoteGpu, pack_color};
 
 use super::{WaterfallRenderInput, collect_visible_notes_for_gpu};
 

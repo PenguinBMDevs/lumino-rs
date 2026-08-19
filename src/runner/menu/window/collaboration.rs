@@ -2,6 +2,7 @@
 
 use crate::runner::RunnerInner;
 use lumino_ui::event::window::collaboration::Event;
+use lumino_ui::state::root_state::CollaborationViewState;
 
 impl RunnerInner {
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
@@ -33,12 +34,19 @@ impl RunnerInner {
                 invite_code,
             } => {
                 tracing::info!("协作认证成功: user={user_id}, invite={invite_code}");
+                // 认证成功：保持连接中（即将进入房间）
+                self.set_main_collab_view_state(CollaborationViewState::Connecting, None, None);
             }
             RoomCreated {
                 room_name,
                 invite_code,
             } => {
                 tracing::info!("协作房间创建成功: {room_name}, invite={invite_code}");
+                self.set_main_collab_view_state(
+                    CollaborationViewState::InRoom,
+                    Some(invite_code),
+                    Some(room_name),
+                );
             }
             RoomJoined {
                 room_name,
@@ -48,15 +56,56 @@ impl RunnerInner {
                 tracing::info!(
                     "已加入协作房间: {room_name}, invite={invite_code}, 用户数={user_count}"
                 );
+                self.set_main_collab_view_state(
+                    CollaborationViewState::InRoom,
+                    Some(invite_code),
+                    Some(room_name),
+                );
             }
             Disconnected => {
                 tracing::info!("协作连接已断开");
+                // 回到可连接态，允许重试
+                self.set_main_collab_view_state(CollaborationViewState::Connect, None, None);
+            }
+            ConnectFailed { reason } => {
+                tracing::error!("协作连接失败: {reason}");
+                // 连接失败：回到可连接态并展示原因，允许重试
+                self.set_main_collab_view_state(
+                    CollaborationViewState::Connect,
+                    None,
+                    Some(format!("连接失败: {reason}")),
+                );
             }
             UserLeft { user_id } => {
-                tracing::info!("协作用户离开: {user_id}");
+                // 从主窗口与协作对话框移除远端光标
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .remove_remote_cursor(user_id.clone());
+                self.window_state
+                    .dialog_manager
+                    .forward_collaboration_user_left(user_id);
             }
-            MouseUpdate { user_id, x, y, .. } => {
-                tracing::debug!("协作鼠标更新: user={user_id}, ({x:.0},{y:.0})");
+            MouseUpdate {
+                user_id,
+                x,
+                y,
+                color,
+                username,
+            } => {
+                tracing::trace!("协作鼠标更新: user={user_id}, ({x:.0},{y:.0})");
+                // 更新主窗口远端光标（编辑器画布渲染）
+                self.window_state.window.ui_mut().update_remote_cursor(
+                    user_id.clone(),
+                    x,
+                    y,
+                    color.clone(),
+                    username.clone(),
+                );
+                // 同步到协作对话框（对话框亦展示远端光标）
+                self.window_state
+                    .dialog_manager
+                    .forward_collaboration_cursor(user_id, x, y, color, username);
             }
             NoteUpdate { user_id, operation } => {
                 self.handle_remote_note_update(user_id, operation);

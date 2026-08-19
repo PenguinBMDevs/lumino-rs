@@ -2,8 +2,8 @@
 
 use super::RenderParams;
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance,
-    MiditrailNoteGpu, RulerTickInstance, WaterfallNoteGpu,
+    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, MiditrailNoteGpu,
+    RulerTickInstance, WaterfallNoteGpu,
 };
 
 /// [`RenderParams`] 的 Builder。

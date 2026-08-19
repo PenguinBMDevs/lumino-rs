@@ -108,6 +108,26 @@ pub(crate) struct CollabState {
     pub(crate) collaboration_status: CollaborationStatus,
     pub(crate) collaboration_service: CollaborationService,
     pub(crate) last_collab_sync: Option<std::time::Instant>,
+    /// 上一次实际发送的鼠标状态（含内容坐标、滚动、缩放），用于变更检测以抑制
+    /// 无变化的重复发送（避免热路径日志洪泛与无谓带宽占用）
+    pub(crate) last_sent_mouse: Option<LastSentMouse>,
+}
+
+/// 上一次发送的鼠标状态快照（用于变更检测）
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct LastSentMouse {
+    /// 内容空间坐标 X
+    pub(crate) x: f32,
+    /// 内容空间坐标 Y
+    pub(crate) y: f32,
+    /// 滚动偏移 X
+    pub(crate) scroll_x: f32,
+    /// 滚动偏移 Y
+    pub(crate) scroll_y: f32,
+    /// 缩放 X
+    pub(crate) zoom_x: f32,
+    /// 缩放 Y
+    pub(crate) zoom_y: f32,
 }
 
 /// 测试与调试状态
@@ -267,6 +287,7 @@ impl Runner {
                 collaboration_status,
                 collaboration_service,
                 last_collab_sync: None,
+                last_sent_mouse: None,
             },
             test_state: TestState {
                 test_mode_state: None,

@@ -81,7 +81,17 @@ pub(super) struct DrawThickLineInput<'a> {
 }
 
 pub(super) fn draw_thick_line(input: DrawThickLineInput<'_>) {
-    let DrawThickLineInput { frame, fw, fh, x0, y0, x1, y1, color_bgra, thickness } = input;
+    let DrawThickLineInput {
+        frame,
+        fw,
+        fh,
+        x0,
+        y0,
+        x1,
+        y1,
+        color_bgra,
+        thickness,
+    } = input;
     let t = thickness.max(1) as i64;
     let half = t / 2;
     let steps = (x1 - x0).abs().max((y1 - y0).abs()).max(1);

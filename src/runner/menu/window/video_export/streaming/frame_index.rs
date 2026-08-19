@@ -3,8 +3,8 @@
 use lumino_midi_loader::TICK_SEARCH_BUFFER;
 use rayon::prelude::*;
 
-use super::NoteRecord;
 use super::super::{seconds_to_tick, ticks_to_seconds};
+use super::NoteRecord;
 
 /// 帧索引条目：记录本帧需要渲染的音符范围
 #[derive(Debug, Clone, Copy)]

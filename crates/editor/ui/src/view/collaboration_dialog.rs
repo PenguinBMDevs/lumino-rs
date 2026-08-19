@@ -100,19 +100,33 @@ fn view_connect<'a>(
         .padding(8)
         .width(Length::Fill);
 
-    // 根据连接状态显示不同的按钮
-    let (button_text, is_connecting) = if !state.connection_status.is_empty() {
-        (state.connection_status.clone(), true)
-    } else {
-        ("连接".to_string(), false)
-    };
-
-    let connect_button = if is_connecting {
-        // 连接中状态 - 禁用按钮
-        button(text(button_text).size(14)).padding([8, 24]).style(
-            move |_theme: &iced_core::Theme, _status| button::Style {
-                background: Some(palette.background.weak.color.into()),
-                text_color: palette.background.neutral.text,
+    // 连接按钮始终可点击（Connect 视图内允许重试）。
+    // 连接状态以独立提示文字呈现，不再作为按钮禁用条件，避免断连后按钮被永久禁用。
+    let connect_button = button(text("连接").size(14))
+        .on_press(Message::Collaboration(
+            lumino_message::CollaborationAction::Connect {
+                host: state.server_host.clone(),
+                port: state
+                    .server_port
+                    .parse()
+                    .unwrap_or(crate::constants::collaboration::DEFAULT_PORT),
+                username: state.username.clone(),
+                invite_code: if state.invite_code.trim().is_empty() {
+                    None
+                } else {
+                    Some(state.invite_code.clone())
+                },
+            },
+        ))
+        .padding([8, 24])
+        .style(move |_theme: &iced_core::Theme, status| {
+            let bg = match status {
+                button::Status::Hovered => palette.primary.strong.color,
+                _ => palette.primary.base.color,
+            };
+            button::Style {
+                background: Some(bg.into()),
+                text_color: iced_core::Color::WHITE,
                 border: iced_core::Border {
                     radius: 4.0.into(),
                     width: 0.0,
@@ -120,43 +134,17 @@ fn view_connect<'a>(
                 },
                 snap: false,
                 shadow: Default::default(),
-            },
-        )
+            }
+        });
+
+    // 连接状态提示（独立展示，不阻塞按钮）
+    let status_hint = if state.connection_status.is_empty() {
+        text("")
     } else {
-        // 正常状态 - 可点击
-        button(text(button_text).size(14))
-            .on_press(Message::Collaboration(
-                lumino_message::CollaborationAction::Connect {
-                    host: state.server_host.clone(),
-                    port: state
-                        .server_port
-                        .parse()
-                        .unwrap_or(crate::constants::collaboration::DEFAULT_PORT),
-                    username: state.username.clone(),
-                    invite_code: if state.invite_code.trim().is_empty() {
-                        None
-                    } else {
-                        Some(state.invite_code.clone())
-                    },
-                },
-            ))
-            .padding([8, 24])
-            .style(move |_theme: &iced_core::Theme, status| {
-                let bg = match status {
-                    button::Status::Hovered => palette.primary.strong.color,
-                    _ => palette.primary.base.color,
-                };
-                button::Style {
-                    background: Some(bg.into()),
-                    text_color: iced_core::Color::WHITE,
-                    border: iced_core::Border {
-                        radius: 4.0.into(),
-                        width: 0.0,
-                        color: iced_core::Color::TRANSPARENT,
-                    },
-                    snap: false,
-                    shadow: Default::default(),
-                }
+        text(state.connection_status.clone())
+            .size(12)
+            .style(move |_theme: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text),
             })
     };
 
@@ -168,6 +156,8 @@ fn view_connect<'a>(
         invite_input,
         space().height(16),
         connect_button,
+        space().height(8),
+        status_hint,
     ]
     .align_x(iced_core::Alignment::Center)
     .into()

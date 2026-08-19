@@ -1,5 +1,5 @@
-use super::*;
 use super::super::seconds_to_tick;
+use super::*;
 use lumino_midi_loader::TICK_SEARCH_BUFFER;
 
 const PPQN: u32 = 480;

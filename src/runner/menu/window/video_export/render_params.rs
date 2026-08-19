@@ -149,8 +149,8 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             miditrail_z_far,
             fps,
         })),
-        RenderMode::NoteRectangle => {
-            Some(build_note_rectangle_render_params(NoteRectangleRenderInput {
+        RenderMode::NoteRectangle => Some(build_note_rectangle_render_params(
+            NoteRectangleRenderInput {
                 width,
                 height,
                 tick,
@@ -158,8 +158,8 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
                 ppq,
                 visible_notes,
                 note_instances_out,
-            }))
-        }
+            },
+        )),
         RenderMode::NoteCounter => None,
         RenderMode::DataCurve => None,
     }

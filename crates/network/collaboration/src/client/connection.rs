@@ -10,7 +10,7 @@ use tokio::time::interval;
 use tokio_tungstenite::{
     MaybeTlsStream, WebSocketStream, connect_async, tungstenite::protocol::Message,
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, trace};
 
 use crate::Result;
 
@@ -30,14 +30,14 @@ impl CollaborationClient {
         let ws_url = self.build_websocket_url(room_id);
         tracing::debug!("连接到 WebSocket: {}", ws_url);
 
-        *self.state.write().await = ClientState::Connecting;
+        self.state.set(ClientState::Connecting);
 
         let ws_stream = self.connect_websocket_with_timeout(&ws_url).await?;
 
         info!("WebSocket 连接成功");
         let (write, read) = ws_stream.split();
         let write = Arc::new(Mutex::new(write));
-        *self.state.write().await = ClientState::Connected;
+        self.state.set(ClientState::Connected);
 
         self.send_auth_message(&write).await?;
         let read = self.handle_auth_response(read, &write).await?;
@@ -106,7 +106,7 @@ impl CollaborationClient {
             .send(Message::Text(auth_json.into()))
             .await?;
 
-        *self.state.write().await = ClientState::Authenticating;
+        self.state.set(ClientState::Authenticating);
         tracing::debug!("认证消息已发送，等待响应...");
 
         Ok(())
@@ -158,7 +158,7 @@ impl CollaborationClient {
                                 }
                             }
                             Some(Ok(Message::Close(_))) => {
-                                *state.write().await = ClientState::Disconnected;
+                                state.set(ClientState::Disconnected);
                                 break;
                             }
                             Some(Err(e)) => {
@@ -168,10 +168,10 @@ impl CollaborationClient {
                                 } else {
                                     error!("WebSocket 错误: {}", e);
                                 }
-                                *state.write().await = ClientState::Error;
+                                state.set(ClientState::Error);
                             }
                             None => {
-                                *state.write().await = ClientState::Disconnected;
+                                state.set(ClientState::Disconnected);
                                 break;
                             }
                             _ => {}
@@ -188,7 +188,7 @@ impl CollaborationClient {
                             let mut writer = write.lock().await;
                             if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 tracing::warn!("心跳发送失败: {}", e);
-                                *state.write().await = ClientState::Disconnected;
+                                state.set(ClientState::Disconnected);
                                 break;
                             }
                         }
@@ -200,10 +200,10 @@ impl CollaborationClient {
                             let mut writer = write.lock().await;
                             if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 error!("发送消息失败: {}", e);
-                                *state.write().await = ClientState::Error;
+                                state.set(ClientState::Error);
                                 break;
                             }
-                            info!("WS 消息发送完成");
+                            trace!("WS 消息发送完成");
                         } else {
                             error!("消息序列化失败");
                         }
@@ -211,7 +211,7 @@ impl CollaborationClient {
 
                     _ = shutdown_rx.recv() => {
                         info!("收到关闭信号，后台循环退出");
-                        *state.write().await = ClientState::Disconnected;
+                        state.set(ClientState::Disconnected);
                         break;
                     }
                 }
@@ -247,7 +247,7 @@ impl CollaborationClient {
                     } => {
                         let invite_code = room.invite_code.clone();
                         info!("认证成功: user_id={}, invite_code={}", user_id, invite_code);
-                        *self.state.write().await = ClientState::InRoom;
+                        self.state.set(ClientState::InRoom);
 
                         let room_info = RoomInfo {
                             id: room.id,

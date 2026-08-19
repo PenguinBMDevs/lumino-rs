@@ -18,17 +18,17 @@ mod render_params;
 mod waterfall_frame;
 
 pub(super) use counter_font::CounterFontRenderer;
-pub(super) use counter_frame::render_counter_frame;
 pub(super) use counter_frame::CounterFrameInput;
+pub(super) use counter_frame::render_counter_frame;
 pub(super) use counter_stats::{CounterRenderConfig, CounterStats, current_bpm};
 pub(super) use data_curve_frame::{
     DataCurveRenderConfig, DataCurveRenderer, render_data_curve_frame,
 };
-pub use render_params::SortableNote;
 pub use render_params::RenderParamsInput;
+pub use render_params::SortableNote;
 pub(super) use render_params::build_video_export_render_params;
-pub use waterfall_frame::render_waterfall_frame;
 pub use waterfall_frame::WaterfallFrameInput;
+pub use waterfall_frame::render_waterfall_frame;
 
 use self::waterfall_frame::{DIGIT_H, DIGIT_SPACING, DIGIT_W, draw_digit};
 

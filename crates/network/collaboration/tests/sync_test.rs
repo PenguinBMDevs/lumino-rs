@@ -109,10 +109,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
             key_offset: None,
             timestamp: i as u64,
         };
-        client_a
-            .send_note_batch(op)
-            .await
-            .expect("发送音符批次失败");
+        client_a.send_note_batch(op).expect("发送音符批次失败");
         sleep(delay).await;
     }
 
@@ -137,8 +134,8 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
     println!("Test A -> B passed for {} notes/sec", rate);
 
     // Ensure connection is clean logic... (simplified here)
-    let _ = client_a.disconnect().await;
-    let _ = client_b.disconnect().await;
+    let _ = client_a.disconnect();
+    let _ = client_b.disconnect();
 }
 
 #[tokio::test]

@@ -223,7 +223,15 @@ impl TtfFontRenderer {
     /// 数据曲线模式里程碑刻度文字放大用：每个光栅化像素绘制为
     /// `extra_scale × extra_scale` 方块（与点阵后端的整倍放大语义一致）。
     pub(super) fn draw_line_scaled(&mut self, input: DrawLineScaledInput<'_>) -> u32 {
-        let DrawLineScaledInput { frame, frame_width, line, x, y, color, extra_scale } = input;
+        let DrawLineScaledInput {
+            frame,
+            frame_width,
+            line,
+            x,
+            y,
+            color,
+            extra_scale,
+        } = input;
         let extra = extra_scale.max(1) as i64;
         let frame_w = frame_width as usize;
         let row_bytes = frame_w * 4;
