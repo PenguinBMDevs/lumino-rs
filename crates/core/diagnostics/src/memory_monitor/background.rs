@@ -5,9 +5,12 @@
 //! 的同步检查（check / is_over_limit）构成三层防护。
 //! 拆分自 `memory_monitor.rs`。
 
+#[cfg(not(target_os = "macos"))]
 use std::sync::OnceLock;
 
+#[cfg(not(target_os = "macos"))]
 use super::MemoryMonitor;
+#[cfg(not(target_os = "macos"))]
 use super::watchdog;
 
 /// 后台监控线程检查间隔（毫秒）
