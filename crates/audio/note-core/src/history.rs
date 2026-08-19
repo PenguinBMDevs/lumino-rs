@@ -322,9 +322,8 @@ impl History {
         self.undo_stack.back()
     }
 
-    /// 查看 redo 栈顶（测试用）
-    #[cfg(test)]
-    pub(crate) fn redo_back(&self) -> Option<&HistoryEntry> {
+    /// 查看 redo 栈顶
+    pub fn redo_back(&self) -> Option<&HistoryEntry> {
         self.redo_stack.back()
     }
 

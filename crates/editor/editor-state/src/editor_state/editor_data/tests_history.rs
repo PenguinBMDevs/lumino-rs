@@ -233,3 +233,70 @@ fn test_apply_create_ops_by_value_exact_undo() {
         72
     );
 }
+
+#[test]
+fn test_undo_does_not_change_current_track() {
+    // 构造两轨工程：在轨道 0 编辑后切换到轨道 1，undo 不应跳回轨道 0
+    let mut data = EditorData::with_f32_notes(1, &[]);
+    data.current_track = 0;
+    data.push_history();
+    data.insert_note(0, Note::new(0.0, 60, 1.0));
+    assert_eq!(data.current_track_note_count(), 1);
+
+    // 切换到轨道 1（模拟用户切换音轨）
+    data.current_track = 1;
+
+    // undo：应恢复轨道 0 的数据，但当前视图音轨保持为 1
+    assert!(data.undo());
+    assert_eq!(data.current_track, 1, "undo 不应恢复 current_track");
+    assert_eq!(data.track_notes(0).len(), 0, "undo 应成功恢复轨道 0 音符");
+    // 跨音轨 undo：受影响的是轨道 0（非当前视图），应走洋葱皮 TrackDelta 增量，
+    // 不强制全量重建；但必须清空过期的 note_delta_events。
+    assert!(
+        !data.note_delta_dirty,
+        "跨音轨 undo 不应设置 note_delta_dirty"
+    );
+    assert_eq!(
+        data.onion_dirty_tracks,
+        Some(std::collections::HashSet::from([0])),
+        "跨音轨 undo 应精确标记洋葱皮脏音轨"
+    );
+    assert!(
+        data.note_delta_events.is_empty(),
+        "跨音轨 undo 应清空过期增量事件"
+    );
+}
+
+#[test]
+fn test_redo_does_not_change_current_track() {
+    let mut data = EditorData::with_f32_notes(1, &[]);
+    data.current_track = 0;
+    data.push_history();
+    data.insert_note(0, Note::new(0.0, 60, 1.0));
+
+    data.current_track = 1;
+    assert!(data.undo());
+    assert_eq!(data.current_track, 1);
+
+    // redo：应重新在轨道 0 插入音符，但视图仍保持在轨道 1
+    assert!(data.redo());
+    assert_eq!(data.current_track, 1, "redo 不应恢复 current_track");
+    assert_eq!(data.track_notes(0).len(), 1, "redo 应恢复轨道 0 音符");
+}
+
+#[test]
+fn test_undo_current_track_sets_note_delta_dirty() {
+    // 在当前视图音轨内 undo：由于快照是整轨替换，必须走 note_delta_dirty 兜底
+    let mut data = EditorData::with_f32_notes(0, &[]);
+    data.push_history();
+    data.insert_note(0, Note::new(0.0, 60, 1.0));
+    assert_eq!(data.current_track_note_count(), 1);
+
+    assert!(data.undo());
+    assert_eq!(data.current_track, 0);
+    assert_eq!(data.current_track_note_count(), 0);
+    assert!(
+        data.note_delta_dirty,
+        "当前音轨内的快照 undo 应触发全量兜底重建"
+    );
+}

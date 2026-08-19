@@ -7,6 +7,7 @@
 //! - 基于 MoveOp 的 undo/redo 往返
 
 use super::*;
+use crate::DragState;
 use bit_vec::BitVec;
 use lumino_note_core::note::Note;
 
