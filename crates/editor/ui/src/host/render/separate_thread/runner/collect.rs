@@ -163,9 +163,6 @@ impl Host {
             (editor.scroll(), editor.zoom())
         };
 
-        // WGPU 渲染模式下不使用 Iced Canvas 键盘
-        let keyboard_instances = vec![];
-
         // 标尺实例由 GPU 线程的 RulerRenderer::prepare 内部基于缓存生成，
         // UI 线程不再每帧重复生成——之前每帧调用 generate_ruler_instances 是冗余的：
         // 1. 生成内容完全没被 GPU 使用（仅取 is_empty/len 判断）
@@ -203,7 +200,6 @@ impl Host {
             scroll,
             zoom,
             viewport_size,
-            keyboard_instances,
             ruler_instances,
             arrangement_note_instances,
             cc_bar_instances,

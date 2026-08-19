@@ -15,7 +15,6 @@ fn test_render_params_default() {
     assert_eq!(params.background_color, [0.1, 0.1, 0.1, 1.0]);
     assert!(params.grid_instances.is_empty());
     assert!(params.ruler_instances.is_empty());
-    assert!(params.keyboard_instances.is_empty());
     assert_eq!(params.ticks_per_measure, 7680);
     assert_eq!(params.ticks_per_beat, 1920);
     assert_eq!(params.canvas_offset, (0.0, 0.0));
@@ -46,7 +45,6 @@ fn test_render_params_clone() {
         grid_instances: Vec::new(),
         note_instances: Vec::new(),
         ruler_instances: Vec::new(),
-        keyboard_instances: Vec::new(),
         ticks_per_measure: 960,
         ticks_per_beat: 240,
         canvas_offset: (10.0, 20.0),

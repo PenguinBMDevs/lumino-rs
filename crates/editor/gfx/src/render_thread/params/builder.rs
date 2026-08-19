@@ -2,7 +2,7 @@
 
 use super::RenderParams;
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
+    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance,
     MiditrailNoteGpu, RulerTickInstance, WaterfallNoteGpu,
 };
 
@@ -28,7 +28,6 @@ pub struct RenderParamsBuilder {
     color_key_line: [f32; 4],
     grid_instances: Vec<GridLineInstance>,
     ruler_instances: Vec<RulerTickInstance>,
-    keyboard_instances: Vec<KeyInstance>,
     ppq: f32,
     max_key_index: f32,
     is_arrangement_mode: bool,
@@ -76,7 +75,6 @@ impl Default for RenderParamsBuilder {
             color_key_line: base.color_key_line,
             grid_instances: base.grid_instances,
             ruler_instances: base.ruler_instances,
-            keyboard_instances: base.keyboard_instances,
             ppq: base.ppq,
             max_key_index: base.max_key_index,
             is_arrangement_mode: base.is_arrangement_mode,
@@ -206,12 +204,6 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置琴键实例
-    pub fn keyboard_instances(mut self, instances: Vec<KeyInstance>) -> Self {
-        self.keyboard_instances = instances;
-        self
-    }
-
     /// 设置 PPQ (Pulses Per Quarter note)
     pub fn ppq(mut self, ppq: f32) -> Self {
         self.ppq = ppq;
@@ -311,7 +303,6 @@ impl RenderParamsBuilder {
             grid_instances: self.grid_instances,
             note_instances: Vec::new(),
             ruler_instances: self.ruler_instances,
-            keyboard_instances: self.keyboard_instances,
             ticks_per_measure,
             ticks_per_beat,
             canvas_offset: self.canvas_offset,

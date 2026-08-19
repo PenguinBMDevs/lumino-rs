@@ -172,7 +172,6 @@ pub(super) fn build_note_rectangle_params_from_visible(
         ppq,
         time_signatures,
     );
-    let keyboard_instances = Vec::new();
 
     // 按 key 计数分桶（O(N)）：可见音符已由调用方收集，此处只排序
     const KEY_BUCKETS: usize = 256;
@@ -235,7 +234,6 @@ pub(super) fn build_note_rectangle_params_from_visible(
         note_instances: std::mem::take(note_instances_out),
         grid_instances,
         ruler_instances,
-        keyboard_instances,
         ppq: ppq as f32,
         max_key_index,
         canvas_size,

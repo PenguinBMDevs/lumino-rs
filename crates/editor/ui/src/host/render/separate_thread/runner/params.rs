@@ -133,7 +133,6 @@ impl Host {
             .is_arrangement_mode(is_arrangement_mode)
             .ruler_instances(data.ruler_instances)
             .time_signatures(es.data.time_signatures.clone())
-            .keyboard_instances(data.keyboard_instances)
             .arrangement_note_instances(data.arrangement_note_instances)
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)

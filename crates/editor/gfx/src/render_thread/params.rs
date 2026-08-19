@@ -1,5 +1,5 @@
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, KeyInstance,
+    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance,
     MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
@@ -46,8 +46,6 @@ pub struct RenderParams {
     pub note_instances: Vec<NoteInstance>,
     /// 标尺刻度实例
     pub ruler_instances: Vec<RulerTickInstance>,
-    /// 琴键实例
-    pub keyboard_instances: Vec<KeyInstance>,
     /// 每小节 tick 数
     pub ticks_per_measure: u32,
     /// 每拍 tick 数
@@ -124,7 +122,6 @@ impl Default for RenderParams {
             grid_instances: Vec::new(),
             note_instances: Vec::new(),
             ruler_instances: Vec::new(),
-            keyboard_instances: Vec::new(),
             ticks_per_measure: 7680,
             ticks_per_beat: 1920,
             canvas_offset: (0.0, 0.0),
