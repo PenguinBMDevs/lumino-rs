@@ -14,7 +14,6 @@
 //!   仅音符与键盘键位为不透明像素。
 
 use std::sync::mpsc;
-use std::time::Duration;
 
 use iced_wgpu::wgpu;
 use wgpu::util::DeviceExt;
@@ -679,11 +678,9 @@ impl KeyboardRenderer {
         let height = height.max(1);
         let count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
 
-        // 非阻塞轮询：驱动在途的 map_async 回调完成（不依赖渲染线程，避免读回永远卡住）
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(Duration::from_millis(0)),
-        });
+        // 非阻塞轮询：驱动在途的 map_async 回调完成（不依赖渲染线程，避免读回永远卡住）。
+        // 注意：必须用 PollType::Poll——Wait 变体在队列空时会因 wait 提交索引断言而致命崩溃。
+        let _ = device.poll(wgpu::PollType::Poll);
 
         // 1) 尝试收集已完成的读回（非阻塞）
         if let Ok((bytes, w, h)) = self.readback_rx.try_recv() {
@@ -927,11 +924,8 @@ impl KeyboardRenderer {
                 let _ = tx.send((Vec::new(), w, h));
             }
         });
-        // 非阻塞轮询：驱动 GPU 完成拷贝与映射回调，绝不阻塞 UI 线程
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: Some(Duration::from_millis(0)),
-        });
+        // 非阻塞轮询：驱动 GPU 完成拷贝与映射回调，绝不阻塞 UI 线程（用 Poll 避免 Wait 断言崩溃）
+        let _ = device.poll(wgpu::PollType::Poll);
         // 标记读回在途：在途期间不再向同一缓冲发起新读回/拷贝，避免映射冲突
         self.map_pending = true;
         // 极可能尚未完成：本帧不更新 Handle，下一帧收集
