@@ -291,6 +291,11 @@ impl<T: EventTick + PartialEq> PartialEq<Vec<T>> for ChunkedList<T> {
 }
 
 /// 索引访问（全局索引，O(log 块数)）
+///
+/// # Panics
+///
+/// 索引越界时 panic（与 `Vec` 的 `Index` 语义一致）——越界属于调用方编程错误，
+/// 通过 panic 尽早暴露而非静默返回错误数据。
 impl<T: EventTick> std::ops::Index<usize> for ChunkedList<T> {
     type Output = T;
 

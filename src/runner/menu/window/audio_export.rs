@@ -10,9 +10,12 @@ use lumino_export::audio::config::{
 };
 
 impl RunnerInner {
+    // clippy::boxed_local: Box 来自 `dialog::Event::StartAudioExport` 枚举解包，
+    // 用于 UI→Runner 消息零拷贝传递（见 Message 枚举体积守卫测试）。
+    #[allow(clippy::boxed_local)]
     pub(crate) fn handle_start_audio_export(
         &mut self,
-        config: lumino_message::events::window::dialog::AudioExportConfig,
+        config: Box<lumino_message::events::window::dialog::AudioExportConfig>,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) {
         use std::time::Instant;
@@ -40,7 +43,7 @@ impl RunnerInner {
             key_low,
             key_high,
             note_force_end_delay,
-        } = config;
+        } = *config;
 
         // 根据是否有内存中的 MidiDocument 选择渲染模式
         let mode_str = if document.is_some() {

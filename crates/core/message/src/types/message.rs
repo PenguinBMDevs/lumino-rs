@@ -227,6 +227,21 @@ mod tests {
         assert!(matches!(msg, Message::Null));
     }
 
+    /// 回归测试：Message 枚举体积守卫。
+    ///
+    /// 历史：`Core(Event)` variant 曾达 328 bytes（`window::Event::Dialog` 内
+    /// `StartAudioExport`/`StartVideoExport` 携带大 config 结构体），高频 UI 消息
+    /// 循环每次传递都整块拷贝。Box 化 config 字段后应显著缩小；若未来有人把
+    /// 大字段直接塞回枚举，此测试立即报警。
+    #[test]
+    fn test_message_size_bound() {
+        let size = std::mem::size_of::<Message<(), (), (), ()>>();
+        assert!(
+            size <= 200,
+            "Message 枚举体积回退：当前 {size} bytes（Box 化大 config 后应 ≤ 200）"
+        );
+    }
+
     // ─── PianoRollContextMenu ───
 
     #[test]

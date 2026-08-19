@@ -186,14 +186,20 @@ impl Event {
         config: dialog::AudioExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartAudioExport { config, document })
+        Self::Dialog(dialog::Event::StartAudioExport {
+            config: Box::new(config),
+            document,
+        })
     }
     /// 构造开始视频导出事件
     pub fn start_video_export(
         config: dialog::VideoExportConfig,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) -> Self {
-        Self::Dialog(dialog::Event::StartVideoExport { config, document })
+        Self::Dialog(dialog::Event::StartVideoExport {
+            config: Box::new(config),
+            document,
+        })
     }
 
     // ── 协作构造函数（直接构造 collaboration::Event） ──

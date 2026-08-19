@@ -131,8 +131,8 @@ pub enum Event {
     /// 如果 `document` 为 `Some`，则使用内存中的 MidiDocument 进行渲染（零拷贝）；
     /// 否则从 `midi_path` 指定的文件读取。
     StartAudioExport {
-        /// 音频导出配置
-        config: AudioExportConfig,
+        /// 音频导出配置（Box 减小 Message 枚举体积，见 `window::Event` 布局注释）
+        config: Box<AudioExportConfig>,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },
@@ -146,8 +146,8 @@ pub enum Event {
     /// Runner 线程逐帧构建 RenderParams，发送给渲染线程离屏渲染 + GPU 读回，
     /// 再将 BGRA 帧写入 FFmpeg。
     StartVideoExport {
-        /// 视频导出配置（强类型，事件层传输结构）
-        config: VideoExportConfig,
+        /// 视频导出配置（强类型，事件层传输结构；Box 减小 Message 枚举体积）
+        config: Box<VideoExportConfig>,
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },

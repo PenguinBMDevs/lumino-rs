@@ -23,7 +23,7 @@ mod streaming_task;
 impl RunnerInner {
     pub(crate) fn handle_start_video_export(
         &mut self,
-        config: EventVideoExportConfig,
+        config: Box<EventVideoExportConfig>,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) {
         let EventVideoExportConfig {
@@ -43,7 +43,7 @@ impl RunnerInner {
             miditrail_z_far,
             note_counter,
             data_curve,
-        } = config;
+        } = *config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
         let container = match container {
