@@ -1,28 +1,11 @@
-//! KeyboardRenderer 集成测试
+//! 键盘实例数据类型集成测试
+//!
+//! `KeyboardRenderer`（wgpu 管线）已删除，此处仅保留仍被引用的
+//! `KeyInstance` 布局测试与活跃的 `is_black_key` 逻辑测试。
 
-use lumino_gfx::{KeyInstance, KeyboardPrepareParams, KeyboardViewportUniform};
+use lumino_gfx::{KeyInstance, is_black_key};
 
-/// 测试 KeyboardViewportUniform 内存布局
-#[test]
-fn test_keyboard_viewport_uniform_layout() {
-    let _uniform = KeyboardViewportUniform::from_params(&KeyboardPrepareParams {
-        viewport_size: (1920.0, 1080.0),
-        keyboard_width: 60.0,
-        ruler_height: 30.0,
-        scroll_y: 100.0,
-        zoom_y: 20.0,
-        visible_key_count: 128,
-    });
-
-    // 验证大小（实际大小可能因对齐而变化）
-    let size = std::mem::size_of::<KeyboardViewportUniform>();
-    assert!((32..=48).contains(&size), "Unexpected size: {}", size);
-
-    // 验证对齐
-    assert_eq!(std::mem::align_of::<KeyboardViewportUniform>(), 4);
-}
-
-/// 测试 KeyInstance 内存布局
+/// 验证 KeyInstance 内存布局
 #[test]
 fn test_key_instance_layout() {
     let _instance = KeyInstance::new([10.0, 20.0], [60.0, 20.0], [1.0, 1.0, 1.0, 1.0], false, 60);
@@ -38,41 +21,36 @@ fn test_key_instance_layout() {
 #[test]
 fn test_black_key_detection() {
     // C (0) = 白键
-    assert!(!is_key_dark(0));
+    assert!(!is_black_key(0));
     // C# (1) = 黑键
-    assert!(is_key_dark(1));
+    assert!(is_black_key(1));
     // D (2) = 白键
-    assert!(!is_key_dark(2));
+    assert!(!is_black_key(2));
     // D# (3) = 黑键
-    assert!(is_key_dark(3));
+    assert!(is_black_key(3));
     // E (4) = 白键
-    assert!(!is_key_dark(4));
+    assert!(!is_black_key(4));
     // F (5) = 白键
-    assert!(!is_key_dark(5));
+    assert!(!is_black_key(5));
     // F# (6) = 黑键
-    assert!(is_key_dark(6));
+    assert!(is_black_key(6));
     // G (7) = 白键
-    assert!(!is_key_dark(7));
+    assert!(!is_black_key(7));
     // G# (8) = 黑键
-    assert!(is_key_dark(8));
+    assert!(is_black_key(8));
     // A (9) = 白键
-    assert!(!is_key_dark(9));
+    assert!(!is_black_key(9));
     // A# (10) = 黑键
-    assert!(is_key_dark(10));
+    assert!(is_black_key(10));
     // B (11) = 白键
-    assert!(!is_key_dark(11));
+    assert!(!is_black_key(11));
 
     // 测试跨八度
-    assert!(!is_key_dark(12)); // C
-    assert!(is_key_dark(13)); // C#
+    assert!(!is_black_key(12)); // C
+    assert!(is_black_key(13)); // C#
 }
 
-fn is_key_dark(key: isize) -> bool {
-    let note_in_octave = key.rem_euclid(12);
-    matches!(note_in_octave, 1 | 3 | 6 | 8 | 10)
-}
-
-/// 测试琴键位置计算
+/// 计算钢琴键位位置
 #[test]
 fn test_key_position_calculation() {
     let zoom_y = 20.0;
@@ -80,7 +58,7 @@ fn test_key_position_calculation() {
     let ruler_height = 30.0;
     let max_key_index = 127.0;
 
-    // 测试第 60 个键（C4）的位置
+    // 测试第 60 键（C4）的位置
     let key_index = 60;
     let world_y = (max_key_index - key_index as f32) * zoom_y;
     let screen_y = world_y - scroll_y + ruler_height;
@@ -89,7 +67,7 @@ fn test_key_position_calculation() {
     assert_eq!(screen_y, 1370.0); // 1340 + 30
 }
 
-/// 测试大量琴键实例生成性能
+/// 测试批量琴键实例生成性能
 #[test]
 fn test_key_instance_generation_performance() {
     use std::time::Instant;
@@ -147,7 +125,7 @@ fn test_key_instance_generation_performance() {
         elapsed
     );
 
-    // 性能要求：生成 128 个琴键实例应该在 1ms 以内
+    // 生成全部 128 个琴键实例应远低于 1ms
     assert!(
         elapsed.as_micros() < 1000,
         "Key generation too slow: {:?}",

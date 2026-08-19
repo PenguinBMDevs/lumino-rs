@@ -7,6 +7,7 @@
 //! 运行：`cargo test -p lumino-gfx test_miditrail_instances_bench -- --nocapture`
 
 use super::*;
+use crate::is_black_key;
 
 #[test]
 fn test_miditrail_instances_bench() {
@@ -141,8 +142,8 @@ fn test_miditrail_instances_bench() {
         t_visible += t3.elapsed().as_micros() as u64;
         let t4 = Instant::now();
         entries.sort_by(|a, b| {
-            let a_black = is_black_key(a.0);
-            let b_black = is_black_key(b.0);
+            let a_black = is_black_key(a.0 as isize);
+            let b_black = is_black_key(b.0 as isize);
             a_black
                 .cmp(&b_black)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -195,7 +196,7 @@ fn test_miditrail_instances_bench() {
             } else {
                 zb ^ 0x8000_0000
             };
-            let packed = ((is_black_key(note.key) as u64) << 63)
+            let packed = ((is_black_key(note.key as isize) as u64) << 63)
                 | ((z_sortable as u64) << 7)
                 | (note.key as u64);
             entries_x.push((

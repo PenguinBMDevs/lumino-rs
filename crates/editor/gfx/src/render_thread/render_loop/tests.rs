@@ -46,11 +46,6 @@ fn test_infinite_grid_shader_valid() {
 }
 
 #[test]
-fn test_keyboard_shader_valid() {
-    validate_wgsl(include_str!("../../shaders/keyboard.wgsl"), "keyboard");
-}
-
-#[test]
 fn test_note_shader_valid() {
     validate_wgsl(include_str!("../../shaders/note.wgsl"), "note");
 }
@@ -93,7 +88,6 @@ fn test_video_export_renderers_use_no_depth_shaders() {
             "infinite_grid",
             include_str!("../../shaders/infinite_grid.wgsl"),
         ),
-        ("keyboard", include_str!("../../shaders/keyboard.wgsl")),
         ("note", include_str!("../../shaders/note.wgsl")),
         ("ruler", include_str!("../../shaders/ruler.wgsl")),
     ];

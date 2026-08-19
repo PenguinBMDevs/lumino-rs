@@ -2,6 +2,7 @@
 //! 输出顺序必须完全一致（视觉零差异回归护栏）。
 
 use super::*;
+use crate::is_black_key;
 
 /// 排序等价性：u64 打包键 sort_unstable_by_key 与旧三键闭包 sort_by
 /// 输出顺序必须完全一致（视觉零差异回归护栏）。
@@ -141,8 +142,8 @@ fn build_note_instances_old_style(
         ));
     }
     entries.sort_by(|a, b| {
-        let a_black = is_black_key(a.0);
-        let b_black = is_black_key(b.0);
+        let a_black = is_black_key(a.0 as isize);
+        let b_black = is_black_key(b.0 as isize);
         a_black
             .cmp(&b_black)
             .then_with(|| a.1.total_cmp(&b.1))

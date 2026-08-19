@@ -4,6 +4,7 @@ use super::MIDITRAIL_SCENE_DEPTH;
 use super::types::{
     MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu,
 };
+use crate::is_black_key;
 
 const KEYBOARD_HEIGHT: f32 = 0.012;
 const WHITE_KEY_DEPTH: f32 = 0.07;
@@ -78,7 +79,7 @@ pub fn update_key_positions(
 
     let count = key_count as usize;
     let num_white = (0..count)
-        .filter(|key_idx| !is_black_key(*key_idx as u32))
+        .filter(|key_idx| !is_black_key(*key_idx as isize))
         .count()
         .max(1);
     let white_width = 1.0 / num_white as f32;
@@ -86,7 +87,7 @@ pub fn update_key_positions(
 
     let mut pos = 0.0f32;
     for key_idx in 0..count {
-        if is_black_key(key_idx as u32) {
+        if is_black_key(key_idx as isize) {
             key_positions[key_idx] = pos - black_width * 0.5;
             key_widths[key_idx] = black_width;
         } else {
@@ -95,12 +96,6 @@ pub fn update_key_positions(
             pos += white_width;
         }
     }
-}
-
-/// 判断 MIDI 键是否为黑键。
-#[must_use]
-pub fn is_black_key(key: u32) -> bool {
-    matches!(key % 12, 1 | 3 | 6 | 8 | 10)
 }
 
 /// 将 [r, g, b, a] 颜色打包为 `0xRRGGBBAA`。
@@ -199,7 +194,7 @@ pub fn build_note_instances(
         // key 范围 0-127 只需 7 位；z 左移 7 位后最高到 bit 38，不与 bit 63 冲突。
         // 注意：z 不能左移 32 位——z_sortable ≥ 0x8000_0000（正数 z）时其 bit 31
         // 会落到 bit 63，与 is_black 位互相污染导致排序错乱（曾实测 85 处不一致）。
-        let sort_key = ((is_black_key(note.key) as u64) << 63)
+        let sort_key = ((is_black_key(note.key as isize) as u64) << 63)
             | ((z_sortable as u64) << 7)
             | (note.key as u64);
 
@@ -238,7 +233,7 @@ pub fn build_key_instances(
     for key_idx in 0..key_count {
         let left = key_positions[key_idx];
         let width = key_widths[key_idx];
-        let is_black = is_black_key(key_idx as u32);
+        let is_black = is_black_key(key_idx as isize);
         let (y, height) = if is_black {
             (BLACK_KEY_ELEVATION, BLACK_KEY_HEIGHT)
         } else {

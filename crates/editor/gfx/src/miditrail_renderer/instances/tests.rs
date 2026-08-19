@@ -36,7 +36,7 @@ fn test_key_positions() {
     let white_total: f32 = positions
         .iter()
         .enumerate()
-        .filter(|(i, _)| !is_black_key(*i as u32))
+        .filter(|(i, _)| !is_black_key(*i as isize))
         .map(|(i, _)| widths[i])
         .sum();
     assert!((white_total - 1.0).abs() < 1e-5);

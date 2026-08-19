@@ -45,8 +45,7 @@ pub use context::{Context, ContextError, Result};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
-pub use keyboard_renderer::renderer::KeyboardPrepareParams;
-pub use keyboard_renderer::{KeyInstance, KeyboardRenderer, KeyboardViewportUniform};
+pub use keyboard_renderer::KeyInstance;
 /// 贴图瀑布流音符类型（从 lumino-midiplayer 重导出）
 pub use lumino_midiplayer::texture_waterfall::WaterfallNote;
 /// 贴图瀑布流渲染器（从 lumino-midiplayer 重导出）
