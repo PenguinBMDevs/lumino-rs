@@ -142,8 +142,11 @@ impl Editor {
                 // 松手后强制 O(N) 回退路径重新计算，确保正确性。
                 self.selected_bounds.set(None);
                 tracing::debug!("Editor: 选择框批量编辑完成，重建空间索引");
-                // 标记当前轨变化（document 已被直接修改）
-                self.editor_state.data.mark_current_track_changed();
+                // 记录增量事件，确保 GPU 主音轨段同步刷新。
+                let selected = self.get_selected_indices();
+                if !selected.is_empty() {
+                    self.editor_state.data.record_update_ranges(&selected);
+                }
                 self.mark_notes_changed();
             }
             _ => {}

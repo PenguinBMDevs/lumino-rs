@@ -43,6 +43,7 @@ impl EditorData {
         self.push_history();
 
         let mut modified = 0usize;
+        let mut modified_indices: Vec<usize> = Vec::new();
         if let Some(track) = self
             .document
             .as_mut()
@@ -84,13 +85,14 @@ impl EditorData {
                     }
                     if changed {
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
         }
 
         if modified > 0 {
-            self.mark_current_track_changed();
+            self.record_update_ranges(&modified_indices);
         } else {
             self.history.discard_last();
         }

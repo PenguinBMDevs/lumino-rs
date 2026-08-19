@@ -2,9 +2,12 @@
 //!
 //! 2026-08 单一权威源：测试种子经 `test_helpers::seed_notes` 写入 document。
 
+use std::collections::HashSet;
+
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
+use iced_core::Point;
 use lumino_message::Tool;
 
 /// 测试音符选中功能
@@ -281,6 +284,42 @@ fn test_select_all_notes() {
     assert_eq!(editor.selected_notes_count(), 2);
     assert!(editor.is_note_selected(0));
     assert!(editor.is_note_selected(1));
+}
+
+/// BUG 复现：批量框选右边缘拉伸后，主音轨应记录增量事件以供 GPU 刷新。
+#[test]
+fn test_batch_selection_resize_end_records_delta_events() {
+    let mut editor = Editor::new();
+    test_helpers::seed_notes(
+        &mut editor,
+        1,
+        0,
+        &[Note::new(0.0, 60, 480.0), Note::new(480.0, 64, 480.0)],
+    );
+
+    // 选中全部音符并进入选择框右边缘拉伸状态
+    editor.editor_state.interaction.selected_notes = HashSet::from([0, 1]);
+    editor.editor_state.interaction.edit_state =
+        crate::EditState::ResizingSelectionEnd { last_tick: 0.0 };
+
+    // 拖动到 tick 960：两个音符长度都增加
+    let view = editor.editor_state.view.clone();
+    let x = view.tick_to_x(960.0);
+    let y = view.key_to_y(60) + view.zoom_y / 2.0;
+    editor.handle_moved(Point::new(x, y));
+
+    // 拖动期间走 ghost 路径，不记录主音轨增量事件
+    assert!(
+        editor.editor_state.data.note_delta_events.is_empty(),
+        "拉伸拖动期间不应记录主音轨事件"
+    );
+
+    // 松手后必须记录增量事件，否则 GPU 不会刷新
+    editor.handle_released();
+    assert!(
+        !editor.editor_state.data.note_delta_events.is_empty(),
+        "批量拉伸释放后应记录增量事件"
+    );
 }
 
 /// 测试全选（大数据量路径）

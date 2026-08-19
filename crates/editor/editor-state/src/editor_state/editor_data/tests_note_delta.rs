@@ -305,6 +305,26 @@ fn test_apply_speed_change_records_event() {
 // ── 边界：越界索引防御 ─────────────────────────────────────────
 
 #[test]
+fn test_apply_batch_edit_gate_records_event() {
+    let mut data = make_data(4);
+    let selected = HashSet::from([1, 2]);
+    let modified = data.apply_batch_edit(&selected, "", "*2", "", "", 127);
+    assert_eq!(modified, 2);
+    assert_eq!(event_ranges(&data.note_delta_events), vec![(1, 2)]);
+    assert!(!data.note_delta_dirty);
+}
+
+#[test]
+fn test_apply_batch_edit_noop_clears_history() {
+    let mut data = make_data(3);
+    let selected = HashSet::from([0, 1]);
+    // 空表达式 → 无变更 → discard_last
+    let modified = data.apply_batch_edit(&selected, "", "", "", "", 127);
+    assert_eq!(modified, 0);
+    assert!(data.note_delta_events.is_empty());
+}
+
+#[test]
 fn test_record_update_ranges_out_of_bounds_filtered() {
     let mut data = make_data(3);
     // 索引 5 越界 → 事件只含有效区间 [0, 3)
