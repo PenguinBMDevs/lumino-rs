@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.1] - Unreleased
+
+### 其它
+- **版本号更新** — 升级项目版本号至 0.2.1
+
 ## [0.2.0] - 2026-08-16
 
 ### midiplayer 与贴图瀑布流

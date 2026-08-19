@@ -25,7 +25,7 @@ xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
 xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino" }
 
 [workspace.package]
-version = "0.2.0"
+version = "0.2.1"
 rust-version = "1.92.0"
 homepage = "https://github.com/PenguinBMDevs/lumino-rs"
 repository = "https://github.com/PenguinBMDevs/lumino-rs"
@@ -34,29 +34,29 @@ description = "Lumino - A Fast Black MIDI Editor"
 edition = "2024"
 
 [workspace.dependencies]
-lumino-core = { path = "crates/core/core", version = "0.2.0-crates-io-preview1" }
-lumino-export = { path = "crates/tools/export", version = "0.2.0-crates-io-preview1" }
-lumino-gfx = { path = "crates/editor/gfx", version = "0.2.0-crates-io-preview1" }
-lumino-midi-io = { path = "crates/audio/midi-io", version = "0.2.0-crates-io-preview1" }
-lumino-midi-loader = { path = "crates/audio/midi-loader", version = "0.2.0-crates-io-preview1" }
-lumino-midiplayer = { path = "crates/audio/midiplayer", version = "0.2.0-crates-io-preview1" }
-lumino-diagnostics = { path = "crates/core/diagnostics", version = "0.2.0-crates-io-preview1" }
-lumino-midi-model = { path = "crates/audio/midi-model", version = "0.2.0-crates-io-preview1" }
-lumino-message = { path = "crates/core/message", version = "0.2.0-crates-io-preview1" }
+lumino-core = { path = "crates/core/core", version = "0.2.1-crates-io-preview1" }
+lumino-export = { path = "crates/tools/export", version = "0.2.1-crates-io-preview1" }
+lumino-gfx = { path = "crates/editor/gfx", version = "0.2.1-crates-io-preview1" }
+lumino-midi-io = { path = "crates/audio/midi-io", version = "0.2.1-crates-io-preview1" }
+lumino-midi-loader = { path = "crates/audio/midi-loader", version = "0.2.1-crates-io-preview1" }
+lumino-midiplayer = { path = "crates/audio/midiplayer", version = "0.2.1-crates-io-preview1" }
+lumino-diagnostics = { path = "crates/core/diagnostics", version = "0.2.1-crates-io-preview1" }
+lumino-midi-model = { path = "crates/audio/midi-model", version = "0.2.1-crates-io-preview1" }
+lumino-message = { path = "crates/core/message", version = "0.2.1-crates-io-preview1" }
 midly = { version = "0.6.3", package = "lumino-midly", features = ["std", "alloc", "parallel", "memmap"] }
-lumino-dialog = { path = "crates/editor/dialog", version = "0.2.0-crates-io-preview1" }
-lumino-ui = { path = "crates/editor/ui", version = "0.2.0-crates-io-preview1" }
+lumino-dialog = { path = "crates/editor/dialog", version = "0.2.1-crates-io-preview1" }
+lumino-ui = { path = "crates/editor/ui", version = "0.2.1-crates-io-preview1" }
 # lumino-ui-constants: merged into lumino-ui-core::constants
 # lumino-ui-host: merged into lumino-gfx::cache
-lumino-ui-core = { path = "crates/editor/ui-core", version = "0.2.0-crates-io-preview1" }
-lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.0-crates-io-preview1" }
-lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.0-crates-io-preview1" }
-lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.0-crates-io-preview1" }
-lumino-note-core = { path = "crates/audio/note-core", version = "0.2.0-crates-io-preview1" }
-lumino-editor-state = { path = "crates/editor/editor-state", version = "0.2.0-crates-io-preview1" }
-lumino-project = { path = "crates/core/project", version = "0.2.0-crates-io-preview1" }
-lumino-extras = { path = "crates/tools/extras", version = "0.2.0-crates-io-preview1" }
-lumino-cloud = { path = "crates/network/cloud", version = "0.2.0-crates-io-preview1" }
+lumino-ui-core = { path = "crates/editor/ui-core", version = "0.2.1-crates-io-preview1" }
+lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.1-crates-io-preview1" }
+lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.1-crates-io-preview1" }
+lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.1-crates-io-preview1" }
+lumino-note-core = { path = "crates/audio/note-core", version = "0.2.1-crates-io-preview1" }
+lumino-editor-state = { path = "crates/editor/editor-state", version = "0.2.1-crates-io-preview1" }
+lumino-project = { path = "crates/core/project", version = "0.2.1-crates-io-preview1" }
+lumino-extras = { path = "crates/tools/extras", version = "0.2.1-crates-io-preview1" }
+lumino-cloud = { path = "crates/network/cloud", version = "0.2.1-crates-io-preview1" }
 # 云存储（FTP / SFTP / WebDAV）
 suppaftp = "10.0.1"
 # SFTP 使用 russh（纯 Rust，ring 后端无系统依赖；ssh2 vendored-openssl 需 perl 编译 OpenSSL 故弃用）

@@ -4126,7 +4126,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "lumino-cloud"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "aes-gcm",
  "async-trait",
@@ -4149,7 +4149,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-collaboration"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "chrono",
  "futures",
@@ -4170,7 +4170,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "bit-vec",
@@ -4184,7 +4184,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-diagnostics"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "libc",
  "mimalloc",
@@ -4196,7 +4196,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-dialog"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lumino-core",
  "lumino-gfx",
@@ -4210,7 +4210,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-editor-state"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bit-vec",
  "im",
@@ -4223,7 +4223,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-export"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "bytes",
@@ -4255,7 +4255,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-extras"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "lumino-core",
  "png 0.17.16",
@@ -4266,7 +4266,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-gfx"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "bytemuck",
@@ -4290,7 +4290,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-message"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "iced_widget",
  "lumino-core",
@@ -4301,7 +4301,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midi-io"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "crossbeam-channel",
  "libloading 0.9.0",
@@ -4322,7 +4322,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midi-loader"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "encoding_rs",
@@ -4348,7 +4348,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midi-model"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "encoding_rs",
@@ -4362,7 +4362,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-midiplayer"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "bytemuck",
@@ -4391,7 +4391,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-note-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bit-vec",
  "font-kit",
@@ -4407,7 +4407,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-project"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "bincode",
  "chrono",
@@ -4425,7 +4425,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-rs"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "ab_glyph",
  "anyhow",
@@ -4483,7 +4483,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-ui"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "anyhow",
  "arboard",
@@ -4530,7 +4530,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-ui-core"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "iced_core",
  "iced_wgpu",
@@ -4550,7 +4550,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-ui-editor"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "arboard",
  "iced_core",
@@ -4576,7 +4576,7 @@ dependencies = [
 
 [[package]]
 name = "lumino-ui-settings"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "iced_core",
  "iced_widget",
