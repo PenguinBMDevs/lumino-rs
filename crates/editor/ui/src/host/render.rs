@@ -142,7 +142,9 @@ impl Host {
             KeyboardRenderer::new(&self.render_ctx.device)
         });
 
-        let bytes = renderer.render_scene(
+        // 异步读回：返回 Some 才更新 Handle；None 表示读回在途/资源重建，
+        // 保持旧 Handle 并保留签名，下一帧继续重试（避免阻塞与闪烁）。
+        let rendered = renderer.render_scene(
             &self.render_ctx.device,
             &self.render_ctx.queue,
             width,
@@ -153,11 +155,21 @@ impl Host {
             scroll_x,
             current_track,
         );
-
-        let handle = iced_core::image::Handle::from_rgba(width, height, bytes);
-        state.handle = Some(handle);
-        state.rendered_width = width;
-        state.rendered_height = height;
-        state.cached_signature = Some(sig);
+        match rendered {
+            Some((bytes, w, h)) => {
+                let handle = iced_core::image::Handle::from_rgba(w, h, bytes);
+                state.handle = Some(handle);
+                state.rendered_width = w;
+                state.rendered_height = h;
+                state.cached_signature = Some(sig);
+            }
+            None => {
+                // 读回仍在途：请求一次续帧轮询以驱动 map_async 回调完成；
+                // 仅在有读回在途时才续帧，读回完成后自终止，避免 RedrawRequested 自循环。
+                if renderer.is_readback_pending() {
+                    self.window_ctx.window.request_redraw();
+                }
+            }
+        }
     }
 }
