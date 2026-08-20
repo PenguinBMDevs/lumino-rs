@@ -68,16 +68,26 @@ impl super::Editor {
 
     /// 设置水平滚动位置（钳位到有效范围并刷新标尺缓存）。
     ///
+    /// 纵向卷帘复用本方法驱动时间轴偏移：`keyboard_width` 传键盘高度、
+    /// `canvas_width` 传画布高度、`time_zoom` 传 `zoom_y`。
+    ///
     /// # 参数
-    /// * `scroll_x` — 目标水平滚动值
-    pub fn set_scroll_x(&mut self, scroll_x: f32) {
-        let keyboard_width = self.editor_state.view.keyboard_width;
-        let canvas_width = self.editor_state.canvas.size_x;
+    /// * `scroll_x` — 目标水平滚动值（纵向模式下即时间轴偏移）
+    /// * `keyboard_width` — pitch 轴方向留白尺寸
+    /// * `canvas_width` — 视口尺寸（与 `keyboard_width` 同向）
+    /// * `time_zoom` — 时间轴像素缩放
+    pub fn set_scroll_x(
+        &mut self,
+        scroll_x: f32,
+        keyboard_width: f32,
+        canvas_width: f32,
+        time_zoom: f32,
+    ) {
         Viewport::new(
             &mut self.editor_state.view,
             &mut self.editor_state.max_scroll,
         )
-        .set_scroll_x(scroll_x, keyboard_width, canvas_width);
+        .set_scroll_x(scroll_x, keyboard_width, canvas_width, time_zoom);
         self.invalidate_caches(CacheInvalidation::RULER);
     }
 

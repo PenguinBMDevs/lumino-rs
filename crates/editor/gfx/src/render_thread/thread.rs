@@ -87,8 +87,7 @@ impl WgpuRenderThread {
         let latest_texture_clone = Arc::clone(&latest_texture);
         let note_instances_buffer_clone = Arc::clone(&note_instances_buffer);
         let waterfall_progress_clone = Arc::clone(&waterfall_progress);
-        let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> =
-            Arc::new(Mutex::new(None));
+        let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> = Arc::new(Mutex::new(None));
         let note_data_pub_clone = Arc::clone(&note_data_pub);
 
         // 启动渲染线程

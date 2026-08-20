@@ -156,6 +156,9 @@ impl Root {
             .roll_bar_active
             .unwrap_or(sidebar::RollBarButton::Horizontal);
 
+        // 卷帘方向 → 写入 editor_state，供自动滚动轴向与播放指示线方向共享同一事实源
+        self.editor.editor_state.is_vertical_roll = self.sidebar.is_vertical_roll();
+
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;

@@ -31,8 +31,17 @@ impl<'a> Viewport<'a> {
     }
 
     /// 设置水平滚动位置
-    pub fn set_scroll_x(&mut self, scroll_x: f32, keyboard_width: f32, canvas_width: f32) {
-        let total_width = self.view.total_ticks as f32 * self.view.zoom_x;
+    ///
+    /// `time_zoom` 为时间轴的像素缩放（横向为 `zoom_x`；纵向卷帘转置后时间轴在 Y 方向，传 `zoom_y`）。
+    /// `keyboard_width` 为 pitch 轴方向的留白尺寸（纵向卷帘传键盘高度）。
+    pub fn set_scroll_x(
+        &mut self,
+        scroll_x: f32,
+        keyboard_width: f32,
+        canvas_width: f32,
+        time_zoom: f32,
+    ) {
+        let total_width = self.view.total_ticks as f32 * time_zoom;
         let viewport_width = (canvas_width - keyboard_width).max(0.0);
         let max_scroll = (total_width - viewport_width).max(0.0);
         self.view.scroll_x = scroll_x.max(0.0).min(max_scroll);
@@ -142,20 +151,29 @@ mod tests {
     fn test_set_scroll_x_clamps_to_max() {
         let (mut view, mut max_scroll) = setup_viewport();
         let total_ticks = view.total_ticks;
+        let time_zoom = 1.0;
+        let keyboard_width = 120.0;
+        let canvas_width = 800.0;
+        let expected_max = (total_ticks as f32 * time_zoom
+            - f32::max(canvas_width - keyboard_width, 0.0))
+        .max(0.0);
         {
             let mut vp = Viewport::new(&mut view, &mut max_scroll);
             vp.update_max_scroll(total_ticks);
-            vp.set_scroll_x(100000.0, 120.0, 800.0);
+            vp.set_scroll_x(100000.0, keyboard_width, canvas_width, time_zoom);
         }
-        assert!(view.scroll_x <= max_scroll.0);
+        assert!(view.scroll_x <= expected_max);
     }
 
     #[test]
     fn test_set_scroll_x_clamps_to_zero() {
         let (mut view, mut max_scroll) = setup_viewport();
+        let time_zoom = 1.0;
+        let keyboard_width = 120.0;
+        let canvas_width = 800.0;
         {
             let mut vp = Viewport::new(&mut view, &mut max_scroll);
-            vp.set_scroll_x(-100.0, 120.0, 800.0);
+            vp.set_scroll_x(-100.0, keyboard_width, canvas_width, time_zoom);
         }
         assert_eq!(view.scroll_x, 0.0);
     }

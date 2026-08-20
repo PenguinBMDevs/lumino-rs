@@ -88,7 +88,10 @@ impl NoteRenderer {
     /// 返回 `(buffer 克隆, 实例数)`；buffer 为只读 `storage`，与渲染线程同源同缓冲，
     /// 面板 offscreen 管线直接 bind 该缓冲即可，无需重新上传音符数据。
     pub fn gpu_note_buffer_for_sharing(&self) -> (wgpu::Buffer, u32) {
-        (self.gpu_note_buffer.buffer().clone(), self.gpu_instance_count() as u32)
+        (
+            self.gpu_note_buffer.buffer().clone(),
+            self.gpu_instance_count() as u32,
+        )
     }
 
     /// 更新视图状态（当前音轨 + 静音位图）

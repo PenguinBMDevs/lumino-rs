@@ -13,7 +13,7 @@ fn test_scroll_boundaries() {
     editor.editor_state.view.total_ticks = 1000;
 
     // 设置一个超出范围的 scroll_x
-    editor.set_scroll_x(10000.0);
+    editor.set_scroll_x(10000.0, 120.0, 800.0, 1.0);
 
     // 应该被限制在有效范围内
     assert!(editor.scroll_x() <= editor.editor_state.max_scroll.0);

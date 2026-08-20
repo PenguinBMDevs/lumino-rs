@@ -70,7 +70,12 @@ pub(crate) fn draw(
 
     {
         puffin::profile_scope!("draw::playback_indicator");
-        let playback_indicator_geom = playback_indicator::draw(editor, renderer, bounds);
+        let playback_indicator_geom = playback_indicator::draw(
+            editor,
+            renderer,
+            bounds,
+            editor.editor_state.is_vertical_roll,
+        );
         geometries.push(playback_indicator_geom);
     }
 

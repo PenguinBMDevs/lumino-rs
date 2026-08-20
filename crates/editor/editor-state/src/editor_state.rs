@@ -64,6 +64,8 @@ pub struct EditorState {
     pub auto_scroll: AutoScrollConfig,
     /// 最大滚动范围（横向、纵向）
     pub max_scroll: (f32, f32),
+    /// 当前是否为纵向卷帘视图（影响自动滚动轴向与播放指示线方向）
+    pub is_vertical_roll: bool,
     /// 编辑器文档与音符数据
     pub data: EditorData,
     /// 图片转 MIDI 放置模式状态
@@ -93,6 +95,7 @@ impl EditorState {
             data: EditorData::new(),
             tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
+            is_vertical_roll: false,
             image_to_midi: image_to_midi::ImageToMidiState::default(),
             line_tool: line_tool::LineToolState::default(),
         }

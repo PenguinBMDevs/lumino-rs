@@ -20,7 +20,13 @@ impl Root {
                 true
             }
             Message::ScrollbarScrolled(x) => {
-                self.editor.set_scroll_x(*x);
+                let v = &self.editor.editor_state.view;
+                self.editor.set_scroll_x(
+                    *x,
+                    v.keyboard_width,
+                    self.editor.editor_state.canvas.size_x,
+                    v.zoom_x,
+                );
                 true
             }
             Message::ScrollbarScrolledY(y) => {

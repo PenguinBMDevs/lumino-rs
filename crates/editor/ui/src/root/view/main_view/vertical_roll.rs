@@ -32,12 +32,20 @@ impl Root {
         let view = &self.editor.editor_state.view;
         let ppq = view.ppq as u32;
         let zoom_x = view.zoom_x;
-        let scroll_x = view.scroll_x;
+        let scroll_x = view.scroll_x; // 时间轴（Y）主滚动
         let ruler_width = view.ruler_height;
         let total_ticks = view.total_ticks;
 
         // 小节线 / 拍线 tick 计算（复用横向卷帘同款算法，仅转置到 Y 轴）
         let (beat_ticks, measure_ticks) = ticks_per_beat_and_measure(ppq);
+
+        // 纵向键盘高度与横向卷帘键盘宽度保持一致（DEFAULT_KEYBOARD_WIDTH），避免视觉不一致。
+        let keyboard_height = lumino_core::view_state::DEFAULT_KEYBOARD_WIDTH;
+
+        // 播放指示线 Y 坐标：纵向卷帘时间轴在 Y，播放时 scroll_x 推进使内容下移，
+        // 指示线固定（与横向"指示线固定、内容上移"对称）。越过键盘留白区或画布范围则不绘制。
+        let playback_indicator_y =
+            keyboard_height + self.editor.playback_position * zoom_x - scroll_x;
 
         let program = VerticalRollProgram {
             zoom_x,
@@ -46,16 +54,14 @@ impl Root {
             total_ticks,
             beat_ticks,
             measure_ticks,
+            playback_indicator_y,
         };
 
-        // 纵向键盘（编辑区底部，键沿 X 轴铺开，复用横向键盘同款 pitch 轴映射）
+        // 纵向键盘（编辑区底部，键沿 X 轴铺开）：将全部音高均匀铺满键盘宽度，
+        // 与上方网格 X 轴（= 全音域对应整宽）严格对齐，且播放时不随 scroll_x 移动 → 稳定、全量可见。
         let keyboard_program = VerticalKeyboardProgram {
-            visible_key_count: view.visible_key_count,
-            zoom_y: view.zoom_y,
-            scroll_y: view.scroll_y,
-            ruler_width,
+            key_count: view.key_count,
         };
-        let keyboard_height = ruler_width;
 
         // 顶部：左侧纵向小节标尺 + 右侧转置网格线（时间轴在 Y 轴）
         let top = row![
@@ -120,6 +126,8 @@ struct VerticalRollProgram {
     total_ticks: u32,
     beat_ticks: u32,
     measure_ticks: u32,
+    /// 播放指示线 Y 坐标（时间轴在 Y 方向）；<= ruler_width 或越界表示不绘制
+    playback_indicator_y: f32,
 }
 
 impl Program<Message, Theme, Renderer> for VerticalRollProgram {
@@ -199,6 +207,30 @@ impl Program<Message, Theme, Renderer> for VerticalRollProgram {
             );
         }
 
+        // 播放指示线（瀑布流下落红线）：横向红线 + 左侧朝右三角形（指向时间增长方向）
+        if self.playback_indicator_y > self.ruler_width && self.playback_indicator_y <= height {
+            let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
+            let y = self.playback_indicator_y;
+            let line_path = iced_widget::canvas::Path::line(
+                Point::new(self.ruler_width, y),
+                Point::new(width, y),
+            );
+            frame.stroke(
+                &line_path,
+                iced_widget::canvas::Stroke::default()
+                    .with_width(2.0)
+                    .with_color(indicator_color),
+            );
+            let tri = 6.0;
+            let triangle_path = iced_widget::canvas::Path::new(|builder| {
+                builder.move_to(Point::new(self.ruler_width, y - tri / 2.0));
+                builder.line_to(Point::new(self.ruler_width, y + tri / 2.0));
+                builder.line_to(Point::new(self.ruler_width + tri, y));
+                builder.close();
+            });
+            frame.fill(&triangle_path, indicator_color);
+        }
+
         vec![frame.into_geometry()]
     }
 }
@@ -237,7 +269,7 @@ impl Program<Message, Theme, Renderer> for RulerProgram {
         let bar_color = theme.bar_line_color();
         let text_color = theme.text_color();
 
-        // 小节号 + 小节线刻度（标尺右侧边缘短横线）
+        // 小节号 + 小节线刻度（标尺右侧边缘短横线）；标尺的时间轴（Y）用 scroll_x
         let first_measure = (self.scroll_x / (self.measure_ticks as f32)).floor() as i64 - 1;
         let last_measure = ((self.scroll_x + height - self.ruler_width)
             / (self.measure_ticks as f32))
