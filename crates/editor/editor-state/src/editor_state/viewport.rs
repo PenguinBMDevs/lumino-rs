@@ -23,6 +23,8 @@ impl<'a> Viewport<'a> {
     }
 
     /// 根据总 tick 数更新最大滚动范围
+    ///
+    /// `.1`（音高轴/键盘高度轴）使用 `zoom_y`（横向钢琴卷帘键盘高度轴）。
     pub fn update_max_scroll(&mut self, total_ticks: u32) {
         *self.max_scroll = (
             total_ticks as f32 * self.view.zoom_x,

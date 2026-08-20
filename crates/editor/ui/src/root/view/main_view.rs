@@ -10,7 +10,6 @@
 mod arrangement;
 mod panels;
 mod piano_roll;
-pub(crate) mod vertical_roll;
 
 use crate::Element;
 use crate::root::Root;

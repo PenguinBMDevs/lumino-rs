@@ -35,8 +35,9 @@ impl Editor {
     /// 更新自动滚动（在每帧渲染前调用，根据播放位置调整滚动）
     ///
     /// 纵向卷帘（`editor_state.is_vertical_roll`）把时间轴转置到 Y 方向：
-    /// 用 `zoom_y` 作时间轴缩放、`keyboard_height`(=横向 `keyboard_width`) 作 pitch 轴留白，
-    /// 继续驱动 `scroll_x`（纵向视图的时间轴偏移），保证瀑布流「向下落」方向正确。
+    /// 用 `zoom_x` 作时间轴缩放、`keyboard_height`(=横向 `keyboard_width`) 作 pitch 轴留白，
+    /// 继续驱动 `scroll_x`（纵向视图的时间轴偏移）。内容「向下落」方向由 `tick_to_y` 的
+    /// `ruler + tick*zoom - scroll` 保证（scroll 增→坐标增→下移），故纵向与横向同取 `+target`。
     ///
     /// 返回是否需要刷新网格缓存
     pub fn update_auto_scroll(&mut self, playback_tick: f32) -> bool {
@@ -83,12 +84,8 @@ impl Editor {
                     target_scroll_x = max_scroll;
                 }
                 // 纵向卷帘时间轴在 Y、内容应「瀑布流下落」(scroll 增→坐标增→下移)，
-                // 故取 -target（与横向「内容上移」相反，但二者各自视觉正确）。
-                let scroll = if is_vertical {
-                    -target_scroll_x
-                } else {
-                    target_scroll_x
-                };
+                // 与横向同取 +target；竖向滚动条滑块与 scroll 同向（0=起点在底，随播放上移）。
+                let scroll = target_scroll_x;
                 self.set_scroll_x(scroll, pitch_inset, canvas_size, time_zoom);
                 // 自动滚动直接设置，同步平滑滚动目标
                 self.editor_state.view.smooth_scroll.sync(
@@ -100,12 +97,8 @@ impl Editor {
             AutoScrollMode::ScrollingIndicator => {
                 let trigger_offset = asc.page_trigger_offset as f32;
                 let return_pos = asc.page_return_position as f32;
-                let indicator_screen_x = if is_vertical {
-                    // 纵向：屏幕 Y = ruler + tick*zoom - scroll；scroll 取负，故 +|scroll|
-                    playback_tick * time_zoom + v.scroll_x + pitch_inset
-                } else {
-                    playback_tick * time_zoom - v.scroll_x + pitch_inset
-                };
+                // 横向/纵向的屏幕坐标公式一致：ruler + tick*zoom - scroll（纵向 scroll 已为正，下落方向）
+                let indicator_screen_x = playback_tick * time_zoom - v.scroll_x + pitch_inset;
                 let trigger_screen_x = viewport_width + pitch_inset - trigger_offset;
 
                 if indicator_screen_x >= trigger_screen_x {
@@ -113,11 +106,7 @@ impl Editor {
                     if target_scroll_x >= max_scroll {
                         target_scroll_x = max_scroll;
                     }
-                    let scroll = if is_vertical {
-                        -target_scroll_x
-                    } else {
-                        target_scroll_x
-                    };
+                    let scroll = target_scroll_x;
                     self.set_scroll_x(scroll, pitch_inset, canvas_size, time_zoom);
                     // 自动滚动直接设置，同步平滑滚动目标
                     self.editor_state.view.smooth_scroll.sync(

@@ -183,17 +183,13 @@ impl<'a> ScrollbarWidget<'a> {
         let delta = current_pos - start_pos;
         let effective_delta = if edge == Edge::End { delta } else { -delta };
 
-        // 动态判断滚动是否已达极限，阻止缩小方向的拖拽（放大方向仍可正常工作）
-        // 使用 1px 迟滞防止浮点精度导致的误判
-        const LIMIT_HYSTERESIS: f32 = 1.0;
-        let actual_max_scroll = self.actual_max_scroll(geo.track_size);
-        let can_zoom_out = match edge {
-            Edge::Start => self.scroll > LIMIT_HYSTERESIS,
-            Edge::End => self.scroll < actual_max_scroll - LIMIT_HYSTERESIS,
-        };
+        // 仅在内容已填满视口（无溢出）时，才阻止「缩小」方向的拖拽；
+        // 内容仍有溢出（例如键盘未显示全）时放行，允许继续缩小看全。
+        // 放大方向始终可正常工作。
+        let content_fits = self.content_fits(geo.track_size);
 
-        if !can_zoom_out && effective_delta > 0.0 {
-            // 滚动已达极限，阻止继续缩小。
+        if content_fits && effective_delta > 0.0 {
+            // 内容已满屏，阻止继续缩小。
             // 更新 start_pos 和 start_zoom，使后续 delta ≈ 0、ratio ≈ 1，
             // 避免 effective_delta 突变导致 new_zoom 跳回 start_zoom 产生抽动。
             // 用户反向拖拽（放大）时也能从当前位置平滑过渡。

@@ -174,4 +174,14 @@ impl super::Editor {
         );
         self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
+
+    /// 设置纵向卷帘「音高轴」滚动位置（键盘 X 向平移）。
+    ///
+    /// 使用音高轴专用坐标（`pitch_zoom`/`key_count`/`max_scroll.1`）钳制，**不碰**
+    /// 横向键盘的 `scroll_y`/`zoom_y`，与 `ScrollbarScrolledY` 配套。
+    pub fn set_pitch_scroll(&mut self, _pitch_scroll: f32) {
+        // 纵向卷帘面板已改为直接复用瀑布流播放器（键盘 + 卷帘由 GPU 离屏渲染），
+        // 不再维护独立的 `pitch_zoom`/`pitch_scroll` 字段；该分支暂为占位，
+        // 后续挂载音符编辑动作时再实现对应缩放/平移。保持函数签名以保留调用点稳定。
+    }
 }

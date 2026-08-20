@@ -22,6 +22,39 @@ impl Root {
             return self.view_waterfall_fullscreen();
         }
 
+        // 纵向卷帘面板：与全屏瀑布流同款「独立面板」处理——只渲染瀑布流播放器
+        // （钢琴键盘 + 下落式卷帘），剥离钢琴卷帘工具栏 / 力度面板 / 右侧栏 / 3D 卷帘场景。
+        // 仅保留应用级全局导航（标题栏 + 左侧栏），纵向面板后续在此壳上挂载独立编辑动作。
+        if self.sidebar.is_vertical_roll() {
+            let language = self.settings.display.language;
+            let ppq = self.editor.editor_state.view.ppq;
+            let note_precision = self.toolbar.note_precision.as_ticks(ppq);
+            let titlebar = self.titlebar.view(
+                &self.window,
+                self.settings.synth.use_native_titlebar,
+                self.state.current_mode,
+                self.state.toggle_animation.position,
+                language,
+                false,
+            );
+            let left_bar = self.sidebar.view(
+                &self.window,
+                language,
+                self.state.current_mode,
+                note_precision,
+            );
+            let player = self.view_waterfall_player();
+            return column![
+                titlebar,
+                row![
+                    left_bar,
+                    container(player).width(Length::Fill).height(Length::Fill)
+                ]
+                .height(Length::Fill),
+            ]
+            .into();
+        }
+
         let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）
@@ -36,12 +69,7 @@ impl Root {
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 全屏瀑布流播放器）
         puffin::profile_scope!("root_view_right_content");
-        let right_content: Element<'_> = if self.state.current_mode
-            == crate::titlebar::mode_toggle::AppMode::Waterfall
-        {
-            // 瀑布流模式：全屏播放器（铺满主界面，复用右侧栏预览同款渲染）
-            self.view_waterfall_player()
-        } else if is_arrangement_route {
+        let right_content: Element<'_> = if is_arrangement_route {
             // 音轨总览模式：使用 wgpu 原生渲染
             right_content::wrap_right_content(self, false, true, |available_width| {
                 self.view_arrangement(available_width)
@@ -52,11 +80,6 @@ impl Root {
         } else if self.sidebar.video_export_visible {
             // 视频渲染面板（在主界面钢琴卷帘区域显示）
             self.view_video_export_panel()
-        } else if self.sidebar.is_vertical_roll() {
-            // 纵向卷帘模式：中心编辑区替换为纵向卷帘只读预览
-            // （左侧小节标尺 + 转置网格线；瀑布流内容后续接入）。
-            // 右侧栏与工具栏照常渲染——仅中心画布区域被纵向卷帘取代。
-            self.view_vertical_roll()
         } else if !self.sidebar.piano_roll_visible {
             // 钢琴卷帘已关闭：显示空白区域
             container(

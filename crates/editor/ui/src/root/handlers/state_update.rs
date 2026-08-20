@@ -30,6 +30,8 @@ impl Root {
                 true
             }
             Message::ScrollbarScrolledY(y) => {
+                // 纵向卷帘面板现已复用瀑布流播放器（键盘+卷帘由 GPU 离屏渲染），
+                // 不再维护独立音高轴滚动；该消息仍被横向键盘高度轴复用，故走通用 set_scroll_y。
                 self.editor.set_scroll_y(*y);
                 true
             }
@@ -46,6 +48,8 @@ impl Root {
                 true
             }
             Message::ZoomYChanged { zoom, fixed_ratio } => {
+                // 纵向卷帘面板现已复用瀑布流播放器（键盘+卷帘由 GPU 离屏渲染），
+                // 不再维护独立音高轴缩放；该消息仍被横向键盘高度轴复用，故统一走 set_zoom_y。
                 self.editor.set_zoom_y(*zoom, *fixed_ratio);
                 true
             }
@@ -58,31 +62,36 @@ impl Root {
                 // 缩放不应出现空白区域：viewport 变化后，若琴键没填满 viewport，
                 // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
                 // 确保面板开关或 window resize 后不留空区。
+                // 纵向卷帘：音高在 X 轴、缩放下限由专用 set_zoom_y_vertical 约束（且不依赖视口高度），
+                // 此处横向键盘的「按高度填满」逻辑不适用，跳过以免误夹死音高轴。
+                let is_vertical = self.editor.editor_state.is_vertical_roll;
                 let state = &mut self.editor.editor_state;
                 let vh = (state.canvas.size_y - state.view.ruler_height).max(0.0);
-                let th = state.view.visible_key_count as f32 * state.view.zoom_y;
+                let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
+                if !is_vertical {
+                    let th = state.view.visible_key_count as f32 * state.view.zoom_y;
 
-                if th < vh {
-                    // content 没填满 viewport → 调高 zoom
-                    let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
-                        crate::constants::editor::zoom::MIN_ZOOM_Y,
-                        crate::constants::editor::zoom::MAX_ZOOM_Y,
-                    );
-                    if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
-                        state.view.zoom_y = fill_zoom;
-                        let total_ticks = state.view.total_ticks;
-                        lumino_editor_state::editor_state::viewport::Viewport::new(
-                            &mut state.view,
-                            &mut state.max_scroll,
-                        )
-                        .update_max_scroll(total_ticks);
+                    if th < vh {
+                        // content 没填满 viewport → 调高 zoom
+                        let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
+                            crate::constants::editor::zoom::MIN_ZOOM_Y,
+                            crate::constants::editor::zoom::MAX_ZOOM_Y,
+                        );
+                        if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
+                            state.view.zoom_y = fill_zoom;
+                            let total_ticks = state.view.total_ticks;
+                            lumino_editor_state::editor_state::viewport::Viewport::new(
+                                &mut state.view,
+                                &mut state.max_scroll,
+                            )
+                            .update_max_scroll(total_ticks);
+                        }
                     }
                 }
 
                 // 重新钳制滚动位置
                 let ms_y = (state.max_scroll.1 - vh).max(0.0);
                 state.view.scroll_y = state.view.scroll_y.min(ms_y);
-                let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
                 let ms_x = (state.max_scroll.0 - vw).max(0.0);
                 state.view.scroll_x = state.view.scroll_x.min(ms_x);
 

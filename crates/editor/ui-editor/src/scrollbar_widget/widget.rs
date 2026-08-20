@@ -136,6 +136,15 @@ impl<'a> ScrollbarWidget<'a> {
         (self.max_scroll - viewport).max(0.0)
     }
 
+    /// 内容是否已填满视口（无可滚动余量）。
+    ///
+    /// `max_scroll <= viewport` 即整片内容已落在视口内，此时再缩小无视觉意义，
+    /// 边缘拖拽缩放应阻止「缩小」方向；内容仍有溢出时则放行，允许继续缩小看全。
+    pub(crate) fn content_fits(&self, track_size: f32) -> bool {
+        let viewport = self.effective_viewport(track_size);
+        self.max_scroll <= viewport
+    }
+
     pub(crate) fn thumb_geometry(&self, bounds: Rectangle) -> (f32, f32, Rectangle) {
         match self.orientation {
             ScrollbarOrientation::Horizontal => {

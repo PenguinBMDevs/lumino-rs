@@ -86,7 +86,8 @@ impl Host {
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
         use crate::titlebar::mode_toggle::AppMode;
 
-        let in_waterfall = self.root.state.current_mode == AppMode::Waterfall;
+        let in_waterfall = self.root.state.current_mode == AppMode::Waterfall
+            || self.root.editor.editor_state.is_vertical_roll;
 
         // 键数跟随全局设置：开启 256 键扩展则为 256，否则 128
         let key_count: u32 = if self.root.settings.display.enable_256key {
@@ -109,7 +110,7 @@ impl Host {
         let note_count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
 
         if in_waterfall {
-            // ── 全屏瀑布流播放器：铺满主界面右侧内容区，复用同款离屏渲染 ──
+            // ── 瀑布流渲染：全屏 Waterfall 模式 或 纵向卷帘面板（二者共用键盘+卷帘绘制逻辑）──
             let size = *self.root.waterfall_player.size.borrow();
             let (width, height) = match size {
                 Some(s) => s,
@@ -141,7 +142,7 @@ impl Host {
                 width,
                 height,
                 key_count,
-                note_data,
+                note_data.clone(),
                 zoom_x,
                 scroll_x,
                 current_track,
@@ -150,13 +151,16 @@ impl Host {
                 state.cached_signature = Some(sig);
             }
 
-            // 瀑布流模式下右侧栏预览被隐藏：释放其纹理与签名，停止一切渲染动作
+            // 瀑布流（全屏/纵向卷帘）模式下右侧栏预览被隐藏：释放其纹理与签名，停止一切渲染动作
             let rs = &mut self.root.right_sidebar.piano_waterfall;
             if rs.waterfall_view.is_some() {
                 rs.waterfall_view = None;
                 rs.cached_signature = None;
             }
-            return;
+            // 全屏瀑布流模式独占主界面，无需再走右侧栏预览渲染；纵向卷帘模式则放行后续右侧栏分支。
+            if self.root.state.current_mode == AppMode::Waterfall {
+                return;
+            }
         }
 
         // ── 右侧栏瀑布流预览 ──

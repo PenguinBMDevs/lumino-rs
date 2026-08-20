@@ -43,6 +43,13 @@ pub mod editor {
         pub const MIN_ZOOM_Y: f32 = 0.5;
         /// Y轴最大缩放
         pub const MAX_ZOOM_Y: f32 = 100.0;
+        /// 纵向卷帘「音高轴」最大缩放（专用上限）。
+        ///
+        /// 与横向 X 向 `MAX_ZOOM_X=10` 不同：纵向卷帘键盘有 128 键（≈视口宽 ×N），
+        /// 若沿用 `MAX_ZOOM_X=10`，在 4K 大屏下「填满画布」所需下限（canvas/128≈17.5）
+        /// 会超过该上限，导致任何缩小手势都把键盘压到 < 视口宽、max_scroll 归零、横条卡死铺满。
+        /// 故给音高轴一个更高的专用上限，保证键盘可放大到填满并保留缩放手感。
+        pub const MAX_PITCH_ZOOM: f32 = 48.0;
 
         /// 走带视图 X 轴最小缩放
         pub const MIN_ARRANGEMENT_ZOOM_X: f32 = 0.01;

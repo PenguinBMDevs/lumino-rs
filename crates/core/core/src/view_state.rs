@@ -33,11 +33,11 @@ pub const DEFAULT_RULER_HEIGHT: f32 = 24.0;
 pub struct ViewState {
     /// 水平滚动偏移（pixel）
     pub scroll_x: f32,
-    /// 垂直滚动偏移（pixel）
+    /// 垂直滚动偏移（pixel）—— 横向钢琴卷帘：键盘高度轴
     pub scroll_y: f32,
     /// 横向缩放（Pixels per Tick）
     pub zoom_x: f32,
-    /// 纵向缩放（Pixels per Key）
+    /// 纵向缩放（Pixels per Key）—— 横向钢琴卷帘：键盘高度轴
     pub zoom_y: f32,
     /// 歌曲总长度（tick）
     pub total_ticks: u32,
