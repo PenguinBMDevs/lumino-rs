@@ -18,6 +18,7 @@ use crate::root::Root;
 use crate::{Element, Message, Renderer, Theme};
 use keyboard::VerticalKeyboardProgram;
 use lumino_ui_editor::grid::theme::ThemeExt;
+use lumino_ui_editor::scrollbar_widget::ScrollbarWidget;
 use lumino_ui_editor::zoom::{fixed_ratio_from_viewport, zoom_factor_from_delta};
 
 /// 纵向卷帘网格「每小节拍数」（基础样式暂固定 4/4，与横向卷帘空拍号回退一致）
@@ -55,19 +56,30 @@ impl Root {
             ctrl_pressed: self.editor.ctrl_pressed(),
         };
 
-        // 纵向键盘（编辑区底部，键沿 X 轴铺开）：音高轴复用 `zoom_y`(缩放) + `scroll_x`(平移)，
-        // 与网格 X 轴（音高）保持一致；播放时 scroll_x 驱动时间轴（Y）下落，键盘横向不随播放移动。
+        // 纵向键盘（编辑区底部，键沿 X 轴铺开）：样式像素级对齐横向钢琴卷帘键盘
+        // （世界坐标公式 `(max_key - keynum)*zoom_y - scroll_y + 左侧标尺留白`），
+        // 音高轴用**独立**的 `zoom_y`(缩放) + `scroll_y`(平移)，与横向键盘语义一致。
+        // ⚠️ 绝不绑 scroll_x（时间轴）：auto_scroll 播放一推 scroll_x，键盘 pitch 轴纹丝不动。
         let keyboard_program = VerticalKeyboardProgram {
             key_count: view.key_count,
-            pitch_zoom: view.zoom_y,
-            pitch_scroll: view.scroll_x,
+            ruler_width,
+            zoom_y: view.zoom_y,
+            scroll_y: view.scroll_y,
             editor_view: view.clone(),
             editor_canvas: self.editor.editor_state.canvas,
             ctrl_pressed: self.editor.ctrl_pressed(),
         };
 
-        // 顶部：左侧纵向小节标尺 + 右侧转置网格线（时间轴在 Y 轴）
-        let top = row![
+        // 滚动条（对齐横向钢琴卷帘接线，但轴向转置）：
+        // - 右侧【竖条】= 时间轴（Y）：scroll_x / zoom_x → ScrollbarScrolled / ZoomXChanged
+        // - 键盘底部【横条】= 音高轴（X）：scroll_y / zoom_y → ScrollbarScrolledY / ZoomYChanged
+        let grid_height = self.editor.editor_state.canvas.size_y - ruler_width;
+        let max_scroll_x = (view.total_ticks as f32 * zoom_x - grid_height).max(0.0);
+        let pitch_viewport = self.editor.editor_state.canvas.size_x - ruler_width;
+        let max_scroll_y = (view.key_count as f32 * view.zoom_y - pitch_viewport).max(0.0);
+
+        // 网格区：左侧纵向小节标尺 + 右侧转置网格线 + 最右时间轴竖滚动条
+        let grid_row = row![
             Canvas::new(RulerProgram {
                 zoom_x,
                 scroll_x,
@@ -81,21 +93,45 @@ impl Root {
             Canvas::new(program)
                 .width(Length::Fill)
                 .height(Length::Fill),
+            ScrollbarWidget::vertical(
+                scroll_x,
+                max_scroll_x,
+                zoom_x,
+                Some(grid_height),
+                Message::ScrollbarScrolled,
+                |zoom, fixed_ratio| Message::ZoomXChanged { zoom, fixed_ratio },
+            ),
         ]
         .height(Length::Fill);
 
-        // 底部：纵向键盘（与上方网格 X 轴对齐）+ 左下空白（对齐左侧标尺列）
-        let bottom = row![
+        // 键盘行：键盘画布（键从 ruler_width 起绘，与网格 X 轴对齐）+ 右侧 12px 占位（对齐竖滚动条）
+        let keyboard_row = row![
             Canvas::new(keyboard_program)
                 .width(Length::Fill)
                 .height(Length::Fixed(keyboard_height)),
             container(iced_widget::Space::new())
-                .width(Length::Fixed(ruler_width))
+                .width(Length::Fixed(12.0))
                 .height(Length::Fixed(keyboard_height)),
         ]
         .height(Length::Fixed(keyboard_height));
 
-        let content = column![top, bottom].height(Length::Fill);
+        // 键盘底部：音高轴横向滚动条（左右移动键盘）+ 右侧 12px 占位（对齐竖滚动条）
+        let pitch_scroll = row![
+            ScrollbarWidget::horizontal(
+                view.scroll_y,
+                max_scroll_y,
+                view.zoom_y,
+                Some(pitch_viewport),
+                Message::ScrollbarScrolledY,
+                |zoom, fixed_ratio| Message::ZoomYChanged { zoom, fixed_ratio },
+            ),
+            container(iced_widget::Space::new())
+                .width(Length::Fixed(12.0))
+                .height(Length::Fixed(12.0)),
+        ]
+        .height(Length::Fixed(12.0));
+
+        let content = column![grid_row, keyboard_row, pitch_scroll].height(Length::Fill);
 
         let background = container(content)
             .width(Length::Fill)
