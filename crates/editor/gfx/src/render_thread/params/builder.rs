@@ -50,6 +50,7 @@ pub struct RenderParamsBuilder {
     miditrail_z_far: f32,
     miditrail_ticks_per_second: f32,
     fps: f32,
+    skip_scene_render: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -97,6 +98,7 @@ impl Default for RenderParamsBuilder {
             miditrail_z_far: base.miditrail_z_far,
             miditrail_ticks_per_second: base.miditrail_ticks_per_second,
             fps: base.fps,
+            skip_scene_render: base.skip_scene_render,
         }
     }
 }
@@ -276,6 +278,14 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置是否跳过钢琴卷帘 3D 场景绘制（全屏瀑布流播放器模式用）。
+    ///
+    /// `true` 时渲染线程仍上传/发布音符缓冲，但不再执行 `render_offscreen_pass`。
+    pub fn skip_scene_render(mut self, skip: bool) -> Self {
+        self.skip_scene_render = skip;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -327,6 +337,7 @@ impl RenderParamsBuilder {
             miditrail_z_far: self.miditrail_z_far,
             miditrail_ticks_per_second: self.miditrail_ticks_per_second,
             fps: self.fps,
+            skip_scene_render: self.skip_scene_render,
         }
     }
 }

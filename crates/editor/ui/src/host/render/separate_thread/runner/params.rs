@@ -3,6 +3,7 @@
 use crate::RenderParams;
 use crate::host::Host;
 use crate::host::render::data::{GridColors, RenderData};
+use crate::titlebar::mode_toggle::AppMode;
 use lumino_gfx::ArrangementUniform;
 
 impl Host {
@@ -137,6 +138,7 @@ impl Host {
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
+            .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
             .build()
     }
 }

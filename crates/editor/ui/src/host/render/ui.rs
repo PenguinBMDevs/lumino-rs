@@ -1,14 +1,19 @@
 use crate::host::Host;
-use iced_core::{Event, renderer, window as iced_window};
+use iced_core::{Color, Event, renderer, window as iced_window};
 use iced_wgpu::wgpu;
 use iced_winit::runtime::user_interface::{self, UserInterface};
 
 impl Host {
     /// 渲染 iced UI 层
+    ///
+    /// `background` 为 `Some(color)` 时先以该颜色清屏（播放器模式用，与钢琴卷帘
+    /// 完全隔离）；为 `None` 时不清屏，叠在已 blit 到 surface 的卷帘 3D 场景之上
+    /// （编辑器模式用）。
     pub(super) fn render_iced_ui(
         &mut self,
         frame: &wgpu::SurfaceTexture,
         texture_view: &wgpu::TextureView,
+        background: Option<Color>,
     ) {
         puffin::profile_function!();
 
@@ -25,7 +30,7 @@ impl Host {
         if !is_menu_open && !self.ui_dirty && !is_first_render {
             // UI 没有变化且不是第一次渲染，直接 present 之前渲染的内容
             self.render_ctx.renderer.present(
-                None,
+                background,
                 frame.texture.format(),
                 texture_view,
                 &self.render_ctx.viewport,
@@ -84,7 +89,7 @@ impl Host {
         }
 
         self.render_ctx.renderer.present(
-            None,
+            background,
             frame.texture.format(),
             texture_view,
             &self.render_ctx.viewport,

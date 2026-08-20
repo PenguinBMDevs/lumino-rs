@@ -11,7 +11,24 @@ impl Host {
         frame: &iced_wgpu::wgpu::SurfaceTexture,
         gfx: &lumino_gfx::Context,
     ) {
+        use crate::titlebar::mode_toggle::AppMode;
+
+        // 始终驱动渲染线程：保证音符实例缓冲持续发布，供瀑布流播放器读取实时落键。
         self.redraw_separate_thread();
+
+        // 全屏瀑布流播放器模式：与钢琴卷帘完全隔离。
+        // 不再把卷帘 3D 场景 blit 到 surface；改为清屏为应用背景后仅叠加 iced UI
+        // （瀑布流 + 键盘），卷帘的网格/音符不会透出到播放器背景。
+        if self.root.state.current_mode == AppMode::Waterfall {
+            if !self.skip_ui_rendering {
+                let view = frame
+                    .texture
+                    .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
+                let bg = self.root.theme().palette().background;
+                self.render_iced_ui(frame, &view, Some(bg));
+            }
+            return;
+        }
 
         // 将离屏渲染结果拷贝到 Surface
         if let Some(ref wgpu_thread) = self.render_ctx.wgpu_render_thread {
@@ -23,7 +40,7 @@ impl Host {
             let view = frame
                 .texture
                 .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
-            self.render_iced_ui(frame, &view);
+            self.render_iced_ui(frame, &view, None);
         }
     }
 

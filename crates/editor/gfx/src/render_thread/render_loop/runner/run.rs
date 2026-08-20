@@ -167,34 +167,39 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
             puffin::profile_scope!("wgpu_render_thread_frame");
             let frame_start = Instant::now();
 
-            ensure_offscreen_textures_and_upload_notes(&mut PreviewUploadContext {
-                ctx: &ctx,
-                channels: &channels,
-                current_texture: &mut current_texture,
-                depth_texture: &mut depth_texture,
-                depth_texture_view: &mut depth_texture_view,
-                texture_view: &mut texture_view,
-                current_size: &mut current_size,
-                params,
-            });
+            // 全屏瀑布流播放器模式：与钢琴卷帘完全隔离，跳过卷帘 3D 场景绘制
+            // （网格/音符/洋葱皮的离屏绘制，最贵的 GPU 工作），解放 GPU。
+            // 下方仍照常发布活体音符缓冲（note_data_pub）供播放器复用，禁止第二份拷贝。
+            if !params.skip_scene_render {
+                ensure_offscreen_textures_and_upload_notes(&mut PreviewUploadContext {
+                    ctx: &ctx,
+                    channels: &channels,
+                    current_texture: &mut current_texture,
+                    depth_texture: &mut depth_texture,
+                    depth_texture_view: &mut depth_texture_view,
+                    texture_view: &mut texture_view,
+                    current_size: &mut current_size,
+                    params,
+                });
 
-            render_offscreen_pass(&mut PreviewPassContext {
-                ctx: &ctx,
-                params,
-                channels: &channels,
-                renderers: &mut renderers,
-                current_texture: &mut current_texture,
-                depth_texture: &mut depth_texture,
-                depth_texture_view: &mut depth_texture_view,
-                texture_view: &mut texture_view,
-                current_size: &mut current_size,
-                last_note_version: &mut last_note_version,
-                texture_waterfall_renderer: &mut texture_waterfall_renderer,
-                texture_waterfall_meta: &mut texture_waterfall_meta,
-                texture_waterfall_config: &mut texture_waterfall_config,
-                export_pipeline: &mut export_pipeline,
-                export_frame_tx: &mut export_frame_tx,
-            });
+                render_offscreen_pass(&mut PreviewPassContext {
+                    ctx: &ctx,
+                    params,
+                    channels: &channels,
+                    renderers: &mut renderers,
+                    current_texture: &mut current_texture,
+                    depth_texture: &mut depth_texture,
+                    depth_texture_view: &mut depth_texture_view,
+                    texture_view: &mut texture_view,
+                    current_size: &mut current_size,
+                    last_note_version: &mut last_note_version,
+                    texture_waterfall_renderer: &mut texture_waterfall_renderer,
+                    texture_waterfall_meta: &mut texture_waterfall_meta,
+                    texture_waterfall_config: &mut texture_waterfall_config,
+                    export_pipeline: &mut export_pipeline,
+                    export_frame_tx: &mut export_frame_tx,
+                });
+            }
 
             // 发布活体音符实例缓冲给 UI 线程（侧边瀑布流面板复用，禁止第二份拷贝）
             {

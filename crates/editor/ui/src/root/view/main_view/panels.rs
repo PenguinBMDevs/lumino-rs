@@ -1,7 +1,7 @@
 //! 音频/视频导出面板与瀑布流全屏播放器
 
 use iced_core::{Length, Size};
-use iced_widget::{container, responsive, scrollable, text};
+use iced_widget::{column, container, responsive, row, scrollable, text};
 
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
@@ -85,6 +85,41 @@ impl Root {
                     .into(),
             }
         })
+        .into()
+    }
+
+    /// 渲染全屏瀑布流播放器的完整窗口布局（铺满主界面，仅瀑布流 + 键盘）。
+    ///
+    /// 与编辑器布局解耦：不渲染钢琴卷帘任何 UI（工具栏 / 力度面板 / 状态栏 /
+    /// 卷帘画布 / 右侧栏 / 左侧轨道列表面板）。仅保留应用级全局导航栏
+    /// （标题栏含模式切换退出入口、左侧 48px 路由栏），二者非钢琴卷帘界面内容。
+    pub(crate) fn view_waterfall_fullscreen(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_waterfall_fullscreen");
+
+        let language = self.settings.display.language;
+        let ppq = self.editor.editor_state.view.ppq;
+        let note_precision = self.toolbar.note_precision.as_ticks(ppq);
+
+        // 全局导航栏（非钢琴卷帘内容）
+        let titlebar = self.titlebar.view(
+            &self.window,
+            self.settings.synth.use_native_titlebar,
+            self.state.current_mode,
+            self.state.toggle_animation.position,
+            language,
+            false,
+        );
+        let left_bar =
+            self.sidebar
+                .view(&self.window, language, self.state.current_mode, note_precision);
+
+        // 仅瀑布流播放器（含键盘），铺满导航栏之外的全部区域
+        let player = self.view_waterfall_player();
+
+        column![
+            titlebar,
+            row![left_bar, player].height(Length::Fill),
+        ]
         .into()
     }
 }

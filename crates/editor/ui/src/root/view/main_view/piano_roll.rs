@@ -14,6 +14,14 @@ impl Root {
     pub(crate) fn view_main(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_main");
 
+        // 全屏瀑布流播放器：仅渲染瀑布流 + 键盘，剥离钢琴卷帘全部 UI
+        // （工具栏 / 力度面板 / 状态栏 / 卷帘画布 / 右侧栏 / 左侧轨道列表面板）。
+        // 仅保留全局导航栏（标题栏含模式切换退出入口、左侧 48px 路由栏），
+        // 二者属应用级导航而非钢琴卷帘界面内容。
+        if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Waterfall {
+            return self.view_waterfall_fullscreen();
+        }
+
         let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）

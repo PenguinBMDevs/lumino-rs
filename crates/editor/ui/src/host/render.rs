@@ -63,7 +63,7 @@ impl Host {
         } else {
             // 轻量窗口（dialog/progress）：直接渲染 iced UI
             if !self.skip_ui_rendering {
-                self.render_iced_ui(frame, view);
+                self.render_iced_ui(frame, view, None);
             }
         }
     }

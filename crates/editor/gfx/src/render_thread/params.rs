@@ -99,6 +99,12 @@ pub struct RenderParams {
     pub miditrail_ticks_per_second: f32,
     /// Miditrail / 视频导出目标帧率（用于按键动画时间步长）。
     pub fps: f32,
+    /// 全屏瀑布流播放器模式：跳过钢琴卷帘 3D 场景绘制（仅发布活体音符缓冲），解放 GPU。
+    ///
+    /// `true` 时渲染线程仍上传/发布音符缓冲（`note_data_pub`）供播放器复用，
+    /// 但不再执行 `render_offscreen_pass`（网格/音符/洋葱皮的离屏绘制），
+    /// 与钢琴卷帘完全隔离，避免每帧空转绘制整张卷帘。
+    pub skip_scene_render: bool,
 }
 
 impl Default for RenderParams {
@@ -146,6 +152,7 @@ impl Default for RenderParams {
             miditrail_z_far: 7.5,
             miditrail_ticks_per_second: 0.0,
             fps: 60.0,
+            skip_scene_render: false,
         }
     }
 }
