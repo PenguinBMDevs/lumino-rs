@@ -28,6 +28,8 @@ pub struct KeyRect {
     pub h: f32,
     /// 是否为黑键
     pub is_black: bool,
+    /// MIDI 键号（0 起；绘制顺序重排后仍携带原始键号，供着色器索引活跃键颜色）
+    pub key: u32,
 }
 
 /// 构建键盘布局
@@ -64,6 +66,7 @@ pub fn build_layout(width: f32, height: f32, key_count: u32) -> Vec<KeyRect> {
                 w: black_w,
                 h: black_h,
                 is_black: true,
+                key: k,
             });
         } else {
             rects.push(KeyRect {
@@ -72,6 +75,7 @@ pub fn build_layout(width: f32, height: f32, key_count: u32) -> Vec<KeyRect> {
                 w: white_w,
                 h: height,
                 is_black: false,
+                key: k,
             });
             white_index += 1;
         }
