@@ -6,14 +6,17 @@
 //! 本文件仅为「基本只读模式 UI 样式」：复用横向卷帘同款标尺 tick 计算与配色，
 //! 先呈现布局与网格；音符瀑布流内容后续接入。
 
+mod keyboard;
+
 use iced_core::alignment;
 use iced_core::mouse;
 use iced_core::{Color, Length, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Canvas, Frame, Program};
-use iced_widget::{container, row};
+use iced_widget::{column, container, row};
 
 use crate::root::Root;
 use crate::{Element, Message, Renderer, Theme};
+use keyboard::VerticalKeyboardProgram;
 use lumino_ui_editor::grid::theme::ThemeExt;
 
 /// 纵向卷帘网格「每小节拍数」（基础样式暂固定 4/4，与横向卷帘空拍号回退一致）
@@ -45,8 +48,17 @@ impl Root {
             measure_ticks,
         };
 
-        // 左侧纵向小节标尺 + 右侧网格线（时间轴在 Y 轴）
-        let content = row![
+        // 纵向键盘（编辑区底部，键沿 X 轴铺开，复用横向键盘同款 pitch 轴映射）
+        let keyboard_program = VerticalKeyboardProgram {
+            visible_key_count: view.visible_key_count,
+            zoom_y: view.zoom_y,
+            scroll_y: view.scroll_y,
+            ruler_width,
+        };
+        let keyboard_height = ruler_width;
+
+        // 顶部：左侧纵向小节标尺 + 右侧转置网格线（时间轴在 Y 轴）
+        let top = row![
             Canvas::new(RulerProgram {
                 zoom_x,
                 scroll_x,
@@ -62,6 +74,19 @@ impl Root {
                 .height(Length::Fill),
         ]
         .height(Length::Fill);
+
+        // 底部：纵向键盘（与上方网格 X 轴对齐）+ 左下空白（对齐左侧标尺列）
+        let bottom = row![
+            Canvas::new(keyboard_program)
+                .width(Length::Fill)
+                .height(Length::Fixed(keyboard_height)),
+            container(iced_widget::Space::new())
+                .width(Length::Fixed(ruler_width))
+                .height(Length::Fixed(keyboard_height)),
+        ]
+        .height(Length::Fixed(keyboard_height));
+
+        let content = column![top, bottom].height(Length::Fill);
 
         let background = container(content)
             .width(Length::Fill)
