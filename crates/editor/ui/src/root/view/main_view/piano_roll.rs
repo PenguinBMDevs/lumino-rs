@@ -52,6 +52,11 @@ impl Root {
         } else if self.sidebar.video_export_visible {
             // 视频渲染面板（在主界面钢琴卷帘区域显示）
             self.view_video_export_panel()
+        } else if self.sidebar.is_vertical_roll() {
+            // 纵向卷帘模式：中心编辑区替换为纵向卷帘只读预览
+            // （左侧小节标尺 + 转置网格线；瀑布流内容后续接入）。
+            // 右侧栏与工具栏照常渲染——仅中心画布区域被纵向卷帘取代。
+            self.view_vertical_roll()
         } else if !self.sidebar.piano_roll_visible {
             // 钢琴卷帘已关闭：显示空白区域
             container(

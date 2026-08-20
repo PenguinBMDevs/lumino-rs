@@ -54,15 +54,17 @@ pub enum RollBarButton {
 
 impl RollBarButton {
     /// 获取按钮提示文本（随语言切换）
+    ///
+    /// 两个按钮代表卷帘内容的展开方向（横向卷帘 / 纵向卷帘）。
     pub fn tooltip(&self, lang: Language) -> &'static str {
         match self {
             RollBarButton::Horizontal => match lang {
-                Language::ZhCn => "横向三条杠",
-                Language::EnUs => "Horizontal Bars",
+                Language::ZhCn => "横向卷帘",
+                Language::EnUs => "Horizontal Roll",
             },
             RollBarButton::Vertical => match lang {
-                Language::ZhCn => "纵向三条杠",
-                Language::EnUs => "Vertical Bars",
+                Language::ZhCn => "纵向卷帘",
+                Language::EnUs => "Vertical Roll",
             },
         }
     }

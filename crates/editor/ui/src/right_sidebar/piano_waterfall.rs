@@ -15,9 +15,9 @@ pub(crate) mod waterfall_primitive;
 use std::sync::Arc;
 
 use iced_core::{Length, Rectangle, mouse};
+use iced_wgpu::wgpu;
 use iced_widget::shader::{Program, Shader};
 use iced_widget::{Column, container, text};
-use iced_wgpu::wgpu;
 
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -66,12 +66,10 @@ pub(super) fn panel<'a>(
 
     // 瀑布流占满面板剩余高度：用 iced `shader` 图元直接合成离屏纹理（GPU→GPU，不闪烁）
     let bottom_section: crate::Element<'a> = match &state.waterfall_view {
-        Some(view) => Shader::new(WaterfallProgram {
-            view: view.clone(),
-        })
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into(),
+        Some(view) => Shader::new(WaterfallProgram { view: view.clone() })
+            .width(Length::Fill)
+            .height(Length::Fill)
+            .into(),
         None => text("（键盘渲染中或面板不可见）")
             .size(11)
             .style(|theme: &Theme| text::Style {

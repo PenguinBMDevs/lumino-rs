@@ -130,13 +130,9 @@ fn test_piano_waterfall_panel_toggle() {
 
     // 第一次点击：展开并切换到钢琴瀑布流
     root.handle_right_sidebar_action(RightSidebarAction::PianoWaterfallClicked);
+    assert!(root.right_sidebar.panel_visible, "点击后右侧栏面板应展开");
     assert!(
-        root.right_sidebar.panel_visible,
-        "点击后右侧栏面板应展开"
-    );
-    assert!(
-        root
-            .right_sidebar
+        root.right_sidebar
             .is_panel_active(RightSidebarPanel::PianoWaterfall),
         "点击后应切换到钢琴瀑布流面板"
     );
@@ -157,16 +153,14 @@ fn test_piano_waterfall_exclusive_with_image_to_midi() {
 
     root.handle_right_sidebar_action(RightSidebarAction::PianoWaterfallClicked);
     assert!(
-        root
-            .right_sidebar
+        root.right_sidebar
             .is_panel_active(RightSidebarPanel::PianoWaterfall),
         "先打开应为钢琴瀑布流面板"
     );
 
     root.handle_right_sidebar_action(RightSidebarAction::ImageToMidiClicked);
     assert!(
-        root
-            .right_sidebar
+        root.right_sidebar
             .is_panel_active(RightSidebarPanel::ImageToMidi),
         "再打开图片转 MIDI 应互斥切换到该面板"
     );

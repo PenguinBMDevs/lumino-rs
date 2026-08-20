@@ -41,16 +41,21 @@ pub fn view<'a>(
             Message::RightSidebar(RightSidebarAction::MaterialLibraryClicked),
             right_sidebar.is_panel_active(RightSidebarPanel::Materials),
             window,
-        ))
-        // 钢琴瀑布流预览按钮：点击切换到钢琴瀑布流预览面板并亮灯
-        .push(sidebar_button(
+        ));
+    // 钢琴瀑布流预览按钮：仅横向卷帘模式显示。
+    // 纵向卷帘模式下瀑布流内容已并入纵向卷帘编辑区，入口隐藏。
+    let col = if right_sidebar.roll_mode == crate::sidebar::RollBarButton::Vertical {
+        col
+    } else {
+        col.push(sidebar_button(
             Icon::PianoWaterfall,
             t.piano_waterfall,
             Message::RightSidebar(RightSidebarAction::PianoWaterfallClicked),
             right_sidebar.is_panel_active(RightSidebarPanel::PianoWaterfall),
             window,
         ))
-        .push(Space::new().height(Length::Fill));
+    };
+    let col = col.push(Space::new().height(Length::Fill));
 
     // 图标列容器
     let route_bar = container(col)

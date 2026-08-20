@@ -89,6 +89,9 @@ pub struct Sidebar {
     ///
     /// 用单值 `Option` 而非两个 bool：横向/纵向三条杠的打开状态互斥，
     /// 互斥性由类型保证，无需运行时同步两个字段。
+    ///
+    /// 语义即「卷帘方向」：默认 `Some(Horizontal)` = 横向卷帘；
+    /// `Some(Vertical)` = 纵向卷帘；`None` = 两个按钮均熄灭（理论不出现）。
     pub roll_bar_active: Option<RollBarButton>,
 }
 
@@ -148,7 +151,8 @@ impl Sidebar {
             pending_track_deletion_meta: None,
             pending_recover_track_dialog: false,
             track_reorder: None,
-            roll_bar_active: None,
+            // 默认进入横向卷帘（与用户「默认横向三条杠按钮」要求一致）
+            roll_bar_active: Some(RollBarButton::Horizontal),
         }
     }
 
@@ -167,6 +171,13 @@ impl Sidebar {
             && !self.is_arrangement_route()
             && !self.audio_export_visible
             && !self.video_export_visible
+    }
+
+    /// 当前是否处于纵向卷帘模式（卷帘内容沿时间轴竖直展开）
+    ///
+    /// 由底部「卷帘方向」按钮的激活项推导：仅 `Some(Vertical)` 为纵向。
+    pub fn is_vertical_roll(&self) -> bool {
+        self.roll_bar_active == Some(RollBarButton::Vertical)
     }
 
     /// yinhe 风格端口字母：port 0→'A', 1→'B', ..., 25→'Z'，超限为 '?'

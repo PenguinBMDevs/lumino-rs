@@ -149,6 +149,13 @@ impl Root {
                 self.settings.synth.soundfont_path.clone();
         }
 
+        // 卷帘方向切换 → 镜像到右侧栏，驱动瀑布流预览入口按钮显隐
+        // （纵向卷帘模式下该入口隐藏，因其内容已并入纵向卷帘编辑区）
+        self.right_sidebar.roll_mode = self
+            .sidebar
+            .roll_bar_active
+            .unwrap_or(sidebar::RollBarButton::Horizontal);
+
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;
         let current_offset_y = self.editor.editor_state.canvas.offset_y;

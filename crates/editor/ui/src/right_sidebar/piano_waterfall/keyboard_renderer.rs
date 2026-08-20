@@ -502,12 +502,11 @@ impl KeyboardRenderer {
                     },
                 ],
             });
-        let note_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("piano_waterfall_note"),
-                bind_group_layouts: &[&note_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let note_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("piano_waterfall_note"),
+            bind_group_layouts: &[&note_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
         let cull_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -565,73 +564,71 @@ impl KeyboardRenderer {
                     },
                 ],
             });
-        let cull_pipeline_layout =
-            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                label: Some("piano_waterfall_cull"),
-                bind_group_layouts: &[&cull_bind_group_layout],
-                push_constant_ranges: &[],
-            });
+        let cull_pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: Some("piano_waterfall_cull"),
+            bind_group_layouts: &[&cull_bind_group_layout],
+            push_constant_ranges: &[],
+        });
 
-        let keyboard_pipeline =
-            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-                label: Some("piano_waterfall_keyboard"),
-                layout: Some(&keyboard_pipeline_layout),
-                vertex: wgpu::VertexState {
-                    module: &keyboard_shader,
-                    entry_point: Some("vs"),
-                    buffers: &[
-                        wgpu::VertexBufferLayout {
-                            array_stride: 8,
-                            step_mode: wgpu::VertexStepMode::Vertex,
-                            attributes: &[wgpu::VertexAttribute {
-                                format: wgpu::VertexFormat::Float32x2,
+        let keyboard_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("piano_waterfall_keyboard"),
+            layout: Some(&keyboard_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &keyboard_shader,
+                entry_point: Some("vs"),
+                buffers: &[
+                    wgpu::VertexBufferLayout {
+                        array_stride: 8,
+                        step_mode: wgpu::VertexStepMode::Vertex,
+                        attributes: &[wgpu::VertexAttribute {
+                            format: wgpu::VertexFormat::Float32x2,
+                            offset: 0,
+                            shader_location: 0,
+                        }],
+                    },
+                    wgpu::VertexBufferLayout {
+                        array_stride: std::mem::size_of::<Instance>() as u64,
+                        step_mode: wgpu::VertexStepMode::Instance,
+                        attributes: &[
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x4,
                                 offset: 0,
-                                shader_location: 0,
-                            }],
-                        },
-                        wgpu::VertexBufferLayout {
-                            array_stride: std::mem::size_of::<Instance>() as u64,
-                            step_mode: wgpu::VertexStepMode::Instance,
-                            attributes: &[
-                                wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Float32x4,
-                                    offset: 0,
-                                    shader_location: 1,
-                                },
-                                wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Float32x4,
-                                    offset: 16,
-                                    shader_location: 2,
-                                },
-                                wgpu::VertexAttribute {
-                                    format: wgpu::VertexFormat::Uint32,
-                                    offset: 32,
-                                    shader_location: 3,
-                                },
-                            ],
-                        },
-                    ],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                },
-                primitive: wgpu::PrimitiveState {
-                    topology: wgpu::PrimitiveTopology::TriangleList,
-                    ..Default::default()
-                },
-                depth_stencil: None,
-                multisample: wgpu::MultisampleState::default(),
-                fragment: Some(wgpu::FragmentState {
-                    module: &keyboard_shader,
-                    entry_point: Some("fs"),
-                    targets: &[Some(wgpu::ColorTargetState {
-                        format: wgpu::TextureFormat::Rgba8Unorm,
-                        blend: None,
-                        write_mask: wgpu::ColorWrites::ALL,
-                    })],
-                    compilation_options: wgpu::PipelineCompilationOptions::default(),
-                }),
-                multiview: None,
-                cache: None,
-            });
+                                shader_location: 1,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Float32x4,
+                                offset: 16,
+                                shader_location: 2,
+                            },
+                            wgpu::VertexAttribute {
+                                format: wgpu::VertexFormat::Uint32,
+                                offset: 32,
+                                shader_location: 3,
+                            },
+                        ],
+                    },
+                ],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState::default(),
+            fragment: Some(wgpu::FragmentState {
+                module: &keyboard_shader,
+                entry_point: Some("fs"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: wgpu::TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            multiview: None,
+            cache: None,
+        });
 
         let note_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("piano_waterfall_note"),
@@ -662,15 +659,14 @@ impl KeyboardRenderer {
             cache: None,
         });
 
-        let cull_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("piano_waterfall_cull"),
-                layout: Some(&cull_pipeline_layout),
-                module: &cull_shader,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let cull_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("piano_waterfall_cull"),
+            layout: Some(&cull_pipeline_layout),
+            module: &cull_shader,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         // 活跃键颜色 compute bind group layout（notes + uniforms + key_colors + cull_offset）
         let keycolor_bind_group_layout =
@@ -729,20 +725,17 @@ impl KeyboardRenderer {
             label: Some("piano_waterfall_keycolor"),
             source: wgpu::ShaderSource::Wgsl(KEYCOLOR_SHADER.into()),
         });
-        let keycolor_pipeline =
-            device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
-                label: Some("piano_waterfall_keycolor"),
-                layout: Some(&keycolor_pipeline_layout),
-                module: &keycolor_shader,
-                entry_point: Some("main"),
-                compilation_options: wgpu::PipelineCompilationOptions::default(),
-                cache: None,
-            });
+        let keycolor_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
+            label: Some("piano_waterfall_keycolor"),
+            layout: Some(&keycolor_pipeline_layout),
+            module: &keycolor_shader,
+            entry_point: Some("main"),
+            compilation_options: wgpu::PipelineCompilationOptions::default(),
+            cache: None,
+        });
 
         // 单位正方形 [0,1]^2 → 两个三角形（6 顶点）
-        let quad: [f32; 12] = [
-            0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0,
-        ];
+        let quad: [f32; 12] = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0, 0.0, 1.0, 1.0, 0.0, 1.0, 1.0];
         let quad_bytes = f32_slice_to_bytes(&quad);
         let quad_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("piano_waterfall_keyboard_quad"),
@@ -931,8 +924,7 @@ impl KeyboardRenderer {
         };
         queue.write_buffer(&self.draw_args, 0, &draw_args_bytes);
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor::default());
 
         // 可视区间剔除：仅把可见音符索引写入 visible_indices + draw_args[1]
         // 超量音符（>65535 工作群组）分块调度，每块带各自 dispatch 偏移，
@@ -965,9 +957,7 @@ impl KeyboardRenderer {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::Buffer(
-                                buf.as_entire_buffer_binding(),
-                            ),
+                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -1031,9 +1021,7 @@ impl KeyboardRenderer {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::Buffer(
-                                buf.as_entire_buffer_binding(),
-                            ),
+                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,
@@ -1094,9 +1082,7 @@ impl KeyboardRenderer {
                     entries: &[
                         wgpu::BindGroupEntry {
                             binding: 0,
-                            resource: wgpu::BindingResource::Buffer(
-                                buf.as_entire_buffer_binding(),
-                            ),
+                            resource: wgpu::BindingResource::Buffer(buf.as_entire_buffer_binding()),
                         },
                         wgpu::BindGroupEntry {
                             binding: 1,

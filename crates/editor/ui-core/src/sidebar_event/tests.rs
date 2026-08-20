@@ -80,10 +80,10 @@ fn test_roll_bar_event_helpers() {
 fn test_roll_bar_tooltip_switches_language() {
     assert_eq!(
         RollBarButton::Horizontal.tooltip(Language::ZhCn),
-        "横向三条杠"
+        "横向卷帘"
     );
     assert_eq!(
         RollBarButton::Vertical.tooltip(Language::EnUs),
-        "Vertical Bars"
+        "Vertical Roll"
     );
 }

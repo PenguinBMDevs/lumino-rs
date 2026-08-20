@@ -129,7 +129,8 @@ impl Root {
             Self {
                 sidebar: sidebar::Sidebar::new(),
                 right_sidebar: right_sidebar::RightSidebar::new(),
-                waterfall_player: crate::right_sidebar::piano_waterfall::WaterfallPlayerState::default(),
+                waterfall_player:
+                    crate::right_sidebar::piano_waterfall::WaterfallPlayerState::default(),
                 titlebar: titlebar::Titlebar::new(),
                 statusbar: statusbar::StatusBar::new(),
                 toolbar,

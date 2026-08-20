@@ -17,7 +17,7 @@ use iced_wgpu::wgpu;
 use crate::host::Host;
 use crate::right_sidebar::core::RESIZE_HANDLE_WIDTH;
 use crate::right_sidebar::piano_waterfall::keyboard_renderer::{
-    KeyboardRenderer, KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT,
+    KEY_HEIGHT_RATIO, KeyboardRenderer, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT,
 };
 
 // 子模块声明
@@ -98,8 +98,7 @@ impl Host {
         // 视口参数（与钢琴卷帘一致，驱动音符落点 / 时间流 / 主音轨蓝）
         let zoom_x = self.root.editor.editor_state.view.zoom_x;
         let scroll_x = self.root.editor.editor_state.view.scroll_x;
-        let current_track =
-            self.root.editor.editor_state.data.current_track as u32 + 1;
+        let current_track = self.root.editor.editor_state.data.current_track as u32 + 1;
 
         // 复用渲染线程发布的活体 GPU 音符实例缓冲（零拷贝）
         let note_data = self

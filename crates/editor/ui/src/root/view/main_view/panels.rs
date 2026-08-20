@@ -109,17 +109,16 @@ impl Root {
             language,
             false,
         );
-        let left_bar =
-            self.sidebar
-                .view(&self.window, language, self.state.current_mode, note_precision);
+        let left_bar = self.sidebar.view(
+            &self.window,
+            language,
+            self.state.current_mode,
+            note_precision,
+        );
 
         // 仅瀑布流播放器（含键盘），铺满导航栏之外的全部区域
         let player = self.view_waterfall_player();
 
-        column![
-            titlebar,
-            row![left_bar, player].height(Length::Fill),
-        ]
-        .into()
+        column![titlebar, row![left_bar, player].height(Length::Fill),].into()
     }
 }

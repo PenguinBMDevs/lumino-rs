@@ -206,6 +206,11 @@ pub struct RightSidebar {
     pub panel_visible: bool,
     /// 当前激活的面板（I2M / 素材库，互斥切换）
     pub active_panel: RightSidebarPanel,
+    /// 卷帘方向（由左侧栏底部「卷帘方向」按钮镜像，用于显隐面板入口）
+    ///
+    /// 纵向卷帘模式下，瀑布流预览窗面板入口按钮隐藏（其内容已并入纵向卷帘
+    /// 编辑区，无需再经右侧栏入口打开）。默认横向。
+    pub roll_mode: crate::sidebar::RollBarButton,
     /// 面板宽度
     pub panel_width: f32,
     /// 是否正在拖拽调整宽度
@@ -245,6 +250,7 @@ impl RightSidebar {
         Self {
             panel_visible: false,
             active_panel: RightSidebarPanel::ImageToMidi,
+            roll_mode: crate::sidebar::RollBarButton::Horizontal,
             panel_width: DEFAULT_PANEL_WIDTH,
             is_resizing: false,
             resize_start_x: 0.0,
