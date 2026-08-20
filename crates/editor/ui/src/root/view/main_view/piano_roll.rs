@@ -26,13 +26,13 @@ impl Root {
             self.toolbar.note_precision.as_ticks(ppq),
         );
 
-        // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 瀑布流占位）
+        // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 全屏瀑布流播放器）
         puffin::profile_scope!("root_view_right_content");
         let right_content: Element<'_> = if self.state.current_mode
             == crate::titlebar::mode_toggle::AppMode::Waterfall
         {
-            // 瀑布流模式：显示"实现中"占位页面
-            self.view_waterfall_placeholder()
+            // 瀑布流模式：全屏播放器（铺满主界面，复用右侧栏预览同款渲染）
+            self.view_waterfall_player()
         } else if is_arrangement_route {
             // 音轨总览模式：使用 wgpu 原生渲染
             right_content::wrap_right_content(self, false, true, |available_width| {

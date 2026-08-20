@@ -58,6 +58,8 @@ pub struct Root {
     pub(crate) sidebar: sidebar::Sidebar,
     /// 右侧栏
     pub right_sidebar: right_sidebar::RightSidebar,
+    /// 全屏瀑布流播放器状态（仅在 `AppMode::Waterfall` 下渲染，铺满主界面）
+    pub(crate) waterfall_player: crate::right_sidebar::piano_waterfall::WaterfallPlayerState,
     pub(crate) titlebar: titlebar::Titlebar,
     pub(crate) statusbar: statusbar::StatusBar,
     /// 工具栏
@@ -127,6 +129,7 @@ impl Root {
             Self {
                 sidebar: sidebar::Sidebar::new(),
                 right_sidebar: right_sidebar::RightSidebar::new(),
+                waterfall_player: crate::right_sidebar::piano_waterfall::WaterfallPlayerState::default(),
                 titlebar: titlebar::Titlebar::new(),
                 statusbar: statusbar::StatusBar::new(),
                 toolbar,

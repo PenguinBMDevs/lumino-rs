@@ -1,7 +1,7 @@
-//! 音频/视频导出面板与瀑布流占位页面
+//! 音频/视频导出面板与瀑布流全屏播放器
 
-use iced_core::Length;
-use iced_widget::{column, container, scrollable, text};
+use iced_core::{Length, Size};
+use iced_widget::{container, responsive, scrollable, text};
 
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
@@ -58,33 +58,32 @@ impl Root {
         .into()
     }
 
-    /// 渲染瀑布流模式占位页面（功能实现中）
-    pub(crate) fn view_waterfall_placeholder(&self) -> Element<'_> {
-        puffin::profile_scope!("root_view_waterfall_placeholder");
+    /// 渲染全屏瀑布流播放器（铺满主界面右侧内容区，复用右侧栏预览同款离屏渲染）。
+    ///
+    /// 通过 `responsive` 获取主内容区精确像素尺寸并写入 `waterfall_player.size`，
+    /// 供 `Host::ensure_piano_waterfall_keyboard` 离屏定尺寸（无拉伸、无 1 帧闪现）。
+    pub(crate) fn view_waterfall_player(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_waterfall_player");
 
-        container(
-            column![
-                text("瀑布流模式")
-                    .size(32)
-                    .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().background.neutral.text),
-                    }),
-                text("🚧 功能实现中...")
+        let size_cell = &self.waterfall_player.size;
+        let view_opt = self.waterfall_player.view.clone();
+
+        responsive(move |size: Size| {
+            let w = (size.width.max(1.0)) as u32;
+            let h = (size.height.max(1.0)) as u32;
+            size_cell.borrow_mut().replace((w, h));
+
+            match &view_opt {
+                Some(v) => {
+                    crate::right_sidebar::piano_waterfall::waterfall_shader_element(v.clone())
+                }
+                None => text("（瀑布流渲染中…）")
                     .size(18)
                     .style(|theme: &Theme| text::Style {
-                        color: Some(theme.extended_palette().background.strong.text),
-                    }),
-            ]
-            .spacing(16)
-            .align_x(iced_core::Alignment::Center),
-        )
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .center_x(Length::Fill)
-        .center_y(Length::Fill)
-        .style(|theme: &Theme| container::Style {
-            background: Some(iced_core::Background::Color(theme.palette().background)),
-            ..Default::default()
+                        color: Some(theme.extended_palette().background.neutral.text),
+                    })
+                    .into(),
+            }
         })
         .into()
     }

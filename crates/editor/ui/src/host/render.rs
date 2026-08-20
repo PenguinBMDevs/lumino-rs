@@ -84,9 +84,9 @@ impl Host {
     /// 下落式音符直接复用渲染线程发布的活体 GPU 实例缓冲（只读 storage），
     /// 不重新上传音符数据——满足「禁止第二份拷贝」约束。
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
-        let active = self.root.right_sidebar.panel_visible
-            && self.root.right_sidebar.active_panel
-                == crate::right_sidebar::RightSidebarPanel::PianoWaterfall;
+        use crate::titlebar::mode_toggle::AppMode;
+
+        let in_waterfall = self.root.state.current_mode == AppMode::Waterfall;
 
         // 键数跟随全局设置：开启 256 键扩展则为 256，否则 128
         let key_count: u32 = if self.root.settings.display.enable_256key {
@@ -94,13 +94,6 @@ impl Host {
         } else {
             128
         };
-
-        // 键盘实际绘制宽度 = 面板内容宽（与显示宽度一致，无边框/留白，保证清晰不拉伸）
-        let width = (self.root.right_sidebar.panel_width - RESIZE_HANDLE_WIDTH).max(1.0) as u32;
-        // 面板内容高 = 窗口逻辑高（瀑布流占满面板纵轴，键盘贴底）
-        let panel_height = self.render_ctx.viewport.logical_size().height.max(1.0);
-        let kb_h = (width as f32 * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
-        let height = (panel_height).max(kb_h + 1.0) as u32;
 
         // 视口参数（与钢琴卷帘一致，驱动音符落点 / 时间流 / 主音轨蓝）
         let zoom_x = self.root.editor.editor_state.view.zoom_x;
@@ -116,6 +109,88 @@ impl Host {
             .and_then(|t| t.take_note_data());
         let note_count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
 
+        if in_waterfall {
+            // ── 全屏瀑布流播放器：铺满主界面右侧内容区，复用同款离屏渲染 ──
+            let size = *self.root.waterfall_player.size.borrow();
+            let (width, height) = match size {
+                Some(s) => s,
+                // 尚无布局尺寸（首帧视图未构建），下一帧再渲染，避免 1x1 闪现
+                None => return,
+            };
+
+            let mut sig: u64 = width as u64;
+            sig = sig.wrapping_mul(31).wrapping_add(height as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(zoom_x as i64 as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(scroll_x as i64 as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
+
+            let state = &mut self.root.waterfall_player;
+            if state.cached_signature == Some(sig) {
+                return; // 参数未变，复用已渲染纹理视图
+            }
+
+            let renderer = self
+                .render_ctx
+                .keyboard_renderer
+                .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+
+            if let Some(view) = renderer.render_scene(
+                &self.render_ctx.device,
+                &self.render_ctx.queue,
+                width,
+                height,
+                key_count,
+                note_data,
+                zoom_x,
+                scroll_x,
+                current_track,
+            ) {
+                state.view = Some(view);
+                state.cached_signature = Some(sig);
+            }
+
+            // 瀑布流模式下右侧栏预览被隐藏：释放其纹理与签名，停止一切渲染动作
+            let rs = &mut self.root.right_sidebar.piano_waterfall;
+            if rs.waterfall_view.is_some() {
+                rs.waterfall_view = None;
+                rs.cached_signature = None;
+            }
+            return;
+        }
+
+        // ── 右侧栏瀑布流预览 ──
+        // 仅当右侧栏确实可见（且为瀑布流面板）时才渲染：关闭面板 / 切换面板 /
+        // 进入瀑布流全屏模式 / 走带 / 导出面板 等任一情形均彻底停渲。
+        let active = self.root.right_sidebar.panel_visible
+            && self.root.right_sidebar.active_panel
+                == crate::right_sidebar::RightSidebarPanel::PianoWaterfall
+            && self.root.right_sidebar_visible();
+
+        let state = &mut self.root.right_sidebar.piano_waterfall;
+        if !active {
+            // 面板不可见：释放已渲染纹理视图与签名，避免陈旧显示与显存占用
+            if state.waterfall_view.is_some() {
+                state.waterfall_view = None;
+                state.cached_signature = None;
+            }
+            // 同步清空全屏播放器缓存（从瀑布流模式切回时）
+            let fp = &mut self.root.waterfall_player;
+            if fp.view.is_some() {
+                fp.view = None;
+                fp.cached_signature = None;
+            }
+            return;
+        }
+
+        // 键盘实际绘制宽度 = 面板内容宽（与显示宽度一致，无边框/留白，保证清晰不拉伸）
+        let width = (self.root.right_sidebar.panel_width - RESIZE_HANDLE_WIDTH).max(1.0) as u32;
+        // 面板内容高 = 窗口逻辑高（瀑布流占满面板纵轴，键盘贴底）
+        let panel_height = self.render_ctx.viewport.logical_size().height.max(1.0);
+        let kb_h = (width as f32 * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
+        let height = (panel_height).max(kb_h + 1.0) as u32;
+
         // 脏判断签名：任意参数变化即重绘（滚动/缩放变化 → 瀑布流实时跟随）
         let mut sig: u64 = width as u64;
         sig = sig.wrapping_mul(31).wrapping_add(height as u64);
@@ -125,23 +200,14 @@ impl Host {
         sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
         sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
 
-        let state = &mut self.root.right_sidebar.piano_waterfall;
-        if !active {
-            // 面板不可见：释放已渲染纹理视图与签名，避免陈旧显示与显存占用
-            if state.waterfall_view.is_some() {
-                state.waterfall_view = None;
-                state.cached_signature = None;
-            }
-            return;
-        }
-
         if state.cached_signature == Some(sig) {
             return; // 参数未变，复用已渲染纹理视图
         }
 
-        let renderer = self.render_ctx.keyboard_renderer.get_or_insert_with(|| {
-            KeyboardRenderer::new(&self.render_ctx.device)
-        });
+        let renderer = self
+            .render_ctx
+            .keyboard_renderer
+            .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
 
         // 同步离屏渲染：返回 Some 即拿到本帧纹理视图（无 CPU 读回、无异步）；
         // iced `shader` 图元会在自身渲染通道内直接采样该视图合成（GPU→GPU，不闪烁）。

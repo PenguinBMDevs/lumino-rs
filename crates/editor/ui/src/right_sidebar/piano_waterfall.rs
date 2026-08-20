@@ -28,7 +28,9 @@ use self::keyboard_renderer::{KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, 
 use self::waterfall_primitive::WaterfallPrimitive;
 
 /// 瀑布流图元的 iced `shader` 程序：每帧把当前离屏纹理视图交给图元直接合成。
-struct WaterfallProgram {
+///
+/// 右侧栏预览面板与全屏瀑布流播放器共用同一程序（样式完全一致）。
+pub(crate) struct WaterfallProgram {
     /// 离屏纹理视图（`Arc` 克隆，纹理重建时旧视图仍可被在途图元安全引用）
     view: Arc<wgpu::TextureView>,
 }
@@ -104,6 +106,38 @@ fn panel_header<'a>(title: String, _window: &'a window::Window) -> Element<'a> {
             color: Some(theme.extended_palette().background.neutral.text),
         })
         .into()
+}
+
+/// 构造铺满容器的瀑布流 `shader` 图元（右侧栏预览与全屏播放器共用同款样式）。
+///
+/// 调用方负责用 `Length::Fill` 容器承载，使图元尺寸与离屏纹理尺寸一致（无拉伸）。
+pub(crate) fn waterfall_shader_element<'a>(view: Arc<wgpu::TextureView>) -> Element<'a> {
+    Shader::new(WaterfallProgram { view })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into()
+}
+
+/// 全屏瀑布流播放器状态：缓存离屏纹理视图、脏签名与布局尺寸。
+///
+/// 仅在 `AppMode::Waterfall` 下渲染；离开该模式即释放纹理（停止一切 GPU 渲染动作）。
+pub(crate) struct WaterfallPlayerState {
+    /// 离屏纹理视图（全屏瀑布流）
+    pub view: Option<Arc<wgpu::TextureView>>,
+    /// 脏判断签名（尺寸 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数任一变化即重绘）
+    pub cached_signature: Option<u64>,
+    /// 主内容区实际像素尺寸（由 `responsive` 布局回调写入，供离屏渲染定尺寸）
+    pub size: std::cell::RefCell<Option<(u32, u32)>>,
+}
+
+impl Default for WaterfallPlayerState {
+    fn default() -> Self {
+        Self {
+            view: None,
+            cached_signature: None,
+            size: std::cell::RefCell::new(None),
+        }
+    }
 }
 
 /// 由面板内容宽度推导键盘渲染尺寸（宽度变化时高度按比例联动）
