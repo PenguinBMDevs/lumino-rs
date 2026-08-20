@@ -1,23 +1,37 @@
 //! 纵向卷帘键盘 Canvas（编辑区底部，键沿 X 轴铺开）
 
 use iced_core::mouse;
-use iced_core::{Color, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Frame, Program, Stroke};
+use iced_core::{Color, Event, Point, Rectangle, Size};
+use iced_widget::canvas::{self, Action, Frame, Program, Stroke};
 use lumino_gfx::grid::is_black_key;
 
 use crate::{Message, Renderer, Theme};
 use iced_wgpu::Geometry;
+use lumino_core::view_state::ViewState;
+use lumino_editor_state::CanvasState;
 use lumino_ui_editor::grid::theme::ThemeExt;
+use lumino_ui_editor::zoom::{fixed_ratio_from_viewport, zoom_factor_from_delta};
 
 /// 纵向卷帘键盘
 ///
-/// 键盘是「音高标尺」，**始终铺满全部音高**作为定位参照（不随滚动缩放只露几颗键）。
-/// 全部 `key_count` 个键均匀铺满键盘宽度（单键宽 = 画布宽 / key_count），与上方网格 X 轴
-/// （= width 对应全音域）严格对齐：网格中音高 `key` 的 X 坐标恰好落在键盘第 `key` 颗键上。
+/// 键盘是「音高标尺」，与上方网格 X 轴（音高）严格对齐：网格中音高 `key` 的 X 坐标
+/// 恰好落在键盘第 `key` 颗键上。音高轴缩放/平移复用横向卷帘同款语义 ——
+/// `pitch_zoom`(= 横向 `zoom_y`，Pixels per Key) 控制键条宽窄，`pitch_scroll`(= 横向 `scroll_x`)
+/// 控制横向滚动画面。播放时 `scroll_x` 驱动时间轴（Y）下落，键盘横向不随播放移动。
 /// 配色复用横向键盘同款 `ThemeExt`（黑/白键、键盘底色、边框）。
 pub struct VerticalKeyboardProgram {
     /// 总键数（音域宽度）
     pub key_count: u16,
+    /// 音高轴缩放（Pixels per Key，复用横向 `zoom_y`）
+    pub pitch_zoom: f32,
+    /// 音高轴平移（复用横向 `scroll_x`），与网格 X 轴一致
+    pub pitch_scroll: f32,
+    /// 视图快照（供 update 读取缩放锚点所需的 canvas/view 尺寸）
+    pub editor_view: ViewState,
+    /// 画布状态快照（供 update 计算缩放视口宽度）
+    pub editor_canvas: CanvasState,
+    /// Ctrl 是否按下（host 通道注入，用于 Ctrl+滚轮缩放）
+    pub ctrl_pressed: bool,
 }
 
 impl Program<Message, Theme, Renderer> for VerticalKeyboardProgram {
@@ -41,12 +55,14 @@ impl Program<Message, Theme, Renderer> for VerticalKeyboardProgram {
         );
 
         let key_height = bounds.height;
-        let key_width = bounds.width / self.key_count.max(1) as f32;
+        // 单键宽 = 画布宽 / 总键数 * pitch_zoom（pitch_zoom=1 时整排铺满）
+        let key_width = bounds.width / self.key_count.max(1) as f32 * self.pitch_zoom;
 
         for i in 0..self.key_count {
             let keynum = i as isize;
-            // 全部音高均匀铺满键盘宽度：低音在左、高音在右（与网格 X 轴全音域对齐）
-            let screen_x = keynum as f32 * key_width;
+            // 与网格 X 轴（音高）对齐：归一化位置 * 画布宽 - 横向滚动（低音在左、高音在右）
+            let normalized = (keynum as f32) / (self.key_count.max(1) as f32);
+            let screen_x = normalized * bounds.width - self.pitch_scroll;
             let is_black = is_black_key(keynum);
             let base_color = if is_black {
                 theme.black_key_color()
@@ -104,6 +120,42 @@ impl Program<Message, Theme, Renderer> for VerticalKeyboardProgram {
         }
 
         vec![frame.into_geometry()]
+    }
+
+    fn update(
+        &self,
+        _state: &mut (),
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<Action<Message>> {
+        let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event else {
+            return None;
+        };
+        // Ctrl+滚轮：音高轴缩放（对应横向键盘区 Ctrl+滚轮→ZoomYChanged）
+        if !self.ctrl_pressed {
+            return None;
+        }
+        let factor = zoom_factor_from_delta(delta)?;
+        let view = &self.editor_view;
+        let canvas = &self.editor_canvas;
+        let viewport_w = (canvas.size_x - view.keyboard_width).max(0.0);
+        let local_pos = cursor
+            .position()
+            .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y))?;
+        Some(Action::publish(Message::ZoomYChanged {
+            zoom: view.zoom_y * factor,
+            fixed_ratio: fixed_ratio_from_viewport(local_pos.x, view.keyboard_width, viewport_w),
+        }))
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &(),
+        _bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        mouse::Interaction::None
     }
 }
 

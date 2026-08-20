@@ -10,14 +10,15 @@ mod keyboard;
 
 use iced_core::alignment;
 use iced_core::mouse;
-use iced_core::{Color, Length, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Canvas, Frame, Program};
+use iced_core::{Color, Event, Length, Point, Rectangle, Size};
+use iced_widget::canvas::{self, Action, Canvas, Frame, Program};
 use iced_widget::{column, container, row};
 
 use crate::root::Root;
 use crate::{Element, Message, Renderer, Theme};
 use keyboard::VerticalKeyboardProgram;
 use lumino_ui_editor::grid::theme::ThemeExt;
+use lumino_ui_editor::zoom::{fixed_ratio_from_viewport, zoom_factor_from_delta};
 
 /// 纵向卷帘网格「每小节拍数」（基础样式暂固定 4/4，与横向卷帘空拍号回退一致）
 const DEFAULT_NUMERATOR: u32 = 4;
@@ -42,11 +43,6 @@ impl Root {
         // 纵向键盘高度与横向卷帘键盘宽度保持一致（DEFAULT_KEYBOARD_WIDTH），避免视觉不一致。
         let keyboard_height = lumino_core::view_state::DEFAULT_KEYBOARD_WIDTH;
 
-        // 播放指示线 Y 坐标：纵向卷帘时间轴在 Y，播放时 scroll_x 推进使内容下移，
-        // 指示线固定（与横向"指示线固定、内容上移"对称）。越过键盘留白区或画布范围则不绘制。
-        let playback_indicator_y =
-            keyboard_height + self.editor.playback_position * zoom_x - scroll_x;
-
         let program = VerticalRollProgram {
             zoom_x,
             scroll_x,
@@ -54,13 +50,20 @@ impl Root {
             total_ticks,
             beat_ticks,
             measure_ticks,
-            playback_indicator_y,
+            editor_view: view.clone(),
+            editor_canvas: self.editor.editor_state.canvas,
+            ctrl_pressed: self.editor.ctrl_pressed(),
         };
 
-        // 纵向键盘（编辑区底部，键沿 X 轴铺开）：将全部音高均匀铺满键盘宽度，
-        // 与上方网格 X 轴（= 全音域对应整宽）严格对齐，且播放时不随 scroll_x 移动 → 稳定、全量可见。
+        // 纵向键盘（编辑区底部，键沿 X 轴铺开）：音高轴复用 `zoom_y`(缩放) + `scroll_x`(平移)，
+        // 与网格 X 轴（音高）保持一致；播放时 scroll_x 驱动时间轴（Y）下落，键盘横向不随播放移动。
         let keyboard_program = VerticalKeyboardProgram {
             key_count: view.key_count,
+            pitch_zoom: view.zoom_y,
+            pitch_scroll: view.scroll_x,
+            editor_view: view.clone(),
+            editor_canvas: self.editor.editor_state.canvas,
+            ctrl_pressed: self.editor.ctrl_pressed(),
         };
 
         // 顶部：左侧纵向小节标尺 + 右侧转置网格线（时间轴在 Y 轴）
@@ -126,8 +129,11 @@ struct VerticalRollProgram {
     total_ticks: u32,
     beat_ticks: u32,
     measure_ticks: u32,
-    /// 播放指示线 Y 坐标（时间轴在 Y 方向）；<= ruler_width 或越界表示不绘制
-    playback_indicator_y: f32,
+    /// 视图快照（供 update 读取缩放锚点所需的 canvas/view 尺寸）
+    editor_view: lumino_core::view_state::ViewState,
+    editor_canvas: lumino_editor_state::CanvasState,
+    /// Ctrl 是否按下（host 通道注入，用于 Ctrl+滚轮缩放）
+    ctrl_pressed: bool,
 }
 
 impl Program<Message, Theme, Renderer> for VerticalRollProgram {
@@ -207,35 +213,45 @@ impl Program<Message, Theme, Renderer> for VerticalRollProgram {
             );
         }
 
-        // 播放指示线（瀑布流下落红线）：横向红线 + 左侧朝右三角形（指向时间增长方向）
-        if self.playback_indicator_y > self.ruler_width && self.playback_indicator_y <= height {
-            let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
-            let y = self.playback_indicator_y;
-            let line_path = iced_widget::canvas::Path::line(
-                Point::new(self.ruler_width, y),
-                Point::new(width, y),
-            );
-            frame.stroke(
-                &line_path,
-                iced_widget::canvas::Stroke::default()
-                    .with_width(2.0)
-                    .with_color(indicator_color),
-            );
-            let tri = 6.0;
-            let triangle_path = iced_widget::canvas::Path::new(|builder| {
-                builder.move_to(Point::new(self.ruler_width, y - tri / 2.0));
-                builder.line_to(Point::new(self.ruler_width, y + tri / 2.0));
-                builder.line_to(Point::new(self.ruler_width + tri, y));
-                builder.close();
-            });
-            frame.fill(&triangle_path, indicator_color);
-        }
-
         vec![frame.into_geometry()]
     }
-}
 
-/// 纵向卷帘小节标尺 Canvas（位于左侧，样式对齐横向卷帘小节标尺）
+    fn update(
+        &self,
+        _state: &mut (),
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<Action<Message>> {
+        let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event else {
+            return None;
+        };
+        // Ctrl+滚轮：时间轴缩放（对应纵向 Y 方向，对齐横向 Ctrl+滚轮→ZoomXChanged）
+        if !self.ctrl_pressed {
+            return None;
+        }
+        let factor = zoom_factor_from_delta(delta)?;
+        let view = &self.editor_view;
+        let canvas = &self.editor_canvas;
+        let viewport_h = (canvas.size_y - view.ruler_height).max(0.0);
+        let local_pos = cursor
+            .position()
+            .map(|p| Point::new(p.x - bounds.x, p.y - bounds.y))?;
+        Some(Action::publish(Message::ZoomXChanged {
+            zoom: view.zoom_x * factor,
+            fixed_ratio: fixed_ratio_from_viewport(local_pos.y, view.ruler_height, viewport_h),
+        }))
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &(),
+        _bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        mouse::Interaction::None
+    }
+}
 struct RulerProgram {
     zoom_x: f32,
     scroll_x: f32,

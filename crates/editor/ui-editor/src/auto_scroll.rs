@@ -75,15 +75,21 @@ impl Editor {
         match asc.mode {
             AutoScrollMode::FixedIndicatorLeft => {
                 let indicator_pos = asc.fixed_indicator_position as f32;
-                let target_scroll_x = playback_tick * time_zoom - indicator_pos;
+                let mut target_scroll_x = playback_tick * time_zoom - indicator_pos;
 
                 // 如果目标滚动已到达或超过末尾，自动松开固定
                 // 此时滚动停在末尾，指示线自然跟随播放位置移动
                 if target_scroll_x >= max_scroll {
-                    self.set_scroll_x(max_scroll, pitch_inset, canvas_size, time_zoom);
-                } else {
-                    self.set_scroll_x(target_scroll_x, pitch_inset, canvas_size, time_zoom);
+                    target_scroll_x = max_scroll;
                 }
+                // 纵向卷帘时间轴在 Y、内容应「瀑布流下落」(scroll 增→坐标增→下移)，
+                // 故取 -target（与横向「内容上移」相反，但二者各自视觉正确）。
+                let scroll = if is_vertical {
+                    -target_scroll_x
+                } else {
+                    target_scroll_x
+                };
+                self.set_scroll_x(scroll, pitch_inset, canvas_size, time_zoom);
                 // 自动滚动直接设置，同步平滑滚动目标
                 self.editor_state.view.smooth_scroll.sync(
                     self.editor_state.view.scroll_x,
@@ -94,12 +100,25 @@ impl Editor {
             AutoScrollMode::ScrollingIndicator => {
                 let trigger_offset = asc.page_trigger_offset as f32;
                 let return_pos = asc.page_return_position as f32;
-                let indicator_screen_x = playback_tick * time_zoom - v.scroll_x + pitch_inset;
+                let indicator_screen_x = if is_vertical {
+                    // 纵向：屏幕 Y = ruler + tick*zoom - scroll；scroll 取负，故 +|scroll|
+                    playback_tick * time_zoom + v.scroll_x + pitch_inset
+                } else {
+                    playback_tick * time_zoom - v.scroll_x + pitch_inset
+                };
                 let trigger_screen_x = viewport_width + pitch_inset - trigger_offset;
 
                 if indicator_screen_x >= trigger_screen_x {
-                    let target_scroll_x = playback_tick * time_zoom - return_pos;
-                    self.set_scroll_x(target_scroll_x, pitch_inset, canvas_size, time_zoom);
+                    let mut target_scroll_x = playback_tick * time_zoom - return_pos;
+                    if target_scroll_x >= max_scroll {
+                        target_scroll_x = max_scroll;
+                    }
+                    let scroll = if is_vertical {
+                        -target_scroll_x
+                    } else {
+                        target_scroll_x
+                    };
+                    self.set_scroll_x(scroll, pitch_inset, canvas_size, time_zoom);
                     // 自动滚动直接设置，同步平滑滚动目标
                     self.editor_state.view.smooth_scroll.sync(
                         self.editor_state.view.scroll_x,
