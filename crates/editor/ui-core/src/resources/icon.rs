@@ -83,6 +83,9 @@ define_icons! {
     (Download, "../../../../../resources/icons/sidebar/export-group.svg"),
     (PlayCircle, "../../../../../resources/icons/sidebar/waterfall-record.svg"),
     (EllipsisVertical, "../../../../../resources/icons/sidebar/toolbar-overflow-trigger.svg"),
+    // 卷帘面板左侧栏底部按钮（横向 / 纵向三条杠）
+    (RollBarHorizontal, "../../../../../resources/icons/sidebar/roll-bar-horizontal.svg"),
+    (RollBarVertical, "../../../../../resources/icons/sidebar/roll-bar-vertical.svg"),
     (Users, "../../../../../resources/icons/toolbar/collaboration.svg"),
     // 工具栏图标
     (Play, "../../../../../resources/icons/toolbar/playback-start.svg"),

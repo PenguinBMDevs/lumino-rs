@@ -1,108 +1,25 @@
 //! Sidebar 事件子模块
 //!
 //! 包括侧边栏事件枚举及其依赖的分组和路由类型。
+//!
+//! 子模块组织（保持单文件 < 400 行）：
+//! - `group`: 分组 ID（`GroupId`）及灯条颜色 / 提示文本
+//! - `route`: 路由（`Route`）与卷帘面板底部按钮（`RollBarButton`）
+//! - `constructors`: `Event` 的 `Message` 构造器
+//! - `tests`: 构造器与提示文本单元测试
+
+mod constructors;
+mod group;
+mod route;
+
+pub use group::GroupId;
+pub use route::{RollBarButton, Route};
+
+#[cfg(test)]
+mod tests;
 
 use iced_core::{Color, Point};
-use lumino_extras::i18n::{Language, main_translations};
 use lumino_message::{PanelContextMenuItem, TrackContextMenuItem};
-
-use crate::Message;
-
-// ─── 分组 ID（从 sidebar/core.rs 迁入） ───
-
-/// 侧边栏分组 ID
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GroupId {
-    /// 钢琴卷帘组（红色）
-    PianoRoll,
-    /// 工程走带组（绿色）
-    Project,
-    /// 播放器组（黄色）
-    Waterfall,
-    /// 渲染组（蓝色）
-    Renderer,
-}
-
-impl GroupId {
-    /// 父按钮灯条颜色（硬编码）
-    pub fn parent_color(&self) -> Color {
-        match self {
-            GroupId::PianoRoll => Color::from_rgb(0.85, 0.15, 0.15),
-            GroupId::Project => Color::from_rgb(0.15, 0.75, 0.35),
-            GroupId::Waterfall => Color::from_rgb(0.85, 0.75, 0.10),
-            GroupId::Renderer => Color::from_rgb(0.15, 0.45, 0.85),
-        }
-    }
-
-    /// 子按钮灯条颜色（比父按钮浅）
-    pub fn child_color(&self) -> Color {
-        match self {
-            GroupId::PianoRoll => Color::from_rgb(0.65, 0.35, 0.35),
-            GroupId::Project => Color::from_rgb(0.35, 0.65, 0.45),
-            GroupId::Waterfall => Color::from_rgb(0.65, 0.58, 0.30),
-            GroupId::Renderer => Color::from_rgb(0.35, 0.55, 0.65),
-        }
-    }
-
-    /// 获取分组提示文本（随语言切换）
-    pub fn tooltip(&self, lang: Language) -> &'static str {
-        match self {
-            GroupId::PianoRoll => match lang {
-                Language::ZhCn => "钢琴卷帘组",
-                Language::EnUs => "Piano Roll",
-            },
-            GroupId::Project => match lang {
-                Language::ZhCn => "工程走带",
-                Language::EnUs => "Project",
-            },
-            GroupId::Waterfall => match lang {
-                Language::ZhCn => "播放器",
-                Language::EnUs => "Player",
-            },
-            GroupId::Renderer => match lang {
-                Language::ZhCn => "渲染器",
-                Language::EnUs => "Renderer",
-            },
-        }
-    }
-}
-
-// ─── 路由（从 sidebar/core.rs 迁入） ───
-
-/// 侧边栏路由（页面标识）
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Route {
-    /// 文件路由
-    File,
-    /// 编排（钢琴卷帘）路由
-    Arrangement,
-    /// 自动化路由
-    Automation,
-    /// 视频渲染路由
-    VideoExport,
-    /// 音频渲染路由
-    AudioExport,
-}
-
-impl Route {
-    /// 获取路由提示文本（随语言切换）
-    pub fn tooltip(&self, lang: Language) -> &'static str {
-        let translations = main_translations(lang);
-        match self {
-            Route::File => translations.sidebar_file,
-            Route::Arrangement => translations.sidebar_arrangement,
-            Route::Automation => translations.sidebar_automation,
-            Route::VideoExport => match lang {
-                Language::ZhCn => "视频渲染",
-                Language::EnUs => "Video Render",
-            },
-            Route::AudioExport => match lang {
-                Language::ZhCn => "音频渲染",
-                Language::EnUs => "Audio Render",
-            },
-        }
-    }
-}
 
 // ─── 事件（从 sidebar/event.rs 迁入） ───
 
@@ -143,6 +60,8 @@ pub enum Event {
     PianoRollToggled,
     /// 分组切换
     GroupToggled(GroupId),
+    /// 卷帘面板底部按钮切换（横向/纵向三条杠，两者互斥）
+    RollBarToggled(RollBarButton),
     /// 打开音轨选项卡右键菜单
     TrackContextMenuOpened(usize),
     /// 关闭音轨选项卡右键菜单
@@ -188,244 +107,4 @@ pub enum Event {
     TrackReorderEnded(Option<usize>),
     /// 取消音轨拖拽排序（不执行排序，仅清除候选状态）
     TrackReorderCancelled,
-}
-
-impl Event {
-    /// 构造"路由更新"的侧边栏消息
-    pub const fn route_updated(route: Route) -> Message {
-        Message::Sidebar(Self::RouteUpdated(route))
-    }
-
-    /// 构造"面板切换"的侧边栏消息
-    pub const fn panel_toggled(route: Route) -> Message {
-        Message::Sidebar(Self::PanelToggled(route))
-    }
-
-    /// 构造"音轨选择"的侧边栏消息
-    pub const fn track_selected(id: usize) -> Message {
-        Message::Sidebar(Self::TrackSelected(id))
-    }
-
-    /// 构造"音轨静音切换"的侧边栏消息
-    pub const fn track_mute_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackMuteToggled(id))
-    }
-
-    /// 构造"音轨独奏切换"的侧边栏消息
-    pub const fn track_solo_toggled(id: usize) -> Message {
-        Message::Sidebar(Self::TrackSoloToggled(id))
-    }
-
-    /// 构造"多轨同时选择"的侧边栏消息
-    pub const fn tracks_selected(ids: Vec<usize>) -> Message {
-        Message::Sidebar(Self::TracksSelected(ids))
-    }
-
-    /// 构造"添加音轨"的侧边栏消息
-    pub const fn add_track() -> Message {
-        Message::Sidebar(Self::AddTrack)
-    }
-
-    /// 构造"在指定音轨上方添加"的侧边栏消息
-    pub const fn track_add_above(id: usize) -> Message {
-        Message::Sidebar(Self::TrackAddAbove(id))
-    }
-
-    /// 构造"在指定音轨下方添加"的侧边栏消息
-    pub const fn track_add_below(id: usize) -> Message {
-        Message::Sidebar(Self::TrackAddBelow(id))
-    }
-
-    /// 构造"上移指定音轨"的侧边栏消息
-    pub const fn track_move_up(id: usize) -> Message {
-        Message::Sidebar(Self::TrackMoveUp(id))
-    }
-
-    /// 构造"下移指定音轨"的侧边栏消息
-    pub const fn track_move_down(id: usize) -> Message {
-        Message::Sidebar(Self::TrackMoveDown(id))
-    }
-
-    /// 构造"开始拖拽调整面板宽度"的侧边栏消息
-    pub fn resize_drag_started() -> Message {
-        Message::Sidebar(Self::ResizeDragStarted(Point::new(0.0, 0.0)))
-    }
-
-    /// 构造"拖拽中调整面板宽度"的侧边栏消息
-    pub fn resize_dragged() -> Message {
-        Message::Sidebar(Self::ResizeDragged(Point::new(0.0, 0.0)))
-    }
-
-    /// 构造"结束拖拽调整面板宽度"的侧边栏消息
-    pub const fn resize_drag_ended() -> Message {
-        Message::Sidebar(Self::ResizeDragEnded)
-    }
-
-    /// 构造"自动化面板切换"的侧边栏消息
-    pub const fn automation_panel_toggled() -> Message {
-        Message::Sidebar(Self::AutomationPanelToggled)
-    }
-
-    /// 构造"钢琴卷帘面板切换"的侧边栏消息
-    pub const fn piano_roll_toggled() -> Message {
-        Message::Sidebar(Self::PianoRollToggled)
-    }
-
-    /// 构造"分组切换"的侧边栏消息
-    pub const fn group_toggled(group: GroupId) -> Message {
-        Message::Sidebar(Self::GroupToggled(group))
-    }
-
-    /// 构造"打开音轨选项卡右键菜单"的侧边栏消息
-    pub const fn track_context_menu_opened(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackContextMenuOpened(track_id))
-    }
-
-    /// 构造"关闭音轨选项卡右键菜单"的侧边栏消息
-    pub const fn track_context_menu_closed() -> Message {
-        Message::Sidebar(Self::TrackContextMenuClosed)
-    }
-
-    /// 构造"点击音轨选项卡右键菜单项"的侧边栏消息
-    pub const fn track_context_menu_item_clicked(
-        track_id: usize,
-        item: TrackContextMenuItem,
-    ) -> Message {
-        Message::Sidebar(Self::TrackContextMenuItemClicked(track_id, item))
-    }
-
-    /// 构造"打开侧边栏空白区域右键菜单"的侧边栏消息
-    pub const fn panel_context_menu_opened() -> Message {
-        Message::Sidebar(Self::PanelContextMenuOpened)
-    }
-
-    /// 构造"关闭侧边栏空白区域右键菜单"的侧边栏消息
-    pub const fn panel_context_menu_closed() -> Message {
-        Message::Sidebar(Self::PanelContextMenuClosed)
-    }
-
-    /// 构造"点击侧边栏空白区域右键菜单项"的侧边栏消息
-    pub const fn panel_context_menu_item_clicked(item: PanelContextMenuItem) -> Message {
-        Message::Sidebar(Self::PanelContextMenuItemClicked(item))
-    }
-
-    /// 构造"开始重命名音轨"的侧边栏消息
-    pub fn track_rename_started(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackRenameStarted(track_id))
-    }
-
-    /// 构造"重命名输入变化"的侧边栏消息
-    pub fn track_rename_changed(track_id: usize, value: String) -> Message {
-        Message::Sidebar(Self::TrackRenameChanged(track_id, value))
-    }
-
-    /// 构造"确认重命名"的侧边栏消息
-    pub fn track_rename_confirmed(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackRenameConfirmed(track_id))
-    }
-
-    /// 构造"取消重命名"的侧边栏消息
-    pub fn track_rename_cancelled(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackRenameCancelled(track_id))
-    }
-
-    /// 构造"打开音轨颜色选择器"的侧边栏消息
-    pub fn track_color_picker_opened(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackColorPickerOpened(track_id))
-    }
-
-    /// 构造"选择音轨颜色"的侧边栏消息
-    pub fn track_color_selected(track_id: usize, color: Color) -> Message {
-        Message::Sidebar(Self::TrackColorSelected(track_id, color))
-    }
-
-    /// 构造"重置音轨颜色为默认"的侧边栏消息
-    pub fn track_color_reset(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackColorReset(track_id))
-    }
-
-    /// 构造"关闭音轨颜色选择器"的侧边栏消息
-    pub fn track_color_picker_closed(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackColorPickerClosed(track_id))
-    }
-
-    /// 构造"音轨拖拽排序候选开始"的侧边栏消息
-    pub const fn track_reorder_started(track_id: usize) -> Message {
-        Message::Sidebar(Self::TrackReorderStarted(track_id))
-    }
-
-    /// 构造"音轨拖拽排序中鼠标移动"的侧边栏消息
-    pub const fn track_reorder_moved(x: f32, y: f32) -> Message {
-        Message::Sidebar(Self::TrackReorderMoved { x, y })
-    }
-
-    /// 构造"音轨拖拽排序结束"的侧边栏消息
-    pub const fn track_reorder_ended(insert_index: Option<usize>) -> Message {
-        Message::Sidebar(Self::TrackReorderEnded(insert_index))
-    }
-
-    /// 构造"取消音轨拖拽排序"的侧边栏消息
-    pub const fn track_reorder_cancelled() -> Message {
-        Message::Sidebar(Self::TrackReorderCancelled)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_track_context_menu_event_helpers() {
-        let msg = Event::track_context_menu_opened(3);
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackContextMenuOpened(3))
-        ));
-
-        let msg = Event::track_context_menu_closed();
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackContextMenuClosed)
-        ));
-
-        let msg = Event::track_context_menu_item_clicked(2, TrackContextMenuItem::Delete);
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackContextMenuItemClicked(
-                2,
-                TrackContextMenuItem::Delete
-            ))
-        ));
-    }
-
-    #[test]
-    fn test_track_rename_event_helpers() {
-        let msg = Event::track_rename_started(1);
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackRenameStarted(1))
-        ));
-
-        let msg = Event::track_rename_changed(1, "New Name".to_string());
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackRenameChanged(1, _))
-        ));
-
-        let msg = Event::track_rename_confirmed(1);
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackRenameConfirmed(1))
-        ));
-    }
-
-    #[test]
-    fn test_track_color_event_helpers() {
-        let color = Color::from_rgb(1.0, 0.0, 0.0);
-        let msg = Event::track_color_selected(2, color);
-        assert!(matches!(
-            msg,
-            Message::Sidebar(Event::TrackColorSelected(2, c)) if c == color
-        ));
-    }
 }

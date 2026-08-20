@@ -25,6 +25,7 @@ impl Sidebar {
         let prev_color_picking = self.color_picking_track;
         let prev_panel_context_menu_open = self.panel_context_menu.is_open;
         let prev_reorder_hover = self.track_reorder.as_ref().and_then(|r| r.hover_index);
+        let prev_roll_bar_active = self.roll_bar_active;
         match event {
             // ── 分组切换（核心逻辑） ──
             GroupToggled(group) => self.handle_group_toggle(group),
@@ -84,6 +85,8 @@ impl Sidebar {
             // ── 子按钮切换 ──
             AutomationPanelToggled => self.handle_automation_panel_toggled(),
             PianoRollToggled => self.handle_piano_roll_toggled(),
+            // ── 卷帘面板底部按钮（横向/纵向三条杠，互斥） ──
+            RollBarToggled(button) => self.handle_roll_bar_toggled(button),
         }
         // 最终保护
         if self.route == Route::Arrangement {
@@ -99,5 +102,7 @@ impl Sidebar {
             || self.panel_context_menu.is_open != prev_panel_context_menu_open
             // 拖拽排序状态变化（开始/移动/激活/结束）需要重绘
             || self.track_reorder.as_ref().and_then(|r| r.hover_index) != prev_reorder_hover
+            // 卷帘底部按钮亮灯状态变化需要重绘
+            || self.roll_bar_active != prev_roll_bar_active
     }
 }

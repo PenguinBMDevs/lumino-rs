@@ -1,0 +1,6 @@
+<svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- 横向三条杠：卷帘面板左侧栏底部按钮（上方按钮） -->
+  <rect x="2" y="3" width="12" height="2" rx="1" fill="black"/>
+  <rect x="2" y="7" width="12" height="2" rx="1" fill="black"/>
+  <rect x="2" y="11" width="12" height="2" rx="1" fill="black"/>
+</svg>

@@ -1,6 +1,7 @@
-//! 路由/面板切换处理 — RouteUpdated、PanelToggled、AutomationPanelToggled、PianoRollToggled
+//! 路由/面板切换处理 — RouteUpdated、PanelToggled、AutomationPanelToggled、
+//! PianoRollToggled、RollBarToggled
 
-use crate::sidebar::core::{GroupId, Route, Sidebar};
+use crate::sidebar::core::{GroupId, RollBarButton, Route, Sidebar};
 
 impl Sidebar {
     /// 处理路由更新事件
@@ -89,5 +90,16 @@ impl Sidebar {
         if self.piano_roll_visible && self.route == Route::Arrangement {
             self.restore_piano_roll_state();
         }
+    }
+
+    /// 处理卷帘面板底部按钮切换（横向/纵向三条杠）
+    ///
+    /// 互斥语义：点击未激活的按钮 → 该按钮点亮、另一个熄灭；
+    /// 再次点击已激活的按钮 → 关闭（两个按钮均熄灭）。
+    pub(super) fn handle_roll_bar_toggled(&mut self, button: RollBarButton) {
+        self.roll_bar_active = match self.roll_bar_active {
+            Some(active) if active == button => None,
+            _ => Some(button),
+        };
     }
 }

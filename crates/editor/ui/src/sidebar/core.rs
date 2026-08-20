@@ -6,7 +6,7 @@
 use std::collections::HashSet;
 
 use super::track_reorder::TrackReorderState;
-pub use lumino_ui_core::sidebar_event::{GroupId, Route};
+pub use lumino_ui_core::sidebar_event::{GroupId, RollBarButton, Route};
 
 mod types;
 pub use types::{
@@ -85,6 +85,11 @@ pub struct Sidebar {
     pub pending_recover_track_dialog: bool,
     /// 音轨拖拽排序状态（None = 无拖拽进行中）
     pub track_reorder: Option<TrackReorderState>,
+    /// 卷帘面板底部按钮当前激活项（`None` = 两个按钮均未点亮）
+    ///
+    /// 用单值 `Option` 而非两个 bool：横向/纵向三条杠的打开状态互斥，
+    /// 互斥性由类型保证，无需运行时同步两个字段。
+    pub roll_bar_active: Option<RollBarButton>,
 }
 
 impl Sidebar {
@@ -143,12 +148,25 @@ impl Sidebar {
             pending_track_deletion_meta: None,
             pending_recover_track_dialog: false,
             track_reorder: None,
+            roll_bar_active: None,
         }
     }
 
     /// 检查当前是否为音轨总览路由
     pub fn is_arrangement_route(&self) -> bool {
         self.route == Route::Arrangement
+    }
+
+    /// 当前是否处于钢琴卷帘面板（决定卷帘底部两个按钮是否显示）
+    ///
+    /// 与 `Root::right_sidebar_visible` 同源语义：卷帘 UI 可见，且主区域未被
+    /// 工程走带 / 音频导出 / 视频导出面板替代。瀑布流模式下 `piano_roll_visible`
+    /// 已被 `activate_group` 置为 false，因此本判定不涉及 AppMode。
+    pub fn is_piano_roll_panel(&self) -> bool {
+        self.piano_roll_visible
+            && !self.is_arrangement_route()
+            && !self.audio_export_visible
+            && !self.video_export_visible
     }
 
     /// yinhe 风格端口字母：port 0→'A', 1→'B', ..., 25→'Z'，超限为 '?'

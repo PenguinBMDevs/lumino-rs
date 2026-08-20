@@ -134,7 +134,11 @@ mod tests {
     fn test_black_key_centers_between_whites() {
         // 取白键宽度（与具体键数无关），验证黑键中心落在相邻白键边界
         let rects = build_layout(1000.0, 100.0, 10); // C C# D D# E F F# G G# A
-        let white_w = rects.iter().find(|r| !r.is_black).unwrap().w;
+        let white_w = rects
+            .iter()
+            .find(|r| !r.is_black)
+            .expect("10 键布局应至少包含一个白键")
+            .w;
         // C#(k=1) 中心应在 1*white_w
         let c_sharp = rects[1];
         assert!(c_sharp.is_black);

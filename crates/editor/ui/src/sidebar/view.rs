@@ -35,21 +35,22 @@ impl Sidebar {
             iced_widget::container(iced_widget::space()).width(0).into()
         };
 
-        let inner = row![
-            route::view(
-                self.route,
-                self.panel_visible,
-                self.automation_panel_visible,
-                self.piano_roll_visible,
-                current_mode,
-                self.active_group,
-                self.audio_export_visible,
-                self.video_export_visible,
-                window,
-                language
-            ),
-            panel,
-        ];
+        // 卷帘底部按钮显隐：处于卷帘面板且非瀑布流模式（与右侧栏同源判定）
+        let roll_bar_visible = current_mode != AppMode::Waterfall && self.is_piano_roll_panel();
+        let route_params = route::RouteViewParams {
+            active: self.route,
+            panel_visible: self.panel_visible,
+            automation_panel_visible: self.automation_panel_visible,
+            piano_roll_visible: self.piano_roll_visible,
+            current_mode,
+            active_group: self.active_group,
+            audio_export_visible: self.audio_export_visible,
+            video_export_visible: self.video_export_visible,
+            roll_bar_active: self.roll_bar_active,
+            roll_bar_visible,
+        };
+
+        let inner = row![route::view(route_params, window, language), panel];
 
         container(inner).into()
     }
