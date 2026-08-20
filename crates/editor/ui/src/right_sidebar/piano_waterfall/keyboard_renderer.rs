@@ -1,19 +1,18 @@
 //! 钢琴瀑布流面板离屏渲染器（键盘底条 + 下落式音符）
 //!
-//! 将「下落式音符 + 底部钢琴键盘」绘制到一张离屏 `Rgba8Unorm` 纹理，读回 RGBA
-//! 字节后交由 iced 以 `image::Handle` 显示。
+//! 将「下落式音符 + 底部钢琴键盘」绘制到一张离屏 `Rgba8Unorm` 纹理（`self.tex`），
+//! 其纹理视图由 iced 的 `shader` 图元在自身渲染通道内**直接采样合成**（GPU→GPU），
+//! 不经过 CPU 读回、不经 `image::Handle`、不进 iced 图集——因此与钢琴卷帘洋葱皮同样不闪烁。
 //!
 //! 关键约束（来自需求）：
 //! - **音符数据禁止第二份拷贝**——直接 bind 渲染线程已持有的活体 GPU 音符实例缓冲
 //!   （只读 `storage`），在面板 offscreen pass 中复用，不重新上传。
 //! - **可视区间剔除**：通过一次 compute 预过滤，仅把落在可见纵轴区间的音符索引写入
 //!   间接绘制缓冲，主绘制用 `draw_indirect` 只画可见音符——杜绝百万级音符每帧全量顶点。
-//! - **不阻塞 UI 线程 / 不闪烁**：纹理与读回缓冲跨帧复用，读回走异步 `map_async` +
-//!   非阻塞 `poll`，绝不 `wait_indefinitely`，避免滚动时卡顿与撕裂。
 //! - **背景透明**：整张纹理以 alpha=0 清屏（不填白），瀑布流区域透出面板自身背景；
 //!   仅音符与键盘键位为不透明像素。
 
-use std::sync::mpsc;
+use std::sync::Arc;
 
 use iced_wgpu::wgpu;
 use wgpu::util::DeviceExt;
@@ -287,22 +286,15 @@ pub struct KeyboardRenderer {
     visible_indices: wgpu::Buffer,
     /// 间接绘制参数缓冲 [vertex_count, instance_count, first_vertex, first_instance]
     draw_args: wgpu::Buffer,
-    /// 离屏目标纹理（跨帧复用，尺寸变化才重建）
+    /// 离屏目标纹理（跨帧复用，尺寸变化才重建）；其视图交给 iced shader 图元直接采样合成
     tex: Option<wgpu::Texture>,
-    tex_view: Option<wgpu::TextureView>,
-    /// 读回缓冲（跨帧复用；同一时刻仅一个读回在途）
-    staging: Option<wgpu::Buffer>,
-    /// 读回完成通道（非空 RGBA + 宽高）
-    readback_tx: mpsc::Sender<(Vec<u8>, u32, u32)>,
-    readback_rx: mpsc::Receiver<(Vec<u8>, u32, u32)>,
-    /// 是否有读回在途（在途期间不再发起新读回，避免映射同一缓冲）
-    map_pending: bool,
+    /// `tex` 的视图（跨帧复用）；iced shader 图元持有其 `Arc` 克隆，在自身渲染通道内采样。
+    /// 用 `Arc` 包裹以便跨帧/跨图元共享，且纹理重建时旧视图仍可被在途图元安全引用。
+    tex_view: Option<Arc<wgpu::TextureView>>,
     /// 已分配的纹理/缓冲尺寸与音符数（用于判定是否需要重建）
     last_w: u32,
     last_h: u32,
     last_count: u32,
-    /// 离屏纹理每行对齐后的字节数（宽度向上取整到 64 的倍数）
-    padded_width: u32,
 }
 
 impl KeyboardRenderer {
@@ -565,8 +557,6 @@ impl KeyboardRenderer {
             mapped_at_creation: false,
         });
 
-        let (readback_tx, readback_rx) = mpsc::channel();
-
         Self {
             pipeline: keyboard_pipeline,
             quad_buffer,
@@ -579,33 +569,17 @@ impl KeyboardRenderer {
             draw_args,
             tex: None,
             tex_view: None,
-            staging: None,
-            readback_tx,
-            readback_rx,
-            map_pending: false,
             last_w: 0,
             last_h: 0,
             last_count: 0,
-            padded_width: 0,
         }
     }
 
-    /// 是否仍有读回在途（供 Host 决定是否续帧轮询，避免空闲时卡死 / 活跃时撕裂）
-    pub(crate) fn is_readback_pending(&self) -> bool {
-        self.map_pending
-    }
-
-    /// 确保离屏纹理与读回缓冲尺寸匹配（跨帧复用，仅在尺寸变化时重建）
+    /// 确保离屏纹理尺寸匹配（跨帧复用，仅在尺寸变化时重建）；其视图交给 iced shader 图元采样。
     fn ensure_targets(&mut self, device: &wgpu::Device, width: u32, height: u32) {
         if self.last_w == width && self.last_h == height && self.tex.is_some() {
             return;
         }
-        // 尺寸变化且仍有读回在途：先让在途读回完成，下一帧再重建，避免 drop 已映射缓冲
-        if self.map_pending {
-            return;
-        }
-        let padded_width = (width + 63) & !63;
-        self.padded_width = padded_width;
         let tex = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("piano_waterfall_tex"),
             size: wgpu::Extent3d {
@@ -617,19 +591,13 @@ impl KeyboardRenderer {
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
             format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+            // RENDER_ATTACHMENT：离屏渲染目标；TEXTURE_BINDING：iced shader 图元采样合成。
+            usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::TEXTURE_BINDING,
             view_formats: &[],
         });
-        let tex_view = tex.create_view(&wgpu::TextureViewDescriptor::default());
-        let staging = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("piano_waterfall_staging"),
-            size: (padded_width * 4 * height) as u64,
-            usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-        });
+        let tex_view = Arc::new(tex.create_view(&wgpu::TextureViewDescriptor::default()));
         self.tex = Some(tex);
         self.tex_view = Some(tex_view);
-        self.staging = Some(staging);
         self.last_w = width;
         self.last_h = height;
     }
@@ -638,9 +606,6 @@ impl KeyboardRenderer {
     fn ensure_visible_indices(&mut self, device: &wgpu::Device, count: u32) {
         if self.last_count == count && count > 0 {
             return;
-        }
-        if self.map_pending {
-            return; // 在途读回期间不重建缓冲
         }
         let size = (count.max(1) as u64) * 4;
         let buf = device.create_buffer(&wgpu::BufferDescriptor {
@@ -653,10 +618,13 @@ impl KeyboardRenderer {
         self.last_count = count;
     }
 
-    /// 渲染「下落式音符 + 底部键盘」到离屏纹理并异步读回 RGBA 字节。
+    /// 渲染「下落式音符 + 底部键盘」到离屏纹理，返回其纹理视图供 iced `shader` 图元直接采样合成。
     ///
-    /// 返回 `Some((rgba, w, h))` 表示本次拿到一帧读回结果（调用方据此更新 `image::Handle`）；
-    /// 返回 `None` 表示读回在途或资源正在重建，应保持旧 Handle 下一帧重试。
+    /// 返回 `Some(Arc<TextureView>)` 表示本次渲染完成（调用方据此更新面板持有的视图）；
+    /// 返回 `None` 表示离屏资源尚未就绪（尺寸/缓冲尚未分配），下一帧重试即可。
+    ///
+    /// 注意：**不做 CPU 读回**。纹理由 iced 在自身渲染通道内直接采样，GPU→GPU 合成，
+    /// 与钢琴卷帘洋葱皮同一路径，因此不进 `image::Handle`、不进 iced 图集、不闪烁。
     ///
     /// - `note_data`：渲染线程发布的活体 GPU 实例缓冲与实例数；`None` 时仅渲染键盘。
     /// - `zoom_x` / `scroll_x`：与钢琴卷帘 X 缩放/滚动一致，驱动音符落点与时间流。
@@ -673,28 +641,10 @@ impl KeyboardRenderer {
         zoom_x: f32,
         scroll_x: f32,
         current_track: u32,
-    ) -> Option<(Vec<u8>, u32, u32)> {
+    ) -> Option<Arc<wgpu::TextureView>> {
         let width = width.max(1);
         let height = height.max(1);
         let count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
-
-        // 非阻塞轮询：驱动在途的 map_async 回调完成（不依赖渲染线程，避免读回永远卡住）。
-        // 注意：必须用 PollType::Poll——Wait 变体在队列空时会因 wait 提交索引断言而致命崩溃。
-        let _ = device.poll(wgpu::PollType::Poll);
-
-        // 1) 尝试收集已完成的读回（非阻塞）
-        if let Ok((bytes, w, h)) = self.readback_rx.try_recv() {
-            self.map_pending = false;
-            // 空字节 = 读回失败哨兵：放弃本帧，下一帧重试
-            if bytes.is_empty() {
-                return None;
-            }
-            return Some((bytes, w, h));
-        }
-        // 2) 仍有读回在途：保持旧 Handle，不发起新读回
-        if self.map_pending {
-            return None;
-        }
 
         // 键盘底条：高度按宽度比例联动，贴底
         let kb_h = (width as f32 * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
@@ -702,9 +652,7 @@ impl KeyboardRenderer {
 
         self.ensure_targets(device, width, height);
         self.ensure_visible_indices(device, count);
-        let tex = self.tex.as_ref()?;
         let tex_view = self.tex_view.as_ref()?;
-        let staging = self.staging.as_ref()?;
 
         let colors = KeyboardColors::pure();
         let mut keys = key_layout::build_layout(width as f32, kb_h, key_count);
@@ -813,7 +761,7 @@ impl KeyboardRenderer {
             let mut rp = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("piano_waterfall_pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: tex_view,
+                    view: tex_view.as_ref(),
                     depth_slice: None,
                     resolve_target: None,
                     ops: wgpu::Operations {
@@ -875,61 +823,11 @@ impl KeyboardRenderer {
             }
         }
 
-        encoder.copy_texture_to_buffer(
-            wgpu::TexelCopyTextureInfo {
-                texture: tex,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            wgpu::TexelCopyBufferInfo {
-                buffer: staging,
-                layout: wgpu::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(self.padded_width * 4),
-                    rows_per_image: Some(height),
-                },
-            },
-            wgpu::Extent3d {
-                width,
-                height,
-                depth_or_array_layers: 1,
-            },
-        );
-
         queue.submit(std::iter::once(encoder.finish()));
 
-        // 3) 发起异步读回（非阻塞）：克隆两份缓冲引用，避免移动与借用冲突
-        let staging_for_map = staging.clone();
-        let staging_for_cb = staging.clone();
-        let tx = self.readback_tx.clone();
-        // 注意：行跨度必须是**字节**数 = padded_width * 4（RGBA），少乘 4 会把图像按 4 段错位缠绕
-        let (w, h, padded, active) = (width, height, self.padded_width * 4, width * 4);
-        staging_for_map.slice(..).map_async(wgpu::MapMode::Read, move |res| {
-            if res.is_ok() {
-                let slice = staging_for_cb.slice(..);
-                let mapped = slice.get_mapped_range();
-                let row = padded as usize;
-                let active = active as usize;
-                let mut rgba = Vec::with_capacity(active * h as usize);
-                for y in 0..h as usize {
-                    let start = y * row;
-                    rgba.extend_from_slice(&mapped[start..start + active]);
-                }
-                drop(mapped);
-                staging_for_cb.unmap();
-                let _ = tx.send((rgba, w, h));
-            } else {
-                // 读回失败哨兵（空字节），调用方据此跳过本帧
-                let _ = tx.send((Vec::new(), w, h));
-            }
-        });
-        // 非阻塞轮询：驱动 GPU 完成拷贝与映射回调，绝不阻塞 UI 线程（用 Poll 避免 Wait 断言崩溃）
-        let _ = device.poll(wgpu::PollType::Poll);
-        // 标记读回在途：在途期间不再向同一缓冲发起新读回/拷贝，避免映射冲突
-        self.map_pending = true;
-        // 极可能尚未完成：本帧不更新 Handle，下一帧收集
-        None
+        // 不做 CPU 读回：直接返回离屏纹理视图，由 iced `shader` 图元在自身渲染通道内采样合成
+        // （GPU→GPU）。返回克隆的 `Arc`，即使后续纹理重建，旧视图仍可被在途图元安全引用。
+        self.tex_view.clone()
     }
 }
 

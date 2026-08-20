@@ -1,24 +1,51 @@
 //! 右侧栏钢琴瀑布流预览面板
 //!
-//! 以「离屏 wgpu 渲染 → iced `image::Handle`」的方式绘制：
+//! 以「离屏 wgpu 渲染 → iced `shader` 图元直接合成」的方式绘制（GPU→GPU，零 CPU 读回）：
 //! - 底部标准钢琴键盘（键数跟随全局 `enable_256key`：开启 256 键，否则 128 键）；
 //! - 上方下落式音符瀑布流，复用渲染线程活体 GPU 实例缓冲（禁止第二份拷贝），
 //!   配色与卷帘洋葱皮逐位一致，主音轨音符显示为蓝色，滚动与卷帘 X 缩放/滚动同步。
 //!
-//! 纹理由 Host 在 GPU 上下文持有者处渲染并缓存，面板仅负责展示。
+//! 离屏纹理视图交给 iced `shader` 图元，在 iced 自身渲染通道内直接采样——
+//! 与钢琴卷帘洋葱皮同一合成路径，因此不进 `image::Handle`、不进 iced 图集、不闪烁。
 
 pub(crate) mod key_layout;
 pub(crate) mod keyboard_renderer;
+pub(crate) mod waterfall_primitive;
 
-use iced_core::Length;
+use std::sync::Arc;
+
+use iced_core::{Length, Rectangle, mouse};
+use iced_widget::shader::{Program, Shader};
 use iced_widget::{Column, container, text};
+use iced_wgpu::wgpu;
 
 use lumino_extras::i18n::{Language, main_translations};
 
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
-use crate::{Element, Theme, window};
+use crate::{Element, Message, Theme, window};
 
 use self::keyboard_renderer::{KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING};
+use self::waterfall_primitive::WaterfallPrimitive;
+
+/// 瀑布流图元的 iced `shader` 程序：每帧把当前离屏纹理视图交给图元直接合成。
+struct WaterfallProgram {
+    /// 离屏纹理视图（`Arc` 克隆，纹理重建时旧视图仍可被在途图元安全引用）
+    view: Arc<wgpu::TextureView>,
+}
+
+impl Program<Message> for WaterfallProgram {
+    type State = ();
+    type Primitive = WaterfallPrimitive;
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        _cursor: mouse::Cursor,
+        _bounds: Rectangle,
+    ) -> Self::Primitive {
+        WaterfallPrimitive::new(self.view.clone())
+    }
+}
 
 /// 渲染钢琴瀑布流预览面板内容（标题 + 说明 + 底部键盘图像）
 pub(super) fn panel<'a>(
@@ -35,19 +62,20 @@ pub(super) fn panel<'a>(
         .width(Length::Fill)
         .push(panel_header(format!("{}预览", t.piano_waterfall), _window));
 
-    // 瀑布流图像占满面板剩余高度（音符随卷帘滚动下落，底部为钢琴键盘落点）
-    let bottom_section: crate::Element<'a> = if let Some(handle) = &state.handle {
-        iced_widget::image::Image::<iced_core::image::Handle>::new(handle.clone())
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .into()
-    } else {
-        text("（键盘渲染中或面板不可见）")
+    // 瀑布流占满面板剩余高度：用 iced `shader` 图元直接合成离屏纹理（GPU→GPU，不闪烁）
+    let bottom_section: crate::Element<'a> = match &state.waterfall_view {
+        Some(view) => Shader::new(WaterfallProgram {
+            view: view.clone(),
+        })
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .into(),
+        None => text("（键盘渲染中或面板不可见）")
             .size(11)
             .style(|theme: &Theme| text::Style {
                 color: Some(theme.extended_palette().background.strong.text),
             })
-            .into()
+            .into(),
     };
 
     let content_col = Column::new()

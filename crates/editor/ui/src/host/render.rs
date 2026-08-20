@@ -77,7 +77,8 @@ impl Host {
     /// 按需离屏渲染钢琴瀑布流面板键盘（真·裸 wgpu）
     ///
     /// 仅在面板可见且为钢琴瀑布流面板时渲染；其余情况清空缓存以释放纹理。
-    /// 渲染产物为 iced `image::Handle`，缓存于 `RightSidebar.piano_waterfall`，
+    /// 渲染产物为离屏纹理视图（`Arc<wgpu::TextureView>`），缓存于 `RightSidebar.piano_waterfall`，
+    /// 由 iced `shader` 图元在自身渲染通道内直接合成（GPU→GPU，无 CPU 读回、不闪烁），
     /// 仅当（宽 / 高 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数）任一参数变化时才重绘。
     ///
     /// 下落式音符直接复用渲染线程发布的活体 GPU 实例缓冲（只读 storage），
@@ -126,25 +127,25 @@ impl Host {
 
         let state = &mut self.root.right_sidebar.piano_waterfall;
         if !active {
-            // 面板不可见：释放已渲染纹理与签名，避免陈旧显示与显存占用
-            if state.handle.is_some() {
-                state.handle = None;
+            // 面板不可见：释放已渲染纹理视图与签名，避免陈旧显示与显存占用
+            if state.waterfall_view.is_some() {
+                state.waterfall_view = None;
                 state.cached_signature = None;
             }
             return;
         }
 
         if state.cached_signature == Some(sig) {
-            return; // 参数未变，复用已渲染 Handle
+            return; // 参数未变，复用已渲染纹理视图
         }
 
         let renderer = self.render_ctx.keyboard_renderer.get_or_insert_with(|| {
             KeyboardRenderer::new(&self.render_ctx.device)
         });
 
-        // 异步读回：返回 Some 才更新 Handle；None 表示读回在途/资源重建，
-        // 保持旧 Handle 并保留签名，下一帧继续重试（避免阻塞与闪烁）。
-        let rendered = renderer.render_scene(
+        // 同步离屏渲染：返回 Some 即拿到本帧纹理视图（无 CPU 读回、无异步）；
+        // iced `shader` 图元会在自身渲染通道内直接采样该视图合成（GPU→GPU，不闪烁）。
+        if let Some(view) = renderer.render_scene(
             &self.render_ctx.device,
             &self.render_ctx.queue,
             width,
@@ -154,22 +155,9 @@ impl Host {
             zoom_x,
             scroll_x,
             current_track,
-        );
-        match rendered {
-            Some((bytes, w, h)) => {
-                let handle = iced_core::image::Handle::from_rgba(w, h, bytes);
-                state.handle = Some(handle);
-                state.rendered_width = w;
-                state.rendered_height = h;
-                state.cached_signature = Some(sig);
-            }
-            None => {
-                // 读回仍在途：请求一次续帧轮询以驱动 map_async 回调完成；
-                // 仅在有读回在途时才续帧，读回完成后自终止，避免 RedrawRequested 自循环。
-                if renderer.is_readback_pending() {
-                    self.window_ctx.window.request_redraw();
-                }
-            }
+        ) {
+            state.waterfall_view = Some(view);
+            state.cached_signature = Some(sig);
         }
     }
 }

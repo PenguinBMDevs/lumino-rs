@@ -1,5 +1,8 @@
 //! 右侧栏核心数据结构与常量
 
+use std::sync::Arc;
+
+use iced_wgpu::wgpu;
 use lumino_message::I2mConfigField;
 use once_cell::sync::Lazy;
 
@@ -225,17 +228,14 @@ pub struct RightSidebar {
 
 /// 钢琴瀑布流预览面板状态
 ///
-/// 持有离屏 wgpu 渲染得到的键盘纹理 `Handle`，以及用于脏标记的参数签名，
-/// 仅在面板宽度 / 键数（由 `enable_256key` 设置决定）/ 主题变化时重绘，避免每帧 GPU 读回开销。
+/// 持有离屏 wgpu 渲染得到的键盘纹理视图（`Arc<wgpu::TextureView>`），
+/// 由 iced `shader` 图元在自身渲染通道内直接采样合成（GPU→GPU，无 CPU 读回、无 `image::Handle`、无图集重传），
+/// 因此与钢琴卷帘洋葱皮同样不闪烁。仅用脏签名避免每帧重绘。
 #[derive(Debug, Clone, Default)]
 pub struct PianoWaterfallState {
-    /// 当前键盘纹理（iced `image::Handle`），`None` 表示尚未渲染或面板不可见
-    pub handle: Option<iced_core::image::Handle>,
-    /// 已渲染纹理的像素宽度
-    pub rendered_width: u32,
-    /// 已渲染纹理的像素高度
-    pub rendered_height: u32,
-    /// 上次渲染的参数签名（宽度/高度/键数），用于脏判断
+    /// 当前键盘/瀑布流纹理视图；`None` 表示尚未渲染或面板不可见
+    pub waterfall_view: Option<Arc<wgpu::TextureView>>,
+    /// 上次渲染的参数签名（宽度/高度/键数等），用于脏判断
     pub cached_signature: Option<u64>,
 }
 
