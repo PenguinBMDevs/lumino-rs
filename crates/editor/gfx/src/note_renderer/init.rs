@@ -74,8 +74,19 @@ impl NoteRenderer {
         cull_shader: &'static str,
     ) -> Self {
         let shader = crate::shader::create_shader_module(device, "note_shader", vertex_shader);
-
         let cull_shader = crate::shader::create_shader_module(device, "cull_shader", cull_shader);
+
+        // 纵向转置版管线（复用同缓冲，瀑布流风格的纵向流动）
+        let vertical_shader = crate::shader::create_shader_module(
+            device,
+            "note_vertical_shader",
+            Self::VERTEX_SHADER_VERTICAL,
+        );
+        let vertical_cull_shader = crate::shader::create_shader_module(
+            device,
+            "cull_vertical_shader",
+            Self::CULL_SHADER_VERTICAL,
+        );
 
         // 创建渲染 bind group layout
         let render_bind_group_layout = Self::create_render_bind_group_layout(device);
@@ -91,10 +102,19 @@ impl NoteRenderer {
             format,
             needs_depth,
         );
+        let vertical_pipeline = Self::create_render_pipeline(
+            device,
+            &vertical_shader,
+            &render_bind_group_layout,
+            format,
+            needs_depth,
+        );
 
         // 创建计算管线
         let cull_pipeline =
             Self::create_cull_pipeline(device, &cull_shader, &cull_bind_group_layout);
+        let vertical_cull_pipeline =
+            Self::create_cull_pipeline(device, &vertical_cull_shader, &cull_bind_group_layout);
 
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
@@ -152,7 +172,9 @@ impl NoteRenderer {
 
         Self {
             pipeline,
+            vertical_pipeline,
             cull_pipeline,
+            vertical_cull_pipeline,
             gpu_note_buffer,
             visible_instance_buffer,
             indirect_buffer,

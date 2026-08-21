@@ -19,8 +19,10 @@ mod tests;
 ///
 /// 将 6 个渲染器捆绑为一个结构体，使渲染管线函数签名更清晰。
 pub struct Renderers {
-    /// 背景网格渲染器
+    /// 背景网格渲染器（横向）
     pub grid: crate::GridRenderer,
+    /// 纵向网格渲染器（转置版，键盘在底部，Key 范围明显分割）
+    pub vertical_grid: crate::VerticalGridRenderer,
     /// 主音符渲染器
     pub note: crate::NoteRenderer,
     /// 洋葱皮渲染器（不透明背景层，在主音轨之前绘制）
@@ -38,6 +40,7 @@ impl Renderers {
     pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, format: wgpu::TextureFormat) -> Self {
         Self {
             grid: crate::GridRenderer::new(device, format),
+            vertical_grid: crate::VerticalGridRenderer::new(device, format),
             note: crate::NoteRenderer::new(device, queue, format),
             onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format),
             ruler: crate::RulerRenderer::new(device, format),
@@ -54,6 +57,7 @@ impl Renderers {
     ) -> Self {
         Self {
             grid: crate::GridRenderer::new_without_depth(device, format),
+            vertical_grid: crate::VerticalGridRenderer::new_without_depth(device, format),
             note: crate::NoteRenderer::new_without_depth(device, queue, format),
             onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format),
             ruler: crate::RulerRenderer::new_without_depth(device, format),

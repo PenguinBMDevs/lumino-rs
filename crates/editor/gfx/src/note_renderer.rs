@@ -20,10 +20,14 @@ mod prepare;
 pub struct NoteRenderer {
     /// GPU 音符缓冲区
     gpu_note_buffer: crate::gpu_note_buffer::GpuNoteBuffer,
-    /// 渲染管线
+    /// 渲染管线（横向）
     pipeline: wgpu::RenderPipeline,
-    /// 计算管线 (用于裁剪)
+    /// 渲染管线（纵向，复用同缓冲仅转置坐标，瀑布流风格）
+    vertical_pipeline: wgpu::RenderPipeline,
+    /// 计算管线 (用于裁剪，横向)
     cull_pipeline: wgpu::ComputePipeline,
+    /// 计算管线（纵向转置版）
+    vertical_cull_pipeline: wgpu::ComputePipeline,
     /// 可见实例缓冲区 (裁剪后)
     visible_instance_buffer: TrackedBuffer,
     /// 间接绘制参数缓冲区
@@ -63,10 +67,14 @@ impl NoteRenderer {
     const INITIAL_CAPACITY: usize = crate::constants::rendering::INITIAL_INSTANCE_CAPACITY;
     /// 顶点着色器代码 (WGSL)
     const VERTEX_SHADER: &'static str = include_str!("shaders/note.wgsl");
+    /// 纵向卷帘顶点着色器代码（转置版，复用 MIDI GPU 数据改变绘制方式）
+    const VERTEX_SHADER_VERTICAL: &'static str = include_str!("shaders/note_vertical.wgsl");
     /// 洋葱皮顶点着色器代码 (WGSL)
     const ONION_SHADER: &'static str = include_str!("shaders/onion_note.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
+    /// 纵向卷帘裁剪着色器代码（转置版）
+    const CULL_SHADER_VERTICAL: &'static str = include_str!("shaders/cull_vertical.wgsl");
 
     /// 获取上次上传的实例数量（用于诊断）
     pub fn last_upload_count(&self) -> u32 {

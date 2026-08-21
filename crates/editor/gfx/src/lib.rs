@@ -20,6 +20,7 @@ mod note_renderer;
 mod pipeline;
 pub mod render_thread;
 mod ruler_renderer;
+mod vertical_grid_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;
@@ -65,6 +66,7 @@ pub use ruler_renderer::{
     RulerPrepareParams, RulerRenderer, RulerTickInstance, RulerViewportUniform,
 };
 pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, SwappableBuffer};
+pub use vertical_grid_renderer::VerticalGridRenderer;
 
 pub use miditrail_renderer::{
     MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, pack_color,

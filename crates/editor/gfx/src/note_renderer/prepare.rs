@@ -209,10 +209,27 @@ impl NoteRenderer {
         camera: CameraUniform,
         queue: &wgpu::Queue,
     ) {
+        self.prepare_pass_with_pipeline(encoder, camera, queue, false);
+    }
+
+    /// 纵向卷帘准备：复用同缓冲，转置坐标的裁剪（瀑布流风格纵向流动）
+    pub fn prepare_vertical_pass(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        camera: CameraUniform,
+        queue: &wgpu::Queue,
+    ) {
+        self.prepare_pass_with_pipeline(encoder, camera, queue, true);
+    }
+
+    fn prepare_pass_with_pipeline(
+        &mut self,
+        encoder: &mut wgpu::CommandEncoder,
+        camera: CameraUniform,
+        queue: &wgpu::Queue,
+        is_vertical: bool,
+    ) {
         puffin::profile_function!();
-        // 重置间接绘制参数：每个槽位写入 DrawIndirectArgs 默认值
-        // (vertex_count=4 / first_vertex=0 / first_instance=0，instance_count=0)，
-        // 仅 instance_count 由 cull shader 原子递增；其余字段清零会导致 draw 0 顶点。
         let slot_align = self.chunk_layout.slot_align;
         let slot_count = MAX_CHUNKS;
         let mut indirect_init = vec![0u8; (slot_count as u64 * slot_align) as usize];
@@ -228,24 +245,30 @@ impl NoteRenderer {
         if self.last_upload_count == 0 {
             return;
         }
-        // 上传 viewport uniform
         queue.write_buffer(
             self.viewport_buffer.inner(),
             0,
             bytemuck::cast_slice(&[camera]),
         );
 
-        // 执行 Compute Culling：每 chunk 一次 dispatch
         let count = self.last_upload_count as usize;
         let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
+        let label = if is_vertical {
+            "note_cull_vertical_pass"
+        } else {
+            "note_cull_pass"
+        };
         let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
-            label: Some("note_cull_pass"),
+            label: Some(label),
             timestamp_writes: None,
         });
-        compute_pass.set_pipeline(&self.cull_pipeline);
+        let pipeline = if is_vertical {
+            &self.vertical_cull_pipeline
+        } else {
+            &self.cull_pipeline
+        };
+        compute_pass.set_pipeline(pipeline);
 
-        // 计算工作组数量 (每组 256 个线程，与 shader 中的 workgroup_size 匹配)
-        // 使用 256 可以更好地利用 modern GPU 的 warp/wavefront 大小
         const WORKGROUP_SIZE: u32 = 256;
         const MAX_DISPATCH_X: u32 = 65535;
         for idx in 0..chunk_count {

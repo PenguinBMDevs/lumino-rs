@@ -105,6 +105,8 @@ pub struct RenderParams {
     /// 但不再执行 `render_offscreen_pass`（网格/音符/洋葱皮的离屏绘制），
     /// 与钢琴卷帘完全隔离，避免每帧空转绘制整张卷帘。
     pub skip_scene_render: bool,
+    /// 纵向卷帘模式：网格与音符使用转置着色器（复用同 MIDI GPU 数据，瀑布流风格纵向流动）
+    pub is_vertical_roll: bool,
 }
 
 impl Default for RenderParams {
@@ -153,6 +155,7 @@ impl Default for RenderParams {
             miditrail_ticks_per_second: 0.0,
             fps: 60.0,
             skip_scene_render: false,
+            is_vertical_roll: false,
         }
     }
 }

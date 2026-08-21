@@ -35,6 +35,10 @@ fn test_cc_bar_shader_valid() {
 #[test]
 fn test_cull_shader_valid() {
     validate_wgsl(include_str!("../../shaders/cull.wgsl"), "cull");
+    validate_wgsl(
+        include_str!("../../shaders/cull_vertical.wgsl"),
+        "cull_vertical",
+    );
 }
 
 #[test]
@@ -43,11 +47,19 @@ fn test_infinite_grid_shader_valid() {
         include_str!("../../shaders/infinite_grid.wgsl"),
         "infinite_grid",
     );
+    validate_wgsl(
+        include_str!("../../shaders/infinite_grid_vertical.wgsl"),
+        "infinite_grid_vertical",
+    );
 }
 
 #[test]
 fn test_note_shader_valid() {
     validate_wgsl(include_str!("../../shaders/note.wgsl"), "note");
+    validate_wgsl(
+        include_str!("../../shaders/note_vertical.wgsl"),
+        "note_vertical",
+    );
 }
 
 #[test]

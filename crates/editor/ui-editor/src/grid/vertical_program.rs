@@ -131,13 +131,11 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
     ) -> Vec<Geometry<Renderer>> {
         let mut geometries = Vec::new();
 
-        // 1. 网格线（水平时间 + 垂直音高）
-        let grid_geom = {
-            let mut frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
-            super::vertical_bars::draw(self.editor, &mut frame, bounds, theme);
-            frame.into_geometry()
-        };
-        geometries.push(grid_geom);
+        // 1. 网格线与音符已迁移至 wgpu（infinite_grid_vertical.wgsl + note_vertical.wgsl），
+        //    复用加载 MIDI 后同批 NoteInstance GPU 数据，仅转置坐标（瀑布流风格纵向流动），
+        //    样式完移植横向 LOD 且 Key 范围八度分割更明显（C 音 2px/0.95 alpha）；
+        //    Canvas 层不再绘制网格/音符，避免与 wgpu 离屏纹理重叠，仅保留键盘与指示线。
+        //    （保留 vertical_bars.rs 作离线校验与单元测试，不再参与实时绘制）
 
         // 2. 底部横向钢琴键盘（缓存与横向一致：复用 keyboard_cache 语义，但此处每帧直绘）
         let kb_geom = {
@@ -146,6 +144,14 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             frame.into_geometry()
         };
         geometries.push(kb_geom);
+
+        // 2.2 小节号文本与边框（网格线已由 wgpu 绘制，此处仅保留文本，避免重复）
+        let label_geom = {
+            let mut frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
+            super::vertical_bars::draw_labels(self.editor, &mut frame, bounds, theme);
+            frame.into_geometry()
+        };
+        geometries.push(label_geom);
 
         // 2.1 洋葱皮覆盖层
         if let Some(geom) =

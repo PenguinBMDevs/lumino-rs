@@ -24,7 +24,7 @@ pub fn prepare_renderers(
         return;
     }
 
-    // 准备网格渲染器
+    // 准备网格渲染器（纵向转置版与横向共存，复用同参数仅 Shader 转置，Key 范围八度分割更明显）
     let grid_params = crate::grid_renderer::GridPrepareParams {
         viewport_size: params.logical_size,
         scroll_x: params.scroll.0,
@@ -46,13 +46,14 @@ pub fn prepare_renderers(
         canvas_offset_y: params.canvas_offset.1,
         time_signatures: params.time_signatures.clone(),
     };
-    renderers.grid.prepare(queue, &grid_params);
+    if params.is_vertical_roll {
+        renderers.vertical_grid.prepare(queue, &grid_params);
+    } else {
+        renderers.grid.prepare(queue, &grid_params);
+    }
 
-    // 准备标尺渲染器
-    // 走带模式不使用标尺；钢琴卷帘模式始终调用 prepare，
-    // 内部基于 scroll/zoom/viewport 等 8 个字段的缓存比对决定是否重新生成实例，
-    // 滚动/缩放未变化时仅做一次字段比较即返回，开销可忽略。
-    if !params.is_arrangement_mode {
+    // 准备标尺渲染器（纵向 wgpu 转置版已由网格着色器内置小节号文本，横向仍需 RulerRenderer）
+    if !params.is_arrangement_mode && !params.is_vertical_roll {
         let ruler_params = crate::RulerPrepareParams {
             viewport_size: params.logical_size,
             ruler_height: params.ruler_height,

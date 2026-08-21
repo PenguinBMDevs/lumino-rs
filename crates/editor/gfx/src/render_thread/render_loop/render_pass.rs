@@ -88,7 +88,7 @@ pub fn execute_render_pass(
         return;
     }
 
-    // 钢琴卷帘模式：正常渲染
+    // 钢琴卷帘模式：正常渲染（纵向复用同 MIDI GPU 数据，仅转置绘制）
     let camera = CameraUniform::new(CameraParams {
         scroll: [params.scroll.0, params.scroll.1],
         zoom: [params.zoom.0, params.zoom.1],
@@ -99,15 +99,25 @@ pub fn execute_render_pass(
         max_key_index: params.max_key_index,
     });
 
-    frame
-        .renderers
-        .note
-        .prepare_pass(encoder, camera, &ctx.queue);
-    // 贴图瀑布流 compute cull（每帧，与主音轨共享同一 camera）
-    frame
-        .renderers
-        .onion_skin
-        .prepare_pass(encoder, camera, &ctx.queue);
+    if params.is_vertical_roll {
+        frame
+            .renderers
+            .note
+            .prepare_vertical_pass(encoder, camera, &ctx.queue);
+        frame
+            .renderers
+            .onion_skin
+            .prepare_vertical_pass(encoder, camera, &ctx.queue);
+    } else {
+        frame
+            .renderers
+            .note
+            .prepare_pass(encoder, camera, &ctx.queue);
+        frame
+            .renderers
+            .onion_skin
+            .prepare_pass(encoder, camera, &ctx.queue);
+    }
 
     {
         puffin::profile_scope!("render_pass");
@@ -136,17 +146,28 @@ pub fn execute_render_pass(
         let scissor_height =
             ((params.canvas_size.1 * scale) as u32).min(height.saturating_sub(scissor_y));
 
-        // 绘制背景网格
+        // 绘制背景网格（纵向 wgpu 转置版：键盘在底部，Key 范围八度分割更明显）
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-        frame.renderers.grid.draw(&mut render_pass, 1);
+        if params.is_vertical_roll {
+            frame.renderers.vertical_grid.draw(&mut render_pass, 1);
+        } else {
+            frame.renderers.grid.draw(&mut render_pass, 1);
+        }
 
         // 绘制贴图瀑布流（不透明背景层，网格之上、主音轨之前）
         render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
         let onion_has_instances = frame.renderers.onion_skin.last_upload_count() > 0;
-        frame
-            .renderers
-            .onion_skin
-            .draw(&mut render_pass, onion_has_instances, None);
+        if params.is_vertical_roll {
+            frame
+                .renderers
+                .onion_skin
+                .draw_vertical(&mut render_pass, onion_has_instances, None);
+        } else {
+            frame
+                .renderers
+                .onion_skin
+                .draw(&mut render_pass, onion_has_instances, None);
+        }
 
         // 绘制贴图瀑布流（网格之上、低精度洋葱皮之下，半透明叠加）
         if let Some(waterfall) = frame.texture_waterfall_renderer.as_ref() {
@@ -157,28 +178,34 @@ pub fn execute_render_pass(
             waterfall.render_dirty_overlays(&mut render_pass, waterfall_visible_coords, has_depth);
         }
 
-        // 绘制音符（贴图瀑布流模式下音符已包含在贴图中，跳过）
+        // 绘制音符（纵向复用同 MIDI GPU 数据，瀑布流风格纵向流动）
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
-            frame.renderers.note.draw(
-                &mut render_pass,
-                true,
-                Some((scissor_x, scissor_y, scissor_width, scissor_height)),
-            );
+            if params.is_vertical_roll {
+                frame.renderers.note.draw_vertical(
+                    &mut render_pass,
+                    true,
+                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+                );
+            } else {
+                frame.renderers.note.draw(
+                    &mut render_pass,
+                    true,
+                    Some((scissor_x, scissor_y, scissor_width, scissor_height)),
+                );
+            }
         }
 
-        // 绘制标尺
-        // 使用 RulerRenderer 内部 cached_instances 的长度作为 instance_count，
-        // 而非 RenderParams.ruler_instances.len()：前者是 GPU buffer 实际持有的实例数，
-        // 后者由 UI 线程单独生成，参数（如 keyboard_width）不一致时长度可能不同，
-        // 会导致 draw 越界读到 buffer 末尾的垃圾数据。
-        let ruler_count = frame.renderers.ruler.instance_count();
-        if ruler_count > 0 {
-            render_pass.set_scissor_rect(0, 0, width, height);
-            frame
-                .renderers
-                .ruler
-                .draw(&mut render_pass, ruler_count as u32);
+        // 绘制标尺（纵向已由 wgpu 网格 + Canvas 小节号文本接管，跳过横向 RulerRenderer）
+        if !params.is_vertical_roll {
+            let ruler_count = frame.renderers.ruler.instance_count();
+            if ruler_count > 0 {
+                render_pass.set_scissor_rect(0, 0, width, height);
+                frame
+                    .renderers
+                    .ruler
+                    .draw(&mut render_pass, ruler_count as u32);
+            }
         }
 
         // 绘制 CC 柱状条（力度面板 — 统一矩形渲染，覆盖所有模式）

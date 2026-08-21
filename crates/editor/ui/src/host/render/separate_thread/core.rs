@@ -16,12 +16,10 @@ impl Host {
         // 始终驱动渲染线程：保证音符实例缓冲持续发布，供瀑布流播放器读取实时落键。
         self.redraw_separate_thread();
 
-        // 全屏瀑布流播放器 / 纵向卷帘：与横向卷帘 3D 场景隔离。
-        // 不再把卷帘 3D 场景 blit 到 surface；改为清屏为应用背景后仅叠加 iced UI，
-        // 避免横向网格透出导致纵向网格重叠。
-        if self.root.state.current_mode == AppMode::Waterfall
-            || self.root.editor.editor_state.is_vertical_roll
-        {
+        // 全屏瀑布流播放器：与卷帘 3D 场景隔离，清屏后仅叠加 iced UI。
+        // 纵向卷帘已接入 wgpu 转置管线（复用 MIDI GPU 数据，瀑布流风格纵向），
+        // 与横向同走离屏拷贝 + iced 覆盖层，不再早期返回，避免 wgpu 网格被清空。
+        if self.root.state.current_mode == AppMode::Waterfall {
             if !self.skip_ui_rendering {
                 let view = frame
                     .texture

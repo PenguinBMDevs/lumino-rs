@@ -13,18 +13,41 @@ impl NoteRenderer {
         has_instances: bool,
         scissor_rect: Option<(u32, u32, u32, u32)>,
     ) {
+        self.draw_with_pipeline(render_pass, has_instances, scissor_rect, false);
+    }
+
+    /// 纵向卷帘绘制（复用同缓冲，转置坐标，瀑布流风格的纵向流动）
+    pub fn draw_vertical<'r>(
+        &'r self,
+        render_pass: &mut wgpu::RenderPass<'r>,
+        has_instances: bool,
+        scissor_rect: Option<(u32, u32, u32, u32)>,
+    ) {
+        self.draw_with_pipeline(render_pass, has_instances, scissor_rect, true);
+    }
+
+    fn draw_with_pipeline<'r>(
+        &'r self,
+        render_pass: &mut wgpu::RenderPass<'r>,
+        has_instances: bool,
+        scissor_rect: Option<(u32, u32, u32, u32)>,
+        is_vertical: bool,
+    ) {
         puffin::profile_function!();
         if !has_instances || self.last_upload_count == 0 {
             return;
         }
 
-        // 设置裁剪矩形（限制绘制区域）
         if let Some((x, y, width, height)) = scissor_rect {
             render_pass.set_scissor_rect(x, y, width, height);
         }
 
-        // 绑定管线并绘制
-        render_pass.set_pipeline(&self.pipeline);
+        let pipeline = if is_vertical {
+            &self.vertical_pipeline
+        } else {
+            &self.pipeline
+        };
+        render_pass.set_pipeline(pipeline);
 
         let count = self.last_upload_count as usize;
         let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);

@@ -51,6 +51,7 @@ pub struct RenderParamsBuilder {
     miditrail_ticks_per_second: f32,
     fps: f32,
     skip_scene_render: bool,
+    is_vertical_roll: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -99,6 +100,7 @@ impl Default for RenderParamsBuilder {
             miditrail_ticks_per_second: base.miditrail_ticks_per_second,
             fps: base.fps,
             skip_scene_render: base.skip_scene_render,
+            is_vertical_roll: base.is_vertical_roll,
         }
     }
 }
@@ -286,6 +288,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置是否为纵向卷帘（网格与音符转置，复用同 MIDI GPU 数据）
+    pub fn is_vertical_roll(mut self, is_vertical: bool) -> Self {
+        self.is_vertical_roll = is_vertical;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -338,6 +346,7 @@ impl RenderParamsBuilder {
             miditrail_ticks_per_second: self.miditrail_ticks_per_second,
             fps: self.fps,
             skip_scene_render: self.skip_scene_render,
+            is_vertical_roll: self.is_vertical_roll,
         }
     }
 }
