@@ -14,8 +14,6 @@ use iced_widget::canvas::path::Builder;
 use iced_widget::canvas::{Frame, Path, Stroke};
 use lumino_ui_core::Renderer;
 
-use super::vertical_keyboard::VERTICAL_KEYBOARD_HEIGHT;
-
 // ─── 复用横向 bars.rs 的 LOD 常量（保证视觉一致）───
 const BEAT_MAX_MEASURES: f32 = 48.0;
 const HALF_BEAT_MAX_MEASURES: f32 = 24.0;
@@ -178,7 +176,8 @@ pub fn draw(
     let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
     let ruler_height = view.ruler_height;
-    let keyboard_h = VERTICAL_KEYBOARD_HEIGHT;
+    // 键盘高度与横向键盘宽度保持一致（视觉统一）
+    let keyboard_h = view.keyboard_width;
     if bounds.height <= ruler_height + keyboard_h || bounds.width <= 1.0 {
         return;
     }

@@ -138,7 +138,10 @@ impl Host {
             .arrangement_uniform(arrangement_uniform)
             .cc_bar_instances(data.cc_bar_instances)
             .velocity_panel_rect(velocity_panel_rect)
-            .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
+            .skip_scene_render(
+                self.root.state.current_mode == AppMode::Waterfall
+                    || self.root.editor.editor_state.is_vertical_roll,
+            )
             .build()
     }
 }

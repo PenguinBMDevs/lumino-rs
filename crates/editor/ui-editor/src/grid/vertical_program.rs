@@ -58,46 +58,11 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             state.position = Some(local_pos);
         }
 
-        let cursor_over_bounds = cursor.position_over(bounds);
-
-        match event {
-            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
-                if cursor_over_bounds.is_some() {
-                    // 复用横向的滚轮逻辑：纵向同样支持 Shift+滚轮水平/垂直切换
-                    // 简化：直接分发 Scrolled，轴语义与横向一致（scroll_x=时间Y, scroll_y=音高X）
-                    let (delta_x, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
-                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-                    };
-                    let dx = delta_x.clamp(-120.0, 120.0);
-                    let dy = delta_y.clamp(-120.0, 120.0);
-                    return Some(Action::publish(Message::EditorAction(
-                        lumino_ui_core::message::EditorAction::Scrolled {
-                            delta_x: dx,
-                            delta_y: dy,
-                        },
-                    )));
-                }
-            }
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
-                if let Some(position) = cursor_over_bounds {
-                    let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
-                    // 点击网格区：复用按压语义，但坐标需转置（时间 Y→ tick, 音高 X→ key）
-                    // 为保持与横向一致的 Editor::Pressed 语义，这里直接透传原始坐标；
-                    // 具体的 tick/key 解析由 Editor 侧按纵向模式转置处理（后续若需编辑再扩展）。
-                    return Some(Action::publish(Message::EditorAction(
-                        lumino_ui_core::message::EditorAction::Pressed {
-                            pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
-                            shift: state.shift_pressed,
-                        },
-                    )));
-                }
-            }
-            Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
-                state.shift_pressed = modifiers.shift();
-                state.control_pressed = modifiers.control();
-            }
-            _ => {}
+        // 纵向卷帘现阶段暂不支持滚动/编辑交互：仅同步画布边界，忽略滚轮与点击
+        // 避免错误的 scroll_x/scroll_y 轴转置导致网格错位与重叠
+        if let Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) = event {
+            state.shift_pressed = modifiers.shift();
+            state.control_pressed = modifiers.control();
         }
 
         None
@@ -162,7 +127,7 @@ fn draw_vertical_playback(
     use iced_widget::canvas::{Frame, Path, Stroke};
 
     let view = &editor.editor_state.view;
-    let keyboard_h = super::vertical_keyboard::VERTICAL_KEYBOARD_HEIGHT;
+    let keyboard_h = view.keyboard_width;
     if bounds.height <= view.ruler_height + keyboard_h {
         return None;
     }

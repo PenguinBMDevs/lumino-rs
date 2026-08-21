@@ -16,9 +16,9 @@ use lumino_ui_core::constants::editor::KEY_LABEL_FONT_SIZE;
 
 /// 纵向卷帘底部键盘高度（像素）
 ///
-/// 与横向 `DEFAULT_KEYBOARD_WIDTH = 120` 的视觉权重对等：既保证 88 键可辨识，
-//  又不挤压上方网格区。缩放时键盘高度固定，键宽随 `zoom_y` 拉伸。
-pub const VERTICAL_KEYBOARD_HEIGHT: f32 = 72.0;
+/// 与横向 `DEFAULT_KEYBOARD_WIDTH = 120` 保持一致，保证横/纵向键盘厚度视觉统一。
+/// 键宽随 `zoom_y` 拉伸，键盘高度固定为横向键盘宽度。
+pub const VERTICAL_KEYBOARD_HEIGHT: f32 = 120.0;
 
 /// 绘制纵向卷帘键盘到 Geometry（用于 Canvas 绘制）
 pub fn draw_to_geometry(
@@ -44,8 +44,8 @@ pub fn draw(
     theme: &lumino_ui_core::Theme,
 ) {
     let view = &editor.editor_state.view;
-    // 键盘区域：贴底横条，宽度铺满，高度固定
-    let keyboard_h = VERTICAL_KEYBOARD_HEIGHT;
+    // 键盘区域：贴底横条，宽度铺满，高度与横向键盘宽度保持一致
+    let keyboard_h = view.keyboard_width;
     if bounds.height <= keyboard_h || bounds.width <= 1.0 {
         return;
     }
@@ -152,7 +152,7 @@ pub fn draw_onion_overlay(
 
     let mut frame = Frame::new(renderer, bounds.size());
     let view = &editor.editor_state.view;
-    let keyboard_h = VERTICAL_KEYBOARD_HEIGHT;
+    let keyboard_h = view.keyboard_width;
     if bounds.height <= keyboard_h {
         return None;
     }
