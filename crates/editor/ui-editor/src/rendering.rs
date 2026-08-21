@@ -81,12 +81,34 @@ impl Editor {
     /// 样式与横向 `view` 一致：复用同款主题、缩放/滚动语义，仅布局转置
     /// （时间轴转至 Y 方向，键盘移至底部横向排列）。网格线按 key/小节规则
     /// 由 `vertical_bars` 按 LOD 绘制，键盘由 `vertical_keyboard` 绘制。
-    pub fn view_vertical<'a>(&'a self) -> Element<'a> {
+    /// 底部横向滚动条驱动 `scroll_y` / `zoom_y`（音高轴水平滚动），默认缩放铺满 128/256 键。
+    pub fn view_vertical<'a>(
+        &'a self,
+        on_scroll_y: impl Fn(f32) -> Message + 'static,
+        on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
+    ) -> Element<'a> {
+        let es = &self.editor_state;
+        let canvas_width = es.canvas.size_x.max(1.0);
+
         let grid = Canvas::new(crate::grid::VerticalRollGrid::new(self))
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let content = iced_widget::container(grid)
+        // 底部横向滚动条：驱动纵向键盘的水平滚动/缩放（scroll_y / zoom_y）
+        let keyboard_scrollbar = scrollbar_widget::ScrollbarWidget::horizontal(
+            es.view.scroll_y,
+            es.max_scroll.1,
+            es.view.zoom_y,
+            Some(canvas_width),
+            on_scroll_y,
+            on_zoom_y,
+        );
+
+        let grid_container = iced_widget::container(grid)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let content = iced_widget::column![grid_container, keyboard_scrollbar]
             .width(Length::Fill)
             .height(Length::Fill);
 

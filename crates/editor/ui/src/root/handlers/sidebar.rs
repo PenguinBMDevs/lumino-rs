@@ -158,6 +158,28 @@ impl Root {
 
         // 卷帘方向 → 写入 editor_state，供自动滚动轴向与播放指示线方向共享同一事实源
         self.editor.editor_state.is_vertical_roll = self.sidebar.is_vertical_roll();
+        if self.editor.editor_state.is_vertical_roll {
+            // 进入纵向：重置键盘缩放以完整显示 128/256 键（铺满视口宽度）
+            let vw = self.editor.editor_state.canvas.size_x;
+            if vw > 1.0 {
+                self.editor.fit_vertical_keyboard_to_viewport();
+            } else {
+                // 视口尚未初始化（首次进入），按典型宽度估算保证 128 键大致铺满
+                let visible = self.editor.editor_state.view.visible_key_count as f32;
+                let typical_vw = 1200.0;
+                let target_zoom = (typical_vw / visible).clamp(
+                    crate::constants::editor::zoom::MIN_ZOOM_Y,
+                    crate::constants::editor::zoom::MAX_ZOOM_Y,
+                );
+                self.editor.editor_state.view.zoom_y = target_zoom;
+                self.editor.editor_state.max_scroll.1 = visible * target_zoom;
+                self.editor.editor_state.view.scroll_y = 0.0;
+                self.editor.editor_state.view.smooth_scroll.target_y = 0.0;
+                self.editor.editor_state.view.smooth_scroll.active = false;
+                self.editor
+                    .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
+            }
+        }
 
         // 更新画布偏移
         let sidebar_width = self.sidebar.width() as f32;

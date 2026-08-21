@@ -184,4 +184,73 @@ impl super::Editor {
         // 不再维护独立的 `pitch_zoom`/`pitch_scroll` 字段；该分支暂为占位，
         // 后续挂载音符编辑动作时再实现对应缩放/平移。保持函数签名以保留调用点稳定。
     }
+
+    /// 设置纵向键盘水平滚动（仅纵向卷帘，视口为画布宽度）
+    pub fn set_vertical_keyboard_scroll(&mut self, scroll_y: f32) {
+        let canvas_width = self.editor_state.canvas.size_x;
+        let total_width =
+            self.editor_state.view.visible_key_count as f32 * self.editor_state.view.zoom_y;
+        let max_scroll = (total_width - canvas_width).max(0.0);
+        self.editor_state.view.scroll_y = scroll_y.clamp(0.0, max_scroll);
+        self.editor_state.view.smooth_scroll.target_y = self.editor_state.view.scroll_y;
+        self.editor_state.view.smooth_scroll.active = false;
+        self.invalidate_caches(CacheInvalidation::KEYBOARD);
+    }
+
+    /// 设置纵向键盘缩放（仅纵向卷帘，视口为画布宽度，锚点为水平比例）
+    pub fn set_vertical_keyboard_zoom(&mut self, zoom_y: f32, fixed_ratio: f32) {
+        let canvas_width = self.editor_state.canvas.size_x;
+        let visible_key_count = self.editor_state.view.visible_key_count;
+        let old = self.editor_state.view.zoom_y;
+
+        let dynamic_min_zoom = if visible_key_count > 0 && canvas_width > 0.0 {
+            (canvas_width / visible_key_count as f32).clamp(MIN_ZOOM_Y, MAX_ZOOM_Y)
+        } else {
+            MIN_ZOOM_Y
+        };
+
+        const MAX_SCROLLABLE_PAGES: f32 = 16.0;
+        let dynamic_max_zoom = if visible_key_count > 0 && canvas_width > 0.0 {
+            MAX_ZOOM_Y
+                .min(canvas_width * MAX_SCROLLABLE_PAGES / visible_key_count as f32)
+                .max(MIN_ZOOM_Y)
+        } else {
+            MAX_ZOOM_Y
+        };
+
+        let new_zoom = zoom_y.clamp(dynamic_min_zoom, dynamic_max_zoom);
+        if (new_zoom - old).abs() < f32::EPSILON {
+            return;
+        }
+        let ratio = new_zoom / old.max(f32::EPSILON);
+        let viewport = canvas_width.max(0.0);
+        let fixed_point = self.editor_state.view.scroll_y + viewport * fixed_ratio;
+        self.editor_state.view.scroll_y = fixed_point * ratio - viewport * fixed_ratio;
+        self.editor_state.view.zoom_y = new_zoom;
+        self.editor_state.max_scroll.1 = visible_key_count as f32 * new_zoom;
+        let max_scroll = (self.editor_state.max_scroll.1 - viewport).max(0.0);
+        self.editor_state.view.scroll_y = self.editor_state.view.scroll_y.clamp(0.0, max_scroll);
+        self.editor_state.view.smooth_scroll.target_y = self.editor_state.view.scroll_y;
+        self.editor_state.view.smooth_scroll.active = false;
+        self.invalidate_caches(CacheInvalidation::KEYBOARD);
+    }
+
+    /// 使纵向键盘完整显示 128/256 键（重置缩放与滚动以铺满视口宽度）
+    pub fn fit_vertical_keyboard_to_viewport(&mut self) {
+        let canvas_width = self.editor_state.canvas.size_x;
+        if canvas_width <= 1.0 {
+            return;
+        }
+        let visible = self.editor_state.view.visible_key_count as f32;
+        if visible <= 0.0 {
+            return;
+        }
+        let target_zoom = (canvas_width / visible).clamp(MIN_ZOOM_Y, MAX_ZOOM_Y);
+        self.editor_state.view.zoom_y = target_zoom;
+        self.editor_state.max_scroll.1 = visible * target_zoom;
+        self.editor_state.view.scroll_y = 0.0;
+        self.editor_state.view.smooth_scroll.target_y = 0.0;
+        self.editor_state.view.smooth_scroll.active = false;
+        self.invalidate_caches(CacheInvalidation::KEYBOARD);
+    }
 }

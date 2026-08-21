@@ -83,7 +83,13 @@ impl Root {
                         } else {
                             iced_widget::Space::new().height(0).into()
                         };
-                        let editor_view = self.editor.view_vertical();
+                        let editor_view = self.editor.view_vertical(
+                            message::Message::ScrollbarScrolledY,
+                            |zoom, fixed_ratio| message::Message::ZoomYChanged {
+                                zoom,
+                                fixed_ratio,
+                            },
+                        );
                         let perf_ctx = crate::toolbar::ToolbarPerfContext {
                             playback_tick: self.editor.playback_position,
                             ppq: self.editor.editor_state.view.ppq,

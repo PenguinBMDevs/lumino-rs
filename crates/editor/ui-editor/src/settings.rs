@@ -13,6 +13,7 @@ impl super::Editor {
     pub fn set_visible_key_count(&mut self, count: u16) {
         let old_count = self.editor_state.view.visible_key_count;
         let canvas_height = self.editor_state.canvas.size_y;
+        let is_vertical = self.editor_state.is_vertical_roll;
 
         Viewport::new(
             &mut self.editor_state.view,
@@ -27,14 +28,19 @@ impl super::Editor {
 
         // 向上拓展：高键号在上方，扩展键（128-255）应出现在原有键位之上
         // 原有最高键(127)的 world_y 从 0 变为 added_keys*zoom_y
-        // 需要同步增加 scroll_y 使原有可见区域保持不变
-        if count > old_count {
+        // 需要同步增加 scroll_y 使原有可见区域保持不变（仅横向模式）
+        if !is_vertical && count > old_count {
             let added_keys = (count - old_count) as f32;
             self.editor_state.view.scroll_y += added_keys * self.editor_state.view.zoom_y;
             // 重新钳位到有效范围
             let vh = (canvas_height - self.editor_state.view.ruler_height).max(0.0);
             let max_sy = (self.editor_state.max_scroll.1 - vh).max(0.0);
             self.editor_state.view.scroll_y = self.editor_state.view.scroll_y.clamp(0.0, max_sy);
+        }
+
+        if is_vertical {
+            // 纵向键盘：确保切换 128/256 后仍铺满视口宽度
+            self.fit_vertical_keyboard_to_viewport();
         }
 
         // 键盘和网格缓存都需要刷新：key_count 变了，键盘绘制和网格线都要重绘

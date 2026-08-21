@@ -58,11 +58,55 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             state.position = Some(local_pos);
         }
 
-        // 纵向卷帘现阶段暂不支持滚动/编辑交互：仅同步画布边界，忽略滚轮与点击
-        // 避免错误的 scroll_x/scroll_y 轴转置导致网格错位与重叠
         if let Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) = event {
             state.shift_pressed = modifiers.shift();
             state.control_pressed = modifiers.control();
+        }
+
+        // 键盘区域滚轮：支持缩放（Ctrl+滚轮）与左右滚动
+        if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event
+            && let Some(pos) = cursor.position_over(bounds)
+        {
+            let local = Point::new(pos.x - bounds.x, pos.y - bounds.y);
+            let view = &self.editor.editor_state.view;
+            let keyboard_h = view.keyboard_width;
+            let is_over_keyboard = local.y >= bounds.height - keyboard_h;
+            if is_over_keyboard {
+                let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
+                if ctrl_pressed {
+                    if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
+                        let fixed_ratio = (local.x / bounds.width).clamp(0.0, 1.0);
+                        return Some(Action::publish(lumino_ui_core::Message::ZoomYChanged {
+                            zoom: view.zoom_y * factor,
+                            fixed_ratio,
+                        }));
+                    }
+                } else {
+                    // 普通滚轮：垂直增量映射为水平滚动（自然滚动方向与横向键盘一致）
+                    let (_, delta_y) = match delta {
+                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    };
+                    // 优先使用垂直增量，兼容触控板水平手势
+                    let mut delta_h = delta_y;
+                    if delta_h.abs() < f32::EPSILON {
+                        if let mouse::ScrollDelta::Lines { x, .. } = delta {
+                            delta_h = *x * 20.0;
+                        } else if let mouse::ScrollDelta::Pixels { x, .. } = delta {
+                            delta_h = *x;
+                        }
+                    }
+                    delta_h = delta_h.clamp(-120.0, 120.0);
+                    if delta_h.abs() > f32::EPSILON {
+                        return Some(Action::publish(lumino_ui_core::Message::EditorAction(
+                            lumino_ui_core::message::EditorAction::Scrolled {
+                                delta_x: 0.0,
+                                delta_y: delta_h,
+                            },
+                        )));
+                    }
+                }
+            }
         }
 
         None

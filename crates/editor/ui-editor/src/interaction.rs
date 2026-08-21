@@ -100,9 +100,15 @@ impl Editor {
     pub(crate) fn handle_scrolled(&mut self, delta_x: f32, delta_y: f32) {
         let state = &mut self.editor_state;
         let v = &mut state.view;
+        let is_vertical = state.is_vertical_roll;
         let max_x =
             (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
-        let max_y = (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0);
+        let max_y = if is_vertical {
+            // 纵向键盘：音高轴水平展开，视口为画布宽度
+            (state.max_scroll.1 - state.canvas.size_x.max(0.0)).max(0.0)
+        } else {
+            (state.max_scroll.1 - (state.canvas.size_y - v.ruler_height).max(0.0)).max(0.0)
+        };
 
         // 以平滑滚动的「当前目标」为基准叠加 delta，而非以 scroll_x/scroll_y 的瞬时值为基准。
         // 原因：触控板斜向滑动时，Windows/winit 会把双指手势拆成两条独立事件

@@ -30,7 +30,11 @@ impl Root {
                 true
             }
             Message::ScrollbarScrolledY(y) => {
-                self.editor.set_scroll_y(*y);
+                if self.editor.editor_state.is_vertical_roll {
+                    self.editor.set_vertical_keyboard_scroll(*y);
+                } else {
+                    self.editor.set_scroll_y(*y);
+                }
                 true
             }
             Message::ArrangementScrollX(x) => self.handle_arrangement_scroll_x(*x),
@@ -46,7 +50,11 @@ impl Root {
                 true
             }
             Message::ZoomYChanged { zoom, fixed_ratio } => {
-                self.editor.set_zoom_y(*zoom, *fixed_ratio);
+                if self.editor.editor_state.is_vertical_roll {
+                    self.editor.set_vertical_keyboard_zoom(*zoom, *fixed_ratio);
+                } else {
+                    self.editor.set_zoom_y(*zoom, *fixed_ratio);
+                }
                 true
             }
             Message::CanvasBoundsChanged { offset, size } => {
@@ -59,34 +67,68 @@ impl Root {
                 // 自动钳正 zoom_y，始终让 content 高度 ≥ viewport 高度。
                 // 确保面板开关或 window resize 后不留空区。
                 let state = &mut self.editor.editor_state;
-                let vh = (state.canvas.size_y - state.view.ruler_height).max(0.0);
-                let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
-                {
-                    let th = state.view.visible_key_count as f32 * state.view.zoom_y;
-
-                    if th < vh {
-                        // content 没填满 viewport → 调高 zoom
-                        let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
-                            crate::constants::editor::zoom::MIN_ZOOM_Y,
-                            crate::constants::editor::zoom::MAX_ZOOM_Y,
-                        );
-                        if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
-                            state.view.zoom_y = fill_zoom;
-                            let total_ticks = state.view.total_ticks;
-                            lumino_editor_state::editor_state::viewport::Viewport::new(
-                                &mut state.view,
-                                &mut state.max_scroll,
-                            )
-                            .update_max_scroll(total_ticks);
+                let is_vertical = state.is_vertical_roll;
+                if is_vertical {
+                    // 纵向卷帘：键盘横向铺满宽度，时间轴垂直
+                    let keyboard_h = state.view.keyboard_width;
+                    let vh_grid =
+                        (state.canvas.size_y - state.view.ruler_height - keyboard_h).max(0.0);
+                    let vw_keyboard = state.canvas.size_x.max(0.0);
+                    // 视口扩大后若内容未填满则放大铺满（保持 128/256 完整显示且无空白）
+                    {
+                        let total_w = state.view.visible_key_count as f32 * state.view.zoom_y;
+                        if total_w < vw_keyboard {
+                            let fill_zoom = (vw_keyboard / state.view.visible_key_count as f32)
+                                .clamp(
+                                    crate::constants::editor::zoom::MIN_ZOOM_Y,
+                                    crate::constants::editor::zoom::MAX_ZOOM_Y,
+                                );
+                            if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
+                                state.view.zoom_y = fill_zoom;
+                                let total_ticks = state.view.total_ticks;
+                                lumino_editor_state::editor_state::viewport::Viewport::new(
+                                    &mut state.view,
+                                    &mut state.max_scroll,
+                                )
+                                .update_max_scroll(total_ticks);
+                            }
                         }
                     }
-                }
+                    // 钳制滚动：scroll_y 按宽度（键盘水平），scroll_x 按网格高度（时间垂直）
+                    let ms_y = (state.max_scroll.1 - vw_keyboard).max(0.0);
+                    state.view.scroll_y = state.view.scroll_y.min(ms_y).max(0.0);
+                    let ms_x = (state.max_scroll.0 - vh_grid).max(0.0);
+                    state.view.scroll_x = state.view.scroll_x.min(ms_x).max(0.0);
+                } else {
+                    let vh = (state.canvas.size_y - state.view.ruler_height).max(0.0);
+                    let vw = (state.canvas.size_x - state.view.keyboard_width).max(0.0);
+                    {
+                        let th = state.view.visible_key_count as f32 * state.view.zoom_y;
 
-                // 重新钳制滚动位置
-                let ms_y = (state.max_scroll.1 - vh).max(0.0);
-                state.view.scroll_y = state.view.scroll_y.min(ms_y);
-                let ms_x = (state.max_scroll.0 - vw).max(0.0);
-                state.view.scroll_x = state.view.scroll_x.min(ms_x);
+                        if th < vh {
+                            // content 没填满 viewport → 调高 zoom
+                            let fill_zoom = (vh / state.view.visible_key_count as f32).clamp(
+                                crate::constants::editor::zoom::MIN_ZOOM_Y,
+                                crate::constants::editor::zoom::MAX_ZOOM_Y,
+                            );
+                            if (fill_zoom - state.view.zoom_y).abs() > f32::EPSILON {
+                                state.view.zoom_y = fill_zoom;
+                                let total_ticks = state.view.total_ticks;
+                                lumino_editor_state::editor_state::viewport::Viewport::new(
+                                    &mut state.view,
+                                    &mut state.max_scroll,
+                                )
+                                .update_max_scroll(total_ticks);
+                            }
+                        }
+                    }
+
+                    // 重新钳制滚动位置
+                    let ms_y = (state.max_scroll.1 - vh).max(0.0);
+                    state.view.scroll_y = state.view.scroll_y.min(ms_y);
+                    let ms_x = (state.max_scroll.0 - vw).max(0.0);
+                    state.view.scroll_x = state.view.scroll_x.min(ms_x);
+                }
 
                 self.editor
                     .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
