@@ -78,23 +78,26 @@ impl Editor {
 
     /// 构建纵向卷帘视图（底部横向钢琴键盘 + 水平时间 / 垂直音高网格）
     ///
-    /// 样式与横向 `view` 一致：复用同款主题、缩放/滚动语义，仅布局转置
-    /// （时间轴转至 Y 方向，键盘移至底部横向排列）。网格线按 key/小节规则
-    /// 由 `vertical_bars` 按 LOD 绘制，键盘由 `vertical_keyboard` 绘制。
-    /// 底部横向滚动条驱动 `scroll_y` / `zoom_y`（音高轴水平滚动），默认缩放铺满 128/256 键。
+    /// 头部对齐键盘顶部（时间从键盘向上递增，向远离键盘方向），Y 向支持上下滚动/缩放。
+    /// 底部横向滚动条驱动 `scroll_y` / `zoom_y`（音高轴水平），右侧纵向滚动条驱动
+    /// `scroll_x` / `zoom_x`（时间轴垂直，头部在键盘顶部）。
     pub fn view_vertical<'a>(
         &'a self,
+        on_scroll_x: impl Fn(f32) -> Message + 'static,
         on_scroll_y: impl Fn(f32) -> Message + 'static,
+        on_zoom_x: impl Fn(f32, f32) -> Message + 'static,
         on_zoom_y: impl Fn(f32, f32) -> Message + 'static,
     ) -> Element<'a> {
         let es = &self.editor_state;
         let canvas_width = es.canvas.size_x.max(1.0);
+        let canvas_height = es.canvas.size_y.max(1.0);
+        let grid_height = (canvas_height - es.view.ruler_height - es.view.keyboard_width).max(0.0);
 
         let grid = Canvas::new(crate::grid::VerticalRollGrid::new(self))
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // 底部横向滚动条：驱动纵向键盘的水平滚动/缩放（scroll_y / zoom_y）
+        // 底部横向滚动条：音高轴水平滚动/缩放（scroll_y / zoom_y）
         let keyboard_scrollbar = scrollbar_widget::ScrollbarWidget::horizontal(
             es.view.scroll_y,
             es.max_scroll.1,
@@ -104,11 +107,31 @@ impl Editor {
             on_zoom_y,
         );
 
+        // 右侧纵向滚动条：时间轴垂直滚动/缩放（scroll_x / zoom_x，头部在键盘顶部）
+        // 头部在底部，滚动条需反转：scroll 0（头部在底部）对应滚动条底部，scroll max 对应顶部
+        let max_time_scroll = es.max_scroll.0;
+        let inverted_scroll_x = (max_time_scroll - es.view.scroll_x).clamp(0.0, max_time_scroll);
+        let time_scrollbar = scrollbar_widget::ScrollbarWidget::vertical(
+            inverted_scroll_x,
+            max_time_scroll,
+            es.view.zoom_x,
+            Some(grid_height),
+            move |x| on_scroll_x((max_time_scroll - x).clamp(0.0, max_time_scroll)),
+            move |zoom, fixed_ratio| {
+                // 固定比例需反转：滚动条的 fixed_ratio 0 在顶部，1 在底部，而时间轴 0 在底部
+                on_zoom_x(zoom, 1.0 - fixed_ratio.clamp(0.0, 1.0))
+            },
+        );
+
         let grid_container = iced_widget::container(grid)
             .width(Length::Fill)
             .height(Length::Fill);
 
-        let content = iced_widget::column![grid_container, keyboard_scrollbar]
+        let grid_with_hscroll = iced_widget::column![grid_container, keyboard_scrollbar]
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let content = iced_widget::row![grid_with_hscroll, time_scrollbar]
             .width(Length::Fill)
             .height(Length::Fill);
 

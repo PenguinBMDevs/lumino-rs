@@ -168,10 +168,11 @@ mod tests {
             zoom: [1.0, 20.0],
             viewport_size: [800.0, 600.0],
             canvas_offset: [0.0, 0.0],
+            canvas_size: [800.0, 600.0],
             keyboard_width: 60.0,
             ruler_height: 30.0,
             max_key_index: 127.0,
-            _padding: 0.0,
+            _padding: [0.0; 2],
         };
 
         assert_eq!(camera.scroll, [0.0, 0.0]);

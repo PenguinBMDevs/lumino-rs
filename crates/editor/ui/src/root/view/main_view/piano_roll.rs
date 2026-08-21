@@ -84,7 +84,12 @@ impl Root {
                             iced_widget::Space::new().height(0).into()
                         };
                         let editor_view = self.editor.view_vertical(
+                            message::Message::ScrollbarScrolled,
                             message::Message::ScrollbarScrolledY,
+                            |zoom, fixed_ratio| message::Message::ZoomXChanged {
+                                zoom,
+                                fixed_ratio,
+                            },
                             |zoom, fixed_ratio| message::Message::ZoomYChanged {
                                 zoom,
                                 fixed_ratio,

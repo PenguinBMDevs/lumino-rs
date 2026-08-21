@@ -27,10 +27,11 @@ struct CameraUniform {
     zoom: vec2<f32>,
     viewport_size: vec2<f32>,
     canvas_offset: vec2<f32>,
+    canvas_size: vec2<f32>,
     keyboard_width: f32,
     ruler_height: f32,
     max_key_index: f32,
-    _padding: f32,
+    _padding: vec2<f32>,
 }
 
 @group(0) @binding(0)

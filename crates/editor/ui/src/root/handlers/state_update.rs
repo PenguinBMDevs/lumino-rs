@@ -20,13 +20,17 @@ impl Root {
                 true
             }
             Message::ScrollbarScrolled(x) => {
-                let v = &self.editor.editor_state.view;
-                self.editor.set_scroll_x(
-                    *x,
-                    v.keyboard_width,
-                    self.editor.editor_state.canvas.size_x,
-                    v.zoom_x,
-                );
+                if self.editor.editor_state.is_vertical_roll {
+                    self.editor.set_vertical_time_scroll(*x);
+                } else {
+                    let v = &self.editor.editor_state.view;
+                    self.editor.set_scroll_x(
+                        *x,
+                        v.keyboard_width,
+                        self.editor.editor_state.canvas.size_x,
+                        v.zoom_x,
+                    );
+                }
                 true
             }
             Message::ScrollbarScrolledY(y) => {
@@ -46,7 +50,11 @@ impl Root {
                 self.handle_arrangement_zoom_y(*zoom, *fixed_ratio)
             }
             Message::ZoomXChanged { zoom, fixed_ratio } => {
-                self.editor.set_zoom_x(*zoom, *fixed_ratio);
+                if self.editor.editor_state.is_vertical_roll {
+                    self.editor.set_vertical_time_zoom(*zoom, *fixed_ratio);
+                } else {
+                    self.editor.set_zoom_x(*zoom, *fixed_ratio);
+                }
                 true
             }
             Message::ZoomYChanged { zoom, fixed_ratio } => {

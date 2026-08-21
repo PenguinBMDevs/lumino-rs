@@ -106,6 +106,8 @@ pub struct CameraUniform {
     pub viewport_size: [f32; 2],
     /// 画布偏移 [x, y]
     pub canvas_offset: [f32; 2],
+    /// 画布尺寸 [width, height]（纵向头部对齐键盘顶部需用）
+    pub canvas_size: [f32; 2],
     /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
     /// 顶标尺高度（像素）
@@ -113,7 +115,7 @@ pub struct CameraUniform {
     /// 最大琴键索引
     pub max_key_index: f32,
     /// 对齐填充（保持 16 字节对齐）
-    pub _padding: f32,
+    pub _padding: [f32; 2],
 }
 
 /// 相机/视口参数（摄像头 uniform 的友好输入类型）
@@ -126,6 +128,8 @@ pub struct CameraParams {
     pub viewport: [f32; 2],
     /// 画布偏移 [x, y]
     pub offset: [f32; 2],
+    /// 画布尺寸 [width, height]（纵向头部对齐键盘顶部）
+    pub canvas_size: [f32; 2],
     /// 键盘分区宽度（像素）
     pub keyboard_width: f32,
     /// 顶标尺高度（像素）
@@ -146,10 +150,11 @@ impl CameraUniform {
             zoom: params.zoom,
             viewport_size: params.viewport,
             canvas_offset: params.offset,
+            canvas_size: params.canvas_size,
             keyboard_width: params.keyboard_width,
             ruler_height: params.ruler_height,
             max_key_index: params.max_key_index,
-            _padding: 0.0,
+            _padding: [0.0; 2],
         }
     }
 }
@@ -161,10 +166,11 @@ impl Default for CameraUniform {
             zoom: [1.0, 1.0],
             viewport_size: [0.0, 0.0],
             canvas_offset: [0.0, 0.0],
+            canvas_size: [0.0, 0.0],
             keyboard_width: 0.0,
             ruler_height: 0.0,
             max_key_index: 0.0,
-            _padding: 0.0,
+            _padding: [0.0; 2],
         }
     }
 }

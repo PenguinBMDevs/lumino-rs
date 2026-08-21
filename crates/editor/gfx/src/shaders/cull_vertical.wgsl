@@ -16,10 +16,11 @@ struct CameraUniform {
     zoom: vec2<f32>,
     viewport_size: vec2<f32>,
     canvas_offset: vec2<f32>,
+    canvas_size: vec2<f32>,
     keyboard_width: f32,
     ruler_height: f32,
     max_key_index: f32,
-    _padding: f32,
+    _padding: vec2<f32>,
 };
 
 struct CullUniform {
@@ -67,15 +68,15 @@ fn main(
         let key = f32(instance.key_color & 0xFFu);
 
         if (length > 0.0) {
-            // 纵向：X = key*zoom_y - scroll_y, 宽度 = zoom_y
+            // 纵向头部对齐键盘顶部：X = key*zoom_y - scroll_y, Y = grid_bottom - (tick+len)*zoom + scroll
+            let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - camera.keyboard_width;
             let screen_min_x = key * camera.zoom.y - camera.scroll.y + camera.canvas_offset.x;
             if (screen_min_x <= camera.viewport_size.x) {
                 let screen_max_x = screen_min_x + camera.zoom.y;
                 if (screen_max_x >= 0.0) {
-                    // 纵向：Y = tick*zoom_x - scroll_x + ruler, 高度 = len*zoom_x
-                    let screen_min_y = tick * camera.zoom.x - camera.scroll.x + camera.ruler_height + camera.canvas_offset.y;
-                    let screen_max_y = screen_min_y + length * camera.zoom.x;
-                    if (screen_max_y >= 0.0 && screen_min_y <= camera.viewport_size.y) {
+                    let screen_top = grid_bottom - (tick + length) * camera.zoom.x + camera.scroll.x;
+                    let screen_bottom = grid_bottom - tick * camera.zoom.x + camera.scroll.x;
+                    if (screen_bottom >= 0.0 && screen_top <= camera.viewport_size.y) {
                         is_visible = true;
                     }
                 }

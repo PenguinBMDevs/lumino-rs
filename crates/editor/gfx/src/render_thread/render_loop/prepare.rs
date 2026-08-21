@@ -24,7 +24,7 @@ pub fn prepare_renderers(
         return;
     }
 
-    // 准备网格渲染器（纵向转置版与横向共存，复用同参数仅 Shader 转置，Key 范围八度分割更明显）
+    // 准备网格渲染器（纵向转置版头部对齐键盘顶部，时间向上）
     let grid_params = crate::grid_renderer::GridPrepareParams {
         viewport_size: params.logical_size,
         scroll_x: params.scroll.0,
@@ -44,6 +44,7 @@ pub fn prepare_renderers(
         max_key_index: params.max_key_index,
         canvas_offset_x: params.canvas_offset.0,
         canvas_offset_y: params.canvas_offset.1,
+        canvas_size: params.canvas_size,
         time_signatures: params.time_signatures.clone(),
     };
     if params.is_vertical_roll {

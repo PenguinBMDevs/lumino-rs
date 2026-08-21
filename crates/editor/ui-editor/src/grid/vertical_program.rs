@@ -63,7 +63,7 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             state.control_pressed = modifiers.control();
         }
 
-        // 键盘区域滚轮：支持缩放（Ctrl+滚轮）与左右滚动
+        // 键盘区域滚轮：支持缩放（Ctrl+滚轮）与左右滚动（音高轴 X）
         if let Event::Mouse(mouse::Event::WheelScrolled { delta }) = event
             && let Some(pos) = cursor.position_over(bounds)
         {
@@ -102,6 +102,54 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             lumino_ui_core::message::EditorAction::Scrolled {
                                 delta_x: 0.0,
                                 delta_y: delta_h,
+                            },
+                        )));
+                    }
+                }
+            } else if local.y >= view.ruler_height && local.y < bounds.height - keyboard_h {
+                // 网格区域：Y 向时间轴（头部在键盘顶部，向上递增）支持滚动与缩放
+                let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
+                let grid_top = view.ruler_height;
+                let grid_bottom = bounds.height - keyboard_h;
+                let grid_h = (grid_bottom - grid_top).max(1.0);
+                if ctrl_pressed {
+                    if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
+                        // 锚点距底部比例：0=键盘顶部，1=顶部标尺
+                        let fixed_ratio = ((grid_bottom - local.y) / grid_h).clamp(0.0, 1.0);
+                        return Some(Action::publish(lumino_ui_core::Message::ZoomXChanged {
+                            zoom: view.zoom_x * factor,
+                            fixed_ratio,
+                        }));
+                    }
+                } else {
+                    // 普通滚轮：垂直滚动时间轴（Y，头部在底部），水平滚动音高轴（X）
+                    let (delta_x, delta_y) = match delta {
+                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    };
+                    let mut out_delta_x = 0.0;
+                    let mut out_delta_y = 0.0;
+                    // 垂直增量 -> 时间轴（scroll_x），取反使向上滚显示更后时间（与横向一致）
+                    if delta_y.abs() > f32::EPSILON {
+                        out_delta_x = (-delta_y).clamp(-120.0, 120.0);
+                    }
+                    // 水平增量 -> 音高轴（scroll_y），取反使向右滚显示更高音
+                    if delta_x.abs() > f32::EPSILON {
+                        out_delta_y = (-delta_x).clamp(-120.0, 120.0);
+                    }
+                    // Shift+滚轮：垂直转水平（触控板兼容）
+                    if state.shift_pressed
+                        && out_delta_x.abs() < f32::EPSILON
+                        && delta_y.abs() > f32::EPSILON
+                    {
+                        out_delta_y = (-delta_y).clamp(-120.0, 120.0);
+                        out_delta_x = 0.0;
+                    }
+                    if out_delta_x.abs() > f32::EPSILON || out_delta_y.abs() > f32::EPSILON {
+                        return Some(Action::publish(lumino_ui_core::Message::EditorAction(
+                            lumino_ui_core::message::EditorAction::Scrolled {
+                                delta_x: out_delta_x,
+                                delta_y: out_delta_y,
                             },
                         )));
                     }
@@ -184,8 +232,8 @@ fn draw_vertical_playback(
     let grid_top = view.ruler_height;
     let grid_bottom = bounds.height - keyboard_h;
 
-    // 计算播放指示线 Y（纵向：时间轴在 Y）
-    let indicator_y = editor.playback_position * view.zoom_x - view.scroll_x + grid_top;
+    // 计算播放指示线 Y（纵向：时间轴在 Y，头部在键盘顶部，向上递增）
+    let indicator_y = grid_bottom - editor.playback_position * view.zoom_x + view.scroll_x;
 
     if indicator_y < grid_top || indicator_y > grid_bottom {
         return None;

@@ -14,10 +14,11 @@ struct CameraUniform {
     zoom: vec2<f32>,
     viewport_size: vec2<f32>,
     canvas_offset: vec2<f32>,
+    canvas_size: vec2<f32>,
     keyboard_width: f32,
     ruler_height: f32,
     max_key_index: f32,
-    _padding: f32,
+    _padding: vec2<f32>,
 }
 
 @group(0) @binding(0)
@@ -67,9 +68,10 @@ fn vs_main(
     let length = instance.start_length.y;
     let key = f32(instance.key_color & 0xFFu);
 
-    // 纵向转置：X = key * zoom_y - scroll_y, Y = tick * zoom_x - scroll_x + ruler
+    // 纵向转置头部对齐键盘顶部：X = key*zoom_y - scroll_y, Y = grid_bottom - (tick+length)*zoom_x + scroll_x
+    let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - camera.keyboard_width;
     let screen_x = key * camera.zoom.y - camera.scroll.y + camera.canvas_offset.x;
-    let screen_y = tick * camera.zoom.x - camera.scroll.x + camera.ruler_height + camera.canvas_offset.y;
+    let screen_y = grid_bottom - (tick + length) * camera.zoom.x + camera.scroll.x;
     let screen_size = vec2<f32>(camera.zoom.y, length * camera.zoom.x);
 
     let screen_pos = vec2<f32>(screen_x, screen_y) + local_offset * screen_size;

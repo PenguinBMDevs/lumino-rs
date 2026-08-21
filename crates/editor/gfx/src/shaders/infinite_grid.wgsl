@@ -26,6 +26,7 @@ struct CameraUniform {
     ppq: f32,
     max_key_index: f32,
     canvas_offset: vec2<f32>, // (offset_x, offset_y)
+    canvas_size: vec2<f32>,   // (width, height) 纵向头部对齐键盘顶部需用
     time_signature_count: u32,
     time_signatures: array<vec4<u32>, 16>,
 };

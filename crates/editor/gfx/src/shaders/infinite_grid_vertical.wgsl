@@ -31,6 +31,7 @@ struct CameraUniform {
     ppq: f32,
     max_key_index: f32,
     canvas_offset: vec2<f32>,
+    canvas_size: vec2<f32>,
     time_signature_count: u32,
     time_signatures: array<vec4<u32>, 16>,
 };
@@ -193,9 +194,10 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let keyboard_h = camera.margins.x;
     let ruler_h = camera.margins.y;
 
-    // 纵向：标尺在顶部，键盘在底部（键盘由 iced Canvas 不透明覆盖，无需在 shader 额外 discard 底部）
+    // 纵向：标尺在顶部，键盘在底部（头部对齐键盘顶部，时间向上）
+    let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - keyboard_h;
     let margin_test_y = screen_y - camera.canvas_offset.y;
-    if margin_test_y < ruler_h {
+    if margin_test_y < ruler_h || screen_y > grid_bottom {
         discard;
     }
     // X 轴无左侧键盘，铺满全宽，不做左侧 discard；但需保证在 canvas 水平范围内
@@ -214,8 +216,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // === Y 轴可见小节数（LOD）===
-    // 可用高度 = 视口高 - 标尺 - 底部键盘
-    let pixel_height = camera.viewport_size.y - ruler_h - keyboard_h;
+    // 可用高度 = 画布高 - 标尺 - 底部键盘（头部对齐键盘顶部，时间向上远离键盘）
+    let pixel_height = camera.canvas_size.y - ruler_h - keyboard_h;
     let first_ts = get_time_signature(0.0);
     let first_tpm = ticks_per_measure(first_ts);
     let tick_height = max(pixel_height, 1.0) / camera.zoom.x;
@@ -225,8 +227,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let beat_alpha = smooth_fade(visible_measures, BEAT_MAX_MEASURES);
     let halfbeat_alpha = smooth_fade(visible_measures, HALF_BEAT_MAX_MEASURES);
 
-    // === Y 轴：Tick 坐标（纵向时间）===
-    let world_tick = (screen_y - ruler_h - camera.canvas_offset.y + camera.camera_pos.x) / camera.zoom.x;
+    // === Y 轴：Tick 坐标（纵向时间，头部对齐键盘顶部，向远离键盘方向递增）===
+    let world_tick = (grid_bottom - screen_y + camera.camera_pos.x) / camera.zoom.x;
     let base_width = 1.0;
     let before_tick_zero = world_tick < 0.0;
     let current_ts = get_time_signature(world_tick);

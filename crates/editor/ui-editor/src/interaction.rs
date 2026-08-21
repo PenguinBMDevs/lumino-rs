@@ -101,8 +101,13 @@ impl Editor {
         let state = &mut self.editor_state;
         let v = &mut state.view;
         let is_vertical = state.is_vertical_roll;
-        let max_x =
-            (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0);
+        let max_x = if is_vertical {
+            // 纵向时间轴：头部在键盘顶部，视口为网格高度（画布-标尺-键盘）
+            let grid_h = (state.canvas.size_y - v.ruler_height - v.keyboard_width).max(0.0);
+            (state.max_scroll.0 - grid_h).max(0.0)
+        } else {
+            (state.max_scroll.0 - (state.canvas.size_x - v.keyboard_width).max(0.0)).max(0.0)
+        };
         let max_y = if is_vertical {
             // 纵向键盘：音高轴水平展开，视口为画布宽度
             (state.max_scroll.1 - state.canvas.size_x.max(0.0)).max(0.0)

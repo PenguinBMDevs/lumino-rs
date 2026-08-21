@@ -253,4 +253,46 @@ impl super::Editor {
         self.editor_state.view.smooth_scroll.active = false;
         self.invalidate_caches(CacheInvalidation::KEYBOARD);
     }
+
+    /// 设置纵向时间轴滚动（Y 向，头部对齐键盘顶部，向远离键盘方向递增）
+    pub fn set_vertical_time_scroll(&mut self, scroll_x: f32) {
+        let canvas_height = self.editor_state.canvas.size_y;
+        let keyboard_h = self.editor_state.view.keyboard_width;
+        let ruler_h = self.editor_state.view.ruler_height;
+        let grid_h = (canvas_height - ruler_h - keyboard_h).max(0.0);
+        let total_h = self.editor_state.view.total_ticks as f32 * self.editor_state.view.zoom_x;
+        let max_scroll = (total_h - grid_h).max(0.0);
+        self.editor_state.view.scroll_x = scroll_x.clamp(0.0, max_scroll);
+        self.editor_state.view.smooth_scroll.target_x = self.editor_state.view.scroll_x;
+        self.editor_state.view.smooth_scroll.active = false;
+        self.invalidate_caches(CacheInvalidation::RULER);
+    }
+
+    /// 设置纵向时间轴缩放（Y 向，锚点为距键盘顶部比例，0=键盘顶部，1=顶部标尺）
+    pub fn set_vertical_time_zoom(&mut self, zoom_x: f32, fixed_ratio: f32) {
+        let canvas_height = self.editor_state.canvas.size_y;
+        let keyboard_h = self.editor_state.view.keyboard_width;
+        let ruler_h = self.editor_state.view.ruler_height;
+        let grid_h = (canvas_height - ruler_h - keyboard_h).max(0.0);
+        let old = self.editor_state.view.zoom_x;
+        let new_zoom = zoom_x.clamp(MIN_ZOOM_X, MAX_ZOOM_X);
+        if (new_zoom - old).abs() < f32::EPSILON || grid_h <= 0.0 {
+            return;
+        }
+        let ratio = new_zoom / old.max(f32::EPSILON);
+        // fixed_ratio 0 在键盘顶部（grid_bottom），1 在顶部标尺（grid_top），即距底部距离 = grid_h * fixed_ratio
+        // 推导：tick = (grid_bottom - pointer_y + scroll)/zoom = (dist_from_bottom + scroll)/zoom
+        // 保持 tick 不变：(dist + new_scroll)/new_zoom = (dist + old_scroll)/old_zoom
+        let dist_from_bottom = grid_h * fixed_ratio.clamp(0.0, 1.0);
+        let fixed_point = self.editor_state.view.scroll_x + dist_from_bottom;
+        let new_scroll = fixed_point * ratio - dist_from_bottom;
+        self.editor_state.view.zoom_x = new_zoom;
+        self.editor_state.view.scroll_x = new_scroll;
+        self.editor_state.max_scroll.0 = self.editor_state.view.total_ticks as f32 * new_zoom;
+        let max_scroll = (self.editor_state.max_scroll.0 - grid_h).max(0.0);
+        self.editor_state.view.scroll_x = self.editor_state.view.scroll_x.clamp(0.0, max_scroll);
+        self.editor_state.view.smooth_scroll.target_x = self.editor_state.view.scroll_x;
+        self.editor_state.view.smooth_scroll.active = false;
+        self.invalidate_caches(CacheInvalidation::RULER);
+    }
 }

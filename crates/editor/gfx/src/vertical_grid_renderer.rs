@@ -105,6 +105,7 @@ impl VerticalGridRenderer {
             .ppq(params.ppq)
             .max_key_index(params.max_key_index)
             .canvas_offset(params.canvas_offset_x, params.canvas_offset_y)
+            .canvas_size(params.canvas_size.0, params.canvas_size.1)
             .time_signatures(params.time_signatures.clone())
             .build();
 

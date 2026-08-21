@@ -22,10 +22,11 @@ pub struct GridCameraUniform {
     pub ppq: f32,
     pub max_key_index: f32,
     pub canvas_offset: [f32; 2], // (offset_x, offset_y)
+    pub canvas_size: [f32; 2],   // (width, height) 用于纵向头部对齐键盘顶部
     /// 当前有效的拍号变化数量
     pub time_signature_count: u32,
     /// 对齐填充，保证 vec4 数组在 WGSL uniform 中满足 16 字节对齐
-    pub _padding: [u32; 3],
+    pub _padding: [u32; 1],
     /// 拍号变化列表，每个 vec4 存储 (tick, 分子, 分母, 保留)
     pub time_signatures: [[u32; 4]; 16],
 }
@@ -64,6 +65,7 @@ pub struct GridCameraUniformBuilder {
     ppq: f32,
     max_key_index: f32,
     canvas_offset: [f32; 2],
+    canvas_size: [f32; 2],
     time_signatures: Vec<(u32, u8, u8)>,
 }
 
@@ -84,6 +86,7 @@ impl Default for GridCameraUniformBuilder {
             ppq: 1920.0,
             max_key_index: 127.0,
             canvas_offset: [0.0, 0.0],
+            canvas_size: [800.0, 600.0],
             time_signatures: vec![(0, 4, 4)],
         }
     }
@@ -174,6 +177,12 @@ impl GridCameraUniformBuilder {
         self
     }
 
+    /// 设置画布尺寸
+    pub fn canvas_size(mut self, width: f32, height: f32) -> Self {
+        self.canvas_size = [width, height];
+        self
+    }
+
     /// 设置拍号变化列表
     pub fn time_signatures(mut self, time_signatures: Vec<(u32, u8, u8)>) -> Self {
         self.time_signatures = time_signatures;
@@ -202,8 +211,9 @@ impl GridCameraUniformBuilder {
             ppq: self.ppq,
             max_key_index: self.max_key_index,
             canvas_offset: self.canvas_offset,
+            canvas_size: self.canvas_size,
             time_signature_count: count,
-            _padding: [0; 3],
+            _padding: [0; 1],
             time_signatures: ts_arr,
         }
     }
@@ -289,6 +299,8 @@ pub struct GridPrepareParams {
     pub canvas_offset_x: f32,
     /// 画布垂直偏移（像素）
     pub canvas_offset_y: f32,
+    /// 画布尺寸 [width, height]（纵向头部对齐键盘顶部需用）
+    pub canvas_size: (f32, f32),
     /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,
 }
@@ -401,6 +413,7 @@ impl GridRenderer {
             .ppq(params.ppq)
             .max_key_index(params.max_key_index)
             .canvas_offset(params.canvas_offset_x, params.canvas_offset_y)
+            .canvas_size(params.canvas_size.0, params.canvas_size.1)
             .time_signatures(params.time_signatures.clone())
             .build();
 

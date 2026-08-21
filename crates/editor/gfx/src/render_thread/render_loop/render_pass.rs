@@ -88,12 +88,13 @@ pub fn execute_render_pass(
         return;
     }
 
-    // 钢琴卷帘模式：正常渲染（纵向复用同 MIDI GPU 数据，仅转置绘制）
+    // 钢琴卷帘模式：正常渲染（纵向头部对齐键盘顶部，向远离键盘方向递增，复用同 GPU 数据）
     let camera = CameraUniform::new(CameraParams {
         scroll: [params.scroll.0, params.scroll.1],
         zoom: [params.zoom.0, params.zoom.1],
         viewport: [params.logical_size.0, params.logical_size.1],
         offset: [params.canvas_offset.0, params.canvas_offset.1],
+        canvas_size: [params.canvas_size.0, params.canvas_size.1],
         keyboard_width: params.keyboard_width,
         ruler_height: params.ruler_height,
         max_key_index: params.max_key_index,

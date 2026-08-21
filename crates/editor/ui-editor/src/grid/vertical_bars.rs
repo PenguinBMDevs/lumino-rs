@@ -131,13 +131,12 @@ impl GridLod {
 struct HLineCtx {
     zoom_x: f32,
     scroll_x: f32,
-    ruler_height: f32,
     bounds_width: f32,
     grid_top: f32,
     grid_bottom: f32,
 }
 
-/// 将某一层的所有可见水平线加入 Builder
+/// 将某一层的所有可见水平线加入 Builder（头部在键盘顶部，向远离键盘方向递增）
 fn add_hlevel_lines(
     builder: &mut Builder,
     start_tick: f32,
@@ -155,7 +154,7 @@ fn add_hlevel_lines(
             });
 
         if !skip {
-            let screen_y = current_tick * ctx.zoom_x - ctx.scroll_x + ctx.ruler_height;
+            let screen_y = ctx.grid_bottom - current_tick * ctx.zoom_x + ctx.scroll_x;
             if screen_y >= ctx.grid_top && screen_y <= ctx.grid_bottom {
                 builder.move_to(Point::new(0.0, screen_y));
                 builder.line_to(Point::new(ctx.bounds_width, screen_y));
@@ -264,7 +263,6 @@ pub fn draw(
     let ctx = HLineCtx {
         zoom_x: view.zoom_x,
         scroll_x: view.scroll_x,
-        ruler_height,
         bounds_width: bounds.width,
         grid_top,
         grid_bottom,
@@ -300,7 +298,7 @@ pub fn draw(
         );
     }
 
-    // ── 2.1 小节号文本（沿左侧垂直排列，按小节规则）──
+    // ── 2.1 小节号文本（沿左侧垂直排列，头部在键盘顶部）
     {
         let ticks_per_measure = ppq * 4.0;
         if ticks_per_measure > 0.0 {
@@ -308,7 +306,7 @@ pub fn draw(
             let mut measure_no = (measure_tick / ticks_per_measure) as u32 + 1;
             let text_color = theme.text_color();
             while measure_tick < end_tick {
-                let screen_y = measure_tick * view.zoom_x - view.scroll_x + ruler_height;
+                let screen_y = grid_bottom - measure_tick * view.zoom_x + view.scroll_x;
                 if screen_y >= grid_top && screen_y <= grid_bottom {
                     let label = iced_widget::canvas::Text {
                         content: measure_no.to_string(),
@@ -326,10 +324,7 @@ pub fn draw(
                 }
                 measure_tick += ticks_per_measure;
                 measure_no += 1;
-                // 避免在极度缩小时绘制过多文本（间隔过密时仅每 N 小节标注）
-                if lod.measure_count > 1 && measure_no.is_multiple_of(2) {
-                    // 当小节线已翻倍时，跳过奇数小节文本已在 LOD 中合并，此处无需额外跳过
-                }
+                if lod.measure_count > 1 && measure_no.is_multiple_of(2) {}
             }
         }
     }
@@ -399,7 +394,7 @@ pub fn draw_labels(
     let end_tick = (view.scroll_x + grid_height) / view.zoom_x;
     let lod = GridLod::compute(end_tick - start_tick, ppq);
 
-    // 小节号文本（沿左侧垂直排列）
+    // 小节号文本（沿左侧垂直排列，头部在键盘顶部）
     {
         let ticks_per_measure = ppq * 4.0;
         if ticks_per_measure > 0.0 {
@@ -407,7 +402,7 @@ pub fn draw_labels(
             let mut measure_no = (measure_tick / ticks_per_measure) as u32 + 1;
             let text_color = theme.text_color();
             while measure_tick < end_tick {
-                let screen_y = measure_tick * view.zoom_x - view.scroll_x + ruler_height;
+                let screen_y = grid_bottom - measure_tick * view.zoom_x + view.scroll_x;
                 if screen_y >= grid_top && screen_y <= grid_bottom {
                     let label = iced_widget::canvas::Text {
                         content: measure_no.to_string(),
