@@ -166,6 +166,139 @@ impl<T: EventTick> ChunkedList<T> {
         // chunk_offsets 在 rebuild_index 中重建
     }
 
+    /// 批量插入已排序事件（O(N+M) 分块局部归并，单次重建，内存可控）
+    ///
+    /// `events` 需按 `tick` 升序（调用方保证，稳定插入语义：同 tick 排在已有事件之后）。
+    /// 策略：仅归并受影响块区间（`min_tick..max_tick` 覆盖的块），
+    /// 前缀/后缀块 `Arc` 浅拷零拷贝，避免全轨扫描 15M。
+    /// 追加/前插（`min>old_last` / `max<old_first`）→ 零扫描拼接，O(块数)。
+    pub fn extend_sorted(&mut self, events: Vec<T>)
+    where
+        T: Clone,
+    {
+        if events.is_empty() {
+            return;
+        }
+        if self.is_empty() {
+            *self = Self::from_sorted(events);
+            return;
+        }
+        let min_tick = events.first().map(|e| e.tick()).unwrap_or(0);
+        let max_tick = events.last().map(|e| e.tick()).unwrap_or(0);
+        let old_first = self.first().map(|e| e.tick()).unwrap_or(0);
+        let old_last = self.last().map(|e| e.tick()).unwrap_or(0);
+
+        // 追加：新事件全部在尾部之后 → 旧块浅拷 + 新块拼接，零扫描
+        if min_tick > old_last {
+            let old = std::mem::take(self);
+            let old_len = old.total_len;
+            let new_list = Self::from_sorted(events);
+            let new_len = new_list.total_len;
+            let mut new_chunks = Vec::with_capacity(old.chunks.len() + new_list.chunks.len());
+            new_chunks.extend(old.chunks);
+            new_chunks.extend(new_list.chunks);
+            *self = Self {
+                chunks: new_chunks,
+                chunk_first_ticks: Vec::new(),
+                chunk_offsets: Vec::new(),
+                total_len: old_len + new_len,
+            };
+            self.rebuild_index();
+            return;
+        }
+        // 前插：新事件全部在首部之前 → 新块 + 旧块拼接，零扫描
+        if max_tick < old_first {
+            let old = std::mem::take(self);
+            let old_len = old.total_len;
+            let new_list = Self::from_sorted(events);
+            let new_len = new_list.total_len;
+            let mut new_chunks = Vec::with_capacity(new_list.chunks.len() + old.chunks.len());
+            new_chunks.extend(new_list.chunks);
+            new_chunks.extend(old.chunks);
+            *self = Self {
+                chunks: new_chunks,
+                chunk_first_ticks: Vec::new(),
+                chunk_offsets: Vec::new(),
+                total_len: old_len + new_len,
+            };
+            self.rebuild_index();
+            return;
+        }
+
+        // 通用局部归并：仅扫描受影响块区间
+        let old = std::mem::take(self);
+        let start_ci = old.locate_chunk(min_tick);
+        let end_ci = old.locate_chunk(max_tick);
+
+        // 前缀/后缀浅拷（Arc clone，零拷贝）
+        let prefix_len = start_ci;
+        let suffix_start = end_ci + 1;
+
+        // 收集受影响区间旧事件（仅该区间，非全轨）— 用 extend_from_slice 做批量 memcpy
+        let middle_old_len: usize = old.chunks[start_ci..=end_ci].iter().map(|c| c.len()).sum();
+        let mut middle_old: Vec<T> = Vec::with_capacity(middle_old_len);
+        for chunk in &old.chunks[start_ci..=end_ci] {
+            middle_old.extend_from_slice(chunk);
+        }
+        // middle_old 已有序（块间/块内有序），events 已有序 → 线性归并
+        let mut merged: Vec<T> = Vec::with_capacity(middle_old.len() + events.len());
+        let mut i = 0usize;
+        let mut j = 0usize;
+        while i < middle_old.len() && j < events.len() {
+            if middle_old[i].tick() <= events[j].tick() {
+                merged.push(middle_old[i].clone());
+                i += 1;
+            } else {
+                merged.push(events[j].clone());
+                j += 1;
+            }
+        }
+        if i < middle_old.len() {
+            merged.extend_from_slice(&middle_old[i..]);
+        }
+        if j < events.len() {
+            merged.extend_from_slice(&events[j..]);
+        }
+
+        // 中间区间重建分块（按 500k 切块）
+        let middle_new = Self::from_sorted(merged);
+        let mut new_chunks: Vec<Arc<Vec<T>>> = Vec::with_capacity(
+            prefix_len + middle_new.chunks.len() + old.chunks.len() - suffix_start,
+        );
+        // 前缀浅拷
+        new_chunks.extend(old.chunks[0..prefix_len].iter().cloned());
+        // 中间新块
+        new_chunks.extend(middle_new.chunks);
+        // 后缀浅拷
+        if suffix_start < old.chunks.len() {
+            new_chunks.extend(old.chunks[suffix_start..].iter().cloned());
+        }
+
+        let total_len = old.total_len + events.len();
+        *self = Self {
+            chunks: new_chunks,
+            chunk_first_ticks: Vec::new(),
+            chunk_offsets: Vec::new(),
+            total_len,
+        };
+        self.rebuild_index();
+    }
+
+    /// 批量插入（自动排序 + 归并，O((N+M)logM + N+M)）
+    ///
+    /// `events` 无需有序，内部按 `tick` 排序后走 `extend_sorted` 单次归并。
+    /// 适合粘贴/放置等无序批量场景；已排序场景请直接用 `extend_sorted` 避免重复排序。
+    pub fn batch_insert(&mut self, mut events: Vec<T>)
+    where
+        T: Clone,
+    {
+        if events.is_empty() {
+            return;
+        }
+        events.sort_by_key(|a| a.tick());
+        self.extend_sorted(events);
+    }
+
     /// 重建双索引（O(块数)，块数变化后调用；块数 ~120 时开销可忽略）
     ///
     /// 不变式：`chunk_offsets.len() == chunks.len()`，且

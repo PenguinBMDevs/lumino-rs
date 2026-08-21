@@ -179,10 +179,9 @@ impl Editor {
             return false;
         }
 
-        // 与粘贴提交（commit_pasted_notes）一致：push history → batch insert → 选中新副本
+        // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB）
         self.push_history();
         let inserted = self.editor_state.data.batch_insert_notes(&notes);
-        self.editor_state.data.mark_current_track_changed();
         // 插入位移了既有音符索引，旧选中索引全部失效：清空后按参数全等
         // 重选「副本」（最新件框选；副本 tick 可能落在现有音符之间，索引散布
         // 而非连续追加，不能按 start..start+inserted 连续区间选中）。

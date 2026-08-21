@@ -42,6 +42,57 @@ impl MidiDocument {
         true
     }
 
+    /// 批量插入音符（O(N+M) 归并，单次重建，内存可控）
+    ///
+    /// `notes` 按 `start_tick` 升序归并到目标轨，同 tick 稳定插在已有事件之后。
+    /// 单次 `from_sorted_iter` 流式分块构建，峰值仅单块 500k（8MB），
+    /// 避免 N 次 `insert` 的 N 次 COW 深拷（8GB/1k 音符）与 N 条 delta。
+    /// 返回实际插入数（track 越界为 0）。`notes` 为空直接返回 0。
+    pub fn batch_insert_notes(&mut self, track_id: usize, mut notes: Vec<NoteEvent>) -> usize {
+        if notes.is_empty() {
+            return 0;
+        }
+        let Some(track_notes) = self.notes.get_mut(track_id) else {
+            return 0;
+        };
+        let inserted = notes.len();
+        // 调用方未必有序（粘贴/放置），统一排序保证归并前提
+        notes.sort_by_key(|a| a.start_tick);
+        let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        track_notes.extend_sorted(notes);
+        // max 缓存：脏则保持脏，命中则取大
+        if let Some(cell) = self.track_max_end_ticks.get(track_id)
+            && let Some(cur) = cell.lock().ok().and_then(|g| *g)
+            && max_end > cur
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(max_end);
+        }
+        inserted
+    }
+
+    /// 批量插入已排序音符（O(N+M)，免排序）
+    ///
+    /// 前置：`notes` 已按 `start_tick` 升序。比 `batch_insert_notes` 少一次排序，
+    /// 适合 I2M 放置等已排序路径。
+    pub fn batch_insert_notes_sorted(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> usize {
+        if notes.is_empty() {
+            return 0;
+        }
+        let Some(track_notes) = self.notes.get_mut(track_id) else {
+            return 0;
+        };
+        let inserted = notes.len();
+        let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        track_notes.extend_sorted(notes);
+        if let Some(cell) = self.track_max_end_ticks.get(track_id)
+            && let Some(cur) = cell.lock().ok().and_then(|g| *g)
+            && max_end > cur
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(max_end);
+        }
+        inserted
+    }
+
     /// 使指定音轨的 max_end_tick 缓存失效（置脏），下次查询时惰性重算。
     ///
     /// 毒锁时恢复（`into_inner`）而非 panic：缓存失效是保守操作，

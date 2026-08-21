@@ -139,21 +139,17 @@ impl Editor {
         Some((anchor, pasted))
     }
 
-    /// 将解析的音符提交到编辑器并选中
+    /// 将解析的音符提交到编辑器并选中（O(N+M) 批量归并）
     fn commit_pasted_notes(&mut self, _anchor: (f32, u16), pasted: Vec<super::Note>) {
         self.push_history();
         self.selection_clear();
         let pasted_count = pasted.len();
-        // 2026-08 单一权威源：批量插入到 document（按 start_tick 有序插入）
-        let start = self.editor_state.data.current_track_note_count();
+        // 批量归并：单次重建替代 N 次 insert，峰值仅单块 8MB
         self.editor_state.data.batch_insert_notes(&pasted);
-        self.editor_state.data.mark_current_track_changed();
-        // 注意：batch_insert_notes 按 start_tick 有序插入。若粘贴的 tick 落在
-        // 现有音符之间，新音符索引将散布而非连续追加——此选中逻辑仅在
-        // 粘贴音符 tick 不小于现有最大 tick（常见场景）时与旧 append 语义一致。
-        for index in start..start + pasted_count {
-            self.selection_insert(index);
-        }
+        // 批量插入索引散布，旧的 start..start+count 连续选中在 tick 重叠时失效
+        // → 按参数全等重选（与 commit_pending_copy 一致，最新件语义）
+        self.selection_clear();
+        self.select_notes_by_params(&pasted);
         self.mark_notes_changed();
         tracing::info!("Editor: 已粘贴 {} 个音符", pasted_count);
     }

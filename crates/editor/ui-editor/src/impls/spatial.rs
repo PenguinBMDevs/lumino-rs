@@ -7,9 +7,12 @@ use std::cell::{Cell, RefCell};
 
 /// 启用空间索引的音符数量阈值
 ///
-/// 低于此阈值时，线性扫描比构建二叉空间索引更快（避免小数据量下的建树开销）。
+/// 低于此阈值时，线性扫描/窗口扫描比构建二叉空间索引更快（避免小数据量下的建树开销）。
 /// 高于此阈值时，空间索引的 O(log N + K) 查询优势才能抵消建树成本。
-pub(crate) const SPATIAL_INDEX_BUILD_THRESHOLD: usize = 50_000;
+/// 2026-08-08 批量写入优化：100k 建树需 69ms(dev)/~15ms(release)，对 1k 批量插入
+/// 的 4ms 合并而言占比过高；阈值从 50k 提升至 200k，使 100k 以内走
+/// `ChunkedList::window_range` 零建树路径，批量插入后无重建卡顿。
+pub(crate) const SPATIAL_INDEX_BUILD_THRESHOLD: usize = 200_000;
 
 /// 空间索引**上限**：超过此规模不再构建空间索引
 ///

@@ -69,9 +69,13 @@ impl Root {
             .map(|t| t.id)
             .collect();
 
-        // 逐轨写入（轨 0 → 当前轨，轨 1+ → 复用的现有轨或新建轨）
-        let mut create_ops: Vec<lumino_note_core::history::CreateOp> = Vec::new();
+        // 逐轨批量写入（O(N+M) 归并，单次重建，单轨单次 COW）
+        // 旧路径逐音符 insert_note → N 次 COW 深拷 + N 条 delta → 数千音符卡死
+        let mut create_ops: Vec<lumino_note_core::history::CreateOp> =
+            Vec::with_capacity(total_notes);
         let mut affected = std::collections::HashSet::new();
+        // 预分配：主轨增量脏标记需单独处理
+        let mut main_track_needs_dirty = false;
         for (color_idx, notes) in tracks_data.iter().enumerate() {
             if notes.is_empty() {
                 continue;
@@ -89,41 +93,61 @@ impl Root {
             if !self.editor.editor_state.data.ensure_track(target_track) {
                 continue;
             }
+            // 批量归一化 + 一次性 Note→NoteEvent 转换（零逐条 insert）
+            let mut track_events = Vec::with_capacity(notes.len());
             for &(tick, key, length) in notes {
-                // 批量归一化：区域等比映射产生亚 tick 数值（如 12418.724），
-                // 写入前统一 round 为整数 tick/长度——既保证 note_to_event 对
-                // tick 与 tick+length 的 round 结果一致（长度不变形），也从源头
-                // 消除非整数 tick（f32_to_tick 因此走快速路径，零日志、零阻塞）。
                 let tick = tick.round();
                 let length = length.round().max(1.0);
                 let note = lumino_note_core::note::Note::new(tick, u16::from(key), length);
-                let event = lumino_editor_state::note_to_event(note.clone());
-                if self
-                    .editor
-                    .editor_state
-                    .data
-                    .insert_note(target_track, note)
-                {
-                    create_ops.push(lumino_note_core::history::CreateOp {
-                        track_id: target_track as u32,
-                        note: event,
-                    });
-                }
+                let event = lumino_editor_state::note_to_event(note);
+                track_events.push(event);
             }
-            affected.insert(target_track);
+            // 历史：先基于 events 快照生成 CreateOp（Copy 开销 16B/条，可忽略）
+            let create_ops_for_track: Vec<lumino_note_core::history::CreateOp> = track_events
+                .iter()
+                .map(|ev| lumino_note_core::history::CreateOp {
+                    track_id: target_track as u32,
+                    note: *ev,
+                })
+                .collect();
+            // 关键优化：单次批量归并（内部自动排序），峰值仅单块 8MB，替代 N 次 COW
+            let inserted = self
+                .editor
+                .editor_state
+                .data
+                .document
+                .as_mut()
+                .map(|doc| doc.batch_insert_notes(target_track, track_events))
+                .unwrap_or(0);
+            if inserted > 0 {
+                create_ops.extend(create_ops_for_track);
+                affected.insert(target_track);
+                if target_track == current_track {
+                    main_track_needs_dirty = true;
+                }
+                // 同步维护 max_end 缓存（batch 已处理）无需额外置脏
+            }
         }
 
-        // 历史记录（跨轨撤销）+ 标记变化（洋葱皮增量：明确受影响音轨）
+        // 历史记录 + 标记变化（主轨走全量 dirty，其余轨洋葱皮增量豁免）
         if !create_ops.is_empty() {
             self.editor
                 .editor_state
                 .data
                 .history
                 .push_note_create(create_ops);
+            // 批量插入索引散布，增量 InsertAt 需 N 次 GPU 搬运 → 主轨直接全量
+            if main_track_needs_dirty {
+                self.editor.editor_state.data.note_delta_events.clear();
+                self.editor.editor_state.data.note_delta_dirty = true;
+            }
             self.editor
                 .editor_state
                 .data
-                .mark_track_notes_changed_for(Some(affected));
+                .mark_track_notes_changed_for(Some(affected.clone()));
+            if main_track_needs_dirty {
+                self.editor.editor_state.data.note_delta_dirty = true;
+            }
         }
 
         // 清除放置模式，还原显示区域

@@ -285,10 +285,10 @@ impl Host {
                     let grid_bottom = canvas.size_y - view.keyboard_width;
                     let t = (grid_bottom - local_y + view.scroll_x) / view.zoom_x;
                     let k_f = (local_x + view.scroll_y) / view.zoom_y;
-                    let k = k_f.round().clamp(
-                        0.0,
-                        view.visible_key_count.saturating_sub(1) as f32,
-                    ) as u16;
+                    let k = k_f
+                        .round()
+                        .clamp(0.0, view.visible_key_count.saturating_sub(1) as f32)
+                        as u16;
                     (view.snap_tick(t).max(0.0), k)
                 } else {
                     let t = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
