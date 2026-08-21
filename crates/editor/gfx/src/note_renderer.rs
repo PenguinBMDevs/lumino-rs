@@ -172,7 +172,7 @@ mod tests {
             keyboard_width: 60.0,
             ruler_height: 30.0,
             max_key_index: 127.0,
-            _padding: [0.0; 2],
+            _padding: [0.0; 3],
         };
 
         assert_eq!(camera.scroll, [0.0, 0.0]);

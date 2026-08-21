@@ -114,8 +114,8 @@ pub struct CameraUniform {
     pub ruler_height: f32,
     /// 最大琴键索引
     pub max_key_index: f32,
-    /// 对齐填充（保持 16 字节对齐）
-    pub _padding: [f32; 2],
+    /// 对齐填充（保持 16 字节对齐，64 字节）
+    pub _padding: [f32; 3],
 }
 
 /// 相机/视口参数（摄像头 uniform 的友好输入类型）
@@ -154,7 +154,7 @@ impl CameraUniform {
             keyboard_width: params.keyboard_width,
             ruler_height: params.ruler_height,
             max_key_index: params.max_key_index,
-            _padding: [0.0; 2],
+            _padding: [0.0; 3],
         }
     }
 }
@@ -170,7 +170,7 @@ impl Default for CameraUniform {
             keyboard_width: 0.0,
             ruler_height: 0.0,
             max_key_index: 0.0,
-            _padding: [0.0; 2],
+            _padding: [0.0; 3],
         }
     }
 }

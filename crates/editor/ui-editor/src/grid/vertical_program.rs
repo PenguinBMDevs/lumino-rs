@@ -196,7 +196,7 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
         // 2.2 小节号文本与边框（网格线已由 wgpu 绘制，此处仅保留文本，避免重复）
         let label_geom = {
             let mut frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
-            super::vertical_bars::draw_labels(self.editor, &mut frame, bounds, theme);
+            super::vertical_labels::draw_labels(self.editor, &mut frame, bounds, theme);
             frame.into_geometry()
         };
         geometries.push(label_geom);
