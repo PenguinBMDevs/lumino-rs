@@ -3,17 +3,34 @@
 use crate::Editor;
 use iced_core::{Point, Rectangle, Size};
 
-/// 卷帘内容区（选框/按钮的可见范围）：键盘列右侧、标尺下方的网格区域
+/// 卷帘内容区（选框/按钮的可见范围）
+///
+/// - 横向：键盘列右侧、标尺下方的网格区域；
+/// - 纵向：键盘在**底部**、无顶部标尺 → 全宽 ×（画布高 − 键盘高）。
+///
+/// 曲线工具 √× 按钮 / i2m 区域框按钮 / 选框裁剪均依赖本区域做钳制，
+/// 纵向模式下若沿用横向语义会把按钮错误钳到不存在的"标尺/键盘列"上
+/// （路径靠左时按钮甚至直接消失）。
 pub(crate) fn content_bounds(editor: &Editor) -> Rectangle {
     let view = &editor.editor_state.view;
     let canvas = &editor.editor_state.canvas;
-    Rectangle::new(
-        Point::new(view.keyboard_width, view.ruler_height),
-        Size::new(
-            (canvas.size_x - view.keyboard_width).max(0.0),
-            (canvas.size_y - view.ruler_height).max(0.0),
-        ),
-    )
+    if editor.editor_state.is_vertical_roll {
+        Rectangle::new(
+            Point::new(0.0, 0.0),
+            Size::new(
+                canvas.size_x.max(0.0),
+                (canvas.size_y - view.keyboard_width).max(0.0),
+            ),
+        )
+    } else {
+        Rectangle::new(
+            Point::new(view.keyboard_width, view.ruler_height),
+            Size::new(
+                (canvas.size_x - view.keyboard_width).max(0.0),
+                (canvas.size_y - view.ruler_height).max(0.0),
+            ),
+        )
+    }
 }
 
 /// 将屏幕矩形裁剪到卷帘内容区（视觉裁剪，数据不动）
@@ -119,6 +136,32 @@ mod tests {
     /// 构造默认卷帘内容区（键盘列 120px + 标尺 24px，画布 800x600）
     fn default_content() -> Rectangle {
         Rectangle::new(Point::new(120.0, 24.0), Size::new(680.0, 576.0))
+    }
+
+    /// 纵向卷帘内容区：键盘在底部（高 120）、无标尺 → 全宽 × (600-120)
+    #[test]
+    fn test_content_bounds_vertical_roll() {
+        let mut editor = Editor::new();
+        editor.editor_state.is_vertical_roll = true;
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
+        // keyboard_width 默认 120（纵向语义 = 底部键盘高度）
+        let content = content_bounds(&editor);
+        assert_eq!(
+            content,
+            Rectangle::new(Point::new(0.0, 0.0), Size::new(800.0, 480.0)),
+            "纵向内容区应从 (0,0) 到（全宽 × 画布高-键盘高）"
+        );
+    }
+
+    /// 横向内容区回归：键盘列右侧、标尺下方（既有语义不变）
+    #[test]
+    fn test_content_bounds_horizontal_default() {
+        let mut editor = Editor::new();
+        editor.editor_state.canvas.size_x = 800.0;
+        editor.editor_state.canvas.size_y = 600.0;
+        let content = content_bounds(&editor);
+        assert_eq!(content, default_content());
     }
 
     #[test]

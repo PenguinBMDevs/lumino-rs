@@ -6,9 +6,7 @@ use super::state::GridInteractionState;
 use crate::Editor;
 use iced_core::{Point, Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
-use lumino_ui_core::constants::editor::{
-    PLAYBACK_INDICATOR_TRIANGLE_SIZE, PLAYBACK_INDICATOR_WIDTH,
-};
+use lumino_message::Tool;
 use lumino_ui_core::{Message, Renderer, Theme};
 
 /// 纵向卷帘网格绘制程序
@@ -280,10 +278,23 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
+        state: &Self::State,
         _bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> mouse::Interaction {
+        // 纵向卷帘光标反馈（与横向 `program_impl/mouse_interaction.rs` 对齐）：
+        // 橡皮擦十字、曲线工具命中锚点/段可拖动（Pointer）、其余十字。
+        if self.editor.current_tool() == Tool::Eraser {
+            return mouse::Interaction::Crosshair;
+        }
+        if self.editor.current_tool() == Tool::Curve {
+            if let Some(local_pos) = state.position
+                && self.editor.line_tool_hit_test(local_pos).is_some()
+            {
+                return mouse::Interaction::Pointer;
+            }
+            return mouse::Interaction::Crosshair;
+        }
         mouse::Interaction::Idle
     }
 
@@ -326,62 +337,24 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
 
+        // 2.3 曲线工具 / 图片转 MIDI / 选框 的 Canvas 图层（纵向卷帘 BUG 修复：
+        // 旧实现漏挂曲线工具图层，导致路径/锚点/控制柄/√×按钮全部不可见）。
+        // 与横向 `program_impl/draw.rs` 图层顺序对齐（指示线保持最顶层）。
+        if let Some(geom) = crate::grid::selection_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+        if let Some(geom) = crate::grid::i2m_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+        if let Some(geom) = crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+
         // 3. 播放指示线（水平红线，时间轴在 Y）
-        if let Some(geom) = draw_vertical_playback(self.editor, renderer, bounds) {
+        if let Some(geom) = super::vertical_playback::draw(self.editor, renderer, bounds) {
             geometries.push(geom);
         }
 
         geometries
     }
-}
-
-fn draw_vertical_playback(
-    editor: &Editor,
-    renderer: &Renderer,
-    bounds: Rectangle,
-) -> Option<Geometry<Renderer>> {
-    use iced_widget::canvas::{Frame, Path, Stroke};
-
-    let view = &editor.editor_state.view;
-    let keyboard_h = view.keyboard_width;
-    // 纵向隐藏横向标尺：网格从顶部 0 开始至键盘顶部
-    if bounds.height <= keyboard_h {
-        return None;
-    }
-    let grid_top = 0.0;
-    let grid_bottom = bounds.height - keyboard_h;
-
-    // 计算播放指示线 Y（纵向：时间轴在 Y，头部在键盘顶部，向上递增）
-    let indicator_y = grid_bottom - editor.playback_position * view.zoom_x + view.scroll_x;
-
-    if indicator_y < grid_top || indicator_y > grid_bottom {
-        return None;
-    }
-
-    let mut frame = Frame::new(renderer, bounds.size());
-    let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
-    let line_path = Path::line(
-        Point::new(0.0, indicator_y),
-        Point::new(bounds.width, indicator_y),
-    );
-    frame.stroke(
-        &line_path,
-        Stroke::default()
-            .with_width(PLAYBACK_INDICATOR_WIDTH)
-            .with_color(indicator_color),
-    );
-    // 左侧三角形指示
-    let tri = PLAYBACK_INDICATOR_TRIANGLE_SIZE;
-    let triangle_path = Path::new(|b| {
-        let top = Point::new(0.0, indicator_y - tri / 2.0);
-        let bottom = Point::new(0.0, indicator_y + tri / 2.0);
-        let right = Point::new(tri, indicator_y);
-        b.move_to(top);
-        b.line_to(bottom);
-        b.line_to(right);
-        b.close();
-    });
-    frame.fill(&triangle_path, indicator_color);
-
-    Some(frame.into_geometry())
 }

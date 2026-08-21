@@ -135,6 +135,36 @@ fn test_button_rects_none_without_complete_path() {
     assert!(line_button_rects(&editor).is_none());
 }
 
+/// 纵向卷帘回归（BUG：曲线工具纵向无法使用）：完整路径下按钮必须存在，
+/// 且完整落在**纵向**内容区（全宽 × 画布高−键盘高）内。
+/// 旧 `content_bounds` 横向语义会把按钮钳到不存在的标尺/键盘列上。
+#[test]
+fn test_button_rects_vertical_roll_inside_vertical_content() {
+    let mut editor = multi_curve_editor();
+    editor.editor_state.is_vertical_roll = true;
+    // 路径锚点 (5000,105)/(5300,110) 纵向屏幕 Y 为负（tick 超出视口），
+    // 但按钮钳制逻辑必须仍产出内容区内位置（与横向越界行为一致）
+    let btns = line_button_rects(&editor).expect("纵向模式按钮应存在");
+    let content = content_bounds(&editor);
+    assert_eq!(
+        (content.x, content.y),
+        (0.0, 0.0),
+        "纵向内容区应从画布原点开始"
+    );
+    for rect in [btns.confirm, btns.cancel] {
+        assert!(rect.x >= content.x, "按钮不得超出内容区左缘");
+        assert!(rect.y >= content.y, "按钮不得超出内容区顶缘");
+        assert!(
+            rect.x + rect.width <= content.x + content.width,
+            "按钮不得超出内容区右缘"
+        );
+        assert!(
+            rect.y + rect.height <= content.y + content.height,
+            "按钮不得压到底部键盘区"
+        );
+    }
+}
+
 /// 蓝军验证：矢量填充的 NonZero 绕数合计 = 填充显示区域
 #[test]
 fn test_fill_render_winding_interior_only() {

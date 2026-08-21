@@ -257,7 +257,7 @@ impl Host {
             return out;
         }
 
-        // hover 预览（铅笔工具 + Idle 状态，跟随鼠标指针）
+        // hover 预览（铅笔工具 + Idle 状态，跟随鼠标指针，转置支持）
         if matches!(edit_state, crate::editor::EditState::Idle)
             && editor.current_tool() == crate::message::Tool::Pencil
             && self.root.should_render_preview_note()
@@ -267,13 +267,34 @@ impl Host {
             let canvas = &editor.editor_state.canvas;
             let local_x = cx - canvas.offset_x;
             let local_y = cy - canvas.offset_y;
-            let in_canvas = local_x >= view.keyboard_width
-                && local_y >= view.ruler_height
-                && local_x < canvas.size_x
-                && local_y < canvas.size_y;
+            let is_vertical = editor.editor_state.is_vertical_roll;
+            let in_canvas = if is_vertical {
+                let grid_bottom = canvas.size_y - view.keyboard_width;
+                local_x >= 0.0
+                    && local_x < canvas.size_x
+                    && local_y >= 0.0
+                    && local_y <= grid_bottom
+            } else {
+                local_x >= view.keyboard_width
+                    && local_y >= view.ruler_height
+                    && local_x < canvas.size_x
+                    && local_y < canvas.size_y
+            };
             if in_canvas {
-                let tick = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
-                let key = view.y_to_key(local_y);
+                let (tick, key) = if is_vertical {
+                    let grid_bottom = canvas.size_y - view.keyboard_width;
+                    let t = (grid_bottom - local_y + view.scroll_x) / view.zoom_x;
+                    let k_f = (local_x + view.scroll_y) / view.zoom_y;
+                    let k = k_f.round().clamp(
+                        0.0,
+                        view.visible_key_count.saturating_sub(1) as f32,
+                    ) as u16;
+                    (view.snap_tick(t).max(0.0), k)
+                } else {
+                    let t = view.snap_tick(view.x_to_tick(local_x)).max(0.0);
+                    let k = view.y_to_key(local_y);
+                    (t, k)
+                };
                 return vec![NoteInstance::new_preview(
                     tick,
                     key as u8,

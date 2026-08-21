@@ -33,6 +33,7 @@ pub mod utils;
 pub mod vertical_bars;
 pub mod vertical_keyboard;
 pub mod vertical_labels;
+pub mod vertical_playback;
 pub mod vertical_program;
 
 pub use vertical_program::VerticalRollGrid;
