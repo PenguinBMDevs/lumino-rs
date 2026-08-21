@@ -60,6 +60,11 @@ fn test_note_shader_valid() {
         include_str!("../../shaders/note_vertical.wgsl"),
         "note_vertical",
     );
+    validate_wgsl(include_str!("../../shaders/onion_note.wgsl"), "onion_note");
+    validate_wgsl(
+        include_str!("../../shaders/onion_note_vertical.wgsl"),
+        "onion_note_vertical",
+    );
 }
 
 #[test]

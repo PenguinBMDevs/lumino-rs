@@ -71,6 +71,8 @@ impl NoteRenderer {
     const VERTEX_SHADER_VERTICAL: &'static str = include_str!("shaders/note_vertical.wgsl");
     /// 洋葱皮顶点着色器代码 (WGSL)
     const ONION_SHADER: &'static str = include_str!("shaders/onion_note.wgsl");
+    /// 洋葱皮纵向顶点着色器代码（转置版，主轨蓝/静音裁剪完移植）
+    const ONION_SHADER_VERTICAL: &'static str = include_str!("shaders/onion_note_vertical.wgsl");
     /// 计算着色器代码 (WGSL)
     const CULL_SHADER: &'static str = include_str!("shaders/cull.wgsl");
     /// 纵向卷帘裁剪着色器代码（转置版）

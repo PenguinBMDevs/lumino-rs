@@ -157,9 +157,12 @@ impl Root {
             .unwrap_or(sidebar::RollBarButton::Horizontal);
 
         // 卷帘方向 → 写入 editor_state，供自动滚动轴向与播放指示线方向共享同一事实源
-        self.editor.editor_state.is_vertical_roll = self.sidebar.is_vertical_roll();
-        if self.editor.editor_state.is_vertical_roll {
-            // 进入纵向：重置键盘缩放以完整显示 128/256 键（铺满视口宽度）
+        let was_vertical = self.editor.editor_state.is_vertical_roll;
+        let is_vertical = self.sidebar.is_vertical_roll();
+        self.editor.editor_state.is_vertical_roll = is_vertical;
+        if is_vertical && !was_vertical {
+            // 进入纵向：先备份横向视图，再重置键盘缩放以完整显示 128/256 键（铺满视口宽度）
+            self.editor.editor_state.save_horizontal_backup();
             let vw = self.editor.editor_state.canvas.size_x;
             if vw > 1.0 {
                 self.editor.fit_vertical_keyboard_to_viewport();
@@ -179,6 +182,13 @@ impl Root {
                 self.editor
                     .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
             }
+        } else if !is_vertical && was_vertical {
+            // 退出纵向：恢复横向视图备份，避免“音符消失”（缩放/滚动错位）
+            self.editor.editor_state.restore_horizontal_backup();
+            self.editor
+                .invalidate_caches(crate::editor::CacheInvalidation::KEYBOARD);
+            self.editor
+                .invalidate_caches(crate::editor::CacheInvalidation::RULER);
         }
 
         // 更新画布偏移

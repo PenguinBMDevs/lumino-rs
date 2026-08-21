@@ -24,7 +24,8 @@ pub fn prepare_renderers(
         return;
     }
 
-    // 准备网格渲染器（纵向转置版头部对齐键盘顶部，时间向上）
+    // 准备网格渲染器（纵向转置版头部对齐键盘顶部，时间向上；纵向隐藏横向标尺故 ruler=0）
+    let is_vertical = params.is_vertical_roll;
     let grid_params = crate::grid_renderer::GridPrepareParams {
         viewport_size: params.logical_size,
         scroll_x: params.scroll.0,
@@ -32,7 +33,11 @@ pub fn prepare_renderers(
         zoom_x: params.zoom.0,
         zoom_y: params.zoom.1,
         keyboard_width: params.keyboard_width,
-        ruler_height: params.ruler_height,
+        ruler_height: if is_vertical {
+            0.0
+        } else {
+            params.ruler_height
+        },
         color_bg: params.color_bg,
         color_bg_black_key: params.color_bg_black_key,
         color_bar: params.color_bar,
@@ -47,7 +52,7 @@ pub fn prepare_renderers(
         canvas_size: params.canvas_size,
         time_signatures: params.time_signatures.clone(),
     };
-    if params.is_vertical_roll {
+    if is_vertical {
         renderers.vertical_grid.prepare(queue, &grid_params);
     } else {
         renderers.grid.prepare(queue, &grid_params);

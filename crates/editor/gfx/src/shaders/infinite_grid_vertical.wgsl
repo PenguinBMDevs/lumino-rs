@@ -192,12 +192,9 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     let screen_y = input.uv.y * camera.viewport_size.y;
 
     let keyboard_h = camera.margins.x;
-    let ruler_h = camera.margins.y;
-
-    // 纵向：标尺在顶部，键盘在底部（头部对齐键盘顶部，时间向上）
+    // 纵向隐藏横向标尺：网格占满至画布顶部（无顶部标尺留白），仅保留底部键盘
     let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - keyboard_h;
-    let margin_test_y = screen_y - camera.canvas_offset.y;
-    if margin_test_y < ruler_h || screen_y > grid_bottom {
+    if screen_y > grid_bottom || screen_y < camera.canvas_offset.y {
         discard;
     }
     // X 轴无左侧键盘，铺满全宽，不做左侧 discard；但需保证在 canvas 水平范围内
@@ -216,8 +213,8 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     }
 
     // === Y 轴可见小节数（LOD）===
-    // 可用高度 = 画布高 - 标尺 - 底部键盘（头部对齐键盘顶部，时间向上远离键盘）
-    let pixel_height = camera.canvas_size.y - ruler_h - keyboard_h;
+    // 可用高度 = 画布高 - 底部键盘（纵向隐藏横向标尺，头部对齐键盘顶部，时间向上远离键盘）
+    let pixel_height = camera.canvas_size.y - keyboard_h;
     let first_ts = get_time_signature(0.0);
     let first_tpm = ticks_per_measure(first_ts);
     let tick_height = max(pixel_height, 1.0) / camera.zoom.x;

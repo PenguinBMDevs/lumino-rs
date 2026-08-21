@@ -15,12 +15,12 @@ pub fn draw_labels(
 ) {
     let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
-    let ruler_height = view.ruler_height;
+    // 纵向隐藏横向标尺：网格从顶部 0 开始
     let keyboard_h = view.keyboard_width;
-    if bounds.height <= ruler_height + keyboard_h || bounds.width <= 1.0 {
+    if bounds.height <= keyboard_h || bounds.width <= 1.0 {
         return;
     }
-    let grid_top = ruler_height;
+    let grid_top = 0.0;
     let grid_bottom = bounds.height - keyboard_h;
     let grid_height = (grid_bottom - grid_top).max(0.0);
     let start_tick = view.scroll_x / view.zoom_x;
@@ -60,9 +60,9 @@ pub fn draw_labels(
         Point::new(bounds.width, grid_bottom),
     );
     frame.stroke(&kb_top, border_stroke);
-    let ruler_bottom = Path::line(
+    let top_border = Path::line(
         Point::new(0.0, grid_top),
         Point::new(bounds.width, grid_top),
     );
-    frame.stroke(&ruler_bottom, border_stroke);
+    frame.stroke(&top_border, border_stroke);
 }

@@ -49,6 +49,16 @@ use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollConfig;
 use lumino_core::view_state::ViewState;
 
+/// 横向视图备份（纵向切回横向时恢复，避免音符因缩放/滚动错位而“消失”）
+#[derive(Debug, Clone)]
+pub struct HorizontalViewBackup {
+    pub zoom_x: f32,
+    pub zoom_y: f32,
+    pub scroll_x: f32,
+    pub scroll_y: f32,
+    pub max_scroll: (f32, f32),
+}
+
 /// 编辑器完整状态
 #[derive(Debug)]
 pub struct EditorState {
@@ -66,6 +76,8 @@ pub struct EditorState {
     pub max_scroll: (f32, f32),
     /// 当前是否为纵向卷帘视图（影响自动滚动轴向与播放指示线方向）
     pub is_vertical_roll: bool,
+    /// 横向视图备份（进入纵向前保存，退出时恢复）
+    pub horizontal_backup: Option<HorizontalViewBackup>,
     /// 编辑器文档与音符数据
     pub data: EditorData,
     /// 图片转 MIDI 放置模式状态
@@ -96,6 +108,7 @@ impl EditorState {
             tool: Tool::Pointer,
             auto_scroll: AutoScrollConfig::default(),
             is_vertical_roll: false,
+            horizontal_backup: None,
             image_to_midi: image_to_midi::ImageToMidiState::default(),
             line_tool: line_tool::LineToolState::default(),
         }
@@ -108,11 +121,49 @@ impl EditorState {
         self.view = ViewState::default();
         self.tool = Tool::Pointer;
         self.auto_scroll = AutoScrollConfig::default();
+        self.horizontal_backup = None;
         self.image_to_midi = image_to_midi::ImageToMidiState::default();
         self.line_tool = line_tool::LineToolState::default();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);
+    }
+
+    /// 保存横向视图备份（进入纵向前调用，仅首次保存）
+    pub fn save_horizontal_backup(&mut self) {
+        if self.horizontal_backup.is_some() {
+            return;
+        }
+        self.horizontal_backup = Some(HorizontalViewBackup {
+            zoom_x: self.view.zoom_x,
+            zoom_y: self.view.zoom_y,
+            scroll_x: self.view.scroll_x,
+            scroll_y: self.view.scroll_y,
+            max_scroll: self.max_scroll,
+        });
+    }
+
+    /// 恢复横向视图备份（退出纵向时调用）
+    pub fn restore_horizontal_backup(&mut self) {
+        if let Some(backup) = self.horizontal_backup.take() {
+            self.view.zoom_x = backup.zoom_x;
+            self.view.zoom_y = backup.zoom_y;
+            self.view.scroll_x = backup.scroll_x;
+            self.view.scroll_y = backup.scroll_y;
+            self.max_scroll = backup.max_scroll;
+            self.view.smooth_scroll.target_x = backup.scroll_x;
+            self.view.smooth_scroll.target_y = backup.scroll_y;
+            self.view.smooth_scroll.active = false;
+            // 重算 max_scroll 以同步画布尺寸变化
+            let total_ticks = self.view.total_ticks;
+            viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
+                .update_max_scroll(total_ticks);
+            // 钳制 scroll 到新 max 范围内
+            self.view.scroll_x = self.view.scroll_x.clamp(0.0, self.max_scroll.0);
+            self.view.scroll_y = self.view.scroll_y.clamp(0.0, self.max_scroll.1);
+            self.view.smooth_scroll.target_x = self.view.scroll_x;
+            self.view.smooth_scroll.target_y = self.view.scroll_y;
+        }
     }
 
     /// 设置当前工具

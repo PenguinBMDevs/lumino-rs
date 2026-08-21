@@ -174,14 +174,13 @@ pub fn draw(
 ) {
     let view = &editor.editor_state.view;
     let ppq = view.ppq as f32;
-    let ruler_height = view.ruler_height;
-    // 键盘高度与横向键盘宽度保持一致（视觉统一）
+    // 纵向隐藏横向标尺栏：网格从顶部 0 开始
     let keyboard_h = view.keyboard_width;
-    if bounds.height <= ruler_height + keyboard_h || bounds.width <= 1.0 {
+    if bounds.height <= keyboard_h || bounds.width <= 1.0 {
         return;
     }
 
-    let grid_top = ruler_height;
+    let grid_top = 0.0;
     let grid_bottom = bounds.height - keyboard_h;
     let grid_height = (grid_bottom - grid_top).max(0.0);
 
@@ -355,7 +354,7 @@ pub fn draw(
             }),
     );
 
-    // ── 4. 网格区域边框（底部基线：键盘顶边）──
+    // ── 4. 网格区域边框（底部基线：键盘顶边，纵向隐藏横向标尺故仅保留键盘顶边与顶部边框）──
     let border_stroke = Stroke::default()
         .with_width(1.0)
         .with_color(theme.border_color());
@@ -365,12 +364,12 @@ pub fn draw(
         Point::new(bounds.width, grid_bottom),
     );
     frame.stroke(&kb_top, border_stroke);
-    // 标尺底边
-    let ruler_bottom = Path::line(
+    // 顶部边框（替代原标尺底边）
+    let top_border = Path::line(
         Point::new(0.0, grid_top),
         Point::new(bounds.width, grid_top),
     );
-    frame.stroke(&ruler_bottom, border_stroke);
+    frame.stroke(&top_border, border_stroke);
 }
 
 #[cfg(test)]

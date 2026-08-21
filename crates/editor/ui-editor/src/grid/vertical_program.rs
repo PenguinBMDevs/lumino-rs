@@ -106,10 +106,10 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                         )));
                     }
                 }
-            } else if local.y >= view.ruler_height && local.y < bounds.height - keyboard_h {
-                // 网格区域：Y 向时间轴（头部在键盘顶部，向上递增）支持滚动与缩放
+            } else if local.y < bounds.height - keyboard_h {
+                // 网格区域：Y 向时间轴（头部在键盘顶部，向上递增，纵向隐藏横向标尺故 grid_top=0）支持滚动与缩放
                 let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
-                let grid_top = view.ruler_height;
+                let grid_top = 0.0;
                 let grid_bottom = bounds.height - keyboard_h;
                 let grid_h = (grid_bottom - grid_top).max(1.0);
                 if ctrl_pressed {
@@ -226,10 +226,11 @@ fn draw_vertical_playback(
 
     let view = &editor.editor_state.view;
     let keyboard_h = view.keyboard_width;
-    if bounds.height <= view.ruler_height + keyboard_h {
+    // 纵向隐藏横向标尺：网格从顶部 0 开始至键盘顶部
+    if bounds.height <= keyboard_h {
         return None;
     }
-    let grid_top = view.ruler_height;
+    let grid_top = 0.0;
     let grid_bottom = bounds.height - keyboard_h;
 
     // 计算播放指示线 Y（纵向：时间轴在 Y，头部在键盘顶部，向上递增）

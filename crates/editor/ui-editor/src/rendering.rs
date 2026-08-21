@@ -91,7 +91,8 @@ impl Editor {
         let es = &self.editor_state;
         let canvas_width = es.canvas.size_x.max(1.0);
         let canvas_height = es.canvas.size_y.max(1.0);
-        let grid_height = (canvas_height - es.view.ruler_height - es.view.keyboard_width).max(0.0);
+        // 纵向隐藏横向小节标尺栏：网格占满顶部至键盘顶部，无顶部标尺留白
+        let grid_height = (canvas_height - es.view.keyboard_width).max(0.0);
 
         let grid = Canvas::new(crate::grid::VerticalRollGrid::new(self))
             .width(Length::Fill)

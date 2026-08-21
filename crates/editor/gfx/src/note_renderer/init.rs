@@ -77,10 +77,22 @@ impl NoteRenderer {
         let cull_shader = crate::shader::create_shader_module(device, "cull_shader", cull_shader);
 
         // 纵向转置版管线（复用同缓冲，瀑布流风格的纵向流动）
+        // 洋葱皮纵向需主轨特别显示（ViewState），与普通预览音符的 note_vertical 不同
+        let is_onion = vertex_shader == Self::ONION_SHADER;
+        let vertical_shader_source = if is_onion {
+            Self::ONION_SHADER_VERTICAL
+        } else {
+            Self::VERTEX_SHADER_VERTICAL
+        };
+        let vertical_shader_label = if is_onion {
+            "onion_note_vertical_shader"
+        } else {
+            "note_vertical_shader"
+        };
         let vertical_shader = crate::shader::create_shader_module(
             device,
-            "note_vertical_shader",
-            Self::VERTEX_SHADER_VERTICAL,
+            vertical_shader_label,
+            vertical_shader_source,
         );
         let vertical_cull_shader = crate::shader::create_shader_module(
             device,
