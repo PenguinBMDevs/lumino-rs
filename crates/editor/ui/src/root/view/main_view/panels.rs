@@ -71,34 +71,45 @@ impl Root {
         let clip_zoom = self.state.video_clip.zoom;
         let export_state = self.state.video_export_dialog.clone();
         let theme = self.window.theme.clone();
+        let total_ticks = self.editor.editor_state.view.total_ticks;
+        let ppq = self.editor.editor_state.view.ppq;
+        let tempos: Vec<(u32, f32)> = self
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .map(|tp| (tp.tick as u32, tp.bpm as f32))
+            .collect();
 
         responsive(move |size: Size| {
             let palette = theme.extended_palette();
             // 提取 Copy 的颜色，避免闭包返回 Element 时借用 palette 悬空
             let weak_text = palette.background.weak.text;
-            let weak_color = palette.background.weak.color;
             let weakest_color = palette.background.weakest.color;
             let strong_text = palette.background.strong.text;
             let strong_color = palette.background.strong.color;
             let base_color = palette.background.base.color;
             let neutral_text = palette.background.neutral.text;
 
-            // 预留左侧面板：轨道列表占位 220px（含 6px 拖拽条）
+            // 预留左侧面板：轨道列表占位 220px（row padding 12*2 + spacing 12 = 36）
             let left_reserved: f32 = 220.0;
-            let h_padding: f32 = 24.0;
-            let v_padding: f32 = 16.0;
-            let available_w = (size.width - left_reserved - h_padding).max(320.0);
-            let available_h = (size.height - v_padding).max(240.0);
-            // 16:9 预览尺寸：以可用宽为基准，高度 = 宽 * 9/16，限制不超过可用高的 55%
-            let mut preview_w = available_w;
-            let mut preview_h = preview_w * 9.0 / 16.0;
-            let max_preview_h = (available_h * 0.55).max(180.0);
-            if preview_h > max_preview_h {
-                preview_h = max_preview_h;
-                preview_w = preview_h * 16.0 / 9.0;
-            }
-            preview_w = preview_w.max(320.0);
-            preview_h = preview_h.max(180.0);
+            let h_reserved: f32 = 36.0;
+            let available_w = (size.width - left_reserved - h_reserved).max(320.0);
+            // 下部 UI 占位：header ~40 + timeline 200 + settings 最小 80 + spacing 12*3 + padding 24
+            let lower_reserved: f32 =
+                40.0 + crate::view::video_clip::layout::TIMELINE_HEIGHT + 80.0 + 36.0 + 24.0;
+            let available_h_for_preview = (size.height - lower_reserved).max(180.0);
+            // 强制 16:9：取宽、高约束的最小值，被压缩时动态重算
+            let max_w_by_width = available_w;
+            let max_h_by_width = max_w_by_width * 9.0 / 16.0;
+            let max_h_by_height = available_h_for_preview;
+            let max_w_by_height = max_h_by_height * 16.0 / 9.0;
+            let (preview_w, preview_h) = if max_h_by_width <= available_h_for_preview {
+                (max_w_by_width, max_h_by_width)
+            } else {
+                (max_w_by_height, max_h_by_height)
+            };
             size_cell
                 .borrow_mut()
                 .replace((preview_w as u32, preview_h as u32));
@@ -172,9 +183,10 @@ impl Root {
                     .height(Length::Fill)
                     .into()
                 };
+            // 严格 16:9 的 widget 控件：黑底容器本身 Fixed 16:9，shader 铺满其中不拉伸
             let preview: crate::Element<'_> = iced_widget::container(preview_content)
-                .width(Length::Fill)
-                .height(Length::Fill)
+                .width(Length::Fixed(preview_w))
+                .height(Length::Fixed(preview_h))
                 .style(move |_t: &iced_core::Theme| iced_widget::container::Style {
                     background: Some(iced_core::Color::BLACK.into()),
                     border: iced_core::Border {
@@ -185,7 +197,7 @@ impl Root {
                     ..Default::default()
                 })
                 .into();
-            // 16:9 黑底容器居中
+            // 外层卡片 Fill 宽 + Fixed 高，内部 16:9 预览居中，左右留 base 底色，不拉伸
             let preview_card = container(
                 container(preview)
                     .width(Length::Fixed(preview_w))
@@ -202,37 +214,9 @@ impl Root {
                 ..Default::default()
             });
 
-            let timeline: crate::Element<'_> = {
-                let tl_strong_text = strong_text;
-                let tl_strong_color = strong_color;
-                let tl_weak_color = weak_color;
-                // 直接内联时间轴占位，避免借用 theme 导致闭包生命周期问题
-                let inner: crate::Element<'_> = iced_widget::text(
-                    "时间轴（待接入：轨道 / 波形 / 播放头）",
-                )
-                .size(12)
-                .style(move |_t: &crate::Theme| iced_widget::text::Style {
-                    color: Some(tl_strong_text),
-                })
-                .into();
-                iced_widget::container(inner)
-                    .width(Length::Fill)
-                    .height(Length::Fixed(
-                        crate::view::video_clip::layout::TIMELINE_HEIGHT,
-                    ))
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill)
-                    .style(move |_t: &iced_core::Theme| iced_widget::container::Style {
-                        background: Some(tl_weak_color.into()),
-                        border: iced_core::Border {
-                            color: tl_strong_color,
-                            width: 1.0,
-                            radius: 6.0.into(),
-                        },
-                        ..Default::default()
-                    })
-                    .into()
-            };
+            let timeline = crate::view::video_clip::timeline::timeline_pane(
+                &theme, total_ticks, ppq, &tempos,
+            );
             let settings = {
                 let s = &export_state;
                 iced_widget::column![
