@@ -6,3 +6,4 @@
 pub mod layout;
 pub mod preview;
 pub mod timeline;
+pub mod timeline_canvas;

@@ -73,6 +73,7 @@ impl Root {
         let theme = self.window.theme.clone();
         let total_ticks = self.editor.editor_state.view.total_ticks;
         let ppq = self.editor.editor_state.view.ppq;
+        let ctrl_pressed = self.toolbar.ctrl_pressed;
         let tempos: Vec<(u32, f32)> = self
             .editor
             .editor_state
@@ -98,6 +99,9 @@ impl Root {
             size_cell
                 .borrow_mut()
                 .replace((preview_w as u32, preview_h as u32));
+            // 时间轴可视宽度（剪辑带滚动条/滚动的钳制基准，随消息携带）
+            let timeline_viewport_w =
+                crate::view::video_clip::layout::renderer_panel_available_width(size);
 
             // 左侧轨道占位（后续接入真实轨道列表）
             let left_panel = container(
@@ -179,7 +183,13 @@ impl Root {
             );
 
             let timeline = crate::view::video_clip::timeline::timeline_pane(
-                &theme, total_ticks, ppq, &tempos,
+                &theme,
+                total_ticks,
+                ppq,
+                &tempos,
+                &self.state.video_clip,
+                timeline_viewport_w,
+                ctrl_pressed,
             );
             let settings = {
                 let s = &export_state;

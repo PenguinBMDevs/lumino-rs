@@ -370,6 +370,22 @@ impl Root {
     }
 
     /// 处理视频剪辑面板交互
+    /// 剪辑带时间轴未缩放基准宽度（像素）＝ MIDI 时长 × 像素密度，最小兜底 400
+    pub(crate) fn clip_timeline_base_width(&self) -> f32 {
+        let v = &self.editor.editor_state.view;
+        let tempos: Vec<(u32, f32)> = self
+            .editor
+            .editor_state
+            .data
+            .tempo_points
+            .iter()
+            .map(|tp| (tp.tick as u32, tp.bpm as f32))
+            .collect();
+        let duration =
+            crate::view::video_clip::timeline::duration_seconds(v.total_ticks, v.ppq, &tempos);
+        (duration as f32 * crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC).max(400.0)
+    }
+
     pub(crate) fn handle_video_clip_action(&mut self, action: VideoClipAction) -> bool {
         match action {
             VideoClipAction::ZoomChanged(factor) => {
@@ -405,6 +421,30 @@ impl Root {
             VideoClipAction::PreviewSizeChanged { width, height } => {
                 self.state.video_clip.preview_width = width;
                 self.state.video_clip.preview_height = height;
+                true
+            }
+            VideoClipAction::TimelineScroll { x, viewport_w } => {
+                let zoom = self.state.video_clip.zoom;
+                let content_w = self.clip_timeline_base_width() * zoom;
+                self.state
+                    .video_clip
+                    .set_timeline_scroll(x, content_w, viewport_w.max(1.0));
+                true
+            }
+            VideoClipAction::TimelineZoom {
+                zoom,
+                fixed_ratio,
+                viewport_w,
+            } => {
+                let old_zoom = self.state.video_clip.zoom;
+                let base_w = self.clip_timeline_base_width();
+                self.state.video_clip.timeline_zoom_around(
+                    zoom,
+                    fixed_ratio,
+                    old_zoom,
+                    base_w,
+                    viewport_w.max(1.0),
+                );
                 true
             }
         }

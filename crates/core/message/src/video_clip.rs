@@ -33,6 +33,22 @@ pub enum VideoClipAction {
     },
     /// 重置视口（双击）
     ResetView,
+    /// 时间轴水平滚动（绝对滚动位置，来自滚动条拖拽/滚轮）
+    TimelineScroll {
+        /// 目标滚动位置（像素）
+        x: f32,
+        /// 发出时的时间轴可视宽度（用于钳制，避免视图状态反向同步）
+        viewport_w: f32,
+    },
+    /// 时间轴缩放（目标倍率 + 锚点比例，来自滚动条边缘手势/滚轮）
+    TimelineZoom {
+        /// 目标缩放倍率
+        zoom: f32,
+        /// 锚点在视口内的横向比例（0.0 贴左，1.0 贴右）
+        fixed_ratio: f32,
+        /// 发出时的时间轴可视宽度（用于锚点换算与钳制）
+        viewport_w: f32,
+    },
     /// 预览区尺寸变化（responsive 回调）
     PreviewSizeChanged {
         /// 宽度

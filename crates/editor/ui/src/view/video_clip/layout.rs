@@ -32,6 +32,14 @@ pub const PREVIEW_MIN_W: f32 = 320.0;
 /// 预览最小高度
 pub const PREVIEW_MIN_H: f32 = 180.0;
 
+/// 走带指示线固定 x 位置（视频带区域前端，像素）
+pub const PLAYHEAD_X: f32 = 50.0;
+
+/// 渲染器入口面板主区域的可用宽度（扣除左侧轨道面板与行内边距）
+pub fn renderer_panel_available_width(area: Size) -> f32 {
+    (area.width - LEFT_RESERVED - H_RESERVED).max(PREVIEW_MIN_W)
+}
+
 /// 计算 16:9 预览尺寸，严格保持 16:9，不被 UI 拉伸
 ///
 /// `available_width` 为预览可用宽，`available_height` 为预览可用高；
