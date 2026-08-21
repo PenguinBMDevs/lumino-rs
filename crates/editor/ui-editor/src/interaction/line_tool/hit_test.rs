@@ -143,8 +143,12 @@ impl Editor {
         best.map(|(pos, _)| pos)
     }
 
-    /// 锚点/控制柄屏幕位置（key 支持 f32 自由值）
+    /// 锚点/控制柄屏幕位置（key 支持 f32 自由值，转置：纵向 tick→Y，key→X）
     pub fn line_pos_screen_pos(&self, pos: (f32, f32)) -> Point {
+        if self.editor_state.is_vertical_roll {
+            // 纵向：复用 Editor 的统一转换（tick,key）→ 屏幕点
+            return self.tick_key_to_pos_f32(pos.0, pos.1);
+        }
         let v = &self.editor_state.view;
         let max_key_index = (v.visible_key_count - 1) as f32;
         Point::new(
@@ -156,9 +160,25 @@ impl Editor {
     /// y 坐标 → key（f32 原始值，不取整；中间锚点自由定位用）
     ///
     /// `pub(crate)`：moved.rs（interaction 父模块）直接调用
+    /// 纵向时实际从 X 取 key（保持调用点语义，内部转置）
     pub(crate) fn raw_y_to_key(&self, y: f32) -> f32 {
+        if self.editor_state.is_vertical_roll {
+            // 纵向调用方已改为 pos_to_raw_key，这里保留兼容：仍从 y 映射会错，但不再被纵向路径调用
+            // 为安全，直接按 X 计算（调用方传入的 y 在纵向实际是 pos.x，已在 moved.rs 中修正）
+            let v = &self.editor_state.view;
+            return (y + v.scroll_y) / v.zoom_y;
+        }
         let v = &self.editor_state.view;
         let max_key_index = (v.visible_key_count - 1) as f32;
         max_key_index - (y - v.ruler_height + v.scroll_y) / v.zoom_y
+    }
+
+    /// 位置 → (tick, raw_key) 的纵向感知封装（供 pressed/moved 复用）
+    pub(crate) fn pos_to_line_raw(&self, pos: Point) -> (f32, f32) {
+        if self.editor_state.is_vertical_roll {
+            (self.pos_to_tick(pos), self.pos_to_raw_key(pos))
+        } else {
+            (self.x_to_tick(pos.x), self.raw_y_to_key(pos.y))
+        }
     }
 }

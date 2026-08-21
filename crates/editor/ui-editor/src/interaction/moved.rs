@@ -10,8 +10,8 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
         crate::puffin_profiler::moved_handle();
-        let tick = self.x_to_tick(pos.x);
-        let key = self.y_to_key(pos.y);
+        let tick = self.pos_to_tick(pos);
+        let key = self.pos_to_key(pos);
         let snapped_tick = self.snap_tick(tick);
 
         // 图片转 MIDI 放置模式：移动/拉伸（框选 Selecting 复用下方 EditState::Selecting 逻辑）
@@ -24,16 +24,15 @@ impl Editor {
             return;
         }
 
-        // 曲线工具贝塞尔路径模式：锚点/控制柄拖动中
+        // 曲线工具贝塞尔路径模式：锚点/控制柄拖动中（纵向转置）
         if self.editor_state.tool == lumino_message::Tool::Curve
             && self.editor_state.line_tool.interaction != LineToolInteraction::None
         {
-            self.handle_line_tool_moved(
-                snapped_tick,
-                key as f32,
-                self.x_to_tick(pos.x),
-                self.raw_y_to_key(pos.y),
-            );
+            let raw_tick = self.pos_to_tick(pos);
+            let raw_key = self.pos_to_raw_key(pos);
+            // 横向原逻辑：snapped_tick 来自 tick 吸附，key 取整，raw 为自由值
+            // 纵向保持同语义，仅轴互换
+            self.handle_line_tool_moved(snapped_tick, key as f32, raw_tick, raw_key);
             return;
         }
 
@@ -66,6 +65,20 @@ impl Editor {
             return;
         }
 
+        // 预计算垂直/水平所需的 Y 值，避免在 &mut borrow 期间再借 self
+        let is_y_select = self.editor_state.tool == lumino_message::Tool::PointerYSelect;
+        let is_vertical = self.editor_state.is_vertical_roll;
+        let tick_y_vertical = if is_vertical {
+            self.tick_to_y_vertical(tick)
+        } else {
+            0.0
+        };
+        let key_y_horizontal = if !is_vertical {
+            let view = &self.editor_state.view;
+            view.key_to_y(key) + view.zoom_y
+        } else {
+            0.0
+        };
         if let EditState::Selecting {
             current_tick,
             current_key,
@@ -73,19 +86,21 @@ impl Editor {
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            // Y 向框选工具：X 维度同普通框选，Y 维度保持全范围不动
-            let is_y_select = self.editor_state.tool == lumino_message::Tool::PointerYSelect;
-            let view = &self.editor_state.view;
             // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）。
             // 曾用 snap_tick_forward（1/4 提前吸附）/ floor 吸附，导致选框边界
             // 相对鼠标位置多延伸出最多一个精度单元（正向 0.75 单元、反向 1 单元），
             // 且会选中鼠标未扫过的音符。框选边界必须精确跟随鼠标扫过的范围。
             *current_tick = tick;
             if !is_y_select {
-                // 上下精度 = 单个 key：current_y 对齐到 key 线
-                //（key_to_y(key) + zoom_y 为该 key 的底边，覆盖完整整数 key 范围）
                 *current_key = key;
-                *current_y = view.key_to_y(key) + view.zoom_y;
+                if is_vertical {
+                    // 纵向：Y 为时间轴，current_y 为 tick 的屏幕 Y（零高初始，后续随 tick 扩展）
+                    *current_y = tick_y_vertical;
+                } else {
+                    // 上下精度 = 单个 key：current_y 对齐到 key 线
+                    //（key_to_y(key) + zoom_y 为该 key 的底边，覆盖完整整数 key 范围）
+                    *current_y = key_y_horizontal;
+                }
             }
         }
 

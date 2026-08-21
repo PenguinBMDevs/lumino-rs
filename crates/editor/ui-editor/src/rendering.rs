@@ -32,22 +32,36 @@ impl Editor {
         let view = &es.view;
         let canvas = &es.canvas;
 
-        let viewport_width = canvas.size_x - view.keyboard_width;
-        let viewport_height = canvas.size_y - view.ruler_height;
+        let (visible_tick_start, visible_tick_end, visible_key_min, visible_key_max) = if es
+            .is_vertical_roll
+        {
+            // 纵向：tick 垂直（Y），key 水平（X）
+            let grid_h = (canvas.size_y - view.keyboard_width).max(0.0);
+            let tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+            let tick_end = ((view.scroll_x + grid_h) / view.zoom_x).max(tick_start);
+            let key_min_f = (view.scroll_y / view.zoom_y).floor().max(0.0);
+            let key_max_f = ((view.scroll_y + canvas.size_x) / view.zoom_y).ceil();
+            let key_min = key_min_f as u16;
+            let key_max = (key_max_f as u16).saturating_add(1).min(view.key_count);
+            (tick_start, tick_end, key_min, key_max)
+        } else {
+            let viewport_width = canvas.size_x - view.keyboard_width;
+            let viewport_height = canvas.size_y - view.ruler_height;
 
-        let visible_tick_start = (view.scroll_x / view.zoom_x).max(0.0);
-        let visible_tick_end =
-            ((view.scroll_x + viewport_width) / view.zoom_x).max(visible_tick_start);
+            let tick_start = (view.scroll_x / view.zoom_x).max(0.0);
+            let tick_end = ((view.scroll_x + viewport_width) / view.zoom_x).max(tick_start);
 
-        let max_key_index = (view.visible_key_count - 1) as f32;
+            let max_key_index = (view.visible_key_count - 1) as f32;
 
-        // key_top 对应屏幕上方 (Y = ruler_height)，值最大（高音）
-        let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
-        // key_bottom 对应屏幕下方 (Y = canvas_size.y)，值最小（低音）
-        let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
+            // key_top 对应屏幕上方 (Y = ruler_height)，值最大（高音）
+            let key_top_f32 = max_key_index - (view.scroll_y / view.zoom_y);
+            // key_bottom 对应屏幕下方 (Y = canvas_size.y)，值最小（低音）
+            let key_bottom_f32 = max_key_index - ((view.scroll_y + viewport_height) / view.zoom_y);
 
-        let visible_key_max = key_top_f32.ceil() as u16 + 1; // 多取 1 个作为缓冲
-        let visible_key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
+            let key_max = key_top_f32.ceil() as u16 + 1; // 多取 1 个作为缓冲
+            let key_min = (key_bottom_f32.floor().max(0.0) as u16).saturating_sub(1); // 多取 1 个作为缓冲
+            (tick_start, tick_end, key_min, key_max)
+        };
 
         if overscan_factor > 0.0 {
             let tick_span = visible_tick_end - visible_tick_start;
@@ -203,31 +217,49 @@ impl Editor {
         editor_content.into()
     }
 
-    /// 获取选择框的屏幕坐标（用于渲染选择框）
+    /// 获取选择框的屏幕坐标（用于渲染选择框，转置支持）
     ///
     /// 将选择框坐标（tick/key）转换为屏幕坐标，确保选择框与音符对齐
     pub fn get_selection_box(&self) -> Option<(Point, Point)> {
         if let EditState::Selecting {
             start_tick,
             current_tick,
+            start_key,
+            current_key,
             start_y,
             current_y,
-            ..
         } = self.editor_state.interaction.edit_state
         {
-            let start_x = self.tick_to_x(start_tick);
-            let current_x = self.tick_to_x(current_tick);
-            Some((
-                Point::new(start_x, start_y),
-                Point::new(current_x, current_y),
-            ))
+            if self.editor_state.is_vertical_roll {
+                // 纵向：X=key，Y=tick（头部在键盘顶部）
+                let view = &self.editor_state.view;
+                let start_x = self.key_to_x_vertical(start_key);
+                let current_x = self.key_to_x_vertical(current_key) + view.zoom_y;
+                // Y 直接用 tick 转置（与 moved.rs 存储的 tick Y 一致，重新计算避免脏数据）
+                let start_y_v = self.tick_to_y_vertical(start_tick);
+                let current_y_v = self.tick_to_y_vertical(current_tick);
+                // 保持与 horizontal 相同的返回语义：start_y/current_y 仍为 Y 值，但此处用计算值
+                // 若需兼容旧 stored 值，可忽略 start_y/current_y 直接用计算
+                let _ = (start_y, current_y); // 避免未使用警告，纵向不用 stored
+                Some((
+                    Point::new(start_x.min(current_x), start_y_v.min(current_y_v)),
+                    Point::new(start_x.max(current_x), start_y_v.max(current_y_v)),
+                ))
+            } else {
+                let start_x = self.tick_to_x(start_tick);
+                let current_x = self.tick_to_x(current_tick);
+                Some((
+                    Point::new(start_x, start_y),
+                    Point::new(current_x, current_y),
+                ))
+            }
         } else {
             None
         }
     }
 
-    /// 判断是否在 Canvas 有效区域内
-    /// 有效区域 = Canvas 除去键盘区域（左侧）、标尺区域（顶部）、滚动条区域（底部和右侧）
+    /// 判断是否在 Canvas 有效区域内（纵向转置：键盘在底部，标尺隐藏）
+    /// 有效区域 = Canvas 除去键盘区域（纵向底部/横向左侧）、标尺区域（横向顶部）
     /// 同时避开窗口边框和菜单栏的边界区域
     pub fn is_inside_canvas(&self, local_pos: Point) -> bool {
         let es = &self.editor_state;
@@ -240,16 +272,27 @@ impl Editor {
             return false;
         }
 
-        // 检查是否在键盘区域外（x 大于键盘宽度）
-        if local_pos.x < es.view.keyboard_width {
-            return false;
-        }
+        if es.is_vertical_roll {
+            // 纵向：键盘在底部（高度=keyboard_width），无顶部标尺
+            let kb_h = es.view.keyboard_width;
+            let grid_bottom = es.canvas.size_y - kb_h;
+            if local_pos.y > grid_bottom {
+                return false;
+            }
+            // X 方向无左侧键盘留白，全宽可用
+            true
+        } else {
+            // 检查是否在键盘区域外（x 大于键盘宽度）
+            if local_pos.x < es.view.keyboard_width {
+                return false;
+            }
 
-        // 检查是否在标尺区域下方（y 大于标尺高度）
-        if local_pos.y < es.view.ruler_height {
-            return false;
-        }
+            // 检查是否在标尺区域下方（y 大于标尺高度）
+            if local_pos.y < es.view.ruler_height {
+                return false;
+            }
 
-        true
+            true
+        }
     }
 }

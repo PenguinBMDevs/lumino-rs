@@ -22,6 +22,49 @@ impl<'a> VerticalRollGrid<'a> {
     }
 }
 
+impl VerticalRollGrid<'_> {
+    fn detect_double_click(&self, state: &mut GridInteractionState, local_pos: Point) -> bool {
+        use lumino_ui_core::constants::editor as editor_constants;
+        let now = std::time::Instant::now();
+        let is_double_click = state.last_click_pos.is_some_and(|last_pos| {
+            let time_delta = now.duration_since(state.last_click_time).as_millis();
+            let pos_delta =
+                ((local_pos.x - last_pos.x).powi(2) + (local_pos.y - last_pos.y).powi(2)).sqrt();
+            time_delta < editor_constants::DOUBLE_CLICK_TIME_MS
+                && pos_delta < editor_constants::DOUBLE_CLICK_DISTANCE_PX
+        });
+        if !is_double_click {
+            state.last_click_time = now;
+            state.last_click_pos = Some(local_pos);
+        }
+        is_double_click
+    }
+
+    fn handle_left_press_vertical(
+        &self,
+        state: &mut GridInteractionState,
+        local_pos: Point,
+    ) -> Option<Action<Message>> {
+        use lumino_ui_core::message::EditorAction;
+        // 纵向：头部在键盘顶部，无顶部标尺，循环区域与固定指示线逻辑沿用横向（暂不转置）
+        // 仅保留核心 Pressed/DoubleClicked 分发，纵向坐标由 Editor 层转置处理
+        if self.detect_double_click(state, local_pos) {
+            return Some(Action::publish(Message::EditorAction(
+                EditorAction::DoubleClicked(lumino_ui_core::message::Point2::new(
+                    local_pos.x,
+                    local_pos.y,
+                )),
+            )));
+        }
+        Some(Action::publish(Message::EditorAction(
+            EditorAction::Pressed {
+                pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                shift: state.shift_pressed,
+            },
+        )))
+    }
+}
+
 impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
     type State = GridInteractionState;
 
@@ -61,6 +104,81 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
         if let Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) = event {
             state.shift_pressed = modifiers.shift();
             state.control_pressed = modifiers.control();
+        }
+
+        let cursor_over_bounds = cursor.position_over(bounds);
+        match event {
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(position) = cursor_over_bounds {
+                    let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 图片转 MIDI 与曲线工具悬浮按钮优先（复用横向逻辑）
+                    if self.editor.editor_state.image_to_midi.mode
+                        == lumino_editor_state::ImageToMidiMode::Placing
+                        && let Some(btns) = crate::grid::i2m_box::i2m_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::RightSidebar(
+                                lumino_message::RightSidebarAction::PlacementConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::RightSidebar(
+                                lumino_message::RightSidebarAction::PlacementCancel,
+                            )));
+                        }
+                    }
+                    if self.editor.current_tool() == lumino_message::Tool::Curve
+                        && let Some(btns) =
+                            crate::grid::line_tool_box::line_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::LineToolConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::LineToolCancel,
+                            )));
+                        }
+                    }
+                    if self.editor.is_inside_canvas(local_pos) {
+                        return self.handle_left_press_vertical(state, local_pos);
+                    }
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Right)) => {
+                if let Some(position) = cursor_over_bounds {
+                    let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+                    if self.editor.is_inside_canvas(local_pos) {
+                        return Some(Action::publish(Message::PianoRollContextMenu(
+                            lumino_message::PianoRollContextMenuAction::Open {
+                                position: lumino_message::Point2::new(local_pos.x, local_pos.y),
+                            },
+                        )));
+                    }
+                }
+            }
+            Event::Mouse(mouse::Event::CursorMoved { position }) => {
+                let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+                // 更新框选框平滑动画（复用 Editor 逻辑）
+                crate::grid::program::PianoRollGrid::new(self.editor)
+                    .update_selection_box_animation(Some(local_pos));
+                if cursor_over_bounds.is_some() {
+                    return Some(Action::publish(Message::EditorAction(
+                        lumino_ui_core::message::EditorAction::Moved(
+                            lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                        ),
+                    )));
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
+                self.editor.selection_box_anim.set(None);
+                return Some(Action::publish(Message::EditorAction(
+                    lumino_ui_core::message::EditorAction::Released,
+                )));
+            }
+            _ => {}
         }
 
         // 键盘区域滚轮：支持缩放（Ctrl+滚轮）与左右滚动（音高轴 X）

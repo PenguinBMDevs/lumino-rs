@@ -64,7 +64,7 @@ impl Editor {
         snapped_tick: f32,
         snapped_key: f32,
     ) {
-        let raw = (self.x_to_tick(pos.x), self.raw_y_to_key(pos.y));
+        let raw = self.pos_to_line_raw(pos);
         // 端点设置：创建/续完路径（连续追加合并为一次撤销）
         if !self.editor_state.line_tool.is_complete()
             || self.editor_state.line_tool.creating_path().is_some()
@@ -334,12 +334,23 @@ impl Editor {
             }
         }
         // 填充音符：√ 确认时按**图形覆盖范围**计算（标记 → 区域 → 全部格点）。
-        // 范围 = 画布可见 tick 区间 + 全键盘 key（与渲染背景矩形一致）。
+        // 范围 = 画布可见 tick 区间 + 全键盘 key（与渲染背景矩形一致，纵向转置）。
         if !fill_marks.is_empty() {
-            let tick_lo = self.x_to_tick(0.0).max(0.0);
-            let tick_hi = self
-                .x_to_tick(self.editor_state.canvas.size_x)
-                .max(tick_lo + snap_max);
+            let (tick_lo, tick_hi) = if self.editor_state.is_vertical_roll {
+                let view = &self.editor_state.view;
+                let canvas_h = self.editor_state.canvas.size_y;
+                let kb_h = view.keyboard_width;
+                let grid_h = (canvas_h - kb_h).max(0.0);
+                let lo = (view.scroll_x / view.zoom_x).max(0.0);
+                let hi = ((view.scroll_x + grid_h) / view.zoom_x).max(lo + snap_max);
+                (lo, hi)
+            } else {
+                let lo = self.x_to_tick(0.0).max(0.0);
+                let hi = self
+                    .x_to_tick(self.editor_state.canvas.size_x)
+                    .max(lo + snap_max);
+                (lo, hi)
+            };
             let key_count = self.editor_state.view.key_count;
             let edges = fill::collect_edges(&paths, snap_max);
             let cells = fill::confirm_fill_cells(

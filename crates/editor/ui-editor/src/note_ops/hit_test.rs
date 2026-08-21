@@ -58,8 +58,11 @@ impl Editor {
     /// pressed 通常在 Idle 状态触发，空间索引是最新的，准确性有保证。
     pub fn hit_test_note(&self, pos: Point) -> Option<(usize, HitType)> {
         let view = &self.editor_state.view;
-        let tick = view.x_to_tick(pos.x);
-        let key = view.y_to_key(pos.y);
+        let (tick, key) = if self.editor_state.is_vertical_roll {
+            (self.pos_to_tick(pos), self.pos_to_key(pos))
+        } else {
+            (view.x_to_tick(pos.x), view.y_to_key(pos.y))
+        };
         let edge_threshold = NOTE_EDGE_THRESHOLD_PX / view.zoom_x;
         let max_key = view.visible_key_count.saturating_sub(1);
         let edit_state = &self.editor_state.interaction.edit_state;

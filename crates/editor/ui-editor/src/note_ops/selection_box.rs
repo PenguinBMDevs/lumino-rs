@@ -59,7 +59,7 @@ impl Editor {
 
         // 非 ghost 路径：使用增量维护的 selected_bounds，O(1)
         if !needs_ghost && let Some((min_t, max_te, max_k, min_k)) = self.selected_bounds.get() {
-            return vec![rect_from_bounds(view, min_t, max_te, max_k, min_k)];
+            return vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)];
         }
         // 缓存失效时回退到全量扫描（理论上不应发生，兜底）
 
@@ -131,14 +131,14 @@ impl Editor {
                 let (g_min_t, g_max_te, g_max_k, g_min_k) =
                     ghost_rect(min_t, max_te, max_k, min_k, dt, dk, max_key);
                 // 不缓存 ghost 结果（delta 每帧变化）
-                return vec![rect_from_bounds(view, g_min_t, g_max_te, g_max_k, g_min_k)];
+                return vec![self.bounds_to_screen_rect(g_min_t, g_max_te, g_max_k, g_min_k)];
             }
             // 移动模式（无复制）：选择框跟随移动 ghost（原件 + move delta）
             if move_active {
                 let (g_min_t, g_max_te, g_max_k, g_min_k) =
                     ghost_rect(min_t, max_te, max_k, min_k, move_dt, move_dk, max_key);
                 // 不缓存 ghost 结果（delta 每帧变化）
-                return vec![rect_from_bounds(view, g_min_t, g_max_te, g_max_k, g_min_k)];
+                return vec![self.bounds_to_screen_rect(g_min_t, g_max_te, g_max_k, g_min_k)];
             }
             // needs_ghost 为 true 时必有 move 或 copy 活跃，此处理论不可达
         }
@@ -242,14 +242,14 @@ impl Editor {
             if copy_active {
                 // 只保留最新件（副本）框选：单框返回
                 if c_min_t.is_finite() {
-                    return vec![rect_from_bounds(view, c_min_t, c_max_te, c_max_k, c_min_k)];
+                    return vec![self.bounds_to_screen_rect(c_min_t, c_max_te, c_max_k, c_min_k)];
                 }
                 return Vec::new();
             }
             if !any {
                 return Vec::new();
             }
-            return vec![rect_from_bounds(view, min_t, max_te, max_k, min_k)];
+            return vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)];
         }
 
         puffin::profile_scope!("get_selection_box_rects::fallback");
@@ -272,7 +272,7 @@ impl Editor {
         if !any {
             return Vec::new();
         }
-        vec![rect_from_bounds(view, min_t, max_te, max_k, min_k)]
+        vec![self.bounds_to_screen_rect(min_t, max_te, max_k, min_k)]
     }
 
     /// 兼容入口：返回所有选择框的并集（覆盖所有选中与副本）
@@ -301,7 +301,7 @@ impl Editor {
     }
 }
 
-/// (min_t, max_te, max_k, min_k) → 屏幕坐标矩形
+/// (min_t, max_te, max_k, min_k) → 屏幕坐标矩形（纵向转置）
 #[inline]
 fn rect_from_bounds(
     view: &lumino_core::view_state::ViewState,
@@ -310,12 +310,35 @@ fn rect_from_bounds(
     max_k: u16,
     min_k: u16,
 ) -> ScreenRect {
+    // 注意：此函数仅在横向路径使用；纵向由 Editor::vertical_rect_from_bounds 处理
+    // 保留以兼容未迁移调用点，但实际 Editor 路径已分支
     (
         view.tick_to_x(min_t),
         view.tick_to_x(max_te),
         view.key_to_y(max_k),
         view.key_to_y(min_k) + view.zoom_y,
     )
+}
+
+/// 纵向 (min_t, max_te, max_k, min_k) → 屏幕坐标矩形
+#[inline]
+fn vertical_rect_from_bounds(
+    view: &lumino_core::view_state::ViewState,
+    canvas_h: f32,
+    min_t: f32,
+    max_te: f32,
+    max_k: u16,
+    min_k: u16,
+) -> ScreenRect {
+    let kb_h = view.keyboard_width;
+    let grid_bottom = canvas_h - kb_h;
+    // X：key 水平
+    let min_x = min_k as f32 * view.zoom_y - view.scroll_y;
+    let max_x = max_k as f32 * view.zoom_y - view.scroll_y + view.zoom_y;
+    // Y：tick 垂直（头部在底部，向上递增）
+    let min_y = grid_bottom - max_te * view.zoom_x + view.scroll_x;
+    let max_y = grid_bottom - min_t * view.zoom_x + view.scroll_x;
+    (min_x, max_x, min_y.min(max_y), min_y.max(max_y))
 }
 
 /// 对 (min_t, max_te, max_k, min_k) 边界应用 ghost delta（tick 平移 + key clamp）
@@ -335,4 +358,22 @@ fn ghost_rect(
         (max_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
         (min_k as i32 + dk as i32).clamp(0, max_key as i32) as u16,
     )
+}
+
+impl super::super::Editor {
+    #[inline]
+    fn bounds_to_screen_rect(&self, min_t: f32, max_te: f32, max_k: u16, min_k: u16) -> ScreenRect {
+        if self.editor_state.is_vertical_roll {
+            vertical_rect_from_bounds(
+                &self.editor_state.view,
+                self.editor_state.canvas.size_y,
+                min_t,
+                max_te,
+                max_k,
+                min_k,
+            )
+        } else {
+            rect_from_bounds(&self.editor_state.view, min_t, max_te, max_k, min_k)
+        }
+    }
 }

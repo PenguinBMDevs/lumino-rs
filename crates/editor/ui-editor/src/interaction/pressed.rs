@@ -17,8 +17,8 @@ impl Editor {
             return;
         }
 
-        let tick = self.x_to_tick(pos.x);
-        let key = self.y_to_key(pos.y);
+        let tick = self.pos_to_tick(pos);
+        let key = self.pos_to_key(pos);
         let snapped_tick = self.snap_tick(tick);
 
         self.handle_tool_pressed(pos, shift, snapped_tick, key);
@@ -80,8 +80,8 @@ impl Editor {
         hit_result: Option<(usize, HitType)>,
         snapped_tick: f32,
     ) {
-        let tick = self.x_to_tick(pos.x);
-        let key = self.y_to_key(pos.y);
+        let tick = self.pos_to_tick(pos);
+        let key = self.pos_to_key(pos);
         // Y 向框选工具：X 维度同普通框选，Y 维度自动覆盖全部可见键
         let is_y_select = self.editor_state.tool == Tool::PointerYSelect;
         // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）：
@@ -186,12 +186,25 @@ impl Editor {
             self.flush_pending_drag();
             self.playback_position = snapped_tick;
             self.selection_clear();
-            // Y 向框选工具：Y 维度自动覆盖全部可见键范围
+            // Y 向框选工具：Y 维度自动覆盖全部可见键范围（纵向转置：Y 为 tick，X 为 key）
             let (start_key, current_key, start_y, current_y) = if is_y_select {
-                let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-                let top_y = self.editor_state.view.key_to_y(max_key);
-                let bottom_y = self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
-                (max_key, 0, top_y, bottom_y)
+                if self.editor_state.is_vertical_roll {
+                    let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+                    let grid_bottom =
+                        self.editor_state.canvas.size_y - self.editor_state.view.keyboard_width;
+                    // 纵向 Y=时间，覆盖全高；key 覆盖全键盘（X 维度）
+                    (max_key, 0, 0.0, grid_bottom.max(0.0))
+                } else {
+                    let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+                    let top_y = self.editor_state.view.key_to_y(max_key);
+                    let bottom_y =
+                        self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
+                    (max_key, 0, top_y, bottom_y)
+                }
+            } else if self.editor_state.is_vertical_roll {
+                // 纵向：Y 为时间轴，起点为 tick 对应的屏幕 Y（零高初始框，拖动时扩展）
+                let y = self.tick_to_y_vertical(tick);
+                (key, key, y, y)
             } else {
                 // 上下精度 = 单个 key：起点/终点对齐到 key 线
                 let view = &self.editor_state.view;
@@ -256,8 +269,8 @@ impl Editor {
         shift: bool,
         hit_result: Option<(usize, HitType)>,
     ) {
-        let tick = self.x_to_tick(pos.x);
-        let key = self.y_to_key(pos.y);
+        let tick = self.pos_to_tick(pos);
+        let key = self.pos_to_key(pos);
         // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附，与指针工具框选一致）
         let selection_start_tick = tick;
 
@@ -265,15 +278,20 @@ impl Editor {
             EraserBehavior::Default => {
                 if shift {
                     self.selection_clear();
+                    let (start_y, current_y) = if self.editor_state.is_vertical_roll {
+                        let y = self.tick_to_y_vertical(tick);
+                        (y, y)
+                    } else {
+                        let y0 = self.editor_state.view.key_to_y(key);
+                        (y0, y0 + self.editor_state.view.zoom_y)
+                    };
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
-                        // 上下精度 = 单个 key：起点/终点对齐到 key 线
-                        start_y: self.editor_state.view.key_to_y(key),
-                        current_y: self.editor_state.view.key_to_y(key)
-                            + self.editor_state.view.zoom_y,
+                        start_y,
+                        current_y,
                     };
                 } else if hit_result.is_some() {
                     self.delete_note_at(pos);
@@ -284,15 +302,20 @@ impl Editor {
                     self.delete_note_at(pos);
                 } else {
                     self.selection_clear();
+                    let (start_y, current_y) = if self.editor_state.is_vertical_roll {
+                        let y = self.tick_to_y_vertical(tick);
+                        (y, y)
+                    } else {
+                        let y0 = self.editor_state.view.key_to_y(key);
+                        (y0, y0 + self.editor_state.view.zoom_y)
+                    };
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,
                         current_tick: selection_start_tick,
                         current_key: key,
-                        // 上下精度 = 单个 key：起点/终点对齐到 key 线
-                        start_y: self.editor_state.view.key_to_y(key),
-                        current_y: self.editor_state.view.key_to_y(key)
-                            + self.editor_state.view.zoom_y,
+                        start_y,
+                        current_y,
                     };
                 }
             }

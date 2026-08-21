@@ -46,22 +46,27 @@ impl Editor {
                 current_key,
                 ..
             } => {
-                // 计算起点的屏幕坐标（固定锚点）
-                let start_x = self.tick_to_x(start_tick);
-                let start_y = self.key_to_y(start_key);
-                let start_pos = Point::new(start_x, start_y);
+                let is_vertical = self.editor_state.is_vertical_roll;
+                // 计算起点的屏幕坐标（固定锚点，转置）
+                let start_pos = if is_vertical {
+                    self.tick_key_to_pos(start_tick, start_key)
+                } else {
+                    let start_x = self.tick_to_x(start_tick);
+                    let start_y = self.key_to_y(start_key);
+                    Point::new(start_x, start_y)
+                };
 
                 // 计算弹簧目标位置
                 // 与 Selecting.current_tick 保持一致：目标 = 鼠标精确 tick 位置
                 //（像素级，不吸附——吸附语义会让选框边界多延伸一个精度单元，
                 // 且动画目标与选区边界不一致导致视觉与实际选中范围不符）
                 let snapped_tick = if let Some(pos) = mouse_pos {
-                    self.x_to_tick(pos.x)
+                    self.pos_to_tick(pos)
                 } else {
                     current_tick
                 };
                 let snapped_key = if let Some(pos) = mouse_pos {
-                    self.y_to_key(pos.y)
+                    self.pos_to_key(pos)
                 } else {
                     current_key
                 };
@@ -78,26 +83,32 @@ impl Editor {
                             state.snapped_key,
                         )
                     } else {
-                        // 初始状态：显示位置等于第一个吸附位置
-                        let init_x = self.tick_to_x(snapped_tick);
-                        let init_y = self.key_to_y(snapped_key);
-                        (
-                            Point::new(init_x, init_y),
-                            Point::new(0.0, 0.0),
-                            snapped_tick,
-                            snapped_key,
-                        )
+                        // 初始状态：显示位置等于第一个吸附位置（转置）
+                        let init_pos = if is_vertical {
+                            self.tick_key_to_pos(snapped_tick, snapped_key)
+                        } else {
+                            let init_x = self.tick_to_x(snapped_tick);
+                            let init_y = self.key_to_y(snapped_key);
+                            Point::new(init_x, init_y)
+                        };
+                        (init_pos, Point::new(0.0, 0.0), snapped_tick, snapped_key)
                     };
 
                 // 判断吸附位置是否发生变化
                 let snapped_changed =
                     snapped_tick != last_snapped_tick || snapped_key != last_snapped_key;
 
-                // 计算弹簧目标位置：吸附位置变化时更新目标，否则保持上一次的目标
+                // 计算弹簧目标位置：吸附位置变化时更新目标，否则保持上一次的目标（转置）
                 let spring_target = if snapped_changed {
-                    let target_x = self.tick_to_x(snapped_tick);
-                    let target_y = self.key_to_y(snapped_key);
-                    Point::new(target_x, target_y)
+                    if is_vertical {
+                        self.tick_key_to_pos(snapped_tick, snapped_key)
+                    } else {
+                        let target_x = self.tick_to_x(snapped_tick);
+                        let target_y = self.key_to_y(snapped_key);
+                        Point::new(target_x, target_y)
+                    }
+                } else if is_vertical {
+                    self.tick_key_to_pos(last_snapped_tick, last_snapped_key)
                 } else {
                     let target_x = self.tick_to_x(last_snapped_tick);
                     let target_y = self.key_to_y(last_snapped_key);

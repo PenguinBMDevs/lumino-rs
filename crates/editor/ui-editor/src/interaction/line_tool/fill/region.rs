@@ -51,11 +51,22 @@ pub(crate) fn fill_region(editor: &Editor) -> Option<FillRegion> {
         .filter(|lp| line.fill.iter().any(|&m| covered(lp, m)))
         .cloned()
         .collect();
-    // 背景矩形 = 画布可见 tick 区间 × 全键盘 key（与 confirm_fill_cells 范围一致）
-    let tick_lo = editor.x_to_tick(0.0).max(0.0);
-    let tick_hi = editor
-        .x_to_tick(editor.editor_state.canvas.size_x)
-        .max(tick_lo + snap);
+    // 背景矩形 = 画布可见 tick 区间 × 全键盘 key（与 confirm_fill_cells 范围一致，纵向转置）
+    let (tick_lo, tick_hi) = if editor.editor_state.is_vertical_roll {
+        let view = &editor.editor_state.view;
+        let canvas_h = editor.editor_state.canvas.size_y;
+        let kb_h = view.keyboard_width;
+        let grid_h = (canvas_h - kb_h).max(0.0);
+        let lo = (view.scroll_x / view.zoom_x).max(0.0);
+        let hi = ((view.scroll_x + grid_h) / view.zoom_x).max(lo + snap);
+        (lo, hi)
+    } else {
+        let lo = editor.x_to_tick(0.0).max(0.0);
+        let hi = editor
+            .x_to_tick(editor.editor_state.canvas.size_x)
+            .max(lo + snap);
+        (lo, hi)
+    };
     let key_count = editor.editor_state.view.key_count;
     let bounds = (tick_lo, 0.0, tick_hi, key_count.saturating_sub(1) as f32);
     Some(FillRegion {
