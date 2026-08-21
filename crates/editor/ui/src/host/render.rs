@@ -86,8 +86,7 @@ impl Host {
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
         use crate::titlebar::mode_toggle::AppMode;
 
-        let in_waterfall = self.root.state.current_mode == AppMode::Waterfall
-            || self.root.editor.editor_state.is_vertical_roll;
+        let in_waterfall = self.root.state.current_mode == AppMode::Waterfall;
 
         // 键数跟随全局设置：开启 256 键扩展则为 256，否则 128
         let key_count: u32 = if self.root.settings.display.enable_256key {
@@ -109,14 +108,22 @@ impl Host {
             .and_then(|t| t.take_note_data());
         let note_count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
 
+        if std::env::var("LUMINO_VRDIAG").is_ok() {
+            tracing::info!(
+                "[VR_DIAG] ensure: in_waterfall={} size={:?} key_count={} note_count={}",
+                in_waterfall,
+                *self.root.waterfall_player.size.borrow(),
+                key_count,
+                note_count
+            );
+        }
         if in_waterfall {
-            // ── 瀑布流渲染：全屏 Waterfall 模式 或 纵向卷帘面板（二者共用键盘+卷帘绘制逻辑）──
+            // ── 瀑布流渲染：全屏 Waterfall 模式 ——
             let size = *self.root.waterfall_player.size.borrow();
-            let (width, height) = match size {
-                Some(s) => s,
-                // 尚无布局尺寸（首帧视图未构建），下一帧再渲染，避免 1x1 闪现
-                None => return,
-            };
+            // 尚无布局尺寸时不再早退：用兜底尺寸先把纹理建出来（键盘立即可见），
+            // responsive 写回真实尺寸后签名变化会触发下一帧重渲染到精确尺寸，
+            // 打破「尺寸 None → 早退 → 永不渲染」的死循环。
+            let (width, height) = size.unwrap_or((1280, 720));
 
             let mut sig: u64 = width as u64;
             sig = sig.wrapping_mul(31).wrapping_add(height as u64);
@@ -136,7 +143,8 @@ impl Host {
                 .keyboard_renderer
                 .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
 
-            if let Some(view) = renderer.render_scene(
+            let diag = std::env::var("LUMINO_VRDIAG").is_ok();
+            let scene = renderer.render_scene(
                 &self.render_ctx.device,
                 &self.render_ctx.queue,
                 width,
@@ -146,18 +154,27 @@ impl Host {
                 zoom_x,
                 scroll_x,
                 current_track,
-            ) {
+            );
+            if let Some(view) = scene {
                 state.view = Some(view);
                 state.cached_signature = Some(sig);
+                if diag {
+                    tracing::info!(
+                        "[VR_DIAG] render_scene OK w={width} h={height} note_count={note_count}"
+                    );
+                }
+            } else if diag {
+                tracing::info!(
+                    "[VR_DIAG] render_scene NONE w={width} h={height} note_count={note_count}"
+                );
             }
 
-            // 瀑布流（全屏/纵向卷帘）模式下右侧栏预览被隐藏：释放其纹理与签名，停止一切渲染动作
+            // 瀑布流全屏模式下右侧栏预览被隐藏：释放其纹理与签名，停止一切渲染动作
             let rs = &mut self.root.right_sidebar.piano_waterfall;
             if rs.waterfall_view.is_some() {
                 rs.waterfall_view = None;
                 rs.cached_signature = None;
             }
-            // 全屏瀑布流模式独占主界面，无需再走右侧栏预览渲染；纵向卷帘模式则放行后续右侧栏分支。
             if self.root.state.current_mode == AppMode::Waterfall {
                 return;
             }

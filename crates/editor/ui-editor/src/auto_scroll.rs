@@ -1,6 +1,5 @@
 use crate::Editor;
 use lumino_core::storage::config::{AutoScrollConfig, AutoScrollMode};
-use lumino_core::view_state::DEFAULT_KEYBOARD_WIDTH;
 
 impl Editor {
     /// 设置自动滚动配置
@@ -34,11 +33,6 @@ impl Editor {
 
     /// 更新自动滚动（在每帧渲染前调用，根据播放位置调整滚动）
     ///
-    /// 纵向卷帘（`editor_state.is_vertical_roll`）把时间轴转置到 Y 方向：
-    /// 用 `zoom_x` 作时间轴缩放、`keyboard_height`(=横向 `keyboard_width`) 作 pitch 轴留白，
-    /// 继续驱动 `scroll_x`（纵向视图的时间轴偏移）。内容「向下落」方向由 `tick_to_y` 的
-    /// `ruler + tick*zoom - scroll` 保证（scroll 增→坐标增→下移），故纵向与横向同取 `+target`。
-    ///
     /// 返回是否需要刷新网格缓存
     pub fn update_auto_scroll(&mut self, playback_tick: f32) -> bool {
         let asc = &self.editor_state.auto_scroll;
@@ -46,24 +40,10 @@ impl Editor {
             return false;
         }
 
-        let is_vertical = self.editor_state.is_vertical_roll;
         let v = &self.editor_state.view;
-        // 纵向卷帘等价于"把横向卷帘整体转 90°"：主滚动轴仍是 X（时间轴、键盘 pitch 轴、
-        // auto_scroll 全部共用 `zoom_x`/`scroll_x`）。故纵向模式下时间轴缩放仍用 `zoom_x`，
-        // 仅把 pitch 轴留白换成键盘高、画布尺寸换成画布高度。之前误用 `zoom_y` 导致与网格
-        // 时间轴 `zoom_x` 错配，播放时 `scroll_x` 被按 `zoom_y` 驱动、网格按 `zoom_x` 解释，
-        // 整片网格被推出可视区而"消失"。
         let time_zoom = v.zoom_x;
-        let pitch_inset = if is_vertical {
-            DEFAULT_KEYBOARD_WIDTH
-        } else {
-            v.keyboard_width
-        };
-        let canvas_size = if is_vertical {
-            self.editor_state.canvas.size_y
-        } else {
-            self.editor_state.canvas.size_x
-        };
+        let pitch_inset = v.keyboard_width;
+        let canvas_size = self.editor_state.canvas.size_x;
         let viewport_width = (canvas_size - pitch_inset).max(0.0);
         if viewport_width <= 0.0 {
             return false;
@@ -148,37 +128,6 @@ impl Editor {
                 // 指示线位置 = 播放位置对应的像素 - 滚动偏移 + 键盘宽度
                 let indicator_x = self.playback_position * v.zoom_x - v.scroll_x + v.keyboard_width;
                 Some(indicator_x)
-            }
-        }
-    }
-
-    /// 获取演奏指示线在 Canvas 坐标系中的 Y 坐标（用于渲染，纵向卷帘）
-    ///
-    /// 与 `get_playback_indicator_screen_x` 对称：时间轴转置到 Y 方向，
-    /// 用 `zoom_x` 作时间轴缩放（与网格时间轴一致）、`keyboard_height`(=横向 `keyboard_width`) 作顶部留白。
-    pub fn get_playback_indicator_screen_y(&self) -> Option<f32> {
-        let v = &self.editor_state.view;
-        let asc = &self.editor_state.auto_scroll;
-        let keyboard_height = DEFAULT_KEYBOARD_WIDTH;
-        match asc.mode {
-            AutoScrollMode::FixedIndicatorLeft => {
-                let indicator_pos = asc.fixed_indicator_position as f32;
-
-                let total_height = v.total_ticks as f32 * v.zoom_x;
-                let viewport_height = (self.editor_state.canvas.size_y - keyboard_height).max(0.0);
-                let max_scroll = (total_height - viewport_height).max(0.0);
-
-                if max_scroll > 0.0 && v.scroll_x >= max_scroll - 1.0 {
-                    let indicator_y =
-                        self.playback_position * v.zoom_x - v.scroll_x + keyboard_height;
-                    Some(indicator_y)
-                } else {
-                    Some(keyboard_height + indicator_pos)
-                }
-            }
-            AutoScrollMode::ScrollingIndicator | AutoScrollMode::Off => {
-                let indicator_y = self.playback_position * v.zoom_x - v.scroll_x + keyboard_height;
-                Some(indicator_y)
             }
         }
     }

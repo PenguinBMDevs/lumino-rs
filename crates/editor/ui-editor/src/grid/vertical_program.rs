@@ -1,0 +1,205 @@
+//! 纵向卷帘 Canvas Program — 底部横向钢琴键盘 + 网格线（水平时间 + 垂直音高）
+//!
+//! 复用横向 `PianoRollGrid` 的交互状态与缩放/滚动语义，仅绘制层转置。
+
+use super::state::GridInteractionState;
+use crate::Editor;
+use iced_core::{Point, Rectangle, mouse};
+use iced_widget::canvas::{Action, Event, Geometry, Program};
+use lumino_ui_core::constants::editor::{
+    PLAYBACK_INDICATOR_TRIANGLE_SIZE, PLAYBACK_INDICATOR_WIDTH,
+};
+use lumino_ui_core::{Message, Renderer, Theme};
+
+/// 纵向卷帘网格绘制程序
+pub struct VerticalRollGrid<'a> {
+    pub editor: &'a Editor,
+}
+
+impl<'a> VerticalRollGrid<'a> {
+    pub fn new(editor: &'a Editor) -> Self {
+        Self { editor }
+    }
+}
+
+impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
+    type State = GridInteractionState;
+
+    fn update(
+        &self,
+        state: &mut Self::State,
+        event: &Event,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
+    ) -> Option<Action<Message>> {
+        let bounds_pos = Point::new(bounds.x, bounds.y);
+        let bounds_size = iced_core::Size::new(bounds.width, bounds.height);
+
+        let canvas = &self.editor.editor_state.canvas;
+        let new_size = Point::new(bounds.width, bounds.height);
+        if canvas.size_x != new_size.x
+            || canvas.size_y != new_size.y
+            || canvas.offset_x != bounds_pos.x
+            || canvas.offset_y != bounds_pos.y
+        {
+            return Some(Action::publish(
+                lumino_ui_core::Message::CanvasBoundsChanged {
+                    offset: lumino_ui_core::message::Point2::new(bounds_pos.x, bounds_pos.y),
+                    size: lumino_ui_core::message::Size2::new(
+                        bounds_size.width,
+                        bounds_size.height,
+                    ),
+                },
+            ));
+        }
+
+        if let Some(position) = cursor.position() {
+            let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+            state.position = Some(local_pos);
+        }
+
+        let cursor_over_bounds = cursor.position_over(bounds);
+
+        match event {
+            Event::Mouse(mouse::Event::WheelScrolled { delta }) => {
+                if cursor_over_bounds.is_some() {
+                    // 复用横向的滚轮逻辑：纵向同样支持 Shift+滚轮水平/垂直切换
+                    // 简化：直接分发 Scrolled，轴语义与横向一致（scroll_x=时间Y, scroll_y=音高X）
+                    let (delta_x, delta_y) = match delta {
+                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    };
+                    let dx = delta_x.clamp(-120.0, 120.0);
+                    let dy = delta_y.clamp(-120.0, 120.0);
+                    return Some(Action::publish(Message::EditorAction(
+                        lumino_ui_core::message::EditorAction::Scrolled {
+                            delta_x: dx,
+                            delta_y: dy,
+                        },
+                    )));
+                }
+            }
+            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                if let Some(position) = cursor_over_bounds {
+                    let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
+                    // 点击网格区：复用按压语义，但坐标需转置（时间 Y→ tick, 音高 X→ key）
+                    // 为保持与横向一致的 Editor::Pressed 语义，这里直接透传原始坐标；
+                    // 具体的 tick/key 解析由 Editor 侧按纵向模式转置处理（后续若需编辑再扩展）。
+                    return Some(Action::publish(Message::EditorAction(
+                        lumino_ui_core::message::EditorAction::Pressed {
+                            pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
+                            shift: state.shift_pressed,
+                        },
+                    )));
+                }
+            }
+            Event::Keyboard(iced_core::keyboard::Event::ModifiersChanged(modifiers)) => {
+                state.shift_pressed = modifiers.shift();
+                state.control_pressed = modifiers.control();
+            }
+            _ => {}
+        }
+
+        None
+    }
+
+    fn mouse_interaction(
+        &self,
+        _state: &Self::State,
+        _bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> mouse::Interaction {
+        mouse::Interaction::Idle
+    }
+
+    fn draw(
+        &self,
+        _state: &Self::State,
+        renderer: &Renderer,
+        theme: &Theme,
+        bounds: Rectangle,
+        _cursor: mouse::Cursor,
+    ) -> Vec<Geometry<Renderer>> {
+        let mut geometries = Vec::new();
+
+        // 1. 网格线（水平时间 + 垂直音高）
+        let grid_geom = {
+            let mut frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
+            super::vertical_bars::draw(self.editor, &mut frame, bounds, theme);
+            frame.into_geometry()
+        };
+        geometries.push(grid_geom);
+
+        // 2. 底部横向钢琴键盘（缓存与横向一致：复用 keyboard_cache 语义，但此处每帧直绘）
+        let kb_geom = {
+            let mut frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
+            super::vertical_keyboard::draw(self.editor, &mut frame, bounds, theme);
+            frame.into_geometry()
+        };
+        geometries.push(kb_geom);
+
+        // 2.1 洋葱皮覆盖层
+        if let Some(geom) =
+            super::vertical_keyboard::draw_onion_overlay(self.editor, renderer, bounds)
+        {
+            geometries.push(geom);
+        }
+
+        // 3. 播放指示线（水平红线，时间轴在 Y）
+        if let Some(geom) = draw_vertical_playback(self.editor, renderer, bounds) {
+            geometries.push(geom);
+        }
+
+        geometries
+    }
+}
+
+fn draw_vertical_playback(
+    editor: &Editor,
+    renderer: &Renderer,
+    bounds: Rectangle,
+) -> Option<Geometry<Renderer>> {
+    use iced_widget::canvas::{Frame, Path, Stroke};
+
+    let view = &editor.editor_state.view;
+    let keyboard_h = super::vertical_keyboard::VERTICAL_KEYBOARD_HEIGHT;
+    if bounds.height <= view.ruler_height + keyboard_h {
+        return None;
+    }
+    let grid_top = view.ruler_height;
+    let grid_bottom = bounds.height - keyboard_h;
+
+    // 计算播放指示线 Y（纵向：时间轴在 Y）
+    let indicator_y = editor.playback_position * view.zoom_x - view.scroll_x + grid_top;
+
+    if indicator_y < grid_top || indicator_y > grid_bottom {
+        return None;
+    }
+
+    let mut frame = Frame::new(renderer, bounds.size());
+    let indicator_color = iced_core::Color::from_rgb(1.0, 0.2, 0.2);
+    let line_path = Path::line(
+        Point::new(0.0, indicator_y),
+        Point::new(bounds.width, indicator_y),
+    );
+    frame.stroke(
+        &line_path,
+        Stroke::default()
+            .with_width(PLAYBACK_INDICATOR_WIDTH)
+            .with_color(indicator_color),
+    );
+    // 左侧三角形指示
+    let tri = PLAYBACK_INDICATOR_TRIANGLE_SIZE;
+    let triangle_path = Path::new(|b| {
+        let top = Point::new(0.0, indicator_y - tri / 2.0);
+        let bottom = Point::new(0.0, indicator_y + tri / 2.0);
+        let right = Point::new(tri, indicator_y);
+        b.move_to(top);
+        b.line_to(bottom);
+        b.line_to(right);
+        b.close();
+    });
+    frame.fill(&triangle_path, indicator_color);
+
+    Some(frame.into_geometry())
+}

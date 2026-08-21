@@ -76,6 +76,34 @@ impl Editor {
         )
     }
 
+    /// 构建纵向卷帘视图（底部横向钢琴键盘 + 水平时间 / 垂直音高网格）
+    ///
+    /// 样式与横向 `view` 一致：复用同款主题、缩放/滚动语义，仅布局转置
+    /// （时间轴转至 Y 方向，键盘移至底部横向排列）。网格线按 key/小节规则
+    /// 由 `vertical_bars` 按 LOD 绘制，键盘由 `vertical_keyboard` 绘制。
+    pub fn view_vertical<'a>(&'a self) -> Element<'a> {
+        let grid = Canvas::new(crate::grid::VerticalRollGrid::new(self))
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        let content = iced_widget::container(grid)
+            .width(Length::Fill)
+            .height(Length::Fill);
+
+        // 纵向模式同样支持右键上下文菜单（复用横向组件）
+        if self.context_menu.open
+            && let Some(position) = self.context_menu.position
+        {
+            return iced_widget::Stack::new()
+                .push(content)
+                .push(crate::context_menu::background_close_overlay())
+                .push(crate::context_menu::view(position))
+                .into();
+        }
+
+        content.into()
+    }
+
     /// 构建编辑器视图
     pub fn view<'a>(
         &'a self,

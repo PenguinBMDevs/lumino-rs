@@ -22,39 +22,6 @@ impl Root {
             return self.view_waterfall_fullscreen();
         }
 
-        // 纵向卷帘面板：与全屏瀑布流同款「独立面板」处理——只渲染瀑布流播放器
-        // （钢琴键盘 + 下落式卷帘），剥离钢琴卷帘工具栏 / 力度面板 / 右侧栏 / 3D 卷帘场景。
-        // 仅保留应用级全局导航（标题栏 + 左侧栏），纵向面板后续在此壳上挂载独立编辑动作。
-        if self.sidebar.is_vertical_roll() {
-            let language = self.settings.display.language;
-            let ppq = self.editor.editor_state.view.ppq;
-            let note_precision = self.toolbar.note_precision.as_ticks(ppq);
-            let titlebar = self.titlebar.view(
-                &self.window,
-                self.settings.synth.use_native_titlebar,
-                self.state.current_mode,
-                self.state.toggle_animation.position,
-                language,
-                false,
-            );
-            let left_bar = self.sidebar.view(
-                &self.window,
-                language,
-                self.state.current_mode,
-                note_precision,
-            );
-            let player = self.view_waterfall_player();
-            return column![
-                titlebar,
-                row![
-                    left_bar,
-                    container(player).width(Length::Fill).height(Length::Fill)
-                ]
-                .height(Length::Fill),
-            ]
-            .into();
-        }
-
         let is_arrangement_route = self.sidebar.is_arrangement_route();
 
         // 左侧栏（包含图标栏和音轨面板）
@@ -99,60 +66,132 @@ impl Root {
             // 右侧栏跟随钢琴卷帘 UI 显隐（right_sidebar_visible 收口）：
             // 离开钢琴卷帘（工程走带/瀑布流/导出面板/卷帘关闭）时由上方
             // 各分支接管，不渲染右侧栏。
+            // 纵向卷帘：底部横向钢琴键盘 + 水平时间 / 垂直音高网格，复用同款主题与右/底边栏
             let has_selection = self.editor.selected_notes_count() > 0;
-            right_content::wrap_right_content(self, has_selection, false, move |available_width| {
-                let velocity_panel = if self.sidebar.automation_panel_visible {
-                    self.editor.velocity_panel.view(
-                        &self.editor,
-                        self.visual.velocity_panel_height,
-                        self.settings.display.language,
-                    )
-                } else {
-                    iced_widget::Space::new().height(0).into()
-                };
-                let editor_view = self.editor.view(
-                    message::Message::ScrollbarScrolled,
-                    message::Message::ScrollbarScrolledY,
-                    |zoom, fixed_ratio| message::Message::ZoomXChanged { zoom, fixed_ratio },
-                    |zoom, fixed_ratio| message::Message::ZoomYChanged { zoom, fixed_ratio },
-                );
-                let perf_ctx = crate::toolbar::ToolbarPerfContext {
-                    playback_tick: self.editor.playback_position,
-                    ppq: self.editor.editor_state.view.ppq,
-                    tempo_points: &self.editor.editor_state.data.tempo_points,
-                };
-                let toolbar = self.toolbar.toolbar_view(
-                    &self.window,
+            if self.sidebar.is_vertical_roll() {
+                right_content::wrap_right_content(
+                    self,
                     has_selection,
-                    self.settings.display.language,
-                    &perf_ctx,
-                    available_width,
                     false,
-                );
-                // 右侧栏渲染条件收口：仅钢琴卷帘编辑区渲染（防御性兜底，
-                // 正常情况下该分支即满足 right_sidebar_visible）
-                let right_bar = if self.right_sidebar_visible() {
-                    right_sidebar::view::view(
-                        &self.right_sidebar,
-                        &self.window,
-                        self.settings.display.language,
-                    )
-                } else {
-                    iced_widget::Space::new().into()
-                };
-                column![
-                    toolbar,
-                    row![
-                        column![container(editor_view).height(Length::Fill), velocity_panel,]
+                    move |available_width| {
+                        let velocity_panel = if self.sidebar.automation_panel_visible {
+                            self.editor.velocity_panel.view(
+                                &self.editor,
+                                self.visual.velocity_panel_height,
+                                self.settings.display.language,
+                            )
+                        } else {
+                            iced_widget::Space::new().height(0).into()
+                        };
+                        let editor_view = self.editor.view_vertical();
+                        let perf_ctx = crate::toolbar::ToolbarPerfContext {
+                            playback_tick: self.editor.playback_position,
+                            ppq: self.editor.editor_state.view.ppq,
+                            tempo_points: &self.editor.editor_state.data.tempo_points,
+                        };
+                        let toolbar = self.toolbar.toolbar_view(
+                            &self.window,
+                            has_selection,
+                            self.settings.display.language,
+                            &perf_ctx,
+                            available_width,
+                            false,
+                        );
+                        let right_bar = if self.right_sidebar_visible() {
+                            right_sidebar::view::view(
+                                &self.right_sidebar,
+                                &self.window,
+                                self.settings.display.language,
+                            )
+                        } else {
+                            iced_widget::Space::new().into()
+                        };
+                        column![
+                            toolbar,
+                            row![
+                                column![
+                                    container(editor_view).height(Length::Fill),
+                                    velocity_panel,
+                                ]
+                                .height(Length::Fill),
+                                right_bar,
+                            ]
                             .height(Length::Fill),
-                        right_bar,
-                    ]
-                    .height(Length::Fill),
-                ]
-                .width(Length::Fill)
-                .height(Length::Fill)
-                .into()
-            })
+                        ]
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                    },
+                )
+            } else {
+                right_content::wrap_right_content(
+                    self,
+                    has_selection,
+                    false,
+                    move |available_width| {
+                        let velocity_panel = if self.sidebar.automation_panel_visible {
+                            self.editor.velocity_panel.view(
+                                &self.editor,
+                                self.visual.velocity_panel_height,
+                                self.settings.display.language,
+                            )
+                        } else {
+                            iced_widget::Space::new().height(0).into()
+                        };
+                        let editor_view = self.editor.view(
+                            message::Message::ScrollbarScrolled,
+                            message::Message::ScrollbarScrolledY,
+                            |zoom, fixed_ratio| message::Message::ZoomXChanged {
+                                zoom,
+                                fixed_ratio,
+                            },
+                            |zoom, fixed_ratio| message::Message::ZoomYChanged {
+                                zoom,
+                                fixed_ratio,
+                            },
+                        );
+                        let perf_ctx = crate::toolbar::ToolbarPerfContext {
+                            playback_tick: self.editor.playback_position,
+                            ppq: self.editor.editor_state.view.ppq,
+                            tempo_points: &self.editor.editor_state.data.tempo_points,
+                        };
+                        let toolbar = self.toolbar.toolbar_view(
+                            &self.window,
+                            has_selection,
+                            self.settings.display.language,
+                            &perf_ctx,
+                            available_width,
+                            false,
+                        );
+                        // 右侧栏渲染条件收口：仅钢琴卷帘编辑区渲染（防御性兜底，
+                        // 正常情况下该分支即满足 right_sidebar_visible）
+                        let right_bar = if self.right_sidebar_visible() {
+                            right_sidebar::view::view(
+                                &self.right_sidebar,
+                                &self.window,
+                                self.settings.display.language,
+                            )
+                        } else {
+                            iced_widget::Space::new().into()
+                        };
+                        column![
+                            toolbar,
+                            row![
+                                column![
+                                    container(editor_view).height(Length::Fill),
+                                    velocity_panel,
+                                ]
+                                .height(Length::Fill),
+                                right_bar,
+                            ]
+                            .height(Length::Fill),
+                        ]
+                        .width(Length::Fill)
+                        .height(Length::Fill)
+                        .into()
+                    },
+                )
+            }
         };
 
         puffin::profile_scope!("root_view_main_content");

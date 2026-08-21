@@ -30,6 +30,11 @@ pub mod selection_box;
 pub mod state;
 pub mod theme;
 pub mod utils;
+pub mod vertical_bars;
+pub mod vertical_keyboard;
+pub mod vertical_program;
+
+pub use vertical_program::VerticalRollGrid;
 
 pub use loop_range::{LoopHitTest, LoopRange};
 pub use program::PianoRollGrid;
