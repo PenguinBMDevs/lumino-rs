@@ -180,6 +180,54 @@ impl Host {
             }
         }
 
+        // ── 渲染器入口（视频剪辑窗口）瀑布流预览 ──
+        // 当 Renderer 分组首级面板激活（且未进入 Audio/Video 子面板）时，在 waterfall_player 上离屏渲染
+        // 对标 PianoRoll 的 File/Automation 子面板逻辑，复用全屏 waterfall 的渲染路径但由剪辑窗口的 responsive 驱动尺寸
+        let is_renderer_entry = self.root.sidebar.active_group
+            == Some(lumino_ui_core::sidebar_event::GroupId::Renderer)
+            && !self.root.sidebar.audio_export_visible
+            && !self.root.sidebar.video_export_visible
+            && self.root.state.current_mode != AppMode::Waterfall;
+        if is_renderer_entry {
+            let size = *self.root.waterfall_player.size.borrow();
+            let (width, height) = size.unwrap_or((1920, 1080));
+            let mut sig: u64 = width as u64;
+            sig = sig.wrapping_mul(31).wrapping_add(height as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(zoom_x as i64 as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(scroll_x as i64 as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
+            sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
+            let state = &mut self.root.waterfall_player;
+            if state.cached_signature != Some(sig) {
+                let renderer = self
+                    .render_ctx
+                    .keyboard_renderer
+                    .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+                if let Some(view) = renderer.render_scene(
+                    &self.render_ctx.device,
+                    &self.render_ctx.queue,
+                    width,
+                    height,
+                    key_count,
+                    note_data.clone(),
+                    zoom_x,
+                    scroll_x,
+                    current_track,
+                ) {
+                    state.view = Some(view);
+                    state.cached_signature = Some(sig);
+                }
+            }
+            // 剪辑窗口接管瀑布流预览，右侧栏预览应清空避免双重渲染
+            let rs = &mut self.root.right_sidebar.piano_waterfall;
+            if rs.waterfall_view.is_some() {
+                rs.waterfall_view = None;
+                rs.cached_signature = None;
+            }
+            return;
+        }
+
         // ── 右侧栏瀑布流预览 ──
         // 仅当右侧栏确实可见（且为瀑布流面板）时才渲染：关闭面板 / 切换面板 /
         // 进入瀑布流全屏模式 / 走带 / 导出面板 等任一情形均彻底停渲。

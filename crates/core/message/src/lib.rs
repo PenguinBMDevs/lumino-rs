@@ -21,6 +21,7 @@ pub mod settings_dialog;
 pub mod speed_change;
 pub mod types;
 pub mod velocity;
+pub mod video_clip;
 pub mod video_export;
 
 pub use audio_export::AudioExportAction;
@@ -41,6 +42,7 @@ pub use settings_dialog::SettingsDialogAction;
 pub use speed_change::SpeedChangeAction;
 pub use types::*;
 pub use velocity::VelocityAction;
+pub use video_clip::VideoClipAction;
 pub use video_export::VideoExportAction;
 
 pub use lumino_core::{AudioAction, DotType, NotePrecision, Tool};

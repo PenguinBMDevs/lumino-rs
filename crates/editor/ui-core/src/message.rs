@@ -16,7 +16,7 @@ pub use lumino_message::{
     LoopRangeAction, Message as GenericMessage, NotePrecision, PerfData, Point2,
     ProjectSettingsAction, RecoverTrackAction, RightSidebarAction, SettingsDialogAction, Size2,
     SpeedChangeAction, SpeedFactor, ThreadingOption, Tool, TupletType, VelocityAction,
-    VideoExportAction,
+    VideoClipAction, VideoExportAction,
 };
 
 /// 具体化的消息类型

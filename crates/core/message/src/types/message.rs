@@ -21,6 +21,7 @@ use crate::types::editor::EditorAction;
 use crate::types::geometry::{Point2, Size2};
 use crate::types::ui::PerfData;
 use crate::velocity::VelocityAction;
+use crate::video_clip::VideoClipAction;
 use crate::video_export::VideoExportAction;
 
 use crate::context_menu::PianoRollContextMenuAction;
@@ -142,6 +143,8 @@ pub enum Message<W, S, Se, T> {
     RecoverTrack(RecoverTrackAction),
     /// 视频导出动作
     VideoExport(VideoExportAction),
+    /// 视频剪辑动作（瀑布流预览交互）
+    VideoClip(VideoClipAction),
     /// 批量消息（用于 canvas 等一次事件需要发布多条消息的场景）
     Batch(Vec<Message<W, S, Se, T>>),
     /// 钢琴卷帘右键上下文菜单动作

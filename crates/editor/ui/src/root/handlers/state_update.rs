@@ -3,7 +3,7 @@
 //! 处理 `try_handle_simple_state` 中的剩余直接消息，
 //! 包括滚动条、缩放、画布边界、动画帧、性能数据、MIDI 输入等。
 
-use crate::message::Message;
+use crate::message::{Message, VideoClipAction};
 use crate::root::Root;
 use std::time::Instant;
 
@@ -312,6 +312,7 @@ impl Root {
                 }
                 true
             }
+            Message::VideoClip(action) => self.handle_video_clip_action(action.clone()),
             _ => false,
         }
     }
@@ -366,5 +367,46 @@ impl Root {
         self.toast.cleanup_expired(Instant::now());
 
         true
+    }
+
+    /// 处理视频剪辑面板交互
+    pub(crate) fn handle_video_clip_action(&mut self, action: VideoClipAction) -> bool {
+        match action {
+            VideoClipAction::ZoomChanged(factor) => {
+                self.state.video_clip.apply_zoom(factor);
+                true
+            }
+            VideoClipAction::ZoomSet(zoom) => {
+                self.state.video_clip.set_zoom(zoom);
+                true
+            }
+            VideoClipAction::PanChanged { dx, dy } => {
+                self.state.video_clip.pan_by(dx, dy);
+                true
+            }
+            VideoClipAction::ZoomAround {
+                old_zoom,
+                new_zoom,
+                cursor_x,
+                cursor_y,
+                center_x,
+                center_y,
+            } => {
+                self.state.video_clip.zoom_around(
+                    old_zoom, new_zoom, 0.0, 0.0, center_x, center_y, cursor_x, cursor_y,
+                );
+                self.state.video_clip.set_zoom(new_zoom);
+                true
+            }
+            VideoClipAction::ResetView => {
+                self.state.video_clip.reset_view();
+                true
+            }
+            VideoClipAction::PreviewSizeChanged { width, height } => {
+                self.state.video_clip.preview_width = width;
+                self.state.video_clip.preview_height = height;
+                true
+            }
+        }
     }
 }

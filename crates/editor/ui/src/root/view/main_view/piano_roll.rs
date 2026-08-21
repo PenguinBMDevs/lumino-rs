@@ -48,19 +48,25 @@ impl Root {
             // 视频渲染面板（在主界面钢琴卷帘区域显示）
             self.view_video_export_panel()
         } else if !self.sidebar.piano_roll_visible {
-            // 钢琴卷帘已关闭：显示空白区域
-            container(
-                iced_widget::column![]
-                    .width(Length::Fill)
-                    .height(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .style(|theme: &Theme| container::Style {
-                background: Some(iced_core::Background::Color(theme.palette().background)),
-                ..Default::default()
-            })
-            .into()
+            // 渲染器入口面板（首级面板）：当 Renderer 分组激活且未进入子面板时，展示视频剪辑窗口
+            // 对标钢琴卷帘分组的 File/Automation 子面板逻辑，进入/退出由 GroupId::Renderer 状态驱动
+            if self.sidebar.active_group == Some(lumino_ui_core::sidebar_event::GroupId::Renderer) {
+                self.view_renderer_panel()
+            } else {
+                // 钢琴卷帘已关闭：显示空白区域
+                container(
+                    iced_widget::column![]
+                        .width(Length::Fill)
+                        .height(Length::Fill),
+                )
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .style(|theme: &Theme| container::Style {
+                    background: Some(iced_core::Background::Color(theme.palette().background)),
+                    ..Default::default()
+                })
+                .into()
+            }
         } else {
             // 钢琴卷帘编辑区 —— 右侧栏唯一渲染位置。
             // 右侧栏跟随钢琴卷帘 UI 显隐（right_sidebar_visible 收口）：

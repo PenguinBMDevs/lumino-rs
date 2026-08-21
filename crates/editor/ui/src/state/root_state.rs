@@ -7,7 +7,7 @@ pub use lumino_ui_core::state::{
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
     ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SpeedChangeDialogState,
-    ToggleAnimationState, VideoExportDialogState, VideoExportOverlayState,
+    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;
@@ -80,6 +80,8 @@ pub struct RootState {
     pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 找回删除音轨对话框状态
     pub recover_track_dialog: RecoverTrackDialogState,
+    /// 视频剪辑面板状态（瀑布流预览 zoom/pan）
+    pub video_clip: VideoClipState,
     /// 当前应用模式（编辑器/瀑布流）
     pub current_mode: AppMode,
     /// 模式切换按钮动画状态
@@ -112,6 +114,7 @@ impl RootState {
             batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             recover_track_dialog: RecoverTrackDialogState::default(),
+            video_clip: VideoClipState::new(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),
         }
