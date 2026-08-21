@@ -92,24 +92,9 @@ impl Root {
             let base_color = palette.background.base.color;
             let neutral_text = palette.background.neutral.text;
 
-            // 预留左侧面板：轨道列表占位 220px（row padding 12*2 + spacing 12 = 36）
-            let left_reserved: f32 = 220.0;
-            let h_reserved: f32 = 36.0;
-            let available_w = (size.width - left_reserved - h_reserved).max(320.0);
-            // 下部 UI 占位：header ~40 + timeline 200 + settings 最小 80 + spacing 12*3 + padding 24
-            let lower_reserved: f32 =
-                40.0 + crate::view::video_clip::layout::TIMELINE_HEIGHT + 80.0 + 36.0 + 24.0;
-            let available_h_for_preview = (size.height - lower_reserved).max(180.0);
-            // 强制 16:9：取宽、高约束的最小值，被压缩时动态重算
-            let max_w_by_width = available_w;
-            let max_h_by_width = max_w_by_width * 9.0 / 16.0;
-            let max_h_by_height = available_h_for_preview;
-            let max_w_by_height = max_h_by_height * 16.0 / 9.0;
-            let (preview_w, preview_h) = if max_h_by_width <= available_h_for_preview {
-                (max_w_by_width, max_h_by_width)
-            } else {
-                (max_w_by_height, max_h_by_height)
-            };
+            // 16:9 预览尺寸：单一事实源（UI 布局与离屏纹理存储共用，比例必然一致）
+            let (preview_w, preview_h) =
+                crate::view::video_clip::layout::renderer_panel_preview_size(size);
             size_cell
                 .borrow_mut()
                 .replace((preview_w as u32, preview_h as u32));
@@ -131,7 +116,7 @@ impl Root {
                 ]
                 .padding(12),
             )
-            .width(Length::Fixed(left_reserved))
+            .width(Length::Fixed(crate::view::video_clip::layout::LEFT_RESERVED))
             .height(Length::Fill)
             .style(move |_t: &iced_core::Theme| container::Style {
                 background: Some(weakest_color.into()),
@@ -183,36 +168,15 @@ impl Root {
                     .height(Length::Fill)
                     .into()
                 };
-            // 严格 16:9 的 widget 控件：黑底容器本身 Fixed 16:9，shader 铺满其中不拉伸
-            let preview: crate::Element<'_> = iced_widget::container(preview_content)
-                .width(Length::Fixed(preview_w))
-                .height(Length::Fixed(preview_h))
-                .style(move |_t: &iced_core::Theme| iced_widget::container::Style {
-                    background: Some(iced_core::Color::BLACK.into()),
-                    border: iced_core::Border {
-                        color: strong_color,
-                        width: 1.0,
-                        radius: 6.0.into(),
-                    },
-                    ..Default::default()
-                })
-                .into();
-            // 外层卡片 Fill 宽 + Fixed 高，内部 16:9 预览居中，左右留 base 底色，不拉伸
-            let preview_card = container(
-                container(preview)
-                    .width(Length::Fixed(preview_w))
-                    .height(Length::Fixed(preview_h))
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill),
-            )
-            .width(Length::Fill)
-            .height(Length::Fixed(preview_h + 16.0))
-            .center_x(Length::Fill)
-            .center_y(Length::Fill)
-            .style(move |_t: &iced_core::Theme| container::Style {
-                background: Some(iced_core::Background::Color(base_color)),
-                ..Default::default()
-            });
+            // 严格 16:9 预览卡片：几何结构由可测试的 preview_card 构建（黑底 Fixed 盒 + 居中包装），
+            // 禁止 center_x/center_y(Fill)——它们会把 Fixed 覆盖成 Fill（16:9 回归根因）
+            let preview_card = crate::view::video_clip::preview::preview_card(
+                preview_w,
+                preview_h,
+                strong_color,
+                base_color,
+                preview_content,
+            );
 
             let timeline = crate::view::video_clip::timeline::timeline_pane(
                 &theme, total_ticks, ppq, &tempos,
@@ -246,13 +210,15 @@ impl Root {
                 .width(Length::Fill)
             };
 
+            // 设置区固定高度：与 layout::SETTINGS_HEIGHT 预留严格一致，
+            // 禁止 Fill——否则与预览包装器平分剩余高度，挤压预览区（16:9 回归根因之二）
             let settings_card = container(
                 iced_widget::scrollable(settings)
                     .width(Length::Fill)
                     .height(Length::Fill),
             )
             .width(Length::Fill)
-            .height(Length::Fill)
+            .height(Length::Fixed(crate::view::video_clip::layout::SETTINGS_HEIGHT))
             .padding(8)
             .style(move |_t: &iced_core::Theme| container::Style {
                 background: Some(base_color.into()),

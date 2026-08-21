@@ -12,6 +12,25 @@ impl Host {
         gfx: &lumino_gfx::Context,
     ) {
         use crate::titlebar::mode_toggle::AppMode;
+        use lumino_ui_core::sidebar_event::GroupId;
+
+        // 视频剪辑面板（渲染器首级）：不应渲染钢琴卷帘的任何内容（网格/音符/标尺），
+        // 仅保留瀑布流离屏预览（由 ensure_piano_waterfall_keyboard 的 is_renderer_entry 分支处理）
+        // 与 iced UI，避免其他面板内容透出或 GPU 浪费。
+        let is_renderer_clip = self.root.sidebar.active_group == Some(GroupId::Renderer)
+            && !self.root.sidebar.audio_export_visible
+            && !self.root.sidebar.video_export_visible
+            && self.root.state.current_mode != AppMode::Waterfall;
+        if is_renderer_clip {
+            if !self.skip_ui_rendering {
+                let view = frame
+                    .texture
+                    .create_view(&iced_wgpu::wgpu::TextureViewDescriptor::default());
+                let bg = self.root.theme().palette().background;
+                self.render_iced_ui(frame, &view, Some(bg));
+            }
+            return;
+        }
 
         // 始终驱动渲染线程：保证音符实例缓冲持续发布，供瀑布流播放器读取实时落键。
         self.redraw_separate_thread();
@@ -57,6 +76,19 @@ impl Host {
 
         if !self.validate_render_thread_ready() {
             return;
+        }
+
+        // 视频剪辑面板时跳过钢琴卷帘的离屏渲染（网格/音符/标尺），避免与剪辑预览叠加
+        {
+            use crate::titlebar::mode_toggle::AppMode;
+            use lumino_ui_core::sidebar_event::GroupId;
+            let is_renderer_clip = self.root.sidebar.active_group == Some(GroupId::Renderer)
+                && !self.root.sidebar.audio_export_visible
+                && !self.root.sidebar.video_export_visible
+                && self.root.state.current_mode != AppMode::Waterfall;
+            if is_renderer_clip {
+                return;
+            }
         }
 
         let render_data = self.collect_render_data();

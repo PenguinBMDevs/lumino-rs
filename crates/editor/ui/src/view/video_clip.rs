@@ -4,4 +4,5 @@
 //! 首级面板从空白改为三段式：预览区 | 时间轴 | 设置区。
 
 pub mod layout;
+pub mod preview;
 pub mod timeline;
