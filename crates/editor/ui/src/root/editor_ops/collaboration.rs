@@ -10,6 +10,7 @@ impl Root {
         if open {
             self.state.dialog_type = DialogType::Collaboration;
             self.state.collaboration_dialog.view_state = CollaborationViewState::Connect;
+            self.state.collaboration_dialog.connection_status = "未连接".to_string();
         }
         tracing::info!("协作对话框状态: {}", open);
     }
@@ -28,12 +29,15 @@ impl Root {
         if let Some(code) = invite_code {
             self.state.collaboration_dialog.invite_code = code;
         }
-        if let Some(name) = room_name {
-            self.state.collaboration_dialog.room_name = name;
+        if let Some(name) = &room_name {
+            self.state.collaboration_dialog.room_name = name.clone();
         }
         match state {
             CollaborationViewState::Connect => {
-                self.state.collaboration_dialog.connection_status = "未连接".to_string();
+                // 连接失败时通过 room_name 参数透传具体原因（如"用户不存在"/"密码错误"）；
+                // 否则保持默认"未连接"提示。
+                self.state.collaboration_dialog.connection_status =
+                    room_name.unwrap_or_else(|| "未连接".to_string());
             }
             CollaborationViewState::Connecting => {
                 self.state.collaboration_dialog.connection_status = "正在连接...".to_string();

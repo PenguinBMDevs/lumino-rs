@@ -81,7 +81,7 @@ impl RunnerInner {
                 self.set_main_collab_view_state(
                     CollaborationViewState::Connect,
                     None,
-                    Some(format!("连接失败: {reason}")),
+                    Some(reason),
                 );
             }
             UserLeft { user_id } => {
