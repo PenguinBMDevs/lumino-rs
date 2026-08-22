@@ -70,6 +70,8 @@ impl CollaborationClient {
             id: response.room.id.clone(),
             invite_code: response.room.invite_code.clone(),
             name: response.room.name.clone(),
+            project_name: String::new(),
+            project_hash: String::new(),
             host_id: response.room.host_id.clone(),
             user_count: 1,
             max_users: 10,

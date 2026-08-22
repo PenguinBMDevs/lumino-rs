@@ -50,6 +50,11 @@ pub enum ClientMessage {
         /// 项目更新内容
         update: crate::types::ProjectUpdate,
     },
+    /// 选择同步（本地选择变更广播给其他客户端）
+    Selection {
+        /// 选择内容（JSON：{active, timestamp, fingerprints}）
+        selection: serde_json::Value,
+    },
     /// 请求全量同步
     RequestSync,
     /// 心跳 Ping
@@ -165,6 +170,14 @@ pub enum ServerMessage {
         /// 项目更新内容
         update: crate::types::ProjectUpdate,
     },
+    /// 选择更新（来自其他用户的本地选择变更）
+    Selection {
+        /// 发起选择的用户 ID
+        #[serde(rename = "userId")]
+        user_id: crate::types::UserId,
+        /// 选择内容（JSON：{active, timestamp, fingerprints}）
+        selection: serde_json::Value,
+    },
     /// 全量同步响应
     FullSync {
         /// 项目状态快照
@@ -205,6 +218,7 @@ impl ServerMessage {
             ServerMessage::MidiEventUpdate { .. } => "midiEventUpdate",
             ServerMessage::MidiEventBatchUpdate { .. } => "midiEventBatchUpdate",
             ServerMessage::ProjectStateUpdate { .. } => "projectStateUpdate",
+            ServerMessage::Selection { .. } => "selection",
             ServerMessage::FullSync { .. } => "fullSync",
             ServerMessage::Pong { .. } => "pong",
             ServerMessage::Error { .. } => "error",

@@ -26,6 +26,12 @@ pub struct RoomInfo {
     pub invite_code: InviteCode,
     /// 房间名称
     pub name: String,
+    /// 工程名称（用于协作房间工程文件同步；由 host 上传时携带）
+    #[serde(default)]
+    pub project_name: String,
+    /// 工程哈希（lmpj 字节的哈希，hex 编码；用于判断 joiner 与 host 是否为同一工程）
+    #[serde(default)]
+    pub project_hash: String,
     /// 房主用户 ID
     pub host_id: UserId,
     /// 当前用户数量

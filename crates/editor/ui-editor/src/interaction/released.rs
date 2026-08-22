@@ -40,6 +40,8 @@ impl Editor {
                         "框选结束，选中 {} 个音符",
                         self.editor_state.interaction.selected_notes.len()
                     );
+                    // 广播本地选择变更（供协作对端高亮 + first-writer-wins 冲突判定）
+                    self.emit_local_selection_changed(true);
                 }
             }
             EditState::Drawing {

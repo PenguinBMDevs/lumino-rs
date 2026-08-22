@@ -109,6 +109,13 @@ pub async fn handle_server_message(
             );
         }
 
+        ServerMessage::Selection { user_id, selection } => {
+            emit(
+                &callback,
+                CollaborationEvent::Selection { user_id, selection },
+            );
+        }
+
         ServerMessage::FullSync { users, .. } => {
             let mut sess = session.write().await;
             sess.remote_users.clear();

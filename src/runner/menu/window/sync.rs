@@ -47,6 +47,13 @@ impl RunnerInner {
             LocalTrackAdded { track_index } => {
                 self.handle_local_track_added(track_index);
             }
+            LocalSelectionChanged {
+                active,
+                timestamp,
+                fingerprints,
+            } => {
+                self.handle_local_selection_changed(active, timestamp, fingerprints);
+            }
         }
     }
 }

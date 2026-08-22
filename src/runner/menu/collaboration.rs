@@ -106,6 +106,9 @@ impl RunnerInner {
     ) {
         // 更新状态为连接中，并广播到协作对话框（若存在）
         self.collab_state.collaboration_status = CollaborationStatus::Connecting;
+        // 记录服务器地址（工程文件同步 HTTP 请求用）
+        self.collab_state.server_host = host.clone();
+        self.collab_state.server_port = port;
         self.set_main_collab_view_state(CollaborationViewState::Connecting, None, None);
 
         // 使用协作服务连接
@@ -330,6 +333,41 @@ impl RunnerInner {
             tracing::debug!("协作: 发送音轨添加失败: {}", e);
         } else {
             tracing::info!("协作: 已发送音轨添加 - track_index={}", track_index);
+        }
+    }
+
+    /// 处理本地选择变更（同步到其他用户）
+    ///
+    /// 构造 `{active, timestamp, fingerprints}` JSON 并经协作通道广播。
+    pub(super) fn handle_local_selection_changed(
+        &self,
+        active: bool,
+        timestamp: u64,
+        fingerprints: Vec<[f64; 4]>,
+    ) {
+        if !self.collab_state.collaboration_service.is_connected() {
+            return;
+        }
+
+        let selection = serde_json::json!({
+            "active": active,
+            "timestamp": timestamp,
+            "fingerprints": fingerprints,
+        });
+
+        if let Err(e) = self
+            .collab_state
+            .collaboration_service
+            .send_selection(selection)
+        {
+            tracing::debug!("协作: 发送选择变更失败: {}", e);
+        } else {
+            tracing::debug!(
+                "协作: 已发送选择变更 - active={}, timestamp={}, 指纹数={}",
+                active,
+                timestamp,
+                fingerprints.len()
+            );
         }
     }
 

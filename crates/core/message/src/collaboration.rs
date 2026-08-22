@@ -71,6 +71,15 @@ pub enum CollaborationAction {
         /// 更新操作描述
         operation: String,
     },
+    /// 协作远端选择更新
+    RemoteSelection {
+        /// 远端用户 ID
+        user_id: std::sync::Arc<str>,
+        /// 选择内容（JSON 字符串：{active, timestamp, fingerprints}）
+        selection: String,
+        /// 远端用户颜色（hex 字符串）
+        color: std::sync::Arc<str>,
+    },
 }
 
 #[cfg(test)]

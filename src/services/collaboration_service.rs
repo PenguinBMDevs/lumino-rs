@@ -215,6 +215,8 @@ impl CollaborationService {
                     lumino_ui::event::window::Event::collaboration_room_created(
                         room.name,
                         room.invite_code,
+                        room.project_name.clone(),
+                        room.project_hash.clone(),
                     ),
                 ));
             }
@@ -229,6 +231,18 @@ impl CollaborationService {
                         room.name,
                         room.invite_code,
                         users.len(),
+                        room.project_name.clone(),
+                        room.project_hash.clone(),
+                    ),
+                ));
+            }
+            CollaborationEvent::Selection { user_id, selection } => {
+                tracing::debug!("协作: 收到远端选择更新 - 用户: {}", user_id);
+                lumino_ui::event::emit(lumino_ui::event::Event::window(
+                    lumino_ui::event::window::Event::collaboration_selection(
+                        user_id,
+                        selection.to_string(),
+                        String::new(),
                     ),
                 ));
             }
@@ -324,6 +338,14 @@ impl CollaborationService {
         update: lumino_collaboration::types::ProjectUpdate,
     ) -> Result<(), String> {
         self.with_client(|client| client.send_project_update(update))
+    }
+
+    /// 发送本地选择变更（同步 API）
+    pub fn send_selection(
+        &self,
+        selection: serde_json::Value,
+    ) -> Result<(), String> {
+        self.with_client(|client| client.send_selection(selection))
     }
 
     /// 检查客户端是否已连接（同步 API，真值语义）

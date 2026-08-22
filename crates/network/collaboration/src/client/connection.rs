@@ -254,6 +254,8 @@ impl CollaborationClient {
                             id: room.id,
                             invite_code: room.invite_code.clone(),
                             name: room.name,
+                            project_name: String::new(),
+                            project_hash: String::new(),
                             host_id: room.host_id.clone(),
                             user_count: room.user_count as usize,
                             max_users: room.max_users as usize,

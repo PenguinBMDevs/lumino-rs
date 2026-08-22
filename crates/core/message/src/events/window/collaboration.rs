@@ -41,6 +41,10 @@ pub enum Event {
         room_name: String,
         /// 邀请码
         invite_code: String,
+        /// 工程名称（host 上传时用）
+        project_name: String,
+        /// 工程哈希（host 上传时用，hex）
+        project_hash: String,
     },
     /// 协作加入房间成功
     RoomJoined {
@@ -50,6 +54,10 @@ pub enum Event {
         invite_code: String,
         /// 房间用户数
         user_count: usize,
+        /// 工程名称
+        project_name: String,
+        /// 工程哈希（hex），用于判断与本地工程是否一致
+        project_hash: String,
     },
     /// 协作连接断开
     Disconnected,
@@ -89,5 +97,14 @@ pub enum Event {
         user_id: String,
         /// 工程更新内容（ProjectUpdate 的 JSON 字符串）
         update: String,
+    },
+    /// 远端选择更新（来自其他用户的本地选择变更）
+    Selection {
+        /// 远端用户 ID
+        user_id: String,
+        /// 选择内容（JSON 字符串：{active, timestamp, fingerprints}）
+        selection: String,
+        /// 远端用户颜色（hex 字符串，可能为空，由接收方按 user_id 派生）
+        color: String,
     },
 }

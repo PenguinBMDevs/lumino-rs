@@ -108,6 +108,10 @@ pub(crate) struct CollabState {
     pub(crate) collaboration_status: CollaborationStatus,
     pub(crate) collaboration_service: CollaborationService,
     pub(crate) last_collab_sync: Option<std::time::Instant>,
+    /// 协作服务器地址（用于工程文件同步 HTTP 请求）
+    pub(crate) server_host: String,
+    /// 协作服务器端口
+    pub(crate) server_port: u16,
     /// 上一次实际发送的鼠标状态（含内容坐标、滚动、缩放），用于变更检测以抑制
     /// 无变化的重复发送（避免热路径日志洪泛与无谓带宽占用）
     pub(crate) last_sent_mouse: Option<LastSentMouse>,
@@ -287,6 +291,8 @@ impl Runner {
                 collaboration_status,
                 collaboration_service,
                 last_collab_sync: None,
+                server_host: "localhost".to_string(),
+                server_port: 3000,
                 last_sent_mouse: None,
             },
             test_state: TestState {

@@ -78,6 +78,13 @@ pub enum CollaborationEvent {
         /// 项目更新内容
         update: crate::types::ProjectUpdate,
     },
+    /// 选择更新（来自其他用户的本地选择变更）
+    Selection {
+        /// 发起选择的用户 ID
+        user_id: crate::types::UserId,
+        /// 选择内容（JSON：{active, timestamp, fingerprints}）
+        selection: serde_json::Value,
+    },
     /// 全量同步
     FullSync {
         /// 同步到的用户列表

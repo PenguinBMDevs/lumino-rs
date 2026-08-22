@@ -47,6 +47,9 @@ impl Editor {
                 selected_bounds: Cell::new(None),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
                 ctrl_pressed: false,
+                remote_selections: std::collections::HashMap::new(),
+                local_selection_timestamp: None,
+                local_selection_fingerprints: Vec::new(),
             }
         })
     }

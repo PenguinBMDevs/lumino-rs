@@ -7,6 +7,7 @@ use std::collections::HashSet;
 
 use super::Editor;
 use crate::Note;
+use crate::RemoteSelectionSet;
 
 impl Editor {
     /// 向选中集合添加音符，并增量更新选择框边界。
@@ -143,6 +144,157 @@ impl Editor {
         }
         for i in indices {
             self.selection_insert(i);
+        }
+    }
+}
+
+/// 当前毫秒时间戳（用于选择时间戳 / first-writer-wins 冲突判定）
+fn now_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+impl Editor {
+    /// 计算当前选中音符的指纹列表 `(track_index, tick, key, length)`
+    pub fn selected_fingerprints(&self) -> Vec<(usize, f32, u16, f32)> {
+        let track = self.editor_state.data.current_track;
+        self.get_selected_indices()
+            .into_iter()
+            .filter_map(|i| {
+                self.editor_state
+                    .data
+                    .get_note_view(i)
+                    .map(|n| (track, n.tick, n.key, n.length))
+            })
+            .collect()
+    }
+
+    /// 应用远端用户的选择更新（来自协作 `Selection` 事件）
+    ///
+    /// - `active == false`：移除该用户的远端选择（取消/编辑已提交）。
+    /// - `active == true`：记录指纹与时间戳，供高亮渲染与冲突判定使用。
+    pub fn apply_remote_selection(&mut self, user_id: &str, selection_json: &str, color: &str) {
+        let parsed: serde_json::Value = match serde_json::from_str(selection_json) {
+            Ok(v) => v,
+            Err(e) => {
+                tracing::error!("协作: 解析远端选择失败: {}", e);
+                return;
+            }
+        };
+        let active = parsed
+            .get("active")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+        if !active {
+            self.remote_selections.remove(user_id);
+            self.grid_cache.clear();
+            return;
+        }
+        let timestamp = parsed
+            .get("timestamp")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0);
+        let mut fingerprints = Vec::new();
+        if let Some(arr) = parsed.get("fingerprints").and_then(|v| v.as_array()) {
+            for f in arr {
+                if let (Some(t), Some(ti), Some(k), Some(l)) = (
+                    f.get(0).and_then(|v| v.as_f64()),
+                    f.get(1).and_then(|v| v.as_f64()),
+                    f.get(2).and_then(|v| v.as_f64()),
+                    f.get(3).and_then(|v| v.as_f64()),
+                ) {
+                    fingerprints.push((t as usize, ti as f32, k as u16, l as f32));
+                }
+            }
+        }
+        self.remote_selections.insert(
+            user_id.to_string(),
+            RemoteSelectionSet {
+                timestamp,
+                fingerprints,
+                color: color.to_string(),
+            },
+        );
+        self.grid_cache.clear();
+    }
+
+    /// 移除远端用户的选择（用户离开等）
+    pub fn remove_remote_selection(&mut self, user_id: &str) {
+        self.remote_selections.remove(user_id);
+        self.grid_cache.clear();
+    }
+
+    /// first-writer-wins 冲突判定
+    ///
+    /// 若 `notes` 中任一音符与某个**更早**（`timestamp < local_timestamp`）的
+    /// 远端选择指纹重叠（同轨、同键、tick 区间相交），返回 `true`：
+    /// 表示远端已先占该音符，本地编辑应让行（远端优先）。
+    pub fn is_locked_by_other(
+        &self,
+        local_timestamp: u64,
+        notes: &[(usize, f32, u16, f32)],
+    ) -> bool {
+        for sel in self.remote_selections.values() {
+            if sel.timestamp >= local_timestamp {
+                continue; // 远端不更早，不锁定
+            }
+            for (rtrack, rtick, rkey, rlen) in &sel.fingerprints {
+                for (track, tick, key, len) in notes {
+                    if *rtrack == *track
+                        && *rkey == *key
+                        && *tick < *rtick + *rlen
+                        && *tick + *len > *rtick
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+        false
+    }
+
+    /// 用当前本地选择状态判定是否被远端更早选择锁定
+    pub(crate) fn local_selection_is_locked(&self) -> bool {
+        match self.local_selection_timestamp {
+            Some(ts) => self.is_locked_by_other(ts, &self.local_selection_fingerprints),
+            None => false,
+        }
+    }
+
+    /// 广播本地选择变更（供协作客户端转发到其他用户）
+    ///
+    /// - `active == true`：写入选中指纹 + 时间戳，并作为本地选择会话起点。
+    /// - `active == false`：清空本地选择会话并通知对端选择已结束。
+    pub fn emit_local_selection_changed(&mut self, active: bool) {
+        let timestamp = if active {
+            now_ms()
+        } else {
+            self.local_selection_timestamp.unwrap_or(0)
+        };
+        if active {
+            let fps = self.selected_fingerprints();
+            self.local_selection_timestamp = Some(timestamp);
+            self.local_selection_fingerprints = fps.clone();
+            let json_fps: Vec<[f64; 4]> = fps
+                .iter()
+                .map(|(t, ti, k, l)| [*t as f64, *ti as f64, *k as f64, *l as f64])
+                .collect();
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_selection_changed(
+                    true, timestamp, json_fps,
+                ),
+            ));
+        } else {
+            self.local_selection_timestamp = None;
+            self.local_selection_fingerprints.clear();
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_selection_changed(
+                    false, timestamp, Vec::new(),
+                ),
+            ));
         }
     }
 }

@@ -198,6 +198,18 @@ impl MessageHandler for CollaborationHandler {
                     self.handle_remote_note_update(root, operation);
                     None
                 }
+                lumino_message::CollaborationAction::RemoteSelection {
+                    user_id,
+                    selection,
+                    color,
+                } => {
+                    root.apply_remote_selection(
+                        user_id.to_string(),
+                        selection,
+                        color.to_string(),
+                    );
+                    None
+                }
                 lumino_message::CollaborationAction::HostChanged(host) => {
                     root.state.collaboration_dialog.server_host = host;
                     None

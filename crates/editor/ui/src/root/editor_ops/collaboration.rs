@@ -92,6 +92,12 @@ impl Root {
         );
     }
 
+    /// 应用远端用户的选择更新到本地编辑器（高亮 + 冲突判定）
+    pub fn apply_remote_selection(&mut self, user_id: String, selection: String, color: String) {
+        self.editor
+            .apply_remote_selection(&user_id, &selection, &color);
+    }
+
     /// 应用远程笔记操作到本地编辑器
     pub fn apply_remote_note_operation(
         &mut self,

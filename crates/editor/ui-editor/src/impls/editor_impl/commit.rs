@@ -83,6 +83,13 @@ impl Editor {
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
 
+        // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先），
+        // 既不应用移动也不广播。
+        if self.local_selection_is_locked() {
+            tracing::debug!("协作: 批量移动被远端抢先选择锁定，跳过（远端优先）");
+            return false;
+        }
+
         let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
         // 广播协作同步事件：批量移动（框选拖动）必须通知其他客户端，
         // 否则对端音符状态不会改变（B 端收不到任何更新）。
@@ -94,6 +101,8 @@ impl Editor {
         match self.editor_state.data.apply_move_ops_async(ops, max_key) {
             Ok(true) => {
                 tracing::info!("Editor: 已启动 pending 批量拖动异步提交");
+                // 编辑已提交：结束本地选择会话（通知对端）
+                self.emit_local_selection_changed(false);
                 true
             }
             Ok(false) => {
@@ -162,6 +171,13 @@ impl Editor {
         }
 
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+
+        // first-writer-wins 冲突判定：本地选择被更早的远端选择锁定时让行（远端优先）。
+        if self.local_selection_is_locked() {
+            tracing::debug!("协作: 批量复制被远端抢先选择锁定，跳过（远端优先）");
+            return false;
+        }
+
         // 构造副本音符列表（原始位置 + delta，tick/key clamp 到合法范围）
         let notes: Vec<Note> = drag_state
             .selected_indices_fast()
@@ -189,6 +205,8 @@ impl Editor {
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
         self.pending_copy_drag_state = None;
+        // 编辑已提交：结束本地选择会话（通知对端）
+        self.emit_local_selection_changed(false);
         tracing::info!("Editor: 已复制 {} 个音符", inserted);
         true
     }

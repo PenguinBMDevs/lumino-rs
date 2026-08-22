@@ -32,4 +32,9 @@ impl CollaborationClient {
     pub fn send_project_update(&self, update: crate::types::ProjectUpdate) -> Result<()> {
         self.enqueue_message(ClientMessage::ProjectUpdate { update })
     }
+
+    /// 发送选择同步（本地选择变更，同步入队）
+    pub fn send_selection(&self, selection: serde_json::Value) -> Result<()> {
+        self.enqueue_message(ClientMessage::Selection { selection })
+    }
 }

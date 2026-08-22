@@ -194,6 +194,37 @@ pub struct Editor {
     /// 与 `GridInteractionState.control_pressed`（iced canvas 内事件，可能因焦点
     /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
     ctrl_pressed: bool,
+
+    /// 远端用户选择集合（用于协作高亮 + first-writer-wins 冲突判定）
+    ///
+    /// key = 远端用户 ID，value = 该用户的选择指纹与时间戳。
+    pub remote_selections: std::collections::HashMap<String, RemoteSelectionSet>,
+
+    /// 本地当前选择的时间戳（ms）
+    ///
+    /// 框选完成时由 `emit_local_selection_changed(true)` 写入，用于冲突判定：
+    /// 提交本地编辑前比对远端选择时间戳，远端更早则本地让行。
+    pub(crate) local_selection_timestamp: Option<u64>,
+
+    /// 本地当前选择的指纹（track, tick, key, length）
+    ///
+    /// 与 `local_selection_timestamp` 同步写入/清空，供冲突判定复用，
+    /// 避免在提交热路径重新扫描选中集合。
+    pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
+}
+
+/// 远端用户选择集合
+///
+/// 由 `RemoteSelection` 协作事件解析填充，用于在钢琴卷帘上绘制按用户着色的
+/// 选择高亮，并为 first-writer-wins 冲突判定提供远端选择指纹与时间戳。
+#[derive(Debug, Clone)]
+pub struct RemoteSelectionSet {
+    /// 选择时间戳（ms，first-writer-wins 用）
+    pub timestamp: u64,
+    /// 选择指纹列表（track, tick, key, length）
+    pub fingerprints: Vec<(usize, f32, u16, f32)>,
+    /// 远端用户颜色（hex 字符串；空时由接收方按 user_id 派生）
+    pub color: String,
 }
 
 /// 框选框弹簧动画状态

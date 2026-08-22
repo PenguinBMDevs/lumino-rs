@@ -53,4 +53,16 @@ pub enum Event {
         /// 音轨索引
         track_index: usize,
     },
+    /// 本地选择变更（需要同步到其他用户）
+    ///
+    /// 指纹（fingerprint）为选中音符的 `(track_index, tick, key, length)` 四元组，
+    /// 以 `[f64; 4]` 表示以匹配 serde JSON 传输。
+    LocalSelectionChanged {
+        /// 选择是否激活（true=框选完成/编辑中，false=取消或编辑已提交）
+        active: bool,
+        /// 选择时间戳（ms，用于 first-writer-wins 冲突判定）
+        timestamp: u64,
+        /// 选中音符指纹列表
+        fingerprints: Vec<[f64; 4]>,
+    },
 }

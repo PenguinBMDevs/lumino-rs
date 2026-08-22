@@ -246,10 +246,17 @@ impl Event {
         })
     }
     /// 构造协作房间已创建事件
-    pub fn collaboration_room_created(room_name: String, invite_code: String) -> Self {
+    pub fn collaboration_room_created(
+        room_name: String,
+        invite_code: String,
+        project_name: String,
+        project_hash: String,
+    ) -> Self {
         Self::Collaboration(collaboration::Event::RoomCreated {
             room_name,
             invite_code,
+            project_name,
+            project_hash,
         })
     }
     /// 构造协作房间已加入事件
@@ -257,11 +264,15 @@ impl Event {
         room_name: String,
         invite_code: String,
         user_count: usize,
+        project_name: String,
+        project_hash: String,
     ) -> Self {
         Self::Collaboration(collaboration::Event::RoomJoined {
             room_name,
             invite_code,
             user_count,
+            project_name,
+            project_hash,
         })
     }
     /// 构造协作已断开事件
@@ -299,6 +310,14 @@ impl Event {
     /// 构造协作工程更新事件
     pub fn collaboration_project_update(user_id: String, update: String) -> Self {
         Self::Collaboration(collaboration::Event::ProjectUpdate { user_id, update })
+    }
+    /// 构造远端选择更新事件
+    pub fn collaboration_selection(user_id: String, selection: String, color: String) -> Self {
+        Self::Collaboration(collaboration::Event::Selection {
+            user_id,
+            selection,
+            color,
+        })
     }
 
     // ── 同步构造函数（直接构造 sync::Event） ──
@@ -360,5 +379,17 @@ impl Event {
     /// 构造本地音轨添加同步事件
     pub fn local_track_added(track_index: usize) -> Self {
         Self::Sync(sync::Event::LocalTrackAdded { track_index })
+    }
+    /// 构造本地选择变更同步事件
+    pub fn local_selection_changed(
+        active: bool,
+        timestamp: u64,
+        fingerprints: Vec<[f64; 4]>,
+    ) -> Self {
+        Self::Sync(sync::Event::LocalSelectionChanged {
+            active,
+            timestamp,
+            fingerprints,
+        })
     }
 }

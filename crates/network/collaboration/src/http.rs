@@ -134,6 +134,66 @@ impl HttpClient {
         let health: serde_json::Value = response.json().await?;
         Ok(health)
     }
+
+    /// 上传房间工程文件（host 路径）。
+    ///
+    /// `POST /api/room/{code}/project?name=<urlencoded>&hash=<hex>`，
+    /// body 为原始 `.lmpj` 字节（octet-stream）。返回服务器 JSON 响应。
+    pub async fn upload_room_project(
+        &self,
+        code: &str,
+        name: &str,
+        hash: &str,
+        bytes: Vec<u8>,
+    ) -> Result<serde_json::Value> {
+        let url = format!("{}/api/room/{}/project", self.base_url, code);
+        let response = self
+            .client
+            .post(&url)
+            .query(&[("name", name), ("hash", hash)])
+            .header("Content-Type", "application/octet-stream")
+            .body(bytes)
+            .send()
+            .await?;
+
+        let status = response.status();
+        let text = response.text().await?;
+        if !status.is_success() {
+            return Err(crate::CollaborationError::Other(format!(
+                "HTTP error: {}",
+                text
+            )));
+        }
+
+        serde_json::from_str(&text).map_err(|e| {
+            crate::CollaborationError::Other(format!("JSON parse error: {} - text: {}", e, text))
+        })
+    }
+
+    /// 下载房间工程文件（joiner 路径）。
+    ///
+    /// `GET /api/room/{code}/project` → 原始 `.lmpj` 字节。
+    /// 服务器返回 404 时返回 `Err`（调用方据此跳过同步）。
+    pub async fn download_room_project(&self, code: &str) -> Result<Vec<u8>> {
+        let url = format!("{}/api/room/{}/project", self.base_url, code);
+        let response = self.client.get(&url).send().await?;
+
+        if response.status().as_u16() == 404 {
+            return Err(crate::CollaborationError::Other(
+                "room project not found (404)".to_string(),
+            ));
+        }
+        if !response.status().is_success() {
+            let text = response.text().await.unwrap_or_default();
+            return Err(crate::CollaborationError::Other(format!(
+                "HTTP error: {}",
+                text
+            )));
+        }
+
+        let bytes = response.bytes().await?;
+        Ok(bytes.to_vec())
+    }
 }
 
 #[cfg(test)]

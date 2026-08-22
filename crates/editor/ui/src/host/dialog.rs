@@ -277,6 +277,18 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 应用远端用户的选择更新（高亮 + first-writer-wins 冲突判定）
+    pub fn apply_remote_selection(&mut self, user_id: String, selection: String, color: String) {
+        self.route_message(message::Message::Collaboration(
+            lumino_message::CollaborationAction::RemoteSelection {
+                user_id: user_id.into(),
+                selection,
+                color: color.into(),
+            },
+        ));
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 更新远端音符
     pub fn update_remote_note(&mut self, operation: String) {
         self.route_message(message::Message::Collaboration(

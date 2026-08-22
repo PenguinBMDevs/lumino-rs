@@ -9,6 +9,7 @@
 //! - `ruler`: 时间轴标尺绘制
 //! - `bars`: 小节线/网格线绘制
 //! - `remote_cursors`: 远程光标渲染
+//! - `remote_selection`: 远程选择高亮渲染
 //! - `selection_box`: 选择框渲染
 //! - `playback_indicator`: 播放指示线渲染
 //! - `program`: PianoRollGrid 结构体定义
@@ -25,6 +26,7 @@ pub mod playback_indicator;
 pub mod program;
 pub mod program_impl;
 pub mod remote_cursors;
+pub mod remote_selection;
 pub mod ruler;
 pub mod selection_box;
 pub mod state;
