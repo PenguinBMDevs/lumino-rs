@@ -9,6 +9,7 @@ use std::sync::Arc;
 
 use crate::OutputConnection;
 use crate::playback::engine::{MidiMessage, MidiTrackEvent, PlaybackEngine};
+use crate::playback::state::PlaybackState;
 use crate::playback::{PlaybackAccessor, TempoChange};
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
@@ -83,11 +84,19 @@ pub(crate) fn handle_command(
             push_state_frame(engine, frame_tx, last_frame);
         }
         Command::Seek(tick) => {
-            if let Some(out) = midi_output {
+            // 仅播放中的 seek 可能存在「已 NoteOn 未收到 NoteOff」的悬挂音符，
+            // 需要静音清理；停止/暂停状态本就无声（Stop/Pause 路径已清理过），
+            // 无条件发送会在拖拽 scrub 等高频 seek 场景向输出设备灌冗余消息。
+            if engine.state() == PlaybackState::Playing
+                && let Some(out) = midi_output
+            {
                 let _ = out.all_notes_off();
                 let _ = out.reset_control();
             }
             engine.seek(tick);
+            // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
+            // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
+            push_state_frame(engine, frame_tx, last_frame);
         }
         Command::SetLooping(looping) => engine.set_looping(looping),
         Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),

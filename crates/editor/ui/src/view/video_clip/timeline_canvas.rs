@@ -1,19 +1,27 @@
 //! 剪辑带时间轴 Canvas（对标钢琴卷帘「内容区自绘 + 外挂滚动条」结构）
 //!
-//! 自绘内容：秒标尺、视频/音频轨道条、走带指示线（固定于区域前端
-//! [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X) 像素处）。
-//! 滚动与缩放由底部 `ScrollbarWidget`（卷帘同款）驱动，
-//! 本 Canvas 仅消费滚轮事件发射缩放/滚动消息。
+//! 自绘内容见 [`draw`]：秒标尺、圆角视频/音频轨道条（首尾裁剪把手）、
+//! 走带指示线。交互见 [`interact`]：滚轮滚动/缩放、标尺点击与拖拽定位
+//! （剪辑面板独立传输时钟）、素材条整体移动与首尾裁剪。
 
+use iced_core::Rectangle;
 use iced_core::mouse;
-use iced_core::{Color, Point, Rectangle, Size};
-use iced_widget::canvas::{self, Frame, Geometry, Program, Text};
+use iced_widget::canvas::{self, Geometry, Program};
 
 use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
+use lumino_ui_core::state::video_clip_state::ClipTrackEdit;
 
 use crate::editor::zoom::{fixed_ratio_from_viewport, zoom_factor_from_delta};
 use crate::message::VideoClipAction;
 use crate::{Message, Renderer, Theme};
+
+mod draw;
+mod interact;
+
+pub use draw::{HitZone, TrackGeom};
+pub use interact::TrackDrag;
+
+use interact::seek_action;
 
 /// 每秒基准像素密度（zoom=1 时）
 pub const PIXELS_PER_SEC: f32 = 80.0;
@@ -33,9 +41,9 @@ pub const MAJOR_INTERVAL: f32 = 5.0;
 /// 次刻度间隔（秒）
 pub const MINOR_INTERVAL: f32 = 1.0;
 
-/// 时间轴 Canvas 数据与交互
+/// 时间轴 Canvas 数据（每帧视图重建时由面板写入）
 pub struct TimelineCanvas {
-    /// MIDI 实际时长（秒）
+    /// MIDI 实际时长（秒，同时是素材源长）
     pub duration_secs: f32,
     /// 当前水平缩放倍率
     pub zoom: f32,
@@ -43,8 +51,23 @@ pub struct TimelineCanvas {
     pub scroll_x: f32,
     /// Ctrl 键按下状态（Ctrl+滚轮 = 缩放，卷帘同款交互）
     pub ctrl_pressed: bool,
-    /// 当前播放位置（秒）；走带线画在其对应屏幕坐标
+    /// 当前播放位置（秒，剪辑面板独立传输时钟）；走带线画在其对应屏幕坐标
     pub playhead_secs: f32,
+    /// 是否正在播放（播放中禁用标尺点击/拖拽定位）
+    pub is_playing: bool,
+    /// 视频轨素材编辑（偏移/首尾裁剪）
+    pub video_edit: ClipTrackEdit,
+    /// 音频轨素材编辑（偏移/首尾裁剪）
+    pub audio_edit: ClipTrackEdit,
+}
+
+/// Canvas 交互状态（scrub / 素材拖拽会话）
+#[derive(Debug, Clone, Copy, Default)]
+pub struct TimelineDragState {
+    /// 正在按住标尺拖拽定位
+    pub scrubbing: bool,
+    /// 正在拖拽素材条（移动或裁剪）
+    pub track_drag: Option<TrackDrag>,
 }
 
 impl TimelineCanvas {
@@ -53,25 +76,12 @@ impl TimelineCanvas {
         (self.duration_secs * PIXELS_PER_SEC * self.zoom).max(400.0)
     }
 
-    /// 秒 → 内容坐标 x（未含滚动偏移）
-    fn sec_to_content_x(&self, sec: f32) -> f32 {
-        sec * PIXELS_PER_SEC * self.zoom
-    }
-
-    /// 可视窗口覆盖的秒区间 `(start_sec, end_sec)`
-    fn visible_seconds(&self, viewport_w: f32) -> (f32, f32) {
-        let start = self.scroll_x / (PIXELS_PER_SEC * self.zoom);
-        let end = (self.scroll_x + viewport_w) / (PIXELS_PER_SEC * self.zoom);
-        (start.max(0.0), end.min(self.duration_secs))
-    }
-
-    /// 走带指示线的屏幕 x 坐标（播放头内容坐标 − 滚动偏移）。
+    /// 走带指示线的屏幕 x 坐标。
     ///
-    /// 播放中滚动被自动跟随（`follow_video_clip_playhead`）钉在
-    /// [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)，本值恒等于该锚点；
-    /// 暂停/停止时可随手动滚动移出视口（返回 `None` 表示不绘制）。
+    /// 播放中滚动被自动跟随钉在 [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)；
+    /// 暂停时可随手动滚动移出视口（返回 `None` 表示不绘制）。
     pub fn playhead_screen_x(&self, viewport_w: f32) -> Option<f32> {
-        let x = self.sec_to_content_x(self.playhead_secs) - self.scroll_x;
+        let x = self.playhead_secs * PIXELS_PER_SEC * self.zoom - self.scroll_x;
         (-1.0..=viewport_w + 1.0).contains(&x).then_some(x)
     }
 }
@@ -81,12 +91,18 @@ pub fn wheel_scroll_delta(delta_y: f32) -> f32 {
     (delta_y * SCROLL_LINES_SCALE).clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA)
 }
 
+/// 纯函数：标尺点击位置 → 目标播放秒数（钳制到内容范围内）
+pub fn ruler_click_secs(local_x: f32, scroll_x: f32, zoom: f32, duration_secs: f32) -> f32 {
+    let secs = (local_x + scroll_x) / (PIXELS_PER_SEC * zoom.max(f32::EPSILON));
+    secs.clamp(0.0, duration_secs.max(0.0))
+}
+
 impl Program<Message, Theme, Renderer> for TimelineCanvas {
-    type State = ();
+    type State = TimelineDragState;
 
     fn update(
         &self,
-        _state: &mut Self::State,
+        state: &mut Self::State,
         event: &canvas::Event,
         bounds: Rectangle,
         cursor: mouse::Cursor,
@@ -94,6 +110,32 @@ impl Program<Message, Theme, Renderer> for TimelineCanvas {
         let pos = cursor.position()?;
         if !bounds.contains(pos) {
             return None;
+        }
+
+        // ── 拖拽会话事件（优先于新命中）──
+        match event {
+            canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
+                return interact::begin_drag(self, state, pos, bounds);
+            }
+            canvas::Event::Mouse(mouse::Event::CursorMoved { .. }) => {
+                if state.scrubbing {
+                    let local_x = (pos.x - bounds.x).clamp(0.0, bounds.width);
+                    let secs =
+                        ruler_click_secs(local_x, self.scroll_x, self.zoom, self.duration_secs);
+                    return Some(seek_action(secs));
+                }
+                if let Some(drag) = state.track_drag {
+                    return interact::drag_move(self, pos, bounds, drag);
+                }
+            }
+            canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left))
+                if state.scrubbing || state.track_drag.is_some() =>
+            {
+                state.scrubbing = false;
+                state.track_drag = None;
+                return Some(canvas::Action::capture());
+            }
+            _ => {}
         }
 
         match event {
@@ -140,96 +182,42 @@ impl Program<Message, Theme, Renderer> for TimelineCanvas {
         bounds: Rectangle,
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry<Renderer>> {
-        let palette = theme.extended_palette();
-        let weak_color = palette.background.weak.color;
-        let strong_color = palette.background.strong.color;
-        let weak_text = palette.background.weak.text;
-
-        let mut frame = Frame::new(renderer, bounds.size());
-
-        // ── 背景 ──
-        frame.fill_rectangle(
-            Point::ORIGIN,
-            bounds.size(),
-            palette.background.weakest.color,
-        );
-
-        // ── 标尺：可视窗口内的秒刻度 ──
-        let (start_sec, end_sec) = self.visible_seconds(bounds.width);
-        let mut t = start_sec.floor();
-        while t <= end_sec {
-            let is_major = (t % MAJOR_INTERVAL).abs() < 0.01;
-            let tick_h = if is_major { 12.0 } else { 6.0 };
-            let x = self.sec_to_content_x(t) - self.scroll_x;
-            if x >= -1.0 && x <= bounds.width + 1.0 {
-                let color = if is_major { strong_color } else { weak_color };
-                frame.fill_rectangle(
-                    Point::new(x, RULER_HEIGHT - tick_h),
-                    Size::new(1.0, tick_h),
-                    color,
-                );
-                if is_major {
-                    frame.fill_text(Text {
-                        content: format!("{t:.0}s"),
-                        position: Point::new(x + 3.0, 2.0),
-                        size: 10.0.into(),
-                        color: weak_text,
-                        ..Text::default()
-                    });
-                }
-            }
-            t += MINOR_INTERVAL;
-        }
-
-        // ── 视频轨（蓝色）与音频轨（绿色），等长 = duration*pps*zoom ──
-        let track_w = self.sec_to_content_x(self.duration_secs);
-        let video_color = Color::from_rgb(0.2, 0.6, 0.95);
-        let audio_color = Color::from_rgb(0.25, 0.75, 0.35);
-        let video_y = RULER_HEIGHT + TRACK_SPACING;
-        let audio_y = video_y + TRACK_HEIGHT + TRACK_SPACING;
-
-        for (y, color, label) in [
-            (video_y, video_color, "视频"),
-            (audio_y, audio_color, "音频"),
-        ] {
-            let rect_w = (track_w - self.scroll_x).min(bounds.width).max(0.0);
-            if rect_w > 0.0 {
-                frame.fill_rectangle(Point::new(0.0, y), Size::new(rect_w, TRACK_HEIGHT), color);
-                // 轨道标签（跟随内容滚动）
-                let label_x = 8.0 - self.scroll_x;
-                if label_x > -60.0 && label_x < bounds.width {
-                    frame.fill_text(Text {
-                        content: label.to_string(),
-                        position: Point::new(label_x, y + (TRACK_HEIGHT - 14.0) / 2.0),
-                        size: 11.0.into(),
-                        color: Color::WHITE,
-                        ..Text::default()
-                    });
-                }
-            }
-        }
-
-        // ── 走带指示线：画在播放位置对应的屏幕坐标，纵贯全高 ──
-        // 播放中滚动自动跟随使该坐标恒定钉在 PLAYHEAD_X；暂停时可随手动
-        // 滚动移动或移出视口（与 NLE 剪辑软件行为一致）。
-        if let Some(playhead_x) = self.playhead_screen_x(bounds.width) {
-            frame.fill_rectangle(
-                Point::new(playhead_x, 0.0),
-                Size::new(2.0, bounds.height),
-                Color::from_rgb(0.95, 0.25, 0.25),
-            );
-        }
-
+        let mut frame = canvas::Frame::new(renderer, bounds.size());
+        draw::draw_timeline(&mut frame, theme, bounds, self);
         vec![frame.into_geometry()]
     }
 
     fn mouse_interaction(
         &self,
-        _state: &Self::State,
-        _bounds: Rectangle,
-        _cursor: mouse::Cursor,
+        state: &Self::State,
+        bounds: Rectangle,
+        cursor: mouse::Cursor,
     ) -> mouse::Interaction {
-        mouse::Interaction::default()
+        use mouse::Interaction;
+        let Some(pos) = cursor.position() else {
+            return Interaction::default();
+        };
+        if !bounds.contains(pos) {
+            return Interaction::default();
+        }
+        // 拖拽中跟随模式光标
+        if let Some(drag) = state.track_drag {
+            return match drag.mode {
+                HitZone::HandleStart | HitZone::HandleEnd => Interaction::ResizingHorizontally,
+                HitZone::Body => Interaction::Grabbing,
+            };
+        }
+        // 悬停提示：标尺十字 / 把手缩放 / 条身抓取
+        if pos.y - bounds.y <= RULER_HEIGHT && !self.is_playing {
+            return Interaction::Crosshair;
+        }
+        let pps_zoom = PIXELS_PER_SEC * self.zoom;
+        let (_, zone) = interact::hit_track(self, pos, pps_zoom);
+        match zone {
+            Some(HitZone::HandleStart | HitZone::HandleEnd) => Interaction::ResizingHorizontally,
+            Some(HitZone::Body) => Interaction::Grab,
+            _ => Interaction::default(),
+        }
     }
 }
 
@@ -238,83 +226,156 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_wheel_scroll_delta_clamped() {
-        assert!((wheel_scroll_delta(1.0) - SCROLL_LINES_SCALE).abs() < f32::EPSILON);
-        assert!((wheel_scroll_delta(100.0) - SCROLL_MAX_DELTA).abs() < f32::EPSILON);
-        assert!((wheel_scroll_delta(-100.0) + SCROLL_MAX_DELTA).abs() < f32::EPSILON);
+    fn test_pure_functions() {
+        // 滚轮钳制
+        assert_eq!(wheel_scroll_delta(100.0), SCROLL_MAX_DELTA);
+        assert_eq!(wheel_scroll_delta(-1.0), -SCROLL_LINES_SCALE);
+        // 标尺点击换算：x=400 无滚动 zoom=1 → 5s；越界钳到时长
+        assert!((ruler_click_secs(400.0, 0.0, 1.0, 30.0) - 5.0).abs() < f32::EPSILON);
+        assert!((ruler_click_secs(9999.0, 0.0, 1.0, 30.0) - 30.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_playhead_screen_x_follow_and_cull() {
+        let c = |scroll: f32, playhead: f32| TimelineCanvas {
+            duration_secs: 30.0,
+            zoom: 1.0,
+            scroll_x: scroll,
+            ctrl_pressed: false,
+            playhead_secs: playhead,
+            is_playing: false,
+            video_edit: ClipTrackEdit::default(),
+            audio_edit: ClipTrackEdit::default(),
+        };
+        // 播放头 5s 内容 x=400，跟随滚动 350 → 屏幕 x 恒为 PLAYHEAD_X
+        let x = c(350.0, 5.0).playhead_screen_x(800.0).expect("应在视口内");
+        assert!((x - crate::view::video_clip::layout::PLAYHEAD_X).abs() < f32::EPSILON);
+        // 手动滚远后移出视口 → 不绘制
+        assert!(c(2000.0, 5.0).playhead_screen_x(800.0).is_none());
     }
 
     #[test]
     fn test_content_width_scales_with_zoom_and_min() {
-        let c = TimelineCanvas {
+        let mut c = TimelineCanvas {
             duration_secs: 10.0,
             zoom: 1.0,
             scroll_x: 0.0,
             ctrl_pressed: false,
             playhead_secs: 0.0,
+            is_playing: false,
+            video_edit: ClipTrackEdit::default(),
+            audio_edit: ClipTrackEdit::default(),
         };
         // 10s * 80px/s = 800
         assert!((c.content_width() - 800.0).abs() < f32::EPSILON);
-
-        let tiny = TimelineCanvas {
-            duration_secs: 0.0,
-            ..c
-        };
+        c.duration_secs = 0.0;
         // 最小兜底 400
-        assert!((tiny.content_width() - 400.0).abs() < f32::EPSILON);
+        assert!((c.content_width() - 400.0).abs() < f32::EPSILON);
     }
 
+    /// 实证：按下视频轨首端把手并向右拖动，必须发出 `ClipTrimChanged::Start`，
+    /// 且裁剪值 ≈ 拖动秒数，可见长度随之缩短。
     #[test]
-    fn test_visible_seconds_window() {
-        let c = TimelineCanvas {
-            duration_secs: 30.0,
-            zoom: 2.0,
-            scroll_x: 320.0, // pps_zoom=160 → 起点 2s
-            ctrl_pressed: false,
-            playhead_secs: 0.0,
-        };
-        // 视口宽 800 → 终点 (320+800)/160 = 7s
-        let (s, e) = c.visible_seconds(800.0);
-        assert!((s - 2.0).abs() < 0.001, "start = {s}");
-        assert!((e - 7.0).abs() < 0.001, "end = {e}");
+    fn test_drag_start_handle_trims_and_shortens_strip() {
+        use crate::message::VideoClipAction;
+        use iced_core::Point;
+        use lumino_message::video_clip::{ClipTrack, ClipTrimEdge};
 
-        // 滚动越界被 clamp 到 0
-        let scrolled_back = TimelineCanvas {
-            scroll_x: -500.0,
-            ..c
-        };
-        let (s, _) = scrolled_back.visible_seconds(800.0);
-        assert!(s.abs() < f32::EPSILON);
-    }
-
-    #[test]
-    fn test_playhead_screen_x_follow_and_cull() {
-        // 播放头 5s、zoom=1 → 内容 x=400；自动跟随使 scroll = 400-PLAYHEAD_X(50) = 350，
-        // 屏幕坐标应恒等于 PLAYHEAD_X（钉住不动）
-        let playing = TimelineCanvas {
+        let canvas = TimelineCanvas {
             duration_secs: 30.0,
             zoom: 1.0,
-            scroll_x: 350.0,
-            ctrl_pressed: false,
-            playhead_secs: 5.0,
-        };
-        let x = playing.playhead_screen_x(800.0).expect("应在视口内");
-        assert!((x - super::super::layout::PLAYHEAD_X).abs() < f32::EPSILON);
-
-        // 手动滚远后播放头移出视口 → 不绘制
-        let scrolled_away = TimelineCanvas {
-            scroll_x: 2000.0,
-            ..playing
-        };
-        assert!(scrolled_away.playhead_screen_x(800.0).is_none());
-
-        // 播放头在起点且未滚动 → 屏幕 x=0，可见
-        let at_origin = TimelineCanvas {
             scroll_x: 0.0,
+            ctrl_pressed: false,
             playhead_secs: 0.0,
-            ..playing
+            is_playing: false,
+            video_edit: ClipTrackEdit::default(),
+            audio_edit: ClipTrackEdit::default(),
         };
-        let origin_x = at_origin.playhead_screen_x(800.0).expect("原点应在视口内");
-        assert!(origin_x.abs() < f32::EPSILON);
+        let bounds = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 4000.0,
+            height: 200.0,
+        };
+        let mut state = TimelineDragState::default();
+        // 按下视频轨首端把手：x=2（落在左缘 HANDLE_WIDTH 内），y=40（视频轨 y∈[32,80]）
+        let press = interact::begin_drag(&canvas, &mut state, Point::new(2.0, 40.0), bounds);
+        assert!(press.is_some(), "按下把手应返回动作");
+        assert!(state.track_drag.is_some(), "拖拽会话应已建立");
+
+        // 拖到 x=160（2s * 80px/s）处
+        let drag = state.track_drag.unwrap();
+        let action = interact::drag_move(&canvas, Point::new(160.0, 40.0), bounds, drag);
+        let (msg, _redraw, _status) = action.expect("拖拽应返回动作").into_inner();
+        match msg {
+            Some(Message::VideoClip(VideoClipAction::ClipTrimChanged {
+                track,
+                edge,
+                trim_secs,
+            })) => {
+                assert_eq!(track, ClipTrack::Video);
+                assert_eq!(edge, ClipTrimEdge::Start);
+                assert!(
+                    (trim_secs - 2.0).abs() < 0.5,
+                    "首端裁剪应≈2s（拖到 2s 处），实际 {trim_secs}"
+                );
+            }
+            other => panic!("期望 ClipTrimChanged::Start 发布，实际: {other:?}"),
+        }
+    }
+
+    /// 实证：按下视频轨尾端把手并向左拖动，必须发出 `ClipTrimChanged::End`，
+    /// 且裁剪值 ≈（源长 − 拖动秒数），可见长度随之缩短。
+    #[test]
+    fn test_drag_end_handle_trims_and_shortens_strip() {
+        use crate::message::VideoClipAction;
+        use iced_core::Point;
+        use lumino_message::video_clip::{ClipTrack, ClipTrimEdge};
+
+        let canvas = TimelineCanvas {
+            duration_secs: 30.0,
+            zoom: 1.0,
+            scroll_x: 0.0,
+            ctrl_pressed: false,
+            playhead_secs: 0.0,
+            is_playing: false,
+            video_edit: ClipTrackEdit::default(),
+            audio_edit: ClipTrackEdit::default(),
+        };
+        let bounds = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 4000.0,
+            height: 200.0,
+        };
+        let mut state = TimelineDragState::default();
+        // 尾端把手在右缘 g.x+g.w = 30*80 = 2400 处
+        let right_edge_x = 30.0 * PIXELS_PER_SEC;
+        let press = interact::begin_drag(
+            &canvas,
+            &mut state,
+            Point::new(right_edge_x - 2.0, 40.0),
+            bounds,
+        );
+        assert!(press.is_some(), "按下尾端把手应返回动作");
+        let drag = state.track_drag.unwrap();
+        // 向左拖到 x=1600（20s）→ 右缘应=20s，尾裁=30−20=10s
+        let action = interact::drag_move(&canvas, Point::new(1600.0, 40.0), bounds, drag);
+        let (msg, _redraw, _status) = action.expect("拖拽应返回动作").into_inner();
+        match msg {
+            Some(Message::VideoClip(VideoClipAction::ClipTrimChanged {
+                track,
+                edge,
+                trim_secs,
+            })) => {
+                assert_eq!(track, ClipTrack::Video);
+                assert_eq!(edge, ClipTrimEdge::End);
+                assert!(
+                    (trim_secs - 10.0).abs() < 0.5,
+                    "尾端裁剪应≈10s（右缘拖到 20s），实际 {trim_secs}"
+                );
+            }
+            other => panic!("期望 ClipTrimChanged::End 发布，实际: {other:?}"),
+        }
     }
 }

@@ -15,6 +15,11 @@ impl Host {
         // 清除窗口最大化/还原保护标志（已在 handle_sidebar_event 中阻止路由切换）
         self.root.window_resize_guard = false;
 
+        // 剪辑面板独立传输时钟推进（秒域，与下方卷帘播放状态互不相干）
+        let frame_now = std::time::Instant::now();
+        let clip_dt = frame_now.duration_since(self.last_frame_time).as_secs_f32();
+        self.root.tick_video_clip_transport(clip_dt);
+
         // 更新播放状态和自动滚动
         self.update_playback_state();
 
@@ -101,9 +106,6 @@ impl Host {
                 self.root.editor.update_auto_scroll(tick);
                 // 工程走带视图也应用相同的自动滚动配置
                 self.root.update_arrangement_auto_scroll(tick);
-                // 剪辑带播放跟随：滚动钉住走带线于区域前端，
-                // 视频带/音频带以正确速度向左流动
-                self.root.follow_video_clip_playhead(tick);
                 // 更新播放期间琴键洋葱皮颜色（实时检测音符并着色键盘）
                 self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。

@@ -2,6 +2,10 @@
 //!
 //! 模仿 nezha `piano_view::show` 的 zoom / pan 交互模型，
 //! 为 Lumino 视频剪辑窗口提供独立的预览视口状态。
+//!
+//! 2026-08 播放体系分离：本状态持有**秒域独立传输时钟**
+//! （[`VideoClipState::clip_position_secs`] 等），与钢琴卷帘的
+//! tick 域 [`PlaybackManager`] 完全无关——两面板互不驱动。
 
 /// 最小缩放倍数（对标 nezha MIN_ZOOM）
 pub const VIDEO_CLIP_MIN_ZOOM: f32 = 1.0;
@@ -9,6 +13,53 @@ pub const VIDEO_CLIP_MIN_ZOOM: f32 = 1.0;
 pub const VIDEO_CLIP_MAX_ZOOM: f32 = 10.0;
 /// 滚轮缩放系数（对标 nezha ZOOM_SCROLL_FACTOR）
 pub const VIDEO_CLIP_ZOOM_SCROLL_FACTOR: f32 = 1.1;
+
+/// 剪辑轨道种类（视频/音频双轨）。
+///
+/// 权威定义在 `lumino_message::video_clip`（跨层消息契约），此处 re-export。
+pub use lumino_message::video_clip::ClipTrack;
+
+/// 剪辑轨道素材编辑状态（首尾裁剪 + 整体移动）
+///
+/// 素材源长即曲目时长；可视区间 `[offset+trim_in, offset+source_len-trim_out]`。
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub struct ClipTrackEdit {
+    /// 素材整体时间偏移（秒，≥0）：决定素材在时间轴上的摆放起点
+    pub offset_secs: f32,
+    /// 首端裁剪（秒，≥0）：素材开头被裁掉的部分
+    pub trim_in_secs: f32,
+    /// 尾端裁剪（秒，≥0）：素材结尾被裁掉的部分
+    pub trim_out_secs: f32,
+}
+
+impl ClipTrackEdit {
+    /// 素材可视区间起点（秒）＝ 偏移 ＋ 首端裁剪
+    pub fn visible_start(&self) -> f32 {
+        self.offset_secs + self.trim_in_secs
+    }
+
+    /// 素材可视时长（秒）＝ 源长 − 首尾裁剪（下限 0）
+    pub fn visible_len(&self, source_len: f32) -> f32 {
+        (source_len - self.trim_in_secs - self.trim_out_secs).max(0.0)
+    }
+
+    /// 设置整体偏移（下限 0）
+    pub fn set_offset(&mut self, offset_secs: f32) {
+        self.offset_secs = offset_secs.max(0.0);
+    }
+
+    /// 设置首端裁剪（绝对值），钳制 `[0, 源长−尾裁]`
+    pub fn set_trim_start(&mut self, trim_secs: f32, source_len: f32) {
+        let max = (source_len - self.trim_out_secs).max(0.0);
+        self.trim_in_secs = trim_secs.clamp(0.0, max);
+    }
+
+    /// 设置尾端裁剪（绝对值），钳制 `[0, 源长−首裁]`
+    pub fn set_trim_end(&mut self, trim_secs: f32, source_len: f32) {
+        let max = (source_len - self.trim_in_secs).max(0.0);
+        self.trim_out_secs = trim_secs.clamp(0.0, max);
+    }
+}
 
 /// 视频剪辑预览状态
 ///
@@ -28,6 +79,14 @@ pub struct VideoClipState {
     pub preview_width: f32,
     /// 预览区内容高度
     pub preview_height: f32,
+    /// 剪辑面板独立播放头（秒域）——与卷帘 PlaybackManager 完全无关
+    pub clip_position_secs: f32,
+    /// 剪辑面板独立播放状态
+    pub clip_playing: bool,
+    /// 视频轨素材编辑（偏移/首尾裁剪）
+    pub video_edit: ClipTrackEdit,
+    /// 音频轨素材编辑（偏移/首尾裁剪）
+    pub audio_edit: ClipTrackEdit,
 }
 
 impl Default for VideoClipState {
@@ -46,6 +105,48 @@ impl VideoClipState {
             timeline_scroll_x: 0.0,
             preview_width: 0.0,
             preview_height: 0.0,
+            clip_position_secs: 0.0,
+            clip_playing: false,
+            video_edit: ClipTrackEdit::default(),
+            audio_edit: ClipTrackEdit::default(),
+        }
+    }
+
+    /// 切换剪辑面板独立播放/暂停
+    pub fn clip_toggle_play(&mut self) {
+        self.clip_playing = !self.clip_playing;
+    }
+
+    /// 回零并停止（剪辑面板独立传输）
+    pub fn clip_rewind(&mut self) {
+        self.clip_playing = false;
+        self.clip_position_secs = 0.0;
+    }
+
+    /// 定位剪辑面板播放头（下限 0）
+    pub fn set_clip_position(&mut self, secs: f32) {
+        self.clip_position_secs = secs.max(0.0);
+    }
+
+    /// 推进剪辑面板独立传输时钟（每帧调用，秒域实时步进）
+    ///
+    /// 到达内容末尾自动停止并钉在末尾。
+    pub fn advance_clip_transport(&mut self, dt_secs: f32, content_duration: f32) {
+        if !self.clip_playing {
+            return;
+        }
+        self.clip_position_secs += dt_secs.max(0.0);
+        if self.clip_position_secs >= content_duration {
+            self.clip_position_secs = content_duration.max(0.0);
+            self.clip_playing = false;
+        }
+    }
+
+    /// 取指定轨道的可变编辑状态
+    pub fn track_edit_mut(&mut self, track: ClipTrack) -> &mut ClipTrackEdit {
+        match track {
+            ClipTrack::Video => &mut self.video_edit,
+            ClipTrack::Audio => &mut self.audio_edit,
         }
     }
 
@@ -223,5 +324,56 @@ mod tests {
         s.timeline_scroll_x = 300.0;
         s.reset_view();
         assert!(s.timeline_scroll_x.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_clip_track_edit_visible_window() {
+        let mut e = ClipTrackEdit::default();
+        // 偏移 2s、首裁 1s、尾裁 0.5s、源长 10s → 可视起点 [3]，可视长 = 10−1−0.5 = 8.5
+        e.set_offset(2.0);
+        e.set_trim_start(1.0, 10.0);
+        e.set_trim_end(0.5, 10.0);
+        assert!((e.visible_start() - 3.0).abs() < f32::EPSILON);
+        assert!((e.visible_len(10.0) - 8.5).abs() < f32::EPSILON);
+
+        // 首裁钳制上界 = 源长 − 尾裁 = 9.5（绝对值 API）
+        e.set_trim_start(100.0, 10.0);
+        assert!((e.trim_in_secs - 9.5).abs() < f32::EPSILON);
+
+        // 偏移下限 0
+        e.set_offset(-5.0);
+        assert!(e.offset_secs.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_clip_transport_advance_and_auto_stop() {
+        let mut s = VideoClipState::new();
+        // 非播放态推进无效
+        s.advance_clip_transport(0.5, 10.0);
+        assert!(s.clip_position_secs.abs() < f32::EPSILON);
+
+        // 播放推进累加
+        s.clip_playing = true;
+        s.advance_clip_transport(0.25, 10.0);
+        s.advance_clip_transport(0.25, 10.0);
+        assert!((s.clip_position_secs - 0.5).abs() < f32::EPSILON);
+        assert!(s.clip_playing);
+
+        // 到末尾自动停止并钉在末尾
+        s.advance_clip_transport(99.0, 10.0);
+        assert!((s.clip_position_secs - 10.0).abs() < f32::EPSILON);
+        assert!(!s.clip_playing);
+    }
+
+    #[test]
+    fn test_clip_rewind_and_toggle() {
+        let mut s = VideoClipState::new();
+        s.clip_playing = true;
+        s.set_clip_position(7.0);
+        s.clip_rewind();
+        assert!((s.clip_position_secs).abs() < f32::EPSILON);
+        assert!(!s.clip_playing);
+        s.clip_toggle_play();
+        assert!(s.clip_playing);
     }
 }
