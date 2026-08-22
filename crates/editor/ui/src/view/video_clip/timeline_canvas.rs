@@ -43,6 +43,8 @@ pub struct TimelineCanvas {
     pub scroll_x: f32,
     /// Ctrl 键按下状态（Ctrl+滚轮 = 缩放，卷帘同款交互）
     pub ctrl_pressed: bool,
+    /// 当前播放位置（秒）；走带线画在其对应屏幕坐标
+    pub playhead_secs: f32,
 }
 
 impl TimelineCanvas {
@@ -61,6 +63,16 @@ impl TimelineCanvas {
         let start = self.scroll_x / (PIXELS_PER_SEC * self.zoom);
         let end = (self.scroll_x + viewport_w) / (PIXELS_PER_SEC * self.zoom);
         (start.max(0.0), end.min(self.duration_secs))
+    }
+
+    /// 走带指示线的屏幕 x 坐标（播放头内容坐标 − 滚动偏移）。
+    ///
+    /// 播放中滚动被自动跟随（`follow_video_clip_playhead`）钉在
+    /// [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)，本值恒等于该锚点；
+    /// 暂停/停止时可随手动滚动移出视口（返回 `None` 表示不绘制）。
+    pub fn playhead_screen_x(&self, viewport_w: f32) -> Option<f32> {
+        let x = self.sec_to_content_x(self.playhead_secs) - self.scroll_x;
+        (-1.0..=viewport_w + 1.0).contains(&x).then_some(x)
     }
 }
 
@@ -197,12 +209,16 @@ impl Program<Message, Theme, Renderer> for TimelineCanvas {
             }
         }
 
-        // ── 走带指示线：固定在时间轴区域前端 PLAYHEAD_X 处，纵贯全高 ──
-        frame.fill_rectangle(
-            Point::new(super::layout::PLAYHEAD_X, 0.0),
-            Size::new(2.0, bounds.height),
-            Color::from_rgb(0.95, 0.25, 0.25),
-        );
+        // ── 走带指示线：画在播放位置对应的屏幕坐标，纵贯全高 ──
+        // 播放中滚动自动跟随使该坐标恒定钉在 PLAYHEAD_X；暂停时可随手动
+        // 滚动移动或移出视口（与 NLE 剪辑软件行为一致）。
+        if let Some(playhead_x) = self.playhead_screen_x(bounds.width) {
+            frame.fill_rectangle(
+                Point::new(playhead_x, 0.0),
+                Size::new(2.0, bounds.height),
+                Color::from_rgb(0.95, 0.25, 0.25),
+            );
+        }
 
         vec![frame.into_geometry()]
     }
@@ -235,15 +251,14 @@ mod tests {
             zoom: 1.0,
             scroll_x: 0.0,
             ctrl_pressed: false,
+            playhead_secs: 0.0,
         };
         // 10s * 80px/s = 800
         assert!((c.content_width() - 800.0).abs() < f32::EPSILON);
 
         let tiny = TimelineCanvas {
             duration_secs: 0.0,
-            zoom: 1.0,
-            scroll_x: 0.0,
-            ctrl_pressed: false,
+            ..c
         };
         // 最小兜底 400
         assert!((tiny.content_width() - 400.0).abs() < f32::EPSILON);
@@ -256,6 +271,7 @@ mod tests {
             zoom: 2.0,
             scroll_x: 320.0, // pps_zoom=160 → 起点 2s
             ctrl_pressed: false,
+            playhead_secs: 0.0,
         };
         // 视口宽 800 → 终点 (320+800)/160 = 7s
         let (s, e) = c.visible_seconds(800.0);
@@ -269,5 +285,36 @@ mod tests {
         };
         let (s, _) = scrolled_back.visible_seconds(800.0);
         assert!(s.abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_playhead_screen_x_follow_and_cull() {
+        // 播放头 5s、zoom=1 → 内容 x=400；自动跟随使 scroll = 400-PLAYHEAD_X(50) = 350，
+        // 屏幕坐标应恒等于 PLAYHEAD_X（钉住不动）
+        let playing = TimelineCanvas {
+            duration_secs: 30.0,
+            zoom: 1.0,
+            scroll_x: 350.0,
+            ctrl_pressed: false,
+            playhead_secs: 5.0,
+        };
+        let x = playing.playhead_screen_x(800.0).expect("应在视口内");
+        assert!((x - super::super::layout::PLAYHEAD_X).abs() < f32::EPSILON);
+
+        // 手动滚远后播放头移出视口 → 不绘制
+        let scrolled_away = TimelineCanvas {
+            scroll_x: 2000.0,
+            ..playing
+        };
+        assert!(scrolled_away.playhead_screen_x(800.0).is_none());
+
+        // 播放头在起点且未滚动 → 屏幕 x=0，可见
+        let at_origin = TimelineCanvas {
+            scroll_x: 0.0,
+            playhead_secs: 0.0,
+            ..playing
+        };
+        let origin_x = at_origin.playhead_screen_x(800.0).expect("原点应在视口内");
+        assert!(origin_x.abs() < f32::EPSILON);
     }
 }

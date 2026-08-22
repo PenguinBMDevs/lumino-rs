@@ -29,6 +29,7 @@ pub mod sidebar;
 pub mod state_update;
 pub mod toolbar;
 pub mod velocity;
+pub mod video_clip_update;
 
 // 重新导出处理器类型
 pub use cloud::CloudHandler;

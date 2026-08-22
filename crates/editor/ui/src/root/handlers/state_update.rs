@@ -3,7 +3,7 @@
 //! 处理 `try_handle_simple_state` 中的剩余直接消息，
 //! 包括滚动条、缩放、画布边界、动画帧、性能数据、MIDI 输入等。
 
-use crate::message::{Message, VideoClipAction};
+use crate::message::Message;
 use crate::root::Root;
 use std::time::Instant;
 
@@ -367,86 +367,5 @@ impl Root {
         self.toast.cleanup_expired(Instant::now());
 
         true
-    }
-
-    /// 处理视频剪辑面板交互
-    /// 剪辑带时间轴未缩放基准宽度（像素）＝ MIDI 时长 × 像素密度，最小兜底 400
-    pub(crate) fn clip_timeline_base_width(&self) -> f32 {
-        let v = &self.editor.editor_state.view;
-        let tempos: Vec<(u32, f32)> = self
-            .editor
-            .editor_state
-            .data
-            .tempo_points
-            .iter()
-            .map(|tp| (tp.tick as u32, tp.bpm as f32))
-            .collect();
-        let duration =
-            crate::view::video_clip::timeline::duration_seconds(v.total_ticks, v.ppq, &tempos);
-        (duration as f32 * crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC).max(400.0)
-    }
-
-    pub(crate) fn handle_video_clip_action(&mut self, action: VideoClipAction) -> bool {
-        match action {
-            VideoClipAction::ZoomChanged(factor) => {
-                self.state.video_clip.apply_zoom(factor);
-                true
-            }
-            VideoClipAction::ZoomSet(zoom) => {
-                self.state.video_clip.set_zoom(zoom);
-                true
-            }
-            VideoClipAction::PanChanged { dx, dy } => {
-                self.state.video_clip.pan_by(dx, dy);
-                true
-            }
-            VideoClipAction::ZoomAround {
-                old_zoom,
-                new_zoom,
-                cursor_x,
-                cursor_y,
-                center_x,
-                center_y,
-            } => {
-                self.state.video_clip.zoom_around(
-                    old_zoom, new_zoom, 0.0, 0.0, center_x, center_y, cursor_x, cursor_y,
-                );
-                self.state.video_clip.set_zoom(new_zoom);
-                true
-            }
-            VideoClipAction::ResetView => {
-                self.state.video_clip.reset_view();
-                true
-            }
-            VideoClipAction::PreviewSizeChanged { width, height } => {
-                self.state.video_clip.preview_width = width;
-                self.state.video_clip.preview_height = height;
-                true
-            }
-            VideoClipAction::TimelineScroll { x, viewport_w } => {
-                let zoom = self.state.video_clip.zoom;
-                let content_w = self.clip_timeline_base_width() * zoom;
-                self.state
-                    .video_clip
-                    .set_timeline_scroll(x, content_w, viewport_w.max(1.0));
-                true
-            }
-            VideoClipAction::TimelineZoom {
-                zoom,
-                fixed_ratio,
-                viewport_w,
-            } => {
-                let old_zoom = self.state.video_clip.zoom;
-                let base_w = self.clip_timeline_base_width();
-                self.state.video_clip.timeline_zoom_around(
-                    zoom,
-                    fixed_ratio,
-                    old_zoom,
-                    base_w,
-                    viewport_w.max(1.0),
-                );
-                true
-            }
-        }
     }
 }

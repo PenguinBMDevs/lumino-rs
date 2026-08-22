@@ -71,17 +71,13 @@ impl Root {
         let clip_zoom = self.state.video_clip.zoom;
         let export_state = self.state.video_export_dialog.clone();
         let theme = self.window.theme.clone();
-        let total_ticks = self.editor.editor_state.view.total_ticks;
+        // 真实内容长度：优先文档轨尾标（与播放停止点同源），空工程回退画布默认
+        let total_ticks = self.clip_real_total_ticks();
         let ppq = self.editor.editor_state.view.ppq;
         let ctrl_pressed = self.toolbar.ctrl_pressed;
-        let tempos: Vec<(u32, f32)> = self
-            .editor
-            .editor_state
-            .data
-            .tempo_points
-            .iter()
-            .map(|tp| (tp.tick as u32, tp.bpm as f32))
-            .collect();
+        let tempos: Vec<(u32, f32)> = self.tempo_pairs();
+        // 播放头秒数：走带线绘制基准（播放中滚动自动跟随，恒钉在区域前端）
+        let playhead_secs = self.clip_playhead_secs();
 
         responsive(move |size: Size| {
             let palette = theme.extended_palette();
@@ -184,12 +180,15 @@ impl Root {
 
             let timeline = crate::view::video_clip::timeline::timeline_pane(
                 &theme,
-                total_ticks,
-                ppq,
-                &tempos,
-                &self.state.video_clip,
-                timeline_viewport_w,
-                ctrl_pressed,
+                crate::view::video_clip::timeline::TimelinePaneParams {
+                    total_ticks,
+                    ppq,
+                    tempos: &tempos,
+                    clip: &self.state.video_clip,
+                    viewport_w: timeline_viewport_w,
+                    ctrl_pressed,
+                    playhead_secs,
+                },
             );
             let settings = {
                 let s = &export_state;

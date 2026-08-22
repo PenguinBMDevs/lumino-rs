@@ -9,8 +9,11 @@ use lumino_ui_core::state::video_clip_state::VideoClipState;
 
 use crate::Theme;
 
-/// 将 tick 转换为秒（与 `video_export.rs` 的 `ticks_to_seconds` 一致）
-fn ticks_to_seconds(tick: u64, ppq: u32, tempos: &[(u32, f32)]) -> f64 {
+/// 将 tick 转换为秒（与 `video_export.rs` 的 `ticks_to_seconds` 一致）。
+///
+/// 剪辑带全链路共用：时长计算（[`duration_seconds`]）、播放头秒数换算
+/// （panels/frame 走带联动）均经此单一实现，保证标尺/轨道条/走带线同源。
+pub(crate) fn ticks_to_seconds(tick: u64, ppq: u32, tempos: &[(u32, f32)]) -> f64 {
     if ppq == 0 {
         return tick as f64;
     }
@@ -48,33 +51,41 @@ pub(crate) fn duration_seconds(total_ticks: u32, ppq: u16, tempos: &[(u32, f32)]
     }
 }
 
+/// 剪辑带时间轴视图参数（打包传入，避免长参数列表）
+pub struct TimelinePaneParams<'a> {
+    /// 内容总长（tick，调用方传入真实轨尾标，见 `Root::clip_real_total_ticks`）
+    pub total_ticks: u32,
+    /// PPQ（每四分音符 tick 数）
+    pub ppq: u16,
+    /// Tempo 映射 `(tick, bpm)`
+    pub tempos: &'a [(u32, f32)],
+    /// 剪辑视口状态（zoom 与 timeline_scroll_x 驱动内容与滚动条）
+    pub clip: &'a VideoClipState,
+    /// 时间轴可视宽度（由面板 responsive 计算传入）
+    pub viewport_w: f32,
+    /// Ctrl 键状态（Ctrl+滚轮缩放）
+    pub ctrl_pressed: bool,
+    /// 当前播放位置（秒）；走带线画在其对应屏幕坐标，
+    /// 播放中因滚动自动跟随恒定钉在 [`layout::PLAYHEAD_X`](super::layout::PLAYHEAD_X)
+    pub playhead_secs: f32,
+}
+
 /// 渲染剪辑带时间轴
-///
-/// * `clip` — 剪辑视口状态（zoom 与 timeline_scroll_x 驱动内容与滚动条）
-/// * `viewport_w` — 时间轴可视宽度（由面板 responsive 计算传入）
-/// * `ctrl_pressed` — Ctrl 键状态（Ctrl+滚轮缩放）
-pub fn timeline_pane(
-    theme: &Theme,
-    total_ticks: u32,
-    ppq: u16,
-    tempos: &[(u32, f32)],
-    clip: &VideoClipState,
-    viewport_w: f32,
-    ctrl_pressed: bool,
-) -> crate::Element<'static> {
+pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::Element<'static> {
     let palette = theme.extended_palette();
     let weak_text = palette.background.weak.text;
     let strong_text = palette.background.strong.text;
     let weak_color = palette.background.weak.color;
     let strong_color = palette.background.strong.color;
 
-    let duration_secs = duration_seconds(total_ticks, ppq, tempos) as f32;
+    let duration_secs = duration_seconds(params.total_ticks, params.ppq, params.tempos) as f32;
 
     let canvas_data = super::timeline_canvas::TimelineCanvas {
         duration_secs,
-        zoom: clip.zoom,
-        scroll_x: clip.timeline_scroll_x,
-        ctrl_pressed,
+        zoom: params.clip.zoom,
+        scroll_x: params.clip.timeline_scroll_x,
+        ctrl_pressed: params.ctrl_pressed,
+        playhead_secs: params.playhead_secs,
     };
     let content_width = canvas_data.content_width();
 
@@ -85,10 +96,11 @@ pub fn timeline_pane(
 
     // 卷帘同款水平滚动条：滑块拖拽滚动 + 边缘拖拽缩放（视口宽随消息携带，无状态反向同步）
     use crate::message::{Message, VideoClipAction};
+    let viewport_w = params.viewport_w;
     let h_scrollbar = crate::editor::scrollbar_widget::ScrollbarWidget::horizontal(
-        clip.timeline_scroll_x,
+        params.clip.timeline_scroll_x,
         content_width,
-        clip.zoom,
+        params.clip.zoom,
         Some(viewport_w.max(1.0)),
         move |scroll| {
             Message::VideoClip(VideoClipAction::TimelineScroll {
@@ -117,7 +129,7 @@ pub fn timeline_pane(
                 iced_widget::space().width(Length::Fill),
                 text(format!(
                     "时长 {:.1}s  ({} ticks)  缩放 {:.1}x",
-                    duration_secs, total_ticks, clip.zoom
+                    duration_secs, params.total_ticks, params.clip.zoom
                 ))
                 .size(11)
                 .style(move |_t: &Theme| text::Style {
