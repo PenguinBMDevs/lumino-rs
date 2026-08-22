@@ -22,6 +22,12 @@ impl Host {
             && !self.root.sidebar.video_export_visible
             && self.root.state.current_mode != AppMode::Waterfall;
         if is_renderer_clip {
+            // 必须先驱动渲染线程参数发送：redraw_separate_thread 是音符实例
+            // 双缓冲（note_data_pub）的唯一写入通道，瀑布流预览经 take_note_data
+            // 读取。跳过会导致「加载 MIDI 后剪辑预览无音符，切卷帘才恢复」。
+            // 此处仅发参数，不做离屏拷贝（copy_offscreen_to_surface），主表面干净。
+            self.redraw_separate_thread();
+
             if !self.skip_ui_rendering {
                 let view = frame
                     .texture
@@ -70,25 +76,15 @@ impl Host {
     /// 2. 生成渲染参数
     /// 3. 写入音符数据到双缓冲
     /// 4. 发送渲染参数到 WGPU 线程
+    ///
+    /// 注意：本函数**不做任何离屏拷贝/表面绘制**，仅发送参数（含音符实例数据）。
+    /// 因此视频剪辑面板模式下也必须被调用——瀑布流预览依赖 note_data_pub 双缓冲。
     pub(super) fn redraw_separate_thread(&mut self) {
         puffin::profile_function!();
         puffin::profile_scope!("redraw_separate_thread");
 
         if !self.validate_render_thread_ready() {
             return;
-        }
-
-        // 视频剪辑面板时跳过钢琴卷帘的离屏渲染（网格/音符/标尺），避免与剪辑预览叠加
-        {
-            use crate::titlebar::mode_toggle::AppMode;
-            use lumino_ui_core::sidebar_event::GroupId;
-            let is_renderer_clip = self.root.sidebar.active_group == Some(GroupId::Renderer)
-                && !self.root.sidebar.audio_export_visible
-                && !self.root.sidebar.video_export_visible
-                && self.root.state.current_mode != AppMode::Waterfall;
-            if is_renderer_clip {
-                return;
-            }
         }
 
         let render_data = self.collect_render_data();
