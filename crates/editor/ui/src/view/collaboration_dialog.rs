@@ -93,6 +93,14 @@ fn view_connect<'a>(
         .padding(8)
         .width(Length::Fill);
 
+    let password_input = text_input("密码", &state.password)
+        .on_input(|s| {
+            Message::Collaboration(lumino_message::CollaborationAction::PasswordChanged(s))
+        })
+        .secure(true)
+        .padding(8)
+        .width(Length::Fill);
+
     let invite_input = text_input("邀请码（可选）", &state.invite_code)
         .on_input(|s| {
             Message::Collaboration(lumino_message::CollaborationAction::InviteCodeChanged(s))
@@ -111,6 +119,7 @@ fn view_connect<'a>(
                     .parse()
                     .unwrap_or(crate::constants::collaboration::DEFAULT_PORT),
                 username: state.username.clone(),
+                password: state.password.clone(),
                 invite_code: if state.invite_code.trim().is_empty() {
                     None
                 } else {
@@ -152,6 +161,8 @@ fn view_connect<'a>(
         row![host_input, space().width(8), port_input].align_y(iced_core::Alignment::Center),
         space().height(12),
         username_input,
+        space().height(12),
+        password_input,
         space().height(12),
         invite_input,
         space().height(16),

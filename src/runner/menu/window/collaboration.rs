@@ -12,10 +12,18 @@ impl RunnerInner {
                 host,
                 port,
                 username,
+                password,
                 invite_code,
             } => {
                 tracing::info!("请求连接协作服务器: {host}:{port}");
-                self.handle_collaboration_connect(host, port, username, None, invite_code);
+                self.handle_collaboration_connect(
+                    host,
+                    port,
+                    username,
+                    password,
+                    None,
+                    invite_code,
+                );
             }
             CreateRoom { name } => {
                 tracing::info!("请求创建协作房间: {name}");

@@ -100,6 +100,7 @@ impl RunnerInner {
         host: String,
         port: u16,
         username: String,
+        password: String,
         room_name: Option<String>,
         invite_code: Option<String>,
     ) {
@@ -111,7 +112,7 @@ impl RunnerInner {
         let service = self.collab_state.collaboration_service.clone();
         tokio::spawn(async move {
             if let Err(e) = service
-                .connect(host, port, username, room_name, invite_code)
+                .connect(host, port, username, password, room_name, invite_code)
                 .await
             {
                 tracing::error!("协作连接失败: {}", e);

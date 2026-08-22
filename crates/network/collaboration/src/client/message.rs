@@ -9,6 +9,8 @@ pub enum ClientMessage {
     Auth {
         /// 用户名
         username: String,
+        /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+        password: String,
     },
     /// 创建房间请求
     CreateRoom {

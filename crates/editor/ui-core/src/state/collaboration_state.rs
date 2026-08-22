@@ -25,6 +25,8 @@ pub struct CollaborationDialogState {
     pub server_port: String,
     /// 用户名
     pub username: String,
+    /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+    pub password: String,
     /// 房间名称（创建房间用）
     pub room_name: String,
     /// 邀请码（加入房间用）
@@ -49,6 +51,7 @@ impl CollaborationDialogState {
             server_host: "localhost".to_string(),
             server_port: "3000".to_string(),
             username: "用户".to_string(),
+            password: String::new(),
             room_name: "我的房间".to_string(),
             invite_code: String::new(),
             view_state: CollaborationViewState::Connect,

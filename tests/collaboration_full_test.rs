@@ -69,6 +69,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
         server_host: "lumino-collaborative-server.enderman-bm.workers.dev".to_string(),
         server_port: 443,
         username: "测试用户01".to_string(),
+        password: String::new(),
         auto_reconnect: false,
         max_reconnect_attempts: 0,
     });
@@ -115,6 +116,7 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
         server_host: "lumino-collaborative-server.enderman-bm.workers.dev".to_string(),
         server_port: 443,
         username: "测试用户02".to_string(),
+        password: String::new(),
         auto_reconnect: false,
         max_reconnect_attempts: 0,
     });

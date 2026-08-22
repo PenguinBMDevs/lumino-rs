@@ -28,6 +28,7 @@ impl CollaborationHandler {
         host: String,
         port: u16,
         username: String,
+        password: String,
         invite_code: Option<String>,
     ) {
         tracing::info!(
@@ -42,7 +43,13 @@ impl CollaborationHandler {
 
         // 发送核心事件到 Runner 处理实际连接
         crate::event::emit(crate::event::Event::Window(
-            crate::event::window::Event::collaboration_connect(host, port, username, invite_code),
+            crate::event::window::Event::collaboration_connect(
+                host,
+                port,
+                username,
+                password,
+                invite_code,
+            ),
         ));
     }
 
@@ -144,9 +151,17 @@ impl MessageHandler for CollaborationHandler {
                     host,
                     port,
                     username,
+                    password,
                     invite_code,
                 } => {
-                    self.handle_collaboration_connect(root, host, port, username, invite_code);
+                    self.handle_collaboration_connect(
+                        root,
+                        host,
+                        port,
+                        username,
+                        password,
+                        invite_code,
+                    );
                     None
                 }
                 lumino_message::CollaborationAction::CreateRoom { name } => {
@@ -201,6 +216,10 @@ impl MessageHandler for CollaborationHandler {
                 }
                 lumino_message::CollaborationAction::InviteCodeChanged(code) => {
                     root.state.collaboration_dialog.invite_code = code;
+                    None
+                }
+                lumino_message::CollaborationAction::PasswordChanged(password) => {
+                    root.state.collaboration_dialog.password = password;
                     None
                 }
             },

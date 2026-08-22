@@ -74,6 +74,7 @@ impl CollaborationService {
         host: String,
         port: u16,
         username: String,
+        password: String,
         room_name: Option<String>,
         invite_code: Option<String>,
     ) -> Result<(), String> {
@@ -86,6 +87,7 @@ impl CollaborationService {
             server_host: host.clone(),
             server_port: port,
             username: username.clone(),
+            password,
             auto_reconnect: true,
             max_reconnect_attempts: 5,
         };

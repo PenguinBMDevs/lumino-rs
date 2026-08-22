@@ -17,6 +17,8 @@ pub enum CollaborationAction {
         port: u16,
         /// 协作用户名
         username: String,
+        /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+        password: String,
         /// 邀请码（加入已有房间时提供）
         invite_code: Option<String>,
     },
@@ -42,6 +44,8 @@ pub enum CollaborationAction {
     RoomNameChanged(String),
     /// 协作邀请码变更
     InviteCodeChanged(String),
+    /// 协作密码变更（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+    PasswordChanged(String),
     /// 协作复制邀请码到剪贴板
     CopyInviteCode,
     /// 协作远端鼠标移动
@@ -85,6 +89,7 @@ mod tests {
             host: "localhost".to_string(),
             port: 3000,
             username: "test".to_string(),
+            password: "test".to_string(),
             invite_code: None,
         };
         assert!(matches!(action, CollaborationAction::Connect { .. }));

@@ -11,6 +11,8 @@ pub struct ClientConfig {
     pub server_port: u16,
     /// 用户名
     pub username: String,
+    /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+    pub password: String,
     /// 是否自动重连
     pub auto_reconnect: bool,
     /// 最大重连尝试次数
@@ -29,6 +31,7 @@ impl Default for ClientConfig {
             server_host: "localhost".to_string(),
             server_port: 3000,
             username: format!("用户{}", seed % 10000),
+            password: String::new(),
             auto_reconnect: true,
             max_reconnect_attempts: 5,
         }

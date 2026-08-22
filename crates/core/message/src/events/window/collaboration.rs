@@ -11,6 +11,8 @@ pub enum Event {
         port: u16,
         /// 协作用户名
         username: String,
+        /// 密码（与注册/登录账户一致，用于 WebSocket 握手鉴权）
+        password: String,
         /// 邀请码（加入已有房间时提供）
         invite_code: Option<String>,
     },

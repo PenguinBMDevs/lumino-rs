@@ -46,7 +46,7 @@ impl DialogWindow {
         let (width, height, title, resizable) = match dialog_type {
             DialogType::None => unreachable!("不会创建 None 类型的对话框"),
             DialogType::CustomPrecision => (480.0, 180.0, "自定义贴合", false),
-            DialogType::Collaboration => (420.0, 320.0, "多人协作", false),
+            DialogType::Collaboration => (800.0, 600.0, "多人协作", false),
             DialogType::LoadConfirm => (420.0, 260.0, "加载大文件", false),
             DialogType::ProjectSettings => (450.0, 480.0, "工程设置", true),
             DialogType::Settings => (720.0, 540.0, "设置", true),

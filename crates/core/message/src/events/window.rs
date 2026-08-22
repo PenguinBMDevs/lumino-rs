@@ -215,12 +215,14 @@ impl Event {
         host: String,
         port: u16,
         username: String,
+        password: String,
         invite_code: Option<String>,
     ) -> Self {
         Self::Collaboration(collaboration::Event::Connect {
             host,
             port,
             username,
+            password,
             invite_code,
         })
     }

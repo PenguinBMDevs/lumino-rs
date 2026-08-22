@@ -96,6 +96,7 @@ impl CollaborationClient {
     async fn send_auth_message(&self, write: &Arc<Mutex<WsSink>>) -> Result<()> {
         let auth_msg = ClientMessage::Auth {
             username: self.config.username.clone(),
+            password: self.config.password.clone(),
         };
         let auth_json = serde_json::to_string(&auth_msg)?;
 
