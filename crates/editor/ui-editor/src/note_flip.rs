@@ -24,6 +24,8 @@ impl Editor {
             self.selection_clear();
             self.editor_state.interaction.hover_state = None;
             self.mark_notes_changed();
+            // 2026-09 协作修复：垂直翻转前向立即广播（防队列堆积→克隆体）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }
@@ -63,6 +65,8 @@ impl Editor {
             self.selection_clear();
             self.editor_state.interaction.hover_state = None;
             self.mark_notes_changed();
+            // 2026-09 协作修复：水平翻转前向立即广播（防队列堆积→克隆体）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }

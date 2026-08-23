@@ -204,6 +204,16 @@ impl Editor {
         self.selection_clear();
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
+        // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
+        // 否则 B 端完全缺失被复制的副本。
+        let track = self.editor_state.data.current_track;
+        for n in &notes {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_added(
+                    n.tick, n.key, n.length, n.velocity, n.channel, track,
+                ),
+            ));
+        }
         self.pending_copy_drag_state = None;
         // 编辑已提交：结束本地选择会话（通知对端）
         self.emit_local_selection_changed(false);

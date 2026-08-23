@@ -108,10 +108,11 @@ impl EditorData {
             return false;
         }
         let (key, velocity, channel) = (note.key, note.velocity, note.channel);
+        let track_idx = self.current_track;
 
         self.push_history();
         // 移除原音符，插入 right + left（insert_note 按 start_tick 有序插入）
-        self.remove_note(self.current_track, index);
+        self.remove_note(track_idx, index);
         let right = Note::from_raw(
             split_tick,
             key as u16,
@@ -126,9 +127,37 @@ impl EditorData {
             velocity,
             channel,
         );
-        self.insert_note(self.current_track, left);
-        self.insert_note(self.current_track, right);
+        self.insert_note(track_idx, left);
+        self.insert_note(track_idx, right);
         self.mark_current_track_changed();
+        // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
+        self.pending_collab_transform_sync.push((
+            false,
+            note_tick,
+            key as u16,
+            note_length,
+            velocity,
+            channel,
+            track_idx,
+        ));
+        self.pending_collab_transform_sync.push((
+            true,
+            note_tick,
+            key as u16,
+            split_tick - note_tick,
+            velocity,
+            channel,
+            track_idx,
+        ));
+        self.pending_collab_transform_sync.push((
+            true,
+            split_tick,
+            key as u16,
+            note_tick + note_length - split_tick,
+            velocity,
+            channel,
+            track_idx,
+        ));
         true
     }
 
@@ -173,11 +202,33 @@ impl EditorData {
             let rm: Vec<usize> = group.iter().map(|note_tuple| note_tuple.0).collect();
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
+            // 2026-09 协作修复：合并改变音符数量，先记录每个被合并音符的删除。
+            for nt in group {
+                self.pending_collab_transform_sync.push((
+                    false,
+                    nt.1,
+                    nt.2,
+                    nt.3,
+                    nt.4,
+                    nt.5,
+                    self.current_track,
+                ));
+            }
             for &idx in &rm_sorted {
                 self.remove_note(self.current_track, idx);
             }
             let merged_note = Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5);
             self.insert_note(self.current_track, merged_note);
+            // 2026-09 协作修复：添加一个合并后的音符。
+            self.pending_collab_transform_sync.push((
+                true,
+                merged_tick,
+                first.2,
+                merged_length,
+                first.4,
+                first.5,
+                self.current_track,
+            ));
             merged += 1;
         }
         self.mark_current_track_changed();
@@ -227,11 +278,15 @@ impl EditorData {
 
         let mut tied = 0usize;
         self.push_history();
+        let track_idx = self.current_track;
+        // 2026-09 协作修复：连奏延长长度，须在修改后广播「删旧长度 + 加新长度」。
+        // `track` 可变借用 self.document，故先收集到本地 Vec 再统一追加，规避借用冲突。
+        let mut sync_entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
 
         if let Some(track) = self
             .document
             .as_mut()
-            .and_then(|doc| doc.track_notes_mut(self.current_track))
+            .and_then(|doc| doc.track_notes_mut(track_idx))
         {
             for group_idx in 0..groups.len() - 1 {
                 let current_tick = groups[group_idx].0;
@@ -243,13 +298,21 @@ impl EditorData {
                     if let Some(note) = track.get_mut(idx) {
                         let current_length = (note.end_tick - note.start_tick) as f32;
                         if new_length > current_length {
+                            let old_tick = note.start_tick as f32;
+                            let old_key = note.key as u16;
+                            let old_vel = note.velocity;
+                            let old_ch = note.channel;
                             note.end_tick = note.start_tick + new_length as u32;
+                            let new_len = (note.end_tick - note.start_tick) as f32;
+                            sync_entries.push((false, old_tick, old_key, current_length, old_vel, old_ch, track_idx));
+                            sync_entries.push((true, old_tick, old_key, new_len, old_vel, old_ch, track_idx));
                             tied += 1;
                         }
                     }
                 }
             }
         }
+        self.pending_collab_transform_sync.extend(sync_entries);
 
         if tied > 0 {
             self.mark_current_track_changed();

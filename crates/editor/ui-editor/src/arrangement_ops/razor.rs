@@ -41,6 +41,8 @@ impl Editor {
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(std::collections::HashSet::from([doc_track])));
+        // 2026-09 协作修复：Razor 切割前向立即广播（删原+加左右），防 B 端失同步。
+        self.broadcast_pending_collab_transform_sync();
         tracing::info!(
             "Arrangement: 分割 {} 个音符 (tick={}, visual={}, track={})",
             split_count,
@@ -79,6 +81,10 @@ impl Editor {
         indices_to_split: Vec<usize>,
     ) -> usize {
         let mut split_count = 0usize;
+        // 2026-09 协作修复：切割改变音符数量，累积「删原 + 加左右」同步条目。
+        // pending_collab_transform_sync 为 pub(crate)，ui-editor 不可直访，
+        // 故经 pub 入口 push_collab_transform_entries 注入。
+        let mut sync_entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
         // 从后往前分割，避免索引漂移
         for idx in indices_to_split.into_iter().rev() {
             // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right
@@ -105,8 +111,14 @@ impl Editor {
             // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护
             self.editor_state.data.insert_note(track, right);
             self.editor_state.data.insert_note(track, left);
+            sync_entries.push((false, note_tick, note_key, note_length, note.velocity, note.channel, track));
+            sync_entries.push((true, note_tick, note_key, tick_f - note_tick, note.velocity, note.channel, track));
+            sync_entries.push((true, tick_f, note_key, note_tick + note_length - tick_f, note.velocity, note.channel, track));
             split_count += 1;
         }
+        self.editor_state
+            .data
+            .push_collab_transform_entries(sync_entries);
         split_count
     }
 }

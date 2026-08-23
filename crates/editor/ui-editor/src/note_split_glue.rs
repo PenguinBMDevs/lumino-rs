@@ -19,6 +19,8 @@ impl Editor {
             self.selection_clear();
             self.editor_state.interaction.hover_state = None;
             self.mark_notes_changed();
+            // 2026-09 协作修复：分割改变音符数量，前向立即广播（删原+加左右）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }
@@ -34,6 +36,8 @@ impl Editor {
             self.selection_clear();
             self.editor_state.interaction.hover_state = None;
             self.mark_notes_changed();
+            // 2026-09 协作修复：合并改变音符数量，前向立即广播（删被并+加合并后）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }
@@ -47,6 +51,8 @@ impl Editor {
             self.selection_clear();
             self.editor_state.interaction.hover_state = None;
             self.mark_notes_changed();
+            // 2026-09 协作修复：连奏延长长度，前向立即广播（删旧长度+加新长度）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }

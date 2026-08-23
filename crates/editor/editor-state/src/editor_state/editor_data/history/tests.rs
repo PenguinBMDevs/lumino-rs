@@ -429,3 +429,64 @@ fn test_transpose_populates_collab_transform_sync() {
     assert!(is_add_1);
     assert_eq!(k1, 63, "添加的新音符 key=63 (+3 半音)");
 }
+
+/// Bug 回归：分割（split）改变音符数量，前向须入队「删原 + 加左 + 加右」，
+/// 否则 B 端只见新增的左/右之一或完全缺失（用户报告「拆分没同步」）。
+#[test]
+fn test_split_populates_collab_transform_sync() {
+    let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    let ok = data.split_note(0, 0.5);
+    assert!(ok, "split 应成功");
+    assert_eq!(data.current_track_note_count(), 2);
+    let pending = data.take_pending_collab_transform_sync();
+    // 删原(0,60,1.0) + 加左(0,60,0.5) + 加右(0.5,60,0.5)
+    assert_eq!(pending.len(), 3);
+    let (d, t0, k0, l0, _, _, _) = pending[0];
+    let (a1, t1, k1, l1, _, _, _) = pending[1];
+    let (a2, t2, k2, l2, _, _, _) = pending[2];
+    assert!(!d, "首条应为删除原音符");
+    assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
+    assert!(a1 && a2, "后两条应为添加左右");
+    assert_eq!((t1, k1, l1), (0.0, 60, 0.5));
+    assert_eq!((t2, k2, l2), (0.5, 60, 0.5));
+}
+
+/// Bug 回归：合并（glue）改变音符数量，前向须入队「删每个被并音符 + 加合并后音符」。
+#[test]
+fn test_glue_populates_collab_transform_sync() {
+    let mut data =
+        EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0), Note::new(1.0, 60, 1.0)]);
+    use std::collections::HashSet;
+    let merged = data.glue_selected_notes(&HashSet::from([0usize, 1usize]));
+    assert_eq!(merged, 1, "应合并 1 组");
+    assert_eq!(data.current_track_note_count(), 1);
+    let pending = data.take_pending_collab_transform_sync();
+    // 删两个被并音符 + 加一个合并后音符(0..2)
+    assert_eq!(pending.len(), 3);
+    let adds: Vec<_> = pending.iter().filter(|e| e.0).collect();
+    let dels: Vec<_> = pending.iter().filter(|e| !e.0).collect();
+    assert_eq!(adds.len(), 1);
+    assert_eq!(dels.len(), 2);
+    let (_, at, ak, al, _, _, _) = *adds[0];
+    assert_eq!((at, ak, al), (0.0, 60, 2.0), "合并后音符应为 (0..2)");
+    let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.1).collect();
+    del_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    assert_eq!(del_ticks, vec![0.0, 1.0], "应删除两个被并音符(0 与 1)");
+}
+
+/// Bug 回归：连奏（tie）延长长度，前向须入队「删旧长度 + 加新长度」（同 tick/key）。
+#[test]
+fn test_tie_populates_collab_transform_sync() {
+    let mut data =
+        EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0), Note::new(2.0, 60, 1.0)]);
+    use std::collections::HashSet;
+    let tied = data.tie_selected_notes(&HashSet::from([0usize, 1usize]));
+    assert_eq!(tied, 1, "应连接 1 个音符");
+    let pending = data.take_pending_collab_transform_sync();
+    assert_eq!(pending.len(), 2);
+    let (d, dt, dk, dl, _, _, _) = pending[0];
+    let (a, at, ak, al, _, _, _) = pending[1];
+    assert!(!d && a, "应为删旧长度 + 加新长度");
+    assert_eq!((dt, dk, dl), (0.0, 60, 1.0), "旧长度 1.0");
+    assert_eq!((at, ak, al), (0.0, 60, 2.0), "新长度延长到 2.0");
+}

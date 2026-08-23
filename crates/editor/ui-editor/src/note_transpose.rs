@@ -18,6 +18,9 @@ impl Editor {
         let result = self.editor_state.data.transpose(&selected, semitones);
         if result > 0 {
             self.mark_notes_changed();
+            // 2026-09 协作修复：移调前向须立即广播，否则队列堆积后被延迟 flush 会
+            // 命中漂移位置，导致 B 端生成克隆体。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }

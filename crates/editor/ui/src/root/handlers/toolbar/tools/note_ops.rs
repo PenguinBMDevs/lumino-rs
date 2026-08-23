@@ -64,6 +64,22 @@ impl ToolbarHandler {
                 })
                 .collect();
 
+        // 2026-09 协作修复：量化会改变 tick/length，须广播旧→新让 B 端同步。
+        // 提前捕获每个选中音符的旧状态（vel/ch 不变，key 不变）。
+        let old_notes: Vec<(f32, u16, f32, u8, u8)> = selected_indices
+            .iter()
+            .map(|&i| {
+                let note = &root.editor.editor_state.data.current_track_notes()[i];
+                (
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                    note.velocity,
+                    note.channel,
+                )
+            })
+            .collect();
+
         let modified_count =
             lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
 
@@ -87,6 +103,23 @@ impl ToolbarHandler {
                     note.start_tick = new_tick;
                 }
             }
+
+            // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。
+            let track = root.editor.editor_state.data.current_track;
+            let mut entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
+            for (pos, old) in old_notes.iter().enumerate() {
+                let new_tick = quantizable_notes[pos].tick;
+                let new_length = quantizable_notes[pos].length;
+                if (new_tick, new_length) != (old.0, old.2) {
+                    entries.push((false, old.0, old.1, old.2, old.3, old.4, track));
+                    entries.push((true, new_tick, old.1, new_length, old.3, old.4, track));
+                }
+            }
+            root.editor
+                .editor_state
+                .data
+                .push_collab_transform_entries(entries);
+            root.editor.broadcast_pending_collab_transform_sync();
 
             root.editor.mark_notes_changed();
             tracing::info!("Root: 量化完成，修改了 {} 个音符", modified_count);

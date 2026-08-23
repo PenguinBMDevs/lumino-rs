@@ -277,6 +277,18 @@ impl EditorData {
         ));
     }
 
+    /// 批量推送「删除旧 / 添加新」协作同步条目（ui-editor 层如 Razor 切割使用）。
+    ///
+    /// `pub`：`pending_collab_transform_sync` 为 `pub(crate)`，ui-editor 仓无法直接访问，
+    /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
+    /// `(is_add, tick, key, length, velocity, channel, track_index)`。
+    pub fn push_collab_transform_entries(
+        &mut self,
+        entries: Vec<(bool, f32, u16, f32, u8, u8, usize)>,
+    ) {
+        self.pending_collab_transform_sync.extend(entries);
+    }
+
     /// 把前向变换产生的「旧→新」音符状态对批量推入协作同步队列（使用当前音轨）。
     pub(crate) fn push_collab_transform_transitions(
         &mut self,
