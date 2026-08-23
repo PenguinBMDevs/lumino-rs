@@ -67,6 +67,14 @@ pub struct EditorData {
     pub history: History,
     /// 异步提交的待完成状态（MoveOp 后台应用）
     pub(crate) pending_commit: Option<async_commit::PendingCommit>,
+    /// 撤销/重做（MoveOp）后待广播给协作对端的音符移动。
+    ///
+    /// `apply_history_entry` 在应用 OperationEntry（音符移动）时填充，
+    /// 由 ui-editor 层的 `editor_impl::history` 在 `undo/redo` 成功后 drain 并
+    /// 发射 `LocalNoteMoved` 同步事件。这样撤销/重做也能让远端（B 客户端）保持一致，
+    /// 否则 B 端在撤销后本地坐标与 A 端失同步，下一次操作在 B 端 0/N 失配。
+    /// 元组：(参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)
+    pub(crate) pending_collab_move_sync: Vec<(f32, u16, f32, i16, usize)>,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；

@@ -190,6 +190,42 @@ impl EditorData {
                 // redo 时 inverse=false 按 delta 前进。
                 let affected: HashSet<usize> = op.ops.iter().map(|o| o.track_id as usize).collect();
                 let _ = self.apply_move_ops(&op.ops, inverse, self.max_key_for_move_op());
+                // 构造协作广播：撤销（inverse=true）时本地音符当前位于「移动后」位置
+                // （original + delta），需引用该位置并叠加反向偏移 -delta，使 B 端正确回退；
+                // 重做（inverse=false）则引用 original 并叠加 +delta。下游 ui-editor 层在
+                // undo/redo 成功后 drain 这些记录并发射 `LocalNoteMoved`，否则 B 端在 A 撤销后
+                // 永久失同步，下一次操作在 B 端 0/N 失配。
+                let mut sync = Vec::new();
+                for m in &op.ops {
+                    let track = m.track_id as usize;
+                    for i in 0..m.original_ticks.len() {
+                        // 注意：`History::undo/redo` 返回的 entry 已经是「反向 op」
+                        // （`MoveOp::inverse()` 仅对 delta 取反，original_* 保持不变）。
+                        // 因此这里的 `inverse` 标志只表示当前处于 undo 路径，语义推导如下：
+                        // - 偏移恒为 +entry.delta：undo 时 entry.delta = -delta_original，
+                        //   叠加到对端即「回退」；redo 时 entry.delta = +delta_original，
+                        //   叠加到对端即「前进」。undo/redo 方向由 History 层反转保证，
+                        //   切勿在此再对 delta 取反（双重反转会让 ref 落到不存在的坐标，
+                        //   对端 0/N 失配，正是此前「A 撤销后 B 不响应」的根因）。
+                        // - 引用点 ref：对端当前持有音符的位置。
+                        //   redo 路径 entry 为原始 op，对端位于 original → ref = original；
+                        //   undo 路径 entry 为反向 op（delta 已取反），对端位于
+                        //   original + delta_original = original - entry.delta
+                        //   → ref = original - entry.delta。
+                        let off_tick = m.delta_tick as f32;
+                        let off_key = m.delta_key;
+                        let (ref_tick, ref_key) = if inverse {
+                            (
+                                m.original_ticks[i] - m.delta_tick as f32,
+                                (m.original_keys[i] as i32 - m.delta_key as i32).max(0) as u16,
+                            )
+                        } else {
+                            (m.original_ticks[i], m.original_keys[i])
+                        };
+                        sync.push((ref_tick, ref_key, off_tick, off_key, track));
+                    }
+                }
+                self.pending_collab_move_sync = sync;
                 self.mark_tracks_changed_after_history(affected);
             }
             HistoryEntry::Create(entry) => {
@@ -199,6 +235,14 @@ impl EditorData {
                 self.mark_tracks_changed_after_history(affected);
             }
         }
+    }
+
+    /// 取出并清空「撤销/重做后待广播给协作对端的音符移动」。
+    ///
+    /// 返回 `(参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)` 列表，
+    /// 调用方（ui-editor 层 `editor_impl::history`）据此发射 `LocalNoteMoved`。
+    pub fn take_pending_collab_move_sync(&mut self) -> Vec<(f32, u16, f32, i16, usize)> {
+        std::mem::take(&mut self.pending_collab_move_sync)
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。

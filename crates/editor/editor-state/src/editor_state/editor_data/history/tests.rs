@@ -274,3 +274,47 @@ fn test_undo_redo_with_move_op_entry() {
         62
     );
 }
+
+/// Bug 2 回归：A 端对 MoveOp 执行 undo/redo 后，必须把「反向/正向移动」记入
+/// `pending_collab_move_sync`，供 ui-editor 层广播给协作对端。若缺失，B 端在 A 撤销后
+/// 本地音符坐标与 A 端失同步（用户日志中的「匹配 0/1」「B 无法正确响应」）。
+#[test]
+fn test_undo_redo_populates_collab_move_sync() {
+    let mut data = make_data_with_notes();
+    let ops = data.move_ops_from_drag_state(&{
+        let mut bv = BitVec::from_elem(3, false);
+        bv.set(0, true);
+        bv.set(2, true);
+        let mut ds = DragState::new(bv, 0, 60);
+        ds.set_delta(5, -2); // delta_tick=5, delta_key=-2
+        ds
+    });
+    data.apply_move_ops(&ops, false, 127);
+    data.push_move_op(ops);
+
+    // 移动/提交阶段不应累积协作同步记录
+    assert!(
+        data.take_pending_collab_move_sync().is_empty(),
+        "提交阶段不应填充待广播队列"
+    );
+
+    // ── undo（inverse=true）──
+    assert!(data.undo());
+    let mut pending = data.take_pending_collab_move_sync();
+    assert_eq!(pending.len(), 2, "被移动的两个音符应各有一条同步记录");
+    pending.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    // 音符0：original_tick=0, original_key=60, delta_tick=5, delta_key=-2
+    //  ref = original + delta，offset = -delta
+    assert_eq!(pending[0], (5.0, 58, -5.0, 2, 1));
+    // 音符2：original_tick=20, original_key=64
+    assert_eq!(pending[1], (25.0, 62, -5.0, 2, 1));
+
+    // ── redo（inverse=false）──
+    assert!(data.redo());
+    let mut pending2 = data.take_pending_collab_move_sync();
+    assert_eq!(pending2.len(), 2);
+    pending2.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    // ref = original，offset = +delta
+    assert_eq!(pending2[0], (0.0, 60, 5.0, -2, 1));
+    assert_eq!(pending2[1], (20.0, 64, 5.0, -2, 1));
+}

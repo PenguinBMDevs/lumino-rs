@@ -21,25 +21,23 @@ fn hash_bytes(bytes: &[u8]) -> String {
 }
 
 impl RunnerInner {
-    /// 构建当前打开工程的 `.lmpj` 字节（无工程时返回 None）
-    fn build_current_project_bytes(&self) -> Option<Vec<u8>> {
-        let ui = self.window_state.window.ui();
-        let data = &ui.root().editor.editor_state.data;
-        let Some(doc) = data.document.as_ref() else {
-            tracing::warn!(
-                "协作: 当前无打开的工程（editor_state.data.document 为空），无法上传房间工程"
-            );
-            return None;
-        };
+    /// 把工程序列化为 `.lmpj` 字节（纯数据操作，可在后台线程执行，不触碰 UI）。
+    ///
+    /// 接收已克隆出来的 `MidiDocument` 与 tempo 点，避免在主线程直接读取编辑器状态
+    /// 导致大工程卡死 UI。返回 None 表示无工程或序列化失败。
+    fn serialize_room_project(doc: &lumino_midi_loader::MidiDocument, tempo: &[(f32, f64)]) -> Option<Vec<u8>> {
         let mut project = lumino_export::LuminoProject::from_midi_document(doc);
-        project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
+        project.apply_tempo_points(tempo.iter().copied());
 
         let tmp_dir = storage::config_dir().join("user-data").join("rooms");
         let _ = std::fs::create_dir_all(&tmp_dir);
-        let path = tmp_dir.join(format!("room_proj_{}.lmpj", std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_nanos()));
+        let path = tmp_dir.join(format!(
+            "room_proj_{}.lmpj",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_nanos()
+        ));
         if let Err(e) = lumino_export::save_to_archive(&project, &path) {
             tracing::warn!("协作: 序列化房间工程为归档失败，无法上传: {e}");
             return None;
@@ -47,12 +45,6 @@ impl RunnerInner {
         let bytes = std::fs::read(&path).ok();
         let _ = std::fs::remove_file(&path);
         bytes
-    }
-
-    /// 计算当前打开工程的哈希（无工程时 None）
-    fn current_project_hash(&self) -> Option<String> {
-        self.build_current_project_bytes()
-            .map(|b| hash_bytes(&b))
     }
 
     pub(crate) fn handle_collaboration_events(&mut self, window_event: Event) {
@@ -108,7 +100,9 @@ impl RunnerInner {
                     Some(room_name.clone()),
                 );
 
-                // host 路径：上传当前工程到房间（异步、非阻塞）
+                // host 路径：上传当前工程到房间。
+                // 关键修复：在 UI 线程仅 Clone 可 Send 的 MidiDocument/tempo（轻量），
+                // 真正的序列化与上传搬到右台线程，避免大工程卡死主线程、进度条晚出。
                 let code = invite_code.clone();
                 let host = self.collab_state.server_host.clone();
                 let port = self.collab_state.server_port;
@@ -117,44 +111,74 @@ impl RunnerInner {
                 } else {
                     project_name
                 };
-                if let Some(bytes) = self.build_current_project_bytes() {
-                    let hash = hash_bytes(&bytes);
-                    let progress_cb = Arc::clone(&self.window_state.progress_cb);
-                    tokio::spawn(async move {
-                        let name_p = name.clone();
-                        let cb_for_stream = Arc::clone(&progress_cb);
-                        let on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>> =
-                            Some(Arc::new(move |sent, total| {
-                                let p = if total > 0 {
-                                    sent as f64 / total as f64
-                                } else {
-                                    0.0
-                                };
-                                cb_for_stream(
-                                    &format!("正在上传协作工程 {}（{:.0}%）", name_p, p * 100.0),
-                                    p,
-                                );
-                            }));
-                        // 上传前先弹出独立进度对话框
-                        progress_cb(&format!("正在上传协作工程 {name}…"), 0.0);
-                        let client = HttpClient::new(&host, port);
-                        match client
-                            .upload_room_project(&code, &name, &hash, bytes, on_progress)
-                            .await
+                let (doc, tempo) = {
+                    let ui = self.window_state.window.ui();
+                    let data = &ui.root().editor.editor_state.data;
+                    (
+                        data.document.clone(),
+                        data.tempo_points
+                            .iter()
+                            .map(|tp| (tp.tick, tp.bpm))
+                            .collect::<Vec<_>>(),
+                    )
+                };
+                let progress_cb = Arc::clone(&self.window_state.progress_cb);
+                // 先弹进度对话框，立即给用户反馈（此时尚未开始序列化）
+                progress_cb(&format!("正在准备协作工程 {name}…"), 0.0);
+                tokio::spawn(async move {
+                    let name_p = name.clone();
+                    let name_for_progress = name.clone();
+                    let cb_for_stream = Arc::clone(&progress_cb);
+                    let on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>> =
+                        Some(Arc::new(move |sent, total| {
+                            let p = if total > 0 {
+                                sent as f64 / total as f64
+                            } else {
+                                0.0
+                            };
+                            cb_for_stream(
+                                &format!("正在上传协作工程 {}（{:.0}%）", name_for_progress, p * 100.0),
+                                p,
+                            );
+                        }));
+                    // 后台线程完成重活：序列化工程为 .lmpj 字节（doc 为 Option，需解包后传入）
+                    let bytes = match doc {
+                        Some(doc_inner) => match tokio::task::spawn_blocking({
+                            let tempo = tempo.clone();
+                            move || Self::serialize_room_project(&doc_inner, &tempo)
+                        })
+                        .await
                         {
-                            Ok(_) => {
-                                progress_cb("协作工程上传完成", 1.0);
-                                tracing::info!("协作: 已上传房间工程 (hash={hash})")
-                            }
-                            Err(e) => {
-                                progress_cb(&format!("协作工程上传失败：{e}"), 1.0);
-                                tracing::warn!("协作: 上传房间工程失败: {e}")
-                            }
+                        Ok(b) => b,
+                        Err(e) => {
+                            progress_cb(&format!("生成协作工程失败：{e}"), 1.0);
+                            return;
                         }
-                    });
-                } else {
-                    tracing::warn!("协作: 当前无工程可上传（可能是空白启动且未加载 MIDI）");
-                }
+                        },
+                        None => None,
+                    };
+                    let Some(bytes) = bytes else {
+                        progress_cb("无工程可上传或生成失败", 1.0);
+                        return;
+                    };
+                    let hash = hash_bytes(&bytes);
+                    // 进度切到「上传中」，进入带百分比的流式上传
+                    progress_cb(&format!("正在上传协作工程 {name_p}…"), 0.0);
+                    let client = HttpClient::new(&host, port);
+                    match client
+                        .upload_room_project(&code, &name_p, &hash, bytes, on_progress)
+                        .await
+                    {
+                        Ok(_) => {
+                            progress_cb("协作工程上传完成", 1.0);
+                            tracing::info!("协作: 已上传房间工程 (hash={hash})")
+                        }
+                        Err(e) => {
+                            progress_cb(&format!("协作工程上传失败：{e}"), 1.0);
+                            tracing::warn!("协作: 上传房间工程失败: {e}")
+                        }
+                    }
+                });
             }
             RoomJoined {
                 room_name,
@@ -172,25 +196,54 @@ impl RunnerInner {
                     Some(room_name.clone()),
                 );
 
-                // joiner 路径：比对工程哈希，不一致则下载并打开 host 工程
+                // joiner 路径：比对工程哈希，不一致则下载并打开 host 工程。
+                // 关键修复：本地工程哈希比对也搬到后台线程（原 current_project_hash 在主线程同步
+                // 序列化大工程会卡死 UI），并弹出进度对话框避免「接收时未响应」的观感。
                 if project_hash.is_empty() {
                     tracing::warn!("协作: 房间无工程哈希，跳过下载");
                     return;
                 }
-                let need_download = match self.current_project_hash() {
-                    Some(local) => local != project_hash,
-                    None => true, // 本地无工程，必须下载
+                let (doc, tempo) = {
+                    let ui = self.window_state.window.ui();
+                    let data = &ui.root().editor.editor_state.data;
+                    (
+                        data.document.clone(),
+                        data.tempo_points
+                            .iter()
+                            .map(|tp| (tp.tick, tp.bpm))
+                            .collect::<Vec<_>>(),
+                    )
                 };
-                if !need_download {
-                    tracing::info!("协作: 本地工程与房间一致，跳过下载");
-                    return;
-                }
-
+                let progress_cb = Arc::clone(&self.window_state.progress_cb);
+                progress_cb(&format!("正在同步协作工程 {invite_code}…"), 0.0);
                 let code = invite_code.clone();
                 let host = self.collab_state.server_host.clone();
                 let port = self.collab_state.server_port;
                 tokio::spawn(async move {
+                    // 后台计算本地工程哈希，与房间哈希比对（避免主线程序列化卡顿）
+                    let local_hash = match doc {
+                        Some(doc_inner) => tokio::task::spawn_blocking({
+                            let tempo = tempo.clone();
+                            move || {
+                                Self::serialize_room_project(&doc_inner, &tempo)
+                                    .map(|b| hash_bytes(&b))
+                            }
+                        })
+                        .await
+                        .ok()
+                        .flatten(),
+                        None => None,
+                    };
+                    if let Some(local) = local_hash {
+                        if local == project_hash {
+                            progress_cb("本地工程已是最新", 1.0);
+                            tracing::info!("协作: 本地工程与房间一致，跳过下载");
+                            return;
+                        }
+                    }
+
                     let client = HttpClient::new(&host, port);
+                    progress_cb(&format!("正在下载协作工程 {code}…"), 0.0);
                     match client.download_room_project(&code).await {
                         Ok(bytes) => {
                             let load = tokio::task::spawn_blocking(move || {
@@ -209,15 +262,23 @@ impl RunnerInner {
                                             std::sync::Arc::new(parsed),
                                         ),
                                     ));
+                                    progress_cb("协作工程已加载", 1.0);
                                     tracing::info!("协作: 已加载房间工程");
                                 }
                                 Ok(Err(e)) => {
+                                    progress_cb(&format!("解析下载工程失败：{e}"), 1.0);
                                     tracing::warn!("协作: 解析下载工程失败: {e}")
                                 }
-                                Err(e) => tracing::warn!("协作: 加载工程任务失败: {e}"),
+                                Err(e) => {
+                                    progress_cb(&format!("加载工程任务失败：{e}"), 1.0);
+                                    tracing::warn!("协作: 加载工程任务失败: {e}")
+                                }
                             }
                         }
-                        Err(e) => tracing::warn!("协作: 下载房间工程失败: {e}"),
+                        Err(e) => {
+                            progress_cb(&format!("下载房间工程失败：{e}"), 1.0);
+                            tracing::warn!("协作: 下载房间工程失败: {e}")
+                        }
                     }
                 });
             }

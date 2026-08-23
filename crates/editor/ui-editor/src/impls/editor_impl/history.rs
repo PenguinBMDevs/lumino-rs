@@ -31,6 +31,7 @@ impl Editor {
         if self.editor_state.data.undo() {
             self.grid_cache.clear();
             self.mark_notes_changed();
+            self.broadcast_pending_collab_sync();
             tracing::info!("Editor: Undo 成功");
             true
         } else {
@@ -62,11 +63,32 @@ impl Editor {
         if self.editor_state.data.redo() {
             self.grid_cache.clear();
             self.mark_notes_changed();
+            self.broadcast_pending_collab_sync();
             tracing::info!("Editor: Redo 成功");
             true
         } else {
             tracing::info!("Editor: 没有可重做的操作");
             false
+        }
+    }
+
+    /// 把 `EditorData` 中累积的「撤销/重做音符移动」广播给协作对端。
+    ///
+    /// 撤销/重做 MoveOp 直接改本地 document 但不经拖动管线，因此不会自动发射
+    /// `LocalNoteMoved`；若不在此补广播，B 端在 A 撤销后本地坐标与 A 端失同步，
+    /// 下一次操作按 A 端本地坐标引用会在 B 端 0/N 失配。本方法 drain
+    /// `pending_collab_move_sync` 并以与拖动一致的语义发射 `LocalNoteMoved`。
+    fn broadcast_pending_collab_sync(&mut self) {
+        let pending = self.editor_state.data.take_pending_collab_move_sync();
+        if pending.is_empty() {
+            return;
+        }
+        for (tick, key, tick_offset, key_offset, track_index) in pending {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_moved(
+                    tick, key, 0.0, tick_offset, key_offset, track_index,
+                ),
+            ));
         }
     }
 
