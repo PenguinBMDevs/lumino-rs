@@ -203,11 +203,7 @@ impl MessageHandler for CollaborationHandler {
                     selection,
                     color,
                 } => {
-                    root.apply_remote_selection(
-                        user_id.to_string(),
-                        selection,
-                        color.to_string(),
-                    );
+                    root.apply_remote_selection(user_id.to_string(), selection, color.to_string());
                     None
                 }
                 lumino_message::CollaborationAction::HostChanged(host) => {

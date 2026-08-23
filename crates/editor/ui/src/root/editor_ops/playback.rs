@@ -139,6 +139,46 @@ impl Root {
         );
 
         manager.set_midi_events(midi_events);
+
+        // 同步音轨静音/独奏状态到播放引擎，使独奏/静音实时过滤播放。
+        // 放在末尾：此时 `manager` 绑定已释放，避免与下方 `&mut self` 借用冲突。
+        self.update_playback_track_states();
+    }
+
+    /// 将侧边栏（卷帘面板）音轨的静音/独奏状态同步到播放引擎，实现播放过滤。
+    ///
+    /// 音轨 `id` 与 document 音轨索引对齐（见 `collect_arrangement_instances`
+    /// 的 `track_order` 构造方式，以 `Track.id` 作为编排顺序），因此直接以 `id`
+    /// 作为播放状态向量下标。若某音轨 `id` 超出 document 音轨数（理论不应发生），
+    /// 则跳过，避免越界。
+    ///
+    /// 播放管理器为懒创建：尚未初始化（首次播放前）时直接返回，状态会在
+    /// 首次 `update_playback_notes` 创建管理器后被正确同步。
+    pub fn update_playback_track_states(&mut self) {
+        let (Some(manager), Some(doc)) = (
+            self.playback.manager.as_mut(),
+            self.editor.editor_state.data.document.as_ref(),
+        ) else {
+            return;
+        };
+
+        let track_count = doc.track_count();
+        let mut muted = vec![false; track_count];
+        let mut soloed = vec![false; track_count];
+        for track in &self.sidebar.tracks {
+            let idx = track.id;
+            if idx < track_count {
+                muted[idx] = track.is_muted;
+                soloed[idx] = track.is_soloed;
+            }
+        }
+
+        tracing::debug!(
+            "update_playback_track_states: muted={:?} soloed={:?}",
+            muted,
+            soloed,
+        );
+        manager.set_track_play_states(muted, soloed);
     }
 
     /// 将编辑器的 tempo_points 同步到播放管理器

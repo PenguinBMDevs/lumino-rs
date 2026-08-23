@@ -164,13 +164,12 @@ impl MidiDocument {
     /// 保持每轨有序不变式。track_id 或 index 越界返回 false。
     pub fn update_note(&mut self, track_id: usize, index: usize, mut note: NoteEvent) -> bool {
         // 先删除旧音符；删除失败（track_id/index 越界）直接返回 false
-        let old = self.remove_note(track_id, index);
-        if old.is_none() {
+        let Some(old) = self.remove_note(track_id, index) else {
             return false;
-        }
+        };
         // 保留被替换音符的身份：新音符未携带 id 时沿用旧 id（稳定身份）
         if note.id == NoteEvent::UNASSIGNED_ID {
-            note.id = old.unwrap().id;
+            note.id = old.id;
         }
         // 删除成功已证明音轨存在，插入必然成功，不会出现中间不一致状态
         self.insert_note(track_id, note)

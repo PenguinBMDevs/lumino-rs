@@ -212,6 +212,15 @@ impl PlaybackManager {
             .send(Command::SetVelocityFilterThreshold(threshold));
     }
 
+    /// 设置音轨静音/独奏状态（用于播放过滤）
+    ///
+    /// `muted` / `soloed` 按 document 音轨索引对齐：索引 `i` 为 `true`
+    /// 表示该音轨被静音 / 被独奏。引擎据此在播放时过滤事件——
+    /// 任一音轨独奏时仅独奏音轨发声，否则所有未静音音轨发声。
+    pub fn set_track_play_states(&mut self, muted: Vec<bool>, soloed: Vec<bool>) {
+        let _ = self.sender.send(Command::SetTrackPlayStates(muted, soloed));
+    }
+
     /// 更新速度变化（别名方法）
     pub fn update_tempo_changes(&mut self, changes: Vec<TempoChange>) {
         self.set_tempo_changes(changes);

@@ -84,28 +84,28 @@ pub(super) fn view_track_item<'a>(
             .into()
     };
 
-    let mute_btn = button(
-        text("M")
+    let solo_btn = button(
+        text("S")
             .size(14)
             .font(iced_core::Font {
                 weight: iced_core::font::Weight::Bold,
                 ..Default::default()
             })
             .style(move |_theme: &Theme| text::Style {
-                color: Some(if track.is_muted {
-                    palette.danger.base.color
+                color: Some(if track.is_soloed {
+                    palette.warning.base.color
                 } else {
                     text_color
                 }),
             }),
     )
-    .on_press(Event::track_mute_toggled(track.id))
+    .on_press(Event::track_solo_toggled(track.id))
     .style(|_theme: &Theme, _status| {
         button::Style::default().with_background(iced_core::Color::TRANSPARENT)
     })
     .padding(0);
 
-    let track_row = row![left_icon, space().width(4), name, mute_btn,]
+    let track_row = row![left_icon, space().width(4), name, solo_btn,]
         .align_y(Alignment::Center)
         .padding(4);
 

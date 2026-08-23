@@ -143,9 +143,8 @@ impl MidiDocument {
                     events.notes.sort_by_key(|n| n.start_tick);
                     notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted_iter(
                         events.notes.into_iter().map(|p| {
-                            let ev = NoteEvent::from(p)
-                                .with_id(next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
-                            ev
+                            NoteEvent::from(p)
+                                .with_id(next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed))
                         }),
                     );
 

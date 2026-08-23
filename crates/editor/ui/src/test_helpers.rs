@@ -5,7 +5,8 @@
 
 /// 构造最小 2 轨 MidiDocument（音符写入 document，单一权威源）。
 pub fn make_test_document() -> lumino_midi_loader::MidiDocument {
-    lumino_midi_loader::MidiDocument { next_note_id: 1,
+    lumino_midi_loader::MidiDocument {
+        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::new(),

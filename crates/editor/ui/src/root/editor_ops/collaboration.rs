@@ -183,10 +183,7 @@ impl Root {
                 .data
                 .insert_note(track_idx, editor_note);
             // 抬升本地分配器，避免未来本地分配复用到对端已占用的 id（碰撞缺陷 #5）。
-            self.editor
-                .editor_state
-                .data
-                .ensure_note_id_above(note.id);
+            self.editor.editor_state.data.ensure_note_id_above(note.id);
         }
         // 精确标记受影响音轨（洋葱皮事件级增量）
         let affected: std::collections::HashSet<usize> =
@@ -208,15 +205,11 @@ impl Root {
             let track_idx = note.track_index;
             // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let Some(match_idx) = notes
-                .iter()
-                .position(|n| n.id == note.id)
-                .or_else(|| {
-                    notes.iter().position(|n| {
-                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-                    })
+            let Some(match_idx) = notes.iter().position(|n| n.id == note.id).or_else(|| {
+                notes.iter().position(|n| {
+                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
                 })
-            else {
+            }) else {
                 continue;
             };
             // 保持其他字段不变，仅更新长度（NoteEvent 为 Copy，先取值再写回）
@@ -304,15 +297,11 @@ impl Root {
             let track_idx = note.track_index;
             let notes = self.editor.editor_state.data.track_notes(track_idx);
             // 优先按全局 ID 精确匹配；ID 未命中回退按位置匹配。
-            let Some(match_idx) = notes
-                .iter()
-                .position(|n| n.id == note.id)
-                .or_else(|| {
-                    notes.iter().position(|n| {
-                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-                    })
+            let Some(match_idx) = notes.iter().position(|n| n.id == note.id).or_else(|| {
+                notes.iter().position(|n| {
+                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
                 })
-            else {
+            }) else {
                 tracing::warn!("协作: track {} 不存在或音符未匹配", track_idx);
                 continue;
             };

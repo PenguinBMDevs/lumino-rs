@@ -73,6 +73,10 @@ pub struct PlaybackEngine {
     pub(crate) midi_event_cursor: usize,
     /// 力度过滤阈值：velocity 小于等于此值的音符不发声（0 表示不过滤）。
     pub(crate) velocity_filter_threshold: u8,
+    /// 音轨静音状态（按 document 音轨索引，true = 静音）
+    pub(crate) track_muted: Vec<bool>,
+    /// 音轨独奏状态（按 document 音轨索引，true = 独奏）
+    pub(crate) track_soloed: Vec<bool>,
     /// 复用的消息缓冲区，避免 update() 每帧分配新 Vec
     pub(crate) reused_messages: Vec<MidiMessage>,
 }
@@ -93,6 +97,8 @@ impl PlaybackEngine {
             control_event_cursor: 0,
             midi_event_cursor: 0,
             velocity_filter_threshold: 1,
+            track_muted: Vec::new(),
+            track_soloed: Vec::new(),
             reused_messages: Vec::with_capacity(64),
         }
     }
@@ -165,6 +171,32 @@ impl PlaybackEngine {
         }
     }
 
+    /// 设置音轨静音/独奏状态（按 document 音轨索引）
+    ///
+    /// 在播放线程中由 `Command::SetTrackPlayStates` 调用。状态随后被
+    /// [`Self::track_should_play`] 用于过滤当前轨与其他轨的事件。
+    pub(crate) fn set_track_play_states(&mut self, muted: Vec<bool>, soloed: Vec<bool>) {
+        self.track_muted = muted;
+        self.track_soloed = soloed;
+    }
+
+    /// 音轨是否应当发声（综合静音/独奏规则）
+    ///
+    /// 标准 DAW 语义：
+    /// - 存在任一独奏音轨（`has_solo`）时，仅独奏音轨发声；
+    /// - 否则所有未静音（`!muted`）的音轨发声。
+    ///
+    /// 索引越界（如音轨数变化后状态未同步）按"未静音、未独奏"处理，
+    /// 即默认发声，避免误杀声音。
+    pub(crate) fn track_should_play(&self, track_idx: usize) -> bool {
+        let has_solo = self.track_soloed.iter().any(|&s| s);
+        if has_solo {
+            self.track_soloed.get(track_idx).copied().unwrap_or(false)
+        } else {
+            !self.track_muted.get(track_idx).copied().unwrap_or(false)
+        }
+    }
+
     /// 设置循环
     pub fn set_looping(&mut self, looping: bool) {
         self.looping = looping;
@@ -186,6 +218,10 @@ impl PlaybackEngine {
         let Some(doc) = self.document.as_ref() else {
             return;
         };
+        // 当前轨被静音或未被独奏 → 整轨不出声，直接清空队列。
+        if !self.track_should_play(self.current_track as usize) {
+            return;
+        }
         let notes = doc.track_notes(self.current_track as usize);
         // 每颗音符最多产生 NoteOn + NoteOff 两个事件，预分配避免反复扩容。
         self.event_queue.reserve(notes.len() * 2);

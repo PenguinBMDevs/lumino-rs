@@ -85,6 +85,14 @@ impl Root {
         // 更新 sidebar，获取是否需要重新渲染
         let needs_redraw = self.sidebar.update(event.clone());
 
+        // 静音/独奏切换 → 立即同步到播放引擎，使独奏/静音实时过滤播放。
+        if matches!(
+            &event,
+            sidebar::Event::TrackMuteToggled(_) | sidebar::Event::TrackSoloToggled(_)
+        ) {
+            self.update_playback_track_states();
+        }
+
         // 音轨新增类事件：同步扩展 document（单一权威源）。
         // 2026-08 修复：sidebar 新建音轨只更新 UI 列表，document 未扩轨，
         // 导致新音轨 insert_note 越界静默失败（音符无法放置）。

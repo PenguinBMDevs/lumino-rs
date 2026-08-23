@@ -194,4 +194,24 @@ mod tests {
         s.handle_track_add_above(0); // 在 conductor 上方添加 → 实际插到其后
         assert_eq!(ids(&s), vec![0, 3, 1, 2], "新音轨应插入 conductor 之后");
     }
+
+    #[test]
+    fn test_handle_track_solo_toggle() {
+        let mut s = sidebar_with_ids(&[0, 1, 2]);
+        assert!(!s.tracks[1].is_soloed, "初始不应独奏");
+        s.handle_track_solo_toggled(1);
+        assert!(s.tracks[1].is_soloed, "首次切换应进入独奏");
+        s.handle_track_solo_toggled(1);
+        assert!(!s.tracks[1].is_soloed, "再次切换应取消独奏");
+    }
+
+    #[test]
+    fn test_handle_track_mute_toggle() {
+        let mut s = sidebar_with_ids(&[0, 1, 2]);
+        assert!(!s.tracks[1].is_muted, "初始不应静音");
+        s.handle_track_mute_toggled(1);
+        assert!(s.tracks[1].is_muted, "切换应进入静音");
+        s.handle_track_mute_toggled(1);
+        assert!(!s.tracks[1].is_muted, "再次切换应取消静音");
+    }
 }

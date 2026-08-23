@@ -7,8 +7,8 @@ use iced_core::Length;
 use iced_widget::{column, container, row, text};
 use lumino_ui_core::state::video_clip_state::{ClipTrackEdit, VideoClipState};
 
-use crate::resources::icon::{self, Icon};
 use crate::Theme;
+use crate::resources::icon::{self, Icon};
 
 /// 将 tick 转换为秒（与 `video_export.rs` 的 `ticks_to_seconds` 一致）。
 ///

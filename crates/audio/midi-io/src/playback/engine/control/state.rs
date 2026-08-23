@@ -92,6 +92,10 @@ impl PlaybackEngine {
             if track_idx == self.current_track as usize {
                 continue;
             }
+            // 静音/独奏过滤：被静音或未被独奏的音轨不发声。
+            if !self.track_should_play(track_idx) {
+                continue;
+            }
             let notes = doc.track_notes(track_idx);
             if notes.is_empty() {
                 continue;
@@ -152,31 +156,33 @@ impl PlaybackEngine {
         // 这样避免与 process_midi_events 重复发射同一事件（double-firing），
         // 同时确保编辑后的 CC 值不会被 doc.control_events 中的原始值覆盖。
         let ctrl_events = &doc.control_events;
-        let ctrl_cursor = &mut self.control_event_cursor;
-        while *ctrl_cursor < ctrl_events.len() {
-            let ctrl_event = &ctrl_events[*ctrl_cursor];
+        while self.control_event_cursor < ctrl_events.len() {
+            let ctrl_event = &ctrl_events[self.control_event_cursor];
             let ctrl_tick = ctrl_event.tick as f32;
             if ctrl_tick > current_tick {
                 break;
             }
             if ctrl_tick >= self.last_processed_tick && ctrl_event.track != self.current_track {
-                if ctrl_event.kind == 0 {
-                    // 复制 packed 字段到局部变量，避免未对齐引用
-                    let cc_tick = ctrl_event.tick;
-                    let cc_track = ctrl_event.track;
-                    let cc_ch = ctrl_event.channel;
-                    let cc_param = ctrl_event.param;
-                    tracing::debug!(
-                        "process_other_tracks: CC 事件 (其他音轨) tick={} track={} ch={} param={}",
-                        cc_tick,
-                        cc_track,
-                        cc_ch,
-                        cc_param,
-                    );
+                // 静音/独奏过滤：被静音或未被独奏的音轨其控制事件也不发送。
+                if self.track_should_play(ctrl_event.track as usize) {
+                    if ctrl_event.kind == 0 {
+                        // 复制 packed 字段到局部变量，避免未对齐引用
+                        let cc_tick = ctrl_event.tick;
+                        let cc_track = ctrl_event.track;
+                        let cc_ch = ctrl_event.channel;
+                        let cc_param = ctrl_event.param;
+                        tracing::debug!(
+                            "process_other_tracks: CC 事件 (其他音轨) tick={} track={} ch={} param={}",
+                            cc_tick,
+                            cc_track,
+                            cc_ch,
+                            cc_param,
+                        );
+                    }
+                    Self::push_control_event(ctrl_event, messages);
                 }
-                Self::push_control_event(ctrl_event, messages);
             }
-            *ctrl_cursor += 1;
+            self.control_event_cursor += 1;
         }
     }
 

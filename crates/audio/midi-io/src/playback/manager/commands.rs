@@ -25,6 +25,8 @@ pub(crate) enum Command {
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     SetVelocityFilterThreshold(u8),
+    /// 设置音轨静音/独奏状态（用于播放过滤：被静音或未被独奏的音轨不出声）
+    SetTrackPlayStates(Vec<bool>, Vec<bool>),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
     Play,
     Pause,
@@ -60,6 +62,25 @@ pub(crate) fn handle_command(
         }
         Command::SetVelocityFilterThreshold(threshold) => {
             engine.set_velocity_filter_threshold(threshold);
+        }
+        Command::SetTrackPlayStates(muted, soloed) => {
+            // 当前轨发声状态变化时需要重建当前轨队列，使独奏/静音即时生效。
+            let was_current_playable = engine.track_should_play(engine.current_track as usize);
+            engine.set_track_play_states(muted, soloed);
+            let is_current_playable = engine.track_should_play(engine.current_track as usize);
+            if was_current_playable != is_current_playable {
+                // 从当前播放位置重建当前轨队列（保留已发出事件之后的音符，
+                // 丢弃过去已发出、其 NoteOff 不会再补发的悬挂音符）。
+                let tick = engine.last_processed_tick.max(0.0);
+                engine.rebuild_queue_from_current_track(Some(tick));
+                // 当前轨由"发声"转为"静音"：立即静音清理，避免悬挂音符。
+                if was_current_playable
+                    && engine.is_playing()
+                    && let Some(out) = midi_output
+                {
+                    let _ = out.all_notes_off();
+                }
+            }
         }
         Command::Play => {
             engine.play();
