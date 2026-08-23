@@ -190,3 +190,80 @@ fn test_set_ppq_without_document_no_panic() {
     assert_eq!(root.editor.editor_state.view.ppq, 960);
     assert!(root.editor.editor_state.data.document.is_none());
 }
+
+/// 协作回归：两方音轨数量不一致时，远端音符操作不应落到缺失/错误音轨。
+///
+/// 复现：对端 A 有 6 条音轨并在 track 5 创建音符，本地 B 只有 2 条音轨。
+/// 修复前 `apply_remote_note_operation` 直接 `insert_note(5, ...)` 因越界静默
+/// 返回 false，音符被丢弃（表现为"音轨错位/丢失"）。
+/// 修复后：应用远端操作前按 `track_index` 补齐本地音轨，音符成功写入 track 5，
+/// 且 document 与侧边栏同步扩展到 6 轨，无缺漏。
+#[test]
+fn test_remote_note_add_on_missing_track_expands_and_inserts() {
+    let mut root = create_root();
+    attach_test_document(&mut root); // document 2 轨，sidebar 2 轨
+    assert_eq!(doc_track_count(&root), 2);
+
+    // 对端 A（6 轨）在 track 5 创建音符并广播
+    let operation = lumino_collaboration::types::NoteBatchOperation {
+        action: lumino_collaboration::types::NoteAction::Add,
+        notes: vec![lumino_collaboration::types::SyncNote {
+            id: 999,
+            tick: 0.0,
+            key: 60,
+            length: 480.0,
+            velocity: 100,
+            channel: 0,
+            track_index: 5,
+        }],
+        source_track: None,
+        target_track: None,
+        tick_offset: None,
+        key_offset: None,
+        timestamp: 0,
+    };
+
+    root.apply_remote_note_operation(&operation);
+
+    // 应补齐到对端音轨数量，且音符成功写入 track 5
+    assert_eq!(doc_track_count(&root), 6, "应补齐到对端音轨数量");
+    assert_eq!(
+        root.editor.editor_state.data.track_notes(5).len(),
+        1,
+        "远程音符应写入补齐后的 track 5（不再静默丢失）"
+    );
+    assert_eq!(
+        root.sidebar.tracks.len(),
+        6,
+        "侧边栏也应补齐到 6 轨（无错位）"
+    );
+}
+
+/// 协作回归：远程添加音轨（索引 > 本地数量）应补齐中间缺失音轨，保持连续无错位。
+///
+/// 复现：对端在 track 4 添加音轨，本地只有 2 轨。修复前 `add_remote_track`
+/// 只在 `track_idx >= len` 时 push 单个 `id=track_idx` 的音轨，导致侧边栏出现
+/// 缺漏（[0,1,4]），后续音符/渲染落到错误视觉行。
+/// 修复后：按 `track_idx` 连续补齐 document 与侧边栏。
+#[test]
+fn test_add_remote_track_fills_gaps_without_misalignment() {
+    let mut root = create_root();
+    attach_test_document(&mut root); // document 2 轨，sidebar 2 轨
+
+    root.add_remote_track(4); // 对端在 index 4 添加音轨
+
+    assert_eq!(doc_track_count(&root), 5, "document 应补齐到 5 轨");
+    let ids: Vec<usize> = root.sidebar.tracks.iter().map(|t| t.id).collect();
+    assert_eq!(ids, vec![0, 1, 2, 3, 4], "侧边栏音轨应连续无缺漏");
+
+    // 补齐后的每一条音轨都能正常插入音符（无错位）
+    for id in ids {
+        assert!(
+            root.editor
+                .editor_state
+                .data
+                .insert_note(id, crate::editor::note::Note::new(0.0, 60, 480.0)),
+            "track {id} 应可插入音符"
+        );
+    }
+}

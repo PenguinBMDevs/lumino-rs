@@ -196,26 +196,10 @@ impl Root {
 
     /// 添加远程音轨（来自协作同步）
     pub fn add_remote_track(&mut self, track_idx: usize) {
-        // 确保 sidebar tracks 足够容纳新音轨
-        if track_idx >= self.sidebar.tracks.len() {
-            self.sidebar.tracks.push(crate::sidebar::Track {
-                id: track_idx,
-                name: format!("Track {}", track_idx),
-                port: 0,
-                channel: 0,
-                display_label: format!("A{:02}", (track_idx + 1).min(16)),
-                is_conductor: false,
-                can_delete: true,
-                is_muted: false,
-                is_soloed: false,
-                color: None,
-            });
-            // 2026-08 修复：同步扩展 document，否则远程音轨无法放置音符
-            // （insert_note 越界静默失败，与 AddTrack 同类问题）
-            self.editor.editor_state.data.ensure_track(track_idx);
-            tracing::info!("协作: 已添加远程音轨 - track_index={}", track_idx);
-        } else {
-            tracing::warn!("协作: 远程音轨 track_index={} 已存在", track_idx);
-        }
+        // 2026-08 修复：按对端索引补齐本地 document 与侧边栏（含中间缺失索引），
+        // 使两方音轨数量不一致时也能正确对齐——否则后续音符操作会落到错误/缺失
+        // 音轨（音轨错位），或在 insert_note 越界时静默丢弃（与 AddTrack 同类问题）。
+        self.ensure_collab_track(track_idx);
+        tracing::info!("协作: 已按对端索引补齐音轨 - track_index={}", track_idx);
     }
 }

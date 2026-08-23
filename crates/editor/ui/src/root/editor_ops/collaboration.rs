@@ -98,12 +98,53 @@ impl Root {
             .apply_remote_selection(&user_id, &selection, &color);
     }
 
+    /// 协作音轨对齐：确保本地 `document` 与侧边栏都覆盖到 `track_idx`
+    /// （含中间缺失索引），使来自对端的音符/音轨操作落到正确的音轨，
+    /// 避免两方音轨数量不一致时音符落到缺失/错误音轨（音轨错位）或静默丢弃。
+    ///
+    /// 仅补齐、幂等：已存在则跳过；`document` 为空时静默返回
+    /// （协作通常在工程已初始化后进行）。
+    pub(crate) fn ensure_collab_track(&mut self, track_idx: usize) {
+        // 先扩 document（音符权威源），保持音轨索引与侧边栏一致。
+        self.editor.editor_state.data.ensure_track(track_idx);
+        while self.sidebar.tracks.len() <= track_idx {
+            let id = self.sidebar.tracks.len();
+            self.sidebar.tracks.push(crate::sidebar::Track {
+                id,
+                name: format!("Track {}", id),
+                port: 0,
+                channel: 0,
+                display_label: format!("A{:02}", (id + 1).min(16)),
+                is_conductor: false,
+                can_delete: true,
+                is_muted: false,
+                is_soloed: false,
+                color: None,
+            });
+        }
+        self.sync_track_visual_order();
+    }
+
     /// 应用远程笔记操作到本地编辑器
     pub fn apply_remote_note_operation(
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
         use lumino_collaboration::types::NoteAction;
+
+        // 协作音轨对齐：远端操作引用的音轨索引（含移动/复制的源轨与目标轨）
+        // 若本地尚不存在，先补齐对应音轨，避免两方音轨数量不一致时音符错位。
+        let mut tracks_to_ensure: Vec<usize> =
+            operation.notes.iter().map(|n| n.track_index).collect();
+        if let Some(s) = operation.source_track {
+            tracks_to_ensure.push(s);
+        }
+        if let Some(t) = operation.target_track {
+            tracks_to_ensure.push(t);
+        }
+        for t in tracks_to_ensure {
+            self.ensure_collab_track(t);
+        }
 
         match operation.action {
             NoteAction::Add => self.handle_remote_notes_add(operation),
