@@ -228,6 +228,7 @@ impl ServerMessage {
 
 /// 认证响应中的房间信息
 #[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AuthRoomInfo {
     /// 房间 ID
     pub id: String,
@@ -245,6 +246,12 @@ pub struct AuthRoomInfo {
     /// 最大用户数量
     #[serde(rename = "maxUsers")]
     pub max_users: u32,
+    /// 房主上传的工程名（协作工程同步用；可能为空）
+    #[serde(default)]
+    pub project_name: String,
+    /// 房主工程文件哈希（lmpj 字节哈希；joiner 据此判断是否同一工程）
+    #[serde(default)]
+    pub project_hash: String,
 }
 
 #[cfg(test)]

@@ -293,7 +293,22 @@ impl CollaborationService {
                     ));
                 }
             }
-            CollaborationEvent::Error { message } => tracing::error!("协作错误: {}", message),
+            CollaborationEvent::Error { message } => {
+                tracing::error!("协作错误: {}", message);
+                // 踢人 / 房间解散等错误必须弹出独立对话框提示，不能只写日志。
+                // 在独立线程弹出原生对话框，避免阻塞协作网络线程。
+                let msg = message.clone();
+                std::thread::spawn(move || {
+                    #[cfg(not(test))]
+                    {
+                        let _ = rfd::MessageDialog::new()
+                            .set_title("协作通知")
+                            .set_description(&msg)
+                            .set_level(rfd::MessageLevel::Warning)
+                            .show();
+                    }
+                });
+            }
             _ => {}
         }
     }

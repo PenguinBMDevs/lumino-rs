@@ -31,11 +31,11 @@ tokio-util = { workspace = true }
 
 [target.'cfg(not(target_os = "windows"))'.dependencies]
 tokio-tungstenite = { workspace = true, features = ["rustls-tls-native-roots"] }
-reqwest = { workspace = true, features = ["json", "rustls", "query"] }
+reqwest = { workspace = true, features = ["json", "rustls", "query", "stream"] }
 
 [target.'cfg(target_os = "windows")'.dependencies]
 tokio-tungstenite = { workspace = true, features = ["native-tls"] }
-reqwest = { workspace = true, features = ["json", "native-tls", "query"] }
+reqwest = { workspace = true, features = ["json", "native-tls", "query", "stream"] }
 
 [dev-dependencies]
 tokio-test = { workspace = true }

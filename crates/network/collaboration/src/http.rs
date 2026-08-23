@@ -5,6 +5,8 @@
 use crate::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::debug;
 
 /// HTTP API 客户端
@@ -139,20 +141,45 @@ impl HttpClient {
     ///
     /// `POST /api/room/{code}/project?name=<urlencoded>&hash=<hex>`，
     /// body 为原始 `.lmpj` 字节（octet-stream）。返回服务器 JSON 响应。
+    ///
+    /// `on_progress` 可选：传入 `(已发送字节, 总字节)` 回调用于驱动上传进度条。
+    /// 内部以 64 KiB 分块流式上传，逐块上报进度（避免一次性把大文件读进内存且无进度）。
     pub async fn upload_room_project(
         &self,
         code: &str,
         name: &str,
         hash: &str,
         bytes: Vec<u8>,
+        on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>>,
     ) -> Result<serde_json::Value> {
+        let total = bytes.len() as u64;
         let url = format!("{}/api/room/{}/project", self.base_url, code);
+
+        // 分块流式上传，逐块上报已发送字节数（用于进度条）
+        const CHUNK: usize = 64 * 1024;
+        let chunks: Vec<Vec<u8>> = bytes.chunks(CHUNK).map(|c| c.to_vec()).collect();
+        let sent = Arc::new(AtomicU64::new(0));
+        let body = match on_progress {
+            Some(cb) => {
+                let sent_stream = Arc::clone(&sent);
+                let cb_stream = Arc::clone(&cb);
+                let stream = futures::stream::iter(chunks.into_iter().map(move |chunk| {
+                    let cur = sent_stream.fetch_add(chunk.len() as u64, Ordering::Relaxed)
+                        + chunk.len() as u64;
+                    cb_stream(cur, total);
+                    Ok::<_, std::io::Error>(chunk)
+                }));
+                reqwest::Body::wrap_stream(stream)
+            }
+            None => reqwest::Body::from(bytes),
+        };
+
         let response = self
             .client
             .post(&url)
             .query(&[("name", name), ("hash", hash)])
             .header("Content-Type", "application/octet-stream")
-            .body(bytes)
+            .body(body)
             .send()
             .await?;
 

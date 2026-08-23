@@ -3,6 +3,7 @@
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::Path;
+use std::sync::Arc;
 
 use crate::runner::RunnerInner;
 use crate::storage;
@@ -24,7 +25,12 @@ impl RunnerInner {
     fn build_current_project_bytes(&self) -> Option<Vec<u8>> {
         let ui = self.window_state.window.ui();
         let data = &ui.root().editor.editor_state.data;
-        let doc = data.document.as_ref()?;
+        let Some(doc) = data.document.as_ref() else {
+            tracing::warn!(
+                "协作: 当前无打开的工程（editor_state.data.document 为空），无法上传房间工程"
+            );
+            return None;
+        };
         let mut project = lumino_export::LuminoProject::from_midi_document(doc);
         project.apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
 
@@ -34,7 +40,8 @@ impl RunnerInner {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
             .as_nanos()));
-        if lumino_export::save_to_archive(&project, &path).is_err() {
+        if let Err(e) = lumino_export::save_to_archive(&project, &path) {
+            tracing::warn!("协作: 序列化房间工程为归档失败，无法上传: {e}");
             return None;
         }
         let bytes = std::fs::read(&path).ok();
@@ -112,17 +119,41 @@ impl RunnerInner {
                 };
                 if let Some(bytes) = self.build_current_project_bytes() {
                     let hash = hash_bytes(&bytes);
+                    let progress_cb = Arc::clone(&self.window_state.progress_cb);
                     tokio::spawn(async move {
+                        let name_p = name.clone();
+                        let cb_for_stream = Arc::clone(&progress_cb);
+                        let on_progress: Option<Arc<dyn Fn(u64, u64) + Send + Sync>> =
+                            Some(Arc::new(move |sent, total| {
+                                let p = if total > 0 {
+                                    sent as f64 / total as f64
+                                } else {
+                                    0.0
+                                };
+                                cb_for_stream(
+                                    &format!("正在上传协作工程 {}（{:.0}%）", name_p, p * 100.0),
+                                    p,
+                                );
+                            }));
+                        // 上传前先弹出独立进度对话框
+                        progress_cb(&format!("正在上传协作工程 {name}…"), 0.0);
                         let client = HttpClient::new(&host, port);
-                        match client.upload_room_project(&code, &name, &hash, bytes).await {
+                        match client
+                            .upload_room_project(&code, &name, &hash, bytes, on_progress)
+                            .await
+                        {
                             Ok(_) => {
+                                progress_cb("协作工程上传完成", 1.0);
                                 tracing::info!("协作: 已上传房间工程 (hash={hash})")
                             }
-                            Err(e) => tracing::debug!("协作: 上传房间工程失败: {e}"),
+                            Err(e) => {
+                                progress_cb(&format!("协作工程上传失败：{e}"), 1.0);
+                                tracing::warn!("协作: 上传房间工程失败: {e}")
+                            }
                         }
                     });
                 } else {
-                    tracing::debug!("协作: 当前无工程可上传");
+                    tracing::warn!("协作: 当前无工程可上传（可能是空白启动且未加载 MIDI）");
                 }
             }
             RoomJoined {
@@ -143,7 +174,7 @@ impl RunnerInner {
 
                 // joiner 路径：比对工程哈希，不一致则下载并打开 host 工程
                 if project_hash.is_empty() {
-                    tracing::debug!("协作: 房间无工程哈希，跳过下载");
+                    tracing::warn!("协作: 房间无工程哈希，跳过下载");
                     return;
                 }
                 let need_download = match self.current_project_hash() {
@@ -181,12 +212,12 @@ impl RunnerInner {
                                     tracing::info!("协作: 已加载房间工程");
                                 }
                                 Ok(Err(e)) => {
-                                    tracing::debug!("协作: 解析下载工程失败: {e}")
+                                    tracing::warn!("协作: 解析下载工程失败: {e}")
                                 }
-                                Err(e) => tracing::debug!("协作: 加载工程任务失败: {e}"),
+                                Err(e) => tracing::warn!("协作: 加载工程任务失败: {e}"),
                             }
                         }
-                        Err(e) => tracing::debug!("协作: 下载房间工程失败: {e}"),
+                        Err(e) => tracing::warn!("协作: 下载房间工程失败: {e}"),
                     }
                 });
             }
