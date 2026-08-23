@@ -146,6 +146,81 @@ fn test_draw_note_then_play() {
     );
 }
 
+/// Root 级胶水测试：经卷帘面板（sidebar）设置独奏，验证最终经默认输出链路过滤播放。
+///
+/// 覆盖 `update_playback_track_states` 适配器：sidebar.tracks（id 与 document 音轨索引对齐）
+/// → 播放状态向量 → 引擎过滤。这是引擎/管理器单测之外唯一尚未端到端覆盖的环节。
+#[test]
+fn test_solo_via_sidebar_filters_root_playback() {
+    let mut root = create_root();
+
+    // 挂载 2 轨 document（当前轨 = 1）
+    attach_test_document(&mut root);
+
+    // 用真实路径填充 sidebar.tracks（id 与 document 音轨索引对齐）
+    root.sidebar.update_tracks_from_midi(&[
+        (0usize, Some("Track 0".to_string()), 0u64, 0u8, 0u8),
+        (1usize, Some("Track 1".to_string()), 0u64, 0u8, 0u8),
+    ]);
+
+    // 两条轨各写一个 tick=0 的音符（不同键，便于计数区分）
+    root.editor
+        .editor_state
+        .data
+        .insert_note(0, Note::new(0.0, 60, 480.0));
+    root.editor
+        .editor_state
+        .data
+        .insert_note(1, Note::new(0.0, 64, 480.0));
+
+    // 设置可计数 mock 输出
+    let note_on_count = Arc::new(AtomicU32::new(0));
+    let note_off_count = Arc::new(AtomicU32::new(0));
+    root.set_midi_output(Box::new(MockOutput::with_counters(
+        Arc::clone(&note_on_count),
+        Arc::clone(&note_off_count),
+    )));
+
+    // 先无独奏播放一次（驱动管理器创建），随后停止
+    root.update(Message::Toolbar(toolbar::Event::Play));
+    assert!(root.playback.manager.is_some(), "播放应创建管理器");
+    thread::sleep(Duration::from_millis(50));
+    for _ in 0..30 {
+        root.update_playback();
+        thread::sleep(Duration::from_millis(1));
+    }
+    root.update(Message::Toolbar(toolbar::Event::Stop));
+
+    // 经卷帘面板独奏轨道 0（当前轨 = 1 不在独奏内）
+    root.sidebar.tracks[0].is_soloed = true;
+    root.update_playback_track_states();
+
+    // 重新计数并再次播放
+    note_on_count.store(0, Ordering::Relaxed);
+    note_off_count.store(0, Ordering::Relaxed);
+    root.update(Message::Toolbar(toolbar::Event::Play));
+    thread::sleep(Duration::from_millis(50));
+    for _ in 0..100 {
+        root.update_playback();
+        thread::sleep(Duration::from_millis(1));
+    }
+    let on_count = note_on_count.load(Ordering::Relaxed);
+    let off_count = note_off_count.load(Ordering::Relaxed);
+    root.update(Message::Toolbar(toolbar::Event::Stop));
+
+    tracing::info!(
+        "独奏过滤 Root 测试: note_on={}, note_off={}",
+        on_count,
+        off_count
+    );
+
+    assert_eq!(
+        on_count, 1,
+        "独奏轨道0后，默认输出应仅收到轨道0的 1 个 note_on，轨道1应被过滤。实际 note_on={}, note_off={}",
+        on_count, off_count
+    );
+}
+
 /// 测试场景：先播放（创建管理器），再画音符，再播放
 #[test]
 fn test_play_then_draw_then_play() {
