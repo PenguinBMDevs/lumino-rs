@@ -5,6 +5,8 @@
 pub enum Event {
     /// 本地笔记更新（需要同步到其他用户）
     LocalNoteAdded {
+        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
+        id: u64,
         /// 起始 tick
         tick: f32,
         /// 音符键位
@@ -20,6 +22,8 @@ pub enum Event {
     },
     /// 本地音符移动（需要同步到其他用户）
     LocalNoteMoved {
+        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
+        id: u64,
         /// 起始 tick
         tick: f32,
         /// 音符键位
@@ -35,6 +39,8 @@ pub enum Event {
     },
     /// 本地音符删除（需要同步到其他用户）
     LocalNoteDeleted {
+        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
+        id: u64,
         /// 起始 tick
         tick: f32,
         /// 音符键位

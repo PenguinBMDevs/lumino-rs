@@ -169,6 +169,7 @@ impl RunnerInner {
     /// 处理本地笔记添加（同步到其他用户）
     pub(super) fn handle_local_note_added(
         &self,
+        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -195,7 +196,7 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Add,
-            "note",
+            id,
             &location,
             &modifiers,
         );
@@ -214,6 +215,7 @@ impl RunnerInner {
     /// 处理本地音符移动（同步到其他用户）
     pub(super) fn handle_local_note_moved(
         &self,
+        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -240,7 +242,7 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Move,
-            "note_move",
+            id,
             &location,
             &modifiers,
         );
@@ -265,6 +267,7 @@ impl RunnerInner {
     /// 处理本地音符删除（同步到其他用户）
     pub(super) fn handle_local_note_deleted(
         &self,
+        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -291,7 +294,7 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Delete,
-            "note_del",
+            id,
             &location,
             &modifiers,
         );
@@ -465,30 +468,17 @@ struct NoteOperationModifiers {
     key_offset: Option<i16>,
 }
 
-/// 根据前缀和音符定位信息生成唯一音符 ID。
-fn generate_note_id(prefix: &str, location: &NoteLocation) -> String {
-    format!(
-        "{}_{}_{}_{}_{}",
-        prefix,
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_millis(),
-        location.tick as u64,
-        location.key,
-        location.track_index
-    )
-}
-
-/// 根据操作类型、音符定位与修饰参数构建同步操作。
+/// 根据操作类型、真实音符 ID 与修饰参数构建同步操作。
+///
+/// `note_id` 为发送端文档分配的全局唯一音符 ID（来自 `LocalNoteAdded/Moved/Deleted`
+/// 事件透传），取代原先基于时间戳的伪 ID，使对端能按 id 精确匹配同一音符，
+/// 并避免不同客户端分配器之间的 id 碰撞。
 fn build_sync_note_operation(
     action: lumino_collaboration::types::NoteAction,
-    note_id_prefix: &str,
+    note_id: u64,
     location: &NoteLocation,
     modifiers: &NoteOperationModifiers,
 ) -> lumino_collaboration::types::NoteBatchOperation {
-    let note_id = generate_note_id(note_id_prefix, location);
-
     let note = lumino_collaboration::types::SyncNote {
         id: note_id,
         tick: location.tick,

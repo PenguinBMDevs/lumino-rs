@@ -132,14 +132,25 @@ impl Editor {
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
         for idx in drag_state.selected_indices() {
-            let Some(view) = self.editor_state.data.get_note_view(idx) else {
-                continue;
+            // 2026-08 单一权威源：id 与原始位置取自 document 当前轨权威 NoteEvent
+            let (id, tick, key, length) = {
+                let notes = self.editor_state.data.track_notes(track_index);
+                let Some(note) = notes.get(idx) else {
+                    continue;
+                };
+                (
+                    note.id,
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                )
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    view.tick,
-                    view.key,
-                    view.length,
+                    id,
+                    tick,
+                    key,
+                    length,
                     tick_offset,
                     key_offset,
                     track_index,
@@ -208,9 +219,11 @@ impl Editor {
         // 否则 B 端完全缺失被复制的副本。
         let track = self.editor_state.data.current_track;
         for n in &notes {
+            // 复制副本已批量插入文档并分配真实 id，按位置反查取回后随事件发出。
+            let id = self.editor_state.data.note_id_at(track, n.tick, n.key).unwrap_or(0);
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
-                    n.tick, n.key, n.length, n.velocity, n.channel, track,
+                    id, n.tick, n.key, n.length, n.velocity, n.channel, track,
                 ),
             ));
         }

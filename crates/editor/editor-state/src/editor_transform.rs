@@ -259,6 +259,7 @@ impl EditorData {
     ) {
         self.pending_collab_transform_sync.push((
             false,
+            old.id,
             old.start_tick as f32,
             old.key as u16,
             old.length() as f32,
@@ -268,6 +269,7 @@ impl EditorData {
         ));
         self.pending_collab_transform_sync.push((
             true,
+            new.id,
             new.start_tick as f32,
             new.key as u16,
             new.length() as f32,
@@ -281,10 +283,10 @@ impl EditorData {
     ///
     /// `pub`：`pending_collab_transform_sync` 为 `pub(crate)`，ui-editor 仓无法直接访问，
     /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
-    /// `(is_add, tick, key, length, velocity, channel, track_index)`。
+    /// `(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, track_index)`。
     pub fn push_collab_transform_entries(
         &mut self,
-        entries: Vec<(bool, f32, u16, f32, u8, u8, usize)>,
+        entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)>,
     ) {
         self.pending_collab_transform_sync.extend(entries);
     }

@@ -107,6 +107,7 @@ impl EditorData {
         if split_tick <= note_tick || split_tick >= note_tick + note_length {
             return false;
         }
+        let note_id = note.id;
         let (key, velocity, channel) = (note.key, note.velocity, note.channel);
         let track_idx = self.current_track;
 
@@ -131,8 +132,10 @@ impl EditorData {
         self.insert_note(track_idx, right);
         self.mark_current_track_changed();
         // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
+        // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
         self.pending_collab_transform_sync.push((
             false,
+            note_id,
             note_tick,
             key as u16,
             note_length,
@@ -140,8 +143,10 @@ impl EditorData {
             channel,
             track_idx,
         ));
+        let left_id = self.note_id_at(track_idx, note_tick, key as u16).unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
+            left_id,
             note_tick,
             key as u16,
             split_tick - note_tick,
@@ -149,8 +154,10 @@ impl EditorData {
             channel,
             track_idx,
         ));
+        let right_id = self.note_id_at(track_idx, split_tick, key as u16).unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
+            right_id,
             split_tick,
             key as u16,
             note_tick + note_length - split_tick,
@@ -206,6 +213,7 @@ impl EditorData {
             for nt in group {
                 self.pending_collab_transform_sync.push((
                     false,
+                    self.note_id_at(self.current_track, nt.1, nt.2).unwrap_or(0),
                     nt.1,
                     nt.2,
                     nt.3,
@@ -222,6 +230,7 @@ impl EditorData {
             // 2026-09 协作修复：添加一个合并后的音符。
             self.pending_collab_transform_sync.push((
                 true,
+                self.note_id_at(self.current_track, merged_tick, first.2).unwrap_or(0),
                 merged_tick,
                 first.2,
                 merged_length,
@@ -281,7 +290,7 @@ impl EditorData {
         let track_idx = self.current_track;
         // 2026-09 协作修复：连奏延长长度，须在修改后广播「删旧长度 + 加新长度」。
         // `track` 可变借用 self.document，故先收集到本地 Vec 再统一追加，规避借用冲突。
-        let mut sync_entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut sync_entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
 
         if let Some(track) = self
             .document
@@ -304,8 +313,8 @@ impl EditorData {
                             let old_ch = note.channel;
                             note.end_tick = note.start_tick + new_length as u32;
                             let new_len = (note.end_tick - note.start_tick) as f32;
-                            sync_entries.push((false, old_tick, old_key, current_length, old_vel, old_ch, track_idx));
-                            sync_entries.push((true, old_tick, old_key, new_len, old_vel, old_ch, track_idx));
+                            sync_entries.push((false, note.id, old_tick, old_key, current_length, old_vel, old_ch, track_idx));
+                            sync_entries.push((true, note.id, old_tick, old_key, new_len, old_vel, old_ch, track_idx));
                             tied += 1;
                         }
                     }

@@ -87,10 +87,10 @@ impl Editor {
         if pending.is_empty() {
             return;
         }
-        for (tick, key, tick_offset, key_offset, track_index) in pending {
+        for (id, tick, key, tick_offset, key_offset, track_index) in pending {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    tick, key, 0.0, tick_offset, key_offset, track_index,
+                    id, tick, key, 0.0, tick_offset, key_offset, track_index,
                 ),
             ));
         }
@@ -107,14 +107,14 @@ impl Editor {
         if pending.is_empty() {
             return;
         }
-        for (tick, key, length, velocity, channel, track_index, is_added) in pending {
+        for (id, tick, key, length, velocity, channel, track_index, is_added) in pending {
             let event = if is_added {
                 lumino_message::events::window::Event::local_note_added(
-                    tick, key, length, velocity, channel, track_index,
+                    id, tick, key, length, velocity, channel, track_index,
                 )
             } else {
                 lumino_message::events::window::Event::local_note_deleted(
-                    tick, key, length, velocity, channel, track_index,
+                    id, tick, key, length, velocity, channel, track_index,
                 )
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(event));
@@ -135,26 +135,26 @@ impl Editor {
         }
         // 先发射全部删除，再发射全部添加：避免「添加落在尚未删除的旧音符位置上」
         // 造成瞬时重复（同位置出现两个音符）。
-        let mut deletes: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
-        let mut adds: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
-        for (is_add, tick, key, length, velocity, channel, track_index) in pending {
+        let mut deletes: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut adds: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        for (is_add, id, tick, key, length, velocity, channel, track_index) in pending {
             if is_add {
-                adds.push((tick, key, length, velocity, channel, track_index));
+                adds.push((id, tick, key, length, velocity, channel, track_index));
             } else {
-                deletes.push((tick, key, length, velocity, channel, track_index));
+                deletes.push((id, tick, key, length, velocity, channel, track_index));
             }
         }
-        for (tick, key, length, velocity, channel, track_index) in deletes {
+        for (id, tick, key, length, velocity, channel, track_index) in deletes {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_deleted(
-                    tick, key, length, velocity, channel, track_index,
+                    id, tick, key, length, velocity, channel, track_index,
                 ),
             ));
         }
-        for (tick, key, length, velocity, channel, track_index) in adds {
+        for (id, tick, key, length, velocity, channel, track_index) in adds {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
-                    tick, key, length, velocity, channel, track_index,
+                    id, tick, key, length, velocity, channel, track_index,
                 ),
             ));
         }

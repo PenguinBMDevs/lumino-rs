@@ -305,21 +305,30 @@ fn test_undo_redo_populates_collab_move_sync() {
     assert!(data.undo());
     let mut pending = data.take_pending_collab_move_sync();
     assert_eq!(pending.len(), 2, "被移动的两个音符应各有一条同步记录");
-    pending.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    // 元组形状 (id, tick, key, tick_offset, key_offset, track_index)
+    pending.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    let (id0, t0, k0, to0, ko0, tr0) = pending[0];
+    assert!(id0 > 0, "音符应已分配全局唯一 id");
     // 音符0：original_tick=0, original_key=60, delta_tick=5, delta_key=-2
     //  ref = original + delta，offset = -delta
-    assert_eq!(pending[0], (5.0, 58, -5.0, 2, 1));
+    assert_eq!((t0, k0, to0, ko0, tr0), (5.0, 58, -5.0, 2, 1));
+    let (id1, t1, k1, to1, ko1, tr1) = pending[1];
+    assert!(id1 > 0, "音符应已分配全局唯一 id");
     // 音符2：original_tick=20, original_key=64
-    assert_eq!(pending[1], (25.0, 62, -5.0, 2, 1));
+    assert_eq!((t1, k1, to1, ko1, tr1), (25.0, 62, -5.0, 2, 1));
 
     // ── redo（inverse=false）──
     assert!(data.redo());
     let mut pending2 = data.take_pending_collab_move_sync();
     assert_eq!(pending2.len(), 2);
-    pending2.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    pending2.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
     // ref = original，offset = +delta
-    assert_eq!(pending2[0], (0.0, 60, 5.0, -2, 1));
-    assert_eq!(pending2[1], (20.0, 64, 5.0, -2, 1));
+    let (id2, t2, k2, to2, ko2, tr2) = pending2[0];
+    assert!(id2 > 0, "音符应已分配全局唯一 id");
+    assert_eq!((t2, k2, to2, ko2, tr2), (0.0, 60, 5.0, -2, 1));
+    let (id3, t3, k3, to3, ko3, tr3) = pending2[1];
+    assert!(id3 > 0, "音符应已分配全局唯一 id");
+    assert_eq!((t3, k3, to3, ko3, tr3), (20.0, 64, 5.0, -2, 1));
 }
 
 /// Bug 回归：A 端撤销「创建音符」时本地音符消失，但此前不广播删除事件，
@@ -328,10 +337,10 @@ fn test_undo_redo_populates_collab_move_sync() {
 #[test]
 fn test_undo_redo_create_populates_collab_create_sync() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
-    // 模拟「创建」一个位于 (100, 72) 的新音符
+    // 模拟「创建」一个位于 (100, 72) 的新音符（携带真实全局 id，等同 finish_drawing 分配）
     let op = CreateOp {
         track_id: 0,
-        note: NoteEvent::new(100, 101, 72, 100, 0),
+        note: NoteEvent::new(100, 101, 72, 100, 0).with_id(7),
     };
     // 正向应用（创建）
     data.apply_create_ops(&[op.clone()], false);
@@ -352,7 +361,9 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     );
     let pending = data.take_pending_collab_create_sync();
     assert_eq!(pending.len(), 1);
-    let (tick, key, _len, _vel, _ch, track, is_added) = pending[0];
+    // 元组形状 (id, tick, key, length, velocity, channel, track_index, is_added)
+    let (id, tick, key, _len, _vel, _ch, track, is_added) = pending[0];
+    assert!(id > 0, "新建音符应已分配全局唯一 id");
     assert_eq!(tick, 100.0);
     assert_eq!(key, 72);
     assert_eq!(track, 0);
@@ -363,7 +374,8 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     assert_eq!(data.current_track_note_count(), 2);
     let pending2 = data.take_pending_collab_create_sync();
     assert_eq!(pending2.len(), 1);
-    let (tick2, key2, _len2, _vel2, _ch2, _track2, is_added2) = pending2[0];
+    let (id2, tick2, key2, _len2, _vel2, _ch2, _track2, is_added2) = pending2[0];
+    assert!(id2 > 0, "新建音符应已分配全局唯一 id");
     assert_eq!(tick2, 100.0);
     assert_eq!(key2, 72);
     assert!(is_added2, "redo 创建应为添加（is_added=true）");
@@ -387,10 +399,10 @@ fn test_speed_change_populates_collab_transform_sync() {
     assert_eq!(modified, 1, "变速应修改 1 个音符");
     assert_eq!(data.current_track_note_count(), 1);
     let pending = data.take_pending_collab_transform_sync();
-    // 每个变化音符 → 一条 Delete(旧) + 一条 Add(新)
+    // 每个变化音符 → 一条 Delete(旧) + 一条 Add(新)；元组 (is_add, id, t, k, l, v, c, tr)
     assert_eq!(pending.len(), 2);
-    let (is_add_0, t0, k0, l0, _v0, _c0, _tr0) = pending[0];
-    let (is_add_1, t1, k1, l1, _v1, _c1, _tr1) = pending[1];
+    let (is_add_0, _id0, t0, k0, l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, _id1, t1, k1, l1, _v1, _c1, _tr1) = pending[1];
     assert!(!is_add_0, "前向第一条应为删除旧音符");
     assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
     assert!(is_add_1, "前向第二条应为添加新音符");
@@ -401,8 +413,8 @@ fn test_speed_change_populates_collab_transform_sync() {
     let pending2 = data.take_pending_collab_transform_sync();
     // 单音符：删除当前(长度2.0) + 添加快照(长度1.0)
     assert_eq!(pending2.len(), 2);
-    let (ia, ta, ka, la, _, _, _) = pending2[0];
-    let (ib, tb, kb, lb, _, _, _) = pending2[1];
+    let (ia, _ida, ta, ka, la, _, _, _) = pending2[0];
+    let (ib, _idb, tb, kb, lb, _, _, _) = pending2[1];
     assert!(!ia, "undo 第一条应为删除当前(新)音符");
     assert_eq!((ta, ka, la), (0.0, 60, 2.0));
     assert!(ib, "undo 第二条应为添加快照(旧)音符");
@@ -421,8 +433,8 @@ fn test_transpose_populates_collab_transform_sync() {
     assert_eq!(modified, 1, "移调应修改 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
     assert_eq!(pending.len(), 2);
-    let (is_add_0, t0, k0, _l0, _v0, _c0, _tr0) = pending[0];
-    let (is_add_1, _t1, k1, _l1, _v1, _c1, _tr1) = pending[1];
+    let (is_add_0, _id0, t0, k0, _l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, _id1, _t1, k1, _l1, _v1, _c1, _tr1) = pending[1];
     assert!(!is_add_0);
     assert_eq!(t0, 0.0);
     assert_eq!(k0, 60, "删除的旧音符 key=60");
@@ -441,9 +453,9 @@ fn test_split_populates_collab_transform_sync() {
     let pending = data.take_pending_collab_transform_sync();
     // 删原(0,60,1.0) + 加左(0,60,0.5) + 加右(0.5,60,0.5)
     assert_eq!(pending.len(), 3);
-    let (d, t0, k0, l0, _, _, _) = pending[0];
-    let (a1, t1, k1, l1, _, _, _) = pending[1];
-    let (a2, t2, k2, l2, _, _, _) = pending[2];
+    let (d, _id0, t0, k0, l0, _, _, _) = pending[0];
+    let (a1, _id1, t1, k1, l1, _, _, _) = pending[1];
+    let (a2, _id2, t2, k2, l2, _, _, _) = pending[2];
     assert!(!d, "首条应为删除原音符");
     assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
     assert!(a1 && a2, "后两条应为添加左右");
@@ -467,9 +479,9 @@ fn test_glue_populates_collab_transform_sync() {
     let dels: Vec<_> = pending.iter().filter(|e| !e.0).collect();
     assert_eq!(adds.len(), 1);
     assert_eq!(dels.len(), 2);
-    let (_, at, ak, al, _, _, _) = *adds[0];
+    let (_, _aid, at, ak, al, _, _, _) = *adds[0];
     assert_eq!((at, ak, al), (0.0, 60, 2.0), "合并后音符应为 (0..2)");
-    let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.1).collect();
+    let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.2).collect();
     del_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap());
     assert_eq!(del_ticks, vec![0.0, 1.0], "应删除两个被并音符(0 与 1)");
 }
@@ -484,9 +496,34 @@ fn test_tie_populates_collab_transform_sync() {
     assert_eq!(tied, 1, "应连接 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
     assert_eq!(pending.len(), 2);
-    let (d, dt, dk, dl, _, _, _) = pending[0];
-    let (a, at, ak, al, _, _, _) = pending[1];
+    let (d, _id, dt, dk, dl, _, _, _) = pending[0];
+    let (a, _id2, at, ak, al, _, _, _) = pending[1];
     assert!(!d && a, "应为删旧长度 + 加新长度");
     assert_eq!((dt, dk, dl), (0.0, 60, 1.0), "旧长度 1.0");
     assert_eq!((at, ak, al), (0.0, 60, 2.0), "新长度延长到 2.0");
+}
+
+/// Bug 回归：接收远端音符（携带真实全局 id）后，本地分配器必须抬到其之上，
+/// 否则本地新建音符会复用到对端已占用的 id，造成「跨客户端 id 碰撞」（缺陷 #5）。
+#[test]
+fn test_ensure_note_id_above_bumps_allocator() {
+    let mut data = EditorData::with_f32_notes(0, &[]);
+    // 本地分配器从 1 起；插入一个零 id 音符 → 分配 1
+    data.insert_note(0, Note::from_raw(0.0, 60, 1.0, 100, 0));
+    assert_eq!(
+        data.note_id_at(0, 0.0, 60),
+        Some(1),
+        "首个本地音符应分配到 id=1"
+    );
+
+    // 模拟接收远端音符 id=42：抬升本地分配器，避免后续复用到 42
+    data.ensure_note_id_above(42);
+
+    // 再插入一个零 id 音符，应分配到 43 而非 1 或 42（无碰撞）
+    data.insert_note(0, Note::from_raw(96.0, 62, 1.0, 100, 0));
+    let new_id = data.note_id_at(0, 96.0, 62).expect("应找到刚插入的音符");
+    assert_eq!(
+        new_id, 43,
+        "接收远端 id=42 后，本地分配器应抬到 43，避免与对端 id 碰撞"
+    );
 }

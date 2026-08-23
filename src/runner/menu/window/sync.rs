@@ -8,6 +8,7 @@ impl RunnerInner {
         use lumino_ui::event::window::sync::Event::*;
         match window_event {
             LocalNoteAdded {
+                id,
                 tick,
                 key,
                 length,
@@ -15,9 +16,10 @@ impl RunnerInner {
                 channel,
                 track_index,
             } => {
-                self.handle_local_note_added(tick, key, length, velocity, channel, track_index);
+                self.handle_local_note_added(id, tick, key, length, velocity, channel, track_index);
             }
             LocalNoteMoved {
+                id,
                 tick,
                 key,
                 length,
@@ -26,6 +28,7 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_moved(
+                    id,
                     tick,
                     key,
                     length,
@@ -35,6 +38,7 @@ impl RunnerInner {
                 );
             }
             LocalNoteDeleted {
+                id,
                 tick,
                 key,
                 length,
@@ -42,7 +46,7 @@ impl RunnerInner {
                 channel,
                 track_index,
             } => {
-                self.handle_local_note_deleted(tick, key, length, velocity, channel, track_index);
+                self.handle_local_note_deleted(id, tick, key, length, velocity, channel, track_index);
             }
             LocalTrackAdded { track_index } => {
                 self.handle_local_track_added(track_index);

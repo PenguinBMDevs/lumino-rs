@@ -73,8 +73,8 @@ pub struct EditorData {
     /// 由 ui-editor 层的 `editor_impl::history` 在 `undo/redo` 成功后 drain 并
     /// 发射 `LocalNoteMoved` 同步事件。这样撤销/重做也能让远端（B 客户端）保持一致，
     /// 否则 B 端在撤销后本地坐标与 A 端失同步，下一次操作在 B 端 0/N 失配。
-    /// 元组：(参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)
-    pub(crate) pending_collab_move_sync: Vec<(f32, u16, f32, i16, usize)>,
+    /// 元组：(音符全局唯一 ID, 参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)
+    pub(crate) pending_collab_move_sync: Vec<(u64, f32, u16, f32, i16, usize)>,
     /// 撤销/重做（CreateOp）后待广播给协作对端的音符创建/删除。
     ///
     /// `apply_history_entry` 在应用 CreateEntry（音符创建日志）时填充：
@@ -82,9 +82,9 @@ pub struct EditorData {
     ///   由 ui-editor 层发射 `LocalNoteDeleted`，否则 B 端会残留该音符。
     /// - redo（inverse=false）：本地重新插入，此处记录为「待添加」，
     ///   由 ui-editor 层发射 `LocalNoteAdded`。
-    /// 元组：(tick, key, length, velocity, channel, 音轨索引, is_added)
+    /// 元组：(音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引, is_added)
     /// `is_added=true` 表示重做（重新添加），`false` 表示撤销（删除）。
-    pub(crate) pending_collab_create_sync: Vec<(f32, u16, f32, u8, u8, usize, bool)>,
+    pub(crate) pending_collab_create_sync: Vec<(u64, f32, u16, f32, u8, u8, usize, bool)>,
     /// 变换类操作（移调 / 翻转 / 变速 / 批量编辑含力度）后待广播给协作对端的音符增删。
     ///
     /// 这些操作直接改 document 当前轨并推**整轨快照**历史（`HistoryEntry::Snapshot`），
@@ -93,9 +93,9 @@ pub struct EditorData {
     /// 的语义复用已修复的 `LocalNoteDeleted`/`LocalNoteAdded` 通道（最稳、覆盖全部字段）：
     /// - 前向：变换函数内逐音符捕获旧/新状态，push `(Delete 旧, Add 新)`；
     /// - undo/redo：`apply_history_entry` 的 Snapshot 分支对整轨做「全删旧 + 全加新」对账。
-    /// 元组：`(is_add, tick, key, length, velocity, channel, 音轨索引)`
+    /// 元组：`(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引)`
     /// `is_add=true` 表示 `LocalNoteAdded`，`false` 表示 `LocalNoteDeleted`。
-    pub(crate) pending_collab_transform_sync: Vec<(bool, f32, u16, f32, u8, u8, usize)>,
+    pub(crate) pending_collab_transform_sync: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)>,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；

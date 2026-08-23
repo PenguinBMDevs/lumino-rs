@@ -60,6 +60,16 @@ impl MidiDocument {
         true
     }
 
+    /// 确保后续分配的 note id 严格大于 `id`，避免与外来（协作/快照恢复）id 碰撞。
+    ///
+    /// 仅在 `id >= next_note_id` 时推进（id 来自本分配器时无需回退）。
+    /// 协作同步接收远端音符时调用，防止本地后续分配复用到已存在的远端 id。
+    pub fn ensure_note_id_above(&mut self, id: u64) {
+        if id >= self.next_note_id {
+            self.next_note_id = id.wrapping_add(1);
+        }
+    }
+
     /// 批量插入音符（O(N+M) 归并，单次重建，内存可控）
     ///
     /// `notes` 按 `start_tick` 升序归并到目标轨，同 tick 稳定插在已有事件之后。

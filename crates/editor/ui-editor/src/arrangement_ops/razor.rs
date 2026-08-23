@@ -84,7 +84,7 @@ impl Editor {
         // 2026-09 协作修复：切割改变音符数量，累积「删原 + 加左右」同步条目。
         // pending_collab_transform_sync 为 pub(crate)，ui-editor 不可直访，
         // 故经 pub 入口 push_collab_transform_entries 注入。
-        let mut sync_entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut sync_entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
         // 从后往前分割，避免索引漂移
         for idx in indices_to_split.into_iter().rev() {
             // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right
@@ -111,9 +111,12 @@ impl Editor {
             // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护
             self.editor_state.data.insert_note(track, right);
             self.editor_state.data.insert_note(track, left);
-            sync_entries.push((false, note_tick, note_key, note_length, note.velocity, note.channel, track));
-            sync_entries.push((true, note_tick, note_key, tick_f - note_tick, note.velocity, note.channel, track));
-            sync_entries.push((true, tick_f, note_key, note_tick + note_length - tick_f, note.velocity, note.channel, track));
+            // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
+            let left_id = self.editor_state.data.note_id_at(track, note_tick, note_key).unwrap_or(0);
+            let right_id = self.editor_state.data.note_id_at(track, tick_f, note_key).unwrap_or(0);
+            sync_entries.push((false, note.id, note_tick, note_key, note_length, note.velocity, note.channel, track));
+            sync_entries.push((true, left_id, note_tick, note_key, tick_f - note_tick, note.velocity, note.channel, track));
+            sync_entries.push((true, right_id, tick_f, note_key, note_tick + note_length - tick_f, note.velocity, note.channel, track));
             split_count += 1;
         }
         self.editor_state

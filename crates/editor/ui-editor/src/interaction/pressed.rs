@@ -364,6 +364,7 @@ impl Editor {
     pub(super) fn emit_note_added_event(&self, note: &Note) {
         lumino_message::events::emit(lumino_message::events::Event::Window(
             lumino_message::events::window::Event::local_note_added(
+                note.id,
                 note.tick,
                 note.key,
                 note.length,

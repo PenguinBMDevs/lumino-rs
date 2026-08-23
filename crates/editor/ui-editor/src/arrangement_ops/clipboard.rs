@@ -217,9 +217,15 @@ impl Editor {
                 }
                 inserted_count += 1;
                 // 2026-09 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失。
+                // note 已插入文档并分配真实 id，按位置反查取回后随事件发出。
+                let id = self
+                    .editor_state
+                    .data
+                    .note_id_at(dest_track, note.tick, note.key)
+                    .unwrap_or(0);
                 lumino_message::events::emit(lumino_message::events::Event::Window(
                     lumino_message::events::window::Event::local_note_added(
-                        note.tick, note.key, note.length, note.velocity, note.channel, dest_track,
+                        id, note.tick, note.key, note.length, note.velocity, note.channel, dest_track,
                     ),
                 ));
             }

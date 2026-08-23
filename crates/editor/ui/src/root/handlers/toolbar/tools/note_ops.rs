@@ -106,13 +106,20 @@ impl ToolbarHandler {
 
             // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。
             let track = root.editor.editor_state.data.current_track;
-            let mut entries: Vec<(bool, f32, u16, f32, u8, u8, usize)> = Vec::new();
+            let mut entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
             for (pos, old) in old_notes.iter().enumerate() {
                 let new_tick = quantizable_notes[pos].tick;
                 let new_length = quantizable_notes[pos].length;
                 if (new_tick, new_length) != (old.0, old.2) {
-                    entries.push((false, old.0, old.1, old.2, old.3, old.4, track));
-                    entries.push((true, new_tick, old.1, new_length, old.3, old.4, track));
+                    // 量化后音符已落到 new_tick，按新位置反查其真实全局 ID。
+                    let note_id =
+                        root.editor
+                            .editor_state
+                            .data
+                            .note_id_at(track, new_tick, old.1)
+                            .unwrap_or(0);
+                    entries.push((false, note_id, old.0, old.1, old.2, old.3, old.4, track));
+                    entries.push((true, note_id, new_tick, old.1, new_length, old.3, old.4, track));
                 }
             }
             root.editor

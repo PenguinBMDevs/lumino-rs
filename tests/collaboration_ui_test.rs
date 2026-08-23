@@ -261,7 +261,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     println!("----------------------------------------");
 
     let note_a = SyncNote {
-        id: format!("note-a-{}", chrono::Utc::now().timestamp_millis()),
+        id: 1001u64,
         tick: 2880.0,
         key: 65,
         length: 480.0,
@@ -355,7 +355,7 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
     println!("----------------------------------------");
 
     let note_b = SyncNote {
-        id: format!("note-b-{}", chrono::Utc::now().timestamp_millis()),
+        id: 1002u64,
         tick: 3840.0,
         key: 72,
         length: 480.0,
@@ -515,7 +515,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
 
     let notes = vec![
         SyncNote {
-            id: format!("batch-note-1-{}", chrono::Utc::now().timestamp_millis()),
+            id: 2001u64,
             tick: 0.0,
             key: 60,
             length: 480.0,
@@ -524,7 +524,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
             track_index: 0,
         },
         SyncNote {
-            id: format!("batch-note-2-{}", chrono::Utc::now().timestamp_millis()),
+            id: 2002u64,
             tick: 480.0,
             key: 64,
             length: 480.0,
@@ -533,7 +533,7 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
             track_index: 0,
         },
         SyncNote {
-            id: format!("batch-note-3-{}", chrono::Utc::now().timestamp_millis()),
+            id: 2003u64,
             tick: 960.0,
             key: 67,
             length: 480.0,

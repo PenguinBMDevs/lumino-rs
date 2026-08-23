@@ -164,6 +164,35 @@ impl EditorData {
         true
     }
 
+    /// 抬升文档级 note id 分配器，确保严格大于 `id`，避免与协作/快照外来 id 碰撞。
+    ///
+    /// 委托给 `MidiDocument::ensure_note_id_above`；无 document 时静默跳过。
+    pub fn ensure_note_id_above(&mut self, id: u64) {
+        if let Some(doc) = self.document.as_mut() {
+            doc.ensure_note_id_above(id);
+        }
+    }
+
+    /// 按 `(音轨, tick, key)` 反查音符全局唯一 ID（协作按 id 同步时取回真实 id）。
+    ///
+    /// tick/key 带容差匹配（≤1 tick、key 全相等），避免浮点/整型换算误差；
+    /// 命中多个时取 tick 最近者。无 document 或未命中返回 `None`。
+    pub fn note_id_at(&self, track_id: usize, tick: f32, key: u16) -> Option<u64> {
+        let notes = self.track_notes(track_id);
+        let mut best: Option<(f32, u64)> = None;
+        for n in notes.iter() {
+            let dt = (n.start_tick as f32 - tick).abs();
+            let dk = (n.key as i32 - key as i32).abs();
+            if dt <= 1.0 && dk == 0 {
+                let score = dt;
+                if best.is_none() || score < best.unwrap().0 {
+                    best = Some((score, n.id));
+                }
+            }
+        }
+        best.map(|b| b.1)
+    }
+
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
     /// document 为空时返回 false。
     pub fn ensure_track(&mut self, track_id: usize) -> bool {

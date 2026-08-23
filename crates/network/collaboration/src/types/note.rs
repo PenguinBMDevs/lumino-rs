@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncNote {
-    /// 会话唯一音符 ID
-    pub id: String,
+    /// 音符全局唯一 ID（与本地 `NoteEvent.id` 一致，由发送端文档分配器分配）
+    pub id: u64,
     /// 起始 tick
     pub tick: f32,
     /// 音高（键号）

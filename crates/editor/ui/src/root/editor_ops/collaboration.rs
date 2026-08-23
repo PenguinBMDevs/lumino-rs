@@ -124,16 +124,16 @@ impl Root {
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
         for note in &operation.notes {
-            // 转换协作音符为编辑器音符（2026-09 修复：必须携带 velocity/channel，
-            // 否则 Delete+Add 类的变换同步会让 B 端音符力度/通道被重置为默认值，
-            // 造成「A 变速/移调后 B 状态不一致」）。SyncNote 已含完整字段。
-            let editor_note = crate::editor::note::Note::from_raw(
+            // 转换协作音符为编辑器音符，并保留对端真实全局 ID（取代原 from_raw 的 0），
+            // 使 B 端音符与 A 端共享同一稳定身份，后续同步按 id 精确匹配。
+            let mut editor_note = crate::editor::note::Note::from_raw(
                 note.tick,
                 note.key,
                 note.length,
                 note.velocity,
                 note.channel,
             );
+            editor_note.id = note.id;
 
             // 2026-08 单一权威源：直接写入 document 指定音轨（track_notes 缓存已删除）
             let track_idx = note.track_index;
@@ -141,6 +141,11 @@ impl Root {
                 .editor_state
                 .data
                 .insert_note(track_idx, editor_note);
+            // 抬升本地分配器，避免未来本地分配复用到对端已占用的 id（碰撞缺陷 #5）。
+            self.editor
+                .editor_state
+                .data
+                .ensure_note_id_above(note.id);
         }
         // 精确标记受影响音轨（洋葱皮事件级增量）
         let affected: std::collections::HashSet<usize> =
@@ -157,14 +162,20 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 更新操作：根据位置匹配现有音符
+        // 更新操作：优先按全局 ID 精确匹配，ID 未命中回退按位置匹配
         for note in &operation.notes {
             let track_idx = note.track_index;
             // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let Some(match_idx) = notes.iter().position(|n| {
-                (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-            }) else {
+            let Some(match_idx) = notes
+                .iter()
+                .position(|n| n.id == note.id)
+                .or_else(|| {
+                    notes.iter().position(|n| {
+                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                    })
+                })
+            else {
                 continue;
             };
             // 保持其他字段不变，仅更新长度（NoteEvent 为 Copy，先取值再写回）
@@ -196,7 +207,7 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 删除操作：根据位置匹配删除音符（索引从大到小删除，避免索引偏移）
+        // 删除操作：按 ID 优先、位置兜底匹配删除音符（索引从大到小删除，避免索引偏移）
         for note in &operation.notes {
             let track_idx = note.track_index;
             // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
@@ -205,7 +216,9 @@ impl Root {
                 .iter()
                 .enumerate()
                 .filter(|(_, n)| {
-                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                    n.id == note.id
+                        || ((n.start_tick as f32 - note.tick).abs() < 1.0
+                            && n.key as u16 == note.key)
                 })
                 .map(|(i, _)| i)
                 .collect();
@@ -249,9 +262,16 @@ impl Root {
             // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
             let track_idx = note.track_index;
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let Some(match_idx) = notes.iter().position(|n| {
-                (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-            }) else {
+            // 优先按全局 ID 精确匹配；ID 未命中回退按位置匹配。
+            let Some(match_idx) = notes
+                .iter()
+                .position(|n| n.id == note.id)
+                .or_else(|| {
+                    notes.iter().position(|n| {
+                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                    })
+                })
+            else {
                 tracing::warn!("协作: track {} 不存在或音符未匹配", track_idx);
                 continue;
             };

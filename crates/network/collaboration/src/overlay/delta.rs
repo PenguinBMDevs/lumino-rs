@@ -143,7 +143,7 @@ mod tests {
 
     fn make_note(tick: f32, key: u16, length: f32, track: usize) -> SyncNote {
         SyncNote {
-            id: format!("n_{}_{}", tick as u64, key),
+            id: (tick as u64) * 1000 + key as u64,
             tick,
             key,
             length,

@@ -96,7 +96,7 @@ async fn run_sync_test(rate: u64, total_notes: u32) {
         let op = NoteBatchOperation {
             action: NoteAction::Add,
             notes: vec![SyncNote {
-                id: format!("note_{}_{}", rate, i),
+                id: (rate as u64) * 100000 + i as u64,
                 tick: 0.0,
                 key: 60,
                 length: 480.0,

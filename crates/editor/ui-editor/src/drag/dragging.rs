@@ -72,16 +72,19 @@ impl Editor {
         }
 
         // 读取原始位置（apply 前的状态，用于协作同步事件）
-        // 2026-08 单一权威源：经 get_note_view 读取（NoteView: tick f32/key u16/length f32）
-        let (original_tick, original_key, length, current_track) = {
-            let Some(original_note) = self.editor_state.data.get_note_view(note_index) else {
+        // 2026-08 单一权威源：id 来自 document 当前轨的权威 NoteEvent，而非派生视图 NoteView
+        let (id, original_tick, original_key, length, current_track) = {
+            let current_track = self.editor_state.data.current_track;
+            let notes = self.editor_state.data.track_notes(current_track);
+            let Some(original_note) = notes.get(note_index) else {
                 return false;
             };
             (
-                original_note.tick,
-                original_note.key,
-                original_note.length,
-                self.editor_state.data.current_track,
+                original_note.id,
+                original_note.start_tick as f32,
+                original_note.key as u16,
+                (original_note.end_tick - original_note.start_tick) as f32,
+                current_track,
             )
         };
 
@@ -115,6 +118,7 @@ impl Editor {
         );
         lumino_message::events::emit(lumino_message::events::Event::Window(
             lumino_message::events::window::Event::local_note_moved(
+                id,
                 original_tick,
                 original_key,
                 length,
