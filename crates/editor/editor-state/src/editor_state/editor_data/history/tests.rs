@@ -8,6 +8,7 @@
 
 use super::*;
 use crate::DragState;
+use crate::editor_transform::EditorTransform;
 use bit_vec::BitVec;
 use lumino_midi_model::NoteEvent;
 use lumino_note_core::history::CreateOp;
@@ -366,4 +367,65 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     assert_eq!(tick2, 100.0);
     assert_eq!(key2, 72);
     assert!(is_added2, "redo 创建应为添加（is_added=true）");
+}
+
+/// Bug 回归：变换类操作（变速/移调/翻转/批量编辑）前向与 undo/redo 均须广播同步。
+/// 此前这些操作只改 document + 推整轨快照历史，既不在前向发射同步事件，也不在
+/// undo/redo 回放时广播，导致 B 端永久失同步（用户报告「A 用变速工具后 B 不同步」）。
+///
+/// 本测试覆盖：
+/// 1. 前向 `apply_speed_change` 入队 `(Delete 旧, Add 新)`，且旧/新状态正确；
+/// 2. undo（整轨快照回放）入队「全删旧 + 全加新」对账，使 B 终态与 A 一致。
+#[test]
+fn test_speed_change_populates_collab_transform_sync() {
+    use std::collections::HashSet;
+    let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+
+    // ── 前向：速度系数 2.0（min_tick=0）→ 长度翻倍，tick 不变 ──
+    let selected = HashSet::from([0usize]);
+    let modified = data.apply_speed_change(&selected, 2.0);
+    assert_eq!(modified, 1, "变速应修改 1 个音符");
+    assert_eq!(data.current_track_note_count(), 1);
+    let pending = data.take_pending_collab_transform_sync();
+    // 每个变化音符 → 一条 Delete(旧) + 一条 Add(新)
+    assert_eq!(pending.len(), 2);
+    let (is_add_0, t0, k0, l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, t1, k1, l1, _v1, _c1, _tr1) = pending[1];
+    assert!(!is_add_0, "前向第一条应为删除旧音符");
+    assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
+    assert!(is_add_1, "前向第二条应为添加新音符");
+    assert_eq!((t1, k1, l1), (0.0, 60, 2.0));
+
+    // ── undo：整轨快照回放，入队「全删当前 + 全加快照(旧)」对账 ──
+    assert!(data.undo());
+    let pending2 = data.take_pending_collab_transform_sync();
+    // 单音符：删除当前(长度2.0) + 添加快照(长度1.0)
+    assert_eq!(pending2.len(), 2);
+    let (ia, ta, ka, la, _, _, _) = pending2[0];
+    let (ib, tb, kb, lb, _, _, _) = pending2[1];
+    assert!(!ia, "undo 第一条应为删除当前(新)音符");
+    assert_eq!((ta, ka, la), (0.0, 60, 2.0));
+    assert!(ib, "undo 第二条应为添加快照(旧)音符");
+    assert_eq!((tb, kb, lb), (0.0, 60, 1.0));
+    assert_eq!(data.current_track_note_count(), 1);
+}
+
+/// Bug 回归：移调（transpose）前向须广播旧→新（key 变化）的删除+添加，
+/// 使 B 端在 A 移调后同步音高。
+#[test]
+fn test_transpose_populates_collab_transform_sync() {
+    use std::collections::HashSet;
+    let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    let selected = HashSet::from([0usize]);
+    let modified = data.transpose(&selected, 3);
+    assert_eq!(modified, 1, "移调应修改 1 个音符");
+    let pending = data.take_pending_collab_transform_sync();
+    assert_eq!(pending.len(), 2);
+    let (is_add_0, t0, k0, _l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, _t1, k1, _l1, _v1, _c1, _tr1) = pending[1];
+    assert!(!is_add_0);
+    assert_eq!(t0, 0.0);
+    assert_eq!(k0, 60, "删除的旧音符 key=60");
+    assert!(is_add_1);
+    assert_eq!(k1, 63, "添加的新音符 key=63 (+3 半音)");
 }

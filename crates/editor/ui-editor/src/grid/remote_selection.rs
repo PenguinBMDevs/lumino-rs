@@ -51,8 +51,13 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
             }
             let left = editor.tick_to_x(*tick);
             let right = editor.tick_to_x(*tick + *length);
-            let top = editor.key_to_y(key.saturating_add(1));
-            let bottom = editor.key_to_y(*key);
+            // 2026-09 协作修复：远端选择框必须覆盖音符真实矩形。
+            // 单音符矩形上界为 `key_to_y(key)`（key 顶线），下界为
+            // `key_to_y(key) + zoom_y`（下一行顶线），与本地 `vertical_rect_from_bounds`
+            // 一致。此前误用 `key_to_y(key+1)` 作上界，使选框整体上移一行，
+            // 落在音符「上方」——正是用户报告的缺陷。
+            let top = editor.key_to_y(*key);
+            let bottom = editor.key_to_y(*key) + editor.editor_state.view.zoom_y;
             let rect = Rectangle::new(
                 Point::new(left, top),
                 Size::new((right - left).max(2.0), (bottom - top).max(2.0)),

@@ -124,8 +124,16 @@ impl Root {
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
         for note in &operation.notes {
-            // 转换协作音符为编辑器音符
-            let editor_note = crate::editor::note::Note::new(note.tick, note.key, note.length);
+            // 转换协作音符为编辑器音符（2026-09 修复：必须携带 velocity/channel，
+            // 否则 Delete+Add 类的变换同步会让 B 端音符力度/通道被重置为默认值，
+            // 造成「A 变速/移调后 B 状态不一致」）。SyncNote 已含完整字段。
+            let editor_note = crate::editor::note::Note::from_raw(
+                note.tick,
+                note.key,
+                note.length,
+                note.velocity,
+                note.channel,
+            );
 
             // 2026-08 单一权威源：直接写入 document 指定音轨（track_notes 缓存已删除）
             let track_idx = note.track_index;

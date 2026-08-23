@@ -137,6 +137,8 @@ impl Editor {
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
+        // 2026-09 协作修复：广播变速结果给对端（B 端按同序先删后加，终态与 A 一致）。
+        self.broadcast_pending_collab_transform_sync();
         tracing::info!(
             "Arrangement: 变速 {} 个音符 (factor={})",
             modified_count,
@@ -179,6 +181,9 @@ impl Editor {
         let mut current_track_touched = false;
         let mut modified_count = 0usize;
         const MIN_LEN: f32 = 1.0;
+        // 2026-09 协作修复：收集「旧→新」音符状态用于广播（避免与 notes 可变借用冲突，
+        // 循环结束后再 push，跨音轨各自携带 track_idx）。
+        let mut transitions: Vec<_> = Vec::new();
 
         // 2026-08 单一权威源：直接修改 document 各轨音符（track_notes_mut）
         for (track_idx, indices) in &track_indices {
@@ -194,6 +199,7 @@ impl Editor {
             {
                 for &i in indices {
                     if let Some(note) = notes.get_mut(i) {
+                        let old = *note;
                         let tick = note.start_tick as f32;
                         let length = (note.end_tick - note.start_tick) as f32;
                         let nt = min_tick + (tick - min_tick) * speed_factor;
@@ -202,11 +208,18 @@ impl Editor {
                             let new_start = nt.max(0.0);
                             note.start_tick = new_start as u32;
                             note.end_tick = note.start_tick + nl as u32;
+                            transitions.push((old, *note, *track_idx));
                             modified_count += 1;
                         }
                     }
                 }
             }
+        }
+
+        for (old, new, track) in transitions {
+            self.editor_state
+                .data
+                .push_collab_transform_transition(old, new, track);
         }
 
         (modified_count, current_track_touched)

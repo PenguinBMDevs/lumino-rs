@@ -210,12 +210,18 @@ impl Editor {
 
             // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
             let editor_data = &mut self.editor_state.data;
-            if editor_data.insert_note(dest_track, note) {
+            if editor_data.insert_note(dest_track, note.clone()) {
                 affected_tracks.insert(dest_track);
                 if dest_track == current_track {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
+                // 2026-09 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失。
+                lumino_message::events::emit(lumino_message::events::Event::Window(
+                    lumino_message::events::window::Event::local_note_added(
+                        note.tick, note.key, note.length, note.velocity, note.channel, dest_track,
+                    ),
+                ));
             }
         }
 

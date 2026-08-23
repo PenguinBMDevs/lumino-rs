@@ -182,7 +182,39 @@ impl EditorData {
         match entry {
             HistoryEntry::Snapshot(s) => {
                 let track = s.current_track;
+                // 协作对账：变换类操作（移调/翻转/变速/批量编辑）走整轨快照历史，
+                // 回放时不经过 MoveOp/CreateOp 的精准广播通道。此处克隆回放前/后的整轨
+                // 音符，以「全删旧 + 全加新」入队，使 B 端在 A 对变换类操作撤销/重做后
+                // 完全同步（B 端按同序执行 Delete 后再 Add，终态与 A 一致）。
+                let old_notes: Vec<lumino_midi_model::NoteEvent> =
+                    self.track_notes(track).iter().copied().collect();
                 self.apply_snapshot(*s);
+                let new_notes: Vec<lumino_midi_model::NoteEvent> =
+                    self.track_notes(track).iter().copied().collect();
+                let mut sync = Vec::new();
+                for n in &old_notes {
+                    sync.push((
+                        false,
+                        n.start_tick as f32,
+                        n.key as u16,
+                        n.length() as f32,
+                        n.velocity,
+                        n.channel,
+                        track,
+                    ));
+                }
+                for n in &new_notes {
+                    sync.push((
+                        true,
+                        n.start_tick as f32,
+                        n.key as u16,
+                        n.length() as f32,
+                        n.velocity,
+                        n.channel,
+                        track,
+                    ));
+                }
+                self.pending_collab_transform_sync = sync;
                 self.mark_tracks_changed_after_history(HashSet::from([track]));
             }
             HistoryEntry::Operation(op) => {
@@ -274,6 +306,18 @@ impl EditorData {
         &mut self,
     ) -> Vec<(f32, u16, f32, u8, u8, usize, bool)> {
         std::mem::take(&mut self.pending_collab_create_sync)
+    }
+
+    /// 取出并清空「变换类操作（移调/翻转/变速/批量编辑）后待广播给协作对端的音符增删」。
+    ///
+    /// 返回 `(is_add, tick, key, length, velocity, channel, 音轨索引)` 列表，
+    /// `is_add=true` → 发射 `LocalNoteAdded`，`false` → 发射 `LocalNoteDeleted`。
+    /// 调用方（ui-editor 层 `editor_impl::history`）据此发射同步事件，使 B 端在 A 执行
+    /// 变换操作或对其撤销/重做后保持一致。
+    pub fn take_pending_collab_transform_sync(
+        &mut self,
+    ) -> Vec<(bool, f32, u16, f32, u8, u8, usize)> {
+        std::mem::take(&mut self.pending_collab_transform_sync)
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。

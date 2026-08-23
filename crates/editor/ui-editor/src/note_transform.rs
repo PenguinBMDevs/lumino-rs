@@ -19,6 +19,8 @@ impl Editor {
             .apply_speed_change(&selected, speed_factor);
         if result > 0 {
             self.mark_notes_changed();
+            // 2026-09 协作修复：前向变速需广播给对端（变换函数内部已入队）。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }
@@ -49,6 +51,8 @@ impl Editor {
             .apply_batch_edit(&selected, velocity, gate, key, tick, max_key);
         if result > 0 {
             self.mark_notes_changed();
+            // 2026-09 协作修复：前向批量编辑（含力度）需广播给对端。
+            self.broadcast_pending_collab_transform_sync();
         }
         result
     }

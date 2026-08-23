@@ -85,6 +85,17 @@ pub struct EditorData {
     /// 元组：(tick, key, length, velocity, channel, 音轨索引, is_added)
     /// `is_added=true` 表示重做（重新添加），`false` 表示撤销（删除）。
     pub(crate) pending_collab_create_sync: Vec<(f32, u16, f32, u8, u8, usize, bool)>,
+    /// 变换类操作（移调 / 翻转 / 变速 / 批量编辑含力度）后待广播给协作对端的音符增删。
+    ///
+    /// 这些操作直接改 document 当前轨并推**整轨快照**历史（`HistoryEntry::Snapshot`），
+    /// 既不在前向应用发射同步事件，也不在 undo/redo 回放时广播——导致 B 端永久失同步
+    /// （用户报告：「A 用变速工具后 B 端音符状态不同步」）。本队列以「删除旧 + 添加新」
+    /// 的语义复用已修复的 `LocalNoteDeleted`/`LocalNoteAdded` 通道（最稳、覆盖全部字段）：
+    /// - 前向：变换函数内逐音符捕获旧/新状态，push `(Delete 旧, Add 新)`；
+    /// - undo/redo：`apply_history_entry` 的 Snapshot 分支对整轨做「全删旧 + 全加新」对账。
+    /// 元组：`(is_add, tick, key, length, velocity, channel, 音轨索引)`
+    /// `is_add=true` 表示 `LocalNoteAdded`，`false` 表示 `LocalNoteDeleted`。
+    pub(crate) pending_collab_transform_sync: Vec<(bool, f32, u16, f32, u8, u8, usize)>,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；

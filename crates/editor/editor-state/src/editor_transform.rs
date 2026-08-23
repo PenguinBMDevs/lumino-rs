@@ -49,6 +49,8 @@ impl EditorTransform for EditorData {
         let center = (min_key as f32 + max_key as f32) / 2.0;
         self.push_history();
         let mut modified = 0;
+        let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
+            Vec::new();
         if let Some(track) = self
             .document
             .as_mut()
@@ -56,16 +58,19 @@ impl EditorTransform for EditorData {
         {
             for &note_idx in &selected_indices {
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old = *note;
                     let new_key = (2.0 * center - note.key as f32)
                         .round()
                         .clamp(0.0, max_key_index) as u8;
                     if new_key != note.key {
                         note.key = new_key;
+                        transitions.push((old, *note));
                         modified += 1;
                     }
                 }
             }
         }
+        self.push_collab_transform_transitions(transitions);
         if modified > 0 {
             // 增量对账：等长修改记录事件（内部 mark 置 dirty 后清除）
             self.record_update_ranges(&selected_indices);
@@ -82,6 +87,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
+            Vec::new();
         if let Some(track) = self
             .document
             .as_mut()
@@ -89,6 +96,7 @@ impl EditorTransform for EditorData {
         {
             for &note_idx in &selected_indices {
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old = *note;
                     let tick = note.start_tick as f32;
                     let length = (note.end_tick - note.start_tick) as f32;
                     let new_tick = (2.0 * axis_tick - (tick + length)).max(0.0);
@@ -97,11 +105,13 @@ impl EditorTransform for EditorData {
                     if new_tick_u != note.start_tick {
                         note.end_tick = note.end_tick.max(new_tick_u.saturating_add(1));
                         note.start_tick = new_tick_u;
+                        transitions.push((old, *note));
                         modified += 1;
                     }
                 }
             }
         }
+        self.push_collab_transform_transitions(transitions);
         if modified > 0 {
             self.record_update_ranges(&selected_indices);
         } else {
@@ -122,6 +132,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
+            Vec::new();
         if let Some(track) = self
             .document
             .as_mut()
@@ -129,14 +141,17 @@ impl EditorTransform for EditorData {
         {
             for &note_idx in &indices {
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old = *note;
                     let new_key = (note.key as i16 + semitones).clamp(0, 255) as u8;
                     if new_key != note.key {
                         note.key = new_key;
+                        transitions.push((old, *note));
                         modified += 1;
                     }
                 }
             }
         }
+        self.push_collab_transform_transitions(transitions);
         if modified > 0 {
             self.record_update_ranges(&indices);
         } else {
@@ -170,6 +185,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
+            Vec::new();
         const MIN_LEN: f32 = 1.0;
         if let Some(track) = self
             .document
@@ -178,6 +195,7 @@ impl EditorTransform for EditorData {
         {
             for &note_idx in &indices {
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old = *note;
                     let tick = note.start_tick as f32;
                     let length = (note.end_tick - note.start_tick) as f32;
                     let new_tick = min_tick + (tick - min_tick) * speed_factor;
@@ -190,11 +208,13 @@ impl EditorTransform for EditorData {
                     if new_tick_u != note.start_tick || new_end_u != note.end_tick {
                         note.start_tick = new_tick_u;
                         note.end_tick = new_end_u.max(new_tick_u.saturating_add(1));
+                        transitions.push((old, *note));
                         modified += 1;
                     }
                 }
             }
         }
+        self.push_collab_transform_transitions(transitions);
         if modified > 0 {
             self.record_update_ranges(&indices);
         } else {
@@ -222,5 +242,49 @@ impl EditorTransform for EditorData {
                 .then_with(|| a.note_index.cmp(&b.note_index))
         });
         points
+    }
+}
+
+impl EditorData {
+    /// 把单个「旧→新」音符状态变换推入协作同步队列（显式指定音轨）。
+    ///
+    /// `pub` 以允许 ui-editor 仓的跨音轨变速（arrangement）在变换后从外部入队。
+    /// 每个变换对以「删除旧音符 + 添加新音符」两条记录入队，复用已修复的
+    /// `LocalNoteDeleted`/`LocalNoteAdded` 通道（最稳、覆盖全部字段）。
+    pub fn push_collab_transform_transition(
+        &mut self,
+        old: lumino_midi_model::NoteEvent,
+        new: lumino_midi_model::NoteEvent,
+        track: usize,
+    ) {
+        self.pending_collab_transform_sync.push((
+            false,
+            old.start_tick as f32,
+            old.key as u16,
+            old.length() as f32,
+            old.velocity,
+            old.channel,
+            track,
+        ));
+        self.pending_collab_transform_sync.push((
+            true,
+            new.start_tick as f32,
+            new.key as u16,
+            new.length() as f32,
+            new.velocity,
+            new.channel,
+            track,
+        ));
+    }
+
+    /// 把前向变换产生的「旧→新」音符状态对批量推入协作同步队列（使用当前音轨）。
+    pub(crate) fn push_collab_transform_transitions(
+        &mut self,
+        transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)>,
+    ) {
+        let track = self.current_track;
+        for (old, new) in transitions {
+            self.push_collab_transform_transition(old, new, track);
+        }
     }
 }

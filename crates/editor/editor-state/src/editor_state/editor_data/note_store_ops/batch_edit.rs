@@ -44,6 +44,8 @@ impl EditorData {
 
         let mut modified = 0usize;
         let mut modified_indices: Vec<usize> = Vec::new();
+        let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
+            Vec::new();
         if let Some(track) = self
             .document
             .as_mut()
@@ -51,6 +53,7 @@ impl EditorData {
         {
             for &note_idx in selected {
                 if let Some(note) = track.get_mut(note_idx) {
+                    let old = *note;
                     let mut changed = false;
                     if let Some(op) = velocity_op {
                         let new_v = op.apply(note.velocity as f32).clamp(0.0, 127.0) as u8;
@@ -86,10 +89,13 @@ impl EditorData {
                     if changed {
                         modified += 1;
                         modified_indices.push(note_idx);
+                        transitions.push((old, *note));
                     }
                 }
             }
         }
+
+        self.push_collab_transform_transitions(transitions);
 
         if modified > 0 {
             self.record_update_ranges(&modified_indices);

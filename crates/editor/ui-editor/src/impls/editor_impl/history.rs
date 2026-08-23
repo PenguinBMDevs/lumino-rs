@@ -33,6 +33,7 @@ impl Editor {
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
             self.broadcast_pending_collab_create_sync();
+            self.broadcast_pending_collab_transform_sync();
             tracing::info!("Editor: Undo 成功");
             true
         } else {
@@ -66,6 +67,7 @@ impl Editor {
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
             self.broadcast_pending_collab_create_sync();
+            self.broadcast_pending_collab_transform_sync();
             tracing::info!("Editor: Redo 成功");
             true
         } else {
@@ -116,6 +118,45 @@ impl Editor {
                 )
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(event));
+        }
+    }
+
+    /// 把 `EditorData` 中累积的「变换类操作（移调/翻转/变速/批量编辑）」广播给协作对端。
+    ///
+    /// 这些操作直接改 document 且走整轨快照历史，前向应用与 undo/redo 回放均不经
+    /// 拖动/绘制/删除管线，因此不会自动发射同步事件——导致 B 端在 A 用变速等工具后
+    /// 永久失同步（用户报告）。`pending_collab_transform_sync` 以「删除旧 + 添加新」入队，
+    /// 本方法 drain 并按 **先删后加** 顺序发射 `LocalNoteDeleted` / `LocalNoteAdded`，
+    /// 复用已修复通道（覆盖全部字段），使 B 端终态与 A 完全一致。
+    pub fn broadcast_pending_collab_transform_sync(&mut self) {
+        let pending = self.editor_state.data.take_pending_collab_transform_sync();
+        if pending.is_empty() {
+            return;
+        }
+        // 先发射全部删除，再发射全部添加：避免「添加落在尚未删除的旧音符位置上」
+        // 造成瞬时重复（同位置出现两个音符）。
+        let mut deletes: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut adds: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+        for (is_add, tick, key, length, velocity, channel, track_index) in pending {
+            if is_add {
+                adds.push((tick, key, length, velocity, channel, track_index));
+            } else {
+                deletes.push((tick, key, length, velocity, channel, track_index));
+            }
+        }
+        for (tick, key, length, velocity, channel, track_index) in deletes {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_deleted(
+                    tick, key, length, velocity, channel, track_index,
+                ),
+            ));
+        }
+        for (tick, key, length, velocity, channel, track_index) in adds {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_added(
+                    tick, key, length, velocity, channel, track_index,
+                ),
+            ));
         }
     }
 

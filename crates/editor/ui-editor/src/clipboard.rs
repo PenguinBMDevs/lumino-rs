@@ -146,6 +146,15 @@ impl Editor {
         let pasted_count = pasted.len();
         // 批量归并：单次重建替代 N 次 insert，峰值仅单块 8MB
         self.editor_state.data.batch_insert_notes(&pasted);
+        // 2026-09 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失被粘贴音符。
+        let track = self.editor_state.data.current_track;
+        for n in &pasted {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_added(
+                    n.tick, n.key, n.length, n.velocity, n.channel, track,
+                ),
+            ));
+        }
         // 批量插入索引散布，旧的 start..start+count 连续选中在 tick 重叠时失效
         // → 按参数全等重选（与 commit_pending_copy 一致，最新件语义）
         self.selection_clear();

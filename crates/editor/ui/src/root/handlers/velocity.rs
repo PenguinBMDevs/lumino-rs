@@ -197,18 +197,24 @@ impl VelocityHandler {
         if let Some(note) = data.current_track_notes().get(note_index) {
             let clamped = velocity.clamp(0, 127);
             if note.velocity != clamped {
-                let note_copy = *note;
+                let old_note = *note;
+                let mut new_note = old_note;
+                new_note.velocity = clamped;
                 data.update_note(
                     track_idx,
                     note_index,
                     Note::from_raw(
-                        note_copy.start_tick as f32,
-                        note_copy.key as u16,
-                        (note_copy.end_tick - note_copy.start_tick) as f32,
+                        old_note.start_tick as f32,
+                        old_note.key as u16,
+                        (old_note.end_tick - old_note.start_tick) as f32,
                         clamped,
-                        note_copy.channel,
+                        old_note.channel,
                     ),
                 );
+                // 2026-09 协作修复：力度（音符状态）变更需广播给对端，否则 B 端力度失同步。
+                // 以「删除旧 + 添加新」入队并广播（复用已修复通道，覆盖全部字段）。
+                data.push_collab_transform_transition(old_note, new_note, track_idx);
+                editor.broadcast_pending_collab_transform_sync();
                 editor.mark_notes_changed();
                 tracing::debug!("力度面板: 音符[{}] 力度更新为 {}", note_index, clamped);
             }
