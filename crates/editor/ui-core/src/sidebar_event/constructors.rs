@@ -44,6 +44,21 @@ impl Event {
         Message::Sidebar(Self::TrackPanChanged(id, pan))
     }
 
+    /// 构造"混音台浮动面板开关"的侧边栏消息
+    pub const fn mixer_panel_toggled() -> Message {
+        Message::Sidebar(Self::MixerPanelToggled)
+    }
+
+    /// 构造"混音台浮动面板最大化/最小化"的侧边栏消息
+    pub const fn mixer_panel_maximize_toggled() -> Message {
+        Message::Sidebar(Self::MixerPanelMaximizeToggled)
+    }
+
+    /// 构造"混音台浮动面板拖拽"的侧边栏消息
+    pub const fn mixer_panel_dragged(dx: f32, dy: f32) -> Message {
+        Message::Sidebar(Self::MixerPanelDragged(dx, dy))
+    }
+
     /// 构造"多轨同时选择"的侧边栏消息
     pub const fn tracks_selected(ids: Vec<usize>) -> Message {
         Message::Sidebar(Self::TracksSelected(ids))

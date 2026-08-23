@@ -28,16 +28,27 @@ impl Sidebar {
         let prev_roll_bar_active = self.roll_bar_active;
         match event {
             // ── 分组切换（核心逻辑） ──
-            GroupToggled(group) => self.handle_group_toggle(group),
+            GroupToggled(group) => {
+                self.handle_group_toggle(group);
+            }
             // ── 路由/面板 ──
-            RouteUpdated(r) => self.handle_route_updated(r),
-            PanelToggled(r) => self.handle_panel_toggled(r),
+            RouteUpdated(r) => {
+                self.handle_route_updated(r);
+            }
+            PanelToggled(r) => {
+                self.handle_panel_toggled(r);
+            }
             // ── 音轨 ──
             TrackSelected(id) => self.handle_track_selected(id),
             TrackMuteToggled(id) => self.handle_track_mute_toggled(id),
             TrackSoloToggled(id) => self.handle_track_solo_toggled(id),
             TrackGainChanged(id, gain) => self.handle_track_gain_changed(id, gain),
             TrackPanChanged(id, pan) => self.handle_track_pan_changed(id, pan),
+            // 混音台面板控制由 Root 层处理（状态在 Root.mixer_panel），
+            // 此处不持有相关状态，原样返回"无需重绘"。
+            MixerPanelToggled => {}
+            MixerPanelMaximizeToggled => {}
+            MixerPanelDragged(_, _) => {}
             TracksSelected(ids) => self.handle_tracks_selected(ids),
             AddTrack => self.handle_add_track(),
             TrackAddAbove(id) => self.handle_track_add_above(id),
@@ -64,7 +75,7 @@ impl Sidebar {
             TrackContextMenuOpened(id) => self.handle_track_context_menu_opened(id),
             TrackContextMenuClosed => self.handle_track_context_menu_closed(),
             TrackContextMenuItemClicked(id, item) => {
-                self.handle_track_context_menu_item_clicked(id, item)
+                self.handle_track_context_menu_item_clicked(id, item);
             }
             // ── 音轨列表面板空白区域右键菜单 ──
             PanelContextMenuOpened => self.handle_panel_context_menu_opened(),
@@ -85,10 +96,16 @@ impl Sidebar {
             ResizeDragged(_) => self.handle_resize_dragged(),
             ResizeDragEnded => self.handle_resize_drag_ended(),
             // ── 子按钮切换 ──
-            AutomationPanelToggled => self.handle_automation_panel_toggled(),
-            PianoRollToggled => self.handle_piano_roll_toggled(),
+            AutomationPanelToggled => {
+                self.handle_automation_panel_toggled();
+            }
+            PianoRollToggled => {
+                self.handle_piano_roll_toggled();
+            }
             // ── 卷帘面板底部按钮（横向/纵向三条杠，互斥） ──
-            RollBarToggled(button) => self.handle_roll_bar_toggled(button),
+            RollBarToggled(button) => {
+                self.handle_roll_bar_toggled(button);
+            }
         }
         // 最终保护
         if self.route == Route::Arrangement {

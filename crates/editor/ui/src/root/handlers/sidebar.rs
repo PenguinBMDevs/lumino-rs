@@ -75,6 +75,33 @@ impl Root {
             return true;
         }
 
+        // 混音台浮动面板控制（开关/最大化/拖拽）：状态在 `Root.mixer_panel`，
+        // 始终触发重绘。拖拽偏移以左下为锚点映射：向右 dx 增大左内缩、
+        // 向下 dy 减小下内缩；并夹紧在左侧栏（48px）之内、屏幕范围内。
+        if matches!(
+            &event,
+            sidebar::Event::MixerPanelToggled
+                | sidebar::Event::MixerPanelMaximizeToggled
+                | sidebar::Event::MixerPanelDragged(_, _)
+        ) {
+            match event {
+                sidebar::Event::MixerPanelToggled => {
+                    self.mixer_panel.open = !self.mixer_panel.open;
+                }
+                sidebar::Event::MixerPanelMaximizeToggled => {
+                    self.mixer_panel.maximized = !self.mixer_panel.maximized;
+                }
+                sidebar::Event::MixerPanelDragged(dx, dy) => {
+                    let (ox, oy) = self.mixer_panel.offset;
+                    let nx = (ox + dx).clamp(48.0, 2000.0);
+                    let ny = (oy - dy).clamp(0.0, 1000.0);
+                    self.mixer_panel.offset = (nx, ny);
+                }
+                _ => {}
+            }
+            return true;
+        }
+
         // 先检查是否是音轨切换
         let track_selected_idx = if let sidebar::Event::TrackSelected(idx) = &event {
             Some(*idx)

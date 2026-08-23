@@ -40,6 +40,12 @@ pub enum Event {
     TrackGainChanged(usize, f32),
     /// 音轨声像变化（-1..1，0 = 居中）
     TrackPanChanged(usize, f32),
+    /// 混音台浮动面板开关切换
+    MixerPanelToggled,
+    /// 混音台浮动面板最大化/最小化（展开/收起主体）切换
+    MixerPanelMaximizeToggled,
+    /// 混音台浮动面板拖拽（增量 dx, dy，单位为逻辑像素）
+    MixerPanelDragged(f32, f32),
     /// 多轨同时选择
     TracksSelected(Vec<usize>),
     /// 添加音轨

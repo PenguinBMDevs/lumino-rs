@@ -246,6 +246,12 @@ impl Root {
         if let Some(dialog) = self.view_material_delete_dialog() {
             stack = stack.push(dialog);
         }
+        // 混音台入口按钮（左下悬浮，点亮表示面板打开）
+        stack = stack.push(crate::root::mixer_panel::view_mixer_entry(self));
+        // 混音台浮动面板（非阻塞覆盖层，打开时叠加于最上层）
+        if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
+            stack = stack.push(panel);
+        }
         stack.into()
     }
 

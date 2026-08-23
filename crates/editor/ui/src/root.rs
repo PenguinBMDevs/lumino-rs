@@ -48,6 +48,7 @@ mod document;
 mod editor_ops;
 pub mod handlers;
 mod memory;
+mod mixer_panel;
 mod state;
 mod view;
 
@@ -86,6 +87,8 @@ pub struct Root {
     pub recording: editor::recording::RecordingState,
     /// Toast 通知管理器（用于编辑拦截/操作反馈等临时通知）
     pub toast: crate::toast::ToastManager,
+    /// 浮动混音台面板状态（打开/关闭、拖拽偏移、最大化）
+    pub(crate) mixer_panel: crate::root::mixer_panel::MixerPanelState,
     /// 窗口最大化/还原保护标志，阻止路由意外切换
     pub window_resize_guard: bool,
     /// 图片转 MIDI 后台转换结果接收端（`right_sidebar::ConvertResult`）
@@ -150,6 +153,7 @@ impl Root {
                 midi: crate::state::midi_state::MidiConnectionState::new(),
                 recording: editor::recording::RecordingState::new(),
                 toast: crate::toast::ToastManager::new(),
+                mixer_panel: crate::root::mixer_panel::MixerPanelState::default(),
                 window_resize_guard: false,
                 pending_i2m: None,
                 pending_material_scan: None,
