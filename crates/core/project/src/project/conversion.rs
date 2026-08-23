@@ -140,6 +140,7 @@ impl LuminoProject {
             .map(|_| lumino_midi_model::ChunkedList::new())
             .collect();
         let mut total_ticks: u32 = 0;
+        let mut next_id: u64 = 1; // 转换路径顺手分配全局唯一 ID
         let mut track_names = Vec::with_capacity(track_count as usize);
 
         for (idx, slot) in self.tracks.iter().enumerate() {
@@ -179,13 +180,11 @@ impl LuminoProject {
                     && let Some(queue) = active.get_mut(&(key, channel))
                     && let Some((start_tick, note_velocity)) = queue.pop_front()
                 {
-                    notes[idx].push_back(NoteEvent::new(
-                        start_tick,
-                        current_tick,
-                        key,
-                        note_velocity,
-                        channel,
-                    ));
+                    notes[idx].push_back(
+                        NoteEvent::new(start_tick, current_tick, key, note_velocity, channel)
+                            .with_id(next_id),
+                    );
+                    next_id += 1;
                     total_ticks = total_ticks.max(current_tick);
                 }
             }
@@ -196,13 +195,11 @@ impl LuminoProject {
             {
                 for ((key, channel), queue) in active {
                     for (start_tick, note_velocity) in queue {
-                        notes[idx].push_back(NoteEvent::new(
-                            start_tick,
-                            max_tick,
-                            key,
-                            note_velocity,
-                            channel,
-                        ));
+                        notes[idx].push_back(
+                            NoteEvent::new(start_tick, max_tick, key, note_velocity, channel)
+                                .with_id(next_id),
+                        );
+                        next_id += 1;
                         total_ticks = total_ticks.max(max_tick);
                     }
                 }
@@ -239,6 +236,7 @@ impl LuminoProject {
 
         Ok(MidiDocument {
             notes,
+            next_note_id: next_id,
             tempo_changes: self.tempo_changes.clone(),
             time_signatures: self.time_signatures.clone(),
             key_signatures: self.key_signatures.clone(),

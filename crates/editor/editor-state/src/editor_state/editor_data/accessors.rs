@@ -329,18 +329,20 @@ pub fn note_to_event(note: Note) -> NoteEvent {
         note.velocity,
         note.channel,
     )
+    .with_id(note.id)
 }
 
 /// NoteEvent（u32 tick）→ Note（f32 tick）无损转换
 #[inline]
 pub fn event_to_note(event: &NoteEvent) -> Note {
-    Note::from_raw(
+    Note::new(
         event.start_tick as f32,
         event.key as u16,
         (event.end_tick - event.start_tick) as f32,
-        event.velocity,
-        event.channel,
     )
+    .with_velocity(event.velocity)
+    .with_channel(event.channel)
+    .with_id(event.id)
 }
 
 /// f32 tick → u32 tick：无损优先（fract==0），异常亚 tick round + trace

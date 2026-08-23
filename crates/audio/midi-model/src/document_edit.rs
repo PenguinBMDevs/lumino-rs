@@ -26,7 +26,25 @@ impl MidiDocument {
     /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
     /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
     /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
-    pub fn insert_note(&mut self, track_id: usize, note: NoteEvent) -> bool {
+    /// 分配一个文档级全局唯一音符 ID（单调、删除不回收）。
+    ///
+    /// 从 1 起分配（0 保留为未分配哨兵），永不重复，保证跨轨不重名。
+    pub fn allocate_note_id(&mut self) -> u64 {
+        let id = self.next_note_id;
+        self.next_note_id = self.next_note_id.wrapping_add(1);
+        id
+    }
+
+    /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
+    /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
+    /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
+    ///
+    /// 传入音符的 `id == 0`（未分配）时自动分配全局唯一 ID；
+    /// 传入非零 ID（如快照恢复/协作同步）则原样保留，维持稳定身份。
+    pub fn insert_note(&mut self, track_id: usize, mut note: NoteEvent) -> bool {
+        if note.id == NoteEvent::UNASSIGNED_ID {
+            note.id = self.allocate_note_id();
+        }
         let Some(track_notes) = self.notes.get_mut(track_id) else {
             return false;
         };
@@ -52,13 +70,22 @@ impl MidiDocument {
         if notes.is_empty() {
             return 0;
         }
-        let Some(track_notes) = self.notes.get_mut(track_id) else {
+        if track_id >= self.notes.len() {
             return 0;
-        };
+        }
         let inserted = notes.len();
         // 调用方未必有序（粘贴/放置），统一排序保证归并前提
         notes.sort_by_key(|a| a.start_tick);
+        // 未分配 id 的音符在此批量分配全局唯一 ID（须在借用 track 之前完成）
+        for n in notes.iter_mut() {
+            if n.id == NoteEvent::UNASSIGNED_ID {
+                n.id = self.allocate_note_id();
+            }
+        }
         let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        let Some(track_notes) = self.notes.get_mut(track_id) else {
+            return 0;
+        };
         track_notes.extend_sorted(notes);
         // max 缓存：脏则保持脏，命中则取大
         if let Some(cell) = self.track_max_end_ticks.get(track_id)
@@ -74,15 +101,23 @@ impl MidiDocument {
     ///
     /// 前置：`notes` 已按 `start_tick` 升序。比 `batch_insert_notes` 少一次排序，
     /// 适合 I2M 放置等已排序路径。
-    pub fn batch_insert_notes_sorted(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> usize {
+    pub fn batch_insert_notes_sorted(&mut self, track_id: usize, mut notes: Vec<NoteEvent>) -> usize {
         if notes.is_empty() {
             return 0;
         }
+        if track_id >= self.notes.len() {
+            return 0;
+        }
+        let inserted = notes.len();
+        for n in notes.iter_mut() {
+            if n.id == NoteEvent::UNASSIGNED_ID {
+                n.id = self.allocate_note_id();
+            }
+        }
+        let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
         let Some(track_notes) = self.notes.get_mut(track_id) else {
             return 0;
         };
-        let inserted = notes.len();
-        let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
         track_notes.extend_sorted(notes);
         if let Some(cell) = self.track_max_end_ticks.get(track_id)
             && let Some(cur) = cell.lock().ok().and_then(|g| *g)
@@ -117,10 +152,15 @@ impl MidiDocument {
 
     /// 替换指定音轨指定索引处的音符：删除旧音符后按 start_tick 升序重新插入新音符，
     /// 保持每轨有序不变式。track_id 或 index 越界返回 false。
-    pub fn update_note(&mut self, track_id: usize, index: usize, note: NoteEvent) -> bool {
+    pub fn update_note(&mut self, track_id: usize, index: usize, mut note: NoteEvent) -> bool {
         // 先删除旧音符；删除失败（track_id/index 越界）直接返回 false
-        if self.remove_note(track_id, index).is_none() {
+        let old = self.remove_note(track_id, index);
+        if old.is_none() {
             return false;
+        }
+        // 保留被替换音符的身份：新音符未携带 id 时沿用旧 id（稳定身份）
+        if note.id == NoteEvent::UNASSIGNED_ID {
+            note.id = old.unwrap().id;
         }
         // 删除成功已证明音轨存在，插入必然成功，不会出现中间不一致状态
         self.insert_note(track_id, note)
@@ -143,7 +183,24 @@ impl MidiDocument {
     ///
     /// `notes` 需按 start_tick 升序（调用方负责排序）；本方法直接整体赋值，
     /// 不做排序校验。track_id 越界返回 false。
-    pub fn replace_track_notes(&mut self, track_id: usize, notes: Vec<NoteEvent>) -> bool {
+    pub fn replace_track_notes(&mut self, track_id: usize, mut notes: Vec<NoteEvent>) -> bool {
+        if track_id >= self.notes.len() {
+            return false;
+        }
+        // 外部导入/粘贴的音符可能未分配 id（id==0）或携带外部 id：
+        // - 未分配者在此批量分配全局唯一 ID（须在借用 track 之前完成）；
+        // - 携带外部 id 者保留，并把分配器抬到其之上，防止后续碰撞。
+        let mut max_incoming = 0u64;
+        for n in notes.iter_mut() {
+            if n.id == NoteEvent::UNASSIGNED_ID {
+                n.id = self.allocate_note_id();
+            } else {
+                max_incoming = max_incoming.max(n.id);
+            }
+        }
+        if max_incoming >= self.next_note_id {
+            self.next_note_id = max_incoming + 1;
+        }
         let Some(track) = self.notes.get_mut(track_id) else {
             return false;
         };

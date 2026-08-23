@@ -49,7 +49,7 @@ fn test_note_search_bounds_window_is_small() {
 /// （覆盖：视口前已结束、跨视口长音符、视口内、视口后未开始）
 #[test]
 fn test_visible_notes_collection_matches_full_scan() {
-    let doc = MidiDocument {
+    let doc = MidiDocument { next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
                 (0, 480, 40),               // 视口前很远，已结束

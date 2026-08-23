@@ -73,6 +73,10 @@ impl TrackNoteView {
 pub struct MidiDocument {
     /// 每轨的音符列表，按 `start_tick` 升序排列，分块存储
     pub notes: Vec<crate::chunked_list::ChunkedList<NoteEvent>>,
+    /// 音符全局唯一 ID 分配器（单调分配、删除不回收；0 = 未分配哨兵）。
+    ///
+    /// 全局单一计数器保证跨轨不重名；从 1 起（0 保留为未分配哨兵）。
+    pub next_note_id: u64,
     /// 预提取的 tempo 变化（tick, bpm）
     pub tempo_changes: Vec<(u32, f32)>,
     /// 预提取的拍号变化（tick, 分子, 分母）。

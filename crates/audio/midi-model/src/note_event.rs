@@ -13,12 +13,15 @@ use midly;
 ///
 /// 与 `CompactEvent` 的 note 事件对相比：
 /// - `CompactEvent`: 2 × 12 bytes = 24 bytes / note
-/// - `NoteEvent`: 13 bytes（对齐后 16 bytes）/ note
+/// - `NoteEvent`: 24 bytes（id u64 + start/end u32 + key/vel/chan u8，无内部 padding）/ note
 ///
-/// 后续将逐步用 `NoteEvent` 替代 note 事件对存储。
+/// `id` 为文档级全局唯一、单调递增、删除不回收的稳定身份，
+/// 用于撤销/重做与协作同步的精确引用（取代易漂移的 index/坐标）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct NoteEvent {
+    /// 文档级全局唯一 ID（分配器单调分配，删除不回收；0 = 未分配哨兵）
+    pub id: u64,
     /// 音符开始 tick
     pub start_tick: u32,
     /// 音符结束 tick
@@ -32,16 +35,27 @@ pub struct NoteEvent {
 }
 
 impl NoteEvent {
-    /// 创建新音符。
+    /// 未分配哨兵 id（分配器从 1 开始，永不发出 0）。
+    pub const UNASSIGNED_ID: u64 = 0;
+
+    /// 创建新音符（id 默认未分配，存储前须用 `with_id` 附加全局唯一 ID）。
     #[inline]
     pub fn new(start_tick: u32, end_tick: u32, key: u8, velocity: u8, channel: u8) -> Self {
         Self {
+            id: Self::UNASSIGNED_ID,
             start_tick,
             end_tick,
             key,
             velocity,
             channel,
         }
+    }
+
+    /// 为音符附加全局唯一 ID（构建器风格）。
+    #[inline]
+    pub fn with_id(mut self, id: u64) -> Self {
+        self.id = id;
+        self
     }
 
     /// 音符时长（tick 数）。
@@ -98,6 +112,7 @@ impl From<NoteInfo> for NoteEvent {
     #[inline]
     fn from(info: NoteInfo) -> Self {
         Self {
+            id: Self::UNASSIGNED_ID,
             start_tick: info.start_tick,
             end_tick: info.end_tick(),
             key: info.key,
@@ -111,6 +126,7 @@ impl From<midly::loader::PackedNote> for NoteEvent {
     #[inline]
     fn from(note: midly::loader::PackedNote) -> Self {
         Self {
+            id: Self::UNASSIGNED_ID,
             start_tick: note.start_tick,
             end_tick: note.end_tick,
             key: note.key,

@@ -14,7 +14,7 @@ fn doc_with_current_track(notes: Vec<DocNoteEvent>) -> Arc<MidiDocument> {
     for n in &notes {
         max_end = max_end.max(n.end_tick);
     }
-    Arc::new(MidiDocument {
+    Arc::new(MidiDocument { next_note_id: 1,
         notes: vec![lumino_midi_loader::ChunkedList::from_sorted(notes)],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
@@ -180,7 +180,7 @@ fn test_document_streaming_emits_events_in_order() {
 
     // 构造一个两轨文档：track 0 为当前轨（空），track 1 为其他轨。
     // 其他轨的音符故意交错，验证 NoteOn/NoteOff 按时间顺序合并输出。
-    let doc = Arc::new(MidiDocument {
+    let doc = Arc::new(MidiDocument { next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::from_sorted(vec![

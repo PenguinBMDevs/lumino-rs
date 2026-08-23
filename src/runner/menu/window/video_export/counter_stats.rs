@@ -196,7 +196,7 @@ mod tests {
     use lumino_midi_loader::{NoteEvent, TrackManager};
 
     fn make_doc(tracks: &[Vec<(u32, u32, u8)>]) -> MidiDocument {
-        MidiDocument {
+        MidiDocument { next_note_id: 1,
             notes: tracks
                 .iter()
                 .map(|v| {

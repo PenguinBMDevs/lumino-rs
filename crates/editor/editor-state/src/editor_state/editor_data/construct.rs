@@ -69,6 +69,7 @@ impl EditorData {
             track_ports: vec![0; track_id + 1],
 
             track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(track_id + 1),
+            next_note_id: 1,
         };
         for note in notes {
             doc.insert_note(track_id, *note);

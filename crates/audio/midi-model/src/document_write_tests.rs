@@ -21,7 +21,7 @@ fn make_track(notes: &[(u32, u32, u8)]) -> Vec<NoteEvent> {
 /// 构造测试文档：给定每轨音符列表，其余字段取最小合理值。
 fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
     let track_count = tracks.len() as u16;
-    MidiDocument {
+    MidiDocument { next_note_id: 1,
         notes: tracks
             .into_iter()
             .map(crate::chunked_list::ChunkedList::from_sorted)
@@ -54,9 +54,15 @@ fn test_insert_note_empty_track() {
     let note = NoteEvent::new(100, 200, 60, 100, 0);
     assert!(doc.insert_note(0, note));
 
-    // notes[0] 只有一个音符，且与插入值一致
+    // notes[0] 只有一个音符，内容字段与插入值一致，并被分配唯一非零 id
     assert_eq!(doc.notes[0].len(), 1);
-    assert_eq!(doc.notes[0][0], note);
+    let stored = &doc.notes[0][0];
+    assert_eq!(stored.start_tick, note.start_tick);
+    assert_eq!(stored.end_tick, note.end_tick);
+    assert_eq!(stored.key, note.key);
+    assert_eq!(stored.velocity, note.velocity);
+    assert_eq!(stored.channel, note.channel);
+    assert_ne!(stored.id, NoteEvent::UNASSIGNED_ID);
 }
 
 #[test]
@@ -200,13 +206,16 @@ fn test_insert_after_remove_consistency() {
     assert!(doc.insert_note(0, NoteEvent::new(200, 300, 61, 100, 0)));
     assert_eq!(doc.notes[0].len(), 3);
 
-    // 删除中间（start=200）
+    // 删除中间（start=200）：返回被删除音符副本（含其被分配的唯一 id）
     let removed = doc.remove_note(0, 1);
-    assert_eq!(
-        removed,
-        Some(NoteEvent::new(200, 300, 61, 100, 0)),
-        "应返回被删除的音符副本"
-    );
+    assert!(removed.is_some(), "应返回被删除的音符副本");
+    let removed = removed.unwrap();
+    assert_eq!(removed.start_tick, 200);
+    assert_eq!(removed.end_tick, 300);
+    assert_eq!(removed.key, 61);
+    assert_eq!(removed.velocity, 100);
+    assert_eq!(removed.channel, 0);
+    assert_ne!(removed.id, NoteEvent::UNASSIGNED_ID);
     assert_eq!(doc.notes[0].len(), 2);
 
     // 再插入填补空隙，最终有序
@@ -225,8 +234,16 @@ fn test_replace_track_notes() {
         NoteEvent::new(200, 300, 64, 80, 0),
     ];
     assert!(doc.replace_track_notes(0, new_notes.clone()));
-    assert_eq!(doc.notes[0], new_notes);
+    // 整轨替换后内容字段与输入一致，且每个音符被赋予唯一非零 id
     assert_eq!(doc.notes[0].len(), 2);
+    for (stored, expected) in doc.notes[0].iter().zip(new_notes.iter()) {
+        assert_eq!(stored.start_tick, expected.start_tick);
+        assert_eq!(stored.end_tick, expected.end_tick);
+        assert_eq!(stored.key, expected.key);
+        assert_eq!(stored.velocity, expected.velocity);
+        assert_eq!(stored.channel, expected.channel);
+        assert_ne!(stored.id, NoteEvent::UNASSIGNED_ID);
+    }
 
     // 其他轨道不受影响
     assert!(doc.notes[1].is_empty());

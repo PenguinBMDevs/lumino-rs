@@ -4,7 +4,7 @@
 //! 克隆，COW 共享）。恢复时经 `replace_track_notes` 写回 document。
 //! `automation_lanes` 仍为 `Vec<Arc<AutomationLane>>`，编辑路径经 `Arc::make_mut` 写时复制。
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use super::EditorData;
@@ -179,40 +179,62 @@ impl EditorData {
 
     /// 根据 HistoryEntry 类型应用撤销/重做
     fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
+        // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
+        // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
+        self.note_delta_events.clear();
         match entry {
             HistoryEntry::Snapshot(s) => {
                 let track = s.current_track;
-                // 协作对账：变换类操作（移调/翻转/变速/批量编辑）走整轨快照历史，
-                // 回放时不经过 MoveOp/CreateOp 的精准广播通道。此处克隆回放前/后的整轨
-                // 音符，以「全删旧 + 全加新」入队，使 B 端在 A 对变换类操作撤销/重做后
-                // 完全同步（B 端按同序执行 Delete 后再 Add，终态与 A 一致）。
-                let old_notes: Vec<lumino_midi_model::NoteEvent> =
-                    self.track_notes(track).iter().copied().collect();
-                self.apply_snapshot(*s);
-                let new_notes: Vec<lumino_midi_model::NoteEvent> =
-                    self.track_notes(track).iter().copied().collect();
+                // 协作对账（无大拷贝）：变换类操作走整轨快照历史。先记录回放前
+                // （post-op）状态，再 apply_snapshot 恢复到 pre-op，最后按 id 增量 diff
+                // ——before 仅存「id → 5 个同步字段」元组（不拷 24 字节整个 NoteEvent），
+                // after 用 s.notes.clone()（Arc 浅拷，O(块)），二者均不持有 &self 引用，
+                // 故可在 apply_snapshot 改 self 后安全使用（消除 defect #2 大拷贝）。
+                // 语义（撤销方向：B 随 A 从 post-op 回到 pre-op）：
+                //   before 有 / after 无 → 删除；after 有 / before 无 → 添加；
+                //   id 同值异 → 删旧(before) + 加新(after)，对端终态一致。
+                type SyncTuple = (f32, u16, f32, u8, u8);
+                let mut before_map: HashMap<u64, SyncTuple> = self
+                    .track_notes(track)
+                    .iter()
+                    .map(|n| {
+                        (
+                            n.id,
+                            (
+                                n.start_tick as f32,
+                                n.key as u16,
+                                n.length() as f32,
+                                n.velocity,
+                                n.channel,
+                            ),
+                        )
+                    })
+                    .collect();
+                let after_notes = s.notes.clone(); // Arc 浅拷，无数据复制
+                self.apply_snapshot(*s); // 恢复 pre-op（track 现 = after_notes）
                 let mut sync = Vec::new();
-                for n in &old_notes {
-                    sync.push((
-                        false,
+                for n in after_notes.iter() {
+                    let after: SyncTuple = (
                         n.start_tick as f32,
                         n.key as u16,
                         n.length() as f32,
                         n.velocity,
                         n.channel,
-                        track,
-                    ));
+                    );
+                    match before_map.remove(&n.id) {
+                        None => sync.push((true, after.0, after.1, after.2, after.3, after.4, track)),
+                        Some(before) => {
+                            if before != after {
+                                // 值变更：删旧(post-op) + 加新(pre-op)
+                                sync.push((false, before.0, before.1, before.2, before.3, before.4, track));
+                                sync.push((true, after.0, after.1, after.2, after.3, after.4, track));
+                            }
+                        }
+                    }
                 }
-                for n in &new_notes {
-                    sync.push((
-                        true,
-                        n.start_tick as f32,
-                        n.key as u16,
-                        n.length() as f32,
-                        n.velocity,
-                        n.channel,
-                        track,
-                    ));
+                // before_map 残留 = 被撤销删除的音符（post-op 存在、pre-op 无）
+                for (_, before) in before_map {
+                    sync.push((false, before.0, before.1, before.2, before.3, before.4, track));
                 }
                 self.pending_collab_transform_sync = sync;
                 self.mark_tracks_changed_after_history(HashSet::from([track]));
@@ -258,7 +280,7 @@ impl EditorData {
                     }
                 }
                 self.pending_collab_move_sync = sync;
-                self.mark_tracks_changed_after_history(affected);
+                self.mark_track_notes_changed_for(Some(affected));
             }
             HistoryEntry::Create(entry) => {
                 let affected: HashSet<usize> =
@@ -282,7 +304,7 @@ impl EditorData {
                     ));
                 }
                 self.pending_collab_create_sync = sync;
-                self.mark_tracks_changed_after_history(affected);
+                self.mark_track_notes_changed_for(Some(affected));
             }
         }
     }

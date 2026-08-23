@@ -3,6 +3,7 @@
 //! 这些逻辑从 `history.rs` 拆分出来，使主文件保持在 400 行以内。
 
 use lumino_note_core::history::{CreateOp, MoveOp};
+use lumino_note_core::Note;
 
 use super::EditorData;
 use crate::DragState;
@@ -19,24 +20,33 @@ impl EditorData {
         if ops.is_empty() {
             return 0;
         }
-        let Some(doc) = self.document.as_mut() else {
-            return 0;
-        };
-
         let mut count = 0usize;
         for op in ops {
             let track_id = op.track_id as usize;
             if inverse {
-                // undo：按值匹配删除（精确，与合并窗口内插入顺序无关）
-                let Some(idx) = doc.track_notes(track_id).position_of(&op.note) else {
+                // undo：按「音乐内容」精确定位后删除（忽略 id——id 由分配器后加，
+                // CreateOp.note 可能未携带分配 id，按全值匹配会落空）。逐 op 重算定位，
+                // 兼容合并窗口内多音符删除的缓冲位移，GPU 段内 RemoveAt 顺序与文档推进
+                // 一致（零漂移）。走 `EditorData::remove_note`：当前音轨自动记录 RemoveAt。
+                let Some(idx) = self.document.as_ref().and_then(|doc| {
+                    doc.track_notes(track_id).iter().position(|n| {
+                        n.start_tick == op.note.start_tick
+                            && n.end_tick == op.note.end_tick
+                            && n.key == op.note.key
+                            && n.velocity == op.note.velocity
+                            && n.channel == op.note.channel
+                    })
+                }) else {
                     continue;
                 };
-                if doc.remove_note(track_id, idx).is_some() {
+                if self.remove_note(track_id, idx).is_some() {
                     count += 1;
                 }
             } else {
-                // redo：按 tick 有序插入，恢复创建时的位置
-                if doc.insert_note(track_id, op.note) {
+                // redo：按 tick 有序重新插入，复用普通插入增量通道（InsertAt）。
+                if self
+                    .insert_note(track_id, super::super::accessors::event_to_note(&op.note))
+                {
                     count += 1;
                 }
             }
@@ -110,6 +120,37 @@ impl EditorData {
         }
 
         if modified > 0 {
+            // 主音轨段内增量：为每个被修改的连续区间推送 UpdateRange，
+            // 使 GPU 主音轨段按索引原地替换（免 note_delta_dirty 全量重建）。
+            // 连续区间替换无索引漂移隐患（与 live 拖动 update_note 同一通道）。
+            let mut ranges: Vec<(usize, Vec<Note>)> = Vec::new();
+            for op in ops {
+                let track_id = op.track_id as usize;
+                let start = op.range_start as usize;
+                let end = (op.range_end as usize).saturating_sub(1); // 含尾索引
+                if let Some(notes) = self
+                    .document
+                    .as_ref()
+                    .and_then(|doc| doc.track_notes(track_id).get_range(start..=end))
+                {
+                    let mapped: Vec<Note> = notes
+                        .iter()
+                        .copied()
+                        .map(|n| super::super::accessors::event_to_note(n))
+                        .collect();
+                    if !mapped.is_empty() {
+                        ranges.push((start, mapped));
+                    }
+                }
+            }
+            for (start, notes) in ranges {
+                self.note_delta_events.push(
+                    crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                        start_index: start,
+                        notes,
+                    },
+                );
+            }
             // 记录所有受影响音轨：若全部是当前音轨（洋葱皮不显示），
             // stream_onion_skin_instances 可豁免全量重建上传。
             let dirty_tracks: std::collections::HashSet<usize> =

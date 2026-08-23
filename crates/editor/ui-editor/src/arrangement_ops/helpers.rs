@@ -21,6 +21,7 @@ pub(super) fn note_event_to_note(event: &NoteEvent) -> Note {
         event.velocity,
         event.channel,
     )
+    .with_id(event.id)
 }
 
 /// 判断音符是否与擦除矩形相交（tick 半开区间 [tick_start, tick_end)）。

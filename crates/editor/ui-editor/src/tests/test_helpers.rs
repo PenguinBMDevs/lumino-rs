@@ -14,7 +14,7 @@ use lumino_midi_loader::{MidiDocument, NoteEvent, TrackManager};
 /// `track_count` 会与 `track_id + 1` 取 max，保证目标音轨存在。
 pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]) -> MidiDocument {
     let track_count = track_count.max(track_id + 1);
-    let mut doc = MidiDocument {
+    let mut doc = MidiDocument { next_note_id: 1,
         notes: (0..track_count)
             .map(|_| lumino_midi_loader::ChunkedList::new())
             .collect(),

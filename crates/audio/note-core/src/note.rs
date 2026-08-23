@@ -3,6 +3,8 @@
 /// 音符逻辑表示（纯数据，不含 UI 相关方法）
 #[derive(Debug, Clone)]
 pub struct Note {
+    /// 文档级全局唯一 ID（与 `NoteEvent` 对应；0 = 未分配）。
+    pub id: u64,
     /// 音符起始 tick。
     pub tick: f32,
     /// 音高（MIDI 音高数字）。
@@ -24,6 +26,7 @@ impl Note {
     /// * `length` — 时长（tick）
     pub fn new(tick: f32, key: u16, length: f32) -> Self {
         Self {
+            id: 0,
             tick,
             key,
             length,
@@ -35,6 +38,7 @@ impl Note {
     /// 从原始数据元组构造 Note
     pub fn from_raw(tick: f32, key: u16, length: f32, velocity: u8, channel: u8) -> Self {
         Self {
+            id: 0,
             tick,
             key,
             length,
@@ -58,6 +62,12 @@ impl Note {
     /// * `channel` — 通道号 0–15
     pub fn with_channel(mut self, channel: u8) -> Self {
         self.channel = channel;
+        self
+    }
+
+    /// 附加全局唯一 ID（构建器风格）。
+    pub fn with_id(mut self, id: u64) -> Self {
+        self.id = id;
         self
     }
 }

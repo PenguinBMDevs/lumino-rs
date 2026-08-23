@@ -345,7 +345,7 @@ mod tests {
 
         let track1 = vec![NoteEvent::new(0, 1920, 67, 100, 1)]; // G4
 
-        MidiDocument {
+        MidiDocument { next_note_id: 1,
             notes: vec![
                 lumino_midi_loader::ChunkedList::from_sorted(track0),
                 lumino_midi_loader::ChunkedList::from_sorted(track1),
@@ -423,7 +423,7 @@ mod tests {
     #[test]
     fn test_playback_key_colors_no_overflow() {
         // 验证 key 索引在 127 以上时不会越界写入
-        let doc = MidiDocument {
+        let doc = MidiDocument { next_note_id: 1,
             notes: vec![lumino_midi_loader::ChunkedList::from_sorted(vec![
                 NoteEvent::new(0, 100, 200, 100, 0),
             ])],

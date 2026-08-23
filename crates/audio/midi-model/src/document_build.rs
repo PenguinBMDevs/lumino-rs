@@ -42,6 +42,7 @@ impl MidiDocument {
             notes: (0..track_count)
                 .map(|_| crate::chunked_list::ChunkedList::new())
                 .collect(),
+            next_note_id: 1,
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
             key_signatures: Vec::new(),
@@ -96,6 +97,9 @@ impl MidiDocument {
 
         // 使用 MIDI 标签追踪解析过程中的密集内存分配
         lumino_diagnostics::memtrace::with_tag(lumino_diagnostics::memtrace::AllocTag::Midi, || {
+            // 加载期全局 ID 分配器：跨轨单调递增，保证加载出的音符全局唯一
+            // 用 AtomicU64（midly loader 回调要求 Send，Cell 不满足）
+            let next_id = std::sync::atomic::AtomicU64::new(1u64);
             let track_names = scan::scan_track_names(file_bytes);
 
             if let Some(cb) = progress {
@@ -138,7 +142,11 @@ impl MidiDocument {
                     // 做原地排序，不引入额外峰值内存（无第二个 Vec<NoteEvent> 常驻）。
                     events.notes.sort_by_key(|n| n.start_tick);
                     notes[track_idx] = crate::chunked_list::ChunkedList::from_sorted_iter(
-                        events.notes.into_iter().map(NoteEvent::from),
+                        events.notes.into_iter().map(|p| {
+                            let ev = NoteEvent::from(p)
+                                .with_id(next_id.fetch_add(1, std::sync::atomic::Ordering::Relaxed));
+                            ev
+                        }),
                     );
 
                     // MidiPort meta (FF 21)：流式提取首个出现值（与旧 Smf::parse
@@ -206,6 +214,7 @@ impl MidiDocument {
             Ok((
                 Self {
                     notes,
+                    next_note_id: next_id.load(std::sync::atomic::Ordering::Relaxed),
                     tempo_changes: all_tempo_changes,
                     time_signatures: all_time_signatures,
                     key_signatures: all_key_signatures,

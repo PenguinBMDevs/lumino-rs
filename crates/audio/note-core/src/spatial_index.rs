@@ -336,6 +336,7 @@ mod tests {
         let num_notes = 100_000;
         for i in 0..num_notes {
             notes.push(Note {
+                id: 0,
                 tick: (i % 10000) as f32 * 10.0,
                 key: (i % 128) as u16,
                 length: 20.0,
