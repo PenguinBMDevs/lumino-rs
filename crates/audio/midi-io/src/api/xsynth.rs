@@ -9,7 +9,7 @@ use xsynth_core::{
 };
 
 use crate::realtime::{
-    RealtimeEventSender, RealtimeSynth, StreamRestartError, SynthEvent,
+    ChannelMixHandle, RealtimeEventSender, RealtimeSynth, StreamRestartError, SynthEvent,
     ThreadCount as LuminoThreadCount, XSynthRealtimeConfig,
 };
 
@@ -49,6 +49,10 @@ pub struct XSynth {
     synth: RealtimeSynth,
     /// 共享事件发送器（全量重建时替换，所有已创建的输出连接自动跟随）
     sender_shared: Arc<Mutex<RealtimeEventSender>>,
+    /// 混音参数共享句柄（重建稳定：外层 `Arc` 指针不变，重建时替换内层 `Vec`）。
+    /// 所有已创建的 `XSynthOutputConn` 通过它设置每通道增益/声像，
+    /// 与 `sender_shared` 同生命周期语义。
+    mixer_shared: ChannelMixHandle,
     /// 音色库路径（重建管线时重用）
     soundfont_path: PathBuf,
     /// 打开选项（重建管线时重用）
@@ -71,6 +75,7 @@ impl XSynth {
 
         let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref())?;
         let sender_shared = Arc::new(Mutex::new(sender));
+        let mixer_shared = ChannelMixHandle::new(Mutex::new(synth.clone_channel_mix()));
 
         let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
         tracing::info!("XSynth: 初始化完成");
@@ -78,6 +83,7 @@ impl XSynth {
         Ok(Self {
             synth,
             sender_shared,
+            mixer_shared,
             soundfont_path: soundfont_path.to_path_buf(),
             options,
             version,
@@ -232,6 +238,9 @@ impl XSynth {
         self.synth = synth;
         // 替换共享发送器：已创建的输出连接通过 Arc 读取，自动指向新管线
         *self.sender_shared.lock().unwrap_or_else(|e| e.into_inner()) = sender;
+        // 替换混音句柄：已创建的输出连接通过外层 Arc 读取，自动指向新管线
+        *self.mixer_shared.lock().unwrap_or_else(|e| e.into_inner()) =
+            self.synth.clone_channel_mix();
 
         tracing::info!("XSynth: 合成管线已重建");
         Ok(())
@@ -260,6 +269,7 @@ impl Api for XSynth {
         }
         Ok(Box::new(XSynthOutputConn {
             sender: Arc::clone(&self.sender_shared),
+            mixer: Arc::clone(&self.mixer_shared),
         }))
     }
 

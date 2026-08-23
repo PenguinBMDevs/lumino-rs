@@ -27,6 +27,10 @@ pub(crate) enum Command {
     SetVelocityFilterThreshold(u8),
     /// 设置音轨静音/独奏状态（用于播放过滤：被静音或未被独奏的音轨不出声）
     SetTrackPlayStates(Vec<bool>, Vec<bool>),
+    /// 设置某 MIDI 通道的音频域增益（线性，1.0 = 0 dB）
+    SetChannelGain(u8, f32),
+    /// 设置某 MIDI 通道的音频域声像（-1..1，0 = 居中）
+    SetChannelPan(u8, f32),
     // 旧 SetCache/SetSkipTracksInCache 已移除（disk_cache future support）
     Play,
     Pause,
@@ -80,6 +84,16 @@ pub(crate) fn handle_command(
                 {
                     let _ = out.all_notes_off();
                 }
+            }
+        }
+        Command::SetChannelGain(ch, gain) => {
+            if let Some(out) = midi_output {
+                let _ = out.set_channel_gain(ch, gain);
+            }
+        }
+        Command::SetChannelPan(ch, pan) => {
+            if let Some(out) = midi_output {
+                let _ = out.set_channel_pan(ch, pan);
             }
         }
         Command::Play => {

@@ -10,9 +10,9 @@ pub use lumino_ui_core::sidebar_event::{GroupId, RollBarButton, Route};
 
 mod types;
 pub use types::{
-    DEFAULT_PANEL_WIDTH, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, PanelContextMenuState,
-    PendingTrackDeletionMeta, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, ROUTES, RouteConfig, Track,
-    TrackContextMenuState,
+    DEFAULT_PANEL_WIDTH, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, MixerState,
+    PanelContextMenuState, PendingTrackDeletionMeta, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, ROUTES,
+    RouteConfig, StripParams, Track, TrackContextMenuState,
 };
 
 // ─── Sidebar 主结构 ───
@@ -93,6 +93,8 @@ pub struct Sidebar {
     /// 语义即「卷帘方向」：默认 `Some(Horizontal)` = 横向卷帘；
     /// `Some(Vertical)` = 纵向卷帘；`None` = 两个按钮均熄灭（理论不出现）。
     pub roll_bar_active: Option<RollBarButton>,
+    /// 混音台状态（每条音轨的增益/声像，键为音轨 ID）
+    pub mixer: MixerState,
 }
 
 impl Sidebar {
@@ -153,7 +155,13 @@ impl Sidebar {
             track_reorder: None,
             // 默认进入横向卷帘（与用户「默认横向三条杠按钮」要求一致）
             roll_bar_active: Some(RollBarButton::Horizontal),
+            mixer: MixerState::default(),
         }
+    }
+
+    /// 读取某音轨的混音台参数（增益/声像），缺失时返回默认。
+    pub fn mixer_strip(&self, id: usize) -> StripParams {
+        self.mixer.get(id)
     }
 
     /// 检查当前是否为音轨总览路由

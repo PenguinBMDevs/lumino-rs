@@ -181,6 +181,25 @@ impl Root {
         manager.set_track_play_states(muted, soloed);
     }
 
+    /// 将侧边栏中每条音轨的音频域增益/声像同步到播放管理器（→ XSynth 合成管线）。
+    ///
+    /// 增益/声像以音轨 MIDI 通道（`track.channel`，0..16）为颗粒度下发：
+    /// xsynth 按 MIDI 通道混音，故共享同一 MIDI 通道的多个文档音轨会共用同一设置
+    /// （v1 粒度，符合 xsynth 合成管线模型）。
+    ///
+    /// 播放管理器懒创建：尚未初始化时直接返回，状态会在首次播放创建管理器后同步。
+    pub fn update_playback_track_mix(&mut self) {
+        let Some(manager) = self.playback.manager.as_mut() else {
+            return;
+        };
+
+        for track in &self.sidebar.tracks {
+            let strip = self.sidebar.mixer_strip(track.id);
+            manager.set_channel_gain(track.channel, strip.gain);
+            manager.set_channel_pan(track.channel, strip.pan);
+        }
+    }
+
     /// 将编辑器的 tempo_points 同步到播放管理器
     ///
     /// 播放管理器是懒创建的（首次播放时 `init_playback_manager`）。当管理器尚未

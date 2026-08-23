@@ -5,9 +5,10 @@
 //! 音频设备变化触发合成管线重建时，XSynth 会替换共享发送器，
 //! 所有已创建的连接自动跟随新管线，无需重新打开连接。
 
+use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 
-use crate::realtime::{RealtimeEventSender, SynthEvent};
+use crate::realtime::{ChannelMixHandle, RealtimeEventSender, SynthEvent};
 use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
 
 use crate::constants::*;
@@ -17,6 +18,9 @@ use crate::{Error, OutputConnection};
 pub(crate) struct XSynthOutputConn {
     /// 共享事件发送器（与 XSynth 共用 Arc，重建管线后自动跟随新发送器）
     pub(crate) sender: Arc<Mutex<RealtimeEventSender>>,
+    /// 混音参数共享句柄（与 XSynth 共用 Arc，重建管线后自动跟随新句柄）。
+    /// 用于音频域每通道增益/声像设置，与 MIDI CC 解耦。
+    pub(crate) mixer: ChannelMixHandle,
 }
 
 impl XSynthOutputConn {
@@ -147,6 +151,23 @@ impl OutputConnection for XSynthOutputConn {
         self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::ResetControl,
         )));
+        Ok(())
+    }
+
+    fn set_channel_gain(&mut self, ch: u8, gain: f32) -> Result<(), Error> {
+        let mix = self.mixer.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cm) = mix.get(ch as usize) {
+            cm.gain.store(gain.max(0.0).to_bits(), Ordering::Relaxed);
+        }
+        Ok(())
+    }
+
+    fn set_channel_pan(&mut self, ch: u8, pan: f32) -> Result<(), Error> {
+        let mix = self.mixer.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(cm) = mix.get(ch as usize) {
+            cm.pan
+                .store(pan.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
+        }
         Ok(())
     }
 

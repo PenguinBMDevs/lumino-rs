@@ -221,6 +221,19 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::SetTrackPlayStates(muted, soloed));
     }
 
+    /// 设置某 MIDI 通道的音频域增益（线性，1.0 = 0 dB；负数按 0 处理）。
+    ///
+    /// 经播放线程命令投递到输出连接（XSynth 实现为合成管线末端增益），
+    /// 与 MIDI CC7 解耦。非 xsynth 输出（纯 MIDI 设备）默认无操作。
+    pub fn set_channel_gain(&mut self, channel: u8, gain: f32) {
+        let _ = self.sender.send(Command::SetChannelGain(channel, gain));
+    }
+
+    /// 设置某 MIDI 通道的音频域声像（-1..1，0 = 居中）。
+    pub fn set_channel_pan(&mut self, channel: u8, pan: f32) {
+        let _ = self.sender.send(Command::SetChannelPan(channel, pan));
+    }
+
     /// 更新速度变化（别名方法）
     pub fn update_tempo_changes(&mut self, changes: Vec<TempoChange>) {
         self.set_tempo_changes(changes);

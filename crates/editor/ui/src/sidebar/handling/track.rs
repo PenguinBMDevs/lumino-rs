@@ -24,6 +24,16 @@ impl Sidebar {
         }
     }
 
+    /// 处理音轨增益变化（线性，1.0 = 0 dB；负数按 0 处理）
+    pub(super) fn handle_track_gain_changed(&mut self, id: usize, gain: f32) {
+        self.mixer.set_gain(id, gain);
+    }
+
+    /// 处理音轨声像变化（-1..1，0 = 居中）
+    pub(super) fn handle_track_pan_changed(&mut self, id: usize, pan: f32) {
+        self.mixer.set_pan(id, pan);
+    }
+
     /// 处理多轨选择
     pub(super) fn handle_tracks_selected(&mut self, ids: Vec<usize>) {
         if let Some(&first) = ids.first() {

@@ -34,6 +34,16 @@ impl Event {
         Message::Sidebar(Self::TrackSoloToggled(id))
     }
 
+    /// 构造"音轨增益变化"的侧边栏消息
+    pub const fn track_gain_changed(id: usize, gain: f32) -> Message {
+        Message::Sidebar(Self::TrackGainChanged(id, gain))
+    }
+
+    /// 构造"音轨声像变化"的侧边栏消息
+    pub const fn track_pan_changed(id: usize, pan: f32) -> Message {
+        Message::Sidebar(Self::TrackPanChanged(id, pan))
+    }
+
     /// 构造"多轨同时选择"的侧边栏消息
     pub const fn tracks_selected(ids: Vec<usize>) -> Message {
         Message::Sidebar(Self::TracksSelected(ids))

@@ -5,6 +5,7 @@
 
 use crate::resources::icon;
 use iced_core::Color;
+use std::collections::HashMap;
 
 use super::{GroupId, Route};
 
@@ -135,6 +136,63 @@ pub struct Track {
     pub color: Option<Color>,
 }
 
+/// 混音台单条音轨的音频域参数。
+///
+/// - `gain`：线性增益（1.0 = 0 dB），负数按 0 处理。
+/// - `pan`：声像，∈ [-1, 1]，0 = 居中（-1 = 全左，1 = 全右）。
+///
+/// 注意：静音/独奏仍由 `Track.is_muted / is_soloed` 作为单一来源，
+/// 此处仅承载增益与声像这两项混音台专有参数，避免污染文档音轨元数据。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct StripParams {
+    pub gain: f32,
+    pub pan: f32,
+}
+
+impl Default for StripParams {
+    fn default() -> Self {
+        Self {
+            gain: 1.0,
+            pan: 0.0,
+        }
+    }
+}
+
+/// 混音台状态：以音轨 ID 为键的增益/声像表。
+///
+/// 与 `Sidebar.tracks` 一一对应（按音轨 ID 索引）。某音轨缺失条目时
+/// 视为默认值（`StripParams::default()`）。
+#[derive(Debug, Clone, Default)]
+pub struct MixerState {
+    pub strips: HashMap<usize, StripParams>,
+}
+
+impl MixerState {
+    /// 读取某音轨的混音参数（缺失则返回默认）。
+    pub fn get(&self, id: usize) -> StripParams {
+        self.strips.get(&id).copied().unwrap_or_default()
+    }
+
+    /// 设置某音轨增益（保留声像），负数按 0 处理。
+    pub fn set_gain(&mut self, id: usize, gain: f32) {
+        let mut params = self.get(id);
+        params.gain = gain.max(0.0);
+        self.strips.insert(id, params);
+    }
+
+    /// 设置某音轨声像（保留增益），超出 [-1,1] 自动夹紧。
+    pub fn set_pan(&mut self, id: usize, pan: f32) {
+        let mut params = self.get(id);
+        params.pan = pan.clamp(-1.0, 1.0);
+        self.strips.insert(id, params);
+    }
+
+    /// 移除某音轨的混音参数（音轨删除时调用，避免孤儿条目）。
+    pub fn remove(&mut self, id: usize) {
+        self.strips.remove(&id);
+    }
+}
+
 /// 待删除音轨的元数据缓存
 ///
 /// 用户在音轨选项卡右键菜单点击"删除"时，sidebar 立即从 `tracks` 中
@@ -171,5 +229,62 @@ impl PanelContextMenuState {
     pub fn reset(&mut self) {
         self.is_open = false;
         self.mouse_pos = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_params_default() {
+        let s = StripParams::default();
+        assert_eq!(s.gain, 1.0);
+        assert_eq!(s.pan, 0.0);
+    }
+
+    #[test]
+    fn test_mixer_get_default_when_absent() {
+        let mixer = MixerState::default();
+        assert_eq!(mixer.get(42), StripParams::default());
+    }
+
+    #[test]
+    fn test_mixer_set_gain_clamps_negative() {
+        let mut mixer = MixerState::default();
+        mixer.set_gain(1, -0.5);
+        assert_eq!(mixer.get(1).gain, 0.0);
+        mixer.set_gain(1, 2.0);
+        assert_eq!(mixer.get(1).gain, 2.0);
+    }
+
+    #[test]
+    fn test_mixer_set_pan_clamps_range() {
+        let mut mixer = MixerState::default();
+        mixer.set_pan(2, 5.0);
+        assert_eq!(mixer.get(2).pan, 1.0);
+        mixer.set_pan(2, -9.0);
+        assert_eq!(mixer.get(2).pan, -1.0);
+        mixer.set_pan(2, 0.3);
+        assert_eq!(mixer.get(2).pan, 0.3);
+    }
+
+    #[test]
+    fn test_mixer_set_gain_keeps_pan() {
+        let mut mixer = MixerState::default();
+        mixer.set_pan(3, -0.7);
+        mixer.set_gain(3, 0.5);
+        let strip = mixer.get(3);
+        assert_eq!(strip.gain, 0.5);
+        assert_eq!(strip.pan, -0.7);
+    }
+
+    #[test]
+    fn test_mixer_remove() {
+        let mut mixer = MixerState::default();
+        mixer.set_gain(7, 0.25);
+        assert_eq!(mixer.get(7).gain, 0.25);
+        mixer.remove(7);
+        assert_eq!(mixer.get(7), StripParams::default());
     }
 }

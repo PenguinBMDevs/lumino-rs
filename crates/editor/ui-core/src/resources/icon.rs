@@ -138,6 +138,8 @@ define_icons! {
     (ContextMenuRecoverTrack, "../../../../../resources/icons/context-menu/recover-deleted-track.svg"),
     // 素材库右键菜单图标
     (ContextMenuUploadToCloud, "../../../../../resources/icons/context-menu/upload-to-cloud.svg"),
+    (Mixer, "../../../../../resources/icons/sidebar/mixer.svg"),
+    (MixerActive, "../../../../../resources/icons/sidebar/mixer-active.svg"),
 }
 
 #[derive(Clone)]
@@ -203,7 +205,8 @@ fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> 
 /// 判断指定图标在当前主题下是否需要反色。
 /// Logo 类图标（Lumino / LogoInApp）在暗色/亮色模式下均保持原色，不反色。
 fn should_invert_icon(icon: Icon, is_dark: bool) -> bool {
-    is_dark && !matches!(icon, Icon::Lumino | Icon::LogoInApp)
+    // MixerActive 为「亮灯」态固定琥珀色，不参与反色，确保打开面板时图标常亮。
+    is_dark && !matches!(icon, Icon::Lumino | Icon::LogoInApp | Icon::MixerActive)
 }
 
 /// 渲染图标（可能 panic，仅用于向后兼容）

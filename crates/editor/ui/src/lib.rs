@@ -13,7 +13,6 @@ pub use lumino_ui_editor as editor;
 pub mod event;
 pub mod host;
 pub use lumino_ui_core::message;
-pub mod mixer;
 pub mod playback;
 pub(crate) use lumino_ui_core::resources;
 pub mod root;

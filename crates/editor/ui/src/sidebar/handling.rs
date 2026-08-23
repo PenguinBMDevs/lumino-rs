@@ -36,6 +36,8 @@ impl Sidebar {
             TrackSelected(id) => self.handle_track_selected(id),
             TrackMuteToggled(id) => self.handle_track_mute_toggled(id),
             TrackSoloToggled(id) => self.handle_track_solo_toggled(id),
+            TrackGainChanged(id, gain) => self.handle_track_gain_changed(id, gain),
+            TrackPanChanged(id, pan) => self.handle_track_pan_changed(id, pan),
             TracksSelected(ids) => self.handle_tracks_selected(ids),
             AddTrack => self.handle_add_track(),
             TrackAddAbove(id) => self.handle_track_add_above(id),

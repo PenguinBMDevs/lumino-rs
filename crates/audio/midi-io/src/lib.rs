@@ -207,6 +207,22 @@ pub trait OutputConnection: Send {
         Ok(())
     }
 
+    /// 设置某 MIDI 通道的音频域增益（线性，1.0 = 0 dB；负数按 0 处理）。
+    ///
+    /// 仅音频合成类输出（如 XSynth）实现此能力；纯 MIDI 设备输出默认无操作。
+    /// 与 MIDI CC7（音量）解耦：此处是合成管线末端的真正混音增益，
+    /// 由混音台 UI 直接驱动，不经过 MIDI 事件流。
+    fn set_channel_gain(&mut self, _channel: u8, _gain: f32) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 设置某 MIDI 通道的音频域声像（-1..1，0 = 居中）。
+    ///
+    /// 仅音频合成类输出实现此能力；纯 MIDI 设备输出默认无操作。
+    fn set_channel_pan(&mut self, _channel: u8, _pan: f32) -> Result<(), Error> {
+        Ok(())
+    }
+
     /// 关闭输出连接
     fn close(self: Box<Self>);
 }

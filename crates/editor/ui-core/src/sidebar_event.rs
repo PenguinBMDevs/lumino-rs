@@ -36,6 +36,10 @@ pub enum Event {
     TrackMuteToggled(usize),
     /// 音轨独奏切换
     TrackSoloToggled(usize),
+    /// 音轨增益变化（线性，1.0 = 0 dB；负数按 0 处理）
+    TrackGainChanged(usize, f32),
+    /// 音轨声像变化（-1..1，0 = 居中）
+    TrackPanChanged(usize, f32),
     /// 多轨同时选择
     TracksSelected(Vec<usize>),
     /// 添加音轨

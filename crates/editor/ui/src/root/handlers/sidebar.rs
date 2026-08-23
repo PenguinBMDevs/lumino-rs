@@ -93,6 +93,14 @@ impl Root {
             self.update_playback_track_states();
         }
 
+        // 增益/声像变化 → 立即同步到播放引擎（音频域混音，与 MIDI CC 解耦）。
+        if matches!(
+            &event,
+            sidebar::Event::TrackGainChanged(_, _) | sidebar::Event::TrackPanChanged(_, _)
+        ) {
+            self.update_playback_track_mix();
+        }
+
         // 音轨新增类事件：同步扩展 document（单一权威源）。
         // 2026-08 修复：sidebar 新建音轨只更新 UI 列表，document 未扩轨，
         // 导致新音轨 insert_note 越界静默失败（音符无法放置）。
