@@ -57,14 +57,12 @@ impl LuminoProject {
             }
         }
 
-        // 提取每轨事件
+        // 提取每轨事件（含空白音轨：无音符但需保留音轨槽位与元数据，
+        // 否则空白音轨不会被保存/加载）
         for track_id in 0..doc.track_count {
             let track_notes = doc.track_notes(track_id as usize);
-            if track_notes.is_empty() {
-                continue;
-            }
 
-            // 从 NoteEvent 构造 CompactEvent 音符事件
+            // 从 NoteEvent 构造 CompactEvent 音符事件（空白音轨则为空）
             let mut track_events: Vec<lumino_midi_model::compact::CompactEvent> =
                 Vec::with_capacity(track_notes.len() * 2);
             for note in track_notes {
@@ -86,12 +84,13 @@ impl LuminoProject {
                 last_tick = abs_tick;
             }
 
-            // 推断 channel：取第一个音符事件的通道
-            let channel = track_events
-                .iter()
-                .find(|ev| ev.kind().is_note())
-                .map(|ev| ev.channel())
-                .unwrap_or(0);
+            // 推断 channel：优先取首个音符事件的通道；空白音轨（无音符）回退到
+            // document 的 track_channel（含控制事件通道，最终默认 0）
+            let channel = if let Some(ev) = track_events.iter().find(|ev| ev.kind().is_note()) {
+                ev.channel()
+            } else {
+                doc.track_channel(track_id)
+            };
 
             // 推断 max_tick：最后一对音符的结束 tick（绝对值）
             let max_tick = track_events
@@ -105,13 +104,34 @@ impl LuminoProject {
 
             let name = doc.track_name(track_id as usize).unwrap_or("").to_string();
 
+            // 从 document 音轨视图恢复可见性与 solo（空白音轨通常需要保留
+            // 隐藏/静音状态，否则保存→加载后状态丢失）
+            let (visibility, solo) = doc
+                .tracks
+                .get(track_id)
+                .map(|view| {
+                    (
+                        match view.visibility {
+                            lumino_midi_model::TrackVisibility::Visible => {
+                                TrackVisibilitySer::Visible
+                            }
+                            lumino_midi_model::TrackVisibility::Muted => TrackVisibilitySer::Muted,
+                            lumino_midi_model::TrackVisibility::Hidden => {
+                                TrackVisibilitySer::Hidden
+                            }
+                        },
+                        view.solo,
+                    )
+                })
+                .unwrap_or((TrackVisibilitySer::Visible, false));
+
             let meta = TrackMeta {
                 track_id,
                 name,
                 channel,
-                port: 0,
-                visibility: TrackVisibilitySer::Visible,
-                solo: false,
+                port: doc.track_port(track_id),
+                visibility,
+                solo,
                 is_drum: channel == 9, // MIDI 通道 10 (0-indexed 9) 为鼓组
                 max_tick,
             };
@@ -234,7 +254,7 @@ impl LuminoProject {
         // 补齐缺失的 track_names
         track_names.resize_with(track_count as usize, || None);
 
-        Ok(MidiDocument {
+        let mut doc = MidiDocument {
             notes,
             next_note_id: next_id,
             tempo_changes: self.tempo_changes.clone(),
@@ -254,7 +274,24 @@ impl LuminoProject {
             track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(
                 track_count as usize,
             ),
-        })
+        };
+
+        // 恢复每轨可见性与 solo（来自 lmtrack 元数据），保证隐藏/静音等音轨状态
+        // 在保存→加载往返后不丢失（空白音轨的状态亦在此保留）
+        for (idx, slot) in self.tracks.iter().enumerate() {
+            let (TrackSlot::Loaded(d) | TrackSlot::Modified(d)) = slot else {
+                continue;
+            };
+            let visibility = match d.meta.visibility {
+                TrackVisibilitySer::Visible => lumino_midi_model::TrackVisibility::Visible,
+                TrackVisibilitySer::Muted => lumino_midi_model::TrackVisibility::Muted,
+                TrackVisibilitySer::Hidden => lumino_midi_model::TrackVisibility::Hidden,
+            };
+            doc.tracks.set_visibility(idx as u16, visibility);
+            doc.tracks.set_solo(idx as u16, d.meta.solo);
+        }
+
+        Ok(doc)
     }
 
     /// 记录一个导入的外部 MIDI 文件

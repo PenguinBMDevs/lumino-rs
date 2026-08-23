@@ -238,3 +238,142 @@ fn test_from_midi_document_same_key_adjacent_notes() {
     assert_eq!(sorted[1].start_tick, 480);
     assert_eq!(sorted[1].end_tick, 960);
 }
+
+/// 空白音轨回归：无音符的音轨必须被保存与加载（不再因 track_notes 为空被跳过）。
+/// 同时验证隐藏/静音等音轨状态在保存→加载往返后保留。
+#[test]
+fn test_blank_track_preserved_roundtrip() {
+    let doc = MidiDocument {
+        next_note_id: 1,
+        notes: vec![
+            // track 0：有音符
+            lumino_midi_model::ChunkedList::from_sorted(vec![NoteEvent::new(0, 480, 60, 100, 0)]),
+            // track 1：空白
+            lumino_midi_model::ChunkedList::new(),
+            // track 2：空白
+            lumino_midi_model::ChunkedList::new(),
+        ],
+        time_signatures: vec![(0, 4, 4)],
+        tempo_changes: vec![(0, 120.0)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_model::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![
+            Some("Melody".into()),
+            Some("Harmony".into()),
+            Some("Drums".into()),
+        ],
+        total_ticks: 480,
+        track_count: 3,
+        tracks: {
+            let mut mgr = TrackManager::new(3);
+            mgr.set_visibility(1, lumino_midi_model::TrackVisibility::Hidden);
+            mgr.set_visibility(2, lumino_midi_model::TrackVisibility::Muted);
+            mgr.set_solo(2, true);
+            mgr
+        },
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    };
+
+    // from_midi_document：3 条音轨都应保留（含 2 条空白）
+    let project = LuminoProject::from_midi_document(&doc);
+    assert_eq!(project.tracks.len(), 3, "空白音轨不应被丢弃");
+    assert_eq!(project.loaded_track_count(), 3);
+    assert_eq!(project.get_track(0).unwrap().note_count, 1);
+    assert_eq!(project.get_track(1).unwrap().note_count, 0);
+    assert_eq!(project.get_track(2).unwrap().note_count, 0);
+
+    // 音轨状态（可见性 / solo）应被保留
+    assert_eq!(
+        project.get_track(1).unwrap().meta.visibility,
+        TrackVisibilitySer::Hidden
+    );
+    assert_eq!(
+        project.get_track(2).unwrap().meta.visibility,
+        TrackVisibilitySer::Muted
+    );
+    assert!(project.get_track(2).unwrap().meta.solo);
+
+    // to_midi_document：往返后音轨数量、名称与状态保留
+    let rebuilt = project.to_midi_document().expect("重建失败");
+    assert_eq!(rebuilt.track_count, 3);
+    assert_eq!(rebuilt.notes[0].len(), 1);
+    assert_eq!(rebuilt.notes[1].len(), 0);
+    assert_eq!(rebuilt.notes[2].len(), 0);
+    assert_eq!(
+        rebuilt.track_names,
+        vec![
+            Some("Melody".into()),
+            Some("Harmony".into()),
+            Some("Drums".into()),
+        ]
+    );
+    assert_eq!(
+        rebuilt.tracks.get(1).unwrap().visibility,
+        lumino_midi_model::TrackVisibility::Hidden
+    );
+    assert_eq!(
+        rebuilt.tracks.get(2).unwrap().visibility,
+        lumino_midi_model::TrackVisibility::Muted
+    );
+    assert!(rebuilt.tracks.get(2).unwrap().solo);
+
+    // save → load 往返：空白音效实际写入磁盘并可重新加载
+    use crate::project::{load, save};
+    let dir = std::env::temp_dir().join("lumino_blank_track_roundtrip");
+    let _ = std::fs::remove_dir_all(&dir);
+    save::save_to_folder(&project, &dir).expect("保存失败");
+    let loaded = load::load_project(&dir).expect("加载失败");
+    assert_eq!(loaded.tracks.len(), 3, "加载后空白音轨应保留");
+    assert_eq!(
+        loaded.get_track(1).unwrap().meta.visibility,
+        TrackVisibilitySer::Hidden
+    );
+    assert_eq!(
+        loaded.get_track(2).unwrap().meta.visibility,
+        TrackVisibilitySer::Muted
+    );
+    assert!(loaded.get_track(2).unwrap().meta.solo);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// 全空白工程（如新建文件的 Conductor + Setup 两轨均无音符）必须有 track_count 条
+/// 音轨被保存/加载，而非坍缩为 0 轨。
+#[test]
+fn test_all_blank_project_preserved() {
+    let doc = MidiDocument {
+        next_note_id: 1,
+        notes: vec![
+            lumino_midi_model::ChunkedList::new(),
+            lumino_midi_model::ChunkedList::new(),
+        ],
+        time_signatures: vec![],
+        tempo_changes: vec![(0, 120.0)],
+        key_signatures: vec![],
+        control_events: lumino_midi_model::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("Conductor".into()), Some("Setup".into())],
+        total_ticks: 0,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    };
+
+    let project = LuminoProject::from_midi_document(&doc);
+    assert_eq!(project.tracks.len(), 2, "全空白工程应保留 2 条音轨");
+    assert_eq!(project.metadata.audio.track_count, 2);
+
+    let rebuilt = project.to_midi_document().expect("重建失败");
+    assert_eq!(rebuilt.track_count, 2);
+    assert_eq!(rebuilt.notes.len(), 2);
+    assert_eq!(rebuilt.notes[0].len(), 0);
+    assert_eq!(rebuilt.notes[1].len(), 0);
+}
