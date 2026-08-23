@@ -75,6 +75,16 @@ pub struct EditorData {
     /// 否则 B 端在撤销后本地坐标与 A 端失同步，下一次操作在 B 端 0/N 失配。
     /// 元组：(参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)
     pub(crate) pending_collab_move_sync: Vec<(f32, u16, f32, i16, usize)>,
+    /// 撤销/重做（CreateOp）后待广播给协作对端的音符创建/删除。
+    ///
+    /// `apply_history_entry` 在应用 CreateEntry（音符创建日志）时填充：
+    /// - undo（inverse=true）：本地按值删除被创建音符，此处记录为「待删除」，
+    ///   由 ui-editor 层发射 `LocalNoteDeleted`，否则 B 端会残留该音符。
+    /// - redo（inverse=false）：本地重新插入，此处记录为「待添加」，
+    ///   由 ui-editor 层发射 `LocalNoteAdded`。
+    /// 元组：(tick, key, length, velocity, channel, 音轨索引, is_added)
+    /// `is_added=true` 表示重做（重新添加），`false` 表示撤销（删除）。
+    pub(crate) pending_collab_create_sync: Vec<(f32, u16, f32, u8, u8, usize, bool)>,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；

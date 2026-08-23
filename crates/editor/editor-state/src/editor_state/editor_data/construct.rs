@@ -26,6 +26,7 @@ impl EditorData {
             history: History::new(),
             pending_commit: None,
             pending_collab_move_sync: Vec::new(),
+            pending_collab_create_sync: Vec::new(),
             cc_data: CcData::default(),
             automation_lanes: Vec::new(),
             tempo_points: vec![TempoPoint {

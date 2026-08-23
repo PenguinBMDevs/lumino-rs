@@ -232,6 +232,24 @@ impl EditorData {
                 let affected: HashSet<usize> =
                     entry.ops.iter().map(|o| o.track_id as usize).collect();
                 let _ = self.apply_create_ops(&entry.ops, inverse);
+                // 构造协作广播：撤销（inverse=true）本地按值删除被创建音符，
+                // 需让对端也删除；重做（inverse=false）本地重新插入，需让对端也添加。
+                // `is_added` 与本地动作一致：undo→删除(false)，redo→添加(true)。
+                let is_added = !inverse;
+                let mut sync = Vec::new();
+                for op in &entry.ops {
+                    let note = op.note;
+                    sync.push((
+                        note.start_tick as f32,
+                        note.key as u16,
+                        note.length() as f32,
+                        note.velocity,
+                        note.channel,
+                        op.track_id as usize,
+                        is_added,
+                    ));
+                }
+                self.pending_collab_create_sync = sync;
                 self.mark_tracks_changed_after_history(affected);
             }
         }
@@ -243,6 +261,19 @@ impl EditorData {
     /// 调用方（ui-editor 层 `editor_impl::history`）据此发射 `LocalNoteMoved`。
     pub fn take_pending_collab_move_sync(&mut self) -> Vec<(f32, u16, f32, i16, usize)> {
         std::mem::take(&mut self.pending_collab_move_sync)
+    }
+
+    /// 取出并清空「撤销/重做创建/删除后待广播给协作对端的音符创建事件」。
+    ///
+    /// 返回 `(tick, key, length, velocity, channel, 音轨索引, is_added)` 列表，
+    /// `is_added=true` 表示应发射 `LocalNoteAdded`（重做重新添加），
+    /// `false` 表示应发射 `LocalNoteDeleted`（撤销删除）。
+    /// 调用方（ui-editor 层 `editor_impl::history`）据此发射同步事件，
+    /// 否则 B 端在 A 撤销创建后残留该音符（本次修复的协作缺陷）。
+    pub fn take_pending_collab_create_sync(
+        &mut self,
+    ) -> Vec<(f32, u16, f32, u8, u8, usize, bool)> {
+        std::mem::take(&mut self.pending_collab_create_sync)
     }
 
     /// 撤销/重做后标记受影响的音轨并清理过期增量事件。

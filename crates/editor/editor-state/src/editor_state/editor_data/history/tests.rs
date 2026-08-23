@@ -9,6 +9,8 @@
 use super::*;
 use crate::DragState;
 use bit_vec::BitVec;
+use lumino_midi_model::NoteEvent;
+use lumino_note_core::history::CreateOp;
 use lumino_note_core::note::Note;
 
 fn make_data_with_notes() -> EditorData {
@@ -317,4 +319,51 @@ fn test_undo_redo_populates_collab_move_sync() {
     // ref = original，offset = +delta
     assert_eq!(pending2[0], (0.0, 60, 5.0, -2, 1));
     assert_eq!(pending2[1], (20.0, 64, 5.0, -2, 1));
+}
+
+/// Bug 回归：A 端撤销「创建音符」时本地音符消失，但此前不广播删除事件，
+/// 导致 B 端残留该音符。本测试验证 undo/redo 创建会正确填充
+/// `pending_collab_create_sync`（undo→`LocalNoteDeleted`，redo→`LocalNoteAdded`）。
+#[test]
+fn test_undo_redo_create_populates_collab_create_sync() {
+    let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    // 模拟「创建」一个位于 (100, 72) 的新音符
+    let op = CreateOp {
+        track_id: 0,
+        note: NoteEvent::new(100, 101, 72, 100, 0),
+    };
+    // 正向应用（创建）
+    data.apply_create_ops(&[op.clone()], false);
+    assert_eq!(data.current_track_note_count(), 2, "创建后应有 2 个音符");
+    data.push_note_create(vec![op]);
+
+    assert!(
+        data.take_pending_collab_create_sync().is_empty(),
+        "创建提交阶段不应填充队列"
+    );
+
+    // ── undo：本地删除，应广播 LocalNoteDeleted（is_added=false）──
+    assert!(data.undo());
+    assert_eq!(
+        data.current_track_note_count(),
+        1,
+        "撤销创建后本地只剩原音符"
+    );
+    let pending = data.take_pending_collab_create_sync();
+    assert_eq!(pending.len(), 1);
+    let (tick, key, _len, _vel, _ch, track, is_added) = pending[0];
+    assert_eq!(tick, 100.0);
+    assert_eq!(key, 72);
+    assert_eq!(track, 0);
+    assert!(!is_added, "undo 创建应为删除（is_added=false）");
+
+    // ── redo：本地重新插入，应广播 LocalNoteAdded（is_added=true）──
+    assert!(data.redo());
+    assert_eq!(data.current_track_note_count(), 2);
+    let pending2 = data.take_pending_collab_create_sync();
+    assert_eq!(pending2.len(), 1);
+    let (tick2, key2, _len2, _vel2, _ch2, _track2, is_added2) = pending2[0];
+    assert_eq!(tick2, 100.0);
+    assert_eq!(key2, 72);
+    assert!(is_added2, "redo 创建应为添加（is_added=true）");
 }

@@ -32,6 +32,7 @@ impl Editor {
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
+            self.broadcast_pending_collab_create_sync();
             tracing::info!("Editor: Undo 成功");
             true
         } else {
@@ -64,6 +65,7 @@ impl Editor {
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
+            self.broadcast_pending_collab_create_sync();
             tracing::info!("Editor: Redo 成功");
             true
         } else {
@@ -89,6 +91,31 @@ impl Editor {
                     tick, key, 0.0, tick_offset, key_offset, track_index,
                 ),
             ));
+        }
+    }
+
+    /// 把 `EditorData` 中累积的「撤销/重做音符创建/删除」广播给协作对端。
+    ///
+    /// 撤销创建（`inverse=true`）本地删除被创建音符，但不经绘制/删除管线，
+    /// 不会自动发射 `LocalNoteDeleted`，导致 B 端残留该音符（本次修复的缺陷）。
+    /// 重做创建（`inverse=false`）本地重新插入，需补发射 `LocalNoteAdded`。
+    /// 本方法 drain `pending_collab_create_sync` 并按 `is_added` 发射对应同步事件。
+    fn broadcast_pending_collab_create_sync(&mut self) {
+        let pending = self.editor_state.data.take_pending_collab_create_sync();
+        if pending.is_empty() {
+            return;
+        }
+        for (tick, key, length, velocity, channel, track_index, is_added) in pending {
+            let event = if is_added {
+                lumino_message::events::window::Event::local_note_added(
+                    tick, key, length, velocity, channel, track_index,
+                )
+            } else {
+                lumino_message::events::window::Event::local_note_deleted(
+                    tick, key, length, velocity, channel, track_index,
+                )
+            };
+            lumino_message::events::emit(lumino_message::events::Event::Window(event));
         }
     }
 
