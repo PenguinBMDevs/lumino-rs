@@ -219,3 +219,59 @@ fn test_left_press_inside_bounds_selects_track() {
         other => panic!("列表内按下应发 Batch(TrackSelected)，实际为: {other:?}"),
     }
 }
+
+/// 架构收口（单一来源）回归：走带视图的静音/独奏必须每帧从单一来源
+/// `sidebar.tracks` 经 `with_mutes`/`with_solos` 派生，并由 `ensure_state`
+/// 同步到绘制缓冲 `state`。任一环节断开，走带视图 M/S 显示就会与卷帘面板发散。
+#[test]
+fn test_ensure_state_propagates_mute_solo_from_single_source() {
+    let list = TrackListCanvas::new(vec![(0, "A".into()), (1, "B".into())], 0, 0.0, 48.0, 96.0)
+        .with_mutes(vec![true, false])
+        .with_solos(vec![false, true]);
+    let mut state = TrackListState::default();
+    list.ensure_state(&mut state);
+    assert_eq!(
+        state.track_muted,
+        vec![true, false],
+        "静音应同步自单一来源（sidebar.tracks）"
+    );
+    assert_eq!(
+        state.track_soloed,
+        vec![false, true],
+        "独奏应同步自单一来源（sidebar.tracks）"
+    );
+}
+
+/// 架构收口（单一来源）回归：点击静音按钮的唯一副作用是发射
+/// `track_mute_toggled` 事件（由 Root 写回单一来源 sidebar.tracks），
+/// 并乐观翻转绘制缓冲。杜绝在走带视图内维护独立可写状态。
+#[test]
+fn test_mute_button_click_emits_track_mute_toggled() {
+    let list = canvas(false, 1.0);
+    let mut state = TrackListState::default();
+    // 第 0 轨静音按钮区域（BTN_SIZE=18, BTN_GAP=2, canvas_w=160）：
+    // Mute 按钮 x∈[116,134], 行 0 的 y∈[15,33]
+    let cursor = Cursor::Available(Point::new(120.0, 24.0));
+    let action = list
+        .update(
+            &mut state,
+            &canvas::Event::Mouse(iced_core::mouse::Event::ButtonPressed(
+                iced_core::mouse::Button::Left,
+            )),
+            bounds(),
+            cursor,
+        )
+        .expect("列表内静音按钮点击应产生动作");
+    let (message, _, _) = action.into_inner();
+    match message {
+        Some(Message::Sidebar(lumino_ui_core::sidebar_event::Event::TrackMuteToggled(id))) => {
+            assert_eq!(
+                id, 0,
+                "应发射第 0 轨的 track_mute_toggled（单一来源的唯一步进路径）"
+            );
+        }
+        other => panic!("静音点击应发 TrackMuteToggled，实际为: {other:?}"),
+    }
+    // 乐观更新：点击后绘制缓冲立即反映静音（下一帧由 ensure_state 从单一来源确认）
+    assert!(state.track_muted[0], "点击后绘制缓冲应乐观标记静音");
+}

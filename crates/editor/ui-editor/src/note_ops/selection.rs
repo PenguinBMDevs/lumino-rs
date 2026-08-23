@@ -292,7 +292,9 @@ impl Editor {
             self.local_selection_fingerprints.clear();
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_selection_changed(
-                    false, timestamp, Vec::new(),
+                    false,
+                    timestamp,
+                    Vec::new(),
                 ),
             ));
         }

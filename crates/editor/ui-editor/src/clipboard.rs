@@ -150,7 +150,11 @@ impl Editor {
         let track = self.editor_state.data.current_track;
         for n in &pasted {
             // 粘贴音符已批量插入文档并分配真实 id，按位置反查取回后随事件发出。
-            let id = self.editor_state.data.note_id_at(track, n.tick, n.key).unwrap_or(0);
+            let id = self
+                .editor_state
+                .data
+                .note_id_at(track, n.tick, n.key)
+                .unwrap_or(0);
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
                     id, n.tick, n.key, n.length, n.velocity, n.channel, track,

@@ -63,12 +63,21 @@ pub fn draw(editor: &Editor, renderer: &Renderer, bounds: Rectangle) -> Vec<Geom
                 Size::new((right - left).max(2.0), (bottom - top).max(2.0)),
             );
             let path = Path::rectangle(rect.position(), rect.size());
-            frame.fill(&path, iced_core::Color { a: 0.22, ..base_color });
+            frame.fill(
+                &path,
+                iced_core::Color {
+                    a: 0.22,
+                    ..base_color
+                },
+            );
             frame.stroke(
                 &path,
                 Stroke::default()
                     .with_width(2.0)
-                    .with_color(iced_core::Color { a: 0.8, ..base_color }),
+                    .with_color(iced_core::Color {
+                        a: 0.8,
+                        ..base_color
+                    }),
             );
             any = true;
         }

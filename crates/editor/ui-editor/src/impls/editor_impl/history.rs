@@ -90,7 +90,13 @@ impl Editor {
         for (id, tick, key, tick_offset, key_offset, track_index) in pending {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    id, tick, key, 0.0, tick_offset, key_offset, track_index,
+                    id,
+                    tick,
+                    key,
+                    0.0,
+                    tick_offset,
+                    key_offset,
+                    track_index,
                 ),
             ));
         }
@@ -110,11 +116,23 @@ impl Editor {
         for (id, tick, key, length, velocity, channel, track_index, is_added) in pending {
             let event = if is_added {
                 lumino_message::events::window::Event::local_note_added(
-                    id, tick, key, length, velocity, channel, track_index,
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
                 )
             } else {
                 lumino_message::events::window::Event::local_note_deleted(
-                    id, tick, key, length, velocity, channel, track_index,
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
                 )
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(event));
@@ -147,14 +165,26 @@ impl Editor {
         for (id, tick, key, length, velocity, channel, track_index) in deletes {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_deleted(
-                    id, tick, key, length, velocity, channel, track_index,
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
                 ),
             ));
         }
         for (id, tick, key, length, velocity, channel, track_index) in adds {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
-                    id, tick, key, length, velocity, channel, track_index,
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
                 ),
             ));
         }

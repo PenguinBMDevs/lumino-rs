@@ -112,11 +112,46 @@ impl Editor {
             self.editor_state.data.insert_note(track, right);
             self.editor_state.data.insert_note(track, left);
             // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
-            let left_id = self.editor_state.data.note_id_at(track, note_tick, note_key).unwrap_or(0);
-            let right_id = self.editor_state.data.note_id_at(track, tick_f, note_key).unwrap_or(0);
-            sync_entries.push((false, note.id, note_tick, note_key, note_length, note.velocity, note.channel, track));
-            sync_entries.push((true, left_id, note_tick, note_key, tick_f - note_tick, note.velocity, note.channel, track));
-            sync_entries.push((true, right_id, tick_f, note_key, note_tick + note_length - tick_f, note.velocity, note.channel, track));
+            let left_id = self
+                .editor_state
+                .data
+                .note_id_at(track, note_tick, note_key)
+                .unwrap_or(0);
+            let right_id = self
+                .editor_state
+                .data
+                .note_id_at(track, tick_f, note_key)
+                .unwrap_or(0);
+            sync_entries.push((
+                false,
+                note.id,
+                note_tick,
+                note_key,
+                note_length,
+                note.velocity,
+                note.channel,
+                track,
+            ));
+            sync_entries.push((
+                true,
+                left_id,
+                note_tick,
+                note_key,
+                tick_f - note_tick,
+                note.velocity,
+                note.channel,
+                track,
+            ));
+            sync_entries.push((
+                true,
+                right_id,
+                tick_f,
+                note_key,
+                note_tick + note_length - tick_f,
+                note.velocity,
+                note.channel,
+                track,
+            ));
             split_count += 1;
         }
         self.editor_state

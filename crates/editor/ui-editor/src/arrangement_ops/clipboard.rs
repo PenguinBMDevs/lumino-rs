@@ -225,7 +225,13 @@ impl Editor {
                     .unwrap_or(0);
                 lumino_message::events::emit(lumino_message::events::Event::Window(
                     lumino_message::events::window::Event::local_note_added(
-                        id, note.tick, note.key, note.length, note.velocity, note.channel, dest_track,
+                        id,
+                        note.tick,
+                        note.key,
+                        note.length,
+                        note.velocity,
+                        note.channel,
+                        dest_track,
                     ),
                 ));
             }

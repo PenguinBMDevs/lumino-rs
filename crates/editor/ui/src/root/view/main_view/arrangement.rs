@@ -53,6 +53,22 @@ impl Root {
             .map(|track| track.is_conductor)
             .collect();
 
+        // 静音/独奏状态：单一来源为 `sidebar.tracks`（同时驱动播放过滤）。
+        // 走带视图每帧按视觉顺序（与 track_data 对齐）派生到 TrackListCanvas，
+        // 经 ensure_state 同步到绘制缓冲，避免走带与卷帘两套状态发散。
+        let track_mutes: Vec<bool> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|track| track.is_muted)
+            .collect();
+        let track_solos: Vec<bool> = self
+            .sidebar
+            .tracks
+            .iter()
+            .map(|track| track.is_soloed)
+            .collect();
+
         let track_list_canvas = crate::editor::arrangement::TrackListCanvas::new(
             track_data,
             self.sidebar.selected_track,
@@ -63,6 +79,8 @@ impl Root {
         .with_labels(track_labels)
         .with_channels(track_channels)
         .with_conductors(track_conductors)
+        .with_mutes(track_mutes)
+        .with_solos(track_solos)
         // 长按激活拖拽排序（Sidebar 统一计时），驱动走带指示线与遮罩绘制
         .with_drag_active(
             self.sidebar
