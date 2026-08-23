@@ -76,12 +76,15 @@ impl Root {
         }
 
         // 混音台浮动面板控制（开关/最大化/拖拽）：状态在 `Root.mixer_panel`，
-        // 始终触发重绘。拖拽偏移以左下为锚点映射：向右 dx 增大左内缩、
-        // 向下 dy 减小下内缩；并夹紧在左侧栏（48px）之内、屏幕范围内。
+        // 始终触发重绘。拖拽以左下为锚点：向右增大左内缩、向下减小下内缩；
+        // 并夹紧在左侧栏（48px）之外、屏幕范围内。拖拽采用 `on_move` 相对坐标
+        // 递推：`offset += (p - grab)`，使面板跟随光标（单次事件延迟）。
         if matches!(
             &event,
             sidebar::Event::MixerPanelToggled
                 | sidebar::Event::MixerPanelMaximizeToggled
+                | sidebar::Event::MixerPanelDragStarted
+                | sidebar::Event::MixerPanelDragEnded
                 | sidebar::Event::MixerPanelDragged(_, _)
         ) {
             match event {
@@ -91,11 +94,24 @@ impl Root {
                 sidebar::Event::MixerPanelMaximizeToggled => {
                     self.mixer_panel.maximized = !self.mixer_panel.maximized;
                 }
-                sidebar::Event::MixerPanelDragged(dx, dy) => {
-                    let (ox, oy) = self.mixer_panel.offset;
-                    let nx = (ox + dx).clamp(48.0, 2000.0);
-                    let ny = (oy - dy).clamp(0.0, 1000.0);
-                    self.mixer_panel.offset = (nx, ny);
+                sidebar::Event::MixerPanelDragStarted => {
+                    self.mixer_panel.dragging = true;
+                    self.mixer_panel.grab = None;
+                }
+                sidebar::Event::MixerPanelDragEnded => {
+                    self.mixer_panel.dragging = false;
+                    self.mixer_panel.grab = None;
+                }
+                sidebar::Event::MixerPanelDragged(px, py) if self.mixer_panel.dragging => {
+                    match self.mixer_panel.grab {
+                        None => self.mixer_panel.grab = Some((px, py)),
+                        Some((gx, gy)) => {
+                            let (ox, oy) = self.mixer_panel.offset;
+                            let nx = (ox + (px - gx)).clamp(48.0, 2000.0);
+                            let ny = (oy - (py - gy)).clamp(0.0, 1000.0);
+                            self.mixer_panel.offset = (nx, ny);
+                        }
+                    }
                 }
                 _ => {}
             }

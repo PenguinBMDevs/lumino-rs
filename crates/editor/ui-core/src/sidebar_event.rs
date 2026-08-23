@@ -44,8 +44,12 @@ pub enum Event {
     MixerPanelToggled,
     /// 混音台浮动面板最大化/最小化（展开/收起主体）切换
     MixerPanelMaximizeToggled,
-    /// 混音台浮动面板拖拽（增量 dx, dy，单位为逻辑像素）
+    /// 混音台浮动面板拖拽（鼠标移动时的相对坐标，单位为逻辑像素）
     MixerPanelDragged(f32, f32),
+    /// 混音台浮动面板拖拽开始（标题栏按下）
+    MixerPanelDragStarted,
+    /// 混音台浮动面板拖拽结束（松开）
+    MixerPanelDragEnded,
     /// 多轨同时选择
     TracksSelected(Vec<usize>),
     /// 添加音轨

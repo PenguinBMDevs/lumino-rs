@@ -8,14 +8,16 @@
 //! `Root` 侧同步到播放引擎（XSynth 合成管线末端的音频域增益/声像）。
 //! 静音/独奏复用 `TrackMuteToggled` / `TrackSoloToggled`（单一来源）。
 //!
-//! 注：面板拖拽（`MixerPanelDragged`）所需的 `mouse_area::on_drag` 在当前
-//! iced 版本不可用，已预留事件与状态，待升级 iced 或接入自定义拖拽后启用。
+//! 拖拽：iced 0.14 的 `mouse_area` 无 `on_drag`，改用标题栏 `on_press`
+//! （开始）/ `on_move`（相对坐标）/ `on_release`（结束）组合；以 `offset +=
+//! (p - grab)` 递推跟随光标（单次事件延迟，无感知）。拖拽边界夹在左侧栏
+//! （48px）之外、屏幕范围内。
 
 use crate::root::Root;
 use crate::{Element, Theme, resources::icon, sidebar::Track};
 use iced_core::{Background, Color, Length, Padding, alignment};
 use iced_widget::{
-    Space, button, column, container, row, scrollable, slider, text, vertical_slider,
+    Space, button, column, container, mouse_area, row, scrollable, slider, text, vertical_slider,
 };
 use lumino_ui_core::sidebar_event::Event;
 
@@ -27,8 +29,12 @@ pub(crate) struct MixerPanelState {
     /// 面板主体是否展开（最大化）；false = 仅显示标题栏（最小化）
     pub maximized: bool,
     /// 面板左上角相对主内容区左下角的偏移（拖拽累加，逻辑像素）。
-    /// 当前为预留字段，待接入自定义拖拽后生效。
+    /// `offset.0` = 距左边界内缩（= 面板左缘 x），`offset.1` = 距底边界内缩。
     pub offset: (f32, f32),
+    /// 是否正在拖拽（标题栏按下且未松开）
+    pub(crate) dragging: bool,
+    /// 拖拽抓取点（首次 on_move 时记录的标题栏相对坐标），用于计算移动增量
+    pub(crate) grab: Option<(f32, f32)>,
 }
 
 /// 入口按钮：钢琴卷帘小组底部左侧悬浮，点亮（MixerActive）表示面板打开。
@@ -73,10 +79,11 @@ pub(crate) fn view_mixer_panel(root: &Root) -> Option<Element<'static>> {
     let panel = container(column![header, body].spacing(2).width(Length::Shrink))
         .style(panel_background)
         .width(Length::Shrink)
-        .height(Length::Shrink);
+        .height(Length::Shrink)
+        .max_width(900);
 
     // 外层全屏容器：无事件处理器 → 点击外部穿透（非阻塞覆盖层）。
-    // 面板以左下为锚点，offset 预留用于未来拖拽。
+    // 面板以左下为锚点，offset 为距左/底边界的内缩 padding。
     Some(
         container(panel)
             .width(Length::Fill)
@@ -93,7 +100,7 @@ pub(crate) fn view_mixer_panel(root: &Root) -> Option<Element<'static>> {
     )
 }
 
-/// 标题栏：含最小化 / 关闭按钮（拖拽手柄待 on_drag 支持后接入）。
+/// 标题栏：含最小化 / 关闭按钮；标题+中间空白为拖拽手柄（按钮区不触发拖拽）。
 fn build_header() -> Element<'static> {
     let title = text("混音台").size(13);
     let minimize_btn = button(text("—").size(12))
@@ -106,13 +113,23 @@ fn build_header() -> Element<'static> {
         .on_press(Event::mixer_panel_toggled());
     let controls = row![minimize_btn, close_btn].spacing(4);
 
-    let header_row = row![title, Space::new().width(Length::Fill), controls]
+    // 拖拽手柄：标题 + 中间空白区域；按钮区独立，避免点击关闭/最小化误触拖拽。
+    let drag_handle = mouse_area(
+        row![title, Space::new().width(Length::Fill)]
+            .spacing(8)
+            .align_y(iced_core::Alignment::Center),
+    )
+    .on_press(Event::mixer_panel_drag_started())
+    .on_move(|p| Event::mixer_panel_dragged(p.x, p.y))
+    .on_release(Event::mixer_panel_drag_ended());
+
+    let header_row = row![drag_handle, controls]
         .spacing(8)
         .align_y(iced_core::Alignment::Center);
 
     container(header_row)
         .padding(8)
-        .width(Length::Shrink)
+        .width(Length::Fill)
         .style(|theme: &Theme| container::Style {
             background: Some(Background::Color(
                 theme.extended_palette().background.strong.color,

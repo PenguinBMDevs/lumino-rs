@@ -48,6 +48,8 @@ impl Sidebar {
             // 此处不持有相关状态，原样返回"无需重绘"。
             MixerPanelToggled => {}
             MixerPanelMaximizeToggled => {}
+            MixerPanelDragStarted => {}
+            MixerPanelDragEnded => {}
             MixerPanelDragged(_, _) => {}
             TracksSelected(ids) => self.handle_tracks_selected(ids),
             AddTrack => self.handle_add_track(),

@@ -59,6 +59,16 @@ impl Event {
         Message::Sidebar(Self::MixerPanelDragged(dx, dy))
     }
 
+    /// 构造"混音台浮动面板拖拽开始"的侧边栏消息
+    pub const fn mixer_panel_drag_started() -> Message {
+        Message::Sidebar(Self::MixerPanelDragStarted)
+    }
+
+    /// 构造"混音台浮动面板拖拽结束"的侧边栏消息
+    pub const fn mixer_panel_drag_ended() -> Message {
+        Message::Sidebar(Self::MixerPanelDragEnded)
+    }
+
     /// 构造"多轨同时选择"的侧边栏消息
     pub const fn tracks_selected(ids: Vec<usize>) -> Message {
         Message::Sidebar(Self::TracksSelected(ids))
