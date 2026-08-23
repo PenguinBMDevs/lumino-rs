@@ -370,4 +370,36 @@ mod tests {
 
         let _ = std::fs::remove_file(&events_archive_path);
     }
+
+    /// 回归：作者与版权信息必须随工程文件保存并重新加载后保留
+    /// （修复：工程设置面板的作者/版权保存后重新打开显示空白）。
+    #[test]
+    fn test_author_copyright_survive_save_load() {
+        // 归档（单文件 .lmpj）形态
+        let mut archive_project = create_test_project();
+        archive_project.metadata.project.author = "张三".into();
+        archive_project.metadata.project.copyright = "© 2026 Lumino".into();
+        let archive_path = std::env::temp_dir().join("lumino_author_copyright_archive_test.lmpj");
+        let _ = std::fs::remove_file(&archive_path);
+        crate::project::save::save_to_archive(&archive_project, &archive_path)
+            .expect("保存归档失败");
+        let archive_bytes = std::fs::read(&archive_path).expect("读取归档失败");
+        let loaded_archive = load_from_archive(&archive_bytes).expect("从归档加载失败");
+        assert_eq!(loaded_archive.metadata.project.author, "张三");
+        assert_eq!(loaded_archive.metadata.project.copyright, "© 2026 Lumino");
+        let _ = std::fs::remove_file(&archive_path);
+
+        // 文件夹形态（metadata.toml）
+        let mut folder_project = create_test_project();
+        folder_project.metadata.project.author = "李四".into();
+        folder_project.metadata.project.copyright = "© 2026 Lumino".into();
+        let folder_dir = std::env::temp_dir().join("lumino_author_copyright_folder_test");
+        let _ = std::fs::remove_dir_all(&folder_dir);
+        crate::project::save::save_to_folder(&folder_project, &folder_dir)
+            .expect("保存文件夹失败");
+        let loaded_folder = load_from_folder(&folder_dir).expect("从文件夹加载失败");
+        assert_eq!(loaded_folder.metadata.project.author, "李四");
+        assert_eq!(loaded_folder.metadata.project.copyright, "© 2026 Lumino");
+        let _ = std::fs::remove_dir_all(&folder_dir);
+    }
 }

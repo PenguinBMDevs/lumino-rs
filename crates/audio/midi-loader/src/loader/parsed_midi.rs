@@ -202,6 +202,9 @@ pub async fn load_parsed_midi(
         document: Some(std::sync::Arc::new(document)),
         // 常规 MIDI 文件无工程 stats，历史累计时间为 0
         accumulated_editing_secs: 0.0,
+        // 常规 MIDI 文件无作者/版权信息
+        author: String::new(),
+        copyright: String::new(),
     })
 }
 
@@ -259,6 +262,9 @@ pub async fn load_parsed_midi_from_bytes(
         document: Some(std::sync::Arc::new(document)),
         // 字节加载路径无工程 stats，历史累计时间为 0
         accumulated_editing_secs: 0.0,
+        // 字节加载路径无作者/版权信息
+        author: String::new(),
+        copyright: String::new(),
     })
 }
 

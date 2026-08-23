@@ -107,6 +107,9 @@ pub struct ProjectInfo {
     pub name: String,
     /// 作者
     pub author: String,
+    /// 版权信息（可选；旧版工程文件无此字段，按默认空字符串解析）
+    #[serde(default)]
+    pub copyright: String,
     /// 创建时间（RFC3339）
     pub created_at: String,
     /// 修改时间（RFC3339）
@@ -212,6 +215,7 @@ impl ProjectMetadata {
             project: ProjectInfo {
                 name: name.into(),
                 author: "Anonymous".into(),
+                copyright: String::new(),
                 created_at: now.clone(),
                 modified_at: now,
                 description: None,

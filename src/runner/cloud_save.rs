@@ -36,6 +36,10 @@ impl RunnerInner {
         let project = {
             let ui = self.window_state.window.ui();
             let data = &ui.root().editor.editor_state.data;
+            // 抓取工程设置对话框中的作者/版权（关闭工程后由 Runner 从已加载
+            // .lmpj 回填），随云保存一并持久化，避免重新下载后丢失
+            let author = ui.get_project_author();
+            let copyright = ui.get_project_copyright();
             match data.document.as_ref() {
                 Some(doc) => {
                     let mut project = lumino_export::LuminoProject::from_midi_document(doc);
@@ -45,6 +49,9 @@ impl RunnerInner {
                         .apply_tempo_points(data.tempo_points.iter().map(|tp| (tp.tick, tp.bpm)));
                     // 累计创作时间随云保存持久化（与本地保存一致）
                     project.set_working_time_seconds(self.session_tracker.current_editing_secs());
+                    // 作者/版权随云保存持久化（与本地保存一致）
+                    project.metadata.project.author = author;
+                    project.metadata.project.copyright = copyright;
                     project
                 }
                 None => {

@@ -68,6 +68,10 @@ impl RunnerInner {
                 let source_path = std::path::PathBuf::from(&parsed.info.path);
                 // 历史累计创作时间（.lmpj 工程文件跨会话累计）——必须在 parsed move 前提取
                 let accumulated_editing_secs = parsed.accumulated_editing_secs;
+                // 作者/版权（.lmpj 工程文件携带，常规 MIDI 为空）——必须在 parsed move 前提取，
+                // 加载后回填工程设置对话框，修复"保存后重新打开显示空白"
+                let project_author = parsed.author.clone();
+                let project_copyright = parsed.copyright.clone();
 
                 // 先导入音符到编辑器（新的懒加载模式：只加载当前音轨，其他音轨按需加载）
                 self.import_midi_to_editor(parsed);
@@ -89,6 +93,13 @@ impl RunnerInner {
                 // 常规 MIDI 文件加载时该值为 0——跨会话累计的关键一环。
                 self.session_tracker.accumulated_editing_secs = accumulated_editing_secs;
                 self.window_state.window.ui_mut().reset_project_settings();
+
+                // 回填 .lmpj 携带的作者/版权到工程设置对话框状态
+                // （reset 已清空，此处重新写入，关闭工程后重开面板显示正确值）
+                self.window_state
+                    .window
+                    .ui_mut()
+                    .set_project_author_and_copyright(project_author, project_copyright);
 
                 // 设置工程创建时间（从文件系统获取）
                 self.session_tracker.created_at = self

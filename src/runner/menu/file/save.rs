@@ -71,8 +71,9 @@ impl RunnerInner {
             };
             let mut project =
                 material::build_material_project_from_selection(doc, &selected, &data.tempo_points);
-            // 作者栏：素材文件继承工程设置对话框中填写的作者
+            // 作者/版权：素材文件继承工程设置对话框中填写的作者与版权
             project.metadata.project.author = ui.get_project_author();
+            project.metadata.project.copyright = ui.get_project_copyright();
             project
         };
 
@@ -287,10 +288,12 @@ impl RunnerInner {
             return;
         };
 
-        // 工程设置对话框中填写的作者写入工程元数据（.lmpj / metadata.toml）
+        // 工程设置对话框中填写的作者/版权写入工程元数据（.lmpj / metadata.toml）
         let mut project = project;
         let author = self.window_state.window.ui().get_project_author();
         project.metadata.project.author = author;
+        let copyright = self.window_state.window.ui().get_project_copyright();
+        project.metadata.project.copyright = copyright;
 
         // 累计创作时间写入工程元数据：历史累计 + 本次会话编辑时长。
         // 保存时取实时值（current_editing_secs = accumulated + 会话已流逝），

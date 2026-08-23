@@ -31,5 +31,9 @@ pub fn project_to_parsed_midi(
         // 历史累计创作时间随工程文件传递，供 Runner 注入会话计时器
         // （常规 MIDI 文件加载路径为 0，此处从 .lmpj metadata.stats 读取）
         accumulated_editing_secs: project.working_time_seconds(),
+        // 作者/版权随工程文件传递，供 Runner 加载后恢复工程设置面板
+        // （常规 MIDI 文件加载路径为空，此处从 .lmpj metadata.project 读取）
+        author: project.metadata.project.author.clone(),
+        copyright: project.metadata.project.copyright.clone(),
     })
 }

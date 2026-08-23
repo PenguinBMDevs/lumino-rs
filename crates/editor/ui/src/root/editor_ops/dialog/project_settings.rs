@@ -31,6 +31,16 @@ impl Root {
         self.state.project_settings_dialog.reset();
     }
 
+    /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权。
+    ///
+    /// 加载工程时 `reset_project_settings` 会清空对话框状态；本方法在重置之后
+    /// 调用，将磁盘元数据中的作者/版权写入对话框状态，使关闭工程后再次打开
+    /// 工程设置面板仍能看到之前保存的值（修复：版权/作者保存后重新打开显示空白）。
+    pub fn apply_loaded_project_metadata(&mut self, author: String, copyright: String) {
+        self.state.project_settings_dialog.author = author;
+        self.state.project_settings_dialog.copyright = copyright;
+    }
+
     /// 设置工程设置对话框数据
     pub fn set_project_settings_data(&mut self, data: ProjectSettingsDialogData) {
         self.state.project_settings_dialog.title = data.title;

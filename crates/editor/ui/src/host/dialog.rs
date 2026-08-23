@@ -138,6 +138,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 回填从已加载 `.lmpj` 工程文件恢复的作者与版权（关闭工程后重开面板显示正确值）
+    pub fn set_project_author_and_copyright(&mut self, author: String, copyright: String) {
+        self.root.apply_loaded_project_metadata(author, copyright);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置工程设置对话框数据（用于独立对话框窗口）
     pub fn set_project_settings_data(&mut self, data: crate::root::ProjectSettingsDialogData) {
         self.root.set_project_settings_data(data);

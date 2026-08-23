@@ -64,6 +64,9 @@ impl LmpjData {
             document: None,
             // 旧版 LMPJ 格式无 stats 段，历史累计时间按 0 处理
             accumulated_editing_secs: 0.0,
+            // 旧版 LMPJ 格式无作者/版权字段，按空处理
+            author: String::new(),
+            copyright: String::new(),
         }
     }
 }
@@ -86,6 +89,16 @@ pub struct ParsedMidi {
     /// 常规 MIDI 文件加载时为 0。
     /// 不参与序列化（旧格式兼容：反序列化后为 0）。
     pub accumulated_editing_secs: f64,
+    /// 工程作者（仅 `.lmpj` 工程文件携带，常规 MIDI 文件加载时为空）。
+    ///
+    /// 由 `project_to_parsed_midi` 从工程元数据 `metadata.project.author` 回填，
+    /// 供 Runner 加载后恢复工程设置面板的作者字段。不参与序列化。
+    pub author: String,
+    /// 工程版权信息（仅 `.lmpj` 工程文件携带，常规 MIDI 文件加载时为空）。
+    ///
+    /// 由 `project_to_parsed_midi` 从工程元数据 `metadata.project.copyright` 回填，
+    /// 供 Runner 加载后恢复工程设置面板的版权字段。不参与序列化。
+    pub copyright: String,
 }
 
 impl serde::Serialize for ParsedMidi {
@@ -110,6 +123,9 @@ impl<'de> serde::Deserialize<'de> for ParsedMidi {
             document: None,
             // 旧数据没有该字段，反序列化后按 0 处理
             accumulated_editing_secs: 0.0,
+            // 旧数据没有作者/版权字段，反序列化后按空处理
+            author: String::new(),
+            copyright: String::new(),
         })
     }
 }
