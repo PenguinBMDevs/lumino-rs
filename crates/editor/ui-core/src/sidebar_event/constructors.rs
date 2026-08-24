@@ -69,6 +69,16 @@ impl Event {
         Message::Sidebar(Self::MixerPanelDragEnded)
     }
 
+    /// 构造"混音台主音量变化"的侧边栏消息
+    pub const fn mixer_panel_master_volume_changed(volume: u8) -> Message {
+        Message::Sidebar(Self::MixerPanelMasterVolumeChanged(volume))
+    }
+
+    /// 构造"混音台横向滚动"的侧边栏消息
+    pub const fn mixer_panel_scrolled(x: f32) -> Message {
+        Message::Sidebar(Self::MixerPanelScrolled(x))
+    }
+
     /// 构造"多轨同时选择"的侧边栏消息
     pub const fn tracks_selected(ids: Vec<usize>) -> Message {
         Message::Sidebar(Self::TracksSelected(ids))

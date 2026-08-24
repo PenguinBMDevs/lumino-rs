@@ -86,6 +86,8 @@ impl Root {
                 | sidebar::Event::MixerPanelDragStarted
                 | sidebar::Event::MixerPanelDragEnded
                 | sidebar::Event::MixerPanelDragged(_, _)
+                | sidebar::Event::MixerPanelMasterVolumeChanged(_)
+                | sidebar::Event::MixerPanelScrolled(_)
         ) {
             match event {
                 sidebar::Event::MixerPanelToggled => {
@@ -115,6 +117,15 @@ impl Root {
                             self.mixer_panel.last_cursor = Some((px, py));
                         }
                     }
+                }
+                // 主音量变化：更新状态并即时同步到播放引擎（全局缩放所有通道增益）。
+                sidebar::Event::MixerPanelMasterVolumeChanged(v) => {
+                    self.mixer_panel.master_volume = v.clamp(0, sidebar::MIXER_MAX_VOLUME);
+                    self.update_playback_track_mix();
+                }
+                // 横向滚动：仅更新裁剪偏移，触发重绘（视口节流在 build_body 生效）。
+                sidebar::Event::MixerPanelScrolled(x) => {
+                    self.mixer_panel.scroll_x = x;
                 }
                 _ => {}
             }

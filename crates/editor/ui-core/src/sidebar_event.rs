@@ -50,6 +50,10 @@ pub enum Event {
     MixerPanelDragStarted,
     /// 混音台浮动面板拖拽结束（松开）
     MixerPanelDragEnded,
+    /// 混音台主音量（全局音量控制器）变化，0..=127
+    MixerPanelMasterVolumeChanged(u8),
+    /// 混音台主体横向滚动偏移变化（用于视口裁剪节流），单位为逻辑像素
+    MixerPanelScrolled(f32),
     /// 多轨同时选择
     TracksSelected(Vec<usize>),
     /// 添加音轨

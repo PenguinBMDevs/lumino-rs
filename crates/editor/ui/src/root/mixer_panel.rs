@@ -14,13 +14,28 @@
 //! （48px）之外、屏幕范围内。
 
 use crate::root::Root;
-use crate::sidebar::{MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
+use crate::sidebar::{MIXER_DEFAULT_VOLUME, MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
 use crate::{Element, Theme, sidebar::Track};
 use iced_core::{Alignment, Background, Color, Length, Padding, alignment};
 use iced_widget::{
     Space, button, column, container, mouse_area, row, scrollable, slider, text, vertical_slider,
 };
 use lumino_ui_core::sidebar_event::Event;
+
+/// 单个通道条固定宽度（逻辑像素），用于横向滚动时按索引确定 x 位置并做视口裁剪。
+const STRIP_WIDTH: f32 = 88.0;
+/// 通道条横向间距
+const STRIP_SPACING: f32 = 8.0;
+/// 相邻通道条步进（宽度 + 间距）
+const STRIP_STEP: f32 = STRIP_WIDTH + STRIP_SPACING;
+/// 推子 / 标尺 / 电平表统一高度
+const FADER_HEIGHT: f32 = 180.0;
+/// 电平呈现条宽度
+const METER_WIDTH: f32 = 6.0;
+/// 视口裁剪外扩缓冲：保证"单个混音控制器的任何区域进入可视范围即显示"（宁多勿漏）。
+const CULL_MARGIN: f32 = STRIP_STEP * 2.0;
+/// 面板最大宽度（与 `max_width(900)` 一致），作为可见宽度的安全上界。
+const PANEL_VISIBLE_WIDTH: f32 = 900.0;
 
 /// 浮动混音台面板状态
 #[derive(Debug, Clone)]
@@ -37,6 +52,10 @@ pub(crate) struct MixerPanelState {
     /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量，
     /// 使面板在光标离开标题栏/窗口范围时仍跟随（首次 move 时为 None 仅记录）。
     pub(crate) last_cursor: Option<(f32, f32)>,
+    /// 混音台主音量（全局音量控制器），0..=127（127 对应 0 dB）
+    pub(crate) master_volume: u8,
+    /// 混音台主体横向滚动偏移（逻辑像素），用于视口裁剪节流
+    pub(crate) scroll_x: f32,
 }
 
 impl Default for MixerPanelState {
@@ -50,6 +69,9 @@ impl Default for MixerPanelState {
             offset: (56.0, 8.0),
             dragging: false,
             last_cursor: None,
+            // 主音量出厂默认 100（与单轨默认一致）。
+            master_volume: MIXER_DEFAULT_VOLUME,
+            scroll_x: 0.0,
         }
     }
 }
@@ -139,29 +161,73 @@ fn build_header() -> Element<'static> {
         .into()
 }
 
-/// 面板主体：横向滚动的通道条列表。指挥轨（conductor）不发音符、无增益/声像，
-/// 不属于混音对象，跳过不渲染。
+/// 面板主体：横向滚动的通道条列表。
+///
+/// 渲染序列首项为**全局音量控制器（主音量）**，其后为各普通音轨通道条；
+/// 指挥轨（conductor）不发音符、无增益/声像，不属于混音对象，跳过。
+///
+/// **视口节流**：不在可见范围内的通道条以固定宽高的占位 `Space` 代替——既不显示、
+/// 也不构建重控件（推子/按钮/电平表），同时维持内容总宽恒定，使滚动位置稳定、
+/// 不产生抖动。判定采用"任何区域进入可见范围即显示"（外扩 `CULL_MARGIN` 缓冲，
+/// 宁多勿漏）。
 fn build_body(root: &Root) -> Element<'static> {
-    let strips: Vec<Element<'static>> = root
+    let scroll_x = root.mixer_panel.scroll_x;
+    let visible_start = scroll_x - CULL_MARGIN;
+    let visible_end = scroll_x + PANEL_VISIBLE_WIDTH + CULL_MARGIN;
+
+    let mut rendered: Vec<Element<'static>> = Vec::new();
+
+    // 主音量（索引 0）：全局音量控制器，始终位于首项。
+    rendered.push(if strip_in_view(0, visible_start, visible_end) {
+        build_master_strip(root)
+    } else {
+        placeholder_strip()
+    });
+
+    for (i, track) in root
         .sidebar
         .tracks
         .iter()
         .filter(|track| !track.is_conductor)
-        .map(|track| build_strip(root, track))
-        .collect();
+        .enumerate()
+    {
+        let idx = i + 1;
+        rendered.push(if strip_in_view(idx, visible_start, visible_end) {
+            build_strip(root, track)
+        } else {
+            placeholder_strip()
+        });
+    }
 
-    if strips.is_empty() {
+    if rendered.is_empty() {
         return container(text("暂无音轨").size(12)).padding(16).into();
     }
 
-    scrollable(row(strips).spacing(8).padding(8))
+    scrollable(row(rendered).spacing(STRIP_SPACING).padding(8))
         .direction(scrollable::Direction::Horizontal(
             scrollable::Scrollbar::new().width(8),
         ))
+        .on_scroll(|vp| Event::mixer_panel_scrolled(vp.absolute_offset().x))
         .into()
 }
 
-/// 单条音轨的通道条：名称 + M/S + 增益推子（纵向）+ 声像（横向）。
+/// 判断索引为 `idx` 的通道条（固定宽度、按 `idx * STRIP_STEP` 排列）是否与可见区间相交。
+/// 相交即意为"其任何区域已进入可视范围"，应显示。
+fn strip_in_view(idx: usize, visible_start: f32, visible_end: f32) -> bool {
+    let x_left = idx as f32 * STRIP_STEP;
+    let x_right = x_left + STRIP_WIDTH;
+    x_right > visible_start && x_left < visible_end
+}
+
+/// 不可见通道条的占位（固定宽高、无内容），仅用于维持滚动内容与裁剪边界稳定。
+fn placeholder_strip() -> Element<'static> {
+    Space::new()
+        .width(Length::Fixed(STRIP_WIDTH))
+        .height(Length::Fixed(FADER_HEIGHT))
+        .into()
+}
+
+/// 单条音轨的通道条：名称 + M/S + 电平表 + 增益推子（纵向）+ 声像（横向）。
 fn build_strip(root: &Root, track: &Track) -> Element<'static> {
     // 提取为拥有值，避免闭包捕获 `&Track` 引用导致生命周期受限。
     let id = track.id;
@@ -186,7 +252,7 @@ fn build_strip(root: &Root, track: &Track) -> Element<'static> {
         volume as f32,
         move |v| Event::track_gain_changed(id, volume_to_gain(v as u8)),
     )
-    .height(Length::Fixed(180.0))
+    .height(Length::Fixed(FADER_HEIGHT))
     .step(1.0_f32);
 
     // 音量标尺：左侧刻度（127 / 100 / 0）与推子等高，以 Fill 间隔均匀分布。
@@ -197,8 +263,10 @@ fn build_strip(root: &Root, track: &Track) -> Element<'static> {
         Space::new().height(Length::Fill),
         text("0").size(9),
     ]
-    .height(Length::Fixed(180.0))
+    .height(Length::Fixed(FADER_HEIGHT))
     .align_x(Alignment::End);
+
+    let meter = build_level_meter(volume);
     let vol_readout = text(format!("音量 {volume}")).size(10);
 
     // 声像：-1..1，0 = 居中。
@@ -210,14 +278,87 @@ fn build_strip(root: &Root, track: &Track) -> Element<'static> {
     column![
         name,
         row![mute_btn, solo_btn].spacing(4),
-        row![ruler, gain].spacing(4).align_y(Alignment::Center),
+        row![ruler, meter, gain]
+            .spacing(4)
+            .align_y(Alignment::Center),
         vol_readout,
         pan,
     ]
     .spacing(6)
-    .width(Length::Shrink)
+    .width(Length::Fixed(STRIP_WIDTH))
     .align_x(Alignment::Center)
     .into()
+}
+
+/// 全局音量控制器（混音台首项）：主音量推子 + 电平表 + 读数，无 M/S 与声像。
+fn build_master_strip(root: &Root) -> Element<'static> {
+    let master_volume = root.mixer_panel.master_volume;
+    let name = text("主音量").size(11);
+
+    // 主音量推子：0..=127，纵向，变化即时同步到播放引擎（全局缩放所有通道）。
+    let gain = vertical_slider(
+        0.0_f32..=(MIXER_MAX_VOLUME as f32),
+        master_volume as f32,
+        move |v| Event::mixer_panel_master_volume_changed(v as u8),
+    )
+    .height(Length::Fixed(FADER_HEIGHT))
+    .step(1.0_f32);
+
+    let meter = build_level_meter(master_volume);
+    let vol_readout = text(format!("音量 {master_volume}")).size(10);
+
+    column![
+        name,
+        row![meter, gain].spacing(4).align_y(Alignment::Center),
+        vol_readout,
+    ]
+    .spacing(6)
+    .width(Length::Fixed(STRIP_WIDTH))
+    .align_x(Alignment::Center)
+    .into()
+}
+
+/// 电平呈现条（纵向）：以当前音量为填充高度，绿→黄→红分档着色。
+///
+/// 当前反映各通道"设定的音量"（单一来源），即为该通道当前响度档位指示；
+/// 如需实时音频响度，可后续接入引擎峰值表（XSynth 当前未暴露通道/主输出电平）。
+fn build_level_meter(volume: u8) -> Element<'static> {
+    let ratio = volume as f32 / MIXER_MAX_VOLUME as f32;
+    let fill_h = (FADER_HEIGHT * ratio).clamp(2.0, FADER_HEIGHT);
+    let color = meter_color(volume);
+    container(
+        container(Space::new().height(Length::Fixed(fill_h)))
+            .width(Length::Fill)
+            .style(move |_theme: &Theme| container::Style {
+                background: Some(Background::Color(color)),
+                ..Default::default()
+            }),
+    )
+    .width(Length::Fixed(METER_WIDTH))
+    .height(Length::Fixed(FADER_HEIGHT))
+    .align_y(Alignment::End)
+    .style(meter_bg_style)
+    .into()
+}
+
+/// 电平条底色（轨道槽）
+fn meter_bg_style(theme: &Theme) -> container::Style {
+    let p = theme.extended_palette();
+    container::Style {
+        background: Some(Background::Color(p.background.strong.color)),
+        ..Default::default()
+    }
+}
+
+/// 电平分档着色：≤100 绿（安全区）；≤115 黄（接近上限）；否则橙红（上限附近）。
+fn meter_color(volume: u8) -> Color {
+    if volume <= 100 {
+        Color::from_rgb(0.18, 0.78, 0.36)
+    } else if volume <= 115 {
+        Color::from_rgb(0.95, 0.82, 0.18)
+    } else {
+        Color::from_rgb(0.92, 0.32, 0.24)
+    }
 }
 
 /// 通道条 M/S 按钮样式（激活时高亮）

@@ -51,6 +51,8 @@ impl Sidebar {
             MixerPanelDragStarted => {}
             MixerPanelDragEnded => {}
             MixerPanelDragged(_, _) => {}
+            MixerPanelMasterVolumeChanged(_) => {}
+            MixerPanelScrolled(_) => {}
             TracksSelected(ids) => self.handle_tracks_selected(ids),
             AddTrack => self.handle_add_track(),
             TrackAddAbove(id) => self.handle_track_add_above(id),

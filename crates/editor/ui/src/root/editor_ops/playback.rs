@@ -193,13 +193,18 @@ impl Root {
             return;
         };
 
+        // 主音量（全局音量控制器）作为所有通道增益的全局缩放因子。
+        let master = crate::sidebar::volume_to_gain(self.mixer_panel.master_volume);
+
         for track in &self.sidebar.tracks {
             // 指挥轨不发音符、无音频域混音参数，跳过（避免向 MIDI 通道 0 误下发增益）。
             if track.is_conductor {
                 continue;
             }
             let strip = self.sidebar.mixer_strip(track.id);
-            manager.set_channel_gain(track.channel, strip.gain);
+            // 有效增益 = 主音量缩放 × 通道增益（两者均为 0..=1 线性增益）。
+            let gain = master * strip.gain;
+            manager.set_channel_gain(track.channel, gain);
             manager.set_channel_pan(track.channel, strip.pan);
         }
     }
