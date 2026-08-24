@@ -111,7 +111,8 @@ impl Sidebar {
                     name: "Conductor".to_string(),
                     port: 0,
                     channel: 0,
-                    display_label: "A01".to_string(),
+                    // 指挥轨无 MIDI 端口/通道，不发音符，不能用音符轨的 "A01" 标签。
+                    display_label: "Conductor".to_string(),
                     is_conductor: true,
                     can_delete: false,
                     is_muted: false,

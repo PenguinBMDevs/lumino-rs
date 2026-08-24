@@ -139,18 +139,20 @@ fn build_header() -> Element<'static> {
         .into()
 }
 
-/// 面板主体：横向滚动的通道条列表。
+/// 面板主体：横向滚动的通道条列表。指挥轨（conductor）不发音符、无增益/声像，
+/// 不属于混音对象，跳过不渲染。
 fn build_body(root: &Root) -> Element<'static> {
-    if root.sidebar.tracks.is_empty() {
-        return container(text("暂无音轨").size(12)).padding(16).into();
-    }
-
     let strips: Vec<Element<'static>> = root
         .sidebar
         .tracks
         .iter()
+        .filter(|track| !track.is_conductor)
         .map(|track| build_strip(root, track))
         .collect();
+
+    if strips.is_empty() {
+        return container(text("暂无音轨").size(12)).padding(16).into();
+    }
 
     scrollable(row(strips).spacing(8).padding(8))
         .direction(scrollable::Direction::Horizontal(

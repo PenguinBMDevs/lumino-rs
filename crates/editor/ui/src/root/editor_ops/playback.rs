@@ -194,6 +194,10 @@ impl Root {
         };
 
         for track in &self.sidebar.tracks {
+            // 指挥轨不发音符、无音频域混音参数，跳过（避免向 MIDI 通道 0 误下发增益）。
+            if track.is_conductor {
+                continue;
+            }
             let strip = self.sidebar.mixer_strip(track.id);
             manager.set_channel_gain(track.channel, strip.gain);
             manager.set_channel_pan(track.channel, strip.pan);
