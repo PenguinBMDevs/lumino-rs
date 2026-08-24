@@ -9,7 +9,7 @@ use iced_widget::{Stack, responsive};
 
 use crate::Element;
 use crate::root::Root;
-use crate::toolbar::{brush_dropdown, overflow, tool_panel};
+use crate::toolbar::overflow;
 
 /// 将右侧内容包装在 responsive 中，并在工具栏溢出菜单打开时叠加覆盖层。
 ///
@@ -36,10 +36,7 @@ fn with_toolbar_overlay<'a>(
     has_selection: bool,
     arrangement_mode: bool,
 ) -> Element<'a> {
-    if !root.toolbar.overflow_menu_open
-        && !root.toolbar.tool_panel_open
-        && !root.toolbar.brush_dropdown_open
-    {
+    if !root.toolbar.overflow_menu_open {
         return content;
     }
 
@@ -75,33 +72,6 @@ fn with_toolbar_overlay<'a>(
                 .push(overflow::background_close_overlay())
                 .push(menu_overlay);
         }
-    }
-
-    // 绘制工具选择面板（颜料桶右侧小三角触发）
-    if root.toolbar.tool_panel_open {
-        let menu = tool_panel::render_tool_panel(
-            root.settings.display.language,
-            panel_background,
-            &root.window.theme,
-        );
-        let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
-        stack = stack
-            .push(overflow::background_close_overlay())
-            .push(menu_overlay);
-    }
-
-    // 画刷工具下拉（Ctrl+点击附属按钮触发）：粗细度 + 绘制行为入口
-    if root.toolbar.brush_dropdown_open {
-        let menu = brush_dropdown::render_brush_dropdown(
-            &root.toolbar.brush,
-            root.settings.display.language,
-            panel_background,
-            &root.window.theme,
-        );
-        let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
-        stack = stack
-            .push(overflow::background_close_overlay())
-            .push(menu_overlay);
     }
 
     stack.into()

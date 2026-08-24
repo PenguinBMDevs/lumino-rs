@@ -171,10 +171,11 @@ impl Toolbar {
             }
             Event::ToolSelected(tool) => {
                 self.current_tool = tool;
-                // 颜料桶仅曲线工具附属：切到其他工具自动关闭
-                if tool != Tool::Curve {
-                    self.fill_enabled = false;
-                }
+                // 切换工具即离开任何共存态：填充桶仅曲线/形状可共存，切到其它工具一律关闭
+                self.fill_enabled = false;
+                // 关闭所有下拉，避免工具切换后残留
+                self.tool_panel_open = false;
+                self.brush_dropdown_open = false;
             }
             Event::FillToggled(enabled) => {
                 self.fill_enabled = enabled;
@@ -334,8 +335,9 @@ impl Toolbar {
             }
             Event::ToggleToolPanel => {
                 self.tool_panel_open = !self.tool_panel_open;
-                // 与溢出菜单互斥：打开工具面板时关闭溢出菜单
+                // 与溢出菜单、画刷下拉互斥：打开工具面板时关闭其余浮层
                 self.overflow_menu_open = false;
+                self.brush_dropdown_open = false;
                 tracing::debug!(
                     "工具栏: 绘制工具面板 {}",
                     if self.tool_panel_open { "打开" } else { "关闭" }
@@ -370,23 +372,36 @@ impl Toolbar {
                         tracing::info!("工具栏: 描边设置（功能开发中）");
                     }
                     ToolPanelItem::FillBucket => {
-                        // 颜料桶 = 曲线工具 + 填充模式开启
-                        self.current_tool = Tool::Curve;
-                        self.fill_enabled = true;
+                        // 填充桶为曲线/形状的共存修饰：
+                        // - 当前为曲线/形状时切换填充开关；
+                        // - 否则（画刷/文字/橡皮擦等独立工具）切换为曲线 + 填充开启。
+                        if matches!(self.current_tool, Tool::Curve | Tool::Shape) {
+                            self.fill_enabled = !self.fill_enabled;
+                        } else {
+                            self.current_tool = Tool::Curve;
+                            self.fill_enabled = true;
+                        }
                     }
                     ToolPanelItem::Brush => {
+                        // 画刷仅可独立使用，不可与填充桶共存
                         self.current_tool = Tool::Brush;
+                        self.fill_enabled = false;
                     }
                     ToolPanelItem::Shape => {
-                        // 形状工具：功能开发中（UI 占位）
-                        tracing::info!("工具栏: 形状工具（功能开发中）");
+                        // 形状工具：与曲线互斥（单一 base 工具），可与填充桶共存，
+                        // 选中形状时先关闭填充，再由「填充桶」条目按需开启
+                        self.current_tool = Tool::Shape;
+                        self.fill_enabled = false;
                     }
                     ToolPanelItem::Text => {
-                        // 文字输入：功能开发中（UI 占位）
-                        tracing::info!("工具栏: 文字输入（功能开发中）");
+                        // 文字工具：独立工具，不可与任何工具/填充桶共存
+                        self.current_tool = Tool::Text;
+                        self.fill_enabled = false;
                     }
                     ToolPanelItem::Eraser => {
+                        // 橡皮擦：独立工具，不可与填充桶共存
                         self.current_tool = Tool::Eraser;
+                        self.fill_enabled = false;
                     }
                 }
                 // 选中后关闭面板（与溢出菜单逐项选择行为一致）
