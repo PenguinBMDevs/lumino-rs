@@ -1,16 +1,15 @@
-use iced_core::image::Handle;
-use iced_widget::image::Image;
+use iced_core::Color;
+use iced_widget::svg::{Handle as SvgHandle, Svg};
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-/// 当前 HiDPI 图标渲染状态（true=2x，false=1x）
+/// 当前 HiDPI 图标渲染状态（兼容旧设置项，SVG 矢量直渲已无需 2x 位图，保留仅为触发缓存刷新）
 static HIDPI_ENABLED: AtomicBool = AtomicBool::new(true);
 
-/// 缓存的 Handle 对象，key=(Icon, 是否暗色主题)。
-/// 避免每帧创建新 Handle → iced_wgpu 缓存命中 → 零每帧纹理上传。
-static HANDLE_CACHE: Lazy<Mutex<HashMap<(Icon, bool), Handle>>> =
+/// 缓存的 SVG Handle 对象，key=Icon，避免每帧创建新 Handle
+static SVG_HANDLE_CACHE: Lazy<Mutex<HashMap<Icon, SvgHandle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub use Icon::*;
@@ -32,7 +31,7 @@ pub enum IconError {
     LockError,
 }
 
-// ─── 图标定义宏：一处定义 → 三处生成（枚举 + 缓存构建 + bytes 匹配） ───
+// ─── 图标定义宏：一处定义 → 三处生成（枚举 + 全部枚举数组 + bytes 匹配） ───
 macro_rules! define_icons {
     ($(($name:ident, $path:expr)),* $(,)?) => {
         /// 图标变体枚举（由 define_icons! 宏生成）
@@ -44,17 +43,6 @@ macro_rules! define_icons {
 
         /// 全部图标枚举（与宏定义同源，供测试/遍历使用）
         pub const ALL_ICONS: &[Icon] = &[$($name,)*];
-
-        fn build_icon_cache() -> HashMap<Icon, IconData> {
-            let mut map = HashMap::new();
-            $(
-                match render_svg_to_data(Icon::$name) {
-                    Ok(data) => { map.insert(Icon::$name, data); }
-                    Err(e) => { tracing::error!("加载图标 {:?} 失败: {}", Icon::$name, e); }
-                }
-            )*
-            map
-        }
 
         fn bytes(icon: Icon) -> &'static [u8] {
             match icon {
@@ -149,56 +137,22 @@ struct IconData {
     height: u32,
 }
 
-static ICON_CACHE: Lazy<Mutex<HashMap<Icon, IconData>>> =
-    Lazy::new(|| Mutex::new(build_icon_cache()));
-
-/// 返回当前渲染倍率：HiDPI=2x，普通=1x
-fn get_current_scale() -> u32 {
-    if HIDPI_ENABLED.load(Ordering::Relaxed) {
-        2
-    } else {
-        1
-    }
-}
-
-/// 设置 HiDPI 状态并重建图标缓存
+/// 设置 HiDPI 状态并刷新 SVG 缓存（SVG 矢量无需重光栅，清空缓存仅为兼容旧逻辑触发界面重绘）
 pub fn set_hidpi_enabled(enabled: bool) {
     HIDPI_ENABLED.store(enabled, Ordering::Relaxed);
-    let new_cache = build_icon_cache();
-    if let Ok(mut cache) = ICON_CACHE.lock() {
-        *cache = new_cache;
-    }
-    // 清空 Handle 缓存，下次 view 调用时以新尺寸重建 Handle → iced_wgpu 重新上传纹理
-    if let Ok(mut handle_cache) = HANDLE_CACHE.lock() {
-        handle_cache.clear();
+    if let Ok(mut cache) = SVG_HANDLE_CACHE.lock() {
+        cache.clear();
     }
 }
 
-/// 获取图标数据，如果不在缓存中则返回错误
-fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
-    let cache = ICON_CACHE.lock().map_err(|_| IconError::LockError)?;
-    cache
-        .get(&icon)
-        .cloned()
-        .ok_or(IconError::IconNotInCache(icon))
-}
-
-/// 获取或创建缓存的 Handle。
-/// 稳定 Handle::id() → iced_wgpu 的纹理缓存命中 → 零每帧图集上传。
-fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> {
-    let mut cache = HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
-    if let Some(handle) = cache.get(&(icon, is_dark)) {
+/// 获取或创建缓存的 SVG Handle。
+fn get_or_create_svg_handle(icon: Icon) -> Result<SvgHandle, IconError> {
+    let mut cache = SVG_HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
+    if let Some(handle) = cache.get(&icon) {
         return Ok(handle.clone());
     }
-
-    let icon_data = get_icon_data(icon)?;
-    let rgba = if should_invert_icon(icon, is_dark) {
-        invert_rgba(&icon_data.rgba)
-    } else {
-        icon_data.rgba
-    };
-    let handle = Handle::from_rgba(icon_data.width, icon_data.height, rgba);
-    cache.insert((icon, is_dark), handle.clone());
+    let handle = SvgHandle::from_memory(bytes(icon));
+    cache.insert(icon, handle.clone());
     Ok(handle)
 }
 
@@ -209,13 +163,38 @@ fn should_invert_icon(icon: Icon, is_dark: bool) -> bool {
     is_dark && !matches!(icon, Icon::Lumino | Icon::LogoInApp | Icon::MixerActive)
 }
 
+fn is_dark_theme(theme: Option<&crate::Theme>) -> bool {
+    if crate::theme::is_high_contrast() {
+        true
+    } else {
+        theme
+            .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
+            .unwrap_or(true)
+    }
+}
+
+fn svg_element(icon: Icon, width: u32, height: u32, is_dark: bool) -> Svg<'static, crate::Theme> {
+    // 兼容性：先从缓存取 Handle，失败则直接 from_memory（理论上不失败）
+    let handle = get_or_create_svg_handle(icon)
+        .unwrap_or_else(|_| SvgHandle::from_memory(bytes(icon)));
+    let mut svg = Svg::new(handle)
+        .width(iced_core::Length::Fixed(width as f32))
+        .height(iced_core::Length::Fixed(height as f32));
+    if should_invert_icon(icon, is_dark) {
+        // 整体染色为白色，覆盖 SVG 内硬编码的 #000000，保持与旧 invert_rgba 行为一致
+        svg = svg.style(|_theme, _status| iced_widget::svg::Style {
+            color: Some(Color::WHITE),
+        });
+    }
+    svg
+}
+
 /// 渲染图标（可能 panic，仅用于向后兼容）
 pub fn view(icon: Icon) -> crate::Element<'static> {
     match view_safe(icon) {
         Ok(element) => element,
         Err(e) => {
             tracing::error!("渲染图标失败: {}", e);
-            // 返回一个空的占位符元素
             iced_widget::Space::new()
                 .width(iced_core::Length::Fixed(24.0))
                 .height(iced_core::Length::Fixed(24.0))
@@ -226,12 +205,9 @@ pub fn view(icon: Icon) -> crate::Element<'static> {
 
 /// 安全地渲染图标，返回 Result
 pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
-    let handle = get_or_create_handle(icon, false)?;
-    Ok(Image::new(handle)
-        .width(24)
-        .height(24)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
-        .into())
+    // 旧逻辑硬编码为浅色（is_dark=false → 黑色），保持兼容
+    let element: crate::Element<'static> = svg_element(icon, 24, 24, false).into();
+    Ok(element)
 }
 
 /// 渲染指定尺寸和主题的图标（可能 panic，仅用于向后兼容）
@@ -245,7 +221,6 @@ pub fn view_with_size_and_theme(
         Ok(element) => element,
         Err(e) => {
             tracing::error!("渲染图标失败: {}", e);
-            // 返回一个空的占位符元素
             iced_widget::Space::new()
                 .width(iced_core::Length::Fixed(width as f32))
                 .height(iced_core::Length::Fixed(height as f32))
@@ -273,24 +248,12 @@ pub fn view_with_size_and_theme_safe(
     height: u32,
     theme: Option<&crate::Theme>,
 ) -> Result<crate::Element<'static>, IconError> {
-    let is_dark = if crate::theme::is_high_contrast() {
-        true
-    } else {
-        theme
-            .map(|t| t.extended_palette().background.weakest.color.r < 0.5)
-            .unwrap_or(true)
-    };
-
-    // 使用缓存 Handle（含主题反色），iced_wgpu 的纹理缓存命中后零每帧上传
-    let handle = get_or_create_handle(icon, is_dark)?;
-
-    Ok(Image::new(handle)
-        .width(width)
-        .height(height)
-        .filter_method(iced_widget::image::FilterMethod::Nearest)
-        .into())
+    let is_dark = is_dark_theme(theme);
+    let element: crate::Element<'static> = svg_element(icon, width, height, is_dark).into();
+    Ok(element)
 }
 
+#[allow(dead_code)]
 fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
     rgba.chunks(4)
         .flat_map(|chunk| {
@@ -303,15 +266,7 @@ fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-fn render_svg_to_data(icon: Icon) -> Result<IconData, IconError> {
-    let svg_data = bytes(icon);
-    let scale = get_current_scale();
-    let size = match icon {
-        Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20 * scale,
-        _ => 24 * scale,
-    };
-    render_svg(svg_data, size, size)
-}
+// ─── 仅供 canvas svg_handle 使用的栅格化管线（保留以兼容非 widget 场景） ───
 
 fn render_svg(
     svg_data: &[u8],

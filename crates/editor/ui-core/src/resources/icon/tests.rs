@@ -99,24 +99,28 @@ fn test_render_real_note_tie_icon_is_centered() {
 /// 全量回归：所有内置 SVG 都能解析并渲染，防止批量修改后出现非法文件
 #[test]
 fn test_all_icon_svgs_parse_and_render() {
-    // 直接触发宏生成的缓存构建：任一 SVG 解析失败会缺失条目（构建函数内部只打日志不 panic）
-    let cache = build_icon_cache();
-
-    // 枚举驱动断言（与 define_icons! 宏同源，新增图标自动纳入检查）：
-    // 逐个变体验证，失败时精确定位到具体图标，不再依赖手工维护的数量魔法数。
-    // （修复背景：新增 upload-to-cloud 图标后数量断言 57→58 未同步导致误报）
-    let missing: Vec<Icon> = ALL_ICONS
-        .iter()
-        .copied()
-        .filter(|icon| !cache.contains_key(icon))
-        .collect();
+    // SVG 矢量直渲：用 usvg 解析 + SvgHandle 创建双重验证，不再依赖旧的位图缓存
+    let mut missing: Vec<Icon> = Vec::new();
+    for icon in ALL_ICONS.iter().copied() {
+        let svg_data = bytes(icon);
+        let options = usvg::Options::default();
+        if usvg::Tree::from_data(svg_data, &options).is_err() {
+            missing.push(icon);
+            continue;
+        }
+        // SvgHandle 创建应始终成功（bytes 非空且为合法 SVG）
+        if get_or_create_svg_handle(icon).is_err() {
+            missing.push(icon);
+        }
+        // 渲染管线（canvas  fallback）也应能光栅化
+        if render_svg(svg_data, 24, 24).is_err() {
+            missing.push(icon);
+        }
+    }
     assert!(
         missing.is_empty(),
         "存在无法解析/渲染的 SVG 图标: {missing:?}"
     );
-
-    // 数量兜底：缓存条目必须与枚举条目一致（防止重复路径覆盖等异常产生假阴性）
-    assert_eq!(cache.len(), ALL_ICONS.len(), "缓存条目数与图标枚举数不一致");
 }
 
 /// 新增的 i2m 悬浮按钮图标（不注册进 Icon 枚举，直接验证 SVG 可解析且输出 32x32 RGBA 纹理）
@@ -175,4 +179,22 @@ fn test_play_icon_shrunk_to_two_thirds_and_centered() {
         "内容应垂直居中: top={min_y}, bottom={}",
         24 - max_y
     );
+}
+
+#[test]
+fn test_svg_view_does_not_panic() {
+    // 验证矢量直渲路径不 panic，且能为不同主题/尺寸生成 Element
+    let _ = view(Icon::Gear);
+    let _ = view_with_size_and_theme(Icon::Play, 24, 24, None);
+    let _ = view_with_size_and_theme(Icon::MixerActive, 20, 20, None);
+    let _ = view_safe(Icon::Lumino).expect("view_safe 不应失败");
+    let _ = view_with_size_and_theme_safe(Icon::Gear, 32, 32, None).expect("带尺寸渲染不应失败");
+}
+
+#[test]
+fn test_svg_handle_cache_is_stable() {
+    // 同一图标多次获取 Handle 应为同一 id（缓存命中）
+    let h1 = get_or_create_svg_handle(Icon::Gear).expect("首次获取失败");
+    let h2 = get_or_create_svg_handle(Icon::Gear).expect("二次获取失败");
+    assert_eq!(h1.id(), h2.id(), "同一图标 Handle id 应稳定");
 }

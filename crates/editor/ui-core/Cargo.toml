@@ -16,8 +16,8 @@ workspace = true
 
 [dependencies]
 iced_core = { workspace = true }
-iced_wgpu = { workspace = true, features = ["geometry", "image"] }
-iced_widget = { workspace = true, features = ["image"] }
+iced_wgpu = { workspace = true, features = ["geometry", "image", "svg"] }
+iced_widget = { workspace = true, features = ["image", "svg"] }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }
