@@ -100,6 +100,13 @@ define_icons! {
     (Eraser, "../../../../../resources/icons/toolbar/eraser-tool.svg"),
     (Curve, "../../../../../resources/icons/toolbar/curve-tool.svg"),
     (PaintBucket, "../../../../../resources/icons/toolbar/paint-bucket.svg"),
+    // 颜料桶右侧的「绘制工具选择面板」触发小三角
+    (ToolPanelCaret, "../../../../../resources/icons/toolbar/caret-down.svg"),
+    // 绘制工具选择面板条目图标
+    (StrokeSettings, "../../../../../resources/icons/toolbar/stroke-settings.svg"),
+    (BrushTool, "../../../../../resources/icons/toolbar/brush-tool.svg"),
+    (ShapeTool, "../../../../../resources/icons/toolbar/shape-tool.svg"),
+    (TextInput, "../../../../../resources/icons/toolbar/text-input.svg"),
     (Quantize, "../../../../../resources/icons/toolbar/note-quantize.svg"),
     (Speed, "../../../../../resources/icons/toolbar/playback-speed.svg"),
     // 音符翻转图标

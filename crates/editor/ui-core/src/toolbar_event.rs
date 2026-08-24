@@ -102,6 +102,31 @@ pub enum Event {
     ButtonHovered(Option<ButtonId>),
     /// 图片转 MIDI 占位按钮（功能开发中）
     ImageToMidiClicked,
+    /// 切换「绘制工具选择面板」显示/隐藏（颜料桶右侧小三角触发）
+    ToggleToolPanel,
+    /// 关闭「绘制工具选择面板」
+    CloseToolPanel,
+    /// 选择「绘制工具选择面板」中的某个条目
+    ToolPanelItemSelected(ToolPanelItem),
+}
+
+/// 绘制工具选择面板中的条目
+///
+/// 点击后由 `Toolbar::update` 翻译为具体的工具选择/设置动作。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolPanelItem {
+    /// 描边设置
+    StrokeSettings,
+    /// 填充桶
+    FillBucket,
+    /// 画刷工具
+    Brush,
+    /// 形状工具
+    Shape,
+    /// 文字输入
+    Text,
+    /// 橡皮擦
+    Eraser,
 }
 
 /// 水平翻转模式
@@ -334,5 +359,20 @@ impl Event {
     /// 图片转 MIDI 占位按钮点击事件
     pub const fn image_to_midi_clicked() -> Message {
         Message::Toolbar(Self::ImageToMidiClicked)
+    }
+
+    /// 构造“切换绘制工具选择面板”的工具栏消息
+    pub const fn toggle_tool_panel() -> Message {
+        Message::Toolbar(Self::ToggleToolPanel)
+    }
+
+    /// 构造“关闭绘制工具选择面板”的工具栏消息
+    pub const fn close_tool_panel() -> Message {
+        Message::Toolbar(Self::CloseToolPanel)
+    }
+
+    /// 构造“选择绘制工具面板条目”的工具栏消息
+    pub const fn tool_panel_item_selected(item: ToolPanelItem) -> Message {
+        Message::Toolbar(Self::ToolPanelItemSelected(item))
     }
 }

@@ -47,6 +47,48 @@ pub fn tool_button<'a>(
     widget::with_tooltip_bottom(btn, tooltip).into()
 }
 
+/// 工具下拉指示按钮（小三角），点击展开「绘制工具选择面板」。
+///
+/// 图标尺寸较小（12px）、内边距收紧，作为颜料桶按钮右侧的附属触发器，
+/// 与颜料桶在视觉上读作一个整体。图标为 SVG 绘制（`icon::ToolPanelCaret`）。
+pub fn tool_dropdown_caret<'a>(
+    icon_enum: icon::Icon,
+    tooltip: &'a str,
+    on_press: Message,
+    window: &'a window::Window,
+    on_hover_msg: Option<Message>,
+) -> Element<'a> {
+    let palette = window.theme.extended_palette();
+    let btn = button(icon::view_with_size_and_theme(
+        icon_enum,
+        12,
+        12,
+        Some(&window.theme),
+    ))
+    .on_press(on_press)
+    .style(move |_theme: &Theme, status| {
+        let bg = if status == iced_widget::button::Status::Hovered {
+            palette.background.weak.color
+        } else {
+            iced_core::Color::TRANSPARENT
+        };
+        button::Style {
+            border: iced_core::Border {
+                radius: 3.0.into(),
+                width: 0.0,
+                color: iced_core::Color::TRANSPARENT,
+            },
+            ..Default::default()
+        }
+        .with_background(bg)
+    })
+    .padding(2);
+
+    let btn = apply_hover(btn, on_hover_msg);
+
+    widget::with_tooltip_bottom(btn, tooltip).into()
+}
+
 /// 翻转按钮（有选中时可用，无选中时禁用）
 pub fn flip_button<'a>(
     icon_enum: icon::Icon,

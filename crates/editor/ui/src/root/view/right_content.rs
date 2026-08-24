@@ -9,7 +9,7 @@ use iced_widget::{Stack, responsive};
 
 use crate::Element;
 use crate::root::Root;
-use crate::toolbar::overflow;
+use crate::toolbar::{overflow, tool_panel};
 
 /// 将右侧内容包装在 responsive 中，并在工具栏溢出菜单打开时叠加覆盖层。
 ///
@@ -36,14 +36,7 @@ fn with_toolbar_overlay<'a>(
     has_selection: bool,
     arrangement_mode: bool,
 ) -> Element<'a> {
-    if !root.toolbar.overflow_menu_open {
-        return content;
-    }
-
-    let (_, hidden) = root
-        .toolbar
-        .compute_overflow_groups(available_width, arrangement_mode);
-    if hidden.is_empty() {
+    if !root.toolbar.overflow_menu_open && !root.toolbar.tool_panel_open {
         return content;
     }
 
@@ -58,21 +51,43 @@ fn with_toolbar_overlay<'a>(
         toolbar_bg.a,
     );
 
-    let menu = root.toolbar.render_overflow_menu(
-        &hidden,
-        has_selection,
-        root.settings.display.language,
-        panel_background,
-        &root.window.theme,
-        arrangement_mode,
-    );
-    let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
+    let mut stack = Stack::new().push(content);
 
-    Stack::new()
-        .push(content)
-        .push(overflow::background_close_overlay())
-        .push(menu_overlay)
-        .into()
+    // 工具栏「更多工具」溢出菜单
+    if root.toolbar.overflow_menu_open {
+        let (_, hidden) = root
+            .toolbar
+            .compute_overflow_groups(available_width, arrangement_mode);
+        if !hidden.is_empty() {
+            let menu = root.toolbar.render_overflow_menu(
+                &hidden,
+                has_selection,
+                root.settings.display.language,
+                panel_background,
+                &root.window.theme,
+                arrangement_mode,
+            );
+            let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
+            stack = stack
+                .push(overflow::background_close_overlay())
+                .push(menu_overlay);
+        }
+    }
+
+    // 绘制工具选择面板（颜料桶右侧小三角触发）
+    if root.toolbar.tool_panel_open {
+        let menu = tool_panel::render_tool_panel(
+            root.settings.display.language,
+            panel_background,
+            &root.window.theme,
+        );
+        let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
+        stack = stack
+            .push(overflow::background_close_overlay())
+            .push(menu_overlay);
+    }
+
+    stack.into()
 }
 
 /// 关闭背景：点击菜单外部区域关闭

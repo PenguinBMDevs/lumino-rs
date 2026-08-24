@@ -10,9 +10,10 @@ pub mod event;
 pub(crate) mod overflow;
 mod record;
 pub mod types;
+pub(crate) mod tool_panel;
 mod view;
 
-pub use event::{Event, FlipHorizontalMode};
+pub use event::{Event, FlipHorizontalMode, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
@@ -73,6 +74,8 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
+    /// 绘制工具选择面板是否打开（颜料桶右侧小三角触发）
+    pub tool_panel_open: bool,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
 }
@@ -98,6 +101,7 @@ impl Toolbar {
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
+            tool_panel_open: false,
             fill_enabled: false,
         }
     }
@@ -117,6 +121,19 @@ impl Toolbar {
             )
         {
             self.overflow_menu_open = false;
+        }
+
+        // 绘制工具选择面板打开时，除以下情况外其余操作先关闭面板：
+        // - 再次点击小三角（ToggleToolPanel）用于切换关闭
+        // - 悬停事件（ButtonHovered）不应关闭面板（同溢出菜单的处理）
+        // - 显式关闭事件（CloseToolPanel）
+        if self.tool_panel_open
+            && !matches!(
+                event,
+                Event::ToggleToolPanel | Event::ButtonHovered(_) | Event::CloseToolPanel
+            )
+        {
+            self.tool_panel_open = false;
         }
 
         match event {
@@ -244,6 +261,8 @@ impl Toolbar {
             }
             Event::ToggleOverflowMenu => {
                 self.overflow_menu_open = !self.overflow_menu_open;
+                // 与绘制工具面板互斥：打开溢出菜单时关闭工具面板
+                self.tool_panel_open = false;
                 tracing::debug!(
                     "工具栏: 溢出菜单 {}",
                     if self.overflow_menu_open {
@@ -291,6 +310,49 @@ impl Toolbar {
             Event::ButtonHovered(_) => {}
             Event::ImageToMidiClicked => {
                 tracing::info!("工具栏: 图片转MIDI功能开发中，按钮已点击");
+            }
+            Event::ToggleToolPanel => {
+                self.tool_panel_open = !self.tool_panel_open;
+                // 与溢出菜单互斥：打开工具面板时关闭溢出菜单
+                self.overflow_menu_open = false;
+                tracing::debug!(
+                    "工具栏: 绘制工具面板 {}",
+                    if self.tool_panel_open { "打开" } else { "关闭" }
+                );
+            }
+            Event::CloseToolPanel => {
+                self.tool_panel_open = false;
+                tracing::debug!("工具栏: 关闭绘制工具面板");
+            }
+            Event::ToolPanelItemSelected(item) => {
+                match item {
+                    ToolPanelItem::StrokeSettings => {
+                        // 描边设置：功能开发中（UI 占位）
+                        tracing::info!("工具栏: 描边设置（功能开发中）");
+                    }
+                    ToolPanelItem::FillBucket => {
+                        // 颜料桶 = 曲线工具 + 填充模式开启
+                        self.current_tool = Tool::Curve;
+                        self.fill_enabled = true;
+                    }
+                    ToolPanelItem::Brush => {
+                        self.current_tool = Tool::Brush;
+                    }
+                    ToolPanelItem::Shape => {
+                        // 形状工具：功能开发中（UI 占位）
+                        tracing::info!("工具栏: 形状工具（功能开发中）");
+                    }
+                    ToolPanelItem::Text => {
+                        // 文字输入：功能开发中（UI 占位）
+                        tracing::info!("工具栏: 文字输入（功能开发中）");
+                    }
+                    ToolPanelItem::Eraser => {
+                        self.current_tool = Tool::Eraser;
+                    }
+                }
+                // 选中后关闭面板（与溢出菜单逐项选择行为一致）
+                self.tool_panel_open = false;
+                tracing::debug!("工具栏: 工具面板选择 {:?}", item);
             }
         }
     }

@@ -7,7 +7,9 @@ use iced_core::Alignment;
 use iced_widget::{container, row, space};
 
 use crate::resources::icon;
-use crate::toolbar::buttons::{flip_button, toggle_button, tool_button, tool_selector};
+use crate::toolbar::buttons::{
+    flip_button, tool_button, tool_dropdown_caret, tool_selector, toggle_button,
+};
 use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, Tool, Toolbar};
 use crate::{Element, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
@@ -103,6 +105,15 @@ impl Toolbar {
                     self.fill_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Fill))),
+                ),
+                space().width(2),
+                // 颜料桶右侧小三角（SVG 绘制）：点击展开「绘制工具选择面板」
+                tool_dropdown_caret(
+                    icon::ToolPanelCaret,
+                    t.tool_panel_tooltip,
+                    Event::toggle_tool_panel(),
+                    window,
+                    Some(Event::button_hovered(Some(ButtonId::ToolPanel))),
                 ),
                 space().width(4),
                 tool_button(
