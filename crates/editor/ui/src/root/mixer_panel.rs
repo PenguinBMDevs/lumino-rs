@@ -21,7 +21,7 @@ use iced_widget::{Space, button, column, container, mouse_area, row, scrollable,
 use lumino_ui_core::sidebar_event::Event;
 
 mod strips;
-pub(crate) use strips::{build_master_strip, build_strip, transparent_button};
+pub(crate) use strips::{build_master_strip, build_strip, mixer_text_style, transparent_button};
 
 /// 单个通道条固定宽度（逻辑像素），用于横向滚动时按索引确定 x 位置并做视口裁剪。
 const STRIP_WIDTH: f32 = 88.0;
@@ -130,7 +130,7 @@ pub(crate) fn view_mixer_panel(root: &Root) -> Option<Element<'static>> {
 
 /// 标题栏：含关闭按钮；标题+中间空白为拖拽手柄（按下开始拖拽，全窗口覆盖层接管后续移动）。
 fn build_header() -> Element<'static> {
-    let title = text("混音台").size(13);
+    let title = text("混音台").size(13).style(mixer_text_style);
     let close_btn = button(text("✕").size(12))
         .padding(2)
         .style(transparent_button)

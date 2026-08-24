@@ -92,6 +92,12 @@ impl Root {
             match event {
                 sidebar::Event::MixerPanelToggled => {
                     self.mixer_panel.open = !self.mixer_panel.open;
+                    // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截
+                    // 后续再次打开 / 交互（拖拽未正常结束时 open 被切回也可能导致覆盖层卡死）。
+                    if !self.mixer_panel.open {
+                        self.mixer_panel.dragging = false;
+                        self.mixer_panel.last_cursor = None;
+                    }
                 }
                 sidebar::Event::MixerPanelMaximizeToggled => {
                     self.mixer_panel.maximized = !self.mixer_panel.maximized;

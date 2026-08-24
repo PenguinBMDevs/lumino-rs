@@ -8,8 +8,25 @@ use crate::root::Root;
 use crate::sidebar::{MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
 use crate::{Element, Theme, sidebar::Track};
 use iced_core::{Alignment, Background, Color, Length};
-use iced_widget::{Space, button, column, container, row, slider, text, vertical_slider};
+use iced_widget::{Space, button, column, container, row, text, vertical_slider};
 use lumino_ui_core::sidebar_event::Event;
+
+/// 混音台文本主题样式：跟随主题基底文字色（暗色系白字 / 亮色系黑字），
+/// 避免硬编码黑/白导致在亮/暗主题下不可读。
+pub(crate) fn mixer_text_style(theme: &Theme) -> text::Style {
+    text::Style {
+        color: Some(theme.extended_palette().background.base.text),
+    }
+}
+
+/// 音量刻度在标尺中的纵向偏移（自顶向下，单位逻辑像素）。
+///
+/// 线性映射：值 127 对应顶端（y=0），值 0 对应底端（y=FADER_HEIGHT）；
+/// 与纵向推子拇指的实际行程一致，保证刻度间距与推子行程成正比（不会出现
+/// 前半段 0-100、后半段 101-127 这类间距不一致）。
+pub(crate) fn ruler_tick_offset(value: u8) -> f32 {
+    (1.0 - value as f32 / 127.0) * FADER_HEIGHT
+}
 
 /// 单条音轨的通道条：名称 + M/S + 电平表 + 增益推子（纵向）+ 声像（横向）。
 pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
@@ -19,7 +36,7 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
     let is_soloed = track.is_soloed;
     let display_label = track.display_label.clone();
     let strip = root.sidebar.mixer_strip(id);
-    let name = text(display_label).size(11);
+    let name = text(display_label).size(11).style(mixer_text_style);
     let mute_btn = button(text("M").size(11))
         .padding(2)
         .style(move |theme: &Theme, _status| channel_button_style(theme, is_muted))
@@ -39,16 +56,29 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
     .height(Length::Fixed(FADER_HEIGHT))
     .step(1.0_f32);
 
-    // 音量标尺：左侧刻度（127 / 100 / 0）与推子等高，以 Fill 间隔均匀分布。
-    let ruler = column![
-        text("127").size(9),
-        Space::new().height(Length::Fill),
-        text("100").size(9),
-        Space::new().height(Length::Fill),
-        text("0").size(9),
-    ]
-    .height(Length::Fixed(FADER_HEIGHT))
-    .align_x(Alignment::End);
+    // 音量标尺：纵向刻度按线性映射（0..127 对应 0..FADER_HEIGHT，自下而上）等比例定位，
+    // 保证刻度间距与推子行程一致（值间距 = 像素间距），避免"前半段 0-100、后半段
+    // 101-127"这类间距不一致；刻度位置与推子拇指实际位置对齐。
+    let ruler_ticks: [(u8, f32); 4] = [
+        (127, ruler_tick_offset(127)),
+        (100, ruler_tick_offset(100)),
+        (50, ruler_tick_offset(50)),
+        (0, ruler_tick_offset(0)),
+    ];
+    let mut ruler_items: Vec<Element<'static>> = Vec::with_capacity(ruler_ticks.len() * 2);
+    let mut prev_y = 0.0f32;
+    for (val, y) in ruler_ticks {
+        let gap = (y - prev_y).max(0.0);
+        if gap > 0.0 {
+            ruler_items.push(Space::new().height(Length::Fixed(gap)).into());
+        }
+        ruler_items.push(text(val.to_string()).size(9).style(mixer_text_style).into());
+        prev_y = y;
+    }
+    let ruler = column(ruler_items)
+        .spacing(0)
+        .height(Length::Fixed(FADER_HEIGHT))
+        .align_x(Alignment::End);
 
     // 实时响度峰值：每帧从播放引擎帧快照读取该通道当前演奏响度（0 表示无声）。
     let level = root
@@ -64,13 +94,9 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
         })
         .unwrap_or(0.0);
     let meter = build_level_meter(level);
-    let vol_readout = text(format!("音量 {volume}")).size(10);
-
-    // 声像：-1..1，0 = 居中。
-    let pan = slider(-1.0_f32..=1.0_f32, strip.pan, move |v| {
-        Event::track_pan_changed(id, v)
-    })
-    .step(0.01_f32);
+    let vol_readout = text(format!("音量 {volume}"))
+        .size(10)
+        .style(mixer_text_style);
 
     column![
         name,
@@ -79,7 +105,6 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
             .spacing(4)
             .align_y(Alignment::Center),
         vol_readout,
-        pan,
     ]
     .spacing(6)
     .width(Length::Fixed(STRIP_WIDTH))
@@ -90,7 +115,7 @@ pub(crate) fn build_strip(root: &Root, track: &Track) -> Element<'static> {
 /// 全局音量控制器（混音台首项）：主音量推子 + 电平表 + 读数，无 M/S 与声像。
 pub(crate) fn build_master_strip(root: &Root) -> Element<'static> {
     let master_volume = root.mixer_panel.master_volume;
-    let name = text("主音量").size(11);
+    let name = text("主音量").size(11).style(mixer_text_style);
 
     // 主音量推子：0..=127，纵向，变化即时同步到播放引擎（全局缩放所有通道）。
     let gain = vertical_slider(
@@ -110,7 +135,9 @@ pub(crate) fn build_master_strip(root: &Root) -> Element<'static> {
         .map(|f| f.master_level)
         .unwrap_or(0.0);
     let meter = build_level_meter(master_level);
-    let vol_readout = text(format!("音量 {master_volume}")).size(10);
+    let vol_readout = text(format!("音量 {master_volume}"))
+        .size(10)
+        .style(mixer_text_style);
 
     column![
         name,
@@ -202,5 +229,17 @@ mod tests {
         assert_eq!(meter_color(0.6), meter_color(0.8));
         assert_eq!(meter_color(0.9), meter_color(1.2));
         assert!(meter_color(0.2) != meter_color(0.9));
+    }
+
+    #[test]
+    fn test_ruler_tick_offset_proportional() {
+        // 127 在顶端（y=0），0 在底端（y=FADER_HEIGHT）。
+        assert_eq!(ruler_tick_offset(127), 0.0);
+        assert_eq!(ruler_tick_offset(0), FADER_HEIGHT);
+        // 线性：100 与 50 的偏移差应等于 50 与 0 的偏移差（等间距），
+        // 即刻度间距与推子行程成正比，无 0-100 / 100-127 的间距突变。
+        let gap_high = ruler_tick_offset(50) - ruler_tick_offset(100);
+        let gap_low = ruler_tick_offset(0) - ruler_tick_offset(50);
+        assert!((gap_high - gap_low).abs() < 1e-3);
     }
 }
