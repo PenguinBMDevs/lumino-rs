@@ -96,20 +96,23 @@ impl Root {
                 }
                 sidebar::Event::MixerPanelDragStarted => {
                     self.mixer_panel.dragging = true;
-                    self.mixer_panel.grab = None;
+                    self.mixer_panel.last_cursor = None;
                 }
                 sidebar::Event::MixerPanelDragEnded => {
                     self.mixer_panel.dragging = false;
-                    self.mixer_panel.grab = None;
+                    self.mixer_panel.last_cursor = None;
                 }
                 sidebar::Event::MixerPanelDragged(px, py) if self.mixer_panel.dragging => {
-                    match self.mixer_panel.grab {
-                        None => self.mixer_panel.grab = Some((px, py)),
-                        Some((gx, gy)) => {
+                    // px/py 为全窗口覆盖层给出的绝对光标位置；以增量方式跟随，
+                    // 使面板在光标离开标题栏/窗口范围时仍持续移动。
+                    match self.mixer_panel.last_cursor {
+                        None => self.mixer_panel.last_cursor = Some((px, py)),
+                        Some((lx, ly)) => {
                             let (ox, oy) = self.mixer_panel.offset;
-                            let nx = (ox + (px - gx)).clamp(48.0, 2000.0);
-                            let ny = (oy - (py - gy)).clamp(0.0, 1000.0);
+                            let nx = (ox + (px - lx)).clamp(48.0, 4000.0);
+                            let ny = (oy - (py - ly)).clamp(0.0, 2000.0);
                             self.mixer_panel.offset = (nx, ny);
+                            self.mixer_panel.last_cursor = Some((px, py));
                         }
                     }
                 }

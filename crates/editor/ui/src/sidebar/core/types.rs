@@ -152,10 +152,28 @@ pub struct StripParams {
 impl Default for StripParams {
     fn default() -> Self {
         Self {
-            gain: 1.0,
+            gain: volume_to_gain(MIXER_DEFAULT_VOLUME),
             pan: 0.0,
         }
     }
+}
+
+/// 混音台音量采用 MIDI 风格 0..=127 整数刻度：127 对应 0 dB（引擎增益 1.0），
+/// 100 为出厂默认，0 为静音。UI 推子与标尺均以此刻度为基准。
+pub const MIXER_MAX_VOLUME: u8 = 127;
+/// 混音台音量出厂默认（= 约 0.787 引擎增益）
+pub const MIXER_DEFAULT_VOLUME: u8 = 100;
+
+/// 音量(0..=127) → 引擎增益(0.0..=1.0，127 对应 0 dB)
+pub fn volume_to_gain(volume: u8) -> f32 {
+    volume as f32 / MIXER_MAX_VOLUME as f32
+}
+
+/// 引擎增益 → 音量(0..=127)，超出范围夹紧
+pub fn gain_to_volume(gain: f32) -> u8 {
+    (gain * MIXER_MAX_VOLUME as f32)
+        .round()
+        .clamp(0.0, MIXER_MAX_VOLUME as f32) as u8
 }
 
 /// 混音台状态：以音轨 ID 为键的增益/声像表。
@@ -239,8 +257,19 @@ mod tests {
     #[test]
     fn test_strip_params_default() {
         let s = StripParams::default();
-        assert_eq!(s.gain, 1.0);
+        // 默认音量为 100/127（MIDI 风格，默认 100），对应引擎增益 ≈ 0.7874。
+        assert!((s.gain - 100.0 / 127.0).abs() < 1e-6);
         assert_eq!(s.pan, 0.0);
+    }
+
+    #[test]
+    fn test_volume_gain_roundtrip() {
+        assert_eq!(gain_to_volume(volume_to_gain(127)), 127);
+        assert_eq!(gain_to_volume(volume_to_gain(100)), 100);
+        assert_eq!(gain_to_volume(volume_to_gain(0)), 0);
+        // 超出范围夹紧
+        assert_eq!(gain_to_volume(2.0), 127);
+        assert_eq!(gain_to_volume(-1.0), 0);
     }
 
     #[test]

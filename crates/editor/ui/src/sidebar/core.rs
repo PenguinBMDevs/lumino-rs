@@ -10,9 +10,10 @@ pub use lumino_ui_core::sidebar_event::{GroupId, RollBarButton, Route};
 
 mod types;
 pub use types::{
-    DEFAULT_PANEL_WIDTH, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, MixerState,
-    PanelContextMenuState, PendingTrackDeletionMeta, RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, ROUTES,
-    RouteConfig, StripParams, Track, TrackContextMenuState,
+    DEFAULT_PANEL_WIDTH, GroupSubState, MAX_PANEL_WIDTH, MIN_PANEL_WIDTH, MIXER_DEFAULT_VOLUME,
+    MIXER_MAX_VOLUME, MixerState, PanelContextMenuState, PendingTrackDeletionMeta,
+    RESIZE_HANDLE_WIDTH, ROUTE_BAR_WIDTH, ROUTES, RouteConfig, StripParams, Track,
+    TrackContextMenuState, gain_to_volume, volume_to_gain,
 };
 
 // ─── Sidebar 主结构 ───

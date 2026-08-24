@@ -14,8 +14,9 @@
 //! （48px）之外、屏幕范围内。
 
 use crate::root::Root;
+use crate::sidebar::{MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
 use crate::{Element, Theme, sidebar::Track};
-use iced_core::{Background, Color, Length, Padding, alignment};
+use iced_core::{Alignment, Background, Color, Length, Padding, alignment};
 use iced_widget::{
     Space, button, column, container, mouse_area, row, scrollable, slider, text, vertical_slider,
 };
@@ -33,8 +34,9 @@ pub(crate) struct MixerPanelState {
     pub offset: (f32, f32),
     /// 是否正在拖拽（标题栏按下且未松开）
     pub(crate) dragging: bool,
-    /// 拖拽抓取点（首次 on_move 时记录的标题栏相对坐标），用于计算移动增量
-    pub(crate) grab: Option<(f32, f32)>,
+    /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量，
+    /// 使面板在光标离开标题栏/窗口范围时仍跟随（首次 move 时为 None 仅记录）。
+    pub(crate) last_cursor: Option<(f32, f32)>,
 }
 
 impl Default for MixerPanelState {
@@ -47,7 +49,7 @@ impl Default for MixerPanelState {
             // 避免渲染在 (0,0) 被左栏与状态栏遮住而"看起来没弹出"。
             offset: (56.0, 8.0),
             dragging: false,
-            grab: None,
+            last_cursor: None,
         }
     }
 }
@@ -73,44 +75,53 @@ pub(crate) fn view_mixer_panel(root: &Root) -> Option<Element<'static>> {
 
     // 外层全屏容器：无事件处理器 → 点击外部穿透（非阻塞覆盖层）。
     // 面板以左下为锚点，offset 为距左/底边界的内缩 padding。
-    Some(
-        container(panel)
-            .width(Length::Fill)
-            .height(Length::Fill)
-            .align_x(alignment::Horizontal::Left)
-            .align_y(alignment::Vertical::Bottom)
-            .padding(Padding {
-                top: 0.0,
-                right: 0.0,
-                bottom: root.mixer_panel.offset.1,
-                left: root.mixer_panel.offset.0,
-            })
-            .into(),
-    )
+    let panel_outer = container(panel)
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .align_x(alignment::Horizontal::Left)
+        .align_y(alignment::Vertical::Bottom)
+        .padding(Padding {
+            top: 0.0,
+            right: 0.0,
+            bottom: root.mixer_panel.offset.1,
+            left: root.mixer_panel.offset.0,
+        });
+
+    // 拖拽进行中：叠加全窗口透明 mouse_area，使光标离开标题栏甚至窗口范围时
+    // 仍能持续收到 on_move（Windows 按住期间 OS 隐式捕获鼠标，窗口外亦触发），
+    // 实现"始终跟随鼠标"的拖拽；松开由覆盖层的 on_release 结束拖拽。
+    if root.mixer_panel.dragging {
+        let drag_overlay = mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
+            .on_move(|p| Event::mixer_panel_dragged(p.x, p.y))
+            .on_release(Event::mixer_panel_drag_ended());
+        return Some(
+            iced_widget::Stack::new()
+                .push(panel_outer)
+                .push(drag_overlay)
+                .into(),
+        );
+    }
+
+    Some(panel_outer.into())
 }
 
-/// 标题栏：含最小化 / 关闭按钮；标题+中间空白为拖拽手柄（按钮区不触发拖拽）。
+/// 标题栏：含关闭按钮；标题+中间空白为拖拽手柄（按下开始拖拽，全窗口覆盖层接管后续移动）。
 fn build_header() -> Element<'static> {
     let title = text("混音台").size(13);
-    let minimize_btn = button(text("—").size(12))
-        .padding(2)
-        .style(transparent_button)
-        .on_press(Event::mixer_panel_maximize_toggled());
     let close_btn = button(text("✕").size(12))
         .padding(2)
         .style(transparent_button)
         .on_press(Event::mixer_panel_toggled());
-    let controls = row![minimize_btn, close_btn].spacing(4);
+    let controls = row![close_btn].spacing(4);
 
-    // 拖拽手柄：标题 + 中间空白区域；按钮区独立，避免点击关闭/最小化误触拖拽。
+    // 拖拽手柄：标题 + 中间空白区域；仅 on_press 开始拖拽，后续移动由全窗口
+    // 覆盖层（view_mixer_panel 中 dragging 时叠加）接管，确保跟随光标不中断。
     let drag_handle = mouse_area(
         row![title, Space::new().width(Length::Fill)]
             .spacing(8)
             .align_y(iced_core::Alignment::Center),
     )
-    .on_press(Event::mixer_panel_drag_started())
-    .on_move(|p| Event::mixer_panel_dragged(p.x, p.y))
-    .on_release(Event::mixer_panel_drag_ended());
+    .on_press(Event::mixer_panel_drag_started());
 
     let header_row = row![drag_handle, controls]
         .spacing(8)
@@ -166,12 +177,27 @@ fn build_strip(root: &Root, track: &Track) -> Element<'static> {
         .style(move |theme: &Theme, _status| channel_button_style(theme, is_soloed))
         .on_press(Event::track_solo_toggled(id));
 
-    // 增益推子：线性 0..=2（1.0 = 0 dB），纵向推子。
-    let gain = vertical_slider(0.0_f32..=2.0_f32, strip.gain, move |v| {
-        Event::track_gain_changed(id, v)
-    })
+    // 音量推子：0..=127（MIDI 风格，100 为默认，127 对应 0 dB），纵向推子。
+    let volume = gain_to_volume(strip.gain);
+    let gain = vertical_slider(
+        0.0_f32..=(MIXER_MAX_VOLUME as f32),
+        volume as f32,
+        move |v| Event::track_gain_changed(id, volume_to_gain(v as u8)),
+    )
     .height(Length::Fixed(180.0))
-    .step(0.01_f32);
+    .step(1.0_f32);
+
+    // 音量标尺：左侧刻度（127 / 100 / 0）与推子等高，以 Fill 间隔均匀分布。
+    let ruler = column![
+        text("127").size(9),
+        Space::new().height(Length::Fill),
+        text("100").size(9),
+        Space::new().height(Length::Fill),
+        text("0").size(9),
+    ]
+    .height(Length::Fixed(180.0))
+    .align_x(Alignment::End);
+    let vol_readout = text(format!("音量 {volume}")).size(10);
 
     // 声像：-1..1，0 = 居中。
     let pan = slider(-1.0_f32..=1.0_f32, strip.pan, move |v| {
@@ -179,11 +205,17 @@ fn build_strip(root: &Root, track: &Track) -> Element<'static> {
     })
     .step(0.01_f32);
 
-    column![name, row![mute_btn, solo_btn].spacing(4), gain, pan]
-        .spacing(6)
-        .width(Length::Shrink)
-        .align_x(iced_core::Alignment::Center)
-        .into()
+    column![
+        name,
+        row![mute_btn, solo_btn].spacing(4),
+        row![ruler, gain].spacing(4).align_y(Alignment::Center),
+        vol_readout,
+        pan,
+    ]
+    .spacing(6)
+    .width(Length::Shrink)
+    .align_x(Alignment::Center)
+    .into()
 }
 
 /// 通道条 M/S 按钮样式（激活时高亮）

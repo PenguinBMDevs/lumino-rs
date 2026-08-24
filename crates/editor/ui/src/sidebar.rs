@@ -12,7 +12,8 @@ pub mod event;
 mod route;
 
 pub use core::{
-    GroupId, RESIZE_HANDLE_WIDTH, ROUTES, RollBarButton, Route, RouteConfig, Sidebar, Track,
+    GroupId, MIXER_DEFAULT_VOLUME, MIXER_MAX_VOLUME, RESIZE_HANDLE_WIDTH, ROUTES, RollBarButton,
+    Route, RouteConfig, Sidebar, Track, gain_to_volume, volume_to_gain,
 };
 pub use event::Event;
 pub use track_reorder::TrackReorderState;
