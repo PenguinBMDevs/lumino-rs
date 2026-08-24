@@ -29,6 +29,12 @@ impl Editor {
             return;
         }
 
+        // 画刷笔触结束：收尾并清状态（绕过通用 Drawing 收尾）
+        if self.brush_last_cell.is_some() {
+            self.finish_brush_stroke();
+            return;
+        }
+
         match edit_state {
             EditState::Selecting { .. } => {
                 if self.editor_state.tool == Tool::Eraser {

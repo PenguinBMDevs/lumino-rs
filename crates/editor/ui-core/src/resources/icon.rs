@@ -107,6 +107,9 @@ define_icons! {
     (BrushTool, "../../../../../resources/icons/toolbar/brush-tool.svg"),
     (ShapeTool, "../../../../../resources/icons/toolbar/shape-tool.svg"),
     (TextInput, "../../../../../resources/icons/toolbar/text-input.svg"),
+    // 画刷下拉/绘制行为对话框：圆形 +/- 按钮（SVG 绘制）
+    (PlusCircle, "../../../../../resources/icons/toolbar/plus-circle.svg"),
+    (MinusCircle, "../../../../../resources/icons/toolbar/minus-circle.svg"),
     (Quantize, "../../../../../resources/icons/toolbar/note-quantize.svg"),
     (Speed, "../../../../../resources/icons/toolbar/playback-speed.svg"),
     // 音符翻转图标

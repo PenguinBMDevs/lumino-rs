@@ -108,6 +108,12 @@ pub enum Event {
     CloseToolPanel,
     /// 选择「绘制工具选择面板」中的某个条目
     ToolPanelItemSelected(ToolPanelItem),
+    /// 切换「画刷工具下拉」（ctrl+点击附属按钮触发）
+    ToggleBrushDropdown,
+    /// 关闭「画刷工具下拉」
+    CloseBrushDropdown,
+    /// 画刷粗细度变更（下拉 +/- 步进，1-20）
+    BrushThicknessChanged(u8),
 }
 
 /// 绘制工具选择面板中的条目
@@ -374,5 +380,20 @@ impl Event {
     /// 构造“选择绘制工具面板条目”的工具栏消息
     pub const fn tool_panel_item_selected(item: ToolPanelItem) -> Message {
         Message::Toolbar(Self::ToolPanelItemSelected(item))
+    }
+
+    /// 构造“切换画刷工具下拉”的工具栏消息
+    pub const fn toggle_brush_dropdown() -> Message {
+        Message::Toolbar(Self::ToggleBrushDropdown)
+    }
+
+    /// 构造“关闭画刷工具下拉”的工具栏消息
+    pub const fn close_brush_dropdown() -> Message {
+        Message::Toolbar(Self::CloseBrushDropdown)
+    }
+
+    /// 构造“画刷粗细度变更”的工具栏消息
+    pub const fn brush_thickness_changed(thickness: u8) -> Message {
+        Message::Toolbar(Self::BrushThicknessChanged(thickness))
     }
 }

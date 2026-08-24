@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use lumino_core::storage::config::UiConfig;
+use lumino_core::BrushConfig;
 use lumino_ui::state::root_state::DialogType;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};
@@ -23,6 +24,8 @@ pub struct PendingDialog {
     pub pending_size_mb: Option<f64>,
     /// ProjectSettings 的窗口标题
     pub pending_title: Option<String>,
+    /// BrushSettings 的待注入画刷配置（打开时种入对话框草稿）
+    pub pending_brush_config: Option<BrushConfig>,
 }
 
 /// 对话框管理器
@@ -55,6 +58,7 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: None,
+            pending_brush_config: None,
         });
     }
 
@@ -65,6 +69,7 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: Some(title),
+            pending_brush_config: None,
         });
     }
 
@@ -75,6 +80,18 @@ impl DialogManager {
             pending_path: Some(path),
             pending_size_mb: Some(size_mb),
             pending_title: None,
+            pending_brush_config: None,
+        });
+    }
+
+    /// 请求打开画刷「绘制行为」对话框（携带当前画刷配置）
+    pub fn open_brush_settings(&mut self, config: BrushConfig) {
+        self.pending_dialogs.push(PendingDialog {
+            dialog_type: DialogType::BrushSettings,
+            pending_path: None,
+            pending_size_mb: None,
+            pending_title: None,
+            pending_brush_config: Some(config),
         });
     }
 
@@ -88,6 +105,7 @@ impl DialogManager {
             pending_path: None,
             pending_size_mb: None,
             pending_title: None,
+            pending_brush_config: None,
         });
     }
 
@@ -145,6 +163,7 @@ impl DialogManager {
                     pending.pending_path.as_deref(),
                     pending.pending_size_mb.unwrap_or(0.0),
                     pending.pending_title.as_deref(),
+                    pending.pending_brush_config.as_ref(),
                 ) {
                     tracing::error!("初始化对话框 UI 失败: {}", e);
                     self.initializing.remove(0);

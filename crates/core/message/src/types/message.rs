@@ -7,6 +7,7 @@ use crate::events::Event;
 
 use crate::audio_export::AudioExportAction;
 use crate::batch_edit::BatchEditAction;
+use crate::brush_settings::BrushSettingsAction;
 use crate::cloud_action::CloudAction;
 use crate::collaboration::CollaborationAction;
 use crate::custom_precision::CustomPrecisionAction;
@@ -102,6 +103,8 @@ pub enum Message<W, S, Se, T> {
     Toolbar(T),
     /// 自定义精度对话框动作
     CustomPrecision(CustomPrecisionAction),
+    /// 画刷「绘制行为」对话框动作
+    BrushSettings(BrushSettingsAction),
     /// 协作动作
     Collaboration(CollaborationAction),
     /// 加载确认对话框动作

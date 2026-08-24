@@ -8,7 +8,8 @@ use iced_widget::{column, container, progress_bar, space, text};
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    batch_edit_dialog::view_batch_edit_dialog, collaboration_dialog::view_collaboration_dialog,
+    batch_edit_dialog::view_batch_edit_dialog, brush_settings_dialog::view_brush_settings_dialog,
+    collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
@@ -150,6 +151,12 @@ impl Root {
             DialogType::RecoverTrack => {
                 view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
             }
+            DialogType::BrushSettings => view_brush_settings_dialog(
+                &self.state.brush_settings_draft,
+                &self.state.brush_settings_tracks,
+                &self.window.theme,
+                self.settings.display.language,
+            ),
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)

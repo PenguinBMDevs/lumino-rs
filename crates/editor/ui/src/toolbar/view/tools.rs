@@ -96,22 +96,37 @@ impl Toolbar {
                 ),
                 space().width(4),
                 // 颜料桶（启用式开关）：仅曲线工具激活时可操作；
-                // 选中高亮 = 填充模式开启，点击切换开/关
+                // 选中高亮 = 填充模式开启，点击切换开/关。
+                // 图标随当前激活子工具自动切换（画刷激活显示画刷图标）；
+                // 普通点击切换填充，Ctrl+左键触发画刷工具下拉。
                 toggle_button(
-                    icon::PaintBucket,
+                    if self.current_tool == Tool::Brush {
+                        icon::BrushTool
+                    } else {
+                        icon::PaintBucket
+                    },
                     t.tool_fill,
-                    Event::fill_toggled(!self.fill_enabled),
-                    self.current_tool == Tool::Curve,
+                    if self.ctrl_pressed {
+                        Event::toggle_brush_dropdown()
+                    } else {
+                        Event::fill_toggled(!self.fill_enabled)
+                    },
+                    self.current_tool == Tool::Curve || self.current_tool == Tool::Brush,
                     self.fill_enabled,
                     window,
                     Some(Event::button_hovered(Some(ButtonId::Fill))),
                 ),
                 space().width(2),
-                // 颜料桶右侧小三角（SVG 绘制）：点击展开「绘制工具选择面板」
+                // 颜料桶右侧小三角（SVG 绘制）：点击展开「绘制工具选择面板」。
+                // Ctrl+左键同样触发画刷工具下拉。
                 tool_dropdown_caret(
                     icon::ToolPanelCaret,
                     t.tool_panel_tooltip,
-                    Event::toggle_tool_panel(),
+                    if self.ctrl_pressed {
+                        Event::toggle_brush_dropdown()
+                    } else {
+                        Event::toggle_tool_panel()
+                    },
                     window,
                     Some(Event::button_hovered(Some(ButtonId::ToolPanel))),
                 ),

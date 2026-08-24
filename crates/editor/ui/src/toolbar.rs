@@ -6,6 +6,7 @@
 //! - `view`: 视图渲染逻辑
 
 mod buttons;
+pub(crate) mod brush_dropdown;
 pub mod event;
 pub(crate) mod overflow;
 mod record;
@@ -21,6 +22,7 @@ pub use types::{
 };
 
 use crate::util::is_digits_or_empty;
+use lumino_core::BrushConfig;
 
 /// 工具栏视图所需的性能/检测数据聚合
 ///
@@ -76,6 +78,10 @@ pub struct Toolbar {
     pub overflow_menu_open: bool,
     /// 绘制工具选择面板是否打开（颜料桶右侧小三角触发）
     pub tool_panel_open: bool,
+    /// 画刷工具下拉是否打开（ctrl+点击附属按钮触发）
+    pub brush_dropdown_open: bool,
+    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    pub brush: BrushConfig,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
 }
@@ -102,6 +108,8 @@ impl Toolbar {
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
             tool_panel_open: false,
+            brush_dropdown_open: false,
+            brush: BrushConfig::new(),
             fill_enabled: false,
         }
     }
@@ -134,6 +142,19 @@ impl Toolbar {
             )
         {
             self.tool_panel_open = false;
+        }
+
+        // 画刷工具下拉打开时，除以下情况外其余操作先关闭下拉：
+        // - 再次点击附属按钮（ToggleBrushDropdown）用于切换关闭
+        // - 悬停事件不应关闭下拉
+        // - 显式关闭事件（CloseBrushDropdown）
+        if self.brush_dropdown_open
+            && !matches!(
+                event,
+                Event::ToggleBrushDropdown | Event::ButtonHovered(_) | Event::CloseBrushDropdown
+            )
+        {
+            self.brush_dropdown_open = false;
         }
 
         match event {
@@ -323,6 +344,24 @@ impl Toolbar {
             Event::CloseToolPanel => {
                 self.tool_panel_open = false;
                 tracing::debug!("工具栏: 关闭绘制工具面板");
+            }
+            Event::ToggleBrushDropdown => {
+                self.brush_dropdown_open = !self.brush_dropdown_open;
+                // 与其他面板互斥
+                self.overflow_menu_open = false;
+                self.tool_panel_open = false;
+                tracing::debug!(
+                    "工具栏: 画刷工具下拉 {}",
+                    if self.brush_dropdown_open { "打开" } else { "关闭" }
+                );
+            }
+            Event::CloseBrushDropdown => {
+                self.brush_dropdown_open = false;
+                tracing::debug!("工具栏: 关闭画刷工具下拉");
+            }
+            Event::BrushThicknessChanged(thickness) => {
+                self.brush.set_thickness(thickness);
+                tracing::debug!("工具栏: 画刷粗细度变更为 {}", self.brush.thickness);
             }
             Event::ToolPanelItemSelected(item) => {
                 match item {

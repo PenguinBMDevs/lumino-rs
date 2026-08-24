@@ -72,6 +72,41 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 种入画刷「绘制行为」对话框本地草稿（Runner 在对话框 UI 就绪后注入）
+    pub fn set_brush_settings_draft(&mut self, config: lumino_core::BrushConfig) {
+        self.root.state.brush_settings_draft = config;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 应用画刷「绘制行为」配置到主窗口（对话框 Save 后由 runner 调用）
+    pub fn apply_brush_settings(&mut self, config: lumino_core::BrushConfig) {
+        self.root.toolbar.brush = config.clone();
+        self.root.editor.brush = config;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 收集可选音轨列表（仅普通音轨，排除指挥轨），供画刷「绘制行为」对话框使用
+    ///
+    /// 返回 `(track_id, name)` 列表，顺序与侧边栏一致。
+    pub fn normal_track_choices(&self) -> Vec<(usize, String)> {
+        self.root
+            .sidebar
+            .tracks
+            .iter()
+            .filter(|t| !t.is_conductor)
+            .map(|t| (t.id, t.name.clone()))
+            .collect()
+    }
+
+    /// 种入画刷「绘制行为」对话框可选音轨列表（仅普通音轨，排除指挥轨）
+    pub fn set_brush_settings_tracks(&mut self, tracks: Vec<(usize, String)>) {
+        self.root.state.brush_settings_tracks = tracks;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置找回删除音轨对话框的条目列表（Runner 扫描缓存目录后调用）
     pub fn set_recover_track_dialog_entries(
         &mut self,

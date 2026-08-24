@@ -63,6 +63,10 @@ impl Event {
     pub fn open_custom_precision_dialog() -> Self {
         Self::dialog(dialog::Event::OpenCustomPrecisionDialog)
     }
+    /// 构造打开画刷「绘制行为」对话框事件（携带当前画刷配置）
+    pub fn open_brush_settings_dialog(config: lumino_core::BrushConfig) -> Self {
+        Self::dialog(dialog::Event::OpenBrushSettingsDialog(config))
+    }
     /// 构造关闭自定义精度对话框事件
     pub fn close_custom_precision_dialog() -> Self {
         Self::dialog(dialog::Event::CloseCustomPrecisionDialog)

@@ -1,5 +1,6 @@
 pub mod audio_export_dialog;
 pub mod batch_edit_dialog;
+pub mod brush_settings_dialog;
 pub mod cloud_browser;
 pub mod cloud_dialog;
 pub mod collaboration_dialog;
