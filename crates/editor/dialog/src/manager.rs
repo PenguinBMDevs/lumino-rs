@@ -5,8 +5,8 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use lumino_core::storage::config::UiConfig;
 use lumino_core::BrushConfig;
+use lumino_core::storage::config::UiConfig;
 use lumino_ui::state::root_state::DialogType;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::{Window, WindowId};

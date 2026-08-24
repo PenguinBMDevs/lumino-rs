@@ -7,10 +7,10 @@ use iced_widget::{button, column, container, row, space, text};
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
 
-use crate::resources::icon;
-use crate::message::{BrushSettingsAction, Message};
-use crate::toolbar::Event;
 use crate::Element;
+use crate::message::{BrushSettingsAction, Message};
+use crate::resources::icon;
+use crate::toolbar::Event;
 
 /// 渲染画刷工具下拉
 pub(crate) fn render_brush_dropdown<'a>(
@@ -23,7 +23,11 @@ pub(crate) fn render_brush_dropdown<'a>(
     let _ = &_t;
 
     let thickness = brush.thickness;
-    let dec = if thickness > 1 { thickness - 1 } else { thickness };
+    let dec = if thickness > 1 {
+        thickness - 1
+    } else {
+        thickness
+    };
     let inc = if thickness < BrushConfig::MAX_THICKNESS {
         thickness + 1
     } else {
@@ -40,7 +44,9 @@ pub(crate) fn render_brush_dropdown<'a>(
             button(text("-").size(16))
                 .on_press(Event::brush_thickness_changed(dec))
                 .padding([2, 10]),
-            text(format!("{thickness}")).size(14).width(Length::Fixed(28.0)),
+            text(format!("{thickness}"))
+                .size(14)
+                .width(Length::Fixed(28.0)),
             button(text("+").size(16))
                 .on_press(Event::brush_thickness_changed(inc))
                 .padding([2, 10]),
@@ -55,11 +61,16 @@ pub(crate) fn render_brush_dropdown<'a>(
             container(row![
                 text("绘制行为").size(14),
                 space().width(8),
-                button(icon::view_with_size_and_theme(icon::Gear, 18, 18, Some(theme)))
-                    .on_press(Message::BrushSettings(BrushSettingsAction::OpenDialog(
-                        brush.clone()
-                    )))
-                    .padding(2),
+                button(icon::view_with_size_and_theme(
+                    icon::Gear,
+                    18,
+                    18,
+                    Some(theme)
+                ))
+                .on_press(Message::BrushSettings(BrushSettingsAction::OpenDialog(
+                    brush.clone()
+                )))
+                .padding(2),
             ])
             .into(),
         );

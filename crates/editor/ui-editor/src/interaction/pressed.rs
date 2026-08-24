@@ -339,7 +339,12 @@ impl Editor {
     }
 
     /// 开始编辑现有音符
-    pub(crate) fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
+    pub(crate) fn start_note_edit(
+        &mut self,
+        index: usize,
+        hit_type: HitType,
+        pos: iced_core::Point,
+    ) {
         interaction_ops::start_note_edit(
             &mut self.editor_state.data,
             &mut self.editor_state.interaction,

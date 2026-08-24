@@ -10,7 +10,7 @@ static HIDPI_ENABLED: AtomicBool = AtomicBool::new(true);
 
 /// 缓存的 Handle 对象，key=(Icon, 是否暗色主题)。
 /// 避免每帧创建新 Handle → iced_wgpu 缓存命中 → 零每帧纹理上传。
-static HANDLE_CACHE: Lazy<Mutex<HashMap<(Icon, bool), Handle>>> =
+static HANDLE_CACHE: Lazy<Mutex<HashMap<(Icon, bool, u32), Handle>>> =
     Lazy::new(|| Mutex::new(HashMap::new()));
 
 pub use Icon::*;
@@ -185,6 +185,7 @@ pub fn set_hidpi_enabled(enabled: bool) {
 }
 
 /// 获取图标数据，如果不在缓存中则返回错误
+#[allow(dead_code)]
 fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
     let cache = ICON_CACHE.lock().map_err(|_| IconError::LockError)?;
     cache
@@ -193,23 +194,10 @@ fn get_icon_data(icon: Icon) -> Result<IconData, IconError> {
         .ok_or(IconError::IconNotInCache(icon))
 }
 
-/// 获取或创建缓存的 Handle。
+/// 获取或创建缓存的 Handle（默认不裁切，crop=1.0）。
 /// 稳定 Handle::id() → iced_wgpu 的纹理缓存命中 → 零每帧图集上传。
 fn get_or_create_handle(icon: Icon, is_dark: bool) -> Result<Handle, IconError> {
-    let mut cache = HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
-    if let Some(handle) = cache.get(&(icon, is_dark)) {
-        return Ok(handle.clone());
-    }
-
-    let icon_data = get_icon_data(icon)?;
-    let rgba = if should_invert_icon(icon, is_dark) {
-        invert_rgba(&icon_data.rgba)
-    } else {
-        icon_data.rgba
-    };
-    let handle = Handle::from_rgba(icon_data.width, icon_data.height, rgba);
-    cache.insert((icon, is_dark), handle.clone());
-    Ok(handle)
+    get_or_create_handle_crop(icon, is_dark, 1.0)
 }
 
 /// 判断指定图标在当前主题下是否需要反色。
@@ -264,11 +252,31 @@ pub fn view_with_size_and_theme(
     }
 }
 
+/// 渲染指定尺寸/主题且带居中裁切的图标（可能 panic，仅用于向后兼容）
+pub fn view_with_size_and_theme_crop(
+    icon: Icon,
+    width: u32,
+    height: u32,
+    theme: Option<&crate::Theme>,
+    crop: f32,
+) -> crate::Element<'static> {
+    match view_with_size_and_theme_crop_safe(icon, width, height, theme, crop) {
+        Ok(element) => element,
+        Err(e) => {
+            tracing::error!("渲染图标失败: {}", e);
+            iced_widget::Space::new()
+                .width(iced_core::Length::Fixed(width as f32))
+                .height(iced_core::Length::Fixed(height as f32))
+                .into()
+        }
+    }
+}
+
 /// 将任意 SVG 数据光栅化为 iced 图像句柄（供 canvas 等非 widget 场景复用）
 ///
 /// 复用 `usvg + resvg` 渲染管线，与内置图标一致；尺寸为正方形画布。
 pub fn svg_handle(svg_data: &[u8], size: u32) -> Result<iced_core::image::Handle, IconError> {
-    let data = render_svg(svg_data, size, size)?;
+    let data = render_svg(svg_data, size, size, 1.0)?;
     Ok(iced_core::image::Handle::from_rgba(
         data.width,
         data.height,
@@ -283,6 +291,22 @@ pub fn view_with_size_and_theme_safe(
     height: u32,
     theme: Option<&crate::Theme>,
 ) -> Result<crate::Element<'static>, IconError> {
+    view_with_size_and_theme_crop_safe(icon, width, height, theme, 1.0)
+}
+
+/// 安全地渲染指定尺寸和主题的图标，并可对 SVG 视口做居中裁切缩放，返回 Result
+///
+/// `crop` ∈ (0, 1]：仅取 SVG 视口中央 `crop` 比例的区域进行渲染，其余边缘留白被裁掉。
+/// 许多 FontAwesome 图标的实际笔画只占视口的 ~80%（四周有固定留白），直接用
+/// `contain` 渲染会导致「图标盒子很大、里面笔画却偏小」。传入 `crop≈0.8` 可让笔画
+/// 填满图标盒子，视觉上更饱满、与工具栏标准图标风格一致。
+pub fn view_with_size_and_theme_crop_safe(
+    icon: Icon,
+    width: u32,
+    height: u32,
+    theme: Option<&crate::Theme>,
+    crop: f32,
+) -> Result<crate::Element<'static>, IconError> {
     let is_dark = if crate::theme::is_high_contrast() {
         true
     } else {
@@ -292,13 +316,37 @@ pub fn view_with_size_and_theme_safe(
     };
 
     // 使用缓存 Handle（含主题反色），iced_wgpu 的纹理缓存命中后零每帧上传
-    let handle = get_or_create_handle(icon, is_dark)?;
+    let handle = get_or_create_handle_crop(icon, is_dark, crop)?;
 
     Ok(Image::new(handle)
         .width(width)
         .height(height)
         .filter_method(iced_widget::image::FilterMethod::Nearest)
         .into())
+}
+
+/// 获取或创建带「居中裁切」的缓存 Handle。
+///
+/// `crop` 仅影响 SVG 有效笔画区域（裁掉四周留白），不改变主题反色结果；
+/// 按 (icon, is_dark, 量化crop) 缓存，避免每帧重新光栅化。iced_wgpu 的纹理缓存
+/// 命中后零每帧图集上传。
+fn get_or_create_handle_crop(icon: Icon, is_dark: bool, crop: f32) -> Result<Handle, IconError> {
+    let crop_q = (crop * 100.0).round().clamp(50.0, 100.0) as u32;
+    let mut cache = HANDLE_CACHE.lock().map_err(|_| IconError::LockError)?;
+    if let Some(handle) = cache.get(&(icon, is_dark, crop_q)) {
+        return Ok(handle.clone());
+    }
+
+    // 裁切在光栅化阶段完成：直接按 crop 重新光栅化 SVG 字节
+    let icon_data = render_svg_to_data_crop(icon, crop)?;
+    let rgba = if should_invert_icon(icon, is_dark) {
+        invert_rgba(&icon_data.rgba)
+    } else {
+        icon_data.rgba
+    };
+    let handle = Handle::from_rgba(icon_data.width, icon_data.height, rgba);
+    cache.insert((icon, is_dark, crop_q), handle.clone());
+    Ok(handle)
 }
 
 fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
@@ -314,19 +362,25 @@ fn invert_rgba(rgba: &[u8]) -> Vec<u8> {
 }
 
 fn render_svg_to_data(icon: Icon) -> Result<IconData, IconError> {
+    render_svg_to_data_crop(icon, 1.0)
+}
+
+/// 光栅化图标并支持居中裁切（`crop` 仅取 SVG 视口中央 `crop` 比例区域，裁掉四周留白）
+fn render_svg_to_data_crop(icon: Icon, crop: f32) -> Result<IconData, IconError> {
     let svg_data = bytes(icon);
     let scale = get_current_scale();
     let size = match icon {
         Icon::WindowMin | Icon::WindowMax | Icon::WindowUnMax | Icon::WindowClose => 20 * scale,
         _ => 24 * scale,
     };
-    render_svg(svg_data, size, size)
+    render_svg(svg_data, size, size, crop)
 }
 
 fn render_svg(
     svg_data: &[u8],
     target_width: u32,
     target_height: u32,
+    crop: f32,
 ) -> Result<IconData, IconError> {
     let options = usvg::Options::default();
     let tree = usvg::Tree::from_data(svg_data, &options)
@@ -336,18 +390,34 @@ fn render_svg(
     let svg_width = svg_size.width();
     let svg_height = svg_size.height();
 
-    let scale_x = target_width as f32 / svg_width;
-    let scale_y = target_height as f32 / svg_height;
+    // 居中裁切：仅取视口中央 crop 比例区域作为有效内容，其余边缘留白被裁掉
+    let crop = crop.clamp(0.5, 1.0);
+    let view_w = svg_width * crop;
+    let view_h = svg_height * crop;
+    let view_off_x = (svg_width - view_w) / 2.0;
+    let view_off_y = (svg_height - view_h) / 2.0;
+
+    let scale_x = target_width as f32 / view_w;
+    let scale_y = target_height as f32 / view_h;
     // 等比缩放（contain），保持图标原始宽高比，避免拉伸变形
     let scale = scale_x.min(scale_y);
 
-    // 缩放后的内容尺寸；不足目标画布时水平/垂直居中，避免贴左上角
-    let scaled_w = svg_width * scale;
-    let scaled_h = svg_height * scale;
+    // 缩放后的有效内容尺寸；不足目标画布时水平/垂直居中，避免贴左上角
+    let scaled_w = view_w * scale;
+    let scaled_h = view_h * scale;
     let offset_x = (target_width as f32 - scaled_w) / 2.0;
     let offset_y = (target_height as f32 - scaled_h) / 2.0;
 
-    let transform = tiny_skia::Transform::from_row(scale, 0.0, 0.0, scale, offset_x, offset_y);
+    // 将 view 坐标 (view_off_x, view_off_y) 映射到 pixmap (offset_x, offset_y)，
+    // 使中央 crop 区域充满画布、四周留白被裁掉。
+    let transform = tiny_skia::Transform::from_row(
+        scale,
+        0.0,
+        0.0,
+        scale,
+        offset_x - view_off_x * scale,
+        offset_y - view_off_y * scale,
+    );
 
     let mut pixmap = tiny_skia::Pixmap::new(target_width, target_height)
         .ok_or(IconError::PixmapCreationError)?;

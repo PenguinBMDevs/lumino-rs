@@ -222,19 +222,28 @@ impl EditorData {
                         n.channel,
                     );
                     match before_map.remove(&n.id) {
-                        None => sync.push((true, n.id, after.0, after.1, after.2, after.3, after.4, track)),
+                        None => sync.push((
+                            true, n.id, after.0, after.1, after.2, after.3, after.4, track,
+                        )),
                         Some(before) => {
                             if before != after {
                                 // 值变更：删旧(post-op) + 加新(pre-op)
-                                sync.push((false, n.id, before.0, before.1, before.2, before.3, before.4, track));
-                                sync.push((true, n.id, after.0, after.1, after.2, after.3, after.4, track));
+                                sync.push((
+                                    false, n.id, before.0, before.1, before.2, before.3, before.4,
+                                    track,
+                                ));
+                                sync.push((
+                                    true, n.id, after.0, after.1, after.2, after.3, after.4, track,
+                                ));
                             }
                         }
                     }
                 }
                 // before_map 残留 = 被撤销删除的音符（post-op 存在、pre-op 无）
                 for (id, before) in before_map {
-                    sync.push((false, id, before.0, before.1, before.2, before.3, before.4, track));
+                    sync.push((
+                        false, id, before.0, before.1, before.2, before.3, before.4, track,
+                    ));
                 }
                 self.pending_collab_transform_sync = sync;
                 self.mark_tracks_changed_after_history(HashSet::from([track]));

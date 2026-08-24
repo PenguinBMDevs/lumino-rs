@@ -25,7 +25,10 @@ impl RunnerInner {
     ///
     /// 接收已克隆出来的 `MidiDocument` 与 tempo 点，避免在主线程直接读取编辑器状态
     /// 导致大工程卡死 UI。返回 None 表示无工程或序列化失败。
-    fn serialize_room_project(doc: &lumino_midi_loader::MidiDocument, tempo: &[(f32, f64)]) -> Option<Vec<u8>> {
+    fn serialize_room_project(
+        doc: &lumino_midi_loader::MidiDocument,
+        tempo: &[(f32, f64)],
+    ) -> Option<Vec<u8>> {
         let mut project = lumino_export::LuminoProject::from_midi_document(doc);
         project.apply_tempo_points(tempo.iter().copied());
 
@@ -137,7 +140,11 @@ impl RunnerInner {
                                 0.0
                             };
                             cb_for_stream(
-                                &format!("正在上传协作工程 {}（{:.0}%）", name_for_progress, p * 100.0),
+                                &format!(
+                                    "正在上传协作工程 {}（{:.0}%）",
+                                    name_for_progress,
+                                    p * 100.0
+                                ),
                                 p,
                             );
                         }));
@@ -149,11 +156,11 @@ impl RunnerInner {
                         })
                         .await
                         {
-                        Ok(b) => b,
-                        Err(e) => {
-                            progress_cb(&format!("生成协作工程失败：{e}"), 1.0);
-                            return;
-                        }
+                            Ok(b) => b,
+                            Err(e) => {
+                                progress_cb(&format!("生成协作工程失败：{e}"), 1.0);
+                                return;
+                            }
                         },
                         None => None,
                     };
@@ -247,8 +254,8 @@ impl RunnerInner {
                     match client.download_room_project(&code).await {
                         Ok(bytes) => {
                             let load = tokio::task::spawn_blocking(move || {
-                                let project = load_project_from_bytes(&bytes)
-                                    .map_err(|e| e.to_string())?;
+                                let project =
+                                    load_project_from_bytes(&bytes).map_err(|e| e.to_string())?;
                                 lumino_export::project_to_parsed_midi(
                                     &project,
                                     Path::new("collab_room_project.lmpj"),

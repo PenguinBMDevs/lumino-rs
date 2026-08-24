@@ -21,7 +21,8 @@ fn make_track(notes: &[(u32, u32, u8)]) -> Vec<NoteEvent> {
 /// 构造测试文档：给定每轨音符列表，其余字段取最小合理值。
 fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
     let track_count = tracks.len() as u16;
-    MidiDocument { next_note_id: 1,
+    MidiDocument {
+        next_note_id: 1,
         notes: tracks
             .into_iter()
             .map(crate::chunked_list::ChunkedList::from_sorted)

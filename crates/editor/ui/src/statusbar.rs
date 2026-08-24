@@ -101,17 +101,18 @@ impl StatusBar {
                 .width(Length::Fixed(220.0))
                 .wrapping(Wrapping::None)
                 .style(move |theme: &Theme| {
-                if use_fps_style {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.primary.strong.color),
+                    if use_fps_style {
+                        let palette = theme.extended_palette();
+                        text::Style {
+                            color: Some(palette.primary.strong.color),
+                        }
+                    } else {
+                        text::Style::default()
                     }
-                } else {
-                    text::Style::default()
-                }
-            }))
-            .width(Length::Fixed(220.0))
-            .into();
+                }),
+        )
+        .width(Length::Fixed(220.0))
+        .into();
 
         // 右侧性能指标组：CPU / MEM / FPS（仿照 yinhe mode_bar 底部栏的 metric 设计：
         // label 用弱色、value 用强调色；MEM 可点击打开内存监控对话框）

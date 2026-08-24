@@ -5,13 +5,13 @@
 //! - `event`: 工具栏事件枚举和工厂方法
 //! - `view`: 视图渲染逻辑
 
-mod buttons;
 pub(crate) mod brush_dropdown;
+mod buttons;
 pub mod event;
 pub(crate) mod overflow;
 mod record;
-pub mod types;
 pub(crate) mod tool_panel;
+pub mod types;
 mod view;
 
 pub use event::{Event, FlipHorizontalMode, ToolPanelItem};
@@ -340,7 +340,11 @@ impl Toolbar {
                 self.brush_dropdown_open = false;
                 tracing::debug!(
                     "工具栏: 绘制工具面板 {}",
-                    if self.tool_panel_open { "打开" } else { "关闭" }
+                    if self.tool_panel_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
                 );
             }
             Event::CloseToolPanel => {
@@ -354,7 +358,11 @@ impl Toolbar {
                 self.tool_panel_open = false;
                 tracing::debug!(
                     "工具栏: 画刷工具下拉 {}",
-                    if self.brush_dropdown_open { "打开" } else { "关闭" }
+                    if self.brush_dropdown_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
                 );
             }
             Event::CloseBrushDropdown => {

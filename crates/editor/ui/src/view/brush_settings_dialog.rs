@@ -8,9 +8,9 @@ use iced_widget::{button, column, container, pick_list, row, scrollable, space, 
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
 
-use crate::resources::icon;
-use crate::message::{BrushSettingsAction, Message};
 use crate::Element;
+use crate::message::{BrushSettingsAction, Message};
+use crate::resources::icon;
 
 /// 音轨选择项（用于在 pick_list 中区分「默认（自动分配）」与具体音轨）
 #[derive(Debug, Clone)]
@@ -73,11 +73,10 @@ pub fn view_brush_settings_dialog<'a>(
         }
 
         // 下拉选项：默认（自动分配）+ 每个普通音轨
-        let mut options: Vec<TrackChoice> =
-            vec![TrackChoice {
-                id: None,
-                name: "默认（自动分配）".to_string(),
-            }];
+        let mut options: Vec<TrackChoice> = vec![TrackChoice {
+            id: None,
+            name: "默认（自动分配）".to_string(),
+        }];
         for (id, name) in tracks.iter() {
             options.push(TrackChoice {
                 id: Some(*id),
@@ -101,13 +100,9 @@ pub fn view_brush_settings_dialog<'a>(
             container(row![
                 text(label).size(14).width(Length::Fixed(64.0)),
                 space().width(8),
-                pick_list(
-                    options,
-                    Some(selected),
-                    move |c| {
-                        Message::BrushSettings(BrushSettingsAction::LevelTrackChanged(level_idx, c.id))
-                    }
-                )
+                pick_list(options, Some(selected), move |c| {
+                    Message::BrushSettings(BrushSettingsAction::LevelTrackChanged(level_idx, c.id))
+                })
                 .width(Length::Fixed(200.0)),
                 space().width(8),
                 // + 按钮：在当前层下方插入新层
@@ -117,7 +112,9 @@ pub fn view_brush_settings_dialog<'a>(
                     18,
                     Some(theme)
                 ))
-                .on_press(Message::BrushSettings(BrushSettingsAction::AddLevel(level_idx)))
+                .on_press(Message::BrushSettings(BrushSettingsAction::AddLevel(
+                    level_idx
+                )))
                 .padding(2),
                 space().width(4),
                 // - 按钮：删除当前层（仅剩 1 层时禁用）
@@ -128,7 +125,9 @@ pub fn view_brush_settings_dialog<'a>(
                     Some(theme)
                 ))
                 .on_press_maybe(if can_remove {
-                    Some(Message::BrushSettings(BrushSettingsAction::RemoveLevel(level_idx)))
+                    Some(Message::BrushSettings(BrushSettingsAction::RemoveLevel(
+                        level_idx,
+                    )))
                 } else {
                     None
                 })

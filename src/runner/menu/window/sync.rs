@@ -46,7 +46,15 @@ impl RunnerInner {
                 channel,
                 track_index,
             } => {
-                self.handle_local_note_deleted(id, tick, key, length, velocity, channel, track_index);
+                self.handle_local_note_deleted(
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
+                );
             }
             LocalTrackAdded { track_index } => {
                 self.handle_local_track_added(track_index);

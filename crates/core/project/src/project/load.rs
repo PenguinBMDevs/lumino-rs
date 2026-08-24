@@ -395,8 +395,7 @@ mod tests {
         folder_project.metadata.project.copyright = "© 2026 Lumino".into();
         let folder_dir = std::env::temp_dir().join("lumino_author_copyright_folder_test");
         let _ = std::fs::remove_dir_all(&folder_dir);
-        crate::project::save::save_to_folder(&folder_project, &folder_dir)
-            .expect("保存文件夹失败");
+        crate::project::save::save_to_folder(&folder_project, &folder_dir).expect("保存文件夹失败");
         let loaded_folder = load_from_folder(&folder_dir).expect("从文件夹加载失败");
         assert_eq!(loaded_folder.metadata.project.author, "李四");
         assert_eq!(loaded_folder.metadata.project.copyright, "© 2026 Lumino");
