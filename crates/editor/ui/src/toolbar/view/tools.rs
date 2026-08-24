@@ -4,14 +4,14 @@
 //! 分割/合并/移调/连奏/精度）与工程走带工具区（指针/曲线/橡皮/变速）。
 
 use iced_core::{Alignment, Color, Length};
-use iced_widget::{container, row, space};
+use iced_widget::{container, mouse_area, row, space};
 
 use crate::resources::icon;
 use crate::toolbar::buttons::{
     flip_button, tool_button, tool_dropdown_caret, tool_selector, tool_selector_custom,
 };
 use crate::toolbar::view::curve_tool_group::CurveToolGroup;
-use crate::toolbar::{brush_dropdown, tool_panel, ButtonId, Event, FlipHorizontalMode, Tool, Toolbar};
+use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel};
 use crate::{Element, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 
@@ -262,12 +262,14 @@ impl Toolbar {
             toolbar_bg.a,
         );
 
-        // 下拉菜单宽度（像素），用于约束 overlay 布局
-        let menu_width = 240.0;
+        // 下拉菜单宽度（像素），用于约束 overlay 布局。
+        // 面板改为「图标独占横向排列」后，内容宽约 5×40 + 4×4(间距) + 2×8(内边距) = 232px，
+        // 这里取 248 留少量余量，避免裁切。
+        let menu_width = 248.0;
 
         // 下拉菜单：绘制工具选择面板（填充桶/画刷/形状/文字/橡皮擦）或画刷工具下拉。
         // 二者互斥，仅其一打开。菜单锚定在按钮正下方，点击外部由 overlay 关闭。
-        let menu = if self.tool_panel_open {
+        let menu: Option<Element<'a>> = if self.tool_panel_open {
             Some(
                 container(tool_panel::render_tool_panel(
                     self.current_tool,
@@ -308,7 +310,18 @@ impl Toolbar {
             .align_y(Alignment::Center)
             .into();
 
-        CurveToolGroup::new(content, menu, menu_width, close_message).into()
+        match menu {
+            Some(panel) => {
+                // 面板背景用 mouse_area 包裹：点击面板内空白即关闭下拉；
+                // 面板内按钮仍优先响应自身 on_press（与右键悬浮面板 context_menu 同源，
+                // mouse_area 不会吞掉子按钮点击）。面板整体作为 CurveToolGroup 的
+                // overlay，由 iced 标准 Overlay 机制锚定在按钮正下方并转发点击——
+                // 这正是此前"按钮点不动 / 高度裁切"病灶的根除方案。
+                let panel_with_close = mouse_area(panel).on_press(close_message).into();
+                CurveToolGroup::new(content, Some(panel_with_close), menu_width).into()
+            }
+            None => content,
+        }
     }
 
     /// 渲染工程走带视图专用的工具选择区域

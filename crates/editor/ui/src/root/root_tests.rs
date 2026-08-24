@@ -207,3 +207,4 @@ fn test_reset_project_settings_restores_defaults() {
 mod cloud_snapshot;
 mod sidebar;
 mod speed_change;
+mod tool_panel_switch;

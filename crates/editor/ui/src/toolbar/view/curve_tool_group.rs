@@ -1,68 +1,74 @@
-//! 曲线工具组自定义 widget
+//! 曲线工具组 + 工具选择面板（悬浮层）
 //!
-//! 将「曲线工具按钮 + 右侧小三角」与下拉菜单组合为一个 widget，
-//! 利用 iced 的 `overlay` 机制把下拉菜单正确锚定在按钮正下方
-//! （与 `combo_box` 同款实现思路）。点击菜单外部区域时关闭下拉。
+//! 采用标准 `Widget::overlay` 把面板锚定在曲线按钮正下方（与 Tooltip / combo_box
+//! 的悬浮层同源），布局与命中区全部交由 iced 统一处理。
+//!
+//! 关键修正（相对此前手写 MenuOverlay 的两处病灶）：
+//! 1. 定位使用**按钮自身边界** `content_bounds`，而非视口边界——避免面板高度被误算、
+//!    出现"比按钮高一倍"的错位。
+//! 2. `Overlay::update` / `Overlay::mouse_interaction` **显式转发**给面板元素——
+//!    否则 trait 默认实现"什么都不做"，面板内按钮永远收不到点击（工具切不动）。
+//!
+//! 面板背景用 `mouse_area(...) .on_press(close)` 包裹（见 tools.rs），点击面板内
+//! 空白处即关闭下拉；面板内按钮仍优先响应自身 `on_press`（与右键悬浮面板同源，
+//! 不会被 mouse_area 吞掉）。
 
-use crate::{Element, Message, Theme};
-use iced_core::overlay;
-use iced_core::widget::{Operation, Tree};
 use iced_core::{
-    Clipboard, Event, Layout, Length, Point, Rectangle, Shell, Size, Vector, Widget,
+    Clipboard, Element, Event, Layout, Length, Point, Rectangle, Shell, Size, Vector, layout,
+    mouse, overlay, renderer, widget,
 };
-use iced_core::{mouse, renderer, touch};
-use iced_widget::core::layout;
-use iced_wgpu::Renderer;
 
-/// 曲线工具组：内部为工具按钮行，可选的下方下拉菜单。
+use crate::{Message, Renderer, Theme};
+
+/// 曲线工具组：左侧曲线按钮（含小三角），右侧可选的下拉面板（工具面板 / 画刷下拉）。
 pub struct CurveToolGroup<'a> {
-    content: Element<'a>,
-    menu: Option<Element<'a>>,
+    /// 激活时显示的按钮内容（曲线按钮 + 小三角）。
+    content: Element<'a, Message, Theme, Renderer>,
+    /// 下拉面板（工具面板或画刷下拉），互斥，仅其一存在。
+    menu: Option<Element<'a, Message, Theme, Renderer>>,
+    /// 面板宽度（用于约束布局 / 越界吸附）。
     menu_width: f32,
-    close_message: Message,
 }
 
 impl<'a> CurveToolGroup<'a> {
-    /// 构造曲线工具组。
-    ///
-    /// - `content`：按钮行（曲线按钮 + 小三角）。
-    /// - `menu`：下拉菜单元素；为 `None` 时不渲染下拉。
-    /// - `menu_width`：下拉菜单宽度（像素），用于约束 overlay 布局。
-    /// - `close_message`：点击菜单外部区域时发布的关闭消息。
     pub fn new(
-        content: Element<'a>,
-        menu: Option<Element<'a>>,
+        content: Element<'a, Message, Theme, Renderer>,
+        menu: Option<Element<'a, Message, Theme, Renderer>>,
         menu_width: f32,
-        close_message: Message,
     ) -> Self {
-        Self {
-            content,
-            menu,
-            menu_width,
-            close_message,
-        }
+        Self { content, menu, menu_width }
     }
 }
 
-impl<'a> Widget<Message, Theme, Renderer> for CurveToolGroup<'a>
-where
-    Message: Clone,
-{
+impl widget::Widget<Message, Theme, Renderer> for CurveToolGroup<'_> {
+    fn children(&self) -> Vec<widget::Tree> {
+        let mut trees = vec![widget::Tree::new(&self.content)];
+        if let Some(menu) = &self.menu {
+            trees.push(widget::Tree::new(menu));
+        }
+        trees
+    }
+
+    fn diff(&self, tree: &mut widget::Tree) {
+        let mut children: Vec<&dyn widget::Widget<Message, Theme, Renderer>> =
+            vec![self.content.as_widget()];
+        if let Some(menu) = &self.menu {
+            children.push(menu.as_widget());
+        }
+        tree.diff_children(&children);
+    }
+
     fn size(&self) -> Size<Length> {
         self.content.as_widget().size()
     }
 
-    fn children(&self) -> Vec<Tree> {
-        vec![Tree::new(&self.content)]
-    }
-
-    fn diff(&self, tree: &mut Tree) {
-        tree.diff_children(std::slice::from_ref(&self.content));
+    fn size_hint(&self) -> Size<Length> {
+        self.content.as_widget().size_hint()
     }
 
     fn layout(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut widget::Tree,
         renderer: &Renderer,
         limits: &layout::Limits,
     ) -> layout::Node {
@@ -73,7 +79,7 @@ where
 
     fn update(
         &mut self,
-        tree: &mut Tree,
+        tree: &mut widget::Tree,
         event: &Event,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
@@ -94,25 +100,12 @@ where
         );
     }
 
-    fn mouse_interaction(
-        &self,
-        tree: &Tree,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-        viewport: &Rectangle,
-        renderer: &Renderer,
-    ) -> mouse::Interaction {
-        self.content
-            .as_widget()
-            .mouse_interaction(&tree.children[0], layout, cursor, viewport, renderer)
-    }
-
     fn draw(
         &self,
-        tree: &Tree,
+        tree: &widget::Tree,
         renderer: &mut Renderer,
         theme: &Theme,
-        renderer_style: &renderer::Style,
+        inherited_style: &renderer::Style,
         layout: Layout<'_>,
         cursor: mouse::Cursor,
         viewport: &Rectangle,
@@ -121,113 +114,93 @@ where
             &tree.children[0],
             renderer,
             theme,
-            renderer_style,
+            inherited_style,
             layout,
             cursor,
             viewport,
         );
     }
 
-    #[allow(clippy::type_complexity)]
     fn overlay<'b>(
         &'b mut self,
-        _tree: &'b mut Tree,
+        tree: &'b mut widget::Tree,
         layout: Layout<'b>,
         _renderer: &Renderer,
         _viewport: &Rectangle,
         translation: Vector,
     ) -> Option<overlay::Element<'b, Message, Theme, Renderer>> {
-        // 仅在下拉菜单存在时渲染 overlay；否则返回 None（不覆盖任何区域）。
-        //
-        // 关键：必须“借用”菜单而不能 `take()`。iced 在每一帧会多次调用
-        // `Widget::overlay`（`update` / `operate` / `draw` 各一次），若此处
-        // `take()` 消费菜单，则第一次调用（update）拿走菜单后，draw 阶段的
-        // 调用只能拿到 `None`，导致菜单“已布局却从不绘制”（表现为下拉菜单打不开）；
-        // 同时 `self.overlay` 残留的旧布局会让 overlay 系统错位（表现为悬停工具时
-        // 描述文字框被拉长）。combo_box 采用同样的借用方式。
         let menu = self.menu.as_mut()?;
+        let menu_tree = &mut tree.children[1];
 
-        let bounds = layout.bounds();
-        let position = layout.position() + translation;
+        let content_bounds = layout.bounds();
+        let anchor = layout.position() + translation;
 
-        // 必须为菜单构建完整的 widget 树（含其内部子控件的 tree.children），
-        // 否则菜单内 mouse_area/button 等访问 tree.children[0] 会越界 panic。
-        let menu_tree = Tree::new(&*menu);
-
-        let menu_overlay = MenuOverlay {
-            position,
-            tree: menu_tree,
+        Some(overlay::Element::new(Box::new(PanelOverlay {
+            content_bounds,
+            anchor,
             menu,
-            target_height: bounds.height,
-            width: self.menu_width,
-            close_message: self.close_message.clone(),
-            viewport: _viewport.clone(),
-        };
-
-        Some(overlay::Element::new(Box::new(menu_overlay)))
+            tree: menu_tree,
+            menu_width: self.menu_width,
+        })))
     }
 }
 
-impl<'a> From<CurveToolGroup<'a>> for Element<'a> {
-    fn from(widget: CurveToolGroup<'a>) -> Element<'a> {
-        Element::new(widget)
+/// 面板悬浮层：锚定在曲线按钮正下方，由 iced 负责事件转发与绘制。
+struct PanelOverlay<'a, 'b> {
+    content_bounds: Rectangle,
+    anchor: Point,
+    menu: &'b mut Element<'a, Message, Theme, Renderer>,
+    tree: &'b mut widget::Tree,
+    menu_width: f32,
+}
+
+impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
+    fn layout(&mut self, renderer: &Renderer, bounds: Size) -> layout::Node {
+        let viewport = Rectangle::with_size(bounds);
+
+        let menu_layout = self.menu.as_widget_mut().layout(
+            self.tree,
+            renderer,
+            &layout::Limits::new(Size::ZERO, viewport.size()),
+        );
+        let menu_bounds = menu_layout.bounds();
+
+        // 锚定：面板左缘与按钮左缘对齐，顶缘在按钮正下方留 2px 间隙。
+        let mut x = self.anchor.x;
+        let mut y = self.anchor.y + self.content_bounds.height + 2.0;
+
+        let width = menu_bounds.width.max(self.menu_width);
+
+        // 右越界则左移，吸附视口内。
+        if x + width > viewport.x + viewport.width {
+            x = (viewport.x + viewport.width - width).max(viewport.x);
+        }
+        // 下方空间不足（被视口底裁掉）则上移到按钮正上方。
+        if y + menu_bounds.height > viewport.y + viewport.height {
+            y = (self.anchor.y - menu_bounds.height - 2.0).max(viewport.y);
+        }
+
+        layout::Node::with_children(Size::new(width, menu_bounds.height), vec![menu_layout])
+            .translate(Vector::new(x, y))
     }
-}
 
-/// 下拉菜单的 overlay 实现：锚定在触发按钮正下方，点击外部关闭。
-struct MenuOverlay<'a, 'b> {
-    position: Point,
-    tree: Tree,
-    /// 借用 `CurveToolGroup` 持有的菜单元素（不拥有，避免 `take` 导致 draw 阶段丢失）。
-    menu: &'b mut Element<'a>,
-    target_height: f32,
-    width: f32,
-    close_message: Message,
-    /// 视口矩形（窗口尺寸），用于计算下拉可用空间，避免依赖 `Overlay::layout`
-    /// 传入的 `bounds`（其含义在不同 iced 版本/调用路径下不确定）。
-    viewport: Rectangle,
-}
-
-impl<'a, 'b> overlay::Overlay<Message, Theme, Renderer> for MenuOverlay<'a, 'b>
-where
-    Message: Clone + 'a,
-{
-    fn layout(&mut self, renderer: &Renderer, _bounds: Size) -> layout::Node {
-        // 使用视口尺寸计算可用空间，与 combo_box 的做法一致：
-        // 按钮底部到视口底部的剩余高度即下拉菜单可占用的纵向空间。
-        let space_below = self.viewport.height - (self.position.y + self.target_height);
-
-        let limits = layout::Limits::new(
-            Size::ZERO,
-            Size::new(
-                self.viewport.width - self.position.x,
-                space_below.max(0.0),
-            ),
-        )
-        .width(self.width);
-
-        let node = self
-            .menu
-            .as_widget_mut()
-            .layout(&mut self.tree, renderer, &limits);
-
-        let menu_height = node.size().height;
-
-        // 下方空间不足以容纳菜单时改为在按钮上方展开，避免超出视口底部被裁切。
-        let y = if space_below >= menu_height {
-            self.position.y + self.target_height
-        } else {
-            (self.position.y - menu_height).max(0.0)
-        };
-
-        // 右侧空间不足以容纳菜单时整体左移，避免超出视口右边界。
-        let x = if self.position.x + self.width > self.viewport.width {
-            (self.viewport.width - self.width).max(0.0)
-        } else {
-            self.position.x
-        };
-
-        node.move_to(Point::new(x, y))
+    fn draw(
+        &self,
+        renderer: &mut Renderer,
+        theme: &Theme,
+        inherited_style: &renderer::Style,
+        layout: Layout<'_>,
+        cursor: mouse::Cursor,
+    ) {
+        self.menu.as_widget().draw(
+            self.tree,
+            renderer,
+            theme,
+            inherited_style,
+            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            cursor,
+            &Rectangle::with_size(Size::INFINITE),
+        );
     }
 
     fn update(
@@ -239,26 +212,16 @@ where
         clipboard: &mut dyn Clipboard,
         shell: &mut Shell<'_, Message>,
     ) {
-        // 点击菜单外部区域时关闭下拉（菜单项自身的消息仍会正常下发）
-        match event {
-            Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left))
-            | Event::Touch(touch::Event::FingerPressed { .. })
-                if !cursor.is_over(layout.bounds()) =>
-            {
-                shell.publish(self.close_message.clone());
-            }
-            _ => {}
-        }
-
+        // 关键：把事件转发给面板元素，按钮的 on_press 才能被触发。
         self.menu.as_widget_mut().update(
-            &mut self.tree,
+            self.tree,
             event,
-            layout,
+            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
             cursor,
             renderer,
             clipboard,
             shell,
-            &layout.bounds(),
+            &Rectangle::with_size(Size::INFINITE),
         );
     }
 
@@ -269,41 +232,17 @@ where
         renderer: &Renderer,
     ) -> mouse::Interaction {
         self.menu.as_widget().mouse_interaction(
-            &self.tree,
-            layout,
+            self.tree,
+            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
             cursor,
-            &layout.bounds(),
+            &Rectangle::with_size(Size::INFINITE),
             renderer,
         )
     }
+}
 
-    fn draw(
-        &self,
-        renderer: &mut Renderer,
-        theme: &Theme,
-        renderer_style: &renderer::Style,
-        layout: Layout<'_>,
-        cursor: mouse::Cursor,
-    ) {
-        self.menu.as_widget().draw(
-            &self.tree,
-            renderer,
-            theme,
-            renderer_style,
-            layout,
-            cursor,
-            &layout.bounds(),
-        );
-    }
-
-    fn operate(
-        &mut self,
-        layout: Layout<'_>,
-        renderer: &Renderer,
-        operation: &mut dyn Operation,
-    ) {
-        self.menu
-            .as_widget_mut()
-            .operate(&mut self.tree, layout, renderer, operation);
+impl<'a> From<CurveToolGroup<'a>> for Element<'a, Message, Theme, Renderer> {
+    fn from(value: CurveToolGroup<'a>) -> Element<'a, Message, Theme, Renderer> {
+        Element::new(value)
     }
 }
