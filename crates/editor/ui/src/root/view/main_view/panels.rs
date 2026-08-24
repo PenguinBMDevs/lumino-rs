@@ -327,6 +327,7 @@ impl Root {
             language,
             self.state.current_mode,
             note_precision,
+            self.mixer_panel.open,
         );
 
         // 仅瀑布流播放器（含键盘），铺满导航栏之外的全部区域

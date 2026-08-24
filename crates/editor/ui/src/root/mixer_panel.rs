@@ -14,7 +14,7 @@
 //! （48px）之外、屏幕范围内。
 
 use crate::root::Root;
-use crate::{Element, Theme, resources::icon, sidebar::Track};
+use crate::{Element, Theme, sidebar::Track};
 use iced_core::{Background, Color, Length, Padding, alignment};
 use iced_widget::{
     Space, button, column, container, mouse_area, row, scrollable, slider, text, vertical_slider,
@@ -22,13 +22,13 @@ use iced_widget::{
 use lumino_ui_core::sidebar_event::Event;
 
 /// 浮动混音台面板状态
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub(crate) struct MixerPanelState {
     /// 面板是否打开
     pub open: bool,
     /// 面板主体是否展开（最大化）；false = 仅显示标题栏（最小化）
     pub maximized: bool,
-    /// 面板左上角相对主内容区左下角的偏移（拖拽累加，逻辑像素）。
+    /// 面板距左/底边界内缩（拖拽累加，逻辑像素）。
     /// `offset.0` = 距左边界内缩（= 面板左缘 x），`offset.1` = 距底边界内缩。
     pub offset: (f32, f32),
     /// 是否正在拖拽（标题栏按下且未松开）
@@ -37,30 +37,19 @@ pub(crate) struct MixerPanelState {
     pub(crate) grab: Option<(f32, f32)>,
 }
 
-/// 入口按钮：钢琴卷帘小组底部左侧悬浮，点亮（MixerActive）表示面板打开。
-pub(crate) fn view_mixer_entry(root: &Root) -> Element<'static> {
-    let icon_enum = if root.mixer_panel.open {
-        icon::Icon::MixerActive
-    } else {
-        icon::Icon::Mixer
-    };
-    let icon_img = icon::view_with_size_and_theme(icon_enum, 22, 22, Some(&root.window.theme));
-    let btn = button(icon_img)
-        .padding(8)
-        .style(transparent_button)
-        .on_press(Event::mixer_panel_toggled());
-    container(btn)
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .align_x(alignment::Horizontal::Left)
-        .align_y(alignment::Vertical::Bottom)
-        .padding(Padding {
-            top: 0.0,
-            right: 0.0,
-            bottom: 8.0,
-            left: 56.0,
-        })
-        .into()
+impl Default for MixerPanelState {
+    fn default() -> Self {
+        Self {
+            open: false,
+            // 默认展开主体（显示各音轨推子）；仅标题栏的紧凑态需用户收起。
+            maximized: true,
+            // 默认显形位置：紧贴左侧栏右侧（48px 栏宽 + 8px 间隙）、距底 8px，
+            // 避免渲染在 (0,0) 被左栏与状态栏遮住而"看起来没弹出"。
+            offset: (56.0, 8.0),
+            dragging: false,
+            grab: None,
+        }
+    }
 }
 
 /// 浮动混音台面板（关闭时返回 None）

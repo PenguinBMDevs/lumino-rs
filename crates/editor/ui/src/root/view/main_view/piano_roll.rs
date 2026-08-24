@@ -32,6 +32,7 @@ impl Root {
             self.settings.display.language,
             self.state.current_mode,
             self.toolbar.note_precision.as_ticks(ppq),
+            self.mixer_panel.open,
         );
 
         // 右侧内容区域（工具栏 + 编辑器 + 力度面板 / 全屏瀑布流播放器）
@@ -246,9 +247,8 @@ impl Root {
         if let Some(dialog) = self.view_material_delete_dialog() {
             stack = stack.push(dialog);
         }
-        // 混音台入口按钮（左下悬浮，点亮表示面板打开）
-        stack = stack.push(crate::root::mixer_panel::view_mixer_entry(self));
-        // 混音台浮动面板（非阻塞覆盖层，打开时叠加于最上层）
+        // 混音台浮动面板（非阻塞覆盖层，打开时叠加于最上层；
+        // 入口按钮在左侧栏底部，点亮表示面板打开）
         if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
             stack = stack.push(panel);
         }

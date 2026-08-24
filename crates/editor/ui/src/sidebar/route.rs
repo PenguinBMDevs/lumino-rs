@@ -36,6 +36,8 @@ pub struct RouteViewParams {
     pub roll_bar_active: Option<RollBarButton>,
     /// 是否渲染卷帘面板底部按钮（仅在处于卷帘面板时为 true）
     pub roll_bar_visible: bool,
+    /// 混音台浮动面板是否打开（用于点亮入口按钮）
+    pub mixer_panel_open: bool,
 }
 
 pub fn view<'a>(
@@ -134,6 +136,20 @@ pub fn view<'a>(
             language,
         ));
     }
+
+    // 混音台入口按钮（点亮表示面板打开）；常驻左侧栏底部，点击切换浮动面板。
+    items.push(bar_button(
+        if params.mixer_panel_open {
+            icon::MixerActive
+        } else {
+            icon::Mixer
+        },
+        params.mixer_panel_open,
+        GroupId::PianoRoll.child_color(),
+        Event::mixer_panel_toggled(),
+        "混音台",
+        window,
+    ));
 
     container(column(items))
         .width(48)

@@ -15,6 +15,7 @@ impl Sidebar {
         language: Language,
         current_mode: AppMode,
         _snap_precision: f32,
+        mixer_panel_open: bool,
     ) -> Element<'a> {
         let panel = if self.panel_visible {
             let sidebar_params = panel::SidebarViewParams {
@@ -48,6 +49,7 @@ impl Sidebar {
             video_export_visible: self.video_export_visible,
             roll_bar_active: self.roll_bar_active,
             roll_bar_visible,
+            mixer_panel_open,
         };
 
         let inner = row![route::view(route_params, window, language), panel];
