@@ -223,6 +223,21 @@ pub trait OutputConnection: Send {
         Ok(())
     }
 
+    /// 读取各 MIDI 通道的实时响度峰值（振幅 0..≈1；超过 1 表示接近/超过削波）。
+    ///
+    /// 仅音频合成类输出（如 XSynth）实现此能力；纯 MIDI 设备输出默认返回全零。
+    /// 索引 = 通道号 0..16。供混音台电平表渲染真实演奏响度。
+    fn get_channel_levels(&self) -> [f32; 16] {
+        [0.0; 16]
+    }
+
+    /// 读取主输出实时响度峰值（振幅 0..≈1）。
+    ///
+    /// 仅音频合成类输出实现；纯 MIDI 设备输出默认返回 0。
+    fn get_master_level(&self) -> f32 {
+        0.0
+    }
+
     /// 关闭输出连接
     fn close(self: Box<Self>);
 }

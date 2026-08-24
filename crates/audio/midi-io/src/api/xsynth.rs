@@ -1,4 +1,5 @@
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicU32;
 use std::sync::{Arc, Mutex};
 use std::time::Instant;
 
@@ -53,6 +54,9 @@ pub struct XSynth {
     /// 所有已创建的 `XSynthOutputConn` 通过它设置每通道增益/声像，
     /// 与 `sender_shared` 同生命周期语义。
     mixer_shared: ChannelMixHandle,
+    /// 主输出实时响度峰值共享句柄（重建稳定：`clone_master_peak` 的 `Arc` 不变，
+    /// 重建时跟随新管线），供输出连接读取主输出电平。
+    master_peak_shared: Arc<AtomicU32>,
     /// 音色库路径（重建管线时重用）
     soundfont_path: PathBuf,
     /// 打开选项（重建管线时重用）
@@ -76,6 +80,7 @@ impl XSynth {
         let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref())?;
         let sender_shared = Arc::new(Mutex::new(sender));
         let mixer_shared = ChannelMixHandle::new(Mutex::new(synth.clone_channel_mix()));
+        let master_peak_shared = synth.clone_master_peak();
 
         let version = "xsynth-realtime 0.4.0 (lumino-realtime)".to_string();
         tracing::info!("XSynth: 初始化完成");
@@ -84,6 +89,7 @@ impl XSynth {
             synth,
             sender_shared,
             mixer_shared,
+            master_peak_shared,
             soundfont_path: soundfont_path.to_path_buf(),
             options,
             version,
@@ -270,6 +276,7 @@ impl Api for XSynth {
         Ok(Box::new(XSynthOutputConn {
             sender: Arc::clone(&self.sender_shared),
             mixer: Arc::clone(&self.mixer_shared),
+            master: Arc::clone(&self.master_peak_shared),
         }))
     }
 

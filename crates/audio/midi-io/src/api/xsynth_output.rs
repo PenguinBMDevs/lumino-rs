@@ -5,7 +5,7 @@
 //! 音频设备变化触发合成管线重建时，XSynth 会替换共享发送器，
 //! 所有已创建的连接自动跟随新管线，无需重新打开连接。
 
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::realtime::{ChannelMixHandle, RealtimeEventSender, SynthEvent};
@@ -21,6 +21,8 @@ pub(crate) struct XSynthOutputConn {
     /// 混音参数共享句柄（与 XSynth 共用 Arc，重建管线后自动跟随新句柄）。
     /// 用于音频域每通道增益/声像设置，与 MIDI CC 解耦。
     pub(crate) mixer: ChannelMixHandle,
+    /// 主输出实时响度峰值共享句柄（重建管线后自动跟随）。
+    pub(crate) master: Arc<AtomicU32>,
 }
 
 impl XSynthOutputConn {
@@ -169,6 +171,20 @@ impl OutputConnection for XSynthOutputConn {
                 .store(pan.clamp(-1.0, 1.0).to_bits(), Ordering::Relaxed);
         }
         Ok(())
+    }
+
+    fn get_channel_levels(&self) -> [f32; 16] {
+        let mut levels = [0.0f32; 16];
+        if let Ok(mix) = self.mixer.lock() {
+            for (i, cm) in mix.iter().enumerate().take(16) {
+                levels[i] = f32::from_bits(cm.peak.load(Ordering::Relaxed));
+            }
+        }
+        levels
+    }
+
+    fn get_master_level(&self) -> f32 {
+        f32::from_bits(self.master.load(Ordering::Relaxed))
     }
 
     fn close(self: Box<Self>) {

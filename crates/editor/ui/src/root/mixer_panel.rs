@@ -14,13 +14,14 @@
 //! （48px）之外、屏幕范围内。
 
 use crate::root::Root;
-use crate::sidebar::{MIXER_DEFAULT_VOLUME, MIXER_MAX_VOLUME, gain_to_volume, volume_to_gain};
-use crate::{Element, Theme, sidebar::Track};
-use iced_core::{Alignment, Background, Color, Length, Padding, alignment};
-use iced_widget::{
-    Space, button, column, container, mouse_area, row, scrollable, slider, text, vertical_slider,
-};
+use crate::sidebar::MIXER_DEFAULT_VOLUME;
+use crate::{Element, Theme};
+use iced_core::{Background, Length, Padding, alignment};
+use iced_widget::{Space, button, column, container, mouse_area, row, scrollable, text};
 use lumino_ui_core::sidebar_event::Event;
+
+mod strips;
+pub(crate) use strips::{build_master_strip, build_strip, transparent_button};
 
 /// 单个通道条固定宽度（逻辑像素），用于横向滚动时按索引确定 x 位置并做视口裁剪。
 const STRIP_WIDTH: f32 = 88.0;
@@ -227,164 +228,6 @@ fn placeholder_strip() -> Element<'static> {
         .into()
 }
 
-/// 单条音轨的通道条：名称 + M/S + 电平表 + 增益推子（纵向）+ 声像（横向）。
-fn build_strip(root: &Root, track: &Track) -> Element<'static> {
-    // 提取为拥有值，避免闭包捕获 `&Track` 引用导致生命周期受限。
-    let id = track.id;
-    let is_muted = track.is_muted;
-    let is_soloed = track.is_soloed;
-    let display_label = track.display_label.clone();
-    let strip = root.sidebar.mixer_strip(id);
-    let name = text(display_label).size(11);
-    let mute_btn = button(text("M").size(11))
-        .padding(2)
-        .style(move |theme: &Theme, _status| channel_button_style(theme, is_muted))
-        .on_press(Event::track_mute_toggled(id));
-    let solo_btn = button(text("S").size(11))
-        .padding(2)
-        .style(move |theme: &Theme, _status| channel_button_style(theme, is_soloed))
-        .on_press(Event::track_solo_toggled(id));
-
-    // 音量推子：0..=127（MIDI 风格，100 为默认，127 对应 0 dB），纵向推子。
-    let volume = gain_to_volume(strip.gain);
-    let gain = vertical_slider(
-        0.0_f32..=(MIXER_MAX_VOLUME as f32),
-        volume as f32,
-        move |v| Event::track_gain_changed(id, volume_to_gain(v as u8)),
-    )
-    .height(Length::Fixed(FADER_HEIGHT))
-    .step(1.0_f32);
-
-    // 音量标尺：左侧刻度（127 / 100 / 0）与推子等高，以 Fill 间隔均匀分布。
-    let ruler = column![
-        text("127").size(9),
-        Space::new().height(Length::Fill),
-        text("100").size(9),
-        Space::new().height(Length::Fill),
-        text("0").size(9),
-    ]
-    .height(Length::Fixed(FADER_HEIGHT))
-    .align_x(Alignment::End);
-
-    let meter = build_level_meter(volume);
-    let vol_readout = text(format!("音量 {volume}")).size(10);
-
-    // 声像：-1..1，0 = 居中。
-    let pan = slider(-1.0_f32..=1.0_f32, strip.pan, move |v| {
-        Event::track_pan_changed(id, v)
-    })
-    .step(0.01_f32);
-
-    column![
-        name,
-        row![mute_btn, solo_btn].spacing(4),
-        row![ruler, meter, gain]
-            .spacing(4)
-            .align_y(Alignment::Center),
-        vol_readout,
-        pan,
-    ]
-    .spacing(6)
-    .width(Length::Fixed(STRIP_WIDTH))
-    .align_x(Alignment::Center)
-    .into()
-}
-
-/// 全局音量控制器（混音台首项）：主音量推子 + 电平表 + 读数，无 M/S 与声像。
-fn build_master_strip(root: &Root) -> Element<'static> {
-    let master_volume = root.mixer_panel.master_volume;
-    let name = text("主音量").size(11);
-
-    // 主音量推子：0..=127，纵向，变化即时同步到播放引擎（全局缩放所有通道）。
-    let gain = vertical_slider(
-        0.0_f32..=(MIXER_MAX_VOLUME as f32),
-        master_volume as f32,
-        move |v| Event::mixer_panel_master_volume_changed(v as u8),
-    )
-    .height(Length::Fixed(FADER_HEIGHT))
-    .step(1.0_f32);
-
-    let meter = build_level_meter(master_volume);
-    let vol_readout = text(format!("音量 {master_volume}")).size(10);
-
-    column![
-        name,
-        row![meter, gain].spacing(4).align_y(Alignment::Center),
-        vol_readout,
-    ]
-    .spacing(6)
-    .width(Length::Fixed(STRIP_WIDTH))
-    .align_x(Alignment::Center)
-    .into()
-}
-
-/// 电平呈现条（纵向）：以当前音量为填充高度，绿→黄→红分档着色。
-///
-/// 当前反映各通道"设定的音量"（单一来源），即为该通道当前响度档位指示；
-/// 如需实时音频响度，可后续接入引擎峰值表（XSynth 当前未暴露通道/主输出电平）。
-fn build_level_meter(volume: u8) -> Element<'static> {
-    let ratio = volume as f32 / MIXER_MAX_VOLUME as f32;
-    let fill_h = (FADER_HEIGHT * ratio).clamp(2.0, FADER_HEIGHT);
-    let color = meter_color(volume);
-    container(
-        container(Space::new().height(Length::Fixed(fill_h)))
-            .width(Length::Fill)
-            .style(move |_theme: &Theme| container::Style {
-                background: Some(Background::Color(color)),
-                ..Default::default()
-            }),
-    )
-    .width(Length::Fixed(METER_WIDTH))
-    .height(Length::Fixed(FADER_HEIGHT))
-    .align_y(Alignment::End)
-    .style(meter_bg_style)
-    .into()
-}
-
-/// 电平条底色（轨道槽）
-fn meter_bg_style(theme: &Theme) -> container::Style {
-    let p = theme.extended_palette();
-    container::Style {
-        background: Some(Background::Color(p.background.strong.color)),
-        ..Default::default()
-    }
-}
-
-/// 电平分档着色：≤100 绿（安全区）；≤115 黄（接近上限）；否则橙红（上限附近）。
-fn meter_color(volume: u8) -> Color {
-    if volume <= 100 {
-        Color::from_rgb(0.18, 0.78, 0.36)
-    } else if volume <= 115 {
-        Color::from_rgb(0.95, 0.82, 0.18)
-    } else {
-        Color::from_rgb(0.92, 0.32, 0.24)
-    }
-}
-
-/// 通道条 M/S 按钮样式（激活时高亮）
-fn channel_button_style(theme: &Theme, active: bool) -> button::Style {
-    let p = theme.extended_palette();
-    button::Style {
-        background: Some(Background::Color(if active {
-            p.primary.strong.color
-        } else {
-            p.background.weak.color
-        })),
-        text_color: p.background.base.text,
-        ..Default::default()
-    }
-}
-
-/// 透明背景按钮（入口按钮 / 标题栏按钮）
-fn transparent_button(theme: &Theme, _status: button::Status) -> button::Style {
-    let p = theme.extended_palette();
-    button::Style {
-        text_color: p.background.base.text,
-        ..Default::default()
-    }
-    .with_background(Color::TRANSPARENT)
-}
-
 /// 面板容器背景样式
 fn panel_background(theme: &Theme) -> container::Style {
     let p = theme.extended_palette();
@@ -396,5 +239,20 @@ fn panel_background(theme: &Theme) -> container::Style {
             radius: 6.0.into(),
         },
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_strip_in_view_basic() {
+        // 索引 0 的条：左缘 0、右缘 STRIP_WIDTH(88)，与 [-100,100) 相交。
+        assert!(strip_in_view(0, -100.0, 100.0));
+        // 索引 5 的条：左缘 5*96=480，超出 [0,10) 区间，不相交。
+        assert!(!strip_in_view(5, 0.0, 10.0));
+        // 与可见区间左边界刚好相切（右缘 == visible_start）视为不相交。
+        assert!(!strip_in_view(0, STRIP_WIDTH, 200.0));
     }
 }

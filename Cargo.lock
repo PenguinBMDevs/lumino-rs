@@ -2056,7 +2056,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -5163,7 +5163,7 @@ version = "0.7.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "680998035259dcfcafe653688bf2aa6d3e2dc05e98be6ab46afb089dc84f1df8"
 dependencies = [
- "proc-macro-crate 1.3.1",
+ "proc-macro-crate 2.0.2",
  "proc-macro2",
  "quote",
  "syn 2.0.118",
@@ -6296,7 +6296,7 @@ dependencies = [
  "once_cell",
  "socket2",
  "tracing",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6985,7 +6985,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys 0.12.1",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -7042,7 +7042,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -8123,7 +8123,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix 1.1.4",
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -9469,7 +9469,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.52.0",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -10191,7 +10191,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#cdb13264401efc5db646b1d848a689fc7e7760ed"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#e9fabf6f0b798195bfb9b4e7e36a74edbe6a56c3"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -10211,7 +10211,7 @@ dependencies = [
 [[package]]
 name = "xsynth-realtime"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#cdb13264401efc5db646b1d848a689fc7e7760ed"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#e9fabf6f0b798195bfb9b4e7e36a74edbe6a56c3"
 dependencies = [
  "atomic_refcell",
  "bytemuck",
@@ -10230,7 +10230,7 @@ dependencies = [
 [[package]]
 name = "xsynth-soundfonts"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#cdb13264401efc5db646b1d848a689fc7e7760ed"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#e9fabf6f0b798195bfb9b4e7e36a74edbe6a56c3"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",

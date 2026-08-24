@@ -28,6 +28,11 @@ pub struct PlaybackFrame {
     pub state: PlaybackState,
     /// 当前 BPM（随 tempo 变化实时更新）
     pub bpm: f64,
+    /// 各 MIDI 通道实时响度峰值（振幅 0..≈1），索引 = 通道号 0..16。
+    /// 由播放线程每帧从输出连接读取，供混音台电平表渲染真实演奏响度。
+    pub channel_levels: [f32; 16],
+    /// 主输出实时响度峰值（振幅 0..≈1）。
+    pub master_level: f32,
 }
 
 /// 播放回调类型：在播放线程中调用，参数为实时播放帧快照。
@@ -100,10 +105,18 @@ impl PlaybackManager {
                         // 同时触发用户注册的回调（轻量非阻塞）。
                         // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
                         let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
+                        // 实时响度峰值：从输出连接读取（XSynth 实现为真实演奏响度）；
+                        // 非合成类输出返回全零。无输出连接时同样为零。
+                        let (channel_levels, master_level) = midi_output
+                            .as_ref()
+                            .map(|out| (out.get_channel_levels(), out.get_master_level()))
+                            .unwrap_or(([0.0; 16], 0.0));
                         let frame = PlaybackFrame {
                             tick: engine.current_tick(),
                             state: engine.state(),
                             bpm,
+                            channel_levels,
+                            master_level,
                         };
                         let _ = frame_tx.try_send(frame);
                         *last_frame.lock() = Some(frame);

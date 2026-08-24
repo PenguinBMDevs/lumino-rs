@@ -98,7 +98,7 @@ pub(crate) fn handle_command(
         }
         Command::Play => {
             engine.play();
-            push_state_frame(engine, frame_tx, last_frame);
+            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
         }
         Command::Pause => {
             engine.pause();
@@ -108,7 +108,7 @@ pub(crate) fn handle_command(
                 }
                 let _ = out.all_notes_off();
             }
-            push_state_frame(engine, frame_tx, last_frame);
+            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
         }
         Command::Stop => {
             engine.stop();
@@ -116,7 +116,7 @@ pub(crate) fn handle_command(
                 let _ = out.all_notes_off();
                 let _ = out.reset_control();
             }
-            push_state_frame(engine, frame_tx, last_frame);
+            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
         }
         Command::Seek(tick) => {
             // 仅播放中的 seek 可能存在「已 NoteOn 未收到 NoteOff」的悬挂音符，
@@ -131,7 +131,7 @@ pub(crate) fn handle_command(
             engine.seek(tick);
             // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
             // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
-            push_state_frame(engine, frame_tx, last_frame);
+            push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
         }
         Command::SetLooping(looping) => engine.set_looping(looping),
         Command::SetLoopRange(start, end) => engine.set_loop_range(start, end),
@@ -148,12 +148,18 @@ fn push_state_frame(
     engine: &PlaybackEngine,
     frame_tx: &Sender<PlaybackFrame>,
     last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
+    midi_output: Option<&dyn OutputConnection>,
 ) {
     let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
+    let (channel_levels, master_level) = midi_output
+        .map(|out| (out.get_channel_levels(), out.get_master_level()))
+        .unwrap_or(([0.0; 16], 0.0));
     let frame = PlaybackFrame {
         tick: engine.current_tick(),
         state: engine.state(),
         bpm,
+        channel_levels,
+        master_level,
     };
     let _ = frame_tx.try_send(frame);
     *last_frame.lock() = Some(frame);
