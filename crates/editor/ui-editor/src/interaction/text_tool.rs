@@ -65,7 +65,7 @@ fn load_font(family: &str) -> Option<FontArc> {
 
 /// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
 ///
-/// 行 0 = 文字顶部。字形按框高度填充、按框宽度水平拉伸，使文字铺满文本框。
+/// 行 0 = 文字顶部。文字**底部对齐**到框底（共用基线），并按框高度填满、按框宽度拉伸。
 /// 返回 `None` 表示无字体或文字为空。
 pub(crate) fn rasterize_text(
     text: &str,
@@ -80,17 +80,29 @@ pub(crate) fn rasterize_text(
     let h = (rows as u32) * SS;
     let w = (cols as u32) * SS;
 
-    // 计算「填充高度」的缩放：em 缩放到使字体行高 ≈ h
-    let h1 = font.as_scaled(PxScale::from(1.0)).height().max(1e-3);
+    // 垂直缩放：用字体 ascent+descent（不含行距）充满框高，使文字填满框且不留顶部空白。
+    let unit = font.as_scaled(PxScale::from(1.0));
+    let h1 = (unit.ascent() + unit.descent()).max(1e-3);
     let scale = PxScale::from(h as f32 / h1);
     let scaled = font.as_scaled(scale);
 
-    // 先计算自然布局总推进宽度
+    // 第一遍：计算自然布局总推进宽度，并记录所有字形中最低墨水的 y（渲染像素，y 向下）。
     let mut total_advance = 0f32;
+    let mut max_bottom = 0f32;
     for ch in text.chars() {
-        total_advance += scaled.h_advance(font.glyph_id(ch));
+        let gid = font.glyph_id(ch);
+        total_advance += scaled.h_advance(gid);
+        if let Some(outline) = font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default())) {
+            let b = outline.px_bounds();
+            if b.max.y > max_bottom {
+                max_bottom = b.max.y;
+            }
+        }
     }
     let tw = total_advance.max(1.0).ceil() as u32;
+
+    // 底部对齐：把最低墨水（max_bottom）对齐到缓冲底（行 h）。
+    let y0 = (h as f32) - max_bottom;
 
     // 渲染到临时缓冲（高 = h，宽 = 自然推进）
     let mut temp = vec![0u8; (h as usize) * (tw as usize)];
@@ -99,11 +111,12 @@ pub(crate) fn rasterize_text(
         let gid = font.glyph_id(ch);
         let glyph = gid.with_scale_and_position(scale, AbPoint::default());
         if let Some(outline) = font.outline_glyph(glyph) {
+            let b = outline.px_bounds();
             outline.draw(|px, py, alpha| {
-                // 回调坐标已相对字形包围盒左上角：x 向右、y 向下（与画布一致，无翻转）。
-                // px_bounds 的 min 即为原点，无需再减 ascent 或加 min 偏移。
-                let x = (x_cursor + px as f32).round() as i32;
-                let y = py as i32;
+                // px/py 为相对字形包围盒左上角的渲染像素坐标（x 向右、y 向下，无翻转）。
+                // px_bounds().min 为字形在基线坐标系下的原点偏移；加 y0 实现底部对齐。
+                let x = (x_cursor + px as f32 + b.min.x).round() as i32;
+                let y = (py as f32 + b.min.y + y0).round() as i32;
                 if x >= 0 && x < tw as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
                     temp[y as usize * tw as usize + x as usize] = (alpha * 255.0) as u8;
                 }
@@ -418,5 +431,32 @@ mod tests {
     #[test]
     fn test_rasterize_text_empty() {
         assert!(rasterize_text("", 8, 8, "Microsoft YaHei").is_none());
+    }
+
+    #[test]
+    fn test_rasterize_text_bottom_aligned() {
+        // 文字应底部对齐到框底：下半区墨水应明显多于上半区，且顶部留白。
+        if let Some(occ) = rasterize_text("c", 16, 16, "Microsoft YaHei") {
+            let rows = occ.len();
+            let half = rows / 2;
+            let mut top_ink = 0u32;
+            let mut bottom_ink = 0u32;
+            for (r, row) in occ.iter().enumerate() {
+                for &on in row.iter() {
+                    if on {
+                        if r < half {
+                            top_ink += 1;
+                        } else {
+                            bottom_ink += 1;
+                        }
+                    }
+                }
+            }
+            assert!(top_ink + bottom_ink > 0, "可识别字符应产生墨水");
+            assert!(
+                bottom_ink > top_ink,
+                "文字应底部对齐：下半区墨水({bottom_ink})需多于上半区({top_ink})"
+            );
+        }
     }
 }
