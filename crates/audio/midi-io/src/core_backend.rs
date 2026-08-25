@@ -19,9 +19,7 @@ use xsynth_core::{
     channel::ChannelInitOptions,
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     channel_group::SynthFormat,
-    channel_group::{
-        ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, ThreadCount,
-    },
+    channel_group::{ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent},
     soundfont::SoundfontBase,
 };
 
@@ -202,10 +200,11 @@ impl CoreOutput {
             },
             format: SynthFormat::Midi,
             audio_params: params,
-            parallelism: ParallelismOptions {
-                channel: ThreadCount::Auto,
-                key: ThreadCount::None,
-            },
+            // 键级并行（AUTO_PER_KEY）与 Realtime（threads=Auto → 每 VoiceChannel
+            // 共享 rayon 池渲染 key）对齐：Black MIDI 密集段大量 voice 集中在
+            // 少数通道，仅通道级并行无法吃满多核。渲染块 512 帧 ≈10.6ms@48k，
+            // 远大于 xsynth 文档提示的 sub-1ms 开销阈值，键级并行的调度成本可忽略。
+            parallelism: ParallelismOptions::AUTO_PER_KEY,
         };
         let mut group = ChannelGroup::new(group_config);
         if let Some(sf) = sf_opt {
