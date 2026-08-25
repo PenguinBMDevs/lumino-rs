@@ -486,3 +486,113 @@ fn test_solo_plays_only_soloed_track_engine() {
         "被独奏的音轨应当发声（验证过滤逻辑方向正确）"
     );
 }
+
+/// 构造两轨文档：track 0 为当前轨（空），track 1 含控制事件。
+fn two_track_doc_with_control_events(
+    control_events: Vec<midly::loader::PackedControlEvent>,
+) -> Arc<MidiDocument> {
+    Arc::new(MidiDocument {
+        next_note_id: 1,
+        notes: vec![
+            lumino_midi_loader::ChunkedList::new(),
+            lumino_midi_loader::ChunkedList::from_sorted(vec![DocNoteEvent::new(
+                0, 500, 60, 100, 0,
+            )]),
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::from_sorted(control_events),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![None, None],
+        total_ticks: 500,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    })
+}
+
+#[test]
+fn test_seek_chase_replays_control_state() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+
+    // track 1（其他轨）：tick 100 设 PC=42、CC7=90、弯音 +0.5
+    let doc = two_track_doc_with_control_events(vec![
+        midly::loader::PackedControlEvent::program_change(100, 1, 3, 42),
+        midly::loader::PackedControlEvent::control_change(100, 1, 3, 7, 90),
+        midly::loader::PackedControlEvent::pitch_bend(100, 1, 3, 8192 + 4096),
+    ]);
+    engine.set_document(doc, 0);
+
+    // seek 到 tick 300 → chase 应重放上述状态
+    let chase = engine.seek(300.0);
+    assert!(
+        chase
+            .iter()
+            .any(|m| matches!(m, MidiMessage::ProgramChange { program: 42, .. })),
+        "seek 后应重放 PC=42，实际 = {:?}",
+        chase
+    );
+    assert!(
+        chase.iter().any(|m| matches!(
+            m,
+            MidiMessage::ControlChange {
+                controller: 7,
+                value: 90,
+                ..
+            }
+        )),
+        "seek 后应重放 CC7=90"
+    );
+    assert!(
+        chase
+            .iter()
+            .any(|m| matches!(m, MidiMessage::PitchBend { value, .. }
+                if (*value - 0.5).abs() < 0.01)),
+        "seek 后应重放弯音 +0.5"
+    );
+}
+
+#[test]
+fn test_seek_chase_excludes_muted_tracks() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+
+    let doc =
+        two_track_doc_with_control_events(vec![midly::loader::PackedControlEvent::program_change(
+            100, 1, 3, 42,
+        )]);
+    engine.set_document(doc, 0);
+    // 静音 track 1 → 其控制事件不参与 chase
+    engine.set_track_play_states(vec![false, true], vec![false, false]);
+
+    let chase = engine.seek(300.0);
+    assert!(
+        !chase
+            .iter()
+            .any(|m| matches!(m, MidiMessage::ProgramChange { program: 42, .. })),
+        "静音轨道的控制器不应被 chase 重放，实际 = {:?}",
+        chase
+    );
+}
+
+#[test]
+fn test_seek_before_events_emits_no_chase() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+
+    let doc =
+        two_track_doc_with_control_events(vec![midly::loader::PackedControlEvent::program_change(
+            100, 1, 3, 42,
+        )]);
+    engine.set_document(doc, 0);
+
+    // seek 到事件之前 → 无需重放
+    let chase = engine.seek(50.0);
+    assert!(chase.is_empty(), "seek 点之前无事件时不应产生 chase 消息");
+}

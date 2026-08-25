@@ -128,7 +128,12 @@ pub(crate) fn handle_command(
                 let _ = out.all_notes_off();
                 let _ = out.reset_control();
             }
-            engine.seek(tick);
+            // seek 返回 chase 重放消息（跳转点之前生效的 CC/PC/PB/RPN），
+            // 在清理之后发送，保证跳转后音色/弯音/踏板与目标位置一致。
+            let chase_messages = engine.seek(tick);
+            if !chase_messages.is_empty() {
+                flush_midi_messages(&chase_messages, midi_output);
+            }
             // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
             // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
             push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());

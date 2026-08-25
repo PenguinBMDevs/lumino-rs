@@ -212,7 +212,7 @@ impl PlaybackEngine {
     }
 
     /// 处理循环回绕
-    fn handle_loop_wrap(&mut self, current_tick: f32, _messages: &mut Vec<MidiMessage>) {
+    fn handle_loop_wrap(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         if self.looping
             && let Some((_loop_start, loop_end)) = self.loop_range
             && current_tick >= loop_end
@@ -248,6 +248,9 @@ impl PlaybackEngine {
             }
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
+            // 循环回绕同样是 seek：chase 重放回绕点之前的控制器状态，
+            // 否则第二轮循环音色/弯音/踏板停留在循环尾状态。
+            messages.extend(self.compute_chase_messages());
         }
     }
 
