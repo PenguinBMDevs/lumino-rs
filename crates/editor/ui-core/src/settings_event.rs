@@ -30,6 +30,10 @@ pub enum Event {
     XSynthFadeOutChanged(bool),
     /// XSynth 每键最大同音数变更（None 为不限）
     XSynthMaxVoicesChanged(Option<usize>),
+    /// Core 环形缓冲帧数变更
+    CoreBufferFramesChanged(u32),
+    /// XSynth 每键最大同音数自定义输入变更
+    XSynthMaxVoicesCustomInput(String),
     /// 主题变更
     ThemeChanged(String),
     /// 橡皮擦工具行为变更

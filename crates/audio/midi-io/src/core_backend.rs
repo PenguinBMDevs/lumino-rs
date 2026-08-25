@@ -60,7 +60,11 @@ pub struct CoreOutput {
 unsafe impl Send for CoreOutput {}
 
 impl CoreOutput {
-    pub fn new(soundfont_path: PathBuf, sample_rate: Option<u32>) -> Result<Self, Error> {
+    pub fn new(
+        soundfont_path: PathBuf,
+        sample_rate: Option<u32>,
+        buffer_frames: Option<u32>,
+    ) -> Result<Self, Error> {
         // ── 采样率/声道协商（优先设备，避免跑调） ──
         let (sr, channel_count, stream_config_opt, device_opt) = {
             let host = cpal::default_host();
@@ -199,6 +203,7 @@ impl CoreOutput {
         };
 
         // ── 渲染线程（唯一生产者） ──
+        let target_frames = buffer_frames.unwrap_or(TARGET_BUFFER_FRAMES as u32) as usize;
         let (event_tx, event_rx): (Sender<SynthEvent>, Receiver<SynthEvent>) = unbounded();
         let running = Arc::new(AtomicBool::new(true));
         let running_clone = Arc::clone(&running);
@@ -210,6 +215,7 @@ impl CoreOutput {
                     &mut producer,
                     event_rx,
                     running_clone,
+                    target_frames,
                 );
             })
             .map_err(|e| Error::InitFailed(format!("启动渲染线程失败: {e}")))?;
@@ -233,11 +239,12 @@ fn render_loop(
     producer: &mut crate::audio_ring::AudioRingProducer,
     event_rx: Receiver<SynthEvent>,
     running: Arc<AtomicBool>,
+    target_frames: usize,
 ) {
     let channels = group.stream_params().channels.count() as usize;
     let chunk_samples = RENDER_CHUNK_FRAMES * channels;
     let mut scratch = vec![0.0f32; chunk_samples];
-    let target_samples = TARGET_BUFFER_FRAMES * channels;
+    let target_samples = target_frames * channels;
 
     while running.load(Ordering::Relaxed) {
         while let Ok(ev) = event_rx.try_recv() {

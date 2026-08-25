@@ -281,6 +281,9 @@ pub struct UiConfig {
     /// 音频引擎后端（Realtime vs Core）
     #[serde(default)]
     pub audio_engine: AudioEngineKind,
+    /// Core 引擎环形缓冲目标帧数（512..16384，默认 4096≈85ms@48k）
+    #[serde(default = "default_core_buffer_frames")]
+    pub core_buffer_frames: u32,
 }
 
 fn default_true() -> bool {
@@ -317,6 +320,10 @@ fn default_tempo_max_bpm() -> f64 {
 
 fn default_monitor_refresh_interval_ms() -> f32 {
     100.0
+}
+
+fn default_core_buffer_frames() -> u32 {
+    4096
 }
 
 fn default_log_retention_count() -> usize {
@@ -392,6 +399,7 @@ impl Default for UiConfig {
             log_retention_count: default_log_retention_count(),
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
             audio_engine: AudioEngineKind::default(),
+            core_buffer_frames: default_core_buffer_frames(),
         }
     }
 }

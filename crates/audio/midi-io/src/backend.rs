@@ -45,8 +45,17 @@ pub fn create_output(
 ) -> Result<Box<dyn OutputConnection>, Error> {
     match kind {
         BackendKind::Realtime => create_realtime_output(soundfont_path, sample_rate),
-        BackendKind::Core => create_core_output(soundfont_path, sample_rate),
+        BackendKind::Core => create_core_output(soundfont_path, sample_rate, None),
     }
+}
+
+/// Core 专用：可指定环缓冲帧数（Realtime 忽略）
+pub fn create_core_output_with_buffer(
+    soundfont_path: PathBuf,
+    sample_rate: Option<u32>,
+    buffer_frames: u32,
+) -> Result<Box<dyn OutputConnection>, Error> {
+    create_core_output(soundfont_path, sample_rate, Some(buffer_frames))
 }
 
 #[cfg(feature = "realtime")]
@@ -78,8 +87,9 @@ fn create_realtime_output(
 fn create_core_output(
     soundfont_path: PathBuf,
     sample_rate: Option<u32>,
+    buffer_frames: Option<u32>,
 ) -> Result<Box<dyn OutputConnection>, Error> {
-    crate::core_backend::CoreOutput::new(soundfont_path, sample_rate).map(|o| {
+    crate::core_backend::CoreOutput::new(soundfont_path, sample_rate, buffer_frames).map(|o| {
         let b: Box<dyn OutputConnection> = Box::new(o);
         b
     })

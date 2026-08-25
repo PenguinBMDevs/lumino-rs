@@ -47,6 +47,8 @@ pub struct SynthSettings {
     pub xsynth_fade_out: bool,
     /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
+    /// Core 环形缓冲帧数
+    pub core_buffer_frames: u32,
 }
 
 /// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）

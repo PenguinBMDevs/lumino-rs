@@ -166,25 +166,62 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
-    // 缓冲区大小
-    col = col.push(
-        row![
-            text(format!(
-                "{}: {:.1} ms",
-                t.buffer_latency, settings.synth.xsynth_buffer_ms
-            ))
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style())
-            .width(160.0),
-            iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
-                Message::Settings(crate::Event::XSynthBufferChanged(ms))
-            })
-            .step(1.0)
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-    );
+    // 缓冲区大小：Realtime 用 ms，Core 用帧（yinhe 帧精度，避免采样率耦合）
+    if settings.synth.audio_engine == lumino_core::storage::config::AudioEngineKind::Core {
+        col = col.push(
+            row![
+                text(format!(
+                    "缓冲帧数: {} frames (~{:.0}ms@{}Hz)",
+                    settings.synth.core_buffer_frames,
+                    settings.synth.core_buffer_frames as f32 / settings.synth.xsynth_sample_rate as f32 * 1000.0,
+                    settings.synth.xsynth_sample_rate
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(220.0),
+                iced_widget::slider(
+                    512.0..=16384.0,
+                    settings.synth.core_buffer_frames as f32,
+                    |v| Message::Settings(crate::Event::CoreBufferFramesChanged(v as u32))
+                )
+                .step(512.0)
+                .width(180.0),
+                text_input(
+                    "512-16384",
+                    &settings.synth.core_buffer_frames.to_string()
+                )
+                .width(80.0)
+                .on_input(|s| {
+                    if let Ok(v) = s.parse::<u32>() {
+                        Message::Settings(crate::Event::CoreBufferFramesChanged(v))
+                    } else {
+                        Message::Null
+                    }
+                }),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+    } else {
+        col = col.push(
+            row![
+                text(format!(
+                    "{}: {:.1} ms",
+                    t.buffer_latency, settings.synth.xsynth_buffer_ms
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(160.0),
+                iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
+                    Message::Settings(crate::Event::XSynthBufferChanged(ms))
+                })
+                .step(1.0)
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+    }
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
     // 音符释放淡出
@@ -195,70 +232,52 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
-    // 每键最大同音数
-    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-    struct VoiceOption(Option<usize>, &'static str);
-    impl std::fmt::Display for VoiceOption {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            write!(f, "{}", self.1)
-        }
-    }
-    fn voice_name(value: Option<usize>, lang: lumino_extras::i18n::Language) -> &'static str {
-        match lang {
-            lumino_extras::i18n::Language::ZhCn => match value {
-                Some(1) => "1 (极保守)",
-                Some(2) => "2",
-                Some(4) => "4 (默认)",
-                Some(8) => "8",
-                Some(16) => "16 (推荐)",
-                Some(32) => "32",
-                Some(64) => "64 (密集)",
-                None => "不限制",
-                _ => "",
-            },
-            lumino_extras::i18n::Language::EnUs => match value {
-                Some(1) => "1 (Conservative)",
-                Some(2) => "2",
-                Some(4) => "4 (Default)",
-                Some(8) => "8",
-                Some(16) => "16 (Recommended)",
-                Some(32) => "32",
-                Some(64) => "64 (Dense)",
-                None => "Unlimited",
-                _ => "",
-            },
-        }
-    }
-    let voice_options = [
-        VoiceOption(Some(1), voice_name(Some(1), settings.display.language)),
-        VoiceOption(Some(2), voice_name(Some(2), settings.display.language)),
-        VoiceOption(Some(4), voice_name(Some(4), settings.display.language)),
-        VoiceOption(Some(8), voice_name(Some(8), settings.display.language)),
-        VoiceOption(Some(16), voice_name(Some(16), settings.display.language)),
-        VoiceOption(Some(32), voice_name(Some(32), settings.display.language)),
-        VoiceOption(Some(64), voice_name(Some(64), settings.display.language)),
-        VoiceOption(None, voice_name(None, settings.display.language)),
-    ];
-    let current_voice = voice_options
-        .iter()
-        .find(|o| o.0 == settings.synth.xsynth_max_voices_per_key)
-        .copied()
-        .or(Some(voice_options[3]));
-
+    // 每键最大同音数：拖拽滑块 1..64 + 自定义输入 1..128 + 不限制切换
+    // 结论：滑块适合快速试听对比（跟手），输入框适合精细/超限值，复选框一键不限制；三者共存最灵活
+    let is_unlimited = settings.synth.xsynth_max_voices_per_key.is_none();
+    let cur_val = settings.synth.xsynth_max_voices_per_key.unwrap_or(16) as f32;
     col = col.push(
         row![
             text(t.max_voices)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(voice_options, current_voice, |opt| {
-                Message::Settings(crate::Event::XSynthMaxVoicesChanged(opt.0))
-            })
-            .width(200.0),
+            iced_widget::Checkbox::new(is_unlimited)
+                .label(if is_unlimited { "不限制" } else { "限制" })
+                .on_toggle(|b| {
+                    if b {
+                        Message::Settings(crate::Event::XSynthMaxVoicesChanged(None))
+                    } else {
+                        Message::Settings(crate::Event::XSynthMaxVoicesChanged(Some(16)))
+                    }
+                }),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
+    col = col.push(iced_widget::space().height(8.0));
+    if !is_unlimited {
+        col = col.push(
+            row![
+                text(format!("{}: {}", t.max_voices, cur_val as usize))
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(140.0),
+                iced_widget::slider(1.0..=64.0, cur_val, |v| {
+                    Message::Settings(crate::Event::XSynthMaxVoicesChanged(Some(v as usize)))
+                })
+                .step(1.0)
+                .width(160.0),
+                text_input("1-128", &format!("{}", cur_val as usize))
+                    .width(70.0)
+                    .on_input(|s| {
+                        Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s))
+                    }),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+    }
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
         text(t.max_voices_hint)

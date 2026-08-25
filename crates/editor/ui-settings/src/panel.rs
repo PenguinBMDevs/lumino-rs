@@ -53,6 +53,7 @@ impl SettingsPanel {
                 xsynth_threads: ui_config.xsynth_threads,
                 xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+                core_buffer_frames: ui_config.core_buffer_frames,
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -152,6 +153,16 @@ impl SettingsPanel {
             }
             Event::XSynthMaxVoicesChanged(v) => {
                 self.synth.xsynth_max_voices_per_key = v;
+            }
+            Event::CoreBufferFramesChanged(v) => {
+                self.synth.core_buffer_frames = v.clamp(512, 16384);
+            }
+            Event::XSynthMaxVoicesCustomInput(s) => {
+                if s.trim().is_empty() || s.trim().eq_ignore_ascii_case("unlimited") {
+                    self.synth.xsynth_max_voices_per_key = None;
+                } else if let Ok(v) = s.trim().parse::<usize>() {
+                    self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
+                }
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理
