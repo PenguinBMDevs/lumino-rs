@@ -1,8 +1,9 @@
 use std::sync::{
-    Arc, Mutex,
-    atomic::{AtomicBool, Ordering},
+    Arc, Condvar, Mutex,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use super::commands::{ControlCommand, RenderCommand};
 use super::params::RenderParams;
@@ -11,6 +12,11 @@ use super::render_loop::runner::context::{RenderContext, RenderThreadChannels};
 use super::stats::RenderStats;
 use crate::SwappableBuffer;
 use crate::gpu_resource_tracker::TrackedTexture;
+
+/// 帧同步原语：渲染线程渲染完成 `frame_id` 对应帧后写入 `rendered_frame` 并 notify，
+/// UI 线程在 present（copy 离屏纹理到 Surface）前 `wait_for_frame` 等待，
+/// 避免拷到尚未被渲染线程处理的旧离屏帧（音符放置后不立即显示的竞态根因）。
+type FrameSync = Arc<(Mutex<u64>, Condvar)>;
 
 /// WGPU 渲染线程
 ///
@@ -50,6 +56,10 @@ pub struct WgpuRenderThread {
     /// 镜像 `latest_texture` 的发布模式：渲染线程每帧把洋葱皮 GPU 实例缓冲的
     /// 克隆句柄 + 实例数写入此处，UI 线程只读 storage 直接 bind，杜绝第二份拷贝。
     pub note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>>,
+    /// 帧同步：递增分配的 frame_id 发送端 + 渲染完成信号（见 [`FrameSync`]）
+    outgoing_frame: AtomicU64,
+    /// 帧同步原语（渲染线程写 `rendered_frame` + notify，UI 线程 `wait_for_frame`）
+    frame_sync: FrameSync,
 }
 
 impl WgpuRenderThread {
@@ -77,6 +87,8 @@ impl WgpuRenderThread {
         let (command_sender, command_receiver) = std::sync::mpsc::channel::<RenderCommand>();
         let latest_texture: Arc<Mutex<Option<Arc<TrackedTexture>>>> = Arc::new(Mutex::new(None));
         let waterfall_progress: Arc<Mutex<Vec<(String, f32)>>> = Arc::new(Mutex::new(Vec::new()));
+        // 帧同步原语：渲染线程渲染完成后写入 rendered_frame 并 notify
+        let frame_sync: FrameSync = Arc::new((Mutex::new(0u64), Condvar::new()));
 
         // 洋葱皮流式上传 channel（容量 3 块 × 800 万实例/块 = 2400 万实例在途，最坏 ~384 MB）
         let (onion_skin_streaming_tx, onion_skin_streaming_rx) =
@@ -89,6 +101,7 @@ impl WgpuRenderThread {
         let waterfall_progress_clone = Arc::clone(&waterfall_progress);
         let note_data_pub: Arc<Mutex<Option<(wgpu::Buffer, u32)>>> = Arc::new(Mutex::new(None));
         let note_data_pub_clone = Arc::clone(&note_data_pub);
+        let frame_sync_clone = Arc::clone(&frame_sync);
 
         // 启动渲染线程
         let thread_handle = thread::spawn(move || {
@@ -103,6 +116,7 @@ impl WgpuRenderThread {
                 waterfall_progress: waterfall_progress_clone,
                 note_data_pub: note_data_pub_clone,
                 onion_skin_streaming_rx,
+                frame_sync: frame_sync_clone,
             };
             run_render_thread(ctx, channels);
         });
@@ -118,14 +132,25 @@ impl WgpuRenderThread {
             note_instances_buffer,
             waterfall_progress,
             note_data_pub,
+            outgoing_frame: AtomicU64::new(0),
+            frame_sync,
         })
     }
 
     /// 发送渲染参数
-    pub fn send_params(&self, params: RenderParams) {
+    ///
+    /// 返回本次分配的 `frame_id`，调用方应在 present（copy 离屏纹理到 Surface）前
+    /// 调用 [`WgpuRenderThread::wait_for_frame`] 等待渲染线程完成该帧渲染，
+    /// 避免拷到尚未被渲染线程处理的旧离屏帧（音符放置后不立即显示的竞态根因）。
+    pub fn send_params(&self, params: RenderParams) -> u64 {
+        // 递增分配 frame_id，与渲染线程的 rendered_frame 完成信号配对
+        let frame_id = self.outgoing_frame.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(ref sender) = self.command_sender {
             // 使用非阻塞发送，如果通道满则丢弃旧帧
-            match sender.send(RenderCommand::Render(Box::new(params))) {
+            match sender.send(RenderCommand::Render {
+                params: Box::new(params),
+                frame_id,
+            }) {
                 Ok(_) => {}
                 Err(_) => {
                     // 通道关闭或满，丢弃这一帧
@@ -135,6 +160,31 @@ impl WgpuRenderThread {
                 }
             }
         }
+        frame_id
+    }
+
+    /// 等待渲染线程完成 `frame_id` 对应帧的渲染
+    ///
+    /// 必须在 [`WgpuRenderThread::copy_offscreen_to_surface`] 之前调用：渲染线程
+    /// 与 UI 线程共享同一离屏纹理与 command queue，只有等本帧渲染 submission 入队后，
+    /// UI 线程的 copy submission（FIFO）才会读到含本次编辑（如音符 Insert）的最新画面。
+    ///
+    /// 带超时（100ms）防死锁：渲染线程异常时不无限阻塞 UI；超时后退回"落后一帧"，
+    /// 下一帧 redraw 会补齐（与旧行为一致，不会更差）。
+    pub fn wait_for_frame(&self, frame_id: u64) {
+        let (mtx, cvar) = &*self.frame_sync;
+        // 锁中毒时退化为不等待（直接 present 旧帧），不放大故障
+        let Ok(guard) = mtx.lock() else {
+            return;
+        };
+        // 阻塞直到渲染线程完成 frame_id 对应帧（或超时 100ms 防死锁）。
+        // 返回的 guard 立即 drop——等待已在 wait_timeout_while 内完成，无需继续持有。
+        drop(
+            cvar.wait_timeout_while(guard, Duration::from_millis(100), |rendered| {
+                *rendered < frame_id
+            })
+            .map(|(guard, _)| guard),
+        );
     }
 
     /// 发送控制命令
@@ -506,7 +556,10 @@ mod tests {
     #[test]
     fn test_render_command_debug() {
         let params = RenderParams::default();
-        let cmd = RenderCommand::Render(Box::new(params));
+        let cmd = RenderCommand::Render {
+            params: Box::new(params),
+            frame_id: 1,
+        };
         let debug_str = format!("{:?}", cmd);
         assert!(debug_str.contains("Render"));
     }

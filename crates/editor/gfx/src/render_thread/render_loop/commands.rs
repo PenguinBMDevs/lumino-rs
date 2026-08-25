@@ -29,13 +29,14 @@ const COMMAND_RECV_TIMEOUT: Duration = Duration::from_millis(16);
 pub fn process_commands(
     command_receiver: &Receiver<RenderCommand>,
     latest_params: &mut Option<RenderParams>,
+    latest_frame_id: &mut u64,
     should_shutdown: &mut bool,
     deferred: &mut Vec<ControlCommand>,
 ) -> bool {
     // 先 drain 所有可用命令；记录本帧是否收到"新渲染命令"
     let mut new_render = false;
     while let Ok(cmd) = command_receiver.try_recv() {
-        if classify_command(cmd, latest_params, should_shutdown, deferred) {
+        if classify_command(cmd, latest_params, latest_frame_id, should_shutdown, deferred) {
             new_render = true;
         }
     }
@@ -50,7 +51,7 @@ pub fn process_commands(
     if !new_render {
         match command_receiver.recv_timeout(COMMAND_RECV_TIMEOUT) {
             Ok(cmd) => {
-                if classify_command(cmd, latest_params, should_shutdown, deferred) {
+                if classify_command(cmd, latest_params, latest_frame_id, should_shutdown, deferred) {
                     new_render = true;
                 }
             }
@@ -71,12 +72,15 @@ pub fn process_commands(
 fn classify_command(
     cmd: RenderCommand,
     latest_params: &mut Option<RenderParams>,
+    latest_frame_id: &mut u64,
     should_shutdown: &mut bool,
     deferred: &mut Vec<ControlCommand>,
 ) -> bool {
     match cmd {
-        RenderCommand::Render(params) => {
+        RenderCommand::Render { params, frame_id } => {
             *latest_params = Some(*params);
+            // 记录最后一条 Render 命令的 frame_id，供主循环渲染完成后通知 UI
+            *latest_frame_id = frame_id;
             true
         }
         RenderCommand::Control(ControlCommand::Shutdown) => {

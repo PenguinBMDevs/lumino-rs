@@ -1,5 +1,5 @@
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Condvar, Mutex};
 
 use crate::gpu_resource_tracker::TrackedTexture;
 use crate::render_thread::commands::{FrameSender, RenderCommand};
@@ -70,6 +70,10 @@ pub struct RenderThreadChannels {
     /// - `Done`：全量会话结束
     /// - `TrackDelta`：单音轨增量替换（等长/变长段替换）
     pub onion_skin_streaming_rx: std::sync::mpsc::Receiver<crate::OnionSkinStreamMsg>,
+    /// 帧同步：渲染线程渲染完成 `frame_id` 对应的帧后写入 `rendered_frame` 并 notify，
+    /// UI 线程 present（copy 到 Surface）前 `wait_for_frame`，避免拷到尚未被渲染线程
+    /// 处理的旧离屏帧（音符放置后不立即显示的竞态根因）。
+    pub frame_sync: Arc<(Mutex<u64>, Condvar)>,
 }
 
 /// 可变的每帧渲染状态。

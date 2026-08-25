@@ -31,6 +31,8 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
     // 渲染循环状态
     let mut frame_count = 0u64;
     let mut fps_update_time = Instant::now();
+    // 记录本轮回环处理到的最后一条 Render 命令的 frame_id，供渲染完成后通知 UI
+    let mut latest_frame_id = 0u64;
     let mut current_texture: Option<Arc<TrackedTexture>> = None;
     let mut depth_texture: Option<TrackedTexture> = None;
     let mut depth_texture_view: Option<wgpu::TextureView> = None;
@@ -73,6 +75,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         let has_params = process_commands(
             &channels.command_receiver,
             &mut latest_params,
+            &mut latest_frame_id,
             &mut should_shutdown,
             &mut deferred,
         );
@@ -219,6 +222,15 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 &channels.stats_clone,
                 renderers.ruler.instance_count(),
             );
+
+            // 通知 UI 线程：本帧（frame_id）已渲染完成，可安全 present（copy 到 Surface）。
+            // 修复音符放置后不立即显示：UI 线程 present 前需 wait_for_frame，确保拷到
+            // 含本次编辑（如音符 Insert）的最新离屏帧，而非尚未被本线程处理的旧帧。
+            let (mtx, cvar) = &*channels.frame_sync;
+            if let Ok(mut guard) = mtx.lock() {
+                *guard = latest_frame_id;
+                cvar.notify_all();
+            }
         }
     }
 
