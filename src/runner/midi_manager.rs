@@ -435,7 +435,7 @@ impl MidiManager {
         // OutputConnection 是自包含的，不需要父 Api 保持存活
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
-            SynthBackend::XSynth => {
+            SynthBackend::XSynth if self.api.is_some() => {
                 // XSynth：禁止创建第二个实例！
                 // 策略1（共享 sender）总是成功；如果策略1失败说明 API 已损坏。
                 // 创建第二个 RealtimeSynth 会导致：
@@ -448,6 +448,9 @@ impl MidiManager {
                 );
                 None
             }
+            // Core 引擎：active_backend 同为 XSynth，但不持有独立 API 实例，
+            // 不能按「第二个实例」处理，直接回退到策略3（复用主输出）。
+            SynthBackend::XSynth => None,
             SynthBackend::System | SynthBackend::Kdmapi => {
                 let api_kind = match self.active_backend {
                     SynthBackend::Kdmapi => {
@@ -471,8 +474,9 @@ impl MidiManager {
         // 播放期间音符预览会暂时无响应，但播放功能正常
         // System 后端启动时只有 1 个 MIDI OUT 端口，fallback 是预期行为，不记录日志
         if let Some(output) = self.output.take() {
-            // XSynth 切换后还 fallback 才值得警告
-            if matches!(self.active_backend, SynthBackend::XSynth) {
+            // 仅真正的 XSynth-Realtime 还 fallback 才值得警告；
+            // Core 引擎本就复用主输出，属于预期行为，不报警。
+            if matches!(self.active_backend, SynthBackend::XSynth) && self.api.is_some() {
                 tracing::warn!(
                     "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
                 );
@@ -543,6 +547,16 @@ impl MidiManager {
     /// 检查是否需要重新初始化
     pub fn needs_reinit(&self) -> bool {
         self.needs_reinit
+    }
+
+    /// 是否正在进行 XSynth 异步初始化
+    ///
+    /// 用于在 `reinit_if_needed` 之后判断新后端是「立即就绪的同步后端」
+    /// （Core / System / Kdmapi）还是「仍在异步初始化的 XSynth-Realtime」，
+    /// 从而决定是否需要立即把播放输出重连到新连接（同步后端必须立即重连，
+    /// 否则 PlaybackManager 继续向已被丢弃的旧连接发送事件 → 切换后无声）。
+    pub fn is_xsynth_initializing(&self) -> bool {
+        self.is_xsynth_initializing
     }
 
     /// 如果设置改变，重新初始化 MIDI 输出

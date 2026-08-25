@@ -103,27 +103,31 @@ impl XSynth {
         soundfont_path: &Path,
         options: Option<&XSynthOptions>,
     ) -> Result<(RealtimeSynth, RealtimeEventSender), Error> {
-        // 在打开音频流之前，先用配置的采样率构造 AudioStreamParams
-        // 提前加载音色库。这样在音频流启动时，音色库已经就绪，
-        // BufferedRenderer 的 render pipeline 能立即产生有效数据，
-        // 避免 callback 在 recv() 上阻塞导致 ALSA underrun。
-        let sample_rate = options
+        // 采样率对齐原则：配置中的 `xsynth_sample_rate` 仅作提示，
+        // 真正决定音高的是设备实际采样率。`RealtimeSynth`（xsynth-realtime）
+        // 总是以 cpal 设备原生采样率渲染，因此音色库必须以同一采样率预处理，
+        // 否则 SampleSoundfont 内部重采样/包络时间错配会产生音高偏移（跑调）。
+        //
+        // 为避免「请求采样率」与「设备实际采样率」不一致（尤其从 ring 后端切换过来时）
+        // 带来的跑调，这里先按请求采样率占位预加载（保证音频流启动瞬间有数据，避免 underrun），
+        // 待打开音频流取得设备实际采样率后，「始终」按设备实际采样率加载正式音色库。
+        let requested_sample_rate = options
             .map(|o| o.sample_rate)
             .unwrap_or(DEFAULT_SAMPLE_RATE);
-        let load_params = AudioStreamParams::new(sample_rate, ChannelCount::Stereo);
 
-        tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", sample_rate);
+        // 占位预加载（按请求采样率），实际使用的音色库在下方按设备实际采样率重新加载
+        let load_params = AudioStreamParams::new(requested_sample_rate, ChannelCount::Stereo);
+        tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", requested_sample_rate);
         let load_start = Instant::now();
-        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, load_params)
+        let _ = soundfont_cache::load_soundfont_cached(soundfont_path, load_params)
             .map_err(Error::InitFailed)?;
         tracing::info!(
-            "XSynth: 音色库加载完成，耗时: {:.2} 秒",
+            "XSynth: 音色库预加载完成，耗时: {:.2} 秒",
             load_start.elapsed().as_secs_f64()
         );
 
-        // 音色库已就绪，现在打开音频流
+        // 音色库已就绪，现在打开音频流（cpal 在此选定设备原生采样率）
         let mut rt_config = XSynthRealtimeConfig::default();
-        let requested_sample_rate = sample_rate; // 复用上面已计算的采样率
 
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
@@ -142,37 +146,23 @@ impl XSynth {
         let synth = RealtimeSynth::open_with_default_output(rt_config)
             .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?;
 
-        // 注意：lumino-realtime 使用音频设备的原生采样率，配置中的 sample_rate 仅用于音色库预加载
-        // 实际采样率由 cpal 决定，可能与请求的不同
+        // 设备实际采样率（cpal 决定，可能与请求的不同）
         let actual_sample_rate = synth.stream_params().sample_rate;
 
-        // 如果实际采样率与预加载时不一致，必须重新加载音色库。
-        // SampleSoundfont::new() 的内部预处理（采样率转换、包络时间等）
-        // 与目标 AudioStreamParams.sample_rate 强相关，混用会导致音高/速度错误（跑调）。
-        let soundfont = if actual_sample_rate != requested_sample_rate {
-            tracing::warn!(
-                "XSynth: 请求的采样率 {}Hz 与设备实际采样率 {}Hz 不匹配，重新加载音色库...",
-                requested_sample_rate,
-                actual_sample_rate
-            );
-
-            let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
-            let reload_start = Instant::now();
-            let reloaded = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
-                .map_err(Error::InitFailed)?;
-            tracing::info!(
-                "XSynth: 音色库已按实际采样率 {}Hz 重新加载，耗时: {:.2} 秒",
-                actual_sample_rate,
-                reload_start.elapsed().as_secs_f64()
-            );
-            reloaded
-        } else {
-            tracing::info!(
-                "XSynth: 音频流已创建并启动 (sample_rate={}Hz)",
-                actual_sample_rate
-            );
-            soundfont
-        };
+        // 始终按设备实际采样率加载正式音色库：SampleSoundfont::new() 的预处理
+        // （采样率转换、包络时间等）与目标 AudioStreamParams.sample_rate 强相关，
+        // 混用会导致音高/速度错误（跑调）。无条件以 actual_sample_rate 加载，
+        // 彻底消除请求/设备不一致风险；当请求==实际时此处为缓存命中，零额外开销。
+        let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
+        let reload_start = Instant::now();
+        let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
+            .map_err(Error::InitFailed)?;
+        tracing::info!(
+            "XSynth: 音色库已按设备实际采样率 {}Hz 加载（请求 {}Hz），耗时: {:.2} 秒",
+            actual_sample_rate,
+            requested_sample_rate,
+            reload_start.elapsed().as_secs_f64()
+        );
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位
         let mut sender = synth.get_sender_ref().clone();
