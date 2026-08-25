@@ -84,7 +84,6 @@ pub(crate) fn rasterize_text(
     let h1 = font.as_scaled(PxScale::from(1.0)).height().max(1e-3);
     let scale = PxScale::from(h as f32 / h1);
     let scaled = font.as_scaled(scale);
-    let ascent = scaled.ascent(); // 基线到行顶的像素距离（y 向下为正）
 
     // 先计算自然布局总推进宽度
     let mut total_advance = 0f32;
@@ -100,13 +99,11 @@ pub(crate) fn rasterize_text(
         let gid = font.glyph_id(ch);
         let glyph = gid.with_scale_and_position(scale, AbPoint::default());
         if let Some(outline) = font.outline_glyph(glyph) {
-            let b = outline.px_bounds();
-            let bx = b.min.x;
-            let by = b.min.y; // 可为负（降部）
             outline.draw(|px, py, alpha| {
-                // 缓冲坐标：x 向右、y 向下（行顶=0，基线=ascent）
-                let x = (x_cursor + (px as f32 + bx)).round() as i32;
-                let y = (ascent - (py as f32 + by)).round() as i32;
+                // 回调坐标已相对字形包围盒左上角：x 向右、y 向下（与画布一致，无翻转）。
+                // px_bounds 的 min 即为原点，无需再减 ascent 或加 min 偏移。
+                let x = (x_cursor + px as f32).round() as i32;
+                let y = py as i32;
                 if x >= 0 && x < tw as i32 && y >= 0 && y < h as i32 && alpha > 0.0 {
                     temp[y as usize * tw as usize + x as usize] = (alpha * 255.0) as u8;
                 }
