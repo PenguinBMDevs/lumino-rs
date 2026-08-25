@@ -100,13 +100,6 @@ define_icons! {
     (MinusCircle, "../../../../../resources/icons/toolbar/minus-circle.svg"),
     (Quantize, "../../../../../resources/icons/toolbar/note-quantize.svg"),
     (Speed, "../../../../../resources/icons/toolbar/playback-speed.svg"),
-    // 工具面板图标（SVG 矢量直渲迁移时遗漏，补齐以兼容 dev 侧引用）
-    (BrushTool, "../../../../../resources/icons/toolbar/brush-tool.svg"),
-    (ShapeTool, "../../../../../resources/icons/toolbar/shape-tool.svg"),
-    (TextInput, "../../../../../resources/icons/toolbar/text-input.svg"),
-    (ToolPanelCaret, "../../../../../resources/icons/toolbar/caret-down.svg"),
-    (PlusCircle, "../../../../../resources/icons/toolbar/plus-circle.svg"),
-    (MinusCircle, "../../../../../resources/icons/toolbar/minus-circle.svg"),
     // 音符翻转图标
     (FlipVertical, "../../../../../resources/icons/toolbar/note-flip-vertical.svg"),
     (FlipHorizontal, "../../../../../resources/icons/toolbar/note-flip-horizontal.svg"),
