@@ -14,7 +14,9 @@ mod visible_notes;
 pub(crate) use ghost::{copy_deltas_for_index, ghost_delta_for_index, is_copy_ghosted};
 
 use iced_core::{Length, Point};
+use iced_widget::Space;
 use iced_widget::canvas::Canvas;
+use iced_widget::container;
 
 use crate::grid::PianoRollGrid;
 use crate::scrollbar_widget;
@@ -161,6 +163,11 @@ impl Editor {
                 .into();
         }
 
+        // 文字工具编辑态：在文本框位置叠加 TextInput 覆盖层
+        if let Some(overlay) = self.text_tool_input_overlay() {
+            return iced_widget::Stack::new().push(content).push(overlay).into();
+        }
+
         content.into()
     }
 
@@ -214,7 +221,46 @@ impl Editor {
                 .into();
         }
 
+        // 文字工具编辑态：在文本框位置叠加 TextInput 覆盖层
+        if let Some(overlay) = self.text_tool_input_overlay() {
+            return iced_widget::Stack::new()
+                .push(editor_content)
+                .push(overlay)
+                .into();
+        }
+
         editor_content.into()
+    }
+
+    /// 文字工具编辑态的 TextInput 覆盖层（定位在文本框屏幕矩形上）
+    ///
+    /// 仅当文本框激活且处于编辑态时返回 `Some`；纵向卷帘下 `box_rect_screen`
+    /// 返回 `None`，故不叠加。
+    #[allow(clippy::type_complexity)]
+    fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
+        if !(self.editor_state.text_tool.active && self.editor_state.text_tool.editing) {
+            return None;
+        }
+        let (left, top, right, bottom) = crate::grid::text_tool_box::box_rect_screen(self)?;
+        let box_w = (right - left).max(1.0);
+        let box_h = (bottom - top).max(1.0);
+        let input = container(
+            iced_widget::text_input("输入文字…", &self.editor_state.text_tool.text)
+                .on_input(|s: String| {
+                    Message::EditorAction(crate::message::EditorAction::TextToolTextChanged(s))
+                })
+                .width(Length::Fixed(box_w)),
+        )
+        .width(Length::Fixed(box_w))
+        .height(Length::Fixed(box_h));
+        let overlay = iced_widget::column![]
+            .push(Space::new().height(Length::Fixed(top)))
+            .push(
+                iced_widget::row![]
+                    .push(Space::new().width(Length::Fixed(left)))
+                    .push(input),
+            );
+        Some(overlay.into())
     }
 
     /// 获取选择框的屏幕坐标（用于渲染选择框，转置支持）

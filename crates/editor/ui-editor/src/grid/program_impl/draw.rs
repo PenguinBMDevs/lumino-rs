@@ -43,9 +43,9 @@ pub(crate) fn draw(
         if view.keyboard_width > 0.0 && view.ruler_height > 0.0 {
             let mut corner_frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
             {
+                use crate::grid::theme::ThemeExt;
                 use iced_core::{Point, Rectangle, Size};
                 use iced_widget::canvas::{Path, Stroke};
-                use crate::grid::theme::ThemeExt;
                 let corner_rect = Rectangle::new(
                     Point::new(0.0, 0.0),
                     Size::new(view.keyboard_width, view.ruler_height),
@@ -54,7 +54,9 @@ pub(crate) fn draw(
                 corner_frame.fill(&path, theme.ruler_background_color());
                 corner_frame.stroke(
                     &path,
-                    Stroke::default().with_width(1.0).with_color(theme.border_color()),
+                    Stroke::default()
+                        .with_width(1.0)
+                        .with_color(theme.border_color()),
                 );
             }
             geometries.push(corner_frame.into_geometry());
@@ -87,6 +89,13 @@ pub(crate) fn draw(
         puffin::profile_scope!("draw::line_tool_box");
         if let Some(line_geom) = crate::grid::line_tool_box::draw(editor, renderer, theme, bounds) {
             geometries.push(line_geom);
+        }
+    }
+
+    {
+        puffin::profile_scope!("draw::text_tool_box");
+        if let Some(tt_geom) = crate::grid::text_tool_box::draw(editor, renderer, theme, bounds) {
+            geometries.push(tt_geom);
         }
     }
 

@@ -18,6 +18,7 @@ workspace = true
 iced_core = { workspace = true }
 iced_wgpu = { workspace = true, features = ["geometry", "image"] }
 iced_widget = { workspace = true, features = ["image", "canvas"] }
+ab_glyph = { workspace = true }
 lumino-core = { workspace = true }
 lumino-note-core = { workspace = true }
 lumino-extras = { workspace = true }

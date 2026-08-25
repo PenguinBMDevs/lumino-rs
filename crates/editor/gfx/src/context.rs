@@ -203,8 +203,9 @@ impl Context {
                 let gpu = init_shared_gpu(&instance, &surface).await?;
                 // 注册 uncaptured error handler，避免 Metal 报错直接 abort（yinhe:84）
                 // 睡眠唤醒/maximize 大纹理时 Surface::configure 可能触发 idle 等待失败
-                gpu.device
-                    .on_uncaptured_error(Arc::new(|err| tracing::error!("wgpu uncaptured error: {err}")));
+                gpu.device.on_uncaptured_error(Arc::new(|err| {
+                    tracing::error!("wgpu uncaptured error: {err}")
+                }));
                 gpu.device.set_device_lost_callback(|reason, msg| {
                     tracing::error!("wgpu device lost: {reason:?} — {msg}")
                 });
@@ -240,9 +241,7 @@ impl Context {
             wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
             _ => None,
         };
-        let view_formats = linear_view_format
-            .map(|f| vec![f])
-            .unwrap_or_default();
+        let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
 
         surface.configure(
             &shared.device,
@@ -300,9 +299,7 @@ impl Context {
             wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
             _ => None,
         };
-        let view_formats = linear_view_format
-            .map(|f| vec![f])
-            .unwrap_or_default();
+        let view_formats = linear_view_format.map(|f| vec![f]).unwrap_or_default();
 
         self.surface.configure(
             &self.device,

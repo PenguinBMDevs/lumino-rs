@@ -29,6 +29,25 @@ impl Editor {
             return;
         }
 
+        // 文字工具：拖拽拉框完成 → 吸附网格并进入编辑态
+        if self.editor_state.tool == Tool::Text
+            && let EditState::Selecting {
+                start_tick,
+                current_tick,
+                start_key,
+                current_key,
+                ..
+            } = edit_state
+        {
+            self.editor_state
+                .text_tool
+                .set_drag(start_tick, current_tick, start_key, current_key);
+            self.editor_state
+                .text_tool
+                .begin_editing(self.editor_state.view.snap_precision);
+            return;
+        }
+
         // 画刷笔触结束：收尾并清状态（绕过通用 Drawing 收尾）
         if self.brush_last_cell.is_some() {
             self.finish_brush_stroke();

@@ -58,6 +58,8 @@ pub enum EditorAction {
     LineToolConfirm,
     /// 曲线工具直线：取消并清空（× 按钮）
     LineToolCancel,
+    /// 文字工具：输入框文字变更（画布覆盖层 TextInput 的 on_input）
+    TextToolTextChanged(String),
 }
 
 #[cfg(test)]

@@ -25,6 +25,7 @@ pub mod interaction_ops;
 pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
+pub mod text_tool;
 pub mod viewport;
 
 pub use canvas_state::CanvasState;
@@ -84,6 +85,8 @@ pub struct EditorState {
     pub image_to_midi: image_to_midi::ImageToMidiState,
     /// 曲线工具直线绘制状态
     pub line_tool: line_tool::LineToolState,
+    /// 文字工具状态（文本框 + 输入文字 + 采样模式）
+    pub text_tool: text_tool::TextToolState,
 }
 
 impl Default for EditorState {
@@ -111,6 +114,7 @@ impl EditorState {
             horizontal_backup: None,
             image_to_midi: image_to_midi::ImageToMidiState::default(),
             line_tool: line_tool::LineToolState::default(),
+            text_tool: text_tool::TextToolState::new(),
         }
     }
 
@@ -124,6 +128,7 @@ impl EditorState {
         self.horizontal_backup = None;
         self.image_to_midi = image_to_midi::ImageToMidiState::default();
         self.line_tool = line_tool::LineToolState::default();
+        self.text_tool = text_tool::TextToolState::new();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);
@@ -181,6 +186,10 @@ impl EditorState {
         // 曲线工具直线模式：切换工具清除直线状态（避免残留干扰其他工具）
         if tool != Tool::Curve {
             self.line_tool.reset();
+        }
+        // 文字工具：切换走时清除文本框与输入状态
+        if tool != Tool::Text {
+            self.text_tool.reset();
         }
     }
 

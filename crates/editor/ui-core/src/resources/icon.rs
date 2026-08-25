@@ -182,8 +182,8 @@ fn is_dark_theme(theme: Option<&crate::Theme>) -> bool {
 
 fn svg_element(icon: Icon, width: u32, height: u32, is_dark: bool) -> Svg<'static, crate::Theme> {
     // 兼容性：先从缓存取 Handle，失败则直接 from_memory（理论上不失败）
-    let handle = get_or_create_svg_handle(icon)
-        .unwrap_or_else(|_| SvgHandle::from_memory(bytes(icon)));
+    let handle =
+        get_or_create_svg_handle(icon).unwrap_or_else(|_| SvgHandle::from_memory(bytes(icon)));
     let mut svg = Svg::new(handle)
         .width(iced_core::Length::Fixed(width as f32))
         .height(iced_core::Length::Fixed(height as f32));

@@ -240,7 +240,10 @@ impl WgpuRenderThread {
         // 尺寸失配：采样 blit 拉伸（macOS 动画期/拖拽 resize 高频触发，~1 帧过渡）
         tracing::debug!(
             "copy_offscreen size mismatch tex={}x{} frame={}x{} — blit stretch",
-            tex_w, tex_h, frame_w, frame_h
+            tex_w,
+            tex_h,
+            frame_w,
+            frame_h
         );
         Self::blit_texture_to_surface(
             device,
@@ -332,12 +335,11 @@ struct VOut { @builtin(position) pos: vec4<f32>, @location(0) uv: vec2<f32> };
                 label: Some("blit_shader"),
                 source: wgpu::ShaderSource::Wgsl(SHADER.into()),
             });
-            let pipeline_layout =
-                device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-                    label: Some("blit_pipeline_layout"),
-                    bind_group_layouts: &[&bind_group_layout],
-                    push_constant_ranges: &[],
-                });
+            let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("blit_pipeline_layout"),
+                bind_group_layouts: &[&bind_group_layout],
+                push_constant_ranges: &[],
+            });
             let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
                 label: Some("blit_pipeline"),
                 layout: Some(&pipeline_layout),

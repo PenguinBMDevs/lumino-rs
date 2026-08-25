@@ -330,6 +330,9 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
         if let Some(geom) = crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds) {
             geometries.push(geom);
         }
+        if let Some(geom) = crate::grid::text_tool_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
 
         // 3. 播放指示线（水平红线，时间轴在 Y）
         if let Some(geom) = super::vertical_playback::draw(self.editor, renderer, bounds) {

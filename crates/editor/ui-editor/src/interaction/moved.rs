@@ -41,6 +41,17 @@ impl Editor {
             return;
         }
 
+        // 文字工具：拖拽中实时更新文本框（Selecting 态）
+        if self.editor_state.tool == lumino_message::Tool::Text
+            && matches!(
+                self.editor_state.interaction.edit_state,
+                EditState::Selecting { .. }
+            )
+        {
+            self.handle_text_tool_moved(pos);
+            return;
+        }
+
         // 框选/拖拽过程中 hover 判定无意义，且会触发空间索引重建/线性扫描或
         // collect_ghost_indices 的 O(N) 遍历（1600W 选中音符），跳过以提升性能。
         // Dragging/DraggingSelection 状态下 mouse_interaction 直接返回 Grabbing，

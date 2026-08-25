@@ -4554,6 +4554,7 @@ dependencies = [
 name = "lumino-ui-editor"
 version = "0.2.1"
 dependencies = [
+ "ab_glyph",
  "arboard",
  "iced_core",
  "iced_wgpu",

@@ -13,6 +13,7 @@ pub(crate) mod line_tool;
 mod moved;
 mod pressed;
 mod released;
+pub(crate) mod text_tool;
 
 #[cfg(test)]
 mod tests;
@@ -83,6 +84,9 @@ impl Editor {
             }
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
+            }
+            EditorAction::TextToolTextChanged(s) => {
+                self.set_text_tool_text(s);
             }
         }
     }

@@ -30,6 +30,7 @@ pub mod remote_selection;
 pub mod ruler;
 pub mod selection_box;
 pub mod state;
+pub(crate) mod text_tool_box;
 pub mod theme;
 pub mod utils;
 pub mod vertical_bars;
