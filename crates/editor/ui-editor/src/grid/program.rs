@@ -135,8 +135,14 @@ impl<'a> PianoRollGrid<'a> {
             delta_y = 0.0;
         }
 
-        let delta_x = delta_x.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
-        let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+        // 跟手修复：Pixels 为触控板高精度，单帧可达 200+，原 ±100 截断导致高速甩动“粘滞”
+        // Lines 仍保持 ±100（≈3 档），Pixels 放宽到 ±400 保留动量
+        let (limit_x, limit_y) = match delta {
+            iced_core::mouse::ScrollDelta::Pixels { .. } => (400.0, 400.0),
+            _ => (SCROLL_MAX_DELTA, SCROLL_MAX_DELTA),
+        };
+        let delta_x = delta_x.clamp(-limit_x, limit_x);
+        let delta_y = delta_y.clamp(-limit_y, limit_y);
 
         Some(canvas::Action::publish(Message::EditorAction(
             EditorAction::Scrolled { delta_x, delta_y },
@@ -174,7 +180,11 @@ impl<'a> PianoRollGrid<'a> {
         // 注意取反：handle_scrolled 中两轴均为 scroll - delta（取反累加），
         // 发送 -delta_y 才能保持"向上滚 → 视图右移"的既有语义。
         let (_, delta_y) = Self::wheel_delta(delta);
-        let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+        let limit = match delta {
+            iced_core::mouse::ScrollDelta::Pixels { .. } => 400.0,
+            _ => SCROLL_MAX_DELTA,
+        };
+        let delta_y = delta_y.clamp(-limit, limit);
         if delta_y.abs() < f32::EPSILON {
             return None;
         }

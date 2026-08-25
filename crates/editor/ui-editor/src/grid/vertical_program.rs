@@ -199,20 +199,28 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                     }
                 } else {
                     // 普通滚轮：垂直增量映射为水平滚动（自然滚动方向与横向键盘一致）
+                    // 统一用 SCROLL_LINES_SCALE(30) 与 program.rs 一致，原 20.0 导致纵/横手感割裂
+                    use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
                     let (_, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Lines { x, y } => {
+                            (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
+                        }
                         mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
                     };
                     // 优先使用垂直增量，兼容触控板水平手势
                     let mut delta_h = delta_y;
                     if delta_h.abs() < f32::EPSILON {
                         if let mouse::ScrollDelta::Lines { x, .. } = delta {
-                            delta_h = *x * 20.0;
+                            delta_h = *x * SCROLL_LINES_SCALE;
                         } else if let mouse::ScrollDelta::Pixels { x, .. } = delta {
                             delta_h = *x;
                         }
                     }
-                    delta_h = delta_h.clamp(-120.0, 120.0);
+                    let limit = match delta {
+                        mouse::ScrollDelta::Pixels { .. } => 400.0,
+                        _ => SCROLL_MAX_DELTA,
+                    };
+                    delta_h = delta_h.clamp(-limit, limit);
                     if delta_h.abs() > f32::EPSILON {
                         return Some(Action::publish(lumino_ui_core::Message::EditorAction(
                             lumino_ui_core::message::EditorAction::Scrolled {
@@ -239,26 +247,33 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                     }
                 } else {
                     // 普通滚轮：垂直滚动时间轴（Y，头部在底部），水平滚动音高轴（X）
+                    use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
                     let (delta_x, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Lines { x, y } => {
+                            (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
+                        }
                         mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    };
+                    let limit = match delta {
+                        mouse::ScrollDelta::Pixels { .. } => 400.0,
+                        _ => SCROLL_MAX_DELTA,
                     };
                     let mut out_delta_x = 0.0;
                     let mut out_delta_y = 0.0;
                     // 垂直增量 -> 时间轴（scroll_x），取反使向上滚显示更后时间（与横向一致）
                     if delta_y.abs() > f32::EPSILON {
-                        out_delta_x = (-delta_y).clamp(-120.0, 120.0);
+                        out_delta_x = (-delta_y).clamp(-limit, limit);
                     }
                     // 水平增量 -> 音高轴（scroll_y），取反使向右滚显示更高音
                     if delta_x.abs() > f32::EPSILON {
-                        out_delta_y = (-delta_x).clamp(-120.0, 120.0);
+                        out_delta_y = (-delta_x).clamp(-limit, limit);
                     }
                     // Shift+滚轮：垂直转水平（触控板兼容）
                     if state.shift_pressed
                         && out_delta_x.abs() < f32::EPSILON
                         && delta_y.abs() > f32::EPSILON
                     {
-                        out_delta_y = (-delta_y).clamp(-120.0, 120.0);
+                        out_delta_y = (-delta_y).clamp(-limit, limit);
                         out_delta_x = 0.0;
                     }
                     if out_delta_x.abs() > f32::EPSILON || out_delta_y.abs() > f32::EPSILON {
