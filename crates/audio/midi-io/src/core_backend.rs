@@ -16,10 +16,12 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use xsynth_core::{
     AudioPipe, AudioStreamParams, ChannelCount,
-    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
-    channel_group::{ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, ThreadCount},
     channel::ChannelInitOptions,
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     channel_group::SynthFormat,
+    channel_group::{
+        ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, ThreadCount,
+    },
     soundfont::SoundfontBase,
 };
 
@@ -124,7 +126,10 @@ impl CoreOutput {
             match crate::soundfont_cache::load_soundfont_cached(&soundfont_path, params) {
                 Ok(sf) => Some(sf),
                 Err(e) => {
-                    tracing::warn!("Core: 音色库加载失败 {:?}: {e}，创建空合成器", soundfont_path);
+                    tracing::warn!(
+                        "Core: 音色库加载失败 {:?}: {e}，创建空合成器",
+                        soundfont_path
+                    );
                     None
                 }
             }
@@ -156,51 +161,54 @@ impl CoreOutput {
         let levels_consumer = Arc::clone(&levels);
 
         // ── cpal 输出流（唯一消费者，零锁）──
-        let _stream: Option<cpal::Stream> = if let (Some(device), Some(cfg)) =
-            (device_opt, stream_config_opt)
-        {
-            match device.build_output_stream(
-                &cfg,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    let n = consumer.pop_into(data);
-                    if n < data.len() {
-                        data[n..].fill(0.0);
-                    }
-                    let mut peak: f32 = 0.0;
-                    for &s in data.iter() {
-                        let a = s.abs();
-                        if a > peak {
-                            peak = a;
+        let nch = channel_count.count() as usize;
+        let _stream: Option<cpal::Stream> =
+            if let (Some(device), Some(cfg)) = (device_opt, stream_config_opt) {
+                match device.build_output_stream(
+                    &cfg,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let n = consumer.pop_into(data);
+                        if n < data.len() {
+                            data[n..].fill(0.0);
+                        }
+                        // 真实逐通道峰值（交织布局）：单次遍历，只为实际通道数存储，
+                        // 避免向 16 个通道写入同一峰值的冗余原子写（旧实现 channel_levels 全相同）
+                        let mut peaks = [0.0f32; 2];
+                        for (i, &s) in data.iter().enumerate() {
+                            let a = s.abs();
+                            if a > peaks[i % nch] {
+                                peaks[i % nch] = a;
+                            }
+                        }
+                        let master_peak = peaks.iter().take(nch).copied().fold(0.0, f32::max);
+                        levels_consumer
+                            .master
+                            .store(master_peak.to_bits(), Ordering::Relaxed);
+                        for (i, p) in peaks.iter().take(nch).enumerate() {
+                            levels_consumer.channel_levels[i].store(p.to_bits(), Ordering::Relaxed);
+                        }
+                    },
+                    |err| tracing::error!("Core cpal stream error: {err}"),
+                    None,
+                ) {
+                    Ok(s) => {
+                        if let Err(e) = s.play() {
+                            tracing::error!("Core: 启动 cpal 流失败: {e}");
+                            None
+                        } else {
+                            tracing::info!("Core: cpal 流已启动 sr={} ch={:?}", sr, channel_count);
+                            Some(s)
                         }
                     }
-                    levels_consumer
-                        .master
-                        .store(peak.to_bits(), Ordering::Relaxed);
-                    for ch in levels_consumer.channel_levels.iter() {
-                        ch.store(peak.to_bits(), Ordering::Relaxed);
-                    }
-                },
-                |err| tracing::error!("Core cpal stream error: {err}"),
-                None,
-            ) {
-                Ok(s) => {
-                    if let Err(e) = s.play() {
-                        tracing::error!("Core: 启动 cpal 流失败: {e}");
+                    Err(e) => {
+                        tracing::error!("Core: 创建 cpal 流失败: {e}");
                         None
-                    } else {
-                        tracing::info!("Core: cpal 流已启动 sr={} ch={:?}", sr, channel_count);
-                        Some(s)
                     }
                 }
-                Err(e) => {
-                    tracing::error!("Core: 创建 cpal 流失败: {e}");
-                    None
-                }
-            }
-        } else {
-            tracing::warn!("Core: 无可用 cpal 流，进入离线 ring 模式（无 audible 输出）");
-            None
-        };
+            } else {
+                tracing::warn!("Core: 无可用 cpal 流，进入离线 ring 模式（无 audible 输出）");
+                None
+            };
 
         // ── 渲染线程（唯一生产者） ──
         let target_frames = buffer_frames.unwrap_or(TARGET_BUFFER_FRAMES as u32) as usize;
@@ -307,7 +315,7 @@ fn render_loop(
             thread::sleep(Duration::from_millis(1));
             continue;
         }
-        scratch.fill(0.0);
+        // 注意：`read_samples_unchecked` 会写满整个 `scratch`，无需先 fill(0.0)
         group.read_samples_unchecked(&mut scratch);
         limiter.limit(&mut scratch);
         let _ = producer.push_slice(&scratch);
@@ -355,9 +363,9 @@ impl OutputConnection for CoreOutput {
                 let v = bend / 8192.0 - 1.0;
                 SynthEvent::Channel(
                     channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(
-                        ControlEvent::PitchBendValue(v),
-                    )),
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                        v,
+                    ))),
                 )
             }
             _ => return Ok(()),

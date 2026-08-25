@@ -15,7 +15,6 @@ use crate::realtime::{
 };
 
 use super::xsynth_output::XSynthOutputConn;
-use crate::constants::*;
 use crate::soundfont_cache;
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
@@ -108,25 +107,14 @@ impl XSynth {
         // 总是以 cpal 设备原生采样率渲染，因此音色库必须以同一采样率预处理，
         // 否则 SampleSoundfont 内部重采样/包络时间错配会产生音高偏移（跑调）。
         //
-        // 为避免「请求采样率」与「设备实际采样率」不一致（尤其从 ring 后端切换过来时）
-        // 带来的跑调，这里先按请求采样率占位预加载（保证音频流启动瞬间有数据，避免 underrun），
-        // 待打开音频流取得设备实际采样率后，「始终」按设备实际采样率加载正式音色库。
-        let requested_sample_rate = options
-            .map(|o| o.sample_rate)
-            .unwrap_or(DEFAULT_SAMPLE_RATE);
-
-        // 占位预加载（按请求采样率），实际使用的音色库在下方按设备实际采样率重新加载
-        let load_params = AudioStreamParams::new(requested_sample_rate, ChannelCount::Stereo);
-        tracing::info!("XSynth: 预加载音色库 (sample_rate={})...", requested_sample_rate);
-        let load_start = Instant::now();
-        let _ = soundfont_cache::load_soundfont_cached(soundfont_path, load_params)
-            .map_err(Error::InitFailed)?;
-        tracing::info!(
-            "XSynth: 音色库预加载完成，耗时: {:.2} 秒",
-            load_start.elapsed().as_secs_f64()
-        );
-
-        // 音色库已就绪，现在打开音频流（cpal 在此选定设备原生采样率）
+        // 加载策略（性能修复）：先打开音频流取得设备原生采样率，再「只」按实际采样率
+        // 加载一次。
+        //  - 缓存键为 (path, sample_rate)，若先按请求采样率(默认 44100)占位预加载、
+        //    再按实际采样率(多为 48000)加载，采样率不一致时会触发一次完整的
+        //    SampleSoundfont 全量构建冗余，并在全局缓存留下一份永不被使用的数十~数百 MB 条目；
+        //  - 占位预加载的 soundfont 从未经 SetSoundfonts 下发合成器，对「流启动防 underrun」
+        //    零作用（流启动后本就静音，直到下方 SetSoundfonts 到达，与 Core 后端空 Group 一致）。
+        // 故仅加载实际采样率一份，零冗余。
         let mut rt_config = XSynthRealtimeConfig::default();
 
         if let Some(opt) = options {
@@ -149,19 +137,17 @@ impl XSynth {
         // 设备实际采样率（cpal 决定，可能与请求的不同）
         let actual_sample_rate = synth.stream_params().sample_rate;
 
-        // 始终按设备实际采样率加载正式音色库：SampleSoundfont::new() 的预处理
-        // （采样率转换、包络时间等）与目标 AudioStreamParams.sample_rate 强相关，
-        // 混用会导致音高/速度错误（跑调）。无条件以 actual_sample_rate 加载，
-        // 彻底消除请求/设备不一致风险；当请求==实际时此处为缓存命中，零额外开销。
+        // 仅按设备实际采样率加载一次正式音色库（无占位预加载）。SampleSoundfont::new()
+        // 的预处理（采样率转换、包络时间等）与 AudioStreamParams.sample_rate 强相关，
+        // 混用会导致音高/速度错误（跑调），故无条件以 actual_sample_rate 加载。
         let actual_params = AudioStreamParams::new(actual_sample_rate, ChannelCount::Stereo);
-        let reload_start = Instant::now();
+        let load_start = Instant::now();
         let soundfont = soundfont_cache::load_soundfont_cached(soundfont_path, actual_params)
             .map_err(Error::InitFailed)?;
         tracing::info!(
-            "XSynth: 音色库已按设备实际采样率 {}Hz 加载（请求 {}Hz），耗时: {:.2} 秒",
+            "XSynth: 音色库已按设备实际采样率 {}Hz 加载，耗时: {:.2} 秒",
             actual_sample_rate,
-            requested_sample_rate,
-            reload_start.elapsed().as_secs_f64()
+            load_start.elapsed().as_secs_f64()
         );
 
         // 获取 sender — 在 open 后立即配置通道，确保音色库在 callback 首次触发前就位

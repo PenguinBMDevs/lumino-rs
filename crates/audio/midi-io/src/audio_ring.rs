@@ -80,6 +80,11 @@ impl AudioRingProducer {
     }
 
     #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    #[inline]
     pub fn free_space(&self) -> usize {
         self.capacity().saturating_sub(self.len())
     }
@@ -134,6 +139,11 @@ impl AudioRingConsumer {
         let write = self.inner.write.load(Ordering::Acquire);
         let read = self.inner.read.load(Ordering::Relaxed);
         write.wrapping_sub(read)
+    }
+
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
     }
 }
 
