@@ -85,6 +85,10 @@ pub struct Host {
     pub(crate) waterfall_gen_info: Option<(u16, u16, u32)>,
     /// 消息路由器（分发消息到各处理器）
     pub(crate) message_router: root::handlers::MessageRouter,
+    /// 触摸捏合回退：多指触摸点（id -> 逻辑坐标），用于无 PinchGesture 平台合成缩放
+    pub(crate) active_touches: std::collections::HashMap<u64, iced_core::Point>,
+    /// 上一次双指距离（像素），用于计算 pinch delta
+    pub(crate) prev_pinch_distance: Option<f32>,
 }
 
 impl Host {
