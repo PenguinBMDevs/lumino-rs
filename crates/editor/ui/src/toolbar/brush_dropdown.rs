@@ -4,6 +4,7 @@
 
 use iced_core::{Background, Border, Color, Length};
 use iced_widget::{button, column, container, row, space, text};
+use lumino_ui_core::color::contrast_text_color;
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -77,9 +78,13 @@ pub(crate) fn render_brush_dropdown<'a>(
     }
 
     let palette = theme.extended_palette();
+    // 面板背景由工具栏底色派生，在亮色模式下可能仍为偏暗色；
+    // 文字颜色必须按「实际背景亮度」判断，否则会出现黑字落在暗面板上不可见的问题。
+    let panel_text_color = contrast_text_color(panel_background);
     container(column(rows).spacing(8).padding(12))
         .style(move |_theme: &iced_core::Theme| container::Style {
             background: Some(Background::Color(panel_background)),
+            text_color: Some(panel_text_color),
             border: Border {
                 width: 1.0,
                 color: palette.background.strong.color,

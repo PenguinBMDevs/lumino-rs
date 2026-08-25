@@ -5,6 +5,7 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, scrollable, space, text};
+use lumino_ui_core::color::contrast_text_color;
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -164,11 +165,16 @@ pub fn view_brush_settings_dialog<'a>(
     .width(Length::Fill)
     .height(Length::Fill);
 
+    let dialog_bg = theme.palette().background;
+    // 对话框背景为当前主题底色，文字颜色按实际背景亮度计算，
+    // 保证亮/暗模式下都可读（对齐代码库 contrast_text_color 规则）。
+    let dialog_text_color = contrast_text_color(dialog_bg);
     container(content)
         .width(Length::Fill)
         .height(Length::Fill)
-        .style(|theme: &iced_core::Theme| container::Style {
-            background: Some(iced_core::Background::Color(theme.palette().background)),
+        .style(move |_theme: &iced_core::Theme| container::Style {
+            background: Some(iced_core::Background::Color(dialog_bg)),
+            text_color: Some(dialog_text_color),
             ..Default::default()
         })
         .into()
