@@ -188,47 +188,13 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             let keyboard_h = view.keyboard_width;
             let is_over_keyboard = local.y >= bounds.height - keyboard_h;
             if is_over_keyboard {
-                let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
-                if ctrl_pressed {
-                    if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
-                        let fixed_ratio = (local.x / bounds.width).clamp(0.0, 1.0);
-                        return Some(Action::publish(lumino_ui_core::Message::ZoomYChanged {
-                            zoom: view.zoom_y * factor,
-                            fixed_ratio,
-                        }));
-                    }
-                } else {
-                    // 普通滚轮：垂直增量映射为水平滚动（自然滚动方向与横向键盘一致）
-                    // 统一用 SCROLL_LINES_SCALE(30) 与 program.rs 一致，原 20.0 导致纵/横手感割裂
-                    use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
-                    let (_, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => {
-                            (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
-                        }
-                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-                    };
-                    // 优先使用垂直增量，兼容触控板水平手势
-                    let mut delta_h = delta_y;
-                    if delta_h.abs() < f32::EPSILON {
-                        if let mouse::ScrollDelta::Lines { x, .. } = delta {
-                            delta_h = *x * SCROLL_LINES_SCALE;
-                        } else if let mouse::ScrollDelta::Pixels { x, .. } = delta {
-                            delta_h = *x;
-                        }
-                    }
-                    let limit = match delta {
-                        mouse::ScrollDelta::Pixels { .. } => 400.0,
-                        _ => SCROLL_MAX_DELTA,
-                    };
-                    delta_h = delta_h.clamp(-limit, limit);
-                    if delta_h.abs() > f32::EPSILON {
-                        return Some(Action::publish(lumino_ui_core::Message::EditorAction(
-                            lumino_ui_core::message::EditorAction::Scrolled {
-                                delta_x: 0.0,
-                                delta_y: delta_h,
-                            },
-                        )));
-                    }
+                // 便捷缩放：键盘区滚轮直接缩放音高 Y（无需 Ctrl），对齐 yinhe 左区逻辑
+                if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
+                    let fixed_ratio = (local.x / bounds.width).clamp(0.0, 1.0);
+                    return Some(Action::publish(lumino_ui_core::Message::ZoomYChanged {
+                        zoom: view.zoom_y * factor,
+                        fixed_ratio,
+                    }));
                 }
             } else if local.y < bounds.height - keyboard_h {
                 // 网格区域：Y 向时间轴（头部在键盘顶部，向上递增，纵向隐藏横向标尺故 grid_top=0）支持滚动与缩放
