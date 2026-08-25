@@ -41,6 +41,15 @@ impl Editor {
             return;
         }
 
+        // 文字工具：已放置框的拖拽移动（中间实心区），优先于 Selecting 分支
+        if self.editor_state.tool == lumino_message::Tool::Text
+            && self.editor_state.text_tool.active
+            && self.editor_state.text_tool.is_dragging()
+        {
+            self.handle_text_tool_box_move(pos);
+            return;
+        }
+
         // 文字工具：拖拽中实时更新文本框（Selecting 态）
         if self.editor_state.tool == lumino_message::Tool::Text
             && matches!(

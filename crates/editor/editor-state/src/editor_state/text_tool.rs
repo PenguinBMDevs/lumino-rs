@@ -44,6 +44,10 @@ pub struct TextToolState {
     pub mode: TextToolMode,
     /// 字体家族名（默认跟随系统，需支持中文等多语言）
     pub font_family: &'static str,
+    /// 拖拽移动文本框时记录的抓取点（鼠标 tick / key 浮点），None 表示非移动中
+    pub drag_grab: Option<(f32, f32)>,
+    /// 拖拽移动开始时的原始框边界（start_tick, end_tick, start_key, end_key）
+    pub drag_origin: Option<(f32, f32, u16, u16)>,
 }
 
 impl TextToolState {
@@ -118,6 +122,47 @@ impl TextToolState {
     pub fn has_content(&self) -> bool {
         self.active && !self.text.is_empty()
     }
+
+    /// 是否正在拖拽移动文本框
+    pub fn is_dragging(&self) -> bool {
+        self.drag_grab.is_some()
+    }
+
+    /// 开始拖拽移动：记录抓取点与当前框原始边界
+    pub fn begin_move(&mut self, grab_tick: f32, grab_key: f32) {
+        self.drag_origin = Some((self.start_tick, self.end_tick, self.start_key, self.end_key));
+        self.drag_grab = Some((grab_tick, grab_key));
+    }
+
+    /// 结束拖拽移动（释放时调用，清除临时状态）
+    pub fn end_move(&mut self) {
+        self.drag_grab = None;
+        self.drag_origin = None;
+    }
+
+    /// 按当前鼠标位置平移文本框：X 向按音符精度、Y 向按 key 行吸附，
+    /// 框尺寸保持不变（整体平移）。tick 下限 0，key 限制在 0..=255。
+    pub fn move_to(&mut self, cur_tick: f32, cur_key: f32, snap: f32) {
+        let Some((g_tick, g_key)) = self.drag_grab else {
+            return;
+        };
+        let Some((o_st, o_et, o_sk, o_ek)) = self.drag_origin else {
+            return;
+        };
+        let snap = snap.max(1.0);
+        let d_tick = ((cur_tick - g_tick) / snap).round() * snap;
+        let d_key = (cur_key - g_key).round() as i32;
+        let width = o_et - o_st;
+        let new_start = (o_st + d_tick).max(0.0);
+        let new_end = new_start + width;
+        let height = (o_ek as i32) - (o_sk as i32);
+        let new_sk = ((o_sk as i32) + d_key).clamp(0, 255 - height) as u16;
+        let new_ek = (new_sk as i32 + height) as u16;
+        self.start_tick = new_start;
+        self.end_tick = new_end;
+        self.start_key = new_sk;
+        self.end_key = new_ek;
+    }
 }
 
 #[cfg(test)]
@@ -160,5 +205,45 @@ mod tests {
         assert_eq!(s.end_tick, 3840.0);
         assert!(s.active && s.editing);
         assert_eq!(s.rows(), 4);
+    }
+
+    #[test]
+    fn test_move_box_translates_and_snaps() {
+        let mut s = TextToolState::new();
+        // 既有框：start(480,60) → end(960,64)，snap=480
+        s.set_drag(480.0, 960.0, 60, 64);
+        s.active = true;
+        // 抓取点 (grab_tick=600, grab_key=62)
+        s.begin_move(600.0, 62.0);
+        // 拖到鼠标 (1100, 62)：X 位移 500 → 吸附到 480（一个精度单元）
+        s.move_to(1100.0, 62.0, 480.0);
+        assert_eq!(s.start_tick, 960.0, "整体右移一个精度单元");
+        assert_eq!(s.end_tick, 1440.0, "宽度保持不变");
+        assert_eq!(s.start_key, 60);
+        assert_eq!(s.end_key, 64, "Y 未动时 key 行不变");
+
+        // 再下移 2 个 key 行（grab_key 不变，cur_key=64）
+        s.move_to(1100.0, 64.0, 480.0);
+        assert_eq!(s.start_key, 62);
+        assert_eq!(s.end_key, 66, "高度保持不变，整体下移 2 行");
+        assert!(s.is_dragging());
+        s.end_move();
+        assert!(!s.is_dragging(), "释放后清除拖拽状态");
+    }
+
+    #[test]
+    fn test_move_box_clamps_bounds() {
+        let mut s = TextToolState::new();
+        s.set_drag(100.0, 580.0, 250, 254); // 靠近底部
+        s.active = true;
+        s.begin_move(300.0, 252.0);
+        // 试图大幅下移，应被限制在 key<=255 且保持高度（4 行）
+        s.move_to(300.0, 300.0, 480.0);
+        assert_eq!(s.start_key, 251, "下移被钳制在 255-高度(4)=251");
+        assert_eq!(s.end_key, 255);
+        // 尝试左移越过 0
+        s.begin_move(100.0, 252.0);
+        s.move_to(-5000.0, 252.0, 480.0);
+        assert!(s.start_tick >= 0.0, "左移不能越过 tick=0");
     }
 }

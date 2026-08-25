@@ -29,6 +29,12 @@ impl Editor {
             return;
         }
 
+        // 文字工具：已放置框的拖拽移动结束 → 清除拖拽临时状态
+        if self.editor_state.tool == Tool::Text && self.editor_state.text_tool.is_dragging() {
+            self.editor_state.text_tool.end_move();
+            return;
+        }
+
         // 文字工具：拖拽拉框完成 → 吸附网格并进入编辑态
         if self.editor_state.tool == Tool::Text
             && let EditState::Selecting {

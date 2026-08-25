@@ -306,7 +306,7 @@ fn test_undo_redo_populates_collab_move_sync() {
     let mut pending = data.take_pending_collab_move_sync();
     assert_eq!(pending.len(), 2, "被移动的两个音符应各有一条同步记录");
     // 元组形状 (id, tick, key, tick_offset, key_offset, track_index)
-    pending.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    pending.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     let (id0, t0, k0, to0, ko0, tr0) = pending[0];
     assert!(id0 > 0, "音符应已分配全局唯一 id");
     // 音符0：original_tick=0, original_key=60, delta_tick=5, delta_key=-2
@@ -321,7 +321,7 @@ fn test_undo_redo_populates_collab_move_sync() {
     assert!(data.redo());
     let mut pending2 = data.take_pending_collab_move_sync();
     assert_eq!(pending2.len(), 2);
-    pending2.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+    pending2.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
     // ref = original，offset = +delta
     let (id2, t2, k2, to2, ko2, tr2) = pending2[0];
     assert!(id2 > 0, "音符应已分配全局唯一 id");
@@ -482,7 +482,7 @@ fn test_glue_populates_collab_transform_sync() {
     let (_, _aid, at, ak, al, _, _, _) = *adds[0];
     assert_eq!((at, ak, al), (0.0, 60, 2.0), "合并后音符应为 (0..2)");
     let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.2).collect();
-    del_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    del_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     assert_eq!(del_ticks, vec![0.0, 1.0], "应删除两个被并音符(0 与 1)");
 }
 

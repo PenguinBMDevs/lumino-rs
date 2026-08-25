@@ -92,7 +92,9 @@ pub(crate) fn rasterize_glyph_alpha(
     for ch in text.chars() {
         let gid = font.glyph_id(ch);
         total_advance += scaled.h_advance(gid);
-        if let Some(outline) = font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default())) {
+        if let Some(outline) =
+            font.outline_glyph(gid.with_scale_and_position(scale, AbPoint::default()))
+        {
             let b = outline.px_bounds();
             if b.max.y > max_bottom {
                 max_bottom = b.max.y;
@@ -274,13 +276,17 @@ impl Editor {
                     return;
                 }
             }
-            // 框内点击：保持编辑态（输入层聚焦由 iced 处理）
+            // 框内点击（顶部输入条由 iced TextInput 覆盖，不会落到这里）：
+            // 拖拽中间实心区域可整体移动文本框。
             if let Some((l, t, r, b)) = crate::grid::text_tool_box::box_rect_screen(self)
                 && pos.x >= l
                 && pos.x <= r
                 && pos.y >= t
                 && pos.y <= b
             {
+                let grab_tick = self.pos_to_tick(pos);
+                let grab_key = self.pos_to_key(pos) as f32;
+                self.editor_state.text_tool.begin_move(grab_tick, grab_key);
                 self.editor_state.text_tool.editing = true;
                 return;
             }
@@ -324,6 +330,16 @@ impl Editor {
             let view = &self.editor_state.view;
             *current_y = view.key_to_y(key) + view.zoom_y;
         }
+    }
+
+    /// 文字工具：拖拽移动已放置的文本框（中间实心区域）
+    ///
+    /// 保持框尺寸，整体平移；X 向按音符精度、Y 向按 key 行吸附（与采样/生成一致）。
+    pub(crate) fn handle_text_tool_box_move(&mut self, pos: Point) {
+        let snap = self.editor_state.view.snap_precision;
+        let cur_tick = self.pos_to_tick(pos);
+        let cur_key = self.pos_to_key(pos) as f32;
+        self.editor_state.text_tool.move_to(cur_tick, cur_key, snap);
     }
 
     /// 文字工具：确认生成音符（√ 按钮）
@@ -514,5 +530,50 @@ mod tests {
             }
             other => panic!("拉框过程应处于 Selecting 状态，实际 {other:?}"),
         }
+    }
+
+    #[test]
+    fn test_text_tool_box_drag_move_wiring() {
+        // 放置后的文本框：在中间实心区按下拖拽应整体移动，释放后清除拖拽态。
+        use lumino_message::Tool;
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Text;
+        let view = &mut editor.editor_state.view;
+        view.zoom_x = 1.0;
+        view.scroll_x = 0.0;
+        view.keyboard_width = 0.0;
+        view.zoom_y = 1.0;
+        view.scroll_y = 0.0;
+        view.ruler_height = 0.0;
+        view.visible_key_count = 256;
+        view.snap_precision = 480.0;
+
+        // 预置已放置框：tick [480,960], key [60,64]
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(480.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+
+        // 框内按下（x∈[480,960], y∈[191,195]）：应进入拖拽移动
+        editor.handle_text_tool_pressed(Point::new(600.0, 193.0), 62);
+        assert!(
+            editor.editor_state.text_tool.is_dragging(),
+            "框内按下应进入拖拽移动"
+        );
+
+        // 拖到 x=1100（右移一个精度单元），y 不变
+        editor.handle_text_tool_box_move(Point::new(1100.0, 193.0));
+        let tt = &editor.editor_state.text_tool;
+        assert_eq!(tt.start_tick, 960.0, "框应整体右移一个精度单元");
+        assert_eq!(tt.end_tick, 1440.0, "宽度保持不变");
+        assert_eq!(tt.start_key, 60);
+        assert_eq!(tt.end_key, 64);
+
+        // 释放 → 退出拖拽态
+        editor.handle_released();
+        assert!(
+            !editor.editor_state.text_tool.is_dragging(),
+            "释放后应清除拖拽临时状态"
+        );
     }
 }
