@@ -158,10 +158,15 @@ impl SettingsPanel {
                 self.synth.core_buffer_frames = v.clamp(512, 16384);
             }
             Event::XSynthMaxVoicesCustomInput(s) => {
-                if s.trim().is_empty() || s.trim().eq_ignore_ascii_case("unlimited") {
+                let t = s.trim();
+                if t.is_empty() || t.eq_ignore_ascii_case("unlimited") || t == "0" {
                     self.synth.xsynth_max_voices_per_key = None;
-                } else if let Ok(v) = s.trim().parse::<usize>() {
-                    self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
+                } else if let Ok(v) = t.parse::<usize>() {
+                    if v == 0 {
+                        self.synth.xsynth_max_voices_per_key = None;
+                    } else {
+                        self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
+                    }
                 }
             }
             Event::ThemeChanged(_) => {

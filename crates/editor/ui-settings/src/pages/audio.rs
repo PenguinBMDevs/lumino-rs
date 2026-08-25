@@ -232,52 +232,36 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
-    // 每键最大同音数：拖拽滑块 1..64 + 自定义输入 1..128 + 不限制切换
-    // 结论：滑块适合快速试听对比（跟手），输入框适合精细/超限值，复选框一键不限制；三者共存最灵活
-    let is_unlimited = settings.synth.xsynth_max_voices_per_key.is_none();
-    let cur_val = settings.synth.xsynth_max_voices_per_key.unwrap_or(16) as f32;
+    // 每键最大同音数：0=不限制，1..64 拖拽 + 1..128 自定义输入
+    let slider_val = match settings.synth.xsynth_max_voices_per_key {
+        None => 0.0,
+        Some(v) => (v as f32).clamp(0.0, 64.0),
+    };
+    let display_val = match settings.synth.xsynth_max_voices_per_key {
+        None => "不限制".to_string(),
+        Some(v) => v.to_string(),
+    };
     col = col.push(
         row![
-            text(t.max_voices)
+            text(format!("{}: {}", t.max_voices, display_val))
                 .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            iced_widget::Checkbox::new(is_unlimited)
-                .label(if is_unlimited { "不限制" } else { "限制" })
-                .on_toggle(|b| {
-                    if b {
-                        Message::Settings(crate::Event::XSynthMaxVoicesChanged(None))
-                    } else {
-                        Message::Settings(crate::Event::XSynthMaxVoicesChanged(Some(16)))
-                    }
+                .style(create_content_text_style())
+                .width(180.0),
+            iced_widget::slider(0.0..=64.0, slider_val, |v| {
+                let opt = if v < 0.5 { None } else { Some(v as usize) };
+                Message::Settings(crate::Event::XSynthMaxVoicesChanged(opt))
+            })
+            .step(1.0)
+            .width(160.0),
+            text_input("0=不限制 1-128", &display_val)
+                .width(80.0)
+                .on_input(|s| {
+                    Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s))
                 }),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
-    col = col.push(iced_widget::space().height(8.0));
-    if !is_unlimited {
-        col = col.push(
-            row![
-                text(format!("{}: {}", t.max_voices, cur_val as usize))
-                    .size(TEXT_SIZE_CONTENT)
-                    .style(create_content_text_style())
-                    .width(140.0),
-                iced_widget::slider(1.0..=64.0, cur_val, |v| {
-                    Message::Settings(crate::Event::XSynthMaxVoicesChanged(Some(v as usize)))
-                })
-                .step(1.0)
-                .width(160.0),
-                text_input("1-128", &format!("{}", cur_val as usize))
-                    .width(70.0)
-                    .on_input(|s| {
-                        Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s))
-                    }),
-            ]
-            .spacing(SPACING_ICON_LABEL)
-            .align_y(Alignment::Center),
-        );
-    }
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
         text(t.max_voices_hint)
