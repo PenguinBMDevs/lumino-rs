@@ -135,8 +135,14 @@ impl<'a> PianoRollGrid<'a> {
             delta_y = 0.0;
         }
 
-        let delta_x = delta_x.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
-        let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
+        // 跟手修复：Pixels 为触控板高精度，单帧可达 200+，原 ±100 截断导致高速甩动“粘滞”
+        // Lines 仍保持 ±100（≈3 档），Pixels 放宽到 ±400 保留动量
+        let (limit_x, limit_y) = match delta {
+            iced_core::mouse::ScrollDelta::Pixels { .. } => (400.0, 400.0),
+            _ => (SCROLL_MAX_DELTA, SCROLL_MAX_DELTA),
+        };
+        let delta_x = delta_x.clamp(-limit_x, limit_x);
+        let delta_y = delta_y.clamp(-limit_y, limit_y);
 
         Some(canvas::Action::publish(Message::EditorAction(
             EditorAction::Scrolled { delta_x, delta_y },
@@ -144,59 +150,36 @@ impl<'a> PianoRollGrid<'a> {
     }
 
     /// 标尺区域（顶部小节号栏）滚轮处理：
-    /// - Ctrl+滚轮：X 轴缩放，以鼠标位置为缩放锚点
-    /// - 普通滚轮：水平平移（向上滚向右、向下滚向左移动视图）
+    /// 便捷缩放：滚动即 X 轴缩放（无需 Ctrl），锚点跟鼠标 X，对齐 yinhe `widgets/time_ruler.rs:211`
+    /// Ctrl 按下亦走同一路径，兼容旧习惯；普通滚轮不再产生水平平移（标尺即时间尺，平移由网格区双指/Shift 承接）
     pub(super) fn handle_ruler_wheel_scroll(
         &self,
         delta: &iced_core::mouse::ScrollDelta,
-        control_pressed: bool,
+        _control_pressed: bool,
         local_pos: Point,
     ) -> Option<canvas::Action<Message>> {
-        use lumino_ui_core::message::EditorAction;
-
-        if control_pressed {
-            let factor = crate::zoom::zoom_factor_from_delta(delta)?;
-            let view = &self.editor.editor_state.view;
-            let canvas = &self.editor.editor_state.canvas;
-            let viewport_w = (canvas.size_x - view.keyboard_width).max(0.0);
-            return Some(canvas::Action::publish(Message::ZoomXChanged {
-                zoom: view.zoom_x * factor,
-                fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
-                    local_pos.x,
-                    view.keyboard_width,
-                    viewport_w,
-                ),
-            }));
-        }
-
-        // 普通滚轮：垂直增量映射为水平移动。向上滚（delta_y > 0）向右移动视图
-        // （scroll_x 增大），向下滚（delta_y < 0）向左移动视图。
-        // 注意取反：handle_scrolled 中两轴均为 scroll - delta（取反累加），
-        // 发送 -delta_y 才能保持"向上滚 → 视图右移"的既有语义。
-        let (_, delta_y) = Self::wheel_delta(delta);
-        let delta_y = delta_y.clamp(-SCROLL_MAX_DELTA, SCROLL_MAX_DELTA);
-        if delta_y.abs() < f32::EPSILON {
-            return None;
-        }
-        Some(canvas::Action::publish(Message::EditorAction(
-            EditorAction::Scrolled {
-                delta_x: -delta_y,
-                delta_y: 0.0,
-            },
-        )))
+        let factor = crate::zoom::zoom_factor_from_delta(delta)?;
+        let view = &self.editor.editor_state.view;
+        let canvas = &self.editor.editor_state.canvas;
+        let viewport_w = (canvas.size_x - view.keyboard_width).max(0.0);
+        Some(canvas::Action::publish(Message::ZoomXChanged {
+            zoom: view.zoom_x * factor,
+            fixed_ratio: crate::zoom::fixed_ratio_from_viewport(
+                local_pos.x,
+                view.keyboard_width,
+                viewport_w,
+            ),
+        }))
     }
 
     /// 键盘区域（左侧琴键栏）滚轮处理：
-    /// Ctrl+滚轮：Y 轴缩放，以鼠标位置为缩放锚点；无 Ctrl 时无操作（保持原行为，不干扰标记）。
+    /// 便捷缩放：滚动即 Y 轴缩放（无需 Ctrl），锚点跟鼠标 Y，对齐 yinhe `view_interaction.rs:191` 左区滚轮缩放
     pub(super) fn handle_keyboard_wheel_scroll(
         &self,
         delta: &iced_core::mouse::ScrollDelta,
-        control_pressed: bool,
+        _control_pressed: bool,
         local_pos: Point,
     ) -> Option<canvas::Action<Message>> {
-        if !control_pressed {
-            return None;
-        }
         let factor = crate::zoom::zoom_factor_from_delta(delta)?;
         let view = &self.editor.editor_state.view;
         let canvas = &self.editor.editor_state.canvas;

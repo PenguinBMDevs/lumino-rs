@@ -33,8 +33,11 @@ pub struct OffscreenTextureResources<'a> {
 ///
 /// `needs_depth` 控制是否创建深度纹理；视频导出为纯 2D 渲染，可跳过 depth。
 pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>, needs_depth: bool) -> bool {
-    let width = resources.width.max(1);
-    let height = resources.height.max(1);
+    // macOS 最大化时物理尺寸可达 10k+（Retina 2x），超 8192 硬上限会触发
+    // device lost/黑屏（参考 yinhe render_context.rs:181）。此处同 yinhe 做上限裁剪。
+    let max_dim = resources.device.limits().max_texture_dimension_2d;
+    let width = resources.width.min(max_dim).max(1);
+    let height = resources.height.min(max_dim).max(1);
 
     // 如果尺寸改变或纹理不存在，重新创建
     let needs_recreate = *resources.current_size != (width, height)
@@ -53,7 +56,20 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>, needs_dept
         resources.depth_texture.take();
         resources.current_texture.take();
 
-        // 创建离屏渲染纹理
+        // sRGB 需提供 linear view_format（Metal/Vulkan 在 TEXTURE_BINDING 时校验）
+        // 缺失会导致最大化时大纹理创建失败进而 device lost（yinhe:183）
+        let linear_format = match resources.texture_format {
+            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+            _ => None,
+        };
+        let view_formats: &[wgpu::TextureFormat] = if let Some(lf) = &linear_format {
+            std::slice::from_ref(lf)
+        } else {
+            &[]
+        };
+
+        // 创建离屏渲染纹理（需 TEXTURE_BINDING 供最大化/拖拽 resize 时 blit 拉伸，避免黑边）
         let texture = TrackedTexture::new(
             resources.device,
             &wgpu::TextureDescriptor {
@@ -67,8 +83,10 @@ pub fn ensure_textures(resources: &mut OffscreenTextureResources<'_>, needs_dept
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format: resources.texture_format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | wgpu::TextureUsages::COPY_SRC
+                    | wgpu::TextureUsages::TEXTURE_BINDING,
+                view_formats,
             },
         );
 

@@ -179,6 +179,8 @@ impl Context {
         height: u32,
     ) -> Result<Self> {
         let target = target.into();
+        // 初始尺寸同样做上限裁剪，避免最大化时瞬时超限触发 device lost
+        // 需在 adapter 确定后用其 max_texture_dimension_2d 二次裁剪，此处先保底 max(1)
         let width = width.max(1);
         let height = height.max(1);
         puffin::profile_function!();
@@ -199,6 +201,13 @@ impl Context {
             Some(Err(e)) => return Err(ContextError::AdapterCreation(e.clone())),
             None => {
                 let gpu = init_shared_gpu(&instance, &surface).await?;
+                // 注册 uncaptured error handler，避免 Metal 报错直接 abort（yinhe:84）
+                // 睡眠唤醒/maximize 大纹理时 Surface::configure 可能触发 idle 等待失败
+                gpu.device
+                    .on_uncaptured_error(Arc::new(|err| tracing::error!("wgpu uncaptured error: {err}")));
+                gpu.device.set_device_lost_callback(|reason, msg| {
+                    tracing::error!("wgpu device lost: {reason:?} — {msg}")
+                });
                 let gpu = Arc::new(gpu);
                 let _ = SHARED_GPU.set(Ok(Arc::clone(&gpu)));
                 gpu
@@ -219,6 +228,22 @@ impl Context {
         let present_mode = select_present_mode(&capabilities.present_modes);
         tracing::info!("Selected present_mode: {:?}", present_mode);
 
+        // 视口物理尺寸上限裁剪（yinhe:181）：Retina 最大化可达 10k+，超 8192 硬上限会
+        // 导致 Metal 丢设备黑屏。按 adapter 上限裁剪，与离屏纹理保持一致。
+        let max_dim = shared.adapter.limits().max_texture_dimension_2d;
+        let width = width.min(max_dim);
+        let height = height.min(max_dim);
+
+        // sRGB 需提供 linear view_format 供 shader 采样，否则 Metal 大纹理创建失败
+        let linear_view_format = match format {
+            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+            _ => None,
+        };
+        let view_formats = linear_view_format
+            .map(|f| vec![f])
+            .unwrap_or_default();
+
         surface.configure(
             &shared.device,
             &wgpu::SurfaceConfiguration {
@@ -228,7 +253,7 @@ impl Context {
                 height,
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![],
+                view_formats,
                 // 降低帧延迟以减少输入延迟，提高响应性
                 // 对于高帧率应用，1帧延迟比2帧更好
                 desired_maximum_frame_latency: 2,
@@ -266,6 +291,19 @@ impl Context {
         if width == 0 || height == 0 {
             return;
         }
+        let max_dim = self.device.limits().max_texture_dimension_2d;
+        let width = width.min(max_dim);
+        let height = height.min(max_dim);
+
+        let linear_view_format = match self.format {
+            wgpu::TextureFormat::Bgra8UnormSrgb => Some(wgpu::TextureFormat::Bgra8Unorm),
+            wgpu::TextureFormat::Rgba8UnormSrgb => Some(wgpu::TextureFormat::Rgba8Unorm),
+            _ => None,
+        };
+        let view_formats = linear_view_format
+            .map(|f| vec![f])
+            .unwrap_or_default();
+
         self.surface.configure(
             &self.device,
             &wgpu::SurfaceConfiguration {
@@ -275,7 +313,7 @@ impl Context {
                 height,
                 present_mode: self.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                view_formats: vec![],
+                view_formats,
                 desired_maximum_frame_latency: 2,
             },
         );

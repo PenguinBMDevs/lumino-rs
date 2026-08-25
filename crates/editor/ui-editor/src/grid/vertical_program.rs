@@ -188,39 +188,13 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             let keyboard_h = view.keyboard_width;
             let is_over_keyboard = local.y >= bounds.height - keyboard_h;
             if is_over_keyboard {
-                let ctrl_pressed = state.control_pressed || self.editor.ctrl_pressed();
-                if ctrl_pressed {
-                    if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
-                        let fixed_ratio = (local.x / bounds.width).clamp(0.0, 1.0);
-                        return Some(Action::publish(lumino_ui_core::Message::ZoomYChanged {
-                            zoom: view.zoom_y * factor,
-                            fixed_ratio,
-                        }));
-                    }
-                } else {
-                    // 普通滚轮：垂直增量映射为水平滚动（自然滚动方向与横向键盘一致）
-                    let (_, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
-                        mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
-                    };
-                    // 优先使用垂直增量，兼容触控板水平手势
-                    let mut delta_h = delta_y;
-                    if delta_h.abs() < f32::EPSILON {
-                        if let mouse::ScrollDelta::Lines { x, .. } = delta {
-                            delta_h = *x * 20.0;
-                        } else if let mouse::ScrollDelta::Pixels { x, .. } = delta {
-                            delta_h = *x;
-                        }
-                    }
-                    delta_h = delta_h.clamp(-120.0, 120.0);
-                    if delta_h.abs() > f32::EPSILON {
-                        return Some(Action::publish(lumino_ui_core::Message::EditorAction(
-                            lumino_ui_core::message::EditorAction::Scrolled {
-                                delta_x: 0.0,
-                                delta_y: delta_h,
-                            },
-                        )));
-                    }
+                // 便捷缩放：键盘区滚轮直接缩放音高 Y（无需 Ctrl），对齐 yinhe 左区逻辑
+                if let Some(factor) = crate::zoom::zoom_factor_from_delta(delta) {
+                    let fixed_ratio = (local.x / bounds.width).clamp(0.0, 1.0);
+                    return Some(Action::publish(lumino_ui_core::Message::ZoomYChanged {
+                        zoom: view.zoom_y * factor,
+                        fixed_ratio,
+                    }));
                 }
             } else if local.y < bounds.height - keyboard_h {
                 // 网格区域：Y 向时间轴（头部在键盘顶部，向上递增，纵向隐藏横向标尺故 grid_top=0）支持滚动与缩放
@@ -239,26 +213,33 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                     }
                 } else {
                     // 普通滚轮：垂直滚动时间轴（Y，头部在底部），水平滚动音高轴（X）
+                    use lumino_ui_core::constants::editor::{SCROLL_LINES_SCALE, SCROLL_MAX_DELTA};
                     let (delta_x, delta_y) = match delta {
-                        mouse::ScrollDelta::Lines { x, y } => (*x * 20.0, *y * 20.0),
+                        mouse::ScrollDelta::Lines { x, y } => {
+                            (*x * SCROLL_LINES_SCALE, *y * SCROLL_LINES_SCALE)
+                        }
                         mouse::ScrollDelta::Pixels { x, y } => (*x, *y),
+                    };
+                    let limit = match delta {
+                        mouse::ScrollDelta::Pixels { .. } => 400.0,
+                        _ => SCROLL_MAX_DELTA,
                     };
                     let mut out_delta_x = 0.0;
                     let mut out_delta_y = 0.0;
                     // 垂直增量 -> 时间轴（scroll_x），取反使向上滚显示更后时间（与横向一致）
                     if delta_y.abs() > f32::EPSILON {
-                        out_delta_x = (-delta_y).clamp(-120.0, 120.0);
+                        out_delta_x = (-delta_y).clamp(-limit, limit);
                     }
                     // 水平增量 -> 音高轴（scroll_y），取反使向右滚显示更高音
                     if delta_x.abs() > f32::EPSILON {
-                        out_delta_y = (-delta_x).clamp(-120.0, 120.0);
+                        out_delta_y = (-delta_x).clamp(-limit, limit);
                     }
                     // Shift+滚轮：垂直转水平（触控板兼容）
                     if state.shift_pressed
                         && out_delta_x.abs() < f32::EPSILON
                         && delta_y.abs() > f32::EPSILON
                     {
-                        out_delta_y = (-delta_y).clamp(-120.0, 120.0);
+                        out_delta_y = (-delta_y).clamp(-limit, limit);
                         out_delta_x = 0.0;
                     }
                     if out_delta_x.abs() > f32::EPSILON || out_delta_y.abs() > f32::EPSILON {

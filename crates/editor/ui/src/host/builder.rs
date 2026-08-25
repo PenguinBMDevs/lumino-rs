@@ -102,6 +102,8 @@ impl Host {
             waterfall_midi_hash: Some(midi_hash),
             waterfall_gen_info: Some((ppq, key_count, total_ticks)),
             message_router: handlers::create_message_router(),
+            active_touches: std::collections::HashMap::new(),
+            prev_pinch_distance: None,
         }
     }
 

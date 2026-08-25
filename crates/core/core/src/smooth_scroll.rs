@@ -21,7 +21,9 @@ impl Default for SmoothScrollAnimation {
             target_x: 0.0,
             target_y: 0.0,
             active: false,
-            factor: 0.25,
+            // 跟手优化：0.25 -> 0.35，加速收敛，减少触控板/高速滚轮的滞后感
+            // 过小会“拖尾”，过大则失去平滑；0.35 在 60fps 下约 3 帧收敛 70%
+            factor: 0.35,
             threshold: 0.5,
         }
     }
@@ -189,7 +191,7 @@ mod tests {
     fn test_smooth_scroll_default_values() {
         let anim = SmoothScrollAnimation::default();
         assert!(!anim.active);
-        assert!((anim.factor - 0.25).abs() < f32::EPSILON);
+        assert!((anim.factor - 0.35).abs() < f32::EPSILON);
         assert!((anim.threshold - 0.5).abs() < f32::EPSILON);
     }
 
