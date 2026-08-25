@@ -63,16 +63,16 @@ fn load_font(family: &str) -> Option<FontArc> {
     Some(font)
 }
 
-/// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
+/// 将文字光栅化为灰度位图（行优先，**行 0 = 文字顶部**，底部对齐到框底）。
 ///
-/// 行 0 = 文字顶部。文字**底部对齐**到框底（共用基线），并按框高度填满、按框宽度拉伸。
-/// 返回 `None` 表示无字体或文字为空。
-pub(crate) fn rasterize_text(
+/// 返回 `(width, height, buf)`：`width = cols * SS`、`height = rows * SS`，`buf` 按行主序存储，
+/// 每像素为 0..255 的墨水墨度。预览渲染与音符采样共用同一份栅格，保证「看到的就是生成的」。
+pub(crate) fn rasterize_glyph_alpha(
     text: &str,
     cols: usize,
     rows: usize,
     family: &str,
-) -> Option<Vec<Vec<bool>>> {
+) -> Option<(u32, u32, Vec<u8>)> {
     if text.is_empty() || cols == 0 || rows == 0 {
         return None;
     }
@@ -138,6 +138,20 @@ pub(crate) fn rasterize_text(
             *buf_cell = temp[temp_base + src_x as usize];
         }
     }
+    Some((w, h, buf))
+}
+
+/// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
+///
+/// 行 0 = 文字顶部。文字**底部对齐**到框底（共用基线），并按框高度填满、按框宽度拉伸。
+/// 返回 `None` 表示无字体或文字为空。
+pub(crate) fn rasterize_text(
+    text: &str,
+    cols: usize,
+    rows: usize,
+    family: &str,
+) -> Option<Vec<Vec<bool>>> {
+    let (w, _h, buf) = rasterize_glyph_alpha(text, cols, rows, family)?;
 
     // 由 SS×SS 子像素区域判定每个 (col,row) 是否占用
     let mut occ = vec![vec![false; cols]; rows];

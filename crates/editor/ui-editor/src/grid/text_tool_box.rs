@@ -7,7 +7,9 @@
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::content_bounds;
-use iced_core::{Color, Point, Rectangle, Size};
+use crate::interaction::text_tool::rasterize_glyph_alpha;
+use iced_core::image::{self, FilterMethod};
+use iced_core::{Color, Image, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_ui_core::Renderer;
 use lumino_ui_core::constants::editor::{
@@ -112,35 +114,38 @@ pub fn draw(
         frame.stroke(&path, stroke);
     }
 
-    // 文字预览：在框内显示「普通可读文字」（正常方向、按框尺寸自动缩放），
-    // 便于用户核对输入内容。这里只做显示；音符生成仍由确认时的采样逻辑完成。
+    // 文字预览：直接渲染「生成音符用的同一份栅格」，保证预览与最终放置的音符完全一致
+    // （同为底部对齐、同被拉伸铺满框，方向与音符一一对应）——看到的就是生成的。
     {
         let tt = &editor.editor_state.text_tool;
         let text = tt.text.trim();
         if !text.is_empty() {
-            let box_w = (right - left).max(1.0);
-            let box_h = (bottom - top).max(1.0);
-            let char_count = text.chars().count().max(1);
-            // 估算字号：CJK 字符近似 1.0×size 宽、拉丁 0.5×size，取 0.6×size 折中，
-            // 同时适配框高与框宽，避免溢出。
-            let size_h = (box_h * 0.85).clamp(8.0, 400.0);
-            let size_w = (box_w / (0.6 * char_count as f32)).clamp(8.0, 400.0);
-            let size = size_h.min(size_w);
-            let (cx0, cx1) = (left.max(content.x), right.min(content.x + content.width));
-            let (cy0, cy1) = (top.max(content.y), bottom.min(content.y + content.height));
-            if cx1 > cx0 && cy1 > cy0 {
-                frame.fill_text(canvas::Text {
-                    content: text.to_string(),
-                    position: Point::new((cx0 + cx1) * 0.5, (cy0 + cy1) * 0.5),
-                    max_width: cx1 - cx0,
-                    line_height: iced_core::text::LineHeight::Relative(1.0),
-                    size: iced_core::Pixels(size),
-                    color: TEXT_PREVIEW_COLOR,
-                    font: iced_core::Font::with_name(tt.font_family),
-                    align_x: iced_core::alignment::Horizontal::Center.into(),
-                    align_y: iced_core::alignment::Vertical::Center.into(),
-                    shaping: iced_core::text::Shaping::Advanced,
-                });
+            let snap = editor.editor_state.view.snap_precision;
+            let cols = tt.cols(snap);
+            let rows = tt.rows();
+            if let Some((iw, ih, buf)) = rasterize_glyph_alpha(text, cols, rows, tt.font_family) {
+                let (cr, cg, cb) = (
+                    (TEXT_PREVIEW_COLOR.r * 255.0) as u8,
+                    (TEXT_PREVIEW_COLOR.g * 255.0) as u8,
+                    (TEXT_PREVIEW_COLOR.b * 255.0) as u8,
+                );
+                let mut rgba = Vec::with_capacity((iw * ih * 4) as usize);
+                for &a in &buf {
+                    rgba.push(cr);
+                    rgba.push(cg);
+                    rgba.push(cb);
+                    rgba.push(a);
+                }
+                let handle = image::Handle::from_rgba(iw, ih, rgba);
+                let img = Image::new(handle).filter_method(FilterMethod::Linear);
+                // 整框绘制：栅格行 0 对齐框顶，底部对齐的墨水落在框底，与音符放置区重合。
+                frame.draw_image(
+                    Rectangle::new(
+                        Point::new(left, top),
+                        Size::new((right - left).max(1.0), (bottom - top).max(1.0)),
+                    ),
+                    img,
+                );
             }
         }
     }
