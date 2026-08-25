@@ -28,7 +28,7 @@ use crate::{Error, OutputConnection};
 
 const RING_CAPACITY: usize = 32768; // 16384 立体声帧 ≈340ms@48k，与 yinhe 一致
 const RENDER_CHUNK_FRAMES: usize = 512;
-const TARGET_BUFFER_FRAMES: usize = 4096; // 正常水位
+const TARGET_BUFFER_FRAMES: usize = 4096; // 正常水位，帧数而非毫秒（yinhe 用帧，避免浮点/采样率耦合）
 
 #[derive(Debug)]
 struct LevelStore {
@@ -61,46 +61,70 @@ unsafe impl Send for CoreOutput {}
 
 impl CoreOutput {
     pub fn new(soundfont_path: PathBuf, sample_rate: Option<u32>) -> Result<Self, Error> {
-        if !soundfont_path.exists() {
-            return Err(Error::InitFailed(format!(
-                "Soundfont not found: {:?}",
-                soundfont_path
-            )));
-        }
-
-        // ── 协商采样率与声道 ──
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| Error::InitFailed("未找到默认音频输出设备".into()))?;
-        let supported = device
-            .default_output_config()
-            .map_err(|e| Error::InitFailed(format!("获取默认输出配置失败: {e}")))?;
-        let device_sr = supported.sample_rate().0;
-        let sr = sample_rate.unwrap_or(device_sr);
-        // 若请求与设备不一致，优先设备（避免重采样跑调，复刻 yinhe/yinhe 协商）
-        let sr = if sr != device_sr {
-            tracing::warn!(
-                "Core: 请求 sr {sr} 与设备 {device_sr} 不一致，使用设备 sr"
-            );
-            device_sr
-        } else {
-            sr
-        };
-        let channels = supported.channels() as usize;
-        // 仅支持 1/2 声道，其余回退立体声
-        let channel_count = if channels == 1 {
-            ChannelCount::Mono
-        } else {
-            ChannelCount::Stereo
+        // ── 采样率/声道协商（优先设备，避免跑调） ──
+        let (sr, channel_count, stream_config_opt, device_opt) = {
+            let host = cpal::default_host();
+            if let Some(device) = host.default_output_device() {
+                match device.default_output_config() {
+                    Ok(supported) => {
+                        let device_sr = supported.sample_rate().0;
+                        let req_sr = sample_rate.unwrap_or(device_sr);
+                        let sr = if req_sr != device_sr {
+                            tracing::warn!(
+                                "Core: 请求 sr {req_sr} 与设备 {device_sr} 不一致，使用设备 sr"
+                            );
+                            device_sr
+                        } else {
+                            req_sr
+                        };
+                        let channels = supported.channels() as usize;
+                        let cc = if channels == 1 {
+                            ChannelCount::Mono
+                        } else {
+                            ChannelCount::Stereo
+                        };
+                        let cfg: cpal::StreamConfig = supported.into();
+                        (sr, cc, Some(cfg), Some(device))
+                    }
+                    Err(e) => {
+                        tracing::warn!("Core: 获取默认输出配置失败: {e}，回退 44100 Stereo");
+                        (
+                            sample_rate.unwrap_or(44100),
+                            ChannelCount::Stereo,
+                            None,
+                            None,
+                        )
+                    }
+                }
+            } else {
+                tracing::warn!("Core: 未找到默认输出设备，回退 44100 Stereo（无声输出，仅 ring）");
+                (
+                    sample_rate.unwrap_or(44100),
+                    ChannelCount::Stereo,
+                    None,
+                    None,
+                )
+            }
         };
 
         let params = AudioStreamParams::new(sr, channel_count);
-        let sf: Arc<dyn SoundfontBase> = crate::soundfont_cache::load_soundfont_cached(
-            &soundfont_path,
-            params,
-        )
-        .map_err(Error::InitFailed)?;
+
+        // ── SoundFont：缺失时仍创建空 Group，保证 ring/stream 可用（静音），后续重载 ──
+        let sf_opt: Option<Arc<dyn SoundfontBase>> = if soundfont_path.as_os_str().is_empty() {
+            tracing::warn!("Core: 音色库路径为空，创建空合成器（静音，直到设置音色库）");
+            None
+        } else if !soundfont_path.exists() {
+            tracing::warn!("Core: 音色库不存在 {:?}，创建空合成器", soundfont_path);
+            None
+        } else {
+            match crate::soundfont_cache::load_soundfont_cached(&soundfont_path, params) {
+                Ok(sf) => Some(sf),
+                Err(e) => {
+                    tracing::warn!("Core: 音色库加载失败 {:?}: {e}，创建空合成器", soundfont_path);
+                    None
+                }
+            }
+        };
 
         let group_config = ChannelGroupConfig {
             channel_init_options: ChannelInitOptions {
@@ -114,9 +138,11 @@ impl CoreOutput {
             },
         };
         let mut group = ChannelGroup::new(group_config);
-        group.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-            ChannelConfigEvent::SetSoundfonts(vec![sf]),
-        )));
+        if let Some(sf) = sf_opt {
+            group.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+                ChannelConfigEvent::SetSoundfonts(vec![sf]),
+            )));
+        }
 
         // ── 环形缓冲 ──
         let ring = AudioRing::new(RING_CAPACITY);
@@ -125,18 +151,17 @@ impl CoreOutput {
         let levels = Arc::new(LevelStore::new());
         let levels_consumer = Arc::clone(&levels);
 
-        // ── cpal 输出流（唯一消费者，零锁） ──
-        let stream_config: cpal::StreamConfig = supported.into();
-        // cpal 回调：仅 pop_into + 填零 + 峰值统计
-        let stream = device
-            .build_output_stream(
-                &stream_config,
+        // ── cpal 输出流（唯一消费者，零锁）──
+        let _stream: Option<cpal::Stream> = if let (Some(device), Some(cfg)) =
+            (device_opt, stream_config_opt)
+        {
+            match device.build_output_stream(
+                &cfg,
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     let n = consumer.pop_into(data);
                     if n < data.len() {
                         data[n..].fill(0.0);
                     }
-                    // 峰值统计（master）
                     let mut peak: f32 = 0.0;
                     for &s in data.iter() {
                         let a = s.abs();
@@ -147,18 +172,31 @@ impl CoreOutput {
                     levels_consumer
                         .master
                         .store(peak.to_bits(), Ordering::Relaxed);
-                    // 通道峰值近似：均写入 master，便于混音台有反馈
                     for ch in levels_consumer.channel_levels.iter() {
                         ch.store(peak.to_bits(), Ordering::Relaxed);
                     }
                 },
                 |err| tracing::error!("Core cpal stream error: {err}"),
                 None,
-            )
-            .map_err(|e| Error::InitFailed(format!("创建 cpal 流失败: {e}")))?;
-        stream
-            .play()
-            .map_err(|e| Error::InitFailed(format!("启动 cpal 流失败: {e}")))?;
+            ) {
+                Ok(s) => {
+                    if let Err(e) = s.play() {
+                        tracing::error!("Core: 启动 cpal 流失败: {e}");
+                        None
+                    } else {
+                        tracing::info!("Core: cpal 流已启动 sr={} ch={:?}", sr, channel_count);
+                        Some(s)
+                    }
+                }
+                Err(e) => {
+                    tracing::error!("Core: 创建 cpal 流失败: {e}");
+                    None
+                }
+            }
+        } else {
+            tracing::warn!("Core: 无可用 cpal 流，进入离线 ring 模式（无 audible 输出）");
+            None
+        };
 
         // ── 渲染线程（唯一生产者） ──
         let (event_tx, event_rx): (Sender<SynthEvent>, Receiver<SynthEvent>) = unbounded();
@@ -180,7 +218,7 @@ impl CoreOutput {
             event_tx,
             levels,
             running,
-            _stream: Some(stream),
+            _stream,
             render_handle: Some(render_handle),
         })
     }
@@ -196,19 +234,15 @@ fn render_loop(
     event_rx: Receiver<SynthEvent>,
     running: Arc<AtomicBool>,
 ) {
-    // 预分配 scratch，避免热路径堆分配（与 yinhe channel_set 复用一致）
     let channels = group.stream_params().channels.count() as usize;
     let chunk_samples = RENDER_CHUNK_FRAMES * channels;
     let mut scratch = vec![0.0f32; chunk_samples];
     let target_samples = TARGET_BUFFER_FRAMES * channels;
 
     while running.load(Ordering::Relaxed) {
-        // 1. 消费控制事件（非阻塞，批量）
         while let Ok(ev) = event_rx.try_recv() {
             group.send_event(ev);
         }
-
-        // 2. 水位门控：已缓冲 ≥ target 则休眠 1ms
         if producer.len() >= target_samples {
             thread::sleep(Duration::from_millis(1));
             continue;
@@ -217,11 +251,8 @@ fn render_loop(
             thread::sleep(Duration::from_millis(1));
             continue;
         }
-
-        // 3. 渲染一块
         scratch.fill(0.0);
         group.read_samples_unchecked(&mut scratch);
-        // 简单限幅（与 export 的 apply_limiter 一致阈值 0.95）
         for s in scratch.iter_mut() {
             if s.abs() > 0.95 {
                 *s = s.signum() * 0.95;
@@ -298,7 +329,6 @@ impl OutputConnection for CoreOutput {
     }
 
     fn set_channel_gain(&mut self, _ch: u8, _gain: f32) -> Result<(), Error> {
-        // 增益由混音台在渲染后应用；占位保持接口兼容，3/4 可接入 ChannelMix
         Ok(())
     }
 
@@ -320,7 +350,6 @@ impl OutputConnection for CoreOutput {
 
     fn close(mut self: Box<Self>) {
         self.running.store(false, Ordering::Relaxed);
-        // 丢弃 stream 与 handle，触发 Drop/join
         self._stream.take();
         if let Some(h) = self.render_handle.take() {
             let _ = h.join();
