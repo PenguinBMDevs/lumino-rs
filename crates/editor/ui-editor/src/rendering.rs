@@ -244,6 +244,8 @@ impl Editor {
         let (left, top, right, bottom) = crate::grid::text_tool_box::box_rect_screen(self)?;
         let box_w = (right - left).max(1.0);
         let box_h = (bottom - top).max(1.0);
+        // 输入框只占文本框顶部一条（输入文字），下方区域留给画布绘制的「墨水格」实时预览
+        let input_h = box_h.min(28.0);
         let input = container(
             iced_widget::text_input("输入文字…", &self.editor_state.text_tool.text)
                 .on_input(|s: String| {
@@ -252,7 +254,7 @@ impl Editor {
                 .width(Length::Fixed(box_w)),
         )
         .width(Length::Fixed(box_w))
-        .height(Length::Fixed(box_h));
+        .height(Length::Fixed(input_h));
         let overlay = iced_widget::column![]
             .push(Space::new().height(Length::Fixed(top)))
             .push(

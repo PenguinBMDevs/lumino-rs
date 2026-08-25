@@ -43,14 +43,14 @@ pub struct TextToolState {
     /// 采样模式
     pub mode: TextToolMode,
     /// 字体家族名（默认跟随系统，需支持中文等多语言）
-    pub font_family: String,
+    pub font_family: &'static str,
 }
 
 impl TextToolState {
     /// 创建带默认字体（微软雅黑，支持中文）的状态
     pub fn new() -> Self {
         Self {
-            font_family: String::from("Microsoft YaHei"),
+            font_family: "Microsoft YaHei",
             ..Default::default()
         }
     }

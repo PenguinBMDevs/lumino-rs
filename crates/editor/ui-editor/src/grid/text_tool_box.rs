@@ -17,6 +17,9 @@ use lumino_ui_core::constants::editor::{
 /// 按钮与文本框的间距
 const TT_BUTTON_SPACING: f32 = 8.0;
 
+/// 文字预览文字颜色（贴近白色，保证在文本框淡填充上可读）
+const TEXT_PREVIEW_COLOR: Color = Color::from_rgba(0.92, 0.96, 1.0, 0.95);
+
 /// 文字工具悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
 pub struct TextToolButtonRects {
@@ -107,6 +110,39 @@ pub fn draw(
             .with_width(SELECTION_BOX_STROKE_WIDTH)
             .with_color(SELECTION_BOX_STROKE_COLOR);
         frame.stroke(&path, stroke);
+    }
+
+    // 文字预览：在框内显示「普通可读文字」（正常方向、按框尺寸自动缩放），
+    // 便于用户核对输入内容。这里只做显示；音符生成仍由确认时的采样逻辑完成。
+    {
+        let tt = &editor.editor_state.text_tool;
+        let text = tt.text.trim();
+        if !text.is_empty() {
+            let box_w = (right - left).max(1.0);
+            let box_h = (bottom - top).max(1.0);
+            let char_count = text.chars().count().max(1);
+            // 估算字号：CJK 字符近似 1.0×size 宽、拉丁 0.5×size，取 0.6×size 折中，
+            // 同时适配框高与框宽，避免溢出。
+            let size_h = (box_h * 0.85).clamp(8.0, 400.0);
+            let size_w = (box_w / (0.6 * char_count as f32)).clamp(8.0, 400.0);
+            let size = size_h.min(size_w);
+            let (cx0, cx1) = (left.max(content.x), right.min(content.x + content.width));
+            let (cy0, cy1) = (top.max(content.y), bottom.min(content.y + content.height));
+            if cx1 > cx0 && cy1 > cy0 {
+                frame.fill_text(canvas::Text {
+                    content: text.to_string(),
+                    position: Point::new((cx0 + cx1) * 0.5, (cy0 + cy1) * 0.5),
+                    max_width: cx1 - cx0,
+                    line_height: iced_core::text::LineHeight::Relative(1.0),
+                    size: iced_core::Pixels(size),
+                    color: TEXT_PREVIEW_COLOR,
+                    font: iced_core::Font::with_name(tt.font_family),
+                    align_x: iced_core::alignment::Horizontal::Center.into(),
+                    align_y: iced_core::alignment::Vertical::Center.into(),
+                    shaping: iced_core::text::Shaping::Advanced,
+                });
+            }
+        }
     }
 
     // 悬浮按钮

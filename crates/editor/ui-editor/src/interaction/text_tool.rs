@@ -6,6 +6,9 @@
 //! - 框右侧 √（确认生成）/ ×（取消）/ 模式按钮（正常 / key 范围合并）；
 //! - 确认时按字形占位采样生成音符。
 
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
 use ab_glyph::{Font, FontArc, FontVec, Point as AbPoint, PxScale, ScaleFont};
@@ -19,6 +22,10 @@ const SS: u32 = 4;
 /// 单元格占用判定阈值：墨水子像素占比高于此值视为「有墨水」
 const COVERAGE_THRESHOLD: f32 = 0.08;
 
+/// 字体缓存：字形解析较重，按家族名缓存 `FontArc`（内部为 `Arc`，克隆廉价），
+/// 避免实时预览每帧重复读盘与解析。
+static FONT_CACHE: OnceLock<Mutex<HashMap<String, FontArc>>> = OnceLock::new();
+
 /// 点是否落在矩形内
 fn point_in_rect(p: Point, r: iced_core::Rectangle) -> bool {
     p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
@@ -26,6 +33,15 @@ fn point_in_rect(p: Point, r: iced_core::Rectangle) -> bool {
 
 /// 加载字体（按家族名查找系统字体缓存；缺失时回退首个可用字体）
 fn load_font(family: &str) -> Option<FontArc> {
+    // 命中缓存直接返回（Arc 克隆廉价）
+    if let Some(cached) = FONT_CACHE
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .ok()
+        .and_then(|m| m.get(family).cloned())
+    {
+        return Some(cached);
+    }
     use lumino_note_core::font_scanner::get_cached_fonts;
     let fonts = get_cached_fonts();
     let target = fonts
@@ -40,7 +56,11 @@ fn load_font(family: &str) -> Option<FontArc> {
         .or(fonts.first())?;
     let bytes = std::fs::read(&target.path).ok()?;
     let font_vec = FontVec::try_from_vec(bytes).ok()?;
-    Some(FontArc::from(font_vec))
+    let font = FontArc::from(font_vec);
+    if let Ok(mut m) = FONT_CACHE.get_or_init(|| Mutex::new(HashMap::new())).lock() {
+        m.insert(family.to_string(), font.clone());
+    }
+    Some(font)
 }
 
 /// 将文字光栅化为占用网格（rows × cols，[row][col] = 是否有墨水）
@@ -297,7 +317,7 @@ impl Editor {
         if cols == 0 || rows == 0 {
             return false;
         }
-        let occupancy = match rasterize_text(&tt.text, cols, rows, &tt.font_family) {
+        let occupancy = match rasterize_text(&tt.text, cols, rows, tt.font_family) {
             Some(o) => o,
             None => return false,
         };
@@ -388,5 +408,18 @@ mod tests {
     fn test_sample_to_notes_empty() {
         let occ: Vec<Vec<bool>> = vec![];
         assert!(sample_to_notes(&occ, 0.0, 60, 1920.0, true).is_empty());
+    }
+
+    #[test]
+    fn test_rasterize_text_produces_ink() {
+        // 仅在能加载到默认字体时验证（Windows 一般有 Microsoft YaHei；CI 缺失则跳过）
+        if let Some(occ) = rasterize_text("A", 8, 8, "Microsoft YaHei") {
+            assert!(occ.iter().flatten().any(|&b| b), "可识别字符应产生墨水");
+        }
+    }
+
+    #[test]
+    fn test_rasterize_text_empty() {
+        assert!(rasterize_text("", 8, 8, "Microsoft YaHei").is_none());
     }
 }
