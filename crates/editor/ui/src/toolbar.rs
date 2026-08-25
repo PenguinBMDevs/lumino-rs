@@ -5,14 +5,16 @@
 //! - `event`: 工具栏事件枚举和工厂方法
 //! - `view`: 视图渲染逻辑
 
+pub(crate) mod brush_dropdown;
 mod buttons;
 pub mod event;
 pub(crate) mod overflow;
 mod record;
+pub(crate) mod tool_panel;
 pub mod types;
 mod view;
 
-pub use event::{Event, FlipHorizontalMode};
+pub use event::{Event, FlipHorizontalMode, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
@@ -20,6 +22,7 @@ pub use types::{
 };
 
 use crate::util::is_digits_or_empty;
+use lumino_core::BrushConfig;
 
 /// 工具栏视图所需的性能/检测数据聚合
 ///
@@ -73,6 +76,12 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
+    /// 绘制工具选择面板是否打开（颜料桶右侧小三角触发）
+    pub tool_panel_open: bool,
+    /// 画刷工具下拉是否打开（ctrl+点击附属按钮触发）
+    pub brush_dropdown_open: bool,
+    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    pub brush: BrushConfig,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
 }
@@ -98,6 +107,9 @@ impl Toolbar {
             ppq_editing: false,
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
+            tool_panel_open: false,
+            brush_dropdown_open: false,
+            brush: BrushConfig::new(),
             fill_enabled: false,
         }
     }
@@ -119,6 +131,32 @@ impl Toolbar {
             self.overflow_menu_open = false;
         }
 
+        // 绘制工具选择面板打开时，除以下情况外其余操作先关闭面板：
+        // - 再次点击小三角（ToggleToolPanel）用于切换关闭
+        // - 悬停事件（ButtonHovered）不应关闭面板（同溢出菜单的处理）
+        // - 显式关闭事件（CloseToolPanel）
+        if self.tool_panel_open
+            && !matches!(
+                event,
+                Event::ToggleToolPanel | Event::ButtonHovered(_) | Event::CloseToolPanel
+            )
+        {
+            self.tool_panel_open = false;
+        }
+
+        // 画刷工具下拉打开时，除以下情况外其余操作先关闭下拉：
+        // - 再次点击附属按钮（ToggleBrushDropdown）用于切换关闭
+        // - 悬停事件不应关闭下拉
+        // - 显式关闭事件（CloseBrushDropdown）
+        if self.brush_dropdown_open
+            && !matches!(
+                event,
+                Event::ToggleBrushDropdown | Event::ButtonHovered(_) | Event::CloseBrushDropdown
+            )
+        {
+            self.brush_dropdown_open = false;
+        }
+
         match event {
             Event::Play => self.is_playing = true,
             Event::Pause => self.is_playing = false,
@@ -133,10 +171,11 @@ impl Toolbar {
             }
             Event::ToolSelected(tool) => {
                 self.current_tool = tool;
-                // 颜料桶仅曲线工具附属：切到其他工具自动关闭
-                if tool != Tool::Curve {
-                    self.fill_enabled = false;
-                }
+                // 切换工具即离开任何共存态：填充桶仅曲线/形状可共存，切到其它工具一律关闭
+                self.fill_enabled = false;
+                // 关闭所有下拉，避免工具切换后残留
+                self.tool_panel_open = false;
+                self.brush_dropdown_open = false;
             }
             Event::FillToggled(enabled) => {
                 self.fill_enabled = enabled;
@@ -244,6 +283,8 @@ impl Toolbar {
             }
             Event::ToggleOverflowMenu => {
                 self.overflow_menu_open = !self.overflow_menu_open;
+                // 与绘制工具面板互斥：打开溢出菜单时关闭工具面板
+                self.tool_panel_open = false;
                 tracing::debug!(
                     "工具栏: 溢出菜单 {}",
                     if self.overflow_menu_open {
@@ -291,6 +332,90 @@ impl Toolbar {
             Event::ButtonHovered(_) => {}
             Event::ImageToMidiClicked => {
                 tracing::info!("工具栏: 图片转MIDI功能开发中，按钮已点击");
+            }
+            Event::ToggleToolPanel => {
+                self.tool_panel_open = !self.tool_panel_open;
+                // 与溢出菜单、画刷下拉互斥：打开工具面板时关闭其余浮层
+                self.overflow_menu_open = false;
+                self.brush_dropdown_open = false;
+                tracing::debug!(
+                    "工具栏: 绘制工具面板 {}",
+                    if self.tool_panel_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
+                );
+            }
+            Event::CloseToolPanel => {
+                self.tool_panel_open = false;
+                tracing::debug!("工具栏: 关闭绘制工具面板");
+            }
+            Event::ToggleBrushDropdown => {
+                self.brush_dropdown_open = !self.brush_dropdown_open;
+                // 与其他面板互斥
+                self.overflow_menu_open = false;
+                self.tool_panel_open = false;
+                tracing::debug!(
+                    "工具栏: 画刷工具下拉 {}",
+                    if self.brush_dropdown_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
+                );
+            }
+            Event::CloseBrushDropdown => {
+                self.brush_dropdown_open = false;
+                tracing::debug!("工具栏: 关闭画刷工具下拉");
+            }
+            Event::BrushThicknessChanged(thickness) => {
+                self.brush.set_thickness(thickness);
+                tracing::debug!("工具栏: 画刷粗细度变更为 {}", self.brush.thickness);
+            }
+            Event::ToolPanelItemSelected(item) => {
+                match item {
+                    ToolPanelItem::StrokeSettings => {
+                        // 描边设置：功能开发中（UI 占位）
+                        tracing::info!("工具栏: 描边设置（功能开发中）");
+                    }
+                    ToolPanelItem::Curve => {
+                        // 曲线工具：独立基础工具，选中后关闭填充共存态
+                        // （填充由「填充桶」条目单独开启）
+                        self.current_tool = Tool::Curve;
+                        self.fill_enabled = false;
+                    }
+                    ToolPanelItem::FillBucket => {
+                        // 颜料桶随时可切换：仅对曲线/形状绘制的封闭图形生效，
+                        // 即使当前不在曲线工具也可开启，作用范围由编辑器侧控制。
+                        self.fill_enabled = !self.fill_enabled;
+                    }
+                    ToolPanelItem::Brush => {
+                        // 画刷仅可独立使用，不可与填充桶共存
+                        self.current_tool = Tool::Brush;
+                        self.fill_enabled = false;
+                    }
+                    ToolPanelItem::Shape => {
+                        // 形状工具：与曲线互斥（单一 base 工具），可与填充桶共存，
+                        // 选中形状时先关闭填充，再由「填充桶」条目按需开启
+                        self.current_tool = Tool::Shape;
+                        self.fill_enabled = false;
+                    }
+                    ToolPanelItem::Text => {
+                        // 文字工具：独立工具，不可与任何工具/填充桶共存
+                        self.current_tool = Tool::Text;
+                        self.fill_enabled = false;
+                    }
+                    ToolPanelItem::Eraser => {
+                        // 绘制橡皮擦：独立于普通编辑橡皮擦（Tool::Eraser），
+                        // 专用于曲线/形状/画刷绘制上下文
+                        self.current_tool = Tool::DrawEraser;
+                        self.fill_enabled = false;
+                    }
+                }
+                // 选中后关闭面板（与溢出菜单逐项选择行为一致）
+                self.tool_panel_open = false;
+                tracing::debug!("工具栏: 工具面板选择 {:?}", item);
             }
         }
     }

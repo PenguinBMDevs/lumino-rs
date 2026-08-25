@@ -3,12 +3,17 @@
 //! 包含钢琴卷帘工具区（指针/铅笔/橡皮/曲线/颜料桶 + 量化/变速/翻转/
 //! 分割/合并/移调/连奏/精度）与工程走带工具区（指针/曲线/橡皮/变速）。
 
-use iced_core::Alignment;
-use iced_widget::{container, row, space};
+use iced_core::{Alignment, Color, Length};
+use iced_widget::{container, mouse_area, row, space};
 
 use crate::resources::icon;
-use crate::toolbar::buttons::{flip_button, toggle_button, tool_button, tool_selector};
-use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, Tool, Toolbar};
+use crate::toolbar::buttons::{
+    flip_button, tool_button, tool_dropdown_caret, tool_selector, tool_selector_custom,
+};
+use crate::toolbar::view::curve_tool_group::CurveToolGroup;
+use crate::toolbar::{
+    ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel,
+};
 use crate::{Element, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 
@@ -84,26 +89,12 @@ impl Toolbar {
                     Some(Event::button_hovered(Some(ButtonId::Eraser))),
                 ),
                 space().width(4),
-                tool_selector(
-                    icon::Curve,
-                    t.tool_curve,
-                    Tool::Curve,
-                    self.current_tool,
-                    window,
-                    Some(Event::button_hovered(Some(ButtonId::Curve))),
-                ),
-                space().width(4),
-                // 颜料桶（启用式开关）：仅曲线工具激活时可操作；
-                // 选中高亮 = 填充模式开启，点击切换开/关
-                toggle_button(
-                    icon::PaintBucket,
-                    t.tool_fill,
-                    Event::fill_toggled(!self.fill_enabled),
-                    self.current_tool == Tool::Curve,
-                    self.fill_enabled,
-                    window,
-                    Some(Event::button_hovered(Some(ButtonId::Fill))),
-                ),
+                // 曲线工具组：曲线工具按钮 + 右侧小三角（合并后的绘制工具集入口）。
+                // - 曲线工具按钮图标随当前激活的绘制子工具切换（画刷/形状/文字激活时显示对应图标，
+                //   填充开启时显示颜料桶）；其选中高亮与工具栏其他工具按钮保持一致。
+                // - 小三角展开「绘制工具选择面板」（填充桶/画刷/形状/文字/橡皮擦）。
+                // - 下拉菜单锚定在按钮正下方，点击面板外部区域关闭。
+                self.render_curve_tool_group(t, window, language),
                 space().width(4),
                 tool_button(
                     icon::Quantize,
@@ -212,6 +203,127 @@ impl Toolbar {
                 })
         })
         .into()
+    }
+
+    /// 渲染「曲线工具组」：曲线工具按钮（图标随激活子工具切换）+ 右侧小三角
+    ///
+    /// 小三角展开「绘制工具选择面板」（合并后的工具集）。下拉菜单锚定在按钮正下方，
+    /// 点击面板外部区域由全窗口遮罩层关闭。普通点击曲线按钮 = 选择曲线工具（基础态），
+    /// Ctrl+点击 = 打开画刷工具下拉。
+    fn render_curve_tool_group<'a>(
+        &'a self,
+        t: &'static MainTranslations,
+        window: &'a window::Window,
+        language: Language,
+    ) -> Element<'a> {
+        // 曲线工具按钮图标：随当前激活的绘制子工具切换
+        let curve_icon = match self.current_tool {
+            Tool::Curve if self.fill_enabled => icon::PaintBucket,
+            Tool::Brush => icon::BrushTool,
+            Tool::Shape => icon::ShapeTool,
+            Tool::Text => icon::TextInput,
+            _ => icon::Curve,
+        };
+        // 选中高亮：当前处于绘制家族工具之一（曲线/画刷/形状/文字）；
+        // 橡皮擦有独立按钮，故不在此高亮，避免双高亮。
+        let curve_selected = matches!(
+            self.current_tool,
+            Tool::Curve | Tool::Brush | Tool::Shape | Tool::Text
+        );
+        // 普通点击 = 选择曲线工具（基础态）；Ctrl+点击 = 打开画刷工具下拉
+        let curve_on_press = if self.ctrl_pressed {
+            Event::toggle_brush_dropdown()
+        } else {
+            Event::tool_selected(Tool::Curve)
+        };
+        let curve_btn = tool_selector_custom(
+            curve_icon,
+            t.tool_curve,
+            curve_selected,
+            curve_on_press,
+            window,
+            Some(Event::button_hovered(Some(ButtonId::Curve))),
+        );
+
+        // 右侧小三角：展开「绘制工具选择面板」
+        let caret_btn = tool_dropdown_caret(
+            icon::ToolPanelCaret,
+            t.tool_panel_tooltip,
+            Event::toggle_tool_panel(),
+            window,
+            Some(Event::button_hovered(Some(ButtonId::ToolPanel))),
+        );
+
+        // 面板背景色：贴近工具栏背景
+        let palette = window.theme.extended_palette();
+        let toolbar_bg = palette.background.weakest.color;
+        let panel_background = Color::from_rgba(
+            toolbar_bg.r * 0.9,
+            toolbar_bg.g * 0.9,
+            toolbar_bg.b * 0.9,
+            toolbar_bg.a,
+        );
+
+        // 下拉菜单宽度（像素），用于约束 overlay 布局。
+        // 面板改为「图标独占横向排列」后，内容宽约 5×40 + 4×4(间距) + 2×8(内边距) = 232px，
+        // 这里取 248 留少量余量，避免裁切。
+        let menu_width = 248.0;
+
+        // 下拉菜单：绘制工具选择面板（填充桶/画刷/形状/文字/橡皮擦）或画刷工具下拉。
+        // 二者互斥，仅其一打开。菜单锚定在按钮正下方，点击外部由 overlay 关闭。
+        let menu: Option<Element<'a>> = if self.tool_panel_open {
+            Some(
+                container(tool_panel::render_tool_panel(
+                    self.current_tool,
+                    self.fill_enabled,
+                    language,
+                    panel_background,
+                    &window.theme,
+                ))
+                .width(Length::Fixed(menu_width))
+                .height(Length::Shrink)
+                .into(),
+            )
+        } else if self.brush_dropdown_open {
+            Some(
+                container(brush_dropdown::render_brush_dropdown(
+                    &self.brush,
+                    language,
+                    panel_background,
+                    &window.theme,
+                ))
+                .width(Length::Fixed(menu_width))
+                .height(Length::Shrink)
+                .into(),
+            )
+        } else {
+            None
+        };
+
+        // 点击菜单外部区域时发布的关闭消息（与当前打开的下拉对应）
+        let close_message = if self.tool_panel_open {
+            Event::close_tool_panel()
+        } else {
+            Event::close_brush_dropdown()
+        };
+
+        // 垂直居中对齐，使右侧小三角与曲线按钮在同一中轴线上（否则小三角会贴顶）。
+        let content = row![curve_btn, space().width(2), caret_btn]
+            .align_y(Alignment::Center)
+            .into();
+
+        match menu {
+            Some(panel) => {
+                // 面板背景用 mouse_area 包裹：点击面板内空白即关闭下拉；
+                // 面板内按钮仍优先响应自身 on_press（与右键悬浮面板 context_menu 同源，
+                // mouse_area 不会吞掉子按钮点击）。面板整体作为 CurveToolGroup 的
+                // overlay，由 iced 标准 Overlay 机制锚定在按钮正下方并转发点击——
+                // 这正是此前"按钮点不动 / 高度裁切"病灶的根除方案。
+                let panel_with_close = mouse_area(panel).on_press(close_message).into();
+                CurveToolGroup::new(content, Some(panel_with_close), menu_width).into()
+            }
+            None => content,
+        }
     }
 
     /// 渲染工程走带视图专用的工具选择区域

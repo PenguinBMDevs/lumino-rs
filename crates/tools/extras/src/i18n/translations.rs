@@ -33,6 +33,28 @@ pub struct MainTranslations {
     pub tool_curve: &'static str,
     /// 颜料桶（填充封闭区域）
     pub tool_fill: &'static str,
+    /// 绘制工具面板触发按钮（颜料桶右侧小三角）
+    pub tool_panel_tooltip: &'static str,
+    /// 描边设置
+    pub tool_stroke: &'static str,
+    /// 画刷工具
+    pub tool_brush: &'static str,
+    /// 形状工具
+    pub tool_shape: &'static str,
+    /// 文字输入
+    pub tool_text: &'static str,
+    /// 曲线工具说明（绘制工具面板底部描述条）
+    pub tool_curve_desc: &'static str,
+    /// 颜料桶说明（绘制工具面板底部描述条）
+    pub tool_fill_desc: &'static str,
+    /// 画刷工具说明（绘制工具面板底部描述条）
+    pub tool_brush_desc: &'static str,
+    /// 形状工具说明（绘制工具面板底部描述条）
+    pub tool_shape_desc: &'static str,
+    /// 文字输入说明（绘制工具面板底部描述条）
+    pub tool_text_desc: &'static str,
+    /// 橡皮擦说明（绘制工具面板底部描述条）
+    pub tool_eraser_desc: &'static str,
     /// 量化
     pub tool_quantize: &'static str,
     /// 变速
@@ -266,7 +288,18 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_pencil: "铅笔工具",
     tool_eraser: "橡皮擦",
     tool_curve: "曲线工具",
-    tool_fill: "颜料桶（填充封闭区域）",
+    tool_fill: "颜料桶",
+    tool_panel_tooltip: "绘制工具",
+    tool_stroke: "描边设置",
+    tool_brush: "画刷工具",
+    tool_shape: "形状工具",
+    tool_text: "文字输入",
+    tool_curve_desc: "曲线工具：绘制连续音符音高曲线，可叠加颜料桶填充",
+    tool_fill_desc: "颜料桶：填充封闭区域；可随时切换，仅作用于曲线/形状绘制的封闭图形",
+    tool_brush_desc: "画刷工具：独立工具，不可与颜料桶共存",
+    tool_shape_desc: "形状工具：绘制矩形/椭圆等形状；可与颜料桶共存",
+    tool_text_desc: "文字输入：在钢琴卷帘中插入文本标注；独立工具",
+    tool_eraser_desc: "橡皮擦：擦除音符；独立工具",
     tool_quantize: "量化",
     tool_speed: "变速",
     tool_flip_vertical: "垂直翻转",
@@ -393,7 +426,18 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     tool_pencil: "Pencil Tool",
     tool_eraser: "Eraser",
     tool_curve: "Curve Tool",
-    tool_fill: "Paint Bucket (fill enclosed regions)",
+    tool_fill: "Paint Bucket",
+    tool_panel_tooltip: "Drawing Tools",
+    tool_stroke: "Stroke Settings",
+    tool_brush: "Brush Tool",
+    tool_shape: "Shape Tool",
+    tool_text: "Text Input",
+    tool_curve_desc: "Curve Tool: draw continuous pitch curve; can combine with paint bucket fill",
+    tool_fill_desc: "Paint Bucket: fill enclosed regions; toggle anytime, only applies to closed shapes drawn by Curve/Shape",
+    tool_brush_desc: "Brush Tool: standalone tool, cannot combine with paint bucket",
+    tool_shape_desc: "Shape Tool: draw rectangles/ellipses; can combine with paint bucket",
+    tool_text_desc: "Text Input: insert text annotations in the piano roll; standalone tool",
+    tool_eraser_desc: "Eraser: erase notes; standalone tool",
     tool_quantize: "Quantize",
     tool_speed: "Speed Change",
     tool_flip_vertical: "Flip Vertical",

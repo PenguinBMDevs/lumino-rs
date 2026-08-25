@@ -74,6 +74,8 @@ pub enum ButtonId {
     More,
     /// 图片转 MIDI
     ImageToMidi,
+    /// 绘制工具选择面板触发（颜料桶右侧小三角）
+    ToolPanel,
 }
 
 /// 按钮名（实际显示文本），随语言切换
@@ -108,6 +110,7 @@ fn button_name(id: ButtonId, t: &MainTranslations) -> &'static str {
         ButtonId::Collaboration => t.collaboration_tooltip,
         ButtonId::More => t.toolbar_more,
         ButtonId::ImageToMidi => t.tool_image_to_midi,
+        ButtonId::ToolPanel => t.tool_panel_tooltip,
     }
 }
 
@@ -149,6 +152,10 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("Collaboration", "打开多人协作面板"),
     ("More", "打开更多工具菜单"),
     ("ImageToMidi", "图片转MIDI（功能开发中）"),
+    (
+        "ToolPanel",
+        "打开绘制工具选择面板（描边/颜料桶/画刷/形状/文字/橡皮擦）",
+    ),
 ];
 
 /// 英文解释说明占位表（待人工填写）
@@ -198,6 +205,10 @@ const DESC_EN: &[(&str, &str)] = &[
     ("Collaboration", "Open realtime collaboration panel"),
     ("More", "Open more tools menu"),
     ("ImageToMidi", "Image to MIDI (coming soon)"),
+    (
+        "ToolPanel",
+        "Open drawing tools panel (stroke/fill/brush/shape/text/eraser)",
+    ),
 ];
 
 /// 获取按钮在指定语言下的名称与说明描述
@@ -249,6 +260,7 @@ impl ButtonId {
             ButtonId::Collaboration => "Collaboration",
             ButtonId::More => "More",
             ButtonId::ImageToMidi => "ImageToMidi",
+            ButtonId::ToolPanel => "ToolPanel",
         }
     }
 }

@@ -1,6 +1,7 @@
 pub mod performance;
 
 use iced_core::Length;
+use iced_core::widget::text::Wrapping;
 use iced_widget::{button, container, row, space, text};
 use lumino_extras::i18n::{Language, main_translations};
 use lumino_ui_core::button_descs::ButtonId;
@@ -91,21 +92,27 @@ impl StatusBar {
         let use_fps_style = self.use_fps_style();
 
         // 左侧预留描述区（固定宽度，避免 hover 时布局跳动）
-        // 说明文字强制单行显示：不设置 width=Fill，文本默认 Shrink 不换行，
-        // 超出 220px 容器宽度的内容被裁剪，绝不发生折行。
-        let left_section: Element<'a> =
-            container(text(left_text).size(12).style(move |theme: &Theme| {
-                if use_fps_style {
-                    let palette = theme.extended_palette();
-                    text::Style {
-                        color: Some(palette.primary.strong.color),
+        // 说明文字强制单行显示：显式 `Wrapping::None` 关闭自动折行（iced 的
+        // `Text` 默认 `Wrapping::Word`，长描述会在 220px 内折成多行，把 20px 高的
+        // 状态栏“纵向拉长”），同时固定文本宽度为 220px 使其超出部分被裁剪。
+        let left_section: Element<'a> = container(
+            text(left_text)
+                .size(12)
+                .width(Length::Fixed(220.0))
+                .wrapping(Wrapping::None)
+                .style(move |theme: &Theme| {
+                    if use_fps_style {
+                        let palette = theme.extended_palette();
+                        text::Style {
+                            color: Some(palette.primary.strong.color),
+                        }
+                    } else {
+                        text::Style::default()
                     }
-                } else {
-                    text::Style::default()
-                }
-            }))
-            .width(Length::Fixed(220.0))
-            .into();
+                }),
+        )
+        .width(Length::Fixed(220.0))
+        .into();
 
         // 右侧性能指标组：CPU / MEM / FPS（仿照 yinhe mode_bar 底部栏的 metric 设计：
         // label 用弱色、value 用强调色；MEM 可点击打开内存监控对话框）

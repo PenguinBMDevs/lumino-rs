@@ -111,7 +111,11 @@ impl MidiDocument {
     ///
     /// 前置：`notes` 已按 `start_tick` 升序。比 `batch_insert_notes` 少一次排序，
     /// 适合 I2M 放置等已排序路径。
-    pub fn batch_insert_notes_sorted(&mut self, track_id: usize, mut notes: Vec<NoteEvent>) -> usize {
+    pub fn batch_insert_notes_sorted(
+        &mut self,
+        track_id: usize,
+        mut notes: Vec<NoteEvent>,
+    ) -> usize {
         if notes.is_empty() {
             return 0;
         }

@@ -8,7 +8,7 @@ use iced_widget::{Space, button, column, container, mouse_area, row, tooltip};
 use crate::resources::icon;
 use crate::toolbar::overflow::state::{OverflowMenuItem, ToolbarGroup};
 use crate::toolbar::{Event, Toolbar};
-use crate::{Element, Message, Theme};
+use crate::{Element, Theme};
 
 /// 图标按钮尺寸（宽高相同）
 const BUTTON_SIZE: f32 = 40.0;
@@ -56,7 +56,10 @@ impl Toolbar {
                 ..Default::default()
             });
 
-        mouse_area(panel).on_press(Message::Null).into()
+        // 注意：不要用 mouse_area(panel).on_press(Message::Null)——其 on_press 会
+        // capture 事件，吞掉面板内按钮点击（按钮失效）。外部点击关闭由
+        // `background_close_overlay` 负责，面板内点击直接交给按钮自身 on_press。
+        panel.into()
     }
 
     /// 收集隐藏分组的按钮列表

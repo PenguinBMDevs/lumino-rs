@@ -44,10 +44,16 @@ pub enum Tool {
     Pen,
     /// 橡皮擦工具
     Eraser,
+    /// 绘制橡皮擦工具（曲线/形状/画刷绘制上下文的橡皮擦，独立于普通编辑橡皮擦 `Tool::Eraser`）
+    DrawEraser,
     /// 切割工具
     Razor,
     /// 曲线工具（自动化曲线绘制）
     Curve,
+    /// 形状工具（占位：当前仅作为工具栏选择态与共存逻辑，实际绘制行为后续补充）
+    Shape,
+    /// 文字工具（占位：当前仅作为工具栏选择态与共存逻辑，实际绘制行为后续补充）
+    Text,
 }
 
 // ─── 音符精度/网格对齐 ───
@@ -140,6 +146,56 @@ impl NotePrecision {
             NotePrecision::SixtyFourth,
             NotePrecision::OneTwentyEighth,
         ]
+    }
+}
+
+// ─── 画刷工具配置 ───
+
+/// 画刷工具配置
+///
+/// 粗细度 = 画笔纵向覆盖的半音数（1-20）。每个粗细度层级（从底向上 `0..N-1`）
+/// 对应一条音轨。`tracks[i]` 为第 `i+1` 层显式指定的音轨 id；
+/// `None` 表示未指定，绘制时按默认规则（从当前音轨起沿普通音轨序行走、跳过
+/// Conductor 音轨）自动分配。
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct BrushConfig {
+    /// 粗细度（1-20 个 key 范围）
+    pub thickness: u8,
+    /// 每个粗细度层级分配的音轨（长度 = thickness，`None` = 默认自动分配）
+    pub tracks: Vec<Option<usize>>,
+}
+
+impl BrushConfig {
+    /// 最大粗细度
+    pub const MAX_THICKNESS: u8 = 20;
+    /// 最小粗细度
+    pub const MIN_THICKNESS: u8 = 1;
+
+    /// 创建默认配置（粗细度 1，无显式分配）
+    pub fn new() -> Self {
+        Self {
+            thickness: 1,
+            tracks: vec![None],
+        }
+    }
+
+    /// 设置粗细度并同步 `tracks` 长度（新增层级默认 `None`，删除层级截断尾部）
+    pub fn set_thickness(&mut self, thickness: u8) {
+        let t = thickness.clamp(Self::MIN_THICKNESS, Self::MAX_THICKNESS);
+        self.thickness = t;
+        self.tracks.resize(t as usize, None);
+    }
+
+    /// 第 `level` 层（0-based）显式分配的音轨；未指定返回 `None`
+    pub fn track_for_level(&self, level: usize) -> Option<usize> {
+        self.tracks.get(level).copied().flatten()
+    }
+
+    /// 设置第 `level` 层（0-based）的音轨分配
+    pub fn set_track(&mut self, level: usize, track: Option<usize>) {
+        if let Some(slot) = self.tracks.get_mut(level) {
+            *slot = track;
+        }
     }
 }
 

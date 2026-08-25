@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use lumino_core::BrushConfig;
 use lumino_core::storage::config::UiConfig;
 use lumino_ui::state::root_state::DialogType;
 
@@ -44,6 +45,7 @@ impl DialogWindow {
         pending_path: Option<&str>,
         size_mb: f64,
         pending_title: Option<&str>,
+        pending_brush_config: Option<&BrushConfig>,
     ) -> Result<(), String> {
         puffin::profile_scope!("dialog_init_phase_ui");
         let physical_size = self.window.inner_size();
@@ -136,6 +138,15 @@ impl DialogWindow {
                 // 同步主窗口的云存储快照（连接列表/表单回显/提醒内容）。
                 // 云存储唯一数据源是主窗口 Root，对话框为独立 Root 需拉取。
                 ui.sync_cloud_state_from(main_ui);
+            }
+            DialogType::BrushSettings => {
+                // 种入当前画刷配置作为对话框本地草稿，便于用户在此基础上编辑。
+                if let Some(config) = pending_brush_config {
+                    ui.set_brush_settings_draft(config.clone());
+                }
+                // 注入可选音轨列表（排除指挥轨），供「每层音轨」下拉选择。
+                let tracks = main_ui.normal_track_choices();
+                ui.set_brush_settings_tracks(tracks);
             }
         }
 

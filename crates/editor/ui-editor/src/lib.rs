@@ -211,6 +211,11 @@ pub struct Editor {
     /// 与 `local_selection_timestamp` 同步写入/清空，供冲突判定复用，
     /// 避免在提交热路径重新扫描选中集合。
     pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
+
+    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    pub brush: lumino_core::BrushConfig,
+    /// 画刷笔触进行中的当前单元格（Some = 正在绘制，用于 moved/released 分流）
+    pub(crate) brush_last_cell: Option<(f32, u16)>,
 }
 
 /// 远端用户选择集合

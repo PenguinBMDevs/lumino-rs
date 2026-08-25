@@ -2,7 +2,8 @@ use super::*;
 use lumino_midi_model::compact::{CompactEvent, EventKind};
 
 fn make_test_document() -> MidiDocument {
-    MidiDocument { next_note_id: 1,
+    MidiDocument {
+        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
         ])],
@@ -120,7 +121,8 @@ fn test_compact_event_roundtrip() {
 
 #[test]
 fn test_to_midi_document_roundtrip_overlapping_notes() {
-    let doc = MidiDocument { next_note_id: 1,
+    let doc = MidiDocument {
+        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
             NoteEvent::new(120, 600, 64, 80, 0),
@@ -206,7 +208,8 @@ fn test_to_midi_document_same_key_overlapping_notes() {
 /// （sort_unstable 会打乱同 tick 的 NoteOff/NoteOn 顺序 → 长度错乱）
 #[test]
 fn test_from_midi_document_same_key_adjacent_notes() {
-    let doc = MidiDocument { next_note_id: 1,
+    let doc = MidiDocument {
+        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
             NoteEvent::new(480, 960, 60, 90, 0),

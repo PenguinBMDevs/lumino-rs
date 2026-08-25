@@ -356,10 +356,7 @@ impl CollaborationService {
     }
 
     /// 发送本地选择变更（同步 API）
-    pub fn send_selection(
-        &self,
-        selection: serde_json::Value,
-    ) -> Result<(), String> {
+    pub fn send_selection(&self, selection: serde_json::Value) -> Result<(), String> {
         self.with_client(|client| client.send_selection(selection))
     }
 

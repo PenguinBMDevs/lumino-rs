@@ -53,8 +53,11 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
             _ => {
                 // CC / Bend 模式：仅 Curve/Eraser 工具提供锚点悬停反馈
                 //（Pencil/Pointer 不操作自动化面板，悬停不高亮锚点）
-                if matches!(self.editor.current_tool(), Tool::Curve | Tool::Eraser)
-                    && let Some((view, _target, max_val)) = self.automation_view_params(bounds_size)
+                if matches!(
+                    self.editor.current_tool(),
+                    Tool::Curve | Tool::Eraser | Tool::DrawEraser
+                ) && let Some((view, _target, max_val)) =
+                    self.automation_view_params(bounds_size)
                     && let Some(lane) = self.current_automation_lane()
                 {
                     state.hover_anchor_tick =
@@ -111,7 +114,10 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
     ) {
         // 仅 Curve/Eraser 工具提供速度点悬停反馈
         //（Pencil/Pointer 不操作 Tempo 面板，悬停不高亮速度点）
-        if !matches!(self.editor.current_tool(), Tool::Curve | Tool::Eraser) {
+        if !matches!(
+            self.editor.current_tool(),
+            Tool::Curve | Tool::Eraser | Tool::DrawEraser
+        ) {
             state.tempo_hover_idx = None;
             state.hover_point_idx = None;
             state.hover_anchor_tick = None;

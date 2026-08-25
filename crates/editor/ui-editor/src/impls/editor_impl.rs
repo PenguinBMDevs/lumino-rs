@@ -18,6 +18,7 @@ mod tests;
 use crate::velocity::VelocityPanel;
 use crate::{EditState, Editor, EditorMemory, SpatialIndexState, grid};
 use iced_widget::canvas;
+use lumino_core::BrushConfig;
 use lumino_ui_core::message::AudioAction;
 use std::cell::Cell;
 
@@ -50,6 +51,8 @@ impl Editor {
                 remote_selections: std::collections::HashMap::new(),
                 local_selection_timestamp: None,
                 local_selection_fingerprints: Vec::new(),
+                brush: BrushConfig::new(),
+                brush_last_cell: None,
             }
         })
     }

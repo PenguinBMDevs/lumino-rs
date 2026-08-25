@@ -15,5 +15,5 @@ pub mod view_state;
 
 pub use error::{CoreError, Result};
 pub use smooth_scroll::SmoothScrollAnimation;
-pub use types::{AudioAction, DotType, Language, NotePrecision, Tool};
+pub use types::{AudioAction, BrushConfig, DotType, Language, NotePrecision, Tool};
 pub use view_state::ViewState;

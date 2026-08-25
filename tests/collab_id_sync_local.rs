@@ -22,9 +22,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use lumino_collaboration::client::{CollaborationClient, CollaborationEvent};
-use lumino_collaboration::types::{
-    ClientConfig, NoteAction, NoteBatchOperation, SyncNote,
-};
+use lumino_collaboration::types::{ClientConfig, NoteAction, NoteBatchOperation, SyncNote};
 
 use common::EventCollector;
 
@@ -54,7 +52,9 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
         max_reconnect_attempts: 0,
     });
     client_a.set_event_callback(collector_a.callback());
-    let create = client_a.create_room_and_connect("本地ID同步测试".to_string()).await?;
+    let create = client_a
+        .create_room_and_connect("本地ID同步测试".to_string())
+        .await?;
     let invite = create.room.invite_code.clone();
     println!("  A 创建房间，邀请码: {invite}");
 

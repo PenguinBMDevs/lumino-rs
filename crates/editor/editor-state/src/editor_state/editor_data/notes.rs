@@ -143,7 +143,9 @@ impl EditorData {
             channel,
             track_idx,
         ));
-        let left_id = self.note_id_at(track_idx, note_tick, key as u16).unwrap_or(0);
+        let left_id = self
+            .note_id_at(track_idx, note_tick, key as u16)
+            .unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
             left_id,
@@ -154,7 +156,9 @@ impl EditorData {
             channel,
             track_idx,
         ));
-        let right_id = self.note_id_at(track_idx, split_tick, key as u16).unwrap_or(0);
+        let right_id = self
+            .note_id_at(track_idx, split_tick, key as u16)
+            .unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
             right_id,
@@ -230,7 +234,8 @@ impl EditorData {
             // 2026-09 协作修复：添加一个合并后的音符。
             self.pending_collab_transform_sync.push((
                 true,
-                self.note_id_at(self.current_track, merged_tick, first.2).unwrap_or(0),
+                self.note_id_at(self.current_track, merged_tick, first.2)
+                    .unwrap_or(0),
                 merged_tick,
                 first.2,
                 merged_length,
@@ -313,8 +318,20 @@ impl EditorData {
                             let old_ch = note.channel;
                             note.end_tick = note.start_tick + new_length as u32;
                             let new_len = (note.end_tick - note.start_tick) as f32;
-                            sync_entries.push((false, note.id, old_tick, old_key, current_length, old_vel, old_ch, track_idx));
-                            sync_entries.push((true, note.id, old_tick, old_key, new_len, old_vel, old_ch, track_idx));
+                            sync_entries.push((
+                                false,
+                                note.id,
+                                old_tick,
+                                old_key,
+                                current_length,
+                                old_vel,
+                                old_ch,
+                                track_idx,
+                            ));
+                            sync_entries.push((
+                                true, note.id, old_tick, old_key, new_len, old_vel, old_ch,
+                                track_idx,
+                            ));
                             tied += 1;
                         }
                     }

@@ -52,10 +52,18 @@ impl Host {
         self.process_frame_preparation();
 
         // 更新光标位置（用于音符预览）
-        self.update_cursor_for_preview();
+        {
+            puffin::profile_scope!("update_cursor_for_preview");
+            self.update_cursor_for_preview();
+        }
 
         // 钢琴瀑布流面板键盘：在 GPU 上下文持有者处离屏渲染并缓存（按需）
-        self.ensure_piano_waterfall_keyboard();
+        // 单独插桩：该函数未插桩，是播放期主线程同步 GPU 工作的可疑热点，
+        // 用于区分卡顿是否来自瀑布流键盘离屏渲染（render_scene）本身。
+        {
+            puffin::profile_scope!("ensure_piano_waterfall_keyboard");
+            self.ensure_piano_waterfall_keyboard();
+        }
 
         if self.render_ctx.wgpu_render_thread.is_some() {
             // 主窗口：分离渲染线程模式

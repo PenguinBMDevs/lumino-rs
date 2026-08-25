@@ -55,7 +55,8 @@ impl Editor {
                     self.handle_line_tool_pressed(pos, snapped_tick, key as f32);
                 }
             }
-            Tool::Eraser => self.handle_eraser_pressed(pos, shift, hit_result),
+            Tool::Eraser | Tool::DrawEraser => self.handle_eraser_pressed(pos, shift, hit_result),
+            Tool::Brush => self.handle_brush_pressed(pos, hit_result, snapped_tick, key),
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),
         }
     }
@@ -338,7 +339,12 @@ impl Editor {
     }
 
     /// 开始编辑现有音符
-    fn start_note_edit(&mut self, index: usize, hit_type: HitType, pos: iced_core::Point) {
+    pub(crate) fn start_note_edit(
+        &mut self,
+        index: usize,
+        hit_type: HitType,
+        pos: iced_core::Point,
+    ) {
         interaction_ops::start_note_edit(
             &mut self.editor_state.data,
             &mut self.editor_state.interaction,

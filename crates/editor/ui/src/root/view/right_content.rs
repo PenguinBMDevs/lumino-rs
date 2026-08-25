@@ -40,13 +40,6 @@ fn with_toolbar_overlay<'a>(
         return content;
     }
 
-    let (_, hidden) = root
-        .toolbar
-        .compute_overflow_groups(available_width, arrangement_mode);
-    if hidden.is_empty() {
-        return content;
-    }
-
     // 计算面板背景色：贴近工具栏背景色
     let palette = root.window.theme.extended_palette();
     let toolbar_bg = palette.background.weakest.color;
@@ -58,21 +51,30 @@ fn with_toolbar_overlay<'a>(
         toolbar_bg.a,
     );
 
-    let menu = root.toolbar.render_overflow_menu(
-        &hidden,
-        has_selection,
-        root.settings.display.language,
-        panel_background,
-        &root.window.theme,
-        arrangement_mode,
-    );
-    let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
+    let mut stack = Stack::new().push(content);
 
-    Stack::new()
-        .push(content)
-        .push(overflow::background_close_overlay())
-        .push(menu_overlay)
-        .into()
+    // 工具栏「更多工具」溢出菜单
+    if root.toolbar.overflow_menu_open {
+        let (_, hidden) = root
+            .toolbar
+            .compute_overflow_groups(available_width, arrangement_mode);
+        if !hidden.is_empty() {
+            let menu = root.toolbar.render_overflow_menu(
+                &hidden,
+                has_selection,
+                root.settings.display.language,
+                panel_background,
+                &root.window.theme,
+                arrangement_mode,
+            );
+            let menu_overlay = overflow::positioned_overflow_menu(menu, root.toolbar.height());
+            stack = stack
+                .push(overflow::background_close_overlay())
+                .push(menu_overlay);
+        }
+    }
+
+    stack.into()
 }
 
 /// 关闭背景：点击菜单外部区域关闭

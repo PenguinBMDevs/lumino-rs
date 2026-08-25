@@ -75,6 +75,8 @@ pub enum DialogResult {
         /// 删除时记录的音轨 ID（用于释放 reserved_track_ids 占用）
         track_id: u16,
     },
+    /// 画刷「绘制行为」配置（Save 后由 runner 应用回主窗）
+    BrushSettings(lumino_core::BrushConfig),
 }
 
 /// 将触摸事件转换为鼠标事件（兼容性处理）

@@ -2,8 +2,8 @@
 //!
 //! 这些逻辑从 `history.rs` 拆分出来，使主文件保持在 400 行以内。
 
-use lumino_note_core::history::{CreateOp, MoveOp};
 use lumino_note_core::Note;
+use lumino_note_core::history::{CreateOp, MoveOp};
 
 use super::EditorData;
 use crate::DragState;
@@ -44,9 +44,7 @@ impl EditorData {
                 }
             } else {
                 // redo：按 tick 有序重新插入，复用普通插入增量通道（InsertAt）。
-                if self
-                    .insert_note(track_id, super::super::accessors::event_to_note(&op.note))
-                {
+                if self.insert_note(track_id, super::super::accessors::event_to_note(&op.note)) {
                     count += 1;
                 }
             }

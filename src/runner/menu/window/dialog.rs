@@ -13,6 +13,9 @@ impl RunnerInner {
             OpenCustomPrecisionDialog => {
                 self.open_dialog_traced(DialogType::CustomPrecision, "自定义精度")
             }
+            OpenBrushSettingsDialog(config) => {
+                self.window_state.dialog_manager.open_brush_settings(config);
+            }
             CloseCustomPrecisionDialog => {
                 self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度")
             }

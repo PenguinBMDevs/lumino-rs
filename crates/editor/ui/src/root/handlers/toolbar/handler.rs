@@ -27,6 +27,9 @@ impl ToolbarHandler {
         // 更新工具栏自身状态
         root.toolbar.update(event.clone());
 
+        // 同步画刷配置到编辑器（绘制时按当前粗细度/音轨分配落笔）
+        root.editor.brush = root.toolbar.brush.clone();
+
         // 处理播放控制 - 直接执行，不通过消息循环
         self.handle_toolbar_playback(root, &event);
 

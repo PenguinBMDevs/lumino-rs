@@ -16,6 +16,19 @@ impl ToolbarHandler {
         if let crate::toolbar::Event::ToolSelected(tool) = event {
             root.editor.set_tool(*tool);
         }
+        // 面板内选择工具：把工具栏已更新的 current_tool / fill_enabled 镜像到编辑器。
+        // 注意：`view_arrangement` 每帧会用 `editor.current_tool()` 反向覆盖
+        // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
+        // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
+        if let crate::toolbar::Event::ToolPanelItemSelected(item) = event {
+            match item {
+                crate::toolbar::ToolPanelItem::StrokeSettings => {}
+                _ => {
+                    root.editor.set_tool(root.toolbar.current_tool);
+                    root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+                }
+            }
+        }
         // 颜料桶填充模式开关（仅曲线工具激活时可操作，非 Curve 时按钮禁用）
         if let crate::toolbar::Event::FillToggled(enabled) = event {
             root.editor.set_fill_enabled(*enabled);

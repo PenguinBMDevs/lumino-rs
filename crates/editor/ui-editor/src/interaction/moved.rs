@@ -10,6 +10,11 @@ impl Editor {
     /// 处理鼠标移动事件
     pub(crate) fn handle_moved(&mut self, pos: iced_core::Point) {
         crate::puffin_profiler::moved_handle();
+        // 画刷笔触进行中：跟随鼠标轨迹落笔，绕过通用绘制路径
+        if self.brush_last_cell.is_some() {
+            self.handle_brush_moved(pos);
+            return;
+        }
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_key(pos);
         let snapped_tick = self.snap_tick(tick);

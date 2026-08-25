@@ -6,6 +6,7 @@
 //! - released:  鼠标释放事件处理
 //! - edit_ops:  编辑操作入口（占位，实现分散在 clipboard / note_ops / editor 中）
 
+mod brush;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;

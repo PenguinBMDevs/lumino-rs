@@ -11,6 +11,7 @@ pub use lumino_ui_core::state::{
 };
 
 use crate::app_mode::AppMode;
+use lumino_core::BrushConfig;
 
 /// 对话框类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -46,6 +47,8 @@ pub enum DialogType {
     CloudBrowser,
     /// 云存储断连/失败提醒面板（每次会话只弹一次）
     CloudNotice,
+    /// 画刷「绘制行为」对话框（独立 OS 窗口）
+    BrushSettings,
 }
 
 /// Root 组件的状态
@@ -86,6 +89,10 @@ pub struct RootState {
     pub current_mode: AppMode,
     /// 模式切换按钮动画状态
     pub toggle_animation: ToggleAnimationState,
+    /// 画刷「绘制行为」对话框本地草稿（独立窗口编辑，Save 前不影响实际配置）
+    pub brush_settings_draft: BrushConfig,
+    /// 画刷「绘制行为」对话框可选音轨列表（仅普通音轨，排除指挥轨），(track_id, name)
+    pub brush_settings_tracks: Vec<(usize, String)>,
 }
 
 impl Default for RootState {
@@ -117,6 +124,8 @@ impl RootState {
             video_clip: VideoClipState::new(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),
+            brush_settings_draft: BrushConfig::new(),
+            brush_settings_tracks: Vec::new(),
         }
     }
 }

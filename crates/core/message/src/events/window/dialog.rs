@@ -63,6 +63,8 @@ pub struct AudioExportConfig {
 pub enum Event {
     /// 打开自定义精度对话框窗口
     OpenCustomPrecisionDialog,
+    /// 打开画刷「绘制行为」对话框窗口（携带当前画刷配置）
+    OpenBrushSettingsDialog(lumino_core::BrushConfig),
     /// 打开加载确认对话框
     OpenLoadConfirmDialog {
         /// 文件路径

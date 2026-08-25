@@ -286,9 +286,7 @@ impl CollaborationClient {
 
                         Ok(read)
                     }
-                    ServerMessage::Error { error } => {
-                        Err(crate::CollaborationError::Other(error))
-                    }
+                    ServerMessage::Error { error } => Err(crate::CollaborationError::Other(error)),
                     _ => Err(crate::CollaborationError::Other(format!(
                         "意外的认证响应: {}",
                         text

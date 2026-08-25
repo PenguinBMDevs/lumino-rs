@@ -7,6 +7,7 @@
 //! - detection_dashboard: 检测仪表盘（CPU/内存/播放时间，移植自 yinhe）
 
 mod controls;
+mod curve_tool_group;
 mod detection_dashboard;
 mod status;
 mod toolbar_view;

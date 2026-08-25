@@ -82,6 +82,10 @@ impl RunnerInner {
                 tracing::info!("应用批量编辑");
                 ui.apply_batch_edit(&velocity, &gate, &key, &tick);
             }
+            DialogResult::BrushSettings(config) => {
+                tracing::info!("应用画刷绘制行为配置: 粗细度={}", config.thickness);
+                ui.apply_brush_settings(config);
+            }
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }

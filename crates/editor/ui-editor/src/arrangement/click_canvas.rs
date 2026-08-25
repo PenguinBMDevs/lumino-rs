@@ -148,7 +148,7 @@ impl ArrangementClickCanvas {
                     mouse::Interaction::Pointer
                 }
             }
-            Tool::Curve | Tool::Eraser => mouse::Interaction::Crosshair,
+            Tool::Curve | Tool::Eraser | Tool::DrawEraser => mouse::Interaction::Crosshair,
             _ => mouse::Interaction::default(),
         }
     }
@@ -238,7 +238,7 @@ impl Program<Message, Theme, Renderer> for ArrangementClickCanvas {
                     );
                 }
             }
-            Tool::Eraser => {
+            Tool::Eraser | Tool::DrawEraser => {
                 // 状态已由 handle_eraser_event 通过消息同步到 GPU
                 let _ = state;
             }
