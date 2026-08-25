@@ -8,6 +8,7 @@ use super::*;
 struct ConfigDiff {
     synth_changed: bool,
     xsynth_changed: bool,
+    audio_engine_changed: bool,
     titlebar_changed: bool,
     font_changed: bool,
 }
@@ -30,6 +31,7 @@ impl RunnerInner {
             || new.synth.xsynth_threads != old.xsynth_threads
             || new.synth.xsynth_fade_out != old.xsynth_fade_out_killing
             || new.synth.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key;
+        let audio_engine_changed = new.synth.audio_engine != old.audio_engine;
         let titlebar_changed = new.synth.use_native_titlebar != old.use_native_titlebar;
         let font_changed = new.editing.program_font_name != old.program_font_name
             || new.editing.program_font_path != old.program_font_path;
@@ -55,6 +57,7 @@ impl RunnerInner {
         if theme_changed
             || synth_changed
             || xsynth_changed
+            || audio_engine_changed
             || titlebar_changed
             || font_changed
             || other_changed
@@ -62,6 +65,7 @@ impl RunnerInner {
             Some(ConfigDiff {
                 synth_changed,
                 xsynth_changed,
+                audio_engine_changed,
                 titlebar_changed,
                 font_changed,
             })
@@ -97,6 +101,7 @@ impl RunnerInner {
             None => ConfigDiff {
                 synth_changed: false,
                 xsynth_changed: false,
+                audio_engine_changed: false,
                 titlebar_changed: false,
                 font_changed: false,
             },
@@ -127,6 +132,14 @@ impl RunnerInner {
             );
             self.midi_state.midi.mark_for_reinit();
         }
+        if diff.audio_engine_changed {
+            tracing::info!(
+                "音频引擎已改变: {:?} -> {:?}",
+                old.audio_engine,
+                new.synth.audio_engine
+            );
+            self.midi_state.midi.mark_for_reinit();
+        }
         if diff.titlebar_changed {
             tracing::info!(
                 "标题栏设置已改变: native_titlebar {} -> {}",
@@ -152,6 +165,7 @@ impl RunnerInner {
             config.ui.theme.clone_from(&current_theme);
             config.ui.language = new.display.language;
             config.ui.preferred_backend = new.synth.backend;
+            config.ui.audio_engine = new.synth.audio_engine;
             config.ui.soundfont_path = new.synth.soundfont_path.clone();
             config.ui.use_native_titlebar = new.synth.use_native_titlebar;
             config.ui.program_font_name = new.editing.program_font_name.clone();

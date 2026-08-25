@@ -31,6 +31,8 @@ pub use lumino_ui_core::settings_event::Event;
 pub struct SynthSettings {
     /// 合成器后端类型
     pub backend: SynthBackend,
+    /// 音频引擎后端（Realtime vs Core）
+    pub audio_engine: lumino_core::storage::config::AudioEngineKind,
     /// 音色库文件路径（SF2/SFZ）
     pub soundfont_path: String,
     /// 是否使用原生系统标题栏

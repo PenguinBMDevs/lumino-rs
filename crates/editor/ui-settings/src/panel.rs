@@ -45,6 +45,7 @@ impl SettingsPanel {
             selected_menu_index: 0,
             synth: SynthSettings {
                 backend: ui_config.preferred_backend,
+                audio_engine: ui_config.audio_engine,
                 soundfont_path: ui_config.soundfont_path.clone(),
                 use_native_titlebar: ui_config.use_native_titlebar,
                 xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
@@ -119,6 +120,9 @@ impl SettingsPanel {
             }
             Event::SynthBackendChanged(backend) => {
                 self.synth.backend = backend;
+            }
+            Event::AudioEngineChanged(kind) => {
+                self.synth.audio_engine = kind;
             }
             Event::SoundfontPathChanged(path) => {
                 self.synth.soundfont_path = path;

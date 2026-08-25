@@ -1,4 +1,4 @@
-use lumino_core::storage::config::{SynthBackend, UiConfig};
+use lumino_core::storage::config::{AudioEngineKind, SynthBackend, UiConfig};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
@@ -97,8 +97,13 @@ impl MidiManager {
         let init_result = match preferred {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
-            // XSynth 模式下先启动 System，然后在后台初始化 XSynth
-            SynthBackend::XSynth => Self::init_system_output(),
+            SynthBackend::XSynth => {
+                if ui_config.audio_engine == AudioEngineKind::Core {
+                    Self::init_core_output(ui_config)
+                } else {
+                    Self::init_system_output()
+                }
+            }
         };
 
         let mut manager = Self {
@@ -119,8 +124,10 @@ impl MidiManager {
             xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
         };
 
-        // 如果偏好 XSynth，在后台异步初始化
-        if preferred == SynthBackend::XSynth {
+        // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
+        if preferred == SynthBackend::XSynth
+            && ui_config.audio_engine == AudioEngineKind::Realtime
+        {
             manager.start_xsynth_async_init(ui_config);
         }
 
@@ -129,6 +136,9 @@ impl MidiManager {
 
     /// 启动 XSynth 异步初始化
     fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) {
+        if ui_config.audio_engine == AudioEngineKind::Core {
+            return;
+        }
         if self.is_xsynth_initializing {
             return;
         }
@@ -288,6 +298,34 @@ impl MidiManager {
             Err(e) => {
                 tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}，回退到 System 后端", e);
                 // KDMAPI 完全不可用 → 回退到 System 后端
+                Self::init_system_output()
+            }
+        }
+    }
+
+    /// 初始化 Core 后端（同步，基于 ring + ChannelGroup）
+    fn init_core_output(ui_config: &UiConfig) -> BackendInitResult {
+        tracing::info!("MIDI: 启动 Core 后端 (ring)");
+        if ui_config.soundfont_path.is_empty() {
+            tracing::warn!("Core: 音色库路径未设置，回退 System");
+            return Self::init_system_output();
+        }
+        let path = PathBuf::from(&ui_config.soundfont_path);
+        match lumino_midi_io::backend::create_output(
+            lumino_midi_io::backend::BackendKind::Core,
+            path,
+            Some(ui_config.xsynth_sample_rate),
+        ) {
+            Ok(conn) => {
+                tracing::info!("MIDI: Core 后端已就绪");
+                BackendInitResult {
+                    api: None,
+                    output: Some(conn),
+                    backend: SynthBackend::XSynth,
+                }
+            }
+            Err(e) => {
+                tracing::warn!("MIDI: Core 后端启动失败: {:?}，回退 System", e);
                 Self::init_system_output()
             }
         }
@@ -538,12 +576,19 @@ impl MidiManager {
 
         // 重新初始化
         if ui_config.preferred_backend == SynthBackend::XSynth {
-            // 先快速启动 System，然后后台初始化 XSynth
-            let system_result = Self::init_system_output();
-            self.api = system_result.api;
-            self.output = system_result.output;
-            self.active_backend = system_result.backend;
-            self.start_xsynth_async_init(ui_config);
+            if ui_config.audio_engine == AudioEngineKind::Core {
+                let core_result = Self::init_core_output(ui_config);
+                self.api = core_result.api;
+                self.output = core_result.output;
+                self.active_backend = core_result.backend;
+            } else {
+                // 先快速启动 System，然后后台初始化 XSynth
+                let system_result = Self::init_system_output();
+                self.api = system_result.api;
+                self.output = system_result.output;
+                self.active_backend = system_result.backend;
+                self.start_xsynth_async_init(ui_config);
+            }
         } else {
             // 初始化其他后端
             let backend_result = match ui_config.preferred_backend {

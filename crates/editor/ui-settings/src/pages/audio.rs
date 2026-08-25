@@ -7,7 +7,7 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::storage::config::SynthBackend;
+use lumino_core::storage::config::{AudioEngineKind, SynthBackend};
 use lumino_extras::i18n::settings_translations;
 
 /// 本地化合成器后端包装
@@ -40,6 +40,32 @@ impl LocalizedSynth {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+struct LocalizedAudioEngine {
+    inner: AudioEngineKind,
+    name: &'static str,
+}
+impl PartialEq for LocalizedAudioEngine {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+impl Eq for LocalizedAudioEngine {}
+impl std::fmt::Display for LocalizedAudioEngine {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+impl LocalizedAudioEngine {
+    fn new(kind: AudioEngineKind) -> Self {
+        let name = match kind {
+            AudioEngineKind::Realtime => "Realtime (xsynth)",
+            AudioEngineKind::Core => "Core (ring)",
+        };
+        Self { inner: kind, name }
+    }
+}
+
 /// 渲染音频设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.display.language);
@@ -49,6 +75,11 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         LocalizedSynth::new(SynthBackend::System, settings.display.language),
     ];
     let current_synth = LocalizedSynth::new(settings.synth.backend, settings.display.language);
+    let audio_engine_options = vec![
+        LocalizedAudioEngine::new(AudioEngineKind::Realtime),
+        LocalizedAudioEngine::new(AudioEngineKind::Core),
+    ];
+    let current_engine = LocalizedAudioEngine::new(settings.synth.audio_engine);
 
     let mut col = column![
         text(t.audio_title)
@@ -63,6 +94,20 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
             iced_widget::space().width(SPACING_MAIN),
             pick_list(synth_options, Some(current_synth), |ls| {
                 Message::Settings(crate::Event::SynthBackendChanged(ls.inner))
+            })
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_CONTENT),
+        // 音频引擎选择（Realtime vs Core，仅 XSynth 时有效）
+        row![
+            text("音频引擎")
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(audio_engine_options, Some(current_engine), |ae| {
+                Message::Settings(crate::Event::AudioEngineChanged(ae.inner))
             })
             .width(200.0),
         ]
