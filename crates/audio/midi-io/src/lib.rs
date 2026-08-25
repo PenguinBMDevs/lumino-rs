@@ -4,6 +4,7 @@
 //! 以及基于 xsynth 的音频合成与播放管线。
 
 pub mod api;
+pub mod audio_ring;
 pub mod compact;
 pub mod constants;
 pub mod playback;
