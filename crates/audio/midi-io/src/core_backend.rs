@@ -10,16 +10,18 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU32, Ordering},
 };
 use std::thread::{self, JoinHandle};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use xsynth_core::{
     AudioPipe, AudioStreamParams, ChannelCount,
-    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
-    channel_group::{ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, ThreadCount},
     channel::ChannelInitOptions,
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
     channel_group::SynthFormat,
+    channel_group::{
+        ChannelGroup, ChannelGroupConfig, ParallelismOptions, SynthEvent, ThreadCount,
+    },
     soundfont::SoundfontBase,
 };
 
@@ -29,6 +31,64 @@ use crate::{Error, OutputConnection};
 const RING_CAPACITY: usize = 32768; // 16384 立体声帧 ≈340ms@48k，与 yinhe 一致
 const RENDER_CHUNK_FRAMES: usize = 512;
 const TARGET_BUFFER_FRAMES: usize = 4096; // 正常水位，帧数而非毫秒（yinhe 用帧，避免浮点/采样率耦合）
+/// 混合等待的自旋尾长：粗睡到只剩该时长后自旋，保证唤醒精度（Windows 默认定时器
+/// 分辨率 15.6ms，纯 sleep(1ms) 实际睡 15.6ms → ring 产出跟不上消费 → 欠载卡顿）。
+const WAIT_SPIN_TAIL: Duration = Duration::from_micros(300);
+
+/// Windows 高精度定时器守卫：存活期间将系统定时器分辨率提升到 1ms。
+///
+/// 渲染线程的 `thread::sleep` 在 Windows 上默认受 15.6ms 定时中断限制，
+/// 必须 `timeBeginPeriod(1)` 才能真正睡约 1ms（与播放线程 `playback/manager.rs`
+/// 的睡眠+自旋策略互补：timeBeginPeriod 让 sleep 段更准，自旋尾兜底）。
+#[cfg(target_os = "windows")]
+struct TimerResolutionGuard;
+
+#[cfg(target_os = "windows")]
+impl TimerResolutionGuard {
+    fn new() -> Self {
+        // 失败仅意味着保持原分辨率，非致命
+        unsafe { windows::Win32::Media::timeBeginPeriod(1) };
+        Self
+    }
+}
+
+#[cfg(target_os = "windows")]
+impl Drop for TimerResolutionGuard {
+    fn drop(&mut self) {
+        unsafe { windows::Win32::Media::timeEndPeriod(1) };
+    }
+}
+
+/// 睡眠+自旋混合等待：大部分时间粗睡，最后 `WAIT_SPIN_TAIL` 自旋到精确唤醒。
+fn precise_wait(wait: Duration) {
+    let target = Instant::now() + wait;
+    let coarse = wait.saturating_sub(WAIT_SPIN_TAIL);
+    if coarse > Duration::ZERO {
+        thread::sleep(coarse);
+    }
+    while Instant::now() < target {
+        std::hint::spin_loop();
+    }
+}
+
+/// 协商采样率：请求值不在设备任何 f32 输出配置的支持范围内时，回退到设备默认采样率。
+/// （移植自 yinhe `spawn.rs::negotiate_sample_rate`）
+fn negotiate_sample_rate(device: &cpal::Device, requested: u32, device_default: u32) -> u32 {
+    let supported = match device.supported_output_configs() {
+        Ok(configs) => configs
+            .filter(|c| c.sample_format() == cpal::SampleFormat::F32)
+            .any(|c| requested >= c.min_sample_rate().0 && requested <= c.max_sample_rate().0),
+        Err(_) => return device_default,
+    };
+    if supported {
+        requested
+    } else {
+        tracing::warn!(
+            "Core: 请求采样率 {requested}Hz 不被设备支持，回退设备默认 {device_default}Hz"
+        );
+        device_default
+    }
+}
 
 #[derive(Debug)]
 struct LevelStore {
@@ -52,6 +112,9 @@ pub struct CoreOutput {
     running: Arc<AtomicBool>,
     _stream: Option<cpal::Stream>,
     render_handle: Option<JoinHandle<()>>,
+    /// Windows 高分辨率定时器守卫（其他平台为空），随连接关闭恢复系统默认分辨率
+    #[cfg(target_os = "windows")]
+    _timer_guard: TimerResolutionGuard,
 }
 
 // cpal::Stream 在 macOS 上为 !Send（CoreAudio 内部 Mutex 非 Send），但我们在 UI 线程创建
@@ -65,22 +128,22 @@ impl CoreOutput {
         sample_rate: Option<u32>,
         buffer_frames: Option<u32>,
     ) -> Result<Self, Error> {
-        // ── 采样率/声道协商（优先设备，避免跑调） ──
+        // 尽早提升 Windows 定时器分辨率，保证渲染线程 sleep 精度
+        #[cfg(target_os = "windows")]
+        let timer_guard = TimerResolutionGuard::new();
+
+        // ── 采样率/声道协商（请求值在设备支持范围内则生效，否则回退设备默认） ──
         let (sr, channel_count, stream_config_opt, device_opt) = {
             let host = cpal::default_host();
             if let Some(device) = host.default_output_device() {
                 match device.default_output_config() {
                     Ok(supported) => {
                         let device_sr = supported.sample_rate().0;
-                        let req_sr = sample_rate.unwrap_or(device_sr);
-                        let sr = if req_sr != device_sr {
-                            tracing::warn!(
-                                "Core: 请求 sr {req_sr} 与设备 {device_sr} 不一致，使用设备 sr"
-                            );
-                            device_sr
-                        } else {
-                            req_sr
-                        };
+                        let sr = negotiate_sample_rate(
+                            &device,
+                            sample_rate.unwrap_or(device_sr),
+                            device_sr,
+                        );
                         let channels = supported.channels() as usize;
                         let cc = if channels == 1 {
                             ChannelCount::Mono
@@ -124,7 +187,10 @@ impl CoreOutput {
             match crate::soundfont_cache::load_soundfont_cached(&soundfont_path, params) {
                 Ok(sf) => Some(sf),
                 Err(e) => {
-                    tracing::warn!("Core: 音色库加载失败 {:?}: {e}，创建空合成器", soundfont_path);
+                    tracing::warn!(
+                        "Core: 音色库加载失败 {:?}: {e}，创建空合成器",
+                        soundfont_path
+                    );
                     None
                 }
             }
@@ -156,51 +222,50 @@ impl CoreOutput {
         let levels_consumer = Arc::clone(&levels);
 
         // ── cpal 输出流（唯一消费者，零锁）──
-        let _stream: Option<cpal::Stream> = if let (Some(device), Some(cfg)) =
-            (device_opt, stream_config_opt)
-        {
-            match device.build_output_stream(
-                &cfg,
-                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    let n = consumer.pop_into(data);
-                    if n < data.len() {
-                        data[n..].fill(0.0);
-                    }
-                    let mut peak: f32 = 0.0;
-                    for &s in data.iter() {
-                        let a = s.abs();
-                        if a > peak {
-                            peak = a;
+        let _stream: Option<cpal::Stream> =
+            if let (Some(device), Some(cfg)) = (device_opt, stream_config_opt) {
+                match device.build_output_stream(
+                    &cfg,
+                    move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                        let n = consumer.pop_into(data);
+                        if n < data.len() {
+                            data[n..].fill(0.0);
+                        }
+                        let mut peak: f32 = 0.0;
+                        for &s in data.iter() {
+                            let a = s.abs();
+                            if a > peak {
+                                peak = a;
+                            }
+                        }
+                        levels_consumer
+                            .master
+                            .store(peak.to_bits(), Ordering::Relaxed);
+                        for ch in levels_consumer.channel_levels.iter() {
+                            ch.store(peak.to_bits(), Ordering::Relaxed);
+                        }
+                    },
+                    |err| tracing::error!("Core cpal stream error: {err}"),
+                    None,
+                ) {
+                    Ok(s) => {
+                        if let Err(e) = s.play() {
+                            tracing::error!("Core: 启动 cpal 流失败: {e}");
+                            None
+                        } else {
+                            tracing::info!("Core: cpal 流已启动 sr={} ch={:?}", sr, channel_count);
+                            Some(s)
                         }
                     }
-                    levels_consumer
-                        .master
-                        .store(peak.to_bits(), Ordering::Relaxed);
-                    for ch in levels_consumer.channel_levels.iter() {
-                        ch.store(peak.to_bits(), Ordering::Relaxed);
-                    }
-                },
-                |err| tracing::error!("Core cpal stream error: {err}"),
-                None,
-            ) {
-                Ok(s) => {
-                    if let Err(e) = s.play() {
-                        tracing::error!("Core: 启动 cpal 流失败: {e}");
+                    Err(e) => {
+                        tracing::error!("Core: 创建 cpal 流失败: {e}");
                         None
-                    } else {
-                        tracing::info!("Core: cpal 流已启动 sr={} ch={:?}", sr, channel_count);
-                        Some(s)
                     }
                 }
-                Err(e) => {
-                    tracing::error!("Core: 创建 cpal 流失败: {e}");
-                    None
-                }
-            }
-        } else {
-            tracing::warn!("Core: 无可用 cpal 流，进入离线 ring 模式（无 audible 输出）");
-            None
-        };
+            } else {
+                tracing::warn!("Core: 无可用 cpal 流，进入离线 ring 模式（无 audible 输出）");
+                None
+            };
 
         // ── 渲染线程（唯一生产者） ──
         let target_frames = buffer_frames.unwrap_or(TARGET_BUFFER_FRAMES as u32) as usize;
@@ -226,6 +291,8 @@ impl CoreOutput {
             running,
             _stream,
             render_handle: Some(render_handle),
+            #[cfg(target_os = "windows")]
+            _timer_guard: timer_guard,
         })
     }
 
@@ -300,11 +367,11 @@ fn render_loop(
             group.send_event(ev);
         }
         if producer.len() >= target_samples {
-            thread::sleep(Duration::from_millis(1));
+            precise_wait(Duration::from_millis(1));
             continue;
         }
         if producer.free_space() < chunk_samples {
-            thread::sleep(Duration::from_millis(1));
+            precise_wait(Duration::from_millis(1));
             continue;
         }
         scratch.fill(0.0);
@@ -355,9 +422,9 @@ impl OutputConnection for CoreOutput {
                 let v = bend / 8192.0 - 1.0;
                 SynthEvent::Channel(
                     channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(
-                        ControlEvent::PitchBendValue(v),
-                    )),
+                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
+                        v,
+                    ))),
                 )
             }
             _ => return Ok(()),
