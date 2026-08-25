@@ -37,7 +37,7 @@ impl Editor {
 
         match edit_state {
             EditState::Selecting { .. } => {
-                if self.editor_state.tool == Tool::Eraser {
+                if self.editor_state.tool == Tool::Eraser || self.editor_state.tool == Tool::DrawEraser {
                     // 框选过程中 update_selection 已维护好 selected_notes，
                     // 直接复用，避免重复线性扫描。
                     self.delete_selected_notes();

@@ -44,6 +44,8 @@ pub enum Tool {
     Pen,
     /// 橡皮擦工具
     Eraser,
+    /// 绘制橡皮擦工具（曲线/形状/画刷绘制上下文的橡皮擦，独立于普通编辑橡皮擦 `Tool::Eraser`）
+    DrawEraser,
     /// 切割工具
     Razor,
     /// 曲线工具（自动化曲线绘制）

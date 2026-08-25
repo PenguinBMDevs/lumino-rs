@@ -379,16 +379,16 @@ impl Toolbar {
                         // 描边设置：功能开发中（UI 占位）
                         tracing::info!("工具栏: 描边设置（功能开发中）");
                     }
+                    ToolPanelItem::Curve => {
+                        // 曲线工具：独立基础工具，选中后关闭填充共存态
+                        // （填充由「填充桶」条目单独开启）
+                        self.current_tool = Tool::Curve;
+                        self.fill_enabled = false;
+                    }
                     ToolPanelItem::FillBucket => {
-                        // 填充桶为曲线/形状的共存修饰：
-                        // - 当前为曲线/形状时切换填充开关；
-                        // - 否则（画刷/文字/橡皮擦等独立工具）切换为曲线 + 填充开启。
-                        if matches!(self.current_tool, Tool::Curve | Tool::Shape) {
-                            self.fill_enabled = !self.fill_enabled;
-                        } else {
-                            self.current_tool = Tool::Curve;
-                            self.fill_enabled = true;
-                        }
+                        // 颜料桶随时可切换：仅对曲线/形状绘制的封闭图形生效，
+                        // 即使当前不在曲线工具也可开启，作用范围由编辑器侧控制。
+                        self.fill_enabled = !self.fill_enabled;
                     }
                     ToolPanelItem::Brush => {
                         // 画刷仅可独立使用，不可与填充桶共存
@@ -407,8 +407,9 @@ impl Toolbar {
                         self.fill_enabled = false;
                     }
                     ToolPanelItem::Eraser => {
-                        // 橡皮擦：独立工具，不可与填充桶共存
-                        self.current_tool = Tool::Eraser;
+                        // 绘制橡皮擦：独立于普通编辑橡皮擦（Tool::Eraser），
+                        // 专用于曲线/形状/画刷绘制上下文
+                        self.current_tool = Tool::DrawEraser;
                         self.fill_enabled = false;
                     }
                 }

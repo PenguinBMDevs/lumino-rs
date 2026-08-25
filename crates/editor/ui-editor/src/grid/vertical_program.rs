@@ -284,7 +284,7 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
     ) -> mouse::Interaction {
         // 纵向卷帘光标反馈（与横向 `program_impl/mouse_interaction.rs` 对齐）：
         // 橡皮擦十字、曲线工具命中锚点/段可拖动（Pointer）、其余十字。
-        if self.editor.current_tool() == Tool::Eraser {
+        if matches!(self.editor.current_tool(), Tool::Eraser | Tool::DrawEraser) {
             return mouse::Interaction::Crosshair;
         }
         if self.editor.current_tool() == Tool::Curve {

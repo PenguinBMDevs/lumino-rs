@@ -123,6 +123,8 @@ pub enum Event {
 pub enum ToolPanelItem {
     /// 描边设置
     StrokeSettings,
+    /// 曲线工具
+    Curve,
     /// 填充桶
     FillBucket,
     /// 画刷工具

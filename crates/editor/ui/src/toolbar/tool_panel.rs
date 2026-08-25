@@ -33,7 +33,7 @@ const PANEL_PADDING: f32 = 8.0;
 /// 渲染「绘制工具选择面板」
 ///
 /// - `current_tool`：当前激活工具，用于标记面板条目选中态与底部描述条；
-/// - `fill_enabled`：填充桶开关，仅当 `current_tool` 为曲线/形状时有效；
+/// - `fill_enabled`：填充桶开关，随时可切换；仅对曲线/形状绘制的封闭图形生效（作用范围由编辑器控制）；
 /// - `language`：当前语言（用于面板条目标签与说明）；
 /// - `panel_background`：面板背景色（由调用方据工具栏背景计算，贴近工具栏配色）；
 /// - `theme`：当前主题（用于图标反色与文字配色）。
@@ -48,17 +48,18 @@ pub fn render_tool_panel<'a>(
 
     // 面板条目顺序：填充桶 / 画刷工具 / 形状工具 / 文字输入 / 橡皮擦
     // 第三项为该工具的说明文案（用于底部描述条与悬浮 tooltip）。
-    let items: &[(ToolPanelItem, icon::Icon, &'static str)] = &[
-        (
-            ToolPanelItem::FillBucket,
-            icon::PaintBucket,
-            t.tool_fill_desc,
-        ),
+    // 绘制工具条目；曲线工具条目在「当前非曲线工具」时插入到首位，
+    // 启用曲线工具后则不显示自身切换图标（避免冗余自选）。
+    let mut items: Vec<(ToolPanelItem, icon::Icon, &'static str)> = vec![
+        (ToolPanelItem::FillBucket, icon::PaintBucket, t.tool_fill_desc),
         (ToolPanelItem::Brush, icon::BrushTool, t.tool_brush_desc),
         (ToolPanelItem::Shape, icon::ShapeTool, t.tool_shape_desc),
         (ToolPanelItem::Text, icon::TextInput, t.tool_text_desc),
         (ToolPanelItem::Eraser, icon::Eraser, t.tool_eraser_desc),
     ];
+    if current_tool != Tool::Curve {
+        items.insert(0, (ToolPanelItem::Curve, icon::Curve, t.tool_curve_desc));
+    }
 
     let buttons = items
         .iter()
@@ -115,22 +116,22 @@ pub fn render_tool_panel<'a>(
 /// 面板条目是否处于选中（激活）态
 fn panel_item_selected(item: ToolPanelItem, current_tool: Tool, fill_enabled: bool) -> bool {
     match item {
-        ToolPanelItem::FillBucket => {
-            fill_enabled && matches!(current_tool, Tool::Curve | Tool::Shape)
-        }
+        ToolPanelItem::FillBucket => fill_enabled,
+        ToolPanelItem::Curve => current_tool == Tool::Curve,
         ToolPanelItem::Brush => current_tool == Tool::Brush,
         ToolPanelItem::Shape => current_tool == Tool::Shape,
         ToolPanelItem::Text => current_tool == Tool::Text,
-        ToolPanelItem::Eraser => current_tool == Tool::Eraser,
+        ToolPanelItem::Eraser => current_tool == Tool::DrawEraser,
         // 描边设置无选中态（占位入口）
         ToolPanelItem::StrokeSettings => false,
     }
 }
 
 /// 面板条目是否禁用（填充桶在非曲线/形状工具下不可与当前工具共存）
-fn panel_item_disabled(item: ToolPanelItem, current_tool: Tool) -> bool {
+fn panel_item_disabled(item: ToolPanelItem, _current_tool: Tool) -> bool {
     match item {
-        ToolPanelItem::FillBucket => !matches!(current_tool, Tool::Curve | Tool::Shape),
+        // 颜料桶随时可切换（仅对曲线/形状绘制的封闭图形生效，由编辑器侧控制实际作用）
+        ToolPanelItem::FillBucket => false,
         _ => false,
     }
 }
@@ -143,6 +144,7 @@ fn active_tool_desc(current_tool: Tool, fill_enabled: bool, t: &MainTranslations
         (Tool::Shape, _) => t.tool_shape_desc,
         (Tool::Text, _) => t.tool_text_desc,
         (Tool::Eraser, _) => t.tool_eraser_desc,
+        (Tool::DrawEraser, _) => t.tool_eraser_desc,
         // 纯曲线工具（未开填充）或无对应面板项时，回落到曲线说明
         _ => t.tool_curve_desc,
     }

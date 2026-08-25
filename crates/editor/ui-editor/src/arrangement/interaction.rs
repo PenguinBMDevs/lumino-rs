@@ -127,7 +127,7 @@ pub fn handle_event(
         Tool::Pointer => {
             output.extend(pointer::handle_pointer_event(state, viewport, ctx));
         }
-        Tool::Eraser => {
+        Tool::Eraser | Tool::DrawEraser => {
             output.extend(eraser::handle_eraser_event(state, viewport, ctx));
         }
         Tool::Curve => {

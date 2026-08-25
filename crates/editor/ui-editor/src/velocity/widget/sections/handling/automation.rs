@@ -139,7 +139,7 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         params: &AutomationToolActionParams<'_>,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
-            Tool::Eraser => self.handle_automation_eraser_delete(
+            Tool::Eraser | Tool::DrawEraser => self.handle_automation_eraser_delete(
                 params.lane_ref,
                 params.lane_idx,
                 params.track_idx,

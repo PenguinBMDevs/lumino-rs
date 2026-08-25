@@ -55,13 +55,20 @@ fn test_panel_text_switches_to_text() {
 }
 
 #[test]
-fn test_panel_eraser_switches_to_eraser() {
-    select_and_assert(ToolPanelItem::Eraser, Tool::Eraser, false);
+fn test_panel_eraser_switches_to_draw_eraser() {
+    // 下拉内「橡皮擦」是绘制橡皮擦（Tool::DrawEraser），独立于普通编辑橡皮擦（Tool::Eraser）
+    select_and_assert(ToolPanelItem::Eraser, Tool::DrawEraser, false);
 }
 
 #[test]
-fn test_panel_fill_bucket_from_brush_switches_to_curve_with_fill() {
-    // 填充桶在非曲线/形状工具下点击：应切到曲线 + 开启填充
+fn test_panel_curve_switches_to_curve() {
+    // 曲线条目把当前工具切换为曲线（关闭填充共存态）
+    select_and_assert(ToolPanelItem::Curve, Tool::Curve, false);
+}
+
+#[test]
+fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
+    // 填充桶现在随时可切换：从画刷点击仅开启填充，不强制切换到曲线
     let _ = crate::event::take_events();
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.editor.set_tool(Tool::Brush);
@@ -71,8 +78,16 @@ fn test_panel_fill_bucket_from_brush_switches_to_curve_with_fill() {
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
-    assert_eq!(root.editor.current_tool(), Tool::Curve, "填充桶应从画刷切换为曲线");
+    assert_eq!(root.editor.current_tool(), Tool::Brush, "填充桶不应改变当前工具");
     assert!(root.editor.fill_enabled(), "填充桶应开启填充");
+
+    // 再点一次关闭填充
+    handler.handle(
+        &mut root,
+        Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
+    );
+    assert!(!root.editor.fill_enabled(), "再次点击填充桶应关闭填充");
+    assert_eq!(root.editor.current_tool(), Tool::Brush);
 }
 
 #[test]
