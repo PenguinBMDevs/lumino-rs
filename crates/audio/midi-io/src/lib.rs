@@ -5,8 +5,10 @@
 
 pub mod api;
 pub mod audio_ring;
+pub mod backend;
 pub mod compact;
 pub mod constants;
+pub mod core_backend;
 pub mod playback;
 pub mod realtime;
 pub mod soundfont_cache;
