@@ -36,7 +36,11 @@ impl<'a> CurveToolGroup<'a> {
         menu: Option<Element<'a, Message, Theme, Renderer>>,
         menu_width: f32,
     ) -> Self {
-        Self { content, menu, menu_width }
+        Self {
+            content,
+            menu,
+            menu_width,
+        }
     }
 }
 
@@ -197,7 +201,10 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
             renderer,
             theme,
             inherited_style,
-            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            layout
+                .children()
+                .next()
+                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
             cursor,
             &Rectangle::with_size(Size::INFINITE),
         );
@@ -216,7 +223,10 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
         self.menu.as_widget_mut().update(
             self.tree,
             event,
-            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            layout
+                .children()
+                .next()
+                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
             cursor,
             renderer,
             clipboard,
@@ -233,7 +243,10 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
     ) -> mouse::Interaction {
         self.menu.as_widget().mouse_interaction(
             self.tree,
-            layout.children().next().expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            layout
+                .children()
+                .next()
+                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
             cursor,
             &Rectangle::with_size(Size::INFINITE),
             renderer,

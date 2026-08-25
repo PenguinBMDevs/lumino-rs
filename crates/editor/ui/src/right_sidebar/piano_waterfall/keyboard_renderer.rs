@@ -426,6 +426,17 @@ pub struct KeyboardRenderer {
     last_w: u32,
     last_h: u32,
     last_count: u32,
+    /// 键盘实例缓冲（持久化复用）
+    ///
+    /// 键盘几何仅依赖 `width/height/key_count`，与滚动/缩放无关；旧实现每帧
+    /// `create_buffer_init` 新建并立即 drop，触发驱动延迟释放，在播放自动滚动
+    /// （scroll_x 每帧变化→签名变化→每帧 render_scene）时造成突发性 GPU 尖刺。
+    /// 现跨帧复用，三者任一变化时才重建。
+    instance_buffer: Option<wgpu::Buffer>,
+    /// 实例缓冲对应的尺寸/键数（用于判定是否需要重建）
+    inst_w: u32,
+    inst_h: u32,
+    inst_keys: u32,
 }
 
 impl KeyboardRenderer {
@@ -787,6 +798,10 @@ impl KeyboardRenderer {
             last_w: 0,
             last_h: 0,
             last_count: 0,
+            instance_buffer: None,
+            inst_w: 0,
+            inst_h: 0,
+            inst_keys: 0,
         }
     }
 
@@ -871,6 +886,7 @@ impl KeyboardRenderer {
         scroll_x: f32,
         current_track: u32,
     ) -> Option<Arc<wgpu::TextureView>> {
+        puffin::profile_scope!("kbrd_render_scene");
         let width = width.max(1);
         let height = height.max(1);
         let count = note_data.as_ref().map(|(_, c)| *c).unwrap_or(0);
@@ -895,12 +911,30 @@ impl KeyboardRenderer {
         let mut keys = key_layout::build_layout(width as f32, kb_h, key_count);
         keys.sort_by_key(|k| k.is_black); // 白键在前、黑键在后，黑键覆盖白键
         let instances = build_instances(width, height as f32, keyboard_y, &keys, &colors);
-        let instance_bytes = instances_to_bytes(&instances);
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("piano_waterfall_keyboard_instances"),
-            contents: &instance_bytes,
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+
+        // 复用持久化实例缓冲：键盘几何仅依赖 (width, height, key_count)，
+        // 与滚动/缩放/播放进度无关，逐帧重建 + drop 会触发驱动延迟释放，
+        // 在播放自动滚动时造成突发性尖刺。仅当三者变化时才新建。
+        if self.instance_buffer.is_none()
+            || self.inst_w != width
+            || self.inst_h != height
+            || self.inst_keys != key_count
+        {
+            let instance_bytes = instances_to_bytes(&instances);
+            let buf = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("piano_waterfall_keyboard_instances"),
+                contents: &instance_bytes,
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.instance_buffer = Some(buf);
+            self.inst_w = width;
+            self.inst_h = height;
+            self.inst_keys = key_count;
+        }
+        let instance_buffer = self
+            .instance_buffer
+            .as_ref()
+            .expect("instance_buffer allocated above");
 
         // 音符 uniform（含落点线 keyboard_y）
         let uni = build_uniforms(

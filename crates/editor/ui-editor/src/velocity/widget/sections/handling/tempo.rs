@@ -55,7 +55,9 @@ impl<'a> super::super::super::VelocityCanvas<'a> {
         hit_idx: Option<usize>,
     ) -> Option<canvas::Action<Message>> {
         match self.editor.current_tool() {
-            Tool::Eraser | Tool::DrawEraser => hit_idx.map(|idx| publish_velocity(VelocityAction::TempoDelete(idx))),
+            Tool::Eraser | Tool::DrawEraser => {
+                hit_idx.map(|idx| publish_velocity(VelocityAction::TempoDelete(idx)))
+            }
             // Tempo 面板的编辑交互统一由 Curve 工具负责：
             // 命中速度点 → 拖拽移动；未命中 → 创建新速度点。
             // Pencil/Pointer 等其他工具不操作 Tempo 面板（仅在钢琴卷帘使用）。

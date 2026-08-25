@@ -188,6 +188,7 @@ impl WgpuRenderThread {
     /// 返回 `None` 表示渲染线程尚未发布过数据（首帧之前）。返回的 `wgpu::Buffer`
     /// 为渲染线程缓冲的克隆句柄，二者指向同一份 GPU 数据，binding 不会触发第二份拷贝。
     pub fn take_note_data(&self) -> Option<(wgpu::Buffer, u32)> {
+        puffin::profile_scope!("take_note_data_lock");
         self.note_data_pub
             .lock()
             .ok()

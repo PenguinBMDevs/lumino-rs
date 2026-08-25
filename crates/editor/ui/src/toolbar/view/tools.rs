@@ -11,7 +11,9 @@ use crate::toolbar::buttons::{
     flip_button, tool_button, tool_dropdown_caret, tool_selector, tool_selector_custom,
 };
 use crate::toolbar::view::curve_tool_group::CurveToolGroup;
-use crate::toolbar::{ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel};
+use crate::toolbar::{
+    ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel,
+};
 use crate::{Element, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 

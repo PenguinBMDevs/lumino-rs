@@ -25,8 +25,7 @@ fn select_and_assert(item: ToolPanelItem, expect_tool: Tool, expect_fill: bool) 
         item
     );
     assert_eq!(
-        root.toolbar.current_tool,
-        expect_tool,
+        root.toolbar.current_tool, expect_tool,
         "工具栏 current_tool 必须与编辑器一致（{:?}）",
         item
     );
@@ -78,7 +77,11 @@ fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
     );
-    assert_eq!(root.editor.current_tool(), Tool::Brush, "填充桶不应改变当前工具");
+    assert_eq!(
+        root.editor.current_tool(),
+        Tool::Brush,
+        "填充桶不应改变当前工具"
+    );
     assert!(root.editor.fill_enabled(), "填充桶应开启填充");
 
     // 再点一次关闭填充
@@ -123,7 +126,8 @@ fn test_toolbar_update_sets_current_tool_before_sync() {
     root.toolbar
         .update(Event::ToolPanelItemSelected(ToolPanelItem::Brush));
     assert_eq!(
-        root.toolbar.current_tool, Tool::Brush,
+        root.toolbar.current_tool,
+        Tool::Brush,
         "toolbar.update 应把 current_tool 设为 Brush"
     );
 }

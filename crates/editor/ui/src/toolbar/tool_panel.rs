@@ -278,6 +278,9 @@ mod tests {
         // 颜料桶（填充开关）与描边设置占位入口始终保留
         assert!(panel_item_visible(ToolPanelItem::FillBucket, Tool::Curve));
         assert!(panel_item_visible(ToolPanelItem::FillBucket, Tool::Brush));
-        assert!(panel_item_visible(ToolPanelItem::StrokeSettings, Tool::Curve));
+        assert!(panel_item_visible(
+            ToolPanelItem::StrokeSettings,
+            Tool::Curve
+        ));
     }
 }

@@ -297,24 +297,36 @@ impl Context {
     ) -> Result<()> {
         puffin::profile_function!();
 
-        let frame = match self.surface.get_current_texture() {
-            Ok(frame) => frame,
-            Err(wgpu::SurfaceError::OutOfMemory) => {
-                tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
-                return Err(ContextError::FrameAcquisition(
-                    wgpu::SurfaceError::OutOfMemory,
-                ));
+        // 两个真正的 GPU 同步点：获取交换链帧（可能在 GPU 忙时阻塞）与 present
+        // （GPU 积压时阻塞）。单独插桩以便在火焰图中区分「取帧等待」与「呈现等待」，
+        // 定位播放期突发性大卡顿究竟来自哪一环。
+        let frame = {
+            puffin::profile_scope!("get_current_texture");
+            match self.surface.get_current_texture() {
+                Ok(frame) => frame,
+                Err(wgpu::SurfaceError::OutOfMemory) => {
+                    tracing::error!("Swapchain error: OutOfMemory. Rendering cannot continue.");
+                    return Err(ContextError::FrameAcquisition(
+                        wgpu::SurfaceError::OutOfMemory,
+                    ));
+                }
+                Err(e) => return Err(ContextError::FrameAcquisition(e)),
             }
-            Err(e) => return Err(ContextError::FrameAcquisition(e)),
         };
 
-        let view = frame
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = {
+            puffin::profile_scope!("create_view");
+            frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default())
+        };
 
         f(&frame, &view);
 
-        frame.present();
+        {
+            puffin::profile_scope!("present");
+            frame.present();
+        }
 
         Ok(())
     }

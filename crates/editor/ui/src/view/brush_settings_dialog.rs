@@ -5,9 +5,9 @@
 
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, scrollable, space, text};
-use lumino_ui_core::color::contrast_text_color;
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
+use lumino_ui_core::color::contrast_text_color;
 
 use crate::Element;
 use crate::message::{BrushSettingsAction, Message};
