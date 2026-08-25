@@ -35,6 +35,32 @@ pub(crate) fn draw(
         }
     }
 
+    // 左上角缝隙（ruler × keyboard 交叉）：填充背景避免透明穿透，对齐 yinhe widgets/quantize_button.rs:30 track_bg
+    // 当前阶段仅做填充，后续可在此放量化按钮；用即时 Frame 不走缓存，避免污染 ruler_cache
+    {
+        puffin::profile_scope!("draw::corner");
+        let view = &editor.editor_state.view;
+        if view.keyboard_width > 0.0 && view.ruler_height > 0.0 {
+            let mut corner_frame = iced_widget::canvas::Frame::new(renderer, bounds.size());
+            {
+                use iced_core::{Point, Rectangle, Size};
+                use iced_widget::canvas::{Path, Stroke};
+                use crate::grid::theme::ThemeExt;
+                let corner_rect = Rectangle::new(
+                    Point::new(0.0, 0.0),
+                    Size::new(view.keyboard_width, view.ruler_height),
+                );
+                let path = Path::rectangle(corner_rect.position(), corner_rect.size());
+                corner_frame.fill(&path, theme.ruler_background_color());
+                corner_frame.stroke(
+                    &path,
+                    Stroke::default().with_width(1.0).with_color(theme.border_color()),
+                );
+            }
+            geometries.push(corner_frame.into_geometry());
+        }
+    }
+
     {
         puffin::profile_scope!("draw::ruler");
         let ruler_geom = editor.ruler_cache.draw(renderer, bounds.size(), |frame| {
