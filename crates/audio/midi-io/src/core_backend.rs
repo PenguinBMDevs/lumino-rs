@@ -300,54 +300,6 @@ impl CoreOutput {
     }
 }
 
-struct SingleChannelLimiter {
-    loudness: f32,
-    attack: f32,
-    falloff: f32,
-    strength: f32,
-    min_thresh: f32,
-}
-impl SingleChannelLimiter {
-    fn new() -> Self {
-        Self {
-            loudness: 1.0,
-            attack: 100.0,
-            falloff: 16000.0,
-            strength: 1.0,
-            min_thresh: 1.0,
-        }
-    }
-    fn limit(&mut self, val: f32) -> f32 {
-        let abs = val.abs();
-        if self.loudness > abs {
-            self.loudness = (self.loudness * self.falloff + abs) / (self.falloff + 1.0);
-        } else {
-            self.loudness = (self.loudness * self.attack + abs) / (self.attack + 1.0);
-        }
-        if self.loudness < self.min_thresh {
-            self.loudness = self.min_thresh;
-        }
-        val / (self.loudness * self.strength + 2.0 * (1.0 - self.strength)) / 2.0
-    }
-}
-struct VolumeLimiter {
-    channels: Vec<SingleChannelLimiter>,
-    ch: usize,
-}
-impl VolumeLimiter {
-    fn new(ch: u16) -> Self {
-        Self {
-            channels: (0..ch).map(|_| SingleChannelLimiter::new()).collect(),
-            ch: ch as usize,
-        }
-    }
-    fn limit(&mut self, buf: &mut [f32]) {
-        for (i, s) in buf.iter_mut().enumerate() {
-            *s = self.channels[i % self.ch].limit(*s);
-        }
-    }
-}
-
 fn render_loop(
     group: &mut ChannelGroup,
     producer: &mut crate::audio_ring::AudioRingProducer,
@@ -359,7 +311,9 @@ fn render_loop(
     let chunk_samples = RENDER_CHUNK_FRAMES * channels;
     let mut scratch = vec![0.0f32; chunk_samples];
     let target_samples = target_frames * channels;
-    let mut limiter = VolumeLimiter::new(channels as u16);
+    // xsynth 内置限幅器：与 Realtime 路线（xsynth-realtime 回调内）同一实现，
+    // 保证两条路线响度/削波行为一致
+    let mut limiter = xsynth_core::effects::VolumeLimiter::new(channels as u16);
 
     while running.load(Ordering::Relaxed) {
         while let Ok(ev) = event_rx.try_recv() {
