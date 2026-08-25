@@ -288,8 +288,10 @@ impl Editor {
             self.cancel_text_tool();
         }
 
-        // 新框：进入 Selecting 拖拽（Y 向吸附 key 行，与指针空白分支一致）
-        let tick = self.pos_to_tick(pos);
+        // 新框：进入 Selecting 拖拽（Y 向吸附 key 行；X 向吸附音符精度，
+        // 使拖框过程的拉伸变化按精度步进，与最终生成的音符列对齐）。
+        let snap = self.editor_state.view.snap_precision.max(1.0);
+        let tick = (self.pos_to_tick(pos) / snap).round() * snap;
         let view = &self.editor_state.view;
         let top_y = view.key_to_y(key);
         let bottom_y = top_y + view.zoom_y;
@@ -304,8 +306,11 @@ impl Editor {
     }
 
     /// 文字工具：移动处理（拖拽中实时更新框的 current）
+    ///
+    /// X 向实时吸附到音符精度，使框的横向长度变化按精度步进（与最终生成一致）。
     pub(crate) fn handle_text_tool_moved(&mut self, pos: Point) {
-        let tick = self.pos_to_tick(pos);
+        let snap = self.editor_state.view.snap_precision.max(1.0);
+        let tick = (self.pos_to_tick(pos) / snap).round() * snap;
         let key = self.pos_to_key(pos);
         if let EditState::Selecting {
             current_tick,
@@ -471,6 +476,43 @@ mod tests {
                 bottom_ink > top_ink,
                 "文字应底部对齐：下半区墨水({bottom_ink})需多于上半区({top_ink})"
             );
+        }
+    }
+
+    #[test]
+    fn test_text_tool_drag_x_snaps_to_precision() {
+        // 拉框过程中 X 向长度必须按音符精度步进（与最终生成一致），不能自由像素。
+        let mut editor = Editor::new();
+        // 设定视图使 pos_to_tick 为恒等映射，并设置音符精度
+        editor.editor_state.view.zoom_x = 1.0;
+        editor.editor_state.view.scroll_x = 0.0;
+        editor.editor_state.view.keyboard_width = 0.0;
+        let snap = 480.0;
+        editor.editor_state.view.snap_precision = snap;
+
+        // 按下新框：起点 tick=100 → 吸附到 0（round(100/480)=0）
+        editor.handle_text_tool_pressed(Point::new(100.0, 100.0), 60);
+        // 拖到 tick=700 → 吸附到 round(700/480)*480 = 480
+        editor.handle_text_tool_moved(Point::new(700.0, 100.0));
+
+        match &editor.editor_state.interaction.edit_state {
+            EditState::Selecting {
+                start_tick,
+                current_tick,
+                ..
+            } => {
+                assert!(
+                    (start_tick % snap).abs() < 1e-3,
+                    "起点 tick 应吸附精度: {start_tick}"
+                );
+                assert!(
+                    (current_tick % snap).abs() < 1e-3,
+                    "当前 tick 应吸附精度: {current_tick}"
+                );
+                let expected = (700.0 / snap).round() * snap;
+                assert_eq!(*current_tick, expected, "X 向应吸附到精度网格");
+            }
+            other => panic!("拉框过程应处于 Selecting 状态，实际 {other:?}"),
         }
     }
 }
