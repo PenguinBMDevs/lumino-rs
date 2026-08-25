@@ -45,6 +45,7 @@ impl SettingsPanel {
             selected_menu_index: 0,
             synth: SynthSettings {
                 backend: ui_config.preferred_backend,
+                audio_engine: ui_config.audio_engine,
                 soundfont_path: ui_config.soundfont_path.clone(),
                 use_native_titlebar: ui_config.use_native_titlebar,
                 xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
@@ -52,6 +53,7 @@ impl SettingsPanel {
                 xsynth_threads: ui_config.xsynth_threads,
                 xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+                core_buffer_frames: ui_config.core_buffer_frames,
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -120,6 +122,9 @@ impl SettingsPanel {
             Event::SynthBackendChanged(backend) => {
                 self.synth.backend = backend;
             }
+            Event::AudioEngineChanged(kind) => {
+                self.synth.audio_engine = kind;
+            }
             Event::SoundfontPathChanged(path) => {
                 self.synth.soundfont_path = path;
             }
@@ -148,6 +153,21 @@ impl SettingsPanel {
             }
             Event::XSynthMaxVoicesChanged(v) => {
                 self.synth.xsynth_max_voices_per_key = v;
+            }
+            Event::CoreBufferFramesChanged(v) => {
+                self.synth.core_buffer_frames = v.clamp(512, 16384);
+            }
+            Event::XSynthMaxVoicesCustomInput(s) => {
+                let t = s.trim();
+                if t.is_empty() || t.eq_ignore_ascii_case("unlimited") || t == "0" {
+                    self.synth.xsynth_max_voices_per_key = None;
+                } else if let Ok(v) = t.parse::<usize>() {
+                    if v == 0 {
+                        self.synth.xsynth_max_voices_per_key = None;
+                    } else {
+                        self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
+                    }
+                }
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理

@@ -3,7 +3,7 @@
 //! 设置面板的事件枚举（仅枚举，不包含面板逻辑）。
 
 use lumino_core::storage::config::{
-    EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
 };
 use lumino_extras::i18n::Language;
 
@@ -14,6 +14,8 @@ pub enum Event {
     MenuSelected(usize),
     /// 合成器后端变更
     SynthBackendChanged(SynthBackend),
+    /// 音频引擎后端变更（Realtime/Core）
+    AudioEngineChanged(AudioEngineKind),
     /// 音色库路径变更
     SoundfontPathChanged(String),
     /// 请求浏览选择音色库文件
@@ -28,6 +30,10 @@ pub enum Event {
     XSynthFadeOutChanged(bool),
     /// XSynth 每键最大同音数变更（None 为不限）
     XSynthMaxVoicesChanged(Option<usize>),
+    /// Core 环形缓冲帧数变更
+    CoreBufferFramesChanged(u32),
+    /// XSynth 每键最大同音数自定义输入变更
+    XSynthMaxVoicesCustomInput(String),
     /// 主题变更
     ThemeChanged(String),
     /// 橡皮擦工具行为变更

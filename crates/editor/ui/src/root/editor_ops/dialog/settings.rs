@@ -182,6 +182,13 @@ impl Root {
             // 合成器后端变更需要重新初始化，标记为需要重新初始化
             // 实际重新初始化在 save_storage 中处理
         }
+        if old.synth.audio_engine != new.synth.audio_engine {
+            tracing::info!(
+                "同步音频引擎: {:?} -> {:?}",
+                old.synth.audio_engine,
+                new.synth.audio_engine
+            );
+        }
 
         if old.synth.soundfont_path != new.synth.soundfont_path {
             tracing::info!(
