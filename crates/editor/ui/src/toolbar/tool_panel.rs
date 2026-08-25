@@ -5,7 +5,8 @@
 //!
 //! 视觉与交互对齐工具栏「右键悬浮面板」（`ui-editor/src/context_menu.rs`）：
 //! 图标独占按钮（`BUTTON_SIZE=40`、`ICON_SIZE=36`），说明走 `tooltip` 悬浮显示，
-//! 并在面板底部保留一条常驻「描述条」展示当前激活工具的说明（即用户要求的"描述位子"）。
+//! 面板底部为一条常驻「描述文本框」，仅展示当前工具名称（模仿底部状态栏左侧描述区）。
+//! 已呈现在工具栏上的工具图标（如橡皮擦、当前激活的绘制子工具）不在下拉中重复罗列。
 //!
 //! 点击面板外部区域关闭（由 `tools.rs` 的遮罩层驱动）。
 //!
@@ -13,7 +14,7 @@
 //! - 曲线工具 / 形状工具 可与 填充桶 共存（填充桶仅在二者激活时可切换/高亮）；
 //! - 画刷 / 文字 / 橡皮擦 为独立工具，不可与填充桶共存（填充桶对其置灰禁用）。
 
-use iced_core::{Alignment, Background, Color, Length};
+use iced_core::{Alignment, Background, Color, Length, widget::text::Wrapping};
 use iced_widget::{button, column, container, row, text, tooltip};
 
 use crate::resources::icon;
@@ -46,20 +47,25 @@ pub fn render_tool_panel<'a>(
 ) -> Element<'a> {
     let t = lumino_extras::i18n::main_translations(language);
 
-    // 面板条目顺序：填充桶 / 画刷工具 / 形状工具 / 文字输入 / 橡皮擦
-    // 第三项为该工具的说明文案（用于底部描述条与悬浮 tooltip）。
-    // 绘制工具条目；曲线工具条目在「当前非曲线工具」时插入到首位，
-    // 启用曲线工具后则不显示自身切换图标（避免冗余自选）。
-    let mut items: Vec<(ToolPanelItem, icon::Icon, &'static str)> = vec![
-        (ToolPanelItem::FillBucket, icon::PaintBucket, t.tool_fill_desc),
-        (ToolPanelItem::Brush, icon::BrushTool, t.tool_brush_desc),
-        (ToolPanelItem::Shape, icon::ShapeTool, t.tool_shape_desc),
-        (ToolPanelItem::Text, icon::TextInput, t.tool_text_desc),
-        (ToolPanelItem::Eraser, icon::Eraser, t.tool_eraser_desc),
+    // 面板条目：填充桶 / 画刷 / 形状 / 文字 / 橡皮擦 / 曲线。
+    // 第三项为悬浮 tooltip 所用的简短名称（非冗长说明）。
+    // 去重规则：若某工具图标已呈现在工具栏上，则下拉不再重复罗列——
+    // - 橡皮擦在主工具栏已有独立按钮 → 始终不显示；
+    // - 曲线/画刷/形状/文字的激活态图标已呈现在「曲线工具」按钮上
+    //   → 仅当其为当前工具时隐藏，避免与工具栏已有图标重复（启用某绘制工具时不显示其自身图标）。
+    let all_items: &[(ToolPanelItem, icon::Icon, &'static str)] = &[
+        (ToolPanelItem::FillBucket, icon::PaintBucket, t.tool_fill),
+        (ToolPanelItem::Brush, icon::BrushTool, t.tool_brush),
+        (ToolPanelItem::Shape, icon::ShapeTool, t.tool_shape),
+        (ToolPanelItem::Text, icon::TextInput, t.tool_text),
+        (ToolPanelItem::Eraser, icon::Eraser, t.tool_eraser),
+        (ToolPanelItem::Curve, icon::Curve, t.tool_curve),
     ];
-    if current_tool != Tool::Curve {
-        items.insert(0, (ToolPanelItem::Curve, icon::Curve, t.tool_curve_desc));
-    }
+    let items: Vec<(ToolPanelItem, icon::Icon, &'static str)> = all_items
+        .iter()
+        .filter(|(item, _, _)| panel_item_visible(*item, current_tool))
+        .copied()
+        .collect();
 
     let buttons = items
         .iter()
@@ -70,28 +76,27 @@ pub fn render_tool_panel<'a>(
         })
         .collect::<Vec<_>>();
 
-    // 底部常驻描述条：展示当前激活工具的说明（"描述位子"始终可见）；
-    // 单个按钮悬浮时由 tooltip 另行显示该按钮的说明。
-    let desc_bar = container(
-        text(active_tool_desc(current_tool, fill_enabled, t))
+    // 底部描述文本框：模仿工具栏底部状态栏左侧描述区的样式
+    // （固定宽度、单行显示、无冗余背景），内容仅展示当前工具名称，不堆砌说明废话。
+    let desc_box: Element<'a> = container(
+        text(active_tool_name(current_tool, fill_enabled, t))
             .size(12)
-            .color(theme.extended_palette().background.weak.text),
+            .width(Length::Fixed(220.0))
+            .wrapping(Wrapping::None)
+            .style(move |theme: &Theme| text::Style {
+                color: Some(theme.extended_palette().background.weak.text),
+            }),
     )
-    .padding([6, 10])
-    .width(Length::Fill)
-    .style(|_theme: &Theme| container::Style {
-        background: Some(Background::Color(Color::from_rgba(0.0, 0.0, 0.0, 0.18))),
-        border: iced_core::Border::default().rounded(6),
-        ..Default::default()
-    });
+    .width(Length::Fixed(220.0))
+    .into();
 
-    // 横向图标栏 + 底部描述条，整体与右键悬浮面板同范式（图标独占、说明外置）。
+    // 横向图标栏 + 底部描述文本框，整体与右键悬浮面板同范式（图标独占、说明外置）。
     let panel = container(
         column![
             row(buttons)
                 .spacing(BUTTON_SPACING)
                 .align_y(Alignment::Center),
-            desc_bar,
+            desc_box,
         ]
         .spacing(8)
         .align_x(Alignment::Center)
@@ -136,17 +141,35 @@ fn panel_item_disabled(item: ToolPanelItem, _current_tool: Tool) -> bool {
     }
 }
 
-/// 当前激活工具对应的说明文案（用于底部描述条）
-fn active_tool_desc(current_tool: Tool, fill_enabled: bool, t: &MainTranslations) -> &'static str {
+/// 面板条目是否需要在下拉中显示（去重：工具栏已呈现的图标不再罗列）
+fn panel_item_visible(item: ToolPanelItem, current_tool: Tool) -> bool {
+    match item {
+        // 橡皮擦在主工具栏已有独立按钮，下拉不再重复
+        ToolPanelItem::Eraser => false,
+        // 曲线/画刷/形状/文字的激活态图标已呈现在「曲线工具」按钮上，
+        // 仅当其为当前工具时隐藏，避免与工具栏已有图标重复
+        ToolPanelItem::Curve => current_tool != Tool::Curve,
+        ToolPanelItem::Brush => current_tool != Tool::Brush,
+        ToolPanelItem::Shape => current_tool != Tool::Shape,
+        ToolPanelItem::Text => current_tool != Tool::Text,
+        // 颜料桶是填充开关（非独立工具），始终保留以便切换
+        ToolPanelItem::FillBucket => true,
+        // 描边设置占位入口始终保留
+        ToolPanelItem::StrokeSettings => true,
+    }
+}
+
+/// 当前激活工具对应的短名称（用于底部描述文本框，仅展示名称，不堆砌说明）
+fn active_tool_name(current_tool: Tool, fill_enabled: bool, t: &MainTranslations) -> &'static str {
     match (current_tool, fill_enabled) {
-        (Tool::Curve, true) => t.tool_fill_desc,
-        (Tool::Brush, _) => t.tool_brush_desc,
-        (Tool::Shape, _) => t.tool_shape_desc,
-        (Tool::Text, _) => t.tool_text_desc,
-        (Tool::Eraser, _) => t.tool_eraser_desc,
-        (Tool::DrawEraser, _) => t.tool_eraser_desc,
-        // 纯曲线工具（未开填充）或无对应面板项时，回落到曲线说明
-        _ => t.tool_curve_desc,
+        (Tool::Curve, true) => t.tool_fill,
+        (Tool::Curve, false) => t.tool_curve,
+        (Tool::Brush, _) => t.tool_brush,
+        (Tool::Shape, _) => t.tool_shape,
+        (Tool::Text, _) => t.tool_text,
+        (Tool::Eraser, _) | (Tool::DrawEraser, _) => t.tool_eraser,
+        // 非绘制工具（指针/铅笔等）回落到曲线工具名
+        _ => t.tool_curve,
     }
 }
 
@@ -216,5 +239,45 @@ fn tooltip_style(_theme: &Theme) -> container::Style {
         border: iced_core::Border::default().rounded(4),
         text_color: Some(Color::from_rgba(0.95, 0.95, 0.95, 1.0)),
         ..Default::default()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::toolbar::Tool;
+
+    #[test]
+    fn test_panel_hides_eraser_always() {
+        // 橡皮擦在主工具栏已有独立按钮，下拉任何状态下都不重复呈现
+        assert!(!panel_item_visible(ToolPanelItem::Eraser, Tool::Brush));
+        assert!(!panel_item_visible(ToolPanelItem::Eraser, Tool::Curve));
+        assert!(!panel_item_visible(ToolPanelItem::Eraser, Tool::DrawEraser));
+    }
+
+    #[test]
+    fn test_panel_hides_active_drawing_tool() {
+        // 当前激活的绘制子工具图标已呈现在「曲线工具」按钮上，下拉中不再重复
+        assert!(!panel_item_visible(ToolPanelItem::Brush, Tool::Brush));
+        assert!(!panel_item_visible(ToolPanelItem::Shape, Tool::Shape));
+        assert!(!panel_item_visible(ToolPanelItem::Text, Tool::Text));
+        assert!(!panel_item_visible(ToolPanelItem::Curve, Tool::Curve));
+    }
+
+    #[test]
+    fn test_panel_shows_inactive_drawing_tool() {
+        // 非当前工具的绘制子工具仍可在下拉中切换
+        assert!(panel_item_visible(ToolPanelItem::Brush, Tool::Curve));
+        assert!(panel_item_visible(ToolPanelItem::Shape, Tool::Curve));
+        assert!(panel_item_visible(ToolPanelItem::Text, Tool::Curve));
+        assert!(panel_item_visible(ToolPanelItem::Curve, Tool::Brush));
+    }
+
+    #[test]
+    fn test_panel_always_shows_fillbucket_and_stroke() {
+        // 颜料桶（填充开关）与描边设置占位入口始终保留
+        assert!(panel_item_visible(ToolPanelItem::FillBucket, Tool::Curve));
+        assert!(panel_item_visible(ToolPanelItem::FillBucket, Tool::Brush));
+        assert!(panel_item_visible(ToolPanelItem::StrokeSettings, Tool::Curve));
     }
 }
