@@ -237,6 +237,9 @@ pub struct UiConfig {
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值（否则线性插值）
     #[serde(default)]
     pub lgs_use_sinc: bool,
+    /// LGS (GPU) 专属响度(力度)过滤阈值：力度 <= 此值的音符不渲染（0=关闭过滤），与 XSynth 全局力度过滤相互独立
+    #[serde(default = "default_lgs_velocity_filter_threshold")]
+    pub lgs_velocity_filter_threshold: u8,
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
@@ -352,6 +355,10 @@ fn default_velocity_filter_threshold() -> u8 {
     1
 }
 
+fn default_lgs_velocity_filter_threshold() -> u8 {
+    1
+}
+
 fn default_hires_measures_per_group() -> u32 {
     4
 }
@@ -394,6 +401,7 @@ impl Default for UiConfig {
             lgs_block_size: default_lgs_block_size(),
             lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
             lgs_use_sinc: false,
+            lgs_velocity_filter_threshold: default_lgs_velocity_filter_threshold(),
             selection_box_mode: SelectionBoxMode::default(),
             eraser_behavior: EraserBehavior::default(),
             program_font_name: String::from("Microsoft YaHei"),

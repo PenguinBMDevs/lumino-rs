@@ -314,7 +314,7 @@ impl MidiManager {
             block_size: ui_config.lgs_block_size,
             max_voices_per_key: ui_config.lgs_max_voices_per_key,
             use_sinc: ui_config.lgs_use_sinc,
-            velocity_filter_threshold: ui_config.velocity_filter_threshold,
+            velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
         };
 
         let api = lumino_midi_io::new_api(&api_kind)

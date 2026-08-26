@@ -405,9 +405,6 @@ fn render_lgs_options<'a>(
             })
             .step(1.0_f32)
             .width(160.0),
-            text_input("0=不限制 1-128", &display_voices)
-                .width(80.0)
-                .on_input(|s| Message::Settings(crate::Event::LgsMaxVoicesCustomInput(s))),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
@@ -420,16 +417,21 @@ fn render_lgs_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
-    // 响度过滤（复用全局力度过滤阈值；LGS 输出连接在 note_on 处实时丢弃过轻音符）
+    // LGS (GPU) 专属响度过滤（与 XSynth 全局力度过滤相互独立；LGS 输出连接在 note_on 处实时丢弃过轻音符）
     col = col.push(
         row![
-            text(format!("{}: {}", t.velocity_filter, settings.midi.velocity_filter_threshold))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(180.0),
-            iced_widget::slider(0..=127, settings.midi.velocity_filter_threshold, |v| {
-                Message::Settings(crate::Event::VelocityFilterThresholdChanged(v.to_string()))
-            })
+            text(format!(
+                "{}: {}",
+                t.velocity_filter, settings.synth.lgs_velocity_filter_threshold
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(180.0),
+            iced_widget::slider(
+                0..=127,
+                settings.synth.lgs_velocity_filter_threshold,
+                |v| Message::Settings(crate::Event::LgsVelocityFilterChanged(v)),
+            )
             .step(1)
             .width(200.0),
         ]

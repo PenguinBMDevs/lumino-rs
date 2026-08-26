@@ -37,10 +37,10 @@ impl RunnerInner {
         let font_changed = new.editing.program_font_name != old.program_font_name
             || new.editing.program_font_path != old.program_font_path;
         // LGS (GPU) 专属参数变化需要重建 GPU 合成器后端：缓冲区大小、每键最大同音数，
-        // 或（仅当当前/此前为 LGS 时）响度过滤阈值变化。
+        // 或（仅当当前/此前为 LGS 时）专属响度过滤阈值变化（与 XSynth 全局力度过滤相互独立）。
         let lgs_changed = new.synth.lgs_block_size != old.lgs_block_size
             || new.synth.lgs_max_voices_per_key != old.lgs_max_voices_per_key
-            || (new.midi.velocity_filter_threshold != old.velocity_filter_threshold
+            || (new.synth.lgs_velocity_filter_threshold != old.lgs_velocity_filter_threshold
                 && (new.synth.backend
                     == lumino_core::storage::config::SynthBackend::Lgs
                     || old.preferred_backend
@@ -152,8 +152,8 @@ impl RunnerInner {
                 new.synth.lgs_block_size,
                 old.lgs_max_voices_per_key,
                 new.synth.lgs_max_voices_per_key,
-                old.velocity_filter_threshold,
-                new.midi.velocity_filter_threshold
+                old.lgs_velocity_filter_threshold,
+                new.synth.lgs_velocity_filter_threshold
             );
             self.midi_state.midi.mark_for_reinit();
         }
@@ -203,6 +203,7 @@ impl RunnerInner {
             config.ui.xsynth_max_voices_per_key = new.synth.xsynth_max_voices_per_key;
             config.ui.lgs_block_size = new.synth.lgs_block_size;
             config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;
+            config.ui.lgs_velocity_filter_threshold = new.synth.lgs_velocity_filter_threshold;
             config.ui.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             config.ui.eraser_behavior = new.editing.eraser_behavior;
             config.ui.auto_scroll.mode = self

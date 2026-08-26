@@ -57,6 +57,7 @@ impl SettingsPanel {
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
+                lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -193,13 +194,8 @@ impl SettingsPanel {
             Event::LgsMaxVoicesChanged(v) => {
                 self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
             }
-            Event::LgsMaxVoicesCustomInput(s) => {
-                let t = s.trim();
-                if t.is_empty() || t.eq_ignore_ascii_case("unlimited") || t == "0" {
-                    self.synth.lgs_max_voices_per_key = 0;
-                } else if let Ok(v) = t.parse::<usize>() {
-                    self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
-                }
+            Event::LgsVelocityFilterChanged(v) => {
+                self.synth.lgs_velocity_filter_threshold = v.clamp(0, 127);
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理
