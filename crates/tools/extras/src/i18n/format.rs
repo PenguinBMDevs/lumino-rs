@@ -112,12 +112,12 @@ pub fn synth_backend_name(
     use lumino_core::storage::config::SynthBackend::*;
     match lang {
         Language::ZhCn => match backend {
-            XSynth => "XSynth (内置)",
+            XSynth => "内置",
             Kdmapi => "KDMAPI",
             System => "系统 MIDI",
         },
         Language::EnUs => match backend {
-            XSynth => "XSynth (Built-in)",
+            XSynth => "Built-in",
             Kdmapi => "KDMAPI",
             System => "System MIDI",
         },
