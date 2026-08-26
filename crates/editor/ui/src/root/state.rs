@@ -57,12 +57,23 @@ impl Root {
     /// 不再 `lock(playback)`，消除 UI 帧渲染与播放线程的锁争用。
     pub fn update_playback(&mut self) -> Option<f32> {
         if let Some(manager) = &self.playback.manager {
-            // 非阻塞拉取最新播放帧：播放线程每帧 try_send，UI 每帧 try_recv。
-            // 返回 None 表示无新帧（未播放或线程尚未推送），UI 保持原位置。
-            if let Some(frame) = manager.try_recv_frame() {
-                // 同步工具栏播放按钮状态：引擎在轨尾标处自动停止后会推送 Stopped 帧，
-                // 此处据此复位 `is_playing`，避免按钮停留在"播放中"与实际状态不一致。
-                self.toolbar.is_playing = frame.state == crate::playback::PlaybackState::Playing;
+            // 读取 `last_frame` 缓存（而非消费有界通道 `try_recv_frame`）：
+            // 播放中每秒推送上百帧，有界通道（容量 8）极易饱和，状态切换
+            // （Pause/Stop/自动停止）帧在 `try_send` 满时会被丢弃，导致 UI 永远
+            // 收不到「已暂停/已停止」信号、按钮卡在「播放中」。`last_frame` 缓存
+            // 每次推送都会写入，永不丢帧，是播放状态唯一可靠的真相源。
+            if let Some(frame) = manager.last_frame() {
+                // 仅在引擎真正停止（播到轨尾自动停止 / 显式 Stop）时复位 `is_playing`。
+                //
+                // 关键：不在此处把 `is_playing` 置 true，也不因 Playing 帧把它翻回 true。
+                // 播放/暂停/停止的「意图状态」由 `do_play/do_pause/do_stop` 同步设置，
+                // 这里只做「自动停止」这一件 UI 无法预知的复位。
+                // 否则在「Pause 命令已发出、但播放线程尚未处理、帧仍为 Playing」的窗口内，
+                // 旧 Playing 帧会把刚置 false 的 `is_playing` 翻回 true，造成
+                // 「按空格声音已停、按钮却仍显示播放、需再按一次才更新」的竞态。
+                if frame.state == crate::playback::PlaybackState::Stopped {
+                    self.toolbar.is_playing = false;
+                }
                 Some(frame.tick)
             } else {
                 None

@@ -1,6 +1,7 @@
 use super::common::*;
 use crate::editor::note::Note;
 use crate::message::Message;
+use crate::playback::PlaybackState;
 use crate::toolbar;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
@@ -67,6 +68,76 @@ fn test_end_to_end_note_actually_plays() {
         on_count,
         off_count
     );
+}
+
+/// 回归测试：播放中按空格暂停后，工具栏按钮状态应始终保持「暂停」，
+/// 不被仍在流动的 Playing 帧翻回「播放中」——这是修复「需再按一次空格才更新」竞态的护栏。
+///
+/// 旧实现会在 `update_playback` 里用 `frame.state == Playing` 反写 `is_playing`，
+/// 而暂停命令异步生效、引擎尚未翻态前的 Playing 帧会把刚置 false 的标志翻回 true，
+/// 导致按钮卡在播放中。本测试用「暂停后持续 pump update_playback」复现并封锁该竞态。
+#[test]
+fn test_pause_button_state_not_overridden_by_playing_frame() {
+    let mut root = create_root();
+    crate::root::editor_ops::midi::tests::common::attach_test_document(&mut root);
+    root.editor.editor_state.data.insert_note(
+        root.editor.editor_state.data.current_track,
+        Note::new(0.0, 60, 480.0),
+    );
+    root.set_midi_output(create_mock_output());
+    assert!(root.playback.pending_midi_output.is_some());
+
+    // 播放
+    root.update(Message::Toolbar(toolbar::Event::Play));
+    assert!(root.toolbar.is_playing, "播放后工具栏应标记为 playing");
+
+    // 给引擎线程一点时间启动并持续推 Playing 帧
+    thread::sleep(Duration::from_millis(50));
+
+    // 暂停（等价于播放中按下空格：handle_space_shortcut -> Pause）
+    root.update(Message::Toolbar(toolbar::Event::Pause));
+    assert!(
+        !root.toolbar.is_playing,
+        "暂停后工具栏应立即标记为未播放（同步意图）"
+    );
+
+    // 等待引擎处理 Pause 命令。关键：这 20ms 内不调用 update_playback，
+    // 因此 `frame_rx` 有界通道（容量 8）在播放期已被每秒上千帧 Playing 灌满、
+    // 此刻依旧饱和——Pause 推送的 Paused 帧在 `try_send` 满时**被丢弃**，
+    // 只写入 `last_frame` 缓存。这正是生产环境 bug 的复现条件。
+    thread::sleep(Duration::from_millis(20));
+
+    // 持续驱动 update_playback。
+    // - 旧实现读有界通道，先排干的 8 个陈旧 Playing 帧会把 `is_playing` 翻回 true，
+    //   之后通道空、再无纠错帧，按钮永久卡在「播放中」→ 本断言失败。
+    // - 修复后读 `last_frame`（永不丢帧），且只在 Stopped 时复位，恒为 false → 通过。
+    for i in 0..30 {
+        root.update_playback();
+        assert!(
+            !root.toolbar.is_playing,
+            "暂停后第 {i} 次 update_playback 不应把按钮翻回「播放中」\
+             （修复丢帧 + 消除 Playing 帧竞态翻写）"
+        );
+        thread::sleep(Duration::from_millis(1));
+    }
+
+    // 引擎状态也应确为非 Playing（Paused 或自动停止后的 Stopped）
+    if let Some(ref manager) = root.playback.manager {
+        for _ in 0..50 {
+            if manager.state() != PlaybackState::Playing {
+                break;
+            }
+            thread::sleep(Duration::from_millis(1));
+        }
+        assert_ne!(
+            manager.state(),
+            PlaybackState::Playing,
+            "暂停后引擎不应仍处于 Playing"
+        );
+    }
+
+    // 收尾停止，清理可能悬挂的 note
+    root.update(Message::Toolbar(toolbar::Event::Stop));
 }
 
 /// 模拟真实用户场景：先画音符，再点击播放
