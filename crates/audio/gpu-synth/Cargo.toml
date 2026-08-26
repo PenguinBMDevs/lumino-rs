@@ -1,0 +1,27 @@
+[package]
+name = "lumino-gpu-synth"
+version = "0.1.0"
+edition = "2024"
+description = "GPU-accelerated real-time MIDI audio synthesizer and offline renderer (SF2 via xsynth-soundfonts, wgpu compute shaders)"
+license = "MIT OR Apache-2.0"
+keywords = ["midi", "audio", "gpu", "wgpu", "soundfont"]
+categories = ["multimedia::audio", "rendering::gpu"]
+
+# 注意：本 crate 刻意不继承工作区 lint（不写 `[lints] workspace = true`），
+# 因为它沿用上游 `mod.rs` 目录结构与 `.unwrap()` 风格，与 AGENTS.md 的
+# `mod_module_files` / `unwrap_used` 强约束冲突。作为 vendored 子 crate 原样搬入。
+
+[dependencies]
+wgpu = { workspace = true }
+lumino-midly = "0.6.2"
+xsynth-soundfonts = "0.4.0"
+cpal = { workspace = true }
+pollster = { workspace = true }
+bytemuck = { workspace = true, features = ["derive"] }
+thiserror = { workspace = true }
+rayon = { workspace = true }
+sysinfo = { workspace = true, features = ["system"] }
+memmap2 = { workspace = true }
+
+[profile.release]
+opt-level = 3

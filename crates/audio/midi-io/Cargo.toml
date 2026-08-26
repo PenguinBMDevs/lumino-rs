@@ -26,6 +26,7 @@ tracing = { workspace = true }
 xsynth-core = { workspace = true }
 xsynth-soundfonts = { workspace = true }
 xsynth-realtime = { workspace = true, optional = true }
+lumino-gpu-synth = { workspace = true }
 lumino-diagnostics = { workspace = true }
 parking_lot = { workspace = true }
 puffin = { workspace = true }

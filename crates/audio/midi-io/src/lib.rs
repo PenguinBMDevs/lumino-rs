@@ -19,6 +19,7 @@ use std::path::PathBuf;
 use api::Kdmapi;
 use api::System;
 use api::XSynth;
+use api::{Lgs, LgsOptions};
 
 /// MIDI 输入 / 输出错误
 #[derive(Error, Debug)]
@@ -257,6 +258,19 @@ pub enum ApiKind {
     },
     /// 系统 MIDI 后端
     System,
+    /// LGS (GPU) 后端
+    Lgs {
+        /// SoundFont 文件路径
+        soundfont_path: PathBuf,
+        /// 渲染采样率（Hz）
+        sample_rate: u32,
+        /// 每块渲染帧数
+        block_size: usize,
+        /// 每 (通道, 键) 最大同音数
+        max_voices_per_key: usize,
+        /// 是否使用 64 点 sinc 高质量插值
+        use_sinc: bool,
+    },
 }
 
 /// 使用默认选项创建指定类型的后端
@@ -274,6 +288,21 @@ pub fn new_api_with_options(
         ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
         ApiKind::System => Box::new(System::new()?),
+        ApiKind::Lgs {
+            soundfont_path,
+            sample_rate,
+            block_size,
+            max_voices_per_key,
+            use_sinc,
+        } => Box::new(Lgs::new(
+            soundfont_path,
+            &LgsOptions {
+                sample_rate: *sample_rate,
+                block_size: *block_size,
+                max_voices_per_key: *max_voices_per_key,
+                use_sinc: *use_sinc,
+            },
+        )?),
     };
     Ok(engine)
 }

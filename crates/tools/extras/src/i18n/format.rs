@@ -113,11 +113,13 @@ pub fn synth_backend_name(
     match lang {
         Language::ZhCn => match backend {
             XSynth => "内置",
+            Lgs => "LGS (GPU)",
             Kdmapi => "KDMAPI",
             System => "系统 MIDI",
         },
         Language::EnUs => match backend {
             XSynth => "Built-in",
+            Lgs => "LGS (GPU)",
             Kdmapi => "KDMAPI",
             System => "System MIDI",
         },

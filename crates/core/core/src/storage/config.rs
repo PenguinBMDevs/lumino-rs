@@ -49,6 +49,8 @@ pub enum SynthBackend {
     Kdmapi,
     /// 系统 MIDI 合成器
     System,
+    /// LGS (GPU) 合成器（基于 lumino-gpu-synth 的 GPU 加速渲染）
+    Lgs,
 }
 
 /// 框选框显示模式
@@ -95,6 +97,7 @@ impl std::fmt::Display for SynthBackend {
             SynthBackend::XSynth => write!(f, "XSynth (内置)"),
             SynthBackend::Kdmapi => write!(f, "KDMAPI"),
             SynthBackend::System => write!(f, "系统 MIDI"),
+            SynthBackend::Lgs => write!(f, "LGS (GPU)"),
         }
     }
 }
@@ -222,6 +225,18 @@ pub struct UiConfig {
     /// None = 使用 xsynth 默认值 (4096)
     #[serde(default)]
     pub xsynth_global_voice_limit: Option<usize>,
+    /// LGS (GPU) 渲染采样率（Hz），GPU 合成管线以此速率渲染
+    #[serde(default = "default_lgs_sample_rate")]
+    pub lgs_sample_rate: u32,
+    /// LGS (GPU) 每块渲染帧数（GPU 一次 dispatch 的帧数，2 的幂，至少 16）
+    #[serde(default = "default_lgs_block_size")]
+    pub lgs_block_size: usize,
+    /// LGS (GPU) 每个 (通道, 键) 最大同音数
+    #[serde(default = "default_lgs_max_voices_per_key")]
+    pub lgs_max_voices_per_key: usize,
+    /// LGS (GPU) 是否使用 64 点 sinc 高质量插值（否则线性插值）
+    #[serde(default)]
+    pub lgs_use_sinc: bool,
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
@@ -307,6 +322,15 @@ fn default_synth_fade_out() -> bool {
 fn default_max_voices_per_key() -> Option<usize> {
     Some(16)
 }
+fn default_lgs_sample_rate() -> u32 {
+    64_000
+}
+fn default_lgs_block_size() -> usize {
+    512
+}
+fn default_lgs_max_voices_per_key() -> usize {
+    4
+}
 fn default_automation_line_thickness() -> f32 {
     2.0
 }
@@ -366,6 +390,10 @@ impl Default for UiConfig {
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
             xsynth_max_voices_per_key: default_max_voices_per_key(),
+            lgs_sample_rate: default_lgs_sample_rate(),
+            lgs_block_size: default_lgs_block_size(),
+            lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
+            lgs_use_sinc: false,
             selection_box_mode: SelectionBoxMode::default(),
             eraser_behavior: EraserBehavior::default(),
             program_font_name: String::from("Microsoft YaHei"),

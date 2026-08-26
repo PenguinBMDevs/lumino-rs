@@ -16,8 +16,11 @@ impl RunnerInner {
             // 同步后端（Core / System / Kdmapi）在 reinit 后立即就绪，
             // 必须立即把播放引擎的 MIDI 输出重连到新连接，否则 PlaybackManager
             // 仍指向已被丢弃的旧连接 → 切换后无声 / 无响应。
-            // XSynth-Realtime 走异步初始化路径，待 check_async_init_complete 完成时再重连。
-            if !self.midi_state.midi.is_xsynth_initializing() {
+            // XSynth-Realtime / LGS (GPU) 走异步初始化路径，待
+            // check_async_init_complete 完成时再重连。
+            if !self.midi_state.midi.is_xsynth_initializing()
+                && !self.midi_state.midi.is_lgs_initializing()
+            {
                 Self::reconnect_playback_output(self);
             }
         }

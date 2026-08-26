@@ -28,6 +28,15 @@ enum XSynthInitResult {
     Failed(String),
 }
 
+/// LGS (GPU) 异步初始化结果
+enum LgsInitResult {
+    Success {
+        api: Box<dyn lumino_midi_io::Api>,
+        output: Box<dyn lumino_midi_io::OutputConnection>,
+    },
+    Failed(String),
+}
+
 /// MIDI 设备管理器
 ///
 /// 负责管理 MIDI API 和输出连接的生命周期
@@ -62,6 +71,20 @@ pub struct MidiManager {
     xsynth_max_voices_per_key: Option<usize>,
     /// XSynth 全局最大并发 voice 数
     xsynth_global_voice_limit: Option<usize>,
+    /// LGS (GPU) 异步初始化接收器
+    lgs_init_rx: Option<Receiver<LgsInitResult>>,
+    /// 是否正在异步初始化 LGS (GPU)
+    is_lgs_initializing: bool,
+    /// LGS (GPU) 音色库路径（用于 create_additional_output 回退创建时重用）
+    lgs_soundfont_path: String,
+    /// LGS (GPU) 渲染采样率（Hz）
+    lgs_sample_rate: u32,
+    /// LGS (GPU) 每块渲染帧数
+    lgs_block_size: usize,
+    /// LGS (GPU) 每个 (通道, 键) 最大同音数
+    lgs_max_voices_per_key: usize,
+    /// LGS (GPU) 是否使用 64 点 sinc 高质量插值
+    lgs_use_sinc: bool,
 }
 
 impl Default for MidiManager {
@@ -82,6 +105,13 @@ impl Default for MidiManager {
             xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
             xsynth_global_voice_limit: None,
+            lgs_init_rx: None,
+            is_lgs_initializing: false,
+            lgs_soundfont_path: String::new(),
+            lgs_sample_rate: 0,
+            lgs_block_size: 0,
+            lgs_max_voices_per_key: 0,
+            lgs_use_sinc: false,
         }
     }
 }
@@ -98,6 +128,7 @@ impl MidiManager {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
             SynthBackend::XSynth => Self::init_system_output(),
+            SynthBackend::Lgs => Self::init_system_output(),
         };
 
         let mut manager = Self {
@@ -116,12 +147,24 @@ impl MidiManager {
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
+            lgs_init_rx: None,
+            is_lgs_initializing: false,
+            lgs_soundfont_path: ui_config.soundfont_path.clone(),
+            lgs_sample_rate: ui_config.lgs_sample_rate,
+            lgs_block_size: ui_config.lgs_block_size,
+            lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
+            lgs_use_sinc: ui_config.lgs_use_sinc,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
         if preferred == SynthBackend::XSynth && ui_config.audio_engine == AudioEngineKind::Realtime
         {
             manager.start_xsynth_async_init(ui_config);
+        }
+
+        // 如果偏好 LGS (GPU)，同样在后台异步初始化（GPU 设备创建 + 音色库加载较慢）
+        if preferred == SynthBackend::Lgs && ui_config.audio_engine == AudioEngineKind::Realtime {
+            manager.start_lgs_async_init(ui_config);
         }
 
         manager
@@ -213,6 +256,82 @@ impl MidiManager {
         let conn = api
             .open_output(output.id)
             .map_err(|e| format!("打开输出连接失败: {:?}", e))?;
+
+        Ok((api, conn))
+    }
+
+    /// 启动 LGS (GPU) 异步初始化
+    fn start_lgs_async_init(&mut self, ui_config: &UiConfig) {
+        if self.is_lgs_initializing {
+            return;
+        }
+
+        if ui_config.soundfont_path.is_empty() {
+            tracing::warn!("LGS (GPU) 异步初始化: 音色库路径未设置");
+            return;
+        }
+
+        let path = PathBuf::from(&ui_config.soundfont_path);
+        if !path.exists() {
+            tracing::warn!("LGS (GPU) 异步初始化: 音色库文件不存在: {:?}", path);
+            return;
+        }
+
+        tracing::info!("LGS (GPU): 启动后台初始化...");
+        self.is_lgs_initializing = true;
+
+        let (tx, rx) = channel();
+        self.lgs_init_rx = Some(rx);
+
+        let ui_config_clone = ui_config.clone();
+        std::thread::spawn(move || {
+            tracing::info!("LGS (GPU): 后台线程开始初始化");
+
+            let lgs_result = Self::init_lgs_blocking(&ui_config_clone);
+
+            match &lgs_result {
+                Ok(_) => tracing::info!("LGS (GPU): 后台初始化成功"),
+                Err(e) => tracing::warn!("LGS (GPU): 后台初始化失败: {}", e),
+            }
+
+            let init_result = match lgs_result {
+                Ok((api, output)) => LgsInitResult::Success { api, output },
+                Err(e) => LgsInitResult::Failed(e),
+            };
+
+            let _ = tx.send(init_result);
+        });
+    }
+
+    /// 阻塞式初始化 LGS (GPU)（用于后台线程）
+    fn init_lgs_blocking(ui_config: &UiConfig) -> MidiInitResult {
+        use lumino_midi_io::ApiKind;
+
+        let path = PathBuf::from(&ui_config.soundfont_path);
+        let api_kind = ApiKind::Lgs {
+            soundfont_path: path,
+            sample_rate: ui_config.lgs_sample_rate,
+            block_size: ui_config.lgs_block_size,
+            max_voices_per_key: ui_config.lgs_max_voices_per_key,
+            use_sinc: ui_config.lgs_use_sinc,
+        };
+
+        let api = lumino_midi_io::new_api(&api_kind)
+            .map_err(|e| format!("初始化 LGS (GPU) MIDI API 失败: {:?}", e))?;
+
+        if let Some(version) = api.version() {
+            tracing::info!("LGS (GPU): 音频后端已初始化 (version: {})", version);
+        }
+
+        let outputs = api
+            .outputs()
+            .map_err(|e| format!("获取 LGS (GPU) 输出设备失败: {:?}", e))?;
+
+        let output = outputs.first().ok_or("未找到可用的 LGS (GPU) MIDI 输出设备")?;
+
+        let conn = api
+            .open_output(output.id)
+            .map_err(|e| format!("打开 LGS (GPU) 输出连接失败: {:?}", e))?;
 
         Ok((api, conn))
     }
@@ -315,10 +434,17 @@ impl MidiManager {
     ///
     /// 返回 `true` 表示后端已成功切换到 XSynth，调用方应据此更新播放 MIDI 输出。
     pub fn check_async_init_complete(&mut self) -> bool {
-        if !self.is_xsynth_initializing {
-            return false;
+        if self.is_xsynth_initializing {
+            self.finish_xsynth_init()
+        } else if self.is_lgs_initializing {
+            self.finish_lgs_init()
+        } else {
+            false
         }
+    }
 
+    /// 处理 XSynth 异步初始化结果（非阻塞）
+    fn finish_xsynth_init(&mut self) -> bool {
         let rx = match &self.xsynth_init_rx {
             Some(rx) => rx,
             None => return false,
@@ -362,6 +488,47 @@ impl MidiManager {
         }
     }
 
+    /// 处理 LGS (GPU) 异步初始化结果（非阻塞）
+    fn finish_lgs_init(&mut self) -> bool {
+        let rx = match &self.lgs_init_rx {
+            Some(rx) => rx,
+            None => return false,
+        };
+
+        match rx.try_recv() {
+            Ok(LgsInitResult::Success { api, output }) => {
+                tracing::info!("LGS (GPU): 异步初始化完成，切换到 LGS (GPU) 后端");
+
+                // 关闭旧的输出
+                if let Some(old_output) = self.output.take() {
+                    drop(old_output);
+                }
+
+                self.api = Some(api);
+                self.output = Some(output);
+                self.active_backend = SynthBackend::Lgs;
+                self.is_lgs_initializing = false;
+                self.lgs_init_rx = None;
+
+                true
+            }
+            Ok(LgsInitResult::Failed(e)) => {
+                tracing::warn!("LGS (GPU): 异步初始化失败: {}", e);
+                self.is_lgs_initializing = false;
+                self.lgs_init_rx = None;
+                // 保持在当前后端（System）
+                false
+            }
+            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                tracing::warn!("LGS (GPU): 初始化线程异常断开");
+                self.is_lgs_initializing = false;
+                self.lgs_init_rx = None;
+                false
+            }
+        }
+    }
+
     /// 获取 MIDI 输出连接的可变引用
     pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi_io::OutputConnection>> {
         self.output.as_mut()
@@ -390,7 +557,7 @@ impl MidiManager {
         // OutputConnection 是自包含的，不需要父 Api 保持存活
         // （midir::MidiOutputConnection 持有自己的 OS 句柄）
         let strategy2_result = match self.active_backend {
-            SynthBackend::XSynth if self.api.is_some() => {
+            SynthBackend::XSynth | SynthBackend::Lgs if self.api.is_some() => {
                 // XSynth：禁止创建第二个实例！
                 // 策略1（共享 sender）总是成功；如果策略1失败说明 API 已损坏。
                 // 创建第二个 RealtimeSynth 会导致：
@@ -405,7 +572,7 @@ impl MidiManager {
             }
             // Core 引擎：active_backend 同为 XSynth，但不持有独立 API 实例，
             // 不能按「第二个实例」处理，直接回退到策略3（复用主输出）。
-            SynthBackend::XSynth => None,
+            SynthBackend::XSynth | SynthBackend::Lgs => None,
             SynthBackend::System | SynthBackend::Kdmapi => {
                 let api_kind = match self.active_backend {
                     SynthBackend::Kdmapi => {
@@ -431,7 +598,9 @@ impl MidiManager {
         if let Some(output) = self.output.take() {
             // 仅真正的 XSynth-Realtime 还 fallback 才值得警告；
             // Core 引擎本就复用主输出，属于预期行为，不报警。
-            if matches!(self.active_backend, SynthBackend::XSynth) && self.api.is_some() {
+            if matches!(self.active_backend, SynthBackend::XSynth | SynthBackend::Lgs)
+                && self.api.is_some()
+            {
                 tracing::warn!(
                     "MIDI 播放输出: 策略1和2均失败，使用主输出作为播放输出（音符预览将暂时不可用）"
                 );
@@ -471,8 +640,11 @@ impl MidiManager {
     /// 对于不支持输入的 XSynth 后端，返回 System 后端的输入 API。
     pub fn create_input_api(&self) -> Option<Box<dyn lumino_midi_io::Api>> {
         let api_kind = match self.active_backend {
-            SynthBackend::XSynth => {
-                tracing::info!("MIDI 输入 API: XSynth 不支持输入，使用 System 后端");
+            SynthBackend::XSynth | SynthBackend::Lgs => {
+                tracing::info!(
+                    "MIDI 输入 API: {:?} 不支持输入，使用 System 后端",
+                    self.active_backend
+                );
                 lumino_midi_io::ApiKind::System
             }
             SynthBackend::Kdmapi => {
@@ -514,6 +686,14 @@ impl MidiManager {
         self.is_xsynth_initializing
     }
 
+    /// 是否正在进行 LGS (GPU) 异步初始化
+    ///
+    /// 语义同 [`Self::is_xsynth_initializing`]，用于 `reinit_if_needed` 后判断
+    /// 新后端是同步就绪还是仍在异步初始化。
+    pub fn is_lgs_initializing(&self) -> bool {
+        self.is_lgs_initializing
+    }
+
     /// 如果设置改变，重新初始化 MIDI 输出
     pub fn reinit_if_needed(&mut self, ui_config: &UiConfig) {
         if !self.needs_reinit {
@@ -539,6 +719,13 @@ impl MidiManager {
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
         self.xsynth_global_voice_limit = ui_config.xsynth_global_voice_limit;
 
+        // 更新 LGS (GPU) 配置（供异步初始化使用）
+        self.lgs_soundfont_path = ui_config.soundfont_path.clone();
+        self.lgs_sample_rate = ui_config.lgs_sample_rate;
+        self.lgs_block_size = ui_config.lgs_block_size;
+        self.lgs_max_voices_per_key = ui_config.lgs_max_voices_per_key;
+        self.lgs_use_sinc = ui_config.lgs_use_sinc;
+
         // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
         lumino_midi_io::soundfont_cache::clear_cache();
 
@@ -549,25 +736,39 @@ impl MidiManager {
         self.fallback_api = None;
         self.xsynth_init_rx = None;
         self.is_xsynth_initializing = false;
+        self.lgs_init_rx = None;
+        self.is_lgs_initializing = false;
 
         // 重新初始化
-        if ui_config.preferred_backend == SynthBackend::XSynth {
-            // 先快速启动 System，然后后台初始化 XSynth（Realtime 引擎）
-            let system_result = Self::init_system_output();
-            self.api = system_result.api;
-            self.output = system_result.output;
-            self.active_backend = system_result.backend;
-            self.start_xsynth_async_init(ui_config);
-        } else {
-            // 初始化其他后端
-            let backend_result = match ui_config.preferred_backend {
-                SynthBackend::Kdmapi => Self::init_kdmapi_output(),
-                SynthBackend::System => Self::init_system_output(),
-                _ => Self::init_system_output(),
-            };
-            self.api = backend_result.api;
-            self.output = backend_result.output;
-            self.active_backend = backend_result.backend;
+        match ui_config.preferred_backend {
+            SynthBackend::XSynth => {
+                // 先快速启动 System，然后后台初始化 XSynth（Realtime 引擎）
+                let system_result = Self::init_system_output();
+                self.api = system_result.api;
+                self.output = system_result.output;
+                self.active_backend = system_result.backend;
+                self.start_xsynth_async_init(ui_config);
+            }
+            SynthBackend::Lgs => {
+                // 先快速启动 System，然后后台初始化 LGS (GPU)（Realtime 引擎）
+                let system_result = Self::init_system_output();
+                self.api = system_result.api;
+                self.output = system_result.output;
+                self.active_backend = system_result.backend;
+                self.start_lgs_async_init(ui_config);
+            }
+            SynthBackend::Kdmapi => {
+                let backend_result = Self::init_kdmapi_output();
+                self.api = backend_result.api;
+                self.output = backend_result.output;
+                self.active_backend = backend_result.backend;
+            }
+            SynthBackend::System => {
+                let backend_result = Self::init_system_output();
+                self.api = backend_result.api;
+                self.output = backend_result.output;
+                self.active_backend = backend_result.backend;
+            }
         }
 
         tracing::info!("MIDI 输出已重新初始化，实际后端: {:?}", self.active_backend);

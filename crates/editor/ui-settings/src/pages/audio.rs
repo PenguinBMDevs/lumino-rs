@@ -70,6 +70,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.display.language);
     let synth_options = vec![
         LocalizedSynth::new(SynthBackend::XSynth, settings.display.language),
+        LocalizedSynth::new(SynthBackend::Lgs, settings.display.language),
         LocalizedSynth::new(SynthBackend::Kdmapi, settings.display.language),
         LocalizedSynth::new(SynthBackend::System, settings.display.language),
     ];
@@ -115,9 +116,11 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         iced_widget::space().height(SPACING_CONTENT),
     ];
 
-    // 只在 XSynth 模式下显示音色库选择
+    // 只在对应模式下显示音色库选择 / 提示
     if settings.synth.backend == SynthBackend::XSynth {
         col = col.push(render_xsynth_options(settings, t));
+    } else if settings.synth.backend == SynthBackend::Lgs {
+        col = col.push(render_lgs_options(settings, t));
     } else if settings.synth.backend == SynthBackend::Kdmapi {
         col = col.push(
             text(t.kdmapi_hint)
@@ -267,6 +270,46 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(
         text(t.system_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+
+    col
+}
+
+/// 渲染 LGS (GPU) 选项
+///
+/// 与 XSynth 共用 `soundfont_path`；GPU 专属参数（渲染采样率、块大小、插值模式）
+/// 目前使用内置默认值，如需在 UI 暴露可后续补充对应控件与 Event。
+fn render_lgs_options<'a>(
+    settings: &SettingsPanel,
+    t: &lumino_extras::i18n::SettingsTranslations,
+) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
+    let mut col = column![];
+
+    // 音色库选择（与 XSynth 共用 soundfont_path）
+    col = col.push(
+        row![
+            text(t.soundfont)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text_input(t.soundfont_placeholder, &settings.synth.soundfont_path)
+                .width(Length::Fill)
+                .on_input(|s| Message::Settings(crate::Event::SoundfontPathChanged(s))),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        iced_widget::button(t.browse).on_press(Message::Settings(crate::Event::BrowseSoundfont)),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // LGS (GPU) 提示
+    col = col.push(
+        text(t.lgs_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     );

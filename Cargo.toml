@@ -5,6 +5,7 @@ members = [
     "crates/core/core", "crates/core/diagnostics", "crates/core/message", "crates/core/project",
     # audio — MIDI / 音频 / 播放
     "crates/audio/midi-io", "crates/audio/midi-loader", "crates/audio/midi-model", "crates/audio/midiplayer", "crates/audio/note-core",
+    "crates/audio/gpu-synth",
     # editor — UI / 渲染 / 编辑
     "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings",
     # network — 协作 / 云
@@ -38,6 +39,7 @@ lumino-core = { path = "crates/core/core", version = "0.2.1-crates-io-preview1" 
 lumino-export = { path = "crates/tools/export", version = "0.2.1-crates-io-preview1" }
 lumino-gfx = { path = "crates/editor/gfx", version = "0.2.1-crates-io-preview1" }
 lumino-midi-io = { path = "crates/audio/midi-io", version = "0.2.1-crates-io-preview1" }
+lumino-gpu-synth = { path = "crates/audio/gpu-synth", version = "0.1.0" }
 lumino-midi-loader = { path = "crates/audio/midi-loader", version = "0.2.1-crates-io-preview1" }
 lumino-midiplayer = { path = "crates/audio/midiplayer", version = "0.2.1-crates-io-preview1" }
 lumino-diagnostics = { path = "crates/core/diagnostics", version = "0.2.1-crates-io-preview1" }
@@ -79,6 +81,13 @@ iced_wgpu = "0.14.0"
 iced_winit = "0.14.0"
 iced_widget = "0.14.0"
 wgpu = "27.0"
+# GPU 合成后端（lumino-gpu-synth）所需音频/系统依赖
+# 注意：必须锁定 0.15.x 以与 xsynth-realtime 依赖的 cpal 版本统一，
+# 否则会出现两个 alsa-sys（native link）版本冲突，且 cpal 0.16+ 移除了
+# build_output_stream 的 timeout 参数（gpu-synth 使用 4 参形式）。
+cpal = "0.15.3"
+pollster = "0.4"
+sysinfo = "0.39.6"
 tracing = "0.1.43"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 thiserror = "2.0.17"

@@ -84,6 +84,8 @@ pub struct SettingsTranslations {
     pub system_hint: &'static str,
     /// XSynth 模式提示
     pub xsynth_hint: &'static str,
+    /// LGS (GPU) 模式提示
+    pub lgs_hint: &'static str,
 
     // ── 界面页面 ──
     /// 界面页面标题
@@ -251,6 +253,7 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     kdmapi_hint: "KDMAPI 模式使用系统驱动，无需音色库",
     system_hint: "System 模式使用系统默认的WinMM MIDI输出，无需音色库",
     xsynth_hint: "XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库",
+    lgs_hint: "LGS (GPU): 基于 GPU 加速的渲染合成器，使用 lumino-gpu-synth 管线；采样率/块大小等 GPU 参数当前使用内置默认值",
     ui_title: "界面",
     theme: "主题:",
     program_font: "程序字体:",
@@ -349,6 +352,7 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     kdmapi_hint: "KDMAPI mode uses system driver, no soundfont needed",
     system_hint: "System mode uses default WinMM MIDI output, no soundfont needed",
     xsynth_hint: "XSynth: Built-in high-performance synthesizer, supports SFZ/SF2 soundfonts",
+    lgs_hint: "LGS (GPU): GPU-accelerated renderer backed by lumino-gpu-synth; GPU params (sample rate / block size / interpolation) currently use built-in defaults",
     ui_title: "UI",
     theme: "Theme:",
     program_font: "Program Font:",
