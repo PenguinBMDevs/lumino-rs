@@ -92,6 +92,8 @@ impl SettingsPanel {
                 devices: Vec::new(),
                 selected_device: None,
                 velocity_filter_threshold: ui_config.velocity_filter_threshold,
+                winmm_outputs: Vec::new(),
+                selected_winmm_output: ui_config.system_output_device_id,
             },
             hires: HiresSettings {
                 onion_enabled: ui_config.hires_onion_enabled,
@@ -249,6 +251,14 @@ impl SettingsPanel {
             Event::DeviceSelected(id) => {
                 self.midi.selected_device = Some(id);
                 tracing::debug!("设置: MIDI 输入设备选择为 #{}", id);
+            }
+            Event::WinmmOutputSelected(id) => {
+                self.midi.selected_winmm_output = Some(id);
+                tracing::debug!("设置: WinMM 输出设备(播表)选择为 #{}", id);
+            }
+            Event::ScanWinmmOutputs => {
+                // 实际扫描由 editor/ui 的 Root::scan_winmm_outputs 执行并写回设置面板
+                tracing::debug!("设置: 收到 WinMM 播表扫描请求");
             }
             Event::LanguageChanged(lang) => {
                 self.display.language = lang;

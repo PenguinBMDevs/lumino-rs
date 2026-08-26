@@ -82,6 +82,12 @@ pub struct SettingsTranslations {
     pub kdmapi_hint: &'static str,
     /// System 模式提示
     pub system_hint: &'static str,
+    /// WinMM 输出设备（播表）标签
+    pub winmm_output_device: &'static str,
+    /// WinMM 输出设备未检测到提示
+    pub winmm_no_device: &'static str,
+    /// 刷新按钮标签
+    pub refresh: &'static str,
     /// XSynth 模式提示
     pub xsynth_hint: &'static str,
     /// LGS (GPU) 模式提示
@@ -258,6 +264,9 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     select_device_placeholder: "选择MIDI设备",
     kdmapi_hint: "KDMAPI 模式使用系统驱动，无需音色库",
     system_hint: "System 模式使用系统默认的WinMM MIDI输出，无需音色库",
+    winmm_output_device: "WinMM 输出设备 (播表):",
+    winmm_no_device: "未检测到可用的 WinMM 输出设备",
+    refresh: "刷新",
     xsynth_hint: "XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库",
     lgs_hint: "LGS (GPU): 基于 GPU 加速的渲染合成器，使用 lumino-gpu-synth 管线",
     builtin_engine: "内置合成器引擎:",
@@ -360,6 +369,9 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     select_device_placeholder: "Select MIDI device",
     kdmapi_hint: "KDMAPI mode uses system driver, no soundfont needed",
     system_hint: "System mode uses default WinMM MIDI output, no soundfont needed",
+    winmm_output_device: "WinMM Output Device (Playback List):",
+    winmm_no_device: "No available WinMM output device detected",
+    refresh: "Refresh",
     xsynth_hint: "XSynth: Built-in high-performance synthesizer, supports SFZ/SF2 soundfonts",
     lgs_hint: "LGS (GPU): GPU-accelerated renderer backed by lumino-gpu-synth",
     builtin_engine: "Built-in Synth Engine:",

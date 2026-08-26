@@ -6,6 +6,8 @@
 use crate::message::Message;
 use crate::root::Root;
 use crate::root::handlers::MessageHandler;
+use lumino_core::storage::config::SynthBackend;
+use lumino_ui_core::settings_event::OutputType;
 
 /// 设置消息处理器
 #[derive(Default)]
@@ -93,6 +95,18 @@ impl MessageHandler for SettingsHandler {
             }
             crate::settings::Event::MonitorRefreshIntervalChanged(v) => {
                 tracing::debug!("Root: 监控数据刷新间隔设置为 {}ms", v);
+            }
+            crate::settings::Event::ScanWinmmOutputs => {
+                // 系统播表自动扫描（WinMM 输出设备列表）
+                root.scan_winmm_outputs();
+            }
+            crate::settings::Event::WinmmOutputSelected(_id) => {
+                tracing::debug!("Root: 已选择 WinMM 输出设备(播表)");
+            }
+            crate::settings::Event::OutputTypeChanged(OutputType::System)
+            | crate::settings::Event::SynthBackendChanged(SynthBackend::System) => {
+                // 进入 WinMM 模式时自动扫描播表
+                root.scan_winmm_outputs();
             }
             _ => {} // 其他设置变更由 settings.update() 同步
         }

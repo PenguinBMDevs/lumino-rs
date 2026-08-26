@@ -1,4 +1,4 @@
-﻿//! 编辑器操作 - MIDI 输出管理
+//! 编辑器操作 - MIDI 输出管理
 
 use crate::root::Root;
 
@@ -51,6 +51,35 @@ impl Root {
             tracing::info!("Root::clear_midi_output: MIDI output connection cleared");
         }
         self.playback.pending_midi_output = None;
+    }
+
+    /// 系统 MIDI (WinMM) 播表（输出设备）自动扫描。
+    ///
+    /// 通过 System API 枚举所有可用的 WinMM MIDI 输出端口，写入设置面板，
+    /// 供「WinMM 输出设备」下拉菜单展示（系统播表自动扫描）。
+    pub fn scan_winmm_outputs(&mut self) {
+        use lumino_midi_io::ApiKind;
+
+        match lumino_midi_io::new_api(&ApiKind::System) {
+            Ok(api) => {
+                let outputs = api.outputs().unwrap_or_default();
+                let list: Vec<(u32, String)> =
+                    outputs.iter().map(|o| (o.id, o.name.clone())).collect();
+                tracing::info!("扫描到 {} 个 WinMM 输出设备(播表)", list.len());
+                self.settings.midi.winmm_outputs = list.clone();
+
+                // 校验已选设备是否仍然有效；失效则回落到第一个（None = 使用系统默认）
+                if let Some(sel) = self.settings.midi.selected_winmm_output
+                    && !list.iter().any(|(id, _)| *id == sel)
+                {
+                    self.settings.midi.selected_winmm_output = list.first().map(|(id, _)| *id);
+                }
+            }
+            Err(e) => {
+                tracing::warn!("扫描 WinMM 输出设备(播表)失败: {}", e);
+                self.settings.midi.winmm_outputs = Vec::new();
+            }
+        }
     }
 }
 

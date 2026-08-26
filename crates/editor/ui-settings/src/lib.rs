@@ -125,6 +125,10 @@ pub struct MidiSettings {
     pub selected_device: Option<u32>,
     /// 力度过滤阈值
     pub velocity_filter_threshold: u8,
+    /// 系统 MIDI (WinMM) 输出设备列表（系统播表自动扫描结果）
+    pub winmm_outputs: Vec<(u32, String)>,
+    /// 当前选中的系统 MIDI (WinMM) 输出设备 ID（None = 使用系统默认/第一个）
+    pub selected_winmm_output: Option<u32>,
 }
 
 /// 高精度洋葱皮贴图设置

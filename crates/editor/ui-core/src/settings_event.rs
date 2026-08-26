@@ -82,6 +82,10 @@ pub enum Event {
     VelocityCurveStyleChanged(bool),
     /// 选中 MIDI 设备（设备序号）
     DeviceSelected(u32),
+    /// 系统 MIDI (WinMM) 播表（输出设备）选择变更（设备序号）
+    WinmmOutputSelected(u32),
+    /// 请求扫描系统 MIDI (WinMM) 播表（输出设备列表，系统播表自动扫描）
+    ScanWinmmOutputs,
     /// 界面语言变更
     LanguageChanged(Language),
     /// 高精度洋葱皮贴图是否启用

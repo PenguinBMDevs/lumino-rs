@@ -183,11 +183,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
                 .style(create_placeholder_text_style()),
         );
     } else if settings.synth.backend == SynthBackend::System {
-        col = col.push(
-            text(t.system_hint)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_placeholder_text_style()),
-        );
+        col = col.push(render_winmm_output_selector(settings, t));
     }
 
     col.spacing(SPACING_CONTENT).padding(PADDING_CONTENT).into()
@@ -454,6 +450,90 @@ fn render_lgs_options<'a>(
     );
 
     col
+}
+
+/// 渲染 WinMM (系统 MIDI) 输出设备（播表）选择器
+///
+/// 展示系统播表自动扫描结果，通过下拉菜单选择指定的 WINMM 播表；
+/// 提供「刷新」按钮触发重新扫描。
+fn render_winmm_output_selector<'a>(
+    settings: &'a SettingsPanel,
+    t: &lumino_extras::i18n::SettingsTranslations,
+) -> Element<'a> {
+    let label = text(t.winmm_output_device)
+        .size(TEXT_SIZE_CONTENT)
+        .style(create_content_text_style());
+
+    let refresh_btn = iced_widget::button(t.refresh)
+        .on_press(Message::Settings(crate::Event::ScanWinmmOutputs));
+
+    let body: Element<'a> = if settings.midi.winmm_outputs.is_empty() {
+        row![
+            label,
+            iced_widget::space().width(SPACING_MAIN),
+            text(t.winmm_no_device)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style()),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            refresh_btn,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        let options: Vec<&str> = settings
+            .midi
+            .winmm_outputs
+            .iter()
+            .map(|(_, name)| name.as_str())
+            .collect();
+        let selected = settings
+            .midi
+            .selected_winmm_output
+            .and_then(|id| {
+                settings
+                    .midi
+                    .winmm_outputs
+                    .iter()
+                    .find(|(oid, _)| *oid == id)
+                    .map(|(_, name)| name.as_str())
+            });
+
+        row![
+            label,
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(options, selected, move |name| {
+                if let Some((id, _)) = settings
+                    .midi
+                    .winmm_outputs
+                    .iter()
+                    .find(|(_, n)| n.as_str() == name)
+                {
+                    Message::Settings(crate::Event::WinmmOutputSelected(*id))
+                } else {
+                    Message::Null
+                }
+            })
+            .placeholder(t.select_device_placeholder)
+            .padding([4, 8])
+            .width(200.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            refresh_btn,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center)
+        .into()
+    };
+
+    column![
+        body,
+        iced_widget::space().height(SPACING_CONTENT),
+        text(t.system_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .into()
 }
 
 /// 渲染 MIDI 输入设备选择器

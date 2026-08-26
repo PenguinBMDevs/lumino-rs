@@ -300,6 +300,9 @@ pub struct UiConfig {
     /// 音频引擎后端（当前仅 Realtime）
     #[serde(default)]
     pub audio_engine: AudioEngineKind,
+    /// 系统 MIDI (WinMM) 输出设备 ID（None = 使用系统默认/第一个输出设备）
+    #[serde(default)]
+    pub system_output_device_id: Option<u32>,
 }
 
 fn default_true() -> bool {
@@ -429,6 +432,7 @@ impl Default for UiConfig {
             log_retention_count: default_log_retention_count(),
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
             audio_engine: AudioEngineKind::default(),
+            system_output_device_id: None,
         }
     }
 }

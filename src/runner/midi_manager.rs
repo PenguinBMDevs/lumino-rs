@@ -85,6 +85,8 @@ pub struct MidiManager {
     lgs_max_voices_per_key: usize,
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值
     lgs_use_sinc: bool,
+    /// 系统 MIDI (WinMM) 输出设备 ID（None = 第一个/默认）
+    winmm_output_device_id: Option<u32>,
 }
 
 impl Default for MidiManager {
@@ -112,6 +114,7 @@ impl Default for MidiManager {
             lgs_block_size: 0,
             lgs_max_voices_per_key: 0,
             lgs_use_sinc: false,
+            winmm_output_device_id: None,
         }
     }
 }
@@ -125,10 +128,10 @@ impl MidiManager {
 
         // 快速启动初始后端（不阻塞 UI）
         let init_result = match preferred {
-            SynthBackend::Kdmapi => Self::init_kdmapi_output(),
-            SynthBackend::System => Self::init_system_output(),
-            SynthBackend::XSynth => Self::init_system_output(),
-            SynthBackend::Lgs => Self::init_system_output(),
+            SynthBackend::Kdmapi => Self::init_kdmapi_output(ui_config.system_output_device_id),
+            SynthBackend::System => Self::init_system_output(ui_config.system_output_device_id),
+            SynthBackend::XSynth => Self::init_system_output(ui_config.system_output_device_id),
+            SynthBackend::Lgs => Self::init_system_output(ui_config.system_output_device_id),
         };
 
         let mut manager = Self {
@@ -154,6 +157,7 @@ impl MidiManager {
             lgs_block_size: ui_config.lgs_block_size,
             lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
             lgs_use_sinc: ui_config.lgs_use_sinc,
+            winmm_output_device_id: ui_config.system_output_device_id,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
@@ -338,23 +342,31 @@ impl MidiManager {
     }
 
     /// 快速初始化 System 后端（不阻塞）
-    fn init_system_output() -> BackendInitResult {
+    ///
+    /// `selected_device` 为系统播表（WinMM 输出设备）的指定 ID；
+    /// 为 `None` 或该设备不存在时，回落到第一个输出设备（系统默认）。
+    fn init_system_output(selected_device: Option<u32>) -> BackendInitResult {
         use lumino_midi_io::ApiKind;
 
         tracing::info!("MIDI: 快速启动 System 后端");
 
         match lumino_midi_io::new_api(&ApiKind::System) {
             Ok(api) => {
-                if let Ok(outputs) = api.outputs()
-                    && let Some(output) = outputs.first()
-                    && let Ok(conn) = api.open_output(output.id)
-                {
-                    tracing::info!("MIDI: System 后端已就绪");
-                    return BackendInitResult {
-                        api: Some(api),
-                        output: Some(conn),
-                        backend: SynthBackend::System,
-                    };
+                if let Ok(outputs) = api.outputs() {
+                    // 指定的 WINMM 播表优先，否则使用第一个（系统默认）
+                    let output = selected_device
+                        .and_then(|id| outputs.iter().find(|o| o.id == id))
+                        .or_else(|| outputs.first());
+                    if let Some(output) = output
+                        && let Ok(conn) = api.open_output(output.id)
+                    {
+                        tracing::info!("MIDI: System 后端已就绪 (输出设备 #{})", output.id);
+                        return BackendInitResult {
+                            api: Some(api),
+                            output: Some(conn),
+                            backend: SynthBackend::System,
+                        };
+                    }
                 }
                 BackendInitResult {
                     api: Some(api),
@@ -381,7 +393,7 @@ impl MidiManager {
     /// 3. `%PROGRAMFILES%\OmniMIDI\OmniMIDI.dll`
     ///
     /// 如果 KDMAPI 初始化失败，会自动回退到 System 后端，保证至少能出声。
-    fn init_kdmapi_output() -> BackendInitResult {
+    fn init_kdmapi_output(selected_device: Option<u32>) -> BackendInitResult {
         use lumino_midi_io::ApiKind;
 
         tracing::info!("MIDI: 尝试启动 KDMAPI 后端");
@@ -403,12 +415,12 @@ impl MidiManager {
                 }
                 tracing::warn!("MIDI: KDMAPI 已初始化但无法打开输出，回退到 System 后端");
                 // 有 api 但无 output → 回退到 System 后端
-                Self::init_system_output()
+                Self::init_system_output(selected_device)
             }
             Err(e) => {
                 tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}，回退到 System 后端", e);
                 // KDMAPI 完全不可用 → 回退到 System 后端
-                Self::init_system_output()
+                Self::init_system_output(selected_device)
             }
         }
     }
@@ -727,6 +739,9 @@ impl MidiManager {
         self.lgs_max_voices_per_key = ui_config.lgs_max_voices_per_key;
         self.lgs_use_sinc = ui_config.lgs_use_sinc;
 
+        // 更新指定的 WinMM 播表（输出设备）ID
+        self.winmm_output_device_id = ui_config.system_output_device_id;
+
         // 清空 SoundFont 缓存，防止旧条目无限累积（每个 SF2 30-300MB）
         lumino_midi_io::soundfont_cache::clear_cache();
 
@@ -744,7 +759,7 @@ impl MidiManager {
         match ui_config.preferred_backend {
             SynthBackend::XSynth => {
                 // 先快速启动 System，然后后台初始化 XSynth（Realtime 引擎）
-                let system_result = Self::init_system_output();
+                let system_result = Self::init_system_output(self.winmm_output_device_id);
                 self.api = system_result.api;
                 self.output = system_result.output;
                 self.active_backend = system_result.backend;
@@ -752,20 +767,20 @@ impl MidiManager {
             }
             SynthBackend::Lgs => {
                 // 先快速启动 System，然后后台初始化 LGS (GPU)（Realtime 引擎）
-                let system_result = Self::init_system_output();
+                let system_result = Self::init_system_output(self.winmm_output_device_id);
                 self.api = system_result.api;
                 self.output = system_result.output;
                 self.active_backend = system_result.backend;
                 self.start_lgs_async_init(ui_config);
             }
             SynthBackend::Kdmapi => {
-                let backend_result = Self::init_kdmapi_output();
+                let backend_result = Self::init_kdmapi_output(self.winmm_output_device_id);
                 self.api = backend_result.api;
                 self.output = backend_result.output;
                 self.active_backend = backend_result.backend;
             }
             SynthBackend::System => {
-                let backend_result = Self::init_system_output();
+                let backend_result = Self::init_system_output(self.winmm_output_device_id);
                 self.api = backend_result.api;
                 self.output = backend_result.output;
                 self.active_backend = backend_result.backend;
