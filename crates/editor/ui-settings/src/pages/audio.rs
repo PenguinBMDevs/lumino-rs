@@ -60,7 +60,6 @@ impl LocalizedAudioEngine {
     fn new(kind: AudioEngineKind) -> Self {
         let name = match kind {
             AudioEngineKind::Realtime => "Realtime (xsynth)",
-            AudioEngineKind::Core => "Core (ring)",
         };
         Self { inner: kind, name }
     }
@@ -75,10 +74,7 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         LocalizedSynth::new(SynthBackend::System, settings.display.language),
     ];
     let current_synth = LocalizedSynth::new(settings.synth.backend, settings.display.language);
-    let audio_engine_options = vec![
-        LocalizedAudioEngine::new(AudioEngineKind::Realtime),
-        LocalizedAudioEngine::new(AudioEngineKind::Core),
-    ];
+    let audio_engine_options = vec![LocalizedAudioEngine::new(AudioEngineKind::Realtime)];
     let current_engine = LocalizedAudioEngine::new(settings.synth.audio_engine);
 
     let mut col = column![
@@ -166,62 +162,25 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
-    // 缓冲区大小：Realtime 用 ms，Core 用帧（yinhe 帧精度，避免采样率耦合）
-    if settings.synth.audio_engine == lumino_core::storage::config::AudioEngineKind::Core {
-        col = col.push(
-            row![
-                text(format!(
-                    "缓冲帧数: {} frames (~{:.0}ms@{}Hz)",
-                    settings.synth.core_buffer_frames,
-                    settings.synth.core_buffer_frames as f32 / settings.synth.xsynth_sample_rate as f32 * 1000.0,
-                    settings.synth.xsynth_sample_rate
-                ))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(220.0),
-                iced_widget::slider(
-                    512.0..=16384.0,
-                    settings.synth.core_buffer_frames as f32,
-                    |v| Message::Settings(crate::Event::CoreBufferFramesChanged(v as u32))
-                )
-                .step(512.0)
-                .width(180.0),
-                text_input(
-                    "512-16384",
-                    &settings.synth.core_buffer_frames.to_string()
-                )
-                .width(80.0)
-                .on_input(|s| {
-                    if let Ok(v) = s.parse::<u32>() {
-                        Message::Settings(crate::Event::CoreBufferFramesChanged(v))
-                    } else {
-                        Message::Null
-                    }
-                }),
-            ]
-            .spacing(SPACING_ICON_LABEL)
-            .align_y(Alignment::Center),
-        );
-    } else {
-        col = col.push(
-            row![
-                text(format!(
-                    "{}: {:.1} ms",
-                    t.buffer_latency, settings.synth.xsynth_buffer_ms
-                ))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(160.0),
-                iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
-                    Message::Settings(crate::Event::XSynthBufferChanged(ms))
-                })
-                .step(1.0)
-                .width(200.0),
-            ]
-            .spacing(SPACING_ICON_LABEL)
-            .align_y(Alignment::Center),
-        );
-    }
+    // 缓冲区大小（Realtime 引擎使用毫秒粒度）
+    col = col.push(
+        row![
+            text(format!(
+                "{}: {:.1} ms",
+                t.buffer_latency, settings.synth.xsynth_buffer_ms
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(160.0),
+            iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
+                Message::Settings(crate::Event::XSynthBufferChanged(ms))
+            })
+            .step(1.0)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
     // 音符释放淡出
@@ -255,9 +214,7 @@ fn render_xsynth_options<'a>(
             .width(160.0),
             text_input("0=不限制 1-128", &display_val)
                 .width(80.0)
-                .on_input(|s| {
-                    Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s))
-                }),
+                .on_input(|s| { Message::Settings(crate::Event::XSynthMaxVoicesCustomInput(s)) }),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),

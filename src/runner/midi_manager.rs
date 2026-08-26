@@ -56,8 +56,6 @@ pub struct MidiManager {
     xsynth_threads: i32,
     /// XSynth 采样率
     xsynth_sample_rate: u32,
-    /// Core 环缓冲帧数
-    core_buffer_frames: u32,
     /// XSynth 是否启用 killing fade-out
     xsynth_fade_out_killing: bool,
     /// XSynth 每个键最大同音数
@@ -81,7 +79,6 @@ impl Default for MidiManager {
             xsynth_buffer_ms: 0.0,
             xsynth_threads: 0,
             xsynth_sample_rate: 0,
-            core_buffer_frames: 4096,
             xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
             xsynth_global_voice_limit: None,
@@ -100,13 +97,7 @@ impl MidiManager {
         let init_result = match preferred {
             SynthBackend::Kdmapi => Self::init_kdmapi_output(),
             SynthBackend::System => Self::init_system_output(),
-            SynthBackend::XSynth => {
-                if ui_config.audio_engine == AudioEngineKind::Core {
-                    Self::init_core_output(ui_config)
-                } else {
-                    Self::init_system_output()
-                }
-            }
+            SynthBackend::XSynth => Self::init_system_output(),
         };
 
         let mut manager = Self {
@@ -122,15 +113,13 @@ impl MidiManager {
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
             xsynth_threads: ui_config.xsynth_threads,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
-            core_buffer_frames: ui_config.core_buffer_frames,
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
-        if preferred == SynthBackend::XSynth
-            && ui_config.audio_engine == AudioEngineKind::Realtime
+        if preferred == SynthBackend::XSynth && ui_config.audio_engine == AudioEngineKind::Realtime
         {
             manager.start_xsynth_async_init(ui_config);
         }
@@ -140,9 +129,6 @@ impl MidiManager {
 
     /// 启动 XSynth 异步初始化
     fn start_xsynth_async_init(&mut self, ui_config: &UiConfig) {
-        if ui_config.audio_engine == AudioEngineKind::Core {
-            return;
-        }
         if self.is_xsynth_initializing {
             return;
         }
@@ -302,37 +288,6 @@ impl MidiManager {
             Err(e) => {
                 tracing::warn!("MIDI: KDMAPI 后端启动失败: {:?}，回退到 System 后端", e);
                 // KDMAPI 完全不可用 → 回退到 System 后端
-                Self::init_system_output()
-            }
-        }
-    }
-
-    /// 初始化 Core 后端（同步，基于 ring + ChannelGroup）
-    fn init_core_output(ui_config: &UiConfig) -> BackendInitResult {
-        tracing::info!(
-            "MIDI: 启动 Core 后端 (ring, buffer={} frames)",
-            ui_config.core_buffer_frames
-        );
-        if ui_config.soundfont_path.is_empty() {
-            tracing::warn!("Core: 音色库路径未设置，回退 System");
-            return Self::init_system_output();
-        }
-        let path = PathBuf::from(&ui_config.soundfont_path);
-        match lumino_midi_io::backend::create_core_output_with_buffer(
-            path,
-            Some(ui_config.xsynth_sample_rate),
-            ui_config.core_buffer_frames,
-        ) {
-            Ok(conn) => {
-                tracing::info!("MIDI: Core 后端已就绪");
-                BackendInitResult {
-                    api: None,
-                    output: Some(conn),
-                    backend: SynthBackend::XSynth,
-                }
-            }
-            Err(e) => {
-                tracing::warn!("MIDI: Core 后端启动失败: {:?}，回退 System", e);
                 Self::init_system_output()
             }
         }
@@ -580,7 +535,6 @@ impl MidiManager {
         self.xsynth_buffer_ms = ui_config.xsynth_buffer_ms;
         self.xsynth_threads = ui_config.xsynth_threads;
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
-        self.core_buffer_frames = ui_config.core_buffer_frames;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
         self.xsynth_global_voice_limit = ui_config.xsynth_global_voice_limit;
@@ -598,19 +552,12 @@ impl MidiManager {
 
         // 重新初始化
         if ui_config.preferred_backend == SynthBackend::XSynth {
-            if ui_config.audio_engine == AudioEngineKind::Core {
-                let core_result = Self::init_core_output(ui_config);
-                self.api = core_result.api;
-                self.output = core_result.output;
-                self.active_backend = core_result.backend;
-            } else {
-                // 先快速启动 System，然后后台初始化 XSynth
-                let system_result = Self::init_system_output();
-                self.api = system_result.api;
-                self.output = system_result.output;
-                self.active_backend = system_result.backend;
-                self.start_xsynth_async_init(ui_config);
-            }
+            // 先快速启动 System，然后后台初始化 XSynth（Realtime 引擎）
+            let system_result = Self::init_system_output();
+            self.api = system_result.api;
+            self.output = system_result.output;
+            self.active_backend = system_result.backend;
+            self.start_xsynth_async_init(ui_config);
         } else {
             // 初始化其他后端
             let backend_result = match ui_config.preferred_backend {

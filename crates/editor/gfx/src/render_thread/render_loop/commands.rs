@@ -36,7 +36,13 @@ pub fn process_commands(
     // 先 drain 所有可用命令；记录本帧是否收到"新渲染命令"
     let mut new_render = false;
     while let Ok(cmd) = command_receiver.try_recv() {
-        if classify_command(cmd, latest_params, latest_frame_id, should_shutdown, deferred) {
+        if classify_command(
+            cmd,
+            latest_params,
+            latest_frame_id,
+            should_shutdown,
+            deferred,
+        ) {
             new_render = true;
         }
     }
@@ -51,7 +57,13 @@ pub fn process_commands(
     if !new_render {
         match command_receiver.recv_timeout(COMMAND_RECV_TIMEOUT) {
             Ok(cmd) => {
-                if classify_command(cmd, latest_params, latest_frame_id, should_shutdown, deferred) {
+                if classify_command(
+                    cmd,
+                    latest_params,
+                    latest_frame_id,
+                    should_shutdown,
+                    deferred,
+                ) {
                     new_render = true;
                 }
             }

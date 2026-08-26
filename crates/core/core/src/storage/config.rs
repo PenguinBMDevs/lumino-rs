@@ -99,21 +99,22 @@ impl std::fmt::Display for SynthBackend {
     }
 }
 
-/// 音频引擎后端（Realtime vs Core）
+/// 音频引擎后端（当前仅 Realtime：xsynth-realtime 多线程 + BufferedRenderer）
+///
+/// 旧配置文件可能残留 `"Core"` 取值，反序列化时通过 `#[serde(other)]` 回落到 `Realtime`，
+/// 避免历史配置加载失败（ring 引擎已被整体移除）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum AudioEngineKind {
     /// Realtime：xsynth-realtime 多线程 + BufferedRenderer（lumino 原有）
     #[default]
+    #[serde(other)]
     Realtime,
-    /// Core：xsynth-core ChannelGroup + AudioRing SPSC（yinhe 复刻，零锁回调）
-    Core,
 }
 
 impl std::fmt::Display for AudioEngineKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             AudioEngineKind::Realtime => write!(f, "Realtime (xsynth)"),
-            AudioEngineKind::Core => write!(f, "Core (ring)"),
         }
     }
 }
@@ -278,12 +279,9 @@ pub struct UiConfig {
     /// 底边栏监控数据刷新间隔（毫秒，50-2000，默认 100）
     #[serde(default = "default_monitor_refresh_interval_ms")]
     pub monitor_refresh_interval_ms: f32,
-    /// 音频引擎后端（Realtime vs Core）
+    /// 音频引擎后端（当前仅 Realtime）
     #[serde(default)]
     pub audio_engine: AudioEngineKind,
-    /// Core 引擎环形缓冲目标帧数（512..16384，默认 4096≈85ms@48k）
-    #[serde(default = "default_core_buffer_frames")]
-    pub core_buffer_frames: u32,
 }
 
 fn default_true() -> bool {
@@ -320,10 +318,6 @@ fn default_tempo_max_bpm() -> f64 {
 
 fn default_monitor_refresh_interval_ms() -> f32 {
     100.0
-}
-
-fn default_core_buffer_frames() -> u32 {
-    4096
 }
 
 fn default_log_retention_count() -> usize {
@@ -399,7 +393,6 @@ impl Default for UiConfig {
             log_retention_count: default_log_retention_count(),
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
             audio_engine: AudioEngineKind::default(),
-            core_buffer_frames: default_core_buffer_frames(),
         }
     }
 }

@@ -74,7 +74,10 @@ pub enum RenderCommand {
     /// 写入 `rendered_frame` 并 notify。UI 线程在 present（copy 到 Surface）前
     /// `wait_for_frame(frame_id)`，避免拷到"尚未被渲染线程处理"的旧离屏帧
     /// （音符放置后不立即显示的竞态根因：UI 拷贝与 wgpu 渲染对共享离屏纹理的无同步竞态）。
-    Render { params: Box<RenderParams>, frame_id: u64 },
+    Render {
+        params: Box<RenderParams>,
+        frame_id: u64,
+    },
     /// 控制命令
     Control(ControlCommand),
 }

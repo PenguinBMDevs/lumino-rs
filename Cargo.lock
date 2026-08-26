@@ -4305,7 +4305,6 @@ dependencies = [
 name = "lumino-midi-io"
 version = "0.2.1"
 dependencies = [
- "cpal",
  "crossbeam-channel",
  "libloading 0.9.0",
  "lumino-diagnostics",

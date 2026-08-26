@@ -31,7 +31,7 @@ pub use lumino_ui_core::settings_event::Event;
 pub struct SynthSettings {
     /// 合成器后端类型
     pub backend: SynthBackend,
-    /// 音频引擎后端（Realtime vs Core）
+    /// 音频引擎后端（当前仅 Realtime）
     pub audio_engine: lumino_core::storage::config::AudioEngineKind,
     /// 音色库文件路径（SF2/SFZ）
     pub soundfont_path: String,
@@ -47,8 +47,6 @@ pub struct SynthSettings {
     pub xsynth_fade_out: bool,
     /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
-    /// Core 环形缓冲帧数
-    pub core_buffer_frames: u32,
 }
 
 /// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）

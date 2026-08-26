@@ -53,7 +53,6 @@ impl SettingsPanel {
                 xsynth_threads: ui_config.xsynth_threads,
                 xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
-                core_buffer_frames: ui_config.core_buffer_frames,
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -153,9 +152,6 @@ impl SettingsPanel {
             }
             Event::XSynthMaxVoicesChanged(v) => {
                 self.synth.xsynth_max_voices_per_key = v;
-            }
-            Event::CoreBufferFramesChanged(v) => {
-                self.synth.core_buffer_frames = v.clamp(512, 16384);
             }
             Event::XSynthMaxVoicesCustomInput(s) => {
                 let t = s.trim();
