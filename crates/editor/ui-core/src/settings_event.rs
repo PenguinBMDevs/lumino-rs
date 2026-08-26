@@ -7,6 +7,20 @@ use lumino_core::storage::config::{
 };
 use lumino_extras::i18n::Language;
 
+/// MIDI 输出类型（顶层选择）
+///
+/// 内置合成器（XSynth / LGS 等软件合成器）归为 `Builtin` 一类，其下再用
+/// `SynthBackend` 选择具体引擎；KDMAPI / 系统 MIDI 为独立类型。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputType {
+    /// 内置软件合成器
+    Builtin,
+    /// KDMAPI 系统驱动
+    Kdmapi,
+    /// 系统 MIDI (WinMM)
+    System,
+}
+
 /// 设置面板事件
 #[derive(Debug, Clone)]
 pub enum Event {
@@ -14,6 +28,8 @@ pub enum Event {
     MenuSelected(usize),
     /// 合成器后端变更
     SynthBackendChanged(SynthBackend),
+    /// MIDI 输出类型变更（内置合成器 / KDMAPI / 系统 MIDI）
+    OutputTypeChanged(OutputType),
     /// 音频引擎后端变更（当前仅 Realtime）
     AudioEngineChanged(AudioEngineKind),
     /// 音色库路径变更
@@ -32,6 +48,12 @@ pub enum Event {
     XSynthMaxVoicesChanged(Option<usize>),
     /// XSynth 每键最大同音数自定义输入变更
     XSynthMaxVoicesCustomInput(String),
+    /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂）变更
+    LgsBlockSizeChanged(usize),
+    /// LGS (GPU) 每键最大同音数变更（0=不限制）
+    LgsMaxVoicesChanged(usize),
+    /// LGS (GPU) 每键最大同音数自定义输入变更
+    LgsMaxVoicesCustomInput(String),
     /// 主题变更
     ThemeChanged(String),
     /// 橡皮擦工具行为变更

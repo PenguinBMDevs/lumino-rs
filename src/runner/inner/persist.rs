@@ -11,6 +11,7 @@ struct ConfigDiff {
     audio_engine_changed: bool,
     titlebar_changed: bool,
     font_changed: bool,
+    lgs_changed: bool,
 }
 
 fn display_or_empty(s: &str) -> &str {
@@ -35,6 +36,15 @@ impl RunnerInner {
         let titlebar_changed = new.synth.use_native_titlebar != old.use_native_titlebar;
         let font_changed = new.editing.program_font_name != old.program_font_name
             || new.editing.program_font_path != old.program_font_path;
+        // LGS (GPU) 专属参数变化需要重建 GPU 合成器后端：缓冲区大小、每键最大同音数，
+        // 或（仅当当前/此前为 LGS 时）响度过滤阈值变化。
+        let lgs_changed = new.synth.lgs_block_size != old.lgs_block_size
+            || new.synth.lgs_max_voices_per_key != old.lgs_max_voices_per_key
+            || (new.midi.velocity_filter_threshold != old.velocity_filter_threshold
+                && (new.synth.backend
+                    == lumino_core::storage::config::SynthBackend::Lgs
+                    || old.preferred_backend
+                        == lumino_core::storage::config::SynthBackend::Lgs));
         let other_changed = new.display.language != old.language
             || new.editing.selection_box_mode != old.selection_box_mode
             || new.midi.velocity_filter_threshold != old.velocity_filter_threshold
@@ -60,6 +70,7 @@ impl RunnerInner {
             || audio_engine_changed
             || titlebar_changed
             || font_changed
+            || lgs_changed
             || other_changed
         {
             Some(ConfigDiff {
@@ -68,6 +79,7 @@ impl RunnerInner {
                 audio_engine_changed,
                 titlebar_changed,
                 font_changed,
+                lgs_changed,
             })
         } else {
             None
@@ -104,6 +116,7 @@ impl RunnerInner {
                 audio_engine_changed: false,
                 titlebar_changed: false,
                 font_changed: false,
+                lgs_changed: false,
             },
         };
         if diff.synth_changed {
@@ -129,6 +142,18 @@ impl RunnerInner {
                 new.synth.xsynth_fade_out,
                 old.xsynth_max_voices_per_key,
                 new.synth.xsynth_max_voices_per_key,
+            );
+            self.midi_state.midi.mark_for_reinit();
+        }
+        if diff.lgs_changed {
+            tracing::info!(
+                "LGS (GPU) 参数已改变: block_size {} -> {}, max_voices {} -> {}, velocity_filter {} -> {}",
+                old.lgs_block_size,
+                new.synth.lgs_block_size,
+                old.lgs_max_voices_per_key,
+                new.synth.lgs_max_voices_per_key,
+                old.velocity_filter_threshold,
+                new.midi.velocity_filter_threshold
             );
             self.midi_state.midi.mark_for_reinit();
         }
@@ -176,6 +201,8 @@ impl RunnerInner {
             config.ui.xsynth_threads = new.synth.xsynth_threads;
             config.ui.xsynth_fade_out_killing = new.synth.xsynth_fade_out;
             config.ui.xsynth_max_voices_per_key = new.synth.xsynth_max_voices_per_key;
+            config.ui.lgs_block_size = new.synth.lgs_block_size;
+            config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;
             config.ui.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             config.ui.eraser_behavior = new.editing.eraser_behavior;
             config.ui.auto_scroll.mode = self

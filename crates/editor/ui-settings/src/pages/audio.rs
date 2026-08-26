@@ -7,114 +7,169 @@ use lumino_ui_core::{Element, Message, Theme};
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
-use lumino_core::storage::config::{AudioEngineKind, SynthBackend};
+use lumino_core::storage::config::SynthBackend;
+use lumino_extras::i18n::Language;
 use lumino_extras::i18n::settings_translations;
+use lumino_ui_core::settings_event::OutputType;
 
-/// 本地化合成器后端包装
+/// 本地化输出类型（顶层 MIDI 输出类型）
 #[derive(Debug, Clone, Copy)]
-struct LocalizedSynth {
+struct LocalizedOutputType {
+    inner: OutputType,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedOutputType {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedOutputType {}
+
+impl std::fmt::Display for LocalizedOutputType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedOutputType {
+    fn new(ot: OutputType, lang: Language) -> Self {
+        let name = match ot {
+            OutputType::Builtin => match lang {
+                Language::ZhCn => "内置合成器",
+                Language::EnUs => "Built-in Synth",
+            },
+            OutputType::Kdmapi => "KDMAPI",
+            OutputType::System => match lang {
+                Language::ZhCn => "系统 MIDI",
+                Language::EnUs => "System MIDI",
+            },
+        };
+        Self { inner: ot, name }
+    }
+}
+
+/// 本地化内置合成器引擎（内置类型下的子下拉，与 xsynth-realtime 共用同一列表）
+#[derive(Debug, Clone, Copy)]
+struct LocalizedBuiltinEngine {
     inner: SynthBackend,
     name: &'static str,
 }
 
-impl PartialEq for LocalizedSynth {
+impl PartialEq for LocalizedBuiltinEngine {
     fn eq(&self, other: &Self) -> bool {
         self.inner == other.inner
     }
 }
 
-impl Eq for LocalizedSynth {}
+impl Eq for LocalizedBuiltinEngine {}
 
-impl std::fmt::Display for LocalizedSynth {
+impl std::fmt::Display for LocalizedBuiltinEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.name)
     }
 }
 
-impl LocalizedSynth {
-    fn new(backend: SynthBackend, lang: lumino_extras::i18n::Language) -> Self {
-        Self {
-            inner: backend,
-            name: lumino_extras::i18n::synth_backend_name(backend, lang),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-struct LocalizedAudioEngine {
-    inner: AudioEngineKind,
-    name: &'static str,
-}
-impl PartialEq for LocalizedAudioEngine {
-    fn eq(&self, other: &Self) -> bool {
-        self.inner == other.inner
-    }
-}
-impl Eq for LocalizedAudioEngine {}
-impl std::fmt::Display for LocalizedAudioEngine {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.name)
-    }
-}
-impl LocalizedAudioEngine {
-    fn new(kind: AudioEngineKind) -> Self {
-        let name = match kind {
-            AudioEngineKind::Realtime => "Realtime (xsynth)",
+impl LocalizedBuiltinEngine {
+    fn new(b: SynthBackend, lang: Language) -> Self {
+        let name = match b {
+            SynthBackend::XSynth => match lang {
+                Language::ZhCn => "XSynth (Realtime)",
+                Language::EnUs => "XSynth (Realtime)",
+            },
+            SynthBackend::Lgs => "LGS (GPU)",
+            _ => "Unknown",
         };
-        Self { inner: kind, name }
+        Self { inner: b, name }
     }
 }
 
 /// 渲染音频设置页面
 pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     let t = settings_translations(settings.display.language);
-    let synth_options = vec![
-        LocalizedSynth::new(SynthBackend::XSynth, settings.display.language),
-        LocalizedSynth::new(SynthBackend::Lgs, settings.display.language),
-        LocalizedSynth::new(SynthBackend::Kdmapi, settings.display.language),
-        LocalizedSynth::new(SynthBackend::System, settings.display.language),
+
+    // 顶层：MIDI 输出类型（内置合成器 / KDMAPI / 系统 MIDI）
+    let current_output_type = if matches!(
+        settings.synth.backend,
+        SynthBackend::XSynth | SynthBackend::Lgs
+    ) {
+        LocalizedOutputType::new(OutputType::Builtin, settings.display.language)
+    } else {
+        LocalizedOutputType::new(
+            match settings.synth.backend {
+                SynthBackend::Kdmapi => OutputType::Kdmapi,
+                SynthBackend::System => OutputType::System,
+                _ => OutputType::Builtin,
+            },
+            settings.display.language,
+        )
+    };
+    let output_type_options = vec![
+        LocalizedOutputType::new(OutputType::Builtin, settings.display.language),
+        LocalizedOutputType::new(OutputType::Kdmapi, settings.display.language),
+        LocalizedOutputType::new(OutputType::System, settings.display.language),
     ];
-    let current_synth = LocalizedSynth::new(settings.synth.backend, settings.display.language);
-    let audio_engine_options = vec![LocalizedAudioEngine::new(AudioEngineKind::Realtime)];
-    let current_engine = LocalizedAudioEngine::new(settings.synth.audio_engine);
+
+    // 内置合成器引擎子下拉（与 xsynth-realtime 共用同一列表）
+    let show_builtin_engine =
+        matches!(settings.synth.backend, SynthBackend::XSynth | SynthBackend::Lgs);
+    let builtin_engine_options = vec![
+        LocalizedBuiltinEngine::new(SynthBackend::XSynth, settings.display.language),
+        LocalizedBuiltinEngine::new(SynthBackend::Lgs, settings.display.language),
+    ];
+    let current_builtin_engine = LocalizedBuiltinEngine::new(
+        if show_builtin_engine {
+            settings.synth.backend
+        } else {
+            SynthBackend::XSynth
+        },
+        settings.display.language,
+    );
 
     let mut col = column![
         text(t.audio_title)
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
-        // 合成器后端选择
+        // 输出类型选择
         row![
             text(t.synthesizer)
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(synth_options, Some(current_synth), |ls| {
-                Message::Settings(crate::Event::SynthBackendChanged(ls.inner))
+            pick_list(output_type_options, Some(current_output_type), |ot| {
+                Message::Settings(crate::Event::OutputTypeChanged(ot.inner))
             })
             .width(200.0),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        // 音频引擎选择（Realtime vs Core，仅 XSynth 时有效）
-        row![
-            text("音频引擎")
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            pick_list(audio_engine_options, Some(current_engine), |ae| {
-                Message::Settings(crate::Event::AudioEngineChanged(ae.inner))
-            })
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        // MIDI 输入设备选择
-        render_midi_device_selector(settings, t),
         iced_widget::space().height(SPACING_CONTENT),
     ];
+
+    // 内置合成器引擎子下拉（仅内置类型显示）
+    if show_builtin_engine {
+        col = col.push(
+            row![
+                text(t.builtin_engine)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                iced_widget::space().width(SPACING_MAIN),
+                pick_list(builtin_engine_options, Some(current_builtin_engine), |be| {
+                    Message::Settings(crate::Event::SynthBackendChanged(be.inner))
+                })
+                .width(200.0),
+            ]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
+        );
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    }
+
+    // MIDI 输入设备选择
+    col = col.push(render_midi_device_selector(settings, t));
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
     // 只在对应模式下显示音色库选择 / 提示
     if settings.synth.backend == SynthBackend::XSynth {
@@ -178,7 +233,7 @@ fn render_xsynth_options<'a>(
             iced_widget::slider(5.0..=100.0, settings.synth.xsynth_buffer_ms, |ms| {
                 Message::Settings(crate::Event::XSynthBufferChanged(ms))
             })
-            .step(1.0)
+            .step(1.0_f32)
             .width(200.0),
         ]
         .spacing(SPACING_ICON_LABEL)
@@ -213,7 +268,7 @@ fn render_xsynth_options<'a>(
                 let opt = if v < 0.5 { None } else { Some(v as usize) };
                 Message::Settings(crate::Event::XSynthMaxVoicesChanged(opt))
             })
-            .step(1.0)
+            .step(1.0_f32)
             .width(160.0),
             text_input("0=不限制 1-128", &display_val)
                 .width(80.0)
@@ -279,8 +334,8 @@ fn render_xsynth_options<'a>(
 
 /// 渲染 LGS (GPU) 选项
 ///
-/// 与 XSynth 共用 `soundfont_path`；GPU 专属参数（渲染采样率、块大小、插值模式）
-/// 目前使用内置默认值，如需在 UI 暴露可后续补充对应控件与 Event。
+/// 与 XSynth 共用 `soundfont_path`；GPU 专属参数（渲染采样率/块大小/插值）
+/// 通过内置 MIDI 输出组的统一控件暴露：缓冲区大小、每键最大同音数、响度过滤。
 fn render_lgs_options<'a>(
     settings: &SettingsPanel,
     t: &lumino_extras::i18n::SettingsTranslations,
@@ -304,6 +359,88 @@ fn render_lgs_options<'a>(
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
     col = col.push(
         iced_widget::button(t.browse).on_press(Message::Settings(crate::Event::BrowseSoundfont)),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // 缓冲区大小（GPU 块大小，2 的幂）：滑块以 2 的指数表示（64=2^6 … 8192=2^13）
+    let block_index = ((settings.synth.lgs_block_size as f64).log2().round() as usize).clamp(6, 13);
+    col = col.push(
+        row![
+            text(format!("{}: {}", t.lgs_buffer, settings.synth.lgs_block_size))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(200.0),
+            iced_widget::slider(6.0..=13.0, block_index as f32, |i| {
+                Message::Settings(crate::Event::LgsBlockSizeChanged(1usize << i as u32))
+            })
+            .step(1.0_f32)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.lgs_buffer_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // 每键最大同音数：0=不限制，1..128 拖拽 + 自定义输入
+    let lgs_voices = settings.synth.lgs_max_voices_per_key;
+    let display_voices = if lgs_voices == 0 {
+        "不限制".to_string()
+    } else {
+        lgs_voices.to_string()
+    };
+    col = col.push(
+        row![
+            text(format!("{}: {}", t.max_voices, display_voices))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(180.0),
+            iced_widget::slider(0.0..=128.0, lgs_voices as f32, |v| {
+                Message::Settings(crate::Event::LgsMaxVoicesChanged(v as usize))
+            })
+            .step(1.0_f32)
+            .width(160.0),
+            text_input("0=不限制 1-128", &display_voices)
+                .width(80.0)
+                .on_input(|s| Message::Settings(crate::Event::LgsMaxVoicesCustomInput(s))),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.max_voices_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // 响度过滤（复用全局力度过滤阈值；LGS 输出连接在 note_on 处实时丢弃过轻音符）
+    col = col.push(
+        row![
+            text(format!("{}: {}", t.velocity_filter, settings.midi.velocity_filter_threshold))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(180.0),
+            iced_widget::slider(0..=127, settings.midi.velocity_filter_threshold, |v| {
+                Message::Settings(crate::Event::VelocityFilterThresholdChanged(v.to_string()))
+            })
+            .step(1)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.velocity_filter_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     );
     col = col.push(iced_widget::space().height(20));
 

@@ -6,6 +6,7 @@
 //! 中可创建多个连接到同一渲染线程，无需第二个 GPU 实例。
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
@@ -27,6 +28,8 @@ pub struct LgsOptions {
     pub max_voices_per_key: usize,
     /// 是否使用 64 点 sinc 高质量插值（否则线性插值）
     pub use_sinc: bool,
+    /// 响度(力度)过滤阈值：MIDI 力度 <= 此值的音符不发声（0=关闭过滤）
+    pub velocity_filter_threshold: u8,
 }
 
 /// LGS (GPU) 软件合成后端
@@ -36,6 +39,8 @@ pub struct Lgs {
     _playback: Arc<Mutex<AudioPlayback>>,
     /// 共享事件发送器（所有输出连接通过它向渲染线程转发 MIDI 事件）
     event_tx: Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>,
+    /// 响度(力度)过滤阈值（所有输出连接共享，note_on 时实时丢弃过轻音符）
+    velocity_filter: Arc<AtomicU8>,
     /// 音色库路径（重建/重初始化时重用）
     #[allow(dead_code)]
     soundfont_path: PathBuf,
@@ -77,6 +82,7 @@ impl Lgs {
         let playback = AudioPlayback::start(synth)
             .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音频流启动失败: {e}")))?;
         let event_tx = Arc::new(Mutex::new(playback.event_sender()));
+        let velocity_filter = Arc::new(AtomicU8::new(options.velocity_filter_threshold));
 
         let version = format!("lumino-gpu-synth {}", lumino_gpu_synth::VERSION);
         tracing::info!("LGS (GPU): 初始化完成");
@@ -84,6 +90,7 @@ impl Lgs {
         Ok(Self {
             _playback: Arc::new(Mutex::new(playback)),
             event_tx,
+            velocity_filter,
             soundfont_path: soundfont_path.to_path_buf(),
             options: options.clone(),
             version,
@@ -113,6 +120,7 @@ impl Api for Lgs {
         }
         Ok(Box::new(LgsOutputConn {
             event_tx: Arc::clone(&self.event_tx),
+            velocity_filter: Arc::clone(&self.velocity_filter),
         }))
     }
 
@@ -130,6 +138,7 @@ impl Api for Lgs {
 /// LGS (GPU) MIDI 输出连接：把 MIDI 事件转发给 GPU 渲染线程
 pub(crate) struct LgsOutputConn {
     event_tx: Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>,
+    velocity_filter: Arc<AtomicU8>,
 }
 
 impl LgsOutputConn {
@@ -146,6 +155,11 @@ impl LgsOutputConn {
 impl OutputConnection for LgsOutputConn {
     fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
+        // 响度(力度)过滤：仅对真实按下（vel>0）生效；vel==0 视为释放，不被过滤
+        let threshold = self.velocity_filter.load(Ordering::Relaxed);
+        if threshold > 0 && vel > 0 && vel <= threshold {
+            return Ok(());
+        }
         let velocity = if vel == 0 { 1 } else { vel };
         self.send_event(
             channel,
@@ -199,13 +213,21 @@ impl OutputConnection for LgsOutputConn {
         let b2 = data[2];
         match status {
             0x80 => self.send_event(channel, MidiEvent::NoteOff { key: b1 & MIDI_VALUE_MASK }),
-            0x90 => self.send_event(
-                channel,
-                MidiEvent::NoteOn {
-                    key: b1 & MIDI_VALUE_MASK,
-                    vel: b2 & MIDI_VALUE_MASK,
-                },
-            ),
+            0x90 => {
+                // 响度(力度)过滤：b2>0 的真实音符按下才过滤；b2==0 视为释放
+                let threshold = self.velocity_filter.load(Ordering::Relaxed);
+                if threshold > 0 && b2 > 0 && b2 <= threshold {
+                    // 过轻音符直接丢弃，不发往 GPU 渲染线程
+                } else {
+                    self.send_event(
+                        channel,
+                        MidiEvent::NoteOn {
+                            key: b1 & MIDI_VALUE_MASK,
+                            vel: b2 & MIDI_VALUE_MASK,
+                        },
+                    );
+                }
+            }
             0xB0 => self.send_event(channel, MidiEvent::ControlChange {
                 controller: b1,
                 value: b2,

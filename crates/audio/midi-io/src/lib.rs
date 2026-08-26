@@ -270,6 +270,8 @@ pub enum ApiKind {
         max_voices_per_key: usize,
         /// 是否使用 64 点 sinc 高质量插值
         use_sinc: bool,
+        /// 响度(力度)过滤阈值（0=关闭过滤）
+        velocity_filter_threshold: u8,
     },
 }
 
@@ -294,6 +296,7 @@ pub fn new_api_with_options(
             block_size,
             max_voices_per_key,
             use_sinc,
+            velocity_filter_threshold,
         } => Box::new(Lgs::new(
             soundfont_path,
             &LgsOptions {
@@ -301,6 +304,7 @@ pub fn new_api_with_options(
                 block_size: *block_size,
                 max_voices_per_key: *max_voices_per_key,
                 use_sinc: *use_sinc,
+                velocity_filter_threshold: *velocity_filter_threshold,
             },
         )?),
     };

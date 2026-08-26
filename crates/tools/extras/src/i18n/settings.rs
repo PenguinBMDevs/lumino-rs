@@ -86,6 +86,12 @@ pub struct SettingsTranslations {
     pub xsynth_hint: &'static str,
     /// LGS (GPU) 模式提示
     pub lgs_hint: &'static str,
+    /// 内置合成器引擎子下拉标签
+    pub builtin_engine: &'static str,
+    /// LGS (GPU) 缓冲区大小标签
+    pub lgs_buffer: &'static str,
+    /// LGS (GPU) 缓冲区大小提示
+    pub lgs_buffer_hint: &'static str,
 
     // ── 界面页面 ──
     /// 界面页面标题
@@ -253,7 +259,10 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     kdmapi_hint: "KDMAPI 模式使用系统驱动，无需音色库",
     system_hint: "System 模式使用系统默认的WinMM MIDI输出，无需音色库",
     xsynth_hint: "XSynth: 内置高性能合成器，支持SFZ/SF2格式音色库",
-    lgs_hint: "LGS (GPU): 基于 GPU 加速的渲染合成器，使用 lumino-gpu-synth 管线；采样率/块大小等 GPU 参数当前使用内置默认值",
+    lgs_hint: "LGS (GPU): 基于 GPU 加速的渲染合成器，使用 lumino-gpu-synth 管线",
+    builtin_engine: "内置合成器引擎:",
+    lgs_buffer: "缓冲区大小 (samples):",
+    lgs_buffer_hint: "GPU 一次调度的音频帧数，须为 2 的幂（64–8192）；越小延迟越低但密集段落 GPU 开销越大",
     ui_title: "界面",
     theme: "主题:",
     program_font: "程序字体:",
@@ -352,7 +361,10 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     kdmapi_hint: "KDMAPI mode uses system driver, no soundfont needed",
     system_hint: "System mode uses default WinMM MIDI output, no soundfont needed",
     xsynth_hint: "XSynth: Built-in high-performance synthesizer, supports SFZ/SF2 soundfonts",
-    lgs_hint: "LGS (GPU): GPU-accelerated renderer backed by lumino-gpu-synth; GPU params (sample rate / block size / interpolation) currently use built-in defaults",
+    lgs_hint: "LGS (GPU): GPU-accelerated renderer backed by lumino-gpu-synth",
+    builtin_engine: "Built-in Synth Engine:",
+    lgs_buffer: "Buffer Size (samples):",
+    lgs_buffer_hint: "Audio frames rendered per GPU dispatch; must be a power of two (64–8192); smaller = lower latency but higher GPU cost for dense passages",
     ui_title: "UI",
     theme: "Theme:",
     program_font: "Program Font:",

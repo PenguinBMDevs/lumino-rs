@@ -47,6 +47,10 @@ pub struct SynthSettings {
     pub xsynth_fade_out: bool,
     /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
+    /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂，默认 512）
+    pub lgs_block_size: usize,
+    /// LGS (GPU) 每个 (通道, 键) 最大同音数（0=不限制，默认 4）
+    pub lgs_max_voices_per_key: usize,
 }
 
 /// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）

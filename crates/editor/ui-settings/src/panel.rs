@@ -6,6 +6,8 @@ use crate::{
     AutoScrollSettings, CloudSettings, DisplaySettings, EditingSettings, Event, HiresSettings,
     LoggingSettings, MidiSettings, SettingsPanel, SynthSettings,
 };
+use lumino_core::storage::config::SynthBackend;
+use lumino_ui_core::settings_event::OutputType;
 
 /// 解析设置输入字符串并应用；解析失败记录 warn 并忽略（保持旧行为不变）。
 ///
@@ -53,6 +55,8 @@ impl SettingsPanel {
                 xsynth_threads: ui_config.xsynth_threads,
                 xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+                lgs_block_size: ui_config.lgs_block_size,
+                lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -121,6 +125,22 @@ impl SettingsPanel {
             Event::SynthBackendChanged(backend) => {
                 self.synth.backend = backend;
             }
+            Event::OutputTypeChanged(ot) => {
+                // 顶层输出类型：内置合成器归为一类，进入后由 SynthBackendChanged 选择具体引擎；
+                // 从外部类型切回内置时，默认落到 XSynth（用户可在子下拉里改选 LGS）。
+                self.synth.backend = match ot {
+                    OutputType::Builtin => {
+                        if matches!(self.synth.backend, SynthBackend::Kdmapi | SynthBackend::System)
+                        {
+                            SynthBackend::XSynth
+                        } else {
+                            self.synth.backend
+                        }
+                    }
+                    OutputType::Kdmapi => SynthBackend::Kdmapi,
+                    OutputType::System => SynthBackend::System,
+                };
+            }
             Event::AudioEngineChanged(kind) => {
                 self.synth.audio_engine = kind;
             }
@@ -163,6 +183,22 @@ impl SettingsPanel {
                     } else {
                         self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
                     }
+                }
+            }
+            Event::LgsBlockSizeChanged(size) => {
+                // 仅接受 2 的幂（GUI 滑块已约束，这里兜底夹紧到 [64, 8192] 内的 2 的幂）
+                let clamped = size.clamp(64, 8192);
+                self.synth.lgs_block_size = clamped.next_power_of_two();
+            }
+            Event::LgsMaxVoicesChanged(v) => {
+                self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
+            }
+            Event::LgsMaxVoicesCustomInput(s) => {
+                let t = s.trim();
+                if t.is_empty() || t.eq_ignore_ascii_case("unlimited") || t == "0" {
+                    self.synth.lgs_max_voices_per_key = 0;
+                } else if let Ok(v) = t.parse::<usize>() {
+                    self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
                 }
             }
             Event::ThemeChanged(_) => {
