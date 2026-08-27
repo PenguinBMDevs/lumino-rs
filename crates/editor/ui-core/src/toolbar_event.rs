@@ -114,6 +114,27 @@ pub enum Event {
     CloseBrushDropdown,
     /// 画刷粗细度变更（下拉 +/- 步进，1-20）
     BrushThicknessChanged(u8),
+    /// 切换「形状工具下拉」（ctrl+点击形状工具触发）：矩形/圆形/三角形选择
+    ToggleShapeDropdown,
+    /// 关闭「形状工具下拉」
+    CloseShapeDropdown,
+    /// 形状工具当前图形类型变更（矩形/圆形/三角形）
+    ShapeTypeSelected(ShapeType),
+}
+
+/// 形状工具当前绘制的图形类型
+///
+/// 由「形状工具下拉」（ctrl+点击工具栏形状工具弹出）切换，并由工具栏状态变量
+/// `Toolbar::current_shape` 持久保存，供编辑器侧绘制时读取。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ShapeType {
+    /// 矩形
+    #[default]
+    Rectangle,
+    /// 圆形
+    Circle,
+    /// 三角形
+    Triangle,
 }
 
 /// 绘制工具选择面板中的条目
@@ -397,5 +418,20 @@ impl Event {
     /// 构造“画刷粗细度变更”的工具栏消息
     pub const fn brush_thickness_changed(thickness: u8) -> Message {
         Message::Toolbar(Self::BrushThicknessChanged(thickness))
+    }
+
+    /// 构造“切换形状工具下拉”的工具栏消息
+    pub const fn toggle_shape_dropdown() -> Message {
+        Message::Toolbar(Self::ToggleShapeDropdown)
+    }
+
+    /// 构造“关闭形状工具下拉”的工具栏消息
+    pub const fn close_shape_dropdown() -> Message {
+        Message::Toolbar(Self::CloseShapeDropdown)
+    }
+
+    /// 构造“形状类型变更”的工具栏消息
+    pub const fn shape_type_selected(shape: ShapeType) -> Message {
+        Message::Toolbar(Self::ShapeTypeSelected(shape))
     }
 }

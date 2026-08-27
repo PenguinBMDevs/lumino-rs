@@ -6,6 +6,7 @@
 //! - `view`: 视图渲染逻辑
 
 pub(crate) mod brush_dropdown;
+pub(crate) mod shape_dropdown;
 mod buttons;
 pub mod event;
 pub(crate) mod overflow;
@@ -14,7 +15,7 @@ pub(crate) mod tool_panel;
 pub mod types;
 mod view;
 
-pub use event::{Event, FlipHorizontalMode, ToolPanelItem};
+pub use event::{Event, FlipHorizontalMode, ShapeType, ToolPanelItem};
 pub use lumino_ui_core::button_descs::ButtonId;
 pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
@@ -84,6 +85,10 @@ pub struct Toolbar {
     pub brush: BrushConfig,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
+    /// 形状工具下拉是否打开（ctrl+点击形状工具触发，隐藏菜单选择矩形/圆形/三角形）
+    pub shape_dropdown_open: bool,
+    /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
+    pub current_shape: ShapeType,
 }
 
 impl Toolbar {
@@ -111,6 +116,8 @@ impl Toolbar {
             brush_dropdown_open: false,
             brush: BrushConfig::new(),
             fill_enabled: false,
+            shape_dropdown_open: false,
+            current_shape: ShapeType::default(),
         }
     }
 
@@ -160,6 +167,20 @@ impl Toolbar {
             self.brush_dropdown_open = false;
         }
 
+        // 形状工具下拉打开时，除以下情况外其余操作先关闭下拉：
+        // - 再次点击形状工具（ToggleShapeDropdown）用于切换关闭
+        // - 悬停事件不应关闭下拉
+        // - 显式关闭事件（CloseShapeDropdown）
+        // - 选中某个图形（ShapeTypeSelected）即视为完成一次选择，下拉随之关闭
+        if self.shape_dropdown_open
+            && !matches!(
+                event,
+                Event::ToggleShapeDropdown | Event::ButtonHovered(_) | Event::CloseShapeDropdown
+            )
+        {
+            self.shape_dropdown_open = false;
+        }
+
         match event {
             Event::Play => self.is_playing = true,
             Event::Pause => self.is_playing = false,
@@ -179,6 +200,7 @@ impl Toolbar {
                 // 关闭所有下拉，避免工具切换后残留
                 self.tool_panel_open = false;
                 self.brush_dropdown_open = false;
+                self.shape_dropdown_open = false;
             }
             Event::FillToggled(enabled) => {
                 self.fill_enabled = enabled;
@@ -372,6 +394,31 @@ impl Toolbar {
                 self.brush_dropdown_open = false;
                 tracing::debug!("工具栏: 关闭画刷工具下拉");
             }
+            Event::ToggleShapeDropdown => {
+                self.shape_dropdown_open = !self.shape_dropdown_open;
+                // 与其他面板互斥：打开形状工具下拉时关闭其余浮层
+                self.overflow_menu_open = false;
+                self.tool_panel_open = false;
+                self.brush_dropdown_open = false;
+                tracing::debug!(
+                    "工具栏: 形状工具下拉 {}",
+                    if self.shape_dropdown_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
+                );
+            }
+            Event::CloseShapeDropdown => {
+                self.shape_dropdown_open = false;
+                tracing::debug!("工具栏: 关闭形状工具下拉");
+            }
+            Event::ShapeTypeSelected(shape) => {
+                // 切换当前图形类型（矩形/圆形/三角形）并持久保存到状态变量；
+                // 下拉由上方 guard 在收到本事件时自动关闭（视为一次选择完成）。
+                self.current_shape = shape;
+                tracing::debug!("工具栏: 形状类型切换为 {:?}", shape);
+            }
             Event::BrushThicknessChanged(thickness) => {
                 self.brush.set_thickness(thickness);
                 tracing::debug!("工具栏: 画刷粗细度变更为 {}", self.brush.thickness);
@@ -459,11 +506,15 @@ impl Toolbar {
     /// - 普通点击：选择曲线工具（基础态）。
     /// - 仅当当前已处于画刷工具时，Ctrl+点击才打开画刷工具下拉（设置面板）；
     ///   非画刷工具下 Ctrl+点击退化为普通点击，避免误弹画刷设置面板。
+    /// - 仅当当前已处于形状工具时，Ctrl+点击才打开形状工具下拉（矩形/圆形/三角形
+    ///   选择菜单）；非形状工具下 Ctrl+点击退化为普通点击，避免误弹形状菜单。
     ///
     /// 该决策从视图层抽出，便于单元测试回归（见 `tests` 模块）。
     pub fn curve_button_press_event(&self) -> Event {
         if self.ctrl_pressed && self.current_tool == Tool::Brush {
             Event::ToggleBrushDropdown
+        } else if self.ctrl_pressed && self.current_tool == Tool::Shape {
+            Event::ToggleShapeDropdown
         } else {
             Event::ToolSelected(Tool::Curve)
         }
@@ -581,5 +632,84 @@ mod tests {
             !toolbar.brush_dropdown_open,
             "打开状态下再次 ToggleBrushDropdown 应关闭画刷下拉"
         );
+    }
+
+    /// 形状工具激活且 Ctrl 按下时，点击曲线工具组按钮应打开形状工具下拉
+    /// （矩形/圆形/三角形选择菜单），而非退化为选择曲线工具。
+    #[test]
+    fn test_shape_button_ctrl_click_shape_tool_opens_shape_dropdown() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Shape;
+        toolbar.ctrl_pressed = true;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            matches!(event, Event::ToggleShapeDropdown),
+            "形状工具下 Ctrl+点击应打开形状工具下拉"
+        );
+
+        toolbar.update(event);
+        assert!(
+            toolbar.shape_dropdown_open,
+            "ToggleShapeDropdown 应打开形状工具下拉"
+        );
+        // 打开形状下拉时应关闭其它浮层（互斥）
+        assert!(!toolbar.brush_dropdown_open && !toolbar.tool_panel_open);
+    }
+
+    /// 形状工具下但 Ctrl 未按下：普通点击应退化为选择曲线工具，不弹菜单。
+    #[test]
+    fn test_shape_button_normal_click_shape_tool_does_not_open_shape_dropdown() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Shape;
+        toolbar.ctrl_pressed = false;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            matches!(event, Event::ToolSelected(Tool::Curve)),
+            "形状工具下普通点击应回到曲线工具"
+        );
+    }
+
+    /// 选择某个图形类型（ShapeTypeSelected）应写入 current_shape 状态变量，
+    /// 并自动关闭形状工具下拉（视为一次选择完成）。
+    #[test]
+    fn test_shape_type_selected_updates_state_and_closes_dropdown() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Shape;
+        toolbar.shape_dropdown_open = true;
+        assert_eq!(toolbar.current_shape, ShapeType::Rectangle);
+
+        toolbar.update(Event::ShapeTypeSelected(ShapeType::Circle));
+        assert_eq!(
+            toolbar.current_shape,
+            ShapeType::Circle,
+            "ShapeTypeSelected 应更新 current_shape 状态变量"
+        );
+        assert!(
+            !toolbar.shape_dropdown_open,
+            "选择图形后形状工具下拉应自动关闭"
+        );
+
+        // 再切到三角形，验证状态变量可被正确更新多次
+        toolbar.shape_dropdown_open = true;
+        toolbar.update(Event::ShapeTypeSelected(ShapeType::Triangle));
+        assert_eq!(toolbar.current_shape, ShapeType::Triangle);
+    }
+
+    /// 切换工具（ToolSelected）应关闭所有可能残留的下拉，包括形状工具下拉。
+    #[test]
+    fn test_tool_selected_closes_shape_dropdown() {
+        let mut toolbar = Toolbar::new();
+        toolbar.shape_dropdown_open = true;
+        toolbar.current_shape = ShapeType::Circle;
+
+        toolbar.update(Event::ToolSelected(Tool::Pencil));
+        assert!(
+            !toolbar.shape_dropdown_open,
+            "切换工具应关闭形状工具下拉"
+        );
+        // current_shape 作为持久偏好保留，不应被重置
+        assert_eq!(toolbar.current_shape, ShapeType::Circle);
     }
 }

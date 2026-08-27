@@ -95,6 +95,10 @@ define_icons! {
     (BrushTool, "../../../../../resources/icons/toolbar/brush-tool.svg"),
     (ShapeTool, "../../../../../resources/icons/toolbar/shape-tool.svg"),
     (TextInput, "../../../../../resources/icons/toolbar/text-input.svg"),
+    // 形状工具下拉中的图形类型图标（ctrl+点击形状工具弹出）：矩形/圆形/三角形
+    (ShapeRectangle, "../../../../../resources/icons/toolbar/shape-rectangle.svg"),
+    (ShapeCircle, "../../../../../resources/icons/toolbar/shape-circle.svg"),
+    (ShapeTriangle, "../../../../../resources/icons/toolbar/shape-triangle.svg"),
     // 画刷下拉/绘制行为对话框：圆形 +/- 按钮（SVG 绘制）
     (PlusCircle, "../../../../../resources/icons/toolbar/plus-circle.svg"),
     (MinusCircle, "../../../../../resources/icons/toolbar/minus-circle.svg"),

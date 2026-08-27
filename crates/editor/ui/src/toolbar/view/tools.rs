@@ -12,7 +12,7 @@ use crate::toolbar::buttons::{
 };
 use crate::toolbar::view::curve_tool_group::CurveToolGroup;
 use crate::toolbar::{
-    ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel,
+    ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, shape_dropdown, tool_panel,
 };
 use crate::{Element, Message, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
@@ -220,7 +220,13 @@ impl Toolbar {
         let curve_icon = match self.current_tool {
             Tool::Curve if self.fill_enabled => icon::PaintBucket,
             Tool::Brush => icon::BrushTool,
-            Tool::Shape => icon::ShapeTool,
+            // 形状工具激活时，图标反映当前选中的图形类型（矩形/圆形/三角形），
+            // 让用户一眼看到正在绘制的图形；Ctrl+点击弹出图形选择下拉。
+            Tool::Shape => match self.current_shape {
+                crate::toolbar::ShapeType::Rectangle => icon::ShapeRectangle,
+                crate::toolbar::ShapeType::Circle => icon::ShapeCircle,
+                crate::toolbar::ShapeType::Triangle => icon::ShapeTriangle,
+            },
             Tool::Text => icon::TextInput,
             _ => icon::Curve,
         };
@@ -268,8 +274,9 @@ impl Toolbar {
         // 这里取 248 留少量余量，避免裁切。
         let menu_width = 248.0;
 
-        // 下拉菜单：绘制工具选择面板（填充桶/画刷/形状/文字/橡皮擦）或画刷工具下拉。
-        // 二者互斥，仅其一打开。菜单锚定在按钮正下方，点击外部由 overlay 关闭。
+        // 下拉菜单：绘制工具选择面板（填充桶/画刷/形状/文字/橡皮擦）、画刷工具下拉，
+        // 或形状工具下拉（矩形/圆形/三角形）。三者互斥，仅其一打开。菜单锚定在按钮
+        // 正下方，点击外部由 overlay 关闭。
         let menu: Option<Element<'a>> = if self.tool_panel_open {
             Some(
                 container(tool_panel::render_tool_panel(
@@ -295,6 +302,17 @@ impl Toolbar {
                 .height(Length::Shrink)
                 .into(),
             )
+        } else if self.shape_dropdown_open {
+            Some(
+                container(shape_dropdown::render_shape_dropdown(
+                    self.current_shape,
+                    panel_background,
+                    &window.theme,
+                ))
+                .width(Length::Fixed(menu_width))
+                .height(Length::Shrink)
+                .into(),
+            )
         } else {
             None
         };
@@ -302,8 +320,10 @@ impl Toolbar {
         // 点击菜单外部区域时发布的关闭消息（与当前打开的下拉对应）
         let close_message = if self.tool_panel_open {
             Event::close_tool_panel()
-        } else {
+        } else if self.brush_dropdown_open {
             Event::close_brush_dropdown()
+        } else {
+            Event::close_shape_dropdown()
         };
 
         // 垂直居中对齐，使右侧小三角与曲线按钮在同一中轴线上（否则小三角会贴顶）。
