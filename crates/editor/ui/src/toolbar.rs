@@ -151,7 +151,10 @@ impl Toolbar {
         if self.brush_dropdown_open
             && !matches!(
                 event,
-                Event::ToggleBrushDropdown | Event::ButtonHovered(_) | Event::CloseBrushDropdown
+                Event::ToggleBrushDropdown
+                    | Event::ButtonHovered(_)
+                    | Event::CloseBrushDropdown
+                    | Event::BrushThicknessChanged(_)
             )
         {
             self.brush_dropdown_open = false;
@@ -536,6 +539,47 @@ mod tests {
         assert!(
             matches!(event, Event::ToolSelected(Tool::Curve)),
             "画刷工具下普通点击应回到曲线工具"
+        );
+    }
+
+    /// 画刷下拉内部的粗细 +/- 按钮点击后，下拉应保持打开（不被误关）。
+    /// 仅点击面板内空白（CloseBrushDropdown）或再次切换（ToggleBrushDropdown）才关闭。
+    #[test]
+    fn test_brush_dropdown_stays_open_on_thickness_button() {
+        let mut toolbar = Toolbar::new();
+        toolbar.brush_dropdown_open = true;
+
+        // 点击下拉内部的「+」按钮：改粗细，但不应关闭下拉
+        toolbar.update(Event::BrushThicknessChanged(5));
+        assert!(
+            toolbar.brush_dropdown_open,
+            "点击画刷下拉内部的粗细按钮不应关闭下拉"
+        );
+
+        // 再次点击「-」按钮：同样保持打开（连续操作不关闭）
+        toolbar.update(Event::BrushThicknessChanged(3));
+        assert!(
+            toolbar.brush_dropdown_open,
+            "连续操作画刷下拉按钮不应关闭下拉"
+        );
+
+        // 点击面板内空白（外部关闭消息）：应关闭
+        toolbar.update(Event::CloseBrushDropdown);
+        assert!(
+            !toolbar.brush_dropdown_open,
+            "CloseBrushDropdown（点击面板外空白）应关闭画刷下拉"
+        );
+    }
+
+    /// 画刷下拉打开时，再次点击附属按钮（ToggleBrushDropdown）应切换关闭。
+    #[test]
+    fn test_brush_dropdown_toggle_closes() {
+        let mut toolbar = Toolbar::new();
+        toolbar.brush_dropdown_open = true;
+        toolbar.update(Event::ToggleBrushDropdown);
+        assert!(
+            !toolbar.brush_dropdown_open,
+            "打开状态下再次 ToggleBrushDropdown 应关闭画刷下拉"
         );
     }
 }
