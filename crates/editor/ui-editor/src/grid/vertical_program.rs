@@ -140,6 +140,21 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             )));
                         }
                     }
+                    if self.editor.current_tool() == lumino_message::Tool::Shape
+                        && let Some(btns) =
+                            crate::grid::shape_tool_box::shape_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::ShapeToolConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::ShapeToolCancel,
+                            )));
+                        }
+                    }
                     if self.editor.is_inside_canvas(local_pos) {
                         return self.handle_left_press_vertical(state, local_pos);
                     }
@@ -328,6 +343,11 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+        if let Some(geom) =
+            crate::grid::shape_tool_box::draw(self.editor, renderer, theme, bounds)
+        {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::text_tool_box::draw(self.editor, renderer, theme, bounds) {

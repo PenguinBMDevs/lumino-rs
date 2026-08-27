@@ -58,6 +58,10 @@ pub enum EditorAction {
     LineToolConfirm,
     /// 曲线工具直线：取消并清空（× 按钮）
     LineToolCancel,
+    /// 形状工具：确认并按图形区域生成音符（√ 按钮）
+    ShapeToolConfirm,
+    /// 形状工具：取消并清空（× 按钮）
+    ShapeToolCancel,
     /// 文字工具：输入框文字变更（画布覆盖层 TextInput 的 on_input）
     TextToolTextChanged(String),
 }

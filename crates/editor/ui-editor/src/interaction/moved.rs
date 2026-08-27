@@ -4,6 +4,7 @@
 
 use crate::{EditState, Editor};
 use lumino_editor_state::LineToolInteraction;
+use lumino_editor_state::ShapeToolInteraction;
 use lumino_editor_state::editor_state::interaction_ops;
 
 impl Editor {
@@ -47,6 +48,14 @@ impl Editor {
             && self.editor_state.text_tool.is_dragging()
         {
             self.handle_text_tool_box_move(pos);
+            return;
+        }
+
+        // 形状工具：拖拽拉框中（横向 / 纵向卷帘统一走吸附逻辑坐标）
+        if self.editor_state.tool == lumino_message::Tool::Shape
+            && self.editor_state.shape_tool.interaction != ShapeToolInteraction::None
+        {
+            self.handle_shape_tool_moved(snapped_tick, key as f32);
             return;
         }
 

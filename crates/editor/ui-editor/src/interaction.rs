@@ -10,6 +10,7 @@ mod brush;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;
+pub(crate) mod shape_tool;
 mod moved;
 mod pressed;
 mod released;
@@ -84,6 +85,12 @@ impl Editor {
             }
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
+            }
+            EditorAction::ShapeToolConfirm => {
+                self.confirm_shape_tool();
+            }
+            EditorAction::ShapeToolCancel => {
+                self.cancel_shape_tool();
             }
             EditorAction::TextToolTextChanged(s) => {
                 self.set_text_tool_text(s);

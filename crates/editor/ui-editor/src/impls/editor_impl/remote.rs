@@ -42,4 +42,17 @@ impl Editor {
     pub fn ctrl_pressed(&self) -> bool {
         self.ctrl_pressed
     }
+
+    /// 记录 Shift 键按下状态（窗口级 `ShiftKeyChanged` 消息驱动）
+    ///
+    /// 形状工具拖拽绘制时据此实时约束为正图形（Shift），走 host 层可靠通道，
+    /// 避免 canvas 内 `ModifiersChanged` 事件因焦点问题不送达。
+    pub fn set_shift_pressed(&mut self, pressed: bool) {
+        self.shift_pressed = pressed;
+    }
+
+    /// 当前 Shift 键是否按下（可靠通道）
+    pub fn shift_pressed(&self) -> bool {
+        self.shift_pressed
+    }
 }

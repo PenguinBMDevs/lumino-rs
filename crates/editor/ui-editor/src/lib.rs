@@ -195,6 +195,12 @@ pub struct Editor {
     /// 问题不送达）互为兜底：ruler/键盘区的 Ctrl+滚轮缩放以此字段为准。
     ctrl_pressed: bool,
 
+    /// Shift 键按下状态（窗口级 `ShiftKeyChanged` 消息驱动，可靠通道）
+    ///
+    /// 与 `ctrl_pressed` 同构：拖拽绘制形状时实时约束为正图形（Shift），
+    /// 走 host 层可靠通道，避免 canvas 内 `ModifiersChanged` 事件因焦点问题不送达。
+    shift_pressed: bool,
+
     /// 远端用户选择集合（用于协作高亮 + first-writer-wins 冲突判定）
     ///
     /// key = 远端用户 ID，value = 该用户的选择指纹与时间戳。

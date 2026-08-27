@@ -25,6 +25,7 @@ pub mod interaction_ops;
 pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
+pub mod shape_tool;
 pub mod text_tool;
 pub mod viewport;
 
@@ -42,6 +43,9 @@ pub use interaction_state::{
 };
 pub use line_tool::{
     BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
+};
+pub use shape_tool::{
+    ShapeInstance, ShapeKind, ShapeToolInteraction, ShapeToolState,
 };
 
 use std::collections::HashSet;
@@ -85,6 +89,8 @@ pub struct EditorState {
     pub image_to_midi: image_to_midi::ImageToMidiState,
     /// 曲线工具直线绘制状态
     pub line_tool: line_tool::LineToolState,
+    /// 形状工具绘制状态（矩形/圆/三角 拉框）
+    pub shape_tool: shape_tool::ShapeToolState,
     /// 文字工具状态（文本框 + 输入文字 + 采样模式）
     pub text_tool: text_tool::TextToolState,
 }
@@ -114,6 +120,7 @@ impl EditorState {
             horizontal_backup: None,
             image_to_midi: image_to_midi::ImageToMidiState::default(),
             line_tool: line_tool::LineToolState::default(),
+            shape_tool: shape_tool::ShapeToolState::default(),
             text_tool: text_tool::TextToolState::new(),
         }
     }
@@ -128,6 +135,7 @@ impl EditorState {
         self.horizontal_backup = None;
         self.image_to_midi = image_to_midi::ImageToMidiState::default();
         self.line_tool = line_tool::LineToolState::default();
+        self.shape_tool = shape_tool::ShapeToolState::default();
         self.text_tool = text_tool::TextToolState::new();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
@@ -190,6 +198,10 @@ impl EditorState {
         // 文字工具：切换走时清除文本框与输入状态
         if tool != Tool::Text {
             self.text_tool.reset();
+        }
+        // 形状工具：切换走时清除拉框状态（保留图形类型，详见 clear_pending）
+        if tool != Tool::Shape {
+            self.shape_tool.clear_pending();
         }
     }
 

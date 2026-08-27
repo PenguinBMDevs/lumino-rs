@@ -22,6 +22,7 @@ pub mod keyboard;
 pub mod keys;
 pub mod line_tool_box;
 pub mod loop_range;
+pub mod shape_tool_box;
 pub mod playback_indicator;
 pub mod program;
 pub mod program_impl;

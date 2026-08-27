@@ -91,6 +91,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             )));
                         }
                     }
+                    // 形状工具：优先响应悬浮 √× 按钮
+                    if self.editor.current_tool() == Tool::Shape
+                        && let Some(btns) =
+                            crate::grid::shape_tool_box::shape_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::ShapeToolConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::ShapeToolCancel,
+                            )));
+                        }
+                    }
                     return self.handle_left_press(state, local_pos);
                 }
             }

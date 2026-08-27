@@ -7,6 +7,7 @@ use crate::drag::compute_state_changes::{
 };
 use crate::{EditState, Editor};
 use lumino_editor_state::LineToolInteraction;
+use lumino_editor_state::ShapeToolInteraction;
 use lumino_message::Tool;
 
 impl Editor {
@@ -32,6 +33,14 @@ impl Editor {
         // 文字工具：已放置框的拖拽移动结束 → 清除拖拽临时状态
         if self.editor_state.tool == Tool::Text && self.editor_state.text_tool.is_dragging() {
             self.editor_state.text_tool.end_move();
+            return;
+        }
+
+        // 形状工具：结束拖拽拉框 → 生成待确认图形（等待 √ 确认）
+        if self.editor_state.tool == Tool::Shape
+            && self.editor_state.shape_tool.interaction != ShapeToolInteraction::None
+        {
+            self.handle_shape_tool_released();
             return;
         }
 

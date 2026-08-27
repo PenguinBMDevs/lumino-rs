@@ -10,6 +10,10 @@ pub use editor_state::text_tool;
 pub use editor_state::{
     BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
 };
+pub use editor_state::shape_tool;
+pub use editor_state::{
+    ShapeInstance, ShapeKind, ShapeToolInteraction, ShapeToolState,
+};
 pub use editor_state::{
     CanvasState, DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData,
     EditorState, GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent,

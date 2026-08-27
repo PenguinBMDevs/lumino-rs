@@ -62,6 +62,7 @@ impl Editor {
             Tool::Eraser | Tool::DrawEraser => self.handle_eraser_pressed(pos, shift, hit_result),
             Tool::Brush => self.handle_brush_pressed(pos, hit_result, snapped_tick, key),
             Tool::Text => self.handle_text_tool_pressed(pos, key),
+            Tool::Shape => self.handle_shape_tool_pressed(snapped_tick, key, shift),
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),
         }
     }

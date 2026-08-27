@@ -155,6 +155,8 @@ impl Root {
             }
             Message::ShiftKeyChanged(pressed) => {
                 self.toolbar.shift_pressed = *pressed;
+                // 同步到 Editor：形状工具拖拽绘制时实时约束正图形依赖此可靠通道
+                self.editor.set_shift_pressed(*pressed);
                 true
             }
             Message::ToggleSettings | Message::Null => true,

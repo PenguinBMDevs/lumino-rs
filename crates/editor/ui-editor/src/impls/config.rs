@@ -10,17 +10,29 @@ use lumino_message::Tool;
 impl Editor {
     /// 设置当前工具（委托到 editor_state）
     ///
-    /// 切到非曲线工具时自动关闭颜料桶填充模式（曲线工具附属开关）。
+    /// 切到非曲线工具时自动关闭曲线工具颜料桶填充模式；
+    /// 切到非形状工具时自动关闭形状工具颜料桶填充模式（均为工具附属开关）。
     pub fn set_tool(&mut self, tool: Tool) {
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
         }
+        // 形状工具：离开时关闭其填充桶（避免遗留影响其他工具）
+        // editor_state.set_tool 已重置整个 shape_tool（含 fill_enabled）。
+        if tool != Tool::Shape {
+            self.editor_state.shape_tool.fill_enabled = false;
+        }
     }
 
-    /// 设置颜料桶填充模式开关（仅曲线工具激活时调用方会启用）
+    /// 设置当前形状类型（由工具栏 `current_shape` 同步）
+    pub fn set_shape(&mut self, kind: lumino_editor_state::ShapeKind) {
+        self.editor_state.shape_tool.set_shape_kind(kind);
+    }
+
+    /// 设置颜料桶填充模式开关（曲线工具与形状工具共享同一开关）
     pub fn set_fill_enabled(&mut self, enabled: bool) {
         self.editor_state.line_tool.fill_enabled = enabled;
+        self.editor_state.shape_tool.fill_enabled = enabled;
     }
 
     /// 颜料桶填充模式是否开启
