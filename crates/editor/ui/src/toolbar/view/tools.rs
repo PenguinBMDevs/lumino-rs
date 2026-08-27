@@ -14,7 +14,7 @@ use crate::toolbar::view::curve_tool_group::CurveToolGroup;
 use crate::toolbar::{
     ButtonId, Event, FlipHorizontalMode, Tool, Toolbar, brush_dropdown, tool_panel,
 };
-use crate::{Element, Theme, window};
+use crate::{Element, Message, Theme, window};
 use lumino_extras::i18n::{Language, MainTranslations};
 
 impl Toolbar {
@@ -230,12 +230,11 @@ impl Toolbar {
             self.current_tool,
             Tool::Curve | Tool::Brush | Tool::Shape | Tool::Text
         );
-        // 普通点击 = 选择曲线工具（基础态）；Ctrl+点击 = 打开画刷工具下拉
-        let curve_on_press = if self.ctrl_pressed {
-            Event::toggle_brush_dropdown()
-        } else {
-            Event::tool_selected(Tool::Curve)
-        };
+        // 普通点击 = 选择曲线工具（基础态）；仅当当前已处于画刷工具时，
+        // Ctrl+点击才打开画刷工具下拉（设置面板）。非画刷工具下 Ctrl+点击应
+        // 退化为普通点击（选择曲线工具），不应误弹画刷设置面板。
+        // 决策逻辑抽出到 `Toolbar::curve_button_press_event` 以便回归测试。
+        let curve_on_press = Message::Toolbar(self.curve_button_press_event());
         let curve_btn = tool_selector_custom(
             curve_icon,
             t.tool_curve,

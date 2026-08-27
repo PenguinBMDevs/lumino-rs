@@ -450,10 +450,92 @@ impl Toolbar {
     pub fn height(&self) -> f32 {
         self.height
     }
+
+    /// 曲线工具按钮在「按下」时应发出的事件。
+    ///
+    /// - 普通点击：选择曲线工具（基础态）。
+    /// - 仅当当前已处于画刷工具时，Ctrl+点击才打开画刷工具下拉（设置面板）；
+    ///   非画刷工具下 Ctrl+点击退化为普通点击，避免误弹画刷设置面板。
+    ///
+    /// 该决策从视图层抽出，便于单元测试回归（见 `tests` 模块）。
+    pub fn curve_button_press_event(&self) -> Event {
+        if self.ctrl_pressed && self.current_tool == Tool::Brush {
+            Event::ToggleBrushDropdown
+        } else {
+            Event::ToolSelected(Tool::Curve)
+        }
+    }
 }
 
 impl Default for Toolbar {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 非画刷工具下 Ctrl+点击曲线按钮：不得弹出画刷设置面板，
+    /// 应退化为普通点击（选择曲线工具）。
+    #[test]
+    fn test_curve_button_ctrl_click_non_brush_does_not_open_brush_panel() {
+        let mut toolbar = Toolbar::new();
+        // 当前处于选择工具（非画刷），且 Ctrl 被按下
+        toolbar.current_tool = Tool::Pointer;
+        toolbar.ctrl_pressed = true;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            !matches!(event, Event::ToggleBrushDropdown),
+            "非画刷工具下 Ctrl+点击不应打开画刷设置面板"
+        );
+        assert!(
+            matches!(event, Event::ToolSelected(Tool::Curve)),
+            "非画刷工具下 Ctrl+点击应退化为选择曲线工具"
+        );
+    }
+
+    /// 曲线工具（非画刷）下 Ctrl+点击曲线按钮：同样不应弹出画刷设置面板。
+    #[test]
+    fn test_curve_button_ctrl_click_curve_tool_does_not_open_brush_panel() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Curve;
+        toolbar.ctrl_pressed = true;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            !matches!(event, Event::ToggleBrushDropdown),
+            "曲线工具下 Ctrl+点击不应打开画刷设置面板"
+        );
+    }
+
+    /// 仅当已处于画刷工具且 Ctrl 按下时，才打开画刷设置面板。
+    #[test]
+    fn test_curve_button_ctrl_click_brush_tool_opens_brush_panel() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Brush;
+        toolbar.ctrl_pressed = true;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            matches!(event, Event::ToggleBrushDropdown),
+            "画刷工具下 Ctrl+点击应打开画刷设置面板"
+        );
+    }
+
+    /// 画刷工具下但 Ctrl 未按下：普通点击选择曲线工具，不弹面板。
+    #[test]
+    fn test_curve_button_normal_click_brush_tool_does_not_open_brush_panel() {
+        let mut toolbar = Toolbar::new();
+        toolbar.current_tool = Tool::Brush;
+        toolbar.ctrl_pressed = false;
+
+        let event = toolbar.curve_button_press_event();
+        assert!(
+            matches!(event, Event::ToolSelected(Tool::Curve)),
+            "画刷工具下普通点击应回到曲线工具"
+        );
     }
 }
