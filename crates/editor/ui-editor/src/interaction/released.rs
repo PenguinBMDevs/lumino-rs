@@ -36,7 +36,9 @@ impl Editor {
         }
 
         // 文字工具：拖拽拉框完成 → 吸附网格并进入编辑态
+        // Conductor 音轨（track 0）整工具不可用：即使存在 Selecting 也不进入编辑态
         if self.editor_state.tool == Tool::Text
+            && self.text_tool_allowed()
             && let EditState::Selecting {
                 start_tick,
                 current_tick,

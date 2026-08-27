@@ -258,8 +258,20 @@ impl Editor {
         self.editor_state.text_tool.reset();
     }
 
+    /// 当前音轨是否允许使用文字工具
+    ///
+    /// Conductor 音轨（track 0）不可放置音符，整工具在 Conductor 轨上不可用
+    /// （与铅笔等工具的 `current_track == 0` 守卫同源）。
+    pub(crate) fn text_tool_allowed(&self) -> bool {
+        self.editor_state.data.current_track != 0
+    }
+
     /// 文字工具：按下处理
     pub(crate) fn handle_text_tool_pressed(&mut self, pos: Point, key: u16) {
+        // Conductor 音轨（track 0）：整工具不可用，所有按下交互直接忽略
+        if !self.text_tool_allowed() {
+            return;
+        }
         // 已拉出框：先判按钮命中
         if self.editor_state.text_tool.active {
             if let Some(btns) = button_rects(self) {
@@ -505,6 +517,9 @@ mod tests {
     fn test_text_tool_drag_x_snaps_to_precision() {
         // 拉框过程中 X 向长度必须按音符精度步进（与最终生成一致），不能自由像素。
         let mut editor = Editor::new();
+        // 文字工具交互测试必须落在「非 Conductor 的可编辑轨」上（默认 track 0 为 Conductor）
+        use crate::tests::test_helpers::seed_notes;
+        seed_notes(&mut editor, 2, 1, &[]);
         // 设定视图使 pos_to_tick 为恒等映射，并设置音符精度
         editor.editor_state.view.zoom_x = 1.0;
         editor.editor_state.view.scroll_x = 0.0;
@@ -544,6 +559,9 @@ mod tests {
         use lumino_message::Tool;
         let mut editor = Editor::new();
         editor.editor_state.tool = Tool::Text;
+        // 预置已放置框需落在非 Conductor 轨（默认 track 0 为 Conductor，文字工具不可用）
+        use crate::tests::test_helpers::seed_notes;
+        seed_notes(&mut editor, 2, 1, &[]);
         let view = &mut editor.editor_state.view;
         view.zoom_x = 1.0;
         view.scroll_x = 0.0;
@@ -657,5 +675,43 @@ mod tests {
         );
         let created = editor.editor_state.data.track_notes(0).len();
         assert_eq!(created, 0, "Conductor 音轨不应写入任何音符");
+    }
+
+    #[test]
+    fn test_text_tool_press_noop_on_conductor_track() {
+        // 回归：文字工具在 Conductor 音轨（track 0）上「整个不可用」——
+        // 即便完成「按下 → 释放」整段交互，也不得进入编辑态、不得生成任何音符。
+        use lumino_message::{EditorAction, Point2, Tool};
+        use crate::tests::test_helpers::seed_notes;
+
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Text;
+        // 选中 Conductor 音轨（track 0）
+        seed_notes(&mut editor, 1, 0, &[]);
+
+        // 模拟在 Conductor 轨上「按下 → 释放」整段交互
+        editor.handle_action(EditorAction::Pressed {
+            pos: Point2::new(100.0, 100.0),
+            shift: false,
+        });
+        editor.handle_action(EditorAction::Released);
+
+        // 入口交互被拦截：文本框从未激活、从未进入编辑态
+        assert!(!editor.text_tool_allowed(), "当前轨应为 Conductor");
+        assert!(
+            !editor.editor_state.text_tool.active,
+            "Conductor 音轨上文字工具不得激活任何文本框"
+        );
+        assert!(!editor.editor_state.text_tool.editing);
+
+        // released 处的 begin_editing 也被 Conductor 守卫拦下，不得置位激活状态
+        assert!(!editor.editor_state.text_tool.active);
+
+        // 文档侧：Conductor 轨不得写入任何音符
+        assert_eq!(
+            editor.editor_state.data.track_notes(0).len(),
+            0,
+            "Conductor 音轨不应写入任何音符"
+        );
     }
 }

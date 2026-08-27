@@ -238,7 +238,10 @@ impl Editor {
     /// 返回 `None`，故不叠加。
     #[allow(clippy::type_complexity)]
     fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
-        if !(self.editor_state.text_tool.active && self.editor_state.text_tool.editing) {
+        // Conductor 音轨（track 0）：整工具不可用，绝不叠加文字输入框
+        if !self.text_tool_allowed()
+            || !(self.editor_state.text_tool.active && self.editor_state.text_tool.editing)
+        {
             return None;
         }
         let (left, top, right, bottom) = crate::grid::text_tool_box::box_rect_screen(self)?;

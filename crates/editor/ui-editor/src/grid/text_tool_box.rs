@@ -94,6 +94,10 @@ pub fn draw(
     _theme: &lumino_ui_core::Theme,
     bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
+    // Conductor 音轨（track 0）：整工具不可用，不绘制文本框与悬浮按钮
+    if !editor.text_tool_allowed() {
+        return None;
+    }
     let (left, top, right, bottom) = box_rect_screen(editor)?;
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let content = content_bounds(editor);
