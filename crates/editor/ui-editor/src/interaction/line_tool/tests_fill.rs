@@ -34,7 +34,7 @@ fn rect_editor() -> Editor {
 #[test]
 fn test_fill_stores_mark_not_notes() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     // 点击只记录标记：不直接生成音符、不做区域计算
     assert_eq!(
@@ -52,7 +52,7 @@ fn test_fill_stores_mark_not_notes() {
 #[test]
 fn test_fill_undoable() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert!(editor.undo(), "填充操作可撤销");
     assert!(
@@ -66,7 +66,7 @@ fn test_fill_undoable() {
 #[test]
 fn test_fill_click_again_clears() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     // 再点已标记格点 → 取消全部填充
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
@@ -79,7 +79,7 @@ fn test_fill_click_again_clears() {
 #[test]
 fn test_fill_boundary_click_fills_side() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     // 点击边界格点 (0,60)：标记记录（归属由 √ 时几何判定决定）
     editor.handle_fill_pressed(Point::new(0.0, 0.0), 0.0, 60);
     assert!(editor.editor_state.line_tool.has_fill());
@@ -94,7 +94,7 @@ fn test_fill_boundary_click_fills_side() {
 #[test]
 fn test_confirm_merges_path_and_fill() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     // 路径格点（矩形四边：顶 3 + 右 3 + 底 3 去重连接点 = 7，左竖线新增 1 = 8）
     // + 填充覆盖范围（矩形内部 4 格，与路径重叠 3）→ 去重后 9 格
@@ -109,7 +109,7 @@ fn test_confirm_merges_path_and_fill() {
 #[test]
 fn test_cancel_clears_fill() {
     let mut editor = rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     editor.cancel_line_tool();
     assert!(!editor.editor_state.line_tool.has_fill());
@@ -126,7 +126,7 @@ fn test_fill_mode_press_does_not_create_path() {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
     editor.editor_state.line_tool.fill_enabled = true;
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_pressed(Point::new(120.0, 24.0), false);
     assert!(
         editor.editor_state.line_tool.paths.is_empty(),
@@ -171,7 +171,7 @@ fn test_fill_full_ui_flow_default_snap() {
         line.push_anchor(1, (0.0, 62.0));
         line.push_anchor(1, (0.0, 60.0));
     }
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     // 工具栏开启颜料桶（FillToggled → set_fill_enabled）
     editor.set_fill_enabled(true);
     assert!(editor.fill_enabled());
@@ -237,7 +237,7 @@ fn test_fill_bent_curve_sealed_no_leak() {
     // （表现为"封闭图形填不上、背景被填"）；几何绕数判定由曲线几何
     // 决定内部，缝隙从根上不存在 → √ 后轮廓内部 8 格完全铺满。
     let mut editor = bent_rect_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert_eq!(
         editor.editor_state.line_tool.fill,
@@ -289,7 +289,7 @@ fn test_fill_all_bent_closed_shape_sealed() {
         line.paths[1][1].set_in_handle((2880.0, -30.0));
     }
     // 点击两弧之间内部 (1920,61)
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 1920.0, 61);
     assert_eq!(
         editor.editor_state.line_tool.fill,
@@ -342,7 +342,7 @@ fn test_fill_two_curves_nearly_closed() {
         line.paths[1][1].set_in_handle((2880.0, -30.0));
     }
     // 点击两弧之间内部 (1920,61)
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 1920.0, 61);
     assert!(
         editor.confirm_line_tool(),

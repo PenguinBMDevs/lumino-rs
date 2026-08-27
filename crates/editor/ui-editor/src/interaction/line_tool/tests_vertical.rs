@@ -6,6 +6,7 @@
 //! 本文件钉死交互层纵向语义，防止后续重构回退。
 
 use super::*;
+use crate::tests::test_helpers::seed_notes;
 use lumino_core::Tool;
 
 /// 构造纵向卷帘编辑器（画布 800x600，键盘高度 120 → 网格区 y ∈ [0, 480)）
@@ -14,6 +15,8 @@ use lumino_core::Tool;
 fn vertical_curve_editor() -> Editor {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
+    // 非 Conductor 音轨（track 1）以触发曲线工具真实交互（Conductor 整工具不可用）
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.editor_state.is_vertical_roll = true;
     editor.editor_state.canvas.size_x = 800.0;
     editor.editor_state.canvas.size_y = 600.0;

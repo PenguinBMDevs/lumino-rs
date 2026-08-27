@@ -15,6 +15,12 @@ impl Editor {
     /// 写入当前音轨并使用 `CreateOp` 操作日志。
     /// 成功后清空全部路径、填充与编辑历史；返回是否生成了音符。
     pub(crate) fn confirm_line_tool(&mut self) -> bool {
+        // Conductor 音轨（track 0）禁止放置音符：整曲线工具不可用，
+        // 与铅笔 finish_drawing、文字工具 confirm_text_tool 同源守卫
+        if self.editor_state.data.current_track == 0 {
+            tracing::debug!("曲线工具: Conductor 轨道禁止放置音符");
+            return false;
+        }
         let snap = self.editor_state.view.snap_precision;
         let snap_max = snap.max(1.0);
         let line = &self.editor_state.line_tool;

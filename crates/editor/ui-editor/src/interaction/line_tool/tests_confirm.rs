@@ -26,7 +26,7 @@ fn line_editor() -> Editor {
 #[test]
 fn test_confirm_line_creates_notes() {
     let mut editor = line_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     assert!(editor.confirm_line_tool());
     // 水平线 (0,60)-(3840,60)：终点锚点对齐最后一个音符尾部 →
     // 格点 (0,1920,3840) 中终点格点 -snap 与相邻格点去重 → 2 个音符
@@ -39,7 +39,7 @@ fn test_confirm_last_anchor_aligns_note_tail() {
     // 最后一个锚点对齐最后一个音符**尾部**（原行为头部对齐：曲线终点
     // 处会多出 [tick, tick+snap) 半格音符，尾部超出曲线终点）
     let mut editor = line_editor();
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     assert!(editor.confirm_line_tool());
     let notes = editor.editor_state.data.current_track_notes();
     assert_eq!(notes.len(), 2, "曲线 (0,60)-(3840,60) 铺满 2 个音符");
@@ -61,7 +61,7 @@ fn test_confirm_last_anchor_aligns_note_tail() {
 fn test_confirm_multiple_paths_batch() {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     {
         let line = &mut editor.editor_state.line_tool;
         // 路径 1：水平 3 格
@@ -84,7 +84,7 @@ fn test_confirm_multiple_paths_batch() {
 fn test_confirm_incomplete_paths_skipped() {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
-    seed_notes(&mut editor, 1, 0, &[]);
+    seed_notes(&mut editor, 2, 1, &[]);
     {
         let line = &mut editor.editor_state.line_tool;
         // 完整路径
@@ -127,5 +127,33 @@ fn test_cancel_line_clears() {
     assert!(
         !editor.editor_state.line_tool.can_undo_path(),
         "取消应清空历史"
+    );
+}
+
+#[test]
+fn test_confirm_line_rejected_on_conductor_track() {
+    // 回归：曲线工具不得在 Conductor 音轨（track 0）放置音符，
+    // 与铅笔 finish_drawing、文字工具 confirm_text_tool 的 `current_track == 0` 守卫一致。
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    // 选中 Conductor 音轨（track 0），预置一条完整路径（普通轨会生成音符）
+    seed_notes(&mut editor, 1, 0, &[]);
+    // 预置一条完整路径（普通轨会生成音符）
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (480.0, 60.0));
+    }
+
+    // Conductor 音轨禁止放置：确认必须失败，且文档侧不得写入任何音符
+    assert!(
+        !editor.confirm_line_tool(),
+        "Conductor 音轨（track 0）禁止放置音符：确认必须返回 false"
+    );
+    assert_eq!(
+        editor.editor_state.data.track_notes(0).len(),
+        0,
+        "Conductor 音轨不应写入任何音符"
     );
 }

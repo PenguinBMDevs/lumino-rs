@@ -68,6 +68,10 @@ fn paths_bounds(editor: &Editor) -> Option<(f32, f32, f32, f32)> {
 ///
 /// 按钮组钳制到卷帘内容区内：路径移出/越界时按钮仍保持完整可见可点。
 pub fn line_button_rects(editor: &Editor) -> Option<LineButtonRects> {
+    // Conductor 音轨（track 0）：整工具不可用，不计算 √× 按钮命中区
+    if editor.editor_state.data.current_track == 0 {
+        return None;
+    }
     if editor.current_tool() != Tool::Curve {
         return None;
     }
@@ -114,6 +118,10 @@ pub fn draw(
     theme: &lumino_ui_core::Theme,
     bounds: Rectangle,
 ) -> Option<Geometry<Renderer>> {
+    // Conductor 音轨（track 0）：整工具不可用，不绘制路径与 √× 按钮
+    if editor.editor_state.data.current_track == 0 {
+        return None;
+    }
     if editor.current_tool() != Tool::Curve {
         return None;
     }

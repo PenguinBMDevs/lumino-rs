@@ -46,6 +46,10 @@ impl Editor {
             Tool::PointerYSelect => self.handle_pointer_pressed(pos, hit_result, snapped_tick),
             Tool::Pencil => self.handle_pencil_pressed(pos, hit_result, snapped_tick, key),
             Tool::Curve => {
+                // Conductor 音轨（track 0）：整工具不可用，不开始任何曲线/填充绘制
+                if self.editor_state.data.current_track == 0 {
+                    return;
+                }
                 if self.editor_state.line_tool.fill_enabled {
                     // 颜料桶模式：点击封闭区域内部 → 泛洪填充生成实心音符
                     self.handle_fill_pressed(pos, snapped_tick, key);

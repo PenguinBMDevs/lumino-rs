@@ -1,6 +1,7 @@
 //! 曲线工具盒（锚点/曲线/控制柄/矢量填充/悬浮按钮）渲染层测试
 
 use super::*;
+use crate::tests::test_helpers::seed_notes;
 use lumino_core::Tool;
 
 /// 构造曲线工具 + 两条完整路径的编辑器（默认视图 128 键 × 20px、画布 800x600）
@@ -10,6 +11,7 @@ use lumino_core::Tool;
 fn multi_curve_editor() -> Editor {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
     {
         let line = &mut editor.editor_state.line_tool;
         line.paths.push(Vec::new());
@@ -29,6 +31,7 @@ fn multi_curve_editor() -> Editor {
 fn two_rects_editor(fill: &[(f32, u16)]) -> Editor {
     let mut editor = Editor::new();
     editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
     editor.editor_state.view.snap_precision = 1.0;
     editor.editor_state.canvas.size_x = 800.0;
     editor.editor_state.canvas.size_y = 600.0;
