@@ -148,9 +148,10 @@ impl EditorData {
         }
         if track_id == self.current_track {
             let track = doc.track_notes(track_id);
-            // 插入后文档索引：新音符插在同 tick 音符之后（稳定插入），
-            // `partition_point(start_tick+1)` = tick <= start_tick 的音符数，
-            // 含新音符自身 → 需 -1 才等于新音符的文档索引（GPU 布局与文档保序）。
+            // 注意：上方 `doc.insert_note` 已把新音符按升序插入文档，
+            // 故此处 `track` 已包含该音符本身。`partition_point(start_tick + 1)`
+            // 返回 tick < start_tick + 1（即 tick <= start_tick）的音符数，
+            // 其中含新音符自身，故减 1 得到新音符的文档索引（GPU 段内布局保序）。
             let index = if start_tick == u32::MAX {
                 track.len().saturating_sub(1)
             } else {

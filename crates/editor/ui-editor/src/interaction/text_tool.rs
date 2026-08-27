@@ -354,6 +354,12 @@ impl Editor {
         if !tt.has_content() {
             return false;
         }
+        // Conductor 音轨（track 0）禁止放置音符：与铅笔等工具（finish_drawing）一致，
+        // 避免文字工具在不可编辑轨上创建音符。
+        if self.editor_state.data.current_track == 0 {
+            tracing::debug!("文字工具: Conductor 轨道禁止放置音符");
+            return false;
+        }
         let snap = self.editor_state.view.snap_precision;
         let (tick_lo, _) = tt.normalized_ticks();
         let (_key_lo, key_hi) = tt.normalized_keys();
@@ -575,5 +581,81 @@ mod tests {
             !editor.editor_state.text_tool.is_dragging(),
             "释放后应清除拖拽临时状态"
         );
+    }
+
+    #[test]
+    fn test_text_tool_confirm_uses_incremental_path() {
+        // 回归（Bug 2）：文字工具批量创建音符必须走「增量」路径（与铅笔/直线工具一致），
+        // 绝不能用全量重建绕过。即确认后：note_delta_dirty 必须为 false（不触发
+        // force_full_next），且 note_delta_events 携带正确的 InsertAt 增量事件，
+        // 文档侧已写入音符。
+        use lumino_message::Tool;
+        use crate::tests::test_helpers::seed_notes;
+
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Text;
+        // 当前轨（非 Conductor 的普通轨 index=1）空文档：确认后的新音符从索引 0 起始
+        seed_notes(&mut editor, 2, 1, &[]);
+
+        // 构造一个能光栅化出音符的文字框（tick [0,480]，key [60,64]）
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 480.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+
+        assert!(
+            editor.confirm_text_tool(),
+            "确认应成功光栅化并创建音符（依赖系统字体回退）"
+        );
+
+        // 必须走增量：不触发全量重建（note_delta_dirty 保持 false）
+        assert!(
+            !editor.editor_state.data.note_delta_dirty,
+            "文字工具确认必须走增量路径，不得触发全量重建（force_full_next）"
+        );
+
+        // 增量事件已记录：携带 InsertAt（供渲染线程段内插入）
+        let inserts: Vec<_> = editor
+            .editor_state
+            .data
+            .note_delta_events
+            .iter()
+            .filter(|e| matches!(e, lumino_editor_state::NoteDeltaEvent::InsertAt { .. }))
+            .collect();
+        assert!(!inserts.is_empty(), "确认后应产生 InsertAt 增量事件");
+
+        // 文档侧：音符确实已写入当前轨（普通轨 index=1，非 Conductor）
+        let created = editor.editor_state.data.track_notes(1).len();
+        assert!(created > 0, "确认后当前轨应至少写入一个音符");
+    }
+
+    #[test]
+    fn test_text_tool_confirm_rejected_on_conductor_track() {
+        // 回归：文字工具不得在非可编辑的 Conductor 音轨（track 0）放置音符，
+        // 与铅笔等工具（finish_drawing 的 `current_track == 0` 守卫）保持一致。
+        use lumino_message::Tool;
+        use crate::tests::test_helpers::seed_notes;
+
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Text;
+        // 选中 Conductor 音轨（track 0），且无任何音符
+        seed_notes(&mut editor, 1, 0, &[]);
+
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 480.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+        tt.text = "A".to_string();
+        tt.font_family = "Microsoft YaHei";
+
+        // Conductor 音轨禁止放置：确认必须失败，且文档侧不得写入任何音符
+        assert!(
+            !editor.confirm_text_tool(),
+            "Conductor 音轨（track 0）禁止放置音符，确认必须返回 false"
+        );
+        let created = editor.editor_state.data.track_notes(0).len();
+        assert_eq!(created, 0, "Conductor 音轨不应写入任何音符");
     }
 }
