@@ -196,6 +196,19 @@ impl Root {
             self.sync_track_visual_order();
         }
 
+        // 删除当前音轨后，editor.current_track 必须跟随 sidebar.selected_track 切走，
+        // 否则卷帘（钢琴卷帘）仍渲染已删除音轨——其文档数据被保留用于「找回删除音轨」，
+        // 表现为「删除动作未同步到卷帘」。仅当当前音轨已不在音轨列表时兜底切换
+        // （新增/排序不会改变当前音轨，any() 为真，不触发）。
+        if !self
+            .sidebar
+            .tracks
+            .iter()
+            .any(|t| t.id == self.editor.editor_state.data.current_track)
+        {
+            self.set_current_track(self.sidebar.selected_track, false);
+        }
+
         // 消费 sidebar 中待删除音轨请求，构造 payload 转发给 Runner 写入 .lmdeltrack
         // 必须在 sidebar.update 之后调用——此时 pending_track_deletion 才被设置。
         self.forward_pending_track_deletion();

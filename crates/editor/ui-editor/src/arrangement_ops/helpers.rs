@@ -38,5 +38,8 @@ pub(super) fn note_event_in_rect(note: &NoteEvent, tick_start: f64, tick_end: f6
     s < (tick_end as f32) && e > (tick_start as f32)
 }
 
-/// 剪贴板音符元组：(track_offset, tick_offset, key_offset, length, velocity, channel)
-pub(super) type ClipboardNoteEntry = (u16, f32, u16, f32, u8, u8);
+/// 剪贴板音符元组：(dest_track, tick_offset, key_offset, length, velocity, channel)
+///
+/// `dest_track` 为解析时已映射到文档的音轨索引（视觉偏移经 `document_track_at`
+/// 转换得到），`apply_paste_internal` 直接按此插入，不再二次换算。
+pub(super) type ClipboardNoteEntry = (usize, f32, u16, f32, u8, u8);
