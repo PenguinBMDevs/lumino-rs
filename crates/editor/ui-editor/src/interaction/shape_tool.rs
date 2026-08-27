@@ -18,28 +18,25 @@ impl Editor {
     /// - 填充桶开启且点击命中某待确认图形内部：标记该图形为「已填充」
     ///   （支持用填充桶填充已拉出的图案），不开始新拖拽；
     /// - 否则开始拖拽拉框。
-    pub(crate) fn handle_shape_tool_pressed(
-        &mut self,
-        snapped_tick: f32,
-        key: u16,
-        _shift: bool,
-    ) {
+    ///
+    /// `tick` / `key` 已是**调用方按 Shift 状态解析好的坐标**：
+    /// Shift 按住时为鼠标原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标），
+    /// 否则为网格吸附后的坐标。正图形约束在 `effective_rect` 内基于该坐标计算。
+    pub(crate) fn handle_shape_tool_pressed(&mut self, tick: f32, key: f32, _shift: bool) {
         // Conductor 音轨：形状工具不可用
         if self.editor_state.data.current_track == 0 {
             return;
         }
         // 填充桶：点击待确认图形内部 → 标记填充
         if self.editor_state.shape_tool.fill_enabled {
-            if let Some(idx) = self.shape_hit_test(snapped_tick, key as f32) {
+            if let Some(idx) = self.shape_hit_test(tick, key) {
                 self.editor_state.shape_tool.shapes[idx].filled = true;
                 self.mark_notes_changed();
                 return;
             }
         }
-        // 正常：开始拖拽拉框
-        self.editor_state
-            .shape_tool
-            .begin_drag((snapped_tick, key as f32));
+        // 正常：开始拖拽拉框（坐标已由调用方解析：Shift=原始浮点 / 否则=网格吸附）
+        self.editor_state.shape_tool.begin_drag((tick, key));
     }
 
     /// 形状工具：拖拽移动 —— 更新当前点（实时预览）
@@ -76,6 +73,9 @@ impl Editor {
         let snap_key = snap.max(1.0);
 
         let mut points: Vec<(f32, u16)> = Vec::new();
+        // 屏幕空间约束所需的像素尺度（tick/key 每单位像素数）
+        let px_per_tick = self.editor_state.view.zoom_x;
+        let px_per_key = self.editor_state.view.zoom_y;
         for shape in &self.editor_state.shape_tool.shapes {
             let cells = lumino_editor_state::shape_tool::shape_cells(
                 shape.kind,
@@ -83,6 +83,8 @@ impl Editor {
                 shape.shift_constrained,
                 shape.filled,
                 snap,
+                px_per_tick,
+                px_per_key,
             );
             points.extend(cells);
         }
@@ -131,8 +133,18 @@ impl Editor {
 
     /// 命中待确认图形内部（用于填充桶点击填充），返回图形索引
     fn shape_hit_test(&self, tick: f32, key: f32) -> Option<usize> {
+        let px_per_tick = self.editor_state.view.zoom_x;
+        let px_per_key = self.editor_state.view.zoom_y;
         for (i, shape) in self.editor_state.shape_tool.shapes.iter().enumerate() {
-            if point_in_shape(shape.kind, shape.rect, shape.shift_constrained, tick, key) {
+            if point_in_shape(
+                shape.kind,
+                shape.rect,
+                shape.shift_constrained,
+                px_per_tick,
+                px_per_key,
+                tick,
+                key,
+            ) {
                 return Some(i);
             }
         }
@@ -162,7 +174,7 @@ mod tests {
         editor.set_shape(ShapeKind::Rectangle);
         editor.editor_state.shape_tool.fill_enabled = false;
         // 拖出 0..4 × key 60..64 的矩形轮廓
-        editor.handle_shape_tool_pressed(0.0, 60, false);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         assert!(editor.editor_state.shape_tool.has_pending());
@@ -184,7 +196,7 @@ mod tests {
         let mut editor = test_editor();
         editor.set_shape(ShapeKind::Rectangle);
         editor.editor_state.shape_tool.fill_enabled = true;
-        editor.handle_shape_tool_pressed(0.0, 60, false);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         let ok = editor.confirm_shape_tool();
@@ -197,7 +209,7 @@ mod tests {
     fn test_cancel_clears_pending() {
         let mut editor = test_editor();
         editor.set_shape(ShapeKind::Rectangle);
-        editor.handle_shape_tool_pressed(0.0, 60, false);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         assert!(editor.editor_state.shape_tool.has_pending());
@@ -211,7 +223,7 @@ mod tests {
         let mut editor = test_editor();
         editor.editor_state.data.current_track = 0;
         editor.set_shape(ShapeKind::Rectangle);
-        editor.handle_shape_tool_pressed(0.0, 60, false);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         // Conductor 轨道（track 0）整工具不可用，不应开始拖拽
@@ -224,14 +236,62 @@ mod tests {
         editor.set_shape(ShapeKind::Rectangle);
         // 先拉出轮廓（填充桶关闭）
         editor.editor_state.shape_tool.fill_enabled = false;
-        editor.handle_shape_tool_pressed(0.0, 60, false);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
         editor.handle_shape_tool_moved(4.0, 64.0);
         editor.handle_shape_tool_released();
         assert!(!editor.editor_state.shape_tool.shapes[0].filled);
         // 开启填充桶并点选图形内部（命中）→ 标记填充
         editor.editor_state.shape_tool.fill_enabled = true;
-        editor.handle_shape_tool_pressed(2.0, 62, false);
+        editor.handle_shape_tool_pressed(2.0, 62.0, false);
         assert!(editor.editor_state.shape_tool.shapes[0].filled);
+    }
+
+    /// Shift 拉出：尺寸直接吃鼠标原始坐标（绕过 key/音符精度吸附），再套正图形约束。
+    ///
+    /// 用非整数原始坐标 (10.3, 63.7) 拖拽（宽高均不整除网格）。若错误地先吸附再约束
+    /// （(10, 64)），生成的音符数与基于原始坐标不同——据此证明确实走了原始坐标。
+    #[test]
+    fn test_shift_uses_raw_mouse_coords_for_square() {
+        let mut editor = test_editor();
+        editor.set_shape(ShapeKind::Rectangle);
+        editor.editor_state.shape_tool.fill_enabled = false;
+        // 模拟 host 通道：Shift 按下（released 路径读取 shift_pressed 决定约束）
+        editor.shift_pressed = true;
+        // 起点 (0.0, 60.0)，Shift 拖到非网格坐标 (10.3, 63.7)（原始浮点）
+        editor.handle_shape_tool_pressed(0.0, 60.0, true);
+        editor.handle_shape_tool_moved(10.3, 63.7);
+        editor.handle_shape_tool_released();
+        // 存储的外接框应为原始鼠标坐标（未吸附到网格）：若被吸附会变成 (0,60,10,64)
+        assert_eq!(
+            editor.editor_state.shape_tool.shapes[0].rect,
+            (0.0, 60.0, 10.3, 63.7),
+            "Shift 拖拽应直接吃鼠标原始坐标，而非先吸附到网格"
+        );
+        let ok = editor.confirm_shape_tool();
+        assert!(ok);
+
+        // 与 confirm 一致的屏幕像素尺度（tick/key 每单位像素数）
+        let px_per_tick = editor.editor_state.view.zoom_x;
+        let px_per_key = editor.editor_state.view.zoom_y;
+
+        // 预期：基于原始鼠标坐标 (10.3, 63.7) 在「屏幕空间」套 Shift 约束
+        // （正方形：min(宽_px, 高_px)），量化到网格后的音符数，
+        // 应等于直接对该原始外接框套约束的几何结果。
+        let raw_expected = lumino_editor_state::shape_tool::shape_cells(
+            ShapeKind::Rectangle,
+            (0.0, 60.0, 10.3, 63.7),
+            true,
+            false,
+            1.0,
+            px_per_tick,
+            px_per_key,
+        )
+        .len();
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            raw_expected,
+            "确认生成的音符数应等于基于原始鼠标外接框套屏幕空间 Shift 约束的结果"
+        );
     }
 }
 

@@ -46,8 +46,10 @@ fn shape_screen_aabb(
         min_y = min_y.min(p.y);
         max_y = max_y.max(p.y);
     };
-    // 统一应用 Shift 正图形约束，使包围盒与生成音符一致
-    let rect = effective_rect(kind, rect, shift);
+    // 统一应用屏幕空间 Shift 正图形约束，使包围盒与生成音符一致
+    let px_per_tick = editor.editor_state.view.zoom_x;
+    let px_per_key = editor.editor_state.view.zoom_y;
+    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
     match kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
@@ -59,7 +61,8 @@ fn shape_screen_aabb(
             acc(editor.line_pos_screen_pos((mx, cy1)));
         }
         _ => {
-            let verts = shape_vertices(kind, rect, false).unwrap_or_default();
+            let verts =
+                shape_vertices(kind, rect, false, px_per_tick, px_per_key).unwrap_or_default();
             for (t, k) in verts {
                 acc(editor.line_pos_screen_pos((t, k)));
             }
@@ -151,8 +154,10 @@ fn draw_one_shape(
     filled: bool,
     color: Color,
 ) {
-    // 统一应用 Shift 正图形约束，使预览与生成音符一致
-    let rect = effective_rect(kind, rect, shift);
+    // 统一应用屏幕空间 Shift 正图形约束，使预览与生成音符一致
+    let px_per_tick = editor.editor_state.view.zoom_x;
+    let px_per_key = editor.editor_state.view.zoom_y;
+    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
     match kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
@@ -174,7 +179,7 @@ fn draw_one_shape(
             frame.stroke(&path, stroke);
         }
         _ => {
-            let verts = match shape_vertices(kind, rect, false) {
+            let verts = match shape_vertices(kind, rect, false, px_per_tick, px_per_key) {
                 Some(v) => v,
                 None => return,
             };

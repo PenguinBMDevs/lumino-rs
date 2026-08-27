@@ -62,7 +62,18 @@ impl Editor {
             Tool::Eraser | Tool::DrawEraser => self.handle_eraser_pressed(pos, shift, hit_result),
             Tool::Brush => self.handle_brush_pressed(pos, hit_result, snapped_tick, key),
             Tool::Text => self.handle_text_tool_pressed(pos, key),
-            Tool::Shape => self.handle_shape_tool_pressed(snapped_tick, key, shift),
+            Tool::Shape => {
+                // Shift 按住：使用鼠标原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；
+                // 否则：网格吸附坐标。正图形约束在几何层基于该坐标计算，保证「Shift=正图案」。
+                let tick = self.pos_to_tick(pos);
+                let raw_key = self.pos_to_raw_key(pos);
+                let (dt, dk) = if shift {
+                    (tick, raw_key)
+                } else {
+                    (snapped_tick, key as f32)
+                };
+                self.handle_shape_tool_pressed(dt, dk, shift);
+            }
             _ => self.handle_default_tool_pressed(pos, hit_result, snapped_tick, key),
         }
     }

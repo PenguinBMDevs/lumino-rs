@@ -158,27 +158,61 @@ fn normalize_rect(a: (f32, f32), b: (f32, f32)) -> (f32, f32, f32, f32) {
     (x0, y0, x1, y1)
 }
 
-/// 应用 Shift 约束后的圆外接框（正圆：rx = ry = min）
-pub fn shift_circle_rect(rect: (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
-    let (x0, y0, x1, y1) = rect;
-    let rx = ((x1 - x0) / 2.0).max(1e-6);
-    let ry = ((y1 - y0) / 2.0).max(1e-6);
-    let r = rx.min(ry);
+/// 应用 Shift 约束后的圆外接框（屏幕像素空间正圆：rx_px = ry_px = min）
+///
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数。
+/// 在**屏幕空间**取半径像素最小值再换算回逻辑 tick/key，保证屏幕上呈现正圆。
+fn screen_circle_rect(
+    (x0, y0, x1, y1): (f32, f32, f32, f32),
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> (f32, f32, f32, f32) {
     let mx = (x0 + x1) / 2.0;
     let my = (y0 + y1) / 2.0;
-    (mx - r, my - r, mx + r, my + r)
+    let rx_px = ((x1 - x0) / 2.0).abs() * px_per_tick;
+    let ry_px = ((y1 - y0) / 2.0).abs() * px_per_key;
+    let r = rx_px.min(ry_px).max(1e-6);
+    let rx = r / px_per_tick;
+    let ry = r / px_per_key;
+    (mx - rx, my - ry, mx + rx, my + ry)
 }
 
-/// 应用 Shift 约束后的三角形三顶点（等边三角形：高度 = 底宽 × √3 / 2）
+/// 应用 Shift 约束后的矩形外接框（屏幕像素空间正方形）
 ///
-/// 顶点约定：底边在下方 (y1)，顶点在上方 (y0)，顶点 x = 底边中点。
-fn shift_triangle_verts(rect: (f32, f32, f32, f32)) -> [(f32, f32); 3] {
-    let (x0, _y0, x1, y1) = rect;
-    let mid = (x0 + x1) / 2.0;
-    let w = (x1 - x0).max(1e-6);
-    let h = w * (3.0_f32).sqrt() / 2.0;
-    let apex_y = (y1 - h).max(0.0);
-    [(x0, y1), (x1, y1), (mid, apex_y)]
+/// 在屏幕空间取 min(宽_px, 高_px) 作为边长，再换算回逻辑 tick/key 尺寸，
+/// 这样拉出的矩形在屏幕上才是真正的正方形（不再被压扁）。边长带方向符号，
+/// 保留用户拖拽的 X / Y 方向。
+fn screen_square_rect(
+    (x0, y0, x1, y1): (f32, f32, f32, f32),
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> (f32, f32, f32, f32) {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let side = (dx * px_per_tick)
+        .abs()
+        .min((dy * px_per_key).abs())
+        .max(1e-6);
+    let w = side / px_per_tick; // 逻辑 tick 边长（保留 dx 方向）
+    let h = side / px_per_key; // 逻辑 key 边长（保留 dy 方向）
+    (x0, y0, x0 + dx.signum() * w, y0 + dy.signum() * h)
+}
+
+/// 应用 Shift 约束后的三角形外接框（屏幕像素空间等边三角形）
+///
+/// 以矩形底边（沿 tick 的水平边）宽度为基准，屏幕高度 = 底宽_px × √3 / 2，
+/// 再换算回逻辑 key 高度，保证屏幕上呈现真正的等边三角形。
+fn screen_equilateral_rect(
+    (x0, y0, x1, y1): (f32, f32, f32, f32),
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> (f32, f32, f32, f32) {
+    let dx = x1 - x0;
+    let dy = y1 - y0;
+    let base_px = (dx * px_per_tick).abs();
+    let height_px = base_px * (3.0_f32).sqrt() / 2.0;
+    let h = (height_px / px_per_key).max(1e-6);
+    (x0, y0, x0 + dx, y0 + dy.signum() * h)
 }
 
 /// 三角形三顶点（未约束：顶点在 (mid, y0)，底边 (x0..x1, y1)）
@@ -188,43 +222,33 @@ fn normal_triangle_verts(rect: (f32, f32, f32, f32)) -> [(f32, f32); 3] {
     [(x0, y1), (x1, y1), (mid, y0)]
 }
 
-/// 应用 Shift 约束后的矩形外接框（正方形：边长 = min(宽, 高)，锚定在 (x0, y0)）
-fn shift_rect((x0, y0, x1, y1): (f32, f32, f32, f32)) -> (f32, f32, f32, f32) {
-    let w = x1 - x0;
-    let h = y1 - y0;
-    let s = w.min(h).max(1e-6);
-    (x0, y0, x0 + s, y0 + s)
-}
-
-/// 形状对外有效外接框：统一应用 Shift 正图形约束
+/// 形状对外有效外接框：统一应用 Shift 正图形约束（**屏幕像素空间**）
 ///
-/// - 矩形 → 正方形（min(宽, 高)）；
-/// - 圆 → 正圆（rx = ry = min）；
-/// - 三角形 → 等边三角形的外接框（顶点在底边上方 h = 宽 × √3 / 2）。
+/// - 矩形 → 屏幕正方形（min(宽_px, 高_px)）；
+/// - 圆 → 屏幕正圆（rx_px = ry_px）；
+/// - 三角形 → 屏幕等边三角形（高 = 底宽_px × √3 / 2）。
 ///
-/// 几何判定 / 渲染 / 命中测试均应先经此函数，保证三者一致（避免「拉出正方形、
-/// 生成却是长方形」这类不一致）。
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数：
+/// 逻辑空间里 tick 与 key 的像素尺度悬殊，直接在逻辑空间取 min(宽,高) 会让矩形
+/// 在屏幕上被压扁（X 向宽度异常压缩、且因 X 被钳到 Y 而不跟手），故约束必须放到
+/// 屏幕空间做。几何判定 / 渲染 / 命中测试均应先经此函数并传入相同尺度，保证三者一致。
 pub fn effective_rect(
     kind: ShapeKind,
     rect: (f32, f32, f32, f32),
     shift_constrained: bool,
+    px_per_tick: f32,
+    px_per_key: f32,
 ) -> (f32, f32, f32, f32) {
     if !shift_constrained {
         return rect;
     }
+    // 防止缩放尺度为 0 时换算出现除零 / NaN
+    let px_per_tick = px_per_tick.max(1e-6);
+    let px_per_key = px_per_key.max(1e-6);
     match kind {
-        ShapeKind::Rectangle => shift_rect(rect),
-        ShapeKind::Circle => shift_circle_rect(rect),
-        ShapeKind::Triangle => {
-            let v = shift_triangle_verts(rect);
-            let xs = [v[0].0, v[1].0, v[2].0];
-            let ys = [v[0].1, v[1].1, v[2].1];
-            let minx = xs.iter().cloned().fold(f32::INFINITY, f32::min);
-            let maxx = xs.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-            let miny = ys.iter().cloned().fold(f32::INFINITY, f32::min);
-            let maxy = ys.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-            (minx, miny, maxx, maxy)
-        }
+        ShapeKind::Rectangle => screen_square_rect(rect, px_per_tick, px_per_key),
+        ShapeKind::Circle => screen_circle_rect(rect, px_per_tick, px_per_key),
+        ShapeKind::Triangle => screen_equilateral_rect(rect, px_per_tick, px_per_key),
     }
 }
 
@@ -233,12 +257,17 @@ pub fn effective_rect(
 /// - 矩形：返回 4 个角；
 /// - 三角形：返回 3 个顶点（Shift 约束为等边）；
 /// - 圆形：无顶点（用椭圆渲染），返回 `None`。
+///
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数，
+/// 用于屏幕空间的正图形约束（见 `effective_rect`）。
 pub fn shape_vertices(
     kind: ShapeKind,
     rect: (f32, f32, f32, f32),
     shift_constrained: bool,
+    px_per_tick: f32,
+    px_per_key: f32,
 ) -> Option<Vec<(f32, f32)>> {
-    let rect = effective_rect(kind, rect, shift_constrained);
+    let rect = effective_rect(kind, rect, shift_constrained, px_per_tick, px_per_key);
     match kind {
         ShapeKind::Rectangle => {
             let (x0, y0, x1, y1) = rect;
@@ -250,14 +279,19 @@ pub fn shape_vertices(
 }
 
 /// 判断逻辑坐标点 (cx, cy) 是否落在指定图形内部
+///
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数，
+/// 用于屏幕空间的正图形约束（见 `effective_rect`）。
 pub fn point_in_shape(
     kind: ShapeKind,
     rect: (f32, f32, f32, f32),
     shift_constrained: bool,
+    px_per_tick: f32,
+    px_per_key: f32,
     cx: f32,
     cy: f32,
 ) -> bool {
-    let rect = effective_rect(kind, rect, shift_constrained);
+    let rect = effective_rect(kind, rect, shift_constrained, px_per_tick, px_per_key);
     match kind {
         ShapeKind::Rectangle => {
             let (x0, y0, x1, y1) = rect;
@@ -299,12 +333,17 @@ fn point_in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32))
 ///
 /// - `filled = true`：图形内部全部格点；
 /// - `filled = false`：仅边界格点（轮廓，用于空心图形）。
+///
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数，
+/// 用于屏幕空间的正图形约束（见 `effective_rect`）。
 pub fn shape_cells(
     kind: ShapeKind,
     rect: (f32, f32, f32, f32),
     shift_constrained: bool,
     filled: bool,
     snap: f32,
+    px_per_tick: f32,
+    px_per_key: f32,
 ) -> Vec<(f32, u16)> {
     let snap = snap.max(1.0);
     let (x0, y0, x1, y1) = rect;
@@ -317,7 +356,15 @@ pub fn shape_cells(
         let cx = xi as f32 * snap;
         for yi in yi0..=yi1 {
             let cy = yi as f32;
-            if !point_in_shape(kind, rect, shift_constrained, cx, cy) {
+            if !point_in_shape(
+                kind,
+                rect,
+                shift_constrained,
+                px_per_tick,
+                px_per_key,
+                cx,
+                cy,
+            ) {
                 continue;
             }
             if !filled {
@@ -328,9 +375,9 @@ pub fn shape_cells(
                     (cx, cy - 1.0),
                     (cx, cy + 1.0),
                 ];
-                let on_boundary = neighbors
-                    .iter()
-                    .any(|&(nx, ny)| !point_in_shape(kind, rect, shift_constrained, nx, ny));
+                let on_boundary = neighbors.iter().any(|&(nx, ny)| {
+                    !point_in_shape(kind, rect, shift_constrained, px_per_tick, px_per_key, nx, ny)
+                });
                 if !on_boundary {
                     continue;
                 }
@@ -353,7 +400,7 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             true,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         assert_eq!(cells.len(), 5 * 5);
         assert!(cells.contains(&(0.0, 60)));
@@ -368,7 +415,7 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             false,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         assert_eq!(cells.len(), 5 * 5 - 3 * 3);
     }
@@ -381,7 +428,7 @@ mod tests {
             (0.0, 60.0, 10.0, 64.0),
             true,
             true,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         // 约束后应为 4×4（高度决定边长），故 25 格
         assert_eq!(cells.len(), 5 * 5);
@@ -395,7 +442,7 @@ mod tests {
             (-2.0, 60.0, 2.0, 64.0),
             false,
             true,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         // 中心 (0,62) 必包含
         assert!(cells.contains(&(0.0, 62)));
@@ -411,7 +458,7 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             true,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         assert!(cells.contains(&(2.0, 60)));
         // 顶点附近 (2,64) 必在内
@@ -426,7 +473,7 @@ mod tests {
             (0.0, 60.0, 10.0, 64.0),
             true,
             true,
-            1.0,
+            1.0, 1.0, 1.0,
         );
         // 正圆半径 2，中心 (5,62)，中心格在内
         assert!(cells.contains(&(5.0, 62)));

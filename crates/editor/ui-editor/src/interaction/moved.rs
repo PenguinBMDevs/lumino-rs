@@ -51,11 +51,19 @@ impl Editor {
             return;
         }
 
-        // 形状工具：拖拽拉框中（横向 / 纵向卷帘统一走吸附逻辑坐标）
+        // 形状工具：拖拽拉框中（横向 / 纵向卷帘统一走逻辑坐标）
         if self.editor_state.tool == lumino_message::Tool::Shape
             && self.editor_state.shape_tool.interaction != ShapeToolInteraction::None
         {
-            self.handle_shape_tool_moved(snapped_tick, key as f32);
+            // Shift 按住：使用原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；
+            // 否则：网格吸附坐标。正图形约束在几何层基于该坐标计算。
+            let raw_key = self.pos_to_raw_key(pos);
+            let (dt, dk) = if self.shift_pressed() {
+                (tick, raw_key)
+            } else {
+                (snapped_tick, key as f32)
+            };
+            self.handle_shape_tool_moved(dt, dk);
             return;
         }
 
