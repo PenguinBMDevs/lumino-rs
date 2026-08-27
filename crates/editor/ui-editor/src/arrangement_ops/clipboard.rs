@@ -497,5 +497,43 @@ mod tests {
         assert_eq!(doc_track_note_count(&editor, 1), 1);
         assert_eq!(doc_track_note_count(&editor, 0), 1);
     }
+
+    /// 回归：走带框选复制后切换音轨，粘贴应锚定到切换后的当前轨，
+    /// 而非残留的旧框选音轨（"两个同时活跃的音轨"）。
+    ///
+    /// 复现路径：doc 轨 2（视觉 0）框选并复制 → 在走带卷帘区域点击 doc 轨 0
+    /// （视觉 1）切轨 → 粘贴。`switch_to_track` 必须清空 `arrange_selection`，
+    /// 否则粘贴会落到旧框选所在的 doc 2（"选中的音轨"），而非切换后的 doc 0。
+    #[test]
+    fn test_track_switch_clears_arrange_selection_so_paste_anchors_switched_track() {
+        let mut editor = editor_with_sorted_visual_order();
+        editor.editor_state.data.current_track = 2; // 复制时位于 doc 轨 2（视觉 0）
+        // 用户在 doc 轨 2（视觉 0）框选并复制
+        editor
+            .editor_state
+            .data
+            .arrange_selection
+            .rects
+            .push((0, 100, 0, 127, 0, 0));
+
+        // 在走带卷帘区域点击 doc 轨 0（视觉 1）切换当前轨
+        editor.switch_to_track(0);
+
+        // 复制自视觉 0（doc 2），origin_track=0，note 视觉偏移=0
+        let json = single_track_clipboard_json();
+        let pasted = editor.arrange_paste_from_text(&json);
+        assert!(pasted, "粘贴应成功");
+
+        assert_eq!(
+            doc_track_note_count(&editor, 0),
+            2,
+            "粘贴应落到切换后的当前轨 doc 0（而非旧选区所在 doc 2）"
+        );
+        assert_eq!(
+            doc_track_note_count(&editor, 2),
+            1,
+            "doc 2 不应被旧选区误写入"
+        );
+    }
 }
 

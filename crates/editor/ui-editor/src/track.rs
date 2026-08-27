@@ -23,6 +23,11 @@ impl super::Editor {
 
         // 切换音轨时清除选中状态（通过 editor_state）
         self.selection_clear();
+        // 走带视图的框选（arrange_selection）同样属于"当前编辑音轨"的上下文：
+        // 否则切轨后旧框选仍驻留，复制/粘贴会锚定在旧音轨而非新当前轨，
+        // 表现为"两个同时活跃的音轨"（切轨高亮一轨、旧框选另一轨）。
+        // 单一权威源：切轨即重置走带选择，粘贴锚定落在当前轨。
+        self.editor_state.data.arrange_selection.clear();
         self.editor_state.interaction.hover_state = None;
         self.editor_state.interaction.edit_state = super::EditState::Idle;
         // 切轨中断拖动：丢弃未弹出的批量拖动预览序列（发声反馈）
