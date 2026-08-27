@@ -342,7 +342,7 @@ impl Toolbar {
                 self.overflow_menu_open = false;
                 self.brush_dropdown_open = false;
                 tracing::debug!(
-                    "工具栏: 绘制工具面板 {}",
+                    "工具栏: 音符绘制工具集 {}",
                     if self.tool_panel_open {
                         "打开"
                     } else {
@@ -352,7 +352,7 @@ impl Toolbar {
             }
             Event::CloseToolPanel => {
                 self.tool_panel_open = false;
-                tracing::debug!("工具栏: 关闭绘制工具面板");
+                tracing::debug!("工具栏: 关闭音符绘制工具集");
             }
             Event::ToggleBrushDropdown => {
                 self.brush_dropdown_open = !self.brush_dropdown_open;

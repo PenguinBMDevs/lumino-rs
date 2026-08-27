@@ -33,7 +33,7 @@ pub struct MainTranslations {
     pub tool_curve: &'static str,
     /// 颜料桶（填充封闭区域）
     pub tool_fill: &'static str,
-    /// 绘制工具面板触发按钮（颜料桶右侧小三角）
+    /// 音符绘制工具集触发按钮（工具栏小三角）
     pub tool_panel_tooltip: &'static str,
     /// 描边设置
     pub tool_stroke: &'static str,
@@ -289,7 +289,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_eraser: "橡皮擦",
     tool_curve: "曲线工具",
     tool_fill: "颜料桶",
-    tool_panel_tooltip: "绘制工具",
+    tool_panel_tooltip: "音符绘制工具集",
     tool_stroke: "描边设置",
     tool_brush: "画刷工具",
     tool_shape: "形状工具",
@@ -427,7 +427,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     tool_eraser: "Eraser",
     tool_curve: "Curve Tool",
     tool_fill: "Paint Bucket",
-    tool_panel_tooltip: "Drawing Tools",
+    tool_panel_tooltip: "Note Drawing Toolset",
     tool_stroke: "Stroke Settings",
     tool_brush: "Brush Tool",
     tool_shape: "Shape Tool",
