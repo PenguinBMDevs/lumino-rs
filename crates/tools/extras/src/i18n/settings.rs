@@ -98,6 +98,14 @@ pub struct SettingsTranslations {
     pub lgs_buffer: &'static str,
     /// LGS (GPU) 缓冲区大小提示
     pub lgs_buffer_hint: &'static str,
+    /// 音频播放输出设备标签
+    pub audio_output_device: &'static str,
+    /// 音频播放输出设备默认项（系统默认输出设备）
+    pub audio_output_default: &'static str,
+    /// 音频播放输出设备未检测到提示
+    pub audio_output_no_device: &'static str,
+    /// 音频播放输出设备提示
+    pub audio_output_hint: &'static str,
 
     // ── 界面页面 ──
     /// 界面页面标题
@@ -272,6 +280,10 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     builtin_engine: "内置合成器引擎:",
     lgs_buffer: "缓冲区大小 (samples):",
     lgs_buffer_hint: "GPU 一次调度的音频帧数，须为 2 的幂（64–8192）；越小延迟越低但密集段落 GPU 开销越大",
+    audio_output_device: "音频播放输出设备:",
+    audio_output_default: "系统默认输出设备",
+    audio_output_no_device: "未检测到可用的音频播放输出设备",
+    audio_output_hint: "选择音频播放输出设备；默认使用系统默认设备。更改后下次播放（软件合成器重建）生效",
     ui_title: "界面",
     theme: "主题:",
     program_font: "程序字体:",
@@ -377,6 +389,10 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     builtin_engine: "Built-in Synth Engine:",
     lgs_buffer: "Buffer Size (samples):",
     lgs_buffer_hint: "Audio frames rendered per GPU dispatch; must be a power of two (64–8192); smaller = lower latency but higher GPU cost for dense passages",
+    audio_output_device: "Audio Playback Output Device:",
+    audio_output_default: "System Default Output Device",
+    audio_output_no_device: "No available audio playback output device detected",
+    audio_output_hint: "Select the audio playback output device; system default is used if unset. Applies on next playback (software synth rebuild)",
     ui_title: "UI",
     theme: "Theme:",
     program_font: "Program Font:",

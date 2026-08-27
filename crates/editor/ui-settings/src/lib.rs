@@ -53,6 +53,10 @@ pub struct SynthSettings {
     pub lgs_max_voices_per_key: usize,
     /// LGS (GPU) 专属响度(力度)过滤阈值（0=关闭过滤，默认 1，与 XSynth 全局力度过滤相互独立）
     pub lgs_velocity_filter_threshold: u8,
+    /// 音频播放输出设备（CPAL 音频设备）扫描结果列表（设备名）
+    pub audio_output_devices: Vec<String>,
+    /// 当前选中的音频播放输出设备（设备名；None = 系统默认输出设备）
+    pub selected_audio_output_device: Option<String>,
 }
 
 /// 编辑行为设置（橡皮/框选/字体/历史/自动化/Tempo/音轨）

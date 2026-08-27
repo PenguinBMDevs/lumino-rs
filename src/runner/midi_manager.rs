@@ -232,6 +232,7 @@ impl MidiManager {
             threads: ui_config.xsynth_threads,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
+            audio_output_device: ui_config.audio_output_device.clone(),
         };
 
         let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))
@@ -319,6 +320,7 @@ impl MidiManager {
             max_voices_per_key: ui_config.lgs_max_voices_per_key,
             use_sinc: ui_config.lgs_use_sinc,
             velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
+            audio_output_device: ui_config.audio_output_device.clone(),
         };
 
         let api = lumino_midi_io::new_api(&api_kind)

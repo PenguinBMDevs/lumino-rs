@@ -167,6 +167,12 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
         col = col.push(iced_widget::space().height(SPACING_CONTENT));
     }
 
+    // 音频播放输出设备（CPAL 音频设备）选择器：仅对软件合成器（内置引擎）生效
+    if show_builtin_engine {
+        col = col.push(render_audio_output_selector(settings, t));
+        col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    }
+
     // MIDI 输入设备选择
     col = col.push(render_midi_device_selector(settings, t));
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
@@ -529,6 +535,80 @@ fn render_winmm_output_selector<'a>(
         body,
         iced_widget::space().height(SPACING_CONTENT),
         text(t.system_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    ]
+    .spacing(SPACING_CONTENT)
+    .into()
+}
+
+/// 渲染音频播放输出设备（CPAL 音频设备）选择器
+///
+/// 展示 CPAL 音频输出设备扫描结果，通过下拉菜单选择指定的播放输出设备；
+/// 默认项为「系统默认输出设备」，提供「刷新」按钮触发重新扫描。
+/// 该设置仅对软件合成器（XSynth / LGS）生效。
+fn render_audio_output_selector<'a>(
+    settings: &'a SettingsPanel,
+    t: &lumino_extras::i18n::SettingsTranslations,
+) -> Element<'a> {
+    let default_label = t.audio_output_default;
+    let refresh_btn = iced_widget::button(t.refresh)
+        .on_press(Message::Settings(crate::Event::ScanAudioOutputs));
+
+    let body: Element<'a> = if settings.synth.audio_output_devices.is_empty() {
+        row![
+            text(t.audio_output_device)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            text(t.audio_output_no_device)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_placeholder_text_style()),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            refresh_btn,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center)
+        .into()
+    } else {
+        // 选项：默认项 + 所有扫描到的音频输出设备名
+        let mut options: Vec<String> = vec![default_label.to_string()];
+        options.extend(settings.synth.audio_output_devices.iter().cloned());
+        // 选中态：未选择（None）时显示默认项
+        let selected: Option<String> = settings
+            .synth
+            .selected_audio_output_device
+            .clone()
+            .or_else(|| Some(default_label.to_string()));
+
+        row![
+            text(t.audio_output_device)
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style()),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(options, selected, move |name| {
+                // 选择默认项 → 清空（使用系统默认）；否则记录设备名
+                if name == default_label {
+                    Message::Settings(crate::Event::AudioOutputSelected(String::new()))
+                } else {
+                    Message::Settings(crate::Event::AudioOutputSelected(name))
+                }
+            })
+            .placeholder(t.select_device_placeholder)
+            .padding([4, 8])
+            .width(200.0),
+            iced_widget::space().width(SPACING_ICON_LABEL),
+            refresh_btn,
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center)
+        .into()
+    };
+
+    column![
+        body,
+        iced_widget::space().height(SPACING_CONTENT),
+        text(t.audio_output_hint)
             .size(12.0)
             .style(create_placeholder_text_style()),
     ]

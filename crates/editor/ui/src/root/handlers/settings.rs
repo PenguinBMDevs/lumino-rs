@@ -103,10 +103,23 @@ impl MessageHandler for SettingsHandler {
             crate::settings::Event::WinmmOutputSelected(_id) => {
                 tracing::debug!("Root: 已选择 WinMM 输出设备(播表)");
             }
+            crate::settings::Event::ScanAudioOutputs => {
+                // 音频播放输出设备自动扫描（CPAL 音频设备列表）
+                root.scan_audio_outputs();
+            }
+            crate::settings::Event::AudioOutputSelected(_name) => {
+                tracing::debug!("Root: 已选择音频播放输出设备");
+            }
             crate::settings::Event::OutputTypeChanged(OutputType::System)
             | crate::settings::Event::SynthBackendChanged(SynthBackend::System) => {
                 // 进入 WinMM 模式时自动扫描播表
                 root.scan_winmm_outputs();
+            }
+            crate::settings::Event::OutputTypeChanged(OutputType::Builtin)
+            | crate::settings::Event::SynthBackendChanged(SynthBackend::XSynth)
+            | crate::settings::Event::SynthBackendChanged(SynthBackend::Lgs) => {
+                // 进入内置软件合成器时自动扫描音频播放输出设备
+                root.scan_audio_outputs();
             }
             _ => {} // 其他设置变更由 settings.update() 同步
         }

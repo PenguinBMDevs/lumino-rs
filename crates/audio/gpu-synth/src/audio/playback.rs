@@ -179,15 +179,18 @@ impl AudioPlayback {
     ///
     /// Returns [`SynthError::Gpu`] if no audio output device is available or
     /// the stream cannot be opened.
-    pub fn start(mut synth: GpuSynth) -> Result<Self, SynthError> {
+    pub fn start(mut synth: GpuSynth, device: Option<cpal::Device>) -> Result<Self, SynthError> {
         let engine_rate = synth.config().sample_rate;
         let channels = synth.config().channels.channel_count();
         let block = synth.config().block_size;
 
-        let host = cpal::default_host();
-        let device = host
-            .default_output_device()
-            .ok_or_else(|| SynthError::Gpu("no default audio output device".into()))?;
+        // 优先使用调用方解析出的指定输出设备；否则回退到系统默认输出设备。
+        let device = match device {
+            Some(d) => d,
+            None => cpal::default_host()
+                .default_output_device()
+                .ok_or_else(|| SynthError::Gpu("no default audio output device".into()))?,
+        };
 
         // Negotiate: prefer the engine rate, else the device default, and
         // remember which we got so the render thread can resample.

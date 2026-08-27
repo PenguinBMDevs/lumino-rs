@@ -81,6 +81,23 @@ impl Root {
             }
         }
     }
+
+    /// 音频播放输出设备（CPAL 音频设备）自动扫描。
+    ///
+    /// 通过 CPAL 枚举所有可用的音频输出设备，写入设置面板，
+    /// 供「音频播放输出设备」下拉菜单展示（系统音频设备自动扫描）。
+    pub fn scan_audio_outputs(&mut self) {
+        let list = lumino_midi_io::audio_devices::enumerate_audio_output_devices();
+        tracing::info!("扫描到 {} 个音频播放输出设备", list.len());
+        self.settings.synth.audio_output_devices = list.clone();
+
+        // 校验已选设备是否仍然有效；失效则回落到系统默认（None）
+        if let Some(sel) = self.settings.synth.selected_audio_output_device.clone()
+            && !list.iter().any(|name| *name == sel)
+        {
+            self.settings.synth.selected_audio_output_device = None;
+        }
+    }
 }
 
 #[cfg(test)]

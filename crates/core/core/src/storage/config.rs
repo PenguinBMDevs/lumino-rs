@@ -303,6 +303,13 @@ pub struct UiConfig {
     /// 系统 MIDI (WinMM) 输出设备 ID（None = 使用系统默认/第一个输出设备）
     #[serde(default)]
     pub system_output_device_id: Option<u32>,
+    /// 音频播放输出设备（CPAL 音频设备名；None = 使用系统默认输出设备）
+    ///
+    /// 仅对软件合成器后端（XSynth / LGS）生效；系统 MIDI / KDMAPI 走 WinMM 播表
+    /// （见 `system_output_device_id`），不受此字段影响。设备名来自 CPAL 枚举，
+    /// 跨会话不保证稳定，但单次运行内唯一可识别。
+    #[serde(default)]
+    pub audio_output_device: Option<String>,
 }
 
 fn default_true() -> bool {
@@ -433,6 +440,7 @@ impl Default for UiConfig {
             monitor_refresh_interval_ms: default_monitor_refresh_interval_ms(),
             audio_engine: AudioEngineKind::default(),
             system_output_device_id: None,
+            audio_output_device: None,
         }
     }
 }

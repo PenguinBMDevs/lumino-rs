@@ -8,6 +8,7 @@ use xsynth_core::{
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent},
     soundfont::SoundfontBase,
 };
+use cpal::traits::DeviceTrait;
 
 use crate::realtime::{
     ChannelMixHandle, RealtimeEventSender, RealtimeSynth, StreamRestartError, SynthEvent,
@@ -42,6 +43,8 @@ pub struct XSynthOptions {
     pub sample_rate: u32,
     /// 是否淡出被杀掉的 voice
     pub fade_out_killing: bool,
+    /// 音频播放输出设备（CPAL 音频设备名；None = 使用系统默认输出设备）
+    pub audio_output_device: Option<String>,
 }
 
 /// XSynth 软件合成后端，基于 realtime 合成管线提供实时 MIDI 播放
@@ -131,8 +134,22 @@ impl XSynth {
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
         }
 
-        let synth = RealtimeSynth::open_with_default_output(rt_config)
-            .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?;
+        // 解析音频播放输出设备：指定设备有效则直接对其打开流，
+        // 否则回退到系统默认输出设备（设备已移除 / 改名时优雅降级）。
+        let target_device = crate::audio_devices::resolve_audio_output_device(
+            options.and_then(|o| o.audio_output_device.as_deref()),
+        );
+        let synth = match target_device {
+            Some(device) => {
+                let stream_config = device
+                    .default_output_config()
+                    .map_err(|e| Error::InitFailed(format!("音频设备默认配置失败: {}", e)))?;
+                RealtimeSynth::open(rt_config, &device, stream_config)
+                    .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?
+            }
+            None => RealtimeSynth::open_with_default_output(rt_config)
+                .map_err(|e| Error::InitFailed(format!("xsynth-realtime: {}", e)))?,
+        };
 
         // 设备实际采样率（cpal 决定，可能与请求的不同）
         let actual_sample_rate = synth.stream_params().sample_rate;

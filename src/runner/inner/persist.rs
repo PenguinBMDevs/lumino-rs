@@ -13,6 +13,7 @@ struct ConfigDiff {
     font_changed: bool,
     lgs_changed: bool,
     winmm_changed: bool,
+    audio_output_changed: bool,
 }
 
 fn display_or_empty(s: &str) -> &str {
@@ -49,6 +50,8 @@ impl RunnerInner {
         // 系统 MIDI (WinMM) 播表（输出设备）变化需要重建 System 输出连接
         let winmm_changed = new.synth.backend == lumino_core::storage::config::SynthBackend::System
             && new.midi.selected_winmm_output != old.system_output_device_id;
+        // 音频播放输出设备（CPAL 音频设备）变化需要重建软件合成器（XSynth / LGS）的音频流
+        let audio_output_changed = new.synth.selected_audio_output_device != old.audio_output_device;
         let other_changed = new.display.language != old.language
             || new.editing.selection_box_mode != old.selection_box_mode
             || new.midi.velocity_filter_threshold != old.velocity_filter_threshold
@@ -76,6 +79,7 @@ impl RunnerInner {
             || font_changed
             || lgs_changed
             || winmm_changed
+            || audio_output_changed
             || other_changed
         {
             Some(ConfigDiff {
@@ -86,6 +90,7 @@ impl RunnerInner {
                 font_changed,
                 lgs_changed,
                 winmm_changed,
+                audio_output_changed,
             })
         } else {
             None
@@ -124,6 +129,7 @@ impl RunnerInner {
                 font_changed: false,
                 lgs_changed: false,
                 winmm_changed: false,
+                audio_output_changed: false,
             },
         };
         if diff.synth_changed {
@@ -169,6 +175,14 @@ impl RunnerInner {
                 "WinMM 播表(输出设备)已改变: {:?} -> {:?}",
                 old.system_output_device_id,
                 new.midi.selected_winmm_output
+            );
+            self.midi_state.midi.mark_for_reinit();
+        }
+        if diff.audio_output_changed {
+            tracing::info!(
+                "音频播放输出设备已改变: {:?} -> {:?}",
+                old.audio_output_device,
+                new.synth.selected_audio_output_device
             );
             self.midi_state.midi.mark_for_reinit();
         }
@@ -253,6 +267,7 @@ impl RunnerInner {
             config.ui.monitor_refresh_interval_ms = new.logging.monitor_refresh_interval_ms;
             config.ui.log_retention_count = new.logging.log_retention_count;
             config.ui.system_output_device_id = new.midi.selected_winmm_output;
+            config.ui.audio_output_device = new.synth.selected_audio_output_device.clone();
         });
         lumino_extras::palette::set_current_palette_by_name(&new.display.selected_palette);
         if let Err(e) = self.window_state.storage.config.save() {

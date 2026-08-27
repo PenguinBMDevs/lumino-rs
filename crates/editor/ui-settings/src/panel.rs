@@ -58,6 +58,8 @@ impl SettingsPanel {
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
                 lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
+                audio_output_devices: Vec::new(),
+                selected_audio_output_device: ui_config.audio_output_device.clone(),
             },
             editing: EditingSettings {
                 eraser_behavior: ui_config.eraser_behavior,
@@ -259,6 +261,19 @@ impl SettingsPanel {
             Event::ScanWinmmOutputs => {
                 // 实际扫描由 editor/ui 的 Root::scan_winmm_outputs 执行并写回设置面板
                 tracing::debug!("设置: 收到 WinMM 播表扫描请求");
+            }
+            Event::AudioOutputSelected(name) => {
+                // 空串/默认项表示使用系统默认输出设备
+                self.synth.selected_audio_output_device = if name.is_empty() {
+                    None
+                } else {
+                    Some(name)
+                };
+                tracing::debug!("设置: 音频播放输出设备选择为 {:?}", self.synth.selected_audio_output_device);
+            }
+            Event::ScanAudioOutputs => {
+                // 实际扫描由 editor/ui 的 Root::scan_audio_outputs 执行并写回设置面板
+                tracing::debug!("设置: 收到音频播放输出设备扫描请求");
             }
             Event::LanguageChanged(lang) => {
                 self.display.language = lang;

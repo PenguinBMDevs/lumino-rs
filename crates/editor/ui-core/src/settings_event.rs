@@ -86,6 +86,10 @@ pub enum Event {
     WinmmOutputSelected(u32),
     /// 请求扫描系统 MIDI (WinMM) 播表（输出设备列表，系统播表自动扫描）
     ScanWinmmOutputs,
+    /// 音频播放输出设备（CPAL 音频设备）选择变更（设备名；空串/默认项表示系统默认）
+    AudioOutputSelected(String),
+    /// 请求扫描音频播放输出设备（CPAL 音频设备列表）
+    ScanAudioOutputs,
     /// 界面语言变更
     LanguageChanged(Language),
     /// 高精度洋葱皮贴图是否启用

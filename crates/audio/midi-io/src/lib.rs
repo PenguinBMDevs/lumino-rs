@@ -4,6 +4,7 @@
 //! 以及基于 xsynth 的音频合成与播放管线。
 
 pub mod api;
+pub mod audio_devices;
 pub mod compact;
 pub mod constants;
 pub mod playback;
@@ -272,6 +273,8 @@ pub enum ApiKind {
         use_sinc: bool,
         /// 响度(力度)过滤阈值（0=关闭过滤）
         velocity_filter_threshold: u8,
+        /// 音频播放输出设备（CPAL 音频设备名；None = 系统默认）
+        audio_output_device: Option<String>,
     },
 }
 
@@ -297,6 +300,7 @@ pub fn new_api_with_options(
             max_voices_per_key,
             use_sinc,
             velocity_filter_threshold,
+            audio_output_device,
         } => Box::new(Lgs::new(
             soundfont_path,
             &LgsOptions {
@@ -305,6 +309,7 @@ pub fn new_api_with_options(
                 max_voices_per_key: *max_voices_per_key,
                 use_sinc: *use_sinc,
                 velocity_filter_threshold: *velocity_filter_threshold,
+                audio_output_device: audio_output_device.clone(),
             },
         )?),
     };

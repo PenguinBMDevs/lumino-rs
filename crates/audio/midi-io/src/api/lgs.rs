@@ -30,6 +30,8 @@ pub struct LgsOptions {
     pub use_sinc: bool,
     /// 响度(力度)过滤阈值：MIDI 力度 <= 此值的音符不发声（0=关闭过滤）
     pub velocity_filter_threshold: u8,
+    /// 音频播放输出设备（CPAL 音频设备名；None = 使用系统默认输出设备）
+    pub audio_output_device: Option<String>,
 }
 
 /// LGS (GPU) 软件合成后端
@@ -79,7 +81,12 @@ impl Lgs {
             .load_soundfont(soundfont_path, 0, 0)
             .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音色库加载失败: {e}")))?;
 
-        let playback = AudioPlayback::start(synth)
+        // 解析音频播放输出设备：指定设备有效则对其打开流，
+        // 否则回退到系统默认输出设备。
+        let device = crate::audio_devices::resolve_audio_output_device(
+            options.audio_output_device.as_deref(),
+        );
+        let playback = AudioPlayback::start(synth, device)
             .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音频流启动失败: {e}")))?;
         let event_tx = Arc::new(Mutex::new(playback.event_sender()));
         let velocity_filter = Arc::new(AtomicU8::new(options.velocity_filter_threshold));
