@@ -37,6 +37,17 @@ fn first_remove_at(events: &[NoteDeltaEvent]) -> (usize, usize) {
     panic!("未找到 RemoveAt 事件");
 }
 
+/// 提取事件列表中全部 RemoveAt 的 (index, count) 列表（按记录顺序）
+fn all_remove_at(events: &[NoteDeltaEvent]) -> Vec<(usize, usize)> {
+    events
+        .iter()
+        .filter_map(|e| match e {
+            NoteDeltaEvent::RemoveAt { index, count } => Some((*index, *count)),
+            _ => None,
+        })
+        .collect()
+}
+
 /// 从事件列表中提取所有 InsertAt 的 (index, tick) 摘要
 fn insert_at_summary(events: &[NoteDeltaEvent]) -> Vec<(usize, f32)> {
     events
@@ -153,6 +164,50 @@ fn test_delete_records_remove_at_event() {
         (1, 1),
         "删除索引 1 应产生 RemoveAt {{ index: 1, count: 1 }}"
     );
+}
+
+#[test]
+fn test_delete_selected_merges_contiguous_into_remove_at_ranges() {
+    // 选中 {0, 2, 3, 4, 6}（含一段连续 [2,3,4] 与散点 0/6）：
+    // 旧实现对每个选中音符各发一条 RemoveAt{count:1}（5 次段内移位）；
+    // 新实现合并连续段为 RemoveAt{index, count}，按降序下发：
+    //   [RemoveAt{6,1}, RemoveAt{2,3}, RemoveAt{0,1}]（3 条事件，2 段移位）。
+    let mut data = make_data(8);
+    let mut selected = HashSet::new();
+    selected.insert(0);
+    selected.insert(2);
+    selected.insert(3);
+    selected.insert(4);
+    selected.insert(6);
+
+    data.delete_selected_notes(&selected);
+
+    assert!(
+        !data.note_delta_dirty,
+        "批量删除走事件增量，不置 dirty（渲染层不触发全量兜底重建）"
+    );
+    let removes = all_remove_at(&data.note_delta_events);
+    assert_eq!(
+        removes,
+        vec![(6, 1), (2, 3), (0, 1)],
+        "连续 [2,3,4] 合并为 RemoveAt{{2,3}}，散点各一条；降序下发"
+    );
+    // 文档剩余音符数 = 8 - 5 = 3，且索引未错位
+    assert_eq!(data.current_track_note_count(), 3, "应删除 5 个音符");
+    let ticks: Vec<u32> = data
+        .current_track_notes()
+        .iter()
+        .map(|n| n.start_tick)
+        .collect();
+    assert_eq!(ticks, vec![10, 50, 70], "残留音符应为原索引 1/5/7");
+}
+
+#[test]
+fn test_delete_selected_empty_is_noop() {
+    let mut data = make_data(4);
+    data.delete_selected_notes(&HashSet::new());
+    assert_eq!(data.current_track_note_count(), 4, "空选中不应删除任何音符");
+    assert!(data.note_delta_events.is_empty(), "空选中不应记录增量事件");
 }
 
 #[test]

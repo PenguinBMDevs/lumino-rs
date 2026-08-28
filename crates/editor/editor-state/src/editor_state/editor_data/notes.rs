@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::note_grouping::{self, NoteTuple};
-use super::EditorData;
+use super::{EditorData, NoteDeltaEvent};
 use crate::DragState;
 use lumino_note_core::history::CreateOp;
 use lumino_note_core::note::Note;
@@ -71,24 +71,44 @@ impl EditorData {
 
     /// 批量删除选中音符
     ///
-    /// 索引降序逐个删除，避免索引漂移；相比 retain 的 O(N) 有 K 次删除开销，
-    /// 但 document 为唯一权威源，语义清晰。第二阶段分块后删除走块级批量路径。
+    /// 索引降序逐个删除 document 当前轨（唯一权威源），避免索引漂移；
+    /// 删除完成后将待删索引合并为连续区间，统一下发 `RemoveAt { index, count }`
+    /// 增量事件（按降序），替代原每音符一条 `RemoveAt { count: 1 }`：
+    /// GPU 段内左移次数从 K（选中数）降至「连续删除段数」，整轨框选等海量选中
+    /// 场景下避免 K 次整段搬移的全量级开销。
+    /// 全程走 `note_delta_events` 增量通道，`note_delta_dirty` 不置位，
+    /// 渲染层不触发全量兜底重建（不走全量重建）。
     pub fn delete_selected_notes(&mut self, selected: &HashSet<usize>) {
         if selected.is_empty() {
             return;
         }
-        self.push_history();
+        let current_track = self.current_track;
+        // 待删索引降序排列（避免删除后索引漂移）
         let mut sorted: Vec<usize> = selected.iter().copied().collect();
         sorted.sort_unstable_by(|a, b| b.cmp(a));
+
+        // 先从 document 按降序删除（authoritative 源），不经 `remove_note` 以避免逐音符
+        // 记录事件；增量事件在删除完成后统一合并下发。
         let mut deleted = 0usize;
-        for idx in sorted {
-            if self.remove_note(self.current_track, idx).is_some() {
-                deleted += 1;
+        if let Some(doc) = self.document.as_mut() {
+            for &idx in &sorted {
+                if doc.remove_note(current_track, idx).is_some() {
+                    deleted += 1;
+                }
             }
         }
-        if deleted > 0 {
-            self.mark_current_track_changed();
+        if deleted == 0 {
+            return;
         }
+
+        // 仅当前音轨变更需记录段内增量（GPU buffer 布局 = 全量轨段）；
+        // 其他轨变化由洋葱皮层 Delta 通道同步，主音轨增量路径无需事件。
+        if current_track == self.current_track {
+            push_merged_remove_events(&mut self.note_delta_events, &sorted);
+        }
+
+        self.push_history();
+        self.mark_current_track_changed();
     }
 
     /// 返回所有音符索引
@@ -422,6 +442,29 @@ impl EditorData {
             }
         }
         results
+    }
+}
+
+/// 将降序索引列表合并为连续区间的 `RemoveAt` 增量事件（段内增量，按降序下发）。
+///
+/// `descending` 已由大到小排序。相邻索引差 1 视为同一连续删除段，合并为单条
+/// `RemoveAt { index: 段首(最小索引), count: 段长 }`。降序下发保证 GPU 段内左移时
+/// 高索引先处理、低索引仍有效，与逐音符降序删除语义一致。
+fn push_merged_remove_events(events: &mut Vec<NoteDeltaEvent>, descending: &[usize]) {
+    let mut i = 0;
+    while i < descending.len() {
+        let seg_start = descending[i]; // 段内最大索引（降序起点）
+        let mut seg_end = seg_start;
+        while i + 1 < descending.len() && descending[i + 1] == seg_end - 1 {
+            seg_end -= 1;
+            i += 1;
+        }
+        let count = seg_start - seg_end + 1;
+        events.push(NoteDeltaEvent::RemoveAt {
+            index: seg_end,
+            count,
+        });
+        i += 1;
     }
 }
 
