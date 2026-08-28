@@ -65,31 +65,25 @@ fn test_gpu_renders_preview_png() {
         set(&mut grid, 1, 1 + i, c, fg_light, bg_dark);
     }
 
-    // 控制面板：标签行 + 数值行（模拟真实 MidiConsole 的数据文字，验证对比度）
+    // 控制面板标签行（row 2），位于键盘条右侧（同行横向对齐）
     let labels = [
         "PC", "VOL", "EXP", "PAN", "P.BEND", "P.RANGE", "MOD", "HOLD", "CUT", "RESO", "ATT", "DEC",
         "REL",
     ];
-    let values = [
-        "001", "100", "064", "000", "0000", "024", "000", "000", "040", "060", "010", "020", "030",
-    ];
-    let ctrl_cols = [71usize, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137];
+    let field_cols = [71usize, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137];
     for f in 0..13usize {
         for (i, c) in labels[f].chars().enumerate() {
-            set(&mut grid, 2, ctrl_cols[f] + i, c, fg_light, bg_dark);
-        }
-        for (i, c) in values[f].chars().enumerate() {
-            set(&mut grid, 3, ctrl_cols[f] + i, c, fg_light, bg_dark);
+            set(&mut grid, 2, field_cols[f] + i, c, fg_light, bg_dark);
         }
     }
 
-    // 多行键盘条（CH01..CH05 + ALL），左侧标签 + 半块键；每格 ▌ 左=键2i、右=键2i+1，
-    // 与 CPU 端 draw_keyboard_row 语义一致，键位之间连续无间隔
+    // 每通道：键盘条（左，cols 5..68）+ 控制数据（右，col 71+）在同一行，横向对齐；
+    // 与 CPU 端 render() 的「数据在键盘右侧、同行横向对齐」布局一致
     let draw_kb = |grid: &mut [CellGpu], row: usize, label: &str, lit: &[usize]| {
         for (i, c) in label.chars().enumerate() {
             set(grid, row, 1 + i, c, fg_light, bg_dark);
         }
-        for i in 0..32usize {
+        for i in 0..64usize {
             let k0 = i * 2;
             let k1 = i * 2 + 1;
             let is_black = |k: usize| k % 12 == 1 || k % 12 == 3 || k % 12 == 6 || k % 12 == 8 || k % 12 == 10;
@@ -110,16 +104,42 @@ fn test_gpu_renders_preview_png() {
             set(grid, row, 5 + i, '\u{258C}', col0, col1);
         }
     };
-    draw_kb(&mut grid, 5, "CH01", &[0, 2, 4, 5, 7, 9, 11, 12]);
-    draw_kb(&mut grid, 7, "CH02", &[3, 8, 10, 15, 20, 25]);
-    draw_kb(&mut grid, 9, "CH03", &[1, 6, 14, 18, 22, 30]);
-    draw_kb(&mut grid, 11, "CH04", &[13, 17, 19, 24, 28, 33]);
-    draw_kb(&mut grid, 13, "CH05", &[2, 9, 16, 21, 27, 35]);
+    for ch in 0..16usize {
+        let kb_row = 3 + ch * 2;
+        // 数据（与键盘同行，右侧 col 71+）
+        let vals = [
+            format!("{:>3}", ch + 1),
+            format!("{:>3}", 100usize.wrapping_sub(ch)),
+            format!("{:>3}", 64 + ch % 20),
+            format!("{:>3}", (ch * 7) % 128),
+            format!("{:>4}", (ch as i32) * 100 - 200),
+            format!("{:>3}", 24),
+            format!("{:>3}", ch * 5),
+            format!("{:>3}", (ch % 2) * 64),
+            format!("{:>3}", 40 + ch),
+            format!("{:>3}", 60usize.wrapping_sub(ch)),
+            format!("{:>3}", 10),
+            format!("{:>3}", 20 + ch),
+            format!("{:>3}", 30),
+        ];
+        for f in 0..13usize {
+            for (i, c) in vals[f].chars().enumerate() {
+                set(&mut grid, kb_row, field_cols[f] + i, c, fg_light, bg_dark);
+            }
+        }
+        // 键盘
+        let lit_keys: Vec<usize> = (0..128usize)
+            .filter(|k| (k % 12 == ch % 12) || (k % 13 == (ch + 3) % 13))
+            .collect();
+        let label = format!("CH{:02}", ch + 1);
+        draw_kb(&mut grid, kb_row, &label, &lit_keys);
+    }
+    // ALL 合并键盘条（row 35，仅键盘）
     draw_kb(
         &mut grid,
-        15,
+        3 + 16 * 2,
         "ALL",
-        &[0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60],
+        &[0, 12, 24, 36, 48, 60, 72, 84, 96, 108, 120],
     );
 
     // 保证可见性：底部整行用亮色背景填充（即便字体缺失也不会全黑）

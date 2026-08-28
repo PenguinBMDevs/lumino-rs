@@ -31,7 +31,7 @@ const KEYBOARD_CELLS: u32 = 64;
 /// 控制面板字段数（PC/VOL/EXP/PAN/P.BEND/P.RANGE/MOD/HOLD/CUT/RESO/ATT/DEC/REL）
 const CONTROL_FIELDS: usize = 13;
 
-/// 控制字段列起始（逻辑列），与表头标签对齐
+/// 控制字段列起始（逻辑列），位于键盘条右侧、与键盘同行横向对齐
 const CTRL_COLS: [u32; CONTROL_FIELDS] = [
     71, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137,
 ];
@@ -290,11 +290,11 @@ impl MidiConsoleRenderer {
         self.draw_control_header(grid);
 
         for ch in 0..16usize {
+            // 键盘条 + 控制数据在同一行：键盘在左（cols 5..68），数据在右（col 71+），横向对齐
             let kb_row = 3 + ch * 2;
-            let ctrl_row = kb_row + 1;
             self.draw_keyboard_row(grid, kb_row as u32, ch as usize);
             if self.config.show_control_panel {
-                self.draw_control_row(grid, ctrl_row as u32, ch as usize);
+                self.draw_control_row(grid, kb_row as u32, ch as usize);
             }
         }
         // ALL 合并行
