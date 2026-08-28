@@ -101,10 +101,12 @@ pub struct MidiConsoleRenderer {
     ch_pitch: [i32; 16],
     /// control_events 扫描游标
     cc_cursor: usize,
-    /// 键盘淡出计时器：`[行][key]`，行 0 = ALL，1..16 = CH01..CH16
-    key_fade: [[u8; 128]; 17],
-    /// 控制面板变化高亮淡出计时器 `[channel][field]`
-    ctrl_fade: [[u8; CONTROL_FIELDS]; 16],
+    /// 键盘按键亮度水平（0=熄灭底色，1=完全点亮暖色）：`[行][key]`，行 0 = ALL，1..16 = CH01..CH16
+    /// 每帧向目标（按下=1 / 松开=0）连续趋近，实现亮灭平滑过渡动画
+    key_level: [[f32; 128]; 17],
+    /// 控制面板变化高亮亮度水平（0=常态，1=最强高亮）：`[channel][field]`
+    /// 变化瞬间置 1，随后每帧趋向 0，实现高亮淡出
+    ctrl_level: [[f32; CONTROL_FIELDS]; 16],
     /// 累计已开始音符总数（NOTES 统计）
     note_count: u64,
     /// 上一帧 tick（回退检测）
@@ -137,8 +139,8 @@ impl MidiConsoleRenderer {
             ch_cc: [[0; 128]; 16],
             ch_pitch: [0; 16],
             cc_cursor: 0,
-            key_fade: [[0u8; 128]; 17],
-            ctrl_fade: [[0u8; CONTROL_FIELDS]; 16],
+            key_level: [[0.0; 128]; 17],
+            ctrl_level: [[0.0; CONTROL_FIELDS]; 16],
             note_count: 0,
             last_tick: 0,
             config: config.clone(),
@@ -154,8 +156,8 @@ impl MidiConsoleRenderer {
         self.ch_cc = [[0; 128]; 16];
         self.ch_pitch = [0; 16];
         self.cc_cursor = 0;
-        self.key_fade = [[0u8; 128]; 17];
-        self.ctrl_fade = [[0u8; 13]; 16];
+        self.key_level = [[0.0; 128]; 17];
+        self.ctrl_level = [[0.0; CONTROL_FIELDS]; 16];
         self.note_count = 0;
         self.last_tick = 0;
     }
@@ -174,8 +176,6 @@ impl MidiConsoleRenderer {
                 self.note_cursor[ch] += 1;
                 self.active.push((e, ch as u8, k));
                 self.pressed[ch][k as usize] = true;
-                // ALL 行（索引 0）与各通道行（索引 ch+1）的淡出计时器
-                self.key_fade[ch + 1][k as usize] = self.config.keyboard_fade_frames as u8;
                 self.note_count += 1;
                 let _ = s;
             }
@@ -189,15 +189,6 @@ impl MidiConsoleRenderer {
                 true
             }
         });
-        // ALL 行淡出计时器 = 各通道最大值
-        for k in 0..128usize {
-            let mut m = 0u8;
-            for ch in 0..16 {
-                m = m.max(self.key_fade[ch + 1][k]);
-            }
-            self.key_fade[0][k] = m;
-        }
-
         // 2. 控制事件（CC / PC / PB），驱动控制面板高亮
         let ces = &document.control_events;
         while self.cc_cursor < ces.len() && ces[self.cc_cursor].tick <= tick {
@@ -209,18 +200,18 @@ impl MidiConsoleRenderer {
                         let (c, v) = ev.as_control_change();
                         self.ch_cc[ch][c as usize] = v;
                         if let Some(f) = cc_field_index(c) {
-                            self.ctrl_fade[ch][f] = self.config.control_fade_frames as u8;
+                            self.ctrl_level[ch][f] = 1.0;
                         }
                     }
                     1 => {
                         let p = ev.as_program_change();
                         self.ch_program[ch] = p;
-                        self.ctrl_fade[ch][0] = self.config.control_fade_frames as u8;
+                        self.ctrl_level[ch][0] = 1.0;
                     }
                     2 => {
                         let pb = ev.as_pitch_bend();
                         self.ch_pitch[ch] = (pb as i32) - 8192;
-                        self.ctrl_fade[ch][4] = self.config.control_fade_frames as u8;
+                        self.ctrl_level[ch][4] = 1.0;
                     }
                     _ => {}
                 }
@@ -228,18 +219,26 @@ impl MidiConsoleRenderer {
             self.cc_cursor += 1;
         }
 
-        // 3. 淡出计时器逐帧衰减
+        // 3. 亮度水平连续趋近：按键 → 趋向 1（亮起渐变），松开 → 趋向 0（熄灭渐变）；
+        //    控制面板变化 → 瞬间置 1，随后趋向 0（高亮淡出）。实现平滑过渡动画。
+        let krate = 1.0 / self.config.keyboard_fade_frames.max(1) as f32;
+        let crate_rate = 1.0 / self.config.control_fade_frames.max(1) as f32;
         for ch in 0..16 {
             for k in 0..128usize {
-                if self.key_fade[ch + 1][k] > 0 {
-                    self.key_fade[ch + 1][k] -= 1;
-                }
+                let tgt = if self.pressed[ch][k] { 1.0 } else { 0.0 };
+                self.key_level[ch + 1][k] = ramp(self.key_level[ch + 1][k], tgt, krate);
             }
             for f in 0..CONTROL_FIELDS {
-                if self.ctrl_fade[ch][f] > 0 {
-                    self.ctrl_fade[ch][f] -= 1;
-                }
+                self.ctrl_level[ch][f] = ramp(self.ctrl_level[ch][f], 0.0, crate_rate);
             }
+        }
+        // ALL 行亮度 = 各通道最大值
+        for k in 0..128usize {
+            let mut m = 0.0f32;
+            for ch in 0..16 {
+                m = m.max(self.key_level[ch + 1][k]);
+            }
+            self.key_level[0][k] = m;
         }
 
         self.last_tick = tick;
@@ -269,13 +268,12 @@ impl MidiConsoleRenderer {
         if k >= 128 {
             return [18, 18, 20];
         }
-        let (pressed, fade) = if ch_index == 16 {
-            let pressed = (0..16).any(|c| self.pressed[c][k]);
-            (pressed, self.key_fade[0][k])
+        let level = if ch_index == 16 {
+            self.key_level[0][k]
         } else {
-            (self.pressed[ch_index][k], self.key_fade[ch_index + 1][k])
+            self.key_level[ch_index + 1][k]
         };
-        key_color(k, pressed, fade, self.config.keyboard_fade_frames, self.config.warm_key_color)
+        key_color(k, level, self.config.warm_key_color)
     }
 
     /// 把当前 tick 的状态写入字符网格
@@ -358,8 +356,8 @@ impl MidiConsoleRenderer {
     fn draw_control_row(&self, grid: &mut [Cell], row: u32, ch: usize) {
         let vals = self.control_values(ch);
         for f in 0..CONTROL_FIELDS {
-            let hot = self.ctrl_fade[ch][f] > 0;
-            let (txt, col) = format_field(f, vals[f], hot);
+            let level = self.ctrl_level[ch][f];
+            let (txt, col) = format_field(f, vals[f], level);
             set_text(grid, row, CTRL_COLS[f], &txt, col, BG);
         }
     }
@@ -374,8 +372,9 @@ fn play_speed(ppq: u32, bpm: f64, fps: u32) -> f64 {
 }
 
 /// 逐通道控制面板字段格式化
-fn format_field(f: usize, v: i32, hot: bool) -> (String, [u8; 3]) {
-    let col = if hot { WARN } else { [205, 205, 185] };
+fn format_field(f: usize, v: i32, level: f32) -> (String, [u8; 3]) {
+    // 高亮强度随 ctrl_level 从常态色平滑过渡到告警红（控制变化高亮淡出动画）
+    let col = mix([205, 205, 185], WARN, level.clamp(0.0, 1.0));
     let s = match f {
         0 => {
             if v < 0 {
@@ -430,13 +429,11 @@ fn is_black_key(k: usize) -> bool {
     matches!(k % 12, 1 | 3 | 6 | 8 | 10)
 }
 
-/// 键颜色：未按下用底色（黑/白键区分），按下时按淡出计时器从底色渐变到暖色
-fn key_color(k: usize, pressed: bool, fade: u8, fade_frames: u32, warm: [u8; 3]) -> [u8; 3] {
+/// 键颜色：底色（黑/白键区分）按亮度水平 level（0=熄灭，1=点亮）平滑过渡到暖色，
+/// 因此按键的亮起与熄灭都是连续渐变动画。
+fn key_color(k: usize, level: f32, warm: [u8; 3]) -> [u8; 3] {
     let base: [u8; 3] = if is_black_key(k) { KEY_BLACK } else { KEY_WHITE };
-    if !pressed {
-        return base;
-    }
-    let t = (fade as f32 / fade_frames.max(1) as f32).clamp(0.0, 1.0);
+    let t = level.clamp(0.0, 1.0);
     [
         lerp(base[0], warm[0], t),
         lerp(base[1], warm[1], t),
@@ -446,6 +443,23 @@ fn key_color(k: usize, pressed: bool, fade: u8, fade_frames: u32, warm: [u8; 3])
 
 fn lerp(a: u8, b: u8, t: f32) -> u8 {
     (a as f32 + (b as f32 - a as f32) * t).clamp(0.0, 255.0) as u8
+}
+
+/// 两个 RGB 颜色按 t 线性混合
+fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
+    [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+}
+
+/// 向目标值以固定步长连续趋近（用于亮度过渡动画）
+#[inline]
+fn ramp(cur: f32, tgt: f32, rate: f32) -> f32 {
+    if cur < tgt {
+        (cur + rate).min(tgt)
+    } else if cur > tgt {
+        (cur - rate).max(tgt)
+    } else {
+        cur
+    }
 }
 
 // ───────────────────────── 字符网格 → 像素 ─────────────────────────
@@ -578,6 +592,9 @@ pub fn render_midicomsole_frame(
             }
         }
     }
+
+    // 3) 复古终端 CRT 后处理：静态扫描线 + 随 tick 移动的高亮扫描带（动态发光）
+    apply_crt_effect(frame, fw, fh, tick);
 }
 
 /// 背景色与前景色按覆盖率混合（BGRA 顺序）
@@ -611,6 +628,32 @@ fn fill_rect(
                 frame[di + 2] = color[0];
                 frame[di + 3] = 255;
             }
+        }
+    }
+}
+
+/// 复古终端 CRT 后处理：在每个像素上叠加扫描线纹理与一条随时间（tick）向下移动的高亮扫描带，
+/// 营造动态发光扫描线的复古显示器质感。扫描带位置由 tick 驱动，逐帧变化即产生「流动」动画。
+fn apply_crt_effect(frame: &mut [u8], fw: usize, fh: usize, tick: u32) {
+    let scan_period: usize = 3; // 每 3 行一条扫描暗线
+    let scan_dark: f32 = 0.82; // 扫描暗线压暗系数
+    let band_speed: f32 = 6.0; // 高亮扫描带每 tick 下移像素数
+    let band_center = (tick as f32 * band_speed) % fh as f32;
+    let band_width: f32 = 26.0; // 高亮扫描带半宽（高斯）
+    let band_strength: f32 = 0.28; // 高亮扫描带增益
+    for y in 0..fh {
+        // 扫描线：每隔 scan_period 行整体压暗
+        let scan = if y % scan_period == 0 { scan_dark } else { 1.0 };
+        // 移动高亮带：以 band_center 为中心的高斯发光
+        let dy = (y as f32 - band_center).abs();
+        let glow = (-(dy * dy) / (2.0 * band_width * band_width)).exp() * band_strength;
+        let factor = scan * (1.0 + glow);
+        let row = y * fw;
+        for x in 0..fw {
+            let di = (row + x) * 4;
+            frame[di] = (frame[di] as f32 * factor).clamp(0.0, 255.0) as u8;
+            frame[di + 1] = (frame[di + 1] as f32 * factor).clamp(0.0, 255.0) as u8;
+            frame[di + 2] = (frame[di + 2] as f32 * factor).clamp(0.0, 255.0) as u8;
         }
     }
 }
@@ -782,5 +825,82 @@ mod tests {
         }
         println!("------------------------------------------------------");
         println!("MidiConsole 预览图已写出: {}", path.display());
+    }
+
+    /// 按键亮度水平应随按下/松开平滑过渡（亮起渐变 + 熄灭渐变），而非瞬间跳变
+    #[test]
+    fn test_key_level_animates() {
+        let doc = make_short_doc();
+        let cfg = MidiConsoleRenderConfig {
+            show_control_panel: true,
+            keyboard_fade_frames: 30,
+            control_fade_frames: 30,
+            warm_key_color: [234, 234, 208],
+        };
+        let mut renderer = MidiConsoleRenderer::new(&doc, &cfg);
+        let mut grid = vec![Cell::blank(); (COLS * ROWS) as usize];
+        // 按住（tick=100，CH1 C4 发声中）：连续多帧后亮度应平滑趋近 1
+        for _ in 0..30 {
+            renderer.render(&mut grid, &doc, 100, 480, 60);
+        }
+        assert!(
+            renderer.key_level[1][60] > 0.8,
+            "按住时按键亮度应平滑趋近 1（亮起渐变动画），实际 {}",
+            renderer.key_level[1][60]
+        );
+        // 松开（tick=300 > 结束 240）：连续多帧后亮度应淡出趋近 0
+        for _ in 0..40 {
+            renderer.render(&mut grid, &doc, 300, 480, 60);
+        }
+        assert!(
+            renderer.key_level[1][60] < 0.1,
+            "松开后按键亮度应淡出趋近 0（熄灭渐变动画），实际 {}",
+            renderer.key_level[1][60]
+        );
+    }
+
+    /// CRT 后处理应产生扫描线压暗，且随 tick 改变帧内容（动态发光扫描线）
+    #[test]
+    fn test_crt_scanline_darkens() {
+        let w = 100u32;
+        let h = 100u32;
+        let mut frame = vec![0u8; (w * h * 4) as usize];
+        for i in 0..frame.len() {
+            frame[i] = if i % 4 == 3 { 255 } else { 200 };
+        }
+        let original = frame.clone();
+        // tick=10 时移动亮带中心约在 y=60，远离顶行，便于比较扫描线压暗
+        apply_crt_effect(&mut frame, w as usize, h as usize, 10);
+        assert_ne!(frame, original, "CRT 后处理应改变像素（扫描线/亮带生效）");
+        // 扫描线行（y%3==0，如 y=0）应比相邻非扫描线行（y=1）暗
+        let r_scan = frame[0] as f32;
+        let r_nonscan = frame[(1usize * w as usize) * 4] as f32;
+        assert!(
+            r_scan < r_nonscan,
+            "扫描线行应比非扫描线行暗（r_scan={r_scan}, r_nonscan={r_nonscan}）"
+        );
+    }
+
+    /// 仅含一个短音符（CH1 C4，tick 0..240）的文档，用于过渡动画测试
+    fn make_short_doc() -> MidiDocument {
+        let notes = vec![NoteEvent::new(0, 240, 60, 100, 0)];
+        MidiDocument {
+            next_note_id: 1,
+            notes: vec![ChunkedList::from_sorted(notes)],
+            tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
+            key_signatures: vec![(0, 0, false)],
+            control_events: ChunkedList::new(),
+            lyrics: vec![],
+            markers: vec![],
+            sys_ex: vec![],
+            track_names: vec![Some("T1".into())],
+            total_ticks: 240,
+            track_count: 1,
+            tracks: TrackManager::new(1),
+            division: 480,
+            track_ports: vec![],
+            track_max_end_ticks: vec![],
+        }
     }
 }
