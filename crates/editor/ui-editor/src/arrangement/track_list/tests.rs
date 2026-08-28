@@ -242,6 +242,70 @@ fn test_ensure_state_propagates_mute_solo_from_single_source() {
     );
 }
 
+/// 回归（单一真相源）：泳道高亮必须跟随模型当前轨。
+/// 泳道点击置位的本地 `selected_tracks` 在侧边栏切轨（外部路径）后必须被回收，
+/// 否则旧泳道仍高亮，与模型当前轨并存成"两个同时活跃的音轨"双高亮。
+#[test]
+fn test_ensure_state_resyncs_stale_highlight_to_model_current_track() {
+    let list = TrackListCanvas::new(
+        vec![(0, "A".into()), (1, "B".into()), (2, "C".into())],
+        2, // 模型当前轨已切到 lane 2
+        0.0,
+        48.0,
+        144.0,
+    );
+    let mut state = TrackListState::default();
+    // 模拟此前在泳道内点击过 lane 1，本地集合被冻结为 {1}
+    state.selected_tracks.insert(1);
+    list.ensure_state(&mut state);
+    assert_eq!(
+        state.selected_tracks,
+        std::collections::HashSet::from([2]),
+        "侧边栏切轨后，泳道高亮应收敛到模型当前轨 2，不得残留旧 lane 1"
+    );
+}
+
+/// 泳道内单选（本地集合恰为模型当前轨）应被保留，不误回收。
+#[test]
+fn test_ensure_state_preserves_local_selection_when_includes_model_current() {
+    let list = TrackListCanvas::new(
+        vec![(0, "A".into()), (1, "B".into()), (2, "C".into())],
+        1,
+        0.0,
+        48.0,
+        144.0,
+    );
+    let mut state = TrackListState::default();
+    state.selected_tracks.insert(1); // 泳道内点击 lane 1，与模型一致
+    list.ensure_state(&mut state);
+    assert_eq!(
+        state.selected_tracks,
+        std::collections::HashSet::from([1]),
+        "本地选择已是模型当前轨时应原样保留"
+    );
+}
+
+/// 泳道内 shift 多选（集合含模型当前轨 first）应保留，不被单轨覆盖。
+#[test]
+fn test_ensure_state_preserves_canvas_multi_select() {
+    let list = TrackListCanvas::new(
+        vec![(0, "A".into()), (1, "B".into()), (2, "C".into())],
+        1, // 多选 first（模型当前轨）为 1
+        0.0,
+        48.0,
+        144.0,
+    );
+    let mut state = TrackListState::default();
+    state.selected_tracks.insert(1);
+    state.selected_tracks.insert(2); // 泳道内 shift 多选 {1,2}
+    list.ensure_state(&mut state);
+    assert_eq!(
+        state.selected_tracks,
+        std::collections::HashSet::from([1, 2]),
+        "泳道内多选（含模型当前轨）应保留"
+    );
+}
+
 /// 架构收口（单一来源）回归：点击静音按钮的唯一副作用是发射
 /// `track_mute_toggled` 事件（由 Root 写回单一来源 sidebar.tracks），
 /// 并乐观翻转绘制缓冲。杜绝在走带视图内维护独立可写状态。

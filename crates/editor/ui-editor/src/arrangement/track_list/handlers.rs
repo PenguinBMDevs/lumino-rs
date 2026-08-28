@@ -22,13 +22,20 @@ impl TrackListCanvas {
         for (i, &v) in self.track_soloed.iter().enumerate().take(count) {
             state.track_soloed[i] = v;
         }
-        if state.selected_tracks.is_empty() {
-            if !self.selected_tracks.is_empty() {
-                state.selected_tracks.clone_from(&self.selected_tracks);
-                state.selection_anchor = self.selection_anchor;
+        // 单一真相源：泳道高亮必须跟随模型当前轨（sidebar.selected_track，
+        // 即 editor.current_track），而非被泳道点击置位后冻结的本地状态。
+        // 一旦模型当前轨脱离本地集合（侧边栏切轨等外部路径），立即以模型为准
+        // 重设，回收旧泳道高亮，杜绝"两个同时活跃的音轨"双高亮；泳道内单选/
+        // 多选（集合已含模型当前轨）则保留本地交互状态。
+        let model_current = self.selected_track;
+        if !state.selected_tracks.contains(&model_current) {
+            state.selected_tracks.clear();
+            if self.selected_tracks.is_empty() {
+                state.selected_tracks.insert(model_current);
             } else {
-                state.selected_tracks.insert(self.selected_track);
+                state.selected_tracks.clone_from(&self.selected_tracks);
             }
+            state.selection_anchor = None;
         }
     }
 
