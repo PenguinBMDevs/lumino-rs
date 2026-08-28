@@ -4270,6 +4270,7 @@ dependencies = [
 name = "lumino-gfx"
 version = "0.2.1"
 dependencies = [
+ "ab_glyph",
  "anyhow",
  "bytemuck",
  "futures",

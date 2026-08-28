@@ -16,6 +16,7 @@ default = []
 
 [dependencies]
 wgpu = { workspace = true }
+ab_glyph = { workspace = true }
 thiserror = { workspace = true }
 tracing = { workspace = true }
 bytemuck = { workspace = true, features = ["derive"] }

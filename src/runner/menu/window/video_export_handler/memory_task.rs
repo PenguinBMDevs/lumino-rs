@@ -251,7 +251,7 @@ fn enqueue_memory_frame(
                     send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染配置（内部错误）");
                     return true;
                 };
-                video_export::render_midicomsole_frame(
+                video_export::render_midicomsole_frame_gpu(
                     renderer,
                     &mut frame_data,
                     ctx.width,

@@ -25,7 +25,10 @@ pub(super) use counter_stats::{CounterRenderConfig, CounterStats, current_bpm};
 pub(super) use data_curve_frame::{
     DataCurveRenderConfig, DataCurveRenderer, render_data_curve_frame,
 };
-pub use midi_console::{MidiConsoleRenderConfig, MidiConsoleRenderer, render_midicomsole_frame};
+pub use midi_console::{
+    MidiConsoleRenderConfig, MidiConsoleRenderer, render_midicomsole_frame,
+    render_midicomsole_frame_gpu,
+};
 pub use render_params::RenderParamsInput;
 pub use render_params::SortableNote;
 pub(super) use render_params::build_video_export_render_params;

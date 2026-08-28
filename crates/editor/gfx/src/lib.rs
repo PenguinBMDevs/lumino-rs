@@ -24,6 +24,7 @@ mod vertical_grid_renderer;
 // mod velocity_line_renderer; // 已弃用 — 改用 CcBarRenderer
 
 pub mod automation;
+pub mod midiconsole_renderer;
 pub mod miditrail_renderer;
 pub mod waterfall_renderer;
 
