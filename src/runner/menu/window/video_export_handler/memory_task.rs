@@ -13,7 +13,7 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::{
     self, CounterFontRenderer, CounterRenderConfig, CounterStats, DataCurveRenderConfig,
-    DataCurveRenderer, SortableNote, keyboard,
+    DataCurveRenderer, MidiConsoleRenderConfig, MidiConsoleRenderer, SortableNote, keyboard,
 };
 use super::commands::{finalize_video_export, send_export_error, send_initial_render_commands};
 use super::composite::{CompositeEncodeFrameInput, composite_and_encode_frame};
@@ -39,6 +39,8 @@ struct MemoryEnqueueCtx<'a> {
     counter_renderer: &'a mut Option<CounterFontRenderer>,
     data_curve_config: &'a Option<DataCurveRenderConfig>,
     data_curve_renderer: &'a mut Option<DataCurveRenderer>,
+    midi_console_config: &'a Option<MidiConsoleRenderConfig>,
+    midi_console_renderer: &'a mut Option<MidiConsoleRenderer>,
     duration_secs: f64,
     waterfall_scroll_speed: f32,
     miditrail_z_far: f32,
@@ -239,6 +241,27 @@ fn enqueue_memory_frame(
                     );
                 }
             }
+            RenderMode::MidiConsole => {
+                // MidiConsole 风格：状态化渲染器直出 BGRA（与计数器/数据曲线同属 CPU 渲染）
+                let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
+                    send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染器（内部错误）");
+                    return true;
+                };
+                let Some(_cfg) = ctx.midi_console_config.as_ref() else {
+                    send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染配置（内部错误）");
+                    return true;
+                };
+                video_export::render_midicomsole_frame(
+                    renderer,
+                    &mut frame_data,
+                    ctx.width,
+                    ctx.height,
+                    ctx.document,
+                    tick,
+                    ctx.ppq,
+                    ctx.fps_f64 as u32,
+                );
+            }
         }
 
         // 帧数据直接送入编码通道，跳过渲染线程的 GPU 路径
@@ -310,6 +333,7 @@ pub(super) struct RunVideoExportTaskInput {
     pub render_mode: RenderMode,
     pub counter_config: Option<CounterRenderConfig>,
     pub data_curve_config: Option<DataCurveRenderConfig>,
+    pub midi_console_config: Option<MidiConsoleRenderConfig>,
 }
 
 pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
@@ -333,6 +357,8 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         render_mode,
         counter_config,
         data_curve_config,
+        midi_console_config,
+        ..
     } = input;
     let start = Instant::now();
 
@@ -444,6 +470,12 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         }
     }
 
+    // MidiConsole 风格渲染器（全文档模式，需完整 MIDI 数据）
+    let mut midi_console_renderer: Option<MidiConsoleRenderer> = None;
+    if let Some(cfg) = &midi_console_config {
+        midi_console_renderer = Some(MidiConsoleRenderer::new(&document, cfg));
+    }
+
     let mut render_bar = video_export::cli_progress::CliProgressBar::new(30, "视频渲染");
     render_bar.update(
         0.0,
@@ -485,6 +517,8 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         counter_renderer: &mut counter_renderer,
         data_curve_config: &data_curve_config,
         data_curve_renderer: &mut data_curve_renderer,
+        midi_console_config: &midi_console_config,
+        midi_console_renderer: &mut midi_console_renderer,
         duration_secs,
         waterfall_scroll_speed,
         miditrail_z_far,

@@ -153,6 +153,34 @@ impl Default for DataCurveConfig {
     }
 }
 
+/// MidiConsole 风格渲染配置（事件层传输结构）。
+///
+/// 复刻 MidiConsole（by Zacksony）的终端像素网格风格：逐通道半块键盘条 +
+/// 控制面板（PC/VOL/EXP/PAN/P.BEND/P.RANGE/MOD/HOLD/CUT/RESO/ATT/DEC/REL）。
+/// 风格高度固定（忠实原版配色），此处仅暴露少量可调开关，其余沿用原版常量。
+#[derive(Debug, Clone)]
+pub struct MidiConsoleConfig {
+    /// 是否绘制逐通道控制面板（PC/VOL/EXP/...）。关闭后仅保留键盘条与统计行。
+    pub show_control_panel: bool,
+    /// 按键按下后的淡出帧数（原版 MaxKeyboardFadeTime = 6）
+    pub keyboard_fade_frames: u32,
+    /// 控制值变化后的高亮淡出帧数（原版 MaxControlHighLightFadeTime = 40）
+    pub control_fade_frames: u32,
+    /// 按键按下时的暖色目标 RGB（原版 maxR/G/B = 234/234/208）
+    pub warm_key_color: [u8; 3],
+}
+
+impl Default for MidiConsoleConfig {
+    fn default() -> Self {
+        Self {
+            show_control_panel: true,
+            keyboard_fade_frames: 6,
+            control_fade_frames: 40,
+            warm_key_color: [234, 234, 208],
+        }
+    }
+}
+
 /// 视频导出配置（事件层传输结构）。
 #[derive(Debug, Clone)]
 pub struct VideoExportConfig {
@@ -188,4 +216,6 @@ pub struct VideoExportConfig {
     pub note_counter: NoteCounterConfig,
     /// 数据曲线渲染配置（仅 `render_mode == DataCurve` 时生效）
     pub data_curve: DataCurveConfig,
+    /// MidiConsole 风格渲染配置（仅 `render_mode == MidiConsole` 时生效）
+    pub midi_console: MidiConsoleConfig,
 }

@@ -43,6 +43,7 @@ impl RunnerInner {
             miditrail_z_far,
             note_counter,
             data_curve,
+            midi_console,
         } = *config;
 
         // 事件层枚举 → 导出层枚举（总映射，无字符串解析、无静默降级）
@@ -164,6 +165,7 @@ impl RunnerInner {
                     render_mode,
                     lumino_message::events::window::video::RenderMode::NoteCounter
                         | lumino_message::events::window::video::RenderMode::DataCurve
+                        | lumino_message::events::window::video::RenderMode::MidiConsole
                 );
                 // GPU compute / 3D 渲染输出为 rgba8unorm storage texture，
                 // 因此编码器输入像素格式必须为 "rgba"；
@@ -194,6 +196,15 @@ impl RunnerInner {
                 } else {
                     None
                 };
+                // MidiConsole 风格渲染配置（仅 MidiConsole 模式有效）
+                let midi_console_config = if matches!(
+                    render_mode,
+                    lumino_message::events::window::video::RenderMode::MidiConsole
+                ) {
+                    Some(super::video_export::MidiConsoleRenderConfig::from(&midi_console))
+                } else {
+                    None
+                };
                 if let Some(document) = document {
                     // Arc 快照不可变：克隆 owned 副本后覆盖 tempo。
                     // ChunkedList 为块级浅拷贝（O(块数) 指针拷贝），不复制音符数据。
@@ -221,12 +232,13 @@ impl RunnerInner {
                         render_mode,
                         counter_config,
                         data_curve_config,
+                        midi_console_config,
                     });
                 } else if !midi_path.is_empty() {
                     if is_cpu_renderer {
-                        tracing::error!("计数器/数据曲线模式需要完整 MIDI 数据，流式读取不支持");
+                        tracing::error!("计数器/数据曲线/MidiConsole 模式需要完整 MIDI 数据，流式读取不支持");
                         let _ = progress_tx.send((
-                            "导出失败：计数器/数据曲线模式需要完整 MIDI 数据，请先加载工程或指定 MIDI 数据源"
+                            "导出失败：计数器/数据曲线/MidiConsole 模式需要完整 MIDI 数据，请先加载工程或指定 MIDI 数据源"
                                 .to_string(),
                             -1.0,
                             0,

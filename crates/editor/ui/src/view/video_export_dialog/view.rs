@@ -143,6 +143,7 @@ fn render_quality_mode_options<'a>(
                 "MIDITrail".to_string(),
                 "计数器".to_string(),
                 "数据曲线".to_string(),
+                "MidiConsole".to_string(),
             ],
             Some(state.render_mode.clone()),
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),

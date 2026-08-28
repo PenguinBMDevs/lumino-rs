@@ -180,5 +180,6 @@ pub(crate) fn build_video_config(
             show_text: st.dc_show_text,
             show_bars: st.dc_show_bars,
         },
+        midi_console: MidiConsoleConfig::default(),
     }
 }

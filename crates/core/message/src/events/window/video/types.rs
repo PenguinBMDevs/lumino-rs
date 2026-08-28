@@ -123,6 +123,8 @@ pub enum RenderMode {
     NoteCounter,
     /// 数据曲线渲染（绘制统计数据随时间的折线图，参考 MIDIGraphRenderer 移植）
     DataCurve,
+    /// MidiConsole 风格（复刻 MidiConsole 的终端像素网格：逐通道半块键盘条 + 控制面板，参考 MidiConsole by Zacksony）
+    MidiConsole,
 }
 
 impl RenderMode {
@@ -134,6 +136,7 @@ impl RenderMode {
             RenderMode::MIDITrail => "miditrail",
             RenderMode::NoteCounter => "note_counter",
             RenderMode::DataCurve => "data_curve",
+            RenderMode::MidiConsole => "midi_console",
         }
     }
 }
@@ -146,6 +149,7 @@ impl std::fmt::Display for RenderMode {
             RenderMode::MIDITrail => f.write_str("MIDITrail"),
             RenderMode::NoteCounter => f.write_str("计数器"),
             RenderMode::DataCurve => f.write_str("数据曲线"),
+            RenderMode::MidiConsole => f.write_str("MidiConsole"),
         }
     }
 }
@@ -156,6 +160,7 @@ impl_unit_enum_from_str!(RenderMode, "未知渲染模式: {input}", {
     MIDITrail => ["miditrail", "MIDITrail"],
     NoteCounter => ["note_counter", "计数器", "NoteCounter"],
     DataCurve => ["data_curve", "数据曲线", "DataCurve"],
+    MidiConsole => ["midi_console", "MidiConsole"],
 });
 
 /// 数据曲线模式的数据来源指标。

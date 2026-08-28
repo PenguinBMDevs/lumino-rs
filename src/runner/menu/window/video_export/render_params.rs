@@ -162,6 +162,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
         )),
         RenderMode::NoteCounter => None,
         RenderMode::DataCurve => None,
+        RenderMode::MidiConsole => None,
     }
 }
 
