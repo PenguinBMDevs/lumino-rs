@@ -29,7 +29,11 @@ impl Root {
 
     /// 更新工程走带视图的自动滚动（基于编辑器自动滚动配置）
     /// 使演奏指示线的滚动模式在工程走带界面同样适用
-    pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32) {
+    ///
+    /// `is_playing` 指示当前是否处于播放状态。自动翻页（模式2 `ScrollingIndicator`）
+    /// 仅在播放状态下触发，非播放状态（暂停/停止/拖拽预览）下不主动翻页，
+    /// 避免打断用户对视图滚动的手动控制、造成滚动异常。
+    pub fn update_arrangement_auto_scroll(&mut self, playback_tick: f32, is_playing: bool) {
         let asc = *self.editor.auto_scroll_config();
         if asc.mode == lumino_core::storage::config::AutoScrollMode::Off {
             return;
@@ -59,7 +63,9 @@ impl Root {
                 let return_pos = asc.page_return_position as f32;
                 let indicator_screen_x = playback_tick * ppu - vp.scroll_x;
 
-                if indicator_screen_x >= viewport_width - trigger_offset {
+                // 仅在播放状态下触发自动翻页：非播放状态（暂停/停止/拖拽预览）下
+                // 不主动翻页，避免打断用户对视图滚动的手动控制、造成滚动异常。
+                if is_playing && indicator_screen_x >= viewport_width - trigger_offset {
                     let target_scroll_x = playback_tick * ppu - return_pos;
                     vp.scroll_x = target_scroll_x.clamp(0.0, max_scroll);
                 }

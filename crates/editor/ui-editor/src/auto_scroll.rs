@@ -33,8 +33,12 @@ impl Editor {
 
     /// 更新自动滚动（在每帧渲染前调用，根据播放位置调整滚动）
     ///
+    /// `is_playing` 指示当前是否处于播放状态。**自动翻页（模式2 `ScrollingIndicator`）
+    /// 仅在播放状态下触发**——非播放状态（暂停/停止/拖拽预览/seek）下若仍按播放头位置
+    /// 翻页，会打断用户对视图滚动的手动控制，导致滚动异常。
+    ///
     /// 返回是否需要刷新网格缓存
-    pub fn update_auto_scroll(&mut self, playback_tick: f32) -> bool {
+    pub fn update_auto_scroll(&mut self, playback_tick: f32, is_playing: bool) -> bool {
         let asc = &self.editor_state.auto_scroll;
         if asc.mode == AutoScrollMode::Off {
             return false;
@@ -81,7 +85,9 @@ impl Editor {
                 let indicator_screen_x = playback_tick * time_zoom - v.scroll_x + pitch_inset;
                 let trigger_screen_x = viewport_width + pitch_inset - trigger_offset;
 
-                if indicator_screen_x >= trigger_screen_x {
+                // 仅在播放状态下触发自动翻页：非播放状态（暂停/停止/拖拽预览/seek）下
+                // 不主动翻页，避免打断用户对视图滚动的手动控制、造成滚动异常。
+                if is_playing && indicator_screen_x >= trigger_screen_x {
                     let mut target_scroll_x = playback_tick * time_zoom - return_pos;
                     if target_scroll_x >= max_scroll {
                         target_scroll_x = max_scroll;

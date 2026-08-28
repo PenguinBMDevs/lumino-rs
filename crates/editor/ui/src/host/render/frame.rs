@@ -103,9 +103,9 @@ impl Host {
             self.root.editor.playback_position = tick;
             if self.root.is_playing() {
                 // 始终更新自动滚动（侧效果：设置 scroll_x）
-                self.root.editor.update_auto_scroll(tick);
+                self.root.editor.update_auto_scroll(tick, true);
                 // 工程走带视图也应用相同的自动滚动配置
-                self.root.update_arrangement_auto_scroll(tick);
+                self.root.update_arrangement_auto_scroll(tick, true);
                 // 更新播放期间琴键洋葱皮颜色（实时检测音符并着色键盘）
                 self.root.editor.update_playback_key_colors();
                 // 播放时总是请求重绘并标记 UI 脏，确保播放指示线位置更新。
@@ -121,8 +121,10 @@ impl Host {
                 // 位置（>0），故不能依赖 `update_playback_key_colors` 的 `== 0` 分支，
                 // 必须在此显式清空。
                 self.root.editor.clear_playback_key_colors();
-                // 停止后仍需按旧行为处理自动滚动触发
-                if self.root.editor.update_auto_scroll(tick) {
+                // 停止后仍需处理自动滚动，但**仅限固定指示线模式（模式1）**；
+                // 自动翻页（模式2）必须停在非播放状态，否则会打断用户对视图滚动的
+                // 手动控制、造成滚动异常。
+                if self.root.editor.update_auto_scroll(tick, false) {
                     self.window_ctx.window.request_redraw();
                 }
                 // 颜色变化需重绘键盘覆盖层

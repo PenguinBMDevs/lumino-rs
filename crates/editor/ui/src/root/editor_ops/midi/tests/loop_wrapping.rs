@@ -79,7 +79,7 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
 
         editor.playback_position = current_tick;
 
-        let scrolled = editor.update_auto_scroll(current_tick);
+        let scrolled = editor.update_auto_scroll(current_tick, true);
         assert!(scrolled, "FixedIndicatorLeft 模式 auto_scroll 应始终触发");
         assert!(
             (editor.editor_state.view.scroll_x - 0.0).abs() < f32::EPSILON,
@@ -106,7 +106,7 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
             ..Default::default()
         });
 
-        let scrolled = editor.update_auto_scroll(current_tick);
+        let scrolled = editor.update_auto_scroll(current_tick, true);
         assert!(!scrolled, "ScrollingIndicator: 回绕后不应触发翻页滚动");
 
         let expected_indicator_x = current_tick * 2.0 - 0.0 + 60.0;
@@ -132,7 +132,7 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
             ..Default::default()
         });
 
-        let scrolled = editor.update_auto_scroll(current_tick);
+        let scrolled = editor.update_auto_scroll(current_tick, true);
         assert!(!scrolled, "Off 模式 auto_scroll 不应触发");
 
         let expected_indicator_x = current_tick * 2.0 - 0.0 + 60.0;
@@ -153,7 +153,51 @@ fn test_loop_wrapping_full_pipeline_position_verification() {
     manager.stop();
 }
 
-/// 测试 Bug 2 场景：先开启循环再创建播放管理器，循环状态应同步到引擎
+/// 回归测试：未处于播放状态时，自动翻页（模式2 `ScrollingIndicator`）不应触发。
+///
+/// 场景：播放头已越过翻页触发位置（本「应」触发翻页），但传入 `is_playing = false`。
+/// 期望：返回 false 且不改变 `scroll_x`，从而不会打断用户对视图滚动的手动控制、
+/// 避免视图滚动异常。同时验证播放时（`is_playing = true`）翻页仍正常工作。
+#[test]
+fn test_scrolling_indicator_only_triggers_when_playing() {
+    let mut editor = Editor::new();
+
+    editor.editor_state.view.zoom_x = 2.0;
+    editor.editor_state.view.keyboard_width = 60.0;
+    editor.editor_state.view.scroll_x = 0.0;
+    editor.editor_state.canvas.size_x = 1280.0;
+    editor.editor_state.canvas.size_y = 800.0;
+    editor.editor_state.view.total_ticks = 2000;
+
+    editor.set_auto_scroll_config(AutoScrollConfig {
+        mode: AutoScrollMode::ScrollingIndicator,
+        page_trigger_offset: 100,
+        page_return_position: 100,
+        ..Default::default()
+    });
+
+    // 播放头处于较大位置，使指示线越过翻页触发线
+    let tick = 600.0;
+    editor.playback_position = tick;
+
+    // 非播放状态：不应触发翻页，scroll_x 保持不变（仍为 0）
+    let scrolled = editor.update_auto_scroll(tick, false);
+    assert!(!scrolled, "非播放状态下自动翻页不应触发");
+    assert!(
+        (editor.editor_state.view.scroll_x - 0.0).abs() < f32::EPSILON,
+        "非播放状态下 scroll_x 不应改变，实际 = {}",
+        editor.editor_state.view.scroll_x,
+    );
+
+    // 播放状态：应正常触发翻页（600*2 - 100 = 1100）
+    let scrolled = editor.update_auto_scroll(tick, true);
+    assert!(scrolled, "播放状态下自动翻页应触发");
+    assert!(
+        (editor.editor_state.view.scroll_x - 1100.0).abs() < f32::EPSILON,
+        "播放状态下 scroll_x 应翻页到 1100，实际 = {}",
+        editor.editor_state.view.scroll_x,
+    );
+}
 #[test]
 fn test_loop_synced_to_new_playback_manager() {
     let mut manager = PlaybackManager::new(480);
