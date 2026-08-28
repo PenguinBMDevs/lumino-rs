@@ -114,3 +114,81 @@ fn test_flush_pending_drag_commits_copy_on_empty_click() {
         "复制提交后 pending 应清空"
     );
 }
+
+// ===== 回归：窗口级 Ctrl 通道失效时，canvas 上报的 Ctrl 仍应触发复制 =====
+// 复现用户 BUG：窗口级 CtrlKeyChanged 因焦点丢失未送达（editor.ctrl_pressed()
+// 为 false），但 canvas 本地 ModifiersChanged 可靠检测到 Ctrl。修复前复制判定
+// 仅依赖窗口通道，会漏判成「移动」，副本既不入内存也不显示；修复后 canvas 的
+// ctrl 随 Pressed 消息进入 handle_action 入口的双通道 OR，复制拖拽正常触发。
+
+#[test]
+fn test_pointer_pressed_ctrl_via_canvas_message_triggers_copy_when_window_channel_dead() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.selection_insert(0);
+    // 关键：不调用 set_ctrl_pressed(true)，模拟窗口级 Ctrl 通道失效
+    assert!(!editor.ctrl_pressed(), "前置：窗口级 ctrl 通道应处于失效状态");
+
+    let center = selection_box_center(&editor);
+    // 通过 EditorAction::Pressed 携带 canvas 可靠检测到的 ctrl（窗口通道为 false）
+    editor.handle_action(lumino_ui_core::message::EditorAction::Pressed {
+        pos: lumino_ui_core::message::Point2::new(center.x, center.y),
+        shift: false,
+        ctrl: true,
+    });
+
+    match editor.editor_state.interaction.edit_state {
+        EditState::DraggingSelectionCopy { .. } => {}
+        other => panic!(
+            "canvas 上报 Ctrl 时应进入 DraggingSelectionCopy（复制），实际 {:?}",
+            other
+        ),
+    }
+}
+
+// 端到端回归：经真实 handle_action(Pressed/Moved/Released) 全链路，
+// 断言副本「写入内存（数量 1→2）且可见（显示）」，对齐用户「复制 + 写入内存 + 显示」三要素。
+#[test]
+fn test_ctrl_drag_copy_full_flow_via_handle_action_writes_to_memory_and_display() {
+    let mut editor = Editor::new();
+    editor.editor_state.canvas.size_x = 2000.0;
+    editor.editor_state.canvas.size_y = 4000.0;
+    test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
+    editor.editor_state.view.set_snap_precision(10.0);
+    editor.selection_insert(0);
+
+    // 模拟 canvas 把 ctrl（可靠通道）随 Pressed 消息上报，窗口通道失效
+    let center = selection_box_center(&editor);
+    editor.handle_action(lumino_ui_core::message::EditorAction::Pressed {
+        pos: lumino_ui_core::message::Point2::new(center.x, center.y),
+        shift: false,
+        ctrl: true,
+    });
+    assert!(
+        matches!(
+            editor.editor_state.interaction.edit_state,
+            EditState::DraggingSelectionCopy { .. }
+        ),
+        "应进入复制拖拽状态"
+    );
+
+    // 向右移动：center 对应 tick 240，移向 tick 290（+50）
+    let moved_x = editor.editor_state.view.tick_to_x(290.0);
+    editor.handle_action(lumino_ui_core::message::EditorAction::Moved(
+        lumino_ui_core::message::Point2::new(moved_x, center.y),
+    ));
+    editor.handle_action(lumino_ui_core::message::EditorAction::Released);
+
+    // 副本已写入内存（从 1 → 2）
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        2,
+        "副本应写入内存层"
+    );
+    // 副本同时可见（渲染数据层包含原件 + 副本）
+    let mut visible: Vec<(f32, u16, f32)> = Vec::new();
+    editor.collect_visible_note_data(&mut visible, None, 0.0);
+    assert_eq!(visible.len(), 2, "副本应同时可见（写入显示）");
+}

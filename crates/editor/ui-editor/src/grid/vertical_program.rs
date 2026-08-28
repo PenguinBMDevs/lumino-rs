@@ -58,6 +58,9 @@ impl VerticalRollGrid<'_> {
             EditorAction::Pressed {
                 pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
                 shift: state.shift_pressed,
+                // 携带 canvas 本地 ModifiersChanged 的 Ctrl 状态（可靠通道），
+                // 用于复制拖拽判定（见横向 handle_left_press 注释）。
+                ctrl: state.control_pressed,
             },
         )))
     }

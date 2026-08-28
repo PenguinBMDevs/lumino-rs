@@ -693,6 +693,7 @@ mod tests {
         editor.handle_action(EditorAction::Pressed {
             pos: Point2::new(100.0, 100.0),
             shift: false,
+            ctrl: false,
         });
         editor.handle_action(EditorAction::Released);
 

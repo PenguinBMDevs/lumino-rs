@@ -29,7 +29,13 @@ impl Editor {
         self.editor_state.interaction.pending_audio_actions.clear();
 
         match action {
-            EditorAction::Pressed { pos, shift } => {
+            EditorAction::Pressed { pos, shift, ctrl } => {
+                // 复制拖拽（Ctrl+拖动批量选区复制）依赖可靠的 Ctrl 状态。
+                // 双通道合并：canvas 本地 `control_pressed`（ModifiersChanged，可靠）
+                // 与窗口级 `CtrlKeyChanged`（可能因焦点丢失不送达）取 OR，
+                // 与 Ctrl+滚轮缩放语义一致。否则窗口通道漏判时 Ctrl+拖动
+                // 会错误走成「移动」而非「复制」，副本既不入内存也不显示。
+                self.set_ctrl_pressed(ctrl || self.ctrl_pressed());
                 self.handle_pressed(iced_core::Point::new(pos.x, pos.y), shift)
             }
             EditorAction::Moved(pos) => self.handle_moved(iced_core::Point::new(pos.x, pos.y)),

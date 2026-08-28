@@ -11,6 +11,13 @@ pub enum EditorAction {
         pos: Point2,
         /// 是否按下 Shift
         shift: bool,
+        /// 是否按下 Ctrl（来自 canvas 本地 ModifiersChanged，可靠通道）
+        ///
+        /// 用于复制拖拽（Ctrl+拖动批量选区复制）等依赖 Ctrl 的交互。
+        /// 与窗口级 `CtrlKeyChanged` 互为兜底：canvas 内 `ModifiersChanged`
+        /// 可靠（焦点不丢失），窗口级可能因焦点问题不送达，二者在
+        /// `handle_action` 入口取 OR 合并，与 Ctrl+滚轮缩放语义一致。
+        ctrl: bool,
     },
     /// 编辑器内鼠标移动
     Moved(Point2),

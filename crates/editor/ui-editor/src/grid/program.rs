@@ -111,6 +111,10 @@ impl<'a> PianoRollGrid<'a> {
                 EditorAction::Pressed {
                     pos: lumino_ui_core::message::Point2::new(local_pos.x, local_pos.y),
                     shift: state.shift_pressed,
+                    // 携带 canvas 本地 ModifiersChanged 的 Ctrl 状态（可靠通道），
+                    // 用于复制拖拽判定，与窗口级 CtrlKeyChanged 在 handle_action
+                    // 入口取 OR 合并，避免焦点丢失导致 Ctrl 漏判。
+                    ctrl: state.control_pressed,
                 },
             )))
         }
