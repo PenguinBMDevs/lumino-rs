@@ -305,7 +305,10 @@ impl MidiConsoleRenderer {
 
     fn draw_header(&self, grid: &mut [Cell], _document: &MidiDocument, _tick: u32, _ppq: u32, _fps: u32) {
         set_text(grid, 0, 1, "LUMINO MIDICONSOLE", [220, 220, 230], BG);
-        set_text(grid, 0, COLS - 12, "▶ PLAYING", [120, 220, 120], BG);
+        // 显式标注：CH01..CH16 行即 MIDI 通道 1..16（非轨道），按键亮起按通道独立检测。
+        // 仅用 ASCII（Consolas/DejaVu 保证有字形），避免 ▶/·/中文 等缺失字形导致空白。
+        set_text(grid, 0, 20, "- CH1-16 = MIDI CHANNEL", [150, 170, 210], BG);
+        set_text(grid, 0, COLS - 10, "> PLAYING", [120, 220, 120], BG);
     }
 
     fn draw_stats(&self, grid: &mut [Cell], document: &MidiDocument, tick: u32, ppq: u32, fps: u32) {
@@ -542,9 +545,12 @@ pub fn render_midicomsole_frame(
                     let baseline_y = r as f32 * cell_h + off_y + ascent;
                     let glyph = gid.with_scale_and_position(scale, Point { x: baseline_x, y: baseline_y });
                     if let Some(outline) = font.outline_glyph(glyph) {
+                        // 关键：ab_glyph 的 draw 回调坐标是「相对字形包围盒左上角」，
+                        // 必须叠加 px_bounds().min 才是帧内绝对像素（与本仓 text_tool 完全一致）
+                        let b = outline.px_bounds();
                         outline.draw(|px, py, cov| {
-                            let x = px as i32;
-                            let y = py as i32;
+                            let x = (px as f32 + b.min.x).round() as i32;
+                            let y = (py as f32 + b.min.y).round() as i32;
                             if x < 0 || y < 0 {
                                 return;
                             }
@@ -627,6 +633,8 @@ mod tests {
             NoteEvent::new(300, 1600, 48, 100, 3), // CH4 C3
             NoteEvent::new(400, 1500, 76, 100, 4), // CH5 E5
             NoteEvent::new(500, 1400, 81, 100, 5), // CH6 A5
+            NoteEvent::new(0, 1920, 72, 100, 7), // CH8 C5（验证中段通道）
+            NoteEvent::new(0, 1920, 84, 100, 15), // CH16 C6（验证最高通道）
         ];
         let mut list: Vec<NoteEvent> = notes;
         list.sort_unstable_by_key(|n| n.start_tick);
@@ -674,11 +682,13 @@ mod tests {
         let cfg = MidiConsoleRenderConfig::from(&MidiConsoleConfig::default());
         let mut renderer = MidiConsoleRenderer::new(&doc, &cfg);
         let mut grid = vec![Cell::blank(); (COLS * ROWS) as usize];
-        // tick=240：CH1 的 C4(60) 活跃、CH2 的 G3(55) 活跃
+        // tick=240：验证跨通道独立检测（CH1 / CH2 / CH8 / CH16 各自按键）
         renderer.render(&mut grid, &doc, 240, 480, 60);
         assert!(renderer.pressed[0][60], "CH1 C4 应被按下");
         assert!(renderer.pressed[1][55], "CH2 G3 应被按下");
-        assert!(renderer.note_count >= 2, "已计数的音符应 >= 2");
+        assert!(renderer.pressed[7][72], "CH8 C5 应被按下（中段通道）");
+        assert!(renderer.pressed[15][84], "CH16 C6 应被按下（最高通道）");
+        assert!(renderer.note_count >= 4, "已计数的音符应 >= 4");
     }
 
     /// 渲染一帧并导出 PNG 预览图，供人工查看 MidiConsole 风格效果。
@@ -699,6 +709,41 @@ mod tests {
         render_midicomsole_frame(&mut renderer, &mut frame, w, h, &doc, 960, 480, 60);
 
         assert!(frame.iter().any(|&v| v != 0), "预览帧不应全黑");
+
+        // ── 字形坐标正确性验证（闭环证据）──
+        // 修复前 draw 回调的 px/py 被误当绝对坐标，所有字形堆在帧左上角 (0,0) 互相覆盖。
+        // 修复后：表头文字应出现在正确格子，左上角第 0 列（header 行此处为空格）应保持背景。
+        let cell_w_i = cell as usize;
+        let cell_h_i = (cell * 2) as usize;
+        let fw_us = w as usize;
+        // (1) 左上角第 0 列不应被字形堆满
+        let mut left_col_light = 0usize;
+        for y in 0..cell_h_i {
+            for x in 0..cell_w_i {
+                let di = (y * fw_us + x) * 4;
+                if frame[di] > 60 {
+                    left_col_light += 1;
+                }
+            }
+        }
+        assert!(
+            left_col_light < 50,
+            "左上角第0列不应被字形堆满（坐标偏移修复后），实际亮像素 {left_col_light}"
+        );
+        // (2) 表头整行应有文字亮起（字形已正确定位）
+        let mut header_light = 0usize;
+        for y in 0..cell_h_i {
+            for x in 0..fw_us {
+                let di = (y * fw_us + x) * 4;
+                if frame[di] > 60 {
+                    header_light += 1;
+                }
+            }
+        }
+        assert!(
+            header_light > 200,
+            "表头行应有文字亮起（字形已正确定位），实际亮像素 {header_light}"
+        );
 
         // BGRA -> RGBA 后写出 PNG
         let out_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
