@@ -39,11 +39,11 @@ const CTRL_COLS: [u32; CONTROL_FIELDS] = [
 /// 调色板（近似 ANSI 真彩终端）
 const BG: [u8; 3] = [12, 12, 14];
 const TEXT: [u8; 3] = [200, 200, 210];
-const LABEL: [u8; 3] = [150, 150, 160];
+const LABEL: [u8; 3] = [190, 196, 216];
 const WARN: [u8; 3] = [210, 55, 55];
 /// 黑键 / 白键未按下时的底色
-const KEY_BLACK: [u8; 3] = [20, 20, 24];
-const KEY_WHITE: [u8; 3] = [34, 34, 40];
+const KEY_BLACK: [u8; 3] = [72, 76, 92];
+const KEY_WHITE: [u8; 3] = [104, 110, 126];
 
 /// 字符网格中的一个单元
 #[derive(Clone, Copy)]

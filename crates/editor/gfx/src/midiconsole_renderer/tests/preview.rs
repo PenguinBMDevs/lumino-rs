@@ -42,8 +42,8 @@ fn test_gpu_renders_preview_png() {
 
     let bg_dark: u32 = pack_rgb(12, 12, 14);
     let fg_light: u32 = pack_rgb(205, 205, 185);
-    let key_black: u32 = pack_rgb(40, 40, 46);
-    let key_white: u32 = pack_rgb(60, 60, 68);
+    let key_black: u32 = pack_rgb(72, 76, 92);
+    let key_white: u32 = pack_rgb(104, 110, 126);
     let warm: u32 = pack_rgb(90, 200, 255);
 
     let mut grid = vec![
@@ -59,28 +59,68 @@ fn test_gpu_renders_preview_png() {
     for (i, c) in "> PLAYING".chars().enumerate() {
         set(&mut grid, 0, GRID_COLS - 10 + i, c, warm, bg_dark);
     }
-
-    // 控制面板标签行
-    let labels = "PC VOL EXP PAN P.BEND P.RANGE MOD HOLD CUT RESO ATT DEC REL";
-    for (i, c) in labels.chars().enumerate() {
-        set(&mut grid, 2, 71 + i, c, fg_light, bg_dark);
+    // 状态行
+    let stats = "SPD 1.00x  BPM 120.0  4/4  TPQ 480  TICK 0  NOTES 128  EVENTS 64";
+    for (i, c) in stats.chars().enumerate() {
+        set(&mut grid, 1, 1 + i, c, fg_light, bg_dark);
     }
 
-    // 一个键盘条（CH01）：左侧标签 + 64 个半块键，黑白交替并以暖色高亮若干
-    let row_kb = 6usize;
-    for (i, c) in "CH01".chars().enumerate() {
-        set(&mut grid, row_kb, 1 + i, c, fg_light, bg_dark);
+    // 控制面板：标签行 + 数值行（模拟真实 MidiConsole 的数据文字，验证对比度）
+    let labels = [
+        "PC", "VOL", "EXP", "PAN", "P.BEND", "P.RANGE", "MOD", "HOLD", "CUT", "RESO", "ATT", "DEC",
+        "REL",
+    ];
+    let values = [
+        "001", "100", "064", "000", "0000", "024", "000", "000", "040", "060", "010", "020", "030",
+    ];
+    let ctrl_cols = [71usize, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137];
+    for f in 0..13usize {
+        for (i, c) in labels[f].chars().enumerate() {
+            set(&mut grid, 2, ctrl_cols[f] + i, c, fg_light, bg_dark);
+        }
+        for (i, c) in values[f].chars().enumerate() {
+            set(&mut grid, 3, ctrl_cols[f] + i, c, fg_light, bg_dark);
+        }
     }
-    for k in 0..64usize {
-        let (fg, bg) = if k % 12 == 1 || k % 12 == 3 || k % 12 == 6 || k % 12 == 8 || k % 12 == 10
-        {
-            (key_black, bg_dark)
-        } else {
-            (key_white, bg_dark)
-        };
-        let fg = if k < 8 { warm } else { fg };
-        set(&mut grid, row_kb, 5 + k, '\u{258C}', fg, bg);
-    }
+
+    // 多行键盘条（CH01..CH05 + ALL），左侧标签 + 半块键；每格 ▌ 左=键2i、右=键2i+1，
+    // 与 CPU 端 draw_keyboard_row 语义一致，键位之间连续无间隔
+    let draw_kb = |grid: &mut [CellGpu], row: usize, label: &str, lit: &[usize]| {
+        for (i, c) in label.chars().enumerate() {
+            set(grid, row, 1 + i, c, fg_light, bg_dark);
+        }
+        for i in 0..32usize {
+            let k0 = i * 2;
+            let k1 = i * 2 + 1;
+            let is_black = |k: usize| k % 12 == 1 || k % 12 == 3 || k % 12 == 6 || k % 12 == 8 || k % 12 == 10;
+            let col0 = if lit.contains(&k0) {
+                warm
+            } else if is_black(k0) {
+                key_black
+            } else {
+                key_white
+            };
+            let col1 = if lit.contains(&k1) {
+                warm
+            } else if is_black(k1) {
+                key_black
+            } else {
+                key_white
+            };
+            set(grid, row, 5 + i, '\u{258C}', col0, col1);
+        }
+    };
+    draw_kb(&mut grid, 5, "CH01", &[0, 2, 4, 5, 7, 9, 11, 12]);
+    draw_kb(&mut grid, 7, "CH02", &[3, 8, 10, 15, 20, 25]);
+    draw_kb(&mut grid, 9, "CH03", &[1, 6, 14, 18, 22, 30]);
+    draw_kb(&mut grid, 11, "CH04", &[13, 17, 19, 24, 28, 33]);
+    draw_kb(&mut grid, 13, "CH05", &[2, 9, 16, 21, 27, 35]);
+    draw_kb(
+        &mut grid,
+        15,
+        "ALL",
+        &[0, 4, 8, 12, 16, 20, 24, 28, 32, 36, 40, 44, 48, 52, 56, 60],
+    );
 
     // 保证可见性：底部整行用亮色背景填充（即便字体缺失也不会全黑）
     let bg_bright: u32 = pack_rgb(30, 40, 60);

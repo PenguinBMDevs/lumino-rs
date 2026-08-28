@@ -80,7 +80,16 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
         let idx = row * U.grid_cols + col;
         let cell = cells[idx];
         let bg = unpack_rgb(cell.bg);
-        if (cell.ch != 32u) {
+        if (cell.ch == 32u) {
+            color = bg;
+        } else if (cell.ch == 0x258Cu) {
+            // 半块字符 ▌：精确左半 fg（当前键）、右半 bg（下一键），程序化绘制、
+            // 字体无关，保证键位之间无间隔、与 CPU 端 set_cell(col0,col1) 语义一致
+            let lx = px.x - f32(col) * U.cell_w;
+            let left = select(0.0, 1.0, lx <= U.cell_w * 0.5);
+            let fg = unpack_rgb(cell.fg);
+            color = mix(bg, fg, left);
+        } else {
             let lx = px.x - f32(col) * U.cell_w;
             let ly = px.y - f32(row) * U.cell_h;
             let slot = char_slot(cell.ch);
@@ -94,8 +103,6 @@ fn fs_main(@builtin(position) frag: vec4<f32>) -> @location(0) vec4<f32> {
             let cov = textureSample(atlas, samp, uv).r;
             let fg = unpack_rgb(cell.fg);
             color = mix(bg, fg, cov);
-        } else {
-            color = bg;
         }
     }
     // CRT：每 3 行压暗 + 随 tick 移动的高亮扫描带
