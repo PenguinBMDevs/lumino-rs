@@ -67,6 +67,9 @@ impl Host {
         // 清空高精度脏标记，避免新建工程/关闭文件后残留脏状态误触发
         self.waterfall_dirty_tracks.clear();
 
+        // 清空后工程处于干净状态（无未保存更改），避免误弹保存确认对话框
+        self.mark_project_clean();
+
         self.window_ctx.window.request_redraw();
         tracing::info!("UI: 编辑器已完全清空（含历史记录、空间索引、播放状态）");
     }
@@ -121,5 +124,8 @@ impl Host {
             "UI: 空白工程已初始化（document 2 轨，当前轨 {} 可编辑）",
             editable
         );
+
+        // 空白工程为干净状态（无未保存更改），避免误弹保存确认对话框
+        self.mark_project_clean();
     }
 }

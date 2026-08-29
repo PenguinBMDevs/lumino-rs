@@ -25,5 +25,8 @@ impl EditorData {
         self.note_delta_events.clear();
         self.note_delta_dirty = true;
         self.track_visual_order.clear();
+        // 重置 = 干净状态（无未保存更改）。注意：上方 `mark_track_notes_changed`
+        // 与 `set_tempo_points` 会置位 `modified`，此处必须最后复位。
+        self.modified = false;
     }
 }

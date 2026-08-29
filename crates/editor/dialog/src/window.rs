@@ -31,6 +31,13 @@ pub struct DialogWindow {
 }
 
 impl DialogWindow {
+    /// 获取对话框类型（供 Runner 在不引入 dialog crate 内部可见性前提下判断）
+    pub fn dialog_type(&self) -> DialogType {
+        self.dialog_type
+    }
+}
+
+impl DialogWindow {
     /// 创建新对话框窗口（仅创建 winit 窗口，不初始化 GFX/UI）
     ///
     /// 将原本一次性的阻塞初始化拆分为多阶段：
@@ -56,6 +63,7 @@ impl DialogWindow {
             DialogType::VideoExport => (520.0, 560.0, "视频导出", false),
             DialogType::MemoryMonitor => (300.0, 440.0, "内存占用详情", false),
             DialogType::RecoverTrack => (560.0, 770.0, "找回删除音轨", true),
+            DialogType::SaveConfirm => (380.0, 180.0, "Lumino", false),
             DialogType::CloudConnect => (480.0, 515.0, "连接云存储", false),
             DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
             DialogType::CloudNotice => (440.0, 200.0, "云存储提醒", false),

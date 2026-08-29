@@ -148,12 +148,18 @@ impl RunnerInner {
     /// **智能分流**：
     /// - 已有 .lmpj 工程文件路径（`current_midi_source`）→ 直接覆盖保存原文件（无对话框）
     /// - 无工程路径（空白工程 / 从 .mid 打开 / 从未保存过）→ 弹出格式选择对话框
-    pub(super) fn handle_save_file(&mut self) {
+    /// 保存工程文件
+    ///
+    /// 返回 `true` 表示保存已真正启动（已选路径并进入异步写入），
+    /// `false` 表示未启动（保存进行中被拒绝 / 用户取消保存对话框）。
+    /// 供保存确认对话框在「保存」后判断是否需要等待 `handle_save_completed`
+    /// 继续挂起的关闭动作——未启动则视为取消关闭，绝不强制关闭工程。
+    pub(super) fn handle_save_file(&mut self) -> bool {
         // 串行限制：保存/云上传进行中，新保存请求直接拒绝
         // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
         if self.is_saving() || self.is_cloud_saving() {
             tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
-            return;
+            return false;
         }
 
         // 自动提交当前编辑（ghost 方案：松手即提交）
@@ -171,11 +177,11 @@ impl RunnerInner {
         // 已有 .lmpj 工程路径 → 覆盖保存原文件（无对话框）
         if let Some(path) = self.current_lmpj_source() {
             self.save_lmpj_project_to(path);
-            return;
+            return true;
         }
 
         // 首次保存：弹对话框选择路径/格式
-        self.handle_save_single_file();
+        self.handle_save_single_file()
     }
 
     /// 当前工程文件路径（仅 .lmpj，Ctrl+S 覆盖保存适用）
@@ -191,7 +197,9 @@ impl RunnerInner {
     ///
     /// **自动提交编辑**：进入对话框前调用 `commit_current_edit()`，
     /// 保证保存的数据包含用户当前正在编辑（ghost 拖动/绘制/调整大小）的音符。
-    pub(super) fn handle_save_single_file(&mut self) {
+    ///
+    /// 返回 `true` 表示已选择路径并进入保存流程；`false` 表示用户取消对话框。
+    pub(super) fn handle_save_single_file(&mut self) -> bool {
         // 自动提交当前编辑（ghost 方案：松手即提交）
         let committed = self
             .window_state
@@ -224,7 +232,8 @@ impl RunnerInner {
             .set_file_name(format!("{file_stem}.lmpj"))
             .save_file()
         else {
-            return;
+            // 用户取消保存对话框
+            return false;
         };
 
         let extension = get_file_extension(&save_path);
@@ -232,8 +241,12 @@ impl RunnerInner {
         match extension.as_str() {
             "lmpj" => self.save_lmpj_project_to(save_path),
             "mid" | "midi" => self.save_as_midi_with_edits(save_path),
-            _ => tracing::warn!("不支持的保存格式: {}", extension),
+            _ => {
+                tracing::warn!("不支持的保存格式: {}", extension);
+                return false;
+            }
         }
+        true
     }
 
     /// 保存为 LMPJ 文件（默认使用新格式：按音轨拆分 + 归档）

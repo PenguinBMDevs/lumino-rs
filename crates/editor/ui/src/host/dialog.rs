@@ -16,6 +16,32 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 查询当前工程是否存在未保存的更改
+    ///
+    /// 供关闭工程 / 打开另一个工程 / 退出软件前判断是否需要弹出
+    /// 「是否保留未保存的更改」确认对话框。
+    pub fn is_project_modified(&self) -> bool {
+        self.root.editor.editor_state.data.modified
+    }
+
+    /// 标记当前工程为「已保存」状态（清零未保存更改标记）
+    ///
+    /// 保存完成 / 加载新文件 / 新建 / 关闭工程后调用，避免误弹保存确认对话框。
+    pub fn mark_project_clean(&mut self) {
+        self.root.editor.editor_state.data.modified = false;
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
+    /// 打开保存确认对话框（用于独立对话框窗口）
+    ///
+    /// 关闭工程 / 打开另一个工程 / 退出软件前，若工程存在未保存更改时弹出。
+    pub fn set_save_confirm_dialog(&mut self) {
+        self.root.set_save_confirm_dialog_open(true);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 设置自定义精度对话框是否打开（用于独立对话框窗口）
     pub fn set_custom_precision_dialog_open(&mut self, open: bool) {
         self.root.set_custom_precision_dialog_open(open);

@@ -39,6 +39,7 @@ impl EditorData {
             note_delta_events: Vec::new(),
             note_delta_dirty: false,
             track_visual_order: Vec::new(),
+            modified: false,
         }
     }
 

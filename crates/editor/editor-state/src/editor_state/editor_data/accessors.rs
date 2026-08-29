@@ -24,6 +24,17 @@ impl EditorData {
         self.mark_track_notes_changed_for(None);
     }
 
+    /// 标记工程存在未保存的更改（供关闭/打开/退出前的保存确认对话框使用）
+    ///
+    /// 所有直接修改音符/工程数据的入口都应调用本方法（见 `mark_track_notes_changed_for`、
+    /// `insert_note`/`remove_note`/`update_note`/`replace_track_notes`、`undo`/`redo`、
+    /// `set_tempo_points`/`set_time_signatures`）。保存完成 / 加载 / 新建 / 关闭工程
+    /// 时由 Host 显式复位（`mark_project_clean`），因此此处是单向置位、无需清零。
+    #[inline]
+    pub fn mark_modified(&mut self) {
+        self.modified = true;
+    }
+
     /// 标记音符数据已变化，并记录明确受影响的音轨集合
     ///
     /// `tracks` 为本次操作实际修改的音轨 id 集合：
@@ -41,6 +52,8 @@ impl EditorData {
         if self.onion_dirty_tracks.is_none() {
             self.note_delta_dirty = true;
         }
+        // 任意音符数据变化都意味着未保存更改（供保存确认对话框使用）
+        self.modified = true;
     }
 
     /// 标记当前音轨的音符已变化（热路径专用）
@@ -96,6 +109,7 @@ impl EditorData {
     /// 调用方需保证输入已按 tick 排序（加载路径天然有序；工程设置路径已排序）。
     pub fn set_time_signatures(&mut self, time_signatures: Vec<(u32, u8, u8)>) {
         self.time_signatures = time_signatures;
+        self.modified = true;
         if let Some(doc) = self.document.as_mut() {
             doc.time_signatures = self.time_signatures.clone();
         }
@@ -141,6 +155,7 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        self.modified = true;
         let event = note_to_event(note.clone());
         let start_tick = event.start_tick;
         if !doc.insert_note(track_id, event) {
@@ -208,6 +223,7 @@ impl EditorData {
 
     /// 在指定音轨指定索引处删除音符。返回被删除的音符。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
+        self.modified = true;
         if track_id == self.current_track {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
@@ -220,6 +236,7 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        self.modified = true;
         let event = note_to_event(note.clone());
         let start_tick = event.start_tick;
         if !doc.update_note(track_id, index, event) {
@@ -250,6 +267,7 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        self.modified = true;
         doc.replace_track_notes(track_id, notes)
     }
 
@@ -264,6 +282,7 @@ impl EditorData {
         let Some(doc) = self.document.as_mut() else {
             return false;
         };
+        self.modified = true;
         doc.replace_track_notes_chunked(track_id, notes)
     }
 

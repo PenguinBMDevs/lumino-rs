@@ -129,6 +129,14 @@ pub struct EditorData {
     /// 此映射仍保留供 arrangement 操作统一使用。若将来侧边栏顺序与文档顺序
     /// 不一致（如拖动排序），只需更新此映射即可。
     pub track_visual_order: Vec<usize>,
+    /// 工程是否相对「上次保存/加载」发生了未保存的更改。
+    ///
+    /// 用于关闭工程 / 打开另一个工程 / 退出软件前弹出「是否保留未保存的更改」
+    /// 确认对话框。所有修改音符数据的入口（见 `mark_modified` 与各 `mark_*`/
+    /// `insert_*`/`remove_*`/`replace_*`/`undo`/`redo`/`set_tempo_points`/
+    /// `set_time_signatures`）都会置位；保存完成 / 加载新文件 / 新建 / 关闭工程
+    /// 时由 Host 调用 `mark_project_clean` 复位。
+    pub modified: bool,
 }
 
 /// 主音轨 GPU 增量事件（数据层 → UI 渲染层）

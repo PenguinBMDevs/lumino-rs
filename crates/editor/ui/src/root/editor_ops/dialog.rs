@@ -11,6 +11,7 @@ use crate::root::Root;
 
 pub mod dialog_toggles;
 pub mod export;
+pub mod save_confirm;
 pub mod operations;
 pub mod project_settings;
 pub mod settings;

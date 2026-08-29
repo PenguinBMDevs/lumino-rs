@@ -134,6 +134,9 @@ impl DialogWindow {
             DialogType::RecoverTrack => {
                 ui.set_recover_track_dialog_open(true);
             }
+            DialogType::SaveConfirm => {
+                ui.set_save_confirm_dialog();
+            }
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 // 同步主窗口的云存储快照（连接列表/表单回显/提醒内容）。
                 // 云存储唯一数据源是主窗口 Root，对话框为独立 Root 需拉取。

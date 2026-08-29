@@ -89,6 +89,10 @@ impl RunnerInner {
             DialogResult::Cancel => {
                 tracing::debug!("取消操作，无需处理");
             }
+            DialogResult::SaveConfirm(_) => {
+                // SaveConfirm 由 lifecycle.rs 处理，这里不应到达
+                tracing::warn!("SaveConfirm 结果不应通过 apply_dialog_result_to_ui 处理");
+            }
             DialogResult::RecoverTrackRestore {
                 path,
                 original_index,

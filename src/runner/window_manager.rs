@@ -27,6 +27,11 @@ pub struct WindowManager {
     cloud_saving: Arc<AtomicBool>,
     /// 待关闭标志：保存期间用户请求关闭 → 保存完成后自动退出
     pub(crate) close_pending: bool,
+    /// 窗口关闭被保存确认对话框挂起（工程存在未保存更改）
+    ///
+    /// `handle_window_actions` 检测到关闭请求且工程有未保存更改时置位，
+    /// 由 Runner 在 `about_to_wait` 中读取并弹出保存确认对话框，置位后清空。
+    pub(crate) deferred_save_confirm_close: bool,
 }
 
 impl WindowManager {
@@ -101,6 +106,7 @@ impl WindowManager {
             saving,
             cloud_saving,
             close_pending: false,
+            deferred_save_confirm_close: false,
         })
     }
 
@@ -214,15 +220,7 @@ impl WindowManager {
     pub fn handle_window_actions(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         // 检查系统关闭请求
         if self.close_requested {
-            // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
-            if self.is_saving() {
-                tracing::info!("保存进行中，关闭请求延迟到保存完成");
-                self.close_pending = true;
-                self.close_requested = false;
-            } else {
-                self.quick_close();
-                event_loop.exit();
-            }
+            self.handle_close_request(event_loop);
             return;
         }
 
@@ -237,14 +235,7 @@ impl WindowManager {
                     self.window.set_maximized(!is_maximized);
                 }
                 TrafficAction::Close => {
-                    // 保存期间禁止关闭软件：延迟到保存完成自动退出
-                    if self.is_saving() {
-                        tracing::info!("保存进行中，关闭请求延迟到保存完成");
-                        self.close_pending = true;
-                    } else {
-                        self.quick_close();
-                        event_loop.exit();
-                    }
+                    self.handle_close_request(event_loop);
                 }
             }
         }
@@ -256,6 +247,44 @@ impl WindowManager {
                 self.ui.release_left_mouse_button();
             }
         }
+    }
+
+    /// 统一的窗口关闭处理（系统关闭请求 / 自制标题栏关闭按钮共用）
+    ///
+    /// 处理顺序：
+    /// 1. 保存/云端上传进行中 → 转为 `close_pending`，保存完成后自动退出；
+    /// 2. 工程存在未保存更改 → 置位 `deferred_save_confirm_close`，
+    ///    交由 Runner 弹出「是否保留未保存的更改」确认对话框，**暂不关闭**；
+    /// 3. 否则立即快速关闭并退出事件循环。
+    fn handle_close_request(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
+        // 保存期间禁止关闭软件：关闭请求转为待关闭，保存完成后自动退出
+        if self.is_saving() {
+            tracing::info!("保存进行中，关闭请求延迟到保存完成");
+            self.close_pending = true;
+            self.close_requested = false;
+            return;
+        }
+
+        // 工程存在未保存更改：交给 Runner 弹出保存确认对话框，暂不关闭窗口
+        if self.ui.is_project_modified() {
+            tracing::debug!("窗口关闭：工程存在未保存更改，挂起保存确认对话框");
+            self.deferred_save_confirm_close = true;
+            self.close_requested = false;
+            return;
+        }
+
+        self.quick_close();
+        event_loop.exit();
+    }
+
+    /// 取走挂起的保存确认关闭请求（Runner 在 `about_to_wait` 中调用）
+    ///
+    /// 读取并清空 `deferred_save_confirm_close` 标志，True 表示本次窗口关闭
+    /// 因工程未保存更改而挂起，需弹出保存确认对话框。
+    pub(crate) fn take_deferred_save_confirm_close(&mut self) -> bool {
+        let pending = self.deferred_save_confirm_close;
+        self.deferred_save_confirm_close = false;
+        pending
     }
 
     /// 构建窗口属性

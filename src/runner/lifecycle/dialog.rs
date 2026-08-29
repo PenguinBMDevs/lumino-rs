@@ -4,6 +4,9 @@ use winit::event::WindowEvent;
 use winit::event_loop::ActiveEventLoop;
 use winit::window::WindowId;
 
+use lumino_ui::message::SaveConfirmAction;
+use lumino_ui::state::root_state::DialogType;
+
 use crate::runner::dialog_manager::DialogResult;
 use crate::runner::inner::RunnerInner;
 
@@ -22,9 +25,12 @@ impl RunnerInner {
 
         let mut dialog_result = None;
         let mut should_close = false;
+        // 记录对话框类型（用于块外判断保存确认对话框被 X 关闭的情况）
+        let mut dialog_type: Option<DialogType> = None;
 
         if let Some(dialog) = self.window_state.dialog_manager.get_dialog_mut(window_id) {
             dialog.handle_event(event);
+            dialog_type = Some(dialog.dialog_type());
 
             // 检查对话框是否应该关闭
             should_close = dialog.should_close();
@@ -77,6 +83,16 @@ impl RunnerInner {
             self.window_state.dialog_manager.close_dialog(window_id);
         }
 
+        // 保存确认对话框被窗口 X 关闭（未点击任何按钮）→ 视为「取消」关闭操作，
+        // 清空挂起的关闭动作，避免后续关闭请求被忽略。
+        if dialog_result.is_none()
+            && should_close
+            && dialog_type == Some(DialogType::SaveConfirm)
+        {
+            tracing::debug!("保存确认对话框被 X 关闭，视为取消");
+            self.handle_save_confirm_result(SaveConfirmAction::Cancel);
+        }
+
         // 处理对话框返回的结果
         if let Some(result) = dialog_result {
             tracing::debug!("处理对话框结果: {:?}", std::mem::discriminant(&result));
@@ -89,6 +105,11 @@ impl RunnerInner {
     /// 处理对话框结果
     fn process_dialog_result(&mut self, result: DialogResult) {
         match &result {
+            DialogResult::SaveConfirm(choice) => {
+                // 保存确认对话框：保存 / 关闭（放弃）/ 取消 三选一
+                // 交由 RunnerInner 继续挂起的关闭动作或清空挂起状态。
+                self.handle_save_confirm_result(*choice);
+            }
             DialogResult::LoadConfirm => {
                 if let Some(path) = self.file_state.pending_load_path.take() {
                     self.load_midi_file(path);

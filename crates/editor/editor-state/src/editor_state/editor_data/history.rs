@@ -116,6 +116,7 @@ impl EditorData {
         let current = self.make_snapshot_for_track(track);
         if let Some(entry) = self.history.undo(current) {
             self.apply_history_entry(entry, true);
+            self.modified = true;
             true
         } else {
             false
@@ -132,6 +133,7 @@ impl EditorData {
         let current = self.make_snapshot_for_track(track);
         if let Some(entry) = self.history.redo(current) {
             self.apply_history_entry(entry, false);
+            self.modified = true;
             true
         } else {
             false

@@ -14,6 +14,7 @@ use crate::view::{
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     memory_monitor_dialog::view_memory_monitor_dialog,
+    save_confirm_dialog::view_save_confirm_dialog,
     project_settings_dialog::view_project_settings_dialog,
     recover_track_dialog::view_recover_track_dialog, settings_dialog::view_settings_dialog,
     speed_change_dialog::view_speed_change_dialog, video_export_dialog::view_video_export_overlay,
@@ -150,6 +151,9 @@ impl Root {
             }
             DialogType::RecoverTrack => {
                 view_recover_track_dialog(&self.state.recover_track_dialog, &self.window.theme)
+            }
+            DialogType::SaveConfirm => {
+                view_save_confirm_dialog(&self.state.save_confirm_dialog, &self.window.theme)
             }
             DialogType::BrushSettings => view_brush_settings_dialog(
                 &self.state.brush_settings_draft,

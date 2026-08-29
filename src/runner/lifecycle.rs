@@ -194,6 +194,13 @@ impl winit::application::ApplicationHandler for Runner {
         puffin::profile_scope!("runner_about_to_wait_window_actions");
         this.window_state.window.handle_window_actions(event_loop);
 
+        // 窗口关闭被保存确认对话框挂起（工程存在未保存更改）：弹出确认对话框
+        // 交由 Runner 决定「保存 / 关闭（放弃）/ 取消」。读取并清空该标志。
+        if this.window_state.window.take_deferred_save_confirm_close() {
+            use crate::runner::inner::PendingCloseAction;
+            this.request_close_action(PendingCloseAction::WindowClose, event_loop);
+        }
+
         // 处理音频动作
         puffin::profile_scope!("runner_about_to_wait_audio_actions");
         crate::runner::inner::RunnerInner::process_audio_actions(

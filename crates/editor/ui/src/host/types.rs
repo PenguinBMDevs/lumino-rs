@@ -25,6 +25,8 @@ pub enum DialogResult {
     LoadConfirm,
     /// 取消操作
     Cancel,
+    /// 保存确认对话框结果（关闭 / 打开 / 退出前的未保存更改确认）
+    SaveConfirm(crate::message::SaveConfirmAction),
     /// 项目设置
     ProjectSettings {
         /// 项目标题

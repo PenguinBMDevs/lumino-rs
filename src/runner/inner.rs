@@ -169,6 +169,35 @@ pub(crate) struct RunnerInner {
     pub(crate) saving: std::sync::Arc<AtomicBool>,
     /// 云端上传进行中标志（保存到云/自动回传期间置 true）
     pub(crate) cloud_saving: std::sync::Arc<AtomicBool>,
+    /// 关闭/打开/退出操作被保存确认对话框挂起时的待执行动作。
+    ///
+    /// 用户在工程有未保存更改时触发「关闭工程 / 打开另一个工程 / 新建 / 退出」
+    /// 或点击窗口关闭按钮，Runner 会先弹出保存确认对话框，并将本动作暂存；
+    /// 待用户在对话框中选择「保存 / 关闭（放弃）」后执行，选择「取消」则清空。
+    pub(crate) pending_close_action: Option<PendingCloseAction>,
+    /// 保存确认对话框选择「保存」后，是否在执行保存完成后继续挂起的关闭动作。
+    ///
+    /// 仅当 `pending_close_action.is_some()` 且用户选择「保存」时为 true；
+    /// 保存任务完成后（`handle_save_completed`）据此继续原动作。
+    pub(crate) run_pending_after_save: bool,
+}
+
+/// 被保存确认对话框挂起的关闭类动作
+///
+/// 工程存在未保存更改时，这些动作不会立即执行，而是先弹确认对话框，
+/// 待用户决策后再继续。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PendingCloseAction {
+    /// 关闭当前工程（菜单「关闭」）
+    CloseProject,
+    /// 新建工程（菜单「新建」）
+    NewProject,
+    /// 打开另一个工程（菜单「打开」）
+    OpenProject,
+    /// 退出软件（菜单「退出」）
+    Exit,
+    /// 点击窗口关闭按钮（X / 自制标题栏关闭）
+    WindowClose,
 }
 
 // ── impl Runner ─────────────────────────────────────────────────────────
@@ -313,6 +342,8 @@ impl Runner {
             cloud_alert_shown: false,
             saving,
             cloud_saving,
+            pending_close_action: None,
+            run_pending_after_save: false,
         };
 
         Ok(runner)

@@ -15,6 +15,7 @@ impl EditorData {
     /// 整体替换 tempo 点并同步到 document（工程设置 / undo 恢复 / 重置）
     pub fn set_tempo_points(&mut self, points: Vec<TempoPoint>) {
         self.tempo_points = points;
+        self.modified = true;
         self.sync_tempo_to_document();
     }
 
@@ -24,6 +25,7 @@ impl EditorData {
             return false;
         };
         point.bpm = bpm;
+        self.modified = true;
         self.sync_tempo_to_document();
         true
     }
@@ -35,6 +37,7 @@ impl EditorData {
             .sort_by(|a, b| a.tick.partial_cmp(&b.tick).unwrap_or(Ordering::Equal));
         self.tempo_points
             .dedup_by(|a, b| (a.tick - b.tick).abs() < f32::EPSILON);
+        self.modified = true;
         self.sync_tempo_to_document();
     }
 
@@ -42,6 +45,7 @@ impl EditorData {
     pub fn remove_tempo_point(&mut self, index: usize) -> bool {
         if index < self.tempo_points.len() {
             self.tempo_points.remove(index);
+            self.modified = true;
             self.sync_tempo_to_document();
             true
         } else {

@@ -6,8 +6,9 @@ pub use lumino_ui_core::state::{
     COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
-    ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SpeedChangeDialogState,
-    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState,
+    SpeedChangeDialogState, ToggleAnimationState, VideoClipState, VideoExportDialogState,
+    VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;
@@ -41,6 +42,8 @@ pub enum DialogType {
     MemoryMonitor,
     /// 找回删除音轨
     RecoverTrack,
+    /// 保存确认对话框（关闭工程 / 打开另一个工程 / 退出前的未保存更改确认）
+    SaveConfirm,
     /// 云存储连接面板（地址/协议/用户名/密码）
     CloudConnect,
     /// 云文件浏览面板（仿资源管理器）
@@ -83,6 +86,8 @@ pub struct RootState {
     pub memory_monitor_dialog: MemoryMonitorDialogState,
     /// 找回删除音轨对话框状态
     pub recover_track_dialog: RecoverTrackDialogState,
+    /// 保存确认对话框状态
+    pub save_confirm_dialog: SaveConfirmDialogState,
     /// 视频剪辑面板状态（瀑布流预览 zoom/pan）
     pub video_clip: VideoClipState,
     /// 当前应用模式（编辑器/瀑布流）
@@ -121,6 +126,7 @@ impl RootState {
             batch_edit_dialog: BatchEditDialogState::new(),
             memory_monitor_dialog: MemoryMonitorDialogState::new(),
             recover_track_dialog: RecoverTrackDialogState::default(),
+            save_confirm_dialog: SaveConfirmDialogState::default(),
             video_clip: VideoClipState::new(),
             current_mode: AppMode::default(),
             toggle_animation: ToggleAnimationState::new(),

@@ -84,6 +84,16 @@ impl Root {
         }
     }
 
+    /// 设置保存确认对话框是否打开
+    pub fn set_save_confirm_dialog_open(&mut self, open: bool) {
+        self.state.save_confirm_dialog.is_open = open;
+        if open {
+            self.state.dialog_type = DialogType::SaveConfirm;
+        } else if self.state.dialog_type == DialogType::SaveConfirm {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置找回删除音轨对话框的条目列表（由 Runner 扫描缓存目录后填充）
     pub fn set_recover_track_dialog_entries(
         &mut self,

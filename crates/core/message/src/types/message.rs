@@ -12,6 +12,7 @@ use crate::cloud_action::CloudAction;
 use crate::collaboration::CollaborationAction;
 use crate::custom_precision::CustomPrecisionAction;
 use crate::load_confirm::LoadConfirmAction;
+use crate::save_confirm::SaveConfirmAction;
 use crate::loop_range::LoopRangeAction;
 use crate::project_settings::ProjectSettingsAction;
 use crate::recover_track::RecoverTrackAction;
@@ -109,6 +110,8 @@ pub enum Message<W, S, Se, T> {
     Collaboration(CollaborationAction),
     /// 加载确认对话框动作
     LoadConfirm(LoadConfirmAction),
+    /// 保存确认对话框动作（关闭/打开/退出前的未保存更改确认）
+    SaveConfirm(SaveConfirmAction),
     /// 工程设置对话框动作
     ProjectSettings(ProjectSettingsAction),
     /// 设置对话框动作
