@@ -346,3 +346,37 @@ fn test_track_max_end_tick_cache_incremental_and_per_track() {
     // track 0 仍独立正确
     assert_eq!(doc.track_max_end_tick(0), 900);
 }
+
+#[test]
+fn test_batch_insert_with_ids_aligned_and_unique() {
+    let mut doc = make_doc(vec![make_track(&[]), make_track(&[])]);
+
+    // 乱序输入：验证返回 id 与输入顺序对齐、全局唯一，且可直接用于广播
+    let input = vec![
+        NoteEvent::new(300, 400, 60, 100, 0),
+        NoteEvent::new(100, 200, 61, 100, 0),
+        NoteEvent::new(500, 600, 62, 100, 0),
+    ];
+    let ids = doc.batch_insert_notes_with_ids(0, input.clone());
+
+    assert_eq!(ids.len(), input.len(), "返回 id 数应与输入一致");
+
+    // 全局唯一且非零（粘贴广播可据此直接定位）
+    let mut uniq = ids.clone();
+    uniq.sort_unstable();
+    uniq.dedup();
+    assert_eq!(uniq.len(), ids.len(), "分配的 id 应唯一");
+    for id in &ids {
+        assert_ne!(*id, NoteEvent::UNASSIGNED_ID);
+    }
+
+    // 按输入序对齐：ids[i] 对应的音符 start_tick == input[i].start_tick
+    for (i, id) in ids.iter().enumerate() {
+        let stored = doc.notes[0]
+            .iter()
+            .find(|n| n.id == *id)
+            .expect("分配的 id 应可在文档中找到");
+        assert_eq!(stored.start_tick, input[i].start_tick);
+    }
+    assert_eq!(doc.notes[0].len(), input.len());
+}

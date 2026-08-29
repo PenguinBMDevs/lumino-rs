@@ -1,17 +1,17 @@
-//! 工程走带剪贴板操作（复制/粘贴/剪切）
+//! 工程走带剪贴板操作（复制/粘贴/剪切，Lumino 程序本体间同步）
 //!
-//! 使用与钢琴卷帘相同的 JSON 剪贴板格式，额外包含 origin_track。
+//! 使用与钢琴卷帘相同的 JSON 剪贴板格式，额外包含 origin_track；
+//! 载荷携带 `division`（源 PPQN），粘贴时若与目标文档 PPQN 不一致则按 ratio 重采样，
+//! 保证跨 Lumino 进程粘贴出的音符长度与数据完全一致。
 
 use super::Editor;
 use super::helpers::ClipboardNoteEntry;
 use super::helpers::note_event_to_note;
 use crate::note::Note;
+use lumino_midi_loader::NoteEvent;
 
 impl Editor {
-    /// 复制工程走带选中音符到系统剪贴板（JSON 格式）。
-    ///
-    /// 使用与钢琴卷帘相同的剪贴板格式，额外包含 origin_track。
-    /// 返回是否有音符被复制。
+    /// 复制工程走带选中音符到系统剪贴板（JSON，含 division）。
     pub fn arrange_copy_selected_notes(&self) -> bool {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;
@@ -20,7 +20,6 @@ impl Editor {
         }
 
         let all_notes = self.collect_selected_notes_for_clipboard();
-
         if all_notes.is_empty() {
             return false;
         }
@@ -28,7 +27,7 @@ impl Editor {
         self.write_arrangement_clipboard(all_notes)
     }
 
-    /// 从剪贴板粘贴音符到工程走带视图。
+    /// 从剪贴板粘贴音符到工程走带视图（Lumino 私有 JSON，含 PPQN 一致性重采样）。
     ///
     /// 粘贴位置规则：
     /// - X 坐标（tick）对齐演奏指示线（playback_position）
@@ -55,15 +54,14 @@ impl Editor {
     }
 
     /// 从剪贴板 JSON 文本粘贴（绕过系统剪贴板，便于单元测试）。
-    ///
-    /// 粘贴锚点与音轨映射规则见 [`Self::parse_arrangement_clipboard_notes`]。
     pub(crate) fn arrange_paste_from_text(&mut self, text: &str) -> bool {
-        let Some((origin_key, origin_track, notes_value)) = self.parse_clipboard_json_text(text)
+        let Some((origin_key, origin_track, source_division, notes_value)) =
+            self.parse_clipboard_json_text(text)
         else {
             return false;
         };
         let Some((anchor_tick, _anchor_visual, pasted)) =
-            self.parse_arrangement_clipboard_notes(origin_key, origin_track, &notes_value)
+            self.parse_arrangement_clipboard_notes(origin_key, origin_track, source_division, &notes_value)
         else {
             return false;
         };
@@ -85,7 +83,6 @@ impl Editor {
         if current_track_touched {
             self.mark_notes_changed();
         }
-        // 精确记录受影响音轨（洋葱皮事件级增量）
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
@@ -97,8 +94,6 @@ impl Editor {
     }
 
     /// 剪切工程走带选中音符（复制 + 删除）。
-    ///
-    /// 返回实际剪切的音符数（删除的音符数）。
     pub fn arrange_cut_selected_notes(&mut self) -> usize {
         let copied = self.arrange_copy_selected_notes();
         if !copied {
@@ -109,21 +104,23 @@ impl Editor {
 
     // ── 私有辅助方法 ─────────────────────────────────────
 
-    /// 构建并写入剪贴板 JSON。
-    fn write_arrangement_clipboard(&self, all_notes: Vec<(usize, Note)>) -> bool {
+    /// 构建并写入剪贴板 JSON（携带 division）。
+    fn write_arrangement_clipboard(&self, all_notes: Vec<(usize, NoteEvent)>) -> bool {
+        let editor_data = &self.editor_state.data;
+        let division = editor_data
+            .document
+            .as_ref()
+            .map(|d| d.division)
+            .unwrap_or(480);
         let origin_tick = all_notes
             .iter()
-            .map(|(_, note)| note.tick)
+            .map(|(_, note)| note.start_tick as f32)
             .fold(f32::INFINITY, f32::min);
         let origin_key = all_notes
             .iter()
-            .map(|(_, note)| note.key)
+            .map(|(_, note)| note.key as u16)
             .min()
             .unwrap_or(0);
-        let editor_data = &self.editor_state.data;
-        // 以视觉位置（侧边栏顺序）为基准，保留复制时的相对布局。
-        // 粘贴时统一经 `document_track_at` 映射回文档音轨索引，
-        // 避免 `track_visual_order` 非恒等（删轨/加轨/排序后）时错位。
         let origin_visual = all_notes
             .iter()
             .map(|(track, _)| editor_data.visual_position_of(*track).unwrap_or(*track))
@@ -131,81 +128,97 @@ impl Editor {
             .unwrap_or(0);
 
         let note_count = all_notes.len();
-        let payload = serde_json::json!({
-            "lumino": lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
-            "version": lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
-            "type": "arrangement",
-            "origin_tick": origin_tick,
-            "origin_key": origin_key,
-            "origin_track": origin_visual,
-            "notes": all_notes.into_iter().map(|(track, note)| {
-                let visual = editor_data.visual_position_of(track).unwrap_or(track);
-                serde_json::json!({
-                    "tick": note.tick - origin_tick,
-                    "key": note.key - origin_key,
-                    "length": note.length,
-                    "velocity": note.velocity,
-                    "channel": note.channel,
-                    "track": visual - origin_visual,
-                })
-            }).collect::<Vec<_>>(),
-        });
-
-        let mut clipboard = match arboard::Clipboard::new() {
-            Ok(cb) => cb,
-            Err(e) => {
-                tracing::error!("Arrangement: 创建剪贴板失败: {}", e);
-                return false;
+        let mut s = String::with_capacity(note_count.saturating_mul(48) + 180);
+        use std::fmt::Write as _;
+        let _ = write!(
+            s,
+            "{{\"lumino\":\"{}\",\"version\":{},\"type\":\"arrangement\",\"origin_tick\":{},\"origin_key\":{},\"origin_track\":{},\"division\":{},\"notes\":[",
+            lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
+            lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
+            origin_tick, origin_key, origin_visual, division
+        );
+        let mut first = true;
+        for (track, note_event) in &all_notes {
+            let n = note_event_to_note(note_event);
+            let visual = editor_data.visual_position_of(*track).unwrap_or(*track);
+            let tick = (n.tick - origin_tick).max(0.0);
+            let key = (n.key as i32 - origin_key as i32).max(0) as u16;
+            let length = n.length;
+            let track_offset = (visual as i64 - origin_visual as i64).max(0) as usize;
+            if !first {
+                s.push(',');
             }
-        };
-        match clipboard.set_text(payload.to_string()) {
-            Ok(()) => {
-                tracing::info!("Arrangement: 已复制 {} 个音符", note_count);
-                true
-            }
-            Err(e) => {
-                tracing::error!("Arrangement: 复制到剪贴板失败: {}", e);
-                false
-            }
+            first = false;
+            let _ = write!(
+                s,
+                "{{\"tick\":{},\"key\":{},\"length\":{},\"velocity\":{},\"channel\":{},\"track\":{}}}",
+                tick, key, length, n.velocity, n.channel, track_offset
+            );
         }
+        s.push_str("]}");
+
+        crate::clipboard::set_clipboard_text(&s)
     }
 
-    /// 从 MidiDocument 收集所有选中音符（track_notes 缓存已删除，统一读 document）。
-    fn collect_selected_notes_for_clipboard(&self) -> Vec<(usize, Note)> {
+    /// 从 MidiDocument 收集所有选中音符（NoteEvent，u32 tick 保精度）。
+    ///
+    /// P1 修复：按选区矩形窗口反查命中音符，复杂度 O(rects × 窗口)；
+    /// 替代原「遍历全曲所有音符 + selection.contains」的 O(全音符) 全扫。
+    fn collect_selected_notes_for_clipboard(&self) -> Vec<(usize, NoteEvent)> {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;
-        let mut all_notes: Vec<(usize, Note)> = Vec::new();
-
-        let Some(doc) = &editor_data.document else {
+        let mut all_notes: Vec<(usize, NoteEvent)> = Vec::new();
+        if editor_data.document.is_none() {
             return all_notes;
-        };
-        for track_idx in 0..doc.track_count() {
-            let visual_pos = editor_data
-                .visual_position_of(track_idx)
-                .unwrap_or(track_idx);
-            for note_event in editor_data.track_notes(track_idx) {
-                if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
-                    let note = note_event_to_note(note_event);
-                    all_notes.push((track_idx, note));
+        }
+        // 去重：同一音符可能因重叠矩形被多次命中（用 id+位置做幂等键）
+        let mut seen: std::collections::HashSet<(usize, u64, u32, u8)> =
+            std::collections::HashSet::new();
+        for &(ts, te, kl, kh, tl, th) in &selection.rects {
+            for v in tl..=th {
+                let doc_track = editor_data.document_track_at(v as usize);
+                let notes = editor_data.track_notes(doc_track);
+                let (lo, hi) = notes.window_range(ts, te, 0);
+                for (_, note_event) in notes.iter_window(lo, hi) {
+                    if note_event.key >= kl
+                        && note_event.key <= kh
+                        && note_event.start_tick >= ts
+                        && note_event.start_tick < te
+                        && seen.insert((
+                            doc_track,
+                            note_event.id,
+                            note_event.start_tick,
+                            note_event.key,
+                        ))
+                    {
+                        all_notes.push((doc_track, *note_event));
+                    }
                 }
             }
         }
-
         all_notes
     }
 
     /// 从剪贴板 JSON 文本解析走带视图专用的数据（与系统剪贴板解耦，便于测试）。
-    fn parse_clipboard_json_text(&self, text: &str) -> Option<(u16, usize, Vec<serde_json::Value>)> {
+    fn parse_clipboard_json_text(
+        &self,
+        text: &str,
+    ) -> Option<(u16, usize, Option<u16>, Vec<serde_json::Value>)> {
         let value: serde_json::Value = serde_json::from_str(text).ok()?;
 
         let clipboard_type = value.get("type").and_then(|t| t.as_str());
         let origin_key = value.get("origin_key")?.as_u64()? as u16;
         // `origin_track` 现表示复制时的锚点视觉位置（见 `write_arrangement_clipboard`）。
         let origin_track = value.get("origin_track")?.as_u64()? as usize;
+        // 源 division（PPQN），用于粘贴端 PPQN 一致性重采样；缺失则视为与目标一致。
+        let division = value
+            .get("division")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16);
         let notes = value.get("notes")?.as_array()?.to_vec();
 
         if clipboard_type == Some("arrangement") {
-            Some((origin_key, origin_track, notes))
+            Some((origin_key, origin_track, division, notes))
         } else {
             tracing::warn!(
                 "Arrangement: 剪贴板数据不是走带格式 (type={:?})",
@@ -220,6 +233,9 @@ impl Editor {
     /// `pasted` 中的 `dest_track` 已由 [`Self::parse_arrangement_clipboard_notes`]
     /// 解析为文档音轨索引（视觉偏移经 `document_track_at` 转换），此处直接插入。
     /// 返回 (inserted_count, current_track_touched, affected_tracks)。
+    ///
+    /// P0 修复：按目标文档音轨分组批量插入（O(N·log M)），并直接拿回已分配 id 广播，
+    /// 消除原逐条 `insert_note`（O(N·M) 插入）+ `note_id_at`（O(N·M) 广播）双重悬崖。
     fn apply_paste_internal(
         &mut self,
         anchor_tick: f32,
@@ -232,27 +248,28 @@ impl Editor {
         let mut affected_tracks: std::collections::HashSet<usize> =
             std::collections::HashSet::new();
 
+        // 按目标文档音轨分组，批量插入并直接取回已分配 id
+        let mut by_track: std::collections::HashMap<usize, Vec<Note>> =
+            std::collections::HashMap::new();
         for (dest_doc, tick_offset, key_offset, length, velocity, channel) in pasted {
-            let dest_track = *dest_doc;
             let note_tick = (anchor_tick + *tick_offset).max(0.0);
             let note_key = origin_key.saturating_add(*key_offset).min(127);
             let note = Note::from_raw(note_tick, note_key, *length, *velocity, *channel);
+            by_track.entry(*dest_doc).or_default().push(note);
+        }
 
-            // 2026-08 单一权威源：直接插入 document（按 start_tick 有序插入）
-            let editor_data = &mut self.editor_state.data;
-            if editor_data.insert_note(dest_track, note.clone()) {
+        for (dest_track, notes) in by_track {
+            let ids = self
+                .editor_state
+                .data
+                .batch_insert_notes_to_track_with_ids(dest_track, &notes);
+            for (note, id) in notes.into_iter().zip(ids) {
                 affected_tracks.insert(dest_track);
                 if dest_track == current_track {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
-                // 2026-09 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失。
-                // note 已插入文档并分配真实 id，按位置反查取回后随事件发出。
-                let id = self
-                    .editor_state
-                    .data
-                    .note_id_at(dest_track, note.tick, note.key)
-                    .unwrap_or(0);
+                // 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失。
                 lumino_message::events::emit(lumino_message::events::Event::Window(
                     lumino_message::events::window::Event::local_note_added(
                         id,
@@ -271,11 +288,6 @@ impl Editor {
     }
 
     /// 计算粘贴锚点（视觉位置，即侧边栏顺序）。
-    ///
-    /// 优先使用选区最小视觉位置；选区为空时取当前音轨的视觉位置。
-    /// 返回值为**视觉位置**，粘贴时由 [`Self::parse_arrangement_clipboard_notes`]
-    /// 经 `document_track_at` 映射为文档音轨索引——这是修复「复制粘贴落到错误音轨」
-    /// 的关键：选择矩形存的是视觉位置，不能当作文档索引直接使用。
     fn compute_anchor_visual(&self) -> usize {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;
@@ -286,7 +298,7 @@ impl Editor {
         }
         let mut min_visual = usize::MAX;
         for rect in &selection.rects {
-            let v = rect.4 as usize; // 选择矩形存的是视觉位置（侧边栏顺序）
+            let v = rect.4 as usize;
             if v < min_visual {
                 min_visual = v;
             }
@@ -300,19 +312,20 @@ impl Editor {
         }
     }
 
-    /// 从走带剪贴板 JSON 解析锚点坐标和音符列表。
+    /// 从走带剪贴板 JSON 解析锚点坐标和音符列表（含 PPQN 一致性重采样）。
     ///
-    /// 粘贴位置规则：
-    /// - X 坐标（tick）对齐演奏指示线（playback_position）
-    /// - 音轨以选中区域的**最小视觉位置**为锚点，若选择为空则使用当前音轨的视觉位置
-    /// - 剪贴板 `track` 字段是相对锚点的**视觉偏移**，粘贴时先加锚点视觉位置得到
-    ///   目标视觉位置，再经 `document_track_at` 映射为文档音轨索引（见
-    ///   [`Self::compute_anchor_visual`]）。全链路统一视觉空间，修复
-    ///   `track_visual_order` 非恒等（删轨/加轨/排序后）时复制粘贴落到错误音轨。
+    /// 粘贴位置规则：X 对齐 playback_position；音轨以选中区域最小视觉位置为锚点；
+    /// `track` 是相对锚点的视觉偏移。全链路统一视觉空间，修复 `track_visual_order`
+    /// 非恒等（删轨/加轨/排序后）时复制粘贴落到错误音轨。
+    ///
+    /// PPQN 一致性：若 `source_division` 与当前文档 `division` 不一致且非零，则 tick
+    /// 偏移与音符长度按 ratio = 目标/源 等比缩放（多一次同步计算），保证粘贴音符的
+    /// 长度（节拍）与数据（key/vel/ch）与源完全一致。
     fn parse_arrangement_clipboard_notes(
         &self,
         _origin_key: u16,
         _origin_track: usize,
+        source_division: Option<u16>,
         notes_value: &[serde_json::Value],
     ) -> Option<(f32, usize, Vec<ClipboardNoteEntry>)> {
         let anchor_tick = self.snap_tick(self.playback_position);
@@ -320,39 +333,54 @@ impl Editor {
         let anchor_visual = self.compute_anchor_visual();
 
         let editor_data = &self.editor_state.data;
-        // 2026-08 单一权威源：音轨数从 document 统计（track_notes 缓存已删除）
         let max_visual = editor_data
             .document
             .as_ref()
             .map(|doc| doc.track_count())
             .unwrap_or(0)
             .max(1);
+        let target_division = editor_data
+            .document
+            .as_ref()
+            .map(|d| d.division)
+            .unwrap_or(480);
+        // 多一次同步计算：PPQN 不一致时计算重采样 ratio
+        let ratio = match source_division {
+            Some(src) if src != 0 && src != target_division => {
+                target_division as f64 / src as f64
+            }
+            _ => 1.0,
+        };
+
         let mut pasted: Vec<ClipboardNoteEntry> = Vec::with_capacity(notes_value.len());
 
         for item in notes_value {
-            let tick_offset = item.get("tick")?.as_f64()? as f32;
+            let raw_tick = item.get("tick")?.as_f64()? as f32;
+            let raw_length = item.get("length")?.as_f64()? as f32;
             let key_offset = item.get("key")?.as_u64()? as u16;
-            let length = item.get("length")?.as_f64()? as f32;
             let velocity = item.get("velocity").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
             let channel = item.get("channel").and_then(|c| c.as_u64()).unwrap_or(0) as u8;
-            // 剪贴板 `track` 是相对锚点的视觉偏移（非负）
             let track_offset = item.get("track").and_then(|t| t.as_i64()).unwrap_or(0);
+
+            // tick 偏移与长度按 ratio 重采样（同 PPQN 时 ratio=1，零缩放、逐字节一致）
+            let tick_offset = if ratio == 1.0 {
+                raw_tick
+            } else {
+                (raw_tick as f64 * ratio).round() as f32
+            };
+            let length = if ratio == 1.0 {
+                raw_length
+            } else {
+                (raw_length as f64 * ratio).round() as f32
+            };
 
             let dest_visual = (anchor_visual as i64 + track_offset).max(0) as usize;
             if dest_visual >= max_visual {
                 continue;
             }
-            // 视觉位置 → 文档音轨索引（track_visual_order 非恒等时精确映射）
             let dest_doc = editor_data.document_track_at(dest_visual);
 
-            pasted.push((
-                dest_doc,
-                tick_offset,
-                key_offset,
-                length,
-                velocity,
-                channel,
-            ));
+            pasted.push((dest_doc, tick_offset, key_offset, length, velocity, channel));
         }
 
         Some((anchor_tick, anchor_visual, pasted))
@@ -365,9 +393,6 @@ mod tests {
     use crate::tests::test_helpers::{doc_with_notes, seed_notes};
     use crate::note::Note;
 
-    /// 构造 3 轨 document，音符在 doc 轨 0 和 doc 轨 2，并设置排序后的视觉映射：
-    /// 视觉 0 → doc 轨 2，视觉 1 → doc 轨 0，视觉 2 → doc 轨 1
-    /// （模拟用户把轨 2 拖到顶部的排序场景 —— `track_visual_order` 非恒等）。
     fn editor_with_sorted_visual_order() -> Editor {
         let mut editor = Editor::default();
         let notes2 = vec![Note::from_raw(0.0, 64, 10.0, 100, 0)];
@@ -384,29 +409,18 @@ mod tests {
         editor.editor_state.data.track_notes(track).len()
     }
 
-    /// 锚点计算必须把选择矩形的**视觉位置**映射回**文档音轨索引**。
     #[test]
     fn test_compute_anchor_visual_maps_to_document_track() {
         let mut editor = editor_with_sorted_visual_order();
         editor.editor_state.data.current_track = 0;
-
-        // 无选区 → 当前音轨（doc 0）的视觉位置 = 1
         assert_eq!(editor.compute_anchor_visual(), 1);
-
-        // 选区在视觉轨 0（对应 doc 轨 2）
         editor
             .editor_state
             .data
             .arrange_selection
             .rects
             .push((0, 10, 0, 127, 0, 0));
-        assert_eq!(
-            editor.compute_anchor_visual(),
-            0,
-            "选区视觉 0 应映射到视觉位置 0"
-        );
-
-        // 选区在视觉轨 1（对应 doc 轨 0）
+        assert_eq!(editor.compute_anchor_visual(), 0);
         editor.editor_state.data.arrange_selection.rects.clear();
         editor
             .editor_state
@@ -414,66 +428,46 @@ mod tests {
             .arrange_selection
             .rects
             .push((0, 10, 0, 127, 1, 1));
-        assert_eq!(
-            editor.compute_anchor_visual(),
-            1,
-            "选区视觉 1 应映射到视觉位置 1"
-        );
+        assert_eq!(editor.compute_anchor_visual(), 1);
     }
 
-    /// 模拟 `write_arrangement_clipboard` 产出的 JSON：复制自 doc 轨 2（视觉 0），
-    /// 锚点视觉位置 = 0，音符视觉偏移 = 0。
     fn single_track_clipboard_json() -> String {
-        r#"{"type":"arrangement","origin_tick":0.0,"origin_key":64,"origin_track":0,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0}]}"#.to_string()
+        r#"{"type":"arrangement","origin_tick":0.0,"origin_key":64,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0}]}"#.to_string()
     }
 
-    /// 回归：复制粘贴（视觉偏移语义）在 `track_visual_order` 非恒等时落到正确文档音轨。
     #[test]
     fn test_paste_lands_on_mapped_document_track() {
         let mut editor = editor_with_sorted_visual_order();
-        // 选区锚定在视觉轨 0（doc 轨 2）
         editor
             .editor_state
             .data
             .arrange_selection
             .rects
             .push((0, 10, 0, 127, 0, 0));
-
         let pasted = editor.arrange_paste_from_text(&single_track_clipboard_json());
         assert!(pasted, "粘贴应成功");
-        // 视觉 0 → doc 轨 2，音符应落在 doc 轨 2，而非 doc 轨 0
         assert_eq!(doc_track_note_count(&editor, 2), 2, "doc 轨 2 应新增 1 个音符");
         assert_eq!(doc_track_note_count(&editor, 0), 1, "doc 轨 0 不应被误写入");
         assert_eq!(doc_track_note_count(&editor, 1), 0);
     }
 
-    /// 回归：多轨复制粘贴保持视觉相对布局（核心修复点）。
-    ///
-    /// 复制 doc 轨 2（视觉 0）+ doc 轨 0（视觉 1），锚点视觉 0；
-    /// 旧逻辑把剪贴板 `track` 当文档偏移，会落到 doc 0 / doc 1（错位）；
-    /// 新逻辑按视觉偏移解析，应落回 doc 2 / doc 0。
     #[test]
     fn test_paste_multi_track_preserves_visual_layout() {
         let mut editor = editor_with_sorted_visual_order();
-        // 选区覆盖视觉轨 0 与 1（doc 轨 2 与 doc 轨 0）
         editor
             .editor_state
             .data
             .arrange_selection
             .rects
             .push((0, 10, 0, 127, 0, 1));
-        // 两音：doc 轨 2（视觉偏移 0）、doc 轨 0（视觉偏移 1）
-        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0},{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":1}]}"#;
-
+        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0},{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":1}]}"#;
         let pasted = editor.arrange_paste_from_text(json);
         assert!(pasted, "多轨粘贴应成功");
-        // 视觉 0 → doc 2，视觉 1 → doc 0
         assert_eq!(doc_track_note_count(&editor, 2), 2, "doc 轨 2 应新增音符");
         assert_eq!(doc_track_note_count(&editor, 0), 2, "doc 轨 0 应新增音符");
         assert_eq!(doc_track_note_count(&editor, 1), 0, "doc 轨 1 不应被误写入");
     }
 
-    /// 恒等映射（无排序）下粘贴行为与历史一致：视觉位置即文档索引。
     #[test]
     fn test_paste_identity_mapping_unchanged() {
         let mut editor = Editor::default();
@@ -489,51 +483,67 @@ mod tests {
             .arrange_selection
             .rects
             .push((0, 10, 0, 127, 1, 1));
-        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0}]}"#;
-
+        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":10.0,"velocity":100,"channel":0,"track":0}]}"#;
         let pasted = editor.arrange_paste_from_text(json);
         assert!(pasted);
-        // 视觉 1 = doc 1，应落在 doc 1
         assert_eq!(doc_track_note_count(&editor, 1), 1);
         assert_eq!(doc_track_note_count(&editor, 0), 1);
     }
 
-    /// 回归：走带框选复制后切换音轨，粘贴应锚定到切换后的当前轨，
-    /// 而非残留的旧框选音轨（"两个同时活跃的音轨"）。
-    ///
-    /// 复现路径：doc 轨 2（视觉 0）框选并复制 → 在走带卷帘区域点击 doc 轨 0
-    /// （视觉 1）切轨 → 粘贴。`switch_to_track` 必须清空 `arrange_selection`，
-    /// 否则粘贴会落到旧框选所在的 doc 2（"选中的音轨"），而非切换后的 doc 0。
     #[test]
     fn test_track_switch_clears_arrange_selection_so_paste_anchors_switched_track() {
         let mut editor = editor_with_sorted_visual_order();
-        editor.editor_state.data.current_track = 2; // 复制时位于 doc 轨 2（视觉 0）
-        // 用户在 doc 轨 2（视觉 0）框选并复制
+        editor.editor_state.data.current_track = 2;
         editor
             .editor_state
             .data
             .arrange_selection
             .rects
             .push((0, 100, 0, 127, 0, 0));
-
-        // 在走带卷帘区域点击 doc 轨 0（视觉 1）切换当前轨
         editor.switch_to_track(0);
-
-        // 复制自视觉 0（doc 2），origin_track=0，note 视觉偏移=0
         let json = single_track_clipboard_json();
         let pasted = editor.arrange_paste_from_text(&json);
         assert!(pasted, "粘贴应成功");
-
         assert_eq!(
             doc_track_note_count(&editor, 0),
             2,
             "粘贴应落到切换后的当前轨 doc 0（而非旧选区所在 doc 2）"
         );
-        assert_eq!(
-            doc_track_note_count(&editor, 2),
-            1,
-            "doc 2 不应被旧选区误写入"
-        );
+        assert_eq!(doc_track_note_count(&editor, 2), 1, "doc 2 不应被旧选区误写入");
+    }
+
+    /// 回归：PPQN 不一致时粘贴需多一次重采样，使音符**长度（节拍）完全一致**。
+    /// 源 division=480、length=480（=1 拍）；目标 division=960 → 应重采样为 960。
+    #[test]
+    fn test_paste_resamples_length_on_ppqn_mismatch() {
+        let mut editor = Editor::default();
+        editor.editor_state.data.document = Some(doc_with_notes(1, 0, &[]));
+        // 目标文档 PPQN 设为 960（与源 480 不一致）
+        editor
+            .editor_state
+            .data
+            .document
+            .as_mut()
+            .unwrap()
+            .division = 960;
+        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":480.0,"velocity":100,"channel":0,"track":0}]}"#;
+        assert!(editor.arrange_paste_from_text(json));
+        let notes = editor.editor_state.data.track_notes(0);
+        assert_eq!(notes.len(), 1);
+        // 1 拍在 480 PPQN 下 = 480 tick；在 960 PPQN 下应 = 960 tick（长度一致）
+        assert_eq!(notes[0].length(), 960u32, "PPQN 不一致时应重采样长度以保节拍一致");
+    }
+
+    /// 回归：PPQN 一致（或缺失 division）时零缩放，粘贴音符长度逐字节一致。
+    #[test]
+    fn test_paste_no_resample_when_ppqn_matches() {
+        let mut editor = Editor::default();
+        editor.editor_state.data.document = Some(doc_with_notes(1, 0, &[]));
+        // 默认 doc_with_notes division=480，与 JSON division=480 一致
+        let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":480.0,"velocity":100,"channel":0,"track":0}]}"#;
+        assert!(editor.arrange_paste_from_text(json));
+        let notes = editor.editor_state.data.track_notes(0);
+        assert_eq!(notes.len(), 1);
+        assert_eq!(notes[0].length(), 480u32, "PPQN 一致时不应缩放");
     }
 }
-

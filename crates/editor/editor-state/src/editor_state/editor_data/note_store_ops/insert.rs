@@ -87,6 +87,56 @@ impl EditorData {
         inserted
     }
 
+    /// 批量插入并返回已分配 id（按输入顺序），供粘贴广播免去 `note_id_at` 全轨重扫。
+    ///
+    /// 消除粘贴路径 O(N·M) 悬崖（N 粘贴 / M 轨已有）。仅当前轨触发主轨全量脏标记。
+    pub fn batch_insert_notes_with_ids(&mut self, notes: &[Note]) -> Vec<u64> {
+        if notes.is_empty() {
+            return Vec::new();
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return Vec::new();
+        };
+        let events: Vec<lumino_midi_model::NoteEvent> = notes
+            .iter()
+            .map(|n| super::super::accessors::note_to_event(n.clone()))
+            .collect();
+        let ids = doc.batch_insert_notes_with_ids(self.current_track, events);
+        if !ids.is_empty() {
+            self.note_delta_events.clear();
+            self.note_delta_dirty = true;
+            self.mark_current_track_changed();
+            self.note_delta_dirty = true;
+        }
+        ids
+    }
+
+    /// 批量插入到指定音轨并返回已分配 id（按输入顺序），供粘贴广播免去全轨重扫。
+    ///
+    /// 仅当 `track_id == current_track` 时触发主轨全量脏标记（其余轨走洋葱皮增量豁免）。
+    pub fn batch_insert_notes_to_track_with_ids(
+        &mut self,
+        track_id: usize,
+        notes: &[Note],
+    ) -> Vec<u64> {
+        if notes.is_empty() {
+            return Vec::new();
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return Vec::new();
+        };
+        let events: Vec<lumino_midi_model::NoteEvent> = notes
+            .iter()
+            .map(|n| super::super::accessors::note_to_event(n.clone()))
+            .collect();
+        let ids = doc.batch_insert_notes_with_ids(track_id, events);
+        if !ids.is_empty() && track_id == self.current_track {
+            self.note_delta_events.clear();
+            self.note_delta_dirty = true;
+        }
+        ids
+    }
+
     /// 单个音符追加
     ///
     /// 返回插入的音符数（0 或 1）。调用方需在调用前 `push_history()`。

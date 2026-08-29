@@ -107,6 +107,45 @@ impl MidiDocument {
         inserted
     }
 
+    /// 批量插入并返回各音符分配到的全局唯一 ID（按输入顺序对齐）。
+    ///
+    /// 与 `batch_insert_notes` 同语义，但额外回传 id 列表。粘贴广播可直接使用这些 id，
+    /// **无需再经 `note_id_at` 全轨线性重扫**——那是 O(N·M) 粘贴悬崖（N 粘贴 / M 轨已有）
+    /// 的根因。返回的 `Vec<u64>` 与输入 `notes` 一一对应（id 在排序前、按输入序捕获）。
+    pub fn batch_insert_notes_with_ids(
+        &mut self,
+        track_id: usize,
+        mut notes: Vec<NoteEvent>,
+    ) -> Vec<u64> {
+        if notes.is_empty() {
+            return Vec::new();
+        }
+        if track_id >= self.notes.len() {
+            return Vec::new();
+        }
+        // 插入前批量分配全局唯一 ID，并按输入顺序捕获（排序前，保证与调用方输入对齐）
+        let mut ids: Vec<u64> = Vec::with_capacity(notes.len());
+        for n in notes.iter_mut() {
+            if n.id == NoteEvent::UNASSIGNED_ID {
+                n.id = self.allocate_note_id();
+            }
+            ids.push(n.id);
+        }
+        notes.sort_by_key(|a| a.start_tick);
+        let max_end = notes.iter().map(|n| n.end_tick).max().unwrap_or(0);
+        let Some(track_notes) = self.notes.get_mut(track_id) else {
+            return Vec::new();
+        };
+        track_notes.extend_sorted(notes);
+        if let Some(cell) = self.track_max_end_ticks.get(track_id)
+            && let Some(cur) = cell.lock().ok().and_then(|g| *g)
+            && max_end > cur
+        {
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(max_end);
+        }
+        ids
+    }
+
     /// 批量插入已排序音符（O(N+M)，免排序）
     ///
     /// 前置：`notes` 已按 `start_tick` 升序。比 `batch_insert_notes` 少一次排序，
