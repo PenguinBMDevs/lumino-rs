@@ -180,6 +180,9 @@ pub(crate) fn build_video_config(
             show_text: st.dc_show_text,
             show_bars: st.dc_show_bars,
         },
-        midi_console: MidiConsoleConfig::default(),
+        midi_console: MidiConsoleConfig {
+            render_backend: parse_enum_or_log(&st.midi_console_backend, "midi_console_backend"),
+            ..MidiConsoleConfig::default()
+        },
     }
 }

@@ -52,6 +52,8 @@ pub struct VideoExportDialogState {
     pub quality: String,
     /// 渲染模式（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
     pub render_mode: String,
+    /// MidiConsole 渲染后端（"GPU"/"CPU"，默认 GPU）
+    pub midi_console_backend: String,
     /// 瀑布流滚动速度（默认 1.0）
     pub waterfall_speed: f32,
     /// MIDITrail Z 方向显示距离（默认 7.5，精度 0.1）
@@ -194,6 +196,7 @@ impl VideoExportDialogState {
             backend: "Software (CPU)".to_string(),
             quality: "中".to_string(),
             render_mode: "Lumino瀑布流".to_string(),
+            midi_console_backend: "GPU".to_string(),
             waterfall_speed: 1.0,
             miditrail_z_far: MIDITRAIL_Z_FAR_DEFAULT,
             counter_text: COUNTER_DEFAULT_TEXT.to_string(),

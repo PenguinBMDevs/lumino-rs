@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
-use lumino_message::events::window::video::RenderMode;
+use lumino_message::events::window::video::{MidiConsoleBackend, RenderMode};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::{
@@ -242,25 +242,41 @@ fn enqueue_memory_frame(
                 }
             }
             RenderMode::MidiConsole => {
-                // MidiConsole 风格：状态化渲染器直出 BGRA（与计数器/数据曲线同属 CPU 渲染）
+                // MidiConsole 风格：状态化渲染器直出 BGRA；后端由配置决定（GPU/CPU）
                 let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
                     send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染器（内部错误）");
                     return true;
                 };
-                let Some(_cfg) = ctx.midi_console_config.as_ref() else {
+                let Some(cfg) = ctx.midi_console_config.as_ref() else {
                     send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染配置（内部错误）");
                     return true;
                 };
-                video_export::render_midicomsole_frame_gpu(
-                    renderer,
-                    &mut frame_data,
-                    ctx.width,
-                    ctx.height,
-                    ctx.document,
-                    tick,
-                    ctx.ppq,
-                    ctx.fps_f64 as u32,
-                );
+                match cfg.render_backend {
+                    MidiConsoleBackend::Gpu => {
+                        video_export::render_midicomsole_frame_gpu(
+                            renderer,
+                            &mut frame_data,
+                            ctx.width,
+                            ctx.height,
+                            ctx.document,
+                            tick,
+                            ctx.ppq,
+                            ctx.fps_f64 as u32,
+                        );
+                    }
+                    MidiConsoleBackend::Cpu => {
+                        video_export::render_midicomsole_frame(
+                            renderer,
+                            &mut frame_data,
+                            ctx.width,
+                            ctx.height,
+                            ctx.document,
+                            tick,
+                            ctx.ppq,
+                            ctx.fps_f64 as u32,
+                        );
+                    }
+                }
             }
         }
 

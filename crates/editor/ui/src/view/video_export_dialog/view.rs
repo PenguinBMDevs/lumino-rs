@@ -65,6 +65,16 @@ fn render_settings_section<'a>(
         .width(Length::Fill)
         .into();
     }
+    // MidiConsole 模式附加设置（渲染后端 GPU/CPU 切换，默认 GPU）
+    if state.render_mode == "MidiConsole" {
+        content = column![
+            content,
+            space().height(12),
+            midi_console_settings_section(state, palette),
+        ]
+        .width(Length::Fill)
+        .into();
+    }
     content
 }
 
@@ -147,6 +157,29 @@ fn render_quality_mode_options<'a>(
             ],
             Some(state.render_mode.clone()),
             |v| Message::VideoExport(VideoExportAction::RenderModeChanged(v)),
+            palette,
+        ),
+    ]
+    .into()
+}
+
+/// MidiConsole 模式附加设置（渲染后端 GPU/CPU 切换）
+fn midi_console_settings_section<'a>(
+    state: &'a VideoExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    column![
+        text("MidiConsole 设置")
+            .size(16)
+            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .style(widgets::dialog_label_style(palette)),
+        space().height(12),
+        pick_list_row(
+            "渲染后端:",
+            100.0,
+            vec!["GPU".to_string(), "CPU".to_string()],
+            Some(state.midi_console_backend.clone()),
+            |v| Message::VideoExport(VideoExportAction::MidiConsoleBackendChanged(v)),
             palette,
         ),
     ]

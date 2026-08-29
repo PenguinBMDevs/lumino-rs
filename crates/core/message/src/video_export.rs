@@ -37,6 +37,8 @@ pub enum VideoExportAction {
     BrowseMidi,
     /// 渲染模式变更（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
     RenderModeChanged(String),
+    /// MidiConsole 渲染后端变更（"GPU"/"CPU"）
+    MidiConsoleBackendChanged(String),
     /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
     WaterfallSpeedChanged(f32),
     /// MIDITrail Z 方向显示距离变更（0.1~15.0，精度 0.1）

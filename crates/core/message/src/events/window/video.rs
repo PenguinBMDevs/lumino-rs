@@ -153,6 +153,36 @@ impl Default for DataCurveConfig {
     }
 }
 
+/// MidiConsole 渲染后端（GPU 加速 / CPU 栅格化）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MidiConsoleBackend {
+    /// GPU 加速（wgpu）。无可用适配器时由渲染器自动回退 CPU。
+    #[default]
+    Gpu,
+    /// CPU 栅格化（ab_glyph），兼容性最好（无 GPU 依赖）。
+    Cpu,
+}
+
+impl std::fmt::Display for MidiConsoleBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MidiConsoleBackend::Gpu => write!(f, "GPU"),
+            MidiConsoleBackend::Cpu => write!(f, "CPU"),
+        }
+    }
+}
+
+impl std::str::FromStr for MidiConsoleBackend {
+    type Err = String;
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.trim() {
+            "GPU" | "gpu" => Ok(MidiConsoleBackend::Gpu),
+            "CPU" | "cpu" => Ok(MidiConsoleBackend::Cpu),
+            other => Err(format!("未知的 MidiConsole 渲染后端: {other}")),
+        }
+    }
+}
+
 /// MidiConsole 风格渲染配置（事件层传输结构）。
 ///
 /// 复刻 MidiConsole（by Zacksony）的终端像素网格风格：逐通道半块键盘条 +
@@ -160,6 +190,8 @@ impl Default for DataCurveConfig {
 /// 风格高度固定（忠实原版配色），此处仅暴露少量可调开关，其余沿用原版常量。
 #[derive(Debug, Clone)]
 pub struct MidiConsoleConfig {
+    /// 渲染后端（GPU 加速 / CPU 栅格化），默认 GPU。
+    pub render_backend: MidiConsoleBackend,
     /// 是否绘制逐通道控制面板（PC/VOL/EXP/...）。关闭后仅保留键盘条与统计行。
     pub show_control_panel: bool,
     /// 按键按下后的淡出帧数（原版 MaxKeyboardFadeTime = 6）
@@ -173,6 +205,7 @@ pub struct MidiConsoleConfig {
 impl Default for MidiConsoleConfig {
     fn default() -> Self {
         Self {
+            render_backend: MidiConsoleBackend::Gpu,
             show_control_panel: true,
             keyboard_fade_frames: 6,
             control_fade_frames: 40,

@@ -19,7 +19,7 @@ use std::path::PathBuf;
 
 use ab_glyph::{Font, FontArc, FontVec, Point, PxScale, ScaleFont};
 use lumino_gfx::midiconsole_renderer::{CellGpu, MidiconsoleGpuContext, pack_rgb};
-use lumino_message::events::window::video::MidiConsoleConfig;
+use lumino_message::events::window::video::{MidiConsoleBackend, MidiConsoleConfig};
 use lumino_midi_loader::MidiDocument;
 
 /// 逻辑网格（与原版 148×40 终端一致）
@@ -66,6 +66,7 @@ impl Cell {
 /// MidiConsole 风格渲染配置（runner 内部使用，由事件层 `MidiConsoleConfig` 转换）
 #[derive(Debug, Clone)]
 pub struct MidiConsoleRenderConfig {
+    pub render_backend: MidiConsoleBackend,
     pub show_control_panel: bool,
     pub keyboard_fade_frames: u32,
     pub control_fade_frames: u32,
@@ -75,6 +76,7 @@ pub struct MidiConsoleRenderConfig {
 impl From<&MidiConsoleConfig> for MidiConsoleRenderConfig {
     fn from(c: &MidiConsoleConfig) -> Self {
         Self {
+            render_backend: c.render_backend,
             show_control_panel: c.show_control_panel,
             keyboard_fade_frames: c.keyboard_fade_frames.max(1),
             control_fade_frames: c.control_fade_frames.max(1),
@@ -938,6 +940,7 @@ mod tests {
     fn test_key_level_animates() {
         let doc = make_short_doc();
         let cfg = MidiConsoleRenderConfig {
+            render_backend: MidiConsoleBackend::Gpu,
             show_control_panel: true,
             keyboard_fade_frames: 30,
             control_fade_frames: 30,

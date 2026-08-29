@@ -115,6 +115,9 @@ impl DialogHandler {
             V::RenderModeChanged(v) => {
                 root.state.video_export_dialog.render_mode = v;
             }
+            V::MidiConsoleBackendChanged(v) => {
+                root.state.video_export_dialog.midi_console_backend = v;
+            }
             V::WaterfallSpeedChanged(v) => {
                 root.state.video_export_dialog.waterfall_speed = v;
             }
