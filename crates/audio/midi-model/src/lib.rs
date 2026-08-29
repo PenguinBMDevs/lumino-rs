@@ -9,6 +9,7 @@
 //! - `lumino-core`：仅依赖 `lumino-midi-model` 而非 `lumino-midi-loader`。
 
 pub mod chunked_list;
+pub mod clipboard;
 pub mod compact;
 pub mod document;
 pub mod error;

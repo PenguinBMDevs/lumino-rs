@@ -29,6 +29,7 @@ lumino-ui-core = { workspace = true }
 # lumino-ui-constants: merged into lumino-ui-core::constants
 lumino-message = { workspace = true }
 lumino-diagnostics = { workspace = true }
+lumino-midi-model = { workspace = true }
 rayon = { workspace = true }
 tracing = { workspace = true }
 once_cell = { workspace = true }
@@ -37,3 +38,4 @@ im = { workspace = true }
 serde_json = { workspace = true }
 puffin = { workspace = true }
 arboard = { workspace = true }
+winapi = { workspace = true }

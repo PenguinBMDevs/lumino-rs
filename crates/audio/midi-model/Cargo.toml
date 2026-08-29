@@ -11,6 +11,10 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[[bench]]
+name = "clipboard_bench"
+harness = false
+
 [dependencies]
 midly = { workspace = true }
 tracing = { workspace = true }

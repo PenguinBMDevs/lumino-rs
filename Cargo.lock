@@ -4586,6 +4586,7 @@ dependencies = [
  "lumino-gfx",
  "lumino-message",
  "lumino-midi-loader",
+ "lumino-midi-model",
  "lumino-note-core",
  "lumino-ui-core",
  "once_cell",
@@ -4594,6 +4595,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.20",
  "tracing",
+ "winapi",
 ]
 
 [[package]]

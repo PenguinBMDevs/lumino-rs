@@ -108,7 +108,7 @@ puffin_http = "0.16.1"
 chrono = "0.4"
 tokio-test = "0.4"
 raw-window-handle = "0.6"
-winapi = { version = "0.3", features = ["winuser", "windef", "minwindef", "processthreadsapi", "psapi"] }
+winapi = { version = "0.3", features = ["winuser", "windef", "minwindef", "processthreadsapi", "psapi", "winbase"] }
 muda = "0.17.1"
 # xsynth deps
 xsynth-core = "0.4.0"
