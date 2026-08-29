@@ -86,6 +86,7 @@ pub fn file_menu(lang: Language, export_material_enabled: bool) -> MenuConfig {
             )),
             Action(crate::event::Event::menu_file(file::Event::save_to_cloud())),
             Separator,
+            Action(crate::event::Event::menu_file(file::Event::export_midi())),
             Submenu(
                 vec![
                     Action(crate::event::Event::menu_file(
@@ -356,6 +357,7 @@ pub fn event_display_name(event: &Event, lang: Language) -> String {
                 FileEvent::ExportProjectArchive => translations.file_export_archive.to_string(),
                 FileEvent::ExportProjectFolder => translations.file_export_folder.to_string(),
                 FileEvent::ExportMaterial => translations.file_export_material.to_string(),
+                FileEvent::ExportMidi => translations.file_export_midi.to_string(),
                 FileEvent::ProjectSettings => translations.file_project_settings.to_string(),
                 FileEvent::Settings => translations.file_settings.to_string(),
                 FileEvent::Exit => translations.file_exit.to_string(),

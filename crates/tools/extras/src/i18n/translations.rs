@@ -131,6 +131,8 @@ pub struct MainTranslations {
     pub file_export_folder: &'static str,
     /// 导出为素材
     pub file_export_material: &'static str,
+    /// 导出为 MIDI 文件
+    pub file_export_midi: &'static str,
     /// 导出音频
     pub file_export_audio: &'static str,
     /// 工程设置
@@ -175,6 +177,10 @@ pub struct MainTranslations {
     pub status_file_saved: &'static str,
     /// 保存失败后的底边栏提示前缀
     pub status_save_failed: &'static str,
+    /// 导出 MIDI 成功后的底边栏提示
+    pub status_midi_exported: &'static str,
+    /// 没有可导出的 MIDI 内容时的底边栏提示
+    pub status_no_midi_content: &'static str,
     /// 侧边栏：音轨列表
     pub sidebar_file: &'static str,
     /// 侧边栏：音轨总览
@@ -338,6 +344,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     file_export_archive: "导出为单文件",
     file_export_folder: "导出为文件夹",
     file_export_material: "导出为素材",
+    file_export_midi: "导出为MIDI",
     file_export_audio: "导出音频",
     file_project_settings: "工程设置",
     file_settings: "设置",
@@ -360,6 +367,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     status_ready: "就绪",
     status_file_saved: "文件已经保存",
     status_save_failed: "保存失败",
+    status_midi_exported: "MIDI 已导出",
+    status_no_midi_content: "没有可导出的 MIDI 内容",
     sidebar_file: "音轨列表",
     sidebar_arrangement: "音轨总览",
     sidebar_automation: "自动化面板",
@@ -476,6 +485,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     file_export_archive: "Export as Single File",
     file_export_folder: "Export as Folder",
     file_export_material: "Export as Material",
+    file_export_midi: "Export as MIDI",
     file_export_audio: "Export Audio",
     file_project_settings: "Project Settings",
     file_settings: "Settings",
@@ -498,6 +508,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     status_ready: "Ready",
     status_file_saved: "File saved",
     status_save_failed: "Save failed",
+    status_midi_exported: "MIDI exported",
+    status_no_midi_content: "No MIDI content to export",
     sidebar_file: "Track List",
     sidebar_arrangement: "Track Overview",
     sidebar_automation: "Automation",
