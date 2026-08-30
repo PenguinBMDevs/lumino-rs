@@ -5,6 +5,7 @@
 //! 2026-08 单一权威源：音符一律从 `midi_doc`（MidiDocument）读取。
 
 use crate::ArrangementNoteInstance;
+use std::time::Instant;
 
 /// 走带视图颜色配置
 #[derive(Debug, Clone)]
@@ -80,6 +81,8 @@ pub fn build_arrangement_all(
     out: &mut Vec<ArrangementNoteInstance>,
     params: &ArrangementSceneParams<'_>,
 ) {
+    puffin::profile_scope!("arrangement::build_instances");
+    let t0 = Instant::now();
     let viewport = params.viewport;
     let colors = params.colors;
     let w = viewport.canvas_size[0];
@@ -230,6 +233,15 @@ pub fn build_arrangement_all(
             ));
         }
     }
+
+    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let n = out.len();
+    tracing::debug!(
+        target: "perf::arrangement",
+        instances = n,
+        ms = elapsed_ms,
+        "build_arrangement_instances"
+    );
 }
 
 /// Collect arrangement instances from raw data (no UI dependency).

@@ -12,6 +12,7 @@ use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::clipboard::{
     decode_clipboard_records, encode_clipboard, parse_clipboard_header, ClipRecord,
 };
+use std::time::Instant;
 
 /// 走带二进制剪贴板子格式哨兵（写入 `ClipRecord` 头的 `track_hint` 字段），
 /// 与钢琴卷帘二进制（track_hint=0）区分，避免跨路径互相误读。
@@ -265,6 +266,8 @@ impl Editor {
     /// 含 PPQN 一致性重采样；区别仅在载荷格式为紧凑二进制（毫秒级 vs JSON 秒级）。
     /// 仅当 `track_hint == ARRANGEMENT_BINARY_MARK` 时接受，避免误读钢琴卷帘二进制。
     pub(crate) fn arrange_paste_from_binary_bytes(&mut self, bytes: &[u8]) -> bool {
+        puffin::profile_scope!("arrangement::paste_binary");
+        let t0 = Instant::now();
         let meta = match parse_clipboard_header(bytes) {
             Ok(m) => m,
             Err(e) => {
@@ -336,10 +339,12 @@ impl Editor {
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         tracing::info!(
-            "Arrangement: 已粘贴 {} 个音符 (anchor_tick={}) [二进制]",
+            "Arrangement: 已粘贴 {} 个音符 (anchor_tick={}) [二进制] 耗时 {:.2}ms",
             inserted_count,
-            anchor_tick
+            anchor_tick,
+            elapsed_ms
         );
         true
     }
@@ -442,6 +447,8 @@ impl Editor {
             by_track.entry(*dest_doc).or_default().push(note);
         }
 
+        puffin::profile_scope!("arrangement::insert_notes");
+        let t0 = Instant::now();
         for (dest_track, notes) in by_track {
             let ids = self
                 .editor_state
@@ -467,6 +474,13 @@ impl Editor {
                 ));
             }
         }
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        tracing::debug!(
+            target: "perf::arrangement",
+            inserted = inserted_count,
+            ms = elapsed_ms,
+            "insert_notes"
+        );
 
         (inserted_count, current_track_touched, affected_tracks)
     }

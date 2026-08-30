@@ -3,6 +3,7 @@ use super::ArrangementRenderer;
 impl ArrangementRenderer {
     /// 绘制走带视图
     pub fn draw<'r>(&'r self, render_pass: &mut wgpu::RenderPass<'r>) {
+        puffin::profile_scope!("arrangement::draw");
         if self.last_instance_count == 0 {
             return;
         }

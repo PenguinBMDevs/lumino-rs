@@ -58,6 +58,7 @@ pub fn execute_render_pass(
 
     // 工程走带模式：渲染走带背景和音符
     if params.is_arrangement_mode {
+        puffin::profile_scope!("arrangement::render_pass");
         // 排列模式同样需要 scissor rect 剔除，避免渲染视口外音符
         let arr_scissor_x = ((params.canvas_offset.0 * params.scale_factor) as u32).min(width);
         let arr_scissor_y = ((params.canvas_offset.1 * params.scale_factor) as u32).min(height);

@@ -15,6 +15,7 @@ pub fn prepare_renderers(
 
     // 音轨总览模式：准备走带渲染器，跳过钢琴卷帘相关渲染器
     if params.is_arrangement_mode {
+        puffin::profile_scope!("arrangement::prepare");
         renderers.arrangement.prepare(
             device,
             queue,
