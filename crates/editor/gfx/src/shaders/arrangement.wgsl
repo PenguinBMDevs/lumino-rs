@@ -9,7 +9,7 @@ struct Uniforms {
     zoom: f32,
     track_height: f32,
     notes_per_track: f32,
-    _pad0: f32,
+    zoom_y: f32,
     canvas_offset: vec2<f32>,
     playhead_x: f32,
     _pad1: f32,
@@ -47,10 +47,32 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
 
-    let x = instance.xywh.x;
-    let y = instance.xywh.y;
-    let w = instance.xywh.z;
-    let h = instance.xywh.w;
+    var x: f32 = instance.xywh.x;
+    var y: f32 = instance.xywh.y;
+    var w: f32 = instance.xywh.z;
+    var h: f32 = instance.xywh.w;
+
+    // 音符实例以 note-space 存储 (x=start_tick, y=key, z=length_ticks, w=lane_index)，
+    // 视口变换放到着色器里完成，使 CPU 仅在音符数据变化时才重建实例，
+    // 滚动/缩放只更新 uniform（消除每帧 ~67ms 的实例重建）。
+    if (instance.packed.w == 3u) {
+        let ppu = u.zoom;
+        let lh = u.track_height * u.zoom_y;
+        let key_h = lh / 128.0;
+        let cox = u.canvas_offset.x;
+        let coy = u.canvas_offset.y;
+        let ts = u.scroll.x / ppu;
+        let te = (u.scroll.x + u.viewport_size.x) / ppu;
+        let left_tick = max(instance.xywh.x, ts);
+        let right_tick = min(instance.xywh.x + instance.xywh.z, te);
+        let sx = cox + left_tick * ppu - u.scroll.x;
+        let right_screen = cox + right_tick * ppu - u.scroll.x;
+        x = sx;
+        w = max(right_screen - sx, 2.0);
+        let lane_top = instance.xywh.w * lh - u.scroll.y + coy;
+        y = lane_top + (127.0 - instance.xywh.y) * key_h;
+        h = 4.0;
+    }
 
     var pos = array<vec2<f32>, 6>(
         vec2<f32>(x + w, y),

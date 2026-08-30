@@ -17,8 +17,8 @@ pub struct ArrangementUniform {
     pub track_height: f32,
     /// 每轨音符数（128）— offset 24
     pub notes_per_track: f32,
-    /// 对齐填充 — offset 28 (align canvas_offset to 8)
-    pub _pad0: f32,
+    /// 垂直缩放（倍率，1.0 = 默认高度）— offset 28
+    pub zoom_y: f32,
     /// 画布偏移 [x, y] — offset 32
     pub canvas_offset: [f32; 2],
     /// 演奏指示线 x 坐标 — offset 40
@@ -51,9 +51,9 @@ impl Default for ArrangementUniform {
             zoom: 0.5,
             track_height: 48.0,
             notes_per_track: 128.0,
+            zoom_y: 1.0,
             canvas_offset: [0.0, 0.0],
             playhead_x: -1.0,
-            _pad0: 0.0,
             _pad1: 0.0,
             bg_color: [0.18, 0.18, 0.18, 1.0],
             bar_color: [0.3, 0.3, 0.3, 1.0],
@@ -134,13 +134,22 @@ impl ArrangementNoteInstance {
         }
     }
 
-    /// 创建音符实例（屏幕坐标）
-    pub fn note(x: f32, y: f32, w: f32, h: f32, color: [f32; 3], velocity: u8) -> Self {
+    /// 创建音符实例（note-space：x=start_tick, y=key, z=length_ticks, w=lane_index）
+    /// 屏幕坐标由着色器根据 uniform 计算，因此实例在滚动/缩放时完全不变，
+    /// 仅需在音符数据变化时重建一次（常驻 GPU buffer）。
+    pub fn note_space(
+        start_tick: f32,
+        length_ticks: f32,
+        key: f32,
+        lane_index: f32,
+        color: [f32; 3],
+        velocity: u8,
+    ) -> Self {
         Self {
-            x,
-            y,
-            w: w.max(2.0), // 最小宽度 2 像素
-            h,
+            x: start_tick,
+            y: key,
+            w: length_ticks,
+            h: lane_index,
             rgba_packed: pack_rgba(color[0], color[1], color[2], 0.85),
             props_packed: pack_props(2.0, 1.0), // 圆角 2px, 边框 1px
             velocity: velocity as u32,

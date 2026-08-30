@@ -6,7 +6,12 @@ pub struct RenderData {
     pub zoom: (f32, f32),
     pub viewport_size: Size,
     pub ruler_instances: Vec<lumino_gfx::RulerTickInstance>,
-    pub arrangement_note_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
+    /// 走带视图覆盖层实例（背景/lane/网格/框选/指示线），每帧重建
+    pub arrangement_overlay_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
+    /// 覆盖层中"背景层"实例数（背景/lane/网格），绘制在音符之下
+    pub arrangement_overlay_back_len: usize,
+    /// 走带视图常驻音符实例（note-space）；仅数据变化时由宿主重新提供
+    pub arrangement_resident_notes: Option<Vec<lumino_gfx::ArrangementNoteInstance>>,
     pub cc_bar_instances: Vec<lumino_gfx::CcBarInstance>,
 }
 

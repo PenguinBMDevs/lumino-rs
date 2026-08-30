@@ -76,13 +76,44 @@ pub struct ArrangementViewport {
 }
 
 /// 构建全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
-/// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
+///
+/// 拆分为 [`build_arrangement_overlay_back`] / [`build_arrangement_notes`] /
+/// [`build_arrangement_overlay_front`] 三个子过程，以便宿主把「每帧都变」的覆盖层
+/// （背景/lane/网格/框选/指示线）与「仅在音符数据变化时变」的音符实例分开处理：
+/// 音符实例构建为 note-space 并由着色器定位，可常驻 GPU buffer，横向滚动时零重建。
 pub fn build_arrangement_all(
     out: &mut Vec<ArrangementNoteInstance>,
     params: &ArrangementSceneParams<'_>,
 ) {
     puffin::profile_scope!("arrangement::build_instances");
     let t0 = Instant::now();
+    build_arrangement_overlay_back(out, params);
+    build_arrangement_notes(out, params);
+    build_arrangement_overlay_front(out, params);
+    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let n = out.len();
+    tracing::debug!(
+        target: "perf::arrangement",
+        instances = n,
+        ms = elapsed_ms,
+        "build_arrangement_instances"
+    );
+}
+
+/// 音轨颜色（按 track_order 索引选取调色板）
+fn track_color_of(params: &ArrangementSceneParams<'_>, ti: usize) -> [f32; 3] {
+    if params.track_colors.is_empty() {
+        [0.5, 0.5, 0.5]
+    } else {
+        params.track_colors[ti % params.track_colors.len()]
+    }
+}
+
+/// 构建覆盖层（背景 + lane + 网格线），绘制在音符之下
+pub fn build_arrangement_overlay_back(
+    out: &mut Vec<ArrangementNoteInstance>,
+    params: &ArrangementSceneParams<'_>,
+) {
     let viewport = params.viewport;
     let colors = params.colors;
     let w = viewport.canvas_size[0];
@@ -93,14 +124,8 @@ pub fn build_arrangement_all(
     let cox = viewport.canvas_offset[0];
     let coy = viewport.canvas_offset[1];
 
-    // 可见 tick 范围（屏幕坐标模式下，这是所有元素的计算基准）
-    let ts = (viewport.scroll_x / ppu) as f64;
-    let te = ((viewport.scroll_x + w) / ppu) as f64;
-
     // ── 1. 背景 ──
-    out.push(ArrangementNoteInstance::background(
-        cox, coy, w, h, colors.bg,
-    ));
+    out.push(ArrangementNoteInstance::background(cox, coy, w, h, colors.bg));
 
     if nt == 0 {
         return;
@@ -108,22 +133,14 @@ pub fn build_arrangement_all(
 
     let (tf, tl) = visible_trk_range(viewport, h, nt);
 
-    // ── 2. Lane + 音符 ──
-    for (ti, tid) in params.track_order.iter().enumerate() {
+    // ── 2. Lane 背景 ──
+    for (ti, _tid) in params.track_order.iter().enumerate() {
         if ti < tf || ti >= tl {
             continue;
         }
         if !params.track_visible.get(ti).copied().unwrap_or(true) {
             continue;
         }
-
-        let color = if params.track_colors.is_empty() {
-            [0.5, 0.5, 0.5]
-        } else {
-            params.track_colors[ti % params.track_colors.len()]
-        };
-
-        // Lane 背景
         let lane_y = trk_screen_y(viewport, ti) + coy;
         let c = if ti % 2 == 0 {
             colors.lane_even
@@ -131,74 +148,111 @@ pub fn build_arrangement_all(
             colors.lane_odd
         };
         out.push(ArrangementNoteInstance::lane(cox, lane_y, w, lh, c));
-
-        // 音符（2026-08 单一权威源：一律从 document 读取）
-        if let Some(doc) = params.midi_doc {
-            collect_notes_doc(out, doc, *tid, color, viewport, cox, lane_y);
-        }
     }
 
-    // ── 3. 小节线（按拍号变化，与标尺/真实小节边界一致）──
+    // ── 3. 网格线（按拍号变化，与标尺/真实小节边界一致）──
+    let ts = (viewport.scroll_x / ppu) as u32;
+    let te = ((viewport.scroll_x + w) / ppu) as u32;
     for tick in crate::grid::measure_line_ticks(
-        ts as u32,
-        te as u32,
+        ts,
+        te,
         viewport.ppq as u32,
         params.time_signatures,
     ) {
         let screen_x = tick_to_x(viewport, tick as f64);
         if screen_x >= cox && screen_x <= cox + w {
             out.push(ArrangementNoteInstance::grid_line(
-                screen_x,
-                coy,
-                1.0,
-                h,
-                colors.measure_line,
-                tick,
+                screen_x, coy, 1.0, h, colors.measure_line, tick,
             ));
         }
     }
+}
 
-    // ── 4. 框选矩形 ──
+/// 构建音符实例（note-space，常驻 GPU buffer）。
+///
+/// 仅遍历「可见轨范围」内的音轨；水平方向不做 tick 剔除——音符以 note-space 存储，
+/// 由着色器按 uniform 计算屏幕位置并裁剪视口外部分。因此横向滚动无需重建此缓冲。
+pub fn build_arrangement_notes(
+    out: &mut Vec<ArrangementNoteInstance>,
+    params: &ArrangementSceneParams<'_>,
+) {
+    puffin::profile_scope!("arrangement::build_notes");
+    let t0 = Instant::now();
+    let viewport = params.viewport;
+    let nt = params.track_order.len();
+    if nt == 0 {
+        return;
+    }
+    let (tf, tl) = visible_trk_range(viewport, viewport.canvas_size[1], nt);
+    let total = viewport.total_ticks;
+    for (ti, tid) in params.track_order.iter().enumerate() {
+        if ti < tf || ti >= tl {
+            continue;
+        }
+        if !params.track_visible.get(ti).copied().unwrap_or(true) {
+            continue;
+        }
+        let color = track_color_of(params, ti);
+        if let Some(doc) = params.midi_doc {
+            collect_notes_doc_space(out, doc, *tid, color, ti as f32, total);
+        }
+    }
+    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+    let n = out.len();
+    tracing::debug!(
+        target: "perf::arrangement",
+        instances = n,
+        ms = elapsed_ms,
+        "build_arrangement_notes"
+    );
+}
+
+/// 构建覆盖层（框选矩形 + 拖拽框选 + ghost 音符 + 演奏指示线），绘制在音符之上
+pub fn build_arrangement_overlay_front(
+    out: &mut Vec<ArrangementNoteInstance>,
+    params: &ArrangementSceneParams<'_>,
+) {
+    let viewport = params.viewport;
+    let colors = params.colors;
+    let w = viewport.canvas_size[0];
+    let h = viewport.canvas_size[1];
+    let lh = viewport.track_height * viewport.zoom_y;
+    let ppu = viewport.zoom_x.max(0.001);
+    let nt = params.track_order.len();
+    let cox = viewport.canvas_offset[0];
+    let coy = viewport.canvas_offset[1];
+
+    // ── 1. 框选矩形 ──
     if let Some((t_start, t_end, track_lo, track_hi)) = params.sel_rect {
-        let lh = viewport.track_height * viewport.zoom_y;
         let sx = cox + (t_start as f32) * ppu - viewport.scroll_x;
         let ex = cox + (t_end as f32) * ppu - viewport.scroll_x;
         let sy = track_lo as f32 * lh - viewport.scroll_y + coy;
         let ey = (track_hi as f32 + 1.0) * lh - viewport.scroll_y + coy;
-        let min_x = sx.min(ex);
-        let max_x = sx.max(ex);
-        let min_y = sy.min(ey);
-        let max_y = sy.max(ey);
         out.push(ArrangementNoteInstance::selection_rect(
-            min_x,
-            min_y,
-            max_x - min_x,
-            max_y - min_y,
+            sx.min(ex),
+            sy.min(ey),
+            sx.max(ex) - sx.min(ex),
+            sy.max(ey) - sy.min(ey),
             colors.sel_rect,
         ));
     }
 
-    // ── 5. 拖拽框选矩形 ──
+    // ── 2. 拖拽框选矩形 ──
     if let Some((t_start, t_end, track_lo, track_hi)) = params.drag_sel_rect {
-        let lh = viewport.track_height * viewport.zoom_y;
         let sx = cox + (t_start as f32) * ppu - viewport.scroll_x;
         let ex = cox + (t_end as f32) * ppu - viewport.scroll_x;
         let sy = track_lo as f32 * lh - viewport.scroll_y + coy;
         let ey = (track_hi as f32 + 1.0) * lh - viewport.scroll_y + coy;
-        let min_x = sx.min(ex);
-        let max_x = sx.max(ex);
-        let min_y = sy.min(ey);
-        let max_y = sy.max(ey);
         out.push(ArrangementNoteInstance::selection_rect(
-            min_x,
-            min_y,
-            max_x - min_x,
-            max_y - min_y,
+            sx.min(ex),
+            sy.min(ey),
+            sx.max(ex) - sx.min(ex),
+            sy.max(ey) - sy.min(ey),
             colors.sel_rect,
         ));
     }
 
-    // ── 6. ghost 音符预览 ──
+    // ── 3. ghost 音符预览 ──
     if !params.ghost_notes.is_empty() {
         let ghost_color = [0.9, 0.9, 0.9];
         for (start, end, track) in params.ghost_notes {
@@ -211,37 +265,20 @@ pub fn build_arrangement_all(
             let sw = ((*end - *start) as f32) * ppu;
             let sy = lane_y + lh * 0.5 - 2.0;
             out.push(ArrangementNoteInstance::ghost_note(
-                sx,
-                sy,
-                sw.max(2.0),
-                4.0,
-                ghost_color,
+                sx, sy, sw.max(2.0), 4.0, ghost_color,
             ));
         }
     }
 
-    // ── 7. 演奏指示线 ──
+    // ── 4. 演奏指示线 ──
     if params.playback_position > 0.0 {
         let cx = tick_to_x(viewport, params.playback_position as f64);
         if cx >= cox && cx <= cox + w {
             out.push(ArrangementNoteInstance::playhead(
-                cx,
-                coy,
-                2.0,
-                h,
-                colors.playhead,
+                cx, coy, 2.0, h, colors.playhead,
             ));
         }
     }
-
-    let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
-    let n = out.len();
-    tracing::debug!(
-        target: "perf::arrangement",
-        instances = n,
-        ms = elapsed_ms,
-        "build_arrangement_instances"
-    );
 }
 
 /// Collect arrangement instances from raw data (no UI dependency).
@@ -255,59 +292,35 @@ pub fn collect_arrangement_instances(
 
 // ─── 音符读取 ──────────────────────────────────────────────
 
-fn collect_notes_doc(
+/// 按 note-space 收集单轨全部音符（不含 tick 范围剔除）。
+///
+/// 音符以 (start_tick, length_ticks, key, lane_index) 存储，屏幕坐标由着色器
+/// 依据 uniform 计算。由于水平滚动时 GPU 会自行裁剪视口外音符，这里无需按可见
+/// tick 范围二分剔除——否则每次横向滚动都要重建缓冲。纵向滚动由调用方按可见轨范围
+/// 过滤（见 [`build_arrangement_notes`]）。
+fn collect_notes_doc_space(
     out: &mut Vec<ArrangementNoteInstance>,
     doc: &lumino_midi_loader::MidiDocument,
     tid: usize,
     color: [f32; 3],
-    viewport: &ArrangementViewport,
-    cox: f32,
-    lane_y: f32,
+    lane_index: f32,
+    total_ticks: u32,
 ) {
-    let ppu = viewport.zoom_x.max(0.001);
-    let w = viewport.canvas_size[0];
-    let ts = (viewport.scroll_x / ppu) as f64;
-    let te = ((viewport.scroll_x + w) / ppu) as f64;
-    let lh = viewport.track_height * viewport.zoom_y;
-    let key_h = lh / 128.0;
-    let scroll_x = viewport.scroll_x;
-
     let notes = doc.track_notes(tid);
     if notes.is_empty() {
         return;
     }
 
-    // 分块二分范围查询（含 TICK_SEARCH_BUFFER 捕获跨范围音符）
-    let ts_u = ts as u32;
-    let te_u = te as u32;
-    const TICK_BUF: u32 = 19200;
-
-    let range_start = ts_u.saturating_sub(TICK_BUF);
-
-    for note_info in notes.range(range_start, te_u + 1) {
-        if note_info.start_tick > te_u {
-            break;
-        }
+    for note_info in notes.range(0, total_ticks.saturating_add(1)) {
         let end_tick = note_info.end_tick();
-        if end_tick < ts_u {
-            continue;
-        }
-        // NoteInfo → 屏幕坐标，一行输出，无 active-table 开销
-        let s = (note_info.start_tick as f64).max(ts);
-        let e = (end_tick as f64).min(te);
-        if s < e {
-            let sx = cox + s as f32 * ppu - scroll_x;
-            let sw = (e - s) as f32 * ppu;
-            let sy = lane_y + (127.0 - note_info.key as f32) * key_h;
-            out.push(ArrangementNoteInstance::note(
-                sx,
-                sy,
-                sw.max(2.0),
-                4.0,
-                color,
-                note_info.velocity,
-            ));
-        }
+        out.push(ArrangementNoteInstance::note_space(
+            note_info.start_tick as f32,
+            (end_tick.saturating_sub(note_info.start_tick)) as f32,
+            note_info.key as f32,
+            lane_index,
+            color,
+            note_info.velocity,
+        ));
     }
 }
 

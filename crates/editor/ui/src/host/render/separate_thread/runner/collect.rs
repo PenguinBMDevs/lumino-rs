@@ -9,9 +9,19 @@ use crate::host::render::data::RenderData;
 use lumino_gfx::{ArrangementNoteInstance, ArrangementSceneParams, ArrangementViewColors};
 
 impl Host {
-    /// 收集走带视图全部实例（背景 + lane + 网格线 + 音符 + 演奏指示线）
-    /// 屏幕坐标，每帧重建，二分查找加速 MidiDocument 音符读取
-    pub(super) fn collect_arrangement_instances(&self) -> Vec<ArrangementNoteInstance> {
+    /// 收集走带视图渲染数据。
+    ///
+    /// 返回 `(覆盖层实例, 覆盖层背景层数, 常驻音符实例 Option)`。
+    /// 常驻音符实例以 note-space 存储、由着色器定位，仅在音符数据/轨道顺序/纵向可见轨
+    /// 范围变化时才重建（返回 `Some`）；横向滚动只更新 uniform，本函数返回 `None`，
+    /// 渲染线程复用 GPU 上的常驻缓冲——彻底消除每帧 ~67ms 的实例重建。
+    pub(super) fn collect_arrangement_instances(
+        &mut self,
+    ) -> (
+        Vec<ArrangementNoteInstance>,
+        usize,
+        Option<Vec<ArrangementNoteInstance>>,
+    ) {
         puffin::profile_scope!("collect_arrangement_instances");
 
         let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
@@ -123,7 +133,53 @@ impl Host {
             time_signatures: &self.root.editor.editor_state.data.time_signatures,
         };
 
-        lumino_gfx::collect_arrangement_instances(&scene_params)
+        // 脏标记键：音符世代 + 轨道顺序 + 纵向可见轨范围 + 模式。
+        // 横向滚动(scroll_x/zoom_x) 故意不计入 → 横向滚动零重建，仅更新 uniform。
+        let key = {
+            let gen_val = self.root.editor.editor_state.data.track_notes_gen;
+            let mut h: u64 = 1469598103934665603;
+            for &t in &track_order {
+                h ^= t as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
+            let mut k = gen_val;
+            k = k.wrapping_mul(0x9E3779B1).wrapping_add(h);
+            k = k
+                .wrapping_mul(0x9E3779B1)
+                .wrapping_add(viewport.scroll_y.to_bits() as u64);
+            k = k
+                .wrapping_mul(0x9E3779B1)
+                .wrapping_add(viewport.zoom_y.to_bits() as u64);
+            k = k
+                .wrapping_mul(0x9E3779B1)
+                .wrapping_add(viewport.track_height.to_bits() as u64);
+            k = k
+                .wrapping_mul(0x9E3779B1)
+                .wrapping_add(viewport.canvas_size[1].to_bits() as u64);
+            k = k
+                .wrapping_mul(0x9E3779B1)
+                .wrapping_add(if self.root.is_arrangement_mode() { 1 } else { 0 });
+            k
+        };
+
+        // 仅当脏标记变化时才重建常驻音符实例（note-space），否则复用 GPU 上的常驻缓冲。
+        let resident = if key != self.arr_cached_note_key {
+            let mut notes = Vec::new();
+            lumino_gfx::build_arrangement_notes(&mut notes, &scene_params);
+            self.arr_cached_notes = notes;
+            self.arr_cached_note_key = key;
+            Some(self.arr_cached_notes.clone())
+        } else {
+            None
+        };
+
+        // 覆盖层（背景/lane/网格/框选/ghost/指示线）每帧重建（实例数很少，开销可忽略）
+        let mut overlay = Vec::new();
+        lumino_gfx::build_arrangement_overlay_back(&mut overlay, &scene_params);
+        let overlay_back_len = overlay.len();
+        lumino_gfx::build_arrangement_overlay_front(&mut overlay, &scene_params);
+
+        (overlay, overlay_back_len, resident)
     }
 
     /// 收集渲染所需的数据
@@ -174,13 +230,14 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
-        // 收集走带视图音符实例
-        let arrangement_note_instances = if self.root.is_arrangement_mode() {
-            puffin::profile_scope!("collect_arrangement_instances");
-            self.collect_arrangement_instances()
-        } else {
-            vec![]
-        };
+        // 收集走带视图渲染数据：覆盖层每帧重建，常驻音符仅在数据变化时重建
+        let (arrangement_overlay_instances, arrangement_overlay_back_len, arrangement_resident_notes) =
+            if self.root.is_arrangement_mode() {
+                puffin::profile_scope!("collect_arrangement_instances");
+                self.collect_arrangement_instances()
+            } else {
+                (vec![], 0, None)
+            };
 
         // 构建 CC 柱状条实例（背景/网格/中心线）
         // 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算
@@ -201,7 +258,9 @@ impl Host {
             zoom,
             viewport_size,
             ruler_instances,
-            arrangement_note_instances,
+            arrangement_overlay_instances,
+            arrangement_overlay_back_len,
+            arrangement_resident_notes,
             cc_bar_instances,
         }
     }

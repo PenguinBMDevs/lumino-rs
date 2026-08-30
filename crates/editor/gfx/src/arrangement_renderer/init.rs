@@ -77,10 +77,15 @@ impl ArrangementRenderer {
             },
         );
 
-        // 创建 instance buffer（作为 vertex buffer 使用）
-        let instance_buffer = gpu_resource_tracker::create_instance_buffer::<
+        // 创建覆盖层 instance buffer（每帧重建）
+        let overlay_buffer = gpu_resource_tracker::create_instance_buffer::<
             super::ArrangementNoteInstance,
-        >(device, "arrangement_instance_buffer", INITIAL_CAPACITY);
+        >(device, "arrangement_overlay_buffer", INITIAL_CAPACITY);
+
+        // 创建音符 instance buffer（常驻，仅数据变化时重建）
+        let note_buffer = gpu_resource_tracker::create_instance_buffer::<
+            super::ArrangementNoteInstance,
+        >(device, "arrangement_note_buffer", INITIAL_CAPACITY);
 
         // 创建 bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
@@ -95,10 +100,14 @@ impl ArrangementRenderer {
         Self {
             pipeline,
             uniform_buffer,
-            instance_buffer,
+            overlay_buffer,
+            overlay_capacity: INITIAL_CAPACITY,
+            overlay_count: 0,
+            note_buffer,
+            note_capacity: INITIAL_CAPACITY,
+            note_count: 0,
+            overlay_back_len: 0,
             bind_group,
-            capacity: INITIAL_CAPACITY,
-            last_instance_count: 0,
         }
     }
 

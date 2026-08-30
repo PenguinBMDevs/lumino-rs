@@ -33,6 +33,7 @@ mod swappable_buffer;
 
 pub use arrangement_instances::{
     ArrangementSceneParams, ArrangementViewColors, ArrangementViewport, build_arrangement_all,
+    build_arrangement_notes, build_arrangement_overlay_back, build_arrangement_overlay_front,
     collect_arrangement_instances,
 };
 pub use arrangement_renderer::{

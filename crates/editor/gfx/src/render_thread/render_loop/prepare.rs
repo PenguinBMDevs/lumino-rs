@@ -20,7 +20,9 @@ pub fn prepare_renderers(
             device,
             queue,
             params.arrangement_uniform,
-            &params.arrangement_note_instances,
+            &params.arrangement_overlay_instances,
+            params.arrangement_resident_notes.as_deref(),
+            params.arrangement_overlay_back_len,
         );
         return;
     }

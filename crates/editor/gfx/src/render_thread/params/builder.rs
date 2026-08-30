@@ -31,7 +31,9 @@ pub struct RenderParamsBuilder {
     ppq: f32,
     max_key_index: f32,
     is_arrangement_mode: bool,
-    arrangement_note_instances: Vec<ArrangementNoteInstance>,
+    arrangement_overlay_instances: Vec<ArrangementNoteInstance>,
+    arrangement_overlay_back_len: usize,
+    arrangement_resident_notes: Option<Vec<ArrangementNoteInstance>>,
     arrangement_uniform: ArrangementUniform,
     cc_bar_instances: Vec<CcBarInstance>,
     canvas_offset: (f32, f32),
@@ -80,7 +82,9 @@ impl Default for RenderParamsBuilder {
             ppq: base.ppq,
             max_key_index: base.max_key_index,
             is_arrangement_mode: base.is_arrangement_mode,
-            arrangement_note_instances: base.arrangement_note_instances,
+            arrangement_overlay_instances: base.arrangement_overlay_instances,
+            arrangement_overlay_back_len: base.arrangement_overlay_back_len,
+            arrangement_resident_notes: base.arrangement_resident_notes,
             arrangement_uniform: base.arrangement_uniform,
             cc_bar_instances: base.cc_bar_instances,
             canvas_offset: base.canvas_offset,
@@ -226,9 +230,27 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置音轨总览模式音符实例
-    pub fn arrangement_note_instances(mut self, instances: Vec<ArrangementNoteInstance>) -> Self {
-        self.arrangement_note_instances = instances;
+    /// 设置音轨总览模式覆盖层实例（背景/lane/网格/框选/指示线），每帧重建
+    pub fn arrangement_overlay_instances(
+        mut self,
+        instances: Vec<ArrangementNoteInstance>,
+    ) -> Self {
+        self.arrangement_overlay_instances = instances;
+        self
+    }
+
+    /// 设置覆盖层中"背景层"实例数（背景/lane/网格），绘制在音符之下
+    pub fn arrangement_overlay_back_len(mut self, len: usize) -> Self {
+        self.arrangement_overlay_back_len = len;
+        self
+    }
+
+    /// 设置音轨总览模式常驻音符实例；仅在音符数据变化时提供，否则传 None
+    pub fn arrangement_resident_notes(
+        mut self,
+        notes: Option<Vec<ArrangementNoteInstance>>,
+    ) -> Self {
+        self.arrangement_resident_notes = notes;
         self
     }
 
@@ -328,7 +350,9 @@ impl RenderParamsBuilder {
             ppq: self.ppq,
             max_key_index: self.max_key_index,
             is_arrangement_mode: self.is_arrangement_mode,
-            arrangement_note_instances: self.arrangement_note_instances,
+            arrangement_overlay_instances: self.arrangement_overlay_instances,
+            arrangement_overlay_back_len: self.arrangement_overlay_back_len,
+            arrangement_resident_notes: self.arrangement_resident_notes,
             arrangement_uniform: self.arrangement_uniform,
             cc_bar_instances: self.cc_bar_instances,
             velocity_panel_rect: self.velocity_panel_rect,

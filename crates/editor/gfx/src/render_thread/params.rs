@@ -62,8 +62,12 @@ pub struct RenderParams {
     pub max_key_index: f32,
     /// 是否为音轨总览模式（音轨总览模式下不渲染钢琴卷帘网格）
     pub is_arrangement_mode: bool,
-    /// 音轨总览模式：音符实例
-    pub arrangement_note_instances: Vec<ArrangementNoteInstance>,
+    /// 音轨总览模式：覆盖层实例（背景/lane/网格/框选/指示线），每帧重建
+    pub arrangement_overlay_instances: Vec<ArrangementNoteInstance>,
+    /// 音轨总览模式：覆盖层中"背景层"实例数（背景/lane/网格），绘制在音符之下
+    pub arrangement_overlay_back_len: usize,
+    /// 音轨总览模式：常驻音符实例（note-space），仅在数据变化时由宿主重新提供
+    pub arrangement_resident_notes: Option<Vec<ArrangementNoteInstance>>,
     /// 音轨总览模式：uniform
     pub arrangement_uniform: ArrangementUniform,
     /// CC 柱状条实例（力度面板所有模式：Velocity/CC/Bend）
@@ -137,7 +141,9 @@ impl Default for RenderParams {
             ppq: 1920.0,
             max_key_index: 127.0,
             is_arrangement_mode: false,
-            arrangement_note_instances: Vec::new(),
+            arrangement_overlay_instances: Vec::new(),
+            arrangement_overlay_back_len: 0,
+            arrangement_resident_notes: None,
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,
