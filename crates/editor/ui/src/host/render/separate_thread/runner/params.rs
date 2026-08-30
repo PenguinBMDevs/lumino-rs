@@ -70,6 +70,10 @@ impl Host {
                 scroll: [data.scroll.0, data.scroll.1],
                 zoom: data.zoom.0,
                 track_height: av.track_height,
+                // 垂直缩放必须透传：音符 GPU 裁剪/绘制管线用 track_height*zoom_y
+                // 计算泳道高度，与 CPU 端 lane 背景（arrangement_instances.rs 用同一
+                // viewport.zoom_y）保持一致，否则缩放时音符泳道高度与背景失配。
+                zoom_y: av.zoom_y,
                 viewport_size: [data.viewport_size.width, data.viewport_size.height],
                 canvas_offset: [canvas_offset.0, canvas_offset.1],
                 playhead_x,

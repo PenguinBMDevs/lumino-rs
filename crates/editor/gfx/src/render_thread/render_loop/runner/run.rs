@@ -416,8 +416,10 @@ fn prepare_arrangement_note_data(params: &mut RenderParams) {
     }
 
     // 2. 走带专属 uniform（滚动/缩放/泳道高/画布偏移）
+    // 泳道高度必须与 CPU 端 lane 背景（arrangement_instances.rs 的
+    // `track_height * zoom_y`）完全一致，否则垂直缩放时音符与背景泳道失配。
     let au = &params.arrangement_uniform;
-    let lh = (au.track_height * au.zoom_y).max(1.0);
+    let lh = au.track_height * au.zoom_y;
     params.arrangement_lane_index = lane_index;
     params.arrangement_note_uniform = ArrangementNoteUniform {
         scroll: au.scroll,
