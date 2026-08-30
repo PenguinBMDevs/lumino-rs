@@ -15,7 +15,9 @@ impl GpuNoteBuffer {
                 size,
                 usage: wgpu::BufferUsages::STORAGE
                     | wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::COPY_SRC,
+                    | wgpu::BufferUsages::COPY_SRC
+                    // 走带视图直接复用该常驻缓冲作为顶点缓冲（零第二份显存）
+                    | wgpu::BufferUsages::VERTEX,
                 mapped_at_creation: false,
             },
         )

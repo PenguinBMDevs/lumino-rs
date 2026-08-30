@@ -235,10 +235,11 @@ impl Host {
     ///
     /// 2026-08 单一权威源：音符数据一律从 `document` 读取（track_notes 缓存已删除）。
     pub(super) fn stream_onion_skin_instances(&mut self) {
-        // 走带模式跳过
-        if self.root.is_arrangement_mode() {
-            return;
-        }
+        // 注：走带模式不再跳过流式上传。
+        // 走带音符层直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），
+        // 必须让该共享缓冲在走带模式下也保持常驻（全量一次上传，编辑走增量），
+        // 由渲染线程依据段表 + 侧栏音轨顺序分音轨绘制。
+        // 钢琴卷帘的洋葱皮可视化绘制仍由 prepare_renderers 在走带模式提前返回而跳过。
 
         let fp = OnionSkinState::collect_fingerprint(self);
         let action = self.render_ctx.onion_skin_state.decide_action(&fp);

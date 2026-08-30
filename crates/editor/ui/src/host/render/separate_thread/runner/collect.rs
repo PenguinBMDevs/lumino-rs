@@ -17,11 +17,7 @@ impl Host {
     /// 渲染线程复用 GPU 上的常驻缓冲——彻底消除每帧 ~67ms 的实例重建。
     pub(super) fn collect_arrangement_instances(
         &mut self,
-    ) -> (
-        Vec<ArrangementNoteInstance>,
-        usize,
-        Option<Vec<ArrangementNoteInstance>>,
-    ) {
+    ) -> (Vec<ArrangementNoteInstance>, usize, Vec<usize>) {
         puffin::profile_scope!("collect_arrangement_instances");
 
         let track_order: Vec<usize> = self.root.sidebar.tracks.iter().map(|t| t.id).collect();
@@ -133,53 +129,15 @@ impl Host {
             time_signatures: &self.root.editor.editor_state.data.time_signatures,
         };
 
-        // 脏标记键：音符世代 + 轨道顺序 + 纵向可见轨范围 + 模式。
-        // 横向滚动(scroll_x/zoom_x) 故意不计入 → 横向滚动零重建，仅更新 uniform。
-        let key = {
-            let gen_val = self.root.editor.editor_state.data.track_notes_gen;
-            let mut h: u64 = 1469598103934665603;
-            for &t in &track_order {
-                h ^= t as u64;
-                h = h.wrapping_mul(1099511628211);
-            }
-            let mut k = gen_val;
-            k = k.wrapping_mul(0x9E3779B1).wrapping_add(h);
-            k = k
-                .wrapping_mul(0x9E3779B1)
-                .wrapping_add(viewport.scroll_y.to_bits() as u64);
-            k = k
-                .wrapping_mul(0x9E3779B1)
-                .wrapping_add(viewport.zoom_y.to_bits() as u64);
-            k = k
-                .wrapping_mul(0x9E3779B1)
-                .wrapping_add(viewport.track_height.to_bits() as u64);
-            k = k
-                .wrapping_mul(0x9E3779B1)
-                .wrapping_add(viewport.canvas_size[1].to_bits() as u64);
-            k = k
-                .wrapping_mul(0x9E3779B1)
-                .wrapping_add(if self.root.is_arrangement_mode() { 1 } else { 0 });
-            k
-        };
-
-        // 仅当脏标记变化时才重建常驻音符实例（note-space），否则复用 GPU 上的常驻缓冲。
-        let resident = if key != self.arr_cached_note_key {
-            let mut notes = Vec::new();
-            lumino_gfx::build_arrangement_notes(&mut notes, &scene_params);
-            self.arr_cached_notes = notes;
-            self.arr_cached_note_key = key;
-            Some(self.arr_cached_notes.clone())
-        } else {
-            None
-        };
-
-        // 覆盖层（背景/lane/网格/框选/ghost/指示线）每帧重建（实例数很少，开销可忽略）
+        // 覆盖层（背景/lane/网格/框选/ghost/指示线）每帧重建（实例数很少，开销可忽略）。
+        // 音符层不再在此构建：走带直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），
+        // 由渲染线程依据 onion 段表 + 侧栏音轨顺序分音轨绘制（见 gfx run.rs）。
         let mut overlay = Vec::new();
         lumino_gfx::build_arrangement_overlay_back(&mut overlay, &scene_params);
         let overlay_back_len = overlay.len();
         lumino_gfx::build_arrangement_overlay_front(&mut overlay, &scene_params);
 
-        (overlay, overlay_back_len, resident)
+        (overlay, overlay_back_len, track_order)
     }
 
     /// 收集渲染所需的数据
@@ -230,14 +188,22 @@ impl Host {
 
         self.update_note_data_for_wgpu_thread();
 
-        // 收集走带视图渲染数据：覆盖层每帧重建，常驻音符仅在数据变化时重建
-        let (arrangement_overlay_instances, arrangement_overlay_back_len, arrangement_resident_notes) =
+        // 收集走带视图渲染数据：覆盖层每帧重建；音符层复用钢琴卷帘常驻 GPU 缓冲
+        // （侧栏音轨顺序传给渲染线程，由其按洋葱皮段表分音轨绘制）。
+        let (arrangement_overlay_instances, arrangement_overlay_back_len, arrangement_track_order) =
             if self.root.is_arrangement_mode() {
                 puffin::profile_scope!("collect_arrangement_instances");
                 self.collect_arrangement_instances()
             } else {
-                (vec![], 0, None)
+                (vec![], 0, Vec::new())
             };
+
+        // 各泳道可见性（静音/隐藏）与 side bar 对齐；非走带模式为空
+        let arrangement_track_visible: Vec<bool> = if self.root.is_arrangement_mode() {
+            self.root.sidebar.tracks.iter().map(|t| !t.is_muted).collect()
+        } else {
+            Vec::new()
+        };
 
         // 构建 CC 柱状条实例（背景/网格/中心线）
         // 仅在自动化面板可见时构建，否则跳过 308ms 的无效计算
@@ -260,7 +226,8 @@ impl Host {
             ruler_instances,
             arrangement_overlay_instances,
             arrangement_overlay_back_len,
-            arrangement_resident_notes,
+            arrangement_track_order,
+            arrangement_track_visible,
             cc_bar_instances,
         }
     }

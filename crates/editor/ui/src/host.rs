@@ -89,10 +89,6 @@ pub struct Host {
     pub(crate) active_touches: std::collections::HashMap<u64, iced_core::Point>,
     /// 上一次双指距离（像素），用于计算 pinch delta
     pub(crate) prev_pinch_distance: Option<f32>,
-    /// 走带视图：常驻音符实例缓存（note-space，仅音符/轨道顺序/可见轨范围变化时重建）
-    pub(crate) arr_cached_notes: Vec<lumino_gfx::ArrangementNoteInstance>,
-    /// 走带视图：常驻音符缓存脏标记键（track_notes_gen + 轨道顺序 + 可见轨范围 + 模式）
-    pub(crate) arr_cached_note_key: u64,
 }
 
 impl Host {

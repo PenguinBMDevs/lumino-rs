@@ -4,6 +4,7 @@ use std::time::Instant;
 use super::super::super::commands::ControlCommand;
 use super::super::super::export_pipeline::ExportPipeline;
 use super::super::super::params::RenderParams;
+use crate::ArrangementNoteUniform;
 use super::super::commands::process_commands;
 use super::super::render_pass::update_stats;
 use super::context::{
@@ -166,9 +167,16 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
         }
 
         // 执行渲染（离屏纹理）
-        if has_params && let Some(ref params) = latest_params {
+        if has_params && let Some(ref mut params) = latest_params {
             puffin::profile_scope!("wgpu_render_thread_frame");
             let frame_start = Instant::now();
+
+            // 走带音符层：复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）。
+            // 依据 onion 段表 + 侧栏音轨顺序，预计算 lane 映射 / 可见分段 / uniform，
+            // 写入 params，供 prepare_renderers 直接驱动走带音符管线。
+            if params.is_arrangement_mode {
+                prepare_arrangement_note_data(&onion_segments, params);
+            }
 
             // 全屏瀑布流播放器模式：与钢琴卷帘完全隔离，跳过卷帘 3D 场景绘制
             // （网格/音符/洋葱皮的离屏绘制，最贵的 GPU 工作），解放 GPU。
@@ -374,3 +382,80 @@ fn process_deferred_commands(
         handle_deferred_command(cmd, context);
     }
 }
+
+/// 预计算走带音符层所需的 GPU 数据（复用钢琴卷帘常驻 GPU 音符缓冲，零第二份显存）。
+///
+/// 输入：
+/// - `onion_segments`：洋葱皮全量会话构建的 GPU 音符缓冲段表（track_id → offset/len）；
+/// - `params.arrangement_track_order`：侧栏音轨顺序（元素=文档音轨 id，索引=泳道序号）。
+///
+/// 输出（写入 `params`）：
+/// - `arrangement_lane_index`：`lane_index[doc_track] = 泳道序号`（着色器按 doc track 索引）；
+/// - `arrangement_note_segments`：可见泳道对应音轨在缓冲中的 (offset, len) 分段；
+/// - `arrangement_note_uniform`：滚动/缩放/泳道高/画布偏移等走带专属 uniform。
+///
+/// 横向滚动只需更新 uniform（scroll.x），无需任何重建；纵向滚动仅改变可见泳道范围，
+/// 重新挑选分段即可——彻底消除此前每帧 ~67ms 的音符实例重建。
+fn prepare_arrangement_note_data(onion_segments: &[OnionSegment], params: &mut RenderParams) {
+    puffin::profile_scope!("arrangement::note_data");
+    let track_order = &params.arrangement_track_order;
+    let nt = track_order.len();
+    if nt == 0 {
+        params.arrangement_lane_index.clear();
+        params.arrangement_note_segments.clear();
+        return;
+    }
+
+    // 1. lane_index[doc_track] = 泳道序号
+    let max_doc = track_order.iter().cloned().max().unwrap_or(0) as usize;
+    let mut lane_index = vec![0.0f32; max_doc.saturating_add(1).max(1)];
+    for (lane, &doc) in track_order.iter().enumerate() {
+        lane_index[doc as usize] = lane as f32;
+    }
+
+    // 2. 段表：doc_track -> (offset, len)
+    let mut seg_map: std::collections::HashMap<u32, (u32, u32)> =
+        std::collections::HashMap::with_capacity(onion_segments.len());
+    for s in onion_segments {
+        seg_map.insert(s.track_id as u32, (s.offset as u32, s.len as u32));
+    }
+
+    // 3. 可见泳道范围（与 gfx 侧 visible_trk_range 一致：按 lane 高度反算）
+    let au = &params.arrangement_uniform;
+    let lh = (au.track_height * au.zoom_y).max(1.0);
+    let first = ((au.scroll[1] / lh).floor() as usize).min(nt.saturating_sub(1));
+    let count = ((au.viewport_size[1] / lh).ceil() as usize).saturating_add(1);
+    let last = (first + count).min(nt);
+
+    let mut segments = Vec::new();
+    for ti in first..last {
+        // 静音/隐藏泳道：与覆盖层 lane 行为一致，跳过其音符
+        if !params
+            .arrangement_track_visible
+            .get(ti)
+            .copied()
+            .unwrap_or(true)
+        {
+            continue;
+        }
+        let doc = track_order[ti];
+        if let Some(&(off, len)) = seg_map.get(&(doc as u32)) {
+            if len > 0 {
+                segments.push((off, len));
+            }
+        }
+    }
+
+    params.arrangement_lane_index = lane_index;
+    params.arrangement_note_segments = segments;
+    params.arrangement_note_uniform = ArrangementNoteUniform {
+        scroll: au.scroll,
+        zoom: [au.zoom, 1.0],
+        viewport_size: au.viewport_size,
+        canvas_offset: au.canvas_offset,
+        lane_height: lh,
+        note_height: 4.0,
+        _pad: [0.0, 0.0],
+    };
+}
+

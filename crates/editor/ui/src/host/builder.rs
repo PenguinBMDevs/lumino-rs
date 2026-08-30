@@ -104,8 +104,6 @@ impl Host {
             message_router: handlers::create_message_router(),
             active_touches: std::collections::HashMap::new(),
             prev_pinch_distance: None,
-            arr_cached_notes: Vec::new(),
-            arr_cached_note_key: u64::MAX,
         }
     }
 

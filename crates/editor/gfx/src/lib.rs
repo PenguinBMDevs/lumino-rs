@@ -32,12 +32,11 @@ mod shader;
 mod swappable_buffer;
 
 pub use arrangement_instances::{
-    ArrangementSceneParams, ArrangementViewColors, ArrangementViewport, build_arrangement_all,
-    build_arrangement_notes, build_arrangement_overlay_back, build_arrangement_overlay_front,
-    collect_arrangement_instances,
+    ArrangementSceneParams, ArrangementViewColors, ArrangementViewport,
+    build_arrangement_overlay_back, build_arrangement_overlay_front,
 };
 pub use arrangement_renderer::{
-    ArrangementNoteInstance, ArrangementRenderer, ArrangementUniform, colors,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementRenderer, ArrangementUniform, colors,
 };
 pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,

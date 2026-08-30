@@ -54,7 +54,6 @@ fn test_render_params_clone() {
         is_arrangement_mode: false,
         arrangement_overlay_instances: Vec::new(),
         arrangement_overlay_back_len: 0,
-        arrangement_resident_notes: None,
         arrangement_uniform: lumino_gfx::ArrangementUniform::default(),
         cc_bar_instances: Vec::new(),
         velocity_panel_rect: None,

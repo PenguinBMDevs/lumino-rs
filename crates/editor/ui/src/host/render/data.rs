@@ -10,8 +10,13 @@ pub struct RenderData {
     pub arrangement_overlay_instances: Vec<lumino_gfx::ArrangementNoteInstance>,
     /// 覆盖层中"背景层"实例数（背景/lane/网格），绘制在音符之下
     pub arrangement_overlay_back_len: usize,
-    /// 走带视图常驻音符实例（note-space）；仅数据变化时由宿主重新提供
-    pub arrangement_resident_notes: Option<Vec<lumino_gfx::ArrangementNoteInstance>>,
+    /// 走带视图侧栏音轨顺序（文档音轨 id 列表，索引=泳道序号）。
+    ///
+    /// 走带音符直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），
+    /// 该顺序用于把文档音轨映射到泳道序号，由渲染线程段表定位可见音符。
+    pub arrangement_track_order: Vec<usize>,
+    /// 走带视图各泳道可见性（与 `arrangement_track_order` 对齐，`false`=静音/隐藏不绘制）。
+    pub arrangement_track_visible: Vec<bool>,
     pub cc_bar_instances: Vec<lumino_gfx::CcBarInstance>,
 }
 

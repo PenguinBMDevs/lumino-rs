@@ -1,6 +1,6 @@
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, MiditrailNoteGpu,
-    NoteInstance, RulerTickInstance, WaterfallNoteGpu,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
+    GridLineInstance, MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
 };
 
 mod builder;
@@ -66,8 +66,19 @@ pub struct RenderParams {
     pub arrangement_overlay_instances: Vec<ArrangementNoteInstance>,
     /// 音轨总览模式：覆盖层中"背景层"实例数（背景/lane/网格），绘制在音符之下
     pub arrangement_overlay_back_len: usize,
-    /// 音轨总览模式：常驻音符实例（note-space），仅在数据变化时由宿主重新提供
-    pub arrangement_resident_notes: Option<Vec<ArrangementNoteInstance>>,
+    /// 音轨总览模式：侧栏音轨顺序（文档音轨 id 列表，索引=泳道序号）
+    ///
+    /// 走带音符复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存），本字段用于把
+    /// 文档音轨映射到泳道序号（见 `arrangement_lane_index`）。
+    pub arrangement_track_order: Vec<u32>,
+    /// 音轨总览模式：各泳道可见性（与 `arrangement_track_order` 对齐，`false`=静音不绘制）
+    pub arrangement_track_visible: Vec<bool>,
+    /// 音轨总览模式：文档音轨 → 泳道序号 映射（存储缓冲，着色器按 doc track 索引）
+    pub arrangement_lane_index: Vec<f32>,
+    /// 音轨总览模式：本帧可见音轨在常驻缓冲中的 (offset, len) 分段
+    pub arrangement_note_segments: Vec<(u32, u32)>,
+    /// 音轨总览模式：音符着色器 uniform（滚动/缩放/泳道高/画布偏移）
+    pub arrangement_note_uniform: ArrangementNoteUniform,
     /// 音轨总览模式：uniform
     pub arrangement_uniform: ArrangementUniform,
     /// CC 柱状条实例（力度面板所有模式：Velocity/CC/Bend）
@@ -143,7 +154,11 @@ impl Default for RenderParams {
             is_arrangement_mode: false,
             arrangement_overlay_instances: Vec::new(),
             arrangement_overlay_back_len: 0,
-            arrangement_resident_notes: None,
+            arrangement_track_order: Vec::new(),
+            arrangement_track_visible: Vec::new(),
+            arrangement_lane_index: Vec::new(),
+            arrangement_note_segments: Vec::new(),
+            arrangement_note_uniform: ArrangementNoteUniform::default(),
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),
             velocity_panel_rect: None,

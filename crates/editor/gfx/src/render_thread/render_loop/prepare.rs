@@ -16,13 +16,20 @@ pub fn prepare_renderers(
     // 音轨总览模式：准备走带渲染器，跳过钢琴卷帘相关渲染器
     if params.is_arrangement_mode {
         puffin::profile_scope!("arrangement::prepare");
+        // 音符层直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）：
+        // lane_index / note_segments / note_uniform 已由渲染主循环依据
+        // onion_segments + 侧栏音轨顺序预计算并写入 params。
+        let (note_source, _) = renderers.onion_skin.gpu_note_buffer_for_sharing();
         renderers.arrangement.prepare(
             device,
             queue,
             params.arrangement_uniform,
             &params.arrangement_overlay_instances,
-            params.arrangement_resident_notes.as_deref(),
             params.arrangement_overlay_back_len,
+            &note_source,
+            params.arrangement_note_uniform,
+            &params.arrangement_lane_index,
+            &params.arrangement_note_segments,
         );
         return;
     }

@@ -43,6 +43,43 @@ pub struct ArrangementUniform {
     pub _pad4: f32,
 }
 
+/// 走带音符着色器 Uniform —— 复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）
+///
+/// 与 `shaders/arrangement_note.wgsl` 的 `Uniforms` 严格对齐。
+/// 总大小：48 字节（16 字节对齐）。
+#[repr(C)]
+#[derive(Copy, Clone, Debug, PartialEq, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct ArrangementNoteUniform {
+    /// 滚动 [scroll_x(tick), scroll_y(px)] — offset 0
+    pub scroll: [f32; 2],
+    /// 缩放 [px/tick, 未用] — offset 8
+    pub zoom: [f32; 2],
+    /// 视口像素尺寸 — offset 16
+    pub viewport_size: [f32; 2],
+    /// 画布内偏移(px) — offset 24
+    pub canvas_offset: [f32; 2],
+    /// 单个泳道高度(px) = track_height * zoom_y — offset 32
+    pub lane_height: f32,
+    /// 音符条高度(px) — offset 36
+    pub note_height: f32,
+    /// 对齐填充 — offset 40 (vec2 对齐到 8)
+    pub _pad: [f32; 2],
+}
+
+impl Default for ArrangementNoteUniform {
+    fn default() -> Self {
+        Self {
+            scroll: [0.0, 0.0],
+            zoom: [1.0, 1.0],
+            viewport_size: [800.0, 600.0],
+            canvas_offset: [0.0, 0.0],
+            lane_height: 48.0,
+            note_height: 4.0,
+            _pad: [0.0, 0.0],
+        }
+    }
+}
+
 impl Default for ArrangementUniform {
     fn default() -> Self {
         Self {

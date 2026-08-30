@@ -2,8 +2,8 @@
 
 use super::RenderParams;
 use crate::{
-    ArrangementNoteInstance, ArrangementUniform, CcBarInstance, GridLineInstance, MiditrailNoteGpu,
-    RulerTickInstance, WaterfallNoteGpu,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
+    GridLineInstance, MiditrailNoteGpu, RulerTickInstance, WaterfallNoteGpu,
 };
 
 /// [`RenderParams`] 的 Builder。
@@ -33,7 +33,11 @@ pub struct RenderParamsBuilder {
     is_arrangement_mode: bool,
     arrangement_overlay_instances: Vec<ArrangementNoteInstance>,
     arrangement_overlay_back_len: usize,
-    arrangement_resident_notes: Option<Vec<ArrangementNoteInstance>>,
+    arrangement_track_order: Vec<u32>,
+    arrangement_track_visible: Vec<bool>,
+    arrangement_lane_index: Vec<f32>,
+    arrangement_note_segments: Vec<(u32, u32)>,
+    arrangement_note_uniform: ArrangementNoteUniform,
     arrangement_uniform: ArrangementUniform,
     cc_bar_instances: Vec<CcBarInstance>,
     canvas_offset: (f32, f32),
@@ -84,7 +88,11 @@ impl Default for RenderParamsBuilder {
             is_arrangement_mode: base.is_arrangement_mode,
             arrangement_overlay_instances: base.arrangement_overlay_instances,
             arrangement_overlay_back_len: base.arrangement_overlay_back_len,
-            arrangement_resident_notes: base.arrangement_resident_notes,
+            arrangement_track_order: base.arrangement_track_order,
+            arrangement_track_visible: base.arrangement_track_visible,
+            arrangement_lane_index: base.arrangement_lane_index,
+            arrangement_note_segments: base.arrangement_note_segments,
+            arrangement_note_uniform: base.arrangement_note_uniform,
             arrangement_uniform: base.arrangement_uniform,
             cc_bar_instances: base.cc_bar_instances,
             canvas_offset: base.canvas_offset,
@@ -245,12 +253,33 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置音轨总览模式常驻音符实例；仅在音符数据变化时提供，否则传 None
-    pub fn arrangement_resident_notes(
-        mut self,
-        notes: Option<Vec<ArrangementNoteInstance>>,
-    ) -> Self {
-        self.arrangement_resident_notes = notes;
+    /// 设置音轨总览模式侧栏音轨顺序（文档音轨 id 列表，索引=泳道序号）
+    pub fn arrangement_track_order(mut self, order: Vec<u32>) -> Self {
+        self.arrangement_track_order = order;
+        self
+    }
+
+    /// 设置音轨总览模式各泳道可见性（与 `arrangement_track_order` 对齐）
+    pub fn arrangement_track_visible(mut self, visible: Vec<bool>) -> Self {
+        self.arrangement_track_visible = visible;
+        self
+    }
+
+    /// 设置音轨总览模式：文档音轨 → 泳道序号 映射
+    pub fn arrangement_lane_index(mut self, lane_index: Vec<f32>) -> Self {
+        self.arrangement_lane_index = lane_index;
+        self
+    }
+
+    /// 设置音轨总览模式：本帧可见音轨分段 (offset, len)
+    pub fn arrangement_note_segments(mut self, segments: Vec<(u32, u32)>) -> Self {
+        self.arrangement_note_segments = segments;
+        self
+    }
+
+    /// 设置音轨总览模式：音符着色器 uniform
+    pub fn arrangement_note_uniform(mut self, uniform: ArrangementNoteUniform) -> Self {
+        self.arrangement_note_uniform = uniform;
         self
     }
 
@@ -352,7 +381,11 @@ impl RenderParamsBuilder {
             is_arrangement_mode: self.is_arrangement_mode,
             arrangement_overlay_instances: self.arrangement_overlay_instances,
             arrangement_overlay_back_len: self.arrangement_overlay_back_len,
-            arrangement_resident_notes: self.arrangement_resident_notes,
+            arrangement_track_order: self.arrangement_track_order,
+            arrangement_track_visible: self.arrangement_track_visible,
+            arrangement_lane_index: self.arrangement_lane_index,
+            arrangement_note_segments: self.arrangement_note_segments,
+            arrangement_note_uniform: self.arrangement_note_uniform,
             arrangement_uniform: self.arrangement_uniform,
             cc_bar_instances: self.cc_bar_instances,
             velocity_panel_rect: self.velocity_panel_rect,
