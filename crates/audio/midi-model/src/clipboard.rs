@@ -11,6 +11,10 @@
 
 use crate::note_event::NoteEvent;
 
+/// Domino（TAKABO SOFT）剪贴板互通：格式 `MidiPortalSequence` 的解析/编码。
+pub mod domino;
+pub use domino::{decode_domino_clipboard, encode_domino_clipboard, CLIPBOARD_FORMAT, PORTAL_MAGIC};
+
 /// 剪贴板载荷魔数（"LUMC" = Lumino Clip）
 pub const CLIP_MAGIC: [u8; 4] = *b"LUMC";
 /// 当前格式版本

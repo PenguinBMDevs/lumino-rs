@@ -14,7 +14,8 @@ mod sys;
 
 #[cfg(windows)]
 use lumino_midi_model::clipboard::{
-    decode_clipboard_chunks, encode_clipboard, parse_clipboard_header, ClipRecord,
+    decode_clipboard_chunks, decode_domino_clipboard, encode_clipboard, encode_domino_clipboard,
+    parse_clipboard_header, ClipRecord,
 };
 
 impl Editor {
@@ -49,18 +50,32 @@ impl Editor {
             .map(|d| d.division)
             .unwrap_or(480);
 
-        // Windows：优先二进制私有格式
+        // Windows：同时写入 Lumino 私有二进制与 Domino(MidiPortalSequence) 两种格式
         #[cfg(windows)]
         {
-            if let Some(bytes) = self.build_clipboard_binary(track, division)
-                && crate::clipboard::sys::set_clipboard_binary(&bytes)
-            {
-                tracing::info!(
-                    "Editor: 已复制 {} 字节二进制音符 (division={})",
-                    bytes.len(),
-                    division
-                );
-                return true;
+            let domino = self.build_clipboard_domino();
+            if let Some(bytes) = self.build_clipboard_binary(track, division) {
+                // 优先一次会话内同时携带 Domino 格式，便于跨 DAW 粘贴
+                if let Some(dom) = domino {
+                    if crate::clipboard::sys::set_clipboard_binary_pair(&bytes, &dom) {
+                        tracing::info!(
+                            "Editor: 已复制 {} 字节 Lumino 二进制 + {} 字节 Domino 二进制 (division={})",
+                            bytes.len(),
+                            dom.len(),
+                            division
+                        );
+                        return true;
+                    }
+                }
+                // 退化：仅 Lumino 二进制
+                if crate::clipboard::sys::set_clipboard_binary(&bytes) {
+                    tracing::info!(
+                        "Editor: 已复制 {} 字节二进制音符 (division={})",
+                        bytes.len(),
+                        division
+                    );
+                    return true;
+                }
             }
         }
 
@@ -195,6 +210,52 @@ impl Editor {
         Some(bytes)
     }
 
+    /// 构建 Domino 互通剪贴板载荷（Windows 二进制路径的并行格式）。
+    ///
+    /// 把选中音符收集为 `NoteEvent`（key/velocity/channel 绝对，tick 按 Domino 的
+    /// division=480 网格重采样），再交给 `encode_domino_clipboard` 编码为
+    /// `PortalSequenceData` + zlib，供 Domino 直接粘贴。
+    #[cfg(windows)]
+    fn build_clipboard_domino(&self) -> Option<Vec<u8>> {
+        let target_div = self
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map(|d| d.division)
+            .unwrap_or(480);
+        // Lumino 文档以 target_div 表达 tick，需换算到 Domino 的 480 网格
+        let ratio = if target_div != 480 {
+            480.0 / target_div as f64
+        } else {
+            1.0
+        };
+        let mut events: Vec<lumino_midi_model::note_event::NoteEvent> = Vec::new();
+        self.each_selected_note_on_current_track(|n| {
+            let start = if ratio == 1.0 {
+                n.start_tick
+            } else {
+                (n.start_tick as f64 * ratio).round() as u32
+            };
+            let end = if ratio == 1.0 {
+                n.end_tick
+            } else {
+                (n.end_tick as f64 * ratio).round() as u32
+            };
+            events.push(lumino_midi_model::note_event::NoteEvent::new(
+                start,
+                end,
+                (n.key as u32).min(127) as u8,
+                n.velocity,
+                n.channel,
+            ));
+        });
+        if events.is_empty() {
+            return None;
+        }
+        encode_domino_clipboard(&events).ok()
+    }
+
     /// 从剪贴板粘贴音符。
     ///
     /// Windows：先探测 Lumino 二进制私有格式，命中则走紧凑二进制粘贴（含 PPQN 重采样）；
@@ -203,6 +264,10 @@ impl Editor {
         #[cfg(windows)]
         {
             if self.try_paste_from_binary() {
+                return;
+            }
+            // Domino（TAKABO SOFT）互通：剪贴板存在 MidiPortalSequence 时，按 MIDI 标准音符解析
+            if self.try_paste_from_domino() {
                 return;
             }
         }
@@ -299,6 +364,73 @@ impl Editor {
         }
         self.mark_notes_changed();
         tracing::info!("Editor: 已从二进制剪贴板粘贴 {} 个音符", total);
+        true
+    }
+
+    /// Domino（TAKABO SOFT）剪贴板粘贴（Windows）。
+    ///
+    /// 读取 `MidiPortalSequence` 格式 → `decode_domino_clipboard` 还原为 `NoteEvent` →
+    /// 按目标文档 PPQN 做一致性重采样（样本采用 division=480）→ 插入当前轨并广播协作事件。
+    #[cfg(windows)]
+    fn try_paste_from_domino(&mut self) -> bool {
+        let raw = match crate::clipboard::sys::get_clipboard_domino() {
+            Some(b) => b,
+            None => return false,
+        };
+        let events = match decode_domino_clipboard(&raw) {
+            Ok(n) => n,
+            Err(e) => {
+                tracing::debug!("Editor: Domino 剪贴板解码失败: {e}");
+                return false;
+            }
+        };
+        if events.is_empty() {
+            return false;
+        }
+        // Domino 样本以 division=480 表达 tick；与目标不一致时等比重采样
+        let target_div = self
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map(|d| d.division)
+            .unwrap_or(480);
+        let ratio = if target_div != 480 {
+            target_div as f64 / 480.0
+        } else {
+            1.0
+        };
+        let max_key = self
+            .editor_state
+            .view
+            .visible_key_count
+            .saturating_sub(1);
+        let pasted: Vec<super::Note> = events
+            .iter()
+            .map(|n| {
+                let tick = if ratio == 1.0 {
+                    n.start_tick as f64
+                } else {
+                    (n.start_tick as f64 * ratio).round()
+                };
+                let length = if ratio == 1.0 {
+                    n.length() as f64
+                } else {
+                    (n.length() as f64 * ratio).round()
+                };
+                let key = (n.key as i32).max(0).min(max_key as i32) as u16;
+                super::Note::from_raw(
+                    tick as f32,
+                    key,
+                    length as f32,
+                    n.velocity,
+                    n.channel,
+                )
+            })
+            .collect();
+        let count = pasted.len();
+        self.commit_pasted_notes((self.snap_tick(self.playback_position), 0), pasted);
+        tracing::info!("Editor: 已从 Domino 剪贴板粘贴 {} 个音符", count);
         true
     }
 

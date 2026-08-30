@@ -280,6 +280,10 @@ iced = { workspace = true, features = ["image"] }
 wgpu = { workspace = true }
 chrono = { workspace = true }
 tokio-test = { workspace = true }
+# 剪贴板探测示例 (examples/domino_clipboard_probe.rs) 依赖
+arboard = { workspace = true }
+encoding_rs = { workspace = true }
+lumino-midi-model = { workspace = true }
 
 [target.'cfg(windows)'.dev-dependencies]
 winapi = { workspace = true }
