@@ -39,7 +39,7 @@ fn bench_one(n: usize) {
 
     // —— 复制（编码）——
     let t0 = Instant::now();
-    let bytes = encode_clipboard(record_stream(n as u32), division_src, 0, 0, 0);
+    let bytes = encode_clipboard(record_stream(n as u32), n, division_src, 0, 0, 0);
     let enc_ms = t0.elapsed().as_nanos() as f64 / 1e6;
 
     // 预解析头部，供解码回调还原 NoteEvent（origin / division）

@@ -127,16 +127,20 @@ fn rd_u16(buf: &[u8], pos: &mut usize) -> Result<u16, String> {
 /// 流式编码：输入 `ClipRecord` 迭代器（按 `tick_offset` 升序），输出紧凑二进制载荷。
 ///
 /// 不在堆上物化 `Vec<NoteEvent>` 或 `Vec<ClipRecord>`，仅累积最终 `Vec<u8>`（即剪贴板载荷本身）。
+///
+/// `count` 为记录总数（调用方第一遍扫描已得知），用于精确预分配 `Vec<u8>` 容量。
+/// `filter_map` / `flat_map` 等迭代器的 `size_hint` 下界为 0，若不显式传入 `count`，
+/// 10MB 级载荷会反复 realloc 搬迁（~20 次深拷贝），这是钢琴卷帘「全选」复制的隐性悬崖。
 pub fn encode_clipboard(
     records: impl Iterator<Item = ClipRecord>,
+    count: usize,
     division: u16,
     origin_tick: u32,
     origin_key: u8,
     track_hint: u16,
 ) -> Vec<u8> {
-    // 依据迭代器 size_hint 预分配，避免 66MB 载荷反复 realloc 搬迁
-    let (lo, _hi) = records.size_hint();
-    let mut out = Vec::with_capacity(HEADER_LEN + lo.saturating_mul(8));
+    // 依据记录总数精确预分配，避免 66MB 载荷反复 realloc 搬迁
+    let mut out = Vec::with_capacity(HEADER_LEN + count.saturating_mul(8));
     out.extend_from_slice(&CLIP_MAGIC);
     out.push(CLIP_VERSION);
     out.push(0); // flags 预留
@@ -207,9 +211,36 @@ pub fn decode_clipboard_chunks(
     chunk_size: usize,
     mut f: impl FnMut(&[ClipRecord]),
 ) -> Result<ClipMeta, String> {
+    let (meta, _) = parse_header(bytes)?;
+    let mut buf: Vec<ClipRecord> = Vec::with_capacity(chunk_size.max(1));
+    decode_clipboard_records(bytes, |tick_offset, length, key_offset, velocity, channel, track| {
+        buf.push(ClipRecord::new(
+            tick_offset, length, key_offset, velocity, channel, track,
+        ));
+        if buf.len() == chunk_size.max(1) {
+            f(&buf);
+            buf.clear();
+        }
+    })?;
+    if !buf.is_empty() {
+        f(&buf);
+    }
+    Ok(meta)
+}
+
+/// 流式解码：不物化任何中间 `Vec<ClipRecord>`，每解出一条即回调。
+///
+/// 比 `decode_clipboard_chunks` 省去每块的 `Vec<ClipRecord>` 分配与拷贝（1M 音符约省 24MB），
+/// 是粘贴热路径的速度杠杆；回调直接拿到已还原为绝对偏移的字段，粘贴端可就地构造
+/// `NoteEvent` 累加到按音轨分组的 `Vec`，**免去 `ClipRecord` 中间结构体二次构造**。
+///
+/// 回调参数：`(tick_offset, length, key_offset, velocity, channel, track)`，
+/// 其中 `tick_offset` 已加回 `origin_tick`（绝对偏移）。
+pub fn decode_clipboard_records(
+    bytes: &[u8],
+    mut f: impl FnMut(u32, u32, u8, u8, u8, u16),
+) -> Result<ClipMeta, String> {
     let (meta, mut pos) = parse_header(bytes)?;
-    let chunk_size = chunk_size.max(1);
-    let mut buf: Vec<ClipRecord> = Vec::with_capacity(chunk_size);
     let mut prev_abs: u32 = 0;
     for _ in 0..meta.count {
         let delta = read_varint(bytes, &mut pos)?;
@@ -220,14 +251,7 @@ pub fn decode_clipboard_chunks(
         let velocity = rd_u8(bytes, &mut pos)?;
         let channel = rd_u8(bytes, &mut pos)?;
         let track = rd_u16(bytes, &mut pos)?;
-        buf.push(ClipRecord::new(abs, length, key_offset, velocity, channel, track));
-        if buf.len() == chunk_size {
-            f(&buf);
-            buf.clear();
-        }
-    }
-    if !buf.is_empty() {
-        f(&buf);
+        f(abs, length, key_offset, velocity, channel, track);
     }
     Ok(meta)
 }
@@ -283,7 +307,7 @@ mod tests {
     #[test]
     fn test_roundtrip_preserves_records() {
         let recs = sorted_records(2000);
-        let bytes = encode_clipboard(recs.iter().copied(), 480, 0, 0, 0);
+        let bytes = encode_clipboard(recs.iter().copied(), recs.len(), 480, 0, 0, 0);
         let (meta, out) = decode_clipboard(&bytes).unwrap();
         assert_eq!(meta.division, 480);
         assert_eq!(meta.count as usize, recs.len());
@@ -296,14 +320,15 @@ mod tests {
     #[test]
     fn test_payload_compactness_small() {
         let recs = sorted_records(2000);
-        let bytes = encode_clipboard(recs.iter().copied(), 480, 0, 0, 0);
+        let bytes = encode_clipboard(recs.iter().copied(), recs.len(), 480, 0, 0, 0);
         assert!(bytes.len() < 2000 * 12, "二进制应远小于定长编码");
     }
 
     #[test]
     fn test_ppqn_resample_doubles_length() {
         let recs = vec![ClipRecord::new(100, 200, 5, 100, 0, 0)];
-        let bytes = encode_clipboard(recs.into_iter(), 480, 50, 60, 0);
+        let n = recs.len();
+        let bytes = encode_clipboard(recs.into_iter(), n, 480, 50, 60, 0);
         let (meta, out) = decode_clipboard(&bytes).unwrap();
         let ratio = 960.0 / 480.0;
         let n = record_to_note_event(&out[0], &meta, ratio);
@@ -317,7 +342,8 @@ mod tests {
     #[test]
     fn test_ppqn_no_resample_when_equal() {
         let recs = vec![ClipRecord::new(100, 50, 5, 100, 0, 0)];
-        let bytes = encode_clipboard(recs.into_iter(), 480, 50, 60, 0);
+        let n = recs.len();
+        let bytes = encode_clipboard(recs.into_iter(), n, 480, 50, 60, 0);
         let (meta, out) = decode_clipboard(&bytes).unwrap();
         let n = record_to_note_event(&out[0], &meta, 1.0);
         assert_eq!(n.start_tick, 150);
@@ -327,7 +353,7 @@ mod tests {
     #[test]
     fn test_decode_chunks_bounds_memory() {
         let recs = sorted_records(100_000);
-        let bytes = encode_clipboard(recs.iter().copied(), 480, 0, 0, 0);
+        let bytes = encode_clipboard(recs.iter().copied(), recs.len(), 480, 0, 0, 0);
         let mut seen = 0usize;
         let mut max_chunk = 0usize;
         decode_clipboard_chunks(&bytes, 10_000, |chunk| {

@@ -10,7 +10,7 @@ use super::Editor;
 use lumino_ui_core::constants::editor::{CLIPBOARD_FORMAT, CLIPBOARD_VERSION};
 
 #[cfg(windows)]
-mod sys;
+pub(crate) mod sys;
 
 #[cfg(windows)]
 use lumino_midi_model::clipboard::{
@@ -202,6 +202,7 @@ impl Editor {
                     track as u16,
                 ))
             }),
+            count,
             division,
             origin_tick,
             origin_key,

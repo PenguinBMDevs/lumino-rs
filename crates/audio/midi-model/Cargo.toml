@@ -15,6 +15,10 @@ workspace = true
 name = "clipboard_bench"
 harness = false
 
+[[bench]]
+name = "real_midi_clipboard_bench"
+harness = false
+
 [dependencies]
 midly = { workspace = true }
 tracing = { workspace = true }
