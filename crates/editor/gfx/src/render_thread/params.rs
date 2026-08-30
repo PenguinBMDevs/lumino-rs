@@ -75,8 +75,6 @@ pub struct RenderParams {
     pub arrangement_track_visible: Vec<bool>,
     /// 音轨总览模式：文档音轨 → 泳道序号 映射（存储缓冲，着色器按 doc track 索引）
     pub arrangement_lane_index: Vec<f32>,
-    /// 音轨总览模式：本帧可见音轨在常驻缓冲中的 (offset, len) 分段
-    pub arrangement_note_segments: Vec<(u32, u32)>,
     /// 音轨总览模式：音符着色器 uniform（滚动/缩放/泳道高/画布偏移）
     pub arrangement_note_uniform: ArrangementNoteUniform,
     /// 音轨总览模式：uniform
@@ -157,7 +155,6 @@ impl Default for RenderParams {
             arrangement_track_order: Vec::new(),
             arrangement_track_visible: Vec::new(),
             arrangement_lane_index: Vec::new(),
-            arrangement_note_segments: Vec::new(),
             arrangement_note_uniform: ArrangementNoteUniform::default(),
             arrangement_uniform: ArrangementUniform::default(),
             cc_bar_instances: Vec::new(),

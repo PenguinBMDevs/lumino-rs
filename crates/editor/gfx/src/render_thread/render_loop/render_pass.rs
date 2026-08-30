@@ -67,6 +67,10 @@ pub fn execute_render_pass(
         let arr_scissor_h = ((params.canvas_size.1 * params.scale_factor) as u32)
             .min(height.saturating_sub(arr_scissor_y));
 
+        // GPU 裁剪计算 pass：全量单次分发覆盖整份共享缓冲，输出可见实例索引 +
+        // indirect 计数（绘制阶段 draw_indirect 一次性提交，CPU 零参与）
+        frame.renderers.arrangement.run_cull(encoder);
+
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
             label: Some("arrangement_render_pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {

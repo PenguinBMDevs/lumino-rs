@@ -17,9 +17,9 @@ pub fn prepare_renderers(
     if params.is_arrangement_mode {
         puffin::profile_scope!("arrangement::prepare");
         // 音符层直接复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）：
-        // lane_index / note_segments / note_uniform 已由渲染主循环依据
-        // onion_segments + 侧栏音轨顺序预计算并写入 params。
-        let (note_source, _) = renderers.onion_skin.gpu_note_buffer_for_sharing();
+        // lane_index / note_uniform 已由渲染主循环依据 onion_segments + 侧栏音轨顺序
+        // 预计算并写入 params；可见性裁剪交由 GPU 计算着色器一次性完成。
+        let (note_source, note_instance_count) = renderers.onion_skin.gpu_note_buffer_for_sharing();
         renderers.arrangement.prepare(
             device,
             queue,
@@ -27,9 +27,9 @@ pub fn prepare_renderers(
             &params.arrangement_overlay_instances,
             params.arrangement_overlay_back_len,
             &note_source,
+            note_instance_count,
             params.arrangement_note_uniform,
             &params.arrangement_lane_index,
-            &params.arrangement_note_segments,
         );
         return;
     }
