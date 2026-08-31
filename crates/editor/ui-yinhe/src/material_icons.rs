@@ -46,7 +46,7 @@ pub fn icon<'a>(
         .color(color)
 }
 
-/// 码点查表（常用 yinhe 图标，来自 `MaterialIcons.codepoints`）
+/// 码点查表（常用 yinhe 图标，来自 `MaterialIcons.codepoints`，与 yinhe egui_material_icons 0.8 对齐）
 pub mod codepoints {
     /// home e88a
     pub const HOME: char = '\u{E88A}';
@@ -58,50 +58,80 @@ pub mod codepoints {
     pub const STOP: char = '\u{E047}';
     /// fiber_manual_record e061 (录制红点)
     pub const FIBER_MANUAL_RECORD: char = '\u{E061}';
-    /// save e161
-    pub const SAVE: char = '\u{E161}';
-    /// folder_open e2c8
+    /// note_add e89c (新建工程)
+    pub const NOTE_ADD: char = '\u{E89C}';
+    /// description e873 (新建文档)
+    pub const DESCRIPTION: char = '\u{E873}';
+    /// folder_open e2c8 (打开)
     pub const FOLDER_OPEN: char = '\u{E2C8}';
-    /// edit e3c9
-    pub const EDIT: char = '\u{E3C9}';
+    /// save e161 (保存)
+    pub const SAVE: char = '\u{E161}';
+    /// save_as f090
+    pub const SAVE_AS: char = '\u{F090}';
+    /// close e5cd (关闭)
+    pub const CLOSE: char = '\u{E5CD}';
+    /// audio_file eb82 (导出音频)
+    pub const AUDIO_FILE: char = '\u{EB82}';
+    /// audiotrack e405 (导出 MIDI)
+    pub const AUDIOTRACK: char = '\u{E405}';
+    /// tune e429 (工程设置)
+    pub const TUNE: char = '\u{E429}';
+    /// settings e8b8 (设置)
+    pub const SETTINGS: char = '\u{E8B8}';
+    /// exit_to_app e879 (退出)
+    pub const EXIT_TO_APP: char = '\u{E879}';
+    /// edit f097 (编辑)
+    pub const EDIT: char = '\u{F097}';
     /// content_cut e14e
     pub const CONTENT_CUT: char = '\u{E14E}';
     /// content_copy e14d
     pub const CONTENT_COPY: char = '\u{E14D}';
     /// content_paste e14f
     pub const CONTENT_PASTE: char = '\u{E14F}';
-    /// delete e872
-    pub const DELETE: char = '\u{E872}';
+    /// delete e92e (删除，e872 为旧版)
+    pub const DELETE: char = '\u{E92E}';
     /// undo e166
     pub const UNDO: char = '\u{E166}';
     /// redo e15a
     pub const REDO: char = '\u{E15A}';
     /// select_all e162
     pub const SELECT_ALL: char = '\u{E162}';
+    /// history e88c (最近文件)
+    pub const HISTORY: char = '\u{E88C}';
     /// text_fields e262
     pub const TEXT_FIELDS: char = '\u{E262}';
     /// brush e3ae
     pub const BRUSH: char = '\u{E3AE}';
-    /// draw e3ae (alias)
-    pub const DRAW: char = '\u{E3AE}';
+    /// draw e746 (draw)
+    pub const DRAW: char = '\u{E746}';
     /// pan_tool e925
     pub const PAN_TOOL: char = '\u{E925}';
     /// straighten e41c (尺子/量化)
     pub const STRAIGHTEN: char = '\u{E41C}';
-    /// tune e429 (调音/工具)
-    pub const TUNE: char = '\u{E429}';
-    /// settings e8b8
-    pub const SETTINGS: char = '\u{E8B8}';
     /// more_horiz e5d3
     pub const MORE_HORIZ: char = '\u{E5D3}';
     /// arrow_drop_down e5c5
     pub const ARROW_DROP_DOWN: char = '\u{E5C5}';
     /// check_box e834
     pub const CHECK_BOX: char = '\u{E834}';
-    /// push_pin e55f (图钉)
-    pub const PUSH_PIN: char = '\u{E55F}';
-    /// push_pin 描边 e55f 同
-    pub const PUSH_PIN_OUTLINED: char = '\u{E55F}';
+    /// push_pin f10d (图钉，f55f 旧版)
+    pub const PUSH_PIN: char = '\u{F10D}';
+    /// push_pin 描边（同）
+    pub const PUSH_PIN_OUTLINED: char = '\u{F10D}';
+    /// visibility e8f4
+    pub const VISIBILITY: char = '\u{E8F4}';
+    /// visibility_off e8f5
+    pub const VISIBILITY_OFF: char = '\u{E8F5}';
+    /// search e8b6
+    pub const SEARCH: char = '\u{E8B6}';
+    /// arrow_upward e5d8
+    pub const ARROW_UPWARD: char = '\u{E5D8}';
+    /// arrow_downward e5db
+    pub const ARROW_DOWNWARD: char = '\u{E5DB}';
+    /// arrow_forward e5c8
+    pub const ARROW_FORWARD: char = '\u{E5C8}';
+    /// content_copy e14d alias
+    pub const COPY_ALL: char = '\u{E14D}';
 }
 
 /// 加载任务（0.14 async，需 Task::perform）

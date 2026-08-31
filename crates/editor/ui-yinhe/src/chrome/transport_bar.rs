@@ -68,7 +68,39 @@ impl FileAction {
         FileAction::Exit,
     ];
 
+    pub fn codepoint(self) -> char {
+        use crate::material_icons::codepoints as C;
+        match self {
+            FileAction::NewProject => C::NOTE_ADD,
+            FileAction::Open => C::FOLDER_OPEN,
+            FileAction::Save => C::SAVE,
+            FileAction::SaveAs => C::SAVE_AS,
+            FileAction::CloseDocument => C::CLOSE,
+            FileAction::ExportAudio => C::AUDIO_FILE,
+            FileAction::ExportMidi => C::AUDIOTRACK,
+            FileAction::ProjectSettings => C::TUNE,
+            FileAction::Settings => C::SETTINGS,
+            FileAction::Exit => C::EXIT_TO_APP,
+        }
+    }
+
+    pub fn shortcut(self) -> &'static str {
+        match self {
+            FileAction::NewProject => "⌘N",
+            FileAction::Open => "⌘O",
+            FileAction::Save => "⌘S",
+            FileAction::SaveAs => "⇧⌘S",
+            FileAction::CloseDocument => "⌘W",
+            FileAction::ExportAudio => "",
+            FileAction::ExportMidi => "",
+            FileAction::ProjectSettings => "",
+            FileAction::Settings => "⌘,",
+            FileAction::Exit => "⌘Q",
+        }
+    }
+
     pub fn icon(self) -> icon::Icon {
+        // 保留 SVG 兼容，Yinhe 侧优先用 codepoint()
         match self {
             FileAction::NewProject => icon::Icon::Plus,
             FileAction::Open => icon::Icon::FolderTree,
@@ -117,6 +149,38 @@ pub enum EditAction {
 }
 
 impl EditAction {
+    pub fn codepoint(self) -> char {
+        use crate::material_icons::codepoints as C;
+        match self {
+            EditAction::Undo => C::UNDO,
+            EditAction::Redo => C::REDO,
+            EditAction::Cut => C::CONTENT_CUT,
+            EditAction::Copy => C::CONTENT_COPY,
+            EditAction::Paste => C::CONTENT_PASTE,
+            EditAction::SelectAll => C::SELECT_ALL,
+            EditAction::Duplicate => C::CONTENT_COPY,
+            EditAction::Delete => C::DELETE,
+            EditAction::TransposeUp => C::ARROW_UPWARD,
+            EditAction::TransposeDown => C::ARROW_DOWNWARD,
+            EditAction::DedupWithinTrack => C::SELECT_ALL,
+            EditAction::DedupAcrossTracks => C::SELECT_ALL,
+        }
+    }
+    pub fn shortcut(self) -> &'static str {
+        match self {
+            EditAction::Undo => "⌘Z",
+            EditAction::Redo => "⇧⌘Z",
+            EditAction::Cut => "⌘X",
+            EditAction::Copy => "⌘C",
+            EditAction::Paste => "⌘V",
+            EditAction::SelectAll => "⌘A",
+            EditAction::Duplicate => "⌘D",
+            EditAction::Delete => "⌫",
+            EditAction::TransposeUp => "⇧↑",
+            EditAction::TransposeDown => "⇧↓",
+            _ => "",
+        }
+    }
     pub const ALL: [EditAction; 12] = [
         EditAction::Undo,
         EditAction::Redo,
@@ -559,18 +623,18 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                     }
                 });
             let label_with_icon: iced_widget::Row<'_, Message, Theme, lumino_ui_core::Renderer> =
-                iced_widget::row![ crate::material_icons::icon(
-                    match action {
-                        FileAction::NewProject => crate::material_icons::codepoints::TEXT_FIELDS,
-                        FileAction::Open => crate::material_icons::codepoints::FOLDER_OPEN,
-                        FileAction::Save => crate::material_icons::codepoints::SAVE,
-                        _ => crate::material_icons::codepoints::HOME,
-                    },
-                    14.0,
-                    window.theme.extended_palette().background.base.text
-                ),
-                iced_widget::text(action.label()).size(13)
-            ]
+                iced_widget::row![
+                    crate::material_icons::icon(
+                        action.codepoint(),
+                        14.0,
+                        window.theme.extended_palette().background.base.text
+                    ),
+                    iced_widget::text(action.label()).size(13),
+                    iced_widget::space::horizontal().width(iced_core::Length::Fill),
+                    iced_widget::text(action.shortcut())
+                        .size(11)
+                        .color(window.theme.extended_palette().background.weak.text),
+                ]
             .spacing(6)
             .align_y(Alignment::Center);
             // 美化：悬浮弱底，按压强底，圆角8+阴影 0,2,8 0.12，已统一到 edit/play
@@ -644,11 +708,13 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                 });
             let label_row = iced_widget::row![
                 crate::material_icons::icon(
-                    crate::material_icons::codepoints::EDIT,
+                    action.codepoint(),
                     14.0,
                     window.theme.extended_palette().background.base.text
                 ),
-                iced_widget::text(action.label()).size(13)
+                iced_widget::text(action.label()).size(13),
+                iced_widget::space::horizontal().width(iced_core::Length::Fill),
+                iced_widget::text(action.shortcut()).size(11).color(window.theme.extended_palette().background.weak.text),
             ]
             .spacing(6)
             .align_y(Alignment::Center);
