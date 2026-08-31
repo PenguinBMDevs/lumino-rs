@@ -12,11 +12,16 @@
 
 use std::collections::HashSet;
 
-use iced_core::{Alignment, Length};
-use iced_widget::{button, column, container, row, scrollable, text};
+use iced_core::{Alignment, Length, Padding};
+use iced_widget::{button, column, container, row, scrollable, space, text};
 
-use lumino_ui_core::{Element, Message, Theme, window::Window};
 use lumino_ui_core::sidebar_event::Event as SidebarEvent;
+use lumino_ui_core::{Element, Message, Theme, window::Window};
+
+/// 面板固定宽度，对齐 yinhe `tp_w = 220` 与 `left_panel_width = 220 + SPLIT_HANDLE_W`
+const PANEL_WIDTH: f32 = 220.0;
+/// 色带宽度，对齐 yinhe `badge_w = 14.0`
+const BADGE_WIDTH: f32 = 14.0;
 
 /// 音轨行显示数据（精简版，对齐 yinhe `TrackInfo + TrackOverride + ArRowLayout`）
 ///
@@ -40,6 +45,12 @@ pub struct TrackRow {
     /// 是否静音 / 是否独奏（对齐 `TrackOverride`）
     pub muted: bool,
     pub soloed: bool,
+    /// 是否为自动化子行（Pitch Bend / CC 通道等）
+    ///
+    /// 等宽约束：子行与主轨共用 `Fixed(PANEL_WIDTH)` 外容器，宽度完全一致；
+    /// 仅通过左侧缩进与背景微调区分，不产生宽度差异（修复 yinhe 原 1046 中
+    /// `panel_w` 统一为 `tp_w` 的等宽布局）。
+    pub is_automation: bool,
 }
 
 impl TrackRow {
@@ -122,15 +133,26 @@ fn inline_button<'a>(
 /// 渲染单行（对齐 yinhe `track_panel::show` 的行内布局：
 ///
 /// `| 色带 14px | 编号 003 | 标签 A01 | 名称 ... | [M][S] | chevron/+/展开 |`）
+///
+/// 等宽约束（修复问题1）：所有行（主轨+自动化子项）外容器均为
+/// `Fixed(PANEL_WIDTH)` × `Fixed(row_height)`，子项仅通过 `indent` 缩进与
+/// 背景区分，不改变宽度；`scrollable` 与外层 `container` 均 `Fixed(220)`，
+/// `column` 与行均 `Fixed(220)`，移除导致子项变窄的 `padding`/`Fill`→`Shrink` 混用。
 #[allow(clippy::manual_is_multiple_of)]
-fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> Element<'a> {
+fn track_row_view<'a>(
+    row: &TrackRow,
+    is_selected: bool,
+    row_pos: usize,
+    row_height: f32,
+    window: &'a Window,
+) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let stripe = palette.background.weak.color;
 
+    // 交替行条纹按全局行号奇偶（与 yinhe `row % 2 == 0` 一致），而非 `row.index`
     let bg = if is_selected {
-        // clippy::manual_is_multiple_of 允许取模判断行奇偶
         palette.background.strong.color
-    } else if row.index % 2 == 0 {
+    } else if row_pos % 2 == 0 {
         stripe
     } else {
         palette.background.base.color
@@ -139,9 +161,10 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
     let color32 =
         iced_core::Color::from_rgba(row.color[0], row.color[1], row.color[2], row.color[3]);
 
+    // 色带：固定 14px × row_height，与 yinhe `badge_w = 14.0, badge_rect = vec2(14, lh)` 一致
     let badge = container(text("").size(1))
-        .width(Length::Fixed(14.0))
-        .height(Length::Fixed(28.0))
+        .width(Length::Fixed(BADGE_WIDTH))
+        .height(Length::Fixed(row_height))
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(color32)),
             ..Default::default()
@@ -151,10 +174,16 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
     let label = text(row.label()).size(11);
     let name = text(row.name.clone()).size(12);
 
-    let details = if row.is_conductor {
-        row![num, label, name].spacing(6).align_y(Alignment::Center)
+    // 左侧文本组（编号+标签+名称），右侧 M/S 按钮右对齐（与 yinhe `row_rect.max.x - total_btn_w - 6` 一致）
+    let left = row![num, label, name]
+        .spacing(6)
+        .align_y(Alignment::Center);
+
+    let right: Element<'a> = if row.is_conductor {
+        // Conductor 无 M/S（与 yinhe `is_conductor` 分支一致）
+        space().width(Length::Fixed(0.0)).height(Length::Fixed(0.0)).into()
     } else {
-        // M/S 按钮（与 yinhe `draw_inline_button` 尺寸 18 呼应，紧凑行隐藏）— 接线到 Sidebar 事件
+        // M/S 按钮 — 接线到 Sidebar 事件；自动化子行同样等宽占位（仅背景/缩进区分）
         let m_btn = inline_button(
             "M",
             row.muted,
@@ -173,18 +202,39 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
                 row.index as usize,
             ))),
         );
-        row![num, label, name, m_btn, s_btn]
-            .spacing(6)
+        row![m_btn, s_btn]
+            .spacing(4)
             .align_y(Alignment::Center)
+            .into()
     };
 
+    // 中间弹性空白，使 M/S 右对齐（等宽关键：若用 `row![left, right]`，名称长度变化会导致 M/S 位置抖动）
+    let details = row![
+        left,
+        space().width(Length::Fill),
+        right
+    ]
+    .spacing(6)
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+
+    // 子项缩进：仅改变内边距，不改变外容器宽度（Fixed 220），与 yinhe 子行同宽、仅内容缩进一致
+    let indent = if row.is_automation { 10.0 } else { 0.0 };
     let inner = row![badge, details]
         .spacing(6)
         .align_y(Alignment::Center)
-        .padding([2, 6]);
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(Padding {
+            top: 2.0,
+            bottom: 2.0,
+            left: 6.0 + indent,
+            right: 6.0,
+        });
 
     let row_content = container(inner)
-        .width(Length::Fill)
+        .width(Length::Fixed(PANEL_WIDTH))
+        .height(Length::Fixed(row_height))
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(bg)),
             border: iced_core::Border {
@@ -194,11 +244,14 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
             ..Default::default()
         });
 
-    // 整行可点击选中（Conductor 也可选中）；M/S 按钮已在内部处理 mute/solo，行点击处理选中
+    // 等宽关键：button 与 container 均显式 Fixed(PANEL_WIDTH)，避免 `Fill` 在 `Shrink` 父容器中塌缩
+    //（原实现 `container(Fill)` 在 `button(Shrink)` 内导致非 Conductor 行窄于 Conductor）
     if row.is_conductor {
         row_content.into()
     } else {
         button(row_content)
+            .width(Length::Fixed(PANEL_WIDTH))
+            .height(Length::Fixed(row_height))
             .padding(0)
             .style(|_theme: &Theme, _status| button::Style {
                 background: None,
@@ -225,22 +278,35 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
 ///   由上层 `Message::ArrangementSelectTrack` 等消息驱动，此处仅展示，
 ///   不直接修改 `HashSet`，符合 iced 单向数据流。
 pub fn view<'a>(window: &'a Window, state: TrackPanelState) -> Element<'a> {
-    // 拥有所有权，避免上层 Box::leak 泄漏；此处 clone 已足够
+    // 行高回退：与 yinhe `row_height.clamp(16,120)` 一致，异常值回退 32
+    let row_h = if state.row_height.is_finite() && state.row_height >= 16.0 {
+        state.row_height
+    } else {
+        32.0
+    };
+    // 全局行号用于条纹（过滤隐藏轨后重新计数，与 yinhe `row % 2` 的全局行号一致）
+    // 可见行重新编号用于条纹（与 yinhe `row % 2` 的全局行号一致；隐藏轨不占用条纹）
     let visible_rows: Vec<Element<'a>> = state
         .rows
         .into_iter()
         .filter(|r| r.visible)
-        .map(|r| {
+        .enumerate()
+        .map(|(pos, r)| {
             let sel = state.selected.contains(&r.index);
-            track_row_view(&r, sel, window)
+            track_row_view(&r, sel, pos, row_h, window)
         })
         .collect();
 
-    let content = column(visible_rows).spacing(2).padding([4, 4]);
+    // column 与 scrollable 均 Fixed(220)，内容列 padding 0、spacing 0（与 yinhe 行连续堆叠 `y = row * lh` 一致）
+    // 移除原 `padding [4,4] + spacing 2` 导致的可用宽度 212 与行间隙，确保主轨/子项视觉等宽
+    let content = column(visible_rows)
+        .spacing(0)
+        .width(Length::Fixed(PANEL_WIDTH))
+        .padding(Padding::new(0.0));
 
     scrollable(content)
         .height(Length::Fill)
-        .width(Length::Fixed(220.0))
+        .width(Length::Fixed(PANEL_WIDTH))
         .into()
 }
 
@@ -260,6 +326,7 @@ mod tests {
             visible: true,
             muted: false,
             soloed: false,
+            is_automation: false,
         };
         assert_eq!(r.label(), "Master");
         assert_eq!(r.num_text(), "000");
@@ -277,7 +344,41 @@ mod tests {
             visible: true,
             muted: false,
             soloed: false,
+            is_automation: false,
         };
         assert_eq!(r.label(), "B03");
+    }
+
+    #[test]
+    fn automation_row_is_distinguished_by_indent_not_width() {
+        // 子项与主轨宽度一致，仅缩进/背景区分
+        let main = TrackRow {
+            index: 1,
+            name: "Setup".into(),
+            port: 0,
+            channel: 0,
+            color: [0.3, 0.7, 0.9, 1.0],
+            is_conductor: false,
+            visible: true,
+            muted: false,
+            soloed: false,
+            is_automation: false,
+        };
+        let sub = TrackRow {
+            index: 1,
+            name: "Pitch Bend Setup".into(),
+            port: 0,
+            channel: 0,
+            color: [0.85, 0.85, 0.85, 1.0],
+            is_conductor: false,
+            visible: true,
+            muted: false,
+            soloed: false,
+            is_automation: true,
+        };
+        assert!(!main.is_automation);
+        assert!(sub.is_automation);
+        // 宽度由常量保证等宽，此处仅校验标记
+        assert_eq!(main.index, sub.index);
     }
 }

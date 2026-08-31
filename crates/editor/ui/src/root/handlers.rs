@@ -143,6 +143,12 @@ impl Root {
                 self.handle_right_sidebar_action(action.clone());
                 true
             }
+            #[cfg(feature = "yinhe")]
+            Message::Yinhe(action) => {
+                self.handle_yinhe_action(action.clone());
+                true
+            }
+            #[cfg(not(feature = "yinhe"))]
             Message::Yinhe(action) => {
                 self.handle_yinhe_action(action.clone());
                 true

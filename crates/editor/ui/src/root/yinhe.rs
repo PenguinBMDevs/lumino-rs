@@ -134,8 +134,10 @@ impl Root {
                     visible: true,
                     muted: t.is_muted,
                     soloed: t.is_soloed,
+                    is_automation: false,
                 });
                 // 选中轨展开 CC 通道（PitchBend/CC 7/10/11/64 等），与图二一致；未选中轨不展开以免过长
+                // 等宽约束：子项与主轨同为 Fixed(220)，仅通过缩进区分（is_automation = true）
                 if t.id == self.sidebar.selected_track && !t.is_conductor {
                     let lanes = [
                         ("Pitch Bend", 0, 0, [0.85, 0.85, 0.85, 1.0]),
@@ -155,6 +157,7 @@ impl Root {
                             visible: true,
                             muted: false,
                             soloed: false,
+                            is_automation: true,
                         });
                     }
                 }
@@ -170,6 +173,7 @@ impl Root {
                     visible: true,
                     muted: false,
                     soloed: false,
+                    is_automation: false,
                 });
             }
             // 若仅 2 轨（空工程），补充示例 3-16 轨以接近图二（开发预览，不影响真实工程）
@@ -193,6 +197,7 @@ impl Root {
                         visible: true,
                         muted: false,
                         soloed: false,
+                        is_automation: false,
                     });
                 }
             }
@@ -385,6 +390,12 @@ impl Root {
 
 #[cfg(not(feature = "yinhe"))]
 impl Root {
+    /// 非 feature 桩：处理 Yinhe 动作（未启用 feature 时直接忽略，已处理避免 WARN）
+    pub(crate) fn handle_yinhe_action(&mut self, _action: lumino_message::YinheAction) -> bool {
+        tracing::debug!("Yinhe 动作已忽略（未启用 yinhe feature）");
+        true
+    }
+
     /// 非 feature 桩：Yinhe 视图占位（提示需 --features yinhe）
     pub(crate) fn view_yinhe(&self) -> Element<'_> {
         iced_widget::container(
@@ -411,5 +422,80 @@ impl Root {
         _shift: bool,
     ) -> bool {
         false
+    }
+}
+
+#[cfg(all(test, feature = "yinhe"))]
+mod tests {
+    use crate::message::Message;
+    use lumino_core::storage::config::UiConfig;
+    use lumino_message::{YinheAction, YinheViewMode};
+
+    #[test]
+    fn yinhe_default_is_arrange() {
+        let state = lumino_ui_yinhe::state::YinheState::default();
+        assert_eq!(state.view_mode, lumino_ui_yinhe::chrome::ViewMode::Arrange);
+        let root = crate::root::Root::new(&UiConfig::default());
+        assert_eq!(
+            root.yinhe.view_mode,
+            lumino_ui_yinhe::chrome::ViewMode::Arrange,
+            "Root.yinhe 默认应为 ARRANGE"
+        );
+    }
+
+    #[test]
+    fn handle_yinhe_action_switches_all_modes() {
+        let mut root = crate::root::Root::new(&UiConfig::default());
+        // 默认 ARRANGE
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Arrange);
+
+        // 切换到 Piano
+        let handled = root.handle_yinhe_action(YinheAction::ViewModeChanged(YinheViewMode::Piano));
+        assert!(handled);
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Piano);
+
+        // 切换到 Mix
+        let handled = root.handle_yinhe_action(YinheAction::ViewModeChanged(YinheViewMode::Mix));
+        assert!(handled);
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Mix);
+
+        // 切换回 Arrange（关键回归：ARRANGE 必须可达）
+        let handled = root.handle_yinhe_action(YinheAction::ViewModeChanged(YinheViewMode::Arrange));
+        assert!(handled);
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Arrange);
+    }
+
+    #[test]
+    fn update_via_message_routes_yinhe() {
+        let mut root = crate::root::Root::new(&UiConfig::default());
+        root.update(Message::Yinhe(YinheAction::ViewModeChanged(YinheViewMode::Piano)));
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Piano);
+
+        root.update(Message::Yinhe(YinheAction::ViewModeChanged(YinheViewMode::Arrange)));
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Arrange);
+
+        root.update(Message::Yinhe(YinheAction::ViewModeChanged(YinheViewMode::Mix)));
+        assert_eq!(root.yinhe.view_mode, lumino_ui_yinhe::chrome::ViewMode::Mix);
+
+        // TogglePianoroll
+        let before = root.yinhe.layout.show_pianoroll_in_arrange;
+        root.update(Message::Yinhe(YinheAction::TogglePianorollInArrange));
+        assert_eq!(root.yinhe.layout.show_pianoroll_in_arrange, !before);
+    }
+
+    #[test]
+    fn mode_bar_sends_correct_messages() {
+        use lumino_ui_yinhe::chrome::mode_bar::ViewMode;
+        // 验证 mode_bar 的 view_mode_message 映射（间接通过 handle）
+        let mut root = crate::root::Root::new(&UiConfig::default());
+        for mode in ViewMode::ALL {
+            let vm = match mode {
+                ViewMode::Arrange => YinheViewMode::Arrange,
+                ViewMode::Piano => YinheViewMode::Piano,
+                ViewMode::Mix => YinheViewMode::Mix,
+            };
+            root.handle_yinhe_action(YinheAction::ViewModeChanged(vm));
+            assert_eq!(root.yinhe.view_mode, mode, "切换到 {:?} 失败", mode);
+        }
     }
 }

@@ -152,8 +152,8 @@ pub fn compute_layout(
 ) -> Option<PianoLayout> {
     let vertical = orientation == Orientation::Vertical;
     let kb_w = view.keyboard_width;
-    let scrollbar_w = 12.0_f32;
-    let scrollbar_h = 12.0_f32;
+    let scrollbar_w = crate::widgets::scrollbar::SCROLLBAR_W;
+    let scrollbar_h = crate::widgets::scrollbar::SCROLLBAR_H;
     let pr_bar_h = 28.0_f32;
     let ruler_h = view.ruler_height;
 

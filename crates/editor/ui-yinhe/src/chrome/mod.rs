@@ -137,7 +137,7 @@ mod tests {
             ..Default::default()
         };
         // 仅断言 view 可构造 Element 且不 panic（不实际渲染到 wgpu）
-        let _el = view(&window, AppMode::Yinhe, &state);
+        let _el = view(&window, AppMode::Yinhe, state);
     }
 
     #[test]
@@ -145,6 +145,6 @@ mod tests {
         let window = Window::new("Tokyo Night Storm");
         let mut state = ChromeState::default();
         state.use_native_titlebar = true;
-        let _el = view(&window, AppMode::Editor, &state);
+        let _el = view(&window, AppMode::Editor, state);
     }
 }

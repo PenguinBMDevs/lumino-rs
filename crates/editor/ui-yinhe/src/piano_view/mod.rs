@@ -11,6 +11,7 @@ pub mod bg;
 pub mod drag;
 pub mod keyboard;
 pub mod layout;
+pub mod overlay;
 
 use iced_core::{Point, Rectangle, mouse};
 use iced_widget::canvas::{self, Cache, Frame, Geometry, Program};
@@ -52,6 +53,7 @@ pub struct PianoViewInteractionState {
     /// 渲染缓存（键盘/标尺/网格，复用 ui-editor 的 Cache 策略）
     pub keyboard_cache: Cache<Renderer>,
     pub grid_cache: Cache<Renderer>,
+    pub overlay_cache: Cache<Renderer>,
 }
 
 impl Default for PianoViewInteractionState {
@@ -66,6 +68,7 @@ impl Default for PianoViewInteractionState {
             pencil: drag::PencilState::default(),
             keyboard_cache: Cache::default(),
             grid_cache: Cache::default(),
+            overlay_cache: Cache::default(),
         }
     }
 }
@@ -85,6 +88,10 @@ pub struct PianoRollProgram<'a> {
     pub orientation: Orientation,
     /// 是否显示网格背景
     pub show_grid: bool,
+    /// 演奏指示线位置（tick），None 则不绘制
+    pub cursor_tick: Option<f64>,
+    /// 当前按下的琴键（用于键盘高亮），None 则无高亮
+    pub pressed_keys: Option<&'a [u8]>,
 }
 
 impl<'a> PianoRollProgram<'a> {
@@ -94,11 +101,23 @@ impl<'a> PianoRollProgram<'a> {
             editor_state,
             orientation: Orientation::Horizontal,
             show_grid: true,
+            cursor_tick: None,
+            pressed_keys: None,
         }
     }
 
     pub fn with_orientation(mut self, o: Orientation) -> Self {
         self.orientation = o;
+        self
+    }
+
+    pub fn with_cursor(mut self, tick: Option<f64>) -> Self {
+        self.cursor_tick = tick;
+        self
+    }
+
+    pub fn with_pressed_keys(mut self, keys: Option<&'a [u8]>) -> Self {
+        self.pressed_keys = keys;
         self
     }
 }
@@ -288,13 +307,18 @@ impl Program<Message, Theme, Renderer> for PianoRollProgram<'_> {
             orientation: self.orientation,
         });
 
-        // 1) 键盘（缓存）
+        // 1) 键盘（缓存）— 按压高亮
         {
+            let pressed = self.pressed_keys;
             let g = state.keyboard_cache.draw(
                 renderer,
                 bounds.size(),
                 |frame: &mut Frame<Renderer>| {
-                    keyboard::draw(&view_owned, &layout, frame, bounds, theme);
+                    if let Some(keys) = pressed {
+                        keyboard::draw_with_pressed(&view_owned, &layout, frame, bounds, theme, Some(keys));
+                    } else {
+                        keyboard::draw(&view_owned, &layout, frame, bounds, theme);
+                    }
                 },
             );
             geoms.push(g);
@@ -308,6 +332,18 @@ impl Program<Message, Theme, Renderer> for PianoRollProgram<'_> {
                     .draw(renderer, bounds.size(), |frame: &mut Frame<Renderer>| {
                         bg::draw(&view_owned, &layout, frame, bounds, theme);
                     });
+            geoms.push(g);
+        }
+
+        // 2.5) 演奏指示线（红色竖线+三角形头，跟随播放 tick）
+        if let Some(tick) = self.cursor_tick {
+            let g = state.overlay_cache.draw(
+                renderer,
+                bounds.size(),
+                |frame: &mut Frame<Renderer>| {
+                    overlay::draw(&view_owned, &layout, frame, bounds, Some(tick as f64));
+                },
+            );
             geoms.push(g);
         }
 
@@ -369,9 +405,33 @@ pub fn view<'a>(
     canvas::Canvas::new(program).into()
 }
 
+/// 带播放指示线的重载
+pub fn view_with_cursor<'a>(
+    view: &'a ViewState,
+    editor_state: &'a EditorState,
+    _window: &'a Window,
+    orientation: Orientation,
+    cursor_tick: Option<f64>,
+) -> Element<'a> {
+    let program = PianoRollProgram::new(view, editor_state)
+        .with_orientation(orientation)
+        .with_cursor(cursor_tick);
+    canvas::Canvas::new(program).into()
+}
+
 /// 简化重载：横向默认 + 无窗口依赖（主题由 canvas Program 透传）
 pub fn view_simple<'a>(view: &'a ViewState, editor_state: &'a EditorState) -> Element<'a> {
     let program = PianoRollProgram::new(view, editor_state);
+    canvas::Canvas::new(program).into()
+}
+
+/// 简化重载带 cursor
+pub fn view_simple_with_cursor<'a>(
+    view: &'a ViewState,
+    editor_state: &'a EditorState,
+    cursor_tick: Option<f64>,
+) -> Element<'a> {
+    let program = PianoRollProgram::new(view, editor_state).with_cursor(cursor_tick);
     canvas::Canvas::new(program).into()
 }
 

@@ -295,17 +295,32 @@ impl Program<Message, Theme, Renderer> for ArrangeCanvas<'_> {
                 state
                     .overlay_cache
                     .draw(renderer, bounds.size(), |frame: &mut Frame<Renderer>| {
-                        // 播放光标线
+                        // 播放光标线（红色竖线 + 三角形头，跟随播放 tick）
                         if let Some(t) = self.cursor_tick {
                             let x = vp.tick_to_x(t);
                             if x >= vp.left_panel_width && x <= bounds.width {
-                                let p =
-                                    Path::line(Point::new(x, 0.0), Point::new(x, bounds.height));
+                                let tri_size: f32 = 8.0;
+                                let line = Path::line(Point::new(x, 0.0), Point::new(x, bounds.height));
                                 frame.stroke(
-                                    &p,
+                                    &line,
                                     Stroke::default()
-                                        .with_width(1.5)
+                                        .with_width(2.0)
                                         .with_color(iced_core::Color::from_rgb(1.0, 0.2, 0.2)),
+                                );
+                                // 顶部倒三角形 ▼
+                                let tri = Path::new(|b| {
+                                    let half = tri_size / 2.0;
+                                    b.move_to(Point::new(x - half, 0.0));
+                                    b.line_to(Point::new(x + half, 0.0));
+                                    b.line_to(Point::new(x, tri_size));
+                                    b.close();
+                                });
+                                frame.fill(&tri, iced_core::Color::from_rgb(1.0, 0.2, 0.2));
+                                frame.stroke(
+                                    &tri,
+                                    Stroke::default()
+                                        .with_width(0.5)
+                                        .with_color(iced_core::Color::WHITE.scale_alpha(0.9)),
                                 );
                             }
                         }
