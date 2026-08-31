@@ -73,28 +73,17 @@ impl Default for ChromeState {
 /// `chrome_state` 聚合三栏业务状态。
 pub fn view<'a>(
     window: &'a Window,
-    app_mode: AppMode,
+    _app_mode: AppMode,
     chrome_state: ChromeState,
 ) -> Element<'a> {
-    let title_el = title_bar::view(
-        window,
-        chrome_state.title.clone(),
-        chrome_state.use_native_titlebar,
-    );
+    // 2. 删除顶部歌名/Conductor 行：title_bar 已移除，按用户要求不显示文件名单行
+    // 4. 修复 ARRANGE PIANO MIX 顶部重复：mode_bar 已移至底部，此处仅保留 transport
     let transport_el = transport_bar::view(window, chrome_state.transport.clone());
-    let mode_el = mode_bar::view(
-        window,
-        app_mode,
-        chrome_state.view_mode,
-        chrome_state.show_pianoroll_in_arrange,
-        chrome_state.mode_metrics,
-    );
 
-    // 外层容器：三栏纵向叠加，背景随主题（与 title_bar 保持一致）
     let palette = window.theme.extended_palette();
     let bg = palette.background.base.color;
 
-    container(column![title_el, transport_el, mode_el].spacing(0))
+    container(transport_el)
         .width(iced_core::Length::Fill)
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(bg)),

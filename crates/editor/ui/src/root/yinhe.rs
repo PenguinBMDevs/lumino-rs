@@ -242,10 +242,35 @@ impl Root {
             sigs_ref,
             &self.window,
         );
-        let center: Element<'_> = iced_widget::container(center_canvas)
+        let center_with_scroll: Element<'_> = {
+            // 横纵滚动条（薄 10px，悬浮高亮，轨道点击/拖拇指/边缘缩放）
+            let h_bar = lumino_ui_yinhe::widgets::scrollbar::horizontal_for_view(
+                &self.editor.editor_state.view,
+                &self.window,
+            );
+            let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_for_view(
+                &self.editor.editor_state.view,
+                &self.window,
+            );
+            let grid_with_v = iced_widget::row![
+                iced_widget::container(center_canvas)
+                    .width(iced_core::Length::Fill)
+                    .height(iced_core::Length::Fill),
+                iced_widget::container(v_bar)
+                    .width(iced_core::Length::Fixed(10.0))
+                    .height(iced_core::Length::Fill)
+            ]
+            .height(iced_core::Length::Fill);
+            let grid_with_h = iced_widget::column![
+                grid_with_v.height(iced_core::Length::Fill),
+                iced_widget::container(h_bar)
+                    .width(iced_core::Length::Fill)
+                    .height(iced_core::Length::Fixed(10.0))
+            ]
             .width(iced_core::Length::Fill)
-            .height(iced_core::Length::Fill)
-            .into();
+            .height(iced_core::Length::Fill);
+            grid_with_h.into()
+        };
 
         // ── 右侧面板：240px，占位 default（Info/Events/SoundFont），数据后续接 lumino 文档 ──
         static RIGHT_PANEL_DEFAULT: std::sync::OnceLock<
@@ -264,7 +289,7 @@ impl Root {
         let middle: Element<'_> = match self.yinhe.view_mode {
             lumino_ui_yinhe::chrome::ViewMode::Arrange => iced_widget::row![
                 left_wrapped,
-                center,
+                center_with_scroll,
                 right
             ]
             .height(iced_core::Length::Fill)
