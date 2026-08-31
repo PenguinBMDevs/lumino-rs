@@ -351,19 +351,32 @@ impl Program<Message, Theme, Renderer> for PianoRollProgram<'_> {
         // 实际路径：EditorState → SwappableBuffer<NoteInstance> → NoteRenderer
         // 渲染线程通过 Context.device/queue 发起 cull + draw，离屏纹理合成到
         // iced 的 wgpu 视图。此处不直接调用 wgpu，仅保留 ghost/marquee 等
-        // CPU 预览几何。
+        // CPU 预览几何。视口严格裁剪到 music_rect（网格区），避免在键盘/标尺区渲染。
         {
             let mut frame = Frame::new(renderer, bounds.size());
-            // 框选矩形（虚线占位，与 ui-editor/grid/selection_box.rs 对齐，300α 黄）
+            // 裁剪到 music_rect，避免音符在钢琴下方/键盘区渲染（与布局 music_rect 对齐）
+            let clip = layout.music_rect;
+            // 框选矩形（虚线占位，与 ui-editor/grid/selection_box.rs 对齐，300α 黄）— 仅在 music_rect 内有效
             if let Some(r) = state.drag.marquee_rect() {
                 use iced_widget::canvas::{Path, Stroke};
-                let p = Path::rectangle(r.position(), r.size());
-                let st = Stroke::default()
-                    .with_width(1.0)
-                    .with_color(iced_core::Color::from_rgba(1.0, 0.8, 0.0, 0.9));
-                frame.stroke(&p, st);
-                frame.fill(&p, iced_core::Color::from_rgba(1.0, 0.8, 0.0, 0.15));
+                // 将 marquee 限制在 music_rect 内
+                let clipped = r.intersection(&clip).unwrap_or(r);
+                if clipped.width > 1.0 && clipped.height > 1.0 {
+                    let p = Path::rectangle(clipped.position(), clipped.size());
+                    let st = Stroke::default()
+                        .with_width(1.0)
+                        .with_color(iced_core::Color::from_rgba(1.0, 0.8, 0.0, 0.9));
+                    frame.stroke(&p, st);
+                    frame.fill(&p, iced_core::Color::from_rgba(1.0, 0.8, 0.0, 0.15));
+                }
             }
+            // 视口指示：仅在 music_rect 内绘制，避免溢出到键盘/标尺
+            frame.stroke(
+                &iced_widget::canvas::Path::rectangle(clip.position(), clip.size()),
+                iced_widget::canvas::Stroke::default()
+                    .with_width(0.5)
+                    .with_color(iced_core::Color::TRANSPARENT),
+            );
             geoms.push(frame.into_geometry());
         }
 
