@@ -244,13 +244,18 @@ impl Root {
         );
         let center_with_scroll: Element<'_> = {
             // 横纵滚动条（薄 10px，悬浮高亮，轨道点击/拖拇指/边缘缩放）
+            let view = &self.editor.editor_state.view;
+            let viewport_w = (view.total_ticks as f32 * view.zoom_x).max(1.0);
+            let viewport_h = (view.visible_key_count as f32 * view.zoom_y).max(1.0);
             let h_bar = lumino_ui_yinhe::widgets::scrollbar::horizontal_for_view(
-                &self.editor.editor_state.view,
-                &self.window,
+                view,
+                viewport_w,
+                &self.window.theme,
             );
-            let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_for_view(
-                &self.editor.editor_state.view,
-                &self.window,
+            let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_pixel_for_view(
+                view,
+                viewport_h,
+                &self.window.theme,
             );
             let grid_with_v = iced_widget::row![
                 iced_widget::container(center_canvas)

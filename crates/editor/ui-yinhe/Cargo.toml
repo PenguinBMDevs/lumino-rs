@@ -26,9 +26,11 @@ lumino-message = { workspace = true }
 lumino-project = { workspace = true }
 lumino-extras = { workspace = true }
 winit = { workspace = true }
+iced = { workspace = true }
 iced_core = { workspace = true }
 iced_widget = { workspace = true, features = ["image", "svg", "canvas"] }
 iced_wgpu = { workspace = true, features = ["geometry", "image", "svg"] }
+iced_aw = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tracing = { workspace = true }

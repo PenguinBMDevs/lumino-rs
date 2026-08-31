@@ -38,7 +38,7 @@ pub fn icon<'a>(
     codepoint: char,
     size: f32,
     color: iced_core::Color,
-) -> iced_widget::Text<'a, iced_core::Theme, iced_core::Renderer> {
+) -> iced_widget::Text<'a, iced_core::Theme, lumino_ui_core::Renderer> {
     use iced_widget::text;
     text(codepoint.to_string())
         .font(font())

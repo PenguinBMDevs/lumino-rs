@@ -13,6 +13,7 @@ pub mod arrange;
 pub mod chrome;
 pub mod dialogs;
 pub mod file;
+pub mod material_icons;
 pub mod piano_view;
 pub mod platform;
 pub mod right_panel;

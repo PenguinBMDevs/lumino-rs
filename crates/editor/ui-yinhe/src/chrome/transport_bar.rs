@@ -521,28 +521,170 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let has_doc = state.has_active_document;
 
-    // ── 左侧：文件/编辑/播放 菜单按钮 + 图钉固定区 ────────────────────────
-    // 文件菜单（始终可用，`pick_file` 走 `Message::Null` 占位，真实文件对话框由宿主 `Root` 侧 `handle_yin_load_stub` 接管）
-    let file_menu_btn = menu_button(
-        icon::Icon::FolderTree,
-        "文件菜单 (Ctrl N/O/S)",
-        Some(lumino_ui_core::message::null()),
-        window,
+    // ── 左侧：文件/编辑/播放 菜单按钮 + 图钉固定区 — iced_aw Menu 弹窗（参考 lumino titlebar/menu.rs，圆角8+阴影美化） ──
+    use iced_aw::{Menu, menu::Item, style::menu_bar};
+    // 文件菜单：带图标 +  pin 切换，hover 弱底 + 选中强底，圆角4
+    let file_items = FileAction::ALL
+        .iter()
+        .enumerate()
+        .map(|(idx, action)| {
+            let is_pinned = state.pinned_file_actions[idx];
+            let pin_icon = if is_pinned { "📌" } else { "📍" };
+            let row: iced_widget::Row<'_, Message, Theme, lumino_ui_core::Renderer> =
+                iced_widget::row![
+                    iced_widget::text(action.label()).size(13).width(iced_core::Length::Fill),
+                    iced_widget::button(iced_widget::text(pin_icon).size(10))
+                        .on_press(lumino_ui_core::message::null())
+                        .padding(2)
+                        .style(|_t: &Theme, _s| iced_widget::button::Style::default()
+                            .with_background(iced_core::Color::TRANSPARENT))
+                ]
+                .align_y(Alignment::Center)
+                .spacing(4);
+            let label_with_icon: iced_widget::Row<'_, Message, Theme, lumino_ui_core::Renderer> =
+                iced_widget::row![ crate::material_icons::icon(
+                    match action {
+                        FileAction::NewProject => crate::material_icons::codepoints::TEXT_FIELDS,
+                        FileAction::Open => crate::material_icons::codepoints::FOLDER_OPEN,
+                        FileAction::Save => crate::material_icons::codepoints::SAVE,
+                        _ => crate::material_icons::codepoints::HOME,
+                    },
+                    14.0,
+                    window.theme.extended_palette().background.base.text
+                ),
+                iced_widget::text(action.label()).size(13)
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center);
+            // 美化：悬浮弱底，按压强底，圆角8+阴影由 Menu 容器统一处理，增强美观
+            let btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+                iced_widget::button(label_with_icon)
+                    .width(iced_core::Length::Fill)
+                    .padding([6, 10])
+                    .style(|theme: &Theme, status| {
+                        let p = theme.extended_palette();
+                        let bg = match status {
+                            iced_widget::button::Status::Hovered => p.background.weaker.color,
+                            iced_widget::button::Status::Pressed => p.background.weak.color,
+                            _ => iced_core::Color::TRANSPARENT,
+                        };
+                        iced_widget::button::Style {
+                            background: Some(iced_core::Background::Color(bg)),
+                            border: iced_core::Border::default().rounded(8),
+                            shadow: iced_core::Shadow {
+                                color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.12),
+                                offset: iced_core::Vector::new(0.0, 2.0),
+                                blur_radius: 8.0,
+                            },
+                            text_color: p.background.neutral.text,
+                            ..Default::default()
+                        }
+                    })
+                    .on_press(lumino_ui_core::message::null());
+            let el: Element<'_> = btn.into();
+            Item::new(el)
+        })
+        .collect::<Vec<_>>();
+    let file_menu_btn = Item::with_menu(
+        menu_button(icon::Icon::FolderTree, "文件", Some(lumino_ui_core::message::null()), window),
+        Menu::new(file_items).width(220.0).offset(4.0),
     );
-    // 编辑菜单（与文件同款 `ICON_EDIT_SQUARE` → `Pencil`）
-    let edit_menu_btn = menu_button(
-        icon::Icon::Pencil,
-        "编辑菜单",
-        Some(lumino_ui_core::message::null()),
-        window,
+    let edit_items = EditAction::ALL
+        .iter()
+        .map(|action| {
+            let btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+                iced_widget::button(
+                    iced_widget::row![
+                        crate::material_icons::icon(
+                            crate::material_icons::codepoints::EDIT,
+                            14.0,
+                            window.theme.extended_palette().background.base.text
+                        ),
+                        iced_widget::text(action.label()).size(13)
+                    ]
+                    .spacing(6),
+                )
+                .width(iced_core::Length::Fill)
+                .padding([6, 10])
+                .style(|theme: &Theme, status| {
+                    let p = theme.extended_palette();
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => p.background.weaker.color,
+                        _ => iced_core::Color::TRANSPARENT,
+                    };
+                    iced_widget::button::Style {
+                        background: Some(iced_core::Background::Color(bg)),
+                        border: iced_core::Border::default().rounded(8),
+                        shadow: iced_core::Shadow {
+                            color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.08),
+                            offset: iced_core::Vector::new(0.0, 1.0),
+                            blur_radius: 4.0,
+                        },
+                        ..Default::default()
+                    }
+                })
+                .on_press(lumino_ui_core::message::null());
+            let el: Element<'_> = btn.into();
+            Item::new(el)
+        })
+        .collect::<Vec<_>>();
+    let edit_menu_btn = Item::with_menu(
+        menu_button(icon::Icon::Pencil, "编辑", Some(lumino_ui_core::message::null()), window),
+        Menu::new(edit_items).width(200.0).offset(4.0),
     );
-    // 播放菜单（`ICON_PLAY_CIRCLE` → `PlayCircle`）
-    let play_menu_btn = menu_button(
-        icon::Icon::PlayCircle,
-        "播放菜单",
-        Some(lumino_ui_core::message::null()),
-        window,
+    let play_items = {
+        let btn1: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+            iced_widget::button(iced_widget::text("播放/暂停").size(13))
+                .width(iced_core::Length::Fill)
+                .padding([6, 10])
+                .style(|theme: &Theme, status| {
+                    let p = theme.extended_palette();
+                    iced_widget::button::Style {
+                        background: Some(iced_core::Background::Color(match status {
+                            iced_widget::button::Status::Hovered => p.background.weaker.color,
+                            _ => iced_core::Color::TRANSPARENT,
+                        })),
+                        border: iced_core::Border::default().rounded(8),
+                        ..Default::default()
+                    }
+                })
+                .on_press(ToolbarEvent::play());
+        let el1: Element<'_> = btn1.into();
+        let btn2: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+            iced_widget::button(iced_widget::text("停止").size(13))
+                .width(iced_core::Length::Fill)
+                .padding([6, 10])
+                .style(|theme: &Theme, status| {
+                    let p = theme.extended_palette();
+                    iced_widget::button::Style {
+                        background: Some(iced_core::Background::Color(match status {
+                            iced_widget::button::Status::Hovered => p.background.weaker.color,
+                            _ => iced_core::Color::TRANSPARENT,
+                        })),
+                        border: iced_core::Border::default().rounded(8),
+                        ..Default::default()
+                    }
+                })
+                .on_press(ToolbarEvent::stop());
+        let el2: Element<'_> = btn2.into();
+        vec![
+            Item::new(el1),
+            Item::new(el2),
+        ]
+    };
+    let play_menu_btn = Item::with_menu(
+        menu_button(icon::Icon::PlayCircle, "播放", Some(lumino_ui_core::message::null()), window),
+        Menu::new(play_items).width(160.0).offset(4.0),
     );
+    // 将三个 Menu Item 包装为 MenuBar（lumino 标题栏同款，close_on_background_click）
+    let menu_bar = iced_aw::MenuBar::new(vec![file_menu_btn, edit_menu_btn, play_menu_btn])
+        .close_on_background_click_global(true)
+        .close_on_item_click_global(true)
+        .spacing(2)
+        .style(|theme: &Theme, status| menu_bar::Style {
+            bar_background: iced_core::Background::Color(iced_core::Color::TRANSPARENT),
+            ..menu_bar::primary(theme, status)
+        });
 
     // 图钉文件按钮行（`pinned_file_actions` 10 项，有钉才显示）
     let mut pinned_file_row: Vec<Element<'a>> = Vec::new();
@@ -653,16 +795,17 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         ));
     }
 
-    // 左侧聚合行（含按钮间 2px 间距，与原 `ui.add_space(2.0)` 一致）
-    let mut left_items: Vec<Element<'a>> = Vec::new();
-    left_items.push(file_menu_btn);
-    left_items.extend(pinned_file_row);
-    left_items.push(edit_menu_btn);
-    left_items.extend(pinned_edit_row);
-    left_items.push(play_menu_btn);
-    left_items.extend(pinned_play_row);
-
-    let left_group: Element<'a> = row(left_items).spacing(2).align_y(Alignment::Center).into();
+    // 左侧聚合行（含按钮间 2px 间距，与原 `ui.add_space(2.0)` 一致）— menu_bar 美化：圆角8+阴影
+    let left_group: Element<'a> = {
+        // menu_bar 为三菜单聚合，需转为 Element 单独处理
+        let bar_el: Element<'a> = menu_bar.into();
+        let mut items: Vec<Element<'a>> = Vec::new();
+        items.push(bar_el);
+        items.extend(pinned_file_row);
+        items.extend(pinned_edit_row);
+        items.extend(pinned_play_row);
+        row(items).spacing(2).align_y(Alignment::Center).into()
+    };
 
     // ── 中部：黑色数码框（固定黑底青字，Theme 兼容但不跟随 Theme 变色） ──
     let timecode = timecode_display(window, &state);
