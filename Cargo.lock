@@ -4482,6 +4482,7 @@ dependencies = [
  "lumino-note-core",
  "lumino-project",
  "lumino-ui",
+ "lumino-ui-yinhe",
  "muda",
  "parking_lot",
  "png 0.17.16",
@@ -4537,6 +4538,7 @@ dependencies = [
  "lumino-ui-core",
  "lumino-ui-editor",
  "lumino-ui-settings",
+ "lumino-ui-yinhe",
  "once_cell",
  "parking_lot",
  "puffin",
@@ -4615,6 +4617,31 @@ dependencies = [
  "lumino-ui-core",
  "rfd",
  "tracing",
+]
+
+[[package]]
+name = "lumino-ui-yinhe"
+version = "0.2.1"
+dependencies = [
+ "iced_core",
+ "iced_wgpu",
+ "iced_widget",
+ "lumino-core",
+ "lumino-editor-state",
+ "lumino-extras",
+ "lumino-gfx",
+ "lumino-message",
+ "lumino-midi-loader",
+ "lumino-midi-model",
+ "lumino-note-core",
+ "lumino-project",
+ "lumino-ui-core",
+ "muda",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.20",
+ "tracing",
+ "winit",
 ]
 
 [[package]]

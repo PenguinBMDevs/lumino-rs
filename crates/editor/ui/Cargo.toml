@@ -13,6 +13,10 @@ workspace = true
 
 [features]
 default = []
+# 可选编译：yinhe 副模式（发布形态 --features yinhe）
+# P7 约束：数据模型直接用 Lumino 工程格式，混音台不迁，多文档不做，
+# i18n 按 lumino，快捷键统一复用罗盘，不新定义 Keybindings 持久化
+yinhe = ["dep:lumino-ui-yinhe"]
 
 [dependencies]
 lumino-core = { workspace = true }
@@ -32,6 +36,7 @@ lumino-ui-core = { workspace = true }
 # lumino-ui-host: merged into lumino-gfx::cache
 lumino-ui-settings = { workspace = true }
 lumino-ui-editor = { workspace = true }
+lumino-ui-yinhe = { workspace = true, optional = true }
 # crates.io
 midly = { workspace = true }
 # crates.io

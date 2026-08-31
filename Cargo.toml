@@ -7,7 +7,7 @@ members = [
     "crates/audio/midi-io", "crates/audio/midi-loader", "crates/audio/midi-model", "crates/audio/midiplayer", "crates/audio/note-core",
     "crates/audio/gpu-synth",
     # editor — UI / 渲染 / 编辑
-    "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings",
+    "crates/editor/dialog", "crates/editor/editor-state", "crates/editor/gfx", "crates/editor/ui", "crates/editor/ui-core", "crates/editor/ui-editor", "crates/editor/ui-settings", "crates/editor/ui-yinhe",
     # network — 协作 / 云
     "crates/network/cloud", "crates/network/collaboration",
     # tools — 工具 / 导出
@@ -53,6 +53,7 @@ lumino-ui = { path = "crates/editor/ui", version = "0.2.1-crates-io-preview1" }
 lumino-ui-core = { path = "crates/editor/ui-core", version = "0.2.1-crates-io-preview1" }
 lumino-ui-settings = { path = "crates/editor/ui-settings", version = "0.2.1-crates-io-preview1" }
 lumino-ui-editor = { path = "crates/editor/ui-editor", version = "0.2.1-crates-io-preview1" }
+lumino-ui-yinhe = { path = "crates/editor/ui-yinhe", version = "0.2.1-crates-io-preview1" }
 lumino-collaboration = { path = "crates/network/collaboration", version = "0.2.1-crates-io-preview1" }
 lumino-note-core = { path = "crates/audio/note-core", version = "0.2.1-crates-io-preview1" }
 lumino-editor-state = { path = "crates/editor/editor-state", version = "0.2.1-crates-io-preview1" }
@@ -185,6 +186,13 @@ edition.workspace = true
 [lints]
 workspace = true
 
+[features]
+default = []
+# 可选编译：yinhe 副模式（UI 套 lumino 底层，egui→iced）
+# P7 要求：`--features yinhe` 启用 lumino-ui-yinhe，
+# 通过 lumino-ui 透传（lumino-ui/yinhe → lumino-ui-yinhe 可选依赖）
+yinhe = ["dep:lumino-ui-yinhe", "lumino-ui/yinhe"]
+
 [dependencies]
 lumino-core = { workspace = true }
 lumino-message = { workspace = true }
@@ -195,6 +203,7 @@ lumino-midi-loader = { workspace = true }
 lumino-diagnostics = { workspace = true }
 lumino-ui = { workspace = true }
 lumino-note-core = { workspace = true }
+lumino-ui-yinhe = { workspace = true, optional = true }
 lumino-extras = { workspace = true }
 lumino-project = { workspace = true }
 lumino-collaboration = { workspace = true }
