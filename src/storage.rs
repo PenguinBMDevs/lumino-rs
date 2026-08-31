@@ -17,6 +17,63 @@ const OLD_ORGANIZATION: &str = "buickmeow";
 pub struct Storage {
     pub config: config::ConfigWrapper,
     pub ui_state: ui_state::UiStateWrapper,
+    /// Yinhe 布局独立持久化（`yinhe_layout.json`），不污染 UiState/UiConfig
+    #[cfg(feature = "yinhe")]
+    pub yinhe: yinhe_state::YinheStateWrapper,
+}
+
+#[cfg(feature = "yinhe")]
+mod yinhe_state {
+    use std::path::PathBuf;
+
+    #[derive(Debug)]
+    pub struct YinheStateWrapper {
+        inner: lumino_ui_yinhe::state::YinheState,
+        path: PathBuf,
+        dirty: bool,
+    }
+
+    impl YinheStateWrapper {
+        pub fn new(path: PathBuf) -> Self {
+            let inner = match std::fs::read(&path) {
+                Ok(bytes) => lumino_ui_yinhe::state::YinheState::from_json_slice(&bytes).clamped(),
+                Err(_) => lumino_ui_yinhe::state::YinheState::default(),
+            };
+            Self {
+                inner,
+                path,
+                dirty: false,
+            }
+        }
+
+        pub fn get(&self) -> &lumino_ui_yinhe::state::YinheState {
+            &self.inner
+        }
+
+        pub fn patch<F>(&mut self, f: F)
+        where
+            F: FnOnce(&mut lumino_ui_yinhe::state::YinheState),
+        {
+            f(&mut self.inner);
+            self.inner.clamp();
+            self.dirty = true;
+        }
+
+        pub fn save(&mut self) -> std::io::Result<()> {
+            if !self.dirty {
+                return Ok(());
+            }
+            if let Some(parent) = self.path.parent() {
+                std::fs::create_dir_all(parent)?;
+            }
+            let file = std::fs::File::create(&self.path)?;
+            let writer = std::io::BufWriter::new(file);
+            serde_json::to_writer_pretty(writer, &self.inner)
+                .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+            self.dirty = false;
+            Ok(())
+        }
+    }
 }
 
 /// 将整个配置目录从旧路径迁移到新路径
@@ -121,6 +178,10 @@ impl Storage {
             // 成功
             config: config::ConfigWrapper::new(config.join("config.json"))?,
             ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
+            #[cfg(feature = "yinhe")]
+            yinhe: yinhe_state::YinheStateWrapper::new(
+                preference.join(lumino_ui_yinhe::state::YINHE_LAYOUT_FILE),
+            ),
         })
     }
 }

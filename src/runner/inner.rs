@@ -244,6 +244,13 @@ impl Runner {
         )
         .map_err(|e| InitError::Window(e.to_string()))?;
 
+        // Yinhe 独立持久化：从 yinhe_layout.json 恢复到 Root.yinhe（不污染 UiState/UiConfig）
+        #[cfg(feature = "yinhe")]
+        {
+            let yinhe_state = storage.yinhe.get().clone();
+            window.ui_mut().root_mut().yinhe = yinhe_state;
+        }
+
         // 创建进度管理器
         let (progress, progress_tx) = ProgressManager::new();
         let progress_cb = lumino_midi_loader::loader::progress_from_sender(progress_tx);

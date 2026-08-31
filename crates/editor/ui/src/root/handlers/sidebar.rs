@@ -23,6 +23,7 @@ impl Root {
         let target_mode = match self.state.current_mode {
             AppMode::Editor => AppMode::Waterfall,
             AppMode::Waterfall => AppMode::Editor,
+            AppMode::Yinhe => AppMode::Editor,
         };
         if target_mode == AppMode::Waterfall {
             // 通过分组系统切换
@@ -36,6 +37,7 @@ impl Root {
         let target_progress = match target_mode {
             AppMode::Editor => 0.0,
             AppMode::Waterfall => 1.0,
+            AppMode::Yinhe => 0.0,
         };
         self.state.current_mode = target_mode;
         self.state.toggle_animation.animate_to(target_progress);

@@ -92,8 +92,32 @@ impl Host {
         true
     }
 
+    /// 处理 Yinhe 副模式专属消息分支（feature 门控）
+    ///
+    /// P7 约束：数据模型直接复用 Lumino 工程格式，混音台不迁，多文档不做，
+    /// 因此 Yinhe 消息**不新增** `Message` 变体（避免消息膨胀与跨 crate 破坏），
+    /// 直接复用 `EditorAction` / `ToolbarEvent` / `Arrangement*` 罗盘。
+    /// 本分支仅做文档占位与未来扩展点：
+    /// - 当前：Yinhe 的 ViewMode 切换等通过 `ToolbarEvent::ToolSelected` 占位
+    ///   （见 `lumino-ui-yinhe::chrome::mode_bar::view_mode_message`），
+    ///   无需独立分支，统一走 `EditorAction` / `Toolbar` 罗盘。
+    /// - 未来：若需 Yinhe 专属消息（如 `.yin` 加载完成），在 `lumino-message`
+    ///   新增 `YinheAction` 后于此分支优先处理，再落入通用路由。
+    #[cfg(feature = "yinhe")]
+    fn try_handle_yinhe_message(&mut self, _msg: &message::Message) -> Option<bool> {
+        // 占位：当前无 Yinhe 专属 Message 变体，全部复用现有罗盘
+        // 保留分支便于 P8 在此接入 `.yin` 解析完成等独立消息
+        None
+    }
+
     /// 处理单个消息，返回是否有状态变更
     pub(crate) fn process_message(&mut self, message: message::Message) -> bool {
+        // Yinhe 消息分支（feature 门控，当前为占位，复用现有罗盘）
+        #[cfg(feature = "yinhe")]
+        if let Some(handled) = self.try_handle_yinhe_message(&message) {
+            return handled;
+        }
+
         // 处理窗口/工具栏/侧边栏拖拽消息
         {
             puffin::profile_scope!("process_message::window_match");

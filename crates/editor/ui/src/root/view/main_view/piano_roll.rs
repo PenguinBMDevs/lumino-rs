@@ -14,6 +14,12 @@ impl Root {
     pub(crate) fn view_main(&self) -> Element<'_> {
         puffin::profile_scope!("root_view_main");
 
+        // Yinhe 副模式：独立 chrome + arrange/piano/mix 中心区 + right_panel
+        // 数据模型直接复用 Lumino 工程格式，yin 格式之后适配（P7 桩式）
+        if self.state.current_mode == crate::titlebar::mode_toggle::AppMode::Yinhe {
+            return self.view_yinhe();
+        }
+
         // 全屏瀑布流播放器：仅渲染瀑布流 + 键盘，剥离钢琴卷帘全部 UI
         // （工具栏 / 力度面板 / 状态栏 / 卷帘画布 / 右侧栏 / 左侧轨道列表面板）。
         // 仅保留全局导航栏（标题栏含模式切换退出入口、左侧 48px 路由栏），

@@ -51,6 +51,7 @@ mod memory;
 mod mixer_panel;
 mod state;
 mod view;
+pub mod yinhe;
 
 pub use editor_ops::dialog::ProjectSettingsDialogData;
 
@@ -100,6 +101,9 @@ pub struct Root {
     pub(crate) i2m_restore_tool: Option<lumino_message::Tool>,
     /// 云存储 UI 状态（连接表单 / 文件浏览）
     pub cloud: crate::state::cloud_state::CloudUiState,
+    /// Yinhe 副模式状态（仅 `--features yinhe` 时有效，独立 `yinhe_layout.json`）
+    #[cfg(feature = "yinhe")]
+    pub yinhe: lumino_ui_yinhe::state::YinheState,
 }
 
 /// Root 构造参数
@@ -159,6 +163,8 @@ impl Root {
                 pending_material_scan: None,
                 i2m_restore_tool: None,
                 cloud: crate::state::cloud_state::CloudUiState::default(),
+                #[cfg(feature = "yinhe")]
+                yinhe: lumino_ui_yinhe::state::YinheState::default(),
             }
         })
     }

@@ -78,6 +78,35 @@ impl Host {
         let ctrl = super::is_ctrl_or_cmd_pressed(modifiers);
         let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
+        // Yinhe 副模式：优先走 yinhe 25 action 罗盘（复用，不落盘）
+        // - 单字母工具键（V/P/E/B/C）仅在 Yinhe 模式下生效，避免与 Editor 字母输入冲突
+        // - 其他 Ctrl 组合与 Editor 罗盘一致，直接复用 lumino EditorAction/ToolbarEvent
+        // - 命中后通过 Root::try_handle_yinhe_shortcut → route_message，不再走后续罗盘
+        #[cfg(feature = "yinhe")]
+        if self.root.try_handle_yinhe_shortcut(key, ctrl, shift) {
+            self.window_ctx.window.request_redraw();
+            return;
+        }
+        #[cfg(not(feature = "yinhe"))]
+        {
+            // 无 feature 时：Yinhe 模式下仍需避免工具键误触 Editor Delete 等
+            // 若处于 Yinhe 模式但未编译 yinhe，拦截工具单字母
+            if self.root.state.current_mode == crate::titlebar::mode_toggle::AppMode::Yinhe
+                && matches!(
+                    key,
+                    winit::keyboard::KeyCode::KeyV
+                        | winit::keyboard::KeyCode::KeyP
+                        | winit::keyboard::KeyCode::KeyE
+                        | winit::keyboard::KeyCode::KeyB
+                        | winit::keyboard::KeyCode::KeyC
+                )
+                && !ctrl
+                && !shift
+            {
+                return;
+            }
+        }
+
         // 空格键：播放/暂停切换
         if key == winit::keyboard::KeyCode::Space {
             self.handle_space_shortcut();

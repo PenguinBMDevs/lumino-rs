@@ -34,8 +34,10 @@ impl Root {
     /// 或关闭钢琴卷帘（钢琴卷帘 UI 隐藏）时，右侧栏跟随隐藏。
     /// 视图层调用此函数决定是否渲染右侧栏组件——所有"非钢琴卷帘"视图
     /// （走带、瀑布流、导出面板、卷帘关闭）均不得渲染右侧栏。
+    /// Yinhe 模式下由 `yinhe` 的 `right_panel` 接管，lumino 右侧栏同样隐藏。
     pub(crate) fn right_sidebar_visible(&self) -> bool {
         self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
+            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Yinhe
             && self.sidebar.piano_roll_visible
             && !self.sidebar.is_arrangement_route()
             && !self.sidebar.audio_export_visible
