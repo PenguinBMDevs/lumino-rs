@@ -25,6 +25,7 @@ use crate::types::ui::PerfData;
 use crate::velocity::VelocityAction;
 use crate::video_clip::VideoClipAction;
 use crate::video_export::VideoExportAction;
+use crate::yinhe::YinheAction;
 
 use crate::context_menu::PianoRollContextMenuAction;
 
@@ -215,6 +216,8 @@ pub enum Message<W, S, Se, T> {
     ArrangementCut,
     /// 工程走带：删除选中音符
     ArrangementDeleteSelection,
+    /// Yinhe 副模式动作
+    Yinhe(YinheAction),
 }
 
 /// 构造空消息

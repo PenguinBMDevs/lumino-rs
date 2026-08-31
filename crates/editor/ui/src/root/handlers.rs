@@ -143,6 +143,10 @@ impl Root {
                 self.handle_right_sidebar_action(action.clone());
                 true
             }
+            Message::Yinhe(action) => {
+                self.handle_yinhe_action(action.clone());
+                true
+            }
             _ => self.try_handle_simple_state(msg),
         }
     }

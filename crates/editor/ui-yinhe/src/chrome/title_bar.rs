@@ -171,7 +171,7 @@ fn traffic_view<'a>(window: &'a Window) -> Element<'a> {
 ///   但不含拖动与窗口按钮，交由系统标题栏）
 pub fn view<'a>(
     window: &'a Window,
-    state: &'a TitleBarState,
+    state: TitleBarState,
     use_native_titlebar: bool,
 ) -> Element<'a> {
     if use_native_titlebar {

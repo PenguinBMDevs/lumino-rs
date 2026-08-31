@@ -74,14 +74,14 @@ impl Default for ChromeState {
 pub fn view<'a>(
     window: &'a Window,
     app_mode: AppMode,
-    chrome_state: &'a ChromeState,
+    chrome_state: ChromeState,
 ) -> Element<'a> {
     let title_el = title_bar::view(
         window,
-        &chrome_state.title,
+        chrome_state.title.clone(),
         chrome_state.use_native_titlebar,
     );
-    let transport_el = transport_bar::view(window, &chrome_state.transport);
+    let transport_el = transport_bar::view(window, chrome_state.transport.clone());
     let mode_el = mode_bar::view(
         window,
         app_mode,

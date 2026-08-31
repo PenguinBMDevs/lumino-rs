@@ -162,7 +162,7 @@ fn text_button<'a>(
 /// - 速度：`Toolbar::SpeedChange`（占位，点击触发变速面板，P3 完善）
 /// - 拍号：占位文本按钮（P3 接入拍号编辑对话框）
 /// - 量化：`Toolbar::Quantize` / `PrecisionChanged`（P2 桩以 Quantize 占位）
-pub fn view<'a>(window: &'a Window, state: &TransportState) -> Element<'a> {
+pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let has_doc = state.has_active_document;
 

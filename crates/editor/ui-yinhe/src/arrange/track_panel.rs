@@ -15,7 +15,8 @@ use std::collections::HashSet;
 use iced_core::{Alignment, Length};
 use iced_widget::{button, column, container, row, scrollable, text};
 
-use lumino_ui_core::{Element, Theme, window::Window};
+use lumino_ui_core::{Element, Message, Theme, window::Window};
+use lumino_ui_core::sidebar_event::Event as SidebarEvent;
 
 /// 音轨行显示数据（精简版，对齐 yinhe `TrackInfo + TrackOverride + ArRowLayout`）
 ///
@@ -86,7 +87,7 @@ fn inline_button<'a>(
     active: bool,
     active_color: iced_core::Color,
     _window: &'a Window,
-    on_press: Option<lumino_ui_core::Message>,
+    on_press: Option<Message>,
 ) -> Element<'a> {
     let mut btn = button(text(label).size(11).align_x(Alignment::Center))
         .padding([2, 6])
@@ -153,20 +154,24 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
     let details = if row.is_conductor {
         row![num, label, name].spacing(6).align_y(Alignment::Center)
     } else {
-        // M/S 按钮（与 yinhe `draw_inline_button` 尺寸 18 呼应，紧凑行隐藏）
+        // M/S 按钮（与 yinhe `draw_inline_button` 尺寸 18 呼应，紧凑行隐藏）— 接线到 Sidebar 事件
         let m_btn = inline_button(
             "M",
             row.muted,
             iced_core::Color::from_rgb(0.95, 0.33, 0.33),
             window,
-            None,
+            Some(Message::Sidebar(SidebarEvent::TrackMuteToggled(
+                row.index as usize,
+            ))),
         );
         let s_btn = inline_button(
             "S",
             row.soloed,
             iced_core::Color::from_rgb(0.33, 0.62, 0.95),
             window,
-            None,
+            Some(Message::Sidebar(SidebarEvent::TrackSoloToggled(
+                row.index as usize,
+            ))),
         );
         row![num, label, name, m_btn, s_btn]
             .spacing(6)
@@ -178,7 +183,7 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
         .align_y(Alignment::Center)
         .padding([2, 6]);
 
-    container(inner)
+    let row_content = container(inner)
         .width(Length::Fill)
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(bg)),
@@ -187,8 +192,25 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
                 ..Default::default()
             },
             ..Default::default()
-        })
-        .into()
+        });
+
+    // 整行可点击选中（Conductor 也可选中）；M/S 按钮已在内部处理 mute/solo，行点击处理选中
+    if row.is_conductor {
+        row_content.into()
+    } else {
+        button(row_content)
+            .padding(0)
+            .style(|_theme: &Theme, _status| button::Style {
+                background: None,
+                text_color: iced_core::Color::TRANSPARENT,
+                border: iced_core::Border::default(),
+                ..Default::default()
+            })
+            .on_press(Message::Sidebar(SidebarEvent::TrackSelected(
+                row.index as usize,
+            )))
+            .into()
+    }
 }
 
 /// 渲染音轨列表（row + scrollable）
@@ -202,14 +224,15 @@ fn track_row_view<'a>(row: &TrackRow, is_selected: bool, window: &'a Window) -> 
 /// - 单击 / Shift 范围 / Ctrl 切换 / 双击入 Pianoroll 的选择逻辑
 ///   由上层 `Message::ArrangementSelectTrack` 等消息驱动，此处仅展示，
 ///   不直接修改 `HashSet`，符合 iced 单向数据流。
-pub fn view<'a>(window: &'a Window, state: &'a TrackPanelState) -> Element<'a> {
+pub fn view<'a>(window: &'a Window, state: TrackPanelState) -> Element<'a> {
+    // 拥有所有权，避免上层 Box::leak 泄漏；此处 clone 已足够
     let visible_rows: Vec<Element<'a>> = state
         .rows
-        .iter()
+        .into_iter()
         .filter(|r| r.visible)
         .map(|r| {
             let sel = state.selected.contains(&r.index);
-            track_row_view(r, sel, window)
+            track_row_view(&r, sel, window)
         })
         .collect();
 

@@ -25,6 +25,7 @@ pub mod types;
 pub mod velocity;
 pub mod video_clip;
 pub mod video_export;
+pub mod yinhe;
 
 pub use audio_export::AudioExportAction;
 pub use batch_edit::{BatchEditAction, BatchEditField};
@@ -48,5 +49,6 @@ pub use types::*;
 pub use velocity::VelocityAction;
 pub use video_clip::VideoClipAction;
 pub use video_export::VideoExportAction;
+pub use yinhe::{YinheAction, YinheViewMode};
 
 pub use lumino_core::{AudioAction, DotType, NotePrecision, Tool};

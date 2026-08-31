@@ -4315,6 +4315,7 @@ dependencies = [
  "lumino-core",
  "lumino-midi-loader",
  "lumino-note-core",
+ "serde",
  "tracing",
 ]
 

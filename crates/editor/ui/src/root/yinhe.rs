@@ -105,9 +105,7 @@ impl Root {
     /// 先用占位行/默认状态跑通，不强求真实 MIDI 渲染；真实走带网格+时间标尺由 `arrange::view_ui` canvas 绘制。
     pub(crate) fn view_yinhe(&self) -> Element<'_> {
         // ── 顶部 chrome：title(30)+transport(40)+mode(28) 三栏 ──
-        // yinhe_chrome_state() 聚合 Lumino 文档名/BPM/播放态等，占位数据即可跑通
-        let chrome_state: &'static lumino_ui_yinhe::chrome::ChromeState =
-            Box::leak(Box::new(self.yinhe_chrome_state(self.use_native_titlebar)));
+        let chrome_state = self.yinhe_chrome_state(self.use_native_titlebar);
         let top: Element<'_> = lumino_ui_yinhe::chrome::view(
             &self.window,
             lumino_ui_core::app_mode::AppMode::Yinhe,
@@ -202,16 +200,14 @@ impl Root {
         };
         let mut selected = std::collections::HashSet::new();
         selected.insert(self.sidebar.selected_track as u16);
-        let track_state: &'static lumino_ui_yinhe::arrange::TrackPanelState = Box::leak(
-            Box::new(lumino_ui_yinhe::arrange::TrackPanelState {
-                rows,
-                selected,
-                selection_anchor: Some(self.sidebar.selected_track as u16),
-                row_height: 32.0,
-                scroll_y: self.editor.editor_state.view.scroll_y,
-                request_pianoroll: false,
-            }),
-        );
+        let track_state = lumino_ui_yinhe::arrange::TrackPanelState {
+            rows,
+            selected,
+            selection_anchor: Some(self.sidebar.selected_track as u16),
+            row_height: 32.0,
+            scroll_y: self.editor.editor_state.view.scroll_y,
+            request_pianoroll: false,
+        };
         let left: Element<'_> =
             lumino_ui_yinhe::arrange::track_panel::view(&self.window, track_state);
         let left_wrapped: Element<'_> = iced_widget::container(left)
@@ -247,8 +243,11 @@ impl Root {
             .into();
 
         // ── 右侧面板：240px，占位 default（Info/Events/SoundFont），数据后续接 lumino 文档 ──
-        let right_state: &'static lumino_ui_yinhe::right_panel::RightPanelState =
-            Box::leak(Box::new(lumino_ui_yinhe::right_panel::RightPanelState::default()));
+        static RIGHT_PANEL_DEFAULT: std::sync::OnceLock<
+            lumino_ui_yinhe::right_panel::RightPanelState,
+        > = std::sync::OnceLock::new();
+        let right_state = RIGHT_PANEL_DEFAULT
+            .get_or_init(lumino_ui_yinhe::right_panel::RightPanelState::default);
         let right_raw: Element<'_> =
             lumino_ui_yinhe::right_panel::view(&self.window, right_state);
         let right: Element<'_> = iced_widget::container(right_raw)
@@ -339,6 +338,33 @@ impl Root {
             return true;
         }
         false
+    }
+
+    /// 处理 Yinhe 动作（ViewMode 切换等）
+    pub(crate) fn handle_yinhe_action(&mut self, action: lumino_message::YinheAction) -> bool {
+        match action {
+            lumino_message::YinheAction::ViewModeChanged(vm) => {
+                let mode = match vm {
+                    lumino_message::YinheViewMode::Arrange => {
+                        lumino_ui_yinhe::chrome::ViewMode::Arrange
+                    }
+                    lumino_message::YinheViewMode::Piano => lumino_ui_yinhe::chrome::ViewMode::Piano,
+                    lumino_message::YinheViewMode::Mix => lumino_ui_yinhe::chrome::ViewMode::Mix,
+                };
+                self.yinhe.view_mode = mode;
+                tracing::info!("Yinhe ViewMode 切换到 {:?}", mode);
+                true
+            }
+            lumino_message::YinheAction::TogglePianorollInArrange => {
+                self.yinhe.layout.show_pianoroll_in_arrange =
+                    !self.yinhe.layout.show_pianoroll_in_arrange;
+                tracing::info!(
+                    "Yinhe show_pianoroll_in_arrange 切换到 {}",
+                    self.yinhe.layout.show_pianoroll_in_arrange
+                );
+                true
+            }
+        }
     }
 
     /// Yinhe 文件加载桩：拦截 .yin 后后缀，提示“yin格式暂不支持，请导出MIDI”

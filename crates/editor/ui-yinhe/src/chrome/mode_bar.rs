@@ -15,6 +15,7 @@ use iced_core::{Alignment, Length};
 use iced_widget::{button, container, row, space, text};
 use serde::{Deserialize, Serialize};
 
+use lumino_message::{YinheAction, YinheViewMode};
 use lumino_ui_core::app_mode::AppMode;
 use lumino_ui_core::window::Window;
 use lumino_ui_core::{Element, Message, Theme};
@@ -83,24 +84,14 @@ pub struct ModeBarMetrics {
     pub fps: f32,
 }
 
-/// 将 `ViewMode` 映射为占位的 `Message`
-///
-/// P2 阶段 `lumino-message` 尚未新增 Yinhe 专用 ViewMode 事件，
-///
-/// 为保证编译，先以 `ToolSelected` 占位：
-/// - Arrange → `Tool::Pointer`
-/// - Piano   → `Tool::Pencil`
-/// - Mix     → `Tool::Brush`
-/// TODO(P2.5): 在 `lumino-message` / `toolbar_event` 新增 `YinheViewModeChanged(ViewMode)` 后替换。
+/// 将 `ViewMode` 映射为 `Message::Yinhe`
 fn view_mode_message(mode: ViewMode) -> Message {
-    use lumino_core::Tool;
-    let tool = match mode {
-        ViewMode::Arrange => Tool::Pointer,
-        ViewMode::Piano => Tool::Pencil,
-        ViewMode::Mix => Tool::Brush,
+    let vm = match mode {
+        ViewMode::Arrange => YinheViewMode::Arrange,
+        ViewMode::Piano => YinheViewMode::Piano,
+        ViewMode::Mix => YinheViewMode::Mix,
     };
-    // toolbar_event::Event::tool_selected 生成 Message::Toolbar(...)
-    lumino_ui_core::toolbar_event::Event::tool_selected(tool)
+    Message::Yinhe(YinheAction::ViewModeChanged(vm))
 }
 
 /// 单个模式按钮（复用 `lumino-ui/src/toolbar/buttons.rs:tool_selector_custom` 风格）
@@ -205,8 +196,7 @@ pub fn view<'a>(
                 14,
                 Some(&window.theme),
             ))
-            // TODO: 接入真实状态切换 — 当前以 ToolSelected 占位（与 Mix 共用 Brush 仅为编译占位）
-            .on_press(view_mode_message(ViewMode::Piano))
+            .on_press(Message::Yinhe(YinheAction::TogglePianorollInArrange))
             .padding(4)
             .style(move |_theme: &Theme, status| {
                 let bg = if is_active {
