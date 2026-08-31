@@ -17,6 +17,14 @@ use crate::statusbar::performance::CpuMonitor;
 use super::render_ctx::WgpuResources;
 use super::{Host, RenderContext, WindowContext};
 
+/// 确保 Material Icons 字体已加载（yinhe 模式用，lumino SVG 侧无影响）
+#[cfg(feature = "yinhe")]
+fn ensure_material_icons_loaded() {
+    // 字体通过 iced::font::load Task 异步加载，此处仅占位（首帧可能 fallback，次帧恢复）
+    // 实际加载由 Host 事件循环的 Task 处理，此处不阻塞
+    let _ = lumino_ui_yinhe::material_icons::FONT_BYTES;
+}
+
 impl Host {
     /// 创建渲染上下文和窗口上下文（三个构造函数的公共逻辑）
     ///

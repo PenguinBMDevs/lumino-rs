@@ -46,10 +46,10 @@ pub fn icon<'a>(
         .color(color)
 }
 
-/// 码点查表（常用 yinhe 图标，来自 `MaterialIcons.codepoints`，与 yinhe egui_material_icons 0.8 对齐）
+/// 码点查表（常用 yinhe 图标，来自 `MaterialIcons.codepoints`，已校正为 MaterialSymbolsRounded 实际码点）
 pub mod codepoints {
-    /// home e88a
-    pub const HOME: char = '\u{E88A}';
+    /// home e9b2（校正：原 e88a 为 MaterialIcons，Symbols 为 e9b2）
+    pub const HOME: char = '\u{E9B2}';
     /// play_arrow e037
     pub const PLAY_ARROW: char = '\u{E037}';
     /// pause e034
@@ -80,7 +80,7 @@ pub mod codepoints {
     pub const SETTINGS: char = '\u{E8B8}';
     /// exit_to_app e879 (退出)
     pub const EXIT_TO_APP: char = '\u{E879}';
-    /// edit f097 (编辑)
+    /// edit f097（校正：原 e3c9 为旧版）
     pub const EDIT: char = '\u{F097}';
     /// content_cut e14e
     pub const CONTENT_CUT: char = '\u{E14E}';
@@ -88,7 +88,7 @@ pub mod codepoints {
     pub const CONTENT_COPY: char = '\u{E14D}';
     /// content_paste e14f
     pub const CONTENT_PASTE: char = '\u{E14F}';
-    /// delete e92e (删除，e872 为旧版)
+    /// delete e92e (删除)
     pub const DELETE: char = '\u{E92E}';
     /// undo e166
     pub const UNDO: char = '\u{E166}';
@@ -96,8 +96,8 @@ pub mod codepoints {
     pub const REDO: char = '\u{E15A}';
     /// select_all e162
     pub const SELECT_ALL: char = '\u{E162}';
-    /// history e88c (最近文件)
-    pub const HISTORY: char = '\u{E88C}';
+    /// history e8b3（校正：原 e88c）
+    pub const HISTORY: char = '\u{E8B3}';
     /// text_fields e262
     pub const TEXT_FIELDS: char = '\u{E262}';
     /// brush e3ae
@@ -114,7 +114,7 @@ pub mod codepoints {
     pub const ARROW_DROP_DOWN: char = '\u{E5C5}';
     /// check_box e834
     pub const CHECK_BOX: char = '\u{E834}';
-    /// push_pin f10d (图钉，f55f 旧版)
+    /// push_pin f10d
     pub const PUSH_PIN: char = '\u{F10D}';
     /// push_pin 描边（同）
     pub const PUSH_PIN_OUTLINED: char = '\u{F10D}';
@@ -130,8 +130,10 @@ pub mod codepoints {
     pub const ARROW_DOWNWARD: char = '\u{E5DB}';
     /// arrow_forward e5c8
     pub const ARROW_FORWARD: char = '\u{E5C8}';
-    /// content_copy e14d alias
+    /// content_copy alias
     pub const COPY_ALL: char = '\u{E14D}';
+    /// save_alt f090 alias
+    pub const SAVE_ALT: char = '\u{F090}';
 }
 
 /// 加载任务（0.14 async，需 Task::perform）

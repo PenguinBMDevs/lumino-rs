@@ -45,7 +45,9 @@ iced_aw = { workspace = true }
 iced_wgpu = { workspace = true, features = ["geometry", "svg"] }
 iced_winit = { workspace = true }
 iced_widget = { workspace = true, features = ["image", "wgpu", "svg"] }
+iced = { workspace = true }
 iced_core = { workspace = true }
+pollster = { workspace = true }
 image = { workspace = true }
 once_cell = { workspace = true }
 rfd = { workspace = true }
