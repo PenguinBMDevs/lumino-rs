@@ -530,8 +530,19 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         .enumerate()
         .map(|(idx, action)| {
             let is_pinned = state.pinned_file_actions[idx];
-            let pin_icon = if is_pinned { "📌" } else { "📍" };
-            let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_btn = iced_widget::button(
+                crate::material_icons::icon(
+                    pin_cp,
+                    14.0,
+                    if is_pinned {
+                        window.theme.extended_palette().primary.strong.color
+                    } else {
+                        iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.6)
+                    },
+                )
+                .size(12),
+            )
                 .padding(2)
                 .on_press(Message::Yinhe(YinheAction::TogglePinnedFile(idx)))
                 .style(|theme: &Theme, status| {
@@ -603,8 +614,19 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         .enumerate()
         .map(|(idx, action)| {
             let is_pinned = state.pinned_edit_actions[idx];
-            let pin_icon = if is_pinned { "📌" } else { "📍" };
-            let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_btn = iced_widget::button(
+                crate::material_icons::icon(
+                    pin_cp,
+                    14.0,
+                    if is_pinned {
+                        window.theme.extended_palette().primary.strong.color
+                    } else {
+                        iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.6)
+                    },
+                )
+                .size(12),
+            )
                 .padding(2)
                 .on_press(Message::Yinhe(YinheAction::TogglePinnedEdit(idx)))
                 .style(|theme: &Theme, status| {
@@ -683,8 +705,15 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                     3 => state.pinned_step_input,
                     _ => false,
                 };
-                let pin_icon = if is_pinned { "📌" } else { "📍" };
-                let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_color = if is_pinned {
+                window.theme.extended_palette().primary.strong.color
+            } else {
+                iced_core::Color::from_rgba(0.5, 0.5, 0.5, 0.6)
+            };
+            let pin_btn = iced_widget::button(
+                crate::material_icons::icon(pin_cp, 14.0, pin_color).size(12),
+            )
                     .padding(2)
                     .on_press(Message::Yinhe(YinheAction::TogglePinnedPlay(*idx)))
                     .style(|theme: &Theme, status| {
