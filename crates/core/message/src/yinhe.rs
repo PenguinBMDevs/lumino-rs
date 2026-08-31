@@ -33,4 +33,10 @@ pub enum YinheAction {
     ViewModeChanged(YinheViewMode),
     /// 切换 PianoRoll 在 Arrange 中的叠加显示
     TogglePianorollInArrange,
+    /// 切换文件菜单图钉（索引对齐 `FileAction::ALL` 0..10）
+    TogglePinnedFile(usize),
+    /// 切换编辑菜单图钉（索引对齐 `EditAction::ALL` 0..12）
+    TogglePinnedEdit(usize),
+    /// 切换播放菜单图钉（0: 播放/暂停, 1: 停止, 2: 录制, 3: 步进输入）
+    TogglePinnedPlay(usize),
 }

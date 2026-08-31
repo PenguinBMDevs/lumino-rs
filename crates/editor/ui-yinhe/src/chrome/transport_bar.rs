@@ -12,6 +12,7 @@ use iced_core::{Alignment, Border, Color, Length};
 use iced_widget::{button, container, row, space, text};
 
 use lumino_core::{NotePrecision, Tool};
+use lumino_message::YinheAction;
 use lumino_ui_core::resources::icon;
 use lumino_ui_core::toolbar_event::Event as ToolbarEvent;
 use lumino_ui_core::window::Window;
@@ -523,24 +524,29 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
 
     // ── 左侧：文件/编辑/播放 菜单按钮 + 图钉固定区 — iced_aw Menu 弹窗（参考 lumino titlebar/menu.rs，圆角8+阴影美化） ──
     use iced_aw::{Menu, menu::Item, style::menu_bar};
-    // 文件菜单：带图标 +  pin 切换，hover 弱底 + 选中强底，圆角4
+    // 文件菜单：带图标 +  pin 切换，hover 弱底 + 选中强底，圆角8+阴影 0,2,8 0.12 美化
     let file_items = FileAction::ALL
         .iter()
         .enumerate()
         .map(|(idx, action)| {
             let is_pinned = state.pinned_file_actions[idx];
             let pin_icon = if is_pinned { "📌" } else { "📍" };
-            let row: iced_widget::Row<'_, Message, Theme, lumino_ui_core::Renderer> =
-                iced_widget::row![
-                    iced_widget::text(action.label()).size(13).width(iced_core::Length::Fill),
-                    iced_widget::button(iced_widget::text(pin_icon).size(10))
-                        .on_press(lumino_ui_core::message::null())
-                        .padding(2)
-                        .style(|_t: &Theme, _s| iced_widget::button::Style::default()
-                            .with_background(iced_core::Color::TRANSPARENT))
-                ]
-                .align_y(Alignment::Center)
-                .spacing(4);
+            let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+                .padding(2)
+                .on_press(Message::Yinhe(YinheAction::TogglePinnedFile(idx)))
+                .style(|theme: &Theme, status| {
+                    let p = theme.extended_palette();
+                    let bg = match status {
+                        iced_widget::button::Status::Hovered => p.background.weaker.color,
+                        iced_widget::button::Status::Pressed => p.background.weak.color,
+                        _ => iced_core::Color::TRANSPARENT,
+                    };
+                    iced_widget::button::Style {
+                        background: Some(iced_core::Background::Color(bg)),
+                        border: iced_core::Border::default().rounded(4),
+                        ..Default::default()
+                    }
+                });
             let label_with_icon: iced_widget::Row<'_, Message, Theme, lumino_ui_core::Renderer> =
                 iced_widget::row![ crate::material_icons::icon(
                     match action {
@@ -556,8 +562,8 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
             ]
             .spacing(6)
             .align_y(Alignment::Center);
-            // 美化：悬浮弱底，按压强底，圆角8+阴影由 Menu 容器统一处理，增强美观
-            let btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+            // 美化：悬浮弱底，按压强底，圆角8+阴影 0,2,8 0.12，已统一到 edit/play
+            let main_btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
                 iced_widget::button(label_with_icon)
                     .width(iced_core::Length::Fill)
                     .padding([6, 10])
@@ -581,8 +587,11 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                         }
                     })
                     .on_press(lumino_ui_core::message::null());
-            let el: Element<'_> = btn.into();
-            Item::new(el)
+            let row_el: Element<'_> = iced_widget::row![main_btn, pin_btn]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into();
+            Item::new(row_el)
         })
         .collect::<Vec<_>>();
     let file_menu_btn = Item::with_menu(
@@ -591,41 +600,65 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     );
     let edit_items = EditAction::ALL
         .iter()
-        .map(|action| {
-            let btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
-                iced_widget::button(
-                    iced_widget::row![
-                        crate::material_icons::icon(
-                            crate::material_icons::codepoints::EDIT,
-                            14.0,
-                            window.theme.extended_palette().background.base.text
-                        ),
-                        iced_widget::text(action.label()).size(13)
-                    ]
-                    .spacing(6),
-                )
-                .width(iced_core::Length::Fill)
-                .padding([6, 10])
+        .enumerate()
+        .map(|(idx, action)| {
+            let is_pinned = state.pinned_edit_actions[idx];
+            let pin_icon = if is_pinned { "📌" } else { "📍" };
+            let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+                .padding(2)
+                .on_press(Message::Yinhe(YinheAction::TogglePinnedEdit(idx)))
                 .style(|theme: &Theme, status| {
                     let p = theme.extended_palette();
                     let bg = match status {
                         iced_widget::button::Status::Hovered => p.background.weaker.color,
+                        iced_widget::button::Status::Pressed => p.background.weak.color,
                         _ => iced_core::Color::TRANSPARENT,
                     };
                     iced_widget::button::Style {
                         background: Some(iced_core::Background::Color(bg)),
-                        border: iced_core::Border::default().rounded(8),
-                        shadow: iced_core::Shadow {
-                            color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.08),
-                            offset: iced_core::Vector::new(0.0, 1.0),
-                            blur_radius: 4.0,
-                        },
+                        border: iced_core::Border::default().rounded(4),
                         ..Default::default()
                     }
-                })
-                .on_press(lumino_ui_core::message::null());
-            let el: Element<'_> = btn.into();
-            Item::new(el)
+                });
+            let label_row = iced_widget::row![
+                crate::material_icons::icon(
+                    crate::material_icons::codepoints::EDIT,
+                    14.0,
+                    window.theme.extended_palette().background.base.text
+                ),
+                iced_widget::text(action.label()).size(13)
+            ]
+            .spacing(6)
+            .align_y(Alignment::Center);
+            let main_btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+                iced_widget::button(label_row)
+                    .width(iced_core::Length::Fill)
+                    .padding([6, 10])
+                    .style(|theme: &Theme, status| {
+                        let p = theme.extended_palette();
+                        let bg = match status {
+                            iced_widget::button::Status::Hovered => p.background.weaker.color,
+                            iced_widget::button::Status::Pressed => p.background.weak.color,
+                            _ => iced_core::Color::TRANSPARENT,
+                        };
+                        iced_widget::button::Style {
+                            background: Some(iced_core::Background::Color(bg)),
+                            border: iced_core::Border::default().rounded(8),
+                            shadow: iced_core::Shadow {
+                                color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.12),
+                                offset: iced_core::Vector::new(0.0, 2.0),
+                                blur_radius: 8.0,
+                            },
+                            text_color: p.background.neutral.text,
+                            ..Default::default()
+                        }
+                    })
+                    .on_press(lumino_ui_core::message::null());
+            let row_el: Element<'_> = iced_widget::row![main_btn, pin_btn]
+                .spacing(4)
+                .align_y(Alignment::Center)
+                .into();
+            Item::new(row_el)
         })
         .collect::<Vec<_>>();
     let edit_menu_btn = Item::with_menu(
@@ -633,57 +666,107 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         Menu::new(edit_items).width(200.0).offset(4.0),
     );
     let play_items = {
-        let btn1: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
-            iced_widget::button(iced_widget::text("播放/暂停").size(13))
-                .width(iced_core::Length::Fill)
-                .padding([6, 10])
-                .style(|theme: &Theme, status| {
-                    let p = theme.extended_palette();
-                    iced_widget::button::Style {
-                        background: Some(iced_core::Background::Color(match status {
+        // 播放菜单 4 项（对齐 TransportState pin 4 布尔），每项带 pin 切换，圆角8+阴影 0,2,8 0.12 统一美化
+        let play_defs: [(&str, usize, Option<Message>); 4] = [
+            ("播放/暂停", 0, Some(ToolbarEvent::play())),
+            ("停止", 1, Some(ToolbarEvent::stop())),
+            ("录制", 2, Some(ToolbarEvent::record())),
+            ("步进输入", 3, Some(lumino_ui_core::message::null())),
+        ];
+        play_defs
+            .iter()
+            .map(|(label, idx, msg)| {
+                let is_pinned = match idx {
+                    0 => state.pinned_play_pause,
+                    1 => state.pinned_stop,
+                    2 => state.pinned_record,
+                    3 => state.pinned_step_input,
+                    _ => false,
+                };
+                let pin_icon = if is_pinned { "📌" } else { "📍" };
+                let pin_btn = iced_widget::button(iced_widget::text(pin_icon).size(12))
+                    .padding(2)
+                    .on_press(Message::Yinhe(YinheAction::TogglePinnedPlay(*idx)))
+                    .style(|theme: &Theme, status| {
+                        let p = theme.extended_palette();
+                        let bg = match status {
                             iced_widget::button::Status::Hovered => p.background.weaker.color,
+                            iced_widget::button::Status::Pressed => p.background.weak.color,
                             _ => iced_core::Color::TRANSPARENT,
-                        })),
-                        border: iced_core::Border::default().rounded(8),
-                        ..Default::default()
-                    }
-                })
-                .on_press(ToolbarEvent::play());
-        let el1: Element<'_> = btn1.into();
-        let btn2: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
-            iced_widget::button(iced_widget::text("停止").size(13))
-                .width(iced_core::Length::Fill)
-                .padding([6, 10])
-                .style(|theme: &Theme, status| {
-                    let p = theme.extended_palette();
-                    iced_widget::button::Style {
-                        background: Some(iced_core::Background::Color(match status {
-                            iced_widget::button::Status::Hovered => p.background.weaker.color,
-                            _ => iced_core::Color::TRANSPARENT,
-                        })),
-                        border: iced_core::Border::default().rounded(8),
-                        ..Default::default()
-                    }
-                })
-                .on_press(ToolbarEvent::stop());
-        let el2: Element<'_> = btn2.into();
-        vec![
-            Item::new(el1),
-            Item::new(el2),
-        ]
+                        };
+                        iced_widget::button::Style {
+                            background: Some(iced_core::Background::Color(bg)),
+                            border: iced_core::Border::default().rounded(4),
+                            ..Default::default()
+                        }
+                    });
+                let label_el = iced_widget::row![
+                    crate::material_icons::icon(
+                        crate::material_icons::codepoints::PLAY_ARROW,
+                        14.0,
+                        window.theme.extended_palette().background.base.text
+                    ),
+                    iced_widget::text(*label).size(13)
+                ]
+                .spacing(6)
+                .align_y(Alignment::Center);
+                let main_btn: iced_widget::Button<'_, Message, Theme, lumino_ui_core::Renderer> =
+                    iced_widget::button(label_el)
+                        .width(iced_core::Length::Fill)
+                        .padding([6, 10])
+                        .style(|theme: &Theme, status| {
+                            let p = theme.extended_palette();
+                            let bg = match status {
+                                iced_widget::button::Status::Hovered => p.background.weaker.color,
+                                iced_widget::button::Status::Pressed => p.background.weak.color,
+                                _ => iced_core::Color::TRANSPARENT,
+                            };
+                            iced_widget::button::Style {
+                                background: Some(iced_core::Background::Color(bg)),
+                                border: iced_core::Border::default().rounded(8),
+                                shadow: iced_core::Shadow {
+                                    color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.12),
+                                    offset: iced_core::Vector::new(0.0, 2.0),
+                                    blur_radius: 8.0,
+                                },
+                                text_color: p.background.neutral.text,
+                                ..Default::default()
+                            }
+                        })
+                        .on_press(msg.clone().unwrap_or(lumino_ui_core::message::null()));
+                let row_el: Element<'_> = iced_widget::row![main_btn, pin_btn]
+                    .spacing(4)
+                    .align_y(Alignment::Center)
+                    .into();
+                Item::new(row_el)
+            })
+            .collect::<Vec<_>>()
     };
     let play_menu_btn = Item::with_menu(
         menu_button(icon::Icon::PlayCircle, "播放", Some(lumino_ui_core::message::null()), window),
         Menu::new(play_items).width(160.0).offset(4.0),
     );
-    // 将三个 Menu Item 包装为 MenuBar（lumino 标题栏同款，close_on_background_click）
+    // 将三个 Menu Item 包装为 MenuBar（lumino 标题栏同款，close_on_background_click，容器美化：背景 base、边框 weak、圆角8、阴影 0,2,8 0.12）
     let menu_bar = iced_aw::MenuBar::new(vec![file_menu_btn, edit_menu_btn, play_menu_btn])
         .close_on_background_click_global(true)
         .close_on_item_click_global(true)
         .spacing(2)
-        .style(|theme: &Theme, status| menu_bar::Style {
-            bar_background: iced_core::Background::Color(iced_core::Color::TRANSPARENT),
-            ..menu_bar::primary(theme, status)
+        .style(|theme: &Theme, status| {
+            let p = theme.extended_palette();
+            let mut s = menu_bar::primary(theme, status);
+            s.bar_background = iced_core::Background::Color(iced_core::Color::TRANSPARENT);
+            s.menu_background = iced_core::Background::Color(p.background.base.color);
+            s.menu_border = iced_core::Border {
+                radius: 8.0.into(),
+                width: 1.0,
+                color: p.background.weak.color,
+            };
+            s.menu_shadow = iced_core::Shadow {
+                color: iced_core::Color::from_rgba(0.0, 0.0, 0.0, 0.12),
+                offset: iced_core::Vector::new(0.0, 2.0),
+                blur_radius: 8.0,
+            };
+            s
         });
 
     // 图钉文件按钮行（`pinned_file_actions` 10 项，有钉才显示）

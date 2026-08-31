@@ -48,6 +48,24 @@ pub struct YinheState {
     /// 布局（走带分割/右侧面板/叠加开关）
     #[serde(default)]
     pub layout: YinheLayout,
+    /// 文件菜单图钉（10 项，对齐 `chrome::transport_bar::FileAction::ALL`）
+    #[serde(default)]
+    pub pinned_file_actions: [bool; 10],
+    /// 编辑菜单图钉（12 项，对齐 `chrome::transport_bar::EditAction::ALL`）
+    #[serde(default)]
+    pub pinned_edit_actions: [bool; 12],
+    /// 播放菜单图钉：播放/暂停
+    #[serde(default)]
+    pub pinned_play_pause: bool,
+    /// 播放菜单图钉：停止
+    #[serde(default)]
+    pub pinned_stop: bool,
+    /// 播放菜单图钉：录制
+    #[serde(default)]
+    pub pinned_record: bool,
+    /// 播放菜单图钉：步进输入
+    #[serde(default)]
+    pub pinned_step_input: bool,
 }
 
 impl Default for YinheState {
@@ -55,6 +73,12 @@ impl Default for YinheState {
         Self {
             view_mode: ViewMode::default(),
             layout: YinheLayout::default(),
+            pinned_file_actions: [false; 10],
+            pinned_edit_actions: [false; 12],
+            pinned_play_pause: false,
+            pinned_stop: false,
+            pinned_record: false,
+            pinned_step_input: false,
         }
     }
 }
@@ -181,6 +205,7 @@ mod tests {
                 right_panel_width: 280.0,
                 show_pianoroll_in_arrange: true,
             },
+            ..Default::default()
         };
         let json = serde_json::to_string(&s).expect("serialize");
         assert!(json.contains("view_mode"));

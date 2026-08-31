@@ -78,6 +78,12 @@ impl Root {
                     .map(|tp| tp.bpm as f32)
                     .unwrap_or(120.0),
                 has_active_document: self.editor.editor_state.data.document.is_some(),
+                pinned_file_actions: self.yinhe.pinned_file_actions,
+                pinned_edit_actions: self.yinhe.pinned_edit_actions,
+                pinned_play_pause: self.yinhe.pinned_play_pause,
+                pinned_stop: self.yinhe.pinned_stop,
+                pinned_record: self.yinhe.pinned_record,
+                pinned_step_input: self.yinhe.pinned_step_input,
                 ..Default::default()
             },
             mode_metrics: None,
@@ -397,6 +403,39 @@ impl Root {
                     "Yinhe show_pianoroll_in_arrange 切换到 {}",
                     self.yinhe.layout.show_pianoroll_in_arrange
                 );
+                true
+            }
+            lumino_message::YinheAction::TogglePinnedFile(idx) => {
+                if idx < self.yinhe.pinned_file_actions.len() {
+                    self.yinhe.pinned_file_actions[idx] = !self.yinhe.pinned_file_actions[idx];
+                    tracing::info!(
+                        "Yinhe pinned_file[{}] 切换到 {}",
+                        idx,
+                        self.yinhe.pinned_file_actions[idx]
+                    );
+                }
+                true
+            }
+            lumino_message::YinheAction::TogglePinnedEdit(idx) => {
+                if idx < self.yinhe.pinned_edit_actions.len() {
+                    self.yinhe.pinned_edit_actions[idx] = !self.yinhe.pinned_edit_actions[idx];
+                    tracing::info!(
+                        "Yinhe pinned_edit[{}] 切换到 {}",
+                        idx,
+                        self.yinhe.pinned_edit_actions[idx]
+                    );
+                }
+                true
+            }
+            lumino_message::YinheAction::TogglePinnedPlay(idx) => {
+                match idx {
+                    0 => self.yinhe.pinned_play_pause = !self.yinhe.pinned_play_pause,
+                    1 => self.yinhe.pinned_stop = !self.yinhe.pinned_stop,
+                    2 => self.yinhe.pinned_record = !self.yinhe.pinned_record,
+                    3 => self.yinhe.pinned_step_input = !self.yinhe.pinned_step_input,
+                    _ => {}
+                };
+                tracing::info!("Yinhe pinned_play[{}] 切换", idx);
                 true
             }
         }
