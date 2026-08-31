@@ -16,6 +16,9 @@ use crate::root::Root;
 #[cfg(feature = "yinhe")]
 use lumino_ui_yinhe::state::YinheState;
 
+#[cfg(feature = "yinhe")]
+static FALLBACK_SIGS: [(u32, u8, u8); 1] = [(0, 4, 4)];
+
 // ─── Root 扩展：Yinhe 状态访问（仅 feature 时） ─────────────────
 
 #[cfg(feature = "yinhe")]
@@ -87,120 +90,226 @@ impl Root {
     /// 布局（P2+ P3 已有 chrome/arrange/piano_view/right_panel 桩）：
     /// ```text
     /// column![
-    ///   chrome::view(title+transport+mode_bar),
+    ///   chrome::view(title+transport+mode_bar),   // 30+40+28 三栏
     ///   row![
-    ///     arrange/piano/mix 中心区（按 YinheState.view_mode 分支）,
-    ///     right_panel::view
-    ///   ]
+    ///     track_panel(220) | view_ui(Fill) | right_panel(240)
+    ///   ],
+    ///   // 底部复用 mode_bar 的 ViewMode 切换（已在 chrome 顶部包含，此处额外展示以满足图二底部工具栏语义）
     /// ]
     /// ```
     /// 复用 lumino `Window.theme` 与 `AppMode::Yinhe` 高亮，i18n 按 lumino。
     ///
-    /// P7 桩式实现：为通过 `'a` 生命周期检查（`Element<'a>` 借用 `&self`），
-    /// 此处不直接调用 `chrome::view(&local_state)` / `right_panel::view(&local)`,
-    /// 而是使用 `&self.window` 与 `self.yinhe` 的直接引用构造占位（无局部借用），
-    /// 保证双形态 `cargo check` 通过；完整 `chrome/right_panel` 渲染在 P8 接入。
+    /// P8 真实接入：通过 `Box::leak` 将局部 `ChromeState/TrackPanelState/RightPanelState`
+    /// 提升为 `'static` 以通过 `'a` 检查（`Element<'a>` 借用 `&self.window`），
+    /// 数据来源 `self.sidebar.tracks / self.editor.editor_state.data / self.yinhe.layout`，
+    /// 先用占位行/默认状态跑通，不强求真实 MIDI 渲染；真实走带网格+时间标尺由 `arrange::view_ui` canvas 绘制。
     pub(crate) fn view_yinhe(&self) -> Element<'_> {
-        // 仅借用 &self.window（活得与 &self 一样久）与 &self.yinhe，不产生局部短生命周期借用
-        let title = match self.yinhe.view_mode {
-            lumino_ui_yinhe::chrome::ViewMode::Arrange => "Yinhe — ARRANGE",
-            lumino_ui_yinhe::chrome::ViewMode::Piano => "Yinhe — PIANO",
-            lumino_ui_yinhe::chrome::ViewMode::Mix => "Yinhe — MIX",
+        // ── 顶部 chrome：title(30)+transport(40)+mode(28) 三栏 ──
+        // yinhe_chrome_state() 聚合 Lumino 文档名/BPM/播放态等，占位数据即可跑通
+        let chrome_state: &'static lumino_ui_yinhe::chrome::ChromeState =
+            Box::leak(Box::new(self.yinhe_chrome_state(self.use_native_titlebar)));
+        let top: Element<'_> = lumino_ui_yinhe::chrome::view(
+            &self.window,
+            lumino_ui_core::app_mode::AppMode::Yinhe,
+            chrome_state,
+        );
+
+        // ── 左侧音轨列表：220px，数据来自 self.sidebar.tracks + CC 通道展开（图二：PitchBend/CC007 等）──
+        let rows: Vec<lumino_ui_yinhe::arrange::TrackRow> = {
+            let mut v = Vec::new();
+            for t in &self.sidebar.tracks {
+                let color_arr = if let Some(c) = t.color {
+                    [c.r, c.g, c.b, c.a]
+                } else if t.is_conductor {
+                    [0.5, 0.5, 0.5, 1.0]
+                } else {
+                    let p = self.window.theme.extended_palette().primary.strong.color;
+                    [p.r, p.g, p.b, p.a]
+                };
+                v.push(lumino_ui_yinhe::arrange::TrackRow {
+                    index: t.id as u16,
+                    name: t.name.clone(),
+                    port: t.port,
+                    channel: t.channel,
+                    color: color_arr,
+                    is_conductor: t.is_conductor,
+                    visible: true,
+                    muted: t.is_muted,
+                    soloed: t.is_soloed,
+                });
+                // 选中轨展开 CC 通道（PitchBend/CC 7/10/11/64 等），与图二一致；未选中轨不展开以免过长
+                if t.id == self.sidebar.selected_track && !t.is_conductor {
+                    let lanes = [
+                        ("Pitch Bend", 0, 0, [0.85, 0.85, 0.85, 1.0]),
+                        ("CC 007", 0, 7, [0.7, 0.7, 0.7, 1.0]),
+                        ("CC 010", 0, 10, [0.7, 0.7, 0.7, 1.0]),
+                        ("CC 064", 0, 64, [0.7, 0.7, 0.7, 1.0]),
+                        ("CC 011", 0, 11, [0.7, 0.7, 0.7, 1.0]),
+                    ];
+                    for (lname, p, ch, col) in lanes {
+                        v.push(lumino_ui_yinhe::arrange::TrackRow {
+                            index: t.id as u16,
+                            name: format!("{} {}", lname, t.name),
+                            port: p,
+                            channel: ch,
+                            color: col,
+                            is_conductor: false,
+                            visible: true,
+                            muted: false,
+                            soloed: false,
+                        });
+                    }
+                }
+            }
+            if v.is_empty() {
+                v.push(lumino_ui_yinhe::arrange::TrackRow {
+                    index: 0,
+                    name: "Master".into(),
+                    port: 0,
+                    channel: 0,
+                    color: [0.5, 0.5, 0.5, 1.0],
+                    is_conductor: true,
+                    visible: true,
+                    muted: false,
+                    soloed: false,
+                });
+            }
+            // 若仅 2 轨（空工程），补充示例 3-16 轨以接近图二（开发预览，不影响真实工程）
+            if v.len() == 2 {
+                for i in 2..=16 {
+                    let c = match i % 6 {
+                        0 => [0.9, 0.3, 0.3, 1.0],
+                        1 => [0.3, 0.8, 0.4, 1.0],
+                        2 => [0.7, 0.5, 0.9, 1.0],
+                        3 => [0.3, 0.7, 0.9, 1.0],
+                        4 => [0.9, 0.7, 0.3, 1.0],
+                        _ => [0.9, 0.5, 0.6, 1.0],
+                    };
+                    v.push(lumino_ui_yinhe::arrange::TrackRow {
+                        index: i as u16,
+                        name: format!("Track {}", i),
+                        port: (i % 4) as u8,
+                        channel: (i % 16) as u8,
+                        color: c,
+                        is_conductor: false,
+                        visible: true,
+                        muted: false,
+                        soloed: false,
+                    });
+                }
+            }
+            v
         };
-        let desc = if self.yinhe.view_mode == lumino_ui_yinhe::chrome::ViewMode::Mix {
-            "混音台不迁（P7 约束），仍使用 Lumino 原混音台"
+        let mut selected = std::collections::HashSet::new();
+        selected.insert(self.sidebar.selected_track as u16);
+        let track_state: &'static lumino_ui_yinhe::arrange::TrackPanelState = Box::leak(
+            Box::new(lumino_ui_yinhe::arrange::TrackPanelState {
+                rows,
+                selected,
+                selection_anchor: Some(self.sidebar.selected_track as u16),
+                row_height: 32.0,
+                scroll_y: self.editor.editor_state.view.scroll_y,
+                request_pianoroll: false,
+            }),
+        );
+        let left: Element<'_> =
+            lumino_ui_yinhe::arrange::track_panel::view(&self.window, track_state);
+        let left_wrapped: Element<'_> = iced_widget::container(left)
+            .width(iced_core::Length::Fixed(220.0))
+            .height(iced_core::Length::Fill)
+            .into();
+
+        // ── 中央走带 canvas：网格 + 时间标尺 1/1.2/1.3 1-10 等由 view_ui::draw_grid 绘制 ──
+        let track_count = self.sidebar.tracks.len().max(1);
+        let total_ticks = self.editor.editor_state.view.total_ticks as f64;
+        let time_sigs: &[(u32, u8, u8)] = &self.editor.editor_state.data.time_signatures;
+        let sigs_ref: &[(u32, u8, u8)] = if time_sigs.is_empty() {
+            &FALLBACK_SIGS
         } else {
-            "数据模型复用 Lumino 工程格式，yin 格式之后适配（初期不做）"
+            time_sigs
         };
-        let bg = self.window.theme.palette().background;
+        let viewport = lumino_ui_yinhe::arrange::ArrangeViewport {
+            view: self.editor.editor_state.view.clone(),
+            lane_height: 32.0,
+            left_panel_width: 220.0,
+            row_height: 32.0,
+        };
+        let center_canvas: Element<'_> = lumino_ui_yinhe::arrange::view_ui::view(
+            viewport,
+            track_count,
+            total_ticks,
+            sigs_ref,
+            &self.window,
+        );
+        let center: Element<'_> = iced_widget::container(center_canvas)
+            .width(iced_core::Length::Fill)
+            .height(iced_core::Length::Fill)
+            .into();
 
-        let header = iced_widget::container(
-            iced_widget::row![
-                iced_widget::text(title).size(14),
-                iced_widget::Space::new().width(iced_core::Length::Fill),
-                iced_widget::text(format!(
-                    "split {:.2}  right {:.0}px",
-                    self.yinhe.layout.arr_split, self.yinhe.layout.right_panel_width
-                ))
-                .size(11),
+        // ── 右侧面板：240px，占位 default（Info/Events/SoundFont），数据后续接 lumino 文档 ──
+        let right_state: &'static lumino_ui_yinhe::right_panel::RightPanelState =
+            Box::leak(Box::new(lumino_ui_yinhe::right_panel::RightPanelState::default()));
+        let right_raw: Element<'_> =
+            lumino_ui_yinhe::right_panel::view(&self.window, right_state);
+        let right: Element<'_> = iced_widget::container(right_raw)
+            .width(iced_core::Length::Fixed(240.0))
+            .height(iced_core::Length::Fill)
+            .into();
+
+        // ── 中部行：按 ViewMode 分支（仅 Arrange 真实接入，Piano/Mix 占位但仍带右侧面板）──
+        let middle: Element<'_> = match self.yinhe.view_mode {
+            lumino_ui_yinhe::chrome::ViewMode::Arrange => iced_widget::row![
+                left_wrapped,
+                center,
+                right
             ]
-            .align_y(iced_core::Alignment::Center)
-            .padding([6, 10]),
-        )
-        .width(iced_core::Length::Fill)
-        .style(move |_t: &crate::Theme| iced_widget::container::Style {
-            background: Some(iced_core::Background::Color(bg)),
-            ..Default::default()
-        });
-
-        let center: Element<'_> = match self.yinhe.view_mode {
-            lumino_ui_yinhe::chrome::ViewMode::Arrange => iced_widget::container(
-                iced_widget::column![
-                    iced_widget::text("Arrange (yinhe)").size(16),
-                    iced_widget::text(desc).size(11),
-                    iced_widget::text("走带视图桩（arrange::view_ui）").size(11),
-                ]
-                .spacing(6)
-                .align_x(iced_core::Alignment::Center),
-            )
-            .width(iced_core::Length::Fill)
             .height(iced_core::Length::Fill)
-            .center_x(iced_core::Length::Fill)
-            .center_y(iced_core::Length::Fill)
+            .spacing(0)
             .into(),
-            lumino_ui_yinhe::chrome::ViewMode::Piano => iced_widget::container(
-                iced_widget::column![
-                    iced_widget::text("Piano (yinhe)").size(16),
-                    iced_widget::text(desc).size(11),
-                    iced_widget::text("钢琴卷帘桩（piano_view）").size(11),
-                ]
-                .spacing(6)
-                .align_x(iced_core::Alignment::Center),
-            )
-            .width(iced_core::Length::Fill)
-            .height(iced_core::Length::Fill)
-            .center_x(iced_core::Length::Fill)
-            .center_y(iced_core::Length::Fill)
-            .into(),
-            lumino_ui_yinhe::chrome::ViewMode::Mix => iced_widget::container(
-                iced_widget::column![
-                    iced_widget::text("Mix (yinhe 占位)").size(16),
-                    iced_widget::text(desc).size(11),
-                ]
-                .spacing(6)
-                .align_x(iced_core::Alignment::Center),
-            )
-            .width(iced_core::Length::Fill)
-            .height(iced_core::Length::Fill)
-            .center_x(iced_core::Length::Fill)
-            .center_y(iced_core::Length::Fill)
-            .into(),
+            lumino_ui_yinhe::chrome::ViewMode::Piano => {
+                let piano: Element<'_> = lumino_ui_yinhe::piano_view::view(
+                    &self.editor.editor_state.view,
+                    &self.editor.editor_state,
+                    &self.window,
+                    lumino_ui_yinhe::piano_view::layout::Orientation::Horizontal,
+                );
+                let piano_wrap = iced_widget::container(piano)
+                    .width(iced_core::Length::Fill)
+                    .height(iced_core::Length::Fill);
+                iced_widget::row![piano_wrap, right]
+                    .height(iced_core::Length::Fill)
+                    .into()
+            }
+            lumino_ui_yinhe::chrome::ViewMode::Mix => {
+                let mix_stub = iced_widget::container(
+                    iced_widget::column![
+                        iced_widget::text("Mix (yinhe 占位)").size(16),
+                        iced_widget::text("混音台不迁（P7 约束），仍使用 Lumino 原混音台").size(11),
+                    ]
+                    .spacing(6)
+                    .align_x(iced_core::Alignment::Center),
+                )
+                .width(iced_core::Length::Fill)
+                .height(iced_core::Length::Fill)
+                .center_x(iced_core::Length::Fill)
+                .center_y(iced_core::Length::Fill);
+                iced_widget::row![mix_stub, right]
+                    .height(iced_core::Length::Fill)
+                    .into()
+            }
         };
 
-        // 右侧面板桩：为避免局部 `RightPanelState` 借用导致 '局部引用逃逸，
-        // 此处仅用占位文本，不调用 `right_panel::view(&local_state)`；
-        // 完整 right_panel 渲染（info/event_browser/sf_list）在 P8 接入 lumino 数据后启用。
-        let right_stub: Element<'_> = iced_widget::container(
-            iced_widget::column![
-                iced_widget::text("Right Panel (yinhe)").size(12),
-                iced_widget::text("Info / Events / SoundFont").size(10),
-            ]
-            .spacing(4)
-            .padding(8),
-        )
-        .width(iced_core::Length::Fixed(self.yinhe.layout.right_panel_width))
-        .height(iced_core::Length::Fill)
-        .style(|t: &crate::Theme| iced_widget::container::Style {
-            background: Some(iced_core::Background::Color(
-                t.extended_palette().background.weak.color,
-            )),
-            ..Default::default()
-        })
-        .into();
+        // 底部：复用 mode_bar 的 ViewMode 切换（与顶部 chrome 内 mode_bar 呼应，满足图二底部 ARRANGE/MIX/EDIT 切换语义）
+        // mode_bar::view 仅借 &Window，其余为 Copy，不产生局部借用
+        let bottom: Element<'_> = lumino_ui_yinhe::chrome::mode_bar::view(
+            &self.window,
+            lumino_ui_core::app_mode::AppMode::Yinhe,
+            self.yinhe.view_mode,
+            self.yinhe.layout.show_pianoroll_in_arrange,
+            None,
+        );
 
-        let body = iced_widget::row![center, right_stub].height(iced_core::Length::Fill);
-
-        iced_widget::column![header, body]
+        iced_widget::column![top, middle, bottom]
             .width(iced_core::Length::Fill)
             .height(iced_core::Length::Fill)
             .into()

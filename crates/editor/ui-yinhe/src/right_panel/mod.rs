@@ -120,7 +120,7 @@ pub fn view<'a>(window: &'a Window, state: &'a RightPanelState) -> Element<'a> {
     let body = column![tabs, content].spacing(0);
 
     container(body)
-        .width(Length::Fixed(320.0))
+        .width(Length::Fixed(240.0))
         .height(Length::Fill)
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(bg)),
