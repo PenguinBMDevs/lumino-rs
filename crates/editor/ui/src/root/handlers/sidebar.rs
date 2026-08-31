@@ -16,31 +16,48 @@ mod i2m;
 mod right_sidebar;
 
 impl Root {
-    /// 处理模式切换（编辑器 ↔ 瀑布流）
+    /// 处理模式切换（编辑器 ↔ 瀑布流 ↔ Yinhe）
+    ///
+    /// 未启用 yinhe feature 时保持 Editor↔Waterfall 二态，启用后为三态循环：
+    /// Editor → Yinhe → Waterfall → Editor
     pub(crate) fn handle_mode_toggle(&mut self) -> bool {
         use crate::sidebar::GroupId;
 
         let target_mode = match self.state.current_mode {
-            AppMode::Editor => AppMode::Waterfall,
+            AppMode::Editor => {
+                #[cfg(feature = "yinhe")]
+                {
+                    AppMode::Yinhe
+                }
+                #[cfg(not(feature = "yinhe"))]
+                {
+                    AppMode::Waterfall
+                }
+            }
+            AppMode::Yinhe => AppMode::Waterfall,
             AppMode::Waterfall => AppMode::Editor,
-            AppMode::Yinhe => AppMode::Editor,
         };
         if target_mode == AppMode::Waterfall {
             // 通过分组系统切换
             self.sidebar
                 .update(sidebar::Event::GroupToggled(GroupId::Waterfall));
+        } else if target_mode == AppMode::Yinhe {
+            // 进入 Yinhe：收起瀑布流分组，保持钢琴卷帘可见性由 Yinhe 自管理
+            self.sidebar
+                .update(sidebar::Event::GroupToggled(GroupId::PianoRoll));
         } else {
-            // 从瀑布流转回 → 恢复钢琴卷帘组
+            // 从瀑布流/Yinhe 转回 → 恢复钢琴卷帘组
             self.sidebar
                 .update(sidebar::Event::GroupToggled(GroupId::PianoRoll));
         }
         let target_progress = match target_mode {
             AppMode::Editor => 0.0,
             AppMode::Waterfall => 1.0,
-            AppMode::Yinhe => 0.0,
+            AppMode::Yinhe => 0.5,
         };
         self.state.current_mode = target_mode;
         self.state.toggle_animation.animate_to(target_progress);
+        tracing::info!("模式切换: -> {:?}", target_mode);
         true
     }
 
@@ -225,9 +242,19 @@ impl Root {
                     self.state.current_mode = AppMode::Waterfall;
                     self.state.toggle_animation.animate_to(1.0);
                 }
+                Some(sidebar::GroupId::Yinhe) => {
+                    self.state.current_mode = AppMode::Yinhe;
+                    self.state.toggle_animation.animate_to(0.5);
+                }
                 _ => {
-                    self.state.current_mode = AppMode::Editor;
-                    self.state.toggle_animation.animate_to(0.0);
+                    // 仅当当前为非 Editor 且目标非 Yinhe/Waterfall 时回 Editor，避免 Yinhe 内切换子路由时误切回
+                    if self.state.current_mode != AppMode::Yinhe {
+                        self.state.current_mode = AppMode::Editor;
+                        self.state.toggle_animation.animate_to(0.0);
+                    } else if self.sidebar.active_group != Some(sidebar::GroupId::Yinhe) {
+                        self.state.current_mode = AppMode::Editor;
+                        self.state.toggle_animation.animate_to(0.0);
+                    }
                 }
             }
         }

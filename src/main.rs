@@ -131,6 +131,12 @@ async fn main() -> Result<(), winit::error::EventLoopError> {
         runner.set_test_config(config);
     }
 
+    // yinhe 副模式启动标志（需 --features yinhe）
+    if cli.yinhe {
+        runner.set_yinhe_enabled(true);
+        tracing::info!("已启用 yinhe 副模式启动");
+    }
+
     // 设置日志功能
     if cli.log_memory_usage() {
         runner.set_log_memory_usage(true);

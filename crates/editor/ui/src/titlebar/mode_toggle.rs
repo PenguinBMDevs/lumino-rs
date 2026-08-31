@@ -10,7 +10,7 @@ pub use lumino_ui_core::app_mode::AppMode;
 /// 渲染标题栏模式切换视图
 pub fn view(
     theme: &Theme,
-    _current_mode: AppMode,
+    current_mode: AppMode,
     progress: f32,
     language: Language,
 ) -> Element<'_> {
@@ -18,23 +18,19 @@ pub fn view(
     let p = progress.clamp(0.0, 1.0);
     let palette = theme.extended_palette();
 
-    let is_waterfall = p >= 0.5;
-
-    let icon_type = if is_waterfall {
-        icon::Icon::Keys
+    // 三态：Editor(0) / Yinhe(0.5) / Waterfall(1)，progress 为动画插值，current_mode 为目标态
+    let (icon_type, label, tooltip_text) = if current_mode == AppMode::Yinhe {
+        // yinhe 需 --features yinhe，无 feature 时不会进入此分支（但仍编译期可见）
+        (icon::Icon::Arrangement, "Yinhe", "切换到瀑布流 (Yinhe→Waterfall)")
+    } else if current_mode == AppMode::Waterfall || p >= 0.75 {
+        (icon::Icon::Keys, t.mode_waterfall, t.mode_switch_to_editor)
+    } else if p >= 0.25 && current_mode != AppMode::Editor {
+        // 动画中途按目标态显示
+        (icon::Icon::Arrangement, "Yinhe", "切换到瀑布流")
     } else {
-        icon::Icon::PencilOutline
+        (icon::Icon::PencilOutline, t.mode_editor, t.mode_switch_to_waterfall)
     };
-    let label = if is_waterfall {
-        t.mode_waterfall
-    } else {
-        t.mode_editor
-    };
-    let tooltip_text = if is_waterfall {
-        t.mode_switch_to_editor
-    } else {
-        t.mode_switch_to_waterfall
-    };
+    let is_waterfall = current_mode == AppMode::Waterfall;
 
     let icon_bg = palette.background.strong.color;
     let text_color = palette.background.neutral.text;

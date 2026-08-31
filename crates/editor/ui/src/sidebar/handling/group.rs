@@ -81,8 +81,8 @@ impl Sidebar {
                     automation_panel_visible: self.automation_panel_visible,
                 };
             }
-            GroupId::Waterfall => {
-                // 瀑布流无子按钮，无需保存
+            GroupId::Waterfall | GroupId::Yinhe => {
+                // 瀑布流/Yinhe 无子按钮，无需保存
             }
         }
     }
@@ -126,6 +126,15 @@ impl Sidebar {
                 self.audio_export_visible = false;
                 self.video_export_visible = false;
             }
+            GroupId::Yinhe => {
+                // Yinhe 副模式：全屏铺满，关闭钢琴卷帘/走带
+                self.piano_roll_visible = false;
+                self.panel_visible = false;
+                self.automation_panel_visible = false;
+                self.route = Route::File;
+                self.audio_export_visible = false;
+                self.video_export_visible = false;
+            }
             GroupId::Renderer => {
                 // 渲染组：当前无子按钮，保持基本状态
                 self.piano_roll_visible = false;
@@ -160,9 +169,8 @@ impl Sidebar {
                 self.active_group = Some(GroupId::PianoRoll);
                 return;
             }
-            GroupId::Waterfall => {
-                // 退出瀑布流时切回钢琴卷帘组（如果有保存状态）
-                // 默认回到编辑器模式
+            GroupId::Waterfall | GroupId::Yinhe => {
+                // 退出瀑布流/Yinhe 时切回钢琴卷帘组
             }
             GroupId::Renderer => {
                 // 关闭渲染组：清除渲染面板标志

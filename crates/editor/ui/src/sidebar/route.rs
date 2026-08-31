@@ -55,6 +55,7 @@ pub fn view<'a>(
                     GroupId::Project => params.active_group == Some(GroupId::Project),
                     GroupId::Waterfall => params.current_mode == AppMode::Waterfall,
                     GroupId::Renderer => params.active_group == Some(GroupId::Renderer),
+                    GroupId::Yinhe => params.current_mode == AppMode::Yinhe,
                 };
                 bar_button(
                     icon,
@@ -134,6 +135,20 @@ pub fn view<'a>(
             params.roll_bar_active,
             window,
             language,
+        ));
+    }
+
+    // Yinhe 副模式入口（仅 --features yinhe 时可见）；位于混音台上方
+    #[cfg(feature = "yinhe")]
+    {
+        let is_yinhe = params.current_mode == AppMode::Yinhe;
+        items.push(bar_button(
+            icon::Arrangement,
+            is_yinhe,
+            GroupId::Yinhe.child_color(),
+            Event::group_toggled(GroupId::Yinhe),
+            GroupId::Yinhe.tooltip(language),
+            window,
         ));
     }
 

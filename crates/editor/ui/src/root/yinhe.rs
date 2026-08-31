@@ -20,6 +20,13 @@ use lumino_ui_yinhe::state::YinheState;
 
 #[cfg(feature = "yinhe")]
 impl Root {
+    /// 进入 Yinhe 副模式（供 Runner --yinhe 启动时调用）
+    pub fn enter_yinhe_mode(&mut self) {
+        self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Yinhe;
+        self.state.toggle_animation.animate_to(0.5);
+        self.sidebar.active_group = Some(lumino_ui_core::sidebar_event::GroupId::Yinhe);
+    }
+
     /// 获取 Yinhe 状态（feature 门控，供 Host/Runner 读取）
     pub fn yinhe_state(&self) -> &YinheState {
         &self.yinhe

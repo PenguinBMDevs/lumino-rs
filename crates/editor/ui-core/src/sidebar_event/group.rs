@@ -16,6 +16,8 @@ pub enum GroupId {
     Waterfall,
     /// 渲染组（蓝色）
     Renderer,
+    /// Yinhe 副模式组（紫色，仅 --features yinhe）
+    Yinhe,
 }
 
 impl GroupId {
@@ -26,6 +28,7 @@ impl GroupId {
             GroupId::Project => Color::from_rgb(0.15, 0.75, 0.35),
             GroupId::Waterfall => Color::from_rgb(0.85, 0.75, 0.10),
             GroupId::Renderer => Color::from_rgb(0.15, 0.45, 0.85),
+            GroupId::Yinhe => Color::from_rgb(0.65, 0.25, 0.85),
         }
     }
 
@@ -36,6 +39,7 @@ impl GroupId {
             GroupId::Project => Color::from_rgb(0.35, 0.65, 0.45),
             GroupId::Waterfall => Color::from_rgb(0.65, 0.58, 0.30),
             GroupId::Renderer => Color::from_rgb(0.35, 0.55, 0.65),
+            GroupId::Yinhe => Color::from_rgb(0.75, 0.45, 0.95),
         }
     }
 
@@ -57,6 +61,10 @@ impl GroupId {
             GroupId::Renderer => match lang {
                 Language::ZhCn => "渲染器",
                 Language::EnUs => "Renderer",
+            },
+            GroupId::Yinhe => match lang {
+                Language::ZhCn => "Yinhe 副模式",
+                Language::EnUs => "Yinhe",
             },
         }
     }

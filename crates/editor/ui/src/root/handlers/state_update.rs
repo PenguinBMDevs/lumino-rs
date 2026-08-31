@@ -322,16 +322,18 @@ impl Root {
     /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理）
     pub(crate) fn handle_animation_tick(&mut self) -> bool {
         let still_animating = self.state.toggle_animation.update();
-        if !still_animating
-            && self.state.toggle_animation.position >= 0.5
-            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Waterfall
-        {
-            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Waterfall;
-        } else if !still_animating
-            && self.state.toggle_animation.position < 0.5
-            && self.state.current_mode != crate::titlebar::mode_toggle::AppMode::Editor
-        {
-            self.state.current_mode = crate::titlebar::mode_toggle::AppMode::Editor;
+        if !still_animating {
+            let pos = self.state.toggle_animation.position;
+            let target = if (pos - 0.5).abs() < 0.01 {
+                crate::titlebar::mode_toggle::AppMode::Yinhe
+            } else if pos >= 0.5 {
+                crate::titlebar::mode_toggle::AppMode::Waterfall
+            } else {
+                crate::titlebar::mode_toggle::AppMode::Editor
+            };
+            if self.state.current_mode != target {
+                self.state.current_mode = target;
+            }
         }
 
         let scroll_animating = {

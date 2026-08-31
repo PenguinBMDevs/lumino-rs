@@ -50,6 +50,7 @@ pub struct Runner {
     pub(crate) init_error: Option<InitError>,
     pub(crate) test_config: Option<crate::cli::TestConfig>,
     pub(crate) log_memory_usage: bool,
+    pub(crate) yinhe_enabled: bool,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────
@@ -213,6 +214,11 @@ impl Runner {
         self.log_memory_usage = enabled;
     }
 
+    /// 设置是否以 yinhe 副模式启动
+    pub fn set_yinhe_enabled(&mut self, enabled: bool) {
+        self.yinhe_enabled = enabled;
+    }
+
     pub(crate) fn init_inner(
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
@@ -249,6 +255,14 @@ impl Runner {
         {
             let yinhe_state = storage.yinhe.get().clone();
             window.ui_mut().root_mut().yinhe = yinhe_state;
+            if self.yinhe_enabled {
+                window.ui_mut().root_mut().enter_yinhe_mode();
+                tracing::info!("Runner: 已按 --yinhe 标志切换到 Yinhe 副模式");
+            }
+        }
+        #[cfg(not(feature = "yinhe"))]
+        if self.yinhe_enabled {
+            tracing::warn!("--yinhe 需 --features yinhe 编译，当前构建未启用该 feature");
         }
 
         // 创建进度管理器

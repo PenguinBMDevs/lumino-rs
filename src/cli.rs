@@ -23,6 +23,10 @@ pub struct Cli {
     #[arg(long = "log", value_name = "FEATURE")]
     pub log: Option<String>,
 
+    /// 以 yinhe 副模式启动（需 --features yinhe 编译）
+    #[arg(long = "yinhe")]
+    pub yinhe: bool,
+
     /// 子命令
     #[command(subcommand)]
     pub command: Option<Commands>,
