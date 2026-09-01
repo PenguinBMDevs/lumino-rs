@@ -209,6 +209,7 @@ impl Root {
             }
             v
         };
+        let track_count = rows.len().max(1);
         let mut selected = std::collections::HashSet::new();
         selected.insert(self.sidebar.selected_track as u16);
         let track_state = lumino_ui_yinhe::arrange::TrackPanelState {
@@ -227,7 +228,6 @@ impl Root {
             .into();
 
         // ── 中央走带 canvas：网格 + 时间标尺 1/1.2/1.3 1-10 等由 view_ui::draw_grid 绘制 ──
-        let track_count = self.sidebar.tracks.len().max(1);
         let total_ticks = self.editor.editor_state.view.total_ticks as f64;
         let time_sigs: &[(u32, u8, u8)] = &self.editor.editor_state.data.time_signatures;
         let sigs_ref: &[(u32, u8, u8)] = if time_sigs.is_empty() {
@@ -260,16 +260,18 @@ impl Root {
                 &self.window.theme,
             );
             // 横纵滚动条（薄 10px，悬浮高亮，轨道点击/拖拇指/边缘缩放）
-            let viewport_w = (view.total_ticks as f32 * view.zoom_x).max(1.0);
-            let viewport_h = (view.visible_key_count as f32 * view.zoom_y).max(1.0);
+            // 视口估算：窗口宽-面板后约 700×600，可见 thumb 正确；AR 竖向按轨数
+            let viewport_w = 700.0;
             let h_bar = lumino_ui_yinhe::widgets::scrollbar::horizontal_for_view(
                 view,
                 viewport_w,
                 &self.window.theme,
             );
-            let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_pixel_for_view(
-                view,
-                viewport_h,
+            let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_pixel(
+                600.0,
+                track_count,
+                32.0,
+                view.scroll_y,
                 &self.window.theme,
             );
             let grid_with_v = iced_widget::row![
@@ -320,16 +322,55 @@ impl Root {
             .spacing(0)
             .into(),
             lumino_ui_yinhe::chrome::ViewMode::Piano => {
+                let view = &self.editor.editor_state.view;
                 let piano: Element<'_> = lumino_ui_yinhe::piano_view::view(
-                    &self.editor.editor_state.view,
+                    view,
                     &self.editor.editor_state,
                     &self.window,
                     lumino_ui_yinhe::piano_view::layout::Orientation::Horizontal,
                 );
-                let piano_wrap = iced_widget::container(piano)
-                    .width(iced_core::Length::Fill)
-                    .height(iced_core::Length::Fill);
-                iced_widget::row![piano_wrap, right]
+                // PR 时间标尺（与 AR 同，横向 28px，联动 scroll_x/zoom_x）
+                let ruler = lumino_ui_yinhe::widgets::time_ruler::view(
+                    view.ppq as u32,
+                    view.zoom_x,
+                    view.scroll_x,
+                    0.0,
+                    &[],
+                    &self.window.theme,
+                );
+                // 滚动条：复用 AR 同款，横向联动 scroll_x，纵向联动 scroll_y（key 轴）
+                // 视口估算：窗口宽-面板宽后约 700，取 max 600 保证 thumb 可见
+                let viewport_w = 700.0;
+                let viewport_h = 600.0;
+                let h_bar = lumino_ui_yinhe::widgets::scrollbar::horizontal_for_view(
+                    view,
+                    viewport_w,
+                    &self.window.theme,
+                );
+                let v_bar = lumino_ui_yinhe::widgets::scrollbar::vertical_pixel_for_view(
+                    view,
+                    viewport_h,
+                    &self.window.theme,
+                );
+                let piano_with_v = iced_widget::row![
+                    iced_widget::container(piano)
+                        .width(iced_core::Length::Fill)
+                        .height(iced_core::Length::Fill),
+                    iced_widget::container(v_bar)
+                        .width(iced_core::Length::Fixed(10.0))
+                        .height(iced_core::Length::Fill)
+                ]
+                .height(iced_core::Length::Fill);
+                let piano_with_h = iced_widget::column![
+                    ruler,
+                    piano_with_v.height(iced_core::Length::Fill),
+                    iced_widget::container(h_bar)
+                        .width(iced_core::Length::Fill)
+                        .height(iced_core::Length::Fixed(10.0))
+                ]
+                .width(iced_core::Length::Fill)
+                .height(iced_core::Length::Fill);
+                iced_widget::row![piano_with_h, right]
                     .height(iced_core::Length::Fill)
                     .into()
             }
