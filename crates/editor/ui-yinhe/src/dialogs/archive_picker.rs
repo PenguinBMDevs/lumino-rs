@@ -3,7 +3,7 @@
 //! 原 `egui` 实现含异步打开（`mpsc::Receiver`）、搜索过滤、列表选中与二次确认；
 //! iced 桩以 `container + column + button + scrollable + text_input` 重建骨架，
 //! 独立窗口复用 `lumino_dialog::DialogManager`（每个对话框为独立 `DialogWindow`），
-//! 图标走 `lumino_ui_core::resources::icon` SVG，字体/配色走 `Theme`。
+//! 图标走 `material_icons` Material Symbols Rounded（`SEARCH e8b6` / `VISIBILITY e8f4`），字体/配色走 `Theme`。
 
 use iced_core::{Alignment, Length};
 use iced_widget::{button, column, container, row, scrollable, text, text_input};
@@ -123,11 +123,10 @@ pub fn view<'a>(window: &'a Window, state: &'a ArchivePickerState) -> Element<'a
                 color: Some(palette.background.base.text),
             }),
         row![
-            lumino_ui_core::resources::icon::view_with_size_and_theme(
-                lumino_ui_core::resources::icon::Icon::Gear,
-                14,
-                14,
-                Some(&window.theme)
+            crate::material_icons::icon(
+                crate::material_icons::codepoints::SEARCH,
+                14.0,
+                window.theme.extended_palette().background.base.text
             ),
             text_input("search", &state.search_query)
                 .on_input(|_| lumino_ui_core::message::null())
@@ -291,15 +290,18 @@ pub fn view_password<'a>(window: &'a Window, state: &'a PasswordPromptState) -> 
                 .on_input(|_| lumino_ui_core::message::null())
                 .secure(!state.show_password)
                 .padding(8),
-            button(lumino_ui_core::resources::icon::view_with_size_and_theme(
+            button(crate::material_icons::icon(
                 if state.show_password {
-                    lumino_ui_core::resources::icon::Icon::EyeSlash
+                    crate::material_icons::codepoints::VISIBILITY_OFF
                 } else {
-                    lumino_ui_core::resources::icon::Icon::Eye
+                    crate::material_icons::codepoints::VISIBILITY
                 },
-                16,
-                16,
-                Some(&window.theme)
+                16.0,
+                if state.show_password {
+                    window.theme.extended_palette().primary.base.color
+                } else {
+                    window.theme.extended_palette().background.base.text
+                }
             ))
             .on_press(lumino_ui_core::message::null())
             .padding(6)

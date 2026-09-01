@@ -63,6 +63,11 @@ impl WindowManager {
         )
         .map_err(|e| format!("初始化图形上下文失败: {e}"))?;
 
+        // yinhe 模式：同步注入 Material Icons 到全局字体系统，需早于首个 Host/Engine 创建
+        // 与 `UiConfig.program_font_name` 共存，正文缺省族 vs 图标显式族 `Material Symbols Rounded` 高优不可覆盖
+        #[cfg(feature = "yinhe")]
+        lumino_ui_yinhe::material_icons::ensure_loaded();
+
         // 在后台预热对话框共享的 iced Engine，避免首个对话框创建时
         // 因重新编译 pipeline 阻塞事件循环 900ms+。
         lumino_ui::prewarm_dialog_shared_engine(&gfx);

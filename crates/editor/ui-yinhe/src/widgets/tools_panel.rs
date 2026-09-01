@@ -3,33 +3,40 @@
 use iced_core::Length;
 use iced_widget::{button, column, container, row, text};
 
-use lumino_ui_core::resources::icon::{Icon, view_with_size_and_theme};
 use lumino_ui_core::window::Window;
 use lumino_ui_core::{Element, Theme};
 
-/// 渲染工具面板（笔/刷/形状/文字等）
+/// 渲染工具面板（笔/刷/形状/文字等，对齐 yinhe `widgets/tools_panel.rs:26`）
+///
+/// - `pencil` → `EDIT f097`，`brush` → `BRUSH e3ae`，`eraser` → `INK_ERASER e6d0`
+/// - `shape` → `CATEGORY` 占位（`add e145` 近似矩形），`text` → `TEXT_FIELDS e262`
 pub fn view<'a>(window: &'a Window, active_tool: &'a str) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let bg = palette.background.base.color;
 
     let tools = [
-        ("pencil", Icon::Pencil),
-        ("brush", Icon::BrushTool),
-        ("eraser", Icon::Eraser),
-        ("shape", Icon::ShapeTool),
-        ("text", Icon::TextInput),
+        ("pencil", crate::material_icons::codepoints::EDIT),
+        ("brush", crate::material_icons::codepoints::BRUSH),
+        ("eraser", crate::material_icons::codepoints::INK_ERASER),
+        ("shape", crate::material_icons::codepoints::ADD),
+        ("text", crate::material_icons::codepoints::TEXT_FIELDS),
     ];
 
     let buttons: Vec<Element<'a>> = tools
         .iter()
-        .map(|(name, icon)| {
+        .map(|(name, cp)| {
             let is_active = *name == active_tool;
             let bg_col = if is_active {
                 palette.background.strong.color
             } else {
                 iced_core::Color::TRANSPARENT
             };
-            button(view_with_size_and_theme(*icon, 16, 16, Some(&window.theme)))
+            let icon_color = if is_active {
+                palette.background.strong.text
+            } else {
+                palette.background.base.text
+            };
+            button(crate::material_icons::icon(*cp, 16.0, icon_color))
                 .on_press(lumino_ui_core::message::null())
                 .padding(6)
                 .style(move |_t: &Theme, status| {

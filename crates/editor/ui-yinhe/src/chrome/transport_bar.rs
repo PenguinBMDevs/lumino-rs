@@ -158,12 +158,12 @@ impl EditAction {
             EditAction::Copy => C::CONTENT_COPY,
             EditAction::Paste => C::CONTENT_PASTE,
             EditAction::SelectAll => C::SELECT_ALL,
-            EditAction::Duplicate => C::CONTENT_COPY,
+            EditAction::Duplicate => C::COPY_ALL,
             EditAction::Delete => C::DELETE,
             EditAction::TransposeUp => C::ARROW_UPWARD,
             EditAction::TransposeDown => C::ARROW_DOWNWARD,
-            EditAction::DedupWithinTrack => C::SELECT_ALL,
-            EditAction::DedupAcrossTracks => C::SELECT_ALL,
+            EditAction::DedupWithinTrack => C::STACK_OFF,
+            EditAction::DedupAcrossTracks => C::STACK_OFF,
         }
     }
     pub fn shortcut(self) -> &'static str {
@@ -369,16 +369,23 @@ fn quantize_label(q: NotePrecision) -> String {
 }
 
 // ── 按钮工厂：与 `lumino-ui/src/toolbar/buttons.rs:tool_selector_custom` 风格一致 ──
+///
+/// - `yinhe` 全量 `Material Symbols Rounded`，与 `UiConfig.program_font_name` 共存，
+///   正文字体走主题缺省，图标显式 `Font::with_name(FONT_FAMILY)` 高优不可覆盖
 
 fn menu_button<'a>(
-    icon_enum: icon::Icon,
+    codepoint: char,
     _tooltip: &'static str,
     on_press: Option<Message>,
     window: &'a Window,
 ) -> Element<'a> {
     let palette = window.theme.extended_palette();
     let bg_weak = palette.background.weak.color;
-    let icon_el = icon::view_with_size_and_theme(icon_enum, ICON_S, ICON_S, Some(&window.theme));
+    let icon_el = crate::material_icons::icon(
+        codepoint,
+        ICON_S as f32,
+        palette.background.base.text,
+    );
     let mut btn = button(icon_el)
         .padding(6)
         .style(move |_theme: &Theme, status| {
@@ -404,7 +411,7 @@ fn menu_button<'a>(
 }
 
 fn pinned_action_button<'a>(
-    icon_enum: icon::Icon,
+    codepoint: char,
     _tooltip: &'static str,
     on_press: Option<Message>,
     is_active: bool,
@@ -415,7 +422,15 @@ fn pinned_action_button<'a>(
     let palette = window.theme.extended_palette();
     let bg_strong = palette.background.strong.color;
     let bg_weak = palette.background.weak.color;
-    let icon_el = icon::view_with_size_and_theme(icon_enum, ICON_S, ICON_S, Some(&window.theme));
+    let icon_el = crate::material_icons::icon(
+        codepoint,
+        ICON_S as f32,
+        if is_active && accent_override.is_none() {
+            palette.background.strong.text
+        } else {
+            palette.background.base.text
+        },
+    );
     let mut btn = button(icon_el)
         .padding(6)
         .style(move |_theme: &Theme, status| {
@@ -448,7 +463,7 @@ fn pinned_action_button<'a>(
 fn tool_button<'a>(
     tool: Tool,
     current: Tool,
-    icon_enum: icon::Icon,
+    codepoint: char,
     tooltip: &'static str,
     enabled: bool,
     window: &'a Window,
@@ -457,7 +472,13 @@ fn tool_button<'a>(
     let is_active = tool == current;
     let bg_strong = palette.background.strong.color;
     let bg_weak = palette.background.weak.color;
-    let icon_el = icon::view_with_size_and_theme(icon_enum, ICON_S, ICON_S, Some(&window.theme));
+    // 激活态图标用强对比色，常态用基色
+    let icon_color = if is_active {
+        palette.background.strong.text
+    } else {
+        palette.background.base.text
+    };
+    let icon_el = crate::material_icons::icon(codepoint, ICON_S as f32, icon_color);
     let mut btn = button(icon_el)
         .padding(6)
         .style(move |_theme: &Theme, status| {
@@ -594,7 +615,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         .enumerate()
         .map(|(idx, action)| {
             let is_pinned = state.pinned_file_actions[idx];
-            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_cp = crate::material_icons::codepoints::KEEP;
             let pin_btn = iced_widget::button(
                 crate::material_icons::icon(
                     pin_cp,
@@ -670,7 +691,12 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         })
         .collect::<Vec<_>>();
     let file_menu_btn = Item::with_menu(
-        menu_button(icon::Icon::FolderTree, "文件", Some(lumino_ui_core::message::null()), window),
+        menu_button(
+            crate::material_icons::codepoints::DESCRIPTION,
+            "文件",
+            Some(lumino_ui_core::message::null()),
+            window,
+        ),
         Menu::new(file_items).width(220.0).offset(4.0),
     );
     let edit_items = EditAction::ALL
@@ -678,7 +704,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         .enumerate()
         .map(|(idx, action)| {
             let is_pinned = state.pinned_edit_actions[idx];
-            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_cp = crate::material_icons::codepoints::KEEP;
             let pin_btn = iced_widget::button(
                 crate::material_icons::icon(
                     pin_cp,
@@ -750,7 +776,12 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         })
         .collect::<Vec<_>>();
     let edit_menu_btn = Item::with_menu(
-        menu_button(icon::Icon::Pencil, "编辑", Some(lumino_ui_core::message::null()), window),
+        menu_button(
+            crate::material_icons::codepoints::EDIT_SQUARE,
+            "编辑",
+            Some(lumino_ui_core::message::null()),
+            window,
+        ),
         Menu::new(edit_items).width(200.0).offset(4.0),
     );
     let play_items = {
@@ -771,7 +802,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                     3 => state.pinned_step_input,
                     _ => false,
                 };
-            let pin_cp = crate::material_icons::codepoints::PUSH_PIN;
+            let pin_cp = crate::material_icons::codepoints::KEEP;
             let pin_color = if is_pinned {
                 window.theme.extended_palette().primary.strong.color
             } else {
@@ -795,9 +826,16 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                             ..Default::default()
                         }
                     });
+                let cp = match idx {
+                    0 => crate::material_icons::codepoints::PLAY_ARROW,
+                    1 => crate::material_icons::codepoints::STOP,
+                    2 => crate::material_icons::codepoints::FIBER_MANUAL_RECORD,
+                    3 => crate::material_icons::codepoints::STEP,
+                    _ => crate::material_icons::codepoints::PLAY_ARROW,
+                };
                 let label_el = iced_widget::row![
                     crate::material_icons::icon(
-                        crate::material_icons::codepoints::PLAY_ARROW,
+                        cp,
                         14.0,
                         window.theme.extended_palette().background.base.text
                     ),
@@ -838,7 +876,12 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
             .collect::<Vec<_>>()
     };
     let play_menu_btn = Item::with_menu(
-        menu_button(icon::Icon::PlayCircle, "播放", Some(lumino_ui_core::message::null()), window),
+        menu_button(
+            crate::material_icons::codepoints::PLAY_CIRCLE,
+            "播放",
+            Some(lumino_ui_core::message::null()),
+            window,
+        ),
         Menu::new(play_items).width(160.0).offset(4.0),
     );
     // 将三个 Menu Item 包装为 MenuBar（lumino 标题栏同款，close_on_background_click，容器美化：背景 base、边框 weak、圆角8、阴影 0,2,8 0.12）
@@ -876,7 +919,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
                 FileAction::NewProject | FileAction::Open | FileAction::Settings | FileAction::Exit
             );
         pinned_file_row.push(pinned_action_button(
-            action.icon(),
+            action.codepoint(),
             action.label(),
             Some(lumino_ui_core::message::null()),
             false,
@@ -894,7 +937,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         }
         let enabled = has_doc;
         pinned_edit_row.push(pinned_action_button(
-            action.icon(),
+            action.codepoint(),
             action.label(),
             Some(lumino_ui_core::message::null()),
             false,
@@ -909,10 +952,10 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     // 播放/暂停
     if state.pinned_play_pause {
         let is_playing = state.is_playing;
-        let icon = if is_playing {
-            icon::Icon::Pause
+        let cp = if is_playing {
+            crate::material_icons::codepoints::PAUSE
         } else {
-            icon::Icon::Play
+            crate::material_icons::codepoints::PLAY_ARROW
         };
         let msg = if is_playing {
             ToolbarEvent::pause()
@@ -920,7 +963,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
             ToolbarEvent::play()
         };
         pinned_play_row.push(pinned_action_button(
-            icon,
+            cp,
             if is_playing { "暂停" } else { "播放" },
             Some(msg),
             is_playing,
@@ -932,7 +975,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     // 停止
     if state.pinned_stop {
         pinned_play_row.push(pinned_action_button(
-            icon::Icon::Ban,
+            crate::material_icons::codepoints::STOP,
             "停止",
             has_doc.then_some(ToolbarEvent::stop()),
             false,
@@ -946,7 +989,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         let is_rec = state.is_recording;
         let red = Color::from_rgb8(220, 38, 38);
         pinned_play_row.push(pinned_action_button(
-            icon::Icon::PlayCircle,
+            crate::material_icons::codepoints::FIBER_MANUAL_RECORD,
             "录制",
             Some(if is_rec {
                 ToolbarEvent::record_stop()
@@ -963,7 +1006,7 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     if state.pinned_step_input {
         let active = state.step_input;
         pinned_play_row.push(pinned_action_button(
-            icon::Icon::Quantize,
+            crate::material_icons::codepoints::STEP,
             "步进输入",
             Some(lumino_ui_core::message::null()),
             active,
@@ -992,24 +1035,51 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
     // 工具表：对齐 yinhe `ALL_TOOLS:7` + 选区笔(画刷) = 8（任务要求 8 工具 + 量化）
     // yinhe 7：Select/SelectVertical/Pan/Pencil/Curve/Scissors/Eraser
     // lumino 侧新增 Brush(选区笔) 作为第 8
-    let tool_defs: [(Tool, icon::Icon, &'static str); 8] = [
-        (Tool::Pointer, icon::Icon::MousePointer, "选框工具"),
+    let tool_defs: [(Tool, char, &'static str); 8] = [
+        (
+            Tool::Pointer,
+            crate::material_icons::codepoints::SELECT,
+            "选框工具",
+        ),
         (
             Tool::PointerYSelect,
-            icon::Icon::MousePointerYSelect,
+            crate::material_icons::codepoints::TEXT_SELECT_START,
             "区间选择",
         ),
-        (Tool::Pencil, icon::Icon::Pencil, "铅笔"),
-        (Tool::Brush, icon::Icon::BrushTool, "选区笔/画刷"),
-        (Tool::Curve, icon::Icon::Curve, "曲线"),
-        (Tool::Razor, icon::Icon::Split, "剪刀"),
-        (Tool::Eraser, icon::Icon::Eraser, "擦除"),
-        // 手型 Pan 原无直接图标，用 Scroll(autoscroll) 近似
-        (Tool::Pen, icon::Icon::Scroll, "手型/抓手"),
+        (
+            Tool::Pencil,
+            crate::material_icons::codepoints::EDIT,
+            "铅笔",
+        ),
+        (
+            Tool::Brush,
+            crate::material_icons::codepoints::BRUSH,
+            "选区笔/画刷",
+        ),
+        (
+            Tool::Curve,
+            crate::material_icons::codepoints::DRAW,
+            "曲线",
+        ),
+        (
+            Tool::Razor,
+            crate::material_icons::codepoints::CONTENT_CUT,
+            "剪刀",
+        ),
+        (
+            Tool::Eraser,
+            crate::material_icons::codepoints::INK_ERASER,
+            "擦除",
+        ),
+        (
+            Tool::Pen,
+            crate::material_icons::codepoints::PAN_TOOL,
+            "手型/抓手",
+        ),
     ];
 
     // 手型用第 8 位调序到第 3 位，使顺序 选框/区间/手型/铅笔/曲线/剪刀/擦除/画刷 与任务描述一致
-    let ordered_tools: [(Tool, icon::Icon, &'static str); 8] = [
+    let ordered_tools: [(Tool, char, &'static str); 8] = [
         tool_defs[0], // Pointer
         tool_defs[1], // YSelect
         tool_defs[7], // Pan(Pen+Scroll)
@@ -1025,11 +1095,9 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         tool_buttons.push(tool_button(tool, state.active_tool, ic, tip, has_doc, window));
     }
 
-    // 方向切换（横向/纵向，`RollBarHorizontal/Vertical`，当前方向高亮如 yinhe `hover_button_rotated`）
-    let ori_icon = match state.orientation {
-        Orientation::Horizontal => icon::Icon::RollBarHorizontal,
-        Orientation::Vertical => icon::Icon::RollBarVertical,
-    };
+    // 方向切换（横向/纵向，`dehaze e3c7`，纵向高亮如 yinhe `hover_button_rotated`）
+    // yinhe 用 `ICON_DEHAZE` 水平，纵向 `hover_button_rotated(FRAC_PI_2)`；iced 侧暂同图标以背景高亮区分
+    let ori_cp = crate::material_icons::codepoints::DEHAZE;
     let ori_tip = match state.orientation {
         Orientation::Horizontal => "横向",
         Orientation::Vertical => "纵向",
@@ -1038,8 +1106,12 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         let is_vertical = state.orientation == Orientation::Vertical;
         let bg_strong = palette.background.strong.color;
         let bg_weak = palette.background.weak.color;
-        let icon_el =
-            icon::view_with_size_and_theme(ori_icon, ICON_S, ICON_S, Some(&window.theme));
+        let icon_color = if is_vertical {
+            palette.background.strong.text
+        } else {
+            palette.background.base.text
+        };
+        let icon_el = crate::material_icons::icon(ori_cp, ICON_S as f32, icon_color);
         let mut btn = button(icon_el)
             .padding(6)
             .style(move |_theme: &Theme, status| {
@@ -1066,11 +1138,15 @@ pub fn view<'a>(window: &'a Window, state: TransportState) -> Element<'a> {
         btn.into()
     };
 
-    // 量化按钮（`icon::Quantize` + 标签如 `1/4`，点击走 `Toolbar::Quantize`）
+    // 量化按钮（`straighten e41c` + 标签如 `1/4`，点击走 `Toolbar::Quantize`，对齐 yinhe 尺子语义）
     let quant_label = quantize_label(state.quantize);
     let quant_btn = {
         let bg_weak = palette.background.weak.color;
-        let quant_icon = icon::view_with_size_and_theme(icon::Icon::Quantize, 14, 14, Some(&window.theme));
+        let quant_icon = crate::material_icons::icon(
+            crate::material_icons::codepoints::STRAIGHTEN,
+            14.0,
+            palette.background.base.text,
+        );
         let lbl = text(quant_label.clone()).size(11).style(move |theme: &Theme| {
             let p = theme.extended_palette();
             iced_widget::text::Style {

@@ -28,6 +28,7 @@ lumino-extras = { workspace = true }
 winit = { workspace = true }
 iced = { workspace = true }
 iced_core = { workspace = true }
+iced_graphics = { workspace = true }
 iced_widget = { workspace = true, features = ["image", "svg", "canvas"] }
 iced_wgpu = { workspace = true, features = ["geometry", "image", "svg"] }
 iced_aw = { workspace = true }

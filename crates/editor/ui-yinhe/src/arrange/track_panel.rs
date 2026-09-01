@@ -237,10 +237,6 @@ fn track_row_view<'a>(
         .height(Length::Fixed(row_height))
         .style(move |_theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(bg)),
-            border: iced_core::Border {
-                radius: 2.0.into(),
-                ..Default::default()
-            },
             ..Default::default()
         });
 

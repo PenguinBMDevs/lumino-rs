@@ -238,7 +238,7 @@ impl Root {
         let viewport = lumino_ui_yinhe::arrange::ArrangeViewport {
             view: self.editor.editor_state.view.clone(),
             lane_height: 32.0,
-            left_panel_width: 220.0,
+            left_panel_width: 0.0,
             row_height: 32.0,
         };
         let center_canvas: Element<'_> = lumino_ui_yinhe::arrange::view_ui::view(
@@ -249,8 +249,17 @@ impl Root {
             &self.window,
         );
         let center_with_scroll: Element<'_> = {
-            // 横纵滚动条（薄 10px，悬浮高亮，轨道点击/拖拇指/边缘缩放）
+            // 顶部时间标尺（对齐 yinhe `RULER_H 28`，与走带网格同 `scroll_x/zoom_x/ppq`）
             let view = &self.editor.editor_state.view;
+            let ruler = lumino_ui_yinhe::widgets::time_ruler::view(
+                view.ppq as u32,
+                view.zoom_x,
+                view.scroll_x,
+                0.0,
+                &[],
+                &self.window.theme,
+            );
+            // 横纵滚动条（薄 10px，悬浮高亮，轨道点击/拖拇指/边缘缩放）
             let viewport_w = (view.total_ticks as f32 * view.zoom_x).max(1.0);
             let viewport_h = (view.visible_key_count as f32 * view.zoom_y).max(1.0);
             let h_bar = lumino_ui_yinhe::widgets::scrollbar::horizontal_for_view(
@@ -280,7 +289,11 @@ impl Root {
             ]
             .width(iced_core::Length::Fill)
             .height(iced_core::Length::Fill);
-            grid_with_h.into()
+            // 标尺 + 网格 + 水平滚动条（与 yinhe `ruler_rect`/`gpu_rect` 布局一致）
+            iced_widget::column![ruler, grid_with_h]
+                .width(iced_core::Length::Fill)
+                .height(iced_core::Length::Fill)
+                .into()
         };
 
         // ── 右侧面板：240px，占位 default（Info/Events/SoundFont），数据后续接 lumino 文档 ──

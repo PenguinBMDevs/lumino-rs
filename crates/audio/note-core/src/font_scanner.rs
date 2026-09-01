@@ -25,8 +25,48 @@ impl std::fmt::Display for FontInfo {
 
 /// 扫描系统字体，返回可用字体列表
 ///
+/// - macOS：`font-kit` 的 CoreText 后端在非主线程返回空且 `Handle::Memory` 无路径，
+///   此处改用 `fontdb` 直接扫描文件系统（`/System/Library/Fonts` 等），与 `cosmic-text`
+///   同源，可在任意线程调用且返回真实路径
+/// - 其他平台：`font-kit` SystemSource 已在 Windows/Linux 上准确且路径为 `Handle::Path`
+#[cfg(target_os = "macos")]
+pub fn scan_system_fonts() -> Vec<FontInfo> {
+    use std::collections::HashMap;
+
+    let mut db = fontdb::Database::new();
+    db.load_system_fonts();
+
+    // 以家族名为 key 去重，每族保留首次出现的路径（下拉框 per-family）
+    let mut map: HashMap<String, PathBuf> = HashMap::new();
+    for face in db.faces() {
+        let Some((family, _)) = face.families.first() else {
+            continue;
+        };
+        if family.trim().is_empty() || map.contains_key(family) {
+            continue;
+        }
+        let path = match &face.source {
+            fontdb::Source::File(p) => p.clone(),
+            fontdb::Source::SharedFile(p, _) => p.clone(),
+            fontdb::Source::Binary(_) => continue,
+        };
+        map.insert(family.clone(), path);
+    }
+
+    let mut fonts: Vec<FontInfo> = map
+        .into_iter()
+        .map(|(name, path)| FontInfo { name, path })
+        .collect();
+
+    fonts.sort_by_key(|a| a.name.to_lowercase());
+    fonts
+}
+
+/// 扫描系统字体，返回可用字体列表
+///
 /// 使用 font-kit 的 SystemSource 调用系统 API 获取准确的字体信息，
 /// 包括真实的字体名称（而非文件名）和字体文件路径。
+#[cfg(not(target_os = "macos"))]
 pub fn scan_system_fonts() -> Vec<FontInfo> {
     use font_kit::source::SystemSource;
 

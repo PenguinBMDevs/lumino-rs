@@ -18,11 +18,14 @@ use super::render_ctx::WgpuResources;
 use super::{Host, RenderContext, WindowContext};
 
 /// 确保 Material Icons 字体已加载（yinhe 模式用，lumino SVG 侧无影响）
+///
+/// - 同步注入到 `iced_graphics::text::font_system`，早于首帧 `UserInterface::build`，
+///   与 `UiConfig.program_font_name` 共存：正文走 `Renderer::new(default_font)` 缺省族，
+///   图标在 `material_icons::icon()->Font::with_name(FONT_FAMILY)` 精确命中，本族高优且
+///   不可被设置覆盖（`Once` 幂等，`load_font` 按指针去重）
 #[cfg(feature = "yinhe")]
 fn ensure_material_icons_loaded() {
-    // 字体通过 iced::font::load Task 异步加载，此处仅占位（首帧可能 fallback，次帧恢复）
-    // 实际加载由 Host 事件循环的 Task 处理，此处不阻塞
-    let _ = lumino_ui_yinhe::material_icons::FONT_BYTES;
+    lumino_ui_yinhe::material_icons::ensure_loaded();
 }
 
 impl Host {
@@ -42,6 +45,9 @@ impl Host {
         needs_renderers: bool,
         use_shared_engine: bool,
     ) -> (RenderContext, WindowContext) {
+        #[cfg(feature = "yinhe")]
+        ensure_material_icons_loaded();
+
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 

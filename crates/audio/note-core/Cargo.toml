@@ -19,6 +19,7 @@ lumino-core = { workspace = true }
 lumino-midi-model = { workspace = true }
 thiserror = { workspace = true }
 font-kit = { workspace = true }
+fontdb = { workspace = true }
 im = { workspace = true }
 bit-vec = { workspace = true }
 puffin = { workspace = true }

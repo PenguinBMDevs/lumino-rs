@@ -183,18 +183,21 @@ pub fn view<'a>(
         .spacing(4)
         .align_y(Alignment::Center);
 
-    // Arrange 下的钢琴卷帘叠加开关（yinhe 原 mode_bar.rs:183..202）
+    // Arrange 下的钢琴卷帘叠加开关（yinhe 原 mode_bar.rs:183..202，ICON_PIANO e521）
     if view_mode == ViewMode::Arrange {
         let pianoroll_btn: Element<'a> = {
-            let icon = lumino_ui_core::resources::icon::Icon::Pencil;
             let is_active = show_pianoroll_in_arrange;
             let bg_strong = palette.background.strong.color;
             let bg_weak = palette.background.weak.color;
-            let btn = button(lumino_ui_core::resources::icon::view_with_size_and_theme(
-                icon,
-                14,
-                14,
-                Some(&window.theme),
+            let icon_color = if is_active {
+                palette.background.strong.text
+            } else {
+                palette.background.base.text
+            };
+            let btn = button(crate::material_icons::icon(
+                crate::material_icons::codepoints::PIANO,
+                14.0,
+                icon_color,
             ))
             .on_press(Message::Yinhe(YinheAction::TogglePianorollInArrange))
             .padding(4)
