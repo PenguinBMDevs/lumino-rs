@@ -1,6 +1,6 @@
 //! 音频导出动作 — 仅保留 UI 控件交互变体
 
-use crate::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+use crate::{AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 
 /// 音频导出动作
 #[derive(Debug, Clone)]
@@ -51,6 +51,8 @@ pub enum AudioExportAction {
     KeyHighChanged(String),
     /// 音符强制结束延迟（毫秒）
     NoteForceEndDelayChanged(String),
+    /// 渲染后端变更（CPU / GPU）
+    BackendChanged(AudioBackend),
     /// 输出路径变更
     OutputPathChanged(String),
     /// 浏览输出路径

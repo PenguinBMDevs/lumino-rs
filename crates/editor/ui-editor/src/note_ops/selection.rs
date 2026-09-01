@@ -232,14 +232,22 @@ impl Editor {
     /// 若 `notes` 中任一音符与某个**更早**（`timestamp < local_timestamp`）的
     /// 远端选择指纹重叠（同轨、同键、tick 区间相交），返回 `true`：
     /// 表示远端已先占该音符，本地编辑应让行（远端优先）。
+    ///
+    /// 改进：过期远端选择（>5 秒未更新）自动失效，避免网络异常或用户挂起导致永久锁定；
+    /// 平局（`==`）本地优先，避免同毫秒抖动误锁。
     pub fn is_locked_by_other(
         &self,
         local_timestamp: u64,
         notes: &[(usize, f32, u16, f32)],
     ) -> bool {
+        let now = now_ms();
         for sel in self.remote_selections.values() {
+            // 过期检查：远端选择超过 5 秒未更新视为失效（用户已释放或网络断开）
+            if now.saturating_sub(sel.timestamp) > 5_000 {
+                continue;
+            }
             if sel.timestamp >= local_timestamp {
-                continue; // 远端不更早，不锁定
+                continue; // 远端不更早，不锁定（平局本地赢）
             }
             for (rtrack, rtick, rkey, rlen) in &sel.fingerprints {
                 for (track, tick, key, len) in notes {
@@ -262,6 +270,17 @@ impl Editor {
             Some(ts) => self.is_locked_by_other(ts, &self.local_selection_fingerprints),
             None => false,
         }
+    }
+
+    /// 判定目标音符区间是否被远端更早选择锁定（供粘贴/插入等非选区操作调用）
+    ///
+    /// 调用方传入待插入/粘贴的音符指纹列表，若任一目标区间与远端更早选择重叠则返回 true。
+    /// 该检查可防止“粘贴覆盖远端已框选音符”的冲突（随机混合编辑场景）。
+    #[allow(dead_code)]
+    pub fn is_target_locked_by_other(&self, target_notes: &[(usize, f32, u16, f32)]) -> bool {
+        let now = now_ms();
+        // 用当前时刻作为本地时间戳近似（粘贴瞬时），若远端更早则锁定
+        self.is_locked_by_other(now, target_notes)
     }
 
     /// 广播本地选择变更（供协作客户端转发到其他用户）

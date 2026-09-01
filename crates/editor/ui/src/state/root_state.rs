@@ -137,7 +137,7 @@ impl RootState {
 }
 
 /// 音频导出 UI 类型 re-export（保持兼容）
-pub use lumino_message::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+pub use lumino_message::{AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 
 #[cfg(test)]
 mod tests {

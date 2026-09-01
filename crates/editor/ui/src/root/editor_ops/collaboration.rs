@@ -164,9 +164,35 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
+        use std::collections::{HashMap, HashSet};
+
+        // 按音轨分组批量插入，避免对 100K 音符逐条 insert（O(K·log N) → O(N log N) 单次归并）
+        // 预建每轨现有 id 集合，避免每音符全轨线性扫（O(K·M) → O(M+K)）
+        let mut existing_ids_by_track: HashMap<usize, HashSet<u64>> = HashMap::new();
+        for n in &operation.notes {
+            existing_ids_by_track
+                .entry(n.track_index)
+                .or_insert_with(|| {
+                    self.editor
+                        .editor_state
+                        .data
+                        .track_notes(n.track_index)
+                        .iter()
+                        .map(|ev| ev.id)
+                        .collect()
+                });
+        }
+        let mut by_track: HashMap<usize, Vec<crate::editor::note::Note>> = HashMap::new();
+        let mut max_id: u64 = 0;
         for note in &operation.notes {
-            // 转换协作音符为编辑器音符，并保留对端真实全局 ID（取代原 from_raw 的 0），
-            // 使 B 端音符与 A 端共享同一稳定身份，后续同步按 id 精确匹配。
+            max_id = max_id.max(note.id);
+            // 去重：若该 id 已存在于本地（重传），跳过插入避免重复 id
+            if existing_ids_by_track
+                .get(&note.track_index)
+                .is_some_and(|s| s.contains(&note.id))
+            {
+                continue;
+            }
             let mut editor_note = crate::editor::note::Note::from_raw(
                 note.tick,
                 note.key,
@@ -175,25 +201,31 @@ impl Root {
                 note.channel,
             );
             editor_note.id = note.id;
-
-            // 2026-08 单一权威源：直接写入 document 指定音轨（track_notes 缓存已删除）
-            let track_idx = note.track_index;
-            self.editor
+            by_track
+                .entry(note.track_index)
+                .or_default()
+                .push(editor_note);
+        }
+        // 分轨批量写入（复用 EditorData 的批量接口，自动处理 dirty/增量）
+        for (track_idx, notes) in by_track {
+            // batch_insert_notes_to_track_with_ids 会保留已设置的 id（非 0 则原样），并做排序归并
+            let _ids = self
+                .editor
                 .editor_state
                 .data
-                .insert_note(track_idx, editor_note);
-            // 抬升本地分配器，避免未来本地分配复用到对端已占用的 id（碰撞缺陷 #5）。
-            self.editor.editor_state.data.ensure_note_id_above(note.id);
+                .batch_insert_notes_to_track_with_ids(track_idx, &notes);
         }
-        // 精确标记受影响音轨（洋葱皮事件级增量）
-        let affected: std::collections::HashSet<usize> =
-            operation.notes.iter().map(|n| n.track_index).collect();
+        // 抬升分配器只需一次
+        if max_id != 0 {
+            self.editor.editor_state.data.ensure_note_id_above(max_id);
+        }
+        // 精确标记受影响音轨（洋葱皮事件级增量）——若已在循环内标记，此处再补全
+        let affected: HashSet<usize> = operation.notes.iter().map(|n| n.track_index).collect();
         self.editor
             .editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        // 音符由 wgpu 渲染，不需要清 grid cache
-        tracing::info!("协作: 已添加 {} 个远程音符", operation.notes.len());
+        tracing::info!("协作: 已添加 {} 个远程音符（批量）", operation.notes.len());
     }
 
     fn handle_remote_notes_update(
@@ -285,7 +317,27 @@ impl Root {
             operation.notes.len(),
             operation.source_track
         );
+        // 预建每轨 id→index 映射，避免每音符全轨线性扫（100K*1M → 建表一次）
+        let mut id_index_by_track: std::collections::HashMap<
+            usize,
+            std::collections::HashMap<u64, usize>,
+        > = std::collections::HashMap::new();
+        for note in &operation.notes {
+            id_index_by_track.entry(note.track_index).or_insert_with(|| {
+                self.editor
+                    .editor_state
+                    .data
+                    .track_notes(note.track_index)
+                    .iter()
+                    .enumerate()
+                    .map(|(i, n)| (n.id, i))
+                    .collect()
+            });
+        }
         let mut matched_count = 0;
+        // 收集待更新操作，避免在循环中因 update_note 导致索引失效
+        // 策略：先按原始索引快照匹配，更新时注意 update_note 会重排，需重新解析但 id 仍唯一
+        // 为简化，每次取当前快照的 position（仍 O(1) 查表 + 一次 position 回退），但比全轨扫快
         for note in &operation.notes {
             tracing::trace!(
                 "协作: Move 查找音符 - target_tick={}, target_key={}, track={}",
@@ -293,18 +345,36 @@ impl Root {
                 note.key,
                 note.track_index
             );
-            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
             let track_idx = note.track_index;
-            let notes = self.editor.editor_state.data.track_notes(track_idx);
-            // 优先按全局 ID 精确匹配；ID 未命中回退按位置匹配。
-            let Some(match_idx) = notes.iter().position(|n| n.id == note.id).or_else(|| {
-                notes.iter().position(|n| {
-                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+            // 优先按 id 索引 O(1) 命中
+            let match_idx = if let Some(map) = id_index_by_track.get(&track_idx)
+                && let Some(&idx) = map.get(&note.id)
+            {
+                // 验证索引仍有效且 id 匹配（update 可能已重排，前次 map 已过期需回退线性扫）
+                let notes = self.editor.editor_state.data.track_notes(track_idx);
+                if idx < notes.len() && notes[idx].id == note.id {
+                    Some(idx)
+                } else {
+                    notes.iter().position(|n| n.id == note.id).or_else(|| {
+                        notes.iter().position(|n| {
+                            (n.start_tick as f32 - note.tick).abs() < 1.0
+                                && n.key as u16 == note.key
+                        })
+                    })
+                }
+            } else {
+                let notes = self.editor.editor_state.data.track_notes(track_idx);
+                notes.iter().position(|n| n.id == note.id).or_else(|| {
+                    notes.iter().position(|n| {
+                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                    })
                 })
-            }) else {
+            };
+            let Some(match_idx) = match_idx else {
                 tracing::warn!("协作: track {} 不存在或音符未匹配", track_idx);
                 continue;
             };
+            let notes = self.editor.editor_state.data.track_notes(track_idx);
             tracing::trace!(
                 "协作:   [{}] tick={}, key={}",
                 match_idx,

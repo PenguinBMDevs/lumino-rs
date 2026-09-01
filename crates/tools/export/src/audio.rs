@@ -11,6 +11,7 @@ pub mod engine;
 pub mod event;
 pub mod event_kind;
 pub mod event_stream;
+pub mod gpu_backend;
 pub mod limiter;
 pub mod render_loops;
 pub mod renderer;

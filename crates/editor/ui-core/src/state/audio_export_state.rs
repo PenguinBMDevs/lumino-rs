@@ -1,6 +1,6 @@
 //! 音频导出面板状态
 
-use lumino_message::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+use lumino_message::{AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 
 /// 音频导出面板状态（主界面侧边栏面板，非独立对话框）
 ///
@@ -53,6 +53,8 @@ pub struct AudioExportDialogState {
     pub key_high: u8,
     /// 音符强制结束延迟（毫秒）
     pub note_force_end_delay: u32,
+    /// 渲染后端（CPU / GPU）
+    pub backend: AudioBackend,
     /// 输出路径
     pub output_path: String,
     /// 是否正在渲染（显示内嵌进度条）
@@ -100,6 +102,7 @@ impl AudioExportDialogState {
             key_low: 0,
             key_high: 127,
             note_force_end_delay: 0,
+            backend: AudioBackend::default(),
             output_path: String::new(),
             is_rendering: false,
             render_message: String::new(),

@@ -4234,6 +4234,7 @@ dependencies = [
  "lumino-core",
  "lumino-diagnostics",
  "lumino-extras",
+ "lumino-gpu-synth",
  "lumino-midi-loader",
  "lumino-midi-model",
  "lumino-midiplayer",

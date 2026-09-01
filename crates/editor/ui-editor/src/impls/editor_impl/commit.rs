@@ -207,8 +207,10 @@ impl Editor {
         }
 
         // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB）
+        // 使用 with_ids 免去每音符 note_id_at 全轨重扫（O(N·M) → O(N log N)）
         self.push_history();
-        let inserted = self.editor_state.data.batch_insert_notes(&notes);
+        let ids = self.editor_state.data.batch_insert_notes_with_ids(&notes);
+        let inserted = ids.len();
         // 插入位移了既有音符索引，旧选中索引全部失效：清空后按参数全等
         // 重选「副本」（最新件框选；副本 tick 可能落在现有音符之间，索引散布
         // 而非连续追加，不能按 start..start+inserted 连续区间选中）。
@@ -216,18 +218,12 @@ impl Editor {
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
         // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
-        // 否则 B 端完全缺失被复制的副本。
+        // 否则 B 端完全缺失被复制的副本。使用返回的 ids 直接广播，消除 note_id_at 循环。
         let track = self.editor_state.data.current_track;
-        for n in &notes {
-            // 复制副本已批量插入文档并分配真实 id，按位置反查取回后随事件发出。
-            let id = self
-                .editor_state
-                .data
-                .note_id_at(track, n.tick, n.key)
-                .unwrap_or(0);
+        for (n, id) in notes.iter().zip(ids.iter()) {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
-                    id, n.tick, n.key, n.length, n.velocity, n.channel, track,
+                    *id, n.tick, n.key, n.length, n.velocity, n.channel, track,
                 ),
             ));
         }

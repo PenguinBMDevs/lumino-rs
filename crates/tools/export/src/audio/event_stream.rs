@@ -19,211 +19,107 @@ pub(crate) struct MergedEvent {
 }
 
 /// MidiDocEventStream — 流式迭代 MidiDocument 中的事件
-pub(crate) struct MidiDocEventStream<'a> {
-    doc: &'a MidiDocument,
-    note_cursors: Vec<(usize, bool)>,
-    ctrl_cursor: usize,
-    total_events: usize,
-    emitted: usize,
+///
+/// 将文档中所有 NoteOn/NoteOff 与控制事件展开为扁平列表后按 (tick, priority)
+/// 排序，彻底解决旧游标实现中“同轨重叠音符屏蔽”问题：
+/// 旧实现每轨仅跟踪一个 `(idx, bool)`，发射 `A On(0)` 后游标指向 `A Off(10)`，
+/// 导致 `B On(5)` 被掩盖、推迟到 10 才触发（和弦变琶音）。新实现预排序保证
+/// 时值精确，代价为一次 O(N log N) 排序（N=2*notes+controls，對 100K 音符约 200K 事件可接受）。
+pub(crate) struct MidiDocEventStream {
+    events: Vec<MergedEvent>,
+    cursor: usize,
 }
 
-impl<'a> MidiDocEventStream<'a> {
-    pub fn new(doc: &'a MidiDocument) -> Self {
-        let track_count = doc.notes.len();
-        let note_cursors = vec![(0_usize, false); track_count];
+impl MidiDocEventStream {
+    pub fn new(doc: &MidiDocument) -> Self {
         let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
-        let total_events = total_notes * 2 + doc.control_events.len();
-        MidiDocEventStream {
-            doc,
-            note_cursors,
-            ctrl_cursor: 0,
-            total_events,
-            emitted: 0,
-        }
-    }
+        let total = total_notes * 2 + doc.control_events.len();
+        let mut events = Vec::with_capacity(total);
 
-    pub fn total_events(&self) -> usize {
-        self.total_events
-    }
-
-    /// 在所有游标中找到最小 tick
-    fn find_min_tick(&self) -> u32 {
-        let mut min_tick = u32::MAX;
-
-        for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
-            if note_idx < self.doc.notes[track_idx].len() {
-                let note = &self.doc.notes[track_idx][note_idx];
-                let tick = if note_on_emitted {
-                    note.end_tick
-                } else {
-                    note.start_tick
-                };
-                if tick < min_tick {
-                    min_tick = tick;
-                }
-            }
-        }
-        if self.ctrl_cursor < self.doc.control_events.len() {
-            let tick = self.doc.control_events[self.ctrl_cursor].tick;
-            if tick < min_tick {
-                min_tick = tick;
-            }
-        }
-
-        min_tick
-    }
-
-    /// 在指定 tick 处找到优先级最高的事件（priority 数值越小优先级越高）
-    fn find_best_event_at(&self, min_tick: u32) -> Option<(u8, MergedEvent)> {
-        let mut best: Option<(u8, MergedEvent)> = None;
-
-        // 扫描所有音轨，找最小 tick 处的事件
-        for (track_idx, &(note_idx, note_on_emitted)) in self.note_cursors.iter().enumerate() {
-            if note_idx >= self.doc.notes[track_idx].len() {
-                continue;
-            }
-            let note = &self.doc.notes[track_idx][note_idx];
-            let tick = if note_on_emitted {
-                note.end_tick
-            } else {
-                note.start_tick
-            };
-            if tick != min_tick {
-                continue;
-            }
-            let priority = if note_on_emitted { 1 } else { 5 };
-            let event = if note_on_emitted {
-                MergedEvent {
-                    tick: note.end_tick,
-                    kind: 1,
-                    channel: note.channel,
-                    param1: note.key,
-                    param2: 0,
-                }
-            } else {
-                MergedEvent {
+        // 展开所有音符为 NoteOn/NoteOff
+        for track_notes in doc.notes.iter() {
+            for note in track_notes.iter() {
+                events.push(MergedEvent {
                     tick: note.start_tick,
                     kind: 0,
                     channel: note.channel,
                     param1: note.key,
                     param2: note.velocity as u16,
-                }
-            };
-            if best.as_ref().is_none_or(|(p, _)| priority < *p) {
-                best = Some((priority, event));
+                });
+                events.push(MergedEvent {
+                    tick: note.end_tick,
+                    kind: 1,
+                    channel: note.channel,
+                    param1: note.key,
+                    param2: 0,
+                });
             }
         }
-
-        // 扫描控制事件
-        self.try_control_event_at(min_tick, &mut best);
-
-        best
-    }
-
-    /// 尝试在指定 tick 处添加控制事件到最佳候选
-    fn try_control_event_at(&self, min_tick: u32, best: &mut Option<(u8, MergedEvent)>) {
-        if self.ctrl_cursor >= self.doc.control_events.len() {
-            return;
-        }
-        let ctrl = &self.doc.control_events[self.ctrl_cursor];
-        if ctrl.tick != min_tick {
-            return;
-        }
-        let candidate = match ctrl.kind {
-            0 => {
-                let (c, v) = ctrl.as_control_change();
-                Some((
-                    2,
-                    MergedEvent {
+        // 展开控制事件
+        for ctrl in doc.control_events.iter() {
+            match ctrl.kind {
+                0 => {
+                    let (c, v) = ctrl.as_control_change();
+                    events.push(MergedEvent {
                         tick: ctrl.tick,
                         kind: 2,
                         channel: ctrl.channel,
                         param1: c,
                         param2: v as u16,
-                    },
-                ))
-            }
-            1 => Some((
-                3,
-                MergedEvent {
+                    });
+                }
+                1 => events.push(MergedEvent {
                     tick: ctrl.tick,
                     kind: 3,
                     channel: ctrl.channel,
                     param1: ctrl.as_program_change(),
                     param2: 0,
-                },
-            )),
-            2 => Some((
-                4,
-                MergedEvent {
+                }),
+                2 => events.push(MergedEvent {
                     tick: ctrl.tick,
                     kind: 4,
                     channel: ctrl.channel,
                     param1: 0,
                     param2: ctrl.param,
-                },
-            )),
-            _ => None,
-        };
-
-        if let Some(cand) = candidate
-            && best.as_ref().is_none_or(|(p, _)| cand.0 < *p)
-        {
-            *best = Some(cand);
+                }),
+                _ => {}
+            }
         }
+
+        // 按 (tick, priority) 稳定排序；priority 数值越小越先：NoteOff(1) > CC(2) > PC(3) > PB(4) > NoteOn(5)
+        // 使用 stable sort 保持插入序（track 0 先于 track 1），与旧 find_best_event_at 的 tie 语义一致。
+        events.sort_by(|a, b| {
+            let pa = match a.kind {
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                4 => 4,
+                0 => 5,
+                _ => 6,
+            };
+            let pb = match b.kind {
+                1 => 1,
+                2 => 2,
+                3 => 3,
+                4 => 4,
+                0 => 5,
+                _ => 6,
+            };
+            a.tick.cmp(&b.tick).then(pa.cmp(&pb))
+        });
+
+        Self { events, cursor: 0 }
     }
 
-    /// 根据发出的事件推进游标
-    fn advance_cursors(&mut self, event: &MergedEvent) {
-        match event.kind {
-            0 | 1 => {
-                for (track_idx, cursor) in self.note_cursors.iter_mut().enumerate() {
-                    let (note_idx, note_on_emitted) = cursor;
-                    if *note_idx < self.doc.notes[track_idx].len() {
-                        let note = &self.doc.notes[track_idx][*note_idx];
-                        let note_tick = if *note_on_emitted {
-                            note.end_tick
-                        } else {
-                            note.start_tick
-                        };
-                        if note_tick == event.tick {
-                            if *note_on_emitted {
-                                *note_idx += 1;
-                                *note_on_emitted = false;
-                            } else {
-                                *note_on_emitted = true;
-                            }
-                            break;
-                        }
-                    }
-                }
-            }
-            2..=4 => {
-                self.ctrl_cursor += 1;
-            }
-            _ => {}
-        }
+    pub fn total_events(&self) -> usize {
+        self.events.len()
     }
 
     /// 获取下一个事件
     pub fn next_event(&mut self) -> Option<MergedEvent> {
-        if self.emitted >= self.total_events {
-            return None;
-        }
-
-        let min_tick = self.find_min_tick();
-        if min_tick == u32::MAX {
-            return None;
-        }
-
-        let best = self.find_best_event_at(min_tick);
-
-        if let Some((_, ref event)) = best {
-            self.advance_cursors(event);
-        }
-
-        self.emitted += 1;
-        best.map(|(_, e)| e)
+        let ev = *self.events.get(self.cursor)?;
+        self.cursor += 1;
+        Some(ev)
     }
 }
 
@@ -311,5 +207,47 @@ mod tests {
         let e = stream.next_event().expect("second event");
         assert_eq!(e.kind, 0, "second event should also be NoteOn (kind=0)");
         assert_eq!(e.channel, 1, "track 1 second");
+    }
+
+    #[test]
+    fn test_overlapping_notes_same_track() {
+        // 同轨重叠：A(0,10) B(5,15) — 旧游标实现会把 B On 推迟到 10，此测试回归该 bug
+        let doc = make_doc(
+            vec![vec![
+                NoteEvent::new(0, 10, 60, 100, 0),
+                NoteEvent::new(5, 15, 64, 100, 0),
+            ]],
+            15,
+        );
+        let mut stream = MidiDocEventStream::new(&doc);
+        assert_eq!(stream.total_events(), 4);
+        let e1 = stream.next_event().unwrap();
+        assert_eq!((e1.tick, e1.kind, e1.param1), (0, 0, 60));
+        let e2 = stream.next_event().unwrap();
+        assert_eq!((e2.tick, e2.kind, e2.param1), (5, 0, 64), "B On 应在 5 而非 10");
+        let e3 = stream.next_event().unwrap();
+        assert_eq!((e3.tick, e3.kind, e3.param1), (10, 1, 60));
+        let e4 = stream.next_event().unwrap();
+        assert_eq!((e4.tick, e4.kind, e4.param1), (15, 1, 64));
+        assert!(stream.next_event().is_none());
+    }
+
+    #[test]
+    fn test_overlapping_notes_same_tick_priority() {
+        // 同 tick：NoteOff 优先于 NoteOn
+        let doc = make_doc(
+            vec![vec![
+                NoteEvent::new(0, 10, 60, 100, 0),
+                NoteEvent::new(10, 20, 62, 100, 0),
+            ]],
+            20,
+        );
+        let mut stream = MidiDocEventStream::new(&doc);
+        // tick 10 同时有 A Off 和 B On，Off 应先
+        let mut events = Vec::new();
+        while let Some(e) = stream.next_event() {
+            events.push((e.tick, e.kind));
+        }
+        assert_eq!(events, vec![(0, 0), (10, 1), (10, 0), (20, 1)]);
     }
 }

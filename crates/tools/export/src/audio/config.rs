@@ -72,6 +72,10 @@ pub struct AudioRenderConfig {
     /// 音符结束后额外延迟（毫秒）
     pub note_force_end_delay: u32,
 
+    // ── 后端选择 ──
+    /// 音频渲染后端（CPU / GPU）
+    pub backend: AudioBackendKind,
+
     // ── 进度回调 ──
     /// 进度回调函数（可选）
     pub progress_callback: Option<ProgressCallback>,
@@ -94,6 +98,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("linear_envelope", &self.linear_envelope)
             .field("audio_codec", &self.audio_codec)
             .field("audio_bitrate", &self.audio_bitrate)
+            .field("backend", &self.backend)
             .field(
                 "progress_callback",
                 &self.progress_callback.as_ref().map(|_| "..."),
@@ -139,6 +144,25 @@ pub enum AudioInterpolation {
     Nearest,
     /// 线性插值
     Linear,
+}
+
+/// 音频渲染后端
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AudioBackendKind {
+    /// CPU 后端（xsynth，默认）
+    #[default]
+    Cpu,
+    /// GPU 后端（lumino-gpu-synth）
+    Gpu,
+}
+
+impl std::fmt::Display for AudioBackendKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cpu => write!(f, "CPU"),
+            Self::Gpu => write!(f, "GPU"),
+        }
+    }
 }
 
 impl From<AudioChannelMode> for ChannelCount {
@@ -190,10 +214,20 @@ impl AudioRenderConfig {
 
     /// 构造 xsynth 的 SoundfontInitOptions
     pub fn build_sf_options(&self) -> SoundfontInitOptions {
-        let vol_envelope_options = EnvelopeOptions {
-            attack_curve: EnvelopeCurveType::Exponential,
-            decay_curve: EnvelopeCurveType::Exponential,
-            release_curve: EnvelopeCurveType::Exponential,
+        // linear_envelope 为 true 时使用线性衰减/释音，匹配 OmniConverter 的 LinearEnvelope 模式
+        // 否则保持指数曲线（默认，与旧行为一致）
+        let vol_envelope_options = if self.linear_envelope {
+            EnvelopeOptions {
+                attack_curve: EnvelopeCurveType::Exponential,
+                decay_curve: EnvelopeCurveType::Linear,
+                release_curve: EnvelopeCurveType::Linear,
+            }
+        } else {
+            EnvelopeOptions {
+                attack_curve: EnvelopeCurveType::Exponential,
+                decay_curve: EnvelopeCurveType::Exponential,
+                release_curve: EnvelopeCurveType::Exponential,
+            }
         };
 
         SoundfontInitOptions {
@@ -231,6 +265,7 @@ impl Default for AudioRenderConfig {
             key_high: 127,
             filter_key: false,
             note_force_end_delay: 0,
+            backend: AudioBackendKind::Cpu,
             progress_callback: None,
         }
     }

@@ -66,34 +66,36 @@ impl<'a> BatchRenderer<'a> {
     /// 渲染的样本数据（f32 interleaved）
     pub fn render(&mut self, event_time: f64) -> Vec<f32> {
         let mut remaining = event_time;
-        let mut buffer = BatchBuffer {
-            output_vec: Vec::with_capacity(4096),
-            missed_samples: 0.0,
-        };
+        let mut missed_samples = 0.0_f64;
+        let mut all_output = Vec::new();
 
         while remaining > 0.0 {
             let batch = remaining.min(MAX_BATCH_SECONDS);
 
             // 计算样点数（含亚样点累加）
-            let samples_f = self.sample_rate as f64 * batch + buffer.missed_samples;
-            buffer.missed_samples = samples_f % 1.0;
+            let samples_f = self.sample_rate as f64 * batch + missed_samples;
+            missed_samples = samples_f % 1.0;
             let frame_count = samples_f as usize;
             let sample_count = frame_count * self.channel_count as usize;
 
             // 从回收池获取 Vec
-            buffer.output_vec = self.acquire_vec(sample_count);
+            let mut buf = self.acquire_vec(sample_count);
             // SAFETY: read_samples_unchecked 会填充样本
             unsafe {
-                buffer.output_vec.set_len(sample_count);
+                buf.set_len(sample_count);
             }
-
-            self.channel_group
-                .read_samples_unchecked(&mut buffer.output_vec);
+            self.channel_group.read_samples_unchecked(&mut buf);
+            all_output.extend_from_slice(&buf);
+            // 归还临时缓冲
+            if self.vec_pool.len() < 4 {
+                buf.clear();
+                self.vec_pool.push(buf);
+            }
 
             remaining -= batch;
         }
 
-        buffer.output_vec
+        all_output
     }
 
     /// 渲染并写入到目标接收器

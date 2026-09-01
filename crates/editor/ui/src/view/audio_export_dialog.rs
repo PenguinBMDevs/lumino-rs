@@ -65,7 +65,7 @@ use iced_core::{Alignment, Length};
 use iced_widget::{checkbox, pick_list, row, text, text_input};
 
 use crate::message::{AudioExportAction, Message};
-use crate::state::root_state::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+use crate::state::root_state::{AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 use crate::view::widgets;
 
 fn audio_settings_section<'a>(
@@ -82,6 +82,25 @@ fn audio_settings_section<'a>(
             .size(18)
             .font(iced_core::Font::with_name("Microsoft YaHei"))
             .style(widgets::dialog_label_style(palette)),
+        space().height(12),
+        // 渲染后端
+        row![
+            text("渲染后端:").size(14).style(label_style).width(120),
+            pick_list(
+                vec![AudioBackend::Cpu, AudioBackend::Gpu],
+                Some(state.backend),
+                |v| Message::AudioExport(AudioExportAction::BackendChanged(v)),
+            )
+            .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+        space().height(4),
+        text("CPU 兼容性最好；GPU 需 Vulkan/Metal，无适配器时自动回退到 CPU，速度提升 2-5 倍")
+            .size(11)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text.scale_alpha(0.7)),
+            }),
         space().height(12),
         // 输出格式
         row![
@@ -115,10 +134,16 @@ fn audio_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        space().height(4),
+        text("仅 MP3/Ogg 有效；WAV/FLAC 忽略此值")
+            .size(11)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+            }),
         space().height(8),
         // 采样率
         row![
-            text("采样率:").size(14).style(label_style).width(120),
+            text("采样率 (Hz):").size(14).style(label_style).width(120),
             pick_list(
                 vec![22050u32, 44100, 48000, 96000],
                 Some(state.sample_rate),
@@ -128,6 +153,12 @@ fn audio_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        space().height(4),
+        text("MP3 最高 48000 Hz，FLAC 最高 384000 Hz，超出会自动报错")
+            .size(11)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+            }),
         space().height(8),
         // 通道数
         row![
@@ -144,7 +175,7 @@ fn audio_settings_section<'a>(
         space().height(8),
         // 层数限制
         row![
-            text("层数限制:").size(14).style(label_style).width(120),
+            text("最大复音数:").size(14).style(label_style).width(120),
             text_input("32", &state.layers.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
                 .padding([6, 10])
@@ -152,18 +183,24 @@ fn audio_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        space().height(4),
+        text("CPU 达到上限时丢弃最旧音符；GPU 上为物理池大小，0=无限制（黑MIDI推荐）")
+            .size(11)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+            }),
         space().height(8),
-        // 通道多线程
+        // 通道多线程（仅 CPU 有效）
         threading_row(
-            "通道多线程:",
+            "通道多线程 (CPU):",
             state.channel_threading,
             |v| Message::AudioExport(AudioExportAction::ChannelThreadingChanged(v)),
             palette
         ),
         space().height(8),
-        // 按键多线程
+        // 按键多线程（仅 CPU 有效）
         threading_row(
-            "按键多线程:",
+            "按键多线程 (CPU):",
             state.key_threading,
             |v| Message::AudioExport(AudioExportAction::KeyThreadingChanged(v)),
             palette
@@ -181,20 +218,26 @@ fn audio_settings_section<'a>(
         ]
         .spacing(8)
         .align_y(Alignment::Center),
+        space().height(4),
+        text("无插值有混叠，线性为默认（GPU 固定线性，与 CPU 线性一致）")
+            .size(11)
+            .style(move |_t: &iced_core::Theme| text::Style {
+                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
+            }),
         space().height(12),
         // 复选框
         checkbox(state.apply_limiter)
-            .label("应用限制器 (防止削波)")
+            .label("启用限幅器（大复音防削波，会轻微影响响度，建议开启）")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         checkbox(state.disable_fade_out)
-            .label("禁用淡出 (可能爆音)")
+            .label("禁用淡出（voice 被抢占时硬切，会产生咔哒声，不建议开启）")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
         space().height(4),
         checkbox(state.linear_envelope)
-            .label("线性包络")
+            .label("线性包络（CPU 衰减/释音用线性，GPU 默认线性，关闭则全指数）")
             .on_toggle(|v| Message::AudioExport(AudioExportAction::LinearEnvelopeChanged(v)))
             .style(widgets::dialog_checkbox_style(palette)),
     ]

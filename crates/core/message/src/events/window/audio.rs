@@ -116,6 +116,25 @@ impl AudioFormat {
     }
 }
 
+/// 音频渲染后端
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum AudioBackend {
+    /// CPU 后端（xsynth，默认）
+    #[default]
+    Cpu,
+    /// GPU 后端（LGS，需 Vulkan/Metal）
+    Gpu,
+}
+
+impl std::fmt::Display for AudioBackend {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cpu => write!(f, "CPU (兼容)"),
+            Self::Gpu => write!(f, "GPU (加速)"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

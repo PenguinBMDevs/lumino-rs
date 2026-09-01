@@ -1,7 +1,7 @@
 //! 音频/导出相关类型。
 
 pub use crate::events::window::audio::{
-    AudioChannels, AudioFormat, Interpolation, ThreadingOption,
+    AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption,
 };
 
 #[cfg(test)]

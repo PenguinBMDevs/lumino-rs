@@ -16,7 +16,7 @@ use xsynth_core::{
 
 use crate::error::{ExportError, ExportResult};
 
-use super::{config::AudioRenderConfig, stream::SampleSink, tick_conv::TickToTime};
+use super::{config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime};
 
 /// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
 ///
@@ -32,6 +32,8 @@ pub struct MidiEventProcessor<'a> {
     channel_count: u16,
     /// Vec 回收池
     vec_pool: Vec<Vec<f32>>,
+    /// 限幅器（启用时）
+    limiter: Option<AudioLimiter>,
 }
 
 /// 进度回调
@@ -48,6 +50,15 @@ impl<'a> MidiEventProcessor<'a> {
         sink: &'a mut dyn SampleSink,
     ) -> Self {
         let params = *channel_group.stream_params();
+        let limiter = if config.apply_limiter {
+            Some(AudioLimiter::new(
+                params.sample_rate,
+                params.channels.count(),
+                0.95,
+            ))
+        } else {
+            None
+        };
         MidiEventProcessor {
             config,
             channel_group,
@@ -56,6 +67,7 @@ impl<'a> MidiEventProcessor<'a> {
             sample_rate: params.sample_rate,
             channel_count: params.channels.count(),
             vec_pool: Vec::new(),
+            limiter,
         }
     }
 
@@ -100,8 +112,8 @@ impl<'a> MidiEventProcessor<'a> {
             self.channel_group.read_samples_unchecked(&mut buffer);
 
             // 应用限制器（如果配置）
-            if self.config.apply_limiter {
-                apply_limiter(&mut buffer, self.channel_count);
+            if let Some(limiter) = self.limiter.as_mut() {
+                limiter.process(&mut buffer);
             }
 
             self.sink.write_samples(&buffer)?;
@@ -111,6 +123,20 @@ impl<'a> MidiEventProcessor<'a> {
         }
 
         Ok(())
+    }
+
+    /// 判断音符是否应被过滤（力度/键位）
+    #[inline]
+    fn is_note_filtered(&self, key: u8, velocity: u8) -> bool {
+        if self.config.filter_key && (key < self.config.key_low || key > self.config.key_high) {
+            return true;
+        }
+        if self.config.filter_velocity
+            && (velocity < self.config.velocity_low || velocity > self.config.velocity_high)
+        {
+            return true;
+        }
+        false
     }
 
     /// 处理一个 MIDI 事件，渲染到该事件的时间点
@@ -128,15 +154,44 @@ impl<'a> MidiEventProcessor<'a> {
             let ch = channel.as_int() as u32;
             match message {
                 MidiMessage::NoteOn { key, vel } => {
+                    let vel_u8 = vel.as_int();
+                    // velocity 0 的 NoteOn 按 MIDI 规范视为 NoteOff
+                    if vel_u8 == 0 {
+                        if self.config.filter_key
+                            && (*key < self.config.key_low || *key > self.config.key_high)
+                        {
+                            return Ok(());
+                        }
+                        if self.config.note_force_end_delay > 0 {
+                            self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                        }
+                        self.channel_group.send_event(SynthEvent::Channel(
+                            ch,
+                            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
+                        ));
+                        return Ok(());
+                    }
+                    if self.is_note_filtered(*key, vel_u8) {
+                        return Ok(());
+                    }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
                         ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
                             key: *key,
-                            vel: vel.as_int(),
+                            vel: vel_u8,
                         }),
                     ));
                 }
                 MidiMessage::NoteOff { key, .. } => {
+                    if self.config.filter_key
+                        && (*key < self.config.key_low || *key > self.config.key_high)
+                    {
+                        return Ok(());
+                    }
+                    // note_force_end_delay：延长音符，延迟发送 NoteOff
+                    if self.config.note_force_end_delay > 0 {
+                        self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                    }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
                         ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
@@ -152,6 +207,9 @@ impl<'a> MidiEventProcessor<'a> {
                     ));
                 }
                 MidiMessage::ProgramChange { program } => {
+                    if self.config.ignore_program_changes {
+                        return Ok(());
+                    }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
                         ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
@@ -184,16 +242,17 @@ impl<'a> MidiEventProcessor<'a> {
                 ChannelAudioEvent::ResetControl,
             )));
 
-        // 持续渲染尾部直到静音
+        // 持续渲染尾部直到静音（带 120s 安全上限，防止无限循环）
         let frame_size = self.channel_count as usize;
         let batch_size = self.sample_rate as usize * frame_size; // 1秒
+        let max_batches = 120; // 120 秒上限，对齐 GPU 侧 max_tail_seconds
 
-        loop {
+        for _ in 0..max_batches {
             let mut buffer = vec![0.0f32; batch_size];
             self.channel_group.read_samples_unchecked(&mut buffer);
 
-            if self.config.apply_limiter {
-                apply_limiter(&mut buffer, self.channel_count);
+            if let Some(limiter) = self.limiter.as_mut() {
+                limiter.process(&mut buffer);
             }
 
             // 检测是否静音
@@ -211,7 +270,8 @@ impl<'a> MidiEventProcessor<'a> {
     }
 }
 
-/// 简单的限幅器（当未使用 AudioLimiter 时作为后备）
+/// 简单的限幅器（兜底，已被 AudioLimiter 替代，保留用于独立调用）
+#[allow(dead_code)]
 fn apply_limiter(samples: &mut [f32], _channels: u16) {
     // 简单的峰值限制
     let threshold = 0.95;

@@ -46,6 +46,7 @@ fn build_audio_export_config(
         key_low: st.key_low,
         key_high: st.key_high,
         note_force_end_delay: st.note_force_end_delay,
+        backend: st.backend,
     }
 }
 
@@ -162,6 +163,9 @@ impl DialogHandler {
                 if let Some(v) = parse_uint(&value) {
                     root.state.audio_export_dialog.note_force_end_delay = v;
                 }
+            }
+            A::BackendChanged(value) => {
+                root.state.audio_export_dialog.backend = value;
             }
             A::BrowseOutput => {
                 let st = &root.state.audio_export_dialog;

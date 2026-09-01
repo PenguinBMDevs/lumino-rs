@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use lumino_export::audio::codec::AudioCodec;
 use lumino_export::audio::config::{
-    AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
+    AudioBackendKind, AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
 };
 
 impl RunnerInner {
@@ -43,6 +43,7 @@ impl RunnerInner {
             key_low,
             key_high,
             note_force_end_delay,
+            backend,
         } = *config;
 
         // 根据是否有内存中的 MidiDocument 选择渲染模式
@@ -93,6 +94,11 @@ impl RunnerInner {
             lumino_message::events::window::audio::AudioFormat::WavPack => AudioCodec::WavPack,
         };
 
+        let backend_kind = match backend {
+            lumino_message::events::window::audio::AudioBackend::Cpu => AudioBackendKind::Cpu,
+            lumino_message::events::window::audio::AudioBackend::Gpu => AudioBackendKind::Gpu,
+        };
+
         // 1. 创建进度通道，将渲染进度发回主线程更新 UI
         let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
         self.window_state.export_progress_rx = Some(progress_rx);
@@ -125,6 +131,7 @@ impl RunnerInner {
             key_low,
             key_high,
             note_force_end_delay,
+            backend: backend_kind,
             progress_callback: Some(progress_cb),
         };
 

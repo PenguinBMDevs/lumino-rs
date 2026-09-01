@@ -30,7 +30,17 @@ impl TickToTime {
         // 确保按 tick 排序
         tempos.sort_by_key(|&(t, _)| t);
         // 去重：同 tick 的保留最后一个（后加载的覆盖前面的）
-        tempos.dedup_by_key(|&mut (t, _)| t);
+        // dedup_by_key 保留第一个，需反向处理以保留最后一个
+        {
+            let mut deduped: Vec<(u32, f32)> = Vec::with_capacity(tempos.len());
+            for (t, bpm) in tempos.into_iter().rev() {
+                if deduped.last().is_none_or(|(lt, _)| *lt != t) {
+                    deduped.push((t, bpm));
+                }
+            }
+            deduped.reverse();
+            tempos = deduped;
+        }
         // 确保至少有一个起始速度
         if !tempos.iter().any(|&(t, _)| t == 0) {
             tempos.insert(0, (0, 120.0));

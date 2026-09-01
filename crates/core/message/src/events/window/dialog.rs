@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use lumino_midi_loader::MidiDocument;
 
-pub use super::audio::{AudioChannels, AudioFormat, Interpolation, ThreadingOption};
+pub use super::audio::{AudioBackend, AudioChannels, AudioFormat, Interpolation, ThreadingOption};
 pub use super::video::{
     Container, EncoderBackend, QualityPreset, RenderMode, VideoCodec, VideoExportConfig,
 };
@@ -56,6 +56,8 @@ pub struct AudioExportConfig {
     pub key_high: u8,
     /// 音符强制结束延迟（毫秒）
     pub note_force_end_delay: u32,
+    /// 渲染后端（CPU / GPU）
+    pub backend: AudioBackend,
 }
 
 #[derive(Debug, Clone)]

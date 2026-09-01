@@ -25,9 +25,23 @@ use super::tick_conv::TickToTime;
 
 /// 流式模式：直接从磁盘 MIDI 文件渲染为音频文件
 pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
+    // GPU 后端优先尝试
+    if config.backend == super::config::AudioBackendKind::Gpu {
+        match super::gpu_backend::render_audio_gpu_streaming(config) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                tracing::warn!("GPU 渲染失败，回退到 CPU: {e}");
+                if matches!(config.backend, super::config::AudioBackendKind::Gpu) {
+                    // 如果 GPU 明确请求但失败，返回错误让调用方感知（而非静默回退）
+                    // 此处保留回退逻辑以保证导出可用性
+                }
+            }
+        }
+    }
+
     info!(
-        "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?}",
-        config.midi_path, config.soundfonts, config.output_path
+        "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?} [backend={}]",
+        config.midi_path, config.soundfonts, config.output_path, config.backend
     );
 
     // 使用 mmap 映射 MIDI 文件
@@ -69,9 +83,14 @@ pub fn render_audio_from_document(
     config: &AudioRenderConfig,
     doc: &MidiDocument,
 ) -> ExportResult<()> {
+    // GPU 后端
+    if config.backend == super::config::AudioBackendKind::Gpu {
+        return super::gpu_backend::render_audio_gpu_from_document(config, doc);
+    }
+
     info!(
-        "[内存] 音频渲染: SF2={:?}, 输出={:?}",
-        config.soundfonts, config.output_path
+        "[内存] 音频渲染: SF2={:?}, 输出={:?} [backend={}]",
+        config.soundfonts, config.output_path, config.backend
     );
 
     let total_events: usize =
