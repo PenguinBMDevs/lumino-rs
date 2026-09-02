@@ -3,8 +3,8 @@ use clap::{Parser, Subcommand};
 /// Lumino 命令行接口
 #[derive(Parser, Debug)]
 #[command(name = "lumino-rs")]
-#[command(author = "BuickMeow")]
-#[command(version = "0.1.1-dev")]
+#[command(author = "PenguinBMDevs")]
+#[command(version)]
 #[command(about = "Lumino 音乐编辑器 - 命令行测试模式")]
 pub struct Cli {
     /// 启用测试模式

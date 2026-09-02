@@ -1,7 +1,7 @@
 # Lumino RS
 
 一个使用 Rust 开发的新一代 MIDI 编辑器，基于现代化技术栈构建，提供低延迟、跨平台的 MIDI 编辑体验。
-[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/BuickMeow/lumino-rs)
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/PenguinBMDevs/lumino-rs)
 
 ## 特性
 

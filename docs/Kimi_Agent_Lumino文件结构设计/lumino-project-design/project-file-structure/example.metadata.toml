@@ -4,11 +4,11 @@ format_version = 1
 
 [project]
 name = "Black MIDI Nightmare"
-author = "BuickMeow"
+author = "PenguinBMDevs"
 created_at = "2026-05-28T10:30:00+08:00"
 modified_at = "2026-05-28T22:45:00+08:00"
 description = "A 10-million note Black MIDI composition for piano."
-lumino_version = "0.1.0"
+lumino_version = "0.2.1"
 
 [audio]
 division = 480
