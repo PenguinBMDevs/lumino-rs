@@ -1,6 +1,9 @@
 import struct, zlib, json
+from pathlib import Path
 
-PATH = "target/fast-release/domino_clip.bin"
+# 脚本已迁移至 scripts/，路径按项目根目录解析
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+PATH = PROJECT_ROOT / "target/fast-release/domino_clip.bin"
 data = open(PATH, "rb").read()
 assert data[:18] == b"PortalSequenceData"
 size_field = struct.unpack("<I", data[18:22])[0]
@@ -67,6 +70,7 @@ for i, (cid, kind, ln, p) in enumerate(note_chunks):
         print(f"  note[{i}] field id={key} kind=0x{skind:02x} len={sln} -> {val}")
     notes.append(rec)
 
-with open("domino_notes.json", "w") as f:
+out_path = PROJECT_ROOT / "domino_notes.json"
+with open(out_path, "w") as f:
     json.dump(notes, f, indent=2)
-print("\nwrote domino_notes.json")
+print(f"\nwrote {out_path}")

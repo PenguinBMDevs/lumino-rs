@@ -14,9 +14,10 @@ cargo build --release
 # Run the application
 cargo run
 
-# Build script wrappers
-./build.sh [release|debug]    # Linux/macOS
-build.bat [release|debug]     # Windows
+# Build script wrappers (已收进 scripts/)
+./scripts/build.sh [release|debug]    # Linux/macOS
+scripts/build.bat [release|debug]     # Windows
+python scripts/build.py [release|debug]  # 跨平台
 ```
 
 ## Test Commands

@@ -1,5 +1,7 @@
 @echo off
 chcp 65001 >nul
+REM 脚本已迁移至 scripts/，切换到项目根目录
+pushd "%~dp0.." >nul
 
 set "MODE=%~1"
 
@@ -48,3 +50,4 @@ if errorlevel 1 (
 
 echo Build completed successfully!
 echo Executable copied to: bin\lumino-rs.exe
+popd >nul

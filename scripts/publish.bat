@@ -9,7 +9,9 @@ REM
 REM Run on: Windows 10/11 with Rust installed
 REM ============================================================
 
-set "PROJECT_DIR=%~dp0"
+set "PROJECT_DIR=%~dp0.."
+REM 去掉尾部斜杠并解析为绝对路径
+for %%I in ("%PROJECT_DIR%") do set "PROJECT_DIR=%%~fI\"
 set "PUBLISH_DIR=%PROJECT_DIR%publish"
 
 REM 日志函数

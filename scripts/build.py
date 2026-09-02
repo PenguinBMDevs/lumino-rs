@@ -35,7 +35,7 @@ def log_err(msg: str) -> None:
 
 def build(mode: str) -> int:
     """Build the project in the specified mode."""
-    project_dir = Path(__file__).parent.resolve()
+    project_dir = (Path(__file__).parent.parent).resolve()
 
     if mode == "release":
         log_info("Building in release mode...")

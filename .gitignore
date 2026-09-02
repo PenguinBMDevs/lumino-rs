@@ -72,8 +72,15 @@ agents.yaml
 rust-code-engineer.md
 
 
-# CodeGraph data files
-# These are local to each machine and should not be committed
+# CodeGraph / local AI indexes
+.codegraph/*
+!.codegraph/.gitignore
+.kilo/
+
+# Research artifacts (one-off scripts)
+domino_notes.json
+# domino_clip.bin 已在 target/ 下（已被 target 忽略），此处仅防根目录残留
+domino_clip.bin
 
 # Database
 *.db

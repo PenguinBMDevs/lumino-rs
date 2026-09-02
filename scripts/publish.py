@@ -56,7 +56,7 @@ def log_err(msg: str) -> None:
 
 class BuildContext:
     def __init__(self) -> None:
-        self.project_dir = Path(__file__).parent.resolve()
+        self.project_dir = (Path(__file__).parent.parent).resolve()
         self.publish_dir = self.project_dir / "publish"
         self.host_os = platform.system().lower()
 
