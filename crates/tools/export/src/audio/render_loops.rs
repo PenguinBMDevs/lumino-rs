@@ -83,9 +83,20 @@ pub fn render_audio_from_document(
     config: &AudioRenderConfig,
     doc: &MidiDocument,
 ) -> ExportResult<()> {
-    // GPU 后端
+    // GPU 后端（SFZ 会自动回退到 CPU，保证导出可用）
     if config.backend == super::config::AudioBackendKind::Gpu {
-        return super::gpu_backend::render_audio_gpu_from_document(config, doc);
+        match super::gpu_backend::render_audio_gpu_from_document(config, doc) {
+            Ok(()) => return Ok(()),
+            Err(e) => {
+                // SFZ 等 GPU 不支持的格式，warn 后回退到 CPU
+                let msg = e.to_string();
+                if msg.contains("SFZ") || msg.contains("sfz") {
+                    tracing::warn!("GPU 不支持 SFZ，已自动回退到 CPU 渲染: {e}");
+                } else {
+                    tracing::warn!("GPU 渲染失败，回退到 CPU: {e}");
+                }
+            }
+        }
     }
 
     info!(
