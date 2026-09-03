@@ -291,25 +291,27 @@ fn validate_sf2_path(path: &std::path::Path) -> ExportResult<()> {
     }
     if let Some(ext) = path.extension().and_then(|s| s.to_str()) {
         if ext.eq_ignore_ascii_case("sfz") {
-            return Err(ExportError::AudioWrite(format!(
-                "暂不支持 SFZ 导出 {:?}：音频导出仅支持 .sf2（RIFF），请选择 .sf2 音色库；SFZ 可在播放时使用",
-                path
-            )));
+            // CPU 的 SampleSoundfont 支持 SFZ（按扩展名分发到 new_sfz），允许通过；
+            // 仅校验文件可读，不做 RIFF 检查
+            return Ok(());
         }
         if !ext.eq_ignore_ascii_case("sf2") {
             return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2",
+                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
                 path
             )));
         }
     }
-    // 快速校验 RIFF 头，避免底层 soundfont crate 直接 panic（abort）
-    if let Ok(mut f) = std::fs::File::open(path) {
+    // 仅对 SF2 快速校验 RIFF 头，避免底层 soundfont crate 直接 panic（abort）
+    if let Some(ext) = path.extension().and_then(|s| s.to_str())
+        && ext.eq_ignore_ascii_case("sf2")
+        && let Ok(mut f) = std::fs::File::open(path)
+    {
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
             return Err(ExportError::AudioWrite(format!(
-                "音色库不是合法的 SF2 文件 {:?}：头应为 RIFF，实际 {:02X?}（若为 SFZ 请换用 .sf2）",
+                "音色库不是合法的 SF2 文件 {:?}：头应为 RIFF，实际 {:02X?}",
                 path, header
             )));
         }
