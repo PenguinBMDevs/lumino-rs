@@ -60,17 +60,20 @@ pub struct GpuContext {
 
 /// Creates a [`GpuContext`] using the default high-performance adapter.
 ///
-/// The backend is pinned to Vulkan: the render kernel binds 13 storage
-/// buffers per stage, and Vulkan's `maxPerStageDescriptorStorageBuffers`
-/// is much higher than D3D12's conservative default of 8 (which wgpu
-/// enforces even on DX12).
+/// Prefer Vulkan on desktop for its higher `maxStorageBuffersPerShaderStage`
+/// (D3D12 is capped at 8, Vulkan exposes much more), but fall back to
+/// Metal/DX12/GL on platforms where Vulkan is unavailable (macOS Metal,
+/// Windows DX12, etc.). Using `all()` lets wgpu pick the best available
+/// backend per platform while still requesting the high limits below —
+/// adapters that cannot satisfy them will fail `request_device` and be
+/// skipped by `request_adapter`.
 ///
 /// # Errors
 ///
 /// Returns [`SynthError::GpuInit`] when no usable adapter/device exists.
 pub fn create_gpu_context() -> Result<GpuContext, SynthError> {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
-        backends: wgpu::Backends::VULKAN,
+        backends: wgpu::Backends::all(),
         ..Default::default()
     });
 
