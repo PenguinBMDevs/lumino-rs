@@ -103,9 +103,10 @@ impl RunnerInner {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
         self.window_state.export_progress_rx = Some(progress_rx);
 
+        let progress_tx_cb = progress_tx.clone();
         let progress_cb: lumino_export::audio::config::ProgressCallback =
             Arc::new(move |msg: String, pct: f64| {
-                let _ = progress_tx.send((msg, pct, 0, 0.0, 0.0));
+                let _ = progress_tx_cb.send((msg, pct, 0, 0.0, 0.0));
             });
 
         let config = AudioRenderConfig {
@@ -154,6 +155,16 @@ impl RunnerInner {
         // 3. 在后台线程执行音频渲染，避免阻塞主线程 UI
         let output_path_display = config.output_path.display().to_string();
         let doc_clone = document.clone();
+        let progress_tx_final = progress_tx.clone();
+        let backend_for_log = config.backend;
+        // 立即发送初始进度，避免 UI 长时间停在 0% 无反馈（GPU 初始化可能耗时）
+        let _ = progress_tx.send((
+            format!("正在初始化 {} 渲染...", backend_for_log),
+            0.0,
+            0,
+            0.0,
+            0.0,
+        ));
         let _ = std::thread::Builder::new()
             .name("audio-render".into())
             .spawn(move || {
@@ -179,9 +190,17 @@ impl RunnerInner {
                             elapsed.as_secs_f64(),
                             output_path_display,
                         );
+                        let _ = progress_tx_final.send((
+                            "导出完成".to_string(),
+                            1.0,
+                            0,
+                            0.0,
+                            elapsed.as_secs_f64(),
+                        ));
                     }
                     Err(e) => {
                         tracing::error!("音频导出失败: {e}");
+                        let _ = progress_tx_final.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
                     }
                 }
             });

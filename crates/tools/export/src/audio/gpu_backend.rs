@@ -226,24 +226,39 @@ pub fn render_audio_gpu_from_document(
     use tempfile::NamedTempFile;
     use std::io::Write;
 
+    let report = |msg: &str, pct: f64| {
+        if let Some(ref cb) = config.progress_callback {
+            cb(msg.to_string(), pct);
+        }
+    };
+
     if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite("未指定音色库文件".into()));
+        return Err(ExportError::AudioWrite("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into()));
     }
     // 校验编码器参数
     if let Err(msg) = config.audio_codec.validate(config.sample_rate, config.audio_bitrate) {
         return Err(ExportError::AudioWrite(msg));
     }
+    // 检查音色库文件存在
+    let sf_path = &config.soundfonts[0];
+    if !sf_path.exists() {
+        return Err(ExportError::AudioWrite(format!(
+            "音色库文件不存在: {:?}，请检查路径或重新选择",
+            sf_path
+        )));
+    }
 
+    report("GPU 初始化中...", 0.05);
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败: {e}")))?;
+        .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}")))?;
 
-    // 加载音色库（仅首个，多音色库场景可扩展为多次 load）
-    let sf_path = &config.soundfonts[0];
+    report("GPU 加载音色库...", 0.10);
     synth
         .load_soundfont(sf_path, 0, 0)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
+    report("GPU 导出临时 MIDI...", 0.15);
     // 构造临时 MIDI 文件
     let export_data = build_export_data(doc, config);
     let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
@@ -255,14 +270,17 @@ pub fn render_audio_gpu_from_document(
         .map_err(|e| ExportError::AudioWrite(format!("刷新临时 MIDI 失败: {e}")))?;
     let tmp_path = tmp.path().to_path_buf();
 
-    // GPU 离线渲染
+    report("GPU 渲染中（可能耗时，黑 MIDI 请耐心）...", 0.20);
+    // GPU 离线渲染（阻塞，期间无细粒度进度，靠最终写入阶段推进到 1.0）
     let result = synth
         .render_midi_file(&tmp_path)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
 
+    report("GPU 写入输出...", 0.85);
     // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
     write_gpu_result_to_sink(config, &result.samples, result.sample_rate, result.channels)?;
 
+    report("GPU 完成", 1.0);
     Ok(())
 }
 
@@ -270,27 +288,50 @@ pub fn render_audio_gpu_from_document(
 pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
 
+    let report = |msg: &str, pct: f64| {
+        if let Some(ref cb) = config.progress_callback {
+            cb(msg.to_string(), pct);
+        }
+    };
+
     if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite("未指定音色库文件".into()));
+        return Err(ExportError::AudioWrite("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into()));
     }
     if let Err(msg) = config.audio_codec.validate(config.sample_rate, config.audio_bitrate) {
         return Err(ExportError::AudioWrite(msg));
     }
+    let sf_path = &config.soundfonts[0];
+    if !sf_path.exists() {
+        return Err(ExportError::AudioWrite(format!(
+            "音色库文件不存在: {:?}",
+            sf_path
+        )));
+    }
+    if !config.midi_path.exists() {
+        return Err(ExportError::AudioWrite(format!(
+            "MIDI 文件不存在: {:?}",
+            config.midi_path
+        )));
+    }
 
+    report("GPU 初始化中...", 0.05);
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败: {e}")))?;
 
-    let sf_path = &config.soundfonts[0];
+    report("GPU 加载音色库...", 0.10);
     synth
         .load_soundfont(sf_path, 0, 0)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
+    report("GPU 渲染中...", 0.20);
     let result = synth
         .render_midi_file(&config.midi_path)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
 
+    report("GPU 写入输出...", 0.85);
     write_gpu_result_to_sink(config, &result.samples, result.sample_rate, result.channels)?;
+    report("GPU 完成", 1.0);
     Ok(())
 }
 
@@ -321,7 +362,7 @@ fn write_gpu_result_to_sink(
 
     let mut sink = create_output_sink(config)?;
 
-    // 分块写入，避免单次过大
+    // 分块写入，避免单次过大；进度从 0.85 映射到 1.0
     const CHUNK_FRAMES: usize = 4096;
     let ch = channels as usize;
     let mut offset = 0;
@@ -329,10 +370,11 @@ fn write_gpu_result_to_sink(
         let end = (offset + CHUNK_FRAMES * ch).min(samples.len());
         sink.write_samples(&samples[offset..end])?;
         offset = end;
-        // 进度回调（按样本进度估算）
+        // 进度回调（按样本进度估算 0.85→1.0）
         if let Some(ref cb) = config.progress_callback {
-            let pct = offset as f64 / samples.len() as f64;
-            cb(format!("GPU 写入 {:.1}%", pct * 100.0), pct);
+            let inner = offset as f64 / samples.len().max(1) as f64;
+            let pct = 0.85 + inner * 0.15;
+            cb(format!("GPU 写入 {:.1}%", inner * 100.0), pct);
         }
     }
     sink.finalize()?;
