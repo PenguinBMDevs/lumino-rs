@@ -66,6 +66,9 @@ impl RunnerInner {
             } => {
                 self.handle_local_selection_changed(active, timestamp, fingerprints);
             }
+            LocalNotesAddedBatch { notes } => {
+                self.handle_local_notes_added_batch(notes);
+            }
         }
     }
 }

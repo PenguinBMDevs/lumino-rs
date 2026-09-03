@@ -218,13 +218,16 @@ impl Editor {
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
         // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
-        // 否则 B 端完全缺失被复制的副本。使用返回的 ids 直接广播，消除 note_id_at 循环。
+        // 否则 B 端完全缺失被复制的副本。使用返回的 ids 批量广播，避免 100K 单消息风暴。
         let track = self.editor_state.data.current_track;
-        for (n, id) in notes.iter().zip(ids.iter()) {
+        if !ids.is_empty() {
+            let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
+                .iter()
+                .zip(ids.iter())
+                .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .collect();
             lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_note_added(
-                    *id, n.tick, n.key, n.length, n.velocity, n.channel, track,
-                ),
+                lumino_message::events::window::Event::local_notes_added_batch(batch),
             ));
         }
         self.pending_copy_drag_state = None;

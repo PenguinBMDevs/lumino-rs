@@ -405,4 +405,8 @@ impl Event {
             fingerprints,
         })
     }
+    /// 构造本地批量音符添加同步事件（100K 粘贴）
+    pub fn local_notes_added_batch(notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>) -> Self {
+        Self::Sync(sync::Event::LocalNotesAddedBatch { notes })
+    }
 }

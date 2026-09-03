@@ -232,19 +232,52 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 更新操作：优先按全局 ID 精确匹配，ID 未命中回退按位置匹配
+        // 批量更新：预建 id→index 映射，避免每音符全轨扫
+        let mut id_map_by_track: std::collections::HashMap<
+            usize,
+            std::collections::HashMap<u64, usize>,
+        > = std::collections::HashMap::new();
+        for n in &operation.notes {
+            id_map_by_track.entry(n.track_index).or_insert_with(|| {
+                self.editor
+                    .editor_state
+                    .data
+                    .track_notes(n.track_index)
+                    .iter()
+                    .enumerate()
+                    .map(|(i, ev)| (ev.id, i))
+                    .collect()
+            });
+        }
         for note in &operation.notes {
             let track_idx = note.track_index;
-            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
-            let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let Some(match_idx) = notes.iter().position(|n| n.id == note.id).or_else(|| {
-                notes.iter().position(|n| {
-                    (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+            let match_idx = if let Some(map) = id_map_by_track.get(&track_idx)
+                && let Some(&idx) = map.get(&note.id)
+            {
+                let notes = self.editor.editor_state.data.track_notes(track_idx);
+                if idx < notes.len() && notes[idx].id == note.id {
+                    Some(idx)
+                } else {
+                    notes.iter().position(|n| n.id == note.id).or_else(|| {
+                        notes.iter().position(|n| {
+                            (n.start_tick as f32 - note.tick).abs() < 1.0
+                                && n.key as u16 == note.key
+                        })
+                    })
+                }
+            } else {
+                let notes = self.editor.editor_state.data.track_notes(track_idx);
+                notes.iter().position(|n| n.id == note.id).or_else(|| {
+                    notes.iter().position(|n| {
+                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
+                    })
                 })
-            }) else {
+            };
+            let Some(match_idx) = match_idx else {
                 continue;
             };
             // 保持其他字段不变，仅更新长度（NoteEvent 为 Copy，先取值再写回）
+            let notes = self.editor.editor_state.data.track_notes(track_idx);
             let current = notes[match_idx];
             self.editor.editor_state.data.update_note(
                 track_idx,
@@ -265,43 +298,62 @@ impl Root {
             .editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        // 音符由 wgpu 渲染，不需要清 grid cache
-        tracing::info!("协作: 已更新 {} 个远程音符", operation.notes.len());
+        tracing::info!("协作: 已更新 {} 个远程音符（批量索引）", operation.notes.len());
     }
 
     fn handle_remote_notes_delete(
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 删除操作：按 ID 优先、位置兜底匹配删除音符（索引从大到小删除，避免索引偏移）
-        for note in &operation.notes {
-            let track_idx = note.track_index;
-            // 2026-08 单一权威源：从 document 读取并匹配（track_notes 缓存已删除）
+        // 批量删除：按轨聚合待删 id 集合，单次扫描收集索引，降序批量删除
+        // 避免对 100K 删除每条全轨扫（O(K·M)）和多次 sort
+        use std::collections::{HashMap, HashSet};
+        let mut ids_by_track: HashMap<usize, HashSet<u64>> = HashMap::new();
+        let mut fallback_by_track: HashMap<usize, Vec<(f32, u16)>> = HashMap::new();
+        for n in &operation.notes {
+            ids_by_track
+                .entry(n.track_index)
+                .or_default()
+                .insert(n.id);
+            // 同时记录位置兜底（id 未命中时按 tick/key 删）
+            fallback_by_track
+                .entry(n.track_index)
+                .or_default()
+                .push((n.tick, n.key));
+        }
+        for (track_idx, id_set) in ids_by_track {
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let mut match_indices: Vec<usize> = notes
-                .iter()
-                .enumerate()
-                .filter(|(_, n)| {
-                    n.id == note.id
-                        || ((n.start_tick as f32 - note.tick).abs() < 1.0
-                            && n.key as u16 == note.key)
-                })
-                .map(|(i, _)| i)
-                .collect();
-            match_indices.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in match_indices {
+            // 单次扫描收集匹配索引（id 优先，id 未命中则位置兜底）
+            let mut to_delete: Vec<usize> = Vec::new();
+            let fallback = fallback_by_track.get(&track_idx);
+            for (i, ev) in notes.iter().enumerate() {
+                if id_set.contains(&ev.id) {
+                    to_delete.push(i);
+                    continue;
+                }
+                if let Some(list) = fallback {
+                    for (ftick, fkey) in list {
+                        if (ev.start_tick as f32 - *ftick).abs() < 1.0 && ev.key as u16 == *fkey {
+                            to_delete.push(i);
+                            break;
+                        }
+                    }
+                }
+            }
+            // 时间戳先来后到：按 operation.timestamp 排序的思想
+            // 当前为批量到达，内部按索引降序删已保证不偏移；跨批次的时序由服务器到达序保证
+            to_delete.sort_unstable_by(|a, b| b.cmp(a));
+            for idx in to_delete {
                 self.editor.editor_state.data.remove_note(track_idx, idx);
             }
         }
-        // 精确标记受影响音轨（洋葱皮事件级增量）
-        let affected: std::collections::HashSet<usize> =
-            operation.notes.iter().map(|n| n.track_index).collect();
+        // 精确标记受影响音轨
+        let affected: HashSet<usize> = operation.notes.iter().map(|n| n.track_index).collect();
         self.editor
             .editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        // 音符由 wgpu 渲染，不需要清 grid cache
-        tracing::info!("协作: 已删除 {} 个远程音符", operation.notes.len());
+        tracing::info!("协作: 已删除 {} 个远程音符（批量）", operation.notes.len());
     }
 
     fn handle_remote_notes_move(

@@ -350,11 +350,14 @@ impl Editor {
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(track, &notes);
-            for (n, id) in notes.iter().zip(ids) {
+            if !ids.is_empty() {
+                let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
+                    .iter()
+                    .zip(ids.iter())
+                    .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                    .collect();
                 lumino_message::events::emit(lumino_message::events::Event::Window(
-                    lumino_message::events::window::Event::local_note_added(
-                        id, n.tick, n.key, n.length, n.velocity, n.channel, track,
-                    ),
+                    lumino_message::events::window::Event::local_notes_added_batch(batch),
                 ));
             }
             total += notes.len();
@@ -519,12 +522,16 @@ impl Editor {
         let track = self.editor_state.data.current_track;
         // P0 修复：批量插入直接回传已分配的全局唯一 id，O(N) 完成协作广播，
         // 消除原 `note_id_at` 对每条粘贴音符做全轨线性重扫的 O(N·M) 悬崖。
+        // 协作批量：100K 级粘贴改为单条批量消息（分片在 runner 侧），避免 100K 条单消息风暴。
         let ids = self.editor_state.data.batch_insert_notes_with_ids(&pasted);
-        for (n, id) in pasted.iter().zip(ids) {
+        if !ids.is_empty() {
+            let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = pasted
+                .iter()
+                .zip(ids.iter())
+                .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .collect();
             lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_note_added(
-                    id, n.tick, n.key, n.length, n.velocity, n.channel, track,
-                ),
+                lumino_message::events::window::Event::local_notes_added_batch(batch),
             ));
         }
         // 批量插入索引散布，旧连续选中在 tick 重叠时失效 → 按参数全等重选（最新件语义）

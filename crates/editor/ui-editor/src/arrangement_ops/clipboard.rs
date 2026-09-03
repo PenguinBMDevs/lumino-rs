@@ -449,30 +449,26 @@ impl Editor {
 
         puffin::profile_scope!("arrangement::insert_notes");
         let t0 = Instant::now();
+        let mut batch_acc: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
         for (dest_track, notes) in by_track {
             let ids = self
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            for (note, id) in notes.into_iter().zip(ids) {
+            for (note, id) in notes.iter().zip(ids.iter()) {
                 affected_tracks.insert(dest_track);
                 if dest_track == current_track {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
-                // 协作修复：粘贴（新增音符）需广播给对端，否则 B 端缺失。
-                lumino_message::events::emit(lumino_message::events::Event::Window(
-                    lumino_message::events::window::Event::local_note_added(
-                        id,
-                        note.tick,
-                        note.key,
-                        note.length,
-                        note.velocity,
-                        note.channel,
-                        dest_track,
-                    ),
-                ));
+                batch_acc.push((*id, note.tick, note.key, note.length, note.velocity, note.channel, dest_track));
             }
+        }
+        // 协作批量：走带粘贴同样改为批量消息
+        if !batch_acc.is_empty() {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_notes_added_batch(batch_acc),
+            ));
         }
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         tracing::debug!(

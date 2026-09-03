@@ -71,4 +71,9 @@ pub enum Event {
         /// 选中音符指纹列表
         fingerprints: Vec<[f64; 4]>,
     },
+    /// 本地批量音符添加（用于 100K 级粘贴/复制，避免 100K 条单消息）
+    LocalNotesAddedBatch {
+        /// 批量音符（id 已分配，与本地一致）
+        notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>,
+    },
 }

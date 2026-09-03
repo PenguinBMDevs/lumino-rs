@@ -212,6 +212,58 @@ impl RunnerInner {
         }
     }
 
+    /// 处理本地批量音符添加（100K 粘贴，分片发送避免单帧过大）
+    pub(super) fn handle_local_notes_added_batch(
+        &self,
+        notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>,
+    ) {
+        if !self.collab_state.collaboration_service.is_connected() {
+            return;
+        }
+        if notes.is_empty() {
+            return;
+        }
+        // 分片：每 10K 一条 NoteBatchOperation，避免单条 JSON 过大（WebSocket 帧限制）
+        const CHUNK: usize = 10_000;
+        for chunk in notes.chunks(CHUNK) {
+            let sync_notes: Vec<lumino_collaboration::types::SyncNote> = chunk
+                .iter()
+                .map(|(id, tick, key, length, velocity, channel, track_index)| {
+                    lumino_collaboration::types::SyncNote {
+                        id: *id,
+                        tick: *tick,
+                        key: *key,
+                        length: *length,
+                        velocity: *velocity,
+                        channel: *channel,
+                        track_index: *track_index,
+                    }
+                })
+                .collect();
+            let operation = lumino_collaboration::types::NoteBatchOperation {
+                action: lumino_collaboration::types::NoteAction::Add,
+                notes: sync_notes,
+                source_track: chunk.first().map(|(_, _, _, _, _, _, t)| *t),
+                target_track: chunk.first().map(|(_, _, _, _, _, _, t)| *t),
+                tick_offset: None,
+                key_offset: None,
+                timestamp: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64,
+            };
+            if let Err(e) = self
+                .collab_state
+                .collaboration_service
+                .send_note_batch(operation)
+            {
+                tracing::debug!("协作: 发送批量添加失败: {}", e);
+                break;
+            }
+        }
+        tracing::info!("协作: 已发送批量添加 - 总数 {}", notes.len());
+    }
+
     /// 处理本地音符移动（同步到其他用户）
     pub(super) fn handle_local_note_moved(
         &self,
