@@ -500,7 +500,7 @@ fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, sample_rate
             let start = i; // look AHEAD from the emitted sample (anticipation)
             let end = (i + LOOKAHEAD).min(n - 1);
             for f in start..=end {
-                let (a, b) = emit(f, &tail, &raw);
+                let (a, b) = emit(f, tail, &raw);
                 l = l.max(a.abs()).max(b.abs());
             }
             // Forward window truncated at block end: next block unseen,
@@ -1512,9 +1512,11 @@ impl GpuSynth {
     fn check_memory(&self) -> Result<(), SynthError> {
         // Heuristic MIDI budget — file + Vec<TimedEvent> must stay <100 MB.
         // With true file streaming the heap is O(tracks + block); voices dominate.
-        let voices_mem = (self.voices.len() * std::mem::size_of::<crate::synth::voices::Voice>()) as u64;
+        let voices_mem =
+            (self.voices.len() * std::mem::size_of::<crate::synth::voices::Voice>()) as u64;
         let upload_mem = (self.upload_params.len() * std::mem::size_of::<crate::gpu::VoiceParams>()
-            + self.upload_states.len() * std::mem::size_of::<crate::gpu::VoiceState>()) as u64;
+            + self.upload_states.len() * std::mem::size_of::<crate::gpu::VoiceState>())
+            as u64;
         let total = voices_mem + upload_mem + 8 * 1024 * 4; // 4 tracks × 8 KiB
         if total > Self::MAX_CPU_MEM_BYTES {
             return Err(SynthError::Config(format!(
@@ -1524,8 +1526,16 @@ impl GpuSynth {
                 upload_mem / 1024
             )));
         }
-        if self.global_frame.is_multiple_of(self.config.block_size as u64 * 25) {
-            eprintln!("[mem] midi≈{} MB voices={} upload≈{} KiB", total / (1024 * 1024), self.voices.len(), upload_mem / 1024);
+        if self
+            .global_frame
+            .is_multiple_of(self.config.block_size as u64 * 25)
+        {
+            eprintln!(
+                "[mem] midi≈{} MB voices={} upload≈{} KiB",
+                total / (1024 * 1024),
+                self.voices.len(),
+                upload_mem / 1024
+            );
         }
         Ok(())
     }
@@ -1629,10 +1639,9 @@ impl GpuSynth {
         // — same set as `render_midi_inner` but without consuming the stream,
         // so no `rewind` needed. The old heap-scan produced 299 sample diffs
         // when skipped (lazy per-block uploads race the pipeline).
-        if self.sf.is_some() {
+        {
             let mut wanted: Vec<usize> = Vec::new();
-            {
-                let sf_ref = self.sf.as_ref().expect("soundfont present");
+            if let Some(sf_ref) = self.sf.as_ref() {
                 stream.for_each_note_on(|key, vel| {
                     for &zid in sf_ref.zones_at(key, vel) {
                         let z = sf_ref.zone(zid);
@@ -1648,12 +1657,17 @@ impl GpuSynth {
                 // Chunked resample+upload to keep peak <100 MB (was holding all Arcs at once: 200 MB+)
                 let mut grown = false;
                 for chunk in wanted.chunks(16) {
-                    let sf_ref = self.sf.as_ref().expect("soundfont present");
-                    let pre: Vec<(usize, Arc<[f32]>)> = chunk
-                        .par_iter()
-                        .map(|&id| (id, sf_ref.resample_uncached(id, rate)))
-                        .collect();
-                    let sf_mut = self.sf.as_mut().expect("soundfont present");
+                    let pre: Vec<(usize, Arc<[f32]>)> = if let Some(sf_ref) = self.sf.as_ref() {
+                        chunk
+                            .par_iter()
+                            .map(|&id| (id, sf_ref.resample_uncached(id, rate)))
+                            .collect()
+                    } else {
+                        Vec::new()
+                    };
+                    let Some(sf_mut) = self.sf.as_mut() else {
+                        continue;
+                    };
                     let device = &self.res.ctx.device;
                     let queue = &self.res.ctx.queue;
                     for (id, data) in pre {
@@ -2276,7 +2290,6 @@ impl GpuSynth {
         // note-on always survives the trim (XSynth's steal semantics: at
         // high NPS the newest notes sound, the oldest fade out).
         let mut groups: Vec<(u64, u8, Vec<usize>)> = Vec::new();
-        let mut active = 0usize;
         for &pos in &positions {
             let Some(v) = self.voices.get(pos) else {
                 continue;
@@ -2284,7 +2297,6 @@ impl GpuSynth {
             if v.state.ended != 0 || v.release_at != u64::MAX {
                 continue;
             }
-            active += 1;
             match groups.last_mut() {
                 Some((_, _, g)) if self.voices[g[0]].note_id == v.note_id => g.push(pos),
                 _ => groups.push((v.spawn_frame, v.vel, vec![pos])),
@@ -2298,27 +2310,26 @@ impl GpuSynth {
         }
         // xsynth 抢占最安静的力度组，而非最老的，与 VoiceBuffer::pop_quietest_voice_group 一致
         groups.sort_by_key(|&(_, vel, _)| vel);
-        let mut freed = 0usize;
         // For dense black MIDI (>20k), hard-kill is inaudible (dense mix
         // masks the 1-block click) but saves 1 block of fading voices
         // (20k * 32ms tail = 640k voice-blocks). Flame showed fading
         // accumulation is the 80k→70k leak.
         let hard_kill = self.voices.len() > 20000;
-        for (_, _, g) in &groups {
+        for (freed, (_, _, g)) in groups.iter().enumerate() {
             if freed >= need_free {
                 break;
             }
-            freed += 1;
             for &pos in g {
-                if let Some(v) = self.voices.get_mut(pos) {
-                    if v.release_at == u64::MAX && v.state.ended == 0 {
-                        if hard_kill {
-                            v.state.ended = 1;
-                        } else {
-                            v.release_at = self.global_frame;
-                            v.released = true;
-                            v.fade_out = true;
-                        }
+                if let Some(v) = self.voices.get_mut(pos)
+                    && v.release_at == u64::MAX
+                    && v.state.ended == 0
+                {
+                    if hard_kill {
+                        v.state.ended = 1;
+                    } else {
+                        v.release_at = self.global_frame;
+                        v.released = true;
+                        v.fade_out = true;
                     }
                 }
             }
@@ -2429,13 +2440,13 @@ impl GpuSynth {
                     let mut groups = 0usize;
                     let mut last_nid: Option<u64> = None;
                     for &pos in positions.iter() {
-                        if let Some(v) = self.voices.get(pos) {
-                            if Some(v.note_id) != last_nid {
-                                groups += 1;
-                                last_nid = Some(v.note_id);
-                                if groups > per_key_limit {
-                                    return true;
-                                }
+                        if let Some(v) = self.voices.get(pos)
+                            && Some(v.note_id) != last_nid
+                        {
+                            groups += 1;
+                            last_nid = Some(v.note_id);
+                            if groups > per_key_limit {
+                                return true;
                             }
                         }
                     }

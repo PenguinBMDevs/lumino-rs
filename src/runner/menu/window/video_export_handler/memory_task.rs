@@ -244,36 +244,46 @@ fn enqueue_memory_frame(
             RenderMode::MidiConsole => {
                 // MidiConsole 风格：状态化渲染器直出 BGRA；后端由配置决定（GPU/CPU）
                 let Some(renderer) = ctx.midi_console_renderer.as_mut() else {
-                    send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染器（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：MidiConsole 模式缺少渲染器（内部错误）",
+                    );
                     return true;
                 };
                 let Some(cfg) = ctx.midi_console_config.as_ref() else {
-                    send_export_error(ctx.progress_tx, "导出失败：MidiConsole 模式缺少渲染配置（内部错误）");
+                    send_export_error(
+                        ctx.progress_tx,
+                        "导出失败：MidiConsole 模式缺少渲染配置（内部错误）",
+                    );
                     return true;
                 };
                 match cfg.render_backend {
                     MidiConsoleBackend::Gpu => {
                         video_export::render_midicomsole_frame_gpu(
-                            renderer,
-                            &mut frame_data,
-                            ctx.width,
-                            ctx.height,
-                            ctx.document,
-                            tick,
-                            ctx.ppq,
-                            ctx.fps_f64 as u32,
+                            video_export::MidiConsoleFrameArgs {
+                                renderer,
+                                frame: &mut frame_data,
+                                frame_width: ctx.width,
+                                frame_height: ctx.height,
+                                document: ctx.document,
+                                tick,
+                                ppq: ctx.ppq,
+                                fps: ctx.fps_f64 as u32,
+                            },
                         );
                     }
                     MidiConsoleBackend::Cpu => {
                         video_export::render_midicomsole_frame(
-                            renderer,
-                            &mut frame_data,
-                            ctx.width,
-                            ctx.height,
-                            ctx.document,
-                            tick,
-                            ctx.ppq,
-                            ctx.fps_f64 as u32,
+                            video_export::MidiConsoleFrameArgs {
+                                renderer,
+                                frame: &mut frame_data,
+                                frame_width: ctx.width,
+                                frame_height: ctx.height,
+                                document: ctx.document,
+                                tick,
+                                ppq: ctx.ppq,
+                                fps: ctx.fps_f64 as u32,
+                            },
                         );
                     }
                 }

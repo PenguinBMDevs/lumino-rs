@@ -14,7 +14,7 @@ use crate::midi::{MidiSequence, TimedEvent};
 ///
 /// # Example
 ///
-/// ```
+/// ```no_run
 /// use lumino_gpu_synth::MidiFile;
 ///
 /// let midi = MidiFile::load("assets/right-example.mid", 64_000).unwrap();

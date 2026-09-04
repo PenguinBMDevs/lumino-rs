@@ -210,7 +210,7 @@ fn test_insert_after_remove_consistency() {
     // 删除中间（start=200）：返回被删除音符副本（含其被分配的唯一 id）
     let removed = doc.remove_note(0, 1);
     assert!(removed.is_some(), "应返回被删除的音符副本");
-    let removed = removed.unwrap();
+    let removed = removed.expect("前面已断言 is_some，应能取出被删音符");
     assert_eq!(removed.start_tick, 200);
     assert_eq!(removed.end_tick, 300);
     assert_eq!(removed.key, 61);

@@ -7,19 +7,19 @@
 
 use std::time::Instant;
 
-use lumino_midi_model::clipboard::{
-    decode_clipboard_chunks, encode_clipboard, parse_clipboard_header, record_to_note_event,
-    ClipRecord, ClipMeta,
-};
 use lumino_midi_model::MidiDocument;
+use lumino_midi_model::clipboard::{
+    ClipMeta, ClipRecord, decode_clipboard_chunks, encode_clipboard, parse_clipboard_header,
+    record_to_note_event,
+};
 
 /// 生成 N 条按 tick 升序、密集排布的音符记录流（不物化大 `Vec`）。
 /// tick_offset = i（相邻 delta=1 → varint 1 字节），length 短，key/vel/ch/track 固定。
 fn record_stream(n: u32) -> impl Iterator<Item = ClipRecord> {
     (0..n).map(|i| {
         ClipRecord::new(
-            i,                  // tick_offset 升序
-            (i % 4 + 1) as u32, // length 1..4
+            i,         // tick_offset 升序
+            i % 4 + 1, // length 1..4
             (i % 100) as u8,
             100,
             0,

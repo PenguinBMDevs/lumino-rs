@@ -342,7 +342,7 @@ mod tests {
         // 背景为黑色（默认 #000000）
         assert_eq!(&frame[0..4], &[0, 0, 0, 255]);
         // 折线颜色 #00FFFF → BGRA [255, 255, 0, 255] 应出现在画面中
-        assert!(frame.chunks_exact(4).any(|px| px == [255, 255, 0, 255]));
+        assert!(frame.as_chunks::<4>().0.contains(&[255, 255, 0, 255]));
     }
 
     /// 空窗口：仅清背景，不 panic

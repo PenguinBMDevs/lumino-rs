@@ -194,7 +194,7 @@ mod tests {
         let corner = ((39 * 200 + 199) * 4) as usize;
         assert_eq!(&frame[corner..corner + 4], &[0, 0, 0, 255]);
         // 文本像素存在（白色）
-        assert!(frame.chunks_exact(4).any(|p| p == [255, 255, 255, 255]));
+        assert!(frame.as_chunks::<4>().0.contains(&[255, 255, 255, 255]));
         // 统计推进
         assert_eq!(stats.frames, 1);
         assert_eq!(stats.note_count, 2);
@@ -351,7 +351,7 @@ mod tests {
         assert!(out.text.contains("音符: 2 / 3"), "out={}", out.text);
         // 中文模板渲染后应有非零前景像素
         assert!(
-            frame.chunks_exact(4).any(|p| p[0] > 0),
+            frame.as_chunks::<4>().0.iter().any(|p| p[0] > 0),
             "TTF 渲染中文应有像素"
         );
     }

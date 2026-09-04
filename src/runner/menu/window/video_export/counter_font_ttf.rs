@@ -357,7 +357,7 @@ mod tests {
         .expect("加载微软雅黑");
         let mut frame = vec![0u8; 64 * 32 * 4];
         r.draw_line(&mut frame, 64, "音符", 0, 0, [255, 255, 255, 255]);
-        let white_count = frame.chunks_exact(4).filter(|p| p[0] > 0).count();
+        let white_count = frame.as_chunks::<4>().0.iter().filter(|p| p[0] > 0).count();
         assert!(white_count > 0, "中文应渲染出像素，实际 {white_count}");
     }
 

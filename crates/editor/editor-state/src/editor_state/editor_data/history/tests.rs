@@ -343,7 +343,7 @@ fn test_undo_redo_create_populates_collab_create_sync() {
         note: NoteEvent::new(100, 101, 72, 100, 0).with_id(7),
     };
     // 正向应用（创建）
-    data.apply_create_ops(&[op.clone()], false);
+    data.apply_create_ops(std::slice::from_ref(&op), false);
     assert_eq!(data.current_track_note_count(), 2, "创建后应有 2 个音符");
     data.push_note_create(vec![op]);
 

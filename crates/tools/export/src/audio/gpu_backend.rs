@@ -28,9 +28,9 @@ fn map_interpolation(
 
 /// 从 AudioRenderConfig 构建 GPU SynthConfig
 fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConfig {
-    use lumino_gpu_synth::{ChannelMode, SynthConfig};
-    use lumino_gpu_synth::synth::dsp::EnvelopeCurveConfig;
     use lumino_gpu_synth::synth::dsp::CurveKind;
+    use lumino_gpu_synth::synth::dsp::EnvelopeCurveConfig;
+    use lumino_gpu_synth::{ChannelMode, SynthConfig};
 
     let channels = match config.channels {
         AudioChannelMode::Mono => ChannelMode::Mono,
@@ -51,7 +51,6 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
         }
     };
 
-    let max_voices = config.layer_limit.unwrap_or(0);
     // xsynth 每 key 32 复音，与 lumino-export 的 layer_limit 语义一致；GPU 原硬编码 4 导致同音高密集时过度抢占
     // 0/None 表示无限制，需保持 0 而非 max(4)
     let max_voices_per_key = match config.layer_limit {
@@ -74,7 +73,10 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
 }
 
 /// 从 MidiDocument 构造 MidiExportData（用于 GPU 临时 MIDI）
-fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::midi::MidiExportData {
+fn build_export_data(
+    doc: &MidiDocument,
+    config: &AudioRenderConfig,
+) -> crate::midi::MidiExportData {
     use crate::midi::{
         MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent,
         MidiNoteEvent, MidiPitchBendEvent, MidiProgramChangeEvent, MidiTempoEvent,
@@ -255,8 +257,8 @@ pub fn render_audio_gpu_from_document(
     doc: &MidiDocument,
 ) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
-    use tempfile::NamedTempFile;
     use std::io::Write;
+    use tempfile::NamedTempFile;
 
     check_control(config)?;
 
@@ -267,10 +269,15 @@ pub fn render_audio_gpu_from_document(
     };
 
     if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into()));
+        return Err(ExportError::AudioWrite(
+            "未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into(),
+        ));
     }
     // 校验编码器参数
-    if let Err(msg) = config.audio_codec.validate(config.sample_rate, config.audio_bitrate) {
+    if let Err(msg) = config
+        .audio_codec
+        .validate(config.sample_rate, config.audio_bitrate)
+    {
         return Err(ExportError::AudioWrite(msg));
     }
     // 检查音色库文件存在与格式（SFZ 会直接 panic，需前置拦截）
@@ -281,13 +288,14 @@ pub fn render_audio_gpu_from_document(
             sf_path
         )));
     }
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str()) {
-        if !ext.eq_ignore_ascii_case("sf2") && !ext.eq_ignore_ascii_case("sfz") {
-            return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
-                sf_path
-            )));
-        }
+    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
+        && !ext.eq_ignore_ascii_case("sf2")
+        && !ext.eq_ignore_ascii_case("sfz")
+    {
+        return Err(ExportError::AudioWrite(format!(
+            "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
+            sf_path
+        )));
     }
     // 仅对 SF2 校验 RIFF 头，SFZ 为文本
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
@@ -307,8 +315,11 @@ pub fn render_audio_gpu_from_document(
     report("GPU 初始化中...", 0.05);
     check_control(config)?;
     let synth_config = build_synth_config(config);
-    let mut synth = GpuSynth::new(synth_config)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}")))?;
+    let mut synth = GpuSynth::new(synth_config).map_err(|e| {
+        ExportError::AudioWrite(format!(
+            "GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}"
+        ))
+    })?;
 
     report("GPU 加载音色库...", 0.10);
     check_control(config)?;
@@ -329,7 +340,8 @@ pub fn render_audio_gpu_from_document(
     let export_data = build_export_data(doc, config);
     let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
 
-    let mut tmp = NamedTempFile::new().map_err(|e| ExportError::AudioWrite(format!("创建临时 MIDI 失败: {e}")))?;
+    let mut tmp = NamedTempFile::new()
+        .map_err(|e| ExportError::AudioWrite(format!("创建临时 MIDI 失败: {e}")))?;
     tmp.write_all(&midi_bytes)
         .map_err(|e| ExportError::AudioWrite(format!("写入临时 MIDI 失败: {e}")))?;
     tmp.flush()
@@ -366,9 +378,14 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
     };
 
     if config.soundfonts.is_empty() {
-        return Err(ExportError::AudioWrite("未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into()));
+        return Err(ExportError::AudioWrite(
+            "未指定音色库文件，请先在 音色库(SF2) 中选择 .sf2 文件".into(),
+        ));
     }
-    if let Err(msg) = config.audio_codec.validate(config.sample_rate, config.audio_bitrate) {
+    if let Err(msg) = config
+        .audio_codec
+        .validate(config.sample_rate, config.audio_bitrate)
+    {
         return Err(ExportError::AudioWrite(msg));
     }
     let sf_path = &config.soundfonts[0];
@@ -378,13 +395,14 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
             sf_path
         )));
     }
-    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str()) {
-        if !ext.eq_ignore_ascii_case("sf2") && !ext.eq_ignore_ascii_case("sfz") {
-            return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
-                sf_path
-            )));
-        }
+    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
+        && !ext.eq_ignore_ascii_case("sf2")
+        && !ext.eq_ignore_ascii_case("sfz")
+    {
+        return Err(ExportError::AudioWrite(format!(
+            "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
+            sf_path
+        )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
         && ext.eq_ignore_ascii_case("sf2")
@@ -449,11 +467,7 @@ fn write_gpu_result_to_sink(
     // 通道数校验
     let _expected_ch = config.channels.channel_count() as u32;
     if channels != _expected_ch {
-        tracing::warn!(
-            "GPU 渲染声道 {} 与配置 {} 不一致",
-            channels,
-            _expected_ch
-        );
+        tracing::warn!("GPU 渲染声道 {} 与配置 {} 不一致", channels, _expected_ch);
     }
 
     let mut sink = create_output_sink(config)?;

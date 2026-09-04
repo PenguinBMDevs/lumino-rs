@@ -271,7 +271,7 @@ pub fn composite_keyboard(
     // 结构: (overlay_b, overlay_g, overlay_r, overlay_alpha)
     // key_colors 为 RGBA 格式，frame 为 BGRA，读取时交换 R↔B
     let mut per_key_overlay = [(0i32, 0i32, 0i32, 0u8); 128];
-    for (key_idx, colors) in key_colors.chunks_exact(4).enumerate().take(128) {
+    for (key_idx, colors) in key_colors.as_chunks::<4>().0.iter().enumerate().take(128) {
         let alpha = colors[3];
         if alpha != 0 {
             let scaled_alpha = (alpha as u16 * OVERLAY_ALPHA as u16 / 255) as u8;
@@ -318,8 +318,13 @@ pub fn composite_keyboard(
         let frame_row = &mut frame[frame_start..frame_row_end];
         let kb_row = &keyboard_pixels[kb_start..kb_start + row_bytes];
 
-        // 使用 chunks_exact 自动向量化友好的方式处理每像素 4 字节
-        for (fchunk, kchunk) in frame_row.chunks_exact_mut(4).zip(kb_row.chunks_exact(4)) {
+        // 使用 as_chunks 自动向量化友好的方式处理每像素 4 字节
+        for (fchunk, kchunk) in frame_row
+            .as_chunks_mut::<4>()
+            .0
+            .iter_mut()
+            .zip(kb_row.as_chunks::<4>().0.iter())
+        {
             let blue_ch = kchunk[0] as i32;
             let green_ch = kchunk[1] as i32;
             let red_ch = kchunk[2] as i32;

@@ -3,7 +3,6 @@ use super::{
 };
 use crate::note_renderer::types::{CullUniform, DrawIndirectArgs};
 use std::time::Instant;
-use puffin;
 
 impl ArrangementRenderer {
     /// 准备渲染数据
@@ -54,7 +53,7 @@ impl ArrangementRenderer {
                 bytemuck::cast_slice(overlay),
             );
             let upload_ms = t0.elapsed().as_secs_f64() * 1000.0;
-            let bytes = overlay_count * std::mem::size_of::<ArrangementNoteInstance>();
+            let bytes = std::mem::size_of_val(overlay);
             tracing::debug!(
                 target: "perf::arrangement",
                 instances = overlay_count,
@@ -98,8 +97,7 @@ impl ArrangementRenderer {
 
         // 可见索引缓冲容量：至少容纳全部实例的 u32 索引（cull 输出全局源索引）。
         // 必须在重建 bind group 之前扩容，否则 bind group 会绑定到过小的旧缓冲。
-        let required_visible = (note_instance_count as u64)
-            * std::mem::size_of::<u32>() as u64;
+        let required_visible = (note_instance_count as u64) * std::mem::size_of::<u32>() as u64;
         Self::ensure_visible_capacity(&mut self.note_visible_buffer, device, required_visible);
 
         // 重建裁剪/绘制 bind group —— 两个 bind group 都按整份 `all_instances`
@@ -146,59 +144,55 @@ impl ArrangementRenderer {
         let source = self.note_source.as_entire_binding();
 
         // 绘制 bind group：uniform + lane_index 存储 + 全部实例存储
-        self.note_draw_bind_group =
-            Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("arrangement_note_draw_bind_group"),
-                layout: &self.note_draw_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.note_uniform_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.lane_index_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: source.clone(),
-                    },
-                ],
-            }));
+        self.note_draw_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("arrangement_note_draw_bind_group"),
+            layout: &self.note_draw_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.note_uniform_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.lane_index_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: source.clone(),
+                },
+            ],
+        }));
 
         // 裁剪 bind group：uniform + cull_info + 实例 + lane_index + 可见索引 + indirect
-        self.note_cull_bind_group =
-            Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
-                label: Some("arrangement_note_cull_bind_group"),
-                layout: &self.note_cull_bind_group_layout,
-                entries: &[
-                    wgpu::BindGroupEntry {
-                        binding: 0,
-                        resource: self.note_uniform_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 1,
-                        resource: self.cull_info_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 2,
-                        resource: source,
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 3,
-                        resource: self.lane_index_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 4,
-                        resource: self.note_visible_buffer.inner().as_entire_binding(),
-                    },
-                    wgpu::BindGroupEntry {
-                        binding: 5,
-                        resource: self.note_indirect_buffer.inner().as_entire_binding(),
-                    },
-                ],
-            }));
+        self.note_cull_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("arrangement_note_cull_bind_group"),
+            layout: &self.note_cull_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.note_uniform_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: self.cull_info_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 2,
+                    resource: source,
+                },
+                wgpu::BindGroupEntry {
+                    binding: 3,
+                    resource: self.lane_index_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 4,
+                    resource: self.note_visible_buffer.inner().as_entire_binding(),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 5,
+                    resource: self.note_indirect_buffer.inner().as_entire_binding(),
+                },
+            ],
+        }));
     }
 }
-
-

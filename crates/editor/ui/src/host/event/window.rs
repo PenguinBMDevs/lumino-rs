@@ -168,14 +168,14 @@ impl Host {
             // 以双指中点更新光标，确保锚点跟手（对齐 yinhe touch_center）
             self.window_ctx.cursor_position = Some(center);
             self.window_ctx.cursor = iced_core::mouse::Cursor::Available(center);
-            if let Some(prev) = self.prev_pinch_distance {
-                if prev > 0.0 {
-                    let delta = (dist / prev) - 1.0;
-                    // 夹到 ±0.15 避免首帧或快速张合跳变（类似 yinhe 0.02 阈值）
-                    let clamped = delta.clamp(-0.15, 0.15);
-                    if clamped.abs() > 0.01 {
-                        self.handle_pinch_gesture(clamped as f64, winit::event::TouchPhase::Moved);
-                    }
+            if let Some(prev) = self.prev_pinch_distance
+                && prev > 0.0
+            {
+                let delta = (dist / prev) - 1.0;
+                // 夹到 ±0.15 避免首帧或快速张合跳变（类似 yinhe 0.02 阈值）
+                let clamped = delta.clamp(-0.15, 0.15);
+                if clamped.abs() > 0.01 {
+                    self.handle_pinch_gesture(clamped as f64, winit::event::TouchPhase::Moved);
                 }
             }
             self.prev_pinch_distance = Some(dist);

@@ -124,7 +124,7 @@ impl SincResampler {
 
         // The tail of `pending` becomes the history for the next call.
         for (i, dst) in self.history.iter_mut().enumerate() {
-            let src = (n_in - hist + i / chs).max(0) as usize;
+            let src = n_in - hist + i / chs;
             *dst = pending[src * chs + i % chs];
         }
         self.pending = input.to_vec();

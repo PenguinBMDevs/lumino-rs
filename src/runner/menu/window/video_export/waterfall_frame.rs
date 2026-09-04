@@ -164,13 +164,13 @@ fn fill_bgra_rect(input: FillRectInput<'_>) {
             break;
         }
         frame[row_start..row_end].fill(color[0]);
-        for ch in frame[row_start + 1..row_end].chunks_exact_mut(4) {
+        for ch in frame[row_start + 1..row_end].as_chunks_mut::<4>().0 {
             ch[0] = color[1];
         }
-        for ch in frame[row_start + 2..row_end].chunks_exact_mut(4) {
+        for ch in frame[row_start + 2..row_end].as_chunks_mut::<4>().0 {
             ch[0] = color[2];
         }
-        for ch in frame[row_start + 3..row_end].chunks_exact_mut(4) {
+        for ch in frame[row_start + 3..row_end].as_chunks_mut::<4>().0 {
             ch[0] = color[3];
         }
     }

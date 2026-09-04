@@ -34,7 +34,9 @@ pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
 pub use drag_state::DragState;
-pub use editor_data::{EditorData, NoteDeltaEvent};
+pub use editor_data::{
+    CollabCreateSyncEntry, CollabTransformSyncEntry, EditorData, NoteDeltaEvent,
+};
 pub use image_to_midi::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
@@ -45,7 +47,7 @@ pub use line_tool::{
     BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
 };
 pub use shape_tool::{
-    ShapeInstance, ShapeKind, ShapeToolInteraction, ShapeToolState,
+    ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
 };
 
 use std::collections::HashSet;

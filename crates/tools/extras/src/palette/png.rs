@@ -54,7 +54,7 @@ pub(crate) fn decode_palette_png(data: &[u8]) -> Result<Vec<PaletteColor>, PngDe
             // RGBA: 每像素 4 字节
             let pixel_count = width * height;
             let mut colors = Vec::with_capacity(pixel_count);
-            for chunk in buf.chunks_exact(4) {
+            for chunk in buf.as_chunks::<4>().0 {
                 colors.push([chunk[0], chunk[1], chunk[2], chunk[3]]);
             }
             colors
@@ -63,7 +63,7 @@ pub(crate) fn decode_palette_png(data: &[u8]) -> Result<Vec<PaletteColor>, PngDe
             // RGB: 每像素 3 字节，alpha 设为 255
             let pixel_count = width * height;
             let mut colors = Vec::with_capacity(pixel_count);
-            for chunk in buf.chunks_exact(3) {
+            for chunk in buf.as_chunks::<3>().0 {
                 colors.push([chunk[0], chunk[1], chunk[2], 255]);
             }
             colors

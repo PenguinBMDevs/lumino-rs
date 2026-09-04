@@ -4,6 +4,7 @@
 
 use super::Editor;
 use crate::note::Note;
+use lumino_editor_state::CollabTransformSyncEntry;
 
 impl Editor {
     /// 在指定 tick/音轨处分割音符（Razor 工具）。
@@ -84,7 +85,7 @@ impl Editor {
         // 2026-09 协作修复：切割改变音符数量，累积「删原 + 加左右」同步条目。
         // pending_collab_transform_sync 为 pub(crate)，ui-editor 不可直访，
         // 故经 pub 入口 push_collab_transform_entries 注入。
-        let mut sync_entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
         // 从后往前分割，避免索引漂移
         for idx in indices_to_split.into_iter().rev() {
             // 2026-08 单一权威源：从 document 删除原音符，再按序插入 left + right

@@ -10,7 +10,7 @@ use super::helpers::note_event_to_note;
 use crate::note::Note;
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::clipboard::{
-    decode_clipboard_records, encode_clipboard, parse_clipboard_header, ClipRecord,
+    ClipRecord, decode_clipboard_records, encode_clipboard, parse_clipboard_header,
 };
 use std::time::Instant;
 
@@ -36,20 +36,20 @@ impl Editor {
         // 二进制不可用则退化为 JSON 文本（跨平台正确）。
         #[cfg(windows)]
         {
-            if let Some(bytes) = self.encode_arrangement_clipboard_binary(&all_notes) {
-                if crate::clipboard::sys::set_clipboard_binary(&bytes) {
-                    tracing::info!(
-                        "Arrangement: 已复制 {} 字节二进制音符 (division={})",
-                        bytes.len(),
-                        self.editor_state
-                            .data
-                            .document
-                            .as_ref()
-                            .map(|d| d.division)
-                            .unwrap_or(480)
-                    );
-                    return true;
-                }
+            if let Some(bytes) = self.encode_arrangement_clipboard_binary(&all_notes)
+                && crate::clipboard::sys::set_clipboard_binary(&bytes)
+            {
+                tracing::info!(
+                    "Arrangement: 已复制 {} 字节二进制音符 (division={})",
+                    bytes.len(),
+                    self.editor_state
+                        .data
+                        .document
+                        .as_ref()
+                        .map(|d| d.division)
+                        .unwrap_or(480)
+                );
+                return true;
             }
         }
 
@@ -71,10 +71,10 @@ impl Editor {
         // Windows：优先读取紧凑二进制（仅接受走带子格式哨兵，避免误读钢琴卷帘二进制）
         #[cfg(windows)]
         {
-            if let Some(bytes) = crate::clipboard::sys::get_clipboard_binary() {
-                if self.arrange_paste_from_binary_bytes(&bytes) {
-                    return true;
-                }
+            if let Some(bytes) = crate::clipboard::sys::get_clipboard_binary()
+                && self.arrange_paste_from_binary_bytes(&bytes)
+            {
+                return true;
             }
         }
 
@@ -102,9 +102,12 @@ impl Editor {
         else {
             return false;
         };
-        let Some((anchor_tick, _anchor_visual, pasted)) =
-            self.parse_arrangement_clipboard_notes(origin_key, origin_track, source_division, &notes_value)
-        else {
+        let Some((anchor_tick, _anchor_visual, pasted)) = self.parse_arrangement_clipboard_notes(
+            origin_key,
+            origin_track,
+            source_division,
+            &notes_value,
+        ) else {
             return false;
         };
 
@@ -130,7 +133,8 @@ impl Editor {
             .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 已粘贴 {} 个音符 (anchor_tick={})",
-            inserted_count, anchor_tick
+            inserted_count,
+            anchor_tick
         );
         true
     }
@@ -177,7 +181,10 @@ impl Editor {
             "{{\"lumino\":\"{}\",\"version\":{},\"type\":\"arrangement\",\"origin_tick\":{},\"origin_key\":{},\"origin_track\":{},\"division\":{},\"notes\":[",
             lumino_ui_core::constants::editor::CLIPBOARD_FORMAT,
             lumino_ui_core::constants::editor::CLIPBOARD_VERSION,
-            origin_tick, origin_key, origin_visual, division
+            origin_tick,
+            origin_key,
+            origin_visual,
+            division
         );
         let mut first = true;
         for (track, note_event) in &all_notes {
@@ -461,7 +468,15 @@ impl Editor {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
-                batch_acc.push((*id, note.tick, note.key, note.length, note.velocity, note.channel, dest_track));
+                batch_acc.push((
+                    *id,
+                    note.tick,
+                    note.key,
+                    note.length,
+                    note.velocity,
+                    note.channel,
+                    dest_track,
+                ));
             }
         }
         // 协作批量：走带粘贴同样改为批量消息
@@ -540,9 +555,7 @@ impl Editor {
             .unwrap_or(480);
         // 多一次同步计算：PPQN 不一致时计算重采样 ratio
         let ratio = match source_division {
-            Some(src) if src != 0 && src != target_division => {
-                target_division as f64 / src as f64
-            }
+            Some(src) if src != 0 && src != target_division => target_division as f64 / src as f64,
             _ => 1.0,
         };
 
@@ -584,8 +597,8 @@ impl Editor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::test_helpers::{doc_with_notes, seed_notes};
     use crate::note::Note;
+    use crate::tests::test_helpers::{doc_with_notes, seed_notes};
 
     fn editor_with_sorted_visual_order() -> Editor {
         let mut editor = Editor::default();
@@ -640,7 +653,11 @@ mod tests {
             .push((0, 10, 0, 127, 0, 0));
         let pasted = editor.arrange_paste_from_text(&single_track_clipboard_json());
         assert!(pasted, "粘贴应成功");
-        assert_eq!(doc_track_note_count(&editor, 2), 2, "doc 轨 2 应新增 1 个音符");
+        assert_eq!(
+            doc_track_note_count(&editor, 2),
+            2,
+            "doc 轨 2 应新增 1 个音符"
+        );
         assert_eq!(doc_track_note_count(&editor, 0), 1, "doc 轨 0 不应被误写入");
         assert_eq!(doc_track_note_count(&editor, 1), 0);
     }
@@ -665,12 +682,7 @@ mod tests {
     #[test]
     fn test_paste_identity_mapping_unchanged() {
         let mut editor = Editor::default();
-        seed_notes(
-            &mut editor,
-            3,
-            0,
-            &[Note::from_raw(0.0, 60, 10.0, 100, 0)],
-        );
+        seed_notes(&mut editor, 3, 0, &[Note::from_raw(0.0, 60, 10.0, 100, 0)]);
         editor
             .editor_state
             .data
@@ -703,7 +715,11 @@ mod tests {
             2,
             "粘贴应落到切换后的当前轨 doc 0（而非旧选区所在 doc 2）"
         );
-        assert_eq!(doc_track_note_count(&editor, 2), 1, "doc 2 不应被旧选区误写入");
+        assert_eq!(
+            doc_track_note_count(&editor, 2),
+            1,
+            "doc 2 不应被旧选区误写入"
+        );
     }
 
     /// 回归：PPQN 不一致时粘贴需多一次重采样，使音符**长度（节拍）完全一致**。
@@ -718,14 +734,18 @@ mod tests {
             .data
             .document
             .as_mut()
-            .unwrap()
+            .expect("测试前已设置 document，应能取得可变借用")
             .division = 960;
         let json = r#"{"type":"arrangement","origin_tick":0.0,"origin_key":60,"origin_track":0,"division":480,"notes":[{"tick":0.0,"key":0,"length":480.0,"velocity":100,"channel":0,"track":0}]}"#;
         assert!(editor.arrange_paste_from_text(json));
         let notes = editor.editor_state.data.track_notes(0);
         assert_eq!(notes.len(), 1);
         // 1 拍在 480 PPQN 下 = 480 tick；在 960 PPQN 下应 = 960 tick（长度一致）
-        assert_eq!(notes[0].length(), 960u32, "PPQN 不一致时应重采样长度以保节拍一致");
+        assert_eq!(
+            notes[0].length(),
+            960u32,
+            "PPQN 不一致时应重采样长度以保节拍一致"
+        );
     }
 
     /// 回归：PPQN 一致（或缺失 division）时零缩放，粘贴音符长度逐字节一致。
@@ -749,19 +769,14 @@ mod tests {
     #[test]
     fn test_arrangement_binary_roundtrip_matches_json() {
         let mut editor = Editor::default();
-        seed_notes(
-            &mut editor,
-            3,
-            0,
-            &[Note::from_raw(0.0, 60, 10.0, 100, 0)],
-        );
+        seed_notes(&mut editor, 3, 0, &[Note::from_raw(0.0, 60, 10.0, 100, 0)]);
         // 单音符（doc 0，视觉 0 → track 偏移 0），division=480，origin_key=60，origin_tick=0
         let all_notes = vec![(0usize, NoteEvent::new(0, 10, 60, 100, 0))];
         let bytes = editor
             .encode_arrangement_clipboard_binary(&all_notes)
             .expect("二进制编码失败");
-        let meta = lumino_midi_model::clipboard::parse_clipboard_header(&bytes)
-            .expect("头解析失败");
+        let meta =
+            lumino_midi_model::clipboard::parse_clipboard_header(&bytes).expect("头解析失败");
         assert_eq!(
             meta.track_hint, ARRANGEMENT_BINARY_MARK,
             "二进制头应写入走带子格式哨兵"

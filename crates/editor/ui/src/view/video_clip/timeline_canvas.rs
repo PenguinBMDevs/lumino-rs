@@ -304,7 +304,7 @@ mod tests {
         assert!(state.track_drag.is_some(), "拖拽会话应已建立");
 
         // 拖到 x=160（2s * 80px/s）处
-        let drag = state.track_drag.unwrap();
+        let drag = state.track_drag.expect("前面已断言拖拽会话存在，应能取出");
         let action = interact::drag_move(&canvas, Point::new(160.0, 40.0), bounds, drag);
         let (msg, _redraw, _status) = action.expect("拖拽应返回动作").into_inner();
         match msg {
@@ -358,7 +358,7 @@ mod tests {
             bounds,
         );
         assert!(press.is_some(), "按下尾端把手应返回动作");
-        let drag = state.track_drag.unwrap();
+        let drag = state.track_drag.expect("前面已断言拖拽会话存在，应能取出");
         // 向左拖到 x=1600（20s）→ 右缘应=20s，尾裁=30−20=10s
         let action = interact::drag_move(&canvas, Point::new(1600.0, 40.0), bounds, drag);
         let (msg, _redraw, _status) = action.expect("拖拽应返回动作").into_inner();

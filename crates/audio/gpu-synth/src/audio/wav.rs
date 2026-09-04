@@ -92,22 +92,30 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
     let samples = match (tag, bits) {
         (1, 8) => raw.iter().map(|b| (*b as f32 / 128.0) - 1.0).collect(),
         (1, 16) => raw
-            .chunks_exact(2)
+            .as_chunks::<2>()
+            .0
+            .iter()
             .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
             .collect(),
         (1, 24) => raw
-            .chunks_exact(3)
+            .as_chunks::<3>()
+            .0
+            .iter()
             .map(|c| {
                 let v = i32::from_le_bytes([c[0], c[1], c[2], 0]);
                 (v >> 8) as f32 / 32768.0
             })
             .collect(),
         (1, 32) => raw
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| i32::from_le_bytes([c[0], c[1], c[2], c[3]]) as f32 / 2147483648.0)
             .collect(),
         (3, 32) | (65534, 32) => raw
-            .chunks_exact(4)
+            .as_chunks::<4>()
+            .0
+            .iter()
             .map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]]))
             .collect(),
         _ => {
@@ -223,7 +231,7 @@ impl WavStreamWriter {
 
     /// Appends interleaved `samples` (length must be a multiple of `channels`).
     pub fn write_samples(&mut self, samples: &[f32]) -> Result<(), crate::SynthError> {
-        debug_assert!(samples.len() % self.channels as usize == 0);
+        debug_assert!(samples.len().is_multiple_of(self.channels as usize));
         for s in samples {
             self.file.write_all(&s.to_le_bytes())?;
         }

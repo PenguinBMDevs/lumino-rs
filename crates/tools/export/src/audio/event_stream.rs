@@ -221,13 +221,17 @@ mod tests {
         );
         let mut stream = MidiDocEventStream::new(&doc);
         assert_eq!(stream.total_events(), 4);
-        let e1 = stream.next_event().unwrap();
+        let e1 = stream.next_event().expect("第 1 个事件应存在");
         assert_eq!((e1.tick, e1.kind, e1.param1), (0, 0, 60));
-        let e2 = stream.next_event().unwrap();
-        assert_eq!((e2.tick, e2.kind, e2.param1), (5, 0, 64), "B On 应在 5 而非 10");
-        let e3 = stream.next_event().unwrap();
+        let e2 = stream.next_event().expect("第 2 个事件应存在");
+        assert_eq!(
+            (e2.tick, e2.kind, e2.param1),
+            (5, 0, 64),
+            "B On 应在 5 而非 10"
+        );
+        let e3 = stream.next_event().expect("第 3 个事件应存在");
         assert_eq!((e3.tick, e3.kind, e3.param1), (10, 1, 60));
-        let e4 = stream.next_event().unwrap();
+        let e4 = stream.next_event().expect("第 4 个事件应存在");
         assert_eq!((e4.tick, e4.kind, e4.param1), (15, 1, 64));
         assert!(stream.next_event().is_none());
     }

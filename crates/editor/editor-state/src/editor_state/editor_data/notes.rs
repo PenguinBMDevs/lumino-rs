@@ -8,7 +8,7 @@ use std::collections::HashSet;
 
 use super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::note_grouping::{self, NoteTuple};
-use super::{EditorData, NoteDeltaEvent};
+use super::{CollabTransformSyncEntry, EditorData, NoteDeltaEvent};
 use crate::DragState;
 use lumino_note_core::history::CreateOp;
 use lumino_note_core::note::Note;
@@ -315,7 +315,7 @@ impl EditorData {
         let track_idx = self.current_track;
         // 2026-09 协作修复：连奏延长长度，须在修改后广播「删旧长度 + 加新长度」。
         // `track` 可变借用 self.document，故先收集到本地 Vec 再统一追加，规避借用冲突。
-        let mut sync_entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
 
         if let Some(track) = self
             .document

@@ -119,7 +119,7 @@ pub(super) fn composite_and_encode_frame(
         } else {
             // 不需要缩小：clone 并在 clone 上做 BGR 交换
             let mut preview_data = data.clone();
-            for pixel in preview_data.chunks_exact_mut(4) {
+            for pixel in preview_data.as_chunks_mut::<4>().0 {
                 pixel.swap(0, 2);
             }
             (preview_data, width, height)

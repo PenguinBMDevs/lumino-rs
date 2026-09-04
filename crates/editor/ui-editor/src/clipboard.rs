@@ -14,8 +14,8 @@ pub(crate) mod sys;
 
 #[cfg(windows)]
 use lumino_midi_model::clipboard::{
-    decode_clipboard_chunks, decode_domino_clipboard, encode_clipboard, encode_domino_clipboard,
-    parse_clipboard_header, ClipRecord,
+    ClipRecord, decode_clipboard_chunks, decode_domino_clipboard, encode_clipboard,
+    encode_domino_clipboard, parse_clipboard_header,
 };
 
 impl Editor {
@@ -56,16 +56,16 @@ impl Editor {
             let domino = self.build_clipboard_domino();
             if let Some(bytes) = self.build_clipboard_binary(track, division) {
                 // 优先一次会话内同时携带 Domino 格式，便于跨 DAW 粘贴
-                if let Some(dom) = domino {
-                    if crate::clipboard::sys::set_clipboard_binary_pair(&bytes, &dom) {
-                        tracing::info!(
-                            "Editor: 已复制 {} 字节 Lumino 二进制 + {} 字节 Domino 二进制 (division={})",
-                            bytes.len(),
-                            dom.len(),
-                            division
-                        );
-                        return true;
-                    }
+                if let Some(dom) = domino
+                    && crate::clipboard::sys::set_clipboard_binary_pair(&bytes, &dom)
+                {
+                    tracing::info!(
+                        "Editor: 已复制 {} 字节 Lumino 二进制 + {} 字节 Domino 二进制 (division={})",
+                        bytes.len(),
+                        dom.len(),
+                        division
+                    );
+                    return true;
                 }
                 // 退化：仅 Lumino 二进制
                 if crate::clipboard::sys::set_clipboard_binary(&bytes) {
@@ -337,13 +337,7 @@ impl Editor {
                     let key = (meta.origin_key as i32 + r.key_offset as i32)
                         .max(0)
                         .min(max_key as i32) as u16;
-                    super::Note::from_raw(
-                        tick,
-                        key,
-                        length as f32,
-                        r.velocity,
-                        r.channel,
-                    )
+                    super::Note::from_raw(tick, key, length as f32, r.velocity, r.channel)
                 })
                 .collect();
             let ids = self
@@ -404,11 +398,7 @@ impl Editor {
         } else {
             1.0
         };
-        let max_key = self
-            .editor_state
-            .view
-            .visible_key_count
-            .saturating_sub(1);
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let pasted: Vec<super::Note> = events
             .iter()
             .map(|n| {
@@ -423,13 +413,7 @@ impl Editor {
                     (n.length() as f64 * ratio).round()
                 };
                 let key = (n.key as i32).max(0).min(max_key as i32) as u16;
-                super::Note::from_raw(
-                    tick as f32,
-                    key,
-                    length as f32,
-                    n.velocity,
-                    n.channel,
-                )
+                super::Note::from_raw(tick as f32, key, length as f32, n.velocity, n.channel)
             })
             .collect();
         let count = pasted.len();
@@ -475,9 +459,7 @@ impl Editor {
             .map(|d| d.division)
             .unwrap_or(480);
         let ratio = match source_division {
-            Some(src) if src != 0 && src != target_division => {
-                target_division as f64 / src as f64
-            }
+            Some(src) if src != 0 && src != target_division => target_division as f64 / src as f64,
             _ => 1.0,
         };
 
@@ -505,9 +487,7 @@ impl Editor {
                 };
                 let tick = (anchor.0 + tick_offset).max(0.0);
                 let key = anchor.1.saturating_add(key_offset).min(max_key);
-                Some(super::Note::from_raw(
-                    tick, key, length, velocity, channel,
-                ))
+                Some(super::Note::from_raw(tick, key, length, velocity, channel))
             })
             .collect();
 
@@ -542,7 +522,10 @@ impl Editor {
     }
 
     /// 遍历当前轨被选中音符（不物化索引 Vec，避免全选时 GB 级分配）
-    fn each_selected_note_on_current_track(&self, mut f: impl FnMut(&lumino_midi_loader::NoteEvent)) {
+    fn each_selected_note_on_current_track(
+        &self,
+        mut f: impl FnMut(&lumino_midi_loader::NoteEvent),
+    ) {
         let interaction = &self.editor_state.interaction;
         let notes = self.editor_state.data.current_track_notes();
         if let Some(ref bs) = interaction.selection_bitset {

@@ -286,20 +286,20 @@ fn test_blank_track_preserved_roundtrip() {
     let project = LuminoProject::from_midi_document(&doc);
     assert_eq!(project.tracks.len(), 3, "空白音轨不应被丢弃");
     assert_eq!(project.loaded_track_count(), 3);
-    assert_eq!(project.get_track(0).unwrap().note_count, 1);
-    assert_eq!(project.get_track(1).unwrap().note_count, 0);
-    assert_eq!(project.get_track(2).unwrap().note_count, 0);
+    assert_eq!(project.get_track(0).expect("音轨 0 应存在").note_count, 1);
+    assert_eq!(project.get_track(1).expect("音轨 1 应存在").note_count, 0);
+    assert_eq!(project.get_track(2).expect("音轨 2 应存在").note_count, 0);
 
     // 音轨状态（可见性 / solo）应被保留
     assert_eq!(
-        project.get_track(1).unwrap().meta.visibility,
+        project.get_track(1).expect("音轨 1 应存在").meta.visibility,
         TrackVisibilitySer::Hidden
     );
     assert_eq!(
-        project.get_track(2).unwrap().meta.visibility,
+        project.get_track(2).expect("音轨 2 应存在").meta.visibility,
         TrackVisibilitySer::Muted
     );
-    assert!(project.get_track(2).unwrap().meta.solo);
+    assert!(project.get_track(2).expect("音轨 2 应存在").meta.solo);
 
     // to_midi_document：往返后音轨数量、名称与状态保留
     let rebuilt = project.to_midi_document().expect("重建失败");
@@ -316,14 +316,22 @@ fn test_blank_track_preserved_roundtrip() {
         ]
     );
     assert_eq!(
-        rebuilt.tracks.get(1).unwrap().visibility,
+        rebuilt
+            .tracks
+            .get(1)
+            .expect("重建后音轨 1 应存在")
+            .visibility,
         lumino_midi_model::TrackVisibility::Hidden
     );
     assert_eq!(
-        rebuilt.tracks.get(2).unwrap().visibility,
+        rebuilt
+            .tracks
+            .get(2)
+            .expect("重建后音轨 2 应存在")
+            .visibility,
         lumino_midi_model::TrackVisibility::Muted
     );
-    assert!(rebuilt.tracks.get(2).unwrap().solo);
+    assert!(rebuilt.tracks.get(2).expect("重建后音轨 2 应存在").solo);
 
     // save → load 往返：空白音效实际写入磁盘并可重新加载
     use crate::project::{load, save};
@@ -333,14 +341,22 @@ fn test_blank_track_preserved_roundtrip() {
     let loaded = load::load_project(&dir).expect("加载失败");
     assert_eq!(loaded.tracks.len(), 3, "加载后空白音轨应保留");
     assert_eq!(
-        loaded.get_track(1).unwrap().meta.visibility,
+        loaded
+            .get_track(1)
+            .expect("加载后音轨 1 应存在")
+            .meta
+            .visibility,
         TrackVisibilitySer::Hidden
     );
     assert_eq!(
-        loaded.get_track(2).unwrap().meta.visibility,
+        loaded
+            .get_track(2)
+            .expect("加载后音轨 2 应存在")
+            .meta
+            .visibility,
         TrackVisibilitySer::Muted
     );
-    assert!(loaded.get_track(2).unwrap().meta.solo);
+    assert!(loaded.get_track(2).expect("加载后音轨 2 应存在").meta.solo);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

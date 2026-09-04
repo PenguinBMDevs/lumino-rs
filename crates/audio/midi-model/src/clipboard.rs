@@ -13,7 +13,9 @@ use crate::note_event::NoteEvent;
 
 /// Domino（TAKABO SOFT）剪贴板互通：格式 `MidiPortalSequence` 的解析/编码。
 pub mod domino;
-pub use domino::{decode_domino_clipboard, encode_domino_clipboard, CLIPBOARD_FORMAT, PORTAL_MAGIC};
+pub use domino::{
+    CLIPBOARD_FORMAT, PORTAL_MAGIC, decode_domino_clipboard, encode_domino_clipboard,
+};
 
 /// 剪贴板载荷魔数（"LUMC" = Lumino Clip）
 pub const CLIP_MAGIC: [u8; 4] = *b"LUMC";
@@ -213,15 +215,23 @@ pub fn decode_clipboard_chunks(
 ) -> Result<ClipMeta, String> {
     let (meta, _) = parse_header(bytes)?;
     let mut buf: Vec<ClipRecord> = Vec::with_capacity(chunk_size.max(1));
-    decode_clipboard_records(bytes, |tick_offset, length, key_offset, velocity, channel, track| {
-        buf.push(ClipRecord::new(
-            tick_offset, length, key_offset, velocity, channel, track,
-        ));
-        if buf.len() == chunk_size.max(1) {
-            f(&buf);
-            buf.clear();
-        }
-    })?;
+    decode_clipboard_records(
+        bytes,
+        |tick_offset, length, key_offset, velocity, channel, track| {
+            buf.push(ClipRecord::new(
+                tick_offset,
+                length,
+                key_offset,
+                velocity,
+                channel,
+                track,
+            ));
+            if buf.len() == chunk_size.max(1) {
+                f(&buf);
+                buf.clear();
+            }
+        },
+    )?;
     if !buf.is_empty() {
         f(&buf);
     }
@@ -260,7 +270,9 @@ pub fn decode_clipboard_records(
 pub fn decode_clipboard(bytes: &[u8]) -> Result<(ClipMeta, Vec<ClipRecord>), String> {
     let (meta, _) = parse_header(bytes)?;
     let mut out = Vec::with_capacity(meta.count as usize);
-    decode_clipboard_chunks(bytes, meta.count as usize, |chunk| out.extend_from_slice(chunk))?;
+    decode_clipboard_chunks(bytes, meta.count as usize, |chunk| {
+        out.extend_from_slice(chunk)
+    })?;
     Ok((meta, out))
 }
 
@@ -308,7 +320,7 @@ mod tests {
     fn test_roundtrip_preserves_records() {
         let recs = sorted_records(2000);
         let bytes = encode_clipboard(recs.iter().copied(), recs.len(), 480, 0, 0, 0);
-        let (meta, out) = decode_clipboard(&bytes).unwrap();
+        let (meta, out) = decode_clipboard(&bytes).expect("剪贴板解码应成功");
         assert_eq!(meta.division, 480);
         assert_eq!(meta.count as usize, recs.len());
         assert_eq!(out.len(), recs.len());
@@ -329,7 +341,7 @@ mod tests {
         let recs = vec![ClipRecord::new(100, 200, 5, 100, 0, 0)];
         let n = recs.len();
         let bytes = encode_clipboard(recs.into_iter(), n, 480, 50, 60, 0);
-        let (meta, out) = decode_clipboard(&bytes).unwrap();
+        let (meta, out) = decode_clipboard(&bytes).expect("剪贴板解码应成功");
         let ratio = 960.0 / 480.0;
         let n = record_to_note_event(&out[0], &meta, ratio);
         assert_eq!(n.start_tick, 250);
@@ -344,7 +356,7 @@ mod tests {
         let recs = vec![ClipRecord::new(100, 50, 5, 100, 0, 0)];
         let n = recs.len();
         let bytes = encode_clipboard(recs.into_iter(), n, 480, 50, 60, 0);
-        let (meta, out) = decode_clipboard(&bytes).unwrap();
+        let (meta, out) = decode_clipboard(&bytes).expect("剪贴板解码应成功");
         let n = record_to_note_event(&out[0], &meta, 1.0);
         assert_eq!(n.start_tick, 150);
         assert_eq!(n.length(), 50);
@@ -360,7 +372,7 @@ mod tests {
             seen += chunk.len();
             max_chunk = max_chunk.max(chunk.len());
         })
-        .unwrap();
+        .expect("分块解码应成功");
         assert_eq!(seen, 100_000);
         assert!(max_chunk <= 10_000);
     }

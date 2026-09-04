@@ -118,13 +118,9 @@ impl LmtrackData {
 
     /// 获取 CompactEvent 迭代器（零拷贝视图）
     pub fn compact_events(&self) -> Result<impl Iterator<Item = CompactEvent> + '_> {
-        let chunks = self.events.chunks_exact(12);
-        if chunks.remainder().is_empty() {
-            Ok(chunks.map(|chunk| {
-                // safety: remainder 已校验为 0，chunks_exact(12) 的每个 chunk 长度恒为 12
-                let bytes: &[u8; 12] = unsafe { &*(chunk.as_ptr() as *const [u8; 12]) };
-                CompactEvent::from_bytes(bytes)
-            }))
+        let (chunks, remainder) = self.events.as_chunks::<12>();
+        if remainder.is_empty() {
+            Ok(chunks.iter().map(CompactEvent::from_bytes))
         } else {
             Err(CoreError::FileFormat(
                 "lmtrack: event bytes length is not a multiple of 12".into(),

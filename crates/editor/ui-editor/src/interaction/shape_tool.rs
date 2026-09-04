@@ -28,12 +28,12 @@ impl Editor {
             return;
         }
         // 填充桶：点击待确认图形内部 → 标记填充
-        if self.editor_state.shape_tool.fill_enabled {
-            if let Some(idx) = self.shape_hit_test(tick, key) {
-                self.editor_state.shape_tool.shapes[idx].filled = true;
-                self.mark_notes_changed();
-                return;
-            }
+        if self.editor_state.shape_tool.fill_enabled
+            && let Some(idx) = self.shape_hit_test(tick, key)
+        {
+            self.editor_state.shape_tool.shapes[idx].filled = true;
+            self.mark_notes_changed();
+            return;
         }
         // 正常：开始拖拽拉框（坐标已由调用方解析：Shift=原始浮点 / 否则=网格吸附）
         self.editor_state.shape_tool.begin_drag((tick, key));
@@ -50,12 +50,7 @@ impl Editor {
     pub(crate) fn handle_shape_tool_released(&mut self) {
         let snap = self.editor_state.view.snap_precision;
         let shift = self.shift_pressed();
-        if self
-            .editor_state
-            .shape_tool
-            .end_drag(snap, shift)
-            .is_some()
-        {
+        if self.editor_state.shape_tool.end_drag(snap, shift).is_some() {
             self.mark_notes_changed();
         }
     }
@@ -100,11 +95,7 @@ impl Editor {
         let mut create_ops: Vec<CreateOp> = Vec::with_capacity(points.len());
         for (tick, key) in points {
             let note = Note::new(tick, key, snap);
-            if self
-                .editor_state
-                .data
-                .insert_note(track, note.clone())
-            {
+            if self.editor_state.data.insert_note(track, note.clone()) {
                 create_ops.push(CreateOp {
                     track_id: track as u32,
                     note: lumino_editor_state::note_to_event(note),
@@ -115,10 +106,7 @@ impl Editor {
             return false;
         }
 
-        self.editor_state
-            .data
-            .history
-            .push_note_create(create_ops);
+        self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
         self.editor_state.shape_tool.clear_pending();
         self.mark_notes_changed();
@@ -294,4 +282,3 @@ mod tests {
         );
     }
 }
-

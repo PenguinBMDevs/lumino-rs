@@ -8,6 +8,7 @@
 use std::collections::HashSet;
 
 use crate::EditorData;
+use crate::editor_state::editor_data::CollabTransformSyncEntry;
 use lumino_note_core::midi_types::VelocityPoint;
 
 /// 音符变换操作 trait
@@ -284,10 +285,7 @@ impl EditorData {
     /// `pub`：`pending_collab_transform_sync` 为 `pub(crate)`，ui-editor 仓无法直接访问，
     /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
     /// `(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, track_index)`。
-    pub fn push_collab_transform_entries(
-        &mut self,
-        entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)>,
-    ) {
+    pub fn push_collab_transform_entries(&mut self, entries: Vec<CollabTransformSyncEntry>) {
         self.pending_collab_transform_sync.extend(entries);
     }
 

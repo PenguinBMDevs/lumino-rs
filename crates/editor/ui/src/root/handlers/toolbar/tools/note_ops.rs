@@ -4,6 +4,7 @@
 
 use super::super::ToolbarHandler;
 use crate::root::Root;
+use lumino_editor_state::CollabTransformSyncEntry;
 
 impl ToolbarHandler {
     /// 处理量化
@@ -106,7 +107,7 @@ impl ToolbarHandler {
 
             // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。
             let track = root.editor.editor_state.data.current_track;
-            let mut entries: Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+            let mut entries: Vec<CollabTransformSyncEntry> = Vec::new();
             for (pos, old) in old_notes.iter().enumerate() {
                 let new_tick = quantizable_notes[pos].tick;
                 let new_length = quantizable_notes[pos].length;

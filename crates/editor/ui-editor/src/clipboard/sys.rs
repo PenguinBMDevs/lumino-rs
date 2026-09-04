@@ -11,7 +11,9 @@
 use std::ptr;
 
 use winapi::shared::minwindef::{HGLOBAL, UINT};
-use winapi::um::winbase::{GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE};
+use winapi::um::winbase::{
+    GMEM_MOVEABLE, GlobalAlloc, GlobalFree, GlobalLock, GlobalSize, GlobalUnlock,
+};
 use winapi::um::winuser::{
     CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable, OpenClipboard,
     RegisterClipboardFormatA, SetClipboardData,
@@ -24,46 +26,50 @@ const DOMINO_NAME: &[u8] = b"MidiPortalSequence\0";
 
 /// 注册格式名，返回格式 ID（0 = 失败）。
 unsafe fn register(name: &[u8]) -> UINT {
-    RegisterClipboardFormatA(name.as_ptr() as *const i8)
+    unsafe { RegisterClipboardFormatA(name.as_ptr() as *const i8) }
 }
 
 /// 在已打开的剪贴板会话内，把一段数据写入指定格式（调用方负责 Open/Empty/Close）。
 unsafe fn set_one(fmt: UINT, data: &[u8]) -> bool {
-    let h: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, data.len());
-    if h.is_null() {
-        return false;
-    }
-    let p = GlobalLock(h);
-    if p.is_null() {
-        GlobalFree(h);
-        return false;
-    }
-    ptr::copy_nonoverlapping(data.as_ptr(), p as *mut u8, data.len());
-    GlobalUnlock(h);
-    let res = SetClipboardData(fmt, h);
-    if res.is_null() {
-        GlobalFree(h);
-        false
-    } else {
-        true
+    unsafe {
+        let h: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, data.len());
+        if h.is_null() {
+            return false;
+        }
+        let p = GlobalLock(h);
+        if p.is_null() {
+            GlobalFree(h);
+            return false;
+        }
+        ptr::copy_nonoverlapping(data.as_ptr(), p as *mut u8, data.len());
+        GlobalUnlock(h);
+        let res = SetClipboardData(fmt, h);
+        if res.is_null() {
+            GlobalFree(h);
+            false
+        } else {
+            true
+        }
     }
 }
 
 /// 在已打开的剪贴板会话内，读取指定格式（调用方负责 Open/Close）。
 unsafe fn get_one(fmt: UINT) -> Option<Vec<u8>> {
-    let h: HGLOBAL = GetClipboardData(fmt);
-    if h.is_null() {
-        return None;
+    unsafe {
+        let h: HGLOBAL = GetClipboardData(fmt);
+        if h.is_null() {
+            return None;
+        }
+        let size = GlobalSize(h);
+        let p = GlobalLock(h);
+        if p.is_null() {
+            return None;
+        }
+        let mut out = vec![0u8; size];
+        ptr::copy_nonoverlapping(p as *const u8, out.as_mut_ptr(), size);
+        GlobalUnlock(h);
+        Some(out)
     }
-    let size = GlobalSize(h);
-    let p = GlobalLock(h);
-    if p.is_null() {
-        return None;
-    }
-    let mut out = vec![0u8; size];
-    ptr::copy_nonoverlapping(p as *const u8, out.as_mut_ptr(), size);
-    GlobalUnlock(h);
-    Some(out)
 }
 
 /// 写多个私有二进制格式（一次会话，仅清空一次）。

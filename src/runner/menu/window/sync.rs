@@ -1,5 +1,6 @@
 //! 本地同步类窗口事件处理
 
+use super::super::collaboration::{LocalNoteMove, LocalNoteSnapshot};
 use crate::runner::RunnerInner;
 use lumino_ui::event::window::sync::Event;
 
@@ -16,7 +17,15 @@ impl RunnerInner {
                 channel,
                 track_index,
             } => {
-                self.handle_local_note_added(id, tick, key, length, velocity, channel, track_index);
+                self.handle_local_note_added(LocalNoteSnapshot {
+                    id,
+                    tick,
+                    key,
+                    length,
+                    velocity,
+                    channel,
+                    track_index,
+                });
             }
             LocalNoteMoved {
                 id,
@@ -27,7 +36,7 @@ impl RunnerInner {
                 key_offset,
                 track_index,
             } => {
-                self.handle_local_note_moved(
+                self.handle_local_note_moved(LocalNoteMove {
                     id,
                     tick,
                     key,
@@ -35,7 +44,7 @@ impl RunnerInner {
                     tick_offset,
                     key_offset,
                     track_index,
-                );
+                });
             }
             LocalNoteDeleted {
                 id,
@@ -46,7 +55,7 @@ impl RunnerInner {
                 channel,
                 track_index,
             } => {
-                self.handle_local_note_deleted(
+                self.handle_local_note_deleted(LocalNoteSnapshot {
                     id,
                     tick,
                     key,
@@ -54,7 +63,7 @@ impl RunnerInner {
                     velocity,
                     channel,
                     track_index,
-                );
+                });
             }
             LocalTrackAdded { track_index } => {
                 self.handle_local_track_added(track_index);

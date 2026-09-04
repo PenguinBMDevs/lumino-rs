@@ -32,9 +32,8 @@ const KEYBOARD_CELLS: u32 = 64;
 const CONTROL_FIELDS: usize = 13;
 
 /// 控制字段列起始（逻辑列），位于键盘条右侧、与键盘同行横向对齐
-const CTRL_COLS: [u32; CONTROL_FIELDS] = [
-    71, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137,
-];
+const CTRL_COLS: [u32; CONTROL_FIELDS] =
+    [71, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137];
 
 /// 调色板（近似 ANSI 真彩终端）
 const BG: [u8; 3] = [12, 12, 14];
@@ -280,7 +279,14 @@ impl MidiConsoleRenderer {
     }
 
     /// 把当前 tick 的状态写入字符网格
-    pub fn render(&mut self, grid: &mut [Cell], document: &MidiDocument, tick: u32, ppq: u32, fps: u32) {
+    pub fn render(
+        &mut self,
+        grid: &mut [Cell],
+        document: &MidiDocument,
+        tick: u32,
+        ppq: u32,
+        fps: u32,
+    ) {
         self.advance(document, tick);
         let gw = COLS as usize;
         for c in grid.iter_mut() {
@@ -294,9 +300,9 @@ impl MidiConsoleRenderer {
         for ch in 0..16usize {
             // 键盘条 + 控制数据在同一行：键盘在左（cols 5..68），数据在右（col 71+），横向对齐
             let kb_row = 3 + ch * 2;
-            self.draw_keyboard_row(grid, kb_row as u32, ch as usize);
+            self.draw_keyboard_row(grid, kb_row as u32, ch);
             if self.config.show_control_panel {
-                self.draw_control_row(grid, kb_row as u32, ch as usize);
+                self.draw_control_row(grid, kb_row as u32, ch);
             }
         }
         // ALL 合并行
@@ -304,7 +310,14 @@ impl MidiConsoleRenderer {
         let _ = gw;
     }
 
-    fn draw_header(&self, grid: &mut [Cell], _document: &MidiDocument, _tick: u32, _ppq: u32, _fps: u32) {
+    fn draw_header(
+        &self,
+        grid: &mut [Cell],
+        _document: &MidiDocument,
+        _tick: u32,
+        _ppq: u32,
+        _fps: u32,
+    ) {
         set_text(grid, 0, 1, "LUMINO MIDICONSOLE", [220, 220, 230], BG);
         // 显式标注：CH01..CH16 行即 MIDI 通道 1..16（非轨道），按键亮起按通道独立检测。
         // 仅用 ASCII（Consolas/DejaVu 保证有字形），避免 ▶/·/中文 等缺失字形导致空白。
@@ -312,9 +325,17 @@ impl MidiConsoleRenderer {
         set_text(grid, 0, COLS - 10, "> PLAYING", [120, 220, 120], BG);
     }
 
-    fn draw_stats(&self, grid: &mut [Cell], document: &MidiDocument, tick: u32, ppq: u32, fps: u32) {
+    fn draw_stats(
+        &self,
+        grid: &mut [Cell],
+        document: &MidiDocument,
+        tick: u32,
+        ppq: u32,
+        fps: u32,
+    ) {
         let bpm = super::counter_stats::current_bpm(&document.tempo_changes, tick);
-        let (num, den) = super::counter_stats::current_time_signature(&document.time_signatures, tick);
+        let (num, den) =
+            super::counter_stats::current_time_signature(&document.time_signatures, tick);
         let speed = play_speed(ppq, bpm, fps);
         let notes = self.note_count;
         let events = document.control_events.len() as u64;
@@ -327,8 +348,8 @@ impl MidiConsoleRenderer {
 
     fn draw_control_header(&self, grid: &mut [Cell]) {
         let labels = [
-            "PC", "VOL", "EXP", "PAN", "P.BEND", "P.RANGE", "MOD", "HOLD", "CUT", "RESO", "ATT", "DEC",
-            "REL",
+            "PC", "VOL", "EXP", "PAN", "P.BEND", "P.RANGE", "MOD", "HOLD", "CUT", "RESO", "ATT",
+            "DEC", "REL",
         ];
         for f in 0..CONTROL_FIELDS {
             set_text(grid, 2, CTRL_COLS[f], labels[f], LABEL, BG);
@@ -435,7 +456,11 @@ fn is_black_key(k: usize) -> bool {
 /// 键颜色：底色（黑/白键区分）按亮度水平 level（0=熄灭，1=点亮）平滑过渡到暖色，
 /// 因此按键的亮起与熄灭都是连续渐变动画。
 fn key_color(k: usize, level: f32, warm: [u8; 3]) -> [u8; 3] {
-    let base: [u8; 3] = if is_black_key(k) { KEY_BLACK } else { KEY_WHITE };
+    let base: [u8; 3] = if is_black_key(k) {
+        KEY_BLACK
+    } else {
+        KEY_WHITE
+    };
     let t = level.clamp(0.0, 1.0);
     [
         lerp(base[0], warm[0], t),
@@ -450,7 +475,11 @@ fn lerp(a: u8, b: u8, t: f32) -> u8 {
 
 /// 两个 RGB 颜色按 t 线性混合
 fn mix(a: [u8; 3], b: [u8; 3], t: f32) -> [u8; 3] {
-    [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2], b[2], t)]
+    [
+        lerp(a[0], b[0], t),
+        lerp(a[1], b[1], t),
+        lerp(a[2], b[2], t),
+    ]
 }
 
 /// 向目标值以固定步长连续趋近（用于亮度过渡动画）
@@ -487,9 +516,8 @@ fn set_text(grid: &mut [Cell], r: u32, c: u32, text: &str, fg: [u8; 3], bg: [u8;
 /// 用 `ab_glyph` 加载一个等宽字体（优先 Consolas / DejaVuSansMono）
 fn load_monospace_font() -> Option<FontArc> {
     let candidates: Vec<PathBuf> = if cfg!(windows) {
-        let dir = std::env::var("SystemRoot")
-            .unwrap_or_else(|_| "C:\\Windows".to_string())
-            + "\\Fonts\\";
+        let dir =
+            std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()) + "\\Fonts\\";
         vec![
             PathBuf::from(dir.clone() + "consola.ttf"),
             PathBuf::from(dir.clone() + "consolab.ttf"),
@@ -505,26 +533,47 @@ fn load_monospace_font() -> Option<FontArc> {
         ]
     };
     for p in &candidates {
-        if let Ok(bytes) = std::fs::read(p) {
-            if let Ok(f) = FontVec::try_from_vec(bytes) {
-                return Some(FontArc::from(f));
-            }
+        if let Ok(bytes) = std::fs::read(p)
+            && let Ok(f) = FontVec::try_from_vec(bytes)
+        {
+            return Some(FontArc::from(f));
         }
     }
     None
 }
 
+/// `render_midicomsole_frame` / `_gpu` 共用的帧渲染参数（8 参结构体化，满足 `too_many_arguments`）。
+pub struct MidiConsoleFrameArgs<'a> {
+    /// 状态化字符网格渲染器
+    pub renderer: &'a mut MidiConsoleRenderer,
+    /// 输出 BGRA 帧缓冲
+    pub frame: &'a mut [u8],
+    /// 帧宽（像素）
+    pub frame_width: u32,
+    /// 帧高（像素）
+    pub frame_height: u32,
+    /// 源 MIDI 文档
+    pub document: &'a MidiDocument,
+    /// 当前 tick
+    pub tick: u32,
+    /// 每四分音符 tick 数
+    pub ppq: u32,
+    /// 帧率
+    pub fps: u32,
+}
+
 /// 把字符网格栅格化为 BGRA 帧（按 cell 比例，含半块字符字形）
-pub fn render_midicomsole_frame(
-    renderer: &mut MidiConsoleRenderer,
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    document: &MidiDocument,
-    tick: u32,
-    ppq: u32,
-    fps: u32,
-) {
+pub fn render_midicomsole_frame(args: MidiConsoleFrameArgs<'_>) {
+    let MidiConsoleFrameArgs {
+        renderer,
+        frame,
+        frame_width,
+        frame_height,
+        document,
+        tick,
+        ppq,
+        fps,
+    } = args;
     let gw = COLS as usize;
     let gh = ROWS as usize;
     let fw = frame_width as usize;
@@ -543,7 +592,10 @@ pub fn render_midicomsole_frame(
 
     // 2) 栅格化（参照本仓 ui-editor 的 ab_glyph 用法：glyph_id + outline_glyph）
     if let Some(font) = load_monospace_font() {
-        let scale = PxScale { x: cell_h, y: cell_h };
+        let scale = PxScale {
+            x: cell_h,
+            y: cell_h,
+        };
         let scaled = font.as_scaled(scale);
         let ascent = scaled.ascent();
         let descent = scaled.descent();
@@ -552,7 +604,12 @@ pub fn render_midicomsole_frame(
             for c in 0..gw {
                 let cell = grid[r * gw + c];
                 // 先填充背景
-                fill_rect(frame, fw, fh, c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h, cell.bg);
+                fill_rect(
+                    frame,
+                    (fw, fh),
+                    (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
+                    cell.bg,
+                );
                 if cell.ch != ' ' {
                     let gid = font.glyph_id(cell.ch);
                     let ha = scaled.h_advance(gid);
@@ -560,7 +617,13 @@ pub fn render_midicomsole_frame(
                     let off_y = (cell_h - glyph_h) / 2.0;
                     let baseline_x = c as f32 * cell_w + off_x;
                     let baseline_y = r as f32 * cell_h + off_y + ascent;
-                    let glyph = gid.with_scale_and_position(scale, Point { x: baseline_x, y: baseline_y });
+                    let glyph = gid.with_scale_and_position(
+                        scale,
+                        Point {
+                            x: baseline_x,
+                            y: baseline_y,
+                        },
+                    );
                     if let Some(outline) = font.outline_glyph(glyph) {
                         // 关键：ab_glyph 的 draw 回调坐标是「相对字形包围盒左上角」，
                         // 必须叠加 px_bounds().min 才是帧内绝对像素（与本仓 text_tool 完全一致）
@@ -575,7 +638,7 @@ pub fn render_midicomsole_frame(
                             if di + 3 >= frame.len() {
                                 return;
                             }
-                            let a = cov.clamp(0.0, 1.0) as f32;
+                            let a = cov.clamp(0.0, 1.0);
                             frame[di] = blend(cell.bg[0], cell.fg[0], a);
                             frame[di + 1] = blend(cell.bg[1], cell.fg[1], a);
                             frame[di + 2] = blend(cell.bg[2], cell.fg[2], a);
@@ -591,7 +654,12 @@ pub fn render_midicomsole_frame(
             for c in 0..gw {
                 let cell = grid[r * gw + c];
                 let col = if cell.ch == ' ' { cell.bg } else { cell.fg };
-                fill_rect(frame, fw, fh, c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h, col);
+                fill_rect(
+                    frame,
+                    (fw, fh),
+                    (c as f32 * cell_w, r as f32 * cell_h, cell_w, cell_h),
+                    col,
+                );
             }
         }
     }
@@ -605,16 +673,17 @@ pub fn render_midicomsole_frame(
 /// 复用 CPU 廉价网格构建（状态机逻辑，不慢），仅把昂贵的 ab_glyph 逐帧描边与
 /// CRT 逐像素后处理搬上 GPU（`lumino_gfx::midiconsole_renderer`）。
 /// 任意 GPU 初始化/渲染失败都安全回退到 CPU 路径，保证导出不中断。
-pub fn render_midicomsole_frame_gpu(
-    renderer: &mut MidiConsoleRenderer,
-    frame: &mut [u8],
-    frame_width: u32,
-    frame_height: u32,
-    document: &MidiDocument,
-    tick: u32,
-    ppq: u32,
-    fps: u32,
-) {
+pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
+    let MidiConsoleFrameArgs {
+        renderer,
+        frame,
+        frame_width,
+        frame_height,
+        document,
+        tick,
+        ppq,
+        fps,
+    } = args;
     let gw = COLS as usize;
     let gh = ROWS as usize;
     let fw = frame_width as usize;
@@ -647,7 +716,7 @@ pub fn render_midicomsole_frame_gpu(
         let mut guard = g.borrow_mut();
         let need_rebuild = guard
             .as_ref()
-            .map_or(true, |c| c.width != frame_width || c.height != frame_height);
+            .is_none_or(|c| c.width != frame_width || c.height != frame_height);
         if need_rebuild {
             match build_gpu_ctx(frame_width, frame_height) {
                 Some(ctx) => *guard = Some(ctx),
@@ -675,9 +744,16 @@ pub fn render_midicomsole_frame_gpu(
                 }
             }
         }
-        None => render_midicomsole_frame(
-            renderer, frame, frame_width, frame_height, document, tick, ppq, fps,
-        ),
+        None => render_midicomsole_frame(MidiConsoleFrameArgs {
+            renderer,
+            frame,
+            frame_width,
+            frame_height,
+            document,
+            tick,
+            ppq,
+            fps,
+        }),
     }
 }
 
@@ -690,19 +766,15 @@ struct GpuCtx {
 
 thread_local! {
     /// 当前线程的 GPU 上下文（导出在独立后台线程运行，单例缓存即可）
-    static GPU_CTX: std::cell::RefCell<Option<GpuCtx>> = std::cell::RefCell::new(None);
+    static GPU_CTX: std::cell::RefCell<Option<GpuCtx>> = const { std::cell::RefCell::new(None) };
     /// GPU 不可用时置位，避免每帧重复尝试创建适配器
-    static GPU_DISABLED: std::cell::RefCell<bool> = std::cell::RefCell::new(false);
+    static GPU_DISABLED: std::cell::RefCell<bool> = const { std::cell::RefCell::new(false) };
 }
 
 /// 创建 GPU 上下文（无可用适配器时返回 `None`）
 fn build_gpu_ctx(width: u32, height: u32) -> Option<GpuCtx> {
     let ctx = MidiconsoleGpuContext::new(width, height)?;
-    Some(GpuCtx {
-        width,
-        height,
-        ctx,
-    })
+    Some(GpuCtx { width, height, ctx })
 }
 
 /// 背景色与前景色按覆盖率混合（BGRA 顺序）
@@ -711,17 +783,10 @@ fn blend(bg: u8, fg: u8, a: f32) -> u8 {
     (fg as f32 * a + bg as f32 * (1.0 - a)).clamp(0.0, 255.0) as u8
 }
 
-/// 填充矩形（BGRA）
-fn fill_rect(
-    frame: &mut [u8],
-    fw: usize,
-    fh: usize,
-    x0: f32,
-    y0: f32,
-    w: f32,
-    h: f32,
-    color: [u8; 3],
-) {
+/// 填充矩形（BGRA），`size=(宽, 高)`，`rect=(x0, y0, 宽, 高)`（8 参结构体化，满足 `too_many_arguments`）。
+fn fill_rect(frame: &mut [u8], size: (usize, usize), rect: (f32, f32, f32, f32), color: [u8; 3]) {
+    let (fw, fh) = size;
+    let (x0, y0, w, h) = rect;
     let x0 = x0.max(0.0) as i64;
     let y0 = y0.max(0.0) as i64;
     let x1 = ((x0 as f32 + w) as i64).min(fw as i64);
@@ -775,17 +840,17 @@ mod tests {
         // 跨多个通道、在 tick=960 处全部处于发声状态的音符，
         // 让预览图里 CH01..CH06 与 ALL 行的键盘条同时点亮。
         let notes = vec![
-            NoteEvent::new(0, 1920, 60, 100, 0), // CH1 C4
-            NoteEvent::new(0, 1920, 64, 100, 0), // CH1 E4
-            NoteEvent::new(0, 1920, 67, 100, 0), // CH1 G4
+            NoteEvent::new(0, 1920, 60, 100, 0),   // CH1 C4
+            NoteEvent::new(0, 1920, 64, 100, 0),   // CH1 E4
+            NoteEvent::new(0, 1920, 67, 100, 0),   // CH1 G4
             NoteEvent::new(100, 1900, 55, 100, 1), // CH2 G3
             NoteEvent::new(100, 1900, 59, 100, 1), // CH2 B3
             NoteEvent::new(200, 1700, 72, 100, 2), // CH3 C5
             NoteEvent::new(300, 1600, 48, 100, 3), // CH4 C3
             NoteEvent::new(400, 1500, 76, 100, 4), // CH5 E5
             NoteEvent::new(500, 1400, 81, 100, 5), // CH6 A5
-            NoteEvent::new(0, 1920, 72, 100, 7), // CH8 C5（验证中段通道）
-            NoteEvent::new(0, 1920, 84, 100, 15), // CH16 C6（验证最高通道）
+            NoteEvent::new(0, 1920, 72, 100, 7),   // CH8 C5（验证中段通道）
+            NoteEvent::new(0, 1920, 84, 100, 15),  // CH16 C6（验证最高通道）
         ];
         let mut list: Vec<NoteEvent> = notes;
         list.sort_unstable_by_key(|n| n.start_tick);
@@ -824,7 +889,10 @@ mod tests {
                 non_empty += 1;
             }
         }
-        assert!(non_empty > 1000, "字符网格应产生大量非空格，实际 {non_empty}");
+        assert!(
+            non_empty > 1000,
+            "字符网格应产生大量非空格，实际 {non_empty}"
+        );
     }
 
     #[test]
@@ -857,7 +925,16 @@ mod tests {
         let h = ROWS * (cell * 2);
         let mut frame = vec![0u8; (w * h * 4) as usize];
         // 取 tick=960（多个通道音符同时发声），键盘条应点亮为暖色
-        render_midicomsole_frame(&mut renderer, &mut frame, w, h, &doc, 960, 480, 60);
+        render_midicomsole_frame(MidiConsoleFrameArgs {
+            renderer: &mut renderer,
+            frame: &mut frame,
+            frame_width: w,
+            frame_height: h,
+            document: &doc,
+            tick: 960,
+            ppq: 480,
+            fps: 60,
+        });
 
         assert!(frame.iter().any(|&v| v != 0), "预览帧不应全黑");
 
@@ -909,7 +986,7 @@ mod tests {
             .expect("写入 PNG 头")
             .into_stream_writer()
             .expect("创建 PNG 流写入器");
-        for pix in frame.chunks_exact(4) {
+        for pix in frame.as_chunks::<4>().0 {
             let (b, g, r, a) = (pix[0], pix[1], pix[2], pix[3]);
             writer.write_all(&[r, g, b, a]).expect("写入 PNG 像素");
         }
@@ -974,8 +1051,8 @@ mod tests {
         let w = 100u32;
         let h = 100u32;
         let mut frame = vec![0u8; (w * h * 4) as usize];
-        for i in 0..frame.len() {
-            frame[i] = if i % 4 == 3 { 255 } else { 200 };
+        for (i, px) in frame.iter_mut().enumerate() {
+            *px = if i % 4 == 3 { 255 } else { 200 };
         }
         let original = frame.clone();
         // tick=10 时移动亮带中心约在 y=60，远离顶行，便于比较扫描线压暗
@@ -983,7 +1060,7 @@ mod tests {
         assert_ne!(frame, original, "CRT 后处理应改变像素（扫描线/亮带生效）");
         // 扫描线行（y%3==0，如 y=0）应比相邻非扫描线行（y=1）暗
         let r_scan = frame[0] as f32;
-        let r_nonscan = frame[(1usize * w as usize) * 4] as f32;
+        let r_nonscan = frame[(w as usize) * 4] as f32;
         assert!(
             r_scan < r_nonscan,
             "扫描线行应比非扫描线行暗（r_scan={r_scan}, r_nonscan={r_nonscan}）"

@@ -12,11 +12,11 @@ use super::data_curve_math::rgba_to_bgra;
 pub(super) fn fill_bgra(frame: &mut [u8], color_rgba: [u8; 4]) {
     let c = rgba_to_bgra(color_rgba);
     if c[3] == 255 {
-        for px in frame.chunks_exact_mut(4) {
+        for px in frame.as_chunks_mut::<4>().0 {
             px.copy_from_slice(&c);
         }
     } else {
-        for px in frame.chunks_exact_mut(4) {
+        for px in frame.as_chunks_mut::<4>().0 {
             blend_px(px, c);
         }
     }
@@ -54,12 +54,18 @@ pub(super) fn blend_hline(
         let start = row as usize * fw * 4;
         let end = start + fw * 4;
         if color_bgra[3] == 255 {
-            frame[start..end].chunks_exact_mut(4).for_each(|px| {
-                px.copy_from_slice(&color_bgra);
-            });
+            frame[start..end]
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
+                .for_each(|px| {
+                    px.copy_from_slice(&color_bgra);
+                });
         } else {
             frame[start..end]
-                .chunks_exact_mut(4)
+                .as_chunks_mut::<4>()
+                .0
+                .iter_mut()
                 .for_each(|px| blend_px(px, color_bgra));
         }
     }
@@ -148,10 +154,7 @@ mod tests {
             color_bgra: c,
             thickness: 3,
         });
-        assert!(
-            frame.chunks_exact(4).any(|px| px == c),
-            "线段应出现在画面内"
-        );
+        assert!(frame.as_chunks::<4>().0.contains(&c), "线段应出现在画面内");
     }
 
     /// 水平线厚度居中：thickness=3 时上下各扩展 1px

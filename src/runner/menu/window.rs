@@ -61,7 +61,7 @@ pub(super) fn downscale_bgra_to_rgba(
     if tw >= sw || th >= sh || tw == 0 || th == 0 {
         // 不需缩小：直接 clone 并在 clone 中交换
         let mut dst = src.to_vec();
-        for pixel in dst.chunks_exact_mut(4) {
+        for pixel in dst.as_chunks_mut::<4>().0 {
             pixel.swap(0, 2);
         }
         return (dst, sw, sh);

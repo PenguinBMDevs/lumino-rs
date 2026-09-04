@@ -85,12 +85,7 @@ impl MidiconsoleRenderer {
     ///
     /// `width`/`height` 为输出帧尺寸，单字符单元尺寸按
     /// `cell_w = width / GRID_COLS`、`cell_h = height / GRID_ROWS` 推导。
-    pub fn new(
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        width: u32,
-        height: u32,
-    ) -> Self {
+    pub fn new(device: &wgpu::Device, queue: &wgpu::Queue, width: u32, height: u32) -> Self {
         let cell_w = width as f32 / GRID_COLS as f32;
         let cell_h = height as f32 / GRID_ROWS as f32;
         let shader_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
@@ -143,8 +138,8 @@ impl MidiconsoleRenderer {
         let uniforms = Uniforms {
             grid_cols: GRID_COLS as u32,
             grid_rows: GRID_ROWS as u32,
-            cell_w: cell_w as f32,
-            cell_h: cell_h as f32,
+            cell_w,
+            cell_h,
             atlas_cols: ATLAS_COLS,
             atlas_rows: ATLAS_ROWS,
             atlas_cw: ATLAS_CELL_W as f32,
@@ -165,48 +160,47 @@ impl MidiconsoleRenderer {
         });
 
         // —— 绑定组布局 ——
-        let bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: Some("midiconsole_bind_group_layout"),
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: Some("midiconsole_bind_group_layout"),
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 1,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Texture {
-                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
-                            view_dimension: wgpu::TextureViewDimension::D2,
-                            multisampled: false,
-                        },
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Texture {
+                        sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        view_dimension: wgpu::TextureViewDimension::D2,
+                        multisampled: false,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 2,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
-                        count: None,
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 2,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                    count: None,
+                },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
                     },
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 3,
-                        visibility: wgpu::ShaderStages::FRAGMENT,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Storage { read_only: true },
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                ],
-            });
+                    count: None,
+                },
+            ],
+        });
 
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("midiconsole_bind_group"),
@@ -280,7 +274,11 @@ impl MidiconsoleRenderer {
         tick: u32,
     ) -> Vec<u8> {
         let cell_count = GRID_COLS * GRID_ROWS;
-        assert_eq!(cells.len(), cell_count, "网格单元数量须等于 GRID_COLS*GRID_ROWS");
+        assert_eq!(
+            cells.len(),
+            cell_count,
+            "网格单元数量须等于 GRID_COLS*GRID_ROWS"
+        );
 
         // 更新 uniform（移动高亮带中心随 tick 推进）
         let band_center = (tick as f32 * BAND_SPEED) % self.frame_h as f32;
@@ -305,10 +303,9 @@ impl MidiconsoleRenderer {
         queue.write_buffer(&self.uniform_buffer, 0, bytemuck::bytes_of(&u));
         queue.write_buffer(&self.cells_buffer, 0, bytemuck::cast_slice(cells));
 
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("midiconsole_encoder"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("midiconsole_encoder"),
+        });
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("midiconsole_pass"),
@@ -371,7 +368,9 @@ impl MidiconsoleRenderer {
             submission_index: None,
             timeout: None,
         });
-        rx.recv().expect("map_async 回调未收到").expect("map_async 失败");
+        rx.recv()
+            .expect("map_async 回调未收到")
+            .expect("map_async 失败");
 
         let data = slice.get_mapped_range();
         let mut out = vec![0u8; (self.frame_w * self.frame_h * bpp) as usize];
@@ -402,18 +401,20 @@ impl MidiconsoleGpuContext {
     /// 创建 GPU 上下文（无可用适配器时返回 `None`）。
     pub fn new(width: u32, height: u32) -> Option<Self> {
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-        let adapter =
-            futures::executor::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-                .ok()?;
-        let (device, queue) = futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("midiconsole_gpu_export"),
-            required_features: adapter.features() & wgpu::Features::default(),
-            required_limits: wgpu::Limits::default(),
-            memory_hints: wgpu::MemoryHints::default(),
-            trace: wgpu::Trace::Off,
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        }))
+        let adapter = futures::executor::block_on(
+            instance.request_adapter(&wgpu::RequestAdapterOptions::default()),
+        )
         .ok()?;
+        let (device, queue) =
+            futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+                label: Some("midiconsole_gpu_export"),
+                required_features: adapter.features() & wgpu::Features::default(),
+                required_limits: wgpu::Limits::default(),
+                memory_hints: wgpu::MemoryHints::default(),
+                trace: wgpu::Trace::Off,
+                experimental_features: wgpu::ExperimentalFeatures::disabled(),
+            }))
+            .ok()?;
         let renderer = MidiconsoleRenderer::new(&device, &queue, width, height);
         Some(Self {
             device,
@@ -432,9 +433,8 @@ impl MidiconsoleGpuContext {
 /// 加载等宽字体（与 CPU 预览一致：Consolas / DejaVu 候选）
 fn load_monospace_font() -> Option<FontArc> {
     let candidates: Vec<PathBuf> = if cfg!(windows) {
-        let dir = std::env::var("SystemRoot")
-            .unwrap_or_else(|_| "C:\\Windows".to_string())
-            + "\\Fonts\\";
+        let dir =
+            std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".to_string()) + "\\Fonts\\";
         vec![
             PathBuf::from(dir.clone() + "consola.ttf"),
             PathBuf::from(dir.clone() + "consolab.ttf"),
@@ -450,10 +450,10 @@ fn load_monospace_font() -> Option<FontArc> {
         ]
     };
     for p in &candidates {
-        if let Ok(bytes) = std::fs::read(p) {
-            if let Ok(f) = FontVec::try_from_vec(bytes) {
-                return Some(FontArc::from(f));
-            }
+        if let Ok(bytes) = std::fs::read(p)
+            && let Ok(f) = FontVec::try_from_vec(bytes)
+        {
+            return Some(FontArc::from(f));
         }
     }
     None
@@ -472,7 +472,13 @@ fn build_glyph_atlas() -> Option<(Vec<u8>, u32, u32)> {
     let ascent = scaled.ascent();
 
     for slot in 0u32..(ATLAS_COLS * ATLAS_ROWS) {
-        let ch: u32 = if slot < 95 { slot + 32 } else if slot == 96 { 0x258C } else { 0 };
+        let ch: u32 = if slot < 95 {
+            slot + 32
+        } else if slot == 96 {
+            0x258C
+        } else {
+            0
+        };
         if ch == 0 {
             continue;
         }

@@ -4,6 +4,7 @@
 //! 1) 面板内按钮的 `on_press` 曾被 `mouse_area(...).on_press(Message::Null)` 吞掉；
 //! 2) `ToolPanelItemSelected` 事件未同步到编辑器状态，而 `view_arrangement` 每帧用
 //!    `editor.current_tool()` 反向覆盖 `toolbar.current_tool`。
+//!
 //! 这里用单测把「事件 → 工具栏状态 → 编辑器状态」整条链路钉死，避免再靠肉眼回归。
 
 use super::*;

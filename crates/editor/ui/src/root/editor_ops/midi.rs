@@ -93,7 +93,7 @@ impl Root {
 
         // 校验已选设备是否仍然有效；失效则回落到系统默认（None）
         if let Some(sel) = self.settings.synth.selected_audio_output_device.clone()
-            && !list.iter().any(|name| *name == sel)
+            && !list.contains(&sel)
         {
             self.settings.synth.selected_audio_output_device = None;
         }

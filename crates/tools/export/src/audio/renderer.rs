@@ -26,12 +26,6 @@ pub struct BatchRenderer<'a> {
 /// 最大单批次渲染时长（秒）
 const MAX_BATCH_SECONDS: f64 = 10.0;
 
-/// 亚样点精度累加器
-struct BatchBuffer {
-    output_vec: Vec<f32>,
-    missed_samples: f64,
-}
-
 impl<'a> BatchRenderer<'a> {
     /// 创建批量渲染器
     pub fn new(channel_group: &'a mut ChannelGroup) -> Self {

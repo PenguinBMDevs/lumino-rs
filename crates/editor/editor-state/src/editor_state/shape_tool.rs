@@ -34,6 +34,9 @@ pub enum ShapeToolInteraction {
     },
 }
 
+/// 拖拽预览图形：`(类型, 外接框, Shift约束, 填充)`。
+pub type ShapePreview = (ShapeKind, (f32, f32, f32, f32), bool, bool);
+
 /// 单条待确认图形实例
 #[derive(Debug, Clone, PartialEq)]
 pub struct ShapeInstance {
@@ -114,6 +117,7 @@ impl ShapeToolState {
     ///
     /// - `snap`：吸附精度（tick），用于判定拖拽过短无效；
     /// - `shift_constrained`：绘制时是否按住 Shift（约束正图形）。
+    ///
     /// 返回 `None` 表示拖拽过短 / 无效，已丢弃。
     pub fn end_drag(&mut self, snap: f32, shift_constrained: bool) -> Option<ShapeInstance> {
         let start = match self.interaction {
@@ -138,10 +142,7 @@ impl ShapeToolState {
     }
 
     /// 当前正在拖拽的预览图形（若有）：返回 (类型, 外接框, Shift约束, 填充)
-    pub fn preview_rect(
-        &self,
-        shift_constrained: bool,
-    ) -> Option<(ShapeKind, (f32, f32, f32, f32), bool, bool)> {
+    pub fn preview_rect(&self, shift_constrained: bool) -> Option<ShapePreview> {
         if let ShapeToolInteraction::Dragging { start } = self.interaction {
             let rect = normalize_rect(start, self.drag_current);
             Some((self.shape_kind, rect, shift_constrained, self.fill_enabled))
@@ -376,7 +377,15 @@ pub fn shape_cells(
                     (cx, cy + 1.0),
                 ];
                 let on_boundary = neighbors.iter().any(|&(nx, ny)| {
-                    !point_in_shape(kind, rect, shift_constrained, px_per_tick, px_per_key, nx, ny)
+                    !point_in_shape(
+                        kind,
+                        rect,
+                        shift_constrained,
+                        px_per_tick,
+                        px_per_key,
+                        nx,
+                        ny,
+                    )
                 });
                 if !on_boundary {
                     continue;
@@ -400,7 +409,9 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             true,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         assert_eq!(cells.len(), 5 * 5);
         assert!(cells.contains(&(0.0, 60)));
@@ -415,7 +426,9 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             false,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         assert_eq!(cells.len(), 5 * 5 - 3 * 3);
     }
@@ -428,7 +441,9 @@ mod tests {
             (0.0, 60.0, 10.0, 64.0),
             true,
             true,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         // 约束后应为 4×4（高度决定边长），故 25 格
         assert_eq!(cells.len(), 5 * 5);
@@ -442,7 +457,9 @@ mod tests {
             (-2.0, 60.0, 2.0, 64.0),
             false,
             true,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         // 中心 (0,62) 必包含
         assert!(cells.contains(&(0.0, 62)));
@@ -458,7 +475,9 @@ mod tests {
             (0.0, 60.0, 4.0, 64.0),
             false,
             true,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         assert!(cells.contains(&(2.0, 60)));
         // 顶点附近 (2,64) 必在内
@@ -473,7 +492,9 @@ mod tests {
             (0.0, 60.0, 10.0, 64.0),
             true,
             true,
-            1.0, 1.0, 1.0,
+            1.0,
+            1.0,
+            1.0,
         );
         // 正圆半径 2，中心 (5,62)，中心格在内
         assert!(cells.contains(&(5.0, 62)));

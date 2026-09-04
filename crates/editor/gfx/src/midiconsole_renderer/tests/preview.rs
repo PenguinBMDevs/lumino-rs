@@ -23,15 +23,16 @@ fn test_gpu_renders_preview_png() {
         instance.request_adapter(&wgpu::RequestAdapterOptions::default()),
     )
     .expect("测试需要可用的 wgpu 适配器（GPU 或软件后端）");
-    let (device, queue) = futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("midiconsole_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
+    let (device, queue) =
+        futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+            label: Some("midiconsole_test_device"),
+            required_features: adapter.features() & wgpu::Features::default(),
+            required_limits: wgpu::Limits::default(),
+            memory_hints: wgpu::MemoryHints::default(),
+            trace: wgpu::Trace::Off,
+            experimental_features: wgpu::ExperimentalFeatures::disabled(),
+        }))
+        .expect("请求 wgpu 设备失败");
 
     // 输出帧 1480×800，单元 10×20（与 CPU 预览一致）
     let cell_w = 10u32;
@@ -47,7 +48,12 @@ fn test_gpu_renders_preview_png() {
     let warm: u32 = pack_rgb(90, 200, 255);
 
     let mut grid = vec![
-        CellGpu { ch: 32, fg: 0, bg: bg_dark, _pad: 0 };
+        CellGpu {
+            ch: 32,
+            fg: 0,
+            bg: bg_dark,
+            _pad: 0
+        };
         GRID_COLS * GRID_ROWS
     ];
 
@@ -70,7 +76,9 @@ fn test_gpu_renders_preview_png() {
         "PC", "VOL", "EXP", "PAN", "P.BEND", "P.RANGE", "MOD", "HOLD", "CUT", "RESO", "ATT", "DEC",
         "REL",
     ];
-    let field_cols = [71usize, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137];
+    let field_cols = [
+        71usize, 76, 81, 86, 91, 99, 107, 112, 117, 122, 127, 132, 137,
+    ];
     for f in 0..13usize {
         for (i, c) in labels[f].chars().enumerate() {
             set(&mut grid, 2, field_cols[f] + i, c, fg_light, bg_dark);
@@ -86,7 +94,8 @@ fn test_gpu_renders_preview_png() {
         for i in 0..64usize {
             let k0 = i * 2;
             let k1 = i * 2 + 1;
-            let is_black = |k: usize| k % 12 == 1 || k % 12 == 3 || k % 12 == 6 || k % 12 == 8 || k % 12 == 10;
+            let is_black =
+                |k: usize| k % 12 == 1 || k % 12 == 3 || k % 12 == 6 || k % 12 == 8 || k % 12 == 10;
             let col0 = if lit.contains(&k0) {
                 warm
             } else if is_black(k0) {
@@ -154,7 +163,7 @@ fn test_gpu_renders_preview_png() {
     let mut non_black = 0usize;
     let mut bright = 0usize;
     let mut bar_color = 0usize;
-    for px in rgba.chunks_exact(4) {
+    for px in rgba.as_chunks::<4>().0 {
         if px[0] > 4 || px[1] > 4 || px[2] > 4 {
             non_black += 1;
         }
@@ -190,9 +199,7 @@ fn test_gpu_renders_preview_png() {
     enc.set_color(png::ColorType::Rgba);
     enc.set_depth(png::BitDepth::Eight);
     let mut writer = enc.write_header().expect("写 PNG 头失败");
-    writer
-        .write_image_data(&rgba)
-        .expect("写 PNG 像素失败");
+    writer.write_image_data(&rgba).expect("写 PNG 像素失败");
     eprintln!(
         "已写入 GPU 渲染预览: {}（{}×{}，非黑像素 {non_black}）",
         path.display(),

@@ -341,9 +341,7 @@ impl EditorData {
     /// `false` 表示应发射 `LocalNoteDeleted`（撤销删除）。
     /// 调用方（ui-editor 层 `editor_impl::history`）据此发射同步事件，
     /// 否则 B 端在 A 撤销创建后残留该音符（本次修复的协作缺陷）。
-    pub fn take_pending_collab_create_sync(
-        &mut self,
-    ) -> Vec<(u64, f32, u16, f32, u8, u8, usize, bool)> {
+    pub fn take_pending_collab_create_sync(&mut self) -> Vec<super::CollabCreateSyncEntry> {
         std::mem::take(&mut self.pending_collab_create_sync)
     }
 
@@ -353,9 +351,7 @@ impl EditorData {
     /// `is_add=true` → 发射 `LocalNoteAdded`，`false` → 发射 `LocalNoteDeleted`。
     /// 调用方（ui-editor 层 `editor_impl::history`）据此发射同步事件，使 B 端在 A 执行
     /// 变换操作或对其撤销/重做后保持一致。
-    pub fn take_pending_collab_transform_sync(
-        &mut self,
-    ) -> Vec<(bool, u64, f32, u16, f32, u8, u8, usize)> {
+    pub fn take_pending_collab_transform_sync(&mut self) -> Vec<super::CollabTransformSyncEntry> {
         std::mem::take(&mut self.pending_collab_transform_sync)
     }
 

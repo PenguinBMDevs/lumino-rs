@@ -241,12 +241,12 @@ impl RunnerInner {
                         .flatten(),
                         None => None,
                     };
-                    if let Some(local) = local_hash {
-                        if local == project_hash {
-                            progress_cb("本地工程已是最新", 1.0);
-                            tracing::info!("协作: 本地工程与房间一致，跳过下载");
-                            return;
-                        }
+                    if let Some(local) = local_hash
+                        && local == project_hash
+                    {
+                        progress_cb("本地工程已是最新", 1.0);
+                        tracing::info!("协作: 本地工程与房间一致，跳过下载");
+                        return;
                     }
 
                     let client = HttpClient::new(&host, port);

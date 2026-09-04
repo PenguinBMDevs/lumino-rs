@@ -201,7 +201,7 @@ impl EditorData {
             let dk = (n.key as i32 - key as i32).abs();
             if dt <= 1.0 && dk == 0 {
                 let score = dt;
-                if best.map_or(true, |b| score < b.0) {
+                if best.is_none_or(|b| score < b.0) {
                     best = Some((score, n.id));
                 }
             }

@@ -15,7 +15,12 @@ use lumino_gpu_synth::midi::MidiEvent;
 use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
 
 use crate::constants::*;
-use crate::{Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo};
+use crate::{
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+};
+
+/// 共享 MIDI 事件发送器（输出连接 → GPU 渲染线程）。
+type SharedEventTx = Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>;
 
 /// LGS (GPU) 后端初始化选项
 #[derive(Debug, Clone)]
@@ -40,7 +45,7 @@ pub struct Lgs {
     /// （包在 Mutex 中仅为满足 `Api: Send + Sync`；正常运行无需加锁访问）
     _playback: Arc<Mutex<AudioPlayback>>,
     /// 共享事件发送器（所有输出连接通过它向渲染线程转发 MIDI 事件）
-    event_tx: Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>,
+    event_tx: SharedEventTx,
     /// 响度(力度)过滤阈值（所有输出连接共享，note_on 时实时丢弃过轻音符）
     velocity_filter: Arc<AtomicU8>,
     /// 音色库路径（重建/重初始化时重用）
@@ -144,17 +149,17 @@ impl Api for Lgs {
 
 /// LGS (GPU) MIDI 输出连接：把 MIDI 事件转发给 GPU 渲染线程
 pub(crate) struct LgsOutputConn {
-    event_tx: Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>,
+    event_tx: SharedEventTx,
     velocity_filter: Arc<AtomicU8>,
 }
 
 impl LgsOutputConn {
     /// 向 GPU 渲染线程发送一个 MIDI 事件；发送器不可用（已停止）时静默丢弃。
     fn send_event(&self, channel: u8, event: MidiEvent) {
-        if let Ok(guard) = self.event_tx.lock() {
-            if let Some(tx) = guard.as_ref() {
-                let _ = tx.send((channel, event));
-            }
+        if let Ok(guard) = self.event_tx.lock()
+            && let Some(tx) = guard.as_ref()
+        {
+            let _ = tx.send((channel, event));
         }
     }
 }
@@ -180,7 +185,12 @@ impl OutputConnection for LgsOutputConn {
 
     fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
         let channel = ch & MIDI_CHANNEL_MASK;
-        self.send_event(channel, MidiEvent::NoteOff { key: key & MIDI_VALUE_MASK });
+        self.send_event(
+            channel,
+            MidiEvent::NoteOff {
+                key: key & MIDI_VALUE_MASK,
+            },
+        );
         Ok(())
     }
 
@@ -215,11 +225,16 @@ impl OutputConnection for LgsOutputConn {
 
     fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
         let status = data[0] & 0xF0;
-        let channel = (data[0] & 0x0F) as u8;
+        let channel = data[0] & 0x0F;
         let b1 = data[1];
         let b2 = data[2];
         match status {
-            0x80 => self.send_event(channel, MidiEvent::NoteOff { key: b1 & MIDI_VALUE_MASK }),
+            0x80 => self.send_event(
+                channel,
+                MidiEvent::NoteOff {
+                    key: b1 & MIDI_VALUE_MASK,
+                },
+            ),
             0x90 => {
                 // 响度(力度)过滤：b2>0 的真实音符按下才过滤；b2==0 视为释放
                 let threshold = self.velocity_filter.load(Ordering::Relaxed);
@@ -235,13 +250,16 @@ impl OutputConnection for LgsOutputConn {
                     );
                 }
             }
-            0xB0 => self.send_event(channel, MidiEvent::ControlChange {
-                controller: b1,
-                value: b2,
-            }),
+            0xB0 => self.send_event(
+                channel,
+                MidiEvent::ControlChange {
+                    controller: b1,
+                    value: b2,
+                },
+            ),
             0xC0 => self.send_event(channel, MidiEvent::ProgramChange { program: b1 }),
             0xE0 => {
-                let bend = ((b1 as u16) | ((b2 as u16) << 7)) as u16;
+                let bend = (b1 as u16) | ((b2 as u16) << 7);
                 self.send_event(channel, MidiEvent::PitchBend { value: bend });
             }
             // 通道后触(0xD0) / 复音后触(0xA0)：GPU 合成器不支持，忽略以避免噪声报错

@@ -134,7 +134,7 @@ impl EditorData {
                     let mapped: Vec<Note> = notes
                         .iter()
                         .copied()
-                        .map(|n| super::super::accessors::event_to_note(n))
+                        .map(super::super::accessors::event_to_note)
                         .collect();
                     if !mapped.is_empty() {
                         ranges.push((start, mapped));

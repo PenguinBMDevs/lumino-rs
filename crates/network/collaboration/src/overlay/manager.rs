@@ -148,7 +148,7 @@ impl OverlayManager {
                 if overlay.pixels.len() != pixel_count {
                     continue;
                 }
-                for (i, chunk) in overlay.pixels.chunks_exact(4).enumerate() {
+                for (i, chunk) in overlay.pixels.as_chunks::<4>().0.iter().enumerate() {
                     if chunk[3] > 0 {
                         let offset = i * 4;
                         merged[offset..offset + 4].copy_from_slice(chunk);
