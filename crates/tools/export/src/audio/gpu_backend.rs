@@ -281,6 +281,13 @@ pub fn render_audio_gpu_from_document(
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
     report("GPU 导出临时 MIDI...", 0.15);
+    // 空文档直接报错，交由上层回退到文件模式
+    let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
+    if total_notes == 0 && doc.control_events.is_empty() {
+        return Err(ExportError::AudioWrite(
+            "MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载".into(),
+        ));
+    }
     // 构造临时 MIDI 文件
     let export_data = build_export_data(doc, config);
     let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;

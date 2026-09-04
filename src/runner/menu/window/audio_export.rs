@@ -171,13 +171,38 @@ impl RunnerInner {
                 let start = Instant::now();
                 let render_result = match &doc_clone {
                     Some(doc) => {
-                        // Arc 快照不可变：克隆 owned 副本后覆盖 tempo。
-                        // ChunkedList 为块级浅拷贝（O(块数) 指针拷贝），不复制音符数据。
-                        let mut snapshot = (**doc).clone();
-                        if !editor_tempos.is_empty() {
-                            snapshot.tempo_changes = editor_tempos;
+                        let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
+                        let total_ctrl = doc.control_events.len();
+                        tracing::info!(
+                            "内存文档快照: tracks={}, notes={}, ctrls={}, division={}, tempo_changes={}",
+                            doc.track_count,
+                            total_notes,
+                            total_ctrl,
+                            doc.division,
+                            doc.tempo_changes.len()
+                        );
+                        // 空文档回退到文件模式（macOS 上文档可能为空，避免直接报错）
+                        if total_notes == 0 && total_ctrl == 0 {
+                            tracing::warn!(
+                                "内存文档为空（0 notes），回退到文件模式: {:?}",
+                                config.midi_path
+                            );
+                            if config.midi_path.exists() {
+                                lumino_export::audio::render_audio(&config)
+                            } else {
+                                Err(lumino_export::ExportError::AudioWrite(
+                                    "内存文档为空且 MIDI 文件不存在，请先加载 MIDI 或检查 MIDI 路径".into(),
+                                ))
+                            }
+                        } else {
+                            // Arc 快照不可变：克隆 owned 副本后覆盖 tempo。
+                            // ChunkedList 为块级浅拷贝（O(块数) 指针拷贝），不复制音符数据。
+                            let mut snapshot = (**doc).clone();
+                            if !editor_tempos.is_empty() {
+                                snapshot.tempo_changes = editor_tempos;
+                            }
+                            lumino_export::audio::render_audio_from_document(&config, &snapshot)
                         }
-                        lumino_export::audio::render_audio_from_document(&config, &snapshot)
                     }
                     None => lumino_export::audio::render_audio(&config),
                 };
