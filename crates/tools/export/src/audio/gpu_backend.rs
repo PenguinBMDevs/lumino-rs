@@ -248,25 +248,23 @@ pub fn render_audio_gpu_from_document(
         )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str()) {
-        if ext.eq_ignore_ascii_case("sfz") {
+        if !ext.eq_ignore_ascii_case("sf2") && !ext.eq_ignore_ascii_case("sfz") {
             return Err(ExportError::AudioWrite(format!(
-                "暂不支持 SFZ 导出 {:?}：GPU/CPU 导出仅支持 .sf2（RIFF），请选择 .sf2 音色库",
-                sf_path
-            )));
-        }
-        if !ext.eq_ignore_ascii_case("sf2") {
-            return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2",
+                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
                 sf_path
             )));
         }
     }
-    if let Ok(mut f) = std::fs::File::open(sf_path) {
+    // 仅对 SF2 校验 RIFF 头，SFZ 为文本
+    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
+        && ext.eq_ignore_ascii_case("sf2")
+        && let Ok(mut f) = std::fs::File::open(sf_path)
+    {
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {
             return Err(ExportError::AudioWrite(format!(
-                "音色库不是合法的 SF2 {:?}：头应为 RIFF，实际 {:02X?}（SFZ 请换 .sf2）",
+                "音色库不是合法的 SF2 {:?}：头应为 RIFF，实际 {:02X?}",
                 sf_path, header
             )));
         }
@@ -332,20 +330,17 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
         )));
     }
     if let Some(ext) = sf_path.extension().and_then(|s| s.to_str()) {
-        if ext.eq_ignore_ascii_case("sfz") {
+        if !ext.eq_ignore_ascii_case("sf2") && !ext.eq_ignore_ascii_case("sfz") {
             return Err(ExportError::AudioWrite(format!(
-                "暂不支持 SFZ 导出 {:?}：仅支持 .sf2",
-                sf_path
-            )));
-        }
-        if !ext.eq_ignore_ascii_case("sf2") {
-            return Err(ExportError::AudioWrite(format!(
-                "不支持的音色库格式 {:?}：仅支持 .sf2",
+                "不支持的音色库格式 {:?}：仅支持 .sf2/.sfz",
                 sf_path
             )));
         }
     }
-    if let Ok(mut f) = std::fs::File::open(sf_path) {
+    if let Some(ext) = sf_path.extension().and_then(|s| s.to_str())
+        && ext.eq_ignore_ascii_case("sf2")
+        && let Ok(mut f) = std::fs::File::open(sf_path)
+    {
         use std::io::Read;
         let mut header = [0u8; 4];
         if f.read_exact(&mut header).is_ok() && header != *b"RIFF" {

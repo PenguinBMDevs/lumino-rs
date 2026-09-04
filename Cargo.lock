@@ -4302,6 +4302,7 @@ dependencies = [
  "memmap2",
  "pollster",
  "rayon",
+ "symphonia",
  "sysinfo",
  "thiserror 2.0.20",
  "wgpu",
