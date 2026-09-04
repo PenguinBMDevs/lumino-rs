@@ -20,7 +20,7 @@ use std::path::PathBuf;
 
 use lumino_export::midi::{
     MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent,
-    MidiNoteEvent, MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
+    MidiNoteEvent, MidiPitchBendEvent, MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
     export_midi_to_bytes,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
@@ -37,6 +37,8 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
         Default::default();
     let mut cc_by_track: std::collections::HashMap<u16, Vec<MidiControlChangeEvent>> =
         Default::default();
+    let mut pb_by_track: std::collections::HashMap<u16, Vec<MidiPitchBendEvent>> =
+        Default::default();
     for ev in doc.control_events.iter() {
         match ev.kind {
             0 => {
@@ -49,6 +51,16 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                         channel: ev.channel,
                         controller,
                         value,
+                    });
+            }
+            2 => {
+                pb_by_track
+                    .entry(ev.track)
+                    .or_default()
+                    .push(MidiPitchBendEvent {
+                        tick: ev.tick,
+                        channel: ev.channel,
+                        value: ev.param,
                     });
             }
             1 => {
@@ -79,9 +91,10 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                     duration: n.length().max(1),
                 })
                 .collect();
-            let (program_changes, control_changes) = (
+            let (program_changes, control_changes, pitch_bends) = (
                 pc_by_track.get(&track_id).cloned().unwrap_or_default(),
                 cc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                pb_by_track.get(&track_id).cloned().unwrap_or_default(),
             );
             MidiTrackData {
                 notes,
@@ -124,6 +137,7 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                 },
                 program_changes,
                 control_changes,
+                pitch_bends,
                 name: doc.track_name(i).map(|s| s.to_string()),
             }
         })

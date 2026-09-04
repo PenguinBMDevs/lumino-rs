@@ -246,7 +246,8 @@ impl Default for AudioRenderConfig {
             midi_path: PathBuf::new(),
             soundfonts: Vec::new(),
             output_path: PathBuf::new(),
-            sample_rate: 44100,
+            // 与 UI 默认 48k 对齐（视频/音频通用），避免 UI 48k 与 config 44.1k 分歧导致语义困惑
+            sample_rate: 48000,
             channels: AudioChannelMode::Stereo,
             layer_limit: None,
             channel_threading: ThreadMode::Auto,

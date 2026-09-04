@@ -194,10 +194,13 @@ impl MidiDocument {
             finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));
             finalize_sorted_events(&mut all_key_signatures, |&(t, _, _)| t, (0u32, 0i8, false));
 
-            control_events.sort_unstable_by_key(|e| e.tick);
-            lyrics.sort_unstable_by_key(|e| e.0);
-            markers.sort_unstable_by_key(|e| e.0);
-            sys_ex.sort_unstable_by_key(|e| e.0);
+            // 稳定排序保留同 tick 文件序：RPN(CC101/100/6/38) 必须在同 tick 的 PitchBend 之前，
+            // 否则 PB 会用旧的 bend_sensitivity（默认 2 半音）而非 RPN 设定的值（如 24）。
+            // 复刻 yinhe 2026-06-27 13:22 fix(audio): RPN 展开必须在 PB 之前。
+            control_events.sort_by_key(|e| e.tick);
+            lyrics.sort_by_key(|e| e.0);
+            markers.sort_by_key(|e| e.0);
+            sys_ex.sort_by_key(|e| e.0);
 
             if let Some(cb) = progress {
                 (cb)(0.75);

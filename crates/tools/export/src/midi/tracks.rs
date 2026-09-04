@@ -28,7 +28,6 @@ pub(crate) fn build_midi_smf<'a>(
     if data.options.format == 0 {
         let combined_name = name_bytes.first().and_then(|n| *n);
         let mut combined_track = build_combined_track(data, combined_name)?;
-        combined_track.sort_by_key(|e| e.delta);
         convert_to_delta_times(&mut combined_track);
         // EndOfTrack 必须在轨道末尾，且其后不得有任何事件（其他软件读取硬约束）
         combined_track.push(TrackEvent {
@@ -43,7 +42,6 @@ pub(crate) fn build_midi_smf<'a>(
 
         for (track_data, &name) in data.tracks.iter().zip(name_bytes.iter()) {
             let mut track = build_track(track_data, first_track, name)?;
-            track.sort_by_key(|e| e.delta);
             convert_to_delta_times(&mut track);
             // EndOfTrack 必须在轨道末尾，且其后不得有任何事件（其他软件读取硬约束）
             track.push(TrackEvent {
@@ -185,6 +183,19 @@ fn collect_track_events<'a>(
         });
     }
 
+    // 弯音
+    for pb in &track_data.pitch_bends {
+        events.push(TrackEvent {
+            delta: pb.tick.into(),
+            kind: TrackEventKind::Midi {
+                channel: pb.channel.into(),
+                message: MidiMessage::PitchBend {
+                    bend: midly::PitchBend(midly::num::u14::new(pb.value)),
+                },
+            },
+        });
+    }
+
     // 拍号事件 (全局事件)
     if include_globals {
         for ts in &track_data.time_signatures {
@@ -213,14 +224,32 @@ fn collect_track_events<'a>(
     Ok(())
 }
 
+fn event_priority(kind: &TrackEventKind) -> u8 {
+    match kind {
+        TrackEventKind::Midi { message, .. } => match message {
+            MidiMessage::NoteOff { .. } => 1,
+            MidiMessage::Controller { .. } => 2,
+            MidiMessage::ProgramChange { .. } => 3,
+            MidiMessage::PitchBend { .. } => 4,
+            MidiMessage::NoteOn { .. } => 5,
+            _ => 6,
+        },
+        _ => 0, // Meta 在同 tick 最先（不影响音符/CC 优先级）
+    }
+}
+
 /// 将绝对时间转换为增量时间
 pub(crate) fn convert_to_delta_times(events: &mut [TrackEvent<'_>]) {
     if events.is_empty() {
         return;
     }
 
-    // 先排序
-    events.sort_by_key(|e| u32::from(e.delta));
+    // 按 (tick, priority) 稳定排序：同 tick 时 CC(RPN) < PB < NoteOn，确保 RPN 在 PB 前（yinhe 2026-06-27 13:22）
+    events.sort_by(|a, b| {
+        u32::from(a.delta)
+            .cmp(&u32::from(b.delta))
+            .then(event_priority(&a.kind).cmp(&event_priority(&b.kind)))
+    });
 
     // 转换为增量时间
     let mut last_tick: u32 = 0;

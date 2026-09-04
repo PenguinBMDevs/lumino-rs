@@ -40,8 +40,13 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     }
 
     info!(
-        "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?} [backend={}]",
-        config.midi_path, config.soundfonts, config.output_path, config.backend
+        "[流式] 音频渲染: MIDI={:?}, SF2={:?}, 输出={:?} [backend={}, sr={}, ch={:?}]",
+        config.midi_path,
+        config.soundfonts,
+        config.output_path,
+        config.backend,
+        config.sample_rate,
+        config.channels
     );
 
     // 使用 mmap 映射 MIDI 文件
@@ -99,11 +104,6 @@ pub fn render_audio_from_document(
         }
     }
 
-    info!(
-        "[内存] 音频渲染: SF2={:?}, 输出={:?} [backend={}]",
-        config.soundfonts, config.output_path, config.backend
-    );
-
     let total_events: usize =
         doc.notes.iter().map(|v| v.len()).sum::<usize>() * 2 + doc.control_events.len();
     if total_events == 0 {
@@ -112,6 +112,18 @@ pub fn render_audio_from_document(
         ));
     }
 
+    let ppqn = u32::from(doc.division.max(1));
+    info!(
+        "[内存] 音频渲染: SF2={:?}, 输出={:?} [backend={}, sr={}, ch={:?}, ppqn={}, division={}]",
+        config.soundfonts,
+        config.output_path,
+        config.backend,
+        config.sample_rate,
+        config.channels,
+        ppqn,
+        doc.division
+    );
+
     let mut sink = create_output_sink(config)?;
     let mut engine = AudioEngine::new(config.clone())?;
     let tempos = doc.tempo_changes.clone();
@@ -119,7 +131,6 @@ pub fn render_audio_from_document(
     // （MIDI 文件头 PPQ，或编辑器当前 PPQ）。此前硬编码 480 导致
     // 非 480 PPQ 文档（如 192/960/1920）的 tick→秒换算被放大
     // （division/480 倍），导出音频时长错误、速度减慢但音调正常。
-    let ppqn = u32::from(doc.division.max(1));
     let mut tick_conv = TickToTime::new(tempos, ppqn);
     let mut processor =
         MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);

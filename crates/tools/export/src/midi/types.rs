@@ -75,6 +75,17 @@ pub struct MidiTimeSignatureEvent {
     pub notated_32nd_notes_per_beat: u8,
 }
 
+/// MIDI 弯音事件
+#[derive(Debug, Clone)]
+pub struct MidiPitchBendEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 通道 (0-15)
+    pub channel: u8,
+    /// 14-bit 弯音值 (0..16383, 8192 = 中心)
+    pub value: u16,
+}
+
 /// MIDI 调号事件
 #[derive(Debug, Clone)]
 pub struct MidiKeySignatureEvent {
@@ -97,6 +108,8 @@ pub struct MidiTrackData {
     pub program_changes: Vec<MidiProgramChangeEvent>,
     /// 控制变更事件列表
     pub control_changes: Vec<MidiControlChangeEvent>,
+    /// 弯音事件列表
+    pub pitch_bends: Vec<MidiPitchBendEvent>,
     /// 拍号事件列表
     pub time_signatures: Vec<MidiTimeSignatureEvent>,
     /// 调号事件列表

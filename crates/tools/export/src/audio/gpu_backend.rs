@@ -70,7 +70,8 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
 fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::midi::MidiExportData {
     use crate::midi::{
         MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent,
-        MidiNoteEvent, MidiProgramChangeEvent, MidiTempoEvent, MidiTimeSignatureEvent, MidiTrackData,
+        MidiNoteEvent, MidiPitchBendEvent, MidiProgramChangeEvent, MidiTempoEvent,
+        MidiTimeSignatureEvent, MidiTrackData,
     };
     use lumino_midi_loader::bpm_to_tempo;
 
@@ -78,8 +79,12 @@ fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::m
         Default::default();
     let mut cc_by_track: std::collections::HashMap<u16, Vec<MidiControlChangeEvent>> =
         Default::default();
+    let mut pb_by_track: std::collections::HashMap<u16, Vec<MidiPitchBendEvent>> =
+        Default::default();
 
-    // 仅在非忽略音色时收集 PC/CC
+    // 仅在非忽略音色时收集 PC/CC/PB；保持文件序（已按 tick 稳定排序）
+    // RPN(CC101/100/6/38) 必须在同 tick 的 PB 之前，否则 PB 用错 sensitivity（yinhe 2026-06-27 13:22）。
+    // doc.control_events 已稳定排序，迭代序即文件序 + tick 序，push 时 CC 已天然在 PB 前（event_stream 的 priority 同理）。
     for ev in doc.control_events.iter() {
         match ev.kind {
             0 => {
@@ -106,6 +111,16 @@ fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::m
                         tick: ev.tick,
                         channel: ev.channel,
                         program,
+                    });
+            }
+            2 => {
+                pb_by_track
+                    .entry(ev.track)
+                    .or_default()
+                    .push(MidiPitchBendEvent {
+                        tick: ev.tick,
+                        channel: ev.channel,
+                        value: ev.param,
                     });
             }
             _ => {}
@@ -145,9 +160,10 @@ fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::m
                     duration,
                 });
             }
-            let (program_changes, control_changes) = (
+            let (program_changes, control_changes, pitch_bends) = (
                 pc_by_track.get(&track_id).cloned().unwrap_or_default(),
                 cc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                pb_by_track.get(&track_id).cloned().unwrap_or_default(),
             );
             MidiTrackData {
                 notes,
@@ -190,6 +206,7 @@ fn build_export_data(doc: &MidiDocument, config: &AudioRenderConfig) -> crate::m
                 },
                 program_changes,
                 control_changes,
+                pitch_bends,
                 name: doc.track_name(i).map(|s| s.to_string()),
             }
         })
