@@ -3,11 +3,20 @@
 use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{
     MiditrailNoteGpu, RenderParams,
-    miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},
+    miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH, MiditrailViewMode},
     pack_color,
 };
+use lumino_message::events::window::video::MiditrailViewMode as EventViewMode;
 
 use super::{MiditrailRenderInput, collect_visible_notes_for_gpu};
+
+/// 事件层视图枚举 → GPU 层视图枚举（同构映射，无静默降级）。
+fn map_view_mode(view: EventViewMode) -> MiditrailViewMode {
+    match view {
+        EventViewMode::Normal => MiditrailViewMode::Normal,
+        EventViewMode::Top => MiditrailViewMode::Top,
+    }
+}
 
 /// Miditrail 3D 模式参数
 pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> RenderParams {
@@ -18,7 +27,8 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
         document,
         ppq,
         key_count,
-        waterfall_scroll_speed,
+        miditrail_speed,
+        miditrail_view_mode,
         miditrail_z_far,
         fps,
     } = input;
@@ -40,7 +50,7 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
         tick,
         ppq,
         key_count,
-        waterfall_scroll_speed,
+        miditrail_speed,
         z_far_scale,
         &mut notes,
     );
@@ -75,7 +85,8 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
         max_key_index: (key_count.saturating_sub(1)) as f32,
         canvas_size: (miditrail_width, miditrail_height),
         miditrail_enabled: true,
-        miditrail_speed: waterfall_scroll_speed.max(0.1),
+        miditrail_speed: miditrail_speed.max(0.1),
+        miditrail_view_mode: map_view_mode(miditrail_view_mode),
         miditrail_notes,
         miditrail_current_tick: tick,
         miditrail_z_far: miditrail_z_far.max(0.1),

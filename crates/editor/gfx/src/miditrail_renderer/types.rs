@@ -39,6 +39,56 @@ impl MiditrailNoteGpu {
     }
 }
 
+/// MIDITrail 视图模式（GPU 层，与事件层枚举同构，见 VIEW-001）。
+///
+/// - `Normal`：现有 3D 斜视实现（由旧单一视图迁移而来）；
+/// - `Top`：俯视实现（参考 Comet MIDITrail `Top Down Above` 预设），
+///   音符经时间量化/合并降精度以换取 GPU 开销下降。
+#[repr(u32)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum MiditrailViewMode {
+    /// 普通视图（默认）。
+    #[default]
+    Normal = 0,
+    /// 顶部视图。
+    Top = 1,
+}
+
+impl MiditrailViewMode {
+    /// 是否为顶部视图。
+    #[must_use]
+    pub fn is_top(self) -> bool {
+        matches!(self, MiditrailViewMode::Top)
+    }
+
+    /// 视图模式的规范字符串（与事件层 `as_str` 同构）。
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            MiditrailViewMode::Normal => "normal",
+            MiditrailViewMode::Top => "top",
+        }
+    }
+
+    /// 从 `u32` 还原（未知值回退 `Normal`，不静默产生第三种状态）。
+    #[must_use]
+    pub fn from_u32(value: u32) -> Self {
+        match value {
+            1 => MiditrailViewMode::Top,
+            _ => MiditrailViewMode::Normal,
+        }
+    }
+}
+
+impl std::fmt::Display for MiditrailViewMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MiditrailViewMode::Normal => f.write_str("Normal"),
+            MiditrailViewMode::Top => f.write_str("Top"),
+        }
+    }
+}
+
 /// 每帧渲染参数（CPU 侧使用，不直接上传 GPU）
 #[derive(Debug, Clone, Copy)]
 pub struct MiditrailUniformGpu {
@@ -66,6 +116,8 @@ pub struct MiditrailUniformGpu {
     pub fps: f32,
     /// Z 方向显示距离（决定音符在多远被截断）。
     pub z_far_distance: f32,
+    /// 视图模式（Normal 普通 / Top 顶部；音符显示距离除外，其余设置按视图隔离）。
+    pub view_mode: MiditrailViewMode,
     /// 当前 tick 处每秒 tick 数（BPM × ppq / 60）。
     ///
     /// 作为 Aura 光晕环动画的时间基准（参考 Zenith-MIDI 的
@@ -91,6 +143,7 @@ impl Default for MiditrailUniformGpu {
             param2: 0.0,
             fps: 60.0,
             z_far_distance: 7.5,
+            view_mode: MiditrailViewMode::Normal,
             // 默认按 ppq=480 @ 120 BPM（480 × 2）
             ticks_per_second: 960.0,
             _padding1: 0,
@@ -198,5 +251,23 @@ mod tests {
         assert_eq!(std::mem::size_of::<MiditrailInstanceGpu>(), 48);
         assert_eq!(std::mem::size_of::<MiditrailAuraInstanceGpu>(), 16);
         assert_eq!(std::mem::size_of::<MiditrailCameraGpu>(), 80);
+    }
+
+    #[test]
+    fn test_view_mode_default_and_roundtrip() {
+        // 默认视图为 Normal（现有行为迁移，切换不丢状态的基准）。
+        assert_eq!(MiditrailViewMode::default(), MiditrailViewMode::Normal);
+        assert_eq!(
+            MiditrailUniformGpu::default().view_mode,
+            MiditrailViewMode::Normal
+        );
+        assert!(!MiditrailViewMode::Normal.is_top());
+        assert!(MiditrailViewMode::Top.is_top());
+        assert_eq!(MiditrailViewMode::from_u32(0), MiditrailViewMode::Normal);
+        assert_eq!(MiditrailViewMode::from_u32(1), MiditrailViewMode::Top);
+        // 未知值回退 Normal（不产生第三种状态，避免渲染分支漏覆盖）。
+        assert_eq!(MiditrailViewMode::from_u32(99), MiditrailViewMode::Normal);
+        assert_eq!(MiditrailViewMode::Normal.as_str(), "normal");
+        assert_eq!(MiditrailViewMode::Top.as_str(), "top");
     }
 }

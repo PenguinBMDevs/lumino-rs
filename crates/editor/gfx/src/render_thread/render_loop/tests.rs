@@ -79,6 +79,10 @@ fn test_miditrail_shader_valid() {
         "miditrail_3d",
     );
     validate_wgsl(
+        include_str!("../../shaders/miditrail_top.wgsl"),
+        "miditrail_top",
+    );
+    validate_wgsl(
         include_str!("../../shaders/miditrail_aura.wgsl"),
         "miditrail_aura",
     );

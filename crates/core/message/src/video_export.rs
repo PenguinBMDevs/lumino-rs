@@ -41,6 +41,12 @@ pub enum VideoExportAction {
     MidiConsoleBackendChanged(String),
     /// 瀑布流滚动速度变更（0.1~10.0，精度 0.1）
     WaterfallSpeedChanged(f32),
+    /// MIDITrail 视图模式变更（"Normal"/"Top"）
+    MiditrailViewModeChanged(String),
+    /// MIDITrail Normal 视图滚动速度变更（0.1~10.0，精度 0.1）
+    MiditrailNormalSpeedChanged(f32),
+    /// MIDITrail Top 视图滚动速度变更（0.1~10.0，精度 0.1）
+    MiditrailTopSpeedChanged(f32),
     /// MIDITrail Z 方向显示距离变更（0.1~15.0，精度 0.1）
     MiditrailZFarChanged(f32),
 

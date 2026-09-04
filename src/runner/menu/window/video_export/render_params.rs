@@ -10,6 +10,7 @@ use lumino_extras::palette::current_track_color_f32;
 use lumino_gfx::{
     NoteInstance, RenderParams, calculate_border_width, generate_ruler_instances, pack_key_color,
 };
+use lumino_message::events::window::video::MiditrailViewMode;
 use lumino_message::events::window::video::RenderMode;
 use lumino_midi_loader::{MidiDocument, NoteEvent};
 
@@ -43,6 +44,9 @@ pub struct RenderParamsInput<'a> {
     pub render_mode: RenderMode,
     pub waterfall_scroll_speed: f32,
     pub miditrail_z_far: f32,
+    pub miditrail_view_mode: MiditrailViewMode,
+    pub miditrail_normal_speed: f32,
+    pub miditrail_top_speed: f32,
     pub fps: f32,
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
@@ -89,7 +93,8 @@ pub(crate) struct MiditrailRenderInput<'a> {
     pub document: &'a MidiDocument,
     pub ppq: u32,
     pub key_count: u16,
-    pub waterfall_scroll_speed: f32,
+    pub miditrail_speed: f32,
+    pub miditrail_view_mode: MiditrailViewMode,
     pub miditrail_z_far: f32,
     pub fps: f32,
 }
@@ -101,6 +106,15 @@ mod waterfall;
 
 #[cfg(test)]
 mod tests;
+
+/// 按视图解析 MIDITrail 滚动速度（Normal/Top 各自独立，防互相污染）。
+fn resolve_miditrail_speed(view_mode: MiditrailViewMode, normal_speed: f32, top_speed: f32) -> f32 {
+    if view_mode.is_top() {
+        top_speed.max(0.1)
+    } else {
+        normal_speed.max(0.1)
+    }
+}
 
 pub(crate) use gpu_visible::collect_visible_notes_for_gpu;
 pub(crate) use miditrail::build_miditrail_render_params;
@@ -124,6 +138,9 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
         render_mode,
         waterfall_scroll_speed,
         miditrail_z_far,
+        miditrail_view_mode,
+        miditrail_normal_speed,
+        miditrail_top_speed,
         fps,
         visible_notes,
         note_instances_out,
@@ -145,7 +162,12 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             document,
             ppq,
             key_count,
-            waterfall_scroll_speed,
+            miditrail_speed: resolve_miditrail_speed(
+                miditrail_view_mode,
+                miditrail_normal_speed,
+                miditrail_top_speed,
+            ),
+            miditrail_view_mode,
             miditrail_z_far,
             fps,
         })),

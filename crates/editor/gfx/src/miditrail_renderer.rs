@@ -8,26 +8,30 @@ mod instances;
 mod key_press;
 mod math;
 mod pipeline;
+mod quantize;
 mod render_pass;
+mod textures;
 mod types;
 
 /// 重导出颜色打包工具（供视频导出 waterfall/miditrail 模式使用）
 pub use instances::pack_color;
 pub use types::{
     MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailInstanceGpu, MiditrailNoteGpu,
-    MiditrailUniformGpu,
+    MiditrailUniformGpu, MiditrailViewMode,
 };
 
+use aura::{create_aura_buffers, create_aura_sampler, generate_aura_ring_data};
 use instances::{
     ActiveKeys, build_aura_instances, build_key_instances, build_note_instances,
     compute_active_keys, update_key_positions,
 };
 use math::build_camera_uniform;
 use pipeline::{
-    create_aura_buffers, create_aura_render_pipeline, create_aura_sampler,
-    create_bind_group_layout, create_buffers, create_note_render_pipeline, create_render_pipeline,
-    generate_aura_ring_data,
+    create_aura_render_pipeline, create_bind_group_layout, create_buffers,
+    create_note_render_pipeline, create_render_pipeline, create_top_note_render_pipeline,
+    create_top_render_pipeline,
 };
+use quantize::quantize_notes_for_top;
 
 const KEY_PRESS_SPEED_DOWN: f32 = 15.0;
 const KEY_PRESS_SPEED_UP: f32 = 10.0;
@@ -43,9 +47,13 @@ pub const MIDITRAIL_MAX_Z_FAR_DISTANCE: f32 = 15.0;
 /// 3D MIDITrail 渲染器
 ///
 /// 使用实例化立方体渲染键盘与音符，结果写入 `Rgba8Unorm` 离屏纹理。
+/// Normal 与 Top 视图共用实例缓冲/纹理/深度（零第二份显存），
+/// 区别仅在于相机、音符精度（Top 量化合并）与着色器（Top flat）。
 pub struct MiditrailRenderer {
     render_pipeline: wgpu::RenderPipeline,
     note_pipeline: wgpu::RenderPipeline,
+    top_render_pipeline: wgpu::RenderPipeline,
+    top_note_pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: Option<wgpu::BindGroup>,
 
@@ -83,6 +91,7 @@ pub struct MiditrailRenderer {
 
 impl MiditrailRenderer {
     const SHADER: &'static str = include_str!("shaders/miditrail_3d.wgsl");
+    const TOP_SHADER: &'static str = include_str!("shaders/miditrail_top.wgsl");
     const AURA_SHADER: &'static str = include_str!("shaders/miditrail_aura.wgsl");
     // 单位立方体，每面 4 个顶点，含法线（位置 + 法线 = 6 个 f32）
     const CUBE_VERTICES: [f32; 144] = [
@@ -115,11 +124,17 @@ impl MiditrailRenderer {
     /// 创建 Miditrail 渲染器。
     pub fn new(device: &wgpu::Device) -> Self {
         let shader = crate::shader::create_shader_module(device, "miditrail_shader", Self::SHADER);
+        let top_shader =
+            crate::shader::create_shader_module(device, "miditrail_top_shader", Self::TOP_SHADER);
         let aura_shader =
             crate::shader::create_shader_module(device, "miditrail_aura_shader", Self::AURA_SHADER);
         let bind_group_layout = create_bind_group_layout(device);
         let render_pipeline = create_render_pipeline(device, &bind_group_layout, &shader);
         let note_pipeline = create_note_render_pipeline(device, &bind_group_layout, &shader);
+        let top_render_pipeline =
+            create_top_render_pipeline(device, &bind_group_layout, &top_shader);
+        let top_note_pipeline =
+            create_top_note_render_pipeline(device, &bind_group_layout, &top_shader);
         let aura_pipeline = create_aura_render_pipeline(device, &bind_group_layout, &aura_shader);
         let (uniform_buffer, vertex_buffer, index_buffer) =
             create_buffers(device, &Self::CUBE_VERTICES, &Self::CUBE_INDICES);
@@ -130,6 +145,8 @@ impl MiditrailRenderer {
         Self {
             render_pipeline,
             note_pipeline,
+            top_render_pipeline,
+            top_note_pipeline,
             bind_group_layout,
             bind_group: None,
             uniform_buffer,
@@ -166,7 +183,7 @@ impl MiditrailRenderer {
     /// - `device` — wgpu 设备
     /// - `queue` — wgpu 队列
     /// - `encoder` — 命令编码器（render pass 将追加到此 encoder）
-    /// - `uniform` — 渲染参数（tick、尺寸、速度等）
+    /// - `uniform` — 渲染参数（tick、尺寸、速度、视图模式等）
     /// - `notes` — 可见音符数据切片
     pub fn render(
         &mut self,
@@ -191,6 +208,16 @@ impl MiditrailRenderer {
         );
         let active_keys = compute_active_keys(uniform.tick, notes);
         self.update_key_press_factors(&active_keys, uniform.fps);
+
+        let is_top = uniform.view_mode.is_top();
+        // Top 先做时间量化/合并降精度（Normal 路径零改动，防污染）。
+        let top_notes;
+        let notes: &[MiditrailNoteGpu] = if is_top {
+            top_notes = quantize_notes_for_top(uniform, notes);
+            &top_notes
+        } else {
+            notes
+        };
 
         let mut note_instances = Vec::with_capacity(notes.len());
         build_note_instances(
@@ -226,22 +253,26 @@ impl MiditrailRenderer {
         }
 
         let mut aura_instances = Vec::new();
-        build_aura_instances(
-            uniform,
-            notes,
-            &active_keys,
-            &self.key_positions,
-            &self.key_widths,
-            &mut aura_instances,
-        );
-        self.ensure_aura_instance_buffer(device, aura_instances.len());
-        if let Some(ref buf) = self.aura_instance_buffer {
-            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
+        if !is_top {
+            // Aura 四边形在俯视下与视线垂直（零面积）天然不可见，
+            // Top 直接跳过实例构建与绘制（CPU + GPU 双省）。
+            build_aura_instances(
+                uniform,
+                notes,
+                &active_keys,
+                &self.key_positions,
+                &self.key_widths,
+                &mut aura_instances,
+            );
+            self.ensure_aura_instance_buffer(device, aura_instances.len());
+            if let Some(ref buf) = self.aura_instance_buffer {
+                queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
+            }
         }
 
         self.ensure_aura_resources(device, queue);
 
-        let camera = build_camera_uniform(width, height);
+        let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
         queue.write_buffer(
             self.uniform_buffer.inner(),
             0,
@@ -252,81 +283,18 @@ impl MiditrailRenderer {
             self.rebuild_bind_group(device);
         }
 
-        self.execute_render_pass(encoder, &note_instances, &key_instances, &aura_instances);
+        self.execute_render_pass(
+            encoder,
+            &note_instances,
+            &key_instances,
+            &aura_instances,
+            is_top,
+        );
     }
 
     /// 获取输出纹理引用。
     pub fn output_texture(&self) -> Option<&wgpu::Texture> {
         self.output_texture.as_ref().map(|t| t.inner())
-    }
-
-    fn ensure_output_texture(&mut self, device: &wgpu::Device, width: u32, height: u32) {
-        if width == 0 || height == 0 {
-            return;
-        }
-        if self.current_width == width
-            && self.current_height == height
-            && self.output_texture.is_some()
-            && self.depth_texture.is_some()
-        {
-            return;
-        }
-
-        self.release_textures();
-
-        let color_texture = crate::gpu_resource_tracker::TrackedTexture::new(
-            device,
-            &wgpu::TextureDescriptor {
-                label: Some("miditrail_output_texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-                view_formats: &[],
-            },
-        );
-        self.output_texture_view =
-            Some(color_texture.create_view(&wgpu::TextureViewDescriptor::default()));
-        self.output_texture = Some(color_texture);
-
-        let depth_texture = crate::gpu_resource_tracker::TrackedTexture::new(
-            device,
-            &wgpu::TextureDescriptor {
-                label: Some("miditrail_depth_texture"),
-                size: wgpu::Extent3d {
-                    width,
-                    height,
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Depth32Float,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                view_formats: &[],
-            },
-        );
-        self.depth_texture_view =
-            Some(depth_texture.create_view(&wgpu::TextureViewDescriptor::default()));
-        self.depth_texture = Some(depth_texture);
-
-        self.current_width = width;
-        self.current_height = height;
-        self.bind_group = None;
-    }
-
-    /// 释放纹理资源（由 [`TrackedTexture`] Drop 自动注销内存计数）
-    fn release_textures(&mut self) {
-        self.output_texture.take();
-        self.output_texture_view.take();
-        self.depth_texture.take();
-        self.depth_texture_view.take();
     }
 
     fn ensure_instance_buffer(&mut self, device: &wgpu::Device, count: usize) {

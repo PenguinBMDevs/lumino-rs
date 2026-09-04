@@ -1,6 +1,7 @@
 use crate::{
     ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
     GridLineInstance, MiditrailNoteGpu, NoteInstance, RulerTickInstance, WaterfallNoteGpu,
+    miditrail_renderer::MiditrailViewMode,
 };
 
 mod builder;
@@ -100,6 +101,8 @@ pub struct RenderParams {
     pub miditrail_enabled: bool,
     /// Miditrail 滚动速度
     pub miditrail_speed: f32,
+    /// Miditrail 视图模式（Normal 普通 / Top 顶部，见 VIEW-001）
+    pub miditrail_view_mode: MiditrailViewMode,
     /// Miditrail GPU 音符数据
     pub miditrail_notes: Vec<MiditrailNoteGpu>,
     /// Miditrail 当前 MIDI tick 值
@@ -167,6 +170,7 @@ impl Default for RenderParams {
             waterfall_current_tick: 0,
             miditrail_enabled: false,
             miditrail_speed: 1.0,
+            miditrail_view_mode: MiditrailViewMode::Normal,
             miditrail_notes: Vec::new(),
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,

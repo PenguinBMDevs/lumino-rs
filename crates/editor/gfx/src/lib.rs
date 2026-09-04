@@ -36,7 +36,8 @@ pub use arrangement_instances::{
     build_arrangement_overlay_back, build_arrangement_overlay_front,
 };
 pub use arrangement_renderer::{
-    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementRenderer, ArrangementUniform, colors,
+    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementRenderer, ArrangementUniform,
+    colors,
 };
 pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,
@@ -70,7 +71,7 @@ pub use swappable_buffer::{AtomicSwappableBuffer, MpscQueue, RenderData, Swappab
 pub use vertical_grid_renderer::VerticalGridRenderer;
 
 pub use miditrail_renderer::{
-    MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, pack_color,
+    MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, MiditrailViewMode, pack_color,
 };
 pub use render_thread::{RenderParams, WgpuRenderThread};
 pub use waterfall_renderer::{WaterfallNoteGpu, WaterfallRenderer, WaterfallUniformGpu};

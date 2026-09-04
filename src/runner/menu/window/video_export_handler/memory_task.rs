@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use lumino_export::video::{FfmpegEncoder, VideoExportConfig};
 use lumino_gfx::render_thread::{ControlCommand, RenderCommand};
-use lumino_message::events::window::video::{MidiConsoleBackend, RenderMode};
+use lumino_message::events::window::video::{MidiConsoleBackend, MiditrailViewMode, RenderMode};
 use tokio::sync::mpsc::UnboundedSender;
 
 use super::super::video_export::{
@@ -44,6 +44,9 @@ struct MemoryEnqueueCtx<'a> {
     duration_secs: f64,
     waterfall_scroll_speed: f32,
     miditrail_z_far: f32,
+    miditrail_view_mode: MiditrailViewMode,
+    miditrail_normal_speed: f32,
+    miditrail_top_speed: f32,
     frame_tx_waterfall: &'a Sender<Vec<u8>>,
     progress_tx: &'a UnboundedSender<ProgressMsg>,
     key_colors: &'a mut [u8; keyboard::KEY_COLOR_BYTES],
@@ -308,6 +311,9 @@ fn enqueue_memory_frame(
                 render_mode: ctx.render_mode,
                 waterfall_scroll_speed: ctx.waterfall_scroll_speed,
                 miditrail_z_far: ctx.miditrail_z_far,
+                miditrail_view_mode: ctx.miditrail_view_mode,
+                miditrail_normal_speed: ctx.miditrail_normal_speed,
+                miditrail_top_speed: ctx.miditrail_top_speed,
                 fps: ctx.fps_f64 as f32,
                 visible_notes: ctx.visible_note_buf,
                 note_instances_out: ctx.note_instances_buf,
@@ -356,6 +362,9 @@ pub(super) struct RunVideoExportTaskInput {
     pub is_gpu_compute_style: bool,
     pub waterfall_scroll_speed: f32,
     pub miditrail_z_far: f32,
+    pub miditrail_view_mode: MiditrailViewMode,
+    pub miditrail_normal_speed: f32,
+    pub miditrail_top_speed: f32,
     pub render_mode: RenderMode,
     pub counter_config: Option<CounterRenderConfig>,
     pub data_curve_config: Option<DataCurveRenderConfig>,
@@ -380,6 +389,9 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         is_gpu_compute_style,
         waterfall_scroll_speed,
         miditrail_z_far,
+        miditrail_view_mode,
+        miditrail_normal_speed,
+        miditrail_top_speed,
         render_mode,
         counter_config,
         data_curve_config,
@@ -548,6 +560,9 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         duration_secs,
         waterfall_scroll_speed,
         miditrail_z_far,
+        miditrail_view_mode,
+        miditrail_normal_speed,
+        miditrail_top_speed,
         frame_tx_waterfall: &frame_tx_waterfall,
         progress_tx: &progress_tx,
         key_colors: &mut key_colors,

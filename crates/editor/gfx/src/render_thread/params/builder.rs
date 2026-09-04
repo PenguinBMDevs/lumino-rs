@@ -4,6 +4,7 @@ use super::RenderParams;
 use crate::{
     ArrangementNoteInstance, ArrangementNoteUniform, ArrangementUniform, CcBarInstance,
     GridLineInstance, MiditrailNoteGpu, RulerTickInstance, WaterfallNoteGpu,
+    miditrail_renderer::MiditrailViewMode,
 };
 
 /// [`RenderParams`] 的 Builder。
@@ -50,6 +51,7 @@ pub struct RenderParamsBuilder {
     waterfall_current_tick: u32,
     miditrail_enabled: bool,
     miditrail_speed: f32,
+    miditrail_view_mode: MiditrailViewMode,
     miditrail_notes: Vec<MiditrailNoteGpu>,
     miditrail_current_tick: u32,
     miditrail_z_far: f32,
@@ -104,6 +106,7 @@ impl Default for RenderParamsBuilder {
             waterfall_current_tick: base.waterfall_current_tick,
             miditrail_enabled: base.miditrail_enabled,
             miditrail_speed: base.miditrail_speed,
+            miditrail_view_mode: base.miditrail_view_mode,
             miditrail_notes: base.miditrail_notes,
             miditrail_current_tick: base.miditrail_current_tick,
             miditrail_z_far: base.miditrail_z_far,
@@ -317,6 +320,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置 Miditrail 视图模式（Normal 普通 / Top 顶部）。
+    pub fn miditrail_view_mode(mut self, view_mode: MiditrailViewMode) -> Self {
+        self.miditrail_view_mode = view_mode;
+        self
+    }
+
     /// 设置 Miditrail 光晕环动画时间基准（每秒 tick 数；0 表示由渲染线程回退估算）。
     pub fn miditrail_ticks_per_second(mut self, ticks_per_second: f32) -> Self {
         self.miditrail_ticks_per_second = ticks_per_second;
@@ -388,6 +397,7 @@ impl RenderParamsBuilder {
             waterfall_current_tick: self.waterfall_current_tick,
             miditrail_enabled: self.miditrail_enabled,
             miditrail_speed: self.miditrail_speed,
+            miditrail_view_mode: self.miditrail_view_mode,
             miditrail_notes: self.miditrail_notes,
             miditrail_current_tick: self.miditrail_current_tick,
             miditrail_z_far: self.miditrail_z_far,

@@ -1,8 +1,12 @@
 //! Miditrail 3D 渲染管线创建
+//!
+//! Normal 与 Top 视图共用同一实例缓冲布局（见 `miditrail_top.wgsl` 头注释），
+//! 区别仅在于着色器模块（3D 光照 vs flat）与深度写入策略（两者一致：
+//! 音符不写深度、琴键写深度，琴键最后绘制覆盖音符）。
 
 use super::MiditrailInstanceGpu;
 use super::types::{MiditrailAuraInstanceGpu, MiditrailCameraGpu};
-use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
+use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::pipeline::RenderPipelineBuilder;
 
 pub fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
@@ -70,6 +74,36 @@ pub fn create_note_render_pipeline(
         bind_group_layout,
         shader,
         "miditrail_note_render_pipeline",
+        false,
+    )
+}
+
+/// 创建 Top 视图琴键渲染管线（flat 着色，写深度，琴键最后绘制覆盖音符）。
+pub fn create_top_render_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
+    create_instanced_pipeline(
+        device,
+        bind_group_layout,
+        shader,
+        "miditrail_top_render_pipeline",
+        true,
+    )
+}
+
+/// 创建 Top 视图音符渲染管线（flat 着色，不写深度，配合画家算法）。
+pub fn create_top_note_render_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+    shader: &wgpu::ShaderModule,
+) -> wgpu::RenderPipeline {
+    create_instanced_pipeline(
+        device,
+        bind_group_layout,
+        shader,
+        "miditrail_top_note_render_pipeline",
         false,
     )
 }
@@ -261,118 +295,4 @@ pub fn create_buffers(
     );
 
     (uniform_buffer, vertex_buffer, index_buffer)
-}
-
-pub fn create_aura_buffers(device: &wgpu::Device) -> (TrackedBuffer, TrackedBuffer) {
-    const AURA_VERTICES: [f32; 16] = [
-        -1.0, -1.0, 0.0, 0.0, 1.0, -1.0, 1.0, 0.0, 1.0, 1.0, 1.0, 1.0, -1.0, 1.0, 0.0, 1.0,
-    ];
-    const AURA_INDICES: [u16; 6] = [0, 1, 2, 0, 2, 3];
-
-    let vertex_buffer = TrackedBuffer::new_init(
-        device,
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("miditrail_aura_vertex_buffer"),
-            contents: bytemuck::cast_slice(&AURA_VERTICES),
-            usage: wgpu::BufferUsages::VERTEX,
-        },
-    );
-
-    let index_buffer = TrackedBuffer::new_init(
-        device,
-        &wgpu::util::BufferInitDescriptor {
-            label: Some("miditrail_aura_index_buffer"),
-            contents: bytemuck::cast_slice(&AURA_INDICES),
-            usage: wgpu::BufferUsages::INDEX,
-        },
-    );
-
-    (vertex_buffer, index_buffer)
-}
-
-pub fn create_aura_sampler(device: &wgpu::Device) -> wgpu::Sampler {
-    device.create_sampler(&wgpu::SamplerDescriptor {
-        label: Some("miditrail_aura_sampler"),
-        address_mode_u: wgpu::AddressMode::ClampToEdge,
-        address_mode_v: wgpu::AddressMode::ClampToEdge,
-        mag_filter: wgpu::FilterMode::Linear,
-        min_filter: wgpu::FilterMode::Linear,
-        ..Default::default()
-    })
-}
-
-pub fn create_aura_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    size: u32,
-    data: &[u8],
-) -> TrackedTexture {
-    let texture = TrackedTexture::new(
-        device,
-        &wgpu::TextureDescriptor {
-            label: Some("miditrail_aura_texture"),
-            size: wgpu::Extent3d {
-                width: size,
-                height: size,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: wgpu::TextureDimension::D2,
-            format: wgpu::TextureFormat::Rgba8Unorm,
-            usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            view_formats: &[],
-        },
-    );
-    queue.write_texture(
-        wgpu::TexelCopyTextureInfo {
-            texture: texture.inner(),
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        data,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(size * 4),
-            rows_per_image: Some(size),
-        },
-        wgpu::Extent3d {
-            width: size,
-            height: size,
-            depth_or_array_layers: 1,
-        },
-    );
-    texture
-}
-
-/// 生成一个软环形 Aura 纹理数据（RGBA8，size x size）。
-pub fn generate_aura_ring_data(size: u32) -> Vec<u8> {
-    let mut data = vec![0u8; (size * size * 4) as usize];
-    let center = (size - 1) as f32 * 0.5;
-    let radius = size as f32 * 0.5;
-    let inner = radius * 0.35;
-    let outer = radius * 0.85;
-
-    for y in 0..size {
-        for x in 0..size {
-            let dx = x as f32 - center;
-            let dy = y as f32 - center;
-            let dist = (dx * dx + dy * dy).sqrt();
-            let alpha = if dist < inner || dist > outer {
-                0.0
-            } else {
-                let mid = (inner + outer) * 0.5;
-                let half = (outer - inner) * 0.5;
-                let t = 1.0 - ((dist - mid) / half).abs();
-                t * t * (3.0 - 2.0 * t)
-            };
-            let idx = ((y * size + x) * 4) as usize;
-            data[idx] = 255;
-            data[idx + 1] = 255;
-            data[idx + 2] = 255;
-            data[idx + 3] = (alpha * 255.0) as u8;
-        }
-    }
-    data
 }

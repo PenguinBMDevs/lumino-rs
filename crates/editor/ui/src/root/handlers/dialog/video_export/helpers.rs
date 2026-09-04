@@ -108,6 +108,9 @@ pub(crate) fn build_video_config(
         quality: parse_enum_or_log(&st.quality, "quality"),
         render_mode: parse_enum_or_log(&st.render_mode, "render_mode"),
         waterfall_scroll_speed: st.waterfall_speed,
+        miditrail_view_mode: parse_enum_or_log(&st.miditrail_view_mode, "miditrail_view_mode"),
+        miditrail_normal_speed: st.miditrail_normal_speed.max(0.1),
+        miditrail_top_speed: st.miditrail_top_speed.max(0.1),
         miditrail_z_far: st.miditrail_z_far,
         note_counter: NoteCounterConfig {
             text: st.counter_text.clone(),

@@ -360,6 +360,7 @@ fn handle_miditrail_frame(
         param2: 0.0,
         fps: params.fps.max(1.0),
         z_far_distance: params.miditrail_z_far.max(0.1),
+        view_mode: params.miditrail_view_mode,
         ticks_per_second,
         _padding1: 0,
     };

@@ -243,6 +243,12 @@ pub struct VideoExportConfig {
     pub render_mode: RenderMode,
     /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
     pub waterfall_scroll_speed: f32,
+    /// MIDITrail 视图模式（Normal 普通 / Top 顶部，见 VIEW-001）
+    pub miditrail_view_mode: MiditrailViewMode,
+    /// MIDITrail Normal 视图滚动速度（0.1~10.0，默认 1.0，由旧共享速度迁移而来）
+    pub miditrail_normal_speed: f32,
+    /// MIDITrail Top 视图滚动速度（0.1~10.0，默认 1.0，与 Normal 互相独立）
+    pub miditrail_top_speed: f32,
     /// MIDITrail Z 方向显示距离（0.1~15.0，默认 7.5，精度 0.1）
     pub miditrail_z_far: f32,
     /// 计数器渲染配置（仅 `render_mode == NoteCounter` 时生效）

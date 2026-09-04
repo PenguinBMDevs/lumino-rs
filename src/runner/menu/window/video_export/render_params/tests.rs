@@ -317,6 +317,41 @@ fn tuple_of(v: &[lumino_gfx::WaterfallNoteGpu]) -> Vec<(u32, u32, u32, u32)> {
         .collect()
 }
 
+/// 视图隔离：Normal/Top 各自取各自的速度，互不影响（VIEW-001 防污染）。
+#[test]
+fn test_resolve_miditrail_speed_isolated_per_view() {
+    assert_eq!(
+        resolve_miditrail_speed(MiditrailViewMode::Normal, 2.0, 5.0),
+        2.0,
+        "Normal 应取 Normal 速度"
+    );
+    assert_eq!(
+        resolve_miditrail_speed(MiditrailViewMode::Top, 2.0, 5.0),
+        5.0,
+        "Top 应取 Top 速度"
+    );
+    // 下限钳制（与旧 waterfall_scroll_speed.max(0.1) 语义一致）。
+    assert_eq!(
+        resolve_miditrail_speed(MiditrailViewMode::Top, 1.0, 0.0),
+        0.1
+    );
+}
+
+/// 视图枚举解析：UI 字符串 → 强类型（非法值回退 Normal，不静默产生第三种状态）。
+#[test]
+fn test_miditrail_view_mode_from_str() {
+    use std::str::FromStr;
+    assert_eq!(
+        MiditrailViewMode::from_str("Top").expect("Top 应可解析"),
+        MiditrailViewMode::Top
+    );
+    assert_eq!(
+        MiditrailViewMode::from_str("普通").expect("普通应可解析"),
+        MiditrailViewMode::Normal
+    );
+    assert!(MiditrailViewMode::from_str("侧视").is_err());
+}
+
 /// 性能对比：计数分桶 vs 全量排序 + 扫描偏移（高密集度段落，release 下运行）
 /// 运行：`cargo test --release test_waterfall_bucket_sort_bench -- --nocapture`
 #[test]
