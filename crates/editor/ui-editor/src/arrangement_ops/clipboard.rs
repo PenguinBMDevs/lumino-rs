@@ -16,6 +16,9 @@ use std::time::Instant;
 
 /// 走带二进制剪贴板子格式哨兵（写入 `ClipRecord` 头的 `track_hint` 字段），
 /// 与钢琴卷帘二进制（track_hint=0）区分，避免跨路径互相误读。
+/// 非 Windows 构建时二进制读写仅被单测使用（`#[cfg(windows)]` 调用点被裁剪），
+/// 用 `allow(dead_code)` 避免 `-D warnings` 下的误报；Windows 下仍正常 lint。
+#[cfg_attr(not(windows), allow(dead_code))]
 const ARRANGEMENT_BINARY_MARK: u16 = 0xFFFF;
 
 impl Editor {
@@ -217,6 +220,9 @@ impl Editor {
     ///
     /// 视觉偏移（而非绝对音轨）编码进 `ClipRecord.track`：粘贴端 `dest_visual = anchor_visual
     /// + 偏移`，再经 `document_track_at` 映射回文档音轨，与 JSON 路径逐字节一致。
+    ///
+    /// 非 Windows 构建时仅单测调用（正式调用点为 `#[cfg(windows)]`），允许死代码以过 `-D warnings`。
+    #[cfg_attr(not(windows), allow(dead_code))]
     fn encode_arrangement_clipboard_binary(
         &self,
         all_notes: &[(usize, NoteEvent)],
@@ -272,6 +278,9 @@ impl Editor {
     /// 与 `arrange_paste_from_text` 同语义：锚点对齐 playback_position、按视觉偏移落轨、
     /// 含 PPQN 一致性重采样；区别仅在载荷格式为紧凑二进制（毫秒级 vs JSON 秒级）。
     /// 仅当 `track_hint == ARRANGEMENT_BINARY_MARK` 时接受，避免误读钢琴卷帘二进制。
+    ///
+    /// 非 Windows 构建时仅单测调用（正式调用点为 `#[cfg(windows)]`），允许死代码以过 `-D warnings`。
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn arrange_paste_from_binary_bytes(&mut self, bytes: &[u8]) -> bool {
         puffin::profile_scope!("arrangement::paste_binary");
         let t0 = Instant::now();

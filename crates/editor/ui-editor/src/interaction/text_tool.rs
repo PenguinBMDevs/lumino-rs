@@ -489,6 +489,23 @@ mod tests {
     #[test]
     fn test_rasterize_text_bottom_aligned() {
         // 文字应底部对齐到框底：下半区墨水应明显多于上半区，且顶部留白。
+        // 本断言严格依赖 Microsoft YaHei 的字形度量（x-height/基线位置）。
+        // `load_font` 缺失目标字体时会回退到首个可用字体（如 CI Linux 的 DejaVu），
+        // 其 `c` 字形上下分布不同会导致 bottom>top 不成立（曾出现 50 vs 55 误报）。
+        // 按本文件既有约定（“CI 缺失则跳过”）显式跳过，避免回退字体下的误报。
+        let has_yahei = lumino_note_core::font_scanner::get_cached_fonts()
+            .iter()
+            .any(|f| {
+                f.name == "Microsoft YaHei"
+                    || f.name.eq_ignore_ascii_case("Microsoft YaHei")
+                    || f.name.to_lowercase().contains("microsoft yahei")
+            });
+        if !has_yahei {
+            eprintln!(
+                "跳过 test_rasterize_text_bottom_aligned：缺失 Microsoft YaHei（回退字体不断言对齐）"
+            );
+            return;
+        }
         if let Some(occ) = rasterize_text("c", 16, 16, "Microsoft YaHei") {
             let rows = occ.len();
             let half = rows / 2;
