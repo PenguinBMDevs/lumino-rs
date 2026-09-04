@@ -52,10 +52,16 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
     };
 
     let max_voices = config.layer_limit.unwrap_or(0);
+    // xsynth 每 key 32 复音，与 lumino-export 的 layer_limit 语义一致；GPU 原硬编码 4 导致同音高密集时过度抢占
+    // 0/None 表示无限制，需保持 0 而非 max(4)
+    let max_voices_per_key = match config.layer_limit {
+        None | Some(0) => 0,
+        Some(n) => n.max(4),
+    };
     SynthConfig {
         sample_rate: config.sample_rate,
-        max_voices,
-        max_voices_per_key: 4,
+        max_voices: config.layer_limit.unwrap_or(0),
+        max_voices_per_key,
         block_size: 512,
         interpolation: map_interpolation(config.interpolation),
         use_effects: true,

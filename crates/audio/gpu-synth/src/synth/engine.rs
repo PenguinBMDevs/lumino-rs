@@ -2296,7 +2296,8 @@ impl GpuSynth {
         if need_free == 0 {
             return;
         }
-        groups.sort_by_key(|&(spawn, vel, _)| (spawn, vel));
+        // xsynth 抢占最安静的力度组，而非最老的，与 VoiceBuffer::pop_quietest_voice_group 一致
+        groups.sort_by_key(|&(_, vel, _)| vel);
         let mut freed = 0usize;
         // For dense black MIDI (>20k), hard-kill is inaudible (dense mix
         // masks the 1-block click) but saves 1 block of fading voices
