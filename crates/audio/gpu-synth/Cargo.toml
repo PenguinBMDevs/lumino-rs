@@ -8,8 +8,8 @@ keywords = ["midi", "audio", "gpu", "wgpu", "soundfont"]
 categories = ["multimedia::audio", "rendering::gpu"]
 
 # 注意：本 crate 刻意不继承工作区 lint（不写 `[lints] workspace = true`），
-# 因为它沿用上游 `mod.rs` 目录结构与 `.unwrap()` 风格，与 AGENTS.md 的
-# `mod_module_files` / `unwrap_used` 强约束冲突。作为 vendored 子 crate 原样搬入。
+# 因为它沿用上游 `.unwrap()` 风格，与 AGENTS.md 的 `unwrap_used` 强约束冲突。
+# 作为 vendored 子 crate 原样搬入。
 
 [dependencies]
 wgpu = { workspace = true }

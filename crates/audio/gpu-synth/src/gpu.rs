@@ -443,7 +443,7 @@ fn create_render_pipeline(
     layout: &wgpu::BindGroupLayout,
     block_size: usize,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/render.wgsl")
+    let source = include_str!("gpu/shaders/render.wgsl")
         .replace(
             "const BLOCK: u32 = 512u;",
             &format!("const BLOCK: u32 = {block_size}u;"),
@@ -479,7 +479,7 @@ fn create_mix_pipeline(
     device: &wgpu::Device,
     layout: &wgpu::BindGroupLayout,
 ) -> Result<wgpu::ComputePipeline, SynthError> {
-    let source = include_str!("shaders/mix.wgsl");
+    let source = include_str!("gpu/shaders/mix.wgsl");
     let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
         label: Some("mix.wgsl"),
         source: wgpu::ShaderSource::Wgsl(source.into()),

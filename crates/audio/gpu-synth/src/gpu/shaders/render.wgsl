@@ -62,7 +62,7 @@ struct EnvStageGpu {
 @group(0) @binding(0) var<storage, read> params: array<VoiceParams>;
 // Sample data lives in fixed-size chunks so that no single storage binding
 // exceeds the device's per-binding size limit. CHUNK_F32 must match
-// SAMPLES_CHUNK_BYTES / 4 in gpu/mod.rs (1 GiB of f32).
+// SAMPLES_CHUNK_BYTES / 4 in gpu.rs (1 GiB of f32).
 const CHUNK_F32: u32 = 268435456u;
 @group(0) @binding(1) var<storage, read> samples0: array<f32>;
 @group(0) @binding(2) var<storage, read> samples1: array<f32>;
