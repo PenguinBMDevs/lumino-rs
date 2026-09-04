@@ -61,6 +61,7 @@ bin/
 .figma/
 .ai-context/
 .atomcode/
+.codegraph/
 
 # publish
 publish/
@@ -103,3 +104,4 @@ daemon.pid
 .mimocode/
 
 .agents/
+
