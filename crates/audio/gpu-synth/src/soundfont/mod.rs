@@ -407,7 +407,7 @@ impl SoundFont {
     fn native_rate_for(&self, id: usize) -> u32 {
         self.zones
             .iter()
-            .find(|z| z.sample_id == id)
+            .find(|z| z.sample_id == id || z.sample_id_r == id)
             .map(|z| z.native_rate)
             .unwrap_or(44_100)
     }

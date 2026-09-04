@@ -51,9 +51,15 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
         }
     };
 
+    // 32 全局对于黑 MIDI 极易丢音（实测 10k 同时音符即削），而 CPU 的 32 是每通道。
+    // 默认 32 时对 GPU 自动放宽到 4096，0/None 保持无限制（黑 MIDI 推荐），其余按用户设定但不低于 4096。
+    let max_voices = match config.layer_limit {
+        None | Some(0) => 0,
+        Some(n) => n.max(4096),
+    };
     SynthConfig {
         sample_rate: config.sample_rate,
-        max_voices: config.layer_limit.unwrap_or(0),
+        max_voices,
         max_voices_per_key: 4,
         block_size: 512,
         interpolation: map_interpolation(config.interpolation),
