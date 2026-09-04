@@ -74,6 +74,8 @@ pub(crate) struct WindowState {
     pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
     /// 视频导出取消标志（后台线程通过此标志检测用户取消）
     pub(crate) video_export_cancel: Arc<AtomicBool>,
+    /// 音频导出控制（暂停/中止，跨线程共享）
+    pub(crate) audio_export_control: Option<Arc<lumino_export::audio::control::AudioExportControl>>,
 }
 
 /// MIDI 相关状态
@@ -303,6 +305,7 @@ impl Runner {
                 export_progress_rx: None,
                 video_preview_rx: None,
                 video_export_cancel: Arc::new(AtomicBool::new(false)),
+                audio_export_control: None,
             },
             midi_state: MidiState {
                 midi,

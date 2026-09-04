@@ -25,11 +25,17 @@ use super::tick_conv::TickToTime;
 
 /// 流式模式：直接从磁盘 MIDI 文件渲染为音频文件
 pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
+    if let Some(ctrl) = &config.control {
+        ctrl.check_abort()?;
+    }
     // GPU 后端优先尝试
     if config.backend == super::config::AudioBackendKind::Gpu {
         match super::gpu_backend::render_audio_gpu_streaming(config) {
             Ok(()) => return Ok(()),
             Err(e) => {
+                if matches!(e, ExportError::Aborted) {
+                    return Err(e);
+                }
                 tracing::warn!("GPU 渲染失败，回退到 CPU: {e}");
                 if matches!(config.backend, super::config::AudioBackendKind::Gpu) {
                     // 如果 GPU 明确请求但失败，返回错误让调用方感知（而非静默回退）
@@ -88,11 +94,17 @@ pub fn render_audio_from_document(
     config: &AudioRenderConfig,
     doc: &MidiDocument,
 ) -> ExportResult<()> {
+    if let Some(ctrl) = &config.control {
+        ctrl.check_abort()?;
+    }
     // GPU 后端（SFZ 会自动回退到 CPU，保证导出可用）
     if config.backend == super::config::AudioBackendKind::Gpu {
         match super::gpu_backend::render_audio_gpu_from_document(config, doc) {
             Ok(()) => return Ok(()),
             Err(e) => {
+                if matches!(e, ExportError::Aborted) {
+                    return Err(e);
+                }
                 // SFZ 等 GPU 不支持的格式，warn 后回退到 CPU
                 let msg = e.to_string();
                 if msg.contains("SFZ") || msg.contains("sfz") {
@@ -162,6 +174,10 @@ pub(super) fn run_streaming_render(
     let start_time = std::time::Instant::now();
 
     while let Some((tick, _track_idx, kind)) = player.next_event() {
+        if let Some(ctrl) = &config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
         let now = std::time::Instant::now();
         if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
             let pct = tick as f64 / total_ticks as f64;
@@ -211,6 +227,10 @@ pub(super) fn run_document_render(
     info!("文档流式渲染循环开始 ({} 事件)...", total_events);
 
     while let Some(event) = stream.next_event() {
+        if let Some(ctrl) = &config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
         let tick = event.tick as u64;
 
         let now = std::time::Instant::now();

@@ -39,6 +39,10 @@ pub enum ExportError {
     /// 压缩/解压错误
     #[error("压缩错误: {0}")]
     Compression(String),
+
+    /// 用户主动中止
+    #[error("已中止")]
+    Aborted,
 }
 
 /// 导出结果类型

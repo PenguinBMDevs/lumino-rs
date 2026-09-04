@@ -116,6 +116,28 @@ impl RunnerInner {
             StartVideoExport { config, document } => {
                 self.handle_start_video_export(config, document);
             }
+            PauseAudioExport => {
+                if let Some(ctrl) = &self.window_state.audio_export_control {
+                    ctrl.pause();
+                    tracing::info!("音频导出已暂停");
+                }
+            }
+            ResumeAudioExport => {
+                if let Some(ctrl) = &self.window_state.audio_export_control {
+                    ctrl.resume();
+                    tracing::info!("音频导出已继续");
+                }
+            }
+            AbortAudioExport => {
+                if let Some(ctrl) = &self.window_state.audio_export_control {
+                    ctrl.abort();
+                    tracing::info!("音频导出已请求中止");
+                } else {
+                    tracing::warn!("中止音频导出：无进行中的导出任务");
+                }
+                // 立即清理控制句柄，避免暂停状态残留
+                // 实际文件删除由渲染线程的 abort 分支处理
+            }
         }
     }
 }

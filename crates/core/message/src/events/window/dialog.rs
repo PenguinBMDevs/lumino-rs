@@ -155,4 +155,10 @@ pub enum Event {
         /// 内存中的 MidiDocument（如果存在）
         document: Option<Arc<MidiDocument>>,
     },
+    /// 暂停音频导出
+    PauseAudioExport,
+    /// 继续音频导出
+    ResumeAudioExport,
+    /// 中止音频导出
+    AbortAudioExport,
 }

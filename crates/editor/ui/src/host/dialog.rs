@@ -401,6 +401,7 @@ impl Host {
     /// 标记导出渲染完成
     pub fn set_export_render_completed(&mut self) {
         self.root.state.audio_export_dialog.is_rendering = false;
+        self.root.state.audio_export_dialog.is_paused = false;
         self.root.state.audio_export_dialog.render_completed = true;
         self.root.state.audio_export_dialog.render_progress = 1.0;
         self.root.state.audio_export_dialog.render_message = "导出完成".to_string();
@@ -411,8 +412,15 @@ impl Host {
     /// 标记导出渲染失败
     pub fn set_export_render_failed(&mut self, error: String) {
         self.root.state.audio_export_dialog.is_rendering = false;
-        self.root.state.audio_export_dialog.render_error = Some(error.clone());
-        self.root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+        self.root.state.audio_export_dialog.is_paused = false;
+        // “已中止”为预期操作，不加“导出失败”前缀
+        if error == "已中止" {
+            self.root.state.audio_export_dialog.render_error = Some(error.clone());
+            self.root.state.audio_export_dialog.render_message = "已中止".to_string();
+        } else {
+            self.root.state.audio_export_dialog.render_error = Some(error.clone());
+            self.root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+        }
         self.ui_dirty = true;
         self.window_ctx.window.request_redraw();
     }

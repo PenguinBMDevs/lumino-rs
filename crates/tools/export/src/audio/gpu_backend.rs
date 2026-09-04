@@ -234,6 +234,14 @@ fn human_denom_to_pow2(d: u8) -> u8 {
     }
 }
 
+fn check_control(config: &AudioRenderConfig) -> ExportResult<()> {
+    if let Some(ctrl) = &config.control {
+        ctrl.wait_if_paused();
+        ctrl.check_abort()?;
+    }
+    Ok(())
+}
+
 /// 使用 GPU 后端从 MidiDocument 渲染到 Sink（内存模式）
 pub fn render_audio_gpu_from_document(
     config: &AudioRenderConfig,
@@ -242,6 +250,8 @@ pub fn render_audio_gpu_from_document(
     use lumino_gpu_synth::GpuSynth;
     use tempfile::NamedTempFile;
     use std::io::Write;
+
+    check_control(config)?;
 
     let report = |msg: &str, pct: f64| {
         if let Some(ref cb) = config.progress_callback {
@@ -288,16 +298,19 @@ pub fn render_audio_gpu_from_document(
     }
 
     report("GPU 初始化中...", 0.05);
+    check_control(config)?;
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败（可能无可用 Vulkan/Metal 适配器）: {e}")))?;
 
     report("GPU 加载音色库...", 0.10);
+    check_control(config)?;
     synth
         .load_soundfont(sf_path, 0, 0)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
     report("GPU 导出临时 MIDI...", 0.15);
+    check_control(config)?;
     // 空文档直接报错，交由上层回退到文件模式
     let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
     if total_notes == 0 && doc.control_events.is_empty() {
@@ -317,10 +330,13 @@ pub fn render_audio_gpu_from_document(
     let tmp_path = tmp.path().to_path_buf();
 
     report("GPU 渲染中（可能耗时，黑 MIDI 请耐心）...", 0.20);
+    check_control(config)?;
     // GPU 离线渲染（阻塞，期间无细粒度进度，靠最终写入阶段推进到 1.0）
+    // 粗粒度暂停/中止：渲染前检查，渲染本身为长时间阻塞，暂停会在下次检查生效
     let result = synth
         .render_midi_file(&tmp_path)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
+    check_control(config)?;
 
     report("GPU 写入输出...", 0.85);
     // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
@@ -333,6 +349,8 @@ pub fn render_audio_gpu_from_document(
 /// 使用 GPU 后端从磁盘 MIDI 文件渲染（流式模式，无 MidiDocument）
 pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
+
+    check_control(config)?;
 
     let report = |msg: &str, pct: f64| {
         if let Some(ref cb) = config.progress_callback {
@@ -382,19 +400,23 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
     }
 
     report("GPU 初始化中...", 0.05);
+    check_control(config)?;
     let synth_config = build_synth_config(config);
     let mut synth = GpuSynth::new(synth_config)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 初始化失败: {e}")))?;
 
     report("GPU 加载音色库...", 0.10);
+    check_control(config)?;
     synth
         .load_soundfont(sf_path, 0, 0)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
     report("GPU 渲染中...", 0.20);
+    check_control(config)?;
     let result = synth
         .render_midi_file(&config.midi_path)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
+    check_control(config)?;
 
     report("GPU 写入输出...", 0.85);
     write_gpu_result_to_sink(config, &result.samples, result.sample_rate, result.channels)?;
@@ -434,6 +456,7 @@ fn write_gpu_result_to_sink(
     let ch = channels as usize;
     let mut offset = 0;
     while offset < samples.len() {
+        check_control(config)?;
         let end = (offset + CHUNK_FRAMES * ch).min(samples.len());
         sink.write_samples(&samples[offset..end])?;
         offset = end;

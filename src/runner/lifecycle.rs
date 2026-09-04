@@ -364,10 +364,13 @@ impl crate::runner::inner::RunnerInner {
                     if progress < 0.0 {
                         main_ui.update_export_progress(msg.clone(), 0.0);
                         main_ui.set_export_render_failed(msg);
+                        // 清理控制句柄，避免暂停状态残留
+                        self.window_state.audio_export_control = None;
                     } else {
                         main_ui.update_export_progress(msg, progress);
                         if progress >= 1.0 {
                             main_ui.set_export_render_completed();
+                            self.window_state.audio_export_control = None;
                         }
                     }
                 }

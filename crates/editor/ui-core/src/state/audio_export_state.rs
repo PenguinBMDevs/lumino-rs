@@ -67,6 +67,8 @@ pub struct AudioExportDialogState {
     pub render_completed: bool,
     /// 渲染错误信息
     pub render_error: Option<String>,
+    /// 是否已暂停（渲染中且用户点击暂停）
+    pub is_paused: bool,
 }
 
 impl Default for AudioExportDialogState {
@@ -109,6 +111,7 @@ impl AudioExportDialogState {
             render_progress: 0.0,
             render_completed: false,
             render_error: None,
+            is_paused: false,
         }
     }
 }

@@ -13,6 +13,7 @@ use super::DialogHandler;
 fn begin_audio_export_render(root: &mut Root) {
     let st = &mut root.state.audio_export_dialog;
     st.is_rendering = true;
+    st.is_paused = false;
     st.render_completed = false;
     st.render_error = None;
     st.render_progress = 0.0;
@@ -167,6 +168,54 @@ impl DialogHandler {
             A::BackendChanged(value) => {
                 root.state.audio_export_dialog.backend = value;
             }
+            A::Pause => {
+                if root.state.audio_export_dialog.is_rendering {
+                    root.state.audio_export_dialog.is_paused = true;
+                    root.state.audio_export_dialog.render_message = "已暂停".to_string();
+                    let ev = crate::event::window::Event::dialog(
+                        crate::event::window::dialog::Event::PauseAudioExport,
+                    );
+                    crate::event::emit(crate::event::Event::Window(ev));
+                }
+            }
+            A::Resume => {
+                if root.state.audio_export_dialog.is_rendering {
+                    root.state.audio_export_dialog.is_paused = false;
+                    root.state.audio_export_dialog.render_message = "正在继续...".to_string();
+                    let ev = crate::event::window::Event::dialog(
+                        crate::event::window::dialog::Event::ResumeAudioExport,
+                    );
+                    crate::event::emit(crate::event::Event::Window(ev));
+                }
+            }
+            A::TogglePause => {
+                if root.state.audio_export_dialog.is_rendering {
+                    if root.state.audio_export_dialog.is_paused {
+                        root.state.audio_export_dialog.is_paused = false;
+                        root.state.audio_export_dialog.render_message = "正在继续...".to_string();
+                        let ev = crate::event::window::Event::dialog(
+                            crate::event::window::dialog::Event::ResumeAudioExport,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
+                    } else {
+                        root.state.audio_export_dialog.is_paused = true;
+                        root.state.audio_export_dialog.render_message = "已暂停".to_string();
+                        let ev = crate::event::window::Event::dialog(
+                            crate::event::window::dialog::Event::PauseAudioExport,
+                        );
+                        crate::event::emit(crate::event::Event::Window(ev));
+                    }
+                }
+            }
+            A::Abort => {
+                if root.state.audio_export_dialog.is_rendering {
+                    root.state.audio_export_dialog.render_message = "正在中止...".to_string();
+                    let ev = crate::event::window::Event::dialog(
+                        crate::event::window::dialog::Event::AbortAudioExport,
+                    );
+                    crate::event::emit(crate::event::Event::Window(ev));
+                }
+            }
             A::BrowseOutput => {
                 let st = &root.state.audio_export_dialog;
                 let current = st.output_path.clone();
@@ -225,17 +274,25 @@ impl DialogHandler {
             }
             A::RenderCompleted => {
                 root.state.audio_export_dialog.is_rendering = false;
+                root.state.audio_export_dialog.is_paused = false;
                 root.state.audio_export_dialog.render_completed = true;
                 root.state.audio_export_dialog.render_progress = 1.0;
                 root.state.audio_export_dialog.render_message = "导出完成".to_string();
             }
             A::RenderFailed(error) => {
                 root.state.audio_export_dialog.is_rendering = false;
-                root.state.audio_export_dialog.render_error = Some(error.clone());
-                root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+                root.state.audio_export_dialog.is_paused = false;
+                if error == "已中止" {
+                    root.state.audio_export_dialog.render_error = Some(error.clone());
+                    root.state.audio_export_dialog.render_message = "已中止".to_string();
+                } else {
+                    root.state.audio_export_dialog.render_error = Some(error.clone());
+                    root.state.audio_export_dialog.render_message = format!("导出失败: {error}");
+                }
             }
             A::ResetRendering => {
                 root.state.audio_export_dialog.is_rendering = false;
+                root.state.audio_export_dialog.is_paused = false;
                 root.state.audio_export_dialog.render_completed = false;
                 root.state.audio_export_dialog.render_error = None;
                 root.state.audio_export_dialog.render_progress = 0.0;

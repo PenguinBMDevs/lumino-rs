@@ -7,6 +7,7 @@
 
 pub mod codec;
 pub mod config;
+pub mod control;
 pub mod engine;
 pub mod event;
 pub mod event_kind;

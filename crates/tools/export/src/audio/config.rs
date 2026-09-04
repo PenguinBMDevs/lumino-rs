@@ -14,6 +14,7 @@ use xsynth_core::{
 };
 
 use super::codec::AudioCodec;
+use super::control::SharedControl;
 
 /// 进度回调函数类型
 pub type ProgressCallback = Arc<dyn Fn(String, f64) + Send + Sync>;
@@ -79,6 +80,10 @@ pub struct AudioRenderConfig {
     // ── 进度回调 ──
     /// 进度回调函数（可选）
     pub progress_callback: Option<ProgressCallback>,
+
+    // ── 控制句柄（暂停/中止）──
+    /// 导出控制句柄（暂停/中止），`None` 为无控制（测试/单次导出）
+    pub control: Option<SharedControl>,
 }
 
 impl std::fmt::Debug for AudioRenderConfig {
@@ -103,6 +108,7 @@ impl std::fmt::Debug for AudioRenderConfig {
                 "progress_callback",
                 &self.progress_callback.as_ref().map(|_| "..."),
             )
+            .field("control", &self.control.as_ref().map(|_| "SharedControl"))
             .finish()
     }
 }
@@ -268,6 +274,7 @@ impl Default for AudioRenderConfig {
             note_force_end_delay: 0,
             backend: AudioBackendKind::Cpu,
             progress_callback: None,
+            control: None,
         }
     }
 }

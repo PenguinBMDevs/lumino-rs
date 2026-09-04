@@ -85,10 +85,15 @@ impl<'a> MidiEventProcessor<'a> {
         }
     }
 
-    /// 渲染指定时长的音频
+    /// 渲染指定时长的音频（带暂停/中止检查）
     fn render_duration(&mut self, delta_seconds: f64) -> ExportResult<()> {
         if delta_seconds <= 0.0 {
             return Ok(());
+        }
+        // 暂停/中止检查点
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
         }
 
         let total_samples = (delta_seconds * self.sample_rate as f64) as usize;
@@ -102,6 +107,10 @@ impl<'a> MidiEventProcessor<'a> {
         const MAX_BATCH: usize = 4096;
 
         while remaining > 0 {
+            if let Some(ctrl) = &self.config.control {
+                ctrl.wait_if_paused();
+                ctrl.check_abort()?;
+            }
             let batch = remaining.min(MAX_BATCH);
             let count = batch * frame_size;
 
@@ -145,6 +154,10 @@ impl<'a> MidiEventProcessor<'a> {
         tick: u64,
         event_kind: &TrackEventKind,
     ) -> ExportResult<()> {
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
         // 计算到该事件的时间增量
         let delta = self.tick_conv.advance_to(tick);
         self.render_duration(delta)?;
@@ -232,6 +245,10 @@ impl<'a> MidiEventProcessor<'a> {
 
     /// 完成渲染：发送 NoteOff，渲染尾部直到静音
     pub fn finalize(&mut self) -> ExportResult<()> {
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
         // 发送所有音符关闭
         self.channel_group
             .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
@@ -248,6 +265,10 @@ impl<'a> MidiEventProcessor<'a> {
         let max_batches = 120; // 120 秒上限，对齐 GPU 侧 max_tail_seconds
 
         for _ in 0..max_batches {
+            if let Some(ctrl) = &self.config.control {
+                ctrl.wait_if_paused();
+                ctrl.check_abort()?;
+            }
             let mut buffer = vec![0.0f32; batch_size];
             self.channel_group.read_samples_unchecked(&mut buffer);
 

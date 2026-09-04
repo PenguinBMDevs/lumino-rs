@@ -8,6 +8,7 @@ use lumino_export::audio::codec::AudioCodec;
 use lumino_export::audio::config::{
     AudioBackendKind, AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
 };
+use lumino_export::audio::control::AudioExportControl;
 
 impl RunnerInner {
     // clippy::boxed_local: Box 来自 `dialog::Event::StartAudioExport` 枚举解包，
@@ -103,6 +104,10 @@ impl RunnerInner {
         let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
         self.window_state.export_progress_rx = Some(progress_rx);
 
+        // 1.1 创建导出控制句柄（暂停/中止）
+        let control = Arc::new(AudioExportControl::new());
+        self.window_state.audio_export_control = Some(Arc::clone(&control));
+
         let progress_tx_cb = progress_tx.clone();
         let progress_cb: lumino_export::audio::config::ProgressCallback =
             Arc::new(move |msg: String, pct: f64| {
@@ -134,6 +139,7 @@ impl RunnerInner {
             note_force_end_delay,
             backend: backend_kind,
             progress_callback: Some(progress_cb),
+            control: Some(Arc::clone(&control)),
         };
 
         // 2. 用编辑器 tempo_points 覆盖 doc 的加载时原始 tempo（与保存/云存/工程导出一致）：
@@ -224,8 +230,16 @@ impl RunnerInner {
                         ));
                     }
                     Err(e) => {
-                        tracing::error!("音频导出失败: {e}");
-                        let _ = progress_tx_final.send((format!("导出失败: {e}"), -1.0, 0, 0.0, 0.0));
+                        // 中止为可预期操作，删除残留文件后以“已中止”通知 UI
+                        if matches!(e, lumino_export::ExportError::Aborted) {
+                            let _ = std::fs::remove_file(&output_path_display);
+                            tracing::info!("音频导出已中止，已清理: {}", output_path_display);
+                            let _ = progress_tx_final.send(("已中止".to_string(), -1.0, 0, 0.0, 0.0));
+                        } else {
+                            tracing::error!("音频导出失败: {e}");
+                            let _ = progress_tx_final
+                                .send((format!("{e}"), -1.0, 0, 0.0, 0.0));
+                        }
                     }
                 }
             });

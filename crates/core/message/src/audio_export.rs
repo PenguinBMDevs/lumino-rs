@@ -76,6 +76,14 @@ pub enum AudioExportAction {
     RenderFailed(String),
     /// 重置渲染状态
     ResetRendering,
+    /// 暂停导出
+    Pause,
+    /// 继续导出
+    Resume,
+    /// 切换暂停/继续
+    TogglePause,
+    /// 中止导出
+    Abort,
 }
 
 #[cfg(test)]
