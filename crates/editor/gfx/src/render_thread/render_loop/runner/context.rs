@@ -118,6 +118,10 @@ pub struct RenderFrameState<'a> {
     /// 由命令派发处按 onion 流式就绪状态填充；`None` 表示未就绪，
     /// 调用方回退首帧上传路径。句柄为克隆（引用计数），跨帧持有无碍。
     pub onion_source: Option<(wgpu::Buffer, u32)>,
+    /// onion 常驻数据世代（与 `onion_source` 同快照，`Renderers::onion_epoch`）。
+    ///
+    /// 全局桶等派生索引用它判定重建；`onion_source` 为 `None` 时无意义。
+    pub onion_epoch: u64,
 }
 
 /// 预览帧纹理上传阶段上下文。

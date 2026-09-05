@@ -9,7 +9,7 @@ use super::common::{CopyDrainInput, copy_texture_and_drain, note_instances_to_ke
 use crate::miditrail_renderer::pack_color;
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
-use crate::{WaterfallRenderer, WaterfallUniformGpu, unpack_key_color};
+use crate::{BucketSource, WaterfallRenderer, WaterfallUniformGpu, unpack_key_color};
 
 /// 处理视频导出瀑布流帧：窗口集上传共享缓冲 → 每帧 uniforms → compute dispatch → staging 读回。
 pub(super) fn handle_waterfall_frame(
@@ -19,18 +19,8 @@ pub(super) fn handle_waterfall_frame(
     width: u32,
     height: u32,
 ) {
-    // 窗口集落共享缓冲（上传内容与 params 一致；空窗口跳过上传并按空集派生）。
-    // 用 `upload_shared_instances`：瀑布流不用钢琴 cull 管线，跳过每帧两套
-    // bind group 重建 + cull uniform 写（死工作，见 upload_shared_instances 文档）。
-    let t_upload = std::time::Instant::now();
-    if !params.note_instances.is_empty() {
-        frame
-            .renderers
-            .note
-            .upload_shared_instances(&params.note_instances);
-    }
-    let upload_us = t_upload.elapsed().as_micros() as u64;
-    let (shared_buffer, _) = frame.renderers.note.gpu_note_buffer_for_sharing();
+    // 窗口集落共享缓冲只在 legacy 路径执行；索引路径直接绑定 onion 常驻，零上传。
+    // （上传块已下移到 legacy 分支，见下。）
     let notes = &params.note_instances;
 
     // 初始化瀑布流渲染器
@@ -63,10 +53,10 @@ pub(super) fn handle_waterfall_frame(
         _padding: 0,
     };
 
-    // 派生分桶偏移（唯一的每帧派生 GPU 数据，129 u32，可忽略）
+    // 派生分桶偏移只在 legacy 路径执行（唯一的每帧派生 GPU 数据，129 u32）。
+    // 索引路径绑定全局桶边界，无派生。
     let t_derive = std::time::Instant::now();
     let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
-    let key_offsets = note_instances_to_key_offsets(notes, key_count);
 
     // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
     let tick_u = params.waterfall_current_tick;
@@ -83,37 +73,76 @@ pub(super) fn handle_waterfall_frame(
         }
     }
 
-    // 创建编码器
-    let derive_us = t_derive.elapsed().as_micros() as u64;
-    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：upload/derive 是 CPU 部分，
-    // 与 UI 侧收集打点对齐后即可确认 recv 里 CPU/GPU 各占多少。
-    {
-        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if n < 3 || n.is_multiple_of(300) {
-            tracing::info!(
-                "waterfall渲染打点[{n}]: upload={upload_us}us derive={derive_us}us notes={}",
-                notes.len()
-            );
-        }
-    }
+    // 创建编码器（双轨共用；compute pass 追加到此 encoder）。
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("waterfall_encoder"),
         });
 
-    // dispatch compute shader（音符读共享缓冲，不再自有拷贝）
-    renderer.render(
-        &ctx.device,
-        &ctx.queue,
-        &mut encoder,
-        &uniform,
-        &shared_buffer,
-        notes.len(),
-        &key_offsets,
-        &active_key_colors,
-    );
+    // 数据源双轨：onion 常驻就绪 → 索引路径（零上传、零派生）；否则 legacy。
+    // 世代与句柄由渲染器内部缓存判定（失配自动重建全局桶，一次性成本）。
+    let epoch = frame.onion_epoch;
+    let mut indexed_done = false;
+    let mut path_label = "legacy";
+    let mut upload_us = 0u64;
+    let mut note_total = notes.len();
+    if let Some((ref onion_buf, onion_count)) = frame.onion_source
+        && onion_count > 0
+    {
+        note_total = onion_count as usize;
+        indexed_done = renderer.render_indexed(
+            &ctx.device,
+            &ctx.queue,
+            &mut encoder,
+            &uniform,
+            BucketSource {
+                buffer: onion_buf,
+                count: onion_count as usize,
+                epoch,
+            },
+            &active_key_colors,
+        );
+        // 索引成功走 indexed，构建失败等回落 legacy。
+        path_label = if indexed_done {
+            "indexed"
+        } else {
+            "legacy-fallback"
+        };
+    }
+    if !indexed_done {
+        // ── legacy 路径：窗口集上传共享缓冲 → 派生分桶偏移 → compute dispatch。
+        let t_upload = std::time::Instant::now();
+        if !notes.is_empty() {
+            frame.renderers.note.upload_shared_instances(notes);
+        }
+        upload_us = t_upload.elapsed().as_micros() as u64;
+        let (shared_buffer, _) = frame.renderers.note.gpu_note_buffer_for_sharing();
+        let key_offsets = note_instances_to_key_offsets(notes, key_count);
+        // dispatch compute shader（音符读共享缓冲，不再自有拷贝）
+        renderer.render(
+            &ctx.device,
+            &ctx.queue,
+            &mut encoder,
+            &uniform,
+            &shared_buffer,
+            notes.len(),
+            &key_offsets,
+            &active_key_colors,
+        );
+    }
+    let derive_us = t_derive.elapsed().as_micros() as u64;
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：path 区分索引/legacy/回落，
+    // upload/derive 仅 legacy 有值；索引路径这两项应恒为 0。
+    {
+        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n.is_multiple_of(300) {
+            tracing::info!(
+                "waterfall渲染打点[{n}]: path={path_label} upload={upload_us}us derive={derive_us}us notes={note_total}"
+            );
+        }
+    }
 
     // 获取输出纹理并拷贝到 staging buffer（流水线模式由 pipeline_ready 保证已初始化）
     let pipeline = match frame.export_pipeline.as_mut() {

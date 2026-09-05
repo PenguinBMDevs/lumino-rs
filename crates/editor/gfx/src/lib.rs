@@ -45,7 +45,7 @@ pub use cc_bar_renderer::{
     build_cc_bar_instances,
 };
 pub use context::{Context, ContextError, Result};
-pub use global_bucket::{GlobalBucketError, GlobalBucketIndex};
+pub use global_bucket::{BucketSource, GlobalBucketError, GlobalBucketIndex};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};

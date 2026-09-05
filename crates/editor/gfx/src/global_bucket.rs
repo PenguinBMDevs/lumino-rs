@@ -60,6 +60,20 @@ pub struct GlobalBucketIndex {
     note_count: usize,
 }
 
+/// 全局桶构建源（调用方传入，渲染器内部缓存判定用）。
+///
+/// 打包常驻缓冲三要素，避免 `render_indexed` 类接口参数爆炸；
+/// miditrail 集成时复用同一结构。
+#[derive(Debug)]
+pub struct BucketSource<'a> {
+    /// 常驻音符缓冲（`NoteInstance` 16B，要求 `STORAGE` 用途，只读）。
+    pub buffer: &'a wgpu::Buffer,
+    /// 有效音符数。
+    pub count: usize,
+    /// 常驻数据世代（`Renderers::onion_epoch`，内容变更即递增）。
+    pub epoch: u64,
+}
+
 impl GlobalBucketIndex {
     /// 只读访问置换索引缓冲（供渲染管线绑定）。
     pub fn sort_index_buffer(&self) -> &wgpu::Buffer {

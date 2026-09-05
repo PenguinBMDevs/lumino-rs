@@ -14,8 +14,11 @@
 //! 3. `storage_texture()` — 获取输出纹理，供 export pipeline 读回
 
 mod bind;
+mod indexed;
 mod init;
 mod render;
+#[cfg(test)]
+mod tests;
 
 use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
 
@@ -57,4 +60,12 @@ pub struct WaterfallRenderer {
     key_offsets_capacity: usize,
     current_width: u32,
     current_height: u32,
+
+    /// 全局桶索引管线（`waterfall_indexed.wgsl`，6 绑定；once 创建）。
+    indexed_pipeline: Option<wgpu::ComputePipeline>,
+    indexed_layout: Option<wgpu::BindGroupLayout>,
+    /// 索引绑定组（源/纹理稳定时跨帧复用；缓存重建或自有资源变化时置空）。
+    indexed_bind_group: Option<wgpu::BindGroup>,
+    /// 全局桶缓存（`indexed.rs` 私有类型；源字节数/数量/世代命中即复用）。
+    indexed_cache: Option<indexed::IndexedCache>,
 }

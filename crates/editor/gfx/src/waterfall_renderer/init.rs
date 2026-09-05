@@ -102,6 +102,10 @@ impl WaterfallRenderer {
             key_offsets_capacity: 0,
             current_width: 0,
             current_height: 0,
+            indexed_pipeline: None,
+            indexed_layout: None,
+            indexed_bind_group: None,
+            indexed_cache: None,
         }
     }
 
@@ -144,8 +148,9 @@ impl WaterfallRenderer {
         self.output_texture_view = Some(view);
         self.current_width = width;
         self.current_height = height;
-        // 尺寸变化 → bind group 需要重建
+        // 尺寸变化 → 两套绑定组都需要重建
         self.bind_group = None;
+        self.indexed_bind_group = None;
     }
 
     /// 确保 active_key_colors buffer 存在（128 个 u32）。
@@ -164,6 +169,7 @@ impl WaterfallRenderer {
         );
         self.active_key_colors_buffer = Some(buffer);
         self.bind_group = None;
+        self.indexed_bind_group = None;
     }
 
     /// 确保 key_offsets buffer 有足够容量（动态分桶：key_count + 1 个 u32）
