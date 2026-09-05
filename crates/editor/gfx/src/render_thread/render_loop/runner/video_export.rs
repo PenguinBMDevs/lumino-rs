@@ -9,7 +9,10 @@ use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{RenderContext, RenderFrameState, RenderThreadChannels};
 
 pub(crate) mod common;
-pub(crate) use common::{render_video_frame_command, start_video_export};
+pub(crate) use common::{
+    note_instances_to_miditrail, note_instances_to_waterfall, render_video_frame_command,
+    start_video_export,
+};
 
 /// 推进视频导出 inflight 帧读回。
 ///
@@ -230,8 +233,11 @@ fn handle_waterfall_frame(
         _padding: 0,
     };
 
-    // 使用传入的瀑布流音符数据
-    let notes = &params.waterfall_notes;
+    // 派生数据按需换算：飞行中只有权威 note_instances，瀑布流输入由此算出，不另存。
+    let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
+    let (notes, key_offsets) = note_instances_to_waterfall(&params.note_instances, key_count);
+    let notes = &notes;
+    let key_offsets = &key_offsets;
 
     // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
     let mut active_key_colors = [0u32; 128];
@@ -260,14 +266,14 @@ fn handle_waterfall_frame(
             label: Some("waterfall_encoder"),
         });
 
-    // dispatch compute shader
+    // dispatch compute shader（派生输入为函数内临时值，不经过跨线程存储）
     renderer.render(
         &ctx.device,
         &ctx.queue,
         &mut encoder,
         &uniform,
         notes,
-        &params.waterfall_key_offsets,
+        key_offsets,
         &active_key_colors,
     );
 
@@ -365,7 +371,8 @@ fn handle_miditrail_frame(
         _padding1: 0,
     };
 
-    let notes = &params.miditrail_notes;
+    let notes = note_instances_to_miditrail(&params.note_instances);
+    let notes = &notes;
 
     let mut encoder = ctx
         .device
