@@ -44,11 +44,16 @@ pub const MIDITRAIL_DEFAULT_Z_FAR_DISTANCE: f32 = 7.5;
 /// Z 方向显示距离最大值（也是音符收集范围的最大倍数）。
 pub const MIDITRAIL_MAX_Z_FAR_DISTANCE: f32 = 15.0;
 
+/// Top 键盘去按压用的全零系数（俯视只留颜色反馈；切回 Normal 时内部
+/// `key_press_factors` 仍在更新，按压动画无缝衔接）。
+static ZERO_PRESS_FACTORS: [f32; 128] = [0.0; 128];
+
 /// 3D MIDITrail 渲染器
 ///
 /// 使用实例化立方体渲染键盘与音符，结果写入 `Rgba8Unorm` 离屏纹理。
 /// Normal 与 Top 视图共用实例缓冲/纹理/深度（零第二份显存），
-/// 区别仅在于相机、音符精度（Top 量化合并）与着色器（Top flat）。
+/// 区别仅在于相机、音符精度（Top 逐音量化对齐、永不合并）、键盘反馈
+/// （Top 无按压位移、只变色）与着色器（Top flat）。
 pub struct MiditrailRenderer {
     render_pipeline: wgpu::RenderPipeline,
     note_pipeline: wgpu::RenderPipeline,
@@ -210,7 +215,7 @@ impl MiditrailRenderer {
         self.update_key_press_factors(&active_keys, uniform.fps);
 
         let is_top = uniform.view_mode.is_top();
-        // Top 先做时间量化/合并降精度（Normal 路径零改动，防污染）。
+        // Top 先做逐音时间量化对齐（永不合并；Normal 路径零改动，防污染）。
         let top_notes;
         let notes: &[MiditrailNoteGpu] = if is_top {
             top_notes = quantize_notes_for_top(uniform, notes);
@@ -228,12 +233,20 @@ impl MiditrailRenderer {
             &mut note_instances,
         );
         let mut key_instances = Vec::with_capacity(uniform.key_count as usize);
+        // Top 键盘不要按下位移（俯视下位移丑且无意义），只保留颜色反馈：
+        // 传全零 press 数组，`update_key_press_factors` 照常更新内部状态，
+        // 切回 Normal 时按压动画无缝衔接。
+        let press_factors: &[f32] = if is_top {
+            &ZERO_PRESS_FACTORS
+        } else {
+            &self.key_press_factors
+        };
         build_key_instances(
             uniform,
             &active_keys,
             &self.key_positions,
             &self.key_widths,
-            &self.key_press_factors,
+            press_factors,
             &mut key_instances,
         );
 

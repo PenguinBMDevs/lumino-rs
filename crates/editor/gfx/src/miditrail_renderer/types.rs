@@ -43,7 +43,7 @@ impl MiditrailNoteGpu {
 ///
 /// - `Normal`：现有 3D 斜视实现（由旧单一视图迁移而来）；
 /// - `Top`：俯视实现（参考 Comet MIDITrail `Top Down Above` 预设），
-///   音符经时间量化/合并降精度以换取 GPU 开销下降。
+///   音符起止对齐到时间网格（永不合并），键盘无按压位移只变色。
 #[repr(u32)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum MiditrailViewMode {

@@ -1,8 +1,8 @@
-//! Top 视图实例构建测试：精度降级收益与 Normal 一致性
+//! Top 视图实例构建测试：量化一致性与 Normal 等价
 //!
-//! Top 路径 = 时间量化/合并（`quantize`）+ 复用 `build_note_instances`
-//! 几何/排序逻辑；本模块用数据证明 GPU 收益（实例数单调不增）与
-//! 覆盖一致性（同键集合不变，只降精度不丢音）。
+//! Top 路径 = 时间量化（`quantize`，逐音对齐、永不合并）+ 复用
+//! `build_note_instances` 几何/排序逻辑；本模块用数据证明 Top 与 Normal
+//! 渲染同一音符集合（只降对齐精度，不丢音、不吞音）。
 
 use super::super::super::quantize::{TOP_QUANT_TICKS, quantize_notes_for_top};
 use super::*;
@@ -57,9 +57,9 @@ fn build_all(
     out
 }
 
-/// Top 实例数单调不增，且密集段落显著下降（GPU 顶点 + 片元双省的数据证据）。
+/// Top 实例数与 Normal 完全一致（合并已删除：同一音符集合，只差网格对齐）。
 #[test]
-fn test_top_instances_never_exceed_normal() {
+fn test_top_instances_match_normal() {
     let uniform = uniform_at(0);
     let notes = dense_notes();
     let normal = build_all(&uniform, &notes);
@@ -67,11 +67,12 @@ fn test_top_instances_never_exceed_normal() {
     let top = build_all(&uniform, &quantized);
     // Normal 自带 z_far 裁剪（超显示距离的音符不建实例），只断言相对关系。
     assert!(!normal.is_empty(), "密集输入 Normal 应有实例");
-    assert!(
-        top.len() < normal.len(),
-        "密集输入 Top 应显著降实例：{} → {}",
+    assert_eq!(
+        top.len(),
         normal.len(),
-        top.len()
+        "Top 与 Normal 应渲染同一音符集合：{} vs {}",
+        top.len(),
+        normal.len()
     );
 }
 
