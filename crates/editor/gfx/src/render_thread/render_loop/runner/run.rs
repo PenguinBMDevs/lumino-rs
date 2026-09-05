@@ -4,7 +4,6 @@ use std::time::Instant;
 use super::super::super::commands::ControlCommand;
 use super::super::super::export_pipeline::ExportPipeline;
 use super::super::super::params::RenderParams;
-use crate::ArrangementNoteUniform;
 use super::super::commands::process_commands;
 use super::super::render_pass::update_stats;
 use super::context::{
@@ -15,6 +14,7 @@ use super::deferred::handle_deferred_command;
 use super::onion_segments::{OnionSegment, apply_onion_track_delta, process_main_track_events};
 use super::preview::{ensure_offscreen_textures_and_upload_notes, render_offscreen_pass};
 use super::video_export::advance_export_inflight;
+use crate::ArrangementNoteUniform;
 use crate::gpu_resource_tracker::TrackedTexture;
 use lumino_midiplayer::texture_waterfall::{
     WaterfallGpuCtx, WaterfallStreamMsg, drain_waterfall_stream,
@@ -432,4 +432,3 @@ fn prepare_arrangement_note_data(params: &mut RenderParams) {
         _pad: [0.0, 0.0],
     };
 }
-

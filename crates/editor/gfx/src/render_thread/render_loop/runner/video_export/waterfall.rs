@@ -90,7 +90,7 @@ pub(super) fn handle_waterfall_frame(
     {
         static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if n < 3 || n % 300 == 0 {
+        if n < 3 || n.is_multiple_of(300) {
             tracing::info!(
                 "waterfall渲染打点[{n}]: upload={upload_us}us derive={derive_us}us notes={}",
                 notes.len()

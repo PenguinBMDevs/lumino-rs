@@ -83,7 +83,7 @@ pub(super) fn handle_miditrail_frame(
     {
         static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        if n < 3 || n % 300 == 0 {
+        if n < 3 || n.is_multiple_of(300) {
             tracing::info!(
                 "miditrail渲染打点[{n}]: render={render_us}us notes={}",
                 params.note_instances.len()
