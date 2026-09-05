@@ -33,6 +33,7 @@ struct MemoryEnqueueCtx<'a> {
     height: u32,
     key_count: u16,
     is_cpu_renderer: bool,
+    is_gpu_compute_style: bool,
     render_mode: RenderMode,
     counter_config: &'a Option<CounterRenderConfig>,
     counter_stats: &'a mut Option<CounterStats>,
@@ -56,6 +57,8 @@ struct MemoryEnqueueCtx<'a> {
     note_instances_buf: &'a mut Vec<lumino_gfx::NoteInstance>,
     /// 首帧全量上传标记：首帧收集全文档音符常驻 GPU，后续帧跳过收集（uniform 驱动重裁剪）。
     notes_uploaded: &'a mut bool,
+    /// 瀑布流/MIDITrail 窗口收集滑动状态（同一导出任务内复用，tick 单调递增）。
+    window_state: &'a mut video_export::WindowCollectState,
 }
 
 /// 内存模式单帧入队（原 `run_video_export_task` 内嵌 `enqueue_frame` 闭包抽出的自由函数）。
@@ -72,13 +75,18 @@ fn enqueue_memory_frame(
     let tempo_changes = &ctx.document.tempo_changes;
     let tick = video_export::seconds_to_tick(time_sec, tempo_changes, ctx.ppq);
 
-    // 根据当前播放 tick 增量计算按键高亮颜色
-    video_export::keyboard::update_playback_key_colors(
-        ctx.document,
-        tick,
-        ctx.key_color_state,
-        ctx.key_colors,
-    );
+    // 根据当前播放 tick 增量计算按键高亮颜色（仅钢琴卷帘合成路径消费）。
+    // GPU compute（瀑布流/MIDITrail）与 CPU 渲染（计数器等）走 FrameParams::default()
+    // + 空键盘贴图，key_colors 无人读取——跳过整次增量扫描（含每轨 O(前缀) skip），
+    // 高数据量下这是每帧数十毫秒的死工作（见 recv=20~63ms 根因）。
+    if !ctx.is_cpu_renderer && !ctx.is_gpu_compute_style {
+        video_export::keyboard::update_playback_key_colors(
+            ctx.document,
+            tick,
+            ctx.key_color_state,
+            ctx.key_colors,
+        );
+    }
 
     // 计算 scroll_x / zoom_x，用于标尺小节号合成
     let video_kb_width = 60.0f32;
@@ -314,6 +322,7 @@ fn enqueue_memory_frame(
                 visible_notes: ctx.visible_note_buf,
                 note_instances_out: ctx.note_instances_buf,
                 collect_all,
+                window_state: ctx.window_state,
             })
         else {
             send_export_error(
@@ -539,6 +548,8 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
     let mut note_instances_buf: Vec<lumino_gfx::NoteInstance> = Vec::with_capacity(4096);
     // 首帧全量上传标记（GPU 常驻后后续帧只发 uniforms）
     let mut notes_uploaded = false;
+    // 窗口收集滑动状态（瀑布流/MIDITrail 同一任务内复用）
+    let mut window_state = video_export::WindowCollectState::default();
 
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
     let mut ctx = MemoryEnqueueCtx {
@@ -550,6 +561,7 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         height,
         key_count,
         is_cpu_renderer,
+        is_gpu_compute_style,
         render_mode,
         counter_config: &counter_config,
         counter_stats: &mut counter_stats,
@@ -572,6 +584,7 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         visible_note_buf: &mut visible_note_buf,
         note_instances_buf: &mut note_instances_buf,
         notes_uploaded: &mut notes_uploaded,
+        window_state: &mut window_state,
     };
     let mut enqueue_frame = |queue: &mut EncodeFrameQueue, frame_idx: u64| -> bool {
         enqueue_memory_frame(&mut ctx, queue, frame_idx)

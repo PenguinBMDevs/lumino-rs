@@ -108,7 +108,90 @@ fn test_visible_notes_collection_matches_full_scan() {
     assert_eq!(windowed.len(), 4);
 }
 
-/// 视图隔离：Normal/Top 各自取各自的速度，互不影响（VIEW-001 防污染）。
+/// 正确性：滑动窗口收集在 tick 单调推进（含超长跨视口音符、回退重置）下，
+/// 每一帧输出必须与旧"逐帧全前缀扫描"逐元素一致。
+#[test]
+fn test_collect_window_notes_matches_prefix_scan() {
+    // T0：超长音符横跨整个导出（0..10M）+ 密集短音符；T1：稀疏音符 + 越界 key。
+    let mut t0: Vec<(u32, u32, u8)> = vec![(0, 10_000_000, 60)];
+    for i in 0..2000 {
+        let s = i * 5000;
+        t0.push((s, s + 240, (i % 128) as u8));
+    }
+    let doc = MidiDocument {
+        next_note_id: 1,
+        notes: vec![
+            lumino_midi_loader::ChunkedList::from_sorted(make_track(&t0)),
+            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
+                (100, 200, 10),
+                (4_000_000, 4_000_500, 200), // 越界 key，必须被过滤
+                (9_999_000, 9_999_480, 70),
+            ])),
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("T1".into()), Some("T2".into())],
+        total_ticks: 10_000_000,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    };
+    const KEY_COUNT: u16 = 128;
+    const SPAN: u32 = 7680;
+
+    // 旧实现（参考）：每帧从 0 扫描到 search_end。
+    fn reference(doc: &MidiDocument, tick_start: u32, tick_end: u32) -> Vec<(u8, u32, u32, u16)> {
+        let mut out = Vec::new();
+        for (track_idx, track_notes) in doc.notes.iter().enumerate() {
+            let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
+            for n in track_notes.iter().take(search_end) {
+                if n.end_tick > tick_start && n.start_tick < tick_end && n.key < KEY_COUNT as u8 {
+                    out.push((n.key, n.start_tick, n.end_tick, track_idx as u16));
+                }
+            }
+        }
+        out
+    }
+
+    let mut state = WindowCollectState::default();
+    let mut got = Vec::new();
+    // 单调推进 20 帧（tick ≤ 9.5M < 长音符 end=10M）：超长音符必须全程在场，游标只进不退。
+    let mut tick = 0u32;
+    for _ in 0..20 {
+        let tick_end = tick.saturating_add(SPAN);
+        collect_window_notes(&doc, tick, tick_end, KEY_COUNT, &mut state, &mut got);
+        let expected = reference(&doc, tick, tick_end);
+        let got_tuples: Vec<(u8, u32, u32, u16)> = got
+            .iter()
+            .map(|n| (n.key, n.start_tick, n.start_tick + n.length, n.track_idx))
+            .collect();
+        assert_eq!(got_tuples, expected, "tick={tick} 时滑动收集与旧扫描不一致");
+        // 超长音符 (key=60, start=0) 必须全程可见。
+        assert!(
+            got_tuples.iter().any(|&(k, s, _, _)| k == 60 && s == 0),
+            "tick={tick} 时超长音符丢失"
+        );
+        tick += 500_000;
+    }
+    // 回退重置：tick 跳回起点，输出仍须一致（游标清零重建）。
+    collect_window_notes(&doc, 0, SPAN, KEY_COUNT, &mut state, &mut got);
+    let got_tuples: Vec<(u8, u32, u32, u16)> = got
+        .iter()
+        .map(|n| (n.key, n.start_tick, n.start_tick + n.length, n.track_idx))
+        .collect();
+    assert_eq!(
+        got_tuples,
+        reference(&doc, 0, SPAN),
+        "tick 回退后输出不一致"
+    );
+}
 #[test]
 fn test_resolve_miditrail_speed_isolated_per_view() {
     assert_eq!(

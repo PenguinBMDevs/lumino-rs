@@ -7,7 +7,7 @@
 
 use lumino_gfx::RenderParams;
 
-use super::{SortableNote, WaterfallRenderInput, note_search_bounds, pack_note_instances};
+use super::{WaterfallRenderInput, collect_window_notes, pack_note_instances};
 
 /// 瀑布流模式参数
 pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> RenderParams {
@@ -21,6 +21,7 @@ pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> Rend
         waterfall_scroll_speed,
         visible_notes,
         note_instances_out,
+        window_state,
     } = input;
     let waterfall_width = width.max(1) as f32;
     let waterfall_height = height.max(1) as f32;
@@ -33,29 +34,32 @@ pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> Rend
     let tick_start = tick;
     let tick_end = tick.saturating_add(viewport_tick_span);
 
-    // 每轨按 start_tick 有序 → 二分窗口定位，避免每帧 O(N) 全量遍历
-    visible_notes.clear();
-    note_instances_out.clear();
-    for (track_idx, track_notes) in document.notes.iter().enumerate() {
-        if track_notes.is_empty() {
-            continue;
-        }
-        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in track_notes.iter().take(search_end) {
-            if n.end_tick > tick_start && n.start_tick < tick_end && n.key < key_count as u8 {
-                visible_notes.push(SortableNote {
-                    key: n.key,
-                    start_tick: n.start_tick,
-                    length: n.end_tick.saturating_sub(n.start_tick),
-                    track_idx: track_idx as u16,
-                });
-            }
-        }
-    }
+    // 滑动窗口收集（O(窗口变化量)，tick 单调递增下游标只推进；输出与旧逐帧全前缀扫描一致）。
+    let t_collect = std::time::Instant::now();
+    collect_window_notes(
+        document,
+        tick_start,
+        tick_end,
+        key_count,
+        window_state,
+        visible_notes,
+    );
+    let collect_us = t_collect.elapsed().as_micros() as u64;
 
-    super::sort_visible_notes(visible_notes);
+    let t_sort = std::time::Instant::now();
+    super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
+    let sort_us = t_sort.elapsed().as_micros() as u64;
     // 边框仅钢琴卷帘矩形管线使用，瀑布流换算忽略，填 0。
+    let t_pack = std::time::Instant::now();
     pack_note_instances(visible_notes, 0, note_instances_out);
+    let pack_us = t_pack.elapsed().as_micros() as u64;
+    super::diag_window_collect(
+        "waterfall",
+        collect_us,
+        sort_us,
+        pack_us,
+        visible_notes.len(),
+    );
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),

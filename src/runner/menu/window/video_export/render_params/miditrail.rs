@@ -12,7 +12,7 @@ use lumino_gfx::{
 };
 use lumino_message::events::window::video::MiditrailViewMode as EventViewMode;
 
-use super::{MiditrailRenderInput, SortableNote, note_search_bounds, pack_note_instances};
+use super::{MiditrailRenderInput, collect_window_notes, pack_note_instances};
 
 /// 事件层视图枚举 → GPU 层视图枚举（同构映射，无静默降级）。
 fn map_view_mode(view: EventViewMode) -> MiditrailViewMode {
@@ -37,6 +37,7 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
         fps,
         visible_notes,
         note_instances_out,
+        window_state,
     } = input;
     let miditrail_width = width.max(1) as f32;
     let miditrail_height = height.max(1) as f32;
@@ -61,25 +62,31 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
 
     visible_notes.clear();
     note_instances_out.clear();
-    for (track_idx, track_notes) in document.notes.iter().enumerate() {
-        if track_notes.is_empty() {
-            continue;
-        }
-        let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-        for n in track_notes.iter().take(search_end) {
-            if n.end_tick > tick_start && n.start_tick < tick_end && n.key < key_count as u8 {
-                visible_notes.push(SortableNote {
-                    key: n.key,
-                    start_tick: n.start_tick,
-                    length: n.end_tick.saturating_sub(n.start_tick),
-                    track_idx: track_idx as u16,
-                });
-            }
-        }
-    }
+    // 滑动窗口收集（O(窗口变化量)，与瀑布流共用游标语义；输出与旧逐帧全前缀扫描一致）。
+    let t_collect = std::time::Instant::now();
+    collect_window_notes(
+        document,
+        tick_start,
+        tick_end,
+        key_count,
+        window_state,
+        visible_notes,
+    );
+    let collect_us = t_collect.elapsed().as_micros() as u64;
 
-    super::sort_visible_notes(visible_notes);
+    let t_sort = std::time::Instant::now();
+    super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
+    let sort_us = t_sort.elapsed().as_micros() as u64;
+    let t_pack = std::time::Instant::now();
     pack_note_instances(visible_notes, 0, note_instances_out);
+    let pack_us = t_pack.elapsed().as_micros() as u64;
+    super::diag_window_collect(
+        "miditrail",
+        collect_us,
+        sort_us,
+        pack_us,
+        visible_notes.len(),
+    );
 
     // 光晕环动画时间基准：当前 tick 处每秒 tick 数（BPM × ppq / 60）。
     // 参考 Zenith-MIDI MidiTrailRender 的 tempoFrameStep（每帧 tick 数），

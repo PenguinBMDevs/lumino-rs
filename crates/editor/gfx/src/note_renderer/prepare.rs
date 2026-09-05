@@ -31,6 +31,17 @@ impl NoteRenderer {
         self.update_cull_info(device, queue);
     }
 
+    /// 共享缓冲上传（瀑布流视频导出专用）：只做 `upload_all`，跳过 cull 管线状态更新。
+    ///
+    /// 瀑布流 compute shader 直接绑定共享缓冲 + 自有分桶偏移表，钢琴卷帘的
+    /// cull/render bind group 与可见索引缓冲全程不用——旧路径每帧重建两套
+    /// bind group + 写 cull uniforms 是纯死工作（26 万实例下约毫秒级/帧）。
+    /// 钢琴模式仍走 `upload_instances`/`prepare_notes`（cull compute 需要）。
+    pub fn upload_shared_instances(&mut self, instances: &[crate::NoteInstance]) {
+        self.external_bound = false;
+        self.gpu_note_buffer.upload_all(instances);
+    }
+
     /// 流式上传：开始一次流式上传会话（用于 6 亿音符场景控制 CPU 峰值）
     ///
     /// 调用方应在 UI 线程分块构建 NoteInstance，逐块调用 `streaming_append`，

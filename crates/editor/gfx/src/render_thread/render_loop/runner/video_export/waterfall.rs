@@ -20,12 +20,16 @@ pub(super) fn handle_waterfall_frame(
     height: u32,
 ) {
     // 窗口集落共享缓冲（上传内容与 params 一致；空窗口跳过上传并按空集派生）。
+    // 用 `upload_shared_instances`：瀑布流不用钢琴 cull 管线，跳过每帧两套
+    // bind group 重建 + cull uniform 写（死工作，见 upload_shared_instances 文档）。
+    let t_upload = std::time::Instant::now();
     if !params.note_instances.is_empty() {
         frame
             .renderers
             .note
-            .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+            .upload_shared_instances(&params.note_instances);
     }
+    let upload_us = t_upload.elapsed().as_micros() as u64;
     let (shared_buffer, _) = frame.renderers.note.gpu_note_buffer_for_sharing();
     let notes = &params.note_instances;
 
@@ -60,6 +64,7 @@ pub(super) fn handle_waterfall_frame(
     };
 
     // 派生分桶偏移（唯一的每帧派生 GPU 数据，129 u32，可忽略）
+    let t_derive = std::time::Instant::now();
     let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
     let key_offsets = note_instances_to_key_offsets(notes, key_count);
 
@@ -79,6 +84,19 @@ pub(super) fn handle_waterfall_frame(
     }
 
     // 创建编码器
+    let derive_us = t_derive.elapsed().as_micros() as u64;
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：upload/derive 是 CPU 部分，
+    // 与 UI 侧收集打点对齐后即可确认 recv 里 CPU/GPU 各占多少。
+    {
+        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n % 300 == 0 {
+            tracing::info!(
+                "waterfall渲染打点[{n}]: upload={upload_us}us derive={derive_us}us notes={}",
+                notes.len()
+            );
+        }
+    }
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
