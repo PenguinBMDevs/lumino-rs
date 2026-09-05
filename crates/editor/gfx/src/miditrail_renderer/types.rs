@@ -39,6 +39,23 @@ impl MiditrailNoteGpu {
     }
 }
 
+/// Miditrail 可见 tick 跨度（与 UI 收集窗口同公式，速度越快/远裁越小窗口越窄）。
+///
+/// UI 窗口收集（`collect_window_notes` 上界）与渲染侧 cull 窗口共用，保证谓词一致：
+/// 收集范围按实际 Z 显示距离缩放（GPU 可见条件 `start - tick < span × z_far/SCENE_DEPTH`），
+/// 默认 `z_far = SCENE_DEPTH` 时退化为全跨度。公式与 UI 侧逐 op 一致（含 f32 截断）。
+#[must_use]
+pub fn miditrail_viewport_span(ppq: u32, speed: f32, z_far_distance: f32) -> u32 {
+    let z_far_scale = (z_far_distance.max(0.1) / super::MIDITRAIL_SCENE_DEPTH).clamp(
+        0.1 / super::MIDITRAIL_SCENE_DEPTH,
+        super::MIDITRAIL_MAX_Z_FAR_DISTANCE / super::MIDITRAIL_SCENE_DEPTH,
+    );
+    let speed = speed.max(0.1);
+    let ticks_per_measure = ppq * 4;
+    let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
+    ((ticks_per_measure * visible_measure_count).max(1) as f32 * z_far_scale) as u32
+}
+
 /// MIDITrail 视图模式（GPU 层，与事件层枚举同构，见 VIEW-001）。
 ///
 /// - `Normal`：现有 3D 斜视实现（由旧单一视图迁移而来）；

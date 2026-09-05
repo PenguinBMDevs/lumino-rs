@@ -13,14 +13,21 @@
 //! 2. `render()` — 每帧调用：上传 uniform/偏移/键色、dispatch compute shader、写入 storage texture
 //! 3. `storage_texture()` — 获取输出纹理，供 export pipeline 读回
 
+mod active;
+#[cfg(test)]
+mod active_tests;
 mod bind;
-mod indexed;
 mod init;
 mod render;
 #[cfg(test)]
+mod test_harness;
+#[cfg(test)]
 mod tests;
 
+use crate::ResidentCull;
 use crate::gpu_resource_tracker::{TrackedBuffer, TrackedTexture};
+
+pub use render::CullRenderOutcome;
 
 /// Uniform 参数（与 waterfall.wgsl 中 WaterfallUniform 匹配）
 #[repr(C)]
@@ -61,11 +68,22 @@ pub struct WaterfallRenderer {
     current_width: u32,
     current_height: u32,
 
-    /// 全局桶索引管线（`waterfall_indexed.wgsl`，6 绑定；once 创建）。
-    indexed_pipeline: Option<wgpu::ComputePipeline>,
-    indexed_layout: Option<wgpu::BindGroupLayout>,
-    /// 索引绑定组（源/纹理稳定时跨帧复用；缓存重建或自有资源变化时置空）。
-    indexed_bind_group: Option<wgpu::BindGroup>,
-    /// 全局桶缓存（`indexed.rs` 私有类型；源字节数/数量/世代命中即复用）。
-    indexed_cache: Option<indexed::IndexedCache>,
+    /// 常驻全量窗口提取器（导出共享缓冲一次上传，桶一次构建，常驻复用）。
+    resident_cull: ResidentCull,
+    /// 活跃键内核管线/布局/参数（`waterfall_active.wgsl`；绑定组每帧重建，见 `active.rs`）。
+    active_pipeline: Option<wgpu::ComputePipeline>,
+    active_layout: Option<wgpu::BindGroupLayout>,
+    active_params_buffer: Option<TrackedBuffer>,
+}
+
+/// 瀑布流可见 tick 跨度（与 shader `viewport_tick_span` 同公式，速度越高窗口越窄）。
+///
+/// UI 窗口收集（`collect_window_notes` 上界）与渲染侧 cull 窗口共用，保证谓词一致。
+/// 注意 `.round()` 为 Rust 半远离零，WGSL `round` 为半偶数——`4/speed` 恰为
+/// x.5 时差 1 tick（既有 UI/shader 缝隙，cull 从 UI 侧对齐，与现状逐位一致）。
+pub fn waterfall_viewport_span(ppq: u32, speed: f32) -> u32 {
+    let speed = speed.max(0.1);
+    let ticks_per_measure = ppq * 4;
+    let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
+    (ticks_per_measure * visible_measure_count).max(1)
 }

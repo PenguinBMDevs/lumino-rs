@@ -1,18 +1,19 @@
 //! Miditrail 3D 模式参数（产出统一 `note_instances` + 3D uniforms）
 //!
-//! 单一权威飞行格式：收集窗口可见音符并打包为 `NoteInstance`，
-//! 3D 所需的 `MiditrailNoteGpu` 由渲染线程按需换算（只读 key/start/end/color）。
-//! 注意：此处必须保留逐帧窗口过滤（而非首帧全量）——24M 级文档下，
-//! 全量常驻意味着 390MB 显存＋390MB 镜像＋每帧两次全量扫描（约 100ms/帧，
-//! 已实测），窗口传输按可见集 V 收敛才是正确 trade-off。
+//! 单一权威飞行格式：首帧全量收集（`collect_all`，无窗口过滤）并打包为
+//! `NoteInstance`——渲染侧一次上传自有常驻，全局桶建其上；后续帧跳过收集
+//!（`note_instances` 为空）只发 uniforms，窗口过滤走 GPU cull 并回读
+//!（与旧窗口收集同谓词，legacy 渲染像素逐位一致）。legacy 回退路径
+//!（cull 不可用）消费首帧全量（已排序，回退正确）。
+//!
+//! 旧 390MB 常驻否决项（390MB 显存＋390MB 镜像＋每帧两次全扫 100ms）已消解：
+//! 现常驻仅 GPU 侧一份（无 CPU 镜像），CPU 每帧零扫描（cull 在 GPU 侧，
+//! 回读 V×16B），UI 侧 collect/sort/pack 稳态归零。
 
-use lumino_gfx::{
-    RenderParams,
-    miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH, MiditrailViewMode},
-};
+use lumino_gfx::{RenderParams, miditrail_renderer::MiditrailViewMode};
 use lumino_message::events::window::video::MiditrailViewMode as EventViewMode;
 
-use super::{MiditrailRenderInput, collect_window_notes, pack_note_instances};
+use super::{MiditrailRenderInput, collect_all_notes, pack_note_instances};
 
 /// 事件层视图枚举 → GPU 层视图枚举（同构映射，无静默降级）。
 fn map_view_mode(view: EventViewMode) -> MiditrailViewMode {
@@ -38,55 +39,37 @@ pub(crate) fn build_miditrail_render_params(input: MiditrailRenderInput) -> Rend
         visible_notes,
         note_instances_out,
         window_state,
+        collect_all,
     } = input;
     let miditrail_width = width.max(1) as f32;
     let miditrail_height = height.max(1) as f32;
-    // 收集范围按实际 Z 显示距离缩放（而非写死最大值）：
-    // GPU 实例构建中音符可见条件为 `start_tick - tick < span × z_far/SCENE_DEPTH`，
-    // 因此收集窗口上界取 `tick + span × z_far/SCENE_DEPTH` 即可精确覆盖，
-    // 避免默认 z_far=7.5（=SCENE_DEPTH）时白收集 2 倍音符（10 万级场景 CPU 复制与
-    // GPU 扫描均减半）。z_far 拉满 15.0 时退化为 2.0×，行为与旧实现一致。
-    let z_far_scale = (miditrail_z_far.max(0.1) / MIDITRAIL_SCENE_DEPTH).clamp(
-        0.1 / MIDITRAIL_SCENE_DEPTH,
-        MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH,
-    );
+    // 窗口上界不再用于 CPU 收集（首帧全量无过滤，稳态帧跳过）：cull 窗口公式见
+    // `miditrail_viewport_span`（渲染侧同函数，保证谓词一致）。
 
-    // 可见 tick 窗口（与旧 collect_visible_notes_for_gpu 同公式）。
-    let speed = miditrail_speed.max(0.1);
-    let ticks_per_measure = ppq * 4;
-    let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
-    let viewport_tick_span =
-        ((ticks_per_measure * visible_measure_count).max(1) as f32 * z_far_scale) as u32;
-    let tick_start = tick;
-    let tick_end = tick.saturating_add(viewport_tick_span.max(1));
+    if collect_all {
+        // 首帧全量：无窗口过滤（cull 在 GPU 侧做），排序 + 打包与窗口路径同函数。
+        let t_collect = std::time::Instant::now();
+        collect_all_notes(document, key_count, visible_notes);
+        let collect_us = t_collect.elapsed().as_micros() as u64;
 
-    visible_notes.clear();
-    note_instances_out.clear();
-    // 滑动窗口收集（O(窗口变化量)，与瀑布流共用游标语义；输出与旧逐帧全前缀扫描一致）。
-    let t_collect = std::time::Instant::now();
-    collect_window_notes(
-        document,
-        tick_start,
-        tick_end,
-        key_count,
-        window_state,
-        visible_notes,
-    );
-    let collect_us = t_collect.elapsed().as_micros() as u64;
-
-    let t_sort = std::time::Instant::now();
-    super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
-    let sort_us = t_sort.elapsed().as_micros() as u64;
-    let t_pack = std::time::Instant::now();
-    pack_note_instances(visible_notes, 0, note_instances_out);
-    let pack_us = t_pack.elapsed().as_micros() as u64;
-    super::diag_window_collect(
-        "miditrail",
-        collect_us,
-        sort_us,
-        pack_us,
-        visible_notes.len(),
-    );
+        let t_sort = std::time::Instant::now();
+        super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
+        let sort_us = t_sort.elapsed().as_micros() as u64;
+        let t_pack = std::time::Instant::now();
+        pack_note_instances(visible_notes, 0, note_instances_out);
+        let pack_us = t_pack.elapsed().as_micros() as u64;
+        super::diag_window_collect(
+            "miditrail-full",
+            collect_us,
+            sort_us,
+            pack_us,
+            visible_notes.len(),
+        );
+    } else {
+        // 稳态帧：跳过收集/排序/打包（渲染侧复用 GPU 常驻 + cull），只发 uniforms。
+        visible_notes.clear();
+        note_instances_out.clear();
+    }
 
     // 光晕环动画时间基准：当前 tick 处每秒 tick 数（BPM × ppq / 60）。
     // 参考 Zenith-MIDI MidiTrailRender 的 tempoFrameStep（每帧 tick 数），

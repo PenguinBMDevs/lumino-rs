@@ -108,90 +108,9 @@ fn test_visible_notes_collection_matches_full_scan() {
     assert_eq!(windowed.len(), 4);
 }
 
-/// 正确性：滑动窗口收集在 tick 单调推进（含超长跨视口音符、回退重置）下，
-/// 每一帧输出必须与旧"逐帧全前缀扫描"逐元素一致。
-#[test]
-fn test_collect_window_notes_matches_prefix_scan() {
-    // T0：超长音符横跨整个导出（0..10M）+ 密集短音符；T1：稀疏音符 + 越界 key。
-    let mut t0: Vec<(u32, u32, u8)> = vec![(0, 10_000_000, 60)];
-    for i in 0..2000 {
-        let s = i * 5000;
-        t0.push((s, s + 240, (i % 128) as u8));
-    }
-    let doc = MidiDocument {
-        next_note_id: 1,
-        notes: vec![
-            lumino_midi_loader::ChunkedList::from_sorted(make_track(&t0)),
-            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
-                (100, 200, 10),
-                (4_000_000, 4_000_500, 200), // 越界 key，必须被过滤
-                (9_999_000, 9_999_480, 70),
-            ])),
-        ],
-        tempo_changes: vec![(0, 120.0)],
-        time_signatures: vec![(0, 4, 4)],
-        key_signatures: vec![(0, 0, false)],
-        control_events: lumino_midi_loader::ChunkedList::new(),
-        lyrics: vec![],
-        markers: vec![],
-        sys_ex: vec![],
-        track_names: vec![Some("T1".into()), Some("T2".into())],
-        total_ticks: 10_000_000,
-        track_count: 2,
-        tracks: TrackManager::new(2),
-        division: 480,
-        track_ports: vec![],
-        track_max_end_ticks: vec![],
-    };
-    const KEY_COUNT: u16 = 128;
-    const SPAN: u32 = 7680;
-
-    // 旧实现（参考）：每帧从 0 扫描到 search_end。
-    fn reference(doc: &MidiDocument, tick_start: u32, tick_end: u32) -> Vec<(u8, u32, u32, u16)> {
-        let mut out = Vec::new();
-        for (track_idx, track_notes) in doc.notes.iter().enumerate() {
-            let (_, search_end) = note_search_bounds(track_notes, tick_start, tick_end);
-            for n in track_notes.iter().take(search_end) {
-                if n.end_tick > tick_start && n.start_tick < tick_end && n.key < KEY_COUNT as u8 {
-                    out.push((n.key, n.start_tick, n.end_tick, track_idx as u16));
-                }
-            }
-        }
-        out
-    }
-
-    let mut state = WindowCollectState::default();
-    let mut got = Vec::new();
-    // 单调推进 20 帧（tick ≤ 9.5M < 长音符 end=10M）：超长音符必须全程在场，游标只进不退。
-    let mut tick = 0u32;
-    for _ in 0..20 {
-        let tick_end = tick.saturating_add(SPAN);
-        collect_window_notes(&doc, tick, tick_end, KEY_COUNT, &mut state, &mut got);
-        let expected = reference(&doc, tick, tick_end);
-        let got_tuples: Vec<(u8, u32, u32, u16)> = got
-            .iter()
-            .map(|n| (n.key, n.start_tick, n.start_tick + n.length, n.track_idx))
-            .collect();
-        assert_eq!(got_tuples, expected, "tick={tick} 时滑动收集与旧扫描不一致");
-        // 超长音符 (key=60, start=0) 必须全程可见。
-        assert!(
-            got_tuples.iter().any(|&(k, s, _, _)| k == 60 && s == 0),
-            "tick={tick} 时超长音符丢失"
-        );
-        tick += 500_000;
-    }
-    // 回退重置：tick 跳回起点，输出仍须一致（游标清零重建）。
-    collect_window_notes(&doc, 0, SPAN, KEY_COUNT, &mut state, &mut got);
-    let got_tuples: Vec<(u8, u32, u32, u16)> = got
-        .iter()
-        .map(|n| (n.key, n.start_tick, n.start_tick + n.length, n.track_idx))
-        .collect();
-    assert_eq!(
-        got_tuples,
-        reference(&doc, 0, SPAN),
-        "tick 回退后输出不一致"
-    );
-}
+// 注：`collect_window_notes` 已随 GPU cull 删除，其滑动收集测试同步删除
+//（git 历史可查）；窗口语义等价性由 `lumino-gfx` 的 `global_bucket::cull_tests`
+// + 像素 harness 保证。
 #[test]
 fn test_resolve_miditrail_speed_isolated_per_view() {
     assert_eq!(
@@ -224,4 +143,169 @@ fn test_miditrail_view_mode_from_str() {
         MiditrailViewMode::Normal
     );
     assert!(MiditrailViewMode::from_str("侧视").is_err());
+}
+
+/// 首帧全量 + 稳态跳过（瀑布流）：`collect_all=true` 发全文档有序集（无窗口过滤，
+/// 越界 key 除外），`false` 发空集 + uniforms（渲染侧复用 GPU 常驻 + cull）。
+#[test]
+fn test_waterfall_collect_all_first_frame_full_then_skip() {
+    let doc = MidiDocument {
+        next_note_id: 1,
+        notes: vec![
+            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
+                (0, 240, 60),               // 视口前很远（窗口会过滤，全量保留）
+                (5_000_100, 5_001_000, 62), // 视口内
+                (9_000_000, 9_000_480, 64), // 视口后很远（窗口会过滤，全量保留）
+                (100, 200, 200),            // 越界 key，全量也过滤
+            ])),
+            lumino_midi_loader::ChunkedList::from_sorted(make_track(&[(5_000_200, 5_000_700, 60)])),
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("T1".into()), Some("T2".into())],
+        total_ticks: 9_000_480,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    };
+    let mut visible = Vec::new();
+    let mut out = Vec::new();
+    let mut state = WindowCollectState::default();
+
+    // 首帧：全量 4 个有效音符（越界 key 已滤），(key, start) 有序。
+    let params = build_waterfall_render_params(WaterfallRenderInput {
+        width: 640,
+        height: 360,
+        tick: 5_000_000,
+        document: &doc,
+        ppq: 480,
+        key_count: 128,
+        waterfall_scroll_speed: 1.0,
+        visible_notes: &mut visible,
+        note_instances_out: &mut out,
+        window_state: &mut state,
+        collect_all: true,
+    });
+    assert!(params.is_waterfall_mode, "瀑布流标志");
+    assert_eq!(
+        params.note_instances.len(),
+        4,
+        "首帧全量：不过滤窗口（视口前后 + 跨视口全保留），只滤越界 key"
+    );
+    let keys_starts: Vec<(u32, f32)> = params
+        .note_instances
+        .iter()
+        .map(|n| (n.key_color & 0xFF, n.start_length[0]))
+        .collect();
+    let mut sorted = keys_starts.clone();
+    sorted.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.total_cmp(&b.1)));
+    assert_eq!(
+        keys_starts, sorted,
+        "全量集须 (key, start) 有序（legacy 回退前提）"
+    );
+
+    // 稳态帧：空集 + uniforms（tick 照常推进）。
+    let params2 = build_waterfall_render_params(WaterfallRenderInput {
+        width: 640,
+        height: 360,
+        tick: 5_000_100,
+        document: &doc,
+        ppq: 480,
+        key_count: 128,
+        waterfall_scroll_speed: 1.0,
+        visible_notes: &mut visible,
+        note_instances_out: &mut out,
+        window_state: &mut state,
+        collect_all: false,
+    });
+    assert!(
+        params2.note_instances.is_empty(),
+        "稳态帧跳过收集（渲染侧 cull）"
+    );
+    assert_eq!(
+        params2.waterfall_current_tick, 5_000_100,
+        "uniforms 照常推进"
+    );
+}
+
+/// 首帧全量 + 稳态跳过（Miditrail）：语义同瀑布流，uniforms 含 3D 参数。
+#[test]
+fn test_miditrail_collect_all_first_frame_full_then_skip() {
+    let doc = MidiDocument {
+        next_note_id: 1,
+        notes: vec![lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
+            (0, 240, 60),
+            (5_000_100, 5_001_000, 62),
+            (9_000_000, 9_000_480, 64),
+        ]))],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        sys_ex: vec![],
+        track_names: vec![Some("T1".into())],
+        total_ticks: 9_000_480,
+        track_count: 1,
+        tracks: TrackManager::new(1),
+        division: 480,
+        track_ports: vec![],
+        track_max_end_ticks: vec![],
+    };
+    let mut visible = Vec::new();
+    let mut out = Vec::new();
+    let mut state = WindowCollectState::default();
+
+    let params = build_miditrail_render_params(MiditrailRenderInput {
+        width: 640,
+        height: 360,
+        tick: 5_000_000,
+        document: &doc,
+        ppq: 480,
+        key_count: 128,
+        miditrail_speed: 1.0,
+        miditrail_view_mode: lumino_message::events::window::video::MiditrailViewMode::Normal,
+        miditrail_z_far: 7.5,
+        fps: 60.0,
+        visible_notes: &mut visible,
+        note_instances_out: &mut out,
+        window_state: &mut state,
+        collect_all: true,
+    });
+    assert!(params.miditrail_enabled, "3D 标志");
+    assert_eq!(params.note_instances.len(), 3, "首帧全量：视口前后全保留");
+    assert!(
+        params.miditrail_ticks_per_second > 0.0,
+        "光晕时间基准照常计算"
+    );
+
+    let params2 = build_miditrail_render_params(MiditrailRenderInput {
+        width: 640,
+        height: 360,
+        tick: 5_000_100,
+        document: &doc,
+        ppq: 480,
+        key_count: 128,
+        miditrail_speed: 1.0,
+        miditrail_view_mode: lumino_message::events::window::video::MiditrailViewMode::Normal,
+        miditrail_z_far: 7.5,
+        fps: 60.0,
+        visible_notes: &mut visible,
+        note_instances_out: &mut out,
+        window_state: &mut state,
+        collect_all: false,
+    });
+    assert!(
+        params2.note_instances.is_empty(),
+        "稳态帧跳过收集（渲染侧 cull + 回读）"
+    );
+    assert_eq!(params2.miditrail_current_tick, 5_000_100);
 }

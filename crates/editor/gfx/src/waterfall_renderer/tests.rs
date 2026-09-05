@@ -1,53 +1,21 @@
-//! 瀑布流 legacy 窗口路径与全局桶索引路径的像素等价性。
+//! 瀑布流 cull 路径与 legacy 窗口路径的像素等价性。
 //!
-//! 同一输入、两条管线、逐字节对比：
-//! - `test_indexed_matches_legacy_ordered`（严格）：legacy 窗口集与常驻集同为
-//!   `(key, start)` 有序（含并列同序）→ 必须 bit-identical（算法一致性证明）；
-//! - `test_indexed_tiebreak_deviation_is_bounded`（量化）：常驻集并列逆序（模拟
-//!   load 序 vs legacy 序的 tiebreak 差异）→ 统计差异像素占比， acceptance 标准：
-//!   差异仅出现在同 (key, start) 并列音符几何重叠区（见断言注释）。
+//! 同一全集、两条管线、逐字节对比：legacy 侧消费 CPU 窗口（生产现状），
+//! cull 侧消费常驻全集（`render_culled`：COUNT→FILL→内核→legacy 渲染）：
+//! - `test_cull_render_matches_legacy`（严格）：并列同序 → 必须 bit-identical；
+//! - `test_cull_render_dense_history`（严格）：300+ 死音符下的覆盖长音必须渲染
+//!   （旧索引回溯在此漏检，cull 召回；集合层见 `global_bucket::cull_tests`）；
+//! - `test_cull_tiebreak_deviation_is_bounded`（量化）：并列逆序（load 序 vs
+//!   窗口序 tiebreak）→ 差异局限并列重叠区，总量封顶 2%。
 
-use super::*;
-use crate::{BucketSource, NoteInstance};
-use futures::executor::block_on;
+use super::test_harness::*;
+use crate::NoteInstance;
 
-const TEST_W: u32 = 256;
-const TEST_H: u32 = 144;
+use crate::CullWindow;
+use crate::waterfall_renderer::CullRenderOutcome;
 
-fn test_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("waterfall_equiv_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败")
-}
-
-fn test_uniform() -> WaterfallUniformGpu {
-    WaterfallUniformGpu {
-        tick: 5000,
-        ppq: 480,
-        key_count: 128,
-        frame_width: TEST_W,
-        frame_height: TEST_H,
-        kb_height: 17,
-        speed: 1.0,
-        _padding: 0,
-    }
-}
-
-/// 合成场景：128 键覆盖、长短音混合、刻意并列（同 key 同 start 不同颜色/长度）。
-///
-/// 返回 `(legacy_ordered, resident_order)`：legacy 输入为 `(key, start)` 稳定排序
-/// （复刻生产窗口集语义）；resident 输入为 load 序（复刻 onion 轨追加序）。
-/// `reverse_ties` 为 true 时 resident 内并列逆序（tiebreak 最大压力）。
-fn synthetic_scene(reverse_ties: bool) -> (Vec<NoteInstance>, Vec<NoteInstance>) {
+/// 合成全集（load 序）：随机 3000 + 64 组并列（每组 3 个同 key 同 start）。
+fn synthetic_full() -> Vec<NoteInstance> {
     let mut state = 0x9E37_79B9_7F4A_7C15u64;
     let mut next = move || {
         state ^= state << 13;
@@ -55,13 +23,13 @@ fn synthetic_scene(reverse_ties: bool) -> (Vec<NoteInstance>, Vec<NoteInstance>)
         state ^= state << 17;
         state
     };
-    let mut load_order = Vec::new();
+    let mut notes = Vec::new();
     for i in 0..3000u32 {
         let key = (next() % 128) as u8;
         let start = (next() % 9000) as f32;
         let len = (50 + next() % 1500) as f32;
         let shade = (i % 7) as f32 / 7.0;
-        load_order.push(NoteInstance::new(
+        notes.push(NoteInstance::new(
             start,
             key,
             len,
@@ -69,12 +37,11 @@ fn synthetic_scene(reverse_ties: bool) -> (Vec<NoteInstance>, Vec<NoteInstance>)
             0,
         ));
     }
-    // 刻意并列：同 key 同 start、不同长度/颜色（每组 3 个，64 组）。
     for g in 0..64u32 {
         let key = (g * 37 % 128) as u8;
         let start = 4000.0 + (g % 8) as f32 * 100.0;
         for v in 0..3u32 {
-            load_order.push(NoteInstance::new(
+            notes.push(NoteInstance::new(
                 start,
                 key,
                 200.0 + v as f32 * 300.0,
@@ -83,40 +50,52 @@ fn synthetic_scene(reverse_ties: bool) -> (Vec<NoteInstance>, Vec<NoteInstance>)
             ));
         }
     }
-    // legacy 窗口集：(key, start) 稳定排序（并列保持 load 相对顺序）。
-    let mut legacy_ordered = load_order.clone();
-    legacy_ordered.sort_by(|a, b| {
+    notes
+}
+
+/// 并列逆序：连续同 (key, start) 段整体反转（模拟 load 序 vs 窗口序 tiebreak 差异）。
+fn reverse_ties(mut notes: Vec<NoteInstance>) -> Vec<NoteInstance> {
+    let mut out = Vec::with_capacity(notes.len());
+    let mut run: Vec<NoteInstance> = Vec::new();
+    let key_of = |n: &NoteInstance| (n.key_color & 0xFF, n.start_length[0].max(0.0).to_bits());
+    for n in notes.drain(..) {
+        if run.last().is_some_and(|last| key_of(last) == key_of(&n)) {
+            run.push(n);
+        } else {
+            run.iter().rev().for_each(|r| out.push(*r));
+            run.clear();
+            run.push(n);
+        }
+    }
+    run.iter().rev().for_each(|r| out.push(*r));
+    out
+}
+
+/// CPU 参考窗口（生产窗口语义：同谓词 + `(key, start)` 稳定排序）。
+fn cpu_window(notes: &[NoteInstance], tick_start: u32, tick_end: u32) -> Vec<NoteInstance> {
+    let mut out: Vec<NoteInstance> = notes
+        .iter()
+        .copied()
+        .filter(|n| {
+            let key = (n.key_color & 0xFF) as usize;
+            let start = n.start_length[0].max(0.0) as u32;
+            let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+            key < 128 && end > tick_start && start < tick_end
+        })
+        .collect();
+    out.sort_by(|a, b| {
         let ka = a.key_color & 0xFF;
         let kb = b.key_color & 0xFF;
         ka.cmp(&kb).then_with(|| {
-            let sa = a.start_length[0].max(0.0);
-            let sb = b.start_length[0].max(0.0);
-            sa.total_cmp(&sb)
+            a.start_length[0]
+                .max(0.0)
+                .total_cmp(&b.start_length[0].max(0.0))
         })
     });
-    let mut resident_order = load_order;
-    if reverse_ties {
-        // 并列逆序：连续同 (key, start) 段整体反转（非并列相对顺序不变）。
-        let mut out = Vec::with_capacity(resident_order.len());
-        let mut run: Vec<NoteInstance> = Vec::new();
-        let key_of = |n: &NoteInstance| (n.key_color & 0xFF, n.start_length[0].max(0.0).to_bits());
-        for n in resident_order.drain(..) {
-            if run.last().is_some_and(|last| key_of(last) == key_of(&n)) {
-                run.push(n);
-            } else {
-                run.iter().rev().for_each(|r| out.push(*r));
-                run.clear();
-                run.push(n);
-            }
-        }
-        run.iter().rev().for_each(|r| out.push(*r));
-        resident_order = out;
-    }
-    (legacy_ordered, resident_order)
+    out
 }
 
-/// legacy 分桶偏移派生（与 `video_export::common::note_instances_to_key_offsets` 同语义，
-/// 测试内联以避免跨模块耦合；调用方须保证输入已按 key 聚簇）。
+/// legacy 分桶偏移派生（调用方须保证输入已按 key 聚簇）。
 fn key_offsets_for(notes: &[NoteInstance], key_count: usize) -> Vec<u32> {
     let mut counts = vec![0u32; key_count];
     for n in notes {
@@ -132,98 +111,32 @@ fn key_offsets_for(notes: &[NoteInstance], key_count: usize) -> Vec<u32> {
     offsets
 }
 
-fn upload_storage(
-    device: &wgpu::Device,
-    label: &'static str,
-    notes: &[NoteInstance],
-) -> wgpu::Buffer {
-    use wgpu::util::DeviceExt;
-    device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-        label: Some(label),
-        contents: bytemuck::cast_slice(notes),
-        usage: wgpu::BufferUsages::STORAGE | wgpu::BufferUsages::COPY_DST,
-    })
-}
-
-/// 输出纹理同步回读（256×144 RGBA8，行距 1024 天然对齐，无 padding）。
-fn readback_texture(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    texture: &wgpu::Texture,
-) -> Vec<u8> {
-    let bytes_per_row = TEST_W * 4;
-    let size = (bytes_per_row * TEST_H) as u64;
-    let staging = device.create_buffer(&wgpu::BufferDescriptor {
-        label: Some("waterfall_equiv_staging"),
-        size,
-        usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
-        mapped_at_creation: false,
-    });
-    let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("waterfall_equiv_readback"),
-    });
-    enc.copy_texture_to_buffer(
-        wgpu::TexelCopyTextureInfo {
-            texture,
-            mip_level: 0,
-            origin: wgpu::Origin3d::ZERO,
-            aspect: wgpu::TextureAspect::All,
-        },
-        wgpu::TexelCopyBufferInfo {
-            buffer: &staging,
-            layout: wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(bytes_per_row),
-                rows_per_image: Some(TEST_H),
-            },
-        },
-        wgpu::Extent3d {
-            width: TEST_W,
-            height: TEST_H,
-            depth_or_array_layers: 1,
-        },
-    );
-    queue.submit(Some(enc.finish()));
-    let (tx, rx) = std::sync::mpsc::channel();
-    staging
-        .slice(..)
-        .map_async(wgpu::MapMode::Read, move |result| {
-            let _ = tx.send(result);
-        });
-    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
-    loop {
-        if let Ok(map_result) = rx.try_recv() {
-            map_result.expect("等价测试回读 map 失败");
-            let data = staging.slice(..).get_mapped_range();
-            let out = data.to_vec();
-            drop(data);
-            staging.unmap();
-            return out;
+/// CPU 参考键色（生产 legacy 循环：窗口序 last-writer）。
+fn cpu_active_colors(notes: &[NoteInstance], tick: u32) -> [u32; 128] {
+    use crate::{pack_color, unpack_key_color};
+    let mut colors = [0u32; 128];
+    for n in notes.iter() {
+        let (key, rgb) = unpack_key_color(n.key_color);
+        let start = n.start_length[0].max(0.0) as u32;
+        let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+        if start <= tick && end > tick && (key as usize) < 128 {
+            colors[key as usize] = pack_color([rgb[0], rgb[1], rgb[2], 1.0]) & 0xFFFF_FF00 | 153u32;
         }
-        assert!(
-            std::time::Instant::now() < deadline,
-            "等价测试回读超时（10s）"
-        );
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
     }
+    colors
 }
 
-/// 双轨各渲染一帧并回读像素。
-fn render_both(
-    legacy_notes: &[NoteInstance],
-    resident_notes: &[NoteInstance],
-) -> (Vec<u8>, Vec<u8>) {
+/// 双轨各渲染一帧并回读像素（legacy 窗口 vs cull 全集）。
+fn render_both(window: &[NoteInstance], resident: &[NoteInstance]) -> (Vec<u8>, Vec<u8>) {
     let (device, queue) = test_device();
     let uniform = test_uniform();
-    let colors = [0u32; 128];
+    let (tick, tick_end) = test_window();
+    let colors = cpu_active_colors(window, uniform.tick);
 
     // legacy：窗口集上传 + 派生分桶。
-    let mut legacy_renderer = WaterfallRenderer::new(&device);
-    let window_buf = upload_storage(&device, "waterfall_equiv_window", legacy_notes);
-    let key_offsets = key_offsets_for(legacy_notes, 128);
+    let mut legacy_renderer = new_renderer(&device);
+    let window_buf = upload_storage(&device, "waterfall_equiv_window", window);
+    let key_offsets = key_offsets_for(window, 128);
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("waterfall_equiv_legacy"),
     });
@@ -233,83 +146,123 @@ fn render_both(
         &mut enc,
         &uniform,
         &window_buf,
-        legacy_notes.len(),
+        window.len(),
         &key_offsets,
         &colors,
     );
     let legacy_tex = legacy_renderer
         .output_texture()
         .expect("legacy 输出纹理应就绪");
-    // encoder 提交后再经 readback_texture 独立拷贝读回（纹理句柄跨 submit 有效）。
     queue.submit(Some(enc.finish()));
     let legacy_pixels = readback_texture(&device, &queue, legacy_tex);
 
-    // indexed：常驻集直绑 + 全局桶。
-    let mut indexed_renderer = WaterfallRenderer::new(&device);
-    let resident_buf = upload_storage(&device, "waterfall_equiv_resident", resident_notes);
+    // cull：常驻全集上传 + COUNT→FILL→内核→legacy 渲染。
+    let mut cull_renderer = new_renderer(&device);
+    let resident_buf = upload_storage(&device, "waterfall_equiv_resident", resident);
+    cull_renderer.mark_resident_updated();
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-        label: Some("waterfall_equiv_indexed"),
+        label: Some("waterfall_equiv_cull"),
     });
-    let ok = indexed_renderer.render_indexed(
+    match cull_renderer.render_culled(
         &device,
         &queue,
         &mut enc,
         &uniform,
-        BucketSource {
-            buffer: &resident_buf,
-            count: resident_notes.len(),
-            epoch: 7,
+        &resident_buf,
+        resident.len(),
+        CullWindow {
+            tick_start: tick,
+            tick_end,
+            key_count: 128,
         },
-        &colors,
-    );
-    assert!(ok, "索引渲染应成功（合成数据无异常）");
+    ) {
+        CullRenderOutcome::Culled { .. } => {}
+        CullRenderOutcome::FallbackNeeded => panic!("cull 渲染应成功（合成数据无异常）"),
+    }
     queue.submit(Some(enc.finish()));
-    let indexed_tex = indexed_renderer
-        .output_texture()
-        .expect("indexed 输出纹理应就绪");
-    let indexed_pixels = readback_texture(&device, &queue, indexed_tex);
+    let cull_tex = cull_renderer.output_texture().expect("cull 输出纹理应就绪");
+    let cull_pixels = readback_texture(&device, &queue, cull_tex);
 
-    (legacy_pixels, indexed_pixels)
+    (legacy_pixels, cull_pixels)
+}
+
+fn diff_bytes(a: &[u8], b: &[u8]) -> usize {
+    assert_eq!(a.len(), b.len(), "双轨输出字节数一致");
+    a.iter().zip(b.iter()).filter(|(x, y)| x != y).count()
 }
 
 #[test]
-fn test_indexed_matches_legacy_ordered() {
-    // 同序输入（并列同序）：两条路径必须 bit-identical。
-    let (legacy_notes, resident_notes) = synthetic_scene(false);
-    let (legacy_pixels, indexed_pixels) = render_both(&legacy_notes, &resident_notes);
-    assert_eq!(
-        legacy_pixels.len(),
-        indexed_pixels.len(),
-        "双轨输出字节数一致"
-    );
-    let diffs = legacy_pixels
-        .iter()
-        .zip(indexed_pixels.iter())
-        .filter(|(a, b)| a != b)
-        .count();
+fn test_cull_render_matches_legacy() {
+    // 同序输入（并列同序）：cull 窗口与 CPU 窗口同集同序 → bit-identical。
+    let full = synthetic_full();
+    let (tick, tick_end) = test_window();
+    let window = cpu_window(&full, tick, tick_end);
+    let (legacy_pixels, cull_pixels) = render_both(&window, &full);
+    let diffs = diff_bytes(&legacy_pixels, &cull_pixels);
     assert_eq!(
         diffs, 0,
-        "同序输入下双轨像素必须 bit-identical（差异字节 {diffs}）"
+        "同序输入下 cull 与 legacy 像素必须 bit-identical（差异字节 {diffs}）"
     );
 }
 
 #[test]
-fn test_indexed_tiebreak_deviation_is_bounded() {
-    // 并列逆序（tiebreak 最大压力）：差异必须局限在并列重叠区，总量封顶。
-    let (legacy_notes, resident_notes) = synthetic_scene(true);
-    let (legacy_pixels, indexed_pixels) = render_both(&legacy_notes, &resident_notes);
-    let diff_bytes = legacy_pixels
-        .iter()
-        .zip(indexed_pixels.iter())
-        .filter(|(a, b)| a != b)
-        .count();
-    let diff_pixels = diff_bytes.div_ceil(4);
+fn test_cull_render_dense_history() {
+    // 密集死历史 + 覆盖长音：cull 召回长音，像素与 CPU 窗口一致。
+    let (tick, tick_end) = test_window();
+    let mut full = vec![NoteInstance::new(
+        1000.0,
+        60,
+        9000.0,
+        [1.0, 0.2, 0.2, 1.0],
+        0,
+    )];
+    for i in 0..300u32 {
+        full.push(NoteInstance::new(
+            2000.0 + i as f32 * 10.0,
+            60,
+            5.0,
+            [0.2, 0.5, 0.9, 1.0],
+            0,
+        ));
+    }
+    for i in 0..1500u32 {
+        full.push(NoteInstance::new(
+            (i * 17 % 9000) as f32,
+            (i * 31 % 128) as u8,
+            (50 + i * 13 % 800) as f32,
+            [0.5, 0.5, 0.5, 1.0],
+            0,
+        ));
+    }
+    let window = cpu_window(&full, tick, tick_end);
+    assert!(
+        window
+            .iter()
+            .any(|n| (n.key_color & 0xFF) == 60 && n.start_length[0] == 1000.0),
+        "CPU 参考窗口应含覆盖长音（测试前提）"
+    );
+    let (legacy_pixels, cull_pixels) = render_both(&window, &full);
+    let diffs = diff_bytes(&legacy_pixels, &cull_pixels);
+    assert_eq!(
+        diffs, 0,
+        "密集死历史下 cull 必须召回长音并与 legacy 逐位一致（差异字节 {diffs}）"
+    );
+}
+
+#[test]
+fn test_cull_tiebreak_deviation_is_bounded() {
+    // 并列逆序（tiebreak 最大压力）：legacy 窗口取 load 序并列，常驻取逆序并列；
+    // cull 输出并列倒置，last-writer 取色在重叠区不同，其余逐位一致。
+    let full_ordered = synthetic_full();
+    let full_reversed = reverse_ties(full_ordered.clone());
+    let (tick, tick_end) = test_window();
+    let window = cpu_window(&full_ordered, tick, tick_end);
+    let (legacy_pixels, cull_pixels) = render_both(&window, &full_reversed);
+    let diff_pixels = diff_bytes(&legacy_pixels, &cull_pixels).div_ceil(4);
     let total_pixels = (TEST_W * TEST_H) as usize;
     let ratio = diff_pixels as f64 / total_pixels as f64;
-    // 实测基线（2026-09-05，RTX 2060）：192 个逆序并列下仅 20 像素差异（0.054%），
-    // 局限在同 (key, start) 并列几何重叠区。
-    // 验收线：并列逆序极端压力下差异像素 < 2%（并列组仅 192/3192 音符≈6%，
-    // 重叠区为其子集；超标说明 tiebreak 影响超出并列语义，需升级处理）。
+    // 验收线：并列逆序极端压力下差异像素 < 2%（差异仅来自同 (key, start) 并列的
+    // load 序 vs 窗口序 last-writer 取色不同；超标说明影响超出并列语义）。
     assert!(
         ratio < 0.02,
         "tiebreak 差异像素占比超标：{diff_pixels}/{total_pixels} = {ratio:.4}"

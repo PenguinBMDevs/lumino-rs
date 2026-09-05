@@ -22,20 +22,14 @@ pub struct SortableNote {
     pub track_idx: u16,
 }
 
-/// 窗口收集滑动状态（瀑布流/MIDITrail 逐帧窗口收集复用，避免每帧 O(前缀) 扫描）。
+/// 导出参数构建暂存（首帧全量收集 + 排序复用，避免每帧大分配）。
 ///
-/// 视频导出 tick 严格单调递增（frame_idx 递增），每轨窗口下界 `lo` 只向前推进：
-/// 首帧（或 tick 回退/轨道数变化时重置）做一次 O(前缀) 建窗，后续每帧仅为
-/// O(log 块数) 上界二分 + O(新进入/退出) 增量推进，全导出摊还 O(N)。
-/// 输出集合与旧"每帧从 0 扫描"逐元素一致（含跨视口长音符）。
+/// 历史注：曾含滑动窗口游标（`cursors/last_tick`，逐帧窗口收集增量推进）；
+/// GPU cull 接管窗口过滤后逐帧收集已删除（首帧全量 + 稳态跳过），游标随之删除，
+/// 仅保留排序暂存（`collect_all_notes` 后的计数排序仍需它）。
 #[derive(Default)]
 pub struct WindowCollectState {
-    /// 每轨窗口下界（全局索引）：`[0, cursors[t])` 内音符已确认过期（`end <= 上帧 tick`），
-    /// 直接跳过；`[cursors[t], …)` 仍需逐音符判断 `end_tick`（超长音符后的过期短音符）。
-    cursors: Vec<usize>,
-    /// 上帧 `tick_start`（回退检测：tick 减小即重置全部游标）。
-    last_tick: u32,
-    /// `sort_visible_notes` 计数排序暂存（常驻复用，消每帧 V×SortableNote 分配）。
+    /// `sort_visible_notes` 计数排序暂存（常驻复用，消首帧 N×SortableNote 分配）。
     sort_scratch: Vec<SortableNote>,
 }
 
@@ -58,7 +52,7 @@ pub struct RenderParamsInput<'a> {
     pub note_instances_out: &'a mut Vec<NoteInstance>,
     /// 首帧全量收集（全文档音符一次上传）；后续帧跳过收集，渲染线程复用 GPU 常驻数据。
     pub collect_all: bool,
-    /// 瀑布流/MIDITrail 窗口收集滑动状态（tick 单调递增时增量推进，见 `WindowCollectState`）。
+    /// 排序暂存（首帧全量排序复用，见 `WindowCollectState`）。
     pub window_state: &'a mut WindowCollectState,
 }
 
@@ -97,6 +91,8 @@ pub(crate) struct WaterfallRenderInput<'a> {
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
     pub window_state: &'a mut WindowCollectState,
+    /// 首帧全量（导出常驻一次上传，窗口过滤走 GPU cull）；后续帧跳过收集只发 uniforms。
+    pub collect_all: bool,
 }
 
 /// MIDITrail 模式 `build_miditrail_render_params` 入参（内部分发用）
@@ -114,6 +110,8 @@ pub(crate) struct MiditrailRenderInput<'a> {
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
     pub window_state: &'a mut WindowCollectState,
+    /// 首帧全量（导出常驻一次上传，窗口过滤走 GPU cull）；后续帧跳过收集只发 uniforms。
+    pub collect_all: bool,
 }
 
 mod miditrail;
@@ -174,6 +172,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             visible_notes,
             note_instances_out,
             window_state,
+            collect_all,
         })),
         RenderMode::MIDITrail => Some(build_miditrail_render_params(MiditrailRenderInput {
             width,
@@ -193,6 +192,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             visible_notes,
             note_instances_out,
             window_state,
+            collect_all,
         })),
         RenderMode::NoteRectangle => Some(build_note_rectangle_render_params(
             NoteRectangleRenderInput {
@@ -212,65 +212,38 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
     }
 }
 
-/// 滑动窗口收集：`[tick_start, tick_end)` 内可见音符（含跨视口长音符）。
+/// 首帧全量收集：全文档音符（无窗口过滤，窗口过滤走 GPU cull）。
 ///
-/// 与旧"每帧从 0 扫描到 `search_end`"输出集合逐元素一致，但均摊 O(窗口变化量)：
-/// - 上界：`partition_point` 二分定位（O(log 块数)），与 `note_search_bounds` 同公式；
-/// - 下界：`state.cursors[t]` 只向前推进（跳过 `end_tick <= tick_start` 的过期音符），
-///   tick 单调递增保证每个音符全导出最多被跳过一次；
-/// - 重置：轨道数变化或 tick 回退时游标清零，下一帧重建（单次 O(前缀)，与旧行为一致）。
-///
-/// 调用方须保证同一导出任务内复用同一个 `state`（跨任务/Seek 必须用新 state 或触发重置）。
-pub(crate) fn collect_window_notes(
+/// 与窗口收集的区别仅在过滤条件：此处不过滤 `end_tick/start_tick`，只做 key 范围
+/// 过滤（u16 比较；窗口路径的 `key_count as u8` 在 key_count=256 时回绕的上游
+/// quirk 此处不继承）。输出经调用方排序 + 打包后即导出常驻内容（桶建其上）。
+/// 调用方须保证同一导出任务首帧调用一次（`collect_all`），后续帧跳过。
+pub(crate) fn collect_all_notes(
     document: &MidiDocument,
-    tick_start: u32,
-    tick_end: u32,
     key_count: u16,
-    state: &mut WindowCollectState,
     visible_notes: &mut Vec<SortableNote>,
 ) {
-    let track_count = document.notes.len();
-    if state.cursors.len() != track_count || tick_start < state.last_tick {
-        state.cursors.clear();
-        state.cursors.resize(track_count, 0);
-    }
-    state.last_tick = tick_start;
-
     visible_notes.clear();
     for (track_idx, track_notes) in document.notes.iter().enumerate() {
-        if track_notes.is_empty() {
-            continue;
-        }
-        // 下界推进：踢掉已结束音符（单调 tick 下每音符最多推进一次）。
-        // `get` O(log 块数)，推进总量全导出摊还 O(N)。
-        let mut lo = state.cursors[track_idx];
-        while let Some(n) = track_notes.get(lo) {
-            if n.end_tick > tick_start {
-                break;
-            }
-            lo += 1;
-        }
-        state.cursors[track_idx] = lo;
-        // 上界二分：第一个 `start_tick > tick_end` 的索引（与 `note_search_bounds` 同公式）。
-        let search_end = track_notes.partition_point(tick_end.wrapping_add(1));
-        // 窗口内过滤：`iter_window` 经块偏移直接定位 lo，规避 `iter().skip(lo)` 的
-        // O(lo) 平铺扫描。`end_tick > tick_start` 必须逐音符判断——游标只保证
-        // `[0, lo)` 全过期，lo 之后的短音符仍可能已结束（如超长音符排在过期
-        // 短音符之前时游标停在长音符处）。`start_tick < tick_end` 排除右边界。
-        for (_, n) in track_notes.iter_window(lo, search_end) {
-            if n.end_tick > tick_start && n.start_tick < tick_end && n.key < key_count as u8 {
+        let track_idx = track_idx as u16;
+        for n in track_notes.iter() {
+            if (n.key as u16) < key_count {
                 visible_notes.push(SortableNote {
                     key: n.key,
                     start_tick: n.start_tick,
                     length: n.end_tick.saturating_sub(n.start_tick),
-                    track_idx: track_idx as u16,
+                    track_idx,
                 });
             }
         }
     }
 }
 
-/// 窗口收集分段打点（首 3 帧 + 每 300 帧）：用数据验证收集/排序/打包耗时，
+// 注：滑动窗口收集（`collect_window_notes` + 游标）已删除——GPU cull 接管窗口过滤
+//（见 `bucket_cull.wgsl` 头注），逐帧 CPU 收集是导出主瓶颈；`note_search_bounds`
+// 保留供流式重做复用。删除内容 git 历史可查。
+
+/// 首帧收集分段打点（+ 每 300 帧）：用数据验证收集/排序/打包耗时，
 /// 替代"感觉慢"的体感归因。输出示例：
 /// `waterfall收集打点: collect=120us sort=3400us pack=900us visible=262713`。
 pub(crate) fn diag_window_collect(
@@ -282,7 +255,7 @@ pub(crate) fn diag_window_collect(
 ) {
     static DIAG_COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
     let n = DIAG_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    if n < 3 || n % 300 == 0 {
+    if n < 3 || n.is_multiple_of(300) {
         tracing::info!(
             "{mode}收集打点[{n}]: collect={collect_us}us sort={sort_us}us pack={pack_us}us visible={visible}"
         );

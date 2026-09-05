@@ -4,6 +4,7 @@
 //! 再由导出管线读回 CPU 并编码为视频帧。
 
 mod aura;
+mod cull;
 mod instances;
 mod key_press;
 mod math;
@@ -17,7 +18,7 @@ mod types;
 pub use instances::pack_color;
 pub use types::{
     MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailDrivenParamsGpu, MiditrailInstanceGpu,
-    MiditrailNoteGpu, MiditrailUniformGpu, MiditrailViewMode,
+    MiditrailNoteGpu, MiditrailUniformGpu, MiditrailViewMode, miditrail_viewport_span,
 };
 
 use crate::NoteInstance;
@@ -104,6 +105,15 @@ pub struct MiditrailRenderer {
     /// `NoteInstance` → `MiditrailNoteGpu` 换算暂存（跨帧复用；36 万可见时约
     /// 11.7MB，每帧新建是毫秒级分配器开销）。仅视频导出 `render_from_instances` 用。
     scratch_derived: Vec<MiditrailNoteGpu>,
+    /// 导出全量常驻缓冲（首帧一次上传，`seed_resident`；无 CPU 镜像）。
+    resident_buffer: Option<crate::gpu_resource_tracker::TrackedBuffer>,
+    resident_capacity: usize,
+    resident_count: usize,
+    /// 常驻窗口提取器（桶一次构建，常驻复用；见 `cull.rs`）。
+    resident_cull: crate::ResidentCull,
+    /// cull compact 回读暂存（V×16B，按需扩容）与 CPU 切片（跨帧复用）。
+    cull_staging: Option<crate::gpu_resource_tracker::TrackedBuffer>,
+    cull_cpu: Vec<crate::NoteInstance>,
 
     // Aura 相关资源
     aura_pipeline: wgpu::RenderPipeline,
@@ -226,6 +236,12 @@ impl MiditrailRenderer {
             scratch_keys: Vec::new(),
             scratch_auras: Vec::new(),
             scratch_derived: Vec::new(),
+            resident_buffer: None,
+            resident_capacity: 0,
+            resident_count: 0,
+            resident_cull: crate::ResidentCull::new(),
+            cull_staging: None,
+            cull_cpu: Vec::new(),
             aura_pipeline,
             aura_vertex_buffer,
             aura_index_buffer,

@@ -1,13 +1,14 @@
 //! 瀑布流模式参数（产出统一 `note_instances` + 瀑布流 uniforms）
 //!
-//! 单一权威飞行格式：收集窗口可见音符并打包为 `NoteInstance`。
-//! 注意：此处必须保留逐帧窗口过滤（而非首帧全量）——shader 桶内二分回溯
-//! 上限（SEARCH_BUFFER=128）是按窗口过滤后的桶标定的；全量历史入桶会污染
-//! 回溯预算，导致长音尾部在 dense 段丢失像素。窗口公式与 shader 侧一致。
+//! 单一权威飞行格式：首帧全量收集（`collect_all`，无窗口过滤）并打包为
+//! `NoteInstance`——渲染侧一次上传导出常驻，全局桶建其上；后续帧跳过收集
+//! （`note_instances` 为空）只发 uniforms，窗口过滤走 GPU cull
+//!（与旧窗口收集同谓词、同序，像素等价 harness 保证）。legacy 回退路径
+//!（cull 不可用）消费首帧全量（已排序，回退正确）。
 
 use lumino_gfx::RenderParams;
 
-use super::{WaterfallRenderInput, collect_window_notes, pack_note_instances};
+use super::{WaterfallRenderInput, collect_all_notes, pack_note_instances};
 
 /// 瀑布流模式参数
 pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> RenderParams {
@@ -22,44 +23,36 @@ pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> Rend
         visible_notes,
         note_instances_out,
         window_state,
+        collect_all,
     } = input;
     let waterfall_width = width.max(1) as f32;
     let waterfall_height = height.max(1) as f32;
 
-    // 可见 tick 窗口与 shader 侧 `viewport_tick_span` 同公式（速度越高窗口越窄）。
-    let speed = waterfall_scroll_speed.max(0.1);
-    let ticks_per_measure = ppq * 4;
-    let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
-    let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1);
-    let tick_start = tick;
-    let tick_end = tick.saturating_add(viewport_tick_span);
+    if collect_all {
+        // 首帧全量：无窗口过滤（cull 在 GPU 侧做），排序 + 打包与窗口路径同函数。
+        let t_collect = std::time::Instant::now();
+        collect_all_notes(document, key_count, visible_notes);
+        let collect_us = t_collect.elapsed().as_micros() as u64;
 
-    // 滑动窗口收集（O(窗口变化量)，tick 单调递增下游标只推进；输出与旧逐帧全前缀扫描一致）。
-    let t_collect = std::time::Instant::now();
-    collect_window_notes(
-        document,
-        tick_start,
-        tick_end,
-        key_count,
-        window_state,
-        visible_notes,
-    );
-    let collect_us = t_collect.elapsed().as_micros() as u64;
-
-    let t_sort = std::time::Instant::now();
-    super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
-    let sort_us = t_sort.elapsed().as_micros() as u64;
-    // 边框仅钢琴卷帘矩形管线使用，瀑布流换算忽略，填 0。
-    let t_pack = std::time::Instant::now();
-    pack_note_instances(visible_notes, 0, note_instances_out);
-    let pack_us = t_pack.elapsed().as_micros() as u64;
-    super::diag_window_collect(
-        "waterfall",
-        collect_us,
-        sort_us,
-        pack_us,
-        visible_notes.len(),
-    );
+        let t_sort = std::time::Instant::now();
+        super::sort_visible_notes(visible_notes, &mut window_state.sort_scratch);
+        let sort_us = t_sort.elapsed().as_micros() as u64;
+        // 边框仅钢琴卷帘矩形管线使用，瀑布流换算忽略，填 0。
+        let t_pack = std::time::Instant::now();
+        pack_note_instances(visible_notes, 0, note_instances_out);
+        let pack_us = t_pack.elapsed().as_micros() as u64;
+        super::diag_window_collect(
+            "waterfall-full",
+            collect_us,
+            sort_us,
+            pack_us,
+            visible_notes.len(),
+        );
+    } else {
+        // 稳态帧：跳过收集/排序/打包（渲染侧复用 GPU 常驻 + cull），只发 uniforms。
+        visible_notes.clear();
+        note_instances_out.clear();
+    }
 
     RenderParams {
         viewport_size: (width.max(1), height.max(1)),

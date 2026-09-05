@@ -15,9 +15,15 @@
 //! `sort_visible_notes` tiebreak 为 track 降序——差异由像素等价 harness 量化验收。
 
 mod build;
+mod cull;
+#[cfg(test)]
+mod cull_tests;
 mod support;
 #[cfg(test)]
 mod tests;
+
+pub use cull::{CullExtract, CullWindow, ResidentCull, prefix_counts};
+pub(crate) use support::readback_bytes_sync;
 
 use crate::gpu_resource_tracker::TrackedBuffer;
 
@@ -45,6 +51,9 @@ pub enum GlobalBucketError {
     /// 回读数据长度异常。
     #[error("回读数据长度异常：期望 {expected}，实际 {got}")]
     BadLength { expected: usize, got: usize },
+    /// cull 内部资源缺失（管线/暂存未就绪，正常路径不应发生）。
+    #[error("cull 内部资源缺失: {0}")]
+    CullResource(&'static str),
 }
 
 /// 全局桶索引：一次构建，常驻复用。
@@ -62,7 +71,7 @@ pub struct GlobalBucketIndex {
 
 /// 全局桶构建源（调用方传入，渲染器内部缓存判定用）。
 ///
-/// 打包常驻缓冲三要素，避免 `render_indexed` 类接口参数爆炸；
+/// 打包常驻缓冲三要素，避免 cull 提取类接口参数爆炸；
 /// miditrail 集成时复用同一结构。
 #[derive(Debug)]
 pub struct BucketSource<'a> {

@@ -83,6 +83,40 @@ pub(crate) fn make_bind_group(
     })
 }
 
+/// 变长同步回读（staging 由调用方按需扩容；cull compact V×16B 传输用）。
+///
+/// 读回模式与 `readback_u256` 一致：`map_async` + `device.poll(Wait)` + 5s 兜底。
+/// 返回 staging 全长的字节拷贝（调用方按实际长度 cast）。
+pub(crate) fn readback_bytes_sync(
+    device: &wgpu::Device,
+    staging: &wgpu::Buffer,
+) -> Result<Vec<u8>, GlobalBucketError> {
+    let (tx, rx) = mpsc::channel();
+    staging
+        .slice(..)
+        .map_async(wgpu::MapMode::Read, move |result| {
+            let _ = tx.send(result);
+        });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(map_result) = rx.try_recv() {
+            map_result.map_err(|e| GlobalBucketError::MapFailed(format!("{e:?}")))?;
+            let data = staging.slice(..).get_mapped_range();
+            let out = data.to_vec();
+            drop(data);
+            staging.unmap();
+            return Ok(out);
+        }
+        if Instant::now() >= deadline {
+            return Err(GlobalBucketError::MapTimeout);
+        }
+        let _ = device.poll(wgpu::PollType::Wait {
+            submission_index: None,
+            timeout: None,
+        });
+    }
+}
+///
 /// 1KB 直方图同步回读（staging 由调用方复用；一次性构建成本）。
 ///
 /// 读回模式沿用 `export_pipeline/staging.rs`：`MAP_READ | COPY_DST` staging +

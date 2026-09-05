@@ -1,14 +1,20 @@
-//! Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
+//! Miditrail 3D 帧渲染：首帧全量常驻 + 每帧 GPU cull 窗口 → legacy 精确渲染。
 //!
-//! 窗口集直达 3D 渲染器（24M 级文档下全量常驻意味着 390MB 显存＋
-//! 390MB 镜像＋每帧两次全量扫描，约 100ms/帧，已实测；窗口传输按可见集收敛）。
-//! 派生输入（`MiditrailNoteGpu`）由渲染器内部换算（跨帧复用暂存，不经过跨线程存储）。
+//! UI 首帧发送全量 `note_instances`（`collect_all`，一次上传自有常驻）；后续帧只发
+//! uniforms，窗口由 cull 内核提取并回读（V×16B），走未经修改的 legacy
+//! `render_from_instances`——像素与现状逐位一致（集合等价 harness 保证），
+//! 2026-09-05 的 driven 视觉 veto 不触发。渲染侧 CPU 只剩 compact 换算与实例构建
+//!（窗口级），UI 侧 collect/sort/pack 归零。
+//! cull 不可用时回退所带音符（首帧全量/空帧黑帧 + 错误日志，属防御路径）。
+//!
 //! 注意：钢琴卷帘共享缓冲（`frame.renderers.note`）此处不碰——3D 管线自有实例缓冲，
 //! 往共享缓冲上传是纯死工作（memcpy＋write_buffer＋cull bind group 重建）。
 
 use super::common::{CopyDrainInput, copy_texture_and_drain};
+use crate::CullWindow;
 use crate::MiditrailRenderer;
 use crate::MiditrailUniformGpu;
+use crate::miditrail_renderer::miditrail_viewport_span;
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
 
@@ -62,34 +68,67 @@ pub(super) fn handle_miditrail_frame(
         _padding1: 0,
     };
 
-    // 换算＋实例构建＋上传＋绘制全在渲染器内部（暂存跨帧复用，零每帧大分配）。
-    let t_render = std::time::Instant::now();
+    // 常驻：非空帧播种（首帧全量；后续帧为空，跳过零上传）。
+    if !params.note_instances.is_empty() {
+        renderer.seed_resident(&ctx.device, &ctx.queue, &params.note_instances);
+    }
+    // cull 窗口与 UI 收集同公式（`miditrail_viewport_span` 共享，保证谓词一致）。
+    let tick = params.miditrail_current_tick;
+    let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
+    let tick_end = tick.saturating_add(miditrail_viewport_span(
+        params.ppq as u32,
+        params.miditrail_speed,
+        params.miditrail_z_far,
+    ));
+
+    let t_work = std::time::Instant::now();
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("miditrail_encoder"),
         });
 
-    // 回退到 legacy CPU 路径（2026-09-05 driven 实验前的原始状态）：
-    // UI 实测键盘顶层/前面层异常＋提速不达预期，先恢复最后已知良好状态，
-    // 根因查明前 Normal 也不走 driven（`render_gpu_driven` 保留供 example 继续验证）。
-    renderer.render_from_instances(
-        &ctx.device,
-        &ctx.queue,
-        &mut encoder,
-        &uniform,
-        &params.note_instances,
-    );
-    let render_us = t_render.elapsed().as_micros() as u64;
-    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：与 UI 侧收集打点对齐，
-    // 即可确认 recv 里 CPU 计算 vs GPU 绘制/读回各占多少。
+    // cull 提取 + 回读 → legacy 精确渲染（Normal/Top 双视图保持现状像素）。
+    // cull 失败回退所带音符（首帧全量已排序，回退正确；空帧黑帧 + 错误日志）。
+    let window = CullWindow {
+        tick_start: tick,
+        tick_end,
+        key_count,
+    };
+    let (path_label, note_total) = match renderer.cull_window(&ctx.device, &ctx.queue, window) {
+        Ok(window) => {
+            let n = window.len();
+            renderer.render_from_instances(
+                &ctx.device,
+                &ctx.queue,
+                &mut encoder,
+                &uniform,
+                &window,
+            );
+            renderer.restore_window(window);
+            ("cull-legacy", n)
+        }
+        Err(e) => {
+            tracing::error!("Miditrail cull 失败，回退所带音符: {e}");
+            let n = params.note_instances.len();
+            renderer.render_from_instances(
+                &ctx.device,
+                &ctx.queue,
+                &mut encoder,
+                &uniform,
+                &params.note_instances,
+            );
+            ("legacy-fallback", n)
+        }
+    };
+    let work_us = t_work.elapsed().as_micros() as u64;
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：work 含 cull 两次提交 + 回读 + legacy 渲染调度。
     {
         static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 3 || n.is_multiple_of(300) {
             tracing::info!(
-                "miditrail渲染打点[{n}]: render={render_us}us notes={}",
-                params.note_instances.len()
+                "miditrail渲染打点[{n}]: path={path_label} work={work_us}us notes={note_total}"
             );
         }
     }
