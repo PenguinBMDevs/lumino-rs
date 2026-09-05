@@ -54,6 +54,8 @@ struct MemoryEnqueueCtx<'a> {
     csv_writer: &'a mut Option<BufWriter<std::fs::File>>,
     visible_note_buf: &'a mut Vec<SortableNote>,
     note_instances_buf: &'a mut Vec<lumino_gfx::NoteInstance>,
+    /// 首帧全量上传标记：首帧收集全文档音符常驻 GPU，后续帧跳过收集（uniform 驱动重裁剪）。
+    notes_uploaded: &'a mut bool,
 }
 
 /// 内存模式单帧入队（原 `run_video_export_task` 内嵌 `enqueue_frame` 闭包抽出的自由函数）。
@@ -293,6 +295,7 @@ fn enqueue_memory_frame(
             return true;
         }
     } else {
+        let collect_all = !*ctx.notes_uploaded;
         let Some(params) =
             video_export::build_video_export_render_params(video_export::RenderParamsInput {
                 width: ctx.width,
@@ -310,6 +313,7 @@ fn enqueue_memory_frame(
                 fps: ctx.fps_f64 as f32,
                 visible_notes: ctx.visible_note_buf,
                 note_instances_out: ctx.note_instances_buf,
+                collect_all,
             })
         else {
             send_export_error(
@@ -318,6 +322,8 @@ fn enqueue_memory_frame(
             );
             return true;
         };
+        // 首帧全量数据已随本帧发出，后续帧只发 uniforms，复用 GPU 常驻数据。
+        *ctx.notes_uploaded = true;
 
         if ctx
             .cmd_sender
@@ -531,6 +537,8 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
     // 复用缓冲区避免每帧堆分配
     let mut visible_note_buf: Vec<SortableNote> = Vec::with_capacity(4096);
     let mut note_instances_buf: Vec<lumino_gfx::NoteInstance> = Vec::with_capacity(4096);
+    // 首帧全量上传标记（GPU 常驻后后续帧只发 uniforms）
+    let mut notes_uploaded = false;
 
     // 闭包不捕获 param_queue，而是作为参数传入，避免与主循环中的 pop_front 产生可变借用冲突。
     let mut ctx = MemoryEnqueueCtx {
@@ -563,6 +571,7 @@ pub(super) fn run_video_export_task(input: RunVideoExportTaskInput) {
         csv_writer: &mut csv_writer,
         visible_note_buf: &mut visible_note_buf,
         note_instances_buf: &mut note_instances_buf,
+        notes_uploaded: &mut notes_uploaded,
     };
     let mut enqueue_frame = |queue: &mut EncodeFrameQueue, frame_idx: u64| -> bool {
         enqueue_memory_frame(&mut ctx, queue, frame_idx)

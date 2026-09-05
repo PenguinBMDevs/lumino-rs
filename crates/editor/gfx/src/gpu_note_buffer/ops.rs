@@ -32,6 +32,14 @@ impl GpuNoteBuffer {
     pub fn gpu_memory_usage(&self) -> usize {
         self.instance_buffer.size() as usize
     }
+
+    /// 共享 CPU 镜像只读视图（供渲染线程派生计算复用，零第二份 CPU 拷贝）。
+    ///
+    /// 不变式：镜像仅在 `upload_all` 路径维护；流式上传（`begin_streaming_upload`）
+    /// 会清空镜像，调用方须保证此前走的是全量上传。
+    pub fn shared_cpu_instances(&self) -> &[crate::NoteInstance] {
+        &self.instances
+    }
 }
 
 #[cfg(test)]

@@ -1,11 +1,15 @@
 //! Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
 //!
-//! 派生输入（`MiditrailNoteGpu`）由渲染线程按需换算，不经过跨线程存储。
+//! 首帧全量一次上传常驻共享缓冲，后续帧只发 uniforms；
+//! 可见过滤与派生输入（`MiditrailNoteGpu`）读 CPU 镜像按需换算，不经过跨线程存储。
 
 use super::common::{CopyDrainInput, copy_texture_and_drain, note_instances_to_miditrail};
 use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
-use crate::{MiditrailRenderer, MiditrailUniformGpu};
+use crate::{
+    MiditrailRenderer, MiditrailUniformGpu,
+    miditrail_renderer::{MIDITRAIL_MAX_Z_FAR_DISTANCE, MIDITRAIL_SCENE_DEPTH},
+};
 
 /// Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
 pub(super) fn handle_miditrail_frame(
@@ -15,6 +19,14 @@ pub(super) fn handle_miditrail_frame(
     width: u32,
     height: u32,
 ) {
+    // 1. 首帧全量上传常驻共享缓冲；后续帧复用常驻数据，读镜像做可见过滤。
+    if !params.note_instances.is_empty() {
+        frame
+            .renderers
+            .note
+            .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+    }
+    let mirror = frame.renderers.note.shared_cpu_instances();
     if frame.miditrail_renderer.is_none() {
         *frame.miditrail_renderer = Some(MiditrailRenderer::new(&ctx.device));
     }
@@ -56,8 +68,19 @@ pub(super) fn handle_miditrail_frame(
         _padding1: 0,
     };
 
-    // 派生输入按需换算（函数内临时值，不经过跨线程存储）
-    let notes = note_instances_to_miditrail(&params.note_instances);
+    // 派生输入按需换算（函数内临时值，不经过跨线程存储）。
+    // 可见窗口与旧生产侧同公式：按 Z 显示距离缩放，避免白收集数倍音符。
+    let z_far_scale = (params.miditrail_z_far.max(0.1) / MIDITRAIL_SCENE_DEPTH).clamp(
+        0.1 / MIDITRAIL_SCENE_DEPTH,
+        MIDITRAIL_MAX_Z_FAR_DISTANCE / MIDITRAIL_SCENE_DEPTH,
+    );
+    let speed = params.miditrail_speed.max(0.1);
+    let viewport_tick_span =
+        ((params.ppq.max(1.0) as u32 * 4 * ((4.0 / speed).round()).max(1.0) as u32).max(1) as f32
+            * z_far_scale) as u32;
+    let tick_start = params.miditrail_current_tick;
+    let tick_end = tick_start.saturating_add(viewport_tick_span.max(1));
+    let notes = note_instances_to_miditrail(mirror, tick_start, tick_end);
     let notes = &notes;
 
     let mut encoder = ctx

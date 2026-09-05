@@ -1,8 +1,9 @@
 //! 瀑布流帧渲染：compute shader 全 GPU 渲染，写入 storage texture 后读回。
 //!
-//! 音符零拷贝：权威 `note_instances` 先落共享 `GpuNoteBuffer`
-//! （与钢琴卷帘导出同一份显存），compute 直接绑定该缓冲，
-//! 派生分桶偏移与活跃键色按需换算。
+//! 窗口集逐帧上传共享 `GpuNoteBuffer`（与钢琴卷帘导出同一份显存，
+//! 瀑布流自有 `note_buffer` 已删除）；compute 直接绑定共享缓冲，
+//! 派生分桶偏移与活跃键色按需换算（无堆分配）。
+//! 注意：窗口为空帧跳过上传，此时偏移/键色按空集算（黑帧），不得读镜像旧数据。
 
 use super::common::{CopyDrainInput, copy_texture_and_drain, note_instances_to_key_offsets};
 use crate::miditrail_renderer::pack_color;
@@ -10,7 +11,7 @@ use crate::render_thread::params::RenderParams;
 use crate::render_thread::render_loop::runner::context::{RenderContext, RenderFrameState};
 use crate::{WaterfallRenderer, WaterfallUniformGpu, unpack_key_color};
 
-/// 处理视频导出瀑布流帧：共享缓冲上传 → compute dispatch → staging 读回。
+/// 处理视频导出瀑布流帧：窗口集上传共享缓冲 → 每帧 uniforms → compute dispatch → staging 读回。
 pub(super) fn handle_waterfall_frame(
     ctx: &RenderContext,
     params: RenderParams,
@@ -18,8 +19,7 @@ pub(super) fn handle_waterfall_frame(
     width: u32,
     height: u32,
 ) {
-    // 1. 权威数据落共享缓冲（钢琴卷帘导出上传的是同一块显存，零第二份拷贝）。
-    //    空帧跳过上传：偏移表全零，shader 无命中，与旧行为一致。
+    // 窗口集落共享缓冲（上传内容与 params 一致；空窗口跳过上传并按空集派生）。
     if !params.note_instances.is_empty() {
         frame
             .renderers
@@ -27,6 +27,7 @@ pub(super) fn handle_waterfall_frame(
             .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
     }
     let (shared_buffer, _) = frame.renderers.note.gpu_note_buffer_for_sharing();
+    let notes = &params.note_instances;
 
     // 初始化瀑布流渲染器
     if frame.waterfall_renderer.is_none() {
@@ -58,14 +59,14 @@ pub(super) fn handle_waterfall_frame(
         _padding: 0,
     };
 
-    // 派生分桶偏移（唯一的每帧派生数据，129 u32，可忽略）
+    // 派生分桶偏移（唯一的每帧派生 GPU 数据，129 u32，可忽略）
     let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
-    let key_offsets = note_instances_to_key_offsets(&params.note_instances, key_count);
+    let key_offsets = note_instances_to_key_offsets(notes, key_count);
 
     // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
     let tick_u = params.waterfall_current_tick;
     let mut active_key_colors = [0u32; 128];
-    for n in &params.note_instances {
+    for n in notes {
         let (key, rgb) = unpack_key_color(n.key_color);
         let start = n.start_length[0].max(0.0) as u32;
         let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
@@ -91,7 +92,7 @@ pub(super) fn handle_waterfall_frame(
         &mut encoder,
         &uniform,
         &shared_buffer,
-        params.note_instances.len(),
+        notes.len(),
         &key_offsets,
         &active_key_colors,
     );

@@ -1,7 +1,9 @@
 //! 瀑布流模式参数（产出统一 `note_instances` + 瀑布流 uniforms）
 //!
-//! 单一权威飞行格式：只收集可见音符并打包为 `NoteInstance`，
-//! compute 所需的分桶偏移与活跃键色由渲染线程按需换算（shader 直读共享缓冲）。
+//! 单一权威飞行格式：收集窗口可见音符并打包为 `NoteInstance`。
+//! 注意：此处必须保留逐帧窗口过滤（而非首帧全量）——shader 桶内二分回溯
+//! 上限（SEARCH_BUFFER=128）是按窗口过滤后的桶标定的；全量历史入桶会污染
+//! 回溯预算，导致长音尾部在 dense 段丢失像素。窗口公式与 shader 侧一致。
 
 use lumino_gfx::RenderParams;
 
@@ -33,6 +35,7 @@ pub(crate) fn build_waterfall_render_params(input: WaterfallRenderInput) -> Rend
 
     // 每轨按 start_tick 有序 → 二分窗口定位，避免每帧 O(N) 全量遍历
     visible_notes.clear();
+    note_instances_out.clear();
     for (track_idx, track_notes) in document.notes.iter().enumerate() {
         if track_notes.is_empty() {
             continue;

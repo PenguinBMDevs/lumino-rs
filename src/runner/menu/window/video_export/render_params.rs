@@ -41,6 +41,8 @@ pub struct RenderParamsInput<'a> {
     pub fps: f32,
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
+    /// 首帧全量收集（全文档音符一次上传）；后续帧跳过收集，渲染线程复用 GPU 常驻数据。
+    pub collect_all: bool,
 }
 
 /// NoteRectangle 模式 `build_note_rectangle_params_from_visible` 入参
@@ -63,6 +65,7 @@ pub(crate) struct NoteRectangleRenderInput<'a> {
     pub ppq: u32,
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
+    pub collect_all: bool,
 }
 
 /// 瀑布流模式 `build_waterfall_render_params` 入参（内部分发用）
@@ -92,6 +95,7 @@ pub(crate) struct MiditrailRenderInput<'a> {
     pub fps: f32,
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
+    pub collect_all: bool,
 }
 
 mod miditrail;
@@ -137,6 +141,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
         fps,
         visible_notes,
         note_instances_out,
+        collect_all,
     } = input;
     match render_mode {
         RenderMode::Waterfall => Some(build_waterfall_render_params(WaterfallRenderInput {
@@ -167,6 +172,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             fps,
             visible_notes,
             note_instances_out,
+            collect_all,
         })),
         RenderMode::NoteRectangle => Some(build_note_rectangle_render_params(
             NoteRectangleRenderInput {
@@ -177,6 +183,7 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
                 ppq,
                 visible_notes,
                 note_instances_out,
+                collect_all,
             },
         )),
         RenderMode::NoteCounter => None,
@@ -319,6 +326,7 @@ pub(crate) fn build_note_rectangle_params_from_visible(
 
 /// 计算音符数组的二分搜索窗口 `[start, end)`（半开区间）
 ///
+/// 保留供流式重做使用（全量常驻模式暂不需要逐帧窗口）：
 /// `MidiDocument.notes` 每轨按 `start_tick` 升序排列（见 document.rs）。
 /// 视口 `[tick_start, tick_end]` 内的可见音符必然满足：
 /// - `start_tick <= tick_end`（音符必须已开始）；

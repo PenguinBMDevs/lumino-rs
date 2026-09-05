@@ -82,16 +82,24 @@ pub(crate) fn note_instances_to_key_offsets(notes: &[NoteInstance], key_count: u
     offsets
 }
 
-/// 从权威 `note_instances` 换算 3D 派生数据。
+/// 从权威 `note_instances` 换算 3D 派生数据（窗口内可见部分）。
 ///
 /// 实例构建只读 key/start/end/color（见 `build_note_instances`），
 /// track/力度/通道填默认值即可，行为与旧生产侧一致。
-pub(crate) fn note_instances_to_miditrail(notes: &[NoteInstance]) -> Vec<MiditrailNoteGpu> {
-    let mut derived = Vec::with_capacity(notes.len());
+/// 越界 key 由下游 `build_*_instances` 按 `key_positions` 长度跳过，无需预过滤。
+pub(crate) fn note_instances_to_miditrail(
+    notes: &[NoteInstance],
+    tick_start: u32,
+    tick_end: u32,
+) -> Vec<MiditrailNoteGpu> {
+    let mut derived = Vec::new();
     for n in notes {
         let (key, rgb) = unpack_key_color(n.key_color);
         let start = n.start_length[0].max(0.0) as u32;
         let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+        if end <= tick_start || start >= tick_end {
+            continue;
+        }
         derived.push(MiditrailNoteGpu {
             key: key as u32,
             start_tick: start,
