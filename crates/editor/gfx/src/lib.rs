@@ -12,6 +12,7 @@ pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
+mod global_bucket;
 mod gpu_note_buffer;
 mod gpu_resource_tracker;
 pub mod grid;
@@ -44,6 +45,7 @@ pub use cc_bar_renderer::{
     build_cc_bar_instances,
 };
 pub use context::{Context, ContextError, Result};
+pub use global_bucket::{GlobalBucketError, GlobalBucketIndex};
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};
 pub use grid_renderer::{GridLineInstance, GridPrepareParams, GridRenderer};
