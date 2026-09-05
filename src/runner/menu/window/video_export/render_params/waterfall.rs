@@ -1,7 +1,7 @@
 //! 瀑布流模式参数（产出统一 `note_instances` + 瀑布流 uniforms）
 //!
 //! 单一权威飞行格式：只收集可见音符并打包为 `NoteInstance`，
-//! 瀑布流 compute 所需的 `WaterfallNoteGpu` + 分桶偏移由渲染线程按需换算。
+//! compute 所需的分桶偏移与活跃键色由渲染线程按需换算（shader 直读共享缓冲）。
 
 use lumino_gfx::RenderParams;
 

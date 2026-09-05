@@ -74,7 +74,7 @@ pub use miditrail_renderer::{
     MiditrailNoteGpu, MiditrailRenderer, MiditrailUniformGpu, MiditrailViewMode, pack_color,
 };
 pub use render_thread::{RenderParams, WgpuRenderThread};
-pub use waterfall_renderer::{WaterfallNoteGpu, WaterfallRenderer, WaterfallUniformGpu};
+pub use waterfall_renderer::{WaterfallRenderer, WaterfallUniformGpu};
 /// 重导出 wgpu 纹理格式，供 UI 层匹配视频导出像素格式
 pub use wgpu::TextureFormat;
 

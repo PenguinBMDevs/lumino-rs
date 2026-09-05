@@ -202,12 +202,6 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置网格线实例
-    pub fn grid_instances(mut self, instances: Vec<GridLineInstance>) -> Self {
-        self.grid_instances = instances;
-        self
-    }
-
     /// 设置标尺刻度实例
     pub fn ruler_instances(mut self, instances: Vec<RulerTickInstance>) -> Self {
         self.ruler_instances = instances;
@@ -259,18 +253,6 @@ impl RenderParamsBuilder {
         self
     }
 
-    /// 设置音轨总览模式：文档音轨 → 泳道序号 映射
-    pub fn arrangement_lane_index(mut self, lane_index: Vec<f32>) -> Self {
-        self.arrangement_lane_index = lane_index;
-        self
-    }
-
-    /// 设置音轨总览模式：音符着色器 uniform
-    pub fn arrangement_note_uniform(mut self, uniform: ArrangementNoteUniform) -> Self {
-        self.arrangement_note_uniform = uniform;
-        self
-    }
-
     /// 设置音轨总览模式 uniform
     pub fn arrangement_uniform(mut self, uniform: ArrangementUniform) -> Self {
         self.arrangement_uniform = uniform;
@@ -304,24 +286,6 @@ impl RenderParamsBuilder {
     /// 设置拍号变化列表
     pub fn time_signatures(mut self, time_signatures: Vec<(u32, u8, u8)>) -> Self {
         self.time_signatures = time_signatures;
-        self
-    }
-
-    /// 设置目标帧率（用于动画时间步长）。
-    pub fn fps(mut self, fps: f32) -> Self {
-        self.fps = fps;
-        self
-    }
-
-    /// 设置 Miditrail 视图模式（Normal 普通 / Top 顶部）。
-    pub fn miditrail_view_mode(mut self, view_mode: MiditrailViewMode) -> Self {
-        self.miditrail_view_mode = view_mode;
-        self
-    }
-
-    /// 设置 Miditrail 光晕环动画时间基准（每秒 tick 数；0 表示由渲染线程回退估算）。
-    pub fn miditrail_ticks_per_second(mut self, ticks_per_second: f32) -> Self {
-        self.miditrail_ticks_per_second = ticks_per_second;
         self
     }
 

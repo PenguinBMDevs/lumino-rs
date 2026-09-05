@@ -9,10 +9,9 @@ use super::super::textures::{OffscreenTextureResources, ensure_textures};
 use super::context::{RenderContext, RenderFrameState, RenderThreadChannels};
 
 pub(crate) mod common;
-pub(crate) use common::{
-    note_instances_to_miditrail, note_instances_to_waterfall, render_video_frame_command,
-    start_video_export,
-};
+mod miditrail;
+mod waterfall;
+pub(crate) use common::{render_video_frame_command, start_video_export};
 
 /// 推进视频导出 inflight 帧读回。
 ///
@@ -75,13 +74,13 @@ pub(super) fn handle_video_frame(
 
     // 瀑布流模式：使用 compute shader 全 GPU 渲染
     if params.is_waterfall_mode {
-        handle_waterfall_frame(ctx, params, frame, width, height);
+        waterfall::handle_waterfall_frame(ctx, params, frame, width, height);
         return;
     }
 
     // Miditrail 模式：使用 3D wgpu 渲染管线
     if params.miditrail_enabled {
-        handle_miditrail_frame(ctx, params, frame, width, height);
+        miditrail::handle_miditrail_frame(ctx, params, frame, width, height);
         return;
     }
 
@@ -188,235 +187,6 @@ pub(super) fn handle_video_frame(
     while let Some(data) = pipeline.try_read() {
         if tx.0.send(data).is_err() {
             tracing::warn!("视频帧发送失败：Runner 通道已关闭");
-            return;
-        }
-    }
-}
-
-/// 瀑布流帧渲染：使用 compute shader 全 GPU 渲染，写入 storage texture 后读回。
-fn handle_waterfall_frame(
-    ctx: &RenderContext,
-    params: RenderParams,
-    frame: &mut RenderFrameState,
-    width: u32,
-    height: u32,
-) {
-    use crate::{WaterfallRenderer, WaterfallUniformGpu};
-
-    // 初始化瀑布流渲染器
-    if frame.waterfall_renderer.is_none() {
-        *frame.waterfall_renderer = Some(WaterfallRenderer::new(&ctx.device));
-    }
-    // 不变式：上面 is_none 判断后必然已创建；release 下若异常缺失则跳过本帧而非崩溃
-    let renderer = match frame.waterfall_renderer.as_mut() {
-        Some(r) => r,
-        None => {
-            debug_assert!(false, "waterfall_renderer 应已初始化（is_none 分支已创建）");
-            return;
-        }
-    };
-
-    // 键盘高度：帧高的 12%
-    let kb_height = ((height as f64) * 0.12).round() as u32;
-    let kb_height = kb_height.max(20).min(height / 3);
-
-    // 构建 uniform 参数
-    // 注意：使用 waterfall_current_tick（MIDI tick 值），而非 scroll.0（像素位置 = tick * zoom_x）
-    let uniform = WaterfallUniformGpu {
-        tick: params.waterfall_current_tick,
-        ppq: params.ppq as u32,
-        key_count: (params.max_key_index + 1.0) as u32,
-        frame_width: width,
-        frame_height: height,
-        kb_height,
-        speed: params.waterfall_speed.max(0.1),
-        _padding: 0,
-    };
-
-    // 派生数据按需换算：飞行中只有权威 note_instances，瀑布流输入由此算出，不另存。
-    let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
-    let (notes, key_offsets) = note_instances_to_waterfall(&params.note_instances, key_count);
-    let notes = &notes;
-    let key_offsets = &key_offsets;
-
-    // 构建活跃键颜色数组（128 个 u32，0 表示无高亮）
-    let mut active_key_colors = [0u32; 128];
-    for note in notes {
-        let tick_u = params.waterfall_current_tick;
-        if note.start_tick <= tick_u && note.end_tick > tick_u {
-            let key = note.key as usize;
-            if key < 128 {
-                // 使用音符颜色作为活跃键高亮（混合 60% 透明度）
-                // color_packed 为 0xRRGGBBAA（调色板颜色，由 pack_color 打包），
-                // 与 shader 中 unpack_color 的 RRGGBBAA 解包保持一致
-                let c = note.color_packed;
-                let r = (c >> 24) & 0xFF;
-                let g = (c >> 16) & 0xFF;
-                let b = (c >> 8) & 0xFF;
-                // 存储 0xRRGGBBAA，alpha=153 表示 60% 混合（与 shader 中 blend_key_color 的 alpha 参数匹配）
-                active_key_colors[key] = (r << 24) | (g << 16) | (b << 8) | 153u32;
-            }
-        }
-    }
-
-    // 创建编码器
-    let mut encoder = ctx
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("waterfall_encoder"),
-        });
-
-    // dispatch compute shader（派生输入为函数内临时值，不经过跨线程存储）
-    renderer.render(
-        &ctx.device,
-        &ctx.queue,
-        &mut encoder,
-        &uniform,
-        notes,
-        key_offsets,
-        &active_key_colors,
-    );
-
-    // 获取输出纹理并拷贝到 staging buffer（流水线模式由 pipeline_ready 保证已初始化）
-    let pipeline = match frame.export_pipeline.as_mut() {
-        Some(p) => p,
-        None => {
-            debug_assert!(false, "export_pipeline 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-    let tx = match frame.export_frame_tx.as_ref() {
-        Some(t) => t,
-        None => {
-            debug_assert!(false, "export_frame_tx 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-
-    pipeline.ensure_size(width, height);
-    while !pipeline.can_write() {
-        let data = pipeline.wait_read();
-        if tx.0.send(data).is_err() {
-            tracing::warn!("瀑布流帧发送失败：Runner 通道已关闭");
-            return;
-        }
-    }
-
-    if let Some(tex) = renderer.output_texture() {
-        pipeline.copy_and_submit(encoder, tex, &ctx.queue);
-    } else {
-        tracing::warn!("瀑布流输出纹理未就绪");
-        // 即使没有输出纹理，也必须提交空编码器，否则 GPU 队列死锁
-        ctx.queue.submit(std::iter::once(encoder.finish()));
-        return;
-    }
-
-    // 非阻塞读回已就绪帧
-    while let Some(data) = pipeline.try_read() {
-        if tx.0.send(data).is_err() {
-            tracing::warn!("瀑布流帧发送失败：Runner 通道已关闭");
-            return;
-        }
-    }
-}
-
-/// Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
-fn handle_miditrail_frame(
-    ctx: &RenderContext,
-    params: RenderParams,
-    frame: &mut RenderFrameState,
-    width: u32,
-    height: u32,
-) {
-    use crate::{MiditrailRenderer, MiditrailUniformGpu};
-
-    if frame.miditrail_renderer.is_none() {
-        *frame.miditrail_renderer = Some(MiditrailRenderer::new(&ctx.device));
-    }
-    // 不变式：上面 is_none 判断后必然已创建；release 下若异常缺失则跳过本帧而非崩溃
-    let renderer = match frame.miditrail_renderer.as_mut() {
-        Some(r) => r,
-        None => {
-            debug_assert!(false, "miditrail_renderer 应已初始化（is_none 分支已创建）");
-            return;
-        }
-    };
-
-    let kb_height = ((height as f64) * 0.12).round() as u32;
-    let kb_height = kb_height.max(20).min(height / 3);
-
-    // 光晕环动画时间基准：导出参数已按当前 BPM 计算；
-    // 0（未知，如默认参数）回退到 120 BPM（ppq × 2）。
-    let ticks_per_second = if params.miditrail_ticks_per_second > 0.0 {
-        params.miditrail_ticks_per_second
-    } else {
-        params.ppq.max(1.0) * 2.0
-    };
-
-    let uniform = MiditrailUniformGpu {
-        tick: params.miditrail_current_tick,
-        ppq: params.ppq as u32,
-        key_count: (params.max_key_index + 1.0) as u32,
-        frame_width: width,
-        frame_height: height,
-        kb_height,
-        _reserved: 0,
-        speed: params.miditrail_speed.max(0.1),
-        param1: params.waterfall_speed.max(0.1),
-        param2: 0.0,
-        fps: params.fps.max(1.0),
-        z_far_distance: params.miditrail_z_far.max(0.1),
-        view_mode: params.miditrail_view_mode,
-        ticks_per_second,
-        _padding1: 0,
-    };
-
-    let notes = note_instances_to_miditrail(&params.note_instances);
-    let notes = &notes;
-
-    let mut encoder = ctx
-        .device
-        .create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("miditrail_encoder"),
-        });
-
-    renderer.render(&ctx.device, &ctx.queue, &mut encoder, &uniform, notes);
-
-    let pipeline = match frame.export_pipeline.as_mut() {
-        Some(p) => p,
-        None => {
-            debug_assert!(false, "export_pipeline 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-    let tx = match frame.export_frame_tx.as_ref() {
-        Some(t) => t,
-        None => {
-            debug_assert!(false, "export_frame_tx 应已初始化（pipeline_ready 已保证）");
-            return;
-        }
-    };
-
-    pipeline.ensure_size(width, height);
-    while !pipeline.can_write() {
-        let data = pipeline.wait_read();
-        if tx.0.send(data).is_err() {
-            tracing::warn!("Miditrail 帧发送失败：Runner 通道已关闭");
-            return;
-        }
-    }
-
-    if let Some(tex) = renderer.output_texture() {
-        pipeline.copy_and_submit(encoder, tex, &ctx.queue);
-    } else {
-        tracing::warn!("Miditrail 输出纹理未就绪");
-        ctx.queue.submit(std::iter::once(encoder.finish()));
-        return;
-    }
-
-    while let Some(data) = pipeline.try_read() {
-        if tx.0.send(data).is_err() {
-            tracing::warn!("Miditrail 帧发送失败：Runner 通道已关闭");
             return;
         }
     }

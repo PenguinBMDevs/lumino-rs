@@ -1,10 +1,11 @@
 use crate::miditrail_renderer::pack_color;
+use crate::render_thread::commands::FrameSender;
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::render_loop::Renderers;
 use crate::render_thread::render_loop::runner::context::{
     RenderFrameState, VideoExportFrameContext, VideoExportSetupContext,
 };
-use crate::{MiditrailNoteGpu, NoteInstance, WaterfallNoteGpu, unpack_key_color};
+use crate::{MiditrailNoteGpu, NoteInstance, unpack_key_color};
 
 use super::handle_video_frame;
 
@@ -54,62 +55,31 @@ pub(crate) fn render_video_frame_command(context: VideoExportFrameContext<'_>) {
     handle_video_frame(context.ctx, context.params, &mut frame, context.channels);
 }
 
-/// 从权威 `note_instances` 换算瀑布流派生数据（key 分桶排序 + 偏移表）。
+/// 从权威 `note_instances` 换算瀑布流分桶偏移表（派生索引，可忽略）。
 ///
-/// 替代已删除的 `RenderParams.waterfall_notes / waterfall_key_offsets` 跨线程 Vec：
-/// 颜色经 `key_color` 打包往返（通道误差 ≤1/255，视觉无差），起止由
-/// `start_length` 还原，排序语义与旧生产侧一致（桶内按 start 稳定排序，
-/// 满足 shader 桶内二分回溯前提）。
-pub(crate) fn note_instances_to_waterfall(
-    notes: &[NoteInstance],
-    key_count: usize,
-) -> (Vec<WaterfallNoteGpu>, Vec<u32>) {
+/// 调用方须保证输入已按 (key, start) 有序（`sort_visible_notes` 语义），
+/// 输出 `offsets[k]` = 第一个 `key >= k` 的音符索引，满足 shader 桶内二分前提。
+/// 音符本体零拷贝——shader 直接读共享缓冲，本表是唯一的每帧派生数据。
+pub(crate) fn note_instances_to_key_offsets(notes: &[NoteInstance], key_count: usize) -> Vec<u32> {
     let key_count = key_count.max(1);
-    let mut derived = Vec::with_capacity(notes.len());
-    for n in notes {
-        let (key, rgb) = unpack_key_color(n.key_color);
-        if (key as usize) >= key_count {
-            continue;
-        }
-        let start = n.start_length[0].max(0.0) as u32;
-        let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
-        derived.push(WaterfallNoteGpu {
-            key: key as u32,
-            start_tick: start,
-            end_tick: end,
-            color_packed: pack_color([rgb[0], rgb[1], rgb[2], 1.0]),
-        });
-    }
     let mut counts = vec![0u32; key_count];
-    for n in &derived {
-        counts[n.key as usize] += 1;
+    for n in notes {
+        let (key, _) = unpack_key_color(n.key_color);
+        // 不变式：瀑布流生产侧已按 key_count 过滤（见 render_params/waterfall.rs），
+        // 共享缓冲内不应出现越界 key，否则分桶边界错位。
+        debug_assert!(
+            (key as usize) < key_count,
+            "共享缓冲含越界 key {key}（key_count={key_count}）"
+        );
+        if (key as usize) < key_count {
+            counts[key as usize] += 1;
+        }
     }
     let mut offsets = vec![0u32; key_count + 1];
     for k in 0..key_count {
         offsets[k + 1] = offsets[k] + counts[k];
     }
-    let mut sorted = vec![
-        WaterfallNoteGpu {
-            key: 0,
-            start_tick: 0,
-            end_tick: 0,
-            color_packed: 0,
-        };
-        derived.len()
-    ];
-    let mut cursor = offsets[..key_count].to_vec();
-    for n in &derived {
-        let k = n.key as usize;
-        sorted[cursor[k] as usize] = *n;
-        cursor[k] += 1;
-    }
-    let mut seg_start = 0usize;
-    for k in 0..key_count {
-        let seg_end = offsets[k + 1] as usize;
-        sorted[seg_start..seg_end].sort_by_key(|n| n.start_tick);
-        seg_start = seg_end;
-    }
-    (sorted, offsets)
+    offsets
 }
 
 /// 从权威 `note_instances` 换算 3D 派生数据。
@@ -134,4 +104,48 @@ pub(crate) fn note_instances_to_miditrail(notes: &[NoteInstance]) -> Vec<Miditra
         });
     }
     derived
+}
+
+/// 导出管线收尾：尺寸对齐 → 背压读最早帧 → copy 离屏纹理到 staging 并提交 → 非阻塞读回。
+///
+/// 瀑布流 / 3D 两个 compute/3D 处理器共用，差异仅在日志标签。
+/// 调用方须保证 `encoder` 内已写入目标纹理的渲染命令。
+pub(crate) fn copy_texture_and_drain(input: CopyDrainInput<'_>) {
+    let CopyDrainInput {
+        pipeline,
+        tx,
+        encoder,
+        texture,
+        queue,
+        width,
+        height,
+        label,
+    } = input;
+    pipeline.ensure_size(width, height);
+    while !pipeline.can_write() {
+        let data = pipeline.wait_read();
+        if tx.0.send(data).is_err() {
+            tracing::warn!("{label}帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+    pipeline.copy_and_submit(encoder, texture, queue);
+    while let Some(data) = pipeline.try_read() {
+        if tx.0.send(data).is_err() {
+            tracing::warn!("{label}帧发送失败：Runner 通道已关闭");
+            return;
+        }
+    }
+}
+
+/// `copy_texture_and_drain` 入参（替代 8 个位置参数，消除 `too_many_arguments`）
+pub(crate) struct CopyDrainInput<'a> {
+    pub pipeline: &'a mut ExportPipeline,
+    pub tx: &'a FrameSender,
+    pub encoder: wgpu::CommandEncoder,
+    pub texture: &'a wgpu::Texture,
+    pub queue: &'a wgpu::Queue,
+    pub width: u32,
+    pub height: u32,
+    pub label: &'static str,
 }

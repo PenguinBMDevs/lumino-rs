@@ -93,24 +93,17 @@ fn enqueue_memory_frame(
         key_colors: *ctx.key_colors,
     });
 
-    // 瀑布流/计数器模式（CPU 端渲染）：绕过 GPU compute shader + readback 开销
-    // 参考 Zenith-MIDI 和 fmr 的视频导出策略——CPU 渲染直出 BGRA，无需 GPU 管线参与。
-    // waterfall.wgsl compute shader 每像素扫描所有音符(O(notes×pixels))，
-    // GPU→CPU 回读(staging buffer)引入额外延迟，而 CPU 路径仅需 O(visible_notes)。
+    // 计数器/数据曲线/MidiConsole 模式（CPU 端渲染）：绕过 GPU 开销，BGRA 直出。
+    // 注：瀑布流走 GPU compute 管线（见 RenderMode::Waterfall 的 GPU 分支），此处无 CPU 分支。
     if ctx.is_cpu_renderer {
         let mut frame_data = vec![0u8; (ctx.width as usize) * (ctx.height as usize) * 4];
         match ctx.render_mode {
             RenderMode::Waterfall => {
-                video_export::render_waterfall_frame(video_export::WaterfallFrameInput {
-                    frame: &mut frame_data,
-                    frame_width: ctx.width,
-                    frame_height: ctx.height,
-                    document: ctx.document,
-                    tick,
-                    ppq: ctx.ppq,
-                    key_count: ctx.key_count,
-                    waterfall_speed: ctx.waterfall_scroll_speed,
-                });
+                send_export_error(
+                    ctx.progress_tx,
+                    "导出失败：Waterfall 模式不应进入 CPU 渲染分支（内部错误）",
+                );
+                return true;
             }
             RenderMode::NoteCounter => {
                 // 计数器模式：统计推进 + 文本模板渲染（无卷帘/键盘/标尺）

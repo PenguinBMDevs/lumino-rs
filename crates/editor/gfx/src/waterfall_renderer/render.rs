@@ -1,6 +1,8 @@
-//! 每帧渲染（上传数据 + dispatch compute shader）
+//! 每帧渲染（上传 uniform/派生索引 + dispatch compute shader）
+//!
+//! 音符数据零上传：直接绑定调用方权威 `NoteInstance` 常驻缓冲。
 
-use super::{WaterfallNoteGpu, WaterfallRenderer, WaterfallUniformGpu};
+use super::{WaterfallRenderer, WaterfallUniformGpu};
 
 impl WaterfallRenderer {
     /// 渲染瀑布流帧。
@@ -10,7 +12,8 @@ impl WaterfallRenderer {
     /// - `queue` — wgpu 队列
     /// - `encoder` — 命令编码器（compute pass 将追加到此 encoder）
     /// - `params` — 瀑布流 uniform 参数
-    /// - `notes` — 音符数据切片（按 (key, start_tick) 升序排列）
+    /// - `note_buffer` — 权威 `NoteInstance` 常驻缓冲（调用方所有，`binding(1)` 只读绑定；
+    ///   内容须按 (key, start_tick) 升序排列，与 `key_offsets` 一致）
     /// - `key_offsets` — 分桶偏移表（len = key_count + 1），桶 k 区间为
     ///   `[key_offsets[k], key_offsets[k+1])`。动态分桶：支持任意 key 数量。
     ///   为空时回退为单桶（全部音符），shader 仍可工作。
@@ -22,7 +25,8 @@ impl WaterfallRenderer {
         queue: &wgpu::Queue,
         encoder: &mut wgpu::CommandEncoder,
         params: &WaterfallUniformGpu,
-        notes: &[WaterfallNoteGpu],
+        note_buffer: &wgpu::Buffer,
+        note_count: usize,
         key_offsets: &[u32],
         active_key_colors: &[u32; 128],
     ) {
@@ -32,16 +36,14 @@ impl WaterfallRenderer {
             return;
         }
 
-        // 确保资源已创建
+        // 确保自有资源已创建（音符缓冲归调用方，此处不创建）
         self.ensure_output_texture(device, width, height);
-        self.ensure_note_buffer(device, notes.len());
         self.ensure_active_key_colors_buffer(device);
         self.ensure_key_offsets_buffer(device, key_offsets.len().saturating_sub(1));
 
-        // 重建 bind group（如果资源发生了变化）
-        if self.bind_group.is_none() {
-            self.rebuild_bind_group(device);
-        }
+        // 共享缓冲句柄可能因调用方扩容而变化，每次重建绑定（仅离屏导出路径使用）。
+        self.bind_group = None;
+        self.rebuild_bind_group(device, note_buffer);
 
         // 上传 uniform
         queue.write_buffer(
@@ -50,18 +52,12 @@ impl WaterfallRenderer {
             bytemuck::cast_slice(&[*params]),
         );
 
-        // 上传音符数据
-        if let Some(ref buf) = self.note_buffer {
-            let note_bytes = bytemuck::cast_slice(notes);
-            queue.write_buffer(buf.inner(), 0, note_bytes);
-        }
-
         // 上传分桶偏移表（空时回退单桶：全部音符归入 key 0 桶。
         // 注意必须上传完整 key_count+1 长度，shader 会访问 key_offsets[key_count]）
         if let Some(ref buf) = self.key_offsets_buffer {
             if key_offsets.is_empty() {
                 // 单桶回退：key 0 桶 = [0, len]，其余 key 桶为空
-                let mut offsets = vec![notes.len() as u32; params.key_count as usize + 1];
+                let mut offsets = vec![note_count as u32; params.key_count as usize + 1];
                 offsets[0] = 0;
                 queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&offsets));
             } else {
