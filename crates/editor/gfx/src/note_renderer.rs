@@ -111,11 +111,6 @@ impl NoteRenderer {
         )
     }
 
-    /// 共享 CPU 镜像只读视图（供渲染线程派生活跃键/分桶等计算复用，零第二份拷贝）。
-    pub fn shared_cpu_instances(&self) -> &[crate::NoteInstance] {
-        self.gpu_note_buffer.shared_cpu_instances()
-    }
-
     /// 更新视图状态（当前音轨 + 静音位图）
     ///
     /// 统一全量渲染（2026-08-06）：主音轨 = 洋葱皮 buffer 中 `current_track`

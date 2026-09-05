@@ -80,6 +80,14 @@ pub struct MiditrailRenderer {
     key_widths: Vec<f32>,
     last_key_count: u32,
     key_press_factors: [f32; 128],
+    /// 实例构建暂存（跨帧复用，避免每帧大堆分配；渲染循环单线程独占）。
+    ///
+    /// 高密度导出（70 万可见音符）下 `entries` 约 39MB、`note_instances` 约 33MB，
+    /// 每帧新建是毫秒级开销；复用后仅首次分配。
+    scratch_entries: Vec<(u64, MiditrailInstanceGpu)>,
+    scratch_notes: Vec<MiditrailInstanceGpu>,
+    scratch_keys: Vec<MiditrailInstanceGpu>,
+    scratch_auras: Vec<MiditrailAuraInstanceGpu>,
 
     // Aura 相关资源
     aura_pipeline: wgpu::RenderPipeline,
@@ -169,6 +177,10 @@ impl MiditrailRenderer {
             key_widths: Vec::new(),
             last_key_count: 0,
             key_press_factors: [0.0; 128],
+            scratch_entries: Vec::new(),
+            scratch_notes: Vec::new(),
+            scratch_keys: Vec::new(),
+            scratch_auras: Vec::new(),
             aura_pipeline,
             aura_vertex_buffer,
             aura_index_buffer,
@@ -224,15 +236,18 @@ impl MiditrailRenderer {
             notes
         };
 
-        let mut note_instances = Vec::with_capacity(notes.len());
+        let mut note_instances = std::mem::take(&mut self.scratch_notes);
+        note_instances.clear();
         build_note_instances(
             uniform,
             notes,
             &self.key_positions,
             &self.key_widths,
             &mut note_instances,
+            &mut self.scratch_entries,
         );
-        let mut key_instances = Vec::with_capacity(uniform.key_count as usize);
+        let mut key_instances = std::mem::take(&mut self.scratch_keys);
+        key_instances.clear();
         // Top 键盘不要按下位移（俯视下位移丑且无意义），只保留颜色反馈：
         // 传全零 press 数组，`update_key_press_factors` 照常更新内部状态，
         // 切回 Normal 时按压动画无缝衔接。
@@ -265,7 +280,8 @@ impl MiditrailRenderer {
             }
         }
 
-        let mut aura_instances = Vec::new();
+        let mut aura_instances = std::mem::take(&mut self.scratch_auras);
+        aura_instances.clear();
         if !is_top {
             // Aura 四边形在俯视下与视线垂直（零面积）天然不可见，
             // Top 直接跳过实例构建与绘制（CPU + GPU 双省）。
@@ -303,6 +319,10 @@ impl MiditrailRenderer {
             &aura_instances,
             is_top,
         );
+        // 暂存 Vec 归还（保留容量，下一帧零分配复用）。
+        self.scratch_notes = note_instances;
+        self.scratch_keys = key_instances;
+        self.scratch_auras = aura_instances;
     }
 
     /// 获取输出纹理引用。

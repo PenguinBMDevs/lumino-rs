@@ -93,7 +93,6 @@ pub(crate) struct MiditrailRenderInput<'a> {
     pub fps: f32,
     pub visible_notes: &'a mut Vec<SortableNote>,
     pub note_instances_out: &'a mut Vec<NoteInstance>,
-    pub collect_all: bool,
 }
 
 mod miditrail;
@@ -170,7 +169,6 @@ pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<Rend
             fps,
             visible_notes,
             note_instances_out,
-            collect_all,
         })),
         RenderMode::NoteRectangle => Some(build_note_rectangle_render_params(
             NoteRectangleRenderInput {

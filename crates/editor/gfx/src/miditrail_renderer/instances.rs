@@ -127,6 +127,7 @@ pub fn build_note_instances(
     key_positions: &[f32],
     key_widths: &[f32],
     out: &mut Vec<MiditrailInstanceGpu>,
+    scratch_entries: &mut Vec<(u64, MiditrailInstanceGpu)>,
 ) {
     let tick = uniform.tick;
     let ppq = uniform.ppq.max(1);
@@ -146,7 +147,10 @@ pub fn build_note_instances(
     // `sort_unstable_by_key` 只比较一个 u64，且仅移动 56B 元组（而非闭包比较
     // 时重复计算 is_black_key 模运算与浮点比较）。基准：10 万音符时排序
     // 4.96ms → 1.87ms（省 62%），视觉结果与旧三键 total_cmp 排序严格一致。
-    let mut entries: Vec<(u64, MiditrailInstanceGpu)> = Vec::with_capacity(notes.len());
+    // scratch 由调用方提供并跨帧复用（高密度下约 56B×V，避免每帧大堆分配）。
+    let entries = scratch_entries;
+    entries.clear();
+    entries.reserve(notes.len());
     for note in notes {
         if !note.is_visible_at(tick) {
             continue;
@@ -213,7 +217,7 @@ pub fn build_note_instances(
     // 省约 60%）；稳定性保留旧语义——完全同键（同 key 同 start 的和弦叠音）
     // 按输入顺序绘制，与旧实现一致，避免同位置音符覆盖顺序不确定导致闪烁。
     entries.sort_by_key(|(sort_key, _)| *sort_key);
-    out.extend(entries.into_iter().map(|(_, instance)| instance));
+    out.extend(entries.drain(..).map(|(_, instance)| instance));
 }
 
 /// 构建琴键实例。

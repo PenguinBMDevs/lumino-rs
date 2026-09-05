@@ -64,7 +64,15 @@ fn test_note_instances_sort_key_equivalent() {
     );
     // 新实现
     let mut actual_instances = Vec::new();
-    build_note_instances(&uniform, &notes, &positions, &widths, &mut actual_instances);
+    let mut scratch = Vec::new();
+    build_note_instances(
+        &uniform,
+        &notes,
+        &positions,
+        &widths,
+        &mut actual_instances,
+        &mut scratch,
+    );
 
     assert_eq!(
         expected_instances.len(),
