@@ -62,7 +62,7 @@ fn test_miditrail_instances_bench() {
     );
 
     // 热身
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     for _ in 0..3 {
         let active_keys = compute_active_keys(uniform.tick, &notes_1x);
         let mut out = Vec::with_capacity(notes_1x.len());
@@ -85,7 +85,7 @@ fn test_miditrail_instances_bench() {
     let mut t_sort = 0u64;
     let mut t_sort_x_total = 0u64;
     let mut t_sort_s_total = 0u64;
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     for _ in 0..ITERS {
         let t0 = Instant::now();
         let active_keys = compute_active_keys(uniform.tick, &notes);

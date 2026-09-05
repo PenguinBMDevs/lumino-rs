@@ -33,7 +33,7 @@ fn test_note_instances_sorted_by_depth() {
         },
     ];
     let mut out = Vec::new();
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     build_note_instances(
         &uniform,
         &notes,
@@ -82,7 +82,7 @@ fn test_note_instances_grouped_by_key_color() {
         },
     ];
     let mut out = Vec::new();
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     build_note_instances(
         &uniform,
         &notes,
@@ -132,7 +132,7 @@ fn test_note_instances_clipped_at_z_far_distance() {
         _padding: 0,
     }];
     let mut out = Vec::new();
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     build_note_instances(
         &uniform,
         &notes,
@@ -207,7 +207,7 @@ fn test_note_instances_window_scale_equivalence() {
     assert!(notes_1x.len() < notes.len(), "1.0× 窗口应裁剪掉部分音符");
 
     let mut out_full = Vec::new();
-    let mut scratch = Vec::new();
+    let mut scratch = NoteBuildScratch::default();
     build_note_instances(
         &uniform,
         &notes,

@@ -22,7 +22,7 @@ pub use types::{
 
 use aura::{create_aura_buffers, create_aura_sampler, generate_aura_ring_data};
 use instances::{
-    ActiveKeys, build_aura_instances, build_key_instances, build_note_instances,
+    ActiveKeys, NoteBuildScratch, build_aura_instances, build_key_instances, build_note_instances,
     compute_active_keys, update_key_positions,
 };
 use math::build_camera_uniform;
@@ -80,11 +80,11 @@ pub struct MiditrailRenderer {
     key_widths: Vec<f32>,
     last_key_count: u32,
     key_press_factors: [f32; 128],
-    /// 实例构建暂存（跨帧复用，避免每帧大堆分配；渲染循环单线程独占）。
+    /// 实例构建暂存集（跨帧复用，避免每帧大堆分配；渲染循环单线程独占）。
     ///
-    /// 高密度导出（70 万可见音符）下 `entries` 约 39MB、`note_instances` 约 33MB，
+    /// 高密度导出（70 万可见音符）下实例缓冲约 33MB × 2、排序索引约 11MB × 2，
     /// 每帧新建是毫秒级开销；复用后仅首次分配。
-    scratch_entries: Vec<(u64, MiditrailInstanceGpu)>,
+    scratch_build: NoteBuildScratch,
     scratch_notes: Vec<MiditrailInstanceGpu>,
     scratch_keys: Vec<MiditrailInstanceGpu>,
     scratch_auras: Vec<MiditrailAuraInstanceGpu>,
@@ -180,7 +180,7 @@ impl MiditrailRenderer {
             key_widths: Vec::new(),
             last_key_count: 0,
             key_press_factors: [0.0; 128],
-            scratch_entries: Vec::new(),
+            scratch_build: NoteBuildScratch::default(),
             scratch_notes: Vec::new(),
             scratch_keys: Vec::new(),
             scratch_auras: Vec::new(),
@@ -332,7 +332,7 @@ impl MiditrailRenderer {
             &self.key_positions,
             &self.key_widths,
             &mut note_instances,
-            &mut self.scratch_entries,
+            &mut self.scratch_build,
         );
         let build_notes_us = t_build_notes.elapsed().as_micros() as u64;
         let mut key_instances = std::mem::take(&mut self.scratch_keys);

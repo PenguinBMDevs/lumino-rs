@@ -120,14 +120,36 @@ pub fn boost_color_packed(packed: u32, amount: f32) -> u32 {
     (((r * 255.0) as u32) << 24) | (((g * 255.0) as u32) << 16) | (((b * 255.0) as u32) << 8) | a
 }
 
+/// `build_note_instances` 跨帧复用的暂存集（调用方持有，零每帧分配）。
+///
+/// 四块缓冲各司其职：`order` 存 (排序键, 下标) 供 radix 排序；`gather`
+/// 存按序 gather 后的实例（与 `out` swap）；`radix` 是基数排序 ping-pong
+/// 副缓冲；`hist` 复用 65536 桶直方图。由渲染器/测试持有并跨帧复用。
+#[derive(Debug, Default)]
+pub struct NoteBuildScratch {
+    /// (排序键, `out` 下标)，radix 排序输入/输出。
+    pub order: Vec<(u64, u32)>,
+    /// gather 暂存（与 `out` swap）。
+    pub gather: Vec<MiditrailInstanceGpu>,
+    /// radix ping-pong 副缓冲。
+    pub radix: Vec<(u64, u32)>,
+    /// 65536 桶直方图复用。
+    pub hist: Vec<u32>,
+}
+
 /// 构建可见音符的实例数据。
+///
+/// 排序解耦为"索引排序 + gather"两步：`scratch.order` 存 (排序键, 下标) 16B
+/// 元组并用 LSD 基数排序（稳定，与 `sort_by_key` 输出严格一致，见
+/// sort_equivalence 回归测试），再按排好序的下标把 `out` 中的实例 gather
+/// 到 `scratch.gather` 后 swap 回 `out`。
 pub fn build_note_instances(
     uniform: &MiditrailUniformGpu,
     notes: &[MiditrailNoteGpu],
     key_positions: &[f32],
     key_widths: &[f32],
     out: &mut Vec<MiditrailInstanceGpu>,
-    scratch_entries: &mut Vec<(u64, MiditrailInstanceGpu)>,
+    scratch: &mut NoteBuildScratch,
 ) {
     let tick = uniform.tick;
     let ppq = uniform.ppq.max(1);
@@ -142,15 +164,16 @@ pub fn build_note_instances(
     let z_far_distance = uniform.z_far_distance.max(0.1);
     let z_far = note_z_offset - z_far_distance;
 
-    // 打包排序键 + 实例，避免 (key, z_start, Instance) 三键闭包排序：
-    // 排序键 = is_black(1bit) | z 可排序位(32bit) | key(32bit) 打包为 u64，
-    // `sort_unstable_by_key` 只比较一个 u64，且仅移动 56B 元组（而非闭包比较
-    // 时重复计算 is_black_key 模运算与浮点比较）。基准：10 万音符时排序
-    // 4.96ms → 1.87ms（省 62%），视觉结果与旧三键 total_cmp 排序严格一致。
-    // scratch 由调用方提供并跨帧复用（高密度下约 56B×V，避免每帧大堆分配）。
-    let entries = scratch_entries;
-    entries.clear();
-    entries.reserve(notes.len());
+    // 打包排序键 + 下标：排序键 = is_black(1bit) | z 可排序位(32bit) | key(7bit)，
+    // 详见下方 f32 位重排注释。只排序 16B (键, 下标) 元组（旧 56B (键, 实例)
+    // 元组移动量的约 1/3），实例按输入序直接进 `out`，排序后 gather 重排。
+    // scratch 均由调用方提供并跨帧复用，避免每帧大堆分配。
+    out.clear();
+    out.reserve(notes.len());
+    let order = &mut scratch.order;
+    order.clear();
+    order.reserve(notes.len());
+    let t_loop = std::time::Instant::now();
     for note in notes {
         if !note.is_visible_at(tick) {
             continue;
@@ -202,10 +225,15 @@ pub fn build_note_instances(
             | ((z_sortable as u64) << 7)
             | (note.key as u64);
 
-        entries.push((
-            sort_key,
-            MiditrailInstanceGpu::new(translation, scale, color, false, 0.0, 0.0),
+        out.push(MiditrailInstanceGpu::new(
+            translation,
+            scale,
+            color,
+            false,
+            0.0,
+            0.0,
         ));
+        order.push((sort_key, out.len() as u32 - 1));
     }
 
     // 按 Comet MIDITrail 的音符绘制顺序排序：
@@ -216,12 +244,79 @@ pub fn build_note_instances(
     // (is_black, z, key) 全序，单键比较比闭包快（基准：10 万音符 6.37ms → 2.5ms，
     // 省约 60%）；稳定性保留旧语义——完全同键（同 key 同 start 的和弦叠音）
     // 按输入顺序绘制，与旧实现一致，避免同位置音符覆盖顺序不确定导致闪烁。
-    entries.sort_by_key(|(sort_key, _)| *sort_key);
-    out.extend(entries.drain(..).map(|(_, instance)| instance));
+    let loop_us = t_loop.elapsed().as_micros() as u64;
+    let t_sort = std::time::Instant::now();
+    radix_sort_order(order, &mut scratch.radix, &mut scratch.hist);
+    let sort_us = t_sort.elapsed().as_micros() as u64;
+    let t_gather = std::time::Instant::now();
+    // 按排好序的下标 gather：`scratch_gather` 复用跨帧容量，swap 后 `out`
+    // 即为最终绘制序，旧内容留在 gather 缓冲供下一帧复用（零分配）。
+    let gather = &mut scratch.gather;
+    gather.clear();
+    gather.reserve(out.len());
+    for &(_, idx) in order.iter() {
+        gather.push(out[idx as usize]);
+    }
+    std::mem::swap(out, gather);
+    let gather_us = t_gather.elapsed().as_micros() as u64;
+    diag_build_notes(loop_us, sort_us, gather_us, out.len());
+}
+
+/// build_note_instances 内部分段打点（首 3 帧 + 每 300 帧）：定位 loop/sort/gather 配比。
+fn diag_build_notes(loop_us: u64, sort_us: u64, gather_us: u64, notes: usize) {
+    static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    if n < 3 || n.is_multiple_of(300) {
+        tracing::info!(
+            "miditrail细分[{n}]: loop={loop_us} sort={sort_us} gather={gather_us} notes={notes}"
+        );
+    }
+}
+
+/// LSD 基数排序（16bit × 4 pass，稳定）：对 (排序键, 下标) 按键排序。
+///
+/// 与 `sort_by_key`（稳定）输出严格一致：LSD 从低位到高位逐 pass 稳定
+/// 分桶，同键保持输入相对顺序；排序键是全序 u64，不存在"相等但比较器
+/// 不一致"的暗坑。4 pass 为偶数，ping-pong 后结果落回 `order`，无需回拷。
+/// 每 pass 流量 ≈ 键读 8B + 下标读写 8B，36 万音符约 23MB，远小于比较排序
+/// O(n log n) 次 16B 元组搬运。直方图 65536 × u32 由调用方复用。
+fn radix_sort_order(order: &mut Vec<(u64, u32)>, tmp: &mut Vec<(u64, u32)>, hist: &mut Vec<u32>) {
+    const BITS: u32 = 16;
+    const BUCKETS: usize = 1 << BITS;
+    const PASSES: u32 = 64 / BITS;
+    let n = order.len();
+    if n < 2 {
+        return;
+    }
+    tmp.clear();
+    tmp.resize(n, (0, 0));
+    hist.clear();
+    hist.resize(BUCKETS, 0);
+    let (mut src, mut dst) = (order.as_mut_slice(), tmp.as_mut_slice());
+    for pass in 0..PASSES {
+        let shift = pass * BITS;
+        hist.fill(0);
+        for &(key, _) in src.iter() {
+            hist[((key >> shift) & 0xFFFF) as usize] += 1;
+        }
+        let mut sum = 0u32;
+        for count in hist.iter_mut() {
+            let c = *count;
+            *count = sum;
+            sum += c;
+        }
+        for &(key, idx) in src.iter() {
+            let b = ((key >> shift) & 0xFFFF) as usize;
+            let pos = hist[b] as usize;
+            hist[b] = pos as u32 + 1;
+            dst[pos] = (key, idx);
+        }
+        std::mem::swap(&mut src, &mut dst);
+    }
+    // PASSES = 4 为偶数：偶数次 swap 后 `src` 指回 `order` 的缓冲，结果已就位。
 }
 
 /// 构建琴键实例。
-///
 /// `active_keys` 由 `compute_active_keys` 预先计算，避免本函数再次扫描全部音符。
 pub fn build_key_instances(
     uniform: &MiditrailUniformGpu,
