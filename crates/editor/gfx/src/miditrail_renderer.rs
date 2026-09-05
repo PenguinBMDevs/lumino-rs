@@ -16,20 +16,22 @@ mod types;
 /// 重导出颜色打包工具（供视频导出 waterfall/miditrail 模式使用）
 pub use instances::pack_color;
 pub use types::{
-    MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailInstanceGpu, MiditrailNoteGpu,
-    MiditrailUniformGpu, MiditrailViewMode,
+    MiditrailAuraInstanceGpu, MiditrailCameraGpu, MiditrailDrivenParamsGpu, MiditrailInstanceGpu,
+    MiditrailNoteGpu, MiditrailUniformGpu, MiditrailViewMode,
 };
 
+use crate::NoteInstance;
 use aura::{create_aura_buffers, create_aura_sampler, generate_aura_ring_data};
 use instances::{
     ActiveKeys, NoteBuildScratch, build_aura_instances, build_key_instances, build_note_instances,
-    compute_active_keys, update_key_positions,
+    compute_active_and_aura_for_compact, compute_active_keys, emit_aura_instances,
+    update_key_positions,
 };
 use math::build_camera_uniform;
 use pipeline::{
     create_aura_render_pipeline, create_bind_group_layout, create_buffers,
-    create_note_render_pipeline, create_render_pipeline, create_top_note_render_pipeline,
-    create_top_render_pipeline,
+    create_driven_group_layout, create_note_driven_pipeline, create_note_render_pipeline,
+    create_render_pipeline, create_top_note_render_pipeline, create_top_render_pipeline,
 };
 use quantize::quantize_notes_for_top;
 
@@ -59,6 +61,17 @@ pub struct MiditrailRenderer {
     note_pipeline: wgpu::RenderPipeline,
     top_render_pipeline: wgpu::RenderPipeline,
     top_note_pipeline: wgpu::RenderPipeline,
+    /// GPU-Driven 音符管线（Normal 终局路径：compact 直传＋vertex 推导＋深度排序）。
+    driven_note_pipeline: wgpu::RenderPipeline,
+    /// Driven 参数组布局（group1：位姿参数＋键位表 uniform）。
+    driven_group_layout: wgpu::BindGroupLayout,
+    /// Driven 参数绑定（params 缓冲创建后初始化一次，缓冲句柄稳定）。
+    driven_bind_group: Option<wgpu::BindGroup>,
+    /// Driven 参数上传缓冲（约 1KB，每帧重写）。
+    driven_params_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    /// 紧凑音符上传缓冲（`NoteInstance` 原字节直传，16B/音符）。
+    compact_buffer: Option<crate::gpu_resource_tracker::TrackedBuffer>,
+    compact_capacity: usize,
     bind_group_layout: wgpu::BindGroupLayout,
     bind_group: Option<wgpu::BindGroup>,
 
@@ -109,6 +122,7 @@ impl MiditrailRenderer {
     const SHADER: &'static str = include_str!("shaders/miditrail_3d.wgsl");
     const TOP_SHADER: &'static str = include_str!("shaders/miditrail_top.wgsl");
     const AURA_SHADER: &'static str = include_str!("shaders/miditrail_aura.wgsl");
+    const DRIVEN_SHADER: &'static str = include_str!("shaders/miditrail_note_driven.wgsl");
     // 单位立方体，每面 4 个顶点，含法线（位置 + 法线 = 6 个 f32）
     const CUBE_VERTICES: [f32; 144] = [
         // 顶面 y=1, normal (0,1,0)
@@ -144,13 +158,34 @@ impl MiditrailRenderer {
             crate::shader::create_shader_module(device, "miditrail_top_shader", Self::TOP_SHADER);
         let aura_shader =
             crate::shader::create_shader_module(device, "miditrail_aura_shader", Self::AURA_SHADER);
+        let driven_shader = crate::shader::create_shader_module(
+            device,
+            "miditrail_driven_shader",
+            Self::DRIVEN_SHADER,
+        );
         let bind_group_layout = create_bind_group_layout(device);
+        let driven_group_layout = create_driven_group_layout(device);
         let render_pipeline = create_render_pipeline(device, &bind_group_layout, &shader);
         let note_pipeline = create_note_render_pipeline(device, &bind_group_layout, &shader);
         let top_render_pipeline =
             create_top_render_pipeline(device, &bind_group_layout, &top_shader);
         let top_note_pipeline =
             create_top_note_render_pipeline(device, &bind_group_layout, &top_shader);
+        let driven_note_pipeline = create_note_driven_pipeline(
+            device,
+            &bind_group_layout,
+            &driven_group_layout,
+            &driven_shader,
+        );
+        let driven_params_buffer = crate::gpu_resource_tracker::TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("miditrail_driven_params_buffer"),
+                size: std::mem::size_of::<MiditrailDrivenParamsGpu>() as u64,
+                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
         let aura_pipeline = create_aura_render_pipeline(device, &bind_group_layout, &aura_shader);
         let (uniform_buffer, vertex_buffer, index_buffer) =
             create_buffers(device, &Self::CUBE_VERTICES, &Self::CUBE_INDICES);
@@ -163,6 +198,12 @@ impl MiditrailRenderer {
             note_pipeline,
             top_render_pipeline,
             top_note_pipeline,
+            driven_note_pipeline,
+            driven_group_layout,
+            driven_bind_group: None,
+            driven_params_buffer,
+            compact_buffer: None,
+            compact_capacity: 0,
             bind_group_layout,
             bind_group: None,
             uniform_buffer,
@@ -263,6 +304,246 @@ impl MiditrailRenderer {
         if n < 3 || n.is_multiple_of(300) {
             tracing::info!("miditrail换算打点[{n}]: convert={convert_us}us notes={notes}");
         }
+    }
+
+    /// GPU-Driven 终局路径（Normal 视图）：`NoteInstance` 原字节直传 GPU。
+    ///
+    /// CPU 每帧只做：单次融合扫描（按键＋光晕系数）＋128 键构建＋两次上传
+    /// （compact 音符原字节＋1KB 参数）＋提交。换算/实例构建/排序/gather
+    /// 全部删除（位姿由 vertex shader 推导，顺序由深度测试解决）。
+    /// Top 视图与实时预览仍走 legacy `render`/`render_from_instances`。
+    pub fn render_gpu_driven(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &MiditrailUniformGpu,
+        notes: &[NoteInstance],
+    ) {
+        let width = uniform.frame_width;
+        let height = uniform.frame_height;
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.ensure_output_texture(device, width, height);
+        update_key_positions(
+            uniform.key_count,
+            &mut self.last_key_count,
+            &mut self.key_positions,
+            &mut self.key_widths,
+        );
+
+        let t_scan = std::time::Instant::now();
+        let (active_keys, aura_sizes) = compute_active_and_aura_for_compact(
+            uniform.tick,
+            uniform.ticks_per_second,
+            uniform.fps,
+            notes,
+        );
+        self.update_key_press_factors(&active_keys, uniform.fps);
+        let scan_us = t_scan.elapsed().as_micros() as u64;
+
+        let mut key_instances = std::mem::take(&mut self.scratch_keys);
+        key_instances.clear();
+        build_key_instances(
+            uniform,
+            &active_keys,
+            &self.key_positions,
+            &self.key_widths,
+            &self.key_press_factors,
+            &mut key_instances,
+        );
+
+        let t_upload = std::time::Instant::now();
+        self.ensure_compact_buffer(device, notes.len());
+        if let Some(ref buf) = self.compact_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(notes));
+        }
+        let params = instances::build_driven_params(uniform, &self.key_positions, &self.key_widths);
+        queue.write_buffer(
+            self.driven_params_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[params]),
+        );
+        if self.driven_bind_group.is_none() {
+            self.driven_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("miditrail_driven_bind_group"),
+                layout: &self.driven_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.driven_params_buffer.inner().as_entire_binding(),
+                }],
+            }));
+        }
+        // 琴键实例复用 legacy 实例缓冲（本路径只存键，offset 恒为 0）。
+        self.ensure_instance_buffer(device, key_instances.len());
+        if let Some(ref buf) = self.instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&key_instances));
+        }
+        let upload_us = t_upload.elapsed().as_micros() as u64;
+
+        let mut aura_instances = std::mem::take(&mut self.scratch_auras);
+        aura_instances.clear();
+        let t_aura = std::time::Instant::now();
+        emit_aura_instances(
+            &active_keys,
+            &aura_sizes,
+            uniform.key_count as usize,
+            &self.key_positions,
+            &self.key_widths,
+            &mut aura_instances,
+        );
+        self.ensure_aura_instance_buffer(device, aura_instances.len());
+        if let Some(ref buf) = self.aura_instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
+        }
+        let aura_us = t_aura.elapsed().as_micros() as u64;
+
+        self.ensure_aura_resources(device, queue);
+
+        let t_submit = std::time::Instant::now();
+        let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
+        if self.bind_group.is_none() {
+            self.rebuild_bind_group(device);
+        }
+        self.execute_driven_pass(encoder, notes.len(), &key_instances, &aura_instances);
+        let submit_us = t_submit.elapsed().as_micros() as u64;
+        Self::diag_driven(scan_us, upload_us, aura_us, submit_us, notes.len());
+        self.scratch_keys = key_instances;
+        self.scratch_auras = aura_instances;
+    }
+
+    /// GPU-Driven 分段打点（首 3 帧 + 每 300 帧）：与 legacy `diag_stages` 对齐口径。
+    fn diag_driven(scan_us: u64, upload_us: u64, aura_us: u64, submit_us: u64, notes: usize) {
+        static COUNT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n.is_multiple_of(300) {
+            tracing::info!(
+                "miditrail驱动[{n}]: scan={scan_us} upload={upload_us} aura={aura_us} submit={submit_us} notes={notes}"
+            );
+        }
+    }
+
+    /// 紧凑音符上传缓冲（按字节扩容，`NoteInstance` 16B/音符）。
+    fn ensure_compact_buffer(&mut self, device: &wgpu::Device, count: usize) {
+        if count <= self.compact_capacity {
+            return;
+        }
+        let new_cap = count
+            .next_power_of_two()
+            .max(Self::INITIAL_INSTANCE_CAPACITY);
+        let size = (new_cap * std::mem::size_of::<NoteInstance>()) as u64;
+        let buffer = crate::gpu_resource_tracker::TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("miditrail_compact_buffer"),
+                size,
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        );
+        self.compact_buffer = Some(buffer);
+        self.compact_capacity = new_cap;
+    }
+
+    /// GPU-Driven 提交：音符（driven 管线＋compact 缓冲）→ Aura → 琴键（legacy 管线）。
+    ///
+    /// 琴键管线 depth compare 已为 Always，绘制顺序即覆盖顺序，与 legacy
+    /// "琴键永远置顶"观感一致；音符之间由深度测试解决（不透明，无需排序）。
+    fn execute_driven_pass(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        note_count: usize,
+        key_instances: &[MiditrailInstanceGpu],
+        aura_instances: &[MiditrailAuraInstanceGpu],
+    ) {
+        let Some(color_view) = self.output_texture_view.as_ref() else {
+            debug_assert!(false, "output_texture_view 应已初始化");
+            return;
+        };
+        let Some(depth_view) = self.depth_texture_view.as_ref() else {
+            debug_assert!(false, "depth_texture_view 应已初始化");
+            return;
+        };
+        let Some(bind_group) = self.bind_group.as_ref() else {
+            debug_assert!(false, "bind_group 应已初始化");
+            return;
+        };
+        let Some(driven_group) = self.driven_bind_group.as_ref() else {
+            debug_assert!(false, "driven_bind_group 应已初始化");
+            return;
+        };
+        let Some(compact_buf) = self.compact_buffer.as_ref() else {
+            debug_assert!(false, "compact_buffer 应已初始化");
+            return;
+        };
+        let Some(instance_buf) = self.instance_buffer.as_ref() else {
+            debug_assert!(false, "instance_buffer 应已初始化（琴键用）");
+            return;
+        };
+
+        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("miditrail_driven_pass"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(wgpu::Color {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                view: depth_view,
+                depth_ops: Some(wgpu::Operations {
+                    load: wgpu::LoadOp::Clear(1.0),
+                    store: wgpu::StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+
+        // 1. 音符：driven 管线，compact 实例直读。
+        render_pass.set_pipeline(&self.driven_note_pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.set_bind_group(1, driven_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+        render_pass.set_vertex_buffer(1, compact_buf.inner().slice(..));
+        render_pass.set_index_buffer(
+            self.index_buffer.inner().slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
+        render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count as u32);
+
+        // 2. Aura（加色混合，与 legacy 同）。
+        self.draw_aura(&mut render_pass, aura_instances);
+
+        // 3. 琴键（legacy 管线＋实例缓冲，compare Always 置顶）。
+        render_pass.set_pipeline(&self.render_pipeline);
+        render_pass.set_bind_group(0, bind_group, &[]);
+        render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+        render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
+        render_pass.set_index_buffer(
+            self.index_buffer.inner().slice(..),
+            wgpu::IndexFormat::Uint16,
+        );
+        render_pass.draw_indexed(
+            0..Self::CUBE_INDICES.len() as u32,
+            0,
+            0..key_instances.len() as u32,
+        );
     }
 
     /// 渲染内阶段打点（首 3 帧 + 每 300 帧）：拆 render 42ms 黑盒，下一刀的靶子。

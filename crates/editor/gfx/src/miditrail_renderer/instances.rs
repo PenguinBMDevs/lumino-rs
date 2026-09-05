@@ -2,8 +2,10 @@
 
 use super::MIDITRAIL_SCENE_DEPTH;
 use super::types::{
-    MiditrailAuraInstanceGpu, MiditrailInstanceGpu, MiditrailNoteGpu, MiditrailUniformGpu,
+    MiditrailAuraInstanceGpu, MiditrailDrivenParamsGpu, MiditrailInstanceGpu, MiditrailNoteGpu,
+    MiditrailUniformGpu,
 };
+use crate::NoteInstance;
 use crate::is_black_key;
 
 const KEYBOARD_HEIGHT: f32 = 0.012;
@@ -135,6 +137,40 @@ pub struct NoteBuildScratch {
     pub radix: Vec<(u64, u32)>,
     /// 65536 桶直方图复用。
     pub hist: Vec<u32>,
+}
+
+/// 构建 GPU-Driven 管线参数（`MiditrailDrivenParamsGpu`）。
+///
+/// 视口/深度公式与 `build_note_instances` 头部逐 op 一致（ppq/speed 钳位、
+/// `visible_measure_count` 取整、span 下限 1），键位表直拷调用方缓存。
+/// Top 视图不走此路径（沿用 CPU `quantize_notes_for_top`＋legacy 构建）。
+pub fn build_driven_params(
+    uniform: &MiditrailUniformGpu,
+    key_positions: &[f32],
+    key_widths: &[f32],
+) -> MiditrailDrivenParamsGpu {
+    let ppq = uniform.ppq.max(1);
+    let speed = uniform.speed.max(0.1);
+    let ticks_per_measure = ppq * 4;
+    let visible_measure_count = ((4.0 / speed).round()).max(1.0) as u32;
+    let viewport_tick_span = (ticks_per_measure * visible_measure_count).max(1) as f32;
+    let z_far = NOTE_Z_OFFSET - uniform.z_far_distance.max(0.1);
+    let mut key_table = [[0.0f32; 4]; 128];
+    let n = key_positions.len().min(key_widths.len()).min(128);
+    for (i, slot) in key_table.iter_mut().enumerate().take(n) {
+        *slot = [key_positions[i], key_widths[i], 0.0, 0.0];
+    }
+    MiditrailDrivenParamsGpu {
+        tick: uniform.tick,
+        viewport_tick_span,
+        scene_depth: MIDITRAIL_SCENE_DEPTH,
+        note_z_offset: NOTE_Z_OFFSET,
+        z_far,
+        note_height: NOTE_HEIGHT,
+        note_y: NOTE_Y,
+        key_count: uniform.key_count,
+        key_table,
+    }
 }
 
 /// 构建可见音符的实例数据。
@@ -439,23 +475,42 @@ pub fn build_aura_instances(
 /// 仅当音符当前正在发声（`start_tick <= tick < end_tick`）且已开始时有贡献；
 /// 未开始的音符（Zenith `n.start < midiTime` 才累加）与已结束的音符直接返回 0。
 fn aura_factor_for_note(uniform: &MiditrailUniformGpu, note: &MiditrailNoteGpu) -> f32 {
-    let tick = uniform.tick;
-    if note.start_tick > tick || !note.is_active_at(tick) {
+    aura_factor_raw(
+        uniform.tick,
+        uniform.ticks_per_second,
+        uniform.fps,
+        note.start_tick,
+        note.end_tick,
+    )
+}
+
+/// 光晕系数核心数学（`tick/tps/fps/start/end` 五元决定，与载体无关）。
+///
+/// Legacy `MiditrailNoteGpu` 路径与 GPU-Driven `NoteInstance` 路径共用，
+/// 保证两条路径的光晕动画逐位一致。
+fn aura_factor_raw(
+    tick: u32,
+    ticks_per_second: f32,
+    fps: f32,
+    start_tick: u32,
+    end_tick: u32,
+) -> f32 {
+    if start_tick > tick || end_tick <= tick {
         return 0.0;
     }
-    let ticks_per_second = uniform.ticks_per_second.max(0.1);
+    let tps = ticks_per_second.max(0.1);
     // Zenith `tempoFrameStep`：每帧 tick 数 = 每秒 tick 数 / fps
-    let frame_ticks = (ticks_per_second / uniform.fps.max(1.0)).max(0.001);
+    let frame_ticks = (tps / fps.max(1.0)).max(0.001);
 
     // 按下闪光：起始后 AURA_FLASH_FRAMES 帧内二次衰减到 0
-    let frames_since_start = (tick - note.start_tick) as f32 / frame_ticks;
+    let frames_since_start = (tick - start_tick) as f32 / frame_ticks;
     let flash = (AURA_FLASH_FRAMES - frames_since_start).max(0.0).powi(2) / AURA_FLASH_DIVISOR;
 
     // 常态/收缩：长音符保持 AURA_HELD_FACTOR，最后 AURA_TAIL_SECONDS 内收缩到 0。
     // Zenith `maxAuraLen = tempoFrameStep * fps` 即每秒 tick 数，作为收缩窗口。
-    let aura_len = ticks_per_second * AURA_TAIL_SECONDS;
-    let length = (note.end_tick - note.start_tick).max(1) as f32;
-    let remaining = (note.end_tick - tick) as f32;
+    let aura_len = tps * AURA_TAIL_SECONDS;
+    let length = (end_tick - start_tick).max(1) as f32;
+    let remaining = (end_tick - tick) as f32;
     let offset = remaining.min(aura_len);
     let len = length.min(aura_len);
     let tail = if len > 0.0 {
@@ -465,6 +520,79 @@ fn aura_factor_for_note(uniform: &MiditrailUniformGpu, note: &MiditrailNoteGpu) 
     };
 
     tail + flash
+}
+
+/// GPU-Driven 路径：单次遍历 `NoteInstance` 同时产出按键状态与每键光晕系数。
+///
+/// 与 legacy 两次全量扫描（`compute_active_keys`＋`build_aura_instances`内循环）
+/// 数学等价：`start/end` 解码与 `render_from_instances` 换算逐 op 一致
+/// （`max(0)`钳位＋`max(1)`长度），同键多音符取最后颜色、光晕取最大。
+/// 返回 `(ActiveKeys, aura_sizes[128])`，调用方用 `emit_aura_instances` 落盘。
+pub fn compute_active_and_aura_for_compact(
+    tick: u32,
+    ticks_per_second: f32,
+    fps: f32,
+    notes: &[NoteInstance],
+) -> (ActiveKeys, [f32; 128]) {
+    let mut pressed = [false; 128];
+    let mut colors = [0u32; 128];
+    let mut aura_sizes = [0.0f32; 128];
+    for n in notes {
+        let key = (n.key_color & 0xFF) as usize;
+        if key >= 128 {
+            continue;
+        }
+        // 与 `render_from_instances` 换算一致：start 钳零，长度至少 1 tick。
+        let start = n.start_length[0].max(0.0) as u32;
+        let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+        if start <= tick && tick < end {
+            pressed[key] = true;
+            // `key_color` 高 24 位即 RGB，低 8 key 字节清零后补 alpha=0xFF，
+            // 与 legacy `unpack→pack_color` 逐字节一致。
+            colors[key] = (n.key_color & 0xFFFF_FF00) | 0xFF;
+            let factor = aura_factor_raw(tick, ticks_per_second, fps, start, end);
+            if factor > aura_sizes[key] {
+                aura_sizes[key] = factor;
+            }
+        }
+    }
+    (ActiveKeys { pressed, colors }, aura_sizes)
+}
+
+/// 由 `(ActiveKeys, aura_sizes)` 落盘 Aura 实例（GPU-Driven 路径）。
+///
+/// 与 `build_aura_instances` 后半段（`pressed` 门控＋环几何）逐 op 一致，
+/// 只是输入已由 `compute_active_and_aura_for_compact` 预聚合，省一次全量扫描。
+pub fn emit_aura_instances(
+    active_keys: &ActiveKeys,
+    aura_sizes: &[f32; 128],
+    key_count: usize,
+    key_positions: &[f32],
+    key_widths: &[f32],
+    out: &mut Vec<MiditrailAuraInstanceGpu>,
+) {
+    let key_count = key_count
+        .min(key_positions.len())
+        .min(key_widths.len())
+        .min(128);
+    for key_idx in 0..key_count {
+        if !active_keys.pressed[key_idx] {
+            continue;
+        }
+        let aura = aura_sizes[key_idx];
+        if aura <= 0.0 {
+            continue;
+        }
+        let width = key_widths[key_idx];
+        let center = key_positions[key_idx] + width * 0.5;
+        let size = (width * AURA_RING_SCALE * aura).max(0.001);
+        out.push(MiditrailAuraInstanceGpu {
+            size,
+            pos: center,
+            color_packed: active_keys.colors[key_idx],
+            _padding: 0,
+        });
+    }
 }
 
 #[cfg(test)]

@@ -70,6 +70,9 @@ pub(super) fn handle_miditrail_frame(
             label: Some("miditrail_encoder"),
         });
 
+    // 回退到 legacy CPU 路径（2026-09-05 driven 实验前的原始状态）：
+    // UI 实测键盘顶层/前面层异常＋提速不达预期，先恢复最后已知良好状态，
+    // 根因查明前 Normal 也不走 driven（`render_gpu_driven` 保留供 example 继续验证）。
     renderer.render_from_instances(
         &ctx.device,
         &ctx.queue,

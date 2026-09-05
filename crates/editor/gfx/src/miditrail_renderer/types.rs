@@ -163,6 +163,34 @@ pub struct MiditrailCameraGpu {
     pub ambient: f32,
 }
 
+/// GPU-Driven 音符管线参数（`miditrail_note_driven.wgsl` group1 uniform）。
+///
+/// CPU 每帧只填这 1KB（tick 相关 7 个 f32/u32 ＋ 128 键位表），位姿推导
+/// 进 vertex shader。与 WGSL `DrivenParams` 字段一一对应，顺序一致。
+#[repr(C)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct MiditrailDrivenParamsGpu {
+    /// 当前 tick（`visible_start = max(start, tick)` 的基准）。
+    pub tick: u32,
+    /// 视口 tick 跨度（`ticks_per_measure × visible_measure_count`）。
+    pub viewport_tick_span: f32,
+    /// 场景深度（tick→Z 映射比例）。
+    pub scene_depth: f32,
+    /// 音符 Z 原点（键盘处）。
+    pub note_z_offset: f32,
+    /// 远裁剪 Z（`note_z_offset - z_far_distance`）。
+    pub z_far: f32,
+    /// 音符高度（Y）。
+    pub note_height: f32,
+    /// 音符 Y 基准。
+    pub note_y: f32,
+    /// 键盘键数（shader 侧 `key < 128` 硬约束为主，此处仅信息冗余）。
+    pub key_count: u32,
+    /// `[left, width]` 键位表（与 CPU `key_positions`/`key_widths` 同源；
+    /// vec4 满足 uniform 数组 16 字节步长对齐，z/w 保留未用）。
+    pub key_table: [[f32; 4]; 128],
+}
+
 /// 每实例数据（上传 GPU，与 WGSL 中的 `Instance` 对应）
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
