@@ -1,11 +1,10 @@
-use crate::miditrail_renderer::pack_color;
 use crate::render_thread::commands::FrameSender;
 use crate::render_thread::export_pipeline::ExportPipeline;
 use crate::render_thread::render_loop::Renderers;
 use crate::render_thread::render_loop::runner::context::{
     RenderFrameState, VideoExportFrameContext, VideoExportSetupContext,
 };
-use crate::{MiditrailNoteGpu, NoteInstance, unpack_key_color};
+use crate::{NoteInstance, unpack_key_color};
 
 use super::handle_video_frame;
 
@@ -90,32 +89,6 @@ pub(crate) fn note_instances_to_key_offsets(notes: &[NoteInstance], key_count: u
         offsets[k + 1] = offsets[k] + counts[k];
     }
     offsets
-}
-
-/// 从权威 `note_instances` 换算 3D 派生数据。
-///
-/// 调用方保证输入已是窗口可见集（生产侧过滤）；此处只做格式换算。
-/// 实例构建只读 key/start/end/color（见 `build_note_instances`），
-/// track/力度/通道填默认值即可，行为与旧生产侧一致。
-/// 越界 key 由下游 `build_*_instances` 按 `key_positions` 长度跳过，无需预过滤。
-pub(crate) fn note_instances_to_miditrail(notes: &[NoteInstance]) -> Vec<MiditrailNoteGpu> {
-    let mut derived = Vec::with_capacity(notes.len());
-    for n in notes {
-        let (key, rgb) = unpack_key_color(n.key_color);
-        let start = n.start_length[0].max(0.0) as u32;
-        let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
-        derived.push(MiditrailNoteGpu {
-            key: key as u32,
-            start_tick: start,
-            end_tick: end,
-            color_packed: pack_color([rgb[0], rgb[1], rgb[2], 1.0]),
-            track_idx: 0,
-            velocity: 100,
-            channel: 0,
-            _padding: 0,
-        });
-    }
-    derived
 }
 
 /// 导出管线收尾：尺寸对齐 → 背压读最早帧 → copy 离屏纹理到 staging 并提交 → 非阻塞读回。

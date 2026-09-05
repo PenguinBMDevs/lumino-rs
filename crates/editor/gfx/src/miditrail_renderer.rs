@@ -88,6 +88,9 @@ pub struct MiditrailRenderer {
     scratch_notes: Vec<MiditrailInstanceGpu>,
     scratch_keys: Vec<MiditrailInstanceGpu>,
     scratch_auras: Vec<MiditrailAuraInstanceGpu>,
+    /// `NoteInstance` → `MiditrailNoteGpu` 换算暂存（跨帧复用；36 万可见时约
+    /// 11.7MB，每帧新建是毫秒级分配器开销）。仅视频导出 `render_from_instances` 用。
+    scratch_derived: Vec<MiditrailNoteGpu>,
 
     // Aura 相关资源
     aura_pipeline: wgpu::RenderPipeline,
@@ -181,6 +184,7 @@ impl MiditrailRenderer {
             scratch_notes: Vec::new(),
             scratch_keys: Vec::new(),
             scratch_auras: Vec::new(),
+            scratch_derived: Vec::new(),
             aura_pipeline,
             aura_vertex_buffer,
             aura_index_buffer,
@@ -203,6 +207,53 @@ impl MiditrailRenderer {
     /// - `uniform` — 渲染参数（tick、尺寸、速度、视图模式等）
     /// - `notes` — 可见音符数据切片
     pub fn render(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &MiditrailUniformGpu,
+        notes: &[MiditrailNoteGpu],
+    ) {
+        self.render_inner(device, queue, encoder, uniform, notes);
+    }
+
+    /// 直接消费统一 `NoteInstance` 的视频导出快捷路径（与 `render` 等价）。
+    ///
+    /// `NoteInstance` → `MiditrailNoteGpu` 换算写入跨帧复用的 `scratch_derived`，
+    /// 消每帧 V×32B 整块分配（36 万可见时约 11.7MB/帧）。只读 key/start/end/color，
+    /// 与旧 `note_instances_to_miditrail` 输出逐元素一致。
+    pub fn render_from_instances(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &MiditrailUniformGpu,
+        note_instances: &[crate::NoteInstance],
+    ) {
+        // take/restore：fill 期间释放对 self 的借用，render_inner 才能拿 &mut self。
+        let mut derived = std::mem::take(&mut self.scratch_derived);
+        derived.clear();
+        derived.reserve(note_instances.len());
+        for n in note_instances {
+            let (key, rgb) = crate::unpack_key_color(n.key_color);
+            let start = n.start_length[0].max(0.0) as u32;
+            let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
+            derived.push(MiditrailNoteGpu {
+                key: key as u32,
+                start_tick: start,
+                end_tick: end,
+                color_packed: pack_color([rgb[0], rgb[1], rgb[2], 1.0]),
+                track_idx: 0,
+                velocity: 100,
+                channel: 0,
+                _padding: 0,
+            });
+        }
+        self.render_inner(device, queue, encoder, uniform, &derived);
+        self.scratch_derived = derived;
+    }
+
+    fn render_inner(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,

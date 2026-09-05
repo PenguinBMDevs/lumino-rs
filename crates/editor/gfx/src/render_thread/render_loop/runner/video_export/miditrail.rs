@@ -1,10 +1,12 @@
 //! Miditrail 3D 帧渲染：使用 3D 渲染管线写入颜色纹理后读回。
 //!
-//! 窗口集逐帧上传共享导出缓冲（24M 级文档下全量常驻意味着 390MB 显存＋
+//! 窗口集直达 3D 渲染器（24M 级文档下全量常驻意味着 390MB 显存＋
 //! 390MB 镜像＋每帧两次全量扫描，约 100ms/帧，已实测；窗口传输按可见集收敛）。
-//! 派生输入（`MiditrailNoteGpu`）由渲染线程按需换算，不经过跨线程存储。
+//! 派生输入（`MiditrailNoteGpu`）由渲染器内部换算（跨帧复用暂存，不经过跨线程存储）。
+//! 注意：钢琴卷帘共享缓冲（`frame.renderers.note`）此处不碰——3D 管线自有实例缓冲，
+//! 往共享缓冲上传是纯死工作（memcpy＋write_buffer＋cull bind group 重建）。
 
-use super::common::{CopyDrainInput, copy_texture_and_drain, note_instances_to_miditrail};
+use super::common::{CopyDrainInput, copy_texture_and_drain};
 use crate::MiditrailRenderer;
 use crate::MiditrailUniformGpu;
 use crate::render_thread::params::RenderParams;
@@ -18,13 +20,7 @@ pub(super) fn handle_miditrail_frame(
     width: u32,
     height: u32,
 ) {
-    // 1. 窗口集上传共享导出缓冲（3D 模式独占该缓冲，无跨模式污染）。
-    if !params.note_instances.is_empty() {
-        frame
-            .renderers
-            .note
-            .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
-    }
+    // 3D 管线自有实例缓冲，不经过钢琴共享缓冲（旧 `upload_instances` 是死工作，已删）。
     if frame.miditrail_renderer.is_none() {
         *frame.miditrail_renderer = Some(MiditrailRenderer::new(&ctx.device));
     }
@@ -66,18 +62,34 @@ pub(super) fn handle_miditrail_frame(
         _padding1: 0,
     };
 
-    // 派生输入按需换算（函数内临时值，不经过跨线程存储）。
-    // 生产侧已按 Z 窗口过滤，此处只做格式换算，不再二次过滤。
-    let notes = note_instances_to_miditrail(&params.note_instances);
-    let notes = &notes;
-
+    // 换算＋实例构建＋上传＋绘制全在渲染器内部（暂存跨帧复用，零每帧大分配）。
+    let t_render = std::time::Instant::now();
     let mut encoder = ctx
         .device
         .create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("miditrail_encoder"),
         });
 
-    renderer.render(&ctx.device, &ctx.queue, &mut encoder, &uniform, notes);
+    renderer.render_from_instances(
+        &ctx.device,
+        &ctx.queue,
+        &mut encoder,
+        &uniform,
+        &params.note_instances,
+    );
+    let render_us = t_render.elapsed().as_micros() as u64;
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：与 UI 侧收集打点对齐，
+    // 即可确认 recv 里 CPU 计算 vs GPU 绘制/读回各占多少。
+    {
+        static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        if n < 3 || n % 300 == 0 {
+            tracing::info!(
+                "miditrail渲染打点[{n}]: render={render_us}us notes={}",
+                params.note_instances.len()
+            );
+        }
+    }
 
     let pipeline = match frame.export_pipeline.as_mut() {
         Some(p) => p,
