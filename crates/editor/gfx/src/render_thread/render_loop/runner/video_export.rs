@@ -105,14 +105,30 @@ pub(super) fn handle_video_frame(
     // 视频导出始终使用音符矩形渲染模式：不上传 贴图瀑布流
     let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
-    // 2. 上传视频导出帧的音符实例
-    if !params.note_instances.is_empty() {
-        frame
-            .renderers
-            .note
-            .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+    // 2. 音符数据源（二选一，互斥）：
+    //    - 主缓冲就绪（常规）：直绑 onion 常驻缓冲，零上传。本帧 params.note_instances
+    //      为空（首帧全量除外——见下），cull 按本帧 camera 在 GPU 侧重算。
+    //    - 未就绪（加载后立刻导出等竞态）：回退首帧全量上传路径。
+    //    绑定以"导出缓冲全新"为闩：首帧一旦落定（直绑/上传任一），后续帧不再切换，
+    //    导出中途的切轨/编辑/换文档不影响已定源，快照语义稳定。
+    let export_note_pristine = frame.renderers.note.gpu_instance_count() == 0
+        && frame.renderers.note.last_upload_count() == 0;
+    if export_note_pristine {
+        if let Some((ref onion_buf, onion_count)) = frame.onion_source {
+            frame.renderers.note.bind_external_source(
+                &ctx.device,
+                &ctx.queue,
+                onion_buf,
+                onion_count as usize,
+            );
+        } else if !params.note_instances.is_empty() {
+            frame
+                .renderers
+                .note
+                .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+        }
     }
-    // 首帧诊断：上传后的 last_upload_count
+    // 首帧诊断：上传/直绑后的 last_upload_count
     if diag_idx < 3 {
         tracing::info!(
             "视频帧诊断[{}]: 上传后 last_upload_count={}",

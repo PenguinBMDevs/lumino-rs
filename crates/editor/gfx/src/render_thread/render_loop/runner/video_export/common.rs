@@ -30,6 +30,15 @@ pub(crate) fn start_video_export(context: VideoExportSetupContext<'_>) {
 
 /// 渲染一帧视频导出：构造每帧状态并交给对应渲染模式。
 pub(crate) fn render_video_frame_command(context: VideoExportFrameContext<'_>) {
+    // 主缓冲直绑源：onion 流式上传完成后，主 onion 缓冲即全文档权威数据，
+    // 钢琴模式直接绑定它，零上传。进行中则为 None，调用方走上传回退路径。
+    // 仅钢琴模式需要（瀑布流要 (key,start) 有序窗口，3D 读自有镜像），与分发条件同构。
+    let want_onion = !context.params.is_waterfall_mode && !context.params.miditrail_enabled;
+    let onion_source = if want_onion && !context.onion_streaming_in_progress {
+        Some(context.renderers.onion_skin.gpu_note_buffer_for_sharing())
+    } else {
+        None
+    };
     // 视频导出帧使用纯 2D 渲染器，确保 pipeline 与无 depth 的 RenderPass 兼容。
     let video_renderers = context
         .export_renderers
@@ -37,6 +46,7 @@ pub(crate) fn render_video_frame_command(context: VideoExportFrameContext<'_>) {
         .unwrap_or(&mut *context.renderers);
     let mut frame = RenderFrameState {
         renderers: video_renderers,
+        onion_source,
         current_texture: context.current_texture,
         depth_texture: context.depth_texture,
         depth_texture_view: context.depth_texture_view,

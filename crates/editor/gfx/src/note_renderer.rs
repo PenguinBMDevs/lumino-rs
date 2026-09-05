@@ -32,6 +32,8 @@ pub struct NoteRenderer {
     visible_instance_buffer: TrackedBuffer,
     /// 间接绘制参数缓冲区
     indirect_buffer: TrackedBuffer,
+    /// 间接绘制初始化模板（每帧重置用，init 时预计算，避免每帧堆分配）
+    indirect_template: Vec<u8>,
     /// 当前缓冲区容量（实例数量）
     capacity: usize,
     /// 最大缓冲区容量（受 GPU max_storage_buffer_binding_size 限制）

@@ -1,5 +1,5 @@
 use super::chunk::MAX_CHUNKS;
-use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
+use super::types::{CameraUniform, CullUniform};
 use crate::note_renderer::NoteRenderer;
 
 /// u32 溢出防御：实例数超过 u32::MAX 时截断并报错
@@ -142,6 +142,36 @@ impl NoteRenderer {
     pub fn update_cull_info(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
         puffin::profile_function!();
         let current_count = self.gpu_note_buffer.len();
+        let source = self.gpu_note_buffer.buffer().clone();
+        self.update_cull_info_for(device, queue, &source, current_count);
+    }
+
+    /// 绑定外部权威音符缓冲（视频导出直绑主缓冲，零上传）。
+    ///
+    /// 与 `upload_instances` 等价，唯数据源为外部 buffer 句柄：可见索引缓冲按需扩容，
+    /// cull/render bind group 重建指向外部缓冲，`last_upload_count` 同步为外部计数。
+    /// 视口 uniforms 由后续 `prepare_pass` 按帧更新；外部缓冲的内容更新
+    /// （同句柄原地写）自动生效，无需重绑。
+    pub fn bind_external_source(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        source: &wgpu::Buffer,
+        count: usize,
+    ) {
+        puffin::profile_function!();
+        self.update_cull_info_for(device, queue, source, count);
+    }
+
+    /// `update_cull_info` 内核：按给定源缓冲与计数重建 cull 相关状态。
+    fn update_cull_info_for(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        source: &wgpu::Buffer,
+        current_count: usize,
+    ) {
+        puffin::profile_function!();
 
         if current_count == 0 {
             self.last_upload_count = 0;
@@ -158,7 +188,7 @@ impl NoteRenderer {
         self.cull_bind_groups = Self::create_cull_bind_groups(
             device,
             &self.chunk_layout,
-            self.gpu_note_buffer.buffer(),
+            source,
             self.visible_instance_buffer.inner(),
             self.indirect_buffer.inner(),
             self.cull_uniform_buffer.inner(),
@@ -171,7 +201,7 @@ impl NoteRenderer {
             &self.render_bind_group_layout,
             self.viewport_buffer.inner(),
             self.view_state_buffer.inner(),
-            self.gpu_note_buffer.buffer(),
+            source,
             self.visible_instance_buffer.inner(),
             &self.chunk_layout,
         );
@@ -230,17 +260,8 @@ impl NoteRenderer {
         is_vertical: bool,
     ) {
         puffin::profile_function!();
-        let slot_align = self.chunk_layout.slot_align;
-        let slot_count = MAX_CHUNKS;
-        let mut indirect_init = vec![0u8; (slot_count as u64 * slot_align) as usize];
-        let default_args = DrawIndirectArgs::default();
-        let default_bytes = bytemuck::bytes_of(&default_args);
-        for idx in 0..slot_count {
-            let offset = (idx as u64) * slot_align;
-            indirect_init[offset as usize..offset as usize + default_bytes.len()]
-                .copy_from_slice(default_bytes);
-        }
-        queue.write_buffer(self.indirect_buffer.inner(), 0, &indirect_init);
+        // 重置 indirect buffer（预计算模板，每帧零分配）
+        queue.write_buffer(self.indirect_buffer.inner(), 0, &self.indirect_template);
 
         if self.last_upload_count == 0 {
             return;

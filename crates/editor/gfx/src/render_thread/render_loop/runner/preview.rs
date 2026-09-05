@@ -101,6 +101,7 @@ pub(super) fn render_offscreen_pass(context: &mut PreviewPassContext<'_>) {
             export_frame_tx: context.export_frame_tx,
             waterfall_renderer: &mut None,
             miditrail_renderer: &mut None,
+            onion_source: None,
         };
         execute_render_pass(
             &mut encoder,

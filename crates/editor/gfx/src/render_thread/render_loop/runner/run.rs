@@ -102,6 +102,7 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 waterfall_renderer: &mut waterfall_renderer,
                 miditrail_renderer: &mut miditrail_renderer,
                 texture_waterfall_result_tx: &texture_waterfall_result_tx,
+                onion_streaming_in_progress: onion_skin_streaming_in_progress,
             },
             &mut deferred,
         );

@@ -39,6 +39,7 @@ pub(super) fn handle_deferred_command(
                 params: *params,
                 export_renderers: context.export_renderers,
                 renderers: context.renderers,
+                onion_streaming_in_progress: context.onion_streaming_in_progress,
                 current_texture: context.current_texture,
                 depth_texture: context.depth_texture,
                 depth_texture_view: context.depth_texture_view,

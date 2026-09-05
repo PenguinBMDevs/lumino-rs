@@ -8,9 +8,7 @@
 //! - `miditrail`：3D MIDI 轨迹（产出 note_instances + 3D uniforms）
 
 use lumino_extras::palette::current_track_color_f32;
-use lumino_gfx::{
-    NoteInstance, RenderParams, calculate_border_width, generate_ruler_instances, pack_key_color,
-};
+use lumino_gfx::{NoteInstance, RenderParams, calculate_border_width, pack_key_color};
 use lumino_message::events::window::video::MiditrailViewMode;
 use lumino_message::events::window::video::RenderMode;
 use lumino_midi_loader::{MidiDocument, NoteEvent};
@@ -284,15 +282,8 @@ pub(crate) fn build_note_rectangle_params_from_visible(
     let scroll_y = 0.0f32;
 
     let grid_instances = Vec::new();
-    let ruler_instances = generate_ruler_instances(
-        rect_width,
-        keyboard_width,
-        ruler_height,
-        scroll_x,
-        zoom_x,
-        ppq,
-        time_signatures,
-    );
+    // 注：标尺刻度渲染线程按 scroll/zoom 内部重算并缓存（见 RulerRenderer::prepare），
+    // 此处不再逐帧生成跨线程 Vec（渲染侧零读取，旧逻辑纯浪费）。
 
     // 按 key 计数分桶排序（O(N)，见 sort_visible_notes）
     sort_visible_notes(visible_notes);
@@ -315,7 +306,7 @@ pub(crate) fn build_note_rectangle_params_from_visible(
         ruler_height,
         note_instances: std::mem::take(note_instances_out),
         grid_instances,
-        ruler_instances,
+        ruler_instances: Vec::new(),
         ppq: ppq as f32,
         max_key_index,
         canvas_size,
