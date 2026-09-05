@@ -196,6 +196,7 @@ impl NoteRenderer {
             visible_instance_buffer,
             indirect_buffer,
             indirect_template,
+            external_bound: false,
             capacity: Self::INITIAL_CAPACITY,
             max_capacity,
             last_upload_count: 0,

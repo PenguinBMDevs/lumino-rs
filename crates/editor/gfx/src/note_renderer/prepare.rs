@@ -26,6 +26,7 @@ impl NoteRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
     ) {
+        self.external_bound = false;
         self.gpu_note_buffer.upload_all(instances);
         self.update_cull_info(device, queue);
     }
@@ -116,6 +117,7 @@ impl NoteRenderer {
         camera: CameraUniform,
     ) {
         puffin::profile_function!();
+        self.external_bound = false;
         self.gpu_note_buffer.upload_all(instances);
         self.update_cull_info(device, queue);
         self.prepare_pass(encoder, camera, queue);
@@ -161,6 +163,13 @@ impl NoteRenderer {
     ) {
         puffin::profile_function!();
         self.update_cull_info_for(device, queue, source, count);
+        // 空源不闩定：允许后续帧重试直绑（空文档/流式未完成场景零成本）。
+        self.external_bound = count > 0;
+    }
+
+    /// 当前是否已直绑外部缓冲（调用方据此在直绑与上传回退间互斥）。
+    pub fn is_external_bound(&self) -> bool {
+        self.external_bound
     }
 
     /// `update_cull_info` 内核：按给定源缓冲与计数重建 cull 相关状态。

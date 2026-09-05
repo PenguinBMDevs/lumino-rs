@@ -105,15 +105,13 @@ pub(super) fn handle_video_frame(
     // 视频导出始终使用音符矩形渲染模式：不上传 贴图瀑布流
     let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
-    // 2. 音符数据源（二选一，互斥）：
-    //    - 主缓冲就绪（常规）：直绑 onion 常驻缓冲，零上传。本帧 params.note_instances
-    //      为空（首帧全量除外——见下），cull 按本帧 camera 在 GPU 侧重算。
-    //    - 未就绪（加载后立刻导出等竞态）：回退首帧全量上传路径。
-    //    绑定以"导出缓冲全新"为闩：首帧一旦落定（直绑/上传任一），后续帧不再切换，
-    //    导出中途的切轨/编辑/换文档不影响已定源，快照语义稳定。
-    let export_note_pristine = frame.renderers.note.gpu_instance_count() == 0
-        && frame.renderers.note.last_upload_count() == 0;
-    if export_note_pristine {
+    // 2. 音符数据源（二选一，互斥，优先级：直绑 > 上传回退）：
+    //    - 主缓冲就绪且尚未直绑 → 直绑 onion 常驻缓冲，零上传。含首帧竞态后的
+    //      late-bind（首帧流式未完成则先回退，完成后切直绑；边框会从计算值变为
+    //      1px，一次性）。
+    //    - 未就绪 → 仅当导出缓冲全新且本帧带数据时回退上传（首帧全量）。
+    //    直绑一旦落定不再切换；回退上传后仍可 late-bind（见上）。
+    if !frame.renderers.note.is_external_bound() {
         if let Some((ref onion_buf, onion_count)) = frame.onion_source {
             frame.renderers.note.bind_external_source(
                 &ctx.device,
@@ -121,18 +119,32 @@ pub(super) fn handle_video_frame(
                 onion_buf,
                 onion_count as usize,
             );
-        } else if !params.note_instances.is_empty() {
-            frame
-                .renderers
-                .note
-                .upload_instances(&params.note_instances, &ctx.device, &ctx.queue);
+        } else {
+            let export_note_pristine = frame.renderers.note.gpu_instance_count() == 0
+                && frame.renderers.note.last_upload_count() == 0;
+            if export_note_pristine && !params.note_instances.is_empty() {
+                frame.renderers.note.upload_instances(
+                    &params.note_instances,
+                    &ctx.device,
+                    &ctx.queue,
+                );
+            }
         }
     }
-    // 首帧诊断：上传/直绑后的 last_upload_count
+    // 首帧诊断：数据源（直绑/回退/空）＋上传/直绑后的 last_upload_count。
+    // 下次导出若怀疑"仍然上传"，看这三行：bound=直绑零上传，fallback=回退上传。
     if diag_idx < 3 {
+        let source = if frame.renderers.note.is_external_bound() {
+            "bound"
+        } else if frame.onion_source.is_some() {
+            "bound-empty"
+        } else {
+            "fallback"
+        };
         tracing::info!(
-            "视频帧诊断[{}]: 上传后 last_upload_count={}",
+            "视频帧诊断[{}]: 源={} last_upload_count={}",
             diag_idx,
+            source,
             frame.renderers.note.last_upload_count(),
         );
     }
