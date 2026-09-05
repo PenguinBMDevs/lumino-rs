@@ -32,7 +32,8 @@ use math::build_camera_uniform;
 use pipeline::{
     create_aura_render_pipeline, create_bind_group_layout, create_buffers,
     create_driven_group_layout, create_note_driven_pipeline, create_note_render_pipeline,
-    create_render_pipeline, create_top_note_render_pipeline, create_top_render_pipeline,
+    create_quad_index_buffer, create_render_pipeline, create_top_note_render_pipeline,
+    create_top_render_pipeline,
 };
 use quantize::quantize_notes_for_top;
 
@@ -79,6 +80,12 @@ pub struct MiditrailRenderer {
     uniform_buffer: crate::gpu_resource_tracker::TrackedBuffer,
     vertex_buffer: crate::gpu_resource_tracker::TrackedBuffer,
     index_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    /// 音符平面索引缓冲（`QUAD_INDICES`，仅音符 draw 绑定；琴键/Aura 不动）。
+    quad_index_buffer: crate::gpu_resource_tracker::TrackedBuffer,
+    /// 音符平面模式（`3D音符` 开关关闭 = 平面）：盒子→单面，12→2 三角形/音符。
+    /// 只切换音符 draw 的索引缓冲与绘制段；实例/顺序/变换/颜色/其他物体零改动。
+    /// 构造默认 false（盒子，现状零行为变化）；导出 handler 每帧按参数显式设置。
+    pub flat_notes: bool,
     instance_buffer: Option<crate::gpu_resource_tracker::TrackedBuffer>,
 
     output_texture: Option<crate::gpu_resource_tracker::TrackedTexture>,
@@ -158,6 +165,19 @@ impl MiditrailRenderer {
         16, 17, 18, 16, 18, 19, // 右面
         20, 21, 22, 20, 22, 23,
     ];
+    /// 音符平面索引（盒子→平面的唯一改动点）：正面 6（Normal 视图，相机方向）
+    /// 与顶面 6（Top 视图俯视，z 向面零面积不可见，见 Aura 同理跳过）。
+    /// 索引逐字复用 `CUBE_INDICES` 对应面的绕序——同顶点/同插值/同 shader，
+    /// 正面片元与盒子正面逐位一致；行为（实例/顺序/变换/颜色）零改动。
+    /// 琴键/Aura 继续走立方体缓冲，本缓冲仅音符 draw 绑定。
+    const QUAD_INDICES: [u16; 12] = [
+        // 正面 z=1（Normal）
+        8, 9, 10, 8, 10, 11, // 顶面 y=1（Top）
+        0, 1, 2, 0, 2, 3,
+    ];
+    /// 平面索引在 `QUAD_INDICES` 中的位置（Normal 取正面段，Top 取顶面段）。
+    const QUAD_FRONT_RANGE: std::ops::Range<u32> = 0..6;
+    const QUAD_TOP_RANGE: std::ops::Range<u32> = 6..12;
 
     const INITIAL_INSTANCE_CAPACITY: usize = 4096;
 
@@ -199,6 +219,7 @@ impl MiditrailRenderer {
         let aura_pipeline = create_aura_render_pipeline(device, &bind_group_layout, &aura_shader);
         let (uniform_buffer, vertex_buffer, index_buffer) =
             create_buffers(device, &Self::CUBE_VERTICES, &Self::CUBE_INDICES);
+        let quad_index_buffer = create_quad_index_buffer(device, &Self::QUAD_INDICES);
         let (aura_vertex_buffer, aura_index_buffer) = create_aura_buffers(device);
         let aura_sampler = create_aura_sampler(device);
         let aura_image_data = generate_aura_ring_data(AURA_TEXTURE_SIZE);
@@ -219,6 +240,8 @@ impl MiditrailRenderer {
             uniform_buffer,
             vertex_buffer,
             index_buffer,
+            quad_index_buffer,
+            flat_notes: false,
             instance_buffer: None,
             output_texture: None,
             output_texture_view: None,

@@ -72,6 +72,9 @@ pub(super) fn handle_miditrail_frame(
     if !params.note_instances.is_empty() {
         renderer.seed_resident(&ctx.device, &ctx.queue, &params.note_instances);
     }
+    // 3D 音符开关（默认关 = 平面）：只切换音符 draw 的索引缓冲，实例/顺序/管线不动。
+    renderer.flat_notes = !params.miditrail_3d_notes;
+    let geo_label = if renderer.flat_notes { "quad" } else { "box" };
     // cull 窗口与 UI 收集同公式（`miditrail_viewport_span` 共享，保证谓词一致）。
     let tick = params.miditrail_current_tick;
     let key_count = (params.max_key_index + 1.0).max(1.0) as usize;
@@ -95,40 +98,52 @@ pub(super) fn handle_miditrail_frame(
         tick_end,
         key_count,
     };
-    let (path_label, note_total) = match renderer.cull_window(&ctx.device, &ctx.queue, window) {
-        Ok(window) => {
-            let n = window.len();
-            renderer.render_from_instances(
-                &ctx.device,
-                &ctx.queue,
-                &mut encoder,
-                &uniform,
-                &window,
-            );
-            renderer.restore_window(window);
-            ("cull-legacy", n)
-        }
-        Err(e) => {
-            tracing::error!("Miditrail cull 失败，回退所带音符: {e}");
-            let n = params.note_instances.len();
-            renderer.render_from_instances(
-                &ctx.device,
-                &ctx.queue,
-                &mut encoder,
-                &uniform,
-                &params.note_instances,
-            );
-            ("legacy-fallback", n)
-        }
-    };
+    let (path_label, note_total, count_us, fill_us, legacy_us) =
+        match renderer.cull_window(&ctx.device, &ctx.queue, window) {
+            Ok((window, timing)) => {
+                let n = window.len();
+                let t_legacy = std::time::Instant::now();
+                renderer.render_from_instances(
+                    &ctx.device,
+                    &ctx.queue,
+                    &mut encoder,
+                    &uniform,
+                    &window,
+                );
+                let legacy_us = t_legacy.elapsed().as_micros() as u64;
+                renderer.restore_window(window);
+                (
+                    "cull-legacy",
+                    n,
+                    timing.count_us,
+                    timing.fill_readback_us,
+                    legacy_us,
+                )
+            }
+            Err(e) => {
+                tracing::error!("Miditrail cull 失败，回退所带音符: {e}");
+                let n = params.note_instances.len();
+                let t_legacy = std::time::Instant::now();
+                renderer.render_from_instances(
+                    &ctx.device,
+                    &ctx.queue,
+                    &mut encoder,
+                    &uniform,
+                    &params.note_instances,
+                );
+                let legacy_us = t_legacy.elapsed().as_micros() as u64;
+                ("legacy-fallback", n, 0, 0, legacy_us)
+            }
+        };
     let work_us = t_work.elapsed().as_micros() as u64;
-    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：work 含 cull 两次提交 + 回读 + legacy 渲染调度。
+    // 渲染侧分段打点（首 3 帧 + 每 300 帧）：work 含 cull 两次提交 + 回读 + legacy 渲染调度；
+    // count/fill/legacy 三段拆开，下次诊断不再盲人摸象。
     {
         static RENDER_DIAG: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let n = RENDER_DIAG.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         if n < 3 || n.is_multiple_of(300) {
             tracing::info!(
-                "miditrail渲染打点[{n}]: path={path_label} work={work_us}us notes={note_total}"
+                "miditrail渲染打点[{n}]: path={path_label} geo={geo_label} work={work_us}us notes={note_total} count={count_us}us fill_readback={fill_us}us legacy={legacy_us}us"
             );
         }
     }

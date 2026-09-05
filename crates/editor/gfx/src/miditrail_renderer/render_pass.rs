@@ -79,6 +79,9 @@ impl MiditrailRenderer {
 
             // 1. 绘制音符（不写深度缓冲，参考 Comet MIDITrail 的 Painter's algorithm，
             //    琴键后绘制并覆盖音符）。Top 用 flat 管线（省逐片元光照）。
+            //    平面模式（`3D音符` 开关关闭 = 默认）：仅绑定音符四边形索引，
+            //    Normal 取正面段、Top 取顶面段（z/y 向面在对应视图零面积，不可见）；
+            //    实例/顺序/管线/shader 全不动，琴键与 Aura 仍走立方体缓冲。
             if is_top {
                 render_pass.set_pipeline(&self.top_note_pipeline);
             } else {
@@ -87,12 +90,24 @@ impl MiditrailRenderer {
             render_pass.set_bind_group(0, bind_group, &[]);
             render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
             render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
-            render_pass.set_index_buffer(
-                self.index_buffer.inner().slice(..),
-                wgpu::IndexFormat::Uint16,
-            );
-
-            render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
+            if self.flat_notes {
+                let range = if is_top {
+                    Self::QUAD_TOP_RANGE
+                } else {
+                    Self::QUAD_FRONT_RANGE
+                };
+                render_pass.set_index_buffer(
+                    self.quad_index_buffer.inner().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(range, 0, 0..note_count);
+            } else {
+                render_pass.set_index_buffer(
+                    self.index_buffer.inner().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count);
+            }
 
             // 2. 绘制 Aura（附加混合，不写入深度）。Top 在俯视下零面积不可见，跳过。
             if !is_top {

@@ -16,9 +16,17 @@ use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::readback_bytes_sync;
 use crate::{CullWindow, KEY_BUCKETS, NoteInstance, prefix_counts};
 
+/// cull 窗口分段耗时（随 `cull_window` 返回；打点拆分用，work 黑盒不再盲人摸象）。
+#[derive(Debug, Default, Clone, Copy)]
+pub struct CullTiming {
+    /// COUNT 内核 + 提交 + 1KB 回读同步。
+    pub count_us: u64,
+    /// FILL + compact 回读提交 + V×16B 按需映射拷贝。
+    pub fill_readback_us: u64,
+}
+
 impl MiditrailRenderer {
-    /// 首帧全量播种：常驻缓冲一次上传 + cull 世代递增（桶下次提取时构建）。
-    ///
+    /// 首帧全量播种：常驻缓冲一次上传 + cull 世代递增（桶下次提取时构建）。    ///
     /// 调用方（导出 handler）在 `params.note_instances` 非空时调用；后续空帧跳过。
     pub fn seed_resident(
         &mut self,
@@ -49,8 +57,8 @@ impl MiditrailRenderer {
         self.resident_cull.mark_resident_updated();
     }
 
-    /// cull 窗口提取并回读（返回 CPU 切片的所有权，调用方渲染后 `restore_window` 归还，
-    /// 跨帧复用零分配；take/restore 为指针移动，无拷贝）。
+    /// cull 窗口提取并回读（返回 CPU 切片的所有权 + 分段耗时，调用方渲染后
+    /// `restore_window` 归还，跨帧复用零分配；take/restore 为指针移动，无拷贝）。
     ///
     /// 失败（空常驻/构建失败/回读失败）返回 `Err`，调用方回退所带音符。
     pub fn cull_window(
@@ -58,7 +66,7 @@ impl MiditrailRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         window: CullWindow,
-    ) -> Result<Vec<NoteInstance>, crate::GlobalBucketError> {
+    ) -> Result<(Vec<NoteInstance>, CullTiming), crate::GlobalBucketError> {
         let key_count = window.key_count.min(KEY_BUCKETS);
         let resident = self
             .resident_buffer
@@ -66,6 +74,7 @@ impl MiditrailRenderer {
             .ok_or(crate::GlobalBucketError::CullResource("miditrail 常驻缓冲"))?;
         let resident_inner = resident.inner().clone();
         let resident_count = self.resident_count;
+        let t_count = std::time::Instant::now();
         let extract = self.resident_cull.extract_count(
             device,
             queue,
@@ -73,11 +82,13 @@ impl MiditrailRenderer {
             resident_count,
             window,
         )?;
+        let count_us = t_count.elapsed().as_micros() as u64;
         let (_offsets, bases, total) = prefix_counts(&extract.counts, key_count);
         if total == 0 {
-            return Ok(std::mem::take(&mut self.cull_cpu));
+            return Ok((std::mem::take(&mut self.cull_cpu), CullTiming::default()));
         }
         // FILL + compact 回读：自有 encoder + 提交（legacy 需 CPU 切片，此处同步等待）。
+        let t_fill = std::time::Instant::now();
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("miditrail_cull_fill_readback"),
         });
@@ -110,9 +121,10 @@ impl MiditrailRenderer {
                 .as_ref()
                 .ok_or(crate::GlobalBucketError::CullResource("miditrail 回读暂存"))?
                 .inner(),
+            need_bytes,
         )?;
-        // 暂存按 1.2× 扩容：只取前 `total` 个实例，尾部零填充不是音符。
-        let need_bytes = total * 16;
+        let fill_readback_us = t_fill.elapsed().as_micros() as u64;
+        // 按需映射已保证长度（`need_bytes` 内对齐截断）；尾部零填充不是音符。
         let bytes = &bytes[..need_bytes.min(bytes.len())];
         let count = bytes.len() / 16;
         let mut out = std::mem::take(&mut self.cull_cpu);
@@ -123,7 +135,11 @@ impl MiditrailRenderer {
                 .iter()
                 .copied(),
         );
-        Ok(out)
+        let timing = CullTiming {
+            count_us,
+            fill_readback_us,
+        };
+        Ok((out, timing))
     }
 
     /// 归还 cull 窗口缓冲（`cull_window` 返回值的去向；跨帧复用）。
@@ -131,20 +147,22 @@ impl MiditrailRenderer {
         self.cull_cpu = window;
     }
 
-    /// 确保回读暂存容量（按需扩容；`MAP_READ | COPY_DST`）。
+    /// 确保回读暂存容量（按需扩容 + 滞后收缩；`MAP_READ | COPY_DST`）。
+    ///
+    /// 收缩是按需映射的搭档：只增不减会让密集段后的稀疏帧常驻数十 MB
+    ///（24M 文档实测密集段后稀疏帧被钉死 ~75ms）。`need < cap/4` 时缩到
+    /// 1.2×need；staging 是纯 scratch（每帧全量覆写），重建近乎免费，
+    /// 滞后带宽避免在边界反复抖动。
     fn ensure_cull_staging(&mut self, device: &wgpu::Device, need_bytes: usize) {
-        let ok = self
+        let cap = self
             .cull_staging
             .as_ref()
-            .is_some_and(|b| b.inner().size() >= need_bytes as u64);
-        if ok {
+            .map(|b| b.inner().size() as usize)
+            .unwrap_or(0);
+        if cap >= need_bytes && (need_bytes == 0 || cap < need_bytes.saturating_mul(4)) {
             return;
         }
-        let size = ((need_bytes.saturating_mul(6) / 5)
-            .max(need_bytes + 4096)
-            // map_async 要求 range 为 4 的倍数：按 16（NoteInstance 步长）对齐。
-            .div_ceil(16)
-            * 16) as u64;
+        let size = cull_staging_size(need_bytes) as u64;
         self.cull_staging = Some(TrackedBuffer::new(
             device,
             &wgpu::BufferDescriptor {
@@ -155,4 +173,13 @@ impl MiditrailRenderer {
             },
         ));
     }
+}
+
+/// 回读暂存容量：1.2×need 保底 +4KB，按 16（NoteInstance 步长）对齐
+///（map_async range 对齐要求；调用方 `total * 16` 天然对齐）。
+fn cull_staging_size(need_bytes: usize) -> usize {
+    (need_bytes.saturating_mul(6) / 5)
+        .max(need_bytes + 4096)
+        .div_ceil(16)
+        * 16
 }

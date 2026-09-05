@@ -99,6 +99,9 @@ pub struct RenderParams {
     pub miditrail_current_tick: u32,
     /// Miditrail Z 方向显示距离（音符在多远被截断）。
     pub miditrail_z_far: f32,
+    /// Miditrail 3D 音符开关（默认 false = 平面）：true 还原盒子（12 三角形/音符），
+    /// false 只绘制朝向相机的单面（2 三角形/音符，6 倍几何削减）；实例/顺序/颜色零改动。
+    pub miditrail_3d_notes: bool,
     /// Miditrail 光晕环动画时间基准：当前 tick 处每秒 tick 数（BPM × ppq / 60）。
     ///
     /// 0 表示未知（由渲染线程回退到 120 BPM 估算），供非导出路径的默认参数使用。
@@ -161,6 +164,7 @@ impl Default for RenderParams {
             miditrail_view_mode: MiditrailViewMode::Normal,
             miditrail_current_tick: 0,
             miditrail_z_far: 7.5,
+            miditrail_3d_notes: false,
             miditrail_ticks_per_second: 0.0,
             fps: 60.0,
             skip_scene_render: false,

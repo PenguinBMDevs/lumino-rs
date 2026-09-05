@@ -274,6 +274,7 @@ fn test_miditrail_collect_all_first_frame_full_then_skip() {
         miditrail_speed: 1.0,
         miditrail_view_mode: lumino_message::events::window::video::MiditrailViewMode::Normal,
         miditrail_z_far: 7.5,
+        miditrail_3d_notes: false,
         fps: 60.0,
         visible_notes: &mut visible,
         note_instances_out: &mut out,
@@ -281,6 +282,10 @@ fn test_miditrail_collect_all_first_frame_full_then_skip() {
         collect_all: true,
     });
     assert!(params.miditrail_enabled, "3D 标志");
+    assert!(
+        !params.miditrail_3d_notes,
+        "开关默认关闭（平面）透传渲染参数"
+    );
     assert_eq!(params.note_instances.len(), 3, "首帧全量：视口前后全保留");
     assert!(
         params.miditrail_ticks_per_second > 0.0,
@@ -297,6 +302,7 @@ fn test_miditrail_collect_all_first_frame_full_then_skip() {
         miditrail_speed: 1.0,
         miditrail_view_mode: lumino_message::events::window::video::MiditrailViewMode::Normal,
         miditrail_z_far: 7.5,
+        miditrail_3d_notes: true,
         fps: 60.0,
         visible_notes: &mut visible,
         note_instances_out: &mut out,
@@ -307,5 +313,6 @@ fn test_miditrail_collect_all_first_frame_full_then_skip() {
         params2.note_instances.is_empty(),
         "稳态帧跳过收集（渲染侧 cull + 回读）"
     );
+    assert!(params2.miditrail_3d_notes, "开关打开（盒子）透传渲染参数");
     assert_eq!(params2.miditrail_current_tick, 5_000_100);
 }

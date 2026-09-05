@@ -85,15 +85,22 @@ pub(crate) fn make_bind_group(
 
 /// 变长同步回读（staging 由调用方按需扩容；cull compact V×16B 传输用）。
 ///
+/// 只映射并拷贝前 `need_bytes` 字节——staging 经 1.2× 扩容只增不减（密集段可达
+/// 数十 MB），全量 `slice(..)` 会让稀疏帧也付全缓冲 map + memcpy 税（实测 24M
+/// 文档密集段后稀疏帧被钉死 ~75ms，recv≈work）。`need_bytes` 须为 MAP 对齐
+/// 长度（调用方 `total * 16` 天然 16 对齐）；超长按缓冲实际长度截断。
 /// 读回模式与 `readback_u256` 一致：`map_async` + `device.poll(Wait)` + 5s 兜底。
-/// 返回 staging 全长的字节拷贝（调用方按实际长度 cast）。
 pub(crate) fn readback_bytes_sync(
     device: &wgpu::Device,
     staging: &wgpu::Buffer,
+    need_bytes: usize,
 ) -> Result<Vec<u8>, GlobalBucketError> {
+    let cap = staging.size() as usize;
+    let mut len = need_bytes.min(cap);
+    len -= len % wgpu::MAP_ALIGNMENT as usize;
     let (tx, rx) = mpsc::channel();
     staging
-        .slice(..)
+        .slice(..len as u64)
         .map_async(wgpu::MapMode::Read, move |result| {
             let _ = tx.send(result);
         });
@@ -101,7 +108,7 @@ pub(crate) fn readback_bytes_sync(
     loop {
         if let Ok(map_result) = rx.try_recv() {
             map_result.map_err(|e| GlobalBucketError::MapFailed(format!("{e:?}")))?;
-            let data = staging.slice(..).get_mapped_range();
+            let data = staging.slice(..len as u64).get_mapped_range();
             let out = data.to_vec();
             drop(data);
             staging.unmap();

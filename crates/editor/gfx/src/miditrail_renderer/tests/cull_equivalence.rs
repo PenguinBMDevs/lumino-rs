@@ -105,7 +105,7 @@ fn test_miditrail_cull_window_matches_cpu() {
     let (device, queue) = test_device();
     let mut renderer = MiditrailRenderer::new(&device);
     renderer.seed_resident(&device, &queue, &notes);
-    let window = renderer
+    let (window, _timing) = renderer
         .cull_window(
             &device,
             &queue,
@@ -136,7 +136,7 @@ fn test_miditrail_cull_empty_window() {
     let (device, queue) = test_device();
     let mut renderer = MiditrailRenderer::new(&device);
     renderer.seed_resident(&device, &queue, &notes);
-    let window = renderer
+    let (window, _timing) = renderer
         .cull_window(
             &device,
             &queue,

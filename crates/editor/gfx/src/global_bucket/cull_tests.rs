@@ -151,7 +151,8 @@ fn cull_to_cpu(
     if total == 0 {
         return Vec::new();
     }
-    let bytes = crate::readback_bytes_sync(device, &staging).expect("cull 回读应成功");
+    let need_bytes = (total * 16).max(16);
+    let bytes = crate::readback_bytes_sync(device, &staging, need_bytes).expect("cull 回读应成功");
     bytemuck::cast_slice::<u8, NoteInstance>(&bytes).to_vec()
 }
 
