@@ -384,7 +384,7 @@ pub fn create_buffers(
     (uniform_buffer, vertex_buffer, index_buffer)
 }
 
-/// 音符平面索引缓冲（`QUAD_INDICES`，12×u16 常驻；仅音符 draw 绑定）。
+/// 音符平面索引缓冲（`QUAD_INDICES`，6×u16 常驻；仅音符 draw 绑定）。
 pub fn create_quad_index_buffer(device: &wgpu::Device, indices: &[u16]) -> TrackedBuffer {
     TrackedBuffer::new_init(
         device,

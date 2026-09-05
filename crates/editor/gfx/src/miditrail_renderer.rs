@@ -165,19 +165,20 @@ impl MiditrailRenderer {
         16, 17, 18, 16, 18, 19, // 右面
         20, 21, 22, 20, 22, 23,
     ];
-    /// 音符平面索引（盒子→平面的唯一改动点）：正面 6（Normal 视图，相机方向）
-    /// 与顶面 6（Top 视图俯视，z 向面零面积不可见，见 Aura 同理跳过）。
-    /// 索引逐字复用 `CUBE_INDICES` 对应面的绕序——同顶点/同插值/同 shader，
-    /// 正面片元与盒子正面逐位一致；行为（实例/顺序/变换/颜色）零改动。
+    /// 音符平面索引（盒子→平面的唯一改动点）：仅顶面 6（y=1 的 X-Z 面）。
+    /// 音符实例语义（`instances.rs`）：scale=[宽, 高 NOTE_HEIGHT, Z 长]，
+    /// Y 即高度轴；平面 = 只压 Y，X（音高宽）/Z（时值长）原样保留。
+    /// 索引逐字复用 `CUBE_INDICES[0..6]` 绕序——同顶点/同插值/同 shader，
+    /// 顶面片元与盒子顶面逐位一致；Normal/Top 双视图统一画本面
+    /// （Normal 下盒子可见像素本就几乎全来自顶面：高仅 0.007，
+    /// 正面只是 z=1 处一条细边；误取正面=把 Z 长压没了）。
     /// 琴键/Aura 继续走立方体缓冲，本缓冲仅音符 draw 绑定。
-    const QUAD_INDICES: [u16; 12] = [
-        // 正面 z=1（Normal）
-        8, 9, 10, 8, 10, 11, // 顶面 y=1（Top）
+    const QUAD_INDICES: [u16; 6] = [
+        // 顶面 y=1（X-Z 面：X 宽保留，Z 长保留，Y 压平）
         0, 1, 2, 0, 2, 3,
     ];
-    /// 平面索引在 `QUAD_INDICES` 中的位置（Normal 取正面段，Top 取顶面段）。
-    const QUAD_FRONT_RANGE: std::ops::Range<u32> = 0..6;
-    const QUAD_TOP_RANGE: std::ops::Range<u32> = 6..12;
+    /// 平面索引在 `QUAD_INDICES` 中的位置（Normal/Top 双视图共用）。
+    const QUAD_RANGE: std::ops::Range<u32> = 0..6;
 
     const INITIAL_INSTANCE_CAPACITY: usize = 4096;
 

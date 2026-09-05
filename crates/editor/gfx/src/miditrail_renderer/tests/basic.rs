@@ -11,32 +11,30 @@ fn test_cube_constants() {
 }
 
 /// 平面索引语义（盒子→平面的唯一改动点，纯 CPU 验证）：
-/// - 正面段逐字复用立方体正面绕序，顶面段逐字复用顶面绕序；
-/// - 引用角点坐标落在对应平面上（正面 z=1，顶面 y=1），索引不越界。
+/// - 仅顶面 6（y=1 的 X-Z 面）= 立方体索引 [0..6) 逐字复用；
+/// - Y 即高度轴（scale[1]=NOTE_HEIGHT），平面只压 Y，X/Z 保留；
+/// - 角点 y 全为 1、x/z 取遍 {0,1}（Z 长不丢失），索引不越界。
 #[test]
 fn test_quad_indices_reuse_cube_faces() {
-    assert_eq!(MiditrailRenderer::QUAD_INDICES.len(), 12);
-    assert_eq!(MiditrailRenderer::QUAD_FRONT_RANGE, 0..6);
-    assert_eq!(MiditrailRenderer::QUAD_TOP_RANGE, 6..12);
+    assert_eq!(MiditrailRenderer::QUAD_INDICES.len(), 6);
+    assert_eq!(MiditrailRenderer::QUAD_RANGE, 0..6);
     let cube = MiditrailRenderer::CUBE_INDICES;
     let quad = MiditrailRenderer::QUAD_INDICES;
-    // 正面段 = 立方体索引 [12..18)，顶面段 = [0..6)。
-    assert_eq!(&quad[0..6], &cube[12..18], "正面段必须逐字复用");
-    assert_eq!(&quad[6..12], &cube[0..6], "顶面段必须逐字复用");
+    assert_eq!(&quad[..], &cube[0..6], "平面必须逐字复用顶面");
     // 角点坐标约束：位置 stride 6（pos3 + normal3），24 个顶点。
     let verts = MiditrailRenderer::CUBE_VERTICES;
+    let (mut xs, mut zs) = (vec![], vec![]);
     for &i in quad.iter() {
         let base = (i as usize) * 6;
         assert!(base + 2 < verts.len(), "平面索引越界: {i}");
-    }
-    for &i in quad[0..6].iter() {
-        let base = (i as usize) * 6;
-        assert_eq!(verts[base + 2], 1.0, "正面角点 z 必须为 1: {i}");
-    }
-    for &i in quad[6..12].iter() {
-        let base = (i as usize) * 6;
         assert_eq!(verts[base + 1], 1.0, "顶面角点 y 必须为 1: {i}");
+        xs.push(verts[base]);
+        zs.push(verts[base + 2]);
     }
+    xs.sort_by(|a, b| a.partial_cmp(b).expect("角点 x 非法"));
+    zs.sort_by(|a, b| a.partial_cmp(b).expect("角点 z 非法"));
+    assert_eq!((xs[0], xs[3]), (0.0, 1.0), "X 宽必须保留");
+    assert_eq!((zs[0], zs[3]), (0.0, 1.0), "Z 长必须保留");
 }
 
 /// 验证 wgpu 设备/提交/读回链路可用（与 Miditrail 无关的烟雾测试）。
@@ -400,10 +398,12 @@ fn test_render_from_instances_matches_manual_convert() {
 
 /// A/B：平面模式是盒子模式的严格几何子集（行为零改动的可验证定义）。
 ///
-/// 同实例/同顺序/同管线下，平面三角形逐个等于盒子的对应面三角形
+/// 同实例/同顺序/同管线下，平面三角形逐个等于盒子的顶面三角形
 /// （同顶点/同插值/不透明覆盖），故平面非黑像素集 ⊆ 盒子非黑像素集；
 /// 琴键/Aura 两边完全一致（同缓冲同实例）。
-/// 差异仅来自被删掉的侧面/顶面/底面曾覆盖的像素——这正是开关要的外观变化。
+/// 差异仅来自被删掉的侧面/底面/背面曾覆盖的像素——这正是开关要的外观变化。
+/// 双视图循环：平面几何与视图无关（统一顶面），Normal/Top 逐个断言，
+/// 防"分视图取面"类回归（曾误取正面压掉 Z 长）。
 #[test]
 fn test_flat_notes_is_pixel_subset_of_box() {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -419,23 +419,6 @@ fn test_flat_notes_is_pixel_subset_of_box() {
     }))
     .expect("请求 wgpu 设备失败");
 
-    let uniform = MiditrailUniformGpu {
-        tick: 480,
-        ppq: 480,
-        key_count: 128,
-        frame_width: 320,
-        frame_height: 180,
-        kb_height: 20,
-        _reserved: 0,
-        speed: 1.0,
-        param1: 0.0,
-        param2: 0.0,
-        fps: 60.0,
-        z_far_distance: 7.5,
-        view_mode: MiditrailViewMode::Normal,
-        ticks_per_second: 960.0,
-        _padding1: 0,
-    };
     // 两枚重叠红音符：覆盖画家排序 + 侧面交叠路径。
     let notes = [(480u32, 960u32, 60u8), (600u32, 480u32, 64u8)];
     let manual: Vec<MiditrailNoteGpu> = notes
@@ -452,20 +435,39 @@ fn test_flat_notes_is_pixel_subset_of_box() {
         })
         .collect();
 
-    let mut renderer_box = MiditrailRenderer::new(&device);
-    renderer_box.flat_notes = false;
-    let box_pixels =
-        render_and_count_non_black(&device, &queue, &mut renderer_box, &uniform, &manual);
+    for view_mode in [MiditrailViewMode::Normal, MiditrailViewMode::Top] {
+        let uniform = MiditrailUniformGpu {
+            tick: 480,
+            ppq: 480,
+            key_count: 128,
+            frame_width: 320,
+            frame_height: 180,
+            kb_height: 20,
+            _reserved: 0,
+            speed: 1.0,
+            param1: 0.0,
+            param2: 0.0,
+            fps: 60.0,
+            z_far_distance: 7.5,
+            view_mode,
+            ticks_per_second: 960.0,
+            _padding1: 0,
+        };
+        let mut renderer_box = MiditrailRenderer::new(&device);
+        renderer_box.flat_notes = false;
+        let box_pixels =
+            render_and_count_non_black(&device, &queue, &mut renderer_box, &uniform, &manual);
 
-    let mut renderer_quad = MiditrailRenderer::new(&device);
-    renderer_quad.flat_notes = true;
-    let quad_pixels =
-        render_and_count_non_black(&device, &queue, &mut renderer_quad, &uniform, &manual);
+        let mut renderer_quad = MiditrailRenderer::new(&device);
+        renderer_quad.flat_notes = true;
+        let quad_pixels =
+            render_and_count_non_black(&device, &queue, &mut renderer_quad, &uniform, &manual);
 
-    assert!(box_pixels > 0, "盒子模式应渲染出可见内容");
-    assert!(quad_pixels > 0, "平面模式应渲染出可见内容");
-    assert!(
-        quad_pixels <= box_pixels,
-        "平面像素集应为盒子子集：quad={quad_pixels} box={box_pixels}"
-    );
+        assert!(box_pixels > 0, "{view_mode:?} 盒子模式应渲染出可见内容");
+        assert!(quad_pixels > 0, "{view_mode:?} 平面模式应渲染出可见内容");
+        assert!(
+            quad_pixels <= box_pixels,
+            "{view_mode:?} 平面像素集应为盒子子集：quad={quad_pixels} box={box_pixels}"
+        );
+    }
 }
