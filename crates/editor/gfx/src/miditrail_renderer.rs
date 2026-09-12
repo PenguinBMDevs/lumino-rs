@@ -350,7 +350,9 @@ impl MiditrailRenderer {
     ///
     /// CPU 每帧只做：单次融合扫描（按键＋光晕系数）＋128 键构建＋两次上传
     /// （compact 音符原字节＋1KB 参数）＋提交。换算/实例构建/排序/gather
-    /// 全部删除（位姿由 vertex shader 推导，顺序由深度测试解决）。
+    /// 全部删除（位姿由 vertex shader 推导；顺序由 compact 承载——FILL 画家序 +
+    /// 音符 `depth_write=false`，绘制顺序即最终次序，见 `bucket_cull.wgsl`
+    /// `paint_order` 与 `miditrail_note_driven.wgsl` 头注）。
     /// Top 视图与实时预览仍走 legacy `render`/`render_from_instances`。
     pub fn render_gpu_driven(
         &mut self,
@@ -451,7 +453,21 @@ impl MiditrailRenderer {
         if self.bind_group.is_none() {
             self.rebuild_bind_group(device);
         }
-        self.execute_driven_pass(encoder, notes.len(), &key_instances, &aura_instances);
+        // 不变式：`ensure_compact_buffer` 已在上方执行，句柄必然存在。
+        let compact_buf = match self.compact_buffer.as_ref() {
+            Some(buf) => buf.inner().clone(),
+            None => {
+                debug_assert!(false, "compact_buffer 应已初始化");
+                return;
+            }
+        };
+        self.execute_driven_pass(
+            encoder,
+            notes.len(),
+            &compact_buf,
+            &key_instances,
+            &aura_instances,
+        );
         let submit_us = t_submit.elapsed().as_micros() as u64;
         Self::diag_driven(scan_us, upload_us, aura_us, submit_us, notes.len());
         self.scratch_keys = key_instances;
@@ -491,14 +507,22 @@ impl MiditrailRenderer {
         self.compact_capacity = new_cap;
     }
 
-    /// GPU-Driven 提交：音符（driven 管线＋compact 缓冲）→ Aura → 琴键（legacy 管线）。
+    /// GPU-Driven 提交（两趟）：音符（driven 管线＋compact 缓冲）＋ Aura → 清深度 → 琴键。
     ///
-    /// 琴键管线 depth compare 已为 Always，绘制顺序即覆盖顺序，与 legacy
-    /// "琴键永远置顶"观感一致；音符之间由深度测试解决（不透明，无需排序）。
+    /// 与 legacy 单 pass 语义逐点对齐：
+    /// - legacy 音符不写深度（画家排序），琴键最后绘制且 depth 缓冲里只有琴键自身
+    ///   的写入——"琴键永远置顶"；driven 音符同样不写深度（顺序由 compact 画家序
+    ///   承载，见 `bucket_cull.wgsl` `paint_order`）。
+    /// - 若给琴键 compare=Always 绕过遮挡，琴键盒自遮挡反转：后画的面盖住先画的
+    ///   顶面，键盘呈"开盖壳子"（2026-09-05 实验实锤）。
+    /// - 深度清空分趟（防守语义，现音符不写深度时清空为恒等操作）：音符/光环一趟；
+    ///   琴键一趟清空深度后按 LessEqual 绘制：琴键互遮挡正确，且无论音符深度策略
+    ///   未来如何变化，"琴键永远置顶"与 legacy 逐位一致的语义都被锁死。
     fn execute_driven_pass(
         &self,
         encoder: &mut wgpu::CommandEncoder,
         note_count: usize,
+        compact: &wgpu::Buffer,
         key_instances: &[MiditrailInstanceGpu],
         aura_instances: &[MiditrailAuraInstanceGpu],
     ) {
@@ -518,72 +542,108 @@ impl MiditrailRenderer {
             debug_assert!(false, "driven_bind_group 应已初始化");
             return;
         };
-        let Some(compact_buf) = self.compact_buffer.as_ref() else {
-            debug_assert!(false, "compact_buffer 应已初始化");
-            return;
-        };
         let Some(instance_buf) = self.instance_buffer.as_ref() else {
             debug_assert!(false, "instance_buffer 应已初始化（琴键用）");
             return;
         };
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("miditrail_driven_pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: color_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(wgpu::Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
+        // ── 趟 1：音符（driven 管线，compact 实例直读，写深度）＋ Aura（加色，不写深度）──
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("miditrail_driven_notes_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(wgpu::Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 1.0,
+                        }),
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
                     }),
-                    store: wgpu::StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                view: depth_view,
-                depth_ops: Some(wgpu::Operations {
-                    load: wgpu::LoadOp::Clear(1.0),
-                    store: wgpu::StoreOp::Store,
+                    stencil_ops: None,
                 }),
-                stencil_ops: None,
-            }),
-            timestamp_writes: None,
-            occlusion_query_set: None,
-        });
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
 
-        // 1. 音符：driven 管线，compact 实例直读。
-        render_pass.set_pipeline(&self.driven_note_pipeline);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_bind_group(1, driven_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
-        render_pass.set_vertex_buffer(1, compact_buf.inner().slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.inner().slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
-        render_pass.draw_indexed(0..Self::CUBE_INDICES.len() as u32, 0, 0..note_count as u32);
+            render_pass.set_pipeline(&self.driven_note_pipeline);
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.set_bind_group(1, driven_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+            render_pass.set_vertex_buffer(1, compact.slice(..));
+            // 平面模式（`3D音符` 开关关闭 = 默认）：只画顶面（X-Z），与 legacy 共用
+            // 同一索引语义与 QUAD_RANGE；实例/顺序/管线/shader 全不动。
+            if self.flat_notes {
+                render_pass.set_index_buffer(
+                    self.quad_index_buffer.inner().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(Self::QUAD_RANGE, 0, 0..note_count as u32);
+            } else {
+                render_pass.set_index_buffer(
+                    self.index_buffer.inner().slice(..),
+                    wgpu::IndexFormat::Uint16,
+                );
+                render_pass.draw_indexed(
+                    0..Self::CUBE_INDICES.len() as u32,
+                    0,
+                    0..note_count as u32,
+                );
+            }
 
-        // 2. Aura（加色混合，与 legacy 同）。
-        self.draw_aura(&mut render_pass, aura_instances);
+            self.draw_aura(&mut render_pass, aura_instances);
+        }
 
-        // 3. 琴键（legacy 管线＋实例缓冲，compare Always 置顶）。
-        render_pass.set_pipeline(&self.render_pipeline);
-        render_pass.set_bind_group(0, bind_group, &[]);
-        render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
-        render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
-        render_pass.set_index_buffer(
-            self.index_buffer.inner().slice(..),
-            wgpu::IndexFormat::Uint16,
-        );
-        render_pass.draw_indexed(
-            0..Self::CUBE_INDICES.len() as u32,
-            0,
-            0..key_instances.len() as u32,
-        );
+        // ── 趟 2：琴键（深度清空后 LessEqual：自遮挡正确，且音符深度已丢弃）──
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("miditrail_driven_keys_pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: color_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: wgpu::StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: depth_view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: wgpu::StoreOp::Store,
+                    }),
+                    stencil_ops: None,
+                }),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_bind_group(0, bind_group, &[]);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.inner().slice(..));
+            render_pass.set_vertex_buffer(1, instance_buf.inner().slice(..));
+            render_pass.set_index_buffer(
+                self.index_buffer.inner().slice(..),
+                wgpu::IndexFormat::Uint16,
+            );
+            render_pass.draw_indexed(
+                0..Self::CUBE_INDICES.len() as u32,
+                0,
+                0..key_instances.len() as u32,
+            );
+        }
     }
 
     /// 渲染内阶段打点（首 3 帧 + 每 300 帧）：拆 render 42ms 黑盒，下一刀的靶子。

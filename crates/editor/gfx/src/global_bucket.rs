@@ -22,7 +22,9 @@ mod support;
 #[cfg(test)]
 mod tests;
 
-pub use cull::{CullExtract, CullWindow, ResidentCull, prefix_counts};
+pub use cull::{
+    CullActiveParams, CullExtract, CullWindow, ResidentCull, prefix_counts, prefix_counts_layered,
+};
 pub(crate) use support::readback_bytes_sync;
 
 use crate::gpu_resource_tracker::TrackedBuffer;

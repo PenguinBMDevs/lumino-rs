@@ -8,7 +8,8 @@ use super::super::instances::{
     emit_aura_instances, update_key_positions,
 };
 use super::super::*;
-use crate::NoteInstance;
+use super::paint_order_window;
+use crate::{CullWindow, NoteInstance};
 use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 
@@ -275,25 +276,30 @@ fn test_driven_single_active_note_matches() {
     );
 }
 
-/// GPU 级：同输入下 legacy 与 Driven 像素差异（已知：画家 vs 深度顺序语义差）。
+/// GPU 级：同输入下 legacy 与 Driven 像素差异（画家序回归锁）。
 ///
-/// 2026-09-05 结论：稀疏帧一致，密集重叠带存在系统性 winners 差异（YAVG~9@f300）。
-/// UI 侧验收未通过，driven 已回退；本测试 ignore 保留，待观感方案确定后重启用。
-/// 允许项：画家排序 vs 深度测试在重叠边界的离散差异、float±1LSB。
-/// 不允许：系统性亮度/颜色/缺失差异（如 dense 帧 wash 缺失会直接超标）。
+/// 修复后（compact 画家序 + 音符不写深度）两条路径应逐像素等价，仅容差
+/// float±1LSB 与光晕/按键动画状态差异；本测试为回归锁，超标即画家序又破了。
+/// 允许项：float±1LSB。不允许：系统性亮度/颜色/缺失差异、win 者翻转。
 #[test]
-#[ignore = "driven 已回退：画家vs深度观感差异待产品决策"]
 fn test_driven_pixels_match_legacy() {
     let (_instance, device, queue) = test_device();
     let uniform = test_uniform();
     let notes = dense_scene();
     let (w, h) = (uniform.frame_width, uniform.frame_height);
+    let tick_end = uniform.tick.saturating_add(miditrail_viewport_span(
+        uniform.ppq,
+        uniform.speed,
+        uniform.z_far_distance,
+    ));
+    let paint_notes =
+        paint_order_window(&notes, uniform.tick, tick_end, uniform.key_count as usize);
 
     let mut legacy_renderer = MiditrailRenderer::new(&device);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("miditrail_equiv_legacy"),
     });
-    legacy_renderer.render_from_instances(&device, &queue, &mut encoder, &uniform, &notes);
+    legacy_renderer.render_from_instances(&device, &queue, &mut encoder, &uniform, &paint_notes);
     queue.submit(std::iter::once(encoder.finish()));
     let legacy_tex = legacy_renderer
         .output_texture()
@@ -303,7 +309,7 @@ fn test_driven_pixels_match_legacy() {
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("miditrail_equiv_driven"),
     });
-    driven_renderer.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &notes);
+    driven_renderer.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &paint_notes);
     queue.submit(std::iter::once(encoder.finish()));
     let driven_tex = driven_renderer
         .output_texture()
@@ -353,5 +359,557 @@ fn test_driven_pixels_match_legacy() {
     assert!(
         ratio < 0.005,
         "像素差异率超标：{ratio:.5}（差异通道 {diff_pixels}/{total}，最大差 {max_diff}，音符区差异像素 {diff_top}，键盘区差异像素 {diff_bottom}）"
+    );
+}
+
+/// 生产默认（flat）：driven（compact 画家序）与 legacy 同序输入必须逐位一致。
+///
+/// flat 音符只有顶面四边形，无 box 侧棱面的 GPU/CPU 亚像素舍入分歧，故要求
+/// **全通道 0 差异**（box 模式的侧棱面残差由 `test_driven_pixels_match_legacy`
+/// 的 0.005 阈值兜底）。这是导出视频观感与 legacy 完全一致的硬回归锁。
+#[test]
+fn test_driven_flat_pixels_match_legacy_exactly() {
+    let (_instance, device, queue) = test_device();
+    let uniform = test_uniform();
+    let notes = dense_scene();
+    let (w, h) = (uniform.frame_width, uniform.frame_height);
+    let tick_end = uniform.tick.saturating_add(miditrail_viewport_span(
+        uniform.ppq,
+        uniform.speed,
+        uniform.z_far_distance,
+    ));
+    let paint_notes =
+        paint_order_window(&notes, uniform.tick, tick_end, uniform.key_count as usize);
+
+    let mut legacy = MiditrailRenderer::new(&device);
+    legacy.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("flat_parity_legacy"),
+    });
+    legacy.render_from_instances(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let legacy_tex = legacy.output_texture().expect("legacy 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("flat_parity_legacy_rb"),
+    });
+    let legacy_px = readback_pixels(&device, &queue, encoder, legacy_tex, w, h);
+
+    let mut driven = MiditrailRenderer::new(&device);
+    driven.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("flat_parity_driven"),
+    });
+    driven.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let driven_tex = driven.output_texture().expect("driven 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("flat_parity_driven_rb"),
+    });
+    let driven_px = readback_pixels(&device, &queue, encoder, driven_tex, w, h);
+
+    let mut over = 0usize;
+    let mut max_diff = 0u8;
+    for (a, b) in legacy_px.iter().zip(driven_px.iter()) {
+        let d = a.abs_diff(*b);
+        max_diff = max_diff.max(d);
+        if d > 0 {
+            over += 1;
+        }
+    }
+    assert_eq!(
+        over, 0,
+        "flat 生产路径必须逐位一致（差异通道 {over}，最大差 {max_diff}）"
+    );
+}
+
+/// 导出路径端到端：`cull_prepare` → `render_gpu_driven_from_compact` ≡
+/// `render_gpu_driven`（CPU 扫描 + 上传路径）。
+///
+/// 两条路径的差别只在活跃键/光晕来源（GPU COUNT 顺带聚合 vs CPU 全量扫描）
+/// 与音符实例来源（常驻 compact 直绑 vs CPU 上传）。键色逐位一致、光晕系数
+/// ULP 级差异（`powf(0.3)`）→ 允许极小像素差异（差异像素占比 <0.1%）。
+#[test]
+fn test_driven_from_compact_matches_upload_path() {
+    let (_instance, device, queue) = test_device();
+    let uniform = test_uniform();
+    let notes = dense_scene();
+    let (w, h) = (uniform.frame_width, uniform.frame_height);
+    let tick_end = uniform.tick.saturating_add(miditrail_viewport_span(
+        uniform.ppq,
+        uniform.speed,
+        uniform.z_far_distance,
+    ));
+
+    // A：导出路径（常驻 → cull compact 直绑 + GPU 活跃聚合）。
+    let mut from_compact = MiditrailRenderer::new(&device);
+    from_compact.seed_resident(&device, &queue, &notes);
+    let prepared = from_compact
+        .cull_prepare(
+            &device,
+            &queue,
+            CullWindow {
+                tick_start: uniform.tick,
+                tick_end,
+                key_count: uniform.key_count as usize,
+            },
+            crate::CullActiveParams {
+                ticks_per_second: uniform.ticks_per_second,
+                fps: uniform.fps,
+            },
+        )
+        .expect("cull_prepare 应成功");
+    assert!(prepared.total > 0, "窗口非空（测试前提）");
+    let compact = from_compact
+        .cull_compact_buffer()
+        .cloned()
+        .expect("FILL 后 compact 应就绪");
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_compact_render"),
+    });
+    from_compact.render_gpu_driven_from_compact(
+        &device,
+        &queue,
+        &mut encoder,
+        &uniform,
+        &compact,
+        prepared.total,
+        &prepared.active,
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+    let tex_a = from_compact.output_texture().expect("compact 路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_compact_readback"),
+    });
+    let px_a = readback_pixels(&device, &queue, encoder, tex_a, w, h);
+
+    // B：上传路径（CPU 扫描活跃键 + 上传音符）。输入取与 compact 同集合同序
+    //（画家序：白块→黑块 + 键内 [未来 start 降序、同 start 稳定][已开始升序]）
+    //——顺序即 winner，否则绘制序不同会分叉。
+    let window_notes =
+        paint_order_window(&notes, uniform.tick, tick_end, uniform.key_count as usize);
+
+    let mut upload = MiditrailRenderer::new(&device);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_upload_render"),
+    });
+    upload.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &window_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let tex_b = upload.output_texture().expect("上传路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_upload_readback"),
+    });
+    let px_b = readback_pixels(&device, &queue, encoder, tex_b, w, h);
+
+    let compare = |a: &[u8], b: &[u8], mode: &str| {
+        let mut over8 = 0usize;
+        let mut max_diff = 0u8;
+        for (x, y) in a.iter().zip(b.iter()) {
+            let d = x.abs_diff(*y);
+            max_diff = max_diff.max(d);
+            if d > 8 {
+                over8 += 1;
+            }
+        }
+        let ratio = over8 as f64 / a.len() as f64;
+        assert!(
+            ratio < 0.001,
+            "{mode} compact 路径与上传路径差异超标：{ratio:.5}（超8通道 {over8}，最大差 {max_diff}）"
+        );
+    };
+    compare(&px_a, &px_b, "box");
+
+    // 生产默认是平面（`3D音符` 默认关）：同法再验 flat（音符走 QUAD_RANGE，琴键不变）。
+    from_compact.flat_notes = true;
+    upload.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_compact_render_flat"),
+    });
+    from_compact.render_gpu_driven_from_compact(
+        &device,
+        &queue,
+        &mut encoder,
+        &uniform,
+        &compact,
+        prepared.total,
+        &prepared.active,
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+    let tex_a = from_compact.output_texture().expect("compact 路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_compact_readback_flat"),
+    });
+    let px_a = readback_pixels(&device, &queue, encoder, tex_a, w, h);
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_upload_render_flat"),
+    });
+    upload.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &window_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let tex_b = upload.output_texture().expect("上传路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("equiv_upload_readback_flat"),
+    });
+    let px_b = readback_pixels(&device, &queue, encoder, tex_b, w, h);
+    compare(&px_a, &px_b, "flat");
+}
+
+// ───────────────────────── 预览图导出（手动运行） ─────────────────────────
+//
+// 用法：cargo test -p lumino-gfx --lib preview_keyboard -- --ignored --nocapture
+// 产物：%TEMP%\lumino_miditrail_preview\ 下 legacy/driven 全帧 + 键盘条带 + 差异图。
+
+/// 键盘预览场景：128 键全覆盖 + 近键盘音符（最大限度暴露琴键与音符的遮挡关系）。
+fn keyboard_preview_scene(tick: u32) -> Vec<NoteInstance> {
+    let mut notes = dense_scene();
+    // 每键一枚从键盘平面附近开始的音符（active：按下高亮 + 立方体压住键盘区上沿）。
+    for k in 0..128u32 {
+        notes.push(NoteInstance::new(
+            (tick + 20 * (k % 4)) as f32,
+            k as u8,
+            140.0 + (k % 5) as f32 * 60.0,
+            [0.9, 0.25, 0.2, 1.0],
+            0,
+        ));
+    }
+    notes
+}
+
+/// 写 RGBA8 PNG（预览诊断用）。
+fn write_rgba_png(path: &std::path::Path, px: &[u8], w: u32, h: u32) {
+    let file = std::fs::File::create(path).expect("创建 PNG 文件应成功");
+    let mut enc = png::Encoder::new(std::io::BufWriter::new(file), w, h);
+    enc.set_color(png::ColorType::Rgba);
+    enc.set_depth(png::BitDepth::Eight);
+    let mut writer = enc.write_header().expect("写 PNG 头应成功");
+    writer.write_image_data(px).expect("写 PNG 数据应成功");
+}
+
+/// 取行区间 [y0, y1) 的 RGBA 子图。
+fn crop_rows(px: &[u8], w: u32, y0: u32, y1: u32) -> Vec<u8> {
+    let stride = (w * 4) as usize;
+    let mut out = Vec::with_capacity(stride * (y1 - y0) as usize);
+    out.extend_from_slice(&px[stride * y0 as usize..stride * y1 as usize]);
+    out
+}
+
+/// 两图逐通道绝对差（×4 增益，肉眼可辨）+ 差异统计；alpha 恒 255（差异图不透明）。
+fn diff_amplified(a: &[u8], b: &[u8]) -> (Vec<u8>, usize, u8) {
+    let mut out = Vec::with_capacity(a.len());
+    let mut over8 = 0usize;
+    let mut max = 0u8;
+    for (pa, pb) in a.as_chunks::<4>().0.iter().zip(b.as_chunks::<4>().0.iter()) {
+        for c in 0..3 {
+            let d = pa[c].abs_diff(pb[c]);
+            max = max.max(d);
+            if d > 8 {
+                over8 += 1;
+            }
+            out.push((d as u32 * 4).min(255) as u8);
+        }
+        out.push(255);
+    }
+    (out, over8, max)
+}
+
+/// 预览四联图：legacy / driven 全帧 + 键盘条带 + 放大差异图，另打键盘区差异统计。
+#[test]
+#[ignore = "预览图导出，手动运行"]
+fn test_preview_keyboard_legacy_vs_driven() {
+    let (_instance, device, queue) = test_device();
+    let mut uniform = test_uniform();
+    uniform.frame_width = 960;
+    uniform.frame_height = 540;
+    uniform.kb_height = 65;
+    let notes = keyboard_preview_scene(uniform.tick);
+    let (w, h) = (uniform.frame_width, uniform.frame_height);
+    let tick_end = uniform.tick.saturating_add(miditrail_viewport_span(
+        uniform.ppq,
+        uniform.speed,
+        uniform.z_far_distance,
+    ));
+    // 上传路径须按画家序传实例（顺序即 winner；未排序输入会与 legacy 分叉）。
+    let paint_notes =
+        paint_order_window(&notes, uniform.tick, tick_end, uniform.key_count as usize);
+
+    let mut legacy_renderer = MiditrailRenderer::new(&device);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_legacy"),
+    });
+    legacy_renderer.render_from_instances(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let legacy_tex = legacy_renderer.output_texture().expect("legacy 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_legacy"),
+    });
+    let legacy_px = readback_pixels(&device, &queue, encoder, legacy_tex, w, h);
+
+    let mut driven_renderer = MiditrailRenderer::new(&device);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_driven"),
+    });
+    driven_renderer.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let driven_tex = driven_renderer.output_texture().expect("driven 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_driven"),
+    });
+    let driven_px = readback_pixels(&device, &queue, encoder, driven_tex, w, h);
+
+    // 生产默认（flat）：box 侧棱面差异不应带入生产路径——单独量测 flat 对照。
+    legacy_renderer.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_legacy_flat"),
+    });
+    legacy_renderer.render_from_instances(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let legacy_flat_tex = legacy_renderer
+        .output_texture()
+        .expect("legacy flat 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_legacy_flat"),
+    });
+    let legacy_flat_px = readback_pixels(&device, &queue, encoder, legacy_flat_tex, w, h);
+    driven_renderer.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_driven_flat"),
+    });
+    driven_renderer.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &paint_notes);
+    queue.submit(std::iter::once(encoder.finish()));
+    let driven_flat_tex = driven_renderer
+        .output_texture()
+        .expect("driven flat 应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_driven_flat"),
+    });
+    let driven_flat_px = readback_pixels(&device, &queue, encoder, driven_flat_tex, w, h);
+
+    // 导出路径（cull compact 直绑 + GPU 活跃聚合）：真机导出实际走的路径。
+    let mut export_renderer = MiditrailRenderer::new(&device);
+    export_renderer.seed_resident(&device, &queue, &notes);
+    let tick_end = uniform.tick.saturating_add(miditrail_viewport_span(
+        uniform.ppq,
+        uniform.speed,
+        uniform.z_far_distance,
+    ));
+    let prepared = export_renderer
+        .cull_prepare(
+            &device,
+            &queue,
+            CullWindow {
+                tick_start: uniform.tick,
+                tick_end,
+                key_count: uniform.key_count as usize,
+            },
+            crate::CullActiveParams {
+                ticks_per_second: uniform.ticks_per_second,
+                fps: uniform.fps,
+            },
+        )
+        .expect("cull_prepare 应成功");
+    let compact = export_renderer
+        .cull_compact_buffer()
+        .cloned()
+        .expect("FILL 后 compact 应就绪");
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_export"),
+    });
+    export_renderer.render_gpu_driven_from_compact(
+        &device,
+        &queue,
+        &mut encoder,
+        &uniform,
+        &compact,
+        prepared.total,
+        &prepared.active,
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+    let export_tex = export_renderer.output_texture().expect("导出路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_export"),
+    });
+    let export_px = readback_pixels(&device, &queue, encoder, export_tex, w, h);
+
+    // 生产默认平面（`3D音符` 关）：同法再渲一帧，单独出图（用户默认观感）。
+    export_renderer.flat_notes = true;
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_export_flat"),
+    });
+    export_renderer.render_gpu_driven_from_compact(
+        &device,
+        &queue,
+        &mut encoder,
+        &uniform,
+        &compact,
+        prepared.total,
+        &prepared.active,
+    );
+    queue.submit(std::iter::once(encoder.finish()));
+    let export_flat_tex = export_renderer
+        .output_texture()
+        .expect("导出台面路径应有输出");
+    let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("preview_rb_export_flat"),
+    });
+    let export_flat_px = readback_pixels(&device, &queue, encoder, export_flat_tex, w, h);
+
+    // 键盘条带 = 底部 30%（琴键 + 其上方近场音符）。
+    let kb_y0 = h * 70 / 100;
+    let dir = std::env::temp_dir().join("lumino_miditrail_preview");
+    std::fs::create_dir_all(&dir).expect("创建预览目录应成功");
+    write_rgba_png(&dir.join("legacy_full.png"), &legacy_px, w, h);
+    write_rgba_png(&dir.join("driven_full.png"), &driven_px, w, h);
+    write_rgba_png(
+        &dir.join("legacy_keyboard.png"),
+        &crop_rows(&legacy_px, w, kb_y0, h),
+        w,
+        h - kb_y0,
+    );
+    write_rgba_png(
+        &dir.join("driven_keyboard.png"),
+        &crop_rows(&driven_px, w, kb_y0, h),
+        w,
+        h - kb_y0,
+    );
+    write_rgba_png(&dir.join("export_full.png"), &export_px, w, h);
+    write_rgba_png(
+        &dir.join("export_keyboard.png"),
+        &crop_rows(&export_px, w, kb_y0, h),
+        w,
+        h - kb_y0,
+    );
+    write_rgba_png(&dir.join("export_flat_full.png"), &export_flat_px, w, h);
+    write_rgba_png(
+        &dir.join("export_flat_keyboard.png"),
+        &crop_rows(&export_flat_px, w, kb_y0, h),
+        w,
+        h - kb_y0,
+    );
+    let (diff_full, over8, max_diff) = diff_amplified(&legacy_px, &driven_px);
+    write_rgba_png(&dir.join("diff_full.png"), &diff_full, w, h);
+    // 生产默认（flat）：同画家序输入下应逐位一致（0 = 完全一致）。
+    let (flat_diff, flat_over8, flat_max) = diff_amplified(&legacy_flat_px, &driven_flat_px);
+    write_rgba_png(&dir.join("diff_flat.png"), &flat_diff, w, h);
+    println!("PREVIEW_FLAT over8={flat_over8} max={flat_max}");
+
+    // 导出路径 vs legacy（键盘验收是重点）：仅统计键盘条带差异像素。
+    let mut export_kb_diff = 0usize;
+    let mut export_other_diff = 0usize;
+    for row in 0..h {
+        for col in 0..w {
+            let idx = (row as usize * (w * 4) as usize) + (col * 4) as usize;
+            let row_diff = (0..4).any(|c| legacy_px[idx + c].abs_diff(export_px[idx + c]) > 8);
+            if row_diff {
+                if row >= kb_y0 {
+                    export_kb_diff += 1;
+                } else {
+                    export_other_diff += 1;
+                }
+            }
+        }
+    }
+
+    // 键盘区差异统计。
+    let stride = (w * 4) as usize;
+    let mut kb_diff_px = 0usize;
+    let mut other_diff_px = 0usize;
+    for row in 0..h {
+        for col in 0..w {
+            let idx = (row as usize * stride) + (col * 4) as usize;
+            let row_diff = (0..4).any(|c| legacy_px[idx + c].abs_diff(driven_px[idx + c]) > 8);
+            if row_diff {
+                if row >= kb_y0 {
+                    kb_diff_px += 1;
+                } else {
+                    other_diff_px += 1;
+                }
+            }
+        }
+    }
+    println!(
+        "PREVIEW_STATS over8={over8} max={max_diff} kb_diff_px={kb_diff_px} other_diff_px={other_diff_px} export_kb_diff={export_kb_diff} export_other_diff={export_other_diff} dir={}",
+        dir.display()
+    );
+}
+
+// ───────────────────────── 共面叠音闪烁回归（RCA 锁） ─────────────────────────
+//
+// 根因：driven 曾用真实深度排序（`depth_write=true`）。同键叠音顶面完全共面，
+// 深度只差 ULP：随帧滑动逐像素 winner 在两种颜色间翻转 → 真机视频"疯狂闪烁"
+//（修复前本测试实测 946 像素红↔绿翻转；legacy 0）。legacy 画家排序注释即为
+// 此设计（见 `instances.rs::build_note_instances`）。
+//
+// 修复后（compact 画家序 + `depth_write=false`，绘制顺序即最终次序）：同键叠音
+// 按稳定序绘制，连续两帧红↔绿翻转必须为 0。
+#[test]
+fn test_coplanar_overlap_no_flicker() {
+    let (_instance, device, queue) = test_device();
+    let mut uniform = test_uniform();
+    let (w, h) = (uniform.frame_width, uniform.frame_height);
+    let frames = [5000u32, 5016];
+
+    let scene = || {
+        vec![
+            NoteInstance::new(4000.0, 60, 8000.0, [1.0, 0.0, 0.0, 1.0], 0),
+            NoteInstance::new(4000.0, 60, 4800.0, [0.0, 1.0, 0.0, 1.0], 0),
+        ]
+    };
+    // 红↔绿主导翻转计数（阈值 32 抗提亮与量化噪声）。
+    let flip_count = |a: &[u8], b: &[u8]| -> usize {
+        a.as_chunks::<4>()
+            .0
+            .iter()
+            .zip(b.as_chunks::<4>().0.iter())
+            .filter(|(pa, pb)| {
+                let sa = pa[0] as i32 - pa[1] as i32;
+                let sb = pb[0] as i32 - pb[1] as i32;
+                (sa > 32 && sb < -32) || (sa < -32 && sb > 32)
+            })
+            .count()
+    };
+
+    // A：driven（生产默认平面模式）。
+    let mut driven_frames: Vec<Vec<u8>> = Vec::new();
+    let mut driven = MiditrailRenderer::new(&device);
+    driven.flat_notes = true;
+    for &tick in &frames {
+        uniform.tick = tick;
+        let notes = scene();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flicker_probe_driven"),
+        });
+        driven.render_gpu_driven(&device, &queue, &mut encoder, &uniform, &notes);
+        queue.submit(std::iter::once(encoder.finish()));
+        let tex = driven.output_texture().expect("driven 应有输出");
+        let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flicker_probe_driven_rb"),
+        });
+        driven_frames.push(readback_pixels(&device, &queue, encoder, tex, w, h));
+    }
+
+    // B：legacy 画家路径（对照组，理论只差边缘移动像素）。
+    let mut legacy_frames: Vec<Vec<u8>> = Vec::new();
+    let mut legacy = MiditrailRenderer::new(&device);
+    legacy.flat_notes = true;
+    for &tick in &frames {
+        uniform.tick = tick;
+        let notes = scene();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flicker_probe_legacy"),
+        });
+        legacy.render_from_instances(&device, &queue, &mut encoder, &uniform, &notes);
+        queue.submit(std::iter::once(encoder.finish()));
+        let tex = legacy.output_texture().expect("legacy 应有输出");
+        let encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("flicker_probe_legacy_rb"),
+        });
+        legacy_frames.push(readback_pixels(&device, &queue, encoder, tex, w, h));
+    }
+
+    let driven_flip = flip_count(&driven_frames[0], &driven_frames[1]);
+    let legacy_flip = flip_count(&legacy_frames[0], &legacy_frames[1]);
+    assert_eq!(legacy_flip, 0, "legacy 画家路径基准不得翻转");
+    assert_eq!(
+        driven_flip, 0,
+        "同键共面叠音不得跨帧翻转（真实深度 ULP 闪烁回归；修复前实测 946）"
     );
 }

@@ -2,9 +2,14 @@
 //!
 //! CPU 每帧只上传窗口内 `NoteInstance` 原字节（16B/音符，零换算、零排序），
 //! translation/scale/color 的推导（与 `instances.rs::build_note_instances`
-//! 逐 op 对应，运算顺序刻意保持一致）搬进 `vs_main`。顺序由深度测试解决
-//! （不透明管线，`depth_write=true`），CPU 画家排序彻底删除。
-//! 琴键仍走旧管线最后绘制（depth compare Always，永远置顶，观感不变）。
+//! 逐 op 对应，运算顺序刻意保持一致）搬进 `vs_main`。CPU 画家排序删除——
+//! 顺序由 compact 承载：`bucket_cull.wgsl` FILL 按画家序写（白键块→黑键块 +
+//! 键内 [未来 start 降序、同 start 稳定][已开始升序]），音符管线
+//! `depth_write=false`，绘制顺序即最终次序，与 legacy
+//! `(is_black, z_start, key)` 稳定排序在所有可见重叠上逐像素等价
+//!（含同键同 start 并列——真实深度的 ULP 级翻转闪烁即由此而来，见
+//! `instances.rs::build_note_instances` 排序注释）。
+//! 琴键仍走旧管线最后绘制（深度清空后 LessEqual，永远置顶）。
 
 struct Camera {
     view_proj: mat4x4<f32>,
