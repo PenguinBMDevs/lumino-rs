@@ -198,6 +198,67 @@ fn test_reset_project_settings_restores_defaults() {
 }
 
 // ================================================================
+// 设置面板主题即时全局应用
+//
+// 设置面板为独立窗口 + 独立 Root，面板内切换主题需记录待应用主题，
+// 由 Runner 逐帧取走并广播到主窗口与所有对话框（切换即全局生效）。
+// 主窗口与「主题未变化」的场景不得入队，避免 Runner 回灌造成循环。
+// ================================================================
+
+#[test]
+fn test_settings_dialog_records_pending_theme_apply() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new_settings_dialog("Dark", &ui_config);
+
+    root.handle_window_event(crate::window::Event::Theme("Dracula".to_string()));
+
+    assert_eq!(
+        root.window.theme.to_string(),
+        "Dracula",
+        "设置对话框自身的主题应立即更新"
+    );
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        Some("Dracula".to_string()),
+        "设置对话框切换主题应记录待全局应用的主题"
+    );
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "待应用主题取出后应清空"
+    );
+}
+
+#[test]
+fn test_main_window_does_not_record_pending_theme_apply() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new(&ui_config);
+
+    root.handle_window_event(crate::window::Event::Theme("Dracula".to_string()));
+
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "主窗口本身应用主题不应记录待全局应用主题"
+    );
+}
+
+#[test]
+fn test_settings_dialog_same_theme_not_requeued() {
+    let ui_config = lumino_core::storage::config::UiConfig::default();
+    let mut root = Root::new_settings_dialog("Dark", &ui_config);
+    let current = root.window.theme.to_string();
+
+    root.handle_window_event(crate::window::Event::Theme(current));
+
+    assert_eq!(
+        root.take_pending_theme_apply(),
+        None,
+        "主题未变化时不应入队（防止 Runner 回灌循环）"
+    );
+}
+
+// ================================================================
 // 拆分说明（避免单文件超 400 行）：
 // - `root_tests/speed_change.rs`：变速按钮 Ctrl+Click 测试
 // - `root_tests/sidebar.rs`：右侧栏跟随钢琴卷帘 UI 显隐测试

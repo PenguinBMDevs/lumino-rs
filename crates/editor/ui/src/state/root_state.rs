@@ -98,6 +98,12 @@ pub struct RootState {
     pub brush_settings_draft: BrushConfig,
     /// 画刷「绘制行为」对话框可选音轨列表（仅普通音轨，排除指挥轨），(track_id, name)
     pub brush_settings_tracks: Vec<(usize, String)>,
+    /// 设置对话框内切换主题后待全局应用的主题名。
+    ///
+    /// 设置面板为独立窗口 + 独立 Root，主题选择不能直接改主窗口；
+    /// 在此记录后由 Runner 逐帧取走并广播到主窗口与所有对话框，
+    /// 实现「切换即全局生效」而非「确认后生效」。
+    pub pending_theme_apply: Option<String>,
 }
 
 impl Default for RootState {
@@ -132,6 +138,7 @@ impl RootState {
             toggle_animation: ToggleAnimationState::new(),
             brush_settings_draft: BrushConfig::new(),
             brush_settings_tracks: Vec::new(),
+            pending_theme_apply: None,
         }
     }
 }
