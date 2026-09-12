@@ -117,6 +117,7 @@ pub fn create_top_note_render_pipeline(
 ///   按画家序写（见 `bucket_cull.wgsl` `paint_order`），绘制顺序即最终次序。
 ///   不用真实深度：同键叠音顶面共面，深度只差 ULP，会随帧翻转 winner（真机
 ///   "疯狂闪烁"实锤；legacy 画家排序注释即为此）。
+///
 /// 琴键仍走旧管线最后绘制（深度清空后 LessEqual，永远置顶，观感不变）。
 pub fn create_note_driven_pipeline(
     device: &wgpu::Device,
