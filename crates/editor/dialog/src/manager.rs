@@ -232,6 +232,17 @@ impl DialogManager {
         }
     }
 
+    /// 取出设置对话框内发起、待全局应用的主题。
+    ///
+    /// 设置面板切换主题后需立即同步主窗口与所有对话框（而非等确认按钮），
+    /// Runner 在 `about_to_wait` 中逐帧调用本方法消费。
+    pub fn take_pending_settings_theme(&mut self) -> Option<String> {
+        self.dialogs
+            .values_mut()
+            .filter(|d| d.dialog_type == DialogType::Settings)
+            .find_map(|d| d.take_pending_theme_apply())
+    }
+
     /// 查找指定类型的第一个对话框窗口 ID
     ///
     /// 用于 Runner 在对话框 UI 就绪后注入数据（如 RecoverTrack 对话框的条目列表）。

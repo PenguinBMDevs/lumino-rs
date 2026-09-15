@@ -2,6 +2,10 @@
 //!
 //! 从 `video.rs` 拆分而来，由 `video.rs` 通过 `pub use types::*;` 对外统一暴露。
 
+mod render_mode;
+
+pub use render_mode::RenderMode;
+
 /// 生成 unit-variant 枚举的 `FromStr` 实现（收敛手写样板，别名表与错误消息保留）。
 ///
 /// `$err_fmt` 为错误消息格式串，支持 `{input}` 占位（与原手写实现一致）。
@@ -18,6 +22,9 @@ macro_rules! impl_unit_enum_from_str {
         }
     };
 }
+
+// 宏需显式 re-export 供子模块 `use`（子模块声明在宏定义之前，不依赖宏文本作用域）。
+pub(crate) use impl_unit_enum_from_str;
 
 /// 输出容器格式。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -107,60 +114,6 @@ impl_unit_enum_from_str!(QualityPreset, "未知质量预设: {input}", {
     High => ["高"],
     Medium => ["中"],
     Low => ["低"],
-});
-
-/// 视频导出渲染模式。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum RenderMode {
-    /// Lumino瀑布流渲染（默认模式，音符随时间向下流动）
-    #[default]
-    Waterfall,
-    /// 音符矩形渲染（传统钢琴卷帘样式）
-    NoteRectangle,
-    /// MIDITrail 风格（3D MIDI 轨迹可视化）
-    MIDITrail,
-    /// 计数器渲染（不绘制卷帘，仅在画面上显示变化的统计数据文本）
-    NoteCounter,
-    /// 数据曲线渲染（绘制统计数据随时间的折线图，参考 MIDIGraphRenderer 移植）
-    DataCurve,
-    /// MidiConsole 风格（复刻 MidiConsole 的终端像素网格：逐通道半块键盘条 + 控制面板，参考 MidiConsole by Zacksony）
-    MidiConsole,
-}
-
-impl RenderMode {
-    /// 导出到渲染线程用的规范字符串
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            RenderMode::Waterfall => "waterfall",
-            RenderMode::NoteRectangle => "note_rectangle",
-            RenderMode::MIDITrail => "miditrail",
-            RenderMode::NoteCounter => "note_counter",
-            RenderMode::DataCurve => "data_curve",
-            RenderMode::MidiConsole => "midi_console",
-        }
-    }
-}
-
-impl std::fmt::Display for RenderMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RenderMode::Waterfall => f.write_str("Lumino瀑布流"),
-            RenderMode::NoteRectangle => f.write_str("音符矩形"),
-            RenderMode::MIDITrail => f.write_str("MIDITrail"),
-            RenderMode::NoteCounter => f.write_str("计数器"),
-            RenderMode::DataCurve => f.write_str("数据曲线"),
-            RenderMode::MidiConsole => f.write_str("MidiConsole"),
-        }
-    }
-}
-
-impl_unit_enum_from_str!(RenderMode, "未知渲染模式: {input}", {
-    Waterfall => ["waterfall", "瀑布流", "Lumino瀑布流"],
-    NoteRectangle => ["note_rectangle", "音符矩形"],
-    MIDITrail => ["miditrail", "MIDITrail"],
-    NoteCounter => ["note_counter", "计数器", "NoteCounter"],
-    DataCurve => ["data_curve", "数据曲线", "DataCurve"],
-    MidiConsole => ["midi_console", "MidiConsole"],
 });
 
 /// MIDITrail 视图模式（Normal 普通 / Top 顶部，见 VIEW-001）。

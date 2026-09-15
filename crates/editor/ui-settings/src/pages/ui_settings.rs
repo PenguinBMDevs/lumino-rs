@@ -3,37 +3,16 @@
 mod auto_scroll;
 mod font;
 mod interaction;
+mod theme_cards;
 
 use iced_core::Alignment;
 use iced_widget::{column, pick_list, row, text};
-use lumino_ui_core::{Element, Message, Theme};
+use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use crate::SettingsPanel;
 use lumino_extras::i18n::{Language, settings_translations};
-use lumino_ui_core::window;
-
-/// 本地化主题选项（显示名 vs 规范标识符）
-#[derive(Debug, Clone)]
-struct ThemeOption {
-    display: String,
-    value: String,
-}
-
-impl std::fmt::Display for ThemeOption {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display)
-    }
-}
-
-impl PartialEq for ThemeOption {
-    fn eq(&self, other: &Self) -> bool {
-        self.value == other.value
-    }
-}
-
-impl Eq for ThemeOption {}
 
 /// 渲染界面设置页面
 pub fn view<'a>(
@@ -54,21 +33,6 @@ pub fn view<'a>(
                     Message::Settings(crate::Event::NativeTitlebarChanged(enabled))
                 })
         ]
-    };
-
-    // 主题选项（在 Iced 内置主题前插入高对比度选项）
-    let hc_canonical = lumino_ui_core::theme::HIGH_CONTRAST_DISPLAY;
-    let mut theme_options: Vec<ThemeOption> = vec![ThemeOption {
-        display: t.high_contrast.to_string(),
-        value: hc_canonical.to_string(),
-    }];
-    theme_options.extend(Theme::ALL.iter().map(|t| ThemeOption {
-        display: t.to_string(),
-        value: t.to_string(),
-    }));
-    let current_theme = ThemeOption {
-        display: window.theme.to_string(),
-        value: window.theme.to_string(),
     };
 
     // 字体设置部分
@@ -97,19 +61,12 @@ pub fn view<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(SPACING_CONTENT),
-        // 主题选择
-        row![
-            text(t.theme)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
-            iced_widget::space().width(SPACING_MAIN),
-            pick_list(theme_options, Some(current_theme), |to| {
-                Message::Window(window::Event::Theme(to.value))
-            })
-            .width(200.0),
-        ]
-        .spacing(SPACING_ICON_LABEL)
-        .align_y(Alignment::Center),
+        // 主题选择（卡片预览：点击即切换，选中态高亮边框）
+        text(t.theme)
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style()),
+        iced_widget::space().height(SPACING_CONTENT),
+        theme_cards::view(settings.display.language, &window.theme.to_string()),
         iced_widget::space().height(SPACING_CONTENT),
         // 字体设置
         font_section,

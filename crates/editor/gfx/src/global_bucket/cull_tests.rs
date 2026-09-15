@@ -146,14 +146,14 @@ fn extract_with(
         key_count,
     };
     let extract = cull
-        .extract_count(device, queue, resident, count, window)
+        .extract_count(device, queue, resident, count, window, None)
         .expect("cull 计数应成功");
     let (_offsets, bases, total) = prefix_counts(&extract.counts, key_count);
     let mut enc = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
         label: Some("cull_equiv_fill"),
     });
     cull.extract_fill(
-        device, queue, &mut enc, resident, count, window, total, &bases,
+        device, queue, &mut enc, resident, count, window, total, &bases, false,
     )
     .expect("cull 填充应成功");
     let compact = cull.compact_buffer().expect("cull 紧凑缓冲应就绪").clone();

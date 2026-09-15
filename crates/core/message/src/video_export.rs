@@ -35,7 +35,7 @@ pub enum VideoExportAction {
     MidiPathChanged(String),
     /// 浏览 MIDI 路径
     BrowseMidi,
-    /// 渲染模式变更（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
+    /// 渲染模式变更（"Lumino瀑布流"/"Lumino卷帘"/"MIDITrail"/"计数器"）
     RenderModeChanged(String),
     /// MidiConsole 渲染后端变更（"GPU"/"CPU"）
     MidiConsoleBackendChanged(String),

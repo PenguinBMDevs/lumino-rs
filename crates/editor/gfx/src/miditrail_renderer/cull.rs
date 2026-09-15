@@ -10,19 +10,41 @@
 //! 两次提交：COUNT 自有提交（含 1KB 回读，`ResidentCull` 内部）；FILL + compact
 //! 回读自有提交（legacy 渲染需 CPU 切片，读回后新 encoder 渲染）。回读量 V×16B
 //!（36 万可见约 6MB），相对省掉的 UI 排序可忽略，打点量化。
+//!
+//! 两条出口：
+//! - `cull_window`：Top 视图/回退用（回读 V×16B → legacy 量化渲染）；
+//! - `cull_prepare`：Normal driven 用（零音符回读；COUNT 顺带聚合活跃键/光晕
+//!   并回读 1KB，FILL 直写 compact 供 driven 顶点管线直绑）。
 
 use super::MiditrailRenderer;
+use super::instances::{
+    ActiveKeys, build_driven_params, build_key_instances, emit_aura_instances, update_key_positions,
+};
+use super::math::build_camera_uniform;
+use super::types::MiditrailUniformGpu;
 use crate::gpu_resource_tracker::TrackedBuffer;
 use crate::readback_bytes_sync;
-use crate::{CullWindow, KEY_BUCKETS, NoteInstance, prefix_counts};
+use crate::{CullWindow, KEY_BUCKETS, NoteInstance, prefix_counts_layered};
 
-/// cull 窗口分段耗时（随 `cull_window` 返回；打点拆分用，work 黑盒不再盲人摸象）。
+/// cull 窗口分段耗时（随 `cull_window`/`cull_prepare` 返回；打点拆分用）。
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CullTiming {
-    /// COUNT 内核 + 提交 + 1KB 回读同步。
+    /// COUNT 内核 + 提交 + 回读同步（`cull_prepare` 含活跃键 1KB 回读）。
     pub count_us: u64,
-    /// FILL + compact 回读提交 + V×16B 按需映射拷贝。
+    /// `cull_window`：FILL + compact 回读提交 + V×16B 按需映射拷贝；
+    /// `cull_prepare`：FILL 调度（无 compact 回读）。
     pub fill_readback_us: u64,
+}
+
+/// `cull_prepare` 产物：driven 渲染所需的窗口规模 + 活跃键聚合。
+#[derive(Debug, Clone)]
+pub struct CullPrepared {
+    /// 窗口音符总数（driven `draw_indexed` 实例数）。
+    pub total: usize,
+    /// 活跃键聚合：`[0,128)` 键色（0 = 未按下），`[128,256)` 光晕系数 bitcast。
+    pub active: [u32; KEY_BUCKETS],
+    /// 分段耗时（口径见 `CullTiming`）。
+    pub timing: CullTiming,
 }
 
 impl MiditrailRenderer {
@@ -57,6 +79,183 @@ impl MiditrailRenderer {
         self.resident_cull.mark_resident_updated();
     }
 
+    /// Normal driven 准备：COUNT（顺带活跃键聚合，1KB 回读）→ 前缀和 → FILL。
+    ///
+    /// 不读回 compact——FILL 直写常驻 `compact_buffer`（调用方用
+    /// `cull_compact_buffer()` 拿到句柄交 driven 顶点管线直绑）。CPU 每帧只剩
+    /// 2×1KB 回读 + 前缀和 + 128 键实例/光晕构建，零 V 级 CPU 工作。
+    /// `active_params` 的 tick 统一取 `window.tick_start`（与 `uniform.tick` 同值）。
+    pub fn cull_prepare(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        window: CullWindow,
+        active_params: crate::CullActiveParams,
+    ) -> Result<CullPrepared, crate::GlobalBucketError> {
+        let key_count = window.key_count.min(KEY_BUCKETS);
+        let resident = self
+            .resident_buffer
+            .as_ref()
+            .ok_or(crate::GlobalBucketError::CullResource("miditrail 常驻缓冲"))?;
+        let resident_inner = resident.inner().clone();
+        let resident_count = self.resident_count;
+        let t_count = std::time::Instant::now();
+        let extract = self.resident_cull.extract_count(
+            device,
+            queue,
+            &resident_inner,
+            resident_count,
+            window,
+            Some(active_params),
+        )?;
+        let count_us = t_count.elapsed().as_micros() as u64;
+        let (_offsets, bases, total) = prefix_counts_layered(&extract.counts, key_count);
+        let active = extract.active.unwrap_or([0u32; KEY_BUCKETS]);
+        if total == 0 {
+            return Ok(CullPrepared {
+                total: 0,
+                active,
+                timing: CullTiming {
+                    count_us,
+                    fill_readback_us: 0,
+                },
+            });
+        }
+        let t_fill = std::time::Instant::now();
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("miditrail_cull_fill"),
+        });
+        self.resident_cull.extract_fill(
+            device,
+            queue,
+            &mut encoder,
+            &resident_inner,
+            resident_count,
+            window,
+            total,
+            &bases,
+            true,
+        )?;
+        queue.submit(Some(encoder.finish()));
+        let fill_us = t_fill.elapsed().as_micros() as u64;
+        Ok(CullPrepared {
+            total,
+            active,
+            timing: CullTiming {
+                count_us,
+                fill_readback_us: fill_us,
+            },
+        })
+    }
+
+    /// 常驻 compact 缓冲句柄（FILL 产物，`NoteInstance` 16B 布局，含 VERTEX 用途）。
+    pub fn cull_compact_buffer(&self) -> Option<&wgpu::Buffer> {
+        self.resident_cull.compact_buffer()
+    }
+
+    /// Normal driven 渲染（零音符回读）：compact 直绑顶点实例缓冲，绘制全窗口。
+    ///
+    /// CPU 每帧只做：活跃键解码 + 128 键实例/光晕构建 + 相机/参数上传；
+    /// 音符换算/排序/gather/上传全部消失（vertex 推导 + 深度测试排序）。
+    /// `active` 为 `cull_prepare` 回读的 1KB 聚合（布局见 `CullPrepared`）。
+    /// 仅 Normal 视图使用；Top 视图走 `cull_window` + `render_from_instances`。
+    #[allow(clippy::too_many_arguments)]
+    pub fn render_gpu_driven_from_compact(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
+        uniform: &MiditrailUniformGpu,
+        compact: &wgpu::Buffer,
+        note_count: usize,
+        active: &[u32; KEY_BUCKETS],
+    ) {
+        let width = uniform.frame_width;
+        let height = uniform.frame_height;
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.ensure_output_texture(device, width, height);
+        update_key_positions(
+            uniform.key_count,
+            &mut self.last_key_count,
+            &mut self.key_positions,
+            &mut self.key_widths,
+        );
+
+        let (active_keys, aura_sizes) = decode_active_for_gpu(active, uniform.key_count as usize);
+        self.update_key_press_factors(&active_keys, uniform.fps);
+
+        let mut key_instances = std::mem::take(&mut self.scratch_keys);
+        key_instances.clear();
+        build_key_instances(
+            uniform,
+            &active_keys,
+            &self.key_positions,
+            &self.key_widths,
+            &self.key_press_factors,
+            &mut key_instances,
+        );
+        self.ensure_instance_buffer(device, key_instances.len());
+        if let Some(ref buf) = self.instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&key_instances));
+        }
+
+        let params = build_driven_params(uniform, &self.key_positions, &self.key_widths);
+        queue.write_buffer(
+            self.driven_params_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[params]),
+        );
+        if self.driven_bind_group.is_none() {
+            self.driven_bind_group = Some(device.create_bind_group(&wgpu::BindGroupDescriptor {
+                label: Some("miditrail_driven_bind_group"),
+                layout: &self.driven_group_layout,
+                entries: &[wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: self.driven_params_buffer.inner().as_entire_binding(),
+                }],
+            }));
+        }
+
+        let mut aura_instances = std::mem::take(&mut self.scratch_auras);
+        aura_instances.clear();
+        emit_aura_instances(
+            &active_keys,
+            &aura_sizes,
+            uniform.key_count as usize,
+            &self.key_positions,
+            &self.key_widths,
+            &mut aura_instances,
+        );
+        self.ensure_aura_instance_buffer(device, aura_instances.len());
+        if let Some(ref buf) = self.aura_instance_buffer {
+            queue.write_buffer(buf.inner(), 0, bytemuck::cast_slice(&aura_instances));
+        }
+        self.ensure_aura_resources(device, queue);
+
+        let camera = build_camera_uniform(width, height, uniform.view_mode, uniform.z_far_distance);
+        queue.write_buffer(
+            self.uniform_buffer.inner(),
+            0,
+            bytemuck::cast_slice(&[camera]),
+        );
+        if self.bind_group.is_none() {
+            self.rebuild_bind_group(device);
+        }
+
+        self.execute_driven_pass(
+            encoder,
+            note_count,
+            compact,
+            &key_instances,
+            &aura_instances,
+        );
+
+        self.scratch_keys = key_instances;
+        self.scratch_auras = aura_instances;
+    }
+
     /// cull 窗口提取并回读（返回 CPU 切片的所有权 + 分段耗时，调用方渲染后
     /// `restore_window` 归还，跨帧复用零分配；take/restore 为指针移动，无拷贝）。
     ///
@@ -81,9 +280,10 @@ impl MiditrailRenderer {
             &resident_inner,
             resident_count,
             window,
+            None,
         )?;
         let count_us = t_count.elapsed().as_micros() as u64;
-        let (_offsets, bases, total) = prefix_counts(&extract.counts, key_count);
+        let (_offsets, bases, total) = prefix_counts_layered(&extract.counts, key_count);
         if total == 0 {
             return Ok((std::mem::take(&mut self.cull_cpu), CullTiming::default()));
         }
@@ -101,6 +301,7 @@ impl MiditrailRenderer {
             window,
             total,
             &bases,
+            true,
         )?;
         let compact = self
             .resident_cull
@@ -206,4 +407,30 @@ fn cull_staging_size(need_bytes: usize) -> usize {
         .max(need_bytes + 4096)
         .div_ceil(16)
         * 16
+}
+
+/// 将 GPU 活跃键聚合解码为 `(ActiveKeys, aura_sizes)`。
+///
+/// 布局：`[0,128)` 键色（0 = 未按下），`[128,256)` 光晕系数 f32 bitcast。
+/// 与 `compute_active_and_aura_for_compact` 的 CPU 语义逐位对齐；keys ≥ key_count
+/// 的尾部不采信（防上一帧残留）。
+pub(super) fn decode_active_for_gpu(
+    active: &[u32; KEY_BUCKETS],
+    key_count: usize,
+) -> (ActiveKeys, [f32; 128]) {
+    let limit = key_count.min(128);
+    let mut keys = ActiveKeys {
+        pressed: [false; 128],
+        colors: [0u32; 128],
+    };
+    let mut aura_sizes = [0.0f32; 128];
+    for k in 0..limit {
+        let c = active[k];
+        if c != 0 {
+            keys.pressed[k] = true;
+            keys.colors[k] = c;
+        }
+        aura_sizes[k] = f32::from_bits(active[128 + k]);
+    }
+    (keys, aura_sizes)
 }

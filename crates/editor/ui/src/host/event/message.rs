@@ -80,6 +80,14 @@ impl Host {
         true
     }
 
+    /// 取出设置对话框切换主题后待全局应用的主题（由 Runner 逐帧消费）
+    ///
+    /// 设置对话框为独立窗口，面板内选主题无法直接改主窗口；在 Root 层记录，
+    /// Runner 取走后广播到主窗口与所有对话框，实现「切换即全局生效」。
+    pub fn take_pending_theme_apply(&mut self) -> Option<String> {
+        self.root.take_pending_theme_apply()
+    }
+
     /// 处理编排操作消息（Copy/Paste/Cut/DeleteSelection）
     fn handle_arrangement_message(&mut self, message: message::Message) -> bool {
         let track_idx = self.root.editor.current_track() as u16;

@@ -231,6 +231,18 @@ impl winit::application::ApplicationHandler for Runner {
         puffin::profile_scope!("runner_about_to_wait_dialog_update");
         this.window_state.dialog_manager.update();
 
+        // 设置面板切换主题：立即全局应用（主窗口 + 所有对话框），
+        // 与 View 菜单复用 apply_global_theme；配置持久化交给随后同一帧的
+        // save_storage。消费后设置对话框主题已是新值，回灌不会再次入队。
+        if let Some(theme) = this
+            .window_state
+            .dialog_manager
+            .take_pending_settings_theme()
+        {
+            tracing::info!("设置面板切换主题，立即全局应用: {}", theme);
+            this.apply_global_theme(theme);
+        }
+
         // 保存存储
         puffin::profile_scope!("runner_about_to_wait_save_storage");
         this.save_storage();

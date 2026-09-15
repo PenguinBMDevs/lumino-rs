@@ -3,7 +3,7 @@
 //! 单一权威飞行格式：所有 GPU 模式统一产出 `note_instances`（`NoteInstance`），
 //! 瀑布流 / 3D 所需的派生数据由渲染线程按需换算，不再各存一份。
 //! 将 RenderParams 构建逻辑按渲染模式拆分为子模块：
-//! - `note_rectangle`：NoteRectangle 传统钢琴卷帘矩形
+//! - `note_rectangle`：Lumino卷帘（NoteRectangle 传统钢琴卷帘矩形）
 //! - `waterfall`：瀑布流（产出 note_instances + 瀑布流 uniforms）
 //! - `miditrail`：3D MIDI 轨迹（产出 note_instances + 3D uniforms）
 
@@ -139,7 +139,7 @@ pub(crate) use waterfall::build_waterfall_render_params;
 /// 构建视频导出帧的 RenderParams
 ///
 /// 根据 `render_mode` 选择渲染路径：
-/// - `NoteRectangle`：传统 GPU 音符矩形渲染
+/// - `NoteRectangle`（Lumino卷帘）：传统 GPU 音符矩形渲染
 /// - `Waterfall`：瀑布流 compute shader 渲染
 /// - `MIDITrail`：3D MIDI 轨迹渲染
 pub fn build_video_export_render_params(input: RenderParamsInput) -> Option<RenderParams> {

@@ -6,7 +6,8 @@ use std::time::{Duration, Instant};
 use super::{GlobalBucketError, HIST_BYTES, HIST_LEN};
 use crate::gpu_resource_tracker::TrackedBuffer;
 
-/// 创建 `STORAGE | COPY_DST | COPY_SRC` 通用缓冲（COPY_SRC 供单测回读验证）。
+/// 创建 `STORAGE | COPY_DST | COPY_SRC | VERTEX` 通用缓冲（COPY_SRC 供单测回读验证；
+/// VERTEX 供 cull compact 被 miditrail driven 顶点管线直绑——usage 位无额外成本）。
 pub(crate) fn new_storage_buffer(
     device: &wgpu::Device,
     label: &'static str,
@@ -19,7 +20,8 @@ pub(crate) fn new_storage_buffer(
             size: size.max(16),
             usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
-                | wgpu::BufferUsages::COPY_SRC,
+                | wgpu::BufferUsages::COPY_SRC
+                | wgpu::BufferUsages::VERTEX,
             mapped_at_creation: false,
         },
     )

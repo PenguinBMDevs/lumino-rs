@@ -1,4 +1,4 @@
-//! NoteRectangle 模式：传统钢琴卷帘音符矩形
+//! Lumino卷帘模式（NoteRectangle）：传统钢琴卷帘音符矩形
 
 use lumino_gfx::RenderParams;
 
@@ -7,7 +7,7 @@ use super::{
     build_note_rectangle_params_from_visible,
 };
 
-/// NoteRectangle 模式：传统 GPU 音符矩形渲染
+/// Lumino卷帘模式（NoteRectangle）：传统 GPU 音符矩形渲染
 pub(crate) fn build_note_rectangle_render_params(input: NoteRectangleRenderInput) -> RenderParams {
     let NoteRectangleRenderInput {
         width,

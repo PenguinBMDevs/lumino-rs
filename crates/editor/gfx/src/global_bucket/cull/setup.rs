@@ -85,6 +85,8 @@ impl ResidentCull {
                 storage_entry(6, true),
                 // binding 7：单调游标（每 key 一 u32，读写；零初值即有效）。
                 storage_entry(7, false),
+                // binding 8：活跃键/光晕聚合（COUNT 顺带写；waterfall 不读）。
+                storage_entry(8, false),
             ],
         });
         let pipeline = crate::pipeline::ComputePipelineBuilder::new(
@@ -115,6 +117,24 @@ impl ResidentCull {
             (KEY_BUCKETS * 4) as u64,
         ));
         self.zero_cursors(queue);
+        // 活跃键聚合输出 + 回读暂存（1KB；初值清零，waterfall 路径不写不读）。
+        self.active_buffer = Some(new_storage_buffer(
+            device,
+            "bucket_cull_active",
+            (KEY_BUCKETS * 4) as u64,
+        ));
+        self.active_staging = Some(TrackedBuffer::new(
+            device,
+            &wgpu::BufferDescriptor {
+                label: Some("bucket_cull_active_staging"),
+                size: (KEY_BUCKETS * 4) as u64,
+                usage: wgpu::BufferUsages::MAP_READ | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+            },
+        ));
+        if let Some(ref active) = self.active_buffer {
+            queue.write_buffer(active.inner(), 0, &[0u8; KEY_BUCKETS * 4]);
+        }
         self.counts_staging = Some(TrackedBuffer::new(
             device,
             &wgpu::BufferDescriptor {
@@ -131,6 +151,9 @@ impl ResidentCull {
     }
 
     /// 确保 compact 容量 ≥ `total`（不足则按 1.2× 扩容，句柄变化，绑定组失效）。
+    ///
+    /// 用途含 `VERTEX`：miditrail driven 顶点管线把 compact 作为实例缓冲直绑
+    ///（零回读路径；FILL 写、driven 读，同 encoder 顺序保证可见）。
     pub(super) fn ensure_compact(&mut self, device: &wgpu::Device, total: usize) {
         if total <= self.compact_capacity {
             return;
@@ -205,6 +228,15 @@ impl ResidentCull {
                             .cursor_buffer
                             .as_ref()
                             .ok_or(missing("cull 游标缓冲"))?
+                            .inner()
+                            .as_entire_binding(),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 8,
+                        resource: self
+                            .active_buffer
+                            .as_ref()
+                            .ok_or(missing("cull 活跃键缓冲"))?
                             .inner()
                             .as_entire_binding(),
                     },

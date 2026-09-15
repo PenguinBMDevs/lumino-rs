@@ -2,8 +2,9 @@
 //!
 //! 覆盖渲染器自有常驻路径（播种/世代/回读装配），谓词层已由
 //! `global_bucket::cull_tests` 证明；此处断言经回读的 compact 与 CPU 参考
-//!（同谓词 + 同序）逐字节一致——回读后 legacy 渲染像素随之逐位一致
-//!（`build_note_instances` 内部稳定排序，输入同序则输出同序）。
+//!（同谓词 + **画家序**，见 `super::paint_order_window`）逐字节一致——回读后
+//! legacy 渲染像素随之逐位一致（`build_note_instances` 内部稳定排序，输入同序
+//! 则输出同序）。
 
 use super::super::{MiditrailRenderer, types::miditrail_viewport_span};
 use crate::{CullWindow, NoteInstance};
@@ -22,35 +23,6 @@ fn test_device() -> (wgpu::Device, wgpu::Queue) {
         experimental_features: wgpu::ExperimentalFeatures::disabled(),
     }))
     .expect("请求 wgpu 设备失败")
-}
-
-/// CPU 参考窗口（UI 收集 + 排序语义；打包 end 语义，合成数据无零长音符）。
-fn cpu_window(
-    notes: &[NoteInstance],
-    tick_start: u32,
-    tick_end: u32,
-    key_count: usize,
-) -> Vec<NoteInstance> {
-    let mut out: Vec<NoteInstance> = notes
-        .iter()
-        .copied()
-        .filter(|n| {
-            let key = (n.key_color & 0xFF) as usize;
-            let start = n.start_length[0].max(0.0) as u32;
-            let end = start.saturating_add(n.start_length[1].max(1.0) as u32);
-            key < key_count && end > tick_start && start < tick_end
-        })
-        .collect();
-    out.sort_by(|a, b| {
-        let ka = a.key_color & 0xFF;
-        let kb = b.key_color & 0xFF;
-        ka.cmp(&kb).then_with(|| {
-            a.start_length[0]
-                .max(0.0)
-                .total_cmp(&b.start_length[0].max(0.0))
-        })
-    });
-    out
 }
 
 fn synthetic_full() -> Vec<NoteInstance> {
@@ -99,7 +71,7 @@ fn test_miditrail_cull_window_matches_cpu() {
     // 与生产同公式（ppq=480, speed=1.0, z_far=7.5=SCENE_DEPTH → 全跨度 7680）。
     let tick_end = TICK.saturating_add(miditrail_viewport_span(480, 1.0, 7.5));
     let notes = synthetic_full();
-    let expected = cpu_window(&notes, TICK, tick_end, KEY_COUNT);
+    let expected = super::paint_order_window(&notes, TICK, tick_end, KEY_COUNT);
     assert!(!expected.is_empty(), "合成窗口非空（测试前提）");
 
     let (device, queue) = test_device();
@@ -149,4 +121,71 @@ fn test_miditrail_cull_empty_window() {
         .expect("空窗口 cull 应成功");
     assert!(window.is_empty(), "越过全曲的窗口必须为空");
     renderer.restore_window(window);
+}
+
+/// GPU 活跃键聚合（COUNT 顺带）≡ CPU `compute_active_and_aura_for_compact`。
+///
+/// CPU 参考输入取 bucket 序（key 主序、start 次序、并列 load 序稳定）——
+/// 与全局桶 GPU 稳定排序语义一致，保证"最后一个覆盖者取色"逐键同值。
+/// 光晕系数含 `powf(0.3)`，CPU/GPU 有 ULP 级差异，按 1e-5 容差断言。
+#[test]
+fn test_cull_active_matches_cpu_reference() {
+    use super::super::cull::decode_active_for_gpu;
+    use super::super::instances::compute_active_and_aura_for_compact;
+
+    const TICK: u32 = 5000;
+    const KEY_COUNT: usize = 128;
+    const TPS: f32 = 960.0;
+    const FPS: f32 = 60.0;
+    let tick_end = TICK.saturating_add(miditrail_viewport_span(480, 1.0, 7.5));
+    let notes = synthetic_full();
+
+    let mut ordered = notes.clone();
+    ordered.sort_by(|a, b| {
+        let ka = a.key_color & 0xFF;
+        let kb = b.key_color & 0xFF;
+        ka.cmp(&kb).then_with(|| {
+            (a.start_length[0].max(0.0) as u32).cmp(&(b.start_length[0].max(0.0) as u32))
+        })
+    });
+    let (expected_keys, expected_aura) =
+        compute_active_and_aura_for_compact(TICK, TPS, FPS, &ordered);
+    assert!(
+        expected_keys.pressed.iter().any(|p| *p),
+        "合成场景应有按下键（测试前提）"
+    );
+
+    let (device, queue) = test_device();
+    let mut renderer = MiditrailRenderer::new(&device);
+    renderer.seed_resident(&device, &queue, &notes);
+    let prepared = renderer
+        .cull_prepare(
+            &device,
+            &queue,
+            CullWindow {
+                tick_start: TICK,
+                tick_end,
+                key_count: KEY_COUNT,
+            },
+            crate::CullActiveParams {
+                ticks_per_second: TPS,
+                fps: FPS,
+            },
+        )
+        .expect("cull_prepare 应成功");
+    assert!(prepared.total > 0, "窗口非空（测试前提）");
+
+    let (got_keys, got_aura) = decode_active_for_gpu(&prepared.active, KEY_COUNT);
+    assert_eq!(
+        got_keys.pressed, expected_keys.pressed,
+        "pressed 必须逐键一致"
+    );
+    assert_eq!(got_keys.colors, expected_keys.colors, "键色必须逐键一致");
+    for k in 0..128 {
+        let (a, b) = (got_aura[k], expected_aura[k]);
+        assert!(
+            (a - b).abs() <= 1e-5,
+            "第 {k} 键光晕系数超容差：gpu={a} cpu={b}"
+        );
+    }
 }

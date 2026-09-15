@@ -47,8 +47,8 @@ pub use cc_bar_renderer::{
 pub use context::{Context, ContextError, Result};
 pub(crate) use global_bucket::readback_bytes_sync;
 pub use global_bucket::{
-    BucketSource, CullExtract, CullWindow, GlobalBucketError, GlobalBucketIndex, KEY_BUCKETS,
-    ResidentCull, prefix_counts,
+    BucketSource, CullActiveParams, CullExtract, CullWindow, GlobalBucketError, GlobalBucketIndex,
+    KEY_BUCKETS, ResidentCull, prefix_counts, prefix_counts_layered,
 };
 pub use gpu_note_buffer::{GpuNoteBuffer, NoteEvent, OnionSkinStreamMsg};
 pub use grid::{generate_ruler_instances, is_black_key};

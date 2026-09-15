@@ -239,7 +239,7 @@ pub struct VideoExportConfig {
     pub backend: EncoderBackend,
     /// 质量预设
     pub quality: QualityPreset,
-    /// 渲染模式（瀑布流/音符矩形/MIDITrail/计数器/数据曲线）
+    /// 渲染模式（Lumino瀑布流/Lumino卷帘/MIDITrail/计数器/数据曲线）
     pub render_mode: RenderMode,
     /// 瀑布流滚动速度（0.1~10.0，默认 1.0）
     pub waterfall_scroll_speed: f32,

@@ -102,7 +102,7 @@ pub(super) fn handle_video_frame(
     };
     ensure_textures(&mut tex_resources, false);
 
-    // 视频导出始终使用音符矩形渲染模式：不上传 贴图瀑布流
+    // 视频导出始终使用 Lumino卷帘渲染模式：不上传 贴图瀑布流
     let waterfall_visible_coords: Vec<crate::WaterfallTileCoord> = Vec::new();
 
     // 2. 音符数据源（二选一，互斥，优先级：直绑 > 上传回退）：

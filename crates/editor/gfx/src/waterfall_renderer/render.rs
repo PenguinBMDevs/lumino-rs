@@ -48,17 +48,20 @@ impl WaterfallRenderer {
         if key_count == 0 || resident_count == 0 {
             return CullRenderOutcome::FallbackNeeded;
         }
-        let extract =
-            match self
-                .resident_cull
-                .extract_count(device, queue, resident, resident_count, window)
-            {
-                Ok(e) => e,
-                Err(e) => {
-                    tracing::error!("瀑布流 cull 计数失败，回退 legacy 路径: {e}");
-                    return CullRenderOutcome::FallbackNeeded;
-                }
-            };
+        let extract = match self.resident_cull.extract_count(
+            device,
+            queue,
+            resident,
+            resident_count,
+            window,
+            None,
+        ) {
+            Ok(e) => e,
+            Err(e) => {
+                tracing::error!("瀑布流 cull 计数失败，回退 legacy 路径: {e}");
+                return CullRenderOutcome::FallbackNeeded;
+            }
+        };
         let (offsets, bases, total) = prefix_counts(&extract.counts, key_count);
         if let Err(e) = self.resident_cull.extract_fill(
             device,
@@ -69,6 +72,7 @@ impl WaterfallRenderer {
             window,
             total,
             &bases,
+            false,
         ) {
             tracing::error!("瀑布流 cull 填充失败，回退 legacy 路径: {e}");
             return CullRenderOutcome::FallbackNeeded;

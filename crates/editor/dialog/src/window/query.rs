@@ -41,4 +41,14 @@ impl DialogWindow {
     pub fn ui_mut(&mut self) -> Option<&mut lumino_ui::Host> {
         self.ui.as_mut()
     }
+
+    /// 取出该对话框待全局应用的主题（仅设置对话框会产生）
+    ///
+    /// 设置面板切换主题后需立即同步主窗口与所有对话框（而非等确认按钮），
+    /// 由 Runner 逐帧消费本方法的返回值。
+    pub fn take_pending_theme_apply(&mut self) -> Option<String> {
+        self.ui
+            .as_mut()
+            .and_then(|ui| ui.take_pending_theme_apply())
+    }
 }

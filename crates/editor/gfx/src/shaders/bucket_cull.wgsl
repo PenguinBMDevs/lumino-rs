@@ -35,9 +35,15 @@ struct CullParams {
     key_count: u32,
     phase: u32, // 0 = COUNT，1 = FILL
     total_count: u32, // 常驻总数（越界保护）
-    _pad0: u32,
-    _pad1: u32,
-    _pad2: u32,
+    // 1 = 顺带聚合活跃键（miditrail 导出用；COUNT 扫描已覆盖全部 active 音符，
+    // 零额外内存流量；waterfall 传 0 跳过）。tick 统一取 tick_start。
+    compute_active: u32,
+    ticks_per_second: f32,
+    fps: f32,
+    // 1 = FILL 按"画家序"写（miditrail：键内 [未来 start 降序、同 start 保持原序]
+    // ++ [已开始 start 升序]，配合 CPU `prefix_counts_layered` 的白键块→黑键块
+    // 基址，复刻 legacy `(is_black, z_start, key)` 稳定排序；waterfall 传 0 = 原升序）。
+    paint_order: u32,
 }
 
 struct CullNote {
@@ -54,6 +60,9 @@ struct CullNote {
 @group(0) @binding(5) var<storage, read_write> counts: array<u32>; // 256 项
 @group(0) @binding(6) var<storage, read> base: array<u32>; // 256 项（FILL 用）
 @group(0) @binding(7) var<storage, read_write> cursor: array<u32>; // 256 项单调游标
+// 256 项：`[0,128)` 活跃键色（0 = 未按下，格式 `(key_color & 0xFFFFFF00) | 0xFF`），
+// `[128,256)` 每键光晕系数（f32 bitcast；`compute_active=0` 时不写）。
+@group(0) @binding(8) var<storage, read_write> active_out: array<u32>;
 
 fn note_start(n: CullNote) -> u32 {
     return u32(max(n.start_length.x, 0.0));
@@ -62,6 +71,27 @@ fn note_start(n: CullNote) -> u32 {
 // 打包语义 end（与 waterfall.wgsl `note_end` 同式；零长边界见头注）。
 fn note_end(n: CullNote) -> u32 {
     return note_start(n) + u32(max(n.start_length.y, 1.0));
+}
+
+// 光晕系数：与 CPU `instances.rs::aura_factor_raw` 逐 op 对齐
+//（flash 用 x*x 代替 powi(2)；tail 的 powf(0.3) 由 WGSL pow 近似，ULP 级差异）。
+fn aura_factor(tick: u32, start: u32, end: u32, ticks_per_second: f32, fps: f32) -> f32 {
+    let tps = max(ticks_per_second, 0.1);
+    let frame_ticks = max(tps / max(fps, 1.0), 0.001);
+    let frames_since_start = f32(tick - start) / frame_ticks;
+    let flash_edge = max(10.0 - frames_since_start, 0.0);
+    let flash = flash_edge * flash_edge / 600.0;
+
+    let aura_len = tps * 1.0;
+    let length = f32(max(end - start, 1u));
+    let remaining = f32(end - tick);
+    let offset = min(remaining, aura_len);
+    let len = min(length, aura_len);
+    var tail = 0.0;
+    if len > 0.0 {
+        tail = pow(offset / len, 0.3) * 0.5;
+    }
+    return tail + flash;
 }
 
 @compute @workgroup_size(64, 1, 1)
@@ -92,11 +122,29 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
     if params.phase == 0u {
         // COUNT：从游标（已确认死亡分界）起扫；扫完推进游标。
         // 推进循环只经过"新死"音符——每位置整个桶生命周期恰推进一次。
+        // 活跃键/光晕在扫描内顺带聚合：active 音符必落扫描区间
+        //（end > tick_start 且 start < tick_end），无额外内存流量。
         var c = max(cursor[key], b0);
         var count = 0u;
+        var color = 0u;
+        var aura = 0.0;
+        let compute_active = params.compute_active == 1u;
         for (var i = c; i < hi; i++) {
-            if note_end(notes[sort_index[i]]) > tick_start {
+            let n = notes[sort_index[i]];
+            let s = note_start(n);
+            let e = note_end(n);
+            if e > tick_start {
                 count += 1u;
+            }
+            if compute_active && s <= tick_start && tick_start < e {
+                color = (n.key_color & 0xFFFFFF00u) | 0xFFu;
+                aura = max(aura, aura_factor(
+                    tick_start,
+                    s,
+                    e,
+                    params.ticks_per_second,
+                    params.fps,
+                ));
             }
         }
         counts[key] = count;
@@ -104,16 +152,63 @@ fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
             c += 1u;
         }
         cursor[key] = c;
+        if compute_active {
+            active_out[key] = color;
+            active_out[128u + key] = bitcast<u32>(aura);
+        }
     } else {
         // FILL：复用 COUNT 已推进的游标（同 tick，差集全死，输出一致）。
         let start = max(cursor[key], b0);
         let dst = base[key];
         var j = 0u;
-        for (var i = start; i < hi; i++) {
-            let src = sort_index[i];
-            if note_end(notes[src]) > tick_start {
-                compact[dst + j] = notes[src];
-                j += 1u;
+        if params.paint_order == 1u {
+            // 画家序（miditrail）：键内 [未来 start 降序、同 start 保持原序]
+            // ++ [已开始 start 升序]。切分点 = 首个 start > tick_start（桶内
+            // start 非递减，二分）。未来段全部 end > tick_start（end ≥ start+1），
+            // 无需再过滤；已开始段按同一谓词过滤（与 COUNT 计数吻合）。
+            var split = start;
+            {
+                var lo = start;
+                var upper = hi;
+                while lo < upper {
+                    let mid = (lo + upper) / 2u;
+                    if note_start(notes[sort_index[mid]]) <= tick_start {
+                        lo = mid + 1u;
+                    } else {
+                        upper = mid;
+                    }
+                }
+                split = lo;
+            }
+            // 未来段：按 start 降序输出；同 start 连续 run 内保持升序（稳定序）。
+            var i = hi;
+            while (i > split) {
+                let s = note_start(notes[sort_index[i - 1u]]);
+                var r0 = i - 1u;
+                while (r0 > split && note_start(notes[sort_index[r0 - 1u]]) == s) {
+                    r0 -= 1u;
+                }
+                for (var k = r0; k < i; k += 1u) {
+                    compact[dst + j] = notes[sort_index[k]];
+                    j += 1u;
+                }
+                i = r0;
+            }
+            // 已开始段：升序（死音符跳过，计数与 COUNT 一致）。
+            for (var k = start; k < split; k += 1u) {
+                let src = sort_index[k];
+                if note_end(notes[src]) > tick_start {
+                    compact[dst + j] = notes[src];
+                    j += 1u;
+                }
+            }
+        } else {
+            for (var i = start; i < hi; i++) {
+                let src = sort_index[i];
+                if note_end(notes[src]) > tick_start {
+                    compact[dst + j] = notes[src];
+                    j += 1u;
+                }
             }
         }
     }

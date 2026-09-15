@@ -110,11 +110,15 @@ pub fn create_top_note_render_pipeline(
 
 /// 创建 GPU-Driven 音符渲染管线（Normal 视图终局路径）。
 ///
-/// 与旧 `note_pipeline` 的两处关键差异：
+/// 与旧 `note_pipeline` 的差异：
 /// - 实例布局 = `NoteInstance` 原字节（16B：start_length + key_color + border），
 ///   位姿由 `miditrail_note_driven.wgsl` 按实例实时推导；
-/// - `depth_write=true`：不透明音符用深度测试解决遮挡，CPU 画家排序删除。
-/// 琴键仍走旧管线最后绘制（compare 已改为 Always，永远置顶，观感不变）。
+/// - `depth_write=false`（与 legacy 音符管线一致）：顺序由 compact 承载——FILL
+///   按画家序写（见 `bucket_cull.wgsl` `paint_order`），绘制顺序即最终次序。
+///   不用真实深度：同键叠音顶面共面，深度只差 ULP，会随帧翻转 winner（真机
+///   "疯狂闪烁"实锤；legacy 画家排序注释即为此）。
+///
+/// 琴键仍走旧管线最后绘制（深度清空后 LessEqual，永远置顶，观感不变）。
 pub fn create_note_driven_pipeline(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
@@ -168,7 +172,7 @@ pub fn create_note_driven_pipeline(
         .opaque_target(wgpu::TextureFormat::Rgba8Unorm)
         .depth_stencil(Some(wgpu::DepthStencilState {
             format: wgpu::TextureFormat::Depth32Float,
-            depth_write_enabled: true,
+            depth_write_enabled: false,
             depth_compare: wgpu::CompareFunction::LessEqual,
             stencil: wgpu::StencilState::default(),
             bias: wgpu::DepthBiasState::default(),

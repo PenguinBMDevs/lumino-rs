@@ -54,7 +54,7 @@ pub struct VideoExportDialogState {
     pub backend: String,
     /// 质量预设（"高"/"中"/"低"）
     pub quality: String,
-    /// 渲染模式（"Lumino瀑布流"/"音符矩形"/"MIDITrail"/"计数器"）
+    /// 渲染模式（"Lumino瀑布流"/"Lumino卷帘"/"MIDITrail"/"计数器"）
     pub render_mode: String,
     /// MidiConsole 渲染后端（"GPU"/"CPU"，默认 GPU）
     pub midi_console_backend: String,

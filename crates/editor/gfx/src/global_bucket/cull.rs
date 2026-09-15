@@ -37,7 +37,7 @@ pub struct CullWindow {
     pub key_count: usize,
 }
 
-/// cull 参数 uniform（与 `bucket_cull.wgsl` `CullParams` 同布局，32B）。
+/// cull 参数 uniform（与 `bucket_cull.wgsl` `CullParams` 同布局，36B）。
 #[repr(C)]
 #[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub(super) struct CullParamsGpu {
@@ -46,7 +46,22 @@ pub(super) struct CullParamsGpu {
     pub key_count: u32,
     pub phase: u32,
     pub total_count: u32,
-    pub _pad: [u32; 3],
+    /// 1 = 顺带聚合活跃键（`active: Option<CullActiveParams>` 传入时置 1）。
+    pub compute_active: u32,
+    pub ticks_per_second: f32,
+    pub fps: f32,
+    /// 1 = FILL 按画家序写（miditrail；配合 `prefix_counts_layered` 分层基址）。
+    pub paint_order: u32,
+}
+
+/// 活跃键/光晕聚合参数（`compute_active` 用；tick 统一取 `window.tick_start`）。
+///
+/// 由 miditrail 导出传入（`compute_active_and_aura_for_compact` 的 GPU 版）；
+/// waterfall 不传（`None`，COUNT 循环零额外开销）。
+#[derive(Debug, Clone, Copy)]
+pub struct CullActiveParams {
+    pub ticks_per_second: f32,
+    pub fps: f32,
 }
 
 /// 窗口提取产物（compact 缓冲由本结构持有，调用方只读绑定/回读）。
@@ -58,6 +73,9 @@ pub struct CullExtract {
     pub total: usize,
     /// 本次提取是否重建了桶（调用方据此失效依赖桶句柄的绑定组，如活跃键内核组）。
     pub bucket_rebuilt: bool,
+    /// 活跃键聚合（`compute_active` 请求时有效）：
+    /// `[0,128)` = 键色（0 = 未按下），`[128,256)` = 光晕系数（f32 bitcast）。
+    pub active: Option<[u32; KEY_BUCKETS]>,
 }
 
 /// 常驻全量窗口提取器：桶（一次构建）+ cull 管线/暂存（常驻复用）。
@@ -80,6 +98,10 @@ pub struct ResidentCull {
     pub(super) compact_capacity: usize,
     /// 单调游标缓冲（256×u32，初值 0；见 `bucket_cull.wgsl` 头注）。
     pub(super) cursor_buffer: Option<TrackedBuffer>,
+    /// 活跃键聚合输出（256×u32 = 1KB，初值 0；`compute_active` 时读回）。
+    pub(super) active_buffer: Option<TrackedBuffer>,
+    /// 活跃键回读暂存（1KB）。
+    pub(super) active_staging: Option<TrackedBuffer>,
     /// 上次 COUNT 的 `tick_start`（倒退检测用；初值 0，到达过即单调记忆）。
     pub(super) last_tick_start: u32,
 }
@@ -116,6 +138,8 @@ impl ResidentCull {
         self.compact_buffer = None;
         self.compact_capacity = 0;
         self.cursor_buffer = None;
+        self.active_buffer = None;
+        self.active_staging = None;
         self.last_tick_start = 0;
     }
 
@@ -160,6 +184,40 @@ pub fn prefix_counts(
         acc = acc.saturating_add(c);
     }
     offsets[key_count] = acc;
+    (offsets, bases, acc as usize)
+}
+
+/// 画家序基址（miditrail driven 用）：白键块在前、黑键块在后（块内 key 升序）。
+///
+/// 与 FILL 的 `paint_order=1` 键内序（[未来 start 降序、同 start 稳定] ++
+/// [已开始升序]）配合，复刻 legacy `build_note_instances` 的
+/// `(is_black, z_start, key)` 稳定排序：同层不同键的 x 区间不相交（重叠只可能
+/// 同键或黑白键），故"白块→黑块 + 键内画家序"与全局排序在所有可见重叠上等价。
+/// `offsets` 仍按 key 序返回（兼容签名；miditrail 路径不使用）。
+pub fn prefix_counts_layered(
+    counts: &[u32; KEY_BUCKETS],
+    key_count: usize,
+) -> (Vec<u32>, [u32; KEY_BUCKETS], usize) {
+    let key_count = key_count.min(KEY_BUCKETS);
+    let mut offsets = vec![0u32; key_count + 1];
+    let mut bases = [0u32; KEY_BUCKETS];
+    let mut acc = 0u32;
+    for layer in 0..2 {
+        for k in 0..key_count {
+            let is_black = crate::is_black_key(k as isize);
+            if (layer == 0) == is_black {
+                continue;
+            }
+            bases[k] = acc;
+            acc = acc.saturating_add(counts[k]);
+        }
+    }
+    let mut o = 0u32;
+    for k in 0..key_count {
+        offsets[k] = o;
+        o = o.saturating_add(counts[k]);
+    }
+    offsets[key_count] = o;
     (offsets, bases, acc as usize)
 }
 
