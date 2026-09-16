@@ -62,7 +62,7 @@ static SHARED_GPU: OnceLock<std::result::Result<Arc<SharedGpu>, String>> = OnceL
 ///
 /// Debug 构建保留校验层便于排错；Release 构建关闭所有校验，
 /// 避免 device 创建和运行时产生额外开销。
-fn instance_flags() -> wgpu::InstanceFlags {
+pub(crate) fn instance_flags() -> wgpu::InstanceFlags {
     #[cfg(debug_assertions)]
     {
         wgpu::InstanceFlags::DEBUG

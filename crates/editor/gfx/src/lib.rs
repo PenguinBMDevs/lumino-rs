@@ -12,6 +12,8 @@ pub mod cache;
 mod cc_bar_renderer;
 pub mod constants;
 mod context;
+/// 无头 GPU 兼容性检测（首启设备检查 / 设置页手动检查）
+pub mod device_check;
 mod global_bucket;
 mod gpu_note_buffer;
 mod gpu_resource_tracker;
@@ -45,6 +47,11 @@ pub use cc_bar_renderer::{
     build_cc_bar_instances,
 };
 pub use context::{Context, ContextError, Result};
+pub use device_check::{
+    GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
+    debug_force_fail_requested, probe_adapter_fingerprints, required_backend_name,
+    run_check_with_timeout,
+};
 pub(crate) use global_bucket::readback_bytes_sync;
 pub use global_bucket::{
     BucketSource, CullActiveParams, CullExtract, CullWindow, GlobalBucketError, GlobalBucketIndex,
