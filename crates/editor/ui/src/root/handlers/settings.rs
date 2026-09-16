@@ -8,6 +8,7 @@ use crate::root::Root;
 use crate::root::handlers::MessageHandler;
 use lumino_core::storage::config::SynthBackend;
 use lumino_ui_core::settings_event::OutputType;
+use lumino_ui_core::state::GpuCheckUiState;
 
 /// 设置消息处理器
 #[derive(Default)]
@@ -120,6 +121,29 @@ impl MessageHandler for SettingsHandler {
             | crate::settings::Event::SynthBackendChanged(SynthBackend::Lgs) => {
                 // 进入内置软件合成器时自动扫描音频播放输出设备
                 root.scan_audio_outputs();
+            }
+            crate::settings::Event::RunGpuCompatibilityCheck => {
+                tracing::info!("设置页请求执行 GPU 兼容性检查");
+                crate::event::emit(crate::event::Event::Window(
+                    crate::event::window::Event::gpu_check_run(),
+                ));
+            }
+            crate::settings::Event::CopyGpuDiagnostics => {
+                let detail = match &root.settings.compat.check_state {
+                    GpuCheckUiState::Done(result) => Some(result.detail.clone()),
+                    _ => None,
+                };
+                if let Some(detail) = detail {
+                    match arboard::Clipboard::new()
+                        .and_then(|mut clipboard| clipboard.set_text(detail))
+                    {
+                        Ok(()) => {
+                            root.settings.compat.copied = true;
+                            tracing::info!("GPU 诊断信息已复制到剪贴板");
+                        }
+                        Err(e) => tracing::warn!("复制 GPU 诊断信息失败: {e}"),
+                    }
+                }
             }
             _ => {} // 其他设置变更由 settings.update() 同步
         }

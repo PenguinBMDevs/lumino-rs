@@ -73,6 +73,8 @@ pub struct Root {
     pub(crate) settings: settings::SettingsPanel,
     pub(crate) progress: Option<(String, f64)>,
     pub(crate) is_progress_window: bool,
+    /// 是否为设备检查警告窗（首启 GPU 兼容性失败提示）
+    pub(crate) is_device_warning_window: bool,
     /// 当前窗口是否使用系统标题栏；弹窗不应在该模式下再绘制自制标题栏。
     pub(crate) use_native_titlebar: bool,
     /// UI 状态
@@ -108,6 +110,8 @@ struct RootInitParams {
     ui_config: UiConfig,
     is_progress_window: bool,
     dialog_type: Option<crate::state::root_state::DialogType>,
+    /// 设备检查警告窗详情文案（`Some` 时该 Root 为警告窗）
+    device_warning_detail: Option<String>,
 }
 
 impl Root {
@@ -121,6 +125,7 @@ impl Root {
                 state.is_dialog_window = true;
                 state.dialog_type = dt;
             }
+            state.device_warning_detail = params.device_warning_detail.clone().unwrap_or_default();
 
             // 应用已保存的自动滚动配置到 Editor 和 Toolbar，
             // 否则它们始终使用 AutoScrollConfig::default() 导致用户设置不生效。
@@ -143,6 +148,7 @@ impl Root {
                 settings: settings::SettingsPanel::new(&params.ui_config),
                 progress: None,
                 is_progress_window: params.is_progress_window,
+                is_device_warning_window: params.device_warning_detail.is_some(),
                 use_native_titlebar: params.ui_config.use_native_titlebar,
                 state,
                 playback: crate::state::playback_state::PlaybackState::new(),
@@ -170,6 +176,7 @@ impl Root {
             ui_config: ui_config.clone(),
             is_progress_window: false,
             dialog_type: None,
+            device_warning_detail: None,
         });
         // 同步橡皮擦行为配置到编辑器
         root.editor.set_eraser_behavior(ui_config.eraser_behavior);
@@ -202,6 +209,18 @@ impl Root {
             ui_config: ui_config.clone(),
             is_progress_window: true,
             dialog_type: None,
+            device_warning_detail: None,
+        })
+    }
+
+    /// 创建设备检查警告窗 Root（`detail` 为已本地化的失败详情文案）
+    pub fn new_device_warning(theme: &str, ui_config: &UiConfig, detail: String) -> Self {
+        Self::from_params(RootInitParams {
+            theme: theme.to_string(),
+            ui_config: ui_config.clone(),
+            is_progress_window: false,
+            dialog_type: None,
+            device_warning_detail: Some(detail),
         })
     }
 
@@ -212,6 +231,7 @@ impl Root {
             ui_config: UiConfig::default(),
             is_progress_window: false,
             dialog_type: Some(dialog_type),
+            device_warning_detail: None,
         })
     }
 
@@ -226,6 +246,7 @@ impl Root {
             ui_config: ui_config.clone(),
             is_progress_window: false,
             dialog_type: Some(dialog_type),
+            device_warning_detail: None,
         })
     }
 
@@ -236,6 +257,7 @@ impl Root {
             ui_config: ui_config.clone(),
             is_progress_window: false,
             dialog_type: Some(crate::state::root_state::DialogType::Settings),
+            device_warning_detail: None,
         })
     }
 

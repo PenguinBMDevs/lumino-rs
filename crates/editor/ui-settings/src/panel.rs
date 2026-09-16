@@ -112,6 +112,12 @@ impl SettingsPanel {
                 connections: Vec::new(),
                 alert: None,
             },
+            compat: crate::CompatSettings {
+                check_on_startup: ui_config.gpu_check_on_startup,
+                warning_suppressed: ui_config.gpu_warning_suppressed.unwrap_or(false),
+                check_state: lumino_ui_core::state::GpuCheckUiState::Idle,
+                copied: false,
+            },
         }
     }
 
@@ -361,6 +367,20 @@ impl SettingsPanel {
             }
             Event::MonitorRefreshIntervalChanged(v) => {
                 self.logging.monitor_refresh_interval_ms = v.clamp(50.0, 2000.0);
+            }
+            // 兼容性设置
+            Event::GpuCheckOnStartupChanged(enabled) => {
+                self.compat.check_on_startup = enabled;
+            }
+            Event::GpuWarningSuppressedChanged(suppressed) => {
+                self.compat.warning_suppressed = suppressed;
+            }
+            Event::RunGpuCompatibilityCheck => {
+                self.compat.check_state = lumino_ui_core::state::GpuCheckUiState::Running;
+                self.compat.copied = false;
+            }
+            Event::CopyGpuDiagnostics => {
+                // 剪贴板写入由 lumino-ui 的处理器完成（ui-settings 不依赖剪贴板库）
             }
         }
     }

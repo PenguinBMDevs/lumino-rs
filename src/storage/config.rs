@@ -6,15 +6,24 @@ pub struct ConfigWrapper {
     inner: Config,
     path: PathBuf,
     dirty: bool,
+    /// 是否为缺少 GPU 字段的旧版配置（加载时已归一化为"抑制警告"）
+    legacy_gpu: bool,
 }
 
 impl ConfigWrapper {
     pub fn new(path: PathBuf) -> io::Result<Self> {
-        let inner = Self::load_or_migrate(&path)?;
+        let existed = path.exists() || path.with_extension("toml").exists();
+        let mut inner = Self::load_or_migrate(&path)?;
+        // 旧版配置（文件存在但缺 GPU 字段）：归一化为抑制警告，保证"老用户升级静默"
+        let legacy_gpu = existed && inner.ui.gpu_warning_suppressed.is_none();
+        if legacy_gpu {
+            inner.ui.gpu_warning_suppressed = Some(true);
+        }
         Ok(Self {
             inner,
             path,
             dirty: false,
+            legacy_gpu,
         })
     }
 
@@ -66,6 +75,10 @@ impl ConfigWrapper {
 
     pub fn get(&self) -> &Config {
         &self.inner
+    }
+    /// 是否为旧版配置（缺 GPU 字段，已归一化为抑制警告）
+    pub fn is_legacy_gpu_config(&self) -> bool {
+        self.legacy_gpu
     }
     pub fn patch<F>(&mut self, f: F)
     where

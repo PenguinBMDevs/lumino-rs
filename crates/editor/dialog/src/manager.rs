@@ -220,6 +220,24 @@ impl DialogManager {
         }
     }
 
+    /// 将 GPU 兼容性检测结果注入所有已打开的设置对话框。
+    ///
+    /// 返回是否至少注入了一个对话框：无设置对话框时结果由 Runner 暂存，
+    /// 待下次设置对话框就绪后再注入（与 RecoverTrack 条目的 pending 模式一致）。
+    pub fn apply_gpu_check_result(&mut self, passed: bool, detail: String) -> bool {
+        let mut applied = false;
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::Settings
+                && let Some(ui) = dialog.ui_mut()
+            {
+                ui.set_gpu_check_result(passed, detail.clone());
+                dialog.window().request_redraw();
+                applied = true;
+            }
+        }
+        applied
+    }
+
     /// 将主题同步到所有已打开的对话框窗口
     ///
     /// 对话框主题在创建时从配置快照读取，运行中切换主题后若不广播，

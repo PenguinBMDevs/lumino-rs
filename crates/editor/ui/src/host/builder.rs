@@ -155,6 +155,24 @@ impl Host {
         }
     }
 
+    /// 创建设备检查警告窗口 Host
+    ///
+    /// 警告窗为轻量窗口：不创建音符/网格渲染器，使用独立 iced Engine。
+    pub fn new_device_warning(
+        window: Arc<winit::window::Window>,
+        width: u32,
+        height: u32,
+        ui_config: &config::UiConfig,
+        gfx: &lumino_gfx::Context,
+        detail: &str,
+    ) -> Self {
+        let (render_ctx, window_ctx) = Self::create_render_and_window_context(
+            window, width, height, ui_config, gfx, false, false,
+        );
+        let root = root::Root::new_device_warning(&ui_config.theme, ui_config, detail.to_string());
+        Self::new_common_fields(render_ctx, window_ctx, root, ui_config)
+    }
+
     /// 创建设置对话框 Host（使用主窗口的配置）
     pub fn new_settings_dialog(
         window: Arc<winit::window::Window>,

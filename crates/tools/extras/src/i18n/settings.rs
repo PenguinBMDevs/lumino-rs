@@ -234,6 +234,34 @@ pub struct SettingsTranslations {
     pub ui_monitor_refresh_interval: &'static str,
     /// 监控数据刷新间隔提示
     pub ui_monitor_refresh_interval_hint: &'static str,
+
+    // ── 兼容性页面 ──
+    /// 兼容性菜单项
+    pub compatibility: &'static str,
+    /// 兼容性页面标题
+    pub compatibility_title: &'static str,
+    /// 手动检查按钮
+    pub compat_check_button: &'static str,
+    /// 检查中提示
+    pub compat_checking: &'static str,
+    /// 尚未检查提示
+    pub compat_never_checked: &'static str,
+    /// 检测通过
+    pub compat_passed: &'static str,
+    /// 检测失败
+    pub compat_failed: &'static str,
+    /// 复制诊断信息按钮
+    pub compat_copy_diagnostics: &'static str,
+    /// 已复制提示
+    pub compat_copied: &'static str,
+    /// 每次启动检查开关
+    pub compat_check_on_startup: &'static str,
+    /// 每次启动检查提示
+    pub compat_check_on_startup_hint: &'static str,
+    /// 启动警告开关
+    pub compat_show_warning: &'static str,
+    /// 启动警告提示
+    pub compat_show_warning_hint: &'static str,
 }
 
 static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -343,6 +371,19 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     log_retention_section: "日志",
     log_retention_count: "日志文件保留份数:",
     log_retention_count_hint: "日志文件存储在配置目录的 logs/ 下，超过此份数时自动删除最旧的日志（0 = 不限制）",
+    compatibility: "兼容性",
+    compatibility_title: "兼容性",
+    compat_check_button: "检查 GPU 兼容性",
+    compat_checking: "检查中…",
+    compat_never_checked: "尚未执行检测",
+    compat_passed: "检测通过",
+    compat_failed: "检测失败",
+    compat_copy_diagnostics: "复制诊断信息",
+    compat_copied: "已复制",
+    compat_check_on_startup: "每次启动时检查 GPU 兼容性",
+    compat_check_on_startup_hint: "关闭后不再执行启动检测；开启可用于诊断启动异常（防止死锁）",
+    compat_show_warning: "启动时显示 GPU 兼容性警告",
+    compat_show_warning_hint: "关闭后检测仍会执行，失败时仅在状态栏与日志中提示，不弹出警告窗",
 };
 
 static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
@@ -452,6 +493,19 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     log_retention_section: "Logging",
     log_retention_count: "Log file retention count:",
     log_retention_count_hint: "Log files are stored in logs/ under the config directory. Oldest files are auto-deleted when exceeding this limit (0 = unlimited)",
+    compatibility: "Compatibility",
+    compatibility_title: "Compatibility",
+    compat_check_button: "Check GPU compatibility",
+    compat_checking: "Checking…",
+    compat_never_checked: "No check performed yet",
+    compat_passed: "Check passed",
+    compat_failed: "Check failed",
+    compat_copy_diagnostics: "Copy diagnostics",
+    compat_copied: "Copied",
+    compat_check_on_startup: "Check GPU compatibility on every startup",
+    compat_check_on_startup_hint: "When disabled, startup checks are skipped; enable to diagnose startup issues (deadlock prevention)",
+    compat_show_warning: "Show GPU compatibility warning on startup",
+    compat_show_warning_hint: "When disabled, checks still run; failures only appear in the status bar and logs without the warning window",
 };
 
 /// 获取设置面板翻译
@@ -494,6 +548,8 @@ mod tests {
             assert!(!t.audio_title.is_empty());
             assert!(!t.ui_title.is_empty());
             assert!(!t.about_title.is_empty());
+            assert!(!t.compatibility.is_empty());
+            assert!(!t.compat_check_button.is_empty());
         }
     }
 }

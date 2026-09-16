@@ -31,6 +31,17 @@ impl Root {
             self.statusbar.set_perf_data(*data);
         }
 
+        // 设备检查警告窗：勾选"不要再提示我" / 用户点击按钮
+        match &event {
+            window::Event::DeviceWarningSuppressToggled(checked) => {
+                self.state.device_warning_suppress_checked = *checked;
+            }
+            window::Event::DeviceWarningActioned(action) => {
+                self.state.device_warning_action = Some(*action);
+            }
+            _ => {}
+        }
+
         // 设置对话框内切换主题：记录待全局应用的主题，由 Runner 逐帧取走并
         // 同步主窗口与其余对话框（切换即全局生效，见 RunnerInner::about_to_wait）。
         // 仅当主题确有变化才记录 —— Runner 回灌相同主题时不会再次入队，避免循环。
@@ -55,5 +66,10 @@ impl Root {
     /// 由 Runner 逐帧消费，消费后同步到主窗口与所有对话框。
     pub fn take_pending_theme_apply(&mut self) -> Option<String> {
         self.state.pending_theme_apply.take()
+    }
+
+    /// 取走设备检查警告窗的用户操作（供 Host / Runner 消费）
+    pub fn take_device_warning_action(&mut self) -> Option<crate::window::DeviceWarningAction> {
+        self.state.device_warning_action.take()
     }
 }

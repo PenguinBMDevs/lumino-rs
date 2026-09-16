@@ -104,6 +104,12 @@ pub struct RootState {
     /// 在此记录后由 Runner 逐帧取走并广播到主窗口与所有对话框，
     /// 实现「切换即全局生效」而非「确认后生效」。
     pub pending_theme_apply: Option<String>,
+    /// 设备检查警告窗：详情文案（构造时注入）
+    pub device_warning_detail: String,
+    /// 设备检查警告窗：是否勾选"不要再提示我"
+    pub device_warning_suppress_checked: bool,
+    /// 设备检查警告窗：用户操作结果（由 Host 取走）
+    pub device_warning_action: Option<crate::window::DeviceWarningAction>,
 }
 
 impl Default for RootState {
@@ -139,6 +145,9 @@ impl RootState {
             brush_settings_draft: BrushConfig::new(),
             brush_settings_tracks: Vec::new(),
             pending_theme_apply: None,
+            device_warning_detail: String::new(),
+            device_warning_suppress_checked: false,
+            device_warning_action: None,
         }
     }
 }

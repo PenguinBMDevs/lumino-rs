@@ -123,4 +123,30 @@ impl Storage {
             ui_state: ui_state::UiStateWrapper::new(preference.join("ui_state.json")),
         })
     }
+
+    /// 持久化 GPU 检测缓存（指纹 + 结果），并补写"已初始化"标记。
+    ///
+    /// 全新安装首次运行后调用：把 `gpu_warning_suppressed` 从 `None` 固化为
+    /// `Some(false)`，避免下一次启动被误判为旧版配置而静默。
+    pub fn persist_gpu_check_cache(
+        &mut self,
+        fingerprint: Option<&str>,
+        passed: bool,
+    ) -> io::Result<()> {
+        self.config.patch(|c| {
+            c.ui.gpu_last_fingerprint = fingerprint.map(str::to_string);
+            c.ui.gpu_last_passed = Some(passed);
+            if c.ui.gpu_warning_suppressed.is_none() {
+                c.ui.gpu_warning_suppressed = Some(false);
+            }
+        });
+        self.config.save()
+    }
+
+    /// 设置"不再提示"抑制状态并立即落盘
+    pub fn set_gpu_warning_suppressed(&mut self, suppressed: bool) -> io::Result<()> {
+        self.config
+            .patch(|c| c.ui.gpu_warning_suppressed = Some(suppressed));
+        self.config.save()
+    }
 }

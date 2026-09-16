@@ -21,6 +21,8 @@ impl Root {
 
         if self.is_progress_window {
             self.view_progress()
+        } else if self.is_device_warning_window {
+            self.view_device_warning()
         } else if self.state.is_dialog_window {
             self.view_dialog()
         } else {

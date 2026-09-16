@@ -3,6 +3,7 @@ pub mod batch_edit_state;
 pub mod collaboration_state;
 pub mod custom_precision_state;
 pub mod export_progress_state;
+pub mod gpu_compat_state;
 pub mod load_confirm_state;
 pub mod memory_monitor_state;
 pub mod project_settings_state;
@@ -18,6 +19,7 @@ pub use batch_edit_state::{BatchEditDialogState, BatchEditOperation, parse_batch
 pub use collaboration_state::{CollaborationDialogState, CollaborationViewState};
 pub use custom_precision_state::CustomPrecisionDialogState;
 pub use export_progress_state::ExportProgressDialogState;
+pub use gpu_compat_state::{GpuCheckUiResult, GpuCheckUiState};
 pub use load_confirm_state::LoadConfirmDialogState;
 pub use memory_monitor_state::MemoryMonitorDialogState;
 pub use project_settings_state::ProjectSettingsDialogState;

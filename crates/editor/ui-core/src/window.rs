@@ -6,7 +6,7 @@
 use crate::Theme;
 use crate::theme::HIGH_CONTRAST_DISPLAY;
 
-pub use crate::window_event::{Event, TrafficAction};
+pub use crate::window_event::{DeviceWarningAction, Event, TrafficAction};
 
 /// 窗口状态
 #[derive(Debug, Clone)]
@@ -62,6 +62,9 @@ impl Window {
             }
             Event::TrafficAction(_) | Event::Drag | Event::ToggleMaximize | Event::Close => {
                 // 这些事件由 Host 处理，不需要更新 Window 状态
+            }
+            Event::DeviceWarningSuppressToggled(_) | Event::DeviceWarningActioned(_) => {
+                // 设备检查警告窗事件由拥有该窗口的 Root 处理，无需更新 Window 状态
             }
         }
     }

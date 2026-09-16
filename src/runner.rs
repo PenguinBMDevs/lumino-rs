@@ -5,6 +5,8 @@ mod cloud_ops;
 mod cloud_progress;
 mod cloud_save;
 mod cloud_status;
+mod device_check_policy;
+mod device_warning;
 mod dialog_manager;
 mod file_handler;
 mod inner;

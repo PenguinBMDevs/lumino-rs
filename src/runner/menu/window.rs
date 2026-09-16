@@ -27,7 +27,46 @@ impl RunnerInner {
             WindowEvent::Collaboration(e) => self.handle_collaboration_events(e),
             WindowEvent::Sync(e) => self.handle_sync_events(e),
             WindowEvent::Track(e) => self.handle_track_events(e),
+            WindowEvent::GpuCheckRun => Self::spawn_gpu_compatibility_check(),
+            WindowEvent::GpuCheckFinished { passed, detail } => {
+                self.pending_gpu_check_ui = Some((passed, detail));
+                self.inject_pending_gpu_check_ui();
+            }
             _ => {}
+        }
+    }
+
+    /// 在后台线程执行 GPU 兼容性检查，完成后经事件总线回传纯文本结果
+    ///
+    /// 检查耗时可达数百毫秒且可能触发驱动路径，必须在阻塞线程池执行，
+    /// 不阻塞 UI/事件循环；UI 侧只消费 `(passed, detail)`。
+    fn spawn_gpu_compatibility_check() {
+        tracing::info!("兼容性页请求手动 GPU 兼容性检查");
+        tokio::task::spawn_blocking(|| {
+            let report = lumino_gfx::device_check::run_check_with_timeout(
+                lumino_gfx::device_check::DEFAULT_TIMEOUT,
+            );
+            let detail = report.detail();
+            lumino_ui::event::emit(lumino_ui::event::Event::Window(
+                lumino_ui::event::window::Event::gpu_check_finished(report.passed, detail),
+            ));
+        });
+    }
+
+    /// 逐帧尝试把待注入的 GPU 检查结果写入已就绪的设置对话框
+    ///
+    /// 设置对话框可能尚未创建或仍在分帧初始化（窗口→GFX→UI），此时结果保留在
+    /// `pending_gpu_check_ui`，由 `about_to_wait` 后续帧继续尝试。
+    pub(crate) fn inject_pending_gpu_check_ui(&mut self) {
+        let Some((passed, detail)) = self.pending_gpu_check_ui.clone() else {
+            return;
+        };
+        if self
+            .window_state
+            .dialog_manager
+            .apply_gpu_check_result(passed, detail)
+        {
+            self.pending_gpu_check_ui = None;
         }
     }
 

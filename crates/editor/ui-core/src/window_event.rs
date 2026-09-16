@@ -28,6 +28,10 @@ pub enum Event {
     FpsUpdate(f32),
     /// 性能数据更新
     PerfUpdate(PerfData),
+    /// 设备检查警告窗：勾选"不要再提示我"状态变更
+    DeviceWarningSuppressToggled(bool),
+    /// 设备检查警告窗：用户点击按钮
+    DeviceWarningActioned(DeviceWarningAction),
 }
 
 /// 窗口控制（红绿灯）操作
@@ -39,6 +43,15 @@ pub enum TrafficAction {
     ToggleMaximize,
     /// 关闭窗口
     Close,
+}
+
+/// 设备检查警告窗的用户操作
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceWarningAction {
+    /// 忽略警告继续启动（`suppress` = 是否勾选"不要再提示我"）
+    Continue { suppress: bool },
+    /// 确认并关闭（退出程序）
+    Quit,
 }
 
 impl Event {
@@ -77,5 +90,13 @@ impl Event {
     /// 构造"性能数据更新"的窗口消息
     pub fn perf_update(data: PerfData) -> Message {
         Message::Window(Self::PerfUpdate(data))
+    }
+    /// 构造"设备警告：不再提示勾选变更"的窗口消息
+    pub const fn device_warning_suppress_toggled(checked: bool) -> Message {
+        Message::Window(Self::DeviceWarningSuppressToggled(checked))
+    }
+    /// 构造"设备警告：用户操作"的窗口消息
+    pub const fn device_warning_actioned(action: DeviceWarningAction) -> Message {
+        Message::Window(Self::DeviceWarningActioned(action))
     }
 }

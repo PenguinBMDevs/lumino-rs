@@ -19,7 +19,7 @@ use iced_widget::{column, container, row, scrollable, text};
 
 use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
 use lumino_extras::i18n::Language;
-use lumino_ui_core::{Element, Message, Theme, window};
+use lumino_ui_core::{Element, Message, Theme, state::GpuCheckUiState, window};
 
 use components::*;
 use pages::*;
@@ -168,6 +168,19 @@ pub struct CloudSettings {
     pub alert: Option<String>,
 }
 
+/// GPU 兼容性设置（启动检查开关 / 启动警告 / 手动检查状态）
+#[derive(Debug, Clone)]
+pub struct CompatSettings {
+    /// 每次启动执行 GPU 兼容性检测
+    pub check_on_startup: bool,
+    /// 抑制启动警告（"启动时显示警告"开关的反向值）
+    pub warning_suppressed: bool,
+    /// 手动检查状态（会话内瞬态，不持久化）
+    pub check_state: GpuCheckUiState,
+    /// 复制按钮的瞬时"已复制"状态
+    pub copied: bool,
+}
+
 /// 设置面板状态（按配置类别分组的子结构聚合）。
 #[derive(Debug, Clone)]
 pub struct SettingsPanel {
@@ -189,6 +202,8 @@ pub struct SettingsPanel {
     pub logging: LoggingSettings,
     /// 云存储
     pub cloud: CloudSettings,
+    /// GPU 兼容性
+    pub compat: CompatSettings,
 }
 
 /// 云存储连接条目（设置面板云管理页展示）
@@ -246,7 +261,8 @@ fn render_content_area<'a>(
         5 => palette_view(settings),
         6 => editing_view(settings),
         7 => cloud_view(settings),
-        8 => about_view(settings),
+        8 => compatibility_view(settings),
+        9 => about_view(settings),
         _ => render_placeholder("设置内容区域").into(),
     };
 

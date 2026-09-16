@@ -3,7 +3,7 @@
 //! 包含进度窗口和对话框窗口的渲染。
 
 use iced_core::Length;
-use iced_widget::{column, container, progress_bar, space, text};
+use iced_widget::{button, checkbox, column, container, progress_bar, row, space, text};
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
@@ -52,6 +52,64 @@ impl Root {
         .width(Length::Fill)
         .height(Length::Fill)
         .padding(30)
+        .style(|theme: &Theme| container::Style {
+            background: Some(iced_core::Background::Color(theme.palette().background)),
+            ..Default::default()
+        })
+        .into();
+
+        if self.use_native_titlebar {
+            content
+        } else {
+            column![self.titlebar.view_popup(&self.window), content]
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into()
+        }
+    }
+
+    /// 渲染设备检查警告窗（首启 GPU 兼容性失败提示）
+    pub(super) fn view_device_warning(&self) -> Element<'_> {
+        puffin::profile_scope!("root_view_device_warning");
+
+        let suppress = self.state.device_warning_suppress_checked;
+
+        let actions = row![
+            checkbox(suppress)
+                .label("不要再提示我")
+                .on_toggle(crate::window::Event::device_warning_suppress_toggled),
+            space().width(Length::Fill),
+            button(text("确认并关闭").size(14)).on_press(
+                crate::window::Event::device_warning_actioned(
+                    crate::window::DeviceWarningAction::Quit
+                ),
+            ),
+            button(text("放我进去").size(14)).on_press(
+                crate::window::Event::device_warning_actioned(
+                    crate::window::DeviceWarningAction::Continue { suppress },
+                ),
+            ),
+        ]
+        .spacing(12)
+        .align_y(iced_core::Alignment::Center);
+
+        let content: Element<'_> = container(
+            column![
+                row![
+                    text("🤔").size(34),
+                    text("你的电脑不满足运行 Lumino 的最低要求").size(18),
+                ]
+                .spacing(12)
+                .align_y(iced_core::Alignment::Center),
+                text(self.state.device_warning_detail.clone()).size(14),
+                actions,
+            ]
+            .spacing(20)
+            .align_x(iced_core::Alignment::Start),
+        )
+        .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(24)
         .style(|theme: &Theme| container::Style {
             background: Some(iced_core::Background::Color(theme.palette().background)),
             ..Default::default()

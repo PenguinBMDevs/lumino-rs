@@ -8,6 +8,7 @@
 //! - test_mode: 测试模式 FPS 监测
 
 mod control_flow;
+mod device_gate;
 mod dialog;
 mod memory;
 mod midi;
@@ -17,29 +18,39 @@ use std::sync::Arc;
 
 use lumino_ui::state::root_state::DialogType;
 
-use super::inner::{Runner, TestModeState};
+use super::inner::{InitError, Runner, TestModeState};
+use device_gate::DeviceGate;
 
 impl winit::application::ApplicationHandler for Runner {
     fn resumed(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
-        if self.inner.is_some() || self.init_error.is_some() {
+        if self.inner.is_some() || self.init_error.is_some() || self.device_warning.is_some() {
             return;
+        }
+
+        // 启动设备检查门控（测试模式 / LUMINO_SKIP_DEVICE_CHECK 时跳过）
+        if self.test_config.is_none() && std::env::var_os("LUMINO_SKIP_DEVICE_CHECK").is_none() {
+            match self.run_device_gate(event_loop) {
+                DeviceGate::Proceed => {}
+                DeviceGate::Waiting => return,
+                DeviceGate::Quit => {
+                    event_loop.exit();
+                    return;
+                }
+                DeviceGate::StorageError(e) => {
+                    tracing::error!("Runner 初始化失败：{}", e);
+                    self.init_error = Some(InitError::Storage(e));
+                    event_loop.exit();
+                    return;
+                }
+            }
         }
 
         match self.init_inner(event_loop) {
             Ok(inner) => {
                 self.inner = Some(inner);
 
-                // 兜底首帧：显式请求一次主窗口重绘。
-                // Wait 模式下 about_to_wait 不再每轮强制 request_redraw，
-                // 首帧后若无动画/播放，needs_redraw==false 即进入休眠，不会忙循环。
-                if let Some(this) = self.inner.as_mut() {
-                    this.window_state.window.request_redraw();
-                }
-
-                // 启动自动连接云存储（后台静默执行，失败不打扰用户）
-                if let Some(this) = self.inner.as_mut() {
-                    this.startup_auto_connect();
-                }
+                // 兜底首帧重绘 / 状态栏提示 / 云自动连接（与警告窗「继续」路径共用）
+                self.after_inner_started();
 
                 // 如果是测试模式，自动加载 MIDI
                 if let Some(test_config) = self.test_config.take()
@@ -115,6 +126,18 @@ impl winit::application::ApplicationHandler for Runner {
         puffin::profile_function!();
         puffin::profile_scope!("runner_window_event");
 
+        // 设备检查警告窗优先分发（此时主窗口尚未初始化）
+        if self
+            .device_warning
+            .as_ref()
+            .is_some_and(|w| w.is_window(window_id))
+        {
+            if let Some(warning) = self.device_warning.as_mut() {
+                warning.handle_event(event);
+            }
+            return;
+        }
+
         let Some(this) = self.inner.as_mut() else {
             return;
         };
@@ -148,6 +171,12 @@ impl winit::application::ApplicationHandler for Runner {
 
     fn about_to_wait(&mut self, event_loop: &winit::event_loop::ActiveEventLoop) {
         puffin::profile_scope!("runner_about_to_wait");
+
+        // 设备检查警告窗阶段：主窗口未初始化，只处理警告窗的用户选择
+        if self.inner.is_none() {
+            self.about_to_wait_device_warning(event_loop);
+            return;
+        }
 
         let Some(this) = self.inner.as_mut() else {
             return;
@@ -218,6 +247,9 @@ impl winit::application::ApplicationHandler for Runner {
         // 找回删除音轨对话框 UI 就绪后，把 pending 条目列表注入对话框
         // 必须在 about_to_wait_init_dialogs 之后调用——此时对话框 UI 可能刚就绪
         this.try_fill_recover_track_entries();
+
+        // GPU 兼容性检查结果注入（设置对话框可能刚创建/刚就绪）
+        this.inject_pending_gpu_check_ui();
 
         // 处理视频导出预览帧（转发到 VideoExport 对话框窗口）
         // 注意：必须在对话框初始化之后消费，否则导出线程在对话框创建前发送的

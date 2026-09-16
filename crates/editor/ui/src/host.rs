@@ -117,6 +117,22 @@ impl Host {
         &mut self.root.settings
     }
 
+    /// 取走设备检查警告窗的用户操作（无则返回 `None`）
+    pub fn take_device_warning_choice(&mut self) -> Option<crate::window::DeviceWarningAction> {
+        self.root.take_device_warning_action()
+    }
+
+    /// 注入 GPU 兼容性检测结果到设置面板（设置对话框专用）
+    pub fn set_gpu_check_result(&mut self, passed: bool, detail: String) {
+        self.root.settings.compat.check_state =
+            lumino_ui_core::state::GpuCheckUiState::Done(lumino_ui_core::state::GpuCheckUiResult {
+                passed,
+                detail,
+            });
+        self.root.settings.compat.copied = false;
+        self.mark_dirty();
+    }
+
     /// 获取云存储 UI 状态
     pub fn cloud_state(&self) -> &crate::state::cloud_state::CloudUiState {
         &self.root.cloud

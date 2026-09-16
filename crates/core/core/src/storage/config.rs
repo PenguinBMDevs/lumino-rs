@@ -310,6 +310,19 @@ pub struct UiConfig {
     /// 跨会话不保证稳定，但单次运行内唯一可识别。
     #[serde(default)]
     pub audio_output_device: Option<String>,
+    /// 是否在每次启动时执行 GPU 兼容性检查（默认开启；设置页可关闭）
+    #[serde(default = "default_true")]
+    pub gpu_check_on_startup: bool,
+    /// 启动 GPU 兼容性警告是否被抑制（`None` = 全新配置按未抑制处理；
+    /// 旧版配置在加载时归一化为 `Some(true)`，实现"老用户升级静默"）
+    #[serde(default)]
+    pub gpu_warning_suppressed: Option<bool>,
+    /// 上次 GPU 检测的适配器指纹（启动缓存比对，避免每次全量试画）
+    #[serde(default)]
+    pub gpu_last_fingerprint: Option<String>,
+    /// 上次 GPU 检测是否通过（配合指纹决定是否可跳过全量检测）
+    #[serde(default)]
+    pub gpu_last_passed: Option<bool>,
 }
 
 fn default_true() -> bool {
@@ -441,6 +454,10 @@ impl Default for UiConfig {
             audio_engine: AudioEngineKind::default(),
             system_output_device_id: None,
             audio_output_device: None,
+            gpu_check_on_startup: true,
+            gpu_warning_suppressed: None,
+            gpu_last_fingerprint: None,
+            gpu_last_passed: None,
         }
     }
 }

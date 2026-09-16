@@ -64,3 +64,35 @@ fn test_tempo_custom_close() {
     panel.update(Event::TempoMaxBpmCustomClose);
     assert!(!panel.editing.tempo_custom_open);
 }
+
+// ── 兼容性设置 ──
+
+#[test]
+fn test_compat_init_from_config() {
+    let config = UiConfig {
+        gpu_check_on_startup: false,
+        gpu_warning_suppressed: Some(true),
+        ..UiConfig::default()
+    };
+    let panel = SettingsPanel::new(&config);
+    assert!(!panel.compat.check_on_startup);
+    assert!(panel.compat.warning_suppressed);
+    assert_eq!(
+        panel.compat.check_state,
+        lumino_ui_core::state::GpuCheckUiState::Idle
+    );
+}
+
+#[test]
+fn test_compat_events_update_switches_and_state() {
+    let mut panel = panel_with_tempo(512.0);
+    panel.update(Event::GpuCheckOnStartupChanged(false));
+    assert!(!panel.compat.check_on_startup);
+    panel.update(Event::GpuWarningSuppressedChanged(true));
+    assert!(panel.compat.warning_suppressed);
+    panel.update(Event::RunGpuCompatibilityCheck);
+    assert_eq!(
+        panel.compat.check_state,
+        lumino_ui_core::state::GpuCheckUiState::Running
+    );
+}

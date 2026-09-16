@@ -50,6 +50,14 @@ pub struct Runner {
     pub(crate) init_error: Option<InitError>,
     pub(crate) test_config: Option<crate::cli::TestConfig>,
     pub(crate) log_memory_usage: bool,
+    /// 设备检查警告窗（等待用户选择期间存在；此时 `inner` 尚未初始化）
+    pub(crate) device_warning: Option<super::device_warning::DeviceWarningWindow>,
+    /// 检查阶段提前加载的只读 Storage（供 `init_inner` 复用，避免重复读盘）
+    pub(crate) pending_storage: Option<storage::Storage>,
+    /// 需要写入状态栏的启动提示（GPU 静默失败路径）
+    pub(crate) pending_status_hint: Option<String>,
+    /// 待持久化的 GPU 检测缓存（用户选择「放我进去」时写入）
+    pub(crate) pending_gpu_cache: Option<(Option<String>, bool)>,
 }
 
 // ── 领域状态 ────────────────────────────────────────────────────────────
@@ -182,6 +190,11 @@ pub(crate) struct RunnerInner {
     /// 仅当 `pending_close_action.is_some()` 且用户选择「保存」时为 true；
     /// 保存任务完成后（`handle_save_completed`）据此继续原动作。
     pub(crate) run_pending_after_save: bool,
+    /// 待注入设置对话框的 GPU 兼容性检测结果 `(passed, detail)`。
+    ///
+    /// 手动检查在后台线程执行，结果经事件总线回传时设置对话框可能尚未创建；
+    /// 暂存于此，由 `about_to_wait` 逐帧尝试注入。
+    pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -219,7 +232,11 @@ impl Runner {
         &mut self,
         event_loop: &winit::event_loop::ActiveEventLoop,
     ) -> Result<RunnerInner, InitError> {
-        let storage = storage::Storage::new()?;
+        // 设备检查门控可能已提前只读加载 Storage（含旧配置归一化），优先复用
+        let storage = match self.pending_storage.take() {
+            Some(storage) => storage,
+            None => storage::Storage::new()?,
+        };
 
         // 在存储初始化后启动文件日志
         {
@@ -347,6 +364,7 @@ impl Runner {
             cloud_saving,
             pending_close_action: None,
             run_pending_after_save: false,
+            pending_gpu_check_ui: None,
         };
 
         Ok(runner)
