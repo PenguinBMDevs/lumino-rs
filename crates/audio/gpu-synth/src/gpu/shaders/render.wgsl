@@ -46,6 +46,8 @@ struct VoiceState {
     env_stage: u32,       // current stage index (relative to env_base)
     env_t: u32,           // samples elapsed in the current stage
     env_from: f32,        // value at the start of the current stage
+    env_value: f32,       // current envelope value (persisted across blocks; the
+                          // block-start gain must NOT snap back to env_from)
     lx1: f32, lx2: f32, ly1: f32, ly2: f32,  // biquad state (left channel)
     rx1: f32, rx2: f32, ry1: f32, ry2: f32,  // biquad state (right channel)
     last_loop_pos: u32,   // loop position at release (loop sustain mode)
@@ -310,7 +312,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // worse, overwrote the value persisted from the block where the voice was
     // actually released, producing wrong release tails / discontinuities.
 
-    var env_value = st.env_from;
+    // `env_value` is the persisted CURRENT envelope value (from the previous
+    // block's last frame). Initializing from `st.env_from` (the stage start
+    // value) made the first frame of every block snap back to the stage
+    // start, injecting a one-frame envelope error at each 512-frame block
+    // boundary - the block-rate click/pop artifact audible in quiet tails.
+    var env_value = st.env_value;
 
     // Fast-forward the state to this segment's start. No sample reads, only
     // release/envelope/position logic; frames before `start_at` are gated
@@ -402,6 +409,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // the same value; writing once avoids needless storage traffic).
     // Filtered voices are single-segment and persist from segment 0.
     if (seg == SEGS - 1u || (is_filtered && seg == 0u)) {
+        st.env_value = env_value;
         states[voice] = st;
     }
 }

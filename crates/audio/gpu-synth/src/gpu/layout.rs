@@ -54,6 +54,9 @@ pub struct VoiceState {
     pub env_stage: u32,
     pub env_t: u32,
     pub env_from: f32,
+    /// 当前包络值（跨 block 持久化；块首帧不能回退到 `env_from` 这一阶段起点值，
+    /// 否则每个块边界都会产生一帧包络误差 —— 频谱全频柱/爆音的根因）。
+    pub env_value: f32,
     pub lx1: f32,
     pub lx2: f32,
     pub ly1: f32,

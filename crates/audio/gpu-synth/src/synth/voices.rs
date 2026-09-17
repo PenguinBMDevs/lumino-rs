@@ -216,6 +216,9 @@ pub fn build_voice(
         // click/crackle.
         state: VoiceState {
             env_from: envelope_desc.start_percent,
+            // 新音的当前包络值 = 第一阶段起点值；必须与 env_from 一起初始化，
+            // 否则（默认 0）音符起始会掉一个样本。
+            env_value: envelope_desc.start_percent,
             ..Default::default()
         },
         release_at: u64::MAX,
