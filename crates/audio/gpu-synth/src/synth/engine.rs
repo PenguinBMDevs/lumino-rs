@@ -35,6 +35,22 @@ pub struct RenderResult {
 /// guard well below the 2^32 frame range of the u32 GPU timestamps.
 const MAX_RENDER_FRAMES: u64 = 1 << 31;
 
+/// Cooperative checkpoint for offline render loops: called once per rendered
+/// block (and once per prewarm chunk); returning `false` cancels the render
+/// with [`SynthError::Cancelled`]. Implementations may block inside the
+/// closure to implement pause (e.g. the export layer waits on its
+/// `AudioExportControl`).
+pub type RenderCheckpoint = Arc<dyn Fn() -> bool + Send + Sync>;
+
+/// Runs a checkpoint without needing `&self` (lets hot loops keep a cloned
+/// handle while other `self` fields are mutably borrowed).
+fn checkpoint_ok(checkpoint: &Option<RenderCheckpoint>) -> Result<(), SynthError> {
+    match checkpoint {
+        Some(cb) if !cb() => Err(SynthError::Cancelled),
+        _ => Ok(()),
+    }
+}
+
 /// Voice states are read back every N-th block (see
 /// `GpuSynth::states_sync_counter`).
 ///
@@ -336,7 +352,8 @@ pub struct GpuSynth {
     /// key's budget is spent, further note-ons are skipped entirely. A flat
     /// array (16 channels x 128 keys) keeps the skip path a single indexed
     /// load - the HashMap version cost ~0.15us per skipped note-on.
-    spawn_budget: [u8; 16 * 128],
+    /// u32 计数：层数可超过 255，u8 在 256 的倍数时会截断为 0 导致该键全丢。
+    spawn_budget: [u32; 16 * 128],
     /// Per-(channel, key) count of active (not ended, not released) note
     /// groups, so `release_key` can bail out in O(1) when a note-off has no
     /// target - black-MIDI peaks fire hundreds of thousands of orphan
@@ -369,6 +386,9 @@ pub struct GpuSynth {
     /// staging buffer every call) stops dominating the render time. Measured
     /// 35ms/block for ~400KB of voice uploads vs ~2ms with a belt.
     belt: wgpu::util::StagingBelt,
+    /// Cooperative cancel/pause checkpoint for offline renders (see
+    /// [`RenderCheckpoint`]); `None` = non-cancellable.
+    render_checkpoint: Option<RenderCheckpoint>,
 }
 
 /// A submission whose readback is still outstanding (see `GpuSynth::pending`).
@@ -541,6 +561,47 @@ fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, sample_rate
     }
     tail.copy_from_slice(&raw[raw.len() - LOOKAHEAD * 2..]);
     *gain = g;
+}
+
+/// 每键每块的 note-on 预算判定（纯函数便于单测）：`limit == 0` 表示不限。
+///
+/// `used` 是当前块该键已放行的 note-on 数。绝不能把 `limit` 截断成更小的整数
+/// 再比较（旧实现 `limit as u8` 在 256 的倍数时为 0，该键所有音符被丢）。
+#[inline]
+fn spawn_budget_allows(limit: usize, used: u32) -> bool {
+    limit == 0 || (used as usize) < limit
+}
+
+/// 选择要被抢占的 note 组下标（按"最安静优先"排序），最多 `need_free` 个。
+///
+/// 规则与 XSynth `VoiceBuffer::pop_quietest_voice_group(ignored_id)` 对齐：
+/// - `protected` 指定的组（通常是刚触发的 note；未指定时取 `note_id` 最大者，
+///   即最新组）永不入选，保证"新音符必发声"；
+/// - 其余组按 `(vel, note_id)` 升序抢占（同力度先抢旧的），结果确定。
+///
+/// `groups` 元素为 `(spawn_frame, vel, note_id)`；返回 `groups` 的下标，调用方
+/// 负责实际释放/淡出与索引重建。`need_free ≤ groups.len() - 1`（limit ≥ 1 时）
+/// 由调用方保证，因此保护组之外总有足够候选。
+fn select_evictions(
+    groups: &[(u64, u8, u64)],
+    need_free: usize,
+    protected: Option<u64>,
+) -> Vec<usize> {
+    if need_free == 0 || groups.is_empty() {
+        return Vec::new();
+    }
+    let protected_id = protected.or_else(|| groups.iter().map(|&(_, _, nid)| nid).max());
+    let mut candidates: Vec<usize> = (0..groups.len())
+        .filter(|&i| Some(groups[i].2) != protected_id)
+        .collect();
+    if candidates.len() < need_free {
+        // 兜底：保护组不在列表或 limit == 0 的异常输入，允许抢保护组，
+        // 避免这里出现 panic / 死循环。
+        candidates = (0..groups.len()).collect();
+    }
+    candidates.sort_by_key(|&i| (groups[i].1, groups[i].2, i));
+    candidates.truncate(need_free);
+    candidates
 }
 
 impl GpuSynth {
@@ -771,6 +832,7 @@ impl GpuSynth {
             states_sync_counter: 0,
             pending: None,
             belt: wgpu::util::StagingBelt::new(1 << 20),
+            render_checkpoint: None,
         };
         engine.rebuild_bind_groups();
         Ok(engine)
@@ -779,6 +841,22 @@ impl GpuSynth {
     /// Returns the engine configuration.
     pub fn config(&self) -> &SynthConfig {
         &self.config
+    }
+
+    /// Installs (or clears) the cooperative checkpoint used by the offline
+    /// render loops for cancellation/pause.
+    ///
+    /// The closure runs once per rendered block (and once per prewarm chunk);
+    /// returning `false` aborts the render with [`SynthError::Cancelled`].
+    /// It may block to implement pause, but must keep observing cancellation.
+    pub fn set_render_checkpoint(&mut self, checkpoint: Option<RenderCheckpoint>) {
+        self.render_checkpoint = checkpoint;
+    }
+
+    /// Runs the cooperative checkpoint (if any); `false` = cancelled.
+    #[inline]
+    fn check_render_checkpoint(&self) -> Result<(), SynthError> {
+        checkpoint_ok(&self.render_checkpoint)
     }
 
     /// Returns the adapter info (for diagnostics).
@@ -1319,15 +1397,24 @@ impl GpuSynth {
             wanted.sort_unstable();
             wanted.dedup();
             let rate = self.config.sample_rate;
-            let pre: Vec<(usize, Arc<[f32]>)> = wanted
-                .par_iter()
-                .map(|&id| (id, sf.resample_uncached(id, rate)))
-                .collect();
+            let mut pre: Vec<(usize, Arc<[f32]>)> = Vec::with_capacity(wanted.len());
+            for chunk in wanted.chunks(64) {
+                self.check_render_checkpoint()?;
+                pre.par_extend(
+                    chunk
+                        .par_iter()
+                        .map(|&id| (id, sf.resample_uncached(id, rate))),
+                );
+            }
+            // The upload loop holds `&mut self.sf`, so the checkpoint handle is
+            // cloned out and polled via the free function instead of `&self`.
+            let checkpoint = self.render_checkpoint.clone();
             let sf = self.sf.as_mut().expect("soundfont present");
             let device = &self.res.ctx.device;
             let queue = &self.res.ctx.queue;
             let mut grown = false;
             for (id, data) in pre {
+                checkpoint_ok(&checkpoint)?;
                 sf.cache_resampled(id, rate, data.clone());
                 let len = data.len() as u32;
                 let offset = self.samples_next_offset;
@@ -1405,6 +1492,7 @@ impl GpuSynth {
                 }
                 break;
             }
+            self.check_render_checkpoint()?;
             let rb_t0 = std::time::Instant::now();
             self.render_block(&mut block_buf)?;
             let rb_dt = rb_t0.elapsed();
@@ -1445,6 +1533,7 @@ impl GpuSynth {
 
         // Phase 2: decay tail - render blocks until one is entirely silent.
         loop {
+            self.check_render_checkpoint()?;
             self.render_block(&mut block_buf)?;
             progress.tick(self.global_frame);
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
@@ -1657,6 +1746,7 @@ impl GpuSynth {
                 // Chunked resample+upload to keep peak <100 MB (was holding all Arcs at once: 200 MB+)
                 let mut grown = false;
                 for chunk in wanted.chunks(16) {
+                    self.check_render_checkpoint()?;
                     let pre: Vec<(usize, Arc<[f32]>)> = if let Some(sf_ref) = self.sf.as_ref() {
                         chunk
                             .par_iter()
@@ -1725,6 +1815,7 @@ impl GpuSynth {
                 }
                 break;
             }
+            self.check_render_checkpoint()?;
             let rb_t0 = std::time::Instant::now();
             self.render_block_streaming(&mut block_buf, &mut stream)?;
             let rb_dt = rb_t0.elapsed();
@@ -1763,6 +1854,7 @@ impl GpuSynth {
 
         // Phase 2: tail
         loop {
+            self.check_render_checkpoint()?;
             self.render_block_streaming(&mut block_buf, &mut stream)?;
             progress.tick(self.global_frame);
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
@@ -1877,11 +1969,12 @@ impl GpuSynth {
                 // function call entirely - the peaks fire hundreds of
                 // thousands of note-ons per block, of which only
                 // `max_voices_per_key` can survive the per-key trim.
+                // 旧实现用 `limit as u8` 比较：层数为 256 的倍数时截断为 0，
+                // 导致该键全部 note-on 被丢（静音级 bug），故用 usize 比较。
                 let limit = self.config.max_voices_per_key;
                 if limit > 0 {
-                    const BUDGET_MULT: u8 = 1;
                     let slot = &mut self.spawn_budget[ch * 128 + key as usize];
-                    if *slot >= (limit as u8).saturating_mul(BUDGET_MULT) {
+                    if !spawn_budget_allows(limit, *slot) {
                         return Ok(());
                     }
                     *slot += 1;
@@ -2070,7 +2163,7 @@ impl GpuSynth {
             *slot = slot.saturating_add(1);
             let limit = self.config.max_voices_per_key;
             if limit > 0 && self.key_voices[ch * 128 + key as usize].len() > limit * 2 {
-                self.trim_key_voices(ch as u8, key, limit);
+                self.trim_key_voices(ch as u8, key, limit, Some(note_id));
             }
             return Ok(());
         }
@@ -2117,7 +2210,7 @@ impl GpuSynth {
         // note storms, which makes every in-block release_key scan O(10k).
         let limit = self.config.max_voices_per_key;
         if limit > 0 && self.key_voices[ch * 128 + key as usize].len() > limit * 2 {
-            self.trim_key_voices(ch as u8, key, limit);
+            self.trim_key_voices(ch as u8, key, limit, Some(note_id));
         }
         Ok(())
     }
@@ -2280,16 +2373,18 @@ impl GpuSynth {
     /// sounding voice vanish in one block, an audible click at the
     /// polyphony cap). Whole notes are released, never split zones -
     /// mirroring XSynth's `pop_quietest_voice_group` + `fade_out_killing`.
-    /// O(key voices), so it must only run when the key exceeds its cap,
-    /// not per note-on.
-    fn trim_key_voices(&mut self, ch: u8, key: u8, limit: usize) {
+    ///
+    /// `protected` is the note_id that must survive this trim (the group just
+    /// spawned); `None` protects the newest group (max note_id). This mirrors
+    /// XSynth's `ignored_id`: a fresh note always sounds, the quietest of the
+    /// other groups is stolen. O(key voices), so it must only run when the
+    /// key exceeds its cap, not per note-on.
+    fn trim_key_voices(&mut self, ch: u8, key: u8, limit: usize, protected: Option<u64>) {
         let idx = ch as usize * 128 + key as usize;
         let positions: Vec<usize> = self.key_voices[idx].iter().copied().collect();
         // Group by note_id (spawn order keeps one note's zones adjacent);
-        // ended voices are freed for free. Sort OLDEST first so a fresh
-        // note-on always survives the trim (XSynth's steal semantics: at
-        // high NPS the newest notes sound, the oldest fade out).
-        let mut groups: Vec<(u64, u8, Vec<usize>)> = Vec::new();
+        // ended/released voices are excluded (they are already fading out).
+        let mut groups: Vec<(u64, u8, u64, Vec<usize>)> = Vec::new();
         for &pos in &positions {
             let Some(v) = self.voices.get(pos) else {
                 continue;
@@ -2298,28 +2393,27 @@ impl GpuSynth {
                 continue;
             }
             match groups.last_mut() {
-                Some((_, _, g)) if self.voices[g[0]].note_id == v.note_id => g.push(pos),
-                _ => groups.push((v.spawn_frame, v.vel, vec![pos])),
+                Some((_, _, nid, g)) if *nid == v.note_id => g.push(pos),
+                _ => groups.push((v.spawn_frame, v.vel, v.note_id, vec![pos])),
             }
         }
-        // `active` is voices, but limit is groups — convert: groups = ceil(active / avg_voices_per_group)
-        // For per-key, limit is groups, so need_free groups = groups.len() - limit
+        // `limit` counts note GROUPS (one note = one group, all its zones).
         let need_free = groups.len().saturating_sub(limit);
         if need_free == 0 {
             return;
         }
-        // xsynth 抢占最安静的力度组，而非最老的，与 VoiceBuffer::pop_quietest_voice_group 一致
-        groups.sort_by_key(|&(_, vel, _)| vel);
+        let infos: Vec<(u64, u8, u64)> = groups
+            .iter()
+            .map(|(spawn, vel, nid, _)| (*spawn, *vel, *nid))
+            .collect();
+        let evict = select_evictions(&infos, need_free, protected);
         // For dense black MIDI (>20k), hard-kill is inaudible (dense mix
         // masks the 1-block click) but saves 1 block of fading voices
         // (20k * 32ms tail = 640k voice-blocks). Flame showed fading
         // accumulation is the 80k→70k leak.
         let hard_kill = self.voices.len() > 20000;
-        for (freed, (_, _, g)) in groups.iter().enumerate() {
-            if freed >= need_free {
-                break;
-            }
-            for &pos in g {
+        for &gi in &evict {
+            for &pos in &groups[gi].3 {
                 if let Some(v) = self.voices.get_mut(pos)
                     && v.release_at == u64::MAX
                     && v.state.ended == 0
@@ -2455,7 +2549,7 @@ impl GpuSynth {
                 .map(|(idx, _)| ((idx / 128) as u8, (idx % 128) as u8))
                 .collect();
             for (ch, key) in keys {
-                self.trim_key_voices(ch, key, per_key_limit);
+                self.trim_key_voices(ch, key, per_key_limit, None);
             }
             self.voices.retain(|v| v.state.ended == 0);
             self.rebuild_key_voices();
@@ -3706,7 +3800,11 @@ impl ProgressBar {
 }
 #[cfg(test)]
 mod tests {
-    use super::{ChannelState, ParamSel, limit_block};
+    use super::{
+        ChannelState, ParamSel, RenderCheckpoint, checkpoint_ok, limit_block, select_evictions,
+        spawn_budget_allows,
+    };
+    use crate::error::SynthError;
 
     const LOOKAHEAD: usize = 256;
 
@@ -3853,5 +3951,68 @@ mod tests {
             st.pitch_multiplier,
             expected2
         );
+    }
+
+    #[test]
+    fn render_checkpoint_cancel_semantics() {
+        let none: Option<RenderCheckpoint> = None;
+        assert!(checkpoint_ok(&none).is_ok());
+        let run: Option<RenderCheckpoint> = Some(std::sync::Arc::new(|| true));
+        assert!(checkpoint_ok(&run).is_ok());
+        let cancel: Option<RenderCheckpoint> = Some(std::sync::Arc::new(|| false));
+        assert!(matches!(checkpoint_ok(&cancel), Err(SynthError::Cancelled)));
+    }
+
+    #[test]
+    fn spawn_budget_allows_layer_values_beyond_u8() {
+        // 256 的倍数在旧实现里 `as u8 == 0`，会让该键所有 note-on 被丢。
+        assert!(spawn_budget_allows(256, 0));
+        assert!(spawn_budget_allows(256, 255));
+        assert!(!spawn_budget_allows(256, 256));
+        assert!(spawn_budget_allows(300, 299));
+        // 0 = 无限制。
+        assert!(spawn_budget_allows(0, u32::MAX));
+        // 常规层数：预算内放行，用满即停。
+        assert!(spawn_budget_allows(32, 31));
+        assert!(!spawn_budget_allows(32, 32));
+    }
+
+    #[test]
+    fn evictions_protect_newest_group_even_when_quietest() {
+        // (spawn_frame, vel, note_id)：note_id=3 最新但力度最低。
+        let groups = [(0, 100, 1), (1, 60, 2), (2, 5, 3)];
+        let evict = select_evictions(&groups, 2, Some(3));
+        // 保护 3，其余按 (vel, note_id) 升序：2(60) 先于 1(100)。
+        assert_eq!(evict, vec![1, 0]);
+    }
+
+    #[test]
+    fn evictions_default_protection_is_max_note_id() {
+        let groups = [(0, 100, 1), (1, 60, 2), (2, 5, 3)];
+        let evict = select_evictions(&groups, 2, None);
+        assert_eq!(evict, vec![1, 0]);
+    }
+
+    #[test]
+    fn evictions_prefer_quietest_then_oldest() {
+        // 保护 note_id=4；候选按 (vel, note_id)：1(vel 5)、3(vel 60)、2(vel 100)。
+        let groups = [(0, 5, 1), (1, 100, 2), (2, 60, 3), (3, 20, 4)];
+        let evict = select_evictions(&groups, 2, Some(4));
+        assert_eq!(evict, vec![0, 2]);
+    }
+
+    #[test]
+    fn evictions_limit_one_keeps_latest() {
+        let groups = [(0, 127, 1), (1, 1, 2)];
+        let evict = select_evictions(&groups, 1, Some(2));
+        assert_eq!(evict, vec![0]);
+    }
+
+    #[test]
+    fn evictions_handle_empty_and_zero_request() {
+        assert!(select_evictions(&[], 3, None).is_empty());
+        let groups = [(0, 10, 1), (1, 20, 2)];
+        assert!(select_evictions(&groups, 0, None).is_empty());
+        assert_eq!(select_evictions(&groups, 1, Some(2)), vec![0]);
     }
 }

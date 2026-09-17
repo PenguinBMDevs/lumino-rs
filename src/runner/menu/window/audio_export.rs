@@ -7,6 +7,7 @@ use std::sync::Arc;
 use lumino_export::audio::codec::AudioCodec;
 use lumino_export::audio::config::{
     AudioBackendKind, AudioChannelMode, AudioInterpolation, AudioRenderConfig, ThreadMode,
+    layer_limit_from_ui,
 };
 use lumino_export::audio::control::AudioExportControl;
 
@@ -120,7 +121,7 @@ impl RunnerInner {
             output_path: output_path_buf,
             sample_rate: sample_rate.max(8000),
             channels: channel_mode,
-            layer_limit: Some(layer_limit.max(1) as usize),
+            layer_limit: layer_limit_from_ui(layer_limit),
             channel_threading: channel_threading_val,
             key_threading: key_threading_val,
             interpolation: interpolation_val,

@@ -51,15 +51,19 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
         }
     };
 
-    // xsynth 每 key 32 复音，与 lumino-export 的 layer_limit 语义一致；GPU 原硬编码 4 导致同音高密集时过度抢占
-    // 0/None 表示无限制，需保持 0 而非 max(4)
+    // 每键层数与 xsynth 的 SetLayerCount 对齐：GPU 原硬编码 4 导致同音高密集时过度抢占，
+    // 0/None 表示无限制（保持 0 而非 max(4)），其余对显式层数取 max(4) 保底。
     let max_voices_per_key = match config.layer_limit {
         None | Some(0) => 0,
         Some(n) => n.max(4),
     };
-    SynthConfig {
+    // 全局复音上限与 layer_limit 解耦：CPU/XSynth 基准与实时 LGS 都没有全局上限
+    // （`SynthConfig::default().max_voices == 0`），离线导出必须一致。
+    // 旧实现 `max_voices: config.layer_limit.unwrap_or(0)` 在默认 32 层时把全局上限
+    // 压到 32（物理池 48），高 poly 段被大量抢 voice（issue #31 过度杀音符）。
+    let synth_config = SynthConfig {
         sample_rate: config.sample_rate,
-        max_voices: config.layer_limit.unwrap_or(0),
+        max_voices: 0,
         max_voices_per_key,
         block_size: 512,
         interpolation: map_interpolation(config.interpolation),
@@ -69,7 +73,15 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
         render_silence_threshold: 0.0001,
         max_tail_seconds: 120.0,
         show_progress: false,
-    }
+    };
+    tracing::info!(
+        "GPU SynthConfig: sample_rate={}, max_voices={} (0=无限制), max_voices_per_key={}, channels={:?}",
+        synth_config.sample_rate,
+        synth_config.max_voices,
+        synth_config.max_voices_per_key,
+        synth_config.channels
+    );
+    synth_config
 }
 
 /// 从 MidiDocument 构造 MidiExportData（用于 GPU 临时 MIDI）
@@ -350,11 +362,18 @@ pub fn render_audio_gpu_from_document(
 
     report("GPU 渲染中（可能耗时，黑 MIDI 请耐心）...", 0.20);
     check_control(config)?;
-    // GPU 离线渲染（阻塞，期间无细粒度进度，靠最终写入阶段推进到 1.0）
-    // 粗粒度暂停/中止：渲染前检查，渲染本身为长时间阻塞，暂停会在下次检查生效
-    let result = synth
-        .render_midi_file(&tmp_path)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
+    // 渲染循环内的协作式暂停/中止检查点：GPU 渲染是长时间阻塞调用，
+    // 没有它 UI 的"暂停/停止"要等整段渲染结束才生效。
+    if let Some(ctrl) = config.control.clone() {
+        synth.set_render_checkpoint(Some(std::sync::Arc::new(move || {
+            ctrl.wait_if_paused();
+            !ctrl.is_aborted()
+        })));
+    }
+    let result = synth.render_midi_file(&tmp_path).map_err(|e| match e {
+        lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
+        other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
+    })?;
     check_control(config)?;
 
     report("GPU 写入输出...", 0.85);
@@ -438,9 +457,19 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
 
     report("GPU 渲染中...", 0.20);
     check_control(config)?;
+    // 渲染循环内的协作式暂停/中止检查点（同内存模式）。
+    if let Some(ctrl) = config.control.clone() {
+        synth.set_render_checkpoint(Some(std::sync::Arc::new(move || {
+            ctrl.wait_if_paused();
+            !ctrl.is_aborted()
+        })));
+    }
     let result = synth
         .render_midi_file(&config.midi_path)
-        .map_err(|e| ExportError::AudioWrite(format!("GPU 渲染失败: {e}")))?;
+        .map_err(|e| match e {
+            lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
+            other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
+        })?;
     check_control(config)?;
 
     report("GPU 写入输出...", 0.85);
@@ -495,4 +524,35 @@ fn write_gpu_result_to_sink(
 /// 供调用方查询 GPU 后端是否可用
 pub fn gpu_backend_available() -> bool {
     is_gpu_available()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::build_synth_config;
+    use crate::audio::config::AudioRenderConfig;
+
+    /// 全局复音上限必须与 layer_limit 解耦：默认 32 层时若把 layer_limit 当全局
+    /// 上限，高 poly 段会被大量抢 voice（issue #31 过度杀音符）。
+    #[test]
+    fn gpu_synth_config_decouples_global_cap_from_layer_limit() {
+        for layers in [None, Some(0usize), Some(1), Some(32), Some(256)] {
+            let config = AudioRenderConfig {
+                layer_limit: layers,
+                ..AudioRenderConfig::default()
+            };
+            let synth = build_synth_config(&config);
+            assert_eq!(
+                synth.max_voices, 0,
+                "全局上限必须与 layer_limit 解耦（layers={layers:?}）"
+            );
+            let expected = match layers {
+                None | Some(0) => 0,
+                Some(n) => n.max(4),
+            };
+            assert_eq!(
+                synth.max_voices_per_key, expected,
+                "每键层数应跟随 layer_limit（layers={layers:?}）"
+            );
+        }
+    }
 }

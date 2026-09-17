@@ -79,6 +79,38 @@ fn audio_settings_section<'a>(
         color: Some(label_color),
     };
 
+    // GPU 后端下"启用限幅器/禁用淡出"当前不生效（GPU 引擎始终限幅、固定 1ms 淡出），
+    // 灰显并说明，避免用户误以为它们能改变导出行为。
+    let gpu = state.backend == AudioBackend::Gpu;
+    let apply_limiter_cb = {
+        let cb = checkbox(state.apply_limiter)
+            .label(if gpu {
+                "启用限幅器（GPU 引擎始终限幅，此选项对 GPU 无效）"
+            } else {
+                "启用限幅器（大复音防削波，会轻微影响响度，建议开启）"
+            })
+            .style(widgets::dialog_checkbox_style(palette));
+        if gpu {
+            cb
+        } else {
+            cb.on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v)))
+        }
+    };
+    let disable_fade_cb = {
+        let cb = checkbox(state.disable_fade_out)
+            .label(if gpu {
+                "禁用淡出（GPU 引擎固定 1ms 淡出，此选项对 GPU 无效）"
+            } else {
+                "禁用淡出（voice 被抢占时硬切，会产生咔哒声，不建议开启）"
+            })
+            .style(widgets::dialog_checkbox_style(palette));
+        if gpu {
+            cb
+        } else {
+            cb.on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v)))
+        }
+    };
+
     column![
         text("音频设置")
             .size(18)
@@ -175,9 +207,9 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(8),
-        // 层数限制
+        // 每键最大复音（层数）：CPU=每键 layer 计数，GPU=每键 note 组计数
         row![
-            text("最大复音数:").size(14).style(label_style).width(120),
+            text("每键复音 (0=无限):").size(14).style(label_style).width(120),
             text_input("32", &state.layers.to_string())
                 .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
                 .padding([6, 10])
@@ -186,7 +218,7 @@ fn audio_settings_section<'a>(
         .spacing(8)
         .align_y(Alignment::Center),
         space().height(4),
-        text("CPU 达到上限时丢弃最旧音符；GPU 上为物理池大小，0=无限制（黑MIDI推荐）")
+        text("每个键（通道+音高）最大同时发声数；0=无限。CPU 按 voice 计、GPU 按音符组计；离线导出的全局复音不设上限。")
             .size(11)
             .style(move |_t: &iced_core::Theme| text::Style {
                 color: Some(palette.background.neutral.text.scale_alpha(0.6)),
@@ -227,16 +259,10 @@ fn audio_settings_section<'a>(
                 color: Some(palette.background.neutral.text.scale_alpha(0.6)),
             }),
         space().height(12),
-        // 复选框
-        checkbox(state.apply_limiter)
-            .label("启用限幅器（大复音防削波，会轻微影响响度，建议开启）")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::ApplyLimiterChanged(v)))
-            .style(widgets::dialog_checkbox_style(palette)),
+        // 复选框（GPU 后端下前两项由引擎固定，见上方 gpu 分支）
+        apply_limiter_cb,
         space().height(4),
-        checkbox(state.disable_fade_out)
-            .label("禁用淡出（voice 被抢占时硬切，会产生咔哒声，不建议开启）")
-            .on_toggle(|v| Message::AudioExport(AudioExportAction::DisableFadeOutChanged(v)))
-            .style(widgets::dialog_checkbox_style(palette)),
+        disable_fade_cb,
         space().height(4),
         checkbox(state.linear_envelope)
             .label("线性包络（CPU 衰减/释音用线性，GPU 默认线性，关闭则全指数）")

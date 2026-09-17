@@ -246,6 +246,18 @@ impl AudioRenderConfig {
     }
 }
 
+/// 将 UI 的"层数限制"输入换算为 [`AudioRenderConfig::layer_limit`]。
+///
+/// UI 的 `0` 表示"无限制"：xsynth 通过 `SetLayerCount(None)` 表达，GPU 后端通过
+/// `None → max_voices_per_key = 0` 表达。绝不能映射为 `Some(0)`（xsynth 会每键只
+/// 保留最新一组）或 `Some(1)`（GPU 全局上限被压到 1）。
+pub fn layer_limit_from_ui(layers: u32) -> Option<usize> {
+    match layers {
+        0 => None,
+        n => Some(n as usize),
+    }
+}
+
 impl Default for AudioRenderConfig {
     fn default() -> Self {
         Self {
@@ -282,6 +294,13 @@ impl Default for AudioRenderConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_layer_limit_from_ui_zero_means_unlimited() {
+        assert_eq!(layer_limit_from_ui(0), None);
+        assert_eq!(layer_limit_from_ui(1), Some(1));
+        assert_eq!(layer_limit_from_ui(32), Some(32));
+    }
 
     #[test]
     fn test_audio_channel_mode_channel_count() {

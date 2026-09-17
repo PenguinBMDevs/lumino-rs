@@ -35,6 +35,11 @@ pub enum SynthError {
     #[error("voice limit exceeded: {0} active voices")]
     VoiceLimit(usize),
 
+    /// The render was cancelled by the caller through the cooperative
+    /// render checkpoint (`GpuSynth::set_render_checkpoint`).
+    #[error("render cancelled")]
+    Cancelled,
+
     /// Offline rendering exceeded the maximum allowed length. This happens
     /// when a voice never finishes (e.g. a held damper pedal, a missing
     /// note-off at the end of the MIDI file, or an envelope stage that
