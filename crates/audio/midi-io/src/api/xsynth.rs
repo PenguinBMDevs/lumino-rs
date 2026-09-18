@@ -43,6 +43,32 @@ pub struct XSynthOptions {
     pub sample_rate: u32,
     /// 是否淡出被杀掉的 voice
     pub fade_out_killing: bool,
+    /// 实时 NPS 限流上限（0 = 关闭限流，不丢弃 NoteOn）
+    pub max_nps: u64,
+    /// 每个 (通道, 键) 的最大同音数（None = 不限）。
+    ///
+    /// 上游 xsynth 默认仅 `Some(4)`，高密度黑乐谱会因此大量抢占/丢弃音符；
+    /// 离线导出通过 `SetLayerCount` 配置，此前实时路径遗漏了该配置。
+    pub max_voices_per_key: Option<usize>,
+    /// 每通道活跃声部上限（None = 不限，Some(0) 同样视为不限）。
+    ///
+    /// 注意：上游默认按**每通道**治理；多数黑乐谱跨多通道，实际总预算会被
+    /// 通道数放大。实时路径请优先使用 `global_max_voices`（跨通道全局上限）。
+    pub max_voices_per_channel: Option<usize>,
+    /// 跨通道全局声部上限（硬上限/量程；None = 自动，引擎默认 10000）。
+    ///
+    /// 由渲染管线统一调度：运行目标 = `voice_target_ratio × 硬上限`，
+    /// 超限时向"声部最多的通道"下发抢占命令，保证活跃声部总数有上界，
+    /// 且新音符不被丢弃。
+    pub global_max_voices: Option<usize>,
+    /// 复音软目标比例：运行目标 = 比例 × `global_max_voices`（负载反馈只会更低）。
+    ///
+    /// 默认 `1 - 1/e ≈ 0.632`，留出约 37% 暂态余量，避免过载后的无休止正反馈。
+    pub voice_target_ratio: f64,
+    /// 过载保命闸（软 NPS 闸）：仅在重度过载时临时限速，默认关闭。
+    ///
+    /// 关闭时引擎不存在任何 NoteOn 丢弃路径。
+    pub soft_nps_gate: bool,
     /// 音频播放输出设备（CPAL 音频设备名；None = 使用系统默认输出设备）
     pub audio_output_device: Option<String>,
 }
@@ -121,7 +147,11 @@ impl XSynth {
         let mut rt_config = XSynthRealtimeConfig::default();
 
         if let Some(opt) = options {
-            rt_config.render_window_ms = opt.buffer_ms;
+            // 渲染块固定 10ms：MIDI 事件按渲染块边界批量应用，块越小音符落点
+            // 量化误差越小（节奏更准）；用户的"缓冲区"设置改为总缓冲目标，
+            // 与块大小解耦，用于吸收渲染尖峰与系统调度抖动。
+            rt_config.render_window_ms = 10.0;
+            rt_config.cushion_ms = opt.buffer_ms.max(100.0);
 
             // 解析线程数
             let thread_count = match opt.threads {
@@ -132,6 +162,15 @@ impl XSynth {
             };
             rt_config.multithreading = thread_count;
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
+            rt_config.channel_init_options.max_voices = opt.max_voices_per_channel;
+            // 跨通道全局声部上限：由渲染管线统一治理（实时主路径）。
+            rt_config.global_max_voices = opt.global_max_voices;
+            // 复音软目标比例：运行目标 = 比例 × 硬上限，负载反馈只会更低。
+            rt_config.voice_target_ratio = opt.voice_target_ratio;
+            // 过载保命闸：默认关闭（关闭时无任何 NoteOn 丢弃路径）。
+            rt_config.soft_nps_gate = opt.soft_nps_gate;
+            // 0 = 关闭 NPS 限流（不丢音符）；非 0 时按上游规则限流。
+            rt_config.max_nps = opt.max_nps;
         }
 
         // 解析音频播放输出设备：指定设备有效则直接对其打开流，
@@ -175,6 +214,14 @@ impl XSynth {
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
             ChannelConfigEvent::SetSoundfonts(soundfonts),
         )));
+
+        // 每键同音数：实时路径必须显式下发，否则沿用 xsynth 默认 Some(4)，
+        // 高密度黑乐谱会大量抢占（丢音、震音消失）。None = 不限。
+        if let Some(opt) = options {
+            sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+                ChannelConfigEvent::SetLayerCount(opt.max_voices_per_key),
+            )));
+        }
 
         // 重置所有通道，确保音色库生效
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(

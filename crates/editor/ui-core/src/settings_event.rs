@@ -48,6 +48,12 @@ pub enum Event {
     XSynthMaxVoicesChanged(Option<usize>),
     /// XSynth 每键最大同音数自定义输入变更
     XSynthMaxVoicesCustomInput(String),
+    /// XSynth 全局最大复音数（硬上限）变更（0 = 自动）
+    XSynthGlobalVoiceLimitChanged(usize),
+    /// XSynth 复音软目标比例变更（0.5-0.9）
+    XSynthVoiceTargetRatioChanged(f64),
+    /// XSynth 过载保命闸（软 NPS 闸）开关变更
+    XSynthSoftNpsGateChanged(bool),
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂）变更
     LgsBlockSizeChanged(usize),
     /// LGS (GPU) 每键最大同音数变更（0=不限制）

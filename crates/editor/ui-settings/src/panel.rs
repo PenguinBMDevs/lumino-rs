@@ -55,6 +55,9 @@ impl SettingsPanel {
                 xsynth_threads: ui_config.xsynth_threads,
                 xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+                xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
+                xsynth_voice_target_ratio: ui_config.xsynth_voice_target_ratio,
+                xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
                 lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
@@ -197,6 +200,20 @@ impl SettingsPanel {
                         self.synth.xsynth_max_voices_per_key = Some(v.clamp(1, 128));
                     }
                 }
+            }
+            Event::XSynthGlobalVoiceLimitChanged(v) => {
+                // 0 = 自动（引擎默认 10000）；其余夹紧到 [64, 65536]
+                self.synth.xsynth_global_voice_limit = if v == 0 {
+                    None
+                } else {
+                    Some(v.clamp(64, 65536))
+                };
+            }
+            Event::XSynthVoiceTargetRatioChanged(r) => {
+                self.synth.xsynth_voice_target_ratio = r.clamp(0.50, 0.90);
+            }
+            Event::XSynthSoftNpsGateChanged(on) => {
+                self.synth.xsynth_soft_nps_gate = on;
             }
             Event::LgsBlockSizeChanged(size) => {
                 // 仅接受 2 的幂（GUI 滑块已约束，这里兜底夹紧到 [64, 8192] 内的 2 的幂）

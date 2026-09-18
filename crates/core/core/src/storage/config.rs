@@ -198,6 +198,9 @@ pub struct UiConfig {
     /// XSynth 释放音符时是否淡出(避免爆音)
     #[serde(default = "default_synth_fade_out")]
     pub xsynth_fade_out_killing: bool,
+    /// XSynth 实时 NPS 限流上限（0 = 关闭限流，不丢音符；默认 0）
+    #[serde(default = "default_xsynth_max_nps")]
+    pub xsynth_max_nps: u64,
     /// XSynth 每个键允许的最大同音数（None=不限，默认16）
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
     #[serde(default = "default_max_voices_per_key")]
@@ -220,11 +223,19 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
-    /// XSynth 全局最大并发 voice 数
+    /// XSynth 全局最大并发 voice 数（硬上限/量程）
     /// 设置越低，渲染越快，但并发发音数越少。
-    /// None = 使用 xsynth 默认值 (4096)
+    /// None = 自动（引擎默认硬上限 10000，由负载治理器决定运行目标）
     #[serde(default)]
     pub xsynth_global_voice_limit: Option<usize>,
+    /// XSynth 复音软目标比例：运行目标 = 比例 × 硬上限（负载反馈只会更低、不会更高）
+    /// 默认 1-1/e≈0.632（约 37% 暂态余量）；1-1/e²≈0.865 更激进
+    #[serde(default = "default_xsynth_voice_target_ratio")]
+    pub xsynth_voice_target_ratio: f64,
+    /// XSynth 过载保命闸（软 NPS 闸）：仅在重度过载时临时限速，默认关闭。
+    /// 关闭时不存在任何 NoteOn 丢弃路径。
+    #[serde(default)]
+    pub xsynth_soft_nps_gate: bool,
     /// LGS (GPU) 渲染采样率（Hz），GPU 合成管线以此速率渲染
     #[serde(default = "default_lgs_sample_rate")]
     pub lgs_sample_rate: u32,
@@ -345,6 +356,13 @@ fn default_synth_threads() -> i32 {
 fn default_synth_fade_out() -> bool {
     true
 }
+/// XSynth 实时 NPS 限流上限默认值：0 = 关闭限流（不丢弃 NoteOn）。
+///
+/// 上游 xsynth-realtime 默认 10000，黑乐谱（高 NPS）会因此丢弃大量音符；
+/// 默认关闭限流以保证音符完整，极端工程可在 config.json 中调高后启用。
+fn default_xsynth_max_nps() -> u64 {
+    0
+}
 fn default_max_voices_per_key() -> Option<usize> {
     Some(16)
 }
@@ -406,6 +424,11 @@ fn default_history_entry_limit() -> usize {
 fn default_merge_window_ms() -> u64 {
     300
 }
+
+/// 复音软目标比例默认值：1-1/e ≈ 0.632（一阶系统目标，留约 37% 暂态余量）
+fn default_xsynth_voice_target_ratio() -> f64 {
+    1.0 - 1.0 / std::f64::consts::E
+}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -419,6 +442,7 @@ impl Default for UiConfig {
             xsynth_sample_rate: default_synth_sample_rate(),
             xsynth_threads: default_synth_threads(),
             xsynth_fade_out_killing: default_synth_fade_out(),
+            xsynth_max_nps: default_xsynth_max_nps(),
             xsynth_max_voices_per_key: default_max_voices_per_key(),
             lgs_sample_rate: default_lgs_sample_rate(),
             lgs_block_size: default_lgs_block_size(),
@@ -432,6 +456,8 @@ impl Default for UiConfig {
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
             xsynth_global_voice_limit: None,
+            xsynth_voice_target_ratio: default_xsynth_voice_target_ratio(),
+            xsynth_soft_nps_gate: false,
             icon_hidpi: true,
             enable_256key: false,
             velocity_curve_style: true,

@@ -289,6 +289,76 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
+    // 全局最大复音数（硬上限/量程）：0=自动（引擎默认 10000）
+    let global_limit_val = settings.synth.xsynth_global_voice_limit.unwrap_or(0);
+    let global_display = match settings.synth.xsynth_global_voice_limit {
+        None => format!("{} (10000)", t.global_voice_limit_auto),
+        Some(v) => v.to_string(),
+    };
+    col = col.push(
+        row![
+            text(format!("{}: {}", t.global_voice_limit, global_display))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(200.0),
+            iced_widget::slider(0.0..=20000.0, global_limit_val as f64, |v| {
+                Message::Settings(crate::Event::XSynthGlobalVoiceLimitChanged(v as usize))
+            })
+            .step(500.0_f32)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.global_voice_limit_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+    // 复音软目标比例（默认 1-1/e≈0.632）
+    col = col.push(
+        row![
+            text(format!(
+                "{}: {:.3}",
+                t.voice_target_ratio, settings.synth.xsynth_voice_target_ratio
+            ))
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style())
+            .width(200.0),
+            iced_widget::slider(0.50..=0.90, settings.synth.xsynth_voice_target_ratio, |r| {
+                Message::Settings(crate::Event::XSynthVoiceTargetRatioChanged(r))
+            })
+            .step(0.001_f32)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.voice_target_ratio_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+
+    // 过载保命闸（软 NPS 闸，默认关闭）
+    col = col.push(
+        iced_widget::Checkbox::new(settings.synth.xsynth_soft_nps_gate)
+            .label(t.soft_nps_gate)
+            .on_toggle(|on| Message::Settings(crate::Event::XSynthSoftNpsGateChanged(on))),
+    );
+    col = col.push(iced_widget::space().height(SPACING_CONTENT));
+    col = col.push(
+        text(t.soft_nps_gate_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
+    );
+    col = col.push(iced_widget::space().height(20));
+
     // 力度过滤
     col = col.push(
         row![

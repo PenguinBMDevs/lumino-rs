@@ -47,6 +47,12 @@ pub struct SynthSettings {
     pub xsynth_fade_out: bool,
     /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
+    /// 全局最大复音数（硬上限；None = 自动，引擎默认 10000）
+    pub xsynth_global_voice_limit: Option<usize>,
+    /// 复音软目标比例（运行目标 = 比例 × 硬上限，默认 1-1/e≈0.632）
+    pub xsynth_voice_target_ratio: f64,
+    /// 过载保命闸（软 NPS 闸，默认关闭）
+    pub xsynth_soft_nps_gate: bool,
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂，默认 512）
     pub lgs_block_size: usize,
     /// LGS (GPU) 每个 (通道, 键) 最大同音数（0=不限制，默认 4）

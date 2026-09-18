@@ -138,6 +138,11 @@ impl Playback {
     pub fn current_bpm(&self) -> f64 {
         self.timeline.get_bpm_at(self.current_tick())
     }
+
+    /// 当前 BPM 下每秒推进的 tick 数（用于"迟到音符跳过"的毫秒→tick 换算）。
+    pub fn ticks_per_second(&self) -> f64 {
+        self.current_bpm() / 60.0 * self.timeline.division as f64
+    }
 }
 
 #[cfg(test)]

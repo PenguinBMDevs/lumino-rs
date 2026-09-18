@@ -69,8 +69,12 @@ pub struct MidiManager {
     xsynth_fade_out_killing: bool,
     /// XSynth 每个键最大同音数
     xsynth_max_voices_per_key: Option<usize>,
-    /// XSynth 全局最大并发 voice 数
+    /// XSynth 全局最大并发 voice 数（硬上限/量程；None = 自动）
     xsynth_global_voice_limit: Option<usize>,
+    /// XSynth 复音软目标比例（运行目标 = 比例 × 硬上限）
+    xsynth_voice_target_ratio: f64,
+    /// XSynth 过载保命闸（软 NPS 闸，默认关闭）
+    xsynth_soft_nps_gate: bool,
     /// LGS (GPU) 异步初始化接收器
     lgs_init_rx: Option<Receiver<LgsInitResult>>,
     /// 是否正在异步初始化 LGS (GPU)
@@ -107,6 +111,8 @@ impl Default for MidiManager {
             xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
             xsynth_global_voice_limit: None,
+            xsynth_voice_target_ratio: 1.0 - 1.0 / std::f64::consts::E,
+            xsynth_soft_nps_gate: false,
             lgs_init_rx: None,
             is_lgs_initializing: false,
             lgs_soundfont_path: String::new(),
@@ -150,6 +156,8 @@ impl MidiManager {
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
+            xsynth_voice_target_ratio: ui_config.xsynth_voice_target_ratio,
+            xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
             lgs_init_rx: None,
             is_lgs_initializing: false,
             lgs_soundfont_path: ui_config.soundfont_path.clone(),
@@ -232,6 +240,14 @@ impl MidiManager {
             threads: ui_config.xsynth_threads,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
+            max_nps: ui_config.xsynth_max_nps,
+            max_voices_per_key: ui_config.xsynth_max_voices_per_key,
+            // 每通道上限关闭，改用跨通道全局上限：未配置时给自动（引擎默认 10000），
+            // 由负载治理器按软目标比例决定实际运行目标。
+            max_voices_per_channel: None,
+            global_max_voices: Some(ui_config.xsynth_global_voice_limit.unwrap_or(10_000).max(1)),
+            voice_target_ratio: ui_config.xsynth_voice_target_ratio,
+            soft_nps_gate: ui_config.xsynth_soft_nps_gate,
             audio_output_device: ui_config.audio_output_device.clone(),
         };
 
@@ -243,10 +259,27 @@ impl MidiManager {
             tracing::info!("XSynth: 音频后端已初始化 (version: {})", version);
         }
         tracing::info!(
-            "XSynth: 采样率={}Hz, buffer={}ms, 线程={}",
+            "XSynth: 采样率={}Hz, buffer={}ms, 线程={}, NPS 限流={}, 每键同音数={}, 全局声部上限={}, 软目标比例={:.3}, 保险闸={}",
             ui_config.xsynth_sample_rate,
             ui_config.xsynth_buffer_ms,
             ui_config.xsynth_threads,
+            if ui_config.xsynth_max_nps == 0 {
+                "关闭".to_string()
+            } else {
+                ui_config.xsynth_max_nps.to_string()
+            },
+            ui_config
+                .xsynth_max_voices_per_key
+                .map_or_else(|| "不限".to_string(), |v| v.to_string()),
+            ui_config
+                .xsynth_global_voice_limit
+                .map_or_else(|| "自动(10000)".to_string(), |v| v.to_string()),
+            ui_config.xsynth_voice_target_ratio,
+            if ui_config.xsynth_soft_nps_gate {
+                "开"
+            } else {
+                "关"
+            },
         );
         tracing::info!(
             "XSynth: 如需强制使用 ALSA 而非 JACK，设置环境变量 XSYNTH_AUDIO_BACKEND=alsa"
@@ -737,6 +770,8 @@ impl MidiManager {
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
         self.xsynth_global_voice_limit = ui_config.xsynth_global_voice_limit;
+        self.xsynth_voice_target_ratio = ui_config.xsynth_voice_target_ratio;
+        self.xsynth_soft_nps_gate = ui_config.xsynth_soft_nps_gate;
 
         // 更新 LGS (GPU) 配置（供异步初始化使用）
         self.lgs_soundfont_path = ui_config.soundfont_path.clone();

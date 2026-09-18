@@ -260,6 +260,18 @@ assets = [
 [profile.dev]
 incremental = true
 
+# 实时音频 DSP（xsynth-*）在 debug/开发构建下也必须优化：
+# opt-level 0 的实时光栅渲染约慢 10 倍（实测 6.5µs vs 0.45µs/声部/块），
+# 会导致 96kHz 下 debug 构建无法实时。仅对这几个包开优化，保持开发迭代速度。
+[profile.dev.package.xsynth-core]
+opt-level = 3
+
+[profile.dev.package.xsynth-realtime]
+opt-level = 3
+
+[profile.dev.package.xsynth-soundfonts]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = true

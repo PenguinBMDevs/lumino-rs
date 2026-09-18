@@ -204,9 +204,13 @@ impl Root {
             || old.synth.xsynth_threads != new.synth.xsynth_threads
             || old.synth.xsynth_fade_out != new.synth.xsynth_fade_out
             || old.synth.xsynth_max_voices_per_key != new.synth.xsynth_max_voices_per_key
+            || old.synth.xsynth_global_voice_limit != new.synth.xsynth_global_voice_limit
+            || (old.synth.xsynth_voice_target_ratio - new.synth.xsynth_voice_target_ratio).abs()
+                > 1e-9
+            || old.synth.xsynth_soft_nps_gate != new.synth.xsynth_soft_nps_gate
         {
             tracing::info!(
-                "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
+                "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}, 全局上限={:?}-> {:?}, 软目标比例={:.3}-> {:.3}, 保险闸={}-> {}",
                 old.synth.xsynth_buffer_ms,
                 new.synth.xsynth_buffer_ms,
                 old.synth.xsynth_threads,
@@ -214,7 +218,13 @@ impl Root {
                 old.synth.xsynth_fade_out,
                 new.synth.xsynth_fade_out,
                 old.synth.xsynth_max_voices_per_key,
-                new.synth.xsynth_max_voices_per_key
+                new.synth.xsynth_max_voices_per_key,
+                old.synth.xsynth_global_voice_limit,
+                new.synth.xsynth_global_voice_limit,
+                old.synth.xsynth_voice_target_ratio,
+                new.synth.xsynth_voice_target_ratio,
+                old.synth.xsynth_soft_nps_gate,
+                new.synth.xsynth_soft_nps_gate,
             );
             // XSynth 参数变更需要重新初始化
         }
