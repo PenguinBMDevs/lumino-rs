@@ -188,13 +188,15 @@ mod tests {
         let data = LmctlData {
             control_changes: vec![(0, 0, 0, 7, 100)],
             program_changes: vec![(0, 0, 0, 1)],
-            pitch_bends: vec![(480, 0, 0, 8192)],
+            // pitch_bends 为相对中心的偏移量（i16；0 = 中心），不是 raw 14-bit。
+            pitch_bends: vec![(480, 0, 0, 0)],
         };
         let encoded = data.encode().expect("编码LmctlData失败");
         assert_eq!(&encoded[0..4], LmctlData::MAGIC);
         let decoded = LmctlData::decode(&encoded).expect("解码LmctlData失败");
         assert_eq!(decoded.control_changes.len(), 1);
         assert_eq!(decoded.pitch_bends.len(), 1);
+        assert_eq!(decoded.pitch_bends[0].3, 0, "偏移量中心应为 0");
     }
 
     #[test]

@@ -67,7 +67,9 @@ pub enum MidiEvent {
         tick: u32,
         /// MIDI 通道（0-15）。
         channel: u8,
-        /// 弯音值（-8192..=8191）。
+        /// 弯音值（-8192..=8191，中心 0）。
+        /// 注意：`midly::PitchBend::as_int()` 返回带符号偏移而非 raw 14-bit；
+        /// 需要 raw 值时用 `bend.0.as_int()`（u14）显式取。
         value: i16,
     },
     /// 速度变更（Tempo）。

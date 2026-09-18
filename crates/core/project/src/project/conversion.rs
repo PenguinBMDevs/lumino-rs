@@ -249,7 +249,10 @@ impl LuminoProject {
                 *tick, *track, *channel, bend,
             ));
         }
-        control_events.sort_unstable_by_key(|e| e.tick);
+        // 稳定排序保留同 tick 组装顺序（CC → PC → PB）：RPN 选择/DataEntry 必须
+        // 先于同 tick 的 PB 生效，与 document_build / 导出路径的既有契约一致。
+        // 旧实现用 sort_unstable，会打乱同 tick 顺序（非稳定排序不保证原序）。
+        control_events.sort_by_key(|e| e.tick);
 
         // 补齐缺失的 track_names
         track_names.resize_with(track_count as usize, || None);
