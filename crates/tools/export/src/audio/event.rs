@@ -5,7 +5,7 @@
 
 use std::sync::Arc;
 
-use midly::{MidiMessage, TrackEventKind};
+use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
 use xsynth_core::{
     AudioPipe,
@@ -19,6 +19,16 @@ use crate::error::{ExportError, ExportResult};
 use super::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
 };
+
+/// MIDI 弯音事件 → xsynth 归一化值（-1.0..1.0）。
+///
+/// `lumino_midly::PitchBend::as_int()` 返回的是**带符号偏移**（-8192..=8191，
+/// 中心 0），不是 raw 14-bit（0..16383）；直接除 8192 即可。旧实现
+/// `as_int()/8192 - 1` 把中心值算成 -1.0（全下弯音），导致 CPU 渲染里所有
+/// 中心 PB 事件都把音高拉低一个灵敏度值。
+fn pitch_bend_normalized(bend: PitchBend) -> f32 {
+    bend.as_int() as f32 / 8192.0
+}
 
 /// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
 ///
@@ -234,7 +244,7 @@ impl<'a> MidiEventProcessor<'a> {
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
                         ChannelEvent::Audio(ChannelAudioEvent::Control(
-                            ControlEvent::PitchBendValue(bend.as_int() as f32 / 8192.0 - 1.0),
+                            ControlEvent::PitchBendValue(pitch_bend_normalized(*bend)),
                         )),
                     ));
                 }
@@ -386,4 +396,21 @@ pub fn load_soundfonts(
     )));
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pitch_bend_normalized;
+    use midly::PitchBend;
+
+    /// 回归：`PitchBend::as_int()` 是带符号偏移，中心必须映射到 0。
+    /// 旧实现 `as_int()/8192 - 1` 把中心（raw 0x2000）算成 -1.0（全下弯音）。
+    #[test]
+    fn pitch_bend_normalization_uses_signed_offset() {
+        assert!(pitch_bend_normalized(PitchBend::mid_raw_value()).abs() < 1e-6);
+        assert!((pitch_bend_normalized(PitchBend::min_raw_value()) + 1.0).abs() < 1e-6);
+        assert!((pitch_bend_normalized(PitchBend::max_raw_value()) - 8191.0 / 8192.0).abs() < 1e-6);
+        // 半程上弯（+4096）→ +0.5，旧实现会得到 -0.5。
+        assert!((pitch_bend_normalized(PitchBend::from_int(4096)) - 0.5).abs() < 1e-6);
+    }
 }
