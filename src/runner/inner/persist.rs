@@ -32,7 +32,6 @@ impl RunnerInner {
         let xsynth_changed = new.synth.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.synth.xsynth_sample_rate != old.xsynth_sample_rate
             || new.synth.xsynth_threads != old.xsynth_threads
-            || new.synth.xsynth_fade_out != old.xsynth_fade_out_killing
             || new.synth.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key;
         let audio_engine_changed = new.synth.audio_engine != old.audio_engine;
         let titlebar_changed = new.synth.use_native_titlebar != old.use_native_titlebar;
@@ -145,15 +144,13 @@ impl RunnerInner {
         }
         if diff.xsynth_changed {
             tracing::info!(
-                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
+                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, voices={:?}-> {:?}",
                 old.xsynth_buffer_ms,
                 new.synth.xsynth_buffer_ms,
                 old.xsynth_sample_rate,
                 new.synth.xsynth_sample_rate,
                 old.xsynth_threads,
                 new.synth.xsynth_threads,
-                old.xsynth_fade_out_killing,
-                new.synth.xsynth_fade_out,
                 old.xsynth_max_voices_per_key,
                 new.synth.xsynth_max_voices_per_key,
             );
@@ -229,7 +226,6 @@ impl RunnerInner {
             config.ui.xsynth_buffer_ms = new.synth.xsynth_buffer_ms;
             config.ui.xsynth_sample_rate = new.synth.xsynth_sample_rate;
             config.ui.xsynth_threads = new.synth.xsynth_threads;
-            config.ui.xsynth_fade_out_killing = new.synth.xsynth_fade_out;
             config.ui.xsynth_max_voices_per_key = new.synth.xsynth_max_voices_per_key;
             config.ui.lgs_block_size = new.synth.lgs_block_size;
             config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;

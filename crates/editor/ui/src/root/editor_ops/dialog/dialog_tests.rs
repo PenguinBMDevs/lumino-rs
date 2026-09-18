@@ -175,22 +175,6 @@ fn test_apply_settings_xsynth_threads_changed() {
 }
 
 #[test]
-fn test_apply_settings_xsynth_fade_out_changed() {
-    let mut root = create_test_root();
-    let old_settings = root.settings.clone();
-
-    let mut new_settings = old_settings.clone();
-    new_settings.synth.xsynth_fade_out = !old_settings.synth.xsynth_fade_out;
-
-    root.apply_settings(new_settings.clone());
-
-    assert_eq!(
-        root.settings.synth.xsynth_fade_out,
-        new_settings.synth.xsynth_fade_out
-    );
-}
-
-#[test]
 fn test_apply_settings_xsynth_max_voices_changed() {
     let mut root = create_test_root();
     let old_settings = root.settings.clone();

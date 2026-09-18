@@ -53,7 +53,6 @@ impl SettingsPanel {
                 xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
                 xsynth_sample_rate: ui_config.xsynth_sample_rate,
                 xsynth_threads: ui_config.xsynth_threads,
-                xsynth_fade_out: ui_config.xsynth_fade_out_killing,
                 xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
@@ -179,9 +178,6 @@ impl SettingsPanel {
             }
             Event::XSynthSampleRateChanged(sr) => {
                 self.synth.xsynth_sample_rate = sr;
-            }
-            Event::XSynthFadeOutChanged(f) => {
-                self.synth.xsynth_fade_out = f;
             }
             Event::XSynthMaxVoicesChanged(v) => {
                 self.synth.xsynth_max_voices_per_key = v;

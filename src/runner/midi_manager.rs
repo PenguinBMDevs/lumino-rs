@@ -63,8 +63,6 @@ pub struct MidiManager {
     xsynth_buffer_ms: f64,
     /// XSynth 采样率
     xsynth_sample_rate: u32,
-    /// XSynth 是否启用 killing fade-out
-    xsynth_fade_out_killing: bool,
     /// XSynth 每个键最大同音数
     xsynth_max_voices_per_key: Option<usize>,
     /// LGS (GPU) 异步初始化接收器
@@ -99,7 +97,6 @@ impl Default for MidiManager {
             xsynth_soundfont_path: String::new(),
             xsynth_buffer_ms: 0.0,
             xsynth_sample_rate: 0,
-            xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
             lgs_init_rx: None,
             is_lgs_initializing: false,
@@ -140,7 +137,6 @@ impl MidiManager {
             xsynth_soundfont_path: ui_config.soundfont_path.clone(),
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
-            xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             lgs_init_rx: None,
             is_lgs_initializing: false,
@@ -223,7 +219,6 @@ impl MidiManager {
             buffer_ms: ui_config.xsynth_buffer_ms,
             max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             sample_rate: ui_config.xsynth_sample_rate,
-            fade_out_killing: ui_config.xsynth_fade_out_killing,
             audio_output_device: ui_config.audio_output_device.clone(),
         };
 
@@ -724,7 +719,6 @@ impl MidiManager {
         self.xsynth_soundfont_path = ui_config.soundfont_path.clone();
         self.xsynth_buffer_ms = ui_config.xsynth_buffer_ms;
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
-        self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
 
         // 更新 LGS (GPU) 配置（供异步初始化使用）

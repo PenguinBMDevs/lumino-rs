@@ -42,8 +42,6 @@ pub enum Event {
     XSynthBufferChanged(f64),
     /// XSynth 采样率变更
     XSynthSampleRateChanged(u32),
-    /// XSynth 释放音符时是否淡出
-    XSynthFadeOutChanged(bool),
     /// XSynth 每键最大同音数变更（None 为不限）
     XSynthMaxVoicesChanged(Option<usize>),
     /// XSynth 每键最大同音数自定义输入变更

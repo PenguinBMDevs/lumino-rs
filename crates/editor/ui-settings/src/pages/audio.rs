@@ -245,14 +245,6 @@ fn render_xsynth_options<'a>(
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
-    // 音符释放淡出
-    col = col.push(
-        iced_widget::Checkbox::new(settings.synth.xsynth_fade_out)
-            .label(t.fade_out_label)
-            .on_toggle(|f| Message::Settings(crate::Event::XSynthFadeOutChanged(f))),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-
     // 每键最大同音数：0=不限制，1..64 拖拽 + 1..128 自定义输入
     let slider_val = match settings.synth.xsynth_max_voices_per_key {
         None => 0.0,

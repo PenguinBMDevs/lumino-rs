@@ -43,8 +43,6 @@ pub struct SynthSettings {
     pub xsynth_sample_rate: u32,
     /// 【已废弃】xsynth 渲染线程数：线程策略由后端按机器核数强制决定，字段保留兼容
     pub xsynth_threads: i32,
-    /// xsynth 是否启用渐弱终止
-    pub xsynth_fade_out: bool,
     /// 每个键的最大并发音点数
     pub xsynth_max_voices_per_key: Option<usize>,
     /// LGS (GPU) 缓冲区大小（GPU 块大小，2 的幂，默认 512）

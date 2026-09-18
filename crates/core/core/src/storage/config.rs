@@ -196,9 +196,6 @@ pub struct UiConfig {
     /// 本字段不再被读取，保留仅为兼容旧配置文件
     #[serde(default = "default_synth_threads")]
     pub xsynth_threads: i32,
-    /// XSynth 释放音符时是否淡出(避免爆音)
-    #[serde(default = "default_synth_fade_out")]
-    pub xsynth_fade_out_killing: bool,
     /// XSynth 每个键允许的最大同音数（None=不限，默认 4）
     /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing，但渲染负载线性增加
     #[serde(default = "default_max_voices_per_key")]
@@ -341,9 +338,6 @@ fn default_synth_threads() -> i32 {
     // 已废弃字段的兼容默认值；线程策略由后端按机器核数强制决定（见 api::xsynth）
     0
 }
-fn default_synth_fade_out() -> bool {
-    true
-}
 fn default_max_voices_per_key() -> Option<usize> {
     // 4 与 xsynth 引擎默认 / GPU 后端默认一致：更高的值会让渲染负载线性增加
     Some(4)
@@ -418,7 +412,6 @@ impl Default for UiConfig {
             xsynth_buffer_ms: default_synth_buffer(),
             xsynth_sample_rate: default_synth_sample_rate(),
             xsynth_threads: default_synth_threads(),
-            xsynth_fade_out_killing: default_synth_fade_out(),
             xsynth_max_voices_per_key: default_max_voices_per_key(),
             lgs_sample_rate: default_lgs_sample_rate(),
             lgs_block_size: default_lgs_block_size(),

@@ -202,17 +202,14 @@ impl Root {
         if old.synth.xsynth_buffer_ms != new.synth.xsynth_buffer_ms
             || old.synth.xsynth_sample_rate != new.synth.xsynth_sample_rate
             || old.synth.xsynth_threads != new.synth.xsynth_threads
-            || old.synth.xsynth_fade_out != new.synth.xsynth_fade_out
             || old.synth.xsynth_max_voices_per_key != new.synth.xsynth_max_voices_per_key
         {
             tracing::info!(
-                "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, fade={}-> {}, voices={:?}-> {:?}",
+                "同步 XSynth 参数: buffer={:.1}ms-> {:.1}ms, threads={}-> {}, voices={:?}-> {:?}",
                 old.synth.xsynth_buffer_ms,
                 new.synth.xsynth_buffer_ms,
                 old.synth.xsynth_threads,
                 new.synth.xsynth_threads,
-                old.synth.xsynth_fade_out,
-                new.synth.xsynth_fade_out,
                 old.synth.xsynth_max_voices_per_key,
                 new.synth.xsynth_max_voices_per_key
             );

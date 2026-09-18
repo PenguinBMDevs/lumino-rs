@@ -62,8 +62,6 @@ pub struct SettingsTranslations {
     pub soundfont_placeholder: &'static str,
     /// 缓冲区（延迟）
     pub buffer_latency: &'static str,
-    /// 释放淡出标签
-    pub fade_out_label: &'static str,
     /// 每键最大同音数
     pub max_voices: &'static str,
     /// 每键最大同音数提示
@@ -290,7 +288,6 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     soundfont: "音色库:",
     soundfont_placeholder: "选择音色库文件 (SFZ/SF2)...",
     buffer_latency: "缓冲区 (延迟)",
-    fade_out_label: "释放音符时平滑淡出 (防止爆音)",
     max_voices: "每键最大同音数:",
     max_voices_hint: "同键快速重复/密集和弦时，提高此值减少 voice stealing 导致的断音",
     velocity_filter: "力度过滤阈值",
@@ -412,7 +409,6 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     soundfont: "Soundfont:",
     soundfont_placeholder: "Select soundfont file (SFZ/SF2)...",
     buffer_latency: "Buffer (Latency)",
-    fade_out_label: "Smooth fade-out on note release (prevent clicks)",
     max_voices: "Max voices per key:",
     max_voices_hint: "Increase for fast repeated notes / dense chords to reduce voice stealing",
     velocity_filter: "Velocity Filter Threshold",
