@@ -61,16 +61,12 @@ pub struct MidiManager {
     xsynth_soundfont_path: String,
     /// XSynth 缓冲区大小（毫秒）
     xsynth_buffer_ms: f64,
-    /// XSynth 合成线程数
-    xsynth_threads: i32,
     /// XSynth 采样率
     xsynth_sample_rate: u32,
     /// XSynth 是否启用 killing fade-out
     xsynth_fade_out_killing: bool,
     /// XSynth 每个键最大同音数
     xsynth_max_voices_per_key: Option<usize>,
-    /// XSynth 全局最大并发 voice 数
-    xsynth_global_voice_limit: Option<usize>,
     /// LGS (GPU) 异步初始化接收器
     lgs_init_rx: Option<Receiver<LgsInitResult>>,
     /// 是否正在异步初始化 LGS (GPU)
@@ -102,11 +98,9 @@ impl Default for MidiManager {
             is_xsynth_initializing: false,
             xsynth_soundfont_path: String::new(),
             xsynth_buffer_ms: 0.0,
-            xsynth_threads: 0,
             xsynth_sample_rate: 0,
             xsynth_fade_out_killing: false,
             xsynth_max_voices_per_key: None,
-            xsynth_global_voice_limit: None,
             lgs_init_rx: None,
             is_lgs_initializing: false,
             lgs_soundfont_path: String::new(),
@@ -145,11 +139,9 @@ impl MidiManager {
             is_xsynth_initializing: false,
             xsynth_soundfont_path: ui_config.soundfont_path.clone(),
             xsynth_buffer_ms: ui_config.xsynth_buffer_ms,
-            xsynth_threads: ui_config.xsynth_threads,
             xsynth_sample_rate: ui_config.xsynth_sample_rate,
             xsynth_fade_out_killing: ui_config.xsynth_fade_out_killing,
             xsynth_max_voices_per_key: ui_config.xsynth_max_voices_per_key,
-            xsynth_global_voice_limit: ui_config.xsynth_global_voice_limit,
             lgs_init_rx: None,
             is_lgs_initializing: false,
             lgs_soundfont_path: ui_config.soundfont_path.clone(),
@@ -229,7 +221,7 @@ impl MidiManager {
 
         let options = XSynthOptions {
             buffer_ms: ui_config.xsynth_buffer_ms,
-            threads: ui_config.xsynth_threads,
+            max_voices_per_key: ui_config.xsynth_max_voices_per_key,
             sample_rate: ui_config.xsynth_sample_rate,
             fade_out_killing: ui_config.xsynth_fade_out_killing,
             audio_output_device: ui_config.audio_output_device.clone(),
@@ -243,10 +235,9 @@ impl MidiManager {
             tracing::info!("XSynth: 音频后端已初始化 (version: {})", version);
         }
         tracing::info!(
-            "XSynth: 采样率={}Hz, buffer={}ms, 线程={}",
+            "XSynth: 采样率={}Hz, buffer={}ms, 线程=按机器强制",
             ui_config.xsynth_sample_rate,
             ui_config.xsynth_buffer_ms,
-            ui_config.xsynth_threads,
         );
         tracing::info!(
             "XSynth: 如需强制使用 ALSA 而非 JACK，设置环境变量 XSYNTH_AUDIO_BACKEND=alsa"
@@ -732,11 +723,9 @@ impl MidiManager {
         // 更新 XSynth 配置（供 create_additional_output 回退创建时使用）
         self.xsynth_soundfont_path = ui_config.soundfont_path.clone();
         self.xsynth_buffer_ms = ui_config.xsynth_buffer_ms;
-        self.xsynth_threads = ui_config.xsynth_threads;
         self.xsynth_sample_rate = ui_config.xsynth_sample_rate;
         self.xsynth_fade_out_killing = ui_config.xsynth_fade_out_killing;
         self.xsynth_max_voices_per_key = ui_config.xsynth_max_voices_per_key;
-        self.xsynth_global_voice_limit = ui_config.xsynth_global_voice_limit;
 
         // 更新 LGS (GPU) 配置（供异步初始化使用）
         self.lgs_soundfont_path = ui_config.soundfont_path.clone();

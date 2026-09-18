@@ -37,8 +37,9 @@ pub struct XSynthStats {
 pub struct XSynthOptions {
     /// 缓冲区时长（毫秒）
     pub buffer_ms: f64,
-    /// 渲染线程数
-    pub threads: i32,
+    /// 每个键的最大并发 voice 数（None / 0 = 不限制；上限 128）。
+    /// 对应 `ChannelConfigEvent::SetLayerCount`，调高减少偷声但增加渲染负载。
+    pub max_voices_per_key: Option<usize>,
     /// 采样率
     pub sample_rate: u32,
     /// 是否淡出被杀掉的 voice
@@ -47,12 +48,9 @@ pub struct XSynthOptions {
     pub audio_output_device: Option<String>,
 }
 
-/// `UiConfig::xsynth_threads` 哨兵值：最大线程（通道内并行池使用全部逻辑核）。
-pub const XSYNTH_THREADS_MAX: i32 = -2;
-/// `UiConfig::xsynth_threads` 哨兵值：关闭通道内并行池（每通道单线程渲染）。
-pub const XSYNTH_THREADS_NONE: i32 = -1;
-/// `UiConfig::xsynth_threads` 哨兵值：自动（按机器探测选择实测最优策略）。
-pub const XSYNTH_THREADS_AUTO: i32 = 0;
+/// MIDI 通道数：每个通道对应一个独立渲染线程（xsynth 通道线程模型）。
+/// 逻辑核不超过该值时，通道线程已可占满全部核心。
+const MIDI_CHANNEL_RENDER_THREADS: usize = crate::constants::MIDI_CHANNEL_COUNT as usize;
 
 /// 探测进程可用逻辑核数（至少为 1）。
 fn available_parallelism() -> usize {
@@ -61,36 +59,41 @@ fn available_parallelism() -> usize {
         .unwrap_or(1)
 }
 
-/// 自动模式（机器感知）策略：解析为 xsynth 的线程模式。
+/// 强制线程策略（不对外提供控制）：把机器可用线程用到最大，同时避免通道内池的队头阻塞。
+///
+/// - 逻辑核 ≤ 16（MIDI 通道数）：16 个通道渲染线程已可占满全部核，使用 `None`
+///   （每通道独立线程、互不耦合）；
+/// - 逻辑核 > 16：额外核心只能通过通道内并行池利用，使用 `Manual(逻辑核数)`。
 ///
 /// 实测结论（16 通道并发 × 每通道 ~512 voices、100ms 块、12/6/4/2 逻辑核四档）：
-/// - 共享 rayon 池（`Auto` / `Manual(n)`）最坏单块 0.96~4.6s，尾延迟随密度失控；
-/// - 无池（`None`）最坏单块 0.14~0.57s，且最坏通道均值全面不劣于池。
+/// - 共享 rayon 池最坏单块 0.96~4.6s（队头阻塞：块耗时取决于最晚完成的通道）；
+/// - 无池最坏单块 0.14~0.57s，且最坏通道均值全面不劣于池。
 ///
-/// 根因：16 个通道的 key 任务被 `pool.install` 耦合进同一队列，块耗时取决于
-/// 最晚完成的通道（队头阻塞）；池路径还会为全部 128 个 key 填充/求和音频缓存
-/// （即使无 voice），产生与活动量无关的固定开销。
-/// 故当前引擎结构下自动模式选择 `None`（稳定性优先）。
-/// 若未来引擎改为无 `install` 耦合的任务模型，可在此按探测到的核数启用池。
-fn auto_thread_count() -> LuminoThreadCount {
-    let logical = available_parallelism();
-    tracing::debug!("XSynth: 自动线程模式（探测到 {logical} 逻辑核）→ 关闭通道内并行池");
-    LuminoThreadCount::None
+/// 故 ≤16 核一律用 `None`。>16 核场景暂无实测数据，属"额外核可用"的扩展策略，
+/// 上线后应在高核机器上复测尾延迟；如有问题把该分支改回 `None` 即可。
+fn forced_thread_count(logical_cores: usize) -> LuminoThreadCount {
+    if logical_cores > MIDI_CHANNEL_RENDER_THREADS {
+        LuminoThreadCount::Manual(logical_cores)
+    } else {
+        LuminoThreadCount::None
+    }
 }
 
-/// 将 `UiConfig::xsynth_threads` 解析为 xsynth 线程模式：
-/// - `-2`：最大线程（池 = 全部逻辑核；吞吐优先，实测尾延迟可能显著升高）；
-/// - `-1`：关闭（无通道内并行池）；
-/// - `0`：自动（机器感知，当前策略为无池）；
-/// - `> 0`：手动池线程数；
-/// - 其它值：回落自动。
-fn resolve_thread_count(setting: i32) -> LuminoThreadCount {
-    match setting {
-        XSYNTH_THREADS_MAX => LuminoThreadCount::Manual(available_parallelism()),
-        XSYNTH_THREADS_NONE => LuminoThreadCount::None,
-        XSYNTH_THREADS_AUTO => auto_thread_count(),
-        n if n > 0 => LuminoThreadCount::Manual(n as usize),
-        _ => auto_thread_count(),
+/// 按当前机器强制解析线程模式（供 `init_synth` 使用）。
+fn machine_thread_count() -> LuminoThreadCount {
+    let logical = available_parallelism();
+    tracing::debug!("XSynth: 机器自适应线程策略（{logical} 逻辑核）");
+    forced_thread_count(logical)
+}
+
+/// 归一化每键最大同音数：`None` / `0` = 不限制；其余夹紧到 1..=128。
+///
+/// 注意绝不能把 0 直接传给 `SetLayerCount(Some(0))`：xsynth 会立即偷声，
+/// 导致该键所有新音符无声（0 按"不限制"处理是产品约定）。
+fn normalize_max_voices_per_key(value: Option<usize>) -> Option<usize> {
+    match value {
+        None | Some(0) => None,
+        Some(v) => Some(v.clamp(1, 128)),
     }
 }
 
@@ -165,21 +168,23 @@ impl XSynth {
         //  - 占位预加载的 soundfont 从未经 SetSoundfonts 下发合成器，对「流启动防 underrun」
         //    零作用（流启动后本就静音，直到下方 SetSoundfonts 到达，与 Core 后端空 Group 一致）。
         // 故仅加载实际采样率一份，零冗余。
-        let mut rt_config = XSynthRealtimeConfig::default();
-
-        if let Some(opt) = options {
-            rt_config.render_window_ms = opt.buffer_ms;
-
-            // 解析线程数（-2=最大 / -1=关闭 / 0=自动 / >0=手动；见 resolve_thread_count）
-            rt_config.multithreading = resolve_thread_count(opt.threads);
-            rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
-        }
-
+        // 线程策略：不对外提供控制，按机器核数强制解析（逻辑核 > 16 才启用通道内并行池）。
+        // `UiConfig::xsynth_threads` 已废弃、不再读取，保留字段仅为兼容旧配置。
+        //
         // NPS 限流：fork 默认 10_000，超过阈值即静默丢弃 NoteOn（按力度加权，
         // 黑 MIDI 密集段实测可丢 99%+），对黑 MIDI 编辑器属功能性缺陷。
         // 显式关闭（0 = 不限流）；发声规模仍由每键 layers 上限约束，不会无限膨胀。
         // 如需恢复保护，把 0 改为具体阈值即可（按通道估算 NPS，非全局限流）。
-        rt_config.max_nps = 0;
+        let mut rt_config = XSynthRealtimeConfig {
+            multithreading: machine_thread_count(),
+            max_nps: 0,
+            ..Default::default()
+        };
+
+        if let Some(opt) = options {
+            rt_config.render_window_ms = opt.buffer_ms;
+            rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
+        }
 
         // 解析音频播放输出设备：指定设备有效则直接对其打开流，
         // 否则回退到系统默认输出设备（设备已移除 / 改名时优雅降级）。
@@ -221,6 +226,14 @@ impl XSynth {
         let soundfonts: Vec<Arc<dyn SoundfontBase>> = vec![soundfont];
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
             ChannelConfigEvent::SetSoundfonts(soundfonts),
+        )));
+
+        // 每键最大同音数（layers）：把用户设置真正下发。此前该设置从未接线，
+        // 引擎始终用默认 Some(4)；None / 0 = 不限制，其余夹紧 1..=128。
+        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
+            ChannelConfigEvent::SetLayerCount(normalize_max_voices_per_key(
+                options.and_then(|o| o.max_voices_per_key),
+            )),
         )));
 
         // 重置所有通道，确保音色库生效
@@ -336,34 +349,36 @@ mod tests {
     use super::*;
 
     #[test]
-    fn resolve_thread_count_semantics() {
-        let cores = available_parallelism();
-        assert!(cores >= 1, "逻辑核数应至少为 1");
+    fn forced_thread_count_uses_max_threads_without_pool_on_low_core() {
+        assert!(available_parallelism() >= 1, "逻辑核数应至少为 1");
 
+        // ≤ 16 逻辑核：通道线程已可占满全部核 → 无池（避免队头阻塞）
+        for cores in [1usize, 2, 4, 6, 12, 16] {
+            assert_eq!(
+                forced_thread_count(cores),
+                LuminoThreadCount::None,
+                "{cores} 逻辑核应解析为无通道内池"
+            );
+        }
+        // > 16 逻辑核：额外核通过通道内池利用
+        assert_eq!(forced_thread_count(17), LuminoThreadCount::Manual(17));
+        assert_eq!(forced_thread_count(32), LuminoThreadCount::Manual(32));
+    }
+
+    #[test]
+    fn normalize_max_voices_per_key_bounds() {
+        assert_eq!(normalize_max_voices_per_key(None), None);
         assert_eq!(
-            resolve_thread_count(XSYNTH_THREADS_MAX),
-            LuminoThreadCount::Manual(cores),
-            "-2 应解析为全部逻辑核的最大线程模式"
+            normalize_max_voices_per_key(Some(0)),
+            None,
+            "0 按不限制处理，绝不能下发 Some(0)"
         );
+        assert_eq!(normalize_max_voices_per_key(Some(1)), Some(1));
+        assert_eq!(normalize_max_voices_per_key(Some(16)), Some(16));
         assert_eq!(
-            resolve_thread_count(XSYNTH_THREADS_NONE),
-            LuminoThreadCount::None,
-            "-1 应解析为关闭通道内并行池"
-        );
-        assert_eq!(
-            resolve_thread_count(XSYNTH_THREADS_AUTO),
-            LuminoThreadCount::None,
-            "0 自动模式当前策略为无池（稳定性优先）"
-        );
-        assert_eq!(
-            resolve_thread_count(4),
-            LuminoThreadCount::Manual(4),
-            "正数应解析为手动池线程数"
-        );
-        assert_eq!(
-            resolve_thread_count(-99),
-            LuminoThreadCount::None,
-            "非法负值应回落自动策略"
+            normalize_max_voices_per_key(Some(200)),
+            Some(128),
+            "上限应夹紧到 128"
         );
     }
 }

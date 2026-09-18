@@ -186,20 +186,21 @@ pub struct UiConfig {
     /// 是否使用经典系统标题栏（默认使用自定义标题栏）
     #[serde(default)]
     pub use_native_titlebar: bool,
-    /// XSynth 渲染缓冲区大小(毫秒)，影响延迟和性能
+    /// XSynth 渲染缓冲区大小(毫秒)，影响延迟与音符时值量化（默认 30ms）
     #[serde(default = "default_synth_buffer")]
     pub xsynth_buffer_ms: f64,
     /// XSynth 采样率
     #[serde(default = "default_synth_sample_rate")]
     pub xsynth_sample_rate: u32,
-    /// XSynth 多线程 (-2=最大线程, -1=无通道内池, 0=自动, >0=线程数)
+    /// 【已废弃】XSynth 多线程设置：线程策略改由后端按机器核数强制决定，
+    /// 本字段不再被读取，保留仅为兼容旧配置文件
     #[serde(default = "default_synth_threads")]
     pub xsynth_threads: i32,
     /// XSynth 释放音符时是否淡出(避免爆音)
     #[serde(default = "default_synth_fade_out")]
     pub xsynth_fade_out_killing: bool,
-    /// XSynth 每个键允许的最大同音数（None=不限，默认16）
-    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing
+    /// XSynth 每个键允许的最大同音数（None=不限，默认 4）
+    /// 调高可减少密集钢琴/快速重复音符/拖音过程中的 voice stealing，但渲染负载线性增加
     #[serde(default = "default_max_voices_per_key")]
     pub xsynth_max_voices_per_key: Option<usize>,
     /// 框选框显示模式
@@ -220,11 +221,6 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
-    /// XSynth 全局最大并发 voice 数
-    /// 设置越低，渲染越快，但并发发音数越少。
-    /// None = 使用 xsynth 默认值 (4096)
-    #[serde(default)]
-    pub xsynth_global_voice_limit: Option<usize>,
     /// LGS (GPU) 渲染采样率（Hz），GPU 合成管线以此速率渲染
     #[serde(default = "default_lgs_sample_rate")]
     pub lgs_sample_rate: u32,
@@ -334,19 +330,23 @@ fn default_synth_backend() -> SynthBackend {
 }
 
 fn default_synth_buffer() -> f64 {
-    100.0
+    // 30ms：延迟与音符时值量化（事件在渲染块边界生效）的平衡点。
+    // BufferedRenderer 会保留至少约半块音频富余，30ms 窗口 ≈ 15ms 抗抖动余量。
+    30.0
 }
 fn default_synth_sample_rate() -> u32 {
     44100
 }
 fn default_synth_threads() -> i32 {
+    // 已废弃字段的兼容默认值；线程策略由后端按机器核数强制决定（见 api::xsynth）
     0
 }
 fn default_synth_fade_out() -> bool {
     true
 }
 fn default_max_voices_per_key() -> Option<usize> {
-    Some(16)
+    // 4 与 xsynth 引擎默认 / GPU 后端默认一致：更高的值会让渲染负载线性增加
+    Some(4)
 }
 fn default_lgs_sample_rate() -> u32 {
     64_000
@@ -431,7 +431,6 @@ impl Default for UiConfig {
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
-            xsynth_global_voice_limit: None,
             icon_hidpi: true,
             enable_256key: false,
             velocity_curve_style: true,

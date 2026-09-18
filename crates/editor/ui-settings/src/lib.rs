@@ -41,7 +41,7 @@ pub struct SynthSettings {
     pub xsynth_buffer_ms: f64,
     /// xsynth 采样率
     pub xsynth_sample_rate: u32,
-    /// xsynth 渲染线程数（-2=最大线程, -1=无通道内池, 0=自动, >0=手动）
+    /// 【已废弃】xsynth 渲染线程数：线程策略由后端按机器核数强制决定，字段保留兼容
     pub xsynth_threads: i32,
     /// xsynth 是否启用渐弱终止
     pub xsynth_fade_out: bool,
