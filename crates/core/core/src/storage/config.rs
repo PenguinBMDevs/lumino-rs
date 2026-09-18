@@ -192,7 +192,7 @@ pub struct UiConfig {
     /// XSynth 采样率
     #[serde(default = "default_synth_sample_rate")]
     pub xsynth_sample_rate: u32,
-    /// XSynth 多线程 (-1=无, 0=自动, >0=线程数)
+    /// XSynth 多线程 (-2=最大线程, -1=无通道内池, 0=自动, >0=线程数)
     #[serde(default = "default_synth_threads")]
     pub xsynth_threads: i32,
     /// XSynth 释放音符时是否淡出(避免爆音)

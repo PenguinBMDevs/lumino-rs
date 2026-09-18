@@ -47,6 +47,53 @@ pub struct XSynthOptions {
     pub audio_output_device: Option<String>,
 }
 
+/// `UiConfig::xsynth_threads` 哨兵值：最大线程（通道内并行池使用全部逻辑核）。
+pub const XSYNTH_THREADS_MAX: i32 = -2;
+/// `UiConfig::xsynth_threads` 哨兵值：关闭通道内并行池（每通道单线程渲染）。
+pub const XSYNTH_THREADS_NONE: i32 = -1;
+/// `UiConfig::xsynth_threads` 哨兵值：自动（按机器探测选择实测最优策略）。
+pub const XSYNTH_THREADS_AUTO: i32 = 0;
+
+/// 探测进程可用逻辑核数（至少为 1）。
+fn available_parallelism() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get())
+        .unwrap_or(1)
+}
+
+/// 自动模式（机器感知）策略：解析为 xsynth 的线程模式。
+///
+/// 实测结论（16 通道并发 × 每通道 ~512 voices、100ms 块、12/6/4/2 逻辑核四档）：
+/// - 共享 rayon 池（`Auto` / `Manual(n)`）最坏单块 0.96~4.6s，尾延迟随密度失控；
+/// - 无池（`None`）最坏单块 0.14~0.57s，且最坏通道均值全面不劣于池。
+///
+/// 根因：16 个通道的 key 任务被 `pool.install` 耦合进同一队列，块耗时取决于
+/// 最晚完成的通道（队头阻塞）；池路径还会为全部 128 个 key 填充/求和音频缓存
+/// （即使无 voice），产生与活动量无关的固定开销。
+/// 故当前引擎结构下自动模式选择 `None`（稳定性优先）。
+/// 若未来引擎改为无 `install` 耦合的任务模型，可在此按探测到的核数启用池。
+fn auto_thread_count() -> LuminoThreadCount {
+    let logical = available_parallelism();
+    tracing::debug!("XSynth: 自动线程模式（探测到 {logical} 逻辑核）→ 关闭通道内并行池");
+    LuminoThreadCount::None
+}
+
+/// 将 `UiConfig::xsynth_threads` 解析为 xsynth 线程模式：
+/// - `-2`：最大线程（池 = 全部逻辑核；吞吐优先，实测尾延迟可能显著升高）；
+/// - `-1`：关闭（无通道内并行池）；
+/// - `0`：自动（机器感知，当前策略为无池）；
+/// - `> 0`：手动池线程数；
+/// - 其它值：回落自动。
+fn resolve_thread_count(setting: i32) -> LuminoThreadCount {
+    match setting {
+        XSYNTH_THREADS_MAX => LuminoThreadCount::Manual(available_parallelism()),
+        XSYNTH_THREADS_NONE => LuminoThreadCount::None,
+        XSYNTH_THREADS_AUTO => auto_thread_count(),
+        n if n > 0 => LuminoThreadCount::Manual(n as usize),
+        _ => auto_thread_count(),
+    }
+}
+
 /// XSynth 软件合成后端，基于 realtime 合成管线提供实时 MIDI 播放
 pub struct XSynth {
     synth: RealtimeSynth,
@@ -123,16 +170,16 @@ impl XSynth {
         if let Some(opt) = options {
             rt_config.render_window_ms = opt.buffer_ms;
 
-            // 解析线程数
-            let thread_count = match opt.threads {
-                -1 => LuminoThreadCount::None,
-                0 => LuminoThreadCount::Auto,
-                n if n > 0 => LuminoThreadCount::Manual(n as usize),
-                _ => LuminoThreadCount::Auto,
-            };
-            rt_config.multithreading = thread_count;
+            // 解析线程数（-2=最大 / -1=关闭 / 0=自动 / >0=手动；见 resolve_thread_count）
+            rt_config.multithreading = resolve_thread_count(opt.threads);
             rt_config.channel_init_options.fade_out_killing = opt.fade_out_killing;
         }
+
+        // NPS 限流：fork 默认 10_000，超过阈值即静默丢弃 NoteOn（按力度加权，
+        // 黑 MIDI 密集段实测可丢 99%+），对黑 MIDI 编辑器属功能性缺陷。
+        // 显式关闭（0 = 不限流）；发声规模仍由每键 layers 上限约束，不会无限膨胀。
+        // 如需恢复保护，把 0 改为具体阈值即可（按通道估算 NPS，非全局限流）。
+        rt_config.max_nps = 0;
 
         // 解析音频播放输出设备：指定设备有效则直接对其打开流，
         // 否则回退到系统默认输出设备（设备已移除 / 改名时优雅降级）。
@@ -281,5 +328,42 @@ impl Api for XSynth {
         Err(Error::InitFailed(
             "XSynth does not support MIDI input".into(),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn resolve_thread_count_semantics() {
+        let cores = available_parallelism();
+        assert!(cores >= 1, "逻辑核数应至少为 1");
+
+        assert_eq!(
+            resolve_thread_count(XSYNTH_THREADS_MAX),
+            LuminoThreadCount::Manual(cores),
+            "-2 应解析为全部逻辑核的最大线程模式"
+        );
+        assert_eq!(
+            resolve_thread_count(XSYNTH_THREADS_NONE),
+            LuminoThreadCount::None,
+            "-1 应解析为关闭通道内并行池"
+        );
+        assert_eq!(
+            resolve_thread_count(XSYNTH_THREADS_AUTO),
+            LuminoThreadCount::None,
+            "0 自动模式当前策略为无池（稳定性优先）"
+        );
+        assert_eq!(
+            resolve_thread_count(4),
+            LuminoThreadCount::Manual(4),
+            "正数应解析为手动池线程数"
+        );
+        assert_eq!(
+            resolve_thread_count(-99),
+            LuminoThreadCount::None,
+            "非法负值应回落自动策略"
+        );
     }
 }

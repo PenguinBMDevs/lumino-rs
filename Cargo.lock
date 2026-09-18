@@ -10340,7 +10340,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 [[package]]
 name = "xsynth-core"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#2ee23ec6cb30108dce02dc5b1bb435bf92461548"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=bcd0976a382826fc554902fddf6a7cc549f583c9#bcd0976a382826fc554902fddf6a7cc549f583c9"
 dependencies = [
  "atomic_refcell",
  "biquad",
@@ -10360,7 +10360,7 @@ dependencies = [
 [[package]]
 name = "xsynth-realtime"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#2ee23ec6cb30108dce02dc5b1bb435bf92461548"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=bcd0976a382826fc554902fddf6a7cc549f583c9#bcd0976a382826fc554902fddf6a7cc549f583c9"
 dependencies = [
  "atomic_refcell",
  "bytemuck",
@@ -10379,11 +10379,12 @@ dependencies = [
 [[package]]
 name = "xsynth-soundfonts"
 version = "0.4.0"
-source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino#2ee23ec6cb30108dce02dc5b1bb435bf92461548"
+source = "git+https://github.com/PenguinBMDevs/xsynth-Lumino?rev=bcd0976a382826fc554902fddf6a7cc549f583c9#bcd0976a382826fc554902fddf6a7cc549f583c9"
 dependencies = [
  "encoding_rs",
  "encoding_rs_io",
  "lazy-regex",
+ "rayon",
  "regex-bnf",
  "rubato",
  "simdeez",
