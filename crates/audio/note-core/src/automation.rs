@@ -8,6 +8,7 @@
 
 pub mod curve;
 mod edit;
+mod midi_cc;
 #[cfg(test)]
 mod tests;
 

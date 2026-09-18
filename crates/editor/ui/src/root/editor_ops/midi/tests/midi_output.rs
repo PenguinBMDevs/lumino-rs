@@ -107,4 +107,5 @@ fn test_clear_midi_output_clears_pending() {
 
 mod cc;
 mod playback;
+mod rpn;
 mod tempo;
