@@ -5,10 +5,17 @@
 //! keys, loop points, volume envelopes, filter cutoffs and baked note-on
 //! modulators - is identical to what XSynth consumes.
 //!
-//! Sample data is kept at its native rate and **resampled lazily** into the
-//! output sample rate the first time it is needed (using the exact same
-//! `rubato` sinc resampler as XSynth), so a 400 MB soundfont costs nothing
-//! until its samples are actually played.
+//! Sample data handling: SF2 sample data is resampled at load time to the
+//! engine `sample_rate` passed by the caller (XSynth's loader requires a
+//! target rate and bakes offsets/loops into that domain), so playback needs
+//! no further resampling. SFZ sample data is kept at its native rate and
+//! **resampled lazily** into the output sample rate the first time it is
+//! needed (using the same `rubato` sinc resampler as XSynth), so a 400 MB
+//! soundfont costs nothing until its samples are actually played.
+//!
+//! 注意：SF2 的加载目标必须是引擎采样率。旧实现硬编码 `44_100`，把 48 kHz
+//! 音色库的样本重采样成 44.1 kHz 却按原生率标签播放，导致整体升高约
+//! 147 cents（44100/48000）；44.1 kHz 音色库恰好不受影响。
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -59,7 +66,8 @@ pub struct Zone {
     pub envelope: EnvelopeDescriptor,
     /// Exclusive class (voices sharing a class kill each other).
     pub exclusive_class: Option<u8>,
-    /// Native sample rate of `sample_id`.
+    /// Native sample rate of `sample_id` in the stored data domain
+    /// (SF2: the load-time/engine rate; SFZ: the file's native rate).
     pub native_rate: u32,
 }
 
@@ -99,7 +107,7 @@ pub struct ZonePositions {
 /// ```no_run
 /// use lumino_gpu_synth::SoundFont;
 ///
-/// let sf = SoundFont::load("assets/test.sf2", 0, 0, true).unwrap();
+/// let sf = SoundFont::load("assets/test.sf2", 0, 0, true, 48_000).unwrap();
 /// assert!(!sf.zones_at(60, 100).is_empty());
 /// ```
 #[derive(Debug)]
@@ -116,6 +124,9 @@ pub struct SoundFont {
     sample_ids: HashMap<u64, usize>,
     /// Whether voice effects (cutoff filter) are enabled.
     pub use_effects: bool,
+    /// Rate SF2 sample data was resampled to at load (engine rate); also the
+    /// fallback for [`SoundFont::native_rate_for`].
+    sample_rate: u32,
     /// Resample cache: (sample id, target rate) -> resampled data.
     resample_cache: HashMap<(usize, u32), Arc<[f32]>>,
 }
@@ -136,6 +147,7 @@ impl SoundFont {
         bank: u16,
         preset: u16,
         use_effects: bool,
+        sample_rate: u32,
     ) -> Result<Self, SoundFontError> {
         let p = path.as_ref();
         let is_sfz = p
@@ -144,11 +156,13 @@ impl SoundFont {
             .map(|s| s.eq_ignore_ascii_case("sfz"))
             .unwrap_or(false);
         if is_sfz {
-            return Self::load_sfz(p, bank, preset, use_effects);
+            return Self::load_sfz(p, bank, preset, use_effects, sample_rate);
         }
-        // SF2 path
+        // SF2 path：必须传引擎采样率。XSynth 的加载器会把每份样本重采样到
+        // 该目标率，并把 offset/loop 位置转换到该域；写死 44_100 会让 48 kHz
+        // 音色库被错误重采样，播放时整体升高 ~147 cents。
         let presets =
-            load_soundfont(p, 44_100).map_err(|e| SoundFontError::Parse(format!("{e}")))?;
+            load_soundfont(p, sample_rate).map_err(|e| SoundFontError::Parse(format!("{e}")))?;
 
         let target = presets
             .iter()
@@ -163,6 +177,7 @@ impl SoundFont {
             zones: Vec::new(),
             sample_ids: HashMap::new(),
             use_effects,
+            sample_rate,
             resample_cache: HashMap::new(),
         };
 
@@ -179,6 +194,7 @@ impl SoundFont {
         bank: u16,
         preset: u16,
         use_effects: bool,
+        sample_rate: u32,
     ) -> Result<Self, SoundFontError> {
         use xsynth_soundfonts::sfz::parse_soundfont;
 
@@ -205,6 +221,7 @@ impl SoundFont {
             zones: Vec::new(),
             sample_ids: HashMap::new(),
             use_effects,
+            sample_rate,
             resample_cache: HashMap::new(),
         };
 
@@ -382,6 +399,10 @@ impl SoundFont {
     }
 
     fn resample_data(raw: &Arc<[f32]>, native: u32, new_rate: u32) -> Arc<[f32]> {
+        if native == new_rate {
+            // 数据已在目标率（SF2 修复后常见：加载即引擎率），免去 rubato 往返。
+            return raw.clone();
+        }
         xsynth_soundfonts::resample::resample_vec(raw.to_vec(), native as f32, new_rate as f32)
     }
 
@@ -419,7 +440,7 @@ impl SoundFont {
             .iter()
             .find(|z| z.sample_id == id || z.sample_id_r == id)
             .map(|z| z.native_rate)
-            .unwrap_or(44_100)
+            .unwrap_or(self.sample_rate)
     }
 
     fn add_region(&mut self, region: &xsynth_soundfonts::sf2::Sf2Region) {
@@ -432,7 +453,9 @@ impl SoundFont {
             sample_id
         };
 
-        let native_rate = region.sample_rate;
+        // SF2 样本已被 `load_soundfont` 重采样到 `self.sample_rate`，位置也
+        // 已转换到该域；这里记录实际数据率（不再是 region 的原生率）。
+        let native_rate = self.sample_rate;
         for key in region.keyrange.clone() {
             for vel in region.velrange.clone() {
                 // note_params applies the baked note-on modulators (velocity
@@ -630,7 +653,7 @@ mod tests {
             eprintln!("skip dump_zone_params: 未找到 test.sf2 fixture（CI 预期跳过）");
             return;
         };
-        let sf = SoundFont::load(path, 0, 0, true).expect("测试 SF2 应可加载");
+        let sf = SoundFont::load(path, 0, 0, true, 48_000).expect("测试 SF2 应可加载");
         println!("samples: {}", sf.sample_count());
         let ids = sf.zones_at(60, 100);
         println!("zones at (60,100): {:?}", ids);

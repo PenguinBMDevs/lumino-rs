@@ -876,7 +876,13 @@ impl GpuSynth {
         bank: u16,
         preset: u16,
     ) -> Result<(), SynthError> {
-        let sf = SoundFont::load(path, bank, preset, self.config.use_effects)?;
+        let sf = SoundFont::load(
+            path,
+            bank,
+            preset,
+            self.config.use_effects,
+            self.config.sample_rate,
+        )?;
         self.sf = Some(sf);
         Ok(())
     }
