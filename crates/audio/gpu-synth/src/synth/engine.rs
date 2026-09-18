@@ -164,10 +164,14 @@ struct ChannelState {
     coarse_cents: f32,
     /// Parameter currently selected for Data Entry (RPN/NRPN).
     param: ParamSel,
-    /// Most recent CC6 (Data Entry MSB) value.
-    data_msb: u8,
-    /// Most recent CC38 (Data Entry LSB) value.
-    data_lsb: u8,
+    /// RPN 0 (pitch-bend sensitivity) 的 Data Entry 字节，按参数分槽存储：
+    /// 切换 RPN 时旧参数的字节不会混入新参数（对齐 MIDI 规范与 CPU 实现）。
+    rpn0_msb: u8,
+    rpn0_lsb: u8,
+    /// RPN 1 (fine tuning) 的 Data Entry 字节，标准 14-bit 中心为 8192
+    /// （MSB=64, LSB=0）。
+    rpn1_msb: u8,
+    rpn1_lsb: u8,
 }
 
 impl ChannelState {
@@ -186,8 +190,10 @@ impl ChannelState {
             fine_cents: 0.0,
             coarse_cents: 0.0,
             param: ParamSel::None,
-            data_msb: 0,
-            data_lsb: 0,
+            rpn0_msb: 2,
+            rpn0_lsb: 0,
+            rpn1_msb: 64,
+            rpn1_lsb: 0,
         }
     }
 
@@ -200,29 +206,93 @@ impl ChannelState {
         self.pitch_multiplier = bend_mult * tune_mult;
     }
 
-    /// Applies the current Data Entry bytes (`data_msb`/`data_lsb`) to the
-    /// selected RPN. Only RPN 0 (pitch-bend sensitivity), RPN 1 (fine tuning)
-    /// and RPN 2 (coarse tuning) affect pitch; NRPNs are left to the
-    /// soundfont/synth-specific path.
-    fn apply_rpn_data(&mut self) {
-        let data = ((self.data_msb as u16) << 7) | (self.data_lsb as u16);
+    /// 处理 RPN/NRPN 选择与 Data Entry（CC98/99/100/101/6/38）。
+    ///
+    /// MIDI 规范：CC100/CC101 = RPN LSB/MSB，CC98/CC99 = NRPN LSB/MSB，
+    /// Data Entry 只作用于“当前选中的参数”。本引擎未实现任何 NRPN 效果，
+    /// 因此 NRPN 选中期间的数据入口**消费丢弃**，绝不落到上一次 RPN 选择上。
+    ///
+    /// 返回是否可能改变音高（调用方据此触发 voice 的 pitch 传播）。
+    fn handle_rpn_cc(&mut self, controller: u8, value: u8) -> bool {
+        match controller {
+            0x62 => {
+                // CC98: NRPN LSB。
+                let m = match self.param {
+                    ParamSel::Nrpn(m, _) => m,
+                    _ => 0,
+                };
+                self.param = ParamSel::Nrpn(m, value);
+                false
+            }
+            0x63 => {
+                // CC99: NRPN MSB。
+                let l = match self.param {
+                    ParamSel::Nrpn(_, l) => l,
+                    _ => 0,
+                };
+                self.param = ParamSel::Nrpn(value, l);
+                false
+            }
+            0x64 => {
+                // CC100: RPN LSB。
+                let m = match self.param {
+                    ParamSel::Rpn(m, _) => m,
+                    _ => 0,
+                };
+                self.param = ParamSel::Rpn(m, value);
+                false
+            }
+            0x65 => {
+                // CC101: RPN MSB。
+                let l = match self.param {
+                    ParamSel::Rpn(_, l) => l,
+                    _ => 0,
+                };
+                self.param = ParamSel::Rpn(value, l);
+                false
+            }
+            0x06 => {
+                self.apply_data_entry(true, value);
+                true
+            }
+            0x26 => {
+                self.apply_data_entry(false, value);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    /// 应用一个 Data Entry 字节（CC6 = MSB / CC38 = LSB）到当前选中的 RPN。
+    ///
+    /// 仅支持 RPN 0/1/2；`None` 与 NRPN 一律忽略（消费丢弃）。
+    fn apply_data_entry(&mut self, is_msb: bool, value: u8) {
         match self.param {
             ParamSel::Rpn(0, 0) => {
-                // Pitch Bend Sensitivity: MSB = semitones, LSB = fractional
-                // semitone. Per GM the valid range is 0..24 semitones; clamp
-                // defensively without starving legitimate wide settings.
-                let semis = self.data_msb as f32 + self.data_lsb as f32 / 128.0;
+                // Pitch Bend Sensitivity: MSB = 半音，LSB = 1/128 半音（128 精度）。
+                if is_msb {
+                    self.rpn0_msb = value;
+                } else {
+                    self.rpn0_lsb = value;
+                }
+                let semis = self.rpn0_msb as f32 + self.rpn0_lsb as f32 / 128.0;
                 self.bend_sensitivity = semis.clamp(0.0, 96.0);
                 self.recompute_pitch();
             }
             ParamSel::Rpn(0, 1) => {
-                // Channel Fine Tuning: 14-bit, 8192 = 0 cents, range +-100 cents.
-                self.fine_cents = ((data as f32 - 8192.0) / 8192.0) * 100.0;
+                // Channel Fine Tuning: 标准 14-bit（MSB<<7|LSB），中心 8192 = 0 cents。
+                if is_msb {
+                    self.rpn1_msb = value;
+                } else {
+                    self.rpn1_lsb = value;
+                }
+                let raw = ((self.rpn1_msb as u16) << 7) | self.rpn1_lsb as u16;
+                self.fine_cents = (raw as f32 - 8192.0) / 8192.0 * 100.0;
                 self.recompute_pitch();
             }
-            ParamSel::Rpn(0, 2) => {
-                // Channel Coarse Tuning: MSB = semitones, 64 = 0.
-                self.coarse_cents = (self.data_msb as f32 - 64.0) * 100.0;
+            // Channel Coarse Tuning: 仅 MSB，64 = 0（LSB 不使用）。
+            ParamSel::Rpn(0, 2) if is_msb => {
+                self.coarse_cents = (value as f32 - 64.0) * 100.0;
                 self.recompute_pitch();
             }
             _ => {}
@@ -2252,50 +2322,16 @@ impl GpuSynth {
                 // completeness.
                 let _ = value;
             }
-            // ---- RPN / NRPN selection (pitch-critical) ----
-            0x64 => {
-                // CC100: RPN MSB.
-                let inner = match self.channels[ch].param {
-                    ParamSel::Rpn(_, l) => l,
-                    _ => 0,
-                };
-                self.channels[ch].param = ParamSel::Rpn(value, inner);
+            // ---- RPN / NRPN selection + Data Entry (pitch-critical) ----
+            // 语义见 `ChannelState::handle_rpn_cc`：CC100/101 = RPN LSB/MSB，
+            // CC98/99 = NRPN LSB/MSB，NRPN 数据消费丢弃（规范）。
+            0x62..=0x65 => {
+                self.channels[ch].handle_rpn_cc(controller, value);
             }
-            0x65 => {
-                // CC101: RPN LSB.
-                let inner = match self.channels[ch].param {
-                    ParamSel::Rpn(m, _) => m,
-                    _ => 0,
-                };
-                self.channels[ch].param = ParamSel::Rpn(inner, value);
-            }
-            0x62 => {
-                // CC98: NRPN MSB.
-                let inner = match self.channels[ch].param {
-                    ParamSel::Nrpn(_, l) => l,
-                    _ => 0,
-                };
-                self.channels[ch].param = ParamSel::Nrpn(value, inner);
-            }
-            0x63 => {
-                // CC99: NRPN LSB.
-                let inner = match self.channels[ch].param {
-                    ParamSel::Nrpn(m, _) => m,
-                    _ => 0,
-                };
-                self.channels[ch].param = ParamSel::Nrpn(inner, value);
-            }
-            0x06 => {
-                // CC6: Data Entry MSB (RPN/NRPN).
-                self.channels[ch].data_msb = value;
-                self.channels[ch].apply_rpn_data();
-                pitch_dirty = true;
-            }
-            0x26 => {
-                // CC38: Data Entry LSB (RPN/NRPN).
-                self.channels[ch].data_lsb = value;
-                self.channels[ch].apply_rpn_data();
-                pitch_dirty = true;
+            0x06 | 0x26 => {
+                if self.channels[ch].handle_rpn_cc(controller, value) {
+                    pitch_dirty = true;
+                }
             }
             0x48 => {
                 // Release time (CC72): modifies the release envelope stage.
@@ -3810,8 +3846,8 @@ impl ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChannelState, MAX_SPAWNS_PER_KEY_PER_BLOCK, ParamSel, RenderCheckpoint, checkpoint_ok,
-        limit_block, select_evictions, spawn_budget_allows,
+        ChannelState, MAX_SPAWNS_PER_KEY_PER_BLOCK, RenderCheckpoint, checkpoint_ok, limit_block,
+        select_evictions, spawn_budget_allows,
     };
     use crate::error::SynthError;
 
@@ -3885,58 +3921,43 @@ mod tests {
         );
     }
 
+    /// 标准 CC 编码驱动 RPN 0（弯音灵敏度）：CC101=MSB、CC100=LSB、CC6/CC38=数据。
+    /// 旧实现把 CC100 当 MSB、CC101 当 LSB，标准编码的 RPN 1/2 永远无法生效。
     #[test]
-    fn rpn_pitch_bend_sensitivity_24() {
+    fn cc_driven_rpn_pitch_bend_sensitivity() {
         let mut st = ChannelState::new();
-        // RPN 0 (Pitch Bend Sensitivity) selected, then Data Entry = 24 semitones
-        // -- exactly what right-example.mid sends via CC100/101/6.
-        st.param = ParamSel::Rpn(0, 0);
-        st.data_msb = 24;
-        st.data_lsb = 0;
-        st.apply_rpn_data();
+        assert!(!st.handle_rpn_cc(0x65, 0)); // CC101: RPN MSB = 0
+        assert!(!st.handle_rpn_cc(0x64, 0)); // CC100: RPN LSB = 0
+        assert!(st.handle_rpn_cc(0x06, 12)); // CC6: sensitivity = 12 半音
         assert!(
-            (st.bend_sensitivity - 24.0).abs() < 1e-3,
-            "bend sensitivity = {} (expected 24)",
+            (st.bend_sensitivity - 12.0).abs() < 1e-3,
+            "sensitivity = {} (expected 12; CC100/CC101 wiring)",
             st.bend_sensitivity
         );
-
-        // Bend value 9000 (above center 8192) must now map to ~2.36 semitones,
-        // not the old hardcoded 2-semitone value (~0.197 semitones). This is the
-        // "severe detuning" bug: every bend was scaled ~12x too small.
+        // 12 半音灵敏度下，bend=9000（中心 +808）≈ +1.18 半音。
         st.bend_value = 9000;
         st.recompute_pitch();
-        let expected = 2.0f32.powf(((9000.0 - 8192.0) / 8192.0 * 24.0) / 12.0);
+        let expected = 2.0f32.powf(((9000.0 - 8192.0) / 8192.0 * 12.0) / 12.0);
+        assert!((st.pitch_multiplier - expected).abs() < 1e-4);
+        // LSB 为 1/128 半音（128 精度）：CC38=64 → +0.5 半音。
+        assert!(st.handle_rpn_cc(0x26, 64));
         assert!(
-            (st.pitch_multiplier - expected).abs() < 1e-4,
-            "mult = {} (expected {})",
-            st.pitch_multiplier,
-            expected
+            (st.bend_sensitivity - 12.5).abs() < 1e-3,
+            "sensitivity = {} (expected 12.5, /128 precision)",
+            st.bend_sensitivity
         );
-        // Sanity: clearly shifted up, far beyond the old 2-semitone scaling.
-        assert!(
-            st.pitch_multiplier > 1.1,
-            "bend not scaled by 24 semitones (mult = {})",
-            st.pitch_multiplier
-        );
+        // 默认灵敏度仍为 2（GM）。
+        let st2 = ChannelState::new();
+        assert!((st2.bend_sensitivity - 2.0).abs() < 1e-3);
     }
 
+    /// RPN 2 粗调必须能被标准编码驱动（旧接线下永远不生效）。
     #[test]
-    fn rpn_default_sensitivity_is_2() {
-        let st = ChannelState::new();
-        assert!(
-            (st.bend_sensitivity - 2.0).abs() < 1e-3,
-            "default sensitivity must be 2 semitones (GM)"
-        );
-    }
-
-    #[test]
-    fn rpn_channel_tuning() {
+    fn cc_driven_rpn_coarse_tuning() {
         let mut st = ChannelState::new();
-        // RPN 2 (coarse tuning) = +3 semitones (MSB 67, center 64).
-        st.param = ParamSel::Rpn(0, 2);
-        st.data_msb = 67;
-        st.data_lsb = 0;
-        st.apply_rpn_data();
+        st.handle_rpn_cc(0x65, 0); // MSB
+        st.handle_rpn_cc(0x64, 2); // LSB = 2 → RPN 0:2
+        assert!(st.handle_rpn_cc(0x06, 67)); // +3 半音
         st.recompute_pitch();
         let expected = 2.0f32.powf(3.0 / 12.0);
         assert!(
@@ -3945,21 +3966,51 @@ mod tests {
             st.pitch_multiplier,
             expected
         );
+    }
 
-        // RPN 1 (fine tuning) = +50 cents (14-bit: 8192 + 0.5*8192 = 12288).
-        st.param = ParamSel::Rpn(0, 1);
-        st.data_msb = (12288 >> 7) as u8;
-        st.data_lsb = (12288 & 0x7f) as u8;
-        st.apply_rpn_data();
-        st.recompute_pitch();
-        // Total tuning = +3 semitones + 50 cents.
-        let expected2 = 2.0f32.powf((300.0 + 50.0) / 1200.0);
+    /// RPN 1 微调：标准 14-bit（中心 8192），LSB 先到也应正确。
+    #[test]
+    fn cc_driven_rpn_fine_tuning_lsb_first() {
+        let mut st = ChannelState::new();
+        st.handle_rpn_cc(0x64, 1); // LSB = 1（先发）
+        st.handle_rpn_cc(0x65, 0); // MSB = 0
+        st.handle_rpn_cc(0x06, 64); // 数据 MSB
+        st.handle_rpn_cc(0x26, 0); // 数据 LSB → 中心
+        assert!(st.fine_cents.abs() < 1e-3, "fine = {}", st.fine_cents);
+        st.handle_rpn_cc(0x26, 64);
+        let expected_cents = (64.0 / 8192.0) * 100.0;
         assert!(
-            (st.pitch_multiplier - expected2).abs() < 1e-4,
-            "fine+coarse mult = {} (expected {})",
-            st.pitch_multiplier,
-            expected2
+            (st.fine_cents - expected_cents).abs() < 1e-3,
+            "fine = {} (expected {})",
+            st.fine_cents,
+            expected_cents
         );
+    }
+
+    /// NRPN 选中期间的数据入口必须被消费丢弃（MIDI 规范：RPN/NRPN 独立命名空间），
+    /// 不能落进上一次 RPN 选择（否则会把 NRPN 的值写进弯音灵敏度）。
+    #[test]
+    fn nrpn_data_entry_is_consumed() {
+        let mut st = ChannelState::new();
+        st.handle_rpn_cc(0x65, 0);
+        st.handle_rpn_cc(0x64, 0);
+        st.handle_rpn_cc(0x06, 12);
+        assert!((st.bend_sensitivity - 12.0).abs() < 1e-3);
+        // 切到 NRPN（CC99=MSB / CC98=LSB），再发数据入口。
+        st.handle_rpn_cc(0x63, 1);
+        st.handle_rpn_cc(0x62, 8);
+        st.handle_rpn_cc(0x06, 64);
+        st.handle_rpn_cc(0x26, 127);
+        assert!(
+            (st.bend_sensitivity - 12.0).abs() < 1e-3,
+            "NRPN data leaked into RPN 0: sensitivity = {}",
+            st.bend_sensitivity
+        );
+        // 切回 RPN 0 后数据入口恢复生效。
+        st.handle_rpn_cc(0x65, 0);
+        st.handle_rpn_cc(0x64, 0);
+        st.handle_rpn_cc(0x06, 2);
+        assert!((st.bend_sensitivity - 2.0).abs() < 1e-3);
     }
 
     #[test]
