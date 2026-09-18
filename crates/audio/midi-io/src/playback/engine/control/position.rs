@@ -16,6 +16,9 @@ impl PlaybackEngine {
         self.reset_cursors_to(tick);
         // 重建当前轨事件队列
         self.rebuild_queue_from_current_track(Some(tick));
+        // 模态状态追齐：把 seek 点之前的最后 CC/PC/PB/RPN 状态排队，
+        // 由命令层 flush 到输出（暂停中 seek 也发，保证按 Play 时状态正确）。
+        self.pending_chase = self.compute_chase(tick);
     }
 
     /// 将各音轨读取状态定位到指定 tick 位置

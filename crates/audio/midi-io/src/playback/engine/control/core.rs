@@ -79,6 +79,8 @@ pub struct PlaybackEngine {
     pub(crate) track_soloed: Vec<bool>,
     /// 复用的消息缓冲区，避免 update() 每帧分配新 Vec
     pub(crate) reused_messages: Vec<MidiMessage>,
+    /// 待发送的 seek 状态追齐消息（`seek()` 填充，命令层 flush 后清空）
+    pub(crate) pending_chase: Vec<MidiMessage>,
 }
 
 impl PlaybackEngine {
@@ -100,6 +102,7 @@ impl PlaybackEngine {
             track_muted: Vec::new(),
             track_soloed: Vec::new(),
             reused_messages: Vec::with_capacity(64),
+            pending_chase: Vec::new(),
         }
     }
 

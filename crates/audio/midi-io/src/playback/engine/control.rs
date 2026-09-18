@@ -1,5 +1,6 @@
 //! 播放引擎控制
 
+mod chase;
 mod core;
 mod play;
 mod position;

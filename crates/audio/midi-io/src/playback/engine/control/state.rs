@@ -212,7 +212,7 @@ impl PlaybackEngine {
     }
 
     /// 处理循环回绕
-    fn handle_loop_wrap(&mut self, current_tick: f32, _messages: &mut Vec<MidiMessage>) {
+    fn handle_loop_wrap(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
         if self.looping
             && let Some((_loop_start, loop_end)) = self.loop_range
             && current_tick >= loop_end
@@ -248,6 +248,9 @@ impl PlaybackEngine {
             }
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
+            // 循环回绕：追齐 loop_start 之前的模态状态（CC/RPN/PB 等），
+            // 否则回绕后一段会保留回绕前的旧值。
+            messages.extend(self.compute_chase(loop_start));
         }
     }
 

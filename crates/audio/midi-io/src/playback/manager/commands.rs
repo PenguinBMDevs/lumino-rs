@@ -129,6 +129,12 @@ pub(crate) fn handle_command(
                 let _ = out.reset_control();
             }
             engine.seek(tick);
+            // seek 后模态状态追齐：把 seek 点之前的最后 CC/PC/PB/RPN 状态
+            // 发给输出（含暂停中 seek），避免保留跳转前的旧值。
+            let chase = engine.take_pending_chase();
+            if !chase.is_empty() {
+                flush_midi_messages(&chase, midi_output);
+            }
             // 必须补推状态帧：暂停状态下 seek 后播放线程进入空闲分支不再周期推帧，
             // 若不主动推送，last_frame 停留旧 tick，UI 播放头不跳转。
             push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
