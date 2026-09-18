@@ -345,14 +345,14 @@ pub struct GpuSynth {
     /// voices by id, and reusing ids (e.g. the array position) would apply a
     /// stale state to the wrong voice and roll its envelope back.
     voice_id_counter: u32,
-    /// Per-(channel, key) note-on budget for the current block. Black-MIDI
-    /// peaks push tens of thousands of note-ons per key per block, of which
-    /// only `max_voices_per_key` can survive the per-key trim - the rest are
-    /// processing wasted on notes that produce no audible output. Once a
-    /// key's budget is spent, further note-ons are skipped entirely. A flat
-    /// array (16 channels x 128 keys) keeps the skip path a single indexed
-    /// load - the HashMap version cost ~0.15us per skipped note-on.
-    /// u32 计数：层数可超过 255，u8 在 256 的倍数时会截断为 0 导致该键全丢。
+    /// Per-(channel, key) note-on guard for the current block: pathological
+    /// bursts beyond `MAX_SPAWNS_PER_KEY_PER_BLOCK` are skipped so one key
+    /// cannot stall the render thread on an absurd event storm. This is NOT
+    /// the musical per-key polyphony limit - that is enforced by
+    /// `trim_key_voices` after spawning (XSynth semantics: every note-on
+    /// sounds, the quietest old group is stolen). Using `max_voices_per_key`
+    /// here dropped the NEWEST notes and broke dense passages (measured: 18%
+    /// of a black MIDI's note-ons dropped at limit=4).
     spawn_budget: [u32; 16 * 128],
     /// Per-(channel, key) count of active (not ended, not released) note
     /// groups, so `release_key` can bail out in O(1) when a note-off has no
@@ -360,7 +360,9 @@ pub struct GpuSynth {
     /// note-offs per block whose keys have no live notes left. Rebuilt
     /// exactly once per block in `upload_voices`; in-block spawns/releases
     /// adjust it, trims may leave it slightly stale (only costs a scan).
-    active_notes: [u8; 16 * 128],
+    /// u32：无限层数下同键活组可远超 u8(255)；u8 截断归零会让 release_key
+    /// 跳过 note-off（挂音/超时），故不再截断。
+    active_notes: [u32; 16 * 128],
     /// Voice template cache: `(key, vel, channel, pitch_mult_bits,
     /// env_attack, env_release)` -> pre-built voices for every zone of that
     /// note. Black-MIDI note storms spawn thousands of identical notes per
@@ -563,13 +565,17 @@ fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, sample_rate
     *gain = g;
 }
 
-/// 每键每块的 note-on 预算判定（纯函数便于单测）：`limit == 0` 表示不限。
+/// 每键每块 note-on 硬上限（纯函数便于单测）。
 ///
-/// `used` 是当前块该键已放行的 note-on 数。绝不能把 `limit` 截断成更小的整数
-/// 再比较（旧实现 `limit as u8` 在 256 的倍数时为 0，该键所有音符被丢）。
+/// 这是**防病态风暴**的保护，不是音乐意义的每键复音上限；后者由
+/// `trim_key_voices` 在 spawn 之后保证（XSynth 语义：新音必发声，抢最安静
+/// 老组）。旧实现把 `max_voices_per_key` 当预算，丢的是**最新**音符，
+/// 密集段落大量缺音（实测黑 MIDI 在 limit=4 下丢 18% note-on）。
+const MAX_SPAWNS_PER_KEY_PER_BLOCK: u32 = 65_536;
+
 #[inline]
-fn spawn_budget_allows(limit: usize, used: u32) -> bool {
-    limit == 0 || (used as usize) < limit
+fn spawn_budget_allows(used: u32) -> bool {
+    used < MAX_SPAWNS_PER_KEY_PER_BLOCK
 }
 
 /// 选择要被抢占的 note 组下标（按"最安静优先"排序），最多 `need_free` 个。
@@ -1970,21 +1976,18 @@ impl GpuSynth {
                 if vel <= 1 {
                     return Ok(());
                 }
-                // Per-key note-on budget, checked HERE (not inside
-                // `spawn_voices`) so black-MIDI overflow notes skip the
-                // function call entirely - the peaks fire hundreds of
-                // thousands of note-ons per block, of which only
-                // `max_voices_per_key` can survive the per-key trim.
-                // 旧实现用 `limit as u8` 比较：层数为 256 的倍数时截断为 0，
-                // 导致该键全部 note-on 被丢（静音级 bug），故用 usize 比较。
-                let limit = self.config.max_voices_per_key;
-                if limit > 0 {
-                    let slot = &mut self.spawn_budget[ch * 128 + key as usize];
-                    if !spawn_budget_allows(limit, *slot) {
-                        return Ok(());
-                    }
-                    *slot += 1;
+                // Per-key anti-storm guard, checked HERE so a pathological
+                // burst (millions of note-ons on one key in one block) skips
+                // the spawn call entirely. This is NOT the per-key polyphony
+                // limit: every admitted note-on must sound, and
+                // `trim_key_voices` steals the quietest OLD group afterwards
+                // (XSynth semantics). The old per-`max_voices_per_key`
+                // budget dropped the NEWEST notes and broke dense passages.
+                let slot = &mut self.spawn_budget[ch * 128 + key as usize];
+                if !spawn_budget_allows(*slot) {
+                    return Ok(());
                 }
+                *slot += 1;
                 // Global pool gate: bound per-block spawn cost WITHOUT dropping
                 // audible notes. `upload_voices` trims the pool down to `pool`
                 // keeping the OLDEST voices, so a new note-on must still be
@@ -2462,7 +2465,7 @@ impl GpuSynth {
                 live_notes.push(v.note_id);
             }
         }
-        self.active_notes[ch as usize * 128 + key as usize] = live_notes.len() as u8;
+        self.active_notes[ch as usize * 128 + key as usize] = live_notes.len() as u32;
     }
 
     /// Ends every voice whose exclusive class has a newer note (the newest
@@ -2505,7 +2508,7 @@ impl GpuSynth {
     }
 
     fn upload_voices(&mut self, base: u64) -> Result<(), SynthError> {
-        // The per-key note-on budget is per block.
+        // The per-key anti-storm guard is per block.
         self.spawn_budget.fill(0);
         // Exclusive classes resolved once per block.
         self.trim_exclusive();
@@ -3807,8 +3810,8 @@ impl ProgressBar {
 #[cfg(test)]
 mod tests {
     use super::{
-        ChannelState, ParamSel, RenderCheckpoint, checkpoint_ok, limit_block, select_evictions,
-        spawn_budget_allows,
+        ChannelState, MAX_SPAWNS_PER_KEY_PER_BLOCK, ParamSel, RenderCheckpoint, checkpoint_ok,
+        limit_block, select_evictions, spawn_budget_allows,
     };
     use crate::error::SynthError;
 
@@ -3970,17 +3973,16 @@ mod tests {
     }
 
     #[test]
-    fn spawn_budget_allows_layer_values_beyond_u8() {
-        // 256 的倍数在旧实现里 `as u8 == 0`，会让该键所有 note-on 被丢。
-        assert!(spawn_budget_allows(256, 0));
-        assert!(spawn_budget_allows(256, 255));
-        assert!(!spawn_budget_allows(256, 256));
-        assert!(spawn_budget_allows(300, 299));
-        // 0 = 无限制。
-        assert!(spawn_budget_allows(0, u32::MAX));
-        // 常规层数：预算内放行，用满即停。
-        assert!(spawn_budget_allows(32, 31));
-        assert!(!spawn_budget_allows(32, 32));
+    fn spawn_guard_only_caps_pathological_bursts() {
+        // 常规密度（含黑 MIDI 单键单块千级 note-on）必须全部放行：
+        // 旧实现拿 max_voices_per_key 当预算，丢的是最新音符（limit=4 时
+        // 实测丢 18% note-on），已废弃。
+        assert!(spawn_budget_allows(0));
+        assert!(spawn_budget_allows(2_688));
+        assert!(spawn_budget_allows(MAX_SPAWNS_PER_KEY_PER_BLOCK - 1));
+        // 只有病态风暴（单键单块 6.5 万+ note-on）才触发保护上限。
+        assert!(!spawn_budget_allows(MAX_SPAWNS_PER_KEY_PER_BLOCK));
+        assert!(!spawn_budget_allows(u32::MAX));
     }
 
     #[test]
