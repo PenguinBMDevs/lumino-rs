@@ -17,6 +17,7 @@ use super::event::MidiEventProcessor;
 use super::event_kind::{build_track_event_kind, compute_total_tick};
 use super::event_stream::MidiDocEventStream;
 use super::sink_factory::create_output_sink;
+use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 use super::tick_conv::TickToTime;
 
 // ════════════════════════════════════════════════════════════
@@ -77,10 +78,12 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     let mut sink = create_output_sink(config)?;
     let mut engine = AudioEngine::new(config.clone())?;
     let mut tick_conv = TickToTime::new(tempos, ppqn);
+    // 音频总时长：供进度回调估算"导出倍速"（音频秒/墙钟秒）。
+    let total_seconds = tick_conv.tick_to_seconds(total_ticks);
     let mut processor =
         MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);
 
-    run_streaming_render(config, &mut processor, player)?;
+    run_streaming_render(config, &mut processor, player, total_seconds)?;
 
     processor.finalize()?;
     sink.finalize()?;
@@ -144,11 +147,13 @@ pub fn render_audio_from_document(
     // 非 480 PPQ 文档（如 192/960/1920）的 tick→秒换算被放大
     // （division/480 倍），导出音频时长错误、速度减慢但音调正常。
     let mut tick_conv = TickToTime::new(tempos, ppqn);
+    let total_tick = compute_total_tick(doc);
+    // 音频总时长：供进度回调估算"导出倍速"（音频秒/墙钟秒）。
+    let total_seconds = tick_conv.tick_to_seconds(total_tick);
     let mut processor =
         MidiEventProcessor::new(config, engine.channel_group(), &mut tick_conv, &mut sink);
-    let total_tick = compute_total_tick(doc);
 
-    run_document_render(config, &mut processor, doc, total_tick)?;
+    run_document_render(config, &mut processor, doc, total_tick, total_seconds)?;
 
     processor.finalize()?;
     sink.finalize()?;
@@ -166,12 +171,16 @@ pub(super) fn run_streaming_render(
     config: &AudioRenderConfig,
     processor: &mut MidiEventProcessor,
     mut player: StreamingMidiPlayer,
+    total_seconds: f64,
 ) -> ExportResult<()> {
     let total_ticks = player.total_ticks().max(1);
     let mut event_count = 0_u64;
     let mut note_count = 0_u64;
     let mut last_progress_time = std::time::Instant::now();
     let start_time = std::time::Instant::now();
+    // 倍速用 3s 窗口平均；tick 占比 × 总时长是音频时长的近似（tempo 变化时略有偏差，
+    // 对"倍速"展示足够）。
+    let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
 
     while let Some((tick, _track_idx, kind)) = player.next_event() {
         if let Some(ctrl) = &config.control {
@@ -181,7 +190,18 @@ pub(super) fn run_streaming_render(
         let now = std::time::Instant::now();
         if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
             let pct = tick as f64 / total_ticks as f64;
-            report_progress(config, pct, event_count, note_count, start_time);
+            speed_meter.record(
+                now.duration_since(start_time).as_secs_f64(),
+                pct * total_seconds,
+            );
+            report_progress(
+                config,
+                pct,
+                event_count,
+                note_count,
+                start_time,
+                speed_meter.speed(),
+            );
             last_progress_time = now;
         }
 
@@ -205,7 +225,14 @@ pub(super) fn run_streaming_render(
         }
     }
 
-    report_progress(config, 1.0, event_count, note_count, start_time);
+    report_progress(
+        config,
+        1.0,
+        event_count,
+        note_count,
+        start_time,
+        speed_meter.speed(),
+    );
     info!("流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
     Ok(())
 }
@@ -216,10 +243,12 @@ pub(super) fn run_document_render(
     processor: &mut MidiEventProcessor,
     doc: &MidiDocument,
     total_tick: u64,
+    total_seconds: f64,
 ) -> ExportResult<()> {
     let mut event_count = 0_u64;
     let mut last_progress_time = std::time::Instant::now();
     let start_time = std::time::Instant::now();
+    let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
 
     let mut stream = MidiDocEventStream::new(doc);
     let total_events = stream.total_events();
@@ -236,7 +265,11 @@ pub(super) fn run_document_render(
         let now = std::time::Instant::now();
         if now.duration_since(last_progress_time) >= std::time::Duration::from_millis(100) {
             let pct = tick as f64 / total_tick as f64;
-            report_progress(config, pct, event_count, 0, start_time);
+            speed_meter.record(
+                now.duration_since(start_time).as_secs_f64(),
+                pct * total_seconds,
+            );
+            report_progress(config, pct, event_count, 0, start_time, speed_meter.speed());
             last_progress_time = now;
         }
 
@@ -246,7 +279,7 @@ pub(super) fn run_document_render(
         }
     }
 
-    report_progress(config, 1.0, event_count, 0, start_time);
+    report_progress(config, 1.0, event_count, 0, start_time, speed_meter.speed());
     info!("文档流式渲染完成: 处理 {event_count} 个事件");
     Ok(())
 }
@@ -258,10 +291,12 @@ fn report_progress(
     event_count: u64,
     note_count: u64,
     start_time: std::time::Instant,
+    speed: Option<f64>,
 ) {
     let elapsed = start_time.elapsed();
+    let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
     let msg = format!(
-        "进度: {:.1}% | 事件: {} | 音符: {} | 耗时: {:.1}s",
+        "进度: {:.1}% | 事件: {} | 音符: {}{speed_text} | 耗时: {:.1}s",
         pct * 100.0,
         event_count,
         note_count,

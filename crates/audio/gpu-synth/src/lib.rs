@@ -73,6 +73,7 @@ pub use error::{SoundFontError, SynthError};
 pub use midi::parser::MidiFile;
 pub use midi::stream::MidiStream;
 pub use soundfont::SoundFont;
+pub use synth::RenderProgress;
 pub use synth::RenderResult;
 pub use synth::engine::GpuSynth;
 

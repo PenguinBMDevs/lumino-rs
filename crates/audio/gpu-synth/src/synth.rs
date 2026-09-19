@@ -4,4 +4,4 @@ pub mod dsp;
 pub mod engine;
 pub mod voices;
 
-pub use engine::{GpuSynth, RenderResult};
+pub use engine::{GpuSynth, RenderProgress, RenderProgressFn, RenderResult};

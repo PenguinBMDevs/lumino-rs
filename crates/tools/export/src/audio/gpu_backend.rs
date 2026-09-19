@@ -9,6 +9,7 @@ use crate::error::{ExportError, ExportResult};
 
 use super::config::{AudioChannelMode, AudioRenderConfig};
 use super::sink_factory::create_output_sink;
+use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 
 /// 检测 GPU 是否可用（尝试创建 wgpu 适配器）
 pub fn is_gpu_available() -> bool {
@@ -262,6 +263,88 @@ fn check_control(config: &AudioRenderConfig) -> ExportResult<()> {
     Ok(())
 }
 
+/// 把 GPU 引擎的预载/渲染进度接到导出进度回调（#35）。
+///
+/// 映射区间：预载 0.10→0.20、渲染 0.20→0.85；节流为进度每前进 0.1%
+/// 才转发一次，避免黑 MIDI 每块刷 UI。
+fn attach_render_progress(synth: &mut lumino_gpu_synth::GpuSynth, config: &AudioRenderConfig) {
+    let Some(cb) = config.progress_callback.clone() else {
+        return;
+    };
+    let sample_rate = config.sample_rate as f64;
+    let started = std::time::Instant::now();
+    let last_permille = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let speed = std::sync::Arc::new(std::sync::Mutex::new(ExportSpeedMeter::new(
+        DEFAULT_SPEED_WINDOW_SECS,
+    )));
+    synth.set_render_progress(Some(std::sync::Arc::new(
+        move |p: lumino_gpu_synth::RenderProgress| {
+            let elapsed = started.elapsed().as_secs_f64();
+            // 倍速 = 已渲染音频秒 / 墙钟秒，取 3s 窗口平均（避免瞬时抖动）。
+            let speed_now = match p {
+                lumino_gpu_synth::RenderProgress::Render { done, .. } => {
+                    let mut meter = speed
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    meter.record(elapsed, done as f64 / sample_rate);
+                    meter.speed()
+                }
+                _ => None,
+            };
+            let (pct, msg) = render_progress_message(p, elapsed, speed_now);
+            let permille = (pct.clamp(0.0, 1.0) * 1000.0) as u64;
+            if permille > last_permille.load(std::sync::atomic::Ordering::Relaxed) {
+                last_permille.store(permille, std::sync::atomic::Ordering::Relaxed);
+                cb(msg, pct);
+            }
+        },
+    )));
+}
+
+/// 引擎进度事件 -> 导出进度百分比与展示文案。
+///
+/// 进度总量为 0 时按 0% 处理（避免除零），文案与 CPU 路径的
+/// `进度: xx.x% | ... | 耗时 xx.xs` 风格保持一致。
+fn render_progress_message(
+    progress: lumino_gpu_synth::RenderProgress,
+    elapsed_secs: f64,
+    speed: Option<f64>,
+) -> (f64, String) {
+    match progress {
+        lumino_gpu_synth::RenderProgress::Prewarm { done, total } => {
+            let frac = if total == 0 {
+                0.0
+            } else {
+                done as f64 / total as f64
+            };
+            let pct = 0.10 + 0.10 * frac;
+            (
+                pct,
+                format!(
+                    "进度: {:.1}% | 预载音色库 {done}/{total} | 耗时 {elapsed_secs:.1}s",
+                    pct * 100.0
+                ),
+            )
+        }
+        lumino_gpu_synth::RenderProgress::Render { done, total } => {
+            let frac = if total == 0 {
+                0.0
+            } else {
+                (done as f64 / total as f64).clamp(0.0, 1.0)
+            };
+            let pct = 0.20 + 0.65 * frac;
+            let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
+            (
+                pct,
+                format!(
+                    "进度: {:.1}% | 帧 {done}/{total}{speed_text} | 耗时 {elapsed_secs:.1}s",
+                    pct * 100.0
+                ),
+            )
+        }
+    }
+}
+
 /// 使用 GPU 后端从 MidiDocument 渲染到 Sink（内存模式）
 pub fn render_audio_gpu_from_document(
     config: &AudioRenderConfig,
@@ -369,6 +452,7 @@ pub fn render_audio_gpu_from_document(
             !ctrl.is_aborted()
         })));
     }
+    attach_render_progress(&mut synth, config);
     let result = synth.render_midi_file(&tmp_path).map_err(|e| match e {
         lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
         other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
@@ -463,6 +547,7 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
             !ctrl.is_aborted()
         })));
     }
+    attach_render_progress(&mut synth, config);
     let result = synth
         .render_midi_file(&config.midi_path)
         .map_err(|e| match e {
@@ -570,5 +655,60 @@ mod tests {
                 "用户显式设 {small} 时 GPU 不得抬到 4"
             );
         }
+    }
+
+    /// #35：引擎进度必须落在导出总进度的 0.10→0.20（预载）与 0.20→0.85
+    /// （渲染）区间内，且总量为 0 时不除零/不越界。
+    #[test]
+    fn render_progress_maps_into_export_range() {
+        use super::render_progress_message;
+        use lumino_gpu_synth::RenderProgress;
+
+        let (p, m) = render_progress_message(
+            RenderProgress::Prewarm {
+                done: 0,
+                total: 100,
+            },
+            0.0,
+            None,
+        );
+        assert!((p - 0.10).abs() < 1e-9, "预载起点 {p}");
+        assert!(m.contains("预载"), "预载文案: {m}");
+
+        let (p, _) = render_progress_message(
+            RenderProgress::Prewarm {
+                done: 100,
+                total: 100,
+            },
+            0.0,
+            None,
+        );
+        assert!((p - 0.20).abs() < 1e-9, "预载终点 {p}");
+
+        let (p, _) =
+            render_progress_message(RenderProgress::Render { done: 0, total: 0 }, 0.0, None);
+        assert!((p - 0.20).abs() < 1e-9, "total=0 不应越界 {p}");
+
+        let (p, m) = render_progress_message(
+            RenderProgress::Render {
+                done: 500,
+                total: 1000,
+            },
+            0.0,
+            Some(3.25),
+        );
+        assert!((p - 0.525).abs() < 1e-9, "渲染中点 {p}");
+        assert!(m.contains("进度: 52.5%"), "文案百分比应与进度条一致: {m}");
+        assert!(m.contains("3.25× 实时"), "文案应含倍速: {m}");
+
+        let (p, _) = render_progress_message(
+            RenderProgress::Render {
+                done: 2000,
+                total: 1000,
+            },
+            0.0,
+            None,
+        );
+        assert!((p - 0.85).abs() < 1e-9, "渲染封顶 {p}");
     }
 }
