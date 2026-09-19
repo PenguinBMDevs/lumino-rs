@@ -9,6 +9,7 @@ use crate::error::{ExportError, ExportResult};
 
 use super::config::{AudioChannelMode, AudioRenderConfig};
 use super::sink_factory::create_output_sink;
+use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 
 /// 检测 GPU 是否可用（尝试创建 wgpu 适配器）
 pub fn is_gpu_available() -> bool {
@@ -271,11 +272,27 @@ fn attach_render_progress(synth: &mut lumino_gpu_synth::GpuSynth, config: &Audio
     let Some(cb) = config.progress_callback.clone() else {
         return;
     };
+    let sample_rate = config.sample_rate as f64;
     let started = std::time::Instant::now();
     let last_permille = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let speed = std::sync::Arc::new(std::sync::Mutex::new(ExportSpeedMeter::new(
+        DEFAULT_SPEED_WINDOW_SECS,
+    )));
     synth.set_render_progress(Some(std::sync::Arc::new(
         move |p: lumino_gpu_synth::RenderProgress| {
-            let (pct, msg) = render_progress_message(p, started.elapsed().as_secs_f64());
+            let elapsed = started.elapsed().as_secs_f64();
+            // 倍速 = 已渲染音频秒 / 墙钟秒，取 3s 窗口平均（避免瞬时抖动）。
+            let speed_now = match p {
+                lumino_gpu_synth::RenderProgress::Render { done, .. } => {
+                    let mut meter = speed
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner);
+                    meter.record(elapsed, done as f64 / sample_rate);
+                    meter.speed()
+                }
+                _ => None,
+            };
+            let (pct, msg) = render_progress_message(p, elapsed, speed_now);
             let permille = (pct.clamp(0.0, 1.0) * 1000.0) as u64;
             if permille > last_permille.load(std::sync::atomic::Ordering::Relaxed) {
                 last_permille.store(permille, std::sync::atomic::Ordering::Relaxed);
@@ -292,6 +309,7 @@ fn attach_render_progress(synth: &mut lumino_gpu_synth::GpuSynth, config: &Audio
 fn render_progress_message(
     progress: lumino_gpu_synth::RenderProgress,
     elapsed_secs: f64,
+    speed: Option<f64>,
 ) -> (f64, String) {
     match progress {
         lumino_gpu_synth::RenderProgress::Prewarm { done, total } => {
@@ -316,10 +334,11 @@ fn render_progress_message(
                 (done as f64 / total as f64).clamp(0.0, 1.0)
             };
             let pct = 0.20 + 0.65 * frac;
+            let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
             (
                 pct,
                 format!(
-                    "进度: {:.1}% | 帧 {done}/{total} | 耗时 {elapsed_secs:.1}s",
+                    "进度: {:.1}% | 帧 {done}/{total}{speed_text} | 耗时 {elapsed_secs:.1}s",
                     pct * 100.0
                 ),
             )
@@ -635,6 +654,7 @@ mod tests {
                 total: 100,
             },
             0.0,
+            None,
         );
         assert!((p - 0.10).abs() < 1e-9, "预载起点 {p}");
         assert!(m.contains("预载"), "预载文案: {m}");
@@ -645,10 +665,12 @@ mod tests {
                 total: 100,
             },
             0.0,
+            None,
         );
         assert!((p - 0.20).abs() < 1e-9, "预载终点 {p}");
 
-        let (p, _) = render_progress_message(RenderProgress::Render { done: 0, total: 0 }, 0.0);
+        let (p, _) =
+            render_progress_message(RenderProgress::Render { done: 0, total: 0 }, 0.0, None);
         assert!((p - 0.20).abs() < 1e-9, "total=0 不应越界 {p}");
 
         let (p, m) = render_progress_message(
@@ -657,9 +679,11 @@ mod tests {
                 total: 1000,
             },
             0.0,
+            Some(3.25),
         );
         assert!((p - 0.525).abs() < 1e-9, "渲染中点 {p}");
         assert!(m.contains("进度: 52.5%"), "文案百分比应与进度条一致: {m}");
+        assert!(m.contains("3.25× 实时"), "文案应含倍速: {m}");
 
         let (p, _) = render_progress_message(
             RenderProgress::Render {
@@ -667,6 +691,7 @@ mod tests {
                 total: 1000,
             },
             0.0,
+            None,
         );
         assert!((p - 0.85).abs() < 1e-9, "渲染封顶 {p}");
     }
