@@ -25,9 +25,9 @@ resolver = "3"
 #   tracy feature 门控，默认构建零开销）。
 #   显式 rev 防止 `cargo update` 静默漂移而丢失修复。
 [patch.crates-io]
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "77ecbf0cda7fc92917623b1239fc7e362eded55a" }
-xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "77ecbf0cda7fc92917623b1239fc7e362eded55a" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "77ecbf0cda7fc92917623b1239fc7e362eded55a" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "fba6e59f63d790339462cc6026a312cfec8ff982" }
+xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "fba6e59f63d790339462cc6026a312cfec8ff982" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "fba6e59f63d790339462cc6026a312cfec8ff982" }
 
 [workspace.package]
 version = "0.2.1"
