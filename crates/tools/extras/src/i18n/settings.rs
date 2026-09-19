@@ -66,6 +66,20 @@ pub struct SettingsTranslations {
     pub max_voices: &'static str,
     /// 每键最大同音数提示
     pub max_voices_hint: &'static str,
+    /// 全局最大复音数（硬上限/量程）
+    pub global_voice_limit: &'static str,
+    /// 全局最大复音数：自动
+    pub global_voice_limit_auto: &'static str,
+    /// 全局最大复音数提示
+    pub global_voice_limit_hint: &'static str,
+    /// 复音软目标比例
+    pub voice_target_ratio: &'static str,
+    /// 复音软目标比例提示
+    pub voice_target_ratio_hint: &'static str,
+    /// 过载保命闸
+    pub soft_nps_gate: &'static str,
+    /// 过载保命闸提示
+    pub soft_nps_gate_hint: &'static str,
     /// 力度过滤阈值
     pub velocity_filter: &'static str,
     /// 力度过滤阈值提示
@@ -290,6 +304,13 @@ static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     buffer_latency: "缓冲区 (延迟)",
     max_voices: "每键最大同音数:",
     max_voices_hint: "同键快速重复/密集和弦时，提高此值减少 voice stealing 导致的断音",
+    global_voice_limit: "全局最大复音数:",
+    global_voice_limit_auto: "自动",
+    global_voice_limit_hint: "引擎的复音硬上限（量程）。实际运行目标按下方比例留出暂态余量，负载反馈只会更低、不会更高；超限时从最忙通道抢占最老/最轻声部，新音符优先保留",
+    voice_target_ratio: "复音软目标比例:",
+    voice_target_ratio_hint: "运行目标 = 比例 × 硬上限（默认 1-1/e≈0.632，留约 37% 暂态余量；1-1/e²≈0.865 更激进但余量仅 13.5%）",
+    soft_nps_gate: "过载保命闸（仅在重度过载时临时限速，默认关闭）",
+    soft_nps_gate_hint: "关闭时不存在任何 NoteOn 丢弃路径；开启后仅在负载持续超限时短暂限速，回落后自动解除",
     velocity_filter: "力度过滤阈值",
     velocity_filter_hint: "力度小于等于阈值的音符将不播放（0=关闭过滤）",
     midi_input_device: "MIDI 输入设备:",
@@ -411,6 +432,13 @@ static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     buffer_latency: "Buffer (Latency)",
     max_voices: "Max voices per key:",
     max_voices_hint: "Increase for fast repeated notes / dense chords to reduce voice stealing",
+    global_voice_limit: "Global voice limit:",
+    global_voice_limit_auto: "Auto",
+    global_voice_limit_hint: "Hard ceiling (range) for total voices. The runtime target leaves transient headroom via the ratio below; load feedback can only lower it. Over-limit steals the oldest/quietest voices from the busiest channels, keeping new notes audible",
+    voice_target_ratio: "Voice target ratio:",
+    voice_target_ratio_hint: "Runtime target = ratio x hard limit (default 1-1/e ~= 0.632, ~37% transient headroom; 1-1/e^2 ~= 0.865 is more aggressive but leaves only 13.5%)",
+    soft_nps_gate: "Overload safety gate (temporary throttling under heavy overload, off by default)",
+    soft_nps_gate_hint: "When off there is no NoteOn drop path at all; when on it briefly throttles only under sustained overload and releases automatically",
     velocity_filter: "Velocity Filter Threshold",
     velocity_filter_hint: "Notes with velocity <= threshold will not play (0=disabled)",
     midi_input_device: "MIDI Input Device:",

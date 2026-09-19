@@ -208,6 +208,9 @@ impl AudioRenderConfig {
         ChannelGroupConfig {
             channel_init_options: ChannelInitOptions {
                 fade_out_killing: !self.disable_fade_out,
+                // 离线导出无实时负载约束，声部上限保持不限（每键限制由
+                // SetLayerCount 控制），避免改变既有导出语义。
+                max_voices: None,
             },
             format: SynthFormat::Midi,
             audio_params,

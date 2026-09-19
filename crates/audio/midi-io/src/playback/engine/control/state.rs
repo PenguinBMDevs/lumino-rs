@@ -4,6 +4,14 @@ use super::super::{EventType, MidiMessage};
 use super::core::PlaybackEngine;
 use crate::playback::PlaybackState;
 
+/// 迟到跳过阈值（秒）：进度条已领先该音符这么久时，直接不处理（而不是延后补发）。
+///
+/// 播放线程若因任何原因停顿/跳变（seek、回绕、系统调度、洪峰），
+/// `current_tick - last_processed_tick` 会变大；旧实现会把区间内所有音符一次性补发，
+/// 造成"爆破点 + 噼里啪啦"的过时音符洪水。实时播放语义下应当丢弃：
+/// 一个音符一旦迟到超过该阈值，就永远不会被处理。
+const LATE_NOTE_SKIP_SECS: f64 = 0.15;
+
 impl PlaybackEngine {
     /// 获取播放状态
     pub fn state(&self) -> PlaybackState {
@@ -33,10 +41,17 @@ impl PlaybackEngine {
             return &mut self.reused_messages;
         }
 
+        // 迟到边界（tick）：进度条已领先该值之前的音符一律跳过。
+        let ticks_per_sec = self
+            .lock_playback()
+            .map_or(120.0 / 60.0 * 960.0, |p| p.ticks_per_second());
+        let late_bound =
+            (current_tick as f64 - ticks_per_sec * LATE_NOTE_SKIP_SECS).max(0.0) as f32;
+
         // 临时取出 messages 避免 &mut self + &mut self.reused_messages 双重借用
         let mut messages = std::mem::take(&mut self.reused_messages);
-        self.process_current_track(current_tick, &mut messages);
-        self.process_other_tracks(current_tick, &mut messages);
+        self.process_current_track(current_tick, late_bound, &mut messages);
+        self.process_other_tracks(current_tick, late_bound, &mut messages);
         self.process_midi_events(current_tick, &mut messages);
         self.last_processed_tick = current_tick;
         self.handle_loop_wrap(current_tick, &mut messages);
@@ -64,7 +79,12 @@ impl PlaybackEngine {
     }
 
     /// 处理当前音轨的事件队列
-    fn process_current_track(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
+    fn process_current_track(
+        &mut self,
+        current_tick: f32,
+        late_bound: f32,
+        messages: &mut Vec<MidiMessage>,
+    ) {
         while let Some(event) = self.event_queue.peek() {
             if event.tick > current_tick {
                 break;
@@ -74,6 +94,10 @@ impl PlaybackEngine {
             } else {
                 break;
             };
+            // 迟到即弃：避免停顿/跳变后补发过时音符。
+            if event.tick < late_bound {
+                continue;
+            }
             Self::push_midi_message(event.event_type, messages);
         }
     }
@@ -83,10 +107,18 @@ impl PlaybackEngine {
     /// 每个非当前音轨维护一个 `note_cursor` 指向下一颗待触发 NoteOn 的音符，
     /// 并用最小堆保存已触发 NoteOn、等待 NoteOff 的音符。播放时按时间顺序
     /// 合并 NoteOn/NoteOff，避免预先把整轨事件拷贝排序。
-    fn process_other_tracks(&mut self, current_tick: f32, messages: &mut Vec<MidiMessage>) {
+    fn process_other_tracks(
+        &mut self,
+        current_tick: f32,
+        late_bound: f32,
+        messages: &mut Vec<MidiMessage>,
+    ) {
         let Some(doc) = &self.document else { return };
         let tick_start_u = self.last_processed_tick as u32;
         let tick_end_u = current_tick as u32;
+        // 迟到边界与"上次处理位置"取大：区间内过旧的 NoteOn 直接丢弃（不发声、
+        // 不登记 NoteOff），确保迟到的音符永远不会被延后补发。
+        let note_floor_u = tick_start_u.max(late_bound.max(0.0) as u32);
 
         for track_idx in 0..self.track_states.len() {
             if track_idx == self.current_track as usize {
@@ -120,7 +152,7 @@ impl PlaybackEngine {
 
                 if next_tick == next_on_tick {
                     let note = &notes[state.note_cursor];
-                    if note.start_tick >= tick_start_u
+                    if note.start_tick >= note_floor_u
                         && note.velocity > self.velocity_filter_threshold
                     {
                         messages.push(MidiMessage::NoteOn {

@@ -106,9 +106,8 @@ impl PlaybackManager {
                     // 空闲时阻塞等待命令，避免空转烧满一个核。
                     if engine.is_playing() {
                         // 更新引擎并发送 MIDI 消息
-                        let messages = crate::profiling::tracy_zone!("playback_update", {
-                            engine.update()
-                        });
+                        let messages =
+                            crate::profiling::tracy_zone!("playback_update", { engine.update() });
                         crate::profiling::tracy_zone!("playback_flush", {
                             commands::flush_midi_messages(messages, &mut midi_output);
                         });

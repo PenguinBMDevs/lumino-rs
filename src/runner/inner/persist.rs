@@ -32,7 +32,10 @@ impl RunnerInner {
         let xsynth_changed = new.synth.xsynth_buffer_ms != old.xsynth_buffer_ms
             || new.synth.xsynth_sample_rate != old.xsynth_sample_rate
             || new.synth.xsynth_threads != old.xsynth_threads
-            || new.synth.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key;
+            || new.synth.xsynth_max_voices_per_key != old.xsynth_max_voices_per_key
+            || new.synth.xsynth_global_voice_limit != old.xsynth_global_voice_limit
+            || (new.synth.xsynth_voice_target_ratio - old.xsynth_voice_target_ratio).abs() > 1e-9
+            || new.synth.xsynth_soft_nps_gate != old.xsynth_soft_nps_gate;
         let audio_engine_changed = new.synth.audio_engine != old.audio_engine;
         let titlebar_changed = new.synth.use_native_titlebar != old.use_native_titlebar;
         let font_changed = new.editing.program_font_name != old.program_font_name
@@ -144,7 +147,7 @@ impl RunnerInner {
         }
         if diff.xsynth_changed {
             tracing::info!(
-                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, voices={:?}-> {:?}",
+                "XSynth 参数已改变: buffer={:.1}ms-> {:.1}ms, sr={}-> {}, threads={}-> {}, voices={:?}-> {:?}, 全局上限={:?}-> {:?}, 软目标比例={:.3}-> {:.3}, 保险闸={}-> {}",
                 old.xsynth_buffer_ms,
                 new.synth.xsynth_buffer_ms,
                 old.xsynth_sample_rate,
@@ -153,6 +156,12 @@ impl RunnerInner {
                 new.synth.xsynth_threads,
                 old.xsynth_max_voices_per_key,
                 new.synth.xsynth_max_voices_per_key,
+                old.xsynth_global_voice_limit,
+                new.synth.xsynth_global_voice_limit,
+                old.xsynth_voice_target_ratio,
+                new.synth.xsynth_voice_target_ratio,
+                old.xsynth_soft_nps_gate,
+                new.synth.xsynth_soft_nps_gate,
             );
             self.midi_state.midi.mark_for_reinit();
         }
@@ -227,6 +236,9 @@ impl RunnerInner {
             config.ui.xsynth_sample_rate = new.synth.xsynth_sample_rate;
             config.ui.xsynth_threads = new.synth.xsynth_threads;
             config.ui.xsynth_max_voices_per_key = new.synth.xsynth_max_voices_per_key;
+            config.ui.xsynth_global_voice_limit = new.synth.xsynth_global_voice_limit;
+            config.ui.xsynth_voice_target_ratio = new.synth.xsynth_voice_target_ratio;
+            config.ui.xsynth_soft_nps_gate = new.synth.xsynth_soft_nps_gate;
             config.ui.lgs_block_size = new.synth.lgs_block_size;
             config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;
             config.ui.lgs_velocity_filter_threshold = new.synth.lgs_velocity_filter_threshold;

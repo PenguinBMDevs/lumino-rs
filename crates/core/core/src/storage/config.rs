@@ -218,6 +218,19 @@ pub struct UiConfig {
     /// 力度过滤阈值（力度 <= 此值的音符不播放，0=关闭过滤，最大127）
     #[serde(default = "default_velocity_filter_threshold")]
     pub velocity_filter_threshold: u8,
+    /// XSynth 全局最大并发 voice 数（硬上限/量程）
+    /// 设置越低，渲染越快，但并发发音数越少。
+    /// None = 自动（引擎默认硬上限 10000，由负载治理器决定运行目标）
+    #[serde(default)]
+    pub xsynth_global_voice_limit: Option<usize>,
+    /// XSynth 复音软目标比例：运行目标 = 比例 × 硬上限（负载反馈只会更低、不会更高）
+    /// 默认 1-1/e≈0.632（约 37% 暂态余量）；1-1/e²≈0.865 更激进
+    #[serde(default = "default_xsynth_voice_target_ratio")]
+    pub xsynth_voice_target_ratio: f64,
+    /// XSynth 过载保命闸（软 NPS 闸）：仅在重度过载时临时限速，默认关闭。
+    /// 关闭时不存在任何 NoteOn 丢弃路径。
+    #[serde(default)]
+    pub xsynth_soft_nps_gate: bool,
     /// LGS (GPU) 渲染采样率（Hz），GPU 合成管线以此速率渲染
     #[serde(default = "default_lgs_sample_rate")]
     pub lgs_sample_rate: u32,
@@ -400,6 +413,11 @@ fn default_history_entry_limit() -> usize {
 fn default_merge_window_ms() -> u64 {
     300
 }
+
+/// 复音软目标比例默认值：1-1/e ≈ 0.632（一阶系统目标，留约 37% 暂态余量）
+fn default_xsynth_voice_target_ratio() -> f64 {
+    1.0 - 1.0 / std::f64::consts::E
+}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
@@ -424,6 +442,9 @@ impl Default for UiConfig {
             program_font_path: String::new(),
             auto_scroll: AutoScrollConfig::default(),
             velocity_filter_threshold: default_velocity_filter_threshold(),
+            xsynth_global_voice_limit: None,
+            xsynth_voice_target_ratio: default_xsynth_voice_target_ratio(),
+            xsynth_soft_nps_gate: false,
             icon_hidpi: true,
             enable_256key: false,
             velocity_curve_style: true,

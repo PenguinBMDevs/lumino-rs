@@ -19,9 +19,7 @@ macro_rules! tracy_zone {
 /// 未启用 `tracy` feature 时的空操作版本（不产生任何代码）。
 #[cfg(not(feature = "tracy"))]
 macro_rules! tracy_zone {
-    ($name:literal, $body:block) => {{
-        $body
-    }};
+    ($name:literal, $body:block) => {{ $body }};
 }
 
 pub(crate) use tracy_zone;
