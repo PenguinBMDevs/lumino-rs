@@ -16,6 +16,8 @@ default = ["realtime"]
 realtime = ["dep:xsynth-realtime"]
 # Tracy 性能剖析：启用后播放线程与 xsynth 音频线程发射 zone（默认构建零开销）
 tracy = ["dep:tracy-client", "xsynth-realtime?/tracy", "xsynth-core/tracy"]
+# voice 阶段级性能探针：转发 xsynth-core 的 voice_probe feature（默认构建零开销）
+voice_probe = ["xsynth-core/voice_probe"]
 
 [dependencies]
 lumino-midi-model = { workspace = true }
