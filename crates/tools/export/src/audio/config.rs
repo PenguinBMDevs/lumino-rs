@@ -34,7 +34,11 @@ pub struct AudioRenderConfig {
     pub sample_rate: u32,
     /// 声道数
     pub channels: AudioChannelMode,
-    /// 每通道最大层数（None = 不限）
+    /// 每 (通道, 键) 最大同时发声数（`None` / `Some(0)` = 不限）。
+    ///
+    /// 计数口径随后端：CPU（xsynth）按层/voice 计，GPU（LGS）按音符组计
+    /// （一个音符的全部 zone 算一组）。两端都必须经 [`normalize_layer_limit`]
+    /// 归一化后再消费。
     pub layer_limit: Option<usize>,
     /// 通道级多线程
     pub channel_threading: ThreadMode,
@@ -249,16 +253,26 @@ impl AudioRenderConfig {
     }
 }
 
-/// 将 UI 的"层数限制"输入换算为 [`AudioRenderConfig::layer_limit`]。
+/// 归一化每键复音/层数配置：`None` 与 `Some(0)` 统一表示"不限"。
+///
+/// **所有消费 [`AudioRenderConfig::layer_limit`] 的后端都必须走这里**，因为
+/// `Some(0)` 不是"0 个音符"而是历史遗留的"不限"写法，直传会得到两套行为：
+/// xsynth 的 `SetLayerCount(Some(0))` 会退化成"每键只保留最新一组"（该键其余
+/// 音符全部无声），而 GPU 侧 `max_voices_per_key = 0` 是"不限制"。
+pub fn normalize_layer_limit(limit: Option<usize>) -> Option<usize> {
+    match limit {
+        None | Some(0) => None,
+        Some(n) => Some(n),
+    }
+}
+
+/// 将 UI 的"层数限制/每键复音"输入换算为 [`AudioRenderConfig::layer_limit`]。
 ///
 /// UI 的 `0` 表示"无限制"：xsynth 通过 `SetLayerCount(None)` 表达，GPU 后端通过
 /// `None → max_voices_per_key = 0` 表达。绝不能映射为 `Some(0)`（xsynth 会每键只
 /// 保留最新一组）或 `Some(1)`（GPU 全局上限被压到 1）。
 pub fn layer_limit_from_ui(layers: u32) -> Option<usize> {
-    match layers {
-        0 => None,
-        n => Some(n as usize),
-    }
+    normalize_layer_limit(Some(layers as usize))
 }
 
 impl Default for AudioRenderConfig {
@@ -303,6 +317,16 @@ mod tests {
         assert_eq!(layer_limit_from_ui(0), None);
         assert_eq!(layer_limit_from_ui(1), Some(1));
         assert_eq!(layer_limit_from_ui(32), Some(32));
+    }
+
+    #[test]
+    fn test_normalize_layer_limit_folds_some_zero_into_none() {
+        // Some(0) 是历史遗留的"不限"写法：CPU 与 GPU 必须看到同一个语义，
+        // 否则 CPU 侧 SetLayerCount(Some(0)) 会把该键压成"只保留最新一组"。
+        assert_eq!(normalize_layer_limit(None), None);
+        assert_eq!(normalize_layer_limit(Some(0)), None);
+        assert_eq!(normalize_layer_limit(Some(1)), Some(1));
+        assert_eq!(normalize_layer_limit(Some(256)), Some(256));
     }
 
     #[test]
