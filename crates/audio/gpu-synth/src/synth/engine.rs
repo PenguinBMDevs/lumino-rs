@@ -42,6 +42,43 @@ const MAX_RENDER_FRAMES: u64 = 1 << 31;
 /// `AudioExportControl`).
 pub type RenderCheckpoint = Arc<dyn Fn() -> bool + Send + Sync>;
 
+/// 离线渲染的进度事件（供导出 UI 展示真实进度；不参与音频数据流）。
+///
+/// `done` / `total` 的语义随阶段不同：
+/// - [`RenderProgress::Prewarm`]：音色重采样/上传的采样条目数；
+/// - [`RenderProgress::Render`]：已渲染帧数 / 渲染地平线帧数
+///   （`events_end + max_tail`，被限帧调用时以调用方给出的帧数为准）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RenderProgress {
+    /// 预载音色库：重采样并上传离线渲染需要的采样。
+    Prewarm {
+        /// 已处理的采样条目数。
+        done: u64,
+        /// 需要处理的总采样条目数。
+        total: u64,
+    },
+    /// 主渲染：按块推进。
+    Render {
+        /// 已渲染帧数（不超过 `total`）。
+        done: u64,
+        /// 渲染地平线总帧数。
+        total: u64,
+    },
+}
+
+/// 离线渲染进度回调：在渲染线程内按预载分片 / 渲染块调用。
+///
+/// 回调必须轻量且不可阻塞（只做转发），节流由调用方负责（见 `lumino-export`
+/// 的 `gpu_backend`）。回调为 `Fn`，可以被安全地重复调用。
+pub type RenderProgressFn = Arc<dyn Fn(RenderProgress) + Send + Sync>;
+
+/// 不依赖 `&self` 的进度转发（供 `&mut self` 字段被借用的热循环使用）。
+fn report_progress(callback: &Option<RenderProgressFn>, progress: RenderProgress) {
+    if let Some(cb) = callback {
+        cb(progress);
+    }
+}
+
 /// Runs a checkpoint without needing `&self` (lets hot loops keep a cloned
 /// handle while other `self` fields are mutably borrowed).
 fn checkpoint_ok(checkpoint: &Option<RenderCheckpoint>) -> Result<(), SynthError> {
@@ -461,6 +498,8 @@ pub struct GpuSynth {
     /// Cooperative cancel/pause checkpoint for offline renders (see
     /// [`RenderCheckpoint`]); `None` = non-cancellable.
     render_checkpoint: Option<RenderCheckpoint>,
+    /// 离线渲染进度回调（见 [`RenderProgressFn`]）；`None` = 不报告。
+    render_progress: Option<RenderProgressFn>,
 }
 
 /// A submission whose readback is still outstanding (see `GpuSynth::pending`).
@@ -909,6 +948,7 @@ impl GpuSynth {
             pending: None,
             belt: wgpu::util::StagingBelt::new(1 << 20),
             render_checkpoint: None,
+            render_progress: None,
         };
         engine.rebuild_bind_groups();
         Ok(engine)
@@ -927,6 +967,19 @@ impl GpuSynth {
     /// It may block to implement pause, but must keep observing cancellation.
     pub fn set_render_checkpoint(&mut self, checkpoint: Option<RenderCheckpoint>) {
         self.render_checkpoint = checkpoint;
+    }
+
+    /// 设置离线渲染进度回调（`None` = 关闭）。
+    ///
+    /// 回调在渲染线程内被调用，必须轻量且不可阻塞；节流与 UI 映射由
+    /// 调用方负责（导出侧见 `lumino-export` 的 `gpu_backend`）。
+    pub fn set_render_progress(&mut self, callback: Option<RenderProgressFn>) {
+        self.render_progress = callback;
+    }
+
+    /// 内部：向进度回调转发一次事件（回调为 `Fn`，可安全重复调用）。
+    fn report_render_progress(&self, progress: RenderProgress) {
+        report_progress(&self.render_progress, progress);
     }
 
     /// Runs the cooperative checkpoint (if any); `false` = cancelled.
@@ -1465,6 +1518,7 @@ impl GpuSynth {
         // use, resample it in parallel and upload it to the GPU up front, so
         // the render loop never stalls on a lazily-resampled sample or pays
         // per-block sample uploads during the dense sections.
+        let mut prewarm_total: u64 = 0;
         if let Some(sf) = self.sf.as_ref() {
             let mut wanted: Vec<usize> = Vec::new();
             for ev in &self.offline_events {
@@ -1479,6 +1533,8 @@ impl GpuSynth {
             wanted.sort_unstable();
             wanted.dedup();
             let rate = self.config.sample_rate;
+            prewarm_total = wanted.len() as u64;
+            let mut prewarm_done: u64 = 0;
             let mut pre: Vec<(usize, Arc<[f32]>)> = Vec::with_capacity(wanted.len());
             for chunk in wanted.chunks(64) {
                 self.check_render_checkpoint()?;
@@ -1487,6 +1543,11 @@ impl GpuSynth {
                         .par_iter()
                         .map(|&id| (id, sf.resample_uncached(id, rate))),
                 );
+                prewarm_done += chunk.len() as u64;
+                self.report_render_progress(RenderProgress::Prewarm {
+                    done: prewarm_done,
+                    total: prewarm_total,
+                });
             }
             // The upload loop holds `&mut self.sf`, so the checkpoint handle is
             // cloned out and polled via the free function instead of `&self`.
@@ -1513,6 +1574,13 @@ impl GpuSynth {
             if grown {
                 self.render_bg_dirty = true;
             }
+        }
+        if prewarm_total > 0 {
+            // 上传循环结束后统一收尾，保证导出侧看到 100% 预载。
+            self.report_render_progress(RenderProgress::Prewarm {
+                done: prewarm_total,
+                total: prewarm_total,
+            });
         }
 
         // Render timeout guard: the offline loops must terminate on their own
@@ -1579,6 +1647,10 @@ impl GpuSynth {
             self.render_block(&mut block_buf)?;
             let rb_dt = rb_t0.elapsed();
             progress.tick(self.global_frame);
+            self.report_render_progress(RenderProgress::Render {
+                done: self.global_frame.min(max_frames),
+                total: max_frames,
+            });
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
             if rb_dt.as_millis() > 30 {
                 eprintln!(
@@ -1618,6 +1690,10 @@ impl GpuSynth {
             self.check_render_checkpoint()?;
             self.render_block(&mut block_buf)?;
             progress.tick(self.global_frame);
+            self.report_render_progress(RenderProgress::Render {
+                done: self.global_frame.min(max_frames),
+                total: max_frames,
+            });
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
             if silent {
                 break;
@@ -1810,6 +1886,11 @@ impl GpuSynth {
         // — same set as `render_midi_inner` but without consuming the stream,
         // so no `rewind` needed. The old heap-scan produced 299 sample diffs
         // when skipped (lazy per-block uploads race the pipeline).
+        //
+        // 进度回调先克隆出来：下面的上传循环持有 `&mut self.sf`，不能借用 `self`。
+        let progress_cb = self.render_progress.clone();
+        let mut prewarm_total: u64 = 0;
+        let mut prewarm_done: u64 = 0;
         {
             let mut wanted: Vec<usize> = Vec::new();
             if let Some(sf_ref) = self.sf.as_ref() {
@@ -1824,6 +1905,7 @@ impl GpuSynth {
                 wanted.dedup();
             }
             if !wanted.is_empty() {
+                prewarm_total = wanted.len() as u64;
                 let rate = self.config.sample_rate;
                 // Chunked resample+upload to keep peak <100 MB (was holding all Arcs at once: 200 MB+)
                 let mut grown = false;
@@ -1856,11 +1938,28 @@ impl GpuSynth {
                         self.sample_offsets.insert(id, (offset, len));
                         self.samples_next_offset = offset + len;
                     }
+                    prewarm_done += chunk.len() as u64;
+                    report_progress(
+                        &progress_cb,
+                        RenderProgress::Prewarm {
+                            done: prewarm_done,
+                            total: prewarm_total,
+                        },
+                    );
                 }
                 if grown {
                     self.render_bg_dirty = true;
                 }
             }
+        }
+        if prewarm_total > 0 {
+            report_progress(
+                &progress_cb,
+                RenderProgress::Prewarm {
+                    done: prewarm_total,
+                    total: prewarm_total,
+                },
+            );
         }
 
         let events_end = stream.end_sample();
@@ -1902,6 +2001,10 @@ impl GpuSynth {
             self.render_block_streaming(&mut block_buf, &mut stream)?;
             let rb_dt = rb_t0.elapsed();
             progress.tick(self.global_frame);
+            self.report_render_progress(RenderProgress::Render {
+                done: self.global_frame.min(max_frames),
+                total: max_frames,
+            });
             self.check_memory()?;
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
             if rb_dt.as_millis() > 30 {
@@ -1939,6 +2042,10 @@ impl GpuSynth {
             self.check_render_checkpoint()?;
             self.render_block_streaming(&mut block_buf, &mut stream)?;
             progress.tick(self.global_frame);
+            self.report_render_progress(RenderProgress::Render {
+                done: self.global_frame.min(max_frames),
+                total: max_frames,
+            });
             let silent = block_buf.iter().all(|s| s.abs() <= threshold);
             if silent {
                 break;
