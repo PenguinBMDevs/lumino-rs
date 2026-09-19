@@ -65,10 +65,6 @@ pub struct XSynthOptions {
     pub audio_output_device: Option<String>,
 }
 
-/// MIDI 通道数：每个通道对应一个独立渲染线程（xsynth 通道线程模型）。
-/// 逻辑核不超过该值时，通道线程已可占满全部核心。
-const MIDI_CHANNEL_RENDER_THREADS: usize = crate::constants::MIDI_CHANNEL_COUNT as usize;
-
 /// 探测进程可用逻辑核数（至少为 1）。
 fn available_parallelism() -> usize {
     std::thread::available_parallelism()
@@ -76,32 +72,80 @@ fn available_parallelism() -> usize {
         .unwrap_or(1)
 }
 
-/// 强制线程策略（不对外提供控制）：把机器可用线程用到最大，同时避免通道内池的队头阻塞。
+/// 线程池逃生口环境变量（**仅供 A/B 复测**，不对外暴露为设置项）。
+const THREAD_POOL_ENV: &str = "XSYNTH_THREAD_POOL";
+
+/// 解析线程池逃生口（纯函数，便于单测）。
 ///
-/// - 逻辑核 ≤ 16（MIDI 通道数）：16 个通道渲染线程已可占满全部核，使用 `None`
-///   （每通道独立线程、互不耦合）；
-/// - 逻辑核 > 16：额外核心只能通过通道内并行池利用，使用 `Manual(逻辑核数)`。
-///
-/// 实测结论（16 通道并发 × 每通道 ~512 voices、100ms 块、12/6/4/2 逻辑核四档）：
-/// - 共享 rayon 池最坏单块 0.96~4.6s（队头阻塞：块耗时取决于最晚完成的通道）；
-/// - 无池最坏单块 0.14~0.57s，且最坏通道均值全面不劣于池。
-///
-/// 故 ≤16 核一律用 `None`。>16 核场景暂无实测数据，属"额外核可用"的扩展策略，
-/// 上线后应在高核机器上复测尾延迟；如有问题把该分支改回 `None` 即可。
-fn forced_thread_count(logical_cores: usize) -> LuminoThreadCount {
-    if logical_cores > MIDI_CHANNEL_RENDER_THREADS {
-        LuminoThreadCount::Manual(logical_cores)
-    } else {
-        LuminoThreadCount::None
+/// - 未设置 / `0` / `none` / `off` / `false` / 非法值 → `ThreadCount::None`（默认策略）；
+/// - `manual` / `on` / `true` → `Manual(逻辑核数)`（复现历史行为，用于在高核机器上对比）；
+/// - 正整数 → `Manual(n)`（指定池线程数）。
+fn parse_thread_pool_override(value: Option<&str>, logical_cores: usize) -> LuminoThreadCount {
+    match value.map(str::trim) {
+        None | Some("") | Some("0") | Some("none") | Some("off") | Some("false") => {
+            LuminoThreadCount::None
+        }
+        Some("manual") | Some("on") | Some("true") => {
+            LuminoThreadCount::Manual(logical_cores.max(1))
+        }
+        Some(raw) => raw
+            .parse::<usize>()
+            .ok()
+            .filter(|threads| *threads > 0)
+            .map(LuminoThreadCount::Manual)
+            .unwrap_or(LuminoThreadCount::None),
     }
+}
+
+/// 线程策略：**始终不使用通道内并行池**（`ThreadCount::None`）。
+///
+/// 每通道一个独立渲染线程（16 通道 = 16 线程），通道之间互不耦合。
+///
+/// 为什么不按核数切换到通道内 rayon 池（历史 `>16 逻辑核 → Manual(核数)` 分支）：
+///
+/// 1. 该池是**全部 16 个通道共享**的（`prepare_channels` 里 `Arc<ThreadPool>` 被克隆给每个
+///    通道），因此并不提供"每通道更多并行"，只是把 16 个通道串行排进同一个池 —— 队头阻塞。
+///    既有实测（16 通道并发 × 每通道 ~512 voices、100ms 块、12/6/4/2 逻辑核四档）：
+///    共享池最坏单块 0.96~4.6s，无池最坏单块 0.14~0.57s，无池全面不劣。
+/// 2. `ThreadCount::Manual(_)` 会让 xsynth 侧 `set_batch_render_available(false)`
+///    （见 `RealtimeSynth::open`），**连带关闭 B1 跨 voice 批渲染**——那是 fork 的核心优化。
+///    于是 >16 核机器同时失去批渲染、又背上队头阻塞，是双重劣势。
+/// 3. 高核机器上剩余的核并非没有用处：缓冲渲染线程、音频回调、播放线程与 UI 都在抢核，
+///    `>16` 分支把"额外核可用"直接等同于"通道内并行更划算"，缺少实测支撑。
+///
+/// 因此本函数不再按核数分支：**任何核数都走无池 + 批渲染**。
+/// 需要在真实高核机器上复测尾延迟时，用 `XSYNTH_THREAD_POOL=manual` 一键切回池化做 A/B。
+fn forced_thread_count(logical_cores: usize) -> LuminoThreadCount {
+    let raw = std::env::var(THREAD_POOL_ENV).ok();
+    let mode = parse_thread_pool_override(raw.as_deref(), logical_cores);
+    if !matches!(mode, LuminoThreadCount::None) {
+        tracing::warn!(
+            "XSynth: {THREAD_POOL_ENV}={:?} 覆盖线程策略 → {mode:?}（仅供 A/B 复测，会关闭批渲染）",
+            raw.unwrap_or_default()
+        );
+    }
+    mode
 }
 
 /// 按当前机器强制解析线程模式（供 `init_synth` 使用）。
 fn machine_thread_count() -> LuminoThreadCount {
     let logical = available_parallelism();
-    tracing::debug!("XSynth: 机器自适应线程策略（{logical} 逻辑核）");
+    tracing::debug!("XSynth: 固定线程策略（{logical} 逻辑核，无通道内并行池、启用批渲染）");
     forced_thread_count(logical)
 }
+
+/// 渲染块时长（ms）：MIDI 事件按渲染块边界批量应用，块越小音符落点量化误差越小。
+const RENDER_WINDOW_MS: f64 = 10.0;
+
+/// 缓冲目标地板（ms）。
+///
+/// 用户的"缓冲区"设置被用作**总缓冲目标**（与渲染块解耦），但后端强制 ≥ 该值：
+/// 渲染尖峰与系统调度抖动需要深缓冲兜底，低于此值在重载下会出现欠载/爆音。
+///
+/// 与 UI 的不一致必须显式告警而非静默抬升：UI 滑块量程 5–100ms、
+/// 默认值 30ms（`default_synth_buffer`），因此**默认配置本身就低于地板**，
+/// 用户拉到任何值（含默认）实际都按 100ms 运行。
+const MIN_CUSHION_MS: f64 = 100.0;
 
 /// 归一化每键最大同音数：`None` / `0` = 不限制；其余夹紧到 1..=128。
 ///
@@ -206,8 +250,20 @@ impl XSynth {
             // 渲染块固定 10ms：MIDI 事件按渲染块边界批量应用，块越小音符落点
             // 量化误差越小（节奏更准）；用户的"缓冲区"设置改为总缓冲目标，
             // 与块大小解耦，用于吸收渲染尖峰与系统调度抖动。
-            rt_config.render_window_ms = 10.0;
-            rt_config.cushion_ms = opt.buffer_ms.max(100.0);
+            rt_config.render_window_ms = RENDER_WINDOW_MS;
+            // 缓冲目标地板：低于地板一律按地板运行，并显式告警（不再静默抬升）。
+            let requested_cushion_ms = opt.buffer_ms;
+            let cushion_ms = requested_cushion_ms.max(MIN_CUSHION_MS);
+            if requested_cushion_ms < MIN_CUSHION_MS {
+                tracing::warn!(
+                    "XSynth: 缓冲区设置 {:.1}ms 低于后端地板 {:.0}ms，实际按 {:.0}ms 运行；\
+                     UI 滑块量程/默认值需与后端地板对齐（当前不一致会让该设置看起来无效）",
+                    requested_cushion_ms,
+                    MIN_CUSHION_MS,
+                    cushion_ms
+                );
+            }
+            rt_config.cushion_ms = cushion_ms;
 
             // 每通道上限关闭（None），改用跨通道全局上限。
             rt_config.channel_init_options.max_voices = opt.max_voices_per_channel;
@@ -382,20 +438,59 @@ mod tests {
     use super::*;
 
     #[test]
-    fn forced_thread_count_uses_max_threads_without_pool_on_low_core() {
-        assert!(available_parallelism() >= 1, "逻辑核数应至少为 1");
-
-        // ≤ 16 逻辑核：通道线程已可占满全部核 → 无池（避免队头阻塞）
-        for cores in [1usize, 2, 4, 6, 12, 16] {
+    fn thread_policy_never_uses_channel_pool_by_default() {
+        // 关键回归：任何核数都必须走「无池 + 批渲染」，
+        // 不得再按 >16 逻辑核切到「共享池 + 关批渲染」的历史分支。
+        for cores in [1usize, 2, 4, 6, 12, 16, 17, 24, 32, 64] {
             assert_eq!(
-                forced_thread_count(cores),
+                parse_thread_pool_override(None, cores),
                 LuminoThreadCount::None,
-                "{cores} 逻辑核应解析为无通道内池"
+                "{cores} 逻辑核默认必须无通道内池"
             );
         }
-        // > 16 逻辑核：额外核通过通道内池利用
-        assert_eq!(forced_thread_count(17), LuminoThreadCount::Manual(17));
-        assert_eq!(forced_thread_count(32), LuminoThreadCount::Manual(32));
+        assert!(available_parallelism() >= 1, "逻辑核数应至少为 1");
+        // 未设置逃生口时，真实解析路径同样恒为无池。
+        if std::env::var(THREAD_POOL_ENV).is_err() {
+            assert_eq!(forced_thread_count(32), LuminoThreadCount::None);
+        }
+    }
+
+    #[test]
+    fn thread_pool_override_parses_only_whitelisted_values() {
+        // 只有显式白名单才允许切回池化（A/B 复测用）；其余一律保持默认无池。
+        for value in [
+            None,
+            Some(""),
+            Some("   "),
+            Some("0"),
+            Some("none"),
+            Some("off"),
+            Some("false"),
+            Some("bogus"),
+            Some("-1"),
+        ] {
+            assert_eq!(
+                parse_thread_pool_override(value, 24),
+                LuminoThreadCount::None,
+                "{value:?} 应保持默认无池"
+            );
+        }
+        for value in [Some("manual"), Some("on"), Some("true"), Some(" manual ")] {
+            assert_eq!(
+                parse_thread_pool_override(value, 24),
+                LuminoThreadCount::Manual(24),
+                "{value:?} 应强制池化"
+            );
+        }
+        assert_eq!(
+            parse_thread_pool_override(Some("8"), 24),
+            LuminoThreadCount::Manual(8)
+        );
+        // 异常环境（逻辑核数 0）也不得构造出合法的 Manual(0)。
+        assert_eq!(
+            parse_thread_pool_override(Some("manual"), 0),
+            LuminoThreadCount::Manual(1)
+        );
     }
 
     #[test]
