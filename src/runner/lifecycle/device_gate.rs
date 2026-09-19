@@ -3,7 +3,7 @@
 //! 在 `resumed` 初始化主窗口之前执行：
 //! 1. 只读加载配置（`Storage::new` 不写盘）
 //! 2. 策略判定（是否检查 / 失败是否弹窗）
-//! 3. 指纹缓存命中时仅廉价探测，否则完整无头检测（≤3s 超时）
+//! 3. 指纹缓存命中（TTL 内 + 指纹一致）时仅廉价探测，否则完整无头检测（≤3s 超时）
 //! 4. 失败：按策略弹警告窗（等待用户）或静默继续（日志 + 状态栏提示）
 
 use lumino_gfx::device_check::{self, GpuCheckFailure, GpuCheckReport};
@@ -47,20 +47,43 @@ impl Runner {
         let config = storage.config.get();
         let cached_fp = config.ui.gpu_last_fingerprint.clone();
         let cached_passed = config.ui.gpu_last_passed;
+        let cached_time = config.ui.gpu_last_check_time;
         let ui_snapshot = config.ui.clone();
 
-        // 指纹缓存命中（上次通过且适配器指纹仍在）：廉价探测后直接放行。
-        // 调试强制失败时不走缓存，保证 LUMINO_FORCE_DEVICE_CHECK_FAIL 可复现。
-        let cache_hit = !device_check::debug_force_fail_requested()
-            && cached_passed == Some(true)
-            && cached_fp.as_deref().is_some_and(|fp| {
-                device_check::probe_adapter_fingerprints()
-                    .iter()
-                    .any(|probe| probe.as_str() == fp)
-            });
+        // 缓存时效：上次完整检测的时间戳必须在 TTL 内。
+        // macOS（Metal）的适配器指纹恒定（driver / driver_info 为空串），只有时间兜底才能让
+        // 系统 / 驱动大版本升级后重新检测；旧配置缺 gpu_last_check_time、系统时钟异常、
+        // 调试开关强制过期 → 一律按 miss 处理（宁可多检一次，不漏检）。
+        let within_ttl = if device_check_policy::debug_expire_cache_requested() {
+            tracing::warn!("LUMINO_DEBUG_STALE_GPU_CACHE 已设置：强制按缓存过期处理，执行全量检测");
+            false
+        } else if device_check_policy::cache_within_ttl(cached_time, storage::now_unix_secs()) {
+            true
+        } else {
+            tracing::info!(
+                "GPU 检测缓存已过期或缺失（上次检测时间戳 {:?}，TTL {} 天），执行全量检测",
+                cached_time,
+                device_check_policy::GPU_CHECK_CACHE_TTL_DAYS
+            );
+            false
+        };
+
+        // 指纹缓存命中（TTL 内 + 上次通过 + 适配器指纹仍在）：廉价探测后直接放行。
+        // 调试强制失败时不走缓存，保证 LUMINO_FORCE_DEVICE_CHECK_FAIL 可复现；
+        // TTL 过期时不执行廉价探测，直接落回全量检测。
+        let cache_hit = device_check_policy::cache_hit(
+            within_ttl,
+            device_check::debug_force_fail_requested(),
+            cached_passed,
+            cached_fp.as_deref(),
+            device_check::probe_adapter_fingerprints,
+        );
 
         let report = if cache_hit {
-            tracing::info!("GPU 适配器指纹未变化，跳过完整试画检测（缓存命中）");
+            tracing::info!(
+                "GPU 适配器指纹未变化，跳过完整试画检测（缓存命中，上次检测时间戳 {:?}）",
+                cached_time
+            );
             GpuCheckReport {
                 passed: true,
                 failure: None,
@@ -76,7 +99,11 @@ impl Runner {
 
         let fingerprint = report.fingerprint.clone();
         let passed = report.passed;
-        let cache_changed = cached_fp != fingerprint || cached_passed != Some(passed);
+        // 结果有变化，或本次未走缓存（TTL 过期 / 旧配置无时间戳 / 调试开关）→ 需要回写。
+        // 注意 `!within_ttl`：TTL 过期触发的全量检测必须刷新时间戳，否则此后每次启动
+        // 都会被判定为过期，退化成"每次启动都全量检测"。
+        let cache_changed =
+            !within_ttl || cached_fp != fingerprint || cached_passed != Some(passed);
 
         if passed {
             if cache_changed

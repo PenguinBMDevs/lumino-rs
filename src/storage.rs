@@ -102,6 +102,17 @@ pub fn config_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+/// 当前 Unix 时间戳（秒）；系统时钟早于 epoch（异常）时返回 `None`。
+///
+/// GPU 检测缓存 TTL 把 `None` 解释为"时间不可信"：调用方一律按缓存过期处理，
+/// 宁可多检一次也不漏检。
+pub(crate) fn now_unix_secs() -> Option<u64> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()
+        .map(|elapsed| elapsed.as_secs())
+}
+
 // 存储系统，存一些配置文件和状态文件
 impl Storage {
     // 创建一个新的存储系统
@@ -124,10 +135,13 @@ impl Storage {
         })
     }
 
-    /// 持久化 GPU 检测缓存（指纹 + 结果），并补写"已初始化"标记。
+    /// 持久化 GPU 检测缓存（指纹 + 结果 + 检测时刻），并补写"已初始化"标记。
     ///
     /// 全新安装首次运行后调用：把 `gpu_warning_suppressed` 从 `None` 固化为
     /// `Some(false)`，避免下一次启动被误判为旧版配置而静默。
+    ///
+    /// `gpu_last_check_time` 记录本次完整检测的时刻（Unix 秒），供启动门控做 TTL 判定；
+    /// 系统时钟异常时写 `None`，等价于"无时间戳"，下次启动按缓存过期处理。
     pub fn persist_gpu_check_cache(
         &mut self,
         fingerprint: Option<&str>,
@@ -136,6 +150,7 @@ impl Storage {
         self.config.patch(|c| {
             c.ui.gpu_last_fingerprint = fingerprint.map(str::to_string);
             c.ui.gpu_last_passed = Some(passed);
+            c.ui.gpu_last_check_time = now_unix_secs();
             if c.ui.gpu_warning_suppressed.is_none() {
                 c.ui.gpu_warning_suppressed = Some(false);
             }
