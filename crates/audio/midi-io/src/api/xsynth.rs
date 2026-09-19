@@ -30,6 +30,19 @@ pub struct XSynthStats {
     pub average_renderer_load: f64,
     /// 缓冲区样本数
     pub buffer_samples: i64,
+    /// 事件队列当前深度（跨通道取最后采样值，单位：事件数）
+    ///
+    /// 正常播放为个位数~几十；**持续上涨即说明接入侧跟不上**（引擎的接入上限 =
+    /// `DRAIN_CAP × 2 × 块率 × 在用通道数`，实测 16 通道 ≈ 84 万事件/秒、
+    /// 单通道仅 ≈ 5.1 万事件/秒）。详见
+    /// `realtime/examples/ingest_ceiling.rs` 与 `docs/2026-09-19-XSynth实时后端性能扫描与修复记录.md`。
+    pub event_queue_depth: i64,
+    /// 事件队列深度高水位（自启动以来最大值，单位：事件数）
+    pub event_queue_high_water: i64,
+    /// 被丢弃的 NoteOn 总数（紧急模式直接丢弃 + 洪峰队列冲洗）
+    ///
+    /// 保命闸关闭且未进入紧急模式时恒为 0，即"无丢音"。
+    pub emergency_dropped_notes: u64,
 }
 
 /// XSynth 后端打开选项
@@ -344,6 +357,9 @@ impl XSynth {
             voice_count: stats.voice_count(),
             average_renderer_load: stats.buffer().average_renderer_load(),
             buffer_samples: stats.buffer().last_samples_after_read(),
+            event_queue_depth: stats.event_queue_depth(),
+            event_queue_high_water: stats.event_queue_high_water(),
+            emergency_dropped_notes: stats.emergency_dropped_notes(),
         }
     }
 
