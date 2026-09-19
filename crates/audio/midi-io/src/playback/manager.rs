@@ -71,6 +71,12 @@ impl PlaybackManager {
         let last_frame = Arc::new(Mutex::new(None::<PlaybackFrame>));
         let callback = Arc::new(Mutex::new(None::<PlaybackCallback>));
 
+        #[cfg(feature = "tracy")]
+        {
+            // 提前启动 Tracy 客户端，保证播放线程 zone 不依赖合成器初始化时序。
+            let _ = tracy_client::Client::start();
+        }
+
         let thread_handle = thread::spawn({
             let frame_tx = frame_tx;
             let last_frame = Arc::clone(&last_frame);
@@ -81,48 +87,56 @@ impl PlaybackManager {
 
                 loop {
                     // 处理所有挂起的命令
-                    while let Ok(cmd) = receiver.try_recv() {
-                        if matches!(cmd, Command::Quit) {
-                            return;
+                    crate::profiling::tracy_zone!("playback_cmds", {
+                        while let Ok(cmd) = receiver.try_recv() {
+                            if matches!(cmd, Command::Quit) {
+                                return;
+                            }
+                            commands::handle_command(
+                                cmd,
+                                &mut engine,
+                                &mut midi_output,
+                                &frame_tx,
+                                &last_frame,
+                            );
                         }
-                        commands::handle_command(
-                            cmd,
-                            &mut engine,
-                            &mut midi_output,
-                            &frame_tx,
-                            &last_frame,
-                        );
-                    }
+                    });
 
                     // 仅在播放/暂停（仍需要定时推进）时启用高精度 1ms 定时循环；
                     // 空闲时阻塞等待命令，避免空转烧满一个核。
                     if engine.is_playing() {
                         // 更新引擎并发送 MIDI 消息
-                        let messages = engine.update();
-                        commands::flush_midi_messages(messages, &mut midi_output);
+                        let messages = crate::profiling::tracy_zone!("playback_update", {
+                            engine.update()
+                        });
+                        crate::profiling::tracy_zone!("playback_flush", {
+                            commands::flush_midi_messages(messages, &mut midi_output);
+                        });
 
                         // 无阻塞播放回调：构造帧快照并 try_send 到 UI channel，
                         // 同时触发用户注册的回调（轻量非阻塞）。
                         // 满则丢最旧帧，保证 UI 始终拿到最新进度，绝不阻塞播放线程。
-                        let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
-                        // 实时响度峰值：从输出连接读取（XSynth 实现为真实演奏响度）；
-                        // 非合成类输出返回全零。无输出连接时同样为零。
-                        let (channel_levels, master_level) = midi_output
-                            .as_ref()
-                            .map(|out| (out.get_channel_levels(), out.get_master_level()))
-                            .unwrap_or(([0.0; 16], 0.0));
-                        let frame = PlaybackFrame {
-                            tick: engine.current_tick(),
-                            state: engine.state(),
-                            bpm,
-                            channel_levels,
-                            master_level,
-                        };
-                        let _ = frame_tx.try_send(frame);
-                        *last_frame.lock() = Some(frame);
-                        if let Some(cb) = callback.lock().as_mut() {
-                            cb(frame);
-                        }
+                        crate::profiling::tracy_zone!("playback_frame", {
+                            let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
+                            // 实时响度峰值：从输出连接读取（XSynth 实现为真实演奏响度）；
+                            // 非合成类输出返回全零。无输出连接时同样为零。
+                            let (channel_levels, master_level) = midi_output
+                                .as_ref()
+                                .map(|out| (out.get_channel_levels(), out.get_master_level()))
+                                .unwrap_or(([0.0; 16], 0.0));
+                            let frame = PlaybackFrame {
+                                tick: engine.current_tick(),
+                                state: engine.state(),
+                                bpm,
+                                channel_levels,
+                                master_level,
+                            };
+                            let _ = frame_tx.try_send(frame);
+                            *last_frame.lock() = Some(frame);
+                            if let Some(cb) = callback.lock().as_mut() {
+                                cb(frame);
+                            }
+                        });
 
                         // 高精度定时等待：sleep 大部分时间，最后自旋等待精确唤醒。
                         // Windows 默认定时器分辨率为 15.6ms，纯 sleep(1ms) 实际睡 15.6ms，

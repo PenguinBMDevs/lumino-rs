@@ -20,13 +20,13 @@ resolver = "3"
 # - fork 含定制修改：音频设备拔出/更换后，在 stream owner 线程内原地重定向 cpal 流（合成管线不动）
 # - ⚠️ 必须三包一起 patch：fork 的 realtime/soundfonts 通过 workspace path 依赖 fork 内 core，
 #   若只 patch 单个包，会产生 crates.io 与 git 双实例类型分裂（E0308）
-# - rev 固定到 fix/rpn-nrpn-midi-spec 分支 bcd0976（在 2ee23ec RPN 修复之上增加：
-#   NPS 限流可配置 0=不限、BufferedRenderer 保留渲染块富余、SF2 重采样并行）。
-#   显式 rev 防止 `cargo update` 静默回到 master 而丢失修复；分支合并回 master 后改为 master rev。
+# - rev 固定到 master e69b66b（bcd0976 缓冲富余修复 + abf617f 淡出滞留有界化 +
+#   e69b66b Tracy 音频热路径插桩，块/通道级粒度；tracy feature 门控，默认构建零开销）。
+#   显式 rev 防止 `cargo update` 静默漂移而丢失修复。
 [patch.crates-io]
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "bcd0976a382826fc554902fddf6a7cc549f583c9" }
-xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "bcd0976a382826fc554902fddf6a7cc549f583c9" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "bcd0976a382826fc554902fddf6a7cc549f583c9" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "e69b66b84c9a78556388fa3030a4f42cdf01a118" }
+xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "e69b66b84c9a78556388fa3030a4f42cdf01a118" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "e69b66b84c9a78556388fa3030a4f42cdf01a118" }
 
 [workspace.package]
 version = "0.2.1"
@@ -184,6 +184,11 @@ repository.workspace = true
 license.workspace = true
 description.workspace = true
 edition.workspace = true
+
+[features]
+# Tracy 性能剖析：启用后音频/播放热路径发射 zone（默认构建零开销）。
+# 用法：cargo build --profile fast-release --features tracy
+tracy = ["lumino-midi-io/tracy"]
 
 [lints]
 workspace = true

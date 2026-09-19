@@ -11,6 +11,8 @@ pub mod playback;
 pub mod realtime;
 pub mod soundfont_cache;
 
+mod profiling;
+
 pub use constants::*;
 
 use thiserror::Error;
