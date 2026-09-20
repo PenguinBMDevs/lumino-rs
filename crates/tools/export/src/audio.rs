@@ -17,6 +17,7 @@ pub mod limiter;
 pub mod render_loops;
 pub mod renderer;
 pub mod sink_factory;
+pub mod speed;
 pub mod stream;
 pub mod tick_conv;
 
