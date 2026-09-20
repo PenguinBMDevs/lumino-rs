@@ -4310,6 +4310,8 @@ mod tests {
         b.state.ended = 1; // 已结束
         let c = test_voice(3, 64, 0, true);
         assert_eq!(select_damper_release_groups(&[a, b, c], 0), vec![(64, 3)]);
+    }
+
     #[test]
     fn evictions_never_steal_the_protected_group_when_candidates_run_short() {
         // 只有一个组就是保护组：宁可一个都不抢，也不能杀它（"新音符必发声"）。
