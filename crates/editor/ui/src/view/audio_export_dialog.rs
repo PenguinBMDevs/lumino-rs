@@ -79,11 +79,13 @@ fn audio_settings_section<'a>(
         color: Some(label_color),
     };
 
-    // GPU 后端下"启用限幅器/禁用淡出"当前不生效（GPU 引擎始终限幅、固定 1ms 淡出），
-    // 灰显并说明，避免用户误以为它们能改变导出行为。
+    // GPU 后端下"启用限幅器/禁用淡出"不生效（GPU 引擎始终限幅、固定 1ms 淡出）：
+    // 摘掉 on_toggle（iced 会标成 Disabled，样式随之灰显），并且**显示引擎的实际
+    // 行为**而不是用户上次在 CPU 下的选择——否则会出现"看起来没限幅，实际限幅了"
+    // 这种更糟的误导。
     let gpu = state.backend == AudioBackend::Gpu;
     let apply_limiter_cb = {
-        let cb = checkbox(state.apply_limiter)
+        let cb = checkbox(gpu || state.apply_limiter)
             .label(if gpu {
                 "启用限幅器（GPU 引擎始终限幅，此选项对 GPU 无效）"
             } else {
@@ -97,7 +99,7 @@ fn audio_settings_section<'a>(
         }
     };
     let disable_fade_cb = {
-        let cb = checkbox(state.disable_fade_out)
+        let cb = checkbox(!gpu && state.disable_fade_out)
             .label(if gpu {
                 "禁用淡出（GPU 引擎固定 1ms 淡出，此选项对 GPU 无效）"
             } else {

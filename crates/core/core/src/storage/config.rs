@@ -329,6 +329,13 @@ pub struct UiConfig {
     /// 上次 GPU 检测是否通过（配合指纹决定是否可跳过全量检测）
     #[serde(default)]
     pub gpu_last_passed: Option<bool>,
+    /// 上次完整 GPU 检测完成时刻（Unix 秒；配合 TTL 决定缓存是否仍可复用）
+    ///
+    /// 适配器指纹在 macOS（Metal）上恒为常量（`driver` / `driver_info` 均为空串），
+    /// 仅靠指纹无法感知系统 / 驱动大版本升级，故缓存必须带时间兜底。
+    /// `None` = 旧配置缺该字段或系统时钟异常，一律按"缓存过期"处理（宁可多检不漏检）。
+    #[serde(default)]
+    pub gpu_last_check_time: Option<u64>,
 }
 
 fn default_true() -> bool {
@@ -471,6 +478,44 @@ impl Default for UiConfig {
             gpu_warning_suppressed: None,
             gpu_last_fingerprint: None,
             gpu_last_passed: None,
+            gpu_last_check_time: None,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 旧配置（UI-010 之前写入的 `config.json`）缺少 `gpu_last_check_time`：
+    /// 反序列化不得失败，字段落为 `None`，由调用方按"缓存过期"处理。
+    #[test]
+    fn test_legacy_config_without_gpu_check_time_deserializes_to_none() {
+        let mut value =
+            serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化为 JSON");
+        let removed = value
+            .as_object_mut()
+            .expect("UiConfig 序列化结果应为 JSON 对象")
+            .remove("gpu_last_check_time");
+        assert!(removed.is_some(), "默认配置应写出 gpu_last_check_time 键");
+
+        let restored: UiConfig =
+            serde_json::from_value(value).expect("缺时间戳字段的旧配置应能反序列化");
+        assert_eq!(
+            restored.gpu_last_check_time, None,
+            "旧配置缺时间戳字段应落为 None（按缓存过期处理）"
+        );
+    }
+
+    /// 新写入的时间戳可正确往返，供启动 TTL 判定读取。
+    #[test]
+    fn test_gpu_check_time_serde_roundtrip() {
+        let config = UiConfig {
+            gpu_last_check_time: Some(1_700_000_000),
+            ..UiConfig::default()
+        };
+        let json = serde_json::to_string(&config).expect("UiConfig 应能序列化");
+        let restored: UiConfig = serde_json::from_str(&json).expect("UiConfig 应能反序列化");
+        assert_eq!(restored.gpu_last_check_time, Some(1_700_000_000));
     }
 }

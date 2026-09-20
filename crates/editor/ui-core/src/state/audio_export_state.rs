@@ -17,10 +17,8 @@ pub struct AudioExportDialogState {
     pub sample_rate: u32,
     /// 通道数
     pub channels: AudioChannels,
-    /// 每通道层数限制
+    /// 每 (通道, 键) 最大同时发声数（0 = 不限）
     pub layers: u32,
-    /// GPU 导出时最大同时 voice 数（0 = 使用默认值 2048）
-    pub max_voices: u32,
     /// 通道多线程
     pub channel_threading: ThreadingOption,
     /// 按键多线程
@@ -87,7 +85,6 @@ impl AudioExportDialogState {
             sample_rate: 48000,
             channels: AudioChannels::default(),
             layers: 32,
-            max_voices: 2048,
             channel_threading: ThreadingOption::default(),
             key_threading: ThreadingOption::default(),
             apply_limiter: true,

@@ -17,7 +17,10 @@ use xsynth_core::{
 use crate::error::{ExportError, ExportResult};
 
 use super::{
-    config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
+    config::{AudioRenderConfig, normalize_layer_limit},
+    limiter::AudioLimiter,
+    stream::SampleSink,
+    tick_conv::TickToTime,
 };
 
 /// MIDI 弯音事件 → xsynth 归一化值（-1.0..1.0）。
@@ -392,7 +395,9 @@ pub fn load_soundfonts(
         ChannelConfigEvent::SetSoundfonts(soundfonts),
     )));
     channel_group.send_event(SynthEvent::AllChannels(ChannelEvent::Config(
-        ChannelConfigEvent::SetLayerCount(config.layer_limit),
+        // 归一化后再下发：`Some(0)` 绝不能直传 xsynth（会退化成"每键只保留
+        // 最新一组"，该键其余音符全部无声），GPU 侧走同一个 helper。
+        ChannelConfigEvent::SetLayerCount(normalize_layer_limit(config.layer_limit)),
     )));
 
     Ok(())

@@ -31,20 +31,28 @@ pub fn dialog_input_style<'a>(
 }
 
 /// 对话框单选框样式（暗色主题文字反色已修复）
+///
+/// `Disabled`（未挂 `on_toggle` 的复选框）必须真的**看起来**禁用：iced 只负责把
+/// 状态标成 `Disabled`，视觉完全由这里决定——忽略 `status` 会让"灰显"变成
+/// "看着能点、实际点不动"。
 pub fn dialog_checkbox_style<'a>(
     palette: &'a Extended,
 ) -> impl Fn(&iced_core::Theme, iced_widget::checkbox::Status) -> iced_widget::checkbox::Style + 'a
 {
-    move |_theme: &iced_core::Theme, _status: iced_widget::checkbox::Status| {
+    use iced_widget::checkbox::Status;
+    move |_theme: &iced_core::Theme, status: Status| {
+        let disabled = matches!(status, Status::Disabled { .. });
+        // 禁用态统一压到半透明，一眼可辨（不改布局，不影响其他控件）。
+        let dim = |c: iced_core::Color| c.scale_alpha(if disabled { 0.45 } else { 1.0 });
         iced_widget::checkbox::Style {
-            background: iced_core::Background::Color(palette.background.weak.color),
-            icon_color: palette.background.neutral.text,
+            background: iced_core::Background::Color(dim(palette.background.weak.color)),
+            icon_color: dim(palette.background.neutral.text),
             border: iced_core::Border {
                 radius: 4.0.into(),
                 width: 1.0,
-                color: palette.background.strong.color,
+                color: dim(palette.background.strong.color),
             },
-            text_color: Some(palette.background.neutral.text),
+            text_color: Some(dim(palette.background.neutral.text)),
         }
     }
 }

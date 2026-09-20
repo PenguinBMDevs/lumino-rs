@@ -51,12 +51,11 @@ fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth::SynthConf
         }
     };
 
-    // 每键层数与 xsynth 的 SetLayerCount 对齐：GPU 原硬编码 4 导致同音高密集时过度抢占，
-    // 0/None 表示无限制（保持 0 而非 max(4)），其余对显式层数取 max(4) 保底。
-    let max_voices_per_key = match config.layer_limit {
-        None | Some(0) => 0,
-        Some(n) => n.max(4),
-    };
+    // 每键复音与 xsynth 的 SetLayerCount 严格对齐：不做 floor/ceiling 修饰，
+    // 用户设 1 就是 1（旧实现 `n.max(4)` 会把 1..3 静默抬到 4，CPU 侧却按原值，
+    // 导致 issue #31 的 GPU/CPU 对拍在"参数相同"这个前提下就不成立）。
+    // None / Some(0) = 不限制（GPU 侧用 0 表达）。
+    let max_voices_per_key = super::config::normalize_layer_limit(config.layer_limit).unwrap_or(0);
     // 全局复音上限与 layer_limit 解耦：CPU/XSynth 基准与实时 LGS 都没有全局上限
     // （`SynthConfig::default().max_voices == 0`），离线导出必须一致。
     // 旧实现 `max_voices: config.layer_limit.unwrap_or(0)` 在默认 32 层时把全局上限
@@ -547,11 +546,28 @@ mod tests {
             );
             let expected = match layers {
                 None | Some(0) => 0,
-                Some(n) => n.max(4),
+                Some(n) => n,
             };
             assert_eq!(
                 synth.max_voices_per_key, expected,
-                "每键层数应跟随 layer_limit（layers={layers:?}）"
+                "每键复音应原样跟随 layer_limit，不得静默抬高（layers={layers:?}）"
+            );
+        }
+    }
+
+    /// 小值必须原样透传：旧实现 `n.max(4)` 把 UI 的 1..3 静默变成 4，而 CPU
+    /// （xsynth）按原值走 —— 同一个 UI 值两套行为，对拍验收直接失效。
+    #[test]
+    fn gpu_per_key_limit_does_not_silently_raise_small_values() {
+        for small in [1usize, 2, 3] {
+            let config = AudioRenderConfig {
+                layer_limit: Some(small),
+                ..AudioRenderConfig::default()
+            };
+            let synth = build_synth_config(&config);
+            assert_eq!(
+                synth.max_voices_per_key, small,
+                "用户显式设 {small} 时 GPU 不得抬到 4"
             );
         }
     }

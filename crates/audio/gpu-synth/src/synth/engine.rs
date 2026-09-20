@@ -656,8 +656,11 @@ fn spawn_budget_allows(used: u32) -> bool {
 /// - 其余组按 `(vel, note_id)` 升序抢占（同力度先抢旧的），结果确定。
 ///
 /// `groups` 元素为 `(spawn_frame, vel, note_id)`；返回 `groups` 的下标，调用方
-/// 负责实际释放/淡出与索引重建。`need_free ≤ groups.len() - 1`（limit ≥ 1 时）
-/// 由调用方保证，因此保护组之外总有足够候选。
+/// 负责实际释放/淡出与索引重建。
+///
+/// 候选不足时**宁可少抢**（返回个数可以少于 `need_free`），也绝不抢 `protected`
+/// 组：`truncate` 本身就能容忍候选不足，不需要"放开保护"的兜底——那个兜底会
+/// 把"新音符必发声"这条硬不变量悄悄破坏掉。
 fn select_evictions(
     groups: &[(u64, u8, u64)],
     need_free: usize,
@@ -670,11 +673,6 @@ fn select_evictions(
     let mut candidates: Vec<usize> = (0..groups.len())
         .filter(|&i| Some(groups[i].2) != protected_id)
         .collect();
-    if candidates.len() < need_free {
-        // 兜底：保护组不在列表或 limit == 0 的异常输入，允许抢保护组，
-        // 避免这里出现 panic / 死循环。
-        candidates = (0..groups.len()).collect();
-    }
     candidates.sort_by_key(|&i| (groups[i].1, groups[i].2, i));
     candidates.truncate(need_free);
     candidates
@@ -2484,7 +2482,14 @@ impl GpuSynth {
     /// XSynth's `ignored_id`: a fresh note always sounds, the quietest of the
     /// other groups is stolen. O(key voices), so it must only run when the
     /// key exceeds its cap, not per note-on.
+    ///
+    /// `limit == 0` 表示"每键不限制"（与 UI 的 `0=无限`、`spawn_budget_allows`
+    /// 的 0 语义一致），此时不抢占任何组——**绝不能**让 0 走到下面的
+    /// `saturating_sub`，否则"无限制"会变成"杀掉该键全部音符"。
     fn trim_key_voices(&mut self, ch: u8, key: u8, limit: usize, protected: Option<u64>) {
+        if limit == 0 {
+            return;
+        }
         let idx = ch as usize * 128 + key as usize;
         let positions: Vec<usize> = self.key_voices[idx].iter().copied().collect();
         // Group by note_id (spawn order keeps one note's zones adjacent);
@@ -3385,10 +3390,9 @@ impl GpuSynth {
                 let mut groups: Vec<(u64, u8, u64, Vec<usize>)> = Vec::new();
                 for (i, v) in self.voices.iter().enumerate() {
                     match groups.last_mut() {
-                        Some((_, _, nid, _)) if *nid == v.note_id => {}
-                        _ => groups.push((v.spawn_frame, v.vel, v.note_id, Vec::new())),
+                        Some((_, _, nid, g)) if *nid == v.note_id => g.push(i),
+                        _ => groups.push((v.spawn_frame, v.vel, v.note_id, vec![i])),
                     }
-                    groups.last_mut().unwrap().3.push(i);
                 }
                 groups.sort_by_key(|&(spawn, vel, _, _)| (spawn, vel));
                 let mut freed = 0usize;
@@ -4199,5 +4203,17 @@ mod tests {
         b.state.ended = 1; // 已结束
         let c = test_voice(3, 64, 0, true);
         assert_eq!(select_damper_release_groups(&[a, b, c], 0), vec![(64, 3)]);
+    #[test]
+    fn evictions_never_steal_the_protected_group_when_candidates_run_short() {
+        // 只有一个组就是保护组：宁可一个都不抢，也不能杀它（"新音符必发声"）。
+        let only = [(0, 10, 7)];
+        assert!(select_evictions(&only, 1, Some(7)).is_empty());
+        assert!(select_evictions(&only, 9, Some(7)).is_empty());
+        // 候选只有 1 个却要 5 个：抢到候选用尽即停，保护组（8）不受影响。
+        let groups = [(0, 10, 7), (1, 20, 8)];
+        assert_eq!(select_evictions(&groups, 5, Some(8)), vec![0]);
+        // 保护 id 不在列表里（异常输入）：此时全部组都是普通候选。
+        let groups = [(0, 10, 7), (1, 20, 8)];
+        assert_eq!(select_evictions(&groups, 2, Some(99)), vec![0, 1]);
     }
 }
