@@ -38,6 +38,10 @@ pub struct Voice {
     pub release_at: u64,
     /// Whether the voice has been released already.
     pub released: bool,
+    /// NoteOff 已在踏板（CC64）踩下期间到达、等待踏板松开的标记
+    /// （镜像 XSynth 的 `held_by_damper`）：踏板松开时只释放置位的组，
+    /// 仍被按键按住的音符继续发声。纯 CPU 端状态，不参与 WGSL。
+    pub damper_pending: bool,
     /// Exclusive class, if any.
     pub exclusive_class: Option<u8>,
     /// Absolute global frame at which the voice becomes audible.
@@ -223,6 +227,7 @@ pub fn build_voice(
         },
         release_at: u64::MAX,
         released: false,
+        damper_pending: false,
         exclusive_class: zone.exclusive_class,
         start_at,
         spawn_frame: 0, // set by the engine when the voice is spawned
@@ -259,4 +264,60 @@ pub fn refresh_env_stages(v: &mut Voice) {
         .release_idx
         .unwrap_or(v.env_stages.len().saturating_sub(1)) as u32;
     v.finished_idx = (v.env_stages.len().saturating_sub(1)) as u32;
+}
+
+/// 测试用最小声部：只填充 damper/抢占状态机所需的字段，DSP 字段取哑值。
+///
+/// 仅 `cfg(test)` 下存在，供 `engine.rs` 的单测构造可预测的声部列表。
+#[cfg(test)]
+pub(crate) fn test_voice(note_id: u64, key: u8, channel: u8, damper_pending: bool) -> Voice {
+    Voice {
+        id: note_id as u32,
+        note_id,
+        key,
+        vel: 100,
+        channel,
+        zone_id: 0,
+        state: VoiceState::default(),
+        release_at: u64::MAX,
+        released: false,
+        damper_pending,
+        exclusive_class: None,
+        start_at: 0,
+        spawn_frame: 0,
+        positions: ZonePositions {
+            offset: 0,
+            loop_start: 0,
+            loop_end: 0,
+            sample_end: 0,
+        },
+        sample_len: 0,
+        sample_id: 0,
+        sample_id_r: 0,
+        sample_offset_r: 0,
+        speed: 1.0,
+        amp: 1.0,
+        pan_l: 1.0,
+        pan_r: 1.0,
+        loop_mode: LoopMode::NoLoop,
+        filter: None,
+        env_stages: Vec::new(),
+        envelope_desc: EnvelopeDescriptor {
+            start_percent: 0.0,
+            delay: 0.0,
+            attack: 0.0,
+            hold: 0.0,
+            decay: 0.0,
+            sustain_percent: 1.0,
+            release: 0.0,
+        },
+        envelope_rate: 48_000,
+        envelope_curves: EnvelopeCurveConfig::default(),
+        env_attack: None,
+        env_release: None,
+        release_idx: 0,
+        finished_idx: 0,
+        fade_out: false,
+        channels: 2,
+    }
 }

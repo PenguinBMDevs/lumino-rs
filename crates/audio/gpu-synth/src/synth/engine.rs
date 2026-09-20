@@ -717,6 +717,52 @@ fn select_evictions(
     candidates
 }
 
+/// 为一个 NoteOff 选择要释放的 note 组（FIFO，镜像 XSynth `release_next_voice`）。
+///
+/// 跳过已在释放中的组（`released` / `release_at != MAX`）以及"NoteOff 已到、
+/// 正等待踏板松开"的组（`damper_pending`）：后者已经消费过自己的 NoteOff，
+/// 后续 NoteOff 必须匹配更新的音符，否则会把老组重复配对、吞掉新音符。
+/// 返回最老可释放组的 `note_id`。
+fn select_release_note_id(
+    voices: &[Voice],
+    positions: impl IntoIterator<Item = usize>,
+) -> Option<u64> {
+    for pos in positions {
+        let Some(v) = voices.get(pos) else {
+            continue;
+        };
+        if v.released || v.release_at != u64::MAX || v.damper_pending {
+            continue;
+        }
+        return Some(v.note_id);
+    }
+    None
+}
+
+/// CC64 踩→松时要释放的 note 组：`(key, note_id)`，按组去重。
+///
+/// 只包含"NoteOff 在踏板踩下期间到达"的组（`damper_pending`）；仍被按键
+/// 按住的音符不在其中，必须继续发声（#42：旧实现把整通道在响音符全部
+/// release，同 tick NoteOn/CC64=0 冲突与尾奏处会丢音）。
+fn select_damper_release_groups(voices: &[Voice], ch: usize) -> Vec<(u8, u64)> {
+    let mut groups: Vec<(u8, u64)> = Vec::new();
+    for v in voices {
+        if v.channel as usize != ch
+            || !v.damper_pending
+            || v.released
+            || v.release_at != u64::MAX
+            || v.state.ended != 0
+        {
+            continue;
+        }
+        let entry = (v.key, v.note_id);
+        if !groups.contains(&entry) {
+            groups.push(entry);
+        }
+    }
+    groups
+}
+
 impl GpuSynth {
     /// Creates a new synthesizer with the given configuration, initializing
     /// the GPU device (a wgpu adapter is picked automatically).
@@ -2257,41 +2303,41 @@ impl GpuSynth {
         // early; releasing a single zone would split a stereo pair.
         let idx = ch * 128 + key as usize;
         let positions = &self.key_voices[idx];
-        if !positions.is_empty() {
-            let mut note_id: Option<u64> = None;
+        let Some(nid) = select_release_note_id(&self.voices, positions.iter().copied()) else {
+            return Ok(());
+        };
+        if damper {
+            // 踏板踩下：NoteOff 只登记"待释放"，音符继续延音到踏板松开
+            // （XSynth `held_by_damper`）。已登记的组会被后续 NoteOff 跳过，
+            // FIFO 配对不串位。
             for &pos in positions {
-                let Some(v) = self.voices.get(pos) else {
-                    continue;
-                };
-                if v.released || v.release_at != u64::MAX {
-                    continue;
-                }
-                // First not-yet-releasing note wins; release all of its
-                // zone voices together.
-                note_id = Some(v.note_id);
-                break;
-            }
-            if let Some(nid) = note_id {
-                let mut released_any = false;
-                for &pos in positions {
-                    if let Some(v) = self.voices.get_mut(pos)
-                        && v.note_id == nid
-                        && !damper
-                    {
-                        v.release_at = at;
-                        released_any = true;
-                    }
-                    // When the damper is down, the voice stays sustained
-                    // until the damper is lifted (release_at stays MAX).
-                }
-                if released_any {
-                    // The whole note group is now releasing; decrement the
-                    // active-note count (never below 0 - trims may have
-                    // stale-counted).
-                    let slot = &mut self.active_notes[ch * 128 + key as usize];
-                    *slot = slot.saturating_sub(1);
+                if let Some(v) = self.voices.get_mut(pos)
+                    && v.note_id == nid
+                    && !v.released
+                    && v.release_at == u64::MAX
+                {
+                    v.damper_pending = true;
                 }
             }
+            return Ok(());
+        }
+        let mut released_any = false;
+        for &pos in positions {
+            if let Some(v) = self.voices.get_mut(pos)
+                && v.note_id == nid
+                && v.release_at == u64::MAX
+            {
+                v.release_at = at;
+                v.damper_pending = false;
+                released_any = true;
+            }
+        }
+        if released_any {
+            // The whole note group is now releasing; decrement the
+            // active-note count (never below 0 - trims may have
+            // stale-counted).
+            let slot = &mut self.active_notes[idx];
+            *slot = slot.saturating_sub(1);
         }
         Ok(())
     }
@@ -2337,6 +2383,7 @@ impl GpuSynth {
                 v.state = VoiceState::default();
                 v.release_at = u64::MAX;
                 v.released = false;
+                v.damper_pending = false;
                 v.sample_offset_r = 0;
                 v.spawn_frame = self.global_frame;
                 let pos = self.voices.len();
@@ -2462,15 +2509,27 @@ impl GpuSynth {
                 let was_damper = self.channels[ch].damper;
                 let damper = value >= 64;
                 self.channels[ch].damper = damper;
-                // Releasing the damper frees all voices that were sustained.
+                // 松开踏板：只释放"NoteOff 已到、但被踏板扣住"的组；仍被按键
+                // 按住的音符必须继续发声。旧实现把整通道在响音符全部 release，
+                // 同 tick NoteOn/CC64=0 冲突与尾奏处会偶发缺音（#42）。
                 if was_damper && !damper {
-                    for v in &mut self.voices {
-                        if v.channel as usize == ch
-                            && !v.released
-                            && v.release_at == u64::MAX
-                            && v.state.ended == 0
-                        {
-                            v.release_at = self.global_frame;
+                    let groups = select_damper_release_groups(&self.voices, ch);
+                    if !groups.is_empty() {
+                        for v in &mut self.voices {
+                            if v.channel as usize == ch
+                                && v.damper_pending
+                                && !v.released
+                                && v.release_at == u64::MAX
+                                && v.state.ended == 0
+                            {
+                                v.release_at = self.global_frame;
+                                v.damper_pending = false;
+                            }
+                        }
+                        // 每个被释放的 note 组只减一次活跃计数。
+                        for (key, _) in &groups {
+                            let slot = &mut self.active_notes[ch * 128 + *key as usize];
+                            *slot = slot.saturating_sub(1);
                         }
                     }
                 }
@@ -2485,6 +2544,7 @@ impl GpuSynth {
                 for v in &mut self.voices {
                     if v.channel as usize == ch {
                         v.release_at = self.global_frame;
+                        v.damper_pending = false;
                     }
                 }
             }
@@ -2577,10 +2637,12 @@ impl GpuSynth {
                 {
                     if hard_kill {
                         v.state.ended = 1;
+                        v.damper_pending = false;
                     } else {
                         v.release_at = self.global_frame;
                         v.released = true;
                         v.fade_out = true;
+                        v.damper_pending = false;
                     }
                 }
             }
@@ -2651,6 +2713,7 @@ impl GpuSynth {
                 v.release_at = self.global_frame;
                 v.released = true;
                 v.fade_out = true;
+                v.damper_pending = false;
             }
         }
     }
@@ -2768,6 +2831,7 @@ impl GpuSynth {
                                 v.release_at = self.global_frame;
                                 v.released = true;
                                 v.fade_out = true;
+                                v.damper_pending = false;
                                 fade_count += 1;
                             } else {
                                 // The fade slots are full (sustained overload):
@@ -2775,10 +2839,12 @@ impl GpuSynth {
                                 // (the sort above), so its output is already
                                 // decaying - inaudible.
                                 v.state.ended = 1;
+                                v.damper_pending = false;
                             }
                         } else {
                             // Already fading: end it now (output has decayed).
                             v.state.ended = 1;
+                            v.damper_pending = false;
                         }
                         freed += 1;
                     }
@@ -3958,9 +4024,11 @@ impl ProgressBar {
 mod tests {
     use super::{
         ChannelState, MAX_SPAWNS_PER_KEY_PER_BLOCK, RenderCheckpoint, checkpoint_ok, limit_block,
-        select_evictions, spawn_budget_allows,
+        select_damper_release_groups, select_evictions, select_release_note_id,
+        spawn_budget_allows,
     };
     use crate::error::SynthError;
+    use crate::synth::voices::test_voice;
 
     const LOOKAHEAD: usize = 256;
 
@@ -4186,6 +4254,62 @@ mod tests {
         assert_eq!(select_evictions(&groups, 1, Some(2)), vec![0]);
     }
 
+    /// #42：踏板踩下期间已登记"待释放"的组，后续 NoteOff 必须跳过它，
+    /// 否则同一个组会被重复配对、把更新的音符吞掉。
+    #[test]
+    fn release_selection_skips_damper_pending_groups() {
+        let voices = [
+            test_voice(1, 60, 0, false),
+            test_voice(2, 60, 0, true),
+            test_voice(3, 60, 0, false),
+        ];
+        assert_eq!(
+            select_release_note_id(&voices, [0, 1, 2]),
+            Some(1),
+            "最老的未释放组应优先"
+        );
+
+        // 组 1 已进入释放后，跳过的目标换成组 3（组 2 仍等待踏板）。
+        let mut v1 = test_voice(1, 60, 0, false);
+        v1.release_at = 10;
+        let voices = [v1, test_voice(2, 60, 0, true), test_voice(3, 60, 0, false)];
+        assert_eq!(select_release_note_id(&voices, [0, 1, 2]), Some(3));
+    }
+
+    #[test]
+    fn release_selection_returns_none_when_all_releasing_or_pending() {
+        let mut v1 = test_voice(1, 60, 0, false);
+        v1.released = true;
+        let voices = [v1, test_voice(2, 60, 0, true)];
+        assert_eq!(select_release_note_id(&voices, [0, 1]), None);
+    }
+
+    /// #42：踏板松开只释放"NoteOff 已到"的组；仍被按键按住的音符留在
+    /// 通道里继续发声，且其他通道不受影响。
+    #[test]
+    fn damper_release_selects_only_pending_groups_of_channel() {
+        let voices = [
+            test_voice(1, 60, 0, true),  // ch0：等待踏板 → 释放
+            test_voice(2, 62, 0, false), // ch0：仍被按住 → 必须保留
+            test_voice(3, 64, 1, true),  // ch1：另一个通道
+            test_voice(1, 60, 0, true),  // ch0 同组第二个 zone → 去重
+        ];
+        assert_eq!(
+            select_damper_release_groups(&voices, 0),
+            vec![(60, 1)],
+            "同一 note 组的多个 zone 只算一次"
+        );
+        assert_eq!(select_damper_release_groups(&voices, 1), vec![(64, 3)]);
+    }
+
+    #[test]
+    fn damper_release_ignores_released_or_ended_pending() {
+        let mut a = test_voice(1, 60, 0, true);
+        a.release_at = 5; // 已在释放
+        let mut b = test_voice(2, 62, 0, true);
+        b.state.ended = 1; // 已结束
+        let c = test_voice(3, 64, 0, true);
+        assert_eq!(select_damper_release_groups(&[a, b, c], 0), vec![(64, 3)]);
     #[test]
     fn evictions_never_steal_the_protected_group_when_candidates_run_short() {
         // 只有一个组就是保护组：宁可一个都不抢，也不能杀它（"新音符必发声"）。
