@@ -27,6 +27,17 @@ use lumino_midi_model::clipboard::{
     ClipRecord, decode_clipboard_records, encode_clipboard, parse_clipboard_header,
 };
 
+#[path = "real_midi_clipboard_bench/bin_path.rs"]
+mod bin_path;
+#[path = "real_midi_clipboard_bench/fixture.rs"]
+mod fixture;
+#[path = "real_midi_clipboard_bench/json_path.rs"]
+mod json_path;
+
+use bin_path::{copy_bin, paste_bin};
+use fixture::{build_selection, compute_origin, load_doc, total_notes};
+use json_path::{copy_json, paste_json};
+
 /// 真实 MIDI 文件路径（用户提供的性能日志来源文件）。
 const DEFAULT_MIDI: &str = r"D:\BM-DATA\MIDI File\Ouranos - HDSQ & The Romanticist [v1.6.6].mid";
 
@@ -37,210 +48,6 @@ const SELECTION_NOTES: u32 = 1_043_936;
 const TARGET_MS: f64 = 100.0;
 /// 优秀线：< 50ms。
 const EXCELLENT_MS: f64 = 50.0;
-
-/// 加载真实 MIDI；文件缺失则回退合成数据（合成 1,043,936 音符选区 + 等价全量）。
-fn load_doc() -> (MidiDocument, String) {
-    let path = env::var("LUMINO_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
-    if Path::new(&path).exists() {
-        match MidiDocument::from_notes_file(&path, None) {
-            Ok(doc) => {
-                let n: u64 = (0..doc.track_count())
-                    .map(|t| doc.track_note_count(t as u16))
-                    .sum();
-                return (doc, format!("real:{path} (notes={n})"));
-            }
-            Err(e) => eprintln!("⚠ 加载真实 MIDI 失败: {e}，回退合成数据"),
-        }
-    }
-    (synth_doc(), "synthetic".into())
-}
-
-/// 合成文档：跨 16 轨铺满 ~1,043,936 音符（升序 tick，模拟黑乐谱密集排布）。
-fn synth_doc() -> MidiDocument {
-    let per = SELECTION_NOTES / 16;
-    let mut doc = MidiDocument::empty_with_tracks(16, 480);
-    for t in 0..16u16 {
-        let mut notes: Vec<NoteEvent> = Vec::with_capacity(per as usize);
-        for i in 0..per {
-            let start = i * 4;
-            let key = ((i * 7) % 128) as u8;
-            notes.push(NoteEvent::new(start, start + 2, key, 100, (t % 16) as u8));
-        }
-        doc.batch_insert_sorted_notes_with_ids(t as usize, notes);
-    }
-    doc
-}
-
-/// 取前 `n` 个音符作为「选区」（真实数据顺序：逐轨、轨内按 tick 升序）。
-/// 这正是 `arrangement_ops::clipboard::collect_selected_notes_for_clipboard` 产出的形态。
-fn build_selection(doc: &MidiDocument, n: u32) -> Vec<(usize, NoteEvent)> {
-    let mut sel: Vec<(usize, NoteEvent)> = Vec::with_capacity(n as usize);
-    for t in 0..doc.track_count() {
-        for note in doc.track_notes(t).iter() {
-            sel.push((t, *note));
-            if sel.len() as u32 >= n {
-                return sel;
-            }
-        }
-    }
-    sel
-}
-
-/// 选区总音符数。
-fn total_notes(doc: &MidiDocument) -> usize {
-    (0..doc.track_count())
-        .map(|t| doc.track_note_count(t as u16) as usize)
-        .sum()
-}
-
-/// 预计算 origin（复制端两遍扫描的第一遍，不计入复制耗时）。
-fn compute_origin(sel: &[(usize, NoteEvent)]) -> (u32, u8) {
-    let mut min_tick = u32::MAX;
-    let mut min_key = u8::MAX;
-    for (_, n) in sel {
-        if n.start_tick < min_tick {
-            min_tick = n.start_tick;
-        }
-        if n.key < min_key {
-            min_key = n.key;
-        }
-    }
-    (min_tick, min_key)
-}
-
-/// ── JSON 旧路径：复制（手写 `write!` 拼 JSON 字符串）──
-///
-/// 与 `arrangement_ops::clipboard::write_arrangement_clipboard` 同构：1M 音符对象逐条格式化。
-/// 计时区间覆盖整段字符串构建（即复制端真实 CPU 成本）。
-fn copy_json(sel: &[(usize, NoteEvent)], origin_tick: u32, origin_key: u8) -> (String, f64) {
-    let ot = origin_tick as f32;
-    let ok = origin_key as u16;
-    let t0 = Instant::now();
-    let mut s = String::with_capacity(sel.len().saturating_mul(48) + 180);
-    use std::fmt::Write as _;
-    let _ = write!(
-        s,
-        "{{\"type\":\"arrangement\",\"origin_tick\":{ot},\"origin_key\":{ok},\"division\":480,\"notes\":["
-    );
-    let mut first = true;
-    for (t, n) in sel {
-        let tick = (n.start_tick as f32 - ot).max(0.0);
-        let key = (n.key as i32 - ok as i32).max(0) as u16;
-        let length = (n.end_tick - n.start_tick) as f32;
-        if !first {
-            s.push(',');
-        }
-        first = false;
-        let _ = write!(
-            s,
-            "{{\"tick\":{tick},\"key\":{key},\"length\":{length},\"velocity\":{},\"channel\":{},\"track\":{t}}}",
-            n.velocity, n.channel
-        );
-    }
-    s.push(']');
-    s.push('}');
-    let ms = t0.elapsed().as_nanos() as f64 / 1e6;
-    (s, ms)
-}
-
-/// ── JSON 旧路径：粘贴（`serde_json` 解析 + 按轨批量插入）──
-fn paste_json(doc: &mut MidiDocument, text: &str) -> (usize, f64) {
-    let t0 = Instant::now();
-    let value: serde_json::Value = serde_json::from_str(text).expect("JSON 解析失败");
-    let notes = value
-        .get("notes")
-        .and_then(|v| v.as_array())
-        .expect("notes 缺失");
-    let mut by_track: std::collections::HashMap<usize, Vec<NoteEvent>> =
-        std::collections::HashMap::new();
-    for item in notes {
-        let tick = item.get("tick").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        let key = item.get("key").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-        let length = item.get("length").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32;
-        let velocity = item.get("velocity").and_then(|v| v.as_u64()).unwrap_or(100) as u8;
-        let channel = item.get("channel").and_then(|v| v.as_u64()).unwrap_or(0) as u8;
-        let track = item.get("track").and_then(|v| v.as_u64()).unwrap_or(0) as usize;
-        let note = NoteEvent::new(tick as u32, (tick + length) as u32, key, velocity, channel);
-        by_track.entry(track).or_default().push(note);
-    }
-    let mut inserted = 0usize;
-    for (track, notes) in by_track {
-        inserted += doc.batch_insert_notes_with_ids(track, notes).len();
-    }
-    let ms = t0.elapsed().as_nanos() as f64 / 1e6;
-    (inserted, ms)
-}
-
-/// ── 二进制优化路径：复制（构建 `ClipRecord` 流 + 流式 `encode_clipboard`）──
-///
-/// 与钢琴卷帘 `build_clipboard_binary` 同构：每音符 `ClipRecord`（delta 变长 tick + 定长字段），
-/// 显式传入 count 精确预分配 `Vec<u8>`，避免 filter_map/flat_map 的 size_hint=0 反复 realloc 悬崖。
-fn copy_bin(sel: &[(usize, NoteEvent)], origin_tick: u32, origin_key: u8) -> (Vec<u8>, f64) {
-    let t0 = Instant::now();
-    // 选区已物化为 Vec，故 ClipRecord 也直接物化（与应用侧 collect_selected_notes 同构），
-    // 换来精确 size_hint 与无闭包链开销的编码。
-    let records: Vec<ClipRecord> = sel
-        .iter()
-        .map(|(t, n)| {
-            ClipRecord::new(
-                n.start_tick - origin_tick,
-                n.end_tick - n.start_tick,
-                (n.key as i32 - origin_key as i32).max(0) as u8,
-                n.velocity,
-                n.channel,
-                *t as u16,
-            )
-        })
-        .collect();
-    let n = records.len();
-    let bytes = encode_clipboard(records.into_iter(), n, 480, origin_tick, origin_key, 0);
-    let ms = t0.elapsed().as_nanos() as f64 / 1e6;
-    (bytes, ms)
-}
-
-/// ── 二进制优化路径：粘贴（分块解码 + 按音轨连续刷入 + 已排序批量插入）──
-///
-/// 关键优化：解码单遍完成，**按音轨连续 flush**（同轨子序列天然 tick 升序），直接走
-/// `batch_insert_sorted_notes_with_ids` 免排序、**无 per-note HashMap 哈希**。
-fn paste_bin(doc: &mut MidiDocument, bytes: &[u8]) -> (usize, f64) {
-    let meta = parse_clipboard_header(bytes).expect("头部解析失败");
-    let t0 = Instant::now();
-    let mut cur_track: Option<usize> = None;
-    let mut cur_vec: Vec<NoteEvent> = Vec::new();
-    let mut inserted = 0usize;
-    // 同 PPQN（ratio=1）：纯整数快路径，就地构造 NoteEvent 免去中间结构体二次构造。
-    let origin_tick = meta.origin_tick;
-    let origin_key = meta.origin_key as u32;
-    decode_clipboard_records(
-        bytes,
-        |tick_offset, length, key_offset, velocity, channel, track| {
-            let track = track as usize;
-            if cur_track != Some(track) {
-                if let Some(t) = cur_track {
-                    inserted += doc
-                        .batch_insert_sorted_notes_with_ids(t, std::mem::take(&mut cur_vec))
-                        .len();
-                }
-                cur_track = Some(track);
-            }
-            let start = origin_tick.saturating_add(tick_offset);
-            let note = NoteEvent::new(
-                start,
-                start.saturating_add(length),
-                (origin_key + key_offset as u32).min(127) as u8,
-                velocity,
-                channel,
-            );
-            cur_vec.push(note);
-        },
-    )
-    .expect("decode 失败");
-    if let Some(t) = cur_track {
-        inserted += doc.batch_insert_sorted_notes_with_ids(t, cur_vec).len();
-    }
-    let ms = t0.elapsed().as_nanos() as f64 / 1e6;
-    (inserted, ms)
-}
 
 fn bar(label: &str, ms: f64) -> String {
     let mark = if ms < EXCELLENT_MS {
