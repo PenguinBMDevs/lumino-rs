@@ -222,6 +222,17 @@ fn test_text_tool_confirm_uses_incremental_path() {
     tt.text = "A".to_string();
     tt.font_family = "Microsoft YaHei";
 
+    // 字体环境探测：macOS/headless CI 可能无 Microsoft YaHei，且回退字体
+    // 也可能不可读（font-kit 句柄/沙箱限制），此时光栅化必然失败。
+    // 本测试验证的是「增量路径」而非字体渲染，按本文件既有约定
+    //（“CI 缺失则跳过”）显式跳过，避免环境型误报。
+    if rasterize_text("A", 8, 8, "Microsoft YaHei").is_none() {
+        eprintln!(
+            "跳过 test_text_tool_confirm_uses_incremental_path：无可用系统字体（光栅化探测失败）"
+        );
+        return;
+    }
+
     assert!(
         editor.confirm_text_tool(),
         "确认应成功光栅化并创建音符（依赖系统字体回退）"

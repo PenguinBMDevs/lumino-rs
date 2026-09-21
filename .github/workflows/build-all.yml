@@ -56,7 +56,7 @@ jobs:
       CARGO_TARGET_${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'AARCH64_UNKNOWN_LINUX_GNU' || matrix.target == 'armv7-unknown-linux-gnueabihf' && 'ARMV7_UNKNOWN_LINUX_GNUEABIHF' || 'X86_64_UNKNOWN_LINUX_GNU' }}_LINKER: ${{ matrix.linker }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -67,7 +67,7 @@ jobs:
 
       # 替换为 actions/cache 以支持降级复用
       - name: Cache cargo & target
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -188,7 +188,7 @@ jobs:
           BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
           mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}
@@ -209,7 +209,7 @@ jobs:
             extension: .exe
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -220,7 +220,7 @@ jobs:
 
       # 统一使用 actions/cache
       - name: Cache cargo & target
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -258,7 +258,7 @@ jobs:
           $BUILD_TYPE = if ("${{ github.event.inputs.release_mode }}" -eq "release") { "release" } else { "debug" }
           Move-Item "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}
@@ -279,7 +279,7 @@ jobs:
             extension: ""
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 
@@ -290,7 +290,7 @@ jobs:
 
       # 统一使用 actions/cache
       - name: Cache cargo & target
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -328,7 +328,7 @@ jobs:
           BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
           mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7.0.1
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}

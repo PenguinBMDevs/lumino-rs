@@ -7,11 +7,14 @@ fn test_memory_monitor_defaults() {
     let monitor = MemoryMonitor::new();
     assert!(monitor.total_physical() > 0);
     assert!(monitor.soft_limit() > 0);
+    // CI/测试可用 LUMINO_MEMORY_SOFT_LIMIT_MB 覆盖软限（见 `soft_limit_override`），
+    // 有覆盖时以覆盖值为准；无覆盖时必须是 total - reserve。
     assert_eq!(
         monitor.soft_limit(),
-        monitor
+        soft_limit_override().unwrap_or_else(|| monitor
             .total_physical()
-            .saturating_sub(DEFAULT_RESERVE_BYTES)
+            .saturating_sub(DEFAULT_RESERVE_BYTES)),
+        "软限应为 total - reserve；设置了 LUMINO_MEMORY_SOFT_LIMIT_MB 时应等于覆盖值"
     );
     assert_eq!(
         monitor

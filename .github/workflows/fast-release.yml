@@ -13,12 +13,12 @@ jobs:
   build:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ github.event.inputs.branch }}
 
       - name: Cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -33,7 +33,7 @@ jobs:
         run: cargo build --profile fast-release --workspace
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: lumino-windows-${{ github.event.inputs.branch }}
           path: |

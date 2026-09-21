@@ -104,18 +104,38 @@ pub struct MemoryMonitor {
     warn_throttle: std::sync::atomic::AtomicU32,
 }
 
+/// 解析软限环境变量覆盖（`LUMINO_MEMORY_SOFT_LIMIT_MB`，单位 MB）。
+///
+/// 仅用于 CI/测试等内存受限环境；未设置或非法时返回 `None`（走默认软限）。
+fn soft_limit_override() -> Option<u64> {
+    std::env::var("LUMINO_MEMORY_SOFT_LIMIT_MB")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|mb| mb.saturating_mul(1024 * 1024))
+}
+
 impl MemoryMonitor {
     /// 使用默认配置创建（保留 512 MB）
+    ///
+    /// 可用环境变量 `LUMINO_MEMORY_SOFT_LIMIT_MB` 覆盖软限制（仅用于 CI/测试
+    /// 等内存受限环境，避免测试进程被误判 OOM 而 panic）；未设置或非法时
+    /// 行为与默认完全一致。
     fn new() -> Self {
         let total = platform::get_total_physical_memory();
         let reserve = DEFAULT_RESERVE_BYTES;
-        let limit = total.saturating_sub(reserve);
+        let overridden = soft_limit_override();
+        let limit = overridden.unwrap_or_else(|| total.saturating_sub(reserve));
 
         tracing::info!(
-            "MemoryMonitor: 总物理内存 {} MB, 保留 {} MB, 软限制 {} MB",
+            "MemoryMonitor: 总物理内存 {} MB, 保留 {} MB, 软限制 {} MB{}",
             total / 1024 / 1024,
             reserve / 1024 / 1024,
             limit / 1024 / 1024,
+            if overridden.is_some() {
+                " (env override: LUMINO_MEMORY_SOFT_LIMIT_MB)"
+            } else {
+                ""
+            },
         );
 
         assert!(
@@ -210,6 +230,26 @@ impl MemoryMonitor {
             }
             if fail_count >= MAX_RSS_FAILURES {
                 tracing::error!("{log_prefix}RSS 连续 {fail_count} 次读取失败，跳过本轮检查");
+                return None;
+            }
+            return Some(false);
+        }
+
+        // ── 异常读数兜底 ──
+        // macOS `task_info` 偶发返回异常读数（CI 实测：check 读到远超实际的值触发
+        // 误报 abort，崩溃报告中重读仅 5.8 GB）。物理 RSS 不可能超过总内存的 2 倍，
+        // 超出即按读取失败处理（与 rss == 0 同路径）。
+        if self.total_physical > 0 && rss > self.total_physical.saturating_mul(2) {
+            let fail_count = self
+                .rss_fail_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            if fail_count == 1 {
+                tracing::warn!(
+                    "{log_prefix}异常 RSS 读数（{rss} 字节 > 总内存 2 倍），按读取失败处理"
+                );
+            }
+            if fail_count >= MAX_RSS_FAILURES {
                 return None;
             }
             return Some(false);

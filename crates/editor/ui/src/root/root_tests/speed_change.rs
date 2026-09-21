@@ -15,6 +15,7 @@ use lumino_core::storage::config::UiConfig;
 
 #[test]
 fn test_speed_change_ctrl_click_opens_dialog_event() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 清空全局事件缓冲区
     let _ = crate::event::take_events();
 
@@ -40,6 +41,7 @@ fn test_speed_change_ctrl_click_opens_dialog_event() {
 
 #[test]
 fn test_speed_change_direct_click_no_selection_returns_early() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.toolbar.ctrl_pressed = false;
 
@@ -62,6 +64,7 @@ fn test_speed_change_direct_click_no_selection_returns_early() {
 
 #[test]
 fn test_speed_change_button_always_enabled_in_view() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 验证在工具栏 view 中变速按钮的 enabled 始终为 true
     // （与 has_selection 解耦），确保 Ctrl+Click 路径可到达 handler。
     // 这是 toolbar/view.rs 中 flip_button 调用改为硬编码 true 的行为保证。

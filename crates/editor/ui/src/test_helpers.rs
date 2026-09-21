@@ -3,6 +3,19 @@
 //! 收敛散落在 handlers_tests / root_tests / midi tests 中的
 //! 25 字段 `MidiDocument` 字面量重复构造——改动字段只需改这一处。
 
+use std::sync::{Mutex, MutexGuard};
+
+/// 串行化「全局事件队列」相关测试。
+///
+/// `crate::event` 的队列是进程级全局状态，而同一测试二进制内的测试并行执行：
+/// 一个测试的 `take_events()` 会偷走另一个测试刚发出的事件（CI Ubuntu 实测
+/// `test_dialog_handler_opens_custom_precision` 因事件被并发测试取走而闪断）。
+/// 所有访问该队列的测试需在开头获取此锁。
+pub fn event_queue_lock() -> MutexGuard<'static, ()> {
+    static LOCK: Mutex<()> = Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 /// 构造最小 2 轨 MidiDocument（音符写入 document，单一权威源）。
 pub fn make_test_document() -> lumino_midi_loader::MidiDocument {
     lumino_midi_loader::MidiDocument {

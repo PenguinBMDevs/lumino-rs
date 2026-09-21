@@ -19,7 +19,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -43,7 +43,7 @@ jobs:
 
       # 优化后的缓存配置：支持降级匹配
       - name: Cache cargo & target
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -71,7 +71,7 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7.0.1
 
       - name: Install system dependencies (Ubuntu)
         if: matrix.os == 'ubuntu-latest'
@@ -92,7 +92,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
 
       - name: Cache cargo & target
-        uses: actions/cache@v4
+        uses: actions/cache@v6.1.0
         with:
           path: |
             ~/.cargo/registry
@@ -106,3 +106,4 @@ jobs:
         run: cargo test --workspace
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
+          LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
