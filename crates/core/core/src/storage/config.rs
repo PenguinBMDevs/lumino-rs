@@ -1,6 +1,17 @@
 use crate::types::Language;
 use serde::{Deserialize, Serialize};
 
+mod autoscroll;
+mod defaults;
+mod enums;
+
+pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
+pub use enums::{
+    AudioEngineKind, EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
+};
+
+use defaults::*;
+
 /// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -8,162 +19,11 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
-// 音轨标签格式同 yinhe：{通道字母}{通道号+1:02}，音轨始终按原始序号排列。
-// 通道字母 ch0=A, ch1=B, ..., ch15=P，通道号 1-16（零填充两位数）。
-
-/// 添加音轨时的行为
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum TrackAddBehavior {
-    /// 自动跳转到被添加的新音轨
-    #[default]
-    AutoSwitch,
-    /// 保持当前音轨位置不变
-    StayCurrent,
-}
-
-impl std::fmt::Display for TrackAddBehavior {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TrackAddBehavior::AutoSwitch => write!(f, "自动跳转到新音轨"),
-            TrackAddBehavior::StayCurrent => write!(f, "保持当前音轨"),
-        }
-    }
-}
-
 /// 用户界面配置默认值
 impl Default for Config {
     fn default() -> Self {
         Self {
             ui: UiConfig::default(),
-        }
-    }
-}
-
-/// 合成器后端类型
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum SynthBackend {
-    /// 内置 XSynth 合成器（默认）
-    #[default]
-    XSynth,
-    /// KDMAPI 合成器（调用系统 KDMAPI）
-    Kdmapi,
-    /// 系统 MIDI 合成器
-    System,
-    /// LGS (GPU) 合成器（基于 lumino-gpu-synth 的 GPU 加速渲染）
-    Lgs,
-}
-
-/// 框选框显示模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum SelectionBoxMode {
-    /// 弹簧动画模式：框选框边界有弹性动画效果
-    Spring,
-    /// 直接跟随模式：框选框直接跟随鼠标，无动画延迟
-    #[default]
-    Direct,
-}
-
-impl std::fmt::Display for SelectionBoxMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SelectionBoxMode::Spring => write!(f, "弹簧动画"),
-            SelectionBoxMode::Direct => write!(f, "直接跟随"),
-        }
-    }
-}
-
-/// 橡皮擦工具行为模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum EraserBehavior {
-    /// 默认模式：Shift+拖动框选删除，普通点击删除单个
-    #[default]
-    Default,
-    /// 直接框选模式：拖动框选删除，Shift+点击删除单个
-    DirectSelect,
-}
-
-impl std::fmt::Display for EraserBehavior {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EraserBehavior::Default => write!(f, "默认 (Shift+拖动框选)"),
-            EraserBehavior::DirectSelect => write!(f, "直接框选 (无需Shift)"),
-        }
-    }
-}
-
-impl std::fmt::Display for SynthBackend {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            SynthBackend::XSynth => write!(f, "XSynth (内置)"),
-            SynthBackend::Kdmapi => write!(f, "KDMAPI"),
-            SynthBackend::System => write!(f, "系统 MIDI"),
-            SynthBackend::Lgs => write!(f, "LGS (GPU)"),
-        }
-    }
-}
-
-/// 音频引擎后端（当前仅 Realtime：xsynth-realtime 多线程 + BufferedRenderer）
-///
-/// 旧配置文件可能残留 `"Core"` 取值，反序列化时通过 `#[serde(other)]` 回落到 `Realtime`，
-/// 避免历史配置加载失败（ring 引擎已被整体移除）。
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum AudioEngineKind {
-    /// Realtime：xsynth-realtime 多线程 + BufferedRenderer（lumino 原有）
-    #[default]
-    #[serde(other)]
-    Realtime,
-}
-
-impl std::fmt::Display for AudioEngineKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AudioEngineKind::Realtime => write!(f, "Realtime (xsynth)"),
-        }
-    }
-}
-
-/// 自动滚动模式
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum AutoScrollMode {
-    /// 模式1：固定指示线到左侧，卷帘自动左移
-    FixedIndicatorLeft,
-    /// 模式2：指示线移动，到右侧翻页
-    #[default]
-    ScrollingIndicator,
-    /// 关闭自动滚动
-    Off,
-}
-
-/// 自动滚动配置
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
-pub struct AutoScrollConfig {
-    /// 当前自动滚动模式
-    pub mode: AutoScrollMode,
-    /// 模式1：指示线固定位置（从左边缘算起，像素）
-    pub fixed_indicator_position: u32,
-    /// 模式2：翻页触发位置（从右边缘算起，像素）
-    pub page_trigger_offset: u32,
-    /// 模式2：翻页后指示线回到的位置（从左边缘算起，像素）
-    pub page_return_position: u32,
-}
-
-impl Default for AutoScrollConfig {
-    fn default() -> Self {
-        Self {
-            mode: AutoScrollMode::default(),
-            fixed_indicator_position: 200,
-            page_trigger_offset: 100,
-            page_return_position: 200,
-        }
-    }
-}
-
-impl std::fmt::Display for AutoScrollMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            AutoScrollMode::FixedIndicatorLeft => write!(f, "固定指示线 (卷帘滚动)"),
-            AutoScrollMode::ScrollingIndicator => write!(f, "滚动指示线 (自动翻页)"),
-            AutoScrollMode::Off => write!(f, "关闭"),
         }
     }
 }
@@ -338,93 +198,6 @@ pub struct UiConfig {
     pub gpu_last_check_time: Option<u64>,
 }
 
-fn default_true() -> bool {
-    true
-}
-
-fn default_synth_backend() -> SynthBackend {
-    SynthBackend::XSynth
-}
-
-fn default_synth_buffer() -> f64 {
-    // 30ms：延迟与音符时值量化（事件在渲染块边界生效）的平衡点。
-    // BufferedRenderer 会保留至少约半块音频富余，30ms 窗口 ≈ 15ms 抗抖动余量。
-    30.0
-}
-fn default_synth_sample_rate() -> u32 {
-    44100
-}
-fn default_synth_threads() -> i32 {
-    // 已废弃字段的兼容默认值；线程策略由后端按机器核数强制决定（见 api::xsynth）
-    0
-}
-fn default_max_voices_per_key() -> Option<usize> {
-    // 4 与 xsynth 引擎默认 / GPU 后端默认一致：更高的值会让渲染负载线性增加
-    Some(4)
-}
-fn default_lgs_sample_rate() -> u32 {
-    64_000
-}
-fn default_lgs_block_size() -> usize {
-    512
-}
-fn default_lgs_max_voices_per_key() -> usize {
-    4
-}
-fn default_automation_line_thickness() -> f32 {
-    2.0
-}
-
-/// Tempo 面板 BPM 绘制上限默认值
-fn default_tempo_max_bpm() -> f64 {
-    512.0
-}
-
-fn default_monitor_refresh_interval_ms() -> f32 {
-    100.0
-}
-
-fn default_log_retention_count() -> usize {
-    10
-}
-
-fn default_velocity_filter_threshold() -> u8 {
-    1
-}
-
-fn default_lgs_velocity_filter_threshold() -> u8 {
-    1
-}
-
-fn default_hires_measures_per_group() -> u32 {
-    4
-}
-fn default_hires_tile_width() -> u32 {
-    1920
-}
-fn default_hires_cooldown() -> u64 {
-    10
-}
-fn default_hires_gpu_mem_limit() -> u32 {
-    512
-}
-
-fn default_history_total_limit() -> usize {
-    100
-}
-
-fn default_history_entry_limit() -> usize {
-    1000
-}
-
-fn default_merge_window_ms() -> u64 {
-    300
-}
-
-/// 复音软目标比例默认值：1-1/e ≈ 0.632（一阶系统目标，留约 37% 暂态余量）
-fn default_xsynth_voice_target_ratio() -> f64 {
-    1.0 - 1.0 / std::f64::consts::E
-}
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
