@@ -1,0 +1,292 @@
+//! `MidiEventProcessor` 实现 — 事件分发、渲染驱动与限幅兜底
+//!
+//! 自 `event.rs` 拆分而来（零逻辑变更）。
+
+use midly::{MidiMessage, PitchBend, TrackEventKind};
+use tracing::info;
+use xsynth_core::{
+    AudioPipe,
+    channel::{ChannelAudioEvent, ChannelEvent, ControlEvent},
+    channel_group::{ChannelGroup, SynthEvent},
+};
+
+use crate::audio::{
+    config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
+};
+use crate::error::ExportResult;
+
+use super::MidiEventProcessor;
+
+/// MIDI 弯音事件 → xsynth 归一化值（-1.0..1.0）。
+///
+/// `lumino_midly::PitchBend::as_int()` 返回的是**带符号偏移**（-8192..=8191，
+/// 中心 0），不是 raw 14-bit（0..16383）；直接除 8192 即可。旧实现
+/// `as_int()/8192 - 1` 把中心值算成 -1.0（全下弯音），导致 CPU 渲染里所有
+/// 中心 PB 事件都把音高拉低一个灵敏度值。
+pub(super) fn pitch_bend_normalized(bend: PitchBend) -> f32 {
+    bend.as_int() as f32 / 8192.0
+}
+
+impl<'a> MidiEventProcessor<'a> {
+    /// 创建 MIDI 事件处理器。
+    ///
+    /// 将 MIDI 事件按时间轴播放到给定的合成通道组与采样输出。
+    pub fn new(
+        config: &'a AudioRenderConfig,
+        channel_group: &'a mut ChannelGroup,
+        tick_conv: &'a mut TickToTime,
+        sink: &'a mut dyn SampleSink,
+    ) -> Self {
+        let params = *channel_group.stream_params();
+        let limiter = if config.apply_limiter {
+            Some(AudioLimiter::new(
+                params.sample_rate,
+                params.channels.count(),
+                0.95,
+            ))
+        } else {
+            None
+        };
+        MidiEventProcessor {
+            config,
+            channel_group,
+            tick_conv,
+            sink,
+            sample_rate: params.sample_rate,
+            channel_count: params.channels.count(),
+            vec_pool: Vec::new(),
+            limiter,
+        }
+    }
+
+    /// 从 Vec 池获取或创建新 Vec
+    fn acquire_buffer(&mut self, capacity: usize) -> Vec<f32> {
+        self.vec_pool
+            .pop()
+            .unwrap_or_else(|| Vec::with_capacity(capacity))
+    }
+
+    /// 归还 Vec 到池
+    fn release_buffer(&mut self, buf: Vec<f32>) {
+        if self.vec_pool.len() < 4 {
+            self.vec_pool.push(buf);
+        }
+    }
+
+    /// 渲染指定时长的音频（带暂停/中止检查）
+    fn render_duration(&mut self, delta_seconds: f64) -> ExportResult<()> {
+        if delta_seconds <= 0.0 {
+            return Ok(());
+        }
+        // 暂停/中止检查点
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
+
+        let total_samples = (delta_seconds * self.sample_rate as f64) as usize;
+        if total_samples == 0 {
+            return Ok(());
+        }
+
+        let frame_size = self.channel_count as usize;
+        let mut remaining = total_samples;
+
+        const MAX_BATCH: usize = 4096;
+
+        while remaining > 0 {
+            if let Some(ctrl) = &self.config.control {
+                ctrl.wait_if_paused();
+                ctrl.check_abort()?;
+            }
+            let batch = remaining.min(MAX_BATCH);
+            let count = batch * frame_size;
+
+            let mut buffer = self.acquire_buffer(count);
+            buffer.resize(count, 0.0);
+
+            // SAFETY: read_samples_unchecked 会填充所有样本
+            self.channel_group.read_samples_unchecked(&mut buffer);
+
+            // 应用限制器（如果配置）
+            if let Some(limiter) = self.limiter.as_mut() {
+                limiter.process(&mut buffer);
+            }
+
+            self.sink.write_samples(&buffer)?;
+            self.release_buffer(buffer);
+
+            remaining -= batch;
+        }
+
+        Ok(())
+    }
+
+    /// 判断音符是否应被过滤（力度/键位）
+    #[inline]
+    fn is_note_filtered(&self, key: u8, velocity: u8) -> bool {
+        if self.config.filter_key && (key < self.config.key_low || key > self.config.key_high) {
+            return true;
+        }
+        if self.config.filter_velocity
+            && (velocity < self.config.velocity_low || velocity > self.config.velocity_high)
+        {
+            return true;
+        }
+        false
+    }
+
+    /// 处理一个 MIDI 事件，渲染到该事件的时间点
+    pub fn process_midi_event(
+        &mut self,
+        tick: u64,
+        event_kind: &TrackEventKind,
+    ) -> ExportResult<()> {
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
+        // 计算到该事件的时间增量
+        let delta = self.tick_conv.advance_to(tick);
+        self.render_duration(delta)?;
+
+        // 发送 MIDI 事件到合成器
+        if let TrackEventKind::Midi { channel, message } = event_kind {
+            let ch = channel.as_int() as u32;
+            match message {
+                MidiMessage::NoteOn { key, vel } => {
+                    let vel_u8 = vel.as_int();
+                    // velocity 0 的 NoteOn 按 MIDI 规范视为 NoteOff
+                    if vel_u8 == 0 {
+                        if self.config.filter_key
+                            && (*key < self.config.key_low || *key > self.config.key_high)
+                        {
+                            return Ok(());
+                        }
+                        if self.config.note_force_end_delay > 0 {
+                            self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                        }
+                        self.channel_group.send_event(SynthEvent::Channel(
+                            ch,
+                            ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
+                        ));
+                        return Ok(());
+                    }
+                    if self.is_note_filtered(*key, vel_u8) {
+                        return Ok(());
+                    }
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
+                            key: *key,
+                            vel: vel_u8,
+                        }),
+                    ));
+                }
+                MidiMessage::NoteOff { key, .. } => {
+                    if self.config.filter_key
+                        && (*key < self.config.key_low || *key > self.config.key_high)
+                    {
+                        return Ok(());
+                    }
+                    // note_force_end_delay：延长音符，延迟发送 NoteOff
+                    if self.config.note_force_end_delay > 0 {
+                        self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                    }
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
+                    ));
+                }
+                MidiMessage::Controller { controller, value } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
+                            controller.as_int(),
+                            value.as_int(),
+                        ))),
+                    ));
+                }
+                MidiMessage::ProgramChange { program } => {
+                    if self.config.ignore_program_changes {
+                        return Ok(());
+                    }
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program.as_int())),
+                    ));
+                }
+                MidiMessage::PitchBend { bend } => {
+                    self.channel_group.send_event(SynthEvent::Channel(
+                        ch,
+                        ChannelEvent::Audio(ChannelAudioEvent::Control(
+                            ControlEvent::PitchBendValue(pitch_bend_normalized(*bend)),
+                        )),
+                    ));
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
+    /// 完成渲染：发送 NoteOff，渲染尾部直到静音
+    pub fn finalize(&mut self) -> ExportResult<()> {
+        if let Some(ctrl) = &self.config.control {
+            ctrl.wait_if_paused();
+            ctrl.check_abort()?;
+        }
+        // 发送所有音符关闭
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::AllNotesOff,
+            )));
+        self.channel_group
+            .send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+                ChannelAudioEvent::ResetControl,
+            )));
+
+        // 持续渲染尾部直到静音（带 120s 安全上限，防止无限循环）
+        let frame_size = self.channel_count as usize;
+        let batch_size = self.sample_rate as usize * frame_size; // 1秒
+        let max_batches = 120; // 120 秒上限，对齐 GPU 侧 max_tail_seconds
+
+        for _ in 0..max_batches {
+            if let Some(ctrl) = &self.config.control {
+                ctrl.wait_if_paused();
+                ctrl.check_abort()?;
+            }
+            let mut buffer = vec![0.0f32; batch_size];
+            self.channel_group.read_samples_unchecked(&mut buffer);
+
+            if let Some(limiter) = self.limiter.as_mut() {
+                limiter.process(&mut buffer);
+            }
+
+            // 检测是否静音
+            let is_silent = buffer.iter().all(|&s| s.abs() < 0.0001);
+
+            self.sink.write_samples(&buffer)?;
+
+            if is_silent {
+                break;
+            }
+        }
+
+        info!("音频渲染完成");
+        Ok(())
+    }
+}
+
+/// 简单的限幅器（兜底，已被 AudioLimiter 替代，保留用于独立调用）
+#[allow(dead_code)]
+fn apply_limiter(samples: &mut [f32], _channels: u16) {
+    // 简单的峰值限制
+    let threshold = 0.95;
+    for sample in samples.iter_mut() {
+        if sample.abs() > threshold {
+            *sample = sample.signum() * threshold;
+        }
+    }
+}
