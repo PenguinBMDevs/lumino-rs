@@ -1,4 +1,3 @@
-
 use super::*;
 /// 构造最小合法 SMF（1 轨：tempo + note on/off + end），避免依赖 gitignored 大文件。
 fn minimal_smf() -> Vec<u8> {
