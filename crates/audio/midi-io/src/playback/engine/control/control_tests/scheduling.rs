@@ -55,9 +55,12 @@ fn test_document_streaming_emits_events_in_order() {
     engine.set_document(doc, 0);
     engine.play();
 
-    // 让时间推进足够覆盖全部音符（约 10 tick ≈ 10 ms）
-    std::thread::sleep(Duration::from_millis(20));
-    let messages = engine.update();
+    // 直接以固定 tick 驱动「多轨流式合并」路径，锁定「按时间顺序合并」的语义：
+    // 生产入口 `update()` 含「迟到 > LATE_NOTE_SKIP_SECS（150ms）即跳过」的
+    // wall-clock 语义，CI runner 卡顿会把全部音符误判为迟到（macOS 实测返回空
+    // 事件列表），故此测试不走 wall-clock，改用固定 current_tick=10 / late_bound=0。
+    let mut messages = Vec::new();
+    engine.process_other_tracks(10.0, 0.0, &mut messages);
 
     // 收集所有 NoteOn/NoteOff 的 key 与类型，验证时间顺序
     let event_keys: Vec<_> = messages

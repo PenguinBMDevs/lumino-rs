@@ -107,7 +107,7 @@ impl PlaybackEngine {
     /// 每个非当前音轨维护一个 `note_cursor` 指向下一颗待触发 NoteOn 的音符，
     /// 并用最小堆保存已触发 NoteOn、等待 NoteOff 的音符。播放时按时间顺序
     /// 合并 NoteOn/NoteOff，避免预先把整轨事件拷贝排序。
-    fn process_other_tracks(
+    pub(super) fn process_other_tracks(
         &mut self,
         current_tick: f32,
         late_bound: f32,
