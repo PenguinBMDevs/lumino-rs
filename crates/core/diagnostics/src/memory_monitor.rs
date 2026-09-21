@@ -234,6 +234,26 @@ impl MemoryMonitor {
             }
             return Some(false);
         }
+
+        // ── 异常读数兜底 ──
+        // macOS `task_info` 偶发返回异常读数（CI 实测：check 读到远超实际的值触发
+        // 误报 abort，崩溃报告中重读仅 5.8 GB）。物理 RSS 不可能超过总内存的 2 倍，
+        // 超出即按读取失败处理（与 rss == 0 同路径）。
+        if self.total_physical > 0 && rss > self.total_physical.saturating_mul(2) {
+            let fail_count = self
+                .rss_fail_count
+                .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+                + 1;
+            if fail_count == 1 {
+                tracing::warn!(
+                    "{log_prefix}异常 RSS 读数（{rss} 字节 > 总内存 2 倍），按读取失败处理"
+                );
+            }
+            if fail_count >= MAX_RSS_FAILURES {
+                return None;
+            }
+            return Some(false);
+        }
         self.rss_fail_count
             .store(0, std::sync::atomic::Ordering::Relaxed);
 

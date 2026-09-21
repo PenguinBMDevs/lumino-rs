@@ -41,33 +41,39 @@ fn select_and_assert(item: ToolPanelItem, expect_tool: Tool, expect_fill: bool) 
 
 #[test]
 fn test_panel_brush_switches_to_brush() {
+    let _guard = crate::test_helpers::event_queue_lock();
     select_and_assert(ToolPanelItem::Brush, Tool::Brush, false);
 }
 
 #[test]
 fn test_panel_shape_switches_to_shape() {
+    let _guard = crate::test_helpers::event_queue_lock();
     select_and_assert(ToolPanelItem::Shape, Tool::Shape, false);
 }
 
 #[test]
 fn test_panel_text_switches_to_text() {
+    let _guard = crate::test_helpers::event_queue_lock();
     select_and_assert(ToolPanelItem::Text, Tool::Text, false);
 }
 
 #[test]
 fn test_panel_eraser_switches_to_draw_eraser() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 下拉内「橡皮擦」是绘制橡皮擦（Tool::DrawEraser），独立于普通编辑橡皮擦（Tool::Eraser）
     select_and_assert(ToolPanelItem::Eraser, Tool::DrawEraser, false);
 }
 
 #[test]
 fn test_panel_curve_switches_to_curve() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 曲线条目把当前工具切换为曲线（关闭填充共存态）
     select_and_assert(ToolPanelItem::Curve, Tool::Curve, false);
 }
 
 #[test]
 fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 填充桶现在随时可切换：从画刷点击仅开启填充，不强制切换到曲线
     let _ = crate::event::take_events();
     let mut root = Root::new_dialog("dark", DialogType::None);
@@ -96,6 +102,7 @@ fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
 
 #[test]
 fn test_panel_fill_bucket_from_curve_toggles_fill() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let _ = crate::event::take_events();
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.editor.set_tool(Tool::Curve);
@@ -121,6 +128,7 @@ fn test_panel_fill_bucket_from_curve_toggles_fill() {
 
 #[test]
 fn test_toolbar_update_sets_current_tool_before_sync() {
+    let _guard = crate::test_helpers::event_queue_lock();
     // 隔离验证第一段：toolbar.update 自身就把 current_tool 设对（sync 之前）
     let mut root = Root::new_dialog("dark", DialogType::None);
     root.toolbar.tool_panel_open = true;
@@ -137,6 +145,7 @@ fn test_toolbar_update_sets_current_tool_before_sync() {
 /// 间接保证面板结构（图标独占按钮 + 描述条）可正常构建。
 #[test]
 fn test_render_tool_panel_does_not_panic() {
+    let _guard = crate::test_helpers::event_queue_lock();
     use iced_core::Color;
     use lumino_core::storage::config::UiConfig;
 

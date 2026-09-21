@@ -5,6 +5,7 @@ use crate::message::CustomPrecisionAction;
 
 #[test]
 fn test_collaboration_handler_opens_dialog() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let mut handler = CollaborationHandler::new();
     let mut root = create_root();
 
@@ -18,6 +19,7 @@ fn test_collaboration_handler_opens_dialog() {
 
 #[test]
 fn test_dialog_handler_opens_custom_precision() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let mut handler = DialogHandler::new();
     let mut root = create_root();
 
@@ -41,6 +43,7 @@ fn test_dialog_handler_opens_custom_precision() {
 
 #[test]
 fn test_toolbar_handler_play_creates_manager() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let mut handler = ToolbarHandler::new();
     let mut root = create_root();
 
@@ -59,6 +62,7 @@ fn test_toolbar_handler_play_creates_manager() {
 
 #[test]
 fn test_handle_core_event_re_emits_event() {
+    let _guard = crate::test_helpers::event_queue_lock();
     let mut root = create_root();
 
     // 清空已有事件
