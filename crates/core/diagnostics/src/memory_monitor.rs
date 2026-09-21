@@ -104,6 +104,16 @@ pub struct MemoryMonitor {
     warn_throttle: std::sync::atomic::AtomicU32,
 }
 
+/// 解析软限环境变量覆盖（`LUMINO_MEMORY_SOFT_LIMIT_MB`，单位 MB）。
+///
+/// 仅用于 CI/测试等内存受限环境；未设置或非法时返回 `None`（走默认软限）。
+fn soft_limit_override() -> Option<u64> {
+    std::env::var("LUMINO_MEMORY_SOFT_LIMIT_MB")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .map(|mb| mb.saturating_mul(1024 * 1024))
+}
+
 impl MemoryMonitor {
     /// 使用默认配置创建（保留 512 MB）
     ///
@@ -113,10 +123,7 @@ impl MemoryMonitor {
     fn new() -> Self {
         let total = platform::get_total_physical_memory();
         let reserve = DEFAULT_RESERVE_BYTES;
-        let overridden = std::env::var("LUMINO_MEMORY_SOFT_LIMIT_MB")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .map(|mb| mb.saturating_mul(1024 * 1024));
+        let overridden = soft_limit_override();
         let limit = overridden.unwrap_or_else(|| total.saturating_sub(reserve));
 
         tracing::info!(
