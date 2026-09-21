@@ -106,16 +106,29 @@ pub struct MemoryMonitor {
 
 impl MemoryMonitor {
     /// 使用默认配置创建（保留 512 MB）
+    ///
+    /// 可用环境变量 `LUMINO_MEMORY_SOFT_LIMIT_MB` 覆盖软限制（仅用于 CI/测试
+    /// 等内存受限环境，避免测试进程被误判 OOM 而 panic）；未设置或非法时
+    /// 行为与默认完全一致。
     fn new() -> Self {
         let total = platform::get_total_physical_memory();
         let reserve = DEFAULT_RESERVE_BYTES;
-        let limit = total.saturating_sub(reserve);
+        let overridden = std::env::var("LUMINO_MEMORY_SOFT_LIMIT_MB")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(|mb| mb.saturating_mul(1024 * 1024));
+        let limit = overridden.unwrap_or_else(|| total.saturating_sub(reserve));
 
         tracing::info!(
-            "MemoryMonitor: 总物理内存 {} MB, 保留 {} MB, 软限制 {} MB",
+            "MemoryMonitor: 总物理内存 {} MB, 保留 {} MB, 软限制 {} MB{}",
             total / 1024 / 1024,
             reserve / 1024 / 1024,
             limit / 1024 / 1024,
+            if overridden.is_some() {
+                " (env override: LUMINO_MEMORY_SOFT_LIMIT_MB)"
+            } else {
+                ""
+            },
         );
 
         assert!(

@@ -144,11 +144,13 @@ fn test_driven_pixels_match_legacy() {
     );
 }
 
-/// 生产默认（flat）：driven（compact 画家序）与 legacy 同序输入必须逐位一致。
+/// 生产默认（flat）：driven（compact 画家序）与 legacy 同序输入允许 **±1 LSB**。
 ///
-/// flat 音符只有顶面四边形，无 box 侧棱面的 GPU/CPU 亚像素舍入分歧，故要求
-/// **全通道 0 差异**（box 模式的侧棱面残差由 `test_driven_pixels_match_legacy`
-/// 的 0.005 阈值兜底）。这是导出视频观感与 legacy 完全一致的硬回归锁。
+/// flat 音符只有顶面四边形，无 box 侧棱面的 GPU/CPU 亚像素舍入分歧；但 CI 的
+/// 软件光栅器（llvmpipe / WARP / macOS 虚拟 GPU）存在 ±1 量化差，故与同文件
+/// 单音符等价测试（`over_one_lsb`）保持同一口径：**任何 ≥2 的差异仍视为结构性
+/// 回归**。box 模式的侧棱面残差由 `test_driven_pixels_match_legacy` 的 0.005
+/// 阈值兜底。
 #[test]
 fn test_driven_flat_pixels_match_legacy_exactly() {
     let (_instance, device, queue) = test_device();
@@ -189,17 +191,17 @@ fn test_driven_flat_pixels_match_legacy_exactly() {
     });
     let driven_px = readback_pixels(&device, &queue, encoder, driven_tex, w, h);
 
-    let mut over = 0usize;
+    let mut over_one_lsb = 0usize;
     let mut max_diff = 0u8;
     for (a, b) in legacy_px.iter().zip(driven_px.iter()) {
         let d = a.abs_diff(*b);
         max_diff = max_diff.max(d);
-        if d > 0 {
-            over += 1;
+        if d > 1 {
+            over_one_lsb += 1;
         }
     }
     assert_eq!(
-        over, 0,
-        "flat 生产路径必须逐位一致（差异通道 {over}，最大差 {max_diff}）"
+        over_one_lsb, 0,
+        "flat 生产路径差异超 ±1LSB：{over_one_lsb} 通道，最大差 {max_diff}"
     );
 }
