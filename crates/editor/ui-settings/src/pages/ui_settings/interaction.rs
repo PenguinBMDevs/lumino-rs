@@ -5,8 +5,9 @@ use iced_widget::{column, pick_list, row, text};
 use lumino_ui_core::{Element, Message};
 
 use super::super::super::components::constants::*;
-use super::super::super::components::styles::{
-    create_content_text_style, create_placeholder_text_style,
+use super::super::super::components::styles::create_content_text_style;
+use super::super::super::components::{
+    with_setting_tooltip_inline, with_setting_tooltip_inline_action,
 };
 use crate::SettingsPanel;
 use lumino_core::storage::config::SelectionBoxMode;
@@ -53,9 +54,12 @@ pub(crate) fn build_interaction_section<'a>(
             .style(create_content_text_style()),
         iced_widget::space().height(12),
         row![
-            text(t.selection_box_mode)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.selection_box_mode)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.selection_box_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 vec![
@@ -72,10 +76,6 @@ pub(crate) fn build_interaction_section<'a>(
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.selection_box_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
         // 256键钢琴卷帘设置
         text(t.piano_roll)
@@ -83,48 +83,59 @@ pub(crate) fn build_interaction_section<'a>(
             .style(create_content_text_style()),
         iced_widget::space().height(12),
         row![
-            iced_widget::Checkbox::new(settings.display.enable_256key)
-                .label(t.enable_256key)
-                .on_toggle(|enabled| {
-                    Message::Settings(crate::Event::Enable256keyChanged(enabled))
-                }),
+            iced_widget::Checkbox::new(settings.display.enable_256key).on_toggle(|enabled| {
+                Message::Settings(crate::Event::Enable256keyChanged(enabled))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.enable_256key)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.enable_256key_hint,
+                Message::Settings(crate::Event::Enable256keyChanged(
+                    !settings.display.enable_256key,
+                )),
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.enable_256key_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         // 力度面板显示样式（曲线/柱状图切换）
         row![
-            iced_widget::Checkbox::new(settings.display.velocity_curve_style)
-                .label("力度面板曲线显示（默认）")
-                .on_toggle(|enabled| {
-                    Message::Settings(crate::Event::VelocityCurveStyleChanged(enabled))
-                }),
+            iced_widget::Checkbox::new(settings.display.velocity_curve_style).on_toggle(
+                |enabled| { Message::Settings(crate::Event::VelocityCurveStyleChanged(enabled)) }
+            ),
+            with_setting_tooltip_inline_action(
+                text("力度面板曲线显示（默认）")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                "关闭后使用柱状图显示力度值",
+                Message::Settings(crate::Event::VelocityCurveStyleChanged(
+                    !settings.display.velocity_curve_style,
+                )),
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text("关闭后使用柱状图显示力度值")
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         // 播放键盘颜色指示
         row![
-            iced_widget::Checkbox::new(settings.display.playback_key_colors_enabled)
-                .label("播放时键盘颜色指示（默认关闭）")
-                .on_toggle(|enabled| {
+            iced_widget::Checkbox::new(settings.display.playback_key_colors_enabled).on_toggle(
+                |enabled| {
                     Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(enabled))
-                }),
+                }
+            ),
+            with_setting_tooltip_inline_action(
+                text("播放时键盘颜色指示（默认关闭）")
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                "开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存",
+                Message::Settings(crate::Event::PlaybackKeyColorsEnabledChanged(
+                    !settings.display.playback_key_colors_enabled,
+                )),
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text("开启后播放时在钢琴键盘上高亮当前音符位置，占用额外内存")
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .into()

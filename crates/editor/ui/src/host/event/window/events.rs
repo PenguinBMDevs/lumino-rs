@@ -1,6 +1,7 @@
 //! Host 窗口事件处理子模块 — 事件转换、队列处理与 UI 状态门控
 
 use iced_core::mouse;
+use iced_core::window::RedrawRequest;
 use iced_winit::runtime::user_interface;
 use iced_winit::{conversion, winit};
 
@@ -168,6 +169,10 @@ impl Host {
                 )
                 .0
         };
+        let redraw_request = match &state {
+            user_interface::State::Updated { redraw_request, .. } => *redraw_request,
+            user_interface::State::Outdated => RedrawRequest::Wait,
+        };
 
         let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
 
@@ -178,6 +183,8 @@ impl Host {
         }
 
         self.update_cursor_icon(&state);
+        // Tooltip 延迟显示依赖 At 定时唤醒，必须转发 iced 的重绘请求。
+        self.handle_redraw_request(redraw_request);
 
         (messages, is_ui_updated)
     }

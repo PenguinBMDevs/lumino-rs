@@ -12,6 +12,7 @@ use super::super::super::components::constants::{
 use super::super::super::components::styles::{
     create_content_text_style, create_placeholder_text_style,
 };
+use super::super::super::components::with_setting_tooltip_inline;
 use crate::SettingsPanel;
 
 /// 渲染 WinMM (系统 MIDI) 输出设备（播表）选择器
@@ -22,9 +23,13 @@ pub(super) fn render_winmm_output_selector<'a>(
     settings: &'a SettingsPanel,
     t: &lumino_extras::i18n::SettingsTranslations,
 ) -> Element<'a> {
-    let label = text(t.winmm_output_device)
-        .size(TEXT_SIZE_CONTENT)
-        .style(create_content_text_style());
+    // 整组说明（System 模式无需音色库）挂在组内首个标签文字上；控件本身不触发提示
+    let label = with_setting_tooltip_inline(
+        text(t.winmm_output_device)
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style()),
+        t.system_hint,
+    );
 
     let refresh_btn =
         iced_widget::button(t.refresh).on_press(Message::Settings(crate::Event::ScanWinmmOutputs));
@@ -84,15 +89,7 @@ pub(super) fn render_winmm_output_selector<'a>(
         .into()
     };
 
-    column![
-        body,
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.system_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    ]
-    .spacing(SPACING_CONTENT)
-    .into()
+    column![body].spacing(SPACING_CONTENT).into()
 }
 
 /// 渲染音频播放输出设备（CPAL 音频设备）选择器
@@ -108,11 +105,17 @@ pub(super) fn render_audio_output_selector<'a>(
     let refresh_btn =
         iced_widget::button(t.refresh).on_press(Message::Settings(crate::Event::ScanAudioOutputs));
 
+    // 整组说明挂在组内首个标签文字上；控件本身不触发提示
+    let device_label = with_setting_tooltip_inline(
+        text(t.audio_output_device)
+            .size(TEXT_SIZE_CONTENT)
+            .style(create_content_text_style()),
+        t.audio_output_hint,
+    );
+
     let body: Element<'a> = if settings.synth.audio_output_devices.is_empty() {
         row![
-            text(t.audio_output_device)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            device_label,
             iced_widget::space().width(SPACING_MAIN),
             text(t.audio_output_no_device)
                 .size(TEXT_SIZE_CONTENT)
@@ -135,9 +138,7 @@ pub(super) fn render_audio_output_selector<'a>(
             .or_else(|| Some(default_label.to_string()));
 
         row![
-            text(t.audio_output_device)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            device_label,
             iced_widget::space().width(SPACING_MAIN),
             pick_list(options, selected, move |name| {
                 // 选择默认项 → 清空（使用系统默认）；否则记录设备名
@@ -158,15 +159,7 @@ pub(super) fn render_audio_output_selector<'a>(
         .into()
     };
 
-    column![
-        body,
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.audio_output_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    ]
-    .spacing(SPACING_CONTENT)
-    .into()
+    column![body].spacing(SPACING_CONTENT).into()
 }
 
 /// 渲染 MIDI 输入设备选择器

@@ -8,6 +8,7 @@ use super::super::super::components::constants::*;
 use super::super::super::components::styles::{
     create_content_text_style, create_placeholder_text_style,
 };
+use super::super::super::components::with_setting_tooltip_inline;
 use crate::SettingsPanel;
 use lumino_extras::i18n::SettingsTranslations;
 
@@ -37,12 +38,16 @@ pub(crate) fn build_font_section<'a>(
     let browse_font_button =
         button(t.browse).on_press(Message::Settings(crate::Event::BrowseProgramFont));
 
+    // 字体说明（系统字体下拉 + 自定义路径）挂在组内首个设置项标签文字上
     column![
         // 系统字体下拉菜单
         row![
-            text(t.program_font)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.program_font)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.font_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             font_dropdown,
             iced_widget::space().width(SPACING_ICON_LABEL),
@@ -59,11 +64,6 @@ pub(crate) fn build_font_section<'a>(
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        // 字体设置说明
-        text(t.font_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     ]
     .into()
 }

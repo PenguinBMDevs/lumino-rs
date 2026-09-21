@@ -9,9 +9,8 @@ use lumino_ui_core::{Message, Theme};
 use super::super::super::components::constants::{
     SPACING_CONTENT, SPACING_ICON_LABEL, SPACING_MAIN, TEXT_SIZE_CONTENT,
 };
-use super::super::super::components::styles::{
-    create_content_text_style, create_placeholder_text_style,
-};
+use super::super::super::components::styles::create_content_text_style;
+use super::super::super::components::with_setting_tooltip_inline;
 use crate::SettingsPanel;
 
 /// 渲染 LGS (GPU) 选项
@@ -24,12 +23,15 @@ pub(super) fn render_lgs_options<'a>(
 ) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     let mut col = column![];
 
-    // 音色库选择（与 XSynth 共用 soundfont_path）
+    // 音色库选择（与 XSynth 共用 soundfont_path；LGS 引擎说明挂在「音色库」标签文字上，控件本身不触发提示）
     col = col.push(
         row![
-            text(t.soundfont)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.soundfont)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.lgs_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input(t.soundfont_placeholder, &settings.synth.soundfont_path)
                 .width(Length::Fill)
@@ -48,13 +50,16 @@ pub(super) fn render_lgs_options<'a>(
     let block_index = ((settings.synth.lgs_block_size as f64).log2().round() as usize).clamp(6, 13);
     col = col.push(
         row![
-            text(format!(
-                "{}: {}",
-                t.lgs_buffer, settings.synth.lgs_block_size
-            ))
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style())
-            .width(200.0),
+            with_setting_tooltip_inline(
+                text(format!(
+                    "{}: {}",
+                    t.lgs_buffer, settings.synth.lgs_block_size
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(200.0),
+                t.lgs_buffer_hint,
+            ),
             iced_widget::slider(6.0..=13.0, block_index as f32, |i| {
                 Message::Settings(crate::Event::LgsBlockSizeChanged(1usize << i as u32))
             })
@@ -63,12 +68,6 @@ pub(super) fn render_lgs_options<'a>(
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.lgs_buffer_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     );
     col = col.push(iced_widget::space().height(20));
 
@@ -81,10 +80,13 @@ pub(super) fn render_lgs_options<'a>(
     };
     col = col.push(
         row![
-            text(format!("{}: {}", t.max_voices, display_voices))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(180.0),
+            with_setting_tooltip_inline(
+                text(format!("{}: {}", t.max_voices, display_voices))
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(180.0),
+                t.max_voices_hint,
+            ),
             iced_widget::slider(0.0..=128.0, lgs_voices as f32, |v| {
                 Message::Settings(crate::Event::LgsMaxVoicesChanged(v as usize))
             })
@@ -94,24 +96,21 @@ pub(super) fn render_lgs_options<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.max_voices_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
     col = col.push(iced_widget::space().height(20));
 
     // LGS (GPU) 专属响度过滤（与 XSynth 全局力度过滤相互独立；LGS 输出连接在 note_on 处实时丢弃过轻音符）
     col = col.push(
         row![
-            text(format!(
-                "{}: {}",
-                t.velocity_filter, settings.synth.lgs_velocity_filter_threshold
-            ))
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style())
-            .width(180.0),
+            with_setting_tooltip_inline(
+                text(format!(
+                    "{}: {}",
+                    t.velocity_filter, settings.synth.lgs_velocity_filter_threshold
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(180.0),
+                t.velocity_filter_hint,
+            ),
             iced_widget::slider(0..=127, settings.synth.lgs_velocity_filter_threshold, |v| {
                 Message::Settings(crate::Event::LgsVelocityFilterChanged(v))
             },)
@@ -121,20 +120,7 @@ pub(super) fn render_lgs_options<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.velocity_filter_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
     col = col.push(iced_widget::space().height(20));
-
-    // LGS (GPU) 提示
-    col = col.push(
-        text(t.lgs_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
 
     col
 }

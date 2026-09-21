@@ -66,6 +66,11 @@ impl Host {
             )
         };
 
+        let redraw_request = match &state {
+            user_interface::State::Updated { redraw_request, .. } => *redraw_request,
+            user_interface::State::Outdated => iced_window::RedrawRequest::Wait,
+        };
+
         // 绘制界面
         {
             puffin::profile_scope!("draw_interface");
@@ -135,5 +140,8 @@ impl Host {
                 }
             }
         }
+
+        // 处理 iced 的重绘请求：Tooltip 延迟显示依赖 `RedrawRequest::At` 的定时唤醒。
+        self.handle_redraw_request(redraw_request);
     }
 }

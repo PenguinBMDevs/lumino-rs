@@ -3,6 +3,7 @@
 //! 页面只负责展示与发起事件；检查执行在 Runner（后台线程），
 //! 结果经事件总线回传并注入本页状态（`GpuCheckUiState`）。
 
+use iced_core::Alignment;
 use iced_widget::{button, checkbox, column, row, text};
 use lumino_extras::i18n::settings_translations;
 use lumino_ui_core::{Element, Message, state::GpuCheckUiState};
@@ -11,6 +12,7 @@ use crate::SettingsPanel;
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
+use super::super::components::with_setting_tooltip_inline_action;
 
 /// 渲染兼容性页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
@@ -86,23 +88,41 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         iced_widget::space().height(8),
         result_block,
         iced_widget::space().height(20),
-        checkbox(compat.check_on_startup)
-            .label(t.compat_check_on_startup)
-            .on_toggle(
-                |enabled| Message::Settings(crate::Event::GpuCheckOnStartupChanged(enabled,))
+        // 启动检查开关（说明挂在标签文字上，提示不覆盖对钩框；点击文字等价于切换对钩）
+        row![
+            checkbox(compat.check_on_startup).on_toggle(|enabled| {
+                Message::Settings(crate::Event::GpuCheckOnStartupChanged(enabled))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.compat_check_on_startup)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.compat_check_on_startup_hint,
+                Message::Settings(crate::Event::GpuCheckOnStartupChanged(
+                    !compat.check_on_startup,
+                )),
             ),
-        text(t.compat_check_on_startup_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
         iced_widget::space().height(8),
-        checkbox(!compat.warning_suppressed)
-            .label(t.compat_show_warning)
-            .on_toggle(
-                |visible| Message::Settings(crate::Event::GpuWarningSuppressedChanged(!visible),)
+        // 启动警告开关（说明挂在标签文字上，提示不覆盖对钩框；点击文字等价于切换对钩）
+        row![
+            checkbox(!compat.warning_suppressed).on_toggle(|visible| {
+                Message::Settings(crate::Event::GpuWarningSuppressedChanged(!visible))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.compat_show_warning)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.compat_show_warning_hint,
+                Message::Settings(crate::Event::GpuWarningSuppressedChanged(
+                    !compat.warning_suppressed,
+                )),
             ),
-        text(t.compat_show_warning_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)

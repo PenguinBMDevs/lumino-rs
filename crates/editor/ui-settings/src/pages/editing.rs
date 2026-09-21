@@ -12,7 +12,8 @@ use lumino_extras::i18n::settings_translations;
 use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
-use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
+use super::super::components::styles::create_content_text_style;
+use super::super::components::{with_setting_tooltip_inline, with_setting_tooltip_inline_action};
 use crate::SettingsPanel;
 
 /// Tempo BPM 上限预设值
@@ -96,11 +97,14 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .size(TEXT_SIZE_SECTION)
             .style(create_content_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
-        // 操作日志总条数上限
+        // 操作日志总条数上限（说明挂在标签文字上，输入框本身不触发）
         row![
-            text(t.editing_history_total_limit)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.editing_history_total_limit)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_history_total_limit_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input("100", &settings.editing.history_total_limit.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HistoryTotalLimitChanged(v)))
@@ -108,16 +112,15 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_history_total_limit_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         // 单条日志条目上限
         row![
-            text(t.editing_history_entry_limit)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.editing_history_entry_limit)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_history_entry_limit_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input("1000", &settings.editing.history_entry_limit.to_string())
                 .on_input(|v| Message::Settings(crate::Event::HistoryEntryLimitChanged(v)))
@@ -125,16 +128,15 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_history_entry_limit_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         // 合并窗口
         row![
-            text(t.editing_merge_window)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.editing_merge_window)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_merge_window_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input("300", &settings.editing.merge_window_ms.to_string())
                 .on_input(|v| Message::Settings(crate::Event::MergeWindowMsChanged(v)))
@@ -142,10 +144,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_merge_window_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
         // ── Tempo 面板 section ──
         text(t.editing_tempo_max_bpm)
@@ -154,9 +152,12 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         iced_widget::space().height(SPACING_CONTENT),
         // BPM 绘制上限下拉（预设 + 自定义）
         row![
-            text(t.editing_tempo_max_bpm)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.editing_tempo_max_bpm)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_tempo_max_bpm_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 TempoMaxBpmOption::all()
@@ -180,30 +181,31 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_tempo_max_bpm_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(24),
         // ── 编辑拦截 section ──
         text(t.editing_intercept_section)
             .size(TEXT_SIZE_SECTION)
             .style(create_content_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
-        // 拦截时显示 Toast 提示
+        // 拦截时显示 Toast 提示（说明挂在标签文字上，对钩框本身不触发）
         row![
-            iced_widget::Checkbox::new(settings.editing.intercept_notification_enabled)
-                .label(t.editing_intercept_notification)
-                .on_toggle(|enabled| {
+            iced_widget::Checkbox::new(settings.editing.intercept_notification_enabled).on_toggle(
+                |enabled| {
                     Message::Settings(crate::Event::InterceptNotificationChanged(enabled))
-                }),
+                }
+            ),
+            with_setting_tooltip_inline_action(
+                text(t.editing_intercept_notification)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.editing_intercept_notification_hint,
+                Message::Settings(crate::Event::InterceptNotificationChanged(
+                    !settings.editing.intercept_notification_enabled,
+                )),
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.editing_intercept_notification_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT);

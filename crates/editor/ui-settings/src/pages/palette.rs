@@ -8,6 +8,7 @@ use lumino_ui_core::{Element, Message, Theme};
 
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
+use super::super::components::with_setting_tooltip_inline;
 use crate::{Event, SettingsPanel};
 use lumino_extras::palette::PaletteColor;
 
@@ -68,21 +69,19 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
-        // 调色板选择器
+        // 调色板选择器（说明挂在左侧标签文字上，控件本身不触发提示）
         row![
-            text(t.palette_select)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.palette_select)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.palette_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             picker,
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        // 说明文字
-        text(t.palette_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(20),
         // 颜色预览
         text(t.palette_colors_info)
