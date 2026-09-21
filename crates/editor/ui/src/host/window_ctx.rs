@@ -26,6 +26,12 @@ pub(crate) struct WindowContext {
     pub is_toolbar_resizing: bool,
     /// 鼠标按钮按下标识
     pub is_mouse_pressed: bool,
+    /// 已实际应用到窗口的光标状态（`None` = 尚未应用；`Some(None)` = 已隐藏）。
+    ///
+    /// 只在光标图标/可见性**真正变化**时才调用 `set_cursor` / `set_cursor_visible`：
+    /// 每帧重复设置会被系统（Windows `WM_SETCURSOR`）与异步设置竞态重置，
+    /// 表现为光标在两种形态间闪烁。
+    pub applied_cursor: Option<Option<winit::window::CursorIcon>>,
 }
 
 impl WindowContext {
@@ -42,6 +48,7 @@ impl WindowContext {
             pending_drag: false,
             is_toolbar_resizing: false,
             is_mouse_pressed: false,
+            applied_cursor: None,
         }
     }
 }

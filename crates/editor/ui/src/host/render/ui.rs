@@ -125,19 +125,14 @@ impl Host {
             }
         }
 
-        // 更新鼠标光标
+        // 更新鼠标光标（幂等，仅变化时真正设置，避免与事件路径竞态闪烁）
         {
             puffin::profile_scope!("update_cursor");
             if let user_interface::State::Updated {
                 mouse_interaction, ..
             } = state
             {
-                if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
-                    self.window_ctx.window.set_cursor(icon);
-                    self.window_ctx.window.set_cursor_visible(true);
-                } else {
-                    self.window_ctx.window.set_cursor_visible(false);
-                }
+                self.apply_cursor_interaction(mouse_interaction);
             }
         }
 

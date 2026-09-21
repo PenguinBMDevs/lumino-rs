@@ -21,6 +21,10 @@ impl Host {
     }
 
     fn handle_focused_event(&mut self, focused: bool) {
+        if focused {
+            // 重新获得焦点后系统可能已重置光标，丢弃缓存以便下一帧重新应用
+            self.window_ctx.applied_cursor = None;
+        }
         self.route_message(message::Window::focused(focused));
     }
 
@@ -83,6 +87,10 @@ impl Host {
         match &event {
             Resized(_) => self.handle_resized_event(),
             Focused(r) => self.handle_focused_event(*r),
+            CursorEntered { .. } => {
+                // 鼠标重新进入窗口后强制重新应用光标（系统可能已重置）
+                self.window_ctx.applied_cursor = None;
+            }
             KeyboardInput { event, .. } => self.handle_keyboard_input_event(event, modifiers),
             MouseInput { state, button, .. } => {
                 self.handle_mouse_input_event(*state, *button);

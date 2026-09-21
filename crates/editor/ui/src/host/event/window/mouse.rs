@@ -96,15 +96,32 @@ impl Host {
             mouse_interaction, ..
         } = state
         {
-            {
-                puffin::profile_scope!("cursor_update");
-                if let Some(icon) = iced_winit::conversion::mouse_interaction(*mouse_interaction) {
-                    self.window_ctx.window.set_cursor(icon);
-                    self.window_ctx.window.set_cursor_visible(true);
-                } else {
-                    self.window_ctx.window.set_cursor_visible(false);
-                }
+            self.apply_cursor_interaction(*mouse_interaction);
+        }
+    }
+
+    /// 应用 iced 的鼠标交互为窗口光标（幂等：仅在变化时真正设置）。
+    ///
+    /// 每帧无条件调用 `set_cursor` / `set_cursor_visible` 会被系统与 winit 的
+    /// 异步设置竞态重置，导致光标在两种形态间闪烁；这里缓存上次应用值，
+    /// 仅在图标或可见性变化时调用一次。
+    pub(crate) fn apply_cursor_interaction(&mut self, interaction: iced_core::mouse::Interaction) {
+        let icon = iced_winit::conversion::mouse_interaction(interaction);
+        if self.window_ctx.applied_cursor == Some(icon) {
+            return;
+        }
+
+        puffin::profile_scope!("cursor_update");
+        match icon {
+            Some(icon) => {
+                self.window_ctx.window.set_cursor(icon);
+                self.window_ctx.window.set_cursor_visible(true);
+            }
+            None => {
+                // `Interaction::Hidden`：隐藏光标（`conversion` 返回 None 的唯一情况）。
+                self.window_ctx.window.set_cursor_visible(false);
             }
         }
+        self.window_ctx.applied_cursor = Some(icon);
     }
 }
