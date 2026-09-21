@@ -9,8 +9,9 @@ use lumino_ui_core::{Message, Theme};
 use super::super::super::components::constants::{
     SPACING_CONTENT, SPACING_ICON_LABEL, SPACING_MAIN, TEXT_SIZE_CONTENT,
 };
-use super::super::super::components::styles::{
-    create_content_text_style, create_placeholder_text_style,
+use super::super::super::components::styles::create_content_text_style;
+use super::super::super::components::{
+    with_setting_tooltip_inline, with_setting_tooltip_inline_action,
 };
 use crate::SettingsPanel;
 
@@ -21,12 +22,15 @@ pub(super) fn render_xsynth_options<'a>(
 ) -> iced_widget::Column<'a, Message, Theme, lumino_ui_core::Renderer> {
     let mut col = column![];
 
-    // 音色库选择
+    // 音色库选择（XSynth 引擎说明挂在「音色库」标签文字上，控件本身不触发提示）
     col = col.push(
         row![
-            text(t.soundfont)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.soundfont)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.xsynth_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input(t.soundfont_placeholder, &settings.synth.soundfont_path)
                 .width(Length::Fill)
@@ -73,10 +77,13 @@ pub(super) fn render_xsynth_options<'a>(
     };
     col = col.push(
         row![
-            text(format!("{}: {}", t.max_voices, display_val))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(180.0),
+            with_setting_tooltip_inline(
+                text(format!("{}: {}", t.max_voices, display_val))
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(180.0),
+                t.max_voices_hint,
+            ),
             iced_widget::slider(0.0..=64.0, slider_val, |v| {
                 let opt = if v < 0.5 { None } else { Some(v as usize) };
                 Message::Settings(crate::Event::XSynthMaxVoicesChanged(opt))
@@ -90,12 +97,6 @@ pub(super) fn render_xsynth_options<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.max_voices_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
     col = col.push(iced_widget::space().height(20));
 
     // 全局最大复音数（硬上限/量程）：0=自动（引擎默认 10000）
@@ -106,10 +107,13 @@ pub(super) fn render_xsynth_options<'a>(
     };
     col = col.push(
         row![
-            text(format!("{}: {}", t.global_voice_limit, global_display))
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style())
-                .width(200.0),
+            with_setting_tooltip_inline(
+                text(format!("{}: {}", t.global_voice_limit, global_display))
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(200.0),
+                t.global_voice_limit_hint,
+            ),
             iced_widget::slider(0.0..=20000.0, global_limit_val as f64, |v| {
                 Message::Settings(crate::Event::XSynthGlobalVoiceLimitChanged(v as usize))
             })
@@ -120,23 +124,20 @@ pub(super) fn render_xsynth_options<'a>(
         .align_y(Alignment::Center),
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.global_voice_limit_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
     // 复音软目标比例（默认 1-1/e≈0.632）
     col = col.push(
         row![
-            text(format!(
-                "{}: {:.3}",
-                t.voice_target_ratio, settings.synth.xsynth_voice_target_ratio
-            ))
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style())
-            .width(200.0),
+            with_setting_tooltip_inline(
+                text(format!(
+                    "{}: {:.3}",
+                    t.voice_target_ratio, settings.synth.xsynth_voice_target_ratio
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(200.0),
+                t.voice_target_ratio_hint,
+            ),
             iced_widget::slider(0.50..=0.90, settings.synth.xsynth_voice_target_ratio, |r| {
                 Message::Settings(crate::Event::XSynthVoiceTargetRatioChanged(r))
             })
@@ -147,37 +148,41 @@ pub(super) fn render_xsynth_options<'a>(
         .align_y(Alignment::Center),
     );
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.voice_target_ratio_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
     // 过载保命闸（软 NPS 闸，默认关闭）
+    // 说明挂在独立标签文字上（提示不覆盖对钩框）；点击文字等价于切换对钩
     col = col.push(
-        iced_widget::Checkbox::new(settings.synth.xsynth_soft_nps_gate)
-            .label(t.soft_nps_gate)
-            .on_toggle(|on| Message::Settings(crate::Event::XSynthSoftNpsGateChanged(on))),
-    );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.soft_nps_gate_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
+        row![
+            iced_widget::Checkbox::new(settings.synth.xsynth_soft_nps_gate)
+                .on_toggle(|on| Message::Settings(crate::Event::XSynthSoftNpsGateChanged(on))),
+            with_setting_tooltip_inline_action(
+                text(t.soft_nps_gate)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.soft_nps_gate_hint,
+                Message::Settings(crate::Event::XSynthSoftNpsGateChanged(
+                    !settings.synth.xsynth_soft_nps_gate,
+                )),
+            ),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
     );
     col = col.push(iced_widget::space().height(20));
 
     // 力度过滤
     col = col.push(
         row![
-            text(format!(
-                "{}: {}",
-                t.velocity_filter, settings.midi.velocity_filter_threshold
-            ))
-            .size(TEXT_SIZE_CONTENT)
-            .style(create_content_text_style())
-            .width(180.0),
+            with_setting_tooltip_inline(
+                text(format!(
+                    "{}: {}",
+                    t.velocity_filter, settings.midi.velocity_filter_threshold
+                ))
+                .size(TEXT_SIZE_CONTENT)
+                .style(create_content_text_style())
+                .width(180.0),
+                t.velocity_filter_hint,
+            ),
             iced_widget::slider(0..=127, settings.midi.velocity_filter_threshold, |v| {
                 Message::Settings(crate::Event::VelocityFilterThresholdChanged(v.to_string()))
             })
@@ -187,30 +192,7 @@ pub(super) fn render_xsynth_options<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
     );
-    col = col.push(iced_widget::space().height(SPACING_CONTENT));
-    col = col.push(
-        text(t.velocity_filter_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
     col = col.push(iced_widget::space().height(20));
-
-    // 帮助文本
-    col = col.push(
-        text(t.xsynth_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
-    col = col.push(
-        text(t.kdmapi_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
-    col = col.push(
-        text(t.system_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-    );
 
     col
 }

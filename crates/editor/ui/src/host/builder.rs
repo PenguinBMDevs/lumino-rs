@@ -104,6 +104,8 @@ impl Host {
             message_router: handlers::create_message_router(),
             active_touches: std::collections::HashMap::new(),
             prev_pinch_distance: None,
+            redraw_at: std::sync::Arc::new(std::sync::Mutex::new(None)),
+            redraw_timer_active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
         }
     }
 

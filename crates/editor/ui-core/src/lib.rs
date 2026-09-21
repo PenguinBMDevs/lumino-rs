@@ -21,6 +21,8 @@ pub mod window_event;
 
 /// Root 持有的子状态类型（视觉/渲染状态；播放/MIDI 连接状态已上移至 lumino-ui::state）
 pub mod visual_state;
+/// 自定义 Widget 辅助函数（tooltip 等通用封装）
+pub mod widget;
 /// 窗口状态（Window 结构体）
 pub mod window;
 

@@ -89,6 +89,10 @@ pub struct Host {
     pub(crate) active_touches: std::collections::HashMap<u64, iced_core::Point>,
     /// 上一次双指距离（像素），用于计算 pinch delta
     pub(crate) prev_pinch_distance: Option<f32>,
+    /// iced 定时重绘调度（Tooltip 延迟等）：待唤醒时刻（保留最早者）
+    pub(crate) redraw_at: std::sync::Arc<std::sync::Mutex<Option<Instant>>>,
+    /// 定时重绘后台线程是否在运行（避免重复起线程）
+    pub(crate) redraw_timer_active: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 impl Host {
@@ -180,6 +184,80 @@ impl Host {
     /// 确保 `render_iced_ui` 不因 `ui_dirty == false` 而跳过 `UserInterface::build`。
     pub fn mark_dirty(&mut self) {
         self.ui_dirty = true;
+    }
+
+    /// 处理 iced 返回的重绘请求。
+    ///
+    /// `Tooltip` 的延迟显示依赖 `RedrawRequest::At` 的定时唤醒；若丢弃该请求，
+    /// 提示必须等下一次鼠标事件才会出现（表现为"鼠标不动就不弹提示"）。
+    pub(crate) fn handle_redraw_request(&mut self, request: iced_core::window::RedrawRequest) {
+        match request {
+            iced_core::window::RedrawRequest::NextFrame => {
+                self.ui_dirty = true;
+                self.window_ctx.window.request_redraw();
+            }
+            iced_core::window::RedrawRequest::At(at) => {
+                self.ui_dirty = true;
+                self.schedule_redraw_at(at);
+            }
+            iced_core::window::RedrawRequest::Wait => {}
+        }
+    }
+
+    /// 安排一次定时重绘（保留最早时刻；复用单个后台线程）。
+    fn schedule_redraw_at(&self, at: Instant) {
+        let mut slot = match self.redraw_at.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
+        if let Some(existing) = *slot
+            && existing <= at
+        {
+            return;
+        }
+        *slot = Some(at);
+        if self
+            .redraw_timer_active
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return;
+        }
+        drop(slot);
+
+        let window = std::sync::Arc::clone(&self.window_ctx.window);
+        let slot = std::sync::Arc::clone(&self.redraw_at);
+        let active = std::sync::Arc::clone(&self.redraw_timer_active);
+        let _ = std::thread::Builder::new()
+            .name("ui-redraw-timer".to_string())
+            .spawn(move || {
+                loop {
+                    let target = match slot.lock() {
+                        Ok(mut guard) => guard.take(),
+                        Err(poisoned) => poisoned.into_inner().take(),
+                    };
+                    match target {
+                        Some(target) => {
+                            let now = Instant::now();
+                            if target > now {
+                                std::thread::sleep(target - now);
+                            }
+                            window.request_redraw();
+                        }
+                        None => {
+                            // 持锁置空闲，与 `schedule_redraw_at` 的"写槽 + 查活跃"互斥，
+                            // 避免刚置空闲又有新请求时丢唤醒。
+                            let guard = match slot.lock() {
+                                Ok(guard) => guard,
+                                Err(poisoned) => poisoned.into_inner(),
+                            };
+                            if guard.is_none() {
+                                active.store(false, std::sync::atomic::Ordering::SeqCst);
+                                break;
+                            }
+                        }
+                    }
+                }
+            });
     }
 
     /// 收集所有组件的内存占用快照（Root + RenderCache）

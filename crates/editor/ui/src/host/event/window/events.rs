@@ -1,6 +1,7 @@
 //! Host 窗口事件处理子模块 — 事件转换、队列处理与 UI 状态门控
 
 use iced_core::mouse;
+use iced_core::window::RedrawRequest;
 use iced_winit::runtime::user_interface;
 use iced_winit::{conversion, winit};
 
@@ -20,6 +21,10 @@ impl Host {
     }
 
     fn handle_focused_event(&mut self, focused: bool) {
+        if focused {
+            // 重新获得焦点后系统可能已重置光标，丢弃缓存以便下一帧重新应用
+            self.window_ctx.applied_cursor = None;
+        }
         self.route_message(message::Window::focused(focused));
     }
 
@@ -82,6 +87,10 @@ impl Host {
         match &event {
             Resized(_) => self.handle_resized_event(),
             Focused(r) => self.handle_focused_event(*r),
+            CursorEntered { .. } => {
+                // 鼠标重新进入窗口后强制重新应用光标（系统可能已重置）
+                self.window_ctx.applied_cursor = None;
+            }
             KeyboardInput { event, .. } => self.handle_keyboard_input_event(event, modifiers),
             MouseInput { state, button, .. } => {
                 self.handle_mouse_input_event(*state, *button);
@@ -168,6 +177,10 @@ impl Host {
                 )
                 .0
         };
+        let redraw_request = match &state {
+            user_interface::State::Updated { redraw_request, .. } => *redraw_request,
+            user_interface::State::Outdated => RedrawRequest::Wait,
+        };
 
         let is_ui_updated = matches!(state, user_interface::State::Updated { .. });
 
@@ -178,6 +191,8 @@ impl Host {
         }
 
         self.update_cursor_icon(&state);
+        // Tooltip 延迟显示依赖 At 定时唤醒，必须转发 iced 的重绘请求。
+        self.handle_redraw_request(redraw_request);
 
         (messages, is_ui_updated)
     }

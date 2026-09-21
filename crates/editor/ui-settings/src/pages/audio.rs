@@ -16,7 +16,8 @@ use self::outputs::{
 use self::types::{LocalizedBuiltinEngine, LocalizedOutputType};
 use self::xsynth::render_xsynth_options;
 use super::super::components::constants::*;
-use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
+use super::super::components::styles::create_content_text_style;
+use super::super::components::with_setting_tooltip_inline;
 use crate::SettingsPanel;
 use lumino_core::storage::config::SynthBackend;
 use lumino_extras::i18n::settings_translations;
@@ -71,11 +72,14 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
             .size(TEXT_SIZE_TITLE)
             .style(create_content_text_style()),
         iced_widget::space().height(20),
-        // 输出类型选择
+        // 输出类型选择（KDMAPI 说明挂在「合成器」标签文字上，控件本身不触发提示）
         row![
-            text(t.synthesizer)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.synthesizer)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.kdmapi_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(output_type_options, Some(current_output_type), |ot| {
                 Message::Settings(crate::Event::OutputTypeChanged(ot.inner))
@@ -116,17 +120,12 @@ pub fn view<'a>(settings: &'a SettingsPanel) -> Element<'a> {
     col = col.push(render_midi_device_selector(settings, t));
     col = col.push(iced_widget::space().height(SPACING_CONTENT));
 
-    // 只在对应模式下显示音色库选择 / 提示
+    // 只在对应模式下显示音色库选择 / 提示；
+    // KDMAPI 模式使用系统驱动、无需音色库，其说明已挂在上方「合成器」输出类型选择器上
     if settings.synth.backend == SynthBackend::XSynth {
         col = col.push(render_xsynth_options(settings, t));
     } else if settings.synth.backend == SynthBackend::Lgs {
         col = col.push(render_lgs_options(settings, t));
-    } else if settings.synth.backend == SynthBackend::Kdmapi {
-        col = col.push(
-            text(t.kdmapi_hint)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_placeholder_text_style()),
-        );
     } else if settings.synth.backend == SynthBackend::System {
         col = col.push(render_winmm_output_selector(settings, t));
     }

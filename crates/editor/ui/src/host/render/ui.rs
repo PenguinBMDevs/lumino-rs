@@ -66,6 +66,11 @@ impl Host {
             )
         };
 
+        let redraw_request = match &state {
+            user_interface::State::Updated { redraw_request, .. } => *redraw_request,
+            user_interface::State::Outdated => iced_window::RedrawRequest::Wait,
+        };
+
         // 绘制界面
         {
             puffin::profile_scope!("draw_interface");
@@ -120,20 +125,18 @@ impl Host {
             }
         }
 
-        // 更新鼠标光标
+        // 更新鼠标光标（幂等，仅变化时真正设置，避免与事件路径竞态闪烁）
         {
             puffin::profile_scope!("update_cursor");
             if let user_interface::State::Updated {
                 mouse_interaction, ..
             } = state
             {
-                if let Some(icon) = iced_winit::conversion::mouse_interaction(mouse_interaction) {
-                    self.window_ctx.window.set_cursor(icon);
-                    self.window_ctx.window.set_cursor_visible(true);
-                } else {
-                    self.window_ctx.window.set_cursor_visible(false);
-                }
+                self.apply_cursor_interaction(mouse_interaction);
             }
         }
+
+        // 处理 iced 的重绘请求：Tooltip 延迟显示依赖 `RedrawRequest::At` 的定时唤醒。
+        self.handle_redraw_request(redraw_request);
     }
 }

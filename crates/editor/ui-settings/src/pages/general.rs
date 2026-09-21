@@ -5,7 +5,8 @@ use iced_widget::{column, pick_list, row, text, text_input};
 use lumino_ui_core::{Element, Message};
 
 use super::super::components::constants::*;
-use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
+use super::super::components::styles::create_content_text_style;
+use super::super::components::with_setting_tooltip_inline;
 use crate::SettingsPanel;
 use lumino_core::storage::config::{EraserBehavior, TrackAddBehavior};
 use lumino_extras::i18n::settings_translations;
@@ -88,31 +89,35 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .style(create_content_text_style()),
         iced_widget::space().height(20),
         // 橡皮擦行为选择
+        // 两条说明（默认 / 直接框选）分别挂在设置项内的标签与下拉控件上，
+        // 避免嵌套 tooltip 导致两个提示在同一锚点重叠显示。
         row![
-            text(t.eraser_behavior)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.eraser_behavior)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.eraser_default_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(eraser_options, Some(current_eraser), |le| {
-                Message::Settings(crate::Event::EraserBehaviorChanged(le.inner))
-            })
-            .width(200.0),
+            with_setting_tooltip_inline(
+                pick_list(eraser_options, Some(current_eraser), |le| {
+                    Message::Settings(crate::Event::EraserBehaviorChanged(le.inner))
+                })
+                .width(200.0),
+                t.eraser_direct_hint,
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.eraser_default_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
-        text(t.eraser_direct_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(20),
         // 添加音轨行为选择
         row![
-            text(t.track_add_behavior)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.track_add_behavior)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.track_add_behavior_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             pick_list(
                 vec![
@@ -132,10 +137,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(SPACING_CONTENT),
-        text(t.track_add_behavior_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
         iced_widget::space().height(20),
         // 日志存储份数设置
         text(t.log_retention_section)
@@ -143,9 +144,12 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
             .style(create_content_text_style()),
         iced_widget::space().height(SPACING_CONTENT),
         row![
-            text(t.log_retention_count)
-                .size(TEXT_SIZE_CONTENT)
-                .style(create_content_text_style()),
+            with_setting_tooltip_inline(
+                text(t.log_retention_count)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.log_retention_count_hint,
+            ),
             iced_widget::space().width(SPACING_MAIN),
             text_input("10", &settings.logging.log_retention_count.to_string())
                 .on_input(|v| Message::Settings(crate::Event::LogRetentionCountChanged(v)))
@@ -153,10 +157,6 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
-        iced_widget::space().height(4),
-        text(t.log_retention_count_hint)
-            .size(12.0)
-            .style(create_placeholder_text_style()),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)
