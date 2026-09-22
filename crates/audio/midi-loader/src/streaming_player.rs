@@ -1,5 +1,8 @@
 //! 流式播放器本体与 tempo 预扫描（从 `streaming.rs` 拆分）
 
+use std::cmp::Reverse;
+use std::collections::BinaryHeap;
+
 use midly::mmap::MmapSmf;
 use midly::{MetaMessage, TrackEventKind};
 
@@ -73,6 +76,11 @@ pub struct StreamingMidiPlayer<'a> {
     #[allow(dead_code)]
     mmap_smf: MmapSmf<'a>,
     tracks: Vec<TrackCursor<'a>>,
+    /// k 路归并最小堆：各轨当前事件 `(tick, track_idx)`，`Reverse` 使其成为小顶堆。
+    ///
+    /// 同一 tick 的多轨事件按 `track_idx` 升序输出（与旧"逐轨线性扫描取最小"
+    /// 的稳定语义一致）。每轨最多一条堆内条目，消费后立即重新入堆。
+    heap: BinaryHeap<Reverse<(u64, usize)>>,
     /// 预扫描的 Tempo 变化（tick, BPM）
     pub tempo_changes: Vec<(u32, f32)>,
     /// 最大 tick
@@ -104,11 +112,13 @@ impl<'a> StreamingMidiPlayer<'a> {
             _data: core::marker::PhantomData,
             mmap_smf,
             tracks,
+            heap: BinaryHeap::new(),
             tempo_changes,
             total_ticks,
             ppqn,
         };
         player.ensure_all_peeked();
+        player.rebuild_heap();
         Ok(player)
     }
 
@@ -148,21 +158,26 @@ impl<'a> StreamingMidiPlayer<'a> {
     /// 全部耗尽时返回 `None`。
     ///
     /// `TrackEventKind` 借用自原始数据，不受 `self` 后续调用的影响。
+    ///
+    /// 实现为 k 路归并（每轨游标 + 小顶堆）：旧实现每个事件都线性扫描全部轨道
+    /// （O(轨道数)/事件），130 轨 × 3800 万事件下是数十亿次无效比较。
     pub fn next_event(&mut self) -> Option<(u64, usize, TrackEventKind<'a>)> {
-        let (min_tick, ti) = self.find_min_tick_fast();
-        if min_tick == u64::MAX {
-            return None;
-        }
-
-        let consumed = self.tracks[ti].consume()?;
-
-        match consumed {
-            Ok((_delta, kind)) => Some((min_tick, ti, kind)),
-            Err(e) => {
-                // 解析错误：记录日志并跳过
-                tracing::warn!("轨道 {} 事件解析错误: {}", ti, e);
-                // 递归取下一个（跳过坏事件）
-                self.next_event()
+        loop {
+            let Reverse((min_tick, ti)) = self.heap.pop()?;
+            let Some(consumed) = self.tracks[ti].consume() else {
+                // 防御：堆内条目必然对应已预读事件；出现即状态异常，跳过并继续
+                continue;
+            };
+            match consumed {
+                Ok((_delta, kind)) => {
+                    self.push_next_track(ti);
+                    return Some((min_tick, ti, kind));
+                }
+                Err(e) => {
+                    // 解析错误：记录日志并跳过（与旧行为一致）
+                    tracing::warn!("轨道 {} 事件解析错误: {}", ti, e);
+                    self.push_next_track(ti);
+                }
             }
         }
     }
@@ -174,18 +189,19 @@ impl<'a> StreamingMidiPlayer<'a> {
         }
     }
 
-    /// 找到当前最小 tick 及对应的轨道索引（无分配版本）。
-    /// 返回 (min_tick, first_track_index)。若有多个同 tick 轨道，后续 next_event 会取到。
-    fn find_min_tick_fast(&self) -> (u64, usize) {
-        let mut min_tick = u64::MAX;
-        let mut min_track = 0;
-        for (i, track) in self.tracks.iter().enumerate() {
-            let nt = track.next_tick();
-            if nt < min_tick {
-                min_tick = nt;
-                min_track = i;
-            }
+    /// 重建归并堆（创建后调用一次）。
+    fn rebuild_heap(&mut self) {
+        self.heap.clear();
+        for i in 0..self.tracks.len() {
+            self.push_next_track(i);
         }
-        (min_tick, min_track)
+    }
+
+    /// 将 `ti` 轨的当前事件推入归并堆（耗尽时不入堆）。
+    fn push_next_track(&mut self, ti: usize) {
+        let tick = self.tracks[ti].next_tick();
+        if tick != u64::MAX {
+            self.heap.push(Reverse((tick, ti)));
+        }
     }
 }

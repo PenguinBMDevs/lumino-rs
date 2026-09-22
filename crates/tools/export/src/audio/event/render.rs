@@ -81,8 +81,7 @@ mod tests {
         let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
         let mut sink = VecSampleSink::new();
         {
-            let mut processor =
-                MidiEventProcessor::new(&config, &mut group, &mut conv, &mut sink);
+            let mut processor = MidiEventProcessor::new(&config, &mut group, &mut conv, &mut sink);
             processor.render_frames(1000).expect("渲染 1000 帧应成功");
             processor.render_frames(0).expect("0 帧应为空操作");
             processor.render_frames(5000).expect("跨批渲染应成功");
