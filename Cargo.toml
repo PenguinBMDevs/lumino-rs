@@ -285,6 +285,14 @@ opt-level = 3
 [profile.dev.package.xsynth-soundfonts]
 opt-level = 3
 
+# 导出/加载胶水（PREF-002）：debug 构建下同样是导出热路径（逐事件循环、
+# tick→时间换算、事件流解析），opt-0 会让 debug 导出的可用性进一步恶化。
+[profile.dev.package.lumino-export]
+opt-level = 3
+
+[profile.dev.package.lumino-midi-loader]
+opt-level = 3
+
 [profile.release]
 codegen-units = 1
 lto = true
