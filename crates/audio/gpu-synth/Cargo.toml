@@ -23,6 +23,3 @@ rayon = { workspace = true }
 sysinfo = { workspace = true, features = ["system"] }
 memmap2 = { workspace = true }
 symphonia = { version = "0.5", features = ["default"] }
-
-[profile.release]
-opt-level = 3

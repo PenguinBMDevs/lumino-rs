@@ -5,9 +5,9 @@
 //! “cull 提取窗口 → legacy 精确渲染”（见 `shaders/bucket_cull.wgsl` 头注）。
 //!
 //! 两阶段 key 分区提取（输出 `(key, start)` 有序，与 `sort_visible_notes` 同序）：
-//! - COUNT（`cull_extract.rs::extract_count`）：每 key 一线程计数 → 1KB 回读；
+//! - COUNT（`cull/extract.rs::extract_count`）：每 key 一线程计数 → 1KB 回读；
 //! - 前缀和（`prefix_counts`，调用方复用派生 legacy `key_offsets`）；
-//! - FILL（`cull_extract.rs::extract_fill`）：同构重扫写 compact（调用方 encoder
+//! - FILL（`cull/extract.rs::extract_fill`）：同构重扫写 compact（调用方 encoder
 //!   追加，无原子、无竞争）。
 //!
 //! 常驻由调用方持有（瀑布流：导出共享缓冲；miditrail：自有全量缓冲），本结构只
@@ -190,7 +190,7 @@ pub fn prefix_counts(
 /// 画家序基址（miditrail driven 用）：白键块在前、黑键块在后（块内 key 升序）。
 ///
 /// 与 FILL 的 `paint_order=1` 键内序（[未来 start 降序、同 start 稳定] ++
-/// [已开始升序]）配合，复刻 legacy `build_note_instances` 的
+/// `[已开始升序]`）配合，复刻 legacy `build_note_instances` 的
 /// `(is_black, z_start, key)` 稳定排序：同层不同键的 x 区间不相交（重叠只可能
 /// 同键或黑白键），故"白块→黑块 + 键内画家序"与全局排序在所有可见重叠上等价。
 /// `offsets` 仍按 key 序返回（兼容签名；miditrail 路径不使用）。

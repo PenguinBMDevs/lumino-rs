@@ -2,7 +2,7 @@ use super::*;
 
 impl AudioPlayback {
     /// Plays a full, sample-accurate event stream (from
-    /// [`MidiFile::load`]) in real time.
+    /// [`crate::MidiFile::load`]) in real time.
     ///
     /// The events are consumed internally by the render thread's block
     /// progression, so this scales to dense black-MIDI (millions of note

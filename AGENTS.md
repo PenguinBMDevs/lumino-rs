@@ -30,19 +30,19 @@ cargo test
 cargo test test_name
 
 # Run tests in a specific file
-cargo test --test integration_test
+cargo test --test collab_id_sync_local
 cargo test --test collaboration_full_test
 cargo test --test collaboration_ui_test
 
 # Run tests for a specific crate
 cargo test -p lumino-core
-cargo test -p lumino-dms
+cargo test -p lumino-gfx
 
 # Run tests with output
 cargo test -- --nocapture
 
-# Run specific integration test
-cargo test test_midi_to_dms_similarity --test integration_test
+# Run specific integration test（协作套件默认 #[ignore]，需加 --ignored 才会执行）
+cargo test test_collaboration_ui_all --test collaboration_ui_test -- --ignored
 ```
 
 ## Lint/Format Commands

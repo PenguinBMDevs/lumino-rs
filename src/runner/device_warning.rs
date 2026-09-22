@@ -19,7 +19,7 @@ pub(crate) struct DeviceWarningWindow {
     gfx: Option<lumino_gfx::Context>,
     ui: Option<lumino_ui::Host>,
     modifiers: winit::keyboard::ModifiersState,
-    /// 用户直接关闭窗口（[X] / Alt+F4）→ 视为「确认并关闭」
+    /// 用户直接关闭窗口（`[X]` / Alt+F4）→ 视为「确认并关闭」
     close_requested: bool,
 }
 

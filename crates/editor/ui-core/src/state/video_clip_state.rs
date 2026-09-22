@@ -5,7 +5,7 @@
 //!
 //! 2026-08 播放体系分离：本状态持有**秒域独立传输时钟**
 //! （[`VideoClipState::clip_position_secs`] 等），与钢琴卷帘的
-//! tick 域 [`PlaybackManager`] 完全无关——两面板互不驱动。
+//! tick 域 `PlaybackManager`（lumino-midi-io）完全无关——两面板互不驱动。
 
 /// 最小缩放倍数（对标 nezha MIN_ZOOM）
 pub const VIDEO_CLIP_MIN_ZOOM: f32 = 1.0;

@@ -4,8 +4,8 @@ use super::*;
 /// specific `(key, velocity)` pair, mirroring XSynth's spawner parameters.
 #[derive(Debug, Clone)]
 pub struct Zone {
-    /// Index into [`SoundFont::samples`] of the (left/mono) sample data,
-    /// stored at the soundfont's native sample rate.
+    /// Index into the sample list of the owning [`SoundFont`] of the (left/mono)
+    /// sample data, stored at the soundfont's native sample rate.
     pub sample_id: usize,
     /// Index of the right-channel sample data (== `sample_id` for mono).
     pub sample_id_r: usize,
