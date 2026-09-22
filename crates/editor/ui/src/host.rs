@@ -227,7 +227,7 @@ impl Host {
         let window = std::sync::Arc::clone(&self.window_ctx.window);
         let slot = std::sync::Arc::clone(&self.redraw_at);
         let active = std::sync::Arc::clone(&self.redraw_timer_active);
-        let _ = std::thread::Builder::new()
+        let spawn_result = std::thread::Builder::new()
             .name("ui-redraw-timer".to_string())
             .spawn(move || {
                 loop {
@@ -258,6 +258,13 @@ impl Host {
                     }
                 }
             });
+        if let Err(error) = spawn_result {
+            // 线程创建失败：必须回滚活跃标志，保证后续调度可重试起线程；
+            // 否则 active 卡在 true 而线程不存在，tooltip 延迟唤醒会永久失效。
+            self.redraw_timer_active
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            tracing::warn!("ui-redraw-timer 线程创建失败，重绘定时器暂不可用: {error}");
+        }
     }
 
     /// 收集所有组件的内存占用快照（Root + RenderCache）

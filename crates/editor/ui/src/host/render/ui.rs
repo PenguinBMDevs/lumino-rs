@@ -66,11 +66,6 @@ impl Host {
             )
         };
 
-        let redraw_request = match &state {
-            user_interface::State::Updated { redraw_request, .. } => *redraw_request,
-            user_interface::State::Outdated => iced_window::RedrawRequest::Wait,
-        };
-
         // 绘制界面
         {
             puffin::profile_scope!("draw_interface");
@@ -125,18 +120,20 @@ impl Host {
             }
         }
 
-        // 更新鼠标光标（幂等，仅变化时真正设置，避免与事件路径竞态闪烁）
+        // 更新鼠标光标（幂等，仅变化时真正设置，避免与事件路径竞态闪烁），
+        // 并处理 iced 的重绘请求：仅 `State::Updated` 携带有效请求——Tooltip 延迟
+        // 显示依赖 `RedrawRequest::At` 的定时唤醒，`Outdated` 无请求可处理。
         {
             puffin::profile_scope!("update_cursor");
             if let user_interface::State::Updated {
-                mouse_interaction, ..
-            } = state
+                mouse_interaction,
+                redraw_request,
+                ..
+            } = &state
             {
-                self.apply_cursor_interaction(mouse_interaction);
+                self.apply_cursor_interaction(*mouse_interaction);
+                self.handle_redraw_request(*redraw_request);
             }
         }
-
-        // 处理 iced 的重绘请求：Tooltip 延迟显示依赖 `RedrawRequest::At` 的定时唤醒。
-        self.handle_redraw_request(redraw_request);
     }
 }
