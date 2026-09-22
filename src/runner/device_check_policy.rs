@@ -244,6 +244,14 @@ mod tests {
     }
 
     #[test]
+    fn test_cache_hit_probe_timeout_falls_back_to_full_check() {
+        // probe 超时/异常在调用方折算为空指纹列表（`unwrap_or_default`）：
+        // 必须 miss → 落回全量检测；不得命中缓存、不得判定检测失败（UI-008 / #37）
+        let hit = cache_hit(true, false, Some(true), Some(MAC_FINGERPRINT), Vec::new);
+        assert!(!hit, "probe 超时（空结果）不得命中缓存，必须落回全量检测");
+    }
+
+    #[test]
     fn test_cache_hit_missing_cached_fingerprint_is_miss() {
         assert!(!cache_hit(true, false, Some(true), None, Vec::new));
     }

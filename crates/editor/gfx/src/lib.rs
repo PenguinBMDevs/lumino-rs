@@ -49,8 +49,7 @@ pub use cc_bar_renderer::{
 pub use context::{Context, ContextError, Result};
 pub use device_check::{
     GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, check_gpu_support,
-    debug_force_fail_requested, probe_adapter_fingerprints, required_backend_name,
-    run_check_with_timeout,
+    debug_force_fail_requested, required_backend_name, run_check_with_timeout,
 };
 pub(crate) use global_bucket::readback_bytes_sync;
 pub use global_bucket::{

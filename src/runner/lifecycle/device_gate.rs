@@ -71,12 +71,18 @@ impl Runner {
         // 指纹缓存命中（TTL 内 + 上次通过 + 适配器指纹仍在）：廉价探测后直接放行。
         // 调试强制失败时不走缓存，保证 LUMINO_FORCE_DEVICE_CHECK_FAIL 可复现；
         // TTL 过期时不执行廉价探测，直接落回全量检测。
+        // 廉价探测也走独立线程 + 超时（UI-008 / #37）：主线程绝不允许直接探测。
+        // 超时/异常由 `unwrap_or_default()` 折算为空指纹列表 → cache miss → 全量检测；
+        // 探测开始/完成/超时日志由 `probe_adapter_fingerprints_with_timeout` 统一打印。
         let cache_hit = device_check_policy::cache_hit(
             within_ttl,
             device_check::debug_force_fail_requested(),
             cached_passed,
             cached_fp.as_deref(),
-            device_check::probe_adapter_fingerprints,
+            || {
+                device_check::probe_adapter_fingerprints_with_timeout(device_check::PROBE_TIMEOUT)
+                    .unwrap_or_default()
+            },
         );
 
         let report = if cache_hit {
@@ -94,6 +100,7 @@ impl Runner {
                 duration_ms: 0,
             }
         } else {
+            tracing::info!("GPU 适配器指纹缓存未命中，执行全量兼容性检测");
             device_check::run_check_with_timeout(device_check::DEFAULT_TIMEOUT)
         };
 
