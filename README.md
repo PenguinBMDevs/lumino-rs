@@ -52,7 +52,7 @@ cargo run --release
 ```
 
 首次运行会自动创建配置文件：
-- **Windows**: `%APPDATA%\com.PenguinBMDevs.lumino\config.json`
+- **Windows**: `%APPDATA%\PenguinBMDevs\lumino\config\config.json`
 - **macOS**: `~/Library/Application Support/com.PenguinBMDevs.lumino/config.json`
 - **Linux**: `~/.config/com.PenguinBMDevs.lumino/config.json`
 

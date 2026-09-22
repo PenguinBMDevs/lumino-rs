@@ -8,9 +8,10 @@ Lumino 项目包含以下类型的测试：
 
 | 类别 | 测试文件 | 描述 |
 |------|---------|------|
-| **协作功能测试** | `tests/collaboration_ui_test.rs` | 多人协作功能完整测试套件 |
-| **协作基础测试** | `tests/collaboration_full_test.rs` | 协作基础连接测试 |
-| **集成测试** | `tests/integration_test.rs` | 其他集成功能测试 |
+| **协作功能测试** | `tests/collaboration_ui_test.rs` | 多人协作功能完整测试套件（默认 `#[ignore]`，需外部协作服务器） |
+| **协作基础测试** | `tests/collaboration_full_test.rs` | 协作基础连接测试 + 本地序列化单测 |
+| **本地协作 ID 同步测试** | `tests/collab_id_sync_local.rs` | 真实 u64 音符 ID 跨客户端同步（默认 `#[ignore]`，需本地协作服务器） |
+| **公共测试辅助** | `tests/common.rs` | 测试共享辅助（事件收集器等，非独立测试） |
 
 ---
 
@@ -27,14 +28,14 @@ cargo test
 ### 运行特定测试
 
 ```bash
-# 运行协作UI测试（推荐）
-cargo test --test collaboration_ui_test test_collaboration_ui_all -- --nocapture
+# 协作 UI 测试套件（默认 #[ignore]，必须加 --ignored；需外部协作服务器）
+cargo test --test collaboration_ui_test test_collaboration_ui_all -- --ignored --nocapture
 
-# 运行基础协作测试
-cargo test --test collaboration_full_test -- --nocapture
+# 协作基础测试（默认 #[ignore] 的主测试；其中的本地序列化单测无需 --ignored）
+cargo test --test collaboration_full_test -- --ignored --nocapture
 
-# 运行集成测试
-cargo test --test integration_test -- --nocapture
+# 本地协作 ID 同步测试（默认 #[ignore]；需本地 lumino-server-rs，端口 3000）
+cargo test --test collab_id_sync_local -- --ignored --nocapture
 ```
 
 ---
@@ -282,21 +283,21 @@ sleep(Duration::from_millis(2000)).await;
 ## 命令速查表
 
 ```bash
-# 编译测试
+# 编译测试（不运行）
 cargo test --test collaboration_ui_test --no-run
 
-# 运行UI测试（详细输出）
-cargo test --test collaboration_ui_test test_collaboration_ui_all -- --nocapture
+# 运行 UI 测试（详细输出；默认 #[ignore]，需 --ignored）
+cargo test --test collaboration_ui_test test_collaboration_ui_all -- --ignored --nocapture
 
-# 运行基础测试
-cargo test --test collaboration_full_test -- --nocapture
+# 运行基础测试（默认 #[ignore] 的主测试）
+cargo test --test collaboration_full_test -- --ignored --nocapture
 
-# 运行特定测试函数
-cargo test --test collaboration_ui_test test_mouse_cursor_sync -- --nocapture
+# 运行特定测试函数（本地序列化单测，无需 --ignored）
+cargo test --test collaboration_full_test test_serialize_mouse_move -- --nocapture
 
-# 只运行，不编译
+# 不因某个测试失败而中止其余测试
 cargo test --test collaboration_ui_test --no-fail-fast
 
-# 显示测试时间
-cargo test --test collaboration_ui_test -- --nocapture --test-threads=1 --time
+# 单线程运行（输出顺序稳定）
+cargo test --test collaboration_ui_test -- --nocapture --test-threads=1
 ```
