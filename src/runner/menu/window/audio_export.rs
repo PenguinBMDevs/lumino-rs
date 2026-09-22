@@ -138,6 +138,8 @@ impl RunnerInner {
             key_low,
             key_high,
             note_force_end_delay,
+            // PREF-002：CPU 块式渲染块大小（默认 256 帧；0/1 = 逐事件精确模式）
+            block_frames: 256,
             backend: backend_kind,
             progress_callback: Some(progress_cb),
             control: Some(Arc::clone(&control)),

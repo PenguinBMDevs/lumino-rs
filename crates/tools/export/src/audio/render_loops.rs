@@ -11,6 +11,7 @@ use lumino_midi_loader::{MidiDocument, streaming::StreamingMidiPlayer};
 
 use crate::error::{ExportError, ExportResult};
 
+use super::block_scheduler::RenderCursor;
 use super::config::AudioRenderConfig;
 use super::engine::AudioEngine;
 use super::event::MidiEventProcessor;
@@ -181,6 +182,8 @@ pub(super) fn run_streaming_render(
     // 倍速用 3s 窗口平均；tick 占比 × 总时长是音频时长的近似（tempo 变化时略有偏差，
     // 对"倍速"展示足够）。
     let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
+    // 块式渲染游标（PREF-002）：事件按 B 帧块对齐，块首一次性投递后整块渲染
+    let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
 
     while let Some((tick, _track_idx, kind)) = player.next_event() {
         if let Some(ctrl) = &config.control {
@@ -205,7 +208,13 @@ pub(super) fn run_streaming_render(
             last_progress_time = now;
         }
 
-        processor.process_midi_event(tick, &kind)?;
+        // 时间推进由调度器负责（块模式量化到块首；精确模式=逐事件）
+        let frame = processor.frame_at_tick(tick);
+        let advance = cursor.frames_before(frame);
+        if advance > 0 {
+            processor.render_frames(advance)?;
+        }
+        cursor.add_rendered(processor.dispatch_event(&kind)?);
 
         if let TrackEventKind::Midi {
             channel: _,
@@ -223,6 +232,12 @@ pub(super) fn run_streaming_render(
                 _ => {}
             }
         }
+    }
+
+    // 收尾：补齐到最后一个事件的精确帧（输出长度与逐事件旧实现一致）
+    let remainder = cursor.finish_remainder();
+    if remainder > 0 {
+        processor.render_frames(remainder)?;
     }
 
     report_progress(
@@ -249,6 +264,7 @@ pub(super) fn run_document_render(
     let mut last_progress_time = std::time::Instant::now();
     let start_time = std::time::Instant::now();
     let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
+    let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
 
     let mut stream = MidiDocEventStream::new(doc);
     let total_events = stream.total_events();
@@ -274,9 +290,20 @@ pub(super) fn run_document_render(
         }
 
         if let Some(kind) = build_track_event_kind(&event) {
-            processor.process_midi_event(tick, &kind)?;
+            let frame = processor.frame_at_tick(tick);
+            let advance = cursor.frames_before(frame);
+            if advance > 0 {
+                processor.render_frames(advance)?;
+            }
+            cursor.add_rendered(processor.dispatch_event(&kind)?);
             event_count += 1;
         }
+    }
+
+    // 收尾：补齐到最后一个事件的精确帧（输出长度与逐事件旧实现一致）
+    let remainder = cursor.finish_remainder();
+    if remainder > 0 {
+        processor.render_frames(remainder)?;
     }
 
     report_progress(config, 1.0, event_count, 0, start_time, speed_meter.speed());

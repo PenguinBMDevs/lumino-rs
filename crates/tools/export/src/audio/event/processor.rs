@@ -59,67 +59,13 @@ impl<'a> MidiEventProcessor<'a> {
         }
     }
 
-    /// 从 Vec 池获取或创建新 Vec
-    fn acquire_buffer(&mut self, capacity: usize) -> Vec<f32> {
-        self.vec_pool
-            .pop()
-            .unwrap_or_else(|| Vec::with_capacity(capacity))
-    }
-
-    /// 归还 Vec 到池
-    fn release_buffer(&mut self, buf: Vec<f32>) {
-        if self.vec_pool.len() < 4 {
-            self.vec_pool.push(buf);
-        }
-    }
-
-    /// 渲染指定时长的音频（带暂停/中止检查）
-    fn render_duration(&mut self, delta_seconds: f64) -> ExportResult<()> {
-        if delta_seconds <= 0.0 {
-            return Ok(());
-        }
-        // 暂停/中止检查点
-        if let Some(ctrl) = &self.config.control {
-            ctrl.wait_if_paused();
-            ctrl.check_abort()?;
-        }
-
-        let total_samples = (delta_seconds * self.sample_rate as f64) as usize;
-        if total_samples == 0 {
-            return Ok(());
-        }
-
-        let frame_size = self.channel_count as usize;
-        let mut remaining = total_samples;
-
-        const MAX_BATCH: usize = 4096;
-
-        while remaining > 0 {
-            if let Some(ctrl) = &self.config.control {
-                ctrl.wait_if_paused();
-                ctrl.check_abort()?;
-            }
-            let batch = remaining.min(MAX_BATCH);
-            let count = batch * frame_size;
-
-            let mut buffer = self.acquire_buffer(count);
-            buffer.resize(count, 0.0);
-
-            // SAFETY: read_samples_unchecked 会填充所有样本
-            self.channel_group.read_samples_unchecked(&mut buffer);
-
-            // 应用限制器（如果配置）
-            if let Some(limiter) = self.limiter.as_mut() {
-                limiter.process(&mut buffer);
-            }
-
-            self.sink.write_samples(&buffer)?;
-            self.release_buffer(buffer);
-
-            remaining -= batch;
-        }
-
-        Ok(())
+    /// 事件 tick → 目标帧（向下取整）。
+    ///
+    /// 走 [`TickToTime::seconds_at`] 游标（O(1) 摊销），在**整数帧域**累积，
+    /// 修掉旧实现逐事件 `(delta 秒 × sr) as usize` 截断带来的亚采样时基漂移。
+    pub(crate) fn frame_at_tick(&mut self, tick: u64) -> u64 {
+        let secs = self.tick_conv.seconds_at(tick);
+        (secs * f64::from(self.sample_rate)) as u64
     }
 
     /// 判断音符是否应被过滤（力度/键位）
@@ -136,23 +82,21 @@ impl<'a> MidiEventProcessor<'a> {
         false
     }
 
-    /// 处理一个 MIDI 事件，渲染到该事件的时间点
-    pub fn process_midi_event(
-        &mut self,
-        tick: u64,
-        event_kind: &TrackEventKind,
-    ) -> ExportResult<()> {
+    /// 投递一个 MIDI 事件（不推进时间；时间推进由渲染循环按块调度）。
+    ///
+    /// 返回因 `note_force_end_delay` 额外渲染的帧数（无则 0）——调用方必须把它
+    /// 计入采样时钟，避免后续重复渲染。
+    pub(crate) fn dispatch_event(&mut self, event_kind: &TrackEventKind) -> ExportResult<u64> {
         if let Some(ctrl) = &self.config.control {
             ctrl.wait_if_paused();
             ctrl.check_abort()?;
         }
-        // 计算到该事件的时间增量
-        let delta = self.tick_conv.advance_to(tick);
-        self.render_duration(delta)?;
+        let mut extra_frames = 0_u64;
 
         // 发送 MIDI 事件到合成器
         if let TrackEventKind::Midi { channel, message } = event_kind {
             let ch = channel.as_int() as u32;
+            let force_end_frames = self.force_end_delay_frames();
             match message {
                 MidiMessage::NoteOn { key, vel } => {
                     let vel_u8 = vel.as_int();
@@ -161,19 +105,20 @@ impl<'a> MidiEventProcessor<'a> {
                         if self.config.filter_key
                             && (*key < self.config.key_low || *key > self.config.key_high)
                         {
-                            return Ok(());
+                            return Ok(extra_frames);
                         }
-                        if self.config.note_force_end_delay > 0 {
-                            self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                        if force_end_frames > 0 {
+                            self.render_frames(force_end_frames)?;
+                            extra_frames += force_end_frames;
                         }
                         self.channel_group.send_event(SynthEvent::Channel(
                             ch,
                             ChannelEvent::Audio(ChannelAudioEvent::NoteOff { key: *key }),
                         ));
-                        return Ok(());
+                        return Ok(extra_frames);
                     }
                     if self.is_note_filtered(*key, vel_u8) {
-                        return Ok(());
+                        return Ok(extra_frames);
                     }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
@@ -187,11 +132,12 @@ impl<'a> MidiEventProcessor<'a> {
                     if self.config.filter_key
                         && (*key < self.config.key_low || *key > self.config.key_high)
                     {
-                        return Ok(());
+                        return Ok(extra_frames);
                     }
                     // note_force_end_delay：延长音符，延迟发送 NoteOff
-                    if self.config.note_force_end_delay > 0 {
-                        self.render_duration(self.config.note_force_end_delay as f64 / 1000.0)?;
+                    if force_end_frames > 0 {
+                        self.render_frames(force_end_frames)?;
+                        extra_frames += force_end_frames;
                     }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
@@ -209,7 +155,7 @@ impl<'a> MidiEventProcessor<'a> {
                 }
                 MidiMessage::ProgramChange { program } => {
                     if self.config.ignore_program_changes {
-                        return Ok(());
+                        return Ok(extra_frames);
                     }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
@@ -228,7 +174,12 @@ impl<'a> MidiEventProcessor<'a> {
             }
         }
 
-        Ok(())
+        Ok(extra_frames)
+    }
+
+    /// `note_force_end_delay` 对应的帧数（毫秒 → 帧，向下取整；与旧实现同口径）。
+    fn force_end_delay_frames(&self) -> u64 {
+        u64::from(self.config.note_force_end_delay) * u64::from(self.sample_rate) / 1000
     }
 
     /// 完成渲染：发送 NoteOff，渲染尾部直到静音

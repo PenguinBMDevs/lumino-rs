@@ -4,9 +4,11 @@
 //! 基于渲染时间驱动，支持进度回调。
 
 // ── 子模块（按职责拆分，零逻辑变更）──────────────────────────────
-// - `processor`: MidiEventProcessor 的事件分发 / 渲染驱动 / 弯音归一化 / 限幅兜底
+// - `processor`: MidiEventProcessor 的事件分发 / 弯音归一化 / 尾部收尾
+// - `render`: 批量渲染（帧域）与 Vec 缓冲池
 // - `soundfont`: 音色库路径校验与加载
 mod processor;
+mod render;
 mod soundfont;
 
 pub use soundfont::load_soundfonts;
