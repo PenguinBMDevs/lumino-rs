@@ -233,3 +233,35 @@ fn test_generated_midi_self_sufficient() {
         distinct_tracks,
     );
 }
+
+/// 同一 tick 上的多轨事件必须按轨道序号升序输出（k 路归并的稳定语义）。
+///
+/// 旧实现"逐轨线性扫描取严格最小"隐含该顺序；改用最小堆后由
+/// `(tick, track_idx)` 字典序保证，此测试防止后续重构破坏该语义。
+#[test]
+fn test_same_tick_events_follow_track_index_order() {
+    let bytes = generated_test_midi();
+    let mut player = StreamingMidiPlayer::from_bytes(&bytes).expect("生成 MIDI 应可解析");
+
+    let mut prev_tick = u64::MAX;
+    let mut prev_track: Option<usize> = None;
+    let mut same_tick_pairs = 0_u32;
+    while let Some((tick, track_idx, _kind)) = player.next_event() {
+        if tick != prev_tick {
+            prev_tick = tick;
+            prev_track = None;
+        }
+        if let Some(pt) = prev_track {
+            assert!(
+                track_idx >= pt,
+                "同 tick({tick}) 事件必须按轨号升序，得到 {pt} -> {track_idx}"
+            );
+            same_tick_pairs += 1;
+        }
+        prev_track = Some(track_idx);
+    }
+    assert!(
+        same_tick_pairs > 0,
+        "测试数据应包含同 tick 多轨事件（否则此测试未覆盖目标语义）"
+    );
+}
