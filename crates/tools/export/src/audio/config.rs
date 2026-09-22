@@ -275,9 +275,9 @@ impl AudioRenderConfig {
     }
 }
 
-    /// 归一化每键复音/层数配置：`None` 与 `Some(0)` 统一表示"不限"。
-    ///
-    /// **所有消费 [`AudioRenderConfig::layer_limit`] 的后端都必须走这里**，因为
+/// 归一化每键复音/层数配置：`None` 与 `Some(0)` 统一表示"不限"。
+///
+/// **所有消费 [`AudioRenderConfig::layer_limit`] 的后端都必须走这里**，因为
 /// `Some(0)` 不是"0 个音符"而是历史遗留的"不限"写法，直传会得到两套行为：
 /// xsynth 的 `SetLayerCount(Some(0))` 会退化成"每键只保留最新一组"（该键其余
 /// 音符全部无声），而 GPU 侧 `max_voices_per_key = 0` 是"不限制"。

@@ -206,7 +206,13 @@ mod tests {
     /// 覆盖跨段、同 tick 去重、重复 tick、回退 tick 与大跳。
     #[test]
     fn cursor_matches_slow_path_across_segments() {
-        let tempos = vec![(0, 120.0), (480, 60.0), (480, 90.0), (960, 45.0), (1920, 140.0)];
+        let tempos = vec![
+            (0, 120.0),
+            (480, 60.0),
+            (480, 90.0),
+            (960, 45.0),
+            (1920, 140.0),
+        ];
         let mut conv = TickToTime::new(tempos.clone(), 480);
         let slow = TickToTime::new(tempos, 480);
 
@@ -239,6 +245,9 @@ mod tests {
         // 与 seconds_at（绝对查询）一致
         let mut conv2 = TickToTime::new(vec![(0, 120.0), (480, 60.0)], 480);
         assert!((conv2.seconds_at(960) - 1.5).abs() < 1e-9);
-        assert!((conv2.seconds_at(480) - 1.5).abs() < 1e-9, "回退查询应返回当前累计值");
+        assert!(
+            (conv2.seconds_at(480) - 1.5).abs() < 1e-9,
+            "回退查询应返回当前累计值"
+        );
     }
 }
