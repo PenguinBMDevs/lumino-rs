@@ -21,6 +21,8 @@ pub mod speed;
 pub mod stream;
 pub mod tick_conv;
 
+pub(crate) mod block_scheduler;
+
 pub use config::AudioRenderConfig;
 pub use engine::AudioEngine;
 pub use render_loops::render_audio;

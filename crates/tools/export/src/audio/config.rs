@@ -76,6 +76,15 @@ pub struct AudioRenderConfig {
     pub filter_key: bool,
     /// 音符结束后额外延迟（毫秒）
     pub note_force_end_delay: u32,
+    /// CPU 块式渲染的块大小（帧）。
+    ///
+    /// - `0` / `1`：逐事件精确渲染（旧行为，供 A/B 对照与
+    ///   `note_force_end_delay > 0` 的语义保真使用）；
+    /// - `≥2`：事件按块对齐后整块渲染（对齐 GPU 的块式 `apply_events`），
+    ///   块内事件最多提前该帧数生效，调用次数从"事件数"降到"音频帧数 / B"。
+    ///
+    /// 默认 256；GPU 后端不消费此字段。
+    pub block_frames: u32,
 
     // ── 后端选择 ──
     /// 音频渲染后端（CPU / GPU）
@@ -107,6 +116,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("linear_envelope", &self.linear_envelope)
             .field("audio_codec", &self.audio_codec)
             .field("audio_bitrate", &self.audio_bitrate)
+            .field("block_frames", &self.block_frames)
             .field("backend", &self.backend)
             .field(
                 "progress_callback",
@@ -251,11 +261,23 @@ impl AudioRenderConfig {
             interpolator: Interpolator::from(self.interpolation),
         }
     }
+
+    /// 实际生效的块大小（PREF-002 块式渲染）。
+    ///
+    /// `note_force_end_delay > 0` 时强制逐事件精确模式：该选项要求在每个
+    /// NoteOff 前额外渲染若干帧，块对齐会改变其时间推进语义，故按旧行为保真。
+    pub(crate) fn effective_block_frames(&self) -> u32 {
+        if self.note_force_end_delay > 0 {
+            1
+        } else {
+            self.block_frames
+        }
+    }
 }
 
-/// 归一化每键复音/层数配置：`None` 与 `Some(0)` 统一表示"不限"。
-///
-/// **所有消费 [`AudioRenderConfig::layer_limit`] 的后端都必须走这里**，因为
+    /// 归一化每键复音/层数配置：`None` 与 `Some(0)` 统一表示"不限"。
+    ///
+    /// **所有消费 [`AudioRenderConfig::layer_limit`] 的后端都必须走这里**，因为
 /// `Some(0)` 不是"0 个音符"而是历史遗留的"不限"写法，直传会得到两套行为：
 /// xsynth 的 `SetLayerCount(Some(0))` 会退化成"每键只保留最新一组"（该键其余
 /// 音符全部无声），而 GPU 侧 `max_voices_per_key = 0` 是"不限制"。
@@ -301,6 +323,7 @@ impl Default for AudioRenderConfig {
             key_high: 127,
             filter_key: false,
             note_force_end_delay: 0,
+            block_frames: 256,
             backend: AudioBackendKind::Cpu,
             progress_callback: None,
             control: None,
