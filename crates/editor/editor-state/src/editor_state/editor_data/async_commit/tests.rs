@@ -112,8 +112,7 @@ fn test_async_commit_zero_delta_is_noop() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 2,
+        ids: vec![],
         delta_tick: 0,
         delta_key: 0,
         seq: 0,
@@ -133,8 +132,7 @@ fn test_async_commit_rejects_concurrent() {
     let mut data = make_data_with_notes();
     let ops1 = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
@@ -143,8 +141,7 @@ fn test_async_commit_rejects_concurrent() {
     }];
     let ops2 = vec![MoveOp {
         track_id: 1,
-        range_start: 1,
-        range_end: 2,
+        ids: vec![2],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
@@ -163,8 +160,7 @@ fn test_poll_async_commit_returns_none_while_pending() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 100,
         delta_key: 0,
         seq: 0,
@@ -194,8 +190,7 @@ fn test_cancel_async_commit() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 10,
         delta_key: 0,
         seq: 0,

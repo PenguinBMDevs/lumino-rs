@@ -10,7 +10,7 @@
 //! 2026-08 单一权威源改造：后台线程克隆当前音轨 `Vec<NoteEvent>`，完成后整轨写回。
 
 use super::EditorData;
-use super::async_commit::AsyncCommitResult;
+use super::async_commit::{AsyncCommitResult, merge_consecutive_ranges};
 use crate::DragState;
 use bit_vec::BitVec;
 use lumino_core::error::{CoreError, Result};
@@ -70,10 +70,15 @@ pub(crate) fn apply_drag_state_to_clones(
 
     let selected_count = selected.iter().filter(|&selected| selected).count();
     if selected_count == 0 {
-        return Ok(AsyncCommitResult { notes, modified: 0 });
+        return Ok(AsyncCommitResult {
+            notes,
+            modified: 0,
+            modified_ranges: Vec::new(),
+        });
     }
 
     let mut modified = 0usize;
+    let mut modified_indices: Vec<usize> = Vec::new();
     let mut processed = 0usize;
     let log_interval = (selected_count / 10).max(1);
 
@@ -91,6 +96,7 @@ pub(crate) fn apply_drag_state_to_clones(
                 note.end_tick = note.end_tick.max(new_tick.saturating_add(1));
                 note.key = new_key;
                 modified += 1;
+                modified_indices.push(i);
             }
         }
 
@@ -113,7 +119,14 @@ pub(crate) fn apply_drag_state_to_clones(
         start_time.elapsed()
     );
 
-    Ok(AsyncCommitResult { notes, modified })
+    // 实际修改索引 → 连续区间（供 GPU 段内 UpdateRange 事件）
+    let modified_ranges = merge_consecutive_ranges(modified_indices);
+
+    Ok(AsyncCommitResult {
+        notes,
+        modified,
+        modified_ranges,
+    })
 }
 
 #[cfg(test)]

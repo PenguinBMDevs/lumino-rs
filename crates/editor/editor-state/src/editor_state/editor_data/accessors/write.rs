@@ -22,23 +22,20 @@ impl EditorData {
 
     // ── 音符写入（document 唯一权威） ─────────────────────────
 
-    /// 在指定音轨按 start_tick 升序插入音符（f32 tick 无损转换写回）。
+    /// 在指定音轨按 start_tick 升序插入音符，返回分配/保留的全局唯一 id。
     ///
-    /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
+    /// 与 [`Self::insert_note`] 同路径；额外回传 id 供 CreateOp 记录真实身份
+    /// （redo 时原样重插，保证 undo/redo 往返 id 稳定）。音轨不存在返回 `None`。
     /// 当前音轨插入会记录 `NoteDeltaEvent::InsertAt`，供 GPU 主音轨段内增量同步。
-    pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
-        let Some(doc) = self.document.as_mut() else {
-            return false;
-        };
+    pub fn insert_note_with_id(&mut self, track_id: usize, note: Note) -> Option<u64> {
+        let doc = self.document.as_mut()?;
         self.modified = true;
         let event = note_to_event(note.clone());
         let start_tick = event.start_tick;
-        if !doc.insert_note(track_id, event) {
-            return false;
-        }
+        let id = doc.insert_note_with_id(track_id, event)?;
         if track_id == self.current_track {
             let track = doc.track_notes(track_id);
-            // 注意：上方 `doc.insert_note` 已把新音符按升序插入文档，
+            // 注意：上方 `doc.insert_note_with_id` 已把新音符按升序插入文档，
             // 故此处 `track` 已包含该音符本身。`partition_point(start_tick + 1)`
             // 返回 tick < start_tick + 1（即 tick <= start_tick）的音符数，
             // 其中含新音符自身，故减 1 得到新音符的文档索引（GPU 段内布局保序）。
@@ -52,7 +49,16 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::InsertAt { index, note });
         }
-        true
+        Some(id)
+    }
+
+    /// 在指定音轨按 start_tick 升序插入音符（f32 tick 无损转换写回）。
+    ///
+    /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
+    /// 当前音轨插入会记录 `NoteDeltaEvent::InsertAt`，供 GPU 主音轨段内增量同步。
+    /// 需要获取分配到的 id 时用 [`Self::insert_note_with_id`]。
+    pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
+        self.insert_note_with_id(track_id, note).is_some()
     }
 
     /// 抬升文档级 note id 分配器，确保严格大于 `id`，避免与协作/快照外来 id 碰撞。

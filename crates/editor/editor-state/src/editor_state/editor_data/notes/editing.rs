@@ -1,6 +1,6 @@
 //! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
@@ -40,11 +40,12 @@ impl EditorData {
             velocity,
             channel,
         );
-        self.insert_note(track_idx, left);
-        self.insert_note(track_idx, right);
+        // 插入回传真实 id（替代坐标反查）：undo/redo 与协作广播的身份来源
+        let left_id = self.insert_note_with_id(track_idx, left).unwrap_or(0);
+        let right_id = self.insert_note_with_id(track_idx, right).unwrap_or(0);
         self.mark_current_track_changed();
         // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
-        // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
+        // id：删原用原音符真实 id；左右用 insert_note_with_id 回传的真实 id。
         self.pending_collab_transform_sync.push((
             false,
             note_id,
@@ -55,9 +56,6 @@ impl EditorData {
             channel,
             track_idx,
         ));
-        let left_id = self
-            .note_id_at(track_idx, note_tick, key as u16)
-            .unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
             left_id,
@@ -68,9 +66,6 @@ impl EditorData {
             channel,
             track_idx,
         ));
-        let right_id = self
-            .note_id_at(track_idx, split_tick, key as u16)
-            .unwrap_or(0);
         self.pending_collab_transform_sync.push((
             true,
             right_id,
@@ -91,21 +86,22 @@ impl EditorData {
             return 0;
         }
         let track = self.current_track_notes();
-        let selected_notes: Vec<NoteTuple> = sel
-            .iter()
-            .filter_map(|&note_idx| {
-                track.get(note_idx).map(|note| {
-                    (
-                        note_idx,
-                        note.start_tick as f32,
-                        note.key as u16,
-                        (note.end_tick - note.start_tick) as f32,
-                        note.velocity,
-                        note.channel,
-                    )
-                })
-            })
-            .collect();
+        let mut selected_notes: Vec<NoteTuple> = Vec::with_capacity(sel.len());
+        // 索引 → 全局唯一 id：删除同步记录直接取真实 id（替代坐标反查）
+        let mut id_by_index: HashMap<usize, u64> = HashMap::with_capacity(sel.len());
+        for &note_idx in &sel {
+            if let Some(note) = track.get(note_idx) {
+                selected_notes.push((
+                    note_idx,
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                    note.velocity,
+                    note.channel,
+                ));
+                id_by_index.insert(note_idx, note.id);
+            }
+        }
         if selected_notes.is_empty() {
             return 0;
         }
@@ -126,10 +122,11 @@ impl EditorData {
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
             // 2026-09 协作修复：合并改变音符数量，先记录每个被合并音符的删除。
+            // id 取自收集阶段的索引 → id 映射（不再坐标反查）。
             for nt in group {
                 self.pending_collab_transform_sync.push((
                     false,
-                    self.note_id_at(self.current_track, nt.1, nt.2).unwrap_or(0),
+                    id_by_index.get(&nt.0).copied().unwrap_or(0),
                     nt.1,
                     nt.2,
                     nt.3,
@@ -142,12 +139,13 @@ impl EditorData {
                 self.remove_note(self.current_track, idx);
             }
             let merged_note = Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5);
-            self.insert_note(self.current_track, merged_note);
-            // 2026-09 协作修复：添加一个合并后的音符。
+            let merged_id = self
+                .insert_note_with_id(self.current_track, merged_note)
+                .unwrap_or(0);
+            // 2026-09 协作修复：添加一个合并后的音符（id 为插入回传的真实值）。
             self.pending_collab_transform_sync.push((
                 true,
-                self.note_id_at(self.current_track, merged_tick, first.2)
-                    .unwrap_or(0),
+                merged_id,
                 merged_tick,
                 first.2,
                 merged_length,

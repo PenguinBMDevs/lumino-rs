@@ -185,9 +185,14 @@ impl EditorData {
                 let mut sync = Vec::new();
                 for m in &op.ops {
                     let track = m.track_id as usize;
-                    for i in 0..m.original_ticks.len() {
+                    let count = m
+                        .ids
+                        .len()
+                        .min(m.original_ticks.len())
+                        .min(m.original_keys.len());
+                    for i in 0..count {
                         // 注意：`History::undo/redo` 返回的 entry 已经是「反向 op」
-                        // （`MoveOp::inverse()` 仅对 delta 取反，original_* 保持不变）。
+                        // （`MoveOp::inverse()` 仅对 delta 取反，id/original_* 保持不变）。
                         // 因此这里的 `inverse` 标志只表示当前处于 undo 路径，语义推导如下：
                         // - 偏移恒为 +entry.delta：undo 时 entry.delta = -delta_original，
                         //   叠加到对端即「回退」；redo 时 entry.delta = +delta_original，
@@ -209,12 +214,8 @@ impl EditorData {
                         } else {
                             (m.original_ticks[i], m.original_keys[i])
                         };
-                        // 应用后本端音符落在 ref+offset 处，据此反查其全局唯一 ID，
-                        // 供对端按 id 精确匹配（而非浮点坐标）。
-                        let cur_tick = ref_tick + off_tick;
-                        let cur_key = (ref_key as i32 + off_key as i32).max(0) as u16;
-                        let note_id = self.note_id_at(track, cur_tick, cur_key).unwrap_or(0);
-                        sync.push((note_id, ref_tick, ref_key, off_tick, off_key, track));
+                        // 音符身份直接取自 op 记录的全局唯一 id（不再坐标反查）
+                        sync.push((m.ids[i], ref_tick, ref_key, off_tick, off_key, track));
                     }
                 }
                 self.pending_collab_move_sync = sync;

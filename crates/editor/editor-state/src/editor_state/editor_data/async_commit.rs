@@ -5,6 +5,8 @@
 //!
 //! 2026-08 单一权威源改造：后台线程克隆当前音轨的 `Vec<NoteEvent>` 副本
 //! （而非 im::Vector + track_notes 双份克隆），完成后经 `replace_track_notes` 写回。
+//! 2026-09 身份统一：MoveOp 按全局唯一 id 定位（克隆副本内 tick 提示 + 全扫兜底），
+//! 不依赖提交时的索引。
 
 use super::EditorData;
 use lumino_core::error::{CoreError, Result};
@@ -19,6 +21,8 @@ pub struct AsyncCommitResult {
     pub notes: Vec<NoteEvent>,
     /// 实际修改的音符数
     pub modified: usize,
+    /// 实际修改的连续索引区间（start, end_exclusive），供 GPU 段内增量更新
+    pub modified_ranges: Vec<(usize, usize)>,
 }
 
 /// 待完成的异步提交
@@ -68,29 +72,32 @@ impl EditorData {
         match pending.receiver.try_recv() {
             Ok(Ok(result)) => {
                 let modified = result.modified;
-                // 写回 document（当前音轨整轨替换，单一权威源）
-                self.replace_track_notes(self.current_track, result.notes.clone());
-                // 记录增量事件：MoveOp 区间 = notes 索引（等长），
-                // 数据来自替换后的 result.notes（最终状态，重叠区间幂等）。
-                for op in &pending.ops {
-                    let start = op.range_start as usize;
-                    let end = (op.range_end as usize).min(result.notes.len());
-                    if start < end {
-                        let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
-                            .iter()
-                            .map(super::accessors::event_to_note)
-                            .collect();
-                        self.note_delta_events.push(
-                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                                start_index: start,
-                                notes,
-                            },
-                        );
+                // 先按实际修改区间构造 GPU 段内增量事件负载（此时 notes 仍可借用），
+                // 再把整轨 move 写回 document——消除旧实现的整轨 clone。
+                let mut update_events: Vec<(usize, Vec<lumino_note_core::note::Note>)> =
+                    Vec::with_capacity(result.modified_ranges.len());
+                for &(start, end) in &result.modified_ranges {
+                    let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
+                        .iter()
+                        .map(super::accessors::event_to_note)
+                        .collect();
+                    if !notes.is_empty() {
+                        update_events.push((start, notes));
                     }
+                }
+                // 写回 document（当前音轨整轨替换，单一权威源）
+                self.replace_track_notes(self.current_track, result.notes);
+                for (start, notes) in update_events {
+                    self.note_delta_events.push(
+                        crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                            start_index: start,
+                            notes,
+                        },
+                    );
                 }
                 // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
                 self.mark_current_track_changed();
-                // 事件已完整记录（对应 ops 区间）→ 清除 dirty
+                // 事件已完整记录（对应实际修改区间）→ 清除 dirty
                 self.note_delta_dirty = false;
                 self.edited_tracks.insert(self.current_track);
                 self.push_move_op(pending.ops);
@@ -120,24 +127,22 @@ impl EditorData {
     }
 }
 
-/// 将 MoveOp 应用到当前音轨音符的克隆副本
+/// 将 MoveOp 应用到当前音轨音符的克隆副本（按全局唯一 id 定位）
 fn apply_move_ops_to_clone(
     mut notes: Vec<NoteEvent>,
     ops: &[MoveOp],
     max_key: u16,
 ) -> Result<AsyncCommitResult> {
-    let total_indices: usize = ops
-        .iter()
-        .map(|op| op.range_end.saturating_sub(op.range_start) as usize)
-        .sum();
+    let total_indices: usize = ops.iter().map(|op| op.ids.len()).sum();
     let start_time = std::time::Instant::now();
     tracing::info!(
-        "异步提交线程启动: {} 个 op, 预计处理 {} 个音符索引",
+        "异步提交线程启动: {} 个 op, 预计处理 {} 个音符",
         ops.len(),
         total_indices
     );
 
     let mut modified = 0usize;
+    let mut modified_indices: Vec<usize> = Vec::new();
     let mut processed = 0usize;
     let mut next_log_threshold = total_indices / 10; // 每 10% 报告一次
     if next_log_threshold == 0 {
@@ -147,40 +152,55 @@ fn apply_move_ops_to_clone(
     for op in ops {
         let dt = op.delta_tick;
         let dk = op.delta_key as i32;
+        let count = op
+            .ids
+            .len()
+            .min(op.original_ticks.len())
+            .min(op.original_keys.len());
 
-        let start = op.range_start as usize;
-        let end = op.range_end as usize;
-        for i in start..end {
-            if let Some(note) = notes.get_mut(i) {
-                let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
-                let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
-                if note.start_tick != new_tick || note.key != new_key {
-                    note.start_tick = new_tick;
-                    // 移动不改变长度：end_tick 跟随 start_tick 平移（旧实现右移时长度被压缩）
-                    let new_end =
-                        (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
-                    note.end_tick = new_end;
-                    note.key = new_key;
-                    modified += 1;
-                }
-            }
-
-            processed += 1;
-            if processed >= next_log_threshold {
-                let percent = processed
-                    .saturating_mul(100)
-                    .checked_div(total_indices)
-                    .unwrap_or(100);
-                tracing::info!(
-                    "异步提交进度: {}% ({} / {})",
-                    percent,
-                    processed,
-                    total_indices
-                );
-                next_log_threshold += total_indices / 10;
+        // 阶段 1：解析目标索引。提交路径恒为正向 op（undo/redo 走同步
+        // `apply_move_ops`），克隆副本在提交窗口内冻结，tick 提示即原始位置。
+        let mut resolved: Vec<usize> = Vec::with_capacity(count);
+        for i in 0..count {
+            let hint_tick = super::accessors::f32_to_tick(op.original_ticks[i].max(0.0));
+            if let Some(idx) = position_of_id_in_slice(&notes, op.ids[i], hint_tick) {
+                resolved.push(idx);
             }
         }
+
+        // 阶段 2：原地应用（移动不改变长度：end_tick 跟随 start_tick 平移）。
+        for idx in resolved {
+            let note = &mut notes[idx];
+            let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+            let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+            if note.start_tick != new_tick || note.key != new_key {
+                note.start_tick = new_tick;
+                let new_end = (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                note.end_tick = new_end;
+                note.key = new_key;
+                modified += 1;
+                modified_indices.push(idx);
+            }
+        }
+
+        processed += count;
+        if processed >= next_log_threshold && total_indices > 0 {
+            let percent = processed
+                .saturating_mul(100)
+                .checked_div(total_indices)
+                .unwrap_or(100);
+            tracing::info!(
+                "异步提交进度: {}% ({} / {})",
+                percent,
+                processed,
+                total_indices
+            );
+            next_log_threshold += total_indices / 10;
+        }
     }
+
+    // 实际修改索引 → 连续区间（供 GPU 段内 UpdateRange 事件）
+    let modified_ranges = merge_consecutive_ranges(modified_indices);
 
     tracing::info!(
         "异步提交线程完成: 修改 {} 个音符, 耗时 {:?}",
@@ -188,7 +208,48 @@ fn apply_move_ops_to_clone(
         start_time.elapsed()
     );
 
-    Ok(AsyncCommitResult { notes, modified })
+    Ok(AsyncCommitResult {
+        notes,
+        modified,
+        modified_ranges,
+    })
+}
+
+/// 在已按 tick 升序的音符切片中按 id 定位（tick 提示 + 全扫兜底）。
+fn position_of_id_in_slice(notes: &[NoteEvent], id: u64, tick_hint: u32) -> Option<usize> {
+    let start = notes.partition_point(|n| n.start_tick < tick_hint);
+    let mut i = start;
+    while i < notes.len() && notes[i].start_tick <= tick_hint {
+        if notes[i].id == id {
+            return Some(i);
+        }
+        i += 1;
+    }
+    notes.iter().position(|n| n.id == id)
+}
+
+/// 将（可重复、无序的）索引集合排序去重后合并为连续区间 `(start, end_exclusive)`。
+///
+/// 供异步提交结果构造 GPU 段内 `UpdateRange` 事件使用。
+pub(super) fn merge_consecutive_ranges(mut indices: Vec<usize>) -> Vec<(usize, usize)> {
+    indices.sort_unstable();
+    indices.dedup();
+    let mut ranges: Vec<(usize, usize)> = Vec::new();
+    if let Some(&first) = indices.first() {
+        let mut start = first;
+        let mut prev = first;
+        for &i in &indices[1..] {
+            if i == prev + 1 {
+                prev = i;
+                continue;
+            }
+            ranges.push((start, prev + 1));
+            start = i;
+            prev = i;
+        }
+        ranges.push((start, prev + 1));
+    }
+    ranges
 }
 
 #[cfg(test)]

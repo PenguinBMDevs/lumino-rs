@@ -1,7 +1,13 @@
 //! 历史操作应用（MoveOp / CreateOp）与 DragState 构造
 //!
 //! 这些逻辑从 `history.rs` 拆分出来，使主文件保持在 400 行以内。
+//!
+//! 2026-09 统一身份：历史条目一律以 note id 引用音符（`position_of_id` 定位），
+//! 不再依赖易漂移的全局索引区间——id 单调分配、删除不回收，永不失效。
 
+use std::collections::{HashMap, HashSet};
+
+use lumino_midi_model::NoteEvent;
 use lumino_note_core::Note;
 use lumino_note_core::history::{CreateOp, MoveOp};
 
@@ -11,9 +17,11 @@ use crate::DragState;
 impl EditorData {
     /// 应用音符创建日志到 document（增量恢复，单一权威源）
     ///
-    /// - `inverse=true`（undo）：按值精确定位（`position_of`）后删除音符，
-    ///   顺序无关——不受同轨后续操作导致的索引漂移影响。
-    /// - `inverse=false`（redo）：按 tick 有序重新插入，恢复到创建时的位置。
+    /// - `inverse=true`（undo）：按全局唯一 id 精确定位删除；`id == 0`
+    ///   （兼容旧构造）回退为「音乐内容」全值匹配。顺序无关——不受同轨
+    ///   后续操作导致的索引漂移影响。
+    /// - `inverse=false`（redo）：按 tick 有序重新插入，**原样保留 op 记录的 id**
+    ///   （身份稳定，不再重新分配）。
     ///
     /// 返回实际处理的音符数。
     pub fn apply_create_ops(&mut self, ops: &[CreateOp], inverse: bool) -> usize {
@@ -24,19 +32,7 @@ impl EditorData {
         for op in ops {
             let track_id = op.track_id as usize;
             if inverse {
-                // undo：按「音乐内容」精确定位后删除（忽略 id——id 由分配器后加，
-                // CreateOp.note 可能未携带分配 id，按全值匹配会落空）。逐 op 重算定位，
-                // 兼容合并窗口内多音符删除的缓冲位移，GPU 段内 RemoveAt 顺序与文档推进
-                // 一致（零漂移）。走 `EditorData::remove_note`：当前音轨自动记录 RemoveAt。
-                let Some(idx) = self.document.as_ref().and_then(|doc| {
-                    doc.track_notes(track_id).iter().position(|n| {
-                        n.start_tick == op.note.start_tick
-                            && n.end_tick == op.note.end_tick
-                            && n.key == op.note.key
-                            && n.velocity == op.note.velocity
-                            && n.channel == op.note.channel
-                    })
-                }) else {
+                let Some(idx) = self.locate_create_op_note(track_id, op) else {
                     continue;
                 };
                 if self.remove_note(track_id, idx).is_some() {
@@ -52,7 +48,29 @@ impl EditorData {
         count
     }
 
+    /// 定位 CreateOp 对应音符的当前索引。
+    ///
+    /// 优先按全局唯一 id（tick 提示二分 + 同 tick 窗口 + 全扫兜底，O(log N)）；
+    /// `id == 0`（旧构造）回退全值匹配（忽略 id——id 由分配器后加，按全值匹配会落空）。
+    fn locate_create_op_note(&self, track_id: usize, op: &CreateOp) -> Option<usize> {
+        let track = self.track_notes(track_id);
+        if op.note.id != NoteEvent::UNASSIGNED_ID {
+            return track.position_of_id(op.note.id, op.note.start_tick);
+        }
+        track.iter().position(|n| {
+            n.start_tick == op.note.start_tick
+                && n.end_tick == op.note.end_tick
+                && n.key == op.note.key
+                && n.velocity == op.note.velocity
+                && n.channel == op.note.channel
+        })
+    }
+
     /// 应用 MoveOp 列表到 document 对应音轨（单一权威源）。
+    ///
+    /// 每个被移动音符按**全局唯一 id** 定位（tick 提示二分 + 同 tick 窗口 +
+    /// 全扫兜底），不依赖提交时的索引——协作远端插入/删除导致的索引漂移
+    /// 不再损坏无关音符。
     ///
     /// `inverse=true` 时按记录的原始位置恢复（用于 undo）。
     /// `max_key` 用于 clamp key 范围（通常传 `visible_key_count - 1`）。
@@ -63,11 +81,19 @@ impl EditorData {
         }
 
         let mut modified = 0usize;
+        // (track_id, index)：供 UpdateRange 增量事件按实际修改位置生成
+        let mut modified_indices: Vec<(usize, usize)> = Vec::new();
+
         for op in ops {
             let track_id = op.track_id as usize;
-            let start = op.range_start as usize;
-            let end = op.range_end as usize;
-
+            let count = op
+                .ids
+                .len()
+                .min(op.original_ticks.len())
+                .min(op.original_keys.len());
+            if count == 0 {
+                continue;
+            }
             let Some(track) = self
                 .document
                 .as_mut()
@@ -76,17 +102,31 @@ impl EditorData {
                 continue;
             };
 
-            if inverse {
-                // 按原始位置恢复，确保 clamp 后的音符也能精确还原
-                for (idx, i) in (start..end).enumerate() {
-                    if idx >= op.original_ticks.len() || idx >= op.original_keys.len() {
-                        break;
-                    }
-                    let orig_tick = op.original_ticks[idx];
-                    let orig_key = op.original_keys[idx];
-                    if let Some(note) = track.get_mut(i)
-                        && (note.start_tick as f32 != orig_tick || note.key != orig_key as u8)
-                    {
+            // 阶段 1：解析全部目标索引（列表仍有序，命中 tick 提示快路径）。
+            // 期望当前位置：undo 时 entry 的 delta 已取反 → 当前 = original - delta；
+            // redo 时 entry 为正向 op → 当前 = original。
+            let mut resolved: Vec<(usize, usize)> = Vec::with_capacity(count);
+            for i in 0..count {
+                let hint_tick_f = if inverse {
+                    (op.original_ticks[i] - op.delta_tick as f32).max(0.0)
+                } else {
+                    op.original_ticks[i]
+                };
+                let hint_tick = super::super::accessors::f32_to_tick(hint_tick_f);
+                if let Some(idx) = track.position_of_id(op.ids[i], hint_tick) {
+                    resolved.push((i, idx));
+                }
+            }
+
+            // 阶段 2：原地应用（undo 用 original 精确还原，redo 用 delta 前进）。
+            for (i, idx) in resolved {
+                let Some(note) = track.get_mut(idx) else {
+                    continue;
+                };
+                if inverse {
+                    let orig_tick = op.original_ticks[i];
+                    let orig_key = op.original_keys[i];
+                    if note.start_tick as f32 != orig_tick || note.key != orig_key as u8 {
                         // 移动不改变长度：恢复 start 时按当前 length 平移 end
                         // （forward 保证 end 跟随 start 平移，length 不变式成立）
                         let length = note.end_tick.saturating_sub(note.start_tick).max(1);
@@ -94,42 +134,67 @@ impl EditorData {
                         note.end_tick = note.start_tick.saturating_add(length);
                         note.key = orig_key as u8;
                         modified += 1;
+                        modified_indices.push((track_id, idx));
                     }
-                }
-            } else {
-                let dt = op.delta_tick;
-                let dk = op.delta_key as i32;
-                for i in start..end {
-                    if let Some(note) = track.get_mut(i) {
-                        let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
-                        let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
-                        if note.start_tick != new_tick || note.key != new_key {
-                            note.start_tick = new_tick;
-                            // 移动不改变长度：end_tick 跟随 start_tick 平移
-                            let new_end =
-                                (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
-                            note.end_tick = new_end;
-                            note.key = new_key;
-                            modified += 1;
-                        }
+                } else {
+                    let dt = op.delta_tick;
+                    let dk = op.delta_key as i32;
+                    let new_tick = (note.start_tick as i64 + dt as i64).max(0) as u32;
+                    let new_key = (note.key as i32 + dk).clamp(0, max_key as i32) as u8;
+                    if note.start_tick != new_tick || note.key != new_key {
+                        note.start_tick = new_tick;
+                        // 移动不改变长度：end_tick 跟随 start_tick 平移
+                        let new_end =
+                            (note.end_tick as i64 + dt as i64).max(new_tick as i64 + 1) as u32;
+                        note.end_tick = new_end;
+                        note.key = new_key;
+                        modified += 1;
+                        modified_indices.push((track_id, idx));
                     }
                 }
             }
         }
 
         if modified > 0 {
-            // 主音轨段内增量：为每个被修改的连续区间推送 UpdateRange，
+            // 主音轨段内增量：按**实际修改索引**合并连续区间推送 UpdateRange，
             // 使 GPU 主音轨段按索引原地替换（免 note_delta_dirty 全量重建）。
             // 连续区间替换无索引漂移隐患（与 live 拖动 update_note 同一通道）。
-            let mut ranges: Vec<(usize, Vec<Note>)> = Vec::new();
-            for op in ops {
-                let track_id = op.track_id as usize;
-                let start = op.range_start as usize;
-                let end = (op.range_end as usize).saturating_sub(1); // 含尾索引
+            self.push_move_update_ranges(&modified_indices);
+            // 记录所有受影响音轨：若全部是当前音轨（洋葱皮不显示），
+            // stream_onion_skin_instances 可豁免全量重建上传。
+            let dirty_tracks: HashSet<usize> = ops.iter().map(|op| op.track_id as usize).collect();
+            self.mark_track_notes_changed_for(Some(dirty_tracks));
+        }
+        modified
+    }
+
+    /// 将 `(track_id, index)` 修改集合按轨合并连续区间并推送 `UpdateRange` 事件。
+    fn push_move_update_ranges(&mut self, modified_indices: &[(usize, usize)]) {
+        let mut by_track: HashMap<usize, Vec<usize>> = HashMap::new();
+        for &(track_id, idx) in modified_indices {
+            by_track.entry(track_id).or_default().push(idx);
+        }
+        for (track_id, mut idxs) in by_track {
+            idxs.sort_unstable();
+            idxs.dedup();
+            let mut start = idxs[0];
+            let mut prev = idxs[0];
+            let mut ranges: Vec<(usize, usize)> = Vec::new();
+            for &i in &idxs[1..] {
+                if i == prev + 1 {
+                    prev = i;
+                    continue;
+                }
+                ranges.push((start, prev));
+                start = i;
+                prev = i;
+            }
+            ranges.push((start, prev));
+            for (s, e) in ranges {
                 if let Some(notes) = self
                     .document
                     .as_ref()
-                    .and_then(|doc| doc.track_notes(track_id).get_range(start..=end))
+                    .and_then(|doc| doc.track_notes(track_id).get_range(s..=e))
                 {
                     let mapped: Vec<Note> = notes
                         .iter()
@@ -137,25 +202,16 @@ impl EditorData {
                         .map(super::super::accessors::event_to_note)
                         .collect();
                     if !mapped.is_empty() {
-                        ranges.push((start, mapped));
+                        self.note_delta_events.push(
+                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                                start_index: s,
+                                notes: mapped,
+                            },
+                        );
                     }
                 }
             }
-            for (start, notes) in ranges {
-                self.note_delta_events.push(
-                    crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                        start_index: start,
-                        notes,
-                    },
-                );
-            }
-            // 记录所有受影响音轨：若全部是当前音轨（洋葱皮不显示），
-            // stream_onion_skin_instances 可豁免全量重建上传。
-            let dirty_tracks: std::collections::HashSet<usize> =
-                ops.iter().map(|op| op.track_id as usize).collect();
-            self.mark_track_notes_changed_for(Some(dirty_tracks));
         }
-        modified
     }
 
     /// 当前 view 下可用于 clamp key 的最大 key 索引
@@ -166,10 +222,11 @@ impl EditorData {
         255
     }
 
-    /// 从 DragState 构造 MoveOp 列表（按连续区间拆分）。
+    /// 从 DragState 构造 MoveOp 列表（按连续区间拆分，捕获全局唯一 id）。
     ///
     /// **优化**：`selected_indices()` 已按索引升序返回，无需 sort。
-    /// NoteStore 启用时用 `get_ref`（Copy 语义）替代 `notes.get`（clone Note）。
+    /// 每段同时捕获 id 与原始 tick/key：id 供 undo/redo 精确重定位，
+    /// 原始位置供 clamp 场景精确还原。
     pub fn move_ops_from_drag_state(&self, drag_state: &DragState) -> Vec<MoveOp> {
         let track_id = self.current_track as u32;
         let indices: Vec<usize> = drag_state.selected_indices();
@@ -186,22 +243,22 @@ impl EditorData {
         let mut range_start = indices[0];
         let mut prev = indices[0];
 
-        // 直接遍历 document 当前轨提取原始 tick/key（单一权威源）
+        // 直接遍历 document 当前轨提取 id 与原始 tick/key（单一权威源）
         let track_notes = self.current_track_notes();
         let make_op = |start: usize, end: usize, seq: u16| {
-            let (ticks, keys): (Vec<f32>, Vec<u16>) = track_notes
-                .get_range(start..=end)
-                .map(|slice| {
-                    slice
-                        .iter()
-                        .map(|note| (note.start_tick as f32, note.key as u16))
-                        .unzip()
-                })
-                .unwrap_or_default();
+            let mut ids = Vec::with_capacity(end - start + 1);
+            let mut ticks = Vec::with_capacity(end - start + 1);
+            let mut keys = Vec::with_capacity(end - start + 1);
+            if let Some(slice) = track_notes.get_range(start..=end) {
+                for note in slice {
+                    ids.push(note.id);
+                    ticks.push(note.start_tick as f32);
+                    keys.push(note.key as u16);
+                }
+            }
             MoveOp {
                 track_id,
-                range_start: start as u32,
-                range_end: (end + 1) as u32,
+                ids,
                 delta_tick,
                 delta_key,
                 seq,
@@ -222,7 +279,8 @@ impl EditorData {
         }
         // 最后一段
         ops.push(make_op(range_start, prev, seq));
-
+        // 空段（索引越界防御）不进入历史——无可定位的 id 即无操作
+        ops.retain(|op| !op.ids.is_empty());
         ops
     }
 }

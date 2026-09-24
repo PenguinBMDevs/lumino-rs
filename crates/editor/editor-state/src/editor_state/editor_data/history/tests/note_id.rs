@@ -25,3 +25,58 @@ fn test_ensure_note_id_above_bumps_allocator() {
         "接收远端 id=42 后，本地分配器应抬到 43，避免与对端 id 碰撞"
     );
 }
+
+/// 回归：真实绘制路径的 CreateOp 必须记录分配后的真实 id；
+/// undo→redo 往返 id 不变（旧实现 CreateOp.note.id=0，redo 会重新分配新 id，
+/// 破坏「note id 全局稳定」不变量）。
+#[test]
+fn test_finish_drawing_captures_id_and_redo_preserves_it() {
+    let mut data = EditorData::with_f32_notes(1, &[]);
+    let drawn = data
+        .finish_drawing(0.0, 60, 80.0, 1.0, 80.0)
+        .expect("绘制应成功");
+    let real_id = data
+        .current_track_notes()
+        .get(0)
+        .expect("绘制后音符应存在")
+        .id;
+    assert!(real_id > 0, "绘制必须分配全局唯一 id");
+    assert_eq!(drawn.id, real_id, "返回的 Note 应携带真实 id");
+
+    assert!(data.undo());
+    assert_eq!(data.current_track_note_count(), 0, "undo 应删除创建音符");
+
+    assert!(data.redo());
+    let restored_id = data
+        .current_track_notes()
+        .get(0)
+        .expect("redo 后音符应存在")
+        .id;
+    assert_eq!(
+        restored_id, real_id,
+        "redo 必须原样保留 id，不得重新分配（身份稳定）"
+    );
+}
+
+/// 回归：真实绘制路径 undo/redo 的协作广播必须携带真实 id（旧实现广播 id=0，
+/// 对端无法按 id 匹配删除/添加）。
+#[test]
+fn test_create_undo_redo_collab_sync_uses_real_id() {
+    let mut data = EditorData::with_f32_notes(1, &[]);
+    let _ = data.finish_drawing(0.0, 60, 80.0, 1.0, 80.0);
+    let real_id = data
+        .current_track_notes()
+        .get(0)
+        .expect("绘制后音符应存在")
+        .id;
+
+    assert!(data.undo());
+    let pending = data.take_pending_collab_create_sync();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].0, real_id, "undo 创建广播必须携带真实 id");
+
+    assert!(data.redo());
+    let pending = data.take_pending_collab_create_sync();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(pending[0].0, real_id, "redo 创建广播必须携带真实 id");
+}

@@ -94,32 +94,39 @@ impl Root {
                 continue;
             }
             // 批量归一化 + 一次性 Note→NoteEvent 转换（零逐条 insert）
+            let mut normalized: Vec<(f32, u16, f32)> = Vec::with_capacity(notes.len());
             let mut track_events = Vec::with_capacity(notes.len());
             for &(tick, key, length) in notes {
                 let tick = tick.round();
                 let length = length.round().max(1.0);
-                let note = lumino_note_core::note::Note::new(tick, u16::from(key), length);
-                let event = lumino_editor_state::note_to_event(note);
-                track_events.push(event);
+                let key = u16::from(key);
+                normalized.push((tick, key, length));
+                let note = lumino_note_core::note::Note::new(tick, key, length);
+                track_events.push(lumino_editor_state::note_to_event(note));
             }
-            // 历史：先基于 events 快照生成 CreateOp（Copy 开销 16B/条，可忽略）
-            let create_ops_for_track: Vec<lumino_note_core::history::CreateOp> = track_events
-                .iter()
-                .map(|ev| lumino_note_core::history::CreateOp {
-                    track_id: target_track as u32,
-                    note: *ev,
-                })
-                .collect();
-            // 关键优化：单次批量归并（内部自动排序），峰值仅单块 8MB，替代 N 次 COW
-            let inserted = self
+            // 关键优化：单次批量归并（内部自动排序），峰值仅单块 8MB，替代 N 次 COW。
+            // 插入返回与输入同序的全局唯一 id（排序前捕获），据此回填 CreateOp。
+            let ids = self
                 .editor
                 .editor_state
                 .data
                 .document
                 .as_mut()
-                .map(|doc| doc.batch_insert_notes(target_track, track_events))
-                .unwrap_or(0);
-            if inserted > 0 {
+                .map(|doc| doc.batch_insert_notes_with_ids(target_track, track_events))
+                .unwrap_or_default();
+            if !ids.is_empty() {
+                // 历史：按输入序 id 回填 CreateOp（redo 原样重插，身份稳定）
+                let create_ops_for_track: Vec<lumino_note_core::history::CreateOp> = normalized
+                    .iter()
+                    .zip(ids.iter())
+                    .map(|(&(tick, key, length), &id)| {
+                        let note = lumino_note_core::note::Note::new(tick, key, length);
+                        lumino_note_core::history::CreateOp {
+                            track_id: target_track as u32,
+                            note: lumino_editor_state::note_to_event(note).with_id(id),
+                        }
+                    })
+                    .collect();
                 create_ops.extend(create_ops_for_track);
                 affected.insert(target_track);
                 if target_track == current_track {
