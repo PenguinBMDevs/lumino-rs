@@ -28,7 +28,11 @@ impl Editor {
             tracing::info!("Editor: 撤销曲线路径编辑");
             return true;
         }
+        // 主选择漂移防护：undo 回放（整轨快照/操作）会位移当前轨索引，
+        // 先捕获选中身份，回放成功后按 id 重映射。
+        let selection_identity = self.capture_selection_identity();
         if self.editor_state.data.undo() {
+            self.remap_selection_by_identity(&selection_identity);
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
@@ -62,7 +66,11 @@ impl Editor {
             tracing::info!("Editor: 重做曲线路径编辑");
             return true;
         }
+        // 主选择漂移防护：redo 回放（整轨快照/操作）会位移当前轨索引，
+        // 先捕获选中身份，回放成功后按 id 重映射。
+        let selection_identity = self.capture_selection_identity();
         if self.editor_state.data.redo() {
+            self.remap_selection_by_identity(&selection_identity);
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();

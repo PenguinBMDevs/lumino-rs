@@ -58,6 +58,7 @@ mod tests {
     mod preview_sequence;
     mod scroll;
     mod selection_precision;
+    mod selection_remap;
     mod state;
     pub(crate) mod test_helpers;
 }
@@ -69,6 +70,8 @@ use std::cell::{Cell, RefCell};
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 pub use note::Note;
+/// 结构编辑前捕获的主选择身份快照（防索引漂移，见 `note_ops::selection_remap`）
+pub use note_ops::selection_remap::SelectionIdentity;
 
 mod impls;
 

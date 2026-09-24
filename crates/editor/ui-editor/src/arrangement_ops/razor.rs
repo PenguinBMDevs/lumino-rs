@@ -28,12 +28,15 @@ impl Editor {
 
         let current_track = self.editor_state.data.current_track;
         let current_track_touched = doc_track == current_track;
+        // 主选择漂移防护：切割「删原 + 插左右」会位移当前轨索引，先捕获选中身份
+        let selection_identity = self.capture_selection_identity();
         let split_count = self.apply_razor_split(doc_track, tick_f, indices_to_split);
 
         if split_count == 0 {
             self.editor_state.data.discard_last_history();
             return 0;
         }
+        self.remap_selection_by_identity(&selection_identity);
 
         if current_track_touched {
             self.mark_notes_changed();

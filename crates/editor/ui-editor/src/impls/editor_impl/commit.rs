@@ -266,8 +266,12 @@ impl Editor {
     /// 若未完成：返回 `None`。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
         crate::puffin_profiler::poll_async_commit();
+        // 主选择漂移防护：异步写回整轨替换当前轨，先捕获选中身份，
+        // 写回成功后按 id 重映射（批量拖动期间 selected_notes 刻意保留）。
+        let selection_identity = self.capture_selection_identity();
         match self.editor_state.data.poll_async_commit() {
             Some(Ok(modified)) => {
+                self.remap_selection_by_identity(&selection_identity);
                 if modified > 0 {
                     self.mark_notes_changed();
                     tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
@@ -291,8 +295,11 @@ impl Editor {
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
         while self.editor_state.data.has_pending_commit() {
+            // 主选择漂移防护：每次写回整轨替换当前轨，先捕获选中身份
+            let selection_identity = self.capture_selection_identity();
             match self.editor_state.data.poll_async_commit() {
                 Some(Ok(modified)) => {
+                    self.remap_selection_by_identity(&selection_identity);
                     if modified > 0 {
                         self.mark_notes_changed();
                         any_modified = true;

@@ -122,7 +122,10 @@ fn test_razor_split_collab_sync_uses_real_ids() {
     assert_eq!(deleted_ids.len(), 1, "应广播 1 条删除（原音符）");
     assert_eq!(added_ids.len(), 2, "应广播 2 条新增（左右音符）");
     assert!(deleted_ids[0] > 0, "删除条目必须携带真实 id");
-    assert!(added_ids.iter().all(|&id| id > 0), "新增条目必须携带真实 id");
+    assert!(
+        added_ids.iter().all(|&id| id > 0),
+        "新增条目必须携带真实 id"
+    );
     assert_ne!(added_ids[0], added_ids[1], "左右音符 id 应不同");
 }
 

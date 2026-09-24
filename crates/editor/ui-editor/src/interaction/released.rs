@@ -238,6 +238,8 @@ impl Editor {
         let v = &self.editor_state.view;
         // 默认音符长度优先使用上次放置的长度，其次使用精度设置的默认长度
         let effective_default_length = v.last_note_length.unwrap_or(v.default_note_length);
+        // 主选择漂移防护：插入位移既有索引，先捕获选中身份
+        let selection_identity = self.capture_selection_identity();
         if let Some(note) = self.editor_state.data.finish_drawing(
             start_tick,
             key,
@@ -245,6 +247,7 @@ impl Editor {
             v.snap_precision,
             effective_default_length,
         ) {
+            self.remap_selection_by_identity(&selection_identity);
             // 保存本次放置的音符长度，作为下次预览和放置的默认长度
             self.editor_state.view.set_last_note_length(note.length);
             self.emit_note_added_event(&note);

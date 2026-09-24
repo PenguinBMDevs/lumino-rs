@@ -95,6 +95,10 @@ impl Root {
             self.ensure_collab_track(t);
         }
 
+        // 主选择漂移防护：远端结构编辑（增/删/移）会位移当前轨索引，
+        // 先捕获选中音符身份，应用后按 id 重映射（P3 临界区保护只覆盖手势期间）。
+        let selection_identity = self.editor.capture_selection_identity();
+
         match operation.action {
             NoteAction::Add => self.handle_remote_notes_add(operation),
             NoteAction::Update => self.handle_remote_notes_update(operation),
@@ -104,6 +108,8 @@ impl Root {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
         }
+
+        self.editor.remap_selection_by_identity(&selection_identity);
 
         // 标记音符已变化，重建当前音轨的空间索引
         self.editor.mark_notes_changed();

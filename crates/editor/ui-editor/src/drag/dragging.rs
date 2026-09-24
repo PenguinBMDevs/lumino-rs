@@ -95,6 +95,10 @@ impl Editor {
         // NoteMove 操作日志化：先捕获 MoveOp（记录 apply 前的原始位置），再应用数据
         let ops = self.editor_state.data.move_ops_from_drag_state(&drag_state);
 
+        // 主选择漂移防护：移动改变当前轨索引，先捕获选中身份
+        // （拖动的音符若在选中集内，重映射后选中应跟随到新位置）。
+        let selection_identity = self.capture_selection_identity();
+
         // ghost 方案：流式应用 delta 到 notes 与当前 track_notes 缓存
         let modified = self
             .editor_state
@@ -104,6 +108,7 @@ impl Editor {
             tracing::debug!("Editor: 单音符拖动未产生实际变更（snap 后 delta 为零）");
             return false;
         }
+        self.remap_selection_by_identity(&selection_identity);
 
         if !ops.is_empty() {
             self.editor_state.data.push_move_op(ops);
