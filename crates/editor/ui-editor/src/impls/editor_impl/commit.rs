@@ -44,6 +44,29 @@ impl Editor {
             || self.editor_state.data.has_pending_commit()
     }
 
+    /// 是否有尚未启动异步提交的待提交批量拖动（不含异步提交中的 pending commit）
+    pub fn has_uncommitted_drag(&self) -> bool {
+        self.pending_drag_state.is_some()
+    }
+
+    /// 是否有尚未提交的批量复制（不含异步提交中的 pending commit）
+    pub fn has_uncommitted_copy(&self) -> bool {
+        self.pending_copy_drag_state.is_some()
+    }
+
+    /// 远端音符操作是否应延迟到本地编辑临界区结束后应用。
+    ///
+    /// 本地拖动/待提交/异步提交期间，`DragState.selected`（BitVec）与
+    /// `note_index` 等引用当前轨的**索引**；若此时远端结构编辑（增/删/移/复）
+    /// 落到同一轨，索引漂移会让本地拖动/提交引用错误音符（数据损坏）。
+    /// 因此远端同轨结构编辑需入队延迟（`Root::deferred_remote_ops`），
+    /// 待本地临界区结束（手势松手 / 提交完成）后按到达顺序补放。
+    ///
+    /// `affected_tracks`：远端操作涉及的音轨集合（含 source/target 轨）。
+    pub fn should_defer_remote_note_ops(&self, affected_tracks: &[usize]) -> bool {
+        self.is_editing() && affected_tracks.contains(&self.editor_state.data.current_track)
+    }
+
     /// 丢弃未提交的批量拖动/批量复制（不含异步提交中的 pending commit）
     ///
     /// 图片转 MIDI √ 写入后调用：写入改变了 document 音符数量与顺序，
