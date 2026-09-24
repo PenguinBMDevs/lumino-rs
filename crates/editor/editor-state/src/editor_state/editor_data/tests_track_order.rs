@@ -6,6 +6,7 @@
 
 use crate::DragState;
 use crate::EditorData;
+use crate::EditorTransform;
 use bit_vec::BitVec;
 use lumino_note_core::note::Note;
 
@@ -81,4 +82,41 @@ fn test_restore_current_track_sorted_after_inplace_tick_change() {
         !data.restore_current_track_sorted(&[2]),
         "已有序应返回 false（零重排）"
     );
+}
+
+// ── 同类路径泛化：其余「就地改 tick」写路径同样必须恢复升序 ──
+
+#[test]
+fn test_flip_horizontal_restores_track_order() {
+    // 水平翻转围绕轴镜像 → 时间顺序整体反转（就地改 tick）
+    let mut data = make_data(); // [0, 10, 20]，长度 1
+    let selected: std::collections::HashSet<usize> = [0usize, 2].into_iter().collect();
+    // 轴 10：note0 (0,1) → 19；note2 (20,21) → -1 → 0
+    assert_eq!(data.flip_horizontal(&selected, 10.0), 2);
+    assert_eq!(ticks(&data), vec![0, 10, 19], "翻转后必须恢复升序不变式");
+    assert!(data.note_delta_dirty, "重排 → 主轨全量重建");
+}
+
+#[test]
+fn test_speed_change_subset_restores_track_order() {
+    let mut data = make_data(); // [0, 10, 20]
+    let selected: std::collections::HashSet<usize> = [0usize, 2].into_iter().collect();
+    // min=0；factor 0.25 → note2: 20 → 5（越过未选中的 10）
+    assert_eq!(data.apply_speed_change(&selected, 0.25), 1);
+    assert_eq!(ticks(&data), vec![0, 5, 10], "变速越过后必须恢复升序");
+    assert!(data.note_delta_dirty, "重排 → 主轨全量重建");
+}
+
+#[test]
+fn test_batch_edit_tick_restores_track_order() {
+    let mut data = make_data(); // [0, 10, 20]
+    let selected: std::collections::HashSet<usize> = [2usize].into_iter().collect();
+    // tick 表达式 "/4"：20 → 5（越过未选中的 10）
+    assert_eq!(data.apply_batch_edit(&selected, "", "", "", "/4", 127), 1);
+    assert_eq!(
+        ticks(&data),
+        vec![0, 5, 10],
+        "tick 表达式越过后必须恢复升序"
+    );
+    assert!(data.note_delta_dirty, "重排 → 主轨全量重建");
 }

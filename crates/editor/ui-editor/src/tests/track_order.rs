@@ -6,7 +6,7 @@
 //! 不可点击**（非仅性能退化）。
 
 use crate::tests::test_helpers;
-use crate::{Editor, Note};
+use crate::{EditState, Editor, Note};
 use lumino_editor_state::DragState;
 
 fn ticks(editor: &Editor) -> Vec<u32> {
@@ -99,5 +99,125 @@ fn test_undo_move_keeps_track_sorted() {
             .window_range(0, 1000, 0),
         (0, 3),
         "undo 后窗口必须框住全部音符"
+    );
+}
+
+// ── 同类路径泛化：走带变速 / 框选拉伸左边缘同样就地改 tick ──
+
+#[test]
+fn test_arrange_speed_change_restores_track_order_and_selection() {
+    let mut editor = Editor::default();
+    test_helpers::seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[
+            Note::from_raw(0.0, 60, 240.0, 100, 0),
+            Note::from_raw(480.0, 62, 240.0, 100, 0),
+            Note::from_raw(960.0, 64, 240.0, 100, 0),
+        ],
+    );
+    // 主选择：选中最后一个（索引 2）——重排后必须跟随原音符
+    editor.editor_state.interaction.selected_notes.insert(2);
+    // 走带选择：覆盖 tick [0,100) 与 [900,1000)（跳过 480 的音符）
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect(0, 100, 0, 127);
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect(900, 1000, 0, 127);
+    // factor 0.25：min=0 → 960 → 240（越过未选中的 480）
+    assert_eq!(editor.arrange_apply_speed_change(0.25), 2);
+    assert_eq!(ticks(&editor), vec![0, 240, 480], "走带变速后必须恢复升序");
+    assert_eq!(
+        editor.get_selected_indices(),
+        vec![1],
+        "重排后主选择必须跟随原音符（新索引 1）"
+    );
+    assert!(
+        editor.editor_state.data.note_delta_dirty,
+        "重排 → 主轨全量重建"
+    );
+}
+
+#[test]
+fn test_resize_start_crossing_keeps_track_sorted() {
+    let mut editor = Editor::default();
+    test_helpers::seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[
+            Note::from_raw(0.0, 60, 480.0, 100, 0),
+            Note::from_raw(240.0, 62, 240.0, 100, 0),
+        ],
+    );
+    editor.editor_state.view.snap_precision = 1.0;
+    editor.editor_state.interaction.selected_notes.insert(0);
+    // 框选拉伸左边缘：+300 → 首个音符 start 0 → 300（越过 240）
+    editor.editor_state.interaction.edit_state = EditState::ResizingSelectionStart {
+        origin_tick: 0.0,
+        last_tick: 300.0,
+    };
+    editor.handle_released();
+    assert_eq!(
+        ticks(&editor),
+        vec![240, 300],
+        "拉伸左边缘越过后必须恢复升序"
+    );
+}
+
+// ── 选择漂移联动：重排后选中集必须跟随原音符（按 id） ──
+
+#[test]
+fn test_speed_change_reorder_keeps_selection_on_same_note() {
+    let mut editor = Editor::default();
+    test_helpers::seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[
+            Note::from_raw(0.0, 60, 240.0, 100, 0),
+            Note::from_raw(480.0, 62, 240.0, 100, 0),
+            Note::from_raw(960.0, 64, 240.0, 100, 0),
+        ],
+    );
+    editor.editor_state.interaction.selected_notes.insert(0);
+    editor.editor_state.interaction.selected_notes.insert(2);
+    // min=0；factor 0.25 → 960 → 240（越过未选中的 480）
+    assert!(editor.apply_speed_change(0.25) > 0);
+    assert_eq!(ticks(&editor), vec![0, 240, 480]);
+    assert_eq!(
+        editor.get_selected_indices(),
+        vec![0, 1],
+        "重排后选中必须跟随原音符（960 的音符移到索引 1）"
+    );
+}
+
+#[test]
+fn test_batch_edit_tick_reorder_keeps_selection_on_same_note() {
+    let mut editor = Editor::default();
+    test_helpers::seed_notes(
+        &mut editor,
+        2,
+        1,
+        &[
+            Note::from_raw(0.0, 60, 240.0, 100, 0),
+            Note::from_raw(480.0, 62, 240.0, 100, 0),
+            Note::from_raw(960.0, 64, 240.0, 100, 0),
+        ],
+    );
+    editor.editor_state.interaction.selected_notes.insert(2);
+    // tick 表达式 "/4"：960 → 240（越过未选中的 480）
+    assert!(editor.apply_batch_edit("", "", "", "/4", 127) > 0);
+    assert_eq!(ticks(&editor), vec![0, 240, 480]);
+    assert_eq!(
+        editor.get_selected_indices(),
+        vec![1],
+        "重排后选中必须跟随原音符（新索引 1）"
     );
 }

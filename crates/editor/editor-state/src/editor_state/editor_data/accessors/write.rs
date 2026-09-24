@@ -203,6 +203,8 @@ impl EditorData {
         if sorted.is_empty() {
             return;
         }
+        #[cfg(debug_assertions)]
+        self.debug_assert_track_sorted_around(&sorted);
         let mut start = sorted[0];
         let mut prev = sorted[0];
         for &i in &sorted[1..] {
@@ -215,6 +217,43 @@ impl EditorData {
             prev = i;
         }
         self.push_update_range(start, prev);
+    }
+
+    /// 调试断言：验证当前轨在 `indices` 邻域满足「按 start_tick 升序」不变式。
+    ///
+    /// 就地改 tick 的写路径若忘记 `restore_sorted`，`window_range`/`position_of_id`
+    /// 二分查询会漏检音符（渲染可见性/命中检测失效）——在事件记录点设防，
+    /// 让任何新写路径的漏排在测试中立即暴露（仅 debug 构建，O(k log 块数)）。
+    #[cfg(debug_assertions)]
+    fn debug_assert_track_sorted_around(&self, indices: &[usize]) {
+        let track = self.current_track_notes();
+        let len = track.len();
+        for &i in indices {
+            if i >= len {
+                continue;
+            }
+            let cur = track.get(i).map(|n| n.start_tick);
+            if let Some(prev) = i
+                .checked_sub(1)
+                .and_then(|p| track.get(p))
+                .map(|n| n.start_tick)
+                && let Some(c) = cur
+            {
+                debug_assert!(
+                    prev <= c,
+                    "轨道失序：索引 {i} 前驱 tick {prev} > 当前 tick {c}（就地改 tick 后必须 restore_sorted）"
+                );
+            }
+            if i + 1 < len
+                && let Some(c) = cur
+                && let Some(next) = track.get(i + 1).map(|n| n.start_tick)
+            {
+                debug_assert!(
+                    c <= next,
+                    "轨道失序：索引 {i} tick {c} > 后继 tick {next}（就地改 tick 后必须 restore_sorted）"
+                );
+            }
+        }
     }
 
     /// 推送单个连续区间事件（越界索引防御性过滤）

@@ -189,6 +189,8 @@ impl Editor {
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();
+                    // 主选择漂移防护：拉伸左边缘可越过未选中音符 → 索引位移
+                    let identity = self.capture_selection_identity();
                     if let Some(track) =
                         self.editor_state.data.document.as_mut().and_then(|doc| {
                             doc.track_notes_mut(self.editor_state.data.current_track)
@@ -201,7 +203,18 @@ impl Editor {
                             track,
                         );
                     }
-                    self.editor_state.data.record_update_ranges(&selected);
+                    // 越过邻居 → 恢复「按 start_tick 升序」不变式（二分查询依赖）；
+                    // 重排时区间事件按旧索引失效，走主轨全量重建
+                    if self
+                        .editor_state
+                        .data
+                        .restore_current_track_sorted(&selected)
+                    {
+                        self.editor_state.data.note_delta_dirty = true;
+                    } else {
+                        self.editor_state.data.record_update_ranges(&selected);
+                    }
+                    self.remap_selection_by_identity(&identity);
                 }
                 self.mark_notes_changed();
             }

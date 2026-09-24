@@ -44,6 +44,7 @@ impl EditorData {
 
         let mut modified = 0usize;
         let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reordered = false;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         if let Some(track) = self
@@ -93,12 +94,20 @@ impl EditorData {
                     }
                 }
             }
+            // tick 表达式（+/-/*//）可越过未选中音符 → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reordered = track.restore_sorted(&modified_indices);
         }
 
         self.push_collab_transform_transitions(transitions);
 
         if modified > 0 {
-            self.record_update_ranges(&modified_indices);
+            if reordered {
+                self.mark_current_track_changed();
+                self.note_delta_dirty = true;
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }

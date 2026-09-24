@@ -88,6 +88,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reordered = false;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         if let Some(track) = self
@@ -108,13 +110,22 @@ impl EditorTransform for EditorData {
                         note.start_tick = new_tick_u;
                         transitions.push((old, *note));
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
+            // 镜像反转时间顺序 → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reordered = track.restore_sorted(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            self.record_update_ranges(&selected_indices);
+            if reordered {
+                self.mark_current_track_changed();
+                self.note_delta_dirty = true;
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }
@@ -186,6 +197,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reordered = false;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         const MIN_LEN: f32 = 1.0;
@@ -211,13 +224,22 @@ impl EditorTransform for EditorData {
                         note.end_tick = new_end_u.max(new_tick_u.saturating_add(1));
                         transitions.push((old, *note));
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
+            // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reordered = track.restore_sorted(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            self.record_update_ranges(&indices);
+            if reordered {
+                self.mark_current_track_changed();
+                self.note_delta_dirty = true;
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }

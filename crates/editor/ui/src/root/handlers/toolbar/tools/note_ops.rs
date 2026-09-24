@@ -85,6 +85,8 @@ impl ToolbarHandler {
             lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
 
         if modified_count > 0 {
+            // 主选择漂移防护：量化可越过未量化音符 → 重排会位移选中索引
+            let identity = root.editor.capture_selection_identity();
             // 量化仅改 tick/length（id 不变）：记录每个选中音符的真实 id，
             // 供协作广播直接引用（替代 note_id_at 坐标反查）
             let mut note_ids: Vec<u64> = vec![0; selected_indices.len()];
@@ -120,6 +122,7 @@ impl ToolbarHandler {
             {
                 root.editor.editor_state.data.note_delta_dirty = true;
             }
+            root.editor.remap_selection_by_identity(&identity);
 
             // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。
             let track = root.editor.editor_state.data.current_track;

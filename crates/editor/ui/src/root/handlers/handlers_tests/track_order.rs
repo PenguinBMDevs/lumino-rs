@@ -56,3 +56,36 @@ fn test_quantize_subset_restores_track_order() {
         "重排 → 主轨全量重建"
     );
 }
+
+#[test]
+fn test_quantize_reorder_keeps_selection_on_same_note() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = create_root();
+    attach_test_document(&mut root);
+
+    // 量化网格与处理器同源计算（默认 zoom_x/ppq）
+    let view = &root.editor.editor_state.view;
+    let grid = crate::editor::grid::utils::adaptive_grid_gap(view.zoom_x, view.ppq as f32);
+    // 选中 S = grid/2（四舍五入向上到 grid），未选中 U = 3/4 grid（位于 S 与 grid 之间）
+    let s_tick = (grid * 0.5).round();
+    let u_tick = (grid * 0.75).round();
+    root.editor
+        .editor_state
+        .data
+        .insert_note(1, Note::from_raw(s_tick, 60, 60.0, 100, 0));
+    root.editor
+        .editor_state
+        .data
+        .insert_note(1, Note::from_raw(u_tick, 62, 60.0, 100, 0));
+    root.editor.selection_insert(0); // 只选 S
+
+    let mut handler = ToolbarHandler::new();
+    handler.handle(&mut root, Message::Toolbar(ToolbarEvent::Quantize));
+
+    // S 量化后越过 U（原索引 0 → 新索引 1）→ 选中必须跟随原音符
+    assert_eq!(
+        root.editor.get_selected_indices(),
+        vec![1],
+        "重排后选中必须跟随原音符（新索引 1）"
+    );
+}
