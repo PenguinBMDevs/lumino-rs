@@ -85,6 +85,9 @@ impl ToolbarHandler {
             lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
 
         if modified_count > 0 {
+            // 量化仅改 tick/length（id 不变）：记录每个选中音符的真实 id，
+            // 供协作广播直接引用（替代 note_id_at 坐标反查）
+            let mut note_ids: Vec<u64> = vec![0; selected_indices.len()];
             for (pos, &i) in selected_indices.iter().enumerate() {
                 if let Some(note) = root
                     .editor
@@ -102,6 +105,7 @@ impl ToolbarHandler {
                         lumino_editor_state::f32_to_tick(quantizable_notes[pos].length);
                     note.end_tick = new_tick.saturating_add(new_length.max(1));
                     note.start_tick = new_tick;
+                    note_ids[pos] = note.id;
                 }
             }
 
@@ -112,13 +116,8 @@ impl ToolbarHandler {
                 let new_tick = quantizable_notes[pos].tick;
                 let new_length = quantizable_notes[pos].length;
                 if (new_tick, new_length) != (old.0, old.2) {
-                    // 量化后音符已落到 new_tick，按新位置反查其真实全局 ID。
-                    let note_id = root
-                        .editor
-                        .editor_state
-                        .data
-                        .note_id_at(track, new_tick, old.1)
-                        .unwrap_or(0);
+                    // id 取自量化前轨道（量化不改 id，按 id 精确匹配对端音符）
+                    let note_id = note_ids[pos];
                     entries.push((false, note_id, old.0, old.1, old.2, old.3, old.4, track));
                     entries.push((
                         true, note_id, new_tick, old.1, new_length, old.3, old.4, track,

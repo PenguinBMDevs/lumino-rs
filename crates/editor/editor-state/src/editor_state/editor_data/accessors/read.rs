@@ -67,24 +67,4 @@ impl EditorData {
             .map(|doc| doc.track_note_count(self.current_track as u16) as usize)
             .unwrap_or(0)
     }
-
-    /// 按 `(音轨, tick, key)` 反查音符全局唯一 ID（协作按 id 同步时取回真实 id）。
-    ///
-    /// tick/key 带容差匹配（≤1 tick、key 全相等），避免浮点/整型换算误差；
-    /// 命中多个时取 tick 最近者。无 document 或未命中返回 `None`。
-    pub fn note_id_at(&self, track_id: usize, tick: f32, key: u16) -> Option<u64> {
-        let notes = self.track_notes(track_id);
-        let mut best: Option<(f32, u64)> = None;
-        for n in notes.iter() {
-            let dt = (n.start_tick as f32 - tick).abs();
-            let dk = (n.key as i32 - key as i32).abs();
-            if dt <= 1.0 && dk == 0 {
-                let score = dt;
-                if best.is_none_or(|b| score < b.0) {
-                    best = Some((score, n.id));
-                }
-            }
-        }
-        best.map(|b| b.1)
-    }
 }

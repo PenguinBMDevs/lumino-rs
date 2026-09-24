@@ -109,19 +109,17 @@ impl Editor {
                 note.velocity,
                 note.channel,
             );
-            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护
-            self.editor_state.data.insert_note(track, right);
-            self.editor_state.data.insert_note(track, left);
-            // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
-            let left_id = self
-                .editor_state
-                .data
-                .note_id_at(track, note_tick, note_key)
-                .unwrap_or(0);
+            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护；
+            // 插入回传真实 id（替代 note_id_at 坐标反查，对端/redo 按 id 精确匹配）
             let right_id = self
                 .editor_state
                 .data
-                .note_id_at(track, tick_f, note_key)
+                .insert_note_with_id(track, right)
+                .unwrap_or(0);
+            let left_id = self
+                .editor_state
+                .data
+                .insert_note_with_id(track, left)
                 .unwrap_or(0);
             sync_entries.push((
                 false,

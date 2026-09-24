@@ -9,8 +9,8 @@ fn test_ensure_note_id_above_bumps_allocator() {
     // 本地分配器从 1 起；插入一个零 id 音符 → 分配 1
     data.insert_note(0, Note::from_raw(0.0, 60, 1.0, 100, 0));
     assert_eq!(
-        data.note_id_at(0, 0.0, 60),
-        Some(1),
+        data.track_notes(0).get(0).expect("首个音符应存在").id,
+        1,
         "首个本地音符应分配到 id=1"
     );
 
@@ -19,7 +19,12 @@ fn test_ensure_note_id_above_bumps_allocator() {
 
     // 再插入一个零 id 音符，应分配到 43 而非 1 或 42（无碰撞）
     data.insert_note(0, Note::from_raw(96.0, 62, 1.0, 100, 0));
-    let new_id = data.note_id_at(0, 96.0, 62).expect("应找到刚插入的音符");
+    let new_id = data
+        .track_notes(0)
+        .iter()
+        .find(|n| n.start_tick == 96 && n.key == 62)
+        .expect("应找到刚插入的音符")
+        .id;
     assert_eq!(
         new_id, 43,
         "接收远端 id=42 后，本地分配器应抬到 43，避免与对端 id 碰撞"
