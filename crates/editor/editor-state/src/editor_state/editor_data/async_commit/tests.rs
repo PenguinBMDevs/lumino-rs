@@ -127,6 +127,19 @@ fn test_async_commit_zero_delta_is_noop() {
     assert!(!data.has_pending_commit());
 }
 
+/// 空 ops（无选中拖动）应直接 no-op：不建立 pending，也不推入空 MoveOp 历史。
+#[test]
+fn test_async_commit_empty_ops_is_noop() {
+    let mut data = make_data_with_notes();
+    assert!(
+        !data
+            .apply_move_ops_async(Vec::new(), 127)
+            .expect("空 ops 提交应成功返回 false")
+    );
+    assert!(!data.has_pending_commit());
+    assert!(!data.can_undo(), "不得因空提交产生可撤销历史");
+}
+
 #[test]
 fn test_async_commit_rejects_concurrent() {
     let mut data = make_data_with_notes();

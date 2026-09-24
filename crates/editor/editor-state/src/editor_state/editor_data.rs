@@ -16,7 +16,6 @@ use lumino_note_core::note::Note;
 
 pub(crate) mod accessors;
 pub(crate) mod async_commit;
-pub(crate) mod async_commit_streaming;
 mod automation;
 mod construct;
 mod history;
