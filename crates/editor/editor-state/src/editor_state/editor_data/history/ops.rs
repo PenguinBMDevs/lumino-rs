@@ -83,6 +83,8 @@ impl EditorData {
         let mut modified = 0usize;
         // (track_id, index)：供 UpdateRange 增量事件按实际修改位置生成
         let mut modified_indices: Vec<(usize, usize)> = Vec::new();
+        // 就地改 tick 后发生重排的音轨（区间事件按旧索引失效）
+        let mut reordered_tracks: HashSet<usize> = HashSet::new();
 
         for op in ops {
             let track_id = op.track_id as usize;
@@ -119,6 +121,7 @@ impl EditorData {
             }
 
             // 阶段 2：原地应用（undo 用 original 精确还原，redo 用 delta 前进）。
+            let mut applied: Vec<usize> = Vec::with_capacity(resolved.len());
             for (i, idx) in resolved {
                 let Some(note) = track.get_mut(idx) else {
                     continue;
@@ -135,6 +138,7 @@ impl EditorData {
                         note.key = orig_key as u8;
                         modified += 1;
                         modified_indices.push((track_id, idx));
+                        applied.push(idx);
                     }
                 } else {
                     let dt = op.delta_tick;
@@ -150,16 +154,33 @@ impl EditorData {
                         note.key = new_key;
                         modified += 1;
                         modified_indices.push((track_id, idx));
+                        applied.push(idx);
                     }
                 }
+            }
+
+            // 阶段 3：恢复「按 start_tick 升序」不变式（二分查询依赖，
+            // 破坏后渲染/命中会漏检音符）；重排轨的区间事件失效（见下）。
+            if track.restore_sorted(&applied) {
+                reordered_tracks.insert(track_id);
             }
         }
 
         if modified > 0 {
-            // 主音轨段内增量：按**实际修改索引**合并连续区间推送 UpdateRange，
-            // 使 GPU 主音轨段按索引原地替换（免 note_delta_dirty 全量重建）。
-            // 连续区间替换无索引漂移隐患（与 live 拖动 update_note 同一通道）。
-            self.push_move_update_ranges(&modified_indices);
+            let current_track = self.current_track;
+            if reordered_tracks.contains(&current_track) {
+                // 顺序已变：主轨区间事件按旧索引失效 → 全量重建
+                // （渲染消费者遇 dirty 会丢弃积压事件，见 note_update.rs）
+                self.note_delta_dirty = true;
+            }
+            // 仅当前轨的修改可用主轨段内 UpdateRange：事件队列无 track 维度，
+            // 非当前轨的区间事件会被误应用到当前轨段（错误音符）。
+            let current_only: Vec<(usize, usize)> = modified_indices
+                .iter()
+                .filter(|&&(t, _)| t == current_track && !reordered_tracks.contains(&t))
+                .copied()
+                .collect();
+            self.push_move_update_ranges(&current_only);
             // 记录所有受影响音轨：若全部是当前音轨（洋葱皮不显示），
             // stream_onion_skin_instances 可豁免全量重建上传。
             let dirty_tracks: HashSet<usize> = ops.iter().map(|op| op.track_id as usize).collect();

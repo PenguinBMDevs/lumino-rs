@@ -35,6 +35,8 @@ mod tests_history;
 mod tests_note_delta;
 #[cfg(test)]
 mod tests_note_ops;
+#[cfg(test)]
+mod tests_track_order;
 
 /// 协作创建同步条目：`(音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引, is_added)`。
 pub type CollabCreateSyncEntry = (u64, f32, u16, f32, u8, u8, usize, bool);

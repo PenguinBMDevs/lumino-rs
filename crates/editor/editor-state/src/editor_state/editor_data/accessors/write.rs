@@ -149,6 +149,19 @@ impl EditorData {
 
     // ── 增量事件记录 ─────────────────────────────────────────
 
+    /// 就地修改当前轨若干音符（如量化）后恢复「按 start_tick 升序」不变式。
+    ///
+    /// 返回 `true` 表示发生重排（调用方须走主轨全量重建：区间事件按旧索引失效）。
+    /// 直接 `track_notes_mut` 改 tick 会破坏二分查询依赖的排序，破坏后
+    /// `window_range`/`position_of_id` 会漏检音符（渲染/命中失效）。
+    pub fn restore_current_track_sorted(&mut self, moved: &[usize]) -> bool {
+        let track = self.current_track;
+        self.document
+            .as_mut()
+            .and_then(|doc| doc.track_notes_mut(track))
+            .is_some_and(|t| t.restore_sorted(moved))
+    }
+
     /// 记录等长修改增量事件（整轨同步版）
     ///
     /// 将 `indices`（修改的 notes 索引，无序可重复）合并为连续区间

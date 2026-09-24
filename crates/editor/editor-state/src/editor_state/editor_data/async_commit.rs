@@ -23,6 +23,9 @@ pub struct AsyncCommitResult {
     pub modified: usize,
     /// 实际修改的连续索引区间（start, end_exclusive），供 GPU 段内增量更新
     pub modified_ranges: Vec<(usize, usize)>,
+    /// 是否因就地修改 tick 发生了重排（`notes` 已恢复有序）。
+    /// 为 `true` 时 `modified_ranges` 按旧索引已失效，调用方须走全量重建。
+    pub reordered: bool,
 }
 
 /// 待完成的异步提交
@@ -72,17 +75,21 @@ impl EditorData {
         match pending.receiver.try_recv() {
             Ok(Ok(result)) => {
                 let modified = result.modified;
+                let reordered = result.reordered;
                 // 先按实际修改区间构造 GPU 段内增量事件负载（此时 notes 仍可借用），
                 // 再把整轨 move 写回 document——消除旧实现的整轨 clone。
-                let mut update_events: Vec<(usize, Vec<lumino_note_core::note::Note>)> =
-                    Vec::with_capacity(result.modified_ranges.len());
-                for &(start, end) in &result.modified_ranges {
-                    let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
-                        .iter()
-                        .map(super::accessors::event_to_note)
-                        .collect();
-                    if !notes.is_empty() {
-                        update_events.push((start, notes));
+                // 重排时区间事件按旧索引失效，跳过（改走全量重建，见下）。
+                let mut update_events: Vec<(usize, Vec<lumino_note_core::note::Note>)> = Vec::new();
+                if !reordered {
+                    update_events.reserve(result.modified_ranges.len());
+                    for &(start, end) in &result.modified_ranges {
+                        let notes: Vec<lumino_note_core::note::Note> = result.notes[start..end]
+                            .iter()
+                            .map(super::accessors::event_to_note)
+                            .collect();
+                        if !notes.is_empty() {
+                            update_events.push((start, notes));
+                        }
                     }
                 }
                 // 写回 document（当前音轨整轨替换，单一权威源）
@@ -97,8 +104,13 @@ impl EditorData {
                 }
                 // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
                 self.mark_current_track_changed();
-                // 事件已完整记录（对应实际修改区间）→ 清除 dirty
-                self.note_delta_dirty = false;
+                if reordered {
+                    // 顺序已变：主轨全量重建（渲染消费者遇 dirty 会丢弃积压事件）
+                    self.note_delta_dirty = true;
+                } else {
+                    // 事件已完整记录（对应实际修改区间）→ 清除 dirty
+                    self.note_delta_dirty = false;
+                }
                 self.edited_tracks.insert(self.current_track);
                 self.push_move_op(pending.ops);
                 Some(Ok(modified))
@@ -199,12 +211,21 @@ fn apply_move_ops_to_clone(
         }
     }
 
-    // 实际修改索引 → 连续区间（供 GPU 段内 UpdateRange 事件）
+    // 就地改 tick 破坏「按 start_tick 升序」不变式（window_range/position_of_id
+    // 二分依赖，破坏后渲染/命中会漏检音符）→ 恢复；重排时旧索引区间失效。
+    let (notes, reordered) = match lumino_midi_model::restore_sorted_vec(&notes, &modified_indices)
+    {
+        Some(restored) => (restored, true),
+        None => (notes, false),
+    };
+
+    // 实际修改索引 → 连续区间（供 GPU 段内 UpdateRange 事件；仅未重排时有效）
     let modified_ranges = merge_consecutive_ranges(modified_indices);
 
     tracing::info!(
-        "异步提交线程完成: 修改 {} 个音符, 耗时 {:?}",
+        "异步提交线程完成: 修改 {} 个音符, 重排={}, 耗时 {:?}",
         modified,
+        reordered,
         start_time.elapsed()
     );
 
@@ -212,6 +233,7 @@ fn apply_move_ops_to_clone(
         notes,
         modified,
         modified_ranges,
+        reordered,
     })
 }
 

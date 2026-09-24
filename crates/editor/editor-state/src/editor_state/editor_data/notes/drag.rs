@@ -18,6 +18,7 @@ impl EditorData {
         let mut modified = 0usize;
         // 记录实际被修改的索引（主音轨增量事件：等长 UpdateRange）
         let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reordered = false;
 
         if let Some(track) = self
             .document
@@ -44,11 +45,21 @@ impl EditorData {
                     }
                 }
             }
+            // 就地改 tick 破坏「按 start_tick 升序」不变式（window_range/
+            // position_of_id 二分依赖，破坏后渲染/命中会漏检音符）→ 立即恢复。
+            reordered = track.restore_sorted(&modified_indices);
         }
 
         if modified > 0 {
-            // 增量对账：记录事件（内部 mark 置 dirty 后清除）
-            self.record_update_ranges_streamed(&modified_indices);
+            if reordered {
+                // 顺序已变：区间事件（按旧索引）失效 → 主轨全量重建
+                // （渲染消费者遇 dirty 会丢弃积压事件，见 note_update.rs）
+                self.mark_current_track_changed();
+                self.note_delta_dirty = true;
+            } else {
+                // 增量对账：记录事件（内部 mark 置 dirty 后清除）
+                self.record_update_ranges_streamed(&modified_indices);
+            }
         }
         modified
     }

@@ -61,6 +61,7 @@ mod tests {
     mod selection_remap;
     mod state;
     pub(crate) mod test_helpers;
+    mod track_order;
 }
 
 use iced_core::Point;

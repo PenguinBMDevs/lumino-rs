@@ -16,6 +16,7 @@ mod handler_behavior;
 mod piano_roll;
 mod recover_track;
 mod selection_drift;
+mod track_order;
 mod velocity;
 
 fn create_root() -> Root {

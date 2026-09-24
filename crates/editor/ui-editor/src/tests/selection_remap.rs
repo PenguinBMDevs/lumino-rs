@@ -258,14 +258,15 @@ fn test_single_drag_preserves_selection() {
     drag.set_delta(2000, 0); // A 从 tick 0 → 2000
 
     assert!(editor.finalize_dragging(0, drag));
-    // 流式路径原地改 tick（不重排索引）：A 仍在原索引，选中必须仍指向 A
+    // 有序恢复后 A 落到新索引 2（越过 B/C），选中必须仍指向 A（id 口径）
     assert_eq!(selected_ids(&editor), vec![a_id], "拖动后选中应仍指向 A");
+    assert_eq!(selected_indices(&editor), vec![2], "A 应落到新位置索引 2");
     let a = editor
         .editor_state
         .data
         .track_notes(1)
-        .get(0)
+        .iter()
+        .find(|n| n.id == a_id)
         .expect("A 存在");
-    assert_eq!(a.id, a_id);
     assert_eq!(a.start_tick, 2000, "拖动 delta 应已应用");
 }
