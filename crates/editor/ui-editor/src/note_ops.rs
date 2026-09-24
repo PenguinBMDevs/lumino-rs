@@ -24,12 +24,10 @@ impl Editor {
     /// # 返回
     /// 命中选中集合返回 `true`。
     pub fn is_note_selected(&self, index: usize) -> bool {
-        let interaction = &self.editor_state.interaction;
-        // `selection_bitset` 优先：O(1) 位测试，零内存分配
-        if let Some(ref bs) = interaction.selection_bitset {
-            return bs.get(index);
-        }
-        interaction.selected_notes.contains(&index)
+        self.editor_state
+            .interaction
+            .selected_notes
+            .contains(&index)
     }
 
     /// 当前选中的音符数量。
@@ -37,31 +35,22 @@ impl Editor {
     /// # 返回
     /// 选中音符个数。
     pub fn selected_notes_count(&self) -> usize {
-        let interaction = &self.editor_state.interaction;
-        if let Some(ref bs) = interaction.selection_bitset {
-            return bs.count_ones();
-        }
-        interaction.selected_notes.len()
+        self.editor_state.interaction.selected_notes.len()
     }
 
-    /// 是否有任何选中音符（同时检查 `selection_bitset` 和 `selected_notes`）
+    /// 是否有任何选中音符
     pub fn has_selection(&self) -> bool {
-        let interaction = &self.editor_state.interaction;
-        if interaction.selection_bitset.is_some() {
-            return true;
-        }
-        !interaction.selected_notes.is_empty()
+        !self.editor_state.interaction.selected_notes.is_empty()
     }
 
-    /// 获取选中索引列表（兼容 `selection_bitset` 和 `selected_notes`）
+    /// 获取选中索引列表
     pub fn get_selected_indices(&self) -> Vec<usize> {
-        let interaction = &self.editor_state.interaction;
-        if let Some(ref bs) = interaction.selection_bitset {
-            let mut indices = Vec::with_capacity(bs.count_ones());
-            bs.for_each_set(|i| indices.push(i));
-            return indices;
-        }
-        interaction.selected_notes.iter().copied().collect()
+        self.editor_state
+            .interaction
+            .selected_notes
+            .iter()
+            .copied()
+            .collect()
     }
 
     /// 清空当前选中集合。

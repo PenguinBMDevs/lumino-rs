@@ -92,8 +92,7 @@ pub fn draw(
     // 导致 DraggingSelection/Idle 状态下使用了 stale 的 cached_selection_bounds，框选框不跟随
     // 音符拖动（缺少 ghost delta），且二次框选时位置/大小异常。
     let selected = &editor.editor_state.interaction.selected_notes;
-    let has_selection =
-        !selected.is_empty() || editor.editor_state.interaction.selection_bitset.is_some();
+    let has_selection = !selected.is_empty();
     if has_selection {
         puffin::profile_scope!("draw::selection_box_bbox");
 

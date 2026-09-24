@@ -246,17 +246,9 @@ impl Editor {
     ) {
         let interaction = &self.editor_state.interaction;
         let notes = self.editor_state.data.current_track_notes();
-        if let Some(ref bs) = interaction.selection_bitset {
-            bs.for_each_set(|i| {
-                if let Some(n) = notes.get(i) {
-                    f(n);
-                }
-            });
-        } else {
-            for &i in &interaction.selected_notes {
-                if let Some(n) = notes.get(i) {
-                    f(n);
-                }
+        for &i in &interaction.selected_notes {
+            if let Some(n) = notes.get(i) {
+                f(n);
             }
         }
     }

@@ -78,7 +78,6 @@ impl Editor {
             return;
         }
 
-        // 兼容 `selection_bitset` 和 `selected_notes` 两种选中状态
         let indices: HashSet<usize> = self.get_selected_indices().into_iter().collect();
 
         // 单次 O(N) 遍历捕获待删除音符信息，替代逐个 get(i) O(K·log N)

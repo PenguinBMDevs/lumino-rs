@@ -1,6 +1,6 @@
 //! 主选择索引重映射：结构编辑后按音符身份（id）恢复选中
 //!
-//! 主选择（`selected_notes` / `selection_bitset`）以**当前轨索引**存储。
+//! 主选择（`selected_notes`）以**当前轨索引**存储。
 //! 任何改变当前轨音符列表的操作——远端协作增删移、undo/redo 回放、
 //! razor 切割、拖动提交写回、绘制插入——都会位移索引，使选中集指向
 //! 错误音符（用户报告：A 端选中一段后 B 端在同轨头部插入音符，
@@ -49,25 +49,15 @@ impl Editor {
         let interaction = &self.editor_state.interaction;
         let notes = self.editor_state.data.track_notes(track);
 
-        // 收集选中索引（bitset 路径当前休眠，但保持语义一致）
+        // 收集选中索引
         let mut indices: Vec<usize> = Vec::new();
-        if let Some(ref bs) = interaction.selection_bitset {
-            if bs.count_ones() > MAX_CAPTURE_ENTRIES {
-                return SelectionIdentity {
-                    track,
-                    entries: None,
-                };
-            }
-            bs.for_each_set(|i| indices.push(i));
-        } else {
-            if interaction.selected_notes.len() > MAX_CAPTURE_ENTRIES {
-                return SelectionIdentity {
-                    track,
-                    entries: None,
-                };
-            }
-            indices.extend(interaction.selected_notes.iter().copied());
+        if interaction.selected_notes.len() > MAX_CAPTURE_ENTRIES {
+            return SelectionIdentity {
+                track,
+                entries: None,
+            };
         }
+        indices.extend(interaction.selected_notes.iter().copied());
 
         // 转换为稳定身份（id + tick 提示）；id==0（遗留未分配）无法稳定匹配，跳过
         let entries: Vec<(u64, u32)> = indices

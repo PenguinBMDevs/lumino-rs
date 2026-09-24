@@ -39,8 +39,7 @@ impl Editor {
         let pending = &self.pending_drag_state;
         let pending_copy = &self.pending_copy_drag_state;
 
-        let has_selection_bitset = self.editor_state.interaction.selection_bitset.is_some();
-        if selected.is_empty() && !has_selection_bitset {
+        if selected.is_empty() {
             return Vec::new();
         }
 

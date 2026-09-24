@@ -72,17 +72,9 @@ impl Editor {
             }
             count += 1;
         };
-        if let Some(bs) = &interaction.selection_bitset {
-            for (i, n) in notes.iter().enumerate() {
-                if bs.get(i) {
-                    visit(n);
-                }
-            }
-        } else {
-            for &i in &interaction.selected_notes {
-                if let Some(n) = notes.get(i) {
-                    visit(n);
-                }
+        for &i in &interaction.selected_notes {
+            if let Some(n) = notes.get(i) {
+                visit(n);
             }
         }
         if count == 0 {
@@ -94,12 +86,7 @@ impl Editor {
         // 第二遍：流式编码（文档顺序即 tick 升序；delta 编码使密集排布极省）
         let bytes = encode_clipboard(
             notes.iter().enumerate().filter_map(|(i, n)| {
-                let sel = if let Some(bs) = &interaction.selection_bitset {
-                    bs.get(i)
-                } else {
-                    interaction.selected_notes.contains(&i)
-                };
-                if !sel {
+                if !interaction.selected_notes.contains(&i) {
                     return None;
                 }
                 Some(ClipRecord::new(

@@ -191,8 +191,11 @@ fn test_speed_change_reorder_keeps_selection_on_same_note() {
     // min=0；factor 0.25 → 960 → 240（越过未选中的 480）
     assert!(editor.apply_speed_change(0.25) > 0);
     assert_eq!(ticks(&editor), vec![0, 240, 480]);
+    // 注意：get_selected_indices 返回 HashSet 迭代序（非确定），断言前排序
+    let mut selected = editor.get_selected_indices();
+    selected.sort_unstable();
     assert_eq!(
-        editor.get_selected_indices(),
+        selected,
         vec![0, 1],
         "重排后选中必须跟随原音符（960 的音符移到索引 1）"
     );

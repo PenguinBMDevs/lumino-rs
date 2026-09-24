@@ -47,7 +47,7 @@ impl Host {
 
     /// 获取当前选中的音符（用于"导出为素材"）
     ///
-    /// - 卷帘模式：当前音轨的选中音符索引（`selected_notes` / `selection_bitset`）；
+    /// - 卷帘模式：当前音轨的选中音符索引（`selected_notes`）；
     /// - 走带模式：`arrange_selection` 跨音轨矩形框选覆盖的音符。
     ///
     /// 返回 `(track_idx, [(tick, key, length, velocity, channel)])`（仅含选中音符的音轨）。
