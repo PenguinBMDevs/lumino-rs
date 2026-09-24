@@ -51,12 +51,17 @@ impl EditorData {
     /// 定位 CreateOp 对应音符的当前索引。
     ///
     /// 优先按全局唯一 id（tick 提示二分 + 同 tick 窗口 + 全扫兜底，O(log N)）；
-    /// `id == 0`（旧构造）回退全值匹配（忽略 id——id 由分配器后加，按全值匹配会落空）。
+    /// `id == 0`（兼容旧构造）回退全值匹配（忽略 id——id 由分配器后加，按全值匹配会落空）
+    /// 并告警：生产构造点已全部改用 `insert_note_with_id`/`batch_insert_notes_with_ids`
+    /// 捕获真实 id，此回退仅为未迁移路径的防御网（全值匹配在完全同值音符间有二义性）。
     fn locate_create_op_note(&self, track_id: usize, op: &CreateOp) -> Option<usize> {
         let track = self.track_notes(track_id);
         if op.note.id != NoteEvent::UNASSIGNED_ID {
             return track.position_of_id(op.note.id, op.note.start_tick);
         }
+        tracing::warn!(
+            "CreateOp 缺少 note id（id==0），回退全值匹配——请改用 insert_note_with_id 捕获真实 id"
+        );
         track.iter().position(|n| {
             n.start_tick == op.note.start_tick
                 && n.end_tick == op.note.end_tick
