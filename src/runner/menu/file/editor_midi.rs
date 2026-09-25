@@ -4,8 +4,9 @@
 //! 生成可用于保存/导出的 `MidiDocument` 或 MIDI 字节。
 
 use lumino_export::midi::{
-    MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTimeSignatureEvent,
-    MidiTrackData, extract_pc_cc_events,
+    DocPassthrough, MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent,
+    MidiTimeSignatureEvent, MidiTrackData, ReleaseMap, build_release_map,
+    extract_passthrough_events, extract_pc_cc_events,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
 use lumino_note_core::midi_types::TempoPoint;
@@ -43,14 +44,33 @@ pub(super) type EditorNotes = Vec<(usize, Vec<(f32, u8, f32, u8, u8)>)>;
 
 /// 从当前已加载文档提取 PC/CC 事件（经 UI 只读借用，零拷贝）
 fn extract_current_pc_cc(runner: &RunnerInner) -> Option<(ProgramChangeMap, ControlChangeMap)> {
-    let ui = runner.window_state.window.ui();
-    ui.root()
+    current_document(runner).map(|doc| extract_pc_cc_events(doc))
+}
+
+/// 从当前已加载文档提取透传事件 + 释放力度匹配表（经 UI 只读借用）
+fn extract_current_passthrough(runner: &RunnerInner) -> Option<(DocPassthrough, ReleaseMap)> {
+    current_document(runner).map(|doc| (extract_passthrough_events(doc), build_release_map(doc)))
+}
+
+/// 当前已加载文档（UI 编辑器数据的单一权威源，只读借用）
+fn current_document(runner: &RunnerInner) -> Option<&MidiDocument> {
+    runner
+        .window_state
+        .window
+        .ui()
+        .root()
         .editor
         .editor_state
         .data
         .document
         .as_ref()
-        .map(extract_pc_cc_events)
+}
+
+/// 当前已加载文档的轨道名（索引 = 轨号，文档缺失时返回空）
+fn current_track_names(runner: &RunnerInner) -> Vec<Option<String>> {
+    current_document(runner).map_or_else(Vec::new, |doc| {
+        doc.track_names.iter().map(|n| n.clone()).collect()
+    })
 }
 
 /// 读取编辑器中的音符与 tempo 点
@@ -77,24 +97,37 @@ pub(super) fn build_midi_export_data_from_editor(
     let ppq = runner.window_state.window.ui().ppq();
     let time_signatures = editor_time_signatures(runner);
     let pc_cc = extract_current_pc_cc(runner);
+    // 透传事件 + 释放力度匹配表：编辑器未建模的内容（弯音/触后/文本/SysEx/端口/
+    // 调号）与未编辑音符的释放力度全部从已加载文档回查，保存=无损往返。
+    let (pass, mut release_map): (DocPassthrough, ReleaseMap) =
+        extract_current_passthrough(runner).unwrap_or_default();
+    let track_names = current_track_names(runner);
 
     let tracks: Vec<MidiTrackData> = notes
         .iter()
         .enumerate()
         .map(|(i, (_, notes))| {
+            let track_id = i as u16;
             let midi_notes: Vec<MidiNoteEvent> = notes
                 .iter()
-                .map(|&(tick, key, length, velocity, channel)| MidiNoteEvent {
-                    tick: (tick as u32).max(1),
-                    channel,
-                    key,
-                    velocity,
-                    // UI 音符元组无释放力度概念，落盘默认 0
-                    release_velocity: 0,
-                    duration: (length as u32).max(1),
+                .map(|&(tick, key, length, velocity, channel)| {
+                    let tick_u32 = tick as u32;
+                    // tick=0 与零长度音符按原样写出，不再钳制为 1
+                    // （钳制会挪动音符位置/拉长零长度音符，破坏往返等价）。
+                    let release_velocity = release_map
+                        .get_mut(&track_id)
+                        .and_then(|by_key| by_key.get_mut(&(tick_u32, key, channel))?.pop_front())
+                        .unwrap_or(0);
+                    MidiNoteEvent {
+                        tick: tick_u32,
+                        channel,
+                        key,
+                        velocity,
+                        release_velocity,
+                        duration: length as u32,
+                    }
                 })
                 .collect();
-            let track_id = i as u16;
             let (program_changes, control_changes) = match &pc_cc {
                 Some((pc, cc)) => (
                     pc.get(&track_id).cloned().unwrap_or_default(),
@@ -114,9 +147,31 @@ pub(super) fn build_midi_export_data_from_editor(
                 } else {
                     Vec::new()
                 },
+                // 调号编辑器未建模：文档有则透传到首轨（与 tempo/拍号同位）
+                key_signatures: if tempos_on_first_track && i == 0 {
+                    pass.key_signatures.clone()
+                } else {
+                    Vec::new()
+                },
                 program_changes,
                 control_changes,
-                ..Default::default()
+                pitch_bends: pass.pitch_bends.get(&track_id).cloned().unwrap_or_default(),
+                channel_aftertouch: pass
+                    .channel_aftertouch
+                    .get(&track_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                poly_aftertouch: pass
+                    .poly_aftertouch
+                    .get(&track_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                lyrics: pass.lyrics.get(&track_id).cloned().unwrap_or_default(),
+                markers: pass.markers.get(&track_id).cloned().unwrap_or_default(),
+                text_events: pass.text_events.get(&track_id).cloned().unwrap_or_default(),
+                sys_ex: pass.sys_ex.get(&track_id).cloned().unwrap_or_default(),
+                midi_port: pass.midi_ports.get(&track_id).copied(),
+                name: track_names.get(i).cloned().flatten(),
             }
         })
         .collect();
