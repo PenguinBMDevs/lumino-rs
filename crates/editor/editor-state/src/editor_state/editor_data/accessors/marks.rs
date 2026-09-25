@@ -60,4 +60,16 @@ impl EditorData {
         let current_track = self.current_track;
         self.mark_track_notes_changed_for(Some(HashSet::from([current_track])));
     }
+
+    /// 标记当前轨发生**结构性**变化（批量插入/删除、undo 整轨替换），且无段内增量事件。
+    ///
+    /// 渲染层据此以单轨 `TrackDelta` 重建当前轨段（见
+    /// [`crate::editor_state::EditorData::main_track_struct_dirty`]），
+    /// 替代 `note_delta_dirty` 的全量会话重建（大工程下 ~5x 成本差）。
+    /// 调用方须同时保证 `note_delta_events` 已清空（本方法负责清空）。
+    #[inline]
+    pub fn mark_main_track_struct_changed(&mut self) {
+        self.note_delta_events.clear();
+        self.main_track_struct_dirty = true;
+    }
 }

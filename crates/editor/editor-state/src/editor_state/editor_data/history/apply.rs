@@ -266,14 +266,16 @@ impl EditorData {
     /// 与常规编辑不同，undo/redo 可能作用于非当前视图音轨。本方法：
     /// - 精确记录受影响的音轨集合，供洋葱皮层走 `TrackDelta` 增量同步。
     /// - 若当前音轨也在受影响集合内，由于 undo/redo 入口未记录主音轨段内
-    ///   增量事件，必须走 `note_delta_dirty` 全量兜底重建。
+    ///   增量事件，标记**主轨段重建**（单轨 `TrackDelta`，非全量会话兜底）。
     /// - 清空可能残留的旧 `note_delta_events`，防止其在新 `current_track` 下
     ///   被误应用到错误音轨。
     fn mark_tracks_changed_after_history(&mut self, affected_tracks: HashSet<usize>) {
         self.note_delta_events.clear();
         self.onion_dirty_tracks = Some(affected_tracks.clone());
         self.track_notes_gen = self.track_notes_gen.wrapping_add(1);
-        self.note_delta_dirty = affected_tracks.contains(&self.current_track);
+        // 当前轨整轨替换 → 主轨段重建；其余受影响音轨由洋葱皮 Delta 同步
+        self.main_track_struct_dirty = affected_tracks.contains(&self.current_track);
+        self.note_delta_dirty = false;
     }
 
     /// 应用快照到当前状态（undo / redo 后调用）

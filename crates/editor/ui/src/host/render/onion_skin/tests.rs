@@ -14,6 +14,7 @@ fn make_fp(
         palette_idx,
         onion_dirty_tracks: None,
         muted_tracks: Vec::new(),
+        main_track_struct_dirty: false,
     }
 }
 
@@ -31,6 +32,20 @@ fn make_fp_dirty(
         palette_idx: 0,
         onion_dirty_tracks: Some(dirty_tracks),
         muted_tracks,
+        main_track_struct_dirty: false,
+    }
+}
+
+/// 构造带主轨结构性脏标记的指纹（gen 未变，仅有结构性变化）
+fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint {
+    OnionSkinFingerprint {
+        track_gen: 42,
+        mute_fp: 0,
+        current_track,
+        palette_idx: 0,
+        onion_dirty_tracks: Some(std::collections::HashSet::from([current_track])),
+        muted_tracks: Vec::new(),
+        main_track_struct_dirty: true,
     }
 }
 
@@ -199,6 +214,44 @@ fn onion_skin_state_delta_multi_track_edits() {
     state.mark_built(&make_fp(42, 0, 1, 0));
     let fp = make_fp_dirty(43, 1, std::collections::HashSet::from([2, 5]), vec![]);
     assert_delta(&state.decide_action(&fp), &[2, 5]);
+}
+
+#[test]
+fn onion_skin_state_delta_main_track_struct_change() {
+    // 主轨结构性变化（大插入/undo 整轨替换，gen 未变）→ 当前轨加入 Delta（单轨段重建），
+    // 不再走全量会话重建
+    let mut state = OnionSkinState::default();
+    state.mark_built(&make_fp(42, 0, 1, 0));
+    let fp = make_fp_main_struct(1);
+    assert_delta(&state.decide_action(&fp), &[1]);
+}
+
+#[test]
+fn onion_skin_state_delta_main_track_struct_with_onion_dirty() {
+    // 主轨结构性变化 + 其他洋葱皮音轨同时脏 → Delta 含当前轨与洋葱皮音轨
+    let mut state = OnionSkinState::default();
+    state.mark_built(&make_fp(42, 0, 1, 0));
+    let mut fp = make_fp_main_struct(1);
+    fp.track_gen = 43;
+    fp.onion_dirty_tracks = Some(std::collections::HashSet::from([1, 3]));
+    assert_delta(&state.decide_action(&fp), &[1, 3]);
+}
+
+#[test]
+fn onion_skin_state_view_state_defers_main_track_struct_change() {
+    // 布局变化帧返回 ViewState（数据零重传）；下一帧同指纹仍应产出 Delta(当前轨)，
+    // 由渲染层保留 main_track_struct_dirty 保证不丢失主轨段重建
+    let mut state = OnionSkinState::default();
+    state.mark_built(&make_fp(42, 0, 1, 0));
+    // 模拟切轨帧（mute_fp 变化）
+    let mut layout_fp = make_fp_main_struct(1);
+    layout_fp.mute_fp = 7;
+    assert_view_state(&state.decide_action(&layout_fp));
+    state.mark_built(&layout_fp);
+    // 下一帧布局稳定（mute 指纹保持 7，主轨结构标记仍在）→ Delta(当前轨)
+    let mut stable_fp = make_fp_main_struct(1);
+    stable_fp.mute_fp = 7;
+    assert_delta(&state.decide_action(&stable_fp), &[1]);
 }
 
 #[test]

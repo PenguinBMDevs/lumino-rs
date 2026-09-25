@@ -1,11 +1,14 @@
-//! UI 交互路径基准：**框选（连续拖动）+ 复制（含系统剪贴板）** —— 超大轨道部分选中
+//! UI 交互路径基准：**框选（连续拖动）+ 复制 + 粘贴（含系统剪贴板）** —— 超大轨道部分选中
 //!
 //! 与 `id_history_ops_bench`（数据操作层）互补：本基准驱动 `Editor::handle_action`
-//! 的真实交互路径，覆盖此前 bench 未覆盖的两个真实悬崖（APP 端 105s 单帧冻结的根因）：
+//! 的真实交互路径，覆盖此前 bench 未覆盖的真实悬崖（APP 端单帧冻结的根因）：
 //! 1. **超大轨道无空间索引**（> `SPATIAL_INDEX_MAX_BUILD`=2M）：框选拖动曾退化为
 //!    每帧整框重建（19.2M 轨道 ~130ms/帧，且逐索引随机 `get_note_view`）；
 //! 2. **部分选中复制**（非「全选快路径」）：曾对全轨逐音符哈希查找，恒等哈希在
-//!    索引超表容量时探测退化——实测 19.2M 轨道 / 3M 选中 160s 冻结。
+//!    索引超表容量时探测退化——实测 19.2M 轨道 / 3M 选中 160s 冻结；
+//! 3. **粘贴/大插入的渲染侧全量会话重建**：曾对任何粘贴重建**所有**轨实例
+//!    （19.2M 轨粘贴 ~1s：CPU 构建 5200W 实例 + ~900MB GPU 上传），现改为
+//!    单轨 `TrackDelta` 主轨段重建（当前轨实例并行分片 + ~400MB）。
 //!
 //! 工作负载：取音符最多音轨（19.2M），框选其 tick 区间的 `FRACTION`（默认 5%，
 //! ≈ 280W 选中）——正是 APP 中的真实形态（轨道远大于选中，走部分选中分支）。
@@ -15,14 +18,16 @@
 //! - 复制（二进制编码）≤ 100 ms
 //! - 复制（`handle_action` 全路径，含系统剪贴板写入）≤ 200 ms（含 OS 边界成本）
 //! - 释放（`Released`，协作关闭时零广播）≤ 100 ms
-//! - 单次操作内存上升 ≤ 150 MB
+//! - 粘贴（`handle_action` 全路径，追加/重叠两种锚点）≤ 250 ms
+//! - 主轨段重建（实例构建代理）≤ 200 ms
+//! - 单次操作内存上升 ≤ 150 MB（粘贴独立 200 MB；归并路径与实例缓冲仅信息性报道）
 //!
 //! 运行：
 //! ```bash
 //! cargo bench -p lumino-ui-editor --bench ui_boxselect_copy_bench
 //! LUMINO_UI_BENCH_FRACTION=0.1 LUMINO_UI_BENCH_MOVES=30 LUMINO_UI_BENCH_CYCLES=5 \
 //!   cargo bench -p lumino-ui-editor --bench ui_boxselect_copy_bench
-//! # 跳过系统剪贴板写入（CI/无桌面会话时）：LUMINO_UI_BENCH_CLIPBOARD=0
+//! # 跳过系统剪贴板写入/粘贴（CI/无桌面会话时）：LUMINO_UI_BENCH_CLIPBOARD=0
 //! ```
 //!
 //! 环境变量：`LUMINO_UI_BENCH_MIDI` / `LUMINO_UI_BENCH_FRACTION` / `LUMINO_UI_BENCH_MOVES`
@@ -31,13 +36,19 @@
 use std::env;
 use std::time::Instant;
 
-use lumino_ui_editor::message::{EditorAction, Point2, Tool};
-use lumino_ui_editor::{EditState, Editor};
+use lumino_ui_editor::Editor;
+use lumino_ui_editor::message::EditorAction;
 
+#[path = "ui_boxselect_copy_bench/helpers.rs"]
+mod helpers;
 #[allow(dead_code)]
 #[path = "id_history_ops_bench/support.rs"]
 mod support;
 
+use helpers::{
+    CycleStats, MEM_TARGET_MB, PASTE_MEM_TARGET_MB, Workload, build_track_instances_proxy,
+    env_bool, env_f64, median, report_op, run_cycle,
+};
 use support::{Stat, env_usize, live, mb, reset_run_peak, run_peak};
 
 const DEFAULT_MIDI: &str = r"D:\BM-DATA\MIDI File\Toilet Story 6 F2.mid";
@@ -55,108 +66,16 @@ const COPY_TARGET_MS: f64 = 100.0;
 const COPY_FULL_TARGET_MS: f64 = 200.0;
 /// 释放耗时硬指标（ms）
 const RELEASE_TARGET_MS: f64 = 100.0;
-/// 单次操作内存上升硬指标（MB）
-const MEM_TARGET_MB: f64 = 150.0;
-
-fn env_f64(key: &str, default: f64) -> f64 {
-    env::var(key)
-        .ok()
-        .and_then(|v| v.parse::<f64>().ok())
-        .unwrap_or(default)
-}
-
-fn env_bool(key: &str, default: bool) -> bool {
-    env::var(key).ok().map(|v| v != "0").unwrap_or(default)
-}
-
-/// 单轮测量统计
-struct CycleStats {
-    moves: Stat,
-    released: Stat,
-    binary: Stat,
-    full_copy: Stat,
-    selected: usize,
-    payload_len: usize,
-}
-
-impl CycleStats {
-    fn new() -> Self {
-        Self {
-            moves: Stat::new("框选（单次 Moved）"),
-            released: Stat::new("释放（Released）"),
-            binary: Stat::new("复制（二进制编码）"),
-            full_copy: Stat::new("复制（handle_action 全路径）"),
-            selected: 0,
-            payload_len: 0,
-        }
-    }
-}
-
-/// 工作负载与运行参数（打包传递，避免 `run_cycle` 参数过多）
-struct Workload {
-    x0: f32,
-    sel_end: f32,
-    moves: usize,
-    track: usize,
-    division: u16,
-    do_clipboard: bool,
-}
-
-/// 执行一轮：框选（Pressed → N×Moved → Released）→ 二进制编码 → 全路径复制 → 复位。
+/// 粘贴（handle_action 全路径：读剪贴板 + 解码 + 批量插入 + 历史）耗时硬指标（ms）
+const PASTE_TARGET_MS: f64 = 250.0;
+/// 主轨段重建（实例构建代理）耗时硬指标（ms）
 ///
-/// 返回数据校验是否通过（选中数与载荷均非空）。
-fn run_cycle(editor: &mut Editor, stats: &mut CycleStats, w: &Workload) -> bool {
-    // 起点在首个音符之前（无音符处）→ 必然进入框选而非音符编辑
-    editor.handle_action(EditorAction::Pressed {
-        pos: Point2::new(w.x0, 127.0),
-        shift: false,
-        ctrl: false,
-    });
-    if !matches!(
-        editor.editor_state.interaction.edit_state,
-        EditState::Selecting { .. }
-    ) {
-        eprintln!("✗ 未进入框选状态（按下命中音符？）");
-        return false;
-    }
-
-    for i in 1..=w.moves {
-        let f = i as f32 / w.moves as f32;
-        let x = w.x0 + (w.sel_end - w.x0) * f;
-        let y = 127.0 * (1.0 - f);
-        stats
-            .moves
-            .measure(|| editor.handle_action(EditorAction::Moved(Point2::new(x, y))));
-    }
-
-    stats
-        .released
-        .measure(|| editor.handle_action(EditorAction::Released));
-
-    let payload = stats
-        .binary
-        .measure(|| editor.build_clipboard_binary(w.track, w.division));
-    let payload_len = payload.as_ref().map(|b| b.len()).unwrap_or(0);
-    drop(payload);
-
-    if w.do_clipboard {
-        stats
-            .full_copy
-            .measure(|| editor.handle_action(EditorAction::Copy));
-    }
-
-    stats.selected = editor.selected_notes_count();
-    stats.payload_len = payload_len;
-
-    // 复位：清空选中（下一轮从零开始框选）
-    editor.clear_selection();
-    editor.editor_state.interaction.edit_state = EditState::Idle;
-
-    stats.selected > 0 && payload_len > 0
-}
+/// 渲染侧大粘贴走单轨 `TrackDelta`（构建当前轨实例 + 段替换），
+/// 该构建是主轨段重建的主要 CPU 成本；全量会话重建会构建**所有**轨实例。
+const REBUILD_TARGET_MS: f64 = 200.0;
 
 fn main() {
-    println!("=== Lumino UI 交互路径基准：框选 + 复制（超大轨道部分选中）===");
+    println!("=== Lumino UI 交互路径基准：框选 + 复制 + 粘贴（超大轨道部分选中）===");
     let path = env::var("LUMINO_UI_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
     let fraction = env_f64("LUMINO_UI_BENCH_FRACTION", DEFAULT_FRACTION).clamp(0.001, 1.0);
     let moves = env_usize("LUMINO_UI_BENCH_MOVES", DEFAULT_MOVES).max(1);
@@ -185,7 +104,8 @@ fn main() {
     );
     println!(
         "目标线: 移动 ≤ {MOVE_TARGET_MS:.0} ms | 二进制复制 ≤ {COPY_TARGET_MS:.0} ms | \
-全路径复制 ≤ {COPY_FULL_TARGET_MS:.0} ms | 释放 ≤ {RELEASE_TARGET_MS:.0} ms | 单次内存 ≤ {MEM_TARGET_MB:.0} MB"
+全路径复制 ≤ {COPY_FULL_TARGET_MS:.0} ms | 释放 ≤ {RELEASE_TARGET_MS:.0} ms | \
+粘贴 ≤ {PASTE_TARGET_MS:.0} ms | 主轨段重建 ≤ {REBUILD_TARGET_MS:.0} ms | 单次内存 ≤ {MEM_TARGET_MB:.0} MB"
     );
     println!();
 
@@ -195,19 +115,7 @@ fn main() {
     editor.editor_state.data.current_track = track;
     // 与生产「未连接协作」路径一致：不构建选择指纹广播载荷
     editor.editor_state.data.set_collab_sync_enabled(false);
-    editor.editor_state.tool = Tool::Pointer;
-    {
-        let v = &mut editor.editor_state.view;
-        v.visible_key_count = 128;
-        v.zoom_x = 1.0;
-        v.scroll_x = 0.0;
-        v.keyboard_width = 0.0;
-        v.zoom_y = 1.0;
-        v.scroll_y = 0.0;
-        v.ruler_height = 0.0;
-    }
-    editor.editor_state.canvas.size_x = 4_000_000.0;
-    editor.editor_state.canvas.size_y = 200.0;
+    helpers::configure_editor(&mut editor);
 
     let first_tick = editor
         .editor_state
@@ -286,32 +194,111 @@ fn main() {
         );
     }
 
+    // ── 粘贴（数据层）+ 主轨段重建（渲染侧实例构建代理）──
+    // 剪贴板内容来自最后一轮 Copy；渲染侧现在以单轨 TrackDelta 重建当前轨段
+    // （不再全量会话重建所有轨），实例构建是其主要 CPU 成本 → 作为代理测量。
+    let mut paste_stat = Stat::new("粘贴（追加锚点·快路径）");
+    let mut paste_merge_stat = Stat::new("粘贴（重叠锚点·归并路径）");
+    let mut rebuild_stat = Stat::new("主轨段重建（实例构建代理）");
+    if do_clipboard {
+        editor.handle_action(EditorAction::Paste); // 暖机
+        // 追加锚点：播放位置移到轨道末尾之后 → prepend/append 快路径（无区间归并）
+        for _ in 0..2 {
+            let end = editor
+                .editor_state
+                .data
+                .current_track_notes()
+                .last()
+                .map(|n| n.end_tick)
+                .unwrap_or(0);
+            editor.playback_position = end as f32 + 10.0;
+            paste_stat.measure(|| editor.handle_action(EditorAction::Paste));
+        }
+        // 重叠锚点：固定在 tick 0，与既有粘贴区重叠 → 区间流式归并（最坏路径）
+        for _ in 0..2 {
+            editor.playback_position = 0.0;
+            paste_merge_stat.measure(|| editor.handle_action(EditorAction::Paste));
+        }
+        let instances = rebuild_stat.measure(|| build_track_instances_proxy(&editor, track));
+        all_ok &= instances.iter().any(|p| !p.is_empty());
+        drop(instances);
+    }
+
     // ── 汇总 ──
     println!();
     println!("── UI 路径操作耗时 / 内存（{cycles} 轮热态；移动为全部样本合并）──");
-    let move_pass = report_op("框选（单次 Moved）", stats.moves.times(), MOVE_TARGET_MS);
-    let move_mem = mb(stats.moves.max_peak_growth()) <= MEM_TARGET_MB;
-    let released_pass = report_op(
+    let (move_pass, move_mem) = report_op(
+        "框选（单次 Moved）",
+        stats.moves.times(),
+        MOVE_TARGET_MS,
+        stats.moves.max_peak_growth(),
+        Some(MEM_TARGET_MB),
+    );
+    let (released_pass, released_mem) = report_op(
         "释放（Released）",
         stats.released.times(),
         RELEASE_TARGET_MS,
+        stats.released.max_peak_growth(),
+        Some(MEM_TARGET_MB),
     );
-    let binary_pass = report_op("复制（二进制编码）", stats.binary.times(), COPY_TARGET_MS);
-    let full_pass = if do_clipboard {
+    let (binary_pass, binary_mem) = report_op(
+        "复制（二进制编码）",
+        stats.binary.times(),
+        COPY_TARGET_MS,
+        stats.binary.max_peak_growth(),
+        Some(MEM_TARGET_MB),
+    );
+    let (full_pass, full_mem) = if do_clipboard {
         report_op(
             "复制（handle_action 全路径）",
             stats.full_copy.times(),
             COPY_FULL_TARGET_MS,
+            stats.full_copy.max_peak_growth(),
+            Some(MEM_TARGET_MB),
         )
     } else {
         println!("{:<28} | （剪贴板写入已关闭，跳过）", "复制（全路径）");
-        true
+        (true, true)
+    };
+    let (paste_pass, paste_mem) = if do_clipboard {
+        report_op(
+            "粘贴（追加锚点·快路径）",
+            paste_stat.times(),
+            PASTE_TARGET_MS,
+            paste_stat.max_peak_growth(),
+            Some(PASTE_MEM_TARGET_MB),
+        )
+    } else {
+        println!("{:<28} | （剪贴板写入已关闭，跳过）", "粘贴（全路径）");
+        (true, true)
+    };
+    let (paste_merge_pass, _) = if do_clipboard {
+        // 重叠锚点走区间流式归并（历史快照 COW 共享 → 归并区间必须复制），
+        // 瞬时内存随归并区间长度增长，属固有预算 → 内存仅信息性报道
+        report_op(
+            "粘贴（重叠锚点·归并路径）",
+            paste_merge_stat.times(),
+            PASTE_TARGET_MS,
+            paste_merge_stat.max_peak_growth(),
+            None,
+        )
+    } else {
+        (true, true)
+    };
+    let (rebuild_pass, _) = if do_clipboard {
+        // 实例缓冲（~3000W × 16B ≈ 480MB）是渲染侧固有预算，内存仅信息性报道
+        report_op(
+            "主轨段重建（实例构建代理）",
+            rebuild_stat.times(),
+            REBUILD_TARGET_MS,
+            rebuild_stat.max_peak_growth(),
+            None,
+        )
+    } else {
+        (true, true)
     };
 
-    let mem_pass = move_mem
-        && mb(stats.released.max_peak_growth()) <= MEM_TARGET_MB
-        && mb(stats.binary.max_peak_growth()) <= MEM_TARGET_MB
-        && (!do_clipboard || mb(stats.full_copy.max_peak_growth()) <= MEM_TARGET_MB);
+    let mem_pass = move_mem && released_mem && binary_mem && full_mem && paste_mem;
 
     let peak = run_peak();
     let growth = peak as i64 - baseline as i64;
@@ -323,12 +310,20 @@ fn main() {
         mb(growth)
     );
 
-    let pass = all_ok && move_pass && released_pass && binary_pass && full_pass && mem_pass;
+    let pass = all_ok
+        && move_pass
+        && released_pass
+        && binary_pass
+        && full_pass
+        && paste_pass
+        && paste_merge_pass
+        && rebuild_pass
+        && mem_pass;
     println!();
     println!(
-        "结论（超大轨道部分选中 框选+复制）: {}",
+        "结论（超大轨道部分选中 框选+复制+粘贴）: {}",
         if pass {
-            "✓ PASS —— 框选移动/释放/复制均在性能线内，数据校验通过"
+            "✓ PASS —— 框选移动/释放/复制/粘贴/主轨段重建均在性能线内，数据校验通过"
         } else if !all_ok {
             "✗ FAIL —— 数据校验失败"
         } else if !mem_pass {
@@ -338,38 +333,4 @@ fn main() {
         }
     );
     println!("=== 完成 ===");
-}
-
-/// 输出单操作统计（中位/最小/最大），返回耗时是否达标。
-fn report_op(name: &str, times: &[f64], target_ms: f64) -> bool {
-    if times.is_empty() {
-        println!("{name:<28} | （无样本）");
-        return true;
-    }
-    let median = median(times);
-    let max = times.iter().copied().fold(0.0f64, f64::max);
-    let min = times.iter().copied().fold(f64::INFINITY, f64::min);
-    let pass = median <= target_ms;
-    if env::var_os("LUMINO_UI_BENCH_VERBOSE").is_some() {
-        let samples: Vec<String> = times.iter().map(|t| format!("{t:.1}")).collect();
-        println!("  [明细] {name}: {} ms", samples.join(", "));
-    }
-    println!(
-        "{name:<28} | 中位 {median:>8.2} ms | 最小 {min:>8.2} ms | 最大 {max:>8.2} ms | {}",
-        if pass {
-            "✓ 达标"
-        } else {
-            "✗ 耗时超标"
-        }
-    );
-    pass
-}
-
-fn median(xs: &[f64]) -> f64 {
-    if xs.is_empty() {
-        return 0.0;
-    }
-    let mut s = xs.to_vec();
-    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    s[s.len() / 2]
 }

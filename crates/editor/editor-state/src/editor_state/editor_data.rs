@@ -139,6 +139,14 @@ pub struct EditorData {
     /// `true` = 渲染层必须全量兜底重建（事件队列不可信）。由 `mark_*` 默认置位，
     /// 事件记录 API 在记录完成后显式清除（见 `record_update_ranges`）。
     pub note_delta_dirty: bool,
+    /// 当前轨**结构性**变化且无段内增量事件（批量插入/删除、undo 整轨替换）。
+    ///
+    /// 与 [`Self::note_delta_dirty`] 的区别：后者重建**所有**音轨的全量会话
+    /// （19.2M 轨粘贴实测 ~1s：CPU 构建 5200W 实例 + ~900MB GPU 上传）；
+    /// 本标记只让渲染层以单轨 `TrackDelta` 重建**当前轨段**
+    /// （同场景 ~200ms：构建 2000W 实例 + ~400MB 上传）。
+    /// 渲染层消费后清零；主轨段内事件增量（`note_delta_events`）优先，二者互斥。
+    pub main_track_struct_dirty: bool,
     /// 视觉位置 → 文档音轨索引 映射
     ///
     /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。

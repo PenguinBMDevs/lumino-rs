@@ -39,6 +39,7 @@ impl EditorData {
             arrange_selection: ArrangeSelection::new(),
             note_delta_events: Vec::new(),
             note_delta_dirty: false,
+            main_track_struct_dirty: false,
             track_visual_order: Vec::new(),
             modified: false,
         }

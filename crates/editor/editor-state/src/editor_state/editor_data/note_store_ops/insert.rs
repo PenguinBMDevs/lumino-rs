@@ -24,10 +24,9 @@ impl EditorData {
             .collect();
         let ids = doc.batch_insert_notes_with_ids(self.current_track, events);
         if !ids.is_empty() {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            // 结构性大插入：主轨段重建（TrackDelta），不走全量会话兜底
+            self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
-            self.note_delta_dirty = true;
         }
         ids
     }
@@ -52,8 +51,8 @@ impl EditorData {
             .collect();
         let ids = doc.batch_insert_notes_with_ids(track_id, events);
         if !ids.is_empty() && track_id == self.current_track {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            self.mark_main_track_struct_changed();
+            self.mark_current_track_changed();
         }
         ids
     }
@@ -77,8 +76,8 @@ impl EditorData {
         };
         let ids = doc.batch_insert_sorted_notes_with_ids(track_id, events);
         if !ids.is_empty() && track_id == self.current_track {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            self.mark_main_track_struct_changed();
+            self.mark_current_track_changed();
         }
         ids
     }
@@ -101,8 +100,8 @@ impl EditorData {
         };
         let inserted = doc.batch_insert_notes_sorted(track_id, events);
         if inserted > 0 && track_id == self.current_track {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            self.mark_main_track_struct_changed();
+            self.mark_current_track_changed();
         }
     }
 }

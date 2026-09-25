@@ -285,8 +285,9 @@ fn test_redo_does_not_change_current_track() {
 }
 
 #[test]
-fn test_undo_current_track_sets_note_delta_dirty() {
-    // 在当前视图音轨内 undo：由于快照是整轨替换，必须走 note_delta_dirty 兜底
+fn test_undo_current_track_sets_main_track_struct_dirty() {
+    // 在当前视图音轨内 undo：快照是整轨替换，无段内事件可对账
+    // → 标记主轨段重建（单轨 TrackDelta），不再走全量会话兜底
     let mut data = EditorData::with_f32_notes(0, &[]);
     data.push_history();
     data.insert_note(0, Note::new(0.0, 60, 1.0));
@@ -296,7 +297,11 @@ fn test_undo_current_track_sets_note_delta_dirty() {
     assert_eq!(data.current_track, 0);
     assert_eq!(data.current_track_note_count(), 0);
     assert!(
-        data.note_delta_dirty,
-        "当前音轨内的快照 undo 应触发全量兜底重建"
+        data.main_track_struct_dirty,
+        "当前音轨内的快照 undo 应触发主轨段重建"
+    );
+    assert!(
+        !data.note_delta_dirty,
+        "主轨段重建已覆盖当前轨变化，不应再要求全量会话兜底"
     );
 }

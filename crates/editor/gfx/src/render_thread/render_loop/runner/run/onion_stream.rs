@@ -87,10 +87,7 @@ pub(super) fn drain_onion_skin_stream(
                 }
                 renderers.onion_skin.streaming_append(&instances);
             }
-            Ok(crate::OnionSkinStreamMsg::TrackDelta {
-                track_id,
-                instances,
-            }) => {
+            Ok(crate::OnionSkinStreamMsg::TrackDelta { track_id, parts }) => {
                 if *onion_skin_streaming_in_progress {
                     // UI 不应在全量会话中夹带增量（防御性：状态不一致时跳过）
                     tracing::warn!(
@@ -102,7 +99,7 @@ pub(super) fn drain_onion_skin_stream(
                         renderers,
                         onion_segments,
                         track_id,
-                        &instances,
+                        &parts,
                         &ctx.device,
                         &ctx.queue,
                     );

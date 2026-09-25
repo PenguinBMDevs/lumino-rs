@@ -120,7 +120,7 @@ pub fn process_main_track_events(
             }
             NoteEvent::Reset(instances) => {
                 // 防御性兜底：整段替换（正常路径 UI 不再发送 Reset）
-                apply_onion_track_delta(renderers, segments, track_id, &instances, device, queue);
+                apply_onion_track_delta(renderers, segments, track_id, &[instances], device, queue);
             }
             NoteEvent::Clear => {
                 apply_onion_track_delta(renderers, segments, track_id, &[], device, queue);
@@ -164,7 +164,7 @@ pub fn apply_onion_track_delta(
     renderers: &mut Renderers,
     segments: &mut [OnionSegment],
     track_id: usize,
-    instances: &[NoteInstance],
+    parts: &[Vec<NoteInstance>],
     device: &wgpu::Device,
     queue: &wgpu::Queue,
 ) -> bool {
@@ -177,12 +177,18 @@ pub fn apply_onion_track_delta(
     };
 
     let old_len = segments[idx].len;
-    let new_len = instances.len();
+    let new_len: usize = parts.iter().map(Vec::len).sum();
+    // 分片按序写入段内连续区间（大轨并行构建 → 免二次拼接拷贝）
+    let write_parts = |renderers: &mut Renderers, base: usize| {
+        let mut offset = base;
+        for part in parts {
+            renderers.onion_skin.write_segment(offset, part);
+            offset += part.len();
+        }
+    };
     if old_len == new_len {
         // 等长替换：音符级增量，无需动段表 / cull info
-        renderers
-            .onion_skin
-            .write_segment(segments[idx].offset, instances);
+        write_parts(renderers, segments[idx].offset);
         // 常驻字节变更 → 换代（全局桶重建）。
         renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
         return true;
@@ -215,9 +221,7 @@ pub fn apply_onion_track_delta(
     }
 
     // 3. 写新段（目标区间 = [offset, offset + new_len)，与搬移后的后续段相邻不重叠）
-    renderers
-        .onion_skin
-        .write_segment(segments[idx].offset, instances);
+    write_parts(renderers, segments[idx].offset);
 
     // 4. 更新计数与段表
     renderers.onion_skin.set_gpu_instance_count(new_count);

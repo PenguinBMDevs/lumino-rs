@@ -43,8 +43,8 @@ pub enum OnionSkinStreamMsg {
     TrackDelta {
         /// 被替换的音轨 id
         track_id: usize,
-        /// 该音轨段的新实例列表
-        instances: Vec<crate::NoteInstance>,
+        /// 该音轨段的新实例列表（分片按序拼接；大轨并行构建后免二次拷贝）
+        parts: Vec<Vec<crate::NoteInstance>>,
     },
     /// 视图状态更新：当前音轨（track_idx+1）+ 静音音轨集合
     ///
