@@ -210,21 +210,7 @@ fn audio_settings_section<'a>(
         .align_y(Alignment::Center),
         space().height(8),
         // 每键最大复音（层数）：CPU=每键 layer 计数，GPU=每键 note 组计数
-        row![
-            text("每键复音 (0=无限):").size(14).style(label_style).width(120),
-            text_input("32", &state.layers.to_string())
-                .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
-                .padding([6, 10])
-                .width(Length::Fixed(200.0)),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center),
-        space().height(4),
-        text("每个键（通道+音高）最大同时发声数；0=无限。CPU 按 voice 计、GPU 按音符组计；离线导出的全局复音不设上限。")
-            .size(11)
-            .style(move |_t: &iced_core::Theme| text::Style {
-                color: Some(palette.background.neutral.text.scale_alpha(0.6)),
-            }),
+        layers_row(state, palette),
         space().height(8),
         // 通道多线程（仅 CPU 有效）
         threading_row(
@@ -273,6 +259,58 @@ fn audio_settings_section<'a>(
     ]
     .width(Length::Fill)
     .into()
+}
+
+/// 每键复音（层数）设置行 —— `0 = 不限`是陷阱选项，这里给出建议值与实测警告。
+///
+/// 密集素材（如多端口黑 MIDI）在"不限"下声部会无限堆积：实测同一素材全曲
+/// `32 → 165s`、`0 → 59min`，且内存大幅上升；故标签/说明直接给建议，
+/// 并在 `layers == 0` 时追加 danger 色警告行。
+fn layers_row<'a>(
+    state: &'a AudioExportDialogState,
+    palette: &'a iced_core::theme::palette::Extended,
+) -> crate::Element<'a> {
+    let label_color = palette.background.neutral.text;
+    let label_style = move |_t: &iced_core::Theme| text::Style {
+        color: Some(label_color),
+    };
+    let hint_color = palette.background.neutral.text.scale_alpha(0.6);
+    let hint_style = move |_t: &iced_core::Theme| text::Style {
+        color: Some(hint_color),
+    };
+
+    let mut col = column![
+        row![
+            text("每键复音 (0=不限):")
+                .size(14)
+                .style(label_style)
+                .width(120),
+            text_input("32", &state.layers.to_string())
+                .on_input(|v| Message::AudioExport(AudioExportAction::LayersChanged(v)))
+                .padding([6, 10])
+                .width(Length::Fixed(200.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center),
+        space().height(4),
+        text("每个键（通道+音高）最大同时发声数；0=不限（不推荐）。建议保持 32：实测同素材全曲 32 → 165s、0 → 59min（声部无限堆积，耗时与内存暴涨）。CPU 按 voice 计、GPU 按音符组计。")
+            .size(11)
+            .style(hint_style),
+    ];
+
+    if state.layers == 0 {
+        let warn_color = palette.danger.strong.color;
+        col = col.push(space().height(4));
+        col = col.push(
+            text("⚠ 已设为不限：密集素材下声部会无限堆积，渲染时间与内存会显著恶化——除非明确需要，建议改回 32。")
+                .size(11)
+                .style(move |_t: &iced_core::Theme| text::Style {
+                    color: Some(warn_color),
+                }),
+        );
+    }
+
+    col.width(Length::Fill).into()
 }
 
 fn threading_row<'a>(
