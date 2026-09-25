@@ -32,6 +32,8 @@ mod tests_build_points;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
+mod tests_note_delete;
+#[cfg(test)]
 mod tests_note_delta;
 #[cfg(test)]
 mod tests_note_ops;

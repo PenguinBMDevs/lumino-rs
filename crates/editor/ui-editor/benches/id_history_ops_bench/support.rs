@@ -31,6 +31,10 @@ static LIVE: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
 /// 全程存活堆字节峰值（跨所有操作，不重置）
 static RUN_PEAK: AtomicUsize = AtomicUsize::new(0);
+/// 累计分配字节（只增不减；用于「单次操作新增分配总量」口径——
+/// 存活峰值在操作内「先释放后分配」时会低估实际拷贝/构建成本，如删除的
+/// COW 块复制与 redo 栈清理相抵）
+static ALLOC_TOTAL: AtomicUsize = AtomicUsize::new(0);
 
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
@@ -39,6 +43,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
             let now = LIVE.fetch_add(layout.size(), Ordering::Relaxed) + layout.size();
             PEAK.fetch_max(now, Ordering::Relaxed);
             RUN_PEAK.fetch_max(now, Ordering::Relaxed);
+            ALLOC_TOTAL.fetch_add(layout.size(), Ordering::Relaxed);
         }
         ptr
     }
@@ -77,6 +82,11 @@ pub fn run_peak() -> usize {
     RUN_PEAK.load(Ordering::Relaxed)
 }
 
+/// 累计分配字节（只增不减）
+pub fn alloc_total() -> usize {
+    ALLOC_TOTAL.load(Ordering::Relaxed)
+}
+
 /// 字节 → MB
 pub fn mb(bytes: i64) -> f64 {
     bytes as f64 / (1024.0 * 1024.0)
@@ -89,6 +99,8 @@ pub struct Stat {
     name: &'static str,
     times: Vec<f64>,
     peak_growth: Vec<i64>,
+    /// 单次操作累计新增分配字节（只增口径，见 `ALLOC_TOTAL`）
+    alloc_growth: Vec<i64>,
 }
 
 impl Stat {
@@ -102,6 +114,7 @@ impl Stat {
     /// 计时 + 单次操作内存增长测量一次执行。
     pub fn measure<T>(&mut self, f: impl FnOnce() -> T) -> T {
         let before = live();
+        let alloc_before = alloc_total();
         reset_peak();
         let t0 = Instant::now();
         let out = f();
@@ -109,6 +122,8 @@ impl Stat {
         self.times.push(ms);
         let op_peak = peak();
         self.peak_growth.push(op_peak as i64 - before as i64);
+        self.alloc_growth
+            .push(alloc_total() as i64 - alloc_before as i64);
         out
     }
 
@@ -126,6 +141,12 @@ impl Stat {
     #[allow(dead_code)]
     pub fn max_peak_growth(&self) -> i64 {
         self.peak_growth.iter().copied().max().unwrap_or(0)
+    }
+
+    /// 本操作历次执行的最大累计新增分配（字节；「先释放后分配」场景下比峰值更诚实）
+    #[allow(dead_code)]
+    pub fn max_alloc_growth(&self) -> i64 {
+        self.alloc_growth.iter().copied().max().unwrap_or(0)
     }
 
     /// 最小值（确定性代码成本的近似下界，供参考）
@@ -157,12 +178,13 @@ impl Stat {
         let time_pass = self.median() <= TARGET_MS;
         let mem_pass = mb(self.max_peak_growth()) <= TARGET_MEM_MB;
         println!(
-            "{:<28} | 中位 {:>8.2} ms | 最小 {:>8.2} ms | 最大 {:>8.2} ms | 内存峰值增量 {:>7.1} MB | {}",
+            "{:<28} | 中位 {:>8.2} ms | 最小 {:>8.2} ms | 最大 {:>8.2} ms | 内存峰值增量 {:>7.1} MB（新增分配 {:>7.1} MB） | {}",
             self.name,
             self.median(),
             self.min(),
             self.max(),
             mb(self.max_peak_growth()),
+            mb(self.max_alloc_growth()),
             if time_pass && mem_pass {
                 "✓ 达标"
             } else if !time_pass {

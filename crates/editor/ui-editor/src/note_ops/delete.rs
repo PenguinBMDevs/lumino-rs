@@ -5,8 +5,6 @@
 //! 所有音符数据均以 `MidiDocument` 为唯一权威源（2026-08 单一权威源改造），
 //! 不再经 `NoteView` 等派生视图承载身份字段。
 
-use lumino_editor_state::SelectionSet;
-
 use iced_core::Point;
 
 use super::Editor;
@@ -78,30 +76,43 @@ impl Editor {
             return;
         }
 
-        let indices: SelectionSet = self.get_selected_indices().into_iter().collect();
+        // 协作同步关闭（未连接会话的默认态）时，逐音符 `LocalNoteDeleted` 广播
+        // 的消费端会短路丢弃——跳过 O(N) 捕获与 K 次 emit（与粘贴/拖动/提交
+        // 路径的 `collab_sync_enabled` 门控一致）。200W 选中时省 ~100MB 捕获
+        // 缓冲 + 234MB 事件队列 + 逐条 emit/drain 开销。
+        let collab_sync = self.editor_state.data.collab_sync_enabled();
 
         // 单次 O(N) 遍历捕获待删除音符信息，替代逐个 get(i) O(K·log N)
         // 2026-08 单一权威源：id 与字段取自 document 当前轨权威 NoteEvent，而非派生视图 NoteView
         let current_track = self.editor_state.data.current_track;
-        let notes = self.editor_state.data.track_notes(current_track);
-        let deleted_notes: Vec<_> = notes
-            .iter()
-            .enumerate()
-            .filter(|(i, _)| indices.contains(i))
-            .map(|(_, n)| {
-                (
-                    n.id,
-                    n.start_tick as f32,
-                    n.key as u16,
-                    (n.end_tick - n.start_tick) as f32,
-                    n.velocity,
-                    n.channel,
-                    current_track,
-                )
-            })
-            .collect();
+        let deleted_notes: Vec<_> = if collab_sync {
+            let selected = &self.editor_state.interaction.selected_notes;
+            let notes = self.editor_state.data.track_notes(current_track);
+            notes
+                .iter()
+                .enumerate()
+                .filter(|(i, _)| selected.contains(i))
+                .map(|(_, n)| {
+                    (
+                        n.id,
+                        n.start_tick as f32,
+                        n.key as u16,
+                        (n.end_tick - n.start_tick) as f32,
+                        n.velocity,
+                        n.channel,
+                        current_track,
+                    )
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
 
-        self.editor_state.data.delete_selected_notes(&indices);
+        // 直接消费现有选中位图（免 `get_selected_indices` O(K) Vec + 位图重建往返；
+        // 整轨全选时省 153MB 索引 Vec 与翻倍增长峰值）
+        self.editor_state
+            .data
+            .delete_selected_notes(&self.editor_state.interaction.selected_notes);
         self.selection_clear();
         self.editor_state.interaction.hover_state = None;
         self.mark_notes_changed();
@@ -109,7 +120,7 @@ impl Editor {
         // 编辑已提交：结束本地选择会话（通知对端）
         self.emit_local_selection_changed(false);
 
-        // Emit sync events for each deleted note
+        // Emit sync events for each deleted note（仅协作会话开启时）
         for (id, tick, key, length, velocity, channel, track_idx) in deleted_notes {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_deleted(

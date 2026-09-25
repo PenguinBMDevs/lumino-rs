@@ -247,6 +247,22 @@ impl MidiDocument {
         removed
     }
 
+    /// 批量删除指定音轨的降序区间（单次索引重建，见 `ChunkedList::remove_ranges`）。
+    ///
+    /// `ranges` 为 `(起始索引, 数量)`，需按起始索引降序、互不重叠；
+    /// track_id 越界返回 0。返回实际删除的事件数。
+    pub fn remove_note_ranges(&mut self, track_id: usize, ranges: &[(usize, usize)]) -> usize {
+        let removed = match self.notes.get_mut(track_id) {
+            Some(track_notes) => track_notes.remove_ranges(ranges),
+            None => 0,
+        };
+        if removed > 0 {
+            // 保守置脏：被删区间可能包含当前 max，查询时惰性重算
+            self.invalidate_track_max_tick(track_id);
+        }
+        removed
+    }
+
     /// 替换指定音轨指定索引处的音符：删除旧音符后按 start_tick 升序重新插入新音符，
     /// 保持每轨有序不变式。track_id 或 index 越界返回 false。
     pub fn update_note(&mut self, track_id: usize, index: usize, mut note: NoteEvent) -> bool {

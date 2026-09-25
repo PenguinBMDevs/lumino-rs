@@ -84,13 +84,20 @@ impl EditorData {
     }
 
     /// 在指定音轨指定索引处删除音符。返回被删除的音符。
+    ///
+    /// 仅在实际删除成功后记录 `NoteDeltaEvent::RemoveAt`（避免越界索引
+    /// 产生渲染侧错误删除事件）；调用方需在调用前 `push_history()`。
     pub fn remove_note(&mut self, track_id: usize, index: usize) -> Option<NoteEvent> {
         self.modified = true;
+        let removed = self
+            .document
+            .as_mut()
+            .and_then(|doc| doc.remove_note(track_id, index))?;
         if track_id == self.current_track {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
         }
-        self.document.as_mut()?.remove_note(track_id, index)
+        Some(removed)
     }
 
     /// 替换指定音轨指定索引处的音符（内部按序重新插入，保持升序不变式）。

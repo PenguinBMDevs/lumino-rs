@@ -25,6 +25,7 @@
 mod iter;
 mod mutate;
 mod query;
+mod remove_ranges;
 mod restore;
 #[cfg(test)]
 mod tests;

@@ -295,3 +295,32 @@ pub(super) fn merge_descending_ranges(descending: &[usize]) -> Vec<(usize, usize
     }
     ranges
 }
+
+/// 从升序选中位图直接构建**降序**连续区间（免物化 O(K) 索引 Vec 与排序）
+///
+/// 升序遍历命中位，合并相邻索引为连续段，最后整体反转为降序输出
+/// （与 [`merge_descending_ranges`] 输出格式一致，供 `remove_note_ranges` 使用）。
+///
+/// 成本：O(K + 段数)；整轨全选时仅 1 段、无 153MB 索引 Vec 中转。
+pub(super) fn descending_ranges_from_selection(selected: &SelectionSet) -> Vec<(usize, usize)> {
+    let mut ascending: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut prev = 0usize;
+    for i in selected.iter() {
+        match run_start {
+            None => run_start = Some(i),
+            Some(s) => {
+                if i != prev + 1 {
+                    ascending.push((s, prev - s + 1));
+                    run_start = Some(i);
+                }
+            }
+        }
+        prev = i;
+    }
+    if let Some(s) = run_start {
+        ascending.push((s, prev - s + 1));
+    }
+    ascending.reverse();
+    ascending
+}

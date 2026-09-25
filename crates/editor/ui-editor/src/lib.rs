@@ -47,6 +47,7 @@ mod track;
 mod tests {
     mod arrangement_delete_incremental;
     mod arrangement_track_mapping;
+    mod delete_sync_gate;
     mod drawing;
     mod flow;
     mod ghost;
