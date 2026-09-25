@@ -1,7 +1,8 @@
-//! 洋葱皮流式上传实现（全量会话 + 事件级增量）
+//! 洋葱皮流式上传实现（全量会话 + 轨布局 + 事件级增量）
 //!
 //! 被父模块 [`super::stream_onion_skin_instances`] 按决策结果调用：
 //! - `stream_onion_skin_full`：全量分块构建所有音轨实例并 send
+//! - `stream_track_layout`：轨数变化 → `TrackLayout` + 新增轨 `TrackDelta`
 //! - `stream_onion_skin_delta`：事件级增量，只构建被编辑音轨并 send `TrackDelta`
 
 use crate::host::Host;
@@ -27,6 +28,9 @@ impl Host {
         wgpu_thread: &WgpuRenderThread,
     ) {
         let data = &self.root.editor.editor_state.data;
+
+        // 显式会话边界：清空段表 + 重置计数（空文档会话也生效，防旧段表残留）
+        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::BeginSession);
 
         // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
         let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
@@ -91,6 +95,36 @@ impl Host {
             fp.current_track,
             fp.palette_idx
         );
+    }
+
+    /// 轨数变化增量同步：发送 `TrackLayout`（增删段表）+ 新增轨内容。
+    ///
+    /// 增长时为新轨补发 `TrackDelta`（新轨通常为空/少量音符；`apply_track_restored`
+    /// 恢复的音符也在此补齐），既有轨零重建。返回已发送 `TrackDelta` 的音轨 id，
+    /// 供调用方与主轨段重建去重。
+    pub(super) fn stream_track_layout(
+        &self,
+        wgpu_thread: &WgpuRenderThread,
+        track_count: usize,
+        old_count: usize,
+    ) -> Vec<usize> {
+        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackLayout { track_count });
+
+        let data = &self.root.editor.editor_state.data;
+        let mut sent = Vec::new();
+        for track_id in old_count..track_count {
+            let parts = build_track_instance_parts(data, track_id);
+            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts });
+            sent.push(track_id);
+        }
+
+        tracing::debug!(
+            "[onion-skin] 轨布局同步 {} → {} 段（新增轨内容 {:?}）",
+            old_count,
+            track_count,
+            sent
+        );
+        sent
     }
 
     /// 事件级增量：只构建被编辑的洋葱皮音轨并 send `TrackDelta`

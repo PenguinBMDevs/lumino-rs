@@ -53,10 +53,15 @@ pub fn process_main_track_events(
     queue: &wgpu::Queue,
 ) -> bool {
     if current_track_encoded == 0 {
+        drain_stale_events(rx, None);
         return false;
     }
     let track_id = current_track_encoded as usize - 1;
     let Some(idx) = segments.iter().position(|s| s.track_id == track_id) else {
+        // 段表缺该轨（如新增轨尚未收到 TrackLayout）：**丢弃**本批事件。
+        // 事件内容以 document 为准，会由 TrackLayout + 新轨 TrackDelta 补齐；
+        // 若堆积到下次全量会话后应用，会在已含该编辑的新段上二次应用（脏数据）。
+        drain_stale_events(rx, Some(track_id));
         return false;
     };
 
@@ -128,6 +133,22 @@ pub fn process_main_track_events(
         }
     }
     updated
+}
+
+/// 段表缺少目标轨时丢弃通道内残留事件（以 document 为权威源重建，防二次应用）
+fn drain_stale_events(rx: &std::sync::mpsc::Receiver<NoteEvent>, track_id: Option<usize>) -> usize {
+    let mut dropped = 0usize;
+    while rx.try_recv().is_ok() {
+        dropped += 1;
+    }
+    if dropped > 0 {
+        tracing::warn!(
+            "MainTrack: 段表缺少 track={:?} 的段，丢弃 {} 条主轨事件（以 document 为准，待 TrackLayout/TrackDelta 同步）",
+            track_id,
+            dropped
+        );
+    }
+    dropped
 }
 
 /// 段长变化后的段表联动：更新本段长度 + 后续段偏移平移，并刷新 cull info
@@ -250,105 +271,117 @@ pub fn apply_onion_track_delta(
     true
 }
 
-/// 变长替换后，计算新的段表偏移（纯函数，可单测）
+/// 应用文档轨数变化：增量增删段表（**不重建既有轨**）。
 ///
-/// `segments` 为替换前的段表，`idx` 为被替换段，`new_len` 为替换后段长。
-/// 返回替换后的完整段表（后续段 offset 平移 delta）。
-#[cfg(test)]
-pub(crate) fn shifted_segments_after_replace(
+/// - 增长（新增音轨）：追加零长段（offset = 现有实例数末端），无 GPU 数据搬移；
+///   新轨内容由 UI 随后的 `TrackDelta` 补齐。
+/// - 缩短（删除音轨）：尾部段的实例区间一次性 GPU 删除 + 截断段表 + cull 刷新。
+pub fn apply_onion_track_layout(
+    renderers: &mut Renderers,
+    segments: &mut Vec<OnionSegment>,
+    track_count: usize,
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) {
+    if segments.len() == track_count {
+        return;
+    }
+    let (new_segments, removed) = layout_segments_after_track_count(segments, track_count);
+    if let Some((start, count)) = removed {
+        renderers.onion_skin.remove_at(start, count);
+        renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+        renderers.onion_skin.update_cull_info(device, queue);
+    }
+    tracing::debug!(
+        "OnionSkin: 轨布局同步 {} → {} 段（删除实例区间 {:?}）",
+        segments.len(),
+        new_segments.len(),
+        removed
+    );
+    *segments = new_segments;
+}
+
+/// 计算轨布局变更后的段表（纯函数，可单测）。
+///
+/// 返回 `(new_segments, removed_range)`：
+/// - 增长：追加零长段，`removed_range = None`
+/// - 缩短：截断尾部段，`removed_range = Some((start, count))` 为需从 GPU
+///   缓冲区删除的实例区间（尾部段紧凑排列，恒在缓冲区末端）
+pub(crate) fn layout_segments_after_track_count(
     segments: &[OnionSegment],
-    idx: usize,
-    new_len: usize,
-) -> Vec<OnionSegment> {
-    let old_len = segments[idx].len;
-    let delta = new_len as isize - old_len as isize;
-    segments
-        .iter()
-        .enumerate()
-        .map(|(i, s)| {
-            let mut s = *s;
-            if i == idx {
-                s.len = new_len;
-            }
-            if i > idx {
-                s.offset = (s.offset as isize + delta) as usize;
-            }
-            s
-        })
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn seg(track_id: usize, offset: usize, len: usize) -> OnionSegment {
-        OnionSegment {
-            track_id,
-            offset,
-            len,
+    track_count: usize,
+) -> (Vec<OnionSegment>, Option<(usize, usize)>) {
+    if track_count >= segments.len() {
+        let base = segments.last().map(|s| s.offset + s.len).unwrap_or(0);
+        let mut out = segments.to_vec();
+        for track_id in segments.len()..track_count {
+            out.push(OnionSegment {
+                track_id,
+                offset: base,
+                len: 0,
+            });
         }
+        return (out, None);
     }
-
-    fn layout() -> Vec<OnionSegment> {
-        vec![
-            seg(0, 0, 100),
-            seg(1, 100, 50),
-            seg(2, 150, 30),
-            seg(3, 180, 20),
-        ]
-    }
-
-    #[test]
-    fn shift_equal_len_keeps_offsets() {
-        let after = shifted_segments_after_replace(&layout(), 1, 50);
-        assert_eq!(after[1].len, 50);
-        assert_eq!(after[2].offset, 150);
-        assert_eq!(after[3].offset, 180);
-    }
-
-    #[test]
-    fn shift_grow_moves_following_tracks_forward() {
-        // 段1 从 50 变 70（delta=+20）：后续段 offset 全部 +20
-        let after = shifted_segments_after_replace(&layout(), 1, 70);
-        assert_eq!(after[1].len, 70);
-        assert_eq!(after[2].offset, 170);
-        assert_eq!(after[3].offset, 200);
-    }
-
-    #[test]
-    fn shift_shrink_moves_following_tracks_backward() {
-        // 段1 从 50 变 20（delta=-30）：后续段 offset 全部 -30
-        let after = shifted_segments_after_replace(&layout(), 1, 20);
-        assert_eq!(after[1].len, 20);
-        assert_eq!(after[2].offset, 120);
-        assert_eq!(after[3].offset, 150);
-    }
-
-    #[test]
-    fn shift_first_segment() {
-        // 段0（首段）增长：delta = +40
-        let after = shifted_segments_after_replace(&layout(), 0, 140);
-        assert_eq!(after[0].len, 140);
-        assert_eq!(after[1].offset, 140);
-        assert_eq!(after[2].offset, 190);
-        assert_eq!(after[3].offset, 220);
-    }
-
-    #[test]
-    fn shift_last_segment_no_followers() {
-        // 段3（末段）缩短：无后续段可平移
-        let after = shifted_segments_after_replace(&layout(), 3, 5);
-        assert_eq!(after[3].len, 5);
-        assert_eq!(after[3].offset, 180);
-    }
-
-    #[test]
-    fn shift_shrink_to_zero_len() {
-        // 段变 0（整轨清空）：delta = -len
-        let after = shifted_segments_after_replace(&layout(), 1, 0);
-        assert_eq!(after[1].len, 0);
-        assert_eq!(after[2].offset, 100);
-        assert_eq!(after[3].offset, 130);
-    }
+    let start = segments[track_count].offset;
+    let removed: usize = segments[track_count..].iter().map(|s| s.len).sum();
+    let removed = (removed > 0).then_some((start, removed));
+    (segments[..track_count].to_vec(), removed)
 }
+
+/// 应用单音轨区间级删除：将 `track_id` 段内的若干区间删除（批量删除增量路径）。
+///
+/// `ranges` 为 `(index, count)`，语义与 `NoteEvent::RemoveAt` 一致，**必须降序**：
+/// 高索引先删，低索引不漂移；各区间针对删除前的段内容。整轨只做
+/// 「区间数次 GPU 尾部搬移 + 一次 cull 刷新」，免整轨实例重建与重传。
+///
+/// 返回 `true` 表示成功；段表中无该音轨返回 `false`（调用方记录警告并跳过）。
+pub fn apply_onion_track_remove_ranges(
+    renderers: &mut Renderers,
+    segments: &mut [OnionSegment],
+    track_id: usize,
+    ranges: &[(usize, usize)],
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+) -> bool {
+    let Some(idx) = segments.iter().position(|s| s.track_id == track_id) else {
+        tracing::warn!(
+            "OnionSkin: TrackRemoveRanges 的 track_id={} 不在段表中（状态不一致），跳过",
+            track_id
+        );
+        return false;
+    };
+
+    let offset = segments[idx].offset;
+    let mut removed_total = 0usize;
+    for &(index, count) in ranges {
+        // 当前段长已扣除更高区间 → 直接以 index 相对当前段定位
+        let count = count.min(segments[idx].len.saturating_sub(index));
+        if count == 0 {
+            continue;
+        }
+        renderers.onion_skin.remove_at(offset + index, count);
+        segments[idx].len -= count;
+        removed_total += count;
+    }
+    if removed_total == 0 {
+        return true;
+    }
+    for seg in &mut segments[idx + 1..] {
+        seg.offset -= removed_total;
+    }
+    renderers.onion_skin.update_cull_info(device, queue);
+    renderers.onion_epoch = renderers.onion_epoch.wrapping_add(1);
+    tracing::debug!(
+        "OnionSkin: TrackRemoveRanges track={} 删除 {} 实例（{} 个区间）",
+        track_id,
+        removed_total,
+        ranges.len()
+    );
+    true
+}
+
+/// 段表纯函数测试（独立文件，保持本文件 < 400 行）
+#[cfg(test)]
+#[path = "onion_segments/tests.rs"]
+mod tests;

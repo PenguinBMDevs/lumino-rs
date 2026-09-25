@@ -3,7 +3,7 @@
 use super::super::super::selection_set::SelectionSet;
 
 use super::EditorData;
-use super::editing::push_merged_remove_events;
+use super::editing::merge_descending_ranges;
 
 impl EditorData {
     /// 通过索引删除单个音符（直接操作 document 当前轨）
@@ -27,33 +27,69 @@ impl EditorData {
         if selected.is_empty() {
             return;
         }
-        let current_track = self.current_track;
-        // 待删索引降序排列（避免删除后索引漂移）
-        let mut sorted: Vec<usize> = selected.iter().collect();
-        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        let indices: Vec<usize> = selected.iter().collect();
+        let deleted = self.remove_notes_merged(self.current_track, &indices);
+        if deleted == 0 {
+            return;
+        }
+        self.push_history();
+        self.mark_current_track_changed();
+    }
 
-        // 先从 document 按降序删除（authoritative 源），不经 `remove_note` 以避免逐音符
-        // 记录事件；增量事件在删除完成后统一合并下发。
+    /// 批量删除指定音轨的若干索引，并按**区间归并**记录增量删除（不置全量脏标记）。
+    ///
+    /// 索引内部降序排序去重后逐个删除（避免索引漂移）；连续区间合并为单条
+    /// `(index, count)` 事件，按轨分流：
+    /// - 当前轨 → `note_delta_events`（主轨段内 `RemoveAt` 增量）
+    /// - 其他轨 → `pending_track_remove_ranges`（UI 层转 `TrackRemoveRanges`
+    ///   区间级增量，**替代整轨 `TrackDelta` 重建**）
+    ///
+    /// 返回实际删除数。调用方负责 `mark_track_notes_changed_for(Some(affected))`
+    /// 与历史入栈（保持标记/历史语义由操作入口统一控制）。
+    ///
+    /// 同帧对同轨多次调用时，后续区间追加在原区间之后：各区间按记录顺序
+    /// 依次应用（后一批索引基于前一批删除后的状态），语义正确。
+    pub fn remove_notes_merged(&mut self, track_id: usize, indices: &[usize]) -> usize {
+        if indices.is_empty() {
+            return 0;
+        }
+        let mut sorted: Vec<usize> = indices.to_vec();
+        sorted.sort_unstable_by(|a, b| b.cmp(a));
+        sorted.dedup();
+
         let mut deleted = 0usize;
         if let Some(doc) = self.document.as_mut() {
             for &idx in &sorted {
-                if doc.remove_note(current_track, idx).is_some() {
+                if doc.remove_note(track_id, idx).is_some() {
                     deleted += 1;
                 }
             }
         }
         if deleted == 0 {
-            return;
+            return 0;
         }
 
-        // 仅当前音轨变更需记录段内增量（GPU buffer 布局 = 全量轨段）；
-        // 其他轨变化由洋葱皮层 Delta 通道同步，主音轨增量路径无需事件。
-        if current_track == self.current_track {
-            push_merged_remove_events(&mut self.note_delta_events, &sorted);
+        let ranges = merge_descending_ranges(&sorted);
+        if track_id == self.current_track {
+            for (index, count) in ranges {
+                self.note_delta_events
+                    .push(super::super::NoteDeltaEvent::RemoveAt { index, count });
+            }
+        } else if let Some(entry) = self
+            .pending_track_remove_ranges
+            .iter_mut()
+            .find(|(t, _)| *t == track_id)
+        {
+            entry.1.extend(ranges);
+        } else {
+            self.pending_track_remove_ranges.push((track_id, ranges));
         }
+        deleted
+    }
 
-        self.push_history();
-        self.mark_current_track_changed();
+    /// 取出并清空非当前轨待同步的区间删除（UI 层每帧消费 → `TrackRemoveRanges`）
+    pub fn take_pending_track_remove_ranges(&mut self) -> Vec<(usize, Vec<(usize, usize)>)> {
+        std::mem::take(&mut self.pending_track_remove_ranges)
     }
 
     /// 返回所有音符索引

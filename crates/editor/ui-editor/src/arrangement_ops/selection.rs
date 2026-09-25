@@ -74,17 +74,17 @@ impl Editor {
         let mut current_track_touched = false;
         let mut deleted_count = 0usize;
 
-        for (track_idx, mut indices) in indices_by_track {
+        for (track_idx, indices) in indices_by_track {
             if track_idx == current_track {
                 current_track_touched = true;
             }
-            // 2026-08 单一权威源：索引降序逐个删除 document 音符
-            indices.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in indices {
-                if self.editor_state.data.remove_note(track_idx, idx).is_some() {
-                    deleted_count += 1;
-                }
-            }
+            // 区间归并删除：连续删除段合并为单条事件（当前轨走主轨段内增量，
+            // 非当前轨走 `TrackRemoveRanges` 区间增量），不再逐音符一条事件
+            // （K 次 GPU 尾部搬移 + bind group 重建）。
+            deleted_count += self
+                .editor_state
+                .data
+                .remove_notes_merged(track_idx, &indices);
         }
 
         if deleted_count == 0 {

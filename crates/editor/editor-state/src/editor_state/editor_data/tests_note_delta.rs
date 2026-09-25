@@ -211,6 +211,89 @@ fn test_delete_selected_empty_is_noop() {
 }
 
 #[test]
+fn test_remove_notes_merged_current_track_records_remove_at() {
+    // 当前轨：区间归并 → `note_delta_events`（主轨段内增量），不置 dirty
+    let mut data = make_data(8);
+    let deleted = data.remove_notes_merged(data.current_track, &[0, 2, 3, 4, 6]);
+    assert_eq!(deleted, 5);
+    assert!(!data.note_delta_dirty, "区间删除不得触发全量兜底");
+    assert!(
+        data.pending_track_remove_ranges.is_empty(),
+        "当前轨删除不入非当前轨队列"
+    );
+    assert_eq!(
+        all_remove_at(&data.note_delta_events),
+        vec![(6, 1), (2, 3), (0, 1)],
+        "连续段合并 + 降序下发"
+    );
+    assert_eq!(data.current_track_note_count(), 3);
+}
+
+#[test]
+fn test_remove_notes_merged_other_track_queues_ranges() {
+    // 非当前轨：区间归并入 `pending_track_remove_ranges`（UI 转 TrackRemoveRanges），
+    // 不写主轨事件、不置 dirty
+    let mut data = make_data(4);
+    // 扩出第 2 轨（索引 2）并写入 6 个音符
+    let other = 2usize;
+    data.ensure_track(other);
+    let notes: Vec<Note> = (0..6)
+        .map(|i| Note::new((i * 10) as f32, 60 + i as u16, 1.0))
+        .collect();
+    for n in &notes {
+        assert!(data.insert_note(other, n.clone()), "插入其他轨音符");
+    }
+    data.note_delta_events.clear();
+
+    let deleted = data.remove_notes_merged(other, &[5, 3, 4, 0]);
+    assert_eq!(deleted, 4);
+    assert!(!data.note_delta_dirty);
+    assert!(
+        data.note_delta_events.is_empty(),
+        "非当前轨删除不得写主轨段内事件"
+    );
+    assert_eq!(
+        data.pending_track_remove_ranges,
+        vec![(other, vec![(3, 3), (0, 1)])],
+        "连续段 [3,4,5] 合并 + 降序"
+    );
+    assert_eq!(data.track_notes(other).len(), 2, "剩余索引 1/2");
+}
+
+#[test]
+fn test_remove_notes_merged_same_track_accumulates_in_order() {
+    // 同帧同轨多次调用：后续区间追加（各区间按记录顺序依次应用）
+    let mut data = make_data(4);
+    let other = 2usize;
+    data.ensure_track(other);
+    for i in 0..6 {
+        assert!(data.insert_note(other, Note::new((i * 10) as f32, 60, 1.0)));
+    }
+    data.remove_notes_merged(other, &[5]);
+    data.remove_notes_merged(other, &[2, 3]);
+    assert_eq!(
+        data.pending_track_remove_ranges,
+        vec![(other, vec![(5, 1), (2, 2)])],
+        "同轨多次调用按序追加，不合并错序"
+    );
+}
+
+#[test]
+fn test_take_pending_track_remove_ranges_clears() {
+    let mut data = make_data(2);
+    let other = 2usize;
+    data.ensure_track(other);
+    assert!(data.insert_note(other, Note::new(0.0, 60, 1.0)));
+    data.remove_notes_merged(other, &[0]);
+    let taken = data.take_pending_track_remove_ranges();
+    assert_eq!(taken.len(), 1);
+    assert!(
+        data.pending_track_remove_ranges.is_empty(),
+        "take 后队列清空"
+    );
+}
+
+#[test]
 fn test_scattered_edit_records_update_events() {
     // update_note 直接写 document，现在记录 RemoveAt + InsertAt 增量事件
     let mut data = make_data(3);

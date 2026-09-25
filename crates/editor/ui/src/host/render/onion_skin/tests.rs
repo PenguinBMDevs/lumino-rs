@@ -15,6 +15,7 @@ fn make_fp(
         onion_dirty_tracks: None,
         muted_tracks: Vec::new(),
         main_track_struct_dirty: false,
+        track_count: 64,
     }
 }
 
@@ -33,6 +34,7 @@ fn make_fp_dirty(
         onion_dirty_tracks: Some(dirty_tracks),
         muted_tracks,
         main_track_struct_dirty: false,
+        track_count: 64,
     }
 }
 
@@ -46,6 +48,8 @@ fn make_fp_main_struct(current_track: usize) -> OnionSkinFingerprint {
         onion_dirty_tracks: Some(std::collections::HashSet::from([current_track])),
         muted_tracks: Vec::new(),
         main_track_struct_dirty: true,
+        // 当前轨存在于文档（守卫通过）；越界用例单独覆写
+        track_count: current_track + 1,
     }
 }
 
@@ -92,6 +96,7 @@ fn onion_skin_state_default_uninitialized() {
     assert_eq!(state.last_mute_fingerprint, 0);
     assert_eq!(state.last_current_track, usize::MAX);
     assert_eq!(state.last_palette_idx, u8::MAX);
+    assert_eq!(state.last_track_count, 0);
 }
 
 #[test]
@@ -235,6 +240,38 @@ fn onion_skin_state_delta_main_track_struct_with_onion_dirty() {
     fp.track_gen = 43;
     fp.onion_dirty_tracks = Some(std::collections::HashSet::from([1, 3]));
     assert_delta(&state.decide_action(&fp), &[1, 3]);
+}
+
+#[test]
+fn onion_skin_state_main_struct_current_beyond_track_count_is_ignored() {
+    // 守卫：当前轨越界（文档轨数不足）→ 不产生 Delta（无段可重建）。
+    // 典型场景：侧边栏新增轨（doc 扩轨）但 TrackLayout 尚未同步。
+    let mut state = OnionSkinState::default();
+    state.mark_built(&make_fp(42, 0, 15, 0));
+    let mut fp = make_fp_main_struct(15);
+    fp.track_count = 15; // 文档只有 0..14
+    assert_none(&state.decide_action(&fp));
+}
+
+#[test]
+fn onion_skin_state_track_count_change_alone_is_none() {
+    // 轨数变化本身不改变 decide_action 输出（布局同步由调用方独立执行
+    // `TrackLayout`），避免误触发全量重建
+    let mut state = OnionSkinState::default();
+    state.mark_built(&make_fp(42, 0, 1, 0));
+    let mut fp = make_fp(42, 0, 1, 0);
+    fp.track_count = 65;
+    assert_none(&state.decide_action(&fp));
+}
+
+#[test]
+fn onion_skin_state_mark_built_records_track_count() {
+    let mut state = OnionSkinState::default();
+    assert_eq!(state.last_track_count(), 0);
+    let mut fp = make_fp(42, 0, 1, 0);
+    fp.track_count = 16;
+    state.mark_built(&fp);
+    assert_eq!(state.last_track_count(), 16);
 }
 
 #[test]

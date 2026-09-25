@@ -45,6 +45,7 @@ mod track;
 
 #[cfg(test)]
 mod tests {
+    mod arrangement_delete_incremental;
     mod arrangement_track_mapping;
     mod drawing;
     mod flow;

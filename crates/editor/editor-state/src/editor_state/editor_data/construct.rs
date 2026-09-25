@@ -40,6 +40,7 @@ impl EditorData {
             note_delta_events: Vec::new(),
             note_delta_dirty: false,
             main_track_struct_dirty: false,
+            pending_track_remove_ranges: Vec::new(),
             track_visual_order: Vec::new(),
             modified: false,
         }

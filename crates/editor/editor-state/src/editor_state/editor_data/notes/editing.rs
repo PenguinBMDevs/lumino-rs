@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
 use super::super::super::selection_set::SelectionSet;
-use super::super::{CollabTransformSyncEntry, EditorData, NoteDeltaEvent};
+use super::super::{CollabTransformSyncEntry, EditorData};
 use lumino_note_core::note::Note;
 
 impl EditorData {
@@ -275,12 +275,13 @@ impl EditorData {
     }
 }
 
-/// 将降序索引列表合并为连续区间的 `RemoveAt` 增量事件（段内增量，按降序下发）。
+/// 将降序索引列表合并为连续区间 `(index, count)`（降序，语义同 `RemoveAt`）。
 ///
-/// `descending` 已由大到小排序。相邻索引差 1 视为同一连续删除段，合并为单条
-/// `RemoveAt { index: 段首(最小索引), count: 段长 }`。降序下发保证 GPU 段内左移时
-/// 高索引先处理、低索引仍有效，与逐音符降序删除语义一致。
-pub(super) fn push_merged_remove_events(events: &mut Vec<NoteDeltaEvent>, descending: &[usize]) {
+/// `descending` 已由大到小排序（且去重）。相邻索引差 1 视为同一连续删除段，
+/// 合并为单条 `(段首(最小索引), 段长)`。降序下发保证 GPU 段内左移时高索引
+/// 先处理、低索引仍有效，与逐音符降序删除语义一致。
+pub(super) fn merge_descending_ranges(descending: &[usize]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
     let mut i = 0;
     while i < descending.len() {
         let seg_start = descending[i]; // 段内最大索引（降序起点）
@@ -289,11 +290,8 @@ pub(super) fn push_merged_remove_events(events: &mut Vec<NoteDeltaEvent>, descen
             seg_end -= 1;
             i += 1;
         }
-        let count = seg_start - seg_end + 1;
-        events.push(NoteDeltaEvent::RemoveAt {
-            index: seg_end,
-            count,
-        });
+        ranges.push((seg_end, seg_start - seg_end + 1));
         i += 1;
     }
+    ranges
 }

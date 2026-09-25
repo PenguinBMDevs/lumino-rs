@@ -147,6 +147,15 @@ pub struct EditorData {
     /// （同场景 ~200ms：构建 2000W 实例 + ~400MB 上传）。
     /// 渲染层消费后清零；主轨段内事件增量（`note_delta_events`）优先，二者互斥。
     pub main_track_struct_dirty: bool,
+    /// 非当前轨的待同步区间删除（批量删除增量路径，UI 层每帧消费）。
+    ///
+    /// 每项 `(track_id, ranges)`：`ranges` 为段内 `(index, count)` 降序列表
+    /// （语义同 [`NoteDeltaEvent::RemoveAt`]），渲染侧据此做区间级删除
+    /// （`TrackRemoveRanges`），**替代整轨 `TrackDelta` 重建**——
+    /// 多轨批量删除不再逐轨全量构建实例（大工程下等于全工程重建）。
+    ///
+    /// 当前轨的区间删除走 `note_delta_events`（主轨段内事件通道），不入此队列。
+    pub pending_track_remove_ranges: Vec<(usize, Vec<(usize, usize)>)>,
     /// 视觉位置 → 文档音轨索引 映射
     ///
     /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
