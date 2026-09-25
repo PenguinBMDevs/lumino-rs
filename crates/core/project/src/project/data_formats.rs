@@ -133,6 +133,34 @@ impl LmtextmetaData {
     }
 }
 
+/// 触后事件数据（.lmcat）
+///
+/// 与 `.lmctl`（CC/PC/PB）分离成独立文件：`.lmctl` 已是 v1 格式，
+/// bincode 位置编码下加字段会破坏老工程解码；独立文件缺失即空
+/// （加载侧 `exists()` 守卫），老工程零风险。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmcatData {
+    /// 通道触后事件: (tick, track_id, channel, velocity)
+    pub channel_aftertouch: Vec<(u32, u16, u8, u8)>,
+    /// 复音触后事件: (tick, track_id, channel, key, velocity)
+    pub poly_aftertouch: Vec<(u32, u16, u8, u8, u8)>,
+}
+
+impl LmcatData {
+    /// 文件魔数
+    pub const MAGIC: &[u8; 4] = b"LMAT";
+
+    /// 编码为二进制文件字节
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        encode_binary_file(Self::MAGIC, 1, self)
+    }
+
+    /// 从二进制字节解码
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        decode_binary_file(bytes, Self::MAGIC)
+    }
+}
+
 /// SysEx 事件数据（.lmsyx）
 ///
 /// SysEx 可能很大，因此单独成文件，避免与小型控制事件混排导致加载时被迫全部读入内存。
@@ -283,6 +311,20 @@ mod tests {
     }
 
     #[test]
+    fn test_lmcat_roundtrip() {
+        let data = LmcatData {
+            channel_aftertouch: vec![(0, 0, 5, 64), (120, 1, 0, 100)],
+            poly_aftertouch: vec![(240, 0, 3, 60, 80)],
+        };
+        let encoded = data.encode().expect("编码LmcatData失败");
+        assert_eq!(&encoded[0..4], LmcatData::MAGIC);
+        let decoded = LmcatData::decode(&encoded).expect("解码LmcatData失败");
+        assert_eq!(decoded.channel_aftertouch.len(), 2);
+        assert_eq!(decoded.poly_aftertouch, vec![(240, 0, 3, 60, 80)]);
+        assert_eq!(decoded.channel_aftertouch[1].3, 100);
+    }
+
+    #[test]
     fn test_invalid_magic() {
         let mut bytes = vec![0u8; 20];
         bytes[0..4].copy_from_slice(b"XXXX");
@@ -292,5 +334,6 @@ mod tests {
         assert!(LmtxtData::decode(&bytes).is_err());
         assert!(LmsyxData::decode(&bytes).is_err());
         assert!(LmnamesData::decode(&bytes).is_err());
+        assert!(LmcatData::decode(&bytes).is_err());
     }
 }

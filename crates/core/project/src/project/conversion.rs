@@ -54,6 +54,20 @@ impl LuminoProject {
                         .pitch_bends
                         .push((ev.tick, ev.track, ev.channel, offset));
                 }
+                3 => {
+                    project.channel_aftertouch.push((
+                        ev.tick,
+                        ev.track,
+                        ev.channel,
+                        ev.as_channel_aftertouch(),
+                    ));
+                }
+                4 => {
+                    let (key, velocity) = ev.as_poly_aftertouch();
+                    project
+                        .poly_aftertouch
+                        .push((ev.tick, ev.track, ev.channel, key, velocity));
+                }
                 _ => {}
             }
         }
@@ -163,17 +177,21 @@ impl LuminoProject {
         let mut total_ticks: u32 = 0;
         let mut next_id: u64 = 1; // 转换路径顺手分配全局唯一 ID
         let mut track_names = Vec::with_capacity(track_count as usize);
+        // 每轨 MIDI 端口从各 .lmtrack 元数据逐轨恢复（此前全轨归零丢失）
+        let mut track_ports = Vec::with_capacity(track_count as usize);
 
         for (idx, slot) in self.tracks.iter().enumerate() {
             let track_data = match slot {
                 TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
                 TrackSlot::Unloaded { .. } => {
                     track_names.push(None);
+                    track_ports.push(0);
                     continue;
                 }
             };
 
             track_names.push(Some(track_data.meta.name.clone()));
+            track_ports.push(track_data.meta.port);
 
             let compact_events = track_data.compact_events()?;
             // FIFO 配对：同 key 重叠音符按 NoteOn 顺序匹配 NoteOff
@@ -259,6 +277,16 @@ impl LuminoProject {
                 *tick, *track, *channel, bend,
             ));
         }
+        for (tick, track, channel, velocity) in &self.channel_aftertouch {
+            control_events.push(midly::loader::PackedControlEvent::channel_aftertouch(
+                *tick, *track, *channel, *velocity,
+            ));
+        }
+        for (tick, track, channel, key, velocity) in &self.poly_aftertouch {
+            control_events.push(midly::loader::PackedControlEvent::poly_aftertouch(
+                *tick, *track, *channel, *key, *velocity,
+            ));
+        }
         // 稳定排序保留同 tick 组装顺序（CC → PC → PB）：RPN 选择/DataEntry 必须
         // 先于同 tick 的 PB 生效，与 document_build / 导出路径的既有契约一致。
         // 旧实现用 sort_unstable，会打乱同 tick 顺序（非稳定排序不保证原序）。
@@ -283,7 +311,7 @@ impl LuminoProject {
             track_count,
             tracks: TrackManager::new(track_count),
             division: self.metadata.audio.division,
-            track_ports: vec![0u8; track_count as usize],
+            track_ports,
 
             track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(
                 track_count as usize,

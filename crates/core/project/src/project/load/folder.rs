@@ -4,7 +4,8 @@ use std::path::{Path, PathBuf};
 
 use crate::project::{
     data_formats::{
-        LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData, LmtxtData,
+        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
+        LmtxtData,
     },
     folder,
     metadata::ProjectMetadata,
@@ -64,6 +65,16 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
         project.control_changes = data.control_changes;
         project.program_changes = data.program_changes;
         project.pitch_bends = data.pitch_bends;
+    }
+
+    // 读取触后（专用格式 LMAT；老工程无此文件即空，不报错）
+    let aftertouch_path = path.join(folder::FolderPaths::AFTERTOUCH_FILE);
+    if aftertouch_path.exists() {
+        let bytes = std::fs::read(&aftertouch_path)?;
+        let data = LmcatData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("aftertouch 解码失败: {e}")))?;
+        project.channel_aftertouch = data.channel_aftertouch;
+        project.poly_aftertouch = data.poly_aftertouch;
     }
 
     // 读取 text events（专用格式 LMTX）
