@@ -19,12 +19,11 @@
 use std::path::PathBuf;
 
 use lumino_export::midi::{
-    MidiExportData, MidiExportOptions, MidiKeySignatureEvent, MidiNoteEvent, MidiTempoEvent,
-    MidiTimeSignatureEvent, MidiTrackData, export_midi_to_bytes, extract_passthrough_events,
-    extract_pc_cc_events,
+    MidiExportData, MidiExportOptions, MidiNoteEvent, MidiTempoEvent, MidiTimeSignatureEvent,
+    MidiTrackData, export_midi_to_bytes, extract_passthrough_events, extract_pc_cc_events,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
-use midly::{MetaMessage, TrackEventKind};
+use midly::{MetaMessage, MidiMessage, Smf, TrackEventKind};
 
 /// 定位仓库根目录下的测试资源 MIDI
 fn test_midi_path() -> PathBuf {
@@ -48,7 +47,8 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                     key: n.key,
                     velocity: n.velocity,
                     release_velocity: n.release_velocity,
-                    duration: n.length().max(1),
+                    // tick=0 与零长度音符按原样写出（与编辑器保存路径一致，不钳制）
+                    duration: n.length(),
                 })
                 .collect();
             MidiTrackData {
@@ -198,4 +198,229 @@ fn test_midi_export_roundtrip_strict() {
         );
     }
     assert_eq!(total_orig, total_round, "往返后总音符数应一致");
+}
+
+/// 构造全类型覆盖的测试 MIDI（内存合成，不依赖外部文件）。
+///
+/// 覆盖：tick=0 音符、零长度音符、非零释放力度、tempo/拍号/调号、PC/CC、
+/// 弯音、通道触后、复音触后、歌词、标记、文本(0x01)、SysEx、轨名、MidiPort。
+fn build_full_coverage_midi() -> Vec<u8> {
+    use midly::num::{u4, u7, u24, u28};
+    fn ev<'a>(delta: u32, kind: TrackEventKind<'a>) -> midly::TrackEvent<'a> {
+        midly::TrackEvent {
+            delta: u28::new(delta),
+            kind,
+        }
+    }
+    let midi = |ch: u8, msg: MidiMessage| TrackEventKind::Midi {
+        channel: u4::new(ch),
+        message: msg,
+    };
+    let meta = TrackEventKind::Meta;
+
+    let track0 = vec![
+        ev(0, meta(MetaMessage::TrackName(b"Conductor"))),
+        ev(0, meta(MetaMessage::Tempo(u24::new(500_000)))),
+        ev(0, meta(MetaMessage::TimeSignature(4, 2, 24, 8))),
+        ev(0, meta(MetaMessage::KeySignature(2, false))),
+        ev(0, meta(MetaMessage::Marker(b"Intro"))),
+        ev(0, meta(MetaMessage::EndOfTrack)),
+    ];
+    let track1 = vec![
+        ev(0, meta(MetaMessage::TrackName(b"Piano"))),
+        ev(0, meta(MetaMessage::MidiPort(u7::new(1)))),
+        // 零长度音符：tick=0 处开即关
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::NoteOn {
+                    key: 60,
+                    vel: u7::new(100),
+                },
+            ),
+        ),
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::NoteOff {
+                    key: 60,
+                    vel: u7::new(0),
+                },
+            ),
+        ),
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::NoteOn {
+                    key: 62,
+                    vel: u7::new(90),
+                },
+            ),
+        ),
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::ProgramChange {
+                    program: u7::new(5),
+                },
+            ),
+        ),
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::Controller {
+                    controller: u7::new(7),
+                    value: u7::new(100),
+                },
+            ),
+        ),
+        ev(
+            120,
+            midi(
+                0,
+                MidiMessage::PitchBend {
+                    bend: midly::PitchBend(midly::num::u14::new(9192)),
+                },
+            ),
+        ),
+        ev(
+            120,
+            midi(0, MidiMessage::ChannelAftertouch { vel: u7::new(70) }),
+        ),
+        ev(
+            0,
+            midi(
+                0,
+                MidiMessage::Aftertouch {
+                    key: u7::new(62),
+                    vel: u7::new(80),
+                },
+            ),
+        ),
+        // 非零释放力度
+        ev(
+            240,
+            midi(
+                0,
+                MidiMessage::NoteOff {
+                    key: 62,
+                    vel: u7::new(64),
+                },
+            ),
+        ),
+        ev(0, meta(MetaMessage::Lyric(b"la"))),
+        ev(0, meta(MetaMessage::Text(b"hello"))),
+        ev(0, TrackEventKind::SysEx(b"\x01\x02\x03\xF7")),
+        ev(0, meta(MetaMessage::EndOfTrack)),
+    ];
+
+    let smf = Smf {
+        header: midly::Header::new(
+            midly::Format::Parallel,
+            midly::Timing::Metrical(midly::num::u15::new(480)),
+        ),
+        tracks: vec![track0, track1],
+    };
+    let mut bytes = Vec::new();
+    smf.write(&mut bytes).expect("合成测试MIDI失败");
+    bytes
+}
+
+/// 事件归一化：smf 字节 → 每轨绝对 tick 事件多重集（排序后可比）。
+fn normalize_events(bytes: &[u8]) -> Vec<Vec<String>> {
+    let smf = Smf::parse(bytes).expect("测试MIDI应可解析");
+    smf.tracks
+        .iter()
+        .map(|track| {
+            let mut abs = 0u32;
+            let mut out = Vec::new();
+            for e in track {
+                abs = abs.saturating_add(u32::from(e.delta));
+                let s = match &e.kind {
+                    TrackEventKind::Midi { channel, message } => {
+                        let ch = u8::from(*channel);
+                        match message {
+                            MidiMessage::NoteOn { key, vel } => {
+                                format!("{abs} ON ch{ch} k{key} v{}", u8::from(*vel))
+                            }
+                            MidiMessage::NoteOff { key, vel } => {
+                                format!("{abs} OFF ch{ch} k{key} v{}", u8::from(*vel))
+                            }
+                            MidiMessage::ProgramChange { program } => {
+                                format!("{abs} PC ch{ch} p{}", u8::from(*program))
+                            }
+                            MidiMessage::Controller { controller, value } => {
+                                format!(
+                                    "{abs} CC ch{ch} c{} v{}",
+                                    u8::from(*controller),
+                                    u8::from(*value)
+                                )
+                            }
+                            MidiMessage::PitchBend { bend } => {
+                                format!("{abs} PB ch{ch} v{}", bend.as_int())
+                            }
+                            MidiMessage::ChannelAftertouch { vel } => {
+                                format!("{abs} CHAT ch{ch} v{}", u8::from(*vel))
+                            }
+                            MidiMessage::Aftertouch { key, vel } => {
+                                format!("{abs} POLY ch{ch} k{} v{}", u8::from(*key), u8::from(*vel))
+                            }
+                        }
+                    }
+                    TrackEventKind::Meta(m) => match m {
+                        MetaMessage::Tempo(v) => format!("{abs} TEMPO {}", v.as_int()),
+                        MetaMessage::TimeSignature(n, d, c, s) => {
+                            format!("{abs} TIMESIG {n}/{d}/{c}/{s}")
+                        }
+                        MetaMessage::KeySignature(k, m) => format!("{abs} KEYSIG {k}/{m}"),
+                        MetaMessage::TrackName(n) => format!("{abs} NAME {n:?}"),
+                        MetaMessage::Lyric(b) => format!("{abs} LYRIC {b:?}"),
+                        MetaMessage::Marker(b) => format!("{abs} MARKER {b:?}"),
+                        MetaMessage::Text(b) => format!("{abs} TEXT {b:?}"),
+                        MetaMessage::Copyright(b) => format!("{abs} COPYRIGHT {b:?}"),
+                        MetaMessage::InstrumentName(b) => format!("{abs} INST {b:?}"),
+                        MetaMessage::CuePoint(b) => format!("{abs} CUE {b:?}"),
+                        MetaMessage::ProgramName(b) => format!("{abs} PROG {b:?}"),
+                        MetaMessage::DeviceName(b) => format!("{abs} DEV {b:?}"),
+                        MetaMessage::MidiPort(p) => format!("{abs} PORT {}", u8::from(*p)),
+                        MetaMessage::EndOfTrack => format!("{abs} EOT"),
+                        _ => format!("{abs} META-OTHER"),
+                    },
+                    TrackEventKind::SysEx(b) => format!("{abs} SYSEX {b:?}"),
+                    TrackEventKind::Escape(b) => format!("{abs} ESC {b:?}"),
+                };
+                out.push(s);
+            }
+            out.sort();
+            out
+        })
+        .collect()
+}
+
+#[test]
+fn test_midi_save_load_full_roundtrip_equivalence() {
+    // 加载→不编辑→保存→逐事件对比：保存=无损往返
+    let original = build_full_coverage_midi();
+    let (doc, _, _) = MidiDocument::from_notes_bytes(&original, None).expect("加载测试MIDI失败");
+    assert_eq!(doc.track_count(), 2);
+
+    let export_data = build_export_data_from_doc(&doc);
+    let exported = export_midi_to_bytes(&export_data).expect("导出失败");
+    strict_validate(&exported).expect("导出MIDI严格校验失败");
+
+    let want = normalize_events(&original);
+    let got = normalize_events(&exported);
+    assert_eq!(
+        want.len(),
+        got.len(),
+        "往返后音轨数不一致: {want:?} vs {got:?}"
+    );
+    for (ti, (w, g)) in want.iter().zip(got.iter()).enumerate() {
+        assert_eq!(w, g, "音轨 {ti} 往返后事件不等价");
+    }
 }

@@ -256,9 +256,12 @@ fn collect_track_events<'a>(
     // 调号事件 (全局事件)
     if include_globals {
         for ks in &track_data.key_signatures {
+            // midly KeySignature(i8, minor)：第二个字段是"是否小调"，
+            // 与 MidiKeySignatureEvent.is_major 语义相反，此处取反
+            // （此前误传 is_major，大调会写成小调）。
             events.push(TrackEvent {
                 delta: ks.tick.into(),
-                kind: TrackEventKind::Meta(MetaMessage::KeySignature(ks.key, ks.is_major)),
+                kind: TrackEventKind::Meta(MetaMessage::KeySignature(ks.key, !ks.is_major)),
             });
         }
     }
@@ -318,7 +321,6 @@ fn event_priority(kind: &TrackEventKind) -> u8 {
             MidiMessage::ChannelAftertouch { .. } => 4,
             MidiMessage::Aftertouch { .. } => 4,
             MidiMessage::NoteOn { .. } => 5,
-            _ => 6,
         },
         _ => 0, // Meta 在同 tick 最先（不影响音符/CC 优先级）
     }

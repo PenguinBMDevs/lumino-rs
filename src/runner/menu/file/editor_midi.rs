@@ -44,7 +44,7 @@ pub(super) type EditorNotes = Vec<(usize, Vec<(f32, u8, f32, u8, u8)>)>;
 
 /// 从当前已加载文档提取 PC/CC 事件（经 UI 只读借用，零拷贝）
 fn extract_current_pc_cc(runner: &RunnerInner) -> Option<(ProgramChangeMap, ControlChangeMap)> {
-    current_document(runner).map(|doc| extract_pc_cc_events(doc))
+    current_document(runner).map(extract_pc_cc_events)
 }
 
 /// 从当前已加载文档提取透传事件 + 释放力度匹配表（经 UI 只读借用）
@@ -68,9 +68,7 @@ fn current_document(runner: &RunnerInner) -> Option<&MidiDocument> {
 
 /// 当前已加载文档的轨道名（索引 = 轨号，文档缺失时返回空）
 fn current_track_names(runner: &RunnerInner) -> Vec<Option<String>> {
-    current_document(runner).map_or_else(Vec::new, |doc| {
-        doc.track_names.iter().map(|n| n.clone()).collect()
-    })
+    current_document(runner).map_or_else(Vec::new, |doc| doc.track_names.to_vec())
 }
 
 /// 读取编辑器中的音符与 tempo 点
