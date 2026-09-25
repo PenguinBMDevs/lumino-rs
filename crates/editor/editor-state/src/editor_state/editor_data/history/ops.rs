@@ -90,6 +90,9 @@ impl EditorData {
         let mut modified_indices: Vec<(usize, usize)> = Vec::new();
         // 就地改 tick 后发生重排的音轨（区间事件按旧索引失效）
         let mut reordered_tracks: HashSet<usize> = HashSet::new();
+        // 当前轨重排受影响闭区间（最终索引空间）→ 增量更新（替代全量重建）
+        let current_track = self.current_track;
+        let mut current_reorder_ranges: Option<lumino_midi_model::SortedRestoreRanges> = None;
 
         for op in ops {
             let track_id = op.track_id as usize;
@@ -166,17 +169,19 @@ impl EditorData {
 
             // 阶段 3：恢复「按 start_tick 升序」不变式（二分查询依赖，
             // 破坏后渲染/命中会漏检音符）；重排轨的区间事件失效（见下）。
-            if track.restore_sorted(&applied) {
+            if let Some(ranges) = track.restore_sorted_ranges(&applied) {
                 reordered_tracks.insert(track_id);
+                if track_id == current_track {
+                    current_reorder_ranges = Some(ranges);
+                }
             }
         }
 
         if modified > 0 {
-            let current_track = self.current_track;
-            if reordered_tracks.contains(&current_track) {
-                // 顺序已变：主轨区间事件按旧索引失效 → 全量重建
-                // （渲染消费者遇 dirty 会丢弃积压事件，见 note_update.rs）
-                self.note_delta_dirty = true;
+            if let Some(ranges) = &current_reorder_ranges {
+                // 当前轨顺序已变：旧索引区间事件失效 → 按受影响闭区间增量更新
+                // （区间外内容不变，无全量重建）
+                self.push_reorder_ranges_events(ranges);
             }
             // 仅当前轨的修改可用主轨段内 UpdateRange：事件队列无 track 维度，
             // 非当前轨的区间事件会被误应用到当前轨段（错误音符）。

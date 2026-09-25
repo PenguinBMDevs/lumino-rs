@@ -147,6 +147,13 @@ pub struct EditorData {
     pub modified: bool,
 }
 
+/// 重排受影响区间转发为增量事件时的分块上限（音符数）。
+///
+/// 1M 音符 × 16B（`NoteInstance`）= 16MB/块，与渲染侧设备内搬移块
+/// （`GpuNoteBuffer::move_range` 的 `MOVE_BLOCK`）一致；同时约束
+/// 生产者侧单条 `UpdateRange` 的瞬时内存与消费者侧单条消息大小。
+pub(crate) const REORDER_SPAN_CHUNK: usize = 1 << 20;
+
 /// 主音轨 GPU 增量事件（数据层 → UI 渲染层）
 ///
 /// 仅支持**等长**修改（不增删音符）：拖动/变速/翻转/批量编辑。

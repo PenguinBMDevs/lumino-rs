@@ -2,7 +2,8 @@
 //!
 //! 背景：量化子集就地改 tick，被量化音符可越过未量化音符的 tick → 破坏
 //! 「按 start_tick 升序」不变式（`window_range` 二分漏检 → 音符不渲染/不可点）。
-//! 修复：量化后 `restore_current_track_sorted` 恢复，重排时主轨全量重建。
+//! 修复：量化后 `restore_current_track_sorted_incremental` 恢复，重排时按
+//! 受影响闭区间增量更新（不触发全量重建）。
 
 use super::*;
 use crate::editor::note::Note;
@@ -51,9 +52,10 @@ fn test_quantize_subset_restores_track_order() {
         ticks.contains(&(grid as u32)),
         "S 应量化到网格点 {grid}: {ticks:?}"
     );
+    // 重排 → 受影响闭区间增量更新（替代全量重建）
     assert!(
-        root.editor.editor_state.data.note_delta_dirty,
-        "重排 → 主轨全量重建"
+        !root.editor.editor_state.data.note_delta_dirty,
+        "重排必须增量更新（受影响区间），不得触发全量重建"
     );
 }
 

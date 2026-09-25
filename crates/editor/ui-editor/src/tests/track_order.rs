@@ -138,9 +138,10 @@ fn test_arrange_speed_change_restores_track_order_and_selection() {
         vec![1],
         "重排后主选择必须跟随原音符（新索引 1）"
     );
+    // 重排 → 受影响闭区间增量更新（替代全量重建）
     assert!(
-        editor.editor_state.data.note_delta_dirty,
-        "重排 → 主轨全量重建"
+        !editor.editor_state.data.note_delta_dirty,
+        "重排必须增量更新（受影响区间），不得触发全量重建"
     );
 }
 

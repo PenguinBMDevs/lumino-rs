@@ -111,11 +111,12 @@ fn test_restore_sorted_empty_and_out_of_range_moved() {
 fn test_restore_sorted_vec_matches_list_semantics() {
     let mut v = sorted_events(4); // 0,10,20,30
     v[0].tick = 25; // 25,10,20,30
-    let restored = restore_sorted_vec(&v, &[0]).expect("失序应重排");
+    let (restored, ranges) = restore_sorted_vec(&v, &[0]).expect("失序应重排");
     assert_eq!(
         restored.iter().map(|e| e.tick).collect::<Vec<_>>(),
         vec![10, 20, 25, 30]
     );
+    assert_eq!(ranges, vec![(0, 2)], "旧位置 0 → 新位置 2，区间应包住");
     let sorted = sorted_events(4);
     assert!(
         restore_sorted_vec(&sorted, &[1]).is_none(),
@@ -132,4 +133,125 @@ fn test_sorted_locally_in_slice_detects_inversion() {
     // 局部检查契约：漏传被修改索引可能漏检（调用方必须传全）
     let v2 = sorted_events(3);
     assert!(sorted_locally_in_slice(&v2, &[1]));
+}
+
+// ── 受影响区间集合（restore_sorted_ranges）：区间增量更新的正确性基础 ──
+
+#[test]
+fn test_restore_sorted_ranges_tight_single_move() {
+    // 0..90；index 5（tick 50）→ 95 → 落位 index 9
+    let mut list = ChunkedList::from_sorted(sorted_events(10));
+    set_tick(&mut list, 5, 95);
+    let ranges = list.restore_sorted_ranges(&[5]).expect("失序应重排");
+    assert_eq!(ranges, vec![(5, 9)], "区间 = 旧位置 ∪ 新位置（紧致）");
+    assert!(is_sorted(&list));
+}
+
+#[test]
+fn test_restore_sorted_ranges_covers_all_shifts() {
+    // 0..90；index 2(20)→45、index 4(40)→55：中间 3/5 均被位移
+    let mut list = ChunkedList::from_sorted(sorted_events(10));
+    set_tick(&mut list, 2, 45);
+    set_tick(&mut list, 4, 55);
+    let ranges = list.restore_sorted_ranges(&[2, 4]).expect("失序应重排");
+    assert_eq!(
+        ranges,
+        vec![(2, 5)],
+        "近邻区间合并后必须覆盖被位移元素（[45,50,55,60] 对比 [20,30,40,50]）"
+    );
+    assert!(is_sorted(&list));
+}
+
+#[test]
+fn test_restore_sorted_ranges_tie_block_conservative() {
+    // index 2（tick 20）→ 0（与 index 0 同 tick）：同 tick 块整体纳入区间
+    let mut list = ChunkedList::from_sorted(sorted_events(4));
+    set_tick(&mut list, 2, 0);
+    let ranges = list.restore_sorted_ranges(&[2]).expect("失序应重排");
+    assert_eq!(
+        ranges,
+        vec![(0, 2)],
+        "同 tick 块保守覆盖（宁可多传，不可漏）"
+    );
+}
+
+#[test]
+fn test_restore_sorted_ranges_none_when_sorted() {
+    let mut list = ChunkedList::from_sorted(sorted_events(4));
+    set_tick(&mut list, 2, 25); // 仍有序
+    assert!(
+        list.restore_sorted_ranges(&[2]).is_none(),
+        "零重排返回 None"
+    );
+}
+
+#[test]
+fn test_restore_sorted_ranges_scattered_stays_sparse() {
+    // 200 音符；每隔 20 个选一个（0,20,...,180）各自 +15 tick（越过下一个邻居）
+    // → 受影响区间必须**稀疏**（不得退化为横跨整轨的凸包）
+    let mut list = ChunkedList::from_sorted(sorted_events(200)); // ticks 0..1990
+    let moved: Vec<usize> = (0..200).step_by(20).collect();
+    let before: Vec<u32> = list.iter().map(|e| e.id).collect();
+    for &i in &moved {
+        set_tick(&mut list, i, i as u32 * 10 + 15);
+    }
+    let ranges = list.restore_sorted_ranges(&moved).expect("失序应重排");
+    assert!(is_sorted(&list));
+    let payload: usize = ranges.iter().map(|&(lo, hi)| hi - lo + 1).sum();
+    let hull = ranges.last().expect("非空").1 - ranges[0].0 + 1;
+    assert!(
+        payload * 4 < hull,
+        "分散改动负载必须显著小于凸包（实际 {payload} vs 凸包 {hull}）"
+    );
+    assert!(ranges.len() >= 5, "分散改动应产生多个稀疏区间: {ranges:?}");
+    // 契约：区间外内容逐位一致
+    let after: Vec<u32> = list.iter().map(|e| e.id).collect();
+    let covered = |i: usize| ranges.iter().any(|&(lo, hi)| i >= lo && i <= hi);
+    for i in 0..before.len() {
+        if !covered(i) {
+            assert_eq!(before[i], after[i], "区间外索引 {i} 内容必须不变");
+        }
+    }
+}
+
+#[test]
+fn test_restore_sorted_span_large_path_merge() {
+    // 40 元素；index 10..27（17 个，> 阈值 16）搬到末尾 → 归并路径
+    let mut list = ChunkedList::from_sorted(sorted_events(40));
+    for i in 10..27 {
+        set_tick(&mut list, i, 1000 + i as u32);
+    }
+    let moved: Vec<usize> = (10..27).collect();
+    let ranges = list.restore_sorted_ranges(&moved).expect("失序应重排");
+    assert!(is_sorted(&list));
+    assert_eq!(
+        ranges,
+        vec![(10, 39)],
+        "区间 = 旧位置(10..26) ∪ 新位置(23..39)（前 10 个不变）"
+    );
+}
+
+#[test]
+fn test_restore_sorted_ranges_interval_content_contract() {
+    // 契约（区间更新完备性核心）：区间外内容与重排前**逐位一致**
+    for &(idx, new_tick) in &[(5usize, 95u32), (5, 5), (20, 25), (0, 235), (23, 3)] {
+        let n = 24usize;
+        let mut list = ChunkedList::from_sorted(sorted_events(n));
+        let before: Vec<u32> = list.iter().map(|e| e.id).collect();
+        set_tick(&mut list, idx, new_tick);
+        let ranges = list
+            .restore_sorted_ranges(&[idx])
+            .expect("该场景必须失序重排");
+        let after: Vec<u32> = list.iter().map(|e| e.id).collect();
+        for i in 0..before.len() {
+            let covered = ranges.iter().any(|&(lo, hi)| i >= lo && i <= hi);
+            if !covered {
+                assert_eq!(
+                    before[i], after[i],
+                    "idx={idx}: 区间外索引 {i} 内容必须不变（ranges={ranges:?}）"
+                );
+            }
+        }
+        assert!(is_sorted(&list));
+    }
 }

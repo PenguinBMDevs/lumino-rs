@@ -113,15 +113,11 @@ impl ToolbarHandler {
 
             // 子集量化可跨越未量化音符的 tick → 破坏「按 start_tick 升序」不变式
             // （window_range/position_of_id 二分依赖，破坏后渲染/命中会漏检音符）
-            // → 立即恢复；重排时主轨全量重建（区间事件按旧索引失效）。
-            if root
-                .editor
+            // → 立即恢复；重排时按受影响闭区间增量更新（替代全量重建）。
+            root.editor
                 .editor_state
                 .data
-                .restore_current_track_sorted(&selected_indices)
-            {
-                root.editor.editor_state.data.note_delta_dirty = true;
-            }
+                .restore_current_track_sorted_incremental(&selected_indices);
             root.editor.remap_selection_by_identity(&identity);
 
             // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。

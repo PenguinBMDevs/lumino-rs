@@ -2,6 +2,7 @@
 //!
 //! 由 `accessors.rs` 拆分而来。
 
+use super::super::REORDER_SPAN_CHUNK;
 use super::*;
 
 impl EditorData {
@@ -149,17 +150,51 @@ impl EditorData {
 
     // ── 增量事件记录 ─────────────────────────────────────────
 
-    /// 就地修改当前轨若干音符（如量化）后恢复「按 start_tick 升序」不变式。
+    /// 就地修改当前轨若干音符（如量化/拖动）后恢复「按 start_tick 升序」不变式，
+    /// 并在发生重排时发出**受影响索引区间的增量更新事件**（替代全量重建）。
     ///
-    /// 返回 `true` 表示发生重排（调用方须走主轨全量重建：区间事件按旧索引失效）。
+    /// 返回 `true` 表示发生重排（已增量同步，调用方**不需要**置 `note_delta_dirty`）。
     /// 直接 `track_notes_mut` 改 tick 会破坏二分查询依赖的排序，破坏后
     /// `window_range`/`position_of_id` 会漏检音符（渲染/命中失效）。
-    pub fn restore_current_track_sorted(&mut self, moved: &[usize]) -> bool {
-        let track = self.current_track;
-        self.document
+    ///
+    /// 区间契约见 [`SortedRestoreRanges`]：各区间外内容与重排前逐位一致 →
+    /// 区间 `UpdateRange` 更新完备（无全轨/全工程重传）。
+    pub fn restore_current_track_sorted_incremental(&mut self, moved: &[usize]) -> bool {
+        let track_id = self.current_track;
+        let Some(ranges) = self
+            .document
             .as_mut()
-            .and_then(|doc| doc.track_notes_mut(track))
-            .is_some_and(|t| t.restore_sorted(moved))
+            .and_then(|doc| doc.track_notes_mut(track_id))
+            .and_then(|t| t.restore_sorted_ranges(moved))
+        else {
+            return false;
+        };
+        self.push_reorder_ranges_events(&ranges);
+        true
+    }
+
+    /// 重排受影响区间集合 → 分块 `UpdateRange` 事件（替代全量重建）。
+    ///
+    /// 每个区间内部再按 [`REORDER_SPAN_CHUNK`] 分块（16MB/块，与渲染侧设备内
+    /// 搬移块一致），避免超大单消息与瞬时内存峰值。
+    pub fn push_reorder_ranges_events(&mut self, ranges: &[(usize, usize)]) {
+        for &(lo, hi) in ranges {
+            #[cfg(debug_assertions)]
+            self.debug_assert_track_sorted_around(&[lo, hi]);
+            let mut start = lo;
+            loop {
+                let end = (start + REORDER_SPAN_CHUNK - 1).min(hi);
+                self.push_update_range(start, end);
+                if end >= hi {
+                    break;
+                }
+                start = end + 1;
+            }
+        }
+        self.mark_current_track_changed();
+        self.note_delta_dirty = false;
+        // 当前音轨由事件通道同步 → 洋葱皮层豁免本轨重建（与 record_update_ranges 一致）
+        self.onion_dirty_tracks = Some(HashSet::new());
     }
 
     /// 记录等长修改增量事件（整轨同步版）

@@ -89,7 +89,7 @@ impl EditorTransform for EditorData {
         self.push_history();
         let mut modified = 0;
         let mut modified_indices: Vec<usize> = Vec::new();
-        let mut reordered = false;
+        let mut reorder_ranges = None;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         if let Some(track) = self
@@ -116,13 +116,13 @@ impl EditorTransform for EditorData {
             }
             // 镜像反转时间顺序 → 恢复「按 start_tick 升序」不变式
             // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
-            reordered = track.restore_sorted(&modified_indices);
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            if reordered {
-                self.mark_current_track_changed();
-                self.note_delta_dirty = true;
+            if let Some(ranges) = reorder_ranges {
+                // 重排：按受影响闭区间增量更新（替代全量重建）
+                self.push_reorder_ranges_events(&ranges);
             } else {
                 self.record_update_ranges(&modified_indices);
             }
@@ -198,7 +198,7 @@ impl EditorTransform for EditorData {
         self.push_history();
         let mut modified = 0;
         let mut modified_indices: Vec<usize> = Vec::new();
-        let mut reordered = false;
+        let mut reorder_ranges = None;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         const MIN_LEN: f32 = 1.0;
@@ -230,13 +230,13 @@ impl EditorTransform for EditorData {
             }
             // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
             // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
-            reordered = track.restore_sorted(&modified_indices);
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            if reordered {
-                self.mark_current_track_changed();
-                self.note_delta_dirty = true;
+            if let Some(ranges) = reorder_ranges {
+                // 重排：按受影响闭区间增量更新（替代全量重建）
+                self.push_reorder_ranges_events(&ranges);
             } else {
                 self.record_update_ranges(&modified_indices);
             }

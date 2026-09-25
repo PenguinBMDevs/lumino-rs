@@ -204,14 +204,12 @@ impl Editor {
                         );
                     }
                     // 越过邻居 → 恢复「按 start_tick 升序」不变式（二分查询依赖）；
-                    // 重排时区间事件按旧索引失效，走主轨全量重建
-                    if self
+                    // 重排时按受影响闭区间增量更新（替代全量重建）
+                    if !self
                         .editor_state
                         .data
-                        .restore_current_track_sorted(&selected)
+                        .restore_current_track_sorted_incremental(&selected)
                     {
-                        self.editor_state.data.note_delta_dirty = true;
-                    } else {
                         self.editor_state.data.record_update_ranges(&selected);
                     }
                     self.remap_selection_by_identity(&identity);

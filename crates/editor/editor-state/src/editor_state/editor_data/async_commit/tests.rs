@@ -261,13 +261,15 @@ fn test_async_commit_restores_sorted_order() {
     assert_eq!(modified, 1);
     let ticks: Vec<u32> = data.track_notes(1).iter().map(|n| n.start_tick).collect();
     assert_eq!(ticks, vec![10, 20, 30], "异步提交后必须保持升序不变式");
+    // 重排 → 按受影响闭区间增量更新（替代全量重建）
     assert!(
-        data.note_delta_dirty,
-        "重排 → 区间事件按旧索引失效，必须走主轨全量重建"
+        !data.note_delta_dirty,
+        "重排必须增量更新（受影响区间），不得触发全量重建"
     );
-    assert!(
-        data.note_delta_events.is_empty(),
-        "重排时不得推入失效的区间事件"
+    assert_eq!(
+        data.note_delta_events.len(),
+        1,
+        "重排应发出 1 条区间更新事件（区间外内容不变）"
     );
 }
 

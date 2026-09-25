@@ -18,8 +18,8 @@ pub mod note_info;
 pub mod track;
 
 pub use chunked_list::{
-    ChunkedList, EVENT_CHUNK_CAPACITY, EVENT_CHUNK_SPLIT, EventTick, restore_sorted_vec,
-    sorted_locally_in_slice,
+    ChunkedList, EVENT_CHUNK_CAPACITY, EVENT_CHUNK_SPLIT, EventTick, SortedRestoreRanges,
+    restore_sorted_vec, sorted_locally_in_slice,
 };
 pub use compact::{CompactEvent, EventKind};
 pub use document::{MidiDocument, TICK_SEARCH_BUFFER, TrackNoteView};

@@ -352,7 +352,7 @@ fn test_apply_speed_change_records_event() {
     let mut data = make_data(5);
     let selected = HashSet::from([0, 1, 2]);
     // 1.5 倍：tick 10→15 / 20→30，不越过未选中的 30（并列有序）→ 走区间事件；
-    // 越过场景（重排 → 主轨全量重建）见 tests_track_order.rs
+    // 越过场景（重排 → 受影响闭区间增量更新）见 tests_track_order.rs
     let modified = data.apply_speed_change(&selected, 1.5);
     assert_eq!(modified, 3);
     assert_eq!(event_ranges(&data.note_delta_events), vec![(0, 3)]);
