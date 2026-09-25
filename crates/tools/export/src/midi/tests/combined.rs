@@ -34,6 +34,13 @@ fn test_export_midi_with_pc_and_cc() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: Some(String::from("Test")),
     };
     let export_data = MidiExportData {
@@ -92,6 +99,13 @@ fn test_export_midi_format0_with_pc_cc() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: None,
     };
     let export_data = MidiExportData {

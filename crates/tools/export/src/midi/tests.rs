@@ -40,6 +40,13 @@ fn test_export_single_note_midi() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: Some(String::from("Test Track")),
     };
     let export_data = MidiExportData {
@@ -81,6 +88,13 @@ fn test_export_format0_single_track() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: None,
     };
     let export_data = MidiExportData {
@@ -154,6 +168,13 @@ fn test_build_smf_with_track_name() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: Some(String::from("Piano")),
     };
     let export_data = MidiExportData {
@@ -201,6 +222,13 @@ fn test_export_midi_with_program_change() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: None,
     };
     let export_data = MidiExportData {
@@ -260,6 +288,13 @@ fn test_export_midi_with_control_change() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: None,
     };
     let export_data = MidiExportData {
@@ -318,6 +353,13 @@ fn test_export_note_off_writes_release_velocity() {
         pitch_bends: vec![],
         time_signatures: vec![],
         key_signatures: vec![],
+        channel_aftertouch: vec![],
+        poly_aftertouch: vec![],
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        midi_port: None,
         name: None,
     };
     let export_data = MidiExportData {

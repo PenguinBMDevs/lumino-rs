@@ -19,9 +19,9 @@
 use std::path::PathBuf;
 
 use lumino_export::midi::{
-    MidiControlChangeEvent, MidiExportData, MidiExportOptions, MidiKeySignatureEvent,
-    MidiNoteEvent, MidiPitchBendEvent, MidiProgramChangeEvent, MidiTempoEvent,
-    MidiTimeSignatureEvent, MidiTrackData, export_midi_to_bytes,
+    MidiExportData, MidiExportOptions, MidiKeySignatureEvent, MidiNoteEvent, MidiTempoEvent,
+    MidiTimeSignatureEvent, MidiTrackData, export_midi_to_bytes, extract_passthrough_events,
+    extract_pc_cc_events,
 };
 use lumino_midi_loader::{MidiDocument, bpm_to_tempo};
 use midly::{MetaMessage, TrackEventKind};
@@ -31,52 +31,11 @@ fn test_midi_path() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../test-file/test_unzip_midi/Erosoul.mid")
 }
 
-/// 从加载后的 `MidiDocument` 构造导出数据（镜像 `editor_midi` 的字段映射）。
+/// 从加载后的 `MidiDocument` 构造导出数据（走生产级提取函数，
+/// 与 `editor_midi` 保存路径同一数据源，保证测试测的是真链路）。
 fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
-    let mut pc_by_track: std::collections::HashMap<u16, Vec<MidiProgramChangeEvent>> =
-        Default::default();
-    let mut cc_by_track: std::collections::HashMap<u16, Vec<MidiControlChangeEvent>> =
-        Default::default();
-    let mut pb_by_track: std::collections::HashMap<u16, Vec<MidiPitchBendEvent>> =
-        Default::default();
-    for ev in doc.control_events.iter() {
-        match ev.kind {
-            0 => {
-                let (controller, value) = ev.as_control_change();
-                cc_by_track
-                    .entry(ev.track)
-                    .or_default()
-                    .push(MidiControlChangeEvent {
-                        tick: ev.tick,
-                        channel: ev.channel,
-                        controller,
-                        value,
-                    });
-            }
-            2 => {
-                pb_by_track
-                    .entry(ev.track)
-                    .or_default()
-                    .push(MidiPitchBendEvent {
-                        tick: ev.tick,
-                        channel: ev.channel,
-                        value: ev.param,
-                    });
-            }
-            1 => {
-                let program = ev.as_program_change();
-                pc_by_track
-                    .entry(ev.track)
-                    .or_default()
-                    .push(MidiProgramChangeEvent {
-                        tick: ev.tick,
-                        channel: ev.channel,
-                        program,
-                    });
-            }
-            _ => {}
-        }
-    }
+    let (pc_by_track, cc_by_track) = extract_pc_cc_events(doc);
+    let pass = extract_passthrough_events(doc);
 
     let tracks: Vec<MidiTrackData> = (0..doc.track_count())
         .map(|i| {
@@ -92,11 +51,6 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                     duration: n.length().max(1),
                 })
                 .collect();
-            let (program_changes, control_changes, pitch_bends) = (
-                pc_by_track.get(&track_id).cloned().unwrap_or_default(),
-                cc_by_track.get(&track_id).cloned().unwrap_or_default(),
-                pb_by_track.get(&track_id).cloned().unwrap_or_default(),
-            );
             MidiTrackData {
                 notes,
                 tempos: if i == 0 {
@@ -125,20 +79,28 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                     Vec::new()
                 },
                 key_signatures: if i == 0 {
-                    doc.key_signatures
-                        .iter()
-                        .map(|&(tick, sharps, is_minor)| MidiKeySignatureEvent {
-                            tick,
-                            key: sharps,
-                            is_major: !is_minor,
-                        })
-                        .collect()
+                    pass.key_signatures.clone()
                 } else {
                     Vec::new()
                 },
-                program_changes,
-                control_changes,
-                pitch_bends,
+                program_changes: pc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                control_changes: cc_by_track.get(&track_id).cloned().unwrap_or_default(),
+                pitch_bends: pass.pitch_bends.get(&track_id).cloned().unwrap_or_default(),
+                channel_aftertouch: pass
+                    .channel_aftertouch
+                    .get(&track_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                poly_aftertouch: pass
+                    .poly_aftertouch
+                    .get(&track_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                lyrics: pass.lyrics.get(&track_id).cloned().unwrap_or_default(),
+                markers: pass.markers.get(&track_id).cloned().unwrap_or_default(),
+                text_events: pass.text_events.get(&track_id).cloned().unwrap_or_default(),
+                sys_ex: pass.sys_ex.get(&track_id).cloned().unwrap_or_default(),
+                midi_port: pass.midi_ports.get(&track_id).copied(),
                 name: doc.track_name(i).map(|s| s.to_string()),
             }
         })

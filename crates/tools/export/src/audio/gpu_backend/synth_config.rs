@@ -216,6 +216,7 @@ pub(super) fn build_export_data(
                 control_changes,
                 pitch_bends,
                 name: doc.track_name(i).map(|s| s.to_string()),
+                ..Default::default()
             }
         })
         .collect();
