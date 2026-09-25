@@ -78,6 +78,7 @@ mod tests {
             control_events: lumino_midi_model::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
+            text_events: vec![],
             sys_ex: vec![],
             track_names: (0..track_count).map(|_| None).collect(),
             total_ticks,

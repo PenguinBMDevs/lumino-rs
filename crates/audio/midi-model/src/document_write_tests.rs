@@ -33,6 +33,7 @@ fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
         control_events: crate::chunked_list::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: (0..track_count)
             .map(|i| Some(format!("Track {i}")))

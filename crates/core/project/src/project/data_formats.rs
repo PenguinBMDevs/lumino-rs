@@ -106,6 +106,33 @@ impl LmtxtData {
     }
 }
 
+/// 文本类 meta 事件数据（.lmmtx）
+///
+/// 与 `.lmtxt`（歌词/标记）分离成独立文件：`.lmtxt` 已是 v1 格式，
+/// bincode 位置编码下加字段会破坏老工程解码；独立文件缺失即空
+/// （加载侧 `exists()` 守卫），老工程零风险。
+/// 文本 payload 以原始字节保存，meta_type 区分 0x01/0x02/0x04/0x07/0x08/0x09。
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct LmtextmetaData {
+    /// 文本类事件: (tick, track_id, meta_type, text bytes)
+    pub text_events: Vec<(u32, u16, u8, Vec<u8>)>,
+}
+
+impl LmtextmetaData {
+    /// 文件魔数
+    pub const MAGIC: &[u8; 4] = b"LMMT";
+
+    /// 编码为二进制文件字节
+    pub fn encode(&self) -> Result<Vec<u8>> {
+        encode_binary_file(Self::MAGIC, 1, self)
+    }
+
+    /// 从二进制字节解码
+    pub fn decode(bytes: &[u8]) -> Result<Self> {
+        decode_binary_file(bytes, Self::MAGIC)
+    }
+}
+
 /// SysEx 事件数据（.lmsyx）
 ///
 /// SysEx 可能很大，因此单独成文件，避免与小型控制事件混排导致加载时被迫全部读入内存。
@@ -211,6 +238,23 @@ mod tests {
         assert_eq!(decoded.lyrics.len(), 2);
         assert_eq!(decoded.markers.len(), 1);
         assert_eq!(decoded.lyrics[0].2, b"la");
+    }
+
+    #[test]
+    fn test_lmtextmeta_roundtrip() {
+        let data = LmtextmetaData {
+            text_events: vec![
+                (0, 0, 0x01, b"hello".to_vec()),
+                (120, 1, 0x02, b"(c) test".to_vec()),
+                (480, 0, 0x07, b"cue1".to_vec()),
+            ],
+        };
+        let encoded = data.encode().expect("编码LmtextmetaData失败");
+        assert_eq!(&encoded[0..4], LmtextmetaData::MAGIC);
+        let decoded = LmtextmetaData::decode(&encoded).expect("解码LmtextmetaData失败");
+        assert_eq!(decoded.text_events.len(), 3);
+        assert_eq!(decoded.text_events[1].2, 0x02);
+        assert_eq!(decoded.text_events[2].3, b"cue1");
     }
 
     #[test]

@@ -126,7 +126,7 @@ fn collect_track_events<'a>(
             },
         });
 
-        // 音符关闭
+        // 音符关闭（释放力度来自文档，不再硬编码 0）
         let end_tick = note.tick.saturating_add(note.duration);
         events.push(TrackEvent {
             delta: end_tick.into(),
@@ -134,7 +134,7 @@ fn collect_track_events<'a>(
                 channel: note.channel.into(),
                 message: MidiMessage::NoteOff {
                     key: note.key,
-                    vel: 0.into(),
+                    vel: note.release_velocity.into(),
                 },
             },
         });

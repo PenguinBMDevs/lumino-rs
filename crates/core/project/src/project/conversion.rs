@@ -27,6 +27,7 @@ impl LuminoProject {
         project.key_signatures = doc.key_signatures.clone();
         project.lyrics = doc.lyrics.clone();
         project.markers = doc.markers.clone();
+        project.text_events = doc.text_events.clone();
         project.sys_ex = doc.sys_ex.clone();
         project.track_names = doc.track_names.clone();
 
@@ -200,9 +201,18 @@ impl LuminoProject {
                     && let Some(queue) = active.get_mut(&(key, channel))
                     && let Some((start_tick, note_velocity)) = queue.pop_front()
                 {
+                    // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复
+                    let release_velocity = ev.param2() as u8;
                     notes[idx].push_back(
-                        NoteEvent::new(start_tick, current_tick, key, note_velocity, channel)
-                            .with_id(next_id),
+                        NoteEvent::new_with_release(
+                            start_tick,
+                            current_tick,
+                            key,
+                            note_velocity,
+                            release_velocity,
+                            channel,
+                        )
+                        .with_id(next_id),
                     );
                     next_id += 1;
                     total_ticks = total_ticks.max(current_tick);
@@ -266,6 +276,7 @@ impl LuminoProject {
             control_events: lumino_midi_model::ChunkedList::from_sorted(control_events),
             lyrics: self.lyrics.clone(),
             markers: self.markers.clone(),
+            text_events: self.text_events.clone(),
             sys_ex: self.sys_ex.clone(),
             track_names,
             total_ticks: total_ticks.max(self.metadata.audio.total_ticks),

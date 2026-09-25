@@ -88,6 +88,7 @@ fn build_export_data_from_doc(doc: &MidiDocument) -> MidiExportData {
                     channel: n.channel,
                     key: n.key,
                     velocity: n.velocity,
+                    release_velocity: n.release_velocity,
                     duration: n.length().max(1),
                 })
                 .collect();

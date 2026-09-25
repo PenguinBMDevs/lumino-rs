@@ -13,7 +13,9 @@ use midly;
 ///
 /// 与 `CompactEvent` 的 note 事件对相比：
 /// - `CompactEvent`: 2 × 12 bytes = 24 bytes / note
-/// - `NoteEvent`: 24 bytes（id u64 + start/end u32 + key/vel/chan u8，无内部 padding）/ note
+/// - `NoteEvent`: 24 bytes（id u64 + start/end u32 + key/vel/rel/chan u8，末尾 padding 对齐）/ note
+///
+/// `release_velocity` 复用原 padding 位，`size_of::<NoteEvent>() == 24` 由单测锁死。
 ///
 /// `id` 为文档级全局唯一、单调递增、删除不回收的稳定身份，
 /// 用于撤销/重做与协作同步的精确引用（取代易漂移的 index/坐标）。
@@ -28,8 +30,10 @@ pub struct NoteEvent {
     pub end_tick: u32,
     /// MIDI key (0-127)
     pub key: u8,
-    /// 力度 (0-127)
+    /// 按压力度 / NoteOn velocity (0-127)
     pub velocity: u8,
+    /// 释放力度 / NoteOff velocity (0-127)，缺失时为 0
+    pub release_velocity: u8,
     /// MIDI 通道 (0-15)
     pub channel: u8,
 }
@@ -39,6 +43,8 @@ impl NoteEvent {
     pub const UNASSIGNED_ID: u64 = 0;
 
     /// 创建新音符（id 默认未分配，存储前须用 `with_id` 附加全局唯一 ID）。
+    ///
+    /// 释放力度默认 0；需要显式释放力度时用 [`Self::new_with_release`]。
     #[inline]
     pub fn new(start_tick: u32, end_tick: u32, key: u8, velocity: u8, channel: u8) -> Self {
         Self {
@@ -47,6 +53,28 @@ impl NoteEvent {
             end_tick,
             key,
             velocity,
+            release_velocity: 0,
+            channel,
+        }
+    }
+
+    /// 创建携带释放力度的新音符（MIDI 加载 / 工程恢复路径用）。
+    #[inline]
+    pub fn new_with_release(
+        start_tick: u32,
+        end_tick: u32,
+        key: u8,
+        velocity: u8,
+        release_velocity: u8,
+        channel: u8,
+    ) -> Self {
+        Self {
+            id: Self::UNASSIGNED_ID,
+            start_tick,
+            end_tick,
+            key,
+            velocity,
+            release_velocity,
             channel,
         }
     }
@@ -90,7 +118,7 @@ impl NoteEvent {
                 EventKind::NoteOff,
                 self.channel,
                 self.key as u16,
-                self.velocity as u16,
+                self.release_velocity as u16,
             ),
         ]
     }
@@ -117,6 +145,8 @@ impl From<NoteInfo> for NoteEvent {
             end_tick: info.end_tick(),
             key: info.key,
             velocity: info.velocity,
+            // NoteInfo（UI 缓存）无释放力度概念，归零
+            release_velocity: 0,
             channel: info.channel,
         }
     }
@@ -131,6 +161,7 @@ impl From<midly::loader::PackedNote> for NoteEvent {
             end_tick: note.end_tick,
             key: note.key,
             velocity: note.velocity,
+            release_velocity: note.release_velocity,
             channel: note.channel,
         }
     }
@@ -154,6 +185,12 @@ mod tests {
     }
 
     #[test]
+    fn test_note_event_layout_still_24_bytes() {
+        // 释放力度复用原 padding 位，加字段后体积不得上涨（千万级内存红线）
+        assert_eq!(core::mem::size_of::<NoteEvent>(), 24);
+    }
+
+    #[test]
     fn test_note_event_to_compact_events() {
         let note = NoteEvent::new(100, 200, 60, 100, 5);
         let [on, off] = note.to_compact_events(3);
@@ -166,6 +203,20 @@ mod tests {
 
         assert_eq!(off.delta_tick(), 200);
         assert_eq!(off.kind(), EventKind::NoteOff);
+        // new() 默认释放力度 0（不再复用按压力度）
+        assert_eq!(off.param2(), 0);
+    }
+
+    #[test]
+    fn test_note_event_release_velocity_roundtrip() {
+        let note = NoteEvent::new_with_release(100, 200, 60, 100, 64, 5);
+        let [_, off] = note.to_compact_events(3);
+        assert_eq!(off.param2(), 64);
+
+        let packed = midly::loader::PackedNote::new_with_release(100, 200, 60, 100, 77, 5, 0);
+        let doc_note = NoteEvent::from(packed);
+        assert_eq!(doc_note.velocity, 100);
+        assert_eq!(doc_note.release_velocity, 77);
     }
 
     #[test]

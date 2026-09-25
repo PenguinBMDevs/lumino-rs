@@ -21,8 +21,10 @@ pub struct MidiNoteEvent {
     pub channel: u8,
     /// 键号 (0-127)
     pub key: u8,
-    /// 力度 (0-127)
+    /// 按压力度 (0-127)
     pub velocity: u8,
+    /// 释放力度 / NoteOff velocity (0-127)，缺失时为 0
+    pub release_velocity: u8,
     /// 持续时间 (tick)
     pub duration: u32,
 }

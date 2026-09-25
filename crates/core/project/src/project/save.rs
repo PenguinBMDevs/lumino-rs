@@ -7,7 +7,9 @@ use std::path::Path;
 use crate::{
     LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     project::archive,
-    project::data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
+    project::data_formats::{
+        LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData, LmtxtData,
+    },
     project::folder,
     project::metadata::{
         LoadedFileMetadataEntry, LoadedMetadata, ProjectMetadata, TrackMetadataEntry,
@@ -70,6 +72,13 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
     };
     let encoded = txt_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::TEXT_EVENTS_FILE), encoded)?;
+
+    // 写入文本类 meta 数据（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
+    let txtmeta_data = LmtextmetaData {
+        text_events: project.text_events.clone(),
+    };
+    let encoded = txtmeta_data.encode()?;
+    std::fs::write(base.join(folder::FolderPaths::TEXT_METAS_FILE), encoded)?;
 
     // 写入 SysEx 数据（专用格式 LMSY）
     let syx_data = LmsyxData {
@@ -158,6 +167,13 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
     };
     let encoded = txt_data.encode()?;
     files.push(("data/project/text_events.lmtxt".into(), encoded, true));
+
+    // text metas（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
+    let txtmeta_data = LmtextmetaData {
+        text_events: project.text_events.clone(),
+    };
+    let encoded = txtmeta_data.encode()?;
+    files.push(("data/project/text_metas.lmmtx".into(), encoded, true));
 
     // sysex（专用格式 LMSY）
     let syx_data = LmsyxData {

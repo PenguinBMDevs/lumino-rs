@@ -29,6 +29,7 @@ fn test_export_single_note_midi() {
         channel: 0,
         key: 60,
         velocity: 100,
+        release_velocity: 0,
         duration: 480,
     };
     let track = MidiTrackData {
@@ -66,6 +67,7 @@ fn test_export_format0_single_track() {
         channel: 0,
         key: 60,
         velocity: 100,
+        release_velocity: 0,
         duration: 480,
     };
     let track = MidiTrackData {
@@ -186,6 +188,7 @@ fn test_export_midi_with_program_change() {
             channel: 0,
             key: 60,
             velocity: 100,
+            release_velocity: 0,
             duration: 480,
         }],
         tempos: vec![],
@@ -235,6 +238,7 @@ fn test_export_midi_with_control_change() {
             channel: 0,
             key: 60,
             velocity: 100,
+            release_velocity: 0,
             duration: 480,
         }],
         tempos: vec![],
@@ -294,4 +298,47 @@ fn test_export_midi_with_control_change() {
     }
     assert!(found_cc7, "exported MIDI should contain CC7 (Volume)");
     assert!(found_cc10, "exported MIDI should contain CC10 (Pan)");
+}
+
+#[test]
+fn test_export_note_off_writes_release_velocity() {
+    // EXP-006：NoteOff 不再硬编码 vel=0，写文档中的释放力度
+    let track = MidiTrackData {
+        notes: vec![MidiNoteEvent {
+            tick: 0,
+            channel: 0,
+            key: 60,
+            velocity: 100,
+            release_velocity: 64,
+            duration: 480,
+        }],
+        tempos: vec![],
+        program_changes: vec![],
+        control_changes: vec![],
+        pitch_bends: vec![],
+        time_signatures: vec![],
+        key_signatures: vec![],
+        name: None,
+    };
+    let export_data = MidiExportData {
+        options: MidiExportOptions {
+            format: 1,
+            ppqn: 480,
+        },
+        tracks: vec![track],
+    };
+    let bytes = export_midi_to_bytes(&export_data).expect("export should succeed");
+    let smf = midly::Smf::parse(&bytes).expect("should parse exported MIDI");
+    let mut found_off = false;
+    for event in &smf.tracks[0] {
+        if let TrackEventKind::Midi {
+            message: midly::MidiMessage::NoteOff { vel, .. },
+            ..
+        } = &event.kind
+        {
+            assert_eq!(u8::from(*vel), 64, "NoteOff 应写出释放力度 64");
+            found_off = true;
+        }
+    }
+    assert!(found_off, "exported MIDI should contain NoteOff event");
 }

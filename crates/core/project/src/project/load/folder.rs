@@ -3,7 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use crate::project::{
-    data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
+    data_formats::{
+        LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData, LmtxtData,
+    },
     folder,
     metadata::ProjectMetadata,
 };
@@ -72,6 +74,15 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
             .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
         project.lyrics = data.lyrics;
         project.markers = data.markers;
+    }
+
+    // 读取 text metas（专用格式 LMMT；老工程无此文件即空，不报错）
+    let txtmeta_path = path.join(folder::FolderPaths::TEXT_METAS_FILE);
+    if txtmeta_path.exists() {
+        let bytes = std::fs::read(&txtmeta_path)?;
+        let data = LmtextmetaData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("text metas 解码失败: {e}")))?;
+        project.text_events = data.text_events;
     }
 
     // 读取 SysEx（专用格式 LMSY）

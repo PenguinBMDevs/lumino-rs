@@ -35,6 +35,8 @@ impl FolderPaths {
     pub const CONTROLS_FILE: &str = "data/project/controls.lmctl";
     /// 文本 meta 事件文件（歌词 + 标记）
     pub const TEXT_EVENTS_FILE: &str = "data/project/text_events.lmtxt";
+    /// 文本类 meta 事件文件（Text/版权/乐器名/CuePoint 等，.lmtxt 独立演进）
+    pub const TEXT_METAS_FILE: &str = "data/project/text_metas.lmmtx";
     /// SysEx 事件文件
     pub const SYSEX_FILE: &str = "data/project/sysex.lmsyx";
     /// 音轨名称文件

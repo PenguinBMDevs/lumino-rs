@@ -14,7 +14,9 @@ pub mod metadata;
 pub mod save;
 pub mod track;
 
-pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData};
+pub use data_formats::{
+    LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData, LmtxtData,
+};
 pub use deleted_track::{
     DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
     list_deleted_tracks, load_deleted_track, save_deleted_track,
@@ -47,6 +49,8 @@ pub struct LuminoProject {
     pub lyrics: Vec<(u32, u16, Vec<u8>)>,
     /// 标记文本事件
     pub markers: Vec<(u32, u16, Vec<u8>)>,
+    /// 文本类元事件（tick, track_id, meta_type, 原始字节），语义同 `MidiDocument::text_events`
+    pub text_events: Vec<(u32, u16, u8, Vec<u8>)>,
     /// SysEx 事件
     pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
     /// 音轨名称（索引 = track_id）
@@ -110,6 +114,7 @@ impl LuminoProject {
             pitch_bends: Vec::new(),
             lyrics: Vec::new(),
             markers: Vec::new(),
+            text_events: Vec::new(),
             sys_ex: Vec::new(),
             track_names: Vec::new(),
             loaded_files: Vec::new(),

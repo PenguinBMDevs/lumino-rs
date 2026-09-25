@@ -145,6 +145,7 @@ fn test_cc_via_set_midi_document() {
             end_tick: 960,
             key: 60,
             velocity: 100,
+            release_velocity: 0,
             channel: 0,
         }]),
         // track 1: 1 note on channel 1
@@ -154,6 +155,7 @@ fn test_cc_via_set_midi_document() {
             end_tick: 960,
             key: 64,
             velocity: 100,
+            release_velocity: 0,
             channel: 1,
         }]),
     ];

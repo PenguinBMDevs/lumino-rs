@@ -89,6 +89,8 @@ pub(super) fn build_midi_export_data_from_editor(
                     channel,
                     key,
                     velocity,
+                    // UI 音符元组无释放力度概念，落盘默认 0
+                    release_velocity: 0,
                     duration: (length as u32).max(1),
                 })
                 .collect();
