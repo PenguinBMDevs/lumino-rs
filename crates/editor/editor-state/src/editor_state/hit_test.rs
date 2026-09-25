@@ -53,7 +53,7 @@ pub fn get_selection_box_bounds(
     let mut max_te = f32::NEG_INFINITY;
     let mut max_k = u16::MIN;
     let mut min_k = u16::MAX;
-    for &note_idx in selected_notes.iter() {
+    for note_idx in selected_notes.iter() {
         if let Some(note) = notes.get(note_idx) {
             min_t = min_t.min(note.tick);
             max_te = max_te.max(note.tick + note.length);

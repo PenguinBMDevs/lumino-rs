@@ -33,7 +33,7 @@ impl ToolbarHandler {
             if selected.is_empty() {
                 (0..root.editor.editor_state.data.current_track_note_count()).collect()
             } else {
-                let mut v: Vec<usize> = selected.iter().copied().collect();
+                let mut v: Vec<usize> = selected.iter().collect();
                 v.sort();
                 v
             }
@@ -357,7 +357,6 @@ impl ToolbarHandler {
                     .interaction
                     .selected_notes
                     .iter()
-                    .copied()
                     .collect();
 
                 if selected.is_empty() {

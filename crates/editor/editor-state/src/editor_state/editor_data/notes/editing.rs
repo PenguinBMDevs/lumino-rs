@@ -85,7 +85,7 @@ impl EditorData {
 
     /// 合并选中音符
     pub fn glue_selected_notes(&mut self, selected: &SelectionSet) -> usize {
-        let sel: Vec<usize> = selected.iter().copied().collect();
+        let sel: Vec<usize> = selected.iter().collect();
         if sel.is_empty() {
             return 0;
         }
@@ -176,7 +176,7 @@ impl EditorData {
     /// 仅在前一个音符的结尾与后一个音符的开始之间有间隙时延长，
     /// 不会缩短重叠的音符。最后一个音符保持不变。
     pub fn tie_selected_notes(&mut self, selected: &SelectionSet) -> usize {
-        let sel: Vec<usize> = selected.iter().copied().collect();
+        let sel: Vec<usize> = selected.iter().collect();
         if sel.len() < 2 {
             return 0;
         }

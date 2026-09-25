@@ -116,6 +116,18 @@ impl Stat {
         self.times.iter().copied().fold(0.0f64, f64::max)
     }
 
+    /// 全部样本耗时（ms）——外部基准（`ui_boxselect_copy_bench`）复用统计结构时读取
+    #[allow(dead_code)]
+    pub fn times(&self) -> &[f64] {
+        &self.times
+    }
+
+    /// 本操作历次执行的最大峰值堆增量（字节）
+    #[allow(dead_code)]
+    pub fn max_peak_growth(&self) -> i64 {
+        self.peak_growth.iter().copied().max().unwrap_or(0)
+    }
+
     /// 最小值（确定性代码成本的近似下界，供参考）
     fn min(&self) -> f64 {
         self.times.iter().copied().fold(f64::INFINITY, f64::min)
@@ -129,10 +141,6 @@ impl Stat {
         let mut sorted = self.times.clone();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
         sorted[sorted.len() / 2]
-    }
-
-    fn max_peak_growth(&self) -> i64 {
-        self.peak_growth.iter().copied().max().unwrap_or(0)
     }
 
     /// 输出一行报告，返回 (耗时达标, 内存达标)。

@@ -29,7 +29,29 @@ impl Default for SpatialIndexState {
             note_index: RefCell::new(None),
             note_index_dirty: Cell::new(false),
             query_cache: RefCell::new(Vec::new()),
+            max_note_len: Cell::new(0),
         }
+    }
+}
+
+impl Editor {
+    /// 当前轨最大音符长度（tick；惰性计算并缓存，音符变化时失效）。
+    ///
+    /// 用途：框选增量窗口的 **lookback 精确上界**——查询区间左侧只需回看
+    /// 「可能跨入区间的最长音符」，无需固定 1M tick（密集轨道下 1M tick 可覆盖
+    /// 整轨，拖动增量会退化为每次全轨扫描）。
+    pub(crate) fn current_track_max_note_len(&self) -> u32 {
+        let cached = self.spatial.max_note_len.get();
+        if cached != 0 {
+            return cached;
+        }
+        let mut max = 0u32;
+        for n in self.editor_state.data.current_track_notes().iter() {
+            max = max.max(n.end_tick.saturating_sub(n.start_tick));
+        }
+        let max = max.max(1);
+        self.spatial.max_note_len.set(max);
+        max
     }
 }
 
@@ -42,6 +64,8 @@ impl Editor {
     pub fn mark_notes_changed(&mut self) {
         self.notes_changed = true;
         self.spatial.note_index_dirty.set(true);
+        // 音符已变化 → 最大音符长度缓存失效（框选增量 lookback 依赖）
+        self.spatial.max_note_len.set(0);
         // 诊断日志：打印调用栈，追踪 notes_changed 被误触发的来源
         if std::env::var("LUMINO_TRACE_NOTES_CHANGED").is_ok() {
             let backtrace = std::backtrace::Backtrace::capture();

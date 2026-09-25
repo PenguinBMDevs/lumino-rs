@@ -57,7 +57,7 @@ impl Editor {
                 entries: None,
             };
         }
-        indices.extend(interaction.selected_notes.iter().copied());
+        indices.extend(interaction.selected_notes.iter());
 
         // 转换为稳定身份（id + tick 提示）；id==0（遗留未分配）无法稳定匹配，跳过
         let entries: Vec<(u64, u32)> = indices

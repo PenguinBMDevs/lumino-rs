@@ -280,7 +280,7 @@ impl Editor {
     ) {
         let interaction = &self.editor_state.interaction;
         let notes = self.editor_state.data.current_track_notes();
-        for &i in &interaction.selected_notes {
+        for i in &interaction.selected_notes {
             if let Some(n) = notes.get(i) {
                 f(n);
             }

@@ -84,8 +84,12 @@ impl Editor {
                         "框选结束，选中 {} 个音符",
                         self.editor_state.interaction.selected_notes.len()
                     );
-                    // 广播本地选择变更（供协作对端高亮 + first-writer-wins 冲突判定）
-                    self.emit_local_selection_changed(true);
+                    // 广播本地选择变更（供协作对端高亮 + first-writer-wins 冲突判定）。
+                    // 协作未连接时跳过：消费端 `is_connected` 会短路丢弃，而指纹构建
+                    // （百万级选中 ~100ms）纯浪费。
+                    if self.editor_state.data.collab_sync_enabled() {
+                        self.emit_local_selection_changed(true);
+                    }
                 }
             }
             EditState::Drawing {

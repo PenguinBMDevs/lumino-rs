@@ -109,6 +109,8 @@ pub struct SpatialIndexState {
     pub note_index_dirty: Cell<bool>,
     /// 空间索引查询结果的缓存
     pub query_cache: RefCell<Vec<usize>>,
+    /// 当前轨最大音符长度（tick；0 = 未计算）。框选增量窗口的 lookback 上界。
+    pub max_note_len: Cell<u32>,
 }
 
 /// 钢琴卷帘编辑器

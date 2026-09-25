@@ -51,7 +51,7 @@ impl EditorData {
             .as_mut()
             .and_then(|doc| doc.track_notes_mut(self.current_track))
         {
-            for &note_idx in selected {
+            for note_idx in selected {
                 if let Some(note) = track.get_mut(note_idx) {
                     let old = *note;
                     let mut changed = false;

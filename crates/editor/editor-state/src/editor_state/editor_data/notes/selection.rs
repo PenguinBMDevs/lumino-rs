@@ -29,7 +29,7 @@ impl EditorData {
         }
         let current_track = self.current_track;
         // 待删索引降序排列（避免删除后索引漂移）
-        let mut sorted: Vec<usize> = selected.iter().copied().collect();
+        let mut sorted: Vec<usize> = selected.iter().collect();
         sorted.sort_unstable_by(|a, b| b.cmp(a));
 
         // 先从 document 按降序删除（authoritative 源），不经 `remove_note` 以避免逐音符

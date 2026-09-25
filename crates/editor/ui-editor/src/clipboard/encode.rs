@@ -66,6 +66,9 @@ impl Editor {
         let full = !notes.is_empty() && selected.len() == notes.len();
 
         // 第一遍：origin + count
+        // 非全选也走「轨道顺序扫描 + 位图命中」：`SelectionSet` 现为位图（O(1) 命中、
+        // 顺序读），避免逐索引随机 `notes.get` 与哈希退化（曾实测 19.2M 轨道 3M 选中
+        // 复制 160s）。两遍均为顺序读，缓存友好。
         let mut min_tick = u32::MAX;
         let mut min_key = u8::MAX;
         let count = if full {
@@ -76,8 +79,8 @@ impl Editor {
             notes.len()
         } else {
             let mut c = 0usize;
-            for &i in selected.iter() {
-                if let Some(n) = notes.get(i) {
+            for (i, n) in notes.iter().enumerate() {
+                if selected.contains(&i) {
                     min_tick = min_tick.min(n.start_tick);
                     min_key = min_key.min(n.key);
                     c += 1;
@@ -134,8 +137,21 @@ impl Editor {
     /// 把选中音符收集为 `NoteEvent`（key/velocity/channel 绝对，tick 按 Domino 的
     /// division=480 网格重采样），再交给 `encode_domino_clipboard` 编码为
     /// `PortalSequenceData` + zlib，供 Domino 直接粘贴。
+    ///
+    /// **交互保护上限**：选中数超过 [`DOMINO_MAX_NOTES`] 时返回 `None`（跳过该格式）。
+    /// 百万级选中编码 ~100MB 原始体 + zlib 是复制路径的秒级成本，而 Domino 实际
+    /// 粘贴场景不可能承载百万级音符；Lumino 二进制主格式不受影响。
     #[cfg(windows)]
     pub(super) fn build_clipboard_domino(&self) -> Option<Vec<u8>> {
+        let selected_len = self.editor_state.interaction.selected_notes.len();
+        if selected_len > DOMINO_MAX_NOTES {
+            tracing::debug!(
+                "Editor: 选中 {} 音符超过 Domino 互通上限 {}，跳过 Domino 格式（仅写 Lumino 二进制）",
+                selected_len,
+                DOMINO_MAX_NOTES
+            );
+            return None;
+        }
         let target_div = self
             .editor_state
             .data

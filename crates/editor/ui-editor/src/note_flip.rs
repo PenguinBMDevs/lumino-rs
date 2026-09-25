@@ -41,7 +41,7 @@ impl Editor {
     /// 实际发生翻转的音符数量。
     pub fn flip_selected_notes_horizontal(&mut self, mode: FlipHorizontalMode) -> usize {
         let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
-        let indices: Vec<usize> = selected.iter().copied().collect();
+        let indices: Vec<usize> = selected.iter().collect();
         if indices.is_empty() {
             return 0;
         }

@@ -26,6 +26,13 @@ use lumino_midi_model::clipboard::{
     parse_clipboard_header,
 };
 
+/// Domino 互通剪贴板载荷的音符数上限（超过则跳过该格式，仅写 Lumino 二进制）。
+///
+/// 交互保护：百万级选中的 Domino 编码 ~100MB 原始体 + zlib，是复制路径的秒级成本；
+/// 而 Domino 实际粘贴场景不可能承载百万级音符。Lumino 二进制（主格式）不受影响。
+#[cfg(windows)]
+const DOMINO_MAX_NOTES: usize = 200_000;
+
 impl Editor {
     /// 剪切选中音符
     pub(crate) fn cut_selected_notes(&mut self) {

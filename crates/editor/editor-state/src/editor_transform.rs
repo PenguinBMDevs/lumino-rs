@@ -30,7 +30,7 @@ pub trait EditorTransform {
 
 impl EditorTransform for EditorData {
     fn flip_vertical(&mut self, selected: &SelectionSet, max_key_index: f32) -> usize {
-        let selected_indices: Vec<usize> = selected.iter().copied().collect();
+        let selected_indices: Vec<usize> = selected.iter().collect();
         if selected_indices.is_empty() {
             return 0;
         }
@@ -81,7 +81,7 @@ impl EditorTransform for EditorData {
     }
 
     fn flip_horizontal(&mut self, selected: &SelectionSet, axis_tick: f32) -> usize {
-        let selected_indices: Vec<usize> = selected.iter().copied().collect();
+        let selected_indices: Vec<usize> = selected.iter().collect();
         if selected_indices.is_empty() {
             return 0;
         }
@@ -136,7 +136,7 @@ impl EditorTransform for EditorData {
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
         } else {
-            selected.iter().copied().collect()
+            selected.iter().collect()
         };
         if indices.is_empty() {
             return 0;
@@ -179,7 +179,7 @@ impl EditorTransform for EditorData {
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
         } else {
-            let mut v: Vec<usize> = selected.iter().copied().collect();
+            let mut v: Vec<usize> = selected.iter().collect();
             v.sort();
             v
         };

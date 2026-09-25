@@ -49,7 +49,6 @@ impl Editor {
             .interaction
             .selected_notes
             .iter()
-            .copied()
             .collect()
     }
 
