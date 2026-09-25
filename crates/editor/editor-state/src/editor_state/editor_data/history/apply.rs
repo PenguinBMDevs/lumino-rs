@@ -100,76 +100,84 @@ impl EditorData {
     }
 
     // ── 历史记录条目应用 ─────────────────────────────────────
-
     /// 根据 HistoryEntry 类型应用撤销/重做
     pub(super) fn apply_history_entry(&mut self, entry: HistoryEntry, inverse: bool) {
         // 清空可能残留的旧 note_delta_events，防止其在新 current_track 下被误应用到
         // 错误音轨（原 mark_tracks_changed_after_history 的防跨轨误用意图保留于此）。
         self.note_delta_events.clear();
+        // 协作同步开关：关闭时跳过全部 `pending_collab_*` 广播数据构建
+        // （快照分支的整轨 id 对账/移动分支的逐音符记录均为 O(N)，
+        // 未连接协作时被消费端短路丢弃，纯浪费）。
+        let collab_sync = self.collab_sync_enabled;
         match entry {
             HistoryEntry::Snapshot(s) => {
                 let track = s.current_track;
-                // 协作对账（无大拷贝）：变换类操作走整轨快照历史。先记录回放前
-                // （post-op）状态，再 apply_snapshot 恢复到 pre-op，最后按 id 增量 diff
-                // ——before 仅存「id → 5 个同步字段」元组（不拷 24 字节整个 NoteEvent），
-                // after 用 s.notes.clone()（Arc 浅拷，O(块)），二者均不持有 &self 引用，
-                // 故可在 apply_snapshot 改 self 后安全使用（消除 defect #2 大拷贝）。
-                // 语义（撤销方向：B 随 A 从 post-op 回到 pre-op）：
-                //   before 有 / after 无 → 删除；after 有 / before 无 → 添加；
-                //   id 同值异 → 删旧(before) + 加新(after)，对端终态一致。
-                type SyncTuple = (f32, u16, f32, u8, u8);
-                let mut before_map: HashMap<u64, SyncTuple> = self
-                    .track_notes(track)
-                    .iter()
-                    .map(|n| {
-                        (
-                            n.id,
+                if collab_sync {
+                    // 协作对账（无大拷贝）：变换类操作走整轨快照历史。先记录回放前
+                    // （post-op）状态，再 apply_snapshot 恢复到 pre-op，最后按 id 增量 diff
+                    // ——before 仅存「id → 5 个同步字段」元组（不拷 24 字节整个 NoteEvent），
+                    // after 用 s.notes.clone()（Arc 浅拷，O(块)），二者均不持有 &self 引用，
+                    // 故可在 apply_snapshot 改 self 后安全使用（消除 defect #2 大拷贝）。
+                    // 语义（撤销方向：B 随 A 从 post-op 回到 pre-op）：
+                    //   before 有 / after 无 → 删除；after 有 / before 无 → 添加；
+                    //   id 同值异 → 删旧(before) + 加新(after)，对端终态一致。
+                    type SyncTuple = (f32, u16, f32, u8, u8);
+                    let mut before_map: HashMap<u64, SyncTuple> = self
+                        .track_notes(track)
+                        .iter()
+                        .map(|n| {
                             (
-                                n.start_tick as f32,
-                                n.key as u16,
-                                n.length() as f32,
-                                n.velocity,
-                                n.channel,
-                            ),
-                        )
-                    })
-                    .collect();
-                let after_notes = s.notes.clone(); // Arc 浅拷，无数据复制
-                self.apply_snapshot(*s); // 恢复 pre-op（track 现 = after_notes）
-                let mut sync = Vec::new();
-                for n in after_notes.iter() {
-                    let after: SyncTuple = (
-                        n.start_tick as f32,
-                        n.key as u16,
-                        n.length() as f32,
-                        n.velocity,
-                        n.channel,
-                    );
-                    match before_map.remove(&n.id) {
-                        None => sync.push((
-                            true, n.id, after.0, after.1, after.2, after.3, after.4, track,
-                        )),
-                        Some(before) => {
-                            if before != after {
-                                // 值变更：删旧(post-op) + 加新(pre-op)
-                                sync.push((
-                                    false, n.id, before.0, before.1, before.2, before.3, before.4,
-                                    track,
-                                ));
-                                sync.push((
-                                    true, n.id, after.0, after.1, after.2, after.3, after.4, track,
-                                ));
+                                n.id,
+                                (
+                                    n.start_tick as f32,
+                                    n.key as u16,
+                                    n.length() as f32,
+                                    n.velocity,
+                                    n.channel,
+                                ),
+                            )
+                        })
+                        .collect();
+                    let after_notes = s.notes.clone(); // Arc 浅拷，无数据复制
+                    self.apply_snapshot(*s); // 恢复 pre-op（track 现 = after_notes）
+                    let mut sync = Vec::new();
+                    for n in after_notes.iter() {
+                        let after: SyncTuple = (
+                            n.start_tick as f32,
+                            n.key as u16,
+                            n.length() as f32,
+                            n.velocity,
+                            n.channel,
+                        );
+                        match before_map.remove(&n.id) {
+                            None => sync.push((
+                                true, n.id, after.0, after.1, after.2, after.3, after.4, track,
+                            )),
+                            Some(before) => {
+                                if before != after {
+                                    // 值变更：删旧(post-op) + 加新(pre-op)
+                                    sync.push((
+                                        false, n.id, before.0, before.1, before.2, before.3,
+                                        before.4, track,
+                                    ));
+                                    sync.push((
+                                        true, n.id, after.0, after.1, after.2, after.3, after.4,
+                                        track,
+                                    ));
+                                }
                             }
                         }
                     }
+                    // before_map 残留 = 被撤销删除的音符（post-op 存在、pre-op 无）
+                    for (id, before) in before_map {
+                        sync.push((
+                            false, id, before.0, before.1, before.2, before.3, before.4, track,
+                        ));
+                    }
+                    self.pending_collab_transform_sync = sync;
+                } else {
+                    self.apply_snapshot(*s);
                 }
-                // before_map 残留 = 被撤销删除的音符（post-op 存在、pre-op 无）
-                for (id, before) in before_map {
-                    sync.push((
-                        false, id, before.0, before.1, before.2, before.3, before.4, track,
-                    ));
-                }
-                self.pending_collab_transform_sync = sync;
                 self.mark_tracks_changed_after_history(HashSet::from([track]));
             }
             HistoryEntry::Operation(op) => {
@@ -177,73 +185,77 @@ impl EditorData {
                 // redo 时 inverse=false 按 delta 前进。
                 let affected: HashSet<usize> = op.ops.iter().map(|o| o.track_id as usize).collect();
                 let _ = self.apply_move_ops(&op.ops, inverse, self.max_key_for_move_op());
-                // 构造协作广播：撤销（inverse=true）时本地音符当前位于「移动后」位置
-                // （original + delta），需引用该位置并叠加反向偏移 -delta，使 B 端正确回退；
-                // 重做（inverse=false）则引用 original 并叠加 +delta。下游 ui-editor 层在
-                // undo/redo 成功后 drain 这些记录并发射 `LocalNoteMoved`，否则 B 端在 A 撤销后
-                // 永久失同步，下一次操作在 B 端 0/N 失配。
-                let mut sync = Vec::new();
-                for m in &op.ops {
-                    let track = m.track_id as usize;
-                    let count = m
-                        .ids
-                        .len()
-                        .min(m.original_ticks.len())
-                        .min(m.original_keys.len());
-                    for i in 0..count {
-                        // 注意：`History::undo/redo` 返回的 entry 已经是「反向 op」
-                        // （`MoveOp::inverse()` 仅对 delta 取反，id/original_* 保持不变）。
-                        // 因此这里的 `inverse` 标志只表示当前处于 undo 路径，语义推导如下：
-                        // - 偏移恒为 +entry.delta：undo 时 entry.delta = -delta_original，
-                        //   叠加到对端即「回退」；redo 时 entry.delta = +delta_original，
-                        //   叠加到对端即「前进」。undo/redo 方向由 History 层反转保证，
-                        //   切勿在此再对 delta 取反（双重反转会让 ref 落到不存在的坐标，
-                        //   对端 0/N 失配，正是此前「A 撤销后 B 不响应」的根因）。
-                        // - 引用点 ref：对端当前持有音符的位置。
-                        //   redo 路径 entry 为原始 op，对端位于 original → ref = original；
-                        //   undo 路径 entry 为反向 op（delta 已取反），对端位于
-                        //   original + delta_original = original - entry.delta
-                        //   → ref = original - entry.delta。
-                        let off_tick = m.delta_tick as f32;
-                        let off_key = m.delta_key;
-                        let (ref_tick, ref_key) = if inverse {
-                            (
-                                m.original_ticks[i] - m.delta_tick as f32,
-                                (m.original_keys[i] as i32 - m.delta_key as i32).max(0) as u16,
-                            )
-                        } else {
-                            (m.original_ticks[i], m.original_keys[i])
-                        };
-                        // 音符身份直接取自 op 记录的全局唯一 id（不再坐标反查）
-                        sync.push((m.ids[i], ref_tick, ref_key, off_tick, off_key, track));
+                if collab_sync {
+                    // 构造协作广播：撤销（inverse=true）时本地音符当前位于「移动后」位置
+                    // （original + delta），需引用该位置并叠加反向偏移 -delta，使 B 端正确回退；
+                    // 重做（inverse=false）则引用 original 并叠加 +delta。下游 ui-editor 层在
+                    // undo/redo 成功后 drain 这些记录并发射 `LocalNoteMoved`，否则 B 端在 A 撤销后
+                    // 永久失同步，下一次操作在 B 端 0/N 失配。
+                    let mut sync = Vec::new();
+                    for m in &op.ops {
+                        let track = m.track_id as usize;
+                        let count = m
+                            .ids
+                            .len()
+                            .min(m.original_ticks.len())
+                            .min(m.original_keys.len());
+                        for i in 0..count {
+                            // 注意：`History::undo/redo` 返回的 entry 已经是「反向 op」
+                            // （`MoveOp::inverse()` 仅对 delta 取反，id/original_* 保持不变）。
+                            // 因此这里的 `inverse` 标志只表示当前处于 undo 路径，语义推导如下：
+                            // - 偏移恒为 +entry.delta：undo 时 entry.delta = -delta_original，
+                            //   叠加到对端即「回退」；redo 时 entry.delta = +delta_original，
+                            //   叠加到对端即「前进」。undo/redo 方向由 History 层反转保证，
+                            //   切勿在此再对 delta 取反（双重反转会让 ref 落到不存在的坐标，
+                            //   对端 0/N 失配，正是此前「A 撤销后 B 不响应」的根因）。
+                            // - 引用点 ref：对端当前持有音符的位置。
+                            //   redo 路径 entry 为原始 op，对端位于 original → ref = original；
+                            //   undo 路径 entry 为反向 op（delta 已取反），对端位于
+                            //   original + delta_original = original - entry.delta
+                            //   → ref = original - entry.delta。
+                            let off_tick = m.delta_tick as f32;
+                            let off_key = m.delta_key;
+                            let (ref_tick, ref_key) = if inverse {
+                                (
+                                    m.original_ticks[i] - m.delta_tick as f32,
+                                    (m.original_keys[i] as i32 - m.delta_key as i32).max(0) as u16,
+                                )
+                            } else {
+                                (m.original_ticks[i], m.original_keys[i])
+                            };
+                            // 音符身份直接取自 op 记录的全局唯一 id（不再坐标反查）
+                            sync.push((m.ids[i], ref_tick, ref_key, off_tick, off_key, track));
+                        }
                     }
+                    self.pending_collab_move_sync = sync;
                 }
-                self.pending_collab_move_sync = sync;
                 self.mark_track_notes_changed_for(Some(affected));
             }
             HistoryEntry::Create(entry) => {
                 let affected: HashSet<usize> =
                     entry.ops.iter().map(|o| o.track_id as usize).collect();
                 let _ = self.apply_create_ops(&entry.ops, inverse);
-                // 构造协作广播：撤销（inverse=true）本地按值删除被创建音符，
-                // 需让对端也删除；重做（inverse=false）本地重新插入，需让对端也添加。
-                // `is_added` 与本地动作一致：undo→删除(false)，redo→添加(true)。
-                let is_added = !inverse;
-                let mut sync = Vec::new();
-                for op in &entry.ops {
-                    let note = op.note;
-                    sync.push((
-                        note.id,
-                        note.start_tick as f32,
-                        note.key as u16,
-                        note.length() as f32,
-                        note.velocity,
-                        note.channel,
-                        op.track_id as usize,
-                        is_added,
-                    ));
+                if collab_sync {
+                    // 构造协作广播：撤销（inverse=true）本地按值删除被创建音符，
+                    // 需让对端也删除；重做（inverse=false）本地重新插入，需让对端也添加。
+                    // `is_added` 与本地动作一致：undo→删除(false)，redo→添加(true)。
+                    let is_added = !inverse;
+                    let mut sync = Vec::new();
+                    for op in &entry.ops {
+                        let note = op.note;
+                        sync.push((
+                            note.id,
+                            note.start_tick as f32,
+                            note.key as u16,
+                            note.length() as f32,
+                            note.velocity,
+                            note.channel,
+                            op.track_id as usize,
+                            is_added,
+                        ));
+                    }
+                    self.pending_collab_create_sync = sync;
                 }
-                self.pending_collab_create_sync = sync;
                 self.mark_track_notes_changed_for(Some(affected));
             }
         }

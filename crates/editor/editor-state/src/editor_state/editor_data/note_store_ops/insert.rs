@@ -57,4 +57,52 @@ impl EditorData {
         }
         ids
     }
+
+    /// 批量插入 **NoteEvent**（须按 `start_tick` 升序）到指定音轨并回传已分配 id。
+    ///
+    /// 粘贴热路径专用：解码端直接产出升序 `NoteEvent`（免 `Note` 中间层与二次转换），
+    /// 走免排序单次归并插入（O(N+M)），避免逐块插入对增长中轨道的 O(N·块数) 重复归并。
+    /// **调用方须保证 `events` 已按 `start_tick` 升序**（剪贴板解码天然满足）。
+    /// 仅当 `track_id == current_track` 时触发主轨全量脏标记。
+    pub fn batch_insert_events_to_track_with_ids(
+        &mut self,
+        track_id: usize,
+        events: Vec<lumino_midi_model::NoteEvent>,
+    ) -> Vec<u64> {
+        if events.is_empty() {
+            return Vec::new();
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return Vec::new();
+        };
+        let ids = doc.batch_insert_sorted_notes_with_ids(track_id, events);
+        if !ids.is_empty() && track_id == self.current_track {
+            self.note_delta_events.clear();
+            self.note_delta_dirty = true;
+        }
+        ids
+    }
+
+    /// 批量插入 **NoteEvent**（须按 `start_tick` 升序），不回收 id。
+    ///
+    /// 未连接协作时的粘贴路径专用：省去 N×8B 的 id 列表分配与逐音符收集
+    /// （200W 音符省 ~15MB 与一次遍历）。id 由文档分配器照常分配（身份必需），
+    /// 仅不回传广播列表。仅当 `track_id == current_track` 时触发主轨全量脏标记。
+    pub fn batch_insert_events_to_track(
+        &mut self,
+        track_id: usize,
+        events: Vec<lumino_midi_model::NoteEvent>,
+    ) {
+        if events.is_empty() {
+            return;
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return;
+        };
+        let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 && track_id == self.current_track {
+            self.note_delta_events.clear();
+            self.note_delta_dirty = true;
+        }
+    }
 }

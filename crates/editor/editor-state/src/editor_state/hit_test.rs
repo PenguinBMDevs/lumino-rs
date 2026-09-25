@@ -3,13 +3,12 @@
 //! 将命中测试、选择框边界计算、选择框命中测试等纯几何/数据交互逻辑
 //! 从 `EditorState` facade 中提取出来，降低 facade 的复杂度并提高可测试性。
 
-use std::collections::HashSet;
-
 use lumino_core::view_state::ViewState;
 use lumino_note_core::note::Note;
 
 use super::constants::SELECTION_BOX_EDGE_THRESHOLD;
 use super::interaction_state::{HitType, SelectionHitType};
+use super::selection_set::SelectionSet;
 
 /// 检测坐标是否落在某个音符上
 ///
@@ -45,7 +44,7 @@ pub fn hit_test_note(
 pub fn get_selection_box_bounds(
     notes: &im::Vector<Note>,
     view: &ViewState,
-    selected_notes: &HashSet<usize>,
+    selected_notes: &SelectionSet,
 ) -> Option<(f32, f32, f32, f32)> {
     if selected_notes.is_empty() {
         return None;

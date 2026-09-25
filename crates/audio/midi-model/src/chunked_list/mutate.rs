@@ -225,58 +225,67 @@ impl<T: EventTick> ChunkedList<T> {
             return;
         }
 
-        // 通用局部归并：仅扫描受影响块区间
+        // 通用局部归并：仅扫描受影响块区间。
+        //
+        // 2026-09 内存修复：改为**流式归并**——不物化 `middle_old` 与 `merged`
+        // 两个全区间 `Vec`（大粘贴时各 16B/事件，百万级 = 数十 MB），旧块元素
+        // 边读边 clone 进输出块，新事件按值移动（免 clone）；分块缓冲上限
+        // 1 块（8MB@50 万事件）。归并顺序/稳定性与旧实现一致（同 tick 旧元素在前）。
         let old = std::mem::take(self);
         let start_ci = old.locate_chunk(min_tick);
         let end_ci = old.locate_chunk(max_tick);
-
-        // 前缀/后缀浅拷（Arc clone，零拷贝）
-        let prefix_len = start_ci;
         let suffix_start = end_ci + 1;
+        let events_count = events.len();
 
-        // 收集受影响区间旧事件（仅该区间，非全轨）— 用 extend_from_slice 做批量 memcpy
-        let middle_old_len: usize = old.chunks[start_ci..=end_ci].iter().map(|c| c.len()).sum();
-        let mut middle_old: Vec<T> = Vec::with_capacity(middle_old_len);
-        for chunk in &old.chunks[start_ci..=end_ci] {
-            middle_old.extend_from_slice(chunk);
-        }
-        // middle_old 已有序（块间/块内有序），events 已有序 → 线性归并
-        let mut merged: Vec<T> = Vec::with_capacity(middle_old.len() + events.len());
-        let mut i = 0usize;
-        let mut j = 0usize;
-        while i < middle_old.len() && j < events.len() {
-            if middle_old[i].tick() <= events[j].tick() {
-                merged.push(middle_old[i].clone());
-                i += 1;
-            } else {
-                merged.push(events[j].clone());
-                j += 1;
+        let mut out_chunks: Vec<Arc<Vec<T>>> = Vec::with_capacity(old.chunks.len() + 1);
+        // 前缀浅拷（Arc clone，零拷贝）
+        out_chunks.extend(old.chunks[0..start_ci].iter().cloned());
+
+        // 流式归并缓冲：满 50 万事件落一块，避免物化整个合并区间
+        let mut buf: Vec<T> = Vec::with_capacity(EVENT_CHUNK_CAPACITY);
+        fn push_buffered<T>(buf: &mut Vec<T>, out: &mut Vec<Arc<Vec<T>>>, item: T) {
+            buf.push(item);
+            if buf.len() == EVENT_CHUNK_CAPACITY {
+                let full = std::mem::replace(buf, Vec::with_capacity(EVENT_CHUNK_CAPACITY));
+                out.push(Arc::new(full));
             }
         }
-        if i < middle_old.len() {
-            merged.extend_from_slice(&middle_old[i..]);
-        }
-        if j < events.len() {
-            merged.extend_from_slice(&events[j..]);
-        }
 
-        // 中间区间重建分块（按 500k 切块）
-        let middle_new = Self::from_sorted(merged);
-        let mut new_chunks: Vec<Arc<Vec<T>>> = Vec::with_capacity(
-            prefix_len + middle_new.chunks.len() + old.chunks.len() - suffix_start,
-        );
-        // 前缀浅拷
-        new_chunks.extend(old.chunks[0..prefix_len].iter().cloned());
-        // 中间新块
-        new_chunks.extend(middle_new.chunks);
+        let mut ev_iter = events.into_iter();
+        let mut cur_ev: Option<T> = ev_iter.next();
+        for ci in start_ci..=end_ci {
+            for e in old.chunks[ci].iter() {
+                // 先吐出新事件中所有 tick 严格小于当前旧元素的（同 tick 旧元素在前）
+                while let Some(ev) = cur_ev.take() {
+                    if ev.tick() < e.tick() {
+                        push_buffered(&mut buf, &mut out_chunks, ev);
+                        cur_ev = ev_iter.next();
+                    } else {
+                        cur_ev = Some(ev);
+                        break;
+                    }
+                }
+                push_buffered(&mut buf, &mut out_chunks, e.clone());
+            }
+        }
+        // 收尾：剩余新事件
+        if let Some(ev) = cur_ev {
+            push_buffered(&mut buf, &mut out_chunks, ev);
+        }
+        for ev in ev_iter {
+            push_buffered(&mut buf, &mut out_chunks, ev);
+        }
+        if !buf.is_empty() {
+            out_chunks.push(Arc::new(buf));
+        }
         // 后缀浅拷
         if suffix_start < old.chunks.len() {
-            new_chunks.extend(old.chunks[suffix_start..].iter().cloned());
+            out_chunks.extend(old.chunks[suffix_start..].iter().cloned());
         }
 
-        let total_len = old.total_len + events.len();
+        let total_len = old.total_len + events_count;
         *self = Self {
-            chunks: new_chunks,
+            chunks: out_chunks,
             chunk_first_ticks: Vec::new(),
             chunk_offsets: Vec::new(),
             total_len,

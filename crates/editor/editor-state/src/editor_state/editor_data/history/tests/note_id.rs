@@ -68,6 +68,7 @@ fn test_finish_drawing_captures_id_and_redo_preserves_it() {
 #[test]
 fn test_create_undo_redo_collab_sync_uses_real_id() {
     let mut data = EditorData::with_f32_notes(1, &[]);
+    data.set_collab_sync_enabled(true);
     let _ = data.finish_drawing(0.0, 60, 80.0, 1.0, 80.0);
     let real_id = data
         .current_track_notes()

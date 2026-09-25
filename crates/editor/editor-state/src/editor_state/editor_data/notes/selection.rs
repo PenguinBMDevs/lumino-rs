@@ -1,6 +1,6 @@
 //! 音符选择与删除（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
-use std::collections::HashSet;
+use super::super::super::selection_set::SelectionSet;
 
 use super::EditorData;
 use super::editing::push_merged_remove_events;
@@ -23,7 +23,7 @@ impl EditorData {
     /// 场景下避免 K 次整段搬移的全量级开销。
     /// 全程走 `note_delta_events` 增量通道，`note_delta_dirty` 不置位，
     /// 渲染层不触发全量兜底重建（不走全量重建）。
-    pub fn delete_selected_notes(&mut self, selected: &HashSet<usize>) {
+    pub fn delete_selected_notes(&mut self, selected: &SelectionSet) {
         if selected.is_empty() {
             return;
         }
@@ -57,7 +57,7 @@ impl EditorData {
     }
 
     /// 返回所有音符索引
-    pub fn select_all_notes(&self) -> HashSet<usize> {
+    pub fn select_all_notes(&self) -> SelectionSet {
         (0..self.current_track_note_count()).collect()
     }
 
@@ -68,7 +68,7 @@ impl EditorData {
         start_key: u16,
         current_tick: f32,
         current_key: u16,
-    ) -> HashSet<usize> {
+    ) -> SelectionSet {
         self.get_notes_in_selection_box(start_tick, start_key, current_tick, current_key)
             .into_iter()
             .collect()

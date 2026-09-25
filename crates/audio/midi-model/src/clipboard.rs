@@ -70,21 +70,6 @@ pub struct ClipMeta {
 const HEADER_LEN: usize = 4 + 1 + 1 + 2 + 4 + 1 + 2 + 4; // 19
 
 #[inline]
-fn write_varint(out: &mut Vec<u8>, mut v: u32) {
-    loop {
-        let mut b = (v & 0x7f) as u8;
-        v >>= 7;
-        if v != 0 {
-            b |= 0x80;
-        }
-        out.push(b);
-        if v == 0 {
-            break;
-        }
-    }
-}
-
-#[inline]
 fn read_varint(buf: &[u8], pos: &mut usize) -> Result<u32, String> {
     let mut v: u32 = 0;
     let mut shift = 0u32;
@@ -155,15 +140,49 @@ pub fn encode_clipboard(
 
     let mut count: u32 = 0;
     let mut prev_abs: u32 = 0; // 绝对 tick 偏移累加器（delta 基准）
+    // 单条记录编码到栈缓冲再一次 memcpy：把 ~6 次 `Vec::push`（逐字段容量检查）
+    // 收敛为 1 次 `extend_from_slice`，百万级音符复制热路径显著降本。
+    // 缓冲上限：delta varint(≤5) + key(1) + length varint(≤5) + vel(1) + ch(1) + track(2) = 15。
+    let mut buf = [0u8; 16];
     for r in records {
         let abs = r.tick_offset;
         let delta = abs.wrapping_sub(prev_abs); // 升序输入下为非负小值 → 变长极省
-        write_varint(&mut out, delta);
-        out.push(r.key_offset);
-        write_varint(&mut out, r.length);
-        out.push(r.velocity);
-        out.push(r.channel);
-        out.extend_from_slice(&r.track.to_le_bytes());
+        let mut n = 0usize;
+        let mut v = delta;
+        loop {
+            let mut b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v != 0 {
+                b |= 0x80;
+            }
+            buf[n] = b;
+            n += 1;
+            if v == 0 {
+                break;
+            }
+        }
+        buf[n] = r.key_offset;
+        n += 1;
+        let mut v = r.length;
+        loop {
+            let mut b = (v & 0x7f) as u8;
+            v >>= 7;
+            if v != 0 {
+                b |= 0x80;
+            }
+            buf[n] = b;
+            n += 1;
+            if v == 0 {
+                break;
+            }
+        }
+        buf[n] = r.velocity;
+        n += 1;
+        buf[n] = r.channel;
+        n += 1;
+        buf[n..n + 2].copy_from_slice(&r.track.to_le_bytes());
+        n += 2;
+        out.extend_from_slice(&buf[..n]);
         prev_abs = abs;
         count += 1;
     }

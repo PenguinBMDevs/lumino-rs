@@ -104,6 +104,15 @@ pub struct EditorData {
     /// 元组：`(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引)`
     /// `is_add=true` 表示 `LocalNoteAdded`，`false` 表示 `LocalNoteDeleted`。
     pub(crate) pending_collab_transform_sync: Vec<CollabTransformSyncEntry>,
+    /// 协作同步开关（默认关闭）。
+    ///
+    /// `true` 时 undo/redo 与变换类操作会构建 `pending_collab_*` 广播数据
+    /// （快照分支含整轨 O(N) id 对账），供连接中的协作会话消费；
+    /// `false` 时跳过全部广播数据构建——未连接协作时这些数据被消费端
+    /// （Runner `is_connected` 短路）立即丢弃，纯属浪费。
+    ///
+    /// 由上层在协作房间创建/加入时开启、断开/失败时关闭（见 Runner 协作事件处理）。
+    collab_sync_enabled: bool,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；

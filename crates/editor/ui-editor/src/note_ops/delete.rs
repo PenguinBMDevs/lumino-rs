@@ -5,7 +5,7 @@
 //! 所有音符数据均以 `MidiDocument` 为唯一权威源（2026-08 单一权威源改造），
 //! 不再经 `NoteView` 等派生视图承载身份字段。
 
-use std::collections::HashSet;
+use lumino_editor_state::SelectionSet;
 
 use iced_core::Point;
 
@@ -78,7 +78,7 @@ impl Editor {
             return;
         }
 
-        let indices: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let indices: SelectionSet = self.get_selected_indices().into_iter().collect();
 
         // 单次 O(N) 遍历捕获待删除音符信息，替代逐个 get(i) O(K·log N)
         // 2026-08 单一权威源：id 与字段取自 document 当前轨权威 NoteEvent，而非派生视图 NoteView

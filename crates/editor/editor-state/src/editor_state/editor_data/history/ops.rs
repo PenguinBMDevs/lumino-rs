@@ -112,10 +112,18 @@ impl EditorData {
                 continue;
             };
 
-            // 阶段 1：解析全部目标索引（列表仍有序，命中 tick 提示快路径）。
+            // 阶段 1：解析全部目标索引。
             // 期望当前位置：undo 时 entry 的 delta 已取反 → 当前 = original - delta；
             // redo 时 entry 为正向 op → 当前 = original。
+            //
+            // 2026-09 性能修复：op 内 hint 单调不减（轨道按 tick 升序 + 统一 delta），
+            // 改用**前进单游标顺序扫描**替代逐音符 `position_of_id`（二分 + 随机跳转）——
+            // 百万级音符下随机访问的缓存未命中是主导成本（实测 1.9M 步约 1.9s），
+            // 顺序扫描 ~30ms。hint 非单调（跨 op / 异常数据）自动回退逐项查找。
             let mut resolved: Vec<(usize, usize)> = Vec::with_capacity(count);
+            let track_total = track.len();
+            let mut cursor = 0usize;
+            let mut last_hint = 0u32;
             for i in 0..count {
                 let hint_tick_f = if inverse {
                     (op.original_ticks[i] - op.delta_tick as f32).max(0.0)
@@ -123,9 +131,37 @@ impl EditorData {
                     op.original_ticks[i]
                 };
                 let hint_tick = super::super::accessors::f32_to_tick(hint_tick_f);
-                if let Some(idx) = track.position_of_id(op.ids[i], hint_tick) {
+                let found = if hint_tick >= last_hint {
+                    // 前进游标至第一个 tick >= hint 的位置（全 op 累计 O(轨道长度)）
+                    while cursor < track_total
+                        && track.get(cursor).is_some_and(|n| n.start_tick < hint_tick)
+                    {
+                        cursor += 1;
+                    }
+                    // 同 tick 段内按 id 匹配（段长通常 ≤ 数十）
+                    let mut hit = None;
+                    let mut j = cursor;
+                    while j < track_total {
+                        let Some(n) = track.get(j) else { break };
+                        if n.start_tick > hint_tick {
+                            break;
+                        }
+                        if n.id == op.ids[i] {
+                            hit = Some(j);
+                            break;
+                        }
+                        j += 1;
+                    }
+                    hit
+                } else {
+                    // 非单调 hint：回退逐项查找
+                    None
+                };
+                let found = found.or_else(|| track.position_of_id(op.ids[i], hint_tick));
+                if let Some(idx) = found {
                     resolved.push((i, idx));
                 }
+                last_hint = hint_tick;
             }
 
             // 阶段 2：原地应用（undo 用 original 精确还原，redo 用 delta 前进）。
@@ -201,6 +237,31 @@ impl EditorData {
 
     /// 将 `(track_id, index)` 修改集合按轨合并连续区间并推送 `UpdateRange` 事件。
     fn push_move_update_ranges(&mut self, modified_indices: &[(usize, usize)]) {
+        if modified_indices.is_empty() {
+            return;
+        }
+        // 快路径（常见）：单轨且索引严格升序（解析顺序即索引顺序）→
+        // 直接扫描生成连续区间，免 HashMap 分组 + Vec 拷贝 + 排序（百万级省 ~30MB）。
+        let single_track = modified_indices
+            .iter()
+            .all(|&(t, _)| t == modified_indices[0].0);
+        let sorted_unique = modified_indices.windows(2).all(|w| w[0].1 < w[1].1);
+        if single_track && sorted_unique {
+            let track_id = modified_indices[0].0;
+            let mut start = modified_indices[0].1;
+            let mut prev = start;
+            for &(_, i) in &modified_indices[1..] {
+                if i == prev + 1 {
+                    prev = i;
+                    continue;
+                }
+                self.push_update_range_event(track_id, start, prev);
+                start = i;
+                prev = i;
+            }
+            self.push_update_range_event(track_id, start, prev);
+            return;
+        }
         let mut by_track: HashMap<usize, Vec<usize>> = HashMap::new();
         for &(track_id, idx) in modified_indices {
             by_track.entry(track_id).or_default().push(idx);
@@ -210,38 +271,38 @@ impl EditorData {
             idxs.dedup();
             let mut start = idxs[0];
             let mut prev = idxs[0];
-            let mut ranges: Vec<(usize, usize)> = Vec::new();
             for &i in &idxs[1..] {
                 if i == prev + 1 {
                     prev = i;
                     continue;
                 }
-                ranges.push((start, prev));
+                self.push_update_range_event(track_id, start, prev);
                 start = i;
                 prev = i;
             }
-            ranges.push((start, prev));
-            for (s, e) in ranges {
-                if let Some(notes) = self
-                    .document
-                    .as_ref()
-                    .and_then(|doc| doc.track_notes(track_id).get_range(s..=e))
-                {
-                    let mapped: Vec<Note> = notes
-                        .iter()
-                        .copied()
-                        .map(super::super::accessors::event_to_note)
-                        .collect();
-                    if !mapped.is_empty() {
-                        self.note_delta_events.push(
-                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                                start_index: s,
-                                notes: mapped,
-                            },
-                        );
-                    }
-                }
-            }
+            self.push_update_range_event(track_id, start, prev);
+        }
+    }
+
+    /// 推送单段 `[start, end]`（闭区间）的音符增量更新事件。
+    ///
+    /// 直接经 `iter_window` 顺序取音符转换（免 `get_range` 的 `Vec<&T>` 中间层）。
+    fn push_update_range_event(&mut self, track_id: usize, start: usize, end: usize) {
+        let mapped: Vec<Note> = match self.document.as_ref() {
+            Some(doc) => doc
+                .track_notes(track_id)
+                .iter_window(start, end + 1)
+                .map(|(_, n)| super::super::accessors::event_to_note(n))
+                .collect(),
+            None => return,
+        };
+        if !mapped.is_empty() {
+            self.note_delta_events.push(
+                crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                    start_index: start,
+                    notes: mapped,
+                },
+            );
         }
     }
 

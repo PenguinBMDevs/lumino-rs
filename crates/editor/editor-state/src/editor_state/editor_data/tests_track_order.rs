@@ -119,7 +119,7 @@ fn assert_incremental_reorder(data: &EditorData, expected_ticks: Vec<u32>, ctx: 
 fn test_flip_horizontal_restores_track_order() {
     // 水平翻转围绕轴镜像 → 时间顺序整体反转（就地改 tick）
     let mut data = make_data(); // [0, 10, 20]，长度 1
-    let selected: std::collections::HashSet<usize> = [0usize, 2].into_iter().collect();
+    let selected: crate::SelectionSet = [0usize, 2].into_iter().collect();
     // 轴 10：note0 (0,1) → 19；note2 (20,21) → -1 → 0
     assert_eq!(data.flip_horizontal(&selected, 10.0), 2);
     assert_incremental_reorder(&data, vec![0, 10, 19], "水平翻转");
@@ -128,7 +128,7 @@ fn test_flip_horizontal_restores_track_order() {
 #[test]
 fn test_speed_change_subset_restores_track_order() {
     let mut data = make_data(); // [0, 10, 20]
-    let selected: std::collections::HashSet<usize> = [0usize, 2].into_iter().collect();
+    let selected: crate::SelectionSet = [0usize, 2].into_iter().collect();
     // min=0；factor 0.25 → note2: 20 → 5（越过未选中的 10）
     assert_eq!(data.apply_speed_change(&selected, 0.25), 1);
     assert_incremental_reorder(&data, vec![0, 5, 10], "子集变速");
@@ -137,7 +137,7 @@ fn test_speed_change_subset_restores_track_order() {
 #[test]
 fn test_batch_edit_tick_restores_track_order() {
     let mut data = make_data(); // [0, 10, 20]
-    let selected: std::collections::HashSet<usize> = [2usize].into_iter().collect();
+    let selected: crate::SelectionSet = [2usize].into_iter().collect();
     // tick 表达式 "/4"：20 → 5（越过未选中的 10）
     assert_eq!(data.apply_batch_edit(&selected, "", "", "", "/4", 127), 1);
     assert_incremental_reorder(&data, vec![0, 5, 10], "批量编辑 tick 表达式");

@@ -3,8 +3,7 @@
 //! NoteStore SoA 热路径已删除，统一走 document 当前轨操作。
 //! 保留签名兼容下游调用。
 
-use std::collections::HashSet;
-
+use super::super::super::selection_set::SelectionSet;
 use super::super::EditorData;
 use lumino_note_core::batch_edit::parse_batch_edit_input;
 
@@ -20,7 +19,7 @@ impl EditorData {
     /// - tick 最小为 0.0
     pub fn apply_batch_edit(
         &mut self,
-        selected: &HashSet<usize>,
+        selected: &SelectionSet,
         velocity: &str,
         gate: &str,
         key: &str,

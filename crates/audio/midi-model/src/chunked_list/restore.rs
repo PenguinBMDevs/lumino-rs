@@ -212,7 +212,16 @@ impl<T: EventTick> ChunkedList<T> {
     where
         T: Clone,
     {
-        let idxs = normalize_moved(moved, self.total_len);
+        // 已严格升序且未越界（移动路径的常见形态：解析顺序即索引顺序）→
+        // 直接借用入参，免 `normalize_moved` 的整表拷贝 + 排序 + 去重。
+        let normalized;
+        let idxs: &[usize] =
+            if moved.windows(2).all(|w| w[0] < w[1]) && moved.iter().all(|&i| i < self.total_len) {
+                moved
+            } else {
+                normalized = normalize_moved(moved, self.total_len);
+                &normalized
+            };
         if idxs.is_empty() || self.total_len <= 1 {
             return None;
         }

@@ -2,7 +2,7 @@
 //!
 //! 覆盖：事件记录（拖动/变换）、连续区间合并、dirty 对账（散改/删除/其他轨）。
 
-use std::collections::HashSet;
+use crate::SelectionSet as HashSet;
 
 use lumino_note_core::note::Note;
 
@@ -173,7 +173,7 @@ fn test_delete_selected_merges_contiguous_into_remove_at_ranges() {
     // 新实现合并连续段为 RemoveAt{index, count}，按降序下发：
     //   [RemoveAt{6,1}, RemoveAt{2,3}, RemoveAt{0,1}]（3 条事件，2 段移位）。
     let mut data = make_data(8);
-    let mut selected = HashSet::new();
+    let mut selected = HashSet::default();
     selected.insert(0);
     selected.insert(2);
     selected.insert(3);
@@ -205,7 +205,7 @@ fn test_delete_selected_merges_contiguous_into_remove_at_ranges() {
 #[test]
 fn test_delete_selected_empty_is_noop() {
     let mut data = make_data(4);
-    data.delete_selected_notes(&HashSet::new());
+    data.delete_selected_notes(&HashSet::default());
     assert_eq!(data.current_track_note_count(), 4, "空选中不应删除任何音符");
     assert!(data.note_delta_events.is_empty(), "空选中不应记录增量事件");
 }
@@ -235,7 +235,7 @@ fn test_scattered_edit_records_update_events() {
 fn test_other_track_mark_does_not_dirty_main_track() {
     // 洋葱皮音轨（其他轨）编辑 → 主音轨数据未变 → 不置 dirty
     let mut data = make_data(3);
-    data.mark_track_notes_changed_for(Some(HashSet::from([2])));
+    data.mark_track_notes_changed_for(Some(std::collections::HashSet::from([2])));
     assert!(!data.note_delta_dirty, "其他轨变化不影响主音轨增量路径");
 }
 
@@ -338,7 +338,7 @@ fn test_flip_vertical_records_event() {
     use crate::EditorTransform;
 
     let mut data = make_data(4);
-    let selected = HashSet::from([1, 2]);
+    let selected = HashSet::from_iter([1, 2]);
     let modified = data.flip_vertical(&selected, 127.0);
     assert_eq!(modified, 2);
     assert_eq!(event_ranges(&data.note_delta_events), vec![(1, 2)]);
@@ -350,7 +350,7 @@ fn test_apply_speed_change_records_event() {
     use crate::EditorTransform;
 
     let mut data = make_data(5);
-    let selected = HashSet::from([0, 1, 2]);
+    let selected = HashSet::from_iter([0, 1, 2]);
     // 1.5 倍：tick 10→15 / 20→30，不越过未选中的 30（并列有序）→ 走区间事件；
     // 越过场景（重排 → 受影响闭区间增量更新）见 tests_track_order.rs
     let modified = data.apply_speed_change(&selected, 1.5);
@@ -364,7 +364,7 @@ fn test_apply_speed_change_records_event() {
 #[test]
 fn test_apply_batch_edit_gate_records_event() {
     let mut data = make_data(4);
-    let selected = HashSet::from([1, 2]);
+    let selected = HashSet::from_iter([1, 2]);
     let modified = data.apply_batch_edit(&selected, "", "*2", "", "", 127);
     assert_eq!(modified, 2);
     assert_eq!(event_ranges(&data.note_delta_events), vec![(1, 2)]);
@@ -374,7 +374,7 @@ fn test_apply_batch_edit_gate_records_event() {
 #[test]
 fn test_apply_batch_edit_noop_clears_history() {
     let mut data = make_data(3);
-    let selected = HashSet::from([0, 1]);
+    let selected = HashSet::from_iter([0, 1]);
     // 空表达式 → 无变更 → discard_last
     let modified = data.apply_batch_edit(&selected, "", "", "", "", 127);
     assert_eq!(modified, 0);

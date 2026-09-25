@@ -1,9 +1,10 @@
 //! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
+use super::super::super::selection_set::SelectionSet;
 use super::super::{CollabTransformSyncEntry, EditorData, NoteDeltaEvent};
 use lumino_note_core::note::Note;
 
@@ -46,41 +47,44 @@ impl EditorData {
         self.mark_current_track_changed();
         // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
         // id：删原用原音符真实 id；左右用 insert_note_with_id 回传的真实 id。
-        self.pending_collab_transform_sync.push((
-            false,
-            note_id,
-            note_tick,
-            key as u16,
-            note_length,
-            velocity,
-            channel,
-            track_idx,
-        ));
-        self.pending_collab_transform_sync.push((
-            true,
-            left_id,
-            note_tick,
-            key as u16,
-            split_tick - note_tick,
-            velocity,
-            channel,
-            track_idx,
-        ));
-        self.pending_collab_transform_sync.push((
-            true,
-            right_id,
-            split_tick,
-            key as u16,
-            note_tick + note_length - split_tick,
-            velocity,
-            channel,
-            track_idx,
-        ));
+        // 协作同步关闭时跳过对账（消费端 `is_connected` 会短路丢弃）。
+        if self.collab_sync_enabled {
+            self.pending_collab_transform_sync.push((
+                false,
+                note_id,
+                note_tick,
+                key as u16,
+                note_length,
+                velocity,
+                channel,
+                track_idx,
+            ));
+            self.pending_collab_transform_sync.push((
+                true,
+                left_id,
+                note_tick,
+                key as u16,
+                split_tick - note_tick,
+                velocity,
+                channel,
+                track_idx,
+            ));
+            self.pending_collab_transform_sync.push((
+                true,
+                right_id,
+                split_tick,
+                key as u16,
+                note_tick + note_length - split_tick,
+                velocity,
+                channel,
+                track_idx,
+            ));
+        }
         true
     }
 
     /// 合并选中音符
-    pub fn glue_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
+    pub fn glue_selected_notes(&mut self, selected: &SelectionSet) -> usize {
         let sel: Vec<usize> = selected.iter().copied().collect();
         if sel.is_empty() {
             return 0;
@@ -88,7 +92,10 @@ impl EditorData {
         let track = self.current_track_notes();
         let mut selected_notes: Vec<NoteTuple> = Vec::with_capacity(sel.len());
         // 索引 → 全局唯一 id：删除同步记录直接取真实 id（替代坐标反查）
-        let mut id_by_index: HashMap<usize, u64> = HashMap::with_capacity(sel.len());
+        // 协作同步关闭时无需构建（避免大选中集的 HashMap 对账开销）。
+        let collab_sync = self.collab_sync_enabled;
+        let mut id_by_index: HashMap<usize, u64> =
+            HashMap::with_capacity(if collab_sync { sel.len() } else { 0 });
         for &note_idx in &sel {
             if let Some(note) = track.get(note_idx) {
                 selected_notes.push((
@@ -99,7 +106,9 @@ impl EditorData {
                     note.velocity,
                     note.channel,
                 ));
-                id_by_index.insert(note_idx, note.id);
+                if collab_sync {
+                    id_by_index.insert(note_idx, note.id);
+                }
             }
         }
         if selected_notes.is_empty() {
@@ -123,17 +132,19 @@ impl EditorData {
             rm_sorted.sort_by(|a, b| b.cmp(a));
             // 2026-09 协作修复：合并改变音符数量，先记录每个被合并音符的删除。
             // id 取自收集阶段的索引 → id 映射（不再坐标反查）。
-            for nt in group {
-                self.pending_collab_transform_sync.push((
-                    false,
-                    id_by_index.get(&nt.0).copied().unwrap_or(0),
-                    nt.1,
-                    nt.2,
-                    nt.3,
-                    nt.4,
-                    nt.5,
-                    self.current_track,
-                ));
+            if collab_sync {
+                for nt in group {
+                    self.pending_collab_transform_sync.push((
+                        false,
+                        id_by_index.get(&nt.0).copied().unwrap_or(0),
+                        nt.1,
+                        nt.2,
+                        nt.3,
+                        nt.4,
+                        nt.5,
+                        self.current_track,
+                    ));
+                }
             }
             for &idx in &rm_sorted {
                 self.remove_note(self.current_track, idx);
@@ -143,16 +154,18 @@ impl EditorData {
                 .insert_note_with_id(self.current_track, merged_note)
                 .unwrap_or(0);
             // 2026-09 协作修复：添加一个合并后的音符（id 为插入回传的真实值）。
-            self.pending_collab_transform_sync.push((
-                true,
-                merged_id,
-                merged_tick,
-                first.2,
-                merged_length,
-                first.4,
-                first.5,
-                self.current_track,
-            ));
+            if collab_sync {
+                self.pending_collab_transform_sync.push((
+                    true,
+                    merged_id,
+                    merged_tick,
+                    first.2,
+                    merged_length,
+                    first.4,
+                    first.5,
+                    self.current_track,
+                ));
+            }
             merged += 1;
         }
         self.mark_current_track_changed();
@@ -162,7 +175,7 @@ impl EditorData {
     /// 连奏选中音符：按 tick 排序，填充相邻音符之间的间隙。
     /// 仅在前一个音符的结尾与后一个音符的开始之间有间隙时延长，
     /// 不会缩短重叠的音符。最后一个音符保持不变。
-    pub fn tie_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
+    pub fn tie_selected_notes(&mut self, selected: &SelectionSet) -> usize {
         let sel: Vec<usize> = selected.iter().copied().collect();
         if sel.len() < 2 {
             return 0;
@@ -205,6 +218,8 @@ impl EditorData {
         let track_idx = self.current_track;
         // 2026-09 协作修复：连奏延长长度，须在修改后广播「删旧长度 + 加新长度」。
         // `track` 可变借用 self.document，故先收集到本地 Vec 再统一追加，规避借用冲突。
+        // 协作同步关闭时跳过收集。
+        let collab_sync = self.collab_sync_enabled;
         let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
 
         if let Some(track) = self
@@ -222,26 +237,29 @@ impl EditorData {
                     if let Some(note) = track.get_mut(idx) {
                         let current_length = (note.end_tick - note.start_tick) as f32;
                         if new_length > current_length {
-                            let old_tick = note.start_tick as f32;
-                            let old_key = note.key as u16;
-                            let old_vel = note.velocity;
-                            let old_ch = note.channel;
                             note.end_tick = note.start_tick + new_length as u32;
-                            let new_len = (note.end_tick - note.start_tick) as f32;
-                            sync_entries.push((
-                                false,
-                                note.id,
-                                old_tick,
-                                old_key,
-                                current_length,
-                                old_vel,
-                                old_ch,
-                                track_idx,
-                            ));
-                            sync_entries.push((
-                                true, note.id, old_tick, old_key, new_len, old_vel, old_ch,
-                                track_idx,
-                            ));
+                            if collab_sync {
+                                sync_entries.push((
+                                    false,
+                                    note.id,
+                                    note.start_tick as f32,
+                                    note.key as u16,
+                                    current_length,
+                                    note.velocity,
+                                    note.channel,
+                                    track_idx,
+                                ));
+                                sync_entries.push((
+                                    true,
+                                    note.id,
+                                    note.start_tick as f32,
+                                    note.key as u16,
+                                    (note.end_tick - note.start_tick) as f32,
+                                    note.velocity,
+                                    note.channel,
+                                    track_idx,
+                                ));
+                            }
                             tied += 1;
                         }
                     }

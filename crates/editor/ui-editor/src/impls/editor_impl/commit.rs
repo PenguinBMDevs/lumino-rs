@@ -151,6 +151,10 @@ impl Editor {
     /// 每个被选中音符都发射一次，携带其**原始**位置（移动前 tick/key）与本次
     /// 拖动的统一偏移，对端据此匹配本地音符并叠加相同偏移完成同步。
     fn broadcast_selection_move(&self, drag_state: &DragState) {
+        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃）。
+        if !self.editor_state.data.collab_sync_enabled() {
+            return;
+        }
         let track_index = self.editor_state.data.current_track;
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
@@ -242,8 +246,9 @@ impl Editor {
         self.mark_notes_changed();
         // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
         // 否则 B 端完全缺失被复制的副本。使用返回的 ids 批量广播，避免 100K 单消息风暴。
+        // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let track = self.editor_state.data.current_track;
-        if !ids.is_empty() {
+        if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
             let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
                 .iter()
                 .zip(ids.iter())

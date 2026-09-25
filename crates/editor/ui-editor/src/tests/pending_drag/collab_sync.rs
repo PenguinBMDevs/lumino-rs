@@ -63,6 +63,8 @@ fn test_commit_pending_drag_broadcasts_each_selected_note() {
     let _ = events::take_events();
 
     let mut editor = Editor::new();
+    // 本测试验证协作广播路径：显式开启协作同步（默认关闭为本地零对账）
+    editor.editor_state.data.set_collab_sync_enabled(true);
     // 注意：seed_notes 会按 tick 升序重排音符，重排后索引如下：
     //   idx0 = (999, 50)  ← 选中
     //   idx1 = (1234, 71) ← 未选中

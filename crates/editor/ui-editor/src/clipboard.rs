@@ -16,10 +16,14 @@ pub(crate) mod sys;
 mod encode;
 mod paste;
 
+// 紧凑二进制编码：`build_clipboard_binary` 已跨平台开放（基准/外部复用），
+// 编解码实现本身与平台无关。
+use lumino_midi_model::clipboard::{ClipRecord, encode_clipboard};
+
 #[cfg(windows)]
 use lumino_midi_model::clipboard::{
-    ClipRecord, decode_clipboard_chunks, decode_domino_clipboard, encode_clipboard,
-    encode_domino_clipboard, parse_clipboard_header,
+    decode_clipboard_records, decode_domino_clipboard, encode_domino_clipboard,
+    parse_clipboard_header,
 };
 
 impl Editor {

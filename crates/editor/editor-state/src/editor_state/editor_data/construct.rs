@@ -28,6 +28,7 @@ impl EditorData {
             pending_collab_move_sync: Vec::new(),
             pending_collab_create_sync: Vec::new(),
             pending_collab_transform_sync: Vec::new(),
+            collab_sync_enabled: false,
             cc_data: CcData::default(),
             automation_lanes: Vec::new(),
             tempo_points: vec![TempoPoint {

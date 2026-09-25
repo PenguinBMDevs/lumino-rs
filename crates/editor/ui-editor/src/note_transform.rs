@@ -1,7 +1,7 @@
 use super::Editor;
 use lumino_editor_state::EditorTransform;
 
-use std::collections::HashSet;
+use lumino_editor_state::SelectionSet;
 
 impl Editor {
     /// 按速度系数批量改变选中音符的速度（time-stretch）。
@@ -12,7 +12,7 @@ impl Editor {
     /// # 返回
     /// 实际发生变化的音符数量。
     pub fn apply_speed_change(&mut self, speed_factor: f32) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
         // 主选择漂移防护：子集变速可越过未选中音符 → 重排会位移选中索引
         let identity = self.capture_selection_identity();
         let result = self
@@ -47,7 +47,7 @@ impl Editor {
         tick: &str,
         max_key: u16,
     ) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
         // 主选择漂移防护：tick 表达式（+/-/*//）可越过未选中音符 → 重排位移索引
         let identity = self.capture_selection_identity();
         let result = self

@@ -121,17 +121,20 @@ impl Editor {
             tick_offset,
             key_offset
         );
-        lumino_message::events::emit(lumino_message::events::Event::Window(
-            lumino_message::events::window::Event::local_note_moved(
-                id,
-                original_tick,
-                original_key,
-                length,
-                tick_offset,
-                key_offset,
-                current_track,
-            ),
-        ));
+        // 协作同步关闭时跳过单音符移动广播（消费端未连接会短路丢弃）。
+        if self.editor_state.data.collab_sync_enabled() {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_note_moved(
+                    id,
+                    original_tick,
+                    original_key,
+                    length,
+                    tick_offset,
+                    key_offset,
+                    current_track,
+                ),
+            ));
+        }
         true
     }
 

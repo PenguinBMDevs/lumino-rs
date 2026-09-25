@@ -3,9 +3,11 @@ use super::*;
 impl Editor {
     /// 二进制私有格式粘贴（Windows）。
     ///
-    /// 分块解码 → 锚点定位 → 含 PPQN 重采样的批量插入。`decode_clipboard_chunks`
-    /// 逐块回调，每块仅物化一个 `Vec<Note>`，故 10M 音符粘贴也只占用约 67MB 载荷 +
-    /// 单块的工作内存，不会瞬时分配 GB 级数组。
+    /// 流式解码为 `NoteEvent`（升序）→ 锚点定位 → 含 PPQN 重采样的**单次批量插入**。
+    /// 2026-09 性能修复：原逐 100K 块插入对增长中轨道每次归并 O(轨道+块)，
+    /// 总量级 O(N·块数)（2M 音符 ≈ 58M 元素搬移）；改为全量单次归并 O(N+M)，
+    /// 且 `decode_clipboard_records` 免 `ClipRecord`/`Note` 两层中间物化。
+    /// 峰值内存为「新事件 16B/音符 + 单次归并输出块」，2M 音符约 120MB。
     #[cfg(windows)]
     pub(super) fn try_paste_from_binary(&mut self) -> bool {
         let bytes = match crate::clipboard::sys::get_clipboard_binary() {
@@ -36,48 +38,79 @@ impl Editor {
         self.push_history();
         self.selection_clear();
 
-        let mut total = 0usize;
-        let res = decode_clipboard_chunks(&bytes, 100_000, |recs| {
-            let notes: Vec<super::Note> = recs
+        // 单次归并：全量流式解码升序 NoteEvent 后一次批量插入
+        let mut events: Vec<lumino_midi_model::NoteEvent> = Vec::with_capacity(meta.count as usize);
+        let res = decode_clipboard_records(
+            &bytes,
+            |tick_offset, length, key_offset, velocity, channel, _track_hint| {
+                let to = if ratio == 1.0 {
+                    tick_offset as f64
+                } else {
+                    (tick_offset as f64 * ratio).round()
+                };
+                let le = if ratio == 1.0 {
+                    length as f64
+                } else {
+                    (length as f64 * ratio).round()
+                };
+                let tick = (anchor_tick + to as f32).max(0.0);
+                let key =
+                    (meta.origin_key as i32 + key_offset as i32).clamp(0, max_key as i32) as u8;
+                // 与 note_to_event 一致：start/end 各自独立取整
+                events.push(lumino_midi_model::NoteEvent::new(
+                    lumino_editor_state::f32_to_tick(tick),
+                    lumino_editor_state::f32_to_tick(tick + le as f32),
+                    key,
+                    velocity,
+                    channel,
+                ));
+            },
+        );
+        if res.is_err() || events.is_empty() {
+            return false;
+        }
+        let total = events.len();
+        if self.editor_state.data.collab_sync_enabled() {
+            // 协作开启：先捕获输入序 (tick/key/length/vel/ch)，供插入后与回传 id 对齐广播
+            // （插入会按 tick 重排，不能用插入后的轨道索引反查）。
+            let collab_meta: Vec<(f32, u16, f32, u8, u8)> = events
                 .iter()
-                .map(|r| {
-                    let tick_offset = if ratio == 1.0 {
-                        r.tick_offset as f64
-                    } else {
-                        (r.tick_offset as f64 * ratio).round()
-                    };
-                    let length = if ratio == 1.0 {
-                        r.length as f64
-                    } else {
-                        (r.length as f64 * ratio).round()
-                    };
-                    let tick = (anchor_tick + tick_offset as f32).max(0.0);
-                    let key = (meta.origin_key as i32 + r.key_offset as i32)
-                        .max(0)
-                        .min(max_key as i32) as u16;
-                    super::Note::from_raw(tick, key, length as f32, r.velocity, r.channel)
+                .map(|e| {
+                    (
+                        e.start_tick as f32,
+                        e.key as u16,
+                        e.length() as f32,
+                        e.velocity,
+                        e.channel,
+                    )
                 })
                 .collect();
             let ids = self
                 .editor_state
                 .data
-                .batch_insert_notes_to_track_with_ids(track, &notes);
-            if !ids.is_empty() {
-                let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
-                    .iter()
-                    .zip(ids.iter())
-                    .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .batch_insert_events_to_track_with_ids(track, events);
+            // 分片发射（10K/条），避免单条消息过大；id 与输入序一一对应。
+            let mut start = 0usize;
+            while start < ids.len() {
+                let end = (start + 10_000).min(ids.len());
+                let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = (start..end)
+                    .map(|i| {
+                        let (tick, key, len, vel, ch) = collab_meta[i];
+                        (ids[i], tick, key, len, vel, ch, track)
+                    })
                     .collect();
                 lumino_message::events::emit(lumino_message::events::Event::Window(
                     lumino_message::events::window::Event::local_notes_added_batch(batch),
                 ));
+                start = end;
             }
-            total += notes.len();
-        });
-
-        if res.is_err() || total == 0 {
-            return false;
+        } else {
+            // 本地编辑：不回收 id 广播列表（省 N×8B 分配与收集）
+            self.editor_state
+                .data
+                .batch_insert_events_to_track(track, events);
         }
+
         self.mark_notes_changed();
         tracing::info!("Editor: 已从二进制剪贴板粘贴 {} 个音符", total);
         true
@@ -221,8 +254,9 @@ impl Editor {
         // P0 修复：批量插入直接回传已分配的全局唯一 id，O(N) 完成协作广播，
         // 消除原 `note_id_at` 对每条粘贴音符做全轨线性重扫的 O(N·M) 悬崖。
         // 协作批量：100K 级粘贴改为单条批量消息（分片在 runner 侧），避免 100K 条单消息风暴。
+        // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let ids = self.editor_state.data.batch_insert_notes_with_ids(&pasted);
-        if !ids.is_empty() {
+        if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
             let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = pasted
                 .iter()
                 .zip(ids.iter())

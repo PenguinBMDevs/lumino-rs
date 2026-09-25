@@ -5,32 +5,31 @@
 //!
 //! 2026-08 单一权威源改造：直接操作 document 当前轨（NoteEvent）。
 
-use std::collections::HashSet;
-
 use crate::EditorData;
 use crate::editor_state::editor_data::CollabTransformSyncEntry;
+use crate::editor_state::selection_set::SelectionSet;
 use lumino_note_core::midi_types::VelocityPoint;
 
 /// 音符变换操作 trait
 pub trait EditorTransform {
     /// 垂直翻转选中音符
-    fn flip_vertical(&mut self, selected: &HashSet<usize>, max_key_index: f32) -> usize;
+    fn flip_vertical(&mut self, selected: &SelectionSet, max_key_index: f32) -> usize;
 
     /// 水平翻转选中音符
-    fn flip_horizontal(&mut self, selected: &HashSet<usize>, axis_tick: f32) -> usize;
+    fn flip_horizontal(&mut self, selected: &SelectionSet, axis_tick: f32) -> usize;
 
     /// 移调选中音符（或全部音符）
-    fn transpose(&mut self, selected: &HashSet<usize>, semitones: i16) -> usize;
+    fn transpose(&mut self, selected: &SelectionSet, semitones: i16) -> usize;
 
     /// 变速选中音符（或全部音符）
-    fn apply_speed_change(&mut self, selected: &HashSet<usize>, speed_factor: f32) -> usize;
+    fn apply_speed_change(&mut self, selected: &SelectionSet, speed_factor: f32) -> usize;
 
     /// 构建力度点
     fn build_velocity_points(&self) -> Vec<VelocityPoint>;
 }
 
 impl EditorTransform for EditorData {
-    fn flip_vertical(&mut self, selected: &HashSet<usize>, max_key_index: f32) -> usize {
+    fn flip_vertical(&mut self, selected: &SelectionSet, max_key_index: f32) -> usize {
         let selected_indices: Vec<usize> = selected.iter().copied().collect();
         if selected_indices.is_empty() {
             return 0;
@@ -81,7 +80,7 @@ impl EditorTransform for EditorData {
         modified
     }
 
-    fn flip_horizontal(&mut self, selected: &HashSet<usize>, axis_tick: f32) -> usize {
+    fn flip_horizontal(&mut self, selected: &SelectionSet, axis_tick: f32) -> usize {
         let selected_indices: Vec<usize> = selected.iter().copied().collect();
         if selected_indices.is_empty() {
             return 0;
@@ -132,7 +131,7 @@ impl EditorTransform for EditorData {
         modified
     }
 
-    fn transpose(&mut self, selected: &HashSet<usize>, semitones: i16) -> usize {
+    fn transpose(&mut self, selected: &SelectionSet, semitones: i16) -> usize {
         let notes_len = self.current_track_note_count();
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
@@ -172,7 +171,7 @@ impl EditorTransform for EditorData {
         modified
     }
 
-    fn apply_speed_change(&mut self, selected: &HashSet<usize>, speed_factor: f32) -> usize {
+    fn apply_speed_change(&mut self, selected: &SelectionSet, speed_factor: f32) -> usize {
         let notes_len = self.current_track_note_count();
         if notes_len == 0 {
             return 0;
@@ -280,6 +279,9 @@ impl EditorData {
         new: lumino_midi_model::NoteEvent,
         track: usize,
     ) {
+        if !self.collab_sync_enabled() {
+            return;
+        }
         self.pending_collab_transform_sync.push((
             false,
             old.id,
@@ -308,6 +310,9 @@ impl EditorData {
     /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
     /// `(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, track_index)`。
     pub fn push_collab_transform_entries(&mut self, entries: Vec<CollabTransformSyncEntry>) {
+        if !self.collab_sync_enabled() {
+            return;
+        }
         self.pending_collab_transform_sync.extend(entries);
     }
 

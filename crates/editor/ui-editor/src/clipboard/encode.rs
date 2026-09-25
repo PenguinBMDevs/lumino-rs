@@ -54,56 +54,78 @@ impl Editor {
     /// **流式、零大数组**：第一遍扫描选中音符算 origin（min tick/key），第二遍按文档
     /// tick 顺序 `filter_map` 出 `ClipRecord` 直接喂给 `encode_clipboard`，不物化任何
     /// `Vec<NoteEvent>` / `Vec<ClipRecord>`，故「全选」10M 音符也只占用约 67MB 载荷内存。
-    #[cfg(windows)]
-    pub(super) fn build_clipboard_binary(&self, track: usize, division: u16) -> Option<Vec<u8>> {
+    ///
+    /// 2026-09 全选快路径：`选中数 == 轨道音符数` 时跳过逐音符哈希命中判断与随机
+    /// `get`（百万级全选复制免 2×N 次哈希 + 缓存未命中），两遍均顺序扫描。
+    ///
+    /// `pub`：基准（benches）与外部调用方复用生产编码路径，避免实现漂移。
+    pub fn build_clipboard_binary(&self, track: usize, division: u16) -> Option<Vec<u8>> {
         let interaction = &self.editor_state.interaction;
         let notes = self.editor_state.data.current_track_notes();
+        let selected = &interaction.selected_notes;
+        let full = !notes.is_empty() && selected.len() == notes.len();
 
-        // 第一遍：origin
+        // 第一遍：origin + count
         let mut min_tick = u32::MAX;
         let mut min_key = u8::MAX;
-        let mut count = 0usize;
-        let mut visit = |n: &lumino_midi_loader::NoteEvent| {
-            if n.start_tick < min_tick {
-                min_tick = n.start_tick;
+        let count = if full {
+            for n in notes.iter() {
+                min_tick = min_tick.min(n.start_tick);
+                min_key = min_key.min(n.key);
             }
-            if n.key < min_key {
-                min_key = n.key;
+            notes.len()
+        } else {
+            let mut c = 0usize;
+            for &i in selected.iter() {
+                if let Some(n) = notes.get(i) {
+                    min_tick = min_tick.min(n.start_tick);
+                    min_key = min_key.min(n.key);
+                    c += 1;
+                }
             }
-            count += 1;
+            c
         };
-        for &i in &interaction.selected_notes {
-            if let Some(n) = notes.get(i) {
-                visit(n);
-            }
-        }
         if count == 0 {
             return None;
         }
         let origin_tick = if min_tick != u32::MAX { min_tick } else { 0 };
         let origin_key = if min_key != u8::MAX { min_key } else { 0 };
 
+        let make = |n: &lumino_midi_loader::NoteEvent| {
+            ClipRecord::new(
+                n.start_tick - origin_tick,
+                n.end_tick - n.start_tick,
+                (n.key as i32 - origin_key as i32).max(0) as u8,
+                n.velocity,
+                n.channel,
+                track as u16,
+            )
+        };
+
         // 第二遍：流式编码（文档顺序即 tick 升序；delta 编码使密集排布极省）
-        let bytes = encode_clipboard(
-            notes.iter().enumerate().filter_map(|(i, n)| {
-                if !interaction.selected_notes.contains(&i) {
-                    return None;
-                }
-                Some(ClipRecord::new(
-                    n.start_tick - origin_tick,
-                    n.end_tick - n.start_tick,
-                    (n.key as i32 - origin_key as i32).max(0) as u8,
-                    n.velocity,
-                    n.channel,
-                    track as u16,
-                ))
-            }),
-            count,
-            division,
-            origin_tick,
-            origin_key,
-            track as u16,
-        );
+        let bytes = if full {
+            encode_clipboard(
+                notes.iter().map(make),
+                count,
+                division,
+                origin_tick,
+                origin_key,
+                track as u16,
+            )
+        } else {
+            encode_clipboard(
+                notes
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| selected.contains(i))
+                    .map(|(_, n)| make(n)),
+                count,
+                division,
+                origin_tick,
+                origin_key,
+                track as u16,
+            )
+        };
         Some(bytes)
     }
 

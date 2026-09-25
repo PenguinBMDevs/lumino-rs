@@ -11,11 +11,12 @@ use crate::editor_transform::EditorTransform;
 /// 2. undo（整轨快照回放）入队「全删旧 + 全加新」对账，使 B 终态与 A 一致。
 #[test]
 fn test_speed_change_populates_collab_transform_sync() {
-    use std::collections::HashSet;
+    use crate::SelectionSet as HashSet;
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    data.set_collab_sync_enabled(true);
 
     // ── 前向：速度系数 2.0（min_tick=0）→ 长度翻倍，tick 不变 ──
-    let selected = HashSet::from([0usize]);
+    let selected = HashSet::from_iter([0usize]);
     let modified = data.apply_speed_change(&selected, 2.0);
     assert_eq!(modified, 1, "变速应修改 1 个音符");
     assert_eq!(data.current_track_note_count(), 1);
@@ -47,9 +48,10 @@ fn test_speed_change_populates_collab_transform_sync() {
 /// 使 B 端在 A 移调后同步音高。
 #[test]
 fn test_transpose_populates_collab_transform_sync() {
-    use std::collections::HashSet;
+    use crate::SelectionSet as HashSet;
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
-    let selected = HashSet::from([0usize]);
+    data.set_collab_sync_enabled(true);
+    let selected = HashSet::from_iter([0usize]);
     let modified = data.transpose(&selected, 3);
     assert_eq!(modified, 1, "移调应修改 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
@@ -68,6 +70,7 @@ fn test_transpose_populates_collab_transform_sync() {
 #[test]
 fn test_split_populates_collab_transform_sync() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    data.set_collab_sync_enabled(true);
     let ok = data.split_note(0, 0.5);
     assert!(ok, "split 应成功");
     assert_eq!(data.current_track_note_count(), 2);
@@ -89,8 +92,9 @@ fn test_split_populates_collab_transform_sync() {
 fn test_glue_populates_collab_transform_sync() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0), Note::new(1.0, 60, 1.0)]);
-    use std::collections::HashSet;
-    let merged = data.glue_selected_notes(&HashSet::from([0usize, 1usize]));
+    data.set_collab_sync_enabled(true);
+    use crate::SelectionSet as HashSet;
+    let merged = data.glue_selected_notes(&HashSet::from_iter([0usize, 1usize]));
     assert_eq!(merged, 1, "应合并 1 组");
     assert_eq!(data.current_track_note_count(), 1);
     let pending = data.take_pending_collab_transform_sync();
@@ -112,8 +116,9 @@ fn test_glue_populates_collab_transform_sync() {
 fn test_tie_populates_collab_transform_sync() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0), Note::new(2.0, 60, 1.0)]);
-    use std::collections::HashSet;
-    let tied = data.tie_selected_notes(&HashSet::from([0usize, 1usize]));
+    data.set_collab_sync_enabled(true);
+    use crate::SelectionSet as HashSet;
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0usize, 1usize]));
     assert_eq!(tied, 1, "应连接 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
     assert_eq!(pending.len(), 2);

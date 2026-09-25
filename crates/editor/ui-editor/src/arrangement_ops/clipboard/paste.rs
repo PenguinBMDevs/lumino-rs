@@ -244,6 +244,7 @@ impl Editor {
 
         puffin::profile_scope!("arrangement::insert_notes");
         let t0 = Instant::now();
+        let collab_sync = self.editor_state.data.collab_sync_enabled();
         let mut batch_acc: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
         for (dest_track, notes) in by_track {
             let ids = self
@@ -256,18 +257,21 @@ impl Editor {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
-                batch_acc.push((
-                    *id,
-                    note.tick,
-                    note.key,
-                    note.length,
-                    note.velocity,
-                    note.channel,
-                    dest_track,
-                ));
+                // 协作同步关闭时不构建批量广播载荷。
+                if collab_sync {
+                    batch_acc.push((
+                        *id,
+                        note.tick,
+                        note.key,
+                        note.length,
+                        note.velocity,
+                        note.channel,
+                        dest_track,
+                    ));
+                }
             }
         }
-        // 协作批量：走带粘贴同样改为批量消息
+        // 协作批量：走带粘贴同样改为批量消息（协作同步关闭时不发射）。
         if !batch_acc.is_empty() {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_notes_added_batch(batch_acc),

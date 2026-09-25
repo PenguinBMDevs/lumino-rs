@@ -1,10 +1,11 @@
 //! 交互状态机
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use lumino_core::AudioAction;
 
+use super::selection_set::SelectionSet;
 use crate::editor_state::drag_state::DragState;
 
 /// 批量拖动预览序列中的单个音符。
@@ -157,7 +158,7 @@ pub struct InteractionState {
     /// 悬停目标（音符索引与命中类型）
     pub hover_state: Option<(usize, HitType)>,
     /// 当前选中音符索引集合
-    pub selected_notes: HashSet<usize>,
+    pub selected_notes: SelectionSet,
     /// 待处理的音频动作
     pub pending_audio_actions: Vec<AudioAction>,
     /// 批量拖动预览序列：按工程 BPM 时序排列的待播放音符。

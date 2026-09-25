@@ -59,8 +59,41 @@ impl Editor {
     }
 
     /// 选中当前 track 的全部音符。
+    ///
+    /// 2026-09 性能修复：不再「构建新 HashSet → 整体替换」（百万级选中每轮重建
+    /// 36MB 哈希表 + 首触缺页），改为**原地 clear + reserve + 顺序插入**复用既有
+    /// 容量；边界缓存由一次轨道顺序扫描得出（key 非有序，无法 O(1)）。
+    /// 边界扫描与索引插入分两遍（顺序读 + 顺序写分离，实测快于交错单遍）。
     pub fn select_all_notes(&mut self) {
-        // 2026-08 单一权威源：NoteStore 已删除，全量选择直接走 document 访问器。
-        self.selection_assign(self.editor_state.data.select_all_notes());
+        let data = &self.editor_state.data;
+        let note_count = data.current_track_note_count();
+
+        // 边界：一次顺序扫描（全选时无需哈希命中判断）
+        let mut min_t = f32::INFINITY;
+        let mut max_te = f32::NEG_INFINITY;
+        let mut max_k = u16::MIN;
+        let mut min_k = u16::MAX;
+        if note_count > 0 {
+            for n in data.current_track_notes().iter() {
+                let tick = n.start_tick as f32;
+                let length = (n.end_tick - n.start_tick) as f32;
+                min_t = min_t.min(tick);
+                max_te = max_te.max(tick + length);
+                max_k = max_k.max(n.key as u16);
+                min_k = min_k.min(n.key as u16);
+            }
+        }
+
+        let set = &mut self.editor_state.interaction.selected_notes;
+        set.clear();
+        set.reserve(note_count);
+        for i in 0..note_count {
+            set.insert(i);
+        }
+        self.selected_bounds.set(if note_count > 0 {
+            Some((min_t, max_te, max_k, min_k))
+        } else {
+            None
+        });
     }
 }

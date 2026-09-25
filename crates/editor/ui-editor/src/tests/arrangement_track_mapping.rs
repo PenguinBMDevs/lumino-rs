@@ -93,6 +93,8 @@ fn test_razor_split_collab_sync_uses_real_ids() {
     let _ = events::take_events();
 
     let mut editor = Editor::default();
+    // 本测试验证协作广播路径：显式开启协作同步（默认关闭为本地零对账）
+    editor.editor_state.data.set_collab_sync_enabled(true);
     let notes = vec![Note::from_raw(7000.0, 113, 10.0, 100, 0)];
     editor.editor_state.data.document = Some(doc_with_notes(3, 2, &notes));
     editor.editor_state.data.track_visual_order = vec![2, 0, 1];
