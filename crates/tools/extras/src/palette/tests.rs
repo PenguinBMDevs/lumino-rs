@@ -97,7 +97,9 @@ fn test_decode_random_png() {
 
 #[test]
 fn test_lock_unlock_palette() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // 初始状态为解锁
     unlock_palette();
     assert!(!is_palette_locked(), "初始应为解锁");
@@ -111,7 +113,9 @@ fn test_lock_unlock_palette() {
 
 #[test]
 fn test_set_palette_ignored_when_locked() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // 先设置为已知调色板，再锁定
     let mgr = &*PALETTE_MANAGER;
     let first_name = mgr.names()[0];
@@ -144,7 +148,9 @@ fn test_set_palette_ignored_when_locked() {
 
 #[test]
 fn test_onion_track_color_differs_from_main() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // 当调色板有至少 1 种颜色时，
     // onion_track_color(0) 与主音轨蓝色固定色不同（onion 取调色板第一色，主音轨为固定蓝）
     let mgr = &*PALETTE_MANAGER;
@@ -164,7 +170,9 @@ fn test_onion_track_color_differs_from_main() {
 
 #[test]
 fn test_onion_track_color_offset_is_one() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // 验证 onion_track_color(i) 对应 palette[i % len]
     // 而非 palette[(1 + i) % len]
     let mgr = &*PALETTE_MANAGER;
@@ -191,7 +199,9 @@ fn test_onion_track_color_offset_is_one() {
 
 #[test]
 fn test_onion_track_color_cycling() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // 验证大量洋葱皮取色不 panic
     set_current_palette_by_name(default_palette_name());
     for i in 0..100 {
@@ -201,7 +211,9 @@ fn test_onion_track_color_cycling() {
 
 #[test]
 fn test_onion_track_color_f32_bounds() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     set_current_palette_by_name(default_palette_name());
     let color = onion_track_color_f32(0);
     for &component in &color {
@@ -216,7 +228,9 @@ fn test_onion_track_color_f32_bounds() {
 
 #[test]
 fn test_unlock_after_lock_allows_palette_switch() {
-    let _guard = PALETTE_TEST_MUTEX.lock().expect("调色板测试串行锁未 poison");
+    let _guard = PALETTE_TEST_MUTEX
+        .lock()
+        .expect("调色板测试串行锁未 poison");
     // BUG 回归：MIDI 文件关闭后调色板仍然无法调整
     // 场景模拟：加载 MIDI（锁定）→ 关闭 MIDI（解锁）→ 应该能切换调色板
     let mgr = &*PALETTE_MANAGER;
