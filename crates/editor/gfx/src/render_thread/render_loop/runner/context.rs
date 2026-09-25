@@ -66,9 +66,10 @@ pub struct RenderThreadChannels {
     /// 贴图瀑布流流式上传接收端（UI 线程分块构建 → 渲染线程 streaming_append）
     ///
     /// 消息协议见 [`crate::OnionSkinStreamMsg`]：
-    /// - `Chunk`：数据块（携带音轨 id，构建段表）
-    /// - `Done`：全量会话结束
+    /// - `BeginSession` / `Chunk` / `Done`：全量会话（清段表 → 分块构建 → 完成）
+    /// - `TrackLayout`：文档轨数变化（增量增删段表）
     /// - `TrackDelta`：单音轨增量替换（等长/变长段替换）
+    /// - `TrackRemoveRanges`：单音轨区间级删除（批量删除增量路径）
     pub onion_skin_streaming_rx: std::sync::mpsc::Receiver<crate::OnionSkinStreamMsg>,
     /// 帧同步：渲染线程渲染完成 `frame_id` 对应的帧后写入 `rendered_frame` 并 notify，
     /// UI 线程 present（copy 到 Surface）前 `wait_for_frame`，避免拷到尚未被渲染线程

@@ -15,7 +15,7 @@ pub use editor_state::{
     CanvasState, CollabCreateSyncEntry, CollabTransformSyncEntry, DEFAULT_BPM,
     DEFAULT_PREVIEW_VELOCITY, DragState, EditState, EditorData, EditorState,
     GLUE_PROXIMITY_THRESHOLD, HitType, InteractionState, NoteDeltaEvent, PreviewSequenceNote,
-    SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType,
+    SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType, SelectionSet,
 };
 pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,

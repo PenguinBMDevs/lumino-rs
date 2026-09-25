@@ -1,7 +1,7 @@
 use super::Editor;
 use lumino_editor_state::EditorTransform;
 
-use std::collections::HashSet;
+use lumino_editor_state::SelectionSet;
 
 impl Editor {
     /// 按速度系数批量改变选中音符的速度（time-stretch）。
@@ -12,12 +12,15 @@ impl Editor {
     /// # 返回
     /// 实际发生变化的音符数量。
     pub fn apply_speed_change(&mut self, speed_factor: f32) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
+        // 主选择漂移防护：子集变速可越过未选中音符 → 重排会位移选中索引
+        let identity = self.capture_selection_identity();
         let result = self
             .editor_state
             .data
             .apply_speed_change(&selected, speed_factor);
         if result > 0 {
+            self.remap_selection_by_identity(&identity);
             self.mark_notes_changed();
             // 2026-09 协作修复：前向变速需广播给对端（变换函数内部已入队）。
             self.broadcast_pending_collab_transform_sync();
@@ -44,12 +47,15 @@ impl Editor {
         tick: &str,
         max_key: u16,
     ) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
+        // 主选择漂移防护：tick 表达式（+/-/*//）可越过未选中音符 → 重排位移索引
+        let identity = self.capture_selection_identity();
         let result = self
             .editor_state
             .data
             .apply_batch_edit(&selected, velocity, gate, key, tick, max_key);
         if result > 0 {
+            self.remap_selection_by_identity(&identity);
             self.mark_notes_changed();
             // 2026-09 协作修复：前向批量编辑（含力度）需广播给对端。
             self.broadcast_pending_collab_transform_sync();

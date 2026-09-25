@@ -21,6 +21,16 @@ fn hash_bytes(bytes: &[u8]) -> String {
 }
 
 impl RunnerInner {
+    /// 同步「协作同步开关」到主窗口编辑器。
+    ///
+    /// 开启后 undo/redo 与变换类操作才会构建 `pending_collab_*` 广播数据；
+    /// 连接建立（认证/进出房间）时开启，断开/失败时关闭——未连接时跳过
+    /// 整轨 O(N) 对账与批量广播载荷构建（消费端 `is_connected` 本就会短路丢弃）。
+    fn set_editor_collab_sync(&mut self, enabled: bool) {
+        let editor = &mut self.window_state.window.ui_mut().root_mut().editor;
+        editor.editor_state.data.set_collab_sync_enabled(enabled);
+    }
+
     /// 把工程序列化为 `.lmpj` 字节（纯数据操作，可在后台线程执行，不触碰 UI）。
     ///
     /// 接收已克隆出来的 `MidiDocument` 与 tempo 点，避免在主线程直接读取编辑器状态
@@ -87,6 +97,8 @@ impl RunnerInner {
                 invite_code,
             } => {
                 tracing::info!("协作认证成功: user={user_id}, invite={invite_code}");
+                // 连接已建立（含自动重连后的再次认证）：开启编辑协作同步
+                self.set_editor_collab_sync(true);
                 // 认证成功：保持连接中（即将进入房间）
                 self.set_main_collab_view_state(CollaborationViewState::Connecting, None, None);
             }
@@ -97,6 +109,7 @@ impl RunnerInner {
                 project_hash: _,
             } => {
                 tracing::info!("协作房间创建成功: {room_name}, invite={invite_code}");
+                self.set_editor_collab_sync(true);
                 self.set_main_collab_view_state(
                     CollaborationViewState::InRoom,
                     Some(invite_code.clone()),
@@ -197,6 +210,7 @@ impl RunnerInner {
                 tracing::info!(
                     "已加入协作房间: {room_name}, invite={invite_code}, 用户数={user_count}"
                 );
+                self.set_editor_collab_sync(true);
                 self.set_main_collab_view_state(
                     CollaborationViewState::InRoom,
                     Some(invite_code.clone()),
@@ -291,12 +305,16 @@ impl RunnerInner {
             }
             Disconnected => {
                 tracing::info!("协作连接已断开");
+                // 断开：关闭编辑协作同步，恢复本地零对账开销
+                self.set_editor_collab_sync(false);
                 // 回到可连接态，允许重试
                 self.set_main_collab_view_state(CollaborationViewState::Connect, None, None);
             }
             ConnectFailed { reason } => {
                 tracing::error!("协作连接失败: {reason}");
-                // 连接失败：回到可连接态并展示原因，允许重试
+                // 连接失败：关闭编辑协作同步
+                self.set_editor_collab_sync(false);
+                // 回到可连接态并展示原因，允许重试
                 self.set_main_collab_view_state(
                     CollaborationViewState::Connect,
                     None,

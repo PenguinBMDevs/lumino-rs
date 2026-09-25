@@ -4611,6 +4611,7 @@ dependencies = [
  "ab_glyph",
  "arboard",
  "iced_core",
+ "iced_renderer",
  "iced_wgpu",
  "iced_widget",
  "im",

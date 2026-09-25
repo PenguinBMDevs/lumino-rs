@@ -12,6 +12,7 @@ use lumino_note_core::note::Note;
 mod collab_sync;
 mod move_ops;
 mod note_id;
+mod track_order;
 mod transform_collab_sync;
 
 pub(crate) fn make_data_with_notes() -> EditorData {

@@ -81,6 +81,56 @@ fn test_razor_splits_mapped_document_track() {
     assert_eq!(doc_track_note_count(&editor, 0), 1, "doc 轨 0 不应受影响");
 }
 
+/// 回归：razor 切割的协作同步事件必须携带真实非零 id
+/// （替代旧 `note_id_at` 坐标反查，对端/redo 按 id 精确匹配）。
+#[test]
+fn test_razor_split_collab_sync_uses_real_ids() {
+    use lumino_message::events::window::sync::Event as SyncEvent;
+    use lumino_message::events::{self, Event};
+
+    // 全局事件缓冲区是单例，操作前先清空；用唯一签名（tick 7000/7005、key 113）
+    // 过滤断言，与并行测试污染隔离（与 `pending_drag/collab_sync` 同范式）。
+    let _ = events::take_events();
+
+    let mut editor = Editor::default();
+    // 本测试验证协作广播路径：显式开启协作同步（默认关闭为本地零对账）
+    editor.editor_state.data.set_collab_sync_enabled(true);
+    let notes = vec![Note::from_raw(7000.0, 113, 10.0, 100, 0)];
+    editor.editor_state.data.document = Some(doc_with_notes(3, 2, &notes));
+    editor.editor_state.data.track_visual_order = vec![2, 0, 1];
+
+    let split = editor.arrange_razor(7005.0, 0);
+    assert_eq!(split, 1);
+
+    let mut deleted_ids = Vec::new();
+    let mut added_ids = Vec::new();
+    for e in events::take_events() {
+        if let Event::Window(lumino_message::events::window::Event::Sync(sync)) = e {
+            match sync {
+                SyncEvent::LocalNoteDeleted { id, tick, key, .. }
+                    if tick == 7000.0 && key == 113 =>
+                {
+                    deleted_ids.push(id);
+                }
+                SyncEvent::LocalNoteAdded { id, tick, key, .. }
+                    if (tick == 7000.0 || tick == 7005.0) && key == 113 =>
+                {
+                    added_ids.push(id);
+                }
+                _ => {}
+            }
+        }
+    }
+    assert_eq!(deleted_ids.len(), 1, "应广播 1 条删除（原音符）");
+    assert_eq!(added_ids.len(), 2, "应广播 2 条新增（左右音符）");
+    assert!(deleted_ids[0] > 0, "删除条目必须携带真实 id");
+    assert!(
+        added_ids.iter().all(|&id| id > 0),
+        "新增条目必须携带真实 id"
+    );
+    assert_ne!(added_ids[0], added_ids[1], "左右音符 id 应不同");
+}
+
 #[test]
 fn test_mapping_falls_back_to_identity_when_unset() {
     // 未设置视觉映射（恒等）时，视觉位置即文档索引（兼容旧行为）

@@ -1,11 +1,11 @@
 //! 交互状态机
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::time::Instant;
 
 use lumino_core::AudioAction;
-use lumino_note_core::note_store::BitSet;
 
+use super::selection_set::SelectionSet;
 use crate::editor_state::drag_state::DragState;
 
 /// 批量拖动预览序列中的单个音符。
@@ -158,15 +158,7 @@ pub struct InteractionState {
     /// 悬停目标（音符索引与命中类型）
     pub hover_state: Option<(usize, HitType)>,
     /// 当前选中音符索引集合
-    pub selected_notes: HashSet<usize>,
-    /// 基于位向量的选中集合，用于高效表示"全选"或"大部分选中"。
-    ///
-    /// 当 `Some` 时，`selected_notes` 被忽略，选中状态由 `selection_bitset` 决定。
-    /// 当 `None` 时，选中状态由 `selected_notes` 决定。
-    ///
-    /// 用于 `select_all_notes` 热路径，避免创建 16M 条目的 `HashSet`（512MB 表 + 16M SipHash 插入）。
-    /// `BitSet` 16M 位仅 256KB，支持 O(1) 位测试和 O(K) trailing_zeros 遍历。
-    pub selection_bitset: Option<BitSet>,
+    pub selected_notes: SelectionSet,
     /// 待处理的音频动作
     pub pending_audio_actions: Vec<AudioAction>,
     /// 批量拖动预览序列：按工程 BPM 时序排列的待播放音符。

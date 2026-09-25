@@ -6,6 +6,23 @@
 use super::*;
 
 impl EditorData {
+    /// 设置协作同步开关（上层在协作连接建立/断开时调用）。
+    ///
+    /// 关闭时立即清空三个待广播队列，避免陈旧数据在下次开启时被误发射。
+    pub fn set_collab_sync_enabled(&mut self, enabled: bool) {
+        self.collab_sync_enabled = enabled;
+        if !enabled {
+            self.pending_collab_move_sync.clear();
+            self.pending_collab_create_sync.clear();
+            self.pending_collab_transform_sync.clear();
+        }
+    }
+
+    /// 协作同步是否开启（默认 `false`：本地编辑跳过协作对账）。
+    pub fn collab_sync_enabled(&self) -> bool {
+        self.collab_sync_enabled
+    }
+
     /// 取出并清空「撤销/重做后待广播给协作对端的音符移动」。
     ///
     /// 返回 `(音符全局唯一 ID, 参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)` 列表，

@@ -1,7 +1,7 @@
 //! MoveOp 操作日志测试
 //!
 //! 覆盖：
-//! - MoveOp inverse（含双重取反、i32::MIN 回绕）
+//! - MoveOp inverse（含双重取反、i32::MIN 回绕、id/original 保持）
 //! - push_move_op 创建 Operation 条目
 //! - undo/redo MoveOp roundtrip / 多操作序列 / 混合快照与操作
 
@@ -12,21 +12,21 @@ use crate::history::{History, HistoryEntry, MoveOp, OpKind};
 fn test_move_op_inverse() {
     let move_op = MoveOp {
         track_id: 1,
-        range_start: 10,
-        range_end: 20,
+        ids: vec![11, 12, 13],
         delta_tick: 100,
         delta_key: -5,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
+        original_ticks: vec![0.0, 10.0, 20.0],
+        original_keys: vec![60, 62, 64],
     };
     let inv = move_op.inverse();
     assert_eq!(inv.track_id, move_op.track_id);
-    assert_eq!(inv.range_start, move_op.range_start);
-    assert_eq!(inv.range_end, move_op.range_end);
+    assert_eq!(inv.ids, move_op.ids, "inverse 必须保持 id 不变");
     assert_eq!(inv.delta_tick, -100);
     assert_eq!(inv.delta_key, 5);
     assert_eq!(inv.seq, move_op.seq);
+    assert_eq!(inv.original_ticks, move_op.original_ticks);
+    assert_eq!(inv.original_keys, move_op.original_keys);
 
     // 双重取反应等于原操作
     let inv_inv = inv.inverse();
@@ -38,8 +38,7 @@ fn test_push_move_op_creates_operation_entry() {
     let mut history = History::new();
     let ops = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 3,
+        ids: vec![1, 2, 3],
         delta_tick: 10,
         delta_key: 2,
         seq: 0,
@@ -54,6 +53,7 @@ fn test_push_move_op_creates_operation_entry() {
     assert_eq!(op_entry.op_kind, OpKind::NoteMove);
     assert_eq!(op_entry.ops.len(), 1);
     assert_eq!(op_entry.ops[0].delta_tick, 10);
+    assert_eq!(op_entry.ops[0].ids, vec![1, 2, 3]);
     assert_eq!(op_entry.group_id, Some(gid));
 }
 
@@ -62,8 +62,7 @@ fn test_undo_redo_move_op_roundtrip() {
     let mut history = History::new();
     let ops = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 2,
+        ids: vec![1, 2],
         delta_tick: 5,
         delta_key: -1,
         seq: 0,
@@ -79,6 +78,7 @@ fn test_undo_redo_move_op_roundtrip() {
     let op_entry = assert_operation(&entry);
     assert_eq!(op_entry.ops[0].delta_tick, -5);
     assert_eq!(op_entry.ops[0].delta_key, 1);
+    assert_eq!(op_entry.ops[0].ids, vec![1, 2], "undo 后 id 保持不变");
     assert_eq!(
         history.redo_len(),
         1,
@@ -94,6 +94,7 @@ fn test_undo_redo_move_op_roundtrip() {
     let redo_op = assert_operation(&redo_entry);
     assert_eq!(redo_op.ops[0].delta_tick, 5);
     assert_eq!(redo_op.ops[0].delta_key, -1);
+    assert_eq!(redo_op.ops[0].ids, vec![1, 2], "redo 后 id 保持不变");
     assert_eq!(
         history.undo_len(),
         1,
@@ -107,8 +108,7 @@ fn test_multiple_move_op_undo_redo_sequence() {
     let mut history = History::new();
     let ops1 = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![7],
         delta_tick: 100,
         delta_key: 5,
         seq: 0,
@@ -117,8 +117,7 @@ fn test_multiple_move_op_undo_redo_sequence() {
     }];
     let ops2 = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![7],
         delta_tick: 50,
         delta_key: 3,
         seq: 0,
@@ -160,8 +159,7 @@ fn test_mixed_snapshot_and_operation_undo_order() {
     // 再 push 一个 MoveOp
     let ops = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 10,
         delta_key: 0,
         seq: 0,
@@ -192,8 +190,7 @@ fn test_logical_undo_operation_degrades_to_single() {
     let mut history = History::new();
     let ops = vec![MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 7,
         delta_key: 3,
         seq: 0,
@@ -221,8 +218,7 @@ fn test_logical_undo_operation_degrades_to_single() {
 fn test_move_op_inverse_with_i32_min() {
     let move_op = MoveOp {
         track_id: 0,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: i32::MIN,
         delta_key: i16::MIN,
         seq: 0,

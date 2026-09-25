@@ -45,7 +45,9 @@ mod track;
 
 #[cfg(test)]
 mod tests {
+    mod arrangement_delete_incremental;
     mod arrangement_track_mapping;
+    mod delete_sync_gate;
     mod drawing;
     mod flow;
     mod ghost;
@@ -58,8 +60,10 @@ mod tests {
     mod preview_sequence;
     mod scroll;
     mod selection_precision;
+    mod selection_remap;
     mod state;
     pub(crate) mod test_helpers;
+    mod track_order;
 }
 
 use iced_core::Point;
@@ -69,6 +73,8 @@ use std::cell::{Cell, RefCell};
 // 统一从 editor_state 导入（重构迁移）
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 pub use note::Note;
+/// 结构编辑前捕获的主选择身份快照（防索引漂移，见 `note_ops::selection_remap`）
+pub use note_ops::selection_remap::SelectionIdentity;
 
 mod impls;
 
@@ -105,6 +111,8 @@ pub struct SpatialIndexState {
     pub note_index_dirty: Cell<bool>,
     /// 空间索引查询结果的缓存
     pub query_cache: RefCell<Vec<usize>>,
+    /// 当前轨最大音符长度（tick；0 = 未计算）。框选增量窗口的 lookback 上界。
+    pub max_note_len: Cell<u32>,
 }
 
 /// 钢琴卷帘编辑器

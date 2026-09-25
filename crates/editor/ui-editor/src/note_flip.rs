@@ -2,7 +2,7 @@
 
 use super::Editor;
 use lumino_editor_state::EditorTransform;
-use std::collections::HashSet;
+use lumino_editor_state::SelectionSet;
 
 use lumino_ui_core::toolbar_event::FlipHorizontalMode;
 
@@ -14,7 +14,7 @@ impl Editor {
     /// # 返回
     /// 实际发生翻转的音符数量。
     pub fn flip_selected_notes_vertical(&mut self) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
         let max_key_index = (self.editor_state.view.visible_key_count - 1) as f32;
         let result = self
             .editor_state
@@ -40,8 +40,8 @@ impl Editor {
     /// # 返回
     /// 实际发生翻转的音符数量。
     pub fn flip_selected_notes_horizontal(&mut self, mode: FlipHorizontalMode) -> usize {
-        let selected: HashSet<usize> = self.get_selected_indices().into_iter().collect();
-        let indices: Vec<usize> = selected.iter().copied().collect();
+        let selected: SelectionSet = self.get_selected_indices().into_iter().collect();
+        let indices: Vec<usize> = selected.iter().collect();
         if indices.is_empty() {
             return 0;
         }

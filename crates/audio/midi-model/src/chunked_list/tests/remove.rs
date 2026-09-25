@@ -1,7 +1,84 @@
 //! 删除 / 范围查询 / 替换与清空 / 转回 Vec 测试
 
-use super::util::{make_test_event, sorted_events};
+use super::util::{make_test_event, multi_chunk, sorted_events};
 use crate::chunked_list::{ChunkedList, EventTick};
+
+/// 参照实现：按降序区间逐个删除（与 `remove_ranges` 语义对齐）
+fn reference_remove_ranges(ticks: &mut Vec<u32>, ranges: &[(usize, usize)]) {
+    for &(start, count) in ranges {
+        for _ in 0..count {
+            if start < ticks.len() {
+                ticks.remove(start);
+            }
+        }
+    }
+}
+
+#[test]
+fn test_remove_ranges_matches_reference() {
+    let sizes = [4usize, 4, 4];
+    let cases: Vec<Vec<(usize, usize)>> = vec![
+        vec![(8, 4)],                         // 尾块整块
+        vec![(3, 6)],                         // 跨块连续
+        vec![(9, 1), (7, 1), (5, 1), (3, 1)], // 稀疏
+        vec![(0, 12)],                        // 全量
+        vec![(11, 1), (0, 1)],                // 首尾各一
+        vec![(10, 100)],                      // 尾部越界截断
+        vec![(2, 1), (1, 1), (0, 1)],         // 相邻未合并区间（防御：等价于 (0,3)）
+    ];
+    for ranges in cases {
+        let mut list = multi_chunk(&sizes);
+        let mut ref_ticks: Vec<u32> = (0..12).collect();
+        reference_remove_ranges(&mut ref_ticks, &ranges);
+        let removed = list.remove_ranges(&ranges);
+        assert_eq!(list.len(), ref_ticks.len(), "ranges={ranges:?}");
+        assert_eq!(removed, 12 - ref_ticks.len(), "ranges={ranges:?}");
+        let got: Vec<u32> = list.iter().map(|e| e.tick).collect();
+        assert_eq!(got, ref_ticks, "ranges={ranges:?}");
+        // 索引与块偏移一致性
+        for (i, t) in ref_ticks.iter().enumerate() {
+            assert_eq!(
+                list.get(i).map(|e| e.tick),
+                Some(*t),
+                "ranges={ranges:?} i={i}"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_remove_ranges_full_drops_all_chunks() {
+    let mut list = multi_chunk(&[4, 4, 4]);
+    let removed = list.remove_ranges(&[(0, 12)]);
+    assert_eq!(removed, 12);
+    assert!(list.is_empty());
+    assert_eq!(list.chunk_count(), 0);
+    // 清空后仍可插入（空容器路径）
+    list.insert(make_test_event(1, 1));
+    assert_eq!(list.len(), 1);
+}
+
+#[test]
+fn test_remove_ranges_empty_or_oob_is_noop() {
+    let mut list = multi_chunk(&[4, 4, 4]);
+    assert_eq!(list.remove_ranges(&[]), 0);
+    assert_eq!(list.remove_ranges(&[(100, 5)]), 0);
+    assert_eq!(list.len(), 12);
+}
+
+#[test]
+fn test_remove_ranges_cow_preserves_clone() {
+    let mut list = multi_chunk(&[4, 4, 4]);
+    let snapshot = list.clone();
+    let removed = list.remove_ranges(&[(0, 6)]);
+    assert_eq!(removed, 6);
+    assert_eq!(list.len(), 6);
+    assert_eq!(snapshot.len(), 12);
+    let snap_ticks: Vec<u32> = snapshot.iter().map(|e| e.tick).collect();
+    assert_eq!(snap_ticks, (0..12).collect::<Vec<u32>>());
+    let got: Vec<u32> = list.iter().map(|e| e.tick).collect();
+    assert_eq!(got, vec![6, 7, 8, 9, 10, 11]);
+}
 
 #[test]
 fn test_remove_and_remove_by_tick() {

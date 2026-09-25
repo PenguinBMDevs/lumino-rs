@@ -28,6 +28,7 @@ impl EditorData {
             pending_collab_move_sync: Vec::new(),
             pending_collab_create_sync: Vec::new(),
             pending_collab_transform_sync: Vec::new(),
+            collab_sync_enabled: false,
             cc_data: CcData::default(),
             automation_lanes: Vec::new(),
             tempo_points: vec![TempoPoint {
@@ -38,6 +39,8 @@ impl EditorData {
             arrange_selection: ArrangeSelection::new(),
             note_delta_events: Vec::new(),
             note_delta_dirty: false,
+            main_track_struct_dirty: false,
+            pending_track_remove_ranges: Vec::new(),
             track_visual_order: Vec::new(),
             modified: false,
         }

@@ -8,33 +8,34 @@ use std::time::Instant;
 use super::OpKind;
 
 /// 移动操作日志（NoteMove 用轻量 op 替代完整快照）
+///
+/// 音符以**全局唯一 id** 引用（`ids`，与 `original_ticks`/`original_keys`
+/// 一一对齐），不存索引区间——索引会因协作远端插入/删除而漂移，
+/// id 单调分配、删除不回收，永不失效。
 #[derive(Debug, Clone, PartialEq)]
 pub struct MoveOp {
     /// 音轨 ID
     pub track_id: u32,
-    /// 全局索引起点（含）
-    pub range_start: u32,
-    /// 全局索引终点（不含）
-    pub range_end: u32,
+    /// 被移动音符的全局唯一 id（与 original_ticks/original_keys 对齐）
+    pub ids: Vec<u64>,
     /// tick 偏移量
     pub delta_tick: i32,
     /// key 偏移量
     pub delta_key: i16,
     /// 同一逻辑操作内的序号
     pub seq: u16,
-    /// 范围内音符的原始 tick（用于 undo 精确恢复，尤其是 key/tick 被 clamp 的场景）
+    /// 被移动音符的原始 tick（用于 undo 精确恢复，尤其是 key/tick 被 clamp 的场景）
     pub original_ticks: Vec<f32>,
-    /// 范围内音符的原始 key（用于 undo 精确恢复）
+    /// 被移动音符的原始 key（用于 undo 精确恢复）
     pub original_keys: Vec<u16>,
 }
 
 impl MoveOp {
-    /// 返回反向操作（delta 取反，原始位置保持不变）
+    /// 返回反向操作（delta 取反，id 与原始位置保持不变）
     pub fn inverse(&self) -> Self {
         Self {
             track_id: self.track_id,
-            range_start: self.range_start,
-            range_end: self.range_end,
+            ids: self.ids.clone(),
             delta_tick: self.delta_tick.wrapping_neg(),
             delta_key: self.delta_key.wrapping_neg(),
             seq: self.seq,
@@ -77,14 +78,14 @@ impl OperationEntry {
 
 /// 音符创建操作日志（NoteCreate 用轻量 op 替代完整快照）
 ///
-/// 每个 op 仅记录一次铅笔绘制的音符（16 字节 + track_id），
-/// undo 时按值精确定位删除，redo 时按 tick 有序重新插入——
+/// 每个 op 仅记录一次铅笔绘制的音符（id + 16 字节 + track_id），
+/// undo 时按全局唯一 id 精确定位删除，redo 时保留原 id 有序重新插入——
 /// 与音符总量解耦，1600W 音符工程不再因合并窗口克隆整轨快照。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct CreateOp {
     /// 音轨 ID
     pub track_id: u32,
-    /// 创建的音符（tick/key/velocity/channel 全字段，undo 精确匹配）
+    /// 创建的音符（含分配后的全局唯一 id；0 = 未分配哨兵，兼容按值匹配旧路径）
     pub note: lumino_midi_model::NoteEvent,
 }
 

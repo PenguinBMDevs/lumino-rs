@@ -9,10 +9,14 @@ use lumino_core::storage::config::UiConfig;
 // - `velocity`：力度面板双向滚轮与 Tempo BPM 上限
 // - `recover_track`：恢复已删除音轨对话框
 // - `document_sync`：新建/恢复音轨后 document 同步与 PPQ 保存链路
+// - `deferred_remote_ops`：远端音符操作与本地编辑临界区串行化（防索引漂移）
+mod deferred_remote_ops;
 mod document_sync;
 mod handler_behavior;
 mod piano_roll;
 mod recover_track;
+mod selection_drift;
+mod track_order;
 mod velocity;
 
 fn create_root() -> Root {

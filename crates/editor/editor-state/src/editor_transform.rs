@@ -5,33 +5,32 @@
 //!
 //! 2026-08 单一权威源改造：直接操作 document 当前轨（NoteEvent）。
 
-use std::collections::HashSet;
-
 use crate::EditorData;
 use crate::editor_state::editor_data::CollabTransformSyncEntry;
+use crate::editor_state::selection_set::SelectionSet;
 use lumino_note_core::midi_types::VelocityPoint;
 
 /// 音符变换操作 trait
 pub trait EditorTransform {
     /// 垂直翻转选中音符
-    fn flip_vertical(&mut self, selected: &HashSet<usize>, max_key_index: f32) -> usize;
+    fn flip_vertical(&mut self, selected: &SelectionSet, max_key_index: f32) -> usize;
 
     /// 水平翻转选中音符
-    fn flip_horizontal(&mut self, selected: &HashSet<usize>, axis_tick: f32) -> usize;
+    fn flip_horizontal(&mut self, selected: &SelectionSet, axis_tick: f32) -> usize;
 
     /// 移调选中音符（或全部音符）
-    fn transpose(&mut self, selected: &HashSet<usize>, semitones: i16) -> usize;
+    fn transpose(&mut self, selected: &SelectionSet, semitones: i16) -> usize;
 
     /// 变速选中音符（或全部音符）
-    fn apply_speed_change(&mut self, selected: &HashSet<usize>, speed_factor: f32) -> usize;
+    fn apply_speed_change(&mut self, selected: &SelectionSet, speed_factor: f32) -> usize;
 
     /// 构建力度点
     fn build_velocity_points(&self) -> Vec<VelocityPoint>;
 }
 
 impl EditorTransform for EditorData {
-    fn flip_vertical(&mut self, selected: &HashSet<usize>, max_key_index: f32) -> usize {
-        let selected_indices: Vec<usize> = selected.iter().copied().collect();
+    fn flip_vertical(&mut self, selected: &SelectionSet, max_key_index: f32) -> usize {
+        let selected_indices: Vec<usize> = selected.iter().collect();
         if selected_indices.is_empty() {
             return 0;
         }
@@ -81,13 +80,15 @@ impl EditorTransform for EditorData {
         modified
     }
 
-    fn flip_horizontal(&mut self, selected: &HashSet<usize>, axis_tick: f32) -> usize {
-        let selected_indices: Vec<usize> = selected.iter().copied().collect();
+    fn flip_horizontal(&mut self, selected: &SelectionSet, axis_tick: f32) -> usize {
+        let selected_indices: Vec<usize> = selected.iter().collect();
         if selected_indices.is_empty() {
             return 0;
         }
         self.push_history();
         let mut modified = 0;
+        let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reorder_ranges = None;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         if let Some(track) = self
@@ -108,25 +109,34 @@ impl EditorTransform for EditorData {
                         note.start_tick = new_tick_u;
                         transitions.push((old, *note));
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
+            // 镜像反转时间顺序 → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            self.record_update_ranges(&selected_indices);
+            if let Some(ranges) = reorder_ranges {
+                // 重排：按受影响闭区间增量更新（替代全量重建）
+                self.push_reorder_ranges_events(&ranges);
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }
         modified
     }
 
-    fn transpose(&mut self, selected: &HashSet<usize>, semitones: i16) -> usize {
+    fn transpose(&mut self, selected: &SelectionSet, semitones: i16) -> usize {
         let notes_len = self.current_track_note_count();
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
         } else {
-            selected.iter().copied().collect()
+            selected.iter().collect()
         };
         if indices.is_empty() {
             return 0;
@@ -161,7 +171,7 @@ impl EditorTransform for EditorData {
         modified
     }
 
-    fn apply_speed_change(&mut self, selected: &HashSet<usize>, speed_factor: f32) -> usize {
+    fn apply_speed_change(&mut self, selected: &SelectionSet, speed_factor: f32) -> usize {
         let notes_len = self.current_track_note_count();
         if notes_len == 0 {
             return 0;
@@ -169,7 +179,7 @@ impl EditorTransform for EditorData {
         let indices: Vec<usize> = if selected.is_empty() {
             (0..notes_len).collect()
         } else {
-            let mut v: Vec<usize> = selected.iter().copied().collect();
+            let mut v: Vec<usize> = selected.iter().collect();
             v.sort();
             v
         };
@@ -186,6 +196,8 @@ impl EditorTransform for EditorData {
         }
         self.push_history();
         let mut modified = 0;
+        let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reorder_ranges = None;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         const MIN_LEN: f32 = 1.0;
@@ -211,13 +223,22 @@ impl EditorTransform for EditorData {
                         note.end_tick = new_end_u.max(new_tick_u.saturating_add(1));
                         transitions.push((old, *note));
                         modified += 1;
+                        modified_indices.push(note_idx);
                     }
                 }
             }
+            // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
         self.push_collab_transform_transitions(transitions);
         if modified > 0 {
-            self.record_update_ranges(&indices);
+            if let Some(ranges) = reorder_ranges {
+                // 重排：按受影响闭区间增量更新（替代全量重建）
+                self.push_reorder_ranges_events(&ranges);
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }
@@ -258,6 +279,9 @@ impl EditorData {
         new: lumino_midi_model::NoteEvent,
         track: usize,
     ) {
+        if !self.collab_sync_enabled() {
+            return;
+        }
         self.pending_collab_transform_sync.push((
             false,
             old.id,
@@ -286,6 +310,9 @@ impl EditorData {
     /// 故开放此批量入口。元组语义与 `pending_collab_transform_sync` 完全一致：
     /// `(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, track_index)`。
     pub fn push_collab_transform_entries(&mut self, entries: Vec<CollabTransformSyncEntry>) {
+        if !self.collab_sync_enabled() {
+            return;
+        }
         self.pending_collab_transform_sync.extend(entries);
     }
 

@@ -84,8 +84,12 @@ impl Editor {
                         "框选结束，选中 {} 个音符",
                         self.editor_state.interaction.selected_notes.len()
                     );
-                    // 广播本地选择变更（供协作对端高亮 + first-writer-wins 冲突判定）
-                    self.emit_local_selection_changed(true);
+                    // 广播本地选择变更（供协作对端高亮 + first-writer-wins 冲突判定）。
+                    // 协作未连接时跳过：消费端 `is_connected` 会短路丢弃，而指纹构建
+                    // （百万级选中 ~100ms）纯浪费。
+                    if self.editor_state.data.collab_sync_enabled() {
+                        self.emit_local_selection_changed(true);
+                    }
                 }
             }
             EditState::Drawing {
@@ -189,6 +193,8 @@ impl Editor {
                 let delta_tick = last_tick - origin_tick;
                 if delta_tick != 0.0 {
                     let selected = self.get_selected_indices();
+                    // 主选择漂移防护：拉伸左边缘可越过未选中音符 → 索引位移
+                    let identity = self.capture_selection_identity();
                     if let Some(track) =
                         self.editor_state.data.document.as_mut().and_then(|doc| {
                             doc.track_notes_mut(self.editor_state.data.current_track)
@@ -201,7 +207,16 @@ impl Editor {
                             track,
                         );
                     }
-                    self.editor_state.data.record_update_ranges(&selected);
+                    // 越过邻居 → 恢复「按 start_tick 升序」不变式（二分查询依赖）；
+                    // 重排时按受影响闭区间增量更新（替代全量重建）
+                    if !self
+                        .editor_state
+                        .data
+                        .restore_current_track_sorted_incremental(&selected)
+                    {
+                        self.editor_state.data.record_update_ranges(&selected);
+                    }
+                    self.remap_selection_by_identity(&identity);
                 }
                 self.mark_notes_changed();
             }
@@ -238,6 +253,8 @@ impl Editor {
         let v = &self.editor_state.view;
         // 默认音符长度优先使用上次放置的长度，其次使用精度设置的默认长度
         let effective_default_length = v.last_note_length.unwrap_or(v.default_note_length);
+        // 主选择漂移防护：插入位移既有索引，先捕获选中身份
+        let selection_identity = self.capture_selection_identity();
         if let Some(note) = self.editor_state.data.finish_drawing(
             start_tick,
             key,
@@ -245,6 +262,7 @@ impl Editor {
             v.snap_precision,
             effective_default_length,
         ) {
+            self.remap_selection_by_identity(&selection_identity);
             // 保存本次放置的音符长度，作为下次预览和放置的默认长度
             self.editor_state.view.set_last_note_length(note.length);
             self.emit_note_added_event(&note);

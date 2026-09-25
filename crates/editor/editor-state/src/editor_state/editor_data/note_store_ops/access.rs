@@ -1,7 +1,7 @@
-//! NoteStore 状态查询与迭代访问器（降级兼容层）
+//! 音符只读视图访问器（NoteStore 兼容层清理后的残留子集）
 //!
-//! NoteStore 已删除，访问器直接遍历 document 当前轨（NoteEvent → NoteView 转换）。
-//! 保留签名兼容下游（ui-editor / ui）调用。
+//! `NoteStore` 已删除，访问器直接遍历 document 当前轨（NoteEvent → NoteView 转换）。
+//! 无生产调用方的 `for_each_note_view` 已在 2026-09 死路径清理中删除。
 
 use super::super::EditorData;
 
@@ -17,24 +17,5 @@ impl EditorData {
                 velocity: note.velocity,
                 channel: note.channel,
             })
-    }
-
-    /// 遍历所有音符的 NoteView（从 document 当前轨转换）
-    pub fn for_each_note_view(
-        &self,
-        mut f: impl FnMut(usize, lumino_note_core::note_store::NoteView),
-    ) {
-        for (note_idx, note) in self.current_track_notes().iter().enumerate() {
-            f(
-                note_idx,
-                lumino_note_core::note_store::NoteView {
-                    tick: note.start_tick as f32,
-                    key: note.key as u16,
-                    length: (note.end_tick - note.start_tick) as f32,
-                    velocity: note.velocity,
-                    channel: note.channel,
-                },
-            );
-        }
     }
 }

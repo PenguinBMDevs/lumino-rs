@@ -365,6 +365,9 @@ impl Root {
             self.editor.clear_notes_changed();
         }
 
+        // 补放本地编辑临界区期间延迟的远端音符操作（每帧一次；临界区结束后应用）
+        self.drain_deferred_remote_ops();
+
         // 清理过期 Toast（每帧调用，低成本 O(N) retain）
         self.toast.cleanup_expired(Instant::now());
 

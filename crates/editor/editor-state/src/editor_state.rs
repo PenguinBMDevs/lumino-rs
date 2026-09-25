@@ -25,6 +25,7 @@ pub mod interaction_ops;
 pub mod interaction_state;
 pub mod line_tool;
 pub mod note_grouping;
+pub mod selection_set;
 pub mod shape_tool;
 pub mod text_tool;
 pub mod viewport;
@@ -46,11 +47,10 @@ pub use interaction_state::{
 pub use line_tool::{
     BezierAnchor, HandleSide, LinePath, LineToolInteraction, LineToolState, PathSnapshot,
 };
+pub use selection_set::SelectionSet;
 pub use shape_tool::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
 };
-
-use std::collections::HashSet;
 
 use lumino_core::Tool;
 use lumino_core::storage::config::AutoScrollConfig;
@@ -231,7 +231,7 @@ impl EditorState {
         start_key: u16,
         current_tick: f32,
         current_key: u16,
-    ) -> HashSet<usize> {
+    ) -> SelectionSet {
         self.data
             .compute_selection(start_tick, start_key, current_tick, current_key)
     }

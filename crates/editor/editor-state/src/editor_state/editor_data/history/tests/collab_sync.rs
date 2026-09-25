@@ -11,6 +11,7 @@ use lumino_note_core::history::CreateOp;
 #[test]
 fn test_undo_redo_populates_collab_move_sync() {
     let mut data = make_data_with_notes();
+    data.set_collab_sync_enabled(true);
     let ops = data.move_ops_from_drag_state(&{
         let mut bv = BitVec::from_elem(3, false);
         bv.set(0, true);
@@ -64,6 +65,7 @@ fn test_undo_redo_populates_collab_move_sync() {
 #[test]
 fn test_undo_redo_create_populates_collab_create_sync() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
+    data.set_collab_sync_enabled(true);
     // 模拟「创建」一个位于 (100, 72) 的新音符（携带真实全局 id，等同 finish_drawing 分配）
     let op = CreateOp {
         track_id: 0,

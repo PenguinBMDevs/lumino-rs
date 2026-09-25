@@ -91,20 +91,30 @@ fn test_async_commit_preserves_note_length() {
         std::thread::sleep(std::time::Duration::from_millis(1));
     };
     assert_eq!(modified, 1);
-    // 右移 100：tick 0 → 100，长度必须保持
-    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
-    assert_eq!(view.tick, 100.0);
-    assert_eq!(view.length, 1.0, "移动后长度必须保持 1.0");
+    // 右移 100：tick 0 → 100（越过 10/20 → 重排为 10/20/100），长度必须保持。
+    // 按 tick 定位（重排后索引变化，不再固定索引 0）。
+    let view = data
+        .track_notes(1)
+        .iter()
+        .find(|n| n.start_tick == 100)
+        .expect("被移动音符应存在");
+    assert_eq!(view.length() as f32, 1.0, "移动后长度必须保持 1.0");
     // undo 恢复原位置，长度同样保持
     assert!(data.undo());
-    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
-    assert_eq!(view.tick, 0.0);
-    assert_eq!(view.length, 1.0, "undo 后长度必须保持 1.0");
+    let view = data
+        .track_notes(1)
+        .iter()
+        .find(|n| n.start_tick == 0)
+        .expect("undo 后被移动音符应回到 tick 0");
+    assert_eq!(view.length() as f32, 1.0, "undo 后长度必须保持 1.0");
     // redo 再次应用，长度依旧保持
     assert!(data.redo());
-    let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
-    assert_eq!(view.tick, 100.0);
-    assert_eq!(view.length, 1.0, "redo 后长度必须保持 1.0");
+    let view = data
+        .track_notes(1)
+        .iter()
+        .find(|n| n.start_tick == 100)
+        .expect("redo 后被移动音符应存在");
+    assert_eq!(view.length() as f32, 1.0, "redo 后长度必须保持 1.0");
 }
 
 #[test]
@@ -112,8 +122,7 @@ fn test_async_commit_zero_delta_is_noop() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 2,
+        ids: vec![],
         delta_tick: 0,
         delta_key: 0,
         seq: 0,
@@ -128,13 +137,25 @@ fn test_async_commit_zero_delta_is_noop() {
     assert!(!data.has_pending_commit());
 }
 
+/// 空 ops（无选中拖动）应直接 no-op：不建立 pending，也不推入空 MoveOp 历史。
+#[test]
+fn test_async_commit_empty_ops_is_noop() {
+    let mut data = make_data_with_notes();
+    assert!(
+        !data
+            .apply_move_ops_async(Vec::new(), 127)
+            .expect("空 ops 提交应成功返回 false")
+    );
+    assert!(!data.has_pending_commit());
+    assert!(!data.can_undo(), "不得因空提交产生可撤销历史");
+}
+
 #[test]
 fn test_async_commit_rejects_concurrent() {
     let mut data = make_data_with_notes();
     let ops1 = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
@@ -143,8 +164,7 @@ fn test_async_commit_rejects_concurrent() {
     }];
     let ops2 = vec![MoveOp {
         track_id: 1,
-        range_start: 1,
-        range_end: 2,
+        ids: vec![2],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
@@ -163,8 +183,7 @@ fn test_poll_async_commit_returns_none_while_pending() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 100,
         delta_key: 0,
         seq: 0,
@@ -194,8 +213,7 @@ fn test_cancel_async_commit() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        range_start: 0,
-        range_end: 1,
+        ids: vec![1],
         delta_tick: 10,
         delta_key: 0,
         seq: 0,
@@ -212,5 +230,78 @@ fn test_cancel_async_commit() {
     assert_eq!(
         data.get_note_view(0).expect("第 1 个音符视图应存在").tick,
         0.0
+    );
+}
+
+/// 回归：异步批量提交就地改 tick，移动跨过其它音符后必须恢复升序
+/// （二分查询依赖；失序会让渲染/命中漏检音符）。
+#[test]
+fn test_async_commit_restores_sorted_order() {
+    let mut data = make_data_with_notes();
+    // 把首个音符（tick 0）移到 30（越过 10/20）
+    let ops = vec![MoveOp {
+        track_id: 1,
+        ids: vec![1],
+        delta_tick: 30,
+        delta_key: 0,
+        seq: 0,
+        original_ticks: vec![0.0],
+        original_keys: vec![60],
+    }];
+    assert!(
+        data.apply_move_ops_async(ops, 127)
+            .expect("异步移动提交应成功")
+    );
+    let modified = loop {
+        if let Some(result) = data.poll_async_commit() {
+            break result.expect("异步提交应成功");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    };
+    assert_eq!(modified, 1);
+    let ticks: Vec<u32> = data.track_notes(1).iter().map(|n| n.start_tick).collect();
+    assert_eq!(ticks, vec![10, 20, 30], "异步提交后必须保持升序不变式");
+    // 重排 → 按受影响闭区间增量更新（替代全量重建）
+    assert!(
+        !data.note_delta_dirty,
+        "重排必须增量更新（受影响区间），不得触发全量重建"
+    );
+    assert_eq!(
+        data.note_delta_events.len(),
+        1,
+        "重排应发出 1 条区间更新事件（区间外内容不变）"
+    );
+}
+
+/// 无重排（竖直移动，tick 不变）→ 保持区间事件快路径，不触发全量重建。
+#[test]
+fn test_async_commit_no_reorder_keeps_range_events() {
+    let mut data = make_data_with_notes();
+    let ops = vec![MoveOp {
+        track_id: 1,
+        ids: vec![1],
+        delta_tick: 0,
+        delta_key: 5,
+        seq: 0,
+        original_ticks: vec![0.0],
+        original_keys: vec![60],
+    }];
+    assert!(
+        data.apply_move_ops_async(ops, 127)
+            .expect("异步移动提交应成功")
+    );
+    let modified = loop {
+        if let Some(result) = data.poll_async_commit() {
+            break result.expect("异步提交应成功");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    };
+    assert_eq!(modified, 1);
+    let ticks: Vec<u32> = data.track_notes(1).iter().map(|n| n.start_tick).collect();
+    assert_eq!(ticks, vec![0, 10, 20], "tick 未变，顺序不变");
+    assert!(!data.note_delta_dirty, "无重排应走区间事件（非全量重建）");
+    assert!(
+        !data.note_delta_events.is_empty(),
+        "应记录 UpdateRange 事件"
     );
 }

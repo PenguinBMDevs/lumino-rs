@@ -16,8 +16,9 @@ impl EditorData {
         }
 
         let mut modified = 0usize;
-        // 记录实际被修改的索引（主音轨增量事件：等长 UpdateRange）
+        // 记录实际被修改的索引（主音轨增量事件：等价 UpdateRange）
         let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reorder_ranges = None;
 
         if let Some(track) = self
             .document
@@ -44,11 +45,20 @@ impl EditorData {
                     }
                 }
             }
+            // 就地改 tick 破坏「按 start_tick 升序」不变式（window_range/
+            // position_of_id 二分依赖，破坏后渲染/命中会漏检音符）→ 立即恢复，
+            // 并取回受影响闭区间（区间外内容不变 → 增量更新，无全量重建）。
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
 
         if modified > 0 {
-            // 增量对账：记录事件（内部 mark 置 dirty 后清除）
-            self.record_update_ranges_streamed(&modified_indices);
+            if let Some(ranges) = reorder_ranges {
+                // 顺序已变：旧索引区间事件失效 → 按受影响闭区间增量更新
+                self.push_reorder_ranges_events(&ranges);
+            } else {
+                // 增量对账：记录事件（内部 mark 置 dirty 后清除）
+                self.record_update_ranges_streamed(&modified_indices);
+            }
         }
         modified
     }
@@ -75,15 +85,17 @@ impl EditorData {
         };
         let length = length.max(snap_precision);
         let note = Note::new(tick, key, length);
-        if self.insert_note(self.current_track, note.clone()) {
+        let inserted_id = self.insert_note_with_id(self.current_track, note.clone());
+        if let Some(id) = inserted_id {
             // 增量、极简操作日志：每 op 记录单个音符（20 字节）替代整轨快照克隆。
             // 合并窗口语义不变（300ms 内连续放置合并为一条 CreateEntry），
             // 但 undo/redo 恢复是 O(op 数) 精确位置操作，与音符总量解耦——
             // 1600W 音符工程铅笔绘制不再触发整轨快照（原 `push_history_mergeable` 路径
             // 每条都 `..top.clone()` 复制整个 EditorSnapshot）。
+            // 关键：CreateOp 记录分配后的真实 id，redo 原样重插（身份稳定）。
             let op = CreateOp {
                 track_id: self.current_track as u32,
-                note: super::accessors::note_to_event(note.clone()),
+                note: super::accessors::note_to_event(note.clone()).with_id(id),
             };
             let merged = self.push_note_create(vec![op]);
             if merged {
@@ -92,6 +104,9 @@ impl EditorData {
         }
         self.mark_current_track_changed();
         tracing::debug!("编辑器: 已保存 1 个音符到音轨 {}", self.current_track);
-        Some(note)
+        Some(match inserted_id {
+            Some(id) => note.with_id(id),
+            None => note,
+        })
     }
 }

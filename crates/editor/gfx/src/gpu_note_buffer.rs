@@ -15,16 +15,24 @@ pub mod types;
 ///
 /// 事件级增量优化（2026-08-05）：黑乐谱（单轨海量音符）场景下，
 /// 旧协议只能整轨全量重传。新协议携带音轨边界 + 单音轨增量替换：
+/// - `BeginSession`：全量会话开始（清空段表并重置计数；空文档会话也生效）
 /// - `Reserve`：全量会话前预分配容量（2026-08-06：消除流式 append 的 2×
 ///   倍增余量，2.9 亿音符节省 ~4GB GPU 显存）
 /// - `Chunk`：全量会话数据块（携带 track_id，WGPU 侧据此构建音轨段表）
-/// - `Done`：全量会话结束（finish + 清空段表）
+/// - `Done`：全量会话结束（finish + 保留段表）
+/// - `TrackLayout`：文档轨数变化（新增/删除音轨）→ 增量增删段表，不重建既有轨
 /// - `TrackDelta`：单音轨整段替换（等长 = 音符级增量；变长 = GPU 内部搬移后续段）
+/// - `TrackRemoveRanges`：单音轨区间级删除（批量删除增量路径，免整轨重传）
 /// - `SetViewState`：切轨/静音变化（2026-08-06 统一全量渲染：只更新 ViewState
 ///   uniform，GPU 音符数据零重传）
 /// - `PreviewInstances`：预览音符（Drawing/hover/i2m）实例替换（独立预览渲染器）
 #[derive(Debug)]
 pub enum OnionSkinStreamMsg {
+    /// 全量会话开始：清空段表 + 重置实例计数（后续 `Chunk` 流构建新段表）
+    ///
+    /// 显式化会话边界：即使文档为空（无任何 `Chunk`）也必须清空段表，
+    /// 否则旧文档的段表残留，增量消息会误命中陈旧段。
+    BeginSession,
     /// 全量会话前预分配实例容量（避免流式 append 2× 倍增的容量余量）
     Reserve {
         /// 预分配的实例总容量
@@ -39,12 +47,35 @@ pub enum OnionSkinStreamMsg {
     },
     /// 全量会话结束（WGPU 侧 finish_streaming_upload + 重置段表）
     Done,
+    /// 文档轨数变化（新增/删除音轨）：增量增删段表，**不重建既有轨**
+    ///
+    /// - 增长：为 `segments.len()..track_count` 追加零长段（offset = 当前实例数，
+    ///   无 GPU 数据搬移）
+    /// - 缩短：移除尾部段的实例区间（GPU 搬移一次）+ 截断段表
+    ///
+    /// UI 侧在轨数指纹变化时发送；新增轨的内容随后由 `TrackDelta` 补齐。
+    TrackLayout {
+        /// 文档当前音轨总数（段表应达到的长度）
+        track_count: usize,
+    },
     /// 单音轨增量替换：该音轨段整体替换为新内容
     TrackDelta {
         /// 被替换的音轨 id
         track_id: usize,
-        /// 该音轨段的新实例列表
-        instances: Vec<crate::NoteInstance>,
+        /// 该音轨段的新实例列表（分片按序拼接；大轨并行构建后免二次拷贝）
+        parts: Vec<Vec<crate::NoteInstance>>,
+    },
+    /// 单音轨区间级删除（批量删除增量路径）：只删该音轨段内的若干区间，
+    /// 不重传整轨实例（替代 `TrackDelta` 整轨重建，大轨批量删除免全量构建）。
+    ///
+    /// `ranges` 为 `(index, count)` 列表，语义与 `NoteEvent::RemoveAt` 一致：
+    /// `index` 为段内起始索引、`count` 为删除数量；**必须按 index 降序**给出
+    /// （高索引先删，低索引不漂移），各区间针对删除前的段内容。
+    TrackRemoveRanges {
+        /// 被删除区间的音轨 id
+        track_id: usize,
+        /// 段内删除区间（降序，(index, count)）
+        ranges: Vec<(usize, usize)>,
     },
     /// 视图状态更新：当前音轨（track_idx+1）+ 静音音轨集合
     ///

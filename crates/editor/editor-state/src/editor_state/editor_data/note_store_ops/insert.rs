@@ -1,92 +1,13 @@
-//! 批量/单个插入音符操作（降级兼容层）
+//! 批量插入音符并返回已分配 id（NoteStore 兼容层清理后的残留子集）
 //!
-//! NoteStore insert_bulk 热路径已删除，统一走 document insert_note。
-//! 保留签名兼容下游调用。
+//! 无生产调用方的旧签名（`batch_insert_notes` / `_sorted` / `_to_track` /
+//! `push_note`）已在 2026-09 死路径清理中删除；仅保留返回 id 的变体
+//! （粘贴/复制/协作落盘需要真实 id 用于广播）。
 
 use super::super::EditorData;
 use lumino_note_core::note::Note;
 
 impl EditorData {
-    /// 批量插入音符（O(N+M) 归并，单次重建，内存可控）
-    ///
-    /// 旧实现逐条 `insert_note` → N 次 COW 深拷 + N 条 `InsertAt` → GPU N 次搬运，
-    /// 数百音符即 8GB 拷贝/卡顿。本实现一次性 `Vec<NoteEvent>` 归并，
-    /// 峰值仅单块 8MB，`note_delta_dirty=true` 单次全量上传，避免 N 次 GPU 移位。
-    /// 返回插入数。调用方需在调用前 `push_history()`（快照 O(块数) 浅拷）。
-    pub fn batch_insert_notes(&mut self, notes: &[Note]) -> usize {
-        if notes.is_empty() {
-            return 0;
-        }
-        let Some(doc) = self.document.as_mut() else {
-            return 0;
-        };
-        // 零分配转换：Note(f32) → NoteEvent(u32) 批量
-        let events: Vec<lumino_midi_model::NoteEvent> = notes
-            .iter()
-            .map(|n| super::super::accessors::note_to_event(n.clone()))
-            .collect();
-        let inserted = doc.batch_insert_notes(self.current_track, events);
-        if inserted > 0 {
-            // 批量插入索引散布，增量 InsertAt 需 N 次 GPU 搬运 → 直接全量兜底
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
-            self.mark_current_track_changed();
-            // mark_current_track_changed 未置 dirty（Some 时豁免洋葱皮），补置主轨 dirty
-            self.note_delta_dirty = true;
-        }
-        inserted
-    }
-
-    /// 批量插入已排序音符（免排序，O(N+M)）
-    ///
-    /// 前置：`notes` 已按 tick 升序。少一次排序，适合 I2M 放置等已排序路径。
-    pub fn batch_insert_notes_sorted(&mut self, notes: Vec<lumino_note_core::note::Note>) -> usize {
-        if notes.is_empty() {
-            return 0;
-        }
-        let Some(doc) = self.document.as_mut() else {
-            return 0;
-        };
-        let events: Vec<lumino_midi_model::NoteEvent> = notes
-            .into_iter()
-            .map(super::super::accessors::note_to_event)
-            .collect();
-        let inserted = doc.batch_insert_notes_sorted(self.current_track, events);
-        if inserted > 0 {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
-            self.mark_current_track_changed();
-            self.note_delta_dirty = true;
-        }
-        inserted
-    }
-
-    /// 批量插入到指定音轨（O(N+M) 归并，内存可控）
-    ///
-    /// 用于 I2M 放置等多轨批量场景。`notes` 按 tick 归并到 `track_id`，
-    /// 单次重建，单次脏标记。返回插入数。调用方需在调用前 `push_history()`。
-    pub fn batch_insert_notes_to_track(&mut self, track_id: usize, notes: &[Note]) -> usize {
-        if notes.is_empty() {
-            return 0;
-        }
-        let Some(doc) = self.document.as_mut() else {
-            return 0;
-        };
-        let events: Vec<lumino_midi_model::NoteEvent> = notes
-            .iter()
-            .map(|n| super::super::accessors::note_to_event(n.clone()))
-            .collect();
-        let inserted = doc.batch_insert_notes(track_id, events);
-        if inserted > 0 {
-            // 多轨批量：若命中当前轨则主轨需全量，其余轨走洋葱皮增量豁免
-            if track_id == self.current_track {
-                self.note_delta_events.clear();
-                self.note_delta_dirty = true;
-            }
-        }
-        inserted
-    }
-
     /// 批量插入并返回已分配 id（按输入顺序），供粘贴广播免去 `note_id_at` 全轨重扫。
     ///
     /// 消除粘贴路径 O(N·M) 悬崖（N 粘贴 / M 轨已有）。仅当前轨触发主轨全量脏标记。
@@ -103,10 +24,9 @@ impl EditorData {
             .collect();
         let ids = doc.batch_insert_notes_with_ids(self.current_track, events);
         if !ids.is_empty() {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            // 结构性大插入：主轨段重建（TrackDelta），不走全量会话兜底
+            self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
-            self.note_delta_dirty = true;
         }
         ids
     }
@@ -131,21 +51,57 @@ impl EditorData {
             .collect();
         let ids = doc.batch_insert_notes_with_ids(track_id, events);
         if !ids.is_empty() && track_id == self.current_track {
-            self.note_delta_events.clear();
-            self.note_delta_dirty = true;
+            self.mark_main_track_struct_changed();
+            self.mark_current_track_changed();
         }
         ids
     }
 
-    /// 单个音符追加
+    /// 批量插入 **NoteEvent**（须按 `start_tick` 升序）到指定音轨并回传已分配 id。
     ///
-    /// 返回插入的音符数（0 或 1）。调用方需在调用前 `push_history()`。
-    pub fn push_note(&mut self, note: Note) -> usize {
-        if self.insert_note(self.current_track, note) {
+    /// 粘贴热路径专用：解码端直接产出升序 `NoteEvent`（免 `Note` 中间层与二次转换），
+    /// 走免排序单次归并插入（O(N+M)），避免逐块插入对增长中轨道的 O(N·块数) 重复归并。
+    /// **调用方须保证 `events` 已按 `start_tick` 升序**（剪贴板解码天然满足）。
+    /// 仅当 `track_id == current_track` 时触发主轨全量脏标记。
+    pub fn batch_insert_events_to_track_with_ids(
+        &mut self,
+        track_id: usize,
+        events: Vec<lumino_midi_model::NoteEvent>,
+    ) -> Vec<u64> {
+        if events.is_empty() {
+            return Vec::new();
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return Vec::new();
+        };
+        let ids = doc.batch_insert_sorted_notes_with_ids(track_id, events);
+        if !ids.is_empty() && track_id == self.current_track {
+            self.mark_main_track_struct_changed();
             self.mark_current_track_changed();
-            1
-        } else {
-            0
+        }
+        ids
+    }
+
+    /// 批量插入 **NoteEvent**（须按 `start_tick` 升序），不回收 id。
+    ///
+    /// 未连接协作时的粘贴路径专用：省去 N×8B 的 id 列表分配与逐音符收集
+    /// （200W 音符省 ~15MB 与一次遍历）。id 由文档分配器照常分配（身份必需），
+    /// 仅不回传广播列表。仅当 `track_id == current_track` 时触发主轨全量脏标记。
+    pub fn batch_insert_events_to_track(
+        &mut self,
+        track_id: usize,
+        events: Vec<lumino_midi_model::NoteEvent>,
+    ) {
+        if events.is_empty() {
+            return;
+        }
+        let Some(doc) = self.document.as_mut() else {
+            return;
+        };
+        let inserted = doc.batch_insert_notes_sorted(track_id, events);
+        if inserted > 0 && track_id == self.current_track {
+            self.mark_main_track_struct_changed();
+            self.mark_current_track_changed();
         }
     }
 }

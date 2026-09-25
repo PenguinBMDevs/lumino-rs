@@ -1,14 +1,15 @@
-//! 洋葱皮流式上传实现（全量会话 + 事件级增量）
+//! 洋葱皮流式上传实现（全量会话 + 轨布局 + 事件级增量）
 //!
 //! 被父模块 [`super::stream_onion_skin_instances`] 按决策结果调用：
 //! - `stream_onion_skin_full`：全量分块构建所有音轨实例并 send
+//! - `stream_track_layout`：轨数变化 → `TrackLayout` + 新增轨 `TrackDelta`
 //! - `stream_onion_skin_delta`：事件级增量，只构建被编辑音轨并 send `TrackDelta`
 
 use crate::host::Host;
 use lumino_editor_state::EditorData;
 use lumino_gfx::{NoteInstance, OnionSkinStreamMsg, WgpuRenderThread};
 
-use super::{OnionSkinFingerprint, STREAMING_CHUNK_SIZE, onion_border_width};
+use super::{OnionSkinFingerprint, PARALLEL_BUILD_MIN, STREAMING_CHUNK_SIZE, onion_border_width};
 
 impl Host {
     /// 全量流式会话：分块构建**所有音轨**（含当前轨、静音轨）实例并 send
@@ -27,6 +28,9 @@ impl Host {
         wgpu_thread: &WgpuRenderThread,
     ) {
         let data = &self.root.editor.editor_state.data;
+
+        // 显式会话边界：清空段表 + 重置计数（空文档会话也生效，防旧段表残留）
+        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::BeginSession);
 
         // 分块构建 + send 的辅助闭包（每轨末尾必 flush，空块 = 段表占位）
         let mut chunk: Vec<NoteInstance> = Vec::with_capacity(STREAMING_CHUNK_SIZE);
@@ -93,6 +97,36 @@ impl Host {
         );
     }
 
+    /// 轨数变化增量同步：发送 `TrackLayout`（增删段表）+ 新增轨内容。
+    ///
+    /// 增长时为新轨补发 `TrackDelta`（新轨通常为空/少量音符；`apply_track_restored`
+    /// 恢复的音符也在此补齐），既有轨零重建。返回已发送 `TrackDelta` 的音轨 id，
+    /// 供调用方与主轨段重建去重。
+    pub(super) fn stream_track_layout(
+        &self,
+        wgpu_thread: &WgpuRenderThread,
+        track_count: usize,
+        old_count: usize,
+    ) -> Vec<usize> {
+        wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackLayout { track_count });
+
+        let data = &self.root.editor.editor_state.data;
+        let mut sent = Vec::new();
+        for track_id in old_count..track_count {
+            let parts = build_track_instance_parts(data, track_id);
+            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts });
+            sent.push(track_id);
+        }
+
+        tracing::debug!(
+            "[onion-skin] 轨布局同步 {} → {} 段（新增轨内容 {:?}）",
+            old_count,
+            track_count,
+            sent
+        );
+        sent
+    }
+
     /// 事件级增量：只构建被编辑的洋葱皮音轨并 send `TrackDelta`
     /// 黑乐谱核心路径：编辑非主音轨只重传该音轨（等长=音符级增量；
     /// 变长=WGPU 侧 GPU 搬移后续段），不再全量重建。
@@ -107,11 +141,8 @@ impl Host {
         let data = &self.root.editor.editor_state.data;
 
         for &track_id in tracks {
-            let instances = build_track_instances(data, track_id);
-            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta {
-                track_id,
-                instances,
-            });
+            let parts = build_track_instance_parts(data, track_id);
+            wgpu_thread.send_onion_skin_msg(OnionSkinStreamMsg::TrackDelta { track_id, parts });
         }
 
         tracing::debug!(
@@ -123,30 +154,63 @@ impl Host {
     }
 }
 
-/// 构建单音轨的完整 NoteInstance 列表（数据源：document 单一权威源）
+/// 构建单音轨的完整 NoteInstance 列表（分片；数据源：document 单一权威源）
 ///
 /// 2026-08 改造：track_notes 缓存已删除，一律从 `MidiDocument` 读。
 /// 无文档 → 空列表。
-fn build_track_instances(data: &EditorData, track_id: usize) -> Vec<NoteInstance> {
+///
+/// 2026-09 并行构建：大轨（≥ [`PARALLEL_BUILD_MIN`]）按索引区间切分，多线程
+/// `iter_window` 顺序构建后**按序分片返回**（不做二次拼接拷贝）——单轨 3000W
+/// 实例构建实测 ~180ms，是主轨段重建（`TrackDelta`）的主要 CPU 成本。
+/// 小轨返回单分片（调用方语义不变）。
+fn build_track_instance_parts(data: &EditorData, track_id: usize) -> Vec<Vec<NoteInstance>> {
     let color = lumino_extras::palette::current_track_color_f32(track_id);
     // 轨道索引编码进 border_width 高 16 位（稳定深度优先级）
     let border_width = onion_border_width(track_id);
 
-    if let Some(doc) = data.document.as_ref() {
-        let doc_notes = doc.track_notes(track_id);
-        return doc_notes
-            .iter()
-            .map(|ne| {
-                NoteInstance::new(
+    let Some(doc) = data.document.as_ref() else {
+        return Vec::new();
+    };
+    let doc_notes = doc.track_notes(track_id);
+    let total = doc_notes.len();
+    if total == 0 {
+        return Vec::new();
+    }
+
+    if total < PARALLEL_BUILD_MIN {
+        let mut v = Vec::with_capacity(total);
+        for ne in doc_notes.iter() {
+            v.push(NoteInstance::new(
+                ne.start_tick as f32,
+                ne.key,
+                (ne.end_tick - ne.start_tick) as f32,
+                color,
+                border_width,
+            ));
+        }
+        return vec![v];
+    }
+
+    use rayon::prelude::*;
+    let workers = rayon::current_num_threads().max(1);
+    let part = total.div_ceil(workers);
+    (0..workers)
+        .into_par_iter()
+        .map(|w| {
+            let lo = (w * part).min(total);
+            let hi = ((w + 1) * part).min(total);
+            // 精确预分配：iter_window 无 size_hint，逐元素 push 会触发倍增重分配
+            let mut v = Vec::with_capacity(hi.saturating_sub(lo));
+            for (_, ne) in doc_notes.iter_window(lo, hi) {
+                v.push(NoteInstance::new(
                     ne.start_tick as f32,
                     ne.key,
                     (ne.end_tick - ne.start_tick) as f32,
                     color,
                     border_width,
-                )
-            })
-            .collect();
-    }
-
-    Vec::new()
+                ));
+            }
+            v
+        })
+        .collect()
 }

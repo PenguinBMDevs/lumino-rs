@@ -20,6 +20,31 @@ fn main_track_border_width(track_idx: usize) -> u32 {
 /// ghost 拖动可见索引收集的 overscan 因子（与历史可见收集一致）
 const GHOST_OVERSCAN: f32 = 0.5;
 
+/// 单条 `UpdateMany` 消息的实例上限（1M × 16B = 16MB）。
+///
+/// 重排受影响区间可达整轨（如全选量化重排）——分块发送以约束单条消息
+/// 大小与渲染线程瞬时内存；与生产者侧 `REORDER_SPAN_CHUNK`、渲染侧
+/// `GpuNoteBuffer::move_range` 的块大小一致。
+const MAX_UPDATE_SEGMENT: usize = 1 << 20;
+
+/// 将一段连续区间拆分为 ≤ `max_chunk` 的连续块（防超大单消息）。
+///
+/// 返回 `(start_index, instances)` 序列，索引首尾相接、并集 = 原区间。
+fn split_update_chunks(
+    start: usize,
+    instances: Vec<NoteInstance>,
+    max_chunk: usize,
+) -> Vec<(usize, Vec<NoteInstance>)> {
+    if instances.len() <= max_chunk || max_chunk == 0 {
+        return vec![(start, instances)];
+    }
+    instances
+        .chunks(max_chunk)
+        .enumerate()
+        .map(|(offset, chunk)| (start + offset * max_chunk, chunk.to_vec()))
+        .collect()
+}
+
 impl Host {
     /// 更新 WGPU 渲染线程的音符数据（统一全量渲染，2026-08-06）
     ///
@@ -61,10 +86,17 @@ impl Host {
             let mut update_segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
             let flush_update = |segments: &mut Vec<(usize, Vec<NoteInstance>)>| {
                 for (next, instances) in segments.drain(..) {
-                    if !instances.is_empty() {
+                    if instances.is_empty() {
+                        continue;
+                    }
+                    let start = next - instances.len();
+                    // 大区间分块发送：单条消息 ≤ MAX_UPDATE_SEGMENT（防超大消息/瞬时峰值）
+                    for (chunk_start, chunk) in
+                        split_update_chunks(start, instances, MAX_UPDATE_SEGMENT)
+                    {
                         self.send_note_event_to_render_thread(NoteEvent::UpdateMany {
-                            start_index: next - instances.len(),
-                            instances,
+                            start_index: chunk_start,
+                            instances: chunk,
                         });
                     }
                 }
@@ -305,5 +337,42 @@ impl Host {
         }
 
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn inst(tick: f32) -> NoteInstance {
+        NoteInstance::new(tick, 60, 10.0, [1.0, 0.0, 0.0, 1.0], 1)
+    }
+
+    #[test]
+    fn test_split_update_chunks_contiguous_and_bounded() {
+        // 5 个实例、每块 ≤ 2 → 3 块（2/2/1），索引首尾相接、并集 = 原区间
+        let instances: Vec<NoteInstance> = (0..5).map(|i| inst(i as f32)).collect();
+        let chunks = split_update_chunks(100, instances, 2);
+        assert_eq!(chunks.len(), 3);
+        assert_eq!(chunks[0].0, 100);
+        assert_eq!(chunks[0].1.len(), 2);
+        assert_eq!(chunks[1].0, 102);
+        assert_eq!(chunks[1].1.len(), 2);
+        assert_eq!(chunks[2].0, 104);
+        assert_eq!(chunks[2].1.len(), 1);
+        let ticks: Vec<f32> = chunks
+            .iter()
+            .flat_map(|(_, c)| c.iter().map(|n| n.start_length[0]))
+            .collect();
+        assert_eq!(ticks, vec![0.0, 1.0, 2.0, 3.0, 4.0], "内容顺序必须保持");
+    }
+
+    #[test]
+    fn test_split_update_chunks_small_keeps_single_message() {
+        let instances: Vec<NoteInstance> = (0..2).map(|i| inst(i as f32)).collect();
+        let chunks = split_update_chunks(7, instances, 1024);
+        assert_eq!(chunks.len(), 1, "小负载不拆分");
+        assert_eq!(chunks[0].0, 7);
+        assert_eq!(chunks[0].1.len(), 2);
     }
 }

@@ -68,7 +68,8 @@ impl Editor {
     ) -> usize {
         let mut deleted_count = 0usize;
         for track_idx in tracks_to_clean {
-            // 2026-08 单一权威源：先从 document 收集命中索引，再降序逐个删除
+            // 2026-08 单一权威源：先从 document 收集命中索引，再区间归并删除
+            // （连续删除段合并为单条事件；逐音符事件会退化为 K 次 GPU 尾部搬移）
             let indices: Vec<usize> = self
                 .editor_state
                 .data
@@ -78,11 +79,10 @@ impl Editor {
                 .filter(|(_, note)| super::helpers::note_event_in_rect(note, tick_start, tick_end))
                 .map(|(i, _)| i)
                 .collect();
-            for idx in indices.into_iter().rev() {
-                if self.editor_state.data.remove_note(track_idx, idx).is_some() {
-                    deleted_count += 1;
-                }
-            }
+            deleted_count += self
+                .editor_state
+                .data
+                .remove_notes_merged(track_idx, &indices);
         }
         deleted_count
     }

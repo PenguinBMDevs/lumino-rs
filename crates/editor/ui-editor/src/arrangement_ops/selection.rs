@@ -74,17 +74,17 @@ impl Editor {
         let mut current_track_touched = false;
         let mut deleted_count = 0usize;
 
-        for (track_idx, mut indices) in indices_by_track {
+        for (track_idx, indices) in indices_by_track {
             if track_idx == current_track {
                 current_track_touched = true;
             }
-            // 2026-08 单一权威源：索引降序逐个删除 document 音符
-            indices.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in indices {
-                if self.editor_state.data.remove_note(track_idx, idx).is_some() {
-                    deleted_count += 1;
-                }
-            }
+            // 区间归并删除：连续删除段合并为单条事件（当前轨走主轨段内增量，
+            // 非当前轨走 `TrackRemoveRanges` 区间增量），不再逐音符一条事件
+            // （K 次 GPU 尾部搬移 + bind group 重建）。
+            deleted_count += self
+                .editor_state
+                .data
+                .remove_notes_merged(track_idx, &indices);
         }
 
         if deleted_count == 0 {
@@ -123,7 +123,10 @@ impl Editor {
         let affected_tracks: std::collections::HashSet<usize> =
             track_indices.keys().copied().collect();
 
-        let (modified_count, current_track_touched) =
+        // 主选择漂移防护：变速可越过未选中音符 → 当前轨重排会位移主选择索引
+        let selection_identity = self.capture_selection_identity();
+
+        let (modified_count, current_track_touched, current_track_ranges) =
             self.apply_speed_change_internal(track_indices, min_tick, speed_factor);
 
         if modified_count == 0 {
@@ -131,6 +134,12 @@ impl Editor {
             return 0;
         }
 
+        self.remap_selection_by_identity(&selection_identity);
+
+        if let Some(ranges) = &current_track_ranges {
+            // 当前轨重排：按受影响闭区间增量更新（替代全量重建）
+            self.editor_state.data.push_reorder_ranges_events(ranges);
+        }
         if current_track_touched {
             self.mark_notes_changed();
         }
@@ -170,15 +179,16 @@ impl Editor {
     }
 
     /// 执行变速：按 speed_factor 缩放选中音符的 tick 和 length。
-    /// 返回 (modified_count, current_track_touched)。
+    /// 返回 (modified_count, current_track_touched, current_track_ranges)。
     fn apply_speed_change_internal(
         &mut self,
         track_indices: HashMap<usize, Vec<usize>>,
         min_tick: f32,
         speed_factor: f32,
-    ) -> (usize, bool) {
+    ) -> (usize, bool, Option<lumino_midi_model::SortedRestoreRanges>) {
         let current_track = self.editor_state.data.current_track;
         let mut current_track_touched = false;
+        let mut current_track_ranges: Option<lumino_midi_model::SortedRestoreRanges> = None;
         let mut modified_count = 0usize;
         const MIN_LEN: f32 = 1.0;
         // 2026-09 协作修复：收集「旧→新」音符状态用于广播（避免与 notes 可变借用冲突，
@@ -197,6 +207,7 @@ impl Editor {
                 .as_mut()
                 .and_then(|doc| doc.track_notes_mut(*track_idx))
             {
+                let mut modified_indices: Vec<usize> = Vec::new();
                 for &i in indices {
                     if let Some(note) = notes.get_mut(i) {
                         let old = *note;
@@ -209,9 +220,17 @@ impl Editor {
                             note.start_tick = new_start as u32;
                             note.end_tick = note.start_tick + nl as u32;
                             transitions.push((old, *note, *track_idx));
+                            modified_indices.push(i);
                             modified_count += 1;
                         }
                     }
+                }
+                // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
+                // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+                if let Some(ranges) = notes.restore_sorted_ranges(&modified_indices)
+                    && *track_idx == current_track
+                {
+                    current_track_ranges = Some(ranges);
                 }
             }
         }
@@ -222,7 +241,7 @@ impl Editor {
                 .push_collab_transform_transition(old, new, track);
         }
 
-        (modified_count, current_track_touched)
+        (modified_count, current_track_touched, current_track_ranges)
     }
 
     /// 收集变速操作的目标音轨索引和最小 tick。

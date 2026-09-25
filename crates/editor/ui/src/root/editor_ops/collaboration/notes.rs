@@ -1,10 +1,89 @@
 //! 远程音符批量操作（新增/更新/删除/移动）
+//!
+//! **本地编辑临界区串行化**：本地拖动/待提交/异步提交期间，同轨远端结构编辑
+//! 会漂移本地索引引用（`DragState.selected` / `note_index`），导致拖动/提交
+//! 引用错误音符。此类操作入队 `Root::deferred_remote_ops`，待临界区结束后
+//! 按到达顺序补放（`drain_deferred_remote_ops`）。
 
 use crate::root::Root;
 
 impl Root {
+    /// 远端音符操作涉及的音轨集合（含 source/target 轨）
+    fn remote_op_affected_tracks(
+        operation: &lumino_collaboration::types::NoteBatchOperation,
+    ) -> Vec<usize> {
+        let mut tracks: Vec<usize> = operation.notes.iter().map(|n| n.track_index).collect();
+        if let Some(s) = operation.source_track {
+            tracks.push(s);
+        }
+        if let Some(t) = operation.target_track {
+            tracks.push(t);
+        }
+        tracks
+    }
+
     /// 应用远程笔记操作到本地编辑器
+    ///
+    /// 本地编辑临界区（拖动/待提交/异步提交）期间，同轨远端结构编辑入队延迟；
+    /// 其余情况先补放积压、再应用当前操作，保证到达顺序。
     pub fn apply_remote_note_operation(
+        &mut self,
+        operation: &lumino_collaboration::types::NoteBatchOperation,
+    ) {
+        let affected = Self::remote_op_affected_tracks(operation);
+        if self.editor.should_defer_remote_note_ops(&affected) {
+            tracing::info!(
+                "协作: 本地编辑进行中，远端音符操作延迟（涉及音轨 {:?}）",
+                affected
+            );
+            self.deferred_remote_ops.push(operation.clone());
+            return;
+        }
+        // 顺序保证：临界区已结束则先补放积压，再应用当前操作
+        self.drain_deferred_remote_ops();
+        if self.editor.should_defer_remote_note_ops(&affected) {
+            // 补放触发了待提交手势的自动提交 → 重新进入临界区，当前操作继续排队
+            self.deferred_remote_ops.push(operation.clone());
+            return;
+        }
+        self.apply_remote_note_operation_now(operation);
+    }
+
+    /// 补放延迟的远端音符操作（每帧调用，见 `state_update`）。
+    ///
+    /// 状态机（保证与本地编辑临界区串行化）：
+    /// 1. 异步提交进行中 → 等待（其整轨写回会覆盖临界区内的变更）；
+    /// 2. 已松手的待提交拖动/复制 → 立即提交（用户手势已完成），下一帧继续；
+    /// 3. 仍有活跃手势（拖动/绘制/调整/曲线编辑）→ 等待松手；
+    /// 4. 空闲 → 按到达顺序补放全部积压操作。
+    pub(crate) fn drain_deferred_remote_ops(&mut self) {
+        if self.deferred_remote_ops.is_empty() {
+            return;
+        }
+        if self.editor.editor_state.data.has_pending_commit() {
+            return;
+        }
+        if self.editor.has_uncommitted_drag() {
+            let _ = self.editor.commit_pending_drag();
+            return;
+        }
+        if self.editor.has_uncommitted_copy() {
+            let _ = self.editor.commit_pending_copy();
+            return;
+        }
+        if self.editor.is_editing() {
+            // 活跃手势（拖动/绘制/调整/曲线编辑）中：等待结束
+            return;
+        }
+        let ops = std::mem::take(&mut self.deferred_remote_ops);
+        tracing::info!("协作: 补放 {} 个延迟的远端音符操作", ops.len());
+        for op in &ops {
+            self.apply_remote_note_operation_now(op);
+        }
+    }
+
+    /// 立即应用远程笔记操作（不做临界区判定）
+    fn apply_remote_note_operation_now(
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
@@ -12,17 +91,13 @@ impl Root {
 
         // 协作音轨对齐：远端操作引用的音轨索引（含移动/复制的源轨与目标轨）
         // 若本地尚不存在，先补齐对应音轨，避免两方音轨数量不一致时音符错位。
-        let mut tracks_to_ensure: Vec<usize> =
-            operation.notes.iter().map(|n| n.track_index).collect();
-        if let Some(s) = operation.source_track {
-            tracks_to_ensure.push(s);
-        }
-        if let Some(t) = operation.target_track {
-            tracks_to_ensure.push(t);
-        }
-        for t in tracks_to_ensure {
+        for t in Self::remote_op_affected_tracks(operation) {
             self.ensure_collab_track(t);
         }
+
+        // 主选择漂移防护：远端结构编辑（增/删/移）会位移当前轨索引，
+        // 先捕获选中音符身份，应用后按 id 重映射（P3 临界区保护只覆盖手势期间）。
+        let selection_identity = self.editor.capture_selection_identity();
 
         match operation.action {
             NoteAction::Add => self.handle_remote_notes_add(operation),
@@ -33,6 +108,8 @@ impl Root {
                 tracing::debug!("协作: 未处理的笔记操作类型: {:?}", operation.action);
             }
         }
+
+        self.editor.remap_selection_by_identity(&selection_identity);
 
         // 标记音符已变化，重建当前音轨的空间索引
         self.editor.mark_notes_changed();

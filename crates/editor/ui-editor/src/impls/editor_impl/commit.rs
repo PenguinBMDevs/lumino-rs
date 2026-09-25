@@ -44,6 +44,29 @@ impl Editor {
             || self.editor_state.data.has_pending_commit()
     }
 
+    /// 是否有尚未启动异步提交的待提交批量拖动（不含异步提交中的 pending commit）
+    pub fn has_uncommitted_drag(&self) -> bool {
+        self.pending_drag_state.is_some()
+    }
+
+    /// 是否有尚未提交的批量复制（不含异步提交中的 pending commit）
+    pub fn has_uncommitted_copy(&self) -> bool {
+        self.pending_copy_drag_state.is_some()
+    }
+
+    /// 远端音符操作是否应延迟到本地编辑临界区结束后应用。
+    ///
+    /// 本地拖动/待提交/异步提交期间，`DragState.selected`（BitVec）与
+    /// `note_index` 等引用当前轨的**索引**；若此时远端结构编辑（增/删/移/复）
+    /// 落到同一轨，索引漂移会让本地拖动/提交引用错误音符（数据损坏）。
+    /// 因此远端同轨结构编辑需入队延迟（`Root::deferred_remote_ops`），
+    /// 待本地临界区结束（手势松手 / 提交完成）后按到达顺序补放。
+    ///
+    /// `affected_tracks`：远端操作涉及的音轨集合（含 source/target 轨）。
+    pub fn should_defer_remote_note_ops(&self, affected_tracks: &[usize]) -> bool {
+        self.is_editing() && affected_tracks.contains(&self.editor_state.data.current_track)
+    }
+
     /// 丢弃未提交的批量拖动/批量复制（不含异步提交中的 pending commit）
     ///
     /// 图片转 MIDI √ 写入后调用：写入改变了 document 音符数量与顺序，
@@ -128,6 +151,10 @@ impl Editor {
     /// 每个被选中音符都发射一次，携带其**原始**位置（移动前 tick/key）与本次
     /// 拖动的统一偏移，对端据此匹配本地音符并叠加相同偏移完成同步。
     fn broadcast_selection_move(&self, drag_state: &DragState) {
+        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃）。
+        if !self.editor_state.data.collab_sync_enabled() {
+            return;
+        }
         let track_index = self.editor_state.data.current_track;
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
@@ -219,8 +246,9 @@ impl Editor {
         self.mark_notes_changed();
         // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
         // 否则 B 端完全缺失被复制的副本。使用返回的 ids 批量广播，避免 100K 单消息风暴。
+        // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let track = self.editor_state.data.current_track;
-        if !ids.is_empty() {
+        if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
             let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
                 .iter()
                 .zip(ids.iter())
@@ -243,8 +271,12 @@ impl Editor {
     /// 若未完成：返回 `None`。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
         crate::puffin_profiler::poll_async_commit();
+        // 主选择漂移防护：异步写回整轨替换当前轨，先捕获选中身份，
+        // 写回成功后按 id 重映射（批量拖动期间 selected_notes 刻意保留）。
+        let selection_identity = self.capture_selection_identity();
         match self.editor_state.data.poll_async_commit() {
             Some(Ok(modified)) => {
+                self.remap_selection_by_identity(&selection_identity);
                 if modified > 0 {
                     self.mark_notes_changed();
                     tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
@@ -268,8 +300,11 @@ impl Editor {
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
         while self.editor_state.data.has_pending_commit() {
+            // 主选择漂移防护：每次写回整轨替换当前轨，先捕获选中身份
+            let selection_identity = self.capture_selection_identity();
             match self.editor_state.data.poll_async_commit() {
                 Some(Ok(modified)) => {
+                    self.remap_selection_by_identity(&selection_identity);
                     if modified > 0 {
                         self.mark_notes_changed();
                         any_modified = true;

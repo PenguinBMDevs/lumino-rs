@@ -23,9 +23,6 @@ impl MidiDocument {
         new_id
     }
 
-    /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
-    /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
-    /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
     /// 分配一个文档级全局唯一音符 ID（单调、删除不回收）。
     ///
     /// 从 1 起分配（0 保留为未分配哨兵），永不重复，保证跨轨不重名。
@@ -35,29 +32,39 @@ impl MidiDocument {
         id
     }
 
-    /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
-    /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
+    /// 在指定音轨按 start_tick 升序插入一个音符，返回分配/保留的全局唯一 ID。
+    ///
+    /// 若 track_id 越界（音轨不存在）返回 `None`；成功返回 `Some(id)`。
     /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
     ///
     /// 传入音符的 `id == 0`（未分配）时自动分配全局唯一 ID；
-    /// 传入非零 ID（如快照恢复/协作同步）则原样保留，维持稳定身份。
-    pub fn insert_note(&mut self, track_id: usize, mut note: NoteEvent) -> bool {
+    /// 传入非零 ID（如快照恢复/协作同步/redo 回放）则原样保留，维持稳定身份。
+    pub fn insert_note_with_id(&mut self, track_id: usize, mut note: NoteEvent) -> Option<u64> {
         if note.id == NoteEvent::UNASSIGNED_ID {
             note.id = self.allocate_note_id();
         }
-        let Some(track_notes) = self.notes.get_mut(track_id) else {
-            return false;
-        };
+        let id = note.id;
+        let end_tick = note.end_tick;
+        let track_notes = self.notes.get_mut(track_id)?;
         // 分块插入：只移动目标块内元素（O(块内)），满块自动分裂
         track_notes.insert(note);
         // 增量更新 max 缓存（脏时保持脏，查询时惰性重算）
         if let Some(cell) = self.track_max_end_ticks.get(track_id)
             && let Some(cur) = cell.lock().ok().and_then(|g| *g)
-            && note.end_tick > cur
+            && end_tick > cur
         {
-            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(note.end_tick);
+            *cell.lock().unwrap_or_else(|e| e.into_inner()) = Some(end_tick);
         }
-        true
+        Some(id)
+    }
+
+    /// 在指定音轨按 start_tick 升序插入一个音符（保持每轨有序不变式）。
+    /// 若 track_id 越界（音轨不存在）返回 false；成功返回 true。
+    /// 同 start_tick 的音符插到已存在同 tick 音符之后（稳定插入）。
+    ///
+    /// 需要获取分配到的全局唯一 ID 时请用 [`Self::insert_note_with_id`]。
+    pub fn insert_note(&mut self, track_id: usize, note: NoteEvent) -> bool {
+        self.insert_note_with_id(track_id, note).is_some()
     }
 
     /// 确保后续分配的 note id 严格大于 `id`，避免与外来（协作/快照恢复）id 碰撞。
@@ -237,6 +244,22 @@ impl MidiDocument {
         };
         // 保守置脏：被删音符可能是当前 max，查询时惰性重算
         self.invalidate_track_max_tick(track_id);
+        removed
+    }
+
+    /// 批量删除指定音轨的降序区间（单次索引重建，见 `ChunkedList::remove_ranges`）。
+    ///
+    /// `ranges` 为 `(起始索引, 数量)`，需按起始索引降序、互不重叠；
+    /// track_id 越界返回 0。返回实际删除的事件数。
+    pub fn remove_note_ranges(&mut self, track_id: usize, ranges: &[(usize, usize)]) -> usize {
+        let removed = match self.notes.get_mut(track_id) {
+            Some(track_notes) => track_notes.remove_ranges(ranges),
+            None => 0,
+        };
+        if removed > 0 {
+            // 保守置脏：被删区间可能包含当前 max，查询时惰性重算
+            self.invalidate_track_max_tick(track_id);
+        }
         removed
     }
 

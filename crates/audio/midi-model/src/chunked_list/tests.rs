@@ -9,5 +9,6 @@
 mod cow;
 mod insert;
 mod remove;
+mod restore;
 mod util;
 mod window;

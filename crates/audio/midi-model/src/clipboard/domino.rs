@@ -87,6 +87,15 @@ fn build_chunk(id: u8, kind: u8, payload: &[u8]) -> Vec<u8> {
     v
 }
 
+/// 直接向输出缓冲追加单块（免中间 `Vec` 分配）
+#[inline]
+fn push_chunk(out: &mut Vec<u8>, id: u8, kind: u8, payload: &[u8]) {
+    out.push(id);
+    out.push(kind);
+    out.extend_from_slice(&(payload.len() as u32).to_le_bytes());
+    out.extend_from_slice(payload);
+}
+
 fn zlib_decompress(comp: &[u8], expected: usize) -> Result<Vec<u8>, String> {
     let mut dec = ZlibDecoder::new(comp);
     let mut out = Vec::with_capacity(expected.max(64));
@@ -102,7 +111,9 @@ fn zlib_decompress(comp: &[u8], expected: usize) -> Result<Vec<u8>, String> {
 }
 
 fn zlib_compress(raw: &[u8]) -> Result<Vec<u8>, String> {
-    let mut enc = ZlibEncoder::new(Vec::new(), Compression::default());
+    // 剪贴板是交互路径：压缩级别取 fast（level 1）。level 6 对百万级音符的
+    // ~100MB 原始体需 1s+，而剪贴板载荷体积非关键（fast 仍能压到 ~1/10）。
+    let mut enc = ZlibEncoder::new(Vec::new(), Compression::fast());
     enc.write_all(raw)
         .map_err(|e| format!("zlib 压缩写入失败：{e}"))?;
     enc.finish().map_err(|e| format!("zlib 压缩结束失败：{e}"))
@@ -181,40 +192,56 @@ pub fn encode_domino_clipboard(notes: &[NoteEvent]) -> Result<Vec<u8>, String> {
     let eb_inner = parse_chunks(&top[eb_idx].payload)?;
 
     // 去掉模板原有的音符记录，保留其余常量记录
-    let mut new_inner: Vec<Chunk> = eb_inner
+    let mut head: Vec<Chunk> = eb_inner
         .into_iter()
         .filter(|c| !(c.id == 0xD1 && c.kind == 0x07))
         .collect();
 
     // 在第一个「音符之后的常量块」(d9) 之前插入新音符记录
-    let split_at = new_inner
+    let split_at = head
         .iter()
         .position(|c| c.id == 0xD9 && c.kind == 0x07)
-        .unwrap_or(new_inner.len());
-    let tail = new_inner.split_off(split_at);
+        .unwrap_or(head.len());
+    let tail = head.split_off(split_at);
 
-    for n in notes.iter() {
-        let start = n.start_tick;
-        let key = n.key;
-        let vel = n.velocity.min(127);
-        let gate = n.length();
-        let mut rec = Vec::new();
-        rec.extend_from_slice(&build_chunk(0xE9, 0x03, &start.to_le_bytes()));
-        rec.extend_from_slice(&build_chunk(0xD1, 0x07, &[key]));
-        rec.extend_from_slice(&build_chunk(0xD2, 0x07, &[vel]));
-        rec.extend_from_slice(&build_chunk(0xD3, 0x07, &gate.to_le_bytes()));
-        new_inner.push(Chunk {
-            id: 0xD1,
-            kind: 0x07,
-            payload: rec,
-        });
+    // 直接追加到输出缓冲：消除「每音符 4 次 `build_chunk` 小 `Vec` 分配 + `rec` 增长」
+    // （百万级音符下 ~8 次分配/音符 = 分配风暴，实测 3M 音符复制路径中占数秒）。
+    // 单条音符记录：外层 d1/07 包装（模板结构，解码按此层级解析）+ 34 字节子块
+    // e9(10) + d1(7) + d2(7) + d3(10)。
+    let mut eb_payload: Vec<u8> = Vec::with_capacity(
+        (head.len() + tail.len()) * (CHUNK_HDR + 8) + notes.len() * (CHUNK_HDR + 34) + 64,
+    );
+    for c in &head {
+        push_chunk(&mut eb_payload, c.id, c.kind, &c.payload);
     }
-    new_inner.extend(tail);
+    let mut rec = [0u8; 34];
+    for n in notes.iter() {
+        // e9/03：起始 tick（u32 LE）
+        rec[0] = 0xE9;
+        rec[1] = 0x03;
+        rec[2..6].copy_from_slice(&4u32.to_le_bytes());
+        rec[6..10].copy_from_slice(&n.start_tick.to_le_bytes());
+        // d1/07：音高
+        rec[10] = 0xD1;
+        rec[11] = 0x07;
+        rec[12..16].copy_from_slice(&1u32.to_le_bytes());
+        rec[16] = n.key;
+        // d2/07：力度
+        rec[17] = 0xD2;
+        rec[18] = 0x07;
+        rec[19..23].copy_from_slice(&1u32.to_le_bytes());
+        rec[23] = n.velocity.min(127);
+        // d3/07：时值（gate，u32 LE）
+        rec[24] = 0xD3;
+        rec[25] = 0x07;
+        rec[26..30].copy_from_slice(&4u32.to_le_bytes());
+        rec[30..34].copy_from_slice(&n.length().to_le_bytes());
+        push_chunk(&mut eb_payload, 0xD1, 0x07, &rec);
+    }
+    for c in &tail {
+        push_chunk(&mut eb_payload, c.id, c.kind, &c.payload);
+    }
 
-    let eb_payload: Vec<u8> = new_inner
-        .iter()
-        .flat_map(|c| build_chunk(c.id, c.kind, &c.payload))
-        .collect();
     top[eb_idx] = Chunk {
         id: 0xEB,
         kind: 0x03,

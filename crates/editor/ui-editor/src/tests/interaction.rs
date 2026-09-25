@@ -2,8 +2,6 @@
 //!
 //! 2026-08 单一权威源：测试种子经 `test_helpers::seed_notes` 写入 document。
 
-use std::collections::HashSet;
-
 use crate::Editor;
 use crate::note::Note;
 use crate::tests::test_helpers;
@@ -298,7 +296,8 @@ fn test_batch_selection_resize_end_records_delta_events() {
     );
 
     // 选中全部音符并进入选择框右边缘拉伸状态
-    editor.editor_state.interaction.selected_notes = HashSet::from([0, 1]);
+    editor.editor_state.interaction.selected_notes =
+        lumino_editor_state::SelectionSet::from_iter([0, 1]);
     editor.editor_state.interaction.edit_state = crate::EditState::ResizingSelectionEnd {
         origin_tick: 0.0,
         last_tick: 0.0,

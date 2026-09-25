@@ -3,8 +3,7 @@
 //! NoteStore SoA 热路径已删除，统一走 document 当前轨操作。
 //! 保留签名兼容下游调用。
 
-use std::collections::HashSet;
-
+use super::super::super::selection_set::SelectionSet;
 use super::super::EditorData;
 use lumino_note_core::batch_edit::parse_batch_edit_input;
 
@@ -20,7 +19,7 @@ impl EditorData {
     /// - tick 最小为 0.0
     pub fn apply_batch_edit(
         &mut self,
-        selected: &HashSet<usize>,
+        selected: &SelectionSet,
         velocity: &str,
         gate: &str,
         key: &str,
@@ -44,6 +43,7 @@ impl EditorData {
 
         let mut modified = 0usize;
         let mut modified_indices: Vec<usize> = Vec::new();
+        let mut reorder_ranges = None;
         let mut transitions: Vec<(lumino_midi_model::NoteEvent, lumino_midi_model::NoteEvent)> =
             Vec::new();
         if let Some(track) = self
@@ -51,7 +51,7 @@ impl EditorData {
             .as_mut()
             .and_then(|doc| doc.track_notes_mut(self.current_track))
         {
-            for &note_idx in selected {
+            for note_idx in selected {
                 if let Some(note) = track.get_mut(note_idx) {
                     let old = *note;
                     let mut changed = false;
@@ -93,12 +93,20 @@ impl EditorData {
                     }
                 }
             }
+            // tick 表达式（+/-/*//）可越过未选中音符 → 恢复「按 start_tick 升序」不变式
+            // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
+            reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
 
         self.push_collab_transform_transitions(transitions);
 
         if modified > 0 {
-            self.record_update_ranges(&modified_indices);
+            if let Some(ranges) = reorder_ranges {
+                // 重排：按受影响闭区间增量更新（替代全量重建）
+                self.push_reorder_ranges_events(&ranges);
+            } else {
+                self.record_update_ranges(&modified_indices);
+            }
         } else {
             self.history.discard_last();
         }

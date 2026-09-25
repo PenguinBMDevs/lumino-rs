@@ -73,11 +73,16 @@ fn test_sync_track_notes_at_indices_partial() {
     let modified = data.apply_drag_state_streaming(&ds, 127);
     assert_eq!(modified, 1);
 
+    // 99 越过未修改的 20 → 重排为升序 [0, 20, 99]（二分查询依赖）。
+    // 按 tick 定位：未修改音符的 tick 保持不变，仅索引随重排平移。
     let track = data.track_notes(2);
-    assert_eq!(track[0].start_tick as f32, 0.0, "未修改索引保持不变");
-    assert_eq!(track[1].start_tick as f32, 99.0, "修改索引已更新");
-    assert_eq!(track[1].key as u16, 70);
-    assert_eq!(track[2].start_tick as f32, 20.0, "未修改索引保持不变");
+    let ticks: Vec<u32> = track.iter().map(|n| n.start_tick).collect();
+    assert_eq!(ticks, vec![0, 20, 99], "部分修改后必须保持升序");
+    let moved = track
+        .iter()
+        .find(|n| n.start_tick == 99)
+        .expect("被移动音符应存在");
+    assert_eq!(moved.key as u16, 70);
     assert_eq!(data.track_notes_gen, 1);
 }
 

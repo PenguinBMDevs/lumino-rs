@@ -3,7 +3,7 @@
 //! `selected_bounds` 缓存随选中集合变更增量维护，避免后续
 //! `get_selection_box_bounds()` 走 O(N) 全量扫描。
 
-use std::collections::HashSet;
+use lumino_editor_state::SelectionSet;
 
 use super::Editor;
 use crate::Note;
@@ -12,20 +12,10 @@ use crate::RemoteSelectionSet;
 impl Editor {
     /// 向选中集合添加音符，并增量更新选择框边界。
     /// 避免后续 get_selection_box_bounds() 做 O(N) 全量扫描。
-    ///
-    /// 如果 `selection_bitset` 已激活，直接设置对应位（O(1)），无需回退到 HashSet。
     pub fn selection_insert(&mut self, index: usize) {
-        // `selection_bitset` 路径：直接设置位，O(1) 零分配
-        if let Some(ref mut bs) = self.editor_state.interaction.selection_bitset {
-            if bs.get(index) {
-                return; // 音符已选中
-            }
-            bs.set(index);
-        } else {
-            let inserted = self.editor_state.interaction.selected_notes.insert(index);
-            if !inserted {
-                return; // 音符已选中，不需要更新边界
-            }
+        let inserted = self.editor_state.interaction.selected_notes.insert(index);
+        if !inserted {
+            return; // 音符已选中，不需要更新边界
         }
         if let Some(n) = self.editor_state.data.get_note_view(index) {
             let mut bounds = self.selected_bounds.get();
@@ -45,20 +35,10 @@ impl Editor {
     }
 
     /// 从选中集合移除音符，如果被移除的音符在边界上则失效缓存。
-    ///
-    /// 如果 `selection_bitset` 已激活，直接清除对应位（O(1)），无需回退到 HashSet。
     pub fn selection_remove(&mut self, index: &usize) -> bool {
-        // `selection_bitset` 路径：直接清除位，O(1) 零分配
-        if let Some(ref mut bs) = self.editor_state.interaction.selection_bitset {
-            if !bs.get(*index) {
-                return false;
-            }
-            bs.clear_at(*index);
-        } else {
-            let removed = self.editor_state.interaction.selected_notes.remove(index);
-            if !removed {
-                return false;
-            }
+        let removed = self.editor_state.interaction.selected_notes.remove(index);
+        if !removed {
+            return false;
         }
         // 检查被移除的音符是否在边界上，若在则缓存失效
         if let Some(bounds) = self.selected_bounds.get()
@@ -76,37 +56,50 @@ impl Editor {
     }
 
     /// 清空选中集合，并清除选择框边界缓存。
-    ///
-    /// 同时清除 `selection_bitset` 和 `selected_notes`。
     pub fn selection_clear(&mut self) {
-        self.editor_state.interaction.selection_bitset = None;
         self.editor_state.interaction.selected_notes.clear();
         self.selected_bounds.set(None);
     }
 
     /// 替换选中集合，并重建选择框边界缓存。
     ///
-    /// 清空 `selection_bitset`（全量替换不走位向量路径）。
     /// 性能优化：直接扫描新集合重建 selected_bounds，避免首次调用
     /// `get_selection_box_bounds()` 时做 O(N) 兜底扫描。
     /// 对超大选中集（1600W）的首次调用，将 O(N) 从 `get_selection_box_bounds`
     /// 和 `selection_box::draw` 各一次合并为一次，消除双重扫描。
-    pub fn selection_assign(&mut self, new_set: HashSet<usize>) {
-        // 全量替换时清除 bitset
-        self.editor_state.interaction.selection_bitset = None;
+    pub fn selection_assign(&mut self, new_set: SelectionSet) {
         let data = &self.editor_state.data;
         let mut min_t = f32::INFINITY;
         let mut max_te = f32::NEG_INFINITY;
         let mut max_k = u16::MIN;
         let mut min_k = u16::MAX;
         let mut any = false;
-        for &i in new_set.iter() {
-            if let Some(n) = data.get_note_view(i) {
+        let track = data.current_track_notes();
+        // 大选中集（≥ 轨道 1/8）：顺序扫描轨道 + 集合命中，避免逐元素随机
+        // `get_note_view` 在百万级选中集下的缓存未命中；小集合仍逐元素扫描
+        // （避免为少量选中全轨扫描）。
+        if !new_set.is_empty() && new_set.len() * 8 > track.len() {
+            for (i, n) in track.iter().enumerate() {
+                if !new_set.contains(&i) {
+                    continue;
+                }
                 any = true;
-                min_t = min_t.min(n.tick);
-                max_te = max_te.max(n.tick + n.length);
-                max_k = max_k.max(n.key);
-                min_k = min_k.min(n.key);
+                let tick = n.start_tick as f32;
+                let length = (n.end_tick - n.start_tick) as f32;
+                min_t = min_t.min(tick);
+                max_te = max_te.max(tick + length);
+                max_k = max_k.max(n.key as u16);
+                min_k = min_k.min(n.key as u16);
+            }
+        } else {
+            for i in new_set.iter() {
+                if let Some(n) = data.get_note_view(i) {
+                    any = true;
+                    min_t = min_t.min(n.tick);
+                    max_te = max_te.max(n.tick + n.length);
+                    max_k = max_k.max(n.key);
+                    min_k = min_k.min(n.key);
+                }
             }
         }
         self.editor_state.interaction.selected_notes = new_set;
@@ -159,17 +152,30 @@ fn now_ms() -> u64 {
 
 impl Editor {
     /// 计算当前选中音符的指纹列表 `(track_index, tick, key, length)`
+    ///
+    /// 顺序扫描轨道 + 位图命中（免逐索引随机 `get_note_view`：百万级选中下
+    /// 2.8M 次二分随机访问 ~110ms → 顺序扫描 ~25ms）。
     pub fn selected_fingerprints(&self) -> Vec<(usize, f32, u16, f32)> {
         let track = self.editor_state.data.current_track;
-        self.get_selected_indices()
-            .into_iter()
-            .filter_map(|i| {
-                self.editor_state
-                    .data
-                    .get_note_view(i)
-                    .map(|n| (track, n.tick, n.key, n.length))
-            })
-            .collect()
+        let selected = &self.editor_state.interaction.selected_notes;
+        let mut out = Vec::with_capacity(selected.len());
+        for (i, n) in self
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .enumerate()
+        {
+            if selected.contains(&i) {
+                out.push((
+                    track,
+                    n.start_tick as f32,
+                    n.key as u16,
+                    (n.end_tick - n.start_tick) as f32,
+                ));
+            }
+        }
+        out
     }
 
     /// 应用远端用户的选择更新（来自协作 `Selection` 事件）

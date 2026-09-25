@@ -1,6 +1,6 @@
 //! 音符操作测试 —— split / glue / tie
 
-use std::collections::HashSet;
+use crate::SelectionSet as HashSet;
 
 use lumino_note_core::note::Note;
 
@@ -41,7 +41,7 @@ fn test_split_note_at_boundary() {
 fn test_glue_selected_notes_adjacent() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0), Note::new(2.0, 60, 3.0)]);
-    let merged = data.glue_selected_notes(&HashSet::from([0, 1]));
+    let merged = data.glue_selected_notes(&HashSet::from_iter([0, 1]));
     assert_eq!(merged, 1, "should merge one pair");
     assert_eq!(data.current_track_note_count(), 1, "two notes become one");
     let view = data.get_note_view(0).expect("第 1 个音符视图应存在");
@@ -53,7 +53,7 @@ fn test_glue_selected_notes_adjacent() {
 fn test_glue_selected_notes_non_adjacent() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0), Note::new(5.0, 60, 3.0)]);
-    let merged = data.glue_selected_notes(&HashSet::from([0, 1]));
+    let merged = data.glue_selected_notes(&HashSet::from_iter([0, 1]));
     assert_eq!(merged, 0, "non-adjacent notes with gap should not merge");
     assert_eq!(data.current_track_note_count(), 2, "notes unchanged");
 }
@@ -61,7 +61,7 @@ fn test_glue_selected_notes_non_adjacent() {
 #[test]
 fn test_glue_selected_notes_empty_selection() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0)]);
-    assert_eq!(data.glue_selected_notes(&HashSet::new()), 0);
+    assert_eq!(data.glue_selected_notes(&HashSet::default()), 0);
 }
 
 // ── tie_selected_notes 测试 ──
@@ -70,7 +70,7 @@ fn test_glue_selected_notes_empty_selection() {
 fn test_tie_selected_notes_same_key_adjacent() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0), Note::new(3.0, 60, 3.0)]);
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1]));
     assert_eq!(tied, 1, "should tie one pair");
     assert_eq!(data.current_track_note_count(), 2, "notes count unchanged");
     assert_eq!(
@@ -95,7 +95,7 @@ fn test_tie_selected_notes_three_notes() {
             Note::new(8.0, 60, 3.0),
         ],
     );
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1, 2]));
     assert_eq!(tied, 2, "should tie two pairs");
     assert_eq!(
         data.get_note_view(0).expect("第 1 个音符视图应存在").length,
@@ -118,7 +118,7 @@ fn test_tie_selected_notes_three_notes() {
 fn test_tie_selected_notes_different_key_still_ties() {
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0), Note::new(3.0, 61, 3.0)]);
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1]));
     assert_eq!(tied, 1, "different keys should still tie by tick order");
     assert_eq!(
         data.get_note_view(0).expect("第 1 个音符视图应存在").length,
@@ -138,7 +138,7 @@ fn test_tie_selected_notes_overlapping_notes_not_shortened() {
     // Tie 不应缩短 Note 0，因为重叠不算间隙。
     let mut data =
         EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 10.0), Note::new(3.0, 61, 10.0)]);
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1]));
     assert_eq!(tied, 0, "overlapping notes should not be tied");
     assert_eq!(
         data.get_note_view(0).expect("第 1 个音符视图应存在").length,
@@ -155,14 +155,14 @@ fn test_tie_selected_notes_overlapping_notes_not_shortened() {
 #[test]
 fn test_tie_selected_notes_single_note() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0)]);
-    let tied = data.tie_selected_notes(&HashSet::from([0]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0]));
     assert_eq!(tied, 0, "single note cannot tie");
 }
 
 #[test]
 fn test_tie_selected_notes_empty_selection() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 2.0)]);
-    assert_eq!(data.tie_selected_notes(&HashSet::new()), 0);
+    assert_eq!(data.tie_selected_notes(&HashSet::default()), 0);
 }
 
 #[test]
@@ -176,7 +176,7 @@ fn test_tie_selected_notes_mixed_keys() {
             Note::new(9.0, 61, 3.0),
         ],
     );
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2, 3]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1, 2, 3]));
     // All 4 notes sorted by tick: note0→note1→note2→note3
     // 3 ties: note0→note1, note1→note2, note2→note3
     assert_eq!(tied, 3, "should tie all consecutive pairs by tick order");
@@ -221,7 +221,7 @@ fn test_tie_selected_notes_same_tick_group_extends_to_next_tick() {
         ],
     );
 
-    let tied = data.tie_selected_notes(&HashSet::from([0, 1, 2, 3, 4, 5]));
+    let tied = data.tie_selected_notes(&HashSet::from_iter([0, 1, 2, 3, 4, 5]));
     assert_eq!(
         tied, 3,
         "all measure-1 notes should extend to measure-3 start"

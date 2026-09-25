@@ -39,8 +39,7 @@ impl Editor {
         let pending = &self.pending_drag_state;
         let pending_copy = &self.pending_copy_drag_state;
 
-        let has_selection_bitset = self.editor_state.interaction.selection_bitset.is_some();
-        if selected.is_empty() && !has_selection_bitset {
+        if selected.is_empty() {
             return Vec::new();
         }
 
@@ -188,7 +187,7 @@ impl Editor {
             let mut c_max_k = u16::MIN;
             let mut c_min_k = u16::MAX;
 
-            for &i in selected.iter() {
+            for i in selected.iter() {
                 let Some(n) = data.get_note_view(i) else {
                     continue;
                 };
@@ -254,7 +253,7 @@ impl Editor {
 
         puffin::profile_scope!("get_selection_box_rects::fallback");
         // 兜底路径：selected_bounds 失效且非 ghost 时全量扫描
-        for &i in selected.iter() {
+        for i in selected.iter() {
             let Some(n) = data.get_note_view(i) else {
                 continue;
             };

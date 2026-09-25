@@ -12,6 +12,7 @@
 //! 2026-08-06 阶段二拆分（原文件 1192 行 → 按职责分模块）：
 //! - `mutate`：写路径（insert/remove/push_back/分裂/索引重建）
 //! - `query`：只读路径（二分/范围/窗口/值定位）
+//! - `restore`：有序不变式恢复（就地修改 tick 后重排）
 //! - `iter`：跨块窗口迭代器与遍历支持
 //! - `tests`：单元测试
 //!
@@ -24,12 +25,15 @@
 mod iter;
 mod mutate;
 mod query;
+mod remove_ranges;
+mod restore;
 #[cfg(test)]
 mod tests;
 
 use std::sync::Arc;
 
 pub use iter::WindowIter;
+pub use restore::{SortedRestoreRanges, restore_sorted_vec, sorted_locally_in_slice};
 
 /// 单块容量：50 万事件
 pub const EVENT_CHUNK_CAPACITY: usize = 500_000;

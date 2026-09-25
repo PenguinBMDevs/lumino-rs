@@ -102,6 +102,12 @@ pub struct Root {
     pub(crate) i2m_restore_tool: Option<lumino_message::Tool>,
     /// 云存储 UI 状态（连接表单 / 文件浏览）
     pub cloud: crate::state::cloud_state::CloudUiState,
+    /// 本地编辑临界区期间延迟的远端音符操作（防索引漂移；每帧补放）。
+    ///
+    /// 本地拖动/待提交/异步提交期间，远端同轨结构编辑会漂移本地索引引用，
+    /// 导致拖动/提交引用错误音符。`apply_remote_note_operation` 将这些操作入队，
+    /// `drain_deferred_remote_ops` 在临界区结束后按到达顺序补放。
+    pub(crate) deferred_remote_ops: Vec<lumino_collaboration::types::NoteBatchOperation>,
 }
 
 /// Root 构造参数
@@ -165,6 +171,7 @@ impl Root {
                 pending_material_scan: None,
                 i2m_restore_tool: None,
                 cloud: crate::state::cloud_state::CloudUiState::default(),
+                deferred_remote_ops: Vec::new(),
             }
         })
     }

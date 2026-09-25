@@ -16,7 +16,6 @@ use lumino_note_core::note::Note;
 
 pub(crate) mod accessors;
 pub(crate) mod async_commit;
-pub(crate) mod async_commit_streaming;
 mod automation;
 mod construct;
 mod history;
@@ -33,9 +32,13 @@ mod tests_build_points;
 #[cfg(test)]
 mod tests_history;
 #[cfg(test)]
+mod tests_note_delete;
+#[cfg(test)]
 mod tests_note_delta;
 #[cfg(test)]
 mod tests_note_ops;
+#[cfg(test)]
+mod tests_track_order;
 
 /// 协作创建同步条目：`(音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引, is_added)`。
 pub type CollabCreateSyncEntry = (u64, f32, u16, f32, u8, u8, usize, bool);
@@ -103,6 +106,15 @@ pub struct EditorData {
     /// 元组：`(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引)`
     /// `is_add=true` 表示 `LocalNoteAdded`，`false` 表示 `LocalNoteDeleted`。
     pub(crate) pending_collab_transform_sync: Vec<CollabTransformSyncEntry>,
+    /// 协作同步开关（默认关闭）。
+    ///
+    /// `true` 时 undo/redo 与变换类操作会构建 `pending_collab_*` 广播数据
+    /// （快照分支含整轨 O(N) id 对账），供连接中的协作会话消费；
+    /// `false` 时跳过全部广播数据构建——未连接协作时这些数据被消费端
+    /// （Runner `is_connected` 短路）立即丢弃，纯属浪费。
+    ///
+    /// 由上层在协作房间创建/加入时开启、断开/失败时关闭（见 Runner 协作事件处理）。
+    collab_sync_enabled: bool,
     /// 控制器（CC）数据
     pub cc_data: CcData,
     /// 自动化 lane 列表。`Arc` 使撤销快照可 O(1) 共享未修改的 lane；
@@ -129,6 +141,23 @@ pub struct EditorData {
     /// `true` = 渲染层必须全量兜底重建（事件队列不可信）。由 `mark_*` 默认置位，
     /// 事件记录 API 在记录完成后显式清除（见 `record_update_ranges`）。
     pub note_delta_dirty: bool,
+    /// 当前轨**结构性**变化且无段内增量事件（批量插入/删除、undo 整轨替换）。
+    ///
+    /// 与 [`Self::note_delta_dirty`] 的区别：后者重建**所有**音轨的全量会话
+    /// （19.2M 轨粘贴实测 ~1s：CPU 构建 5200W 实例 + ~900MB GPU 上传）；
+    /// 本标记只让渲染层以单轨 `TrackDelta` 重建**当前轨段**
+    /// （同场景 ~200ms：构建 2000W 实例 + ~400MB 上传）。
+    /// 渲染层消费后清零；主轨段内事件增量（`note_delta_events`）优先，二者互斥。
+    pub main_track_struct_dirty: bool,
+    /// 非当前轨的待同步区间删除（批量删除增量路径，UI 层每帧消费）。
+    ///
+    /// 每项 `(track_id, ranges)`：`ranges` 为段内 `(index, count)` 降序列表
+    /// （语义同 [`NoteDeltaEvent::RemoveAt`]），渲染侧据此做区间级删除
+    /// （`TrackRemoveRanges`），**替代整轨 `TrackDelta` 重建**——
+    /// 多轨批量删除不再逐轨全量构建实例（大工程下等于全工程重建）。
+    ///
+    /// 当前轨的区间删除走 `note_delta_events`（主轨段内事件通道），不入此队列。
+    pub pending_track_remove_ranges: Vec<(usize, Vec<(usize, usize)>)>,
     /// 视觉位置 → 文档音轨索引 映射
     ///
     /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
@@ -145,6 +174,13 @@ pub struct EditorData {
     /// 时由 Host 调用 `mark_project_clean` 复位。
     pub modified: bool,
 }
+
+/// 重排受影响区间转发为增量事件时的分块上限（音符数）。
+///
+/// 1M 音符 × 16B（`NoteInstance`）= 16MB/块，与渲染侧设备内搬移块
+/// （`GpuNoteBuffer::move_range` 的 `MOVE_BLOCK`）一致；同时约束
+/// 生产者侧单条 `UpdateRange` 的瞬时内存与消费者侧单条消息大小。
+pub(crate) const REORDER_SPAN_CHUNK: usize = 1 << 20;
 
 /// 主音轨 GPU 增量事件（数据层 → UI 渲染层）
 ///

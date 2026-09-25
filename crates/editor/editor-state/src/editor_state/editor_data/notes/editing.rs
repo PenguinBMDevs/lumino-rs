@@ -1,10 +1,11 @@
 //! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
-use std::collections::HashSet;
+use std::collections::HashMap;
 
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
-use super::super::{CollabTransformSyncEntry, EditorData, NoteDeltaEvent};
+use super::super::super::selection_set::SelectionSet;
+use super::super::{CollabTransformSyncEntry, EditorData};
 use lumino_note_core::note::Note;
 
 impl EditorData {
@@ -40,72 +41,76 @@ impl EditorData {
             velocity,
             channel,
         );
-        self.insert_note(track_idx, left);
-        self.insert_note(track_idx, right);
+        // 插入回传真实 id（替代坐标反查）：undo/redo 与协作广播的身份来源
+        let left_id = self.insert_note_with_id(track_idx, left).unwrap_or(0);
+        let right_id = self.insert_note_with_id(track_idx, right).unwrap_or(0);
         self.mark_current_track_changed();
         // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
-        // id：删原用原音符真实 id；加左右经 note_id_at 反查刚插入音符的真实 id。
-        self.pending_collab_transform_sync.push((
-            false,
-            note_id,
-            note_tick,
-            key as u16,
-            note_length,
-            velocity,
-            channel,
-            track_idx,
-        ));
-        let left_id = self
-            .note_id_at(track_idx, note_tick, key as u16)
-            .unwrap_or(0);
-        self.pending_collab_transform_sync.push((
-            true,
-            left_id,
-            note_tick,
-            key as u16,
-            split_tick - note_tick,
-            velocity,
-            channel,
-            track_idx,
-        ));
-        let right_id = self
-            .note_id_at(track_idx, split_tick, key as u16)
-            .unwrap_or(0);
-        self.pending_collab_transform_sync.push((
-            true,
-            right_id,
-            split_tick,
-            key as u16,
-            note_tick + note_length - split_tick,
-            velocity,
-            channel,
-            track_idx,
-        ));
+        // id：删原用原音符真实 id；左右用 insert_note_with_id 回传的真实 id。
+        // 协作同步关闭时跳过对账（消费端 `is_connected` 会短路丢弃）。
+        if self.collab_sync_enabled {
+            self.pending_collab_transform_sync.push((
+                false,
+                note_id,
+                note_tick,
+                key as u16,
+                note_length,
+                velocity,
+                channel,
+                track_idx,
+            ));
+            self.pending_collab_transform_sync.push((
+                true,
+                left_id,
+                note_tick,
+                key as u16,
+                split_tick - note_tick,
+                velocity,
+                channel,
+                track_idx,
+            ));
+            self.pending_collab_transform_sync.push((
+                true,
+                right_id,
+                split_tick,
+                key as u16,
+                note_tick + note_length - split_tick,
+                velocity,
+                channel,
+                track_idx,
+            ));
+        }
         true
     }
 
     /// 合并选中音符
-    pub fn glue_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
-        let sel: Vec<usize> = selected.iter().copied().collect();
+    pub fn glue_selected_notes(&mut self, selected: &SelectionSet) -> usize {
+        let sel: Vec<usize> = selected.iter().collect();
         if sel.is_empty() {
             return 0;
         }
         let track = self.current_track_notes();
-        let selected_notes: Vec<NoteTuple> = sel
-            .iter()
-            .filter_map(|&note_idx| {
-                track.get(note_idx).map(|note| {
-                    (
-                        note_idx,
-                        note.start_tick as f32,
-                        note.key as u16,
-                        (note.end_tick - note.start_tick) as f32,
-                        note.velocity,
-                        note.channel,
-                    )
-                })
-            })
-            .collect();
+        let mut selected_notes: Vec<NoteTuple> = Vec::with_capacity(sel.len());
+        // 索引 → 全局唯一 id：删除同步记录直接取真实 id（替代坐标反查）
+        // 协作同步关闭时无需构建（避免大选中集的 HashMap 对账开销）。
+        let collab_sync = self.collab_sync_enabled;
+        let mut id_by_index: HashMap<usize, u64> =
+            HashMap::with_capacity(if collab_sync { sel.len() } else { 0 });
+        for &note_idx in &sel {
+            if let Some(note) = track.get(note_idx) {
+                selected_notes.push((
+                    note_idx,
+                    note.start_tick as f32,
+                    note.key as u16,
+                    (note.end_tick - note.start_tick) as f32,
+                    note.velocity,
+                    note.channel,
+                ));
+                if collab_sync {
+                    id_by_index.insert(note_idx, note.id);
+                }
+            }
+        }
         if selected_notes.is_empty() {
             return 0;
         }
@@ -126,35 +131,41 @@ impl EditorData {
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
             // 2026-09 协作修复：合并改变音符数量，先记录每个被合并音符的删除。
-            for nt in group {
-                self.pending_collab_transform_sync.push((
-                    false,
-                    self.note_id_at(self.current_track, nt.1, nt.2).unwrap_or(0),
-                    nt.1,
-                    nt.2,
-                    nt.3,
-                    nt.4,
-                    nt.5,
-                    self.current_track,
-                ));
+            // id 取自收集阶段的索引 → id 映射（不再坐标反查）。
+            if collab_sync {
+                for nt in group {
+                    self.pending_collab_transform_sync.push((
+                        false,
+                        id_by_index.get(&nt.0).copied().unwrap_or(0),
+                        nt.1,
+                        nt.2,
+                        nt.3,
+                        nt.4,
+                        nt.5,
+                        self.current_track,
+                    ));
+                }
             }
             for &idx in &rm_sorted {
                 self.remove_note(self.current_track, idx);
             }
             let merged_note = Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5);
-            self.insert_note(self.current_track, merged_note);
-            // 2026-09 协作修复：添加一个合并后的音符。
-            self.pending_collab_transform_sync.push((
-                true,
-                self.note_id_at(self.current_track, merged_tick, first.2)
-                    .unwrap_or(0),
-                merged_tick,
-                first.2,
-                merged_length,
-                first.4,
-                first.5,
-                self.current_track,
-            ));
+            let merged_id = self
+                .insert_note_with_id(self.current_track, merged_note)
+                .unwrap_or(0);
+            // 2026-09 协作修复：添加一个合并后的音符（id 为插入回传的真实值）。
+            if collab_sync {
+                self.pending_collab_transform_sync.push((
+                    true,
+                    merged_id,
+                    merged_tick,
+                    first.2,
+                    merged_length,
+                    first.4,
+                    first.5,
+                    self.current_track,
+                ));
+            }
             merged += 1;
         }
         self.mark_current_track_changed();
@@ -164,8 +175,8 @@ impl EditorData {
     /// 连奏选中音符：按 tick 排序，填充相邻音符之间的间隙。
     /// 仅在前一个音符的结尾与后一个音符的开始之间有间隙时延长，
     /// 不会缩短重叠的音符。最后一个音符保持不变。
-    pub fn tie_selected_notes(&mut self, selected: &HashSet<usize>) -> usize {
-        let sel: Vec<usize> = selected.iter().copied().collect();
+    pub fn tie_selected_notes(&mut self, selected: &SelectionSet) -> usize {
+        let sel: Vec<usize> = selected.iter().collect();
         if sel.len() < 2 {
             return 0;
         }
@@ -207,6 +218,8 @@ impl EditorData {
         let track_idx = self.current_track;
         // 2026-09 协作修复：连奏延长长度，须在修改后广播「删旧长度 + 加新长度」。
         // `track` 可变借用 self.document，故先收集到本地 Vec 再统一追加，规避借用冲突。
+        // 协作同步关闭时跳过收集。
+        let collab_sync = self.collab_sync_enabled;
         let mut sync_entries: Vec<CollabTransformSyncEntry> = Vec::new();
 
         if let Some(track) = self
@@ -224,26 +237,29 @@ impl EditorData {
                     if let Some(note) = track.get_mut(idx) {
                         let current_length = (note.end_tick - note.start_tick) as f32;
                         if new_length > current_length {
-                            let old_tick = note.start_tick as f32;
-                            let old_key = note.key as u16;
-                            let old_vel = note.velocity;
-                            let old_ch = note.channel;
                             note.end_tick = note.start_tick + new_length as u32;
-                            let new_len = (note.end_tick - note.start_tick) as f32;
-                            sync_entries.push((
-                                false,
-                                note.id,
-                                old_tick,
-                                old_key,
-                                current_length,
-                                old_vel,
-                                old_ch,
-                                track_idx,
-                            ));
-                            sync_entries.push((
-                                true, note.id, old_tick, old_key, new_len, old_vel, old_ch,
-                                track_idx,
-                            ));
+                            if collab_sync {
+                                sync_entries.push((
+                                    false,
+                                    note.id,
+                                    note.start_tick as f32,
+                                    note.key as u16,
+                                    current_length,
+                                    note.velocity,
+                                    note.channel,
+                                    track_idx,
+                                ));
+                                sync_entries.push((
+                                    true,
+                                    note.id,
+                                    note.start_tick as f32,
+                                    note.key as u16,
+                                    (note.end_tick - note.start_tick) as f32,
+                                    note.velocity,
+                                    note.channel,
+                                    track_idx,
+                                ));
+                            }
                             tied += 1;
                         }
                     }
@@ -259,12 +275,13 @@ impl EditorData {
     }
 }
 
-/// 将降序索引列表合并为连续区间的 `RemoveAt` 增量事件（段内增量，按降序下发）。
+/// 将降序索引列表合并为连续区间 `(index, count)`（降序，语义同 `RemoveAt`）。
 ///
-/// `descending` 已由大到小排序。相邻索引差 1 视为同一连续删除段，合并为单条
-/// `RemoveAt { index: 段首(最小索引), count: 段长 }`。降序下发保证 GPU 段内左移时
-/// 高索引先处理、低索引仍有效，与逐音符降序删除语义一致。
-pub(super) fn push_merged_remove_events(events: &mut Vec<NoteDeltaEvent>, descending: &[usize]) {
+/// `descending` 已由大到小排序（且去重）。相邻索引差 1 视为同一连续删除段，
+/// 合并为单条 `(段首(最小索引), 段长)`。降序下发保证 GPU 段内左移时高索引
+/// 先处理、低索引仍有效，与逐音符降序删除语义一致。
+pub(super) fn merge_descending_ranges(descending: &[usize]) -> Vec<(usize, usize)> {
+    let mut ranges = Vec::new();
     let mut i = 0;
     while i < descending.len() {
         let seg_start = descending[i]; // 段内最大索引（降序起点）
@@ -273,11 +290,37 @@ pub(super) fn push_merged_remove_events(events: &mut Vec<NoteDeltaEvent>, descen
             seg_end -= 1;
             i += 1;
         }
-        let count = seg_start - seg_end + 1;
-        events.push(NoteDeltaEvent::RemoveAt {
-            index: seg_end,
-            count,
-        });
+        ranges.push((seg_end, seg_start - seg_end + 1));
         i += 1;
     }
+    ranges
+}
+
+/// 从升序选中位图直接构建**降序**连续区间（免物化 O(K) 索引 Vec 与排序）
+///
+/// 升序遍历命中位，合并相邻索引为连续段，最后整体反转为降序输出
+/// （与 [`merge_descending_ranges`] 输出格式一致，供 `remove_note_ranges` 使用）。
+///
+/// 成本：O(K + 段数)；整轨全选时仅 1 段、无 153MB 索引 Vec 中转。
+pub(super) fn descending_ranges_from_selection(selected: &SelectionSet) -> Vec<(usize, usize)> {
+    let mut ascending: Vec<(usize, usize)> = Vec::new();
+    let mut run_start: Option<usize> = None;
+    let mut prev = 0usize;
+    for i in selected.iter() {
+        match run_start {
+            None => run_start = Some(i),
+            Some(s) => {
+                if i != prev + 1 {
+                    ascending.push((s, prev - s + 1));
+                    run_start = Some(i);
+                }
+            }
+        }
+        prev = i;
+    }
+    if let Some(s) = run_start {
+        ascending.push((s, prev - s + 1));
+    }
+    ascending.reverse();
+    ascending
 }
