@@ -198,6 +198,14 @@ pub struct Editor {
     /// 元组: (min_tick, max_tick_end, max_key, min_key)
     pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
+    /// 工程走带选区命中音符的派生缓存
+    ///
+    /// 2026-09 性能修复：走带选区非空后，view 层每帧重扫全文档音符
+    /// （12.9ms + 10.6ms，合计 96% 帧时间）。命中集合是
+    /// `(document, arrange_selection, track_visual_order)` 的纯函数，
+    /// 故按三者版本号缓存，见 `arrangement_ops::selection_cache`。
+    pub(crate) arrange_selection_cache: arrangement_ops::selection_cache::ArrangeSelectionCache,
+
     /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,
 

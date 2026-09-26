@@ -10,6 +10,7 @@
 //! - `erase`: 音符擦除（arrange_erase）
 //! - `razor`: 音符切割（arrange_razor）
 //! - `selection`: 选中查询与批量操作（arrangement_selected_notes / arrange_delete_selected_notes / arrange_apply_speed_change）
+//! - `selection_cache`: 走带选区命中音符派生缓存（view 层每帧零扫描的支撑）
 //! - `add_note`: 音符添加（arrange_add_note）
 //! - `clipboard`: 剪贴板操作（复制/粘贴/剪切）
 
@@ -22,3 +23,4 @@ mod helpers;
 mod move_notes;
 mod razor;
 mod selection;
+pub(crate) mod selection_cache;

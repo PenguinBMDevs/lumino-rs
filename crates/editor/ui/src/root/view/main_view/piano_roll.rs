@@ -227,7 +227,11 @@ impl Root {
             // 但零命中音符）时菜单仍可点，点了却导出空素材；而 `resolve_selection`
             // 的判空是「有实际命中音符」，菜单禁用——这才是正确行为（没有可导出的
             // 对象就不该给出可点入口）。
-            let export_material_enabled = !self.active_selection().is_empty();
+            //
+            // 2026-09 性能修复：走零分配判空入口。旧写法每帧为此把走带命中音符
+            // 全量拷贝进 `Vec<NoteEvent>`（框选后 10.6ms/帧）；`has_active_selection`
+            // 与 `resolve_selection` 走同一份派生缓存，判空口径与本行完全同源。
+            let export_material_enabled = self.editor.has_active_selection(self.edit_view());
             column![
                 self.titlebar.view(
                     &self.window,

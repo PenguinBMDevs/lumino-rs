@@ -25,10 +25,12 @@ fn track_values(editor: &Editor, track: usize) -> Vec<(u32, u8)> {
 
 /// 走带选择当前命中的音符值列表 `(start_tick, key)`（跨音轨，按值排序）
 fn selected_values(editor: &Editor) -> Vec<(u32, u8)> {
+    // `arrangement_selected_notes` 返回 `Rc<[..]>`（派生缓存共享，view 层零深拷贝），
+    // 故迭代器产出的是元组引用，需解引用
     let mut values: Vec<(u32, u8)> = editor
         .arrangement_selected_notes()
-        .into_iter()
-        .map(|(start, _, _, key)| (start as u32, key))
+        .iter()
+        .map(|&(start, _, _, key)| (start as u32, key))
         .collect();
     values.sort_unstable();
     values

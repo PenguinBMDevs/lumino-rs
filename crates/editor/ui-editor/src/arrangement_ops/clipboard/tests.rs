@@ -27,20 +27,20 @@ fn test_compute_anchor_visual_maps_to_document_track() {
     let mut editor = editor_with_sorted_visual_order();
     editor.editor_state.data.current_track = 0;
     assert_eq!(editor.compute_anchor_visual(), 1);
+    // 经 `add_rect_track` 写入（bump revision）——直接改 `rects` 会绕过版本号，
+    // 让依赖 revision 的派生缓存读到脏数据
     editor
         .editor_state
         .data
         .arrange_selection
-        .rects
-        .push((0, 10, 0, 127, 0, 0));
+        .add_rect_track(0, 10, 0, 127, 0, 0);
     assert_eq!(editor.compute_anchor_visual(), 0);
-    editor.editor_state.data.arrange_selection.rects.clear();
+    editor.editor_state.data.arrange_selection.clear();
     editor
         .editor_state
         .data
         .arrange_selection
-        .rects
-        .push((0, 10, 0, 127, 1, 1));
+        .add_rect_track(0, 10, 0, 127, 1, 1);
     assert_eq!(editor.compute_anchor_visual(), 1);
 }
 

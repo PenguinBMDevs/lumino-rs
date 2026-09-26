@@ -50,6 +50,17 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::InsertAt { index, note });
         }
+        // 2026-09 补版本号：此前本方法**不** bump `track_notes_gen`，违反
+        // `mark_track_notes_changed` 的契约（「所有直接修改音符数据的地方都必须
+        // 调用」）。后果是所有按 gen 失效的派生缓存读到脏数据——包括
+        // `Root::arrangement_max_tick_end`（走带滚动条范围）、`OnionSkinState`
+        // 与走带选区命中音符缓存。跨轨插入必须**精确**标记受影响轨：若按
+        // `{current_track}` 标记，洋葱皮会对真实变化轨错误豁免 → 漏渲染。
+        if track_id == self.current_track {
+            self.mark_current_track_changed();
+        } else {
+            self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
+        }
         Some(id)
     }
 
@@ -93,6 +104,8 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
         }
+        // 2026-09 补版本号：同 `insert_note_with_id`，删除此前不 bump gen
+        self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         Some(removed)
     }
 
@@ -124,6 +137,8 @@ impl EditorData {
                 note,
             });
         }
+        // 2026-09 补版本号：同 `insert_note_with_id`，更新此前不 bump gen
+        self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         true
     }
 

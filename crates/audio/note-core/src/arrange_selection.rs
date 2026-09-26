@@ -10,91 +10,11 @@
 //! 把「框选时内部包含的被框选音符」固定为精确集合：此后 `contains` 走精确
 //! 成员判定，矩形降级为显示 / 命中 / 粘贴锚点用边界。
 
-use std::collections::HashMap;
+mod frozen;
+#[cfg(test)]
+mod tests;
 
-/// 冻结音符集：精确 `(视觉音轨, start_tick, key)` 成员判定。
-///
-/// 紧凑表示：每个视觉音轨一条升序 `u64` 序列，元素为
-/// `((start_tick as u64) << 8) | key`（8 字节/音符，二分查找 O(log K)）。
-#[derive(Clone, Default, Debug)]
-pub struct FrozenNotes {
-    /// 视觉音轨 → 升序打包键
-    by_track: HashMap<u16, Vec<u64>>,
-    /// 冻结音符总数（按 (start_tick, key) 去重后）
-    len: usize,
-}
-
-/// `(start_tick, key)` 打包为可排序的 `u64`
-#[inline]
-fn pack(start_tick: u32, key: u8) -> u64 {
-    ((start_tick as u64) << 8) | key as u64
-}
-
-impl FrozenNotes {
-    /// 是否为空
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
-    }
-
-    /// 冻结音符数（去重后）
-    pub fn len(&self) -> usize {
-        self.len
-    }
-
-    /// 清空
-    pub fn clear(&mut self) {
-        self.by_track.clear();
-        self.len = 0;
-    }
-
-    /// 由 `(视觉音轨, start_tick, key)` 迭代器构建（去重 + 按音轨升序）
-    pub fn from_entries<I: IntoIterator<Item = (u16, u32, u8)>>(entries: I) -> Self {
-        let mut by_track: HashMap<u16, Vec<u64>> = HashMap::new();
-        for (track, start_tick, key) in entries {
-            by_track
-                .entry(track)
-                .or_default()
-                .push(pack(start_tick, key));
-        }
-        let mut len = 0usize;
-        for keys in by_track.values_mut() {
-            keys.sort_unstable();
-            keys.dedup();
-            len += keys.len();
-        }
-        Self { by_track, len }
-    }
-
-    /// 精确成员判定（按打包键二分，O(log K)）
-    pub fn contains(&self, track: u16, start_tick: u32, key: u8) -> bool {
-        let Some(keys) = self.by_track.get(&track) else {
-            return false;
-        };
-        keys.binary_search(&pack(start_tick, key)).is_ok()
-    }
-
-    /// 按变换函数重建（整体偏移等几何变更用，闭包返回新 `(音轨, start_tick, key)`）
-    pub fn transform<F>(&mut self, mut f: F)
-    where
-        F: FnMut(u16, u32, u8) -> (u16, u32, u8),
-    {
-        let mut by_track: HashMap<u16, Vec<u64>> = HashMap::with_capacity(self.by_track.len());
-        for (&track, keys) in &self.by_track {
-            for &packed in keys {
-                let (nt, ns, nk) = f(track, (packed >> 8) as u32, packed as u8);
-                by_track.entry(nt).or_default().push(pack(ns, nk));
-            }
-        }
-        let mut len = 0usize;
-        for keys in by_track.values_mut() {
-            keys.sort_unstable();
-            keys.dedup();
-            len += keys.len();
-        }
-        self.by_track = by_track;
-        self.len = len;
-    }
-}
+pub use frozen::FrozenNotes;
 
 /// 工程走带音符选择范围。
 ///
@@ -106,15 +26,42 @@ impl FrozenNotes {
 #[derive(Clone, Default, Debug)]
 pub struct ArrangeSelection {
     /// 选择矩形列表。允许重叠，简单可依赖。
+    ///
+    /// **只读消费方**请走 `contains` / `len` / `hash` / `revision`；
+    /// 写入必须走本类型的方法（它们会 bump [`Self::revision`]），
+    /// 否则依赖 revision 的派生缓存（选区命中音符）会读到脏数据。
     pub rects: Vec<(u32, u32, u8, u8, u16, u16)>,
     /// 冻结音符集（几何变更后的精确选择集，见模块文档）
     frozen: Option<FrozenNotes>,
+    /// 变更版本号：任一变更入口（`clear` / `freeze` / `add_rect_track` /
+    /// `offset*`）自增，供派生缓存判失效。
+    ///
+    /// 2026-09 性能修复：走带选区的派生数据（命中音符列表）此前在 view 层
+    /// **每帧全量扫描全文档音符**（框选后 12.9ms/帧）。该派生值是
+    /// `(document, 本选区)` 的纯函数，引入版本号后只需在选区真正变化时重算。
+    revision: u64,
 }
 
 impl ArrangeSelection {
     /// 创建空选择。
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// 变更版本号（选区任一变更即自增）。
+    ///
+    /// 与 `EditorData::track_notes_gen` 组合构成派生缓存的失效键：
+    /// 前者覆盖「音符变了」，本值覆盖「选区变了」，两者缺一不可——
+    /// 文档不变而选区平移（`offset_ticks`）同样会让命中集合改变。
+    #[inline]
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
+    /// bump 变更版本号（内部使用）。
+    #[inline]
+    fn bump_revision(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
     }
 
     /// 是否未选中任何音符。
@@ -126,6 +73,7 @@ impl ArrangeSelection {
     pub fn clear(&mut self) {
         self.rects.clear();
         self.frozen = None;
+        self.bump_revision();
     }
 
     /// 冻结音符集（几何变更后的精确选择集），无冻结时为 `None`
@@ -175,6 +123,7 @@ impl ArrangeSelection {
             // 半开区间 `[ts, te)`：至少覆盖一个 tick，保持 contains 语义可用
             self.rects.push((ts, te.max(ts + 1), kl, kh, tl, th));
         }
+        self.bump_revision();
     }
 
     /// 添加一个通用矩形，默认覆盖全部 track。
@@ -203,6 +152,7 @@ impl ArrangeSelection {
             self.rects
                 .push((tick_start, tick_end, key_lo, key_hi, track_lo, track_hi));
         }
+        self.bump_revision();
     }
 
     /// 判断某个音符是否被选中。
@@ -270,12 +220,13 @@ impl ArrangeSelection {
         if let Some(frozen) = &mut self.frozen {
             frozen.transform(|track, start_tick, key| {
                 (
-                    track,
+                    (track as i32 + delta_keys).clamp(0, 127) as u16,
                     (start_tick as i64 + delta_ticks).max(0) as u32,
                     (key as i32 + delta_keys).clamp(0, 127) as u8,
                 )
             });
         }
+        self.bump_revision();
     }
 
     /// 仅偏移 tick 区间（工程走带拖拽用）。冻结集同步偏移（tick 下限 0）。
@@ -293,6 +244,7 @@ impl ArrangeSelection {
                 (track, (start_tick as i64 + delta_ticks).max(0) as u32, key)
             });
         }
+        self.bump_revision();
     }
 
     /// 仅偏移 track 区间（工程走带跨轨拖拽用）。冻结集同步偏移（音轨下限 0）。
@@ -308,6 +260,7 @@ impl ArrangeSelection {
                 ((track as i32 + delta_tracks).max(0) as u16, start_tick, key)
             });
         }
+        self.bump_revision();
     }
 
     /// 计算与选择范围无关的哈希，用于 GPU 缓存键。
@@ -322,83 +275,5 @@ impl ArrangeSelection {
             h ^= (th as u64).wrapping_mul(0x9e3779b97f4a7c15);
         }
         h
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_contains_and_offset() {
-        let mut sel = ArrangeSelection::new();
-        sel.add_rect_track(100, 200, 0, 127, 0, 2);
-        assert!(sel.contains(1, 150, 60));
-        assert!(!sel.contains(3, 150, 60));
-
-        sel.offset_ticks(50);
-        assert!(sel.contains(1, 210, 60));
-        assert!(sel.contains(1, 150, 60));
-
-        sel.offset_tracks(1);
-        assert!(sel.contains(2, 210, 60));
-        assert!(!sel.contains(0, 210, 60));
-    }
-
-    #[test]
-    fn test_freeze_contains_is_exact() {
-        // 冻结为两个精确音符：矩形平移覆盖不到的落点音符不再被误伤
-        let mut sel = ArrangeSelection::new();
-        sel.freeze([(0u16, 300u32, 400u32, 60u8), (0, 500, 600, 64)]);
-
-        assert!(sel.contains(0, 300, 60), "冻结音符应命中");
-        assert!(sel.contains(0, 500, 64), "冻结音符应命中");
-        // 同一矩形区间内的其他 (tick, key) 不得命中（框选误伤修复核心）
-        assert!(!sel.contains(0, 300, 64), "同 tick 不同 key 不应命中");
-        assert!(!sel.contains(0, 400, 60), "同 key 不同 tick 不应命中");
-        assert!(!sel.contains(1, 300, 60), "不同音轨不应命中");
-        assert_eq!(sel.frozen().map(FrozenNotes::len), Some(2));
-        assert!(!sel.is_empty());
-    }
-
-    #[test]
-    fn test_freeze_bbox_covers_notes_only() {
-        // 冻结后矩形为紧致边界（显示/命中用），四项并集
-        let mut sel = ArrangeSelection::new();
-        sel.freeze([(2u16, 100u32, 200u32, 60u8), (2, 400, 500, 72)]);
-        let (ts, te, kl, kh, tl, th) = sel.rects[0];
-        assert_eq!((ts, te, kl, kh, tl, th), (100, 500, 60, 72, 2, 2));
-    }
-
-    #[test]
-    fn test_freeze_offset_keeps_exact_set_in_sync() {
-        let mut sel = ArrangeSelection::new();
-        sel.freeze([(0u16, 300u32, 400u32, 60u8)]);
-        sel.offset_ticks(100);
-        sel.offset_tracks(1);
-        assert!(sel.contains(1, 400, 60), "冻结集应随偏移同步");
-        assert!(!sel.contains(0, 400, 60));
-        assert!(!sel.contains(1, 300, 60));
-    }
-
-    #[test]
-    fn test_add_rect_drops_frozen_set() {
-        // 新框选（添加矩形）回到矩形判定语义
-        let mut sel = ArrangeSelection::new();
-        sel.freeze([(0u16, 300u32, 400u32, 60u8)]);
-        sel.add_rect_track(100, 200, 0, 127, 0, 0);
-        assert!(sel.frozen().is_none());
-        assert!(sel.contains(0, 150, 60));
-        assert!(!sel.contains(0, 300, 60), "冻结集已被新矩形选择取代");
-    }
-
-    #[test]
-    fn test_clear_resets_frozen_set() {
-        let mut sel = ArrangeSelection::new();
-        sel.freeze([(0u16, 300u32, 400u32, 60u8)]);
-        sel.clear();
-        assert!(sel.is_empty());
-        assert!(sel.frozen().is_none());
-        assert!(!sel.contains(0, 300, 60));
     }
 }

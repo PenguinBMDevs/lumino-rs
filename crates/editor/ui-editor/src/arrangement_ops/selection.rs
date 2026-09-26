@@ -1,17 +1,18 @@
-//! 工程走带选中音符查询与批量操作
+//! 工程走带选中音符**查询**与视图无关选区解析
 //!
 //! 提供以下操作：
-//! - `arrangement_selected_notes`: 获取选中音符列表（用于 ghost 预览）
 //! - `arrange_select_all_notes`: 全选（全部音轨 × 全部 tick）
-//! - `arrange_delete_selected_notes`: 删除选中音符
-//! - `arrange_apply_speed_change`: 选中音符批量变速
+//! - `arrangement_selected_notes`: 获取选中音符列表（用于 ghost 预览）
 //! - `resolve_selection` / `has_active_selection`: 视图无关的选区解析
 //!   （统一入口，见 [`crate::edit_view`]）
 //!
-//! 2026-08 单一权威源：音符唯一权威是 document，本模块直接读写 MidiDocument，
+//! 2026-08 单一权威源：音符唯一权威是 document，本模块直接读 MidiDocument，
 //! 不再维护 track_notes 缓存。
+//!
+//! **批量写操作**（删除 / 变速）在 `selection/batch.rs`——读路径与写路径分离，
+//! 避免读路径的缓存约束被写路径细节淹没。
 
-use std::collections::HashMap;
+mod batch;
 
 use lumino_midi_loader::NoteEvent;
 
@@ -63,289 +64,13 @@ impl Editor {
     /// 返回 `(tick_start, tick_end, track, key)`，用于 ghost 预览。
     /// track 为视觉位置（侧边栏顺序），而非文档音轨索引。
     /// ghost 计算中的 dtr 是视觉空间偏移，与视觉位置相加得到正确的渲染位置。
-    pub fn arrangement_selected_notes(&self) -> Vec<(f64, f64, usize, u8)> {
-        let editor_data = &self.editor_state.data;
-        let selection = &editor_data.arrange_selection;
-        if selection.is_empty() {
-            return Vec::new();
-        }
-
-        let mut result = Vec::new();
-
-        // 2026-08 单一权威源：直接从 document 遍历全部音轨（track_notes 缓存已删除）
-        let Some(doc) = &editor_data.document else {
-            return result;
-        };
-        for track_idx in 0..doc.track_count() {
-            let visual_pos = editor_data
-                .visual_position_of(track_idx)
-                .unwrap_or(track_idx);
-            for note_event in editor_data.track_notes(track_idx) {
-                if selection.contains(visual_pos as u16, note_event.start_tick, note_event.key) {
-                    result.push((
-                        note_event.start_tick as f64,
-                        note_event.end_tick as f64,
-                        visual_pos,
-                        note_event.key,
-                    ));
-                }
-            }
-        }
-
-        result
-    }
-
-    /// 删除工程走带选择区内的所有音符。
     ///
-    /// 返回实际删除的音符数。
-    pub fn arrange_delete_selected_notes(&mut self) -> usize {
-        if self.editor_state.data.arrange_selection.is_empty() {
-            return 0;
-        }
-
-        let indices_by_track = self.collect_delete_targets();
-
-        if indices_by_track.is_empty() {
-            return 0;
-        }
-
-        // 精确记录受影响音轨（洋葱皮事件级增量：只重传这些音轨）
-        let affected_tracks: std::collections::HashSet<usize> =
-            indices_by_track.keys().copied().collect();
-
-        self.push_history();
-
-        let current_track = self.editor_state.data.current_track;
-        let mut current_track_touched = false;
-        let mut deleted_count = 0usize;
-
-        for (track_idx, indices) in indices_by_track {
-            if track_idx == current_track {
-                current_track_touched = true;
-            }
-            // 区间归并删除：连续删除段合并为单条事件（当前轨走主轨段内增量，
-            // 非当前轨走 `TrackRemoveRanges` 区间增量），不再逐音符一条事件
-            // （K 次 GPU 尾部搬移 + bind group 重建）。
-            deleted_count += self
-                .editor_state
-                .data
-                .remove_notes_merged(track_idx, &indices);
-        }
-
-        if deleted_count == 0 {
-            self.editor_state.data.discard_last_history();
-            return 0;
-        }
-
-        if current_track_touched {
-            self.mark_notes_changed();
-        }
-        self.editor_state
-            .data
-            .mark_track_notes_changed_for(Some(affected_tracks));
-        tracing::info!("Arrangement: 删除 {} 个音符", deleted_count);
-        deleted_count
-    }
-
-    /// 对工程走带选择区内的音符执行批量变速。
-    ///
-    /// 行为与钢琴卷帘 `apply_speed_change` 一致：以选中音符的最小 tick 为基准，
-    /// 按 `speed_factor` 缩放 tick 和 length。支持跨音轨操作。
-    /// 返回实际修改的音符数。
-    pub fn arrange_apply_speed_change(&mut self, speed_factor: f32) -> usize {
-        if self.editor_state.data.arrange_selection.is_empty() {
-            return 0;
-        }
-
-        let selection = self.editor_state.data.arrange_selection.clone();
-        let (track_indices, min_tick) = self.collect_speed_change_targets(&selection);
-
-        if track_indices.is_empty() || min_tick.is_infinite() {
-            return 0;
-        }
-
-        // 精确记录受影响音轨（洋葱皮事件级增量）
-        let affected_tracks: std::collections::HashSet<usize> =
-            track_indices.keys().copied().collect();
-
-        // P0 修复（历史链断链）：同 `arrange_move_notes`——`apply_speed_change_internal`
-        // 走的也是 `insert_note`/`remove_note`，契约要求调用方先 push。原实现漏 push，
-        // 导致走带批量变速**撤不掉**，且下方 modified_count == 0 的兜底 discard 会
-        // 吞掉用户上一次真实编辑的撤销点。
-        self.push_history();
-
-        // 主选择漂移防护：变速可越过未选中音符 → 当前轨重排会位移主选择索引
-        let selection_identity = self.capture_selection_identity();
-
-        // 冻结条目：被变速音符的**新位置**（视觉音轨 + 文档权威 tick）
-        let mut frozen_entries: Vec<(u16, u32, u32, u8)> = Vec::new();
-        let (modified_count, current_track_touched, current_track_ranges) = self
-            .apply_speed_change_internal(
-                track_indices,
-                min_tick,
-                speed_factor,
-                &mut frozen_entries,
-            );
-
-        if modified_count == 0 {
-            self.editor_state.data.discard_last_history();
-            return 0;
-        }
-
-        // 框选冻结（框选误伤修复）：变速改变了选择几何，旧矩形既框不住已缩放
-        // 的音符、又会继续按区间命中区间内其他音符；选择集收敛为被变速音符的新位置。
-        self.editor_state
-            .data
-            .arrange_selection
-            .freeze(frozen_entries);
-
-        self.remap_selection_by_identity(&selection_identity);
-
-        if let Some(ranges) = &current_track_ranges {
-            // 当前轨重排：按受影响闭区间增量更新（替代全量重建）
-            self.editor_state.data.push_reorder_ranges_events(ranges);
-        }
-        if current_track_touched {
-            self.mark_notes_changed();
-        }
-        self.editor_state
-            .data
-            .mark_track_notes_changed_for(Some(affected_tracks));
-        // 2026-09 协作修复：广播变速结果给对端（B 端按同序先删后加，终态与 A 一致）。
-        self.broadcast_pending_collab_transform_sync();
-        tracing::info!(
-            "Arrangement: 变速 {} 个音符 (factor={})",
-            modified_count,
-            speed_factor,
-        );
-        modified_count
-    }
-
-    /// 收集删除操作的目标音轨和索引。
-    fn collect_delete_targets(&self) -> HashMap<usize, Vec<usize>> {
-        let editor_data = &self.editor_state.data;
-        let selection = &editor_data.arrange_selection;
-        let mut indices_by_track: HashMap<usize, Vec<usize>> = HashMap::new();
-        // 2026-08 单一权威源：从 document 收集（track_notes 缓存已删除）
-        let Some(doc) = &editor_data.document else {
-            return indices_by_track;
-        };
-        for track_idx in 0..doc.track_count() {
-            let visual_pos = editor_data
-                .visual_position_of(track_idx)
-                .unwrap_or(track_idx);
-            for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
-                if selection.contains(visual_pos as u16, note.start_tick, note.key) {
-                    indices_by_track.entry(track_idx).or_default().push(i);
-                }
-            }
-        }
-        indices_by_track
-    }
-
-    /// 执行变速：按 speed_factor 缩放选中音符的 tick 和 length。
-    /// 返回 (modified_count, current_track_touched, current_track_ranges)。
-    ///
-    /// `frozen_entries` 出参：被处理音符的**新位置** `(视觉音轨, start, end, key)`，
-    /// 供调用方把选择集冻结为变速后的精确集合（见 `arrange_apply_speed_change`）。
-    fn apply_speed_change_internal(
-        &mut self,
-        track_indices: HashMap<usize, Vec<usize>>,
-        min_tick: f32,
-        speed_factor: f32,
-        frozen_entries: &mut Vec<(u16, u32, u32, u8)>,
-    ) -> (usize, bool, Option<lumino_midi_model::SortedRestoreRanges>) {
-        let current_track = self.editor_state.data.current_track;
-        let mut current_track_touched = false;
-        let mut current_track_ranges: Option<lumino_midi_model::SortedRestoreRanges> = None;
-        let mut modified_count = 0usize;
-        const MIN_LEN: f32 = 1.0;
-        // 2026-09 协作修复：收集「旧→新」音符状态用于广播（避免与 notes 可变借用冲突，
-        // 循环结束后再 push，跨音轨各自携带 track_idx）。
-        let mut transitions: Vec<_> = Vec::new();
-
-        // 2026-08 单一权威源：直接修改 document 各轨音符（track_notes_mut）
-        for (track_idx, indices) in &track_indices {
-            if *track_idx == current_track {
-                current_track_touched = true;
-            }
-            let visual = self
-                .editor_state
-                .data
-                .visual_position_of(*track_idx)
-                .unwrap_or(*track_idx) as u16;
-            if let Some(notes) = self
-                .editor_state
-                .data
-                .document
-                .as_mut()
-                .and_then(|doc| doc.track_notes_mut(*track_idx))
-            {
-                let mut modified_indices: Vec<usize> = Vec::new();
-                for &i in indices {
-                    if let Some(note) = notes.get_mut(i) {
-                        let old = *note;
-                        let tick = note.start_tick as f32;
-                        let length = (note.end_tick - note.start_tick) as f32;
-                        let nt = min_tick + (tick - min_tick) * speed_factor;
-                        let nl = (length * speed_factor).max(MIN_LEN);
-                        if (nt - tick).abs() > f32::EPSILON || (nl - length).abs() > f32::EPSILON {
-                            let new_start = nt.max(0.0);
-                            note.start_tick = new_start as u32;
-                            note.end_tick = note.start_tick + nl as u32;
-                            transitions.push((old, *note, *track_idx));
-                            modified_indices.push(i);
-                            modified_count += 1;
-                        }
-                        // 冻结条目取**处理后**的值：未实际变更的音符也保留在选中集内
-                        frozen_entries.push((visual, note.start_tick, note.end_tick, note.key));
-                    }
-                }
-                // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
-                // （window_range/position_of_id 二分依赖，破坏后渲染/命中漏检音符）
-                if let Some(ranges) = notes.restore_sorted_ranges(&modified_indices)
-                    && *track_idx == current_track
-                {
-                    current_track_ranges = Some(ranges);
-                }
-            }
-        }
-
-        for (old, new, track) in transitions {
-            self.editor_state
-                .data
-                .push_collab_transform_transition(old, new, track);
-        }
-
-        (modified_count, current_track_touched, current_track_ranges)
-    }
-
-    /// 收集变速操作的目标音轨索引和最小 tick。
-    fn collect_speed_change_targets(
-        &self,
-        selection: &lumino_note_core::ArrangeSelection,
-    ) -> (HashMap<usize, Vec<usize>>, f32) {
-        let mut track_indices: HashMap<usize, Vec<usize>> = HashMap::new();
-        let mut min_tick = f32::INFINITY;
-
-        let editor_data = &self.editor_state.data;
-        // 2026-08 单一权威源：从 document 收集（track_notes 缓存已删除）
-        let Some(doc) = &editor_data.document else {
-            return (track_indices, min_tick);
-        };
-        for track_idx in 0..doc.track_count() {
-            let visual_pos = editor_data
-                .visual_position_of(track_idx)
-                .unwrap_or(track_idx);
-            for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
-                if selection.contains(visual_pos as u16, note.start_tick, note.key) {
-                    track_indices.entry(track_idx).or_default().push(i);
-                    min_tick = min_tick.min(note.start_tick as f32);
-                }
-            }
-        }
-
-        (track_indices, min_tick)
+    /// 2026-09 性能修复：改走 `selection_cache` 的 `Rc` 共享结果。
+    /// 旧实现每帧全量扫描全文档音符（框选后 12.9ms/帧），而唯一消费者
+    /// `compute_ghost_notes` 只在「正在拖动已有选区」（`move_drag.is_some()`）
+    /// 时才读它——其余帧的扫描产出即扔。
+    pub fn arrangement_selected_notes(&self) -> std::rc::Rc<[(f64, f64, usize, u8)]> {
+        self.arrangement_selection_hits().flat()
     }
 
     /// 解析**当前视图**的选中音符，返回视图无关快照（导出 / 闸门 / 菜单可用性共用）。
@@ -397,37 +122,37 @@ impl Editor {
     ///
     /// 工具栏批量操作闸门与菜单项可用性都应以此为准：判据是「有没有可操作的
     /// 对象」，否则会出现「能点却什么都不做」。
+    ///
+    /// 2026-09 性能修复：判空**零分配**。旧实现走 `resolve_selection`，
+    /// 仅为取一个 bool 却把命中音符全量拷贝进 `Vec<NoteEvent>`——
+    /// 而 `view_main` 每帧调用它（导出素材菜单可用性），框选后单帧 10.6ms。
+    /// 现直接查派生缓存的 `is_empty()`，走带分支与 `resolve_selection`
+    /// 同源（同一份缓存），`tests/arrangement_history.rs` 有同源一致性回归。
     pub fn has_active_selection(&self, view: EditView) -> bool {
-        !self.resolve_selection(view).is_empty()
+        match view {
+            // 走带优先：命中即真，避免无谓的回退扫描
+            EditView::Arrangement => {
+                if self.arrangement_selection_hits().is_empty() {
+                    !self.collect_roll_selected_notes().is_empty()
+                } else {
+                    true
+                }
+            }
+            EditView::PianoRoll => {
+                if self.collect_roll_selected_notes().is_empty() {
+                    !self.arrangement_selection_hits().is_empty()
+                } else {
+                    true
+                }
+            }
+        }
     }
 
     /// 走带选区命中的音符（跨轨，**视觉空间**判定）
+    ///
+    /// 2026-09 性能修复：改走 `selection_cache`，键命中时零扫描。
     fn collect_arrangement_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
-        let editor_data = &self.editor_state.data;
-        let selection = &editor_data.arrange_selection;
-        let mut result: Vec<(usize, Vec<NoteEvent>)> = Vec::new();
-        if selection.is_empty() {
-            return result;
-        }
-        let Some(doc) = &editor_data.document else {
-            return result;
-        };
-        for track_idx in 0..doc.track_count() {
-            // 关键：选区存的是**视觉轨**，必须经 visual_position_of 转换
-            let visual = editor_data
-                .visual_position_of(track_idx)
-                .unwrap_or(track_idx);
-            let notes = editor_data.track_notes(track_idx);
-            let selected: Vec<NoteEvent> = notes
-                .iter()
-                .filter(|n| selection.contains(visual as u16, n.start_tick, n.key))
-                .copied()
-                .collect();
-            if !selected.is_empty() {
-                result.push((track_idx, selected));
-            }
-        }
-        result
+        self.arrangement_selection_hits().by_track().to_vec()
     }
 
     /// 卷帘选区命中的音符（单轨，索引位图）

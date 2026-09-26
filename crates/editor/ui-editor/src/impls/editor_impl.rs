@@ -46,6 +46,8 @@ impl Editor {
                 cached_selection_bounds: Cell::new(None),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 selected_bounds: Cell::new(None),
+                arrange_selection_cache:
+                    crate::arrangement_ops::selection_cache::new_arrange_selection_cache(),
                 playback_scan_state: crate::impls::PlaybackScanState::default(),
                 ctrl_pressed: false,
                 shift_pressed: false,
