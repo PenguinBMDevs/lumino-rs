@@ -1,6 +1,126 @@
 use super::*;
+use std::collections::HashMap;
 
 impl Editor {
+    /// 多轨批量粘贴内核（钢琴卷帘 / 工程走带**共用同一实现**）。
+    ///
+    /// 把 `entries` 按目标文档轨分组后逐轨 `batch_insert_notes_to_track_with_ids`
+    /// 一次性插入，并返回受影响音轨集合。调用方负责在此之前 `push_history()`、
+    /// 在插入数为 0 时 `discard_last_history()`。
+    ///
+    /// **P0 修复（统一）**：原实现是走带私有的 `apply_paste_internal`，钢琴卷帘
+    /// 无法复用（其粘贴路径逐音符 `insert_note`）。两条路径的插入语义、脏标记、
+    /// 协作广播完全一致才是「两个视图操作方式统一」的实质——故提升为公共内核。
+    ///
+    /// P0 修复（去 ID 悬崖）：按目标轨分组批量插入（O(N·log M)），并直接拿回已分配
+    /// id 广播，消除原逐条 `insert_note`（O(N·M)）+ `note_id_at`（O(N·M)）双重悬崖。
+    pub(crate) fn apply_clipboard_paste_entries(
+        &mut self,
+        anchor_tick: f32,
+        origin_key: u16,
+        entries: &[ClipboardNoteEntry],
+        collect_selection: bool,
+    ) -> PasteOutcome {
+        let current_track = self.editor_state.data.current_track;
+        let mut current_track_touched = false;
+        let mut inserted_count = 0usize;
+        let mut affected_tracks: HashSet<usize> = HashSet::new();
+        let mut frozen_entries: Vec<(u16, u32, u32, u8)> = Vec::new();
+
+        // 按目标文档音轨分组，批量插入并直接取回已分配 id
+        let mut by_track: HashMap<usize, Vec<Note>> = HashMap::new();
+        for (dest_doc, tick_offset, key_offset, length, velocity, channel) in entries {
+            let note_tick = (anchor_tick + *tick_offset).max(0.0);
+            let note_key = origin_key.saturating_add(*key_offset).min(127);
+            let note = Note::from_raw(note_tick, note_key, *length, *velocity, *channel);
+            by_track.entry(*dest_doc).or_default().push(note);
+        }
+
+        puffin::profile_scope!("clipboard::insert_notes");
+        let t0 = std::time::Instant::now();
+        let collab_sync = self.editor_state.data.collab_sync_enabled();
+        let mut batch_acc: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+        for (dest_track, notes) in by_track {
+            let visual = self
+                .editor_state
+                .data
+                .visual_position_of(dest_track)
+                .unwrap_or(dest_track) as u16;
+            let _ids = self
+                .editor_state
+                .data
+                .batch_insert_notes_to_track_with_ids(dest_track, &notes);
+            for note in notes.iter() {
+                affected_tracks.insert(dest_track);
+                if dest_track == current_track {
+                    current_track_touched = true;
+                }
+                inserted_count += 1;
+                if collect_selection {
+                    // 冻结条目用文档权威 tick（f32_to_tick），否则 contains 命不中
+                    frozen_entries.push((
+                        visual,
+                        lumino_editor_state::f32_to_tick(note.tick),
+                        lumino_editor_state::f32_to_tick(note.tick + note.length),
+                        note.key.min(u8::MAX as u16) as u8,
+                    ));
+                }
+                // 协作同步关闭时不构建批量广播载荷（按值）。
+                if collab_sync {
+                    batch_acc.push((
+                        note.tick,
+                        note.key,
+                        note.length,
+                        note.velocity,
+                        note.channel,
+                        dest_track,
+                    ));
+                }
+            }
+        }
+        // 协作批量：粘贴统一走批量消息（协作同步关闭时不发射）
+        if !batch_acc.is_empty() {
+            lumino_message::events::emit(lumino_message::events::Event::Window(
+                lumino_message::events::window::Event::local_notes_added_batch(batch_acc),
+            ));
+        }
+        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
+        tracing::debug!(
+            target: "perf::clipboard",
+            inserted = inserted_count,
+            ms = elapsed_ms,
+            "insert_notes"
+        );
+
+        PasteOutcome {
+            inserted: inserted_count,
+            current_track_touched,
+            affected_tracks,
+            frozen_entries,
+        }
+    }
+
+    /// 解析 JSON 载荷，返回 `(origin_key, 源 division, notes 数组)`
+    pub(super) fn parse_json_payload(
+        &self,
+        text: &str,
+    ) -> Option<(u16, Option<u16>, Vec<serde_json::Value>)> {
+        let value: serde_json::Value = serde_json::from_str(text).ok()?;
+        let origin_key = value.get("origin_key")?.as_u64()? as u16;
+        let division = value
+            .get("division")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as u16);
+        let notes = value.get("notes")?.as_array()?.to_vec();
+        Some((origin_key, division, notes))
+    }
+
+    /// 载荷是否为走带子格式（`type == "arrangement"`）
+    pub(super) fn parse_json_payload_is_arrangement(&self, text: &str) -> Option<bool> {
+        let value: serde_json::Value = serde_json::from_str(text).ok()?;
+        Some(value.get("type").and_then(|t| t.as_str()) == Some("arrangement"))
+    }
+
     /// 二进制私有格式粘贴（Windows）。
     ///
     /// 流式解码为 `NoteEvent`（升序）→ 锚点定位 → 含 PPQN 重采样的**单次批量插入**。
@@ -10,105 +130,10 @@ impl Editor {
     /// 峰值内存为「新事件 16B/音符 + 单次归并输出块」，2M 音符约 120MB。
     #[cfg(windows)]
     pub(super) fn try_paste_from_binary(&mut self) -> bool {
-        let bytes = match crate::clipboard::sys::get_clipboard_binary() {
-            Some(b) => b,
-            None => return false,
-        };
-        let meta = match parse_clipboard_header(&bytes) {
-            Ok(m) => m,
-            Err(_) => return false,
-        };
-        let target_div = self
-            .editor_state
-            .data
-            .document
-            .as_ref()
-            .map(|d| d.division)
-            .unwrap_or(480);
-        // PPQN 一致性：源/目标不一致才重采样（ratio=1 时逐字节一致）
-        let ratio = if meta.division != 0 && meta.division != target_div {
-            target_div as f64 / meta.division as f64
-        } else {
-            1.0
-        };
-        let anchor_tick = self.snap_tick(self.playback_position);
-        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
-        let track = self.editor_state.data.current_track;
-
-        self.push_history();
-        self.selection_clear();
-
-        // 单次归并：全量流式解码升序 NoteEvent 后一次批量插入
-        let mut events: Vec<lumino_midi_model::NoteEvent> = Vec::with_capacity(meta.count as usize);
-        let res = decode_clipboard_records(
-            &bytes,
-            |tick_offset, length, key_offset, velocity, channel, _track_hint| {
-                let to = if ratio == 1.0 {
-                    tick_offset as f64
-                } else {
-                    (tick_offset as f64 * ratio).round()
-                };
-                let le = if ratio == 1.0 {
-                    length as f64
-                } else {
-                    (length as f64 * ratio).round()
-                };
-                let tick = (anchor_tick + to as f32).max(0.0);
-                let key =
-                    (meta.origin_key as i32 + key_offset as i32).clamp(0, max_key as i32) as u8;
-                // 与 note_to_event 一致：start/end 各自独立取整
-                events.push(lumino_midi_model::NoteEvent::new(
-                    lumino_editor_state::f32_to_tick(tick),
-                    lumino_editor_state::f32_to_tick(tick + le as f32),
-                    key,
-                    velocity,
-                    channel,
-                ));
-            },
-        );
-        if res.is_err() || events.is_empty() {
+        let Some(bytes) = crate::clipboard::sys::get_clipboard_binary() else {
             return false;
-        }
-        let total = events.len();
-        if self.editor_state.data.collab_sync_enabled() {
-            // 协作开启：按值广播（操作者标识由信封承载，无 ID）。
-            let batch_meta: Vec<(f32, u16, f32, u8, u8, usize)> = events
-                .iter()
-                .map(|e| {
-                    (
-                        e.start_tick as f32,
-                        e.key as u16,
-                        e.length() as f32,
-                        e.velocity,
-                        e.channel,
-                        track,
-                    )
-                })
-                .collect();
-            let _ = self
-                .editor_state
-                .data
-                .batch_insert_events_to_track_with_ids(track, events);
-            // 分片发射（10K/条），避免单条消息过大（按值）。
-            let mut start = 0usize;
-            while start < batch_meta.len() {
-                let end = (start + 10_000).min(batch_meta.len());
-                let batch: Vec<(f32, u16, f32, u8, u8, usize)> = batch_meta[start..end].to_vec();
-                lumino_message::events::emit(lumino_message::events::Event::Window(
-                    lumino_message::events::window::Event::local_notes_added_batch(batch),
-                ));
-                start = end;
-            }
-        } else {
-            // 本地编辑：不回收 id 广播列表（省 N×8B 分配与收集）
-            self.editor_state
-                .data
-                .batch_insert_events_to_track(track, events);
-        }
-
-        self.mark_notes_changed();
-        tracing::info!("Editor: 已从二进制剪贴板粘贴 {} 个音符", total);
-        true
+        };
+        self.paste_binary_payload(&bytes)
     }
 
     /// Domino（TAKABO SOFT）剪贴板粘贴（Windows）。
@@ -168,21 +193,7 @@ impl Editor {
         true
     }
 
-    /// 从剪贴板读取并解析 JSON 数据，返回 (origin_key, 源 division, notes 数组)
-    pub(super) fn read_clipboard_json(&self) -> Option<(u16, Option<u16>, Vec<serde_json::Value>)> {
-        let mut clipboard = arboard::Clipboard::new().ok()?;
-        let text = clipboard.get_text().ok()?;
-        let value: serde_json::Value = serde_json::from_str(&text).ok()?;
-        let origin_key = value.get("origin_key")?.as_u64()? as u16;
-        let division = value
-            .get("division")
-            .and_then(|v| v.as_u64())
-            .map(|v| v as u16);
-        let notes = value.get("notes")?.as_array()?.to_vec();
-        Some((origin_key, division, notes))
-    }
-
-    /// 从剪贴板 JSON 解析锚点坐标和音符列表，并按 PPQN 一致性重采样。
+    /// 从 JSON 载荷解析锚点坐标和音符列表，并按 PPQN 一致性重采样。
     ///
     /// 复制位置规则：
     /// - X 坐标（tick）对齐演奏指示线（playback_position）

@@ -307,6 +307,12 @@ impl Root {
                 }
                 true
             }
+            Message::ArrangementSelectAll => {
+                // 全选只改选区、不改音符：无需 update_playback_notes，
+                // 返回 true 触发 UI 重建（选框由 GPU 每帧按 arrange_selection 绘制）
+                self.editor.arrange_select_all_notes();
+                true
+            }
             Message::VideoClip(action) => self.handle_video_clip_action(action.clone()),
             _ => false,
         }

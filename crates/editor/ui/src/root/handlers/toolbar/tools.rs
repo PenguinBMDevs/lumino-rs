@@ -3,12 +3,16 @@
 //! 包括工具选择、精度同步、撤销/重做、量化、变速、翻转、移调、分割/合并等。
 //!
 //! 子模块组织（保持本文件 < 400 行）：
-//! - `note_ops`: 音符编辑操作（量化/变速/翻转/移调/连奏/分割合并）
+//! - `note_ops`: 逐音符独立变换（量化/变速/翻转/移调）
+//! - `note_group_ops`: 成组类操作（连奏/分割合并）
+//! - `view_gate`: 批量操作的**视图仲裁闸门**（钢琴卷帘 / 工程走带的作用域隔离）
 
 use super::ToolbarHandler;
 use crate::root::Root;
 
+mod note_group_ops;
 mod note_ops;
+mod view_gate;
 
 impl ToolbarHandler {
     /// 同步工具状态到编辑器

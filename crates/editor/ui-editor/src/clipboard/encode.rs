@@ -4,7 +4,12 @@ impl Editor {
     /// 构建 Lumino 私有 JSON 剪贴板文本（跨平台退化路径）。
     ///
     /// 两遍扫描选中音符：第一遍算 origin，第二遍流式拼 JSON，不物化 `Vec<Value>`。
-    pub(super) fn build_clipboard_json(&self, track: usize, division: u16) -> Option<String> {
+    ///
+    /// **跨视图互通**：每音符显式写 `"track":0`——该字段语义为「相对锚点的视觉轨
+    /// 偏移」（同二进制 `ClipRecord.track`，见 [`Self::build_clipboard_binary`]）。
+    /// 卷帘为单轨编辑器故恒 0；显式写出让载荷自描述，走带粘贴端可直接按偏移路由，
+    /// 无需依赖「字段缺失则默认 0」的隐式约定。
+    pub(crate) fn build_clipboard_json(&self, track: usize, division: u16) -> Option<String> {
         let mut min_tick = f32::INFINITY;
         let mut min_key = u16::MAX;
         self.each_selected_note_on_current_track(|n| {
@@ -25,10 +30,12 @@ impl Editor {
 
         let mut s = String::with_capacity(2048);
         use std::fmt::Write as _;
+        // `origin_track` 写入锚点视觉轨（= 复制时的当前轨），使载荷自描述——
+        // 走带粘贴端按可选字段读取（缺失时按 0 处理），两子格式字段集对齐。
         let _ = write!(
             s,
-            "{{\"lumino\":\"{}\",\"version\":{},\"track\":{},\"origin_tick\":{},\"origin_key\":{},\"division\":{},\"notes\":[",
-            CLIPBOARD_FORMAT, CLIPBOARD_VERSION, track, origin_tick, origin_key, division
+            "{{\"lumino\":\"{}\",\"version\":{},\"track\":{},\"origin_tick\":{},\"origin_key\":{},\"origin_track\":{},\"division\":{},\"notes\":[",
+            CLIPBOARD_FORMAT, CLIPBOARD_VERSION, track, origin_tick, origin_key, track, division
         );
         let mut first = true;
         self.each_selected_note_on_current_track(|n| {
@@ -41,7 +48,7 @@ impl Editor {
             first = false;
             let _ = write!(
                 s,
-                "{{\"tick\":{},\"key\":{},\"length\":{},\"velocity\":{},\"channel\":{}}}",
+                "{{\"tick\":{},\"key\":{},\"length\":{},\"velocity\":{},\"channel\":{},\"track\":0}}",
                 tick, key, length, n.velocity, n.channel
             );
         });
@@ -57,6 +64,20 @@ impl Editor {
     ///
     /// 2026-09 全选快路径：`选中数 == 轨道音符数` 时跳过逐音符哈希命中判断与随机
     /// `get`（百万级全选复制免 2×N 次哈希 + 缓存未命中），两遍均顺序扫描。
+    ///
+    /// # `ClipRecord.track` 字段语义（跨视图互通的基石）
+    ///
+    /// 该字段统一为**「相对锚点的视觉轨偏移」**，与走带子格式
+    /// （`arrangement_ops/clipboard/encode.rs`）逐字节同语义。钢琴卷帘是单轨
+    /// 编辑器，锚点恒为当前轨，故偏移**恒为 0**。
+    ///
+    /// 统一前两侧语义冲突（卷侧写绝对轨号 / 走带侧写相对偏移），导致：
+    /// 走带载荷被卷帘粘贴时偏移被丢弃 → 全部音符叠进当前轨（看似成功、结果全错）。
+    /// 统一后粘贴端可按偏移无歧义地路由多轨，卷帘粘贴走带载荷即得跨轨落点。
+    ///
+    /// 头部的 `track_hint` 仍写**真实轨号**，用途从「数据」变为「子格式判别位」：
+    /// 粘贴端据此区分卷帘子格式（偏移恒 0，可走单轨快路径）与走带子格式
+    /// （`ARRANGEMENT_BINARY_MARK`，需多轨路由）。
     ///
     /// `pub`：基准（benches）与外部调用方复用生产编码路径，避免实现漂移。
     pub fn build_clipboard_binary(&self, track: usize, division: u16) -> Option<Vec<u8>> {
@@ -101,7 +122,9 @@ impl Editor {
                 (n.key as i32 - origin_key as i32).max(0) as u8,
                 n.velocity,
                 n.channel,
-                track as u16,
+                // track 偏移：卷帘为单轨编辑器，锚点即当前轨 → 恒 0
+                // （与走带子格式同语义，见本函数文档「`ClipRecord.track` 字段语义」）
+                0,
             )
         };
 

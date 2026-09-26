@@ -37,6 +37,14 @@ impl Editor {
             return 0;
         }
 
+        // P0 修复（历史链断链）：`insert_note` / `remove_note` 的契约是
+        // 「调用方需先 push_history()」——原实现漏 push，导致走带拖动移动
+        // **根本不进历史栈**（Ctrl+Z 撤不掉），且下方 moved_count == 0 时的
+        // `discard_last_history()` 丢掉的是**用户上一次真实编辑**的快照
+        // （表现为「Ctrl+Z 莫名少撤一步」）。push 必须放在「确定要改」之后，
+        // 这样失败兜底 discard 才语义自洽。
+        self.push_history();
+
         // 冻结条目：本次实际移动音符的**落点**（视觉音轨 + 文档权威 tick）
         let frozen_entries = self.frozen_entries_of_moved(&moved_by_dest);
 

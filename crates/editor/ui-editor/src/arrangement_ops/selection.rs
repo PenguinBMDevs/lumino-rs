@@ -2,6 +2,7 @@
 //!
 //! 提供以下操作：
 //! - `arrangement_selected_notes`: 获取选中音符列表（用于 ghost 预览）
+//! - `arrange_select_all_notes`: 全选（全部音轨 × 全部 tick）
 //! - `arrange_delete_selected_notes`: 删除选中音符
 //! - `arrange_apply_speed_change`: 选中音符批量变速
 //!
@@ -13,6 +14,45 @@ use std::collections::HashMap;
 use super::Editor;
 
 impl Editor {
+    /// 工程走带全选：选中**全部音轨 × 全部 tick 区间**。
+    ///
+    /// 走带选区是跨轨矩形，故全选天然覆盖整张工程——与钢琴卷帘
+    /// `select_all_notes`（仅当前轨全部音符）语义对齐：都是「当前视图内的一切」。
+    ///
+    /// 使用矩形模式（非冻结集）：全选是纯几何操作，无需精确成员集合，
+    /// 且矩形模式在撤销后仍是活语义（见 `invalidate_arrange_selection_after_history`）。
+    ///
+    /// 返回是否建立了全选（无工程 / 无音轨时为 `false`）。
+    pub fn arrange_select_all_notes(&mut self) -> bool {
+        let data = &mut self.editor_state.data;
+        let Some(doc) = data.document.as_ref() else {
+            tracing::debug!("Arrangement: 全选 - 无工程文档");
+            return false;
+        };
+        let track_count = doc.track_count();
+        if track_count == 0 {
+            tracing::debug!("Arrangement: 全选 - 工程无音轨");
+            return false;
+        }
+        // tick 上界取工程实际最大终点；空工程兜底一个最小可见区间，
+        // 否则 te <= ts 会让 add_rect_track 静默拒绝、用户看不到任何选区反馈
+        let max_tick = doc.tracks_max_end_tick().max(1);
+        data.arrange_selection.clear();
+        data.arrange_selection.add_rect_track(
+            0,
+            max_tick,
+            0,
+            127,
+            0,
+            (track_count - 1).min(u16::MAX as usize) as u16,
+        );
+        tracing::info!(
+            "Arrangement: 全选 {} 条音轨（tick 0..{max_tick}）",
+            track_count
+        );
+        true
+    }
+
     /// 获取当前工程走带选择范围内的音符列表。
     ///
     /// 返回 `(tick_start, tick_end, track, key)`，用于 ghost 预览。
@@ -122,6 +162,12 @@ impl Editor {
         // 精确记录受影响音轨（洋葱皮事件级增量）
         let affected_tracks: std::collections::HashSet<usize> =
             track_indices.keys().copied().collect();
+
+        // P0 修复（历史链断链）：同 `arrange_move_notes`——`apply_speed_change_internal`
+        // 走的也是 `insert_note`/`remove_note`，契约要求调用方先 push。原实现漏 push，
+        // 导致走带批量变速**撤不掉**，且下方 modified_count == 0 的兜底 discard 会
+        // 吞掉用户上一次真实编辑的撤销点。
+        self.push_history();
 
         // 主选择漂移防护：变速可越过未选中音符 → 当前轨重排会位移主选择索引
         let selection_identity = self.capture_selection_identity();

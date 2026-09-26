@@ -13,6 +13,10 @@ impl ToolbarHandler {
             return;
         }
 
+        if !Self::arrangement_batch_gate(root, "量化") {
+            return;
+        }
+
         tracing::info!("Root: 执行量化操作");
 
         // 使用当前视觉网格线间隔作为量化网格，与显示保持一致
@@ -235,6 +239,10 @@ impl ToolbarHandler {
             return;
         }
 
+        if !Self::arrangement_batch_gate(root, "垂直翻转") {
+            return;
+        }
+
         tracing::info!("Root: 执行垂直翻转操作");
 
         let modified = root.editor.flip_selected_notes_vertical();
@@ -258,6 +266,10 @@ impl ToolbarHandler {
             crate::toolbar::Event::FlipHorizontal(mode) => *mode,
             _ => return,
         };
+
+        if !Self::arrangement_batch_gate(root, "水平翻转") {
+            return;
+        }
 
         tracing::info!("Root: 执行水平翻转操作，模式: {:?}", mode);
 
@@ -283,6 +295,10 @@ impl ToolbarHandler {
             _ => return,
         };
 
+        if !Self::arrangement_batch_gate(root, "移调") {
+            return;
+        }
+
         // 必须有选中音符才能移调
         if root
             .editor
@@ -305,94 +321,6 @@ impl ToolbarHandler {
             root.editor.clear_notes_changed();
         } else {
             tracing::debug!("Root: 没有音符被移调");
-        }
-    }
-
-    /// 处理连奏操作
-    pub(crate) fn handle_toolbar_tie(&self, root: &mut Root, event: &crate::toolbar::Event) {
-        if !matches!(event, crate::toolbar::Event::Tie) {
-            return;
-        }
-
-        tracing::info!("Root: 执行音符连奏操作");
-
-        // 必须有选中音符才能连奏
-        if root
-            .editor
-            .editor_state
-            .interaction
-            .selected_notes
-            .is_empty()
-        {
-            tracing::debug!("Root: 没有选中音符，不执行连奏");
-            return;
-        }
-
-        let tied = root.editor.tie_selected_notes();
-
-        if tied > 0 {
-            tracing::info!("Root: 连奏完成，连接了 {} 个音符", tied);
-            root.update_playback_notes();
-            root.editor.clear_notes_changed();
-        } else {
-            tracing::debug!("Root: 没有音符被连奏（需至少 2 个同 Key 的选中音符）");
-        }
-    }
-
-    /// 处理分割/合并操作
-    pub(crate) fn handle_toolbar_split_glue(&self, root: &mut Root, event: &crate::toolbar::Event) {
-        match event {
-            crate::toolbar::Event::Split => {
-                // 分割选中音符：在音符中间位置分割
-                let selected: Vec<usize> = root
-                    .editor
-                    .editor_state
-                    .interaction
-                    .selected_notes
-                    .iter()
-                    .collect();
-
-                if selected.is_empty() {
-                    tracing::debug!("Root: 分割操作 - 没有选中音符");
-                    return;
-                }
-
-                let mut split_count = 0usize;
-                // 从大到小处理，避免索引偏移
-                let mut indices: Vec<usize> = selected;
-                indices.sort_by(|a, b| b.cmp(a));
-                indices.dedup();
-
-                root.editor.push_history();
-
-                for &idx in &indices {
-                    if let Some(note) = root.editor.editor_state.data.current_track_notes().get(idx)
-                    {
-                        let split_tick =
-                            note.start_tick as f32 + (note.end_tick - note.start_tick) as f32 / 2.0;
-                        root.editor.split_note(idx, split_tick);
-                        split_count += 1;
-                    }
-                }
-
-                if split_count > 0 {
-                    tracing::info!("Root: 分割完成 - 分割了 {} 个音符", split_count);
-                    root.update_playback_notes();
-                    root.editor.clear_notes_changed();
-                    root.editor.editor_state.interaction.selected_notes.clear();
-                }
-            }
-            crate::toolbar::Event::Glue => {
-                let merged = root.editor.glue_selected_notes();
-                if merged > 0 {
-                    tracing::info!("Root: 合并完成 - 合并了 {} 组音符", merged);
-                    root.update_playback_notes();
-                    root.editor.clear_notes_changed();
-                } else {
-                    tracing::debug!("Root: 合并操作 - 没有可合并的音符");
-                }
-            }
-            _ => {}
         }
     }
 }

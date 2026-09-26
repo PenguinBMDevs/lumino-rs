@@ -3,7 +3,10 @@
 //! 为 arrangement_ops 子模块提供以下共享资源：
 //! - `note_event_to_note`: MIDI NoteEvent → 编辑器 Note
 //! - `note_in_rect`: 音符与擦除矩形相交判断
-//! - `ClipboardNoteEntry`: 剪贴板音符元组类型别名
+//!
+//! 剪贴板音符元组 `ClipboardNoteEntry` 已提升为**跨视图公共类型**
+//! （`crate::clipboard::ClipboardNoteEntry`）——钢琴卷帘与工程走带的粘贴路径
+//! 共用同一份多轨插入内核，类型也必须共享，否则又是一条平行实现。
 //!
 //! 2026-08 单一权威源：`track_notes` 缓存已删除，arrangement 操作直接读写
 //! document（MidiDocument 唯一权威）。`sync_current_track_after_arrange_op` /
@@ -36,9 +39,3 @@ pub(super) fn note_event_in_rect(note: &NoteEvent, tick_start: f64, tick_end: f6
     let e = note.end_tick as f32;
     s < (tick_end as f32) && e > (tick_start as f32)
 }
-
-/// 剪贴板音符元组：(dest_track, tick_offset, key_offset, length, velocity, channel)
-///
-/// `dest_track` 为解析时已映射到文档的音轨索引（视觉偏移经 `document_track_at`
-/// 转换得到），`apply_paste_internal` 直接按此插入，不再二次换算。
-pub(super) type ClipboardNoteEntry = (usize, f32, u16, f32, u8, u8);

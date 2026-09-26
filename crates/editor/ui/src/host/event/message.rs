@@ -131,6 +131,7 @@ impl Host {
                 | message::Message::ArrangementPaste
                 | message::Message::ArrangementCut
                 | message::Message::ArrangementDeleteSelection
+                | message::Message::ArrangementSelectAll
         ) {
             return self.handle_arrangement_message(message);
         }

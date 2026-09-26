@@ -65,6 +65,7 @@ impl Editor {
             } else {
                 self.remap_selection_by_identity(&selection_identity);
             }
+            self.invalidate_arrange_selection_after_history("撤销");
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
@@ -75,6 +76,26 @@ impl Editor {
         } else {
             tracing::info!("Editor: 没有可撤销的操作");
             false
+        }
+    }
+
+    /// 历史回退后处理工程走带选区。
+    ///
+    /// 走带选区有两种形态，语义截然不同：
+    /// - **冻结集**（拖动 / 变速 / 粘贴后的精确 `(视觉轨, start_tick, key)` 集合）：
+    ///   是**位置快照**，历史回退后位置全部失效。保留它会让后续拖动 / 删除 / 复制
+    ///   作用不到任何音符，且**无任何提示**——用户只会认为软件坏了。故必须清空。
+    /// - **矩形**（用户框选的时值区间）：是**活语义**，描述的是「这一块区域」而非
+    ///   「这些音符」。历史回退后音符回到矩形内即可继续命中，保留反而符合直觉。
+    ///
+    /// P0 修复：原实现对走带选区零处理，撤销后冻结集悬空。
+    fn invalidate_arrange_selection_after_history(&mut self, op: &str) {
+        let data = &mut self.editor_state.data;
+        if data.arrange_selection.frozen().is_some() {
+            data.arrange_selection.clear();
+            tracing::debug!(
+                "Editor: {op}后清空走带冻结选区（位置快照已失效，保留会导致后续操作静默失效）"
+            );
         }
     }
 
@@ -136,6 +157,7 @@ impl Editor {
             } else {
                 self.remap_selection_by_identity(&selection_identity);
             }
+            self.invalidate_arrange_selection_after_history("重做");
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
