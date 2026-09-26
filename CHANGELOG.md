@@ -9,8 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 渲染修复
+
+- **重叠音符逐帧闪烁修复** — 钢琴卷帘重叠音符（同轨同 key 叠音、预览与已有音符重叠）的深度只编码到轨道粒度，配合 `cull.wgsl` 抢占式 `atomicAdd` 导致的可见顺序随机，管线 `LessEqual + depth_write` 下「同深度后画者胜」的赢家逐帧变化，重叠区描边抖动。四份音符 shader（含纵向转置版）改为「预览 0.0 / 主音轨 2^-17 / 洋葱皮 (track_enc+1)×2^-16」显式分层，并以 chunk 内源索引（跨帧稳定）注入基深度尾数低位做轨内确定性平局裁决；同轨最大偏移恒 < 2^-16，不侵占相邻轨道层、不越远平面（`bbca7239`）
+- **导出路径 depth 兼容性** — 视频导出的洋葱皮渲染器此前沿用带 depth-stencil 的管线，与无 depth attachment 的导出 RenderPass 不兼容（一旦上传实例即触发 wgpu 校验错误并丢弃整条命令缓冲）；新增无 depth 变体并同步导出渲染器集合（`7879d75e`）
+- **验证补齐** — 新增深度精度预算单测（严格单调 / 不越层 / 不越远平面 / shader 契约一致）、64 帧绘制顺序无关的像素级回归、无 depth 路径覆盖掩码等价与管线兼容性测试（`9069dbae`）
+
 ### 其它
+
 - **版本号更新** — 升级项目版本号至 0.2.1
+- **editor-state 测试修复** — 清理 MIDI 文档测试中已被 note-id 移除重构删除的 `next_note_id` 字段，恢复 `cargo clippy --workspace --all-targets` / `cargo test --workspace` 可编译（`5c3d8b0b`）
 
 ## [0.2.0] - 2026-08-16
 
