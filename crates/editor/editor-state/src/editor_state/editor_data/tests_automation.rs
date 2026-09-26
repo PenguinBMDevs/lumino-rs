@@ -125,7 +125,6 @@ fn test_batch_import_control_events_semantics() {
     ]);
     let doc = MidiDocument {
         notes: vec![ChunkedList::new(), ChunkedList::new()],
-        next_note_id: 1,
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![],
@@ -207,7 +206,6 @@ fn test_batch_import_control_events_scales_linearly() {
         .collect();
     let doc = MidiDocument {
         notes: vec![ChunkedList::new()],
-        next_note_id: 1,
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
         key_signatures: vec![],
