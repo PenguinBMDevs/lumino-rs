@@ -24,6 +24,9 @@ pub use chunked_list::{
 pub use compact::{CompactEvent, EventKind};
 pub use document::{MidiDocument, TICK_SEARCH_BUFFER, TrackNoteView};
 pub use error::{LoaderError, LoaderResult};
+/// 控制事件元素类型（`MidiDocument::control_events` 的元素）——
+/// 公开字段的类型应可被消费方命名（REND-003 测试需要构造控制事件）。
+pub use midly::loader::PackedControlEvent;
 pub use note_event::NoteEvent;
 pub use note_info::NoteInfo;
 pub use track::{TrackManager, TrackView, TrackVisibility};

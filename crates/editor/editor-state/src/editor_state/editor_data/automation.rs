@@ -37,6 +37,77 @@ impl EditorData {
         idx
     }
 
+    /// 批量导入文档控制事件为自动化 lane（REND-003）。
+    ///
+    /// 旧路径对**每一条**控制事件调用 [`Self::apply_automation_edit`]（Add）：每条都做
+    /// `retain(同 tick 去重)` + 全量 `sort_by_key` + `recompute_auto_handles`，
+    /// 单条 lane 的累计成本是 **O(M² log M)**——实测素材（Night Voyager）有 45.8 万条
+    /// 控制事件、最大 lane 32.3 万条，加载时在 `set_midi_document` 内长时间卡死。
+    ///
+    /// 本方法按 `(track, target)` 分组、单遍构建，每个 lane 只重算一次控制柄；
+    /// 语义与逐条路径一致：
+    /// - 事件按 tick 升序（文档 `control_events` 本身按 tick 有序，分组内保序）；
+    /// - CC：同 tick 唯一（后出现者替换）；
+    /// - PitchBend：同 tick 允许多条（跳变对）；
+    /// - `lane.channel` 取该 lane 最后一条事件的通道；
+    /// - lane 顺序 = 首次出现顺序（与旧路径一致）。
+    pub fn import_control_events_from_document(&mut self, doc: &lumino_midi_model::MidiDocument) {
+        use lumino_note_core::automation::{AutomationEvent, AutomationTarget, SegmentShape};
+        use std::collections::HashMap;
+
+        // 每次加载新文档时重建，避免旧数据残留（与旧路径一致）
+        self.automation_lanes.clear();
+
+        // key = (track, kind, controller)；kind: 0=CC, 2=PB
+        let mut order: Vec<(u16, u8, u8)> = Vec::new();
+        let mut groups: HashMap<(u16, u8, u8), (u8, Vec<AutomationEvent>)> = HashMap::new();
+
+        for ev in &doc.control_events {
+            let (kind, controller, value) = match ev.kind {
+                0 => (0u8, (ev.param >> 8) as u8, ev.param & 0xFF),
+                2 => (2u8, 0u8, ev.param),
+                _ => continue,
+            };
+            let key = (ev.track, kind, controller);
+            let entry = groups.entry(key).or_insert_with(|| {
+                order.push(key);
+                (ev.channel, Vec::new())
+            });
+            entry.0 = ev.channel;
+            if kind == 0 {
+                // CC 同 tick 唯一：后出现者替换（文档按 tick 有序 → 同 tick 相邻）
+                if let Some(last) = entry.1.last_mut()
+                    && last.tick == ev.tick
+                {
+                    *last = AutomationEvent::new(ev.tick, value, SegmentShape::Step);
+                    continue;
+                }
+            }
+            entry
+                .1
+                .push(AutomationEvent::new(ev.tick, value, SegmentShape::Step));
+        }
+
+        for key in order {
+            let Some((channel, events)) = groups.remove(&key) else {
+                continue;
+            };
+            let target = if key.1 == 0 {
+                AutomationTarget::CC { controller: key.2 }
+            } else {
+                AutomationTarget::PitchBend
+            };
+            let mut lane = AutomationLane {
+                target,
+                track: key.0,
+                channel,
+                events,
+            };
+            lane.recompute_auto_handles();
+            self.automation_lanes.push(Arc::new(lane));
+        }
+    }
+
     /// 应用单个自动化编辑操作到数据模型。
     ///
     /// 返回是否实际修改了数据。

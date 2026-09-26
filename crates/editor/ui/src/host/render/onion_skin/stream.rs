@@ -27,6 +27,7 @@ impl Host {
         fp: &OnionSkinFingerprint,
         wgpu_thread: &WgpuRenderThread,
     ) {
+        let t_start = std::time::Instant::now();
         let data = &self.root.editor.editor_state.data;
 
         // 显式会话边界：清空段表 + 重置计数（空文档会话也生效，防旧段表残留）
@@ -94,6 +95,13 @@ impl Host {
             fp.track_gen,
             fp.current_track,
             fp.palette_idx
+        );
+        // REND-003：全量会话在主线程分块构建 + 阻塞发送（sync_channel(3) 背压），
+        // 大工程下是加载后"未响应"的第二段风险，耗时打点便于定位与后续优化。
+        tracing::info!(
+            "[onion-skin] 全量会话完成：{} 个实例，耗时 {:?}",
+            total_counter.get(),
+            t_start.elapsed()
         );
     }
 
