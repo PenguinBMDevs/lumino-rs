@@ -24,12 +24,38 @@ fn keys_of(originals: &[NoteEvent]) -> Vec<u16> {
     originals.iter().map(|n| n.key as u16).collect()
 }
 
+/// 按生产侧同一逻辑计算移动后快照（original + delta，clamp + 长度不变）。
+///
+/// `max_key` 取对应 `apply_move_ops` 调用的传参，保持存量 `moved` 与回放一致。
+fn shifted(
+    originals: &[NoteEvent],
+    delta_tick: i32,
+    delta_key: i16,
+    max_key: u16,
+) -> Vec<NoteEvent> {
+    originals
+        .iter()
+        .map(|n| {
+            let mut m = *n;
+            let new_tick = (n.start_tick as i64 + delta_tick as i64).max(0) as u32;
+            let new_key = (n.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+            let len = n.end_tick.saturating_sub(n.start_tick).max(1);
+            m.start_tick = new_tick;
+            m.end_tick = new_tick.saturating_add(len);
+            m.key = new_key;
+            m
+        })
+        .collect()
+}
+
 #[test]
 fn test_apply_move_ops_forward() {
     let mut data = make_data_with_notes();
+    let orig = originals_of(&data, 1, &[0, 1]);
     let ops = vec![MoveOp {
         track_id: 1,
-        originals: originals_of(&data, 1, &[0, 1]),
+        moved: shifted(&orig, 5, -2, 127),
+        originals: orig,
         delta_tick: 5,
         delta_key: -2,
         seq: 0,
@@ -71,9 +97,11 @@ fn test_apply_move_ops_forward() {
 #[test]
 fn test_apply_move_ops_inverse() {
     let mut data = make_data_with_notes();
+    let orig = originals_of(&data, 1, &[0, 1, 2]);
     let ops = vec![MoveOp {
         track_id: 1,
-        originals: originals_of(&data, 1, &[0, 1, 2]),
+        moved: shifted(&orig, 10, 5, 127),
+        originals: orig,
         delta_tick: 10,
         delta_key: 5,
         seq: 0,
@@ -115,6 +143,7 @@ fn test_apply_move_ops_clamps_key() {
     let all = originals_of(&data, 1, &[0, 1]);
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: shifted(&all[0..1], 0, -100, 20),
         originals: vec![all[0]],
         delta_tick: 0,
         delta_key: -100,
@@ -129,6 +158,7 @@ fn test_apply_move_ops_clamps_key() {
 
     let ops2 = vec![MoveOp {
         track_id: 1,
+        moved: shifted(&all[1..2], 0, 100, 20),
         originals: vec![all[1]],
         delta_tick: 0,
         delta_key: 100,
@@ -147,6 +177,7 @@ fn test_apply_move_ops_empty_originals_is_noop() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 5,
         delta_key: 0,
@@ -166,9 +197,11 @@ fn test_apply_move_ops_creates_missing_track_notes() {
     // 构造时固定）。原测试意图「操作指定轨数据」改为：构造含 track 2 的 document，
     // 验证 apply_move_ops 可作用于非当前轨（track_id=2）。
     let mut data = EditorData::with_f32_notes(2, &[Note::new(0.0, 60, 1.0)]);
+    let orig = originals_of(&data, 2, &[0]);
     let ops = vec![MoveOp {
         track_id: 2,
-        originals: originals_of(&data, 2, &[0]),
+        moved: shifted(&orig, 3, 1, 127),
+        originals: orig,
         delta_tick: 3,
         delta_key: 1,
         seq: 0,

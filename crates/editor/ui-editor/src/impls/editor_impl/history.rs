@@ -30,7 +30,11 @@ impl Editor {
         }
         // 移动专路预判：Operation undo 后轨道为 originals（按值），
         // 通用旧值重映射必空（旧值已删），此处按目标值重选，无全扫。
-        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> =
+        // 仅当撤销前确有选中时才重选；空选中保持空（不凭空建框）。
+        // 非移动路径仍用通用守卫（值持久的插入/删除，旧值仍存在）。
+        let selection_identity = self.capture_selection_identity();
+        let had_selection = selection_identity.entries().is_some_and(|e| !e.is_empty());
+        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> = if had_selection {
             match self.editor_state.data.history.undo_back() {
                 Some(lumino_note_core::history::HistoryEntry::Operation(entry)) => Some(
                     entry
@@ -40,9 +44,10 @@ impl Editor {
                         .collect(),
                 ),
                 _ => None,
-            };
-        // 非移动路径仍用通用守卫（值持久的插入/删除，旧值仍存在）。
-        let selection_identity = self.capture_selection_identity();
+            }
+        } else {
+            None
+        };
         if self.editor_state.data.undo() {
             if let Some(targets) = move_targets {
                 self.selection_clear();
@@ -94,11 +99,13 @@ impl Editor {
             return true;
         }
         // 移动专路预判：Operation redo 后轨道为 moved（originals + delta），
-        // 按目标新值重选（max_key 与回放一致取 255）。
-        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> =
+        // 按目标新值重选。仅当重做前确有选中时才重选；空选中保持空。
+        let selection_identity = self.capture_selection_identity();
+        let had_selection = selection_identity.entries().is_some_and(|e| !e.is_empty());
+        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> = if had_selection {
             match self.editor_state.data.history.redo_back() {
                 Some(lumino_note_core::history::HistoryEntry::Operation(entry)) => {
-                    // 与回放侧 `max_key_for_move_op()=255` 一致（历史路径默认 255）。
+                    // 与回放侧一致取存量 moved（创建时 clamp 已固化，不再重算）。
                     const HIST_MAX_KEY: u16 = 255;
                     Some(
                         entry
@@ -109,8 +116,10 @@ impl Editor {
                     )
                 }
                 _ => None,
-            };
-        let selection_identity = self.capture_selection_identity();
+            }
+        } else {
+            None
+        };
         if self.editor_state.data.redo() {
             if let Some(targets) = move_targets {
                 self.selection_clear();

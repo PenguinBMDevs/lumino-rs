@@ -20,13 +20,27 @@ fn value_of(data: &EditorData, index: usize) -> NoteEvent {
     *data.track_notes(1).get(index).expect("音符应存在")
 }
 
+/// 按生产侧同一逻辑计算移动后快照（original + delta，clamp + 长度不变）。
+fn shifted_one(orig: &NoteEvent, delta_tick: i32, delta_key: i16, max_key: u16) -> NoteEvent {
+    let mut m = *orig;
+    let new_tick = (orig.start_tick as i64 + delta_tick as i64).max(0) as u32;
+    let new_key = (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+    let len = orig.end_tick.saturating_sub(orig.start_tick).max(1);
+    m.start_tick = new_tick;
+    m.end_tick = new_tick.saturating_add(len);
+    m.key = new_key;
+    m
+}
+
 #[test]
 fn test_apply_move_ops_forward_restores_sorted_order() {
     // 音符 tick 0/10/20；把首个音符移到 30（越过其余两个）→ 必须重排
     let mut data = make_data_with_notes();
+    let orig = value_of(&data, 0);
     let ops = vec![MoveOp {
         track_id: 1,
-        originals: vec![value_of(&data, 0)],
+        moved: vec![shifted_one(&orig, 30, 0, 127)],
+        originals: vec![orig],
         delta_tick: 30,
         delta_key: 0,
         seq: 0,
@@ -48,9 +62,11 @@ fn test_apply_move_ops_forward_restores_sorted_order() {
 fn test_apply_move_ops_inverse_restores_sorted_order() {
     let mut data = make_data_with_notes();
     // 前进：0 → 30（失序来源）
+    let orig = value_of(&data, 0);
     let fwd = vec![MoveOp {
         track_id: 1,
-        originals: vec![value_of(&data, 0)],
+        moved: vec![shifted_one(&orig, 30, 0, 127)],
+        originals: vec![orig],
         delta_tick: 30,
         delta_key: 0,
         seq: 0,
@@ -74,6 +90,7 @@ fn test_apply_move_ops_non_current_track_emits_no_main_events() {
     let orig: NoteEvent = *data.track_notes(2).get(0).expect("音符应存在");
     let ops = vec![MoveOp {
         track_id: 2,
+        moved: vec![shifted_one(&orig, 100, 0, 127)],
         originals: vec![orig],
         delta_tick: 100,
         delta_key: 0,

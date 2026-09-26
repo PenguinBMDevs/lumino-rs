@@ -13,11 +13,35 @@ fn ev(start: u32, key: u8) -> NoteEvent {
     NoteEvent::new(start, start + 480, key, 100, 0)
 }
 
+/// 按生产侧同一逻辑计算移动后快照（original + delta，clamp + 长度不变）。
+fn moved_of(
+    originals: &[NoteEvent],
+    delta_tick: i32,
+    delta_key: i16,
+    max_key: u16,
+) -> Vec<NoteEvent> {
+    originals
+        .iter()
+        .map(|n| {
+            let mut m = *n;
+            let new_tick = (n.start_tick as i64 + delta_tick as i64).max(0) as u32;
+            let new_key = (n.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+            let len = n.end_tick.saturating_sub(n.start_tick).max(1);
+            m.start_tick = new_tick;
+            m.end_tick = new_tick.saturating_add(len);
+            m.key = new_key;
+            m
+        })
+        .collect()
+}
+
 #[test]
 fn test_move_op_inverse() {
+    let originals = vec![ev(0, 60), ev(10, 62), ev(20, 64)];
     let move_op = MoveOp {
         track_id: 1,
-        originals: vec![ev(0, 60), ev(10, 62), ev(20, 64)],
+        moved: moved_of(&originals, 100, -5, 127),
+        originals,
         delta_tick: 100,
         delta_key: -5,
         seq: 0,
@@ -28,6 +52,7 @@ fn test_move_op_inverse() {
         inv.originals, move_op.originals,
         "inverse 必须保持 originals 不变"
     );
+    assert_eq!(inv.moved, move_op.moved, "inverse 必须保持 moved 不变");
     assert_eq!(
         inv.delta_tick, 100,
         "inverse 保持前向 delta（方向由标志决定）"
@@ -43,9 +68,11 @@ fn test_move_op_inverse() {
 #[test]
 fn test_push_move_op_creates_operation_entry() {
     let mut history = History::new();
+    let originals = vec![ev(0, 60), ev(10, 62), ev(20, 64)];
     let ops = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60), ev(10, 62), ev(20, 64)],
+        moved: moved_of(&originals, 10, 2, 127),
+        originals,
         delta_tick: 10,
         delta_key: 2,
         seq: 0,
@@ -65,9 +92,11 @@ fn test_push_move_op_creates_operation_entry() {
 #[test]
 fn test_undo_redo_move_op_roundtrip() {
     let mut history = History::new();
+    let originals = vec![ev(0, 60), ev(10, 62)];
     let ops = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60), ev(10, 62)],
+        moved: moved_of(&originals, 5, -1, 127),
+        originals,
         delta_tick: 5,
         delta_key: -1,
         seq: 0,
@@ -120,16 +149,20 @@ fn test_undo_redo_move_op_roundtrip() {
 #[test]
 fn test_multiple_move_op_undo_redo_sequence() {
     let mut history = History::new();
+    let o1 = vec![ev(0, 60)];
     let ops1 = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60)],
+        moved: moved_of(&o1, 100, 5, 127),
+        originals: o1,
         delta_tick: 100,
         delta_key: 5,
         seq: 0,
     }];
+    let o2 = vec![ev(100, 65)];
     let ops2 = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(100, 65)],
+        moved: moved_of(&o2, 50, 3, 127),
+        originals: o2,
         delta_tick: 50,
         delta_key: 3,
         seq: 0,
@@ -167,9 +200,11 @@ fn test_mixed_snapshot_and_operation_undo_order() {
     // 先 push 一个快照
     history.push(make_snapshot(1));
     // 再 push 一个 MoveOp
+    let o = vec![ev(0, 60)];
     let ops = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60)],
+        moved: moved_of(&o, 10, 0, 127),
+        originals: o,
         delta_tick: 10,
         delta_key: 0,
         seq: 0,
@@ -196,9 +231,11 @@ fn test_mixed_snapshot_and_operation_undo_order() {
 #[test]
 fn test_logical_undo_operation_degrades_to_single() {
     let mut history = History::new();
+    let o = vec![ev(0, 60)];
     let ops = vec![MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60)],
+        moved: moved_of(&o, 7, 3, 127),
+        originals: o,
         delta_tick: 7,
         delta_key: 3,
         seq: 0,
@@ -222,9 +259,11 @@ fn test_logical_undo_operation_degrades_to_single() {
 
 #[test]
 fn test_move_op_inverse_with_i32_min() {
+    let o = vec![ev(0, 60)];
     let move_op = MoveOp {
         track_id: 0,
-        originals: vec![ev(0, 60)],
+        moved: moved_of(&o, i32::MIN, i16::MIN, 127),
+        originals: o,
         delta_tick: i32::MIN,
         delta_key: i16::MIN,
         seq: 0,
@@ -234,4 +273,5 @@ fn test_move_op_inverse_with_i32_min() {
     assert_eq!(inv.delta_tick, i32::MIN);
     assert_eq!(inv.delta_key, i16::MIN);
     assert_eq!(inv.originals, move_op.originals);
+    assert_eq!(inv.moved, move_op.moved);
 }

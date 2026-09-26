@@ -149,13 +149,23 @@ impl Editor {
                     }
                 }
                 crate::SelectionHitType::LeftEdge => {
-                    // 框选左边缘拉伸：先提交 pending 拖动（保留选区，要在当前选区上拉伸）
+                    // 框选左边缘拉伸：先串行化 pending 拖动（保留选区，要在当前选区上拉伸）
                     // 注意：不能用 flush_pending_drag（会清空 selected_notes，导致拉伸无目标）
                     // 未提交的复制（pending_copy）与新操作冲突：直接丢弃（不写入），
                     // 否则 commit_pending_copy 会替换选中集合，导致拉伸作用到副本上。
+                    // 复合串行化例外：拖动已松手（操作完成）但框选未取消时，
+                    // 为避免 pending 索引在拉伸重排后失配 + 异步整轨写回覆盖拉伸变更，
+                    // 此处先提交并等待落盘（drain），保留新值选区再拉伸。
+                    // 纯拖动（无后续拉伸）仍只在空白处取消时落盘，满足幽灵语义。
                     self.pending_copy_drag_state = None;
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
+                        // 等待异步整轨写回完成，避免后台线程覆盖随后的拉伸变更。
+                        self.drain_async_commit();
+                        // 落盘后选中已跟随新值（poll 按新值重选），远端高亮同步到新位置。
+                        if self.editor_state.data.collab_sync_enabled() {
+                            self.emit_local_selection_changed(true);
+                        }
                         // commit_pending_drag 移动音符后，selected_bounds 缓存仍为原始位置，
                         // 不失效会导致后续 get_selection_box_bounds 返回错误边界，框选框跳变。
                         // 在下一次访问时通过 O(N) 回退或 ghost 路径重建缓存。
@@ -169,11 +179,16 @@ impl Editor {
                         };
                 }
                 crate::SelectionHitType::RightEdge => {
-                    // 框选右边缘拉伸：同 LeftEdge，提交 pending 但保留选区
+                    // 框选右边缘拉伸：同 LeftEdge，串行化 pending 后保留选区
                     // 未提交的复制（pending_copy）同样丢弃（见 LeftEdge 注释）
                     self.pending_copy_drag_state = None;
                     if self.pending_drag_state.is_some() {
                         self.commit_pending_drag();
+                        // 同 LeftEdge：等待落盘消除竞态，保留新值选区供拉伸。
+                        self.drain_async_commit();
+                        if self.editor_state.data.collab_sync_enabled() {
+                            self.emit_local_selection_changed(true);
+                        }
                         // 同 LeftEdge：清除 selected_bounds 缓存，防止框选框跳变
                         self.selected_bounds.set(None);
                     }
@@ -245,6 +260,8 @@ impl Editor {
     ///
     /// 在用户开始新操作（点击音符/调整大小/点击空白处）时调用。
     /// 累积拖动场景（框选内部命中）不调用此方法，保留 pending。
+    /// 本方法是批量拖动的唯一常规落盘点（取消框选时）：幽灵期间 document 未变，
+    /// 此处提交 + 清空选区 + 结束远端选择会话。
     ///
     /// **提交顺序（正确性关键）**：移动（pending_drag）走异步提交，完成时
     /// 会整轨替换音符——若复制（pending_copy）先插入副本，会被异步结果覆盖。
@@ -259,6 +276,8 @@ impl Editor {
                 self.drain_async_commit();
             }
             self.selection_clear();
+            // 取消框选：结束本地选择会话（远端清除高亮）。
+            self.emit_local_selection_changed(false);
         }
         if self.pending_copy_drag_state.is_some() {
             self.commit_pending_copy();

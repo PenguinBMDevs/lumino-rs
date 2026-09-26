@@ -56,11 +56,13 @@ impl Root {
 
     /// 补放延迟的远端音符操作（每帧调用，见 `state_update`）。
     ///
-    /// 状态机（保证与本地编辑临界区串行化）：
+    /// 状态机（保证与本地编辑临界区串行化 + 幽灵直到取消）：
     /// 1. 异步提交进行中 → 等待（其整轨写回会覆盖临界区内的变更）；
-    /// 2. 已松手的待提交拖动/复制 → 立即提交（用户手势已完成），下一帧继续；
+    /// 2. 已松手的待提交拖动/复制未取消（仍保留框选）→ 等待取消
+    ///    （blank-click `flush_pending_drag` 统一提交；此处不代提交，
+    ///    否则音符数据在取消框选前落盘，违背幽灵语义）；
     /// 3. 仍有活跃手势（拖动/绘制/调整/曲线编辑）→ 等待松手；
-    /// 4. 空闲 → 按到达顺序补放全部积压操作。
+    /// 4. 空闲（无待提交、无活跃手势）→ 按到达顺序补放全部积压操作。
     pub(crate) fn drain_deferred_remote_ops(&mut self) {
         if self.deferred_remote_ops.is_empty() {
             return;
@@ -68,16 +70,11 @@ impl Root {
         if self.editor.editor_state.data.has_pending_commit() {
             return;
         }
-        if self.editor.has_uncommitted_drag() {
-            let _ = self.editor.commit_pending_drag();
-            return;
-        }
-        if self.editor.has_uncommitted_copy() {
-            let _ = self.editor.commit_pending_copy();
-            return;
-        }
-        if self.editor.is_editing() {
-            // 活跃手势（拖动/绘制/调整/曲线编辑）中：等待结束
+        if self.editor.has_uncommitted_drag()
+            || self.editor.has_uncommitted_copy()
+            || self.editor.is_editing()
+        {
+            // 待提交未取消或活跃手势中：等待取消/松手，不代提交本地拖动
             return;
         }
         let ops = std::mem::take(&mut self.deferred_remote_ops);

@@ -124,27 +124,47 @@ fn test_remote_op_deferred_then_pending_drag_autocommit_and_drain() {
     seed_track1_note(&mut root, 0.0, 60);
     start_live_drag(&mut root);
 
-    // 松手 → 进入待提交（pending_drag_state）
+    // 松手 → 进入待提交（pending_drag_state，仍保留框选，未取消）
     root.editor.handle_action(EditorAction::Released);
     assert!(root.editor.has_uncommitted_drag(), "松手后应存在待提交拖动");
 
-    // 远端同轨操作：临界区（待提交）期间应延迟
+    // 远端同轨操作：待提交未取消期间应延迟，且不代提交本地拖动（幽灵直到取消）
     root.apply_remote_note_operation(&make_add_op(1, 960.0, 72));
     assert_eq!(root.deferred_remote_ops.len(), 1);
-
-    // 每帧补放：自动提交待提交拖动（异步）→ 等待完成 → 补放远端操作
     root.drain_deferred_remote_ops();
     assert!(
-        root.editor.editor_state.data.has_pending_commit(),
-        "补放应自动提交已松手的待提交拖动"
+        !root.editor.editor_state.data.has_pending_commit(),
+        "未取消前不得代提交本地拖动（无异步提交进行中）"
     );
-    // 等待异步提交完成
+    assert_eq!(
+        root.deferred_remote_ops.len(),
+        1,
+        "远端操作应继续排队等待取消"
+    );
+    assert!(
+        !root
+            .editor
+            .editor_state
+            .data
+            .track_notes(1)
+            .iter()
+            .any(|n| n.start_tick == 5 && n.key == 60),
+        "取消前本地拖动不得落盘"
+    );
+
+    // 模拟空白处点击取消框选：提交本地拖动 + 清空选区 + 等待落盘
+    assert!(
+        root.editor.commit_pending_drag(),
+        "取消时应启动本地拖动提交"
+    );
+    root.editor.selection_clear();
     loop {
         if root.editor.poll_async_commit().is_some() {
             break;
         }
         std::thread::sleep(std::time::Duration::from_millis(1));
     }
+    // 取消且本地落盘后，补放远端操作
     root.drain_deferred_remote_ops();
 
     assert!(root.deferred_remote_ops.is_empty(), "远端操作应已补放");

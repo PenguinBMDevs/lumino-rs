@@ -79,10 +79,13 @@ impl Host {
             self.window_ctx.window.request_redraw();
         }
 
-        // 关键：存在 pending 异步提交时，即使没有动画也要触发 AnimationTick，
-        // 否则 `poll_async_commit` 不会被调用，导致撤销/重做等快捷键被阻塞，
-        // 同时空间索引也无法及时重建。
-        if self.root.editor.has_pending_drag() {
+        // 关键：存在**在飞的异步提交**时，即使没有动画也要触发 AnimationTick，
+        // 否则 `poll_async_commit` 不会被调用，提交结果无法落盘、快捷键被阻塞。
+        //
+        // 注意（幽灵直到取消）：`pending_drag_state` 单独存在时**不需要**逐帧驱动——
+        // 幽灵预览只在鼠标事件时重绘，pending 静置期间无任何变化。若用
+        // `has_pending_drag()` 会在 pending 存续的整个期间每帧空转重绘（浪费 GPU）。
+        if self.root.editor.editor_state.data.has_pending_commit() {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
         }

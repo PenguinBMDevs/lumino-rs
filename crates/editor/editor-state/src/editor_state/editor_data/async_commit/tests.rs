@@ -17,6 +17,23 @@ fn make_data_with_notes() -> EditorData {
     )
 }
 
+/// 按生产侧同一逻辑计算移动后快照（original + delta，clamp + 长度不变）。
+fn shifted_one(
+    orig: &lumino_midi_model::NoteEvent,
+    delta_tick: i32,
+    delta_key: i16,
+    max_key: u16,
+) -> lumino_midi_model::NoteEvent {
+    let mut m = *orig;
+    let new_tick = (orig.start_tick as i64 + delta_tick as i64).max(0) as u32;
+    let new_key = (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+    let len = orig.end_tick.saturating_sub(orig.start_tick).max(1);
+    m.start_tick = new_tick;
+    m.end_tick = new_tick.saturating_add(len);
+    m.key = new_key;
+    m
+}
+
 #[test]
 fn test_async_commit_applies_and_pushes_history() {
     let mut data = make_data_with_notes();
@@ -122,6 +139,7 @@ fn test_async_commit_zero_delta_is_noop() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 0,
         delta_key: 0,
@@ -153,6 +171,7 @@ fn test_async_commit_rejects_concurrent() {
     let mut data = make_data_with_notes();
     let ops1 = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 1,
         delta_key: 0,
@@ -160,6 +179,7 @@ fn test_async_commit_rejects_concurrent() {
     }];
     let ops2 = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 1,
         delta_key: 0,
@@ -177,6 +197,7 @@ fn test_poll_async_commit_returns_none_while_pending() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 100,
         delta_key: 0,
@@ -205,6 +226,7 @@ fn test_cancel_async_commit() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![],
         originals: vec![],
         delta_tick: 10,
         delta_key: 0,
@@ -232,6 +254,7 @@ fn test_async_commit_restores_sorted_order() {
     let first = *data.track_notes(1).get(0).expect("首个音符应存在");
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![shifted_one(&first, 30, 0, 127)],
         originals: vec![first],
         delta_tick: 30,
         delta_key: 0,
@@ -269,6 +292,7 @@ fn test_async_commit_no_reorder_keeps_range_events() {
     let first = *data.track_notes(1).get(0).expect("首个音符应存在");
     let ops = vec![MoveOp {
         track_id: 1,
+        moved: vec![shifted_one(&first, 0, 5, 127)],
         originals: vec![first],
         delta_tick: 0,
         delta_key: 5,

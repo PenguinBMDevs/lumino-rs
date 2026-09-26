@@ -18,6 +18,7 @@ mod accumulate;
 mod collab_sync;
 mod commit;
 mod deferred;
+mod ghost_defer;
 
 use crate::EditState;
 use crate::Editor;
