@@ -18,6 +18,7 @@ mod write;
 ///
 /// UI 编辑的 tick 全部来自 `snap_tick`（整数网格吸附），正常路径 `fract() == 0.0`。
 /// 异常亚 tick（防御性）使用 round 并记录 warn——不引入架构性精度损失。
+/// 按值转换，无 ID。
 #[inline]
 pub fn note_to_event(note: Note) -> NoteEvent {
     let start_tick = f32_to_tick(note.tick);
@@ -29,10 +30,9 @@ pub fn note_to_event(note: Note) -> NoteEvent {
         note.velocity,
         note.channel,
     )
-    .with_id(note.id)
 }
 
-/// NoteEvent（u32 tick）→ Note（f32 tick）无损转换
+/// NoteEvent（u32 tick）→ Note（f32 tick）无损转换（按值，无 ID）
 #[inline]
 pub fn event_to_note(event: &NoteEvent) -> Note {
     Note::new(
@@ -42,7 +42,6 @@ pub fn event_to_note(event: &NoteEvent) -> Note {
     )
     .with_velocity(event.velocity)
     .with_channel(event.channel)
-    .with_id(event.id)
 }
 
 /// f32 tick → u32 tick：无损优先（fract==0），异常亚 tick round + trace

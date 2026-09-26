@@ -102,33 +102,30 @@ fn test_razor_split_collab_sync_uses_real_ids() {
     let split = editor.arrange_razor(7005.0, 0);
     assert_eq!(split, 1);
 
-    let mut deleted_ids = Vec::new();
-    let mut added_ids = Vec::new();
+    let mut deleted_vals = Vec::new();
+    let mut added_vals = Vec::new();
     for e in events::take_events() {
         if let Event::Window(lumino_message::events::window::Event::Sync(sync)) = e {
             match sync {
-                SyncEvent::LocalNoteDeleted { id, tick, key, .. }
-                    if tick == 7000.0 && key == 113 =>
-                {
-                    deleted_ids.push(id);
+                SyncEvent::LocalNoteDeleted { tick, key, .. } if tick == 7000.0 && key == 113 => {
+                    deleted_vals.push((tick, key));
                 }
-                SyncEvent::LocalNoteAdded { id, tick, key, .. }
+                SyncEvent::LocalNoteAdded { tick, key, .. }
                     if (tick == 7000.0 || tick == 7005.0) && key == 113 =>
                 {
-                    added_ids.push(id);
+                    added_vals.push((tick, key));
                 }
                 _ => {}
             }
         }
     }
-    assert_eq!(deleted_ids.len(), 1, "应广播 1 条删除（原音符）");
-    assert_eq!(added_ids.len(), 2, "应广播 2 条新增（左右音符）");
-    assert!(deleted_ids[0] > 0, "删除条目必须携带真实 id");
+    assert_eq!(deleted_vals.len(), 1, "应广播 1 条删除（原音符）");
+    assert_eq!(added_vals.len(), 2, "应广播 2 条新增（左右音符）");
+    assert_eq!(deleted_vals[0], (7000.0, 113), "删除条目应按值引用原音符");
     assert!(
-        added_ids.iter().all(|&id| id > 0),
-        "新增条目必须携带真实 id"
+        added_vals.contains(&(7000.0, 113)) && added_vals.contains(&(7005.0, 113)),
+        "新增条目应按值引用左右音符，实际: {added_vals:?}"
     );
-    assert_ne!(added_ids[0], added_ids[1], "左右音符 id 应不同");
 }
 
 #[test]

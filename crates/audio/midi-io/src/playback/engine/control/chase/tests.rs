@@ -50,7 +50,6 @@ fn pitch_bends(messages: &[MidiMessage]) -> Vec<(u8, f32)> {
 /// 构造空音符单轨文档（可带控制事件）。
 fn doc_with_control_events(events: Vec<midly::loader::PackedControlEvent>) -> Arc<MidiDocument> {
     Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_loader::ChunkedList::new()],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
@@ -179,7 +178,6 @@ fn loop_wrap_appends_state_chase() {
     // 文档提供一个可回绕的时间线（音符落在循环范围内）。
     engine.set_document(
         Arc::new(MidiDocument {
-            next_note_id: 1,
             notes: vec![lumino_midi_loader::ChunkedList::from_sorted(vec![
                 DocNoteEvent::new(60, 70, 60, 100, 0),
             ])],

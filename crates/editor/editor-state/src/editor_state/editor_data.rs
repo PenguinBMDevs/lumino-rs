@@ -40,10 +40,11 @@ mod tests_note_ops;
 #[cfg(test)]
 mod tests_track_order;
 
-/// 协作创建同步条目：`(音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引, is_added)`。
-pub type CollabCreateSyncEntry = (u64, f32, u16, f32, u8, u8, usize, bool);
-/// 协作变换同步条目：`(is_add, 音符全局唯一 ID, tick, key, length, velocity, channel, 音轨索引)`。
-pub type CollabTransformSyncEntry = (bool, u64, f32, u16, f32, u8, u8, usize);
+/// 协作创建同步条目：`(tick, key, length, velocity, channel, 音轨索引, is_added)`。
+/// 按值引用，无全局 ID；`is_added=true` 表示重做（重新添加），`false` 表示撤销（删除）。
+pub type CollabCreateSyncEntry = (f32, u16, f32, u8, u8, usize, bool);
+/// 协作变换同步条目：`(is_add, tick, key, length, velocity, channel, 音轨索引)`。
+pub type CollabTransformSyncEntry = (bool, f32, u16, f32, u8, u8, usize);
 
 /// 编辑器数据
 #[derive(Debug)]
@@ -81,8 +82,9 @@ pub struct EditorData {
     /// 由 ui-editor 层的 `editor_impl::history` 在 `undo/redo` 成功后 drain 并
     /// 发射 `LocalNoteMoved` 同步事件。这样撤销/重做也能让远端（B 客户端）保持一致，
     /// 否则 B 端在撤销后本地坐标与 A 端失同步，下一次操作在 B 端 0/N 失配。
-    /// 元组：(音符全局唯一 ID, 参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)
-    pub(crate) pending_collab_move_sync: Vec<(u64, f32, u16, f32, i16, usize)>,
+    /// 元组：(参照 tick, 参照 key, tick 偏移, key 偏移, 音轨索引)——按值引用，
+    /// 操作者标识由信封 `user_id + timestamp` 承载。
+    pub(crate) pending_collab_move_sync: Vec<(f32, u16, f32, i16, usize)>,
     /// 撤销/重做（CreateOp）后待广播给协作对端的音符创建/删除。
     ///
     /// `apply_history_entry` 在应用 CreateEntry（音符创建日志）时填充：

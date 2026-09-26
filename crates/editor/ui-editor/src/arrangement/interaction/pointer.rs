@@ -176,7 +176,8 @@ pub fn handle_pointer_event(
 
                 if delta_ticks != 0 || delta_tracks != 0 {
                     // 选择在拖拽期间未被清空，arrange_move_notes 可直接找到音符并偏移。
-                    // ArrangementMoveNotes handler 会自动 offset 选择矩形到新位置。
+                    // 移动提交后由 arrange_move_notes 把选择集冻结为本次移动的音符
+                    // （精确集合，落点区域内既有音符不进入选择——框选误伤修复）。
                     output.push(Message::ArrangementMoveNotes {
                         delta_ticks,
                         delta_tracks,

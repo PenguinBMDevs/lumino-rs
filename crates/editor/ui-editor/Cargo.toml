@@ -22,6 +22,11 @@ harness = false
 name = "ui_boxselect_copy_bench"
 harness = false
 
+# 走带选区命中音符 · view 层每帧派生查询基准（缓存命中 vs 强制全量重算）
+[[bench]]
+name = "arrangement_sel_cache_bench"
+harness = false
+
 # 删除性能基准（全量轨 1900W 音符，删除/撤销 ≤100ms 门控）
 [[bench]]
 name = "ui_delete_bench"

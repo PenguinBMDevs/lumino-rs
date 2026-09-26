@@ -113,7 +113,10 @@ impl Editor {
             return false;
         }
 
-        let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
+        let ops = self
+            .editor_state
+            .data
+            .move_ops_from_drag_state_with_max_key(drag_state, max_key);
         // 广播协作同步事件：批量移动（框选拖动）必须通知其他客户端，
         // 否则对端音符状态不会改变（B 端收不到任何更新）。
         // 与单音符拖动 `finalize_dragging` 共用同一套协作同步管线：
@@ -124,8 +127,8 @@ impl Editor {
         match self.editor_state.data.apply_move_ops_async(ops, max_key) {
             Ok(true) => {
                 tracing::info!("Editor: 已启动 pending 批量拖动异步提交");
-                // 编辑已提交：结束本地选择会话（通知对端）
-                self.emit_local_selection_changed(false);
+                // 选择会话结束由调用方按场景发射（flush 取消时发 end，
+                // 拉伸/保存等保留选区时发 active 更新），此处不预设。
                 true
             }
             Ok(false) => {
@@ -151,7 +154,7 @@ impl Editor {
     /// 每个被选中音符都发射一次，携带其**原始**位置（移动前 tick/key）与本次
     /// 拖动的统一偏移，对端据此匹配本地音符并叠加相同偏移完成同步。
     fn broadcast_selection_move(&self, drag_state: &DragState) {
-        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃）。
+        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃，按值）。
         if !self.editor_state.data.collab_sync_enabled() {
             return;
         }
@@ -159,14 +162,13 @@ impl Editor {
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
         for idx in drag_state.selected_indices() {
-            // 2026-08 单一权威源：id 与原始位置取自 document 当前轨权威 NoteEvent
-            let (id, tick, key, length) = {
+            // 2026-09 去 ID：原始位置取自 document 当前轨权威 NoteEvent（按值）
+            let (tick, key, length) = {
                 let notes = self.editor_state.data.track_notes(track_index);
                 let Some(note) = notes.get(idx) else {
                     continue;
                 };
                 (
-                    note.id,
                     note.start_tick as f32,
                     note.key as u16,
                     (note.end_tick - note.start_tick) as f32,
@@ -174,7 +176,6 @@ impl Editor {
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    id,
                     tick,
                     key,
                     length,
@@ -233,8 +234,7 @@ impl Editor {
             return false;
         }
 
-        // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB）
-        // 使用 with_ids 免去每音符 note_id_at 全轨重扫（O(N·M) → O(N log N)）
+        // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB，按值）
         self.push_history();
         let ids = self.editor_state.data.batch_insert_notes_with_ids(&notes);
         let inserted = ids.len();
@@ -244,15 +244,14 @@ impl Editor {
         self.selection_clear();
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
-        // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
-        // 否则 B 端完全缺失被复制的副本。使用返回的 ids 批量广播，避免 100K 单消息风暴。
+        // 2026-09 去 ID 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
+        // 否则 B 端完全缺失被复制的副本（按值批量广播，避免 100K 单消息风暴）。
         // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let track = self.editor_state.data.current_track;
         if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
-            let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
+            let batch: Vec<(f32, u16, f32, u8, u8, usize)> = notes
                 .iter()
-                .zip(ids.iter())
-                .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .map(|n| (n.tick, n.key, n.length, n.velocity, n.channel, track))
                 .collect();
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_notes_added_batch(batch),
@@ -269,14 +268,23 @@ impl Editor {
     ///
     /// 若完成：应用结果到 data，清空 pending_drag_state，并返回修改数。
     /// 若未完成：返回 `None`。
+    ///
+    /// 选中跟随条件分支（幽灵直到取消）：
+    /// 保留旧框（interaction 选中值 == pending 原始值）时按新值重选；
+    /// 已取消或新框时走通用重映射。全程窗口定位，无全扫。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
         crate::puffin_profiler::poll_async_commit();
-        // 主选择漂移防护：异步写回整轨替换当前轨，先捕获选中身份，
-        // 写回成功后按 id 重映射（批量拖动期间 selected_notes 刻意保留）。
-        let selection_identity = self.capture_selection_identity();
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let identity = self.capture_selection_identity();
+        let (olds, delta_tick, delta_key) = Self::pending_drag_olds_of(self);
+        let retained = Self::pending_matches_interaction(&identity, &olds);
         match self.editor_state.data.poll_async_commit() {
             Some(Ok(modified)) => {
-                self.remap_selection_by_identity(&selection_identity);
+                if retained {
+                    Self::reselect_moved_news(self, &olds, delta_tick, delta_key, max_key);
+                } else {
+                    self.remap_selection_by_identity(&identity);
+                }
                 if modified > 0 {
                     self.mark_notes_changed();
                     tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
@@ -300,11 +308,23 @@ impl Editor {
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
         while self.editor_state.data.has_pending_commit() {
-            // 主选择漂移防护：每次写回整轨替换当前轨，先捕获选中身份
-            let selection_identity = self.capture_selection_identity();
+            // 同 poll_async_commit 的条件分支（保留旧框→新值重选，否则通用重映射）。
+            let identity = self.capture_selection_identity();
+            let (olds, delta_tick, delta_key) = Self::pending_drag_olds_of(self);
+            let retained = Self::pending_matches_interaction(&identity, &olds);
             match self.editor_state.data.poll_async_commit() {
                 Some(Ok(modified)) => {
-                    self.remap_selection_by_identity(&selection_identity);
+                    if retained {
+                        Self::reselect_moved_news(
+                            self,
+                            &olds,
+                            delta_tick,
+                            delta_key,
+                            self.editor_state.view.visible_key_count.saturating_sub(1),
+                        );
+                    } else {
+                        self.remap_selection_by_identity(&identity);
+                    }
                     if modified > 0 {
                         self.mark_notes_changed();
                         any_modified = true;
@@ -322,6 +342,84 @@ impl Editor {
             }
         }
         any_modified
+    }
+
+    /// 捕获 pending 拖动的原始值快照 + 增量（窗口定位用，无全扫）。
+    ///
+    /// pending 索引指向提交前 document 位置（幽灵期间 document 未变，索引有效）；
+    /// 若 track 已切换或索引越界，对应项跳过（份数语义：能定位多少算多少）。
+    fn pending_drag_olds_of(editor: &Editor) -> (Vec<lumino_midi_loader::NoteEvent>, i64, i16) {
+        match editor.pending_drag_state.as_ref() {
+            Some(ds) => {
+                let track = editor.editor_state.data.current_track;
+                let notes = editor.editor_state.data.track_notes(track);
+                let olds: Vec<lumino_midi_loader::NoteEvent> = ds
+                    .selected_indices()
+                    .into_iter()
+                    .filter_map(|i| notes.get(i).copied())
+                    .collect();
+                (olds, ds.delta_tick, ds.delta_key)
+            }
+            None => (Vec::new(), 0, 0),
+        }
+    }
+
+    /// pending 原始值是否 == 当前 interaction 选中值（多重集按份数相等）。
+    ///
+    /// 相等 → 保留旧框（按新值重选）；不等/空 → 已取消或新框（通用重映射）。
+    /// 整数键计数 O(K)，无全扫。
+    fn pending_matches_interaction(
+        identity: &crate::note_ops::selection_remap::SelectionIdentity,
+        olds: &[lumino_midi_loader::NoteEvent],
+    ) -> bool {
+        if olds.is_empty() {
+            return false;
+        }
+        let Some(entries) = identity.entries() else {
+            // 超大选中集未逐值捕获：用基数启发（保留旧框时两者基数一致）。
+            // 新框局部一般基数显著不同；误判为保留时新值重选可能遮蔽新框，
+            // 但超大场景极罕见，保守选择保留跟随（宁可跟随旧框，不可错选新框？不——
+            // 此处返回 false 走通用清空更安全）。为安全返回 false。
+            return false;
+        };
+        if entries.len() != olds.len() {
+            return false;
+        }
+        values_multiset_eq(entries, olds)
+    }
+
+    /// 按新值（original + delta）重选（删加后旧值已 gone，窗口定位，无全扫）。
+    ///
+    /// 先清空再逐个 `position_of` 新值；未命中者取消选中（份数语义）。
+    fn reselect_moved_news(
+        editor: &mut Editor,
+        olds: &[lumino_midi_loader::NoteEvent],
+        delta_tick: i64,
+        delta_key: i16,
+        max_key: u16,
+    ) {
+        editor.selection_clear();
+        for orig in olds {
+            let new_tick = (orig.start_tick as i64 + delta_tick).max(0) as u32;
+            let new_key = (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+            let len = orig.end_tick.saturating_sub(orig.start_tick).max(1);
+            let mut news = lumino_midi_loader::NoteEvent::new(
+                new_tick,
+                new_tick.saturating_add(len),
+                new_key,
+                orig.velocity,
+                orig.channel,
+            );
+            news.release_velocity = orig.release_velocity;
+            if let Some(idx) = editor
+                .editor_state
+                .data
+                .track_notes(editor.editor_state.data.current_track)
+                .position_of(&news)
+            {
+                editor.selection_insert(idx);
+            }
+        }
     }
 
     /// 提交当前编辑（Save/Play/Export 前自动调用）
@@ -343,9 +441,17 @@ impl Editor {
         // handle_released: Dragging/Drawing/Resizing 直接 apply；DraggingSelection 保存到 pending
         self.handle_released();
         // 延迟提交方案：如果 handle_released 产生了 pending_drag_state，启动异步提交
+        // （显式完成点：Save/Play/Export 必须落盘，选区保留）。
         let pending_committed = self.commit_pending_drag();
         // Save/Play/Export 前必须等待异步提交完成
         let drained = self.drain_async_commit();
+        // 保留选区时远端高亮应跟随到新位置（提交后选中已按新值重选）。
+        if (pending_committed || drained)
+            && !self.editor_state.interaction.selected_notes.is_empty()
+            && self.editor_state.data.collab_sync_enabled()
+        {
+            self.emit_local_selection_changed(true);
+        }
         // 复制模式：未写入的副本在保存/播放/导出前必须写入内存层。
         // 必须在 drain 之后（异步提交整轨替换音符，先插入副本会被覆盖）
         let copy_committed = self.commit_pending_copy();
@@ -360,4 +466,45 @@ impl Editor {
         );
         true
     }
+}
+
+/// 音符值多重集按份数相等（整数键计数 O(K)，无全扫）。
+///
+/// 键为 `(start,end,key,vel,release,chan)` 全字段；同值多份按份数比较。
+fn values_multiset_eq(
+    a: &[lumino_midi_loader::NoteEvent],
+    b: &[lumino_midi_loader::NoteEvent],
+) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let mut counts: std::collections::HashMap<(u32, u32, u8, u8, u8, u8), usize> =
+        std::collections::HashMap::with_capacity(a.len() * 2);
+    for n in a {
+        *counts
+            .entry((
+                n.start_tick,
+                n.end_tick,
+                n.key,
+                n.velocity,
+                n.release_velocity,
+                n.channel,
+            ))
+            .or_insert(0) += 1;
+    }
+    for n in b {
+        let key = (
+            n.start_tick,
+            n.end_tick,
+            n.key,
+            n.velocity,
+            n.release_velocity,
+            n.channel,
+        );
+        match counts.get_mut(&key) {
+            Some(c) if *c > 0 => *c -= 1,
+            _ => return false,
+        }
+    }
+    true
 }

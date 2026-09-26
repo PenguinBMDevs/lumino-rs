@@ -46,7 +46,7 @@ impl EditorData {
                 }
             }
             // 就地改 tick 破坏「按 start_tick 升序」不变式（window_range/
-            // position_of_id 二分依赖，破坏后渲染/命中会漏检音符）→ 立即恢复，
+            // position_of 窗口二分依赖，破坏后渲染/命中会漏检音符）→ 立即恢复，
             // 并取回受影响闭区间（区间外内容不变 → 增量更新，无全量重建）。
             reorder_ranges = track.restore_sorted_ranges(&modified_indices);
         }
@@ -85,17 +85,17 @@ impl EditorData {
         };
         let length = length.max(snap_precision);
         let note = Note::new(tick, key, length);
-        let inserted_id = self.insert_note_with_id(self.current_track, note.clone());
-        if let Some(id) = inserted_id {
-            // 增量、极简操作日志：每 op 记录单个音符（20 字节）替代整轨快照克隆。
+        let inserted = self.insert_note_with_id(self.current_track, note.clone());
+        if inserted.is_some() {
+            // 增量、极简操作日志：每 op 记录单个音符值替代整轨快照克隆。
             // 合并窗口语义不变（300ms 内连续放置合并为一条 CreateEntry），
-            // 但 undo/redo 恢复是 O(op 数) 精确位置操作，与音符总量解耦——
+            // 但 undo/redo 恢复是 O(op 数) 按值精确操作，与音符总量解耦——
             // 1600W 音符工程铅笔绘制不再触发整轨快照（原 `push_history_mergeable` 路径
             // 每条都 `..top.clone()` 复制整个 EditorSnapshot）。
-            // 关键：CreateOp 记录分配后的真实 id，redo 原样重插（身份稳定）。
+            // 关键：CreateOp 按值记录，redo 按值重插（删加语义）。
             let op = CreateOp {
                 track_id: self.current_track as u32,
-                note: super::accessors::note_to_event(note.clone()).with_id(id),
+                note: super::accessors::note_to_event(note.clone()),
             };
             let merged = self.push_note_create(vec![op]);
             if merged {
@@ -104,9 +104,6 @@ impl EditorData {
         }
         self.mark_current_track_changed();
         tracing::debug!("编辑器: 已保存 1 个音符到音轨 {}", self.current_track);
-        Some(match inserted_id {
-            Some(id) => note.with_id(id),
-            None => note,
-        })
+        Some(note)
     }
 }

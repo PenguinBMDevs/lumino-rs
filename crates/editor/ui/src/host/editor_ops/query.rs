@@ -52,48 +52,26 @@ impl Host {
 
     /// 获取当前选中的音符（用于"导出为素材"）
     ///
-    /// - 卷帘模式：当前音轨的选中音符索引（`selected_notes`）；
-    /// - 走带模式：`arrange_selection` 跨音轨矩形框选覆盖的音符。
+    /// # 视图仲裁（已收口，见 [`crate::root::Root::active_selection`]）
+    ///
+    /// 旧实现在此直接判两套选区，犯了两个错：
+    /// 1. `if has_selection() { return; }` 让卷帘选区无条件优先，走带选区被忽略——
+    ///    而菜单启用条件是 `卷帘非空 || 走带非空`，**能点却导出另一套选区**。
+    /// 2. 走带分支把文档音轨索引当视觉轨传进 `ArrangeSelection::contains`，
+    ///    `track_visual_order` 非恒等时判定全错。
+    ///
+    /// 现在只做 **NoteData 类型转换**：取视图、解析选区、主选区空时的回退语义
+    /// 全部由 `Editor::resolve_selection` 统一负责（该逻辑在 ui-editor 内有单测覆盖）。
     ///
     /// 返回 `(track_idx, [(tick, key, length, velocity, channel)])`（仅含选中音符的音轨）。
     pub fn get_selected_notes(&self) -> Vec<(usize, Vec<NoteData>)> {
-        let mut result: Vec<(usize, Vec<NoteData>)> = Vec::new();
-        let Some(doc) = self.root.editor.editor_state.data.document.as_ref() else {
-            return result;
-        };
-        let data = &self.root.editor.editor_state.data;
-
-        // 卷帘模式：当前轨选中音符索引
-        if self.root.editor.has_selection() {
-            let indices = self.root.editor.get_selected_indices();
-            let notes = doc.track_notes(data.current_track);
-            let selected: Vec<NoteData> = indices
-                .into_iter()
-                .filter_map(|idx| notes.get(idx))
-                .map(|n| {
-                    (
-                        n.start_tick as f32,
-                        n.key,
-                        (n.end_tick - n.start_tick) as f32,
-                        n.velocity,
-                        n.channel,
-                    )
-                })
-                .collect();
-            if !selected.is_empty() {
-                result.push((data.current_track, selected));
-            }
-            return result;
-        }
-
-        // 走带模式：跨音轨矩形框选
-        let arrangement = &data.arrange_selection;
-        if !arrangement.is_empty() {
-            for track_idx in 0..doc.track_count() {
-                let notes = doc.track_notes(track_idx);
-                let selected: Vec<NoteData> = notes
-                    .iter()
-                    .filter(|n| arrangement.contains(track_idx as u16, n.start_tick, n.key))
+        self.root
+            .active_selection()
+            .into_tracks()
+            .into_iter()
+            .map(|(track_idx, notes)| {
+                let converted: Vec<NoteData> = notes
+                    .into_iter()
                     .map(|n| {
                         (
                             n.start_tick as f32,
@@ -104,12 +82,9 @@ impl Host {
                         )
                     })
                     .collect();
-                if !selected.is_empty() {
-                    result.push((track_idx, selected));
-                }
-            }
-        }
-        result
+                (track_idx, converted)
+            })
+            .collect()
     }
 
     /// 检查音符数据是否已变化

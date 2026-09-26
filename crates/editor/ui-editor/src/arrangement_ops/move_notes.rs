@@ -1,7 +1,11 @@
 //! 工程走带音符移动操作（跨音轨）
 //!
 //! 支持 delta_ticks 和 delta_tracks 偏移。
-//! 移动后调用方需自行同步选择矩形。
+//!
+//! **框选冻结（框选误伤修复）**：移动成功后将选择集**冻结为本次真正移动的音符**
+//! （精确集合，落点区域内既有的其他音符不再进入选择）——此前由调用方把选择
+//! 矩形平移到新落点，矩形会顺带覆盖落点区域内本来不在框选内的音符，导致
+//! 再次拖动 / 删除 / 复制 / ghost 预览误伤它们。调用方**不得**再平移选择矩形。
 //!
 //! 2026-08 单一权威源：音符唯一权威是 document，本模块所有读写直接操作
 //! MidiDocument，不再维护 track_notes 缓存。
@@ -14,7 +18,8 @@ use crate::note::Note;
 impl Editor {
     /// 移动工程走带选择区内的音符。
     ///
-    /// 支持跨音轨移动（delta_tracks != 0）。移动后调用方需自行同步选择矩形。
+    /// 支持跨音轨移动（delta_tracks != 0）。移动成功后选择集自动冻结为
+    /// 本次实际移动的音符（见模块文档），调用方无需同步选择矩形。
     /// 返回实际移动的音符数。
     pub fn arrange_move_notes(&mut self, delta_ticks: i64, delta_tracks: i32) -> usize {
         if self.editor_state.data.arrange_selection.is_empty()
@@ -32,6 +37,17 @@ impl Editor {
             return 0;
         }
 
+        // P0 修复（历史链断链）：`insert_note` / `remove_note` 的契约是
+        // 「调用方需先 push_history()」——原实现漏 push，导致走带拖动移动
+        // **根本不进历史栈**（Ctrl+Z 撤不掉），且下方 moved_count == 0 时的
+        // `discard_last_history()` 丢掉的是**用户上一次真实编辑**的快照
+        // （表现为「Ctrl+Z 莫名少撤一步」）。push 必须放在「确定要改」之后，
+        // 这样失败兜底 discard 才语义自洽。
+        self.push_history();
+
+        // 冻结条目：本次实际移动音符的**落点**（视觉音轨 + 文档权威 tick）
+        let frozen_entries = self.frozen_entries_of_moved(&moved_by_dest);
+
         // 精确记录受影响音轨（源 + 目标，洋葱皮事件级增量）
         let mut affected_tracks: HashSet<usize> = indices_by_source.keys().copied().collect();
         affected_tracks.extend(moved_by_dest.keys().copied());
@@ -44,6 +60,12 @@ impl Editor {
             return 0;
         }
 
+        // 框选误伤修复：选择集收敛为「框选时内部包含的音符」（移动后位置）
+        self.editor_state
+            .data
+            .arrange_selection
+            .freeze(frozen_entries);
+
         if current_track_touched {
             self.mark_notes_changed();
         }
@@ -51,12 +73,35 @@ impl Editor {
             .data
             .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
-            "Arrangement: 移动 {} 个音符 (delta_ticks={}, delta_tracks={})",
+            "Arrangement: 移动 {} 个音符 (delta_ticks={}, delta_tracks={})，选择集已冻结为移动音符",
             moved_count,
             delta_ticks,
             delta_tracks
         );
         moved_count
+    }
+
+    /// 收集移动后音符的冻结条目 `(视觉音轨, start_tick, end_tick, key)`
+    ///
+    /// tick 经 `f32_to_tick` 转为文档权威值——冻结集必须与 document 中的
+    /// `NoteEvent.start_tick` 完全一致，`contains` 才能被文档遍历逐个命中。
+    fn frozen_entries_of_moved(
+        &self,
+        moved_by_dest: &HashMap<usize, Vec<Note>>,
+    ) -> Vec<(u16, u32, u32, u8)> {
+        let editor_data = &self.editor_state.data;
+        let mut entries = Vec::with_capacity(moved_by_dest.values().map(Vec::len).sum());
+        for (dest_track, notes) in moved_by_dest {
+            let visual = editor_data
+                .visual_position_of(*dest_track)
+                .unwrap_or(*dest_track) as u16;
+            for note in notes {
+                let start = lumino_editor_state::f32_to_tick(note.tick);
+                let end = lumino_editor_state::f32_to_tick(note.tick + note.length);
+                entries.push((visual, start, end, note.key.min(u8::MAX as u16) as u8));
+            }
+        }
+        entries
     }
 
     /// 执行移动：从源音轨移除音符，插入目标音轨。

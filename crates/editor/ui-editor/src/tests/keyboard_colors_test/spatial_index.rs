@@ -31,7 +31,6 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
     track1.sort_unstable_by_key(|n| n.start_tick);
 
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::from_sorted(track0),
             lumino_midi_loader::ChunkedList::from_sorted(track1),

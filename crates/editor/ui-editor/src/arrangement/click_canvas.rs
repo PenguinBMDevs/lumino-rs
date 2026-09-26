@@ -28,7 +28,11 @@ pub struct ArrangementClickCanvas {
     /// 当前已提交的选择矩形（tick_start, tick_end, track_lo, track_hi）
     pub arr_sel_rect: Option<(f64, f64, usize, usize)>,
     /// 当前选中的音符（tick_start, tick_end, track, key），用于移动时 ghost 预览
-    pub selected_notes: Vec<(f64, f64, usize, u8)>,
+    ///
+    /// `Rc` 共享派生缓存：view 层每帧克隆只是引用计数自增，零深拷贝。
+    /// 2026-09 性能修复——旧实现每帧为此做一次全文档音符扫描（12.9ms），
+    /// 而唯一消费者 `compute_ghost_notes` 只在 `move_drag.is_some()` 时才读。
+    pub selected_notes: std::rc::Rc<[(f64, f64, usize, u8)]>,
     /// 每四分音符 tick 数
     pub ppq: u16,
     /// 网格对齐精度
@@ -303,7 +307,7 @@ mod tests {
             current_tool: Tool::Pointer,
             track_count: 1,
             arr_sel_rect: None,
-            selected_notes: Vec::new(),
+            selected_notes: std::rc::Rc::from(Vec::new()),
             ppq: lumino_core::view_state::DEFAULT_PPQ,
             precision: NotePrecision::Quarter,
             time_signatures: Vec::new(),

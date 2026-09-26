@@ -84,27 +84,34 @@ pub fn paste_payload(editor: &mut Editor, bytes: &[u8]) -> usize {
     total
 }
 
-/// 构造 ID `MoveOp`（捕获当前轨全部音符的 id + 原始位置，与拖动提交同构）。
+/// 构造按值 `MoveOp`（捕获当前轨全部音符的原始快照 + moved，与拖动提交同构）。
 pub fn build_move_ops(editor: &Editor) -> Vec<MoveOp> {
     let data = &editor.editor_state.data;
     let track = data.current_track;
     let notes = data.track_notes(track);
-    let mut ids = Vec::with_capacity(notes.len());
-    let mut ticks = Vec::with_capacity(notes.len());
-    let mut keys = Vec::with_capacity(notes.len());
-    for n in notes.iter() {
-        ids.push(n.id);
-        ticks.push(n.start_tick as f32);
-        keys.push(n.key as u16);
-    }
+    let originals: Vec<NoteEvent> = notes.iter().copied().collect();
+    // 与生产 `move_ops_from_drag_state_with_max_key` 同构：按 max_key clamp 预计算 moved。
+    const MAX_KEY: u16 = 127;
+    let moved: Vec<NoteEvent> = originals
+        .iter()
+        .map(|n| {
+            let mut m = *n;
+            let new_tick = (n.start_tick as i64 + 12).max(0) as u32;
+            let new_key = (n.key as i32 + 1).clamp(0, MAX_KEY as i32) as u8;
+            let len = n.end_tick.saturating_sub(n.start_tick).max(1);
+            m.start_tick = new_tick;
+            m.end_tick = new_tick.saturating_add(len);
+            m.key = new_key;
+            m
+        })
+        .collect();
     vec![MoveOp {
         track_id: track as u32,
-        ids,
+        moved,
+        originals,
         delta_tick: 12,
         delta_key: 1,
         seq: 0,
-        original_ticks: ticks,
-        original_keys: keys,
     }]
 }
 
@@ -114,13 +121,13 @@ pub fn drain_events() {
     std::hint::black_box(events.len());
 }
 
-/// 轨道身份：长度 + 首尾音符 (id, tick, key)
-pub type Identity = (usize, Option<(u64, u32, u8)>, Option<(u64, u32, u8)>);
+/// 轨道身份：长度 + 首尾音符 (tick, key)
+pub type Identity = (usize, Option<(u32, u8)>, Option<(u32, u8)>);
 
-/// 轨道身份校验：长度 + 首尾音符 (id, tick, key)。用于确认操作后数据无损。
+/// 轨道身份校验：长度 + 首尾音符 (tick, key)。用于确认操作后数据无损。
 pub fn track_identity(editor: &Editor) -> Identity {
     let notes = editor.editor_state.data.current_track_notes();
-    let first = notes.first().map(|n| (n.id, n.start_tick, n.key));
-    let last = notes.last().map(|n| (n.id, n.start_tick, n.key));
+    let first = notes.first().map(|n| (n.start_tick, n.key));
+    let last = notes.last().map(|n| (n.start_tick, n.key));
     (notes.len(), first, last)
 }

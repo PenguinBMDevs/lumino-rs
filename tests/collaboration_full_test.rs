@@ -214,7 +214,6 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
     println!("----------------------------------------");
 
     let note = SyncNote {
-        id: 42u64,
         tick: 1920.0,
         key: 60,
         length: 480.0,

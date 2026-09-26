@@ -1,9 +1,7 @@
 //! 走带剪贴板粘贴：文本/二进制载荷解析、锚点计算与批量落轨
 
-use super::super::helpers::ClipboardNoteEntry;
-use super::ARRANGEMENT_BINARY_MARK;
 use crate::Editor;
-use crate::note::Note;
+use crate::clipboard::ClipboardNoteEntry;
 use lumino_midi_model::clipboard::{decode_clipboard_records, parse_clipboard_header};
 use std::time::Instant;
 
@@ -15,8 +13,10 @@ impl Editor {
     /// - 音轨以选中区域的最小音轨为锚点，若选择为空则使用当前音轨
     /// - KEY 保持与被复制音符相同（不改变 KEY 位置）
     ///
-    /// Windows 下优先尝试紧凑二进制（`track_hint == ARRANGEMENT_BINARY_MARK`），
-    /// 命中则毫秒级粘贴；否则退化为 JSON 文本路径（跨平台正确）。
+    /// Windows 下优先尝试紧凑二进制（任意 Lumino 子格式，毫秒级）；
+    /// 未命中则退化为 JSON 文本路径（跨平台正确）。
+    ///
+    /// 跨视图互通：钢琴卷帘复制的载荷同样可被粘贴（`track` 偏移恒 0 → 落锚点轨）。
     ///
     /// 返回是否有音符被粘贴。
     pub fn arrange_paste_notes_from_clipboard(&mut self) -> bool {
@@ -69,20 +69,12 @@ impl Editor {
 
         self.push_history();
 
-        let (inserted_count, current_track_touched, affected_tracks) =
-            self.apply_paste_internal(anchor_tick, origin_key, &pasted);
+        let inserted_count = self.apply_paste_internal(anchor_tick, origin_key, &pasted);
 
         if inserted_count == 0 {
             self.editor_state.data.discard_last_history();
             return false;
         }
-
-        if current_track_touched {
-            self.mark_notes_changed();
-        }
-        self.editor_state
-            .data
-            .mark_track_notes_changed_for(Some(affected_tracks));
         tracing::info!(
             "Arrangement: 已粘贴 {} 个音符 (anchor_tick={})",
             inserted_count,
@@ -95,7 +87,15 @@ impl Editor {
     ///
     /// 与 `arrange_paste_from_text` 同语义：锚点对齐 playback_position、按视觉偏移落轨、
     /// 含 PPQN 一致性重采样；区别仅在载荷格式为紧凑二进制（毫秒级 vs JSON 秒级）。
-    /// 仅当 `track_hint == ARRANGEMENT_BINARY_MARK` 时接受，避免误读钢琴卷帘二进制。
+    ///
+    /// # 跨视图互通（2026-09）
+    ///
+    /// 原实现在此硬拒 `track_hint != ARRANGEMENT_BINARY_MARK`，导致「钢琴卷帘复制 →
+    /// 走带粘贴」**静默失败**（只打一条 warn，用户看不到任何提示）。现在统一接受
+    /// 任意 Lumino 二进制子格式：`ClipRecord.track` 已统一为「相对锚点的视觉轨偏移」
+    /// 语义（卷侧恒 0），故卷帘载荷按偏移 0 落锚点轨，天然正确，无需分支。
+    ///
+    /// `track_hint` 仅用于日志标注载荷来源，不再参与准入判定。
     ///
     /// 非 Windows 构建时仅单测调用（正式调用点为 `#[cfg(windows)]`），允许死代码以过 `-D warnings`。
     #[cfg_attr(not(windows), allow(dead_code))]
@@ -109,9 +109,12 @@ impl Editor {
                 return false;
             }
         };
-        if meta.track_hint != ARRANGEMENT_BINARY_MARK {
-            return false;
-        }
+        tracing::debug!(
+            "Arrangement: 读取二进制剪贴板载荷（track_hint={}，{} 音符，division={}）",
+            meta.track_hint,
+            meta.count,
+            meta.division
+        );
         let editor_data = &self.editor_state.data;
         let target_div = editor_data
             .document
@@ -161,18 +164,11 @@ impl Editor {
             return false;
         }
         self.push_history();
-        let (inserted_count, current_track_touched, affected_tracks) =
-            self.apply_paste_internal(anchor_tick, origin_key, &pasted);
+        let inserted_count = self.apply_paste_internal(anchor_tick, origin_key, &pasted);
         if inserted_count == 0 {
             self.editor_state.data.discard_last_history();
             return false;
         }
-        if current_track_touched {
-            self.mark_notes_changed();
-        }
-        self.editor_state
-            .data
-            .mark_track_notes_changed_for(Some(affected_tracks));
         let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
         tracing::info!(
             "Arrangement: 已粘贴 {} 个音符 (anchor_tick={}) [二进制] 耗时 {:.2}ms",
@@ -184,6 +180,13 @@ impl Editor {
     }
 
     /// 从剪贴板 JSON 文本解析走带视图专用的数据（与系统剪贴板解耦，便于测试）。
+    ///
+    /// # `type` 白名单（跨视图互通）
+    ///
+    /// 接受 `None` / `"notes"` / `"arrangement"` 三种：钢琴卷帘 JSON 不带 `type`
+    /// 字段（历史格式），走带 JSON 带 `type="arrangement"`。原先只接受后者，导致
+    /// 「卷帘复制 → 走带粘贴」静默失败。卷帘载荷的每音符 `track` 偏移恒为 0
+    /// （见 `clipboard/encode.rs`），故按偏移路由时天然落到锚点轨，无需特判。
     fn parse_clipboard_json_text(
         &self,
         text: &str,
@@ -192,8 +195,15 @@ impl Editor {
 
         let clipboard_type = value.get("type").and_then(|t| t.as_str());
         let origin_key = value.get("origin_key")?.as_u64()? as u16;
-        // `origin_track` 现表示复制时的锚点视觉位置（见 `write_arrangement_clipboard`）。
-        let origin_track = value.get("origin_track")?.as_u64()? as usize;
+        // `origin_track`：载荷的锚点视觉轨（走带格式自描述字段）。
+        // 钢琴卷帘 JSON 不写该字段（其单轨语义下锚点恒为当前轨）——故**可选**，
+        // 缺失时按 0 处理。实际粘贴锚点一律由 `compute_anchor_visual()` 从当前
+        // 选区 / 当前轨现算（见 `parse_arrangement_clipboard_notes`），
+        // 本字段仅供格式自描述与未来扩展，不参与落点计算。
+        let origin_track = value
+            .get("origin_track")
+            .and_then(|v| v.as_u64())
+            .unwrap_or(0) as usize;
         // 源 division（PPQN），用于粘贴端 PPQN 一致性重采样；缺失则视为与目标一致。
         let division = value
             .get("division")
@@ -201,91 +211,53 @@ impl Editor {
             .map(|v| v as u16);
         let notes = value.get("notes")?.as_array()?.to_vec();
 
-        if clipboard_type == Some("arrangement") {
+        // 白名单：`None`（卷帘历史格式）/ `"notes"`（卷帘显式格式）/ `"arrangement"`（走带）
+        if matches!(clipboard_type, None | Some("notes") | Some("arrangement")) {
             Some((origin_key, origin_track, division, notes))
         } else {
             tracing::warn!(
-                "Arrangement: 剪贴板数据不是走带格式 (type={:?})",
+                "Arrangement: 剪贴板数据不是 Lumino 音符格式 (type={:?})",
                 clipboard_type
             );
             None
         }
     }
 
-    /// 执行粘贴：将剪贴板音符插入目标音轨。
+    /// 执行粘贴：调用公共多轨内核 + 标记脏 + **冻结选区为新粘贴音符**。
     ///
-    /// `pasted` 中的 `dest_track` 已由 [`Self::parse_arrangement_clipboard_notes`]
-    /// 解析为文档音轨索引（视觉偏移经 `document_track_at` 转换），此处直接插入。
-    /// 返回 (inserted_count, current_track_touched, affected_tracks)。
+    /// `pasted` 中的 `dest_track` 已由解析阶段映射为文档音轨索引（视觉偏移经
+    /// `document_track_at` 转换），此处直接插入。返回实际插入数（0 = 未粘贴）。
     ///
-    /// P0 修复：按目标文档音轨分组批量插入（O(N·log M)），并直接拿回已分配 id 广播，
-    /// 消除原逐条 `insert_note`（O(N·M) 插入）+ `note_id_at`（O(N·M) 广播）双重悬崖。
+    /// **P0 修复（粘贴后选区跟随）**：粘贴成功后把选区冻结为**本次新粘贴的音符**。
+    /// 原实现完全不更新选区，导致连续 Ctrl+V 的锚点（`compute_anchor_visual` 读旧
+    /// 矩形）不可预测——卷帘侧 `commit_pasted_notes` 一直是「粘贴即选中」，
+    /// 两视图行为统一到同一语义。
+    ///
+    /// 脏标记与协作广播统一收口于此（调用方不再重复标记）。
     fn apply_paste_internal(
         &mut self,
         anchor_tick: f32,
         origin_key: u16,
         pasted: &[ClipboardNoteEntry],
-    ) -> (usize, bool, std::collections::HashSet<usize>) {
-        let current_track = self.editor_state.data.current_track;
-        let mut current_track_touched = false;
-        let mut inserted_count = 0usize;
-        let mut affected_tracks: std::collections::HashSet<usize> =
-            std::collections::HashSet::new();
+    ) -> usize {
+        let outcome = self.apply_clipboard_paste_entries(anchor_tick, origin_key, pasted, true);
 
-        // 按目标文档音轨分组，批量插入并直接取回已分配 id
-        let mut by_track: std::collections::HashMap<usize, Vec<Note>> =
-            std::collections::HashMap::new();
-        for (dest_doc, tick_offset, key_offset, length, velocity, channel) in pasted {
-            let note_tick = (anchor_tick + *tick_offset).max(0.0);
-            let note_key = origin_key.saturating_add(*key_offset).min(127);
-            let note = Note::from_raw(note_tick, note_key, *length, *velocity, *channel);
-            by_track.entry(*dest_doc).or_default().push(note);
+        if outcome.current_track_touched {
+            self.mark_notes_changed();
         }
+        self.editor_state
+            .data
+            .mark_track_notes_changed_for(Some(outcome.affected_tracks));
 
-        puffin::profile_scope!("arrangement::insert_notes");
-        let t0 = Instant::now();
-        let collab_sync = self.editor_state.data.collab_sync_enabled();
-        let mut batch_acc: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
-        for (dest_track, notes) in by_track {
-            let ids = self
-                .editor_state
+        // 粘贴即选中：选区冻结为新粘贴音符（精确集合，语义同卷帘 select_notes_by_params）
+        if !outcome.frozen_entries.is_empty() {
+            self.editor_state
                 .data
-                .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            for (note, id) in notes.iter().zip(ids.iter()) {
-                affected_tracks.insert(dest_track);
-                if dest_track == current_track {
-                    current_track_touched = true;
-                }
-                inserted_count += 1;
-                // 协作同步关闭时不构建批量广播载荷。
-                if collab_sync {
-                    batch_acc.push((
-                        *id,
-                        note.tick,
-                        note.key,
-                        note.length,
-                        note.velocity,
-                        note.channel,
-                        dest_track,
-                    ));
-                }
-            }
+                .arrange_selection
+                .freeze(outcome.frozen_entries);
         }
-        // 协作批量：走带粘贴同样改为批量消息（协作同步关闭时不发射）。
-        if !batch_acc.is_empty() {
-            lumino_message::events::emit(lumino_message::events::Event::Window(
-                lumino_message::events::window::Event::local_notes_added_batch(batch_acc),
-            ));
-        }
-        let elapsed_ms = t0.elapsed().as_secs_f64() * 1000.0;
-        tracing::debug!(
-            target: "perf::arrangement",
-            inserted = inserted_count,
-            ms = elapsed_ms,
-            "insert_notes"
-        );
 
-        (inserted_count, current_track_touched, affected_tracks)
+        outcome.inserted
     }
 
     /// 计算粘贴锚点（视觉位置，即侧边栏顺序）。

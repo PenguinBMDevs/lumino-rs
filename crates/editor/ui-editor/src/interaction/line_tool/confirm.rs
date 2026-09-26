@@ -92,15 +92,16 @@ impl Editor {
         let mut create_ops = Vec::with_capacity(points.len());
         for (tick, key) in points {
             let note = Note::new(tick, key, snap);
-            // 捕获分配后的真实 id：redo 原样重插，undo/redo 往返身份稳定
-            if let Some(id) = self
+            // 按值记录：redo 按值重插，undo 按值删除（删加语义，无 ID）
+            if self
                 .editor_state
                 .data
                 .insert_note_with_id(track, note.clone())
+                .is_some()
             {
                 create_ops.push(CreateOp {
                     track_id: track as u32,
-                    note: lumino_editor_state::note_to_event(note).with_id(id),
+                    note: lumino_editor_state::note_to_event(note),
                 });
             }
         }

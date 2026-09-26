@@ -215,6 +215,12 @@ pub enum Message<W, S, Se, T> {
     ArrangementCut,
     /// 工程走带：删除选中音符
     ArrangementDeleteSelection,
+    /// 工程走带：全选（全部音轨 × 全部 tick）
+    ///
+    /// P1-5 视图仲裁的落点：原生菜单栏「编辑 → 全选」此前无条件路由到钢琴卷帘
+    /// `EditorAction::SelectAll`，在走带视图下选的是当前轨全部音符（走带上看不见
+    /// 任何选区变化）。仲裁后走带必须有对应消息，否则分流即等于把缺陷换成新缺陷。
+    ArrangementSelectAll,
 }
 
 /// 构造空消息

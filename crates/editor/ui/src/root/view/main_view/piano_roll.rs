@@ -219,9 +219,19 @@ impl Root {
                 self.view_status_section(),
             ]
         } else {
-            // 导出为素材的启用条件：卷帘选中音符 或 走带视图跨音轨框选
-            let export_material_enabled = self.editor.selected_notes_count() > 0
-                || !self.editor.editor_state.data.arrange_selection.is_empty();
+            // 导出为素材的启用条件：走统一选区解析（`active_selection`）——
+            // 与 `Host::get_selected_notes` 的取数口径**必须同源**。
+            //
+            // 旧实现是 `selected_notes_count() > 0 || !arrange_selection.is_empty()`，
+            // 判据为「选区结构非空」。两处口径不一致导致：框选落在空白处（结构非空
+            // 但零命中音符）时菜单仍可点，点了却导出空素材；而 `resolve_selection`
+            // 的判空是「有实际命中音符」，菜单禁用——这才是正确行为（没有可导出的
+            // 对象就不该给出可点入口）。
+            //
+            // 2026-09 性能修复：走零分配判空入口。旧写法每帧为此把走带命中音符
+            // 全量拷贝进 `Vec<NoteEvent>`（框选后 10.6ms/帧）；`has_active_selection`
+            // 与 `resolve_selection` 走同一份派生缓存，判空口径与本行完全同源。
+            let export_material_enabled = self.editor.has_active_selection(self.edit_view());
             column![
                 self.titlebar.view(
                     &self.window,

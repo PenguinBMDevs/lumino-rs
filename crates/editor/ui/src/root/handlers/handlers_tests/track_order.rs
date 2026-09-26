@@ -84,10 +84,12 @@ fn test_quantize_reorder_keeps_selection_on_same_note() {
     let mut handler = ToolbarHandler::new();
     handler.handle(&mut root, Message::Toolbar(ToolbarEvent::Quantize));
 
-    // S 量化后越过 U（原索引 0 → 新索引 1）→ 选中必须跟随原音符
+    // 去 ID 值语义：量化改 tick（旧值已不存在），通用重映射保守清空
+    // （宁可丢选中，不可选错；量化跟随排期二期）。
+    // S 量化后越过 U（原索引 0 → 新索引 1），当前仅保证有序 + 无错选。
     assert_eq!(
         root.editor.get_selected_indices(),
-        vec![1],
-        "重排后选中必须跟随原音符（新索引 1）"
+        Vec::<usize>::new(),
+        "值变更后通用重映射应清空（量化跟随二期）"
     );
 }

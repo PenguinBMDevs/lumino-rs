@@ -126,7 +126,6 @@ impl OutputConnection for CountingOutput {
 /// 构造两轨文档：track 0 为空（作为当前轨），track 1 含 3 个音符（tick 0/3/6）。
 fn two_track_doc() -> Arc<MidiDocument> {
     Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::from_sorted(vec![

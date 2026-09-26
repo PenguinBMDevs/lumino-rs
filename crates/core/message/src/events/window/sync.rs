@@ -3,10 +3,8 @@
 #[derive(Debug, Clone)]
 /// 本地状态同步事件（需要同步到其他用户）
 pub enum Event {
-    /// 本地笔记更新（需要同步到其他用户）
+    /// 本地笔记更新（需要同步到其他用户，按值引用）
     LocalNoteAdded {
-        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
-        id: u64,
         /// 起始 tick
         tick: f32,
         /// 音符键位
@@ -20,13 +18,11 @@ pub enum Event {
         /// 音轨索引
         track_index: usize,
     },
-    /// 本地音符移动（需要同步到其他用户）
+    /// 本地音符移动（需要同步到其他用户，按值引用）
     LocalNoteMoved {
-        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
-        id: u64,
-        /// 起始 tick
+        /// 起始 tick（移动前参照位置）
         tick: f32,
-        /// 音符键位
+        /// 音符键位（移动前参照位置）
         key: u16,
         /// 音符长度（tick）
         length: f32,
@@ -37,10 +33,8 @@ pub enum Event {
         /// 音轨索引
         track_index: usize,
     },
-    /// 本地音符删除（需要同步到其他用户）
+    /// 本地音符删除（需要同步到其他用户，按值引用）
     LocalNoteDeleted {
-        /// 音符全局唯一 ID（由发送端文档分配器分配，供对端按 id 精确匹配）
-        id: u64,
         /// 起始 tick
         tick: f32,
         /// 音符键位
@@ -71,9 +65,9 @@ pub enum Event {
         /// 选中音符指纹列表
         fingerprints: Vec<[f64; 4]>,
     },
-    /// 本地批量音符添加（用于 100K 级粘贴/复制，避免 100K 条单消息）
+    /// 本地批量音符添加（用于 100K 级粘贴/复制，避免 100K 条单消息，按值）
     LocalNotesAddedBatch {
-        /// 批量音符（id 已分配，与本地一致）
-        notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>,
+        /// 批量音符（tick, key, length, velocity, channel, track_index）
+        notes: Vec<(f32, u16, f32, u8, u8, usize)>,
     },
 }

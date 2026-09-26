@@ -28,11 +28,44 @@ impl Editor {
             tracing::info!("Editor: 撤销曲线路径编辑");
             return true;
         }
-        // 主选择漂移防护：undo 回放（整轨快照/操作）会位移当前轨索引，
-        // 先捕获选中身份，回放成功后按 id 重映射。
+        // 移动专路预判：Operation undo 后轨道为 originals（按值），
+        // 通用旧值重映射必空（旧值已删），此处按目标值重选，无全扫。
+        // 仅当撤销前确有选中时才重选；空选中保持空（不凭空建框）。
+        // 非移动路径仍用通用守卫（值持久的插入/删除，旧值仍存在）。
         let selection_identity = self.capture_selection_identity();
+        let had_selection = selection_identity.entries().is_some_and(|e| !e.is_empty());
+        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> = if had_selection {
+            match self.editor_state.data.history.undo_back() {
+                Some(lumino_note_core::history::HistoryEntry::Operation(entry)) => Some(
+                    entry
+                        .ops
+                        .iter()
+                        .flat_map(|op| op.originals.clone())
+                        .collect(),
+                ),
+                _ => None,
+            }
+        } else {
+            None
+        };
         if self.editor_state.data.undo() {
-            self.remap_selection_by_identity(&selection_identity);
+            if let Some(targets) = move_targets {
+                self.selection_clear();
+                for ev in &targets {
+                    if let Some(idx) = self
+                        .editor_state
+                        .data
+                        .track_notes(self.editor_state.data.current_track)
+                        .position_of(ev)
+                    {
+                        // 仅当目标仍在当前轨（跨轨移动 target 轨不同则跳过，避免误选）。
+                        self.selection_insert(idx);
+                    }
+                }
+            } else {
+                self.remap_selection_by_identity(&selection_identity);
+            }
+            self.invalidate_arrange_selection_after_history("撤销");
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
@@ -43,6 +76,26 @@ impl Editor {
         } else {
             tracing::info!("Editor: 没有可撤销的操作");
             false
+        }
+    }
+
+    /// 历史回退后处理工程走带选区。
+    ///
+    /// 走带选区有两种形态，语义截然不同：
+    /// - **冻结集**（拖动 / 变速 / 粘贴后的精确 `(视觉轨, start_tick, key)` 集合）：
+    ///   是**位置快照**，历史回退后位置全部失效。保留它会让后续拖动 / 删除 / 复制
+    ///   作用不到任何音符，且**无任何提示**——用户只会认为软件坏了。故必须清空。
+    /// - **矩形**（用户框选的时值区间）：是**活语义**，描述的是「这一块区域」而非
+    ///   「这些音符」。历史回退后音符回到矩形内即可继续命中，保留反而符合直觉。
+    ///
+    /// P0 修复：原实现对走带选区零处理，撤销后冻结集悬空。
+    fn invalidate_arrange_selection_after_history(&mut self, op: &str) {
+        let data = &mut self.editor_state.data;
+        if data.arrange_selection.frozen().is_some() {
+            data.arrange_selection.clear();
+            tracing::debug!(
+                "Editor: {op}后清空走带冻结选区（位置快照已失效，保留会导致后续操作静默失效）"
+            );
         }
     }
 
@@ -66,11 +119,45 @@ impl Editor {
             tracing::info!("Editor: 重做曲线路径编辑");
             return true;
         }
-        // 主选择漂移防护：redo 回放（整轨快照/操作）会位移当前轨索引，
-        // 先捕获选中身份，回放成功后按 id 重映射。
+        // 移动专路预判：Operation redo 后轨道为 moved（originals + delta），
+        // 按目标新值重选。仅当重做前确有选中时才重选；空选中保持空。
         let selection_identity = self.capture_selection_identity();
+        let had_selection = selection_identity.entries().is_some_and(|e| !e.is_empty());
+        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> = if had_selection {
+            match self.editor_state.data.history.redo_back() {
+                Some(lumino_note_core::history::HistoryEntry::Operation(entry)) => {
+                    // 与回放侧一致取存量 moved（创建时 clamp 已固化，不再重算）。
+                    const HIST_MAX_KEY: u16 = 255;
+                    Some(
+                        entry
+                            .ops
+                            .iter()
+                            .flat_map(|op| op.moved_notes(HIST_MAX_KEY))
+                            .collect(),
+                    )
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
         if self.editor_state.data.redo() {
-            self.remap_selection_by_identity(&selection_identity);
+            if let Some(targets) = move_targets {
+                self.selection_clear();
+                for ev in &targets {
+                    if let Some(idx) = self
+                        .editor_state
+                        .data
+                        .track_notes(self.editor_state.data.current_track)
+                        .position_of(ev)
+                    {
+                        self.selection_insert(idx);
+                    }
+                }
+            } else {
+                self.remap_selection_by_identity(&selection_identity);
+            }
+            self.invalidate_arrange_selection_after_history("重做");
             self.grid_cache.clear();
             self.mark_notes_changed();
             self.broadcast_pending_collab_sync();
@@ -95,10 +182,9 @@ impl Editor {
         if pending.is_empty() {
             return;
         }
-        for (id, tick, key, tick_offset, key_offset, track_index) in pending {
+        for (tick, key, tick_offset, key_offset, track_index) in pending {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    id,
                     tick,
                     key,
                     0.0,
@@ -121,10 +207,9 @@ impl Editor {
         if pending.is_empty() {
             return;
         }
-        for (id, tick, key, length, velocity, channel, track_index, is_added) in pending {
+        for (tick, key, length, velocity, channel, track_index, is_added) in pending {
             let event = if is_added {
                 lumino_message::events::window::Event::local_note_added(
-                    id,
                     tick,
                     key,
                     length,
@@ -134,7 +219,6 @@ impl Editor {
                 )
             } else {
                 lumino_message::events::window::Event::local_note_deleted(
-                    id,
                     tick,
                     key,
                     length,
@@ -160,20 +244,19 @@ impl Editor {
             return;
         }
         // 先发射全部删除，再发射全部添加：避免「添加落在尚未删除的旧音符位置上」
-        // 造成瞬时重复（同位置出现两个音符）。
-        let mut deletes: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
-        let mut adds: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
-        for (is_add, id, tick, key, length, velocity, channel, track_index) in pending {
+        // 造成瞬时重复（同位置出现两个音符）。按值引用，操作者标识由信封承载。
+        let mut deletes: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut adds: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
+        for (is_add, tick, key, length, velocity, channel, track_index) in pending {
             if is_add {
-                adds.push((id, tick, key, length, velocity, channel, track_index));
+                adds.push((tick, key, length, velocity, channel, track_index));
             } else {
-                deletes.push((id, tick, key, length, velocity, channel, track_index));
+                deletes.push((tick, key, length, velocity, channel, track_index));
             }
         }
-        for (id, tick, key, length, velocity, channel, track_index) in deletes {
+        for (tick, key, length, velocity, channel, track_index) in deletes {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_deleted(
-                    id,
                     tick,
                     key,
                     length,
@@ -183,10 +266,9 @@ impl Editor {
                 ),
             ));
         }
-        for (id, tick, key, length, velocity, channel, track_index) in adds {
+        for (tick, key, length, velocity, channel, track_index) in adds {
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_added(
-                    id,
                     tick,
                     key,
                     length,

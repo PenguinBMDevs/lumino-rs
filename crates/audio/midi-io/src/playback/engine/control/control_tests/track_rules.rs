@@ -4,7 +4,6 @@ use super::*;
 /// 用于验证"其他轨"的静音/独奏过滤。
 fn two_track_doc() -> Arc<MidiDocument> {
     Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::from_sorted(vec![
@@ -129,7 +128,6 @@ fn test_solo_plays_only_soloed_track_engine() {
 
     // track 1 设为当前轨（含音符），track 0 为空；独奏 track 1 → 仅 track 1 发声
     let doc = Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::from_sorted(vec![

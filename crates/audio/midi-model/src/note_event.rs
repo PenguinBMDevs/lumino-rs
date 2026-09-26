@@ -13,17 +13,16 @@ use midly;
 ///
 /// 与 `CompactEvent` 的 note 事件对相比：
 /// - `CompactEvent`: 2 × 12 bytes = 24 bytes / note
-/// - `NoteEvent`: 24 bytes（id u64 + start/end u32 + key/vel/rel/chan u8，末尾 padding 对齐）/ note
+/// - `NoteEvent`: 12 bytes（start/end u32 + key/vel/rel/chan u8）/ note
 ///
-/// `release_velocity` 复用原 padding 位，`size_of::<NoteEvent>() == 24` 由单测锁死。
+/// `release_velocity` 复用原 padding 位，`size_of::<NoteEvent>() == 12` 由单测锁死。
 ///
-/// `id` 为文档级全局唯一、单调递增、删除不回收的稳定身份，
-/// 用于撤销/重做与协作同步的精确引用（取代易漂移的 index/坐标）。
+/// 音符身份即其音乐内容 `(start_tick, end_tick, key, velocity,
+/// release_velocity, channel)`——框选/历史/协作一律按值引用，
+/// 不再维护文档级全局唯一 ID（落盘本来就丢 ID，回读重排必漂移）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 #[repr(C)]
 pub struct NoteEvent {
-    /// 文档级全局唯一 ID（分配器单调分配，删除不回收；0 = 未分配哨兵）
-    pub id: u64,
     /// 音符开始 tick
     pub start_tick: u32,
     /// 音符结束 tick
@@ -39,16 +38,12 @@ pub struct NoteEvent {
 }
 
 impl NoteEvent {
-    /// 未分配哨兵 id（分配器从 1 开始，永不发出 0）。
-    pub const UNASSIGNED_ID: u64 = 0;
-
-    /// 创建新音符（id 默认未分配，存储前须用 `with_id` 附加全局唯一 ID）。
+    /// 创建新音符。
     ///
     /// 释放力度默认 0；需要显式释放力度时用 [`Self::new_with_release`]。
     #[inline]
     pub fn new(start_tick: u32, end_tick: u32, key: u8, velocity: u8, channel: u8) -> Self {
         Self {
-            id: Self::UNASSIGNED_ID,
             start_tick,
             end_tick,
             key,
@@ -69,7 +64,6 @@ impl NoteEvent {
         channel: u8,
     ) -> Self {
         Self {
-            id: Self::UNASSIGNED_ID,
             start_tick,
             end_tick,
             key,
@@ -77,13 +71,6 @@ impl NoteEvent {
             release_velocity,
             channel,
         }
-    }
-
-    /// 为音符附加全局唯一 ID（构建器风格）。
-    #[inline]
-    pub fn with_id(mut self, id: u64) -> Self {
-        self.id = id;
-        self
     }
 
     /// 音符时长（tick 数）。
@@ -140,7 +127,6 @@ impl From<NoteInfo> for NoteEvent {
     #[inline]
     fn from(info: NoteInfo) -> Self {
         Self {
-            id: Self::UNASSIGNED_ID,
             start_tick: info.start_tick,
             end_tick: info.end_tick(),
             key: info.key,
@@ -156,7 +142,6 @@ impl From<midly::loader::PackedNote> for NoteEvent {
     #[inline]
     fn from(note: midly::loader::PackedNote) -> Self {
         Self {
-            id: Self::UNASSIGNED_ID,
             start_tick: note.start_tick,
             end_tick: note.end_tick,
             key: note.key,
@@ -186,8 +171,8 @@ mod tests {
 
     #[test]
     fn test_note_event_layout_still_24_bytes() {
-        // 释放力度复用原 padding 位，加字段后体积不得上涨（千万级内存红线）
-        assert_eq!(core::mem::size_of::<NoteEvent>(), 24);
+        // 去 ID 后 12 字节（2×u32 + 4×u8），千万级内存红利由单测锁死
+        assert_eq!(core::mem::size_of::<NoteEvent>(), 12);
     }
 
     #[test]

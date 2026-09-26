@@ -5,7 +5,7 @@
 //!
 //! 2026-08 单一权威源改造：后台线程克隆当前音轨的 `Vec<NoteEvent>` 副本
 //! （而非 im::Vector + track_notes 双份克隆），完成后经 `replace_track_notes` 写回。
-//! 2026-09 身份统一：MoveOp 按全局唯一 id 定位（克隆副本内 tick 提示 + 全扫兜底），
+//! 2026-09 去 ID：MoveOp 按值定位（克隆副本内值提示窗口二分，无全扫兜底），
 //! 不依赖提交时的索引。
 
 use super::EditorData;
@@ -153,13 +153,13 @@ impl EditorData {
     }
 }
 
-/// 将 MoveOp 应用到当前音轨音符的克隆副本（按全局唯一 id 定位）
+/// 将 MoveOp 应用到当前音轨音符的克隆副本（按值定位，无全扫）
 fn apply_move_ops_to_clone(
     mut notes: Vec<NoteEvent>,
     ops: &[MoveOp],
     max_key: u16,
 ) -> Result<AsyncCommitResult> {
-    let total_indices: usize = ops.iter().map(|op| op.ids.len()).sum();
+    let total_indices: usize = ops.iter().map(|op| op.originals.len()).sum();
     let start_time = std::time::Instant::now();
     tracing::info!(
         "异步提交线程启动: {} 个 op, 预计处理 {} 个音符",
@@ -178,18 +178,14 @@ fn apply_move_ops_to_clone(
     for op in ops {
         let dt = op.delta_tick;
         let dk = op.delta_key as i32;
-        let count = op
-            .ids
-            .len()
-            .min(op.original_ticks.len())
-            .min(op.original_keys.len());
+        let count = op.originals.len();
 
-        // 阶段 1：解析目标索引。提交路径恒为正向 op（undo/redo 走同步
-        // `apply_move_ops`），克隆副本在提交窗口内冻结，tick 提示即原始位置。
+        // 阶段 1：按值解析目标索引。提交路径恒为正向 op（undo/redo 走同步
+        // `apply_move_ops` 删加路径），克隆副本在提交窗口内冻结，值提示即原始值。
+        // 窗口二分（partition_point + 同 tick 段全字段匹配），无全扫兜底。
         let mut resolved: Vec<usize> = Vec::with_capacity(count);
-        for i in 0..count {
-            let hint_tick = super::accessors::f32_to_tick(op.original_ticks[i].max(0.0));
-            if let Some(idx) = position_of_id_in_slice(&notes, op.ids[i], hint_tick) {
+        for orig in &op.originals {
+            if let Some(idx) = position_of_value_in_slice(&notes, orig) {
                 resolved.push(idx);
             }
         }
@@ -225,8 +221,8 @@ fn apply_move_ops_to_clone(
         }
     }
 
-    // 就地改 tick 破坏「按 start_tick 升序」不变式（window_range/position_of_id
-    // 二分依赖，破坏后渲染/命中会漏检音符）→ 恢复；重排时旧索引区间失效。
+    // 就地改 tick 破坏「按 start_tick 升序」不变式（二分依赖，
+    // 破坏后渲染/命中会漏检音符）→ 恢复；重排时旧索引区间失效。
     let (notes, reorder_ranges) =
         match lumino_midi_model::restore_sorted_vec(&notes, &modified_indices) {
             Some((restored, ranges)) => (restored, ranges),
@@ -251,17 +247,21 @@ fn apply_move_ops_to_clone(
     })
 }
 
-/// 在已按 tick 升序的音符切片中按 id 定位（tick 提示 + 全扫兜底）。
-fn position_of_id_in_slice(notes: &[NoteEvent], id: u64, tick_hint: u32) -> Option<usize> {
-    let start = notes.partition_point(|n| n.start_tick < tick_hint);
+/// 在已按 tick 升序的音符切片中按值定位（窗口二分，无全扫兜底）。
+///
+/// 以 `target.start_tick` 二分定位同 tick 连续段后全字段匹配；
+/// 未命中返回 None（同值多份取首个，份数语义由调用方逐个删保证）。
+fn position_of_value_in_slice(notes: &[NoteEvent], target: &NoteEvent) -> Option<usize> {
+    let start = notes.partition_point(|n| n.start_tick < target.start_tick);
     let mut i = start;
-    while i < notes.len() && notes[i].start_tick <= tick_hint {
-        if notes[i].id == id {
+    while i < notes.len() && notes[i].start_tick <= target.start_tick {
+        if notes[i] == *target {
             return Some(i);
         }
         i += 1;
     }
-    notes.iter().position(|n| n.id == id)
+    // 同 tick 段内未命中即返回 None，禁止全片兜底扫描。
+    None
 }
 
 /// 将（可重复、无序的）索引集合排序去重后合并为连续区间 `(start, end_exclusive)`。

@@ -22,7 +22,6 @@ fn make_track(notes: &[(u32, u32, u8)]) -> Vec<NoteEvent> {
 fn make_doc(tracks: Vec<Vec<NoteEvent>>) -> MidiDocument {
     let track_count = tracks.len() as u16;
     MidiDocument {
-        next_note_id: 1,
         notes: tracks
             .into_iter()
             .map(crate::chunked_list::ChunkedList::from_sorted)
@@ -56,7 +55,7 @@ fn test_insert_note_empty_track() {
     let note = NoteEvent::new(100, 200, 60, 100, 0);
     assert!(doc.insert_note(0, note));
 
-    // notes[0] 只有一个音符，内容字段与插入值一致，并被分配唯一非零 id
+    // notes[0] 只有一个音符，内容字段与插入值一致（按值引用，无 ID）
     assert_eq!(doc.notes[0].len(), 1);
     let stored = &doc.notes[0][0];
     assert_eq!(stored.start_tick, note.start_tick);
@@ -64,7 +63,6 @@ fn test_insert_note_empty_track() {
     assert_eq!(stored.key, note.key);
     assert_eq!(stored.velocity, note.velocity);
     assert_eq!(stored.channel, note.channel);
-    assert_ne!(stored.id, NoteEvent::UNASSIGNED_ID);
 }
 
 #[test]
@@ -208,7 +206,7 @@ fn test_insert_after_remove_consistency() {
     assert!(doc.insert_note(0, NoteEvent::new(200, 300, 61, 100, 0)));
     assert_eq!(doc.notes[0].len(), 3);
 
-    // 删除中间（start=200）：返回被删除音符副本（含其被分配的唯一 id）
+    // 删除中间（start=200）：返回被删除音符副本
     let removed = doc.remove_note(0, 1);
     assert!(removed.is_some(), "应返回被删除的音符副本");
     let removed = removed.expect("前面已断言 is_some，应能取出被删音符");
@@ -217,7 +215,6 @@ fn test_insert_after_remove_consistency() {
     assert_eq!(removed.key, 61);
     assert_eq!(removed.velocity, 100);
     assert_eq!(removed.channel, 0);
-    assert_ne!(removed.id, NoteEvent::UNASSIGNED_ID);
     assert_eq!(doc.notes[0].len(), 2);
 
     // 再插入填补空隙，最终有序
@@ -236,7 +233,7 @@ fn test_replace_track_notes() {
         NoteEvent::new(200, 300, 64, 80, 0),
     ];
     assert!(doc.replace_track_notes(0, new_notes.clone()));
-    // 整轨替换后内容字段与输入一致，且每个音符被赋予唯一非零 id
+    // 整轨替换后内容字段与输入一致（按值引用）
     assert_eq!(doc.notes[0].len(), 2);
     for (stored, expected) in doc.notes[0].iter().zip(new_notes.iter()) {
         assert_eq!(stored.start_tick, expected.start_tick);
@@ -244,7 +241,6 @@ fn test_replace_track_notes() {
         assert_eq!(stored.key, expected.key);
         assert_eq!(stored.velocity, expected.velocity);
         assert_eq!(stored.channel, expected.channel);
-        assert_ne!(stored.id, NoteEvent::UNASSIGNED_ID);
     }
 
     // 其他轨道不受影响
@@ -352,7 +348,7 @@ fn test_track_max_end_tick_cache_incremental_and_per_track() {
 fn test_batch_insert_with_ids_aligned_and_unique() {
     let mut doc = make_doc(vec![make_track(&[]), make_track(&[])]);
 
-    // 乱序输入：验证返回 id 与输入顺序对齐、全局唯一，且可直接用于广播
+    // 乱序输入：去 ID 后按值插入，返回占位 0 列表保持批量语义
     let input = vec![
         NoteEvent::new(300, 400, 60, 100, 0),
         NoteEvent::new(100, 200, 61, 100, 0),
@@ -360,24 +356,14 @@ fn test_batch_insert_with_ids_aligned_and_unique() {
     ];
     let ids = doc.batch_insert_notes_with_ids(0, input.clone());
 
-    assert_eq!(ids.len(), input.len(), "返回 id 数应与输入一致");
+    assert_eq!(ids.len(), input.len(), "返回占位数应与输入一致");
 
-    // 全局唯一且非零（粘贴广播可据此直接定位）
-    let mut uniq = ids.clone();
-    uniq.sort_unstable();
-    uniq.dedup();
-    assert_eq!(uniq.len(), ids.len(), "分配的 id 应唯一");
-    for id in &ids {
-        assert_ne!(*id, NoteEvent::UNASSIGNED_ID);
-    }
-
-    // 按输入序对齐：ids[i] 对应的音符 start_tick == input[i].start_tick
-    for (i, id) in ids.iter().enumerate() {
-        let stored = doc.notes[0]
-            .iter()
-            .find(|n| n.id == *id)
-            .expect("分配的 id 应可在文档中找到");
-        assert_eq!(stored.start_tick, input[i].start_tick);
+    // 按值可查：每个输入值均可在文档中找到
+    for note in &input {
+        assert!(
+            doc.notes[0].position_of(note).is_some(),
+            "插入的值应可按值定位"
+        );
     }
     assert_eq!(doc.notes[0].len(), input.len());
 }

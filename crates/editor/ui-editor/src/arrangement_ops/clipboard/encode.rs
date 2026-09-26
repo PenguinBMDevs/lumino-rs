@@ -1,7 +1,7 @@
 //! 走带二进制剪贴板编码（Lumino 私有紧凑格式：哨兵 + 视觉偏移）
 
-use super::ARRANGEMENT_BINARY_MARK;
 use crate::Editor;
+use crate::clipboard::ARRANGEMENT_BINARY_MARK;
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::clipboard::{ClipRecord, encode_clipboard};
 

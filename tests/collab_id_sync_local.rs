@@ -1,12 +1,10 @@
 /**
- * 临时集成测试：验证协作同步已切换为「真实全局 u64 音符 ID」（缺陷 #4/#5 修复）。
+ * 临时集成测试：验证协作同步已切换为「按值音符身份」（去 ID 后）。
  *
- * - A 端添加音符（id=42）→ B 端收到同一 id（跨客户端稳定身份，不再用时间戳伪 id）。
- * - A 端移动同一音符（id=42） → B 端按 id 收到 Move（按 id 精确匹配，而非按位置猜测）。
- * - 碰撞预防（服务端 wire 层）：A 连续添加 id=42 与 id=43，B 端分别收到两个不同 id，
- *   证明服务端以 id 为权威键、不同 id 不互相覆盖（B 端接收后再 `ensure_note_id_above`
- *   抬升本地分配器，避免本地后续新建复用到对端已占用的 id，详见 editor-state 单测
- *   `test_ensure_note_id_above_bumps_allocator`）。
+ * - A 端添加音符 (1920,60,480) → B 端收到同一按值身份（跨客户端稳定，不再用时间戳伪 id）。
+ * - A 端移动同一音符 → B 端按值收到 Move（按 tick/key/length 精确匹配，而非按位置猜测）。
+ * - 多音符并存（服务端 wire 层）：A 连续添加两音符，B 端分别收到两个不同按值身份，
+ *   证明服务端以值为权威键、不同值不互相覆盖。
  *
  * 默认 `#[ignore]`：需先本地启动 `../lumino-server-rs`（`cargo run -- --port 3000`，
  * 首次启动用默认账户 admin/admin），再手动运行：
@@ -104,12 +102,11 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
 
     sleep(Duration::from_millis(500)).await;
 
-    // ── 1) A 添加音符 id=42 → B 收到同一 id ──
-    println!("  步骤1: A 添加音符 id=42");
+    // ── 1) A 添加音符 (1920,60,480) → B 收到同一按值身份 ──
+    println!("  步骤1: A 添加音符 (tick=1920,key=60)");
     let add = NoteBatchOperation {
         action: NoteAction::Add,
         notes: vec![SyncNote {
-            id: 42u64,
             tick: 1920.0,
             key: 60,
             length: 480.0,
@@ -132,7 +129,7 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
                     && user_id == &user_a
                     && operation.action == NoteAction::Add
                 {
-                    operation.notes.first().map(|n| n.id)
+                    operation.notes.first().map(|n| (n.tick, n.key, n.length))
                 } else {
                     None
                 }
@@ -140,19 +137,19 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
             5000,
         )
         .await;
-    let recv_add_id = b_recv_add.ok_or("B 未收到 A 的添加事件")?;
+    let recv_add_val = b_recv_add.ok_or("B 未收到 A 的添加事件")?;
     assert_eq!(
-        recv_add_id, 42,
-        "B 收到的音符 id 应与 A 发送的一致（真实全局 ID），实际: {recv_add_id}"
+        recv_add_val,
+        (1920.0, 60, 480.0),
+        "B 收到的音符按值身份应与 A 发送的一致，实际: {recv_add_val:?}"
     );
-    println!("  ✓ B 收到 A 添加的音符，id={recv_add_id}（跨客户端身份一致）");
+    println!("  ✓ B 收到 A 添加的音符，tick/key/length={recv_add_val:?}（跨客户端按值一致）");
 
-    // ── 2) A 移动同一音符 id=42 → B 按 id 收到 Move ──
-    println!("  步骤2: A 移动音符 id=42");
+    // ── 2) A 移动同一音符 (1920,60) → B 按值收到 Move ──
+    println!("  步骤2: A 移动音符 (tick=1920,key=60)");
     let mv = NoteBatchOperation {
         action: NoteAction::Move,
         notes: vec![SyncNote {
-            id: 42u64,
             tick: 1920.0,
             key: 60,
             length: 480.0,
@@ -175,7 +172,7 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
                     && user_id == &user_a
                     && operation.action == NoteAction::Move
                 {
-                    operation.notes.first().map(|n| n.id)
+                    operation.notes.first().map(|n| (n.tick, n.key, n.length))
                 } else {
                     None
                 }
@@ -183,19 +180,19 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
             5000,
         )
         .await;
-    let recv_move_id = b_recv_move.ok_or("B 未收到 A 的移动事件")?;
+    let recv_move_val = b_recv_move.ok_or("B 未收到 A 的移动事件")?;
     assert_eq!(
-        recv_move_id, 42,
-        "B 收到的 Move 事件应引用同一音符 id=42（按 id 匹配，而非位置猜测），实际: {recv_move_id}"
+        recv_move_val,
+        (1920.0, 60, 480.0),
+        "B 收到的 Move 事件应引用同一按值音符，实际: {recv_move_val:?}"
     );
-    println!("  ✓ B 收到 A 移动的音符，id={recv_move_id}（按 id 精确匹配）");
+    println!("  ✓ B 收到 A 移动的音符，tick/key/length={recv_move_val:?}（按值精确匹配）");
 
-    // ── 3) 碰撞预防（wire 层）：A 再添加 id=43，B 收到两个不同 id ──
-    println!("  步骤3: A 添加第二个音符 id=43（碰撞预防）");
+    // ── 3) 多音符并存（wire 层）：A 再添加 (2880,64)，B 收到该按值音符 ──
+    println!("  步骤3: A 添加第二个音符 (tick=2880,key=64)");
     let add2 = NoteBatchOperation {
         action: NoteAction::Add,
         notes: vec![SyncNote {
-            id: 43u64,
             tick: 2880.0,
             key: 64,
             length: 480.0,
@@ -218,7 +215,10 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
                     && user_id == &user_a
                     && operation.action == NoteAction::Add
                 {
-                    operation.notes.iter().any(|n| n.id == 43)
+                    operation
+                        .notes
+                        .iter()
+                        .any(|n| n.tick == 2880.0 && n.key == 64 && n.length == 480.0)
                 } else {
                     false
                 }
@@ -226,9 +226,12 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
             5000,
         )
         .await;
-    assert!(got_43, "B 应收到 id=43 的音符，且不与 id=42 互相覆盖");
-    println!("  ✓ B 收到 id=43 的音符，与 id=42 并行存在（服务端按 id 权威键，无碰撞）");
+    assert!(
+        got_43,
+        "B 应收到 (2880,64,480) 的音符，且不与 (1920,60,480) 互相覆盖"
+    );
+    println!("  ✓ B 收到 (2880,64) 的音符，与 (1920,60) 并行存在（服务端按值权威键，无碰撞）");
 
-    println!("\n🎉 临时集成测试通过：协作同步已使用真实全局 u64 音符 ID。");
+    println!("\n🎉 临时集成测试通过：协作同步已使用按值音符身份。");
     Ok(())
 }

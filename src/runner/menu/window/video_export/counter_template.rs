@@ -205,7 +205,6 @@ mod tests {
             .collect();
         list.sort_unstable_by_key(|n| n.start_tick);
         MidiDocument {
-            next_note_id: 1,
             notes: vec![lumino_midi_loader::ChunkedList::from_sorted(list)],
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],
@@ -283,7 +282,6 @@ mod tests {
     #[test]
     fn test_render_template_empty_doc() {
         let doc = MidiDocument {
-            next_note_id: 1,
             notes: vec![],
             tempo_changes: vec![(0, 120.0)],
             time_signatures: vec![(0, 4, 4)],

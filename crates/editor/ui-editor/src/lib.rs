@@ -14,6 +14,7 @@ pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
 pub mod arrangement;
 pub mod context_menu;
+pub mod edit_view;
 pub mod editor_state;
 pub mod grid;
 pub mod history;
@@ -46,6 +47,8 @@ mod track;
 #[cfg(test)]
 mod tests {
     mod arrangement_delete_incremental;
+    mod arrangement_history;
+    mod arrangement_move_freeze;
     mod arrangement_track_mapping;
     mod delete_sync_gate;
     mod drawing;
@@ -70,7 +73,8 @@ use iced_core::Point;
 use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
 
-// 统一从 editor_state 导入（重构迁移）
+// 统一从 editor_state 导入（重构拆分前 `crate::` 引用兼容）
+pub use edit_view::{EditView, SelectionSnapshot};
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 pub use note::Note;
 /// 结构编辑前捕获的主选择身份快照（防索引漂移，见 `note_ops::selection_remap`）
@@ -193,6 +197,14 @@ pub struct Editor {
     /// 每次选中/取消选中音符时增量更新，仅 ghost 路径（拖拽中）需实时计算。
     /// 元组: (min_tick, max_tick_end, max_key, min_key)
     pub(crate) selected_bounds: Cell<Option<(f32, f32, u16, u16)>>,
+
+    /// 工程走带选区命中音符的派生缓存
+    ///
+    /// 2026-09 性能修复：走带选区非空后，view 层每帧重扫全文档音符
+    /// （12.9ms + 10.6ms，合计 96% 帧时间）。命中集合是
+    /// `(document, arrange_selection, track_visual_order)` 的纯函数，
+    /// 故按三者版本号缓存，见 `arrangement_ops::selection_cache`。
+    pub(crate) arrange_selection_cache: arrangement_ops::selection_cache::ArrangeSelectionCache,
 
     /// 播放键色增量扫描状态——避免每帧 O(N) 全量扫描导致的线性性能退化
     pub(crate) playback_scan_state: impls::PlaybackScanState,

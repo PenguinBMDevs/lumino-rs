@@ -197,7 +197,6 @@ mod tests {
 
     fn make_doc(tracks: &[Vec<(u32, u32, u8)>]) -> MidiDocument {
         MidiDocument {
-            next_note_id: 1,
             notes: tracks
                 .iter()
                 .map(|v| {

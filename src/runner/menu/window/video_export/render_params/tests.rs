@@ -50,7 +50,6 @@ fn test_note_search_bounds_window_is_small() {
 #[test]
 fn test_visible_notes_collection_matches_full_scan() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
                 (0, 480, 40),               // 视口前很远，已结束
@@ -151,7 +150,6 @@ fn test_miditrail_view_mode_from_str() {
 #[test]
 fn test_waterfall_collect_all_first_frame_full_then_skip() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
                 (0, 240, 60),               // 视口前很远（窗口会过滤，全量保留）
@@ -241,7 +239,6 @@ fn test_waterfall_collect_all_first_frame_full_then_skip() {
 #[test]
 fn test_miditrail_collect_all_first_frame_full_then_skip() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_loader::ChunkedList::from_sorted(make_track(&[
             (0, 240, 60),
             (5_000_100, 5_001_000, 62),

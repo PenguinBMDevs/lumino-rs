@@ -213,7 +213,6 @@ mod tests {
         use lumino_midi_loader::{ChunkedList, NoteEvent, TrackManager};
 
         MidiDocument {
-            next_note_id: 1,
             notes: vec![ChunkedList::from_sorted(vec![
                 NoteEvent::new(1000, 1480, 60, 100, 0),
                 NoteEvent::new(2000, 2240, 62, 90, 0),
@@ -292,7 +291,6 @@ mod tests {
         use lumino_midi_loader::{ChunkedList, NoteEvent, TrackManager};
 
         let doc = MidiDocument {
-            next_note_id: 1,
             notes: vec![ChunkedList::from_sorted(vec![NoteEvent::new(
                 0, 480, 60, 100, 0,
             )])],

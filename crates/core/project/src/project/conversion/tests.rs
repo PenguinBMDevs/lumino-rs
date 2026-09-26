@@ -3,7 +3,6 @@ use lumino_midi_model::compact::{CompactEvent, EventKind};
 
 fn make_test_document() -> MidiDocument {
     MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
         ])],
@@ -149,7 +148,6 @@ fn test_compact_event_roundtrip() {
 #[test]
 fn test_to_midi_document_roundtrip_overlapping_notes() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
             NoteEvent::new(120, 600, 64, 80, 0),
@@ -237,7 +235,6 @@ fn test_to_midi_document_same_key_overlapping_notes() {
 #[test]
 fn test_from_midi_document_same_key_adjacent_notes() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_model::ChunkedList::from_sorted(vec![
             NoteEvent::new(0, 480, 60, 100, 0),
             NoteEvent::new(480, 960, 60, 90, 0),
@@ -276,7 +273,6 @@ fn test_from_midi_document_same_key_adjacent_notes() {
 #[test]
 fn test_blank_track_preserved_roundtrip() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![
             // track 0：有音符
             lumino_midi_model::ChunkedList::from_sorted(vec![NoteEvent::new(0, 480, 60, 100, 0)]),
@@ -395,7 +391,6 @@ fn test_blank_track_preserved_roundtrip() {
 #[test]
 fn test_all_blank_project_preserved() {
     let doc = MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_model::ChunkedList::new(),
             lumino_midi_model::ChunkedList::new(),

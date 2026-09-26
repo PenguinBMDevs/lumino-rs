@@ -33,15 +33,13 @@ fn test_undo_redo_populates_collab_move_sync() {
     assert!(data.undo());
     let mut pending = data.take_pending_collab_move_sync();
     assert_eq!(pending.len(), 2, "被移动的两个音符应各有一条同步记录");
-    // 元组形状 (id, tick, key, tick_offset, key_offset, track_index)
-    pending.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
-    let (id0, t0, k0, to0, ko0, tr0) = pending[0];
-    assert!(id0 > 0, "音符应已分配全局唯一 id");
+    // 元组形状 (tick, key, tick_offset, key_offset, track_index)（按值，无 id）
+    pending.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let (t0, k0, to0, ko0, tr0) = pending[0];
     // 音符0：original_tick=0, original_key=60, delta_tick=5, delta_key=-2
     //  ref = original + delta，offset = -delta
     assert_eq!((t0, k0, to0, ko0, tr0), (5.0, 58, -5.0, 2, 1));
-    let (id1, t1, k1, to1, ko1, tr1) = pending[1];
-    assert!(id1 > 0, "音符应已分配全局唯一 id");
+    let (t1, k1, to1, ko1, tr1) = pending[1];
     // 音符2：original_tick=20, original_key=64
     assert_eq!((t1, k1, to1, ko1, tr1), (25.0, 62, -5.0, 2, 1));
 
@@ -49,13 +47,11 @@ fn test_undo_redo_populates_collab_move_sync() {
     assert!(data.redo());
     let mut pending2 = data.take_pending_collab_move_sync();
     assert_eq!(pending2.len(), 2);
-    pending2.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
+    pending2.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
     // ref = original，offset = +delta
-    let (id2, t2, k2, to2, ko2, tr2) = pending2[0];
-    assert!(id2 > 0, "音符应已分配全局唯一 id");
+    let (t2, k2, to2, ko2, tr2) = pending2[0];
     assert_eq!((t2, k2, to2, ko2, tr2), (0.0, 60, 5.0, -2, 1));
-    let (id3, t3, k3, to3, ko3, tr3) = pending2[1];
-    assert!(id3 > 0, "音符应已分配全局唯一 id");
+    let (t3, k3, to3, ko3, tr3) = pending2[1];
     assert_eq!((t3, k3, to3, ko3, tr3), (20.0, 64, 5.0, -2, 1));
 }
 
@@ -66,10 +62,10 @@ fn test_undo_redo_populates_collab_move_sync() {
 fn test_undo_redo_create_populates_collab_create_sync() {
     let mut data = EditorData::with_f32_notes(0, &[Note::new(0.0, 60, 1.0)]);
     data.set_collab_sync_enabled(true);
-    // 模拟「创建」一个位于 (100, 72) 的新音符（携带真实全局 id，等同 finish_drawing 分配）
+    // 模拟「创建」一个位于 (100, 72) 的新音符（按值，等同 finish_drawing 落盘值）
     let op = CreateOp {
         track_id: 0,
-        note: NoteEvent::new(100, 101, 72, 100, 0).with_id(7),
+        note: NoteEvent::new(100, 101, 72, 100, 0),
     };
     // 正向应用（创建）
     data.apply_create_ops(std::slice::from_ref(&op), false);
@@ -90,9 +86,8 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     );
     let pending = data.take_pending_collab_create_sync();
     assert_eq!(pending.len(), 1);
-    // 元组形状 (id, tick, key, length, velocity, channel, track_index, is_added)
-    let (id, tick, key, _len, _vel, _ch, track, is_added) = pending[0];
-    assert!(id > 0, "新建音符应已分配全局唯一 id");
+    // 元组形状 (tick, key, length, velocity, channel, track_index, is_added)（按值）
+    let (tick, key, _len, _vel, _ch, track, is_added) = pending[0];
     assert_eq!(tick, 100.0);
     assert_eq!(key, 72);
     assert_eq!(track, 0);
@@ -103,8 +98,7 @@ fn test_undo_redo_create_populates_collab_create_sync() {
     assert_eq!(data.current_track_note_count(), 2);
     let pending2 = data.take_pending_collab_create_sync();
     assert_eq!(pending2.len(), 1);
-    let (id2, tick2, key2, _len2, _vel2, _ch2, _track2, is_added2) = pending2[0];
-    assert!(id2 > 0, "新建音符应已分配全局唯一 id");
+    let (tick2, key2, _len2, _vel2, _ch2, _track2, is_added2) = pending2[0];
     assert_eq!(tick2, 100.0);
     assert_eq!(key2, 72);
     assert!(is_added2, "redo 创建应为添加（is_added=true）");

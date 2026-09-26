@@ -175,7 +175,6 @@ impl LuminoProject {
             .map(|_| lumino_midi_model::ChunkedList::new())
             .collect();
         let mut total_ticks: u32 = 0;
-        let mut next_id: u64 = 1; // 转换路径顺手分配全局唯一 ID
         let mut track_names = Vec::with_capacity(track_count as usize);
         // 每轨 MIDI 端口从各 .lmtrack 元数据逐轨恢复（此前全轨归零丢失）
         let mut track_ports = Vec::with_capacity(track_count as usize);
@@ -219,20 +218,16 @@ impl LuminoProject {
                     && let Some(queue) = active.get_mut(&(key, channel))
                     && let Some((start_tick, note_velocity)) = queue.pop_front()
                 {
-                    // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复
+                    // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复（按值）
                     let release_velocity = ev.param2() as u8;
-                    notes[idx].push_back(
-                        NoteEvent::new_with_release(
-                            start_tick,
-                            current_tick,
-                            key,
-                            note_velocity,
-                            release_velocity,
-                            channel,
-                        )
-                        .with_id(next_id),
-                    );
-                    next_id += 1;
+                    notes[idx].push_back(NoteEvent::new_with_release(
+                        start_tick,
+                        current_tick,
+                        key,
+                        note_velocity,
+                        release_velocity,
+                        channel,
+                    ));
                     total_ticks = total_ticks.max(current_tick);
                 }
             }
@@ -243,11 +238,13 @@ impl LuminoProject {
             {
                 for ((key, channel), queue) in active {
                     for (start_tick, note_velocity) in queue {
-                        notes[idx].push_back(
-                            NoteEvent::new(start_tick, max_tick, key, note_velocity, channel)
-                                .with_id(next_id),
-                        );
-                        next_id += 1;
+                        notes[idx].push_back(NoteEvent::new(
+                            start_tick,
+                            max_tick,
+                            key,
+                            note_velocity,
+                            channel,
+                        ));
                         total_ticks = total_ticks.max(max_tick);
                     }
                 }
@@ -297,7 +294,6 @@ impl LuminoProject {
 
         let mut doc = MidiDocument {
             notes,
-            next_note_id: next_id,
             tempo_changes: self.tempo_changes.clone(),
             time_signatures: self.time_signatures.clone(),
             key_signatures: self.key_signatures.clone(),

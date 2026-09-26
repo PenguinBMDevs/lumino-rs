@@ -208,7 +208,6 @@ fn test_remote_note_add_on_missing_track_expands_and_inserts() {
     let operation = lumino_collaboration::types::NoteBatchOperation {
         action: lumino_collaboration::types::NoteAction::Add,
         notes: vec![lumino_collaboration::types::SyncNote {
-            id: 999,
             tick: 0.0,
             key: 60,
             length: 480.0,

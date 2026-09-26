@@ -278,6 +278,33 @@ impl Root {
         self.sidebar.is_arrangement_route()
     }
 
+    /// 当前**编辑视图**（钢琴卷帘 / 工程走带）——编辑命令视图仲裁的唯一权威源。
+    ///
+    /// 所有作用于选区的编辑命令（复制/剪切/粘贴/删除/批量操作/导出）都应先经本方法
+    /// 取得视图，再交给 [`lumino_ui_editor::Editor::resolve_selection`] 解析选区。
+    /// **业务代码不得再自行判 `sidebar.route`**——历史上 5 处判定混用了
+    /// `is_arrangement_mode()` 与裸比 `Route::Arrangement` 两种写法，是「新命令
+    /// 忘记判视图 / 抄错写法」的直接来源。
+    ///
+    /// 注意与 `is_arrangement_mode()` 的区别：后者是**渲染布局**判定（渲染层判断
+    /// 当前布局与数据源是否走带，见 `host/render/*`），两者语义相近但关注点不同，
+    /// 渲染层保持独立判定，仅统一写法。
+    pub fn edit_view(&self) -> lumino_ui_editor::EditView {
+        if self.is_arrangement_mode() {
+            lumino_ui_editor::EditView::Arrangement
+        } else {
+            lumino_ui_editor::EditView::PianoRoll
+        }
+    }
+
+    /// 当前编辑视图的选中音符快照（视图无关，判空 = 无可操作对象）
+    ///
+    /// 薄封装：把「取视图 + 解析选区」两步合成一步，杜绝调用方只取视图却漏解析
+    /// （或反之只解析选区却用错视图）。
+    pub fn active_selection(&self) -> lumino_ui_editor::SelectionSnapshot {
+        self.editor.resolve_selection(self.edit_view())
+    }
+
     /// 获取状态可变引用
     pub fn state_mut(&mut self) -> &mut RootState {
         &mut self.state

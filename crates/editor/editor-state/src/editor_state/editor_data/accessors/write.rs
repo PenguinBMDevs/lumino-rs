@@ -50,6 +50,17 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::InsertAt { index, note });
         }
+        // 2026-09 补版本号：此前本方法**不** bump `track_notes_gen`，违反
+        // `mark_track_notes_changed` 的契约（「所有直接修改音符数据的地方都必须
+        // 调用」）。后果是所有按 gen 失效的派生缓存读到脏数据——包括
+        // `Root::arrangement_max_tick_end`（走带滚动条范围）、`OnionSkinState`
+        // 与走带选区命中音符缓存。跨轨插入必须**精确**标记受影响轨：若按
+        // `{current_track}` 标记，洋葱皮会对真实变化轨错误豁免 → 漏渲染。
+        if track_id == self.current_track {
+            self.mark_current_track_changed();
+        } else {
+            self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
+        }
         Some(id)
     }
 
@@ -57,19 +68,15 @@ impl EditorData {
     ///
     /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
     /// 当前音轨插入会记录 `NoteDeltaEvent::InsertAt`，供 GPU 主音轨段内增量同步。
-    /// 需要获取分配到的 id 时用 [`Self::insert_note_with_id`]。
+    /// 需要获取插入结果时用 [`Self::insert_note_with_id`]。
     pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
         self.insert_note_with_id(track_id, note).is_some()
     }
 
-    /// 抬升文档级 note id 分配器，确保严格大于 `id`，避免与协作/快照外来 id 碰撞。
+    /// 兼容旧分配器接口（去 ID 后为无操作保留，供历史测试调用）。
     ///
-    /// 委托给 `MidiDocument::ensure_note_id_above`；无 document 时静默跳过。
-    pub fn ensure_note_id_above(&mut self, id: u64) {
-        if let Some(doc) = self.document.as_mut() {
-            doc.ensure_note_id_above(id);
-        }
-    }
+    /// 去 ID 后音符按值引用，无需抬升分配器，本方法为空操作。
+    pub fn ensure_note_id_above(&mut self, _id: u64) {}
 
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
     /// document 为空时返回 false。
@@ -97,6 +104,8 @@ impl EditorData {
             self.note_delta_events
                 .push(NoteDeltaEvent::RemoveAt { index, count: 1 });
         }
+        // 2026-09 补版本号：同 `insert_note_with_id`，删除此前不 bump gen
+        self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         Some(removed)
     }
 
@@ -128,6 +137,8 @@ impl EditorData {
                 note,
             });
         }
+        // 2026-09 补版本号：同 `insert_note_with_id`，更新此前不 bump gen
+        self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
         true
     }
 

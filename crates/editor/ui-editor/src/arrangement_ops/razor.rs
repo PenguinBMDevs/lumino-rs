@@ -112,21 +112,11 @@ impl Editor {
                 note.velocity,
                 note.channel,
             );
-            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护；
-            // 插入回传真实 id（替代 note_id_at 坐标反查，对端/redo 按 id 精确匹配）
-            let right_id = self
-                .editor_state
-                .data
-                .insert_note_with_id(track, right)
-                .unwrap_or(0);
-            let left_id = self
-                .editor_state
-                .data
-                .insert_note_with_id(track, left)
-                .unwrap_or(0);
+            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护（按值）；
+            let _ = self.editor_state.data.insert_note_with_id(track, right);
+            let _ = self.editor_state.data.insert_note_with_id(track, left);
             sync_entries.push((
                 false,
-                note.id,
                 note_tick,
                 note_key,
                 note_length,
@@ -136,7 +126,6 @@ impl Editor {
             ));
             sync_entries.push((
                 true,
-                left_id,
                 note_tick,
                 note_key,
                 tick_f - note_tick,
@@ -146,7 +135,6 @@ impl Editor {
             ));
             sync_entries.push((
                 true,
-                right_id,
                 tick_f,
                 note_key,
                 note_tick + note_length - tick_f,

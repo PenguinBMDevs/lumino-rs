@@ -5,10 +5,8 @@ mod events;
 mod room;
 mod sync;
 
-/// 本地音符快照（`handle_local_note_added/deleted` 共用 7 字段，结构体化满足 `too_many_arguments`）。
+/// 本地音符快照（按值，操作者标识由信封承载，共用 6 字段）。
 pub(crate) struct LocalNoteSnapshot {
-    /// 音符全局唯一 ID
-    pub id: u64,
     /// 起始 tick
     pub tick: f32,
     /// 音高
@@ -23,13 +21,11 @@ pub(crate) struct LocalNoteSnapshot {
     pub track_index: usize,
 }
 
-/// 本地音符移动事件（7 字段，结构体化满足 `too_many_arguments`）。
+/// 本地音符移动事件（按值 + 偏移，6 字段）。
 pub(crate) struct LocalNoteMove {
-    /// 音符全局唯一 ID
-    pub id: u64,
-    /// 移动后起始 tick
+    /// 移动前起始 tick（参照位置）
     pub tick: f32,
-    /// 音高
+    /// 音高（参照位置）
     pub key: u16,
     /// 长度
     pub length: f32,
