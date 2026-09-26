@@ -64,6 +64,7 @@ impl EditorData {
             control_events: lumino_midi_model::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
+            text_events: vec![],
             sys_ex: vec![],
             track_names: (0..=track_id).map(|i| Some(format!("Track {i}"))).collect(),
             total_ticks: 0,

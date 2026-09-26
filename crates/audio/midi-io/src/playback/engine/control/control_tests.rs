@@ -28,6 +28,7 @@ pub(crate) fn doc_with_current_track(notes: Vec<DocNoteEvent>) -> Arc<MidiDocume
         control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![None],
         total_ticks: max_end,

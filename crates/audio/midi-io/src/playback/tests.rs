@@ -141,6 +141,7 @@ fn two_track_doc() -> Arc<MidiDocument> {
         control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![None, None],
         total_ticks: 10,

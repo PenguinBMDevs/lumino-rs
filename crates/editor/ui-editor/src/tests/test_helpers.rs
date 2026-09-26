@@ -25,6 +25,7 @@ pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]
         control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: (0..track_count)
             .map(|i| Some(format!("Track {i}")))

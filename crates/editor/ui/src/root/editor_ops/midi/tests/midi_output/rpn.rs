@@ -157,6 +157,7 @@ fn test_same_tick_data_entry_never_precedes_selection() {
             end_tick: 192,
             key: 60,
             velocity: 100,
+            release_velocity: 0,
             channel: 0,
         }]),
         lumino_midi_loader::ChunkedList::new(),

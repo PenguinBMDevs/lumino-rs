@@ -129,6 +129,7 @@ mod tests {
             control_events: lumino_midi_loader::ChunkedList::new(),
             lyrics: vec![],
             markers: vec![],
+            text_events: vec![],
             sys_ex: vec![],
             track_names: vec![Some("T1".into())],
             total_ticks: 1920,

@@ -12,17 +12,20 @@ use crate::track::TrackManager;
 
 use super::{MidiDocument, scan};
 
-/// 按 tick 排序去重；若首项 tick != 0，在头部插入 tick=0 的默认事件。
+/// 按 tick 稳定排序；若首项 tick != 0，在头部插入 tick=0 的默认事件。
 ///
 /// 收敛 `from_notes_bytes` 中 tempo/time_sig/key_sig 三处同构的
-/// "sort → dedup → 首项补默认" 模板。
+/// "sort → 首项补默认" 模板。
+///
+/// 加载 = 全量保留：同 tick 的多个 tempo/拍号/调号事件全部保留，
+/// 不做去重（历史 `dedup_by` 会静默丢弃同 tick 事件，与 EXP-005 的
+/// 逐事件往返等价验收冲突）。稳定排序保证同 tick 事件的文件序。
 fn finalize_sorted_events<T>(
     events: &mut Vec<T>,
     get_tick: impl Fn(&T) -> u32,
     default_at_zero: T,
 ) {
-    events.sort_unstable_by_key(&get_tick);
-    events.dedup_by(|a, b| get_tick(a) == get_tick(b));
+    events.sort_by_key(&get_tick);
     if events.first().is_none_or(|e| get_tick(e) != 0) {
         events.insert(0, default_at_zero);
     }
@@ -49,6 +52,7 @@ impl MidiDocument {
             control_events: crate::chunked_list::ChunkedList::new(),
             lyrics: Vec::new(),
             markers: Vec::new(),
+            text_events: Vec::new(),
             sys_ex: Vec::new(),
             track_names: (0..track_count)
                 .map(|i| match i {
@@ -114,6 +118,7 @@ impl MidiDocument {
             let mut control_events: Vec<midly::loader::PackedControlEvent> = Vec::new();
             let mut lyrics: Vec<(u32, u16, Vec<u8>)> = Vec::new();
             let mut markers: Vec<(u32, u16, Vec<u8>)> = Vec::new();
+            let mut text_events: Vec<(u32, u16, u8, Vec<u8>)> = Vec::new();
             let mut sys_ex: Vec<(u32, u16, Vec<u8>)> = Vec::new();
             let mut total_notes: u64 = 0;
             let mut total_ticks: u32 = 0;
@@ -180,6 +185,12 @@ impl MidiDocument {
                             .into_iter()
                             .map(|ev| (ev.tick, ev.track, ev.text.to_vec())),
                     );
+                    text_events.extend(
+                        events
+                            .text_events
+                            .into_iter()
+                            .map(|ev| (ev.tick, ev.track, ev.meta_type, ev.text.to_vec())),
+                    );
                     sys_ex.extend(
                         events
                             .sys_ex
@@ -200,6 +211,7 @@ impl MidiDocument {
             control_events.sort_by_key(|e| e.tick);
             lyrics.sort_by_key(|e| e.0);
             markers.sort_by_key(|e| e.0);
+            text_events.sort_by_key(|e| e.0);
             sys_ex.sort_by_key(|e| e.0);
 
             if let Some(cb) = progress {
@@ -223,6 +235,7 @@ impl MidiDocument {
                     control_events: crate::chunked_list::ChunkedList::from_sorted(control_events),
                     lyrics,
                     markers,
+                    text_events,
                     sys_ex,
                     track_names,
                     total_ticks,
