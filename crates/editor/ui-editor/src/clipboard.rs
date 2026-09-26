@@ -60,11 +60,14 @@ mod paste_interop;
 // 编解码实现本身与平台无关。
 use lumino_midi_model::clipboard::{ClipRecord, encode_clipboard};
 
+// 编解码导入跨平台：`parse_clipboard_header` / `decode_clipboard_records` 被纯函数
+// `paste_binary_payload` 使用（无平台依赖），非 Windows 下也必须可用。
+// 仅 `domino` 三件套（`decode_domino_clipboard` / `encode_domino_clipboard`）仍限 Windows
+// ——它们只服务于 Windows 原生剪贴板互操作。
+use lumino_midi_model::clipboard::{decode_clipboard_records, parse_clipboard_header};
+
 #[cfg(windows)]
-use lumino_midi_model::clipboard::{
-    decode_clipboard_records, decode_domino_clipboard, encode_domino_clipboard,
-    parse_clipboard_header,
-};
+use lumino_midi_model::clipboard::{decode_domino_clipboard, encode_domino_clipboard};
 
 /// Domino 互通剪贴板载荷的音符数上限（超过则跳过该格式，仅写 Lumino 二进制）。
 ///

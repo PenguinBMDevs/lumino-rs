@@ -37,7 +37,22 @@ impl Editor {
     ///   偏移`，再经 `document_track_at` 映射回文档轨），与走带粘贴逐字节一致；
     /// - 卷帘子格式：偏移恒 0（见 [`Self::build_clipboard_binary`]），走原单轨快路径，
     ///   **行为完全不变**（零回归）。
-    #[cfg(windows)]
+    ///
+    /// # 平台无关（2026-09 修复）
+    ///
+    /// 本函数此前挂着 `#[cfg(windows)]`，但它是**纯函数**——只收 `&[u8]`、不触碰系统
+    /// 剪贴板，依赖（`parse_clipboard_header` / `decode_clipboard_records` 在
+    /// `midi-model` 纯逻辑层，`snap_tick` / `commit_pasted_notes` /
+    /// `insert_grouped_notes` 均无 cfg）也全部平台无关。
+    ///
+    /// 那个多余的 cfg 导致非 Windows 构建**整条二进制粘贴路径编译失败**：2 个 import
+    /// 变 unused（`ARRANGEMENT_BINARY_MARK`、`decode_clipboard_records`、
+    /// `parse_clipboard_header`），2 个调用点找不到方法（`paste.rs` 的
+    /// `paste_from_clipboard`、以及本模块的跨视图互通测试）。CI 跑 Linux 才暴露。
+    ///
+    /// 与 [`Self::insert_grouped_notes`] 同一处理原则：**只碰系统剪贴板的部分才需要
+    /// cfg，纯逻辑部分不得加 cfg**——加了会让非 Windows 平台的测试覆盖率恒为 0，
+    /// 且把编译期错误伪装成平台差异。
     pub(crate) fn paste_binary_payload(&mut self, bytes: &[u8]) -> bool {
         let meta = match parse_clipboard_header(bytes) {
             Ok(m) => m,
