@@ -54,6 +54,10 @@ impl Renderers {
     }
 
     /// 创建视频导出专用渲染器（无 depth attachment，与无 depth 的 RenderPass 兼容）。
+    ///
+    /// 洋葱皮同样走无 depth 管线：钢琴卷帘导出分支会绘制洋葱皮渲染器，
+    /// 管线携带 depth-stencil 状态会与无 depth 的 RenderPass 不兼容
+    /// （见 `new_onion_skin_without_depth`）。
     pub fn new_for_video_export(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -63,7 +67,7 @@ impl Renderers {
             grid: crate::GridRenderer::new_without_depth(device, format),
             vertical_grid: crate::VerticalGridRenderer::new_without_depth(device, format),
             note: crate::NoteRenderer::new_without_depth(device, queue, format),
-            onion_skin: crate::NoteRenderer::new_onion_skin(device, queue, format),
+            onion_skin: crate::NoteRenderer::new_onion_skin_without_depth(device, queue, format),
             ruler: crate::RulerRenderer::new_without_depth(device, format),
             arrangement: crate::ArrangementRenderer::new_without_depth(device, format),
             cc_bar: crate::CcBarRenderer::new_without_depth(device, format),

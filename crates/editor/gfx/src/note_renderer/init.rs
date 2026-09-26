@@ -50,6 +50,29 @@ impl NoteRenderer {
         )
     }
 
+    /// 创建不带 depth attachment 的洋葱皮音符渲染器（视频导出等纯 2D 路径）。
+    ///
+    /// 与 `new_onion_skin` 的唯一差异是管线**不携带** depth-stencil 状态：
+    /// 视频导出的 RenderPass 无 depth attachment（`ensure_textures(.., false)`），
+    /// 若管线携带 depth 状态会被 wgpu 校验层判定不兼容
+    /// （`constants::is_depth_stencil_compatible`）而拒绝整条命令缓冲。
+    /// `onion_note.wgsl` 的静音轨分支输出视口外退化几何（不依赖深度裁剪），
+    /// 故无 depth attachment 时语义完全一致。
+    pub fn new_onion_skin_without_depth(
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        format: wgpu::TextureFormat,
+    ) -> Self {
+        Self::new_with_shader(
+            device,
+            queue,
+            format,
+            false,
+            Self::ONION_SHADER,
+            Self::CULL_SHADER,
+        )
+    }
+
     fn new_with_depth(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
