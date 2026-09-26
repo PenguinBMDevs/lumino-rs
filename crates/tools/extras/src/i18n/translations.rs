@@ -181,6 +181,8 @@ pub struct MainTranslations {
     pub mode_switch_to_waterfall: &'static str,
     /// 状态：就绪
     pub status_ready: &'static str,
+    /// 音符总量（工程设置对话框 / 下边栏；UI-015）
+    pub note_count_label: &'static str,
     /// 保存成功后的底边栏提示
     pub status_file_saved: &'static str,
     /// 保存失败后的底边栏提示前缀

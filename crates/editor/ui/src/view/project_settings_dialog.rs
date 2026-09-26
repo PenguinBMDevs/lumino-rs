@@ -140,6 +140,25 @@ pub fn view_project_settings_dialog<'a>(
         .size(14)
         .style(readonly_style);
 
+    // 音符总量 (只读；UI-015；两位置互斥：下边栏模式下对话框不显示该行)
+    let note_count_block: crate::Element<'a> = if state.note_count_display
+        == lumino_core::storage::config::NoteCountDisplay::ProjectSettings
+    {
+        column![
+            space().height(12),
+            text(t.note_count_label).size(14).style(label_style),
+            text(lumino_extras::i18n::format_thousands(
+                state.note_count as u64
+            ))
+            .size(14)
+            .style(readonly_style),
+        ]
+        .spacing(4)
+        .into()
+    } else {
+        iced_widget::Space::new().height(0).into()
+    };
+
     // 按钮区域
     let ok_button = button(text(t.project_ok).size(14))
         .on_press(Message::ProjectSettings(ProjectSettingsAction::Confirm))
@@ -212,6 +231,7 @@ pub fn view_project_settings_dialog<'a>(
         space().height(12),
         editing_time_label,
         editing_time_value,
+        note_count_block,
         space().height(24),
         buttons,
     ]

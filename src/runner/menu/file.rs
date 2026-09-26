@@ -188,6 +188,8 @@ impl RunnerInner {
                 };
 
                 // 将真实数据设置到 UI 状态中
+                let note_count = self.window_state.window.ui().get_editor_note_count();
+                let note_count_display = self.window_state.window.ui().note_count_display();
                 self.window_state.window.ui_mut().set_project_settings_data(
                     lumino_ui::root::ProjectSettingsDialogData {
                         title: display_title.clone(),
@@ -196,6 +198,8 @@ impl RunnerInner {
                         author,
                         created_display,
                         total_editing_time_seconds,
+                        note_count,
+                        note_count_display,
                         time_signatures,
                     },
                 );

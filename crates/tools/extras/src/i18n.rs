@@ -17,6 +17,11 @@ pub fn main_translations(lang: Language) -> &'static MainTranslations {
     main::get(lang)
 }
 
+/// 千分位格式化（`1234567` → `"1,234,567"`；UI-015 音符总量显示）。
+pub fn format_thousands(n: u64) -> String {
+    main::format_thousands(n)
+}
+
 /// 获取音符精度名称（按语言）
 pub fn note_precision_name(precision: NotePrecision, lang: Language) -> &'static str {
     main::note_precision_name(precision, lang)

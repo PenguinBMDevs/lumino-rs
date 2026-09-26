@@ -138,6 +138,18 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 轻量更新工程设置对话框的音符总量（UI-015；返回是否有变化）。
+    ///
+    /// 值变化才置脏并请求重绘，供 Runner 在对话框打开期间每帧同步使用。
+    pub fn set_project_settings_note_count(&mut self, count: usize) -> bool {
+        if !self.root.set_project_settings_note_count(count) {
+            return false;
+        }
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+        true
+    }
+
     /// 获取当前项目设置数据（用于填充工程设置对话框）
     #[allow(clippy::type_complexity)]
     pub fn get_project_settings_data(

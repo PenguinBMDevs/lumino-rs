@@ -165,6 +165,14 @@ pub struct SettingsTranslations {
     pub enable_256key: &'static str,
     /// 256 键扩展提示
     pub enable_256key_hint: &'static str,
+    /// 音符总量统计显示位置（UI-015）
+    pub note_count_display: &'static str,
+    /// 音符总量统计显示位置提示
+    pub note_count_display_hint: &'static str,
+    /// 显示位置选项：工程设置面板
+    pub note_count_display_project_settings: &'static str,
+    /// 显示位置选项：下边栏
+    pub note_count_display_statusbar: &'static str,
     /// 像素
     pub pixel: &'static str,
     /// 从左边缘算起

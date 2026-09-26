@@ -7,7 +7,8 @@ mod enums;
 
 pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
 pub use enums::{
-    AudioEngineKind, EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, NoteCountDisplay, SelectionBoxMode, SynthBackend,
+    TrackAddBehavior,
 };
 
 use defaults::*;
@@ -112,6 +113,9 @@ pub struct UiConfig {
     /// 是否启用 256 键扩展钢琴卷帘（默认关闭）
     #[serde(default)]
     pub enable_256key: bool,
+    /// 音符总量统计的显示位置（默认工程设置对话框；UI-015）
+    #[serde(default)]
+    pub note_count_display: NoteCountDisplay,
     /// 力度面板显示样式（默认曲线=折线图，false=柱状图）
     #[serde(default = "default_true")]
     pub velocity_curve_style: bool,
@@ -227,6 +231,7 @@ impl Default for UiConfig {
             xsynth_soft_nps_gate: false,
             icon_hidpi: true,
             enable_256key: false,
+            note_count_display: NoteCountDisplay::default(),
             velocity_curve_style: true,
             hires_onion_enabled: true,
             hires_measures_per_group: default_hires_measures_per_group(),

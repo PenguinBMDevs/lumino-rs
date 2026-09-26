@@ -125,3 +125,31 @@ pub fn synth_backend_name(
         },
     }
 }
+
+/// 千分位格式化：`1234567` → `"1,234,567"`（UI-015 音符总量显示）。
+pub fn format_thousands(n: u64) -> String {
+    let s = n.to_string();
+    let bytes = s.as_bytes();
+    let mut out = String::with_capacity(s.len() + s.len() / 3);
+    for (i, b) in bytes.iter().enumerate() {
+        if i > 0 && (bytes.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(*b as char);
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::format_thousands;
+
+    #[test]
+    fn test_format_thousands() {
+        assert_eq!(format_thousands(0), "0");
+        assert_eq!(format_thousands(999), "999");
+        assert_eq!(format_thousands(1000), "1,000");
+        assert_eq!(format_thousands(1234567), "1,234,567");
+        assert_eq!(format_thousands(18_906_416), "18,906,416");
+    }
+}

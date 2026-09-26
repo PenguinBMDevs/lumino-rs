@@ -74,6 +74,25 @@ impl std::fmt::Display for EraserBehavior {
     }
 }
 
+/// 音符总量统计的显示位置（UI-015）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum NoteCountDisplay {
+    /// 在工程设置对话框中显示（默认）
+    #[default]
+    ProjectSettings,
+    /// 在下边栏（状态栏）中显示
+    StatusBar,
+}
+
+impl std::fmt::Display for NoteCountDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NoteCountDisplay::ProjectSettings => write!(f, "工程设置面板"),
+            NoteCountDisplay::StatusBar => write!(f, "下边栏"),
+        }
+    }
+}
+
 impl std::fmt::Display for SynthBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {

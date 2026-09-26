@@ -88,6 +88,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     mode_switch_to_editor: "切换到编辑器模式",
     mode_switch_to_waterfall: "切换到瀑布流模式",
     status_ready: "就绪",
+    note_count_label: "音符总量",
     status_file_saved: "文件已经保存",
     status_save_failed: "保存失败",
     status_midi_exported: "MIDI 已导出",
