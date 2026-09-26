@@ -99,6 +99,68 @@ pub struct MidiKeySignatureEvent {
     pub is_major: bool,
 }
 
+/// MIDI 通道触后事件
+#[derive(Debug, Clone)]
+pub struct MidiChannelAftertouchEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 通道 (0-15)
+    pub channel: u8,
+    /// 压力值 (0-127)
+    pub velocity: u8,
+}
+
+/// MIDI 复音触后事件
+#[derive(Debug, Clone)]
+pub struct MidiPolyAftertouchEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 通道 (0-15)
+    pub channel: u8,
+    /// 键号 (0-127)
+    pub key: u8,
+    /// 压力值 (0-127)
+    pub velocity: u8,
+}
+
+/// MIDI 歌词事件（payload 存原始字节，写盘时原样回写）
+#[derive(Debug, Clone)]
+pub struct MidiLyricEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 原始字节
+    pub bytes: Vec<u8>,
+}
+
+/// MIDI 标记事件（payload 存原始字节，写盘时原样回写）
+#[derive(Debug, Clone)]
+pub struct MidiMarkerEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 原始字节
+    pub bytes: Vec<u8>,
+}
+
+/// MIDI 文本类元事件（0x01/0x02/0x04/0x07/0x08/0x09，payload 存原始字节）
+#[derive(Debug, Clone)]
+pub struct MidiTextMetaEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 元事件类型字节
+    pub meta_type: u8,
+    /// 原始字节
+    pub bytes: Vec<u8>,
+}
+
+/// MIDI SysEx 事件（payload 存原始字节，写盘时原样回写）
+#[derive(Debug, Clone)]
+pub struct MidiSysExEvent {
+    /// Tick 位置
+    pub tick: u32,
+    /// 原始字节
+    pub bytes: Vec<u8>,
+}
+
 /// MIDI 音轨
 #[derive(Debug, Clone, Default)]
 pub struct MidiTrackData {
@@ -112,10 +174,24 @@ pub struct MidiTrackData {
     pub control_changes: Vec<MidiControlChangeEvent>,
     /// 弯音事件列表
     pub pitch_bends: Vec<MidiPitchBendEvent>,
+    /// 通道触后事件列表
+    pub channel_aftertouch: Vec<MidiChannelAftertouchEvent>,
+    /// 复音触后事件列表
+    pub poly_aftertouch: Vec<MidiPolyAftertouchEvent>,
     /// 拍号事件列表
     pub time_signatures: Vec<MidiTimeSignatureEvent>,
     /// 调号事件列表
     pub key_signatures: Vec<MidiKeySignatureEvent>,
+    /// 歌词事件列表
+    pub lyrics: Vec<MidiLyricEvent>,
+    /// 标记事件列表
+    pub markers: Vec<MidiMarkerEvent>,
+    /// 文本类元事件列表
+    pub text_events: Vec<MidiTextMetaEvent>,
+    /// SysEx 事件列表
+    pub sys_ex: Vec<MidiSysExEvent>,
+    /// MIDI 端口（FF 21），None 表示不写
+    pub midi_port: Option<u8>,
     /// 轨道名称
     pub name: Option<String>,
 }

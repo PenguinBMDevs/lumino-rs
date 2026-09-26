@@ -14,7 +14,9 @@ mod tracks;
 
 pub use encoding::{bpm_to_tempo, tempo_to_bpm};
 pub use export::{export_midi, export_midi_to_bytes};
-pub use extract::extract_pc_cc_events;
+pub use extract::{
+    DocPassthrough, ReleaseMap, build_release_map, extract_passthrough_events, extract_pc_cc_events,
+};
 
 mod types;
 pub use types::*;
