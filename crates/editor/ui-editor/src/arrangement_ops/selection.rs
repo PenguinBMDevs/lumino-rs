@@ -5,11 +5,14 @@
 //! - `arrange_select_all_notes`: 全选（全部音轨 × 全部 tick）
 //! - `arrange_delete_selected_notes`: 删除选中音符
 //! - `arrange_apply_speed_change`: 选中音符批量变速
+//! - `collect_notes_for_export`: 导出用选区收集（两视图仲裁，见该方法文档）
 //!
 //! 2026-08 单一权威源：音符唯一权威是 document，本模块直接读写 MidiDocument，
 //! 不再维护 track_notes 缓存。
 
 use std::collections::HashMap;
+
+use lumino_midi_loader::NoteEvent;
 
 use super::Editor;
 
@@ -341,5 +344,97 @@ impl Editor {
         }
 
         (track_indices, min_tick)
+    }
+
+    /// 收集「导出为素材」用的选中音符：按**视图优先序**取数，主选区空则回退另一套。
+    ///
+    /// 返回 `(文档音轨索引, 该轨选中音符)`，仅含命中音符的音轨。
+    ///
+    /// # P0 修复（视图仲裁缺失，此前是三处逻辑错误叠加）
+    ///
+    /// 旧实现在 `Host::get_selected_notes` 里，犯了两个错：
+    /// 1. **优先序错误**：`if has_selection() { return; }` —— 卷帘选区非空即提前返回，
+    ///    走带选区被完全忽略。而菜单项的启用条件是 `卷帘非空 || 走带非空`（OR），
+    ///    于是**菜单能点、导出却是另一套选区**（用户框了 A，导出得到 B）。
+    ///    两套选区（`selected_notes` / `arrange_selection`）彼此独立、互不清理，
+    ///    从卷帘切到走带后卷帘选区仍留存，这个错误极易触发。
+    /// 2. **坐标空间错误**：走带分支把**文档音轨索引**当**视觉音轨**传进
+    ///    `ArrangeSelection::contains`。而选区（含冻结集）存的是视觉轨
+    ///    （见 `move_notes::frozen_entries_of_moved` 用 `visual_position_of` 转换）。
+    ///    `track_visual_order` 非恒等时（删轨 / 加轨 / 排序 / 分组显示）判定全错。
+    ///    这与 2025-07 修过的 `arrangement-y-axis-movement` 是**同一个坑换个入口复现**。
+    ///
+    /// 现在：主选区 = 当前视图的选区（`prefer_arrangement` 决定），空则回退另一套，
+    /// 与菜单启用条件的 OR 语义对齐——不会「能点却导不出」。
+    pub fn collect_notes_for_export(
+        &self,
+        prefer_arrangement: bool,
+    ) -> Vec<(usize, Vec<NoteEvent>)> {
+        if prefer_arrangement {
+            let arranged = self.collect_arrangement_selected_notes();
+            if !arranged.is_empty() {
+                return arranged;
+            }
+        }
+        let roll = self.collect_roll_selected_notes();
+        if !roll.is_empty() {
+            return roll;
+        }
+        // 主选区（走带）为空且回退（卷帘）也为空时才走到这里；若调用方是
+        // prefer_arrangement = false 且卷帘为空，仍需尝试走带（OR 语义）
+        if !prefer_arrangement {
+            self.collect_arrangement_selected_notes()
+        } else {
+            Vec::new()
+        }
+    }
+
+    /// 走带选区命中的音符（跨轨，视觉空间判定）
+    fn collect_arrangement_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
+        let editor_data = &self.editor_state.data;
+        let selection = &editor_data.arrange_selection;
+        let mut result: Vec<(usize, Vec<NoteEvent>)> = Vec::new();
+        if selection.is_empty() {
+            return result;
+        }
+        let Some(doc) = &editor_data.document else {
+            return result;
+        };
+        for track_idx in 0..doc.track_count() {
+            // 关键：选区存的是**视觉轨**，必须经 visual_position_of 转换
+            let visual = editor_data
+                .visual_position_of(track_idx)
+                .unwrap_or(track_idx);
+            let notes = editor_data.track_notes(track_idx);
+            let selected: Vec<NoteEvent> = notes
+                .iter()
+                .filter(|n| selection.contains(visual as u16, n.start_tick, n.key))
+                .copied()
+                .collect();
+            if !selected.is_empty() {
+                result.push((track_idx, selected));
+            }
+        }
+        result
+    }
+
+    /// 卷帘选区命中的音符（单轨，索引位图）
+    fn collect_roll_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
+        let editor_data = &self.editor_state.data;
+        if !self.has_selection() {
+            return Vec::new();
+        }
+        let track = editor_data.current_track;
+        let notes = editor_data.track_notes(track);
+        let selected: Vec<NoteEvent> = self
+            .get_selected_indices()
+            .into_iter()
+            .filter_map(|idx| notes.get(idx).copied())
+            .collect();
+        if selected.is_empty() {
+            Vec::new()
+        } else {
+            vec![(track, selected)]
+        }
     }
 }

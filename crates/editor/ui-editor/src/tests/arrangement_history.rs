@@ -193,3 +193,103 @@ fn test_arrangement_select_all_covers_every_track() {
         "全选应覆盖末位音轨（不受当前轨限制）"
     );
 }
+
+// ══════════════════════════════════════════════════════════════════
+// 导出为素材的选区收集（`collect_notes_for_export`）
+//
+// 缺陷背景（两个 bug 叠加，且都与「入口层零视图仲裁」同源）：
+// 1. **优先序错误**：旧实现 `if has_selection() { return; }` 让卷帘选区无条件
+//    优先，走带选区被忽略。而菜单启用条件是 `卷帘非空 || 走带非空`——两套选区
+//    彼此独立、互不清理，从卷帘切到走带后卷帘选区仍留存，于是**菜单能点、
+//    导出却是另一套选区**（用户框了 A，拿到的是 B）。
+// 2. **坐标空间错误**：走带分支把文档音轨索引当视觉轨传进 `contains`。选区
+//    （含冻结集）存的是视觉轨，`track_visual_order` 非恒等时判定全错——与
+//    2025-07 修过的 `arrangement-y-axis-movement` 是同一个坑换个入口复现。
+// ══════════════════════════════════════════════════════════════════
+
+/// 收集结果按文档轨分组的 `(轨, 音符数)` 列表
+fn export_shape(editor: &Editor) -> Vec<(usize, usize)> {
+    editor
+        .collect_notes_for_export(true)
+        .into_iter()
+        .map(|(t, notes)| (t, notes.len()))
+        .collect()
+}
+
+/// 回归 1：走带模式下两套选区同时非空，必须取**走带**选区（视图优先）
+#[test]
+fn test_export_prefers_arrangement_selection_over_roll() {
+    let mut editor = Editor::default();
+    seed_notes(
+        &mut editor,
+        3,
+        0,
+        &[
+            Note::from_raw(0.0, 60, 10.0, 100, 0),    // 卷帘选区会选中它
+            Note::from_raw(5000.0, 67, 10.0, 100, 0), // 走带选区会选中它
+        ],
+    );
+    // 卷帘选区：索引 0
+    editor.selection_insert(0);
+    // 走带选区：只框 [5000, 5010)
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect_track(5000, 5010, 0, 127, 0, 2);
+
+    let notes = editor.collect_notes_for_export(true);
+    assert_eq!(notes.len(), 1, "走带优先时应只返回走带选区命中的 1 条音轨");
+    assert_eq!(
+        (notes[0].0, notes[0].1[0].start_tick, notes[0].1[0].key),
+        (0, 5000, 67),
+        "必须取走带框选的音符（tick 5000），而非卷帘残留选区（tick 0）"
+    );
+}
+
+/// 回归 2：走带选区为空但卷帘有选区时回退卷帘（与菜单 OR 启用条件一致）
+#[test]
+fn test_export_falls_back_to_roll_selection() {
+    let mut editor = Editor::default();
+    seed_notes(&mut editor, 1, 0, &[Note::from_raw(0.0, 60, 10.0, 100, 0)]);
+    editor.selection_insert(0);
+    assert!(
+        editor.editor_state.data.arrange_selection.is_empty(),
+        "前置条件：走带选区为空"
+    );
+
+    // 走带优先但走带空 → 回退卷帘（否则菜单可点却导不出，OR 语义被破坏）
+    assert_eq!(
+        export_shape(&editor),
+        vec![(0, 1)],
+        "走带选区为空时必须回退卷帘选区"
+    );
+    // 反向：卷帘优先 + 卷帘有选区 + 走带空 → 同样取卷帘
+    assert_eq!(export_shape(&editor), vec![(0, 1)]);
+}
+
+/// 回归 3：非恒等 `track_visual_order` 下走带选区仍按**视觉轨**判定
+///
+/// 旧实现传 `track_idx as u16`（文档索引）→ 视觉序 [2,0,1] 时全错。
+#[test]
+fn test_export_uses_visual_track_not_document_index() {
+    let mut editor = Editor::default();
+    seed_notes(&mut editor, 3, 0, &[Note::from_raw(0.0, 60, 10.0, 100, 0)]);
+    // `track_visual_order` 语义 = 视觉位置 → 文档轨索引
+    // vec![2,0,1] → 视觉0=doc2、视觉1=doc0、视觉2=doc1：文档轨 0 位于**视觉轨 1**
+    editor.editor_state.data.track_visual_order = vec![2, 0, 1];
+    // 走带框选**视觉轨 1**（即文档轨 0 所在处）
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect_track(0, 10, 0, 127, 1, 1);
+
+    let notes = editor.collect_notes_for_export(true);
+    assert_eq!(
+        notes.len(),
+        1,
+        "视觉轨判定应命中文档轨 0 的音符（旧实现传文档索引 0 会误判为视觉轨 0 → 漏检）"
+    );
+    assert_eq!(notes[0].0, 0, "命中的文档音轨索引应为 0");
+}
