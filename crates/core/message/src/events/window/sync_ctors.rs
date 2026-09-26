@@ -3,12 +3,8 @@ use super::*;
 impl Event {
     // ── 同步构造函数（直接构造 sync::Event） ──
 
-    /// 构造本地音符添加同步事件
-    ///
-    /// 携带 `id`：发送端在发射时已从文档取回真实全局 ID（绘制直接取、
-    /// 粘贴/复制/排布经 `note_id_at` 反查），由 runner 写入 `SyncNote.id`。
+    /// 构造本地音符添加同步事件（按值引用，操作者标识由信封承载）。
     pub fn local_note_added(
-        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -17,7 +13,6 @@ impl Event {
         track_index: usize,
     ) -> Self {
         Self::Sync(sync::Event::LocalNoteAdded {
-            id,
             tick,
             key,
             length,
@@ -26,9 +21,8 @@ impl Event {
             track_index,
         })
     }
-    /// 构造本地音符移动同步事件
+    /// 构造本地音符移动同步事件（按值引用 + 偏移）。
     pub fn local_note_moved(
-        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -37,7 +31,6 @@ impl Event {
         track_index: usize,
     ) -> Self {
         Self::Sync(sync::Event::LocalNoteMoved {
-            id,
             tick,
             key,
             length,
@@ -46,9 +39,8 @@ impl Event {
             track_index,
         })
     }
-    /// 构造本地音符删除同步事件
+    /// 构造本地音符删除同步事件（按值引用）。
     pub fn local_note_deleted(
-        id: u64,
         tick: f32,
         key: u16,
         length: f32,
@@ -57,7 +49,6 @@ impl Event {
         track_index: usize,
     ) -> Self {
         Self::Sync(sync::Event::LocalNoteDeleted {
-            id,
             tick,
             key,
             length,
@@ -82,8 +73,8 @@ impl Event {
             fingerprints,
         })
     }
-    /// 构造本地批量音符添加同步事件（100K 粘贴）
-    pub fn local_notes_added_batch(notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>) -> Self {
+    /// 构造本地批量音符添加同步事件（100K 粘贴，按值）
+    pub fn local_notes_added_batch(notes: Vec<(f32, u16, f32, u8, u8, usize)>) -> Self {
         Self::Sync(sync::Event::LocalNotesAddedBatch { notes })
     }
 }

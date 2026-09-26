@@ -1,11 +1,12 @@
 use serde::{Deserialize, Serialize};
 
-/// 协作同步音符（与编辑器对应，含会话唯一 ID 与音轨索引）
+/// 协作同步音符（按值引用，含音轨索引）。
+///
+/// 身份即音乐内容 `(tick, key, length, velocity, channel)`；
+/// 操作者标识由信封 `user_id + timestamp` 承载，不再使用音符级全局 ID。
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncNote {
-    /// 音符全局唯一 ID（与本地 `NoteEvent.id` 一致，由发送端文档分配器分配）
-    pub id: u64,
     /// 起始 tick
     pub tick: f32,
     /// 音高（键号）

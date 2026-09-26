@@ -151,27 +151,10 @@ impl<T: EventTick> ChunkedList<T> {
 }
 
 impl ChunkedList<crate::note_event::NoteEvent> {
-    /// 按全局唯一 id 定位音符的全局索引（tick 提示加速）。
+    /// 按值定位音符全局索引（O(log 块数 + 同 tick 事件数)，无全扫）。
     ///
-    /// 快路径：以 `tick_hint` 二分定位同 tick 连续段后扫描 id
-    /// （O(log 块数 + 同 tick 音符数)）。快路径未命中（远端已移动该音符、
-    /// 轨道暂态失序等）时全扫兜底（O(N)）。
-    ///
-    /// id 由文档级分配器单调分配、删除不回收，是历史记录/协作同步的稳定身份。
-    pub fn position_of_id(&self, id: u64, tick_hint: u32) -> Option<usize> {
-        if self.total_len == 0 {
-            return None;
-        }
-        let start = self.partition_point(tick_hint);
-        for (idx, ev) in self.iter_window(start, self.total_len) {
-            if ev.start_tick > tick_hint {
-                break;
-            }
-            if ev.id == id {
-                return Some(idx);
-            }
-        }
-        // 兜底：全扫（id 唯一，命中即返回）
-        self.iter().position(|n| n.id == id)
+    /// 与通用 [`Self::position_of`] 同语义，专供 NoteEvent 调用方语义明确化。
+    pub fn position_of_value(&self, event: &crate::note_event::NoteEvent) -> Option<usize> {
+        self.position_of(event)
     }
 }
