@@ -406,6 +406,121 @@ fn pixel(data: &[u8], x: u32, y: u32) -> [u8; 4] {
     ]
 }
 
+/// 测试用清屏色（与音符颜色明显不同，便于做覆盖判定）
+const CLEAR_COLOR: wgpu::Color = wgpu::Color {
+    r: 0.05,
+    g: 0.05,
+    b: 0.05,
+    a: 1.0,
+};
+
+fn make_color_texture(device: &wgpu::Device, format: wgpu::TextureFormat) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("note_depth_test_color"),
+        size: wgpu::Extent3d {
+            width: TEST_W,
+            height: TEST_H,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
+        view_formats: &[],
+    })
+}
+
+fn make_depth_texture(device: &wgpu::Device) -> wgpu::Texture {
+    device.create_texture(&wgpu::TextureDescriptor {
+        label: Some("note_depth_test_depth"),
+        size: wgpu::Extent3d {
+            width: TEST_W,
+            height: TEST_H,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgpu::TextureDimension::D2,
+        format: DEPTH_FORMAT,
+        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    })
+}
+
+fn color_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassColorAttachment<'_> {
+    wgpu::RenderPassColorAttachment {
+        view,
+        resolve_target: None,
+        ops: wgpu::Operations {
+            load: wgpu::LoadOp::Clear(CLEAR_COLOR),
+            store: wgpu::StoreOp::Store,
+        },
+        depth_slice: None,
+    }
+}
+
+fn depth_attachment(view: &wgpu::TextureView) -> wgpu::RenderPassDepthStencilAttachment<'_> {
+    wgpu::RenderPassDepthStencilAttachment {
+        view,
+        depth_ops: Some(wgpu::Operations {
+            load: wgpu::LoadOp::Clear(1.0),
+            store: wgpu::StoreOp::Store,
+        }),
+        stencil_ops: None,
+    }
+}
+
+/// 直接写相机 uniform（绕开 `prepare_pass` 的 cull，自行控制可见顺序）
+fn write_camera(renderer: &NoteRenderer, queue: &wgpu::Queue) {
+    queue.write_buffer(
+        renderer.viewport_buffer.inner(),
+        0,
+        bytemuck::cast_slice(&[test_camera()]),
+    );
+}
+
+/// 直接写可见索引顺序 + 间接绘制参数（复刻 cull 的输出，用于控制/置换绘制顺序）
+fn write_visible_order(renderer: &NoteRenderer, queue: &wgpu::Queue, order: &[u32]) {
+    queue.write_buffer(
+        renderer.visible_instance_buffer.inner(),
+        0,
+        bytemuck::cast_slice(order),
+    );
+    let args = DrawIndirectArgs {
+        vertex_count: 4,
+        instance_count: order.len() as u32,
+        first_vertex: 0,
+        first_instance: 0,
+        _padding: [0; 4],
+    };
+    queue.write_buffer(
+        renderer.indirect_buffer.inner(),
+        0,
+        bytemuck::bytes_of(&args),
+    );
+}
+
+/// 覆盖掩码：像素是否被音符绘制（与清屏色不同）。
+///
+/// 背景参考取画面右下角——测试场景的音符全部落在 x < 200（tick ≤ 100）与
+/// y < 50（key ≥ 56）之内，该点必然只有清屏色；同时避开 sRGB 目标格式下
+/// 清屏色编码后的精确取值问题。
+fn coverage_mask(pixels: &[u8]) -> Vec<bool> {
+    let background = background_pixel(pixels);
+    pixels
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|px| px != &background)
+        .collect()
+}
+
+/// 背景像素（画面右下角，场景内无音符覆盖）
+fn background_pixel(pixels: &[u8]) -> [u8; 4] {
+    pixel(pixels, TEST_W - 1, TEST_H - 1)
+}
+
 /// 核心回归测试：同一场景、同一源数据，仅改变可见索引的输出顺序，
 /// 连续 64 帧像素必须逐位一致；并锁定确定性的叠压赢家与预览层级。
 #[test]
@@ -424,77 +539,22 @@ fn test_overlap_pixels_are_draw_order_independent() {
     let mut note = NoteRenderer::new(&device, &queue, format);
     note.upload_instances(&preview_notes, &device, &queue);
 
-    // 相机 uniform：正式路径由 prepare_pass 写入；此处直接写（绕开 cull，自行控制可见顺序）
-    queue.write_buffer(
-        onion.viewport_buffer.inner(),
-        0,
-        bytemuck::cast_slice(&[test_camera()]),
-    );
-    queue.write_buffer(
-        note.viewport_buffer.inner(),
-        0,
-        bytemuck::cast_slice(&[test_camera()]),
-    );
+    write_camera(&onion, &queue);
+    write_camera(&note, &queue);
 
-    let color_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("note_depth_order_color"),
-        size: wgpu::Extent3d {
-            width: TEST_W,
-            height: TEST_H,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_SRC,
-        view_formats: &[],
-    });
-    let depth_texture = device.create_texture(&wgpu::TextureDescriptor {
-        label: Some("note_depth_order_depth"),
-        size: wgpu::Extent3d {
-            width: TEST_W,
-            height: TEST_H,
-            depth_or_array_layers: 1,
-        },
-        mip_level_count: 1,
-        sample_count: 1,
-        dimension: wgpu::TextureDimension::D2,
-        format: DEPTH_FORMAT,
-        usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-        view_formats: &[],
-    });
+    let color_texture = make_color_texture(&device, format);
+    let depth_texture = make_depth_texture(&device);
     let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
     let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
 
     let mut baseline: Option<Vec<u8>> = None;
     for frame in 0..ORDER_FRAMES {
-        let onion_order = permuted_order(onion_notes.len(), frame);
-        let preview_order = permuted_order(preview_notes.len(), frame.wrapping_mul(7));
-        queue.write_buffer(
-            onion.visible_instance_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&onion_order),
+        write_visible_order(&onion, &queue, &permuted_order(onion_notes.len(), frame));
+        write_visible_order(
+            &note,
+            &queue,
+            &permuted_order(preview_notes.len(), frame.wrapping_mul(7)),
         );
-        queue.write_buffer(
-            note.visible_instance_buffer.inner(),
-            0,
-            bytemuck::cast_slice(&preview_order),
-        );
-        for (renderer, count) in [(&onion, onion_order.len()), (&note, preview_order.len())] {
-            let args = DrawIndirectArgs {
-                vertex_count: 4,
-                instance_count: count as u32,
-                first_vertex: 0,
-                first_instance: 0,
-                _padding: [0; 4],
-            };
-            queue.write_buffer(
-                renderer.indirect_buffer.inner(),
-                0,
-                bytemuck::bytes_of(&args),
-            );
-        }
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("note_depth_order_encoder"),
@@ -502,28 +562,8 @@ fn test_overlap_pixels_are_draw_order_independent() {
         {
             let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("note_depth_order_pass"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &color_view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color {
-                            r: 0.05,
-                            g: 0.05,
-                            b: 0.05,
-                            a: 1.0,
-                        }),
-                        store: wgpu::StoreOp::Store,
-                    },
-                    depth_slice: None,
-                })],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: wgpu::StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
+                color_attachments: &[Some(color_attachment(&color_view))],
+                depth_stencil_attachment: Some(depth_attachment(&depth_view)),
                 timestamp_writes: None,
                 occlusion_query_set: None,
             });
@@ -576,4 +616,169 @@ fn test_overlap_pixels_are_draw_order_independent() {
         baseline.is_some(),
         "至少需要渲染一帧基线；ORDER_FRAMES 不得为 0"
     );
+}
+
+/// 视频导出（无 depth attachment）回归：音符不得缺失或被错误裁剪——
+/// 同一场景在有 depth / 无 depth 两条管线下的覆盖掩码必须完全一致。
+#[test]
+fn test_depthless_pass_keeps_note_coverage() {
+    let (device, queue) = crate::pipeline::test_device();
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let notes = onion_scene();
+    let order: Vec<u32> = (0..notes.len() as u32).collect();
+
+    let mut with_depth = NoteRenderer::new(&device, &queue, format);
+    with_depth.upload_instances(&notes, &device, &queue);
+    write_camera(&with_depth, &queue);
+    write_visible_order(&with_depth, &queue, &order);
+
+    let mut no_depth = NoteRenderer::new_without_depth(&device, &queue, format);
+    no_depth.upload_instances(&notes, &device, &queue);
+    write_camera(&no_depth, &queue);
+    write_visible_order(&no_depth, &queue, &order);
+
+    let color_with_depth = make_color_texture(&device, format);
+    let depth_texture = make_depth_texture(&device);
+    let view_with_depth = color_with_depth.create_view(&wgpu::TextureViewDescriptor::default());
+    let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let color_no_depth = make_color_texture(&device, format);
+    let view_no_depth = color_no_depth.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("note_depthless_regression_encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("note_with_depth_pass"),
+            color_attachments: &[Some(color_attachment(&view_with_depth))],
+            depth_stencil_attachment: Some(depth_attachment(&depth_view)),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        with_depth.draw(&mut pass, true, None);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("note_no_depth_pass"),
+            color_attachments: &[Some(color_attachment(&view_no_depth))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        no_depth.draw(&mut pass, true, None);
+    }
+    queue.submit(Some(encoder.finish()));
+
+    let pixels_with_depth = readback_pixels(&device, &queue, &color_with_depth);
+    let pixels_no_depth = readback_pixels(&device, &queue, &color_no_depth);
+    let mask_with_depth = coverage_mask(&pixels_with_depth);
+    let mask_no_depth = coverage_mask(&pixels_no_depth);
+
+    let covered = mask_with_depth.iter().filter(|c| **c).count();
+    assert!(covered > 0, "有 depth 参照渲染未画出任何音符");
+    assert_eq!(
+        mask_no_depth.iter().filter(|c| **c).count(),
+        covered,
+        "无 depth 路径的音符覆盖像素数与有 depth 路径不一致（音符缺失/被错误裁剪）"
+    );
+    if let Some(diff) = mask_with_depth
+        .iter()
+        .zip(mask_no_depth.iter())
+        .position(|(a, b)| a != b)
+    {
+        let x = (diff as u32) % TEST_W;
+        let y = (diff as u32) / TEST_W;
+        panic!("无 depth 路径覆盖掩码与有 depth 路径不一致 @({x},{y})");
+    }
+}
+
+/// 洋葱皮无 depth 变体必须与无 depth 的 RenderPass 兼容：
+/// 修复前 `new_onion_skin` 硬编码 needs_depth=true，在无 depth pass 中
+/// `set_pipeline` 会触发 wgpu 校验错误（整条命令缓冲被丢弃）。
+#[test]
+fn test_onion_skin_depthless_pipeline_is_pass_compatible() {
+    let (device, queue) = crate::pipeline::test_device();
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let notes = onion_scene();
+
+    let mut onion = NoteRenderer::new_onion_skin_without_depth(&device, &queue, format);
+    onion.set_view_state(&queue, 1, &[]);
+    onion.upload_instances(&notes, &device, &queue);
+    write_camera(&onion, &queue);
+    write_visible_order(&onion, &queue, &(0..notes.len() as u32).collect::<Vec<_>>());
+    assert!(
+        onion.last_upload_count() > 0,
+        "洋葱皮渲染器必须实际上传实例，否则 draw 提前返回、校验错误不会暴露"
+    );
+
+    let color_texture = make_color_texture(&device, format);
+    let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    device.push_error_scope(wgpu::ErrorFilter::Validation);
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("note_onion_depthless_encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("note_onion_depthless_pass"),
+            color_attachments: &[Some(color_attachment(&color_view))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        onion.draw(&mut pass, true, None);
+    }
+    queue.submit(Some(encoder.finish()));
+    let _ = device.poll(wgpu::PollType::Wait {
+        submission_index: None,
+        timeout: None,
+    });
+    let error = futures::executor::block_on(device.pop_error_scope());
+    assert!(
+        error.is_none(),
+        "无 depth RenderPass 中绘制洋葱皮触发了 wgpu 校验错误：{error:?}"
+    );
+
+    // 静音轨（非主音轨）必须完全不产生片元：覆盖掩码为空
+    let mut muted_onion = NoteRenderer::new_onion_skin_without_depth(&device, &queue, format);
+    // current_track = 1（主音轨 = track_enc 1）；轨道索引 1/2 静音
+    // → track_enc 2（key 58）/ track_enc 3（key 56）必须被裁剪，仅主音轨可见
+    muted_onion.set_view_state(&queue, 1, &[1, 2]);
+    muted_onion.upload_instances(&notes, &device, &queue);
+    write_camera(&muted_onion, &queue);
+    write_visible_order(
+        &muted_onion,
+        &queue,
+        &(0..notes.len() as u32).collect::<Vec<_>>(),
+    );
+    let muted_texture = make_color_texture(&device, format);
+    let muted_view = muted_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+        label: Some("note_onion_muted_encoder"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("note_onion_muted_pass"),
+            color_attachments: &[Some(color_attachment(&muted_view))],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        muted_onion.draw(&mut pass, true, None);
+    }
+    queue.submit(Some(encoder.finish()));
+    let muted_pixels = readback_pixels(&device, &queue, &muted_texture);
+    let clear = background_pixel(&muted_pixels);
+    // 洋葱皮轨道（key 58 → y ∈ [20, 30)、key 56 → y ∈ [40, 50)）在无 depth 路径下
+    // 也必须被静音裁剪掉，不得因「z=2.0 无 depth attachment 不裁剪」而误绘
+    for y in 20..50u32 {
+        for x in 0..TEST_W {
+            assert_eq!(
+                pixel(&muted_pixels, x, y),
+                clear,
+                "静音轨在无 depth 路径下仍被绘制 @({x},{y})"
+            );
+        }
+    }
 }
