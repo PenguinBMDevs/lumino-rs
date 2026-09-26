@@ -234,9 +234,15 @@ impl SettingsPanel {
             }
             Event::ProgramFontNameChanged(name) => {
                 self.editing.program_font_name = name;
+                // UI-001：与自定义字体文件路径互斥（选系统字体 → 清空路径）
+                self.editing.program_font_path.clear();
             }
             Event::ProgramFontPathChanged(path) => {
                 self.editing.program_font_path = path;
+                // UI-001：与系统字体名互斥（输入/粘贴路径 → 清空字体名）
+                if !self.editing.program_font_path.is_empty() {
+                    self.editing.program_font_name.clear();
+                }
             }
             Event::BrowseProgramFont => {
                 if let Some(path) = rfd::FileDialog::new()
@@ -247,6 +253,8 @@ impl SettingsPanel {
                     .pick_file()
                 {
                     self.editing.program_font_path = path.to_string_lossy().into_owned();
+                    // UI-001：与系统字体名互斥（浏览选择文件 → 清空字体名）
+                    self.editing.program_font_name.clear();
                 }
             }
             // 自动滚动配置事件

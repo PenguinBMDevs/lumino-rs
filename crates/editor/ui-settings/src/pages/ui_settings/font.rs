@@ -64,6 +64,11 @@ pub(crate) fn build_font_section<'a>(
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
+        iced_widget::space().height(SPACING_ICON_LABEL),
+        // UI-001：字体在启动时解析（iced 渲染器默认字体不可热更），显式提示重启生效
+        text(t.font_restart_hint)
+            .size(12.0)
+            .style(create_placeholder_text_style()),
     ]
     .into()
 }

@@ -38,7 +38,7 @@ pub fn view_project_settings_dialog<'a>(
     // 标题
     let title = text(t.project_title)
         .size(18)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
+        .font(lumino_ui_core::font::ui_font())
         .style(label_style);
 
     // 项目名称

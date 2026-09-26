@@ -116,7 +116,7 @@ fn audio_settings_section<'a>(
     column![
         text("音频设置")
             .size(18)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
         // 渲染后端

@@ -123,10 +123,11 @@ fn draw_username_label(
         line_height: iced_core::text::LineHeight::Relative(1.0),
         size: iced_core::Pixels(editor_constants::CURSOR_LABEL_FONT_SIZE),
         color: iced_core::Color::WHITE,
-        font: iced_core::Font::DEFAULT,
+        font: lumino_ui_core::font::ui_font(),
         align_x: iced_core::alignment::Horizontal::Left.into(),
         align_y: iced_core::alignment::Vertical::Top,
-        shaping: iced_core::text::Shaping::Basic,
+        // 用户名可能含中文：必须 Advanced 才会缺字形回退（Basic 会出豆腐块，UI-001 实测）
+        shaping: iced_core::text::Shaping::Advanced,
     };
     frame.fill_text(text);
 }
