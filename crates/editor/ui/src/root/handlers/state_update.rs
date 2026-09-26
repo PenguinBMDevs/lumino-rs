@@ -214,18 +214,11 @@ impl Root {
                 delta_ticks,
                 delta_tracks,
             } => {
+                // 框选误伤修复：arrange_move_notes 内部把选择集冻结为本次实际
+                // 移动的音符（精确集合）；此处不得再平移选择矩形——矩形平移到
+                // 落点会覆盖落点区域内既有的其他音符，导致后续操作误伤它们。
                 let moved = self.editor.arrange_move_notes(*delta_ticks, *delta_tracks);
                 if moved > 0 {
-                    self.editor
-                        .editor_state
-                        .data
-                        .arrange_selection
-                        .offset_ticks(*delta_ticks);
-                    self.editor
-                        .editor_state
-                        .data
-                        .arrange_selection
-                        .offset_tracks(*delta_tracks);
                     self.update_playback_notes();
                     self.editor.clear_notes_changed();
                 }

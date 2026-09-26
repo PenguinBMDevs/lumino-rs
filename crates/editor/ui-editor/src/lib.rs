@@ -46,6 +46,7 @@ mod track;
 #[cfg(test)]
 mod tests {
     mod arrangement_delete_incremental;
+    mod arrangement_move_freeze;
     mod arrangement_track_mapping;
     mod delete_sync_gate;
     mod drawing;

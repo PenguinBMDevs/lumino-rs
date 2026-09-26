@@ -126,13 +126,27 @@ impl Editor {
         // 主选择漂移防护：变速可越过未选中音符 → 当前轨重排会位移主选择索引
         let selection_identity = self.capture_selection_identity();
 
-        let (modified_count, current_track_touched, current_track_ranges) =
-            self.apply_speed_change_internal(track_indices, min_tick, speed_factor);
+        // 冻结条目：被变速音符的**新位置**（视觉音轨 + 文档权威 tick）
+        let mut frozen_entries: Vec<(u16, u32, u32, u8)> = Vec::new();
+        let (modified_count, current_track_touched, current_track_ranges) = self
+            .apply_speed_change_internal(
+                track_indices,
+                min_tick,
+                speed_factor,
+                &mut frozen_entries,
+            );
 
         if modified_count == 0 {
             self.editor_state.data.discard_last_history();
             return 0;
         }
+
+        // 框选冻结（框选误伤修复）：变速改变了选择几何，旧矩形既框不住已缩放
+        // 的音符、又会继续按区间命中区间内其他音符；选择集收敛为被变速音符的新位置。
+        self.editor_state
+            .data
+            .arrange_selection
+            .freeze(frozen_entries);
 
         self.remap_selection_by_identity(&selection_identity);
 
@@ -180,11 +194,15 @@ impl Editor {
 
     /// 执行变速：按 speed_factor 缩放选中音符的 tick 和 length。
     /// 返回 (modified_count, current_track_touched, current_track_ranges)。
+    ///
+    /// `frozen_entries` 出参：被处理音符的**新位置** `(视觉音轨, start, end, key)`，
+    /// 供调用方把选择集冻结为变速后的精确集合（见 `arrange_apply_speed_change`）。
     fn apply_speed_change_internal(
         &mut self,
         track_indices: HashMap<usize, Vec<usize>>,
         min_tick: f32,
         speed_factor: f32,
+        frozen_entries: &mut Vec<(u16, u32, u32, u8)>,
     ) -> (usize, bool, Option<lumino_midi_model::SortedRestoreRanges>) {
         let current_track = self.editor_state.data.current_track;
         let mut current_track_touched = false;
@@ -200,6 +218,11 @@ impl Editor {
             if *track_idx == current_track {
                 current_track_touched = true;
             }
+            let visual = self
+                .editor_state
+                .data
+                .visual_position_of(*track_idx)
+                .unwrap_or(*track_idx) as u16;
             if let Some(notes) = self
                 .editor_state
                 .data
@@ -223,6 +246,8 @@ impl Editor {
                             modified_indices.push(i);
                             modified_count += 1;
                         }
+                        // 冻结条目取**处理后**的值：未实际变更的音符也保留在选中集内
+                        frozen_entries.push((visual, note.start_tick, note.end_tick, note.key));
                     }
                 }
                 // 子集变速可越过未选中音符的 tick → 恢复「按 start_tick 升序」不变式
