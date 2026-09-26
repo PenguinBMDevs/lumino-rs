@@ -15,7 +15,7 @@ use lumino_ui::state::root_state::DialogType;
 use winit::{
     dpi::LogicalSize,
     event_loop::ActiveEventLoop,
-    window::{Window, WindowAttributes},
+    window::{Window, WindowAttributes, WindowButtons},
 };
 
 /// 对话框窗口
@@ -74,7 +74,15 @@ impl DialogWindow {
             .with_inner_size(LogicalSize { width, height })
             .with_title(title)
             .with_visible(false)
-            .with_resizable(resizable);
+            .with_resizable(resizable)
+            // UI-004：视频导出对话框内容为固定布局，去掉最大化能力（保留关闭/最小化）；
+            // 其他对话框保持现状（默认全按钮）。Linux（X11/Wayland）不实现按钮掩码，
+            // 但 `with_resizable(false)` 的尺寸约束在那边仍然生效。
+            .with_enabled_buttons(if matches!(dialog_type, DialogType::VideoExport) {
+                WindowButtons::CLOSE | WindowButtons::MINIMIZE
+            } else {
+                WindowButtons::all()
+            });
 
         // 弹窗跟随主窗口的标题栏配置；系统模式下不绘制自制标题栏。
         #[cfg(target_os = "windows")]

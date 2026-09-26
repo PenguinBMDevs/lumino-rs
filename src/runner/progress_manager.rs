@@ -1,7 +1,7 @@
 use lumino_ui::window::TrafficAction;
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use winit::{dpi, event::WindowEvent, window::WindowAttributes};
+use winit::{dpi, event::WindowEvent, window::WindowAttributes, window::WindowButtons};
 
 pub const PROGRESS_WINDOW_WIDTH: u32 = 500;
 pub const PROGRESS_WINDOW_HEIGHT: u32 = 200;
@@ -185,7 +185,10 @@ impl ProgressManager {
                 height: PROGRESS_WINDOW_HEIGHT,
             })
             .with_title("MIDI 处理进度")
-            .with_visible(true);
+            .with_visible(true)
+            // UI-004：进度指示对话框内容为固定布局，禁止拉伸与最大化（保留关闭/最小化）。
+            .with_resizable(false)
+            .with_enabled_buttons(WindowButtons::CLOSE | WindowButtons::MINIMIZE);
 
         // 进度窗口跟随主窗口的标题栏配置。
         #[cfg(target_os = "windows")]
