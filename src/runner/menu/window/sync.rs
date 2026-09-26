@@ -1,4 +1,4 @@
-//! 本地同步类窗口事件处理
+//! 本地同步类窗口事件处理（按值，无 ID）
 
 use super::super::collaboration::{LocalNoteMove, LocalNoteSnapshot};
 use crate::runner::RunnerInner;
@@ -9,7 +9,6 @@ impl RunnerInner {
         use lumino_ui::event::window::sync::Event::*;
         match window_event {
             LocalNoteAdded {
-                id,
                 tick,
                 key,
                 length,
@@ -18,7 +17,6 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_added(LocalNoteSnapshot {
-                    id,
                     tick,
                     key,
                     length,
@@ -28,7 +26,6 @@ impl RunnerInner {
                 });
             }
             LocalNoteMoved {
-                id,
                 tick,
                 key,
                 length,
@@ -37,7 +34,6 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_moved(LocalNoteMove {
-                    id,
                     tick,
                     key,
                     length,
@@ -47,7 +43,6 @@ impl RunnerInner {
                 });
             }
             LocalNoteDeleted {
-                id,
                 tick,
                 key,
                 length,
@@ -56,7 +51,6 @@ impl RunnerInner {
                 track_index,
             } => {
                 self.handle_local_note_deleted(LocalNoteSnapshot {
-                    id,
                     tick,
                     key,
                     length,

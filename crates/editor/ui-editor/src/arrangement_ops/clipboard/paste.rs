@@ -245,22 +245,21 @@ impl Editor {
         puffin::profile_scope!("arrangement::insert_notes");
         let t0 = Instant::now();
         let collab_sync = self.editor_state.data.collab_sync_enabled();
-        let mut batch_acc: Vec<(u64, f32, u16, f32, u8, u8, usize)> = Vec::new();
+        let mut batch_acc: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
         for (dest_track, notes) in by_track {
             let ids = self
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            for (note, id) in notes.iter().zip(ids.iter()) {
+            for note in notes.iter() {
                 affected_tracks.insert(dest_track);
                 if dest_track == current_track {
                     current_track_touched = true;
                 }
                 inserted_count += 1;
-                // 协作同步关闭时不构建批量广播载荷。
+                // 协作同步关闭时不构建批量广播载荷（按值）。
                 if collab_sync {
                     batch_acc.push((
-                        *id,
                         note.tick,
                         note.key,
                         note.length,
@@ -270,6 +269,7 @@ impl Editor {
                     ));
                 }
             }
+            let _ = ids;
         }
         // 协作批量：走带粘贴同样改为批量消息（协作同步关闭时不发射）。
         if !batch_acc.is_empty() {

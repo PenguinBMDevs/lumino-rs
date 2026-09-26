@@ -71,9 +71,8 @@ impl Editor {
         }
         let total = events.len();
         if self.editor_state.data.collab_sync_enabled() {
-            // 协作开启：先捕获输入序 (tick/key/length/vel/ch)，供插入后与回传 id 对齐广播
-            // （插入会按 tick 重排，不能用插入后的轨道索引反查）。
-            let collab_meta: Vec<(f32, u16, f32, u8, u8)> = events
+            // 协作开启：按值广播（操作者标识由信封承载，无 ID）。
+            let batch_meta: Vec<(f32, u16, f32, u8, u8, usize)> = events
                 .iter()
                 .map(|e| {
                     (
@@ -82,23 +81,19 @@ impl Editor {
                         e.length() as f32,
                         e.velocity,
                         e.channel,
+                        track,
                     )
                 })
                 .collect();
-            let ids = self
+            let _ = self
                 .editor_state
                 .data
                 .batch_insert_events_to_track_with_ids(track, events);
-            // 分片发射（10K/条），避免单条消息过大；id 与输入序一一对应。
+            // 分片发射（10K/条），避免单条消息过大（按值）。
             let mut start = 0usize;
-            while start < ids.len() {
-                let end = (start + 10_000).min(ids.len());
-                let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = (start..end)
-                    .map(|i| {
-                        let (tick, key, len, vel, ch) = collab_meta[i];
-                        (ids[i], tick, key, len, vel, ch, track)
-                    })
-                    .collect();
+            while start < batch_meta.len() {
+                let end = (start + 10_000).min(batch_meta.len());
+                let batch: Vec<(f32, u16, f32, u8, u8, usize)> = batch_meta[start..end].to_vec();
                 lumino_message::events::emit(lumino_message::events::Event::Window(
                     lumino_message::events::window::Event::local_notes_added_batch(batch),
                 ));
@@ -245,22 +240,20 @@ impl Editor {
         Some((anchor, pasted))
     }
 
-    /// 将解析的音符提交到编辑器并选中（O(N+M) 批量归并）
+    /// 将解析的音符提交到编辑器并选中（O(N+M) 批量归并，按值广播）
     pub(super) fn commit_pasted_notes(&mut self, _anchor: (f32, u16), pasted: Vec<super::Note>) {
         self.push_history();
         self.selection_clear();
         let pasted_count = pasted.len();
         let track = self.editor_state.data.current_track;
-        // P0 修复：批量插入直接回传已分配的全局唯一 id，O(N) 完成协作广播，
-        // 消除原 `note_id_at` 对每条粘贴音符做全轨线性重扫的 O(N·M) 悬崖。
+        // P0 修复（去 ID）：批量插入按值完成协作广播，无全轨重扫悬崖。
         // 协作批量：100K 级粘贴改为单条批量消息（分片在 runner 侧），避免 100K 条单消息风暴。
         // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let ids = self.editor_state.data.batch_insert_notes_with_ids(&pasted);
         if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
-            let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = pasted
+            let batch: Vec<(f32, u16, f32, u8, u8, usize)> = pasted
                 .iter()
-                .zip(ids.iter())
-                .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .map(|n| (n.tick, n.key, n.length, n.velocity, n.channel, track))
                 .collect();
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_notes_added_batch(batch),

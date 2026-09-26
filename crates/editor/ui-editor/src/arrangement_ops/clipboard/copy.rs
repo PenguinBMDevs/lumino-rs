@@ -123,8 +123,8 @@ impl Editor {
         if editor_data.document.is_none() {
             return all_notes;
         }
-        // 去重：同一音符可能因重叠矩形被多次命中（用 id+位置做幂等键）
-        let mut seen: std::collections::HashSet<(usize, u64, u32, u8)> =
+        // 去重：同一音符可能因重叠矩形被多次命中（用值做幂等键，无 ID）
+        let mut seen: std::collections::HashSet<(usize, u32, u32, u8, u8, u8)> =
             std::collections::HashSet::new();
         for &(ts, te, kl, kh, tl, th) in &selection.rects {
             for v in tl..=th {
@@ -138,9 +138,11 @@ impl Editor {
                         && note_event.start_tick < te
                         && seen.insert((
                             doc_track,
-                            note_event.id,
                             note_event.start_tick,
+                            note_event.end_tick,
                             note_event.key,
+                            note_event.velocity,
+                            note_event.channel,
                         ))
                     {
                         all_notes.push((doc_track, *note_event));

@@ -12,7 +12,7 @@
 use crate::note::Note;
 use lumino_midi_loader::NoteEvent;
 
-/// 将 MIDI 模型的 NoteEvent 转换为编辑器 Note。
+/// 将 MIDI 模型的 NoteEvent 转换为编辑器 Note（按值，无 ID）。
 pub(super) fn note_event_to_note(event: &NoteEvent) -> Note {
     Note::from_raw(
         event.start_tick as f32,
@@ -21,7 +21,6 @@ pub(super) fn note_event_to_note(event: &NoteEvent) -> Note {
         event.velocity,
         event.channel,
     )
-    .with_id(event.id)
 }
 
 /// 判断音符是否与擦除矩形相交（tick 半开区间 [tick_start, tick_end)）。

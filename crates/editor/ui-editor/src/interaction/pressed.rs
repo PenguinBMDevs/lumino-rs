@@ -383,11 +383,10 @@ impl Editor {
             .play_note_audio(key, DEFAULT_NOTE_VELOCITY);
     }
 
-    /// 发送新音符添加的协作同步事件
+    /// 发送新音符添加的协作同步事件（按值，操作者标识由信封承载）
     pub(super) fn emit_note_added_event(&self, note: &Note) {
         lumino_message::events::emit(lumino_message::events::Event::Window(
             lumino_message::events::window::Event::local_note_added(
-                note.id,
                 note.tick,
                 note.key,
                 note.length,

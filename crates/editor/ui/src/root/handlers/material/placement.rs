@@ -105,7 +105,7 @@ impl Root {
                 track_events.push(lumino_editor_state::note_to_event(note));
             }
             // 关键优化：单次批量归并（内部自动排序），峰值仅单块 8MB，替代 N 次 COW。
-            // 插入返回与输入同序的全局唯一 id（排序前捕获），据此回填 CreateOp。
+            // 批量插入（按值，去 ID），据此回填 CreateOp（按值，删加语义）。
             let ids = self
                 .editor
                 .editor_state
@@ -115,15 +115,14 @@ impl Root {
                 .map(|doc| doc.batch_insert_notes_with_ids(target_track, track_events))
                 .unwrap_or_default();
             if !ids.is_empty() {
-                // 历史：按输入序 id 回填 CreateOp（redo 原样重插，身份稳定）
+                // 历史：按值回填 CreateOp（redo 按值重插，undo 按值删除）
                 let create_ops_for_track: Vec<lumino_note_core::history::CreateOp> = normalized
                     .iter()
-                    .zip(ids.iter())
-                    .map(|(&(tick, key, length), &id)| {
+                    .map(|&(tick, key, length)| {
                         let note = lumino_note_core::note::Note::new(tick, key, length);
                         lumino_note_core::history::CreateOp {
                             track_id: target_track as u32,
-                            note: lumino_editor_state::note_to_event(note).with_id(id),
+                            note: lumino_editor_state::note_to_event(note),
                         }
                     })
                     .collect();

@@ -1,9 +1,14 @@
-//! 远程音符批量操作（新增/更新/删除/移动）
+//! 远程音符批量操作（新增/更新/删除/移动，按值，无全扫）
 //!
 //! **本地编辑临界区串行化**：本地拖动/待提交/异步提交期间，同轨远端结构编辑
 //! 会漂移本地索引引用（`DragState.selected` / `note_index`），导致拖动/提交
 //! 引用错误音符。此类操作入队 `Root::deferred_remote_ops`，待临界区结束后
 //! 按到达顺序补放（`drain_deferred_remote_ops`）。
+//!
+//! 去 ID 后远端定位一律窗口二分（`position_of` / `window_range` + 同 tick 段扫描），
+//! 禁止任何全轨 `iter().position` / 全量 id 表构建（即使一次也不行）。
+//! 操作者标识由信封 `user_id + timestamp` 承载（见 `NoteBatchOperation.timestamp`），
+//! 音符身份即其音乐内容。
 
 use crate::root::Root;
 
@@ -96,8 +101,52 @@ impl Root {
         }
 
         // 主选择漂移防护：远端结构编辑（增/删/移）会位移当前轨索引，
-        // 先捕获选中音符身份，应用后按 id 重映射（P3 临界区保护只覆盖手势期间）。
+        // 先捕获选中音符值快照，应用后按值重映射（P3 临界区保护只覆盖手势期间）。
+        // Move 专路：被移动的选中音符旧值已不存在，通用重映射必空，
+        // 此处额外按新值（ref+off）重选，无全扫.
         let selection_identity = self.editor.capture_selection_identity();
+        // 预计算 Move 新值目标（供应用后重选被移动的选中音符）。
+        let move_targets: Option<Vec<lumino_midi_loader::NoteEvent>> =
+            if operation.action == NoteAction::Move {
+                let tick_off = operation.tick_offset.unwrap_or(0.0);
+                let key_off = operation.key_offset.unwrap_or(0);
+                // 仅为当前轨且被选中的旧值计算新值（窗口定位用全值，需长度/力度/通道）。
+                // 长度/力度/通道取自本地旧值快照（移动不改这些），tick/key 按旧值+off
+                // （与远端 ref+off 等价，本地旧值即 ref，省去 ref 匹配浮点误差）。
+                // 匹配条件：旧值 (tick,key) 等于任一 incoming ref (tick,key) 且同轨。
+                let current_track = self.editor.editor_state.data.current_track;
+                let mut targets = Vec::new();
+                if let Some(entries) = selection_identity.entries_for_move() {
+                    for old in entries {
+                        let mut matched = false;
+                        for ref_note in &operation.notes {
+                            if ref_note.track_index != current_track {
+                                continue;
+                            }
+                            let ref_tick = lumino_editor_state::f32_to_tick(ref_note.tick);
+                            let ref_key = ref_note.key.min(255) as u8;
+                            if old.start_tick == ref_tick && old.key == ref_key {
+                                matched = true;
+                                break;
+                            }
+                        }
+                        if !matched {
+                            continue;
+                        }
+                        let new_tick = (old.start_tick as f32 + tick_off).max(0.0).round() as u32;
+                        let new_key = (old.key as i16 + key_off).max(0) as u8;
+                        let mut news = *old;
+                        let len = old.end_tick.saturating_sub(old.start_tick).max(1);
+                        news.start_tick = new_tick;
+                        news.end_tick = new_tick.saturating_add(len);
+                        news.key = new_key;
+                        targets.push(news);
+                    }
+                }
+                Some(targets)
+            } else {
+                None
+            };
 
         match operation.action {
             NoteAction::Add => self.handle_remote_notes_add(operation),
@@ -110,6 +159,20 @@ impl Root {
         }
 
         self.editor.remap_selection_by_identity(&selection_identity);
+        // Move 专路：通用重映射已保留未移动选中，此处补选被移动的新值。
+        if let Some(targets) = move_targets {
+            for ev in &targets {
+                if let Some(idx) = self
+                    .editor
+                    .editor_state
+                    .data
+                    .track_notes(self.editor.editor_state.data.current_track)
+                    .position_of(ev)
+                {
+                    self.editor.selection_insert(idx);
+                }
+            }
+        }
 
         // 标记音符已变化，重建当前音轨的空间索引
         self.editor.mark_notes_changed();
@@ -121,41 +184,52 @@ impl Root {
     ) {
         use std::collections::{HashMap, HashSet};
 
-        // 按音轨分组批量插入，避免对 100K 音符逐条 insert（O(K·log N) → O(N log N) 单次归并）
-        // 预建每轨现有 id 集合，避免每音符全轨线性扫（O(K·M) → O(M+K)）
-        let mut existing_ids_by_track: HashMap<usize, HashSet<u64>> = HashMap::new();
-        for n in &operation.notes {
-            existing_ids_by_track
-                .entry(n.track_index)
-                .or_insert_with(|| {
-                    self.editor
-                        .editor_state
-                        .data
-                        .track_notes(n.track_index)
-                        .iter()
-                        .map(|ev| ev.id)
-                        .collect()
-                });
-        }
+        // 按音轨分组批量插入（O(N+M) 单次归并）。
+        // 去重按值窗口定位（`position_of`），禁止全轨 id 表构建全扫。
         let mut by_track: HashMap<usize, Vec<crate::editor::note::Note>> = HashMap::new();
-        let mut max_id: u64 = 0;
+        // 同批次内去重（重传同一值多次）：值键为整数元组（tick_bits,key,len_bits,vel,chan）。
+        let mut seen_in_batch: HashSet<(usize, u32, u8, u32, u8, u8)> = HashSet::new();
         for note in &operation.notes {
-            max_id = max_id.max(note.id);
-            // 去重：若该 id 已存在于本地（重传），跳过插入避免重复 id
-            if existing_ids_by_track
-                .get(&note.track_index)
-                .is_some_and(|s| s.contains(&note.id))
-            {
+            let start = lumino_editor_state::f32_to_tick(note.tick);
+            let end = start.saturating_add(lumino_editor_state::f32_to_tick(note.length));
+            let key = note.key.min(255) as u8;
+            let seen_key = (
+                note.track_index,
+                start,
+                key,
+                end,
+                note.velocity,
+                note.channel,
+            );
+            if !seen_in_batch.insert(seen_key) {
                 continue;
             }
-            let mut editor_note = crate::editor::note::Note::from_raw(
+            // 本地已存在同值 → 跳过（重传幂等，窗口定位，无全扫）。
+            let exists = {
+                let target = lumino_midi_loader::NoteEvent::new(
+                    start,
+                    end,
+                    key,
+                    note.velocity,
+                    note.channel,
+                );
+                self.editor
+                    .editor_state
+                    .data
+                    .track_notes(note.track_index)
+                    .position_of(&target)
+                    .is_some()
+            };
+            if exists {
+                continue;
+            }
+            let editor_note = crate::editor::note::Note::from_raw(
                 note.tick,
                 note.key,
                 note.length,
                 note.velocity,
                 note.channel,
             );
-            editor_note.id = note.id;
             by_track
                 .entry(note.track_index)
                 .or_default()
@@ -163,80 +237,57 @@ impl Root {
         }
         // 分轨批量写入（复用 EditorData 的批量接口，自动处理 dirty/增量）
         for (track_idx, notes) in by_track {
-            // batch_insert_notes_to_track_with_ids 会保留已设置的 id（非 0 则原样），并做排序归并
-            let _ids = self
+            let _ = self
                 .editor
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(track_idx, &notes);
         }
-        // 抬升分配器只需一次
-        if max_id != 0 {
-            self.editor.editor_state.data.ensure_note_id_above(max_id);
-        }
-        // 精确标记受影响音轨（洋葱皮事件级增量）——若已在循环内标记，此处再补全
+        // 精确标记受影响音轨（洋葱皮事件级增量）
         let affected: HashSet<usize> = operation.notes.iter().map(|n| n.track_index).collect();
         self.editor
             .editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        tracing::info!("协作: 已添加 {} 个远程音符（批量）", operation.notes.len());
+        tracing::info!(
+            "协作: 已添加 {} 个远程音符（批量，按值）",
+            operation.notes.len()
+        );
     }
 
     fn handle_remote_notes_update(
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 批量更新：预建 id→index 映射，避免每音符全轨扫
-        let mut id_map_by_track: std::collections::HashMap<
-            usize,
-            std::collections::HashMap<u64, usize>,
-        > = std::collections::HashMap::new();
-        for n in &operation.notes {
-            id_map_by_track.entry(n.track_index).or_insert_with(|| {
-                self.editor
-                    .editor_state
-                    .data
-                    .track_notes(n.track_index)
-                    .iter()
-                    .enumerate()
-                    .map(|(i, ev)| (ev.id, i))
-                    .collect()
-            });
-        }
+        // 批量更新（长度变更）：按 (tick,key) 窗口定位目标（无全扫），
+        // 保持其他字段不变，仅更新长度。`update_note` 按索引删加，保持有序。
         for note in &operation.notes {
             let track_idx = note.track_index;
-            let match_idx = if let Some(map) = id_map_by_track.get(&track_idx)
-                && let Some(&idx) = map.get(&note.id)
-            {
-                let notes = self.editor.editor_state.data.track_notes(track_idx);
-                if idx < notes.len() && notes[idx].id == note.id {
-                    Some(idx)
-                } else {
-                    notes.iter().position(|n| n.id == note.id).or_else(|| {
-                        notes.iter().position(|n| {
-                            (n.start_tick as f32 - note.tick).abs() < 1.0
-                                && n.key as u16 == note.key
-                        })
-                    })
-                }
-            } else {
-                let notes = self.editor.editor_state.data.track_notes(track_idx);
-                notes.iter().position(|n| n.id == note.id).or_else(|| {
-                    notes.iter().position(|n| {
-                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-                    })
-                })
+            let tick_u32 = lumino_editor_state::f32_to_tick(note.tick);
+            let key_u8 = note.key.min(255) as u8;
+            // 窗口：[tick, tick+1) 同 tick 段扫 key（O(log N + 段长)，无全扫）。
+            let (lo, hi) = {
+                let track = self.editor.editor_state.data.track_notes(track_idx);
+                track.window_range(tick_u32, tick_u32.saturating_add(1), 0)
             };
-            let Some(match_idx) = match_idx else {
+            let mut match_idx: Option<usize> = None;
+            {
+                let track = self.editor.editor_state.data.track_notes(track_idx);
+                for (idx, ev) in track.iter_window(lo, hi) {
+                    if ev.start_tick == tick_u32 && ev.key == key_u8 {
+                        match_idx = Some(idx);
+                        break;
+                    }
+                }
+            }
+            let Some(idx) = match_idx else {
                 continue;
             };
-            // 保持其他字段不变，仅更新长度（NoteEvent 为 Copy，先取值再写回）
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            let current = notes[match_idx];
+            let current = notes[idx];
             self.editor.editor_state.data.update_note(
                 track_idx,
-                match_idx,
+                idx,
                 crate::editor::note::Note::from_raw(
                     current.start_tick as f32,
                     current.key as u16,
@@ -254,7 +305,7 @@ impl Root {
             .data
             .mark_track_notes_changed_for(Some(affected));
         tracing::info!(
-            "协作: 已更新 {} 个远程音符（批量索引）",
+            "协作: 已更新 {} 个远程音符（批量窗口定位，按值）",
             operation.notes.len()
         );
     }
@@ -263,44 +314,75 @@ impl Root {
         &mut self,
         operation: &lumino_collaboration::types::NoteBatchOperation,
     ) {
-        // 批量删除：按轨聚合待删 id 集合，单次扫描收集索引，降序批量删除
-        // 避免对 100K 删除每条全轨扫（O(K·M)）和多次 sort
+        // 批量删除（按值）：每值窗口定位（`position_of`，无全扫），
+        // 收集索引降序批量删除（`remove_note_ranges` 单次重建）。
         use std::collections::{HashMap, HashSet};
-        let mut ids_by_track: HashMap<usize, HashSet<u64>> = HashMap::new();
-        let mut fallback_by_track: HashMap<usize, Vec<(f32, u16)>> = HashMap::new();
+        let mut idx_by_track: HashMap<usize, Vec<usize>> = HashMap::new();
         for n in &operation.notes {
-            ids_by_track.entry(n.track_index).or_default().insert(n.id);
-            // 同时记录位置兜底（id 未命中时按 tick/key 删）
-            fallback_by_track
-                .entry(n.track_index)
-                .or_default()
-                .push((n.tick, n.key));
-        }
-        for (track_idx, id_set) in ids_by_track {
-            let notes = self.editor.editor_state.data.track_notes(track_idx);
-            // 单次扫描收集匹配索引（id 优先，id 未命中则位置兜底）
-            let mut to_delete: Vec<usize> = Vec::new();
-            let fallback = fallback_by_track.get(&track_idx);
-            for (i, ev) in notes.iter().enumerate() {
-                if id_set.contains(&ev.id) {
-                    to_delete.push(i);
-                    continue;
-                }
-                if let Some(list) = fallback {
-                    for (ftick, fkey) in list {
-                        if (ev.start_tick as f32 - *ftick).abs() < 1.0 && ev.key as u16 == *fkey {
-                            to_delete.push(i);
-                            break;
+            let start = lumino_editor_state::f32_to_tick(n.tick);
+            let len = lumino_editor_state::f32_to_tick(n.length);
+            let end = start.saturating_add(len.max(1));
+            let target = lumino_midi_loader::NoteEvent::new(
+                start,
+                end,
+                n.key.min(255) as u8,
+                n.velocity,
+                n.channel,
+            );
+            // 长度可能因四舍五入差 1：先全值匹配，未命中回退 (tick,key) 窗口首个。
+            let track_idx = n.track_index;
+            let found = self
+                .editor
+                .editor_state
+                .data
+                .track_notes(track_idx)
+                .position_of(&target)
+                .or_else(|| {
+                    let tick_u32 = start;
+                    let key_u8 = n.key.min(255) as u8;
+                    let track = self.editor.editor_state.data.track_notes(track_idx);
+                    let (lo, hi) = track.window_range(tick_u32, tick_u32.saturating_add(1), 0);
+                    for (idx, ev) in track.iter_window(lo, hi) {
+                        if ev.start_tick == tick_u32 && ev.key == key_u8 {
+                            return Some(idx);
                         }
                     }
+                    None
+                });
+            if let Some(idx) = found {
+                idx_by_track.entry(track_idx).or_default().push(idx);
+            }
+        }
+        for (track_idx, mut idxs) in idx_by_track {
+            // 降序 + 合并连续区间 → 单次 `remove_note_ranges`（无逐条全扫）。
+            idxs.sort_unstable_by(|a, b| b.cmp(a));
+            idxs.dedup();
+            // 合并连续降序段为 (start,count)
+            let mut ranges: Vec<(usize, usize)> = Vec::new();
+            let mut i = 0;
+            while i < idxs.len() {
+                let seg_max = idxs[i];
+                let mut seg_min = seg_max;
+                while i + 1 < idxs.len() && idxs[i + 1] + 1 == seg_min {
+                    seg_min -= 1;
+                    i += 1;
                 }
+                ranges.push((seg_min, seg_max - seg_min + 1));
+                i += 1;
             }
-            // 时间戳先来后到：按 operation.timestamp 排序的思想
-            // 当前为批量到达，内部按索引降序删已保证不偏移；跨批次的时序由服务器到达序保证
-            to_delete.sort_unstable_by(|a, b| b.cmp(a));
-            for idx in to_delete {
-                self.editor.editor_state.data.remove_note(track_idx, idx);
-            }
+            // `remove_note_ranges` 要求降序；ranges 已按 seg_min 降序（因 idxs 降序）。
+            let _ = self
+                .editor
+                .editor_state
+                .data
+                .document
+                .as_mut()
+                .map(|doc| doc.remove_note_ranges(track_idx, &ranges))
+                .unwrap_or(0);
+            self.editor
+                .editor_state
+                .data
+                .mark_track_notes_changed_for(Some(HashSet::from([track_idx])));
         }
         // 精确标记受影响音轨
         let affected: HashSet<usize> = operation.notes.iter().map(|n| n.track_index).collect();
@@ -308,7 +390,10 @@ impl Root {
             .editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        tracing::info!("协作: 已删除 {} 个远程音符（批量）", operation.notes.len());
+        tracing::info!(
+            "协作: 已删除 {} 个远程音符（批量，按值）",
+            operation.notes.len()
+        );
     }
 
     fn handle_remote_notes_move(
@@ -318,92 +403,44 @@ impl Root {
         let tick_offset = operation.tick_offset.unwrap_or(0.0);
         let key_offset = operation.key_offset.unwrap_or(0);
         tracing::debug!(
-            "协作: Move 操作 - tick_offset={}, key_offset={}, notes数量={}, source_track={:?}",
+            "协作: Move 操作 - tick_offset={}, key_offset={}, notes数量={}, source_track={:?}（按值）",
             tick_offset,
             key_offset,
             operation.notes.len(),
             operation.source_track
         );
-        // 预建每轨 id→index 映射，避免每音符全轨线性扫（100K*1M → 建表一次）
-        let mut id_index_by_track: std::collections::HashMap<
-            usize,
-            std::collections::HashMap<u64, usize>,
-        > = std::collections::HashMap::new();
-        for note in &operation.notes {
-            id_index_by_track
-                .entry(note.track_index)
-                .or_insert_with(|| {
-                    self.editor
-                        .editor_state
-                        .data
-                        .track_notes(note.track_index)
-                        .iter()
-                        .enumerate()
-                        .map(|(i, n)| (n.id, i))
-                        .collect()
-                });
-        }
         let mut matched_count = 0;
-        // 收集待更新操作，避免在循环中因 update_note 导致索引失效
-        // 策略：先按原始索引快照匹配，更新时注意 update_note 会重排，需重新解析但 id 仍唯一
-        // 为简化，每次取当前快照的 position（仍 O(1) 查表 + 一次 position 回退），但比全轨扫快
+        // 逐值窗口定位 ref（tick,key），叠加偏移后 `update_note`（删加，保持有序）。
+        // 每次重查（update 会重排），仍 O(1) 窗口 + 一次定位，无全扫。
         for note in &operation.notes {
-            tracing::trace!(
-                "协作: Move 查找音符 - target_tick={}, target_key={}, track={}",
-                note.tick,
-                note.key,
-                note.track_index
-            );
             let track_idx = note.track_index;
-            // 优先按 id 索引 O(1) 命中
-            let match_idx = if let Some(map) = id_index_by_track.get(&track_idx)
-                && let Some(&idx) = map.get(&note.id)
-            {
-                // 验证索引仍有效且 id 匹配（update 可能已重排，前次 map 已过期需回退线性扫）
-                let notes = self.editor.editor_state.data.track_notes(track_idx);
-                if idx < notes.len() && notes[idx].id == note.id {
-                    Some(idx)
-                } else {
-                    notes.iter().position(|n| n.id == note.id).or_else(|| {
-                        notes.iter().position(|n| {
-                            (n.start_tick as f32 - note.tick).abs() < 1.0
-                                && n.key as u16 == note.key
-                        })
-                    })
-                }
-            } else {
-                let notes = self.editor.editor_state.data.track_notes(track_idx);
-                notes.iter().position(|n| n.id == note.id).or_else(|| {
-                    notes.iter().position(|n| {
-                        (n.start_tick as f32 - note.tick).abs() < 1.0 && n.key as u16 == note.key
-                    })
-                })
+            let tick_u32 = lumino_editor_state::f32_to_tick(note.tick);
+            let key_u8 = note.key.min(255) as u8;
+            let (lo, hi) = {
+                let track = self.editor.editor_state.data.track_notes(track_idx);
+                track.window_range(tick_u32, tick_u32.saturating_add(1), 0)
             };
-            let Some(match_idx) = match_idx else {
-                tracing::warn!("协作: track {} 不存在或音符未匹配", track_idx);
+            let mut match_idx: Option<usize> = None;
+            {
+                let track = self.editor.editor_state.data.track_notes(track_idx);
+                for (idx, ev) in track.iter_window(lo, hi) {
+                    if ev.start_tick == tick_u32 && ev.key == key_u8 {
+                        match_idx = Some(idx);
+                        break;
+                    }
+                }
+            }
+            let Some(idx) = match_idx else {
+                tracing::warn!("协作: track {} 音符未按值匹配", track_idx);
                 continue;
             };
             let notes = self.editor.editor_state.data.track_notes(track_idx);
-            tracing::trace!(
-                "协作:   [{}] tick={}, key={}",
-                match_idx,
-                notes[match_idx].start_tick,
-                notes[match_idx].key
-            );
-            // NoteEvent 为 Copy：先取值再写回，避免借用冲突
-            let current = notes[match_idx];
+            let current = notes[idx];
             let new_tick = current.start_tick as f32 + tick_offset;
             let new_key = (current.key as i16 + key_offset).max(0) as u16;
-            tracing::debug!(
-                "协作:   匹配成功! 更新: tick {} -> {}, key {} -> {}",
-                current.start_tick,
-                new_tick,
-                current.key,
-                new_key
-            );
             self.editor.editor_state.data.update_note(
                 track_idx,
-                match_idx,
+                idx,
                 crate::editor::note::Note::from_raw(
                     new_tick,
                     new_key,
@@ -423,7 +460,7 @@ impl Root {
             .mark_track_notes_changed_for(Some(affected));
         // 音符由 wgpu 渲染，不需要清 grid cache
         tracing::info!(
-            "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}",
+            "协作: Move 完成 - 匹配 {}/{} 个音符, current_track={}（按值）",
             matched_count,
             operation.notes.len(),
             self.editor.editor_state.data.current_track

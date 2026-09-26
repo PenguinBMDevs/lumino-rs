@@ -1,13 +1,12 @@
-//! Runner 协作：本地音符 / 音轨 / 选择同步发送
+//! Runner 协作：本地音符 / 音轨 / 选择同步发送（按值，操作者标识由信封承载）
 
 use super::{LocalNoteMove, LocalNoteSnapshot};
 use crate::runner::RunnerInner;
 
 impl RunnerInner {
-    /// 处理本地笔记添加（同步到其他用户）
+    /// 处理本地笔记添加（同步到其他用户，按值）
     pub(crate) fn handle_local_note_added(&self, note: LocalNoteSnapshot) {
         let LocalNoteSnapshot {
-            id,
             tick,
             key,
             length,
@@ -34,7 +33,6 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Add,
-            id,
             &location,
             &modifiers,
         );
@@ -50,10 +48,10 @@ impl RunnerInner {
         }
     }
 
-    /// 处理本地批量音符添加（100K 粘贴，分片发送避免单帧过大）
+    /// 处理本地批量音符添加（100K 粘贴，分片发送避免单帧过大，按值）
     pub(crate) fn handle_local_notes_added_batch(
         &self,
-        notes: Vec<(u64, f32, u16, f32, u8, u8, usize)>,
+        notes: Vec<(f32, u16, f32, u8, u8, usize)>,
     ) {
         if !self.collab_state.collaboration_service.is_connected() {
             return;
@@ -66,9 +64,8 @@ impl RunnerInner {
         for chunk in notes.chunks(CHUNK) {
             let sync_notes: Vec<lumino_collaboration::types::SyncNote> = chunk
                 .iter()
-                .map(|(id, tick, key, length, velocity, channel, track_index)| {
+                .map(|(tick, key, length, velocity, channel, track_index)| {
                     lumino_collaboration::types::SyncNote {
-                        id: *id,
                         tick: *tick,
                         key: *key,
                         length: *length,
@@ -81,8 +78,8 @@ impl RunnerInner {
             let operation = lumino_collaboration::types::NoteBatchOperation {
                 action: lumino_collaboration::types::NoteAction::Add,
                 notes: sync_notes,
-                source_track: chunk.first().map(|(_, _, _, _, _, _, t)| *t),
-                target_track: chunk.first().map(|(_, _, _, _, _, _, t)| *t),
+                source_track: chunk.first().map(|(_, _, _, _, _, t)| *t),
+                target_track: chunk.first().map(|(_, _, _, _, _, t)| *t),
                 tick_offset: None,
                 key_offset: None,
                 timestamp: std::time::SystemTime::now()
@@ -102,10 +99,9 @@ impl RunnerInner {
         tracing::info!("协作: 已发送批量添加 - 总数 {}", notes.len());
     }
 
-    /// 处理本地音符移动（同步到其他用户）
+    /// 处理本地音符移动（同步到其他用户，按值 + 偏移）
     pub(crate) fn handle_local_note_moved(&self, mv: LocalNoteMove) {
         let LocalNoteMove {
-            id,
             tick,
             key,
             length,
@@ -132,7 +128,6 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Move,
-            id,
             &location,
             &modifiers,
         );
@@ -154,10 +149,9 @@ impl RunnerInner {
         }
     }
 
-    /// 处理本地音符删除（同步到其他用户）
+    /// 处理本地音符删除（同步到其他用户，按值）
     pub(crate) fn handle_local_note_deleted(&self, note: LocalNoteSnapshot) {
         let LocalNoteSnapshot {
-            id,
             tick,
             key,
             length,
@@ -184,7 +178,6 @@ impl RunnerInner {
         };
         let operation = build_sync_note_operation(
             lumino_collaboration::types::NoteAction::Delete,
-            id,
             &location,
             &modifiers,
         );
@@ -269,7 +262,7 @@ impl RunnerInner {
 
 /// 音符定位信息。
 ///
-/// 用于聚合标识一个音符在工程中的位置与所属音轨/通道。
+/// 用于聚合标识一个音符在工程中的位置与所属音轨/通道（按值）。
 #[derive(Debug, Clone, Copy)]
 struct NoteLocation {
     /// 时间刻度（tick）
@@ -299,19 +292,13 @@ struct NoteOperationModifiers {
     key_offset: Option<i16>,
 }
 
-/// 根据操作类型、真实音符 ID 与修饰参数构建同步操作。
-///
-/// `note_id` 为发送端文档分配的全局唯一音符 ID（来自 `LocalNoteAdded/Moved/Deleted`
-/// 事件透传），取代原先基于时间戳的伪 ID，使对端能按 id 精确匹配同一音符，
-/// 并避免不同客户端分配器之间的 id 碰撞。
+/// 根据操作类型与修饰参数构建同步操作（按值，操作者标识由信封 `user_id + timestamp` 承载）。
 fn build_sync_note_operation(
     action: lumino_collaboration::types::NoteAction,
-    note_id: u64,
     location: &NoteLocation,
     modifiers: &NoteOperationModifiers,
 ) -> lumino_collaboration::types::NoteBatchOperation {
     let note = lumino_collaboration::types::SyncNote {
-        id: note_id,
         tick: location.tick,
         key: location.key,
         length: modifiers.length,

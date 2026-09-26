@@ -113,7 +113,10 @@ impl Editor {
             return false;
         }
 
-        let ops = self.editor_state.data.move_ops_from_drag_state(drag_state);
+        let ops = self
+            .editor_state
+            .data
+            .move_ops_from_drag_state_with_max_key(drag_state, max_key);
         // 广播协作同步事件：批量移动（框选拖动）必须通知其他客户端，
         // 否则对端音符状态不会改变（B 端收不到任何更新）。
         // 与单音符拖动 `finalize_dragging` 共用同一套协作同步管线：
@@ -151,7 +154,7 @@ impl Editor {
     /// 每个被选中音符都发射一次，携带其**原始**位置（移动前 tick/key）与本次
     /// 拖动的统一偏移，对端据此匹配本地音符并叠加相同偏移完成同步。
     fn broadcast_selection_move(&self, drag_state: &DragState) {
-        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃）。
+        // 协作同步关闭时跳过逐音符广播（消费端未连接会短路丢弃，按值）。
         if !self.editor_state.data.collab_sync_enabled() {
             return;
         }
@@ -159,14 +162,13 @@ impl Editor {
         let tick_offset = drag_state.delta_tick as f32;
         let key_offset = drag_state.delta_key;
         for idx in drag_state.selected_indices() {
-            // 2026-08 单一权威源：id 与原始位置取自 document 当前轨权威 NoteEvent
-            let (id, tick, key, length) = {
+            // 2026-09 去 ID：原始位置取自 document 当前轨权威 NoteEvent（按值）
+            let (tick, key, length) = {
                 let notes = self.editor_state.data.track_notes(track_index);
                 let Some(note) = notes.get(idx) else {
                     continue;
                 };
                 (
-                    note.id,
                     note.start_tick as f32,
                     note.key as u16,
                     (note.end_tick - note.start_tick) as f32,
@@ -174,7 +176,6 @@ impl Editor {
             };
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_note_moved(
-                    id,
                     tick,
                     key,
                     length,
@@ -233,8 +234,7 @@ impl Editor {
             return false;
         }
 
-        // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB）
-        // 使用 with_ids 免去每音符 note_id_at 全轨重扫（O(N·M) → O(N log N)）
+        // 与粘贴提交一致：push history → 批量归并（单次重建，峰值仅单块 8MB，按值）
         self.push_history();
         let ids = self.editor_state.data.batch_insert_notes_with_ids(&notes);
         let inserted = ids.len();
@@ -244,15 +244,14 @@ impl Editor {
         self.selection_clear();
         self.select_notes_by_params(&notes);
         self.mark_notes_changed();
-        // 2026-09 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
-        // 否则 B 端完全缺失被复制的副本。使用返回的 ids 批量广播，避免 100K 单消息风暴。
+        // 2026-09 去 ID 协作修复：复制拖拽（生成副本）属「增音符」，须广播给对端，
+        // 否则 B 端完全缺失被复制的副本（按值批量广播，避免 100K 单消息风暴）。
         // 协作同步关闭时不构建载荷（消费端未连接会短路丢弃）。
         let track = self.editor_state.data.current_track;
         if !ids.is_empty() && self.editor_state.data.collab_sync_enabled() {
-            let batch: Vec<(u64, f32, u16, f32, u8, u8, usize)> = notes
+            let batch: Vec<(f32, u16, f32, u8, u8, usize)> = notes
                 .iter()
-                .zip(ids.iter())
-                .map(|(n, id)| (*id, n.tick, n.key, n.length, n.velocity, n.channel, track))
+                .map(|n| (n.tick, n.key, n.length, n.velocity, n.channel, track))
                 .collect();
             lumino_message::events::emit(lumino_message::events::Event::Window(
                 lumino_message::events::window::Event::local_notes_added_batch(batch),
@@ -271,12 +270,48 @@ impl Editor {
     /// 若未完成：返回 `None`。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
         crate::puffin_profiler::poll_async_commit();
-        // 主选择漂移防护：异步写回整轨替换当前轨，先捕获选中身份，
-        // 写回成功后按 id 重映射（批量拖动期间 selected_notes 刻意保留）。
-        let selection_identity = self.capture_selection_identity();
+        // 批量拖动后选中跟随新值：先按值捕获原始快照（窗口定位用），
+        // 写回成功后按新值（original + delta）重选，无全扫。
+        let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+        let (olds, delta_tick, delta_key) = match self.pending_drag_state.as_ref() {
+            Some(ds) => {
+                let track = self.editor_state.data.current_track;
+                let notes = self.editor_state.data.track_notes(track);
+                let olds: Vec<lumino_midi_loader::NoteEvent> = ds
+                    .selected_indices()
+                    .into_iter()
+                    .filter_map(|i| notes.get(i).copied())
+                    .collect();
+                (olds, ds.delta_tick, ds.delta_key)
+            }
+            None => (Vec::new(), 0, 0),
+        };
         match self.editor_state.data.poll_async_commit() {
             Some(Ok(modified)) => {
-                self.remap_selection_by_identity(&selection_identity);
+                // 按新值重选（删加后旧值已不存在，通用旧值重映射必空）。
+                self.selection_clear();
+                for orig in &olds {
+                    let new_tick = (orig.start_tick as i64 + delta_tick).max(0) as u32;
+                    let new_key =
+                        (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+                    let len = orig.end_tick.saturating_sub(orig.start_tick).max(1);
+                    let mut news = lumino_midi_loader::NoteEvent::new(
+                        new_tick,
+                        new_tick.saturating_add(len),
+                        new_key,
+                        orig.velocity,
+                        orig.channel,
+                    );
+                    news.release_velocity = orig.release_velocity;
+                    if let Some(idx) = self
+                        .editor_state
+                        .data
+                        .track_notes(self.editor_state.data.current_track)
+                        .position_of(&news)
+                    {
+                        self.selection_insert(idx);
+                    }
+                }
                 if modified > 0 {
                     self.mark_notes_changed();
                     tracing::info!("Editor: 异步提交完成 - 修改 {} 个音符", modified);
@@ -300,11 +335,46 @@ impl Editor {
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
         while self.editor_state.data.has_pending_commit() {
-            // 主选择漂移防护：每次写回整轨替换当前轨，先捕获选中身份
-            let selection_identity = self.capture_selection_identity();
+            // 批量拖动后选中跟随新值（同 poll_async_commit，按新值重选）。
+            let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
+            let (olds, delta_tick, delta_key) = match self.pending_drag_state.as_ref() {
+                Some(ds) => {
+                    let track = self.editor_state.data.current_track;
+                    let notes = self.editor_state.data.track_notes(track);
+                    let olds: Vec<lumino_midi_loader::NoteEvent> = ds
+                        .selected_indices()
+                        .into_iter()
+                        .filter_map(|i| notes.get(i).copied())
+                        .collect();
+                    (olds, ds.delta_tick, ds.delta_key)
+                }
+                None => (Vec::new(), 0, 0),
+            };
             match self.editor_state.data.poll_async_commit() {
                 Some(Ok(modified)) => {
-                    self.remap_selection_by_identity(&selection_identity);
+                    self.selection_clear();
+                    for orig in &olds {
+                        let new_tick = (orig.start_tick as i64 + delta_tick).max(0) as u32;
+                        let new_key =
+                            (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
+                        let len = orig.end_tick.saturating_sub(orig.start_tick).max(1);
+                        let mut news = lumino_midi_loader::NoteEvent::new(
+                            new_tick,
+                            new_tick.saturating_add(len),
+                            new_key,
+                            orig.velocity,
+                            orig.channel,
+                        );
+                        news.release_velocity = orig.release_velocity;
+                        if let Some(idx) = self
+                            .editor_state
+                            .data
+                            .track_notes(self.editor_state.data.current_track)
+                            .position_of(&news)
+                        {
+                            self.selection_insert(idx);
+                        }
+                    }
                     if modified > 0 {
                         self.mark_notes_changed();
                         any_modified = true;

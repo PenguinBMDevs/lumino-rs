@@ -85,11 +85,9 @@ impl ToolbarHandler {
             lumino_midi_loader::quantize::quantize_notes(&mut quantizable_notes, &config);
 
         if modified_count > 0 {
-            // 主选择漂移防护：量化可越过未量化音符 → 重排会位移选中索引
+            // 主选择漂移防护：量化可越过未量化音符 → 重排会位移选中索引（按值捕获）。
             let identity = root.editor.capture_selection_identity();
-            // 量化仅改 tick/length（id 不变）：记录每个选中音符的真实 id，
-            // 供协作广播直接引用（替代 note_id_at 坐标反查）
-            let mut note_ids: Vec<u64> = vec![0; selected_indices.len()];
+            // 量化仅改 tick/length（按值）：直接改 document，不记 ID。
             for (pos, &i) in selected_indices.iter().enumerate() {
                 if let Some(note) = root
                     .editor
@@ -107,12 +105,11 @@ impl ToolbarHandler {
                         lumino_editor_state::f32_to_tick(quantizable_notes[pos].length);
                     note.end_tick = new_tick.saturating_add(new_length.max(1));
                     note.start_tick = new_tick;
-                    note_ids[pos] = note.id;
                 }
             }
 
             // 子集量化可跨越未量化音符的 tick → 破坏「按 start_tick 升序」不变式
-            // （window_range/position_of_id 二分依赖，破坏后渲染/命中会漏检音符）
+            // （window_range/position_of 窗口二分依赖，破坏后渲染/命中会漏检音符）
             // → 立即恢复；重排时按受影响闭区间增量更新（替代全量重建）。
             root.editor
                 .editor_state
@@ -120,19 +117,15 @@ impl ToolbarHandler {
                 .restore_current_track_sorted_incremental(&selected_indices);
             root.editor.remap_selection_by_identity(&identity);
 
-            // 2026-09 协作修复：仅对真正变化的音符发「删旧 + 加新」（key/vel/ch 不变）。
+            // 2026-09 去 ID 协作修复：仅对真正变化的音符发「删旧 + 加新」（按值，key/vel/ch 不变）。
             let track = root.editor.editor_state.data.current_track;
             let mut entries: Vec<CollabTransformSyncEntry> = Vec::new();
             for (pos, old) in old_notes.iter().enumerate() {
                 let new_tick = quantizable_notes[pos].tick;
                 let new_length = quantizable_notes[pos].length;
                 if (new_tick, new_length) != (old.0, old.2) {
-                    // id 取自量化前轨道（量化不改 id，按 id 精确匹配对端音符）
-                    let note_id = note_ids[pos];
-                    entries.push((false, note_id, old.0, old.1, old.2, old.3, old.4, track));
-                    entries.push((
-                        true, note_id, new_tick, old.1, new_length, old.3, old.4, track,
-                    ));
+                    entries.push((false, old.0, old.1, old.2, old.3, old.4, track));
+                    entries.push((true, new_tick, old.1, new_length, old.3, old.4, track));
                 }
             }
             root.editor
