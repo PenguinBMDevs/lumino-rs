@@ -38,11 +38,20 @@ impl ToolbarHandler {
     /// 返回 `true` 表示放行（钢琴卷帘模式，或走带模式且确有走带选区）。
     ///
     /// `op` 仅用于日志，让用户/开发者能看出是哪个操作被拒。
+    ///
+    /// # 视图仲裁收口
+    ///
+    /// 判定与选区判空都走统一入口 [`Root::active_selection`]（视图取自
+    /// [`Root::edit_view`]），不再直接读 `arrange_selection`——否则本文件就成了
+    /// 又一处「自行判视图 + 自行判选区」的旁路，正是 D 要消灭的写法。
+    ///
+    /// 判空口径随之升级：判据从「`arrange_selection` 结构非空」变为
+    /// 「**当前视图有实际命中音符**」，与菜单项可用性、导出取数口径完全一致。
     pub(super) fn arrangement_batch_gate(root: &Root, op: &str) -> bool {
         if !root.is_arrangement_mode() {
             return true;
         }
-        if root.editor.editor_state.data.arrange_selection.is_empty() {
+        if root.active_selection().is_empty() {
             tracing::warn!(
                 "Root: 工程走带模式下的「{op}」被拒绝——请先在走带视图框选音符。\
                  该操作的走带版尚未接线，绝不允许回退到卷帘选区或整轨（否则量化会静默量化整轨）"

@@ -7,6 +7,41 @@ use crate::root::Root;
 use lumino_editor_state::CollabTransformSyncEntry;
 
 impl ToolbarHandler {
+    /// 钢琴卷帘变速：作用于 `selected_notes`（单轨索引位图）
+    ///
+    /// 从 `handle_toolbar_speed_change` 抽出，使视图分派保持 `match` 扁平可读，
+    /// 且两视图的变速路径各自独立成方法——将来任一路径演进不影响另一条。
+    fn apply_piano_roll_speed_change(root: &mut Root, speed_factor: f32) {
+        let selected_count = root.editor.editor_state.interaction.selected_notes.len();
+
+        if root.editor.editor_state.data.current_track_note_count() == 0 {
+            tracing::debug!("Root: 没有音符需要变速");
+            return;
+        }
+
+        // 必须有选中音符才能变速（无选中时对整个音轨变速是灾难性的）
+        if selected_count == 0 {
+            tracing::debug!("Root: 没有选中音符，不执行变速");
+            return;
+        }
+
+        tracing::info!(
+            "Root: 变速配置 - 速度因子: {}, 选中 {} 个音符",
+            speed_factor,
+            selected_count,
+        );
+
+        let modified = root.editor.apply_speed_change(speed_factor);
+
+        if modified > 0 {
+            tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
+            root.update_playback_notes();
+            root.editor.clear_notes_changed();
+        } else {
+            tracing::debug!("Root: 没有音符被变速（长度未变化）");
+        }
+    }
+
     /// 处理量化
     pub(crate) fn handle_toolbar_quantize(&self, root: &mut Root, event: &crate::toolbar::Event) {
         if !matches!(event, crate::toolbar::Event::Quantize) {
@@ -178,53 +213,29 @@ impl ToolbarHandler {
 
         let speed_factor = root.toolbar.speed_factor;
 
-        if root.is_arrangement_mode() {
-            // ---------- 工程走带模式：基于 arrange_selection（rect 框选） ----------
-            if root.editor.editor_state.data.arrange_selection.is_empty() {
-                tracing::debug!("Root: 工程走带变速 - 没有选中区域");
-                return;
+        // 视图仲裁（收口）：`match` 而非 `if`——将来新增编辑视图时此处编译失败，
+        // 强制为新视图补齐批量操作路径，不会静默落到卷帘分支误伤整轨
+        match root.edit_view() {
+            lumino_ui_editor::EditView::Arrangement => {
+                // ---------- 工程走带：作用于 arrange_selection（跨轨） ----------
+                // 不在此重复判空：`arrange_apply_speed_change` 内部已按
+                // `arrange_selection` 取数并在无命中音符时返回 0 + 日志。
+                // 调用方再判一次既是冗余，也会形成「自行判选区」的旁路——
+                // 正是视图仲裁收口要消灭的写法。
+                tracing::info!("Root: 工程走带变速 - 速度因子: {}", speed_factor);
+
+                let modified = root.editor.arrange_apply_speed_change(speed_factor);
+
+                if modified > 0 {
+                    tracing::info!("Root: 工程走带变速完成，修改了 {} 个音符", modified);
+                    root.update_playback_notes();
+                    root.editor.clear_notes_changed();
+                } else {
+                    tracing::debug!("Root: 工程走带变速 - 没有音符被修改（无走带选区或长度未变）");
+                }
             }
-
-            tracing::info!("Root: 工程走带变速 - 速度因子: {}", speed_factor,);
-
-            let modified = root.editor.arrange_apply_speed_change(speed_factor);
-
-            if modified > 0 {
-                tracing::info!("Root: 工程走带变速完成，修改了 {} 个音符", modified);
-                root.update_playback_notes();
-                root.editor.clear_notes_changed();
-            } else {
-                tracing::debug!("Root: 工程走带变速 - 没有音符被修改");
-            }
-        } else {
-            // ---------- 钢琴卷帘模式：基于 selected_notes（HashSet 选中索引） ----------
-            let selected = &root.editor.editor_state.interaction.selected_notes;
-
-            if root.editor.editor_state.data.current_track_note_count() == 0 {
-                tracing::debug!("Root: 没有音符需要变速");
-                return;
-            }
-
-            // 必须有选中音符才能变速（无选中时对整个音轨变速是灾难性的）
-            if selected.is_empty() {
-                tracing::debug!("Root: 没有选中音符，不执行变速");
-                return;
-            }
-
-            tracing::info!(
-                "Root: 变速配置 - 速度因子: {}, 选中 {} 个音符",
-                speed_factor,
-                root.editor.editor_state.interaction.selected_notes.len(),
-            );
-
-            let modified = root.editor.apply_speed_change(speed_factor);
-
-            if modified > 0 {
-                tracing::info!("Root: 变速完成，修改了 {} 个音符", modified);
-                root.update_playback_notes();
-                root.editor.clear_notes_changed();
-            } else {
-                tracing::debug!("Root: 没有音符被变速（长度未变化）");
+            lumino_ui_editor::EditView::PianoRoll => {
+                Self::apply_piano_roll_speed_change(root, speed_factor);
             }
         }
     }

@@ -15,7 +15,7 @@ type EditEvent = crate::event::menu::edit::Event;
 impl Host {
     /// 原生菜单栏「编辑」动作的**视图仲裁**入口。
     ///
-    /// # P1 修复（键盘通、菜单不通）
+    /// # P1 修复（键盘通、菜单不通）+ 视图仲裁收口
     ///
     /// 原生菜单栏的剪切 / 复制 / 粘贴 / 全选此前在 Runner 侧**无条件**路由到
     /// 钢琴卷帘 `EditorAction`，零视图判断。后果：走带视图下同一操作有两条路——
@@ -26,19 +26,35 @@ impl Host {
     /// 仲裁统一收口在此（UI 层）：Runner 只负责把菜单事件递进来，不该知道
     /// 「卷帘 / 走带」这种视图细节。撤销 / 重做两个动作**不分流**——它们操作的是
     /// 全局历史栈，两视图共用（走带批量操作同样 `push_history`）。
+    ///
+    /// 视图取自 [`crate::root::Root::edit_view`]（唯一权威源），且用**穷尽 match**
+    /// 分派：将来新增编辑视图时，此处会编译失败并强制补齐——这就是「新命令不可能
+    /// 忘记判视图」的机制保障。
     pub fn handle_edit_menu_action(&mut self, event: EditEvent) {
-        let arrangement = self.root.is_arrangement_mode();
-        let (action, arrangement_msg) = match (event, arrangement) {
+        use lumino_ui_editor::EditView;
+
+        let (action, arrangement_msg) = match (event, self.root.edit_view()) {
+            // 撤销 / 重做不分流：操作全局历史栈，两视图共用
             (EditEvent::Undo, _) => (Some(message::EditorAction::Undo), None),
             (EditEvent::Redo, _) => (Some(message::EditorAction::Redo), None),
-            (EditEvent::Cut, true) => (None, Some(message::Message::ArrangementCut)),
-            (EditEvent::Copy, true) => (None, Some(message::Message::ArrangementCopy)),
-            (EditEvent::Paste, true) => (None, Some(message::Message::ArrangementPaste)),
-            (EditEvent::SelectAll, true) => (None, Some(message::Message::ArrangementSelectAll)),
-            (EditEvent::Cut, false) => (Some(message::EditorAction::Cut), None),
-            (EditEvent::Copy, false) => (Some(message::EditorAction::Copy), None),
-            (EditEvent::Paste, false) => (Some(message::EditorAction::Paste), None),
-            (EditEvent::SelectAll, false) => (Some(message::EditorAction::SelectAll), None),
+            (EditEvent::Cut, EditView::Arrangement) => {
+                (None, Some(message::Message::ArrangementCut))
+            }
+            (EditEvent::Copy, EditView::Arrangement) => {
+                (None, Some(message::Message::ArrangementCopy))
+            }
+            (EditEvent::Paste, EditView::Arrangement) => {
+                (None, Some(message::Message::ArrangementPaste))
+            }
+            (EditEvent::SelectAll, EditView::Arrangement) => {
+                (None, Some(message::Message::ArrangementSelectAll))
+            }
+            (EditEvent::Cut, EditView::PianoRoll) => (Some(message::EditorAction::Cut), None),
+            (EditEvent::Copy, EditView::PianoRoll) => (Some(message::EditorAction::Copy), None),
+            (EditEvent::Paste, EditView::PianoRoll) => (Some(message::EditorAction::Paste), None),
+            (EditEvent::SelectAll, EditView::PianoRoll) => {
+                (Some(message::EditorAction::SelectAll), None)
+            }
             // 「查找」尚未实现（两个视图都无落点），保持原样忽略
             (other, _) => {
                 tracing::debug!("Host: 编辑事件 {other:?} 未实现");
@@ -139,7 +155,10 @@ impl Host {
         }
 
         // 工程走带视图激活时，先尝试走带快捷键
-        if self.root.sidebar.route == Route::Arrangement
+        // 视图判定统一走 `is_arrangement_mode()`（唯一权威判定入口）——
+        // 此前此处裸比 `sidebar.route == Route::Arrangement`，与全仓其他 4 处
+        // 判定写法不一致，是「抄错写法」的高发点
+        if self.root.is_arrangement_mode()
             && let Some(msg) = Self::match_arrangement_shortcut(key, ctrl, shift)
         {
             self.route_message(msg);

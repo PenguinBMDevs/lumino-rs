@@ -15,6 +15,7 @@
 //! 成功后清空走带**冻结**选区（矩形模式是活语义，保留）。
 
 use crate::Editor;
+use crate::edit_view::EditView;
 use crate::note::Note;
 use crate::tests::test_helpers::seed_notes;
 
@@ -195,7 +196,7 @@ fn test_arrangement_select_all_covers_every_track() {
 }
 
 // ══════════════════════════════════════════════════════════════════
-// 导出为素材的选区收集（`collect_notes_for_export`）
+// 视图无关的选区解析（`resolve_selection`）—— 任务 D 收口后的统一入口
 //
 // 缺陷背景（两个 bug 叠加，且都与「入口层零视图仲裁」同源）：
 // 1. **优先序错误**：旧实现 `if has_selection() { return; }` 让卷帘选区无条件
@@ -205,12 +206,15 @@ fn test_arrangement_select_all_covers_every_track() {
 // 2. **坐标空间错误**：走带分支把文档音轨索引当视觉轨传进 `contains`。选区
 //    （含冻结集）存的是视觉轨，`track_visual_order` 非恒等时判定全错——与
 //    2025-07 修过的 `arrangement-y-axis-movement` 是同一个坑换个入口复现。
+//
+// 收口后：调用方必须显式传 `EditView`，无法绕过视图直接读某一套选区。
 // ══════════════════════════════════════════════════════════════════
 
-/// 收集结果按文档轨分组的 `(轨, 音符数)` 列表
+/// 收集结果按文档轨分组的 `(轨, 音符数)` 列表（走带视图优先）
 fn export_shape(editor: &Editor) -> Vec<(usize, usize)> {
     editor
-        .collect_notes_for_export(true)
+        .resolve_selection(EditView::Arrangement)
+        .into_tracks()
         .into_iter()
         .map(|(t, notes)| (t, notes.len()))
         .collect()
@@ -238,7 +242,9 @@ fn test_export_prefers_arrangement_selection_over_roll() {
         .arrange_selection
         .add_rect_track(5000, 5010, 0, 127, 0, 2);
 
-    let notes = editor.collect_notes_for_export(true);
+    let notes = editor
+        .resolve_selection(EditView::Arrangement)
+        .into_tracks();
     assert_eq!(notes.len(), 1, "走带优先时应只返回走带选区命中的 1 条音轨");
     assert_eq!(
         (notes[0].0, notes[0].1[0].start_tick, notes[0].1[0].key),
@@ -285,11 +291,88 @@ fn test_export_uses_visual_track_not_document_index() {
         .arrange_selection
         .add_rect_track(0, 10, 0, 127, 1, 1);
 
-    let notes = editor.collect_notes_for_export(true);
+    let notes = editor
+        .resolve_selection(EditView::Arrangement)
+        .into_tracks();
     assert_eq!(
         notes.len(),
         1,
         "视觉轨判定应命中文档轨 0 的音符（旧实现传文档索引 0 会误判为视觉轨 0 → 漏检）"
     );
     assert_eq!(notes[0].0, 0, "命中的文档音轨索引应为 0");
+}
+
+/// 收口后的对称性：卷帘视图优先时取卷帘；两视图都有选区时按视图分派（不再是「卷帘无条件优先」）
+#[test]
+fn test_resolve_selection_is_view_symmetric() {
+    let mut editor = Editor::default();
+    seed_notes(
+        &mut editor,
+        3,
+        0,
+        &[
+            Note::from_raw(0.0, 60, 10.0, 100, 0),
+            Note::from_raw(5000.0, 67, 10.0, 100, 0),
+        ],
+    );
+    editor.selection_insert(0);
+    editor
+        .editor_state
+        .data
+        .arrange_selection
+        .add_rect_track(5000, 5010, 0, 127, 0, 2);
+
+    // 卷帘优先 → 取卷帘选区（tick 0）
+    let roll = editor.resolve_selection(EditView::PianoRoll).into_tracks();
+    assert_eq!(roll.len(), 1);
+    assert_eq!(
+        (roll[0].0, roll[0].1[0].start_tick, roll[0].1[0].key),
+        (0, 0, 60),
+        "卷帘视图优先时应取卷帘选区（收口前是卷帘无条件优先，属巧合正确）"
+    );
+    // 走带优先 → 取走带选区（tick 5000）
+    let arr = editor
+        .resolve_selection(EditView::Arrangement)
+        .into_tracks();
+    assert_eq!(arr.len(), 1);
+    assert_eq!(
+        (arr[0].0, arr[0].1[0].start_tick, arr[0].1[0].key),
+        (0, 5000, 67),
+        "走带视图优先时应取走带选区"
+    );
+}
+
+/// `has_active_selection` 与 `resolve_selection` 判空口径必须一致（闸门与菜单可用性同源）
+#[test]
+fn test_has_active_selection_matches_snapshot_emptiness() {
+    let mut editor = Editor::default();
+    seed_notes(&mut editor, 1, 0, &[Note::from_raw(0.0, 60, 10.0, 100, 0)]);
+    for view in [EditView::PianoRoll, EditView::Arrangement] {
+        assert!(
+            !editor.has_active_selection(view),
+            "{view:?}: 两套选区都空时闸门必须拦下"
+        );
+        // 走带框选落在空白处（结构非空但无命中音符）→ 仍应判不可用
+        editor
+            .editor_state
+            .data
+            .arrange_selection
+            .add_rect_track(9000, 9010, 0, 127, 0, 0);
+        assert!(
+            !editor.has_active_selection(view),
+            "{view:?}: 框选落在空白处时不得判为有可操作对象（否则「量化整轨」的坑会重现）"
+        );
+        editor.editor_state.data.arrange_selection.clear();
+        // 真正命中
+        editor
+            .editor_state
+            .data
+            .arrange_selection
+            .add_rect_track(0, 10, 0, 127, 0, 0);
+        assert!(
+            editor.has_active_selection(view),
+            "{view:?}: 有命中音符时应放行"
+        );
+        editor.editor_state.data.arrange_selection.clear();
+    }
 }

@@ -47,24 +47,22 @@ impl Host {
 
     /// 获取当前选中的音符（用于"导出为素材"）
     ///
-    /// # P0 修复（选区仲裁下沉）
+    /// # 视图仲裁（已收口，见 [`crate::root::Root::active_selection`]）
     ///
-    /// 旧实现在此直接判两套选区，犯了两个错（详见
-    /// `Editor::collect_notes_for_export` 的文档）：
+    /// 旧实现在此直接判两套选区，犯了两个错：
     /// 1. `if has_selection() { return; }` 让卷帘选区无条件优先，走带选区被忽略——
     ///    而菜单启用条件是 `卷帘非空 || 走带非空`，**能点却导出另一套选区**。
     /// 2. 走带分支把文档音轨索引当视觉轨传进 `ArrangeSelection::contains`，
     ///    `track_visual_order` 非恒等时判定全错。
     ///
-    /// 现在只做**视图仲裁 + 类型转换**，选区语义与坐标空间全部由
-    /// `collect_notes_for_export` 负责（该逻辑在 ui-editor 内有单测覆盖）。
+    /// 现在只做 **NoteData 类型转换**：取视图、解析选区、主选区空时的回退语义
+    /// 全部由 `Editor::resolve_selection` 统一负责（该逻辑在 ui-editor 内有单测覆盖）。
     ///
     /// 返回 `(track_idx, [(tick, key, length, velocity, channel)])`（仅含选中音符的音轨）。
     pub fn get_selected_notes(&self) -> Vec<(usize, Vec<NoteData>)> {
-        let prefer_arrangement = self.root.is_arrangement_mode();
         self.root
-            .editor
-            .collect_notes_for_export(prefer_arrangement)
+            .active_selection()
+            .into_tracks()
             .into_iter()
             .map(|(track_idx, notes)| {
                 let converted: Vec<NoteData> = notes

@@ -5,7 +5,8 @@
 //! - `arrange_select_all_notes`: 全选（全部音轨 × 全部 tick）
 //! - `arrange_delete_selected_notes`: 删除选中音符
 //! - `arrange_apply_speed_change`: 选中音符批量变速
-//! - `collect_notes_for_export`: 导出用选区收集（两视图仲裁，见该方法文档）
+//! - `resolve_selection` / `has_active_selection`: 视图无关的选区解析
+//!   （统一入口，见 [`crate::edit_view`]）
 //!
 //! 2026-08 单一权威源：音符唯一权威是 document，本模块直接读写 MidiDocument，
 //! 不再维护 track_notes 缓存。
@@ -14,6 +15,7 @@ use std::collections::HashMap;
 
 use lumino_midi_loader::NoteEvent;
 
+use super::super::edit_view::{EditView, SelectionSnapshot};
 use super::Editor;
 
 impl Editor {
@@ -346,50 +348,60 @@ impl Editor {
         (track_indices, min_tick)
     }
 
-    /// 收集「导出为素材」用的选中音符：按**视图优先序**取数，主选区空则回退另一套。
+    /// 解析**当前视图**的选中音符，返回视图无关快照（导出 / 闸门 / 菜单可用性共用）。
     ///
-    /// 返回 `(文档音轨索引, 该轨选中音符)`，仅含命中音符的音轨。
+    /// 这是选区解析的**唯一入口**：调用方必须显式给出 [`EditView`]，无法绕过视图
+    /// 直接读某一套选区——从架构上消除「新命令忘记判视图」的可能。
     ///
-    /// # P0 修复（视图仲裁缺失，此前是三处逻辑错误叠加）
+    /// # 语义
     ///
-    /// 旧实现在 `Host::get_selected_notes` 里，犯了两个错：
-    /// 1. **优先序错误**：`if has_selection() { return; }` —— 卷帘选区非空即提前返回，
-    ///    走带选区被完全忽略。而菜单项的启用条件是 `卷帘非空 || 走带非空`（OR），
-    ///    于是**菜单能点、导出却是另一套选区**（用户框了 A，导出得到 B）。
-    ///    两套选区（`selected_notes` / `arrange_selection`）彼此独立、互不清理，
-    ///    从卷帘切到走带后卷帘选区仍留存，这个错误极易触发。
-    /// 2. **坐标空间错误**：走带分支把**文档音轨索引**当**视觉音轨**传进
-    ///    `ArrangeSelection::contains`。而选区（含冻结集）存的是视觉轨
-    ///    （见 `move_notes::frozen_entries_of_moved` 用 `visual_position_of` 转换）。
-    ///    `track_visual_order` 非恒等时（删轨 / 加轨 / 排序 / 分组显示）判定全错。
-    ///    这与 2025-07 修过的 `arrangement-y-axis-movement` 是**同一个坑换个入口复现**。
+    /// - 主选区（`view` 指定的视图）有命中 → 返回它；
+    /// - 主选区为空 → **回退另一套**。回退是必需的：菜单项启用条件是
+    ///   「任一选区非空」（OR），若此处不回退，就会出现「菜单能点、导不出」，
+    ///   或「闸门放行、实际操作了另一个视图的选区」。
     ///
-    /// 现在：主选区 = 当前视图的选区（`prefer_arrangement` 决定），空则回退另一套，
-    /// 与菜单启用条件的 OR 语义对齐——不会「能点却导不出」。
-    pub fn collect_notes_for_export(
-        &self,
-        prefer_arrangement: bool,
-    ) -> Vec<(usize, Vec<NoteEvent>)> {
-        if prefer_arrangement {
-            let arranged = self.collect_arrangement_selected_notes();
-            if !arranged.is_empty() {
-                return arranged;
+    /// # P0 修复（此前 `Host::get_selected_notes` 内的三处逻辑错误）
+    ///
+    /// 1. **优先序错误**：旧实现 `if has_selection() { return; }` 让卷帘选区
+    ///    无条件优先，走带选区被完全忽略；而菜单按 OR 判定可点 → 用户框了 A、
+    ///    导出得到 B。两套选区互不清理（从卷帘切到走带后卷帘选区仍留存），
+    ///    该错误极易触发。
+    /// 2. **坐标空间错误**：旧走带分支把**文档音轨索引**当**视觉音轨**传进
+    ///    `ArrangeSelection::contains`。选区（含冻结集）存的是视觉轨
+    ///    （见 `move_notes::frozen_entries_of_moved` 的 `visual_position_of` 转换），
+    ///    `track_visual_order` 非恒等时判定全错——与 2025-07 修过的
+    ///    `arrangement-y-axis-movement` 是**同一个坑换个入口复现**。
+    pub fn resolve_selection(&self, view: EditView) -> SelectionSnapshot {
+        let resolved = match view {
+            EditView::Arrangement => {
+                let arranged = self.collect_arrangement_selected_notes();
+                if arranged.is_empty() {
+                    self.collect_roll_selected_notes()
+                } else {
+                    arranged
+                }
             }
-        }
-        let roll = self.collect_roll_selected_notes();
-        if !roll.is_empty() {
-            return roll;
-        }
-        // 主选区（走带）为空且回退（卷帘）也为空时才走到这里；若调用方是
-        // prefer_arrangement = false 且卷帘为空，仍需尝试走带（OR 语义）
-        if !prefer_arrangement {
-            self.collect_arrangement_selected_notes()
-        } else {
-            Vec::new()
-        }
+            EditView::PianoRoll => {
+                let roll = self.collect_roll_selected_notes();
+                if roll.is_empty() {
+                    self.collect_arrangement_selected_notes()
+                } else {
+                    roll
+                }
+            }
+        };
+        SelectionSnapshot::new(view, resolved)
     }
 
-    /// 走带选区命中的音符（跨轨，视觉空间判定）
+    /// 当前视图选区是否可用（有**实际命中音符**，非「选区结构非空」）
+    ///
+    /// 工具栏批量操作闸门与菜单项可用性都应以此为准：判据是「有没有可操作的
+    /// 对象」，否则会出现「能点却什么都不做」。
+    pub fn has_active_selection(&self, view: EditView) -> bool {
+        !self.resolve_selection(view).is_empty()
+    }
+
+    /// 走带选区命中的音符（跨轨，**视觉空间**判定）
     fn collect_arrangement_selected_notes(&self) -> Vec<(usize, Vec<NoteEvent>)> {
         let editor_data = &self.editor_state.data;
         let selection = &editor_data.arrange_selection;

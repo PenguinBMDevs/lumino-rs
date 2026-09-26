@@ -14,6 +14,7 @@ pub use lumino_ui_core::{Element, Message, Renderer, Theme};
 
 pub mod arrangement;
 pub mod context_menu;
+pub mod edit_view;
 pub mod editor_state;
 pub mod grid;
 pub mod history;
@@ -72,7 +73,8 @@ use iced_core::Point;
 use iced_widget::canvas;
 use std::cell::{Cell, RefCell};
 
-// 统一从 editor_state 导入（重构迁移）
+// 统一从 editor_state 导入（重构拆分前 `crate::` 引用兼容）
+pub use edit_view::{EditView, SelectionSnapshot};
 pub use editor_state::{EditState, HitType, SelectionHitType, ViewState};
 pub use note::Note;
 /// 结构编辑前捕获的主选择身份快照（防索引漂移，见 `note_ops::selection_remap`）
