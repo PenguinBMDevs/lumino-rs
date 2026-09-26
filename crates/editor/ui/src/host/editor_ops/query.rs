@@ -45,6 +45,11 @@ impl Host {
             .sum()
     }
 
+    /// 音符总量显示位置（UI-015；工程设置对话框注入与互斥判断用）
+    pub fn note_count_display(&self) -> lumino_core::storage::config::NoteCountDisplay {
+        self.root.settings.display.note_count_display
+    }
+
     /// 获取当前选中的音符（用于"导出为素材"）
     ///
     /// - 卷帘模式：当前音轨的选中音符索引（`selected_notes`）；

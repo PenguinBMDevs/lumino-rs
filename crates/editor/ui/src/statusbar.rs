@@ -76,16 +76,23 @@ impl StatusBar {
         self.hover_label.is_none() && self.info.left_text.is_empty() && self.fps.is_some()
     }
 
-    pub fn view<'a>(&'a self, language: Language) -> Element<'a> {
+    pub fn view<'a>(&'a self, language: Language, note_count: Option<usize>) -> Element<'a> {
         let translations = main_translations(language);
 
         // 左侧描述区：优先显示悬停按钮的 `按钮名 - {解释说明}`，
-        // 其次为显式 left_text，最后为"就绪"
+        // 其次为显式 left_text，再其次为音符总量（UI-015，下边栏模式），
+        // 最后为"就绪"
         let left_text: String = if let Some(id) = self.hover_label {
             let (name, desc) = lumino_ui_core::button_descs::button_desc(id, language);
             format!("{} - {}", name, desc)
         } else if !self.info.left_text.is_empty() {
             self.info.left_text.clone()
+        } else if let Some(count) = note_count {
+            format!(
+                "{}: {}",
+                translations.note_count_label,
+                lumino_extras::i18n::format_thousands(count as u64)
+            )
         } else {
             translations.status_ready.to_string()
         };

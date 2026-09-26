@@ -62,6 +62,7 @@ impl RunnerInner {
             || new.auto_scroll.page_return_position != old.auto_scroll.page_return_position
             || new.display.icon_hidpi != old.icon_hidpi
             || new.display.enable_256key != old.enable_256key
+            || new.display.note_count_display != old.note_count_display
             || new.display.velocity_curve_style != old.velocity_curve_style
             || new.display.playback_key_colors_enabled != old.playback_key_colors_enabled
             || new.editing.track_add_behavior != old.track_add_behavior
@@ -258,6 +259,7 @@ impl RunnerInner {
             config.ui.auto_scroll.page_return_position = new.auto_scroll.page_return_position;
             config.ui.icon_hidpi = new.display.icon_hidpi;
             config.ui.enable_256key = new.display.enable_256key;
+            config.ui.note_count_display = new.display.note_count_display;
             config.ui.velocity_curve_style = new.display.velocity_curve_style;
             config.ui.hires_onion_enabled = new.hires.onion_enabled;
             config.ui.hires_measures_per_group = new.hires.measures_per_group;

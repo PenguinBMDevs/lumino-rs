@@ -15,8 +15,12 @@ pub struct ProjectSettingsDialogData {
     pub author: String,
     /// 创建时间显示文本
     pub created_display: String,
-    /// 总编辑时长（秒）
+    /// 累计编辑时长（秒）
     pub total_editing_time_seconds: f64,
+    /// 音符总量（UI-015；只读展示）
+    pub note_count: usize,
+    /// 音符总量显示位置（UI-015；两位置互斥）
+    pub note_count_display: lumino_core::storage::config::NoteCountDisplay,
     /// 拍号变化列表 (tick, 分子, 分母)
     pub time_signatures: Vec<(u32, u8, u8)>,
 }
@@ -41,6 +45,18 @@ impl Root {
         self.state.project_settings_dialog.copyright = copyright;
     }
 
+    /// 轻量更新音符总量（UI-015：工程设置对话框打开期间同步刷新）。
+    ///
+    /// 返回是否有变化——调用方据此决定是否请求对话框重绘（避免每帧无效重绘）。
+    pub fn set_project_settings_note_count(&mut self, count: usize) -> bool {
+        let state = &mut self.state.project_settings_dialog;
+        if state.note_count == count {
+            return false;
+        }
+        state.note_count = count;
+        true
+    }
+
     /// 设置工程设置对话框数据
     pub fn set_project_settings_data(&mut self, data: ProjectSettingsDialogData) {
         self.state.project_settings_dialog.title = data.title;
@@ -51,6 +67,8 @@ impl Root {
         self.state
             .project_settings_dialog
             .total_editing_time_seconds = data.total_editing_time_seconds;
+        self.state.project_settings_dialog.note_count = data.note_count;
+        self.state.project_settings_dialog.note_count_display = data.note_count_display;
         let (numerator, denominator) = data
             .time_signatures
             .first()

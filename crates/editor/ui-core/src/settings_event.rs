@@ -3,7 +3,8 @@
 //! 设置面板的事件枚举（仅枚举，不包含面板逻辑）。
 
 use lumino_core::storage::config::{
-    AudioEngineKind, EraserBehavior, SelectionBoxMode, SynthBackend, TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, NoteCountDisplay, SelectionBoxMode, SynthBackend,
+    TrackAddBehavior,
 };
 use lumino_extras::i18n::Language;
 
@@ -84,6 +85,8 @@ pub enum Event {
     Enable256keyChanged(bool),
     /// 力度面板显示样式变更（曲线/柱状）
     VelocityCurveStyleChanged(bool),
+    /// 音符总量统计显示位置变更（工程设置面板 / 下边栏；UI-015）
+    NoteCountDisplayChanged(NoteCountDisplay),
     /// 选中 MIDI 设备（设备序号）
     DeviceSelected(u32),
     /// 系统 MIDI (WinMM) 播表（输出设备）选择变更（设备序号）

@@ -165,11 +165,14 @@ fn test_reset_project_settings_restores_defaults() {
         author: "张三".to_string(),
         created_display: "2026-07-01 10:00:00".to_string(),
         total_editing_time_seconds: 3600.0,
+        note_count: 12345,
+        note_count_display: lumino_core::storage::config::NoteCountDisplay::ProjectSettings,
         time_signatures: vec![(0, 6, 8)],
     });
     assert_eq!(root.state.project_settings_dialog.title, "我的工程");
     assert_eq!(root.state.project_settings_dialog.tempo, "96");
     assert_eq!(root.state.project_settings_dialog.author, "张三");
+    assert_eq!(root.state.project_settings_dialog.note_count, 12345);
 
     // 关闭工程：工程设置必须恢复默认值，不得残留
     root.reset_project_settings();

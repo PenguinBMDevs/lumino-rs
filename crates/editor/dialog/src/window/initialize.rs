@@ -108,6 +108,8 @@ impl DialogWindow {
                     author,
                     created_display,
                     total_editing_time_seconds: editing_time,
+                    note_count: main_ui.get_editor_note_count(),
+                    note_count_display: main_ui.note_count_display(),
                     time_signatures,
                 });
             }

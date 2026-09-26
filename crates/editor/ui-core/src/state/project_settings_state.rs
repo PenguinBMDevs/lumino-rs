@@ -1,5 +1,7 @@
 //! 工程设置对话框状态
 
+use lumino_core::storage::config::NoteCountDisplay;
+
 /// 工程设置对话框状态
 #[derive(Debug, Clone)]
 pub struct ProjectSettingsDialogState {
@@ -17,6 +19,10 @@ pub struct ProjectSettingsDialogState {
     pub created_display: String,
     /// 累计创作时间 (秒)
     pub total_editing_time_seconds: f64,
+    /// 音符总量（UI-015；只读展示，打开对话框/编辑期间由 Runner 注入）
+    pub note_count: usize,
+    /// 音符总量显示位置（UI-015；两位置互斥：下边栏模式下对话框不显示该行）
+    pub note_count_display: NoteCountDisplay,
     /// 拍号分子（字符串形式便于输入框绑定）
     pub time_signature_numerator: String,
     /// 拍号分母（字符串形式便于输入框绑定；人类可读，如 4、8、16）
@@ -33,6 +39,8 @@ impl Default for ProjectSettingsDialogState {
             author: String::new(),
             created_display: String::new(),
             total_editing_time_seconds: 0.0,
+            note_count: 0,
+            note_count_display: NoteCountDisplay::default(),
             time_signature_numerator: "4".to_string(),
             time_signature_denominator: "4".to_string(),
         }

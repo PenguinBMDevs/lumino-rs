@@ -10,8 +10,8 @@ pub mod locale;
 pub mod translations;
 
 pub use format::{
-    dot_type_name, eraser_behavior_name, note_precision_name, selection_box_mode_name,
-    synth_backend_name, track_add_behavior_name,
+    dot_type_name, eraser_behavior_name, format_thousands, note_precision_name,
+    selection_box_mode_name, synth_backend_name, track_add_behavior_name,
 };
 pub use locale::get;
 pub use translations::MainTranslations;

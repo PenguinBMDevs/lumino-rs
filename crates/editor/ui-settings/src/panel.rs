@@ -81,6 +81,7 @@ impl SettingsPanel {
             display: DisplaySettings {
                 icon_hidpi: ui_config.icon_hidpi,
                 enable_256key: ui_config.enable_256key,
+                note_count_display: ui_config.note_count_display,
                 velocity_curve_style: ui_config.velocity_curve_style,
                 language: ui_config.language,
                 playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
@@ -267,6 +268,9 @@ impl SettingsPanel {
             }
             Event::Enable256keyChanged(enabled) => {
                 self.display.enable_256key = enabled;
+            }
+            Event::NoteCountDisplayChanged(display) => {
+                self.display.note_count_display = display;
             }
             Event::VelocityCurveStyleChanged(enabled) => {
                 self.display.velocity_curve_style = enabled;

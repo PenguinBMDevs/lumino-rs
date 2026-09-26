@@ -13,7 +13,40 @@ use super::super::components::constants::*;
 use super::super::components::styles::create_content_text_style;
 use super::super::components::{with_setting_tooltip_inline, with_setting_tooltip_inline_action};
 use crate::SettingsPanel;
+use lumino_core::storage::config::NoteCountDisplay;
 use lumino_extras::i18n::{Language, settings_translations};
+
+/// 音符总量显示位置（本地化下拉项；UI-015）
+#[derive(Clone)]
+struct LocalizedNoteCountDisplay {
+    inner: NoteCountDisplay,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedNoteCountDisplay {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedNoteCountDisplay {}
+
+impl std::fmt::Display for LocalizedNoteCountDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedNoteCountDisplay {
+    fn new(value: NoteCountDisplay, lang: Language) -> Self {
+        let t = settings_translations(lang);
+        let name = match value {
+            NoteCountDisplay::ProjectSettings => t.note_count_display_project_settings,
+            NoteCountDisplay::StatusBar => t.note_count_display_statusbar,
+        };
+        Self { inner: value, name }
+    }
+}
 
 /// 渲染界面设置页面
 pub fn view<'a>(
@@ -100,6 +133,36 @@ pub fn view<'a>(
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
         iced_widget::space().height(24),
+        // 音符总量显示位置（UI-015）
+        row![
+            with_setting_tooltip_inline(
+                text(t.note_count_display)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.note_count_display_hint,
+            ),
+            iced_widget::space().width(SPACING_MAIN),
+            pick_list(
+                vec![
+                    LocalizedNoteCountDisplay::new(
+                        NoteCountDisplay::ProjectSettings,
+                        settings.display.language
+                    ),
+                    LocalizedNoteCountDisplay::new(
+                        NoteCountDisplay::StatusBar,
+                        settings.display.language
+                    ),
+                ],
+                Some(LocalizedNoteCountDisplay::new(
+                    settings.display.note_count_display,
+                    settings.display.language
+                )),
+                |value| Message::Settings(crate::Event::NoteCountDisplayChanged(value.inner)),
+            )
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
         // 自动滚动配置
         auto_scroll::build_auto_scroll_section(settings, t),
         // 框选框模式设置

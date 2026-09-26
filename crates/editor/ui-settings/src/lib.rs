@@ -17,7 +17,7 @@ mod tests;
 use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
-use lumino_core::storage::config::{SynthBackend, TrackAddBehavior};
+use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
 use lumino_extras::i18n::Language;
 use lumino_ui_core::{Element, Message, Theme, state::GpuCheckUiState, window};
 
@@ -101,6 +101,8 @@ pub struct DisplaySettings {
     pub icon_hidpi: bool,
     /// 256键扩展钢琴卷帘
     pub enable_256key: bool,
+    /// 音符总量统计显示位置（工程设置面板 / 下边栏；UI-015）
+    pub note_count_display: NoteCountDisplay,
     /// 力度面板显示样式（true=曲线折线图，false=柱状图）
     pub velocity_curve_style: bool,
     /// 界面语言

@@ -61,6 +61,18 @@ impl DialogManager {
     }
 
     /// 转发视频导出进度到 VideoExport 对话框
+    /// UI-015：把主窗口的音符总量推给工程设置对话框（值变化时才重绘）。
+    pub fn forward_project_settings_note_count(&mut self, count: usize) {
+        for dialog in self.dialogs.values_mut() {
+            if dialog.dialog_type == DialogType::ProjectSettings
+                && let Some(ui) = dialog.ui_mut()
+                && ui.set_project_settings_note_count(count)
+            {
+                dialog.request_redraw();
+            }
+        }
+    }
+
     pub fn forward_video_export_progress(
         &mut self,
         message: String,

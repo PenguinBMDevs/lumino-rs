@@ -88,6 +88,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     mode_switch_to_editor: "Switch to Editor Mode",
     mode_switch_to_waterfall: "Switch to Waterfall Mode",
     status_ready: "Ready",
+    note_count_label: "Total Notes",
     status_file_saved: "File saved",
     status_save_failed: "Save failed",
     status_midi_exported: "MIDI exported",
