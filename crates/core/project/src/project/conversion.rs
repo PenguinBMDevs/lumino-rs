@@ -27,6 +27,7 @@ impl LuminoProject {
         project.key_signatures = doc.key_signatures.clone();
         project.lyrics = doc.lyrics.clone();
         project.markers = doc.markers.clone();
+        project.text_events = doc.text_events.clone();
         project.sys_ex = doc.sys_ex.clone();
         project.track_names = doc.track_names.clone();
 
@@ -52,6 +53,20 @@ impl LuminoProject {
                     project
                         .pitch_bends
                         .push((ev.tick, ev.track, ev.channel, offset));
+                }
+                3 => {
+                    project.channel_aftertouch.push((
+                        ev.tick,
+                        ev.track,
+                        ev.channel,
+                        ev.as_channel_aftertouch(),
+                    ));
+                }
+                4 => {
+                    let (key, velocity) = ev.as_poly_aftertouch();
+                    project
+                        .poly_aftertouch
+                        .push((ev.tick, ev.track, ev.channel, key, velocity));
                 }
                 _ => {}
             }
@@ -162,17 +177,21 @@ impl LuminoProject {
         let mut total_ticks: u32 = 0;
         let mut next_id: u64 = 1; // 转换路径顺手分配全局唯一 ID
         let mut track_names = Vec::with_capacity(track_count as usize);
+        // 每轨 MIDI 端口从各 .lmtrack 元数据逐轨恢复（此前全轨归零丢失）
+        let mut track_ports = Vec::with_capacity(track_count as usize);
 
         for (idx, slot) in self.tracks.iter().enumerate() {
             let track_data = match slot {
                 TrackSlot::Loaded(d) | TrackSlot::Modified(d) => d,
                 TrackSlot::Unloaded { .. } => {
                     track_names.push(None);
+                    track_ports.push(0);
                     continue;
                 }
             };
 
             track_names.push(Some(track_data.meta.name.clone()));
+            track_ports.push(track_data.meta.port);
 
             let compact_events = track_data.compact_events()?;
             // FIFO 配对：同 key 重叠音符按 NoteOn 顺序匹配 NoteOff
@@ -200,9 +219,18 @@ impl LuminoProject {
                     && let Some(queue) = active.get_mut(&(key, channel))
                     && let Some((start_tick, note_velocity)) = queue.pop_front()
                 {
+                    // NoteOff 的 param2 即释放力度（加载侧已透传），随音符一并恢复
+                    let release_velocity = ev.param2() as u8;
                     notes[idx].push_back(
-                        NoteEvent::new(start_tick, current_tick, key, note_velocity, channel)
-                            .with_id(next_id),
+                        NoteEvent::new_with_release(
+                            start_tick,
+                            current_tick,
+                            key,
+                            note_velocity,
+                            release_velocity,
+                            channel,
+                        )
+                        .with_id(next_id),
                     );
                     next_id += 1;
                     total_ticks = total_ticks.max(current_tick);
@@ -249,6 +277,16 @@ impl LuminoProject {
                 *tick, *track, *channel, bend,
             ));
         }
+        for (tick, track, channel, velocity) in &self.channel_aftertouch {
+            control_events.push(midly::loader::PackedControlEvent::channel_aftertouch(
+                *tick, *track, *channel, *velocity,
+            ));
+        }
+        for (tick, track, channel, key, velocity) in &self.poly_aftertouch {
+            control_events.push(midly::loader::PackedControlEvent::poly_aftertouch(
+                *tick, *track, *channel, *key, *velocity,
+            ));
+        }
         // 稳定排序保留同 tick 组装顺序（CC → PC → PB）：RPN 选择/DataEntry 必须
         // 先于同 tick 的 PB 生效，与 document_build / 导出路径的既有契约一致。
         // 旧实现用 sort_unstable，会打乱同 tick 顺序（非稳定排序不保证原序）。
@@ -266,13 +304,14 @@ impl LuminoProject {
             control_events: lumino_midi_model::ChunkedList::from_sorted(control_events),
             lyrics: self.lyrics.clone(),
             markers: self.markers.clone(),
+            text_events: self.text_events.clone(),
             sys_ex: self.sys_ex.clone(),
             track_names,
             total_ticks: total_ticks.max(self.metadata.audio.total_ticks),
             track_count,
             tracks: TrackManager::new(track_count),
             division: self.metadata.audio.division,
-            track_ports: vec![0u8; track_count as usize],
+            track_ports,
 
             track_max_end_ticks: lumino_midi_model::MidiDocument::new_track_max_ticks(
                 track_count as usize,

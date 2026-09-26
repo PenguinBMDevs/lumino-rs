@@ -92,6 +92,13 @@ pub struct MidiDocument {
     pub lyrics: Vec<(u32, u16, Vec<u8>)>,
     /// 标记文本事件（tick, track_id, 原始字节）
     pub markers: Vec<(u32, u16, Vec<u8>)>,
+    /// 文本类元事件（tick, track_id, meta_type, 原始字节）。
+    ///
+    /// meta_type 取值：0x01 Text / 0x02 Copyright / 0x04 InstrumentName /
+    /// 0x07 CuePoint / 0x08 ProgramName / 0x09 DeviceName。
+    /// 0x03 TrackName 由 `track_names` 承载、0x05/0x06 由 lyrics/markers 承载，
+    /// 此处不重复收录。payload 存原始字节，展示时经 `decode_midi_text` 解码。
+    pub text_events: Vec<(u32, u16, u8, Vec<u8>)>,
     /// SysEx 事件（tick, track_id, 原始字节）
     pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
     /// 音轨名称（索引 = track_index）
@@ -136,3 +143,8 @@ impl std::fmt::Debug for MidiDocument {
 #[cfg(test)]
 #[path = "document_write_tests.rs"]
 mod tests;
+
+/// MidiDocument 加载链路验收单测（EXP-006 数据保留，独立文件）
+#[cfg(test)]
+#[path = "document_load_tests.rs"]
+mod load_tests;

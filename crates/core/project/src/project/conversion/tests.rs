@@ -15,6 +15,7 @@ fn make_test_document() -> MidiDocument {
         ]),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("Piano".into())],
         total_ticks: 480,
@@ -55,6 +56,32 @@ fn test_to_midi_document_roundtrip() {
     assert_eq!(rebuilt.tempo_changes.len(), 1);
     assert_eq!(rebuilt.control_events.len(), 1);
     assert_eq!(rebuilt.track_names[0], Some("Piano".into()));
+}
+
+/// EXP-006：释放力度 + 文本类事件经工程格式往返不丢失。
+#[test]
+fn test_project_roundtrip_preserves_release_and_text_events() {
+    let mut doc = make_test_document();
+    doc.notes[0] = lumino_midi_model::ChunkedList::from_sorted(vec![NoteEvent::new_with_release(
+        0, 480, 60, 100, 64, 0,
+    )]);
+    doc.text_events = vec![
+        (0, 0, 0x01, b"hello".to_vec()),
+        (480, 0, 0x07, b"cue".to_vec()),
+    ];
+
+    let project = LuminoProject::from_midi_document(&doc);
+    assert_eq!(project.text_events.len(), 2);
+
+    let rebuilt = project.to_midi_document().expect("重建 MidiDocument 失败");
+    assert_eq!(rebuilt.notes[0].len(), 1);
+    assert_eq!(rebuilt.notes[0][0].velocity, 100);
+    assert_eq!(
+        rebuilt.notes[0][0].release_velocity, 64,
+        "释放力度应经 CompactEvent 配对完整往返"
+    );
+    assert_eq!(rebuilt.text_events.len(), 2);
+    assert_eq!(rebuilt.text_events[0].2, 0x01);
 }
 
 /// 编辑后保存回归：UI 编辑 tempo/拍号经统一入口（set_tempo_points /
@@ -134,6 +161,7 @@ fn test_to_midi_document_roundtrip_overlapping_notes() {
         control_events: lumino_midi_model::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("Piano".into())],
         total_ticks: 960,
@@ -220,6 +248,7 @@ fn test_from_midi_document_same_key_adjacent_notes() {
         control_events: lumino_midi_model::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("Piano".into())],
         total_ticks: 960,
@@ -262,6 +291,7 @@ fn test_blank_track_preserved_roundtrip() {
         control_events: lumino_midi_model::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![
             Some("Melody".into()),
@@ -376,6 +406,7 @@ fn test_all_blank_project_preserved() {
         control_events: lumino_midi_model::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("Conductor".into()), Some("Setup".into())],
         total_ticks: 0,

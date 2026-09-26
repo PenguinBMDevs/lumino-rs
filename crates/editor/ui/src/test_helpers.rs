@@ -30,6 +30,7 @@ pub fn make_test_document() -> lumino_midi_loader::MidiDocument {
         control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("Track 0".into()), Some("Track 1".into())],
         total_ticks: 0,

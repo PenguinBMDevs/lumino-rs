@@ -42,6 +42,7 @@ fn test_keyboard_colors_spatial_index_full_rebuild() {
         control_events: lumino_midi_loader::ChunkedList::new(),
         lyrics: vec![],
         markers: vec![],
+        text_events: vec![],
         sys_ex: vec![],
         track_names: vec![Some("T0".into()), Some("T1".into())],
         total_ticks: 8000,

@@ -33,8 +33,12 @@ impl FolderPaths {
     pub const SIGNATURE_FILE: &str = "data/project/signature.lmsig";
     /// 控制事件文件
     pub const CONTROLS_FILE: &str = "data/project/controls.lmctl";
+    /// 触后事件文件（通道触后 + 复音触后，.lmctl 独立演进）
+    pub const AFTERTOUCH_FILE: &str = "data/project/aftertouch.lmcat";
     /// 文本 meta 事件文件（歌词 + 标记）
     pub const TEXT_EVENTS_FILE: &str = "data/project/text_events.lmtxt";
+    /// 文本类 meta 事件文件（Text/版权/乐器名/CuePoint 等，.lmtxt 独立演进）
+    pub const TEXT_METAS_FILE: &str = "data/project/text_metas.lmmtx";
     /// SysEx 事件文件
     pub const SYSEX_FILE: &str = "data/project/sysex.lmsyx";
     /// 音轨名称文件

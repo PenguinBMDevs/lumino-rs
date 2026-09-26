@@ -14,7 +14,9 @@ pub mod metadata;
 pub mod save;
 pub mod track;
 
-pub use data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData};
+pub use data_formats::{
+    LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData, LmtxtData,
+};
 pub use deleted_track::{
     DeletedNote, DeletedTrackData, DeletedTrackEntry, DeletedTrackMetadata, delete_permanently,
     list_deleted_tracks, load_deleted_track, save_deleted_track,
@@ -43,10 +45,16 @@ pub struct LuminoProject {
     pub program_changes: Vec<(u32, u16, u8, u8)>,
     /// 弯音事件（value 为以 8192 为中心的偏移量）
     pub pitch_bends: Vec<(u32, u16, u8, i16)>,
+    /// 通道触后事件（tick, track_id, channel, velocity）
+    pub channel_aftertouch: Vec<(u32, u16, u8, u8)>,
+    /// 复音触后事件（tick, track_id, channel, key, velocity）
+    pub poly_aftertouch: Vec<(u32, u16, u8, u8, u8)>,
     /// 歌词文本事件
     pub lyrics: Vec<(u32, u16, Vec<u8>)>,
     /// 标记文本事件
     pub markers: Vec<(u32, u16, Vec<u8>)>,
+    /// 文本类元事件（tick, track_id, meta_type, 原始字节），语义同 `MidiDocument::text_events`
+    pub text_events: Vec<(u32, u16, u8, Vec<u8>)>,
     /// SysEx 事件
     pub sys_ex: Vec<(u32, u16, Vec<u8>)>,
     /// 音轨名称（索引 = track_id）
@@ -108,8 +116,11 @@ impl LuminoProject {
             control_changes: Vec::new(),
             program_changes: Vec::new(),
             pitch_bends: Vec::new(),
+            channel_aftertouch: Vec::new(),
+            poly_aftertouch: Vec::new(),
             lyrics: Vec::new(),
             markers: Vec::new(),
+            text_events: Vec::new(),
             sys_ex: Vec::new(),
             track_names: Vec::new(),
             loaded_files: Vec::new(),

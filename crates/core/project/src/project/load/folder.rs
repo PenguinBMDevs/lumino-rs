@@ -3,7 +3,10 @@
 use std::path::{Path, PathBuf};
 
 use crate::project::{
-    data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
+    data_formats::{
+        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
+        LmtxtData,
+    },
     folder,
     metadata::ProjectMetadata,
 };
@@ -64,6 +67,16 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
         project.pitch_bends = data.pitch_bends;
     }
 
+    // 读取触后（专用格式 LMAT；老工程无此文件即空，不报错）
+    let aftertouch_path = path.join(folder::FolderPaths::AFTERTOUCH_FILE);
+    if aftertouch_path.exists() {
+        let bytes = std::fs::read(&aftertouch_path)?;
+        let data = LmcatData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("aftertouch 解码失败: {e}")))?;
+        project.channel_aftertouch = data.channel_aftertouch;
+        project.poly_aftertouch = data.poly_aftertouch;
+    }
+
     // 读取 text events（专用格式 LMTX）
     let txt_path = path.join(folder::FolderPaths::TEXT_EVENTS_FILE);
     if txt_path.exists() {
@@ -72,6 +85,15 @@ pub(super) fn load_from_folder(path: &Path) -> Result<LuminoProject> {
             .map_err(|e| CoreError::FileFormat(format!("text events 解码失败: {e}")))?;
         project.lyrics = data.lyrics;
         project.markers = data.markers;
+    }
+
+    // 读取 text metas（专用格式 LMMT；老工程无此文件即空，不报错）
+    let txtmeta_path = path.join(folder::FolderPaths::TEXT_METAS_FILE);
+    if txtmeta_path.exists() {
+        let bytes = std::fs::read(&txtmeta_path)?;
+        let data = LmtextmetaData::decode(&bytes)
+            .map_err(|e| CoreError::FileFormat(format!("text metas 解码失败: {e}")))?;
+        project.text_events = data.text_events;
     }
 
     // 读取 SysEx（专用格式 LMSY）

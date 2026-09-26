@@ -7,7 +7,10 @@ use std::path::Path;
 use crate::{
     LoadedFormat, LuminoProject, TrackSlot, TrackVisibilitySer,
     project::archive,
-    project::data_formats::{LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtxtData},
+    project::data_formats::{
+        LmcatData, LmctlData, LmnamesData, LmsigData, LmsyxData, LmtempData, LmtextmetaData,
+        LmtxtData,
+    },
     project::folder,
     project::metadata::{
         LoadedFileMetadataEntry, LoadedMetadata, ProjectMetadata, TrackMetadataEntry,
@@ -63,6 +66,14 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
     let encoded = ctl_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::CONTROLS_FILE), encoded)?;
 
+    // 写入触后数据（专用格式 LMAT，与 LMCT 独立文件，老工程兼容）
+    let aftertouch_data = LmcatData {
+        channel_aftertouch: project.channel_aftertouch.clone(),
+        poly_aftertouch: project.poly_aftertouch.clone(),
+    };
+    let encoded = aftertouch_data.encode()?;
+    std::fs::write(base.join(folder::FolderPaths::AFTERTOUCH_FILE), encoded)?;
+
     // 写入文本 meta 数据（专用格式 LMTX）
     let txt_data = LmtxtData {
         lyrics: project.lyrics.clone(),
@@ -70,6 +81,13 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
     };
     let encoded = txt_data.encode()?;
     std::fs::write(base.join(folder::FolderPaths::TEXT_EVENTS_FILE), encoded)?;
+
+    // 写入文本类 meta 数据（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
+    let txtmeta_data = LmtextmetaData {
+        text_events: project.text_events.clone(),
+    };
+    let encoded = txtmeta_data.encode()?;
+    std::fs::write(base.join(folder::FolderPaths::TEXT_METAS_FILE), encoded)?;
 
     // 写入 SysEx 数据（专用格式 LMSY）
     let syx_data = LmsyxData {
@@ -151,6 +169,14 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
     let encoded = ctl_data.encode()?;
     files.push(("data/project/controls.lmctl".into(), encoded, true));
 
+    // aftertouch（专用格式 LMAT，与 LMCT 独立文件，老工程兼容）
+    let aftertouch_data = LmcatData {
+        channel_aftertouch: project.channel_aftertouch.clone(),
+        poly_aftertouch: project.poly_aftertouch.clone(),
+    };
+    let encoded = aftertouch_data.encode()?;
+    files.push(("data/project/aftertouch.lmcat".into(), encoded, true));
+
     // text events（专用格式 LMTX）
     let txt_data = LmtxtData {
         lyrics: project.lyrics.clone(),
@@ -158,6 +184,13 @@ fn build_archive_files(project: &LuminoProject) -> Result<Vec<(String, Vec<u8>, 
     };
     let encoded = txt_data.encode()?;
     files.push(("data/project/text_events.lmtxt".into(), encoded, true));
+
+    // text metas（专用格式 LMMT，与 LMTX 独立文件，老工程兼容）
+    let txtmeta_data = LmtextmetaData {
+        text_events: project.text_events.clone(),
+    };
+    let encoded = txtmeta_data.encode()?;
+    files.push(("data/project/text_metas.lmmtx".into(), encoded, true));
 
     // sysex（专用格式 LMSY）
     let syx_data = LmsyxData {
