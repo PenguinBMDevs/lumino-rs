@@ -26,7 +26,6 @@ fn test_document_streaming_emits_events_in_order() {
     // 构造一个两轨文档：track 0 为当前轨（空），track 1 为其他轨。
     // 其他轨的音符故意交错，验证 NoteOn/NoteOff 按时间顺序合并输出。
     let doc = Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(),
             lumino_midi_loader::ChunkedList::from_sorted(vec![
@@ -96,7 +95,6 @@ fn late_notes_are_skipped_not_replayed() {
     let mut engine = PlaybackEngine::new(Arc::clone(&playback));
 
     let doc = Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::new(), // track 0：当前轨（空）
             lumino_midi_loader::ChunkedList::from_sorted(vec![

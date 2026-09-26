@@ -12,12 +12,11 @@ use lumino_editor_state::{DragState, EditState};
 use lumino_note_core::note::Note;
 use lumino_ui_core::message::EditorAction;
 
-/// 构造远端「添加音符」操作
-fn make_add_op(track: usize, id: u64, tick: f32, key: u16) -> NoteBatchOperation {
+/// 构造远端「添加音符」操作（按值引用）
+fn make_add_op(track: usize, tick: f32, key: u16) -> NoteBatchOperation {
     NoteBatchOperation {
         action: NoteAction::Add,
         notes: vec![SyncNote {
-            id,
             tick,
             key,
             length: 480.0,
@@ -58,7 +57,7 @@ fn test_remote_op_applies_immediately_when_idle() {
     seed_track1_note(&mut root, 0.0, 60);
     let before = root.editor.editor_state.data.track_notes(1).len();
 
-    root.apply_remote_note_operation(&make_add_op(1, 900, 960.0, 72));
+    root.apply_remote_note_operation(&make_add_op(1, 960.0, 72));
 
     assert_eq!(
         root.editor.editor_state.data.track_notes(1).len(),
@@ -77,7 +76,7 @@ fn test_remote_op_deferred_during_live_drag_then_drained() {
     start_live_drag(&mut root);
     let before = root.editor.editor_state.data.track_notes(1).len();
 
-    root.apply_remote_note_operation(&make_add_op(1, 901, 960.0, 72));
+    root.apply_remote_note_operation(&make_add_op(1, 960.0, 72));
 
     assert_eq!(
         root.editor.editor_state.data.track_notes(1).len(),
@@ -107,7 +106,7 @@ fn test_remote_op_other_track_applies_immediately_during_drag() {
     start_live_drag(&mut root); // 拖动发生在当前轨 1
     let before0 = root.editor.editor_state.data.track_notes(0).len();
 
-    root.apply_remote_note_operation(&make_add_op(0, 902, 0.0, 62));
+    root.apply_remote_note_operation(&make_add_op(0, 0.0, 62));
 
     assert_eq!(
         root.editor.editor_state.data.track_notes(0).len(),
@@ -130,7 +129,7 @@ fn test_remote_op_deferred_then_pending_drag_autocommit_and_drain() {
     assert!(root.editor.has_uncommitted_drag(), "松手后应存在待提交拖动");
 
     // 远端同轨操作：临界区（待提交）期间应延迟
-    root.apply_remote_note_operation(&make_add_op(1, 903, 960.0, 72));
+    root.apply_remote_note_operation(&make_add_op(1, 960.0, 72));
     assert_eq!(root.deferred_remote_ops.len(), 1);
 
     // 每帧补放：自动提交待提交拖动（异步）→ 等待完成 → 补放远端操作
@@ -158,7 +157,7 @@ fn test_remote_op_deferred_then_pending_drag_autocommit_and_drain() {
     );
     // 远端音符已补放
     assert!(
-        track.iter().any(|n| n.id == 903),
+        track.iter().any(|n| n.start_tick == 960 && n.key == 72),
         "远端音符应已补放写入，实际音符: {:?}",
         track.to_vec()
     );

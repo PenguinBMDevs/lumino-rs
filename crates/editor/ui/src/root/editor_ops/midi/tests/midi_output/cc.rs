@@ -140,7 +140,6 @@ fn test_cc_via_set_midi_document() {
     doc.notes = vec![
         // track 0: 1 note on channel 0
         lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
-            id: 0,
             start_tick: 0,
             end_tick: 960,
             key: 60,
@@ -150,7 +149,6 @@ fn test_cc_via_set_midi_document() {
         }]),
         // track 1: 1 note on channel 1
         lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
-            id: 0,
             start_tick: 0,
             end_tick: 960,
             key: 64,

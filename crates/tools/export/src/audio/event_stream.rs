@@ -131,7 +131,6 @@ mod tests {
     fn make_doc(notes: Vec<Vec<NoteEvent>>, total_ticks: u32) -> MidiDocument {
         let track_count = notes.len() as u16;
         MidiDocument {
-            next_note_id: 1,
             notes: notes
                 .into_iter()
                 .map(lumino_midi_model::ChunkedList::from_sorted)

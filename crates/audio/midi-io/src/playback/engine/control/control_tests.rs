@@ -20,7 +20,6 @@ pub(crate) fn doc_with_current_track(notes: Vec<DocNoteEvent>) -> Arc<MidiDocume
         max_end = max_end.max(n.end_tick);
     }
     Arc::new(MidiDocument {
-        next_note_id: 1,
         notes: vec![lumino_midi_loader::ChunkedList::from_sorted(notes)],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],

@@ -15,7 +15,6 @@ use lumino_midi_loader::{MidiDocument, NoteEvent, TrackManager};
 pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]) -> MidiDocument {
     let track_count = track_count.max(track_id + 1);
     let mut doc = MidiDocument {
-        next_note_id: 1,
         notes: (0..track_count)
             .map(|_| lumino_midi_loader::ChunkedList::new())
             .collect(),
@@ -38,29 +37,22 @@ pub(crate) fn doc_with_notes(track_count: usize, track_id: usize, notes: &[Note]
 
         track_max_end_ticks: lumino_midi_loader::MidiDocument::new_track_max_ticks(track_count),
     };
-    let mut next_id: u64 = 1;
     let mut events: Vec<NoteEvent> = notes
         .iter()
         .map(|n| {
-            // 与生产写入路径一致：种子音符必须携带全局唯一 id（0 = 未分配哨兵）。
-            // id 化的 undo/redo/move 历史依赖非零稳定身份。
-            let event = NoteEvent::new(
+            // 去 ID：音符身份即其音乐内容，按值引用，不再分配全局唯一 id。
+            NoteEvent::new(
                 n.tick.round() as u32,
                 (n.tick + n.length).round() as u32,
                 n.key as u8,
                 n.velocity,
                 n.channel,
             )
-            .with_id(next_id);
-            next_id += 1;
-            event
         })
         .collect();
     // 与 MidiDocument::insert_note 一致：保持每轨 start_tick 升序不变式
     events.sort_by_key(|e| e.start_tick);
     doc.notes[track_id] = lumino_midi_loader::ChunkedList::from_sorted(events);
-    // 与生产加载路径一致：分配器抬到已用 id 之上，避免后续插入 id 碰撞
-    doc.next_note_id = next_id;
     doc
 }
 

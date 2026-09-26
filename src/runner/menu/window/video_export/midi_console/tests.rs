@@ -21,7 +21,6 @@ fn make_doc() -> MidiDocument {
     let mut list: Vec<NoteEvent> = notes;
     list.sort_unstable_by_key(|n| n.start_tick);
     MidiDocument {
-        next_note_id: 1,
         notes: vec![ChunkedList::from_sorted(list)],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],
@@ -238,7 +237,6 @@ fn test_crt_scanline_darkens() {
 fn make_short_doc() -> MidiDocument {
     let notes = vec![NoteEvent::new(0, 240, 60, 100, 0)];
     MidiDocument {
-        next_note_id: 1,
         notes: vec![ChunkedList::from_sorted(notes)],
         tempo_changes: vec![(0, 120.0)],
         time_signatures: vec![(0, 4, 4)],

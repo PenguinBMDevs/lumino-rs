@@ -32,7 +32,6 @@ pub(crate) fn make_test_doc() -> MidiDocument {
 
     let track_count = 2u16;
     MidiDocument {
-        next_note_id: 1,
         notes: vec![
             lumino_midi_loader::ChunkedList::from_sorted(track0),
             lumino_midi_loader::ChunkedList::from_sorted(track1),

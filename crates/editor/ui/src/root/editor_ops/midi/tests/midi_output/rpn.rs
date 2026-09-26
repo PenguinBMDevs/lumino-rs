@@ -152,7 +152,6 @@ fn test_same_tick_data_entry_never_precedes_selection() {
     let mut doc = crate::test_helpers::make_test_document();
     doc.notes = vec![
         lumino_midi_loader::ChunkedList::from_sorted(vec![lumino_midi_loader::NoteEvent {
-            id: 0,
             start_tick: 0,
             end_tick: 192,
             key: 60,

@@ -84,27 +84,18 @@ pub fn paste_payload(editor: &mut Editor, bytes: &[u8]) -> usize {
     total
 }
 
-/// 构造 ID `MoveOp`（捕获当前轨全部音符的 id + 原始位置，与拖动提交同构）。
+/// 构造按值 `MoveOp`（捕获当前轨全部音符的原始快照，与拖动提交同构）。
 pub fn build_move_ops(editor: &Editor) -> Vec<MoveOp> {
     let data = &editor.editor_state.data;
     let track = data.current_track;
     let notes = data.track_notes(track);
-    let mut ids = Vec::with_capacity(notes.len());
-    let mut ticks = Vec::with_capacity(notes.len());
-    let mut keys = Vec::with_capacity(notes.len());
-    for n in notes.iter() {
-        ids.push(n.id);
-        ticks.push(n.start_tick as f32);
-        keys.push(n.key as u16);
-    }
+    let originals: Vec<NoteEvent> = notes.iter().copied().collect();
     vec![MoveOp {
         track_id: track as u32,
-        ids,
+        originals,
         delta_tick: 12,
         delta_key: 1,
         seq: 0,
-        original_ticks: ticks,
-        original_keys: keys,
     }]
 }
 
@@ -114,13 +105,13 @@ pub fn drain_events() {
     std::hint::black_box(events.len());
 }
 
-/// 轨道身份：长度 + 首尾音符 (id, tick, key)
-pub type Identity = (usize, Option<(u64, u32, u8)>, Option<(u64, u32, u8)>);
+/// 轨道身份：长度 + 首尾音符 (tick, key)
+pub type Identity = (usize, Option<(u32, u8)>, Option<(u32, u8)>);
 
-/// 轨道身份校验：长度 + 首尾音符 (id, tick, key)。用于确认操作后数据无损。
+/// 轨道身份校验：长度 + 首尾音符 (tick, key)。用于确认操作后数据无损。
 pub fn track_identity(editor: &Editor) -> Identity {
     let notes = editor.editor_state.data.current_track_notes();
-    let first = notes.first().map(|n| (n.id, n.start_tick, n.key));
-    let last = notes.last().map(|n| (n.id, n.start_tick, n.key));
+    let first = notes.first().map(|n| (n.start_tick, n.key));
+    let last = notes.last().map(|n| (n.start_tick, n.key));
     (notes.len(), first, last)
 }

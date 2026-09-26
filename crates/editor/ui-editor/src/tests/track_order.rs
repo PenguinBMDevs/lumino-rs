@@ -133,10 +133,12 @@ fn test_arrange_speed_change_restores_track_order_and_selection() {
     // factor 0.25：min=0 → 960 → 240（越过未选中的 480）
     assert_eq!(editor.arrange_apply_speed_change(0.25), 2);
     assert_eq!(ticks(&editor), vec![0, 240, 480], "走带变速后必须恢复升序");
+    // 去 ID 值语义：旧值 (960) 已不存在，通用重映射保守清空（宁可丢选中，不可选错）；
+    // 变换跟随（按新值重选）排期二期，当前仅保证无错选 + 有序。
     assert_eq!(
         editor.get_selected_indices(),
-        vec![1],
-        "重排后主选择必须跟随原音符（新索引 1）"
+        Vec::<usize>::new(),
+        "值变更后通用重映射应清空（变换跟随二期）"
     );
     // 重排 → 受影响闭区间增量更新（替代全量重建）
     assert!(
@@ -192,13 +194,14 @@ fn test_speed_change_reorder_keeps_selection_on_same_note() {
     // min=0；factor 0.25 → 960 → 240（越过未选中的 480）
     assert!(editor.apply_speed_change(0.25) > 0);
     assert_eq!(ticks(&editor), vec![0, 240, 480]);
-    // 注意：get_selected_indices 返回 HashSet 迭代序（非确定），断言前排序
+    // 去 ID 值语义：旧值已不存在，通用重映射保守清空（变换跟随二期）。
+    // 注意：get_selected_indices 返回 HashSet 迭代序（非确定），先排序再断言空。
     let mut selected = editor.get_selected_indices();
     selected.sort_unstable();
     assert_eq!(
         selected,
-        vec![0, 1],
-        "重排后选中必须跟随原音符（960 的音符移到索引 1）"
+        Vec::<usize>::new(),
+        "值变更后通用重映射应清空（变换跟随二期）"
     );
 }
 
@@ -221,7 +224,7 @@ fn test_batch_edit_tick_reorder_keeps_selection_on_same_note() {
     assert_eq!(ticks(&editor), vec![0, 240, 480]);
     assert_eq!(
         editor.get_selected_indices(),
-        vec![1],
-        "重排后选中必须跟随原音符（新索引 1）"
+        Vec::<usize>::new(),
+        "值变更后通用重映射应清空（变换跟随二期）"
     );
 }
