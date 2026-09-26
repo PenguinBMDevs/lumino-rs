@@ -53,6 +53,18 @@ impl Editor {
     /// 与 [`Self::insert_grouped_notes`] 同一处理原则：**只碰系统剪贴板的部分才需要
     /// cfg，纯逻辑部分不得加 cfg**——加了会让非 Windows 平台的测试覆盖率恒为 0，
     /// 且把编译期错误伪装成平台差异。
+    ///
+    /// # 为何非 Windows 下 `allow(dead_code)`（2026-09 二次修复）
+    ///
+    /// 去掉 cfg 后本函数跨平台存在、测试在各平台都能跑；但它的**正式调用点**
+    /// `try_paste_from_binary` 要读系统剪贴板，仍是 `#[cfg(windows)]`，因此在非 Windows
+    /// 的 **lib（非 test）构建**里本函数只被 `#[cfg(test)]` 引用，触发
+    /// `-D dead_code`（CI Linux 报 `method is never used`）。
+    ///
+    /// 这与走带侧 [`Self::arrange_paste_from_binary_bytes`] 的处理**逐字一致**：
+    /// 函数保持跨平台（测试可调），仅在非 Windows 下允许死代码。二选一里「cfg 裁掉」
+    /// 会让测试在非 Windows 平台无法编译，「保持跨平台 + allow(dead_code)」两者兼得。
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn paste_binary_payload(&mut self, bytes: &[u8]) -> bool {
         let meta = match parse_clipboard_header(bytes) {
             Ok(m) => m,
