@@ -8,7 +8,7 @@ use crate::view::widgets;
 pub fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
     text("音频导出")
         .size(18)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
+        .font(lumino_ui_core::font::ui_font())
         .style(widgets::dialog_label_style(palette))
         .into()
 }
@@ -20,7 +20,7 @@ pub fn section_title<'a>(
 ) -> crate::Element<'a> {
     text(text_str)
         .size(16)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
+        .font(lumino_ui_core::font::ui_font())
         .style(widgets::dialog_label_style(palette))
         .into()
 }

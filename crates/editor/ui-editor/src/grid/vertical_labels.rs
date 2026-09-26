@@ -42,7 +42,7 @@ pub fn draw_labels(
                 line_height: iced_core::text::LineHeight::Relative(1.0),
                 size: iced_core::Pixels(10.0),
                 color: text_color,
-                font: iced_core::Font::DEFAULT,
+                font: lumino_ui_core::font::ui_font(),
                 align_x: iced_core::alignment::Horizontal::Left.into(),
                 align_y: iced_core::alignment::Vertical::Top,
                 shaping: iced_core::text::Shaping::Basic,

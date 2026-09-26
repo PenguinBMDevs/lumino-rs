@@ -135,6 +135,8 @@ pub struct SettingsTranslations {
     pub font_path_placeholder: &'static str,
     /// 字体提示
     pub font_hint: &'static str,
+    /// 字体修改重启生效提示
+    pub font_restart_hint: &'static str,
     /// 使用原生标题栏
     pub native_titlebar: &'static str,
     /// 原生标题栏提示
