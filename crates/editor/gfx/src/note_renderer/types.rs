@@ -11,7 +11,10 @@ pub const PREVIEW_BORDER_SENTINEL: u32 = 0xFFFF_FFFF;
 ///   - `key_color`: `u32` — 低 8 位 = MIDI key，高 24 位 = RGB（无 alpha，与 wasabi 一致）
 ///   - `border_width`: `u32` — 低 16 位 = 边框像素宽度，高 16 位 = 轨道深度编码
 ///     （洋葱皮 track_idx+1，VS 据此输出稳定深度解决重叠音符闪烁；
-///     主音轨高 16 位为 0 → z=0.0 最前；`PREVIEW_BORDER_SENTINEL` 表示预览音符）
+///     预览音符恒为 0.0（最前层），主音轨高 16 位为 0 → `MAIN_TRACK_DEPTH_BASE`
+///     （2^-17，最小正深度），其余洋葱皮轨道 → `(track_enc+1) × 2^-16`；
+///     同轨叠音再用 chunk 内源索引派生微深度做确定性裁决；
+///     `PREVIEW_BORDER_SENTINEL` 表示预览音符）
 ///
 /// 与 wasabi 的唯一差异：`start`/`length` 单位保留 tick（lumino 是 DAW 编辑器，tick 是底层语义），
 /// 其余 GPU 侧数据存放逻辑完全一致。
@@ -209,7 +212,8 @@ pub struct RenderUniform {
 /// 统一全量渲染（2026-08-06）：洋葱皮 buffer 持有所有轨全部音符，
 /// 「哪个轨是主音轨 / 哪些轨静音」由本 uniform 低频更新（切轨/静音变化），
 /// GPU 数据零重传——shader 据 `current_track` 把主音轨染成主轨色、
-/// 深度压到 0，静音轨仅主轨身份时显示。
+/// 深度压到主轨基深度（`MAIN_TRACK_DEPTH_BASE`，覆盖全部洋葱皮轨道），
+/// 静音轨仅主轨身份时显示。
 ///
 /// 布局：`current_track`（track_idx+1，0=无）+ 2048 u32 静音位图（65536 轨上限，
 /// 支持未来大编制工程）。字节布局与 shader `ViewState`（vec4 数组）严格一致：

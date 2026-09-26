@@ -16,6 +16,10 @@ mod init;
 mod pipeline;
 mod prepare;
 
+/// 深度编码验证（精度预算 CPU 孪生 + 绘制顺序无关的像素证据）
+#[cfg(test)]
+mod depth_tests;
+
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
     /// GPU 音符缓冲区
