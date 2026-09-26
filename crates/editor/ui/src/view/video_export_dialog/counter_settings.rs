@@ -27,7 +27,7 @@ pub fn counter_settings_section<'a>(
     column![
         text("计数器设置")
             .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(8),
         // ── 文本模板（Zenith SettingsCtrl 的 Render Tab 主体） ──

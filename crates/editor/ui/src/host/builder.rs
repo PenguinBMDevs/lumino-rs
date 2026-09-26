@@ -37,7 +37,9 @@ impl Host {
         let viewport =
             Viewport::with_physical_size(Size::new(width, height), window.scale_factor() as f32);
 
-        let font = super::create_font_from_config(ui_config);
+        // 全局字体入口（UI-001）：启动解析一次（path 优先 → name → 默认），
+        // 各窗口/组件统一从 lumino_ui_core::font 取字体（字体切换重启生效）
+        let font = lumino_ui_core::font::init(ui_config);
 
         let note_renderer = needs_renderers
             .then(|| lumino_gfx::NoteRenderer::new(&gfx.device, &gfx.queue, gfx.format));

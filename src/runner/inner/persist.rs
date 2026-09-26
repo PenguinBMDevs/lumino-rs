@@ -212,13 +212,15 @@ impl RunnerInner {
         }
         if diff.font_changed {
             tracing::info!(
-                "字体设置已改变: font_name {} -> {}, font_path {} -> {}",
+                "字体设置已改变（重启程序后生效）: font_name {} -> {}, font_path {} -> {}",
                 display_or_empty(&old.program_font_name),
                 display_or_empty(&new.editing.program_font_name),
                 display_or_empty(&old.program_font_path),
                 display_or_empty(&new.editing.program_font_path),
             );
-            self.window_state.needs_window_restart = true;
+            // UI-001：字体在启动时经 lumino_ui_core::font::init 解析一次，重启程序后生效；
+            // 不再重建窗口（重建成本高且主窗口会闪烁，iced 0.14 的 Renderer 默认字体不可热更），
+            // 设置面板内有「字体修改将在重启程序后生效」的显式提示。
         }
         if current_theme != old.theme {
             tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);

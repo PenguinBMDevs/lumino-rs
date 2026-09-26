@@ -14,15 +14,14 @@
 //! - UI线程（主线程）：处理事件、更新状态、生成渲染命令
 //! - 渲染线程（独立线程）：接收命令、管理GPU资源、执行实际渲染
 
-use std::sync::OnceLock;
 use std::time::Instant;
 
-use iced_core::{Font, Size};
+use iced_core::Size;
 use iced_wgpu::Engine;
 use iced_wgpu::graphics::Viewport;
 
 use crate::statusbar::performance::CpuMonitor;
-use crate::{config, message, root, settings};
+use crate::{message, root, settings};
 
 mod builder;
 mod cache;
@@ -350,34 +349,4 @@ pub fn prewarm_dialog_shared_engine(gfx: &lumino_gfx::Context) {
 /// 从当前调色板的第一个颜色开始取色。
 fn onion_track_color(track_idx: usize) -> [u8; 4] {
     lumino_extras::palette::onion_track_color(track_idx)
-}
-
-/// 字体名称缓存 —— OnceLock 确保只泄漏一次，而不是每次重绘都泄漏
-static FONT_NAME_CACHE: OnceLock<String> = OnceLock::new();
-
-/// 根据配置创建字体
-///
-/// 使用系统字体名称或默认字体
-fn create_font_from_config(ui_config: &config::UiConfig) -> Font {
-    // 优先使用自定义字体路径
-    if !ui_config.program_font_path.is_empty() {
-        let path = std::path::Path::new(&ui_config.program_font_path);
-        if path.exists() {
-            tracing::info!("检测到自定义字体路径: {:?}", path);
-            // 自定义字体文件加载需要重启应用才能生效
-            // 这里只记录日志
-        }
-    }
-
-    // 其次使用系统字体名称
-    if !ui_config.program_font_name.is_empty() {
-        let cached = FONT_NAME_CACHE.get_or_init(|| ui_config.program_font_name.clone());
-
-        tracing::info!("应用字体: {}", cached);
-        return Font::with_name(cached.as_str());
-    }
-
-    // 使用默认字体（用户未配置时回退）
-    tracing::info!("使用默认字体 (SansSerif)");
-    Font::default()
 }

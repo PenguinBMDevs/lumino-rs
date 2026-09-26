@@ -23,7 +23,7 @@ pub(super) fn render_settings_section<'a>(
     let mut content: crate::Element<'a> = column![
         text("渲染设置")
             .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
         render_format_options(state, palette),
@@ -172,7 +172,7 @@ fn midi_console_settings_section<'a>(
     column![
         text("MidiConsole 设置")
             .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(12),
         pick_list_row(

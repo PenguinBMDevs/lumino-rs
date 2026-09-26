@@ -191,7 +191,7 @@ pub fn draw(
             line_height: iced_core::text::LineHeight::Relative(1.0),
             size: iced_core::Pixels(14.0),
             color: Color::WHITE,
-            font: iced_core::Font::DEFAULT,
+            font: lumino_ui_core::font::ui_font(),
             align_x: iced_core::alignment::Horizontal::Center.into(),
             align_y: iced_core::alignment::Vertical::Top,
             shaping: iced_core::text::Shaping::Basic,

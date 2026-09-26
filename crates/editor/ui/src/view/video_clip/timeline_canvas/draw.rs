@@ -149,6 +149,7 @@ pub(super) fn draw_timeline(
                     position: Point::new(x + 3.0, 2.0),
                     size: 10.0.into(),
                     color: weak_text,
+                    font: lumino_ui_core::font::ui_font(),
                     ..Text::default()
                 });
             }
@@ -232,6 +233,7 @@ fn draw_track(
             position: Point::new(label_x, geom.y + (TRACK_HEIGHT - 14.0) / 2.0),
             size: 11.0.into(),
             color: Color::WHITE,
+            font: lumino_ui_core::font::ui_font(),
             ..Text::default()
         });
     }

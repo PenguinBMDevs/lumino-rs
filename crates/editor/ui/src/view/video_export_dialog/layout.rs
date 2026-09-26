@@ -36,7 +36,7 @@ pub fn pick_list_row<'a, T: 'a + Clone + ToString + PartialEq>(
 pub fn title_section<'a>(palette: &'a iced_core::theme::palette::Extended) -> crate::Element<'a> {
     text("视频导出")
         .size(18)
-        .font(iced_core::Font::with_name("Microsoft YaHei"))
+        .font(lumino_ui_core::font::ui_font())
         .style(widgets::dialog_label_style(palette))
         .into()
 }
@@ -55,7 +55,7 @@ pub fn midi_source_section<'a>(
     column![
         text("MIDI 数据源")
             .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(8),
         row![
@@ -91,7 +91,7 @@ pub fn output_path_section<'a>(
     column![
         text("导出位置")
             .size(16)
-            .font(iced_core::Font::with_name("Microsoft YaHei"))
+            .font(lumino_ui_core::font::ui_font())
             .style(widgets::dialog_label_style(palette)),
         space().height(8),
         row![

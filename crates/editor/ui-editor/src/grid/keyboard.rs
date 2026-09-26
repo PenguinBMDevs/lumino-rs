@@ -103,7 +103,7 @@ pub fn draw(
                 line_height: iced_core::text::LineHeight::Relative(1.0),
                 size: iced_core::Pixels(KEY_LABEL_FONT_SIZE),
                 color: label_color,
-                font: iced_core::Font::DEFAULT,
+                font: lumino_ui_core::font::ui_font(),
                 align_x: alignment::Horizontal::Center.into(),
                 align_y: alignment::Vertical::Center,
                 shaping: iced_core::text::Shaping::Basic,

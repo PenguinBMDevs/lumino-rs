@@ -46,10 +46,7 @@ pub(super) fn view_track_item<'a>(
         container(
             text(&track.display_label)
                 .size(14)
-                .font(iced_core::Font {
-                    weight: iced_core::font::Weight::Bold,
-                    ..Default::default()
-                })
+                .font(lumino_ui_core::font::ui_font_bold())
                 .style(move |_theme: &Theme| text::Style {
                     color: Some(text_color),
                 }),
@@ -87,10 +84,7 @@ pub(super) fn view_track_item<'a>(
     let solo_btn = button(
         text("S")
             .size(14)
-            .font(iced_core::Font {
-                weight: iced_core::font::Weight::Bold,
-                ..Default::default()
-            })
+            .font(lumino_ui_core::font::ui_font_bold())
             .style(move |_theme: &Theme| text::Style {
                 color: Some(if track.is_soloed {
                     palette.warning.base.color
