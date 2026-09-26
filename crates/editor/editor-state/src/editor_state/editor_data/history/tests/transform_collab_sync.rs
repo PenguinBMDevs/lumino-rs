@@ -21,10 +21,10 @@ fn test_speed_change_populates_collab_transform_sync() {
     assert_eq!(modified, 1, "变速应修改 1 个音符");
     assert_eq!(data.current_track_note_count(), 1);
     let pending = data.take_pending_collab_transform_sync();
-    // 每个变化音符 → 一条 Delete(旧) + 一条 Add(新)；元组 (is_add, id, t, k, l, v, c, tr)
+    // 每个变化音符 → 一条 Delete(旧) + 一条 Add(新)；元组 (is_add, t, k, l, v, c, tr)
     assert_eq!(pending.len(), 2);
-    let (is_add_0, _id0, t0, k0, l0, _v0, _c0, _tr0) = pending[0];
-    let (is_add_1, _id1, t1, k1, l1, _v1, _c1, _tr1) = pending[1];
+    let (is_add_0, t0, k0, l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, t1, k1, l1, _v1, _c1, _tr1) = pending[1];
     assert!(!is_add_0, "前向第一条应为删除旧音符");
     assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
     assert!(is_add_1, "前向第二条应为添加新音符");
@@ -33,14 +33,19 @@ fn test_speed_change_populates_collab_transform_sync() {
     // ── undo：整轨快照回放，入队「全删当前 + 全加快照(旧)」对账 ──
     assert!(data.undo());
     let pending2 = data.take_pending_collab_transform_sync();
-    // 单音符：删除当前(长度2.0) + 添加快照(长度1.0)
+    // 单音符：删除当前(长度2.0) + 添加快照(长度1.0)，顺序不限（广播层会先删后加）。
     assert_eq!(pending2.len(), 2);
-    let (ia, _ida, ta, ka, la, _, _, _) = pending2[0];
-    let (ib, _idb, tb, kb, lb, _, _, _) = pending2[1];
-    assert!(!ia, "undo 第一条应为删除当前(新)音符");
-    assert_eq!((ta, ka, la), (0.0, 60, 2.0));
-    assert!(ib, "undo 第二条应为添加快照(旧)音符");
-    assert_eq!((tb, kb, lb), (0.0, 60, 1.0));
+    let mut dels: Vec<(f32, u16, f32)> = Vec::new();
+    let mut adds: Vec<(f32, u16, f32)> = Vec::new();
+    for (is_add, t, k, l, _, _, _) in &pending2 {
+        if *is_add {
+            adds.push((*t, *k, *l));
+        } else {
+            dels.push((*t, *k, *l));
+        }
+    }
+    assert_eq!(dels, vec![(0.0, 60, 2.0)], "undo 应删除当前(新)音符");
+    assert_eq!(adds, vec![(0.0, 60, 1.0)], "undo 应添加快照(旧)音符");
     assert_eq!(data.current_track_note_count(), 1);
 }
 
@@ -56,8 +61,8 @@ fn test_transpose_populates_collab_transform_sync() {
     assert_eq!(modified, 1, "移调应修改 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
     assert_eq!(pending.len(), 2);
-    let (is_add_0, _id0, t0, k0, _l0, _v0, _c0, _tr0) = pending[0];
-    let (is_add_1, _id1, _t1, k1, _l1, _v1, _c1, _tr1) = pending[1];
+    let (is_add_0, t0, k0, _l0, _v0, _c0, _tr0) = pending[0];
+    let (is_add_1, _t1, k1, _l1, _v1, _c1, _tr1) = pending[1];
     assert!(!is_add_0);
     assert_eq!(t0, 0.0);
     assert_eq!(k0, 60, "删除的旧音符 key=60");
@@ -77,9 +82,9 @@ fn test_split_populates_collab_transform_sync() {
     let pending = data.take_pending_collab_transform_sync();
     // 删原(0,60,1.0) + 加左(0,60,0.5) + 加右(0.5,60,0.5)
     assert_eq!(pending.len(), 3);
-    let (d, _id0, t0, k0, l0, _, _, _) = pending[0];
-    let (a1, _id1, t1, k1, l1, _, _, _) = pending[1];
-    let (a2, _id2, t2, k2, l2, _, _, _) = pending[2];
+    let (d, t0, k0, l0, _, _, _) = pending[0];
+    let (a1, t1, k1, l1, _, _, _) = pending[1];
+    let (a2, t2, k2, l2, _, _, _) = pending[2];
     assert!(!d, "首条应为删除原音符");
     assert_eq!((t0, k0, l0), (0.0, 60, 1.0));
     assert!(a1 && a2, "后两条应为添加左右");
@@ -104,9 +109,9 @@ fn test_glue_populates_collab_transform_sync() {
     let dels: Vec<_> = pending.iter().filter(|e| !e.0).collect();
     assert_eq!(adds.len(), 1);
     assert_eq!(dels.len(), 2);
-    let (_, _aid, at, ak, al, _, _, _) = *adds[0];
+    let (_, at, ak, al, _, _, _) = *adds[0];
     assert_eq!((at, ak, al), (0.0, 60, 2.0), "合并后音符应为 (0..2)");
-    let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.2).collect();
+    let mut del_ticks: Vec<f32> = dels.iter().map(|e| e.1).collect();
     del_ticks.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
     assert_eq!(del_ticks, vec![0.0, 1.0], "应删除两个被并音符(0 与 1)");
 }
@@ -122,8 +127,8 @@ fn test_tie_populates_collab_transform_sync() {
     assert_eq!(tied, 1, "应连接 1 个音符");
     let pending = data.take_pending_collab_transform_sync();
     assert_eq!(pending.len(), 2);
-    let (d, _id, dt, dk, dl, _, _, _) = pending[0];
-    let (a, _id2, at, ak, al, _, _, _) = pending[1];
+    let (d, dt, dk, dl, _, _, _) = pending[0];
+    let (a, at, ak, al, _, _, _) = pending[1];
     assert!(!d && a, "应为删旧长度 + 加新长度");
     assert_eq!((dt, dk, dl), (0.0, 60, 1.0), "旧长度 1.0");
     assert_eq!((at, ak, al), (0.0, 60, 2.0), "新长度延长到 2.0");

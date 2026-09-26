@@ -122,12 +122,10 @@ fn test_async_commit_zero_delta_is_noop() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        ids: vec![],
+        originals: vec![],
         delta_tick: 0,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
     }];
     assert!(
         !data
@@ -155,21 +153,17 @@ fn test_async_commit_rejects_concurrent() {
     let mut data = make_data_with_notes();
     let ops1 = vec![MoveOp {
         track_id: 1,
-        ids: vec![1],
+        originals: vec![],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
     }];
     let ops2 = vec![MoveOp {
         track_id: 1,
-        ids: vec![2],
+        originals: vec![],
         delta_tick: 1,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
     }];
     assert!(
         data.apply_move_ops_async(ops1, 127)
@@ -183,12 +177,10 @@ fn test_poll_async_commit_returns_none_while_pending() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        ids: vec![1],
+        originals: vec![],
         delta_tick: 100,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
     }];
     assert!(
         data.apply_move_ops_async(ops, 127)
@@ -213,12 +205,10 @@ fn test_cancel_async_commit() {
     let mut data = make_data_with_notes();
     let ops = vec![MoveOp {
         track_id: 1,
-        ids: vec![1],
+        originals: vec![],
         delta_tick: 10,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![],
-        original_keys: vec![],
     }];
     assert!(
         data.apply_move_ops_async(ops, 127)
@@ -239,14 +229,13 @@ fn test_cancel_async_commit() {
 fn test_async_commit_restores_sorted_order() {
     let mut data = make_data_with_notes();
     // 把首个音符（tick 0）移到 30（越过 10/20）
+    let first = *data.track_notes(1).get(0).expect("首个音符应存在");
     let ops = vec![MoveOp {
         track_id: 1,
-        ids: vec![1],
+        originals: vec![first],
         delta_tick: 30,
         delta_key: 0,
         seq: 0,
-        original_ticks: vec![0.0],
-        original_keys: vec![60],
     }];
     assert!(
         data.apply_move_ops_async(ops, 127)
@@ -277,14 +266,13 @@ fn test_async_commit_restores_sorted_order() {
 #[test]
 fn test_async_commit_no_reorder_keeps_range_events() {
     let mut data = make_data_with_notes();
+    let first = *data.track_notes(1).get(0).expect("首个音符应存在");
     let ops = vec![MoveOp {
         track_id: 1,
-        ids: vec![1],
+        originals: vec![first],
         delta_tick: 0,
         delta_key: 5,
         seq: 0,
-        original_ticks: vec![0.0],
-        original_keys: vec![60],
     }];
     assert!(
         data.apply_move_ops_async(ops, 127)

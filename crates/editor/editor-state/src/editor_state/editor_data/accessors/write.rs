@@ -57,19 +57,15 @@ impl EditorData {
     ///
     /// 返回是否插入成功（音轨不存在返回 false）。调用方需在调用前 `push_history()`。
     /// 当前音轨插入会记录 `NoteDeltaEvent::InsertAt`，供 GPU 主音轨段内增量同步。
-    /// 需要获取分配到的 id 时用 [`Self::insert_note_with_id`]。
+    /// 需要获取插入结果时用 [`Self::insert_note_with_id`]。
     pub fn insert_note(&mut self, track_id: usize, note: Note) -> bool {
         self.insert_note_with_id(track_id, note).is_some()
     }
 
-    /// 抬升文档级 note id 分配器，确保严格大于 `id`，避免与协作/快照外来 id 碰撞。
+    /// 兼容旧分配器接口（去 ID 后为无操作保留，供历史测试调用）。
     ///
-    /// 委托给 `MidiDocument::ensure_note_id_above`；无 document 时静默跳过。
-    pub fn ensure_note_id_above(&mut self, id: u64) {
-        if let Some(doc) = self.document.as_mut() {
-            doc.ensure_note_id_above(id);
-        }
-    }
+    /// 去 ID 后音符按值引用，无需抬升分配器，本方法为空操作。
+    pub fn ensure_note_id_above(&mut self, _id: u64) {}
 
     /// 确保指定音轨存在（不存在则自动扩轨，图片转 MIDI 自动建轨用）。
     /// document 为空时返回 false。

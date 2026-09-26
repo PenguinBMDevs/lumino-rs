@@ -1,88 +1,85 @@
 use super::*;
 use crate::EditorData;
 
-/// Bug 回归：接收远端音符（携带真实全局 id）后，本地分配器必须抬到其之上，
-/// 否则本地新建音符会复用到对端已占用的 id，造成「跨客户端 id 碰撞」（缺陷 #5）。
+/// 去 ID 回归：音符身份即其音乐内容（按值引用）。
+/// 本文件原先覆盖全局 u64 分配器（抬水位、绘制分配 id、redo 保留 id），
+/// 去 ID 后逐项改为按值断言：插入/绘制/undo-redo 均以
+/// `(tick, key, length)` 稳定性为准，经 `position_of` 窗口定位（无全扫）。
 #[test]
-fn test_ensure_note_id_above_bumps_allocator() {
+fn test_value_identity_stable_across_insert() {
     let mut data = EditorData::with_f32_notes(0, &[]);
-    // 本地分配器从 1 起；插入一个零 id 音符 → 分配 1
-    data.insert_note(0, Note::from_raw(0.0, 60, 1.0, 100, 0));
-    assert_eq!(
-        data.track_notes(0).get(0).expect("首个音符应存在").id,
-        1,
-        "首个本地音符应分配到 id=1"
+    // 插入两个不同值音符 → 各自按值可定位
+    assert!(data.insert_note(0, Note::from_raw(0.0, 60, 1.0, 100, 0)));
+    assert!(data.insert_note(0, Note::from_raw(96.0, 62, 1.0, 100, 0)));
+    assert_eq!(data.track_notes(0).len(), 2);
+    let track = data.track_notes(0);
+    let first = super::super::super::accessors::note_to_event(Note::from_raw(0.0, 60, 1.0, 100, 0));
+    let second =
+        super::super::super::accessors::note_to_event(Note::from_raw(96.0, 62, 1.0, 100, 0));
+    assert!(
+        track.position_of(&first).is_some(),
+        "首个插入音符应按值可定位"
     );
-
-    // 模拟接收远端音符 id=42：抬升本地分配器，避免后续复用到 42
-    data.ensure_note_id_above(42);
-
-    // 再插入一个零 id 音符，应分配到 43 而非 1 或 42（无碰撞）
-    data.insert_note(0, Note::from_raw(96.0, 62, 1.0, 100, 0));
-    let new_id = data
-        .track_notes(0)
-        .iter()
-        .find(|n| n.start_tick == 96 && n.key == 62)
-        .expect("应找到刚插入的音符")
-        .id;
-    assert_eq!(
-        new_id, 43,
-        "接收远端 id=42 后，本地分配器应抬到 43，避免与对端 id 碰撞"
+    assert!(
+        track.position_of(&second).is_some(),
+        "第二个插入音符应按值可定位"
     );
 }
 
-/// 回归：真实绘制路径的 CreateOp 必须记录分配后的真实 id；
-/// undo→redo 往返 id 不变（旧实现 CreateOp.note.id=0，redo 会重新分配新 id，
-/// 破坏「note id 全局稳定」不变量）。
+/// 回归：真实绘制路径的 CreateOp 按值记录；undo→redo 往返值不变
+/// （旧实现 CreateOp.note.id=0，redo 会重新分配新 id，破坏身份稳定）。
 #[test]
-fn test_finish_drawing_captures_id_and_redo_preserves_it() {
+fn test_finish_drawing_captures_value_and_redo_preserves_it() {
     let mut data = EditorData::with_f32_notes(1, &[]);
     let drawn = data
         .finish_drawing(0.0, 60, 80.0, 1.0, 80.0)
         .expect("绘制应成功");
-    let real_id = data
-        .current_track_notes()
-        .get(0)
-        .expect("绘制后音符应存在")
-        .id;
-    assert!(real_id > 0, "绘制必须分配全局唯一 id");
-    assert_eq!(drawn.id, real_id, "返回的 Note 应携带真实 id");
+    assert_eq!((drawn.tick, drawn.key, drawn.length), (0.0, 60, 80.0));
+    let stored = data.current_track_notes().get(0).expect("绘制后音符应存在");
+    assert_eq!(stored.start_tick, 0, "落盘值应与绘制值一致");
+    assert_eq!(stored.key, 60);
 
     assert!(data.undo());
     assert_eq!(data.current_track_note_count(), 0, "undo 应删除创建音符");
 
     assert!(data.redo());
-    let restored_id = data
+    let restored = data
         .current_track_notes()
         .get(0)
-        .expect("redo 后音符应存在")
-        .id;
+        .expect("redo 后音符应存在");
     assert_eq!(
-        restored_id, real_id,
-        "redo 必须原样保留 id，不得重新分配（身份稳定）"
+        (restored.start_tick, restored.key, restored.length()),
+        (0, 60, 80),
+        "redo 必须原样保留值，不得漂移（身份稳定）"
     );
 }
 
-/// 回归：真实绘制路径 undo/redo 的协作广播必须携带真实 id（旧实现广播 id=0，
-/// 对端无法按 id 匹配删除/添加）。
+/// 回归：真实绘制路径 undo/redo 的协作广播按值携带（旧实现广播 id=0，
+/// 对端无法按值匹配删除/添加）。
 #[test]
-fn test_create_undo_redo_collab_sync_uses_real_id() {
+fn test_create_undo_redo_collab_sync_carries_value() {
     let mut data = EditorData::with_f32_notes(1, &[]);
     data.set_collab_sync_enabled(true);
     let _ = data.finish_drawing(0.0, 60, 80.0, 1.0, 80.0);
-    let real_id = data
-        .current_track_notes()
-        .get(0)
-        .expect("绘制后音符应存在")
-        .id;
+    assert_eq!(data.current_track_note_count(), 1);
 
     assert!(data.undo());
     let pending = data.take_pending_collab_create_sync();
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].0, real_id, "undo 创建广播必须携带真实 id");
+    // 元组形状 (tick, key, length, velocity, channel, track_index, is_added)
+    let (tick, key, len, _vel, _ch, track, is_added) = pending[0];
+    assert_eq!(tick, 0.0);
+    assert_eq!(key, 60);
+    assert_eq!(len, 80.0);
+    assert_eq!(track, 1);
+    assert!(!is_added, "undo 创建应为删除（is_added=false）");
 
     assert!(data.redo());
     let pending = data.take_pending_collab_create_sync();
     assert_eq!(pending.len(), 1);
-    assert_eq!(pending[0].0, real_id, "redo 创建广播必须携带真实 id");
+    let (tick2, key2, len2, _vel2, _ch2, _track2, is_added2) = pending[0];
+    assert_eq!(tick2, 0.0);
+    assert_eq!(key2, 60);
+    assert_eq!(len2, 80.0);
+    assert!(is_added2, "redo 创建应为添加（is_added=true）");
 }

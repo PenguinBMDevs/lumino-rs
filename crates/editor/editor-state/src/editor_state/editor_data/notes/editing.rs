@@ -1,7 +1,5 @@
 //! 音符编辑：分割、合并、连奏与删除增量事件合并（自 `notes.rs` 拆分，保持各文件 < 400 行）
 
-use std::collections::HashMap;
-
 use super::super::super::constants::GLUE_PROXIMITY_THRESHOLD;
 use super::super::super::note_grouping::{self, NoteTuple};
 use super::super::super::selection_set::SelectionSet;
@@ -20,12 +18,11 @@ impl EditorData {
         if split_tick <= note_tick || split_tick >= note_tick + note_length {
             return false;
         }
-        let note_id = note.id;
         let (key, velocity, channel) = (note.key, note.velocity, note.channel);
         let track_idx = self.current_track;
 
         self.push_history();
-        // 移除原音符，插入 right + left（insert_note 按 start_tick 有序插入）
+        // 移除原音符，插入 right + left（insert_note 按 start_tick 有序插入，按值）
         self.remove_note(track_idx, index);
         let right = Note::from_raw(
             split_tick,
@@ -41,17 +38,14 @@ impl EditorData {
             velocity,
             channel,
         );
-        // 插入回传真实 id（替代坐标反查）：undo/redo 与协作广播的身份来源
-        let left_id = self.insert_note_with_id(track_idx, left).unwrap_or(0);
-        let right_id = self.insert_note_with_id(track_idx, right).unwrap_or(0);
+        let _ = self.insert_note_with_id(track_idx, left);
+        let _ = self.insert_note_with_id(track_idx, right);
         self.mark_current_track_changed();
-        // 2026-09 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步。
-        // id：删原用原音符真实 id；左右用 insert_note_with_id 回传的真实 id。
+        // 2026-09 去 ID 协作修复：分割改变音符数量，须广播「删原 + 加左右」让 B 端同步（按值）。
         // 协作同步关闭时跳过对账（消费端 `is_connected` 会短路丢弃）。
         if self.collab_sync_enabled {
             self.pending_collab_transform_sync.push((
                 false,
-                note_id,
                 note_tick,
                 key as u16,
                 note_length,
@@ -61,7 +55,6 @@ impl EditorData {
             ));
             self.pending_collab_transform_sync.push((
                 true,
-                left_id,
                 note_tick,
                 key as u16,
                 split_tick - note_tick,
@@ -71,7 +64,6 @@ impl EditorData {
             ));
             self.pending_collab_transform_sync.push((
                 true,
-                right_id,
                 split_tick,
                 key as u16,
                 note_tick + note_length - split_tick,
@@ -91,11 +83,6 @@ impl EditorData {
         }
         let track = self.current_track_notes();
         let mut selected_notes: Vec<NoteTuple> = Vec::with_capacity(sel.len());
-        // 索引 → 全局唯一 id：删除同步记录直接取真实 id（替代坐标反查）
-        // 协作同步关闭时无需构建（避免大选中集的 HashMap 对账开销）。
-        let collab_sync = self.collab_sync_enabled;
-        let mut id_by_index: HashMap<usize, u64> =
-            HashMap::with_capacity(if collab_sync { sel.len() } else { 0 });
         for &note_idx in &sel {
             if let Some(note) = track.get(note_idx) {
                 selected_notes.push((
@@ -106,9 +93,6 @@ impl EditorData {
                     note.velocity,
                     note.channel,
                 ));
-                if collab_sync {
-                    id_by_index.insert(note_idx, note.id);
-                }
             }
         }
         if selected_notes.is_empty() {
@@ -130,13 +114,11 @@ impl EditorData {
             let rm: Vec<usize> = group.iter().map(|note_tuple| note_tuple.0).collect();
             let mut rm_sorted = rm.clone();
             rm_sorted.sort_by(|a, b| b.cmp(a));
-            // 2026-09 协作修复：合并改变音符数量，先记录每个被合并音符的删除。
-            // id 取自收集阶段的索引 → id 映射（不再坐标反查）。
-            if collab_sync {
+            // 2026-09 去 ID 协作修复：合并改变音符数量，先记录每个被合并音符的删除（按值）。
+            if self.collab_sync_enabled {
                 for nt in group {
                     self.pending_collab_transform_sync.push((
                         false,
-                        id_by_index.get(&nt.0).copied().unwrap_or(0),
                         nt.1,
                         nt.2,
                         nt.3,
@@ -150,14 +132,11 @@ impl EditorData {
                 self.remove_note(self.current_track, idx);
             }
             let merged_note = Note::from_raw(merged_tick, first.2, merged_length, first.4, first.5);
-            let merged_id = self
-                .insert_note_with_id(self.current_track, merged_note)
-                .unwrap_or(0);
-            // 2026-09 协作修复：添加一个合并后的音符（id 为插入回传的真实值）。
-            if collab_sync {
+            let _ = self.insert_note_with_id(self.current_track, merged_note);
+            // 2026-09 去 ID 协作修复：添加一个合并后的音符（按值）。
+            if self.collab_sync_enabled {
                 self.pending_collab_transform_sync.push((
                     true,
-                    merged_id,
                     merged_tick,
                     first.2,
                     merged_length,
@@ -241,7 +220,6 @@ impl EditorData {
                             if collab_sync {
                                 sync_entries.push((
                                     false,
-                                    note.id,
                                     note.start_tick as f32,
                                     note.key as u16,
                                     current_length,
@@ -251,7 +229,6 @@ impl EditorData {
                                 ));
                                 sync_entries.push((
                                     true,
-                                    note.id,
                                     note.start_tick as f32,
                                     note.key as u16,
                                     (note.end_tick - note.start_tick) as f32,
