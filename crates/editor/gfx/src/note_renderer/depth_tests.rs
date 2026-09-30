@@ -1,239 +1,244 @@
-//! 音符深度编码验证：精度预算（CPU 孪生）与「绘制顺序无关」的像素证据。
+//! 音符深度编码验证：区域化位空间契约（CPU 孪生）与「绘制顺序无关」的像素证据。
 //!
 //! 背景：cull.wgsl 每个 workgroup 由线程 0 抢占式 `atomicAdd` 输出槽位，可见实例的
 //! **输出顺序**由 GPU 调度决定、帧间不稳定；而音符管线是 `LessEqual` +
 //! `depth_write_enabled=true`，同深度「后画者胜」——赢家随可见缓冲顺序逐帧随机，
-//! 表现为重叠区描边闪烁。修复手段是让深度只由「跨帧稳定的 chunk 内源索引」派生。
+//! 表现为重叠区描边闪烁。修复手段是让深度只由「跨帧稳定的全局源索引」派生。
+//!
+//! 2026-09 黑乐谱加固：旧实现把索引注入基深度的 ulp 预算（主轨 629 万 /
+//! 洋葱皮 209 万），实测黑乐谱（1936 万音符、单轨最高 494 万）大量音符落入饱和段
+//! 共享同一深度 → 闪烁回归；且旧实现使用 **chunk 内局部索引**，多 chunk 时索引
+//! 重置造成跨 chunk 深度别名（同深度平局在固定的 chunk 绘制顺序下虽稳定，但叠压
+//! 关系与全局索引序相反）。现改为「区域化位空间映射」：
+//!   预览 0.0 < 主音轨区 0x00800000 < 洋葱皮区 0x1F800000；
+//!   区内 `bits = 区起点 + 全局索引`（`chunk_start + 本地可见索引`），每区
+//!   5.2 亿槽位 —— 覆盖项目 2.9 亿目标，索引严格等价于深度序。
 //!
 //! 本模块给出两类可运行证据：
-//!   1. 精度预算（CPU 孪生，无需 GPU）：深度严格单调、不侵占相邻轨道层、不越远平面；
+//!   1. 精度契约（CPU 孪生，无需 GPU）：区内严格单调（含实测黑乐谱规模与旧饱和
+//!      边界）、区间不别名、不越远平面、chunk 折叠无别名、饱和有界；
 //!   2. 像素证据（GPU）：同一场景、同一源数据，仅改变可见索引的**输出顺序**
-//!      （复刻 cull 的随机槽位分配），连续 64 帧回读像素必须逐位一致。
+//!      （复刻 cull 的随机槽位分配），连续 64 帧回读像素必须逐位一致；
+//!      另有 chunk_start 折叠的构图验证（后画 chunk 的音符必须更靠后）。
 //!
-//! 已知边界（本卡范围外）：预览音符固定在预览层 `depth = 0.0`（恒覆盖主轨），
-//! 预览层内部多个预览音符之间仍共享同一深度；预览批次为绘制/hover/i2m 单音符或
-//! 拖拽选区，重叠叠音需再引入预览层微深度（见卡片关联问题）。
+//! 已知边界：预览哨兵恒为 0.0（同批次多个哨兵仍共享深度，实际路径单哨兵）；
+//! 索引超过 5.2 亿（超出项目 2.9 亿目标规模）后饱和到区顶——确定性但饱和段内
+//! 仍可能平局，属记录在案的规模上限。
 
 use super::NoteRenderer;
-use super::types::{CameraUniform, DrawIndirectArgs};
+use super::types::{CameraUniform, CullUniform, DrawIndirectArgs};
 use crate::constants::rendering::DEPTH_FORMAT;
 
-// ═══ 1. 精度预算：shader `tie_break_depth` 的 CPU 孪生 ═══════════════════════
+// ═══ 1. 区域化位空间深度：CPU 孪生与精度契约 ════════════════════════════════
 //
 // 下列常量/函数必须与 4 个音符 shader（note / note_vertical / onion_note /
 // onion_note_vertical）中的同名定义逐字对应——`shader_sources_share_depth_contract`
 // 测试守住这份契约。
 
-/// 相邻轨道深度间隔（2^-16）——对应 shader `TRACK_DEPTH_STEP`
-const TRACK_DEPTH_STEP: f32 = 1.0 / 65536.0;
-/// 主音轨基深度（2^-17）——对应 shader `MAIN_TRACK_DEPTH_BASE`
-const MAIN_TRACK_DEPTH_BASE: f32 = 1.0 / 131072.0;
-/// 轨内微深度索引上界（2^23 - 1）——对应 shader `TIE_BREAK_INDEX_LIMIT`
-const TIE_BREAK_INDEX_LIMIT: u32 = 8_388_607;
+/// 主音轨区起点位模式（2^-126）——对应 shader `MAIN_DEPTH_REGION_BITS`
+const MAIN_DEPTH_REGION_BITS: u32 = 0x0080_0000;
+/// 洋葱皮区起点位模式——对应 shader `ONION_DEPTH_REGION_BITS`
+const ONION_DEPTH_REGION_BITS: u32 = 0x1F80_0000;
+/// 每区槽位数（5.2 亿）——对应 shader `DEPTH_REGION_SLOTS`
+const DEPTH_REGION_SLOTS: u32 = 0x1F00_0000;
 
-/// shader `tie_break_depth` 的 CPU 孪生：把稳定源索引注入基深度的尾数低位。
-fn tie_break_depth(base: f32, visible_index: u32) -> f32 {
-    let layer_gap = (base + TRACK_DEPTH_STEP).to_bits() - base.to_bits();
-    let room_to_far = if base >= 1.0 {
-        0
-    } else {
-        1.0f32.to_bits() - base.to_bits()
-    };
-    let budget = layer_gap.min(room_to_far);
-    if budget < 2 {
-        return base;
-    }
-    let k = visible_index.min(((budget - 1) / 2).min(TIE_BREAK_INDEX_LIMIT));
-    f32::from_bits(base.to_bits() + k)
+/// shader `region_depth` 的 CPU 孪生：区域起点 + 全局源索引（区顶饱和）。
+fn region_depth(region_bits: u32, global_index: u32) -> f32 {
+    f32::from_bits(region_bits + global_index.min(DEPTH_REGION_SLOTS - 1))
 }
 
-/// 洋葱皮轨道编码 `track_enc`（= `track_idx + 1`）的基深度。
-fn onion_track_base(track_enc: u32) -> f32 {
-    (track_enc + 1) as f32 * TRACK_DEPTH_STEP
+/// 主音轨区深度（主轨身份由 ViewState 判定，与 track_enc 无关）
+fn main_region_depth(global_index: u32) -> f32 {
+    region_depth(MAIN_DEPTH_REGION_BITS, global_index)
 }
 
-/// 轨道编码 → 基深度（0 = 主音轨，其余为洋葱皮轨道编码）
-fn track_base_for(track_enc: u32) -> f32 {
-    if track_enc == 0 {
-        MAIN_TRACK_DEPTH_BASE
-    } else {
-        onion_track_base(track_enc)
-    }
+/// 洋葱皮区深度（区序 = 全局索引序 = 段表/轨道顺序）
+fn onion_region_depth(global_index: u32) -> f32 {
+    region_depth(ONION_DEPTH_REGION_BITS, global_index)
 }
 
-/// 该基深度下轨内微深度可用的最大索引（饱和上界）。
-fn index_cap(base: f32) -> u32 {
-    let layer_gap = (base + TRACK_DEPTH_STEP).to_bits() - base.to_bits();
-    let room_to_far = if base >= 1.0 {
-        0
-    } else {
-        1.0f32.to_bits() - base.to_bits()
-    };
-    let budget = layer_gap.min(room_to_far);
-    if budget < 2 {
-        0
-    } else {
-        ((budget - 1) / 2).min(TIE_BREAK_INDEX_LIMIT)
-    }
+/// 全局索引 = chunk 基准 + 本地可见索引（对应 shader `chunk_info.chunk_start`）
+fn global_index(chunk_start: u32, local_index: u32) -> u32 {
+    chunk_start + local_index
 }
 
-/// 采样覆盖轨道的轨道编码（含主音轨、首末洋葱皮轨道与若干中间值）。
-const SAMPLED_TRACKS: [u32; 10] = [0, 1, 2, 3, 63, 64, 1024, 65533, 65534, 65535];
+/// 实测黑乐谱规模（`song for denise - piano fantasia`：1936 万音符 / 31 轨）与
+/// 旧实现的全部饱和边界（209 万 / 629 万 / 838 万 / 1258 万）作为单调性采样点。
+const SCALE_PROBE_INDICES: [u32; 12] = [
+    0,
+    1,
+    4096,
+    2_097_151,
+    6_291_455,
+    8_388_608,
+    12_582_912,
+    19_360_995,
+    100_000_000,
+    290_000_000,
+    DEPTH_REGION_SLOTS - 2,
+    DEPTH_REGION_SLOTS - 1,
+];
 
-/// 采样索引（含 0、饱和上界附近、饱和之后与 u32 上界），升序去重。
-fn probe_indices(base: f32) -> Vec<u32> {
-    let cap = index_cap(base);
-    let mut out = vec![
-        0u32,
-        1,
-        2,
-        3,
-        255,
-        4096,
-        1_048_575,
-        cap.saturating_sub(1),
-        cap,
-        cap.saturating_add(1),
-        u32::MAX - 1,
-        u32::MAX,
-    ];
-    out.sort_unstable();
-    out.dedup();
-    out
-}
-
-/// 主音轨基深度处的微深度步长恰好是一个 f32 ulp（2^-40）——即卡片要求的
-/// `depth += index × EPSILON, EPSILON = 2^-40` 在主轨上逐位等价。
-#[test]
-fn test_main_track_micro_step_is_2_pow_minus_40() {
-    let step = tie_break_depth(MAIN_TRACK_DEPTH_BASE, 1) - MAIN_TRACK_DEPTH_BASE;
-    assert_eq!(
-        step,
-        2f32.powi(-40),
-        "主音轨微深度步长应为 2^-40（f32 在 2^-17 处的一个 ulp）"
-    );
-    assert_eq!(
-        tie_break_depth(MAIN_TRACK_DEPTH_BASE, 0),
-        MAIN_TRACK_DEPTH_BASE,
-        "索引 0 不应产生任何偏移"
-    );
-}
-
-/// 预览层（0.0）恒在主音轨之前，主音轨恒在洋葱皮之前。
+/// 预览层（0.0）恒在主音轨区之前，主音轨区恒在洋葱皮区之前（全区间分层、无交叠）。
 #[test]
 fn test_layer_order_preview_before_main_before_onion() {
-    const { assert!(0.0f32 < MAIN_TRACK_DEPTH_BASE) };
     assert!(
-        MAIN_TRACK_DEPTH_BASE < onion_track_base(1),
-        "主音轨基深度必须小于首个洋葱皮轨道层"
+        0.0f32 < main_region_depth(0),
+        "预览层（0.0）必须在主音轨区底之前"
     );
-    // 主音轨在轨内微深度拉满后仍不得越过首个洋葱皮轨道
-    let main_max = tie_break_depth(MAIN_TRACK_DEPTH_BASE, index_cap(MAIN_TRACK_DEPTH_BASE));
+    let main_max = main_region_depth(DEPTH_REGION_SLOTS - 1);
+    let onion_min = onion_region_depth(0);
     assert!(
-        main_max < onion_track_base(1),
-        "主音轨最大深度 {main_max} 侵占了洋葱皮首层 {}",
-        onion_track_base(1)
+        main_max < onion_min,
+        "主音轨区顶 {main_max} 侵占了洋葱皮区底 {onion_min}"
     );
 }
 
-/// 轨内微深度严格单调：索引大者深度大（绘制顺序无关的确定性裁决）。
+/// 区顶饱和前置：区底为 0 索引深度（无隐式偏移），区顶为槽数上界。
 #[test]
-fn test_in_track_depth_strictly_increasing_within_cap() {
-    for track in SAMPLED_TRACKS {
-        let base = track_base_for(track);
-        let cap = index_cap(base);
-        let mut prev = tie_break_depth(base, 0);
-        for idx in 1..=cap.min(4096) {
-            let depth = tie_break_depth(base, idx);
+fn test_region_depth_endpoints() {
+    assert_eq!(main_region_depth(0), f32::from_bits(MAIN_DEPTH_REGION_BITS));
+    assert_eq!(
+        main_region_depth(DEPTH_REGION_SLOTS - 1),
+        f32::from_bits(MAIN_DEPTH_REGION_BITS + DEPTH_REGION_SLOTS - 1)
+    );
+    assert_eq!(
+        onion_region_depth(0),
+        f32::from_bits(ONION_DEPTH_REGION_BITS)
+    );
+}
+
+/// 区内深度严格单调（索引大者深度大）——采样覆盖项目 2.9 亿目标、
+/// 本次实测黑乐谱规模（1936 万）以及旧实现的全部饱和边界。
+#[test]
+fn test_region_depth_strictly_increasing_with_project_scale() {
+    for region in [MAIN_DEPTH_REGION_BITS, ONION_DEPTH_REGION_BITS] {
+        for pair in SCALE_PROBE_INDICES.windows(2) {
+            let (a, b) = (pair[0], pair[1]);
+            let (da, db) = (region_depth(region, a), region_depth(region, b));
             assert!(
-                depth > prev,
-                "轨道 {track} 索引 {idx} 深度 {depth} 未严格大于前一深度 {prev}"
-            );
-            prev = depth;
-        }
-        // 饱和上界内任意两个采样索引必须可区分
-        let samples: Vec<u32> = probe_indices(base)
-            .into_iter()
-            .filter(|&i| i <= cap)
-            .collect();
-        for (a, b) in samples.iter().zip(samples.iter().skip(1)) {
-            assert!(
-                tie_break_depth(base, *a) < tie_break_depth(base, *b),
-                "轨道 {track} 索引 {a} 与 {b} 深度未严格递增（cap={cap}）"
+                db > da,
+                "区 {region:#010X} 索引 {a} → {b} 深度未严格递增（{da} → {db}）"
             );
         }
     }
 }
 
-/// 超出饱和上界的索引（极端黑乐谱场景）必须饱和到上界深度，
-/// 既不越层、也不越远平面——退化为确定性（不再随机）。
+/// 黑乐谱回归（本卡根因）：实测文件 1936 万音符、单轨最高 494 万，
+/// 旧实现下这些索引全部落入饱和段共享深度；新实现必须全程唯一。
 #[test]
-fn test_indices_beyond_cap_saturate_deterministically() {
-    for track in SAMPLED_TRACKS {
-        let base = track_base_for(track);
-        let cap = index_cap(base);
-        let saturated = tie_break_depth(base, cap);
-        for idx in [cap.saturating_add(1), u32::MAX - 1, u32::MAX] {
-            assert_eq!(
-                tie_break_depth(base, idx),
-                saturated,
-                "轨道 {track} 索引 {idx} 未饱和到上界深度"
-            );
-        }
-        assert!(saturated - base < TRACK_DEPTH_STEP);
-    }
-}
-
-/// 精度预算硬约束：同轨最大偏移 < 相邻轨道深度间隔（2^-16）。
-#[test]
-fn test_in_track_max_offset_below_track_step() {
-    for track in SAMPLED_TRACKS {
-        let base = track_base_for(track);
-        for idx in probe_indices(base) {
-            let offset = tie_break_depth(base, idx) - base;
-            assert!(
-                (0.0..TRACK_DEPTH_STEP).contains(&offset),
-                "轨道 {track} 索引 {idx} 偏移 {offset} 越过轨道层间隔 {TRACK_DEPTH_STEP}"
-            );
-        }
-    }
-}
-
-/// 跨轨道叠压关系不回归：任意轨道的深度区间不与相邻轨道区间相交。
-#[test]
-fn test_adjacent_track_layers_do_not_overlap() {
-    let mut previous_max = tie_break_depth(MAIN_TRACK_DEPTH_BASE, index_cap(MAIN_TRACK_DEPTH_BASE));
-    for track in 1..=65535u32 {
-        if track > 4096 && track < 65533 {
-            continue; // 中间轨道逐个穷举无必要，首末段已覆盖
-        }
-        let base = onion_track_base(track);
-        let min = tie_break_depth(base, 0);
+fn test_black_midi_scale_indices_are_unique_in_region() {
+    // 单个轨道段在缓冲中的索引区间示例（track 27：buffer [12_858_671, 17_801_051)）
+    let track_start = 12_858_671u32;
+    let track_len = 4_942_380u32;
+    let mut prev = onion_region_depth(track_start);
+    for idx in (track_start + 1)..(track_start + track_len) {
+        let depth = onion_region_depth(idx);
         assert!(
-            min > previous_max,
-            "轨道 {track} 的最小深度 {min} 不大于前一轨道的最大深度 {previous_max}"
+            depth > prev,
+            "索引 {idx} 深度未严格递增（旧实现在 209 万即饱和）"
         );
-        previous_max = tie_break_depth(base, index_cap(base));
+        prev = depth;
     }
 }
 
-/// 任意轨道深度都必须落在 NDC 远平面（z=1）之内，否则会被裁剪导致音符缺失。
+/// chunk 折叠回归：不同 chunk 的同本地索引必须映射到不同深度
+/// （旧实现直接用 chunk 局部索引算深度，多 chunk 时索引重置 → 深度别名：
+/// 后画 chunk 的音符以「等深平局 + 后画者胜」反超，叠压关系与全局索引序相反）。
 #[test]
-fn test_all_track_depths_stay_inside_far_plane() {
-    for track in SAMPLED_TRACKS {
-        let base = track_base_for(track);
-        for idx in probe_indices(base) {
-            let depth = tie_break_depth(base, idx);
+fn test_chunk_folding_keeps_global_index_unique() {
+    const CHUNK: u32 = 8_388_608; // 常见设备单 chunk 实例数（128MB binding / 16B）
+    for local in [0u32, 1, 123, CHUNK - 1] {
+        let a = global_index(0, local);
+        let b = global_index(CHUNK, local);
+        assert_ne!(a, b, "跨 chunk 同本地索引 {local} 的全局索引必须不同");
+        assert!(
+            onion_region_depth(b) > onion_region_depth(a),
+            "后 chunk 的深度必须更大（同一区，全局索引序）"
+        );
+        assert!(
+            main_region_depth(b) > main_region_depth(a),
+            "主音轨区同样必须跨 chunk 连续"
+        );
+    }
+}
+
+/// 主音轨区与洋葱皮区对同一全局索引互不别名：主区恒在洋葱区之前。
+#[test]
+fn test_main_and_onion_regions_do_not_alias() {
+    for idx in [0u32, 1, 6_291_455, 19_360_995, 290_000_000] {
+        assert!(
+            main_region_depth(idx) < onion_region_depth(idx),
+            "索引 {idx}：主音轨区深度未小于洋葱皮区深度"
+        );
+    }
+    assert!(main_region_depth(DEPTH_REGION_SLOTS - 1) < onion_region_depth(0));
+}
+
+/// 超出区槽数（5.2 亿，超出项目 2.9 亿目标规模）的极端索引饱和到区顶：
+/// 确定性、有界、不越远平面。
+#[test]
+fn test_saturation_beyond_region_slots_is_bounded() {
+    for region in [MAIN_DEPTH_REGION_BITS, ONION_DEPTH_REGION_BITS] {
+        let saturated = region_depth(region, DEPTH_REGION_SLOTS - 1);
+        for idx in [
+            DEPTH_REGION_SLOTS,
+            DEPTH_REGION_SLOTS + 1,
+            u32::MAX - 1,
+            u32::MAX,
+        ] {
+            assert_eq!(
+                region_depth(region, idx),
+                saturated,
+                "区 {region:#010X} 索引 {idx} 未饱和到区顶"
+            );
+        }
+        assert!(saturated < 1.0, "区顶 {saturated} 越出远平面");
+    }
+}
+
+/// 任意深度都必须落在 NDC 远平面（z=1）之内，否则会被裁剪导致音符缺失。
+#[test]
+fn test_all_depths_stay_inside_far_plane() {
+    for region in [MAIN_DEPTH_REGION_BITS, ONION_DEPTH_REGION_BITS] {
+        for idx in [
+            0u32,
+            1,
+            19_360_995,
+            290_000_000,
+            DEPTH_REGION_SLOTS - 1,
+            u32::MAX,
+        ] {
+            let depth = region_depth(region, idx);
             assert!(
                 (0.0..=1.0).contains(&depth),
-                "轨道 {track} 索引 {idx} 深度 {depth} 越出 [0, 1]"
+                "区 {region:#010X} 索引 {idx} 深度 {depth} 越出 [0, 1]"
             );
         }
     }
 }
 
-/// 4 个音符 shader 必须共享同一份深度契约（常量与函数签名逐字一致），
-/// 并已把静音轨裁剪从「NDC z=2.0 深度裁剪」改为与 depth attachment 无关的退化几何。
+/// 值域契约：区底 ≥ 最小正规格数（无 denormal，深度比较在所有后端稳定）；
+/// 区顶 < 远平面 1.0。
+#[test]
+fn test_region_values_are_positive_normal_floats() {
+    for region in [MAIN_DEPTH_REGION_BITS, ONION_DEPTH_REGION_BITS] {
+        let min = region_depth(region, 0);
+        let max = region_depth(region, DEPTH_REGION_SLOTS - 1);
+        assert!(
+            min.is_normal() && min > 0.0,
+            "区 {region:#010X} 区底 {min} 必须是正规格数"
+        );
+        assert!(
+            max.is_normal() && max < 1.0,
+            "区 {region:#010X} 区顶 {max} 必须是正规格数且 < 1.0"
+        );
+    }
+}
+
+/// 4 个音符 shader 必须共享同一份深度契约（区域常量、区域函数、chunk 折叠逐字一致），
+/// 旧「ulp 预算 + 局部索引」实现片段必须全部清除，
+/// 并保留与 depth attachment 无关的静音轨退化几何裁剪。
 #[test]
 fn test_shader_sources_share_depth_contract() {
     const SOURCES: [(&str, &str); 4] = [
@@ -248,17 +253,29 @@ fn test_shader_sources_share_depth_contract() {
             include_str!("../shaders/onion_note_vertical.wgsl"),
         ),
     ];
-    const CONTRACT: [&str; 4] = [
-        "const TRACK_DEPTH_STEP: f32 = 1.0 / 65536.0;",
-        "const MAIN_TRACK_DEPTH_BASE: f32 = 1.0 / 131072.0;",
-        "const TIE_BREAK_INDEX_LIMIT: u32 = 8388607u;",
-        "fn tie_break_depth(base: f32, visible_index: u32) -> f32 {",
+    const CONTRACT: [&str; 5] = [
+        "const MAIN_DEPTH_REGION_BITS: u32 = 0x00800000u;",
+        "const ONION_DEPTH_REGION_BITS: u32 = 0x1F800000u;",
+        "const DEPTH_REGION_SLOTS: u32 = 0x1F000000u;",
+        "fn region_depth(region_bits: u32, global_index: u32) -> f32 {",
+        "let global_index = chunk_info.chunk_start + visible_index;",
     ];
     for (label, source) in SOURCES {
         for needle in CONTRACT {
             assert!(
                 source.contains(needle),
                 "{label}.wgsl 缺少深度契约片段：{needle}"
+            );
+        }
+        for forbidden in [
+            "tie_break_depth",
+            "MAIN_TRACK_DEPTH_BASE",
+            "TRACK_DEPTH_STEP",
+            "TIE_BREAK_INDEX_LIMIT",
+        ] {
+            assert!(
+                !source.contains(forbidden),
+                "{label}.wgsl 仍残留旧实现片段：{forbidden}"
             );
         }
         assert!(
@@ -532,7 +549,7 @@ fn test_overlap_pixels_are_draw_order_independent() {
     let preview_notes = preview_scene();
 
     let mut onion = NoteRenderer::new_onion_skin(&device, &queue, format);
-    // track_enc = 1 为主音轨（主轨蓝 + 主轨基深度）
+    // track_enc = 1 为主音轨（主轨蓝 + 主音轨区深度）
     onion.set_view_state(&queue, 1, &[]);
     onion.upload_instances(&onion_notes, &device, &queue);
 
@@ -615,6 +632,88 @@ fn test_overlap_pixels_are_draw_order_independent() {
     assert!(
         baseline.is_some(),
         "至少需要渲染一帧基线；ORDER_FRAMES 不得为 0"
+    );
+}
+
+/// chunk 基准折叠的构图验证（跨 chunk 索引别名回归）：
+/// 两个 note 渲染器当「两个 chunk」用——P 的基准 `chunk_start = 0`、音符本地
+/// 索引 100（深度 = 区底 + 100）；Q 的基准 `chunk_start = DEPTH_REGION_SLOTS - 1`、
+/// 音符本地索引 50（全局索引超出槽数 → 深度饱和到区顶，远大于 P）。
+/// P 先画、Q 后画（Q 的绘制顺序在后）。binding 3 生效时，Q 的全局索引远大于 P
+/// → Q 深度更大（更靠后）→ LessEqual 拒绝 Q，最终画面与「只画 P」逐位一致；
+/// binding 3 未生效（旧局部索引）时，Q 用本地 50 < P 的 100 → Q 反超在前 →
+/// 画面变成 Q 的颜色。本验证不依赖裁剪语义，直接锁定
+/// `chunk_start + 本地可见索引` 在 GPU 上真实参与深度。
+#[test]
+fn test_chunk_start_is_folded_into_depth() {
+    let (device, queue) = crate::pipeline::test_device();
+    let format = wgpu::TextureFormat::Rgba8UnormSrgb;
+    let red = [1.0, 0.0, 0.0, 1.0];
+    let green = [0.0, 1.0, 0.0, 1.0];
+
+    // P：101 个实例，可见索引 100 → 深度 = 区底 + 100
+    let mut notes_p = vec![crate::NoteInstance::new(0.0, 60, 100.0, red, 1)];
+    notes_p.resize(101, crate::NoteInstance::new(0.0, 60, 100.0, red, 1));
+    let mut p = NoteRenderer::new(&device, &queue, format);
+    p.upload_instances(&notes_p, &device, &queue);
+    write_camera(&p, &queue);
+    write_visible_order(&p, &queue, &[100]);
+
+    // Q：51 个实例，可见索引 50；chunk 基准拉到槽数上限 → 深度饱和到区顶
+    let mut notes_q = vec![crate::NoteInstance::new(0.0, 60, 100.0, green, 1)];
+    notes_q.resize(51, crate::NoteInstance::new(0.0, 60, 100.0, green, 1));
+    let mut q = NoteRenderer::new(&device, &queue, format);
+    q.upload_instances(&notes_q, &device, &queue);
+    write_camera(&q, &queue);
+    write_visible_order(&q, &queue, &[50]);
+    let uniform = CullUniform {
+        instance_count: 51,
+        chunk_start: DEPTH_REGION_SLOTS - 1,
+        chunk_count: 51,
+        _padding: 0,
+    };
+    queue.write_buffer(
+        q.cull_uniform_buffer.inner(),
+        0,
+        bytemuck::bytes_of(&uniform),
+    );
+
+    let color_texture = make_color_texture(&device, format);
+    let depth_texture = make_depth_texture(&device);
+    let color_view = color_texture.create_view(&wgpu::TextureViewDescriptor::default());
+    let depth_view = depth_texture.create_view(&wgpu::TextureViewDescriptor::default());
+
+    let render_all = |renderers: &[&NoteRenderer]| {
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("note_chunk_fold_pass"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("note_chunk_fold_pass"),
+                color_attachments: &[Some(color_attachment(&color_view))],
+                depth_stencil_attachment: Some(depth_attachment(&depth_view)),
+                timestamp_writes: None,
+                occlusion_query_set: None,
+            });
+            for renderer in renderers {
+                renderer.draw(&mut pass, true, None);
+            }
+        }
+        queue.submit(Some(encoder.finish()));
+        readback_pixels(&device, &queue, &color_texture)
+    };
+
+    let pixels_p = render_all(&[&p]);
+    let pixels_q = render_all(&[&q]);
+    assert_ne!(
+        pixel(&pixels_p, 50, 5),
+        pixel(&pixels_q, 50, 5),
+        "红/绿参考渲染必须可区分（测试装置自检）"
+    );
+    let pixels_pq = render_all(&[&p, &q]);
+    assert_eq!(
+        pixels_pq, pixels_p,
+        "chunk_start 未参与深度：后画的 Q（本地索引 50）反超了 P（本地索引 100）"
     );
 }
 

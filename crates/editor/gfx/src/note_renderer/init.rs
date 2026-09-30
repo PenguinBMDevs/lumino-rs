@@ -28,8 +28,8 @@ impl NoteRenderer {
     /// 原因：encoder.rs 的 render_pass 带 depth_stencil_attachment，根据
     /// `constants::is_depth_stencil_compatible`，pipeline 必须携带匹配的
     /// depth-stencil 状态，否则 wgpu 验证层拒绝 draw call（洋葱皮不显示）。
-    /// 洋葱皮先于主音轨绘制，depth=0.0 通过 LessEqual < 1.0（clear），
-    /// 写入 depth=0.0 后主音轨 LessEqual 0.0<=0.0 通过并覆盖，视觉正确。
+    /// 洋葱皮先于主音轨绘制，深度由 shader 的区域化位空间映射给出：
+    /// 主音轨区 < 洋葱皮区（LessEqual 下主轨稳定覆盖洋葱皮），层间不交叠。
     ///
     /// 性能范式（照搬 wasabi 精神 + lumino 现有基础设施）：
     /// - 全量上传一次（MIDI 加载时，非每帧重写）—— 比 wasabi 每帧重写更优
@@ -187,6 +187,7 @@ impl NoteRenderer {
         );
 
         // 创建渲染 bind groups（按 chunk 分块，避免大 source buffer 整体绑定超限）
+        // binding 3 = 本 chunk 的 cull uniform 槽位（chunk_start 全局基准）
         let render_bind_groups = Self::create_render_bind_groups(
             device,
             &render_bind_group_layout,
@@ -194,6 +195,7 @@ impl NoteRenderer {
             view_state_buffer.inner(),
             gpu_note_buffer.buffer(),
             visible_instance_buffer.inner(),
+            cull_uniform_buffer.inner(),
             &chunk_layout,
         );
 

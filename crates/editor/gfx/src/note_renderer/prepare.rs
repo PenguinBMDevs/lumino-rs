@@ -223,6 +223,7 @@ impl NoteRenderer {
             self.view_state_buffer.inner(),
             source,
             self.visible_instance_buffer.inner(),
+            self.cull_uniform_buffer.inner(),
             &self.chunk_layout,
         );
 
