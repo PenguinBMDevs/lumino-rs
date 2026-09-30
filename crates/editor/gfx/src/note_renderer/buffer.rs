@@ -74,6 +74,13 @@ impl NoteRenderer {
     /// 2026-08-07：顶点着色器从 all_instances storage buffer 读取原实例数据，
     /// 因此渲染 bind group 也需要按 chunk 绑定 source buffer 切片，
     /// 避免大 buffer 整体绑定超过 `max_storage_buffer_binding_size`。
+    ///
+    /// 2026-09 深度加固：binding 3 绑定本 chunk 的 cull uniform 槽位
+    /// （`chunk_start` 字段）——VS 以 `chunk_start + 本地可见索引` 得全局索引，
+    /// 使深度跨 chunk 连续（chunk 局部索引重置不再造成深度别名/平局）。
+    /// 直接复用 cull uniform buffer，零额外分配；uniform 数据由
+    /// `write_cull_uniforms` 在每次 `update_cull_info` 时写入。
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn create_render_bind_groups(
         device: &wgpu::Device,
         layout: &wgpu::BindGroupLayout,
@@ -81,6 +88,7 @@ impl NoteRenderer {
         view_state_buffer: &wgpu::Buffer,
         instance_buffer: &wgpu::Buffer,
         visible_instance_buffer: &wgpu::Buffer,
+        cull_uniform_buffer: &wgpu::Buffer,
         chunk_layout: &ChunkLayout,
     ) -> Vec<wgpu::BindGroup> {
         puffin::profile_function!();
@@ -92,6 +100,9 @@ impl NoteRenderer {
         let chunk_count = chunk_layout
             .chunk_count(capacity_instances)
             .min(super::chunk::MAX_CHUNKS);
+
+        // 16 为编译期常量（4 × u32），必非零 → new_unchecked 避免运行时断言/崩溃
+        let chunk_uniform_size = unsafe { std::num::NonZeroU64::new_unchecked(16) };
 
         let mut bind_groups = Vec::with_capacity(chunk_count);
         for idx in 0..chunk_count {
@@ -117,6 +128,14 @@ impl NoteRenderer {
                             buffer: instance_buffer,
                             offset: chunk_offset,
                             size: std::num::NonZeroU64::new(chunk_bytes),
+                        }),
+                    },
+                    wgpu::BindGroupEntry {
+                        binding: 3,
+                        resource: wgpu::BindingResource::Buffer(wgpu::BufferBinding {
+                            buffer: cull_uniform_buffer,
+                            offset: chunk_layout.chunk_offset_bytes(idx),
+                            size: Some(chunk_uniform_size),
                         }),
                     },
                 ],

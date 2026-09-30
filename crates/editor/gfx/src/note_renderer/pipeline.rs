@@ -42,6 +42,18 @@ impl NoteRenderer {
                     },
                     count: None,
                 },
+                // 本 chunk 的全局基准（复用 cull uniform 槽位数据）：
+                // VS 用 `chunk_start + 本地可见索引` 得全局索引 → 深度跨 chunk 连续。
+                wgpu::BindGroupLayoutEntry {
+                    binding: 3,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         })
     }

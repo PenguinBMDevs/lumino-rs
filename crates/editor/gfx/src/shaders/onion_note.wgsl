@@ -3,15 +3,15 @@
 // 数据模型：GPU buffer 持有**所有轨全部音符**（统一 `border_width` 高 16 位
 // 编码 track_idx+1），「哪个轨是主音轨」由 `ViewState.current_track` uniform
 // 低频更新（切轨零重传）。shader 内：
-//   - 主音轨（track == current_track）：染主音轨蓝、深度 0（最前，覆盖一切）
-//   - 静音轨且非主音轨：NDC z=2.0 裁剪（不渲染）
-//   - 其余（洋葱皮）：实例固化的调色板色、深度 (track_enc+1)/65536
+//   - 主音轨（track == current_track）：染主音轨蓝、深度取主音轨区（最前，覆盖一切）
+//   - 静音轨且非主音轨：视口外退化几何裁剪（不渲染）
+//   - 其余（洋葱皮）：实例固化的调色板色、深度取洋葱皮区
 //
-// 深度语义（修复重叠音符逐帧闪烁，2026-08）：cull.wgsl 输出可见索引，
-// VS 从 all_instances 读取原数据，重叠实例的**输出顺序**由 cull 的 workgroup
-// atomicAdd 抢占决定、帧间不稳定；管线是 LessEqual + depth_write_enabled=true，
+// 深度语义（修复重叠音符逐帧闪烁，2026-08 / 2026-09 黑乐谱加固）：cull.wgsl
+// 输出可见索引，VS 从 all_instances 读取原数据，重叠实例的**输出顺序**由 cull 的
+// workgroup atomicAdd 抢占决定、帧间不稳定；管线是 LessEqual + depth_write_enabled=true，
 // 同深度「后画者胜」→ 赢家逐帧随机。本文件用与绘制顺序无关的稳定深度消除平局，
-// 完整语义见下方 tie_break_depth 前的说明块。
+// 完整语义见下方 region_depth 前的说明块。
 //
 // 与旧 note.wgsl 的差异：无预览哨兵分支（预览音符走独立渲染器 note.wgsl）。
 // 2026-08-07：顶点输入从完整 NoteInstance 改为 u32 可见索引。
@@ -22,7 +22,7 @@ const MAIN_TRACK_COLOR: vec3<f32> = vec3<f32>(0.2, 0.55, 1.0);
 /// 边框颜色加深因子（同色系深色：color * 0.4，与主音轨 note.wgsl 保持一致）
 const BORDER_DARKEN_FACTOR: f32 = 0.4;
 
-// ── 深度语义：重叠音符逐帧闪烁修复（与 note.wgsl 保持一致的语义）──────────
+// ── 深度语义：区域化位空间映射（与 note.wgsl 保持一致的语义，2026-09 加固）──
 //
 // 根因（两半叠加）：
 //   1) cull.wgsl 每个 workgroup 由线程 0 抢占式 atomicAdd 输出槽位，可见实例的
@@ -30,40 +30,31 @@ const BORDER_DARKEN_FACTOR: f32 = 0.4;
 //   2) 管线为 LessEqual + depth_write_enabled=true（constants.rs），同深度
 //      「后画者胜」，赢家随可见缓冲顺序逐帧随机 → 重叠区描边闪烁。
 // 本文件用**与绘制顺序无关**的稳定深度消除平局：
-//   1) 分层：预览（note.wgsl 的 0.0，最前） < 主音轨 MAIN_TRACK_DEPTH_BASE <
-//      洋葱皮轨道 (track_enc+1) × TRACK_DEPTH_STEP —— 主轨恒覆盖洋葱皮。
-//   2) 轨内平局：以 chunk 内源索引 visible_index（缓冲内顺序 = 音符数据顺序，
-//      跨帧稳定）派生微深度，同一轨内索引大者深度大，与绘制顺序无关。
-//      洋葱皮轨道内部同样存在重叠音符，故与主音轨共用同一套裁决。
-//   3) 精度预算：微深度步长 = 基深度处的一个 f32 ulp（主轨基深度处恰为 2^-40），
-//      偏移上限取「到下一轨道层的 ulp 步数」与「到 NDC 远平面 z=1 的 ulp 步数」
-//      的较小值的一半 —— 同轨最大偏移恒 < TRACK_DEPTH_STEP(2^-16)，不侵占相邻
-//      轨道深度层，洋葱皮的轨道排序不回归；索引另受 f32 尾数可精确表示的整数
-//      上界 2^23 约束。
+//   1) 分层：预览（note.wgsl 的 0.0，最前） < 主音轨区 MAIN_DEPTH_REGION_BITS <
+//      洋葱皮区 ONION_DEPTH_REGION_BITS —— 主轨恒覆盖洋葱皮。
+//   2) 区内全序：深度取「区域起点 + 全局源索引」的 f32 正位空间线性映射
+//      （bitcast 后位模式单调 ⇒ 索引严格等价于深度序）。全局索引 =
+//      chunk_start + 本地可见索引，跨 chunk 不重置；索引跨帧稳定（段内原位），
+//      洋葱皮区序 = 段表/轨道顺序，与绘制顺序无关。
+//   3) 容量与饱和：每区 DEPTH_REGION_SLOTS 槽（5.2 亿实例），覆盖项目
+//      2.9 亿音符目标；超过槽数的极端索引饱和到区顶（确定性，但饱和段内
+//      仍可能平局——超出项目目标规模）。
+//   4) 值域：区域起点取最小正规格数 2^-126，洋葱区顶 0.25 < 远平面 1.0，
+//      全程正规格数、无 denormal、不越远平面。
 
-/// 相邻轨道深度间隔（2^-16）：洋葱皮轨道层的深度步长
-const TRACK_DEPTH_STEP: f32 = 1.0 / 65536.0;
-/// 主音轨基深度（2^-17）：最小正深度，预览层（0.0）恒覆盖主轨
-const MAIN_TRACK_DEPTH_BASE: f32 = 1.0 / 131072.0;
-/// 轨内微深度可用索引上界（2^23 - 1）：f32 尾数可精确表示的整数上界
-const TIE_BREAK_INDEX_LIMIT: u32 = 8388607u;
+/// 主音轨区起点位模式（2^-126，最小正规格数）
+const MAIN_DEPTH_REGION_BITS: u32 = 0x00800000u;
+/// 洋葱皮区起点位模式 = 主区起点 + 区容量
+const ONION_DEPTH_REGION_BITS: u32 = 0x1F800000u;
+/// 每区槽位数（5.2 亿）：覆盖项目 2.9 亿音符目标
+const DEPTH_REGION_SLOTS: u32 = 0x1F000000u;
 
-/// 轨内平局裁决：把稳定的 chunk 内源索引注入基深度的尾数低位。
+/// 区域内深度：区域起点 + 全局源索引（超出槽数饱和到区顶）。
 ///
-/// 正浮点位模式随数值单调递增，故 `bitcast<f32>(bits(base) + k)` 在 k 不越层时
-/// 严格递增且可精确表示（等价于 `base + k × ulp(base)`，但不引入乘加舍入）。
-fn tie_break_depth(base: f32, visible_index: u32) -> f32 {
-    // 基深度到下一轨道层之间的可表示浮点数（ulp 步数）
-    let layer_gap = bitcast<u32>(base + TRACK_DEPTH_STEP) - bitcast<u32>(base);
-    // 基深度到 NDC 远平面 z = 1.0 之间的 ulp 步数（z > 1 会被远平面裁剪）
-    let room_to_far = select(bitcast<u32>(1.0) - bitcast<u32>(base), 0u, base >= 1.0);
-    let budget = min(layer_gap, room_to_far);
-    if (budget < 2u) {
-        // 顶层轨道已贴近远平面：保持原深度，不越层、不越平面
-        return base;
-    }
-    let k = min(visible_index, min((budget - 1u) / 2u, TIE_BREAK_INDEX_LIMIT));
-    return bitcast<f32>(bitcast<u32>(base) + k);
+/// 正浮点位模式随数值单调递增，故同一区内索引严格等价于深度序，
+/// 且值恒为正规格数、恒 < 远平面 1.0。
+fn region_depth(region_bits: u32, global_index: u32) -> f32 {
+    return bitcast<f32>(region_bits + min(global_index, DEPTH_REGION_SLOTS - 1u));
 }
 
 struct CameraUniform {
@@ -101,6 +92,17 @@ struct NoteInstance {
 }
 @group(0) @binding(2)
 var<storage, read> all_instances: array<NoteInstance>;
+
+// 本 chunk 的全局基准（跨 chunk 索引连续）：`chunk_start` = 本 chunk 首实例的
+// 全局索引（与 cull 阶段共用同一 uniform 槽位数据，零额外分配）。
+struct ChunkInfo {
+    instance_count: u32,
+    chunk_start: u32,
+    chunk_count: u32,
+    _padding: u32,
+}
+@group(0) @binding(3)
+var<uniform> chunk_info: ChunkInfo;
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
@@ -177,14 +179,12 @@ fn vs_main(
     let show = is_main || !is_muted;
 
     // 稳定深度（与绘制顺序无关，语义见文件头）：
-    //   主音轨 → MAIN_TRACK_DEPTH_BASE（最前，覆盖洋葱皮）；
-    //   洋葱皮轨道 → (track_enc+1) × TRACK_DEPTH_STEP（越大越靠后）
-    var track_base = f32(track_enc + 1u) * TRACK_DEPTH_STEP;
-    if (is_main) {
-        track_base = MAIN_TRACK_DEPTH_BASE;
-    }
-    // 轨内平局裁决：源索引稳定 → 同轨重叠音符胜者稳定
-    let depth = tie_break_depth(track_base, visible_index);
+    //   主音轨 → 主音轨区（最前，覆盖全部洋葱皮）；
+    //   洋葱皮 → 洋葱皮区（全局索引序 = 段表/轨道顺序，稳定）。
+    //   全局索引 = chunk_start + 本地可见索引 → 跨 chunk 不重置、跨帧稳定。
+    let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
+    let global_index = chunk_info.chunk_start + visible_index;
+    let depth = region_depth(region_bits, global_index);
 
     // 颜色：主音轨强制主轨蓝（数据无需重传）；其余用实例固化调色板色
     var color = unpack_key_color(instance.key_color);
