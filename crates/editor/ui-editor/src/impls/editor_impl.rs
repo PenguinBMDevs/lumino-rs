@@ -44,6 +44,7 @@ impl Editor {
                 velocity_panel: VelocityPanel::new(),
                 selection_box_anim: Cell::new(None),
                 cached_selection_bounds: Cell::new(None),
+                marquee_anchor_tick: None,
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 selected_bounds: Cell::new(None),
                 arrange_selection_cache:

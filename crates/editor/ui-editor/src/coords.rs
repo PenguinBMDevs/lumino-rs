@@ -18,6 +18,32 @@ impl super::Editor {
         self.editor_state.view.snap_tick(tick)
     }
 
+    /// 框选锚点单元低边（floor 量化）——框选 X 向量化入口之一
+    pub(super) fn marquee_anchor(&self, tick: f32) -> f32 {
+        self.editor_state.view.snap_marquee_anchor(tick)
+    }
+
+    /// 由锚点与当前鼠标 tick 计算框选两端（单元覆盖式，方向保持）
+    ///
+    /// 口径见 `lumino_core::view_state::ViewState::snap_marquee_edges`。
+    pub(super) fn marquee_edges(&self, anchor_low: f32, mouse_tick: f32) -> (f32, f32) {
+        self.editor_state
+            .view
+            .snap_marquee_edges(anchor_low, mouse_tick)
+    }
+
+    /// 开始一次框选：记录量化锚点并返回选框两端的初始值
+    ///
+    /// 按下时调用。锚点存入 `marquee_anchor_tick`，拖动期间由
+    /// [`Self::marquee_edges`] 推算两端。
+    /// 注意：未设置锚点的 `Selecting`（例如测试直接构造 `EditState`）在
+    /// `moved.rs` 中不做量化，以保持原始精确语义。
+    pub(super) fn begin_marquee_ticks(&mut self, tick: f32) -> (f32, f32) {
+        let anchor = self.marquee_anchor(tick);
+        self.marquee_anchor_tick = Some(anchor);
+        self.marquee_edges(anchor, tick)
+    }
+
     // ── 纵向卷帘坐标转换（转置：tick ↔ Y，key ↔ X）──
 
     /// 逻辑 tick → 屏幕坐标（纵向返回 Y，横向返回 X 的封装）

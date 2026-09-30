@@ -186,3 +186,77 @@ fn test_region_screen_bounds_with_wrapped_key() {
         "越界顶边应超出标尺（由绘制层裁剪）"
     );
 }
+
+/// i2m 框选 X 向与卷帘**同口径**（单元覆盖式量化）。
+///
+/// 历史实现：起点由调用方传入 `snapped_tick`（floor 量化）、终点直接写鼠标原始
+/// tick —— 属于「一端量化、一端精确」的混合口径。本卡统一为：起点 = 锚点单元低边、
+/// 终点 = 鼠标所在单元高边，与指针框选完全一致。
+#[test]
+fn test_i2m_marquee_x_uses_same_cell_quantization_as_roll() {
+    let mut editor = Editor::new();
+    // `handle_moved` 会经 `update_selection` 访问当前轨音符，需挂默认 document
+    crate::tests::test_helpers::seed_notes(&mut editor, 1, 0, &[]);
+    editor
+        .editor_state
+        .image_to_midi
+        .set_preview(ImageToMidiPreview {
+            tracks: vec![],
+            orig_width: 300.0,
+        });
+    // 真实链路（handlers/sidebar/i2m.rs）进入放置模式时会切到 Y 向框选工具：
+    // Y 维度固定全键盘，X 维度按音符精度
+    editor.editor_state.tool = lumino_message::Tool::PointerYSelect;
+    editor.editor_state.canvas.size_x = 800.0;
+    editor.editor_state.canvas.size_y = 600.0;
+
+    let view = editor.editor_state.view.clone();
+    assert_eq!(view.snap_precision, 1920.0, "默认 1/4 精度");
+
+    // 按下 tick=2400（单元 [1920, 3840)）
+    let y = view.key_to_y(60) + view.zoom_y / 2.0;
+    editor.handle_i2m_pressed(
+        Point::new(view.tick_to_x(2400.0), y),
+        editor.snap_tick(2400.0),
+        60.0,
+    );
+    assert_eq!(
+        editor.editor_state.image_to_midi.interaction,
+        I2mInteraction::Selecting
+    );
+
+    // 拖到 tick=5000（单元 [3840, 5760)）
+    editor.handle_moved(Point::new(view.tick_to_x(5000.0), y));
+
+    let (start_tick, current_tick, start_key, current_key) =
+        match &editor.editor_state.interaction.edit_state {
+            EditState::Selecting {
+                start_tick,
+                current_tick,
+                start_key,
+                current_key,
+                ..
+            } => (*start_tick, *current_tick, *start_key, *current_key),
+            other => panic!("i2m 框选应复用 EditState::Selecting，实际 {other:?}"),
+        };
+    assert_eq!(start_tick, 1920.0, "i2m 起点应量化到锚点单元低边");
+    assert_eq!(
+        current_tick, 5760.0,
+        "i2m 终点应量化到鼠标单元高边（历史实现为鼠标原始 tick）"
+    );
+    assert_eq!(start_key, 127, "Y 维度固定全键盘（上边界）");
+    assert_eq!(current_key, 0, "Y 维度固定全键盘（下边界）");
+
+    // 松手确认区域：区域数据必须同为量化值（两端同口径）
+    editor.handle_released();
+    let region = editor
+        .editor_state
+        .image_to_midi
+        .region
+        .expect("区域应已确认");
+    assert_eq!(
+        (region.tick_start, region.tick_end),
+        (1920.0, 5760.0),
+        "确认后的区域两端都必须落在精度格线上"
+    );
+}

@@ -30,16 +30,21 @@ impl Editor {
                 if self.editor_state.image_to_midi.drag_follow.is_some() {
                     return;
                 }
-                // 开始框选：复用 EditState::Selecting 绘制框选矩形
+                // 开始框选：复用 EditState::Selecting 绘制框选矩形。
+                // X 向与卷帘框选**同口径**（单元覆盖式量化）：起点为锚点单元低边、
+                // 终点为鼠标所在单元高边。此前起点用 `snapped_tick`(floor)、终点为
+                // 鼠标原始 tick，属于「一端量化一端精确」的混合口径，已统一。
                 self.editor_state
                     .image_to_midi
                     .begin_selecting(snapped_tick);
+                let (selection_start_tick, selection_current_tick) =
+                    self.begin_marquee_ticks(snapped_tick);
                 let top_y = self.editor_state.view.key_to_y(max_key);
                 let bottom_y = self.editor_state.view.key_to_y(0) + self.editor_state.view.zoom_y;
                 self.editor_state.interaction.edit_state = EditState::Selecting {
-                    start_tick: snapped_tick,
+                    start_tick: selection_start_tick,
                     start_key: max_key,
-                    current_tick: snapped_tick,
+                    current_tick: selection_current_tick,
                     current_key: 0,
                     start_y: top_y,
                     current_y: bottom_y,

@@ -39,6 +39,10 @@ impl Editor {
 
     /// 文字工具：按下处理
     pub(crate) fn handle_text_tool_pressed(&mut self, pos: Point, key: u16) {
+        // 文字工具的框是**生成框**（边界会成为生成音符的位置），X 向用 round 吸附
+        // 到音符精度（见下方），与指针框选的「单元覆盖式」口径**刻意不同**。
+        // 此处清空框选锚点，避免指针框选残留的锚点串味到文字工具链路。
+        self.marquee_anchor_tick = None;
         // Conductor 音轨（track 0）：整工具不可用，所有按下交互直接忽略
         if !self.text_tool_allowed() {
             return;
