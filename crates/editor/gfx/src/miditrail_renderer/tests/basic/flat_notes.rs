@@ -10,18 +10,7 @@ use super::*;
 /// 防"分视图取面"类回归（曾误取正面压掉 Z 长）。
 #[test]
 fn test_flat_notes_is_pixel_subset_of_box() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("miditrail_flat_ab_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     // 两枚重叠红音符：覆盖画家排序 + 侧面交叠路径。
     let notes = [(480u32, 960u32, 60u8), (600u32, 480u32, 64u8)];

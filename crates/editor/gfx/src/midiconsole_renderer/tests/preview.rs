@@ -18,21 +18,7 @@ fn set(grid: &mut [CellGpu], row: usize, col: usize, ch: char, fg: u32, bg: u32)
 
 #[test]
 fn test_gpu_renders_preview_png() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = futures::executor::block_on(
-        instance.request_adapter(&wgpu::RequestAdapterOptions::default()),
-    )
-    .expect("测试需要可用的 wgpu 适配器（GPU 或软件后端）");
-    let (device, queue) =
-        futures::executor::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-            label: Some("midiconsole_test_device"),
-            required_features: adapter.features() & wgpu::Features::default(),
-            required_limits: wgpu::Limits::default(),
-            memory_hints: wgpu::MemoryHints::default(),
-            trace: wgpu::Trace::Off,
-            experimental_features: wgpu::ExperimentalFeatures::disabled(),
-        }))
-        .expect("请求 wgpu 设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     // 输出帧 1480×800，单元 10×20（与 CPU 预览一致）
     let cell_w = 10u32;

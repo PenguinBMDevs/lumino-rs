@@ -214,10 +214,10 @@ impl StagingRing {
                 self.inflight = self.inflight.saturating_sub(1);
                 return Vec::new();
             }
-            let _ = self.device.poll(wgpu::PollType::Wait {
-                submission_index: None,
-                timeout: None,
-            });
+            // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+            // 使上方 5s deadline 形同虚设（GPU 忙时导出线程挂死）。
+            let _ = self.device.poll(wgpu::PollType::Poll);
+            std::thread::sleep(std::time::Duration::from_millis(1));
         }
     }
 

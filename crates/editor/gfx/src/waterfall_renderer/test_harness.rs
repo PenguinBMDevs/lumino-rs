@@ -4,24 +4,12 @@
 
 use super::{WaterfallRenderer, WaterfallUniformGpu};
 use crate::NoteInstance;
-use futures::executor::block_on;
 
 pub const TEST_W: u32 = 256;
 pub const TEST_H: u32 = 144;
 
 pub fn test_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("waterfall_equiv_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败")
+    crate::test_gpu::shared_device()
 }
 
 pub fn test_uniform() -> WaterfallUniformGpu {
@@ -140,10 +128,10 @@ pub fn readback_u32_vec(
             return out;
         }
         assert!(std::time::Instant::now() < deadline, "测试回读超时（10s）");
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
+        let _ = device.poll(wgpu::PollType::Poll);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 
@@ -206,10 +194,10 @@ pub fn readback_texture(
             std::time::Instant::now() < deadline,
             "等价测试回读超时（10s）"
         );
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
+        let _ = device.poll(wgpu::PollType::Poll);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 

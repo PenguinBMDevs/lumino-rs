@@ -291,11 +291,13 @@ impl MidiconsoleRenderer {
         slice.map_async(wgpu::MapMode::Read, move |r| {
             let _ = tx.send(r);
         });
+        // 有界等待（禁止 timeout: None 无限阻塞）：轮询完成回调，超时由下方
+        // `recv_timeout` 明确失败，不挂死调用线程。
         let _ = device.poll(wgpu::PollType::Wait {
             submission_index: None,
-            timeout: None,
+            timeout: Some(std::time::Duration::from_secs(30)),
         });
-        rx.recv()
+        rx.recv_timeout(std::time::Duration::from_secs(30))
             .expect("map_async 回调未收到")
             .expect("map_async 失败");
 

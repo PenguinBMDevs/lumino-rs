@@ -1,7 +1,6 @@
 //! Miditrail 渲染器可见性与预览测试
 
 use super::super::*;
-use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 
 /// 在可用 GPU/软件适配器上渲染一帧 Miditrail，并断言输出不为全黑。
@@ -9,18 +8,7 @@ use wgpu::util::DeviceExt;
 /// 该测试用于验证：键盘与音符实例确实写入离屏纹理，且相机/投影可见。
 #[test]
 fn test_frame_renders_visible_content() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("miditrail_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer = MiditrailRenderer::new(&device);
 
@@ -97,11 +85,12 @@ fn test_frame_renders_visible_content() {
     slice.map_async(wgpu::MapMode::Read, move |r| {
         tx.send(r).expect("map_async 回调发送失败");
     });
+    // 有界等待（禁止 timeout: None 无限阻塞）：超时由 recv_timeout 明确失败
     let _ = device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: None,
+        timeout: Some(std::time::Duration::from_secs(30)),
     });
-    rx.recv()
+    rx.recv_timeout(std::time::Duration::from_secs(30))
         .expect("map_async 回调未收到")
         .expect("map_async 失败");
 
@@ -131,18 +120,7 @@ fn test_frame_renders_visible_content() {
 /// 若输出全黑或文件为空，则测试失败。
 #[test]
 fn test_export_preview_png() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("miditrail_preview_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer = MiditrailRenderer::new(&device);
 
@@ -241,11 +219,12 @@ fn test_export_preview_png() {
     slice.map_async(wgpu::MapMode::Read, move |r| {
         tx.send(r).expect("map_async 回调发送失败");
     });
+    // 有界等待（禁止 timeout: None 无限阻塞）：超时由 recv_timeout 明确失败
     let _ = device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: None,
+        timeout: Some(std::time::Duration::from_secs(30)),
     });
-    rx.recv()
+    rx.recv_timeout(std::time::Duration::from_secs(30))
         .expect("map_async 回调未收到")
         .expect("map_async 失败");
 
@@ -286,18 +265,7 @@ fn test_export_preview_png() {
 /// 断言输出纹理始终存在且每帧均有可见像素（切换无黑屏、无状态丢失）。
 #[test]
 fn test_view_switch_renders_both_modes() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("miditrail_switch_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     let mut renderer = MiditrailRenderer::new(&device);
     let notes = vec![

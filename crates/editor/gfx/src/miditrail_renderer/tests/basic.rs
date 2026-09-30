@@ -1,7 +1,6 @@
 //! Miditrail 渲染器基础烟雾测试
 
 use super::super::*;
-use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 
 mod constants;
@@ -60,11 +59,12 @@ pub(super) fn render_and_count_non_black(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         tx.send(r).expect("map_async 回调发送失败");
     });
+    // 有界等待（禁止 timeout: None 无限阻塞）：超时由 recv_timeout 明确失败
     let _ = device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: None,
+        timeout: Some(std::time::Duration::from_secs(30)),
     });
-    rx.recv()
+    rx.recv_timeout(std::time::Duration::from_secs(30))
         .expect("map_async 回调未收到")
         .expect("map_async 失败");
 

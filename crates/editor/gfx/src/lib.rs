@@ -34,6 +34,10 @@ pub mod waterfall_renderer;
 mod shader;
 mod swappable_buffer;
 
+/// 测试共享 GPU 设备（并行测试单设备复用，避免多设备并发导致驱动停顿/挂死）
+#[cfg(test)]
+mod test_gpu;
+
 pub use arrangement_instances::{
     ArrangementSceneParams, ArrangementViewColors, ArrangementViewport,
     build_arrangement_overlay_back, build_arrangement_overlay_front,

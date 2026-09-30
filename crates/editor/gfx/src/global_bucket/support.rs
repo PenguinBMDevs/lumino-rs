@@ -119,10 +119,10 @@ pub(crate) fn readback_bytes_sync(
         if Instant::now() >= deadline {
             return Err(GlobalBucketError::MapTimeout);
         }
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
+        let _ = device.poll(wgpu::PollType::Poll);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 ///
@@ -160,9 +160,9 @@ pub(crate) fn readback_u256(
         if Instant::now() >= deadline {
             return Err(GlobalBucketError::MapTimeout);
         }
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
+        let _ = device.poll(wgpu::PollType::Poll);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }

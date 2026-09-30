@@ -2,21 +2,9 @@
 
 use super::*;
 use crate::NoteInstance;
-use futures::executor::block_on;
 
 fn test_device() -> (wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("global_bucket_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败")
+    crate::test_gpu::shared_device()
 }
 
 fn upload_notes(device: &wgpu::Device, notes: &[NoteInstance]) -> wgpu::Buffer {
@@ -63,10 +51,10 @@ fn readback_buffer(
             return out;
         }
         assert!(std::time::Instant::now() < deadline, "测试回读超时（10s）");
-        let _ = device.poll(wgpu::PollType::Wait {
-            submission_index: None,
-            timeout: None,
-        });
+        // 非阻塞推进回调 + 短睡：`poll(Wait, timeout: None)` 会无限阻塞，
+        // 使上方 deadline 形同虚设（GPU 卡死时挂起）。
+        let _ = device.poll(wgpu::PollType::Poll);
+        std::thread::sleep(std::time::Duration::from_millis(1));
     }
 }
 

@@ -3,18 +3,7 @@ use super::*;
 /// 验证 wgpu 设备/提交/读回链路可用（与 Miditrail 无关的烟雾测试）。
 #[test]
 fn test_wgpu_basic_red_triangle() {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("需要适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("basic_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求设备失败");
+    let (device, queue) = crate::test_gpu::shared_device();
 
     let texture = device.create_texture(&wgpu::TextureDescriptor {
         label: Some("basic_test_output"),
@@ -113,11 +102,12 @@ fn test_wgpu_basic_red_triangle() {
     slice.map_async(wgpu::MapMode::Read, move |r| {
         tx.send(r).expect("map_async 回调发送失败");
     });
+    // 有界等待（禁止 timeout: None 无限阻塞）：超时由 recv_timeout 明确失败
     let _ = device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: None,
+        timeout: Some(std::time::Duration::from_secs(30)),
     });
-    rx.recv()
+    rx.recv_timeout(std::time::Duration::from_secs(30))
         .expect("map_async 回调未收到")
         .expect("map_async 失败");
     let data = slice.get_mapped_range();

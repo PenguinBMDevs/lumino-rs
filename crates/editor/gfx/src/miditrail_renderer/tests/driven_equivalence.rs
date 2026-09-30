@@ -10,7 +10,6 @@ use super::super::instances::{
 use super::super::*;
 use super::paint_order_window;
 use crate::{CullWindow, NoteInstance};
-use futures::executor::block_on;
 use wgpu::util::DeviceExt;
 
 mod compact;
@@ -70,19 +69,7 @@ pub(crate) fn test_uniform() -> MiditrailUniformGpu {
 }
 
 pub(crate) fn test_device() -> (wgpu::Instance, wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("测试需要可用的 wgpu 适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("miditrail_driven_equiv_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求 wgpu 设备失败");
-    (instance, device, queue)
+    crate::test_gpu::shared_instance_device()
 }
 
 /// 回读一帧 RGBA（去 row padding）。
@@ -129,11 +116,12 @@ pub(crate) fn readback_pixels(
     slice.map_async(wgpu::MapMode::Read, move |r| {
         tx.send(r).expect("map_async 回调发送失败");
     });
+    // 有界等待（禁止 timeout: None 无限阻塞）：超时由 recv_timeout 明确失败
     let _ = device.poll(wgpu::PollType::Wait {
         submission_index: None,
-        timeout: None,
+        timeout: Some(std::time::Duration::from_secs(30)),
     });
-    rx.recv()
+    rx.recv_timeout(std::time::Duration::from_secs(30))
         .expect("map_async 回调未收到")
         .expect("map_async 失败");
     let data = slice.get_mapped_range();

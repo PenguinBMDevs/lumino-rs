@@ -183,23 +183,12 @@ impl<'a> ComputePipelineBuilder<'a> {
     }
 }
 
-/// 共享测试设备创建（与 miditrail_renderer/tests/basic.rs 相同模式）。
+/// 共享测试设备（全 crate 单设备复用，见 [`crate::test_gpu`]）。
+///
+/// 本地复现 CI 软渲染适配器：设置 `LUMINO_GFX_TEST_FALLBACK=1`（见 `test_gpu`）。
 #[cfg(test)]
 pub(crate) fn test_device() -> (wgpu::Device, wgpu::Queue) {
-    use futures::executor::block_on;
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default()))
-        .expect("需要适配器");
-    let (device, queue) = block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("pipeline_builder_test_device"),
-        required_features: adapter.features() & wgpu::Features::default(),
-        required_limits: wgpu::Limits::default(),
-        memory_hints: wgpu::MemoryHints::default(),
-        trace: wgpu::Trace::Off,
-        experimental_features: wgpu::ExperimentalFeatures::disabled(),
-    }))
-    .expect("请求设备失败");
-    (device, queue)
+    crate::test_gpu::shared_device()
 }
 
 #[cfg(test)]
