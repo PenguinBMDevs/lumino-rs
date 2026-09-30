@@ -5,6 +5,30 @@
 use crate::{EditState, Editor};
 use lumino_editor_state::SelectionSet;
 
+/// 框选命中谓词 —— **全项目框选口径的唯一来源**（索引路径与无索引窗口兜底共用）。
+///
+/// 语义：音符与选框**重叠**即命中；**仅「边界相触」不算命中**。
+/// - tick 轴**半开** `[min_tick, max_tick)`：起点恰等于框右边界、终点恰等于框左边界的
+///   音符被排除 —— 这是低精度模式下「框缘贴边音符被误选」的正解；
+/// - key 轴**闭**区间 `[min_key, max_key]`：`key` 是离散格，「整格覆盖」语义，
+///   且增量差集（`rect_subtract`）的 key 代数依赖闭区间。
+///
+/// ⚠️ 索引路径必须使用 `NoteSpatialIndex::update_query_marquee`（同口径半开），
+/// **不得**使用 `update_query`（tick 轴闭区间，供视口裁剪与播放活跃判定使用）。
+/// 两条路径口径不一致会造成「工程规模不同 → 框选结果不同」的口径分裂。
+#[inline]
+fn marquee_hits(
+    note_tick: f32,
+    note_end: f32,
+    key: u16,
+    min_tick: f32,
+    max_tick: f32,
+    min_key: u16,
+    max_key: u16,
+) -> bool {
+    note_end > min_tick && note_tick < max_tick && key >= min_key && key <= max_key
+}
+
 impl Editor {
     /// 增量更新框选：缓存旧边界 → rect_subtract → 仅查 delta 区域（非 O(N) 全量）
     pub(crate) fn update_selection(&mut self) {
@@ -84,25 +108,34 @@ impl Editor {
             if let Some(index) = self.spatial.note_index.borrow().as_ref() {
                 let mut cache = self.spatial.query_cache.borrow_mut();
                 cache.clear();
-                index.update_query(min_tick, max_tick, min_key, max_key, &mut cache);
+                // 框选口径：tick 轴半开（`update_query` 是视口/播放的闭区间原语，不可用）
+                index.update_query_marquee(min_tick, max_tick, min_key, max_key, &mut cache);
                 let mut set = SelectionSet::default();
                 set.extend(cache.iter().copied());
                 set
             } else {
                 // 超大型工程（无空间索引）→ 窗口扫描：块级二分框出 tick 范围
                 // （含 lookback 跨入），一次遍历同时收集索引。
+                //
+                // ⚠️ `window_range` 的 end 参数是**排他**上界，`end_u32 + 1` 使窗口
+                // 成为查询区间的**超集**，由 `marquee_hits` 精确收口。
+                // 不要为了「对齐半开」把这里改成 `end_u32` —— 那会让窗口变子集，
+                // 直接漏音符。
                 puffin::profile_scope!("diag::selection_window_scan");
                 let start_u32 = min_tick.max(0.0) as u32;
                 let end_u32 = max_tick.max(0.0) as u32;
                 let (lo, hi) = notes.window_range(start_u32, end_u32 + 1, lookback);
                 let mut set = SelectionSet::default();
                 for (i, note) in notes.iter_window(lo, hi) {
-                    let note_end = note.end_tick as f32;
-                    if note_end >= min_tick
-                        && note.start_tick as f32 <= max_tick
-                        && note.key as u16 >= min_key
-                        && note.key as u16 <= max_key
-                    {
+                    if marquee_hits(
+                        note.start_tick as f32,
+                        note.end_tick as f32,
+                        note.key as u16,
+                        min_tick,
+                        max_tick,
+                        min_key,
+                        max_key,
+                    ) {
                         set.insert(i);
                     }
                 }
@@ -156,9 +189,11 @@ fn rebuild_full_selection(
 
 /// 查询矩形内的音符索引（追加到 `out`）。
 ///
-/// 优先空间索引；无索引（超大工程）走 `ChunkedList` 窗口扫描兜底——**增量拖动
-/// 仍保持增量**：旧实现在无索引时直接退化为整框重建（19.2M 轨道 ~130ms/帧）。
+/// 优先空间索引（半开口径）；无索引（超大工程）走 `ChunkedList` 窗口扫描兜底——
+/// **增量拖动仍保持增量**：旧实现在无索引时直接退化为整框重建（19.2M 轨道 ~130ms/帧）。
 /// lookback 取当前轨最大音符长度（跨入查询区间的精确上界）。
+///
+/// 口径见 [`marquee_hits`]：tick 轴半开、key 轴闭。索引路径必须与窗口兜底一致。
 fn query_rect_indices(
     editor: &Editor,
     t_min: f32,
@@ -171,20 +206,24 @@ fn query_rect_indices(
     if let Some(index) = editor.spatial.note_index.borrow().as_ref() {
         let mut cache = editor.spatial.query_cache.borrow_mut();
         cache.clear();
-        index.update_query(t_min, t_max, k_min, k_max, &mut cache);
+        index.update_query_marquee(t_min, t_max, k_min, k_max, &mut cache);
         out.extend(cache.iter().copied());
         return;
     }
     let track = editor.editor_state.data.current_track_notes();
     let lookback = editor.current_track_max_note_len();
+    // 同 `rebuild_selected_notes`：`end_u32 + 1` 让窗口保持超集，由谓词精确收口
     let (lo, hi) = track.window_range(t_min.max(0.0) as u32, t_max.max(0.0) as u32 + 1, lookback);
     for (i, n) in track.iter_window(lo, hi) {
-        let note_end = n.end_tick as f32;
-        if note_end >= t_min
-            && n.start_tick as f32 <= t_max
-            && n.key as u16 >= k_min
-            && n.key as u16 <= k_max
-        {
+        if marquee_hits(
+            n.start_tick as f32,
+            n.end_tick as f32,
+            n.key as u16,
+            t_min,
+            t_max,
+            k_min,
+            k_max,
+        ) {
             out.push(i);
         }
     }
