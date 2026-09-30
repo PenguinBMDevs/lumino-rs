@@ -196,6 +196,15 @@ impl MidiDocument {
             .unwrap_or(0)
     }
 
+    /// 当前文档使用到的最大 MIDI 端口号（空文档/无端口时为 0）。
+    ///
+    /// 与 [`crate::multi_port::channels_for_max_port`] 配合决定合成层需要的
+    /// 全局通道数（REND-002 多端口映射；单端口文档恒为 0）。
+    #[inline]
+    pub fn max_port(&self) -> u8 {
+        self.track_ports.iter().copied().max().unwrap_or(0)
+    }
+
     /// 获取所有音轨（排除指定音轨）在指定 tick 范围内的音符。
     pub fn get_all_notes_in_range_except(
         &self,
@@ -282,5 +291,31 @@ impl MidiDocument {
             .map(|t| self.track_max_end_tick(t))
             .max()
             .unwrap_or(0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn max_port_defaults_zero_without_ports() {
+        let doc = MidiDocument::empty_with_tracks(3, 480);
+        assert_eq!(doc.max_port(), 0, "无 FF 21 端口信息时最大端口应为 0");
+    }
+
+    #[test]
+    fn max_port_takes_largest_track_port() {
+        // Night Voyager 素材端口实测分布 0..6，取最大值。
+        let mut doc = MidiDocument::empty_with_tracks(3, 480);
+        doc.track_ports[1] = 3;
+        doc.track_ports[2] = 6;
+        assert_eq!(doc.max_port(), 6);
+    }
+
+    #[test]
+    fn max_port_defaults_zero_without_tracks() {
+        let doc = MidiDocument::empty_with_tracks(0, 480);
+        assert_eq!(doc.max_port(), 0);
     }
 }
