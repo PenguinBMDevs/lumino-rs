@@ -14,6 +14,9 @@ impl Editor {
     /// 处理鼠标释放事件
     pub(crate) fn handle_released(&mut self) {
         crate::puffin_profiler::released_handle();
+        // 框选结束：清除量化锚点（框选过程中的临时状态，任何一条松手路径都不再需要）。
+        // 放在最前，保证 i2m / 文字 / 曲线等提前返回的分支同样被清理。
+        self.marquee_anchor_tick = None;
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
         // 图片转 MIDI 放置模式：框选完成/移动拉伸结束优先处理

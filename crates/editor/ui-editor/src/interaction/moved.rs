@@ -121,18 +121,35 @@ impl Editor {
         } else {
             0.0
         };
+        // 框选 X 向量化：锚点固定，两端由 (锚点, 鼠标 tick) 统一推算 —— **单元覆盖式**。
+        //
+        // 与历史 bug 的区别（评审勿改回单侧吸附）：
+        // - 曾用 `snap_tick_forward`（1/4 提前吸附）→ 移动端单向外扩，反向拖动时
+        //   左边界最多外扩整整一个精度单元，选中鼠标从未扫过的音符；
+        // - 曾用单侧 `snap_tick`(floor) 同时刷两端 → 大端内缩（框内漏选），
+        //   小端在反向拖动时外扩一整格（同样误选）。
+        // 本方案两端同口径覆盖「鼠标所在单元」，配合命中半开区间 `[min, max)`：
+        // 框边界落在格线、贴边音符不误选、鼠标扫过的单元内零漏选。
+        //
+        // 锚点为 `None`（非按下路径构造的 Selecting，例如测试直接赋值）→ 保持
+        // 原始精确语义，避免影响非用户路径。
+        let marquee_anchor = self.marquee_anchor_tick;
+        let marquee_edges = marquee_anchor.map(|anchor| self.marquee_edges(anchor, tick));
+
         if let EditState::Selecting {
+            start_tick,
             current_tick,
             current_key,
             current_y,
             ..
         } = &mut self.editor_state.interaction.edit_state
         {
-            // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）。
-            // 曾用 snap_tick_forward（1/4 提前吸附）/ floor 吸附，导致选框边界
-            // 相对鼠标位置多延伸出最多一个精度单元（正向 0.75 单元、反向 1 单元），
-            // 且会选中鼠标未扫过的音符。框选边界必须精确跟随鼠标扫过的范围。
-            *current_tick = tick;
+            if let Some((sel_start, sel_current)) = marquee_edges {
+                *start_tick = sel_start;
+                *current_tick = sel_current;
+            } else {
+                *current_tick = tick;
+            }
             if !is_y_select {
                 *current_key = key;
                 if is_vertical {

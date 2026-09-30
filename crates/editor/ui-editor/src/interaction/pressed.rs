@@ -32,6 +32,11 @@ impl Editor {
         snapped_tick: f32,
         key: u16,
     ) {
+        // 每次按下先清空框选锚点：只有真正进入框选（Selecting）的分支才会重新设置。
+        // 否则上一次框选残留的锚点会被后续「非按下路径建立」的 Selecting 误用，
+        // 导致选框按旧锚点量化（跨工具串味）。
+        self.marquee_anchor_tick = None;
+
         // 图片转 MIDI 放置模式：拦截全部按下交互
         if self.editor_state.image_to_midi.is_active() {
             self.handle_i2m_pressed(pos, snapped_tick, key as f32);
@@ -102,10 +107,11 @@ impl Editor {
         let key = self.pos_to_key(pos);
         // Y 向框选工具：X 维度同普通框选，Y 维度自动覆盖全部可见键
         let is_y_select = self.editor_state.tool == Tool::PointerYSelect;
-        // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附）：
-        // 起点若吸附到网格点，选区左边界会比鼠标按下位置多延伸最多一个精度单元，
-        // 与移动时的精确 current_tick 不对称，必须保持两边一致的精确语义。
-        let selection_start_tick = tick;
+        // 左右边界 = 鼠标所在**精度单元**的覆盖范围（单元覆盖式量化）：
+        // 起点与终点统一走 `begin_marquee_ticks`，保证两端**同口径**——历史 bug 的
+        // 根因正是一端精确、一端吸附的不对称（见 `tests/selection_precision.rs`）。
+        // 口径详见 `ViewState::snap_marquee_edges`。
+        let (selection_start_tick, selection_current_tick) = self.begin_marquee_ticks(tick);
 
         // 优先级 1：有选中音符时，先检测选择框命中
         // 选择框命中时，无论是否同时命中音符，都走框选逻辑（避免边缘误判走单音符拉伸）
@@ -248,7 +254,7 @@ impl Editor {
             self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                 start_tick: selection_start_tick,
                 start_key,
-                current_tick: selection_start_tick,
+                current_tick: selection_current_tick,
                 current_key,
                 start_y,
                 current_y,
@@ -308,13 +314,13 @@ impl Editor {
     ) {
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_key(pos);
-        // 左右边界 = 鼠标精确 tick 位置（像素级，不吸附，与指针工具框选一致）
-        let selection_start_tick = tick;
 
         match self.editor_state.view.eraser_behavior {
             EraserBehavior::Default => {
                 if shift {
                     self.selection_clear();
+                    let (selection_start_tick, selection_current_tick) =
+                        self.begin_marquee_ticks(tick);
                     let (start_y, current_y) = if self.editor_state.is_vertical_roll {
                         let y = self.tick_to_y_vertical(tick);
                         (y, y)
@@ -325,7 +331,7 @@ impl Editor {
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,
-                        current_tick: selection_start_tick,
+                        current_tick: selection_current_tick,
                         current_key: key,
                         start_y,
                         current_y,
@@ -339,6 +345,8 @@ impl Editor {
                     self.delete_note_at(pos);
                 } else {
                     self.selection_clear();
+                    let (selection_start_tick, selection_current_tick) =
+                        self.begin_marquee_ticks(tick);
                     let (start_y, current_y) = if self.editor_state.is_vertical_roll {
                         let y = self.tick_to_y_vertical(tick);
                         (y, y)
@@ -349,7 +357,7 @@ impl Editor {
                     self.editor_state.interaction.edit_state = crate::EditState::Selecting {
                         start_tick: selection_start_tick,
                         start_key: key,
-                        current_tick: selection_start_tick,
+                        current_tick: selection_current_tick,
                         current_key: key,
                         start_y,
                         current_y,

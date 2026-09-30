@@ -144,7 +144,144 @@ impl ViewState {
     }
 
     /// 吸附 tick 到网格
+    ///
+    /// **绝对 tick 量化**（下拉框起点、拉伸首尾、绘制落点等）的唯一入口：`floor`
+    /// 对齐到 [`Self::snap_precision`]。
+    ///
+    /// ⚠️ 框选 X 向边界**不要**用它直接刷两端（见 [`Self::snap_marquee_edges`]）。
     pub fn snap_tick(&self, tick: f32) -> f32 {
         (tick / self.snap_precision).floor() * self.snap_precision
+    }
+
+    /// 框选锚点单元低边（按下时调用一次）：`floor` 对齐到精度网格。
+    pub fn snap_marquee_anchor(&self, tick: f32) -> f32 {
+        self.snap_tick(tick)
+    }
+
+    /// 由框选锚点与当前鼠标 tick 推算选框两端 —— **框选 X 向量化的唯一入口**。
+    ///
+    /// 采用「**单元覆盖式**」量化：选框恰好覆盖鼠标**扫过的全部精度单元**。
+    /// - 锚点端取所在单元的**外沿**：右拖取单元低边（锚点本身）；左拖取单元高边
+    ///   `锚点 + p`（此时锚点是选框右边界）。
+    /// - 鼠标端取所在单元的**外沿**：右拖取 `floor(m) + p`；左拖取 `floor(m)`。
+    ///
+    /// 与框选命中的半开区间 `[min, max)`（见 `drag::selection::marquee_hits`）配合后：
+    /// - **框边界落在格线上** → 用户按「音符精度」思考的边界与视觉一致；
+    /// - 鼠标端提前拖过格线一点点会被 `floor` **吸收整整一个单元** → 低精度模式下
+    ///   不再"手一抖就多选框缘音符"；
+    /// - 选框 ⊇ 鼠标扫过范围 → 扫过的单元内音符**零漏选**。
+    ///
+    /// ⚠️ 禁止用单侧 [`Self::snap_tick`]（floor）同时刷两端：
+    /// - 大端 floor 会**内缩**（框内重叠音符漏选）；
+    /// - 反向（向左）拖动时小端 floor 会把左边界**外扩整整一个单元**，选中鼠标从未
+    ///   扫过的音符 —— 这是 `ui-editor/src/tests/selection_precision.rs` 记录过的
+    ///   历史 bug（曾用 `snap_tick_forward` / 单侧 floor，已回退）。评审勿改回单侧 floor。
+    ///
+    /// 返回 `(start_tick, current_tick)`：前项为**锚点端**、后项为**鼠标端**（方向保持，
+    /// 向左拖时 `start_tick > current_tick`），供 Spring 弹簧动画按"移动端"驱动。
+    pub fn snap_marquee_edges(&self, anchor_low: f32, mouse_tick: f32) -> (f32, f32) {
+        let p = self.snap_precision.max(1.0);
+        let mouse_cell_low = (mouse_tick / p).floor() * p;
+        if mouse_tick >= anchor_low {
+            (anchor_low, mouse_cell_low + p)
+        } else {
+            (anchor_low + p, mouse_cell_low)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn view_with_precision(p: f32) -> ViewState {
+        ViewState {
+            snap_precision: p,
+            ..ViewState::default()
+        }
+    }
+
+    /// 锚点 = 按下 tick 的单元低边（floor）
+    #[test]
+    fn test_snap_marquee_anchor_floors_to_cell() {
+        let v = view_with_precision(1920.0);
+        assert_eq!(v.snap_marquee_anchor(0.0), 0.0);
+        assert_eq!(v.snap_marquee_anchor(1919.0), 0.0);
+        assert_eq!(v.snap_marquee_anchor(1920.0), 1920.0);
+        assert_eq!(v.snap_marquee_anchor(2400.0), 1920.0);
+        assert_eq!(v.snap_marquee_anchor(5000.0), 3840.0);
+        // 负 tick（框选可越过 0 向左）
+        assert_eq!(v.snap_marquee_anchor(-1.0), -1920.0);
+    }
+
+    /// 向右拖：覆盖 [锚点单元低边, 鼠标单元高边)
+    #[test]
+    fn test_snap_marquee_edges_forward_covers_touched_cells() {
+        let v = view_with_precision(1920.0);
+        let anchor = v.snap_marquee_anchor(2400.0); // 1920
+        // 鼠标仍在锚点单元内 → 只覆盖锚点单元
+        assert_eq!(v.snap_marquee_edges(anchor, 2400.0), (1920.0, 3840.0));
+        assert_eq!(v.snap_marquee_edges(anchor, 3839.0), (1920.0, 3840.0));
+        // 鼠标进入下一单元 → 覆盖到该单元高边
+        assert_eq!(v.snap_marquee_edges(anchor, 3840.0), (1920.0, 5760.0));
+        assert_eq!(v.snap_marquee_edges(anchor, 5000.0), (1920.0, 5760.0));
+    }
+
+    /// 向左拖：覆盖 [鼠标单元低边, 锚点单元高边)，方向保持（start > current）
+    #[test]
+    fn test_snap_marquee_edges_backward_keeps_direction() {
+        let v = view_with_precision(1920.0);
+        let anchor = v.snap_marquee_anchor(2400.0); // 1920
+        let (start, current) = v.snap_marquee_edges(anchor, 1500.0);
+        assert_eq!(
+            (start, current),
+            (3840.0, 0.0),
+            "锚点端为单元高边、鼠标端为低边"
+        );
+        assert!(
+            start > current,
+            "向左拖必须方向保持（Spring 动画按移动端驱动）"
+        );
+        // 覆盖的单元并集 = [0, 3840)
+        assert_eq!(current.min(start), 0.0);
+        assert_eq!(current.max(start), 3840.0);
+    }
+
+    /// 两端永远落在格线上（量化契约），四个档位一致
+    #[test]
+    fn test_snap_marquee_edges_always_on_grid_lines() {
+        for p in [1920.0_f32, 960.0, 480.0, 240.0] {
+            let v = view_with_precision(p);
+            for press in [0.0_f32, 137.0, 700.0, 1920.0, 2401.0, 5000.0] {
+                let anchor = v.snap_marquee_anchor(press);
+                assert_eq!(anchor % p, 0.0, "精度 {p}：锚点必须落格线");
+                for mouse in [0.0_f32, 137.0, 700.0, 1920.0, 2401.0, 5000.0] {
+                    let (a, b) = v.snap_marquee_edges(anchor, mouse);
+                    assert_eq!(a % p, 0.0, "精度 {p}：锚点端必须落格线");
+                    assert_eq!(b % p, 0.0, "精度 {p}：鼠标端必须落格线");
+                    // 覆盖性：鼠标所在单元的完整跨度必须被选框包含
+                    let cell_low = (mouse / p).floor() * p;
+                    assert!(
+                        a.min(b) <= cell_low && a.max(b) >= cell_low + p,
+                        "精度 {p}：鼠标 tick {mouse} 所在单元 [{cell_low}, {}) 未被选框覆盖",
+                        cell_low + p
+                    );
+                }
+            }
+        }
+    }
+
+    /// 边界口径：鼠标恰在格线上时归属右侧单元（与 `snap_tick` 的 floor 语义一致），
+    /// 保证「按在格线=右格」在全项目内只有一套解释。
+    #[test]
+    fn test_snap_marquee_edges_at_grid_line_belongs_to_right_cell() {
+        let v = view_with_precision(1920.0);
+        let anchor = v.snap_marquee_anchor(1920.0);
+        assert_eq!(anchor, 1920.0);
+        assert_eq!(
+            v.snap_marquee_edges(anchor, 1920.0),
+            (1920.0, 3840.0),
+            "恰在格线上：锚点端为格线本身、鼠标端为下一格线（零宽输入覆盖一个单元）"
+        );
     }
 }

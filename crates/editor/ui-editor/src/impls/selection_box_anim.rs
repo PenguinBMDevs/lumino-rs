@@ -57,11 +57,19 @@ impl Editor {
                 };
 
                 // 计算弹簧目标位置
-                // 与 Selecting.current_tick 保持一致：目标 = 鼠标精确 tick 位置
-                //（像素级，不吸附——吸附语义会让选框边界多延伸一个精度单元，
-                // 且动画目标与选区边界不一致导致视觉与实际选中范围不符）
+                // 弹簧目标 = 选框的**移动端**（与 `Selecting.current_tick` 同源）。
+                //
+                // 历史注释曾要求「目标 = 鼠标精确 tick 位置（不吸附）」；自框选 X 向
+                // 改为**单元覆盖式量化**后，移动端是量化后的单元外沿，动画目标必须
+                // 走同一量化，否则弹簧会收敛到鼠标像素位置 → 动画帧内「看到的框」
+                // 与「命中的框」不一致，且视觉上丢失量化效果。
+                // 取 `marquee_edges(..).1` 即移动端（方向保持语义下与 current_tick 相等）。
                 let snapped_tick = if let Some(pos) = mouse_pos {
-                    self.pos_to_tick(pos)
+                    let mouse_tick = self.pos_to_tick(pos);
+                    match self.marquee_anchor_tick {
+                        Some(anchor) => self.marquee_edges(anchor, mouse_tick).1,
+                        None => mouse_tick,
+                    }
                 } else {
                     current_tick
                 };

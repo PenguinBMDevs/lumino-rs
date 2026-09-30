@@ -191,6 +191,13 @@ pub struct Editor {
     /// None = 不在 Selecting 状态 / 未初始化。
     pub(crate) cached_selection_bounds: Cell<Option<(f32, f32, u16, u16)>>,
 
+    /// 框选 X 向量化锚点（按下时 `floor` 到音符精度网格的单元低边）。
+    ///
+    /// 拖动期间选框两端都由 `ViewState::snap_marquee_edges(锚点, 鼠标 tick)` 推算。
+    /// 锚点必须固定：否则"向左拖再拖回右侧"时选框无法正确**回缩**，只能单向扩张。
+    /// `None` = 当前 `Selecting` 非按下路径建立（不量化，保持原始精确语义）。
+    pub(crate) marquee_anchor_tick: Option<f32>,
+
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
 
