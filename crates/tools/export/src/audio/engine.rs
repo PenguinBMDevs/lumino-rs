@@ -4,7 +4,11 @@
 //! - Engine 负责加载 SoundFont 和配置
 //! - Renderer 负责渲染音频样本
 
-use xsynth_core::{AudioPipe, channel_group::ChannelGroup};
+use xsynth_core::{
+    AudioPipe,
+    channel::{ChannelConfigEvent, ChannelEvent},
+    channel_group::{ChannelGroup, SynthEvent},
+};
 
 use crate::error::ExportResult;
 
@@ -28,6 +32,16 @@ impl AudioEngine {
     pub fn new(config: AudioRenderConfig) -> ExportResult<Self> {
         let group_config = config.build_group_config();
         let mut channel_group = ChannelGroup::new(group_config);
+
+        // REND-002：`SynthFormat::Custom` 不自动开启 ch9 打击乐（仅 `Midi` 自动，
+        // 见 fork `channel_group/mod.rs:77-81`），多端口必须对每个端口的
+        // `p*16+9` 显式下发 SetPercussionMode(true)（含 port 0）。
+        for channel in config.percussion_channels() {
+            channel_group.send_event(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
+            ));
+        }
 
         // 加载 SF2 音色库
         load_soundfonts(&mut channel_group, &config)?;
