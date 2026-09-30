@@ -140,6 +140,8 @@ impl RunnerInner {
             note_force_end_delay,
             // PREF-002：CPU 块式渲染块大小（默认 256 帧；0/1 = 逐事件精确模式）
             block_frames: 256,
+            // REND-002：多端口由渲染入口按文档/文件推导（此处不感知文档，保持 0）。
+            midi_max_port: 0,
             backend: backend_kind,
             progress_callback: Some(progress_cb),
             control: Some(Arc::clone(&control)),

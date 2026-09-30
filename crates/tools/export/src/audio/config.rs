@@ -13,6 +13,8 @@ use xsynth_core::{
     soundfont::{EnvelopeCurveType, EnvelopeOptions, Interpolator, SoundfontInitOptions},
 };
 
+use lumino_midi_model::multi_port::{channels_for_max_port, effective_port};
+
 use super::codec::AudioCodec;
 use super::control::SharedControl;
 
@@ -86,6 +88,17 @@ pub struct AudioRenderConfig {
     /// 默认 256；GPU 后端不消费此字段。
     pub block_frames: u32,
 
+    // ── 多端口（REND-002）──
+    /// 待渲染 MIDI 文档使用到的最大 MIDI 端口号（FF 21；空/单端口为 0）。
+    ///
+    /// 由渲染入口（流式路径扫文件、内存路径取 `MidiDocument::max_port()`）在
+    /// 构造 `AudioEngine` 之前写入；0 表示单端口，合成层保持 `SynthFormat::Midi`
+    /// （16 通道，与历史行为完全一致）。非 0 时合成层按
+    /// `(min(max_port, MAX_PORTS-1)+1)*16` 开通全局通道，事件按来源轨道端口映射。
+    ///
+    /// 注意与 [`Self::channels`]（音频输出声道模式）无关，不要混用。
+    pub midi_max_port: u8,
+
     // ── 后端选择 ──
     /// 音频渲染后端（CPU / GPU）
     pub backend: AudioBackendKind,
@@ -117,6 +130,7 @@ impl std::fmt::Debug for AudioRenderConfig {
             .field("audio_codec", &self.audio_codec)
             .field("audio_bitrate", &self.audio_bitrate)
             .field("block_frames", &self.block_frames)
+            .field("midi_max_port", &self.midi_max_port)
             .field("backend", &self.backend)
             .field(
                 "progress_callback",
@@ -214,6 +228,22 @@ impl From<AudioInterpolation> for Interpolator {
 }
 
 impl AudioRenderConfig {
+    /// 合成器格式（REND-002 多端口接缝）。
+    ///
+    /// - `midi_max_port == 0`：`SynthFormat::Midi`（16 通道，零行为变化基线）；
+    /// - 否则：`SynthFormat::Custom { channels: (min(max_port, 15)+1)*16 }`，
+    ///   产品上限 16 端口 = 256 通道；超上限端口折叠到端口 15 块（B1 决策），
+    ///   折叠告警由渲染入口负责。
+    pub fn synth_format(&self) -> SynthFormat {
+        if self.midi_max_port == 0 {
+            SynthFormat::Midi
+        } else {
+            SynthFormat::Custom {
+                channels: channels_for_max_port(effective_port(self.midi_max_port)),
+            }
+        }
+    }
+
     /// 构造 xsynth 的 ChannelGroupConfig
     pub fn build_group_config(&self) -> ChannelGroupConfig {
         let audio_params =
@@ -226,7 +256,7 @@ impl AudioRenderConfig {
                 // SetLayerCount 控制），避免改变既有导出语义。
                 max_voices: None,
             },
-            format: SynthFormat::Midi,
+            format: self.synth_format(),
             audio_params,
             parallelism: ParallelismOptions {
                 channel: ThreadCount::from(self.channel_threading),
@@ -324,6 +354,7 @@ impl Default for AudioRenderConfig {
             filter_key: false,
             note_force_end_delay: 0,
             block_frames: 256,
+            midi_max_port: 0,
             backend: AudioBackendKind::Cpu,
             progress_callback: None,
             control: None,
@@ -364,5 +395,40 @@ mod tests {
         let stereo = AudioChannelMode::Stereo;
         assert_eq!(ChannelCount::from(mono).count(), 1);
         assert_eq!(ChannelCount::from(stereo).count(), 2);
+    }
+
+    /// REND-002 零行为变化基线：单端口（midi_max_port=0）必须保持 `SynthFormat::Midi`。
+    #[test]
+    fn test_synth_format_single_port_stays_midi() {
+        let config = AudioRenderConfig::default();
+        assert_eq!(
+            config.synth_format(),
+            SynthFormat::Midi,
+            "单端口必须保持 Midi/16 通道（零行为变化基线）"
+        );
+    }
+
+    /// REND-002：多端口按 `(min(max_port,15)+1)*16` 开通 Custom 通道，超上限折叠。
+    #[test]
+    fn test_synth_format_multi_port_uses_custom_channels() {
+        let config = AudioRenderConfig {
+            midi_max_port: 6,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.synth_format(),
+            SynthFormat::Custom { channels: 112 },
+            "7 端口素材应为 112 通道"
+        );
+
+        let config = AudioRenderConfig {
+            midi_max_port: 127,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.synth_format(),
+            SynthFormat::Custom { channels: 256 },
+            "超上限端口应折叠到 16 端口 / 256 通道"
+        );
     }
 }

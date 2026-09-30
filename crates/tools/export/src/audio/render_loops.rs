@@ -184,8 +184,10 @@ pub(super) fn run_streaming_render(
     let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
     // 块式渲染游标（PREF-002）：事件按 B 帧块对齐，块首一次性投递后整块渲染
     let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
+    // REND-002：先取出每轨端口快照，事件循环里按 track_idx 查（零拷贝借用冲突）。
+    let track_ports = player.track_ports().to_vec();
 
-    while let Some((tick, _track_idx, kind)) = player.next_event() {
+    while let Some((tick, track_idx, kind)) = player.next_event() {
         if let Some(ctrl) = &config.control {
             ctrl.wait_if_paused();
             ctrl.check_abort()?;
@@ -214,7 +216,8 @@ pub(super) fn run_streaming_render(
         if advance > 0 {
             processor.render_frames(advance)?;
         }
-        cursor.add_rendered(processor.dispatch_event(&kind)?);
+        let port = track_ports.get(track_idx).copied().unwrap_or(0);
+        cursor.add_rendered(processor.dispatch_event(&kind, port)?);
 
         if let TrackEventKind::Midi {
             channel: _,
@@ -295,7 +298,7 @@ pub(super) fn run_document_render(
             if advance > 0 {
                 processor.render_frames(advance)?;
             }
-            cursor.add_rendered(processor.dispatch_event(&kind)?);
+            cursor.add_rendered(processor.dispatch_event(&kind, event.port)?);
             event_count += 1;
         }
     }
