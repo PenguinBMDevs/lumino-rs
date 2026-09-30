@@ -191,6 +191,64 @@ fn test_set_ppq_without_document_no_panic() {
     assert!(root.editor.editor_state.data.document.is_none());
 }
 
+// ── PPQ 变更后框选精度跟随工具栏「音符精度」 ──────────────────────────
+
+/// PPQ 变更后 `snap_precision` 必须按工具栏当前「音符精度」重算，
+/// 而不是停留在旧 PPQ 的 tick 值。
+///
+/// 机制：`Root::set_ppq` 在非 `Custom` 精度下以
+/// `note_precision.as_ticks(new_ppq)` 覆盖 `snap_precision`；框选 X 向量化
+/// （`ViewState::snap_marquee_edges`）直接消费该值，因此自动跟随。
+#[test]
+fn test_set_ppq_rescales_marquee_snap_precision() {
+    let mut root = create_root();
+    attach_test_document(&mut root);
+
+    // 工具栏选 1/4 音符
+    root.toolbar.note_precision = crate::toolbar::NotePrecision::Quarter;
+
+    root.set_ppq(1920);
+    assert_eq!(
+        root.editor.editor_state.view.snap_precision, 1920.0,
+        "PPQ=1920 时 1/4 精度 = 1920 tick"
+    );
+
+    root.set_ppq(960);
+    assert_eq!(
+        root.editor.editor_state.view.snap_precision, 960.0,
+        "PPQ 减半后 1/4 精度必须同步减半——框选量化才跟随工具栏设置"
+    );
+
+    root.set_ppq(480);
+    assert_eq!(root.editor.editor_state.view.snap_precision, 480.0);
+
+    // 切换到 1/8 精度后继续跟随 PPQ
+    root.toolbar.note_precision = crate::toolbar::NotePrecision::Eighth;
+    root.set_ppq(960);
+    assert_eq!(
+        root.editor.editor_state.view.snap_precision, 480.0,
+        "1/8 精度 @PPQ=960 → 480 tick"
+    );
+}
+
+/// `Custom` 精度是用户指定的**绝对 tick 值**，PPQ 变更时不得被悄悄改写
+/// （既有契约守卫：历史 bug 是每次改 PPQ 都硬编码回四分音符）。
+#[test]
+fn test_set_ppq_keeps_custom_snap_precision() {
+    let mut root = create_root();
+    attach_test_document(&mut root);
+
+    root.toolbar.note_precision = crate::toolbar::NotePrecision::Custom;
+    root.editor.set_snap_precision(777.0);
+
+    root.set_ppq(960);
+
+    assert_eq!(
+        root.editor.editor_state.view.snap_precision, 777.0,
+        "Custom 精度为绝对 tick 值，PPQ 变更时必须保持不变"
+    );
+}
+
 /// 协作回归：两方音轨数量不一致时，远端音符操作不应落到缺失/错误音轨。
 ///
 /// 复现：对端 A 有 6 条音轨并在 track 5 创建音符，本地 B 只有 2 条音轨。
