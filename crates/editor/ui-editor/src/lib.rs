@@ -58,6 +58,7 @@ mod tests {
     mod interception;
     mod keyboard_colors_test;
     mod marquee_boundary;
+    mod marquee_incremental;
     mod pending_copy;
     mod pending_drag;
     mod pressed_priority;

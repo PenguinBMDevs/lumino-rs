@@ -258,6 +258,26 @@ fn apply_selection_delta(
     for &(t_min, t_max, k_min, k_max) in &delta_rects {
         query_rect_indices(editor, t_min, t_max, k_min, k_max, &mut remove_list);
     }
+    // 跨边界长音符保护（重叠语义 × 矩形差集的固有缺陷）：
+    // 差集按「矩形相减」切薄条，而命中语义是「与选框**重叠**」。一条跨越 remove
+    // 薄条、但同时与**新选框**重叠的长音符会落在差集里被误剔，且新增路径不会把它
+    // 补回（它本就属于「新旧交集」，不在 `new − old` 中）→ 框缩小时长音符静默失去选中。
+    // 故按新选框二次过滤；无法取到音符（索引失效）时保守保留剔除决定。
+    //
+    // 代价：O(|remove_list|) 次 SoA 查询（`get_note_view` 零 clone），
+    // 与紧随其后的 `selection_remove` 循环同阶，不引入新的渐进复杂度。
+    remove_list.retain(|&i| match editor.editor_state.data.get_note_view(i) {
+        Some(n) => !marquee_hits(
+            n.tick,
+            n.tick + n.length,
+            n.key,
+            new_min_t,
+            new_max_t,
+            new_min_k,
+            new_max_k,
+        ),
+        None => true,
+    });
     let removed = remove_list.len();
     for i in remove_list {
         editor.selection_remove(&i);
@@ -299,8 +319,15 @@ fn apply_selection_delta(
 /// 矩形差集：outer - inner = outer 中不在 inner 内的部分。
 /// 返回最多 4 个非重叠矩形的列表。
 ///
+/// **区间口径**（与 `marquee_hits` 一致，改动时必须同步）：
+/// - tick 轴**半开** `[t_min, t_max)`
+/// - key 轴**闭** `[k_min, k_max]`
+///
 /// 算法：先 clamp inner 到 outer 边界，然后从上/下/左/右四个方向切 strip。
 /// 上/下 strip 跨越 outer 全宽，左/右 strip 夹在 inner 的垂直范围内 → 不重复。
+///
+/// 调用方另需注意：差集是「矩形相减」，而命中语义是「重叠」——跨越 remove 薄条
+/// 且同时与新选框重叠的长音符会落在差集里，需由 `apply_selection_delta` 二次过滤。
 #[allow(clippy::too_many_arguments)]
 fn rect_subtract(
     outer_t_min: f32,
@@ -319,19 +346,23 @@ fn rect_subtract(
     let ic_k_min = inner_k_min.max(outer_k_min);
     let ic_k_max = inner_k_max.min(outer_k_max);
 
-    // 无重叠 → 整个 outer 都是差集
-    if ic_t_min >= ic_t_max || ic_k_min >= ic_k_max {
+    // 无重叠 → 整个 outer 都是差集。
+    // key 轴为闭区间：单行重叠（ic_k_min == ic_k_max）**算重叠**，必须继续切 strip。
+    // 写成 `>=` 会把单行交集误判为无重叠——虽因 remove+add 互相抵消而不产生错误结果，
+    // 但会使增量退化为整框查询，并掩盖下方 strip 的 ±1 语义。
+    if ic_t_min >= ic_t_max || ic_k_min > ic_k_max {
         result.push((outer_t_min, outer_t_max, outer_k_min, outer_k_max));
         return;
     }
 
-    // 上 strip（outer 在 ic 上方的部分，对应更小的 key 值）
+    // 上 strip（outer 在 ic 上方的部分，对应更小的 key 值）：[outer_k_min, ic_k_min - 1]
+    // key 闭区间 ⇒ 必须 -1，否则与 inner 重叠一行；前提 ic_k_min > outer_k_min ⇒ 不会下溢
     if ic_k_min > outer_k_min {
-        result.push((outer_t_min, outer_t_max, outer_k_min, ic_k_min));
+        result.push((outer_t_min, outer_t_max, outer_k_min, ic_k_min - 1));
     }
-    // 下 strip（outer 在 ic 下方的部分，对应更大的 key 值）
+    // 下 strip（outer 在 ic 下方的部分，对应更大的 key 值）：[ic_k_max + 1, outer_k_max]
     if ic_k_max < outer_k_max {
-        result.push((outer_t_min, outer_t_max, ic_k_max, outer_k_max));
+        result.push((outer_t_min, outer_t_max, ic_k_max + 1, outer_k_max));
     }
     // 左 strip（outer 在 ic 左侧、上下之间）
     if ic_t_min > outer_t_min {
