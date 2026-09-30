@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### REND-002 多端口（Phase 1：映射原语与写死解锁）
+
+- **共享映射原语** — 新增 `multi_port` 模块：`global_channel(port, ch) = port*16+ch`（u16 防溢出）、
+  `split_global_channel` 逆映射、`channels_for_max_port`、产品上限 `MAX_PORTS=16` 与
+  `effective_port`（超限折叠到端口 15 块，B1 决策）；`MidiDocument::max_port()` 查询。
+  单测覆盖 port=0 恒等、u7 边界、往返与折叠边界。
+- **解除“写死 16 通道单 Port”** — CPU 离线导出算法零改动，仅新增端口维度并全部由
+  `AudioRenderConfig.midi_max_port==0` 门控（单端口路径与历史逐字节一致）：
+  ① `build_group_config` 由 `synth_format()` 决定 `Midi` 或
+  `Custom{channels:(min(max_port,15)+1)*16}`；② `dispatch_event` 接收来源轨道端口，
+  多端口时映射全局通道；③ 内存事件流 `MergedEvent` 与流式 `StreamingMidiPlayer`
+  携带每轨 FF 21 端口（`MergedEvent` 新增字段填补原 padding，体积不变）。
+- **输出接口扩宽** — `OutputConnection` 通道参数 u8→u16（全局通道）；默认实现保持
+  低 4 位折叠，外部 MIDI 设备行为不变；XSynth 输出直接消费全局通道；LGS 维持 4bit
+  折叠（GPU 范围 #87）。新增折叠行为回归单测。
+- **范围**：本阶段不启用多端口实际映射；入口写入 `midi_max_port`、每端口 ch9 打击乐
+  初始化、超限告警计数与多端口回归 fixture 属 Phase 2；实时管线格式与播放通道空间
+  属 Phase 3。记录见 `docs/2026-10-01-REND-002-CPU多端口Phase1解锁记录.md`
+
 ### 渲染修复
 
 - **重叠音符逐帧闪烁修复** — 钢琴卷帘重叠音符（同轨同 key 叠音、预览与已有音符重叠）的深度只编码到轨道粒度，配合 `cull.wgsl` 抢占式 `atomicAdd` 导致的可见顺序随机，管线 `LessEqual + depth_write` 下「同深度后画者胜」的赢家逐帧变化，重叠区描边抖动。四份音符 shader（含纵向转置版）改为「预览 0.0 / 主音轨 2^-17 / 洋葱皮 (track_enc+1)×2^-16」显式分层，并以 chunk 内源索引（跨帧稳定）注入基深度尾数低位做轨内确定性平局裁决；同轨最大偏移恒 < 2^-16，不侵占相邻轨道层、不越远平面（`bbca7239`）
