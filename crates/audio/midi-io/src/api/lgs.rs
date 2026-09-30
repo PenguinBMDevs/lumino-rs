@@ -165,8 +165,10 @@ impl LgsOutputConn {
 }
 
 impl OutputConnection for LgsOutputConn {
-    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    // REND-002 解锁：接口按 u16 全局通道接收；LGS 侧仍属 GPU 范围（#87），
+    // 暂维持 4bit 折叠，避免越界写入 GPU 引擎的 u8 通道。
+    fn note_on(&mut self, ch: u16, key: u8, vel: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         // 响度(力度)过滤：仅对真实按下（vel>0）生效；vel==0 视为释放，不被过滤
         let threshold = self.velocity_filter.load(Ordering::Relaxed);
         if threshold > 0 && vel > 0 && vel <= threshold {
@@ -183,8 +185,8 @@ impl OutputConnection for LgsOutputConn {
         Ok(())
     }
 
-    fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn note_off(&mut self, ch: u16, key: u8, _vel: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_event(
             channel,
             MidiEvent::NoteOff {
@@ -194,31 +196,31 @@ impl OutputConnection for LgsOutputConn {
         Ok(())
     }
 
-    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn control_change(&mut self, ch: u16, controller: u8, value: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_event(channel, MidiEvent::ControlChange { controller, value });
         Ok(())
     }
 
-    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn program_change(&mut self, ch: u16, program: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_event(channel, MidiEvent::ProgramChange { program });
         Ok(())
     }
 
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn pitch_bend(&mut self, ch: u16, value: f32) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         let bend = ((value + 1.0) * 0.5 * f32::from(PITCH_BEND_MAX)).round() as u16;
         self.send_event(channel, MidiEvent::PitchBend { value: bend });
         Ok(())
     }
 
-    fn channel_pressure(&mut self, _ch: u8, _pressure: u8) -> Result<(), Error> {
+    fn channel_pressure(&mut self, _ch: u16, _pressure: u8) -> Result<(), Error> {
         // GPU 合成器的 `MidiEvent` 无通道后触变体，忽略（与 xsynth 行为一致，不报错）
         Ok(())
     }
 
-    fn poly_pressure(&mut self, _ch: u8, _key: u8, _pressure: u8) -> Result<(), Error> {
+    fn poly_pressure(&mut self, _ch: u16, _key: u8, _pressure: u8) -> Result<(), Error> {
         // GPU 合成器的 `MidiEvent` 无复音后触变体，忽略
         Ok(())
     }

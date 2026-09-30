@@ -118,10 +118,16 @@ pub trait Api: Send + Sync {
 /// MIDI 输出连接接口
 ///
 /// 支持完整的 MIDI 事件集，包括音符、控制器、音色变换、弯音等。
+///
+/// 通道参数为 **u16 全局通道**（REND-002 多端口：`port*16 + channel`）。默认实现
+/// 按 MIDI 线协议只取低 4 位（折叠到 16 通道），保证普通 MIDI 设备行为不变；
+/// 软件合成后端（XSynth，未来的 LGS）可 override 后消费完整全局通道空间。
 pub trait OutputConnection: Send {
     /// 发送 Note On（力度为 0 时自动转换为 Note Off）
-    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    ///
+    /// `ch` 为全局通道；默认实现折叠到低 4 位。
+    fn note_on(&mut self, ch: u16, key: u8, vel: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         let velocity = if vel == 0 { 1 } else { vel };
         self.send_raw([
             STATUS_NOTE_ON | channel,
@@ -131,8 +137,8 @@ pub trait OutputConnection: Send {
     }
 
     /// 发送 Note Off
-    fn note_off(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn note_off(&mut self, ch: u16, key: u8, vel: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_raw([
             STATUS_NOTE_OFF | channel,
             key & MIDI_VALUE_MASK,
@@ -141,8 +147,8 @@ pub trait OutputConnection: Send {
     }
 
     /// 控制器变化（CC）
-    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn control_change(&mut self, ch: u16, controller: u8, value: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_raw([
             STATUS_CONTROL_CHANGE | channel,
             controller & MIDI_VALUE_MASK,
@@ -151,8 +157,8 @@ pub trait OutputConnection: Send {
     }
 
     /// 音色变换（Program Change）
-    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn program_change(&mut self, ch: u16, program: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_raw([
             STATUS_PROGRAM_CHANGE | channel,
             program & MIDI_VALUE_MASK,
@@ -162,8 +168,8 @@ pub trait OutputConnection: Send {
 
     /// 弯音（Pitch Bend）
     /// value 范围: -1.0 到 1.0
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn pitch_bend(&mut self, ch: u16, value: f32) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         let bend = ((value + 1.0) * 0.5 * f32::from(PITCH_BEND_MAX)).round() as u16;
         let lsb = (bend & u16::from(MIDI_VALUE_MASK)) as u8;
         let msb = ((bend >> 7) & u16::from(MIDI_VALUE_MASK)) as u8;
@@ -171,8 +177,8 @@ pub trait OutputConnection: Send {
     }
 
     /// 通道后触（Channel Aftertouch）
-    fn channel_pressure(&mut self, ch: u8, pressure: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn channel_pressure(&mut self, ch: u16, pressure: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_raw([
             STATUS_CHANNEL_PRESSURE | channel,
             pressure & MIDI_VALUE_MASK,
@@ -181,8 +187,8 @@ pub trait OutputConnection: Send {
     }
 
     /// 复音后触（Polyphonic Aftertouch）
-    fn poly_pressure(&mut self, ch: u8, key: u8, pressure: u8) -> Result<(), Error> {
-        let channel = ch & MIDI_CHANNEL_MASK;
+    fn poly_pressure(&mut self, ch: u16, key: u8, pressure: u8) -> Result<(), Error> {
+        let channel = (ch & u16::from(MIDI_CHANNEL_MASK)) as u8;
         self.send_raw([
             STATUS_POLY_PRESSURE | channel,
             key & MIDI_VALUE_MASK,
@@ -197,7 +203,7 @@ pub trait OutputConnection: Send {
     /// 默认实现：向所有通道发送 CC 123 (All Notes Off)
     fn all_notes_off(&mut self) -> Result<(), Error> {
         for ch in 0..MIDI_CHANNEL_COUNT {
-            self.control_change(ch, CC_ALL_NOTES_OFF, 0)?;
+            self.control_change(u16::from(ch), CC_ALL_NOTES_OFF, 0)?;
         }
         Ok(())
     }
@@ -206,7 +212,7 @@ pub trait OutputConnection: Send {
     /// 默认实现：向所有通道发送 CC 121 (Reset All Controllers)
     fn reset_control(&mut self) -> Result<(), Error> {
         for ch in 0..MIDI_CHANNEL_COUNT {
-            self.control_change(ch, CC_RESET_ALL_CONTROLLERS, 0)?;
+            self.control_change(u16::from(ch), CC_RESET_ALL_CONTROLLERS, 0)?;
         }
         Ok(())
     }
@@ -316,4 +322,38 @@ pub fn new_api_with_options(
         )?),
     };
     Ok(engine)
+}
+
+#[cfg(test)]
+mod output_tests {
+    use super::*;
+    use std::sync::{Arc, Mutex};
+
+    /// 记录原始 MIDI 字节的测试连接（只实现 `send_raw`，其余走默认实现）。
+    struct RawRecorder {
+        sent: Arc<Mutex<Vec<[u8; 3]>>>,
+    }
+
+    impl OutputConnection for RawRecorder {
+        fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
+            self.sent.lock().expect("锁未 poison").push(data);
+            Ok(())
+        }
+        fn close(self: Box<Self>) {}
+    }
+
+    /// REND-002 决策 a：默认实现把 u16 全局通道折叠到低 4 位，
+    /// 外部 MIDI 设备行为与历史一致（端口 B ch9 折叠到线通道 9）。
+    #[test]
+    fn default_output_folds_global_channel_to_low_nibble() {
+        let sent = Arc::new(Mutex::new(Vec::new()));
+        let mut conn = RawRecorder {
+            sent: Arc::clone(&sent),
+        };
+        conn.note_on(25, 60, 100).expect("发送应成功"); // 端口 1 ch9
+        conn.program_change(17, 3).expect("发送应成功"); // 端口 1 ch1
+        let sent = sent.lock().expect("锁未 poison");
+        assert_eq!(sent[0], [0x99, 60, 100], "note_on 应折叠到 ch9");
+        assert_eq!(sent[1], [0xC1, 3, 0], "program_change 应折叠到 ch1");
+    }
 }

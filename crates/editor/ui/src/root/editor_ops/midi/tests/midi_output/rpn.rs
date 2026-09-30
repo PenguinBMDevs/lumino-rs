@@ -29,35 +29,37 @@ impl RecordingOutput {
 }
 
 impl lumino_midi_io::OutputConnection for RecordingOutput {
-    fn note_on(&mut self, _ch: u8, _key: u8, _vel: u8) -> Result<(), lumino_midi_io::Error> {
+    fn note_on(&mut self, _ch: u16, _key: u8, _vel: u8) -> Result<(), lumino_midi_io::Error> {
         Ok(())
     }
-    fn note_off(&mut self, _ch: u8, _key: u8, _vel: u8) -> Result<(), lumino_midi_io::Error> {
+    fn note_off(&mut self, _ch: u16, _key: u8, _vel: u8) -> Result<(), lumino_midi_io::Error> {
         Ok(())
     }
     fn control_change(
         &mut self,
-        ch: u8,
+        ch: u16,
         controller: u8,
         value: u8,
     ) -> Result<(), lumino_midi_io::Error> {
+        // REND-002 解锁：接口扩宽到 u16 全局通道；测试仅关心低 16 通道。
+        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
         if let Ok(mut log) = self.cc_log.lock() {
             log.push((ch, controller, value));
         }
         Ok(())
     }
-    fn program_change(&mut self, _ch: u8, _program: u8) -> Result<(), lumino_midi_io::Error> {
+    fn program_change(&mut self, _ch: u16, _program: u8) -> Result<(), lumino_midi_io::Error> {
         Ok(())
     }
-    fn pitch_bend(&mut self, _ch: u8, _value: f32) -> Result<(), lumino_midi_io::Error> {
+    fn pitch_bend(&mut self, _ch: u16, _value: f32) -> Result<(), lumino_midi_io::Error> {
         Ok(())
     }
-    fn channel_pressure(&mut self, _ch: u8, _pressure: u8) -> Result<(), lumino_midi_io::Error> {
+    fn channel_pressure(&mut self, _ch: u16, _pressure: u8) -> Result<(), lumino_midi_io::Error> {
         Ok(())
     }
     fn poly_pressure(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _key: u8,
         _pressure: u8,
     ) -> Result<(), lumino_midi_io::Error> {
