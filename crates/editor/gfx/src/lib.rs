@@ -43,8 +43,8 @@ pub use arrangement_instances::{
     build_arrangement_overlay_back, build_arrangement_overlay_front,
 };
 pub use arrangement_renderer::{
-    ArrangementNoteInstance, ArrangementNoteUniform, ArrangementRenderer, ArrangementUniform,
-    colors,
+    ARRANGEMENT_NOTE_BORDER_DARKEN_FACTOR, ARRANGEMENT_NOTE_HEIGHT, ArrangementNoteInstance,
+    ArrangementNoteUniform, ArrangementRenderer, ArrangementUniform, colors,
 };
 pub use cc_bar_renderer::{
     CcBarColors, CcBarData, CcBarInstance, CcBarRenderer, CcBarViewParams, CcBarViewportUniform,

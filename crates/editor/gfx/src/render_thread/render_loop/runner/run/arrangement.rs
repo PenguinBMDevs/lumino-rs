@@ -1,5 +1,6 @@
 use super::*;
 
+use crate::ARRANGEMENT_NOTE_HEIGHT;
 use crate::ArrangementNoteUniform;
 
 /// 预计算走带音符层所需的 GPU 数据（复用钢琴卷帘常驻 GPU 音符缓冲，零第二份显存）。
@@ -37,6 +38,8 @@ pub(super) fn prepare_arrangement_note_data(params: &mut RenderParams) {
     // 2. 走带专属 uniform（滚动/缩放/泳道高/画布偏移）
     // 泳道高度必须与 CPU 端 lane 背景（arrangement_instances.rs 的
     // `track_height * zoom_y`）完全一致，否则垂直缩放时音符与背景泳道失配。
+    // 音符条高度取单一权威常量：覆盖层 ghost 预览用同一个值算 Y/高度，
+    // 两处不一致时拖动预览会与真实音符错开。
     let au = &params.arrangement_uniform;
     let lh = au.track_height * au.zoom_y;
     params.arrangement_lane_index = lane_index;
@@ -46,7 +49,7 @@ pub(super) fn prepare_arrangement_note_data(params: &mut RenderParams) {
         viewport_size: au.viewport_size,
         canvas_offset: au.canvas_offset,
         lane_height: lh,
-        note_height: 4.0,
+        note_height: ARRANGEMENT_NOTE_HEIGHT,
         _pad: [0.0, 0.0],
     };
 }

@@ -204,7 +204,11 @@ pub enum Message<W, S, Se, T> {
         velocity: u8,
     },
     /// 工程走带：ghost 音符预览列表更新
-    ArrangementGhostNotesUpdated(Vec<(f64, f64, usize)>),
+    ///
+    /// 元素为 `(tick_start, tick_end, 视觉轨, key)`。`key` 参与纵向定位——
+    /// 覆盖层必须按真实音符的同一公式（`arrangement_note.wgsl`）画，缺 key
+    /// 会让预览塌到泳道中线。`track` 是视觉位置（侧边栏顺序），与选区同源。
+    ArrangementGhostNotesUpdated(Vec<(f64, f64, usize, u8)>),
     /// 工程走带：拖拽中的框选矩形（实时预览，由 GPU 渲染）
     ArrangementDragSelectionRect(Option<(f64, f64, usize, usize)>),
     /// 工程走带：复制选中音符到剪贴板
