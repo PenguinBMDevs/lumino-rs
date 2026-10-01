@@ -13,6 +13,7 @@ mod soundfont;
 
 pub use soundfont::load_soundfonts;
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 
 use lumino_midi_model::multi_port::PercussionTracker;
@@ -21,6 +22,19 @@ use xsynth_core::channel_group::ChannelGroup;
 use super::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
 };
+
+/// 诊断探针：最近派发事件（首个非有限样本出现时随日志导出）。
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RecentEvent {
+    /// 事件派发时的累计渲染帧（换算秒定位 NaN 时刻）
+    pub(crate) frame: u64,
+    /// 事件类型：0=NoteOn 1=NoteOff 2=CC 3=PC 4=PB
+    pub(crate) code: u8,
+    pub(crate) port: u8,
+    pub(crate) channel: u8,
+    pub(crate) a: u16,
+    pub(crate) b: u16,
+}
 
 /// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
 ///
@@ -40,6 +54,14 @@ pub struct MidiEventProcessor<'a> {
     limiter: Option<AudioLimiter>,
     /// REND-002 方案 B：运行时通道「音符/打击乐」模态跟踪（Bank Select 约定）。
     percussion: PercussionTracker,
+    /// 诊断：最近 64 条派发事件（NaN 取证，只保留一次）
+    recent_events: VecDeque<RecentEvent>,
+    /// 诊断：首个非有限样本是否已记录
+    nan_probe_done: bool,
+    /// 已写出到 sink 的累计帧数（诊断定位用）
+    frames_rendered: u64,
+    /// 非有限样本总数（已按静音净化；导出结束汇总告警）
+    non_finite_total: u64,
 }
 
 /// 进度回调

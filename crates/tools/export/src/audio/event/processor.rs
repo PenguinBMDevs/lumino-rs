@@ -78,7 +78,87 @@ impl<'a> MidiEventProcessor<'a> {
             vec_pool: Vec::new(),
             limiter,
             percussion: PercussionTracker::new(synth_channels),
+            recent_events: std::collections::VecDeque::with_capacity(64),
+            nan_probe_done: false,
+            frames_rendered: 0,
+            non_finite_total: 0,
         }
+    }
+
+    /// NaN 诊断：记录最近派发事件（容量 64，环形丢弃最旧）。
+    fn push_recent_event(&mut self, port: u8, channel: u8, message: &MidiMessage) {
+        let (code, a, b) = match message {
+            MidiMessage::NoteOn { key, vel, .. } => (0, u16::from(*key), u16::from(vel.as_int())),
+            MidiMessage::NoteOff { key, .. } => (1, u16::from(*key), 0),
+            MidiMessage::Controller { controller, value } => {
+                (2, u16::from(controller.as_int()), u16::from(value.as_int()))
+            }
+            MidiMessage::ProgramChange { program } => (3, u16::from(program.as_int()), 0),
+            MidiMessage::PitchBend { bend } => (4, bend.as_int() as u16, 0),
+            MidiMessage::Aftertouch { key, vel } => {
+                (5, u16::from(key.as_int()), u16::from(vel.as_int()))
+            }
+            MidiMessage::ChannelAftertouch { vel } => (6, u16::from(vel.as_int()), 0),
+        };
+        if self.recent_events.len() == 64 {
+            self.recent_events.pop_front();
+        }
+        self.recent_events.push_back(super::RecentEvent {
+            frame: self.frames_rendered,
+            code,
+            port,
+            channel,
+            a,
+            b,
+        });
+    }
+
+    /// 渲染批次写出后累计帧数（诊断定位用）。
+    pub(crate) fn add_rendered_frames(&mut self, frames: u64) {
+        self.frames_rendered = self.frames_rendered.saturating_add(frames);
+    }
+
+    /// 非有限样本计数累加（已按静音净化）。
+    pub(crate) fn add_non_finite(&mut self, count: u64) {
+        self.non_finite_total = self.non_finite_total.saturating_add(count);
+    }
+
+    /// 非有限样本总数。
+    pub(crate) fn non_finite_total(&self) -> u64 {
+        self.non_finite_total
+    }
+
+    /// NaN 诊断：首个非有限样本的取证日志（一次性）。
+    pub(crate) fn probe_non_finite(&mut self, offset: usize) {
+        if self.nan_probe_done {
+            return;
+        }
+        self.nan_probe_done = true;
+        let frame_size = usize::from(self.channel_count.max(1));
+        let nan_frame = self.frames_rendered + (offset / frame_size) as u64;
+        let sr = f64::from(self.sample_rate.max(1));
+        let dump: Vec<String> = self
+            .recent_events
+            .iter()
+            .map(|e| {
+                format!(
+                    "t{:.3}s k{} p{} c{} a{} b{}",
+                    e.frame as f64 / sr,
+                    e.code,
+                    e.port,
+                    e.channel,
+                    e.a,
+                    e.b
+                )
+            })
+            .collect();
+        // 诊断场景必须可见：不依赖 tracing subscriber（示例/无头导出可能未初始化）。
+        eprintln!(
+            "[REND-002][NaN-PROBE] 首个非有限样本: t={:.3}s frame={nan_frame} ch={}; 最近事件(code:0=On 1=Off 2=CC 3=PC 4=PB 5=AT 6=CAT): {:?}",
+            nan_frame as f64 / sr,
+            offset % frame_size,
+            dump
+        );
     }
 
     /// 事件 tick → 目标帧（向下取整）。
@@ -128,6 +208,7 @@ impl<'a> MidiEventProcessor<'a> {
             // REND-002：单端口（midi_max_port==0）保持 `channel.as_int()` 恒等路径，
             // 与历史行为完全一致；多端口才启用全局通道映射。
             let ch = global_event_channel(self.config, port, channel.as_int());
+            self.push_recent_event(port, ch as u8, message);
             let force_end_frames = self.force_end_delay_frames();
             match message {
                 MidiMessage::NoteOn { key, vel } => {
@@ -269,14 +350,12 @@ impl<'a> MidiEventProcessor<'a> {
             }
         }
 
-        if let Some(limiter) = &self.limiter {
-            let bad = limiter.non_finite_samples();
-            if bad > 0 {
-                tracing::warn!(
-                    "[REND-002] 导出期间检测到 {bad} 个非有限样本（NaN/Inf），已按静音处理并保持限幅器生效；\
-                     这通常意味着上游合成数值污染（请附带素材/音色库上报定位）"
-                );
-            }
+        let bad = self.non_finite_total();
+        if bad > 0 {
+            tracing::warn!(
+                "[REND-002] 导出期间检测到 {bad} 个非有限样本（NaN/Inf），已按静音净化；\
+                 这通常意味着上游合成数值污染（请附带素材/音色库上报定位）"
+            );
         }
 
         info!("音频渲染完成");
