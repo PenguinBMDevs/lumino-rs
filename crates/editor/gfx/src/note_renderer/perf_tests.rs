@@ -705,36 +705,51 @@ fn bench_vs_cull_ab() {
     let iters = env_iters();
     assert!(!counts.is_empty(), "无可测档位（设备容量过小？）");
 
-    for (scene, dense) in [
-        ("dense（同 key 堆叠 · 黑乐谱形态）", true),
-        ("uniform（均匀铺满）", false),
+    for (view, zoomed) in [
+        ("全景（全曲缩放到屏）", false),
+        // zoom-in：cull 剔除率最高的档位（PREF-004 实测该档 cull 占总帧 56%）。
+        // 本卡验收要求「zoom-in 渲染帧时间不回退」——直绘取消了 cull pass，
+        // 该档预期为收益；此处即为该条验收的实测来源。
+        ("放大（局部约 52 键）", true),
     ] {
-        eprintln!(
-            "\n=== {scene} · adapter={} · {iters} 轮中位数（前 2 轮预热丢弃）===",
-            gpu.adapter_info
-        );
-        eprintln!(
-            "{:>12} {:>10} {:>12} {:>12} {:>12} {:>10} {:>10}",
-            "notes", "visible", "blended+cull", "opaque+cull", "opaque+直接", "去混合", "总降幅"
-        );
-        for &count in &counts {
-            let (notes, span) = if dense {
-                synth_notes_dense(count)
-            } else {
-                (synth_notes(count), TOTAL_TICKS)
-            };
-            let camera = panorama_camera_for(span);
-            let [blended, cull, direct] = measure_frame_paths(&gpu, &notes, camera, iters);
+        for (scene, dense) in [
+            ("dense（同 key 堆叠 · 黑乐谱形态）", true),
+            ("uniform（均匀铺满）", false),
+        ] {
             eprintln!(
-                "{:>12} {:>10} {:>11.2} {:>11.2} {:>11.2} {:>9.0}% {:>9.0}%",
-                count,
-                count,
-                blended,
-                cull,
-                direct,
-                (1.0 - cull / blended.max(f64::EPSILON)) * 100.0,
-                (1.0 - direct / blended.max(f64::EPSILON)) * 100.0
+                "\n=== {view} · {scene} · adapter={} · {iters} 轮中位数（前 2 轮预热丢弃）===",
+                gpu.adapter_info
             );
+            eprintln!(
+                "{:>12} {:>12} {:>12} {:>12} {:>10} {:>10}",
+                "notes", "blended+cull", "opaque+cull", "opaque+直接", "去混合", "总降幅"
+            );
+            for &count in &counts {
+                let (notes, span) = if dense {
+                    synth_notes_dense(count)
+                } else {
+                    (synth_notes(count), TOTAL_TICKS)
+                };
+                let camera = if zoomed {
+                    // 放大档：2 px/tick × 20 px/key（约 52 键可见）
+                    CameraUniform {
+                        zoom: [2.0, 20.0],
+                        ..panorama_camera_for(span)
+                    }
+                } else {
+                    panorama_camera_for(span)
+                };
+                let [blended, cull, direct] = measure_frame_paths(&gpu, &notes, camera, iters);
+                eprintln!(
+                    "{:>12} {:>11.2} {:>11.2} {:>11.2} {:>9.0}% {:>9.0}%",
+                    count,
+                    blended,
+                    cull,
+                    direct,
+                    (1.0 - cull / blended.max(f64::EPSILON)) * 100.0,
+                    (1.0 - direct / blended.max(f64::EPSILON)) * 100.0
+                );
+            }
         }
     }
 }

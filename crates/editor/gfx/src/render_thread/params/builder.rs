@@ -58,6 +58,7 @@ pub struct RenderParamsBuilder {
     is_vertical_roll: bool,
     content_dirty: bool,
     subpixel_note_mode: bool,
+    vs_cull_mode: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -113,6 +114,7 @@ impl Default for RenderParamsBuilder {
             is_vertical_roll: base.is_vertical_roll,
             content_dirty: base.content_dirty,
             subpixel_note_mode: base.subpixel_note_mode,
+            vs_cull_mode: base.vs_cull_mode,
         }
     }
 }
@@ -326,6 +328,12 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置 VS cull 直绘开关（严格闸门，见 [`RenderParams::vs_cull_mode`]）。
+    pub fn vs_cull_mode(mut self, enabled: bool) -> Self {
+        self.vs_cull_mode = enabled;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -385,6 +393,7 @@ impl RenderParamsBuilder {
             is_vertical_roll: self.is_vertical_roll,
             content_dirty: self.content_dirty,
             subpixel_note_mode: self.subpixel_note_mode,
+            vs_cull_mode: self.vs_cull_mode,
         }
     }
 }

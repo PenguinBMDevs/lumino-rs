@@ -6,6 +6,44 @@ use crate::host::render::data::{GridColors, RenderData};
 use crate::titlebar::mode_toggle::AppMode;
 use lumino_gfx::ArrangementUniform;
 
+/// VS cull 直绘的可见占比阈值（PREF-005）。
+///
+/// 直绘占优条件为 `V > 0.85N`（见 `RenderParams::vs_cull_mode` 的实测表），
+/// 这里取 0.9 留余量，避免在临界缩放来回切换。
+const VS_CULL_VISIBLE_FRACTION_THRESHOLD: f32 = 0.9;
+
+/// 估算「可见音符占比」（0~1）= 可见 tick 比例 × 可见 key 比例。
+///
+/// 用于 PREF-005 的 VS cull 直绘闸门。闸门判错会直接造成放大档 **8 倍回退**
+/// （实测：1600 万音符里仅 1.5 万可见时，直绘 10.89ms vs cull 1.35ms），
+/// 因此判据抽成纯函数并单测（`tests::estimate_visible_fraction_*`）。
+///
+/// 退化输入一律返回 0（保守关闸）：
+/// - `zoom_x <= 0`（未初始化）：无法估算 → 不启用；
+/// - `total_ticks == 0`（空工程）：无内容可见 → 不启用；
+/// - 非有限结果（NaN/INF）：不启用。
+fn estimate_visible_fraction(
+    zoom_x: f32,
+    canvas_width: f32,
+    total_ticks: u32,
+    visible_key_count: usize,
+    max_key_index: f32,
+) -> f32 {
+    if zoom_x <= 0.0 || canvas_width <= 0.0 || total_ticks == 0 {
+        return 0.0;
+    }
+    let viewport_ticks = (canvas_width / zoom_x).max(0.0);
+    let tick_fraction = (viewport_ticks / total_ticks as f32).min(1.0);
+    let key_axis = (max_key_index + 1.0).max(1.0);
+    let key_fraction = (visible_key_count as f32 / key_axis).min(1.0);
+    let fraction = tick_fraction * key_fraction;
+    if fraction.is_finite() {
+        fraction.clamp(0.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
 impl Host {
     /// 构建渲染参数
     pub(crate) fn build_render_params(&mut self, data: RenderData) -> RenderParams {
@@ -144,6 +182,25 @@ impl Host {
             && es.view.snap_precision > 0.0
             && es.view.zoom_x * es.view.snap_precision < 1.0;
 
+        // ── VS cull 直绘闸门（PREF-005）──
+        //
+        // 直绘把「一趟 compute 扫全量」换成「顶点着色器为全部实例各跑一遍」，
+        // 真机实测（RTX 2060）：全量可见时直绘快 ~12%，而放大档（1.5 万可见 /
+        // 1600 万总数）直绘慢 8 倍。由 `0.65N < 0.10N + 0.65V` 得占优条件
+        // `V > 0.85N`，故此处按「可见 tick 比例 × 可见 key 比例」估算可见占比，
+        // 超过阈值才启用（留余量取 0.9，避免临界抖动）。
+        //
+        // 两条路径已由 `direct_tests` 证明逐位像素等价 ⇒ 闸门切换零视觉风险。
+        let visible_fraction = estimate_visible_fraction(
+            es.view.zoom_x,
+            canvas_size.0,
+            es.view.total_ticks,
+            es.view.visible_key_count as usize,
+            max_key_index,
+        );
+        let vs_cull_mode =
+            !es.is_vertical_roll && visible_fraction > VS_CULL_VISIBLE_FRACTION_THRESHOLD;
+
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
@@ -183,6 +240,68 @@ impl Host {
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
             .content_dirty(content_dirty)
             .subpixel_note_mode(subpixel_note_mode)
+            .vs_cull_mode(vs_cull_mode)
             .build()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{VS_CULL_VISIBLE_FRACTION_THRESHOLD, estimate_visible_fraction};
+
+    /// 1920px 画布 + 128 键（max_key_index = 127）
+    const CANVAS_W: f32 = 1920.0;
+    const KEYS: usize = 128;
+    const MAX_KEY: f32 = 127.0;
+
+    /// 闸门必须**打开**：全曲缩放到屏 + 全键可见（可见占比 ≈ 1.0）。
+    ///
+    /// 这是直绘唯一占优的档位（实测省掉 cull pass ≈ 10%）。
+    #[test]
+    fn estimate_visible_fraction_full_view_opens_gate() {
+        // 全曲 4M tick，zoom_x 取「整曲刚好入屏」
+        let zoom_x = CANVAS_W / 4_000_000.0;
+        let fraction = estimate_visible_fraction(zoom_x, CANVAS_W, 4_000_000, KEYS, MAX_KEY);
+        assert!(
+            fraction > VS_CULL_VISIBLE_FRACTION_THRESHOLD,
+            "全曲视图应开闸，实际占比 {fraction}"
+        );
+    }
+
+    /// 闸门必须**关闭**：放大档（可见 tick 占比极小）。
+    ///
+    /// 这是本卡最关键的回归守卫：该档实测直绘比 cull 慢 8 倍
+    /// （1600 万音符 / 1.5 万可见：10.89ms vs 1.35ms）。
+    #[test]
+    fn estimate_visible_fraction_zoomed_in_keeps_gate_closed() {
+        // 2 px/tick × 52 键可见
+        let fraction = estimate_visible_fraction(2.0, CANVAS_W, 4_000_000, 52, MAX_KEY);
+        assert!(
+            fraction <= VS_CULL_VISIBLE_FRACTION_THRESHOLD,
+            "放大档必须关闸（否则 8 倍回退），实际占比 {fraction}"
+        );
+        assert!(
+            fraction < 0.01,
+            "放大档可见占比应远低于阈值，实际 {fraction}"
+        );
+    }
+
+    /// 退化输入一律保守关闸，不得产生 NaN/INF 让比较式误判为「开」。
+    #[test]
+    fn estimate_visible_fraction_degenerate_inputs_keep_gate_closed() {
+        for (zoom_x, canvas_w, total_ticks, label) in [
+            (0.0, CANVAS_W, 4_000_000, "zoom_x = 0"),
+            (-1.0, CANVAS_W, 4_000_000, "zoom_x < 0"),
+            (2.0, 0.0, 4_000_000, "画布宽 0"),
+            (2.0, CANVAS_W, 0, "空工程 total_ticks = 0"),
+            (f32::NAN, CANVAS_W, 4_000_000, "zoom_x = NaN"),
+            (f32::INFINITY, CANVAS_W, 4_000_000, "zoom_x = INF"),
+        ] {
+            let fraction = estimate_visible_fraction(zoom_x, canvas_w, total_ticks, KEYS, MAX_KEY);
+            assert!(
+                fraction.is_finite() && fraction <= VS_CULL_VISIBLE_FRACTION_THRESHOLD,
+                "{label}：应保守关闸，实际 {fraction}"
+            );
+        }
     }
 }

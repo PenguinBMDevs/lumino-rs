@@ -138,6 +138,25 @@ pub struct RenderParams {
     ///
     /// 默认 `false`（保守走 quad + cull 路径）；仅横向卷帘生效。
     pub subpixel_note_mode: bool,
+    /// VS cull 直绘开关（PREF-005），**严格闸门**：仅当预计可见音符占比
+    /// 高于阈值时才启用。
+    ///
+    /// 为什么必须闸门（真机实测，RTX 2060 / 1920×1080）：
+    /// compute cull 是**一趟 compute** 扫全量（≈0.10 ns/实例）后 `draw_indirect`
+    /// 只画可见实例；VS cull 直绘则是**顶点着色器为全部实例各跑一遍**
+    /// （≈0.65 ns/实例，含退化图元的几何装配）。二者成本不可类比：
+    ///
+    /// | 档位 | 可见 | cull 路径 | 直绘 | 结果 |
+    /// |---|---|---|---|---|
+    /// | 全景 | 全部 | 12.37ms | 10.90ms | 直绘快 ~12% |
+    /// | 放大 | 1.5 万 / 1600 万 | 1.35ms | 10.89ms | **直绘慢 8 倍** |
+    ///
+    /// 由 `0.65N < 0.10N + 0.65V` 得直绘占优条件 `V > 0.85N`（可见占比 > 85%）。
+    /// 因此 UI 侧按「可见 tick 比例 × 可见 key 比例」估算占比，超过阈值才置位。
+    /// 两条路径已由 `direct_tests` 证明**逐位像素等价**，故此处切换无视觉风险。
+    ///
+    /// 默认 `false`（保守走 cull 路径）；纵向卷帘与导出路径不生效。
+    pub vs_cull_mode: bool,
 }
 
 impl Default for RenderParams {
@@ -193,6 +212,7 @@ impl Default for RenderParams {
             is_vertical_roll: false,
             content_dirty: true,
             subpixel_note_mode: false,
+            vs_cull_mode: false,
         }
     }
 }

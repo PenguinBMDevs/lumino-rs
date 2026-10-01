@@ -130,11 +130,13 @@ pub fn execute_render_pass(
             .renderers
             .onion_skin
             .prepare_direct(camera, &ctx.queue);
-    } else if has_depth {
-        // UI 路径（PREF-005）：主音符层取消 compute cull，改由 `vs_direct` 自判可见，
-        // 并按 `instance_index` 升序（= `region_depth` 近→远序）绘制 ⇒ 重叠片元
-        // 后到者被 early-Z 拒绝，FS 执行量降到 ≈ 屏幕像素量级。
-        // 预览层仍走 compute cull（实例数极少，不值得再建一套直绘路径）。
+    } else if has_depth && params.vs_cull_mode {
+        // UI 路径 + 近全量可见闸门（PREF-005）：主音符层取消 compute cull，改由
+        // `vs_direct` 自判可见，并按 `instance_index` 升序（= `region_depth` 近→远序）
+        // 绘制。**闸门是必需的**：直绘要为全部实例各跑一遍 VS（≈0.65 ns/实例），
+        // 而 compute cull 只扫一趟（≈0.10 ns/实例）后只画可见实例——放大档下直绘
+        // 实测慢 8 倍（1.5 万可见 / 1600 万总数）。仅当可见占比 > 90% 才占优。
+        // 预览层仍走 compute cull（实例数极少）。
         frame
             .renderers
             .note
@@ -203,7 +205,7 @@ pub fn execute_render_pass(
                 .renderers
                 .onion_skin
                 .draw_points(&mut render_pass, onion_has_instances, None);
-        } else if has_depth {
+        } else if has_depth && params.vs_cull_mode {
             // VS cull 直绘：每 chunk 4 顶点 × chunk_len 实例，实例序 = 深度序
             frame
                 .renderers
