@@ -86,8 +86,12 @@ impl Playback {
     pub fn play(&mut self) {
         match self.state {
             PlaybackState::Stopped => {
-                self.current_tick = 0.0;
-                self.paused_microseconds = 0;
+                // 从停止态起播必须保留已 seek 的位置：停止态下 seek 只写
+                // `current_tick`（见 `seek()`），若此处无条件归零则“拖动指示线
+                // 后按播放”会丢位置（引擎游标在 seek 点、时钟回到 0，错位无声）。
+                // Stop/自动停止后 `current_tick` 本就为 0，此处换算结果同样为 0，
+                // 语义与原来“从头播”一致。
+                self.paused_microseconds = self.timeline.tick_to_microseconds(self.current_tick);
                 self.play_start_time = Some(Instant::now());
                 self.state = PlaybackState::Playing;
             }

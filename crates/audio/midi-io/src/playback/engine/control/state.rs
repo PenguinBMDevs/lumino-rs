@@ -68,10 +68,10 @@ impl PlaybackEngine {
                 .map(|doc| doc.tracks_max_end_tick())
                 .unwrap_or(0);
             if end_tick > 0 && current_tick >= end_tick as f32 {
-                if let Some(mut playback) = self.lock_playback() {
-                    playback.stop();
-                }
-                self.last_processed_tick = 0.0;
+                // 播到尾自动停止必须走引擎级 `stop()`（重置全部游标/队列/进度），
+                // 只停时钟（`playback.stop()`）会留下尾部游标：UI 指示线回到 0，
+                // 但音频引擎进度仍在尾部，下次起播无声。
+                self.stop();
             }
         }
 

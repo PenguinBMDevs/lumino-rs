@@ -78,3 +78,80 @@ fn test_playback_stops_at_track_end_marker_when_extended_by_edit() {
         "编辑扩展后的新轨尾标应作为停止点"
     );
 }
+
+/// 回归：播到尾自动停止后再次起播必须有声。
+///
+/// BUG 现象：演奏指示线回到开头（`current_tick=0`），但音频引擎进度
+/// （游标/队列）仍停在尾部，下次起播无声。
+/// 自动停止必须走引擎级 `stop()` 全量复位，且下次从停止态起播时重建队列。
+#[test]
+fn test_replay_after_auto_stop_emits_sound() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(Arc::clone(&playback));
+
+    engine.set_document(
+        doc_with_current_track(vec![
+            DocNoteEvent::new(0, 480, 60, 100, 0),
+            DocNoteEvent::new(480, 960, 64, 100, 0),
+        ]),
+        0,
+    );
+    engine.play();
+    engine.seek_playback(960.0);
+    let _ = engine.update();
+    assert_eq!(engine.state(), PlaybackState::Stopped);
+    assert_eq!(engine.current_tick(), 0.0);
+    // 引擎进度必须复位到开头
+    assert_eq!(
+        engine.last_processed_tick, 0.0,
+        "自动停止后 last_processed_tick 应复位到 0"
+    );
+    assert_eq!(
+        engine.control_event_cursor, 0,
+        "自动停止后控制事件游标应复位到 0"
+    );
+    assert_eq!(
+        engine.midi_event_cursor, 0,
+        "自动停止后 MIDI 事件游标应复位到 0"
+    );
+
+    // 再次起播：队列必须重建（2 音符 = 4 事件），否则后续播放无声
+    engine.play();
+    assert_eq!(engine.state(), PlaybackState::Playing);
+    assert_eq!(
+        engine.event_queue.len(),
+        4,
+        "自动停止后重播应重建当前轨队列（2 音符 = 4 事件），否则无声"
+    );
+    let tick = engine.current_tick();
+    assert!(tick < 50.0, "重播起播 tick 应在开头附近，实际 = {}", tick,);
+}
+
+/// 回归：停止态下拖动指示线（seek）后按播放，应从 seek 位置起播而非归零。
+#[test]
+fn test_play_preserves_seek_while_stopped() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(Arc::clone(&playback));
+
+    engine.set_document(
+        doc_with_current_track(vec![
+            DocNoteEvent::new(0, 480, 60, 100, 0),
+            DocNoteEvent::new(480, 960, 64, 100, 0),
+        ]),
+        0,
+    );
+    // 停止态下 seek 到 480（模拟拖动演奏指示线后按播放）
+    engine.seek(480.0);
+    engine.play();
+    let tick = engine.current_tick();
+    assert!(
+        (470.0..=490.0).contains(&tick),
+        "停止态 seek 后起播应保留 seek 位置（480 附近），实际 = {}",
+        tick,
+    );
+    assert!(
+        (479.0..=481.0).contains(&engine.last_processed_tick),
+        "起播后 last_processed_tick 应与 seek 位置对齐，实际 = {}",
+        engine.last_processed_tick,
+    );
+}
