@@ -107,8 +107,32 @@ impl NoteRenderer {
         let mut bind_groups = Vec::with_capacity(chunk_count);
         for idx in 0..chunk_count {
             let (chunk_start, chunk_len) = chunk_layout.chunk_range(capacity_instances, idx);
+            if chunk_len == 0 {
+                tracing::error!(
+                    "NoteRenderer: render 跳过空 chunk idx={} capacity={}",
+                    idx,
+                    capacity_instances
+                );
+                continue;
+            }
             let chunk_bytes = (chunk_len as u64) * instance_size;
             let chunk_offset = (chunk_start as u64) * instance_size;
+            let slot_offset = chunk_layout.chunk_offset_bytes(idx);
+            if chunk_offset + chunk_bytes > instance_buffer.size()
+                || slot_offset + 16 > cull_uniform_buffer.size()
+            {
+                tracing::error!(
+                    "NoteRenderer: render chunk{} 越界跳过 chunk=({},{}) {}/{} uniform {}/{}",
+                    idx,
+                    chunk_start,
+                    chunk_len,
+                    chunk_offset + chunk_bytes,
+                    instance_buffer.size(),
+                    slot_offset + 16,
+                    cull_uniform_buffer.size()
+                );
+                continue;
+            }
 
             bind_groups.push(device.create_bind_group(&wgpu::BindGroupDescriptor {
                 label: Some("note_render_bind_group"),
@@ -183,6 +207,15 @@ impl NoteRenderer {
         let mut bind_groups = Vec::with_capacity(chunk_count);
         for idx in 0..chunk_count {
             let (chunk_start, chunk_len) = layout.chunk_range(capacity_instances, idx);
+            // 防御：空 chunk 不建组（否则 size=None 语义变为整 buffer，极易越界成 invalid）。
+            if chunk_len == 0 {
+                tracing::error!(
+                    "NoteRenderer: 跳过空 chunk idx={} capacity={}，防 invalid bind group",
+                    idx,
+                    capacity_instances
+                );
+                continue;
+            }
             let chunk_bytes = (chunk_len as u64) * instance_size;
             let chunk_offset = (chunk_start as u64) * instance_size;
             // 可见索引 buffer 的切片：按 u32 偏移/长度
@@ -194,6 +227,32 @@ impl NoteRenderer {
             // 16 为编译期常量，必非零 → NonZeroU64 必然构造成功
             // 16 为编译期常量，必非零 → 使用 new_unchecked 避免运行时断言/崩溃
             let uniform_size = unsafe { std::num::NonZeroU64::new_unchecked(16) };
+            // 发布构建切工程必守：offset+size 越界会直接产出 invalid bind group，
+            // 错误延迟到 Queue::submit 的 set_bind_group 才爆发（本 BUG 现象）。
+            // 此处提前拦截并跳过，prepare/draw 用 min(group_len) 降级显示，不断渲染。
+            let indirect_size = std::mem::size_of::<super::types::DrawIndirectArgs>() as u64;
+            if slot_offset + 16 > cull_uniform_buffer_size
+                || slot_offset + indirect_size > indirect_buffer.size()
+                || chunk_offset + chunk_bytes > instance_buffer.size()
+                || visible_chunk_offset + visible_chunk_bytes > visible_instance_buffer.size()
+            {
+                tracing::error!(
+                    "NoteRenderer: chunk{} 越界跳过 建组 slot={} chunk=({},{}) instance={}/{} visible={}/{} uniform={}/{} indirect={}/{}",
+                    idx,
+                    slot_offset,
+                    chunk_start,
+                    chunk_len,
+                    chunk_offset + chunk_bytes,
+                    instance_buffer.size(),
+                    visible_chunk_offset + visible_chunk_bytes,
+                    visible_instance_buffer.size(),
+                    slot_offset + 16,
+                    cull_uniform_buffer_size,
+                    slot_offset + indirect_size,
+                    indirect_buffer.size()
+                );
+                continue;
+            }
             debug_assert!(slot_offset + 16 <= cull_uniform_buffer_size);
 
             let instance_binding = wgpu::BindingResource::Buffer(wgpu::BufferBinding {

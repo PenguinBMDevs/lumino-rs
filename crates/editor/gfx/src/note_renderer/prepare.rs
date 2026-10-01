@@ -48,8 +48,11 @@ impl NoteRenderer {
     /// 最后调用 `finish_streaming_upload`。避免 `upload_instances` 的 CPU 全量副本。
     ///
     /// 详见 `GpuNoteBuffer::begin_streaming_upload`。
+    /// 工程切换时必须同步清零旧计数，防陈旧 bind group 野调度。
     pub fn begin_streaming_upload(&mut self) {
         self.gpu_note_buffer.begin_streaming_upload();
+        self.last_upload_count = 0;
+        self.external_bound = false;
     }
 
     /// 流式上传：追加一块音符实例到 GPU buffer
@@ -295,6 +298,18 @@ impl NoteRenderer {
 
         let count = self.last_upload_count as usize;
         let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
+        // 工程切换/增量搬移后 bind group 可能短于理论 chunk 数：
+        // 取 min 防越界索引陈旧或半重建的 group（draw.rs 同策略）。
+        let bind_group_count = self.cull_bind_groups.len();
+        let dispatch_count = chunk_count.min(bind_group_count);
+        if dispatch_count < chunk_count {
+            tracing::warn!(
+                "NoteRenderer: cull bind group 缺口 chunk={} group={} count={}，跳过尾部 chunk 防崩溃",
+                chunk_count,
+                bind_group_count,
+                count
+            );
+        }
         let label = if is_vertical {
             "note_cull_vertical_pass"
         } else {
@@ -313,7 +328,7 @@ impl NoteRenderer {
 
         const WORKGROUP_SIZE: u32 = 256;
         const MAX_DISPATCH_X: u32 = 65535;
-        for idx in 0..chunk_count {
+        for idx in 0..dispatch_count {
             compute_pass.set_bind_group(0, &self.cull_bind_groups[idx], &[]);
             let (_, chunk_len) = self.chunk_layout.chunk_range(count, idx);
             let workgroup_count = clamp_count(chunk_len).div_ceil(WORKGROUP_SIZE);

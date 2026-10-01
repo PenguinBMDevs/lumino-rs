@@ -31,8 +31,16 @@ impl ChunkLayout {
 
         // binding range 上限向下取整到对齐值，再除以实例大小
         let max_bytes = limits.max_storage_buffer_binding_size as u64 / slot_align * slot_align;
-        let instances_per_chunk =
+        let mut instances_per_chunk =
             (max_bytes / std::mem::size_of::<crate::NoteInstance>() as u64).max(1) as usize;
+        // 可见索引 buffer 按 u32（4B）切片：chunk 起始 offset = start*4 必须满足
+        // storage offset 对齐（slot_align，常见 256B），否则 chunk>=1 的
+        // note_cull_bind_group 创建即 invalid（提交时 set_bind_group 爆错）。
+        // 向下取整到 slot_align/4 的倍数，保证 start*4 % slot_align == 0；
+        // 实例 buffer 侧 start*16 恒为 max_bytes 倍数，本就对齐，不受影响。
+        let visible_align_instances = (slot_align / 4).max(1) as usize;
+        instances_per_chunk =
+            (instances_per_chunk / visible_align_instances * visible_align_instances).max(1);
         Self {
             instances_per_chunk,
             slot_align,
@@ -80,8 +88,9 @@ mod tests {
     #[test]
     fn test_layout_2gb_binding_cap() {
         let layout = ChunkLayout::from_limits(&default_limits());
-        // 2GB-1 向下对齐到 256 → 2_147_483_392 字节 / 16B = 134_217_712 实例
-        assert_eq!(layout.instances_per_chunk, 134_217_712);
+        // 2GB-1 向下对齐到 256 → 2_147_483_392 字节 / 16B = 134_217_712，
+        // 再向下取整到可见对齐 64（256/4）→ 134_217_664，保证 start*4 % 256 == 0。
+        assert_eq!(layout.instances_per_chunk, 134_217_664);
         assert_eq!(layout.slot_align, 256);
         // 每 chunk 字节范围 ≤ 2GB-1
         assert!(
@@ -90,6 +99,11 @@ mod tests {
         );
         // chunk 起始 offset 满足 256B 对齐
         assert_eq!(layout.chunk_offset_bytes(1), 256);
+        // 可见索引切片 offset（start*4）同样满足 storage 对齐，否则 chunk>=1 建组即 invalid
+        assert_eq!(
+            (layout.instances_per_chunk as u64) * 4 % layout.slot_align,
+            0
+        );
     }
 
     #[test]
