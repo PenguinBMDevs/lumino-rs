@@ -4,7 +4,7 @@ use parking_lot::Mutex;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
-use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port, effective_port};
+use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port_clamped};
 
 use crate::playback::engine::types::global_channel_for_track;
 use crate::playback::{
@@ -133,7 +133,7 @@ impl PlaybackEngine {
 
         // REND-002：通道空间随文档端口数（0 → 16）。仅在通道数变化时重建模态
         // 跟踪——编辑后快照复用同一文档，不应重置运行时的音符/打击乐切换状态。
-        let channels = channels_for_max_port(effective_port(doc.max_port()));
+        let channels = channels_for_max_port_clamped(doc.max_port());
         if self.percussion.channels() != channels {
             self.percussion = PercussionTracker::new(channels);
         }

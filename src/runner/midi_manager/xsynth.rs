@@ -121,7 +121,8 @@ impl MidiManager {
 
     /// 应用文档端口布局（REND-002）。
     ///
-    /// - XSynth 就绪：直接 `set_midi_port_layout`（内部只在变化时重建，失败保持旧布局）；
+    /// - XSynth 就绪：直接 `set_midi_port_layout`（**总是全量重建**以清理上一文档
+    ///   遗留的 bank/打击乐模态；重建失败保持旧布局）；
     /// - XSynth 未就绪（异步初始化中/System 回退）：暂存 desired，待初始化完成时对齐。
     pub fn apply_midi_port_layout(&mut self, max_port: u8) {
         self.desired_midi_max_port = max_port;

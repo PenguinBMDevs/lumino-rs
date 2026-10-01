@@ -241,6 +241,10 @@ impl XSynth {
         // 替换混音句柄：已创建的输出连接通过外层 Arc 读取，自动指向新管线
         *self.mixer_shared.lock().unwrap_or_else(|e| e.into_inner()) =
             self.synth.clone_channel_mix();
+        // REND-002 复检修复：`master_peak` 是每个 RealtimeSynth 实例独有句柄
+        // （fork `realtime_synth.rs:388` 创建），不是跨实例稳定 Arc；不更新会
+        // 让输出连接一直读旧实例电平 → 每次重建后电平表冻结。
+        self.master_peak_shared = self.synth.clone_master_peak();
         // 布局提交（重建失败时不会执行到此处）
         self.midi_max_port = midi_max_port;
 

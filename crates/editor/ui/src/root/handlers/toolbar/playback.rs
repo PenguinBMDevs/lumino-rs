@@ -123,6 +123,11 @@ impl ToolbarHandler {
                 loop_range.end_tick(),
             );
         }
+
+        // REND-002：文档装载的强制重建会复位合成器通道混音（`clone_channel_mix`），
+        // 新 manager 接线完成后按面板值重新下发一次，避免"面板显示增益 vs
+        // 合成器实际增益"不一致（此前只在用户动滑块时才同步）。
+        root.update_playback_track_mix();
     }
 
     /// 处理录制
