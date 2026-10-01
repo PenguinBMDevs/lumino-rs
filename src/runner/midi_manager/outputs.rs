@@ -146,7 +146,7 @@ impl MidiManager {
     }
 
     /// 获取 MIDI 输出连接的可变引用
-    pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi_io::OutputConnection>> {
+    pub fn output_mut(&mut self) -> Option<&mut Box<dyn lumino_midi_io::PlaybackOutput>> {
         self.output.as_mut()
     }
 
@@ -156,9 +156,7 @@ impl MidiManager {
     /// 1. 在现有 API 上打开第二个连接（某些驱动可能不支持）
     /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
     /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
-    pub fn create_additional_output(
-        &mut self,
-    ) -> Option<Box<dyn lumino_midi_io::OutputConnection>> {
+    pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi_io::PlaybackOutput>> {
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
         if let Some(api) = self.api.as_ref()
             && let Ok(outputs) = api.outputs()
@@ -237,10 +235,10 @@ impl MidiManager {
         api_kind: &lumino_midi_io::ApiKind,
         options: Option<lumino_midi_io::api::xsynth::XSynthOptions>,
     ) -> Option<(
-        Box<dyn lumino_midi_io::Api>,
-        Box<dyn lumino_midi_io::OutputConnection>,
+        Box<dyn lumino_midi_io::SynthControl>,
+        Box<dyn lumino_midi_io::PlaybackOutput>,
     )> {
-        let new_api: Box<dyn lumino_midi_io::Api> = match options {
+        let new_api: Box<dyn lumino_midi_io::SynthControl> = match options {
             Some(opts) => lumino_midi_io::new_api_with_options(api_kind, Some(opts)).ok()?,
             None => lumino_midi_io::new_api(api_kind).ok()?,
         };
@@ -275,6 +273,8 @@ impl MidiManager {
         match lumino_midi_io::new_api(&api_kind) {
             Ok(api) => {
                 tracing::info!("MIDI 输入 API: 已创建 (backend={:?})", self.active_backend);
+                // 输入侧只用基础 Api 接口：由 SynthControl 上转为 dyn Api
+                let api: Box<dyn lumino_midi_io::Api> = api;
                 Some(api)
             }
             Err(e) => {

@@ -87,8 +87,8 @@ pub trait Api: Send + Sync {
     fn inputs(&self) -> Result<Vec<InputInfo>, Error>;
     /// 列出可用的 MIDI 输出设备
     fn outputs(&self) -> Result<Vec<OutputInfo>, Error>;
-    /// 打开指定输出端口并返回连接
-    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error>;
+    /// 打开指定输出端口并返回连接（含播放输出能力扩展）
+    fn open_output(&self, id: u32) -> Result<Box<dyn PlaybackOutput>, Error>;
     /// 打开 MIDI 输入端口
     ///
     /// `callback` 在收到 MIDI 数据时被调用，参数为时间戳（微秒）和原始数据。
@@ -113,12 +113,18 @@ pub trait Api: Send + Sync {
     fn recover_stream(&mut self) -> Result<(), String> {
         Err("当前后端不支持音频流恢复".to_string())
     }
+}
 
+/// 合成器控制能力扩展（REND-002，接口演进 B：基础 `Api` 冻结，能力进扩展 trait）。
+///
+/// 所有 `Api` 实现需显式 `impl SynthControl`（空 impl = 接受默认行为），
+/// 使“后端能力支持矩阵”在代码里可见；仅软件合成后端覆写非通用能力。
+pub trait SynthControl: Api {
     /// 设置实时合成管线的 MIDI 端口布局（REND-002）。
     ///
     /// `max_port` 为当前文档使用到的最大 FF 21 端口（0 = 单端口）。支持多端口
-    /// 通道空间的后端（XSynth）会按需重建合成管线；不支持的后端默认忽略
-    /// （保持 16 通道折叠语义，见 C1 决策 a）。
+    /// 通道空间的后端（XSynth）会据此重建合成管线；默认 no-op（后端不支持多端口，
+    /// 保持 16 通道折叠语义，见 C1 决策 a）。
     fn set_midi_port_layout(&mut self, _max_port: u8) -> Result<(), String> {
         Ok(())
     }
@@ -242,25 +248,6 @@ pub trait OutputConnection: Send {
         Ok(())
     }
 
-    /// 设置某全局通道的打击乐模态（REND-002 方案 B）。
-    ///
-    /// 仅软件合成后端（XSynth）实现；外部 MIDI 设备无对应线协议消息，
-    /// 默认 no-op（Bank Select 无法表达模态切换，见 fork 约束）。
-    fn set_percussion_mode(&mut self, _ch: u16, _on: bool) -> Result<(), Error> {
-        Ok(())
-    }
-
-    /// 释放所有通道的延音踏板（CC64=0），用于暂停清理。
-    ///
-    /// 默认实现只覆盖 16 个 MIDI 通道；多端口场景下软件合成后端（XSynth）
-    /// override 为 `AllChannels`，确保端口 >0 的全局通道同样释放（REND-002）。
-    fn release_all_dampers(&mut self) -> Result<(), Error> {
-        for ch in 0..MIDI_CHANNEL_COUNT {
-            self.control_change(u16::from(ch), 64, 0)?;
-        }
-        Ok(())
-    }
-
     /// 读取各 MIDI 通道的实时响度峰值（振幅 0..≈1；超过 1 表示接近/超过削波）。
     ///
     /// 仅音频合成类输出（如 XSynth）实现此能力；纯 MIDI 设备输出默认返回全零。
@@ -278,6 +265,32 @@ pub trait OutputConnection: Send {
 
     /// 关闭输出连接
     fn close(self: Box<Self>);
+}
+
+/// 播放输出能力扩展（REND-002，接口演进 B：基础 `OutputConnection` 冻结）。
+///
+/// 所有播放输出实现需显式 `impl PlaybackOutput`（空 impl = 接受默认行为）。
+/// 基础 trait 只保留 MIDI 线协议语义；非线协议的后端能力（如 xsynth 的通道
+/// 配置事件）落在本扩展 trait，外部设备默认 no-op。
+pub trait PlaybackOutput: OutputConnection {
+    /// 设置某全局通道的打击乐模态（REND-002 方案 B）。
+    ///
+    /// 仅软件合成后端（XSynth）覆写；外部 MIDI 设备无对应线协议消息，
+    /// 默认 no-op（Bank Select 无法表达模态切换，见 fork 约束）。
+    fn set_percussion_mode(&mut self, _ch: u16, _on: bool) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 释放所有通道的延音踏板（CC64=0），用于暂停清理。
+    ///
+    /// 默认实现只覆盖 16 个 MIDI 线通道；多端口场景下软件合成后端（XSynth）
+    /// 覆写为 `AllChannels`，确保端口 >0 的全局通道同样释放（REND-002）。
+    fn release_all_dampers(&mut self) -> Result<(), Error> {
+        for ch in 0..MIDI_CHANNEL_COUNT {
+            self.control_change(u16::from(ch), 64, 0)?;
+        }
+        Ok(())
+    }
 }
 
 /// 后端类型描述
@@ -314,18 +327,18 @@ pub enum ApiKind {
     },
 }
 
-/// 使用默认选项创建指定类型的后端
-pub fn new_api(kind: &ApiKind) -> Result<Box<dyn Api>, Error> {
+/// 使用默认选项创建指定类型的后端（返回含能力扩展的句柄）
+pub fn new_api(kind: &ApiKind) -> Result<Box<dyn SynthControl>, Error> {
     new_api_with_options(kind, None)
 }
 
-/// 使用自定义选项创建指定类型的后端
+/// 使用自定义选项创建指定类型的后端（返回含能力扩展的句柄）
 pub fn new_api_with_options(
     kind: &ApiKind,
 
     #[allow(unused_variables)] options: Option<api::xsynth::XSynthOptions>,
-) -> Result<Box<dyn Api>, Error> {
-    let engine: Box<dyn Api> = match kind {
+) -> Result<Box<dyn SynthControl>, Error> {
+    let engine: Box<dyn SynthControl> = match kind {
         ApiKind::XSynth { soundfont_path } => Box::new(XSynth::new(soundfont_path, options)?),
         ApiKind::Kdmapi { path } => Box::new(Kdmapi::new(path)?),
         ApiKind::System => Box::new(System::new()?),

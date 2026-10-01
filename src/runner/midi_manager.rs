@@ -2,38 +2,32 @@ use lumino_core::storage::config::{AudioEngineKind, SynthBackend, UiConfig};
 use std::path::PathBuf;
 use std::sync::mpsc::{Receiver, channel};
 
-/// MIDI API 类型别名
-type MidiApi = Box<dyn lumino_midi_io::Api>;
-/// MIDI 输出连接类型别名
-type MidiOutput = Box<dyn lumino_midi_io::OutputConnection>;
+/// MIDI API 类型别名（REND-002：基础 trait 冻结，能力经 `SynthControl` 扩展）
+type MidiApi = Box<dyn lumino_midi_io::SynthControl>;
+/// MIDI 输出连接类型别名（REND-002：能力经 `PlaybackOutput` 扩展）
+type MidiOutput = Box<dyn lumino_midi_io::PlaybackOutput>;
 /// MIDI 初始化结果类型别名
 type MidiInitResult = Result<(MidiApi, MidiOutput), String>;
 
 /// 后端初始化结果
 struct BackendInitResult {
     /// API 实例（用于保持合成器存活）
-    api: Option<Box<dyn lumino_midi_io::Api>>,
+    api: Option<MidiApi>,
     /// MIDI 输出连接
-    output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
+    output: Option<MidiOutput>,
     /// 实际使用的后端类型
     backend: SynthBackend,
 }
 
 /// XSynth 异步初始化结果
 enum XSynthInitResult {
-    Success {
-        api: Box<dyn lumino_midi_io::Api>,
-        output: Box<dyn lumino_midi_io::OutputConnection>,
-    },
+    Success { api: MidiApi, output: MidiOutput },
     Failed(String),
 }
 
 /// LGS (GPU) 异步初始化结果
 enum LgsInitResult {
-    Success {
-        api: Box<dyn lumino_midi_io::Api>,
-        output: Box<dyn lumino_midi_io::OutputConnection>,
-    },
+    Success { api: MidiApi, output: MidiOutput },
     Failed(String),
 }
 
@@ -42,11 +36,11 @@ enum LgsInitResult {
 /// 负责管理 MIDI API 和输出连接的生命周期
 pub struct MidiManager {
     /// 保存 API 实例（用于保持 RealtimeSynth 等存活）
-    api: Option<Box<dyn lumino_midi_io::Api>>,
+    api: Option<MidiApi>,
     /// 备用 API 实例（用于 create_additional_output 创建独立播放连接时保持存活）
-    fallback_api: Option<Box<dyn lumino_midi_io::Api>>,
+    fallback_api: Option<MidiApi>,
     /// MIDI 输出连接
-    output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
+    output: Option<MidiOutput>,
     /// 实际启用的合成器后端
     active_backend: SynthBackend,
     /// 是否需要重新初始化

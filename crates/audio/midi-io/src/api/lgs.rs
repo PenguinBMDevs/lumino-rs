@@ -17,6 +17,7 @@ use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
 use crate::constants::*;
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+    PlaybackOutput, SynthControl,
 };
 
 /// 共享 MIDI 事件发送器（输出连接 → GPU 渲染线程）。
@@ -126,7 +127,7 @@ impl Api for Lgs {
         }])
     }
 
-    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
+    fn open_output(&self, id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
         if id != 0 {
             return Err(Error::DeviceNotFound(id));
         }
@@ -274,3 +275,9 @@ impl OutputConnection for LgsOutputConn {
         tracing::debug!("LgsOutputConn::close: 关闭连接");
     }
 }
+
+/// REND-002：显式加入能力扩展（空 impl = 默认：不支持多端口布局）。
+impl SynthControl for Lgs {}
+
+/// REND-002：显式加入播放能力扩展（空 impl = 默认：模态 no-op / 16 通道踏板释放）。
+impl PlaybackOutput for LgsOutputConn {}

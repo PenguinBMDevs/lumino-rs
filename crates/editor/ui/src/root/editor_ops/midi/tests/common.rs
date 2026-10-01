@@ -151,6 +151,9 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     fn close(self: Box<Self>) {}
 }
 
+/// REND-002：显式加入播放能力扩展（测试用默认实现）。
+impl lumino_midi_io::PlaybackOutput for MockOutput {}
+
 /// 辅助函数：创建带默认配置的 Root
 pub fn create_root() -> Root {
     Root::new(&UiConfig::default())

@@ -2,9 +2,9 @@
 //!
 //! 从 `midi_manager.rs` 零逻辑变更拆分而来。
 
-/// 处理音频动作
+/// 处理音频动作（REND-002：输出连接为 `PlaybackOutput`，基础方法经 supertrait 可用）
 pub fn handle_audio_action(
-    output: &mut Box<dyn lumino_midi_io::OutputConnection>,
+    output: &mut Box<dyn lumino_midi_io::PlaybackOutput>,
     action: lumino_ui::message::AudioAction,
 ) {
     use lumino_ui::message::AudioAction;

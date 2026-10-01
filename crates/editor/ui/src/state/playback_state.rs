@@ -14,7 +14,7 @@ pub struct PlaybackState {
     /// 延迟应用的 Tempo 变化（播放管理器未初始化时使用）
     pub pending_tempo_changes: Option<Vec<TempoChange>>,
     /// 延迟应用的 MIDI 输出连接（播放管理器未初始化时使用）
-    pub pending_midi_output: Option<Box<dyn lumino_midi_io::OutputConnection>>,
+    pub pending_midi_output: Option<Box<dyn lumino_midi_io::PlaybackOutput>>,
     /// 每个音轨的 MIDI 控制事件（CC/PC/PB），播放時使用
     pub track_midi_events: std::collections::HashMap<usize, Vec<MidiTrackEvent>>,
     /// 上次同步到播放管理器的 `track_notes_gen`，`None` 表示尚未同步。

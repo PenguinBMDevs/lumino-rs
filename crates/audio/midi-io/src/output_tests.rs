@@ -16,6 +16,9 @@ impl OutputConnection for RawRecorder {
     fn close(self: Box<Self>) {}
 }
 
+/// REND-002：显式加入播放能力扩展（测试用默认实现）。
+impl PlaybackOutput for RawRecorder {}
+
 /// REND-002 决策 a：默认实现把 u16 全局通道折叠到低 4 位，
 /// 外部 MIDI 设备行为与历史一致（端口 B ch9 折叠到线通道 9）。
 #[test]

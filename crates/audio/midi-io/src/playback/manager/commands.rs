@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::OutputConnection;
+use crate::PlaybackOutput;
 use crate::playback::engine::{MidiMessage, MidiTrackEvent, PlaybackEngine};
 use crate::playback::state::PlaybackState;
 use crate::playback::{PlaybackAccessor, TempoChange};
@@ -18,7 +18,7 @@ use super::PlaybackFrame;
 
 /// 播放线程命令
 pub(crate) enum Command {
-    SetMidiOutput(Box<dyn OutputConnection>),
+    SetMidiOutput(Box<dyn PlaybackOutput>),
     ClearMidiOutput,
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
@@ -50,7 +50,7 @@ pub(crate) enum Command {
 pub(crate) fn handle_command(
     cmd: Command,
     engine: &mut PlaybackEngine,
-    midi_output: &mut Option<Box<dyn OutputConnection>>,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
     frame_tx: &Sender<PlaybackFrame>,
     last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
 ) {
@@ -154,7 +154,7 @@ fn push_state_frame(
     engine: &PlaybackEngine,
     frame_tx: &Sender<PlaybackFrame>,
     last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
-    midi_output: Option<&dyn OutputConnection>,
+    midi_output: Option<&dyn PlaybackOutput>,
 ) {
     let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
     let (channel_levels, master_level) = midi_output
@@ -174,7 +174,7 @@ fn push_state_frame(
 /// 将引擎输出的 MIDI 消息发送到 MIDI 输出设备。
 pub(crate) fn flush_midi_messages(
     messages: &[MidiMessage],
-    midi_output: &mut Option<Box<dyn OutputConnection>>,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
 ) {
     let Some(out) = midi_output else { return };
     let msg_count = messages.len();

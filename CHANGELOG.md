@@ -45,7 +45,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ⑦ 质量分析处置：文档装载强制重建以清理跨文档通道模态、GPU 多端口显式降级告警、
   端口口径收口为 `track_global_channel/channels_for_max_port_clamped/percussion_channels`、
   超 400 行文件按仓库约定拆分；复检修复重建后 `master_peak` 句柄同步、装载时序
-  （停播→重建→连播放输出）与混音重下发。记录见
+  （停播→重建→连播放输出）与混音重下发；
+  ⑧ 接口演进：基础 `Api`/`OutputConnection` 冻结，三项能力迁入扩展 trait
+  `SynthControl`/`PlaybackOutput`（默认实现 + 各后端显式 impl），存储与流转改用
+  扩展 trait 对象。记录见
   `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复

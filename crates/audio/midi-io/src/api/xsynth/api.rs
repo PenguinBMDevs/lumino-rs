@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use crate::api::xsynth_output::XSynthOutputConn;
 use crate::{
-    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+    Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputInfo, PlaybackOutput,
+    SynthControl,
 };
 
 use super::XSynth;
@@ -23,7 +24,7 @@ impl Api for XSynth {
         }])
     }
 
-    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
+    fn open_output(&self, id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
         if id != 0 {
             return Err(Error::DeviceNotFound(id));
         }
@@ -43,8 +44,11 @@ impl Api for XSynth {
             "XSynth does not support MIDI input".into(),
         ))
     }
+}
 
-    /// REND-002：按文档端口布局重建合成管线（0 → Midi/16 通道；否则 Custom）。
+/// REND-002：软件合成后端的合成器控制能力覆写。
+impl SynthControl for XSynth {
+    /// 按文档端口布局重建合成管线（0 → Midi/16 通道；否则 Custom）。
     ///
     /// **总是全量重建**（即使 `max_port` 未变）：文档切换时必须清掉上一文档遗留的
     /// bank/打击乐模态状态，否则新文档里没有 Bank Select 的通道会沿用旧模态。

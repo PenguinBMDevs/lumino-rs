@@ -20,6 +20,7 @@ use std::sync::Mutex;
 
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+    PlaybackOutput, SynthControl,
 };
 
 /// `libloading` 错误 → 我们的 Error 类型
@@ -291,7 +292,7 @@ impl Api for Kdmapi {
         }])
     }
 
-    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
+    fn open_output(&self, id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
         if id != 0 {
             return Err(Error::DeviceNotFound(id));
         }
@@ -308,6 +309,9 @@ impl Api for Kdmapi {
         Err(Error::InitFailed("KDMAPI 不支持 MIDI 输入".into()))
     }
 }
+
+/// REND-002：显式加入能力扩展（空 impl = 默认：不支持多端口布局）。
+impl SynthControl for Kdmapi {}
 
 // ---------------------------------------------------------------------------
 // OutputConnection 实现
@@ -350,6 +354,9 @@ impl OutputConnection for KdmapiOutputConn {
         // KDMAPI 连接不需要额外清理，TerminateKDMAPIStream 由 KdmapiBundle::drop 处理
     }
 }
+
+/// REND-002：显式加入播放能力扩展（空 impl = 默认：模态 no-op / 16 通道踏板释放）。
+impl PlaybackOutput for KdmapiOutputConn {}
 
 #[cfg(test)]
 mod tests {

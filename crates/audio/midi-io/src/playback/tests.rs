@@ -123,6 +123,9 @@ impl OutputConnection for CountingOutput {
     fn close(self: Box<Self>) {}
 }
 
+/// REND-002：显式加入播放能力扩展（测试用默认实现）。
+impl crate::PlaybackOutput for CountingOutput {}
+
 /// 构造两轨文档：track 0 为空（作为当前轨），track 1 含 3 个音符（tick 0/3/6）。
 fn two_track_doc() -> Arc<MidiDocument> {
     Arc::new(MidiDocument {

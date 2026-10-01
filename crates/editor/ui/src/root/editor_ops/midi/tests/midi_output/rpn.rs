@@ -71,6 +71,9 @@ impl lumino_midi_io::OutputConnection for RecordingOutput {
     fn close(self: Box<Self>) {}
 }
 
+/// REND-002：显式加入播放能力扩展（测试用默认实现）。
+impl lumino_midi_io::PlaybackOutput for RecordingOutput {}
+
 /// 只保留 RPN/NRPN 相关的控制字节，便于顺序断言。
 fn rpn_cc_only(log: &[(u16, u8, u8)]) -> Vec<(u16, u8, u8)> {
     log.iter()
