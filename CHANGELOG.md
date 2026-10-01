@@ -54,7 +54,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   仅端口数真变化才重建；
   ⑩ P0 维护批：未钳制 `channels_for_max_port` 收为 `pub(crate)`、折叠事件统计口径
   统一、内存渲染进度显示真实音符数、`AudioRenderConfig` Debug 补全、chase 后触契约
-  写明、`fade_out_killing` 注释补 fork 引用（原注释正确，核实为误报）。记录见
+  写明、`fade_out_killing` 注释补 fork 引用（原注释正确，核实为误报）；
+  ⑪ 导出限幅器修复（验收发现，独立缺陷）：包络 attack 由 10ms 改瞬时 + 非有限样本
+  按静音处理 + 状态有限性防御 + 非有限样本计数告警——修复“限幅器开启但峰值
+  1.5–30×”“首个 NaN 后限幅器永久旁路”；上游 NaN 源待归因。记录见
   `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复

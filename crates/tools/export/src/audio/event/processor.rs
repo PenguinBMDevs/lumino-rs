@@ -269,6 +269,16 @@ impl<'a> MidiEventProcessor<'a> {
             }
         }
 
+        if let Some(limiter) = &self.limiter {
+            let bad = limiter.non_finite_samples();
+            if bad > 0 {
+                tracing::warn!(
+                    "[REND-002] 导出期间检测到 {bad} 个非有限样本（NaN/Inf），已按静音处理并保持限幅器生效；\
+                     这通常意味着上游合成数值污染（请附带素材/音色库上报定位）"
+                );
+            }
+        }
+
         info!("音频渲染完成");
         Ok(())
     }
