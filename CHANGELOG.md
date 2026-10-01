@@ -41,7 +41,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ④ 共享 `PercussionTracker`（midi-model）按 GS/XG Bank Select 约定在导出与实时
   同步切换打击乐模态（切换消息先于触发 CC），chase 追齐模态并修正跨端口通道；
   ⑤ 暂停清理改 `release_all_dampers`（XSynth AllChannels）覆盖全部端口；
-  ⑥ 单端口保持 `Midi`/恒等路径（零行为变化）。记录见
+  ⑥ 单端口保持 `Midi`/恒等路径（零行为变化）；
+  ⑦ 质量分析处置：文档装载强制重建以清理跨文档通道模态、GPU 多端口显式降级告警、
+  端口口径收口为 `track_global_channel/channels_for_max_port_clamped/percussion_channels`、
+  超 400 行文件按仓库约定拆分。记录见
   `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复
