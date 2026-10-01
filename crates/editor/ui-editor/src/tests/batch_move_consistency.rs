@@ -21,10 +21,8 @@ fn start_batch_drag(
     delta_tick: i64,
     delta_key: i16,
 ) {
+    // 生产链路不推快照，仅提交推 MoveOp
     let note_count = editor.editor_state.data.current_track_note_count();
-    if editor.pending_drag_state.is_none() {
-        editor.push_history();
-    }
     let mut drag = DragState::from_indices(indices, note_count, 0, 60);
     drag.set_delta(delta_tick, delta_key);
     editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };

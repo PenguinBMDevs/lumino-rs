@@ -137,7 +137,9 @@ fn test_accumulated_delta_three_drags_with_negative() {
 
 #[test]
 fn test_accumulated_delta_only_one_history_push() {
-    // 累积模式下，多次拖动只 push 一次 history（一次逻辑操作一条记录）
+    // 累积模式：拖动阶段不推历史（MoveOp-only），提交时只产生一条 MoveOp 记录。
+    // 旧实现拖动时推快照、提交时再推 MoveOp（一次逻辑操作两条目），导致多步移动的
+    // undo 链出现空操作步（第二次 undo 无变化，用户感知的“批量撤销失败”）。
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
 
@@ -146,19 +148,26 @@ fn test_accumulated_delta_only_one_history_push() {
     start_dragging_selection(&mut editor, [0], 100, 5);
     editor.handle_released();
 
-    let history_len_after_first = editor.editor_state.data.history.undo_len();
     assert_eq!(
-        history_len_after_first,
-        history_len_before + 1,
-        "首次拖动应 push 一次 history"
+        editor.editor_state.data.history.undo_len(),
+        history_len_before,
+        "拖动阶段不得推历史（仅提交推 MoveOp）"
     );
 
     start_dragging_selection(&mut editor, [0], 50, 3);
     editor.handle_released();
 
-    let history_len_after_second = editor.editor_state.data.history.undo_len();
     assert_eq!(
-        history_len_after_second, history_len_after_first,
-        "累积模式下第二次拖动不应 push history"
+        editor.editor_state.data.history.undo_len(),
+        history_len_before,
+        "累积拖动阶段同样不得推历史"
+    );
+
+    // 提交时恰好一条 MoveOp
+    assert!(super::commit_pending_drag_and_drain(&mut editor));
+    assert_eq!(
+        editor.editor_state.data.history.undo_len(),
+        history_len_before + 1,
+        "提交时应恰好产生一条 MoveOp 记录"
     );
 }

@@ -59,8 +59,7 @@ fn setup_dragging_selection(
 ) {
     let note_count = editor.editor_state.data.current_track_note_count();
 
-    // 模拟 pressed.rs 中的批量拖动入口：push_history + 进入 DraggingSelection
-    editor.push_history();
+    // 模拟 pressed.rs 中的批量拖动入口：直接进入 DraggingSelection（不推快照，仅提交推 MoveOp）
     let mut drag = DragState::from_indices(indices, note_count, 0, 60);
     drag.set_delta(delta_tick, delta_key);
     editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };

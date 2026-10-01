@@ -24,10 +24,10 @@ use crate::EditState;
 use crate::Editor;
 use lumino_editor_state::DragState;
 
-/// 模拟 pressed.rs 中批量拖动入口：push_history（首次）+ 进入 DraggingSelection
+/// 模拟 pressed.rs 中批量拖动入口：直接进入 DraggingSelection（不推快照）
 ///
-/// **累积模式**：如果 pending_drag_state 已存在，不重复 push_history
-/// （一次逻辑操作只产生一条 history 记录）
+/// 生产链路批量拖动不推快照，仅提交时推一条 MoveOp（单条目）；
+/// 累积模式下多次拖动共享同一条 MoveOp（松手累积 delta，提交时一次构造）。
 fn start_dragging_selection(
     editor: &mut Editor,
     indices: impl IntoIterator<Item = usize>,
@@ -35,10 +35,6 @@ fn start_dragging_selection(
     delta_key: i16,
 ) {
     let note_count = editor.editor_state.data.current_track_note_count();
-    // 累积模式：pending 存在时不重复 push_history
-    if editor.pending_drag_state.is_none() {
-        editor.push_history();
-    }
     let mut drag = DragState::from_indices(indices, note_count, 0, 60);
     drag.set_delta(delta_tick, delta_key);
     editor.editor_state.interaction.edit_state = EditState::DraggingSelection { drag_state: drag };

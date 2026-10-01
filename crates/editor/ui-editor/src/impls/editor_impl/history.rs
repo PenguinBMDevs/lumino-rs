@@ -12,7 +12,16 @@ impl Editor {
     /// 若存在未完成的 pending 批量拖动（异步提交中），先阻塞等待其完成，再执行 undo，
     /// 否则 undo 会操作旧数据并提示"未退出编辑状态"。
     pub fn undo(&mut self) -> bool {
-        // 先排空异步提交，避免 pending 状态阻塞 undo
+        // 先提交未落盘的幽灵拖动，再排空飞行提交，避免 pending 阻塞 undo
+        // 否则批量拖动后直接 Ctrl+Z 会被拦截返回 false（用户感知的“批量撤销失败”）。
+        // 提交后 undo 将回退刚提交的移动（显示与内存一致，redo 可恢复）。
+        if self.pending_drag_state.is_some() {
+            tracing::info!("Editor: Undo 前发现未提交批量拖动，先 commit+drain");
+            self.commit_pending_drag();
+        }
+        if self.pending_copy_drag_state.is_some() {
+            self.commit_pending_copy();
+        }
         if self.has_pending_drag() {
             tracing::info!("Editor: Undo 前发现 pending 异步提交，先 drain");
             self.drain_async_commit();
@@ -51,13 +60,16 @@ impl Editor {
         if self.editor_state.data.undo() {
             if let Some(targets) = move_targets {
                 self.selection_clear();
+                let mut used: std::collections::HashSet<usize> =
+                    std::collections::HashSet::with_capacity(targets.len().min(1024));
                 for ev in &targets {
-                    if let Some(idx) = self
-                        .editor_state
-                        .data
-                        .track_notes(self.editor_state.data.current_track)
-                        .position_of(ev)
-                    {
+                    if let Some(idx) = position_of_unused(
+                        &self.editor_state.data,
+                        self.editor_state.data.current_track,
+                        ev,
+                        &used,
+                    ) {
+                        used.insert(idx);
                         // 仅当目标仍在当前轨（跨轨移动 target 轨不同则跳过，避免误选）。
                         self.selection_insert(idx);
                     }
@@ -104,6 +116,14 @@ impl Editor {
     /// **拦截策略**：同 `undo()`，编辑中拦截；存在 pending 时先 drain。
     /// **路径历史优先**：先重做最近的路径编辑，无则回退 document 历史。
     pub fn redo(&mut self) -> bool {
+        // 同 undo：先提交幽灵拖动再排空，避免批量场景 redo 被拦截失败。
+        if self.pending_drag_state.is_some() {
+            tracing::info!("Editor: Redo 前发现未提交批量拖动，先 commit+drain");
+            self.commit_pending_drag();
+        }
+        if self.pending_copy_drag_state.is_some() {
+            self.commit_pending_copy();
+        }
         if self.has_pending_drag() {
             tracing::info!("Editor: Redo 前发现 pending 异步提交，先 drain");
             self.drain_async_commit();
@@ -144,13 +164,16 @@ impl Editor {
         if self.editor_state.data.redo() {
             if let Some(targets) = move_targets {
                 self.selection_clear();
+                let mut used: std::collections::HashSet<usize> =
+                    std::collections::HashSet::with_capacity(targets.len().min(1024));
                 for ev in &targets {
-                    if let Some(idx) = self
-                        .editor_state
-                        .data
-                        .track_notes(self.editor_state.data.current_track)
-                        .position_of(ev)
-                    {
+                    if let Some(idx) = position_of_unused(
+                        &self.editor_state.data,
+                        self.editor_state.data.current_track,
+                        ev,
+                        &used,
+                    ) {
+                        used.insert(idx);
                         self.selection_insert(idx);
                     }
                 }
@@ -289,4 +312,30 @@ impl Editor {
     pub fn can_redo(&self) -> bool {
         self.editor_state.data.history.can_redo()
     }
+}
+
+/// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配）。
+fn position_of_unused(
+    data: &lumino_editor_state::EditorData,
+    track: usize,
+    target: &lumino_midi_model::NoteEvent,
+    used: &std::collections::HashSet<usize>,
+) -> Option<usize> {
+    let track_notes = data.track_notes(track);
+    let start = track_notes.partition_point(target.start_tick);
+    let len = track_notes.len();
+    let mut i = start;
+    while i < len {
+        let Some(n) = track_notes.get(i) else {
+            break;
+        };
+        if n.start_tick != target.start_tick {
+            break;
+        }
+        if n == target && !used.contains(&i) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }

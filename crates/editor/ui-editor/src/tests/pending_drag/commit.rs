@@ -124,7 +124,8 @@ fn test_is_editing_returns_true_when_pending_drag_exists() {
 
 #[test]
 fn test_undo_blocked_when_pending_drag_exists() {
-    // 用户选择"拦截并 Toast 提示"策略：pending 状态下 Undo 被拦截
+    // 新策略（批量撤销失败修复）：pending 幽灵态不再拦截 Undo，而是先提交/丢弃幽灵再撤销。
+    // 零位移 pending 直接丢弃后撤销上一条历史，应成功。
     let mut editor = Editor::new();
     test_helpers::seed_notes(&mut editor, 1, 0, &[Note::new(0.0, 60, 480.0)]);
     editor.push_history();
@@ -141,7 +142,14 @@ fn test_undo_blocked_when_pending_drag_exists() {
         note.end_tick = note.end_tick.max(note.start_tick + 1);
     }
 
-    // 现在 pending_drag_state 存在（模拟用户拖动后未点击空白处）
+    // 现在 pending_drag_state 存在（模拟用户拖动后未点击空白处，零位移）
     editor.pending_drag_state = Some(DragState::from_single(0, 1, 0, 60));
-    assert!(!editor.undo(), "pending 状态下 Undo 应被拦截");
+    assert!(
+        editor.undo(),
+        "零位移 pending 应先丢弃再撤销上一条，Undo 应成功"
+    );
+    assert!(
+        editor.pending_drag_state.is_none(),
+        "Undo 后幽灵 pending 应已清理"
+    );
 }
