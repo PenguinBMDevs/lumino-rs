@@ -8,6 +8,7 @@
 use std::collections::{HashMap, HashSet};
 
 use lumino_midi_model::NoteEvent;
+use lumino_midi_model::TickIndexedEvents;
 use lumino_note_core::Note;
 use lumino_note_core::history::{CreateOp, MoveOp};
 
@@ -17,42 +18,71 @@ use crate::DragState;
 impl EditorData {
     /// 应用音符创建日志到 document（增量恢复，单一权威源）
     ///
-    /// - `inverse=true`（undo）：按值精确定位删除（窗口二分，无全扫）。
-    ///   顺序无关——不受同轨后续操作导致的索引漂移影响；同值多份按份数删。
-    /// - `inverse=false`（redo）：按 tick 有序重新插入（按值）。
+    /// - `inverse=true`（undo）：按值精确定位删除（同 tick 段内窗口二分，无全扫；
+    ///   同值多份按份数分配到不同索引）。**按轨一次性区间合并删除**：旧实现逐 op
+    ///   调 `remove_note`（每次 `rebuild_index()` + 块内搬移），一笔画刷 √ 生成
+    ///   34 万音符时实测撤销 **35s**；本路径单次 `remove_note_ranges`
+    ///   （块内单遍压缩 + 单次索引重建）后回到毫秒级。
+    /// - `inverse=false`（redo）：按轨分组、按 tick 升序**批量归并插入**
+    ///   （O(N+M) 单次归并，替代逐 op `insert_note` 的块内搬移 + 逐笔增量事件）。
     ///
     /// 返回实际处理的音符数。
     pub fn apply_create_ops(&mut self, ops: &[CreateOp], inverse: bool) -> usize {
         if ops.is_empty() {
             return 0;
         }
-        let mut count = 0usize;
-        for op in ops {
-            let track_id = op.track_id as usize;
-            if inverse {
-                let Some(idx) = self.locate_create_op_note(track_id, op) else {
-                    continue;
-                };
-                if self.remove_note(track_id, idx).is_some() {
-                    count += 1;
-                }
-            } else {
-                // redo：按 tick 有序重新插入（按值）。
-                if self.insert_note(track_id, super::super::accessors::event_to_note(&op.note)) {
-                    count += 1;
+        if inverse {
+            // 1) 按轨收集待删索引：`used` 保证同值多份各分配到不同索引（按份数语义）
+            let mut per_track: HashMap<usize, (HashSet<usize>, Vec<usize>)> = HashMap::new();
+            for op in ops {
+                let track_id = op.track_id as usize;
+                let entry = per_track
+                    .entry(track_id)
+                    .or_insert_with(|| (HashSet::new(), Vec::new()));
+                if let Some(idx) = self
+                    .track_notes(track_id)
+                    .position_of_unused(&op.note, &entry.0)
+                {
+                    entry.0.insert(idx);
+                    entry.1.push(idx);
                 }
             }
+            // 2) 每轨一次性区间合并删除（含被删音符的增量事件分流）
+            let mut count = 0usize;
+            for (track_id, (_, indices)) in per_track {
+                count += self.remove_notes_merged(track_id, &indices);
+            }
+            count
+        } else {
+            // 重做：按轨分组批量归并插入（须按 tick 升序；批量插入无段内增量事件 →
+            // 当前轨走整段重建、其余轨由调用方 mark_track_notes_changed_for 标脏）
+            let mut per_track: HashMap<usize, Vec<NoteEvent>> = HashMap::new();
+            for op in ops {
+                per_track
+                    .entry(op.track_id as usize)
+                    .or_default()
+                    .push(op.note);
+            }
+            let mut count = 0usize;
+            for (track_id, mut notes) in per_track {
+                notes.sort_by_key(|n| n.start_tick);
+                let inserted = self
+                    .document
+                    .as_mut()
+                    .map(|doc| doc.batch_insert_notes_sorted(track_id, notes))
+                    .unwrap_or(0);
+                if inserted > 0 {
+                    if track_id == self.current_track {
+                        self.mark_main_track_struct_changed();
+                        self.mark_current_track_changed();
+                    } else {
+                        self.mark_track_notes_changed_for(Some(HashSet::from([track_id])));
+                    }
+                }
+                count += inserted;
+            }
+            count
         }
-        count
-    }
-
-    /// 定位 CreateOp 对应音符的当前索引（按值窗口定位，无全扫）。
-    ///
-    /// 经 `ChunkedList::position_of` 二分同 tick 段全字段匹配；
-    /// 未命中返回 None（同值多份取首个，份数语义正确）。
-    fn locate_create_op_note(&self, track_id: usize, op: &CreateOp) -> Option<usize> {
-        let track = self.track_notes(track_id);
-        track.position_of(&op.note)
     }
 
     /// 应用 MoveOp 列表到 document 对应音轨（单一权威源，删加语义）。

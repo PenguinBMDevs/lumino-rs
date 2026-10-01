@@ -1,14 +1,15 @@
 //! 画刷工具绘制逻辑（矢量笔画两阶段交互）
 //!
 //! **第一阶段（按下拖动）**：只记录一笔**矢量笔画**（逻辑坐标折线：tick 自由浮点、
-//! key 吸附整数），拖动期间**不写 document**；画布上以圆头圆尾粗线条实时预览
-//! （见 `grid::brush_tool_box`）。
+//! key 吸附整数），拖动期间**不写 document**；画布上按覆盖格画**方块**实时预览
+//! （见 `grid::brush_tool_box`，与 √ 生成结果逐格一致——所见即生成）。
 //! **第二阶段（松手待确认）**：笔画进入待确认集合，√ 一次性按覆盖范围生成音符
 //! （按层写入分配音轨、一次历史记录），× 一次性丢弃；待确认笔画的编辑历史独立于
-//! document 历史（`BrushToolState.path_history`）。
+//! document 历史（`BrushToolState.path_history`），Ctrl+Z / Ctrl+Y 逐笔撤销/重做。
 //!
 //! 断墨修复：相邻采样点之间由 `brush_tool::cov::cover_cells` 做线段栅格化
-//! （输出线段经过的**全部**网格单元），拖得再快也不会丢格；预览与生成共用该覆盖集。
+//! （输出线段经过的**全部**网格单元），拖得再快也不会丢格；预览与生成共用
+//! `brush_pending_notes`（唯一权威源）。
 //!
 //! 命中优先级（按下）：**待确认笔画实心区 > 已确认音符 > 空白处新落笔**——
 //! 笔画必须能被拖动，即使它盖在已有音符上方。
@@ -18,6 +19,7 @@
 use crate::{Editor, HitType};
 use iced_core::Point;
 
+mod cells;
 mod confirm;
 
 /// 笔画实心区命中容差（像素）：线宽之外再放宽，降低"按不住"的挫败感
@@ -65,12 +67,12 @@ impl Editor {
         1 + idx
     }
 
-    /// 某层笔画颜色 = 该层音轨的**音符显示色**加深 40%（含洋葱皮轨，同一规则）
+    /// 指定音轨的笔画方块颜色（= 该轨音符显示色 × 0.6）
     ///
     /// 取色单源 = `current_track_color_f32(doc_track)`，与卷帘音符实例着色同源，
     /// 因此调色板变更后下一次重绘即变色（无需缓存失效）。
-    pub(crate) fn brush_layer_color(&self, level: usize, base_track: usize) -> iced_core::Color {
-        let track = self.brush_track_for_level(level, base_track);
+    /// 预览按"解析后的音轨"直接取色（层号已在 `brush_pending_notes`/行段构建时解析）。
+    pub(crate) fn brush_track_color(&self, track: usize) -> iced_core::Color {
         let c = lumino_extras::palette::current_track_color_f32(track);
         darken(
             iced_core::Color::from_rgba(c[0], c[1], c[2], c[3]),
@@ -134,7 +136,8 @@ impl Editor {
 
     /// 结束画刷笔触（释放时调用）：进入待确认状态
     ///
-    /// 落笔结束把整笔合并进栈顶（新笔画 = 一步撤销）；拖动结束把位移记为一步撤销。
+    /// 落笔结束把整笔合并进栈顶（新画笔 = 一步撤销）；拖动结束**仅在真的移动过**时
+    /// 记一步撤销（原地按一下不产生"空撤销步"，否则 Ctrl+Z 会出现按了没反应的一步）。
     /// 松手不写 document，不触发 `mark_notes_changed`（避免空间索引/洋葱皮无谓重建）。
     pub(crate) fn finish_brush_stroke(&mut self) {
         let brush = &mut self.editor_state.brush_tool;
@@ -142,34 +145,39 @@ impl Editor {
             brush.finish_stroke();
             brush.update_top_path_history();
         } else if brush.is_dragging() {
+            let moved = brush.drag_moved();
             brush.end_drag();
-            brush.push_path_history();
+            if moved {
+                brush.push_path_history();
+            }
         }
     }
 
     /// 笔画实心区命中测试（屏幕空间）：返回最上层（最后绘制）命中的笔画索引
     ///
-    /// 实心区 = 折线在屏幕空间按半径 `总宽/2 + 容差` 膨胀后的区域；
-    /// 单点笔画退化为圆。
+    /// 命中带与**方块带**对齐：方块从落笔 key 向上铺 `thickness` 层，故把折线整体
+    /// 上移半个带高（`(thickness-1)/2` 个 key）后再按半径 `总宽/2 + 容差` 膨胀——
+    /// 所见（方块）即所按（命中区），不会出现"按到方块下方空白也算命中"。
     pub(crate) fn brush_stroke_hit_test(&self, pos: Point) -> Option<usize> {
         let brush = &self.editor_state.brush_tool;
         if !brush.has_pending() {
             return None;
         }
         let radius = self.brush_total_width_px() * 0.5 + STROKE_HIT_SLOP;
+        let band_offset = (self.brush.thickness.max(1) as f32 - 1.0) * 0.5;
         for (index, stroke) in brush.strokes.iter().enumerate().rev() {
             match stroke.points.as_slice() {
                 [] => continue,
                 [only] => {
-                    let p = self.line_pos_screen_pos(*only);
+                    let p = self.line_pos_screen_pos((only.0, only.1 + band_offset));
                     if (p.x - pos.x).hypot(p.y - pos.y) <= radius {
                         return Some(index);
                     }
                 }
                 points => {
                     for pair in points.windows(2) {
-                        let a = self.line_pos_screen_pos(pair[0]);
-                        let b = self.line_pos_screen_pos(pair[1]);
+                        let a = self.line_pos_screen_pos((pair[0].0, pair[0].1 + band_offset));
+                        let b = self.line_pos_screen_pos((pair[1].0, pair[1].1 + band_offset));
                         if point_segment_distance(pos, a, b) <= radius {
                             return Some(index);
                         }

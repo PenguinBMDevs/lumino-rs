@@ -244,6 +244,20 @@ impl BrushToolState {
         }
     }
 
+    /// 当前拖动是否**真的移动了**笔画（相对 `drag_orig`）
+    ///
+    /// 用于拖动结束时判定是否记一步撤销：原地按一下（或拖回原位）不应产生
+    /// "空撤销步"——否则用户按 Ctrl+Z 会出现"按了没反应"的一步。
+    pub fn drag_moved(&self) -> bool {
+        let BrushInteraction::Dragging { stroke } = self.interaction else {
+            return false;
+        };
+        match self.strokes.get(stroke) {
+            Some(current) => *current != self.drag_orig,
+            None => false,
+        }
+    }
+
     /// 丢弃全部待确认笔画与笔画历史（× / 切工具）
     pub fn clear_pending(&mut self) {
         self.strokes.clear();
