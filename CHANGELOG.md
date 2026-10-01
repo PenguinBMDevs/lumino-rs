@@ -51,7 +51,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   扩展 trait 对象；
   ⑨ 重建耗时实测与优化：全量重建 104–188ms（缩回 16 通道最贵）→ 同布局文档切换
   改轻量复位（`SetPercussionMode(false)`×N + `SystemReset`），实测 0.012–0.114ms，
-  仅端口数真变化才重建。记录见
+  仅端口数真变化才重建；
+  ⑩ P0 维护批：未钳制 `channels_for_max_port` 收为 `pub(crate)`、折叠事件统计口径
+  统一、内存渲染进度显示真实音符数、`AudioRenderConfig` Debug 补全、chase 后触契约
+  写明、`fade_out_killing` 注释补 fork 引用（原注释正确，核实为误报）。记录见
   `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复

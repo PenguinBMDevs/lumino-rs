@@ -101,7 +101,8 @@ impl XSynth {
         // 黑 MIDI 密集段实测可丢 99%+），对黑 MIDI 编辑器属功能性缺陷。
         // 显式关闭（0 = 不限流）；发声规模仍由每键 layers 上限约束，不会无限膨胀。
         // 如需恢复保护，把 0 改为具体阈值即可（按通道估算 NPS，非全局限流）。
-        // 实时后端不启用 fade_out_killing（引擎默认 false，被杀 voice 立即出队）：
+        // 实时后端不启用 fade_out_killing（`ChannelInitOptions::default()` 即 false，
+        // fork `core/src/channel/mod.rs:74-81`；被杀 voice 立即出队）：
         // 该选项会让被杀 voice 滞留到本次渲染结束才清除，黑 MIDI 高密度事件积压时
         // 每个 NoteOn 的全 buffer 扫描退化为 O(n²)，实测渲染负载 13~28 倍实时且
         // 长时间无法恢复（死亡螺旋），故产品层直接移除该开关。

@@ -50,10 +50,10 @@ impl Api for XSynth {
 impl SynthControl for XSynth {
     /// 按文档端口布局重建合成管线（0 → Midi/16 通道；否则 Custom）。
     ///
-    /// **总是全量重建**（即使 `max_port` 未变）：文档切换时必须清掉上一文档遗留的
-    /// bank/打击乐模态状态，否则新文档里没有 Bank Select 的通道会沿用旧模态。
-    /// `rebuild_with_layout` 仅在新管线构建成功后提交布局；失败返回 Err，
-    /// 旧管线继续服务，调用方负责告警。
+    /// - **同布局**：走轻量复位（`reset_channel_state`，逐通道清打击乐模态 +
+    ///   `AllChannels(SystemReset)`，实测 0.01–0.11ms，不重开音频流）；
+    /// - **不同布局**：`rebuild_with_layout` 全量重建（104–188ms），仅在新管线
+    ///   构建成功后提交布局；失败返回 Err，旧管线继续服务，调用方负责告警。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
         if max_port == self.midi_max_port {
             // N-2：布局未变 → 轻量复位（微秒级），不重开音频流；

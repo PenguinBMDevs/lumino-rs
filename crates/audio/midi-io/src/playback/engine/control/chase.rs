@@ -6,8 +6,13 @@
 //!
 //! 追齐数据来源为当前轨的 `midi_events`（automation lane 展开结果）与
 //! 非当前轨的 `document.control_events`，两者按 tick 合并后取“每通道最后值”。
-//! 输出顺序：Program → RPN/NRPN 选择（MSB→LSB）→ DataEntry（MSB→LSB）→
-//! 其他 CC（控制器升序）→ Pitch Bend，保证 RPN 数据不会落到错误参数上。
+//! 输出顺序：打击乐模态 → Program → RPN/NRPN 选择（MSB→LSB）→ DataEntry
+//! （MSB→LSB）→ 其他 CC（控制器升序）→ Pitch Bend，保证 RPN 数据不会落到
+//! 错误参数上。
+//!
+//! 契约：`ChannelPressure` / `PolyPressure`（后触）**不参与追齐**——文档控制事件
+//! 只展开 kind 0/1/2（CC/PC/PB，见 `state.rs::push_control_event`），后触在 seek
+//! 后保留合成器侧旧值；如需追齐，需先给 loader/render 补后触事件展开。
 
 use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port_clamped};
 

@@ -42,14 +42,12 @@ pub fn split_global_channel(global: u16) -> (u8, u8) {
     )
 }
 
-/// 覆盖端口 `0..=max_port` 所需的总通道数（`(max_port + 1) * 16`）。
+/// 覆盖端口 `0..=max_port` 所需的**未钳制**通道数（`(max_port + 1) * 16`）。
 ///
-/// 例：单端口文档 → 16；Night Voyager（端口 0..=6）→ 112。
-///
-/// 注意：调用方应先对 `max_port` 取 [`effective_port`] 再传入，
-/// 保证不超出 [`MAX_PORTS`] 对应的 256 通道上限。
+/// 仅供本模块内部与单测使用：直接传 u7 端口（如 127）会得到 2048 通道。
+/// 业务调用方一律走 [`channels_for_max_port_clamped`]（产品上限 16 端口/256 通道）。
 #[inline]
-pub fn channels_for_max_port(max_port: u8) -> u32 {
+pub(crate) fn channels_for_max_port(max_port: u8) -> u32 {
     (u32::from(max_port) + 1) * u32::from(CHANNELS_PER_PORT)
 }
 
@@ -71,8 +69,10 @@ pub fn track_global_channel(port: u8, channel: u8) -> u16 {
 
 /// 逐端口 ch9（打击乐）的全局通道列表：`0..=min(max_port, MAX_PORTS-1)`。
 ///
-/// 用于 `SynthFormat::Custom` 下的打击乐显式初始化；单端口（max_port=0）返回
-/// 仅端口 0 的 ch9。返回 `Vec`（调用点每次仅执行一次，可读性优先）。
+/// 用于 `SynthFormat::Custom` 下的打击乐显式初始化；**单端口（max_port=0）也返回
+/// `[9]`**。注意与导出侧 `AudioRenderConfig::percussion_channels()` 区分：后者在
+/// 单端口返回**空**（`SynthFormat::Midi` 由引擎自动开启 ch9，勿重复下发）。
+/// 返回 `Vec`（调用点每次仅执行一次，可读性优先）。
 pub fn percussion_channels(max_port: u8) -> Vec<u32> {
     (0..=effective_port(max_port))
         .map(|port| u32::from(global_channel(port, 9)))

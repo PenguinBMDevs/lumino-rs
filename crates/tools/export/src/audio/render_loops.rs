@@ -237,7 +237,8 @@ pub(super) fn run_streaming_render(
             processor.render_frames(advance)?;
         }
         let port = track_ports.get(track_idx).copied().unwrap_or(0);
-        if port >= MAX_PORTS {
+        // B1 口径与内存路径对齐：只统计 MIDI 事件（meta/文本等不计入折叠告警）。
+        if port >= MAX_PORTS && matches!(kind, TrackEventKind::Midi { .. }) {
             clamped_events += 1;
         }
         cursor.add_rendered(processor.dispatch_event(&kind, port)?);
@@ -294,6 +295,7 @@ pub(super) fn run_document_render(
     total_seconds: f64,
 ) -> ExportResult<()> {
     let mut event_count = 0_u64;
+    let mut note_count = 0_u64;
     let mut last_progress_time = std::time::Instant::now();
     let start_time = std::time::Instant::now();
     let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
@@ -320,7 +322,14 @@ pub(super) fn run_document_render(
                 now.duration_since(start_time).as_secs_f64(),
                 pct * total_seconds,
             );
-            report_progress(config, pct, event_count, 0, start_time, speed_meter.speed());
+            report_progress(
+                config,
+                pct,
+                event_count,
+                note_count,
+                start_time,
+                speed_meter.speed(),
+            );
             last_progress_time = now;
         }
 
@@ -335,6 +344,10 @@ pub(super) fn run_document_render(
             }
             cursor.add_rendered(processor.dispatch_event(&kind, event.port)?);
             event_count += 1;
+            if event.kind == 0 {
+                // 0 = NoteOn（与流式路径同口径）
+                note_count += 1;
+            }
         }
     }
 
@@ -351,7 +364,14 @@ pub(super) fn run_document_render(
         );
     }
 
-    report_progress(config, 1.0, event_count, 0, start_time, speed_meter.speed());
-    info!("文档流式渲染完成: 处理 {event_count} 个事件");
+    report_progress(
+        config,
+        1.0,
+        event_count,
+        note_count,
+        start_time,
+        speed_meter.speed(),
+    );
+    info!("文档流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
     Ok(())
 }

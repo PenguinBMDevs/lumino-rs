@@ -94,6 +94,9 @@ const MIN_CUSHION_MS: f64 = 100.0;
 ///
 /// 注意绝不能把 0 直接传给 `SetLayerCount(Some(0))`：xsynth 会立即偷声，
 /// 导致该键所有新音符无声（0 按"不限制"处理是产品约定）。
+///
+/// 与导出侧 `lumino_export::audio::config::normalize_layer_limit` 同口径
+/// （`None`/`Some(0)` = 不限）；两者需同步修改，防止实时与导出语义分叉。
 fn normalize_max_voices_per_key(value: Option<usize>) -> Option<usize> {
     match value {
         None | Some(0) => None,
