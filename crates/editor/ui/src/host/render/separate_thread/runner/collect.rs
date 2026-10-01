@@ -100,10 +100,28 @@ impl Host {
 
         // 走带视图轨道颜色：统一使用当前调色板（与 ArrangementUniform 一致），
         // 避免与 gfx 硬编码 ARRANGEMENT_PALETTE 双轨制造成颜色不同步。
-        let track_colors: [[f32; 3]; 12] = std::array::from_fn(|i| {
-            let c = lumino_extras::palette::current_track_color_f32(i);
-            [c[0], c[1], c[2]]
-        });
+        //
+        // 用**文档音轨索引**直查，长度必须覆盖 `track_order` 中出现的全部文档轨 id：
+        // 取色规则本体是 `current_track_color_f32(doc_track)`（音符层同规则，内部按
+        // 调色板长度取模）。旧的 12 项定长镜像在调色板非 12 色、或文档轨 id ≥ 12 时
+        // 会串色/越界——ghost 预览与真实音符就会不同色。
+        //
+        // 唯一消费者是 ghost 取色，故**未拖动时不分配**：非拖动态保持零新增分配。
+        let track_colors: Vec<[f32; 3]> = if self.root.arrangement_view.ghost_notes.is_empty() {
+            Vec::new()
+        } else {
+            let color_slots = track_order
+                .iter()
+                .copied()
+                .max()
+                .map_or(0, |max_doc| max_doc.saturating_add(1));
+            (0..color_slots)
+                .map(|i| {
+                    let c = lumino_extras::palette::current_track_color_f32(i);
+                    [c[0], c[1], c[2]]
+                })
+                .collect()
+        };
 
         let scene_params = ArrangementSceneParams {
             viewport: &viewport,
@@ -113,6 +131,7 @@ impl Host {
             midi_doc: self.root.editor.editor_state.data.document.as_ref(),
             playback_position: self.root.editor.playback_position,
             colors: &colors,
+            note_height: lumino_gfx::ARRANGEMENT_NOTE_HEIGHT,
             ghost_notes: &self.root.arrangement_view.ghost_notes,
             sel_rect: self
                 .root

@@ -43,6 +43,25 @@ pub struct ArrangementUniform {
     pub _pad4: f32,
 }
 
+/// 走带音符条高度（像素）—— 音符层与 ghost 预览共用的**唯一权威**。
+///
+/// 音符层在渲染线程把它写进 `ArrangementNoteUniform::note_height`
+/// （见 `render_thread::render_loop::runner::run::arrangement`），覆盖层（ghost）
+/// 在 UI 线程经 `ArrangementSceneParams::note_height` 取同一常量。两处一旦不一致，
+/// ghost 的高度与纵向位置就会和真实音符错开。
+pub const ARRANGEMENT_NOTE_HEIGHT: f32 = 4.0;
+
+/// 走带音符描边加深系数 —— 必须与 `shaders/arrangement_note.wgsl` 及
+/// `shaders/arrangement.wgsl` 中的 `BORDER_DARKEN_FACTOR` 保持同值。
+///
+/// 为什么 CPU 侧也需要它：走带音符层复用洋葱皮共享缓冲，其 `border_width`
+/// 低 16 位恒为 1（`host::render::onion_skin::onion_border_width`），而
+/// `note_height` 只有 4px → 音符着色器里 `hy = border_width / (note_height/2) = 0.5`，
+/// 4px 高的音符每条扫描线都落在「边框」判据内，**实际渲染色 = 调色板色 × 本系数**、
+/// 通体平涂、无填充。ghost 要与之一致就必须先乘同一系数（覆盖层自身不再加深，
+/// `border_width = 0`），否则 ghost 会比真实音符亮 2.5 倍。
+pub const ARRANGEMENT_NOTE_BORDER_DARKEN_FACTOR: f32 = 0.4;
+
 /// 走带音符着色器 Uniform —— 复用钢琴卷帘常驻 GPU 音符缓冲（零第二份显存）
 ///
 /// 与 `shaders/arrangement_note.wgsl` 的 `Uniforms` 严格对齐。
@@ -74,7 +93,7 @@ impl Default for ArrangementNoteUniform {
             viewport_size: [800.0, 600.0],
             canvas_offset: [0.0, 0.0],
             lane_height: 48.0,
-            note_height: 4.0,
+            note_height: ARRANGEMENT_NOTE_HEIGHT,
             _pad: [0.0, 0.0],
         }
     }
@@ -208,15 +227,22 @@ impl ArrangementNoteInstance {
         }
     }
 
-    /// 创建 ghost 音符预览实例
+    /// 创建 ghost 音符预览实例（屏幕坐标）。
+    ///
+    /// 与真实音符外观对齐的四项硬约束（改这里之前先读
+    /// [`ARRANGEMENT_NOTE_HEIGHT`] 与 [`ARRANGEMENT_NOTE_BORDER_DARKEN_FACTOR`]）：
+    /// - `alpha = 1.0`：`arrangement_note.wgsl` 的 `unpack_color` 恒返回 a=1.0；
+    /// - 无圆角（`radius = 0.0`）：真实音符是硬边矩形，不是胶囊；
+    /// - 无边框（`border_width = 0.0`）：暗化由调用方乘系数完成，避免二次压暗；
+    /// - 最小宽度 `1.0`：与 `arrangement_note.wgsl` 的 `max(length*ppu, 1.0)` 一致。
     pub fn ghost_note(x: f32, y: f32, w: f32, h: f32, color: [f32; 3]) -> Self {
         Self {
             x,
             y,
-            w: w.max(2.0),
+            w: w.max(1.0),
             h,
-            rgba_packed: pack_rgba(color[0], color[1], color[2], 0.5),
-            props_packed: pack_props(2.0, 1.0),
+            rgba_packed: pack_rgba(color[0], color[1], color[2], 1.0),
+            props_packed: pack_props(0.0, 0.0),
             velocity: 0,
             tag: 5,
         }

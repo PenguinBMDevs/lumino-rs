@@ -131,8 +131,11 @@ impl ArrangementViewport {
 pub struct ArrangementView {
     /// 视口状态
     pub viewport: ArrangementViewport,
-    /// 移动拖拽时 ghost 音符预览（tick_start, tick_end, track），由 WGPU 渲染。
-    pub ghost_notes: Vec<(f64, f64, usize)>,
+    /// 移动拖拽时 ghost 音符预览 `(tick_start, tick_end, 视觉轨, key)`，由 WGPU 渲染。
+    ///
+    /// `key` 供覆盖层按真实音符公式定位纵向位置；`视觉轨` 为侧边栏顺序索引
+    /// （取色时由覆盖层经 `track_order` 映射回文档轨）。
+    pub ghost_notes: Vec<(f64, f64, usize, u8)>,
     /// 拖拽中的框选矩形（tick_start, tick_end, track_lo, track_hi），由 WGPU 渲染。
     /// 覆盖 Pointer 框选、移动拖拽、Eraser 拖拽三种场景。
     pub drag_sel_rect: Option<(f64, f64, usize, usize)>,
