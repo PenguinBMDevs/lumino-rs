@@ -15,6 +15,7 @@ pub use soundfont::load_soundfonts;
 
 use std::sync::Arc;
 
+use lumino_midi_model::multi_port::PercussionTracker;
 use xsynth_core::channel_group::ChannelGroup;
 
 use super::{
@@ -37,6 +38,8 @@ pub struct MidiEventProcessor<'a> {
     vec_pool: Vec<Vec<f32>>,
     /// 限幅器（启用时）
     limiter: Option<AudioLimiter>,
+    /// REND-002 方案 B：运行时通道「音符/打击乐」模态跟踪（Bank Select 约定）。
+    percussion: PercussionTracker,
 }
 
 /// 进度回调

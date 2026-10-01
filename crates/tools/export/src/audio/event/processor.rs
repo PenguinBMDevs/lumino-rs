@@ -6,11 +6,11 @@ use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
 use xsynth_core::{
     AudioPipe,
-    channel::{ChannelAudioEvent, ChannelEvent, ControlEvent},
-    channel_group::{ChannelGroup, SynthEvent},
+    channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
+    channel_group::{ChannelGroup, SynthEvent, SynthFormat},
 };
 
-use lumino_midi_model::multi_port::{effective_port, global_channel};
+use lumino_midi_model::multi_port::{PercussionTracker, effective_port, global_channel};
 
 use crate::audio::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
@@ -63,6 +63,11 @@ impl<'a> MidiEventProcessor<'a> {
         } else {
             None
         };
+        // REND-002：模态跟踪按合成层实际通道数初始化（与 `synth_format` 一致）。
+        let synth_channels = match config.synth_format() {
+            SynthFormat::Midi => 16,
+            SynthFormat::Custom { channels } => channels,
+        };
         MidiEventProcessor {
             config,
             channel_group,
@@ -72,6 +77,7 @@ impl<'a> MidiEventProcessor<'a> {
             channel_count: params.channels.count(),
             vec_pool: Vec::new(),
             limiter,
+            percussion: PercussionTracker::new(synth_channels),
         }
     }
 
@@ -171,6 +177,18 @@ impl<'a> MidiEventProcessor<'a> {
                     ));
                 }
                 MidiMessage::Controller { controller, value } => {
+                    // REND-002 方案 B：Bank Select（CC0/CC32）驱动的运行时打击乐
+                    // 模态切换。xsynth 在打击乐模态下忽略 CC0，因此切换必须在
+                    // 转发本条 CC 之前显式下发；CC32 只在收到过 CC0 后才参与判定。
+                    if let Some(on) =
+                        self.percussion
+                            .observe_cc(ch as u16, controller.as_int(), value.as_int())
+                    {
+                        self.channel_group.send_event(SynthEvent::Channel(
+                            ch,
+                            ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(on)),
+                        ));
+                    }
                     self.channel_group.send_event(SynthEvent::Channel(
                         ch,
                         ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
