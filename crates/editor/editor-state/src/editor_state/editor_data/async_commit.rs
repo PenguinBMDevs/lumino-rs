@@ -10,7 +10,7 @@
 
 use super::EditorData;
 use lumino_core::error::{CoreError, Result};
-use lumino_midi_model::NoteEvent;
+use lumino_midi_model::{NoteEvent, TickIndexedEvents};
 use lumino_note_core::history::MoveOp;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
@@ -192,7 +192,7 @@ fn apply_move_ops_to_clone(
         // （批量框选多次移动后显示与内存分叉的根因之一）。
         let mut resolved: Vec<usize> = Vec::with_capacity(count);
         for orig in &op.originals {
-            if let Some(idx) = position_of_value_in_slice_skipping(&notes, orig, &used_indices) {
+            if let Some(idx) = notes.position_of_unused(orig, &used_indices) {
                 used_indices.insert(idx);
                 resolved.push(idx);
             }
@@ -253,31 +253,6 @@ fn apply_move_ops_to_clone(
         modified_ranges,
         reorder_ranges,
     })
-}
-
-/// 按值定位（跳过已占用索引，同值多份按份数分配不同索引）。
-///
-/// 以 `target.start_tick` 二分定位后，在 `start_tick <= target` 范围内线性扫描，
-/// 跳过已占用索引后返回首个全字段匹配；未命中返回 None，禁止全片兜底扫描。
-/// 跳过 `used` 中已占用的索引（同值多份按份数分配不同索引）。
-///
-/// 以 `target.start_tick` 二分定位后，在 `start_tick <= target` 范围内线性扫描，
-/// 跳过已占用索引后返回首个全字段匹配；未命中返回 None，禁止全片兜底扫描。
-fn position_of_value_in_slice_skipping(
-    notes: &[NoteEvent],
-    target: &NoteEvent,
-    used: &std::collections::HashSet<usize>,
-) -> Option<usize> {
-    let start = notes.partition_point(|n| n.start_tick < target.start_tick);
-    let mut i = start;
-    while i < notes.len() && notes[i].start_tick <= target.start_tick {
-        if notes[i] == *target && !used.contains(&i) {
-            return Some(i);
-        }
-        i += 1;
-    }
-    // 同 tick 段内未命中即返回 None，禁止全片兜底扫描。
-    None
 }
 
 /// 将（可重复、无序的）索引集合排序去重后合并为连续区间 `(start, end_exclusive)`。

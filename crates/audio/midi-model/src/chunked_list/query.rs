@@ -158,3 +158,95 @@ impl ChunkedList<crate::note_event::NoteEvent> {
         self.position_of(event)
     }
 }
+
+/// 按 tick 有序、可按全局索引访问的事件序列（[`Self::position_of_unused`] 的存储抽象）。
+///
+/// 存在的唯一理由：**让「同值多份按份数分配」这一原语只有一份实现**。
+/// 该原语服务于两种截然不同的存储——[`ChunkedList<T>`]（跨轨分块，无法提供连续切片）
+/// 与 `[T]`（异步提交线程中的整轨克隆副本）。若各自实现一份，同值多份场景下
+/// 改一处漏一处即造成**静默丢份**（选中丢音符 / 撤销丢音符，无任何提示）。
+///
+/// 已实现：[`ChunkedList<T>`] 与 `[T]`。新增存储只需实现三个原语方法即可复用同一算法。
+pub trait TickIndexedEvents {
+    /// 事件类型（须可按 tick 排序且可全字段比较）
+    type Event: EventTick + PartialEq;
+
+    /// 事件总数
+    fn event_count(&self) -> usize;
+
+    /// 全局索引访问；越界返回 `None`
+    fn event_at(&self, index: usize) -> Option<&Self::Event>;
+
+    /// 首个 `tick() >= tick` 的全局索引（等价 `partition_point(|e| e.tick() < tick)`）
+    fn first_index_at_tick(&self, tick: u32) -> usize;
+
+    /// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配）。
+    ///
+    /// 先定位到 `target` 所在 tick 段首，再在该段内线性扫描**全字段匹配**
+    /// （`PartialEq`）且未被 `used` 占用的首个索引；段内未命中即返回 `None`，
+    /// **无全扫兜底**（跨段扫描会命中错误音符，宁可取消选中）。
+    ///
+    /// 调用方负责把返回索引插入 `used`，以保证同值多份各分配到不同索引。
+    fn position_of_unused(
+        &self,
+        target: &Self::Event,
+        used: &std::collections::HashSet<usize>,
+    ) -> Option<usize> {
+        let mut i = self.first_index_at_tick(target.tick());
+        let len = self.event_count();
+        while i < len {
+            let Some(n) = self.event_at(i) else {
+                break;
+            };
+            // 段内才做全字段比较：越过本段即终止（无跨段兜底）
+            if n.tick() != target.tick() {
+                break;
+            }
+            if n == target && !used.contains(&i) {
+                return Some(i);
+            }
+            i += 1;
+        }
+        None
+    }
+}
+
+impl<T: EventTick + PartialEq> TickIndexedEvents for ChunkedList<T> {
+    type Event = T;
+
+    #[inline]
+    fn event_count(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn event_at(&self, index: usize) -> Option<&T> {
+        self.get(index)
+    }
+
+    #[inline]
+    fn first_index_at_tick(&self, tick: u32) -> usize {
+        // 分块容器的真二分（块级 + 块内），首个 tick >= 目标
+        self.partition_point(tick)
+    }
+}
+
+impl<T: EventTick + PartialEq> TickIndexedEvents for [T] {
+    type Event = T;
+
+    #[inline]
+    fn event_count(&self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn event_at(&self, index: usize) -> Option<&T> {
+        self.get(index)
+    }
+
+    #[inline]
+    fn first_index_at_tick(&self, tick: u32) -> usize {
+        // 与 ChunkedList::partition_point 同语义：首个 tick >= 目标
+        self.partition_point(|e| e.tick() < tick)
+    }
+}

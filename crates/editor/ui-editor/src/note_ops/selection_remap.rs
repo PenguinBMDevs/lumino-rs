@@ -24,8 +24,9 @@
 //!
 //! [`ChunkedList::position_of`]: lumino_midi_model::ChunkedList::position_of
 
+use lumino_midi_model::TickIndexedEvents;
+
 use super::Editor;
-use super::note_position::position_of_unused;
 
 /// 逐音符捕获上限：超过则放弃捕获（防超大选中集内存/耗时失控），
 /// 重映射时保守清空选择（宁可丢选中，不可选错音符）。
@@ -108,8 +109,11 @@ impl Editor {
         let mut used: std::collections::HashSet<usize> =
             std::collections::HashSet::with_capacity(entries.len().min(1024));
         for ev in entries {
-            if let Some(idx) =
-                position_of_unused(&self.editor_state.data, identity.track, ev, &used)
+            if let Some(idx) = self
+                .editor_state
+                .data
+                .track_notes(identity.track)
+                .position_of_unused(ev, &used)
             {
                 used.insert(idx);
                 self.selection_insert(idx);

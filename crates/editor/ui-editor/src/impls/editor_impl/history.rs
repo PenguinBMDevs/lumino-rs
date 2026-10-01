@@ -4,7 +4,7 @@
 //! 优先撤销最近的路径编辑；无路径历史时才回退 document 音符历史。
 
 use crate::Editor;
-use crate::note_ops::note_position::position_of_unused;
+use lumino_midi_model::TickIndexedEvents;
 
 impl Editor {
     /// Undo the last action
@@ -64,12 +64,12 @@ impl Editor {
                 let mut used: std::collections::HashSet<usize> =
                     std::collections::HashSet::with_capacity(targets.len().min(1024));
                 for ev in &targets {
-                    if let Some(idx) = position_of_unused(
-                        &self.editor_state.data,
-                        self.editor_state.data.current_track,
-                        ev,
-                        &used,
-                    ) {
+                    if let Some(idx) = self
+                        .editor_state
+                        .data
+                        .track_notes(self.editor_state.data.current_track)
+                        .position_of_unused(ev, &used)
+                    {
                         used.insert(idx);
                         // 仅当目标仍在当前轨（跨轨移动 target 轨不同则跳过，避免误选）。
                         self.selection_insert(idx);
@@ -168,12 +168,12 @@ impl Editor {
                 let mut used: std::collections::HashSet<usize> =
                     std::collections::HashSet::with_capacity(targets.len().min(1024));
                 for ev in &targets {
-                    if let Some(idx) = position_of_unused(
-                        &self.editor_state.data,
-                        self.editor_state.data.current_track,
-                        ev,
-                        &used,
-                    ) {
+                    if let Some(idx) = self
+                        .editor_state
+                        .data
+                        .track_notes(self.editor_state.data.current_track)
+                        .position_of_unused(ev, &used)
+                    {
                         used.insert(idx);
                         self.selection_insert(idx);
                     }

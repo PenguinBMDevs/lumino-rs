@@ -3,14 +3,12 @@
 //! 按职责拆分以满足 ≤400 行约束：
 //! - `selection`: 选中集合增删改（insert/remove/clear/assign）
 //! - `selection_remap`: 结构编辑后主选择索引重映射（按 id 恢复选中）
-//! - `note_position`: 音符按值定位原语（同 tick 段内跳过已占用索引，三处重选共享唯一实现）
 //! - `hit_test`: 音符命中检测（hit_test_note + note_hit_type）
 //! - `delete`: 音符删除（delete_note_by_index/delete_note_at/delete_selected_notes）
 //! - `selection_box`: 选择框边界计算（get_selection_box_bounds + hit_test_selection_box）
 
 mod delete;
 mod hit_test;
-pub(crate) mod note_position;
 mod selection;
 mod selection_box;
 pub(crate) mod selection_remap;

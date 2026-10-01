@@ -3,9 +3,9 @@
 //! 从 `impls/editor_impl.rs` 抽出，控制文件行数并保持单一职责。
 
 use crate::note::Note;
-use crate::note_ops::note_position::position_of_unused;
 use crate::{EditState, Editor};
 use lumino_editor_state::DragState;
+use lumino_midi_model::TickIndexedEvents;
 
 impl Editor {
     /// Push current state to history
@@ -442,7 +442,12 @@ impl Editor {
             std::collections::HashSet::with_capacity(ghost_entries.len().min(1024));
         let track = self.editor_state.data.current_track;
         for ev in ghost_entries {
-            if let Some(idx) = position_of_unused(&self.editor_state.data, track, ev, &used) {
+            if let Some(idx) = self
+                .editor_state
+                .data
+                .track_notes(track)
+                .position_of_unused(ev, &used)
+            {
                 used.insert(idx);
                 self.selection_insert(idx);
             }
@@ -474,12 +479,12 @@ impl Editor {
                 orig.channel,
             );
             news.release_velocity = orig.release_velocity;
-            if let Some(idx) = position_of_unused(
-                &editor.editor_state.data,
-                editor.editor_state.data.current_track,
-                &news,
-                &used,
-            ) {
+            if let Some(idx) = editor
+                .editor_state
+                .data
+                .track_notes(editor.editor_state.data.current_track)
+                .position_of_unused(&news, &used)
+            {
                 used.insert(idx);
                 editor.selection_insert(idx);
             }

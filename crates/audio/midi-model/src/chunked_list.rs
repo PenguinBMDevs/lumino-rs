@@ -33,6 +33,7 @@ mod tests;
 use std::sync::Arc;
 
 pub use iter::WindowIter;
+pub use query::TickIndexedEvents;
 pub use restore::{SortedRestoreRanges, restore_sorted_vec, sorted_locally_in_slice};
 
 /// 单块容量：50 万事件
