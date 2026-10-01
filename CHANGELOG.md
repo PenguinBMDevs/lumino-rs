@@ -33,6 +33,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   显式告警（超限轨道清单）并在渲染结束汇总折叠事件数，不静默丢音/串台（B1）；
   ④ 新增双端口/单端口自动 fixture 与映射纯函数单测（`multi_port_render.rs`），
   CPU 离线导出算法零改动。记录见 `docs/2026-10-01-REND-002-CPU多端口Phase2导出落地记录.md`
+- **CPU 实时落地（Phase 3，含运行时打击乐模态 B）** — ① `XSynthOptions.midi_max_port`
+  驱动实时 `SynthFormat::Midi/Custom`，`Custom` 逐端口显式开 ch9；
+  ② `Api::set_midi_port_layout` + “重建成功才提交布局”，文档装载/新建/关闭在
+  runner 侧应用，异步初始化完成后对齐；③ 播放 `MidiMessage/EventType/NoteEvent`
+  通道升 u16 全局通道，当前轨/其他轨/automation 均按来源轨道端口映射；
+  ④ 共享 `PercussionTracker`（midi-model）按 GS/XG Bank Select 约定在导出与实时
+  同步切换打击乐模态（切换消息先于触发 CC），chase 追齐模态并修正跨端口通道；
+  ⑤ 暂停清理改 `release_all_dampers`（XSynth AllChannels）覆盖全部端口；
+  ⑥ 单端口保持 `Midi`/恒等路径（零行为变化）。记录见
+  `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复
 
