@@ -92,6 +92,9 @@ pub struct MidiManager {
     /// 由文档装载入口写入；XSynth 就绪时应用/重建，未就绪（异步初始化或
     /// System 回退）时暂存，待 `check_async_init_complete` 完成后对齐。
     desired_midi_max_port: u8,
+    /// REND-002：启动本轮 XSynth 异步初始化时注入的布局；完成回调据此判断
+    /// 是否需要再对齐（初始化期间文档可能已切换），避免刚初始化完又白重建一次。
+    spawned_midi_max_port: u8,
 }
 
 impl Default for MidiManager {
@@ -121,6 +124,7 @@ impl Default for MidiManager {
             lgs_use_sinc: false,
             winmm_output_device_id: None,
             desired_midi_max_port: 0,
+            spawned_midi_max_port: 0,
         }
     }
 }

@@ -143,7 +143,10 @@ impl OutputConnection for XSynthOutputConn {
                 ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
             )),
             0xE0 => {
-                let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
+                // fork 契约：`PitchBendValue` 为归一化 -1.0..1.0（raw 中心 8192 → 0）。
+                // raw 14-bit 直传会把中心值当作灵敏度倍数（潜在跑调/爆音）。
+                let raw = u16::from(b1) | (u16::from(b2) << 7);
+                let bend = (f32::from(raw) - 8192.0) / 8192.0;
                 self.send_event(SynthEvent::Channel(
                     channel,
                     ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(

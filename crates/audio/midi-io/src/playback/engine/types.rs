@@ -8,10 +8,7 @@ use std::cmp::Ordering;
 /// 到端口 15 块（与导出侧 `global_event_channel` 同口径）。
 #[inline]
 pub(crate) fn global_channel_for_track(port: u8, channel: u8) -> u16 {
-    lumino_midi_model::multi_port::global_channel(
-        lumino_midi_model::multi_port::effective_port(port),
-        channel,
-    )
+    lumino_midi_model::multi_port::track_global_channel(port, channel)
 }
 
 /// 音符事件（用于播放调度）

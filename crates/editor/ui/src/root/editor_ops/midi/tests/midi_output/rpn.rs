@@ -17,7 +17,8 @@ use std::sync::{Arc, Mutex};
 /// 记录型 MIDI 输出：按到达顺序保存全部 CC，用于顺序与字节断言。
 struct RecordingOutput {
     /// `(channel, controller, value)` 到达顺序。
-    cc_log: Arc<Mutex<Vec<(u8, u8, u8)>>>,
+    /// CC 记录：(REND-002 全局通道 u16, controller, value)
+    cc_log: Arc<Mutex<Vec<(u16, u8, u8)>>>,
 }
 
 impl RecordingOutput {
@@ -41,8 +42,7 @@ impl lumino_midi_io::OutputConnection for RecordingOutput {
         controller: u8,
         value: u8,
     ) -> Result<(), lumino_midi_io::Error> {
-        // REND-002 解锁：接口扩宽到 u16 全局通道；测试仅关心低 16 通道。
-        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
+        // REND-002：接口为 u16 全局通道，按原样记录（不截断）。
         if let Ok(mut log) = self.cc_log.lock() {
             log.push((ch, controller, value));
         }
@@ -72,7 +72,7 @@ impl lumino_midi_io::OutputConnection for RecordingOutput {
 }
 
 /// 只保留 RPN/NRPN 相关的控制字节，便于顺序断言。
-fn rpn_cc_only(log: &[(u8, u8, u8)]) -> Vec<(u8, u8, u8)> {
+fn rpn_cc_only(log: &[(u16, u8, u8)]) -> Vec<(u16, u8, u8)> {
     log.iter()
         .copied()
         .filter(|&(_, cc, _)| matches!(cc, 6 | 38 | 98 | 99 | 100 | 101))

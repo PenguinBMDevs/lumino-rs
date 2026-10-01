@@ -53,6 +53,32 @@ pub fn channels_for_max_port(max_port: u8) -> u32 {
     (u32::from(max_port) + 1) * u32::from(CHANNELS_PER_PORT)
 }
 
+/// 产品上限内的合成通道数：`(min(max_port, MAX_PORTS-1) + 1) * 16`。
+///
+/// 导出与实时配置都应走本函数，避免各自手写 `effective_port + channels_for_max_port`。
+#[inline]
+pub fn channels_for_max_port_clamped(max_port: u8) -> u32 {
+    channels_for_max_port(effective_port(max_port))
+}
+
+/// `(port, channel)` → 全局通道（自动折叠超上限端口）。
+///
+/// 调用方只持有 u7 端口号时用本函数，无需自行 [`effective_port`]。
+#[inline]
+pub fn track_global_channel(port: u8, channel: u8) -> u16 {
+    global_channel(effective_port(port), channel)
+}
+
+/// 逐端口 ch9（打击乐）的全局通道列表：`0..=min(max_port, MAX_PORTS-1)`。
+///
+/// 用于 `SynthFormat::Custom` 下的打击乐显式初始化；单端口（max_port=0）返回
+/// 仅端口 0 的 ch9。返回 `Vec`（调用点每次仅执行一次，可读性优先）。
+pub fn percussion_channels(max_port: u8) -> Vec<u32> {
+    (0..=effective_port(max_port))
+        .map(|port| u32::from(global_channel(port, 9)))
+        .collect()
+}
+
 /// 将 u7 端口号（0..=127）钳制到产品上限范围内（0..=[`MAX_PORTS`]-1）。
 ///
 /// 超出上限的端口统一折叠到端口 15 块——同一文件内 port 16..127 的事件会与
@@ -241,9 +267,26 @@ mod tests {
         );
     }
 
+    /// 收口 API 与旧组合口径一致（导出/实时/UI 共用，防止单边改动）。
+    #[test]
+    fn helper_functions_share_clamping_policy() {
+        assert_eq!(channels_for_max_port_clamped(0), 16);
+        assert_eq!(channels_for_max_port_clamped(6), 112);
+        assert_eq!(channels_for_max_port_clamped(127), 256);
+        assert_eq!(track_global_channel(0, 5), 5);
+        assert_eq!(track_global_channel(1, 5), 21);
+        assert_eq!(track_global_channel(127, 3), 15 * 16 + 3);
+        assert_eq!(percussion_channels(0), vec![9]);
+        assert_eq!(percussion_channels(6), vec![9, 25, 41, 57, 73, 89, 105]);
+        let clamped = percussion_channels(127);
+        assert_eq!(clamped.len(), 16, "超上限折叠为 16 个端口");
+        assert_eq!(clamped.last().copied(), Some(249));
+    }
+
     #[test]
     fn percussion_tracker_default_is_per_port_ch9() {
         let tracker = PercussionTracker::new(32);
+        assert_eq!(tracker.channels(), 32, "通道空间应等于全局通道数");
         assert!(tracker.is_percussion(9), "端口 0 ch9 默认打击乐");
         assert!(!tracker.is_percussion(0), "端口 0 ch0 默认旋律");
         assert!(tracker.is_percussion(25), "端口 1 ch9（25）默认打击乐");

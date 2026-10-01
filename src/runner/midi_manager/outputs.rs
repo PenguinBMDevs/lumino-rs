@@ -44,6 +44,7 @@ impl MidiManager {
             lgs_use_sinc: ui_config.lgs_use_sinc,
             winmm_output_device_id: ui_config.system_output_device_id,
             desired_midi_max_port: 0,
+            spawned_midi_max_port: 0,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）

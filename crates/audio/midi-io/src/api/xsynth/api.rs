@@ -46,16 +46,15 @@ impl Api for XSynth {
 
     /// REND-002：按文档端口布局重建合成管线（0 → Midi/16 通道；否则 Custom）。
     ///
+    /// **总是全量重建**（即使 `max_port` 未变）：文档切换时必须清掉上一文档遗留的
+    /// bank/打击乐模态状态，否则新文档里没有 Bank Select 的通道会沿用旧模态。
     /// `rebuild_with_layout` 仅在新管线构建成功后提交布局；失败返回 Err，
     /// 旧管线继续服务，调用方负责告警。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
-        if self.midi_max_port == max_port {
-            return Ok(());
-        }
         tracing::info!(
-            "XSynth: 端口布局变化 {} -> {}，重建合成管线",
-            self.midi_max_port,
-            max_port
+            "XSynth: 应用文档端口布局 max_port={}（当前 {}），全量重建以清理通道状态",
+            max_port,
+            self.midi_max_port
         );
         self.rebuild_with_layout(max_port)
     }

@@ -9,7 +9,7 @@
 //! 输出顺序：Program → RPN/NRPN 选择（MSB→LSB）→ DataEntry（MSB→LSB）→
 //! 其他 CC（控制器升序）→ Pitch Bend，保证 RPN 数据不会落到错误参数上。
 
-use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port, effective_port};
+use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port_clamped};
 
 use crate::playback::engine::types::global_channel_for_track;
 
@@ -55,9 +55,7 @@ impl PlaybackEngine {
     pub(crate) fn compute_chase(&self, tick: f32) -> (Vec<MidiMessage>, PercussionTracker) {
         let doc = self.document.as_deref();
         // REND-002：通道空间随文档端口数；无文档时回退 16（Midi 基线）。
-        let channels = doc.map_or(16, |doc| {
-            channels_for_max_port(effective_port(doc.max_port()))
-        });
+        let channels = doc.map_or(16, |doc| channels_for_max_port_clamped(doc.max_port()));
         let mut states: Vec<ChannelChase> = vec![ChannelChase::default(); channels as usize];
         let mut percussion = PercussionTracker::new(channels);
 

@@ -31,6 +31,7 @@ impl MidiManager {
         // REND-002：把当前文档期望的端口布局带入异步初始化（初始化期间可能尚未
         // 装载文档，装载后由 apply_midi_port_layout 再对齐）。
         let desired_midi_max_port = self.desired_midi_max_port;
+        self.spawned_midi_max_port = desired_midi_max_port;
 
         // 在后台线程中初始化 XSynth
         let ui_config_clone = ui_config.clone();

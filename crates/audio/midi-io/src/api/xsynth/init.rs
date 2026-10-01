@@ -9,7 +9,7 @@ use xsynth_core::{
     soundfont::SoundfontBase,
 };
 
-use lumino_midi_model::multi_port::{channels_for_max_port, effective_port, global_channel};
+use lumino_midi_model::multi_port::{channels_for_max_port_clamped, percussion_channels};
 
 use crate::Error;
 use crate::realtime::{
@@ -32,7 +32,7 @@ fn rt_format(midi_max_port: u8) -> SynthFormat {
         SynthFormat::Midi
     } else {
         SynthFormat::Custom {
-            channels: channels_for_max_port(effective_port(midi_max_port)),
+            channels: channels_for_max_port_clamped(midi_max_port),
         }
     }
 }
@@ -197,9 +197,9 @@ impl XSynth {
         // fork `realtime_synth.rs:698-702`），多端口时对每个端口的 `p*16+9`
         // 显式下发 SetPercussionMode(true)（含 port 0）。
         if midi_max_port != 0 {
-            for port in 0..=effective_port(midi_max_port) {
+            for channel in percussion_channels(midi_max_port) {
                 sender.send_event(SynthEvent::Channel(
-                    u32::from(global_channel(port, 9)),
+                    channel,
                     ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
                 ));
             }

@@ -22,6 +22,7 @@ pub mod stream;
 pub mod tick_conv;
 
 pub(crate) mod block_scheduler;
+mod report;
 
 pub use config::AudioRenderConfig;
 pub use engine::AudioEngine;

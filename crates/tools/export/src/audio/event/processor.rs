@@ -10,7 +10,7 @@ use xsynth_core::{
     channel_group::{ChannelGroup, SynthEvent, SynthFormat},
 };
 
-use lumino_midi_model::multi_port::{PercussionTracker, effective_port, global_channel};
+use lumino_midi_model::multi_port::{PercussionTracker, track_global_channel};
 
 use crate::audio::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
@@ -39,7 +39,7 @@ pub(super) fn global_event_channel(config: &AudioRenderConfig, port: u8, channel
     if config.midi_max_port == 0 {
         u32::from(channel)
     } else {
-        u32::from(global_channel(effective_port(port), channel))
+        u32::from(track_global_channel(port, channel))
     }
 }
 
