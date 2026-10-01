@@ -65,7 +65,13 @@ impl Editor {
                 }
             }
             Tool::Eraser | Tool::DrawEraser => self.handle_eraser_pressed(pos, shift, hit_result),
-            Tool::Brush => self.handle_brush_pressed(pos, hit_result, snapped_tick, key),
+            Tool::Brush => {
+                // Conductor 音轨（track 0）：整工具不可用（与曲线工具同源拦截）
+                if self.editor_state.data.current_track == 0 {
+                    return;
+                }
+                self.handle_brush_pressed(pos, hit_result, key);
+            }
             Tool::Text => self.handle_text_tool_pressed(pos, key),
             Tool::Shape => {
                 // Shift 按住：使用鼠标原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；

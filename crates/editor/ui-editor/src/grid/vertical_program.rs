@@ -158,6 +158,21 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             )));
                         }
                     }
+                    if self.editor.current_tool() == lumino_message::Tool::Brush
+                        && let Some(btns) =
+                            crate::grid::brush_tool_box::brush_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::BrushConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::BrushCancel,
+                            )));
+                        }
+                    }
                     if self.editor.is_inside_canvas(local_pos) {
                         return self.handle_left_press_vertical(state, local_pos);
                     }

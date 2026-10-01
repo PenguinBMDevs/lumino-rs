@@ -68,8 +68,8 @@ impl Editor {
             return;
         }
 
-        // 画刷笔触结束：收尾并清状态（绕过通用 Drawing 收尾）
-        if self.brush_last_cell.is_some() {
+        // 画刷笔画结束：进入待确认状态（√ 才生成音符）
+        if self.editor_state.brush_tool.is_active() {
             self.finish_brush_stroke();
             return;
         }

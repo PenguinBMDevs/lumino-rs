@@ -93,6 +93,14 @@ pub(crate) fn draw(
     }
 
     {
+        puffin::profile_scope!("draw::brush_tool_box");
+        if let Some(brush_geom) = crate::grid::brush_tool_box::draw(editor, renderer, theme, bounds)
+        {
+            geometries.push(brush_geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::shape_tool_box");
         if let Some(shape_geom) = crate::grid::shape_tool_box::draw(editor, renderer, theme, bounds)
         {

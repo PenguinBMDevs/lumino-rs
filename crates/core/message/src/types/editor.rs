@@ -69,6 +69,10 @@ pub enum EditorAction {
     ShapeToolConfirm,
     /// 形状工具：取消并清空（× 按钮）
     ShapeToolCancel,
+    /// 画刷（自由笔画）：确认全部待确认笔画并按覆盖范围生成音符（√ 按钮）
+    BrushConfirm,
+    /// 画刷（自由笔画）：丢弃全部待确认笔画（× 按钮）
+    BrushCancel,
     /// 文字工具：输入框文字变更（画布覆盖层 TextInput 的 on_input）
     TextToolTextChanged(String),
 }
