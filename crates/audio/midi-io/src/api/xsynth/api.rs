@@ -55,9 +55,14 @@ impl SynthControl for XSynth {
     /// `rebuild_with_layout` 仅在新管线构建成功后提交布局；失败返回 Err，
     /// 旧管线继续服务，调用方负责告警。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
+        if max_port == self.midi_max_port {
+            // N-2：布局未变 → 轻量复位（微秒级），不重开音频流；
+            // 仍满足“文档切换清掉上一文档 bank/模态”的语义。
+            tracing::info!("XSynth: 文档切换，布局未变（max_port={max_port}），轻量复位通道状态");
+            return self.reset_channel_state();
+        }
         tracing::info!(
-            "XSynth: 应用文档端口布局 max_port={}（当前 {}），全量重建以清理通道状态",
-            max_port,
+            "XSynth: 端口布局 {} -> {max_port}，全量重建合成管线",
             self.midi_max_port
         );
         self.rebuild_with_layout(max_port)

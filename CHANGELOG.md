@@ -48,7 +48,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （停播→重建→连播放输出）与混音重下发；
   ⑧ 接口演进：基础 `Api`/`OutputConnection` 冻结，三项能力迁入扩展 trait
   `SynthControl`/`PlaybackOutput`（默认实现 + 各后端显式 impl），存储与流转改用
-  扩展 trait 对象。记录见
+  扩展 trait 对象；
+  ⑨ 重建耗时实测与优化：全量重建 104–188ms（缩回 16 通道最贵）→ 同布局文档切换
+  改轻量复位（`SetPercussionMode(false)`×N + `SystemReset`），实测 0.012–0.114ms，
+  仅端口数真变化才重建。记录见
   `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复

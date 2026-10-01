@@ -217,6 +217,33 @@ impl XSynth {
         Ok((synth, sender))
     }
 
+    /// 同布局文档切换：不重开音频流，仅复位各通道模态/程序与控制状态。
+    ///
+    /// N-2 实测：全量重建 100–180ms（重开 cpal 流 + join 通道线程），且缩回
+    /// 16 通道比扩到 112 通道更贵；而“文档切换清模态”用轻量复位即可：
+    /// 1. 逐通道显式 `SetPercussionMode(false)`（fork 在 bank=128 时忽略 CC0，
+    ///    必须走 config 事件才能退出打击乐模态）；
+    /// 2. `AllChannels(SystemReset)` 杀声部 + 复位控制器/程序。
+    pub(super) fn reset_channel_state(&mut self) -> Result<(), String> {
+        let channels =
+            lumino_midi_model::multi_port::channels_for_max_port_clamped(self.midi_max_port);
+        let mut sender = self
+            .sender_shared
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone();
+        for ch in 0..channels {
+            sender.send_event(SynthEvent::Channel(
+                ch,
+                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(false)),
+            ));
+        }
+        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::SystemReset,
+        )));
+        Ok(())
+    }
+
     /// 全量重建合成管线（使用当前系统默认输出设备）。
     ///
     /// 重建后替换共享事件发送器，所有已创建的 `XSynthOutputConn` 自动跟随新管线；
