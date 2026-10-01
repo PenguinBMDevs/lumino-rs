@@ -45,6 +45,27 @@ fn select_present_mode(modes: &[wgpu::PresentMode]) -> wgpu::PresentMode {
     }
 }
 
+/// 交换链允许的「CPU 领先 GPU 帧数」。
+///
+/// 这是限制「UI 领先渲染多少帧」的唯一有效杠杆：UI 每 present 一帧就携带一次全量
+/// 音符渲染，若允许 CPU 领先 2 帧，GPU 队列里就常驻 2~3 帧全量渲染，输入到光子的
+/// 内容延迟被放大到 2~3 个 GPU 帧（黑乐谱滚动拖拽全程高延迟的直接来源）。
+/// 收紧到 1 帧后，UI 与 GPU 基本同步推进，队列深度不再随音符量放大。
+///
+/// 注意：`wait_for_frame` 的完成信号是**提交序**而非 GPU 执行完成，不能用它做
+/// 队列背压（渲染线程全程无阻塞式 `device.poll(Wait)`）；因此背压交给交换链。
+///
+/// 可用 `LUMINO_FRAME_LATENCY` 覆盖（1~3）做真机 A/B。
+fn desired_maximum_frame_latency() -> u32 {
+    std::env::var("LUMINO_FRAME_LATENCY")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .map_or(DEFAULT_FRAME_LATENCY, |v| v.clamp(1, 3))
+}
+
+/// 默认交换链帧延迟（低延迟优先）
+const DEFAULT_FRAME_LATENCY: u32 = 1;
+
 /// 进程级共享的 wgpu 资源
 ///
 /// 多窗口场景下重复创建 Instance/Adapter/Device 是启动瓶颈之一，
@@ -253,9 +274,10 @@ impl Context {
                 present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats,
-                // 降低帧延迟以减少输入延迟，提高响应性
-                // 对于高帧率应用，1帧延迟比2帧更好
-                desired_maximum_frame_latency: 2,
+                // 收紧帧延迟以减少输入延迟（见 desired_maximum_frame_latency 说明）：
+                // 该值直接决定 UI 能领先 GPU 多少帧，也就决定全量音符渲染在
+                // GPU 队列里堆积的深度。
+                desired_maximum_frame_latency: desired_maximum_frame_latency(),
             },
         );
 
@@ -311,7 +333,7 @@ impl Context {
                 present_mode: self.present_mode,
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 view_formats,
-                desired_maximum_frame_latency: 2,
+                desired_maximum_frame_latency: desired_maximum_frame_latency(),
             },
         );
     }

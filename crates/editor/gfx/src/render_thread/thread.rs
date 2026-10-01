@@ -146,21 +146,28 @@ impl WgpuRenderThread {
     /// 返回本次分配的 `frame_id`，调用方应在 present（copy 离屏纹理到 Surface）前
     /// 调用 [`WgpuRenderThread::wait_for_frame`] 等待渲染线程完成该帧渲染，
     /// 避免拷到尚未被渲染线程处理的旧离屏帧（音符放置后不立即显示的竞态根因）。
+    /// 调用方可用 [`RenderParams::content_dirty`] 判定本帧是否真的需要该等待。
+    ///
+    /// 注意：[`WgpuRenderThread::wait_for_frame`] 保证的是**提交序**（渲染线程
+    /// `queue.submit` 之后即置位），不是「GPU 执行完成」。想按 GPU 完成度做背压
+    /// 不能拿它当信号。
     pub fn send_params(&self, params: RenderParams) -> u64 {
         // 递增分配 frame_id，与渲染线程的 rendered_frame 完成信号配对
         let frame_id = self.outgoing_frame.fetch_add(1, Ordering::SeqCst) + 1;
         if let Some(ref sender) = self.command_sender {
-            // 使用非阻塞发送，如果通道满则丢弃旧帧
-            match sender.send(RenderCommand::Render {
-                params: Box::new(params),
-                frame_id,
-            }) {
-                Ok(_) => {}
-                Err(_) => {
-                    // 通道关闭或满，丢弃这一帧
-                    if let Ok(mut stats) = self.stats.lock() {
-                        stats.dropped_frames += 1;
-                    }
+            // 通道为无界 mpsc，`send` 仅在渲染线程已退出（receiver 被 drop）时报错。
+            // 积压合并在渲染线程侧完成：`process_commands` drain 全部命令、
+            // 只保留最后一条 Render（drain-to-latest，见 render_loop/commands.rs）。
+            if sender
+                .send(RenderCommand::Render {
+                    params: Box::new(params),
+                    frame_id,
+                })
+                .is_err()
+            {
+                // 渲染线程已关闭：本帧渲染请求丢弃（计数不再作为在途依据，见 frames_in_flight）
+                if let Ok(mut stats) = self.stats.lock() {
+                    stats.dropped_frames += 1;
                 }
             }
         }

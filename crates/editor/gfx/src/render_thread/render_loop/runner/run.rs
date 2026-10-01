@@ -238,9 +238,10 @@ pub fn run_render_thread(ctx: RenderContext, channels: RenderThreadChannels) {
                 renderers.ruler.instance_count(),
             );
 
-            // 通知 UI 线程：本帧（frame_id）已渲染完成，可安全 present（copy 到 Surface）。
-            // 修复音符放置后不立即显示：UI 线程 present 前需 wait_for_frame，确保拷到
-            // 含本次编辑（如音符 Insert）的最新离屏帧，而非尚未被本线程处理的旧帧。
+            // 通知 UI 线程：本帧（frame_id）已渲染完成（**提交序**，非 GPU 执行完成），
+            // 可安全 present（copy 到 Surface）。修复音符放置后不立即显示：UI 线程
+            // present 前需 wait_for_frame，确保拷到含本次编辑（如音符 Insert）的最新
+            // 离屏帧，而非尚未被本线程处理的旧帧。
             let (mtx, cvar) = &*channels.frame_sync;
             if let Ok(mut guard) = mtx.lock() {
                 *guard = latest_frame_id;

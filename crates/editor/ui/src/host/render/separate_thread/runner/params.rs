@@ -115,6 +115,21 @@ impl Host {
                 ))
             };
 
+        // ── 内容脏标记（2026-10-01 滚动拖拽全程卡顿修复）──
+        //
+        // 决定调用方 present 前是否必须等待渲染线程提交本帧：
+        // ① 生产者置位：音符编辑增量 / 洋葱皮重传 / 预览实例变化（新产生的数据）；
+        // ② 首次提交或视口物理尺寸变化：渲染线程会重建离屏纹理，跳过等待可能拷到
+        //    刚创建、尚未渲染的空纹理。
+        //
+        // 注意：随视口每帧重算的派生实例（网格/标尺/走带覆盖层/CC 柱）**不**置位——
+        // 它们落后一帧无感知，置位会让纯滚动帧永远走等待路径、免等待策略失效。
+        let viewport_key = (physical_size.width, physical_size.height);
+        let viewport_changed = self.render_ctx.last_sent_viewport != Some(viewport_key);
+        let content_dirty =
+            std::mem::take(&mut self.render_ctx.render_content_dirty) || viewport_changed;
+        self.render_ctx.last_sent_viewport = Some(viewport_key);
+
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
@@ -152,6 +167,7 @@ impl Host {
             .velocity_panel_rect(velocity_panel_rect)
             .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
+            .content_dirty(content_dirty)
             .build()
     }
 }

@@ -73,12 +73,17 @@ impl Host {
             data.note_delta_events.clear();
             data.note_delta_dirty = false;
             self.render_ctx.onion_skin_state.force_full_next();
+            // 内容脏：全量重建必须在本帧 present 前可见（走等待路径）
+            self.render_ctx.mark_render_content_dirty();
         }
 
         // ── 2. 主音轨事件级增量（段内）：index = notes 索引（保序，
         // GPU 段内位置 = 段 offset + index，由渲染线程按当前音轨段应用）
         let events = self.root.editor.editor_state.data.take_note_delta_events();
         if !events.is_empty() {
+            // 内容脏：音符 Insert/Update/Remove 必须立即显示
+            // （`wait_for_frame` 修复的「音符放置后不立即显示」竞态即由此保证）
+            self.render_ctx.mark_render_content_dirty();
             let current_track = self.root.editor.editor_state.data.current_track;
             let color = lumino_extras::palette::current_track_color_f32(current_track);
             let border_width = main_track_border_width(current_track);
@@ -170,6 +175,9 @@ impl Host {
                 // 复制副本 → 合并到预览列表（原件已在 GPU 段原位，副本叠加渲染）
                 let copy_color = note_worker::MAIN_TRACK_NOTE_COLOR;
                 let copies = editor.build_copy_ghost_positions(&indices);
+                if !copies.is_empty() {
+                    self.render_ctx.mark_render_content_dirty();
+                }
                 preview_instances.reserve(copies.len());
                 for &(tick, key, length) in &copies {
                     preview_instances.push(NoteInstance::new(
@@ -184,6 +192,7 @@ impl Host {
                 // 普通 ghost 拖动 → 段内 UpdateMany（index = notes 索引）
                 let positions = editor.build_ghost_delta_positions(&indices);
                 if !positions.is_empty() {
+                    self.render_ctx.mark_render_content_dirty();
                     // 合并连续段（段元组 (下一个位置, 实例列表)）
                     let mut segments: Vec<(usize, Vec<NoteInstance>)> = Vec::new();
                     for (idx, (tick, key, length)) in positions {
@@ -214,9 +223,21 @@ impl Host {
 
         // ── 4. 预览音符（Drawing / hover / i2m）→ 合并到同一预览列表
         preview_instances.extend(self.build_preview_instances());
-        self.send_onion_skin_msg_to_render_thread(OnionSkinStreamMsg::PreviewInstances(
-            preview_instances,
-        ));
+        // 仅在预览内容**真的变化**时下发并置内容脏标记：
+        // - 内容不变的 hover 预览若每帧置脏，滚动/缩放时会永远走等待路径，
+        //   「在途帧闸门 + 纯视口帧免等待」完全失效；
+        // - 顺带消除渲染侧每帧 `upload_instances` → `update_cull_info` 重建
+        //   cull/render bind group 的固定开销（预览不变时无事可做）。
+        if !crate::host::render_ctx::same_preview_instances(
+            &self.render_ctx.last_preview_instances,
+            &preview_instances,
+        ) {
+            self.render_ctx.mark_render_content_dirty();
+            self.render_ctx.last_preview_instances = preview_instances.clone();
+            self.send_onion_skin_msg_to_render_thread(OnionSkinStreamMsg::PreviewInstances(
+                preview_instances,
+            ));
+        }
 
         // 更新光标位置缓存
         self.render_ctx.last_cursor_position = self.window_ctx.cursor_position;

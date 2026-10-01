@@ -116,6 +116,18 @@ pub struct RenderParams {
     pub skip_scene_render: bool,
     /// 纵向卷帘模式：网格与音符使用转置着色器（复用同 MIDI GPU 数据，瀑布流风格纵向流动）
     pub is_vertical_roll: bool,
+    /// 本帧是否携带「必须在 present 前立即可见」的内容变化。
+    ///
+    /// 语义（2026-10-01 滚动拖拽全程卡顿修复）：
+    /// - `true`：音符编辑增量 / 洋葱皮重传 / 预览音符 / 走带覆盖层 / CC 柱 /
+    ///   视口尺寸变化（离屏纹理重建）等——UI 线程 present 前必须
+    ///   [`crate::WgpuRenderThread::wait_for_frame`]，否则会拷到未含本次内容的
+    ///   旧离屏帧，即「音符放置后不立即显示」竞态。
+    /// - `false`：纯视口变化帧（拖拽滚动/缩放）——UI 线程跳过 `wait_for_frame`，
+    ///   直接 present 最近完成的离屏纹理，画面最多落后一帧，数据正确性不受影响。
+    ///
+    /// 默认 `true`：未知调用方（视频导出 / 测试）走保守的等待路径。
+    pub content_dirty: bool,
 }
 
 impl Default for RenderParams {
@@ -169,6 +181,7 @@ impl Default for RenderParams {
             fps: 60.0,
             skip_scene_render: false,
             is_vertical_roll: false,
+            content_dirty: true,
         }
     }
 }

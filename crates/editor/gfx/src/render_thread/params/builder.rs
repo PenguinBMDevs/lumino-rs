@@ -56,6 +56,7 @@ pub struct RenderParamsBuilder {
     fps: f32,
     skip_scene_render: bool,
     is_vertical_roll: bool,
+    content_dirty: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -109,6 +110,7 @@ impl Default for RenderParamsBuilder {
             fps: base.fps,
             skip_scene_render: base.skip_scene_render,
             is_vertical_roll: base.is_vertical_roll,
+            content_dirty: base.content_dirty,
         }
     }
 }
@@ -305,6 +307,15 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置本帧是否携带必须在 present 前立即可见的内容变化。
+    ///
+    /// `false`（纯视口变化帧）时 UI 线程跳过 `wait_for_frame`；默认 `true`（保守等待）。
+    /// 详细语义见 [`RenderParams::content_dirty`]。
+    pub fn content_dirty(mut self, content_dirty: bool) -> Self {
+        self.content_dirty = content_dirty;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -362,6 +373,7 @@ impl RenderParamsBuilder {
             fps: self.fps,
             skip_scene_render: self.skip_scene_render,
             is_vertical_roll: self.is_vertical_roll,
+            content_dirty: self.content_dirty,
         }
     }
 }

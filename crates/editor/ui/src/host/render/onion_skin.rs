@@ -296,6 +296,11 @@ impl Host {
             return;
         }
 
+        // 内容脏：本帧确有洋葱皮数据重传（全量会话 / TrackDelta / 轨布局 / 区间删除 /
+        // ViewState 切轨静音）——必须在 present 前可见，走 `wait_for_frame` 等待路径。
+        // 纯滚动/缩放帧在此处已提前返回，因此不会误置位。
+        self.render_ctx.mark_render_content_dirty();
+
         // 获取 WGPU 线程引用（用于 send 消息）
         let Some(wgpu_thread) = self.render_ctx.wgpu_render_thread.as_ref() else {
             tracing::warn!("stream_onion_skin_instances: wgpu_render_thread is None");
