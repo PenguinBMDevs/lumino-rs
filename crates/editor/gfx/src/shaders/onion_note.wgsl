@@ -320,3 +320,92 @@ fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
 fn fs_point(input: VertexOutput) -> @location(0) vec4<f32> {
     return vec4<f32>(input.color.rgb, 1.0);
 }
+
+// ── VS cull 直绘入口（PREF-005，2026-10-01）──────────────────────────────────
+//
+// 背景：`cull.wgsl` 的可见索引由 workgroup 间抢占式 `atomicAdd` 写入，输出顺序
+// 由 GPU 调度决定 ⇒ 重叠片元按**随机深度序**到达，`LessEqual + depth_write` 下
+// 无处早拒，每个片元全额付 FS + blend。实测（RTX 2060 / 1920×1080）：
+//   panorama 16M 全可见：compute cull 1.60ms + draw 13.44ms
+// 本入口把可见性判定搬进 VS，于是：
+//   1. 不再需要 compute cull pass（省掉全量读 + 可见索引写 + indirect）；
+//   2. `instance_index` 即**源索引升序** = `region_depth` 的近→远序 ⇒ 重叠片元
+//      后到者被 early-Z 直接拒绝，FS 执行量降到 ≈ 屏幕像素量级；
+//   3. 配合不透明管线（无 blend ROP），early-Z 不再被混合路径拖累。
+//
+// 与 vs_main 的差异（其余语义必须逐字一致，否则两条路径画面不一致）：
+//   1) 顶点输入改为 `@builtin(instance_index)`（无顶点缓冲）；
+//   2) 视口相交判定在本入口完成（谓词与 `cull.wgsl` 逐字一致），不可见/静音/
+//      长度 ≤ 0 一律退化为视口外零面积点（净效果：不产生任何片元）。
+//
+// **硬约束**：不得在此引入 LOD 剔除（"1px 以下音符仍绘制"，见 cull.wgsl 注释）。
+
+@vertex
+fn vs_direct(
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32,
+) -> VertexOutput {
+    let instance = all_instances[instance_index];
+
+    // 根据顶点索引生成矩形的四个角（三角形带顺序，与 vs_main 逐字一致）
+    var local_offset: vec2<f32>;
+    switch vertex_index {
+        case 0u: { local_offset = vec2<f32>(0.0, 0.0); }
+        case 1u: { local_offset = vec2<f32>(0.0, 1.0); }
+        case 2u: { local_offset = vec2<f32>(1.0, 0.0); }
+        case 3u: { local_offset = vec2<f32>(1.0, 1.0); }
+        default: { local_offset = vec2<f32>(0.0, 0.0); }
+    }
+
+    let tick = instance.start_length.x;
+    let length = instance.start_length.y;
+    let key = f32(instance.key_color & 0xFFu);
+
+    let screen_x = tick * camera.zoom.x - camera.scroll.x
+                   + camera.keyboard_width + camera.canvas_offset.x;
+    let screen_size = vec2<f32>(length * camera.zoom.x, camera.zoom.y);
+    let screen_y = (camera.max_key_index - key) * camera.zoom.y
+                   - camera.scroll.y + camera.ruler_height + camera.canvas_offset.y;
+
+    // 可见性：与 cull.wgsl 逐字同口径（长度 > 0 且与视口矩形相交）
+    let in_view = length > 0.0
+        && screen_x <= camera.viewport_size.x
+        && (screen_x + screen_size.x) >= 0.0
+        && (screen_y + screen_size.y) >= 0.0
+        && screen_y <= camera.viewport_size.y;
+
+    let screen_pos = vec2<f32>(screen_x, screen_y) + local_offset * screen_size;
+    let ndc_x = (screen_pos.x / camera.viewport_size.x) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
+
+    let track_enc = instance.border_width >> 16u;
+    let is_main = track_enc == view_state.current_track;
+    let is_muted = is_muted_track(track_enc);
+    let show = is_main || !is_muted;
+
+    // 稳定深度：与 vs_main 同一公式。`instance_index` 与 cull 路径写入可见缓冲的
+    // `local_index` 是同一个值（chunk 内源索引）⇒ 两条路径深度逐位一致。
+    let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
+    let global_index = chunk_info.chunk_start + instance_index;
+    let depth = region_depth(region_bits, global_index);
+
+    var color = unpack_key_color(instance.key_color);
+    if (is_main) {
+        color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
+    }
+
+    var output: VertexOutput;
+    if (show && in_view) {
+        output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
+    } else {
+        // 静音轨 / 视口外 / 非法长度：4 个顶点退化到视口外同一点 → 零面积 → 无片元。
+        // 与静音轨分支同技巧，且与 depth attachment 是否存在无关。
+        output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+    }
+    output.color = color;
+    output.uv = local_offset;
+    output.screen_size = screen_size;
+    output.border_width = instance.border_width;
+
+    return output;
+}

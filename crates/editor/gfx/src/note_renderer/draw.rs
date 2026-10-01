@@ -26,6 +26,49 @@ impl NoteRenderer {
         self.draw_with_pipeline(render_pass, has_instances, scissor_rect, true);
     }
 
+    /// VS cull 直绘（PREF-005）：每 chunk 一次普通 `draw(4 顶点 × chunk_len 实例)`。
+    ///
+    /// 与 [`NoteRenderer::draw`] 的差异：
+    /// - 不读可见索引顶点缓冲（源索引来自 `@builtin(instance_index)`）；
+    /// - 不读 indirect 参数（实例数由 CPU 按 chunk 给出）；
+    /// - 可见性在 `vs_direct` 内判定 ⇒ **不需要 compute cull pass**。
+    ///
+    /// 关键性质：`instance_index` 升序 = 源索引升序 = `region_depth` 近→远序，
+    /// 因此重叠片元天然按前→后到达，后来的远片元被 early-Z 拒绝（需不透明管线 +
+    /// 开启 depth write）。未创建直绘管线的渲染器（预览层 / 导出无 depth 变体）
+    /// 自动回退 cull + 可见索引路径。
+    pub fn draw_direct<'r>(
+        &'r self,
+        render_pass: &mut wgpu::RenderPass<'r>,
+        has_instances: bool,
+        scissor_rect: Option<(u32, u32, u32, u32)>,
+    ) {
+        let Some(pipeline) = self.direct_pipeline.as_ref() else {
+            // 该渲染器没有直绘管线：回退 cull + 可见索引路径，绝不静默不画
+            self.draw_with_pipeline(render_pass, has_instances, scissor_rect, false);
+            return;
+        };
+        puffin::profile_function!();
+        if !has_instances || self.last_upload_count == 0 {
+            return;
+        }
+        if let Some((x, y, width, height)) = scissor_rect {
+            render_pass.set_scissor_rect(x, y, width, height);
+        }
+        render_pass.set_pipeline(pipeline);
+
+        let count = self.last_upload_count as usize;
+        let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
+        let bind_group_count = self.render_bind_groups.len();
+        for idx in 0..chunk_count.min(bind_group_count) {
+            let (_, chunk_len) = self.chunk_layout.chunk_range(count, idx);
+            render_pass.set_bind_group(0, &self.render_bind_groups[idx], &[]);
+            // 4 顶点（quad）× chunk_len 实例；chunk_start 由本 chunk 的 cull
+            // uniform 槽位提供，深度基准与 cull 路径一致。
+            render_pass.draw(0..4, 0..chunk_len as u32);
+        }
+    }
+
     pub(super) fn draw_with_pipeline<'r>(
         &'r self,
         render_pass: &mut wgpu::RenderPass<'r>,

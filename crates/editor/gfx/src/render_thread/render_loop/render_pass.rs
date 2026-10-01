@@ -39,6 +39,10 @@ pub fn execute_render_pass(
 
     // depth 仅在需要时存在（视频导出为纯 2D，跳过 depth attachment）
     let depth_view = frame.depth_texture_view.as_ref();
+    // 是否存在 depth attachment —— 同时是「能否用 early-Z」的唯一判据（PREF-005）：
+    // 有 depth 的 UI 路径走 VS cull 直绘；无 depth 的导出路径保留 compute cull
+    // （early-Z 不可用，直绘会把 FS 全量铺开）。
+    let has_depth = depth_view.is_some();
 
     let depth_stencil_attachment = depth_view.map(|dv| wgpu::RenderPassDepthStencilAttachment {
         view: dv,
@@ -116,8 +120,21 @@ pub fn execute_render_pass(
             .prepare_vertical_pass(encoder, camera, &ctx.queue);
     } else if params.subpixel_note_mode {
         // 亚像素档位（PREF-004 P1）：主音符层走点图元直绘，可见性判定移入
-        // `vs_point`，**跳过 cull pass**（真机 16M 全景：cull 1.39ms / draw 11.97ms）。
+        // `vs_point`，**跳过 cull pass**（真机 16M 全景：cull 1.60ms / draw 13.44ms）。
         // 预览层（`note`）实例数极少，保持 quad + cull 路径不变。
+        frame
+            .renderers
+            .note
+            .prepare_pass(encoder, camera, &ctx.queue);
+        frame
+            .renderers
+            .onion_skin
+            .prepare_direct(camera, &ctx.queue);
+    } else if has_depth {
+        // UI 路径（PREF-005）：主音符层取消 compute cull，改由 `vs_direct` 自判可见，
+        // 并按 `instance_index` 升序（= `region_depth` 近→远序）绘制 ⇒ 重叠片元
+        // 后到者被 early-Z 拒绝，FS 执行量降到 ≈ 屏幕像素量级。
+        // 预览层仍走 compute cull（实例数极少，不值得再建一套直绘路径）。
         frame
             .renderers
             .note
@@ -186,6 +203,12 @@ pub fn execute_render_pass(
                 .renderers
                 .onion_skin
                 .draw_points(&mut render_pass, onion_has_instances, None);
+        } else if has_depth {
+            // VS cull 直绘：每 chunk 4 顶点 × chunk_len 实例，实例序 = 深度序
+            frame
+                .renderers
+                .onion_skin
+                .draw_direct(&mut render_pass, onion_has_instances, None);
         } else {
             frame
                 .renderers

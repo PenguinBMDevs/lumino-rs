@@ -29,6 +29,10 @@ mod perf_tests;
 #[cfg(test)]
 mod point_tests;
 
+/// VS cull 直绘路径的像素等价与自判可见契约（PREF-005）
+#[cfg(test)]
+mod direct_tests;
+
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
     /// GPU 音符缓冲区
@@ -85,6 +89,11 @@ pub struct NoteRenderer {
     /// 仅横向洋葱皮渲染器创建（预览层/导出无 depth 变体保持 `None`，
     /// `draw_points` 会回退 quad 路径）。
     point_pipeline: Option<wgpu::RenderPipeline>,
+    /// VS cull 直绘管线（PREF-005，见 `shaders/onion_note.wgsl::vs_direct`）。
+    ///
+    /// 与点管线同样的创建范围（横向洋葱皮 + depth）；`draw_direct` 在缺失时
+    /// 回退 cull + 可见索引路径。
+    direct_pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl NoteRenderer {

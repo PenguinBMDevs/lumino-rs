@@ -118,18 +118,52 @@ impl NoteRenderer {
     }
 
     /// 创建渲染管线（含 pipeline layout）。
+    ///
+    /// `opaque`：片元恒不透明（洋葱皮/主音符层的 `onion_note*.wgsl` FS 恒输出
+    /// `alpha = 1.0`）时置 `true`，颜色目标改用替换写入——省掉 blend ROP 的
+    /// 读改写，且不抑制 early-Z（PREF-005）。预览层 `note.wgsl` 有 70% alpha
+    /// 哨兵分支，必须保持混合，置 `false`。
     pub(super) fn create_render_pipeline(
         device: &wgpu::Device,
         shader: &wgpu::ShaderModule,
         render_bind_group_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
         needs_depth: bool,
+        opaque: bool,
     ) -> wgpu::RenderPipeline {
-        crate::pipeline::RenderPipelineBuilder::new(device, "note_pipeline", shader)
+        let builder = crate::pipeline::RenderPipelineBuilder::new(device, "note_pipeline", shader)
             .bind_group(render_bind_group_layout)
             .vertex_buffer(Self::visible_index_buffer_layout())
             .triangle_strip()
-            .alpha_blended_target(format)
+            .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
+                needs_depth,
+            ));
+        let builder = if opaque {
+            builder.opaque_target(format)
+        } else {
+            builder.alpha_blended_target(format)
+        };
+        builder.build()
+    }
+
+    /// 创建直绘管线（PREF-005）：源索引来自 `@builtin(instance_index)`，
+    /// **无顶点缓冲**，不依赖 compute cull 产出的可见索引列表。
+    ///
+    /// 与 `create_render_pipeline` 的差异只有「顶点入口 / 顶点缓冲 / 混合」三点，
+    /// 深度状态与 bind group layout 完全一致 ⇒ 深度语义与旧路径逐位相同。
+    pub(super) fn create_direct_pipeline(
+        device: &wgpu::Device,
+        shader: &wgpu::ShaderModule,
+        render_bind_group_layout: &wgpu::BindGroupLayout,
+        format: wgpu::TextureFormat,
+        needs_depth: bool,
+    ) -> wgpu::RenderPipeline {
+        crate::pipeline::RenderPipelineBuilder::new(device, "note_direct_pipeline", shader)
+            .vertex_entry("vs_direct")
+            .bind_group(render_bind_group_layout)
+            // 无顶点缓冲：实例索引来自 @builtin(instance_index)
+            .triangle_strip()
+            .opaque_target(format)
             .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
                 needs_depth,
             ))

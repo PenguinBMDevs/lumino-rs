@@ -16,6 +16,29 @@
 use super::chunk::MAX_CHUNKS;
 use crate::note_renderer::NoteRenderer;
 
+#[cfg(test)]
+impl NoteRenderer {
+    /// 基准专用（`perf_tests`）：把横向 quad 管线换成 **alpha 混合**变体，
+    /// 用于复刻 PREF-005 改动前的基线（洋葱皮管线原本统一走混合写入）。
+    /// 生产路径不调用——改动后洋葱皮恒为不透明。
+    pub(super) fn rebuild_blended_quad_pipeline_for_bench(
+        &mut self,
+        device: &wgpu::Device,
+        format: wgpu::TextureFormat,
+    ) {
+        let shader =
+            crate::shader::create_shader_module(device, "note_bench_blended", Self::ONION_SHADER);
+        self.pipeline = Self::create_render_pipeline(
+            device,
+            &shader,
+            &self.render_bind_group_layout,
+            format,
+            true,
+            false,
+        );
+    }
+}
+
 impl NoteRenderer {
     /// 创建点图元直绘管线（入口 `vs_point` / `fs_point`，无顶点缓冲）。
     pub(super) fn create_point_pipeline(
@@ -31,7 +54,8 @@ impl NoteRenderer {
             .bind_group(render_bind_group_layout)
             // 无顶点缓冲：源索引来自 @builtin(instance_index)
             .point_list()
-            .alpha_blended_target(format)
+            // 与 VS cull 直绘同理：点 FS 恒不透明，用替换写入省掉 blend ROP
+            .opaque_target(format)
             .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
                 needs_depth,
             ))

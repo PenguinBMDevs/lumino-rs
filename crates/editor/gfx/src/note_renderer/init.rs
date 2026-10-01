@@ -131,12 +131,15 @@ impl NoteRenderer {
         let cull_bind_group_layout = Self::create_cull_bind_group_layout(device);
 
         // 创建渲染管线
+        // `opaque`：洋葱皮/主音符层 FS 恒输出 alpha = 1.0 ⇒ 用替换写入，省掉
+        // blend ROP 的读改写；预览层 `note.wgsl` 有 70% alpha 哨兵分支，保持混合。
         let pipeline = Self::create_render_pipeline(
             device,
             &shader,
             &render_bind_group_layout,
             format,
             needs_depth,
+            is_onion,
         );
         let vertical_pipeline = Self::create_render_pipeline(
             device,
@@ -144,6 +147,7 @@ impl NoteRenderer {
             &render_bind_group_layout,
             format,
             needs_depth,
+            is_onion,
         );
 
         // 创建计算管线
@@ -152,19 +156,28 @@ impl NoteRenderer {
         let vertical_cull_pipeline =
             Self::create_cull_pipeline(device, &vertical_cull_shader, &cull_bind_group_layout);
 
-        // 点图元直绘管线（亚像素档位，PREF-004 P1）：
+        // 点图元直绘管线（亚像素档位，PREF-004 P1）与 VS cull 直绘管线（PREF-005）：
         // 仅横向洋葱皮 + 带 depth 的交互路径需要；预览层与导出无 depth 变体不建，
-        // 省掉一次大 shader 的管线编译（启动可见）。
-        let point_pipeline = if is_onion && needs_depth {
-            Some(Self::create_point_pipeline(
-                device,
-                &shader,
-                &render_bind_group_layout,
-                format,
-                needs_depth,
-            ))
+        // 省掉大 shader 的管线编译（启动可见）。
+        let (point_pipeline, direct_pipeline) = if is_onion && needs_depth {
+            (
+                Some(Self::create_point_pipeline(
+                    device,
+                    &shader,
+                    &render_bind_group_layout,
+                    format,
+                    needs_depth,
+                )),
+                Some(Self::create_direct_pipeline(
+                    device,
+                    &shader,
+                    &render_bind_group_layout,
+                    format,
+                    needs_depth,
+                )),
+            )
         } else {
-            None
+            (None, None)
         };
 
         // 创建缓冲区
@@ -250,6 +263,7 @@ impl NoteRenderer {
             cull_bind_group_layout,
             chunk_layout,
             point_pipeline,
+            direct_pipeline,
         }
     }
 
