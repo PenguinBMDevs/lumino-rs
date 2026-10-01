@@ -114,6 +114,18 @@ pub fn execute_render_pass(
             .renderers
             .onion_skin
             .prepare_vertical_pass(encoder, camera, &ctx.queue);
+    } else if params.subpixel_note_mode {
+        // 亚像素档位（PREF-004 P1）：主音符层走点图元直绘，可见性判定移入
+        // `vs_point`，**跳过 cull pass**（真机 16M 全景：cull 1.39ms / draw 11.97ms）。
+        // 预览层（`note`）实例数极少，保持 quad + cull 路径不变。
+        frame
+            .renderers
+            .note
+            .prepare_pass(encoder, camera, &ctx.queue);
+        frame
+            .renderers
+            .onion_skin
+            .prepare_direct(camera, &ctx.queue);
     } else {
         frame
             .renderers
@@ -168,6 +180,12 @@ pub fn execute_render_pass(
                 .renderers
                 .onion_skin
                 .draw_vertical(&mut render_pass, onion_has_instances, None);
+        } else if params.subpixel_note_mode {
+            // 点图元直绘：每实例 1 顶点 1 点，不读可见索引缓冲（无 cull 输出）
+            frame
+                .renderers
+                .onion_skin
+                .draw_points(&mut render_pass, onion_has_instances, None);
         } else {
             frame
                 .renderers

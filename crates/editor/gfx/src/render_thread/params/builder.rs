@@ -57,6 +57,7 @@ pub struct RenderParamsBuilder {
     skip_scene_render: bool,
     is_vertical_roll: bool,
     content_dirty: bool,
+    subpixel_note_mode: bool,
 }
 
 impl Default for RenderParamsBuilder {
@@ -111,6 +112,7 @@ impl Default for RenderParamsBuilder {
             skip_scene_render: base.skip_scene_render,
             is_vertical_roll: base.is_vertical_roll,
             content_dirty: base.content_dirty,
+            subpixel_note_mode: base.subpixel_note_mode,
         }
     }
 }
@@ -316,6 +318,14 @@ impl RenderParamsBuilder {
         self
     }
 
+    /// 设置亚像素档位（主音符层点图元直绘 + 跳过 cull）。
+    ///
+    /// 语义与触发条件见 [`RenderParams::subpixel_note_mode`]。
+    pub fn subpixel_note_mode(mut self, enabled: bool) -> Self {
+        self.subpixel_note_mode = enabled;
+        self
+    }
+
     /// 构建 [`RenderParams`]。
     ///
     /// 从首个拍号推导默认 `ticks_per_measure` 和 `ticks_per_beat`
@@ -374,6 +384,7 @@ impl RenderParamsBuilder {
             skip_scene_render: self.skip_scene_render,
             is_vertical_roll: self.is_vertical_roll,
             content_dirty: self.content_dirty,
+            subpixel_note_mode: self.subpixel_note_mode,
         }
     }
 }

@@ -26,7 +26,7 @@ impl NoteRenderer {
         self.draw_with_pipeline(render_pass, has_instances, scissor_rect, true);
     }
 
-    fn draw_with_pipeline<'r>(
+    pub(super) fn draw_with_pipeline<'r>(
         &'r self,
         render_pass: &mut wgpu::RenderPass<'r>,
         has_instances: bool,

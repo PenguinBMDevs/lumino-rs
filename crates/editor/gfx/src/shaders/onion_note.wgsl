@@ -237,3 +237,86 @@ fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
 
     return vec4<f32>(color, 1.0);
 }
+
+// ── 亚像素档位：点图元直绘入口（PREF-004 P1，2026-10-01）─────────────────────
+//
+// 背景（真机 RTX 2060 / 1920×1080 分段实测）：
+//   缩小全景时每帧成本 = cull 1.39ms + draw 11.97ms（16M 音符全部可见）
+//   ⇒ 瓶颈不是 cull 的读取带宽，而是 **图元装配 + 小三角形光栅化**
+//     （每个音符 quad 只有零点几像素宽，仍要付 4 顶点 / 2 三角形的固定成本）。
+//   点图元把「4 顶点 2 三角形」降为「1 顶点 1 点」，并顺带省掉整趟 cull pass
+//   （可见性判定移入本入口），是这一档位唯一能显著压低 `T` 的杠杆。
+//
+// 与 vs_main 的差异（其余语义必须逐字一致，否则两条路径画面不一致）：
+//   1) 顶点输入改为 `@builtin(instance_index)` 直接索引源缓冲——点直绘不产出
+//      可见索引列表（无 cull），渲染侧因此不设顶点缓冲；
+//   2) 落点取音符**长度/键高的中点**（与 quad 的视觉中心一致）；
+//   3) 视口相交 / 静音轨 / 长度 ≤ 0 判定全部在本入口完成，不可见者输出视口外点；
+//   4) 深度公式不变：`global_index = chunk_start + instance_index`（= 源索引），
+//      与 quad 路径的 `chunk_start + 可见索引` 同值 ⇒ 两条路径深度逐位一致，
+//      重叠音符的稳定裁决语义不回退；
+//   5) 片元不画描边——亚像素宽度下描边没有物理意义（quad 路径在此时
+//      `horiz_margin` 巨大，整块都会被判成描边色，反而更失真）。
+
+@vertex
+fn vs_point(@builtin(instance_index) instance_index: u32) -> VertexOutput {
+    let instance = all_instances[instance_index];
+
+    let tick = instance.start_length.x;
+    let length = instance.start_length.y;
+    let key = f32(instance.key_color & 0xFFu);
+
+    let screen_min_x = tick * camera.zoom.x - camera.scroll.x
+                       + camera.keyboard_width + camera.canvas_offset.x;
+    let screen_size = vec2<f32>(length * camera.zoom.x, camera.zoom.y);
+    let screen_min_y = (camera.max_key_index - key) * camera.zoom.y
+                       - camera.scroll.y + camera.ruler_height + camera.canvas_offset.y;
+
+    // 可见性判定：与 cull.wgsl 逐字同口径（长度 > 0 且与视口矩形相交）
+    let in_view = length > 0.0
+        && screen_min_x <= camera.viewport_size.x
+        && (screen_min_x + screen_size.x) >= 0.0
+        && (screen_min_y + screen_size.y) >= 0.0
+        && screen_min_y <= camera.viewport_size.y;
+
+    let track_enc = instance.border_width >> 16u;
+    let is_main = track_enc == view_state.current_track;
+    let is_muted = is_muted_track(track_enc);
+    let show = is_main || !is_muted;
+
+    // 稳定深度：与 vs_main 同一公式、同一 global_index 语义（见文件头深度说明）
+    let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, is_main);
+    let global_index = chunk_info.chunk_start + instance_index;
+    let depth = region_depth(region_bits, global_index);
+
+    var color = unpack_key_color(instance.key_color);
+    if (is_main) {
+        color = vec4<f32>(MAIN_TRACK_COLOR, 1.0);
+    }
+
+    var output: VertexOutput;
+    if (show && in_view) {
+        let center = vec2<f32>(
+            screen_min_x + screen_size.x * 0.5,
+            screen_min_y + screen_size.y * 0.5,
+        );
+        let ndc_x = (center.x / camera.viewport_size.x) * 2.0 - 1.0;
+        let ndc_y = 1.0 - (center.y / camera.viewport_size.y) * 2.0;
+        output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
+    } else {
+        // 视口外点 → 被裁剪，不产生片元（与 vs_main 的退化几何同思路）
+        output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+    }
+    output.color = color;
+    output.uv = vec2<f32>(0.5, 0.5);
+    output.screen_size = screen_size;
+    output.border_width = instance.border_width;
+
+    return output;
+}
+
+/// 点图元片元：纯色覆盖（不画描边，理由见 vs_point 注释第 5 条）
+@fragment
+fn fs_point(input: VertexOutput) -> @location(0) vec4<f32> {
+    return vec4<f32>(input.color.rgb, 1.0);
+}

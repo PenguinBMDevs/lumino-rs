@@ -60,6 +60,25 @@ impl<'a> RenderPipelineBuilder<'a> {
         self
     }
 
+    /// 便捷方法：切换为 PointList 拓扑（亚像素档位点图元直绘，每实例 1 顶点）。
+    pub fn point_list(mut self) -> Self {
+        self.primitive.topology = wgpu::PrimitiveTopology::PointList;
+        self
+    }
+
+    /// 覆盖顶点入口名（默认 `vs_main`）。用于同一 shader 模块内的多入口管线
+    /// （例如点图元档位的 `vs_point`）。
+    pub fn vertex_entry(mut self, entry: &'a str) -> Self {
+        self.vertex_entry = entry;
+        self
+    }
+
+    /// 覆盖片元入口名（默认 `fs_main`）。
+    pub fn fragment_entry(mut self, entry: &'a str) -> Self {
+        self.fragment_entry = Some(entry);
+        self
+    }
+
     /// 添加颜色目标（默认混合：ALPHA_BLENDING，全通道写入）。
     pub fn alpha_blended_target(mut self, format: wgpu::TextureFormat) -> Self {
         self.targets.push(Some(wgpu::ColorTargetState {

@@ -130,6 +130,20 @@ impl Host {
             std::mem::take(&mut self.render_ctx.render_content_dirty) || viewport_changed;
         self.render_ctx.last_sent_viewport = Some(viewport_key);
 
+        // ── 亚像素档位（PREF-004 P1）──
+        //
+        // 判据：最细可画音符（吸附精度，单位 tick）在时间轴缩放下也不足 1 像素，
+        // 即 `zoom_x × snap_precision < 1`。此时：
+        //   - quad 的形状/描边已无视觉意义（真机上 quad 路径会因 horiz_margin 巨大
+        //     把整块判成描边色，反而更失真）；
+        //   - 每音符仍要付「4 顶点 + 2 三角形」的图元固定成本，真机实测该成本
+        //     是全景帧的主导项（16M 全景 draw 11.97ms vs cull 1.39ms）。
+        // 因此切点图元直绘。仅横向卷帘生效（纵向转置版无点入口）。
+        let subpixel_note_mode = !es.is_vertical_roll
+            && es.view.zoom_x > 0.0
+            && es.view.snap_precision > 0.0
+            && es.view.zoom_x * es.view.snap_precision < 1.0;
+
         RenderParams::builder()
             .viewport_size((physical_size.width, physical_size.height))
             .logical_size((data.viewport_size.width, data.viewport_size.height))
@@ -168,6 +182,7 @@ impl Host {
             .skip_scene_render(self.root.state.current_mode == AppMode::Waterfall)
             .is_vertical_roll(self.root.editor.editor_state.is_vertical_roll)
             .content_dirty(content_dirty)
+            .subpixel_note_mode(subpixel_note_mode)
             .build()
     }
 }

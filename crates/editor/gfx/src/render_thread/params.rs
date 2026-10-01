@@ -128,6 +128,16 @@ pub struct RenderParams {
     ///
     /// 默认 `true`：未知调用方（视频导出 / 测试）走保守的等待路径。
     pub content_dirty: bool,
+    /// 亚像素档位：主音符层改用点图元直绘（PREF-004 P1）。
+    ///
+    /// 由 UI 侧判定：`zoom_x × 吸附精度 < 1px`（最细可画音符也不足 1 像素）
+    /// 时置位——此时 quad 的形状/描边已无视觉意义，而每音符仍要付
+    /// 「4 顶点 + 2 三角形」的图元固定成本。置位后渲染线程：
+    /// 1. 主音符层走 `PointList` 管线（每实例 1 顶点 1 点）；
+    /// 2. 跳过 cull pass（可见性判定移入 `vs_point`），省掉全量读 + 可见索引写。
+    ///
+    /// 默认 `false`（保守走 quad + cull 路径）；仅横向卷帘生效。
+    pub subpixel_note_mode: bool,
 }
 
 impl Default for RenderParams {
@@ -182,6 +192,7 @@ impl Default for RenderParams {
             skip_scene_render: false,
             is_vertical_roll: false,
             content_dirty: true,
+            subpixel_note_mode: false,
         }
     }
 }

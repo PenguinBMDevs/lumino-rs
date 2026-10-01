@@ -14,11 +14,20 @@ mod draw;
 mod events;
 mod init;
 mod pipeline;
+mod point;
 mod prepare;
 
 /// 深度编码验证（精度预算 CPU 孪生 + 绘制顺序无关的像素证据）
 #[cfg(test)]
 mod depth_tests;
+
+/// GPU 耗时分解基准（PREF-004 P1 决策依据，默认 #[ignore]）
+#[cfg(test)]
+mod perf_tests;
+
+/// 亚像素档位点图元直绘的正确性契约（PREF-004 P1）
+#[cfg(test)]
+mod point_tests;
 
 /// 音符渲染器 - 使用 wgpu 实例化渲染高效绘制大量音符
 pub struct NoteRenderer {
@@ -71,6 +80,11 @@ pub struct NoteRenderer {
     cull_bind_group_layout: wgpu::BindGroupLayout,
     /// storage binding 分块布局（跨硬件自适应）
     chunk_layout: chunk::ChunkLayout,
+    /// 点图元直绘管线（亚像素档位，见 `point.rs`）。
+    ///
+    /// 仅横向洋葱皮渲染器创建（预览层/导出无 depth 变体保持 `None`，
+    /// `draw_points` 会回退 quad 路径）。
+    point_pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl NoteRenderer {

@@ -152,6 +152,21 @@ impl NoteRenderer {
         let vertical_cull_pipeline =
             Self::create_cull_pipeline(device, &vertical_cull_shader, &cull_bind_group_layout);
 
+        // 点图元直绘管线（亚像素档位，PREF-004 P1）：
+        // 仅横向洋葱皮 + 带 depth 的交互路径需要；预览层与导出无 depth 变体不建，
+        // 省掉一次大 shader 的管线编译（启动可见）。
+        let point_pipeline = if is_onion && needs_depth {
+            Some(Self::create_point_pipeline(
+                device,
+                &shader,
+                &render_bind_group_layout,
+                format,
+                needs_depth,
+            ))
+        } else {
+            None
+        };
+
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
             / std::mem::size_of::<crate::NoteInstance>();
@@ -234,6 +249,7 @@ impl NoteRenderer {
             render_bind_group_layout,
             cull_bind_group_layout,
             chunk_layout,
+            point_pipeline,
         }
     }
 
