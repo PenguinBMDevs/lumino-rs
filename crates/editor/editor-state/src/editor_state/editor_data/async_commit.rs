@@ -1,4 +1,4 @@
-﻿//! 异步提交 MoveOp 到后台线程
+//! 异步提交 MoveOp 到后台线程
 //!
 //! 批量拖动（DraggingSelection）松手时，将实际数据更新放到后台线程，
 //! UI 层每帧轮询 `poll_async_commit` 获取结果并推入历史记录。
