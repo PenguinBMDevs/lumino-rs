@@ -28,6 +28,21 @@ pub struct BrushNoteItem {
     pub key: u16,
 }
 
+/// 覆盖格是否落在**合法文档范围**内（`tick_cell >= 0`）
+///
+/// 负 tick 格只可能来自"在钢琴键盘列上落笔"（`pos_to_tick` 在键盘列投影出负 tick）。
+/// 经真实输入**当前不可达**——`handle_pressed` 的 `is_inside_canvas` 守卫在横向已
+/// 拒绝 `x < keyboard_width`【证据：`interaction/pressed.rs:16`、`rendering.rs:337`】，
+/// 纵向 tick 由 `(grid_bottom - y + scroll_x) / zoom_x` 保证 `>= scroll_x/zoom_x`。
+///
+/// 但这里仍显式过滤（**纵深防御**，不是修线上 bug）：负 tick 格既不可见（键盘
+/// 覆盖层遮住），`NoteEvent.start_tick` 又是 `u32`——`(-240.0) as u32` **饱和成 0**，
+/// 一旦将来有绕过输入守卫的笔画来源（历史快照/反序列化/程序化构造），
+/// 就会在 tick 0 凭空生成幽灵音符。预览与生成共用本判定，锁死"看不见 ⇒ 不生成"。
+pub(crate) fn cell_in_document(tick_cell: i64) -> bool {
+    tick_cell >= 0
+}
+
 impl Editor {
     /// 待确认笔画 → 待生成音符项（去重后按 `(音轨, key, 格)` 升序）
     ///
@@ -47,6 +62,9 @@ impl Editor {
             let mut expanded = Vec::with_capacity(cells.len() * thickness as usize);
             cov::expand_layers(&cells, thickness, &mut expanded);
             for ((tick_cell, key), level) in expanded {
+                if !cell_in_document(tick_cell) {
+                    continue; // 键盘列投影出的负 tick 格：不可见，也不得饱和成 tick 0 幽灵音符
+                }
                 let track = self.brush_track_for_level(level as usize, base_track);
                 if seen.insert((track, tick_cell, key)) {
                     out.push(BrushNoteItem {
@@ -85,6 +103,9 @@ impl Editor {
         for stroke in &self.editor_state.brush_tool.strokes {
             let base_track = stroke.base_track;
             for (cell, base_key) in stroke.covered_cells(snap) {
+                if !cell_in_document(cell) {
+                    continue; // 与 `brush_pending_notes` 同源过滤（键盘列负 tick 格）
+                }
                 for level in 0..thickness as u16 {
                     let key = base_key.saturating_add(level);
                     if key > cov::MAX_KEY {

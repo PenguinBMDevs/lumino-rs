@@ -13,19 +13,107 @@
 //! - 离屏笔画/方块在绘制前按屏幕矩形剔除，绘制成本只与可见方块数相关；
 //! - 几何计算与屏幕点抽稀无关（不再需要折线抽稀），块成本 O(覆盖格数 + 行段数)。
 //!
+//! ⚠️ 坐标系契约（裁剪错位 BUG 的根因）：`Program::draw` 的 `bounds` 是**窗口坐标**
+//! （含左侧栏/工具栏偏移），帧内绘制坐标却是**画布局部坐标**——可见区域只取
+//! `bounds.size()`，处理见 [`brush_visible_window`]；详见 §16 RCA。
+//!
 //! 渲染路径选型：canvas 叠加层（与 `line_tool_box` 同范式），方块 = 轴对齐矩形填充，
 //! 无需 GFX 管线/跨线程同步。
 
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
-use crate::grid::utils::content_bounds;
+use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path};
+use lumino_editor_state::brush_tool::cov::MAX_KEY;
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
 
 /// 按钮组与笔画包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
+
+/// 笔画可见窗口（**画布局部坐标**下的逻辑区间，闭区间）
+///
+/// 由 [`brush_visible_window`] 计算，绘制前用它做"整段视口外"剔除。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BrushVisibleWindow {
+    /// 可见最小 tick 格索引
+    pub cell_lo: i64,
+    /// 可见最大 tick 格索引
+    pub cell_hi: i64,
+    /// 可见最小 key
+    pub key_lo: u16,
+    /// 可见最大 key
+    pub key_hi: u16,
+}
+
+/// 由 iced 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
+///
+/// # 坐标系契约（★ 画刷裁剪错位 BUG 的根因，见 §16 RCA）
+///
+/// `Program::draw` 收到的 `bounds` 是**父/窗口坐标系**矩形——`position` 是该画布
+/// 组件在窗口里的偏移（本项目实际值 = 左侧栏宽 + 音轨列表 160、工具栏高 + 标题栏
+/// 30，见 `host/render/viewport.rs`），而**帧内所有绘制坐标都是画布局部坐标**
+/// （原点 = 画布左上角）：iced 在调用 `Program::draw` 前先
+/// `renderer.with_translation(Vector::new(bounds.x, bounds.y), ..)`
+/// （`iced_widget/src/canvas.rs`），再把 `bounds`（原样、未归一化）交给 program。
+///
+/// 因此可见区域只能是 `size()`，**绝不能把 `bounds` 当局部矩形用**：
+/// 旧实现用 `Point::new(bounds.x, bounds.y)` 当可见窗口左上角，等于把窗口整体
+/// 右移 `offset_x`、下移 `offset_y`，于是笔画被裁掉左上角一块——
+/// 顶部约 `(offset_y - ruler_height) / zoom_y` 个 key、左侧约 `offset_x - keyboard_width`
+/// 像素宽的格子（用户实测：顶部 3 个 KEY + 左侧部分）。
+///
+/// 本函数只读 `bounds.size()`；`position` 被显式忽略是**有意为之**，
+/// 回归测试 `test_visible_window_is_independent_of_widget_offset` 锁死该语义。
+pub fn brush_visible_window(editor: &Editor, bounds: Rectangle) -> BrushVisibleWindow {
+    let snap = editor.editor_state.view.snap_precision.max(1.0);
+    // 局部坐标四角：原点 → 画布尺寸（忽略 bounds.position）
+    let corner_a = Point::new(0.0, 0.0);
+    let corner_b = Point::new(bounds.width, bounds.height);
+    let (t_a, t_b) = (editor.pos_to_tick(corner_a), editor.pos_to_tick(corner_b));
+    let (t_lo, t_hi) = (t_a.min(t_b), t_a.max(t_b));
+    let (k_a, k_b) = (editor.pos_to_key(corner_a), editor.pos_to_key(corner_b));
+    BrushVisibleWindow {
+        // 1 格余量：边界上的半个格（吸精度 × zoom_x 跨像素）不外泄
+        cell_lo: (t_lo / snap).floor() as i64 - 1,
+        cell_hi: (t_hi / snap).ceil() as i64 + 1,
+        key_lo: k_a.min(k_b).saturating_sub(1),
+        key_hi: k_a.max(k_b).saturating_add(1).min(MAX_KEY),
+    }
+}
+
+/// 行段 `(音轨, key, 起格, 止格)` → 最终可绘制的屏幕矩形（不可见返回 `None`）
+///
+/// 三级剔除，顺序即成本顺序（先逻辑区间，再屏幕矩形，最后内容区裁剪）：
+/// 1. 逻辑可见窗口剔除（整段在视口外的行段完全不构建矩形）；
+/// 2. 屏幕矩形与**画布局部** bounds 求交（`canvas_bounds` 必须是
+///    `Rectangle::new(Point::ORIGIN, bounds.size())`，见 [`brush_visible_window`]）；
+/// 3. 裁剪到卷帘内容区 [`content_bounds`] —— 键盘列/标尺带由先绘制的键盘、标尺
+///    覆盖层遮住音符，预览也必须被遮住才是"所见即生成后效果"；
+///    否则笔画会把方块画到钢琴键和标尺上面。
+///
+/// `pub`：绘制与测试共用同一条过滤管线，避免"测试用一套、绘制用另一套"。
+pub fn brush_run_screen_rect(
+    editor: &Editor,
+    window: &BrushVisibleWindow,
+    canvas_bounds: Rectangle,
+    run: (usize, u16, i64, i64),
+) -> Option<Rectangle> {
+    let (_track, key, t_start, t_end) = run;
+    if t_end < window.cell_lo || t_start > window.cell_hi {
+        return None;
+    }
+    if key < window.key_lo || key > window.key_hi {
+        return None;
+    }
+    // 闭区间格 → 半开矩形
+    let rect = brush_cell_rect(editor, t_start, t_end + 1, key);
+    if !rect.intersects(&canvas_bounds) {
+        return None;
+    }
+    clip_rect(rect, content_bounds(editor))
+}
 
 /// 悬浮按钮矩形（画布坐标）
 #[derive(Debug, Clone, Copy)]
@@ -119,36 +207,18 @@ pub fn draw(
 
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let mut has_content = false;
-    // 逻辑空间可见 tick 区间：先按格剔除，再算屏幕矩形——
-    // 长笔画（或滚出视口的部分）完全不构建矩形，绘制成本只与可见格相关。
-    let view = &editor.editor_state.view;
-    let snap = view.snap_precision.max(1.0);
-    let corner_a = Point::new(bounds.x, bounds.y);
-    let corner_b = Point::new(bounds.x + bounds.width, bounds.y + bounds.height);
-    let (t_a, t_b) = (editor.pos_to_tick(corner_a), editor.pos_to_tick(corner_b));
-    let (t_lo, t_hi) = (t_a.min(t_b), t_a.max(t_b));
-    let (cell_lo, cell_hi) = (
-        (t_lo / snap).floor() as i64 - 1,
-        (t_hi / snap).ceil() as i64 + 1,
-    );
-    // key 方向同理（横向时可见 key 由 y 决定，纵向时由 x 决定）
-    let (k_a, k_b) = (editor.pos_to_key(corner_a), editor.pos_to_key(corner_b));
-    let (key_lo, key_hi) = (
-        k_a.min(k_b).saturating_sub(1),
-        k_a.max(k_b).saturating_add(1),
-    );
+    // ⚠️ `bounds` 的 position 是**窗口坐标**（左侧栏 + 工具栏偏移），而本层绘制坐标
+    // 是**画布局部坐标**：可见区域只能取 size()。旧实现把 `bounds` 直接当局部矩形
+    // 参与剔除 → 可见窗口右移 offset_x、下移 offset_y → 笔画左上角被裁掉
+    // （顶部若干 KEY + 左侧一片），见 [`brush_visible_window`] 与 §16 RCA。
+    let canvas_bounds = Rectangle::new(Point::new(0.0, 0.0), bounds.size());
+    let window = brush_visible_window(editor, bounds);
 
-    for (track, key, t_start, t_end) in editor.brush_preview_runs() {
-        if t_end < cell_lo || t_start > cell_hi || !(key_lo..=key_hi).contains(&key) {
-            continue; // 视口外（网格区间剔除，含 1 格余量）
-        }
-        // 行段 → 屏幕矩形（闭区间格 → 半开矩形）
-        let rect = brush_cell_rect(editor, t_start, t_end + 1, key);
-        // 屏幕矩形二次剔除（边界余量内的极端情形）
-        if !rect.intersects(&bounds) {
-            continue;
-        }
-        let color = editor.brush_track_color(track);
+    for run in editor.brush_preview_runs() {
+        let Some(rect) = brush_run_screen_rect(editor, &window, canvas_bounds, run) else {
+            continue; // 视口外 / 内容区外（键盘列、标尺带）
+        };
+        let color = editor.brush_track_color(run.0);
         let path = Path::rectangle(rect.position(), rect.size());
         frame.fill(&path, color);
         has_content = true;

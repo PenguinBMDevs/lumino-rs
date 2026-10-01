@@ -228,3 +228,194 @@ fn test_button_rects_none_without_strokes_or_wrong_tool() {
     editor.editor_state.tool = Tool::Pencil;
     assert!(brush_button_rects(&editor).is_none(), "非画刷不显示");
 }
+
+// ── ★ 回归：可见窗口必须用**画布局部坐标**（bounds.position 是窗口坐标） ────────
+//
+// BUG：`Program::draw` 的 bounds.position 是画布组件在窗口里的偏移
+// （左侧栏宽 + 音轨列表、工具栏高 + 标题栏），而帧内绘制坐标是画布局部坐标
+// （iced 在调用前 `with_translation(bounds.x, bounds.y)`）。旧实现把 bounds 当
+// 局部矩形用 → 可见窗口整体右移 offset_x、下移 offset_y → 笔画左上角被裁掉。
+
+/// 真实布局偏移：左侧栏 240px + 标题栏 30px + 工具栏 54px = (240, 84)
+const WIDGET_OFFSET: (f32, f32) = (240.0, 84.0);
+/// 画布尺寸（= bounds.size()）
+const CANVAS_SIZE: (f32, f32) = (1200.0, 800.0);
+
+/// 构造"有真实布局偏移"的编辑器：键盘列 120、标尺 24、zoom 0.1/20、精度 240
+fn window_editor() -> Editor {
+    let mut editor = brush_editor();
+    editor.brush.set_thickness(1);
+    editor.editor_state.canvas.size_x = CANVAS_SIZE.0;
+    editor.editor_state.canvas.size_y = CANVAS_SIZE.1;
+    let view = &mut editor.editor_state.view;
+    view.zoom_x = 0.1;
+    view.zoom_y = 20.0;
+    view.keyboard_width = 120.0;
+    view.ruler_height = 24.0;
+    view.visible_key_count = 128;
+    view.scroll_x = 0.0;
+    view.scroll_y = 0.0;
+    editor
+}
+
+fn bounds_at(offset: (f32, f32)) -> Rectangle {
+    Rectangle::new(
+        Point::new(offset.0, offset.1),
+        Size::new(CANVAS_SIZE.0, CANVAS_SIZE.1),
+    )
+}
+
+fn local_canvas_bounds() -> Rectangle {
+    Rectangle::new(
+        Point::new(0.0, 0.0),
+        Size::new(CANVAS_SIZE.0, CANVAS_SIZE.1),
+    )
+}
+
+#[test]
+fn test_visible_window_ignores_widget_offset() {
+    let editor = window_editor();
+    let zero = brush_visible_window(&editor, bounds_at((0.0, 0.0)));
+    let offset = brush_visible_window(&editor, bounds_at(WIDGET_OFFSET));
+    assert_eq!(
+        zero, offset,
+        "可见窗口只由画布尺寸决定；bounds.position（窗口坐标）一旦参与计算就是错位"
+    );
+    assert_eq!(
+        zero,
+        BrushVisibleWindow {
+            cell_lo: -6,
+            cell_hi: 46,
+            key_lo: 87,
+            key_hi: 128
+        },
+        "窗口 = 局部 (0,0)-(1200,800) 映射出的逻辑区间（含 1 格余量）"
+    );
+    // 内容区第一行 key=127（y ∈ [24, 44)）、tick 0 起始格都必须在窗口内
+    assert!(zero.key_hi >= 127, "顶部可见行必须保留");
+    assert!(zero.cell_lo <= 0, "tick 0 起始格必须保留");
+}
+
+#[test]
+fn test_old_window_from_widget_offset_proves_clipping() {
+    // 用**旧公式**（把 bounds.position 当局部坐标）算一遍，量化被误剔除的区域——
+    // 这个测试就是"裁剪区域错位"的证明：旧窗口顶边/左边正好落在窗口偏移处。
+    let editor = window_editor();
+    let snap = editor.editor_state.view.snap_precision.max(1.0);
+    let bounds = bounds_at(WIDGET_OFFSET);
+
+    let old_corner = Point::new(bounds.x, bounds.y);
+    let old_key_hi = editor.pos_to_key(old_corner);
+    let old_cell_lo = (editor.pos_to_tick(old_corner) / snap).floor() as i64 - 1;
+
+    let top_key = editor.pos_to_key(Point::new(0.0, 0.0));
+    let new = brush_visible_window(&editor, bounds);
+
+    // 顶部：旧窗口顶边 = 局部 y=84px 处 → 落在 key 124，而可见首行是 key 127
+    assert_eq!(top_key, 127, "画布局部 y=0 对应最顶可见 key");
+    assert_eq!(old_key_hi, 124, "旧窗口顶边落在 key 124");
+    assert_eq!(
+        top_key - old_key_hi,
+        3,
+        "★ 顶部 3 个 KEY 被误剔除（offset_y 84px ÷ zoom_y 20px）"
+    );
+    assert!(new.key_hi >= top_key, "修复后顶部可见行保留");
+
+    // 左侧：旧窗口左边 = 局部 x=240px（= offset_x）→ 左侧 [键盘宽, 240) 被误剔除
+    assert_eq!(old_cell_lo, 4, "旧窗口左边落在第 4 格（x=240px）");
+    assert!(
+        new.cell_lo < 0,
+        "修复后 tick 0 之前的格保留，越界由内容区裁剪负责"
+    );
+}
+
+#[test]
+fn test_preview_blocks_visible_at_top_left_with_widget_offset() {
+    // 一笔横穿画布顶部第一行、从 tick 0 开始：旧实现整段被剔除（= 笔画被裁剪）
+    let mut editor = window_editor();
+    seed_stroke(&mut editor, &[(0.0, 127.0), (24.0 * 240.0, 127.0)]);
+    let bounds = bounds_at(WIDGET_OFFSET);
+    let window = brush_visible_window(&editor, bounds);
+    let runs = editor.brush_preview_runs();
+    assert_eq!(runs, vec![(1, 127, 0, 24)]);
+
+    let rect = brush_run_screen_rect(&editor, &window, local_canvas_bounds(), runs[0])
+        .expect("★ 顶部第一行的方块必须可见（旧实现被误剔除）");
+    assert!((rect.y - 24.0).abs() < 1e-3, "行顶 = 标尺下方第一行，y=24");
+    assert!((rect.x - 120.0).abs() < 1e-3, "tick 0 → x=键盘宽 120");
+    assert!((rect.width - 600.0).abs() < 1e-3, "25 格 × 24px");
+    assert!((rect.height - 20.0).abs() < 1e-3, "1 key 高");
+}
+
+#[test]
+fn test_preview_is_clipped_to_roll_content_area() {
+    // 键盘列 / 标尺带内不绘制：音符被键盘、标尺覆盖层遮住，预览必须同样被遮住。
+    // 场景：视图右滚 scroll_x=36 → tick 0 的格投影到 x=84（落在键盘列内）。
+    let mut editor = window_editor();
+    editor.editor_state.view.scroll_x = 36.0;
+    let bounds = bounds_at(WIDGET_OFFSET);
+    let window = brush_visible_window(&editor, bounds);
+    let local = local_canvas_bounds();
+
+    // 完全落在键盘列内（x ∈ [84, 108)）→ 不绘制
+    seed_stroke(&mut editor, &[(120.0, 100.0)]);
+    let inside_keyboard = editor.brush_preview_runs();
+    assert_eq!(inside_keyboard, vec![(1, 100, 0, 0)]);
+    assert!(
+        brush_run_screen_rect(&editor, &window, local, inside_keyboard[0]).is_none(),
+        "键盘列内的方块不得绘制"
+    );
+
+    // 跨越键盘右缘（x ∈ [84, 132)）→ 裁剪到内容区左缘，只留 [120, 132)
+    let mut editor = window_editor();
+    editor.editor_state.view.scroll_x = 36.0;
+    seed_stroke(&mut editor, &[(120.0, 100.0), (360.0, 100.0)]);
+    let window = brush_visible_window(&editor, bounds);
+    let straddling = editor.brush_preview_runs();
+    assert_eq!(straddling, vec![(1, 100, 0, 1)]);
+    let rect = brush_run_screen_rect(&editor, &window, local, straddling[0])
+        .expect("跨键盘右缘的方块应保留裁剪后的部分");
+    assert!((rect.x - 120.0).abs() < 1e-3, "左缘裁剪到键盘右边 120");
+    assert!((rect.width - 12.0).abs() < 1e-3, "只保留键盘右侧可见部分");
+}
+
+#[test]
+fn test_negative_tick_cells_are_not_ghost_notes() {
+    // 纵深防御回归：负 tick 格（仅在绕过输入守卫直接构造笔画时才可能出现）不得
+    // 参与预览或生成——`NoteEvent.start_tick` 是 u32，`(-240.0) as u32` 饱和成 0，
+    // 否则"看不见的笔画"会在 tick 0 凭空生成幽灵音符。
+    // 真实输入不可达：`handle_pressed` 的 `is_inside_canvas` 已拒绝键盘列落笔。
+    let mut editor = window_editor();
+    seed_stroke(&mut editor, &[(-240.0, 100.0), (-120.0, 100.0)]);
+    assert!(
+        editor.brush_preview_runs().is_empty(),
+        "负 tick 格不参与预览"
+    );
+    assert!(
+        editor.brush_pending_notes().is_empty(),
+        "负 tick 格不生成音符（与预览同源）"
+    );
+    assert!(!editor.confirm_brush(), "无可生成音符时 √ 不产生历史记录");
+}
+
+#[test]
+fn test_visible_window_vertical_ignores_widget_offset() {
+    let mut editor = window_editor();
+    editor.editor_state.is_vertical_roll = true;
+    let zero = brush_visible_window(&editor, bounds_at((0.0, 0.0)));
+    let offset = brush_visible_window(&editor, bounds_at(WIDGET_OFFSET));
+    assert_eq!(zero, offset, "纵向同样只认画布尺寸");
+    // 纵向：tick 沿 Y（越大越靠上，顶点在底部键盘上沿）、key 沿 X
+    assert_eq!(
+        zero,
+        BrushVisibleWindow {
+            cell_lo: -6,
+            cell_hi: 30,
+            key_lo: 0,
+            key_hi: 61
+        },
+        "纵向窗口（含 1 格余量）"
+    );
+    assert!(zero.cell_hi >= 28, "最高可见 tick 格必须保留");
+    assert_eq!(zero.key_lo, 0, "key 0 起即可见");
+}
