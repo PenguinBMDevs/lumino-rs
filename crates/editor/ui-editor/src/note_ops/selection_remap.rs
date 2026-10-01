@@ -25,6 +25,7 @@
 //! [`ChunkedList::position_of`]: lumino_midi_model::ChunkedList::position_of
 
 use super::Editor;
+use super::note_position::position_of_unused;
 
 /// 逐音符捕获上限：超过则放弃捕获（防超大选中集内存/耗时失控），
 /// 重映射时保守清空选择（宁可丢选中，不可选错音符）。
@@ -115,30 +116,4 @@ impl Editor {
             }
         }
     }
-}
-
-/// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配，见上）。
-fn position_of_unused(
-    data: &lumino_editor_state::EditorData,
-    track: usize,
-    target: &lumino_midi_model::NoteEvent,
-    used: &std::collections::HashSet<usize>,
-) -> Option<usize> {
-    let track_notes = data.track_notes(track);
-    let start = track_notes.partition_point(target.start_tick);
-    let len = track_notes.len();
-    let mut i = start;
-    while i < len {
-        let Some(n) = track_notes.get(i) else {
-            break;
-        };
-        if n.start_tick != target.start_tick {
-            break;
-        }
-        if n == target && !used.contains(&i) {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
 }

@@ -4,6 +4,7 @@
 //! 优先撤销最近的路径编辑；无路径历史时才回退 document 音符历史。
 
 use crate::Editor;
+use crate::note_ops::note_position::position_of_unused;
 
 impl Editor {
     /// Undo the last action
@@ -312,30 +313,4 @@ impl Editor {
     pub fn can_redo(&self) -> bool {
         self.editor_state.data.history.can_redo()
     }
-}
-
-/// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配）。
-fn position_of_unused(
-    data: &lumino_editor_state::EditorData,
-    track: usize,
-    target: &lumino_midi_model::NoteEvent,
-    used: &std::collections::HashSet<usize>,
-) -> Option<usize> {
-    let track_notes = data.track_notes(track);
-    let start = track_notes.partition_point(target.start_tick);
-    let len = track_notes.len();
-    let mut i = start;
-    while i < len {
-        let Some(n) = track_notes.get(i) else {
-            break;
-        };
-        if n.start_tick != target.start_tick {
-            break;
-        }
-        if n == target && !used.contains(&i) {
-            return Some(i);
-        }
-        i += 1;
-    }
-    None
 }
