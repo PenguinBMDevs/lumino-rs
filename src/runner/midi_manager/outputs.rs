@@ -43,6 +43,7 @@ impl MidiManager {
             lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
             lgs_use_sinc: ui_config.lgs_use_sinc,
             winmm_output_device_id: ui_config.system_output_device_id,
+            desired_midi_max_port: 0,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）

@@ -28,12 +28,16 @@ impl MidiManager {
         let (tx, rx) = channel();
         self.xsynth_init_rx = Some(rx);
 
+        // REND-002：把当前文档期望的端口布局带入异步初始化（初始化期间可能尚未
+        // 装载文档，装载后由 apply_midi_port_layout 再对齐）。
+        let desired_midi_max_port = self.desired_midi_max_port;
+
         // 在后台线程中初始化 XSynth
         let ui_config_clone = ui_config.clone();
         std::thread::spawn(move || {
             tracing::info!("XSynth: 后台线程开始初始化");
 
-            let xsynth_result = Self::init_xsynth_blocking(&ui_config_clone);
+            let xsynth_result = Self::init_xsynth_blocking(&ui_config_clone, desired_midi_max_port);
 
             match &xsynth_result {
                 Ok(_) => tracing::info!("XSynth: 后台初始化成功"),
@@ -50,7 +54,7 @@ impl MidiManager {
     }
 
     /// 阻塞式初始化 XSynth（用于后台线程）
-    fn init_xsynth_blocking(ui_config: &UiConfig) -> MidiInitResult {
+    fn init_xsynth_blocking(ui_config: &UiConfig, midi_max_port: u8) -> MidiInitResult {
         use lumino_midi_io::{ApiKind, api::xsynth::XSynthOptions};
 
         let path = PathBuf::from(&ui_config.soundfont_path);
@@ -69,6 +73,8 @@ impl MidiManager {
             voice_target_ratio: ui_config.xsynth_voice_target_ratio,
             soft_nps_gate: ui_config.xsynth_soft_nps_gate,
             audio_output_device: ui_config.audio_output_device.clone(),
+            // REND-002：文档端口布局（0 = 单端口/Midi）
+            midi_max_port,
         };
 
         let api = lumino_midi_io::new_api_with_options(&api_kind, Some(options))
@@ -110,5 +116,24 @@ impl MidiManager {
             .map_err(|e| format!("打开输出连接失败: {:?}", e))?;
 
         Ok((api, conn))
+    }
+
+    /// 应用文档端口布局（REND-002）。
+    ///
+    /// - XSynth 就绪：直接 `set_midi_port_layout`（内部只在变化时重建，失败保持旧布局）；
+    /// - XSynth 未就绪（异步初始化中/System 回退）：暂存 desired，待初始化完成时对齐。
+    pub fn apply_midi_port_layout(&mut self, max_port: u8) {
+        self.desired_midi_max_port = max_port;
+        if self.active_backend != SynthBackend::XSynth {
+            tracing::info!("MIDI: 暂存端口布局 max_port={max_port}（等待 XSynth 就绪后应用）");
+            return;
+        }
+        let Some(api) = self.api.as_mut() else {
+            return;
+        };
+        match api.set_midi_port_layout(max_port) {
+            Ok(()) => tracing::info!("MIDI: 已应用端口布局 max_port={max_port}"),
+            Err(e) => tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}"),
+        }
     }
 }

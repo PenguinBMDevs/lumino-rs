@@ -43,4 +43,20 @@ impl Api for XSynth {
             "XSynth does not support MIDI input".into(),
         ))
     }
+
+    /// REND-002：按文档端口布局重建合成管线（0 → Midi/16 通道；否则 Custom）。
+    ///
+    /// `rebuild_with_layout` 仅在新管线构建成功后提交布局；失败返回 Err，
+    /// 旧管线继续服务，调用方负责告警。
+    fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
+        if self.midi_max_port == max_port {
+            return Ok(());
+        }
+        tracing::info!(
+            "XSynth: 端口布局变化 {} -> {}，重建合成管线",
+            self.midi_max_port,
+            max_port
+        );
+        self.rebuild_with_layout(max_port)
+    }
 }

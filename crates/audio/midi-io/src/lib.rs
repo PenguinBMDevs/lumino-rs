@@ -113,6 +113,15 @@ pub trait Api: Send + Sync {
     fn recover_stream(&mut self) -> Result<(), String> {
         Err("当前后端不支持音频流恢复".to_string())
     }
+
+    /// 设置实时合成管线的 MIDI 端口布局（REND-002）。
+    ///
+    /// `max_port` 为当前文档使用到的最大 FF 21 端口（0 = 单端口）。支持多端口
+    /// 通道空间的后端（XSynth）会按需重建合成管线；不支持的后端默认忽略
+    /// （保持 16 通道折叠语义，见 C1 决策 a）。
+    fn set_midi_port_layout(&mut self, _max_port: u8) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 /// MIDI 输出连接接口
@@ -230,6 +239,25 @@ pub trait OutputConnection: Send {
     ///
     /// 仅音频合成类输出实现此能力；纯 MIDI 设备输出默认无操作。
     fn set_channel_pan(&mut self, _channel: u8, _pan: f32) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 设置某全局通道的打击乐模态（REND-002 方案 B）。
+    ///
+    /// 仅软件合成后端（XSynth）实现；外部 MIDI 设备无对应线协议消息，
+    /// 默认 no-op（Bank Select 无法表达模态切换，见 fork 约束）。
+    fn set_percussion_mode(&mut self, _ch: u16, _on: bool) -> Result<(), Error> {
+        Ok(())
+    }
+
+    /// 释放所有通道的延音踏板（CC64=0），用于暂停清理。
+    ///
+    /// 默认实现只覆盖 16 个 MIDI 通道；多端口场景下软件合成后端（XSynth）
+    /// override 为 `AllChannels`，确保端口 >0 的全局通道同样释放（REND-002）。
+    fn release_all_dampers(&mut self) -> Result<(), Error> {
+        for ch in 0..MIDI_CHANNEL_COUNT {
+            self.control_change(u16::from(ch), 64, 0)?;
+        }
         Ok(())
     }
 

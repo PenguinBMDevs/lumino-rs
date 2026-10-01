@@ -11,7 +11,7 @@ fn ev(tick: f32, message: MidiMessage) -> MidiTrackEvent {
     MidiTrackEvent { tick, message }
 }
 
-fn cc(channel: u8, controller: u8, value: u8) -> MidiMessage {
+fn cc(channel: u16, controller: u8, value: u8) -> MidiMessage {
     MidiMessage::ControlChange {
         channel,
         controller,
@@ -19,11 +19,11 @@ fn cc(channel: u8, controller: u8, value: u8) -> MidiMessage {
     }
 }
 
-fn pb(channel: u8, value: f32) -> MidiMessage {
+fn pb(channel: u16, value: f32) -> MidiMessage {
     MidiMessage::PitchBend { channel, value }
 }
 
-fn cc_tuples(messages: &[MidiMessage]) -> Vec<(u8, u8, u8)> {
+fn cc_tuples(messages: &[MidiMessage]) -> Vec<(u16, u8, u8)> {
     messages
         .iter()
         .filter_map(|message| match message {
@@ -37,7 +37,7 @@ fn cc_tuples(messages: &[MidiMessage]) -> Vec<(u8, u8, u8)> {
         .collect()
 }
 
-fn pitch_bends(messages: &[MidiMessage]) -> Vec<(u8, f32)> {
+fn pitch_bends(messages: &[MidiMessage]) -> Vec<(u16, f32)> {
     messages
         .iter()
         .filter_map(|message| match message {
@@ -220,4 +220,95 @@ fn loop_wrap_appends_state_chase() {
         "回绕后应追齐 CC7=100，实际 {tuples:?}"
     );
     assert_eq!(bends, vec![(0, 0.5)]);
+}
+
+/// REND-002：跨端口同通道的追齐互不串（port 0 ch0 → 0；port 1 ch0 → 16）。
+#[test]
+fn chase_multi_port_channels_are_independent() {
+    use midly::loader::PackedControlEvent;
+
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+    engine.set_document(
+        Arc::new(MidiDocument {
+            notes: vec![
+                lumino_midi_loader::ChunkedList::new(),
+                lumino_midi_loader::ChunkedList::new(),
+            ],
+            tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
+            key_signatures: vec![],
+            control_events: lumino_midi_loader::ChunkedList::from_sorted(vec![
+                PackedControlEvent::control_change(10, 0, 0, 7, 100),
+                PackedControlEvent::control_change(20, 1, 0, 7, 55),
+            ]),
+            lyrics: vec![],
+            markers: vec![],
+            text_events: vec![],
+            sys_ex: vec![],
+            track_names: vec![None, None],
+            total_ticks: 100,
+            track_count: 2,
+            tracks: TrackManager::new(2),
+            division: 480,
+            track_ports: vec![0, 1],
+            track_max_end_ticks: vec![],
+        }),
+        0,
+    );
+    engine.seek(100.0);
+    let chase = cc_tuples(&engine.take_pending_chase());
+    assert!(
+        chase.contains(&(0, 7, 100)),
+        "端口 0 ch0 应追到 100，实际 {chase:?}"
+    );
+    assert!(
+        chase.contains(&(16, 7, 55)),
+        "端口 1 ch0（全局 16）应追到 55，实际 {chase:?}"
+    );
+}
+
+/// REND-002 方案 B：seek 时先追齐打击乐模态、再追齐 Bank Select CC0。
+#[test]
+fn chase_emits_percussion_mode_before_bank_select() {
+    use midly::loader::PackedControlEvent;
+
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+    engine.set_document(
+        doc_with_control_events(vec![
+            // track 0 ch2 CC0=120 → GS Rhythm
+            PackedControlEvent::control_change(10, 0, 2, 0, 120),
+        ]),
+        0,
+    );
+    engine.seek(100.0);
+    let chase = engine.take_pending_chase();
+    let mode_pos = chase.iter().position(|m| {
+        matches!(
+            m,
+            MidiMessage::PercussionMode {
+                channel: 2,
+                on: true
+            }
+        )
+    });
+    let cc_pos = chase.iter().position(|m| {
+        matches!(
+            m,
+            MidiMessage::ControlChange {
+                channel: 2,
+                controller: 0,
+                value: 120
+            }
+        )
+    });
+    assert!(
+        mode_pos.is_some(),
+        "seek 后应追齐打击乐模态，实际 {chase:?}"
+    );
+    assert!(
+        mode_pos.expect("模态消息应存在") < cc_pos.expect("CC0 应存在"),
+        "模态切换必须先于 Bank Select CC0 追齐"
+    );
 }

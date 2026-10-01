@@ -67,6 +67,11 @@ pub struct XSynthOptions {
     pub soft_nps_gate: bool,
     /// 音频播放输出设备（CPAL 音频设备名；None = 使用系统默认输出设备）
     pub audio_output_device: Option<String>,
+    /// 待播放文档使用到的最大 MIDI 端口（FF 21；0 = 单端口）。
+    ///
+    /// REND-002：0 → `SynthFormat::Midi`（16 通道，零行为变化）；否则
+    /// `Custom { channels: (min(max_port,15)+1)*16 }`，并逐端口显式开启 ch9 打击乐。
+    pub midi_max_port: u8,
 }
 
 /// 线程池逃生口环境变量（**仅供 A/B 复测**，不对外暴露为设置项）。
@@ -112,5 +117,10 @@ pub struct XSynth {
     soundfont_path: PathBuf,
     /// 打开选项（重建管线时重用）
     options: Option<XSynthOptions>,
+    /// 当前合成管线使用的最大 MIDI 端口（REND-002；0 = 单端口/Midi）。
+    ///
+    /// 单独存放而非只读 `options`：`options` 允许为 `None`，且布局切换需要在
+    /// 重建成功后才提交（失败回滚），避免"配置说 Custom、管线还是 16 通道"的错位。
+    midi_max_port: u8,
     version: String,
 }

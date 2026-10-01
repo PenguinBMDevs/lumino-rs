@@ -46,6 +46,20 @@ impl Root {
         // 同步 MIDI 控制事件
         // 来源 1：从编辑器的 automation_lanes 中提取当前音轨的编辑后控制事件
         let current_track = self.editor.editor_state.data.current_track as u16;
+        // REND-002：当前轨端口 → 该轨所有事件的全局通道映射。
+        let current_port = self
+            .editor
+            .editor_state
+            .data
+            .document
+            .as_ref()
+            .map_or(0, |doc| doc.track_port(current_track));
+        let map_current = |ch: u8| -> u16 {
+            lumino_midi_model::multi_port::global_channel(
+                lumino_midi_model::multi_port::effective_port(current_port),
+                ch,
+            )
+        };
 
         let mut midi_events: Vec<MidiTrackEvent> = Vec::new();
 
@@ -60,7 +74,7 @@ impl Root {
                         midi_events.push(MidiTrackEvent {
                             tick: ev.tick as f32,
                             message: MidiMessage::ControlChange {
-                                channel: lane.channel,
+                                channel: map_current(lane.channel),
                                 controller: *controller,
                                 value: ev.value as u8,
                             },
@@ -78,7 +92,7 @@ impl Root {
                         midi_events.push(MidiTrackEvent {
                             tick: tick as f32,
                             message: MidiMessage::PitchBend {
-                                channel: lane.channel,
+                                channel: map_current(lane.channel),
                                 value: pb_value.clamp(-1.0, 1.0),
                             },
                         });
@@ -93,7 +107,7 @@ impl Root {
                         midi_events.push(MidiTrackEvent {
                             tick: tick as f32,
                             message: MidiMessage::ControlChange {
-                                channel: lane.channel,
+                                channel: map_current(lane.channel),
                                 controller,
                                 value,
                             },
@@ -103,9 +117,21 @@ impl Root {
             }
         }
 
-        // 来源 2：其他音轨的预加载控制事件（来自 load_track_midi_events）
-        for events in self.playback.track_midi_events.values() {
-            midi_events.extend(events.clone());
+        // 来源 2：其他音轨的预加载控制事件（来自 load_track_midi_events）。
+        // REND-002：按键（轨道索引）查端口并映射全局通道。
+        for (track_idx, events) in &self.playback.track_midi_events {
+            let port = self
+                .editor
+                .editor_state
+                .data
+                .document
+                .as_ref()
+                .map_or(0, |doc| doc.track_port(*track_idx as u16));
+            for ev in events {
+                let mut mapped = ev.clone();
+                mapped.message = map_message_port(&mapped.message, port);
+                midi_events.push(mapped);
+            }
         }
 
         // 来源 3：从 document 中读取当前音轨的 ProgramChange 事件。
@@ -120,7 +146,7 @@ impl Root {
                     midi_events.push(MidiTrackEvent {
                         tick: ev.tick as f32,
                         message: MidiMessage::ProgramChange {
-                            channel: ev.channel,
+                            channel: map_current(ev.channel),
                             program,
                         },
                     });
@@ -252,6 +278,63 @@ impl Root {
             tracing::info!("Root: 重置播放管理器（新文件加载）");
             self.playback.manager = None;
         }
+    }
+}
+
+/// REND-002：把消息的 MIDI 通道映射到合成层全局通道（端口来自来源轨道）。
+fn map_message_port(message: &MidiMessage, port: u8) -> MidiMessage {
+    let map = |ch: u16| -> u16 {
+        lumino_midi_model::multi_port::global_channel(
+            lumino_midi_model::multi_port::effective_port(port),
+            ch as u8,
+        )
+    };
+    match message {
+        MidiMessage::NoteOn {
+            channel,
+            key,
+            velocity,
+        } => MidiMessage::NoteOn {
+            channel: map(*channel),
+            key: *key,
+            velocity: *velocity,
+        },
+        MidiMessage::NoteOff { channel, key } => MidiMessage::NoteOff {
+            channel: map(*channel),
+            key: *key,
+        },
+        MidiMessage::ControlChange {
+            channel,
+            controller,
+            value,
+        } => MidiMessage::ControlChange {
+            channel: map(*channel),
+            controller: *controller,
+            value: *value,
+        },
+        MidiMessage::ProgramChange { channel, program } => MidiMessage::ProgramChange {
+            channel: map(*channel),
+            program: *program,
+        },
+        MidiMessage::PitchBend { channel, value } => MidiMessage::PitchBend {
+            channel: map(*channel),
+            value: *value,
+        },
+        MidiMessage::ChannelPressure { channel, pressure } => MidiMessage::ChannelPressure {
+            channel: map(*channel),
+            pressure: *pressure,
+        },
+        MidiMessage::PolyPressure {
+            channel,
+            key,
+            pressure,
+        } => MidiMessage::PolyPressure {
+            channel: map(*channel),
+            key: *key,
+            pressure: *pressure,
+        },
+        // 派生消息（模态切换）不携带来源轨道端口，原样保留。
+        MidiMessage::PercussionMode { .. } => message.clone(),
     }
 }
 

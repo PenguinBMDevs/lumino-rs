@@ -60,6 +60,8 @@ impl RunnerInner {
                                 tracing::error!("自动保存后加载 MIDI 失败: 无 document");
                                 return;
                             };
+                            // REND-002：自动保存重载同一文档，布局幂等对齐（变化时才重建）
+                            self.midi_state.midi.apply_midi_port_layout(doc.max_port());
                             let ui = self.window_state.window.ui_mut();
                             ui.set_midi_document(doc);
                         }

@@ -9,9 +9,12 @@ use xsynth_core::{
     soundfont::SoundfontBase,
 };
 
+use lumino_midi_model::multi_port::{channels_for_max_port, effective_port, global_channel};
+
 use crate::Error;
 use crate::realtime::{
-    ChannelMixHandle, RealtimeEventSender, RealtimeSynth, SynthEvent, XSynthRealtimeConfig,
+    ChannelMixHandle, RealtimeEventSender, RealtimeSynth, SynthEvent, SynthFormat,
+    XSynthRealtimeConfig,
 };
 use crate::soundfont_cache;
 
@@ -19,6 +22,20 @@ use super::threads::machine_thread_count;
 use super::{
     MIN_CUSHION_MS, RENDER_WINDOW_MS, XSynth, XSynthOptions, normalize_max_voices_per_key,
 };
+
+/// REND-002：最大 MIDI 端口 → 实时合成格式。
+///
+/// - `0`：`SynthFormat::Midi`（16 通道，零行为变化基线）；
+/// - 否则：`Custom { channels: (min(max_port,15)+1)*16 }`（产品上限 16 端口 = 256 通道）。
+fn rt_format(midi_max_port: u8) -> SynthFormat {
+    if midi_max_port == 0 {
+        SynthFormat::Midi
+    } else {
+        SynthFormat::Custom {
+            channels: channels_for_max_port(effective_port(midi_max_port)),
+        }
+    }
+}
 
 impl XSynth {
     /// 使用指定音色库路径创建 XSynth 后端
@@ -33,7 +50,9 @@ impl XSynth {
             )));
         }
 
-        let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref())?;
+        // REND-002：端口布局来自打开选项（文档切换由 `set_midi_port_layout` 重建）
+        let midi_max_port = options.as_ref().map_or(0, |opt| opt.midi_max_port);
+        let (synth, sender) = Self::init_synth(soundfont_path, options.as_ref(), midi_max_port)?;
         let sender_shared = Arc::new(Mutex::new(sender));
         let mixer_shared = ChannelMixHandle::new(Mutex::new(synth.clone_channel_mix()));
         let master_peak_shared = synth.clone_master_peak();
@@ -48,16 +67,19 @@ impl XSynth {
             master_peak_shared,
             soundfont_path: soundfont_path.to_path_buf(),
             options,
+            midi_max_port,
             version,
         })
     }
 
     /// 初始化合成管线：预加载音色库 → 打开音频流 → 配置音色库事件。
     ///
-    /// 被 `new` 与 `rebuild`（设备参数变化后全量重建）复用。
+    /// 被 `new` 与 [`Self::rebuild_with_layout`]（端口布局变化/设备参数变化后
+    /// 全量重建）复用。
     fn init_synth(
         soundfont_path: &Path,
         options: Option<&XSynthOptions>,
+        midi_max_port: u8,
     ) -> Result<(RealtimeSynth, RealtimeEventSender), Error> {
         // 采样率对齐原则：配置中的 `xsynth_sample_rate` 仅作提示，
         // 真正决定音高的是设备实际采样率。`RealtimeSynth`（xsynth-realtime）
@@ -88,6 +110,9 @@ impl XSynth {
             max_nps: 0,
             ..Default::default()
         };
+
+        // REND-002：通道布局随文档端口数（0 → Midi/16 通道，零行为变化基线）。
+        rt_config.format = rt_format(midi_max_port);
 
         if let Some(opt) = options {
             // 渲染块固定 10ms：MIDI 事件按渲染块边界批量应用，块越小音符落点
@@ -168,6 +193,18 @@ impl XSynth {
             )),
         )));
 
+        // REND-002：`SynthFormat::Custom` 不自动开启 ch9 打击乐（仅 `Midi` 自动，
+        // fork `realtime_synth.rs:698-702`），多端口时对每个端口的 `p*16+9`
+        // 显式下发 SetPercussionMode(true)（含 port 0）。
+        if midi_max_port != 0 {
+            for port in 0..=effective_port(midi_max_port) {
+                sender.send_event(SynthEvent::Channel(
+                    u32::from(global_channel(port, 9)),
+                    ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
+                ));
+            }
+        }
+
         // 重置所有通道，确保音色库生效
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::AllNotesKilled,
@@ -185,8 +222,17 @@ impl XSynth {
     /// 重建后替换共享事件发送器，所有已创建的 `XSynthOutputConn` 自动跟随新管线；
     /// 无需上层重建输出连接。
     pub(super) fn rebuild(&mut self) -> Result<(), String> {
-        let (synth, sender) = Self::init_synth(&self.soundfont_path, self.options.as_ref())
-            .map_err(|e| format!("重建合成管线失败: {e}"))?;
+        self.rebuild_with_layout(self.midi_max_port)
+    }
+
+    /// 按指定端口布局全量重建合成管线（REND-002）。
+    ///
+    /// 仅在新管线构建成功后才提交 `midi_max_port`；失败时旧管线与旧布局保持不变，
+    /// 避免"配置说 Custom、实际仍 16 通道"的错位。
+    pub(super) fn rebuild_with_layout(&mut self, midi_max_port: u8) -> Result<(), String> {
+        let (synth, sender) =
+            Self::init_synth(&self.soundfont_path, self.options.as_ref(), midi_max_port)
+                .map_err(|e| format!("重建合成管线失败: {e}"))?;
 
         // 替换合成器（旧实例 drop：发送 Shutdown 并 join 全部线程）
         self.synth = synth;
@@ -195,8 +241,32 @@ impl XSynth {
         // 替换混音句柄：已创建的输出连接通过外层 Arc 读取，自动指向新管线
         *self.mixer_shared.lock().unwrap_or_else(|e| e.into_inner()) =
             self.synth.clone_channel_mix();
+        // 布局提交（重建失败时不会执行到此处）
+        self.midi_max_port = midi_max_port;
 
-        tracing::info!("XSynth: 合成管线已重建");
+        tracing::info!("XSynth: 合成管线已重建（midi_max_port={midi_max_port}）");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REND-002 零行为变化基线：单端口 → Midi/16 通道。
+    #[test]
+    fn rt_format_zero_is_midi_baseline() {
+        assert_eq!(rt_format(0), SynthFormat::Midi);
+    }
+
+    /// REND-002：多端口 → Custom 通道数；超产品上限折叠到 16 端口/256 通道。
+    #[test]
+    fn rt_format_multi_port_uses_custom_channels() {
+        assert_eq!(rt_format(6), SynthFormat::Custom { channels: 112 });
+        assert_eq!(
+            rt_format(127),
+            SynthFormat::Custom { channels: 256 },
+            "超上限端口折叠"
+        );
     }
 }

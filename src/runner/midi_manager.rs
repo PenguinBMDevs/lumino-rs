@@ -87,6 +87,11 @@ pub struct MidiManager {
     lgs_use_sinc: bool,
     /// 系统 MIDI (WinMM) 输出设备 ID（None = 第一个/默认）
     winmm_output_device_id: Option<u32>,
+    /// REND-002：当前文档期望的最大 MIDI 端口（0 = 单端口/Midi）。
+    ///
+    /// 由文档装载入口写入；XSynth 就绪时应用/重建，未就绪（异步初始化或
+    /// System 回退）时暂存，待 `check_async_init_complete` 完成后对齐。
+    desired_midi_max_port: u8,
 }
 
 impl Default for MidiManager {
@@ -115,6 +120,7 @@ impl Default for MidiManager {
             lgs_max_voices_per_key: 0,
             lgs_use_sinc: false,
             winmm_output_device_id: None,
+            desired_midi_max_port: 0,
         }
     }
 }

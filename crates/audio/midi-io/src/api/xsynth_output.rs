@@ -9,7 +9,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::realtime::{ChannelMixHandle, RealtimeEventSender, SynthEvent};
-use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
+use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
 
 use crate::constants::*;
 use crate::{Error, OutputConnection};
@@ -90,6 +90,23 @@ impl OutputConnection for XSynthOutputConn {
                 value,
             ))),
         ));
+        Ok(())
+    }
+
+    /// REND-002 方案 B：运行时打击乐模态切换（Bank Select 推导，播放侧下发）。
+    fn set_percussion_mode(&mut self, ch: u16, on: bool) -> Result<(), Error> {
+        self.send_event(SynthEvent::Channel(
+            u32::from(ch),
+            ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(on)),
+        ));
+        Ok(())
+    }
+
+    /// 暂停清理：释放全部全局通道的延音踏板（多端口下覆盖所有通道）。
+    fn release_all_dampers(&mut self) -> Result<(), Error> {
+        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::Control(ControlEvent::Raw(64, 0)),
+        )));
         Ok(())
     }
 
