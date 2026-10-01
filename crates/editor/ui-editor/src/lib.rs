@@ -51,6 +51,7 @@ mod tests {
     mod arrangement_move_freeze;
     mod arrangement_snap_ledger;
     mod arrangement_track_mapping;
+    mod batch_move_consistency;
     mod delete_sync_gate;
     mod drawing;
     mod flow;

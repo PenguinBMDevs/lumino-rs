@@ -102,16 +102,43 @@ impl Editor {
         }
 
         // 逐个窗口定位（O(k log N)，无全扫；大批量亦然，禁止单次全轨扫描兜底）。
+        // 同值多份按份数分配不同索引（已占用跳过），否则 stacked 重复音符只选中一份。
         self.selection_clear();
+        let mut used: std::collections::HashSet<usize> =
+            std::collections::HashSet::with_capacity(entries.len().min(1024));
         for ev in entries {
-            let found = self
-                .editor_state
-                .data
-                .track_notes(identity.track)
-                .position_of(ev);
-            if let Some(idx) = found {
+            if let Some(idx) =
+                position_of_unused(&self.editor_state.data, identity.track, ev, &used)
+            {
+                used.insert(idx);
                 self.selection_insert(idx);
             }
         }
     }
+}
+
+/// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配，见上）。
+fn position_of_unused(
+    data: &lumino_editor_state::EditorData,
+    track: usize,
+    target: &lumino_midi_model::NoteEvent,
+    used: &std::collections::HashSet<usize>,
+) -> Option<usize> {
+    let track_notes = data.track_notes(track);
+    let start = track_notes.partition_point(target.start_tick);
+    let len = track_notes.len();
+    let mut i = start;
+    while i < len {
+        let Some(n) = track_notes.get(i) else {
+            break;
+        };
+        if n.start_tick != target.start_tick {
+            break;
+        }
+        if n == target && !used.contains(&i) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }

@@ -146,6 +146,29 @@ impl Editor {
                 // 渲染时 ghost 位置 = note + pending.delta + drag_state.delta。
                 if drag_state.is_delta_zero() {
                     tracing::debug!("Editor: 批量拖动 delta 为零，不保存 pending");
+                } else if self.editor_state.data.has_pending_commit() {
+                    // 飞行串行化：已有未完成的异步提交时不允许直接累积到飞行中的 pending
+                    // （飞行 ops 已按旧 delta 快照，累积会污染 pending 导致视觉与内存分叉）。
+                    // 先等待落盘（选中按新值重选、pending 清空），再按当前选中新基准存储当前拖动。
+                    let cur_dt = drag_state.delta_tick;
+                    let cur_dk = drag_state.delta_key;
+                    let cur_init_tick = drag_state.initial_tick;
+                    let cur_init_key = drag_state.initial_key;
+                    self.drain_async_commit();
+                    let note_count = self.editor_state.data.current_track_note_count();
+                    let mut fresh = lumino_editor_state::DragState::from_indices(
+                        self.get_selected_indices(),
+                        note_count,
+                        cur_init_tick,
+                        cur_init_key,
+                    );
+                    fresh.set_delta(cur_dt, cur_dk);
+                    tracing::debug!(
+                        "Editor: 飞行串行化后新基准 pending - delta=({}, {})",
+                        cur_dt,
+                        cur_dk
+                    );
+                    self.pending_drag_state = Some(fresh);
                 } else if let Some(mut pending) = self.pending_drag_state.take() {
                     pending.delta_tick = pending.delta_tick.saturating_add(drag_state.delta_tick);
                     pending.delta_key = pending.delta_key.saturating_add(drag_state.delta_key);

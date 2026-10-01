@@ -1,4 +1,4 @@
-//! 框选（Selection）相关逻辑：增量更新、全量重建、矩形差集
+﻿//! 框选（Selection）相关逻辑：增量更新、全量重建、矩形差集
 //!
 //! 从 `drag.rs` 抽出，控制文件行数并保持单一职责。
 
@@ -103,6 +103,45 @@ impl Editor {
         // lookback = 最大音符长度（精确上界；固定 1M tick 在密集轨道下覆盖整轨）
         let lookback = self.current_track_max_note_len();
 
+        // 飞行/幽灵期间（pending 存在）：显示位置 = 文档旧位置 + pending delta，
+        // 框选必须按视觉（幽灵）位置命中，否则空白点击提交后立即新框选会基于旧文档错位。
+        // 此时旁路空间索引（索引建在旧文档位置上），走幽灵感知的窗口扫描。
+        if self.pending_drag_state.is_some() {
+            let set =
+                ghost_aware_window_collect(self, min_tick, max_tick, min_key, max_key, lookback);
+            // 边界：单遍顺序扫描轨道 + 位图命中（O(轨道) 顺序读，免逐索引随机 get）
+            // 注意：selected_bounds 缓存存 RAW（文档位置），渲染时再叠加 delta 得视觉框
+            let mut bounds = None;
+            if !set.is_empty() {
+                let mut min_t = f32::INFINITY;
+                let mut max_te = f32::NEG_INFINITY;
+                let mut max_k = u16::MIN;
+                let mut min_k = u16::MAX;
+                for (i, n) in self
+                    .editor_state
+                    .data
+                    .current_track_notes()
+                    .iter()
+                    .enumerate()
+                {
+                    if !set.contains(&i) {
+                        continue;
+                    }
+                    let tick = n.start_tick as f32;
+                    let length = (n.end_tick - n.start_tick) as f32;
+                    min_t = min_t.min(tick);
+                    max_te = max_te.max(tick + length);
+                    max_k = max_k.max(n.key as u16);
+                    min_k = min_k.min(n.key as u16);
+                }
+                bounds = Some((min_t, max_te, max_k, min_k));
+            }
+
+            self.editor_state.interaction.selected_notes = set;
+            self.selected_bounds.set(bounds);
+            return;
+        }
+
         let set = {
             let notes = self.editor_state.data.current_track_notes();
             if let Some(index) = self.spatial.note_index.borrow().as_ref() {
@@ -202,6 +241,11 @@ fn query_rect_indices(
     k_max: u16,
     out: &mut Vec<usize>,
 ) {
+    // 幽灵期间旁路索引：索引建在旧文档位置上，幽灵移入/移出的音符会被漏检/误检
+    if editor.pending_drag_state.is_some() {
+        ghost_aware_query_rect(editor, t_min, t_max, k_min, k_max, out);
+        return;
+    }
     editor.ensure_spatial_index();
     if let Some(index) = editor.spatial.note_index.borrow().as_ref() {
         let mut cache = editor.spatial.query_cache.borrow_mut();
@@ -266,8 +310,11 @@ fn apply_selection_delta(
     //
     // 代价：O(|remove_list|) 次 SoA 查询（`get_note_view` 零 clone），
     // 与紧随其后的 `selection_remove` 循环同阶，不引入新的渐进复杂度。
+    // 幽灵期间按视觉（幽灵）位置二次过滤，否则飞行中收缩框选会误剔已移入的长音符。
     remove_list.retain(|&i| match editor.editor_state.data.get_note_view(i) {
-        Some(n) => !marquee_hits(
+        Some(n) => !marquee_hits_effective(
+            editor,
+            i,
             n.tick,
             n.tick + n.length,
             n.key,
@@ -371,5 +418,125 @@ fn rect_subtract(
     // 右 strip（outer 在 ic 右侧、上下之间）
     if ic_t_max < outer_t_max {
         result.push((ic_t_max, outer_t_max, ic_k_min, ic_k_max));
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+/// 幽灵感知的框选命中：pending 选中集内的音符按视觉（文档 + pending delta）位置判定，
+/// 其余按文档位置。保证飞行/幽灵期间新框选与用户看到的位置一致，消除“框选错位”。
+fn marquee_hits_effective(
+    editor: &Editor,
+    idx: usize,
+    note_tick: f32,
+    note_end: f32,
+    key: u16,
+    min_tick: f32,
+    max_tick: f32,
+    min_key: u16,
+    max_key: u16,
+) -> bool {
+    if let Some(pending) = editor.pending_drag_state.as_ref()
+        && idx < pending.selected.len()
+        && pending.selected[idx]
+    {
+        let max_k = editor.editor_state.view.visible_key_count.saturating_sub(1);
+        let len = (note_end - note_tick).max(0.0);
+        let g_tick = (note_tick + pending.delta_tick as f32).max(0.0);
+        let g_key = (key as i32 + pending.delta_key as i32).clamp(0, max_k as i32) as u16;
+        return marquee_hits(
+            g_tick,
+            g_tick + len,
+            g_key,
+            min_tick,
+            max_tick,
+            min_key,
+            max_key,
+        );
+    }
+    marquee_hits(
+        note_tick, note_end, key, min_tick, max_tick, min_key, max_key,
+    )
+}
+
+/// 幽灵感知的窗口收集（全量重建用）：tick 窗口取文档框与幽灵框的并集，
+/// 再逐音符按视觉位置精确收口。窗口仅做剪枝，正确性由 `marquee_hits_effective` 保证。
+fn ghost_aware_window_collect(
+    editor: &Editor,
+    min_tick: f32,
+    max_tick: f32,
+    min_key: u16,
+    max_key: u16,
+    lookback: u32,
+) -> SelectionSet {
+    let (dt, _) = editor
+        .pending_drag_state
+        .as_ref()
+        .map(|p| (p.delta_tick as f32, p.delta_key))
+        .unwrap_or((0.0, 0));
+    // 幽灵旧位置 = 视觉框整体平移 -dt：并集覆盖“文档在框内”与“幽灵在框内”两类候选
+    let exp_min = min_tick.min(min_tick - dt);
+    let exp_max = max_tick.max(max_tick - dt);
+    let track = editor.editor_state.data.current_track_notes();
+    let (lo, hi) = track.window_range(
+        exp_min.max(0.0) as u32,
+        exp_max.max(0.0) as u32 + 1,
+        lookback,
+    );
+    let mut set = SelectionSet::default();
+    for (i, n) in track.iter_window(lo, hi) {
+        if marquee_hits_effective(
+            editor,
+            i,
+            n.start_tick as f32,
+            n.end_tick as f32,
+            n.key as u16,
+            min_tick,
+            max_tick,
+            min_key,
+            max_key,
+        ) {
+            set.insert(i);
+        }
+    }
+    set
+}
+
+/// 幽灵感知的矩形查询（增量 delta 薄条用）：同上，窗口取并集后按视觉位置收口。
+fn ghost_aware_query_rect(
+    editor: &Editor,
+    t_min: f32,
+    t_max: f32,
+    k_min: u16,
+    k_max: u16,
+    out: &mut Vec<usize>,
+) {
+    let (dt, _) = editor
+        .pending_drag_state
+        .as_ref()
+        .map(|p| (p.delta_tick as f32, p.delta_key))
+        .unwrap_or((0.0, 0));
+    let exp_min = t_min.min(t_min - dt);
+    let exp_max = t_max.max(t_max - dt);
+    let track = editor.editor_state.data.current_track_notes();
+    let lookback = editor.current_track_max_note_len();
+    let (lo, hi) = track.window_range(
+        exp_min.max(0.0) as u32,
+        exp_max.max(0.0) as u32 + 1,
+        lookback,
+    );
+    for (i, n) in track.iter_window(lo, hi) {
+        if marquee_hits_effective(
+            editor,
+            i,
+            n.start_tick as f32,
+            n.end_tick as f32,
+            n.key as u16,
+            t_min,
+            t_max,
+            k_min,
+            k_max,
+        ) {
+            out.push(i);
+        }
     }
 }

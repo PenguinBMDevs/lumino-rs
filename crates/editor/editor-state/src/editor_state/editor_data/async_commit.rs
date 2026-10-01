@@ -1,4 +1,4 @@
-//! 异步提交 MoveOp 到后台线程
+﻿//! 异步提交 MoveOp 到后台线程
 //!
 //! 批量拖动（DraggingSelection）松手时，将实际数据更新放到后台线程，
 //! UI 层每帧轮询 `poll_async_commit` 获取结果并推入历史记录。
@@ -169,6 +169,9 @@ fn apply_move_ops_to_clone(
 
     let mut modified = 0usize;
     let mut modified_indices: Vec<usize> = Vec::new();
+    // 全局已占用索引：同值多份按份数分配，避免不同 op 的相同值碰撞到同一索引
+    let mut used_indices: std::collections::HashSet<usize> =
+        std::collections::HashSet::with_capacity(total_indices.min(1024));
     let mut processed = 0usize;
     let mut next_log_threshold = total_indices / 10; // 每 10% 报告一次
     if next_log_threshold == 0 {
@@ -183,9 +186,14 @@ fn apply_move_ops_to_clone(
         // 阶段 1：按值解析目标索引。提交路径恒为正向 op（undo/redo 走同步
         // `apply_move_ops` 删加路径），克隆副本在提交窗口内冻结，值提示即原始值。
         // 窗口二分（partition_point + 同 tick 段全字段匹配），无全扫兜底。
+        //
+        // 同值多份必须按份数分配不同索引：逐个定位时跳过已占用的索引，
+        // 否则两个完全相同的音符会同时解析到同一索引，导致一个被双移、另一个不动
+        // （批量框选多次移动后显示与内存分叉的根因之一）。
         let mut resolved: Vec<usize> = Vec::with_capacity(count);
         for orig in &op.originals {
-            if let Some(idx) = position_of_value_in_slice(&notes, orig) {
+            if let Some(idx) = position_of_value_in_slice_skipping(&notes, orig, &used_indices) {
+                used_indices.insert(idx);
                 resolved.push(idx);
             }
         }
@@ -247,15 +255,23 @@ fn apply_move_ops_to_clone(
     })
 }
 
-/// 在已按 tick 升序的音符切片中按值定位（窗口二分，无全扫兜底）。
+/// 按值定位（跳过已占用索引，同值多份按份数分配不同索引）。
 ///
-/// 以 `target.start_tick` 二分定位同 tick 连续段后全字段匹配；
-/// 未命中返回 None（同值多份取首个，份数语义由调用方逐个删保证）。
-fn position_of_value_in_slice(notes: &[NoteEvent], target: &NoteEvent) -> Option<usize> {
+/// 以 `target.start_tick` 二分定位后，在 `start_tick <= target` 范围内线性扫描，
+/// 跳过已占用索引后返回首个全字段匹配；未命中返回 None，禁止全片兜底扫描。
+/// 跳过 `used` 中已占用的索引（同值多份按份数分配不同索引）。
+///
+/// 以 `target.start_tick` 二分定位后，在 `start_tick <= target` 范围内线性扫描，
+/// 跳过已占用索引后返回首个全字段匹配；未命中返回 None，禁止全片兜底扫描。
+fn position_of_value_in_slice_skipping(
+    notes: &[NoteEvent],
+    target: &NoteEvent,
+    used: &std::collections::HashSet<usize>,
+) -> Option<usize> {
     let start = notes.partition_point(|n| n.start_tick < target.start_tick);
     let mut i = start;
     while i < notes.len() && notes[i].start_tick <= target.start_tick {
-        if notes[i] == *target {
+        if notes[i] == *target && !used.contains(&i) {
             return Some(i);
         }
         i += 1;

@@ -1,4 +1,4 @@
-//! 鼠标按下事件处理 — 工具分发、音符编辑/绘制
+﻿//! 鼠标按下事件处理 — 工具分发、音符编辑/绘制
 //!
 //! 包含：按下事件 → 工具分发 → 指针/铅笔/橡皮擦/默认工具处理
 //!       音符编辑开始、绘制开始、音符音频播放、音符添加事件发射
@@ -126,6 +126,14 @@ impl Editor {
             // 命中选择框：根据边缘/内部分别进入调整大小或拖动状态
             match sel_hit_type {
                 crate::SelectionHitType::Inside => {
+                    // 飞行串行化：若有未完成的异步提交，先等待落盘再构建新拖动，
+                    // 否则新 DragState 基于旧索引 + 松手累积会污染飞行中的 pending。
+                    if self.editor_state.data.has_pending_commit() {
+                        self.drain_async_commit();
+                        if !self.has_selection() {
+                            return;
+                        }
+                    }
                     // ghost 方案（累积模式）：从选中集合构建 DragState
                     let note_count = self.editor_state.data.current_track_note_count();
                     let drag_state = DragState::from_indices(

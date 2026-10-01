@@ -272,10 +272,14 @@ impl Editor {
     /// 选中跟随条件分支（幽灵直到取消）：
     /// 保留旧框（interaction 选中值 == pending 原始值）时按新值重选；
     /// 已取消或新框时走通用重映射。全程窗口定位，无全扫。
+    ///
+    /// 飞行中新框选（空白点击提交后立即框选）按视觉（幽灵）位置构建，
+    /// 重映射必须按幽灵值（旧值 + pending delta）在新文档中定位，否则框选丢失/错位。
     pub fn poll_async_commit(&mut self) -> Option<usize> {
         crate::puffin_profiler::poll_async_commit();
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let identity = self.capture_selection_identity();
+        let ghost_identity = Self::capture_ghost_aware_identity(self, max_key);
         let (olds, delta_tick, delta_key) = Self::pending_drag_olds_of(self);
         let retained = Self::pending_matches_interaction(&identity, &olds);
         match self.editor_state.data.poll_async_commit() {
@@ -283,7 +287,7 @@ impl Editor {
                 if retained {
                     Self::reselect_moved_news(self, &olds, delta_tick, delta_key, max_key);
                 } else {
-                    self.remap_selection_by_identity(&identity);
+                    self.remap_selection_by_ghost_identity(&ghost_identity);
                 }
                 if modified > 0 {
                     self.mark_notes_changed();
@@ -308,8 +312,10 @@ impl Editor {
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
         while self.editor_state.data.has_pending_commit() {
-            // 同 poll_async_commit 的条件分支（保留旧框→新值重选，否则通用重映射）。
+            // 同 poll_async_commit 的条件分支（保留旧框→新值重选，否则幽灵值重映射）。
             let identity = self.capture_selection_identity();
+            let max_key_now = self.editor_state.view.visible_key_count.saturating_sub(1);
+            let ghost_identity = Self::capture_ghost_aware_identity(self, max_key_now);
             let (olds, delta_tick, delta_key) = Self::pending_drag_olds_of(self);
             let retained = Self::pending_matches_interaction(&identity, &olds);
             match self.editor_state.data.poll_async_commit() {
@@ -323,7 +329,7 @@ impl Editor {
                             self.editor_state.view.visible_key_count.saturating_sub(1),
                         );
                     } else {
-                        self.remap_selection_by_identity(&identity);
+                        self.remap_selection_by_ghost_identity(&ghost_identity);
                     }
                     if modified > 0 {
                         self.mark_notes_changed();
@@ -388,9 +394,63 @@ impl Editor {
         values_multiset_eq(entries, olds)
     }
 
+    /// 捕获幽灵感知的选中身份：pending 选中集内的音符按视觉值（旧值 + pending delta），
+    /// 其余按文档旧值。供飞行中新框选在落盘后按视觉值重定位，避免框选丢失/错位。
+    fn capture_ghost_aware_identity(
+        editor: &Editor,
+        max_key: u16,
+    ) -> Vec<lumino_midi_loader::NoteEvent> {
+        let track = editor.editor_state.data.current_track;
+        let notes = editor.editor_state.data.track_notes(track);
+        let pending = editor.pending_drag_state.as_ref();
+        let mut out = Vec::with_capacity(editor.editor_state.interaction.selected_notes.len());
+        for i in editor.editor_state.interaction.selected_notes.iter() {
+            let Some(mut ev) = notes.get(i).copied() else {
+                continue;
+            };
+            if let Some(pp) = pending
+                && i < pp.selected.len()
+                && pp.selected[i]
+            {
+                let new_tick = (ev.start_tick as i64 + pp.delta_tick).max(0) as u32;
+                let new_key = (ev.key as i32 + pp.delta_key as i32).clamp(0, max_key as i32) as u8;
+                let len = ev.end_tick.saturating_sub(ev.start_tick).max(1);
+                ev.start_tick = new_tick;
+                ev.end_tick = new_tick.saturating_add(len);
+                ev.key = new_key;
+            }
+            out.push(ev);
+        }
+        out
+    }
+
+    /// 按幽灵值重映射选中：清空后逐个窗口定位幽灵值（同值多份按份数分配）。
+    fn remap_selection_by_ghost_identity(
+        &mut self,
+        ghost_entries: &[lumino_midi_loader::NoteEvent],
+    ) {
+        if ghost_entries.is_empty() {
+            if self.editor_state.interaction.selected_notes.is_empty() {
+                return;
+            }
+            self.selection_clear();
+            return;
+        }
+        self.selection_clear();
+        let mut used: std::collections::HashSet<usize> =
+            std::collections::HashSet::with_capacity(ghost_entries.len().min(1024));
+        let track = self.editor_state.data.current_track;
+        for ev in ghost_entries {
+            if let Some(idx) = position_of_unused(&self.editor_state.data, track, ev, &used) {
+                used.insert(idx);
+                self.selection_insert(idx);
+            }
+        }
+    }
     /// 按新值（original + delta）重选（删加后旧值已 gone，窗口定位，无全扫）。
     ///
     /// 先清空再逐个 `position_of` 新值；未命中者取消选中（份数语义）。
+    /// 同值多份按份数分配不同索引（已占用跳过），否则两个相同新值会选中同一索引丢一份。
     fn reselect_moved_news(
         editor: &mut Editor,
         olds: &[lumino_midi_loader::NoteEvent],
@@ -399,6 +459,8 @@ impl Editor {
         max_key: u16,
     ) {
         editor.selection_clear();
+        let mut used: std::collections::HashSet<usize> =
+            std::collections::HashSet::with_capacity(olds.len().min(1024));
         for orig in olds {
             let new_tick = (orig.start_tick as i64 + delta_tick).max(0) as u32;
             let new_key = (orig.key as i32 + delta_key as i32).clamp(0, max_key as i32) as u8;
@@ -411,12 +473,13 @@ impl Editor {
                 orig.channel,
             );
             news.release_velocity = orig.release_velocity;
-            if let Some(idx) = editor
-                .editor_state
-                .data
-                .track_notes(editor.editor_state.data.current_track)
-                .position_of(&news)
-            {
+            if let Some(idx) = position_of_unused(
+                &editor.editor_state.data,
+                editor.editor_state.data.current_track,
+                &news,
+                &used,
+            ) {
+                used.insert(idx);
                 editor.selection_insert(idx);
             }
         }
@@ -507,4 +570,33 @@ fn values_multiset_eq(
         }
     }
     true
+}
+
+/// 同 tick 段内跳过已占用索引的按值定位（同值多份按份数分配）。
+///
+/// 先 `partition_point` 到同 tick 段首，再线性扫描同 tick 段内全字段匹配且未被占用的首个索引；
+/// 未命中返回 None（无全扫兜底）。调用方负责将返回索引插入 `used`。
+fn position_of_unused(
+    data: &lumino_editor_state::EditorData,
+    track: usize,
+    target: &lumino_midi_loader::NoteEvent,
+    used: &std::collections::HashSet<usize>,
+) -> Option<usize> {
+    let track_notes = data.track_notes(track);
+    let start = track_notes.partition_point(target.start_tick);
+    let len = track_notes.len();
+    let mut i = start;
+    while i < len {
+        let Some(n) = track_notes.get(i) else {
+            break;
+        };
+        if n.start_tick != target.start_tick {
+            break;
+        }
+        if n == target && !used.contains(&i) {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
