@@ -25,6 +25,8 @@ lumino-gfx = { workspace = true }
 lumino-message = { workspace = true }
 lumino-midi-io = { workspace = true }
 lumino-midi-loader = { workspace = true }
+# REND-002：多端口全局通道映射原语
+lumino-midi-model = { workspace = true }
 lumino-diagnostics = { workspace = true }
 lumino-collaboration = { workspace = true }
 # lumino-ui-constants: merged into lumino-ui-core::constants

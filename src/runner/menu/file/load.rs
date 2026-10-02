@@ -339,12 +339,21 @@ impl RunnerInner {
     /// 2026-08 单一权威源改造：`parsed` 以所有权传入，`MidiDocument` 在
     /// midi_handler 内零拷贝拆出（Arc::try_unwrap）并移入 UI 的 EditorData.document。
     pub(super) fn import_midi_to_editor(&mut self, parsed: lumino_midi_loader::ParsedMidi) {
+        // 先取端口布局（handler 会 move 走 document）
+        let midi_max_port = parsed.document.as_ref().map_or(0, |doc| doc.max_port());
+
+        // 导入文档（`MidiHandler::import_midi_to_editor` 开头先
+        // `reset_playback_manager` 停播，再设置文档）
         {
             let ui = self.window_state.window.ui_mut();
             self.midi_state
                 .midi_handler
                 .import_midi_to_editor(ui, parsed);
         }
+
+        // REND-002：停播后再按文档端口布局强制重建合成管线（清上一文档通道模态），
+        // 最后创建播放输出连接，保证连接指向正确的通道空间。
+        self.midi_state.midi.apply_midi_port_layout(midi_max_port);
 
         // MIDI 导入后，为播放管理器绑定一个独立的 MIDI 输出连接
         if let Some(output) = self.midi_state.midi.create_additional_output() {

@@ -167,3 +167,117 @@ fn test_solo_plays_only_soloed_track_engine() {
         "被独奏的音轨应当发声（验证过滤逻辑方向正确）"
     );
 }
+
+/// REND-002：多端口文档按来源轨道端口映射全局通道（port 1 ch0 → 全局 16），
+/// 跨端口同 (channel,key) 不再合流。
+#[test]
+fn test_multi_port_maps_global_channels() {
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(Arc::clone(&playback));
+
+    let doc = Arc::new(MidiDocument {
+        notes: vec![
+            lumino_midi_loader::ChunkedList::new(), // 当前轨空
+            lumino_midi_loader::ChunkedList::from_sorted(vec![DocNoteEvent::new(0, 5, 60, 100, 0)]),
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::new(),
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        track_names: vec![None, None],
+        total_ticks: 10,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![0, 1],
+        track_max_end_ticks: vec![],
+    });
+    engine.set_document(doc, 0);
+    engine.play();
+    std::thread::sleep(Duration::from_millis(20));
+    let messages = engine.update();
+
+    let note_on_channels: Vec<u16> = messages
+        .iter()
+        .filter_map(|m| match m {
+            MidiMessage::NoteOn { channel, .. } => Some(*channel),
+            _ => None,
+        })
+        .collect();
+    assert!(
+        note_on_channels.contains(&16),
+        "端口 1 ch0 应映射到全局通道 16，实际通道 = {note_on_channels:?}"
+    );
+}
+
+/// REND-002 方案 B：其他轨的 Bank Select（CC0=120）先发出打击乐模态切换，
+/// 再转发触发 CC（顺序不能反：xsynth 在打击乐模态下忽略 CC0）。
+#[test]
+fn test_bank_select_emits_percussion_mode_before_cc() {
+    use midly::loader::PackedControlEvent;
+
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(Arc::clone(&playback));
+
+    let doc = Arc::new(MidiDocument {
+        notes: vec![
+            lumino_midi_loader::ChunkedList::new(), // 当前轨 0（空）
+            lumino_midi_loader::ChunkedList::new(),
+        ],
+        tempo_changes: vec![(0, 120.0)],
+        time_signatures: vec![(0, 4, 4)],
+        key_signatures: vec![(0, 0, false)],
+        control_events: lumino_midi_loader::ChunkedList::from_sorted(vec![
+            // track 1（其他轨，端口 0）ch2 CC0=120 → GS Rhythm
+            PackedControlEvent::control_change(0, 1, 2, 0, 120),
+        ]),
+        lyrics: vec![],
+        markers: vec![],
+        text_events: vec![],
+        sys_ex: vec![],
+        track_names: vec![None, None],
+        total_ticks: 10,
+        track_count: 2,
+        tracks: TrackManager::new(2),
+        division: 480,
+        track_ports: vec![0, 0],
+        track_max_end_ticks: vec![],
+    });
+    engine.set_document(doc, 0);
+    engine.play();
+    std::thread::sleep(Duration::from_millis(20));
+    let messages = engine.update();
+
+    let mode_pos = messages.iter().position(|m| {
+        matches!(
+            m,
+            MidiMessage::PercussionMode {
+                channel: 2,
+                on: true
+            }
+        )
+    });
+    let cc_pos = messages.iter().position(|m| {
+        matches!(
+            m,
+            MidiMessage::ControlChange {
+                channel: 2,
+                controller: 0,
+                value: 120
+            }
+        )
+    });
+    assert!(
+        mode_pos.is_some(),
+        "应在 Bank Select 后发出打击乐模态切换，实际 = {messages:?}"
+    );
+    assert!(cc_pos.is_some(), "触发 CC 应照常转发，实际 = {messages:?}");
+    assert!(
+        mode_pos.expect("模态消息应存在") < cc_pos.expect("CC 应存在"),
+        "模态切换必须先于触发 CC"
+    );
+}

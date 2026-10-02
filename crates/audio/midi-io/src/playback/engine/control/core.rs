@@ -4,6 +4,9 @@ use parking_lot::Mutex;
 use std::collections::BinaryHeap;
 use std::sync::Arc;
 
+use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port_clamped};
+
+use crate::playback::engine::types::global_channel_for_track;
 use crate::playback::{
     EventType, MidiMessage, MidiTrackEvent, Playback, PlaybackAccessor, ScheduledEvent,
 };
@@ -81,6 +84,8 @@ pub struct PlaybackEngine {
     pub(crate) reused_messages: Vec<MidiMessage>,
     /// 待发送的 seek 状态追齐消息（`seek()` 填充，命令层 flush 后清空）
     pub(crate) pending_chase: Vec<MidiMessage>,
+    /// REND-002 方案 B：每全局通道的打击乐模态跟踪（Bank Select 推导）。
+    pub(crate) percussion: PercussionTracker,
 }
 
 impl PlaybackEngine {
@@ -103,6 +108,7 @@ impl PlaybackEngine {
             track_soloed: Vec::new(),
             reused_messages: Vec::with_capacity(64),
             pending_chase: Vec::new(),
+            percussion: PercussionTracker::new(16),
         }
     }
 
@@ -124,6 +130,13 @@ impl PlaybackEngine {
     pub fn set_document(&mut self, doc: Arc<MidiDocument>, current_track: u16) {
         let track_count = doc.track_count();
         let needs_full_reset = self.document.is_none() || self.track_states.len() != track_count;
+
+        // REND-002：通道空间随文档端口数（0 → 16）。仅在通道数变化时重建模态
+        // 跟踪——编辑后快照复用同一文档，不应重置运行时的音符/打击乐切换状态。
+        let channels = channels_for_max_port_clamped(doc.max_port());
+        if self.percussion.channels() != channels {
+            self.percussion = PercussionTracker::new(channels);
+        }
 
         if needs_full_reset {
             // 首次设置或音轨数变化：复用/扩展 Vec，避免每次重新分配。
@@ -226,6 +239,8 @@ impl PlaybackEngine {
             return;
         }
         let notes = doc.track_notes(self.current_track as usize);
+        // REND-002：当前轨所有事件映射到该轨端口对应的全局通道。
+        let port = doc.track_port(self.current_track);
         // 每颗音符最多产生 NoteOn + NoteOff 两个事件，预分配避免反复扩容。
         self.event_queue.reserve(notes.len() * 2);
         let mut seq: u64 = 0;
@@ -243,10 +258,11 @@ impl PlaybackEngine {
             if ne.velocity <= self.velocity_filter_threshold {
                 continue;
             }
+            let channel = global_channel_for_track(port, ne.channel);
             self.event_queue.push(ScheduledEvent {
                 tick,
                 event_type: EventType::NoteOn {
-                    channel: ne.channel,
+                    channel,
                     key: ne.key,
                     velocity: ne.velocity,
                 },
@@ -256,7 +272,7 @@ impl PlaybackEngine {
             self.event_queue.push(ScheduledEvent {
                 tick: tick + length,
                 event_type: EventType::NoteOff {
-                    channel: ne.channel,
+                    channel,
                     key: ne.key,
                 },
                 seq,

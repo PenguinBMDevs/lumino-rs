@@ -4562,6 +4562,7 @@ dependencies = [
  "lumino-message",
  "lumino-midi-io",
  "lumino-midi-loader",
+ "lumino-midi-model",
  "lumino-midly",
  "lumino-note-core",
  "lumino-project",

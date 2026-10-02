@@ -31,8 +31,8 @@ impl Root {
         }
     }
 
-    /// 设置 MIDI 输出连接
-    pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
+    /// 设置 MIDI 输出连接（含播放能力扩展）
+    pub fn set_midi_output(&mut self, output: Box<dyn lumino_midi_io::PlaybackOutput>) {
         if let Some(manager) = &mut self.playback.manager {
             manager.set_midi_output(output);
             tracing::info!("Root::set_midi_output: MIDI output connection set");

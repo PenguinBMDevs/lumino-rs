@@ -1,8 +1,11 @@
 //! 状态管理（update 管线）
 
+use lumino_midi_model::multi_port::PercussionTracker;
+
 use super::super::{EventType, MidiMessage};
 use super::core::PlaybackEngine;
 use crate::playback::PlaybackState;
+use crate::playback::engine::types::global_channel_for_track;
 
 /// 迟到跳过阈值（秒）：进度条已领先该音符这么久时，直接不处理（而不是延后补发）。
 ///
@@ -132,6 +135,8 @@ impl PlaybackEngine {
             if notes.is_empty() {
                 continue;
             }
+            // REND-002：本轨事件映射到该轨端口对应的全局通道。
+            let port = doc.track_port(track_idx as u16);
             let state = &mut self.track_states[track_idx];
 
             loop {
@@ -156,7 +161,7 @@ impl PlaybackEngine {
                         && note.velocity > self.velocity_filter_threshold
                     {
                         messages.push(MidiMessage::NoteOn {
-                            channel: note.channel,
+                            channel: global_channel_for_track(port, note.channel),
                             key: note.key,
                             velocity: note.velocity,
                         });
@@ -173,7 +178,7 @@ impl PlaybackEngine {
                     if off.end_tick >= tick_start_u {
                         let note = &notes[off.note_index];
                         messages.push(MidiMessage::NoteOff {
-                            channel: note.channel,
+                            channel: global_channel_for_track(port, note.channel),
                             key: note.key,
                         });
                     }
@@ -211,7 +216,9 @@ impl PlaybackEngine {
                             cc_param,
                         );
                     }
-                    Self::push_control_event(ctrl_event, messages);
+                    // REND-002：控制事件按来源轨道端口映射全局通道。
+                    let port = doc.track_port(ctrl_event.track);
+                    Self::push_control_event(ctrl_event, port, &mut self.percussion, messages);
                 }
             }
             self.control_event_cursor += 1;
@@ -236,6 +243,20 @@ impl PlaybackEngine {
                         self.midi_event_cursor,
                         midi_event.message,
                     );
+                }
+                // REND-002 方案 B：当前轨 automation/PC 中的 Bank Select 同样驱动
+                // 模态切换（消息通道已是全局通道，由 UI 侧映射）。
+                if let MidiMessage::ControlChange {
+                    channel,
+                    controller,
+                    value,
+                } = &midi_event.message
+                    && let Some(on) = self.percussion.observe_cc(*channel, *controller, *value)
+                {
+                    messages.push(MidiMessage::PercussionMode {
+                        channel: *channel,
+                        on,
+                    });
                 }
                 Self::push_midi_message_from_event(&midi_event.message, messages);
             }
@@ -280,39 +301,43 @@ impl PlaybackEngine {
             }
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
-            // 循环回绕：追齐 loop_start 之前的模态状态（CC/RPN/PB 等），
+            // 循环回绕：追齐 loop_start 之前的模态状态（CC/RPN/PB/打击乐模态等），
             // 否则回绕后一段会保留回绕前的旧值。
-            messages.extend(self.compute_chase(loop_start));
+            let (chase_messages, chase_percussion) = self.compute_chase(loop_start);
+            messages.extend(chase_messages);
+            self.percussion = chase_percussion;
         }
     }
 
     #[inline]
     fn push_control_event(
         event: &midly::loader::PackedControlEvent,
+        port: u8,
+        percussion: &mut PercussionTracker,
         messages: &mut Vec<MidiMessage>,
     ) {
+        // REND-002：按来源轨道端口映射到合成层全局通道。
+        let channel = global_channel_for_track(port, event.channel);
         match event.kind {
             0 => {
                 let (controller, value) = event.as_control_change();
+                // 方案 B：Bank Select（CC0/CC32）先推导模态，切换消息必须前置于 CC。
+                if let Some(on) = percussion.observe_cc(channel, controller, value) {
+                    messages.push(MidiMessage::PercussionMode { channel, on });
+                }
                 messages.push(MidiMessage::ControlChange {
-                    channel: event.channel,
+                    channel,
                     controller,
                     value,
                 });
             }
             1 => {
                 let program = event.as_program_change();
-                messages.push(MidiMessage::ProgramChange {
-                    channel: event.channel,
-                    program,
-                });
+                messages.push(MidiMessage::ProgramChange { channel, program });
             }
             2 => {
                 let value = event.as_pitch_bend();
-                messages.push(MidiMessage::PitchBend {
-                    channel: event.channel,
-                    value,
-                });
+                messages.push(MidiMessage::PitchBend { channel, value });
             }
             _ => {}
         }

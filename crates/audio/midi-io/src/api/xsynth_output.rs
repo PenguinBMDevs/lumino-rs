@@ -9,10 +9,10 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use crate::realtime::{ChannelMixHandle, RealtimeEventSender, SynthEvent};
-use xsynth_core::channel::{ChannelAudioEvent, ChannelEvent, ControlEvent};
+use xsynth_core::channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent};
 
 use crate::constants::*;
-use crate::{Error, OutputConnection};
+use crate::{Error, OutputConnection, PlaybackOutput};
 
 /// XSynth MIDI 输出连接
 pub(crate) struct XSynthOutputConn {
@@ -126,7 +126,10 @@ impl OutputConnection for XSynthOutputConn {
                 ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
             )),
             0xE0 => {
-                let bend = ((b1 as u16) | ((b2 as u16) << 7)) as f32;
+                // fork 契约：`PitchBendValue` 为归一化 -1.0..1.0（raw 中心 8192 → 0）。
+                // raw 14-bit 直传会把中心值当作灵敏度倍数（潜在跑调/爆音）。
+                let raw = u16::from(b1) | (u16::from(b2) << 7);
+                let bend = (f32::from(raw) - 8192.0) / 8192.0;
                 self.send_event(SynthEvent::Channel(
                     channel,
                     ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
@@ -191,5 +194,25 @@ impl OutputConnection for XSynthOutputConn {
 
     fn close(self: Box<Self>) {
         tracing::debug!("XSynthOutputConn::close: 关闭连接");
+    }
+}
+
+/// REND-002 方案 B：软件合成后端的播放能力扩展覆写。
+impl PlaybackOutput for XSynthOutputConn {
+    /// 运行时打击乐模态切换（Bank Select 推导，播放侧下发）。
+    fn set_percussion_mode(&mut self, ch: u16, on: bool) -> Result<(), Error> {
+        self.send_event(SynthEvent::Channel(
+            u32::from(ch),
+            ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(on)),
+        ));
+        Ok(())
+    }
+
+    /// 暂停清理：释放全部全局通道的延音踏板（多端口下覆盖所有端口通道）。
+    fn release_all_dampers(&mut self) -> Result<(), Error> {
+        self.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
+            ChannelAudioEvent::Control(ControlEvent::Raw(64, 0)),
+        )));
+        Ok(())
     }
 }

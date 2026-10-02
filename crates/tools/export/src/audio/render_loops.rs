@@ -18,6 +18,7 @@ use super::engine::AudioEngine;
 use super::event::MidiEventProcessor;
 use super::event_kind::{build_track_event_kind, compute_total_tick};
 use super::event_stream::MidiDocEventStream;
+use super::report::{report_progress, warn_gpu_multi_port, warn_port_overflow};
 use super::sink_factory::create_output_sink;
 use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 use super::tick_conv::TickToTime;
@@ -31,8 +32,23 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
     if let Some(ctrl) = &config.control {
         ctrl.check_abort()?;
     }
+
+    // 使用 mmap 映射 MIDI 文件（GPU 分支也需要端口信息用于多端口告警）
+    let file = std::fs::File::open(&config.midi_path)?;
+    let mmap = unsafe { memmap2::Mmap::map(&file)? };
+
+    let player = StreamingMidiPlayer::from_bytes(&mmap)
+        .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
+
+    // REND-002：多端口由文件预扫描推导（覆盖 UI 传入的 0），并做 B1 超限告警。
+    let mut config = config.clone();
+    config.midi_max_port = player.max_port();
+    let config = &config;
+    warn_port_overflow("流式导出", player.track_ports());
+
     // GPU 后端优先尝试
     if config.backend == super::config::AudioBackendKind::Gpu {
+        warn_gpu_multi_port(config.midi_max_port);
         match super::gpu_backend::render_audio_gpu_streaming(config) {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -57,19 +73,6 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
         config.sample_rate,
         config.channels
     );
-
-    // 使用 mmap 映射 MIDI 文件
-    let file = std::fs::File::open(&config.midi_path)?;
-    let mmap = unsafe { memmap2::Mmap::map(&file)? };
-
-    let player = StreamingMidiPlayer::from_bytes(&mmap)
-        .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
-
-    // REND-002：多端口由文件预扫描推导（覆盖 UI 传入的 0），并做 B1 超限告警。
-    let mut config = config.clone();
-    config.midi_max_port = player.max_port();
-    let config = &config;
-    warn_port_overflow("流式导出", player.track_ports());
 
     let total_ticks = player.total_ticks().max(1);
     let tempos = player.tempo_changes().to_vec();
@@ -108,8 +111,16 @@ pub fn render_audio_from_document(
     if let Some(ctrl) = &config.control {
         ctrl.check_abort()?;
     }
+    // REND-002：多端口由文档端口信息推导（覆盖 UI 传入的 0），并做 B1 超限告警；
+    // 提前到 GPU 分支之前，保证 GPU 多端口时能给出显式降级告警（#87 前不支持）。
+    let mut config = config.clone();
+    config.midi_max_port = doc.max_port();
+    let config = &config;
+    warn_port_overflow("内存导出", &doc.track_ports);
+
     // GPU 后端（SFZ 会自动回退到 CPU，保证导出可用）
     if config.backend == super::config::AudioBackendKind::Gpu {
+        warn_gpu_multi_port(config.midi_max_port);
         match super::gpu_backend::render_audio_gpu_from_document(config, doc) {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -136,11 +147,6 @@ pub fn render_audio_from_document(
     }
 
     let ppqn = u32::from(doc.division.max(1));
-    // REND-002：多端口由文档端口信息推导（覆盖 UI 传入的 0），并做 B1 超限告警。
-    let mut config = config.clone();
-    config.midi_max_port = doc.max_port();
-    let config = &config;
-    warn_port_overflow("内存导出", &doc.track_ports);
     info!(
         "[内存] 音频渲染: SF2={:?}, 输出={:?} [backend={}, sr={}, ch={:?}, ppqn={}, division={}]",
         config.soundfonts,
@@ -231,7 +237,8 @@ pub(super) fn run_streaming_render(
             processor.render_frames(advance)?;
         }
         let port = track_ports.get(track_idx).copied().unwrap_or(0);
-        if port >= MAX_PORTS {
+        // B1 口径与内存路径对齐：只统计 MIDI 事件（meta/文本等不计入折叠告警）。
+        if port >= MAX_PORTS && matches!(kind, TrackEventKind::Midi { .. }) {
             clamped_events += 1;
         }
         cursor.add_rendered(processor.dispatch_event(&kind, port)?);
@@ -288,6 +295,7 @@ pub(super) fn run_document_render(
     total_seconds: f64,
 ) -> ExportResult<()> {
     let mut event_count = 0_u64;
+    let mut note_count = 0_u64;
     let mut last_progress_time = std::time::Instant::now();
     let start_time = std::time::Instant::now();
     let mut speed_meter = ExportSpeedMeter::new(DEFAULT_SPEED_WINDOW_SECS);
@@ -314,7 +322,14 @@ pub(super) fn run_document_render(
                 now.duration_since(start_time).as_secs_f64(),
                 pct * total_seconds,
             );
-            report_progress(config, pct, event_count, 0, start_time, speed_meter.speed());
+            report_progress(
+                config,
+                pct,
+                event_count,
+                note_count,
+                start_time,
+                speed_meter.speed(),
+            );
             last_progress_time = now;
         }
 
@@ -329,6 +344,10 @@ pub(super) fn run_document_render(
             }
             cursor.add_rendered(processor.dispatch_event(&kind, event.port)?);
             event_count += 1;
+            if event.kind == 0 {
+                // 0 = NoteOn（与流式路径同口径）
+                note_count += 1;
+            }
         }
     }
 
@@ -345,64 +364,14 @@ pub(super) fn run_document_render(
         );
     }
 
-    report_progress(config, 1.0, event_count, 0, start_time, speed_meter.speed());
-    info!("文档流式渲染完成: 处理 {event_count} 个事件");
-    Ok(())
-}
-
-/// B1 口径：端口超出产品上限（[`MAX_PORTS`]）时显式告警，列出超限轨道（截断 20 条）。
-///
-/// 不做整体拒绝、不静默丢音：事件会按 `effective_port` 折叠到端口 15 块发送；
-/// 运行期实际折叠事件数由各渲染循环统计后在结束时汇总告警。
-fn warn_port_overflow(source: &str, track_ports: &[u8]) {
-    let over: Vec<(usize, u8)> = track_ports
-        .iter()
-        .enumerate()
-        .filter(|entry| *entry.1 >= MAX_PORTS)
-        .map(|(idx, &port)| (idx, port))
-        .collect();
-    if over.is_empty() {
-        return;
-    }
-
-    let mut detail: Vec<String> = over
-        .iter()
-        .take(20)
-        .map(|(idx, port)| format!("轨{idx}:port{port}"))
-        .collect();
-    if over.len() > detail.len() {
-        detail.push(format!("等 +{}", over.len() - detail.len()));
-    }
-    tracing::warn!(
-        "[REND-002] {source}：{} 条轨道端口超出上限 {}（{}），已折叠到端口 {} 块（B1）；超出部分将共享该块通道状态",
-        over.len(),
-        MAX_PORTS,
-        detail.join(", "),
-        MAX_PORTS - 1
-    );
-}
-
-/// 报告进度
-fn report_progress(
-    config: &AudioRenderConfig,
-    pct: f64,
-    event_count: u64,
-    note_count: u64,
-    start_time: std::time::Instant,
-    speed: Option<f64>,
-) {
-    let elapsed = start_time.elapsed();
-    let speed_text = speed.map_or(String::new(), |s| format!(" | {s:.2}× 实时"));
-    let msg = format!(
-        "进度: {:.1}% | 事件: {} | 音符: {}{speed_text} | 耗时: {:.1}s",
-        pct * 100.0,
+    report_progress(
+        config,
+        1.0,
         event_count,
         note_count,
-        elapsed.as_secs_f64()
+        start_time,
+        speed_meter.speed(),
     );
-    if let Some(ref callback) = config.progress_callback {
-        callback(msg, pct);
-    } else {
-        eprint!("\r{}  ", msg);
-    }
+    info!("文档流式渲染完成: 处理 {event_count} 个事件, {note_count} 个音符");
+    Ok(())
 }

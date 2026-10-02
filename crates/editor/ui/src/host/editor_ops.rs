@@ -139,7 +139,7 @@ impl Host {
     }
 
     /// 设置播放用 MIDI 输出连接
-    pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::OutputConnection>) {
+    pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::PlaybackOutput>) {
         self.root.set_midi_output(output);
     }
 

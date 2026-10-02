@@ -1,5 +1,6 @@
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
+    PlaybackOutput, SynthControl,
 };
 
 const IDENTIFIER: &str = "com.PenguinBMDevs.lumino";
@@ -106,7 +107,7 @@ impl Api for System {
         })
     }
 
-    fn open_output(&self, id: u32) -> Result<Box<dyn OutputConnection>, Error> {
+    fn open_output(&self, id: u32) -> Result<Box<dyn PlaybackOutput>, Error> {
         let ports = self.with_output(|output| Ok(output.ports()))?;
         let port = ports.get(id as usize).ok_or(Error::DeviceNotFound(id))?;
         let output = midir::MidiOutput::new(IDENTIFIER)?;
@@ -134,6 +135,9 @@ impl Api for System {
     }
 }
 
+/// REND-002：显式加入能力扩展（空 impl = 接受默认行为：不支持多端口布局）。
+impl SynthControl for System {}
+
 struct SystemOutputConn {
     conn: midir::MidiOutputConnection,
 }
@@ -159,6 +163,9 @@ impl OutputConnection for SystemOutputConn {
         let _ = self.conn.close();
     }
 }
+
+/// REND-002：显式加入播放能力扩展（空 impl = 默认：模态 no-op / 16 通道踏板释放）。
+impl PlaybackOutput for SystemOutputConn {}
 
 impl InputConnection for SystemInputConn {
     fn close(self: Box<Self>) {

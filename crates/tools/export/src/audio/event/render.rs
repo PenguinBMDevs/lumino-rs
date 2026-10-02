@@ -36,6 +36,26 @@ impl<'a> MidiEventProcessor<'a> {
             // SAFETY: read_samples_unchecked 会填充所有样本
             self.channel_group.read_samples_unchecked(&mut buffer);
 
+            // 上游数值污染兜底：非有限样本按静音净化并计数（无论限幅器是否开启），
+            // 同时一次性记录首个非有限样本与最近事件（NaN 取证）。
+            let mut bad = 0_u64;
+            let mut first_bad: Option<usize> = None;
+            for (i, s) in buffer.iter_mut().enumerate() {
+                if !s.is_finite() {
+                    if first_bad.is_none() {
+                        first_bad = Some(i);
+                    }
+                    *s = 0.0;
+                    bad += 1;
+                }
+            }
+            if let Some(offset) = first_bad {
+                self.probe_non_finite(offset);
+            }
+            if bad > 0 {
+                self.add_non_finite(bad);
+            }
+
             // 应用限制器（如果配置）
             if let Some(limiter) = self.limiter.as_mut() {
                 limiter.process(&mut buffer);
@@ -44,6 +64,7 @@ impl<'a> MidiEventProcessor<'a> {
             self.sink.write_samples(&buffer)?;
             self.release_buffer(buffer);
 
+            self.add_rendered_frames(batch);
             remaining -= batch;
         }
 

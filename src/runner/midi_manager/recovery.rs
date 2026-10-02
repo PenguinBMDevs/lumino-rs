@@ -59,6 +59,23 @@ impl MidiManager {
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
 
+                // REND-002：初始化期间文档可能已装载/切换，完成时对齐端口布局。
+                // 与异步初始化时注入的布局相同则跳过（新管线已是该布局；且
+                // `set_midi_port_layout` 现在是强制全量重建，跳过可省一次重建）。
+                if self.desired_midi_max_port != self.spawned_midi_max_port
+                    && let Some(api) = self.api.as_mut()
+                {
+                    let desired = self.desired_midi_max_port;
+                    match api.set_midi_port_layout(desired) {
+                        Ok(()) => {
+                            tracing::info!("XSynth: 初始化后端口布局已对齐 max_port={desired}")
+                        }
+                        Err(e) => {
+                            tracing::error!("XSynth: 初始化后应用端口布局失败（保持默认布局）: {e}")
+                        }
+                    }
+                }
+
                 true
             }
             Ok(XSynthInitResult::Failed(e)) => {

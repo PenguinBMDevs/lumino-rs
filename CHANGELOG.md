@@ -33,6 +33,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   显式告警（超限轨道清单）并在渲染结束汇总折叠事件数，不静默丢音/串台（B1）；
   ④ 新增双端口/单端口自动 fixture 与映射纯函数单测（`multi_port_render.rs`），
   CPU 离线导出算法零改动。记录见 `docs/2026-10-01-REND-002-CPU多端口Phase2导出落地记录.md`
+- **CPU 实时落地（Phase 3，含运行时打击乐模态 B）** — ① `XSynthOptions.midi_max_port`
+  驱动实时 `SynthFormat::Midi/Custom`，`Custom` 逐端口显式开 ch9；
+  ② `Api::set_midi_port_layout` + “重建成功才提交布局”，文档装载/新建/关闭在
+  runner 侧应用，异步初始化完成后对齐；③ 播放 `MidiMessage/EventType/NoteEvent`
+  通道升 u16 全局通道，当前轨/其他轨/automation 均按来源轨道端口映射；
+  ④ 共享 `PercussionTracker`（midi-model）按 GS/XG Bank Select 约定在导出与实时
+  同步切换打击乐模态（切换消息先于触发 CC），chase 追齐模态并修正跨端口通道；
+  ⑤ 暂停清理改 `release_all_dampers`（XSynth AllChannels）覆盖全部端口；
+  ⑥ 单端口保持 `Midi`/恒等路径（零行为变化）；
+  ⑦ 质量分析处置：文档装载强制重建以清理跨文档通道模态、GPU 多端口显式降级告警、
+  端口口径收口为 `track_global_channel/channels_for_max_port_clamped/percussion_channels`、
+  超 400 行文件按仓库约定拆分；复检修复重建后 `master_peak` 句柄同步、装载时序
+  （停播→重建→连播放输出）与混音重下发；
+  ⑧ 接口演进：基础 `Api`/`OutputConnection` 冻结，三项能力迁入扩展 trait
+  `SynthControl`/`PlaybackOutput`（默认实现 + 各后端显式 impl），存储与流转改用
+  扩展 trait 对象；
+  ⑨ 重建耗时实测与优化：全量重建 104–188ms（缩回 16 通道最贵）→ 同布局文档切换
+  改轻量复位（`SetPercussionMode(false)`×N + `SystemReset`），实测 0.012–0.114ms，
+  仅端口数真变化才重建；
+  ⑩ P0 维护批：未钳制 `channels_for_max_port` 收为 `pub(crate)`、折叠事件统计口径
+  统一、内存渲染进度显示真实音符数、`AudioRenderConfig` Debug 补全、chase 后触契约
+  写明、`fade_out_killing` 注释补 fork 引用（原注释正确，核实为误报）；
+  ⑪ 导出限幅器修复（验收发现，独立缺陷）：包络 attack 由 10ms 改瞬时 + 非有限样本
+  按静音处理 + 状态有限性防御 + 非有限样本计数告警——修复“限幅器开启但峰值
+  1.5–30×”“首个 NaN 后限幅器永久旁路”；上游 NaN 源待归因；
+  ⑫ 导出数值污染兜底与取证：非有限样本无条件净化（无论限幅器开关）+ 一次性
+  NaN-PROBE（首个非有限样本时间 + 最近 64 条事件）；隔离实验确认触发需
+  PB ∧ CC6/38 ∧ RPN 选择三者组合，根因指向 fork 合成侧；
+  ⑬ 根因修复（方案 A）：fork xsynth-Lumino `7a31ed2c`（process_pitch 有限性
+  钳制 + 采样器 time 守卫），Lumino pin 已更新；修复后复现实验 nan=0（修复前 19890）。
+  记录见 `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复
 

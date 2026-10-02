@@ -10,10 +10,10 @@ pub struct MockOutput {
     note_off_count: Option<Arc<AtomicU32>>,
     cc_count: Option<Arc<AtomicU32>>,
     pb_count: Option<Arc<AtomicU32>>,
-    /// 记录最后收到的 CC 参数
-    pub last_cc: std::sync::Mutex<Option<(u8, u8, u8)>>,
-    /// 记录最后收到的 PitchBend 参数
-    pub last_pb: std::sync::Mutex<Option<(u8, f32)>>,
+    /// 记录最后收到的 CC 参数（通道为 REND-002 全局通道 u16）
+    pub last_cc: std::sync::Mutex<Option<(u16, u8, u8)>>,
+    /// 记录最后收到的 PitchBend 参数（通道为 REND-002 全局通道 u16）
+    pub last_pb: std::sync::Mutex<Option<(u16, f32)>>,
 }
 
 impl MockOutput {
@@ -94,8 +94,7 @@ impl lumino_midi_io::OutputConnection for MockOutput {
         controller: u8,
         value: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
-        // REND-002 解锁：接口扩宽到 u16 全局通道；测试仅关心低 16 通道。
-        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
+        // REND-002：接口为 u16 全局通道，测试按原样记录（不截断）。
         if let Some(counter) = &self.cc_count {
             counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -122,7 +121,7 @@ impl lumino_midi_io::OutputConnection for MockOutput {
         ch: u16,
         value: f32,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
-        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
+        // REND-002：接口为 u16 全局通道，测试按原样记录（不截断）。
         if let Some(counter) = &self.pb_count {
             counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -151,6 +150,9 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn close(self: Box<Self>) {}
 }
+
+/// REND-002：显式加入播放能力扩展（测试用默认实现）。
+impl lumino_midi_io::PlaybackOutput for MockOutput {}
 
 /// 辅助函数：创建带默认配置的 Root
 pub fn create_root() -> Root {

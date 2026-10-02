@@ -28,15 +28,18 @@ impl Compressor {
         release_ms: f32,
         lookahead_ms: f32,
     ) -> Self {
+        // attack_ms = 0 → 包络瞬时跟随（coeff = 0.0），配合 lookahead 实现
+        // 真正的 brickwall：增益在峰值样本到达输出前就已压下。
+        // 注意不能用 `1.0`（coeff=1 表示永不更新，包络冻结）。
         let attack_coeff = if attack_ms > 0.0 {
             (-1.0 / (attack_ms * 0.001 * sample_rate)).exp()
         } else {
-            1.0
+            0.0
         };
         let release_coeff = if release_ms > 0.0 {
             (-1.0 / (release_ms * 0.001 * sample_rate)).exp()
         } else {
-            1.0
+            0.0
         };
 
         let buf_size = (lookahead_ms * 0.001 * sample_rate).ceil() as usize;
@@ -56,9 +59,21 @@ impl Compressor {
     }
 
     fn process(&mut self, input: f32) -> f32 {
+        // 非有限样本（NaN/Inf）按 0 处理：上游一次数值污染会通过包络状态
+        // 永久旁路限幅器（实测首个 NaN 后输出峰值飙到 15 倍满幅）。
+        let input = if input.is_finite() { input } else { 0.0 };
+
         // Lookahead delay line
         self.delay_buffer[self.write_idx] = input;
         let delayed_input = self.delay_buffer[self.read_idx];
+
+        // 防御：状态被污染时复位，保证限幅器不会永久失效
+        if !self.envelope.is_finite() {
+            self.envelope = 0.0;
+        }
+        if !self.gain.is_finite() {
+            self.gain = 1.0;
+        }
 
         // Envelope detection
         let rectified = input.abs();
@@ -101,11 +116,15 @@ impl Compressor {
 pub struct AudioLimiter {
     compressors: Vec<Compressor>,
     num_channels: usize,
+    /// 处理过程中遇到并已按静音处理的非有限样本数（NaN/Inf 诊断）。
+    non_finite_samples: u64,
 }
 
 impl AudioLimiter {
     const RATIO: f32 = 1000.0;
-    const ATTACK_MS: f32 = 10.0;
+    /// 瞬时 attack（包络不滞后）+ 10ms lookahead：在峰值样本到达输出前完成增益下压，
+    /// 实测修复前 attack=10ms 与 lookahead 相等，瞬态每音符先原样通过（峰值 1.5–4×）。
+    const ATTACK_MS: f32 = 0.0;
     const RELEASE_MS: f32 = 50.0;
     const LOOKAHEAD_MS: f32 = 10.0;
 
@@ -133,13 +152,23 @@ impl AudioLimiter {
         AudioLimiter {
             compressors,
             num_channels,
+            non_finite_samples: 0,
         }
+    }
+
+    /// 本实例处理过的非有限样本（NaN/Inf）数量（已按静音处理）。
+    pub fn non_finite_samples(&self) -> u64 {
+        self.non_finite_samples
     }
 
     /// 处理一批 interleaved 样本
     pub fn process(&mut self, samples: &mut [f32]) {
         for chunk in samples.chunks_mut(self.num_channels) {
             for (ch, sample) in chunk.iter_mut().enumerate() {
+                if !sample.is_finite() {
+                    self.non_finite_samples += 1;
+                    *sample = 0.0;
+                }
                 if ch < self.compressors.len() {
                     *sample = self.compressors[ch].process(*sample);
                 }
@@ -174,5 +203,40 @@ mod tests {
         let max_val = tail.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
         assert!(max_val < 1.0, "限制器应降低削波峰值: {max_val}");
         assert!(max_val > 0.0, "限制器不应完全静音: {max_val}");
+    }
+
+    /// 密集瞬态（±10，每 64 样本翻转）必须被压到阈值附近。
+    ///
+    /// 回归：修复前 attack=10ms 与 lookahead 相等，每个瞬态先原样通过
+    /// 10ms，实测导出 WAV 峰值 1.5–4×（用户报告“限幅器没生效”）。
+    #[test]
+    fn test_limiter_catches_dense_transients() {
+        let mut limiter = AudioLimiter::new(48_000, 1, 0.95);
+        let mut samples: Vec<f32> = (0..48_000)
+            .map(|i| if (i / 64) % 2 == 0 { 10.0 } else { -10.0 })
+            .collect();
+        limiter.process(&mut samples);
+        let tail = &samples[1_000..];
+        let peak = tail.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        assert!(peak <= 1.0, "瞬态峰值应被限制到 ≤1.0，实际 {peak}");
+        assert!(peak > 0.5, "不应完全静音，实际 {peak}");
+        assert_eq!(limiter.non_finite_samples(), 0);
+    }
+
+    /// NaN 不得毒死限幅器状态：污染段之后必须恢复限幅且输出全部有限。
+    ///
+    /// 回归：修复前一次 NaN 令 envelope 永久 NaN → target_gain 恒 1.0 →
+    /// 限幅器永久旁路（实测首个 NaN 后峰值飙到 15×）。
+    #[test]
+    fn test_limiter_survives_nan_pollution() {
+        let mut limiter = AudioLimiter::new(48_000, 1, 0.95);
+        let mut samples: Vec<f32> = vec![f32::NAN; 100];
+        samples.extend(vec![10.0f32; 10_000]);
+        limiter.process(&mut samples);
+        let tail = &samples[2_000..];
+        assert!(tail.iter().all(|s| s.is_finite()), "输出必须全部有限");
+        let peak = tail.iter().fold(0.0f32, |m, s| m.max(s.abs()));
+        assert!(peak <= 1.0, "NaN 之后限幅器应仍生效，实际峰值 {peak}");
+        assert_eq!(limiter.non_finite_samples(), 100, "应记录并净化 100 个 NaN");
     }
 }

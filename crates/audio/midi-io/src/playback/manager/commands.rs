@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use crate::OutputConnection;
+use crate::PlaybackOutput;
 use crate::playback::engine::{MidiMessage, MidiTrackEvent, PlaybackEngine};
 use crate::playback::state::PlaybackState;
 use crate::playback::{PlaybackAccessor, TempoChange};
@@ -18,7 +18,7 @@ use super::PlaybackFrame;
 
 /// 播放线程命令
 pub(crate) enum Command {
-    SetMidiOutput(Box<dyn OutputConnection>),
+    SetMidiOutput(Box<dyn PlaybackOutput>),
     ClearMidiOutput,
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
@@ -50,7 +50,7 @@ pub(crate) enum Command {
 pub(crate) fn handle_command(
     cmd: Command,
     engine: &mut PlaybackEngine,
-    midi_output: &mut Option<Box<dyn OutputConnection>>,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
     frame_tx: &Sender<PlaybackFrame>,
     last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
 ) {
@@ -103,9 +103,9 @@ pub(crate) fn handle_command(
         Command::Pause => {
             engine.pause();
             if let Some(out) = midi_output {
-                for ch in 0..16 {
-                    let _ = out.control_change(ch, 64, 0);
-                }
+                // REND-002：释放全部全局通道的延音（XSynth AllChannels），
+                // 避免多端口下端口 >0 的踏板持音在暂停后残留。
+                let _ = out.release_all_dampers();
                 let _ = out.all_notes_off();
             }
             push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
@@ -154,7 +154,7 @@ fn push_state_frame(
     engine: &PlaybackEngine,
     frame_tx: &Sender<PlaybackFrame>,
     last_frame: &Arc<Mutex<Option<PlaybackFrame>>>,
-    midi_output: Option<&dyn OutputConnection>,
+    midi_output: Option<&dyn PlaybackOutput>,
 ) {
     let bpm = engine.lock_playback().map_or(120.0, |p| p.current_bpm());
     let (channel_levels, master_level) = midi_output
@@ -174,24 +174,23 @@ fn push_state_frame(
 /// 将引擎输出的 MIDI 消息发送到 MIDI 输出设备。
 pub(crate) fn flush_midi_messages(
     messages: &[MidiMessage],
-    midi_output: &mut Option<Box<dyn OutputConnection>>,
+    midi_output: &mut Option<Box<dyn PlaybackOutput>>,
 ) {
     let Some(out) = midi_output else { return };
     let msg_count = messages.len();
 
     for msg in messages {
-        // REND-002：播放消息的通道暂为 u8（0..15，端口 0 语义）；接口按 u16
-        // 全局通道接收，Phase 3 接线后此处透传 port*16+ch。
+        // REND-002：通道为合成层全局通道（u16），直接透传。
         match msg {
             MidiMessage::NoteOn {
                 channel,
                 key,
                 velocity,
             } => {
-                let _ = out.note_on(u16::from(*channel), *key, *velocity);
+                let _ = out.note_on(*channel, *key, *velocity);
             }
             MidiMessage::NoteOff { channel, key } => {
-                let _ = out.note_off(u16::from(*channel), *key, 0);
+                let _ = out.note_off(*channel, *key, 0);
             }
             MidiMessage::ControlChange {
                 channel,
@@ -204,23 +203,26 @@ pub(crate) fn flush_midi_messages(
                     controller,
                     value,
                 );
-                let _ = out.control_change(u16::from(*channel), *controller, *value);
+                let _ = out.control_change(*channel, *controller, *value);
             }
             MidiMessage::ProgramChange { channel, program } => {
-                let _ = out.program_change(u16::from(*channel), *program);
+                let _ = out.program_change(*channel, *program);
             }
             MidiMessage::PitchBend { channel, value } => {
-                let _ = out.pitch_bend(u16::from(*channel), *value);
+                let _ = out.pitch_bend(*channel, *value);
             }
             MidiMessage::ChannelPressure { channel, pressure } => {
-                let _ = out.channel_pressure(u16::from(*channel), *pressure);
+                let _ = out.channel_pressure(*channel, *pressure);
             }
             MidiMessage::PolyPressure {
                 channel,
                 key,
                 pressure,
             } => {
-                let _ = out.poly_pressure(u16::from(*channel), *key, *pressure);
+                let _ = out.poly_pressure(*channel, *key, *pressure);
+            }
+            MidiMessage::PercussionMode { channel, on } => {
+                let _ = out.set_percussion_mode(*channel, *on);
             }
         }
     }

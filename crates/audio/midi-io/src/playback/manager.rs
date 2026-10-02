@@ -83,7 +83,7 @@ impl PlaybackManager {
             let callback = Arc::clone(&callback);
             move || {
                 let mut engine = engine;
-                let mut midi_output: Option<Box<dyn crate::OutputConnection>> = None;
+                let mut midi_output: Option<Box<dyn crate::PlaybackOutput>> = None;
 
                 loop {
                     // 处理所有挂起的命令
@@ -198,8 +198,8 @@ impl PlaybackAccessor for PlaybackManager {
 }
 
 impl PlaybackManager {
-    /// 设置 MIDI 输出连接
-    pub fn set_midi_output(&mut self, output: Box<dyn crate::OutputConnection>) {
+    /// 设置 MIDI 输出连接（含播放能力扩展）
+    pub fn set_midi_output(&mut self, output: Box<dyn crate::PlaybackOutput>) {
         let _ = self.sender.send(Command::SetMidiOutput(output));
     }
 

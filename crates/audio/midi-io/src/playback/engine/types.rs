@@ -2,13 +2,22 @@
 
 use std::cmp::Ordering;
 
+/// REND-002：来源轨道端口 + MIDI 通道 → 合成层全局通道。
+///
+/// 单端口文档端口恒为 0 → 恒等；多端口 `port*16+channel`；超产品上限端口折叠
+/// 到端口 15 块（与导出侧 `global_event_channel` 同口径）。
+#[inline]
+pub(crate) fn global_channel_for_track(port: u8, channel: u8) -> u16 {
+    lumino_midi_model::multi_port::track_global_channel(port, channel)
+}
+
 /// 音符事件（用于播放调度）
 #[derive(Debug, Clone)]
 pub struct NoteEvent {
     /// 事件时刻（tick）
     pub tick: f32,
-    /// MIDI通道
-    pub channel: u8,
+    /// 合成层全局通道（REND-002：`port*16+channel`）
+    pub channel: u16,
     /// 音高
     pub key: u8,
     /// 力度
@@ -33,8 +42,8 @@ pub struct ScheduledEvent {
 pub enum EventType {
     /// Note On 事件
     NoteOn {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音高
         key: u8,
         /// 力度
@@ -42,8 +51,8 @@ pub enum EventType {
     },
     /// Note Off 事件
     NoteOff {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音高
         key: u8,
     },
@@ -74,12 +83,15 @@ impl Ord for ScheduledEvent {
 }
 
 /// MIDI消息
+///
+/// 通道字段为**合成层全局通道**（REND-002：`port*16+channel`，u16）。
+/// 单端口文档恒等（0..15），零行为变化。
 #[derive(Debug, Clone)]
 pub enum MidiMessage {
     /// Note On 消息
     NoteOn {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音高
         key: u8,
         /// 力度
@@ -87,15 +99,15 @@ pub enum MidiMessage {
     },
     /// Note Off 消息
     NoteOff {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音高
         key: u8,
     },
     /// 控制器变化（CC）消息
     ControlChange {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 控制器编号
         controller: u8,
         /// 控制值
@@ -103,33 +115,43 @@ pub enum MidiMessage {
     },
     /// 音色变换（Program Change）消息
     ProgramChange {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音色编号
         program: u8,
     },
     /// 弯音消息
     PitchBend {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 弯音值（-1.0 到 1.0）
         value: f32,
     },
     /// 通道后触消息
     ChannelPressure {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 压力值
         pressure: u8,
     },
     /// 复音后触消息
     PolyPressure {
-        /// MIDI 通道
-        channel: u8,
+        /// 合成层全局通道
+        channel: u16,
         /// 音高
         key: u8,
         /// 压力值
         pressure: u8,
+    },
+    /// REND-002 方案 B：打击乐模态切换（非 MIDI 线消息，仅软件合成器消费）。
+    ///
+    /// 由 Bank Select 约定在播放侧推导；`flush` 会转为
+    /// `OutputConnection::set_percussion_mode`（外部设备默认忽略）。
+    PercussionMode {
+        /// 合成层全局通道
+        channel: u16,
+        /// `true` = 打击乐，`false` = 旋律
+        on: bool,
     },
 }
 

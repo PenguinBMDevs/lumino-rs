@@ -24,6 +24,9 @@ impl RunnerInner {
         // 清空编辑器
         self.window_state.window.ui_mut().clear_editor();
 
+        // REND-002：空白工程回到单端口布局（0 → Midi/16 通道），释放多端口通道空间
+        self.midi_state.midi.apply_midi_port_layout(0);
+
         // 恢复主窗口默认标题（工程设置确认时设置的 "{标题} - Lumino"）
         self.window_state.window.window().set_title("Lumino");
 
@@ -47,6 +50,8 @@ impl RunnerInner {
         // （clear_editor 内部已重置工程设置对话框状态）
         self.session_tracker.reset();
         self.window_state.window.ui_mut().clear_editor();
+        // REND-002：关闭工程回到单端口布局
+        self.midi_state.midi.apply_midi_port_layout(0);
         // 恢复主窗口默认标题（工程设置确认时设置的 "{标题} - Lumino"）
         self.window_state.window.window().set_title("Lumino");
         tracing::info!("工程已关闭");
