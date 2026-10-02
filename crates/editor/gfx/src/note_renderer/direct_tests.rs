@@ -18,6 +18,30 @@ use crate::NoteInstance;
 use crate::note_renderer::NoteRenderer;
 use crate::note_renderer::types::CameraUniform;
 
+/// 预览层必须创建 VS 直绘管线（z-order 闪烁修复，2026-10）
+///
+/// 契约：预览实例深度恒为 0.0（`note.wgsl` 哨兵分支，恒覆盖文档音符），
+/// 重叠矩形的赢家只能由**绘制顺序**决定 —— 「后画者胜」。若预览层退回
+/// cull 路径，可见槽位由抢占式 `atomicAdd` 分配、顺序逐帧随机，赢家就逐帧
+/// 翻转（闪烁）。所以「预览层存在直绘管线」（`instance_index` 升序 = 提交序）
+/// 是**后来者居上**的必要条件，本测试把它钉死，防止后续为省启动编译时间
+/// 再次收窄创建范围而静默回退（原 `is_onion && needs_depth` 门控即此坑）。
+#[test]
+fn test_preview_layer_has_direct_pipeline() {
+    let (device, queue) = crate::test_gpu::shared_device();
+    let preview = NoteRenderer::new(&device, &queue, FORMAT);
+    assert!(
+        preview.direct_pipeline.is_some(),
+        "预览层必须创建 VS 直绘管线：否则预览实例走 cull 随机序，重叠区 z-order 闪烁"
+    );
+    // 导出无 depth 变体不建（`draw_direct` 内部自动回退 cull 路径）
+    let export = NoteRenderer::new_without_depth(&device, &queue, FORMAT);
+    assert!(
+        export.direct_pipeline.is_none(),
+        "无 depth 变体（导出）不应创建直绘管线"
+    );
+}
+
 const W: u32 = 256;
 const H: u32 = 144;
 const FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Rgba8Unorm;

@@ -231,13 +231,19 @@ pub fn execute_render_pass(
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             if params.is_vertical_roll {
+                // 纵向卷帘仍走 cull + 可见索引路径（与洋葱皮的 `vs_cull_mode` 同口径：
+                // 直绘入口目前只有横向 `note.wgsl::vs_direct`）。已知边界：纵向模式下
+                // 重叠预览矩形仍按 cull 随机序叠加，见 §19 遗留项。
                 frame.renderers.note.draw_vertical(
                     &mut render_pass,
                     true,
                     Some((scissor_x, scissor_y, scissor_width, scissor_height)),
                 );
             } else {
-                frame.renderers.note.draw(
+                // 预览层走 VS 直绘（PREF-005 入口）：实例序 = 提交序，重叠预览矩形
+                // 恒为「后来者居上」，与 cull 抢占式槽位的逐帧随机序解耦（z-order
+                // 闪烁修复，2026-10）。无直绘管线时 `draw_direct` 内部回退 cull 路径。
+                frame.renderers.note.draw_direct(
                     &mut render_pass,
                     true,
                     Some((scissor_x, scissor_y, scissor_width, scissor_height)),
