@@ -92,6 +92,12 @@ impl Editor {
             EditorAction::LineToolCancel => {
                 self.cancel_line_tool();
             }
+            EditorAction::BrushConfirm => {
+                self.confirm_brush();
+            }
+            EditorAction::BrushCancel => {
+                self.cancel_brush();
+            }
             EditorAction::ShapeToolConfirm => {
                 self.confirm_shape_tool();
             }

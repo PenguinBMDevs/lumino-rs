@@ -94,6 +94,12 @@ pub struct NoteRenderer {
     /// 与点管线同样的创建范围（横向洋葱皮 + depth）；`draw_direct` 在缺失时
     /// 回退 cull + 可见索引路径。
     direct_pipeline: Option<wgpu::RenderPipeline>,
+    /// 纵向卷帘的 VS 直绘管线（见 `shaders/note_vertical.wgsl::vs_direct`）。
+    ///
+    /// **只为预览层创建**（`needs_depth && !is_onion`）：预览实例深度恒为 0.0，
+    /// 必须靠提交序决定重叠区赢家（后来者居上，§19）；洋葱皮纵向仍走 cull 路径，
+    /// 不为它多付一次大 shader 的管线编译（启动时间敏感）。
+    vertical_direct_pipeline: Option<wgpu::RenderPipeline>,
 }
 
 impl NoteRenderer {

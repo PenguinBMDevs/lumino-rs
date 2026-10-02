@@ -14,6 +14,7 @@
 //! `EditorState` 只保留结构定义、生命周期方法以及真正跨领域的协调逻辑。
 //! 其他具体操作请直接使用各子模块的 API。
 
+pub mod brush_tool;
 pub mod canvas_state;
 pub mod constants;
 pub mod drag_state;
@@ -30,6 +31,7 @@ pub mod shape_tool;
 pub mod text_tool;
 pub mod viewport;
 
+pub use brush_tool::{BrushInteraction, BrushStroke, BrushToolState};
 pub use canvas_state::CanvasState;
 pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
@@ -91,6 +93,8 @@ pub struct EditorState {
     pub image_to_midi: image_to_midi::ImageToMidiState,
     /// 曲线工具直线绘制状态
     pub line_tool: line_tool::LineToolState,
+    /// 画刷工具矢量笔画状态（待确认笔画 + 独立笔画历史）
+    pub brush_tool: brush_tool::BrushToolState,
     /// 形状工具绘制状态（矩形/圆/三角 拉框）
     pub shape_tool: shape_tool::ShapeToolState,
     /// 文字工具状态（文本框 + 输入文字 + 采样模式）
@@ -122,6 +126,7 @@ impl EditorState {
             horizontal_backup: None,
             image_to_midi: image_to_midi::ImageToMidiState::default(),
             line_tool: line_tool::LineToolState::default(),
+            brush_tool: brush_tool::BrushToolState::default(),
             shape_tool: shape_tool::ShapeToolState::default(),
             text_tool: text_tool::TextToolState::new(),
         }
@@ -137,6 +142,7 @@ impl EditorState {
         self.horizontal_backup = None;
         self.image_to_midi = image_to_midi::ImageToMidiState::default();
         self.line_tool = line_tool::LineToolState::default();
+        self.brush_tool = brush_tool::BrushToolState::default();
         self.shape_tool = shape_tool::ShapeToolState::default();
         self.text_tool = text_tool::TextToolState::new();
         let total_ticks = self.view.total_ticks;
@@ -196,6 +202,11 @@ impl EditorState {
         // 曲线工具直线模式：切换工具清除直线状态（避免残留干扰其他工具）
         if tool != Tool::Curve {
             self.line_tool.reset();
+        }
+        // 画刷矢量笔画：切换工具视为「×」——未确认笔画全部丢弃
+        // （留在画刷内不清空：Ctrl+点击曲线按钮开下拉、切回画刷时笔画应保留）
+        if tool != Tool::Brush {
+            self.brush_tool.clear_pending();
         }
         // 文字工具：切换走时清除文本框与输入状态
         if tool != Tool::Text {

@@ -56,7 +56,6 @@ impl Editor {
                 local_selection_timestamp: None,
                 local_selection_fingerprints: Vec::new(),
                 brush: BrushConfig::new(),
-                brush_last_cell: None,
             }
         })
     }

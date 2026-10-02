@@ -158,6 +158,21 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                             )));
                         }
                     }
+                    if self.editor.current_tool() == lumino_message::Tool::Brush
+                        && let Some(btns) =
+                            crate::grid::brush_tool_box::brush_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::BrushConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                lumino_ui_core::message::EditorAction::BrushCancel,
+                            )));
+                        }
+                    }
                     if self.editor.is_inside_canvas(local_pos) {
                         return self.handle_left_press_vertical(state, local_pos);
                     }
@@ -336,8 +351,9 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
 
-        // 2.3 曲线工具 / 图片转 MIDI / 选框 的 Canvas 图层（纵向卷帘 BUG 修复：
-        // 旧实现漏挂曲线工具图层，导致路径/锚点/控制柄/√×按钮全部不可见）。
+        // 2.3 曲线工具 / 图片转 MIDI / 选框 / 画刷 的 Canvas 图层（纵向卷帘 BUG 修复：
+        // 旧实现漏挂曲线工具图层，导致路径/锚点/控制柄/√×按钮全部不可见；
+        // 画刷图层同类漏挂——纵向下落笔预览与 √× 按钮"不可见却能点"，已补齐）。
         // 与横向 `program_impl/draw.rs` 图层顺序对齐（指示线保持最顶层）。
         if let Some(geom) = crate::grid::selection_box::draw(self.editor, renderer, theme, bounds) {
             geometries.push(geom);
@@ -346,6 +362,10 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::line_tool_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+        if let Some(geom) = crate::grid::brush_tool_box::draw(self.editor, renderer, theme, bounds)
+        {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::shape_tool_box::draw(self.editor, renderer, theme, bounds)

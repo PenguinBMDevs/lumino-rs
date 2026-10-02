@@ -251,9 +251,10 @@ pub struct Editor {
     pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
 
     /// 画刷工具配置（粗细度 + 每层音轨分配）
+    ///
+    /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
+    /// 本字段只保留配置：改粗细度/层音轨后预览与生成立即按新配置解释。
     pub brush: lumino_core::BrushConfig,
-    /// 画刷笔触进行中的当前单元格（Some = 正在绘制，用于 moved/released 分流）
-    pub(crate) brush_last_cell: Option<(f32, u16)>,
 }
 
 /// 远端用户选择集合

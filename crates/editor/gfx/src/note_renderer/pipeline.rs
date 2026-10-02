@@ -151,19 +151,32 @@ impl NoteRenderer {
     ///
     /// 与 `create_render_pipeline` 的差异只有「顶点入口 / 顶点缓冲 / 混合」三点，
     /// 深度状态与 bind group layout 完全一致 ⇒ 深度语义与旧路径逐位相同。
+    ///
+    /// `alpha_blend` 选择混合模式（与 `create_render_pipeline` 的 `opaque` 同义）：
+    /// - 洋葱皮直绘（`false`，不透明）：重叠片元靠 early-Z 拒绝，越远越早被拒；
+    /// - **预览层直绘（`true`，alpha 混合）**：预览矩形必须与下方文档音符混合
+    ///   （哨兵分支的 70% alpha），且重叠的多个预览矩形按**提交序**叠加
+    ///   ⇒ 「后来者居上」（z-order 闪烁修复，2026-10）。
     pub(super) fn create_direct_pipeline(
         device: &wgpu::Device,
         shader: &wgpu::ShaderModule,
         render_bind_group_layout: &wgpu::BindGroupLayout,
         format: wgpu::TextureFormat,
         needs_depth: bool,
+        alpha_blend: bool,
     ) -> wgpu::RenderPipeline {
-        crate::pipeline::RenderPipelineBuilder::new(device, "note_direct_pipeline", shader)
-            .vertex_entry("vs_direct")
-            .bind_group(render_bind_group_layout)
-            // 无顶点缓冲：实例索引来自 @builtin(instance_index)
-            .triangle_strip()
-            .opaque_target(format)
+        let builder =
+            crate::pipeline::RenderPipelineBuilder::new(device, "note_direct_pipeline", shader)
+                .vertex_entry("vs_direct")
+                .bind_group(render_bind_group_layout)
+                // 无顶点缓冲：实例索引来自 @builtin(instance_index)
+                .triangle_strip();
+        let builder = if alpha_blend {
+            builder.alpha_blended_target(format)
+        } else {
+            builder.opaque_target(format)
+        };
+        builder
             .depth_stencil(crate::constants::rendering::depth_stencil_state_for(
                 needs_depth,
             ))

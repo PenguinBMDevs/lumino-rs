@@ -156,28 +156,54 @@ impl NoteRenderer {
         let vertical_cull_pipeline =
             Self::create_cull_pipeline(device, &vertical_cull_shader, &cull_bind_group_layout);
 
-        // 点图元直绘管线（亚像素档位，PREF-004 P1）与 VS cull 直绘管线（PREF-005）：
-        // 仅横向洋葱皮 + 带 depth 的交互路径需要；预览层与导出无 depth 变体不建，
-        // 省掉大 shader 的管线编译（启动可见）。
-        let (point_pipeline, direct_pipeline) = if is_onion && needs_depth {
-            (
-                Some(Self::create_point_pipeline(
-                    device,
-                    &shader,
-                    &render_bind_group_layout,
-                    format,
-                    needs_depth,
-                )),
-                Some(Self::create_direct_pipeline(
-                    device,
-                    &shader,
-                    &render_bind_group_layout,
-                    format,
-                    needs_depth,
-                )),
-            )
+        // 点图元直绘管线（亚像素档位，PREF-004 P1）：仅横向洋葱皮 + 带 depth 的
+        // 交互路径需要，导出无 depth 变体不建（省掉大 shader 的管线编译，启动可见）。
+        let point_pipeline = if is_onion && needs_depth {
+            Some(Self::create_point_pipeline(
+                device,
+                &shader,
+                &render_bind_group_layout,
+                format,
+                needs_depth,
+            ))
         } else {
-            (None, None)
+            None
+        };
+
+        // VS 直绘管线（PREF-005）：**预览层也必须建**（2026-10 z-order 修复）。
+        // 预览实例深度恒为 0.0（`note.wgsl` 哨兵分支），走 cull 路径时可见槽位由
+        // 抢占式 `atomicAdd` 分配、顺序逐帧随机 → 重叠预览矩形「后画者胜」的赢家
+        // 逐帧翻转 = 闪烁；直绘按提交序绘制 ⇒ 后来者居上且跨帧稳定。
+        // 混合模式随 `is_onion`：洋葱皮不透明（early-Z），预览层 alpha 混合。
+        // 导出无 depth 变体保持 `None`（`draw_direct` 内部回退 cull 路径）。
+        let direct_pipeline = if needs_depth {
+            Some(Self::create_direct_pipeline(
+                device,
+                &shader,
+                &render_bind_group_layout,
+                format,
+                needs_depth,
+                !is_onion,
+            ))
+        } else {
+            None
+        };
+
+        // 纵向直绘管线（§19.4 补齐）：**只为预览层建**（`!is_onion`）—— 洋葱皮纵向
+        // 仍走 cull + 可见索引路径（与本卡前既有口径一致），不为它多付一次大 shader
+        // 的管线编译（启动时间敏感）。预览层纵向必须建：重叠预览矩形若走 cull
+        // 随机序，纵向卷帘下同样闪烁。
+        let vertical_direct_pipeline = if needs_depth && !is_onion {
+            Some(Self::create_direct_pipeline(
+                device,
+                &vertical_shader,
+                &render_bind_group_layout,
+                format,
+                needs_depth,
+                true,
+            ))
+        } else {
+            None
         };
 
         // 创建缓冲区
@@ -264,6 +290,7 @@ impl NoteRenderer {
             chunk_layout,
             point_pipeline,
             direct_pipeline,
+            vertical_direct_pipeline,
         }
     }
 

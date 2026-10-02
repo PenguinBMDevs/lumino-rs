@@ -3,6 +3,7 @@
 //! **路径历史优先**：曲线工具的路径编辑（创建/弯曲/锚点增删）有独立历史栈，
 //! 优先撤销最近的路径编辑；无路径历史时才回退 document 音符历史。
 
+use crate::CacheInvalidation;
 use crate::Editor;
 use lumino_midi_model::TickIndexedEvents;
 
@@ -30,6 +31,12 @@ impl Editor {
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Undo —— 当前正在编辑，请先完成当前编辑");
             return false;
+        }
+        // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
+        if self.editor_state.brush_tool.undo_path() {
+            self.invalidate_caches(CacheInvalidation::GRID);
+            tracing::info!("Editor: 撤销画刷笔画编辑");
+            return true;
         }
         // 曲线工具路径编辑历史优先（最近的曲线操作）
         if self.editor_state.line_tool.undo_path() {
@@ -132,6 +139,12 @@ impl Editor {
         if self.is_editing() {
             tracing::warn!("Editor: 拦截 Redo —— 当前正在编辑，请先完成当前编辑");
             return false;
+        }
+        // 画刷待确认笔画编辑历史优先
+        if self.editor_state.brush_tool.redo_path() {
+            self.invalidate_caches(CacheInvalidation::GRID);
+            tracing::info!("Editor: 重做画刷笔画编辑");
+            return true;
         }
         // 曲线工具路径编辑历史优先
         if self.editor_state.line_tool.redo_path() {
@@ -306,11 +319,18 @@ impl Editor {
 
     /// Check if undo is available
     pub fn can_undo(&self) -> bool {
-        self.editor_state.line_tool.can_undo_path() || self.editor_state.data.history.can_undo()
+        self.editor_state.brush_tool.can_undo_path()
+            || self.editor_state.line_tool.can_undo_path()
+            || self.editor_state.data.history.can_undo()
     }
 
     /// Check if redo is available
+    ///
+    /// 与 `can_undo` 对称：待确认笔画/曲线路径的独立历史栈同样可重做
+    ///（此前只查 document 历史，导致"能重做但查询说不能"）。
     pub fn can_redo(&self) -> bool {
-        self.editor_state.data.history.can_redo()
+        self.editor_state.brush_tool.can_redo_path()
+            || self.editor_state.line_tool.can_redo_path()
+            || self.editor_state.data.history.can_redo()
     }
 }

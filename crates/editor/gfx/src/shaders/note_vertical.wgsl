@@ -148,6 +148,81 @@ fn vs_main(
     return output;
 }
 
+// ── VS 直绘入口（纵向版，§19.4 补齐，2026-10）─────────────────────────────
+//
+// 与横向 `note.wgsl::vs_direct` 同因同解：预览实例深度恒为 0.0（下方 `is_preview`
+// 分支），重叠矩形的赢家只能由绘制顺序决定；cull 路径的可见槽位由抢占式
+// `atomicAdd` 分配、顺序逐帧随机 ⇒ 重叠区闪烁。本入口实例序 = **提交序**
+// （`instance_index` 升序）⇒ 后来者居上且跨帧稳定，且不再需要 compute cull pass。
+//
+// 与 `vs_main` 的差异（转置坐标/深度/取色语义必须逐字一致，否则两条路径画面不一致）：
+//   1) 实例索引来自 `@builtin(instance_index)`（不读可见索引顶点缓冲）；
+//   2) 视口相交判定在本入口完成（谓词与 `cull_vertical.wgsl` 同口径），不可见 /
+//      长度 ≤ 0 一律退化为视口外零面积点（净效果：不产生任何片元）。
+@vertex
+fn vs_direct(
+    @builtin(vertex_index) vertex_index: u32,
+    @builtin(instance_index) instance_index: u32,
+) -> VertexOutput {
+    let instance = all_instances[instance_index];
+
+    // 根据顶点索引生成矩形的四个角（与 vs_main 逐字一致）
+    var local_offset: vec2<f32>;
+    switch vertex_index {
+        case 0u: { local_offset = vec2<f32>(0.0, 0.0); }
+        case 1u: { local_offset = vec2<f32>(0.0, 1.0); }
+        case 2u: { local_offset = vec2<f32>(1.0, 0.0); }
+        case 3u: { local_offset = vec2<f32>(1.0, 1.0); }
+        default: { local_offset = vec2<f32>(0.0, 0.0); }
+    }
+
+    let tick = instance.start_length.x;
+    let length = instance.start_length.y;
+    let key = f32(instance.key_color & 0xFFu);
+
+    // 纵向转置头部对齐键盘顶部（与 vs_main 逐字一致）
+    let grid_bottom = camera.canvas_offset.y + camera.canvas_size.y - camera.keyboard_width;
+    let screen_x = key * camera.zoom.y - camera.scroll.y + camera.canvas_offset.x;
+    let screen_y = grid_bottom - (tick + length) * camera.zoom.x + camera.scroll.x;
+    let screen_size = vec2<f32>(camera.zoom.y, length * camera.zoom.x);
+
+    // 可见性：与 cull_vertical.wgsl 同口径（长度 > 0 且与视口矩形相交）
+    let in_view = length > 0.0
+        && screen_x <= camera.viewport_size.x
+        && (screen_x + screen_size.x) >= 0.0
+        && (screen_y + screen_size.y) >= 0.0
+        && screen_y <= camera.viewport_size.y;
+
+    let screen_pos = vec2<f32>(screen_x, screen_y) + local_offset * screen_size;
+    let ndc_x = (screen_pos.x / camera.viewport_size.x) * 2.0 - 1.0;
+    let ndc_y = 1.0 - (screen_pos.y / camera.viewport_size.y) * 2.0;
+
+    // 稳定深度：与 vs_main 同一公式。`instance_index` 与 cull 路径写入可见缓冲的
+    // `local_index` 是同一个值（chunk 内源索引）⇒ 两条路径深度逐位一致。
+    let track = instance.border_width >> 16u;
+    let is_preview = instance.border_width == PREVIEW_BORDER_SENTINEL;
+    let global_index = chunk_info.chunk_start + instance_index;
+    var depth = 0.0;
+    if (!is_preview) {
+        let region_bits = select(ONION_DEPTH_REGION_BITS, MAIN_DEPTH_REGION_BITS, track == 0u);
+        depth = region_depth(region_bits, global_index);
+    }
+
+    var output: VertexOutput;
+    if (in_view) {
+        output.position = vec4<f32>(ndc_x, ndc_y, depth, 1.0);
+    } else {
+        // 视口外 / 非法长度：4 顶点退化到视口外同一点 → 零面积 → 无片元
+        output.position = vec4<f32>(2.0, 2.0, 0.0, 1.0);
+    }
+    output.color = unpack_key_color(instance.key_color);
+    output.uv = local_offset;
+    output.screen_size = screen_size;
+    output.border_width = instance.border_width;
+
+    return output;
+}
+
 @fragment
 fn fs_main(input: VertexOutput) -> @location(0) vec4<f32> {
     if (input.border_width == PREVIEW_BORDER_SENTINEL) {

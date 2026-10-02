@@ -107,6 +107,22 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                             )));
                         }
                     }
+                    // 画刷矢量笔画：优先响应悬浮 √× 按钮（待确认笔画确认/丢弃）
+                    if self.editor.current_tool() == Tool::Brush
+                        && let Some(btns) =
+                            crate::grid::brush_tool_box::brush_button_rects(self.editor)
+                    {
+                        if btns.confirm.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::BrushConfirm,
+                            )));
+                        }
+                        if btns.cancel.contains(local_pos) {
+                            return Some(Action::publish(Message::EditorAction(
+                                EditorAction::BrushCancel,
+                            )));
+                        }
+                    }
                     return self.handle_left_press(state, local_pos);
                 }
             }

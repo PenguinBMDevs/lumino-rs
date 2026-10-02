@@ -17,11 +17,16 @@ impl Editor {
     ///
     /// 返回 `true` 当用户正在进行音符编辑（拖动/绘制/调整大小），
     /// 或有未提交的批量拖动/批量复制（pending_drag_state / pending_copy_drag_state），
-    /// 或正在进行曲线路径编辑（锚点/控制柄拖动）。
+    /// 或正在进行曲线路径编辑（锚点/控制柄拖动），
+    /// 或正在落笔绘制/整体拖动画刷笔画。
+    ///
+    /// 注意：画刷的「待确认笔画」（已松手）**不算**编辑中——否则 Ctrl+Z 会被
+    /// 这里拦截，用户无法用撤销回退笔画编辑（与曲线工具 pending 语义一致）。
     pub fn is_editing(&self) -> bool {
         self.pending_drag_state.is_some()
             || self.pending_copy_drag_state.is_some()
             || self.editor_state.data.has_pending_commit()
+            || self.editor_state.brush_tool.is_active()
             || self.editor_state.line_tool.interaction
                 != lumino_editor_state::LineToolInteraction::None
             || matches!(

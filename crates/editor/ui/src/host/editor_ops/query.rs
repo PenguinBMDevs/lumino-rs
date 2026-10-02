@@ -107,14 +107,20 @@ impl Host {
         let track_idx = self.root.editor.current_track() as u16;
 
         // 先确定该动作是否可能修改音符数据
-        // 确定会改：Delete/Cut/Paste → 直接标记脏，不问 notes_changed
+        // 确定会改：Delete/Cut/Paste/各绘制工具 √ 确认 → 直接标记脏，不问 notes_changed
         // 可能改：Pressed/Released/DoubleClicked/Undo/Redo → 依赖 notes_changed 判断
         // 绝不会改：Moved/Copy/SelectAll/Scrubbed/Scrolled/IndicatorDrag → 跳过
+        //
+        // 2026-10 补：曲线/形状/画刷的 √ 确认此前未归入任何一类 → 生成音符后
+        // 高精度洋葱皮贴图不刷新（需等到下一次 Pressed/Released 才更新）。
         let is_definite_mutation = matches!(
             action,
             message::EditorAction::DeletePressed
                 | message::EditorAction::Cut
                 | message::EditorAction::Paste
+                | message::EditorAction::LineToolConfirm
+                | message::EditorAction::ShapeToolConfirm
+                | message::EditorAction::BrushConfirm
         );
         let is_possible_mutation = matches!(
             action,

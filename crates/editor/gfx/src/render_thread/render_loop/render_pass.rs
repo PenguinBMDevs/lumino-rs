@@ -121,11 +121,9 @@ pub fn execute_render_pass(
     } else if params.subpixel_note_mode {
         // 亚像素档位（PREF-004 P1）：主音符层走点图元直绘，可见性判定移入
         // `vs_point`，**跳过 cull pass**（真机 16M 全景：cull 1.60ms / draw 13.44ms）。
-        // 预览层（`note`）实例数极少，保持 quad + cull 路径不变。
-        frame
-            .renderers
-            .note
-            .prepare_pass(encoder, camera, &ctx.queue);
+        // 预览层（`note`）实例数由 §18 视口窗口界定、可见占比 ≈ 100%，故同样直绘
+        // 并跳过 cull pass（`prepare_direct` 只写相机 uniform）。
+        frame.renderers.note.prepare_direct(camera, &ctx.queue);
         frame
             .renderers
             .onion_skin
@@ -136,20 +134,16 @@ pub fn execute_render_pass(
         // 绘制。**闸门是必需的**：直绘要为全部实例各跑一遍 VS（≈0.65 ns/实例），
         // 而 compute cull 只扫一趟（≈0.10 ns/实例）后只画可见实例——放大档下直绘
         // 实测慢 8 倍（1.5 万可见 / 1600 万总数）。仅当可见占比 > 90% 才占优。
-        // 预览层仍走 compute cull（实例数极少）。
-        frame
-            .renderers
-            .note
-            .prepare_pass(encoder, camera, &ctx.queue);
+        // 预览层恒直绘（可见占比 ≈ 100%）：既保证重叠区「后来者居上」（§19），
+        // 又省掉每帧一次 cull dispatch。
+        frame.renderers.note.prepare_direct(camera, &ctx.queue);
         frame
             .renderers
             .onion_skin
             .prepare_direct(camera, &ctx.queue);
     } else {
-        frame
-            .renderers
-            .note
-            .prepare_pass(encoder, camera, &ctx.queue);
+        // 预览层恒直绘（可见占比 ≈ 100%，见上），洋葱皮仍走 cull
+        frame.renderers.note.prepare_direct(camera, &ctx.queue);
         frame
             .renderers
             .onion_skin
@@ -231,13 +225,18 @@ pub fn execute_render_pass(
         if render_notes {
             render_pass.set_scissor_rect(scissor_x, scissor_y, scissor_width, scissor_height);
             if params.is_vertical_roll {
-                frame.renderers.note.draw_vertical(
+                // 预览层纵向同样走 VS 直绘（`note_vertical.wgsl::vs_direct`）：
+                // 实例序 = 提交序 ⇒ 重叠预览矩形恒为「后来者居上」（§19.4 补齐）。
+                frame.renderers.note.draw_direct_vertical(
                     &mut render_pass,
                     true,
                     Some((scissor_x, scissor_y, scissor_width, scissor_height)),
                 );
             } else {
-                frame.renderers.note.draw(
+                // 预览层走 VS 直绘（PREF-005 入口）：实例序 = 提交序，重叠预览矩形
+                // 恒为「后来者居上」，与 cull 抢占式槽位的逐帧随机序解耦（z-order
+                // 闪烁修复，2026-10）。无直绘管线时 `draw_direct` 内部回退 cull 路径。
+                frame.renderers.note.draw_direct(
                     &mut render_pass,
                     true,
                     Some((scissor_x, scissor_y, scissor_width, scissor_height)),
