@@ -29,6 +29,20 @@ pub(super) fn pitch_bend_normalized(bend: PitchBend) -> f32 {
     bend.as_int() as f32 / 8192.0
 }
 
+/// 事件通道 → 合成层全局通道（REND-002）。
+///
+/// - 单端口（`config.midi_max_port == 0`）：恒等映射（`channel` 直通），保持历史行为；
+/// - 多端口：`(effective_port(port), channel) → port*16 + channel`，超产品上限的
+///   端口折叠到端口 15 块（B1 决策，告警由渲染入口负责）。
+#[inline]
+pub(super) fn global_event_channel(config: &AudioRenderConfig, port: u8, channel: u8) -> u32 {
+    if config.midi_max_port == 0 {
+        u32::from(channel)
+    } else {
+        u32::from(global_channel(effective_port(port), channel))
+    }
+}
+
 impl<'a> MidiEventProcessor<'a> {
     /// 创建 MIDI 事件处理器。
     ///
@@ -106,13 +120,8 @@ impl<'a> MidiEventProcessor<'a> {
         // 发送 MIDI 事件到合成器
         if let TrackEventKind::Midi { channel, message } = event_kind {
             // REND-002：单端口（midi_max_port==0）保持 `channel.as_int()` 恒等路径，
-            // 与历史行为完全一致；多端口才启用全局通道映射，超上限端口折叠到
-            // 端口 15 块（effective_port，B1 决策）。
-            let ch = if self.config.midi_max_port == 0 {
-                u32::from(channel.as_int())
-            } else {
-                u32::from(global_channel(effective_port(port), channel.as_int()))
-            };
+            // 与历史行为完全一致；多端口才启用全局通道映射。
+            let ch = global_event_channel(self.config, port, channel.as_int());
             let force_end_frames = self.force_end_delay_frames();
             match message {
                 MidiMessage::NoteOn { key, vel } => {
@@ -256,5 +265,52 @@ fn apply_limiter(samples: &mut [f32], _channels: u16) {
         if sample.abs() > threshold {
             *sample = sample.signum() * threshold;
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 单端口：恒等映射，且**忽略**传入端口（门控关闭，零行为变化）。
+    #[test]
+    fn single_port_is_identity_and_ignores_port() {
+        let config = AudioRenderConfig::default();
+        for ch in 0u8..16 {
+            assert_eq!(global_event_channel(&config, 0, ch), u32::from(ch));
+        }
+        assert_eq!(
+            global_event_channel(&config, 7, 5),
+            5u32,
+            "单端口下端口必须被忽略（门控关闭）"
+        );
+    }
+
+    /// 多端口：`port*16+ch`，端口 0 恒等，端口间互不重叠。
+    #[test]
+    fn multi_port_maps_to_port_blocks() {
+        let config = AudioRenderConfig {
+            midi_max_port: 6,
+            ..Default::default()
+        };
+        assert_eq!(global_event_channel(&config, 0, 5), 5);
+        assert_eq!(global_event_channel(&config, 1, 5), 21, "端口 1 ch5 → 21");
+        assert_eq!(global_event_channel(&config, 1, 9), 25, "端口 1 ch9 → 25");
+        assert_eq!(global_event_channel(&config, 6, 15), 111, "7 端口边界");
+    }
+
+    /// 超产品上限端口折叠到端口 15 块（B1），不丢事件。
+    #[test]
+    fn over_limit_port_folds_to_last_block() {
+        let config = AudioRenderConfig {
+            midi_max_port: 127,
+            ..Default::default()
+        };
+        assert_eq!(
+            global_event_channel(&config, 127, 3),
+            15 * 16 + 3,
+            "超上限端口应折叠到端口 15 块"
+        );
+        assert_eq!(global_event_channel(&config, 16, 9), 15 * 16 + 9);
     }
 }

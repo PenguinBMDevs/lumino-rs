@@ -27,6 +27,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **范围**：本阶段不启用多端口实际映射；入口写入 `midi_max_port`、每端口 ch9 打击乐
   初始化、超限告警计数与多端口回归 fixture 属 Phase 2；实时管线格式与播放通道空间
   属 Phase 3。记录见 `docs/2026-10-01-REND-002-CPU多端口Phase1解锁记录.md`
+- **CPU 导出落地（Phase 2）** — ① 流式/内存两条渲染入口按文件/文档推导
+  `midi_max_port`（UI 不感知端口）；② `Custom` 播放前对每个端口 `p*16+9` 显式
+  `SetPercussionMode(true)`（fork 的 `Custom` 不自动开 ch9）；③ 端口超上限（>15）
+  显式告警（超限轨道清单）并在渲染结束汇总折叠事件数，不静默丢音/串台（B1）；
+  ④ 新增双端口/单端口自动 fixture 与映射纯函数单测（`multi_port_render.rs`），
+  CPU 离线导出算法零改动。记录见 `docs/2026-10-01-REND-002-CPU多端口Phase2导出落地记录.md`
 
 ### 渲染修复
 

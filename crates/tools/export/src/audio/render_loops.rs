@@ -8,6 +8,7 @@ use tracing::info;
 use midly::{MidiMessage, TrackEventKind};
 
 use lumino_midi_loader::{MidiDocument, streaming::StreamingMidiPlayer};
+use lumino_midi_model::multi_port::MAX_PORTS;
 
 use crate::error::{ExportError, ExportResult};
 
@@ -63,6 +64,12 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
 
     let player = StreamingMidiPlayer::from_bytes(&mmap)
         .map_err(|e| ExportError::AudioWrite(format!("解析 MIDI 失败: {e}")))?;
+
+    // REND-002：多端口由文件预扫描推导（覆盖 UI 传入的 0），并做 B1 超限告警。
+    let mut config = config.clone();
+    config.midi_max_port = player.max_port();
+    let config = &config;
+    warn_port_overflow("流式导出", player.track_ports());
 
     let total_ticks = player.total_ticks().max(1);
     let tempos = player.tempo_changes().to_vec();
@@ -129,6 +136,11 @@ pub fn render_audio_from_document(
     }
 
     let ppqn = u32::from(doc.division.max(1));
+    // REND-002：多端口由文档端口信息推导（覆盖 UI 传入的 0），并做 B1 超限告警。
+    let mut config = config.clone();
+    config.midi_max_port = doc.max_port();
+    let config = &config;
+    warn_port_overflow("内存导出", &doc.track_ports);
     info!(
         "[内存] 音频渲染: SF2={:?}, 输出={:?} [backend={}, sr={}, ch={:?}, ppqn={}, division={}]",
         config.soundfonts,
@@ -186,6 +198,8 @@ pub(super) fn run_streaming_render(
     let mut cursor = RenderCursor::new(u64::from(config.effective_block_frames()));
     // REND-002：先取出每轨端口快照，事件循环里按 track_idx 查（零拷贝借用冲突）。
     let track_ports = player.track_ports().to_vec();
+    // B1：超上限端口的折叠事件计数（渲染结束后汇总告警）。
+    let mut clamped_events = 0_u64;
 
     while let Some((tick, track_idx, kind)) = player.next_event() {
         if let Some(ctrl) = &config.control {
@@ -217,6 +231,9 @@ pub(super) fn run_streaming_render(
             processor.render_frames(advance)?;
         }
         let port = track_ports.get(track_idx).copied().unwrap_or(0);
+        if port >= MAX_PORTS {
+            clamped_events += 1;
+        }
         cursor.add_rendered(processor.dispatch_event(&kind, port)?);
 
         if let TrackEventKind::Midi {
@@ -241,6 +258,13 @@ pub(super) fn run_streaming_render(
     let remainder = cursor.finish_remainder();
     if remainder > 0 {
         processor.render_frames(remainder)?;
+    }
+
+    if clamped_events > 0 {
+        tracing::warn!(
+            "[REND-002] 流式导出：{clamped_events} 个事件来自超上限端口，已折叠到端口 {} 块发送（B1）",
+            MAX_PORTS - 1
+        );
     }
 
     report_progress(
@@ -271,6 +295,8 @@ pub(super) fn run_document_render(
 
     let mut stream = MidiDocEventStream::new(doc);
     let total_events = stream.total_events();
+    // B1：超上限端口的折叠事件计数（渲染结束后汇总告警）。
+    let mut clamped_events = 0_u64;
 
     info!("文档流式渲染循环开始 ({} 事件)...", total_events);
 
@@ -298,6 +324,9 @@ pub(super) fn run_document_render(
             if advance > 0 {
                 processor.render_frames(advance)?;
             }
+            if event.port >= MAX_PORTS {
+                clamped_events += 1;
+            }
             cursor.add_rendered(processor.dispatch_event(&kind, event.port)?);
             event_count += 1;
         }
@@ -309,9 +338,48 @@ pub(super) fn run_document_render(
         processor.render_frames(remainder)?;
     }
 
+    if clamped_events > 0 {
+        tracing::warn!(
+            "[REND-002] 内存导出：{clamped_events} 个事件来自超上限端口，已折叠到端口 {} 块发送（B1）",
+            MAX_PORTS - 1
+        );
+    }
+
     report_progress(config, 1.0, event_count, 0, start_time, speed_meter.speed());
     info!("文档流式渲染完成: 处理 {event_count} 个事件");
     Ok(())
+}
+
+/// B1 口径：端口超出产品上限（[`MAX_PORTS`]）时显式告警，列出超限轨道（截断 20 条）。
+///
+/// 不做整体拒绝、不静默丢音：事件会按 `effective_port` 折叠到端口 15 块发送；
+/// 运行期实际折叠事件数由各渲染循环统计后在结束时汇总告警。
+fn warn_port_overflow(source: &str, track_ports: &[u8]) {
+    let over: Vec<(usize, u8)> = track_ports
+        .iter()
+        .enumerate()
+        .filter(|entry| *entry.1 >= MAX_PORTS)
+        .map(|(idx, &port)| (idx, port))
+        .collect();
+    if over.is_empty() {
+        return;
+    }
+
+    let mut detail: Vec<String> = over
+        .iter()
+        .take(20)
+        .map(|(idx, port)| format!("轨{idx}:port{port}"))
+        .collect();
+    if over.len() > detail.len() {
+        detail.push(format!("等 +{}", over.len() - detail.len()));
+    }
+    tracing::warn!(
+        "[REND-002] {source}：{} 条轨道端口超出上限 {}（{}），已折叠到端口 {} 块（B1）；超出部分将共享该块通道状态",
+        over.len(),
+        MAX_PORTS,
+        detail.join(", "),
+        MAX_PORTS - 1
+    );
 }
 
 /// 报告进度

@@ -13,7 +13,7 @@ use xsynth_core::{
     soundfont::{EnvelopeCurveType, EnvelopeOptions, Interpolator, SoundfontInitOptions},
 };
 
-use lumino_midi_model::multi_port::{channels_for_max_port, effective_port};
+use lumino_midi_model::multi_port::{channels_for_max_port, effective_port, global_channel};
 
 use super::codec::AudioCodec;
 use super::control::SharedControl;
@@ -244,6 +244,20 @@ impl AudioRenderConfig {
         }
     }
 
+    /// 多端口时每个端口 ch9 的全局通道列表（含 port 0）；单端口返回空。
+    ///
+    /// fork 事实：`SynthFormat::Midi` 由引擎自动开启 ch9 打击乐，而
+    /// `SynthFormat::Custom` **不会**——多端口必须对每个端口的 `p*16+9`
+    /// 显式下发 `SetPercussionMode(true)`，否则打击乐轨道会按旋律音色演奏。
+    pub fn percussion_channels(&self) -> Vec<u32> {
+        if self.midi_max_port == 0 {
+            return Vec::new();
+        }
+        (0..=effective_port(self.midi_max_port))
+            .map(|port| u32::from(global_channel(port, 9)))
+            .collect()
+    }
+
     /// 构造 xsynth 的 ChannelGroupConfig
     pub fn build_group_config(&self) -> ChannelGroupConfig {
         let audio_params =
@@ -430,5 +444,37 @@ mod tests {
             SynthFormat::Custom { channels: 256 },
             "超上限端口应折叠到 16 端口 / 256 通道"
         );
+    }
+
+    /// REND-002：单端口不显式下发打击乐（由 `SynthFormat::Midi` 自动开启）。
+    #[test]
+    fn test_percussion_channels_single_port_empty() {
+        let config = AudioRenderConfig::default();
+        assert!(
+            config.percussion_channels().is_empty(),
+            "单端口应返回空（引擎自动开 ch9）"
+        );
+    }
+
+    /// REND-002：多端口每端口 ch9（全局 `p*16+9`），超上限折叠到端口 15。
+    #[test]
+    fn test_percussion_channels_per_port_9() {
+        let config = AudioRenderConfig {
+            midi_max_port: 6,
+            ..Default::default()
+        };
+        assert_eq!(
+            config.percussion_channels(),
+            vec![9, 25, 41, 57, 73, 89, 105],
+            "7 端口应逐端口初始化 ch9"
+        );
+
+        let config = AudioRenderConfig {
+            midi_max_port: 127,
+            ..Default::default()
+        };
+        let channels = config.percussion_channels();
+        assert_eq!(channels.len(), 16, "超上限折叠为 16 个端口");
+        assert_eq!(channels.last().copied(), Some(249), "末端口 ch9 = 15*16+9");
     }
 }
