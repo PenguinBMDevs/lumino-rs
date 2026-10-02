@@ -200,6 +200,9 @@ impl Root {
         // 同步播放键盘颜色配置（防止重启后配置被默认值覆盖）
         root.editor
             .set_playback_key_colors_enabled(ui_config.playback_key_colors_enabled);
+        // 同步 Domino 剪贴板互粘开关（默认关闭；防止重启后配置被默认值覆盖）
+        root.editor
+            .set_domino_clipboard_enabled(ui_config.domino_clipboard_enabled);
         // 同步自动化曲线连线粗细
         root.editor.velocity_panel.automation_line_thickness = ui_config.automation_line_thickness;
         // 同步 Tempo 面板 BPM 绘制上限

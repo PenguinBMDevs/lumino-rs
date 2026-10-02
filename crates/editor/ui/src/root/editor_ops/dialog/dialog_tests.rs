@@ -239,6 +239,46 @@ fn test_apply_settings_tempo_max_bpm_unchanged_keeps_default() {
     assert_eq!(root.editor.velocity_panel.tempo_max_bpm, 512.0);
 }
 
+/// Domino 互粘开关：设置变更必须同步到 Editor 侧字段
+///
+/// 复制/粘贴闸门读的是 Editor 字段，只镜像到设置面板而不下发，会出现
+/// 「设置已改、本次会话行为不变」的错位（重启后才生效）。
+#[test]
+fn test_apply_settings_domino_clipboard_enabled_changed() {
+    let mut root = create_test_root();
+    assert!(
+        !root.editor.domino_clipboard_enabled(),
+        "默认应关闭（UiConfig 默认值）"
+    );
+
+    let mut new_settings = root.settings.clone();
+    new_settings.compat.domino_clipboard_enabled = true;
+    root.apply_settings(new_settings);
+
+    assert!(root.settings.compat.domino_clipboard_enabled);
+    assert!(
+        root.editor.domino_clipboard_enabled(),
+        "开关应同步到 Editor 侧字段，否则复制/粘贴闸门不生效"
+    );
+}
+
+/// 关闭方向同样要同步（避免只处理开启的单向链路）
+#[test]
+fn test_apply_settings_domino_clipboard_enabled_disabled() {
+    let ui_config = UiConfig {
+        domino_clipboard_enabled: true,
+        ..UiConfig::default()
+    };
+    let mut root = Root::new(&ui_config);
+    assert!(root.editor.domino_clipboard_enabled(), "启动应注入配置值");
+
+    let mut new_settings = root.settings.clone();
+    new_settings.compat.domino_clipboard_enabled = false;
+    root.apply_settings(new_settings);
+
+    assert!(!root.editor.domino_clipboard_enabled());
+}
+
 fn create_test_root() -> Root {
     let ui_config = UiConfig::default();
     Root::new(&ui_config)

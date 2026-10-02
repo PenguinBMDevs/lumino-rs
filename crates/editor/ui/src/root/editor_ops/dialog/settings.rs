@@ -88,6 +88,18 @@ impl Root {
                 .set_playback_key_colors_enabled(new.display.playback_key_colors_enabled);
         }
 
+        // Domino 剪贴板互粘开关：复制/粘贴闸门读的是 Editor 侧字段，
+        // 漏掉这条同步会出现「设置已改、本次会话行为不变」的错位
+        if old.compat.domino_clipboard_enabled != new.compat.domino_clipboard_enabled {
+            tracing::info!(
+                "同步 Domino 剪贴板互粘开关: {} -> {}",
+                old.compat.domino_clipboard_enabled,
+                new.compat.domino_clipboard_enabled
+            );
+            self.editor
+                .set_domino_clipboard_enabled(new.compat.domino_clipboard_enabled);
+        }
+
         if old.editing.automation_line_thickness != new.editing.automation_line_thickness {
             tracing::info!(
                 "同步自动化曲线连线粗细: {} -> {}",
