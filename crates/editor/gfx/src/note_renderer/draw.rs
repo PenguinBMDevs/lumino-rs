@@ -69,6 +69,44 @@ impl NoteRenderer {
         }
     }
 
+    /// 纵向卷帘的 VS 直绘（与 [`NoteRenderer::draw_direct`] 同义，改用转置管线）。
+    ///
+    /// 纵向复用同一实例缓冲、只换转置坐标入口（`note_vertical.wgsl::vs_direct`），
+    /// 因此「实例序 = 提交序 = 后来者居上」的 z-order 保证与横向完全一致（§19.4）。
+    ///
+    /// 性能口径与横向相同：**无 compute cull pass、无每帧分配**，每 chunk 一次
+    /// `draw(4 顶点 × chunk_len)`；实例可见性在 `vs_direct` 内自判（视口外零面积），
+    /// 叠加范围由 §18 的视口窗口界定，故不做 GPU 侧二次剔除。
+    pub fn draw_direct_vertical<'r>(
+        &'r self,
+        render_pass: &mut wgpu::RenderPass<'r>,
+        has_instances: bool,
+        scissor_rect: Option<(u32, u32, u32, u32)>,
+    ) {
+        let Some(pipeline) = self.vertical_direct_pipeline.as_ref() else {
+            // 无纵向直绘管线（洋葱皮 / 导出无 depth 变体）：回退 cull 路径，绝不静默不画
+            self.draw_with_pipeline(render_pass, has_instances, scissor_rect, true);
+            return;
+        };
+        puffin::profile_function!();
+        if !has_instances || self.last_upload_count == 0 {
+            return;
+        }
+        if let Some((x, y, width, height)) = scissor_rect {
+            render_pass.set_scissor_rect(x, y, width, height);
+        }
+        render_pass.set_pipeline(pipeline);
+
+        let count = self.last_upload_count as usize;
+        let chunk_count = self.chunk_layout.chunk_count(count).min(MAX_CHUNKS);
+        let bind_group_count = self.render_bind_groups.len();
+        for idx in 0..chunk_count.min(bind_group_count) {
+            let (_, chunk_len) = self.chunk_layout.chunk_range(count, idx);
+            render_pass.set_bind_group(0, &self.render_bind_groups[idx], &[]);
+            render_pass.draw(0..4, 0..chunk_len as u32);
+        }
+    }
+
     pub(super) fn draw_with_pipeline<'r>(
         &'r self,
         render_pass: &mut wgpu::RenderPass<'r>,

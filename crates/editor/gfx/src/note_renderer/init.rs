@@ -189,6 +189,23 @@ impl NoteRenderer {
             None
         };
 
+        // 纵向直绘管线（§19.4 补齐）：**只为预览层建**（`!is_onion`）—— 洋葱皮纵向
+        // 仍走 cull + 可见索引路径（与本卡前既有口径一致），不为它多付一次大 shader
+        // 的管线编译（启动时间敏感）。预览层纵向必须建：重叠预览矩形若走 cull
+        // 随机序，纵向卷帘下同样闪烁。
+        let vertical_direct_pipeline = if needs_depth && !is_onion {
+            Some(Self::create_direct_pipeline(
+                device,
+                &vertical_shader,
+                &render_bind_group_layout,
+                format,
+                needs_depth,
+                true,
+            ))
+        } else {
+            None
+        };
+
         // 创建缓冲区
         let max_capacity = (device.limits().max_storage_buffer_binding_size as usize)
             / std::mem::size_of::<crate::NoteInstance>();
@@ -273,6 +290,7 @@ impl NoteRenderer {
             chunk_layout,
             point_pipeline,
             direct_pipeline,
+            vertical_direct_pipeline,
         }
     }
 

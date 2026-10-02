@@ -40,6 +40,20 @@ fn test_preview_layer_has_direct_pipeline() {
         export.direct_pipeline.is_none(),
         "无 depth 变体（导出）不应创建直绘管线"
     );
+    assert!(
+        preview.vertical_direct_pipeline.is_some(),
+        "预览层必须创建纵向直绘管线：否则纵向卷帘下重叠预览矩形仍按 cull 随机序闪烁"
+    );
+    // 洋葱皮只建横向直绘（纵向仍走 cull 路径），不为它多付一次大 shader 管线编译
+    let onion = NoteRenderer::new_onion_skin(&device, &queue, FORMAT);
+    assert!(
+        onion.direct_pipeline.is_some() && onion.vertical_direct_pipeline.is_none(),
+        "洋葱皮应只有横向直绘管线（纵向仍走 cull 路径）"
+    );
+    assert!(
+        export.vertical_direct_pipeline.is_none(),
+        "无 depth 变体（导出）不应创建纵向直绘管线"
+    );
 }
 
 const W: u32 = 256;
