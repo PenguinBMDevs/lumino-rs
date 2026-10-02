@@ -36,6 +36,10 @@ parking_lot = { workspace = true }
 puffin = { workspace = true }
 crossbeam-channel = { workspace = true }
 cpal = { workspace = true }
+# 内置 UI 音效（`ui_sfx`）解码：symphonia 已由 lumino-gpu-synth 引入（default 特性集
+# **不含 mp3**），此处只在同一版本上追加 mp3 编解码能力 —— cargo 特性合并后仍为单份
+# symphonia 构建，仅多出同族的 `symphonia-bundle-mp3`（MPL-2.0，与现有 symphonia 同源）。
+symphonia = { version = "0.5", features = ["mp3"] }
 tracy-client = { version = "0.19.0", optional = true, default-features = false, features = [
     "enable",
 ] }

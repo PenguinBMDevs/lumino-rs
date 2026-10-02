@@ -151,6 +151,11 @@ pub struct AboutEggState {
     last_update: Option<Instant>,
     /// 随机数种子（xorshift64；避免为此引入 `rand` 依赖）
     seed: u64,
+    /// 落地信号（进入 [`EggPhase::Impact`] 时置位，由调用方取走一次）
+    ///
+    /// 音效挂在**落地瞬间**，故用「置位 + 取走」表达一次性事件：状态机自身不依赖音频
+    /// 设施（`ui-core` 不引入音频依赖），实际播放由 `lumino-ui` 消费本信号完成。
+    impact_signal: bool,
 }
 
 impl Default for AboutEggState {
@@ -187,6 +192,7 @@ impl AboutEggState {
             viewport: (0.0, 0.0),
             last_update: None,
             seed: Self::initial_seed(),
+            impact_signal: false,
         }
     }
 
@@ -255,6 +261,14 @@ impl AboutEggState {
     #[must_use]
     pub fn is_visible_in_page(&self) -> bool {
         matches!(self.phase, EggPhase::Idle | EggPhase::Shake)
+    }
+
+    /// 取走「落地」一次性信号（消费式：同一帧只返回一次 `true`）。
+    ///
+    /// 调用方据此播放落地音效：进入 [`EggPhase::Impact`] 的那一帧置位，
+    /// 取走后不再重复触发（相位重入、硬超时收尾都不会重复出声）。
+    pub fn take_impact_signal(&mut self) -> bool {
+        std::mem::take(&mut self.impact_signal)
     }
 
     /// 原点晃动位移（逻辑像素，正 = 右移）；非晃动相位恒为 0。
@@ -391,11 +405,15 @@ impl AboutEggState {
                 if self.position.1 >= floor {
                     self.position.1 = floor;
                     self.enter(EggPhase::Impact);
+                    // 落地一次性信号：调用方在同一帧取走并播放音效
+                    self.impact_signal = true;
                 }
             }
             EggPhase::Impact => {
+                // 音效不在这里播放：落地那一帧已置位 `impact_signal`，由 `lumino-ui`
+                // 取走后交给 `lumino_midi_io::ui_sfx` 播放（ui-core 不引入音频依赖）。
+                // 本相位只保留一个短暂停顿，作为「砸到底」的视觉/听觉落点。
                 if self.phase_elapsed >= IMPACT_DURATION {
-                    // TODO(UI-007 第二批)：此处播放内置「钢管落地」音效（CC0 素材路线）
                     self.enter(EggPhase::FadeOut);
                 }
             }
@@ -480,6 +498,8 @@ impl AboutEggState {
         self.last_click = None;
         self.spin_angle = 0.0;
         self.opacity = 0.0;
+        // 硬超时兜底收尾时可能尚有未取走的落地信号：一并清掉，避免延迟出声
+        self.impact_signal = false;
         mark_logo_vanished();
     }
 
@@ -531,6 +551,45 @@ mod tests {
 
     fn ms(value: u64) -> Duration {
         Duration::from_millis(value)
+    }
+
+    #[test]
+    fn test_impact_signal_is_one_shot_at_landing() {
+        let _guard = lock();
+        let mut state = ready_state();
+        let mut now = Instant::now();
+        for _ in 0..ABOUT_EGG_CLICK_THRESHOLD {
+            state.on_logo_click(now);
+            now += ms(50);
+        }
+
+        // 起飞后、落地前不得有信号
+        assert!(
+            !state.take_impact_signal(),
+            "序列开始前/落地前不应有落地信号"
+        );
+
+        let mut landed_at_impact = false;
+        for _ in 0..600 {
+            now += ms(16);
+            let still = state.update(now);
+            let signalled = state.take_impact_signal();
+            if signalled {
+                assert_eq!(
+                    state.phase(),
+                    EggPhase::Impact,
+                    "落地信号必须与进入 Impact 相位同帧"
+                );
+                landed_at_impact = true;
+                // 消费式：同一帧再取应为 false
+                assert!(!state.take_impact_signal(), "落地信号必须只能取走一次");
+            }
+            if !still {
+                break;
+            }
+        }
+        assert!(landed_at_impact, "整段序列应产生恰好一次落地信号");
+        assert!(!state.take_impact_signal(), "序列收尾后不应残留落地信号");
     }
 
     #[test]

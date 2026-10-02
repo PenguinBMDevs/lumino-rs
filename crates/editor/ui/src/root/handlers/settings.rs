@@ -158,6 +158,11 @@ impl MessageHandler for SettingsHandler {
                             lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD,
                             clicks_before + 1
                         );
+                        // 预热音效（解码 + 开流并保持暂停）：序列约 1.7s，足够覆盖初始化，
+                        // 落地瞬间只剩一次 `play`，避免开流延迟导致「落地后半天才响」。
+                        lumino_midi_io::ui_sfx::prewarm(
+                            root.settings.synth.selected_audio_output_device.as_deref(),
+                        );
                     } else {
                         tracing::debug!(
                             "关于页 logo 单击反馈：计数 {}/{}",
