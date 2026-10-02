@@ -342,4 +342,58 @@ mod tests {
             "整体右移后锚点必须扣除偏移（否则错帧）"
         );
     }
+
+    /// 回归：首端被向右缩短后，整体拖动必须能把素材带带回时间轴开头。
+    ///
+    /// 旧实现画布层与状态层各钳一次 `offset ≥ 0`，首裁 5s 后可视左缘永远
+    /// ≥5s，用户只能拖到"开头缩短到的位置"，顶不到前面。现在边界只由
+    /// `set_offset` 裁决：下限 = −首端裁剪（可视左缘顶到时间轴原点即止）。
+    #[test]
+    fn test_body_drag_can_return_band_to_timeline_origin() {
+        let mut root = test_root();
+        let source = root.clip_real_duration_secs() as f32;
+        let trim = (source * 0.5).min(5.0);
+        assert!(trim > 1.0, "测试前提：裁剪量需可观测");
+
+        root.handle_video_clip_action(VideoClipAction::ClipTrimChanged {
+            track: ClipTrack::Video,
+            edge: ClipTrimEdge::Start,
+            trim_secs: trim,
+        });
+        assert_eq!(
+            root.state.video_clip.video_window(source),
+            (trim, source),
+            "首端裁短后带起点右移"
+        );
+
+        // 极端向前拖（画布原样发负值）：状态层应钳到 −trim，可视左缘顶到 0
+        root.handle_video_clip_action(VideoClipAction::ClipTrackOffsetChanged {
+            track: ClipTrack::Video,
+            offset_secs: -999.0,
+        });
+        let edit = root.state.video_clip.video_edit;
+        assert!(
+            (edit.offset_secs + trim).abs() < 1e-4,
+            "偏移下限应为 −首端裁剪（−{trim}），实际 {}",
+            edit.offset_secs
+        );
+        assert!(
+            edit.visible_start().abs() < 1e-4,
+            "可视左缘必须能顶到时间轴原点，实际 {}",
+            edit.visible_start()
+        );
+        assert_eq!(
+            root.state.video_clip.video_window(source),
+            (0.0, source - trim),
+            "顶到原点后右缘随之左移（可视长度不变）"
+        );
+
+        // 时间轴 0 处显示的应是入点那一帧，而不是空占位
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: 0.0 });
+        assert_eq!(
+            root.clip_preview_tick(),
+            Some(expected_tick(&root, trim)),
+            "顶到原点后 0 处应显示入点帧"
+        );
+    }
 }
