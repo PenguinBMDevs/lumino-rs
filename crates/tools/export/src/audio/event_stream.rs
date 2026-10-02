@@ -2,7 +2,8 @@
 //!
 //! 参考 OmniConverter 的 MIDIConverter 设计：
 //! - 多轨道事件合并（跨轨最小 tick 优先）
-//! - 相同 tick 按优先级排序（NoteOff > CC > PC > PB > NoteOn）
+//! - 相同 tick：NoteOff 最先、NoteOn 最后；控制事件（CC/PC/PB）保持文档
+//!   （= MIDI 文件）内的相对顺序，不再按 kind 强制 CC→PC→PB
 
 use lumino_midi_loader::MidiDocument;
 
@@ -97,24 +98,24 @@ impl MidiDocEventStream {
             }
         }
 
-        // 按 (tick, priority) 稳定排序；priority 数值越小越先：NoteOff(1) > CC(2) > PC(3) > PB(4) > NoteOn(5)
-        // 使用 stable sort 保持插入序（track 0 先于 track 1），与旧 find_best_event_at 的 tie 语义一致。
+        // 按 (tick, 分组) 稳定排序：NoteOff(1) > 控制事件(2) > NoteOn(3)。
+        // 控制事件（CC/PC/PB）之间**保持文档（= MIDI 文件）序**：同一 tick 的
+        // PB 与 RPN/DataEntry 的顺序由素材自身决定（2026-10-02 决策：遵循
+        // MIDI 本身顺序）。此前按 CC < PC < PB 的 kind 优先级会把 PB 挪到同
+        // tick 的 CC 之后，在"灵敏度变更 + PB"同 tick 时改变弯音结果（实测
+        // 98k 个 PB 中有 7 个因此产生 >1 半音、最大 62 半音的偏差）。
         events.sort_by(|a, b| {
             let pa = match a.kind {
                 1 => 1,
-                2 => 2,
-                3 => 3,
-                4 => 4,
-                0 => 5,
-                _ => 6,
+                2..=4 => 2,
+                0 => 3,
+                _ => 4,
             };
             let pb = match b.kind {
                 1 => 1,
-                2 => 2,
-                3 => 3,
-                4 => 4,
-                0 => 5,
-                _ => 6,
+                2..=4 => 2,
+                0 => 3,
+                _ => 4,
             };
             a.tick.cmp(&b.tick).then(pa.cmp(&pb))
         });
@@ -301,6 +302,32 @@ mod tests {
             (e.kind, e.channel, e.port),
             (2, 5, 3),
             "CC 应携带来源轨道端口"
+        );
+    }
+
+    /// 2026-10-02 决策：控制事件（CC/PC/PB）保持文档（= MIDI 文件）序。
+    /// 同一 tick 文件序为 PB → CC38 → CC6 时，PB 不得被挪到 CC 之后
+    /// （否则"灵敏度变更 + PB"同 tick 时 PB 会用上新灵敏度，改变弯音结果）。
+    #[test]
+    fn test_same_tick_control_order_follows_document() {
+        use midly::loader::PackedControlEvent;
+
+        let mut doc = make_doc(vec![vec![NoteEvent::new(0, 10, 60, 100, 0)]], 10);
+        doc.control_events = lumino_midi_model::ChunkedList::from_sorted(vec![
+            PackedControlEvent::pitch_bend(10, 0, 0, 4096),
+            PackedControlEvent::control_change(10, 0, 0, 38, 0),
+            PackedControlEvent::control_change(10, 0, 0, 6, 116),
+        ]);
+        let mut stream = MidiDocEventStream::new(&doc);
+        // tick 10 的 NoteOff（kind=1）按音符包夹仍最先；控制事件保持文件序。
+        let events: Vec<(u8, u8)> = std::iter::from_fn(|| stream.next_event())
+            .filter(|e| e.kind >= 2)
+            .map(|e| (e.kind, e.param1))
+            .collect();
+        assert_eq!(
+            events,
+            vec![(4, 0), (2, 38), (2, 6)],
+            "同 tick 控制事件必须保持文件序（PB 在 CC 之前）"
         );
     }
 }
