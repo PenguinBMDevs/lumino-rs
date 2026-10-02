@@ -88,17 +88,30 @@ impl ClientStateCell {
     }
 
     /// 仅当当前处于“活动态”时才更新为 `next`，用于连接中断时避免被陈旧事件覆盖
+    ///
+    /// 这里手写 CAS 循环，而不用 `AtomicU8::fetch_update`：后者自 Rust 1.99 起被弃用，
+    /// 替代品 `try_update` 需要 `atomic_try_update` feature（rust-lang/rust#135894），
+    /// 在本 crate 声明的 MSRV 1.92.0 上仍是 unstable（E0658）——直接改名会让 MSRV 失效。
+    /// `compare_exchange_weak` 自 1.0 起稳定，语义与 `fetch_update` 的内部循环完全一致：
+    /// 仅在观测到的当前值处于活动态时写入，否则放弃写入。
     pub fn set_if_active(&self, next: ClientState) {
         let next_u8 = next.as_u8();
-        self.value
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |current| {
-                if ClientState::from_u8(current).is_active() {
-                    Some(next_u8)
-                } else {
-                    None
-                }
-            })
-            .ok();
+        let mut current = self.value.load(Ordering::Relaxed);
+        loop {
+            if !ClientState::from_u8(current).is_active() {
+                return;
+            }
+            match self.value.compare_exchange_weak(
+                current,
+                next_u8,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return,
+                // 竞争失败（或 weak 伪失败）：以最新观测值重试判定
+                Err(actual) => current = actual,
+            }
+        }
     }
 
     /// 是否处于活动态
@@ -118,4 +131,92 @@ pub struct CollaborationSession {
     pub current_room: Option<RoomInfo>,
     /// 远程在线用户映射
     pub remote_users: std::collections::HashMap<UserId, RemoteUser>,
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    /// 覆盖写入后应能读回同一状态
+    #[test]
+    fn test_client_state_cell_set_then_get() {
+        let cell = ClientStateCell::new();
+        assert_eq!(cell.get(), ClientState::Disconnected, "初始应为断连态");
+        cell.set(ClientState::InRoom);
+        assert_eq!(cell.get(), ClientState::InRoom);
+        assert!(cell.is_active(), "InRoom 属于活动态");
+    }
+
+    /// 非活动态下 `set_if_active` 必须放弃写入（陈旧事件不得复活会话）
+    #[test]
+    fn test_set_if_active_skips_inactive() {
+        let cell = ClientStateCell::new();
+        cell.set_if_active(ClientState::InRoom);
+        assert_eq!(
+            cell.get(),
+            ClientState::Disconnected,
+            "Disconnected 为非活动态，不应被覆盖"
+        );
+
+        cell.set(ClientState::Error);
+        cell.set_if_active(ClientState::Connected);
+        assert_eq!(cell.get(), ClientState::Error, "Error 同样属于非活动态");
+    }
+
+    /// 活动态下 `set_if_active` 应写入目标状态
+    #[test]
+    fn test_set_if_active_updates_active() {
+        for from in [
+            ClientState::Connected,
+            ClientState::Authenticated,
+            ClientState::InRoom,
+        ] {
+            let cell = ClientStateCell::new();
+            cell.set(from);
+            cell.set_if_active(ClientState::Error);
+            assert_eq!(
+                cell.get(),
+                ClientState::Error,
+                "{from:?} 为活动态，应允许写入"
+            );
+        }
+    }
+
+    /// CAS 循环在并发下不产生非法编码，且活动态不变量始终成立
+    #[test]
+    fn test_set_if_active_is_atomic_under_contention() {
+        let targets = [
+            ClientState::Connected,
+            ClientState::Authenticated,
+            ClientState::InRoom,
+        ];
+        let cell = Arc::new(ClientStateCell::new());
+        cell.set(ClientState::Connected);
+
+        std::thread::scope(|scope| {
+            let handles: Vec<_> = targets
+                .iter()
+                .map(|&target| {
+                    let cell = Arc::clone(&cell);
+                    scope.spawn(move || {
+                        for _ in 0..1_000 {
+                            cell.set_if_active(target);
+                        }
+                    })
+                })
+                .collect();
+            for handle in handles {
+                handle.join().expect("并发写入线程不应 panic");
+            }
+        });
+
+        let final_state = cell.get();
+        assert!(
+            targets.contains(&final_state),
+            "终态应为某个写入目标：{final_state:?}"
+        );
+        assert!(cell.is_active(), "终态应保持活动态：{final_state:?}");
+    }
 }
