@@ -4,7 +4,7 @@
 //! 按下命中分发（素材把手 > 条身 > 标尺 scrub）、拖拽移动的
 //! 绝对值消息构造，以及交互纯函数测试。
 
-use iced_core::{Point, Rectangle};
+use iced_core::{Point, Rectangle, Vector};
 use iced_widget::canvas;
 
 use lumino_message::video_clip::{ClipTrack, ClipTrimEdge};
@@ -39,12 +39,16 @@ pub(super) fn begin_drag(
     pos: Point,
     bounds: Rectangle,
 ) -> Option<canvas::Action<Message>> {
-    let local_x = pos.x - bounds.x;
+    // ⚠️ 坐标域：`pos` / `bounds` 均为**窗口绝对坐标**（iced 契约：
+    // `Cursor::position` 返回绝对位置，`Program::update` 收到的是 `layout.bounds()`），
+    // 而 [`TrackGeom`] 与 `ruler_click_secs` 全部工作在**画布局部坐标**。
+    // 命中测试必须喂局部坐标，否则纵向轨道带判定恒不命中（表现为整条素材带无法拖拽）。
+    let local = pos - Vector::new(bounds.x, bounds.y);
     let pps_zoom = PIXELS_PER_SEC * canvas.zoom;
-    let grab_secs = ruler_click_secs(local_x, canvas.scroll_x, canvas.zoom, canvas.duration_secs);
+    let grab_secs = ruler_click_secs(local.x, canvas.scroll_x, canvas.zoom, canvas.content_secs());
 
     // 素材条命中（把手优先于条身）
-    let (track, zone) = hit_track(canvas, pos, pps_zoom);
+    let (track, zone) = hit_track(canvas, local, pps_zoom);
     if let (Some(track), Some(zone)) = (track, zone) {
         let edit = edit_of(canvas, track);
         state.track_drag = Some(TrackDrag {
@@ -81,8 +85,9 @@ pub(super) fn drag_move(
     bounds: Rectangle,
     drag: TrackDrag,
 ) -> Option<canvas::Action<Message>> {
-    let local_x = (pos.x - bounds.x).clamp(0.0, bounds.width);
-    let cur_secs = ruler_click_secs(local_x, canvas.scroll_x, canvas.zoom, canvas.duration_secs);
+    let local = pos - Vector::new(bounds.x, bounds.y);
+    let local_x = local.x.clamp(0.0, bounds.width);
+    let cur_secs = ruler_click_secs(local_x, canvas.scroll_x, canvas.zoom, canvas.content_secs());
     let delta = cur_secs - drag.grab_secs;
     match drag.mode {
         HitZone::Body => {
@@ -106,9 +111,13 @@ pub(super) fn drag_move(
 }
 
 /// 命中测试两条轨道（把手优先于条身）
+///
+/// `local` 必须是**画布局部坐标**（`pos - bounds.origin`）——`TrackGeom` 的
+/// x/y 均以画布左上角为原点。传窗口绝对坐标会让纵向轨道带判定整体偏移，
+/// 命中恒为 `(None, None)`。
 pub(super) fn hit_track(
     canvas: &TimelineCanvas,
-    pos: Point,
+    local: Point,
     pps_zoom: f32,
 ) -> (Option<ClipTrack>, Option<HitZone>) {
     use crate::view::video_clip::timeline_canvas::{TrackGeom, draw};
@@ -127,7 +136,7 @@ pub(super) fn hit_track(
             canvas.scroll_x,
             TrackGeom::track_y(ClipTrack::Audio),
         ),
-        pos,
+        local,
     )
 }
 

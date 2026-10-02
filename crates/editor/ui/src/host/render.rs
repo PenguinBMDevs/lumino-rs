@@ -199,11 +199,19 @@ impl Host {
         if is_renderer_entry {
             let size = *self.root.waterfall_player.size.borrow();
             let (width, height) = size.unwrap_or((1920, 1080));
+            // 画面进出显示：剪辑面板预览以「素材带当前时刻」为渲染锚点。
+            // 瀑布流 shader 的落点线 tick = scroll_x / zoom_x，故把锚点时间换算成
+            // tick 后回写 scroll_x（zoom_x 保留卷帘尺度）——出入点或播放头一变，
+            // 画面即跟随；锚点进签名，保证拖拽过程中实时重绘。
+            let anchor_tick = self.root.clip_preview_tick();
+            let anchor_scroll_x = anchor_tick as f32 * zoom_x;
             let mut sig: u64 = width as u64;
             sig = sig.wrapping_mul(31).wrapping_add(height as u64);
             sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
             sig = sig.wrapping_mul(31).wrapping_add(zoom_x as i64 as u64);
-            sig = sig.wrapping_mul(31).wrapping_add(scroll_x as i64 as u64);
+            sig = sig
+                .wrapping_mul(31)
+                .wrapping_add(anchor_scroll_x as i64 as u64);
             sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
             sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
             let state = &mut self.root.waterfall_player;
@@ -220,7 +228,7 @@ impl Host {
                     key_count,
                     note_data.clone(),
                     zoom_x,
-                    scroll_x,
+                    anchor_scroll_x,
                     current_track,
                 ) {
                     state.view = Some(view);

@@ -71,9 +71,14 @@ impl Host {
             .selection_box_anim
             .get()
             .is_some_and(|s| !s.converged);
+        // 剪辑面板独立传输播放中：逐帧驱动重绘，否则秒域时钟只在其它重绘
+        // 机会下推进，画面定格不动（看似「播不动」）
+        let clip_transport_playing =
+            self.root.state.video_clip.clip_playing && self.root.is_renderer_entry_active();
         let needs_animation = self.root.state.toggle_animation.active
             || self.root.editor.editor_state.view.smooth_scroll.active
-            || has_selection_anim;
+            || has_selection_anim
+            || clip_transport_playing;
         if needs_animation {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();

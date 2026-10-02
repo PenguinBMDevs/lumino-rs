@@ -11,15 +11,48 @@ use crate::root::Root;
 use lumino_message::video_clip::ClipTrimEdge;
 
 impl Root {
-    /// 剪辑带时间轴未缩放基准宽度（像素）＝ MIDI 时长 × 像素密度，最小兜底 400
+    /// 剪辑带时间轴未缩放基准宽度（像素）＝ 内容秒长 × 像素密度，最小兜底 400
+    ///
+    /// 内容秒长含素材带整体右移后的越界部分（见 [`Root::clip_timeline_content_secs`]），
+    /// 与画布侧 `TimelineCanvas::content_width` 同源，滚动条不会比画布窄。
     pub(crate) fn clip_timeline_base_width(&self) -> f32 {
-        (self.clip_real_duration_secs() as f32
+        (self.clip_timeline_content_secs()
             * crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC)
             .max(400.0)
     }
 
+    /// 剪辑带时间轴内容秒长（秒）：素材源长与两轨素材带右缘取大
+    pub(crate) fn clip_timeline_content_secs(&self) -> f32 {
+        let dur = self.clip_real_duration_secs() as f32;
+        lumino_ui_core::state::video_clip_state::timeline_content_secs(
+            dur,
+            &[
+                self.state.video_clip.video_edit,
+                self.state.video_clip.audio_edit,
+            ],
+        )
+    }
+
+    /// 剪辑面板预览锚点 tick：画面内容 = 素材带当前时刻对应的那一帧。
+    ///
+    /// 锚点取「播放头钳进视频轨可视区间」后的时间换算出的 tick，
+    /// 因此出入点一变，画面必然落在素材带之内，与素材带当前状态严格一致。
+    pub(crate) fn clip_preview_tick(&self) -> u64 {
+        let source_len = self.clip_real_duration_secs() as f32;
+        let secs = self
+            .state
+            .video_clip
+            .video_edit
+            .clamp_to_visible(self.state.video_clip.clip_position_secs, source_len);
+        crate::view::video_clip::timeline::seconds_to_ticks(
+            secs.max(0.0) as f64,
+            self.editor.editor_state.view.ppq as u32,
+            &self.tempo_pairs(),
+        )
+    }
+
     /// 剪辑面板内容真实时长（秒）：文档轨尾标换算，空工程回退画布默认
-    fn clip_real_duration_secs(&self) -> f64 {
+    pub(crate) fn clip_real_duration_secs(&self) -> f64 {
         let v = &self.editor.editor_state.view;
         let tempos = self.tempo_pairs();
         crate::view::video_clip::timeline::duration_seconds(
@@ -44,14 +77,24 @@ impl Root {
     /// 与卷帘 PlaybackManager 完全无关——卷帘的播放/暂停/seek 不影响本时钟，
     /// 本时钟也不驱动卷帘走带。仅剪辑面板首级可见时推进；播放中滚动自动
     /// 跟随钉住走带线于区域前端 PLAYHEAD_X。
+    ///
+    /// 传输区间取素材带可视区间 `(入点, 出点)`，并在每帧把播放头钳回区间内。
     pub(crate) fn tick_video_clip_transport(&mut self, dt_secs: f32) {
         if !self.is_renderer_entry_active() {
             return;
         }
         let duration = self.clip_real_duration_secs() as f32;
+        // 传输时钟以素材带可视区间为界：走到出点即停，不越过素材带当前状态
+        let window = self.state.video_clip.video_window(duration);
         self.state
             .video_clip
-            .advance_clip_transport(dt_secs, duration);
+            .advance_clip_transport(dt_secs, window);
+        // 每帧自愈：源长变化等外部原因造成的越界位置立即归位。由此保证
+        // 「播放头 == 画面锚点 == 素材带可视区间内」恒成立——画布走带线、
+        // 标题位置读数与预览画面三者不会再出现残留分歧。
+        self.state
+            .video_clip
+            .clamp_clip_position_to_window(duration);
         if self.state.video_clip.clip_playing {
             let pps_zoom = crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC
                 * self.state.video_clip.zoom;
@@ -129,16 +172,34 @@ impl Root {
                 true
             }
             VideoClipAction::TimelineSeek { secs } => {
-                // 标尺定位：写剪辑面板独立传输时钟（与卷帘完全无关）
+                // 标尺定位：写剪辑面板独立传输时钟（与卷帘完全无关），
+                // 并钳进素材带可视区间——播放头与画面锚点必须同源，不留残影
+                let source_len = self.clip_real_duration_secs() as f32;
                 self.state.video_clip.set_clip_position(secs);
+                self.state
+                    .video_clip
+                    .clamp_clip_position_to_window(source_len);
                 true
             }
             VideoClipAction::ClipPlayToggled => {
-                self.state.video_clip.clip_toggle_play();
+                let source_len = self.clip_real_duration_secs() as f32;
+                let s = &mut self.state.video_clip;
+                s.clip_toggle_play();
+                // 已停在出点（或区间之外）时按播放 → 从入点重新走，否则一按就停
+                if s.clip_playing {
+                    let (start, end) = s.video_window(source_len);
+                    if s.clip_position_secs >= end - f32::EPSILON {
+                        s.clip_position_secs = start;
+                    }
+                }
                 true
             }
             VideoClipAction::ClipRewound => {
-                self.state.video_clip.clip_rewind();
+                // 回零 = 回到素材带入点：素材带开头被裁掉后停在时间轴 0 会让
+                // 播放头线与画面锚点分离（显示残留）
+                let source_len = self.clip_real_duration_secs() as f32;
+                let (start, _) = self.state.video_clip.video_window(source_len);
+                self.state.video_clip.clip_rewind(start);
                 true
             }
             VideoClipAction::ClipTrackOffsetChanged { track, offset_secs } => {
@@ -159,6 +220,11 @@ impl Root {
                     ClipTrimEdge::Start => edit.set_trim_start(trim_secs, source_len),
                     ClipTrimEdge::End => edit.set_trim_end(trim_secs, source_len),
                 }
+                // 出入点变化 → 播放头立即钳进新的可视区间：
+                // 拖拽过程中画面实时跟随，松手后播放头线与画面严格一致（无残留）
+                self.state
+                    .video_clip
+                    .clamp_clip_position_to_window(source_len);
                 true
             }
             VideoClipAction::PreviewSizeChanged { width, height } => {

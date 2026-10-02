@@ -52,6 +52,35 @@ pub(crate) fn duration_seconds(total_ticks: u32, ppq: u16, tempos: &[(u32, f32)]
     }
 }
 
+/// 秒 → tick（[`ticks_to_seconds`] 的逆运算，共用同一 tempo 分段积分）。
+///
+/// 画面进出显示用：剪辑面板是**秒域**时钟，而瀑布流/卷帘渲染锚点是
+/// **tick 域**，两者必须经本函数换算才能保证「画面帧 == 素材带当前时刻」。
+/// 逐段累加秒数定位所在 tempo 段，再在该段 bpm 下线性换算（与正向积分互逆）。
+pub(crate) fn seconds_to_ticks(secs: f64, ppq: u32, tempos: &[(u32, f32)]) -> u64 {
+    let secs = if secs.is_finite() { secs.max(0.0) } else { 0.0 };
+    if ppq == 0 {
+        return secs as u64;
+    }
+    let mut prev_tick: u32 = 0;
+    let mut prev_bpm: f32 = 120.0;
+    let mut acc_secs: f64 = 0.0;
+    for &(t, bpm) in tempos {
+        let seg_ticks = t.saturating_sub(prev_tick) as f64;
+        let seg_secs = seg_ticks * 60.0 / (prev_bpm as f64 * ppq as f64);
+        if secs <= acc_secs + seg_secs {
+            let within = secs - acc_secs;
+            let ticks = prev_tick as f64 + within * prev_bpm as f64 * ppq as f64 / 60.0;
+            return ticks.max(0.0) as u64;
+        }
+        acc_secs += seg_secs;
+        prev_tick = t;
+        prev_bpm = bpm;
+    }
+    let ticks = prev_tick as f64 + (secs - acc_secs) * prev_bpm as f64 * ppq as f64 / 60.0;
+    ticks.max(0.0) as u64
+}
+
 /// 剪辑带时间轴视图参数（打包传入，避免长参数列表）
 pub struct TimelinePaneParams<'a> {
     /// 内容总长（tick，调用方传入真实轨尾标，见 `Root::clip_real_total_ticks`）
@@ -230,5 +259,33 @@ mod tests {
     fn test_ticks_to_seconds_zero_ppq_safe() {
         // ppq=0 时直接按 tick 数返回，不 panic
         assert!((ticks_to_seconds(100, 0, &[]) - 100.0).abs() < f64::EPSILON);
+    }
+
+    /// 画面进出显示的地基：秒域时钟 → tick 域渲染锚点必须与正向换算互逆。
+    #[test]
+    fn test_seconds_to_ticks_inverse_of_ticks_to_seconds() {
+        // 空 tempo 表：120BPM / ppq=480 → 960 tick = 1s
+        assert_eq!(seconds_to_ticks(1.0, 480, &[]), 960);
+        assert_eq!(seconds_to_ticks(0.0, 480, &[]), 0);
+        // 负值 / NaN 兜底到 0，不得 panic、不得产生巨值
+        assert_eq!(seconds_to_ticks(-3.0, 480, &[]), 0);
+        assert_eq!(seconds_to_ticks(f64::NAN, 480, &[]), 0);
+        // ppq=0 时按秒当 tick（与 ticks_to_seconds 同款退化分支）
+        assert_eq!(seconds_to_ticks(100.0, 0, &[]), 100);
+
+        // tempo 变化：前 480 tick @120BPM（0.5s），其后 @240BPM
+        let tempos = [(480, 240.0)];
+        assert_eq!(seconds_to_ticks(0.5, 480, &tempos), 480);
+        assert_eq!(seconds_to_ticks(0.75, 480, &tempos), 960);
+
+        // 互逆：任意 tick 正反两次换算回到原值（容差 1 tick）
+        for tick in [0u64, 100, 480, 960, 1200, 5000] {
+            let secs = ticks_to_seconds(tick, 480, &tempos);
+            let back = seconds_to_ticks(secs, 480, &tempos);
+            assert!(
+                (back as i64 - tick as i64).abs() <= 1,
+                "tick {tick} → {secs}s → {back} 不互逆"
+            );
+        }
     }
 }

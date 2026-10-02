@@ -130,7 +130,7 @@ pub(super) fn draw_timeline(
     // ── 标尺：可视窗口内的秒刻度 ──
     let pps_zoom = PIXELS_PER_SEC * c.zoom;
     let start_sec = (c.scroll_x / pps_zoom).floor().max(0.0);
-    let end_sec = ((c.scroll_x + bounds.width) / pps_zoom).min(c.duration_secs);
+    let end_sec = ((c.scroll_x + bounds.width) / pps_zoom).min(c.content_secs());
     let mut t = start_sec;
     while t <= end_sec {
         let is_major = (t % MAJOR_INTERVAL).abs() < 0.01;
