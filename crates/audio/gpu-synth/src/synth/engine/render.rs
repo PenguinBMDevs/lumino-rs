@@ -127,6 +127,19 @@ impl GpuSynth {
         self.render_midi_inner(midi_path, None)
     }
 
+    /// Renders a MIDI file provided as in-memory SMF bytes, stopping once all
+    /// voices have decayed below the silence threshold.
+    ///
+    /// EXP-002：文档导出路径在内存中序列化 SMF 后直接调用本方法，不再写临时文件。
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SynthError::Midi`] if the bytes cannot be parsed, or
+    /// [`SynthError::Gpu`] on GPU failures.
+    pub fn render_midi_bytes(&mut self, midi_bytes: &[u8]) -> Result<RenderResult, SynthError> {
+        self.render_midi_bytes_inner(midi_bytes, None)
+    }
+
     /// Renders the first `frames` frames of a MIDI file (used to compare the
     /// beginning of long MIDIs without rendering the whole piece).
     ///

@@ -1,7 +1,7 @@
 //! GPU 音频导出后端 — 基于 lumino-gpu-synth
 //!
 //! 提供与 CPU (xsynth) 对等的离线渲染能力，支持通过 `AudioRenderConfig` 选择后端。
-//! 架构：`MidiDocument` → `MidiExportData` → 临时 MIDI 文件 → `GpuSynth::render_midi_file` → `SampleSink`。
+//! 架构：`MidiDocument` → `MidiExportData` → 内存 SMF bytes → `GpuSynth::render_midi_bytes` → `SampleSink`。
 //!
 //! 实现按职责拆分（保持各文件 < 400 行，子模块经 `use super::*;` 复用本文件的导入）：
 //! - `synth_config`（synth_config.rs）：SynthConfig 与 MidiExportData 构建
