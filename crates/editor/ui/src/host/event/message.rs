@@ -145,6 +145,17 @@ impl Host {
             self.root.sidebar.set_panel_context_menu_pos(pos.x, pos.y);
         }
 
+        // 关于页 logo 彩蛋（UI-007）：在 route_message 前把本次点击的指针位置写入
+        // 彩蛋状态。iced 的 `mouse_area::on_press` 不携带坐标，且视图层拿不到视口
+        // 尺寸，而 Host 同时持有光标位置与视口，是唯一能做该换算的地方。
+        if matches!(
+            &message,
+            message::Message::Settings(crate::settings::Event::AboutLogoClicked)
+        ) {
+            let point = self.window_ctx.cursor_position.map(|p| (p.x, p.y));
+            self.root.state.about_egg.set_click_point(point);
+        }
+
         // 其他消息交给 root 处理，假设可能有状态变更
         {
             puffin::profile_scope!("process_message::route_message");

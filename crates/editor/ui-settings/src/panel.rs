@@ -411,6 +411,11 @@ impl SettingsPanel {
             Event::CopyGpuDiagnostics => {
                 // 剪贴板写入由 lumino-ui 的处理器完成（ui-settings 不依赖剪贴板库）
             }
+            Event::AboutLogoClicked => {
+                // 关于页 logo 彩蛋（UI-007）：动画状态归属 `RootState::about_egg`
+                // （设置面板每次打开都会重建，面板内状态无法承载跨开关的消失语义），
+                // 本面板不持有该状态，故此处仅作为穷尽匹配的占位。
+            }
         }
     }
 }

@@ -1,7 +1,7 @@
 //! MIDI 输入 / 输出 `Api` 抽象层。
 //!
 //! 提供统一的 MIDI 设备访问接口，支持多种后端（XSynth、KDMAPI、系统 MIDI），
-//! 以及基于 xsynth 的音频合成与播放管线。
+//! 以及基于 xsynth 的音频合成与播放管线，另含内置 UI 音效播放（[`ui_sfx`]）。
 
 pub mod api;
 pub mod audio_devices;
@@ -10,6 +10,7 @@ pub mod constants;
 pub mod playback;
 pub mod realtime;
 pub mod soundfont_cache;
+pub mod ui_sfx;
 
 mod profiling;
 

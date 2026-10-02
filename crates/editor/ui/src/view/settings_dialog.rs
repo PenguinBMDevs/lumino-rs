@@ -15,6 +15,7 @@ use lumino_extras::i18n::settings_translations;
 /// 避免内嵌导致的布局塌陷。
 pub fn view_settings_dialog<'a>(
     settings: &'a settings::SettingsPanel,
+    egg: &'a lumino_ui_core::state::AboutEggState,
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
 ) -> crate::Element<'a> {
@@ -22,7 +23,7 @@ pub fn view_settings_dialog<'a>(
     let palette = window.theme.extended_palette();
 
     // 设置内容（复用现有的 settings::view）
-    let settings_content = settings::view(settings, window, system_fonts);
+    let settings_content = settings::view(settings, window, system_fonts, egg);
 
     // 确认按钮
     let confirm_button = button(text(t.confirm).size(14))

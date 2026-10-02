@@ -3,12 +3,13 @@
 //! 包含进度窗口和对话框窗口的渲染。
 
 use iced_core::Length;
-use iced_widget::{button, checkbox, column, container, progress_bar, row, space, text};
+use iced_widget::{Stack, button, checkbox, column, container, progress_bar, row, space, text};
 
 use crate::root::Root;
 use crate::state::root_state::DialogType;
 use crate::view::{
-    batch_edit_dialog::view_batch_edit_dialog, brush_settings_dialog::view_brush_settings_dialog,
+    about_egg::view as view_about_egg, batch_edit_dialog::view_batch_edit_dialog,
+    brush_settings_dialog::view_brush_settings_dialog,
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
     export_progress_dialog::view_export_progress_dialog,
@@ -149,6 +150,7 @@ impl Root {
                 // 非设置对话框不走此路径，完全不受字体扫描影响。
                 view_settings_dialog(
                     &self.settings,
+                    &self.state.about_egg,
                     &self.window,
                     lumino_note_core::font_scanner::get_cached_fonts(),
                 )
@@ -225,7 +227,7 @@ impl Root {
             }
         };
 
-        if self.use_native_titlebar {
+        let base: Element<'_> = if self.use_native_titlebar {
             content
         } else {
             column![
@@ -235,6 +237,20 @@ impl Root {
             .width(Length::Fill)
             .height(Length::Fill)
             .into()
+        };
+
+        // 关于页 logo 彩蛋（UI-007）飞行层：置于**最顶层**——logo 脱落后可越过自有
+        // 标题栏在整窗范围内飞行（仍严格限制在窗口可见区内），且该层不捕获鼠标事件，
+        // 底层设置内容照常可点。
+        if self.state.dialog_type == DialogType::Settings && self.state.about_egg.is_airborne() {
+            return Stack::new()
+                .push(base)
+                .push(view_about_egg(&self.state.about_egg, &self.window.theme))
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .into();
         }
+
+        base
     }
 }

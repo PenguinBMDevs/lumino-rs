@@ -151,4 +151,10 @@ pub enum Event {
     RunGpuCompatibilityCheck,
     /// 请求复制 GPU 诊断信息
     CopyGpuDiagnostics,
+    // 关于页 logo 彩蛋（UI-007）
+    /// 点击「关于」页 Lumino logo（单击晃动 / 连点触发彩蛋序列）
+    ///
+    /// 指针位置由 `Host` 在路由本消息**之前**写入彩蛋状态
+    /// （`AboutEggState::set_click_point`），故事件本身不携带坐标。
+    AboutLogoClicked,
 }

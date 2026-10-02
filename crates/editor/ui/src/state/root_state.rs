@@ -2,8 +2,8 @@
 
 // 保持路径不变：crate::state::root_state::Xxx 通过 core 重导出
 pub use lumino_ui_core::state::{
-    AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT, COUNTER_DEFAULT_TEXT,
-    COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
+    AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
+    COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
     CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
     MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
@@ -110,6 +110,12 @@ pub struct RootState {
     pub device_warning_suppress_checked: bool,
     /// 设备检查警告窗：用户操作结果（由 Host 取走）
     pub device_warning_action: Option<crate::window::DeviceWarningAction>,
+    /// 「关于」页 logo 彩蛋状态（UI-007：晃动 / 连点计数 / 坠落消失序列）
+    ///
+    /// 注意：**消失标志**不在这里，而在 `lumino_ui_core::state::about_egg` 的
+    /// 进程级 static 上——设置面板每次打开都会重建 RootState，面板内状态无法
+    /// 承载「重开面板不再出现」的语义。
+    pub about_egg: AboutEggState,
 }
 
 impl Default for RootState {
@@ -148,6 +154,7 @@ impl RootState {
             device_warning_detail: String::new(),
             device_warning_suppress_checked: false,
             device_warning_action: None,
+            about_egg: AboutEggState::new(),
         }
     }
 }

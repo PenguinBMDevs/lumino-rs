@@ -318,8 +318,11 @@ impl Root {
         }
     }
 
-    /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理）
+    /// 处理动画 tick（切换动画 + 平滑滚动 + 弹簧物理 + 关于页 logo 彩蛋）
     pub(crate) fn handle_animation_tick(&mut self) -> bool {
+        // 每次 tick 只取一次时钟，避免同一帧内多个动画读到不同时间基准
+        let now = Instant::now();
+
         let still_animating = self.state.toggle_animation.update();
         if !still_animating
             && self.state.toggle_animation.position >= 0.5
@@ -354,7 +357,7 @@ impl Root {
         self.editor.update_selection_box_animation(None);
 
         // 音轨拖拽排序长按计时：候选按下后超过阈值自动激活拖拽
-        self.sidebar.update_track_reorder_timer(Instant::now());
+        self.sidebar.update_track_reorder_timer(now);
 
         // 轮询异步 MoveOp 提交结果（每帧一次，将后台线程结果应用到 data 并 push history）
         if self.editor.poll_async_commit().is_some() {
@@ -368,7 +371,19 @@ impl Root {
         self.drain_deferred_remote_ops();
 
         // 清理过期 Toast（每帧调用，低成本 O(N) retain）
-        self.toast.cleanup_expired(Instant::now());
+        self.toast.cleanup_expired(now);
+
+        // 关于页 logo 彩蛋（UI-007）：推进晃动 / 坠落消失序列。
+        // 相位推进必须在 update 路径完成——`Root::view` 只读 `&self`，无法推进状态。
+        self.state.about_egg.update(now);
+
+        // 落地瞬间播放内置「钢管落地」音效：信号是消费式的，保证整段序列只响一次。
+        // 播放走专属工作线程（立即返回），音频输出设备跟随设置面板的选择。
+        if self.state.about_egg.take_impact_signal() {
+            lumino_midi_io::ui_sfx::play_pipe_impact(
+                self.settings.synth.selected_audio_output_device.as_deref(),
+            );
+        }
 
         true
     }

@@ -224,6 +224,29 @@ pub fn view_safe(icon: Icon) -> Result<crate::Element<'static>, IconError> {
     Ok(element)
 }
 
+/// 渲染带旋转与不透明度的图标（供关于页 logo 彩蛋等需要原地变换的场景使用）。
+///
+/// `rotation_rad` 为弧度；`opacity` 会被钳到 `[0, 1]`。
+///
+/// ⚠️ 尺寸陷阱：iced 的 `Svg` 以**旋转后包围盒**参与 `ContentFit::Contain` 缩放，
+/// 直接旋转会让非正方形图标在转动中被等比缩小。调用方需自行乘上 AABB 补偿系数
+/// （见 `lumino_ui_core::state::about_egg::AboutEggState::spin_fit_scale`），
+/// 并把控件放进固定尺寸容器居中，避免尺寸呼吸引起布局抖动。
+pub fn view_transformed(
+    icon: Icon,
+    width: u32,
+    height: u32,
+    theme: Option<&crate::Theme>,
+    rotation_rad: f32,
+    opacity: f32,
+) -> crate::Element<'static> {
+    let is_dark = is_dark_theme(theme);
+    let svg = svg_element(icon, width, height, is_dark)
+        .rotation(rotation_rad)
+        .opacity(opacity.clamp(0.0, 1.0));
+    svg.into()
+}
+
 /// 渲染指定尺寸和主题的图标（可能 panic，仅用于向后兼容）
 pub fn view_with_size_and_theme(
     icon: Icon,

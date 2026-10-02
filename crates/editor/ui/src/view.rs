@@ -1,3 +1,4 @@
+pub mod about_egg;
 pub mod audio_export_dialog;
 pub mod batch_edit_dialog;
 pub mod brush_settings_dialog;

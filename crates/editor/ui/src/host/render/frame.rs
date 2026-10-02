@@ -64,6 +64,16 @@ impl Host {
 
         self.last_frame_time = now;
 
+        // 关于页 logo 彩蛋（UI-007）：把视口尺寸注入彩蛋状态。
+        // `window::Window` 没有尺寸字段、视图层拿不到 viewport，而彩蛋的飞行/落地
+        // 坐标全部以窗口逻辑像素表达，故由 Host 每帧（在构建视图之前）注入。
+        let viewport = self.render_ctx.viewport.logical_size();
+        self.root
+            .state
+            .about_egg
+            .set_viewport(viewport.width, viewport.height);
+        let about_egg_animating = self.root.state.about_egg.is_animating();
+
         // 更新模式切换按钮的弹簧物理动画、平滑滚动动画和框选框动画
         let has_selection_anim = self
             .root
@@ -78,10 +88,19 @@ impl Host {
         let needs_animation = self.root.state.toggle_animation.active
             || self.root.editor.editor_state.view.smooth_scroll.active
             || has_selection_anim
-            || clip_transport_playing;
+            || clip_transport_playing
+            || about_egg_animating;
         if needs_animation {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
+        }
+
+        // 彩蛋动画期间显式置脏：对话框窗口的 `ui_dirty` 只在「消息产生状态变更」或
+        // iced 返回 `State::Updated` 时被置位（见 `host/event/window/events.rs` 的
+        // `update_ui_state`），事件队列清空后 `render_iced_ui` 会走「仅 present 缓存帧」
+        // 的早退路径，动画会冻结在上一帧。先例：下方播放分支的同类置脏。
+        if about_egg_animating {
+            self.ui_dirty = true;
         }
 
         // 关键：存在**在飞的异步提交**时，即使没有动画也要触发 AnimationTick，

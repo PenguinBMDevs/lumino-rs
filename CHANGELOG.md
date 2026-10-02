@@ -9,6 +9,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 设置面板 · 关于页 Lumino Logo 与点击彩蛋（UI-007）
+
+- **关于页 logo 与彩蛋交互** — 「设置 → 关于」页顶部新增 Lumino logo（复用 `Icon::LogoInApp`，
+  **未新建面板/窗口**）：单击原地晃动一次（0.30s 衰减收正弦、±7px，用左右定宽占位器表达位移，
+  行宽恒定不引起重排）；连点累计满 **15** 次触发彩蛋序列——
+  **快速转动（2 圈/0.5s）→ 脱离原位（0.22s ease-out）→ 飞向窗口中轴 Y 以上随机位置 →
+  匀加速砸向窗口底部（0.55s，重力按落点距离反解以稳定时长）→ 落地（播放「钢管落地」音效）
+  → 渐隐消失（0.35s）**。相邻点击间隔超过 **2s** 计数清零重新累计（惰性判定，无定时器）。
+- **消失状态仅进程内保持** — 用 `lumino-ui-core` 的进程级 `static AtomicBool` 承载，不写任何配置：
+  重开设置面板/关于页不再出现，重启恢复。**不能**放面板状态：设置面板是独立窗口，
+  每次打开都会 `Host::new_settings_dialog` 重建 `RootState`（`dialog/src/manager/lifecycle.rs`、
+  `ui/src/host/builder.rs`），面板内字段必被重置。
+- **逐帧驱动（关键陷阱）** — 对话框的 `ui_dirty` 只在「消息产生状态变更」或 iced 返回
+  `State::Updated` 时置位；事件队列清空后 `render_iced_ui` 走「仅 present 缓存帧」早退路径
+  （`host/render/ui.rs`），**只喂 `AnimationTick` 不置脏 = 动画冻结**。故 `frame.rs` 门控纳入彩蛋
+  动画并显式置脏（先例：同文件播放分支），`DialogManager::update()` 既有 `redraw()` 路径即足，
+  无需改动 `dialog` crate。
+- **几何口径** — `window::Window` 无尺寸字段、视图层拿不到 viewport：由 Host 每帧
+  `set_viewport()` 注入、路由点击消息前 `set_click_point()` 注入光标（`mouse_area::on_press`
+  不携带坐标且 `on_move` 会在悬停期制造高频消息，故不用），状态机在像素域解算并钳制
+  （落点仅取中轴 Y 以上、落地钳在窗口底部内）。悬浮层挂 `view_dialog`（整窗）而非设置内容区，
+  坐标系与 Host 视口逐像素一致，logo 可越过自有标题栏但严格限制在窗口可见区内；
+  该层不套 `mouse_area` ⇒ 点击穿透，底层设置内容照常可点。
+- **旋转尺寸补偿** — iced `Svg` 以旋转后包围盒参与 `ContentFit::Contain` 缩放，不补偿时
+  **非正方形** logo 转动中会周期性缩到约 77%；`ui-core` 新增 `icon::view_transformed()`（旋转 + 不透明度）  并按 AABB 长边比补偿，控件置于固定方盒居中吸收布局呼吸。附带：`SettingsPanel::update` 是
+  **穷尽匹配、无 catch-all**，新增 `Event` 变体必须同步补 arm（本次已补）。
+- **落地音效（内置「钢管落地」）** — 「设置 → 关于」彩蛋落地瞬间播放，音频以 `include_bytes!`
+  内嵌（`resources/sounds/pipe-impact.mp3`，48 kHz 立体声 2.366s / 49,059 B），**运行期不依赖外部文件**。
+  新增 `lumino-midi-io::ui_sfx`：专属工作线程 + 懒开流（播完暂停）、**音频回调零锁零分配**
+  （`Arc<Vec<f32>>` + 两个原子量，沿用仓库「音频回调不持互斥量」纪律）、解码/开流失败
+  **静默降级**不影响彩蛋其余流程、输出设备跟随设置面板选择。彩蛋触发瞬间 `prewarm`
+  （序列 1.27s 后才是落地，足以覆盖解码+开流），落地只剩一次 `play`。
+  解码用仓库既有的 symphonia，仅追加 `mp3` feature（特性合并后仍是单份构建，
+  多出同族 `symphonia-bundle-mp3`，MPL-2.0 与既有 symphonia 同源）。
+- **修复 symphonia 不跳 MP3 编码器延迟（换素材后仍成立）** — 未处理时内嵌素材解码后开头带
+  ~23 ms 近静音（ffmpeg 会按 LAME 头跳过、symphonia 不会；旧素材 ffmpeg/symphonia 前导差
+  24.9 ms、新素材探针实测裁掉 1102 帧 = 23.0 ms，两次独立素材互证），会让「落地后不即响」。
+  解码后按能量阈值裁掉前导静音（保留 0.08 ms 软起振余量），与素材解耦、换素材无需改代码。
+  起振判据为「达到峰值 90% 的时间 ≤ 30 ms」（实录冲击自带 ~20 ms 爬升，固定 10 ms 窗口过严），
+  并经**反证**确认有效：摘掉裁剪后实测 47.5 ms、断言如期变红，恢复后回绿。
+  播放增益 `SFX_GAIN = 0.6`（素材峰值 0.0 dBFS，隐藏彩蛋不宜满刻度）。
+- **验证** — `cargo test -p lumino-ui-core about_egg`（状态机 11 项：计数/超时/相位时序/自然加速/
+  中轴约束/越界/硬超时/消失语义/落地信号一次性）、`cargo test -p lumino-ui about_egg`
+  （消息→处理器→状态→视图接线与序列终止）、`cargo test -p lumino-ui-settings`（消失后不再渲染 logo）、
+  `cargo test -p lumino-midi-io ui_sfx`（内嵌素材解码/前导裁剪/重采样/声道映射 9 项）；
+  另有端到端实跑探针确认设备枚举→开流→回调→二次播放全通（`UI 音效就绪：48000 Hz / 2 声道`）。
+  `cargo fmt --check` / `cargo clippy --workspace --all-targets -- -D warnings` /
+  `cargo test --workspace` 全绿；新增 `.rs` 无 BOM。
+  记录见 `docs/2026-10-02-UI-007-关于界面Logo与彩蛋实施记录.md`（调研见同名「调研」文档）。
+- **遗留** — ① 音效素材由用户提供（曲源标注 **NCS**，使用者确认可直接使用且不要求进一步留档）；
+  ② 视觉流畅度与「非动画期无常态重绘」需实机人工确认；③ 音效输出设备在首次初始化时确定，
+  运行中更换设备需重启生效。
+
 ### REND-002 多端口（Phase 1：映射原语与写死解锁）
 
 - **共享映射原语** — 新增 `multi_port` 模块：`global_channel(port, ch) = port*16+ch`（u16 防溢出）、
