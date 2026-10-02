@@ -27,9 +27,9 @@ resolver = "3"
 #   ac53f16 事件队列积压/丢音可观测 + 接入上限实测台）。
 #   显式 rev 防止 `cargo update` 静默漂移而丢失修复。
 [patch.crates-io]
-xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "ac53f1657783d997781251d8d1479c3ad613df24" }
-xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "ac53f1657783d997781251d8d1479c3ad613df24" }
-xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "ac53f1657783d997781251d8d1479c3ad613df24" }
+xsynth-core = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
+xsynth-realtime = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
+xsynth-soundfonts = { git = "https://github.com/PenguinBMDevs/xsynth-Lumino", rev = "6335b11378e7c0b3a932b7590b3043712e2f1048" }
 
 [workspace.package]
 version = "0.2.1"
