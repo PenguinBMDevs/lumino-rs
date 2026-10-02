@@ -89,6 +89,12 @@ impl Host {
     /// 由 iced `shader` 图元在自身渲染通道内直接合成（GPU→GPU，无 CPU 读回、不闪烁），
     /// 仅当（宽 / 高 / 键数 / 缩放 / 滚动 / 主音轨 / 音符数）任一参数变化时才重绘。
     ///
+    /// 三条渲染路径的滚动来源**刻意不同**，改动时勿混用：
+    /// - 全屏播放器（`AppMode::Waterfall`）：恒为固定下落，滚动由
+    ///   `Editor::waterfall_player_scroll_x` 依播放位置计算，与卷帘自动滚动模式解耦；
+    /// - 视频剪辑面板预览：以播放头处「素材源帧」为锚点（落点线 = 播放头）；
+    /// - 右侧栏预览面板：与卷帘 X 缩放/滚动同步（它本就是卷帘的预览窗口）。
+    ///
     /// 下落式音符直接复用渲染线程发布的活体 GPU 实例缓冲（只读 storage），
     /// 不重新上传音符数据——满足「禁止第二份拷贝」约束。
     pub(crate) fn ensure_piano_waterfall_keyboard(&mut self) {
@@ -127,6 +133,16 @@ impl Host {
         }
         if in_waterfall {
             // ── 瀑布流渲染：全屏 Waterfall 模式 ——
+            // 播放器恒为「固定下落」模式：底部键盘线（落点线）钉在当前播放位置，
+            // 音符等速连续下落到键盘。**刻意不复用卷帘的 `scroll_x`**——卷帘处于
+            // 「自动翻页」时 `scroll_x` 只在播放头触边时整屏跳变（播放器表现为
+            // 「停住 → 跳页」），「关闭」自动滚动时更是完全静止。
+            // 与卷帘的自动滚动模式解耦见 `Editor::waterfall_player_scroll_x`。
+            let player_scroll_x = self
+                .root
+                .editor
+                .waterfall_player_scroll_x(self.root.editor.playback_position);
+
             let size = *self.root.waterfall_player.size.borrow();
             // 尚无布局尺寸时不再早退：用兜底尺寸先把纹理建出来（键盘立即可见），
             // responsive 写回真实尺寸后签名变化会触发下一帧重渲染到精确尺寸，
@@ -137,7 +153,9 @@ impl Host {
             sig = sig.wrapping_mul(31).wrapping_add(height as u64);
             sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
             sig = sig.wrapping_mul(31).wrapping_add(zoom_x as i64 as u64);
-            sig = sig.wrapping_mul(31).wrapping_add(scroll_x as i64 as u64);
+            sig = sig
+                .wrapping_mul(31)
+                .wrapping_add(player_scroll_x as i64 as u64);
             sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
             sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
 
@@ -160,7 +178,7 @@ impl Host {
                 key_count,
                 note_data.clone(),
                 zoom_x,
-                scroll_x,
+                player_scroll_x,
                 current_track,
             );
             if let Some(view) = scene {
