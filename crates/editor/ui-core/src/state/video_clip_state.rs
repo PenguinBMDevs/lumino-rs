@@ -58,20 +58,11 @@ impl ClipTrackEdit {
         self.offset_secs + (source_len - self.trim_out_secs).max(0.0)
     }
 
-    /// 把秒值钳制进素材带可视区间 `[visible_start, visible_end]`。
+    /// 素材带在时间轴上的摆放区间（秒）：`[offset + trim_in, offset + 源长 − trim_out]`
     ///
-    /// 用于让播放头/画面锚点始终落在素材带当前状态之内：出入点变化后
-    /// 画面必须跟着走到新的区间，而不是停在已被裁掉的旧位置上。
-    ///
-    /// 区间退化（源长变化导致历史裁剪越界，`end <= start`）时返回区间起点——
-    /// 不能直接 `clamp`：`f32::clamp` 在 `min > max` 时会 panic。
-    pub fn clamp_to_visible(&self, secs: f32, source_len: f32) -> f32 {
-        let start = self.visible_start();
-        let end = self.visible_end(source_len);
-        if end <= start {
-            return start.max(0.0);
-        }
-        secs.clamp(start, end)
+    /// 供 [`VideoClipState::video_source_secs_at`] 判定播放头是否压在素材带上。
+    pub fn timeline_span(&self, source_len: f32) -> (f32, f32) {
+        (self.visible_start(), self.visible_end(source_len))
     }
 
     /// 设置整体偏移（下限 0）
@@ -184,59 +175,59 @@ impl VideoClipState {
 
     /// 回零并停止（剪辑面板独立传输）
     ///
-    /// `to_secs` 为回零目标（素材带入点）：素材带被裁掉开头后，「回零」应停在
-    /// 素材带起点而不是时间轴 0——否则播放头画在 0 而画面锚在入点，两者不一致。
-    pub fn clip_rewind(&mut self, to_secs: f32) {
+    /// 回零 = 回到时间轴 0。播放指示线是**自由时间轴游标**：不跟随素材带头部，
+    /// 素材带被裁掉开头也不改变回零位置。
+    pub fn clip_rewind(&mut self) {
         self.clip_playing = false;
-        self.clip_position_secs = if to_secs.is_finite() {
-            to_secs.max(0.0)
-        } else {
-            0.0
-        };
+        self.clip_position_secs = 0.0;
     }
 
     /// 定位剪辑面板播放头（下限 0）
+    ///
+    /// 播放头可落在时间轴任意 X 位置（0 到内容末尾），不受素材带区间约束。
     pub fn set_clip_position(&mut self, secs: f32) {
         self.clip_position_secs = secs.max(0.0);
     }
 
-    /// 视频轨素材带可见区间 `(start, end)`（秒）——画面进/出的时间区间。
+    /// 视频轨素材带在时间轴上的摆放区间 `(起点, 终点)`（秒）。
     ///
-    /// 音视频双轨共用同一秒域传输时钟，画面以视频轨区间为准。
+    /// 音视频双轨共用同一秒域传输时钟；画面以视频轨区间为准。
     pub fn video_window(&self, source_len: f32) -> (f32, f32) {
-        (
-            self.video_edit.visible_start(),
-            self.video_edit.visible_end(source_len),
-        )
+        self.video_edit.timeline_span(source_len)
     }
 
-    /// 把播放头钳进视频轨可见区间，返回钳制后的位置。
+    /// 播放头压在视频带上时返回其对应的**素材源时间**（秒），否则 `None`。
     ///
-    /// 出入点变化后必须调用：否则播放头会停在已被裁掉的位置上，
-    /// 画面（以播放头为锚点）显示的就是素材带之外的内容。
-    pub fn clamp_clip_position_to_window(&mut self, source_len: f32) -> f32 {
-        self.clip_position_secs = self
-            .video_edit
-            .clamp_to_visible(self.clip_position_secs, source_len);
-        self.clip_position_secs
+    /// 素材带整体摆放在时间轴 `[offset, offset + 源长]`，故源时间 = 播放头 − 偏移；
+    /// 再按首尾裁剪判定该源时间是否落在可视区间 `[trim_in, 源长 − trim_out]` 内。
+    /// 区间闭包：播放头正好压在入点/出点时仍在带内（那一帧可见）。
+    ///
+    /// 返回值是**画面该显示哪一帧**的唯一依据：`None` 就必须不显示瀑布流，
+    /// 否则会把素材带之外的内容当成画面（越界显示）。
+    pub fn video_source_secs_at(&self, source_len: f32) -> Option<f32> {
+        let edit = self.video_edit;
+        let src = self.clip_position_secs - edit.offset_secs;
+        let hi = (source_len - edit.trim_out_secs).max(0.0);
+        (src >= edit.trim_in_secs && src <= hi).then_some(src)
+    }
+
+    /// 播放头是否压在视频带上（决定预览是否显示瀑布流）
+    pub fn position_in_video_window(&self, source_len: f32) -> bool {
+        self.video_source_secs_at(source_len).is_some()
     }
 
     /// 推进剪辑面板独立传输时钟（每帧调用，秒域实时步进）
     ///
-    /// `window` 为素材带可视区间 `(入点, 出点)`：走到出点自动停止并钉在出点。
-    /// 起始位置低于入点时先对齐到入点——出入点变化（或源长变化）后不残留旧位置，
-    /// 播放头与画面锚点始终同处素材带当前区间内。
-    pub fn advance_clip_transport(&mut self, dt_secs: f32, window: (f32, f32)) {
+    /// `content_secs` 为时间轴内容末尾（秒）：走到末尾自动停止并钉在末尾。
+    /// 播放头**不因素材带区间而截止**——素材带之外只是画面不显示，
+    /// 时间轴本身照常走到底。
+    pub fn advance_clip_transport(&mut self, dt_secs: f32, content_secs: f32) {
         if !self.clip_playing {
             return;
         }
-        let (start, end) = window;
-        if self.clip_position_secs < start {
-            self.clip_position_secs = start.max(0.0);
-        }
         self.clip_position_secs += dt_secs.max(0.0);
-        if self.clip_position_secs >= end {
-            self.clip_position_secs = end.max(0.0);
+        if self.clip_position_secs >= content_secs {
+            self.clip_position_secs = content_secs.max(0.0);
             self.clip_playing = false;
         }
     }
@@ -497,33 +488,86 @@ mod tests {
         assert!(tiny.visible_start() <= tiny.visible_end(0.02) + 1e-6);
     }
 
-    /// 画面进出：播放头必须钳进素材带当前可见区间。
+    /// 播放指示线是**自由时间轴游标**：素材带首端裁剪（带向右缩小）后，
+    /// 播放头必须停在原来的 X 位置，不得被带头部拖着走。
     #[test]
-    fn test_clamp_to_visible_follows_in_out_points() {
+    fn test_playhead_not_dragged_by_trimming_band_head() {
         let source = 30.0;
         let mut s = VideoClipState::new();
-        assert_eq!(s.video_window(source), (0.0, 30.0));
+        s.set_clip_position(2.0);
 
-        // 首端裁到 5s：播放头 2s 落在区间外 → 跟随到新的入点
+        // 首端裁到 5s：带起点右移到 5s，播放头仍应在 2s
         s.video_edit.set_trim_start(5.0, source);
-        assert!((s.clamp_clip_position_to_window(source) - 5.0).abs() < 1e-4);
-        // 入点之后的播放头保持在区间内不被挪动
-        s.set_clip_position(12.0);
-        assert!((s.clamp_clip_position_to_window(source) - 12.0).abs() < 1e-4);
+        assert!(
+            (s.clip_position_secs - 2.0).abs() < 1e-4,
+            "首端裁剪不得移动播放头，实际 {}",
+            s.clip_position_secs
+        );
+        assert_eq!(s.video_window(source), (5.0, 30.0));
+        // 此时播放头已不在带上 → 画面必须判定为「无素材带」
+        assert!(!s.position_in_video_window(source));
+        assert_eq!(s.video_source_secs_at(source), None);
 
-        // 尾端裁到只剩 [5, 20]：播放头 25s 落在区间外 → 跟随到新的出点
-        s.video_edit.set_trim_end(10.0, source);
-        assert_eq!(s.video_window(source), (5.0, 20.0));
+        // 尾端也裁：播放头依旧不动，仅改变带的可视区间
         s.set_clip_position(25.0);
-        assert!((s.clamp_clip_position_to_window(source) - 20.0).abs() < 1e-4);
+        s.video_edit.set_trim_end(10.0, source);
+        assert!((s.clip_position_secs - 25.0).abs() < 1e-4);
+        assert_eq!(s.video_window(source), (5.0, 20.0));
+        assert!(!s.position_in_video_window(source));
 
-        // 区间退化（历史裁剪越过新源长）时回落到区间起点，不 panic
+        // 播放头移到带内 → 恢复显示，且源时间落在可视区间内
+        s.set_clip_position(12.0);
+        assert!(s.position_in_video_window(source));
+        assert!((s.video_source_secs_at(source).expect("带内应给源时间") - 12.0).abs() < 1e-4);
+
+        // 回零回的是时间轴 0，不随带头移动
+        s.clip_rewind();
+        assert!(s.clip_position_secs.abs() < f32::EPSILON);
+    }
+
+    /// 画面取帧：时间轴时间 → 素材源时间必须扣除整体偏移（否则整体右移后画面错帧）。
+    #[test]
+    fn test_video_source_secs_maps_timeline_to_source() {
+        let source = 10.0;
+        let mut s = VideoClipState::new();
+        // 素材带整体右移 4s：时间轴 [4,14] 对应源 [0,10]
+        s.video_edit.set_offset(4.0);
+        assert_eq!(s.video_window(source), (4.0, 14.0));
+
+        // 带外：3.9s（带前）与 14.1s（带后）
+        s.set_clip_position(3.9);
+        assert_eq!(s.video_source_secs_at(source), None);
+        s.set_clip_position(14.1);
+        assert_eq!(s.video_source_secs_at(source), None);
+
+        // 带内：时间轴 7s → 源 3s
+        s.set_clip_position(7.0);
+        assert!((s.video_source_secs_at(source).expect("带内") - 3.0).abs() < 1e-4);
+        // 边界闭包：入点 4s → 源 0；出点 14s → 源 10
+        s.set_clip_position(4.0);
+        assert!((s.video_source_secs_at(source).expect("入点属带内") - 0.0).abs() < 1e-4);
+        s.set_clip_position(14.0);
+        assert!((s.video_source_secs_at(source).expect("出点属带内") - 10.0).abs() < 1e-4);
+
+        // 裁剪与偏移叠加：偏移 4s、首裁 2s、尾裁 3s → 时间轴 [6,11]，源 [2,7]
+        s.video_edit.set_trim_start(2.0, source);
+        s.video_edit.set_trim_end(3.0, source);
+        assert_eq!(s.video_window(source), (6.0, 11.0));
+        s.set_clip_position(8.0);
+        assert!((s.video_source_secs_at(source).expect("带内") - 4.0).abs() < 1e-4);
+        s.set_clip_position(5.5);
+        assert_eq!(s.video_source_secs_at(source), None);
+
+        // 退化源长（历史裁剪越界）不得 panic，且区间为空 → 恒 None
         let broken = ClipTrackEdit {
             offset_secs: 0.0,
             trim_in_secs: 8.0,
             trim_out_secs: 0.0,
         };
-        assert!((broken.clamp_to_visible(9.0, 3.0) - 8.0).abs() < 1e-4);
+        let mut b = VideoClipState::new();
+        b.video_edit = broken;
+        b.set_clip_position(9.0);
+        assert_eq!(b.video_source_secs_at(3.0), None);
     }
 
     /// 时间轴内容长度必须容纳被整体右移的素材带（否则拖出去就滚不回来）。
@@ -553,29 +597,27 @@ mod tests {
     fn test_clip_transport_advance_and_auto_stop() {
         let mut s = VideoClipState::new();
         // 非播放态推进无效
-        s.advance_clip_transport(0.5, (0.0, 10.0));
+        s.advance_clip_transport(0.5, 10.0);
         assert!(s.clip_position_secs.abs() < f32::EPSILON);
 
         // 播放推进累加
         s.clip_playing = true;
-        s.advance_clip_transport(0.25, (0.0, 10.0));
-        s.advance_clip_transport(0.25, (0.0, 10.0));
+        s.advance_clip_transport(0.25, 10.0);
+        s.advance_clip_transport(0.25, 10.0);
         assert!((s.clip_position_secs - 0.5).abs() < f32::EPSILON);
         assert!(s.clip_playing);
 
-        // 到出点自动停止并钉在出点
-        s.advance_clip_transport(99.0, (0.0, 10.0));
+        // 到时间轴内容末尾自动停止并钉在末尾
+        s.advance_clip_transport(99.0, 10.0);
         assert!((s.clip_position_secs - 10.0).abs() < f32::EPSILON);
         assert!(!s.clip_playing);
 
-        // 素材带首端被裁到 3s 后按播放：先对齐入点，再在出点停止
+        // 素材带只占 [3,4] 时，播放头仍可走过带外区间（自由游标，不因带而截止）
         let mut t = VideoClipState::new();
         t.clip_playing = true;
-        t.advance_clip_transport(0.5, (3.0, 4.0));
+        t.advance_clip_transport(3.5, 10.0);
         assert!((t.clip_position_secs - 3.5).abs() < f32::EPSILON);
-        t.advance_clip_transport(1.0, (3.0, 4.0));
-        assert!((t.clip_position_secs - 4.0).abs() < f32::EPSILON);
-        assert!(!t.clip_playing);
+        assert!(t.clip_playing, "走过素材带不应中断时间轴播放");
     }
 
     #[test]
@@ -583,15 +625,10 @@ mod tests {
         let mut s = VideoClipState::new();
         s.clip_playing = true;
         s.set_clip_position(7.0);
-        s.clip_rewind(0.0);
+        s.clip_rewind();
         assert!((s.clip_position_secs).abs() < f32::EPSILON);
         assert!(!s.clip_playing);
         s.clip_toggle_play();
         assert!(s.clip_playing);
-
-        // 素材带首端被裁掉后回零 → 停在入点，而非时间轴 0
-        s.clip_rewind(4.5);
-        assert!((s.clip_position_secs - 4.5).abs() < f32::EPSILON);
-        assert!(!s.clip_playing);
     }
 }

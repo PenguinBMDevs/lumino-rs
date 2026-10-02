@@ -199,12 +199,15 @@ impl Host {
         if is_renderer_entry {
             let size = *self.root.waterfall_player.size.borrow();
             let (width, height) = size.unwrap_or((1920, 1080));
-            // 画面进出显示：剪辑面板预览以「素材带当前时刻」为渲染锚点。
-            // 瀑布流 shader 的落点线 tick = scroll_x / zoom_x，故把锚点时间换算成
-            // tick 后回写 scroll_x（zoom_x 保留卷帘尺度）——出入点或播放头一变，
-            // 画面即跟随；锚点进签名，保证拖拽过程中实时重绘。
+            // 画面进出显示：剪辑面板预览以「播放头处的素材源帧」为渲染锚点。
+            // 瀑布流 shader 的落点线 tick = scroll_x / zoom_x，故把锚点 tick 回写
+            // scroll_x（zoom_x 保留卷帘尺度）——播放头或出入点一变，画面即跟随。
+            //
+            // `clip_preview_tick()` 返回 None 表示播放头不在素材带上：此时必须
+            // **释放预览纹理**，让画面回落到「无素材带」占位，绝不显示瀑布流。
+            // 两种状态（在带 / 不在带）都进签名，状态切换即触发一次刷新。
             let anchor_tick = self.root.clip_preview_tick();
-            let anchor_scroll_x = anchor_tick as f32 * zoom_x;
+            let anchor_scroll_x = anchor_tick.unwrap_or(0) as f32 * zoom_x;
             let mut sig: u64 = width as u64;
             sig = sig.wrapping_mul(31).wrapping_add(height as u64);
             sig = sig.wrapping_mul(31).wrapping_add(key_count as u64);
@@ -214,25 +217,37 @@ impl Host {
                 .wrapping_add(anchor_scroll_x as i64 as u64);
             sig = sig.wrapping_mul(31).wrapping_add(current_track as u64);
             sig = sig.wrapping_mul(31).wrapping_add(note_count as u64);
+            sig = sig
+                .wrapping_mul(31)
+                .wrapping_add(u64::from(anchor_tick.is_some()));
             let state = &mut self.root.waterfall_player;
             if state.cached_signature != Some(sig) {
-                let renderer = self
-                    .render_ctx
-                    .keyboard_renderer
-                    .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
-                if let Some(view) = renderer.render_scene(
-                    &self.render_ctx.device,
-                    &self.render_ctx.queue,
-                    width,
-                    height,
-                    key_count,
-                    note_data.clone(),
-                    zoom_x,
-                    anchor_scroll_x,
-                    current_track,
-                ) {
-                    state.view = Some(view);
-                    state.cached_signature = Some(sig);
+                match anchor_tick {
+                    Some(_) => {
+                        let renderer = self
+                            .render_ctx
+                            .keyboard_renderer
+                            .get_or_insert_with(|| KeyboardRenderer::new(&self.render_ctx.device));
+                        if let Some(view) = renderer.render_scene(
+                            &self.render_ctx.device,
+                            &self.render_ctx.queue,
+                            width,
+                            height,
+                            key_count,
+                            note_data.clone(),
+                            zoom_x,
+                            anchor_scroll_x,
+                            current_track,
+                        ) {
+                            state.view = Some(view);
+                            state.cached_signature = Some(sig);
+                        }
+                    }
+                    None => {
+                        // 播放头在素材带之外：无帧可显示，释放纹理（画面占位由 UI 呈现）
+                        state.view = None;
+                        state.cached_signature = Some(sig);
+                    }
                 }
             }
             // 剪辑窗口接管瀑布流预览，右侧栏预览应清空避免双重渲染

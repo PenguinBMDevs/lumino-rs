@@ -5,6 +5,7 @@ use iced_widget::{column, container, responsive, row, scrollable, text};
 
 use crate::root::Root;
 use crate::view::audio_export_dialog::view_audio_export_dialog;
+use crate::view::video_clip::preview::{PreviewGate, preview_gate, preview_placeholder};
 use crate::view::video_export_dialog::view_video_export_dialog;
 use crate::{Element, Theme};
 
@@ -131,45 +132,52 @@ impl Root {
                 ..Default::default()
             });
 
-            // 预览内容：有纹理则 shader 直合成，否则占位文本（提取 owned 颜色，避免借用 theme）
+            // 预览内容：**播放指示线压在素材带上**才显示瀑布流；
+            // 在带内但纹理未就绪 → 等待占位；不在带内 → 明确提示当前位置无素材。
+            // 判定与 Host 渲染侧同源（`position_in_video_window`），不会一个显示一个不显示。
+            let playhead_in_band = self
+                .state
+                .video_clip
+                .position_in_video_window(self.clip_real_duration_secs() as f32);
+            let texture_ready = waterfall_view.is_some();
             let preview_content: crate::Element<'_> =
-                if let Some(view) = waterfall_view.clone() {
-                    // 复用右侧栏同款 WaterfallPrimitive shader
-                    struct PreviewProgram {
-                        view: std::sync::Arc<iced_wgpu::wgpu::TextureView>,
+                match preview_gate(playhead_in_band, texture_ready) {
+                    PreviewGate::NoMaterial => preview_placeholder(
+                        "播放指示线不在视频带上（当前位置无素材）",
+                        strong_text,
+                    ),
+                    PreviewGate::WaitingRender => {
+                        preview_placeholder("瀑布流预览（等待渲染…）", strong_text)
                     }
-                    impl iced_widget::shader::Program<crate::Message> for PreviewProgram {
-                        type State = ();
-                        type Primitive =
-                            crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive;
-                        fn draw(
-                            &self,
-                            _state: &Self::State,
-                            _cursor: iced_core::mouse::Cursor,
-                            _bounds: iced_core::Rectangle,
-                        ) -> Self::Primitive {
-                            crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive::new(
-                                self.view.clone(),
-                            )
+                    PreviewGate::Waterfall => match waterfall_view.clone() {
+                        Some(view) => {
+                            // 复用右侧栏同款 WaterfallPrimitive shader
+                            struct PreviewProgram {
+                                view: std::sync::Arc<iced_wgpu::wgpu::TextureView>,
+                            }
+                            impl iced_widget::shader::Program<crate::Message> for PreviewProgram {
+                                type State = ();
+                                type Primitive =
+                                    crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive;
+                                fn draw(
+                                    &self,
+                                    _state: &Self::State,
+                                    _cursor: iced_core::mouse::Cursor,
+                                    _bounds: iced_core::Rectangle,
+                                ) -> Self::Primitive {
+                                    crate::right_sidebar::piano_waterfall::waterfall_primitive::WaterfallPrimitive::new(
+                                        self.view.clone(),
+                                    )
+                                }
+                            }
+                            iced_widget::shader::Shader::new(PreviewProgram { view })
+                                .width(Length::Fill)
+                                .height(Length::Fill)
+                                .into()
                         }
-                    }
-                    iced_widget::shader::Shader::new(PreviewProgram { view })
-                        .width(Length::Fill)
-                        .height(Length::Fill)
-                        .into()
-                } else {
-                    iced_widget::container(
-                        iced_widget::text("瀑布流预览（等待渲染…）")
-                            .size(13)
-                            .style(move |_t: &crate::Theme| iced_widget::text::Style {
-                                color: Some(strong_text),
-                            }),
-                    )
-                    .center_x(Length::Fill)
-                    .center_y(Length::Fill)
-                    .width(Length::Fill)
-                    .height(Length::Fill)
-                    .into()
+                        // 门控判定纹理就绪却取不到视图：不静默显示空画面，退占位
+                        None => preview_placeholder("瀑布流预览（纹理缺失）", strong_text),
+                    },
                 };
             // 严格 16:9 预览卡片：几何结构由可测试的 preview_card 构建（黑底 Fixed 盒 + 居中包装），
             // 禁止 center_x/center_y(Fill)——它们会把 Fixed 覆盖成 Fill（16:9 回归根因）

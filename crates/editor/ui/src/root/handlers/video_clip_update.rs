@@ -33,22 +33,21 @@ impl Root {
         )
     }
 
-    /// 剪辑面板预览锚点 tick：画面内容 = 素材带当前时刻对应的那一帧。
+    /// 剪辑面板预览锚点 tick：`Some` = 播放头压在视频带上，画面取该时刻的帧。
     ///
-    /// 锚点取「播放头钳进视频轨可视区间」后的时间换算出的 tick，
-    /// 因此出入点一变，画面必然落在素材带之内，与素材带当前状态严格一致。
-    pub(crate) fn clip_preview_tick(&self) -> u64 {
+    /// `None` = 播放头不在素材带上（带被裁短/右移后播放头落在带外），此时**必须
+    /// 不显示瀑布流**——否则就是把素材带之外的内容当画面（越界显示）。
+    ///
+    /// 锚点用**素材源时间**（播放头 − 整体偏移）换算 tick：素材带整体右移后
+    /// 时间轴时间与源时间不再相等，直接拿播放头当源时间会显示错帧。
+    pub(crate) fn clip_preview_tick(&self) -> Option<u64> {
         let source_len = self.clip_real_duration_secs() as f32;
-        let secs = self
-            .state
-            .video_clip
-            .video_edit
-            .clamp_to_visible(self.state.video_clip.clip_position_secs, source_len);
-        crate::view::video_clip::timeline::seconds_to_ticks(
-            secs.max(0.0) as f64,
+        let src_secs = self.state.video_clip.video_source_secs_at(source_len)?;
+        Some(crate::view::video_clip::timeline::seconds_to_ticks(
+            src_secs.max(0.0) as f64,
             self.editor.editor_state.view.ppq as u32,
             &self.tempo_pairs(),
-        )
+        ))
     }
 
     /// 剪辑面板内容真实时长（秒）：文档轨尾标换算，空工程回退画布默认
@@ -78,23 +77,17 @@ impl Root {
     /// 本时钟也不驱动卷帘走带。仅剪辑面板首级可见时推进；播放中滚动自动
     /// 跟随钉住走带线于区域前端 PLAYHEAD_X。
     ///
-    /// 传输区间取素材带可视区间 `(入点, 出点)`，并在每帧把播放头钳回区间内。
+    /// 播放指示线是**自由时间轴游标**：只有时间轴内容末尾才是它的边界，
+    /// 素材带区间不参与截止（带外只是画面不显示，见 [`Root::clip_preview_tick`]）。
     pub(crate) fn tick_video_clip_transport(&mut self, dt_secs: f32) {
         if !self.is_renderer_entry_active() {
             return;
         }
-        let duration = self.clip_real_duration_secs() as f32;
-        // 传输时钟以素材带可视区间为界：走到出点即停，不越过素材带当前状态
-        let window = self.state.video_clip.video_window(duration);
+        // 时间轴内容末尾（含素材带整体右移后的越界部分）——与标尺/滚动条同一权威值
+        let content_secs = self.clip_timeline_content_secs();
         self.state
             .video_clip
-            .advance_clip_transport(dt_secs, window);
-        // 每帧自愈：源长变化等外部原因造成的越界位置立即归位。由此保证
-        // 「播放头 == 画面锚点 == 素材带可视区间内」恒成立——画布走带线、
-        // 标题位置读数与预览画面三者不会再出现残留分歧。
-        self.state
-            .video_clip
-            .clamp_clip_position_to_window(duration);
+            .advance_clip_transport(dt_secs, content_secs);
         if self.state.video_clip.clip_playing {
             let pps_zoom = crate::view::video_clip::timeline_canvas::PIXELS_PER_SEC
                 * self.state.video_clip.zoom;
@@ -172,34 +165,25 @@ impl Root {
                 true
             }
             VideoClipAction::TimelineSeek { secs } => {
-                // 标尺定位：写剪辑面板独立传输时钟（与卷帘完全无关），
-                // 并钳进素材带可视区间——播放头与画面锚点必须同源，不留残影
-                let source_len = self.clip_real_duration_secs() as f32;
+                // 标尺定位：写剪辑面板独立传输时钟（与卷帘完全无关）。
+                // 播放头可落在时间轴任意 X 位置，不因素材带区间而受限；
+                // 上限由画布侧的 ruler_click_secs 钳到时间轴内容末尾。
                 self.state.video_clip.set_clip_position(secs);
-                self.state
-                    .video_clip
-                    .clamp_clip_position_to_window(source_len);
                 true
             }
             VideoClipAction::ClipPlayToggled => {
-                let source_len = self.clip_real_duration_secs() as f32;
+                let content_secs = self.clip_timeline_content_secs();
                 let s = &mut self.state.video_clip;
                 s.clip_toggle_play();
-                // 已停在出点（或区间之外）时按播放 → 从入点重新走，否则一按就停
-                if s.clip_playing {
-                    let (start, end) = s.video_window(source_len);
-                    if s.clip_position_secs >= end - f32::EPSILON {
-                        s.clip_position_secs = start;
-                    }
+                // 已停在时间轴末尾时按播放 → 从 0 重新走，否则一按就停
+                if s.clip_playing && s.clip_position_secs >= content_secs - f32::EPSILON {
+                    s.clip_position_secs = 0.0;
                 }
                 true
             }
             VideoClipAction::ClipRewound => {
-                // 回零 = 回到素材带入点：素材带开头被裁掉后停在时间轴 0 会让
-                // 播放头线与画面锚点分离（显示残留）
-                let source_len = self.clip_real_duration_secs() as f32;
-                let (start, _) = self.state.video_clip.video_window(source_len);
-                self.state.video_clip.clip_rewind(start);
+                // 回零 = 回到时间轴 0：播放头是自由游标，不随素材带头部移动
+                self.state.video_clip.clip_rewind();
                 true
             }
             VideoClipAction::ClipTrackOffsetChanged { track, offset_secs } => {
@@ -220,11 +204,9 @@ impl Root {
                     ClipTrimEdge::Start => edit.set_trim_start(trim_secs, source_len),
                     ClipTrimEdge::End => edit.set_trim_end(trim_secs, source_len),
                 }
-                // 出入点变化 → 播放头立即钳进新的可视区间：
-                // 拖拽过程中画面实时跟随，松手后播放头线与画面严格一致（无残留）
-                self.state
-                    .video_clip
-                    .clamp_clip_position_to_window(source_len);
+                // 播放头**不动**：素材带右移/裁短后它仍停在原时间轴位置。
+                // 画面是否显示由 clip_preview_tick 按「播放头是否压在带上」决定——
+                // 带不在播放头处就不显示瀑布流，无需搬动指示线。
                 true
             }
             VideoClipAction::PreviewSizeChanged { width, height } => {
@@ -257,5 +239,107 @@ impl Root {
                 true
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_core::storage::config::UiConfig;
+    use lumino_message::video_clip::{ClipTrack, ClipTrimEdge};
+
+    fn test_root() -> Root {
+        Root::new(&UiConfig::default())
+    }
+
+    /// 期望的画面锚点 tick（与生产实现同一换算，用于对齐断言）
+    fn expected_tick(root: &Root, source_secs: f32) -> u64 {
+        crate::view::video_clip::timeline::seconds_to_ticks(
+            source_secs as f64,
+            root.editor.editor_state.view.ppq as u32,
+            &root.tempo_pairs(),
+        )
+    }
+
+    /// 需求 1：首端裁剪（素材带向右缩小）**不得**把播放指示线一起拖走。
+    /// 需求 2：带不在播放头处 → 画面锚点为 None（上层据此不显示瀑布流）。
+    #[test]
+    fn test_trim_shrinks_band_without_dragging_playhead() {
+        let mut root = test_root();
+        let source = root.clip_real_duration_secs() as f32;
+        assert!(source > 1.0, "工程兜底时长应 >1s，实际 {source}");
+
+        // 播放头落在带上（默认带 = [0, source]）→ 有画面锚点
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: 1.0 });
+        assert_eq!(root.clip_preview_tick(), Some(expected_tick(&root, 1.0)));
+
+        // 首端裁掉一半 → 带起点右移，播放头必须原地不动
+        let trim = (source * 0.5).min(5.0);
+        assert!(trim > 1.0, "测试前提：裁剪量需大于播放头位置");
+        root.handle_video_clip_action(VideoClipAction::ClipTrimChanged {
+            track: ClipTrack::Video,
+            edge: ClipTrimEdge::Start,
+            trim_secs: trim,
+        });
+        assert!(
+            (root.state.video_clip.clip_position_secs - 1.0).abs() < 1e-4,
+            "首端裁剪不得移动播放头，实际 {}",
+            root.state.video_clip.clip_position_secs
+        );
+        assert!(
+            !root.state.video_clip.position_in_video_window(source),
+            "播放头 1.0s 已落在带 [{trim}, {source}] 之外"
+        );
+        assert!(
+            root.clip_preview_tick().is_none(),
+            "带不在播放头处时不得给出画面锚点（否则会显示瀑布流）"
+        );
+
+        // 播放头移回带内 → 锚点恢复，且等于「播放头时刻」对应的帧
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: trim + 1.0 });
+        assert_eq!(
+            root.clip_preview_tick(),
+            Some(expected_tick(&root, trim + 1.0)),
+            "带内锚点应为播放头时刻对应的帧"
+        );
+
+        // 播放头可落在带之外的任意 X（自由游标，不受带区间约束）
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: 0.0 });
+        assert_eq!(root.state.video_clip.clip_position_secs, 0.0);
+        assert!(root.clip_preview_tick().is_none());
+
+        // 回零 = 时间轴 0，不随带头移动
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: 2.0 });
+        root.handle_video_clip_action(VideoClipAction::ClipRewound);
+        assert!(root.state.video_clip.clip_position_secs.abs() < f32::EPSILON);
+    }
+
+    /// 需求 2 的另一半：素材带整体右移后，时间轴时间 ≠ 源时间，
+    /// 画面锚点必须扣除偏移，否则显示的是错帧。
+    #[test]
+    fn test_offset_shifts_preview_frame_mapping() {
+        let mut root = test_root();
+        let source = root.clip_real_duration_secs() as f32;
+        let offset = (source * 0.5).min(3.0);
+        assert!(offset > 0.5, "测试前提：偏移需可观测");
+        root.handle_video_clip_action(VideoClipAction::ClipTrackOffsetChanged {
+            track: ClipTrack::Video,
+            offset_secs: offset,
+        });
+
+        // 带左缘之前：无锚点
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: offset * 0.5 });
+        assert!(
+            root.clip_preview_tick().is_none(),
+            "带左缘之前不得显示瀑布流"
+        );
+
+        // 带内：时间轴 offset+1s → 源 1s 的帧
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: offset + 1.0 });
+        assert_eq!(
+            root.clip_preview_tick(),
+            Some(expected_tick(&root, 1.0)),
+            "整体右移后锚点必须扣除偏移（否则错帧）"
+        );
     }
 }

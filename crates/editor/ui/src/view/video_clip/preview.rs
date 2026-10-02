@@ -55,6 +55,54 @@ where
         .into()
 }
 
+/// 预览内容门控决策（纯函数，便于测试）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PreviewGate {
+    /// 显示瀑布流纹理
+    Waterfall,
+    /// 播放指示线不在素材带上：无帧可显示
+    NoMaterial,
+    /// 带内有素材但纹理尚未就绪
+    WaitingRender,
+}
+
+/// 决定预览区显示什么：**播放指示线不在素材带上时，无论纹理是否仍驻留，
+/// 都不得显示瀑布流**。
+///
+/// 这是本卡的关键次序：先判「在不在带上」，再判「纹理就绪没」。反过来写
+/// （先看纹理）会让素材带被裁走/右移后，画面上仍残留裁剪前那一帧。
+pub fn preview_gate(playhead_in_band: bool, texture_ready: bool) -> PreviewGate {
+    match (playhead_in_band, texture_ready) {
+        (false, _) => PreviewGate::NoMaterial,
+        (true, true) => PreviewGate::Waterfall,
+        (true, false) => PreviewGate::WaitingRender,
+    }
+}
+
+/// 预览占位内容（无帧可显示时）。
+///
+/// 两种无帧原因共用同一呈现：纹理尚未就绪，或播放指示线不在素材带上
+/// （后者绝不允许退回显示瀑布流，见 [`preview_gate`]）。
+pub fn preview_placeholder<'a, Message, Renderer>(
+    message: impl Into<String>,
+    color: Color,
+) -> Element<'a, Message, iced_core::Theme, Renderer>
+where
+    Message: 'a,
+    Renderer: iced_core::text::Renderer + 'a,
+{
+    iced_widget::container(
+        iced_widget::text(message.into())
+            .size(13)
+            .style(move |_t: &iced_core::Theme| iced_widget::text::Style { color: Some(color) }),
+    )
+    .center_x(Length::Fill)
+    .center_y(Length::Fill)
+    .width(Length::Fill)
+    .height(Length::Fill)
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,6 +180,18 @@ mod tests {
 
     fn approx(a: f32, b: f32) -> bool {
         (a - b).abs() < 0.5
+    }
+
+    /// 视频带不在当前画面（播放指示线在带外）时，**即便旧纹理仍在驻留**，
+    /// 预览也不得显示瀑布流——这是本卡明确要求的次序。
+    #[test]
+    fn test_preview_gate_hides_waterfall_when_playhead_off_band() {
+        // 带外 + 纹理驻留（素材带刚被裁走/右移的那一帧）→ 必须 NoMaterial
+        assert_eq!(preview_gate(false, true), PreviewGate::NoMaterial);
+        assert_eq!(preview_gate(false, false), PreviewGate::NoMaterial);
+        // 带内才允许显示/等待
+        assert_eq!(preview_gate(true, true), PreviewGate::Waterfall);
+        assert_eq!(preview_gate(true, false), PreviewGate::WaitingRender);
     }
 
     #[test]
