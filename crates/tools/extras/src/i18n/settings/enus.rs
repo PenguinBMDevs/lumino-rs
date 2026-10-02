@@ -133,4 +133,7 @@ pub(super) static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     compat_check_on_startup_hint: "When disabled, startup checks are skipped; enable to diagnose startup issues (deadlock prevention)",
     compat_show_warning: "Show GPU compatibility warning on startup",
     compat_show_warning_hint: "When disabled, checks still run; failures only appear in the status bar and logs without the warning window",
+    compat_domino_clipboard: "Interoperate with Domino clipboard",
+    compat_domino_clipboard_hint: "When enabled, copying also writes the Domino (MidiPortalSequence) format and pasting can parse Domino data; large selections cost extra time and memory",
+    compat_domino_clipboard_unsupported_hint: "Windows only (this platform has no Domino clipboard interoperability)",
 };

@@ -289,6 +289,12 @@ pub struct SettingsTranslations {
     pub compat_show_warning: &'static str,
     /// 启动警告提示
     pub compat_show_warning_hint: &'static str,
+    /// Domino（TAKABO SOFT）剪贴板互粘开关
+    pub compat_domino_clipboard: &'static str,
+    /// Domino 剪贴板互粘开关提示（可用的平台）
+    pub compat_domino_clipboard_hint: &'static str,
+    /// Domino 剪贴板互粘开关提示（当前平台不支持时的置灰说明）
+    pub compat_domino_clipboard_unsupported_hint: &'static str,
 }
 
 /// 获取设置面板翻译

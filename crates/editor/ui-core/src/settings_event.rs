@@ -145,6 +145,8 @@ pub enum Event {
     GpuCheckOnStartupChanged(bool),
     /// 启动 GPU 警告抑制开关变更（true = 不再弹窗；UI 开关显示为其取反）
     GpuWarningSuppressedChanged(bool),
+    /// Domino（TAKABO SOFT）剪贴板互粘开关变更（仅 Windows 生效）
+    DominoClipboardEnabledChanged(bool),
     /// 请求手动执行 GPU 兼容性检查
     RunGpuCompatibilityCheck,
     /// 请求复制 GPU 诊断信息

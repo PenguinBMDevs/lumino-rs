@@ -181,6 +181,8 @@ pub struct CompatSettings {
     pub check_on_startup: bool,
     /// 抑制启动警告（"启动时显示警告"开关的反向值）
     pub warning_suppressed: bool,
+    /// 是否启用 Domino（TAKABO SOFT）剪贴板互粘（仅 Windows 生效，默认关闭）
+    pub domino_clipboard_enabled: bool,
     /// 手动检查状态（会话内瞬态，不持久化）
     pub check_state: GpuCheckUiState,
     /// 复制按钮的瞬时"已复制"状态

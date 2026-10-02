@@ -30,5 +30,8 @@ fn test_settings_translations_not_empty() {
         assert!(!t.about_title.is_empty());
         assert!(!t.compatibility.is_empty());
         assert!(!t.compat_check_button.is_empty());
+        assert!(!t.compat_domino_clipboard.is_empty());
+        assert!(!t.compat_domino_clipboard_hint.is_empty());
+        assert!(!t.compat_domino_clipboard_unsupported_hint.is_empty());
     }
 }

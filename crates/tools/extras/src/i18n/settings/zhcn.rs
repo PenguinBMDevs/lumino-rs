@@ -133,4 +133,7 @@ pub(super) static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     compat_check_on_startup_hint: "关闭后不再执行启动检测；开启可用于诊断启动异常（防止死锁）",
     compat_show_warning: "启动时显示 GPU 兼容性警告",
     compat_show_warning_hint: "关闭后检测仍会执行，失败时仅在状态栏与日志中提示，不弹出警告窗",
+    compat_domino_clipboard: "与 Domino 互通剪贴板",
+    compat_domino_clipboard_hint: "开启后复制会额外写入 Domino(MidiPortalSequence) 格式，粘贴可解析 Domino 数据；大选区复制会额外耗时并占用内存",
+    compat_domino_clipboard_unsupported_hint: "仅 Windows 生效（当前平台无 Domino 剪贴板互通实现）",
 };
