@@ -13,8 +13,6 @@ pub fn render_audio_gpu_from_document(
     doc: &MidiDocument,
 ) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
 
     check_control(config)?;
 
@@ -83,7 +81,7 @@ pub fn render_audio_gpu_from_document(
         .load_soundfont(sf_path, 0, 0)
         .map_err(|e| ExportError::AudioWrite(format!("GPU 音色库加载失败 {sf_path:?}: {e}")))?;
 
-    report("GPU 导出临时 MIDI...", 0.15);
+    report("GPU 序列化 MIDI（内存）...", 0.15);
     check_control(config)?;
     // 空文档直接报错，交由上层回退到文件模式
     let total_notes: usize = doc.notes.iter().map(|v| v.len()).sum();
@@ -92,17 +90,9 @@ pub fn render_audio_gpu_from_document(
             "MIDI 文档中没有可渲染的事件（0 notes），请检查 MIDI 是否已加载".into(),
         ));
     }
-    // 构造临时 MIDI 文件
+    // EXP-002：SMF 序列化只发生在内存，直喂 GPU —— 全程无临时 MIDI 文件、无重复导出
     let export_data = build_export_data(doc, config);
     let midi_bytes = crate::midi::export_midi_to_bytes(&export_data)?;
-
-    let mut tmp = NamedTempFile::new()
-        .map_err(|e| ExportError::AudioWrite(format!("创建临时 MIDI 失败: {e}")))?;
-    tmp.write_all(&midi_bytes)
-        .map_err(|e| ExportError::AudioWrite(format!("写入临时 MIDI 失败: {e}")))?;
-    tmp.flush()
-        .map_err(|e| ExportError::AudioWrite(format!("刷新临时 MIDI 失败: {e}")))?;
-    let tmp_path = tmp.path().to_path_buf();
 
     report("GPU 渲染中（可能耗时，黑 MIDI 请耐心）...", 0.20);
     check_control(config)?;
@@ -115,7 +105,7 @@ pub fn render_audio_gpu_from_document(
         })));
     }
     attach_render_progress(&mut synth, config);
-    let result = synth.render_midi_file(&tmp_path).map_err(|e| match e {
+    let result = synth.render_midi_bytes(&midi_bytes).map_err(|e| match e {
         lumino_gpu_synth::SynthError::Cancelled => ExportError::Aborted,
         other => ExportError::AudioWrite(format!("GPU 渲染失败: {other}")),
     })?;

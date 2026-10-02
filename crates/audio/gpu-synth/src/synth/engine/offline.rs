@@ -1,10 +1,34 @@
 use super::*;
 
 impl GpuSynth {
+    /// 从磁盘路径解析并渲染（兼容入口）。
     pub(crate) fn render_midi_inner(
         &mut self,
         midi_path: impl AsRef<std::path::Path>,
         limit_frames: Option<u64>,
+    ) -> Result<RenderResult, SynthError> {
+        let t0 = std::time::Instant::now();
+        let midi = MidiFile::load(midi_path, self.config.sample_rate)?;
+        self.render_midi_parsed(midi, limit_frames, t0.elapsed())
+    }
+
+    /// 从内存 SMF 字节解析并渲染（EXP-002：文档导出直喂内存数据，无临时文件）。
+    pub(crate) fn render_midi_bytes_inner(
+        &mut self,
+        raw: &[u8],
+        limit_frames: Option<u64>,
+    ) -> Result<RenderResult, SynthError> {
+        let t0 = std::time::Instant::now();
+        let midi = MidiFile::parse(raw, self.config.sample_rate)?;
+        self.render_midi_parsed(midi, limit_frames, t0.elapsed())
+    }
+
+    /// 共享渲染体（与解析来源无关）。
+    fn render_midi_parsed(
+        &mut self,
+        midi: MidiFile,
+        limit_frames: Option<u64>,
+        parse_time: std::time::Duration,
     ) -> Result<RenderResult, SynthError> {
         self.offline_cursor = 0;
         self.offline_events = Vec::new();
@@ -17,8 +41,7 @@ impl GpuSynth {
         self.pending = None;
 
         let prof = std::env::var("LUMINO_PROFILE").is_ok();
-        let t0 = std::time::Instant::now();
-        let midi = MidiFile::load(midi_path, self.config.sample_rate)?;
+        // t1 语义与拆分前一致：解析完成、渲染开始前的时刻（profile 口径不变）。
         let t1 = std::time::Instant::now();
         self.offline_events = midi.sequence.events;
 
@@ -236,7 +259,7 @@ impl GpuSynth {
             let t2 = std::time::Instant::now();
             eprintln!(
                 "[profile] midi load: {:?}, render loops: {:?}, flush: {:?}",
-                t1 - t0,
+                parse_time,
                 t2 - t1,
                 t2.elapsed()
             );
