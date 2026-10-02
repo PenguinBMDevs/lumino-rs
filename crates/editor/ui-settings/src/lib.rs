@@ -230,15 +230,18 @@ pub struct CloudConnItem {
 }
 
 /// 渲染设置面板主视图
+///
+/// `egg` 为「关于」页 logo 彩蛋状态（UI-007）：仅关于页需要，其余页面忽略。
 pub fn view<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
+    egg: &'a lumino_ui_core::state::AboutEggState,
 ) -> Element<'a> {
     let menu_items = menu::create_menu_items(settings.display.language);
 
     let menu_list = menu::render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area(settings, window, system_fonts);
+    let content_area = render_content_area(settings, window, system_fonts, egg);
 
     let main_content = row![
         menu_list,
@@ -259,6 +262,7 @@ fn render_content_area<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
+    egg: &'a lumino_ui_core::state::AboutEggState,
 ) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),
@@ -270,7 +274,7 @@ fn render_content_area<'a>(
         6 => editing_view(settings),
         7 => cloud_view(settings),
         8 => compatibility_view(settings),
-        9 => about_view(settings),
+        9 => about_view(settings, egg),
         _ => render_placeholder("设置内容区域").into(),
     };
 

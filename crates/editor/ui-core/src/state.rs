@@ -1,3 +1,4 @@
+pub mod about_egg;
 pub mod audio_export_state;
 pub mod batch_edit_state;
 pub mod collaboration_state;
@@ -14,6 +15,7 @@ pub mod toggle_animation;
 pub mod video_clip_state;
 pub mod video_export_state;
 
+pub use about_egg::AboutEggState;
 pub use audio_export_state::AudioExportDialogState;
 pub use batch_edit_state::{BatchEditDialogState, BatchEditOperation, parse_batch_edit_input};
 pub use collaboration_state::{CollaborationDialogState, CollaborationViewState};

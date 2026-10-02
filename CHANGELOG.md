@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 设置面板 · 关于页 Lumino Logo 与点击彩蛋（UI-007，第一批不含音效）
+
+- **关于页 logo 与彩蛋交互** — 「设置 → 关于」页顶部新增 Lumino logo（复用 `Icon::LogoInApp`，
+  **未新建面板/窗口**）：单击原地晃动一次（0.30s 衰减收正弦、±7px，用左右定宽占位器表达位移，
+  行宽恒定不引起重排）；连点累计满 **15** 次触发彩蛋序列——
+  **快速转动（2 圈/0.5s）→ 脱离原位（0.22s ease-out）→ 飞向窗口中轴 Y 以上随机位置 →
+  匀加速砸向窗口底部（0.55s，重力按落点距离反解以稳定时长）→ 打入位停顿（0.08s，音效挂载点）
+  → 渐隐消失（0.35s）**。相邻点击间隔超过 **2s** 计数清零重新累计（惰性判定，无定时器）。
+- **消失状态仅进程内保持** — 用 `lumino-ui-core` 的进程级 `static AtomicBool` 承载，不写任何配置：
+  重开设置面板/关于页不再出现，重启恢复。**不能**放面板状态：设置面板是独立窗口，
+  每次打开都会 `Host::new_settings_dialog` 重建 `RootState`（`dialog/src/manager/lifecycle.rs`、
+  `ui/src/host/builder.rs`），面板内字段必被重置。
+- **逐帧驱动（关键陷阱）** — 对话框的 `ui_dirty` 只在「消息产生状态变更」或 iced 返回
+  `State::Updated` 时置位；事件队列清空后 `render_iced_ui` 走「仅 present 缓存帧」早退路径
+  （`host/render/ui.rs`），**只喂 `AnimationTick` 不置脏 = 动画冻结**。故 `frame.rs` 门控纳入彩蛋
+  动画并显式置脏（先例：同文件播放分支），`DialogManager::update()` 既有 `redraw()` 路径即足，
+  无需改动 `dialog` crate。
+- **几何口径** — `window::Window` 无尺寸字段、视图层拿不到 viewport：由 Host 每帧
+  `set_viewport()` 注入、路由点击消息前 `set_click_point()` 注入光标（`mouse_area::on_press`
+  不携带坐标且 `on_move` 会在悬停期制造高频消息，故不用），状态机在像素域解算并钳制
+  （落点仅取中轴 Y 以上、落地钳在窗口底部内）。悬浮层挂 `view_dialog`（整窗）而非设置内容区，
+  坐标系与 Host 视口逐像素一致，logo 可越过自有标题栏但严格限制在窗口可见区内；
+  该层不套 `mouse_area` ⇒ 点击穿透，底层设置内容照常可点。
+- **旋转尺寸补偿** — iced `Svg` 以旋转后包围盒参与 `ContentFit::Contain` 缩放，不补偿时
+  非正方形 logo 转动中会周期性缩到约 77%；`ui-core` 新增 `icon::view_transformed()`（旋转 + 不透明度）
+  并按 AABB 长边比补偿，控件置于固定方盒居中吸收布局呼吸。附带：`SettingsPanel::update` 是
+  **穷尽匹配、无 catch-all**，新增 `Event` 变体必须同步补 arm（本次已补）。
+- **验证** — `cargo test -p lumino-ui-core about_egg`（状态机 10 项：计数/超时/相位时序/自然加速/
+  中轴约束/越界/硬超时/消失语义）、`cargo test -p lumino-ui about_egg`（消息→处理器→状态→视图接线
+  与序列终止）、`cargo test -p lumino-ui-settings`（消除后不再渲染 logo）；`cargo fmt --check` /
+  `cargo clippy --workspace --all-targets -- -D warnings` 通过；新增 `.rs` 无 BOM。
+  记录见 `docs/2026-10-02-UI-007-关于界面Logo与彩蛋实施记录.md`（调研见同名「调研」文档）。
+- **遗留** — 音效按拍板改走内置 CC0 素材路线、**推迟第二批**（`EggPhase::Impact` 已留挂载点）；
+  视觉流畅度与「非动画期无常态重绘」需实机人工确认。
+
 ### REND-002 多端口（Phase 1：映射原语与写死解锁）
 
 - **共享映射原语** — 新增 `multi_port` 模块：`global_channel(port, ch) = port*16+ch`（u16 防溢出）、

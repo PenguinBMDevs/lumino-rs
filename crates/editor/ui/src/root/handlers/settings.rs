@@ -9,6 +9,7 @@ use crate::root::handlers::MessageHandler;
 use lumino_core::storage::config::SynthBackend;
 use lumino_ui_core::settings_event::OutputType;
 use lumino_ui_core::state::GpuCheckUiState;
+use std::time::Instant;
 
 /// 设置消息处理器
 #[derive(Default)]
@@ -142,6 +143,27 @@ impl MessageHandler for SettingsHandler {
                             tracing::info!("GPU 诊断信息已复制到剪贴板");
                         }
                         Err(e) => tracing::warn!("复制 GPU 诊断信息失败: {e}"),
+                    }
+                }
+            }
+            crate::settings::Event::AboutLogoClicked => {
+                // 关于页 logo 彩蛋（UI-007）：点击指针位置已由 Host 在路由前写入
+                // `state.about_egg`（`mouse_area::on_press` 不携带坐标）。
+                let clicks_before = root.state.about_egg.clicks();
+                let consumed = root.state.about_egg.on_logo_click(Instant::now());
+                if consumed {
+                    if root.state.about_egg.is_airborne() {
+                        tracing::info!(
+                            "关于页 logo 彩蛋触发：{} 连点（此前计数 {}）",
+                            lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD,
+                            clicks_before + 1
+                        );
+                    } else {
+                        tracing::debug!(
+                            "关于页 logo 单击反馈：计数 {}/{}",
+                            root.state.about_egg.clicks(),
+                            lumino_ui_core::state::about_egg::ABOUT_EGG_CLICK_THRESHOLD
+                        );
                     }
                 }
             }
