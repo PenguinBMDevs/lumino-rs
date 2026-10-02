@@ -36,8 +36,10 @@ impl XSynthOutputConn {
 }
 
 impl OutputConnection for XSynthOutputConn {
-    fn note_on(&mut self, ch: u8, key: u8, vel: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
+    fn note_on(&mut self, ch: u16, key: u8, vel: u8) -> Result<(), Error> {
+        // REND-002：直接消费全局通道（port*16+channel），由合成层按 Custom
+        // 通道数寻址；合成器对越界通道静默忽略，不再做 4bit 折叠。
+        let channel = u32::from(ch);
         let velocity = if vel == 0 { 1 } else { vel };
         self.send_event(SynthEvent::Channel(
             channel,
@@ -49,8 +51,8 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn note_off(&mut self, ch: u8, key: u8, _vel: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
+    fn note_off(&mut self, ch: u16, key: u8, _vel: u8) -> Result<(), Error> {
+        let channel = u32::from(ch);
         self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
@@ -60,8 +62,8 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn control_change(&mut self, ch: u8, controller: u8, value: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
+    fn control_change(&mut self, ch: u16, controller: u8, value: u8) -> Result<(), Error> {
+        let channel = u32::from(ch);
         self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(
@@ -71,8 +73,8 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn program_change(&mut self, ch: u8, program: u8) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
+    fn program_change(&mut self, ch: u16, program: u8) -> Result<(), Error> {
+        let channel = u32::from(ch);
         self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(program)),
@@ -80,8 +82,8 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> Result<(), Error> {
-        let channel = (ch & MIDI_CHANNEL_MASK) as u32;
+    fn pitch_bend(&mut self, ch: u16, value: f32) -> Result<(), Error> {
+        let channel = u32::from(ch);
         self.send_event(SynthEvent::Channel(
             channel,
             ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(

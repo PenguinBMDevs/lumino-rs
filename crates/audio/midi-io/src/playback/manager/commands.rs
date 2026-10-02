@@ -180,16 +180,18 @@ pub(crate) fn flush_midi_messages(
     let msg_count = messages.len();
 
     for msg in messages {
+        // REND-002：播放消息的通道暂为 u8（0..15，端口 0 语义）；接口按 u16
+        // 全局通道接收，Phase 3 接线后此处透传 port*16+ch。
         match msg {
             MidiMessage::NoteOn {
                 channel,
                 key,
                 velocity,
             } => {
-                let _ = out.note_on(*channel, *key, *velocity);
+                let _ = out.note_on(u16::from(*channel), *key, *velocity);
             }
             MidiMessage::NoteOff { channel, key } => {
-                let _ = out.note_off(*channel, *key, 0);
+                let _ = out.note_off(u16::from(*channel), *key, 0);
             }
             MidiMessage::ControlChange {
                 channel,
@@ -202,23 +204,23 @@ pub(crate) fn flush_midi_messages(
                     controller,
                     value,
                 );
-                let _ = out.control_change(*channel, *controller, *value);
+                let _ = out.control_change(u16::from(*channel), *controller, *value);
             }
             MidiMessage::ProgramChange { channel, program } => {
-                let _ = out.program_change(*channel, *program);
+                let _ = out.program_change(u16::from(*channel), *program);
             }
             MidiMessage::PitchBend { channel, value } => {
-                let _ = out.pitch_bend(*channel, *value);
+                let _ = out.pitch_bend(u16::from(*channel), *value);
             }
             MidiMessage::ChannelPressure { channel, pressure } => {
-                let _ = out.channel_pressure(*channel, *pressure);
+                let _ = out.channel_pressure(u16::from(*channel), *pressure);
             }
             MidiMessage::PolyPressure {
                 channel,
                 key,
                 pressure,
             } => {
-                let _ = out.poly_pressure(*channel, *key, *pressure);
+                let _ = out.poly_pressure(u16::from(*channel), *key, *pressure);
             }
         }
     }

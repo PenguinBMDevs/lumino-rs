@@ -14,6 +14,10 @@ pub(crate) struct MergedEvent {
     /// 0=NoteOn, 1=NoteOff, 2=CC, 3=PC, 4=PB
     pub(crate) kind: u8,
     pub(crate) channel: u8,
+    /// 来源轨道的 MIDI 端口（FF 21，默认 0；REND-002 多端口映射）。
+    ///
+    /// 填补原结构体对齐 padding，不增加 `MergedEvent` 体积。
+    pub(crate) port: u8,
     pub(crate) param1: u8,
     pub(crate) param2: u16,
 }
@@ -36,13 +40,15 @@ impl MidiDocEventStream {
         let total = total_notes * 2 + doc.control_events.len();
         let mut events = Vec::with_capacity(total);
 
-        // 展开所有音符为 NoteOn/NoteOff
-        for track_notes in doc.notes.iter() {
+        // 展开所有音符为 NoteOn/NoteOff；端口取来源轨道（FF 21）
+        for (track_idx, track_notes) in doc.notes.iter().enumerate() {
+            let port = doc.track_port(track_idx as u16);
             for note in track_notes.iter() {
                 events.push(MergedEvent {
                     tick: note.start_tick,
                     kind: 0,
                     channel: note.channel,
+                    port,
                     param1: note.key,
                     param2: note.velocity as u16,
                 });
@@ -50,13 +56,15 @@ impl MidiDocEventStream {
                     tick: note.end_tick,
                     kind: 1,
                     channel: note.channel,
+                    port,
                     param1: note.key,
                     param2: 0,
                 });
             }
         }
-        // 展开控制事件
+        // 展开控制事件（携带各自来源轨道的端口）
         for ctrl in doc.control_events.iter() {
+            let port = doc.track_port(ctrl.track);
             match ctrl.kind {
                 0 => {
                     let (c, v) = ctrl.as_control_change();
@@ -64,6 +72,7 @@ impl MidiDocEventStream {
                         tick: ctrl.tick,
                         kind: 2,
                         channel: ctrl.channel,
+                        port,
                         param1: c,
                         param2: v as u16,
                     });
@@ -72,6 +81,7 @@ impl MidiDocEventStream {
                     tick: ctrl.tick,
                     kind: 3,
                     channel: ctrl.channel,
+                    port,
                     param1: ctrl.as_program_change(),
                     param2: 0,
                 }),
@@ -79,6 +89,7 @@ impl MidiDocEventStream {
                     tick: ctrl.tick,
                     kind: 4,
                     channel: ctrl.channel,
+                    port,
                     param1: 0,
                     param2: ctrl.param,
                 }),
@@ -253,5 +264,43 @@ mod tests {
             events.push((e.tick, e.kind));
         }
         assert_eq!(events, vec![(0, 0), (10, 1), (10, 0), (20, 1)]);
+    }
+
+    /// REND-002：音符事件携带来源轨道的 MIDI 端口（FF 21）。
+    #[test]
+    fn test_merged_event_carries_track_port() {
+        let mut doc = make_doc(
+            vec![
+                vec![NoteEvent::new(0, 10, 60, 100, 0)],
+                vec![NoteEvent::new(0, 10, 64, 100, 1)],
+            ],
+            10,
+        );
+        doc.track_ports = vec![0, 1];
+        let mut stream = MidiDocEventStream::new(&doc);
+        let e1 = stream.next_event().expect("第 1 个事件应存在");
+        assert_eq!((e1.kind, e1.channel, e1.port), (0, 0, 0), "轨 0 端口应为 0");
+        let e2 = stream.next_event().expect("第 2 个事件应存在");
+        assert_eq!((e2.kind, e2.channel, e2.port), (0, 1, 1), "轨 1 端口应为 1");
+    }
+
+    /// REND-002：控制事件按各自来源轨道 (`ctrl.track`) 携带端口。
+    #[test]
+    fn test_control_event_carries_track_port() {
+        use midly::loader::PackedControlEvent;
+
+        let mut doc = make_doc(vec![vec![NoteEvent::new(5, 10, 60, 100, 0)]], 10);
+        doc.track_ports = vec![3];
+        doc.control_events =
+            lumino_midi_model::ChunkedList::from_sorted(vec![PackedControlEvent::control_change(
+                0, 0, 5, 7, 100,
+            )]);
+        let mut stream = MidiDocEventStream::new(&doc);
+        let e = stream.next_event().expect("控制事件应存在");
+        assert_eq!(
+            (e.kind, e.channel, e.port),
+            (2, 5, 3),
+            "CC 应携带来源轨道端口"
+        );
     }
 }

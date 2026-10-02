@@ -12,17 +12,21 @@ use super::cursor::TrackCursor;
 
 // ── Tempo 扫描结果 ────────────────────────────────────────
 
-/// 预扫描结果：Tempo 变化列表 + 最大 tick。
+/// 预扫描结果：Tempo 变化列表 + 最大 tick + 每轨 MIDI 端口（FF 21）。
 struct ScanResult {
     tempo_changes: Vec<(u32, f32)>,
     total_ticks: u64,
     ppqn: u32,
+    /// 每轨 MIDI 端口（FF 21 MidiPort，取首个出现值；无则 0）。
+    /// REND-002 多端口：供流式导出按来源轨道映射全局通道。
+    track_ports: Vec<u8>,
 }
 
-/// 预扫描所有轨道的 Tempo 事件并累计最大 tick。
+/// 预扫描所有轨道的 Tempo 事件与 MIDI 端口（FF 21），并累计最大 tick。
 fn scan_tempos(smf: &MmapSmf) -> ScanResult {
     let mut changes: Vec<(u32, f32)> = Vec::new();
     let mut max_tick: u64 = 0;
+    let mut track_ports: Vec<u8> = Vec::with_capacity(smf.tracks().len());
     let ppqn = match smf.header().timing {
         midly::Timing::Metrical(t) => u16::from(t) as u32,
         midly::Timing::Timecode(_, _) => 480,
@@ -30,15 +34,24 @@ fn scan_tempos(smf: &MmapSmf) -> ScanResult {
 
     for track in smf.tracks() {
         let mut tick: u64 = 0;
+        let mut port: Option<u8> = None;
         for ev in track.iter().flatten() {
             tick += u32::from(ev.delta) as u64;
-            if let TrackEventKind::Meta(MetaMessage::Tempo(tempo)) = ev.kind {
-                let bpm = 60_000_000.0 / tempo.as_int() as f32;
-                if bpm > 0.0 {
-                    changes.push((tick as u32, bpm));
+            match ev.kind {
+                TrackEventKind::Meta(MetaMessage::Tempo(tempo)) => {
+                    let bpm = 60_000_000.0 / tempo.as_int() as f32;
+                    if bpm > 0.0 {
+                        changes.push((tick as u32, bpm));
+                    }
                 }
+                // FF 21 MidiPort：与加载链路一致，取首个出现值（`document_build.rs:152`）。
+                TrackEventKind::Meta(MetaMessage::MidiPort(p)) if port.is_none() => {
+                    port = Some(u8::from(p));
+                }
+                _ => {}
             }
         }
+        track_ports.push(port.unwrap_or(0));
         max_tick = max_tick.max(tick);
     }
 
@@ -60,6 +73,7 @@ fn scan_tempos(smf: &MmapSmf) -> ScanResult {
         tempo_changes: changes,
         total_ticks: max_tick,
         ppqn,
+        track_ports,
     }
 }
 
@@ -87,6 +101,10 @@ pub struct StreamingMidiPlayer<'a> {
     pub total_ticks: u64,
     /// PPQN
     pub ppqn: u32,
+    /// 每轨 MIDI 端口（FF 21，按轨道索引；无则 0）。
+    ///
+    /// REND-002 多端口：流式导出按来源轨道查端口并映射全局通道。
+    track_ports: Vec<u8>,
 }
 
 impl<'a> StreamingMidiPlayer<'a> {
@@ -104,6 +122,7 @@ impl<'a> StreamingMidiPlayer<'a> {
             tempo_changes,
             total_ticks,
             ppqn,
+            track_ports,
         } = scan_tempos(&mmap_smf);
 
         let tracks: Vec<TrackCursor> = mmap_smf.tracks().iter().map(TrackCursor::new).collect();
@@ -116,6 +135,7 @@ impl<'a> StreamingMidiPlayer<'a> {
             tempo_changes,
             total_ticks,
             ppqn,
+            track_ports,
         };
         player.ensure_all_peeked();
         player.rebuild_heap();
@@ -126,6 +146,24 @@ impl<'a> StreamingMidiPlayer<'a> {
     #[inline]
     pub fn ppqn(&self) -> u32 {
         self.ppqn
+    }
+
+    /// 每轨 MIDI 端口（FF 21，按轨道索引；无则 0）。
+    #[inline]
+    pub fn track_ports(&self) -> &[u8] {
+        &self.track_ports
+    }
+
+    /// 指定轨道的 MIDI 端口（越界返回 0，与 `MidiDocument::track_port` 一致）。
+    #[inline]
+    pub fn track_port(&self, track_index: usize) -> u8 {
+        self.track_ports.get(track_index).copied().unwrap_or(0)
+    }
+
+    /// 文件使用到的最大 MIDI 端口号（空/无端口为 0）。
+    #[inline]
+    pub fn max_port(&self) -> u8 {
+        self.track_ports.iter().copied().max().unwrap_or(0)
     }
 
     /// 获取预扫描的 Tempo 变化列表。

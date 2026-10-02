@@ -265,3 +265,42 @@ fn test_same_tick_events_follow_track_index_order() {
         "测试数据应包含同 tick 多轨事件（否则此测试未覆盖目标语义）"
     );
 }
+
+/// REND-002：流式预扫描提取每轨 FF 21 MidiPort，供导出按来源轨道映射全局通道。
+#[test]
+fn test_track_ports_extracted() {
+    let mut out = Vec::new();
+
+    // 头块 MThd：Format 1、2 轨、480 PPQN
+    out.extend_from_slice(b"MThd");
+    out.extend_from_slice(&6u32.to_be_bytes());
+    out.extend_from_slice(&1u16.to_be_bytes());
+    out.extend_from_slice(&2u16.to_be_bytes());
+    out.extend_from_slice(&480u16.to_be_bytes());
+
+    // 轨 0：FF 21 端口 = 2，1 个音符
+    let mut t0 = vlq(0);
+    t0.extend_from_slice(&[0xFF, 0x21, 0x01, 0x02]); // MidiPort = 2
+    t0.extend_from_slice(&[0x90, 60, 100]);
+    t0.extend_from_slice(&vlq(10));
+    t0.extend_from_slice(&[0x80, 60, 64]);
+    t0.extend_from_slice(&vlq(0));
+    t0.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+    push_track(&mut out, &t0);
+
+    // 轨 1：无 FF 21（默认端口 0），1 个音符
+    let mut t1 = vlq(0);
+    t1.extend_from_slice(&[0x90, 64, 100]);
+    t1.extend_from_slice(&vlq(10));
+    t1.extend_from_slice(&[0x80, 64, 64]);
+    t1.extend_from_slice(&vlq(0));
+    t1.extend_from_slice(&[0xFF, 0x2F, 0x00]);
+    push_track(&mut out, &t1);
+
+    let player = StreamingMidiPlayer::from_bytes(&out).expect("生成 MIDI 应可解析");
+    assert_eq!(player.track_ports(), &[2, 0], "应提取每轨 FF 21 端口");
+    assert_eq!(player.track_port(0), 2);
+    assert_eq!(player.track_port(1), 0, "无 FF 21 应为 0");
+    assert_eq!(player.track_port(99), 0, "越界轨道应回退 0");
+    assert_eq!(player.max_port(), 2, "最大端口应为 2");
+}

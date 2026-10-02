@@ -68,7 +68,7 @@ impl Default for MockOutput {
 impl lumino_midi_io::OutputConnection for MockOutput {
     fn note_on(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _key: u8,
         _vel: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
@@ -79,7 +79,7 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn note_off(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _key: u8,
         _vel: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
@@ -90,10 +90,12 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn control_change(
         &mut self,
-        ch: u8,
+        ch: u16,
         controller: u8,
         value: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
+        // REND-002 解锁：接口扩宽到 u16 全局通道；测试仅关心低 16 通道。
+        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
         if let Some(counter) = &self.cc_count {
             counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -110,12 +112,17 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn program_change(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _program: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
         Ok(())
     }
-    fn pitch_bend(&mut self, ch: u8, value: f32) -> std::result::Result<(), lumino_midi_io::Error> {
+    fn pitch_bend(
+        &mut self,
+        ch: u16,
+        value: f32,
+    ) -> std::result::Result<(), lumino_midi_io::Error> {
+        let ch = u8::try_from(ch).expect("测试通道应在 u8 范围");
         if let Some(counter) = &self.pb_count {
             counter.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         }
@@ -126,14 +133,14 @@ impl lumino_midi_io::OutputConnection for MockOutput {
     }
     fn channel_pressure(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _pressure: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {
         Ok(())
     }
     fn poly_pressure(
         &mut self,
-        _ch: u8,
+        _ch: u16,
         _key: u8,
         _pressure: u8,
     ) -> std::result::Result<(), lumino_midi_io::Error> {

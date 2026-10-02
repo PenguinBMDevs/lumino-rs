@@ -10,6 +10,8 @@ use xsynth_core::{
     channel_group::{ChannelGroup, SynthEvent},
 };
 
+use lumino_midi_model::multi_port::{effective_port, global_channel};
+
 use crate::audio::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
 };
@@ -84,9 +86,17 @@ impl<'a> MidiEventProcessor<'a> {
 
     /// 投递一个 MIDI 事件（不推进时间；时间推进由渲染循环按块调度）。
     ///
+    /// `port` 为该事件来源轨道的 MIDI 端口（FF 21）。单端口导出
+    /// （`config.midi_max_port == 0`）下忽略端口、保持恒等映射；
+    /// 多端口下按 `(port, ch) → port*16 + ch` 映射到全局通道。
+    ///
     /// 返回因 `note_force_end_delay` 额外渲染的帧数（无则 0）——调用方必须把它
     /// 计入采样时钟，避免后续重复渲染。
-    pub(crate) fn dispatch_event(&mut self, event_kind: &TrackEventKind) -> ExportResult<u64> {
+    pub(crate) fn dispatch_event(
+        &mut self,
+        event_kind: &TrackEventKind,
+        port: u8,
+    ) -> ExportResult<u64> {
         if let Some(ctrl) = &self.config.control {
             ctrl.wait_if_paused();
             ctrl.check_abort()?;
@@ -95,7 +105,14 @@ impl<'a> MidiEventProcessor<'a> {
 
         // 发送 MIDI 事件到合成器
         if let TrackEventKind::Midi { channel, message } = event_kind {
-            let ch = channel.as_int() as u32;
+            // REND-002：单端口（midi_max_port==0）保持 `channel.as_int()` 恒等路径，
+            // 与历史行为完全一致；多端口才启用全局通道映射，超上限端口折叠到
+            // 端口 15 块（effective_port，B1 决策）。
+            let ch = if self.config.midi_max_port == 0 {
+                u32::from(channel.as_int())
+            } else {
+                u32::from(global_channel(effective_port(port), channel.as_int()))
+            };
             let force_end_frames = self.force_end_delay_frames();
             match message {
                 MidiMessage::NoteOn { key, vel } => {
