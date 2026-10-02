@@ -17,7 +17,9 @@
 //! 1. 拖拽单帧（`Moved` 处理）；2. 预览构建（行段 + 方块）；3. 按钮定位；
 //! 4. 覆盖计算（`cover_cells`）；5. √ 全链路（覆盖 + 层展开 + 写入 + 历史）；
 //! 6. Ctrl+Z 撤销（一次记录回退全部音符）；
-//! 7. 旧实现等价链路（模拟，仅前 100 点，折算每音符成本）。
+//! 7. 旧实现等价链路（模拟，仅前 100 点，折算每音符成本）；
+//! 8. **C/C2 增长曲线**（见 [`growth`]）：每帧预览成本 × 笔画长度 —— 长笔画掉帧的
+//!    量化证据与回归门控（A/B 只有两个点，连不成结论）。
 //!
 //! 运行：`cargo bench -p lumino-ui-editor --bench ui_brush_stroke_bench`
 //! 环境变量：`LUMINO_BENCH_MIDI` / `LUMINO_BENCH_CYCLES` / `LUMINO_BENCH_VERBOSE`。
@@ -27,11 +29,22 @@
 
 use std::time::Instant;
 
+use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::brush_tool::cov;
 use lumino_message::Point2;
-use lumino_ui_editor::grid::brush_tool_box::{brush_button_rects, brush_cell_rect};
+use lumino_ui_editor::grid::brush_tool_box::{
+    brush_button_rects, brush_cell_rect, brush_run_screen_rect, brush_visible_window,
+};
 use lumino_ui_editor::message::EditorAction;
 use lumino_ui_editor::{Editor, Note};
+
+#[path = "ui_brush_stroke_bench/growth.rs"]
+mod growth;
+
+/// 增长曲线的笔画长度序列（点数）
+const GROWTH_LENS: [usize; 5] = [1000, 2000, 5000, 10000, 20000];
+/// 「边画边测」的里程碑（点数）
+const IN_STROKE_MARKS: [usize; 4] = [1000, 5000, 10000, 20000];
 
 #[allow(dead_code)] // 共享支撑模块含其他基准专用项（本基准只取其中一部分）
 #[path = "id_history_ops_bench/support.rs"]
@@ -49,6 +62,13 @@ const TARGET_BUTTONS_MS: f64 = 1.0;
 const TARGET_COVER_MS: f64 = 20.0;
 const TARGET_CONFIRM_MS: f64 = 200.0;
 const TARGET_UNDO_MS: f64 = 200.0;
+/// 长笔画窗口化预览线（ms）= 帧预算的 1/4
+///
+/// 为什么不沿用 A 档的 2ms：C 档是**故意病态**的锯齿负载（粗细度 20 下视口内就有
+/// 2.5 万个互不相连的方块）——这些方块是"必须画"的可见工作量，不是被浪费的算力。
+/// 该门控要抓的是"成本随笔画长度增长"：绝对值不许吃掉 1/4 帧预算，
+/// 且增长倍数必须接近 1×（线性增长 = O(笔画长度) 回归）。
+const TARGET_LONG_STROKE_MS: f64 = 4.0;
 
 /// 负载规格
 struct Scenario {
@@ -152,12 +172,41 @@ impl Stats {
 }
 
 /// 每帧预览构建：行段（与 √ 生成同源）+ 每段方块矩形；返回行段数
+///
+/// **生产绘制路径（窗口化）**：只对可见窗口内的格做覆盖/行段计算 ——
+/// 与 `grid::brush_tool_box::draw` 完全同一条管线（同一组函数），
+/// 因此本指标就是"用户拖长笔画时每帧要付的账"。
 fn preview_runs_and_rects(editor: &Editor) -> usize {
+    let bounds = canvas_bounds(editor);
+    let window = brush_visible_window(editor, bounds);
+    let runs = editor.brush_preview_runs_in_window(window);
+    for run in &runs {
+        let _ = brush_run_screen_rect(editor, &window, bounds, *run);
+    }
+    runs.len()
+}
+
+/// 旧口径（对照，仅用于 A/B 量化）：全量栅格化 + 全量行段 + 逐段方块矩形
+///
+/// 这是 §17 修复前的生产路径（对整笔做覆盖计算后再逐段剔除），保留它做
+/// **同机同轮 A/B**——修复效果不能靠"感觉快了"，要有同一张表的两列数字。
+fn preview_full_path(editor: &Editor) -> usize {
     let runs = editor.brush_preview_runs();
     for (_, key, t_start, t_end) in &runs {
         let _ = brush_cell_rect(editor, *t_start, *t_end + 1, *key);
     }
     runs.len()
+}
+
+/// 画布 bounds（画布局部坐标；尺寸取自编辑器）
+pub fn canvas_bounds(editor: &Editor) -> Rectangle {
+    Rectangle::new(
+        Point::new(0.0, 0.0),
+        Size::new(
+            editor.editor_state.canvas.size_x,
+            editor.editor_state.canvas.size_y,
+        ),
+    )
 }
 
 /// 跑一个场景，返回（统计, 数据校验, 生成音符数, 行段数）
@@ -358,6 +407,15 @@ fn main() {
             if ok { "✓" } else { "✗" }
         );
     }
+
+    // ── C 增长曲线：每帧成本 vs 笔画长度（长笔画掉帧根因量化） ──
+    println!();
+    let growth_cycles = cycles.max(4);
+    let rows = growth::run_growth_curve(&mut editor, &GROWTH_LENS, growth_cycles);
+    all_pass &= growth::report_growth(&rows, thickness, TARGET_LONG_STROKE_MS);
+    let curve = growth::run_growth_in_stroke(&mut editor, &IN_STROKE_MARKS, growth_cycles);
+    all_pass &= growth::report_in_stroke(&curve, TARGET_LONG_STROKE_MS);
+    let _ = lumino_message::events::take_events();
 
     // ── 旧实现等价链路（模拟，仅前 200 点，折算每音符成本） ──
     println!();

@@ -283,7 +283,7 @@ fn test_visible_window_ignores_widget_offset() {
     );
     assert_eq!(
         zero,
-        BrushVisibleWindow {
+        cov::CellWindow {
             cell_lo: -6,
             cell_hi: 46,
             key_lo: 87,
@@ -408,7 +408,7 @@ fn test_visible_window_vertical_ignores_widget_offset() {
     // 纵向：tick 沿 Y（越大越靠上，顶点在底部键盘上沿）、key 沿 X
     assert_eq!(
         zero,
-        BrushVisibleWindow {
+        cov::CellWindow {
             cell_lo: -6,
             cell_hi: 30,
             key_lo: 0,
@@ -418,4 +418,101 @@ fn test_visible_window_vertical_ignores_widget_offset() {
     );
     assert!(zero.cell_hi >= 28, "最高可见 tick 格必须保留");
     assert_eq!(zero.key_lo, 0, "key 0 起即可见");
+}
+
+// ── ★ 窗口化预览（§17 长笔画掉帧修复）：语义等价 + 所见即生成 ────────────────
+
+/// 行段 → `(音轨, key, 格)` 集合（集合语义：拆段/边界重复不影响覆盖）
+fn runs_to_cells(runs: &[(usize, u16, i64, i64)]) -> std::collections::BTreeSet<(usize, u16, i64)> {
+    let mut out = std::collections::BTreeSet::new();
+    for (track, key, t_start, t_end) in runs {
+        for tick in *t_start..=*t_end {
+            out.insert((*track, *key, tick));
+        }
+    }
+    out
+}
+
+#[test]
+fn test_windowed_preview_equals_full_preview_inside_window() {
+    // 窗口化的唯一风险是"丢格/造格"：必须严格等于"全量覆盖 ∩ 窗口"
+    let mut editor = window_editor();
+    editor.brush.set_thickness(3);
+    // 一笔远超视口的长笔画（横跨 120 格）+ 一笔视口内短笔画
+    seed_stroke(&mut editor, &[(0.0, 100.0), (120.0 * 240.0, 104.0)]);
+    seed_stroke(&mut editor, &[(2.0 * 240.0, 96.0), (5.0 * 240.0, 96.0)]);
+
+    let window = brush_visible_window(&editor, local_canvas_bounds());
+    let full = runs_to_cells(&editor.brush_preview_runs());
+    let inside = runs_to_cells(&editor.brush_preview_runs_in_window(window));
+
+    assert!(inside.is_subset(&full), "窗口化不得凭空造格");
+    let expect: std::collections::BTreeSet<(usize, u16, i64)> = full
+        .iter()
+        .copied()
+        .filter(|(_, key, cell)| window.contains(*cell, *key))
+        .collect();
+    let missing: Vec<_> = expect.difference(&inside).take(8).collect();
+    let extra: Vec<_> = inside.difference(&expect).take(8).collect();
+    assert!(
+        inside == expect,
+        "窗口内一格不少、窗口外一格不多（与全量口径严格等价）\n缺 {}: {:?}\n多 {}: {:?}",
+        expect.difference(&inside).count(),
+        missing,
+        inside.difference(&expect).count(),
+        extra
+    );
+    assert!(
+        !full.is_empty() && inside.len() < full.len(),
+        "回归前提：长笔画必须真的被视口裁掉一部分（full {} vs inside {}）",
+        full.len(),
+        inside.len()
+    );
+}
+
+#[test]
+fn test_windowed_preview_skips_strokes_outside_window() {
+    // 视口外整笔 → 一个行段都不产生（成本 O(段数)，这是长笔画每帧成本压平的关键）
+    let mut editor = window_editor();
+    seed_stroke(
+        &mut editor,
+        &[(500.0 * 240.0, 100.0), (600.0 * 240.0, 100.0)],
+    );
+    assert!(!editor.brush_preview_runs().is_empty(), "全量口径仍有行段");
+    let window = brush_visible_window(&editor, local_canvas_bounds());
+    assert!(
+        editor.brush_preview_runs_in_window(window).is_empty(),
+        "视口外的笔画不得产生任何行段"
+    );
+}
+
+#[test]
+fn test_windowed_preview_matches_generated_notes_inside_window() {
+    // 窗口化以后仍然"所见即生成"：视口内预览格 == 视口内生成的音符
+    let mut editor = window_editor();
+    seed_stroke(&mut editor, &[(0.0, 100.0), (60.0 * 240.0, 100.0)]);
+    let window = brush_visible_window(&editor, local_canvas_bounds());
+    let preview_inside = runs_to_cells(&editor.brush_preview_runs_in_window(window));
+
+    assert!(editor.confirm_brush());
+    let mut generated: std::collections::BTreeSet<(usize, u16, i64)> =
+        std::collections::BTreeSet::new();
+    for track in 0..4 {
+        for note in editor.editor_state.data.track_notes(track).iter() {
+            generated.insert((
+                track,
+                note.key as u16,
+                (note.start_tick as f32 / 240.0) as i64,
+            ));
+        }
+    }
+    let expect: std::collections::BTreeSet<(usize, u16, i64)> = generated
+        .iter()
+        .copied()
+        .filter(|(_, key, cell)| window.contains(*cell, *key))
+        .collect();
+    assert_eq!(
+        preview_inside, expect,
+        "★ 视口内所见 == 视口内生成（窗口化不破坏所见即生成）"
+    );
 }

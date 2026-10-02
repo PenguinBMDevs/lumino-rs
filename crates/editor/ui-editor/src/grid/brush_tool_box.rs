@@ -25,27 +25,12 @@ use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_
 use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path};
-use lumino_editor_state::brush_tool::cov::MAX_KEY;
+use lumino_editor_state::brush_tool::cov::{self, MAX_KEY};
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
 
 /// 按钮组与笔画包围盒的间距
 const BUTTON_SPACING: f32 = 8.0;
-
-/// 笔画可见窗口（**画布局部坐标**下的逻辑区间，闭区间）
-///
-/// 由 [`brush_visible_window`] 计算，绘制前用它做"整段视口外"剔除。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct BrushVisibleWindow {
-    /// 可见最小 tick 格索引
-    pub cell_lo: i64,
-    /// 可见最大 tick 格索引
-    pub cell_hi: i64,
-    /// 可见最小 key
-    pub key_lo: u16,
-    /// 可见最大 key
-    pub key_hi: u16,
-}
 
 /// 由 iced 传入的 `bounds` 计算**画布局部坐标**下的可见窗口（逻辑区间）
 ///
@@ -66,7 +51,10 @@ pub struct BrushVisibleWindow {
 ///
 /// 本函数只读 `bounds.size()`；`position` 被显式忽略是**有意为之**，
 /// 回归测试 `test_visible_window_is_independent_of_widget_offset` 锁死该语义。
-pub fn brush_visible_window(editor: &Editor, bounds: Rectangle) -> BrushVisibleWindow {
+///
+/// 返回值即 [`cov::CellWindow`]：既做"整段视口外"剔除，也是**窗口化栅格化**的范围
+/// （预览只对窗口内的格做覆盖计算，见 `brush_preview_runs_in_window`）。
+pub fn brush_visible_window(editor: &Editor, bounds: Rectangle) -> cov::CellWindow {
     let snap = editor.editor_state.view.snap_precision.max(1.0);
     // 局部坐标四角：原点 → 画布尺寸（忽略 bounds.position）
     let corner_a = Point::new(0.0, 0.0);
@@ -74,7 +62,7 @@ pub fn brush_visible_window(editor: &Editor, bounds: Rectangle) -> BrushVisibleW
     let (t_a, t_b) = (editor.pos_to_tick(corner_a), editor.pos_to_tick(corner_b));
     let (t_lo, t_hi) = (t_a.min(t_b), t_a.max(t_b));
     let (k_a, k_b) = (editor.pos_to_key(corner_a), editor.pos_to_key(corner_b));
-    BrushVisibleWindow {
+    cov::CellWindow {
         // 1 格余量：边界上的半个格（吸精度 × zoom_x 跨像素）不外泄
         cell_lo: (t_lo / snap).floor() as i64 - 1,
         cell_hi: (t_hi / snap).ceil() as i64 + 1,
@@ -96,7 +84,7 @@ pub fn brush_visible_window(editor: &Editor, bounds: Rectangle) -> BrushVisibleW
 /// `pub`：绘制与测试共用同一条过滤管线，避免"测试用一套、绘制用另一套"。
 pub fn brush_run_screen_rect(
     editor: &Editor,
-    window: &BrushVisibleWindow,
+    window: &cov::CellWindow,
     canvas_bounds: Rectangle,
     run: (usize, u16, i64, i64),
 ) -> Option<Rectangle> {
@@ -214,7 +202,8 @@ pub fn draw(
     let canvas_bounds = Rectangle::new(Point::new(0.0, 0.0), bounds.size());
     let window = brush_visible_window(editor, bounds);
 
-    for run in editor.brush_preview_runs() {
+    // 窗口化预览：只对可见窗口内的格做覆盖/行段计算（成本与笔画总长度无关）
+    for run in editor.brush_preview_runs_in_window(window) {
         let Some(rect) = brush_run_screen_rect(editor, &window, canvas_bounds, run) else {
             continue; // 视口外 / 内容区外（键盘列、标尺带）
         };

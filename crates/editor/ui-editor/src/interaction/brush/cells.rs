@@ -80,18 +80,32 @@ impl Editor {
         out
     }
 
-    /// 预览行段：`(音轨, key, 起格, 止格)`（闭区间）——同一行内连续格合并
+    /// 预览行段（**全量**窗口）：`(音轨, key, 起格, 止格)`（闭区间）——同一行内连续格合并
     ///
-    /// **每帧热路径**：单遍扫描覆盖格 × 层，用 256 槽直接索引"当前打开的 run"，
-    /// 无全局排序、无 HashSet 去重（对照：早期实现每帧对 34 万项去重+排序，
-    /// 实测 70ms/帧 → 本实现 ~1ms/帧，详见 bench）。
+    /// 等价于 [`Self::brush_preview_runs_in_window`] 传 [`cov::CellWindow::FULL`]：
+    /// 不做视口裁剪，成本 O(全部覆盖格)。用于测试、等价性对比与"需要整笔几何"的调用方；
+    /// **绘制热路径请用窗口化版本**（见 §17：全量口径在长笔画下每帧 O(笔画长度) → 掉帧）。
+    pub fn brush_preview_runs(&self) -> Vec<(usize, u16, i64, i64)> {
+        self.brush_preview_runs_in_window(cov::CellWindow::FULL)
+    }
+
+    /// 预览行段（**视口窗口化**，绘制热路径）：只栅格化并合并窗口内的格
     ///
-    /// 语义说明：多笔画重叠时预览可能重复画同一矩形（同色覆盖，视觉无差别），
-    /// 而 √ 写入走 [`Editor::brush_pending_notes`] 做精确去重——**生成结果永远精确**，
-    /// 预览在最坏情况下只是重复填充同色像素。
+    /// 成本 O(段数 + 窗口内格数)，**与笔画总长度无关**。这是长笔画掉帧的修复点：
+    /// 旧实现每帧对整笔做全量栅格化 + 全量行段合并，实测 2 万点笔画单帧 35.7ms、
+    /// 单帧分配 70MB，而其中 **96.7% 的行段在视口外**（bench C 曲线）。
+    ///
+    /// 语义说明（与全量版一致，仅少了视口外的格）：
+    /// - 多笔画重叠时预览可能重复画同一矩形（同色覆盖，视觉无差别）；
+    /// - 相邻段共享的边界格重复出现 → 由下方"同格重复忽略"分支吸收；
+    /// - √ 写入仍走 [`Editor::brush_pending_notes`]（全量 + 精确去重）——
+    ///   **生成结果永远精确，不受视口影响**（这是"所见即生成"的前提）。
     ///
     /// `pub`：供画布渲染、渲染层测试与性能基准复用。
-    pub fn brush_preview_runs(&self) -> Vec<(usize, u16, i64, i64)> {
+    pub fn brush_preview_runs_in_window(
+        &self,
+        window: cov::CellWindow,
+    ) -> Vec<(usize, u16, i64, i64)> {
         let thickness = self.brush.thickness;
         if thickness == 0 || !self.editor_state.brush_tool.has_pending() {
             return Vec::new();
@@ -100,15 +114,27 @@ impl Editor {
         let mut runs: Vec<(usize, u16, i64, i64)> = Vec::new();
         // key(0..=255) → 当前打开的 run：(音轨, 起格, 止格, runs 索引)
         let mut open: [Option<(usize, i64, i64, usize)>; 256] = [None; 256];
+        // 覆盖格缓冲区跨笔画复用：每帧零分配
+        //（旧实现每帧为整笔新建 Vec<格子> + HashSet 去重，2 万点 = 单帧 70MB 分配churn）
+        let mut cells: Vec<cov::CoveredCell> = Vec::new();
         for stroke in &self.editor_state.brush_tool.strokes {
             let base_track = stroke.base_track;
-            for (cell, base_key) in stroke.covered_cells(snap) {
+            cells.clear();
+            cov::cover_cells_in_window(&stroke.points, snap, window, &mut cells);
+            for &(cell, base_key) in &cells {
                 if !cell_in_document(cell) {
                     continue; // 与 `brush_pending_notes` 同源过滤（键盘列负 tick 格）
                 }
                 for level in 0..thickness as u16 {
                     let key = base_key.saturating_add(level);
                     if key > cov::MAX_KEY {
+                        break;
+                    }
+                    // key 随 level 单调递增：低于窗口只能 continue，高于窗口可 break
+                    if key < window.key_lo {
+                        continue;
+                    }
+                    if key > window.key_hi {
                         break;
                     }
                     let track = self.brush_track_for_level(level as usize, base_track);
@@ -118,7 +144,7 @@ impl Editor {
                             runs[idx].3 = cell;
                             open[key as usize] = Some((t, start, cell, idx));
                         }
-                        // 同格重复（多笔画重叠）→ 忽略，避免零长 run
+                        // 同格重复（多笔画重叠 / 相邻段共享边界格）→ 忽略，避免零长 run
                         Some((t, _, end, _)) if t == track && end == cell => {}
                         // 其余情况 → 开新 run（跨越其他 key 后同 key 再现会被拆段，
                         // 视觉是同一行同色，拆段只增加极少矩形数，不丢格）

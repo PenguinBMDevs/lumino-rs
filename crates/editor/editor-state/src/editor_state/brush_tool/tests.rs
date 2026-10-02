@@ -449,3 +449,175 @@ fn test_editor_state_reset_clears_brush() {
     state.reset();
     assert!(!state.brush_tool.has_pending(), "工程重置清空笔画状态");
 }
+
+// ── ★ 窗口化栅格化（§17 长笔画掉帧修复）：正确性等价性 ──────────────────────
+//
+// 预览改成"只栅格化视口窗口内的格"以后，最大的风险是**丢格/造格**。
+// 下面用确定性伪随机涂抹笔画（不引外部 rand 依赖）验证两条铁律：
+//   1) 全量窗口 ≡ 全量覆盖（逐格等价，不含视口裁剪）；
+//   2) 任意窗口下：窗口化输出 == 全量覆盖 ∩ 窗口（不多一格、不少一格）。
+
+/// 确定性伪随机折线（LCG）：模拟来回涂抹的长笔画
+fn scribble(n: usize, seed: u64) -> Vec<(f32, f32)> {
+    let mut state = seed;
+    let mut out = Vec::with_capacity(n);
+    let mut tick = 480.0f32;
+    let mut key = 60.0f32;
+    for _ in 0..n {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1_442_695_040_888_963_407);
+        let r = ((state >> 33) as f32) / ((1u64 << 31) as f32); // [0,1)
+        tick += (r - 0.5) * 1800.0;
+        key = (key + (r - 0.5) * 6.0).clamp(0.0, 127.0);
+        out.push((tick, key));
+    }
+    out
+}
+
+/// 窗口化覆盖 → 集合
+fn window_cells(points: &[(f32, f32)], window: cov::CellWindow) -> HashSet<CoveredCell> {
+    let mut out = Vec::new();
+    cov::cover_cells_in_window(points, SNAP, window, &mut out);
+    out.into_iter().collect()
+}
+
+#[test]
+fn test_window_full_window_equals_full_coverage() {
+    for seed in [1u64, 7, 42, 2026] {
+        let points = scribble(200, seed);
+        let full: HashSet<CoveredCell> = cov::cover_cells(&points, SNAP).into_iter().collect();
+        assert_eq!(
+            window_cells(&points, cov::CellWindow::FULL),
+            full,
+            "全量窗口必须与全量覆盖逐格等价（seed {seed}）"
+        );
+    }
+}
+
+#[test]
+fn test_window_never_loses_or_invents_cells() {
+    for seed in [3u64, 11, 99] {
+        let points = scribble(300, seed);
+        let full: HashSet<CoveredCell> = cov::cover_cells(&points, SNAP).into_iter().collect();
+        let cell_min = full.iter().map(|c| c.0).min().expect("非空");
+        let cell_max = full.iter().map(|c| c.0).max().expect("非空");
+        let key_min = full.iter().map(|c| c.1).min().expect("非空");
+        let key_max = full.iter().map(|c| c.1).max().expect("非空");
+        let mid = (cell_min + cell_max) / 2;
+        let windows = [
+            // 左窄窗
+            cov::CellWindow {
+                cell_lo: cell_min,
+                cell_hi: cell_min + 40,
+                key_lo: key_min.saturating_sub(2),
+                key_hi: key_max.saturating_add(2),
+            },
+            // 中间窄窗（tick + key 双向裁剪）
+            cov::CellWindow {
+                cell_lo: mid,
+                cell_hi: mid + 10,
+                key_lo: key_min,
+                key_hi: key_max,
+            },
+            // 右窄窗 + 全 key
+            cov::CellWindow {
+                cell_lo: cell_max - 5,
+                cell_hi: cell_max,
+                key_lo: 0,
+                key_hi: cov::MAX_KEY,
+            },
+            // 完全不含任何格的空窗
+            cov::CellWindow {
+                cell_lo: cell_max + 1000,
+                cell_hi: cell_max + 2000,
+                key_lo: 0,
+                key_hi: cov::MAX_KEY,
+            },
+        ];
+        for window in windows {
+            let got = window_cells(&points, window);
+            assert!(
+                got.is_subset(&full),
+                "窗口化不得凭空造格（seed {seed} window {window:?}）"
+            );
+            let expect: HashSet<CoveredCell> = full
+                .iter()
+                .copied()
+                .filter(|cell| window.contains(cell.0, cell.1))
+                .collect();
+            assert_eq!(
+                got, expect,
+                "窗口内可见格一个不少、窗口外一格不多（seed {seed} window {window:?}）"
+            );
+        }
+    }
+}
+
+#[test]
+fn test_window_keeps_visible_part_of_long_segment() {
+    // 单段横穿 100 格：窄窗口下必须保留窗口内那一段（连续 → 预览才能合并成一段）
+    let points = [(0.0, 60.0), (100.0 * SNAP, 60.0)];
+    let window = cov::CellWindow {
+        cell_lo: 50,
+        cell_hi: 60,
+        key_lo: 60,
+        key_hi: 60,
+    };
+    let mut out = Vec::new();
+    cov::cover_cells_in_window(&points, SNAP, window, &mut out);
+    let mut cells: Vec<i64> = out.iter().map(|cell| cell.0).collect();
+    cells.sort_unstable();
+    cells.dedup();
+    assert_eq!(
+        cells,
+        (50..=60).collect::<Vec<i64>>(),
+        "窗口内的连续段必须完整保留"
+    );
+    // 该段必须 4 连通（无洞）
+    let dedup: Vec<CoveredCell> = cells.iter().map(|&c| (c, 60)).collect();
+    assert!(is_4_connected(&dedup));
+}
+
+#[test]
+fn test_window_segment_far_outside_costs_one_clip() {
+    // 语义回归：整段在窗口外 → 一个格都不输出（成本 O(1)，这是掉帧修复的关键路径）
+    let points = [(0.0, 60.0), (1000.0 * SNAP, 60.0)];
+    let window = cov::CellWindow {
+        cell_lo: 10_000,
+        cell_hi: 20_000,
+        key_lo: 0,
+        key_hi: cov::MAX_KEY,
+    };
+    let mut out = Vec::new();
+    cov::cover_cells_in_window(&points, SNAP, window, &mut out);
+    assert!(out.is_empty(), "视口外的段不得产生任何格");
+}
+
+#[test]
+fn test_window_keeps_corner_diagonal_cell() {
+    // ★ 定向回归：线段**精确穿过格点**（y=101 恰在 x=30 处）时，supercover 会补
+    // 对角格 (29,101) 保证 4 连通。窗口化路径曾因“裁剪端点回落 f32”造成
+    // ~1e-7 几何偏移 → 角点判定不再是 tie → 丢掉这一格（预览少一块、与生成不一致）。
+    let points = [(0.0, 100.0), (120.0 * SNAP, 104.0)];
+    let full: HashSet<CoveredCell> = cov::cover_cells(&points, SNAP).into_iter().collect();
+    assert!(
+        full.contains(&(29, 101)),
+        "全量覆盖必须含角点对角格 (29,101)"
+    );
+
+    // 窗口把该角点包在**中间**（不是边界），排除了"边界半格"这类解释
+    let window = cov::CellWindow {
+        cell_lo: 0,
+        cell_hi: 46,
+        key_lo: 87,
+        key_hi: 128,
+    };
+    let got = window_cells(&points, window);
+    let expect: HashSet<CoveredCell> = full
+        .iter()
+        .copied()
+        .filter(|cell| window.contains(cell.0, cell.1))
+        .collect();
+    assert_eq!(got, expect, "窗口化必须保留窗口内的角点对角格");
+}
