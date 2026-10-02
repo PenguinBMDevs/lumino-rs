@@ -56,6 +56,9 @@ mod encode;
 mod paste;
 mod paste_interop;
 
+#[cfg(test)]
+mod tests;
+
 // 紧凑二进制编码：`build_clipboard_binary` 已跨平台开放（基准/外部复用），
 // 编解码实现本身与平台无关。
 use lumino_midi_model::clipboard::{ClipRecord, encode_clipboard};
@@ -108,10 +111,11 @@ impl Editor {
             .map(|d| d.division)
             .unwrap_or(480);
 
-        // Windows：同时写入 Lumino 私有二进制与 Domino(MidiPortalSequence) 两种格式
+        // Windows：开关开启时同时写入 Lumino 私有二进制与 Domino(MidiPortalSequence)
+        // 两种格式；关闭（默认）时只写 Lumino 二进制，不为用不到的格式支付编码成本
         #[cfg(windows)]
         {
-            let domino = self.build_clipboard_domino();
+            let domino = self.domino_payload();
             if let Some(bytes) = self.build_clipboard_binary(track, division) {
                 // 优先一次会话内同时携带 Domino 格式，便于跨 DAW 粘贴
                 if let Some(dom) = domino
@@ -150,6 +154,24 @@ impl Editor {
         }
     }
 
+    /// 按开关决定本次复制要写入的 Domino 互通载荷（`None` = 不写该格式）。
+    ///
+    /// **闸门点**：关闭时 `build_clipboard_domino` 完全不被调用——不做 `NoteEvent`
+    /// 收集、不做 zlib 压缩，这是本开关的全部收益来源（20 万音符档位实测省 60~150ms
+    /// 与 26MB 堆峰值）。判断本身只是一次 bool 读取，且紧贴编码调用点，
+    /// 不引入任何每帧或缓存失效成本。
+    ///
+    /// 与 [`Self::build_clipboard_domino`] 同处 `#[cfg(windows)]`：非 Windows 下
+    /// Domino 路径整体被裁掉，不得为此留下跨平台分支。
+    #[cfg(windows)]
+    fn domino_payload(&self) -> Option<Vec<u8>> {
+        if self.domino_clipboard_enabled {
+            self.build_clipboard_domino()
+        } else {
+            None
+        }
+    }
+
     /// 从剪贴板粘贴音符。
     ///
     /// Windows：先探测 Lumino 二进制私有格式，命中则走紧凑二进制粘贴（含 PPQN 重采样）；
@@ -163,8 +185,9 @@ impl Editor {
             if self.try_paste_from_binary() {
                 return;
             }
-            // Domino（TAKABO SOFT）互通：剪贴板存在 MidiPortalSequence 时，按 MIDI 标准音符解析
-            if self.try_paste_from_domino() {
+            // Domino（TAKABO SOFT）互通：开关开启、且剪贴板存在 MidiPortalSequence 时，
+            // 按 MIDI 标准音符解析。`&&` 短路保证关闭时**连格式探测都不发生**。
+            if self.domino_clipboard_enabled && self.try_paste_from_domino() {
                 return;
             }
         }

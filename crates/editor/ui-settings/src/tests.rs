@@ -72,14 +72,28 @@ fn test_compat_init_from_config() {
     let config = UiConfig {
         gpu_check_on_startup: false,
         gpu_warning_suppressed: Some(true),
+        domino_clipboard_enabled: true,
         ..UiConfig::default()
     };
     let panel = SettingsPanel::new(&config);
     assert!(!panel.compat.check_on_startup);
     assert!(panel.compat.warning_suppressed);
+    assert!(
+        panel.compat.domino_clipboard_enabled,
+        "Domino 开关应镜像 UiConfig"
+    );
     assert_eq!(
         panel.compat.check_state,
         lumino_ui_core::state::GpuCheckUiState::Idle
+    );
+}
+
+#[test]
+fn test_compat_domino_clipboard_defaults_to_disabled() {
+    let panel = SettingsPanel::new(&UiConfig::default());
+    assert!(
+        !panel.compat.domino_clipboard_enabled,
+        "Domino 剪贴板互粘开关默认应为关闭"
     );
 }
 
@@ -90,6 +104,10 @@ fn test_compat_events_update_switches_and_state() {
     assert!(!panel.compat.check_on_startup);
     panel.update(Event::GpuWarningSuppressedChanged(true));
     assert!(panel.compat.warning_suppressed);
+    panel.update(Event::DominoClipboardEnabledChanged(true));
+    assert!(panel.compat.domino_clipboard_enabled);
+    panel.update(Event::DominoClipboardEnabledChanged(false));
+    assert!(!panel.compat.domino_clipboard_enabled);
     panel.update(Event::RunGpuCompatibilityCheck);
     assert_eq!(
         panel.compat.check_state,

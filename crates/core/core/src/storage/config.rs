@@ -200,6 +200,14 @@ pub struct UiConfig {
     /// `None` = 旧配置缺该字段或系统时钟异常，一律按"缓存过期"处理（宁可多检不漏检）。
     #[serde(default)]
     pub gpu_last_check_time: Option<u64>,
+    /// 是否启用 Domino（TAKABO SOFT）剪贴板互粘（默认关闭；仅 Windows 生效）
+    ///
+    /// 开启后 Windows 下复制会额外编码一份 `MidiPortalSequence` 格式、粘贴会额外
+    /// 尝试解码 Domino 载荷。该编码在 20 万音符选中档位上额外阻塞 UI 线程
+    /// 60~150ms 并抬高约 26MB 堆峰值，而多数用户从不与 Domino 互粘，故默认关闭。
+    /// 旧配置缺该字段时落 `false`（由 `#[serde(default)]` 提供），升级后保持关闭。
+    #[serde(default)]
+    pub domino_clipboard_enabled: bool,
 }
 
 /// 用户界面配置默认值
@@ -257,6 +265,7 @@ impl Default for UiConfig {
             gpu_last_fingerprint: None,
             gpu_last_passed: None,
             gpu_last_check_time: None,
+            domino_clipboard_enabled: false,
         }
     }
 }
@@ -295,5 +304,49 @@ mod tests {
         let json = serde_json::to_string(&config).expect("UiConfig 应能序列化");
         let restored: UiConfig = serde_json::from_str(&json).expect("UiConfig 应能反序列化");
         assert_eq!(restored.gpu_last_check_time, Some(1_700_000_000));
+    }
+
+    /// Domino 互粘开关默认关闭：全新配置不得为用不到的 Domino 编码付费。
+    #[test]
+    fn test_domino_clipboard_defaults_to_disabled() {
+        assert!(
+            !UiConfig::default().domino_clipboard_enabled,
+            "Domino 剪贴板互粘开关默认应为关闭"
+        );
+    }
+
+    /// 旧配置（UI-016 之前写入的 `config.json`）缺少 `domino_clipboard_enabled`：
+    /// 反序列化不得失败，字段落为 `false`（关闭），保证升级后不为 Domino 编码付费。
+    #[test]
+    fn test_legacy_config_without_domino_clipboard_deserializes_to_false() {
+        let mut value =
+            serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化为 JSON");
+        let removed = value
+            .as_object_mut()
+            .expect("UiConfig 序列化结果应为 JSON 对象")
+            .remove("domino_clipboard_enabled");
+        assert!(
+            removed.is_some(),
+            "默认配置应写出 domino_clipboard_enabled 键"
+        );
+
+        let restored: UiConfig =
+            serde_json::from_value(value).expect("缺 Domino 开关字段的旧配置应能反序列化");
+        assert!(
+            !restored.domino_clipboard_enabled,
+            "旧配置缺该字段应落为 false（关闭）"
+        );
+    }
+
+    /// 开启状态可正确往返，供设置面板与持久化读取。
+    #[test]
+    fn test_domino_clipboard_serde_roundtrip() {
+        let config = UiConfig {
+            domino_clipboard_enabled: true,
+            ..UiConfig::default()
+        };
+        let json = serde_json::to_string(&config).expect("UiConfig 应能序列化");
+        let restored: UiConfig = serde_json::from_str(&json).expect("UiConfig 应能反序列化");
+        assert!(restored.domino_clipboard_enabled);
     }
 }

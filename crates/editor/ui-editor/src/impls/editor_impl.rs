@@ -37,6 +37,7 @@ impl Editor {
                 playback_position: 0.0,
                 playback_key_colors: [0u8; 1024], // 256 keys × 4 bytes
                 playback_key_colors_enabled: false,
+                domino_clipboard_enabled: false,
                 loop_range: Some(grid::LoopRange::new()),
                 notes_changed: false,
                 pending_drag_state: None,

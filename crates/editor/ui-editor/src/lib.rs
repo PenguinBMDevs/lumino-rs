@@ -150,6 +150,12 @@ pub struct Editor {
     /// 播放时键盘颜色指示是否启用（默认关闭，节省内存和CPU）
     pub(crate) playback_key_colors_enabled: bool,
 
+    /// Domino（TAKABO SOFT）剪贴板互粘是否启用（UiConfig 驱动，默认关闭，仅 Windows 生效）
+    ///
+    /// 关闭时复制只写 Lumino 私有二进制、粘贴不尝试解码 `MidiPortalSequence`，
+    /// 避免为用不到的格式支付编码成本（20 万音符档位实测 60~150ms + 26MB 堆峰值）。
+    pub(crate) domino_clipboard_enabled: bool,
+
     /// 循环区域状态
     pub loop_range: Option<grid::LoopRange>,
 

@@ -118,6 +118,7 @@ impl SettingsPanel {
             compat: crate::CompatSettings {
                 check_on_startup: ui_config.gpu_check_on_startup,
                 warning_suppressed: ui_config.gpu_warning_suppressed.unwrap_or(false),
+                domino_clipboard_enabled: ui_config.domino_clipboard_enabled,
                 check_state: lumino_ui_core::state::GpuCheckUiState::Idle,
                 copied: false,
             },
@@ -399,6 +400,9 @@ impl SettingsPanel {
             }
             Event::GpuWarningSuppressedChanged(suppressed) => {
                 self.compat.warning_suppressed = suppressed;
+            }
+            Event::DominoClipboardEnabledChanged(enabled) => {
+                self.compat.domino_clipboard_enabled = enabled;
             }
             Event::RunGpuCompatibilityCheck => {
                 self.compat.check_state = lumino_ui_core::state::GpuCheckUiState::Running;

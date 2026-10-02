@@ -127,4 +127,19 @@ impl Editor {
             self.playback_scan_state = Default::default();
         }
     }
+
+    /// Domino（TAKABO SOFT）剪贴板互粘是否启用（默认关闭，仅 Windows 生效）
+    ///
+    /// 跨平台方法：非 Windows 下 Domino 路径整体被 `#[cfg(windows)]` 裁掉，该字段无处可读；
+    /// 保留跨平台读写是为了让 `Root` 的设置同步链路三平台一致，避免 cfg 分叉。
+    #[inline]
+    pub fn domino_clipboard_enabled(&self) -> bool {
+        self.domino_clipboard_enabled
+    }
+
+    /// 设置 Domino（TAKABO SOFT）剪贴板互粘是否启用（仅 Windows 生效）
+    #[inline]
+    pub fn set_domino_clipboard_enabled(&mut self, enabled: bool) {
+        self.domino_clipboard_enabled = enabled;
+    }
 }

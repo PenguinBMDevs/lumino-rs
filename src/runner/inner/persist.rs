@@ -74,6 +74,7 @@ impl RunnerInner {
             || new.editing.tempo_max_bpm != old.tempo_max_bpm
             || new.logging.monitor_refresh_interval_ms != old.monitor_refresh_interval_ms
             || new.compat.check_on_startup != old.gpu_check_on_startup
+            || new.compat.domino_clipboard_enabled != old.domino_clipboard_enabled
             || new.compat.warning_suppressed != old.gpu_warning_suppressed.unwrap_or(false);
         if theme_changed
             || synth_changed
@@ -282,6 +283,7 @@ impl RunnerInner {
             config.ui.system_output_device_id = new.midi.selected_winmm_output;
             config.ui.audio_output_device = new.synth.selected_audio_output_device.clone();
             config.ui.gpu_check_on_startup = new.compat.check_on_startup;
+            config.ui.domino_clipboard_enabled = new.compat.domino_clipboard_enabled;
             config.ui.gpu_warning_suppressed = Some(new.compat.warning_suppressed);
         });
         lumino_extras::palette::set_current_palette_by_name(&new.display.selected_palette);

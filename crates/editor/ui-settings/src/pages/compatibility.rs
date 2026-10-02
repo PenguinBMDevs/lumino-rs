@@ -13,6 +13,9 @@ use crate::SettingsPanel;
 use super::super::components::constants::*;
 use super::super::components::styles::{create_content_text_style, create_placeholder_text_style};
 use super::super::components::with_setting_tooltip_inline_action;
+// 非 Windows 下 Domino 开关只读置灰，标签不挂点击动作 → 用无动作的 tooltip 变体
+#[cfg(not(windows))]
+use super::super::components::with_setting_tooltip_inline;
 
 /// 渲染兼容性页面
 pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
@@ -79,6 +82,31 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         }
     };
 
+    // Domino（TAKABO SOFT）剪贴板互粘开关
+    //
+    // 仅 Windows 有 Domino 互通实现（`clipboard/sys.rs` 整体 `#![cfg(windows)]`）。
+    // 非 Windows 下对钩框不挂 `on_toggle`（即 `Status::Disabled` 置灰），标签换用
+    // 无动作的 tooltip 变体——否则点文字仍可切换，置灰会被绕过。
+    let domino_checkbox = checkbox(compat.domino_clipboard_enabled);
+    #[cfg(windows)]
+    let domino_checkbox = domino_checkbox.on_toggle(|enabled| {
+        Message::Settings(crate::Event::DominoClipboardEnabledChanged(enabled))
+    });
+    let domino_label = text(t.compat_domino_clipboard)
+        .size(TEXT_SIZE_CONTENT)
+        .style(create_content_text_style());
+    #[cfg(windows)]
+    let domino_label = with_setting_tooltip_inline_action(
+        domino_label,
+        t.compat_domino_clipboard_hint,
+        Message::Settings(crate::Event::DominoClipboardEnabledChanged(
+            !compat.domino_clipboard_enabled,
+        )),
+    );
+    #[cfg(not(windows))]
+    let domino_label =
+        with_setting_tooltip_inline(domino_label, t.compat_domino_clipboard_unsupported_hint);
+
     column![
         text(t.compatibility_title)
             .size(TEXT_SIZE_TITLE)
@@ -123,6 +151,11 @@ pub fn view<'a>(settings: &SettingsPanel) -> Element<'a> {
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),
+        iced_widget::space().height(8),
+        // Domino 互粘开关（默认关闭；说明挂在标签文字上，提示不覆盖对钩框）
+        row![domino_checkbox, domino_label]
+            .spacing(SPACING_ICON_LABEL)
+            .align_y(Alignment::Center),
     ]
     .spacing(SPACING_CONTENT)
     .padding(PADDING_CONTENT)
