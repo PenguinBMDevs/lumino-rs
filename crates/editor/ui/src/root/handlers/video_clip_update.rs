@@ -62,6 +62,14 @@ impl Root {
     }
 
     /// 剪辑面板是否处于首级入口（Renderer 分组且未进入子面板/瀑布流模式）
+    ///
+    /// 这是「剪辑面板此刻是否真的在屏幕上」的**唯一权威判定**：方位（离屏渲染）、
+    /// 传输时钟推进、快捷键视图仲裁全部走它，禁止各处再裸比 `active_group`。
+    ///
+    /// ⚠️ 必须与 [`crate::root::Root::view_main`] 的主区域优先级一致：工程走带
+    /// 路由**优先于**渲染器入口接管主区域（`view_main` 里 `is_arrangement_route`
+    /// 是第一个分支）。若此处漏判走带，走带视图下剪辑面板会被误判为"可见"，
+    /// 空格键就会被判给剪辑传输——用户看着走带按空格却什么都不发生。
     pub(crate) fn is_renderer_entry_active(&self) -> bool {
         use crate::titlebar::mode_toggle::AppMode;
         use lumino_ui_core::sidebar_event::GroupId;
@@ -69,6 +77,7 @@ impl Root {
             && !self.sidebar.audio_export_visible
             && !self.sidebar.video_export_visible
             && self.state.current_mode != AppMode::Waterfall
+            && !self.sidebar.is_arrangement_route()
     }
 
     /// 每帧推进剪辑面板**独立传输时钟**（秒域实时步进）。
@@ -341,5 +350,91 @@ mod tests {
             Some(expected_tick(&root, 1.0)),
             "整体右移后锚点必须扣除偏移（否则错帧）"
         );
+    }
+
+    /// 回归：首端被向右缩短后，整体拖动必须能把素材带带回时间轴开头。    ///
+    /// 旧实现画布层与状态层各钳一次 `offset ≥ 0`，首裁 5s 后可视左缘永远
+    /// ≥5s，用户只能拖到"开头缩短到的位置"，顶不到前面。现在边界只由
+    /// `set_offset` 裁决：下限 = −首端裁剪（可视左缘顶到时间轴原点即止）。
+    #[test]
+    fn test_body_drag_can_return_band_to_timeline_origin() {
+        let mut root = test_root();
+        let source = root.clip_real_duration_secs() as f32;
+        let trim = (source * 0.5).min(5.0);
+        assert!(trim > 1.0, "测试前提：裁剪量需可观测");
+
+        root.handle_video_clip_action(VideoClipAction::ClipTrimChanged {
+            track: ClipTrack::Video,
+            edge: ClipTrimEdge::Start,
+            trim_secs: trim,
+        });
+        assert_eq!(
+            root.state.video_clip.video_window(source),
+            (trim, source),
+            "首端裁短后带起点右移"
+        );
+
+        // 极端向前拖（画布原样发负值）：状态层应钳到 −trim，可视左缘顶到 0
+        root.handle_video_clip_action(VideoClipAction::ClipTrackOffsetChanged {
+            track: ClipTrack::Video,
+            offset_secs: -999.0,
+        });
+        let edit = root.state.video_clip.video_edit;
+        assert!(
+            (edit.offset_secs + trim).abs() < 1e-4,
+            "偏移下限应为 −首端裁剪（−{trim}），实际 {}",
+            edit.offset_secs
+        );
+        assert!(
+            edit.visible_start().abs() < 1e-4,
+            "可视左缘必须能顶到时间轴原点，实际 {}",
+            edit.visible_start()
+        );
+        assert_eq!(
+            root.state.video_clip.video_window(source),
+            (0.0, source - trim),
+            "顶到原点后右缘随之左移（可视长度不变）"
+        );
+
+        // 时间轴 0 处显示的应是入点那一帧，而不是空占位
+        root.handle_video_clip_action(VideoClipAction::TimelineSeek { secs: 0.0 });
+        assert_eq!(
+            root.clip_preview_tick(),
+            Some(expected_tick(&root, trim)),
+            "顶到原点后 0 处应显示入点帧"
+        );
+    }
+
+    /// 空格键仲裁的地基：`is_renderer_entry_active` 必须与主区域渲染优先级一致。
+    ///
+    /// 工程走带路由**优先于**渲染器入口接管主区域（`view_main` 的第一个分支）。
+    /// 若此处漏判走带，用户看着走带界面按空格，键会被判给（屏幕上根本不存在的）
+    /// 剪辑传输 —— 表现就是「按空格没反应」。
+    #[test]
+    fn test_renderer_entry_predicate_excludes_arrangement_route() {
+        use lumino_ui_core::sidebar_event::{GroupId, Route};
+
+        let mut root = test_root();
+        // 渲染器分组首级入口：卷帘关闭、无导出子面板
+        root.sidebar.active_group = Some(GroupId::Renderer);
+        root.sidebar.piano_roll_visible = false;
+        root.sidebar.audio_export_visible = false;
+        root.sidebar.video_export_visible = false;
+        root.sidebar.route = Route::File;
+        assert!(
+            root.is_renderer_entry_active(),
+            "渲染器首级入口应判定为激活"
+        );
+
+        // 工程走带抢占主区域 → 剪辑面板不再可见，空格必须留给走带/卷帘传输
+        root.sidebar.route = Route::Arrangement;
+        assert!(
+            !root.is_renderer_entry_active(),
+            "工程走带视图下不得把剪辑面板判为激活（否则空格被判给不存在的面板）"
+        );
+
+        // 回到普通路由即恢复
+        root.sidebar.route = Route::File;
+        assert!(root.is_renderer_entry_active());
     }
 }

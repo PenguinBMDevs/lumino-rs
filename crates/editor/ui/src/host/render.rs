@@ -191,12 +191,11 @@ impl Host {
         // ── 渲染器入口（视频剪辑窗口）瀑布流预览 ──
         // 当 Renderer 分组首级面板激活（且未进入 Audio/Video 子面板）时，在 waterfall_player 上离屏渲染
         // 对标 PianoRoll 的 File/Automation 子面板逻辑，复用全屏 waterfall 的渲染路径但由剪辑窗口的 responsive 驱动尺寸
-        let is_renderer_entry = self.root.sidebar.active_group
-            == Some(lumino_ui_core::sidebar_event::GroupId::Renderer)
-            && !self.root.sidebar.audio_export_visible
-            && !self.root.sidebar.video_export_visible
-            && self.root.state.current_mode != AppMode::Waterfall;
-        if is_renderer_entry {
+        //
+        // 判定统一走 `Root::is_renderer_entry_active()`（唯一权威源）：此前此处
+        // 内联复制了一份同款条件，任何一处补条件（如工程走带优先级）都会漏改，
+        // 渲染与交互各自为政。
+        if self.root.is_renderer_entry_active() {
             let size = *self.root.waterfall_player.size.borrow();
             let (width, height) = size.unwrap_or((1920, 1080));
             // 画面进出显示：剪辑面板预览以「播放头处的素材源帧」为渲染锚点。

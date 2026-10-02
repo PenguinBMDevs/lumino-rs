@@ -552,4 +552,56 @@ mod tests {
         // 标尺/播放头换算的上限同源，越界位置不得被当作可定位点
         assert!((ruler_click_secs(9999.0, 0.0, 1.0, c.content_secs()) - 14.0).abs() < 1e-3);
     }
+
+    /// 回归：条身拖拽只发**绝对目标值**，不得在画布层再钳一次 `max(0.0)`。
+    ///
+    /// 首端裁掉 5s 后，整体向前拖的目标偏移必然是负数（合法下限是 −首裁）。
+    /// 画布若按旧规则钳成 ≥0，素材带就永远拖不回时间轴开头——边界必须由
+    /// 状态层 `set_offset` 单独裁决，两侧各钳一次且规则不一致就是本 bug 的成因。
+    #[test]
+    fn test_body_drag_publishes_raw_offset_without_canvas_clamp() {
+        use crate::message::VideoClipAction;
+        use iced_core::Point;
+        use lumino_message::video_clip::ClipTrack;
+
+        let mut canvas = canvas_fixture(30.0);
+        // 素材带：整体偏移 5s + 首端裁 5s → 可视 [10, 30]，宽 20s×80px = 1600px
+        canvas.video_edit.offset_secs = 5.0;
+        canvas.video_edit.trim_in_secs = 5.0;
+        let bounds = layout_bounds();
+        let mut state = TimelineDragState::default();
+
+        // 按住条身中部（局部 x = 1600）起拖
+        let press = interact::begin_drag(
+            &canvas,
+            &mut state,
+            Point::new(bounds.x + 1600.0, bounds.y + 40.0),
+            bounds,
+        );
+        assert!(press.is_some(), "条身应命中");
+        assert_eq!(state.track_drag.map(|d| d.mode), Some(HitZone::Body));
+        let drag = state.track_drag.expect("会话已建立");
+
+        // 向前拖到局部 x=1000（12.5s）→ delta = −7.5s → 目标偏移 = 5 − 7.5 = −2.5
+        let action = interact::drag_move(
+            &canvas,
+            Point::new(bounds.x + 1000.0, bounds.y + 40.0),
+            bounds,
+            drag,
+        );
+        let (msg, _redraw, _status) = action.expect("拖拽应返回动作").into_inner();
+        match msg {
+            Some(Message::VideoClip(VideoClipAction::ClipTrackOffsetChanged {
+                track,
+                offset_secs,
+            })) => {
+                assert_eq!(track, ClipTrack::Video);
+                assert!(
+                    (offset_secs + 2.5).abs() < 0.1,
+                    "条身拖拽必须原样发出负偏移（合法性由状态层裁决），实际 {offset_secs}"
+                );
+            }
+            other => panic!("期望 ClipTrackOffsetChanged 发布，实际: {other:?}"),
+        }
+    }
 }

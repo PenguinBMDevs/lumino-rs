@@ -29,9 +29,15 @@ pub use lumino_message::video_clip::ClipTrack;
 /// 剪辑轨道素材编辑状态（首尾裁剪 + 整体移动）
 ///
 /// 素材源长即曲目时长；可视区间 `[offset+trim_in, offset+source_len-trim_out]`。
+///
+/// **唯一不变量**：可视左缘不得越过时间轴原点，即 `offset + trim_in ≥ 0`。
+/// 偏移可以为负——首端被裁掉的隐藏开头允许落到时间轴之外，这样素材带整体
+/// 向前拖时才能顶到时间轴开头（否则首裁多少就永远停在多少）。
+/// 该不变量由 [`ClipTrackEdit::set_offset`] 与 [`ClipTrackEdit::set_trim_start`]
+/// 共同维持，**不要在 UI 层重复钳制**（两侧规则不一致会互相打架）。
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct ClipTrackEdit {
-    /// 素材整体时间偏移（秒，≥0）：决定素材在时间轴上的摆放起点
+    /// 素材整体时间偏移（秒，下限 `−trim_in_secs`）：决定素材在时间轴上的摆放起点
     pub offset_secs: f32,
     /// 首端裁剪（秒，≥0）：素材开头被裁掉的部分
     pub trim_in_secs: f32,
@@ -65,7 +71,15 @@ impl ClipTrackEdit {
         (self.visible_start(), self.visible_end(source_len))
     }
 
-    /// 设置整体偏移（下限 0）
+    /// 设置整体偏移（下限由**可视左缘**决定）
+    ///
+    /// 约束的不变量是「素材带可视左缘不得越过时间轴原点」：
+    /// `visible_start = offset + trim_in ≥ 0` ⟺ `offset ≥ −trim_in`。
+    ///
+    /// 曾经钳成 `offset ≥ 0`——那是把不变量错安在「素材自身原点」上：首端一旦
+    /// 被裁掉 5s，`visible_start` 就永远 ≥5s，素材带再也拖不回时间轴开头
+    /// （用户感知为「只能拖到开头缩短到的位置，顶不到前面」）。被裁掉的隐藏
+    /// 开头允许落在时间轴之外，这与专业剪辑软件一致。
     ///
     /// 上界由时间轴内容长度兜住（见 [`timeline_content_secs`]）：素材带整体
     /// 右移后时间轴内容随之扩展，越界部分依然可滚动可达，不产生不可达状态。
@@ -75,18 +89,19 @@ impl ClipTrackEdit {
         } else {
             0.0
         };
-        self.offset_secs = v.max(0.0);
+        self.offset_secs = v.max(-self.trim_in_secs);
     }
 
-    /// 设置首端裁剪（绝对值），钳制 `[0, 源长−尾裁−最小时长]`
+    /// 设置首端裁剪（绝对值），钳制 `[max(0, −offset), 源长−尾裁−最小时长]`
+    ///
+    /// 下限同样来自「可视左缘不越过时间轴原点」：素材带已经顶在原点时
+    /// （`offset = −trim_in`），首端把手只能向右，不能向左再"露出"更多开头
+    /// ——时间轴原点之前没有位置可放。
     pub fn set_trim_start(&mut self, trim_secs: f32, source_len: f32) {
-        let max = (source_len - self.trim_out_secs - MIN_CLIP_DURATION_SECS).max(0.0);
-        let v = if trim_secs.is_finite() {
-            trim_secs
-        } else {
-            0.0
-        };
-        self.trim_in_secs = v.clamp(0.0, max);
+        let lo = (-self.offset_secs).max(0.0);
+        let hi = (source_len - self.trim_out_secs - MIN_CLIP_DURATION_SECS).max(lo);
+        let v = if trim_secs.is_finite() { trim_secs } else { lo };
+        self.trim_in_secs = v.clamp(lo, hi);
     }
 
     /// 设置尾端裁剪（绝对值），钳制 `[0, 源长−首裁−最小时长]`
@@ -430,9 +445,75 @@ mod tests {
         e.set_trim_start(100.0, 10.0);
         assert!((e.trim_in_secs - 9.4).abs() < f32::EPSILON);
 
-        // 偏移下限 0
-        e.set_offset(-5.0);
-        assert!(e.offset_secs.abs() < f32::EPSILON);
+        // 偏移下限 = −首端裁剪：可视左缘顶到时间轴原点即止（此处 9.4s）
+        e.set_offset(-999.0);
+        assert!((e.offset_secs + 9.4).abs() < 1e-4, "实际 {}", e.offset_secs);
+        assert!(
+            e.visible_start().abs() < 1e-4,
+            "可视左缘必须能顶到时间轴原点，实际 {}",
+            e.visible_start()
+        );
+    }
+
+    /// 回归：首端被裁短后，整体拖动必须能把素材带带回时间轴开头（顶到 0）。
+    ///
+    /// 旧实现把偏移钳成 `≥ 0`（不变量错安在「素材自身原点」上），首裁 5s 后
+    /// 可视左缘永远 ≥5s —— 用户只能拖到"开头缩短到的位置"，顶不到前面。
+    #[test]
+    fn test_band_body_can_reach_timeline_origin_after_head_trim() {
+        let source = 30.0;
+        let mut e = ClipTrackEdit::default();
+
+        // 首端裁掉 5s：可视区间 [5, 30]
+        e.set_trim_start(5.0, source);
+        assert_eq!((e.visible_start(), e.visible_end(source)), (5.0, 30.0));
+
+        // 整体向前拖：可视左缘必须能到达 0（隐藏开头允许落到时间轴之外）
+        e.set_offset(-999.0);
+        assert!(
+            e.visible_start().abs() < 1e-4,
+            "应能顶到时间轴开头，实际左缘 {}",
+            e.visible_start()
+        );
+        assert!(
+            (e.visible_end(source) - 25.0).abs() < 1e-4,
+            "右缘随整体平移"
+        );
+        assert!(
+            (e.visible_len(source) - 25.0).abs() < 1e-4,
+            "整体移动不改变可视长度"
+        );
+
+        // 已经顶在原点：首端把手不能再向左"露出"更多开头（原点之前没有位置）
+        e.set_trim_start(2.0, source);
+        assert!((e.trim_in_secs - 5.0).abs() < 1e-4, "首裁下限 = −offset");
+        assert!(e.visible_start().abs() < 1e-4);
+
+        // 未顶原点时首端仍可正常向左扩（回退裁剪）
+        e.set_offset(0.0);
+        e.set_trim_start(2.0, source);
+        assert!((e.trim_in_secs - 2.0).abs() < 1e-4);
+
+        // 音视频双轨共用同一规则：音频带同样能顶到原点
+        let mut a = ClipTrackEdit::default();
+        a.set_trim_start(5.0, source);
+        a.set_offset(-999.0);
+        assert!(a.visible_start().abs() < 1e-4);
+    }
+
+    /// 顶到原点后，时间轴 0 处显示的应是**入点那一帧**（源时间 = 播放头 − 偏移）。
+    #[test]
+    fn test_origin_position_shows_in_frame_after_sliding_to_start() {
+        let source = 30.0;
+        let mut s = VideoClipState::new();
+        s.video_edit.set_trim_start(5.0, source);
+        s.video_edit.set_offset(-999.0);
+        s.set_clip_position(0.0);
+        assert_eq!(s.video_window(source), (0.0, 25.0));
+        assert!(
+            (s.video_source_secs_at(source).expect("带内") - 5.0).abs() < 1e-4,
+            "时间轴 0 处应显示入点（源 5s）那一帧"
+        );
     }
 
     /// 长度调整的硬约束：无论怎么拖，可视长度都不小于最小时长。

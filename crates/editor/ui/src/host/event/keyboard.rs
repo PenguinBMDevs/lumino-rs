@@ -72,13 +72,49 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
-    /// 处理空格键：播放/暂停切换
-    fn handle_space_shortcut(&mut self) {
-        if self.root.toolbar.is_playing {
-            self.route_message(message::Message::Toolbar(toolbar::Event::Pause));
-        } else {
-            self.route_message(message::Message::Toolbar(toolbar::Event::Play));
+    /// 空格键的**视图仲裁**（纯函数，便于测试）：返回本次应发的消息。
+    ///
+    /// * `clip_panel_active` — 渲染器首级（视频剪辑面板）是否激活。它持有
+    ///   **自己的秒域传输时钟**，与卷帘 `PlaybackManager` 完全无关：若无条件切
+    ///   卷帘播放，用户在剪辑界面按空格会「什么都没发生」（剪辑时钟根本没被切）。
+    ///   因此剪辑面板激活时必须发 `ClipPlayToggled`——与面板上的播放按钮
+    ///   **同一条消息**，保证按钮与快捷键行为严格一致（含「停在末尾时从 0 重播」
+    ///   等既定语义，不在此处复刻）。
+    /// * `piano_roll_playing` — 卷帘走带是否在播放，决定卷帘路径切 Play 还是 Pause。
+    /// * `ctrl_or_cmd` — 带 Ctrl/Cmd 的空格**不承接**：Windows 中文输入法切换、
+    ///   macOS Spotlight 都占用该组合键，抢过来会在切输入法时莫名开始播放。
+    /// * `repeat` — 长按自动重复必须忽略，否则按住空格会以按键重复率疯狂翻转播放态。
+    fn space_shortcut_message(
+        clip_panel_active: bool,
+        piano_roll_playing: bool,
+        ctrl_or_cmd: bool,
+        repeat: bool,
+    ) -> Option<message::Message> {
+        if repeat || ctrl_or_cmd {
+            return None;
         }
+        if clip_panel_active {
+            Some(message::Message::VideoClip(
+                crate::message::VideoClipAction::ClipPlayToggled,
+            ))
+        } else if piano_roll_playing {
+            Some(message::Message::Toolbar(toolbar::Event::Pause))
+        } else {
+            Some(message::Message::Toolbar(toolbar::Event::Play))
+        }
+    }
+
+    /// 处理空格键：播放/暂停切换（按视图分流，见 [`Self::space_shortcut_message`]）
+    fn handle_space_shortcut(&mut self, ctrl_or_cmd: bool, repeat: bool) {
+        let Some(msg) = Self::space_shortcut_message(
+            self.root.is_renderer_entry_active(),
+            self.root.toolbar.is_playing,
+            ctrl_or_cmd,
+            repeat,
+        ) else {
+            return;
+        };
+        self.route_message(msg);
         self.window_ctx.window.request_redraw();
     }
 
@@ -144,13 +180,15 @@ impl Host {
         &mut self,
         key: winit::keyboard::KeyCode,
         modifiers: winit::keyboard::ModifiersState,
+        repeat: bool,
     ) {
         let ctrl = super::is_ctrl_or_cmd_pressed(modifiers);
         let shift = modifiers.contains(winit::keyboard::ModifiersState::SHIFT);
 
-        // 空格键：播放/暂停切换
+        // 空格键：播放/暂停切换（视图仲裁 + 忽略长按重复，见 space_shortcut_message）。
+        // 无论是否消费都提前返回：空格不参与其余快捷键匹配。
         if key == winit::keyboard::KeyCode::Space {
-            self.handle_space_shortcut();
+            self.handle_space_shortcut(ctrl, repeat);
             return;
         }
 
@@ -200,6 +238,8 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::Host;
+    use crate::message::VideoClipAction;
+    use crate::{message, toolbar};
     use winit::keyboard::KeyCode;
 
     /// Ctrl+S 命中，无 Ctrl 不命中，其他键不命中
@@ -209,5 +249,72 @@ mod tests {
         assert!(!Host::match_save_shortcut(KeyCode::KeyS, false));
         assert!(!Host::match_save_shortcut(KeyCode::KeyA, true));
         assert!(!Host::match_save_shortcut(KeyCode::Space, true));
+    }
+
+    /// 空格键裁决：剪辑面板激活 → 切**剪辑面板独立传输**（与面板播放按钮同一消息）。
+    ///
+    /// 若这里退回卷帘 Play/Pause，剪辑面板的秒域时钟不会被切换，用户按空格
+    /// 会「什么都没发生」——这正是本卡要补的行为。
+    #[test]
+    fn test_space_shortcut_routes_to_clip_transport_in_clip_panel() {
+        let msg = Host::space_shortcut_message(true, false, false, false)
+            .expect("剪辑面板内空格应产生消息");
+        assert!(
+            matches!(
+                msg,
+                message::Message::VideoClip(VideoClipAction::ClipPlayToggled)
+            ),
+            "剪辑面板内空格必须切剪辑传输，实际 {msg:?}"
+        );
+
+        // 剪辑面板的空格切换与卷帘播放状态无关（两套时钟互不驱动）
+        let msg_playing = Host::space_shortcut_message(true, true, false, false)
+            .expect("剪辑面板内空格应产生消息");
+        assert!(
+            matches!(
+                msg_playing,
+                message::Message::VideoClip(VideoClipAction::ClipPlayToggled)
+            ),
+            "卷帘正在播放也不得改写剪辑面板的空格语义"
+        );
+    }
+
+    /// 非剪辑面板视图保持原语义：按卷帘走带状态切 Play / Pause。
+    #[test]
+    fn test_space_shortcut_keeps_piano_roll_semantics_elsewhere() {
+        let idle =
+            Host::space_shortcut_message(false, false, false, false).expect("空闲时应发 Play");
+        assert!(
+            matches!(idle, message::Message::Toolbar(toolbar::Event::Play)),
+            "卷帘空闲时空格应播放，实际 {idle:?}"
+        );
+
+        let playing =
+            Host::space_shortcut_message(false, true, false, false).expect("播放中应发 Pause");
+        assert!(
+            matches!(playing, message::Message::Toolbar(toolbar::Event::Pause)),
+            "卷帘播放中空格应暂停，实际 {playing:?}"
+        );
+    }
+
+    /// 长按自动重复必须被忽略，否则按住空格会以按键重复率疯狂翻转播放态。
+    #[test]
+    fn test_space_shortcut_ignores_key_repeat() {
+        assert!(
+            Host::space_shortcut_message(true, false, false, true).is_none(),
+            "剪辑面板内长按空格不得重复切换"
+        );
+        assert!(
+            Host::space_shortcut_message(false, false, false, true).is_none(),
+            "卷帘视图长按空格不得重复切换"
+        );
+    }
+
+    /// 带 Ctrl/Cmd 的空格不承接（Windows 输入法切换 / macOS Spotlight 占用该组合）。
+    #[test]
+    fn test_space_shortcut_ignores_ctrl_or_cmd() {
+        assert!(Host::space_shortcut_message(true, false, true, false).is_none());
+        assert!(Host::space_shortcut_message(false, false, true, false).is_none());
+        assert!(Host::space_shortcut_message(false, true, true, false).is_none());
     }
 }

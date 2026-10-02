@@ -53,16 +53,13 @@ impl Host {
         gfx: &lumino_gfx::Context,
     ) {
         use crate::titlebar::mode_toggle::AppMode;
-        use lumino_ui_core::sidebar_event::GroupId;
 
         // 视频剪辑面板（渲染器首级）：不应渲染钢琴卷帘的任何内容（网格/音符/标尺），
         // 仅保留瀑布流离屏预览（由 ensure_piano_waterfall_keyboard 的 is_renderer_entry 分支处理）
         // 与 iced UI，避免其他面板内容透出或 GPU 浪费。
-        let is_renderer_clip = self.root.sidebar.active_group == Some(GroupId::Renderer)
-            && !self.root.sidebar.audio_export_visible
-            && !self.root.sidebar.video_export_visible
-            && self.root.state.current_mode != AppMode::Waterfall;
-        if is_renderer_clip {
+        //
+        // 判定统一走 `Root::is_renderer_entry_active()`（唯一权威源），不再内联复制条件。
+        if self.root.is_renderer_entry_active() {
             // 必须先驱动渲染线程参数发送：note_data_pub 活体缓冲的发布发生在渲染线程
             // 处理 Render 命令时，瀑布流预览经 take_note_data 读取。跳过会导致
             // 「加载 MIDI 后剪辑预览无音符，切卷帘才恢复」。

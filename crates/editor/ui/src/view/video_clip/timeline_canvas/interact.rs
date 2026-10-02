@@ -91,11 +91,12 @@ pub(super) fn drag_move(
     let delta = cur_secs - drag.grab_secs;
     match drag.mode {
         HitZone::Body => {
-            // 偏移下限 0（负值由 handler set_offset 兜底钳制）
-            Some(offset_action(
-                drag.track,
-                (drag.orig_offset + delta).max(0.0),
-            ))
+            // 整体移动：只发**绝对目标值**，边界由状态层 `set_offset` 单独裁决
+            // （不变量 = 可视左缘不越过时间轴原点 → offset ≥ −trim_in）。
+            // ⚠️ 不要在画布层再钳一次 `max(0.0)`：那会把不变量错安在「素材自身
+            // 原点」上，首端裁短后素材带就永远拖不回时间轴开头。两侧各钳一次
+            // 且规则不一致，正是本 bug 的成因。
+            Some(offset_action(drag.track, drag.orig_offset + delta))
         }
         HitZone::HandleStart => {
             // 向右拖首端把手 = 裁掉更多；负值由 handler 钳制到 0

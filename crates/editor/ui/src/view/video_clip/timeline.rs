@@ -191,7 +191,7 @@ pub fn timeline_pane(theme: &Theme, params: TimelinePaneParams<'_>) -> crate::El
                 rewind_btn,
                 play_btn,
                 text(format!(
-                    "时长 {:.1}s  位置 {:.1}s  缩放 {:.1}x",
+                    "时长 {:.1}s  位置 {:.1}s  缩放 {:.1}x   空格 播放/暂停",
                     duration_secs, params.playhead_secs, params.clip.zoom
                 ))
                 .size(11)

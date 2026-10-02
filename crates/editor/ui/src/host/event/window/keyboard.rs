@@ -15,7 +15,8 @@ impl Host {
         if let (ElementState::Pressed, winit::keyboard::PhysicalKey::Code(code)) =
             (key_event.state, key_event.physical_key)
         {
-            self.handle_keyboard_shortcuts(code, modifiers);
+            // `repeat` 必须透传：空格等切换类快捷键要忽略长按自动重复
+            self.handle_keyboard_shortcuts(code, modifiers, key_event.repeat);
         }
     }
 
