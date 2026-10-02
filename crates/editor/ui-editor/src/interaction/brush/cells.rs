@@ -14,6 +14,7 @@ use lumino_editor_state::brush_tool::cov;
 use std::collections::HashSet;
 
 use crate::Editor;
+use iced_core::{Point, Rectangle, Size};
 
 /// 待生成音符项（逻辑坐标：格索引 + key，非屏幕坐标）
 ///
@@ -158,5 +159,64 @@ impl Editor {
             }
         }
         runs
+    }
+
+    /// 待确认笔画的 **wgpu 预览音符实例数据**：`(tick, key, length, color)`
+    ///
+    /// §18 长笔画掉帧修复：预览方块不再走 iced canvas（每次 `Frame::fill` 都要跑一遍
+    /// lyon 细分 + 按色查 buffer，实测 8 万方块 = 单帧 81.6ms），改为**复用音符的
+    /// wgpu 预览通路**（`NoteInstance::new_preview` + `PREVIEW_BORDER_SENTINEL`）：
+    /// 每块 = 1 个实例，CPU 只做 16 字节打包，实例数由视口窗口界定 → 每帧成本与
+    /// 笔画长度无关。副产品：预览与 √ 生成的音符走**同一个着色器**，
+    /// "所见即生成"从"几何一致"升级为"着色一致"（只差预览分支的 70% alpha）。
+    ///
+    /// 口径：与画布路径共用 [`Self::brush_preview_runs_in_window`] + 同一剔除函数，
+    /// 每个可见行段输出 1 个实例（矩形 = 行段 tick 跨度 × 1 key）。
+    /// 颜色 = 该行段解析后音轨的显示色（`brush_track_color`，含层分配）。
+    pub fn brush_preview_note_instances(&self) -> Vec<(f32, u8, f32, [f32; 4])> {
+        let thickness = self.brush.thickness;
+        if thickness == 0 || !self.editor_state.brush_tool.has_pending() {
+            return Vec::new();
+        }
+        let snap = self.editor_state.view.snap_precision.max(1.0);
+        // 画布局部 bounds（与绘制层一致：position 是窗口坐标，只取 size）
+        let canvas_bounds = Rectangle::new(
+            Point::new(0.0, 0.0),
+            Size::new(
+                self.editor_state.canvas.size_x,
+                self.editor_state.canvas.size_y,
+            ),
+        );
+        let window = crate::grid::brush_tool_box::brush_visible_window(self, canvas_bounds);
+        let runs = self.brush_preview_runs_in_window(window);
+        let mut out = Vec::with_capacity(runs.len());
+        // 音轨 → 颜色 记忆表：行段按 (音轨, key, 格) 有序，同一音轨会连续重复，
+        // 而 `brush_track_color` 每次都要走一遍全局调色板（原子读 + 惰性静态解引用），
+        // 2.5 万段实测贡献 1~2ms。音轨数很少（默认 1~3），线性查找比查调色板便宜。
+        let mut colors: Vec<(usize, [f32; 4])> = Vec::with_capacity(8);
+        for run in runs {
+            let (track, key, cell_start, cell_end) = run;
+            if crate::grid::brush_tool_box::brush_run_screen_rect(self, &window, canvas_bounds, run)
+                .is_none()
+            {
+                continue; // 内容区外（键盘列/标尺带）
+            }
+            let rgba = match colors.iter().find(|(t, _)| *t == track) {
+                Some((_, cached)) => *cached,
+                None => {
+                    let c = self.brush_track_color(track);
+                    let rgba = [c.r, c.g, c.b, c.a];
+                    colors.push((track, rgba));
+                    rgba
+                }
+            };
+            out.push((
+                cell_start as f32 * snap,
+                key.min(u8::MAX as u16) as u8,
+                (cell_end - cell_start + 1) as f32 * snap,
+                rgba,
+            ));
+        }
+        out
     }
 }

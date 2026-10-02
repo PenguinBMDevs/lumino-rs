@@ -516,3 +516,95 @@ fn test_windowed_preview_matches_generated_notes_inside_window() {
         "★ 视口内所见 == 视口内生成（窗口化不破坏所见即生成）"
     );
 }
+
+// ── ★ §18：预览改走 wgpu 实例（长笔画掉帧修复）之后的等价性 ────────────────
+
+/// 实例 `(tick, key, length)` 展开成 `(key, 格)` 集合（实例 = 半开 tick 区间 × 1 key）
+fn instances_to_cells(
+    instances: &[(f32, u8, f32, [f32; 4])],
+    snap: f32,
+) -> std::collections::BTreeSet<(u16, i64)> {
+    let mut out = std::collections::BTreeSet::new();
+    for (tick, key, length, _color) in instances {
+        let start = (tick / snap) as i64;
+        let end = ((tick + length) / snap) as i64;
+        for cell in start..end {
+            out.insert((*key as u16, cell));
+        }
+    }
+    out
+}
+
+#[test]
+fn test_preview_instances_match_visible_generated_notes() {
+    // ★ wgpu 预览实例（新渲染通路）必须与 √ 生成的音符在**视口内逐格一致**：
+    // 这是"所见即生成"从几何一致升级到"同一个着色器"之后的最终口径。
+    let mut editor = window_editor();
+    editor.brush.set_thickness(3);
+    seed_stroke(&mut editor, &[(0.0, 100.0), (60.0 * 240.0, 102.0)]);
+
+    let window = brush_visible_window(&editor, local_canvas_bounds());
+    let instances = editor.brush_preview_note_instances();
+    assert!(!instances.is_empty(), "待确认笔画必须产出预览实例");
+    let preview_cells = instances_to_cells(&instances, 240.0);
+
+    assert!(editor.confirm_brush());
+    let mut generated: std::collections::BTreeSet<(u16, i64)> = std::collections::BTreeSet::new();
+    for track in 0..4 {
+        for note in editor.editor_state.data.track_notes(track).iter() {
+            let cell = (note.start_tick as f32 / 240.0) as i64;
+            if window.contains(cell, note.key as u16) {
+                generated.insert((note.key as u16, cell));
+            }
+        }
+    }
+    assert_eq!(
+        preview_cells, generated,
+        "★ 预览实例覆盖 == 视口内生成的音符（逐格一致）"
+    );
+}
+
+#[test]
+fn test_preview_instances_are_viewport_bounded() {
+    // 实例数只与视口内行段相关：视口外的长笔画不产生实例（每帧成本与笔画长度解耦）
+    let mut editor = window_editor();
+    seed_stroke(
+        &mut editor,
+        &[(500.0 * 240.0, 100.0), (600.0 * 240.0, 100.0)],
+    );
+    assert!(
+        editor.brush_preview_note_instances().is_empty(),
+        "视口外的笔画不得产生预览实例"
+    );
+
+    // 视口内一笔 → 实例数 == 可见行段数（每段 1 个实例，连续格合并成长矩形）
+    let mut editor = window_editor();
+    seed_stroke(&mut editor, &[(0.0, 100.0), (20.0 * 240.0, 100.0)]);
+    let window = brush_visible_window(&editor, local_canvas_bounds());
+    let runs = editor.brush_preview_runs_in_window(window);
+    let instances = editor.brush_preview_note_instances();
+    assert_eq!(runs, vec![(1, 100, 0, 20)], "水平笔画合并成 1 条行段");
+    assert_eq!(
+        instances.len(),
+        runs.len(),
+        "每个可见行段恰好 1 个实例（连续同色格合并成一条矩形）"
+    );
+    let (tick, key, length, _color) = instances[0];
+    assert_eq!(key, 100);
+    assert!((tick - 0.0).abs() < 1e-3 && (length - 21.0 * 240.0).abs() < 1e-3);
+}
+
+#[test]
+fn test_preview_instances_available_in_vertical_roll() {
+    // 纵向卷帘复用同一条音符预览通路（gfx 侧 `note.draw_vertical`），
+    // 因此实例数据必须与横向同样产出（旧 canvas 图层曾整体漏挂，见 §16.4）。
+    // 纵向 key 沿 X：zoom_y=20、画布宽 1200 → 可见 key 0..=61，故取 key 30。
+    let mut editor = window_editor();
+    editor.editor_state.is_vertical_roll = true;
+    seed_stroke(&mut editor, &[(0.0, 30.0), (10.0 * 240.0, 30.0)]);
+    let instances = editor.brush_preview_note_instances();
+    assert!(
+        !instances.is_empty(),
+        "纵向卷帘下待确认笔画同样产出预览实例"
+    );
+}

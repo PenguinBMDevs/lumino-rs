@@ -19,7 +19,10 @@ use lumino_message::Point2;
 use lumino_ui_editor::Editor;
 use lumino_ui_editor::message::EditorAction;
 
-use super::{Scenario, Stat, mb, median, preview_full_path, preview_runs_and_rects, stroke_points};
+use super::{
+    Scenario, Stat, mb, median, preview_canvas_geometry, preview_full_path, preview_runs_and_rects,
+    stroke_points,
+};
 
 /// 60fps 帧预算（ms）——超过即肉眼可见掉帧
 pub const FRAME_BUDGET_MS: f64 = 16.67;
@@ -32,15 +35,17 @@ pub struct GrowthRow {
     pub cells: usize,
     /// 旧口径行段数（全量栅格化）
     pub runs_full: usize,
-    /// 新口径行段数（窗口化，= 生产绘制路径实际构建的方块数）
+    /// 生产路径实例数（§18 wgpu：= 可见行段数）
     pub runs_window: usize,
-    /// 旧口径每帧耗时中位（ms）
+    /// 旧口径每帧耗时中位（ms，§17 之前的全量画布几何）
     pub full_ms: f64,
-    /// 新口径每帧耗时中位（ms）——判定基准
+    /// §17 画布几何（窗口化行段 + 矩形）耗时中位（ms）
+    pub canvas_ms: f64,
+    /// §18 生产路径（wgpu 预览实例构建）耗时中位（ms）——判定基准
     pub window_ms: f64,
     /// 旧口径单次构建累计新增分配（MB）
     pub full_alloc_mb: f64,
-    /// 新口径单次构建累计新增分配（MB）
+    /// 生产路径单次构建累计新增分配（MB）
     pub window_alloc_mb: f64,
 }
 
@@ -85,15 +90,20 @@ pub fn run_growth_curve(editor: &mut Editor, lens: &[usize], cycles: usize) -> V
         let cells = build_stroke(editor, &points, snap);
 
         let mut full = Stat::new("旧口径");
-        let mut window = Stat::new("新口径");
+        let mut canvas = Stat::new("画布几何");
+        let mut window = Stat::new("wgpu 实例");
         let mut runs_full = 0usize;
         let mut runs_window = 0usize;
         for cycle in 0..=cycles {
             if cycle == 0 {
                 let _ = preview_full_path(editor);
+                let _ = preview_canvas_geometry(editor);
                 let _ = preview_runs_and_rects(editor);
             } else {
                 full.measure(|| runs_full = preview_full_path(editor));
+                canvas.measure(|| {
+                    let _ = preview_canvas_geometry(editor);
+                });
                 window.measure(|| runs_window = preview_runs_and_rects(editor));
             }
         }
@@ -103,6 +113,7 @@ pub fn run_growth_curve(editor: &mut Editor, lens: &[usize], cycles: usize) -> V
             runs_full,
             runs_window,
             full_ms: median(full.times()),
+            canvas_ms: median(canvas.times()),
             window_ms: median(window.times()),
             full_alloc_mb: mb(full.max_alloc_growth()),
             window_alloc_mb: mb(window.max_alloc_growth()),
@@ -171,8 +182,15 @@ pub fn report_growth(rows: &[GrowthRow], thickness: u8, target_ms: f64) -> bool 
          新口径线 {target_ms:.1}ms） ──"
     );
     println!(
-        "{:<9} | {:<9} | {:<10} | {:<11} | {:<10} | {:<10} | {:<10} | 判定",
-        "点数", "覆盖格", "行段(全量)", "行段(窗口化)", "旧口径(ms)", "新口径(ms)", "新分配(MB)"
+        "{:<9} | {:<9} | {:<10} | {:<11} | {:<10} | {:<10} | {:<10} | {:<10} | 判定",
+        "点数",
+        "覆盖格",
+        "行段(全量)",
+        "实例(可见)",
+        "全量画布(ms)",
+        "画布几何(ms)",
+        "wgpu实例(ms)",
+        "实例分配(MB)"
     );
     let mut pass = true;
     for row in rows {
@@ -188,24 +206,34 @@ pub fn report_growth(rows: &[GrowthRow], thickness: u8, target_ms: f64) -> bool 
             "✓"
         };
         println!(
-            "{:<9} | {:<9} | {:<10} | {:<11} | {:<10.3} | {:<10.3} | {:<10.2} | {}",
+            "{:<9} | {:<9} | {:<10} | {:<11} | {:<10.3} | {:<10.3} | {:<10.3} | {:<10.2} | {}",
             row.points,
             row.cells,
             row.runs_full,
             row.runs_window,
             row.full_ms,
+            row.canvas_ms,
             row.window_ms,
             row.window_alloc_mb,
             verdict
         );
     }
+    println!(
+        "  注：三条路径均**不含** iced canvas 的 lyon 细分与逐块 `Frame::fill` —— \
+         真机 puffin 实测 8 万方块单帧 81.6ms（§18 改走 wgpu 的直接原因）"
+    );
     if let (Some(first), Some(last)) = (rows.first(), rows.last()) {
         println!(
-            "  成本增长倍数（{} → {} 点）: 旧口径 {:.1}× / 新口径 {:.1}×（新口径应接近 1×）",
+            "  成本增长倍数（{} → {} 点）: 全量画布 {:.1}× / 画布几何 {:.1}× / wgpu 实例 {:.1}×",
             first.points,
             last.points,
             if first.full_ms > 0.0 {
                 last.full_ms / first.full_ms
+            } else {
+                0.0
+            },
+            if first.canvas_ms > 0.0 {
+                last.canvas_ms / first.canvas_ms
             } else {
                 0.0
             },
@@ -216,10 +244,15 @@ pub fn report_growth(rows: &[GrowthRow], thickness: u8, target_ms: f64) -> bool 
             }
         );
         println!(
-            "  提速（{} 点）: {:.1}× | 每帧分配 {:.1}MB → {:.1}MB | 方块数 {} → {}（视口外 {:.2}% 不再计算）",
+            "  提速（{} 点）: 全量 {:.1}× / 几何 {:.1}× | 每帧分配 {:.1}MB → {:.1}MB | 方块数 {} → {}（视口外 {:.2}% 不再计算）",
             last.points,
             if last.window_ms > 0.0 {
                 last.full_ms / last.window_ms
+            } else {
+                0.0
+            },
+            if last.window_ms > 0.0 {
+                last.canvas_ms / last.window_ms
             } else {
                 0.0
             },

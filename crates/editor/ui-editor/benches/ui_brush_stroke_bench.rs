@@ -171,12 +171,17 @@ impl Stats {
     }
 }
 
-/// 每帧预览构建：行段（与 √ 生成同源）+ 每段方块矩形；返回行段数
+/// 每帧预览构建：**生产绘制路径（§18 wgpu 预览实例）**
 ///
-/// **生产绘制路径（窗口化）**：只对可见窗口内的格做覆盖/行段计算 ——
-/// 与 `grid::brush_tool_box::draw` 完全同一条管线（同一组函数），
-/// 因此本指标就是"用户拖长笔画时每帧要付的账"。
+/// 与 `note_update::build_preview_instances` → `NoteInstance::new_preview` 同源：
+/// 视口窗口化行段 → 每段 16 字节实例，成本与笔画长度无关。
+/// 返回值 = 实例数（= 可见行段数）。
 fn preview_runs_and_rects(editor: &Editor) -> usize {
+    editor.brush_preview_note_instances().len()
+}
+
+/// §17 画布几何路径（保留对照）：窗口化行段 + 每段屏幕矩形
+fn preview_canvas_geometry(editor: &Editor) -> usize {
     let bounds = canvas_bounds(editor);
     let window = brush_visible_window(editor, bounds);
     let runs = editor.brush_preview_runs_in_window(window);
@@ -188,8 +193,9 @@ fn preview_runs_and_rects(editor: &Editor) -> usize {
 
 /// 旧口径（对照，仅用于 A/B 量化）：全量栅格化 + 全量行段 + 逐段方块矩形
 ///
-/// 这是 §17 修复前的生产路径（对整笔做覆盖计算后再逐段剔除），保留它做
-/// **同机同轮 A/B**——修复效果不能靠"感觉快了"，要有同一张表的两列数字。
+/// 这是 §17 修复前的生产路径（对整笔做覆盖计算后再逐段剔除）。**注意**：
+/// 三条路径都**不含** iced canvas 的 lyon 细分与逐块 `Frame::fill` 成本
+/// ——真机 puffin 实测 8 万方块 = 单帧 **81.6ms**，那正是 §18 改走 wgpu 的原因。
 fn preview_full_path(editor: &Editor) -> usize {
     let runs = editor.brush_preview_runs();
     for (_, key, t_start, t_end) in &runs {

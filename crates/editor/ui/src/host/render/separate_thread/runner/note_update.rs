@@ -259,6 +259,20 @@ impl Host {
             .unwrap_or(default_note_length);
         let color = note_worker::MAIN_TRACK_NOTE_COLOR;
 
+        // 画刷待确认笔画（§18 长笔画掉帧修复）：方块预览走**音符预览通路**
+        // （`new_preview` + 哨兵 → 着色器 70% alpha、不画边框），与 √ 生成的音符
+        // 同一个着色器；实例数由视口窗口界定，每帧成本与笔画长度无关。
+        // 旧路径（iced canvas 逐块 `Frame::fill`）实测 8 万方块 = 单帧 81.6ms。
+        if editor.editor_state.brush_tool.has_pending() {
+            return editor
+                .brush_preview_note_instances()
+                .into_iter()
+                .map(|(tick, key, length, color)| {
+                    NoteInstance::new_preview(tick, key, length, color)
+                })
+                .collect();
+        }
+
         // 正在绘制的音符（Drawing 状态）— 预览音符用 new_preview（哨兵）
         if let crate::editor::EditState::Drawing {
             start_tick,

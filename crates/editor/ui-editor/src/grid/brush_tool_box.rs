@@ -1,17 +1,22 @@
-//! 画刷矢量笔画渲染：**覆盖格方块**（方形、所见即生成）+ 共享 √× 悬浮按钮
+//! 画刷矢量笔画渲染：**可见窗口计算 / 行段几何** + 共享 √× 悬浮按钮
 //!
-//! 视觉规格（BRUSH-001 补充需求：不要圆头圆尾，改方形，所见即生成）：
-//! - 预览 = 逐**覆盖格**画方块：`x ∈ [格起 tick, 格起 + 吸附精度)`、`y ∈ [key, key+1)`（屏幕像素），
-//!   **与 √ 实际生成的音符逐格一致**（同源函数 `brush_pending_notes`），因此不存在
-//!   "预览一套、生成一套"的几何偏差；
-//! - 每层（key）颜色 = 该层音轨音符显示色加深 40%（含洋葱皮轨），key 边界硬切换；
+//! 视觉规格（BRUSH-001 补充需求：方形、所见即生成）：
+//! - 方块 = 每个**覆盖格**一个矩形：`x ∈ [格起 tick, 格起 + 吸附精度)`、
+//!   `y ∈ [key, key+1)`；**与 √ 实际生成的音符逐格一致**（同源
+//!   `brush_pending_notes`），不存在"预览一套、生成一套"的几何偏差；
+//! - 每层（key）颜色 = 该层音轨音符显示色（含洋葱皮轨），key 边界硬切换；
 //! - 同一 `(音轨, key)` 行内连续格合并为一个矩形（`brush_preview_runs`），
-//!   方块数远小于音符数，且**只增不改**——追加采样点只会新增格子，不会移动已有格子
+//!   **只增不改**——追加采样点只会新增格子，不会移动已有格子
 //!   （替代旧折线渲染：超过点数上限后等距重采样会整笔漂移 → 抖动，见 §RCA）。
 //!
-//! 性能：
-//! - 离屏笔画/方块在绘制前按屏幕矩形剔除，绘制成本只与可见方块数相关；
-//! - 几何计算与屏幕点抽稀无关（不再需要折线抽稀），块成本 O(覆盖格数 + 行段数)。
+//! ⚠️ **渲染通路（§18）**：方块本体**不再由 canvas 绘制**，改由
+//! [`Editor::brush_preview_note_instances`] 产出实例、走音符的 wgpu 预览通路
+//! （与 √ 生成的音符同一个着色器）。原因：`Frame::fill` 每次调用都要跑一遍 lyon
+//! 细分 + 按色查 buffer，实测 8 万方块 = 单帧 **81.6ms**；而块数 = 可见格 × 粗细度，
+//! 缩小时铺满一屏，CPU 细分结构上守不住 60fps。
+//! 本模块保留：可见窗口计算（`brush_visible_window`，同时供窗口化栅格化与实例筛选）、
+//! 行段→屏幕矩形剔除（`brush_run_screen_rect`，实例筛选复用同一条口径）、
+//! 以及 √× 悬浮按钮的 canvas 绘制（微秒级）。
 //!
 //! ⚠️ 坐标系契约（裁剪错位 BUG 的根因）：`Program::draw` 的 `bounds` 是**窗口坐标**
 //! （含左侧栏/工具栏偏移），帧内绘制坐标却是**画布局部坐标**——可见区域只取
@@ -24,7 +29,7 @@ use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::{clip_rect, content_bounds};
 use iced_core::{Point, Rectangle, Size};
-use iced_widget::canvas::{self, Geometry, Path};
+use iced_widget::canvas::{self, Geometry};
 use lumino_editor_state::brush_tool::cov::{self, MAX_KEY};
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
@@ -177,9 +182,13 @@ pub fn brush_cell_rect(editor: &Editor, t_start: i64, t_end: i64, key: u16) -> R
     }
 }
 
-/// 绘制全部待确认笔画（覆盖格方块）+ 共享 √× 悬浮按钮
+/// 绘制待确认笔画的 **√× 悬浮按钮**（方块本体已改走 wgpu 预览实例）
 ///
-/// 仅在画刷工具激活时绘制。
+/// §18：预览方块不再由 canvas 绘制——`Frame::fill` 每次调用都要跑一遍 lyon 细分
+/// 并按颜色查 buffer 表，实测 8 万方块 = 单帧 **81.6ms**（puffin：整帧只有它超标），
+/// 而块数 = 可见格 × 粗细度，缩小时铺满一屏，CPU 细分结构上守不住 60fps。
+/// 现在方块由 [`Editor::brush_preview_note_instances`] 产出、走音符的 wgpu 预览
+/// 通路（与 √ 生成的音符同一个着色器）；本函数只负责按钮（2 次图片绘制，微秒级）。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -193,47 +202,21 @@ pub fn draw(
         return None;
     }
 
+    let btns = brush_button_rects(editor)?;
     let mut frame = canvas::Frame::new(renderer, bounds.size());
-    let mut has_content = false;
-    // ⚠️ `bounds` 的 position 是**窗口坐标**（左侧栏 + 工具栏偏移），而本层绘制坐标
-    // 是**画布局部坐标**：可见区域只能取 size()。旧实现把 `bounds` 直接当局部矩形
-    // 参与剔除 → 可见窗口右移 offset_x、下移 offset_y → 笔画左上角被裁掉
-    // （顶部若干 KEY + 左侧一片），见 [`brush_visible_window`] 与 §16 RCA。
-    let canvas_bounds = Rectangle::new(Point::new(0.0, 0.0), bounds.size());
-    let window = brush_visible_window(editor, bounds);
-
-    // 窗口化预览：只对可见窗口内的格做覆盖/行段计算（成本与笔画总长度无关）
-    for run in editor.brush_preview_runs_in_window(window) {
-        let Some(rect) = brush_run_screen_rect(editor, &window, canvas_bounds, run) else {
-            continue; // 视口外 / 内容区外（键盘列、标尺带）
-        };
-        let color = editor.brush_track_color(run.0);
-        let path = Path::rectangle(rect.position(), rect.size());
-        frame.fill(&path, color);
-        has_content = true;
-    }
-
-    if let Some(btns) = brush_button_rects(editor) {
-        draw_button(
-            &mut frame,
-            btns.confirm,
-            &CONFIRM_ICON,
-            iced_core::Color::from_rgb8(46, 125, 50),
-        );
-        draw_button(
-            &mut frame,
-            btns.cancel,
-            &CANCEL_ICON,
-            iced_core::Color::from_rgb8(198, 40, 40),
-        );
-        has_content = true;
-    }
-
-    if has_content {
-        Some(frame.into_geometry())
-    } else {
-        None
-    }
+    draw_button(
+        &mut frame,
+        btns.confirm,
+        &CONFIRM_ICON,
+        iced_core::Color::from_rgb8(46, 125, 50),
+    );
+    draw_button(
+        &mut frame,
+        btns.cancel,
+        &CANCEL_ICON,
+        iced_core::Color::from_rgb8(198, 40, 40),
+    );
+    Some(frame.into_geometry())
 }
 
 #[cfg(test)]
