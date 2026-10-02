@@ -60,8 +60,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   1.5–30×”“首个 NaN 后限幅器永久旁路”；上游 NaN 源待归因；
   ⑫ 导出数值污染兜底与取证：非有限样本无条件净化（无论限幅器开关）+ 一次性
   NaN-PROBE（首个非有限样本时间 + 最近 64 条事件）；隔离实验确认触发需
-  PB ∧ CC6/38 ∧ RPN 选择三者组合，根因指向 fork 合成侧。记录见
-  `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
+  PB ∧ CC6/38 ∧ RPN 选择三者组合，根因指向 fork 合成侧；
+  ⑬ 根因修复（方案 A）：fork xsynth-Lumino `7a31ed2c`（process_pitch 有限性
+  钳制 + 采样器 time 守卫），Lumino pin 已更新；修复后复现实验 nan=0（修复前 19890）。
+  记录见 `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
 
 ### 渲染修复
 
