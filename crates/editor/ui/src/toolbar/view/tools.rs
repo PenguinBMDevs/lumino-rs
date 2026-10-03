@@ -87,12 +87,10 @@ impl Toolbar {
                     Some(Event::button_hovered(Some(ButtonId::Eraser))),
                 ),
                 space().width(4),
-                // 曲线工具组：曲线工具按钮 + 右侧小三角（合并后的绘制工具集入口）。
-                // - 曲线工具按钮图标随当前激活的绘制子工具切换（画刷/形状/文字激活时显示对应图标，
-                //   填充开启时显示颜料桶）；其选中高亮与工具栏其他工具按钮保持一致。
-                // - 小三角展开「绘制工具选择面板」（填充桶/画刷/形状/文字/橡皮擦）。
-                // - 下拉菜单锚定在按钮正下方，点击面板外部区域关闭。
-                self.render_curve_tool_group(t, window, language),
+                // 音符画工具箱入口开关：固定图标（DrawToolbox），仅随浮层开合高亮；
+                // 普通点击开关「音符画悬浮工具条」，Ctrl+点击保留画刷/形状下拉、
+                // 分音符填充对话框等旁路。
+                self.render_draw_tool_toggle(t, window, language),
                 space().width(4),
                 tool_button(
                     icon::Quantize,

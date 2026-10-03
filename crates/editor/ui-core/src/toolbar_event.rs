@@ -104,12 +104,18 @@ pub enum Event {
     ButtonHovered(Option<ButtonId>),
     /// 图片转 MIDI 占位按钮（功能开发中）
     ImageToMidiClicked,
-    /// 切换「绘制工具选择面板」显示/隐藏（颜料桶右侧小三角触发）
+    /// 切换「音符绘制悬浮工具条」显示/隐藏（工具栏绘制入口按钮触发）
     ToggleToolPanel,
-    /// 关闭「绘制工具选择面板」
+    /// 关闭「音符绘制悬浮工具条」
     CloseToolPanel,
-    /// 选择「绘制工具选择面板」中的某个条目
+    /// 选择「音符绘制悬浮工具条」中的某个条目
     ToolPanelItemSelected(ToolPanelItem),
+    /// 开始拖拽「音符绘制悬浮工具条」（面板本体按下）
+    ToolPanelDragStarted,
+    /// 拖拽「音符绘制悬浮工具条」中（携带相对全窗口覆盖层的绝对光标位置）
+    ToolPanelDragged(f32, f32),
+    /// 结束拖拽「音符绘制悬浮工具条」
+    ToolPanelDragEnded,
     /// 切换「画刷工具下拉」（ctrl+点击附属按钮触发）
     ToggleBrushDropdown,
     /// 打开「分音符填充」对话框（油漆桶开启时 Ctrl+点击曲线工具触发）：

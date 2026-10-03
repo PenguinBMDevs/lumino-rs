@@ -18,7 +18,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_eraser: "橡皮擦",
     tool_curve: "曲线工具",
     tool_fill: "颜料桶",
-    tool_panel_tooltip: "音符绘制工具集",
+    tool_panel_tooltip: "音符画工具箱",
     tool_stroke: "描边设置",
     tool_brush: "自由笔画",
     tool_shape: "形状工具",

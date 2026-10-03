@@ -15,7 +15,6 @@ mod resize;
 pub(crate) mod shape_dropdown;
 #[cfg(test)]
 mod tests;
-pub(crate) mod tool_panel;
 pub mod types;
 mod update;
 mod view;
@@ -81,8 +80,16 @@ pub struct Toolbar {
     pub ppq_edit_buffer: String,
     /// 溢出菜单是否打开
     pub overflow_menu_open: bool,
-    /// 绘制工具选择面板是否打开（颜料桶右侧小三角触发）
+    /// 音符绘制悬浮工具条是否打开（工具栏绘制入口按钮触发）
     pub tool_panel_open: bool,
+    /// 悬浮工具条偏移：`(dx, dy)`，dx = 相对卷帘水平中心的偏移，
+    /// dy = 距窗口底部内缩（逻辑像素，拖拽累加；默认 `(0, 44)` = 底部居中）
+    pub tool_panel_offset: (f32, f32),
+    /// 悬浮工具条是否正在拖拽（面板本体按下且未松开）
+    pub tool_panel_dragging: bool,
+    /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量递推跟随，
+    /// 使面板在光标离开面板/窗口范围时仍持续移动（首次 move 时为 None 仅记录）
+    pub(crate) tool_panel_last_cursor: Option<(f32, f32)>,
     /// 画刷工具下拉是否打开（ctrl+点击附属按钮触发）
     pub brush_dropdown_open: bool,
     /// 画刷工具配置（粗细度 + 每层音轨分配）

@@ -245,6 +245,21 @@ impl Event {
         Message::Toolbar(Self::ToolPanelItemSelected(item))
     }
 
+    /// 构造“开始拖拽音符绘制悬浮工具条”的工具栏消息
+    pub const fn tool_panel_drag_started() -> Message {
+        Message::Toolbar(Self::ToolPanelDragStarted)
+    }
+
+    /// 构造“拖拽音符绘制悬浮工具条”的工具栏消息（携带绝对光标位置）
+    pub const fn tool_panel_dragged(px: f32, py: f32) -> Message {
+        Message::Toolbar(Self::ToolPanelDragged(px, py))
+    }
+
+    /// 构造“结束拖拽音符绘制悬浮工具条”的工具栏消息
+    pub const fn tool_panel_drag_ended() -> Message {
+        Message::Toolbar(Self::ToolPanelDragEnded)
+    }
+
     /// 构造"切换画刷工具下拉"的工具栏消息
     pub const fn toggle_brush_dropdown() -> Message {
         Message::Toolbar(Self::ToggleBrushDropdown)

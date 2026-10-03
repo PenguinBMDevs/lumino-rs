@@ -23,6 +23,10 @@ impl Toolbar {
             ppq_edit_buffer: String::new(),
             overflow_menu_open: false,
             tool_panel_open: false,
+            // 默认位置：水平居中（dx=0）、距窗口底部内缩 44px（悬浮于卷帘区域下缘）
+            tool_panel_offset: (0.0, 44.0),
+            tool_panel_dragging: false,
+            tool_panel_last_cursor: None,
             brush_dropdown_open: false,
             brush: BrushConfig::new(),
             fill_enabled: false,
@@ -48,18 +52,9 @@ impl Toolbar {
             self.overflow_menu_open = false;
         }
 
-        // 绘制工具选择面板打开时，除以下情况外其余操作先关闭面板：
-        // - 再次点击小三角（ToggleToolPanel）用于切换关闭
-        // - 悬停事件（ButtonHovered）不应关闭面板（同溢出菜单的处理）
-        // - 显式关闭事件（CloseToolPanel）
-        if self.tool_panel_open
-            && !matches!(
-                event,
-                Event::ToggleToolPanel | Event::ButtonHovered(_) | Event::CloseToolPanel
-            )
-        {
-            self.tool_panel_open = false;
-        }
+        // 音符绘制悬浮工具条为**常驻浮层**（非下拉）：不随其它操作自动关闭，
+        // 仅由工具栏绘制入口按钮（ToggleToolPanel）或显式 CloseToolPanel 控制开关。
+        // 因此这里不再对其做"收到其它事件即关闭"的处理（旧下拉时代的 guard 已移除）。
 
         // 画刷工具下拉打开时，除以下情况外其余操作先关闭下拉：
         // - 再次点击附属按钮（ToggleBrushDropdown）用于切换关闭
@@ -107,8 +102,8 @@ impl Toolbar {
                 self.current_tool = tool;
                 // 切换工具即离开任何共存态：填充桶仅曲线/形状可共存，切到其它工具一律关闭
                 self.fill_enabled = false;
-                // 关闭所有下拉，避免工具切换后残留
-                self.tool_panel_open = false;
+                // 关闭附着于工具栏的下拉（画刷/形状），避免工具切换后残留；
+                // 但**不关闭**音符绘制悬浮工具条——它是独立常驻浮层，与工具切换无关。
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
             }
@@ -270,11 +265,16 @@ impl Toolbar {
             }
             Event::ToggleToolPanel => {
                 self.tool_panel_open = !self.tool_panel_open;
-                // 与溢出菜单、画刷下拉互斥：打开工具面板时关闭其余浮层
+                // 与溢出菜单、画刷下拉互斥：打开绘制工具条时关闭其余浮层
                 self.overflow_menu_open = false;
                 self.brush_dropdown_open = false;
+                // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
+                if !self.tool_panel_open {
+                    self.tool_panel_dragging = false;
+                    self.tool_panel_last_cursor = None;
+                }
                 tracing::debug!(
-                    "工具栏: 音符绘制工具集 {}",
+                    "工具栏: 音符绘制悬浮工具条 {}",
                     if self.tool_panel_open {
                         "打开"
                     } else {
@@ -284,7 +284,35 @@ impl Toolbar {
             }
             Event::CloseToolPanel => {
                 self.tool_panel_open = false;
-                tracing::debug!("工具栏: 关闭音符绘制工具集");
+                self.tool_panel_dragging = false;
+                self.tool_panel_last_cursor = None;
+                tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
+            }
+            Event::ToolPanelDragStarted => {
+                self.tool_panel_dragging = true;
+                self.tool_panel_last_cursor = None;
+            }
+            Event::ToolPanelDragEnded => {
+                self.tool_panel_dragging = false;
+                self.tool_panel_last_cursor = None;
+            }
+            Event::ToolPanelDragged(px, py) => {
+                // px/py 为全窗口覆盖层给出的绝对光标位置；以增量方式跟随，
+                // 使面板在光标离开面板/窗口范围时仍持续移动。
+                if self.tool_panel_dragging {
+                    match self.tool_panel_last_cursor {
+                        None => self.tool_panel_last_cursor = Some((px, py)),
+                        Some((lx, ly)) => {
+                            let (dx, dy) = self.tool_panel_offset;
+                            // 向右拖 → dx 增大；向上拖（py 减小）→ 距底内缩 dy 增大
+                            self.tool_panel_offset = (
+                                (dx + (px - lx)).clamp(-4000.0, 4000.0),
+                                (dy - (py - ly)).clamp(0.0, 4000.0),
+                            );
+                            self.tool_panel_last_cursor = Some((px, py));
+                        }
+                    }
+                }
             }
             Event::ToggleBrushDropdown => {
                 self.brush_dropdown_open = !self.brush_dropdown_open;
@@ -377,9 +405,9 @@ impl Toolbar {
                         self.fill_enabled = false;
                     }
                 }
-                // 选中后关闭面板（与溢出菜单逐项选择行为一致）
-                self.tool_panel_open = false;
-                tracing::debug!("工具栏: 工具面板选择 {:?}", item);
+                // 选中后**保持面板打开**：悬浮工具条是常驻浮层，允许连续切换绘制工具
+                // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
+                tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
             }
         }
     }

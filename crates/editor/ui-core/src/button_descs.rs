@@ -74,7 +74,7 @@ pub enum ButtonId {
     More,
     /// 图片转 MIDI
     ImageToMidi,
-    /// 绘制工具选择面板触发（颜料桶右侧小三角）
+    /// 音符画工具箱开关（工具栏入口按钮，开合悬浮工具条）
     ToolPanel,
 }
 
@@ -154,7 +154,7 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("ImageToMidi", "图片转MIDI（功能开发中）"),
     (
         "ToolPanel",
-        "打开音符绘制工具集（描边/颜料桶/画刷/形状/文字/橡皮擦）",
+        "开合音符画工具箱（颜料桶/画刷/形状/文字/橡皮擦）",
     ),
 ];
 
@@ -207,7 +207,7 @@ const DESC_EN: &[(&str, &str)] = &[
     ("ImageToMidi", "Image to MIDI (coming soon)"),
     (
         "ToolPanel",
-        "Open drawing tools panel (stroke/fill/brush/shape/text/eraser)",
+        "Toggle note drawing toolbox (fill/brush/shape/text/eraser)",
     ),
 ];
 
