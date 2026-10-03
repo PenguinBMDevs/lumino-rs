@@ -26,6 +26,7 @@ impl GpuSynth {
         let queue = &res.ctx.queue;
         let block = config.block_size;
         let max_voices = config.max_voices;
+        let midi_channels = config.midi_channels;
         // Physical pool: active voices + room for one block's worth of
         // fading (trimmed) voices. See `FADE_SLOTS_FRACTION`.
         // When max_voices == 0 (unlimited / black-MIDI mode) the pool is
@@ -200,9 +201,9 @@ impl GpuSynth {
             mix_bg: None,
             render_bg_dirty: true,
             mix_bg_dirty: true,
-            channels: (0..16).map(|_| ChannelState::new()).collect(),
+            channels: (0..midi_channels).map(|_| ChannelState::new()).collect(),
             voices: Vec::new(),
-            key_voices: vec![VecDeque::new(); 16 * 128],
+            key_voices: vec![VecDeque::new(); midi_channels * 128],
             sample_offsets: std::collections::HashMap::new(),
             samples_next_offset: 0,
             global_frame: 0,
@@ -222,8 +223,8 @@ impl GpuSynth {
             upload_chans: Vec::new(),
             note_counter: 0,
             voice_id_counter: 0,
-            spawn_budget: [0; 16 * 128],
-            active_notes: [0; 16 * 128],
+            spawn_budget: vec![0; midi_channels * 128],
+            active_notes: vec![0; midi_channels * 128],
             voice_templates: std::collections::HashMap::new(),
             states_sync_counter: 0,
             pending: None,

@@ -8,7 +8,7 @@ use lumino_midly::{MetaMessage, MidiMessage, Smf, Timing, TrackEventKind};
 
 use crate::SynthError;
 use crate::midi::kind;
-use crate::midi::{MidiSequence, TimedEvent};
+use crate::midi::{MidiSequence, TimedEvent, port};
 
 /// A parsed MIDI file.
 ///
@@ -31,6 +31,8 @@ pub struct MidiFile {
     pub tempos: Vec<(u64, u32)>,
     /// Total length of the song in ticks.
     pub length_ticks: u64,
+    /// 文件使用到的最大 MIDI 端口号（FF 21；空/无端口为 0，REND-002 #87）。
+    pub max_port: u8,
 }
 
 impl MidiFile {
@@ -73,15 +75,25 @@ impl MidiFile {
         // second event list sitting in memory.
         let mut tempos: Vec<(u64, u32)> = Vec::new();
         let mut length_ticks: u64 = 0;
+        let mut track_ports: Vec<u8> = Vec::with_capacity(smf.tracks.len());
         for track in &smf.tracks {
             let mut tick: u64 = 0;
+            let mut port: Option<u8> = None;
             for ev in track {
                 tick += ev.delta.as_int() as u64;
                 length_ticks = length_ticks.max(tick);
-                if let TrackEventKind::Meta(MetaMessage::Tempo(us_per_beat)) = &ev.kind {
-                    tempos.push((tick, u24_to_u32(*us_per_beat)));
+                match &ev.kind {
+                    TrackEventKind::Meta(MetaMessage::Tempo(us_per_beat)) => {
+                        tempos.push((tick, u24_to_u32(*us_per_beat)));
+                    }
+                    // FF 21 MidiPort：取首个出现值（与 CPU 加载链路一致）。
+                    TrackEventKind::Meta(MetaMessage::MidiPort(p)) if port.is_none() => {
+                        port = Some(u8::from(*p));
+                    }
+                    _ => {}
                 }
             }
+            track_ports.push(port.unwrap_or(0));
         }
 
         // Cumulative seconds per tempo segment; tick -> seconds is a binary
@@ -118,14 +130,15 @@ impl MidiFile {
         // only big allocations are the final 8-byte-per-event array and
         // midly's own parse tree (freed when `smf` drops below).
         let mut events: Vec<TimedEvent> = Vec::new();
-        for track in &smf.tracks {
+        for (track_idx, track) in smf.tracks.iter().enumerate() {
             let mut tick: u64 = 0;
             for ev in track {
                 tick += ev.delta.as_int() as u64;
                 let TrackEventKind::Midi { channel, message } = &ev.kind else {
                     continue;
                 };
-                let channel = channel.as_int();
+                // REND-002 #87：(port, ch) → 全局通道 port*16+ch（超限折叠到 15 块）。
+                let channel = port::global_channel(track_ports[track_idx], channel.as_int());
                 let (k, payload) = match *message {
                     MidiMessage::NoteOn { key, vel } => {
                         let vel = vel.as_int();
@@ -159,11 +172,13 @@ impl MidiFile {
 
         let end_sample = ticks_to_sample(length_ticks) as u64;
 
+        let max_port = track_ports.iter().copied().max().unwrap_or(0);
         Ok(Self {
             sequence: MidiSequence { events, end_sample },
             sample_rate,
             tempos,
             length_ticks,
+            max_port,
         })
     }
 
@@ -185,4 +200,58 @@ impl MidiFile {
 
 fn u24_to_u32(v: u24) -> u32 {
     v.as_int()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::midi::kind;
+
+    /// 双轨 SMF（format 1）：每轨先写 FF 21 端口，再写 ch0/key60 的 NoteOn/Off。
+    fn two_track_smf(ports: [u8; 2]) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"MThd");
+        v.extend_from_slice(&6u32.to_be_bytes());
+        v.extend_from_slice(&1u16.to_be_bytes());
+        v.extend_from_slice(&2u16.to_be_bytes());
+        v.extend_from_slice(&480u16.to_be_bytes());
+        for p in ports {
+            let mut track = Vec::new();
+            track.extend_from_slice(&[0x00, 0xFF, 0x21, 0x01, p]);
+            track.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+            track.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+            track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+            v.extend_from_slice(b"MTrk");
+            v.extend_from_slice(&(track.len() as u32).to_be_bytes());
+            v.extend_from_slice(&track);
+        }
+        v
+    }
+
+    #[test]
+    fn parse_maps_ports_to_global_channels() {
+        let midi = MidiFile::parse(&two_track_smf([0, 1]), 64_000).expect("双端口 SMF 应可解析");
+        assert_eq!(midi.max_port, 1);
+        let note_on_channels: Vec<u8> = midi
+            .sequence
+            .events
+            .iter()
+            .filter(|e| e.kind() == kind::NOTE_ON)
+            .map(|e| e.channel())
+            .collect();
+        assert_eq!(note_on_channels, vec![0, 16], "轨 1 的 ch0 应映射到全局 16");
+    }
+
+    #[test]
+    fn parse_single_port_is_identity() {
+        let midi = MidiFile::parse(&two_track_smf([0, 0]), 64_000).expect("单端口 SMF 应可解析");
+        assert_eq!(midi.max_port, 0);
+        for e in &midi.sequence.events {
+            assert!(
+                e.channel() < 16,
+                "单端口事件必须保持 0..15: {}",
+                e.channel()
+            );
+        }
+    }
 }

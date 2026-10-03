@@ -1,6 +1,7 @@
 //! MIDI event types shared by the parser, the scheduler and the engine.
 
 pub mod parser;
+pub mod port;
 pub mod stream;
 
 pub use parser::MidiFile;
@@ -42,8 +43,12 @@ pub mod kind {
 /// packed into exactly **8 bytes** (down from 16).
 ///
 /// ```text
-/// sample (u32) | packed (u32) = channel (4 bits) | kind (4 bits) | payload (24 bits)
+/// sample (u32) | packed (u32) = channel (8 bits) | kind (4 bits) | payload (20 bits)
 /// ```
+///
+/// `channel` is the **global** MIDI channel `port*16+ch` (0..=255, REND-002
+/// #87). The largest payload layout is 16 bits (`key | vel << 8`), so the
+/// 20-bit field is lossless for every event kind.
 ///
 /// Payload layouts:
 /// - `NoteOn`/`NoteOff`: `key | vel << 8`
@@ -63,17 +68,16 @@ pub mod kind {
 pub struct TimedEvent {
     /// Absolute output sample index at which this event is applied.
     pub sample: u32,
-    /// `channel (4) | kind (4) | payload (24)` - see the type docs.
+    /// `channel (8) | kind (4) | payload (20)` - see the type docs.
     pub packed: u32,
 }
 
 impl TimedEvent {
     /// Builds a packed event.
     pub fn new(sample: u32, channel: u8, kind: u32, payload: u32) -> Self {
-        debug_assert!(channel < 16, "channel out of range: {channel}");
         Self {
             sample,
-            packed: ((channel as u32) << 28) | ((kind & 0xF) << 24) | (payload & 0x00FF_FFFF),
+            packed: ((channel as u32) << 24) | ((kind & 0xF) << 20) | (payload & 0x000F_FFFF),
         }
     }
 
@@ -93,22 +97,22 @@ impl TimedEvent {
         Self::new(sample, channel, k, p)
     }
 
-    /// The MIDI channel (0-15).
+    /// The global MIDI channel (0-255; `port*16+ch`, REND-002 #87).
     #[inline]
     pub fn channel(&self) -> u8 {
-        (self.packed >> 28) as u8
+        (self.packed >> 24) as u8
     }
 
     /// The packed event kind (see [`kind`]).
     #[inline]
     pub fn kind(&self) -> u32 {
-        (self.packed >> 24) & 0xF
+        (self.packed >> 20) & 0xF
     }
 
-    /// The 24-bit event payload (layout depends on [`Self::kind`]).
+    /// The 20-bit event payload (layout depends on [`Self::kind`]).
     #[inline]
     pub fn payload(&self) -> u32 {
-        self.packed & 0x00FF_FFFF
+        self.packed & 0x000F_FFFF
     }
 
     /// Decodes the event payload into the classic enum view.
@@ -151,8 +155,42 @@ impl TimedEvent {
 #[derive(Debug, Clone, PartialEq)]
 pub struct MidiSequence {
     /// All events in ascending sample order (events from every track and
-    /// channel are merged).
+    /// channel are merged; `channel` is the global `port*16+ch`).
     pub events: Vec<TimedEvent>,
     /// The output sample position of the last event (the MIDI's end).
     pub end_sample: u64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timed_event_roundtrips_full_global_channel_range() {
+        for ch in [0u8, 1, 15, 16, 31, 127, 254, 255] {
+            for (k, payload) in [
+                (kind::NOTE_ON, 60u32 | (100 << 8)),
+                (kind::NOTE_OFF, 60u32),
+                (kind::CONTROL_CHANGE, 7u32 | (127 << 8)),
+                (kind::PROGRAM_CHANGE, 42u32),
+                (kind::PITCH_BEND, 8192u32),
+            ] {
+                let ev = TimedEvent::new(1234, ch, k, payload);
+                assert_eq!(ev.sample, 1234);
+                assert_eq!(ev.channel(), ch);
+                assert_eq!(ev.kind(), k);
+                assert_eq!(ev.payload(), payload);
+            }
+        }
+    }
+
+    #[test]
+    fn port_global_channel_matches_cpu_semantics() {
+        assert_eq!(port::global_channel(0, 9), 9);
+        assert_eq!(port::global_channel(1, 0), 16);
+        assert_eq!(port::global_channel(6, 15), 111);
+        assert_eq!(port::global_channel(15, 15), 255);
+        assert_eq!(port::global_channel(16, 0), 240, "超限端口折叠到 15 块");
+        assert_eq!(port::global_channel(127, 15), 255);
+    }
 }

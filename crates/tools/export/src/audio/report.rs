@@ -36,16 +36,6 @@ pub(super) fn warn_port_overflow(source: &str, track_ports: &[u8]) {
     );
 }
 
-/// REND-002：GPU 后端暂不支持多端口（#87），显式告警避免静默 16 通道折叠。
-pub(super) fn warn_gpu_multi_port(midi_max_port: u8) {
-    if midi_max_port != 0 {
-        tracing::warn!(
-            "[REND-002] GPU 导出暂不支持多端口（#87）：端口将被折叠到 16 通道，\
-             端口间 CC/Program/声部可能串台；建议改用 CPU 后端"
-        );
-    }
-}
-
 /// 报告进度
 pub(super) fn report_progress(
     config: &AudioRenderConfig,

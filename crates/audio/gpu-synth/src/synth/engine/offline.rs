@@ -33,6 +33,11 @@ impl GpuSynth {
         self.offline_cursor = 0;
         self.offline_events = Vec::new();
         self.voices.clear();
+        for q in self.key_voices.iter_mut() {
+            q.clear();
+        }
+        self.spawn_budget.fill(0);
+        self.active_notes.fill(0);
         self.global_frame = 0;
         self.active_voice_count = 0;
         self.last_states = None;

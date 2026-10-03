@@ -26,7 +26,7 @@ struct MixParams {
     _pad0: f32,
     _pad1: f32,
     _pad2: f32,
-    starts: array<MixStart, 16>,
+    starts: array<MixStart, 256>,
 }
 
 struct MixStart {
@@ -51,7 +51,9 @@ struct MixEvent {
     value: f32,
 }
 
-const MAX_CHANNELS: u32 = 16u;
+// 全局通道空间上限（16 端口 × 16 通道）；实际通道数见 channel_count，
+// 单端口时循环只走 16 个通道（REND-002 #87）。
+const MAX_CHANNELS: u32 = 256u;
 
 @group(0) @binding(0) var<storage, read> voice_out: array<f32>;
 @group(0) @binding(1) var<storage, read_write> output: array<f32>;
@@ -99,7 +101,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var acc_r: array<f32, MAX_CHANNELS>;
     var acc_rel_l: array<f32, MAX_CHANNELS>;
     var acc_rel_r: array<f32, MAX_CHANNELS>;
-    for (var c = 0u; c < MAX_CHANNELS; c = c + 1u) {
+    for (var c = 0u; c < mix_params.channel_count; c = c + 1u) {
         acc_l[c] = 0.0;
         acc_r[c] = 0.0;
         acc_rel_l[c] = 0.0;
@@ -109,8 +111,8 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     for (var v = 0u; v < mix_params.voice_count; v = v + 1u) {
         let base = (v * mix_params.block_size + f) * 2u;
         let vc = voice_chans[v];
-        let ch = vc & (MAX_CHANNELS - 1u);
-        let released = (vc >> 7u) & 1u;
+        let ch = vc & 0xFFu;
+        let released = (vc >> 8u) & 1u;
         if (released == 0u) {
             acc_l[ch] = acc_l[ch] + voice_out[base];
             acc_r[ch] = acc_r[ch] + voice_out[base + 1u];
@@ -124,7 +126,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     // and replaying every event with frame <= f.
     var cur: array<MixStart, MAX_CHANNELS>;
     var frames: array<u32, MAX_CHANNELS>;
-    for (var c = 0u; c < MAX_CHANNELS; c = c + 1u) {
+    for (var c = 0u; c < mix_params.channel_count; c = c + 1u) {
         cur[c] = mix_params.starts[c];
         frames[c] = 0u;
     }
@@ -132,7 +134,11 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     var i = 0u;
     while (i < mix_params.event_count && mix_events[i].frame <= f) {
         let ev = mix_events[i];
-        let c = ev.channel & (MAX_CHANNELS - 1u);
+        let c = ev.channel;
+        if (c >= mix_params.channel_count) {
+            i = i + 1u;
+            continue;
+        }
         let n = f32(ev.frame - frames[c]);
         cur[c].vol = lerp_advance(cur[c].vol, cur[c].vol_step, cur[c].vol_end, n);
         cur[c].expr = lerp_advance(cur[c].expr, cur[c].expr_step, cur[c].expr_end, n);

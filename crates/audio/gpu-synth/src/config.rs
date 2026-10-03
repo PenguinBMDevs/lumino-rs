@@ -88,6 +88,13 @@ pub struct SynthConfig {
     /// Default: `8` (XSynth uses 4; 8 keeps fast trills/rolls clean).
     pub max_voices_per_key: usize,
 
+    /// 全局 MIDI 通道空间大小（必须是 16 的倍数，16..=256）。
+    ///
+    /// `16` = 单端口（历史行为，零变化）；多端口 =
+    /// `(实际使用端口数上限+1)*16`，事件通道按 `(port, ch) → port*16+ch`
+    /// 映射（REND-002 #87）。默认 16。
+    pub midi_channels: usize,
+
     /// Number of audio frames rendered per GPU dispatch (per channel).
     ///
     /// Must be a power of two and at least 16. Smaller blocks keep the
@@ -151,6 +158,7 @@ impl Default for SynthConfig {
             sample_rate: 64_000,
             max_voices: 0,         // 0 = unlimited — black MIDI must never drop a voice
             max_voices_per_key: 4, // 4 per (ch,key) as requested
+            midi_channels: 16,
             block_size: 512,
             interpolation: InterpolationMode::Linear,
             use_effects: true,
@@ -176,6 +184,15 @@ impl SynthConfig {
             return Err(crate::SynthError::Config(format!(
                 "max_voices must be within 0..=1_000_000 (0 = unlimited), got {}",
                 self.max_voices
+            )));
+        }
+        if self.midi_channels < 16
+            || self.midi_channels > 256
+            || !self.midi_channels.is_multiple_of(16)
+        {
+            return Err(crate::SynthError::Config(format!(
+                "midi_channels must be a multiple of 16 within 16..=256, got {}",
+                self.midi_channels
             )));
         }
         if !self.block_size.is_power_of_two() || self.block_size < 16 {

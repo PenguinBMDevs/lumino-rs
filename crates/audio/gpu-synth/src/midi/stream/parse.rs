@@ -49,12 +49,13 @@ pub(super) fn read_header_and_tracks_mmap(
     Ok((tpb, infos))
 }
 
-pub(super) fn scan_tempos_mmap(
-    mmap: &[u8],
-    infos: &[(u64, u32)],
-) -> Result<(Vec<(u64, u32)>, u64), SynthError> {
+/// `(tempo 变化, 总 tick, 每轨端口)` —— [`scan_tempos_mmap`] 的返回三元组。
+pub(super) type TempoScan = (Vec<(u64, u32)>, u64, Vec<u8>);
+
+pub(super) fn scan_tempos_mmap(mmap: &[u8], infos: &[(u64, u32)]) -> Result<TempoScan, SynthError> {
     let mut tempos: Vec<(u64, u32)> = Vec::new();
     let mut length_ticks = 0u64;
+    let mut track_ports: Vec<u8> = Vec::with_capacity(infos.len());
     for (off, len) in infos {
         let off = *off as usize;
         let len = *len as usize;
@@ -62,6 +63,7 @@ pub(super) fn scan_tempos_mmap(
         let mut pos = 0usize;
         let mut tick = 0u64;
         let mut running: Option<u8> = None;
+        let mut port: Option<u8> = None;
         while pos < track.len() {
             // VLQ delta
             let mut delta = 0u32;
@@ -128,6 +130,11 @@ pub(super) fn scan_tempos_mmap(
                         tempos.push((tick, tempo));
                         pos += 3;
                     } else {
+                        // FF 21 MidiPort：取首个出现值（与 CPU 加载链路一致）。
+                        if meta_type == 0x21 && meta_len >= 1 && port.is_none() && pos < track.len()
+                        {
+                            port = Some(track[pos]);
+                        }
                         pos += meta_len;
                     }
                 }
@@ -185,7 +192,8 @@ pub(super) fn scan_tempos_mmap(
                 _ => {}
             }
         }
+        track_ports.push(port.unwrap_or(0));
     }
     tempos.sort_by_key(|&(t, _)| t);
-    Ok((tempos, length_ticks))
+    Ok((tempos, length_ticks, track_ports))
 }
