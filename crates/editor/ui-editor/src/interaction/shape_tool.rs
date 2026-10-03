@@ -221,6 +221,8 @@ impl Editor {
 
         self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
+        // 登记图形对象供「鼠标工具」点选（须在清空待确认列表之前读几何）
+        self.record_shape_tool_shapes();
         self.editor_state.shape_tool.clear_pending();
         self.mark_notes_changed();
         true

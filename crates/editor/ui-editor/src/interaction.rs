@@ -8,6 +8,7 @@
 
 mod batch_insert;
 mod brush;
+mod drawn_shape;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;

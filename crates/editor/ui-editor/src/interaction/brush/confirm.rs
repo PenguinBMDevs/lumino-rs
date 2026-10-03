@@ -113,6 +113,8 @@ impl Editor {
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
+        // 登记图形对象供「鼠标工具」点选（须在清空笔画之前读几何）
+        self.record_brush_strokes();
         // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
         self.editor_state.brush_tool.reset();
         self.mark_notes_changed();

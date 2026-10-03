@@ -76,6 +76,16 @@ impl Host {
         self.root.load_tempo_changes(tempo_changes);
     }
 
+    /// 清空「已绘制图形」注册表（装载新 MIDI 文档时调用）
+    ///
+    /// 图形对象是**会话内的叠加对象**（不随 MIDI 文件持久化）：新文档的音符与
+    /// 旧文档的图形几何毫无关系，若不清空，旧文件的图形描边会残留在新文档上。
+    /// 注意：导出前的「自动保存重载同一文档」路径**不**调用本方法（同一文档，
+    /// 用户绘制的图形应保留），见 `runner/menu/file/export.rs`。
+    pub fn clear_drawn_shapes(&mut self) {
+        self.root.editor.editor_state.shape_select.clear();
+    }
+
     /// 设置 MIDI 文档（独占所有权，2026-08 单一权威源改造）
     ///
     /// 设计意图（见 midi_handler.rs）：

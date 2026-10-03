@@ -25,4 +25,5 @@ pub use editor_state::{
 pub use editor_state::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
 };
+pub use editor_state::{DrawnShape, DrawnShapeSource, ShapeSelectState};
 pub use editor_transform::EditorTransform;

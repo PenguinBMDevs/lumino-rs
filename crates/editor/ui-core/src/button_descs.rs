@@ -152,7 +152,7 @@ const DESC_ZH: &[(&str, &str)] = &[
     ("Collaboration", "打开多人协作面板"),
     ("More", "打开更多工具菜单"),
     ("ImageToMidi", "图片转MIDI（功能开发中）"),
-    ("ToolPanel", "开合音符画工具箱（颜料桶/画刷/形状/文字）"),
+    ("ToolPanel", "开合音符画工具箱（鼠标/颜料桶/画刷/形状/文字）"),
 ];
 
 /// 英文解释说明占位表（待人工填写）
@@ -204,7 +204,7 @@ const DESC_EN: &[(&str, &str)] = &[
     ("ImageToMidi", "Image to MIDI (coming soon)"),
     (
         "ToolPanel",
-        "Toggle note drawing toolbox (fill/brush/shape/text)",
+        "Toggle note drawing toolbox (mouse/fill/brush/shape/text)",
     ),
 ];
 

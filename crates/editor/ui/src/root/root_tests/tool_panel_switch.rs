@@ -65,6 +65,13 @@ fn test_panel_curve_switches_to_curve() {
 }
 
 #[test]
+fn test_panel_mouse_switches_to_shape_select() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    // 鼠标工具 = 图形选中工具（Tool::ShapeSelect），独立于音符编辑的 Pointer
+    select_and_assert(ToolPanelItem::Mouse, Tool::ShapeSelect, false);
+}
+
+#[test]
 fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
     let _guard = crate::test_helpers::event_queue_lock();
     // 填充桶现在随时可切换：从画刷点击仅开启填充，不强制切换到曲线

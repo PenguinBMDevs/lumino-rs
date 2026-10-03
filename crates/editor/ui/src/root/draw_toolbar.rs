@@ -4,7 +4,7 @@
 //! 以 `Stack` 顶层叠加于钢琴卷帘之上，默认停在卷帘区域下方、水平居中，可拖拽。
 //! 外形为左右两端全圆的胶囊形（圆角 = 面板高度 / 2），配色随主题。
 //!
-//! 面板常驻显示全部绘制工具（曲线 / 颜料桶 / 画刷 / 形状 / 文字），
+//! 面板常驻显示全部绘制工具（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字），
 //! 当前激活工具高亮；颜料桶为可切换的「填充开关」（可与曲线/形状共存高亮）。
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
@@ -76,6 +76,12 @@ impl Root {
         // 面板条目：全部绘制工具**常显**（当前激活项高亮），不再做旧下拉的"隐藏当前工具"去重。
         // 第三项为 tooltip 所用的简短名称。
         let items: &[(ToolPanelItem, icon::Icon, &'static str, bool)] = &[
+            (
+                ToolPanelItem::Mouse,
+                icon::MousePointer,
+                t.tool_mouse,
+                cur == Tool::ShapeSelect,
+            ),
             (
                 ToolPanelItem::Curve,
                 icon::Curve,
@@ -438,5 +444,6 @@ mod tests {
         assert!(!has_settings(ToolPanelItem::Curve));
         assert!(!has_settings(ToolPanelItem::Text));
         assert!(!has_settings(ToolPanelItem::StrokeSettings));
+        assert!(!has_settings(ToolPanelItem::Mouse));
     }
 }

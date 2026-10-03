@@ -127,6 +127,8 @@ impl Editor {
         // 批量创建操作日志（撤销/重做）+ 标记当前轨变化
         self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
+        // 登记图形对象供「鼠标工具」点选（须在清空路径之前读几何）
+        self.record_line_tool_paths();
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
         self.mark_notes_changed();

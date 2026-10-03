@@ -65,7 +65,16 @@ impl Editor {
         } else {
             None
         };
+        // 本次将撤销的历史条目若是「音符创建」，记下其分组 ID —— 撤销成功后
+        // 把同组的已绘制图形一并隐藏，避免「描边还在、音符已没」的幽灵。
+        let undone_create_group = match self.editor_state.data.history.undo_back() {
+            Some(lumino_note_core::history::HistoryEntry::Create(entry)) => entry.group_id,
+            _ => None,
+        };
         if self.editor_state.data.undo() {
+            if let Some(group) = undone_create_group {
+                self.editor_state.shape_select.hide_group(group);
+            }
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =
@@ -175,7 +184,16 @@ impl Editor {
         } else {
             None
         };
+        // 本次将重做的历史条目若是「音符创建」，记下其分组 ID —— 重做成功后
+        // 恢复同组已绘制图形的可见性（与 undo 的隐藏成对）。
+        let redone_create_group = match self.editor_state.data.history.redo_back() {
+            Some(lumino_note_core::history::HistoryEntry::Create(entry)) => entry.group_id,
+            _ => None,
+        };
         if self.editor_state.data.redo() {
+            if let Some(group) = redone_create_group {
+                self.editor_state.shape_select.show_group(group);
+            }
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =

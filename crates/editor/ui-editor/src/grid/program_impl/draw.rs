@@ -116,6 +116,14 @@ pub(crate) fn draw(
     }
 
     {
+        // 已绘制图形选中高亮（鼠标工具）：与工具无关，选中即绘制
+        puffin::profile_scope!("draw::drawn_shape_box");
+        if let Some(sel_geom) = crate::grid::drawn_shape_box::draw(editor, renderer, theme, bounds) {
+            geometries.push(sel_geom);
+        }
+    }
+
+    {
         puffin::profile_scope!("draw::remote_cursors");
         let remote_cursor_geometries = remote_cursors::draw(editor, renderer, bounds);
         geometries.extend(remote_cursor_geometries);

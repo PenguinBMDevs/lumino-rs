@@ -43,6 +43,8 @@ pub struct MainTranslations {
     pub tool_fill: &'static str,
     /// 音符绘制工具集触发按钮（工具栏小三角）
     pub tool_panel_tooltip: &'static str,
+    /// 绘制工具面板：鼠标工具（图形选中）
+    pub tool_mouse: &'static str,
     /// 描边设置
     pub tool_stroke: &'static str,
     /// 画刷工具
@@ -63,6 +65,8 @@ pub struct MainTranslations {
     pub tool_text_desc: &'static str,
     /// 橡皮擦说明（绘制工具面板底部描述条）
     pub tool_eraser_desc: &'static str,
+    /// 鼠标工具说明（绘制工具面板底部描述条）
+    pub tool_mouse_desc: &'static str,
     /// 量化
     pub tool_quantize: &'static str,
     /// 变速

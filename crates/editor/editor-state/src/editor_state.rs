@@ -18,6 +18,7 @@ pub mod brush_tool;
 pub mod canvas_state;
 pub mod constants;
 pub mod drag_state;
+pub mod drawn_shape;
 pub mod editor_data;
 pub mod hit_test;
 pub mod image_to_midi;
@@ -37,6 +38,7 @@ pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
 pub use drag_state::DragState;
+pub use drawn_shape::{DrawnShape, DrawnShapeSource, ShapeSelectState};
 pub use editor_data::{
     CollabCreateSyncEntry, CollabTransformSyncEntry, EditorData, NoteDeltaEvent,
 };
@@ -99,6 +101,8 @@ pub struct EditorState {
     pub shape_tool: shape_tool::ShapeToolState,
     /// 文字工具状态（文本框 + 输入文字 + 采样模式）
     pub text_tool: text_tool::TextToolState,
+    /// 已确认绘制图形的对象注册表与选中状态（鼠标工具点选 / 高亮描边）
+    pub shape_select: drawn_shape::ShapeSelectState,
 }
 
 impl Default for EditorState {
@@ -129,6 +133,7 @@ impl EditorState {
             brush_tool: brush_tool::BrushToolState::default(),
             shape_tool: shape_tool::ShapeToolState::default(),
             text_tool: text_tool::TextToolState::new(),
+            shape_select: drawn_shape::ShapeSelectState::default(),
         }
     }
 
@@ -145,6 +150,7 @@ impl EditorState {
         self.brush_tool = brush_tool::BrushToolState::default();
         self.shape_tool = shape_tool::ShapeToolState::default();
         self.text_tool = text_tool::TextToolState::new();
+        self.shape_select = drawn_shape::ShapeSelectState::default();
         let total_ticks = self.view.total_ticks;
         viewport::Viewport::new(&mut self.view, &mut self.max_scroll)
             .update_max_scroll(total_ticks);

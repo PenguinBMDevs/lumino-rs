@@ -408,6 +408,12 @@ impl Toolbar {
     /// （Ctrl+点击：选择 + 打开设置）复用，避免两处选择逻辑漂移。
     fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
         match item {
+            ToolPanelItem::Mouse => {
+                // 鼠标工具（图形选中）：独立工具，不与填充桶共存；
+                // 仅用于点选已确认的绘制图形，不参与音符编辑。
+                self.current_tool = Tool::ShapeSelect;
+                self.fill_enabled = false;
+            }
             ToolPanelItem::StrokeSettings => {
                 // 描边设置：功能开发中（UI 占位）
                 tracing::info!("工具栏: 描边设置（功能开发中）");

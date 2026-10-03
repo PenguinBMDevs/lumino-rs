@@ -156,6 +156,8 @@ pub enum ShapeType {
 /// 点击后由 `Toolbar::update` 翻译为具体的工具选择/设置动作。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolPanelItem {
+    /// 鼠标工具（图形选中）：点选已确认的绘制图形，选中的图形高亮描边
+    Mouse,
     /// 描边设置
     StrokeSettings,
     /// 曲线工具
