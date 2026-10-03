@@ -9,6 +9,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 设置面板 · 关于页「回声洞」彩蛋（UI-006）
+
+- **回声洞彩蛋文本** — 「设置 → 关于」页**最后一个文本内容下方**新增一行灰阶小字（12px，
+  复用占位色 `background.weak.text`，不打断关于页信息层级）：进入关于页时以**打字机效果**
+  逐字显示（20 字符/秒，`dt` 上限钳 50ms 防卡顿后瞬移）；**单击**后当前内容**闪烁 0.5s**
+  退出（0.125s 半周期方波 = 2 个完整明暗循环），随后下一条以打字机效果进入，**索引循环**。
+  文案为编译期常量（5 条，含 `🐧`），**不读配置、不依赖外部文件**、不做本地化（彩蛋性质，
+  英文界面同样显示中文）。
+- **连点安全（不可省）** — 闪烁期内的点击**一律忽略**：每次点击最多推进一条，且任何时刻
+  最长 0.5s 必然离开闪烁相位。另两种直觉写法都会坏——「闪烁期重置计时」会被连点无限推迟
+  （观感卡死），「闪烁期立即推进」会一次跳多条。已由单测锁死（闪烁内连点 50 次 ⇒ 恰好 +1）。
+- **状态归属 `RootState`，不放 `SettingsPanel`** — `Root::apply_settings` 是**整面板替换**
+  （`ui/src/root/editor_ops/dialog/settings.rs`）；放面板内会把闪烁中的瞬时状态搬进主窗口，
+  使主窗口为一段与它无关的动画持续重绘。
+- **装填点（不可省）** — 关于页**永远不是**设置面板初始页（`SettingsPanel::new` 中
+  `selected_menu_index` 硬编码为 0），故打字机只能由 `Event::MenuSelected(MENU_INDEX_ABOUT)`
+  显式装填；同时把裸魔数 `9` 提为 `MENU_INDEX_ABOUT` 常量。状态起始相位为 `Idle`
+  （不要求逐帧驱动），否则 APP 启动后主窗口会空转重绘约 1 秒。
+- **逐帧驱动（同类陷阱，与 UI-007 同源）** — 对话框 `ui_dirty` 只在「消息产生状态变更」或
+  iced 返回 `State::Updated` 时置位，事件队列清空后走「仅 present 缓存帧」早退路径 ⇒
+  `frame.rs` 门控纳入回声洞动画并**显式置脏**，否则动画 1~2 帧后冻结。
+- **两处「不抖动」保障** — 闪烁用 **alpha** 而非隐藏控件（保留布局盒，零重排）；彩蛋行外包
+  `width(Fill)` + `height(Fixed)` 容器（`MouseArea` 命中盒 = 子元素布局盒，否则打字初期只有
+  1~2 个字宽几乎点不中；空串时也不塌陷）。逐字揭示按 `chars().take(n)` 截取——文案含 CJK
+  （3 字节）与 emoji（4 字节），字节切片会在非 char 边界 panic。
+- **🐧 字形可得性已探针实测（非推断）** — 三环链路逐环取证：① `font-kit` 探针确认 U+1F427
+  存在于 `Segoe UI Emoji` / `Segoe UI Symbol` / `Noto Color Emoji`（211 个系统家族全枚举）；
+  ② cosmic-text 的 Windows `common_fallback()` 首项即含 `"Segoe UI Emoji"`；③
+  `cryoglyph` 将 `SwashContent::Color` 映射为 `ContentType::Color` ⇒ 彩色 emoji 可光栅化。
+  附带查实：`config.rs` 默认字体写英文名 `Microsoft YaHei`，本机无该家族名（实际为 `微软雅黑` /
+  `Microsoft YaHei UI`），因 cosmic-text 的 `han_unification()` 默认回退到 `Microsoft YaHei UI`
+  故中文正常——与 UI-001 记录的边界一致，本卡不处理。
+- **验证** — `cargo test -p lumino-ui-core echo_cave`（状态机 15 项：起始不动/逐字单调/
+  有界收敛/emoji char 边界/点击冻结/极早期补全/方波相位/索引 +1 循环/**连点不卡死**/
+  整轮有界/`dt` 钳制/重播/文案约束）；`cargo test -p lumino-ui echo_cave`（菜单装填→点击→
+  `AnimationTick`→视图构建 7 项接线）；`cargo test -p lumino-ui-settings`（20 项，含
+  「关于页不是默认页」护栏——该断言变红即提示装填点需重设计）。全仓门禁：
+  `cargo test --workspace`（**2472 passed / 0 failed / 32 ignored**）、`cargo fmt --all`、
+  `cargo clippy --workspace --all-targets -- -D warnings`（exit 0，0 警告）、
+  `scripts/check-bom.sh`（1405 个 `.rs` 无 BOM）全绿。
+  记录见 `docs/2026-10-03-UI-006-回声洞实施记录.md`（调研见同名「调研」文档）。
+
 ### 设置面板 · 关于页 Lumino Logo 与点击彩蛋（UI-007）
 
 - **关于页 logo 与彩蛋交互** — 「设置 → 关于」页顶部新增 Lumino logo（复用 `Icon::LogoInApp`，

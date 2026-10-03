@@ -74,6 +74,10 @@ impl Host {
             .set_viewport(viewport.width, viewport.height);
         let about_egg_animating = self.root.state.about_egg.is_animating();
 
+        // 关于页回声洞彩蛋（UI-006）：打字机 + 闪烁需逐帧驱动。
+        // 起始相位为 Idle（不要求驱动），只有「进入关于页」或「点击切换」后才为真。
+        let echo_cave_animating = self.root.state.echo_cave.is_animating();
+
         // 更新模式切换按钮的弹簧物理动画、平滑滚动动画和框选框动画
         let has_selection_anim = self
             .root
@@ -89,7 +93,8 @@ impl Host {
             || self.root.editor.editor_state.view.smooth_scroll.active
             || has_selection_anim
             || clip_transport_playing
-            || about_egg_animating;
+            || about_egg_animating
+            || echo_cave_animating;
         if needs_animation {
             self.route_message(Message::AnimationTick);
             self.window_ctx.window.request_redraw();
@@ -99,7 +104,7 @@ impl Host {
         // iced 返回 `State::Updated` 时被置位（见 `host/event/window/events.rs` 的
         // `update_ui_state`），事件队列清空后 `render_iced_ui` 会走「仅 present 缓存帧」
         // 的早退路径，动画会冻结在上一帧。先例：下方播放分支的同类置脏。
-        if about_egg_animating {
+        if about_egg_animating || echo_cave_animating {
             self.ui_dirty = true;
         }
 

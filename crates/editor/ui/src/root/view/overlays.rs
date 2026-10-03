@@ -151,6 +151,7 @@ impl Root {
                 view_settings_dialog(
                     &self.settings,
                     &self.state.about_egg,
+                    &self.state.echo_cave,
                     &self.window,
                     lumino_note_core::font_scanner::get_cached_fonts(),
                 )

@@ -157,4 +157,10 @@ pub enum Event {
     /// 指针位置由 `Host` 在路由本消息**之前**写入彩蛋状态
     /// （`AboutEggState::set_click_point`），故事件本身不携带坐标。
     AboutLogoClicked,
+    // 关于页回声洞彩蛋（UI-006）
+    /// 点击「关于」页「回声洞」彩蛋文本
+    ///
+    /// 语义：当前内容闪烁退出 → 下一条以打字机效果进入；闪烁期内的点击会被状态机忽略
+    /// （`EchoCaveState::on_click` 返回 `false`），故本事件无需携带任何载荷。
+    EchoCaveClicked,
 }

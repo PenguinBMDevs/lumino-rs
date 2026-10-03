@@ -377,6 +377,10 @@ impl Root {
         // 相位推进必须在 update 路径完成——`Root::view` 只读 `&self`，无法推进状态。
         self.state.about_egg.update(now);
 
+        // 关于页回声洞彩蛋（UI-006）：推进打字机逐字揭示 / 闪烁退出。
+        // 同上，推进只在 update 路径；`view` 只读 `text()` 与 `opacity()`。
+        self.state.echo_cave.update(now);
+
         // 落地瞬间播放内置「钢管落地」音效：信号是消费式的，保证整段序列只响一次。
         // 播放走专属工作线程（立即返回），音频输出设备跟随设置面板的选择。
         if self.state.about_egg.take_impact_signal() {

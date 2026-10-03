@@ -59,3 +59,18 @@ pub fn create_placeholder_text_style() -> impl Fn(&Theme) -> text::Style + 'stat
         Some(palette.background.weak.text)
     })
 }
+
+/// 创建回声洞彩蛋文本样式（UI-006）
+///
+/// 底色取占位灰（与正文区分），`opacity` 用于「闪烁退出」动效。
+///
+/// 视觉闪烁用 **alpha** 而非「隐藏控件」表达：隐藏会把行高/宽度交回布局重算，
+/// 闪烁期间整页会上下呼吸；alpha=0 保留布局盒，**零重排**。
+pub fn create_echo_text_style(opacity: f32) -> impl Fn(&Theme) -> text::Style + 'static {
+    let opacity = opacity.clamp(0.0, 1.0);
+    move |theme: &Theme| {
+        let mut color = theme.extended_palette().background.weak.text;
+        color.a *= opacity;
+        text::Style { color: Some(color) }
+    }
+}

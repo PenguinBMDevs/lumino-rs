@@ -172,6 +172,31 @@ impl MessageHandler for SettingsHandler {
                     }
                 }
             }
+            crate::settings::Event::MenuSelected(index)
+                if index == crate::settings::MENU_INDEX_ABOUT =>
+            {
+                // 关于页回声洞彩蛋（UI-006）：打字机播放的**唯一装填点**。
+                // 关于页永远不是设置面板的初始页（`SettingsPanel::new` 的
+                // `selected_menu_index` 硬编码为 0），故「进入关于页」只能由菜单切换到达；
+                // 重复进入等价于重播当前文案。
+                root.state.echo_cave.begin_typing(Instant::now());
+                tracing::debug!(
+                    "关于页回声洞（UI-006）：进入关于页，开始打字机播放（第 {} 条）",
+                    root.state.echo_cave.index() + 1
+                );
+            }
+            crate::settings::Event::EchoCaveClicked => {
+                // 关于页回声洞彩蛋（UI-006）：单击切换——当前内容闪烁退出，下一条打字机进入。
+                // 闪烁期内的点击会被状态机忽略（返回 false），保证连点不会把闪烁无限推迟。
+                let now = Instant::now();
+                let consumed = root.state.echo_cave.on_click(now);
+                if consumed {
+                    tracing::debug!(
+                        "关于页回声洞（UI-006）：点击切换，第 {} 条进入闪烁退出",
+                        root.state.echo_cave.index() + 1
+                    );
+                }
+            }
             _ => {} // 其他设置变更由 settings.update() 同步
         }
 

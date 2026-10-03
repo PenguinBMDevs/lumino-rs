@@ -4,7 +4,7 @@
 pub use lumino_ui_core::state::{
     AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
     COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
-    CustomPrecisionDialogState, ExportProgressDialogState, LoadConfirmDialogState,
+    CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, LoadConfirmDialogState,
     MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
     MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
     RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
@@ -116,6 +116,13 @@ pub struct RootState {
     /// 进程级 static 上——设置面板每次打开都会重建 RootState，面板内状态无法
     /// 承载「重开面板不再出现」的语义。
     pub about_egg: AboutEggState,
+    /// 「关于」页回声洞彩蛋状态（UI-006：打字机进场 / 点击闪烁切换）
+    ///
+    /// 与 `about_egg` 同构放在此处而非 `SettingsPanel`：`Root::apply_settings` 是
+    /// **整面板替换**，面板内的动画状态会被搬进主窗口，使主窗口为一段与它无关的
+    /// 动画持续重绘。起始相位为 `Idle`（不要求逐帧驱动），打字由「菜单切到关于页」
+    /// 时调用 `begin_typing` 显式装填。
+    pub echo_cave: EchoCaveState,
 }
 
 impl Default for RootState {
@@ -155,6 +162,7 @@ impl RootState {
             device_warning_suppress_checked: false,
             device_warning_action: None,
             about_egg: AboutEggState::new(),
+            echo_cave: EchoCaveState::new(),
         }
     }
 }

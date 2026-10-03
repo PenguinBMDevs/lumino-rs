@@ -416,6 +416,12 @@ impl SettingsPanel {
                 // （设置面板每次打开都会重建，面板内状态无法承载跨开关的消失语义），
                 // 本面板不持有该状态，故此处仅作为穷尽匹配的占位。
             }
+            Event::EchoCaveClicked => {
+                // 关于页回声洞彩蛋（UI-006）：动画状态归属 `RootState::echo_cave`——
+                // 若放面板内，`Root::apply_settings` 的整面板替换会把闪烁中的瞬时状态
+                // 搬进主窗口，使主窗口为一段与它无关的动画持续重绘（见
+                // `ui/src/root/editor_ops/dialog/settings.rs`）。故此处同样是穷尽匹配占位。
+            }
         }
     }
 }

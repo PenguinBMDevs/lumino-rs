@@ -114,3 +114,27 @@ fn test_compat_events_update_switches_and_state() {
         lumino_ui_core::state::GpuCheckUiState::Running
     );
 }
+
+// ── 关于页回声洞彩蛋（UI-006）──
+
+#[test]
+fn test_default_menu_index_is_not_about() {
+    // UI-006 的装填点是「菜单切到关于页」（`Event::MenuSelected(MENU_INDEX_ABOUT)`）。
+    // 该设计的前提是：关于页**永远不是**设置面板的初始页——否则打字机永远不会启动。
+    // 若将来有人把关于页设为默认页，这条会变红，提示必须在 `view` 路径补装填。
+    let panel = SettingsPanel::new(&UiConfig::default());
+    assert_ne!(
+        panel.selected_menu_index, MENU_INDEX_ABOUT,
+        "关于页成了初始页：回声洞打字机将永不启动，请在视图路径补装填（见 handlers/settings.rs）"
+    );
+    assert_eq!(panel.selected_menu_index, 0, "设置面板默认停在第一页");
+}
+
+#[test]
+fn test_echo_cave_click_event_does_not_panic() {
+    // 面板不持有回声洞状态（归属 `RootState`），本事件在面板侧只是穷尽匹配占位；
+    // 这里守住「事件可达且不改变面板配置」这一契约。
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    panel.update(Event::EchoCaveClicked);
+    assert_eq!(panel.selected_menu_index, 0);
+}

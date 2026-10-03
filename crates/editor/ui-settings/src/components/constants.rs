@@ -15,6 +15,10 @@ pub const TEXT_SIZE_TITLE: f32 = 18.0;
 pub const TEXT_SIZE_SECTION: f32 = 16.0;
 /// 正文内容文本尺寸
 pub const TEXT_SIZE_CONTENT: f32 = 14.0;
+/// 回声洞彩蛋文本尺寸（UI-006）：比正文更小，与正文信息层级区分
+pub const TEXT_SIZE_ECHO: f32 = 12.0;
+/// 回声洞彩蛋行的固定高度（UI-006）：命中区与行高不随打字进度变化
+pub const ECHO_ROW_HEIGHT: f32 = 18.0;
 
 // 布局尺寸
 /// 左侧菜单宽度

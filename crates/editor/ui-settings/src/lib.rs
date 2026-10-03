@@ -26,6 +26,13 @@ use pages::*;
 
 pub use lumino_ui_core::settings_event::Event;
 
+/// 「关于」页在设置菜单中的索引（UI-006）
+///
+/// 该索引同时是**回声洞彩蛋的装填信号**：关于页永远不是设置面板的初始页
+/// （`SettingsPanel::new` 中 `selected_menu_index` 硬编码为 0），因此打字机播放
+/// 只能由「菜单切到关于页」触发。抽出常量避免字面量在多处漂移。
+pub const MENU_INDEX_ABOUT: usize = 9;
+
 /// 合成器与音频输出设置
 #[derive(Debug, Clone)]
 pub struct SynthSettings {
@@ -232,16 +239,18 @@ pub struct CloudConnItem {
 /// 渲染设置面板主视图
 ///
 /// `egg` 为「关于」页 logo 彩蛋状态（UI-007）：仅关于页需要，其余页面忽略。
+/// `echo` 为「关于」页回声洞彩蛋状态（UI-006）：同上。
 pub fn view<'a>(
     settings: &'a SettingsPanel,
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
     egg: &'a lumino_ui_core::state::AboutEggState,
+    echo: &'a lumino_ui_core::state::EchoCaveState,
 ) -> Element<'a> {
     let menu_items = menu::create_menu_items(settings.display.language);
 
     let menu_list = menu::render_menu_list(settings, window, &menu_items);
-    let content_area = render_content_area(settings, window, system_fonts, egg);
+    let content_area = render_content_area(settings, window, system_fonts, egg, echo);
 
     let main_content = row![
         menu_list,
@@ -263,6 +272,7 @@ fn render_content_area<'a>(
     window: &'a window::Window,
     system_fonts: &'a [lumino_note_core::font_scanner::FontInfo],
     egg: &'a lumino_ui_core::state::AboutEggState,
+    echo: &'a lumino_ui_core::state::EchoCaveState,
 ) -> iced_widget::Container<'a, Message, Theme, lumino_ui_core::Renderer> {
     let content = match settings.selected_menu_index {
         0 => general_view(settings),
@@ -274,7 +284,7 @@ fn render_content_area<'a>(
         6 => editing_view(settings),
         7 => cloud_view(settings),
         8 => compatibility_view(settings),
-        9 => about_view(settings, egg),
+        MENU_INDEX_ABOUT => about_view(settings, egg, echo),
         _ => render_placeholder("设置内容区域").into(),
     };
 
