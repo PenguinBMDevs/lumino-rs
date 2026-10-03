@@ -24,26 +24,37 @@ impl ToolbarHandler {
         // 注意：`view_arrangement` 每帧会用 `editor.current_tool()` 反向覆盖
         // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
         // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
-        if let crate::toolbar::Event::ToolPanelItemSelected(item) = event {
-            match item {
+        match event {
+            crate::toolbar::Event::ToolPanelItemSelected(item) => {
+                match item {
+                    crate::toolbar::ToolPanelItem::StrokeSettings => {}
+                    _ => {
+                        root.editor.set_tool(root.toolbar.current_tool);
+                        root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+                    }
+                }
+            }
+            // Ctrl+点击条目：先镜像「选择」结果，再落下该工具的设置副作用。
+            crate::toolbar::Event::ToolPanelItemCtrlSelected(item) => match item {
                 crate::toolbar::ToolPanelItem::StrokeSettings => {}
+                crate::toolbar::ToolPanelItem::FillBucket => {
+                    // 颜料桶的 Ctrl 设置 = 「分音符填充」对话框（工具栏侧已确保填充开启）。
+                    root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+                    root.open_fill_division_dialog();
+                    tracing::info!("Root: 打开分音符填充对话框（悬浮条 Ctrl+单击颜料桶）");
+                }
                 _ => {
+                    // 画刷 / 形状等：镜像工具与填充状态；设置下拉的开关由工具栏侧处理。
                     root.editor.set_tool(root.toolbar.current_tool);
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
                 }
-            }
+            },
+            _ => {}
         }
         // 颜料桶填充模式开关（仅曲线工具激活时可操作，非 Curve 时按钮禁用）
         if let crate::toolbar::Event::FillToggled(enabled) = event {
             root.editor.set_fill_enabled(*enabled);
             tracing::info!("Root: 颜料桶填充模式切换为 {}", enabled);
-        }
-        // 油漆桶开启时 Ctrl+点击曲线工具按钮 → 打开「分音符填充」对话框
-        // （与画刷/形状的 Ctrl+点击同语义；此前会退化为 ToolSelected(Curve)
-        //   把油漆桶打回曲线，即「图标回退 + 弹窗不出现」的根因）
-        if let crate::toolbar::Event::OpenFillDivisionDialog = event {
-            root.open_fill_division_dialog();
-            tracing::info!("Root: 打开分音符填充对话框（工具栏 Ctrl+单击）");
         }
         // 形状工具类型切换（矩形/圆/三角）：把工具栏 current_shape 同步到编辑器
         if let crate::toolbar::Event::ShapeTypeSelected(shape) = event {

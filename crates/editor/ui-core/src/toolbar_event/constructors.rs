@@ -245,6 +245,11 @@ impl Event {
         Message::Toolbar(Self::ToolPanelItemSelected(item))
     }
 
+    /// 构造“Ctrl+点击绘制工具条条目”的工具栏消息（选择该工具并打开其设置）
+    pub const fn tool_panel_item_ctrl_selected(item: ToolPanelItem) -> Message {
+        Message::Toolbar(Self::ToolPanelItemCtrlSelected(item))
+    }
+
     /// 构造“开始拖拽音符绘制悬浮工具条”的工具栏消息
     pub const fn tool_panel_drag_started() -> Message {
         Message::Toolbar(Self::ToolPanelDragStarted)
@@ -263,12 +268,6 @@ impl Event {
     /// 构造"切换画刷工具下拉"的工具栏消息
     pub const fn toggle_brush_dropdown() -> Message {
         Message::Toolbar(Self::ToggleBrushDropdown)
-    }
-
-    /// 构造"打开分音符填充对话框"的工具栏消息
-    /// （油漆桶开启时 Ctrl+点击曲线工具触发）
-    pub const fn open_fill_division_dialog() -> Message {
-        Message::Toolbar(Self::OpenFillDivisionDialog)
     }
 
     /// 构造“关闭画刷工具下拉”的工具栏消息

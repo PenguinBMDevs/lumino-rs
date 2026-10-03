@@ -25,8 +25,26 @@ pub use types::{
     CustomPrecisionDialog, DEFAULT_HEIGHT, DotType, MAX_HEIGHT, MIN_HEIGHT, NotePrecision,
     RESIZE_HANDLE_HEIGHT, Tool, TupletType,
 };
+// 供 `root/draw_toolbar.rs` 复用「工具设置下拉」悬浮层（曲线工具组）——该 widget 定义在
+// 私有 `view::curve_tool_group` 内，此处以 crate 可见性再导出，避免把整个 `view` 模块外放。
+pub(crate) use view::curve_tool_group::CurveToolGroup;
 
 use lumino_core::BrushConfig;
+
+/// 音符绘制悬浮工具条**默认偏移**：`(dx, dy) = (0, 44)`。
+///
+/// - `dx` = 相对卷帘区域水平中心的偏移（0 = 水平居中）；
+/// - `dy` = 距窗口底部内缩（逻辑像素）。
+///
+/// 拖拽结束时若释放点接近本位置，将自动吸附回该默认位（见
+/// `Toolbar::snap_tool_panel_if_near_default`）。
+pub(crate) const TOOL_PANEL_DEFAULT_OFFSET: (f32, f32) = (0.0, 44.0);
+
+/// 悬浮工具条拖拽结束的**自动吸附阈值**（逻辑像素）。
+///
+/// 释放点与 `TOOL_PANEL_DEFAULT_OFFSET` **每轴**距离均不超过此值时吸附回默认位，
+/// 否则停在释放处。取 28px（≈ 半个按钮宽）——"拖回原位附近就吸住"的手感，又不误吸。
+pub(crate) const TOOL_PANEL_SNAP_DISTANCE: f32 = 28.0;
 
 /// 工具栏视图所需的性能/检测数据聚合
 ///

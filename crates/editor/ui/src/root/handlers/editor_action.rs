@@ -76,9 +76,8 @@ impl Root {
 
     /// 打开「分音符填充」覆盖层弹窗（输入框预填当前档位）
     ///
-    /// 两条触发路径共用：
-    /// - 画布 Ctrl+单击（`Editor` 置请求位 → 此处取走）；
-    /// - 工具栏曲线组按钮 Ctrl+单击（`Event::OpenFillDivisionDialog`）。
+    /// 触发路径：画布 Ctrl+单击（`Editor` 置请求位 → 此处取走）；
+    /// 以及音符画悬浮工具条「颜料桶」条目的 Ctrl+点击（`ToolPanelItemCtrlSelected`）。
     pub(crate) fn open_fill_division_dialog(&mut self) {
         let current = self.editor.fill_division();
         self.state.fill_division_dialog.is_open = true;

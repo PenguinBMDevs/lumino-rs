@@ -24,7 +24,7 @@ impl Toolbar {
             overflow_menu_open: false,
             tool_panel_open: false,
             // 默认位置：水平居中（dx=0）、距窗口底部内缩 44px（悬浮于卷帘区域下缘）
-            tool_panel_offset: (0.0, 44.0),
+            tool_panel_offset: TOOL_PANEL_DEFAULT_OFFSET,
             tool_panel_dragging: false,
             tool_panel_last_cursor: None,
             brush_dropdown_open: false,
@@ -265,9 +265,10 @@ impl Toolbar {
             }
             Event::ToggleToolPanel => {
                 self.tool_panel_open = !self.tool_panel_open;
-                // 与溢出菜单、画刷下拉互斥：打开绘制工具条时关闭其余浮层
+                // 与溢出菜单、画刷/形状下拉互斥：打开绘制工具条时关闭其余浮层
                 self.overflow_menu_open = false;
                 self.brush_dropdown_open = false;
+                self.shape_dropdown_open = false;
                 // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
                 if !self.tool_panel_open {
                     self.tool_panel_dragging = false;
@@ -286,6 +287,9 @@ impl Toolbar {
                 self.tool_panel_open = false;
                 self.tool_panel_dragging = false;
                 self.tool_panel_last_cursor = None;
+                // 悬浮条关闭即无从承载工具设置下拉，一并收起
+                self.brush_dropdown_open = false;
+                self.shape_dropdown_open = false;
                 tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
             }
             Event::ToolPanelDragStarted => {
@@ -295,6 +299,8 @@ impl Toolbar {
             Event::ToolPanelDragEnded => {
                 self.tool_panel_dragging = false;
                 self.tool_panel_last_cursor = None;
+                // 松手即尝试吸附回默认位（接近默认点才吸，见方法注释）
+                self.snap_tool_panel_if_near_default();
             }
             Event::ToolPanelDragged(px, py) => {
                 // px/py 为全窗口覆盖层给出的绝对光标位置；以增量方式跟随，
@@ -332,10 +338,6 @@ impl Toolbar {
                 self.brush_dropdown_open = false;
                 tracing::debug!("工具栏: 关闭画刷工具下拉");
             }
-            Event::OpenFillDivisionDialog => {
-                // 弹窗状态在 Root（state.fill_division_dialog），工具栏自身无状态变化；
-                // 打开动作由 ToolbarHandler::sync_toolbar_tool_state 落地。
-            }
             Event::ToggleShapeDropdown => {
                 self.shape_dropdown_open = !self.shape_dropdown_open;
                 // 与其他面板互斥：打开形状工具下拉时关闭其余浮层
@@ -366,49 +368,101 @@ impl Toolbar {
                 tracing::debug!("工具栏: 画刷粗细度变更为 {}", self.brush.thickness);
             }
             Event::ToolPanelItemSelected(item) => {
-                match item {
-                    ToolPanelItem::StrokeSettings => {
-                        // 描边设置：功能开发中（UI 占位）
-                        tracing::info!("工具栏: 描边设置（功能开发中）");
-                    }
-                    ToolPanelItem::Curve => {
-                        // 曲线工具：独立基础工具，选中后关闭填充共存态
-                        // （填充由「填充桶」条目单独开启）
-                        self.current_tool = Tool::Curve;
-                        self.fill_enabled = false;
-                    }
-                    ToolPanelItem::FillBucket => {
-                        // 颜料桶随时可切换：仅对曲线/形状绘制的封闭图形生效，
-                        // 即使当前不在曲线工具也可开启，作用范围由编辑器侧控制。
-                        self.fill_enabled = !self.fill_enabled;
-                    }
-                    ToolPanelItem::Brush => {
-                        // 画刷仅可独立使用，不可与填充桶共存
-                        self.current_tool = Tool::Brush;
-                        self.fill_enabled = false;
-                    }
-                    ToolPanelItem::Shape => {
-                        // 形状工具：与曲线互斥（单一 base 工具），可与填充桶共存，
-                        // 选中形状时先关闭填充，再由「填充桶」条目按需开启
-                        self.current_tool = Tool::Shape;
-                        self.fill_enabled = false;
-                    }
-                    ToolPanelItem::Text => {
-                        // 文字工具：独立工具，不可与任何工具/填充桶共存
-                        self.current_tool = Tool::Text;
-                        self.fill_enabled = false;
-                    }
-                    ToolPanelItem::Eraser => {
-                        // 绘制橡皮擦：独立于普通编辑橡皮擦（Tool::Eraser），
-                        // 专用于曲线/形状/画刷绘制上下文
-                        self.current_tool = Tool::DrawEraser;
-                        self.fill_enabled = false;
-                    }
-                }
+                // 普通点击：仅执行选择语义（切工具 / 切换填充共存态），保持面板打开。
+                self.apply_tool_panel_item(item);
                 // 选中后**保持面板打开**：悬浮工具条是常驻浮层，允许连续切换绘制工具
                 // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
                 tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
             }
+            Event::ToolPanelItemCtrlSelected(item) => {
+                // Ctrl+点击：选择语义 + 打开该工具的「设置」（旧主工具栏
+                // 「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，现已整体迁到悬浮条）。
+                self.apply_tool_panel_item(item);
+                match item {
+                    ToolPanelItem::Brush => {
+                        // 画刷设置下拉（粗细度 / 绘制行为）
+                        self.brush_dropdown_open = true;
+                        self.shape_dropdown_open = false;
+                    }
+                    ToolPanelItem::Shape => {
+                        // 形状设置下拉（矩形 / 圆形 / 三角形），二者互斥
+                        self.shape_dropdown_open = true;
+                        self.brush_dropdown_open = false;
+                    }
+                    ToolPanelItem::FillBucket => {
+                        // 颜料桶的设置 = 「分音符填充」对话框；确保填充开启后由 Root 侧弹窗
+                        // （`sync_toolbar_tool_state` 响应本事件触发 `open_fill_division_dialog`）。
+                        self.fill_enabled = true;
+                    }
+                    // 曲线 / 文字 / 橡皮擦无独立设置，Ctrl+点击等同普通选择
+                    _ => {}
+                }
+                tracing::debug!("工具栏: 绘制工具条 Ctrl+选择 {:?}", item);
+            }
+        }
+    }
+
+    /// 应用「绘制工具条条目」的**普通选择语义**（切换工具 / 切换填充共存态）。
+    ///
+    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与 `ToolPanelItemCtrlSelected`
+    /// （Ctrl+点击：选择 + 打开设置）复用，避免两处选择逻辑漂移。
+    fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
+        match item {
+            ToolPanelItem::StrokeSettings => {
+                // 描边设置：功能开发中（UI 占位）
+                tracing::info!("工具栏: 描边设置（功能开发中）");
+            }
+            ToolPanelItem::Curve => {
+                // 曲线工具：独立基础工具，选中后关闭填充共存态
+                // （填充由「填充桶」条目单独开启）
+                self.current_tool = Tool::Curve;
+                self.fill_enabled = false;
+            }
+            ToolPanelItem::FillBucket => {
+                // 颜料桶随时可切换：仅对曲线/形状绘制的封闭图形生效，
+                // 即使当前不在曲线工具也可开启，作用范围由编辑器侧控制。
+                self.fill_enabled = !self.fill_enabled;
+            }
+            ToolPanelItem::Brush => {
+                // 画刷仅可独立使用，不可与填充桶共存
+                self.current_tool = Tool::Brush;
+                self.fill_enabled = false;
+            }
+            ToolPanelItem::Shape => {
+                // 形状工具：与曲线互斥（单一 base 工具），可与填充桶共存，
+                // 选中形状时先关闭填充，再由「填充桶」条目按需开启
+                self.current_tool = Tool::Shape;
+                self.fill_enabled = false;
+            }
+            ToolPanelItem::Text => {
+                // 文字工具：独立工具，不可与任何工具/填充桶共存
+                self.current_tool = Tool::Text;
+                self.fill_enabled = false;
+            }
+            ToolPanelItem::Eraser => {
+                // 绘制橡皮擦：独立于普通编辑橡皮擦（Tool::Eraser），
+                // 专用于曲线/形状/画刷绘制上下文
+                self.current_tool = Tool::DrawEraser;
+                self.fill_enabled = false;
+            }
+        }
+    }
+
+    /// 拖拽结束时的**自动吸附**：释放点接近默认位（水平居中、距底 44px）时吸回默认位。
+    ///
+    /// 判定为"每轴距离均 ≤ `TOOL_PANEL_SNAP_DISTANCE`"，即面板横向大致居中且纵向大致
+    /// 落在默认高度带内才吸附；否则保留释放点（允许用户把工具条停到任意位置）。
+    fn snap_tool_panel_if_near_default(&mut self) {
+        let (dx, dy) = self.tool_panel_offset;
+        let (default_dx, default_dy) = TOOL_PANEL_DEFAULT_OFFSET;
+        if (dx - default_dx).abs() <= TOOL_PANEL_SNAP_DISTANCE
+            && (dy - default_dy).abs() <= TOOL_PANEL_SNAP_DISTANCE
+        {
+            self.tool_panel_offset = TOOL_PANEL_DEFAULT_OFFSET;
+            tracing::debug!(
+                "工具栏: 悬浮工具条吸附回默认位 {:?}",
+                TOOL_PANEL_DEFAULT_OFFSET
+            );
         }
     }
 }

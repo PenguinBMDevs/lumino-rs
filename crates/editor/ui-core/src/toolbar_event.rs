@@ -110,6 +110,12 @@ pub enum Event {
     CloseToolPanel,
     /// 选择「音符绘制悬浮工具条」中的某个条目
     ToolPanelItemSelected(ToolPanelItem),
+    /// Ctrl+点击「音符绘制悬浮工具条」中的条目：选择该工具并打开其设置
+    ///
+    /// 等同于旧主工具栏入口按钮「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，
+    /// 现已整体迁移到悬浮条：画刷→画刷设置下拉、形状→形状选择下拉、
+    /// 颜料桶→分音符填充对话框；其余条目无独立设置，退化为普通选择。
+    ToolPanelItemCtrlSelected(ToolPanelItem),
     /// 开始拖拽「音符绘制悬浮工具条」（面板本体按下）
     ToolPanelDragStarted,
     /// 拖拽「音符绘制悬浮工具条」中（携带相对全窗口覆盖层的绝对光标位置）
@@ -118,9 +124,6 @@ pub enum Event {
     ToolPanelDragEnded,
     /// 切换「画刷工具下拉」（ctrl+点击附属按钮触发）
     ToggleBrushDropdown,
-    /// 打开「分音符填充」对话框（油漆桶开启时 Ctrl+点击曲线工具触发）：
-    /// 与画刷/形状的 Ctrl+点击同语义 —— Ctrl+点当前工具按钮 = 打开该工具设置
-    OpenFillDivisionDialog,
     /// 关闭「画刷工具下拉」
     CloseBrushDropdown,
     /// 画刷粗细度变更（下拉 +/- 步进，1-20）

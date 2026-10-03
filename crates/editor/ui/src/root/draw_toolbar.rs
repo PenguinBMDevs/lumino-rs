@@ -9,7 +9,8 @@
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
 //!
-//! 拖拽：由胶囊左端的**专用拖拽柄**（`mouse_area` + 抓取纹样）`on_press` 起拖。
+//! 拖拽：由胶囊左端的**专用拖拽柄**（`mouse_area` + 抓取纹样）`on_press` 起拖；
+//! 松手（`ToolPanelDragEnded`）时若释放点接近默认位则**自动吸附回默认位**。
 //!
 //! ⚠️ 为什么必须单独做拖拽柄而不能把拖拽挂到整条胶囊上：iced 的 `button` 在
 //! `ButtonPressed` 时会 `shell.capture_event()`（见 `iced_widget::button::update`），
@@ -18,6 +19,10 @@
 //!
 //! 起拖后叠加**全窗口透明覆盖层**接管 `on_move` / `on_release`（与
 //! `root/mixer_panel.rs` 同一套机制），使光标离开面板/窗口范围时仍持续跟随。
+//!
+//! Ctrl+点击条目：打开该工具的「设置」（画刷设置 / 形状选择 / 分音符填充）——
+//! 即旧主工具栏入口按钮 Ctrl 行为的整体迁移；设置下拉复用 `CurveToolGroup` 悬浮层，
+//! 锚定在胶囊**上方**（胶囊贴近窗口底部时自动上翻）。
 
 use iced_core::alignment::{Horizontal, Vertical};
 use iced_core::{Background, Border, Color, Length, Padding};
@@ -25,8 +30,8 @@ use iced_widget::{Space, Stack, button, container, mouse_area, row, text, toolti
 
 use crate::resources::icon;
 use crate::root::Root;
-use crate::toolbar::{Event, ShapeType, Tool, ToolPanelItem};
-use crate::{Element, Theme};
+use crate::toolbar::{CurveToolGroup, Event, ShapeType, Tool, ToolPanelItem};
+use crate::{Element, Message, Theme};
 use lumino_extras::i18n::main_translations;
 
 /// 单个图标按钮尺寸（宽高相同）
@@ -47,10 +52,12 @@ const GRIP_BAR_WIDTH: f32 = 2.0;
 const GRIP_BAR_HEIGHT: f32 = 12.0;
 /// 拖拽柄两根竖条之间的间距
 const GRIP_BAR_GAP: f32 = 3.0;
+/// 工具设置下拉（画刷 / 形状）的宽度
+const MENU_WIDTH: f32 = 248.0;
 
 impl Root {
     /// 渲染「音符绘制悬浮工具条」（未打开或非钢琴卷帘视图时返回 `None`）
-    pub(crate) fn view_draw_toolbar(&self) -> Option<Element<'static>> {
+    pub(crate) fn view_draw_toolbar(&self) -> Option<Element<'_>> {
         if !self.toolbar.tool_panel_open {
             return None;
         }
@@ -63,6 +70,7 @@ impl Root {
         let t = main_translations(self.settings.display.language);
         let cur = self.toolbar.current_tool;
         let fill = self.toolbar.fill_enabled;
+        let ctrl = self.toolbar.ctrl_pressed;
 
         // 面板条目：全部绘制工具**常显**（当前激活项高亮），不再做旧下拉的"隐藏当前工具"去重。
         // 第三项为 tooltip 所用的简短名称。
@@ -111,7 +119,13 @@ impl Root {
         row_items.push(drag_handle());
         row_items.push(grip_divider());
         row_items.extend(items.iter().map(|(item, ic, desc, selected)| {
-            tool_button(*item, *ic, desc, *selected, &self.window.theme)
+            // Ctrl+点击且该条目有独立设置 → 「选择 + 打开设置」；否则普通选择。
+            let on_press = if ctrl && has_settings(*item) {
+                Event::tool_panel_item_ctrl_selected(*item)
+            } else {
+                Event::tool_panel_item_selected(*item)
+            };
+            tool_button(*ic, desc, *selected, on_press, &self.window.theme)
         }));
 
         // 胶囊面板：横向图标栏 + 主题配色 + 全圆角背景。
@@ -127,15 +141,27 @@ impl Root {
         // 图标按钮区与拖拽柄为更内层，按下时由它们优先捕获，不会误触此层。
         // 同时挂 on_release 结束拖拽：快速点击（按下即抬起、全窗口覆盖层尚未挂载）时兜底，
         // 避免 dragging 残留导致拖拽覆盖层卡住。
-        let draggable = mouse_area(pill)
+        let pill_el: Element<'static> = mouse_area(pill)
             .on_press(Event::tool_panel_drag_started())
-            .on_release(Event::tool_panel_drag_ended());
+            .on_release(Event::tool_panel_drag_ended())
+            .into();
+
+        // 工具设置下拉（画刷 / 形状）：复用 CurveToolGroup 悬浮层，锚定在胶囊**上方**。
+        // 点击下拉内空白即关闭（mouse_area 包裹），下拉内按钮仍优先响应自身 on_press。
+        let content: Element<'_> = match self.draw_tool_settings_menu() {
+            Some((menu, close_message)) => {
+                let panel_with_close: Element<'_> =
+                    mouse_area(menu).on_press(close_message).into();
+                CurveToolGroup::new(pill_el, Some(panel_with_close), MENU_WIDTH).into()
+            }
+            None => pill_el,
+        };
 
         // 定位：水平居中（dx = 相对中心的偏移），底部对齐 + dy 内缩。
         // 用左右不等的 padding 制造中心平移：居中时平移量 = (left - right) / 2，
         // 故取 left / right = 2 × |dx| 即得所需位移 dx。
         let (dx, dy) = self.toolbar.tool_panel_offset;
-        let centered = container(draggable)
+        let centered = container(content)
             .width(Length::Fill)
             .height(Length::Fill)
             .align_x(Horizontal::Center)
@@ -157,6 +183,58 @@ impl Root {
 
         Some(centered.into())
     }
+
+    /// 构建悬浮条的「工具设置」下拉（画刷 / 形状）。
+    ///
+    /// 返回 `(菜单元素, 点击菜单外空白时的关闭消息)`；仅当画刷或形状下拉处于打开态时
+    /// 返回 `Some`（两者互斥）。面板配色贴近工具栏（工具栏底色压暗 10%），
+    /// 与旧主工具栏入口按钮下拉保持一致观感。
+    fn draw_tool_settings_menu(&self) -> Option<(Element<'_>, Message)> {
+        let palette = self.window.theme.extended_palette();
+        let toolbar_bg = palette.background.weakest.color;
+        let panel_background = Color::from_rgba(
+            toolbar_bg.r * 0.9,
+            toolbar_bg.g * 0.9,
+            toolbar_bg.b * 0.9,
+            toolbar_bg.a,
+        );
+
+        if self.toolbar.brush_dropdown_open {
+            let menu: Element<'_> = container(crate::toolbar::brush_dropdown::render_brush_dropdown(
+                &self.toolbar.brush,
+                self.settings.display.language,
+                panel_background,
+                &self.window.theme,
+            ))
+            .width(Length::Fixed(MENU_WIDTH))
+            .height(Length::Shrink)
+            .into();
+            Some((menu, Event::close_brush_dropdown()))
+        } else if self.toolbar.shape_dropdown_open {
+            let menu: Element<'_> = container(crate::toolbar::shape_dropdown::render_shape_dropdown(
+                self.toolbar.current_shape,
+                panel_background,
+                &self.window.theme,
+            ))
+            .width(Length::Fixed(MENU_WIDTH))
+            .height(Length::Shrink)
+            .into();
+            Some((menu, Event::close_shape_dropdown()))
+        } else {
+            None
+        }
+    }
+}
+
+/// 该条目是否有可打开的「工具设置」（Ctrl+点击触发）。
+///
+/// 画刷 → 画刷设置下拉；形状 → 形状选择下拉；颜料桶 → 分音符填充对话框。
+/// 曲线 / 文字 / 橡皮擦无独立设置，Ctrl+点击退化为普通选择。
+fn has_settings(item: ToolPanelItem) -> bool {
+    matches!(
+        item,
+        ToolPanelItem::Brush | ToolPanelItem::Shape | ToolPanelItem::FillBucket
+    )
 }
 
 /// 胶囊左端的**专用拖拽柄**：两根竖细条 + 独立 `mouse_area`（按下即起拖）。
@@ -231,18 +309,20 @@ fn shape_icon(shape: ShapeType) -> icon::Icon {
 }
 
 /// 构建面板中的图标独占按钮（图标 + 悬浮 tooltip，避免把文字塞进按钮撑宽）
-fn tool_button<'a>(
-    item: ToolPanelItem,
+///
+/// `on_press` 由调用方按 Ctrl 状态决定：普通选择或「选择 + 打开设置」。
+fn tool_button(
     ic: icon::Icon,
     desc: &'static str,
     selected: bool,
+    on_press: Message,
     theme: &Theme,
-) -> Element<'a> {
+) -> Element<'static> {
     let icon_el = icon::view_with_size_and_theme(ic, ICON_SIZE, ICON_SIZE, Some(theme));
     let btn = button(icon_el)
         .width(Length::Fixed(BUTTON_SIZE))
         .height(Length::Fixed(BUTTON_SIZE))
-        .on_press(Event::tool_panel_item_selected(item))
+        .on_press(on_press)
         .style(move |theme: &Theme, status| button_style(theme, status, selected));
 
     tooltip::Tooltip::new(btn, text(desc), tooltip::Position::Top)
@@ -331,5 +411,17 @@ mod tests {
             shape_icon(ShapeType::Triangle),
             icon::Icon::ShapeTriangle
         ));
+    }
+
+    /// 设置判定：仅画刷 / 形状 / 颜料桶有独立设置，其余退化为普通选择。
+    #[test]
+    fn test_has_settings_scope() {
+        assert!(has_settings(ToolPanelItem::Brush));
+        assert!(has_settings(ToolPanelItem::Shape));
+        assert!(has_settings(ToolPanelItem::FillBucket));
+        assert!(!has_settings(ToolPanelItem::Curve));
+        assert!(!has_settings(ToolPanelItem::Text));
+        assert!(!has_settings(ToolPanelItem::Eraser));
+        assert!(!has_settings(ToolPanelItem::StrokeSettings));
     }
 }
