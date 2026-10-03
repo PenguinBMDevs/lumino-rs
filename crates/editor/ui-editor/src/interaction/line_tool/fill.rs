@@ -30,6 +30,8 @@ pub(crate) mod spans;
 pub(crate) use loops::assemble_loops;
 pub(crate) use spans::{fill_spans, mark_regions};
 
+use crate::interaction::line_tool::paths::RawNote;
+
 /// 折线边（逻辑坐标 (tick, key) 端对）
 pub(crate) type Edge = ((f32, f32), (f32, f32));
 
@@ -88,6 +90,65 @@ pub(crate) fn collect_edges(paths: &[LinePath], snap: f32) -> Vec<Edge> {
     edges
 }
 
+/// 填充的可计算 tick 范围 = 画布可见区间 ∪ **图形自身的 tick 跨度**。
+///
+/// - 画布可见区间：背景填充（标记在环外）蔓延到画布边缘，与渲染背景矩形一致；
+/// - 图形跨度：图形越出视图时内部填充不被可见范围裁掉
+///   （旧实现按 snap 向上取整，会悄悄把填充截到网格边界）。
+pub(crate) fn fill_tick_range(editor: &Editor, loops: &[Vec<(f32, f32)>]) -> (f32, f32) {
+    let visible = if editor.editor_state.is_vertical_roll {
+        let es = &editor.editor_state;
+        let grid_h = (es.canvas.size_y - es.view.keyboard_width).max(0.0);
+        let lo = (es.view.scroll_x / es.view.zoom_x).max(0.0);
+        let hi = ((es.view.scroll_x + grid_h) / es.view.zoom_x).max(lo + 1.0);
+        (lo, hi)
+    } else {
+        let lo = editor.x_to_tick(0.0).max(0.0);
+        let hi = editor
+            .x_to_tick(editor.editor_state.canvas.size_x)
+            .max(lo + 1.0);
+        (lo, hi)
+    };
+    let mut range = visible;
+    for lp in loops {
+        for &(tick, _) in lp {
+            if tick.is_finite() {
+                range.0 = range.0.min(tick);
+                range.1 = range.1.max(tick);
+            }
+        }
+    }
+    range
+}
+
+/// 当前填充状态对应的**全部音符**（唯一权威计算入口）
+///
+/// 预览（`fill/region.rs`）与 √ 确认（`line_tool/confirm.rs`）**共用此函数**，
+/// 从根本上保证「填充显示 == 生成的音符」不变式：切分档位等任何规则改动
+/// 只需改一处，不会出现预览画一套、生成另一套的漂移。
+pub(crate) fn fill_notes(editor: &Editor) -> Vec<RawNote> {
+    let line = &editor.editor_state.line_tool;
+    if !line.has_fill() {
+        return Vec::new();
+    }
+    let snap = editor.editor_state.view.snap_precision.max(1.0);
+    let edges = collect_edges(&line.paths, snap);
+    let loops = assemble_loops(&edges);
+    let regions = mark_regions(&loops, &line.fill, snap);
+    let (tick_lo, tick_hi) = fill_tick_range(editor, &loops);
+    let key_hi = editor.editor_state.view.key_count.saturating_sub(1) as i32;
+    fill_spans(
+        &loops,
+        &regions,
+        tick_lo,
+        tick_hi,
+        0,
+        key_hi,
+        line.fill_division,
+        editor.editor_state.view.ppq,
+    )
+}
+
 impl Editor {
     /// 颜料桶点击：记录一个**填充标记**（不计算格点、不生成音符）。
     ///
@@ -101,6 +162,13 @@ impl Editor {
     /// `pub(crate)`：pressed.rs（interaction 父模块）在 Curve 工具 + 填充
     /// 模式下调用。
     pub(crate) fn handle_fill_pressed(&mut self, _pos: Point, snapped_tick: f32, key: u16) {
+        // Ctrl+单击 = 打开「分音符填充」对话框（切分档位设置），不记填充标记。
+        // 弹窗为主窗口覆盖层：Editor 只置请求位，由 Root 取走后打开。
+        if self.ctrl_pressed() {
+            self.fill_division_dialog_requested = true;
+            tracing::info!("颜料桶: Ctrl+单击 → 请求打开分音符填充对话框");
+            return;
+        }
         // 无完整路径 → 封闭区域不存在，忽略点击
         if !self.editor_state.line_tool.is_complete() {
             tracing::debug!("颜料桶: 无完整路径，未填充");

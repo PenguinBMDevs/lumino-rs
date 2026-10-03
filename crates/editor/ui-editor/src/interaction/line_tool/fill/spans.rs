@@ -142,6 +142,35 @@ pub(crate) fn mark_regions(
         .collect()
 }
 
+/// 切分步长（tick）：x 分音符 = 4·ppq / x（与 `NotePrecision::as_ticks` 同口径，
+/// 四分音符 = ppq）。取整到整 tick——x 取非 2 的幂（3/5/7…）时步长非整数，
+/// 不取整会让切点逐格累积漂移。
+pub(crate) fn division_step(division: u32, ppq: u16) -> f32 {
+    let ppq = ppq.max(1) as f32;
+    let x = division.max(1) as f32;
+    (4.0 * ppq / x).round().max(1.0)
+}
+
+/// 把区间 `[a, b]` 按**全局网格**（步长 `step`，从 tick 0 起算）切成若干段。
+///
+/// 语义 = 区间与每个网格单元 `[k·step, (k+1)·step]` 求交：内部切点全部落在
+/// 全局网格线上（与标尺/吸附一致），首尾不足一份的残段**保留**为短音符，
+/// 因此切分后的总覆盖严格等于原区间（填充不出现空洞 → 预览与音符一致）。
+pub(crate) fn chop_span(a: f32, b: f32, step: f32) -> Vec<(f32, f32)> {
+    if b <= a || step <= 0.0 {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    let mut t = a;
+    while t < b {
+        let cell_end = ((t / step).floor() + 1.0) * step;
+        let e = cell_end.min(b);
+        out.push((t, e));
+        t = e;
+    }
+    out
+}
+
 /// 逐音高行生成填充音符（tick 精确、无网格量化）。
 ///
 /// 对每行 `q`：取该行全部闭环区间端点（钳到 `[tick_lo, tick_hi]`）作为切分点，
@@ -149,6 +178,8 @@ pub(crate) fn mark_regions(
 /// 覆盖掩码为 `0` 的原子区间 = 背景（`regions` 含 `0` 时蔓延）。
 ///
 /// `snap` 不参与：区间端点就是几何交点。
+/// `division` = 填充桶的切分档位（`Some(x)` → 每行区间再按 x 分音符的全局
+/// 网格切分；`None` = 每个区间一条长音符）。
 pub(crate) fn fill_spans(
     loops: &[Vec<(f32, f32)>],
     regions: &HashSet<RegionKey>,
@@ -156,10 +187,13 @@ pub(crate) fn fill_spans(
     tick_hi: f32,
     key_lo: i32,
     key_hi: i32,
+    division: Option<u32>,
+    ppq: u16,
 ) -> Vec<RawNote> {
     if regions.is_empty() || tick_hi <= tick_lo {
         return Vec::new();
     }
+    let step = division.map(|d| division_step(d, ppq));
     let mut out: Vec<RawNote> = Vec::new();
     for q in key_lo..=key_hi {
         let per_loop: Vec<Vec<(f32, f32)>> =
@@ -197,9 +231,16 @@ pub(crate) fn fill_spans(
         }
 
         for (a, b) in spans {
-            let start = ((a + 0.5).floor() as i64).max(0);
-            let end = ((b + 0.5).floor() as i64).max(start + 1);
-            out.push(RawNote { start, end, key: q });
+            // 切分档位开启：按 x 分音符的全局网格再切一刀（残段保留 → 覆盖不变）
+            let pieces = match step {
+                Some(s) => chop_span(a, b, s),
+                None => vec![(a, b)],
+            };
+            for (a, b) in pieces {
+                let start = ((a + 0.5).floor() as i64).max(0);
+                let end = ((b + 0.5).floor() as i64).max(start + 1);
+                out.push(RawNote { start, end, key: q });
+            }
         }
     }
     out

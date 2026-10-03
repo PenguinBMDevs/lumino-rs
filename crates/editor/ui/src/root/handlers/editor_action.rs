@@ -46,6 +46,14 @@ impl Root {
             puffin::profile_scope!("editor_handle_action");
             self.editor.handle_action(action);
         }
+        // 画布 Ctrl+单击（填充桶）→ 取走弹窗请求，打开「分音符填充」覆盖层。
+        // Editor 不持有主窗口对话框状态，只能置一次性标志，由此处转成 UI 状态。
+        if self.editor.take_fill_division_dialog_request() {
+            let current = self.editor.fill_division();
+            self.state.fill_division_dialog.is_open = true;
+            self.state.fill_division_dialog.value =
+                current.map(|n| n.to_string()).unwrap_or_default();
+        }
         let new_tick = self.editor.playback_position;
 
         // 检查播放位置是否变化

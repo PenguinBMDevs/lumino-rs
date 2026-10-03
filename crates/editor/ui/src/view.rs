@@ -7,6 +7,7 @@ pub mod cloud_dialog;
 pub mod collaboration_dialog;
 pub mod custom_precision_dialog;
 pub mod export_progress_dialog;
+pub mod fill_division_dialog;
 pub mod load_confirm_dialog;
 pub mod memory_monitor_dialog;
 pub mod project_settings_dialog;

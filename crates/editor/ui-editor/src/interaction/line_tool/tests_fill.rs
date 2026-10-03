@@ -369,3 +369,99 @@ fn test_fill_two_curves_nearly_closed() {
     assert!(covers(notes, 1920, 61), "内部被填充");
     assert!(!covers(notes, 1920, 113), "不得蔓延到背景（弧线上方外部）");
 }
+
+// ── 切分档位（x 分音符填充） ──
+
+#[test]
+fn test_ctrl_click_requests_dialog_instead_of_marking() {
+    // Ctrl+单击 = 请求打开分音符弹窗，不记填充标记
+    let mut editor = rect_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_ctrl_pressed(true);
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+    assert!(
+        editor.editor_state.line_tool.fill.is_empty(),
+        "Ctrl+单击不记填充标记"
+    );
+    assert!(
+        editor.take_fill_division_dialog_request(),
+        "Ctrl+单击应置位弹窗请求"
+    );
+    assert!(
+        !editor.take_fill_division_dialog_request(),
+        "请求标志是一次性的（取走后清零）"
+    );
+}
+
+#[test]
+fn test_plain_click_does_not_request_dialog() {
+    let mut editor = rect_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+    assert!(
+        !editor.take_fill_division_dialog_request(),
+        "普通单击不得弹窗"
+    );
+    assert_eq!(editor.editor_state.line_tool.fill.len(), 1);
+}
+
+#[test]
+fn test_fill_division_splits_notes_on_confirm() {
+    // 矩形 tick ∈ [0,960]；ppq = 480 → 四分音符档（480 tick）切出 2 条/行
+    let mut editor = rect_editor();
+    editor.editor_state.view.ppq = 480;
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_fill_division(Some(4));
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    assert!(fills_row(notes, 0, 480, 61), "第一行四分音符: {notes:?}");
+    assert!(fills_row(notes, 480, 960, 61), "第二行四分音符: {notes:?}");
+    // 不得残留整条长音符（切分前的行为）
+    assert!(
+        !fills_row(notes, 0, 960, 61),
+        "切分开启后不应再生成整块长音符"
+    );
+}
+
+#[test]
+fn test_fill_division_survives_confirm() {
+    // 档位是填充桶的模式设置：√ 确认后保留（reset 显式保住）
+    let mut editor = rect_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_fill_division(Some(16));
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+    assert!(editor.confirm_line_tool());
+    assert_eq!(
+        editor.fill_division(),
+        Some(16),
+        "√ 确认后切分档位保留，避免每次重填"
+    );
+}
+
+#[test]
+fn test_fill_division_preview_matches_generated_notes() {
+    // 不变式：预览（fill_region.blocks）== √ 生成的音符（fill_notes）
+    let mut editor = rect_editor();
+    editor.editor_state.view.ppq = 480;
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.set_fill_division(Some(8));
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+
+    let preview = crate::interaction::line_tool::fill::region::fill_region(&editor)
+        .expect("有填充 → 有预览区域");
+    assert!(!preview.blocks.is_empty(), "切分档位下预览应给出音符块");
+    let generated = crate::interaction::line_tool::fill::fill_notes(&editor);
+    assert_eq!(
+        preview.blocks.len(),
+        generated.len(),
+        "预览块数 == 生成音符数（同源计算）"
+    );
+    for (i, n) in generated.iter().enumerate() {
+        assert_eq!(
+            preview.blocks[i],
+            (n.start as f32, n.end as f32, n.key as f32),
+            "第 {i} 块预览与生成音符一致"
+        );
+    }
+}

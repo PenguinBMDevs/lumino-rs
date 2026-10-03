@@ -4,8 +4,9 @@
 //! 1. 每条路径按几何容差展平为折线（[`geom::flatten_path`]），再用
 //!    [`paths::path_notes`] 逐音高行解析求出跨越边界；每个音高行一条音符，
 //!    起点 = 进入该行的 tick、终点 = 下一条音符的起点 → 无缝、长度自然变化；
-//! 2. 颜料桶标记的封闭区域用 [`fill::fill_spans`] 逐音高行求**内部区间**，
-//!    区间端点 = 闭环边与行边界的解析交点，每个区间一条音符；
+//! 2. 颜料桶标记的封闭区域用 [`fill::fill_notes`]（与预览同源）逐音高行求
+//!    **内部区间**，区间端点 = 闭环边与行边界的解析交点；开启切分档位时
+//!    每个区间再按 x 分音符的全局网格切成多条音符；
 //! 3. 两部分合并后同 tick 同 key 只留最长（[`paths::keep_longest`]），
 //!    写入当前音轨并使用 `CreateOp` 操作日志。
 //!
@@ -14,37 +15,6 @@
 use super::{fill, geom, paths};
 use crate::{Editor, Note};
 use lumino_note_core::history::CreateOp;
-
-/// 填充的可计算 tick 范围 = 画布可见区间 ∪ **图形自身的 tick 跨度**。
-///
-/// - 画布可见区间：背景填充（标记在环外）蔓延到画布边缘，与渲染背景矩形一致；
-/// - 图形跨度：图形越出视图时内部填充不被可见范围裁掉
-///   （旧实现按 snap 向上取整，会悄悄把填充截到网格边界）。
-fn fill_tick_range(editor: &Editor, loops: &[Vec<(f32, f32)>]) -> (f32, f32) {
-    let visible = if editor.editor_state.is_vertical_roll {
-        let es = &editor.editor_state;
-        let grid_h = (es.canvas.size_y - es.view.keyboard_width).max(0.0);
-        let lo = (es.view.scroll_x / es.view.zoom_x).max(0.0);
-        let hi = ((es.view.scroll_x + grid_h) / es.view.zoom_x).max(lo + 1.0);
-        (lo, hi)
-    } else {
-        let lo = editor.x_to_tick(0.0).max(0.0);
-        let hi = editor
-            .x_to_tick(editor.editor_state.canvas.size_x)
-            .max(lo + 1.0);
-        (lo, hi)
-    };
-    let mut range = visible;
-    for lp in loops {
-        for &(tick, _) in lp {
-            if tick.is_finite() {
-                range.0 = range.0.min(tick);
-                range.1 = range.1.max(tick);
-            }
-        }
-    }
-    range
-}
 
 impl Editor {
     /// 确认全部路径与填充：按蜘蛛网式逐音高行算法批量生成音符（√ 按钮）。
@@ -57,8 +27,6 @@ impl Editor {
             tracing::debug!("曲线工具: Conductor 轨道禁止放置音符");
             return false;
         }
-        let snap = self.editor_state.view.snap_precision;
-        let snap_max = snap.max(1.0);
         let line_paths = self.editor_state.line_tool.paths.clone();
         let fill_marks = self.editor_state.line_tool.fill.clone();
 
@@ -72,21 +40,20 @@ impl Editor {
             raw.extend(paths::path_notes(&poly, false));
         }
 
-        // ② 颜料桶填充 → 逐音高行内部区间
+        // ② 颜料桶填充 → 逐音高行内部区间（与预览同源：fill::fill_notes）
         if !fill_marks.is_empty() {
-            let key_count = self.editor_state.view.key_count;
-            let edges = fill::collect_edges(&line_paths, snap_max);
-            let loops = fill::assemble_loops(&edges);
-            let regions = fill::mark_regions(&loops, &fill_marks, snap_max);
-            let (tick_lo, tick_hi) = fill_tick_range(self, &loops);
-            raw.extend(fill::fill_spans(
-                &loops,
-                &regions,
-                tick_lo,
-                tick_hi,
-                0,
-                key_count.saturating_sub(1) as i32,
-            ));
+            let fill_raw = fill::fill_notes(self);
+            // 切分模式下填充音符优先：剔除与其 (start, key) 完全重合的轮廓音符。
+            // keep_longest 按 (start, key) 分组保最长，若轮廓长音符与切分音符
+            // 同起点同行，切分结果会被整条吞掉（用户看不到切分效果）。
+            if self.editor_state.line_tool.fill_division.is_some() {
+                raw.retain(|n| {
+                    !fill_raw
+                        .iter()
+                        .any(|f| f.start == n.start && f.key == n.key)
+                });
+            }
+            raw.extend(fill_raw);
         }
 
         // ③ 同 tick 同 key 只留最长（轮廓与填充大量重叠）+ 钳到合法 tick / key

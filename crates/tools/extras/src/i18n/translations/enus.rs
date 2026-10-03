@@ -102,6 +102,10 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     precision_divide_by: "divide by",
     precision_ok: "OK",
     precision_cancel: "Cancel",
+    fill_division_title: "Note division fill",
+    fill_division_prefix: "Fill with",
+    fill_division_suffix: "note",
+    fill_division_hint: "Empty = single block (no split)",
 
     // Velocity/Tempo panel
     velocity_panel_velocity: "Velocity",

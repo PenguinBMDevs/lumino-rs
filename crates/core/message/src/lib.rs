@@ -13,6 +13,7 @@ pub mod context_menu;
 pub mod custom_precision;
 /// 事件系统模块
 pub mod events;
+pub mod fill_division;
 pub mod load_confirm;
 pub mod loop_range;
 pub mod project_settings;
@@ -36,6 +37,7 @@ pub use context_menu::{
     PianoRollContextMenuItem, TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;
+pub use fill_division::FillDivisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;
 pub use project_settings::ProjectSettingsAction;
