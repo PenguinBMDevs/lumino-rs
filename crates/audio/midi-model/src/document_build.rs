@@ -198,9 +198,18 @@ impl MidiDocument {
             finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));
             finalize_sorted_events(&mut all_key_signatures, |&(t, _, _)| t, (0u32, 0i8, false));
 
-            // 稳定排序保留同 tick 文件序：RPN(CC101/100/6/38) 必须在同 tick 的 PitchBend 之前，
-            // 否则 PB 会用旧的 bend_sensitivity（默认 2 半音）而非 RPN 设定的值（如 24）。
-            // 复刻 yinhe 2026-06-27 13:22 fix(audio): RPN 展开必须在 PB 之前。
+            // 稳定排序**只按 tick**：同 tick 内完全保留文件序，不做任何二级重排。
+            //
+            // 这依赖素材本身把 RPN 选择(CC101/100) 写在数据(CC6/38) 之前、并把 RPN 写在
+            // 同 tick 的 PitchBend 之前——否则 PB 会用旧的 bend_sensitivity（默认 2 半音）
+            // 而非 RPN 设定的值（如 24）。复刻 yinhe 2026-06-27 13:22 fix(audio)。
+            //
+            // ⚠️ 已知残留：素材若把 RPN 的 DataEntry 写在选择之前（同 tick），此处
+            // **不会**纠正（审计发现 803 组）。不在此加二级序的原因与回归风险见
+            // `lumino_export::audio::event_stream` 的
+            // `test_same_tick_rpn_data_before_select_is_preserved_as_is`：
+            // 必须同时保证 PB 相对次序不变（否则回归 426d5b2d），且追齐路径
+            // （`chase.rs`）已用「选择→其他→DataEntry」rank，两路口径统一仍是待决问题。
             control_events.sort_by_key(|e| e.tick);
             lyrics.sort_by_key(|e| e.0);
             markers.sort_by_key(|e| e.0);
