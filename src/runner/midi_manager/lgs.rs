@@ -28,11 +28,16 @@ impl MidiManager {
         let (tx, rx) = channel();
         self.lgs_init_rx = Some(rx);
 
+        // REND-002：把当前文档期望的端口布局带入异步初始化（初始化期间可能尚未
+        // 装载文档，装载后由 apply_midi_port_layout 再对齐）。
+        let desired_midi_max_port = self.desired_midi_max_port;
+        self.spawned_midi_max_port = desired_midi_max_port;
+
         let ui_config_clone = ui_config.clone();
         std::thread::spawn(move || {
             tracing::info!("LGS (GPU): 后台线程开始初始化");
 
-            let lgs_result = Self::init_lgs_blocking(&ui_config_clone);
+            let lgs_result = Self::init_lgs_blocking(&ui_config_clone, desired_midi_max_port);
 
             match &lgs_result {
                 Ok(_) => tracing::info!("LGS (GPU): 后台初始化成功"),
@@ -49,7 +54,7 @@ impl MidiManager {
     }
 
     /// 阻塞式初始化 LGS (GPU)（用于后台线程）
-    fn init_lgs_blocking(ui_config: &UiConfig) -> MidiInitResult {
+    fn init_lgs_blocking(ui_config: &UiConfig, midi_max_port: u8) -> MidiInitResult {
         use lumino_midi_io::ApiKind;
 
         let path = PathBuf::from(&ui_config.soundfont_path);
@@ -61,6 +66,8 @@ impl MidiManager {
             use_sinc: ui_config.lgs_use_sinc,
             velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
             audio_output_device: ui_config.audio_output_device.clone(),
+            // REND-002：文档端口布局（0 = 单端口/16 通道）
+            midi_max_port,
         };
 
         let api = lumino_midi_io::new_api(&api_kind)

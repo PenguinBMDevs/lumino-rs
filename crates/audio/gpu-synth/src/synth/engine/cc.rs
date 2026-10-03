@@ -104,6 +104,40 @@ impl GpuSynth {
         }
     }
 
+    /// 释放全部通道的延音踏板（REND-002 实时多端口：对齐 XSynth
+    /// `AllChannels(Control(Raw(64,0)))`）。
+    ///
+    /// 只释放"NoteOff 已到、被踏板扣住"的组（`damper_pending`），仍被按键
+    /// 按住的音符继续发声——与 CC64=0 的单通道语义逐通道一致。
+    pub fn release_all_dampers(&mut self) {
+        for ch in 0..self.channels.len() {
+            if !self.channels[ch].damper {
+                continue;
+            }
+            self.channels[ch].damper = false;
+            let groups = select_damper_release_groups(&self.voices, ch);
+            if groups.is_empty() {
+                continue;
+            }
+            for v in &mut self.voices {
+                if v.channel as usize == ch
+                    && v.damper_pending
+                    && !v.released
+                    && v.release_at == u64::MAX
+                    && v.state.ended == 0
+                {
+                    v.release_at = self.global_frame;
+                    v.damper_pending = false;
+                }
+            }
+            // 每个被释放的 note 组只减一次活跃计数。
+            for (key, _) in &groups {
+                let slot = &mut self.active_notes[ch * 128 + *key as usize];
+                *slot = slot.saturating_sub(1);
+            }
+        }
+    }
+
     /// Recomputes a channel's `pitch_multiplier` is already done in
     /// `ChannelState`; this pushes the new multiplier onto every *active*
     /// voice of the channel so a bend-sensitivity or tuning change takes

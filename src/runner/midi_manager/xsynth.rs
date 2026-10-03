@@ -121,21 +121,27 @@ impl MidiManager {
 
     /// 应用文档端口布局（REND-002）。
     ///
-    /// - XSynth 就绪：直接 `set_midi_port_layout`（**总是全量重建**以清理上一文档
-    ///   遗留的 bank/打击乐模态；重建失败保持旧布局）；
-    /// - XSynth 未就绪（异步初始化中/System 回退）：暂存 desired，待初始化完成时对齐。
+    /// - 软件合成后端（XSynth / LGS）就绪：直接 `set_midi_port_layout`
+    ///   （XSynth 总是全量重建以清理上一文档遗留的 bank/打击乐模态；LGS 同布局
+    ///   走轻量复位、异布局全量重建；失败保持旧布局）；
+    /// - 后端未就绪（异步初始化中/System 回退）：暂存 desired，待初始化完成时对齐。
     pub fn apply_midi_port_layout(&mut self, max_port: u8) {
         self.desired_midi_max_port = max_port;
-        if self.active_backend != SynthBackend::XSynth {
-            tracing::info!("MIDI: 暂存端口布局 max_port={max_port}（等待 XSynth 就绪后应用）");
-            return;
-        }
-        let Some(api) = self.api.as_mut() else {
-            return;
-        };
-        match api.set_midi_port_layout(max_port) {
-            Ok(()) => tracing::info!("MIDI: 已应用端口布局 max_port={max_port}"),
-            Err(e) => tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}"),
+        match self.active_backend {
+            SynthBackend::XSynth | SynthBackend::Lgs => {
+                let Some(api) = self.api.as_mut() else {
+                    return;
+                };
+                match api.set_midi_port_layout(max_port) {
+                    Ok(()) => tracing::info!("MIDI: 已应用端口布局 max_port={max_port}"),
+                    Err(e) => tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}"),
+                }
+            }
+            _ => {
+                tracing::info!(
+                    "MIDI: 暂存端口布局 max_port={max_port}（等待软件合成后端就绪后应用）"
+                );
+            }
         }
     }
 }

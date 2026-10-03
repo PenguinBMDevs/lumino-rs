@@ -25,6 +25,7 @@ impl AudioPlayback {
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
         let (event_tx, event_rx) = mpsc::channel::<(u8, MidiEvent)>();
         let (stream_tx, stream_rx) = mpsc::channel::<Vec<crate::midi::TimedEvent>>();
+        let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
         let stop_flag = Arc::new(AtomicBool::new(false));
 
@@ -103,6 +104,13 @@ impl AudioPlayback {
                     if let Ok(events) = stream_rx.try_recv() {
                         synth.set_events(events);
                         has_stream = true;
+                    }
+                    // REND-002 实时多端口：轻量控制命令（复位/踏板清理，不重开流）。
+                    while let Ok(cmd) = ctrl_rx.try_recv() {
+                        match cmd {
+                            PlaybackControl::ResetState => synth.reset_channel_state(),
+                            PlaybackControl::ReleaseAllDampers => synth.release_all_dampers(),
+                        }
                     }
                     // Drain pending MIDI events (non-blocking).
                     while let Ok((ch, ev)) = event_rx.try_recv() {
@@ -299,6 +307,7 @@ impl AudioPlayback {
             stop_tx: Some(stop_tx),
             event_tx: Some(event_tx),
             stream_tx: Some(stream_tx),
+            ctrl_tx: Some(ctrl_tx),
             thread: Some(thread),
             sample_rate: device_rate,
             engine_rate,
