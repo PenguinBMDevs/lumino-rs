@@ -18,10 +18,12 @@
 //! - `continuous`：连续复制与复制后移动（无 Ctrl 拖副本框）
 //! - `copy_flow`：ghost 增量与完整交互序列回归
 //! - `vertical`：上下拖动复制 BUG 复现
+//! - `large_selection`：大批量选中（跨位图块）复制回归——副本必须是刚性平移
 
 mod commit;
 mod continuous;
 mod copy_flow;
+mod large_selection;
 mod mixed;
 mod pressed;
 mod release;

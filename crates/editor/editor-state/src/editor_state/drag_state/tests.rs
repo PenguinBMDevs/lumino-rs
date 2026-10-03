@@ -81,6 +81,39 @@ fn test_selected_indices() {
 }
 
 #[test]
+fn test_selected_indices_fast_matches_selected_indices_multiblock() {
+    // 跨块选中（100 个索引，远超单块容量）必须与逐位版本完全一致。
+    // 回归 BUG：`selected_indices_fast` 曾以 `block_idx * 64` 计算块基址，
+    // 而 `bit_vec::BitVec` 默认块宽为 **32 位**（B = u32），导致第二个块起
+    // 索引整体偏移（真实 32 被算成 64…），批量复制按错误索引取音符。
+    let mut ds = DragState::from_single(0, 100, 0, 60);
+    for i in 0..100usize {
+        ds.selected.set(i, i % 3 == 0 || i >= 90);
+    }
+    let expected = ds.selected_indices();
+    let fast = ds.selected_indices_fast();
+    assert_eq!(
+        fast, expected,
+        "selected_indices_fast 必须与 selected_indices 一致（跨块场景）"
+    );
+}
+
+#[test]
+fn test_selected_indices_fast_single_block_boundary() {
+    // 块边界：第 32 个索引（块 0 的最后一位）与第 33 个索引（块 1 首位）
+    // from_single(0, ..) 已把索引 0 置位 → 期望 [0,31,32,63]
+    let mut ds = DragState::from_single(0, 64, 0, 60);
+    ds.selected.set(31, true);
+    ds.selected.set(32, true);
+    ds.selected.set(63, true);
+    assert_eq!(
+        ds.selected_indices_fast(),
+        vec![0, 31, 32, 63],
+        "块边界索引不得偏移"
+    );
+}
+
+#[test]
 fn test_ghost_position_basic() {
     let drag_state = DragState {
         selected: BitVec::new(),
