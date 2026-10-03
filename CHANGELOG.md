@@ -159,6 +159,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ⑬ 根因修复（方案 A）：fork xsynth-Lumino `7a31ed2c`（process_pitch 有限性
   钳制 + 采样器 time 守卫），Lumino pin 已更新；修复后复现实验 nan=0（修复前 19890）。
   记录见 `docs/2026-10-01-REND-002-CPU多端口Phase3实时落地记录.md`
+  ⑭ 同 tick 控制事件次序【决策，2026-10-03】：**保持文件序，不引入「选择→数据」二级序**。
+  素材把 RPN DataEntry 写在选择之前（审计 803 组）属素材侧问题，解析/合并层不「修复」；
+  加二级序会同时威胁 PB 的相对次序，回归 `426d5b2d` 修好的弯音偏差（98k PB 中 7 个偏差
+  >1 半音、最大 62 半音）。追齐路径（`chase.rs`）仍用「选择→其他→DataEntry」rank——
+  那是在重放下发「某 tick 的最终状态」、次序由代码语义决定，与「忠实还原文件流」是两件事，
+  差异有意为之。决策由 `event_stream::tests::test_same_tick_rpn_data_before_select_is_preserved_as_is`
+  锁死（改语义必须先让该用例变红）。
+  ⑮ 通道后触误映射修复：`XSynthOutputConn::send_raw` 曾把 `0xD0`（通道后触）映射为
+  `ControlEvent::Raw(0, b1)` = **CC0（Bank Select MSB）** ⇒ 后触会改掉该通道音色库；
+  多端口下默认实现还会把全局通道折叠到低 4 位 ⇒ 改错端口的同号通道，并污染
+  `PercussionTracker` 的 Bank Select 判定（误切打击乐模态）。现抽出纯映射函数
+  `map_raw_message`：`0xD0`/`0xA0` 一律**显式不支持**（无声丢弃，与 `lgs.rs` 既有决策
+  「GPU 合成器不支持，忽略以避免噪声报错」一致），并显式覆写 `channel_pressure`/
+  `poly_pressure` 绕开默认折叠路径；附回归守卫（反证：恢复旧映射该用例即变红）。
+  附带澄清两处口径：`set_channel_gain/pan` 的 `u8` 形参**不是**缺口（全局通道上限 255，
+  恰好覆盖全 256 通道）；`get_channel_levels` 固定返回 `[f32; 16]`，多端口下只覆盖端口 0，
+  已在 trait 文档明确记为**已知限制**（未修）。
 
 ### 渲染修复
 
