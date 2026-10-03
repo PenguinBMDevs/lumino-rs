@@ -394,7 +394,7 @@ impl Toolbar {
                         // （`sync_toolbar_tool_state` 响应本事件触发 `open_fill_division_dialog`）。
                         self.fill_enabled = true;
                     }
-                    // 曲线 / 文字 / 橡皮擦无独立设置，Ctrl+点击等同普通选择
+                    // 曲线 / 文字无独立设置，Ctrl+点击等同普通选择
                     _ => {}
                 }
                 tracing::debug!("工具栏: 绘制工具条 Ctrl+选择 {:?}", item);
@@ -437,12 +437,6 @@ impl Toolbar {
             ToolPanelItem::Text => {
                 // 文字工具：独立工具，不可与任何工具/填充桶共存
                 self.current_tool = Tool::Text;
-                self.fill_enabled = false;
-            }
-            ToolPanelItem::Eraser => {
-                // 绘制橡皮擦：独立于普通编辑橡皮擦（Tool::Eraser），
-                // 专用于曲线/形状/画刷绘制上下文
-                self.current_tool = Tool::DrawEraser;
                 self.fill_enabled = false;
             }
         }

@@ -58,13 +58,6 @@ fn test_panel_text_switches_to_text() {
 }
 
 #[test]
-fn test_panel_eraser_switches_to_draw_eraser() {
-    let _guard = crate::test_helpers::event_queue_lock();
-    // 下拉内「橡皮擦」是绘制橡皮擦（Tool::DrawEraser），独立于普通编辑橡皮擦（Tool::Eraser）
-    select_and_assert(ToolPanelItem::Eraser, Tool::DrawEraser, false);
-}
-
-#[test]
 fn test_panel_curve_switches_to_curve() {
     let _guard = crate::test_helpers::event_queue_lock();
     // 曲线条目把当前工具切换为曲线（关闭填充共存态）

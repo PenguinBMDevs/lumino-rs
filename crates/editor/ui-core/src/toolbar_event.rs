@@ -168,8 +168,6 @@ pub enum ToolPanelItem {
     Shape,
     /// 文字输入
     Text,
-    /// 橡皮擦
-    Eraser,
 }
 
 /// 水平翻转模式
