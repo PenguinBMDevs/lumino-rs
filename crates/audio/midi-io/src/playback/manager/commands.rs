@@ -22,6 +22,8 @@ pub(crate) enum Command {
     ClearMidiOutput,
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
+    /// REND-002 修复：清零打击乐模态跟踪（仅「文档真正切换」发；编辑快照不发）
+    ResetPercussionTracking,
     SetMidiEvents(Vec<MidiTrackEvent>),
     SetTempoChanges(Vec<TempoChange>),
     SetVelocityFilterThreshold(u8),
@@ -59,6 +61,7 @@ pub(crate) fn handle_command(
         Command::ClearMidiOutput => *midi_output = None,
         Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),
         Command::SetDocument(doc, track) => engine.set_document(doc, track),
+        Command::ResetPercussionTracking => engine.reset_percussion_tracking(),
         Command::SetMidiEvents(events) => engine.set_midi_events(events),
         Command::SetTempoChanges(changes) => {
             let mut playback_guard = engine.playback().lock();

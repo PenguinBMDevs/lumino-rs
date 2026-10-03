@@ -38,17 +38,9 @@ impl<'a> MidiEventProcessor<'a> {
 
             // 上游数值污染兜底：非有限样本按静音净化并计数（无论限幅器是否开启），
             // 同时一次性记录首个非有限样本与最近事件（NaN 取证）。
-            let mut bad = 0_u64;
-            let mut first_bad: Option<usize> = None;
-            for (i, s) in buffer.iter_mut().enumerate() {
-                if !s.is_finite() {
-                    if first_bad.is_none() {
-                        first_bad = Some(i);
-                    }
-                    *s = 0.0;
-                    bad += 1;
-                }
-            }
+            // 与尾部收尾共用 `purify_non_finite`——两处口径分叉正是 REND-002
+            // 尾部 NaN 旁路的根因，故净化只有这一份实现。
+            let (bad, first_bad) = super::processor::purify_non_finite(&mut buffer);
             if let Some(offset) = first_bad {
                 self.probe_non_finite(offset);
             }

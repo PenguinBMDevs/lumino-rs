@@ -224,7 +224,10 @@ impl XSynth {
     /// 16 通道比扩到 112 通道更贵；而“文档切换清模态”用轻量复位即可：
     /// 1. 逐通道显式 `SetPercussionMode(false)`（fork 在 bank=128 时忽略 CC0，
     ///    必须走 config 事件才能退出打击乐模态）；
-    /// 2. `AllChannels(SystemReset)` 杀声部 + 复位控制器/程序。
+    /// 2. `AllChannels(SystemReset)` 杀声部 + 复位控制器/程序；
+    /// 3. **再按布局恢复各端口 ch9 的打击乐默认**——`SynthFormat::Custom` 不自动
+    ///    开启 ch9（见 `init_synth`），若只清不恢复，切文档后鼓轨会退化为旋律。
+    ///    放在 `SystemReset` **之后**：无论 SystemReset 是否清模态，终态都正确。
     pub(super) fn reset_channel_state(&mut self) -> Result<(), String> {
         let channels =
             lumino_midi_model::multi_port::channels_for_max_port_clamped(self.midi_max_port);
@@ -242,6 +245,16 @@ impl XSynth {
         sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
             ChannelAudioEvent::SystemReset,
         )));
+        // Custom 布局下 `percussion_channels` 覆盖每个端口的 ch9（含 port 0）；
+        // 单端口（`midi_max_port == 0`）由 `SynthFormat::Midi` 自动开启，不重复下发。
+        if self.midi_max_port != 0 {
+            for channel in percussion_channels(self.midi_max_port) {
+                sender.send_event(SynthEvent::Channel(
+                    channel,
+                    ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
+                ));
+            }
+        }
         Ok(())
     }
 

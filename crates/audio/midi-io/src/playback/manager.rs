@@ -219,6 +219,15 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::SetDocument(doc, current_track));
     }
 
+    /// REND-002 修复：清零打击乐模态跟踪。
+    ///
+    /// 只在**文档真正切换**时调用（与 `set_document` 分离）：`set_document` 同时
+    /// 服务编辑快照更新，那条路径必须保留运行时模态状态，否则每次编辑都会把
+    /// 运行时 Bank Select 推导出的打击乐模态清掉。
+    pub fn reset_percussion_tracking(&mut self) {
+        let _ = self.sender.send(Command::ResetPercussionTracking);
+    }
+
     // 旧 set_cache/set_skip_tracks_in_cache 已移除（disk_cache future support）
 
     /// 设置非音符MIDI事件列表

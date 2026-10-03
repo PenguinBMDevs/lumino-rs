@@ -20,6 +20,15 @@ impl Root {
             .data
             .import_control_events_from_document(&doc);
 
+        // REND-002 修复：真正装载新文档时清零打击乐模态跟踪。
+        // `update_playback_notes` 里的 `set_document` 同时服务编辑快照（必须保留
+        // 运行时 Bank Select 推导出的模态），故「切换」信号必须由这里显式给出。
+        // 不清零会让 msb_seen / bank_msb 跨文档泄漏：新文档只发 CC32（无 CC0）时
+        // 会被旧文档残留的证据误判为需要切换模态。
+        if let Some(manager) = &mut self.playback.manager {
+            manager.reset_percussion_tracking();
+        }
+
         // 单一权威源：文档独占存入 EditorData
         self.editor.editor_state.data.document = Some(doc);
     }

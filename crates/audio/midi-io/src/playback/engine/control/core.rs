@@ -168,6 +168,23 @@ impl PlaybackEngine {
         self.rebuild_queue_from_current_track(None);
     }
 
+    /// REND-002 修复：清零打击乐模态跟踪（**文档真正切换**时调用）。
+    ///
+    /// 不能放进 [`Self::set_document`]：那里同时服务「编辑后快照更新」，而编辑
+    /// 必须保留运行时模态状态（见该方法文档）。故切换信号由调用方显式给出
+    /// （UI 侧 `Root::set_midi_document`）。
+    ///
+    /// 不清零的后果：`msb_seen` / `bank_msb` 会跨文档泄漏——新文档只发 CC32
+    /// （无 CC0）时，旧文档残留的 `msb_seen = true` 会让它错误地参与判定，
+    /// 凭空切换一次模态。
+    pub fn reset_percussion_tracking(&mut self) {
+        let channels = self
+            .document
+            .as_deref()
+            .map_or(16, |doc| channels_for_max_port_clamped(doc.max_port()));
+        self.percussion = PercussionTracker::new(channels);
+    }
+
     /// 从当前 MIDI 文档重建当前音轨播放队列（与其他轨一致从 document 流式读取）
     pub fn rebuild_current_track_queue(&mut self) {
         self.rebuild_queue_from_current_track(None);

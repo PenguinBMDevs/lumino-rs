@@ -8,6 +8,7 @@ use std::time::Duration;
 use lumino_midi_loader::{MidiDocument, NoteEvent as DocNoteEvent, TrackManager};
 
 mod loop_wrap;
+mod percussion_reset;
 mod scheduling;
 mod track_end;
 mod track_rules;
