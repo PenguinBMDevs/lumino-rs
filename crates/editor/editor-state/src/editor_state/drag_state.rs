@@ -118,6 +118,7 @@ impl DragState {
     /// 索引整体偏移 +32/块（真实索引 33 被算成 65、63 算成 95…）：
     /// - 偏移后越界 → 副本音符被丢弃（表现为「完全无法批量复制」）；
     /// - 偏移后落在其它音符上 → 复制到未选中的音符（表现为「复制体散开、飘走」）。
+    ///
     /// 此处用 `size_of_val(&block) * 8` 让基址跟随块类型，杜绝再次硬编码出错。
     pub fn selected_indices_fast(&self) -> Vec<usize> {
         let mut indices = Vec::with_capacity(self.selected_count());

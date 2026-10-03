@@ -465,3 +465,97 @@ fn test_fill_division_preview_matches_generated_notes() {
         );
     }
 }
+
+// ── 大批量填充 √ 确认的写入路径（渲染事件风暴回归）────────────────────
+
+/// 「大批量」判定量级（固定字面量，**故意不引用 `BATCH_INSERT_THRESHOLD`**）：
+/// 若引用阈值，一旦阈值被改动，前置断言会先失败，掩盖「写入路径是否真的批量」
+/// 这条真正要守的断言（牙齿检查时实测过这个坑）。
+const LARGE_FILL_NOTES: usize = 2048;
+
+/// 构造「大面积填充」编辑器：88 音高行 × 24000 tick，切分 1/16 → ≈ 8800 音符
+fn large_fill_editor() -> Editor {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    editor.editor_state.view.snap_precision = 240.0;
+    editor.editor_state.view.ppq = 960;
+    editor.editor_state.view.key_count = 128;
+    editor.editor_state.view.visible_key_count = 128;
+    editor.editor_state.view.zoom_x = 0.02;
+    editor.editor_state.view.zoom_y = 4.0;
+    editor.editor_state.canvas.size_x = 8000.0;
+    editor.editor_state.canvas.size_y = 1200.0;
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.editor_state.line_tool.fill_enabled = true;
+    // 切分档位 1/16：步长 = 4·ppq/x = 4·960/16 = 240 tick
+    editor.editor_state.line_tool.fill_division = Some(16);
+    let line = &mut editor.editor_state.line_tool;
+    line.paths.push(Vec::new());
+    for (t, k) in [
+        (0.0, 40.0),
+        (24000.0, 40.0),
+        (24000.0, 127.0),
+        (0.0, 127.0),
+        (0.0, 40.0),
+    ] {
+        line.push_anchor(0, (t, k));
+    }
+    editor
+}
+
+/// 回归 BUG：`confirm_line_tool` 曾无条件**逐音符** `insert_note_with_id`——
+/// 每个音符记一条 `NoteDeltaEvent::InsertAt`，渲染侧逐条发 `NoteEvent::Insert`
+/// 并在 GPU 内搬移其后的全部实例。填充的生成顺序（按音高行、行内按 tick，
+/// 跨行 tick 回绕）使每条插入都落在列表中部，Σtail 超线性增长：
+/// 实测 13288 音符 = 13288 条消息 + 6805 万实例搬移（≈1038 MB GPU 拷贝）
+/// + 13288 次 submit，√ 瞬间卷帘 WGPU 卡顿（见 `ui_fill_confirm_bench`）。
+///
+/// 修复后：超过 `BATCH_INSERT_THRESHOLD` 走批量归并——`note_delta_events` 为空，
+/// 只发一次主轨结构重建（`main_track_struct_dirty`）。
+#[test]
+fn test_large_fill_confirm_uses_batch_write_no_event_storm() {
+    let mut editor = large_fill_editor();
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 1200.0, 60);
+
+    assert!(editor.confirm_line_tool(), "大面积填充应生成音符");
+    let count = editor.editor_state.data.current_track_note_count();
+    assert!(
+        count > LARGE_FILL_NOTES,
+        "前置：生成音符数应超过批量阈值，实际 {count}"
+    );
+
+    // 关键断言：不得出现逐音符 InsertAt 事件风暴
+    assert!(
+        editor.editor_state.data.note_delta_events.is_empty(),
+        "大批量填充应走批量归并（0 条段内增量事件），实际 {} 条",
+        editor.editor_state.data.note_delta_events.len()
+    );
+    assert!(
+        editor.editor_state.data.main_track_struct_dirty,
+        "大批量填充应以单次主轨结构重建（TrackDelta）同步渲染"
+    );
+
+    // 撤销语义：一次 √ = 一次历史记录，Ctrl+Z 全退
+    assert!(editor.undo(), "填充结果应可撤销");
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        0,
+        "撤销应移除本次填充的全部音符"
+    );
+}
+
+/// 对照组：小规模填充仍走逐音符插入（保留 GPU 段内增量，避免整段重建）
+#[test]
+fn test_small_fill_confirm_keeps_per_note_incremental_events() {
+    let mut editor = rect_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
+
+    assert!(editor.confirm_line_tool(), "小矩形填充应生成音符");
+    let count = editor.editor_state.data.current_track_note_count();
+    assert!(count > 0 && count <= LARGE_FILL_NOTES);
+    assert!(
+        !editor.editor_state.data.note_delta_events.is_empty(),
+        "小规模填充应保留逐音符段内增量事件"
+    );
+}
