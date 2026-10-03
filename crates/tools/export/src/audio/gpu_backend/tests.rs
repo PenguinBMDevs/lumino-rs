@@ -1,4 +1,4 @@
-use super::build_synth_config;
+use super::{build_export_data, build_synth_config};
 use crate::audio::config::AudioRenderConfig;
 
 /// 全局复音上限必须与 layer_limit 解耦：默认 32 层时若把 layer_limit 当全局
@@ -41,6 +41,50 @@ fn gpu_per_key_limit_does_not_silently_raise_small_values() {
             "用户显式设 {small} 时 GPU 不得抬到 4"
         );
     }
+}
+
+/// REND-002 #87：通道空间按实际使用端口块开通（单端口=16 零变化）。
+#[test]
+fn gpu_synth_config_opens_channels_for_used_ports() {
+    for (max_port, expected) in [(0u8, 16usize), (1, 32), (6, 112), (15, 256)] {
+        let config = AudioRenderConfig {
+            midi_max_port: max_port,
+            ..AudioRenderConfig::default()
+        };
+        let synth = build_synth_config(&config);
+        assert_eq!(synth.midi_channels, expected, "max_port={max_port}");
+    }
+}
+
+/// REND-002 #87：导出 SMF 必须携带 FF 21 端口（端口 0 不写）。
+#[test]
+fn build_export_data_writes_track_ports() {
+    use lumino_midi_loader::MidiDocument;
+
+    // 双轨 SMF：轨 0 无 FF21（端口 0），轨 1 FF21=1。
+    let mut raw = Vec::new();
+    raw.extend_from_slice(b"MThd");
+    raw.extend_from_slice(&6u32.to_be_bytes());
+    raw.extend_from_slice(&1u16.to_be_bytes());
+    raw.extend_from_slice(&2u16.to_be_bytes());
+    raw.extend_from_slice(&480u16.to_be_bytes());
+    for port in [None, Some(1u8)] {
+        let mut track = Vec::new();
+        if let Some(p) = port {
+            track.extend_from_slice(&[0x00, 0xFF, 0x21, 0x01, p]);
+        }
+        track.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+        track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        raw.extend_from_slice(b"MTrk");
+        raw.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        raw.extend_from_slice(&track);
+    }
+    let (doc, _, _) = MidiDocument::from_notes_bytes(&raw, None).expect("双轨 SMF 应可解析");
+    let config = AudioRenderConfig::default();
+    let data = build_export_data(&doc, &config);
+    assert_eq!(data.tracks[0].midi_port, None, "端口 0 不写 FF 21");
+    assert_eq!(data.tracks[1].midi_port, Some(1), "轨 1 应携带 FF 21");
 }
 
 /// #35：引擎进度必须落在导出总进度的 0.10→0.20（预载）与 0.20→0.85

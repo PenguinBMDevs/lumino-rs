@@ -10,7 +10,7 @@ use rayon::prelude::*;
 use crate::config::{ChannelMode, SynthConfig};
 use crate::error::SynthError;
 use crate::gpu::{
-    EnvStageGpu, GpuResources, GrowableBuffer, MIX_CHANNELS, MixEvent, MixParams, MixStart,
+    EnvStageGpu, GpuResources, GrowableBuffer, MAX_MIDI_CHANNELS, MixEvent, MixParams, MixStart,
     SAMPLES_CHUNK_BINDING_BASE, SAMPLES_CHUNK_BYTES, SAMPLES_CHUNKS, VoiceParams, VoiceState,
     create_gpu_context,
 };
@@ -162,10 +162,11 @@ pub struct GpuSynth {
     /// voice-list mutation (`retain`) so note-on/note-off handling is O(1)
     /// instead of scanning the whole voice list (dense MIDI can hold tens
     /// of thousands of voices and millions of note events).
-    /// Flat array indexed by `ch*128+key` (2048 entries) to avoid HashMap
+    /// Flat array indexed by `ch*128+key` (`midi_channels*128` entries;
+    /// single-port = the historical 2048) to avoid HashMap
     /// hashing overhead on the hot black-MIDI path (measured: ~30% of
     /// `apply` time on 20k-voice blocks).
-    key_voices: Vec<VecDeque<usize>>, // len 2048
+    key_voices: Vec<VecDeque<usize>>, // len midi_channels*128
     sample_offsets: std::collections::HashMap<usize, (u32, u32)>, // sample_id -> (offset, len)
     samples_next_offset: u32,
     global_frame: u64,
@@ -228,7 +229,7 @@ pub struct GpuSynth {
     /// sounds, the quietest old group is stolen). Using `max_voices_per_key`
     /// here dropped the NEWEST notes and broke dense passages (measured: 18%
     /// of a black MIDI's note-ons dropped at limit=4).
-    spawn_budget: [u32; 16 * 128],
+    spawn_budget: Vec<u32>,
     /// Per-(channel, key) count of active (not ended, not released) note
     /// groups, so `release_key` can bail out in O(1) when a note-off has no
     /// target - black-MIDI peaks fire hundreds of thousands of orphan
@@ -237,7 +238,7 @@ pub struct GpuSynth {
     /// adjust it, trims may leave it slightly stale (only costs a scan).
     /// u32：无限层数下同键活组可远超 u8(255)；u8 截断归零会让 release_key
     /// 跳过 note-off（挂音/超时），故不再截断。
-    active_notes: [u32; 16 * 128],
+    active_notes: Vec<u32>,
     /// Voice template cache: `(key, vel, channel, pitch_mult_bits,
     /// env_attack, env_release)` -> pre-built voices for every zone of that
     /// note. Black-MIDI note storms spawn thousands of identical notes per

@@ -103,7 +103,7 @@ impl EnvStageGpu {
 pub struct MixEvent {
     /// Frame relative to the block start.
     pub frame: u32,
-    /// MIDI channel (0-15).
+    /// 全局 MIDI 通道（0-255，`port*16+ch`，REND-002 #87）。
     pub channel: u32,
     /// Controller number (7 = volume, 11 = expression, 10/8 = pan).
     pub cc: u32,
@@ -129,8 +129,12 @@ pub struct MixStart {
     pub _pad: [f32; 3],
 }
 
-/// Number of MIDI channels in the mix pass.
-pub const MIX_CHANNELS: usize = 16;
+/// MIDI 通道空间上限（16 端口 × 16 通道，REND-002 #87）。
+///
+/// `MixParams.starts` 定长按此分配；实际参与 mix 的通道数由
+/// `MixParams.channel_count`（= `SynthConfig::midi_channels`）决定，
+/// 单端口时循环只走 16 个通道，成本与历史一致。
+pub const MAX_MIDI_CHANNELS: usize = 256;
 
 /// Mirror of `MixParams` in `mix.wgsl` (uniform buffer, 16-byte padded).
 #[repr(C)]
@@ -144,7 +148,7 @@ pub struct MixParams {
     pub lerp_len: f32,
     pub _pad: [f32; 3],
     /// Per-channel block-start lerp states.
-    pub starts: [MixStart; MIX_CHANNELS],
+    pub starts: [MixStart; MAX_MIDI_CHANNELS],
 }
 
 impl MixParams {

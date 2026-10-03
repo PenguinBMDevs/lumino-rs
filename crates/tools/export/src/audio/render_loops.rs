@@ -18,7 +18,7 @@ use super::engine::AudioEngine;
 use super::event::MidiEventProcessor;
 use super::event_kind::{build_track_event_kind, compute_total_tick};
 use super::event_stream::MidiDocEventStream;
-use super::report::{report_progress, warn_gpu_multi_port, warn_port_overflow};
+use super::report::{report_progress, warn_port_overflow};
 use super::sink_factory::create_output_sink;
 use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 use super::tick_conv::TickToTime;
@@ -48,7 +48,6 @@ pub fn render_audio(config: &AudioRenderConfig) -> ExportResult<()> {
 
     // GPU 后端优先尝试
     if config.backend == super::config::AudioBackendKind::Gpu {
-        warn_gpu_multi_port(config.midi_max_port);
         match super::gpu_backend::render_audio_gpu_streaming(config) {
             Ok(()) => return Ok(()),
             Err(e) => {
@@ -111,8 +110,7 @@ pub fn render_audio_from_document(
     if let Some(ctrl) = &config.control {
         ctrl.check_abort()?;
     }
-    // REND-002：多端口由文档端口信息推导（覆盖 UI 传入的 0），并做 B1 超限告警；
-    // 提前到 GPU 分支之前，保证 GPU 多端口时能给出显式降级告警（#87 前不支持）。
+    // REND-002：多端口由文档端口信息推导（覆盖 UI 传入的 0），并做 B1 超限告警。
     let mut config = config.clone();
     config.midi_max_port = doc.max_port();
     let config = &config;
@@ -120,7 +118,6 @@ pub fn render_audio_from_document(
 
     // GPU 后端（SFZ 会自动回退到 CPU，保证导出可用）
     if config.backend == super::config::AudioBackendKind::Gpu {
-        warn_gpu_multi_port(config.midi_max_port);
         match super::gpu_backend::render_audio_gpu_from_document(config, doc) {
             Ok(()) => return Ok(()),
             Err(e) => {

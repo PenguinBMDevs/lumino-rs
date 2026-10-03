@@ -43,6 +43,10 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
     // 导致 issue #31 的 GPU/CPU 对拍在"参数相同"这个前提下就不成立）。
     // None / Some(0) = 不限制（GPU 侧用 0 表达）。
     let max_voices_per_key = super::config::normalize_layer_limit(config.layer_limit).unwrap_or(0);
+    // REND-002 #87：按实际使用的端口块开通全局通道空间（单端口 = 16，
+    // 历史行为零变化；超限端口由 B1 折叠到 15 块）。
+    let midi_channels =
+        lumino_midi_model::multi_port::channels_for_max_port_clamped(config.midi_max_port) as usize;
     // 全局复音上限与 layer_limit 解耦：CPU/XSynth 基准与实时 LGS 都没有全局上限
     // （`SynthConfig::default().max_voices == 0`），离线导出必须一致。
     // 旧实现 `max_voices: config.layer_limit.unwrap_or(0)` 在默认 32 层时把全局上限
@@ -51,6 +55,7 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         sample_rate: config.sample_rate,
         max_voices: 0,
         max_voices_per_key,
+        midi_channels,
         block_size: 512,
         interpolation: map_interpolation(config.interpolation),
         use_effects: true,
@@ -61,10 +66,11 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
         show_progress: false,
     };
     tracing::info!(
-        "GPU SynthConfig: sample_rate={}, max_voices={} (0=无限制), max_voices_per_key={}, channels={:?}",
+        "GPU SynthConfig: sample_rate={}, max_voices={} (0=无限制), max_voices_per_key={}, midi_channels={}, channels={:?}",
         synth_config.sample_rate,
         synth_config.max_voices,
         synth_config.max_voices_per_key,
+        synth_config.midi_channels,
         synth_config.channels
     );
     synth_config
@@ -216,6 +222,12 @@ pub(super) fn build_export_data(
                 control_changes,
                 pitch_bends,
                 name: doc.track_name(i).map(|s| s.to_string()),
+                // REND-002 #87：FF 21 端口随轨道写回 SMF（writer 已支持）；
+                // 端口 0 不写，保持单端口文件无 FF 21 的历史形态。
+                midi_port: {
+                    let p = doc.track_port(track_id);
+                    (p != 0).then_some(p)
+                },
                 ..Default::default()
             }
         })

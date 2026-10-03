@@ -90,7 +90,7 @@ impl GpuSynth {
         // indexing. Templates are built for the DEFAULT channel state only
         // (pitch 1.0, no env CC) - notes with bends or CC72/73 fall back to
         // building on demand.
-        let mut seen: Vec<u8> = vec![0; 16 * 128 * 128];
+        let mut seen: Vec<u8> = vec![0; self.config.midi_channels * 128 * 128];
         for ev in events {
             let MidiEvent::NoteOn { key, vel } = ev.event() else {
                 continue;
