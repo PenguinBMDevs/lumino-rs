@@ -77,8 +77,8 @@ impl GpuSynth {
         for q in self.key_voices.iter_mut() {
             q.clear();
         }
-        self.spawn_budget = [0; 16 * 128];
-        self.active_notes = [0; 16 * 128];
+        self.spawn_budget.fill(0);
+        self.active_notes.fill(0);
         self.global_frame = 0;
         self.active_voice_count = 0;
         self.last_states = None;

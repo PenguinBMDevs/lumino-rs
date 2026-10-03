@@ -14,6 +14,13 @@ pub fn render_audio_gpu_from_document(
 ) -> ExportResult<()> {
     use lumino_gpu_synth::GpuSynth;
 
+    // REND-002 #87 防御：直接调用方（example/测试）可能未预填端口布局，
+    // 合成通道空间必须以文档实际端口为准（外层 `render_audio_from_document`
+    // 已填，此处 `max` 幂等）。
+    let mut config = config.clone();
+    config.midi_max_port = config.midi_max_port.max(doc.max_port());
+    let config = &config;
+
     check_control(config)?;
 
     let report = |msg: &str, pct: f64| {

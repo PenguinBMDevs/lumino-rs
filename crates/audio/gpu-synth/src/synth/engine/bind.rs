@@ -37,8 +37,8 @@ impl GpuSynth {
         // Per-channel block-start states, then advance the CPU-side lerp
         // state machines through this block (all events + the block end) so
         // the next block starts from the right values.
-        let mut starts: Vec<MixStart> = Vec::with_capacity(MIX_CHANNELS);
-        for ch_idx in 0..MIX_CHANNELS {
+        let mut starts: Vec<MixStart> = Vec::with_capacity(self.channels.len());
+        for ch_idx in 0..self.channels.len() {
             let st = &mut self.channels[ch_idx];
             starts.push(MixStart {
                 vol: st.volume.current,
@@ -82,10 +82,12 @@ impl GpuSynth {
         {
             self.mix_bg_dirty = true;
         }
+        // `starts` 是定长数组（上限 256）：未使用的通道槽位保持零值。
+        starts.resize(MAX_MIDI_CHANNELS, bytemuck::Zeroable::zeroed());
         let params = MixParams {
             voice_count: self.active_voice_count,
             block_size: block,
-            channel_count: MIX_CHANNELS as u32,
+            channel_count: self.channels.len() as u32,
             event_count: events.len() as u32,
             lerp_len: sr as f32 * 0.01,
             _pad: [0.0; 3],

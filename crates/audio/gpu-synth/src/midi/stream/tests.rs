@@ -37,3 +37,31 @@ fn stream_roundtrip_small() {
     assert!(c > 0);
     assert!(s.is_exhausted());
 }
+
+/// 双轨各写 FF 21 端口：流式事件必须映射为全局通道（轨 1 → 16）。
+#[test]
+fn stream_maps_ports_to_global_channels() {
+    let mut v = Vec::new();
+    v.extend_from_slice(b"MThd");
+    v.extend_from_slice(&[0, 0, 0, 6, 0, 1, 0, 2, 0x01, 0xE0]); // format 1, 2 tracks, 480
+    for p in [0u8, 1] {
+        let mut track = Vec::new();
+        track.extend_from_slice(&[0x00, 0xFF, 0x21, 0x01, p]);
+        track.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+        track.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+        track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        v.extend_from_slice(b"MTrk");
+        v.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        v.extend_from_slice(&track);
+    }
+    let mut midi = MidiStream::parse(&v, 64_000).expect("双端口 SMF 应可解析");
+    assert_eq!(midi.max_port(), 1);
+    let mut channels = Vec::new();
+    while let Some(ev) = midi.next_event() {
+        if ev.kind() == crate::midi::kind::NOTE_ON {
+            channels.push(ev.channel());
+        }
+    }
+    channels.sort_unstable();
+    assert_eq!(channels, vec![0, 16], "轨 1 的 ch0 应映射到全局 16");
+}

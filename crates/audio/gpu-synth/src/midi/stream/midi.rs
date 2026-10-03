@@ -2,6 +2,7 @@ use super::parse::{read_header_and_tracks_mmap, scan_tempos_mmap};
 use super::tempo::{build_tempo_segs, ticks_to_sample};
 use super::track::{HeapItem, TrackStream};
 use super::*;
+use crate::midi::port::global_channel;
 
 pub struct MidiStream {
     sample_rate: u32,
@@ -11,6 +12,8 @@ pub struct MidiStream {
     length_ticks: u64,
     path: PathBuf,
     track_infos: Vec<(u64, u32)>,
+    /// 每轨 MIDI 端口（FF 21，按轨道索引；无则 0），REND-002 #87。
+    track_ports: Vec<u8>,
     streams: Vec<TrackStream>,
     heap: BinaryHeap<Reverse<HeapItem>>,
 }
@@ -21,7 +24,7 @@ impl MidiStream {
         let mmap =
             unsafe { Mmap::map(&file).map_err(|e| SynthError::Io(std::io::Error::other(e)))? };
         let (tpb, infos) = read_header_and_tracks_mmap(&mmap)?;
-        let (tempos, length_ticks) = scan_tempos_mmap(&mmap, &infos)?;
+        let (tempos, length_ticks, track_ports) = scan_tempos_mmap(&mmap, &infos)?;
         let tempo_segs = build_tempo_segs(&tempos, tpb);
         let end_sample = ticks_to_sample(length_ticks, &tempo_segs, tpb, sample_rate) as u64;
         drop(mmap);
@@ -33,7 +36,8 @@ impl MidiStream {
         for (idx, st) in streams.iter_mut().enumerate() {
             if let Some((tick, ch, k, p)) = st.next_with_tick()? {
                 let sample = ticks_to_sample(tick, &tempo_segs, tpb, sample_rate);
-                let packed = ((ch as u32) << 28) | ((k & 0xF) << 24) | (p & 0x00FF_FFFF);
+                let packed =
+                    TimedEvent::new(sample, global_channel(track_ports[idx], ch), k, p).packed;
                 heap.push(Reverse(HeapItem {
                     sample,
                     track_idx: idx,
@@ -49,6 +53,7 @@ impl MidiStream {
             length_ticks,
             path,
             track_infos: infos,
+            track_ports,
             streams,
             heap,
         })
@@ -66,6 +71,14 @@ impl MidiStream {
     }
     pub fn end_sample(&self) -> u64 {
         self.end_sample
+    }
+    /// 每轨 MIDI 端口（FF 21，按轨道索引；无则 0）。
+    pub fn track_ports(&self) -> &[u8] {
+        &self.track_ports
+    }
+    /// 文件使用到的最大 MIDI 端口号（空/无端口为 0）。
+    pub fn max_port(&self) -> u8 {
+        self.track_ports.iter().copied().max().unwrap_or(0)
     }
     pub fn length_ticks(&self) -> u64 {
         self.length_ticks
@@ -88,7 +101,8 @@ impl MidiStream {
         for (idx, st) in self.streams.iter_mut().enumerate() {
             if let Some((tick, ch, k, p)) = st.next_with_tick()? {
                 let sample = ticks_to_sample(tick, &segs, tpb, sr);
-                let packed = ((ch as u32) << 28) | ((k & 0xF) << 24) | (p & 0x00FF_FFFF);
+                let port = self.track_ports.get(idx).copied().unwrap_or(0);
+                let packed = TimedEvent::new(sample, global_channel(port, ch), k, p).packed;
                 self.heap.push(Reverse(HeapItem {
                     sample,
                     track_idx: idx,
@@ -119,7 +133,8 @@ impl MidiStream {
             && let Ok(Some((tick, ch, k, p))) = st.next_with_tick()
         {
             let sample = ticks_to_sample(tick, &segs, tpb, sr);
-            let packed = ((ch as u32) << 28) | ((k & 0xF) << 24) | (p & 0x00FF_FFFF);
+            let port = self.track_ports.get(item.track_idx).copied().unwrap_or(0);
+            let packed = TimedEvent::new(sample, global_channel(port, ch), k, p).packed;
             self.heap.push(Reverse(HeapItem {
                 sample,
                 track_idx: item.track_idx,

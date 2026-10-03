@@ -124,7 +124,7 @@ impl GpuSynth {
                                             1u32
                                         } else {
                                             0u32
-                                        }) << 7)
+                                        }) << 8)
                                 })
                                 .collect::<Vec<_>>()
                         },
@@ -231,7 +231,7 @@ impl GpuSynth {
                         1u32
                     } else {
                         0u32
-                    }) << 7);
+                    }) << 8);
             }
         }
         self.prev_voice_ids = new_ids;

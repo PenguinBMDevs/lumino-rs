@@ -3,9 +3,11 @@ use super::*;
 impl GpuSynth {
     /// Queues a MIDI event (applied at the next block boundary).
     pub fn send_event(&mut self, channel: u8, event: MidiEvent) {
+        // REND-002 #87: `channel` 是全局通道（0..=255，port*16+ch），不再折叠到
+        // 4 bit；超出引擎通道空间的事件由 `handle_event` 丢弃并告警。
         self.pending_events.push_back(TimedEvent::from_event(
             self.global_frame as u32,
-            channel.min(15),
+            channel,
             event,
         ));
     }
@@ -69,6 +71,17 @@ impl GpuSynth {
 
     pub(crate) fn handle_event(&mut self, ev: TimedEvent) -> Result<(), SynthError> {
         let ch = ev.channel() as usize;
+        if ch >= self.config.midi_channels {
+            // 配置与事件流不同步（例如多端口事件喂给单端口引擎）：丢弃并只告警一次。
+            static WARNED: std::sync::OnceLock<()> = std::sync::OnceLock::new();
+            if WARNED.set(()).is_ok() {
+                eprintln!(
+                    "[gpu-synth] channel {ch} >= midi_channels {}; event dropped (REND-002 #87)",
+                    self.config.midi_channels
+                );
+            }
+            return Ok(());
+        }
         // Fast path on packed kind/payload to avoid constructing MidiEvent
         // enum for the hot note-on/note-off path (black MIDI: >1M events/sec).
         match ev.kind() {
