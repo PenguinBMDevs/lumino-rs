@@ -10,56 +10,50 @@ impl GpuSynth {
         self.spawn_budget.fill(0);
         // Exclusive classes resolved once per block.
         self.trim_exclusive();
-        // Rebuild the active-note counts exactly (trims/exclusive kills may
-        // have left the in-block counters stale). After trim_exclusive, so
-        // killed classes are not counted.
+        // Per-(port, key) polyphony trim (REND-002 #87 / REND-008 #94 /
+        // REND-011 #105 semantics): the cap is shared by the whole port
+        // (across its 16 channels) and counts EVERY sounding note group of
+        // that key - including release tails. Over-cap trimming evicts
+        // release tails first (they are already decaying), then the
+        // quietest/oldest sustained groups; every evicted group gets the
+        // 1 ms fade (`fade_out`), never a fade-less hard kill (#105).
+        //
+        // Why: the old per-(channel,key) cap excluded releasing voices, so
+        // black-MIDI tails accumulated to 30-52k voices per block and
+        // dominated the per-block upload/readback (#94). A port-level cap
+        // bounds the single-port total to 128 x `max_voices_per_key` groups.
+        let per_key_limit = self.config.max_voices_per_key;
+        if per_key_limit > 0 {
+            // One O(voices) pass buckets every live voice by (port, key).
+            let mut buckets: std::collections::HashMap<(usize, u8), Vec<usize>> =
+                std::collections::HashMap::new();
+            for (i, v) in self.voices.iter().enumerate() {
+                if v.state.ended != 0 {
+                    continue;
+                }
+                buckets
+                    .entry((v.channel as usize / 16, v.key))
+                    .or_default()
+                    .push(i);
+            }
+            // Fast path: fewer voices than the cap implies fewer groups.
+            let over: Vec<(usize, u8, Vec<usize>)> = buckets
+                .into_iter()
+                .filter(|(_, positions)| positions.len() > per_key_limit)
+                .map(|((port, key), positions)| (port, key, positions))
+                .collect();
+            for (port, key, positions) in over {
+                self.trim_port_key_voices(port, key, &positions, per_key_limit);
+            }
+        }
+        // Rebuild the active-note counts exactly (trims may have released
+        // sustained groups; the in-block counters are stale).
         self.active_notes.fill(0);
         for v in &self.voices {
             if v.state.ended == 0 && v.release_at == u64::MAX {
                 let slot = &mut self.active_notes[v.channel as usize * 128 + v.key as usize];
                 *slot = slot.saturating_add(1);
             }
-        }
-        // Per-key polyphony trim, deferred from `spawn_voices`: ending voices
-        // per note-on was O(key voices) per event (black-MIDI storms scan
-        // the key for every one of thousands of notes per block); trimming
-        // once per block is O(voices). Semantics mirror XSynth's
-        // `pop_quietest_voice_group`: keep the `max_voices_per_key` loudest
-        // note *groups* of each key (whole notes are killed, never split
-        // zones), quietest first.
-        let per_key_limit = self.config.max_voices_per_key;
-        if per_key_limit > 0 {
-            let keys: Vec<(u8, u8)> = self
-                .key_voices
-                .iter()
-                .enumerate()
-                .filter(|(_, positions)| {
-                    if positions.is_empty() {
-                        return false;
-                    }
-                    // Count distinct note groups (XSynth semantics), not voices
-                    let mut groups = 0usize;
-                    let mut last_nid: Option<u64> = None;
-                    for &pos in positions.iter() {
-                        if let Some(v) = self.voices.get(pos)
-                            && Some(v.note_id) != last_nid
-                        {
-                            groups += 1;
-                            last_nid = Some(v.note_id);
-                            if groups > per_key_limit {
-                                return true;
-                            }
-                        }
-                    }
-                    false
-                })
-                .map(|(idx, _)| ((idx / 128) as u8, (idx % 128) as u8))
-                .collect();
-            for (ch, key) in keys {
-                self.trim_key_voices(ch, key, per_key_limit, None);
-            }
-            self.voices.retain(|v| v.state.ended == 0);
-            self.rebuild_key_voices();
         }
 
         // Drop voices that ended (state refreshed by the previous readback)
@@ -189,5 +183,75 @@ impl GpuSynth {
         self.voices.retain(|v| v.state.ended == 0);
 
         self.rebuild_key_voices();
+    }
+
+    /// 端口级每键裁剪（REND-002 #87 / #94 / #105）。
+    ///
+    /// `positions` 是该 `(port, key)` 的全部在响声部（跨 16 通道、含释放
+    /// 尾巴）。超出 `limit` 个 note 组时：
+    /// - **释放优先**：已进入释放/淡出的组先裁（输出已在衰减）；
+    /// - 其次按 `(vel, note_id)` 升序裁最安静/最旧的持续组；
+    /// - 保护最新组（`max note_id`）：新音符必发声；
+    /// - 被裁组统一 1 ms 淡出（`fade_out`），绝不无淡出硬杀（#105）；
+    ///   已在淡出的组直接 `ended`（上一块已淡完，无 click）。
+    pub(crate) fn trim_port_key_voices(
+        &mut self,
+        port: usize,
+        key: u8,
+        positions: &[usize],
+        limit: usize,
+    ) {
+        let _ = (port, key); // 索引在块末统一 retain + rebuild_key_voices
+        // (releasing, spawn, vel, note_id, positions) —— 按 note_id 分组。
+        let mut groups: Vec<(bool, u64, u8, u64, Vec<usize>)> = Vec::new();
+        for &pos in positions {
+            let Some(v) = self.voices.get(pos) else {
+                continue;
+            };
+            if v.state.ended != 0 {
+                continue;
+            }
+            let releasing = v.released || v.release_at != u64::MAX;
+            match groups.last_mut() {
+                Some((_, _, _, nid, g)) if *nid == v.note_id => g.push(pos),
+                _ => groups.push((releasing, v.spawn_frame, v.vel, v.note_id, vec![pos])),
+            }
+        }
+        let need_free = groups.len().saturating_sub(limit);
+        if need_free == 0 {
+            return;
+        }
+        // 保护最新组（整体 max note_id）；释放尾巴无需保护。
+        let protected = groups.iter().map(|g| g.3).max().unwrap_or(0);
+        let infos: Vec<(bool, u8, u64)> = groups.iter().map(|g| (g.0, g.2, g.3)).collect();
+        let mut freed = 0usize;
+        for gi in order_port_key_evictions(&infos) {
+            if freed >= need_free {
+                break;
+            }
+            if groups[gi].3 == protected {
+                continue;
+            }
+            for &pos in &groups[gi].4 {
+                let Some(v) = self.voices.get_mut(pos) else {
+                    continue;
+                };
+                if v.state.ended != 0 {
+                    continue;
+                }
+                if v.fade_out {
+                    // 上一轮已在淡出：现在直接结束（输出已衰减，无 click）。
+                    v.state.ended = 1;
+                    v.damper_pending = false;
+                } else {
+                    // 统一 1 ms 淡出：尾巴与持续音都不硬杀（#105）。
+                    v.release_at = self.global_frame;
+                    v.released = true;
+                    v.fade_out = true;
+                    v.damper_pending = false;
+                }
+            }
+            freed += 1;
+        }
     }
 }

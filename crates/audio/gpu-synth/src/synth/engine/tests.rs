@@ -1,13 +1,30 @@
 use super::types::MAX_SPAWNS_PER_KEY_PER_BLOCK;
 use super::voice_alloc::select_release_note_id;
 use super::{
-    ChannelState, RenderCheckpoint, checkpoint_ok, limit_block, select_damper_release_groups,
-    select_evictions, spawn_budget_allows,
+    ChannelState, RenderCheckpoint, checkpoint_ok, limit_block, order_port_key_evictions,
+    select_damper_release_groups, select_evictions, spawn_budget_allows,
 };
 use crate::error::SynthError;
 use crate::synth::voices::test_voice;
 
 const LOOKAHEAD: usize = 256;
+
+#[test]
+fn port_key_evictions_prefer_release_tails_then_quietest() {
+    // (releasing, vel, note_id)：释放尾巴优先；同类别按 (vel, note_id) 升序。
+    let groups = [
+        (false, 100u8, 5u64),
+        (true, 100, 9),
+        (false, 40, 2),
+        (true, 20, 7),
+    ];
+    let order = order_port_key_evictions(&groups);
+    assert_eq!(
+        order,
+        vec![3, 1, 2, 0],
+        "尾巴（3,1）先裁且按 vel 升序；持续组（2,0）其后"
+    );
+}
 
 #[test]
 fn limiter_kills_single_sample_spike() {

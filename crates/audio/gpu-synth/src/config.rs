@@ -78,12 +78,14 @@ pub struct SynthConfig {
     /// Default: `0` (unlimited, black-MIDI mode). Set e.g. `4096` to cap.
     pub max_voices: usize,
 
-    /// Maximum number of simultaneous voices for the *same key* on the same
-    /// channel (XSynth-style per-key polyphony limit).
+    /// Maximum number of simultaneously sounding note *groups* for the same
+    /// key **within one MIDI port** - all 16 channels of the port share the
+    /// cap (REND-002 #87 / REND-008 #94 semantics).
     ///
-    /// When a note-on would exceed this, the oldest voice of that key is
-    /// faded out, so a repeated note always steals from its own key rather
-    /// than from unrelated notes. `0` disables the limit entirely.
+    /// Release tails count toward the cap and are evicted first (REND-011
+    /// #105): over-cap trimming fades tails, then the quietest/oldest
+    /// sustained groups; the newest group is always protected. `0` disables
+    /// the limit entirely.
     ///
     /// Default: `8` (XSynth uses 4; 8 keeps fast trills/rolls clean).
     pub max_voices_per_key: usize,
