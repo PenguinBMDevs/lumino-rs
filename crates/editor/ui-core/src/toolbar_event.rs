@@ -112,6 +112,9 @@ pub enum Event {
     ToolPanelItemSelected(ToolPanelItem),
     /// 切换「画刷工具下拉」（ctrl+点击附属按钮触发）
     ToggleBrushDropdown,
+    /// 打开「分音符填充」对话框（油漆桶开启时 Ctrl+点击曲线工具触发）：
+    /// 与画刷/形状的 Ctrl+点击同语义 —— Ctrl+点当前工具按钮 = 打开该工具设置
+    OpenFillDivisionDialog,
     /// 关闭「画刷工具下拉」
     CloseBrushDropdown,
     /// 画刷粗细度变更（下拉 +/- 步进，1-20）

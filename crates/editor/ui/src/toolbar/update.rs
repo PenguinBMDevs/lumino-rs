@@ -304,6 +304,10 @@ impl Toolbar {
                 self.brush_dropdown_open = false;
                 tracing::debug!("工具栏: 关闭画刷工具下拉");
             }
+            Event::OpenFillDivisionDialog => {
+                // 弹窗状态在 Root（state.fill_division_dialog），工具栏自身无状态变化；
+                // 打开动作由 ToolbarHandler::sync_toolbar_tool_state 落地。
+            }
             Event::ToggleShapeDropdown => {
                 self.shape_dropdown_open = !self.shape_dropdown_open;
                 // 与其他面板互斥：打开形状工具下拉时关闭其余浮层

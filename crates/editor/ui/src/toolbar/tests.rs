@@ -48,6 +48,37 @@ fn test_curve_button_ctrl_click_brush_tool_opens_brush_panel() {
     );
 }
 
+/// 油漆桶开启时（Curve+fill）Ctrl+点击曲线按钮：应请求打开「分音符填充」对话框，
+/// 不得退化为 ToolSelected(Curve) —— 那会把油漆桶打回曲线（图标回退 bug 根因）。
+#[test]
+fn test_curve_button_ctrl_click_with_fill_opens_fill_division_dialog() {
+    let mut toolbar = Toolbar::new();
+    toolbar.current_tool = Tool::Curve;
+    toolbar.ctrl_pressed = true;
+    toolbar.fill_enabled = true;
+
+    let event = toolbar.curve_button_press_event();
+    assert!(
+        matches!(event, Event::OpenFillDivisionDialog),
+        "油漆桶开启时 Ctrl+点击应打开分音符填充对话框: {event:?}"
+    );
+}
+
+/// 油漆桶未开启时（Curve 无 fill）Ctrl+点击曲线按钮：保持旧行为（选曲线工具）。
+#[test]
+fn test_curve_button_ctrl_click_without_fill_stays_tool_selected() {
+    let mut toolbar = Toolbar::new();
+    toolbar.current_tool = Tool::Curve;
+    toolbar.ctrl_pressed = true;
+    toolbar.fill_enabled = false;
+
+    let event = toolbar.curve_button_press_event();
+    assert!(
+        matches!(event, Event::ToolSelected(Tool::Curve)),
+        "油漆桶未开启时 Ctrl+点击应保持选择曲线工具: {event:?}"
+    );
+}
+
 /// 画刷工具下但 Ctrl 未按下：普通点击选择曲线工具，不弹面板。
 #[test]
 fn test_curve_button_normal_click_brush_tool_does_not_open_brush_panel() {

@@ -38,6 +38,13 @@ impl ToolbarHandler {
             root.editor.set_fill_enabled(*enabled);
             tracing::info!("Root: 颜料桶填充模式切换为 {}", enabled);
         }
+        // 油漆桶开启时 Ctrl+点击曲线工具按钮 → 打开「分音符填充」对话框
+        // （与画刷/形状的 Ctrl+点击同语义；此前会退化为 ToolSelected(Curve)
+        //   把油漆桶打回曲线，即「图标回退 + 弹窗不出现」的根因）
+        if let crate::toolbar::Event::OpenFillDivisionDialog = event {
+            root.open_fill_division_dialog();
+            tracing::info!("Root: 打开分音符填充对话框（工具栏 Ctrl+单击）");
+        }
         // 形状工具类型切换（矩形/圆/三角）：把工具栏 current_shape 同步到编辑器
         if let crate::toolbar::Event::ShapeTypeSelected(shape) = event {
             let kind = match shape {

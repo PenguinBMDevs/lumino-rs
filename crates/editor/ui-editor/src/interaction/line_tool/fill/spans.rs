@@ -178,8 +178,8 @@ pub(crate) fn chop_span(a: f32, b: f32, step: f32) -> Vec<(f32, f32)> {
 /// 覆盖掩码为 `0` 的原子区间 = 背景（`regions` 含 `0` 时蔓延）。
 ///
 /// `snap` 不参与：区间端点就是几何交点。
-/// `division` = 填充桶的切分档位（`Some(x)` → 每行区间再按 x 分音符的全局
-/// 网格切分；`None` = 每个区间一条长音符）。
+/// `step` = 填充桶切分档位换算出的步长（tick）；`None` = 每个区间一条长音符。
+/// 由调用方用 [`division_step`] 从 (x 分音符, ppq) 算出——本函数不感知 ppq。
 pub(crate) fn fill_spans(
     loops: &[Vec<(f32, f32)>],
     regions: &HashSet<RegionKey>,
@@ -187,13 +187,11 @@ pub(crate) fn fill_spans(
     tick_hi: f32,
     key_lo: i32,
     key_hi: i32,
-    division: Option<u32>,
-    ppq: u16,
+    step: Option<f32>,
 ) -> Vec<RawNote> {
     if regions.is_empty() || tick_hi <= tick_lo {
         return Vec::new();
     }
-    let step = division.map(|d| division_step(d, ppq));
     let mut out: Vec<RawNote> = Vec::new();
     for q in key_lo..=key_hi {
         let per_loop: Vec<Vec<(f32, f32)>> =

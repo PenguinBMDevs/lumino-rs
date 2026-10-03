@@ -137,16 +137,10 @@ pub(crate) fn fill_notes(editor: &Editor) -> Vec<RawNote> {
     let regions = mark_regions(&loops, &line.fill, snap);
     let (tick_lo, tick_hi) = fill_tick_range(editor, &loops);
     let key_hi = editor.editor_state.view.key_count.saturating_sub(1) as i32;
-    fill_spans(
-        &loops,
-        &regions,
-        tick_lo,
-        tick_hi,
-        0,
-        key_hi,
-        line.fill_division,
-        editor.editor_state.view.ppq,
-    )
+    let step = line
+        .fill_division
+        .map(|x| spans::division_step(x, editor.editor_state.view.ppq));
+    fill_spans(&loops, &regions, tick_lo, tick_hi, 0, key_hi, step)
 }
 
 impl Editor {

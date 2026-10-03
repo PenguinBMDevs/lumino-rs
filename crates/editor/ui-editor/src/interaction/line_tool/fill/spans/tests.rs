@@ -38,9 +38,7 @@ fn fill_all(
     key_lo: i32,
     key_hi: i32,
 ) -> Vec<RawNote> {
-    fill_spans(
-        loops, regions, tick_lo, tick_hi, key_lo, key_hi, None, TEST_PPQ,
-    )
+    fill_spans(loops, regions, tick_lo, tick_hi, key_lo, key_hi, None)
 }
 
 // ── row_spans ──
@@ -287,8 +285,7 @@ fn test_fill_spans_division_splits_each_row() {
         480.0,
         2,
         4,
-        Some(16),
-        TEST_PPQ,
+        Some(division_step(16, TEST_PPQ)),
     );
     assert_eq!(notes.len(), 12, "3 行 × 4 段");
     let row3: Vec<RawNote> = notes.iter().copied().filter(|n| n.key == 3).collect();
@@ -331,8 +328,7 @@ fn test_fill_spans_division_preserves_hole() {
         480.0,
         5,
         5,
-        Some(4),
-        TEST_PPQ,
+        Some(division_step(4, TEST_PPQ)),
     );
     assert_eq!(
         notes,
@@ -356,7 +352,7 @@ fn test_fill_spans_division_preserves_hole() {
 fn test_fill_spans_no_division_is_single_block() {
     // 未开切分 → 与既有行为完全一致（每个区间一条长音符）
     let loops = vec![rect(0.0, 2.0, 480.0, 5.0)];
-    let notes = fill_spans(&loops, &regions(&[0b01]), 0.0, 480.0, 3, 3, None, TEST_PPQ);
+    let notes = fill_spans(&loops, &regions(&[0b01]), 0.0, 480.0, 3, 3, None);
     assert_eq!(
         notes,
         vec![RawNote {
