@@ -31,6 +31,25 @@ impl AudioPlayback {
         self.event_tx.clone()
     }
 
+    /// 返回控制命令发送器的克隆（LGS 输出连接用；播放停止后为 `None`）。
+    pub fn control_sender(&self) -> Option<mpsc::Sender<PlaybackControl>> {
+        self.ctrl_tx.clone()
+    }
+
+    /// 请求清空合成状态（文档切换且端口布局未变；不重开音频流）。
+    pub fn reset_synth_state(&self) -> bool {
+        self.ctrl_tx
+            .as_ref()
+            .is_some_and(|tx| tx.send(PlaybackControl::ResetState).is_ok())
+    }
+
+    /// 请求释放全部通道的延音踏板。
+    pub fn release_all_dampers(&self) -> bool {
+        self.ctrl_tx
+            .as_ref()
+            .is_some_and(|tx| tx.send(PlaybackControl::ReleaseAllDampers).is_ok())
+    }
+
     /// Lists the sample rates the default output device supports (empty if
     /// the device cannot be queried).
     pub fn device_sample_rates() -> Vec<u32> {
@@ -141,5 +160,6 @@ impl AudioPlayback {
         }
         self.event_tx = None;
         self.stream_tx = None;
+        self.ctrl_tx = None;
     }
 }

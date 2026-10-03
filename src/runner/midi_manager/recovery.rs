@@ -120,6 +120,24 @@ impl MidiManager {
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
 
+                // REND-002：初始化期间文档可能已装载/切换，完成时对齐端口布局
+                // （与 XSynth 同口径；相同则跳过，避免刚初始化完又白重建一次）。
+                if self.desired_midi_max_port != self.spawned_midi_max_port
+                    && let Some(api) = self.api.as_mut()
+                {
+                    let desired = self.desired_midi_max_port;
+                    match api.set_midi_port_layout(desired) {
+                        Ok(()) => {
+                            tracing::info!("LGS (GPU): 初始化后端口布局已对齐 max_port={desired}")
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "LGS (GPU): 初始化后应用端口布局失败（保持默认布局）: {e}"
+                            )
+                        }
+                    }
+                }
+
                 true
             }
             Ok(LgsInitResult::Failed(e)) => {

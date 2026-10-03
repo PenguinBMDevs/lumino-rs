@@ -303,6 +303,34 @@ impl GpuSynth {
         self.sf = None;
     }
 
+    /// 清空实时合成状态（文档切换、同布局轻量复位；REND-002 实时多端口）。
+    ///
+    /// 对齐 XSynth `reset_channel_state` 语义：清通道控制器/程序/弯音状态与
+    /// 全部声部/事件队列，保留引擎、音频流与已上传采样（不重建、不重开设备）。
+    pub fn reset_channel_state(&mut self) {
+        for c in &mut self.channels {
+            *c = ChannelState::new();
+        }
+        self.voices.clear();
+        for q in self.key_voices.iter_mut() {
+            q.clear();
+        }
+        self.spawn_budget.fill(0);
+        self.active_notes.fill(0);
+        self.pending_events.clear();
+        self.pending_mix_events.clear();
+        self.offline_events.clear();
+        self.offline_cursor = 0;
+        self.active_voice_count = 0;
+        self.prev_voice_ids.clear();
+        self.last_out = None;
+        self.last_states = None;
+        self.pending = None;
+        self.voice_templates.clear();
+        self.limiter_gain = 1.0;
+        self.limiter_tail.clear();
+    }
+
     /// Returns the number of currently active voices.
     pub fn voice_count(&self) -> usize {
         self.voices.len()

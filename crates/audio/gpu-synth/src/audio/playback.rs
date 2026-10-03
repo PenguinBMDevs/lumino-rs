@@ -69,6 +69,15 @@ pub struct PlaybackStatsReader {
 /// Number of recent render-load samples kept for the moving average.
 const STATS_RING: usize = 128;
 
+/// 实时播放控制命令（REND-002 实时多端口）：不重开音频流的轻量操作。
+#[derive(Debug, Clone, Copy)]
+pub enum PlaybackControl {
+    /// 清空合成状态（文档切换且端口布局未变）。
+    ResetState,
+    /// 释放全部通道的延音踏板（暂停清理）。
+    ReleaseAllDampers,
+}
+
 /// A running realtime playback session.
 ///
 /// # Example
@@ -91,6 +100,8 @@ pub struct AudioPlayback {
     stop_tx: Option<mpsc::Sender<()>>,
     event_tx: Option<mpsc::Sender<(u8, MidiEvent)>>,
     stream_tx: Option<mpsc::Sender<Vec<crate::midi::TimedEvent>>>,
+    /// 轻量控制命令发送器（REND-002 实时多端口：复位/踏板清理，不重开流）。
+    ctrl_tx: Option<mpsc::Sender<PlaybackControl>>,
     thread: Option<JoinHandle<()>>,
     sample_rate: u32,
     engine_rate: u32,

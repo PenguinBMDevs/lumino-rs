@@ -334,6 +334,8 @@ pub enum ApiKind {
         velocity_filter_threshold: u8,
         /// 音频播放输出设备（CPAL 音频设备名；None = 系统默认）
         audio_output_device: Option<String>,
+        /// 待播放文档使用到的最大 MIDI 端口（FF 21；0 = 单端口；REND-002）
+        midi_max_port: u8,
     },
 }
 
@@ -360,6 +362,7 @@ pub fn new_api_with_options(
             use_sinc,
             velocity_filter_threshold,
             audio_output_device,
+            midi_max_port,
         } => Box::new(Lgs::new(
             soundfont_path,
             &LgsOptions {
@@ -369,6 +372,7 @@ pub fn new_api_with_options(
                 use_sinc: *use_sinc,
                 velocity_filter_threshold: *velocity_filter_threshold,
                 audio_output_device: audio_output_device.clone(),
+                midi_max_port: *midi_max_port,
             },
         )?),
     };
