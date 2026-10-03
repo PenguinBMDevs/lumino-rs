@@ -57,6 +57,7 @@ impl Editor {
                 local_selection_timestamp: None,
                 local_selection_fingerprints: Vec::new(),
                 brush: BrushConfig::new(),
+                fill_division_dialog_requested: false,
             }
         })
     }

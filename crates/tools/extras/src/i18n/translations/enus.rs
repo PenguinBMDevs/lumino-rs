@@ -18,7 +18,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     tool_eraser: "Eraser",
     tool_curve: "Curve Tool",
     tool_fill: "Paint Bucket",
-    tool_panel_tooltip: "Note Drawing Toolset",
+    tool_panel_tooltip: "Note Drawing Toolbox",
     tool_stroke: "Stroke Settings",
     tool_brush: "Free Stroke",
     tool_shape: "Shape Tool",
@@ -102,6 +102,10 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     precision_divide_by: "divide by",
     precision_ok: "OK",
     precision_cancel: "Cancel",
+    fill_division_title: "Note division fill",
+    fill_division_prefix: "Fill with",
+    fill_division_suffix: "note",
+    fill_division_hint: "Empty = single block (no split)",
 
     // Velocity/Tempo panel
     velocity_panel_velocity: "Velocity",

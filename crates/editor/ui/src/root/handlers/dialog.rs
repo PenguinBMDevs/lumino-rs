@@ -4,6 +4,7 @@ mod audio_export;
 mod batch_edit;
 mod brush_settings;
 mod custom_precision;
+mod fill_division;
 mod load_confirm;
 mod project_settings;
 mod recover_track;
@@ -46,6 +47,7 @@ impl MessageHandler for DialogHandler {
             Message::RecoverTrack(action) => self.handle_recover_track(root, action),
             Message::SaveConfirm(action) => self.handle_save_confirm(root, action),
             Message::BrushSettings(action) => self.handle_brush_settings(root, action),
+            Message::FillDivision(action) => self.handle_fill_division(root, action),
             other => Some(other),
         }
     }

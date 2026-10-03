@@ -45,6 +45,7 @@ pub struct MemoryBreakdown {
 mod arrangement;
 mod collaboration;
 mod document;
+mod draw_toolbar;
 mod editor_ops;
 pub mod handlers;
 mod memory;

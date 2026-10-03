@@ -6,6 +6,7 @@
 //! - released:  鼠标释放事件处理
 //! - edit_ops:  编辑操作入口（占位，实现分散在 clipboard / note_ops / editor 中）
 
+mod batch_insert;
 mod brush;
 mod edit_ops;
 mod i2m;
@@ -15,6 +16,8 @@ mod pressed;
 mod released;
 pub(crate) mod shape_tool;
 pub(crate) mod text_tool;
+
+pub(crate) use batch_insert::BATCH_INSERT_THRESHOLD;
 
 #[cfg(test)]
 mod tests;

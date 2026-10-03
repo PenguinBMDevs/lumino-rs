@@ -58,13 +58,6 @@ fn test_panel_text_switches_to_text() {
 }
 
 #[test]
-fn test_panel_eraser_switches_to_draw_eraser() {
-    let _guard = crate::test_helpers::event_queue_lock();
-    // 下拉内「橡皮擦」是绘制橡皮擦（Tool::DrawEraser），独立于普通编辑橡皮擦（Tool::Eraser）
-    select_and_assert(ToolPanelItem::Eraser, Tool::DrawEraser, false);
-}
-
-#[test]
 fn test_panel_curve_switches_to_curve() {
     let _guard = crate::test_helpers::event_queue_lock();
     // 曲线条目把当前工具切换为曲线（关闭填充共存态）
@@ -141,21 +134,15 @@ fn test_toolbar_update_sets_current_tool_before_sync() {
     );
 }
 
-/// 渲染冒烟测试：render_tool_panel 在当前主题下不应 panic，
-/// 间接保证面板结构（图标独占按钮 + 描述条）可正常构建。
+/// 渲染冒烟测试：音符绘制悬浮工具条在打开状态下构建不应 panic，
+/// 间接保证面板结构（胶囊背景 + 图标独占按钮）可正常构建。
 #[test]
-fn test_render_tool_panel_does_not_panic() {
+fn test_render_draw_toolbar_does_not_panic() {
     let _guard = crate::test_helpers::event_queue_lock();
-    use iced_core::Color;
     use lumino_core::storage::config::UiConfig;
 
     let ui_config = UiConfig::default();
-    let root = Root::new(&ui_config);
-    let _element = crate::toolbar::tool_panel::render_tool_panel(
-        root.toolbar.current_tool,
-        root.toolbar.fill_enabled,
-        root.settings.display.language,
-        Color::from_rgba(0.1, 0.1, 0.1, 1.0),
-        &root.window.theme,
-    );
+    let mut root = Root::new(&ui_config);
+    root.toolbar.tool_panel_open = true;
+    let _element = root.view_draw_toolbar();
 }

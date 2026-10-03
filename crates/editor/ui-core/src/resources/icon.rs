@@ -88,6 +88,8 @@ define_icons! {
     (Eraser, "../../../../../resources/icons/toolbar/eraser-tool.svg"),
     (Curve, "../../../../../resources/icons/toolbar/curve-tool.svg"),
     (PaintBucket, "../../../../../resources/icons/toolbar/paint-bucket.svg"),
+    // 「音符画工具箱」入口图标（工具栏开关按钮，固定不随激活工具切换）
+    (DrawToolbox, "../../../../../resources/icons/toolbar/draw-toolbox.svg"),
     // 颜料桶右侧的「绘制工具选择面板」触发小三角
     (ToolPanelCaret, "../../../../../resources/icons/toolbar/caret-down.svg"),
     // 绘制工具选择面板条目图标

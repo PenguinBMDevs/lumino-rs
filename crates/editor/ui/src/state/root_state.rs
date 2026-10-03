@@ -4,11 +4,12 @@
 pub use lumino_ui_core::state::{
     AboutEggState, AudioExportDialogState, BatchEditDialogState, COUNTER_DEFAULT_CSV_FORMAT,
     COUNTER_DEFAULT_TEXT, COUNTER_FULL_TEXT, CollaborationDialogState, CollaborationViewState,
-    CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, LoadConfirmDialogState,
-    MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT, MIDITRAIL_Z_FAR_DEFAULT,
-    MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState, ProjectSettingsDialogState,
-    RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState, SpeedChangeDialogState,
-    ToggleAnimationState, VideoClipState, VideoExportDialogState, VideoExportOverlayState,
+    CustomPrecisionDialogState, EchoCaveState, ExportProgressDialogState, FillDivisionDialogState,
+    LoadConfirmDialogState, MIDITRAIL_SPEED_DEFAULT, MIDITRAIL_VIEW_MODE_DEFAULT,
+    MIDITRAIL_Z_FAR_DEFAULT, MIDITRAIL_Z_FAR_MAX, MemoryMonitorDialogState,
+    ProjectSettingsDialogState, RecoverTrackDialogState, RecoverTrackEntry, SaveConfirmDialogState,
+    SpeedChangeDialogState, ToggleAnimationState, VideoClipState, VideoExportDialogState,
+    VideoExportOverlayState,
 };
 
 use crate::app_mode::AppMode;
@@ -66,6 +67,8 @@ pub struct RootState {
     pub dialog_type: DialogType,
     /// 自定义精度对话框状态
     pub custom_precision_dialog: CustomPrecisionDialogState,
+    /// 颜料桶「分音符填充」对话框状态（主窗口覆盖层）
+    pub fill_division_dialog: FillDivisionDialogState,
     /// 加载确认对话框状态
     pub load_confirm_dialog: LoadConfirmDialogState,
     /// 协作对话框状态
@@ -141,6 +144,7 @@ impl RootState {
             is_dialog_window: false,
             dialog_type: DialogType::None,
             custom_precision_dialog: CustomPrecisionDialogState::new(),
+            fill_division_dialog: FillDivisionDialogState::new(),
             load_confirm_dialog: LoadConfirmDialogState::default(),
             collaboration_dialog: CollaborationDialogState::new(),
             project_settings_dialog: ProjectSettingsDialogState::new(),

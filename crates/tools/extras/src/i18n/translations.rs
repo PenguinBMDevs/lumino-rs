@@ -209,6 +209,14 @@ pub struct MainTranslations {
     pub precision_ok: &'static str,
     /// 取消
     pub precision_cancel: &'static str,
+    /// 颜料桶「分音符填充」对话框标题
+    pub fill_division_title: &'static str,
+    /// 颜料桶「分音符填充」输入框前缀（"使用 [x] 分音符填充"）
+    pub fill_division_prefix: &'static str,
+    /// 颜料桶「分音符填充」输入框后缀（"分音符填充"）
+    pub fill_division_suffix: &'static str,
+    /// 颜料桶「分音符填充」提示：留空 = 整块填充
+    pub fill_division_hint: &'static str,
 
     // ── 力度/速度编辑面板 ──
     /// 力度标签

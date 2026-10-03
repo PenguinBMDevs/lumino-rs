@@ -1,8 +1,13 @@
 //! 曲线工具批量确认/取消测试：多条路径一次 √ 全部生成、× 全部取消
+//!
+//! 生成语义为蜘蛛网（Spiderweb）式：每条**音高行一条音符**、两两无缝连奏、
+//! 长度由曲线与行边界的解析交点决定——因此断言的是**音符覆盖的几何**
+//! （哪条音高行在哪个 tick 区间被覆盖），而不是"格点数量"。
 
 use super::*;
 use crate::tests::test_helpers::seed_notes;
 use lumino_core::Tool;
+use lumino_midi_model::{ChunkedList, NoteEvent};
 
 /// 构造曲线工具 + 一条完整路径 (0,60)-(3840,60) 的编辑器
 ///
@@ -21,6 +26,13 @@ fn line_editor() -> Editor {
     editor
 }
 
+/// 音符集合里是否有覆盖 (tick, key) 的一条音符
+fn covers(notes: &ChunkedList<NoteEvent>, tick: u32, key: u16) -> bool {
+    notes
+        .iter()
+        .any(|n| n.key == key as u8 && n.start_tick <= tick && n.end_tick > tick)
+}
+
 // ── 确认生成（批量） ──
 
 #[test]
@@ -28,33 +40,48 @@ fn test_confirm_line_creates_notes() {
     let mut editor = line_editor();
     seed_notes(&mut editor, 2, 1, &[]);
     assert!(editor.confirm_line_tool());
-    // 水平线 (0,60)-(3840,60)：终点锚点对齐最后一个音符尾部 →
-    // 格点 (0,1920,3840) 中终点格点 -snap 与相邻格点去重 → 2 个音符
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 2);
+    // 水平线只经过一个音高行 → 恰好一条音符铺满整条线（不是 N 个定长格子）
+    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
     assert!(editor.editor_state.line_tool.paths.is_empty(), "确认后清空");
 }
 
 #[test]
 fn test_confirm_last_anchor_aligns_note_tail() {
-    // 最后一个锚点对齐最后一个音符**尾部**（原行为头部对齐：曲线终点
-    // 处会多出 [tick, tick+snap) 半格音符，尾部超出曲线终点）
+    // 最后一个锚点对齐最后一个音符**尾部**（曲线终点之外不得多出音符）
     let mut editor = line_editor();
     seed_notes(&mut editor, 2, 1, &[]);
     assert!(editor.confirm_line_tool());
     let notes = editor.editor_state.data.current_track_notes();
-    assert_eq!(notes.len(), 2, "曲线 (0,60)-(3840,60) 铺满 2 个音符");
-    let max_end = notes
-        .iter()
-        .map(|n| n.end_tick)
-        .max()
-        .expect("确认后应有音符");
-    assert_eq!(max_end, 3840, "最后一个音符尾部对齐终点锚点");
-    let max_start = notes
-        .iter()
-        .map(|n| n.start_tick)
-        .max()
-        .expect("确认后应有音符");
-    assert_eq!(max_start, 1920, "最后一个音符头部 = 锚点 - snap");
+    assert_eq!(notes.len(), 1, "水平线 (0,60)-(3840,60) 只有一条音符");
+    let n = notes.iter().next().expect("确认后应有音符");
+    assert_eq!(n.start_tick, 0, "音符起于起点锚点");
+    assert_eq!(n.end_tick, 3840, "音符尾部对齐终点锚点");
+}
+
+#[test]
+fn test_confirm_diagonal_gives_one_note_per_row_seamless() {
+    // key 60 → 64 的直线：5 条音高行各分到等长的一份时间、两两无缝
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (3840.0, 64.0));
+    }
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 5, "5 条音高行 → 5 条音符");
+    for (i, key) in (60u16..=64).enumerate() {
+        let lo = 768 * i as u32;
+        let found = notes
+            .iter()
+            .find(|n| n.key == key as u8)
+            .unwrap_or_else(|| panic!("音高行 {key} 应有音符"));
+        assert_eq!(found.start_tick, lo, "音高行 {key} 起点");
+        assert_eq!(found.end_tick, lo + 768, "音高行 {key} 终点（无缝衔接）");
+    }
 }
 
 #[test]
@@ -64,19 +91,27 @@ fn test_confirm_multiple_paths_batch() {
     seed_notes(&mut editor, 2, 1, &[]);
     {
         let line = &mut editor.editor_state.line_tool;
-        // 路径 1：水平 3 格
+        // 路径 1：水平线 (0,60)-(3840,60) → 1 条音符
         line.paths.push(Vec::new());
         line.push_anchor(0, (0.0, 60.0));
         line.push_anchor(0, (3840.0, 60.0));
-        // 路径 2：垂直 5 格（tick 相同）
+        // 路径 2：竖直线 (3840,64)-(3840,68) → 5 条音高行，各 1 tick
         line.paths.push(Vec::new());
         line.push_anchor(1, (3840.0, 64.0));
         line.push_anchor(1, (3840.0, 68.0));
     }
     assert!(editor.confirm_line_tool());
-    // 路径 1 水平 3 格 → 终点去重后 2；路径 2 垂直 5 格 → 终点 -snap 新增 1
-    // → 总 2 + 5 = 7 个音符
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 7);
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 6, "1（水平线）+ 5（竖直段逐行）");
+    assert!(
+        notes
+            .iter()
+            .any(|n| n.key == 60 && n.start_tick == 0 && n.end_tick == 3840),
+        "水平线铺满"
+    );
+    for key in 64u16..=68 {
+        assert!(covers(notes, 3840, key), "竖直段经过音高行 {key}");
+    }
     assert!(editor.editor_state.line_tool.paths.is_empty());
 }
 
@@ -96,8 +131,11 @@ fn test_confirm_incomplete_paths_skipped() {
             .push(vec![lumino_editor_state::BezierAnchor::new((0.0, 70.0))]);
     }
     assert!(editor.confirm_line_tool());
-    // 路径 (0,60)-(1920,60)：2 格点 → 终点 -snap 与起点去重 → 1 个音符
-    assert_eq!(editor.editor_state.data.current_track_note_count(), 1);
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        1,
+        "单锚点路径被跳过，只生成完整路径的音符"
+    );
     assert!(editor.editor_state.line_tool.paths.is_empty());
 }
 
@@ -138,7 +176,6 @@ fn test_confirm_line_rejected_on_conductor_track() {
     editor.editor_state.tool = Tool::Curve;
     // 选中 Conductor 音轨（track 0），预置一条完整路径（普通轨会生成音符）
     seed_notes(&mut editor, 1, 0, &[]);
-    // 预置一条完整路径（普通轨会生成音符）
     {
         let line = &mut editor.editor_state.line_tool;
         line.paths.push(Vec::new());
@@ -146,7 +183,6 @@ fn test_confirm_line_rejected_on_conductor_track() {
         line.push_anchor(0, (480.0, 60.0));
     }
 
-    // Conductor 音轨禁止放置：确认必须失败，且文档侧不得写入任何音符
     assert!(
         !editor.confirm_line_tool(),
         "Conductor 音轨（track 0）禁止放置音符：确认必须返回 false"
@@ -156,4 +192,29 @@ fn test_confirm_line_rejected_on_conductor_track() {
         0,
         "Conductor 音轨不应写入任何音符"
     );
+}
+
+#[test]
+fn test_confirm_keeps_longest_when_outline_and_fill_overlap() {
+    // 同一 (tick, key) 上出现多条时只留最长的一条 —— 由 `paths::keep_longest`
+    // 保证（轮廓与填充大量重叠时靠它合并）
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        // 长水平线 → (0, 3840, 60)
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 60.0));
+        line.push_anchor(0, (3840.0, 60.0));
+        // 短水平线：同一起点、同一音高行 → (0, 960, 60)，被上面那条吞掉
+        line.paths.push(Vec::new());
+        line.push_anchor(1, (0.0, 60.0));
+        line.push_anchor(1, (960.0, 60.0));
+    }
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 1, "同 tick 同 key 只留最长的一条");
+    let n = notes.iter().next().expect("应有音符");
+    assert_eq!((n.start_tick, n.end_tick), (0, 3840), "保留最长的那条");
 }
