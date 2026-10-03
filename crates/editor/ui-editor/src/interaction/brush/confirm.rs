@@ -10,6 +10,7 @@
 //! 大规模走批量归并（O(N+M) 单次重建）并显式补标受影响轨。
 
 use crate::{Editor, Note};
+use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
 use std::collections::HashSet;
 
@@ -26,12 +27,26 @@ impl Editor {
         if thickness == 0 {
             return false;
         }
-        // 预览与写入的唯一权威源（所见即生成）
-        let pending = self.brush_pending_notes();
-        if pending.is_empty() {
+        // 预览与写入的唯一权威源（所见即生成）；附带来源笔画以登记图形对象
+        let pending_with_stroke = self.brush_pending_notes_by_stroke();
+        if pending_with_stroke.is_empty() {
             return false;
         }
         let snap = self.editor_state.view.snap_precision.max(1.0);
+        // 逐笔画音符归属（与写入同源，仅多带来源信息）
+        let mut per_stroke_notes: Vec<Vec<ShapeNote>> =
+            vec![Vec::new(); self.editor_state.brush_tool.strokes.len()];
+        for (stroke_idx, item) in &pending_with_stroke {
+            if let Some(bucket) = per_stroke_notes.get_mut(*stroke_idx) {
+                bucket.push(ShapeNote {
+                    track: item.track,
+                    tick: item.tick_cell as f32 * snap,
+                    key: item.key,
+                    length: snap,
+                });
+            }
+        }
+        let pending: Vec<_> = pending_with_stroke.iter().map(|(_, item)| *item).collect();
         let total = pending.len();
 
         let track_count = self
@@ -113,8 +128,8 @@ impl Editor {
         self.editor_state
             .data
             .mark_track_notes_changed_for(Some(affected));
-        // 登记图形对象供「鼠标工具」点选（须在清空笔画之前读几何）
-        self.record_brush_strokes();
+        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空笔画之前读几何）
+        self.record_brush_strokes(per_stroke_notes);
         // 清空笔画与笔画历史（含撤销栈），驱动渲染刷新
         self.editor_state.brush_tool.reset();
         self.mark_notes_changed();

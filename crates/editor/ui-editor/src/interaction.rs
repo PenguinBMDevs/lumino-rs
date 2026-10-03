@@ -8,7 +8,7 @@
 
 mod batch_insert;
 mod brush;
-mod drawn_shape;
+pub(crate) mod drawn_shape;
 mod edit_ops;
 mod i2m;
 pub(crate) mod line_tool;
@@ -187,6 +187,13 @@ impl Editor {
     /// 其余选中音符保留，用户感知为"Delete 键不能删除批量音符"。
     /// 标准 DAW 语义：有选中集合 → 删除整个选中集合；无选中 → 删除悬停音符。
     pub(crate) fn handle_delete_pressed(&mut self) {
+        // 鼠标工具（图形选中）：有选中图形时删除该图形（图形对象 + 它生成的音符）
+        if self.editor_state.tool == lumino_message::Tool::ShapeSelect
+            && self.editor_state.shape_select.selected().is_some()
+        {
+            self.delete_selected_drawn_shape();
+            return;
+        }
         if self.has_selection() {
             self.delete_selected_notes();
         } else if let Some((index, _)) = self.editor_state.interaction.hover_state {

@@ -18,6 +18,7 @@
 use std::collections::{BTreeMap, HashSet};
 
 use lumino_editor_state::shape_tool::point_in_shape;
+use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
@@ -143,10 +144,11 @@ impl Editor {
         let px_per_key = self.editor_state.view.zoom_y;
 
         // 定长（snap）音符：轮廓图形 + 未开切分的填充图形
-        let mut points: Vec<(f32, u16)> = Vec::new();
-        // 切分音符：(起始 tick, key, 长度)
-        let mut chopped: Vec<(f32, u16, f32)> = Vec::new();
-        for shape in &self.editor_state.shape_tool.shapes {
+        // （第三项 = 来源图形索引，供逐图形登记音符归属）
+        let mut points: Vec<(f32, u16, usize)> = Vec::new();
+        // 切分音符：(起始 tick, key, 长度, 来源图形索引)
+        let mut chopped: Vec<(f32, u16, f32, usize)> = Vec::new();
+        for (idx, shape) in self.editor_state.shape_tool.shapes.iter().enumerate() {
             let cells = lumino_editor_state::shape_tool::shape_cells(
                 shape.kind,
                 shape.rect,
@@ -157,11 +159,15 @@ impl Editor {
                 px_per_key,
             );
             match (shape.filled, step) {
-                (true, Some(s)) => chopped.extend(chop_cells(&cells, snap, s)),
-                _ => points.extend(cells),
+                (true, Some(s)) => chopped.extend(
+                    chop_cells(&cells, snap, s)
+                        .into_iter()
+                        .map(|(t, k, l)| (t, k, l, idx)),
+                ),
+                _ => points.extend(cells.into_iter().map(|(t, k)| (t, k, idx))),
             }
         }
-        // 整体去重（跨多个图形 + 图形内部/边界可能重合）
+        // 整体去重（跨多个图形 + 图形内部/边界可能重合）——先到先得，保留下标最小的图形
         let mut seen: HashSet<(i64, u16)> = HashSet::new();
         points.retain(|p| seen.insert(((p.0 / snap_key).round() as i64, p.1)));
         let mut seen_chopped: HashSet<(i64, u16)> = HashSet::new();
@@ -172,13 +178,36 @@ impl Editor {
         }
 
         let track = self.editor_state.data.current_track;
+        // 逐图形音符归属（与写入 payload 同源，仅多带来源信息）
+        let mut per_shape_notes: Vec<Vec<ShapeNote>> =
+            vec![Vec::new(); self.editor_state.shape_tool.shapes.len()];
+        for &(tick, key, idx) in &points {
+            if let Some(bucket) = per_shape_notes.get_mut(idx) {
+                bucket.push(ShapeNote {
+                    track,
+                    tick,
+                    key,
+                    length: snap,
+                });
+            }
+        }
+        for &(tick, key, length, idx) in &chopped {
+            if let Some(bucket) = per_shape_notes.get_mut(idx) {
+                bucket.push(ShapeNote {
+                    track,
+                    tick,
+                    key,
+                    length,
+                });
+            }
+        }
         let payload: Vec<Note> = points
-            .into_iter()
-            .map(|(tick, key)| Note::new(tick, key, snap))
+            .iter()
+            .map(|&(tick, key, _)| Note::new(tick, key, snap))
             .chain(
                 chopped
-                    .into_iter()
-                    .map(|(tick, key, length)| Note::new(tick, key, length)),
+                    .iter()
+                    .map(|&(tick, key, length, _)| Note::new(tick, key, length)),
             )
             .collect();
         let mut create_ops: Vec<CreateOp> = Vec::with_capacity(payload.len());
@@ -221,8 +250,8 @@ impl Editor {
 
         self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
-        // 登记图形对象供「鼠标工具」点选（须在清空待确认列表之前读几何）
-        self.record_shape_tool_shapes();
+        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空待确认列表之前读几何）
+        self.record_shape_tool_shapes(per_shape_notes);
         self.editor_state.shape_tool.clear_pending();
         self.mark_notes_changed();
         true

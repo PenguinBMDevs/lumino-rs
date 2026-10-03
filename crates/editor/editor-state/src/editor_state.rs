@@ -38,7 +38,9 @@ pub use constants::{
     DEFAULT_BPM, DEFAULT_PREVIEW_VELOCITY, GLUE_PROXIMITY_THRESHOLD, SELECTION_BOX_EDGE_THRESHOLD,
 };
 pub use drag_state::DragState;
-pub use drawn_shape::{DrawnShape, DrawnShapeSource, ShapeSelectState};
+pub use drawn_shape::{
+    DrawnShape, DrawnShapeSource, ShapeDrag, ShapeMove, ShapeNote, ShapeSelectState,
+};
 pub use editor_data::{
     CollabCreateSyncEntry, CollabTransformSyncEntry, EditorData, NoteDeltaEvent,
 };

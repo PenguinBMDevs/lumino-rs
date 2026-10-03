@@ -182,9 +182,18 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
                     if self.editor.is_inside_canvas(local_pos) {
+                        // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）
+                        let target = if self.editor.current_tool() == lumino_message::Tool::ShapeSelect
+                            && self.editor.drawn_shape_at_screen(local_pos).is_some()
+                        {
+                            lumino_message::ContextMenuTarget::DrawnShape
+                        } else {
+                            lumino_message::ContextMenuTarget::Notes
+                        };
                         return Some(Action::publish(Message::PianoRollContextMenu(
                             lumino_message::PianoRollContextMenuAction::Open {
                                 position: lumino_message::Point2::new(local_pos.x, local_pos.y),
+                                target,
                             },
                         )));
                     }

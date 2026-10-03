@@ -12,7 +12,7 @@ use crate::message::EditorAction;
 use crate::{Message, Renderer, Theme};
 use iced_core::{Rectangle, mouse};
 use iced_widget::canvas::{Action, Event, Geometry, Program};
-use lumino_message::Tool;
+use lumino_message::{ContextMenuTarget, Tool};
 
 impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
     type State = GridInteractionState;
@@ -132,9 +132,19 @@ impl Program<Message, Theme, Renderer> for super::PianoRollGrid<'_> {
                         iced_core::Point::new(position.x - bounds.x, position.y - bounds.y);
                     // 仅在有效钢琴卷帘区域内打开右键菜单
                     if self.editor.is_inside_canvas(local_pos) {
+                        // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）；
+                        // 否则沿用「音符」目标菜单。
+                        let target = if self.editor.current_tool() == Tool::ShapeSelect
+                            && self.editor.drawn_shape_at_screen(local_pos).is_some()
+                        {
+                            ContextMenuTarget::DrawnShape
+                        } else {
+                            ContextMenuTarget::Notes
+                        };
                         return Some(Action::publish(Message::PianoRollContextMenu(
                             lumino_message::PianoRollContextMenuAction::Open {
                                 position: lumino_message::Point2::new(local_pos.x, local_pos.y),
+                                target,
                             },
                         )));
                     }

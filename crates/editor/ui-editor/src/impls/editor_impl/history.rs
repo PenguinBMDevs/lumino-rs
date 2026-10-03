@@ -65,16 +65,20 @@ impl Editor {
         } else {
             None
         };
-        // 本次将撤销的历史条目若是「音符创建」，记下其分组 ID —— 撤销成功后
-        // 把同组的已绘制图形一并隐藏，避免「描边还在、音符已没」的幽灵。
-        let undone_create_group = match self.editor_state.data.history.undo_back() {
-            Some(lumino_note_core::history::HistoryEntry::Create(entry)) => entry.group_id,
-            _ => None,
-        };
+        // 本次将撤销的历史条目的分组 ID —— 撤销成功后让绘制图形对象跟随历史状态：
+        // 创建被撤销 → 图形隐藏；删除被撤销 → 图形恢复；移动被撤销 → 几何反向平移。
+        let undone_group = self
+            .editor_state
+            .data
+            .history
+            .undo_back()
+            .and_then(crate::interaction::drawn_shape::history_entry_group);
         if self.editor_state.data.undo() {
-            if let Some(group) = undone_create_group {
-                self.editor_state.shape_select.hide_group(group);
+            if let Some(group) = undone_group {
+                self.editor_state.shape_select.on_undo_group(group);
             }
+            // 删除走 Snapshot 历史（分组在 redo 侧丢失）→ 按「音符是否还在」对账
+            self.reconcile_drawn_shapes();
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =
@@ -184,16 +188,18 @@ impl Editor {
         } else {
             None
         };
-        // 本次将重做的历史条目若是「音符创建」，记下其分组 ID —— 重做成功后
-        // 恢复同组已绘制图形的可见性（与 undo 的隐藏成对）。
-        let redone_create_group = match self.editor_state.data.history.redo_back() {
-            Some(lumino_note_core::history::HistoryEntry::Create(entry)) => entry.group_id,
-            _ => None,
-        };
+        // 本次将重做的历史条目的分组 ID —— 与 undo 的图形状态变更成对回放。
+        let redone_group = self
+            .editor_state
+            .data
+            .history
+            .redo_back()
+            .and_then(crate::interaction::drawn_shape::history_entry_group);
         if self.editor_state.data.redo() {
-            if let Some(group) = redone_create_group {
-                self.editor_state.shape_select.show_group(group);
+            if let Some(group) = redone_group {
+                self.editor_state.shape_select.on_redo_group(group);
             }
+            self.reconcile_drawn_shapes();
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =

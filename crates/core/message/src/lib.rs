@@ -33,7 +33,7 @@ pub use brush_settings::BrushSettingsAction;
 pub use cloud_action::{CloudAction, CloudProtocolUi};
 pub use collaboration::CollaborationAction;
 pub use context_menu::{
-    MaterialContextMenuItem, PanelContextMenuItem, PianoRollContextMenuAction,
+    ContextMenuTarget, MaterialContextMenuItem, PanelContextMenuItem, PianoRollContextMenuAction,
     PianoRollContextMenuItem, TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;

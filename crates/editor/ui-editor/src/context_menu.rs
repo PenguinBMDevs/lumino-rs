@@ -6,7 +6,9 @@
 
 use iced_core::{Alignment, Color, Length, Padding, Point};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
-use lumino_message::{PianoRollContextMenuAction, PianoRollContextMenuItem};
+use lumino_message::{
+    ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem,
+};
 
 use crate::{Element, Message, Theme};
 
@@ -42,13 +44,16 @@ pub struct PianoRollContextMenuState {
     pub open: bool,
     /// 菜单打开位置（canvas 局部坐标）
     pub position: Option<Point>,
+    /// 菜单作用目标（决定渲染的条目集）
+    pub target: ContextMenuTarget,
 }
 
 impl PianoRollContextMenuState {
-    /// 打开菜单
-    pub fn open(&mut self, position: Point) {
+    /// 打开菜单（指定作用目标）
+    pub fn open(&mut self, position: Point, target: ContextMenuTarget) {
         self.open = true;
         self.position = Some(position);
+        self.target = target;
     }
 
     /// 关闭菜单
@@ -59,20 +64,20 @@ impl PianoRollContextMenuState {
 
     /// 切换菜单状态
     #[allow(dead_code)]
-    pub fn toggle(&mut self, position: Point) {
+    pub fn toggle(&mut self, position: Point, target: ContextMenuTarget) {
         if self.open {
             self.close();
         } else {
-            self.open(position);
+            self.open(position, target);
         }
     }
 }
 
 /// 渲染上下文菜单覆盖层
-pub fn view(position: Point) -> Element<'static> {
+pub fn view(position: Point, target: ContextMenuTarget) -> Element<'static> {
     let adjusted_position = Point::new(position.x + MENU_OFFSET_X, position.y + MENU_OFFSET_Y);
 
-    let menu_panel = menu_panel();
+    let menu_panel = menu_panel(target);
 
     container(menu_panel)
         .padding(Padding {
@@ -98,19 +103,21 @@ pub fn background_close_overlay<'a>() -> Element<'a> {
         .into()
 }
 
-/// 构建菜单面板内容
-fn menu_panel() -> Element<'static> {
-    let buttons = [
-        PianoRollContextMenuItem::Cut,
-        PianoRollContextMenuItem::Copy,
-        PianoRollContextMenuItem::Paste,
-        PianoRollContextMenuItem::Delete,
-        PianoRollContextMenuItem::SelectAll,
-        PianoRollContextMenuItem::BatchEdit,
-    ]
-    .into_iter()
-    .map(menu_button)
-    .collect::<Vec<_>>();
+/// 构建菜单面板内容（条目集由作用目标决定）
+fn menu_panel(target: ContextMenuTarget) -> Element<'static> {
+    // 弦外之音：图形目标目前只需「删除」（后续可扩移动/翻转等）
+    let items: &[PianoRollContextMenuItem] = match target {
+        ContextMenuTarget::Notes => &[
+            PianoRollContextMenuItem::Cut,
+            PianoRollContextMenuItem::Copy,
+            PianoRollContextMenuItem::Paste,
+            PianoRollContextMenuItem::Delete,
+            PianoRollContextMenuItem::SelectAll,
+            PianoRollContextMenuItem::BatchEdit,
+        ],
+        ContextMenuTarget::DrawnShape => &[PianoRollContextMenuItem::DeleteDrawnShape],
+    };
+    let buttons = items.iter().copied().map(menu_button).collect::<Vec<_>>();
 
     let total_height = buttons.len() as f32 * BUTTON_SIZE
         + (buttons.len().saturating_sub(1)) as f32 * BUTTON_SPACING
@@ -170,6 +177,7 @@ const fn item_icon(item: PianoRollContextMenuItem) -> lumino_ui_core::resources:
         PianoRollContextMenuItem::Delete => Icon::ContextMenuDelete,
         PianoRollContextMenuItem::SelectAll => Icon::ContextMenuSelectAll,
         PianoRollContextMenuItem::BatchEdit => Icon::Gear,
+        PianoRollContextMenuItem::DeleteDrawnShape => Icon::ContextMenuDelete,
     }
 }
 
@@ -182,6 +190,7 @@ fn item_label(item: PianoRollContextMenuItem) -> &'static str {
         PianoRollContextMenuItem::Delete => "删除",
         PianoRollContextMenuItem::SelectAll => "全选",
         PianoRollContextMenuItem::BatchEdit => "批量编辑",
+        PianoRollContextMenuItem::DeleteDrawnShape => "删除",
     }
 }
 
@@ -221,14 +230,25 @@ mod tests {
         let mut state = PianoRollContextMenuState::default();
         assert!(!state.open);
         assert!(state.position.is_none());
+        assert_eq!(state.target, ContextMenuTarget::Notes, "默认目标为音符");
 
-        state.open(Point::new(100.0, 200.0));
+        state.open(Point::new(100.0, 200.0), ContextMenuTarget::Notes);
         assert!(state.open);
         assert_eq!(state.position, Some(Point::new(100.0, 200.0)));
 
         state.close();
         assert!(!state.open);
         assert!(state.position.is_none());
+    }
+
+    #[test]
+    fn test_state_open_records_target() {
+        let mut state = PianoRollContextMenuState::default();
+        state.open(Point::new(10.0, 20.0), ContextMenuTarget::DrawnShape);
+        assert_eq!(state.target, ContextMenuTarget::DrawnShape);
+        // 关闭不清空 target（仅控制可见性），重新打开会覆盖
+        state.close();
+        assert_eq!(state.target, ContextMenuTarget::DrawnShape);
     }
 
     #[test]
@@ -257,15 +277,21 @@ mod tests {
             item_icon(PianoRollContextMenuItem::BatchEdit),
             lumino_ui_core::resources::icon::Icon::Gear
         );
+        assert_eq!(
+            item_icon(PianoRollContextMenuItem::DeleteDrawnShape),
+            lumino_ui_core::resources::icon::Icon::ContextMenuDelete
+        );
     }
 
     #[test]
     fn test_menu_panel_size() {
-        let _element = menu_panel();
+        let _element = menu_panel(ContextMenuTarget::Notes);
+        let _element = menu_panel(ContextMenuTarget::DrawnShape);
     }
 
     #[test]
     fn test_view_returns_element() {
-        let _element = view(Point::new(50.0, 60.0));
+        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::Notes);
+        let _element = view(Point::new(50.0, 60.0), ContextMenuTarget::DrawnShape);
     }
 }

@@ -19,6 +19,12 @@ impl Editor {
         self.marquee_anchor_tick = None;
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
+        // 图形选中工具：结束拖动 → 提交移动（图形 + 其音符）
+        if self.editor_state.shape_select.is_dragging() {
+            self.handle_shape_select_released();
+            return;
+        }
+
         // 图片转 MIDI 放置模式：框选完成/移动拉伸结束优先处理
         if self.editor_state.image_to_midi.is_active() {
             self.handle_i2m_released(edit_state);

@@ -159,7 +159,7 @@ impl Editor {
             return iced_widget::Stack::new()
                 .push(content)
                 .push(crate::context_menu::background_close_overlay())
-                .push(crate::context_menu::view(position))
+                .push(crate::context_menu::view(position, self.context_menu.target))
                 .into();
         }
 
@@ -217,7 +217,7 @@ impl Editor {
             return iced_widget::Stack::new()
                 .push(editor_content)
                 .push(crate::context_menu::background_close_overlay())
-                .push(crate::context_menu::view(position))
+                .push(crate::context_menu::view(position, self.context_menu.target))
                 .into();
         }
 

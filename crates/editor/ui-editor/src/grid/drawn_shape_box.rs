@@ -41,13 +41,21 @@ fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
 }
 
 /// 把选中图形的轮廓转换成屏幕坐标路径（闭环标记用于形状工具图形）
+///
+/// 拖拽移动进行中时叠加**实时预览偏移**（仅渲染层位移，文档未改）；
+/// 松手提交后才真正平移几何与音符。
 fn selected_outline(editor: &Editor) -> Option<(Path, bool)> {
     let shape = editor.editor_state.shape_select.selected_shape()?;
     if shape.track != editor.editor_state.data.current_track
-        || editor.editor_state.shape_select.is_hidden(shape)
+        || !shape.is_visible()
     {
         return None;
     }
+    // 预览偏移：正在拖拽的正是当前选中图形时生效
+    let (dtick, dkey) = match editor.editor_state.shape_select.drag() {
+        Some(d) if d.shape_id == shape.id => (d.delta_tick, d.delta_key),
+        _ => (0.0, 0.0),
+    };
     let px_per_tick = editor.editor_state.view.zoom_x;
     let px_per_key = editor.editor_state.view.zoom_y;
     match &shape.source {
@@ -57,7 +65,13 @@ fn selected_outline(editor: &Editor) -> Option<(Path, bool)> {
             shift_constrained,
             ..
         } => {
-            let rect = effective_rect(*kind, *rect, *shift_constrained, px_per_tick, px_per_key);
+            let rect = (
+                rect.0 + dtick,
+                rect.1 + dkey,
+                rect.2 + dtick,
+                rect.3 + dkey,
+            );
+            let rect = effective_rect(*kind, rect, *shift_constrained, px_per_tick, px_per_key);
             if *kind == lumino_editor_state::ShapeKind::Circle {
                 let (cx0, cy0, cx1, cy1) = rect;
                 let mx = (cx0 + cx1) / 2.0;
@@ -80,9 +94,13 @@ fn selected_outline(editor: &Editor) -> Option<(Path, bool)> {
             }
         }
         DrawnShapeSource::Polyline { points } => {
+            if points.is_empty() {
+                return None;
+            }
+            let shifted = |&(t, k): &(f32, f32)| (t + dtick, k + dkey);
             if points.len() < 2 {
                 // 单点笔画：以短十字代替（避免空路径）
-                let p = editor.line_pos_screen_pos(points.first().copied()?);
+                let p = editor.line_pos_screen_pos(shifted(&points[0]));
                 let mark = Path::new(|b| {
                     b.move_to(Point::new(p.x - 4.0, p.y));
                     b.line_to(Point::new(p.x + 4.0, p.y));
@@ -93,7 +111,7 @@ fn selected_outline(editor: &Editor) -> Option<(Path, bool)> {
             }
             let screen: Vec<Point> = points
                 .iter()
-                .map(|&(t, k)| editor.line_pos_screen_pos((t, k)))
+                .map(|pt| editor.line_pos_screen_pos(shifted(pt)))
                 .collect();
             Some((open_path(&screen, false), false))
         }

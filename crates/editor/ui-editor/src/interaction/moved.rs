@@ -16,6 +16,13 @@ impl Editor {
             self.handle_brush_moved(pos);
             return;
         }
+        // 图形选中工具：拖动已绘制图形（仅更新叠加层预览偏移，不改 document）
+        if self.editor_state.shape_select.is_dragging() {
+            let raw_tick = self.pos_to_tick(pos);
+            let raw_key = self.pos_to_raw_key(pos);
+            self.handle_shape_select_moved(raw_tick, raw_key);
+            return;
+        }
         let tick = self.pos_to_tick(pos);
         let key = self.pos_to_key(pos);
         let snapped_tick = self.snap_tick(tick);

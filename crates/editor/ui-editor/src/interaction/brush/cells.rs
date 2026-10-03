@@ -3,7 +3,8 @@
 //! 设计要点（BRUSH-001 补充需求）：
 //! - 预览不再画"圆头粗线条折线"，而是把**覆盖格**按 `(音轨, key)` 合并成行段后画方块，
 //!   与 √ 实际生成的音符（tick 对齐格线、长度 = 吸附精度、每层 1 key 高）**逐格一致**；
-//! - 生成与预览共用同一个 [`Editor::brush_pending_notes`]，杜绝"预览一套、生成一套"的口径分裂；
+//! - 生成与预览共用同一套覆盖格口径（[`Editor::brush_pending_notes_by_stroke`]），
+//!   杜绝"预览一套、生成一套"的口径分裂；
 //! - 方块渲染天然**增量稳定**：追加采样点只会新增格子，不会移动已有格子
 //!   （对照旧折线渲染：超过点数上限后等距重采样会整笔漂移 → 抖动，已由本方案取代）。
 //!
@@ -47,17 +48,33 @@ pub(crate) fn cell_in_document(tick_cell: i64) -> bool {
 impl Editor {
     /// 待确认笔画 → 待生成音符项（去重后按 `(音轨, key, 格)` 升序）
     ///
-    /// **唯一权威源**：√ 写入与画布预览都调用本方法，因此"所见即生成"是结构保证。
-    /// 无待确认笔画或粗细度为 0 时返回空。
+    /// **唯一权威源**：√ 写入（`confirm_brush`）与画布预览都以此口径为准，
+    /// 因此"所见即生成"是结构保证。无待确认笔画或粗细度为 0 时返回空。
+    ///
+    /// `#[cfg(test)]`：生产路径改用 [`Self::brush_pending_notes_by_stroke`]
+    /// （同样口径 + 附带来源笔画，供登记图形对象），本方法保留为测试侧的
+    /// 「无来源信息」基准口径。
+    #[cfg(test)]
     pub(crate) fn brush_pending_notes(&self) -> Vec<BrushNoteItem> {
+        self.brush_pending_notes_by_stroke()
+            .into_iter()
+            .map(|(_, item)| item)
+            .collect()
+    }
+
+    /// 同 [`Self::brush_pending_notes`]，但**附带来源笔画索引**（用于按笔画登记图形对象）
+    ///
+    /// 去重口径与主入口完全一致（`seen` 键仍为 `(音轨, 格, key)`，**不含笔画索引**），
+    /// 因此两者产出的音符项集合逐项相同，仅多带来源信息。
+    pub(crate) fn brush_pending_notes_by_stroke(&self) -> Vec<(usize, BrushNoteItem)> {
         let thickness = self.brush.thickness;
         if thickness == 0 || !self.editor_state.brush_tool.has_pending() {
             return Vec::new();
         }
         let snap = self.editor_state.view.snap_precision.max(1.0);
         let mut seen: HashSet<(usize, i64, u16)> = HashSet::new();
-        let mut out: Vec<BrushNoteItem> = Vec::new();
-        for stroke in &self.editor_state.brush_tool.strokes {
+        let mut out: Vec<(usize, BrushNoteItem)> = Vec::new();
+        for (stroke_idx, stroke) in self.editor_state.brush_tool.strokes.iter().enumerate() {
             let base_track = stroke.base_track;
             let cells = stroke.covered_cells(snap);
             let mut expanded = Vec::with_capacity(cells.len() * thickness as usize);
@@ -68,16 +85,19 @@ impl Editor {
                 }
                 let track = self.brush_track_for_level(level as usize, base_track);
                 if seen.insert((track, tick_cell, key)) {
-                    out.push(BrushNoteItem {
-                        track,
-                        tick_cell,
-                        key,
-                    });
+                    out.push((
+                        stroke_idx,
+                        BrushNoteItem {
+                            track,
+                            tick_cell,
+                            key,
+                        },
+                    ));
                 }
             }
         }
         // 排序：同一 (音轨, key) 的格连续 → 预览可合并行段；写入按轨分组亦有序
-        out.sort_unstable_by_key(|n| (n.track, n.key, n.tick_cell));
+        out.sort_unstable_by_key(|(_, n)| (n.track, n.key, n.tick_cell));
         out
     }
 

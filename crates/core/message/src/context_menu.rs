@@ -12,11 +12,27 @@ pub enum PianoRollContextMenuAction {
     Open {
         /// 菜单弹出位置
         position: Point2,
+        /// 菜单作用目标（决定条目集）
+        target: ContextMenuTarget,
     },
     /// 关闭菜单
     Close,
     /// 点击菜单项
     ItemClicked(PianoRollContextMenuItem),
+}
+
+/// 右键菜单作用目标
+///
+/// 同一套菜单容器承载两类目标：音符（传统钢琴卷帘菜单）与
+/// **已绘制图形对象**（音符画工具栏「鼠标工具」选中后右键），
+/// 由目标决定渲染哪些条目。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ContextMenuTarget {
+    /// 音符（钢琴卷帘编辑）
+    #[default]
+    Notes,
+    /// 已绘制图形对象（曲线 / 形状 / 画刷确认后登记的图形）
+    DrawnShape,
 }
 
 /// 上下文菜单项
@@ -34,6 +50,18 @@ pub enum PianoRollContextMenuItem {
     SelectAll,
     /// 批量编辑
     BatchEdit,
+    /// 删除选中的绘制图形（图形目标专用）
+    DeleteDrawnShape,
+}
+
+impl PianoRollContextMenuItem {
+    /// 该条目所属的目标（用于按目标过滤菜单条目）
+    pub fn target(self) -> ContextMenuTarget {
+        match self {
+            Self::DeleteDrawnShape => ContextMenuTarget::DrawnShape,
+            _ => ContextMenuTarget::Notes,
+        }
+    }
 }
 
 /// 音轨选项卡右键上下文菜单项
@@ -89,6 +117,22 @@ mod tests {
     }
 
     #[test]
+    fn test_menu_item_target_routing() {
+        assert_eq!(
+            PianoRollContextMenuItem::DeleteDrawnShape.target(),
+            ContextMenuTarget::DrawnShape
+        );
+        assert_eq!(
+            PianoRollContextMenuItem::Delete.target(),
+            ContextMenuTarget::Notes
+        );
+        assert_eq!(
+            PianoRollContextMenuItem::SelectAll.target(),
+            ContextMenuTarget::Notes
+        );
+    }
+
+    #[test]
     fn test_track_menu_item_variants() {
         let _items = [
             TrackContextMenuItem::Delete,
@@ -116,11 +160,13 @@ mod tests {
     fn test_action_open_position() {
         let action = PianoRollContextMenuAction::Open {
             position: Point2::new(120.0, 80.0),
+            target: ContextMenuTarget::Notes,
         };
         match action {
-            PianoRollContextMenuAction::Open { position } => {
+            PianoRollContextMenuAction::Open { position, target } => {
                 assert!((position.x - 120.0).abs() < f32::EPSILON);
                 assert!((position.y - 80.0).abs() < f32::EPSILON);
+                assert_eq!(target, ContextMenuTarget::Notes);
             }
             _ => panic!("应为 Open 动作"),
         }

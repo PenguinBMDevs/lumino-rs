@@ -18,7 +18,9 @@
 
 use super::{fill, geom, paths};
 use crate::{Editor, Note};
+use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
+use std::collections::HashSet;
 
 impl Editor {
     /// 确认全部路径与填充：按蜘蛛网式逐音高行算法批量生成音符（√ 按钮）。
@@ -74,6 +76,33 @@ impl Editor {
             return false;
         }
 
+        // 逐路径音符归属（供「鼠标工具」登记图形对象）：每条路径独立按同规则生成，
+        // 跨路径首占去重。路径互不重叠时与整体 keep_longest 结果逐项一致；
+        // 重叠时仅归属可能落在先登记的路径上，音符本身（写入 payload）不受影响。
+        let owner_track = self.editor_state.data.current_track;
+        let mut per_path_notes: Vec<Vec<ShapeNote>> = Vec::with_capacity(line_paths.len());
+        let mut claimed: HashSet<(i64, u16)> = HashSet::new();
+        for path in &line_paths {
+            if path.len() < 2 {
+                per_path_notes.push(Vec::new());
+                continue;
+            }
+            let poly = geom::flatten_path(path);
+            let owned: Vec<ShapeNote> = paths::keep_longest(&paths::path_notes(&poly, false))
+                .into_iter()
+                .filter(|n| n.key >= 0 && n.key < key_count)
+                .map(|n| (n.start.max(0) as f32, n.key as u16, n.length() as f32))
+                .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
+                .map(|(tick, key, length)| ShapeNote {
+                    track: owner_track,
+                    tick,
+                    key,
+                    length,
+                })
+                .collect();
+            per_path_notes.push(owned);
+        }
+
         let track = self.editor_state.data.current_track;
         let total = notes.len();
         let mut create_ops = Vec::with_capacity(total);
@@ -127,8 +156,8 @@ impl Editor {
         // 批量创建操作日志（撤销/重做）+ 标记当前轨变化
         self.editor_state.data.history.push_note_create(create_ops);
         self.editor_state.data.mark_current_track_changed();
-        // 登记图形对象供「鼠标工具」点选（须在清空路径之前读几何）
-        self.record_line_tool_paths();
+        // 登记图形对象供「鼠标工具」点选/移动/删除（须在清空路径之前读几何）
+        self.record_line_tool_paths(per_path_notes);
         // 清空全部路径与历史并驱动渲染刷新
         self.editor_state.line_tool.reset();
         self.mark_notes_changed();
