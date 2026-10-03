@@ -30,6 +30,96 @@ fn test_fingerprint_is_stable_and_sensitive() {
     assert_ne!(base.fingerprint(), changed.fingerprint());
 }
 
+/// 测试用回退适配器（Dx12）
+fn dummy_fallback_adapter() -> GpuAdapterSummary {
+    GpuAdapterSummary {
+        name: "fallback".into(),
+        backend: "Dx12".into(),
+        device_type: "DiscreteGpu".into(),
+        driver: "d".into(),
+        driver_info: "i".into(),
+    }
+}
+
+/// 验收标准 1 的确定性断言：**通过路径绝不触发回退后端枚举**。
+///
+/// `enumerate` 闭包注入计数，因此该断言不依赖机器是否有回退后端、也不依赖 GPU。
+#[test]
+fn test_fallback_adapters_on_failure_policy_skips_enumeration_when_passed() {
+    let mut calls = 0usize;
+    let collected = check::fallback_adapters_with(FallbackDiagnostics::OnFailure, true, || {
+        calls += 1;
+        vec![dummy_fallback_adapter()]
+    });
+    assert!(
+        collected.is_empty(),
+        "通过路径不得收集回退后端诊断（结果只进日志）"
+    );
+    assert_eq!(
+        calls, 0,
+        "通过路径不得调用适配器枚举闭包——这正是每次白花的数百毫秒"
+    );
+}
+
+/// `Never`：通过/失败都不收集（启动静默路径）
+#[test]
+fn test_fallback_adapters_never_policy_skips_enumeration() {
+    let mut calls = 0usize;
+    let collected = check::fallback_adapters_with(FallbackDiagnostics::Never, false, || {
+        calls += 1;
+        vec![dummy_fallback_adapter()]
+    });
+    assert!(collected.is_empty(), "静默路径失败时也不收集");
+    assert_eq!(calls, 0);
+}
+
+/// `OnFailure`：失败时收集（启动失败警告窗需要"可能仍可运行"提示）
+#[test]
+fn test_fallback_adapters_on_failure_policy_collects_when_failed() {
+    let mut calls = 0usize;
+    let collected = check::fallback_adapters_with(FallbackDiagnostics::OnFailure, false, || {
+        calls += 1;
+        vec![dummy_fallback_adapter()]
+    });
+    assert_eq!(calls, 1, "失败且要弹窗时必须收集一次");
+    assert_eq!(collected.len(), 1);
+}
+
+/// `Always`：通过时也收集（设置页手动检测，人看得见结果与「复制诊断信息」）
+#[test]
+fn test_fallback_adapters_always_policy_collects_even_when_passed() {
+    let mut calls = 0usize;
+    let collected = check::fallback_adapters_with(FallbackDiagnostics::Always, true, || {
+        calls += 1;
+        vec![dummy_fallback_adapter()]
+    });
+    assert_eq!(calls, 1, "手动检测始终收集");
+    assert_eq!(collected.len(), 1);
+}
+
+/// 端到端补强：真实全量检测走 `Never` 策略时回退列表为空、详情无回退段落。
+///
+/// 注：本断言方向是「Never ⇒ 空」；在无回退后端的机器上判别力有限，
+/// 真正的判别力在 `test_fallback_adapters_on_failure_policy_skips_enumeration_when_passed`。
+#[test]
+fn test_check_without_fallback_collection_returns_empty_list() {
+    let report = run_check_with_timeout(DEFAULT_TIMEOUT, FallbackDiagnostics::Never);
+    println!(
+        "device_check（Never）本机结果: {}",
+        report.detail().replace('\n', " | ")
+    );
+    assert_eq!(report.passed, report.failure.is_none());
+    assert!(
+        report.fallback_adapters.is_empty(),
+        "Never 策略下不得返回回退后端适配器（实收 {} 个）",
+        report.fallback_adapters.len()
+    );
+    assert!(
+        !report.detail().contains("其他可用后端"),
+        "Never 策略下详情不应包含回退后端段落"
+    );
+}
+
 #[test]
 fn test_failed_report_sets_invariants() {
     let report = GpuCheckReport::failed(GpuCheckFailure::Timeout);
@@ -78,7 +168,7 @@ fn test_probe_with_timeout_thread_panic_is_none() {
 
 #[test]
 fn test_timeout_wrapper_returns_wellformed_report() {
-    let report = run_check_with_timeout(DEFAULT_TIMEOUT);
+    let report = run_check_with_timeout(DEFAULT_TIMEOUT, FallbackDiagnostics::Always);
     // 本机结果（--nocapture 可见）：便于人工确认无头试画路径真实可跑
     println!(
         "device_check 本机结果: {}",

@@ -9,10 +9,36 @@ use super::report::{
     required_backends,
 };
 
-/// 执行一次无头 GPU 兼容性检测（可能阻塞，调用方应放在后台线程）
-pub fn check_gpu_support() -> GpuCheckReport {
+/// 回退后端诊断（`GpuCheckReport::fallback_adapters`）的收集时机。
+///
+/// 收集需要新建 `Backends::all` 实例并枚举 DX12 / GL 适配器，实测在本机占一次全量检测
+/// 耗时的 80% 以上（调研与实测数据见
+/// `docs/2026-10-03-GPU检测缓存回写与回退枚举按需收集调研.md`），因此只在"人看得见"的
+/// 场景收集：
+///
+/// - 启动门控**通过路径**：结果只落进一行 info 日志 → [`FallbackDiagnostics::Never`] /
+///   [`FallbackDiagnostics::OnFailure`]（通过时不收集）；
+/// - 启动门控**失败且要弹警告窗**：`failure_detail` 需要「检测到其他可用后端…可能仍可运行」
+///   → [`FallbackDiagnostics::OnFailure`]；
+/// - **设置页手动检测**：通过/失败都会展示并支持「复制诊断信息」→
+///   [`FallbackDiagnostics::Always`]。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FallbackDiagnostics {
+    /// 从不收集（启动静默路径：结果只写日志）
+    Never,
+    /// 仅在检测失败时收集（启动失败警告窗需要回退后端提示）
+    OnFailure,
+    /// 始终收集（设置页手动检测）
+    Always,
+}
+
+/// 执行一次无头 GPU 兼容性检测（可能阻塞，调用方应放在后台线程）。
+///
+/// `when` 决定是否收集回退后端诊断——**必填参数**：收集的成本是全量检测耗时的大头，
+/// 调用方必须显式声明自己的场景，避免无心调用默认策略白花数百毫秒。
+pub fn check_gpu_support(when: FallbackDiagnostics) -> GpuCheckReport {
     puffin::profile_function!();
-    let report = check_inner();
+    let report = check_inner(when);
     if report.passed {
         tracing::info!(
             "GPU 兼容性检测通过: {}",
@@ -28,12 +54,14 @@ pub fn check_gpu_support() -> GpuCheckReport {
 }
 
 /// 在独立线程中执行检测并施加超时。超时/线程异常均返回失败报告，不阻塞调用方。
-pub fn run_check_with_timeout(timeout: Duration) -> GpuCheckReport {
+///
+/// `when` 透传到检测线程，语义同 [`check_gpu_support`]。
+pub fn run_check_with_timeout(timeout: Duration, when: FallbackDiagnostics) -> GpuCheckReport {
     let (tx, rx) = std::sync::mpsc::channel();
     let spawn_result = std::thread::Builder::new()
         .name("lumino-gpu-check".to_string())
         .spawn(move || {
-            let report = check_gpu_support();
+            let report = check_gpu_support(when);
             let _ = tx.send(report);
         });
     if let Err(e) = spawn_result {
@@ -72,7 +100,7 @@ pub fn debug_force_fail_requested() -> bool {
     }
 }
 
-fn check_inner() -> GpuCheckReport {
+fn check_inner(when: FallbackDiagnostics) -> GpuCheckReport {
     let started = Instant::now();
 
     if debug_force_fail_requested() {
@@ -103,7 +131,7 @@ fn check_inner() -> GpuCheckReport {
                 let mut report = GpuCheckReport::failed(GpuCheckFailure::NoAdapter);
                 adapters.sort_by_key(|a| a.fingerprint());
                 report.adapters = adapters;
-                report.fallback_adapters = enumerate_fallback();
+                report.fallback_adapters = fallback_adapters_with(when, false, enumerate_fallback);
                 report.duration_ms = started.elapsed().as_millis() as u64;
                 return report;
             }
@@ -136,7 +164,7 @@ fn check_inner() -> GpuCheckReport {
         Err(e) => {
             let mut report = GpuCheckReport::failed(GpuCheckFailure::DeviceRequest(e.to_string()));
             report.adapters = adapters;
-            report.fallback_adapters = enumerate_fallback();
+            report.fallback_adapters = fallback_adapters_with(when, false, enumerate_fallback);
             report.fingerprint = Some(fingerprint);
             report.duration_ms = started.elapsed().as_millis() as u64;
             return report;
@@ -163,12 +191,13 @@ fn check_inner() -> GpuCheckReport {
         Err(message) => Some(GpuCheckFailure::RenderError(message)),
     };
 
+    let passed = failure.is_none();
     let mut report = GpuCheckReport {
-        passed: failure.is_none(),
+        passed,
         failure,
         required_backend: required_backend_name(),
         adapters,
-        fallback_adapters: enumerate_fallback(),
+        fallback_adapters: fallback_adapters_with(when, passed, enumerate_fallback),
         fingerprint: Some(fingerprint),
         duration_ms: started.elapsed().as_millis() as u64,
     };
@@ -241,7 +270,7 @@ pub(crate) fn probe_adapter_fingerprints() -> Vec<String> {
 ///     within_ttl, force_fail, cached_passed, cached_fp.as_deref(),
 ///     || probe_adapter_fingerprints_with_timeout(PROBE_TIMEOUT).unwrap_or_default(),
 /// );
-/// // cache_hit == false → 调用方执行 run_check_with_timeout(DEFAULT_TIMEOUT) 全量检测
+/// // cache_hit == false → 调用方执行 run_check_with_timeout(DEFAULT_TIMEOUT, FallbackDiagnostics::OnFailure) 全量检测
 /// ```
 ///
 /// # 最坏耗时
@@ -328,6 +357,36 @@ fn enumerate_fallback() -> Vec<GpuAdapterSummary> {
         .filter(|adapter| adapter.get_info().backend != required)
         .map(|adapter| GpuAdapterSummary::from_info(&adapter.get_info()))
         .collect()
+}
+
+/// 按策略决定是否收集回退后端诊断。
+///
+/// 枚举以闭包 `enumerate` 注入，使「通过路径**绝不**触发枚举」成为可单测断言的行为
+/// （见 `device_check::tests`）——这既是本卡验收标准 1 的确定性证据，也让决策与 IO 解耦。
+///
+/// 生产代码只经由 [`check_inner`] 调用；`pub(crate)` 仅为同 crate 单测服务。
+pub(crate) fn fallback_adapters_with<F>(
+    when: FallbackDiagnostics,
+    passed: bool,
+    enumerate: F,
+) -> Vec<GpuAdapterSummary>
+where
+    F: FnOnce() -> Vec<GpuAdapterSummary>,
+{
+    match when {
+        FallbackDiagnostics::Never => {
+            tracing::debug!("回退后端诊断：跳过收集（策略 Never）");
+            Vec::new()
+        }
+        FallbackDiagnostics::OnFailure if passed => {
+            tracing::debug!("回退后端诊断：跳过收集（策略 OnFailure + 本次检测通过）");
+            Vec::new()
+        }
+        FallbackDiagnostics::OnFailure | FallbackDiagnostics::Always => {
+            tracing::debug!("回退后端诊断：开始收集（策略 {when:?}, passed={passed}）");
+            enumerate()
+        }
+    }
 }
 
 /// 取第一条已捕获的 wgpu 错误（渲染期间出错则即使回读成功也判失败）

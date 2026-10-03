@@ -28,7 +28,14 @@ impl RunnerInner {
             WindowEvent::Sync(e) => self.handle_sync_events(e),
             WindowEvent::Track(e) => self.handle_track_events(e),
             WindowEvent::GpuCheckRun => Self::spawn_gpu_compatibility_check(),
-            WindowEvent::GpuCheckFinished { passed, detail } => {
+            WindowEvent::GpuCheckFinished {
+                passed,
+                detail,
+                fingerprint,
+            } => {
+                // 先落盘再注入 UI：设置对话框可能尚未就绪（分帧初始化），
+                // 但检测结果本身已经确定，缓存不应等待 UI。
+                self.persist_manual_gpu_check_cache(fingerprint.as_deref(), passed);
                 self.pending_gpu_check_ui = Some((passed, detail));
                 self.inject_pending_gpu_check_ui();
             }
@@ -39,18 +46,44 @@ impl RunnerInner {
     /// 在后台线程执行 GPU 兼容性检查，完成后经事件总线回传纯文本结果
     ///
     /// 检查耗时可达数百毫秒且可能触发驱动路径，必须在阻塞线程池执行，
-    /// 不阻塞 UI/事件循环；UI 侧只消费 `(passed, detail)`。
+    /// 不阻塞 UI/事件循环；UI 侧只消费 `(passed, detail)`，`fingerprint` 供 Runner 回写缓存。
+    /// 手动检测人看得见结果（设置页展示 + 复制诊断），因此**始终**收集回退后端诊断。
     fn spawn_gpu_compatibility_check() {
         tracing::info!("兼容性页请求手动 GPU 兼容性检查");
         tokio::task::spawn_blocking(|| {
             let report = lumino_gfx::device_check::run_check_with_timeout(
                 lumino_gfx::device_check::DEFAULT_TIMEOUT,
+                lumino_gfx::device_check::FallbackDiagnostics::Always,
             );
             let detail = report.detail();
+            let fingerprint = report.fingerprint.clone();
             lumino_ui::event::emit(lumino_ui::event::Event::Window(
-                lumino_ui::event::window::Event::gpu_check_finished(report.passed, detail),
+                lumino_ui::event::window::Event::gpu_check_finished(
+                    report.passed,
+                    detail,
+                    fingerprint,
+                ),
             ));
         });
+    }
+
+    /// 把手动检测结果回写到启动缓存（与启动门控共用 `Storage` 实例，见 `device_gate`）。
+    ///
+    /// 语义与启动门控一致：「最近一次检测结果」——通过则下次启动走指纹缓存命中，
+    /// 失败则下次启动重新全量检测（`cache_hit` 要求上次通过）。
+    ///
+    /// 回写失败只记 warn：磁盘异常不应影响用户已看到的检测结论。
+    fn persist_manual_gpu_check_cache(&mut self, fingerprint: Option<&str>, passed: bool) {
+        match self
+            .window_state
+            .storage
+            .persist_gpu_check_cache(fingerprint, passed)
+        {
+            Ok(()) => tracing::info!(
+                "手动 GPU 兼容性检测结果已写入缓存: passed={passed}, fingerprint={fingerprint:?}"
+            ),
+            Err(e) => tracing::warn!("手动 GPU 检测结果写入缓存失败（不影响结果展示）: {e}"),
+        }
     }
 
     /// 逐帧尝试把待注入的 GPU 检查结果写入已就绪的设置对话框

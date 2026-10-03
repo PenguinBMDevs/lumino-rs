@@ -5,8 +5,11 @@
 //! 2. 策略判定（是否检查 / 失败是否弹窗）
 //! 3. 指纹缓存命中（TTL 内 + 指纹一致）时仅廉价探测，否则完整无头检测（≤3s 超时）
 //! 4. 失败：按策略弹警告窗（等待用户）或静默继续（日志 + 状态栏提示）
+//!
+//! 全量检测的回退后端诊断（DX12/GL 适配器枚举）只在「失败且要弹警告窗」时收集，
+//! 见 [`fallback_diagnostics`]。
 
-use lumino_gfx::device_check::{self, GpuCheckFailure, GpuCheckReport};
+use lumino_gfx::device_check::{self, FallbackDiagnostics, GpuCheckFailure, GpuCheckReport};
 use winit::event_loop::ActiveEventLoop;
 
 use crate::runner::device_check_policy;
@@ -100,8 +103,11 @@ impl Runner {
                 duration_ms: 0,
             }
         } else {
-            tracing::info!("GPU 适配器指纹缓存未命中，执行全量兼容性检测");
-            device_check::run_check_with_timeout(device_check::DEFAULT_TIMEOUT)
+            let fallback = fallback_diagnostics(policy);
+            tracing::info!(
+                "GPU 适配器指纹缓存未命中，执行全量兼容性检测（回退后端诊断收集策略: {fallback:?}）"
+            );
+            device_check::run_check_with_timeout(device_check::DEFAULT_TIMEOUT, fallback)
         };
 
         let fingerprint = report.fingerprint.clone();
@@ -243,6 +249,23 @@ impl Runner {
     }
 }
 
+/// 启动门控的回退后端诊断收集策略。
+///
+/// 全量检测的**通过路径**上，`fallback_adapters` 只落进一行 info 日志（门控通过时只用
+/// `passed` / `fingerprint`），而收集它需要新建 `Backends::all` 实例枚举 DX12/GL 适配器
+/// ——实测占一次全量检测耗时的 80% 以上（见
+/// `docs/2026-10-03-GPU检测缓存回写与回退枚举按需收集调研.md`）。
+///
+/// 因此：失败且要弹警告窗时才收集（`failure_detail` 要用它拼「可能仍可运行」提示），
+/// 静默失败路径与通过路径一律不收集。
+fn fallback_diagnostics(policy: device_check_policy::StartupCheckPolicy) -> FallbackDiagnostics {
+    if policy.show_warning {
+        FallbackDiagnostics::OnFailure
+    } else {
+        FallbackDiagnostics::Never
+    }
+}
+
 /// 原生提示框兜底（iced 警告窗创建失败时使用）；返回是否选择继续启动
 fn show_native_warning(detail: &str) -> bool {
     const CONTINUE_LABEL: &str = "放我进去";
@@ -300,6 +323,30 @@ fn failure_detail(report: &GpuCheckReport) -> String {
 mod tests {
     use super::*;
     use lumino_gfx::device_check::GpuAdapterSummary;
+
+    /// 门控策略映射：要弹警告窗才收集回退后端诊断，静默路径与通过路径不收集
+    #[test]
+    fn test_fallback_diagnostics_follows_show_warning() {
+        let with_warning = device_check_policy::StartupCheckPolicy {
+            run_check: true,
+            show_warning: true,
+        };
+        assert_eq!(
+            fallback_diagnostics(with_warning),
+            FallbackDiagnostics::OnFailure,
+            "失败要弹警告窗时必须保留「可能仍可运行」的回退后端提示"
+        );
+
+        let silent = device_check_policy::StartupCheckPolicy {
+            run_check: true,
+            show_warning: false,
+        };
+        assert_eq!(
+            fallback_diagnostics(silent),
+            FallbackDiagnostics::Never,
+            "静默路径不回退枚举（结果只进一行日志）"
+        );
+    }
 
     #[test]
     fn test_failure_detail_mentions_required_backend() {

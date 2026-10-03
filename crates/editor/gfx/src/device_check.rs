@@ -18,8 +18,8 @@ mod render;
 mod report;
 
 pub use check::{
-    check_gpu_support, debug_force_fail_requested, probe_adapter_fingerprints_with_timeout,
-    run_check_with_timeout,
+    FallbackDiagnostics, check_gpu_support, debug_force_fail_requested,
+    probe_adapter_fingerprints_with_timeout, run_check_with_timeout,
 };
 pub use report::{GpuAdapterSummary, GpuCheckFailure, GpuCheckReport, required_backend_name};
 

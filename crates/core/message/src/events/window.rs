@@ -33,6 +33,8 @@ pub enum Event {
         passed: bool,
         /// 技术详情（多行文本）
         detail: String,
+        /// 选中适配器指纹（Runner 据此回写启动缓存；无适配器 / 检测超时时为 `None`）
+        fingerprint: Option<String>,
     },
 }
 
@@ -58,8 +60,15 @@ impl Event {
     }
 
     /// 构造 GPU 兼容性检查完成事件
-    pub fn gpu_check_finished(passed: bool, detail: String) -> Self {
-        Self::GpuCheckFinished { passed, detail }
+    ///
+    /// `fingerprint` 供 Runner 回写启动缓存（与启动门控共用同一缓存键，语义为
+    /// 「最近一次检测结果」）；UI 侧只消费 `passed` / `detail`。
+    pub fn gpu_check_finished(passed: bool, detail: String, fingerprint: Option<String>) -> Self {
+        Self::GpuCheckFinished {
+            passed,
+            detail,
+            fingerprint,
+        }
     }
     /// 构造最大化事件
     pub const fn maximize() -> Self {

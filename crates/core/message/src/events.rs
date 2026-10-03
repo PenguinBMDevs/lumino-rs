@@ -196,6 +196,39 @@ mod tests {
         ));
     }
 
+    /// 手动 GPU 检测结果回写缓存依赖该载荷携带指纹（否则 Runner 无从回写）
+    #[test]
+    fn test_gpu_check_finished_carries_fingerprint() {
+        let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
+        let event = window::Event::gpu_check_finished(
+            true,
+            "Vulkan 兼容性检测通过".to_string(),
+            Some("Vulkan|RTX|d|i|DiscreteGpu".to_string()),
+        );
+        let window::Event::GpuCheckFinished {
+            passed,
+            detail,
+            fingerprint,
+        } = event
+        else {
+            panic!("gpu_check_finished 应构造 GpuCheckFinished 变体");
+        };
+        assert!(passed);
+        assert!(detail.contains("通过"));
+        assert_eq!(fingerprint.as_deref(), Some("Vulkan|RTX|d|i|DiscreteGpu"));
+
+        // 无适配器 / 超时场景：指纹缺省不影响事件构造
+        let event = window::Event::gpu_check_finished(false, "失败".to_string(), None);
+        assert!(matches!(
+            event,
+            window::Event::GpuCheckFinished {
+                passed: false,
+                fingerprint: None,
+                ..
+            }
+        ));
+    }
+
     #[test]
     fn test_event_debug_and_clone() {
         let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");
