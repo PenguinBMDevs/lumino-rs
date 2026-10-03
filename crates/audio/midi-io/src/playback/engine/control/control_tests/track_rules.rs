@@ -198,8 +198,13 @@ fn test_multi_port_maps_global_channels() {
     });
     engine.set_document(doc, 0);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
-    let messages = engine.update();
+
+    // 直接以固定 tick 驱动「其他轨」流式路径，锁定端口 → 全局通道映射：
+    // 生产入口 `update()` 含「迟到 > LATE_NOTE_SKIP_SECS（150ms）即跳过」的
+    // wall-clock 语义，CI runner 卡顿会把 tick 0 的音符误判为迟到（macOS 实测
+    // 返回空事件列表），故此测试不走 wall-clock（与 `scheduling.rs` 同口径）。
+    let mut messages = Vec::new();
+    engine.process_other_tracks(10.0, 0.0, &mut messages);
 
     let note_on_channels: Vec<u16> = messages
         .iter()
