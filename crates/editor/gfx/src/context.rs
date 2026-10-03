@@ -109,6 +109,12 @@ async fn init_shared_gpu(
     instance: &wgpu::Instance,
     surface: &wgpu::Surface<'static>,
 ) -> std::result::Result<SharedGpu, ContextError> {
+    // ⚠️ 启动 GPU 兼容性检测（`device_check`）用的是**另一套选卡**：
+    // `required_backends()` + `PowerPreference::HighPerformance` + 无 surface。
+    // 而这里是 `Backends::all()` + 环境变量/默认偏好 + surface 兼容性 ⇒
+    // 两者可能选中不同适配器。故启动门控指纹缓存的语义只是「被检测的那张卡
+    // 仍在枚举列表中」，**不保证**运行时用的就是它（详见
+    // `runner::device_check_policy::cache_hit` 的「不变量边界」）。
     let adapter = wgpu::util::initialize_adapter_from_env_or_default(instance, Some(surface))
         .await
         .map_err(|e| ContextError::AdapterCreation(e.to_string()))?;

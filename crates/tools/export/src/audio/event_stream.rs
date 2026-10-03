@@ -330,4 +330,45 @@ mod tests {
             "同 tick 控制事件必须保持文件序（PB 在 CC 之前）"
         );
     }
+
+    /// **REND-002 残留（锁现状，不代表"正确行为"）**：同 tick 内 RPN 的
+    /// 「选择（CC101/100）→ 数据（CC6/38）」次序**不被重排**，一律按文件序输出。
+    ///
+    /// 素材若把 DataEntry 写在选择之前（审计发现 803 组），合并流会原样保留，
+    /// 合成器就把数据落到**上一次选中的参数**上。
+    ///
+    /// **已决策 2026-10-03：保持文件序（不引入二级序）**。理由：
+    /// - MIDI 是顺序流，按文件序处理才是规范语义，与参考实现一致；素材把 DataEntry
+    ///   写在选择之前属素材侧问题，不在解析/合并层「修复」；
+    /// - 上一条决策要求控制事件保持文件序，正是为了让「灵敏度变更 + PB」同 tick 时的
+    ///   PB 不被挪动；引入「选择 < 数据」二级序必须同时保证 PB 的相对次序不变，
+    ///   否则回归 `426d5b2d` 修好的弯音偏差（98k PB 中 7 个偏差 >1 半音、最大 62 半音）。
+    ///
+    /// 与 `chase.rs` 追齐路径用「选择→其他→DataEntry」rank 的差异是**有意为之**：
+    /// 追齐不是重放文件流，而是把「某 tick 的最终状态」重新下发，那批消息的次序是代码
+    /// 语义问题（选择必须先于数据）；本路径只负责忠实还原文件顺序。
+    ///
+    /// 本用例把该决策钉住：谁要改语义，必须先让这条变红、并更新决策记录。
+    #[test]
+    fn test_same_tick_rpn_data_before_select_is_preserved_as_is() {
+        use midly::loader::PackedControlEvent;
+
+        let mut doc = make_doc(vec![vec![NoteEvent::new(0, 10, 60, 100, 0)]], 10);
+        doc.control_events = lumino_midi_model::ChunkedList::from_sorted(vec![
+            // 文件序刻意「数据在前、选择在后」：病态但真实存在
+            PackedControlEvent::control_change(10, 0, 0, 6, 116),
+            PackedControlEvent::control_change(10, 0, 0, 101, 0),
+            PackedControlEvent::control_change(10, 0, 0, 100, 0),
+        ]);
+        let mut stream = MidiDocEventStream::new(&doc);
+        let controls: Vec<u8> = std::iter::from_fn(|| stream.next_event())
+            .filter(|e| e.kind == 2)
+            .map(|e| e.param1)
+            .collect();
+        assert_eq!(
+            controls,
+            vec![6, 101, 100],
+            "同 tick 控制事件按文件序输出：当前**不**做 RPN 选择/数据的二级重排"
+        );
+    }
 }

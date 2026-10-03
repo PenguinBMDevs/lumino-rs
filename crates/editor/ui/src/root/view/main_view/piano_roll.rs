@@ -262,6 +262,12 @@ impl Root {
         if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
             stack = stack.push(panel);
         }
+        // 音符绘制悬浮工具条（非阻塞覆盖层，浮在卷帘区域上方、默认底部居中、可拖拽；
+        // 由工具栏「绘制入口」按钮开关，仅在钢琴卷帘视图可见）。
+        // 颜料桶「分音符填充」小面板亦挂在其上（`draw_tool_toolbar` 内锚定于胶囊上方）。
+        if let Some(draw_toolbar) = self.view_draw_toolbar() {
+            stack = stack.push(draw_toolbar);
+        }
         stack.into()
     }
 

@@ -206,6 +206,94 @@ fn u24_to_u32(v: u24) -> u32 {
 mod tests {
     use super::*;
     use crate::midi::kind;
+    use std::io::Write;
+
+    /// 最小合法 SMF（1 轨：tempo + note on/off + end of track）。
+    ///
+    /// 手工构造而**不读夹具文件**：`.mid` / `.midi` 被仓库 `.gitignore` 排除，
+    /// 仓库内没有任何可用 MIDI 夹具，测试必须自给自足。
+    fn minimal_smf() -> Vec<u8> {
+        let mut v = Vec::new();
+        // MThd: format 0, 1 track, division 480
+        v.extend_from_slice(b"MThd");
+        v.extend_from_slice(&[0, 0, 0, 6, 0, 0, 0, 1, 0x01, 0xE0]);
+        let mut track = Vec::new();
+        // delta 0, tempo 500000
+        track.extend_from_slice(&[0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20]);
+        // delta 0, note-on ch0 key60 vel100
+        track.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+        // delta 480, note-off ch0 key60 vel64
+        track.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+        // delta 0, end of track
+        track.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        v.extend_from_slice(b"MTrk");
+        v.extend_from_slice(&(track.len() as u32).to_be_bytes());
+        v.extend_from_slice(&track);
+        v
+    }
+
+    /// 把字节写到临时文件，返回路径（避免依赖 tempfile dev-dep）。
+    fn write_temp(name: &str, raw: &[u8]) -> std::path::PathBuf {
+        let path =
+            std::env::temp_dir().join(format!("lumino_exp002_{}_{name}.mid", std::process::id()));
+        let mut f = std::fs::File::create(&path).expect("创建临时 SMF 应成功");
+        f.write_all(raw).expect("写入临时 SMF 应成功");
+        f.sync_all().expect("刷盘应成功");
+        path
+    }
+
+    /// **EXP-002 等价性回归**：`load` 在全部采样率下必须逐字段等于 `parse`。
+    ///
+    /// `load` 的实现只是 `std::fs::read` + `parse`（薄包装），GPU 文档导出由
+    /// 「写临时 MIDI 再 load」改为「内存 bytes 直接 parse」的正确性正建立在该
+    /// 等价性上。若将来有人让 `load` 承担额外职责（重采样、元数据过滤等），
+    /// 本测试会变红——这正是它存在的理由。
+    #[test]
+    fn load_and_parse_are_equivalent_across_sample_rates() {
+        let raw = minimal_smf();
+        let path = write_temp("equiv", &raw);
+
+        for sr in [22_050u32, 44_100, 48_000, 64_000] {
+            let loaded = MidiFile::load(&path, sr).expect("load 应成功");
+            let parsed = MidiFile::parse(&raw, sr).expect("parse 应成功");
+
+            assert_eq!(loaded.sample_rate, parsed.sample_rate, "sr={sr}");
+            assert_eq!(loaded.length_ticks, parsed.length_ticks, "sr={sr}");
+            assert_eq!(loaded.tempos, parsed.tempos, "sr={sr}");
+            assert_eq!(
+                loaded.sequence, parsed.sequence,
+                "sr={sr}: 事件序列必须逐项相等（EXP-002 由 load 切到 parse 的前提）"
+            );
+        }
+
+        // 解析应可重复（无内部可变状态残留）
+        let a = MidiFile::parse(&raw, 48_000).expect("parse 应成功");
+        let b = MidiFile::parse(&raw, 48_000).expect("parse 应成功");
+        assert_eq!(a.sequence, b.sequence, "重复 parse 必须确定");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// 非 SMF 字节：两条入口必须以**同一错误型**拒绝，行为不得漂移。
+    ///
+    /// 唯一允许的差异是 I/O 层：`load` 可返回 `SynthError::Io`，`parse` 不能——
+    /// 导出侧把两者统一映射为 `AudioWrite`，故调用方语义不变。
+    #[test]
+    fn load_and_parse_reject_same_garbage() {
+        let raw = b"definitely not a MIDI file".to_vec();
+        let path = write_temp("garbage", &raw);
+
+        assert!(
+            matches!(MidiFile::parse(&raw, 48_000), Err(SynthError::Midi(_))),
+            "非 SMF 字节应返回 SynthError::Midi"
+        );
+        assert!(
+            matches!(MidiFile::load(&path, 48_000), Err(SynthError::Midi(_))),
+            "从文件读到的非 SMF 字节应返回同一错误型"
+        );
+
+        let _ = std::fs::remove_file(&path);
+    }
 
     /// 双轨 SMF（format 1）：每轨先写 FF 21 端口，再写 ch0/key60 的 NoteOn/Off。
     fn two_track_smf(ports: [u8; 2]) -> Vec<u8> {

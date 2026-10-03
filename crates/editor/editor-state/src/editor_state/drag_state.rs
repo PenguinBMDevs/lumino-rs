@@ -110,15 +110,25 @@ impl DragState {
 
     /// 快速收集选中索引列表（`blocks()` + `trailing_zeros`，只遍历选中位）
     ///
-    /// 用 `BitVec::blocks()` 获取 u64 块，跳过全 0 块，用 CPU 指令 `trailing_zeros`
+    /// 用 `BitVec::blocks()` 获取底层块，跳过全 0 块，用 CPU 指令 `trailing_zeros`
     /// 定位被置 1 的位。16M 50% 选中 ~3ms（vs `selected_indices` 逐位迭代 ~50ms）。
+    ///
+    /// ⚠️ **块基址必须按块的实际位宽换算**：`bit_vec::BitVec` 的默认块类型是
+    /// **`u32`（32 位）**，不是 `u64`。曾以 `block_idx * 64` 硬编码 → 从第二个块起
+    /// 索引整体偏移 +32/块（真实索引 33 被算成 65、63 算成 95…）：
+    /// - 偏移后越界 → 副本音符被丢弃（表现为「完全无法批量复制」）；
+    /// - 偏移后落在其它音符上 → 复制到未选中的音符（表现为「复制体散开、飘走」）。
+    ///
+    /// 此处用 `size_of_val(&block) * 8` 让基址跟随块类型，杜绝再次硬编码出错。
     pub fn selected_indices_fast(&self) -> Vec<usize> {
         let mut indices = Vec::with_capacity(self.selected_count());
         for (block_idx, block) in self.selected.blocks().enumerate() {
             if block == 0 {
                 continue;
             }
-            let base = block_idx * 64;
+            // 块位宽由块类型决定（u32 → 32），不得写死 64
+            let block_bits = std::mem::size_of_val(&block) * 8;
+            let base = block_idx * block_bits;
             let mut bits = block;
             while bits != 0 {
                 let tz = bits.trailing_zeros() as usize;

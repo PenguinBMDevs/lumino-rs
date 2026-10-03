@@ -24,6 +24,12 @@ pub(crate) struct FillRegion {
     pub has_background: bool,
     /// 背景矩形范围（tick/key 逻辑坐标；= 画布可见范围，与 √ 计算一致）
     pub bounds: (f32, f32, f32, f32),
+    /// 切分档位开启时的**逐条音符块**（start_tick, end_tick, key）
+    ///
+    /// 与 √ 确认生成的音符**同源**（都来自 [`super::fill_notes`]）：切分模式下
+    /// 预览画的就是这些块，保证「看到什么就生成什么」。未开切分（整块填充）
+    /// 时为空，走矢量闭环填充（视觉上等价于每行一条长音符）。
+    pub blocks: Vec<(f32, f32, f32)>,
 }
 
 /// 计算填充区域的矢量几何（渲染层用；标记来自 `line_tool.fill`）
@@ -69,11 +75,21 @@ pub(crate) fn fill_region(editor: &Editor) -> Option<FillRegion> {
     };
     let key_count = editor.editor_state.view.key_count;
     let bounds = (tick_lo, 0.0, tick_hi, key_count.saturating_sub(1) as f32);
+    // 切分档位开启：直接取与 √ 确认同源的音符块作为预览（不另算一套几何）
+    let blocks = if line.fill_division.is_some() {
+        super::fill_notes(editor)
+            .into_iter()
+            .map(|n| (n.start as f32, n.end as f32, n.key as f32))
+            .collect()
+    } else {
+        Vec::new()
+    };
     Some(FillRegion {
         all_loops,
         filled_loops,
         has_background,
         bounds,
+        blocks,
     })
 }
 

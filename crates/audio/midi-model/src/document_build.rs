@@ -198,9 +198,25 @@ impl MidiDocument {
             finalize_sorted_events(&mut all_time_signatures, |&(t, _, _)| t, (0u32, 4u8, 4u8));
             finalize_sorted_events(&mut all_key_signatures, |&(t, _, _)| t, (0u32, 0i8, false));
 
-            // 稳定排序保留同 tick 文件序：RPN(CC101/100/6/38) 必须在同 tick 的 PitchBend 之前，
-            // 否则 PB 会用旧的 bend_sensitivity（默认 2 半音）而非 RPN 设定的值（如 24）。
-            // 复刻 yinhe 2026-06-27 13:22 fix(audio): RPN 展开必须在 PB 之前。
+            // 稳定排序**只按 tick**：同 tick 内完全保留文件序，不做任何二级重排。
+            //
+            // 这依赖素材本身把 RPN 选择(CC101/100) 写在数据(CC6/38) 之前、并把 RPN 写在
+            // 同 tick 的 PitchBend 之前——否则 PB 会用旧的 bend_sensitivity（默认 2 半音）
+            // 而非 RPN 设定的值（如 24）。复刻 yinhe 2026-06-27 13:22 fix(audio)。
+            //
+            // 【已决策 2026-10-03：保持文件序】素材若把 RPN 的 DataEntry 写在选择之前
+            // （同 tick，审计 803 组），此处**有意不纠正**：MIDI 是顺序流，按文件序处理
+            // 才是规范语义，与参考实现一致；「修复素材」属素材侧责任，不在解析层做。
+            // 加二级序会同时威胁 PB 的相对次序，回归 426d5b2d 修好的弯音偏差
+            // （98k 个 PB 中 7 个偏差 >1 半音、最大 62 半音）。
+            // 该决策由 `lumino_export::audio::event_stream` 的
+            // `test_same_tick_rpn_data_before_select_is_preserved_as_is` 锁死：
+            // 改语义必须先让那条变红。
+            //
+            // 与 `chase.rs` 追齐路径的差异是**有意为之**，不是口径不一致缺陷：追齐不是在
+            // 重放文件流，而是把「某 tick 的最终状态」重新下发一遍，那批消息的次序由代码
+            // 语义决定（选择必须先于数据，否则数据落到错误参数），故那边用
+            // 「选择→其他→DataEntry」rank；本路径只负责忠实还原文件顺序。
             control_events.sort_by_key(|e| e.tick);
             lyrics.sort_by_key(|e| e.0);
             markers.sort_by_key(|e| e.0);

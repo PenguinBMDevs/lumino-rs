@@ -110,10 +110,11 @@ pub fn execute_render_pass(
     });
 
     if params.is_vertical_roll {
-        frame
-            .renderers
-            .note
-            .prepare_vertical_pass(encoder, camera, &ctx.queue);
+        // 预览层纵向同样恒直绘（可见占比 ≈ 100%）：draw 侧已是
+        // `draw_direct_vertical`（不读 cull 产出的可见索引/indirect），若此处仍走
+        // `prepare_vertical_pass`，那趟 compute cull 就是**纯粹的每帧浪费**。
+        // 洋葱皮纵向保持 cull：纵向直绘管线只为预览层创建（见 `note_renderer::init`）。
+        frame.renderers.note.prepare_direct(camera, &ctx.queue);
         frame
             .renderers
             .onion_skin

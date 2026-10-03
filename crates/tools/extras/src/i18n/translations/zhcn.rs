@@ -18,7 +18,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_eraser: "橡皮擦",
     tool_curve: "曲线工具",
     tool_fill: "颜料桶",
-    tool_panel_tooltip: "音符绘制工具集",
+    tool_panel_tooltip: "音符画工具箱",
     tool_stroke: "描边设置",
     tool_brush: "自由笔画",
     tool_shape: "形状工具",
@@ -102,6 +102,10 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     precision_divide_by: "除以",
     precision_ok: "确定",
     precision_cancel: "取消",
+    fill_division_title: "分音符填充",
+    fill_division_prefix: "使用",
+    fill_division_suffix: "分音符填充",
+    fill_division_hint: "留空 = 整块填充（不切分）",
 
     // 力度/速度编辑面板
     velocity_panel_velocity: "力度",

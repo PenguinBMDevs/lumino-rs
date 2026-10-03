@@ -10,6 +10,7 @@ pub use crate::{
 };
 
 // 重新导出自 lumino-message 的所有公共类型
+pub use lumino_message::FillDivisionAction;
 pub use lumino_message::{
     AudioAction, AudioChannels, AudioExportAction, AudioFormat, BatchEditAction, BatchEditField,
     BrushSettingsAction, CcOption, CustomPrecisionAction, DotType, EditorAction, Interpolation,

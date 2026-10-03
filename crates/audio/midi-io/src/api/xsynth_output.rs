@@ -35,6 +35,54 @@ impl XSynthOutputConn {
     }
 }
 
+/// raw 3 字节 MIDI 消息 → `(通道, xsynth 音频事件)`；`None` = 该类型 xsynth 不支持。
+///
+/// 抽成纯函数的理由：这是「消息类型 → 合成事件」的唯一映射表，必须可单测——
+/// 曾经的缺陷正出在这里。
+///
+/// # `0xD0` / `0xA0` 必须返回 `None`
+///
+/// `xsynth_core::channel::ChannelAudioEvent` **没有**后触变体（只有 NoteOn/NoteOff/
+/// AllNotesOff/AllNotesKilled/ResetControl/Control/ProgramChange/SystemReset）。
+/// 旧实现把 `0xD0`（通道后触）映射为 `ControlEvent::Raw(0, b1)`——而 **CC0 就是
+/// Bank Select MSB**！后果有三：
+/// 1. 通道后触会**改掉该通道的音色库**（听感为音色跳变）；
+/// 2. 默认实现把全局通道折叠到低 4 位 ⇒ 多端口下改的是**别的端口的同号通道**；
+/// 3. `PercussionTracker` 把 CC0 当 Bank Select 证据 ⇒ 误判打击乐模态。
+///
+/// 无声丢弃（不产生任何事件）远优于产生错误的 Bank Select。`0xA0` 同理，
+/// 与 `lgs.rs` 既有决策一致。
+///
+/// # `0xE0` 契约
+///
+/// `PitchBendValue` 为归一化 -1.0..1.0（raw 中心 8192 → 0）；raw 14-bit 直传会把
+/// 中心值当作灵敏度倍数（潜在跑调/爆音）。
+fn map_raw_message(data: [u8; 3]) -> Option<(u32, ChannelAudioEvent)> {
+    let status = data[0] & 0xF0;
+    let channel = u32::from(data[0] & 0x0F);
+    let (b1, b2) = (data[1], data[2]);
+
+    let audio = match status {
+        0x80 => ChannelAudioEvent::NoteOff {
+            key: b1 & MIDI_VALUE_MASK,
+        },
+        0x90 => ChannelAudioEvent::NoteOn {
+            key: b1 & MIDI_VALUE_MASK,
+            vel: b2 & MIDI_VALUE_MASK,
+        },
+        0xB0 => ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2)),
+        0xC0 => ChannelAudioEvent::ProgramChange(b1),
+        0xE0 => {
+            let raw = u16::from(b1) | (u16::from(b2) << 7);
+            let bend = (f32::from(raw) - 8192.0) / 8192.0;
+            ChannelAudioEvent::Control(ControlEvent::PitchBendValue(bend))
+        }
+        // 0xA0 / 0xD0（后触两种）与其余类型：xsynth 无对应事件，显式丢弃。
+        _ => return None,
+    };
+    Some((channel, audio))
+}
+
 impl OutputConnection for XSynthOutputConn {
     fn note_on(&mut self, ch: u16, key: u8, vel: u8) -> Result<(), Error> {
         // REND-002：直接消费全局通道（port*16+channel），由合成层按 Custom
@@ -93,58 +141,31 @@ impl OutputConnection for XSynthOutputConn {
         Ok(())
     }
 
-    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
-        let status = data[0] & 0xF0;
-        let channel = (data[0] & 0x0F) as u32;
-        let b1 = data[1];
-        let b2 = data[2];
-
-        match status {
-            0x80 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOff {
-                    key: b1 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0x90 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::NoteOn {
-                    key: b1 & MIDI_VALUE_MASK,
-                    vel: b2 & MIDI_VALUE_MASK,
-                }),
-            )),
-            0xB0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(b1, b2))),
-            )),
-            0xC0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::ProgramChange(b1)),
-            )),
-            0xD0 => self.send_event(SynthEvent::Channel(
-                channel,
-                ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::Raw(0, b1))),
-            )),
-            0xE0 => {
-                // fork 契约：`PitchBendValue` 为归一化 -1.0..1.0（raw 中心 8192 → 0）。
-                // raw 14-bit 直传会把中心值当作灵敏度倍数（潜在跑调/爆音）。
-                let raw = u16::from(b1) | (u16::from(b2) << 7);
-                let bend = (f32::from(raw) - 8192.0) / 8192.0;
-                self.send_event(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Audio(ChannelAudioEvent::Control(ControlEvent::PitchBendValue(
-                        bend,
-                    ))),
-                ));
-            }
-            _ => {
-                return Err(Error::SendFailed(format!(
-                    "xsynth 不支持的消息类型: 0x{:02X}",
-                    status
-                )));
-            }
-        };
+    /// 通道后触：xsynth **无**对应事件类型，显式安静丢弃。
+    ///
+    /// 不能走默认实现——默认实现会把全局通道 `& 0x0F` 折叠后调
+    /// `send_raw([0xD0|ch, …])`：多端口下会落到**别的端口的同号通道**。
+    /// 与 `lgs.rs` 既有决策一致（「GPU 合成器不支持，忽略以避免噪声报错」）。
+    fn channel_pressure(&mut self, _ch: u16, _pressure: u8) -> Result<(), Error> {
         Ok(())
+    }
+
+    /// 复音后触：同上（xsynth 无对应事件）。
+    fn poly_pressure(&mut self, _ch: u16, _key: u8, _pressure: u8) -> Result<(), Error> {
+        Ok(())
+    }
+
+    fn send_raw(&mut self, data: [u8; 3]) -> Result<(), Error> {
+        match map_raw_message(data) {
+            Some((channel, audio)) => {
+                self.send_event(SynthEvent::Channel(channel, ChannelEvent::Audio(audio)));
+                Ok(())
+            }
+            None => Err(Error::SendFailed(format!(
+                "xsynth 不支持的消息类型: 0x{:02X}",
+                data[0] & 0xF0
+            ))),
+        }
     }
 
     fn all_notes_off(&mut self) -> Result<(), Error> {
@@ -214,5 +235,71 @@ impl PlaybackOutput for XSynthOutputConn {
             ChannelAudioEvent::Control(ControlEvent::Raw(64, 0)),
         )));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// **回归守卫**：后触（0xD0 / 0xA0）绝不能被映射成 CC0（Bank Select MSB）。
+    ///
+    /// 旧实现把 `0xD0` 映射为 `ControlEvent::Raw(0, b1)` ⇒ 通道后触会改掉音色库，
+    /// 多端口下还会因通道折叠改错通道、并污染 `PercussionTracker` 的 Bank Select 判定。
+    #[test]
+    fn aftertouch_is_never_mapped_to_bank_select() {
+        assert!(
+            map_raw_message([0xD0, 64, 0]).is_none(),
+            "通道后触必须显式不支持——映射成 CC0 会改掉 Bank Select"
+        );
+        assert!(
+            map_raw_message([0xA0, 60, 64]).is_none(),
+            "复音后触同样必须显式不支持"
+        );
+        // 反证：合法的 CC0（Bank Select MSB）必须仍然可映射，别把功能一起关掉
+        assert!(
+            matches!(
+                map_raw_message([0xB0, 0, 120]),
+                Some((_, ChannelAudioEvent::Control(ControlEvent::Raw(0, 120))))
+            ),
+            "真正的 CC0 必须继续透传"
+        );
+    }
+
+    /// 映射表逐字节核对（通道取低 4 位，数据字节按 7bit 掩码）。
+    #[test]
+    fn raw_messages_map_to_expected_events() {
+        let (ch, ev) = map_raw_message([0x90 | 5, 60, 100]).expect("NoteOn 应支持");
+        assert_eq!(ch, 5);
+        assert!(matches!(
+            ev,
+            ChannelAudioEvent::NoteOn { key: 60, vel: 100 }
+        ));
+
+        let (ch, ev) = map_raw_message([0x80 | 9, 60, 0]).expect("NoteOff 应支持");
+        assert_eq!(ch, 9);
+        assert!(matches!(ev, ChannelAudioEvent::NoteOff { key: 60 }));
+
+        let (ch, ev) = map_raw_message([0xB0 | 3, 7, 100]).expect("CC 应支持");
+        assert_eq!(ch, 3);
+        assert!(matches!(
+            ev,
+            ChannelAudioEvent::Control(ControlEvent::Raw(7, 100))
+        ));
+
+        let (_, ev) = map_raw_message([0xC0 | 2, 42, 0]).expect("PC 应支持");
+        assert!(matches!(ev, ChannelAudioEvent::ProgramChange(42)));
+    }
+
+    /// 弯音中心（raw 0x2000：lsb 0 / msb 64）必须归一化为 0.0。
+    #[test]
+    fn pitch_bend_center_is_zero() {
+        let (_, ev) = map_raw_message([0xE0, 0, 64]).expect("PB 应支持");
+        match ev {
+            ChannelAudioEvent::Control(ControlEvent::PitchBendValue(v)) => {
+                assert!(v.abs() < 1e-6, "中心弯音必须为 0，实际 {v}");
+            }
+            _ => panic!("中心弯音应映射为 PitchBendValue"),
+        }
     }
 }

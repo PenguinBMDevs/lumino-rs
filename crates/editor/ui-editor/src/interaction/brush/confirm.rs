@@ -13,12 +13,9 @@ use crate::{Editor, Note};
 use lumino_note_core::history::CreateOp;
 use std::collections::HashSet;
 
-/// 批量归并写入阈值（音符数）：超过则走 `batch_insert_events_to_track_with_ids`
-///
-/// 逐笔插入的成本 ≈ 音符数 × 块内搬移 + 每次 `partition_point`；
-/// 长笔画 × 大粗细度下逐笔插入会到秒级（实测 9120 音符 12.15s），批量归并
-/// 压成每轨一次 `extend_sorted`（同场景 4.17ms）。阈值取自块大小量级，由 bench 标定。
-const BATCH_INSERT_THRESHOLD: usize = 2048;
+// 批量归并写入阈值：定义与完整理由集中在 `super::super::batch_insert`
+// （曲线填充 / 形状 / 画刷三处共用，避免各写一份漂移）。
+use super::super::BATCH_INSERT_THRESHOLD;
 
 impl Editor {
     /// 确认全部笔画：按覆盖范围生成音符（按层写入分配音轨，一次历史记录）

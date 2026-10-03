@@ -84,7 +84,9 @@ fn test_solo_filters_other_track_engine() {
     // 独奏当前空轨（track 0）→ 其他轨（track 1）不应发声
     engine.set_track_play_states(vec![false, false], vec![true, false]);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
+    // 确定性推进：时钟 seek 到 tick 10，不依赖 wall-clock（CI runner 卡顿不会
+    // 把 tick 0 的音符误判为迟到；与 scheduling.rs 同口径）。
+    playback.lock().seek(10.0);
     let messages = engine.update();
 
     let note_events: Vec<_> = messages
@@ -107,7 +109,9 @@ fn test_mute_filters_other_track_engine() {
     // 静音 track 1（无独奏）→ track 1 不应发声
     engine.set_track_play_states(vec![false, true], vec![false, false]);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
+    // 确定性推进：时钟 seek 到 tick 10，不依赖 wall-clock（CI runner 卡顿不会
+    // 把 tick 0 的音符误判为迟到；与 scheduling.rs 同口径）。
+    playback.lock().seek(10.0);
     let messages = engine.update();
 
     let note_events: Vec<_> = messages
@@ -155,7 +159,9 @@ fn test_solo_plays_only_soloed_track_engine() {
     engine.set_document(doc, 1);
     engine.set_track_play_states(vec![false, false], vec![false, true]);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
+    // 确定性推进：时钟 seek 到 tick 10，不依赖 wall-clock（CI runner 卡顿不会
+    // 把 tick 0 的音符误判为迟到；与 scheduling.rs 同口径）。
+    playback.lock().seek(10.0);
     let messages = engine.update();
 
     let note_events: Vec<_> = messages
@@ -198,7 +204,10 @@ fn test_multi_port_maps_global_channels() {
     });
     engine.set_document(doc, 0);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
+
+    // 确定性推进：时钟 seek 到 tick 10，不依赖 wall-clock（CI runner 卡顿不会
+    // 把 tick 0 的音符误判为迟到；与 scheduling.rs 同口径）。
+    playback.lock().seek(10.0);
     let messages = engine.update();
 
     let note_on_channels: Vec<u16> = messages
@@ -249,7 +258,9 @@ fn test_bank_select_emits_percussion_mode_before_cc() {
     });
     engine.set_document(doc, 0);
     engine.play();
-    std::thread::sleep(Duration::from_millis(20));
+    // 确定性推进：时钟 seek 到 tick 10，不依赖 wall-clock（CI runner 卡顿不会
+    // 把 tick 0 的音符误判为迟到；与 scheduling.rs 同口径）。
+    playback.lock().seek(10.0);
     let messages = engine.update();
 
     let mode_pos = messages.iter().position(|m| {

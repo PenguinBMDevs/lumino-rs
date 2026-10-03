@@ -124,6 +124,8 @@ pub struct PathSnapshot {
     pub paths: Vec<LinePath>,
     /// 已填充格点（逻辑坐标：tick = snap 倍数、key 整数格）
     pub fill: Vec<(f32, u16)>,
+    /// 颜料桶填充切分档位（x 分音符；`None` = 整块不切分）
+    pub fill_division: Option<u32>,
 }
 
 /// 曲线工具贝塞尔路径状态
@@ -157,6 +159,13 @@ pub struct LineToolState {
     /// 颜料桶填充模式（启用式开关）：开启后曲线工具点击画布 =
     /// 填充封闭区域，不再绘制锚点；仅曲线工具激活时有效
     pub fill_enabled: bool,
+    /// 颜料桶填充的**切分档位**：`Some(x)` = 用 x 分音符切分填充区域
+    /// （每个音高行的填充区间按 `4·ppq/x` 的全局网格切成多条音符）；
+    /// `None` = 整块填充（每个区间一条长音符，切分前的默认行为）。
+    ///
+    /// 属填充桶的**模式设置**（与 `fill_enabled` 同级）：√ 确认 / × 取消
+    /// 后仍保留（`reset` 显式保留），Ctrl+Z 随路径历史一并回滚。
+    pub fill_division: Option<u32>,
     /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
     ///
     /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
@@ -180,6 +189,7 @@ impl Default for LineToolState {
             drag_confirmed: false,
             last_push_path: None,
             fill_enabled: false,
+            fill_division: None,
             // 历史栈初始含空状态（撤销基准）
             path_history: vec![PathSnapshot::default()],
             path_history_index: 0,
@@ -281,6 +291,7 @@ impl LineToolState {
         PathSnapshot {
             paths: self.paths.clone(),
             fill: self.fill.clone(),
+            fill_division: self.fill_division,
         }
     }
 
@@ -334,8 +345,13 @@ impl LineToolState {
     }
 
     /// 重置整个路径状态（含历史）
+    ///
+    /// `fill_division` 是填充桶的**模式设置**而非本次编辑内容，跨 √ 确认 /
+    /// × 取消保留（否则每次填充都要重新输入分音符）。
     pub fn reset(&mut self) {
+        let fill_division = self.fill_division;
         *self = Self::default();
+        self.fill_division = fill_division;
     }
 
     // ── 颜料桶填充 ─────────────────────────
@@ -355,6 +371,20 @@ impl LineToolState {
             }
         }
         added
+    }
+
+    /// 设置填充切分档位（x 分音符；`None` = 整块填充）
+    ///
+    /// 已有待确认内容（路径 / 填充标记）时记一次路径历史，使切分档位
+    /// 变更可被 Ctrl+Z 撤销；空白状态下直接改（无历史可污染）。
+    pub fn set_fill_division(&mut self, division: Option<u32>) {
+        if self.fill_division == division {
+            return;
+        }
+        self.fill_division = division;
+        if !self.paths.is_empty() || self.has_fill() {
+            self.push_path_history();
+        }
     }
 
     /// 清除全部填充标记；返回是否清除了内容

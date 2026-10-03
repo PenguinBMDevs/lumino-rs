@@ -37,6 +37,12 @@ harness = false
 name = "ui_brush_stroke_bench"
 harness = false
 
+# 曲线工具 + 颜料桶填充 √ 确认性能基准：>1 万音符一次性写入的
+# 逐音符 Insert 事件风暴（GPU Σtail 搬移 O(N²)）vs 批量归并路径
+[[bench]]
+name = "ui_fill_confirm_bench"
+harness = false
+
 [dev-dependencies]
 # bench 目标以 release/bench profile 编译：iced_widget 会拉入未开 renderer feature 的
 # iced_renderer（release 下直接 compile_error）。显式开启与 workspace 一致的 feature。

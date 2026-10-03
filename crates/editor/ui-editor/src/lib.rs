@@ -261,6 +261,13 @@ pub struct Editor {
     /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
     /// 本字段只保留配置：改粗细度/层音轨后预览与生成立即按新配置解释。
     pub brush: lumino_core::BrushConfig,
+
+    /// 待打开「分音符填充」对话框的请求标志（由画布 Ctrl+单击置位）
+    ///
+    /// `Editor`（ui-editor）不持有主窗口的对话框状态，无法自行弹窗；
+    /// 置位后由 `Root::handle_editor_action` 每帧取走并打开主窗口覆盖层，
+    /// 与 `notes_changed` 同构的一次性标志。
+    fill_division_dialog_requested: bool,
 }
 
 /// 远端用户选择集合

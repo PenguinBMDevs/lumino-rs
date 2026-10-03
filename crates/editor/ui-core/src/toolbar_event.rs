@@ -104,12 +104,24 @@ pub enum Event {
     ButtonHovered(Option<ButtonId>),
     /// 图片转 MIDI 占位按钮（功能开发中）
     ImageToMidiClicked,
-    /// 切换「绘制工具选择面板」显示/隐藏（颜料桶右侧小三角触发）
+    /// 切换「音符绘制悬浮工具条」显示/隐藏（工具栏绘制入口按钮触发）
     ToggleToolPanel,
-    /// 关闭「绘制工具选择面板」
+    /// 关闭「音符绘制悬浮工具条」
     CloseToolPanel,
-    /// 选择「绘制工具选择面板」中的某个条目
+    /// 选择「音符绘制悬浮工具条」中的某个条目
     ToolPanelItemSelected(ToolPanelItem),
+    /// Ctrl+点击「音符绘制悬浮工具条」中的条目：选择该工具并打开其设置
+    ///
+    /// 等同于旧主工具栏入口按钮「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，
+    /// 现已整体迁移到悬浮条：画刷→画刷设置下拉、形状→形状选择下拉、
+    /// 颜料桶→分音符填充对话框；其余条目无独立设置，退化为普通选择。
+    ToolPanelItemCtrlSelected(ToolPanelItem),
+    /// 开始拖拽「音符绘制悬浮工具条」（面板本体按下）
+    ToolPanelDragStarted,
+    /// 拖拽「音符绘制悬浮工具条」中（携带相对全窗口覆盖层的绝对光标位置）
+    ToolPanelDragged(f32, f32),
+    /// 结束拖拽「音符绘制悬浮工具条」
+    ToolPanelDragEnded,
     /// 切换「画刷工具下拉」（ctrl+点击附属按钮触发）
     ToggleBrushDropdown,
     /// 关闭「画刷工具下拉」
@@ -156,8 +168,6 @@ pub enum ToolPanelItem {
     Shape,
     /// 文字输入
     Text,
-    /// 橡皮擦
-    Eraser,
 }
 
 /// 水平翻转模式

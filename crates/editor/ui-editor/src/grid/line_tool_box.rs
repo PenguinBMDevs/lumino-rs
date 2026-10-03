@@ -203,12 +203,26 @@ pub fn draw(
         }
     }
 
-    // 颜料桶矢量填充：闭环几何（边缘 = 实际曲线轮廓，与精度/key 网格无关）
+    // 颜料桶填充预览：
+    // - 切分档位开启 → 画**逐条音符块**（与 √ 生成的音符同源，所见即所得）；
+    // - 未开切分 → 画矢量闭环（每行一条长音符，等价于整块填充）。
     if let Some(region) = fill_region(editor) {
         let fill_color =
             iced_core::Color::from_rgba(anchor_color.r, anchor_color.g, anchor_color.b, FILL_ALPHA);
-        let path = build_fill_path(editor, &region);
-        frame.fill(&path, fill_color);
+        if region.blocks.is_empty() {
+            let path = build_fill_path(editor, &region);
+            frame.fill(&path, fill_color);
+        } else {
+            for &(t0, t1, key) in &region.blocks {
+                let a = editor.line_pos_screen_pos((t0, key - 0.5));
+                let b = editor.line_pos_screen_pos((t1, key + 0.5));
+                let rect = Rectangle::new(
+                    Point::new(a.x.min(b.x), a.y.min(b.y)),
+                    Size::new((b.x - a.x).abs(), (b.y - a.y).abs()),
+                );
+                frame.fill_rectangle(rect.position(), rect.size(), fill_color);
+            }
+        }
         has_content = true;
     }
 

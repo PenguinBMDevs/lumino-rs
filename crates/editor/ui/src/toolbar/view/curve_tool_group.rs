@@ -1,6 +1,6 @@
-//! 曲线工具组 + 工具选择面板（悬浮层）
+//! 曲线工具组 + 工具设置面板（悬浮层）
 //!
-//! 采用标准 `Widget::overlay` 把面板锚定在曲线按钮正下方（与 Tooltip / combo_box
+//! 采用标准 `Widget::overlay` 把设置面板锚定在按钮内容**上方**（与 Tooltip / combo_box
 //! 的悬浮层同源），布局与命中区全部交由 iced 统一处理。
 //!
 //! 关键修正（相对此前手写 MenuOverlay 的两处病灶）：
@@ -149,7 +149,7 @@ impl widget::Widget<Message, Theme, Renderer> for CurveToolGroup<'_> {
     }
 }
 
-/// 面板悬浮层：锚定在曲线按钮正下方，由 iced 负责事件转发与绘制。
+/// 面板悬浮层：锚定在按钮内容**上方**（水平居中于内容），由 iced 负责事件转发与绘制。
 struct PanelOverlay<'a, 'b> {
     content_bounds: Rectangle,
     anchor: Point,
@@ -169,22 +169,27 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
         );
         let menu_bounds = menu_layout.bounds();
 
-        // 锚定：面板左缘与按钮左缘对齐，顶缘在按钮正下方留 2px 间隙。
-        let mut x = self.anchor.x;
-        let mut y = self.anchor.y + self.content_bounds.height + 2.0;
-
+        // 锚定：面板**水平居中于按钮内容（胶囊）上方**，底缘与内容顶缘留 2px 间隙。
+        // Ctrl+弹出的设置面板统一出现在图标**上方**（需求指定），下方空间充足也不下翻。
         let width = menu_bounds.width.max(self.menu_width);
+        let height = menu_bounds.height;
 
-        // 右越界则左移，吸附视口内。
+        let mut x = self.anchor.x + (self.content_bounds.width - width) / 2.0;
+        let mut y = self.anchor.y - height - 2.0;
+
+        // 左右越界则吸附视口内（居中后两侧都可能溢出）。
         if x + width > viewport.x + viewport.width {
             x = (viewport.x + viewport.width - width).max(viewport.x);
         }
-        // 下方空间不足（被视口底裁掉）则上移到按钮正上方。
-        if y + menu_bounds.height > viewport.y + viewport.height {
-            y = (self.anchor.y - menu_bounds.height - 2.0).max(viewport.y);
+        if x < viewport.x {
+            x = viewport.x;
+        }
+        // 上方空间不足（被视口顶裁掉）才翻到内容正下方。
+        if y < viewport.y {
+            y = self.anchor.y + self.content_bounds.height + 2.0;
         }
 
-        layout::Node::with_children(Size::new(width, menu_bounds.height), vec![menu_layout])
+        layout::Node::with_children(Size::new(width, height), vec![menu_layout])
             .translate(Vector::new(x, y))
     }
 

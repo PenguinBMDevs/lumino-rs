@@ -132,6 +132,15 @@ impl GpuSynth {
     ///
     /// EXP-002：文档导出路径在内存中序列化 SMF 后直接调用本方法，不再写临时文件。
     ///
+    /// 「与 [`GpuSynth::render_midi_file`] 输出逐字节一致」当前**只有人工观测**
+    /// （提交信息里的 md5），没有自动化护栏。原因：渲染需要 GPU 设备 + 音色库，
+    /// 而仓库内唯一可用音色库在 `test-file/` 下——该目录被 `.gitignore` 排除
+    /// （连同 `*.mid`/`*.midi`），所以**测试夹具无法入库**。补齐顺序应为：
+    /// 先修正夹具忽略规则（提交一个体积可控的 `.sf2` + 最小 SMF），
+    /// 再加 `#[ignore]` 的 GPU 门控用例断言两条入口的 `samples` 相等。
+    /// 可无设备验证的部分已由
+    /// `midi::parser::tests::load_and_parse_are_equivalent_across_sample_rates` 覆盖。
+    ///
     /// # Errors
     ///
     /// Returns [`SynthError::Midi`] if the bytes cannot be parsed, or

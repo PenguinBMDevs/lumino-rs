@@ -273,6 +273,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 mod about_egg;
 mod cloud_snapshot;
 mod echo_cave;
+mod fill_division_ctrl;
 mod sidebar;
 mod speed_change;
 mod tool_panel_switch;

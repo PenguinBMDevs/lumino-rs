@@ -40,6 +40,27 @@ impl Editor {
         self.editor_state.line_tool.fill_enabled
     }
 
+    /// 设置颜料桶填充的**切分档位**（`Some(x)` = x 分音符切分；`None` = 整块填充）
+    ///
+    /// 由主窗口「分音符填充」对话框确认后调用。变更会同步进路径历史
+    /// （有待确认内容时），使 Ctrl+Z 可撤销。
+    pub fn set_fill_division(&mut self, division: Option<u32>) {
+        self.editor_state.line_tool.set_fill_division(division);
+        self.mark_notes_changed();
+    }
+
+    /// 颜料桶填充的切分档位（`None` = 整块填充）
+    pub fn fill_division(&self) -> Option<u32> {
+        self.editor_state.line_tool.fill_division
+    }
+
+    /// 取走「打开分音符填充对话框」请求（一次性标志，Root 每帧取用）
+    pub fn take_fill_division_dialog_request(&mut self) -> bool {
+        let requested = self.fill_division_dialog_requested;
+        self.fill_division_dialog_requested = false;
+        requested
+    }
+
     /// 获取当前工具
     pub fn current_tool(&self) -> Tool {
         self.editor_state.tool

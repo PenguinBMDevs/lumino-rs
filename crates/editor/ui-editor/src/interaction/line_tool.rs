@@ -15,13 +15,16 @@
 //!   插入/删除锚点为一次撤销操作（Ctrl+Z / Ctrl+Y）。
 //!
 //! 交互状态独立于 `EditState`（`LineToolInteraction`），不耦合音符选择机制。
-//! 纯几何算法（贝塞尔求值/距离/格点离散化）在 `line_tool/geom.rs`，
-//! 命中测试/坐标转换/放置吸附在 `line_tool/hit_test.rs`。
+//! 纯几何算法（贝塞尔求值/距离/展平）在 `line_tool/geom.rs`，
+//! 命中测试/坐标转换/放置吸附在 `line_tool/hit_test.rs`，
+//! √ 确认时的音符生成（蜘蛛网式逐音高行解析求交 + 逐行填充区间）在
+//! `line_tool/paths.rs` 与 `line_tool/fill/spans.rs`（不经任何"设定精度"）。
 
 mod confirm;
 pub(crate) mod fill;
 pub(crate) mod geom;
 mod hit_test;
+mod paths;
 
 #[cfg(test)]
 mod tests;
