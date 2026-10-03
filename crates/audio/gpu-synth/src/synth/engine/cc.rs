@@ -174,18 +174,15 @@ impl GpuSynth {
             .map(|(spawn, vel, nid, _)| (*spawn, *vel, *nid))
             .collect();
         let evict = select_evictions(&infos, need_free, protected);
-        // For dense black MIDI (>20k), hard-kill is inaudible (dense mix
-        // masks the 1-block click) but saves 1 block of fading voices
-        // (20k * 32ms tail = 640k voice-blocks). Flame showed fading
-        // accumulation is the 80k→70k leak.
-        let hard_kill = self.voices.len() > 20000;
+        // REND-011 (#105)：不再按声部总数硬杀（旧行为 >20k 无淡出）。统一
+        // 1 ms 淡出；已在淡出的组直接结束（输出已衰减，无 click）。
         for &gi in &evict {
             for &pos in &groups[gi].3 {
                 if let Some(v) = self.voices.get_mut(pos)
                     && v.release_at == u64::MAX
                     && v.state.ended == 0
                 {
-                    if hard_kill {
+                    if v.fade_out {
                         v.state.ended = 1;
                         v.damper_pending = false;
                     } else {

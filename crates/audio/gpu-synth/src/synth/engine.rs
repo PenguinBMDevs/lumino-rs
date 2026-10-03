@@ -44,7 +44,7 @@ use types::{
     STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, report_progress,
     spawn_budget_allows,
 };
-use voice_alloc::{select_damper_release_groups, select_evictions};
+use voice_alloc::{order_port_key_evictions, select_damper_release_groups, select_evictions};
 
 pub use types::{RenderCheckpoint, RenderProgress, RenderProgressFn, RenderResult};
 

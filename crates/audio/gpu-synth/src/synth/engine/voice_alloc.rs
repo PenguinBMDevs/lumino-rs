@@ -213,6 +213,14 @@ pub(crate) fn select_evictions(
     candidates
 }
 
+/// 端口级每键裁剪的候选排序（REND-011 #105 口径）：释放尾巴优先（`true` 排前），
+/// 其后按 `(vel, note_id)` 升序（最安静/最旧先裁）。返回组下标。
+pub(crate) fn order_port_key_evictions(groups: &[(bool, u8, u64)]) -> Vec<usize> {
+    let mut order: Vec<usize> = (0..groups.len()).collect();
+    order.sort_by_key(|&i| (!groups[i].0, groups[i].1, groups[i].2));
+    order
+}
+
 /// 为一个 NoteOff 选择要释放的 note 组（FIFO，镜像 XSynth `release_next_voice`）。
 ///
 /// 跳过已在释放中的组（`released` / `release_at != MAX`）以及"NoteOff 已到、
