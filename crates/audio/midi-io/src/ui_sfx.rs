@@ -24,10 +24,10 @@ use std::{
     io::Cursor,
     sync::{
         Arc, OnceLock,
-        atomic::{AtomicBool, AtomicUsize, Ordering},
+        atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering},
         mpsc,
     },
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -80,6 +80,11 @@ struct Playback {
     cursor: AtomicUsize,
     /// 是否正在播放
     playing: AtomicBool,
+    /// 起播代次：每次 `Engine::start` 自增。
+    ///
+    /// 回调只在「本批处理的起止代次一致」时才写回游标——否则一次重新起播
+    /// （归零游标）会被在途回调的旧游标覆盖，表现为「第二次播放不从头上开始」。
+    generation: AtomicU64,
 }
 
 /// 发给工作线程的命令
@@ -143,28 +148,109 @@ pub fn play_pipe_impact(output_device: Option<&str>) {
     }
 }
 
-/// 工作线程主循环：独占 cpal 流，串行处理命令
+/// 工作线程每轮等待命令的最长时间（同时也是收尾检查的粒度）。
+///
+/// 20ms 与旧实现 `play()` 内的轮询间隔一致：足够让「播完 → 暂停流」的尾部
+/// 处理不丢缓冲块，又不会让空闲线程空转。
+const COMMAND_TICK: Duration = Duration::from_millis(20);
+
+/// 播放收尾调度（纯状态机，便于单测）。
+///
+/// 语义（旧实现把两件事混在一起，导致 `TAIL_MARGIN` 形同虚设）：
+/// - 素材播完（回调把 `playing` 翻 `false`）**之后**再等 [`TAIL_MARGIN`] 才暂停流
+///   ——回调是在「把最后一个样本写进设备缓冲」时翻 false，此刻设备还没播出去，
+///   立即 `pause()` 会在部分后端丢掉缓冲残余尾部；
+/// - 同时保留硬上限（素材时长 + 尾音余量），兜住「回调异常未翻 `playing`」。
+#[derive(Debug, Clone, Copy, Default)]
+struct TailSchedule {
+    /// 硬上限：到点必须收尾
+    hard_deadline: Option<Instant>,
+    /// 首次观察到停播后 + [`TAIL_MARGIN`] 的收尾时刻
+    pause_after: Option<Instant>,
+}
+
+impl TailSchedule {
+    /// 起播时重置调度。
+    fn arm(&mut self, now: Instant, duration: Duration) {
+        self.hard_deadline = Some(now + duration + TAIL_MARGIN);
+        self.pause_after = None;
+    }
+
+    /// 是否处于「等待收尾」状态。
+    fn is_armed(&self) -> bool {
+        self.hard_deadline.is_some()
+    }
+
+    /// 推进一步：返回是否应当暂停输出流（返回 true 时自身复位为未武装）。
+    fn poll(&mut self, now: Instant, playing: bool) -> bool {
+        let Some(hard) = self.hard_deadline else {
+            return false;
+        };
+        if self.pause_after.is_none() && !playing {
+            // 首次观察到达「回调已送完样本」：再留尾音余量
+            self.pause_after = Some(now + TAIL_MARGIN);
+        }
+        let due = now >= hard || self.pause_after.is_some_and(|d| now >= d);
+        if due {
+            self.hard_deadline = None;
+            self.pause_after = None;
+        }
+        due
+    }
+}
+
+/// 工作线程主循环：独占 cpal 流，处理命令并驱动播放收尾。
+///
+/// **不在命令处理里等待播放结束**：旧实现的 `play()` 会在循环内 `sleep` 至
+/// 素材时长 + 尾音余量（≈2.5s），期间到达的 `Prewarm` / `Play` 全被推迟——
+/// 彩蛋每进程只触发一次时看不出来，但一旦增加第二个 UI 音效就退化为
+/// 「第二声延迟 2.5 秒」。现在改为 `recv_timeout` + 收尾状态机，播放期间的
+/// 命令照常即时处理（新 `Play` 会立即重新起播）。
 fn worker_loop(rx: mpsc::Receiver<Command>) {
     let mut engine: Option<Engine> = None;
     let mut init_failed = false;
+    let mut schedule = TailSchedule::default();
 
-    while let Ok(command) = rx.recv() {
-        let device = match &command {
-            Command::Prewarm(d) | Command::Play(d) => d.clone(),
+    loop {
+        let command = match rx.recv_timeout(COMMAND_TICK) {
+            Ok(command) => Some(command),
+            Err(mpsc::RecvTimeoutError::Timeout) => None,
+            // 发送端已全部丢弃（进程退出或 Worker 被回收）：结束线程
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
         };
 
-        if engine.is_none() && !init_failed {
-            match Engine::new(device.as_deref()) {
-                Ok(e) => engine = Some(e),
-                Err(e) => {
-                    tracing::warn!("UI 音效初始化失败，本次运行内不再尝试: {e}");
-                    init_failed = true;
+        if let Some(command) = command {
+            let device = match &command {
+                Command::Prewarm(d) | Command::Play(d) => d.clone(),
+            };
+
+            if engine.is_none() && !init_failed {
+                match Engine::new(device.as_deref()) {
+                    Ok(e) => engine = Some(e),
+                    Err(e) => {
+                        tracing::warn!("UI 音效初始化失败，本次运行内不再尝试: {e}");
+                        init_failed = true;
+                    }
                 }
+            }
+
+            if let Command::Play(_) = &command
+                && let Some(engine) = engine.as_mut()
+            {
+                let now = Instant::now();
+                engine.start();
+                schedule.arm(now, engine.duration);
             }
         }
 
-        if let (Some(engine), Command::Play(_)) = (engine.as_mut(), command) {
-            engine.play();
+        // 收尾检查：与命令处理解耦，故命令不会因等待播放结束而被推迟。
+        if schedule.is_armed() {
+            let playing = engine.as_ref().is_some_and(Engine::is_playing);
+            if schedule.poll(Instant::now(), playing)
+                && let Some(engine) = engine.as_mut()
+            {
+                engine.pause_stream();
+            }
         }
     }
 }
@@ -203,6 +289,7 @@ impl Engine {
             samples: Arc::new(adapted),
             cursor: AtomicUsize::new(0),
             playing: AtomicBool::new(false),
+            generation: AtomicU64::new(0),
         });
 
         let callback_state = Arc::clone(&state);
@@ -211,11 +298,14 @@ impl Engine {
                 &config,
                 move |output: &mut [f32], _: &cpal::OutputCallbackInfo| {
                     // 回调内零锁零分配：仅原子读写 + 样本搬运
-                    if !callback_state.playing.load(Ordering::Relaxed) {
+                    if !callback_state.playing.load(Ordering::Acquire) {
                         output.fill(0.0);
                         return;
                     }
                     let samples = &callback_state.samples;
+                    // 起播代次：若本批处理期间发生「重新起播」，则作废本批的游标写回，
+                    // 否则会把归零后的游标覆盖成旧值（第二次播放不从头开始）。
+                    let generation = callback_state.generation.load(Ordering::Acquire);
                     let mut cursor = callback_state.cursor.load(Ordering::Relaxed);
                     for slot in output.iter_mut() {
                         if cursor < samples.len() {
@@ -225,9 +315,12 @@ impl Engine {
                             *slot = 0.0;
                         }
                     }
+                    if callback_state.generation.load(Ordering::Acquire) != generation {
+                        return; // 期间已重新起播：本批游标写回作废
+                    }
                     callback_state.cursor.store(cursor, Ordering::Relaxed);
                     if cursor >= samples.len() {
-                        callback_state.playing.store(false, Ordering::Relaxed);
+                        callback_state.playing.store(false, Ordering::Release);
                     }
                 },
                 |e| tracing::warn!("UI 音效输出流错误: {e}"),
@@ -252,30 +345,31 @@ impl Engine {
         })
     }
 
-    /// 从头播放一次，并在播完后暂停流
-    fn play(&mut self) {
+    /// 起播（**非阻塞**）：关闸 → 归零游标 + 递增代次 → 开闸。
+    ///
+    /// 顺序有意为之：先关闸并递增 `generation`，在途音频回调即使已通过入口判定，
+    /// 也会因代次变化而**放弃写回游标**，不会把归零后的游标覆盖成旧值
+    /// （旧实现会在第二次播放时表现为「不从头开始」）。
+    /// 收尾（暂停流）由 [`TailSchedule`] 在命令循环里驱动，本函数不再阻塞。
+    fn start(&mut self) {
+        self.state.playing.store(false, Ordering::Release);
         self.state.cursor.store(0, Ordering::Relaxed);
-        self.state.playing.store(true, Ordering::Release);
+        self.state.generation.fetch_add(1, Ordering::AcqRel);
         if let Err(e) = self.stream.play() {
             tracing::warn!("UI 音效起播失败: {e}");
-            self.state.playing.store(false, Ordering::Relaxed);
             return;
         }
+        self.state.playing.store(true, Ordering::Release);
+    }
 
-        // 等待播放结束再暂停。此处阻塞的是专属工作线程（不承担其它职责），
-        // 且彩蛋序列每次运行最多触发一次，不存在命令堆积。
-        let wait = self.duration + TAIL_MARGIN;
-        let deadline = std::time::Instant::now() + wait;
-        while std::time::Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
-            if !self.state.playing.load(Ordering::Relaxed) {
-                break;
-            }
-        }
-        // 期间若又收到播放请求（playing 被重新置位），不要暂停
-        if !self.state.playing.load(Ordering::Relaxed)
-            && let Err(e) = self.stream.pause()
-        {
+    /// 回调是否仍在送样本（收尾判据之一）。
+    fn is_playing(&self) -> bool {
+        self.state.playing.load(Ordering::Relaxed)
+    }
+
+    /// 暂停输出流：播完收尾，避免常驻静音回调。
+    fn pause_stream(&mut self) {
+        if let Err(e) = self.stream.pause() {
             tracing::debug!("UI 音效暂停失败（无碍）: {e}");
         }
     }
@@ -523,6 +617,81 @@ mod tests {
     const ONSET_REACH_RATIO: f32 = 0.9;
     /// 容许的起振时间上限（毫秒）：超过则落地后听得出延迟
     const ONSET_MAX_MS: f32 = 30.0;
+
+    // ── 播放收尾调度（S-M2/M3 回归）────────────────────────────────
+    // 这些用例不碰音频设备：`TailSchedule` 是纯状态机，时刻由调用方注入。
+
+    /// **尾音余量必须落在「回调送完样本」之后**——旧实现在 `playing` 翻 false
+    /// 的当刻就 `pause()`，等于没等缓冲块播出去（部分后端会切掉尾部）。
+    #[test]
+    fn tail_schedule_waits_tail_margin_after_playback_ends() {
+        let t0 = Instant::now();
+        let duration = Duration::from_secs(2);
+        let mut s = TailSchedule::default();
+        s.arm(t0, duration);
+
+        // 仍在送样本：不得收尾
+        assert!(!s.poll(t0 + Duration::from_millis(1_900), true));
+        // 回调刚送完（playing = false）的当刻：**不得**收尾
+        let flipped = t0 + duration;
+        assert!(
+            !s.poll(flipped, false),
+            "翻 false 当刻不得暂停流：此时缓冲块还没播出去（旧实现的行为）"
+        );
+        // 尾音余量未满：仍不得收尾
+        assert!(!s.poll(flipped + TAIL_MARGIN - Duration::from_millis(1), false));
+        // 到期收尾，且只收一次
+        assert!(s.poll(flipped + TAIL_MARGIN, false), "尾音余量满后应收尾");
+        assert!(!s.is_armed(), "收尾后必须复位");
+        assert!(
+            !s.poll(flipped + TAIL_MARGIN + Duration::from_secs(5), false),
+            "未重新起播时不得再次暂停"
+        );
+    }
+
+    /// 回调异常（`playing` 永不翻 false）时，硬上限必须兜住而不会永久挂着。
+    #[test]
+    fn tail_schedule_hard_deadline_fires_even_if_playing_never_clears() {
+        let t0 = Instant::now();
+        let duration = Duration::from_secs(2);
+        let mut s = TailSchedule::default();
+        s.arm(t0, duration);
+
+        assert!(!s.poll(t0 + duration, true), "硬上限未到且仍在播放：不收尾");
+        assert!(
+            s.poll(t0 + duration + TAIL_MARGIN, true),
+            "硬上限到点必须收尾（否则流永不暂停、常驻静音回调）"
+        );
+        assert!(!s.is_armed());
+    }
+
+    /// **命令循环不被阻塞的直接证据**：起播期间可以立即重新武装（= 处理新的 Play），
+    /// 且旧收尾时刻不得继续生效。
+    #[test]
+    fn tail_schedule_rearm_replaces_previous_deadline() {
+        let t0 = Instant::now();
+        let mut s = TailSchedule::default();
+        s.arm(t0, Duration::from_secs(2));
+        assert!(!s.poll(t0 + Duration::from_secs(2), false), "开始等尾音");
+
+        // 第二次起播（旧实现这里会被上一次播放阻塞 ≈2.5s 才轮到）
+        let t1 = t0 + Duration::from_secs(2) + Duration::from_millis(10);
+        s.arm(t1, Duration::from_secs(3));
+
+        assert!(
+            !s.poll(t1 + Duration::from_millis(100), true),
+            "重新起播后不得沿用上一次的收尾时刻"
+        );
+        assert!(s.poll(t1 + Duration::from_secs(3) + TAIL_MARGIN, false));
+    }
+
+    /// 未起播时收尾检查必须完全惰性（否则空闲线程会反复 pause 已暂停的流）。
+    #[test]
+    fn tail_schedule_poll_is_inert_before_arm() {
+        let mut s = TailSchedule::default();
+        assert!(!s.is_armed());
+        assert!(!s.poll(Instant::now(), false), "未起播时不得触发暂停流");
+    }
 
     #[test]
     fn test_trim_leading_silence_removes_encoder_delay() {

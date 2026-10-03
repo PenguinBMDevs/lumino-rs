@@ -97,10 +97,12 @@ fn test_fallback_adapters_always_policy_collects_even_when_passed() {
     assert_eq!(collected.len(), 1);
 }
 
-/// 端到端补强：真实全量检测走 `Never` 策略时回退列表为空、详情无回退段落。
+/// 端到端补强：真实全量检测走 `Never` 策略时回退列表为空。
 ///
-/// 注：本断言方向是「Never ⇒ 空」；在无回退后端的机器上判别力有限，
-/// 真正的判别力在 `test_fallback_adapters_on_failure_policy_skips_enumeration_when_passed`。
+/// **判别力说明**：本用例只断言「Never ⇒ 空」，而空是 `Never` 的构造保证，
+/// 故它对详情段落逻辑没有判别力（旧版本还额外断言 `!detail().contains(…)`，
+/// 那一条恒真）。段落逻辑的双向判别见
+/// [`test_detail_fallback_section_follows_adapter_list`]。
 #[test]
 fn test_check_without_fallback_collection_returns_empty_list() {
     let report = run_check_with_timeout(DEFAULT_TIMEOUT, FallbackDiagnostics::Never);
@@ -114,9 +116,35 @@ fn test_check_without_fallback_collection_returns_empty_list() {
         "Never 策略下不得返回回退后端适配器（实收 {} 个）",
         report.fallback_adapters.len()
     );
+}
+
+/// 详情中的「其他可用后端」段落必须**双向**跟随 `fallback_adapters`：
+/// 非空时渲染、空时不渲染。
+///
+/// 这是旧断言（`Never ⇒ 无该段`）的正确替代：旧写法由构造恒真、零判别力，
+/// 摘掉实现里的段落渲染逻辑它也不会变红。
+#[test]
+fn test_detail_fallback_section_follows_adapter_list() {
+    let adapter = GpuAdapterSummary {
+        name: "Microsoft Basic Render Driver".to_string(),
+        backend: "Dx12".to_string(),
+        device_type: "Cpu".to_string(),
+        driver: String::new(),
+        driver_info: String::new(),
+    };
+
+    let mut with_fallback = GpuCheckReport::failed(GpuCheckFailure::NoAdapter);
+    with_fallback.fallback_adapters = vec![adapter];
     assert!(
-        !report.detail().contains("其他可用后端"),
-        "Never 策略下详情不应包含回退后端段落"
+        with_fallback.detail().contains("其他可用后端"),
+        "回退列表非空时必须渲染提示段：{}",
+        with_fallback.detail()
+    );
+
+    let without_fallback = GpuCheckReport::failed(GpuCheckFailure::NoAdapter);
+    assert!(
+        !without_fallback.detail().contains("其他可用后端"),
+        "回退列表为空时不得渲染该段"
     );
 }
 

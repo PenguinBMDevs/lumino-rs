@@ -197,6 +197,13 @@ mod tests {
     }
 
     /// 手动 GPU 检测结果回写缓存依赖该载荷携带指纹（否则 Runner 无从回写）
+    ///
+    /// **范围**：`lumino-message` 只是**载荷搬运工**——它不认识指纹算法，也不应依赖
+    /// `lumino-gfx`（否则核心消息层反向依赖渲染层）。故此处用手写串只验证「字段能
+    /// 装能取、`None` 不影响构造」。
+    /// 「生产者指纹 == 探测端用于比对的指纹」这条**同源**契约由 Runner 侧覆盖
+    /// （`runner::device_check_policy::tests::test_fingerprint_round_trips_from_producer_to_cache_hit`），
+    /// 那里才同时够得着两侧。
     #[test]
     fn test_gpu_check_finished_carries_fingerprint() {
         let _guard = TEST_MUTEX.lock().expect("测试串行锁未 poison");

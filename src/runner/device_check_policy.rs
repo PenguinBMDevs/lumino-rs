@@ -75,6 +75,21 @@ pub(crate) fn debug_expire_cache_requested() -> bool {
 ///
 /// 条件 1~3 任一不成立时 **不会调用 `probe`**：TTL 过期直接落回全量检测，
 /// 连新建 wgpu `Instance` 的廉价探测都省掉。
+///
+/// # 不变量边界（勿扩大解读）
+///
+/// 命中只保证「**被检测过的那张卡**仍在当前枚举列表中」，**不保证运行时用的
+/// 是同一张卡**——两条路径的选卡方式不同：
+///
+/// - 检测（`lumino_gfx::device_check`）：`required_backends()` +
+///   `PowerPreference::HighPerformance` + `compatible_surface: None`；
+/// - 运行时（`lumino_gfx::context`）：`Backends::all()` +
+///   `initialize_adapter_from_env_or_default(.., Some(surface))`，还服从
+///   `WGPU_ADAPTER_NAME` / `WGPU_POWER_PREF` 与 surface 兼容性。
+///
+/// 因此多 GPU 机器上可能出现「检测的是 A 卡、实际跑的是 B 卡」而缓存照样命中。
+/// 收紧口径需要让两条路径共用同一选卡函数，或在 Context 建立后比对实际
+/// adapter 指纹与 `gpu_last_fingerprint` 不一致即失效——**当前未做**。
 pub(crate) fn cache_hit<P>(
     within_ttl: bool,
     force_fail: bool,
@@ -254,5 +269,49 @@ mod tests {
     #[test]
     fn test_cache_hit_missing_cached_fingerprint_is_miss() {
         assert!(!cache_hit(true, false, Some(true), None, Vec::new));
+    }
+
+    /// **指纹同源回归**：生产者的指纹写入后，必须被 `cache_hit` 判为命中。
+    ///
+    /// 这条把「写路径产出」与「读路径比对」连起来——既有测试都用手写字符串，
+    /// 因此无法发现两侧算法分叉（分叉的后果是缓存**永不命中**，退化成每次启动
+    /// 全量检测，且不会有任何测试变红）。
+    ///
+    /// 覆盖范围说明：`Storage::persist_gpu_check_cache` 只是
+    /// `fingerprint.map(str::to_string)` 的**逐字搬运**（见 `src/storage.rs`），
+    /// 故此处直接以字符串模拟落盘值，无需真实配置文件。
+    #[test]
+    fn test_fingerprint_round_trips_from_producer_to_cache_hit() {
+        use lumino_gfx::device_check::GpuAdapterSummary;
+
+        let adapter = GpuAdapterSummary {
+            name: "NVIDIA GeForce RTX 2060".to_string(),
+            backend: "Vulkan".to_string(),
+            device_type: "DiscreteGpu".to_string(),
+            driver: "NVIDIA".to_string(),
+            driver_info: "610.62".to_string(),
+        };
+        let produced = adapter.fingerprint();
+
+        // 写路径：落盘的就是 `report.fingerprint`（`GpuAdapterSummary::fingerprint()` 产物）
+        let cached = Some(produced.as_str());
+        // 读路径：廉价探测枚举出的同样是 `fingerprint()` 产物
+        assert!(
+            cache_hit(true, false, Some(true), cached, || vec![produced.clone()]),
+            "生产者指纹写入后必须被 cache_hit 判为命中（两侧必须同源同算法）；\
+             若此断言变红，说明写/读两侧指纹算法已分叉 → 缓存永不命中"
+        );
+
+        // 反证：任一参与指纹的字段变化都必须失效（防空转式「永远命中」）
+        let driver_upgraded = GpuAdapterSummary {
+            driver_info: "611.00".to_string(),
+            ..adapter
+        };
+        assert!(
+            !cache_hit(true, false, Some(true), cached, || vec![
+                driver_upgraded.fingerprint()
+            ]),
+            "驱动版本变化必须使缓存失效"
+        );
     }
 }
