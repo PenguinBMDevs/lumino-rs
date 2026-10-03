@@ -9,6 +9,7 @@ pub(crate) mod brush_dropdown;
 mod buttons;
 mod default;
 pub mod event;
+pub(crate) mod fill_division_dropdown;
 pub(crate) mod overflow;
 mod record;
 mod resize;

@@ -257,37 +257,18 @@ impl Root {
         if let Some(dialog) = self.view_material_delete_dialog() {
             stack = stack.push(dialog);
         }
-        // 颜料桶「分音符填充」对话框（画布 Ctrl+单击弹出，主窗口覆盖层）
-        if let Some(dialog) = self.view_fill_division_dialog() {
-            stack = stack.push(dialog);
-        }
         // 混音台浮动面板（非阻塞覆盖层，打开时叠加于最上层；
         // 入口按钮在左侧栏底部，点亮表示面板打开）
         if let Some(panel) = crate::root::mixer_panel::view_mixer_panel(self) {
             stack = stack.push(panel);
         }
         // 音符绘制悬浮工具条（非阻塞覆盖层，浮在卷帘区域上方、默认底部居中、可拖拽；
-        // 由工具栏「绘制入口」按钮开关，仅在钢琴卷帘视图可见）
+        // 由工具栏「绘制入口」按钮开关，仅在钢琴卷帘视图可见）。
+        // 颜料桶「分音符填充」小面板亦挂在其上（`draw_tool_toolbar` 内锚定于胶囊上方）。
         if let Some(draw_toolbar) = self.view_draw_toolbar() {
             stack = stack.push(draw_toolbar);
         }
         stack.into()
-    }
-
-    /// 颜料桶「分音符填充」对话框（主窗口覆盖层）
-    ///
-    /// 由 `state.fill_division_dialog.is_open` 驱动；未打开返回 None。
-    /// 打开由画布 Ctrl+单击触发（`Editor::take_fill_division_dialog_request`）。
-    fn view_fill_division_dialog(&self) -> Option<Element<'static>> {
-        if !self.state.fill_division_dialog.is_open {
-            return None;
-        }
-        Some(
-            crate::view::fill_division_dialog::view_fill_division_dialog(
-                &self.state.fill_division_dialog,
-                self.settings.display.language,
-            ),
-        )
     }
 
     /// 素材删除确认对话框（主窗口覆盖层：全屏遮罩 + 居中卡片）

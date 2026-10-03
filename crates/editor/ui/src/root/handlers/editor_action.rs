@@ -74,14 +74,21 @@ impl Root {
         notes_changed
     }
 
-    /// 打开「分音符填充」覆盖层弹窗（输入框预填当前档位）
+    /// 打开「分音符填充」面板（输入框预填当前档位）
     ///
     /// 触发路径：画布 Ctrl+单击（`Editor` 置请求位 → 此处取走）；
-    /// 以及音符画悬浮工具条「颜料桶」条目的 Ctrl+点击（`ToolPanelItemCtrlSelected`）。
+    /// 以及音符画工具箱「颜料桶」条目的 Ctrl+点击（`ToolPanelItemCtrlSelected`）。
+    ///
+    /// 该面板已从全屏居中弹窗重构为贴图标上方的**工具栏小面板**（由
+    /// `root/draw_toolbar.rs` 渲染），故此处需确保音符画工具箱处于展开态——
+    /// 否则面板无处锚定；同时与其他工具设置下拉（画刷 / 形状）互斥。
     pub(crate) fn open_fill_division_dialog(&mut self) {
         let current = self.editor.fill_division();
         self.state.fill_division_dialog.is_open = true;
         self.state.fill_division_dialog.value = current.map(|n| n.to_string()).unwrap_or_default();
+        self.toolbar.tool_panel_open = true;
+        self.toolbar.brush_dropdown_open = false;
+        self.toolbar.shape_dropdown_open = false;
     }
 
     /// 处理钢琴卷帘右键上下文菜单动作

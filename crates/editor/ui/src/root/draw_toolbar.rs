@@ -30,6 +30,7 @@ use iced_widget::{Space, Stack, button, container, mouse_area, row, text, toolti
 
 use crate::resources::icon;
 use crate::root::Root;
+use crate::message::FillDivisionAction;
 use crate::toolbar::{CurveToolGroup, Event, ShapeType, Tool, ToolPanelItem};
 use crate::{Element, Message, Theme};
 use lumino_extras::i18n::main_translations;
@@ -146,8 +147,9 @@ impl Root {
             .on_release(Event::tool_panel_drag_ended())
             .into();
 
-        // 工具设置下拉（画刷 / 形状）：复用 CurveToolGroup 悬浮层，锚定在胶囊**上方**。
-        // 点击下拉内空白即关闭（mouse_area 包裹），下拉内按钮仍优先响应自身 on_press。
+        // 工具设置下拉（画刷 / 形状 / 颜料桶分音符填充）：复用 CurveToolGroup 悬浮层，
+        // 锚定在胶囊**上方**（水平居中）。点击下拉内空白即关闭（mouse_area 包裹），
+        // 下拉内按钮 / 输入框仍优先响应自身事件。
         let content: Element<'_> = match self.draw_tool_settings_menu() {
             Some((menu, close_message)) => {
                 let panel_with_close: Element<'_> =
@@ -184,11 +186,15 @@ impl Root {
         Some(centered.into())
     }
 
-    /// 构建悬浮条的「工具设置」下拉（画刷 / 形状）。
+    /// 构建悬浮条的「工具设置」下拉（画刷 / 形状 / 颜料桶）。
     ///
-    /// 返回 `(菜单元素, 点击菜单外空白时的关闭消息)`；仅当画刷或形状下拉处于打开态时
-    /// 返回 `Some`（两者互斥）。面板配色贴近工具栏（工具栏底色压暗 10%），
+    /// 返回 `(菜单元素, 点击菜单外空白时的关闭消息)`；仅当对应下拉处于打开态时
+    /// 返回 `Some`（三者互斥）。面板配色贴近工具栏（工具栏底色压暗 10%），
     /// 与旧主工具栏入口按钮下拉保持一致观感。
+    ///
+    /// 颜料桶的「分音符填充」面板由 `state.fill_division_dialog.is_open` 驱动
+    /// （画布 Ctrl+单击与悬浮条 Ctrl+单击颜料桶两条路径共用同一状态），
+    /// 渲染为与画刷 / 形状同风格的小面板——不再是全屏居中弹窗。
     fn draw_tool_settings_menu(&self) -> Option<(Element<'_>, Message)> {
         let palette = self.window.theme.extended_palette();
         let toolbar_bg = palette.background.weakest.color;
@@ -220,6 +226,22 @@ impl Root {
             .height(Length::Shrink)
             .into();
             Some((menu, Event::close_shape_dropdown()))
+        } else if self.state.fill_division_dialog.is_open {
+            let menu: Element<'_> = container(
+                crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
+                    &self.state.fill_division_dialog.value,
+                    self.settings.display.language,
+                    panel_background,
+                    &self.window.theme,
+                ),
+            )
+            .width(Length::Fixed(MENU_WIDTH))
+            .height(Length::Shrink)
+            .into();
+            Some((
+                menu,
+                Message::FillDivision(FillDivisionAction::CloseDialog),
+            ))
         } else {
             None
         }

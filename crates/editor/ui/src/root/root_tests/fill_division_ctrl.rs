@@ -51,6 +51,10 @@ fn test_canvas_ctrl_click_opens_dialog_and_keeps_fill() {
         root.state.fill_division_dialog.is_open,
         "画布 Ctrl+单击应打开分音符填充弹窗"
     );
+    assert!(
+        root.toolbar.tool_panel_open,
+        "画布 Ctrl+单击打开分音符填充时，应确保音符画工具箱展开（面板锚定其上）"
+    );
     assert!(root.toolbar.fill_enabled, "工具栏油漆桶不应回退");
     assert!(root.editor.fill_enabled(), "编辑器油漆桶不应回退");
 }
@@ -103,4 +107,45 @@ fn test_panel_ctrl_click_curve_degrades_without_dialog() {
         Tool::Curve,
         "Ctrl+点曲线条目 = 选择曲线工具"
     );
+}
+
+/// 场景 D：面板已打开时，收到无关工具栏事件 → 自动关闭（与画刷/形状下拉同一"外部关闭"语义）。
+#[test]
+fn test_unrelated_toolbar_event_closes_fill_panel() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = setup_paint_bucket();
+    root.toolbar.tool_panel_open = true;
+    root.update(Message::CtrlKeyChanged(true));
+
+    // 打开分音符填充面板
+    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+    assert!(
+        root.state.fill_division_dialog.is_open,
+        "前置：悬浮条 Ctrl+点颜料桶应打开分音符填充面板"
+    );
+
+    // 触发一个与颜料桶无关的工具栏事件 → 面板应被关闭
+    root.update(Message::Toolbar(Event::ToggleOverflowMenu));
+    assert!(
+        !root.state.fill_division_dialog.is_open,
+        "无关工具栏事件应先关闭分音符填充面板"
+    );
+}
+
+/// 场景 E：再次 Ctrl+点颜料桶（命中小面板）不应被"外部关闭"守卫误关。
+#[test]
+fn test_ctrl_click_fill_again_keeps_panel_open() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = setup_paint_bucket();
+    root.toolbar.tool_panel_open = true;
+    root.update(Message::CtrlKeyChanged(true));
+
+    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+
+    assert!(
+        root.state.fill_division_dialog.is_open,
+        "再次 Ctrl+点颜料桶应保持面板打开（守卫放行该事件）"
+    );
+    assert!(root.toolbar.fill_enabled, "颜料桶应保持开启");
 }
