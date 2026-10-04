@@ -56,7 +56,7 @@ pub use line_tool::{
 };
 pub use selection_set::SelectionSet;
 pub use shape_tool::{
-    ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
+    ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,
 };
 
 use lumino_core::Tool;

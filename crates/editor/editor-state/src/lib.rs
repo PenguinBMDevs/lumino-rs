@@ -23,7 +23,7 @@ pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
 pub use editor_state::{
-    ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
+    ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,
 };
 pub use editor_state::{
     DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,

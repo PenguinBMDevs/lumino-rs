@@ -35,7 +35,8 @@ use std::collections::{HashMap, HashSet};
 
 use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::{
-    DrawnShapeSource, PendingShapeRef, ShapeMarquee, ShapeNote, shape_tool::point_in_shape,
+    DrawnShapeSource, PendingShapeRef, ShapeMarquee, ShapeNote, shape_tool::ShapeSpec,
+    shape_tool::point_in_shape,
 };
 use lumino_message::Tool;
 use lumino_midi_loader::NoteEvent;
@@ -131,6 +132,7 @@ impl Editor {
                 rect: s.rect,
                 shift_constrained: s.shift_constrained,
                 filled: s.filled,
+                apex_high: s.apex_high,
             })
             .collect();
         for (source, notes) in sources.into_iter().zip(per_shape_notes) {
@@ -267,6 +269,7 @@ impl Editor {
                     rect: s.rect,
                     shift_constrained: s.shift_constrained,
                     filled: s.filled,
+                    apex_high: s.apex_high,
                 })
             }
             PendingShapeRef::CurvePath(i) => {
@@ -447,11 +450,15 @@ impl Editor {
                     kind,
                     rect,
                     shift_constrained,
+                    apex_high,
                     ..
                 } => point_in_shape(
-                    *kind,
-                    *rect,
-                    *shift_constrained,
+                    ShapeSpec {
+                        kind: *kind,
+                        rect: *rect,
+                        shift_constrained: *shift_constrained,
+                        apex_high: *apex_high,
+                    },
                     px_per_tick,
                     px_per_key,
                     tick,
@@ -1061,10 +1068,16 @@ mod tests {
                 rect,
                 shift_constrained,
                 filled,
+                apex_high,
             } => {
                 assert_eq!(*kind, ShapeKind::Rectangle);
                 assert_eq!(*rect, (0.0, 60.0, 4.0, 64.0));
                 assert!(!shift_constrained && !filled);
+                assert!(
+                    !*apex_high,
+                    "起点 key 60 → 当前 key 64 = 向上拉 ⇒ 朝向 false；\
+                     矩形几何忽略该字段，但登记值必须原样透传（鼠标工具高亮/命中共用）"
+                );
             }
             other => panic!("期望 Shape 几何，实际 {other:?}"),
         }
@@ -1600,6 +1613,7 @@ mod tests {
                 kind: ShapeKind::Rectangle,
                 rect: (200.0, 60.0, 204.0, 64.0),
                 shift_constrained: false,
+                apex_high: true,
                 filled: false,
             },
             Vec::new(),
@@ -1786,6 +1800,7 @@ mod tests {
                 kind: ShapeKind::Rectangle,
                 rect: (240.0, 68.0, 260.0, 72.0),
                 shift_constrained: false,
+                apex_high: true,
                 filled: false,
             },
             Vec::new(),

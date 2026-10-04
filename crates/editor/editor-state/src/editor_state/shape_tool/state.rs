@@ -1,7 +1,21 @@
 //! 形状工具状态机：拖拽交互、实时预览与待确认图形生成
 
 use super::geometry::normalize_rect;
-use super::{ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState};
+use super::{
+    ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,
+};
+
+/// 三角形顶点朝向：顶点朝**拖拽起点**那一侧的 key 边
+///
+/// - 向下拉（`current_key <= start_key`，屏幕向下）⇒ `true` ⇒ 屏幕上**正立**；
+/// - 向上拉（`current_key > start_key`，屏幕向上）⇒ `false` ⇒ **倒立**；
+/// - 拖拽过程中越过起点 ⇒ 结果翻转 ⇒ 预览实时变向（本函数在每帧预览与松手时各算一次）。
+///
+/// 语义与判定只在**逻辑 key 轴**上（key 大 = 音高高 = 横向卷帘的屏幕上方、纵向卷帘的
+/// 屏幕右方），故纵向卷帘转置后依然自洽。
+fn apex_high_of(start: (f32, f32), current: (f32, f32)) -> bool {
+    current.1 <= start.1
+}
 
 impl ShapeToolState {
     /// 重置整个状态（含已拉出图形与当前图形类型）
@@ -83,16 +97,28 @@ impl ShapeToolState {
             rect,
             shift_constrained,
             filled: self.fill_enabled,
+            apex_high: apex_high_of(start, current),
         };
         self.shapes.push(instance.clone());
         Some(instance)
     }
 
-    /// 当前正在拖拽的预览图形（若有）：返回 (类型, 外接框, Shift约束, 填充)
+    /// 当前正在拖拽的预览图形（若有）：返回 (几何参数, 是否填充)
+    ///
+    /// 每帧由起点 + 当前点重算：三角形的顶点朝向随拖拽方向**实时**改变
+    /// （越过起点即翻转，见 `apex_high_of`）。
     pub fn preview_rect(&self, shift_constrained: bool) -> Option<ShapePreview> {
         if let ShapeToolInteraction::Dragging { start } = self.interaction {
-            let rect = normalize_rect(start, self.drag_current);
-            Some((self.shape_kind, rect, shift_constrained, self.fill_enabled))
+            let current = self.drag_current;
+            Some((
+                ShapeSpec {
+                    kind: self.shape_kind,
+                    rect: normalize_rect(start, current),
+                    shift_constrained,
+                    apex_high: apex_high_of(start, current),
+                },
+                self.fill_enabled,
+            ))
         } else {
             None
         }

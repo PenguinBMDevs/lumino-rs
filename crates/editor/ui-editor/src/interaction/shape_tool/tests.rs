@@ -1,9 +1,12 @@
 //! 形状工具测试：描边（几何解析）/ 填充（格点 + 切分）/ 交互守卫
+//!
+//! 三角形朝向回归见 `tests_triangle.rs`（单文件长度纪律，REF-001）。
 
 use super::confirm::{chop_cells, outline_notes};
 use crate::Editor;
 use crate::tests::test_helpers::seed_notes;
 use lumino_editor_state::ShapeKind;
+use lumino_editor_state::shape_tool::ShapeSpec;
 use std::collections::BTreeMap;
 
 /// 构造一个非 Conductor 轨（track 1，空）、吸附精度 = 1 的编辑器
@@ -197,9 +200,13 @@ fn test_shift_uses_raw_mouse_coords_for_square() {
     // （正方形：min(宽_px, 高_px)）后走描边几何解析，逐音符一致。
     // 注意不能用 `shape_cells` 当预期——描边已不是「按 snap 枚举格点」。
     let mut expected: Vec<(i64, u16, i64)> = outline_notes(
-        ShapeKind::Rectangle,
-        (0.0, 60.0, 10.3, 63.7),
-        true,
+        ShapeSpec {
+            kind: ShapeKind::Rectangle,
+            rect: (0.0, 60.0, 10.3, 63.7),
+            shift_constrained: true,
+            // 向上拉（起点 key 60 → 当前 63.7）；矩形忽略该字段，仅为几何参数完整
+            apex_high: false,
+        },
         px_per_tick,
         px_per_key,
         editor.editor_state.view.key_count as i32,

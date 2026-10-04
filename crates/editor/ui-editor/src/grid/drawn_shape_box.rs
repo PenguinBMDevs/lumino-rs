@@ -19,7 +19,7 @@ use crate::Editor;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::{DrawnShape, DrawnShapeSource};
-use lumino_editor_state::shape_tool::{effective_rect, shape_vertices};
+use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
 use lumino_ui_core::{Renderer, Theme};
 
 /// 外发光描边宽度（像素）
@@ -73,10 +73,17 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
             kind,
             rect,
             shift_constrained,
+            apex_high,
             ..
         } => {
             let rect = (rect.0 + dtick, rect.1 + dkey, rect.2 + dtick, rect.3 + dkey);
-            let rect = effective_rect(*kind, rect, *shift_constrained, px_per_tick, px_per_key);
+            let spec = ShapeSpec {
+                kind: *kind,
+                rect,
+                shift_constrained: *shift_constrained,
+                apex_high: *apex_high,
+            };
+            let rect = effective_rect(spec, px_per_tick, px_per_key);
             if *kind == lumino_editor_state::ShapeKind::Circle {
                 let (cx0, cy0, cx1, cy1) = rect;
                 let mx = (cx0 + cx1) / 2.0;
@@ -90,7 +97,7 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
                 let ry = (bottom.y - top.y).abs() * 0.5;
                 Some(ellipse_path(center, rx, ry))
             } else {
-                let verts = shape_vertices(*kind, rect, false, px_per_tick, px_per_key)?;
+                let verts = shape_vertices(spec, px_per_tick, px_per_key)?;
                 let points: Vec<Point> = verts
                     .iter()
                     .map(|&(t, k)| editor.line_pos_screen_pos((t, k)))
@@ -349,6 +356,7 @@ mod tests {
                 kind: ShapeKind::Rectangle,
                 rect: (0.0, 60.0, 4.0, 64.0),
                 shift_constrained: false,
+                apex_high: true,
                 filled: false,
             },
             Vec::new(),
@@ -430,6 +438,7 @@ mod tests {
                 kind: ShapeKind::Rectangle,
                 rect: (8.0, 60.0, 12.0, 64.0),
                 shift_constrained: false,
+                apex_high: true,
                 filled: false,
             },
             Vec::new(),
@@ -463,6 +472,7 @@ mod tests {
                 kind: ShapeKind::Rectangle,
                 rect: (20.0, 40.0, 24.0, 44.0),
                 shift_constrained: false,
+                apex_high: true,
                 filled: false,
             },
             Vec::new(),

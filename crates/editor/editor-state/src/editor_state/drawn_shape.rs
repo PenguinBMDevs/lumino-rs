@@ -57,12 +57,17 @@ pub enum DrawnShapeSource {
     Shape {
         /// 图形类型
         kind: ShapeKind,
-        /// 外接框逻辑坐标 (tick_lo, key_lo, tick_hi, key_hi)
+        /// 外接框逻辑坐标 (tick_lo, key_lo, tick_hi, key_hi)（已规范化 lo <= hi）
         rect: (f32, f32, f32, f32),
         /// 绘制时是否按住 Shift（屏幕空间正图形约束）
         shift_constrained: bool,
         /// 是否填充内部（仅作信息保留，供后续编辑回放）
         filled: bool,
+        /// 三角形顶点朝向（顶点是否在 key 大的一侧；语义见 `ShapeSpec::apex_high`）
+        ///
+        /// 必须随几何一起登记：外接框已规范化、朝向无法从中反推，
+        /// 丢了它鼠标工具高亮 / 命中就会把三角形画成镜像。
+        apex_high: bool,
     },
     /// 折线（曲线工具展平路径 / 画刷笔画），逻辑坐标 (tick, key)
     Polyline {
@@ -727,6 +732,7 @@ mod tests {
             rect: (0.0, 60.0, 4.0, 64.0),
             shift_constrained: false,
             filled: false,
+            apex_high: true,
         }
     }
 
@@ -806,6 +812,7 @@ mod tests {
                 rect: (10.0, 50.0, 20.0, 55.0),
                 shift_constrained: false,
                 filled: false,
+                apex_high: true,
             },
             vec![],
         );
@@ -842,6 +849,7 @@ mod tests {
             rect: (9.0, 70.0, 1.0, 62.0),
             shift_constrained: false,
             filled: false,
+            apex_high: true,
         };
         let a = st.add(1, None, s, vec![]);
         st.select_only(a);
@@ -987,6 +995,7 @@ mod tests {
             rect: (4.0, 64.0, 0.0, 60.0),
             shift_constrained: false,
             filled: false,
+            apex_high: true,
         };
         assert_eq!(s.bounds(), Some((0.0, 4.0, 60.0, 64.0)));
         let p = DrawnShapeSource::Polyline {
@@ -1166,6 +1175,7 @@ mod tests {
                 rect: (0.0, 60.0, 4.0, 64.0),
                 shift_constrained: false,
                 filled: false,
+                apex_high: true,
             },
             vec![],
         );
@@ -1177,6 +1187,7 @@ mod tests {
                 rect: (200.0, 60.0, 204.0, 64.0),
                 shift_constrained: false,
                 filled: false,
+                apex_high: true,
             },
         );
         st.select_all_of([a, m]);

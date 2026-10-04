@@ -16,11 +16,14 @@
 //! 「切分只作用于填充区间、轮廓走 `path_notes`」完全同构。
 //!
 //! 本文件只放**交互处理**（按下/拖动/释放 + 填充桶命中测试）；√/× 的生成逻辑在
-//! [`confirm`]（含两条生成口径的完整说明），测试在 [`tests`]。
+//! [`confirm`]（含两条生成口径的完整说明），测试在 [`tests`]（三角形朝向回归在
+//! [`tests_triangle`]）。
 
 mod confirm;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_triangle;
 
 use lumino_editor_state::shape_tool::point_in_shape;
 
@@ -82,15 +85,7 @@ impl Editor {
         let px_per_tick = self.editor_state.view.zoom_x;
         let px_per_key = self.editor_state.view.zoom_y;
         for (i, shape) in self.editor_state.shape_tool.shapes.iter().enumerate() {
-            if point_in_shape(
-                shape.kind,
-                shape.rect,
-                shape.shift_constrained,
-                px_per_tick,
-                px_per_key,
-                tick,
-                key,
-            ) {
+            if point_in_shape(shape.spec(), px_per_tick, px_per_key, tick, key) {
                 return Some(i);
             }
         }

@@ -20,8 +20,8 @@
 
 use std::collections::{BTreeMap, HashSet};
 
-use lumino_editor_state::shape_tool::{shape_cells, shape_outline_path};
-use lumino_editor_state::{ShapeKind, ShapeNote};
+use lumino_editor_state::ShapeNote;
+use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path};
 use lumino_note_core::history::CreateOp;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
@@ -83,18 +83,15 @@ pub(super) fn chop_cells(cells: &[(f32, u16)], snap: f32, step: f32) -> Vec<(f32
 /// `key_count` 为渲染音高行上限：越界行裁掉（与曲线工具 `confirm` 同口径，
 /// 边界折线的首尾拉伸可能把端点推到行边界外）。
 pub(super) fn outline_notes(
-    kind: ShapeKind,
-    rect: (f32, f32, f32, f32),
-    shift_constrained: bool,
+    spec: ShapeSpec,
     px_per_tick: f32,
     px_per_key: f32,
     key_count: i32,
 ) -> Vec<(f32, u16, f32)> {
-    let poly: Vec<(f64, f64)> =
-        shape_outline_path(kind, rect, shift_constrained, px_per_tick, px_per_key)
-            .into_iter()
-            .map(|(t, k)| (t as f64, k as f64))
-            .collect();
+    let poly: Vec<(f64, f64)> = shape_outline_path(spec, px_per_tick, px_per_key)
+        .into_iter()
+        .map(|(t, k)| (t as f64, k as f64))
+        .collect();
     paths::path_notes(&poly, false)
         .into_iter()
         .filter(|n| n.key >= 0 && n.key < key_count)
@@ -141,29 +138,14 @@ impl Editor {
             // ① 描边：连续几何 → 逐音高行解析（无网格量化）
             if !shape.filled {
                 outline.extend(
-                    outline_notes(
-                        shape.kind,
-                        shape.rect,
-                        shape.shift_constrained,
-                        px_per_tick,
-                        px_per_key,
-                        key_count,
-                    )
-                    .into_iter()
-                    .map(|(t, k, l)| (t, k, l, idx)),
+                    outline_notes(shape.spec(), px_per_tick, px_per_key, key_count)
+                        .into_iter()
+                        .map(|(t, k, l)| (t, k, l, idx)),
                 );
                 continue;
             }
             // ② 填充：覆盖格点 → 定长音符 / 按 x 分音符切分
-            let cells = shape_cells(
-                shape.kind,
-                shape.rect,
-                shape.shift_constrained,
-                true,
-                snap,
-                px_per_tick,
-                px_per_key,
-            );
+            let cells = shape_cells(shape.spec(), true, snap, px_per_tick, px_per_key);
             match step {
                 Some(s) => chopped.extend(
                     chop_cells(&cells, snap, s)

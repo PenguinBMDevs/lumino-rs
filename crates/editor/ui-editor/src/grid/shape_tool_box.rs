@@ -12,7 +12,7 @@ use crate::grid::utils::content_bounds;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::ShapeKind;
-use lumino_editor_state::shape_tool::{effective_rect, shape_vertices};
+use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
 use lumino_ui_core::Renderer;
 
 /// 填充色块透明度（半透明叠加在网格上，√ 确认后成为实心音符）
@@ -30,12 +30,7 @@ pub struct ShapeButtonRects {
 }
 
 /// 单个图形在屏幕坐标下的包围盒 (min_x, max_x, min_y, max_y)
-fn shape_screen_aabb(
-    editor: &Editor,
-    kind: ShapeKind,
-    rect: (f32, f32, f32, f32),
-    shift: bool,
-) -> (f32, f32, f32, f32) {
+fn shape_screen_aabb(editor: &Editor, spec: ShapeSpec) -> (f32, f32, f32, f32) {
     let mut min_x = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
     let mut min_y = f32::INFINITY;
@@ -49,8 +44,8 @@ fn shape_screen_aabb(
     // 统一应用屏幕空间 Shift 正图形约束，使包围盒与生成音符一致
     let px_per_tick = editor.editor_state.view.zoom_x;
     let px_per_key = editor.editor_state.view.zoom_y;
-    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
-    match kind {
+    let rect = effective_rect(spec, px_per_tick, px_per_key);
+    match spec.kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
             let mx = (cx0 + cx1) / 2.0;
@@ -61,8 +56,7 @@ fn shape_screen_aabb(
             acc(editor.line_pos_screen_pos((mx, cy1)));
         }
         _ => {
-            let verts =
-                shape_vertices(kind, rect, false, px_per_tick, px_per_key).unwrap_or_default();
+            let verts = shape_vertices(spec, px_per_tick, px_per_key).unwrap_or_default();
             for (t, k) in verts {
                 acc(editor.line_pos_screen_pos((t, k)));
             }
@@ -87,7 +81,7 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
 
     let mut bounds: Option<(f32, f32, f32, f32)> = None;
     for shape in &shape_tool.shapes {
-        let b = shape_screen_aabb(editor, shape.kind, shape.rect, shape.shift_constrained);
+        let b = shape_screen_aabb(editor, shape.spec());
         bounds = Some(match bounds {
             None => b,
             Some((min_x, max_x, min_y, max_y)) => (
@@ -148,17 +142,15 @@ fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
 fn draw_one_shape(
     frame: &mut canvas::Frame<Renderer>,
     editor: &Editor,
-    kind: ShapeKind,
-    rect: (f32, f32, f32, f32),
-    shift: bool,
+    spec: ShapeSpec,
     filled: bool,
     color: Color,
 ) {
     // 统一应用屏幕空间 Shift 正图形约束，使预览与生成音符一致
     let px_per_tick = editor.editor_state.view.zoom_x;
     let px_per_key = editor.editor_state.view.zoom_y;
-    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
-    match kind {
+    let rect = effective_rect(spec, px_per_tick, px_per_key);
+    match spec.kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
             let mx = (cx0 + cx1) / 2.0;
@@ -179,7 +171,7 @@ fn draw_one_shape(
             frame.stroke(&path, stroke);
         }
         _ => {
-            let verts = match shape_vertices(kind, rect, false, px_per_tick, px_per_key) {
+            let verts = match shape_vertices(spec, px_per_tick, px_per_key) {
                 Some(v) => v,
                 None => return,
             };
@@ -234,21 +226,13 @@ pub fn draw(
 
     // 待确认图形（虚线感由填充/轮廓区分，这里统一实线轮廓）
     for shape in &shape_tool.shapes {
-        draw_one_shape(
-            &mut frame,
-            editor,
-            shape.kind,
-            shape.rect,
-            shape.shift_constrained,
-            shape.filled,
-            base_color,
-        );
+        draw_one_shape(&mut frame, editor, shape.spec(), shape.filled, base_color);
         has_content = true;
     }
 
     // 实时拖拽预览
-    if let Some((kind, rect, shift, filled)) = shape_tool.preview_rect(editor.shift_pressed()) {
-        draw_one_shape(&mut frame, editor, kind, rect, shift, filled, base_color);
+    if let Some((spec, filled)) = shape_tool.preview_rect(editor.shift_pressed()) {
+        draw_one_shape(&mut frame, editor, spec, filled, base_color);
         has_content = true;
     }
 

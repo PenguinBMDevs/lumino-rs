@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 三角形朝向跟随拖拽方向（BUG 修复）
+
+- **症状** — 形状工具选中「三角形」拉框，画出来的永远**倒三角**，与拉框方向无关；
+  预览、√ 生成音符、鼠标工具点选命中、填充四条腿一起倒。中途一度修成「永远正立」，
+  同样不符合预期——**顶点必须跟随拖拽方向**。
+- **期望语义（本次口径）** — 顶点始终朝**拖拽起点**那一侧的 key 边：
+  向下拉（key 递减 / 屏幕向下）⇒ 顶点在高音高侧 ⇒ 横卷帘**正立**（高度为正）；
+  向上拉 ⇒ 顶点在低音高侧 ⇒ **倒立**（高度为负）；拖拽过程中越过起点 ⇒ **实时翻面**
+  （预览每帧重算，不必松手）；纵向卷帘转置后同一条规则（向左拉 ⇒ 顶点朝右）。
+- **根因** — 不是某一侧写反，而是**方向在规范化时被丢掉**：`ShapeInstance::rect` 经
+  `normalize_rect` 强制 `y0 <= y1`，朝向信息无处承载，`normal_triangle_verts` 只能钉死
+  某一侧。首版（提交 `3814001c`）钉在 key 小的一侧 = 屏幕下方 ⇒ 永远倒三角；上一轮修正
+  钉到 key 大的一侧 ⇒ 永远正立——两次同一个根因。（key 轴正向 = 音高更高：横卷帘
+  `ViewState::key_to_y = (max_key - key)·zoom_y`（key 越大越靠屏幕上方）、纵卷帘
+  `Editor::tick_key_to_pos_f32`（key 越大越靠右）。）
+- **修复** — 把方向提升为**随几何走的一等信息**，而不是从外接框里猜：
+  - 新增 `ShapeSpec { kind, rect, shift_constrained, apex_high }`（几何参数打包，渲染 /
+    命中 / 格点 / 描边四条腿共用）；`apex_high` = 三角形顶点是否在 key **大**的一侧；
+  - `ShapeInstance`、持久登记的 `DrawnShapeSource::Shape`（鼠标工具高亮 + 命中共用，
+    丢了它就会把三角形画成镜像）、`ShapePreview` 都带上该字段；
+    `ShapeToolState::{end_drag, preview_rect}` 按 `apex_high = 当前 key <= 起点 key` 计算
+    ⇒ 拖拽中越过起点即翻面；
+  - `normal_triangle_verts(rect, apex_high)` 按朝向选底边/顶点；
+    `screen_equilateral_rect(..., apex_high)`（Shift 等边三角形：底边留在拖拽当前点侧、
+    顶点朝起点侧延伸 h，等边高 = 底宽_px × √3 / 2，外接框仍保持规范序）；
+  - 5 个几何入口改吃 `ShapeSpec` 并顺带消掉 `point_in_shape` / `shape_cells` 逼近
+    clippy `too_many_arguments` 的参数膨胀；调用方由编译器逐一列出（漏一处编不过）。
+- **同类一并修（Shift 正图形约束在单轴拖拽下退化）** — 规范化后的外接框在「纯水平/纯竖直
+  拖拽」时有一轴位移为 0，老实现 `f32::signum(0.0) == 0` 会把算好的边长乘成 0：
+  矩形被压成一条发丝、圆被压成一个点、三角形被压成零高/零宽。新增
+  `constraint_scale`（零位移轴不参与取 min）与 `axis_dir`（零位移按正向处理），
+  矩形/圆/三角三条腿统一；**两轴都有位移时取值逐位不变**（`min` 语义与既有测试不变），
+  纯竖直拖拽的三角形改由拖拽高度反推所需底宽（h × 2 / √3）。
+- **回归测试** — `editor-state`：向下拉 / 向上拉的 `apex_high` 与规范化外接框分别断言、
+  拖拽中越过起点时预览朝向三次翻转、正立/倒立逐点镜像（顶点 + 描边折线 + `shape_vertices`）、
+  命中判定跟随朝向、格点朝向、Shift 等边约束跟随朝向且单轴拖拽不退化。
+  `ui-editor`：向下拉 = 正立（顶点屏幕在上）且描边逐音高行分布逐条断言、向上拉 = 倒立
+  且为其**逐行镜像**、反向拖拽过程中预览实时翻面（松手后与最终朝向一致）、纵向卷帘
+  正反两向、填充三角形宽行随方向翻到 key 60 / key 64、登记来源保留 `apex_high`。
+- **行为变化（需视觉签核）** — 三角形朝向由拖拽方向决定（上下拉各得正立/倒立，拖拽中
+  可翻面），含填充三角形与鼠标工具的命中区域；单轴拖拽 + Shift 现在会得到完整正图形
+  而不是发丝/点。对已保存工程无影响（音符已落盘，重新绘制才走新几何）。
+- **验证** — `cargo test --profile fast-release -p lumino-editor-state --lib`（322 passed）、
+  `-p lumino-ui-editor --lib`（725 passed）、
+  `cargo clippy --profile fast-release -p lumino-editor-state -p lumino-ui-editor --all-targets
+  -- -D warnings`（0 warning）、`cargo clippy --profile fast-release --workspace --lib
+  -- -D warnings`（0 warning，全仓生产代码）、`bash scripts/check-bom.sh`（通过）。
+  **变异验证**：把 `apex_high_of` 改回「恒为 true」（即上一轮的"永远正立"）后，
+  5 条方向用例立即全挂（`test_triangle_apex_follows_drag_direction`、正向/反向/实时翻面/
+  填充方向/纵卷帘），复原后全绿 ⇒ 用例是真语义钉子而非同义反复。
+  测试文件按 REF-001 纪律拆出 `interaction/shape_tool/tests_triangle.rs`（单文件 ≤ 400 行）。
+  另：`cargo clippy --workspace --all-targets` 在 `lumino-ui` 的**测试目标**上失败
+  （`crates/editor/ui/src/view/video_clip/preview.rs:106` 的 `#[cfg(test)] mod tests` 用
+  默认 `Renderer = ()` 构造视图，iced 0.14 的 trait 约束不满足，17 个 E0277/E0599），
+  该文件由 f3384d9b 引入、**与本次改动无关**（本仓 `cargo test --workspace` 同样会在这里断），
+  已单独记录待办。
+
 ### 音符画 · 形状工具描边对齐曲线工具（蜘蛛网式逐音高行）
 
 - **存量欠债** — 音符画工具箱里两套「描边」语义不一致：曲线工具的轮廓
