@@ -12,7 +12,19 @@ impl Editor {
     ///
     /// 切到非曲线工具时自动关闭曲线工具颜料桶填充模式；
     /// 切到非形状工具时自动关闭形状工具颜料桶填充模式（均为工具附属开关）。
+    ///
+    /// ⚠️ 特例：切到「鼠标工具」（`Tool::ShapeSelect`，图形选中）时，先对当前绘制
+    /// 工具的待确认内容执行 **√ 固化**。`EditorState::set_tool` 对绘制工具采用
+    /// 「切换工具 = ×」语义（丢弃待确认内容），这对「画完就换个工具接着画」是合理的；
+    /// 但「鼠标工具」的职责就是操作**刚画出来的图案**，若也按 × 丢弃，用户会看到
+    /// 图案在切换那一刻凭空消失、无从选中（登记只发生在 √ 时）。详见
+    /// `commit_pending_drawing`。
     pub fn set_tool(&mut self, tool: Tool) {
+        // 仅在「确实发生工具变化」且目标是鼠标工具时固化，避免面板重复点击
+        // （每帧反向覆盖 / 连点同一条目）时反复触发提交。
+        if tool == Tool::ShapeSelect && self.editor_state.tool != Tool::ShapeSelect {
+            self.commit_pending_drawing();
+        }
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
@@ -21,6 +33,20 @@ impl Editor {
         // editor_state.set_tool 已重置整个 shape_tool（含 fill_enabled）。
         if tool != Tool::Shape {
             self.editor_state.shape_tool.fill_enabled = false;
+        }
+    }
+
+    /// 固化（√）当前绘制工具的待确认内容 —— 生成音符 + 登记图形对象
+    ///
+    /// 语义与画布上的 √ 按钮完全一致（复用同一批 `confirm_*` 实现，不另立口径）。
+    /// 返回是否真正提交了内容；无待确认内容 / Conductor 轨等不可提交情形返回 `false`
+    /// （此时随后 `EditorState::set_tool` 的清理仍是安全的 no-op）。
+    pub(crate) fn commit_pending_drawing(&mut self) -> bool {
+        match self.editor_state.tool {
+            Tool::Shape => self.confirm_shape_tool(),
+            Tool::Curve => self.confirm_line_tool(),
+            Tool::Brush => self.confirm_brush(),
+            _ => false,
         }
     }
 

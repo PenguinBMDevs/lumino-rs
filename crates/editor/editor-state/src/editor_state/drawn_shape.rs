@@ -170,6 +170,33 @@ pub struct ShapeDrag {
     pub delta_key: f32,
 }
 
+/// 空白处拉框（框选）中的矩形，逻辑坐标 (tick, key)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ShapeMarquee {
+    /// 按下点 tick
+    pub start_tick: f32,
+    /// 按下点 key
+    pub start_key: f32,
+    /// 当前点 tick
+    pub cur_tick: f32,
+    /// 当前点 key
+    pub cur_key: f32,
+}
+
+impl ShapeMarquee {
+    /// 规范化逻辑矩形 `(min_tick, max_tick, min_key, max_key)`
+    ///
+    /// 与 [`DrawnShapeSource::bounds`] 同布局，相交判定可直接比较。
+    pub fn rect(&self) -> (f32, f32, f32, f32) {
+        (
+            self.start_tick.min(self.cur_tick),
+            self.start_tick.max(self.cur_tick),
+            self.start_key.min(self.cur_key),
+            self.start_key.max(self.cur_key),
+        )
+    }
+}
+
 /// 图形选中状态
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ShapeSelectState {
@@ -181,6 +208,8 @@ pub struct ShapeSelectState {
     selected: Option<u64>,
     /// 拖拽移动状态
     drag: Option<ShapeDrag>,
+    /// 空白处拉框（框选）状态
+    marquee: Option<ShapeMarquee>,
 }
 
 impl ShapeSelectState {
@@ -190,6 +219,7 @@ impl ShapeSelectState {
         self.next_id = 0;
         self.selected = None;
         self.drag = None;
+        self.marquee = None;
     }
 
     /// 登记一个已确认图形（几何 + 它生成的音符），返回其稳定 ID
@@ -400,6 +430,41 @@ impl ShapeSelectState {
         Some((d.shape_id, d.delta_tick, d.delta_key))
     }
 
+    // ── 空白拉框（框选） ───────────────────────────────────
+
+    /// 从空白处起框（框选）
+    pub fn begin_marquee(&mut self, tick: f32, key: f32) {
+        self.marquee = Some(ShapeMarquee {
+            start_tick: tick,
+            start_key: key,
+            cur_tick: tick,
+            cur_key: key,
+        });
+    }
+
+    /// 更新拉框当前点
+    pub fn update_marquee(&mut self, tick: f32, key: f32) {
+        if let Some(m) = self.marquee.as_mut() {
+            m.cur_tick = tick;
+            m.cur_key = key;
+        }
+    }
+
+    /// 当前拉框矩形（供叠加层绘制）
+    pub fn marquee(&self) -> Option<ShapeMarquee> {
+        self.marquee
+    }
+
+    /// 是否正在拉框
+    pub fn is_marqueeing(&self) -> bool {
+        self.marquee.is_some()
+    }
+
+    /// 结束拉框并返回其矩形（供命中判定）
+    pub fn end_marquee(&mut self) -> Option<ShapeMarquee> {
+        self.marquee.take()
+    }
+
     /// 删除指定图形记录（含选中态收敛）
     pub fn remove(&mut self, id: u64) -> bool {
         let before = self.shapes.len();
@@ -586,6 +651,32 @@ mod tests {
             DrawnShapeSource::Polyline { points: vec![] }.bounds(),
             None
         );
+    }
+
+    #[test]
+    fn test_marquee_lifecycle_normalizes_rect() {
+        let mut st = ShapeSelectState::default();
+        assert!(!st.is_marqueeing());
+        st.begin_marquee(10.0, 70.0);
+        assert!(st.is_marqueeing());
+        // 反向拖动（左下 → 右上）应被规范化成 (min, max) 布局
+        st.update_marquee(2.0, 60.0);
+        let m = st.marquee().expect("拉框态应存在");
+        assert_eq!(m.rect(), (2.0, 10.0, 60.0, 70.0));
+        let taken = st.end_marquee().expect("结束应返回矩形");
+        assert_eq!(taken.rect(), (2.0, 10.0, 60.0, 70.0));
+        assert!(!st.is_marqueeing(), "结束后拉框态应清空");
+        assert!(st.end_marquee().is_none(), "重复结束应为 None");
+    }
+
+    #[test]
+    fn test_clear_resets_marquee() {
+        let mut st = ShapeSelectState::default();
+        st.add(1, None, rect_source(), vec![]);
+        st.begin_marquee(0.0, 60.0);
+        st.clear();
+        assert!(!st.is_marqueeing());
+        assert!(st.is_empty());
     }
 
     #[test]

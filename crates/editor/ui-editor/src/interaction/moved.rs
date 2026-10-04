@@ -17,7 +17,10 @@ impl Editor {
             return;
         }
         // 图形选中工具：拖动已绘制图形（仅更新叠加层预览偏移，不改 document）
-        if self.editor_state.shape_select.is_dragging() {
+        // 或空白处拉框框选（仅更新拉框矩形，不改 document）
+        if self.editor_state.shape_select.is_dragging()
+            || self.editor_state.shape_select.is_marqueeing()
+        {
             let raw_tick = self.pos_to_tick(pos);
             let raw_key = self.pos_to_raw_key(pos);
             self.handle_shape_select_moved(raw_tick, raw_key);

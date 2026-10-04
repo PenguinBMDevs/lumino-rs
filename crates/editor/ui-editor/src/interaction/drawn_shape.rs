@@ -6,10 +6,17 @@
 //!   创建历史的分组 ID，供撤销/重做同步（见 `Editor::undo/redo`）。
 //! - **点选**：鼠标工具（`Tool::ShapeSelect`）左键按下 —— 命中当前音轨**最上层**
 //!   的可见图形则选中（高亮描边由 `grid::drawn_shape_box` 渲染），点空白取消选中。
+//! - **框选**：鼠标工具在空白处按下并拖动 → 叠加层实时画出拉框，松手后选中框内
+//!   **最上层**的可见图形（见 [`Editor::finish_shape_marquee`]）。拉框过小视为一次
+//!   普通点击，不改变选中态（保持「点空白取消选中」语义）。
 //! - **拖动移动**：按住选中图形拖动 → 实时预览偏移（叠加层）→ 松手后把该图形生成的
 //!   音符整体按 `MoveOp`（删旧 + 加新）平移，并同步平移几何；历史可撤销/重做。
 //! - **删除**：Delete 键或右键菜单「删除」→ 快照历史 + 按值删除该图形的全部音符 +
 //!   标记图形已删除；撤销该删除可恢复。
+//!
+//! 进入鼠标工具时，当前绘制工具的**待确认内容会被 √ 固化**（见
+//! `Editor::commit_pending_drawing`）——否则 `EditorState::set_tool` 的「切换工具 = ×」
+//! 会把用户刚画好的图案连同登记机会一起丢掉，表现为「切到选择工具图案就消失」。
 //!
 //! 命中判定（逻辑坐标 → 屏幕像素空间，容差统一为像素）：
 //! - 形状工具图形：直接复用 `point_in_shape`（含 Shift 正图形约束与圆形内部判定）；
@@ -20,7 +27,7 @@
 
 use std::collections::{HashMap, HashSet};
 
-use lumino_editor_state::{DrawnShapeSource, ShapeNote, shape_tool::point_in_shape};
+use lumino_editor_state::{DrawnShapeSource, ShapeMarquee, ShapeNote, shape_tool::point_in_shape};
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::TickIndexedEvents;
 use lumino_note_core::history::{HistoryEntry, MoveOp, OpKind};
@@ -31,8 +38,16 @@ use crate::{Editor, Note};
 /// 折线命中容差（屏幕像素）：点击位置到笔画折线的最短距离阈值
 const HIT_TOLERANCE_PX: f32 = 6.0;
 
+/// 空白拉框的最小屏幕边长（像素）：低于此值视为「一次点击」而非框选
+const MARQUEE_MIN_PX: f32 = 4.0;
+
 /// 单条画刷笔画的登记三元组：(落笔基准轨, 折线点列, 该笔画生成的音符)
 type StrokeRecord = (usize, Vec<(f32, f32)>, Vec<ShapeNote>);
+
+/// 逻辑 AABB 相交（含接触）；参数布局统一为 `(min_tick, max_tick, min_key, max_key)`
+fn aabb_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
+    a.0 <= b.1 && b.0 <= a.1 && a.2 <= b.3 && b.2 <= a.3
+}
 
 /// 点到线段的最短距离（同坐标系）
 fn point_segment_distance(p: (f32, f32), a: (f32, f32), b: (f32, f32)) -> f32 {
@@ -198,34 +213,74 @@ impl Editor {
 
     // ── 点选 / 拖动 ───────────────────────────────────────
 
-    /// 鼠标工具：左键按下 —— 命中则选中并起拖，点空白取消选中
+    /// 鼠标工具：左键按下 —— 命中则选中并起拖；点空白则取消选中并**起框**（框选）
     pub(crate) fn handle_shape_select_pressed(&mut self, tick: f32, key: f32) {
         let hit = self.hit_test_drawn_shape(tick, key);
         self.editor_state.shape_select.select(hit);
         if let Some(id) = hit {
             self.editor_state.shape_select.begin_drag(id, tick, key);
+        } else {
+            // 空白按下：起框。是否真的构成框选由松手时的屏幕尺度判定，
+            // 因此「点一下空白取消选中」的既有语义不受影响。
+            let snapped = self.snap_tick(tick);
+            self.editor_state.shape_select.begin_marquee(snapped, key);
         }
         // 仅叠加层视觉变化（文档未变）：清网格缓存驱动重绘。
         // **不能**用 `mark_notes_changed()`——那会置 notes_changed 并重建空间索引（O(N)）。
         self.grid_cache.clear();
     }
 
-    /// 鼠标工具：拖动中 —— 更新预览偏移（不改文档）
+    /// 鼠标工具：拖动中 —— 更新预览偏移（拖动图形）或拉框矩形（框选），均不改文档
     pub(crate) fn handle_shape_select_moved(&mut self, tick: f32, key: f32) {
-        if !self.editor_state.shape_select.is_dragging() {
+        if self.editor_state.shape_select.is_dragging() {
+            let snap = self.editor_state.view.snap_precision;
+            self.editor_state.shape_select.update_drag(tick, key, snap);
+        } else if self.editor_state.shape_select.is_marqueeing() {
+            let snapped = self.snap_tick(tick);
+            self.editor_state.shape_select.update_marquee(snapped, key);
+        } else {
             return;
         }
-        let snap = self.editor_state.view.snap_precision;
-        self.editor_state.shape_select.update_drag(tick, key, snap);
         self.grid_cache.clear();
     }
 
-    /// 鼠标工具：左键释放 —— 有实际位移则提交移动
+    /// 鼠标工具：左键释放 —— 有实际位移则提交移动，否则落在框选上
     pub(crate) fn handle_shape_select_released(&mut self) {
         if let Some((id, dtick, dkey)) = self.editor_state.shape_select.end_drag() {
             self.move_drawn_shape(id, dtick, dkey);
+        } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
+            self.finish_shape_marquee(area);
         }
         self.grid_cache.clear();
+    }
+
+    /// 结束框选：拉框足够大时选中框内**最上层**的可见图形，返回其 ID
+    ///
+    /// - 拉框过小（点一下空白）→ 不改变选中态：按下阶段已取消选中，
+    ///   保持「点空白取消选中」的既有语义（因此**不能**用逻辑尺寸判定，
+    ///   纵横卷帘下逻辑单位对应的像素尺度不同，统一按屏幕边长比较）。
+    /// - 单选模型的折中：框内命中多个图形时取「最后登记」（与点选的最上层口径一致）。
+    fn finish_shape_marquee(&mut self, area: ShapeMarquee) -> Option<u64> {
+        let (t0, t1, k0, k1) = area.rect();
+        let p0 = self.line_pos_screen_pos((t0, k0));
+        let p1 = self.line_pos_screen_pos((t1, k1));
+        if (p1.x - p0.x).abs() < MARQUEE_MIN_PX && (p1.y - p0.y).abs() < MARQUEE_MIN_PX {
+            return None;
+        }
+        let track = self.editor_state.data.current_track;
+        let hit = self
+            .editor_state
+            .shape_select
+            .visible_on(track)
+            .rev()
+            .find(|s| {
+                s.source
+                    .bounds()
+                    .is_some_and(|b| aabb_overlap(b, (t0, t1, k0, k1)))
+            })
+            .map(|s| s.id);
+        self.editor_state.shape_select.select(hit);
+        hit
     }
 
     /// 把某图形的全部音符整体平移（`MoveOp` 删旧 + 加新），并同步平移几何
@@ -750,5 +805,202 @@ mod tests {
         assert!((d - 3.0).abs() < 1e-4, "期望 3.0，实际 {d}");
         let d = point_segment_distance((14.0, 0.0), (0.0, 0.0), (10.0, 0.0));
         assert!((d - 4.0).abs() < 1e-4, "期望 4.0，实际 {d}");
+    }
+
+    // ── 切换到鼠标工具：图案不得消失（回归） ───────────────
+
+    /// 拉出（但不 √）一个待确认形状：模拟「用户刚画完图案还没确认」的状态
+    fn draw_pending_rect(editor: &mut Editor) {
+        editor.set_tool(Tool::Shape);
+        editor.set_shape(ShapeKind::Rectangle);
+        editor.editor_state.shape_tool.fill_enabled = false;
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
+        editor.handle_shape_tool_moved(4.0, 64.0);
+        editor.handle_shape_tool_released();
+        assert!(
+            editor.editor_state.shape_tool.has_pending(),
+            "前置条件：应存在待确认图形"
+        );
+    }
+
+    #[test]
+    fn test_switch_to_mouse_tool_commits_pending_shape() {
+        let mut editor = test_editor();
+        draw_pending_rect(&mut editor);
+        // 切到「鼠标工具」（框选/选择绘制图形）
+        editor.set_tool(Tool::ShapeSelect);
+        // 图案不能凭空消失：应视为 √ 固化 —— 音符落地 + 图形登记 + 可命中
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            16,
+            "切换到鼠标工具应把待确认形状固化为音符（而不是丢弃）"
+        );
+        assert_eq!(
+            editor.editor_state.shape_select.visible_on(1).count(),
+            1,
+            "固化后图形应已登记，可被选中"
+        );
+        assert!(
+            editor.hit_test_drawn_shape(2.0, 62.0).is_some(),
+            "固化后图案应可命中"
+        );
+        editor.handle_shape_select_pressed(2.0, 62.0);
+        editor.handle_shape_select_released();
+        assert!(
+            editor.editor_state.shape_select.selected().is_some(),
+            "固化后图案应可被鼠标工具选中"
+        );
+    }
+
+    #[test]
+    fn test_switch_to_mouse_tool_commits_pending_curve() {
+        let mut editor = test_editor();
+        editor.set_tool(Tool::Curve);
+        editor.editor_state.line_tool.paths = vec![vec![
+            BezierAnchor::new((0.0, 60.0)),
+            BezierAnchor::new((240.0, 64.0)),
+        ]];
+        editor.editor_state.line_tool.recompute_auto_handles();
+        editor.set_tool(Tool::ShapeSelect);
+        assert_eq!(
+            editor.editor_state.shape_select.visible_on(1).count(),
+            1,
+            "切换到鼠标工具应固化待确认曲线并登记图形"
+        );
+        assert!(editor.editor_state.data.current_track_note_count() > 0);
+    }
+
+    #[test]
+    fn test_switch_to_mouse_tool_commits_pending_brush() {
+        let mut editor = test_editor();
+        editor.set_tool(Tool::Brush);
+        // 粗细度 1：单层笔画全部落在基准轨，便于断言
+        editor.brush.set_thickness(1);
+        editor.editor_state.brush_tool.strokes.push(BrushStroke {
+            points: vec![(0.0, 60.0), (1.0, 60.0), (2.0, 60.0)],
+            base_track: 1,
+        });
+        editor.set_tool(Tool::ShapeSelect);
+        assert!(
+            editor.editor_state.data.current_track_note_count() > 0,
+            "切换到鼠标工具应固化待确认笔画"
+        );
+        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 1);
+    }
+
+    #[test]
+    fn test_switch_to_other_drawing_tool_still_discards_pending() {
+        // 反向约束：只有进入「鼠标工具」才是 √；切到其它绘制工具仍是「×」
+        let mut editor = test_editor();
+        draw_pending_rect(&mut editor);
+        editor.set_tool(Tool::Curve);
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            0,
+            "切到其它绘制工具应保持既有「×」语义（丢弃待确认内容）"
+        );
+        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 0);
+    }
+
+    #[test]
+    fn test_switch_to_mouse_tool_without_pending_is_noop() {
+        let mut editor = test_editor();
+        editor.set_tool(Tool::Shape);
+        editor.set_tool(Tool::ShapeSelect);
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+        assert!(editor.editor_state.shape_select.is_empty());
+    }
+
+    // ── 空白拉框（框选） ──────────────────────────────────
+
+    #[test]
+    fn test_marquee_selects_shape_inside_box() {
+        let mut editor = draw_and_confirm_rect();
+        editor.set_tool(Tool::ShapeSelect);
+        // 空白处按下（远离 0..4 × 60..64 的图形）→ 拉出覆盖图形的框
+        editor.handle_shape_select_pressed(50.0, 80.0);
+        assert!(
+            editor.editor_state.shape_select.is_marqueeing(),
+            "空白按下应进入拉框态"
+        );
+        editor.handle_shape_select_moved(0.0, 55.0);
+        editor.handle_shape_select_released();
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            Some(0),
+            "框内图形应被框选选中"
+        );
+        assert!(
+            !editor.editor_state.shape_select.is_marqueeing(),
+            "松手后拉框态应清空"
+        );
+    }
+
+    #[test]
+    fn test_marquee_outside_box_selects_nothing() {
+        let mut editor = draw_and_confirm_rect();
+        editor.set_tool(Tool::ShapeSelect);
+        editor.handle_shape_select_pressed(2.0, 62.0); // 先选中图形
+        assert!(editor.editor_state.shape_select.selected().is_some());
+        // 空白处拉一个与图形不相交的框 → 取消选中
+        editor.handle_shape_select_pressed(50.0, 80.0);
+        editor.handle_shape_select_moved(60.0, 90.0);
+        editor.handle_shape_select_released();
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            None,
+            "框外无图形应保持未选中"
+        );
+    }
+
+    #[test]
+    fn test_tiny_drag_is_click_not_marquee() {
+        let mut editor = draw_and_confirm_rect();
+        editor.set_tool(Tool::ShapeSelect);
+        editor.handle_shape_select_pressed(2.0, 62.0);
+        assert!(editor.editor_state.shape_select.selected().is_some());
+        // 空白处「点一下」（无实际位移）→ 仍是「点空白取消选中」，不构成框选
+        editor.handle_shape_select_pressed(50.0, 80.0);
+        editor.handle_shape_select_moved(50.0, 80.0);
+        editor.handle_shape_select_released();
+        assert_eq!(editor.editor_state.shape_select.selected(), None);
+    }
+
+    #[test]
+    fn test_marquee_picks_topmost_shape() {
+        let mut editor = draw_and_confirm_rect();
+        // 再登记一个大框（全部覆盖），后登记者应视为最上层
+        editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (0.0, 50.0, 40.0, 90.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            Vec::new(),
+        );
+        editor.set_tool(Tool::ShapeSelect);
+        editor.handle_shape_select_pressed(100.0, 100.0);
+        editor.handle_shape_select_moved(0.0, 40.0);
+        editor.handle_shape_select_released();
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            Some(1),
+            "框内命中多个图形时应取最上层（最后登记）"
+        );
+    }
+
+    #[test]
+    fn test_marquee_ignores_hidden_shape_and_other_track() {
+        let mut editor = draw_and_confirm_rect();
+        editor.set_tool(Tool::ShapeSelect);
+        // 切到别的音轨：当前轨无图形 → 框选不应选中任何东西
+        editor.editor_state.data.current_track = 2;
+        editor.handle_shape_select_pressed(50.0, 80.0);
+        editor.handle_shape_select_moved(0.0, 55.0);
+        editor.handle_shape_select_released();
+        assert_eq!(editor.editor_state.shape_select.selected(), None);
     }
 }

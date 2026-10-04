@@ -19,8 +19,10 @@ impl Editor {
         self.marquee_anchor_tick = None;
         let edit_state = std::mem::take(&mut self.editor_state.interaction.edit_state);
 
-        // 图形选中工具：结束拖动 → 提交移动（图形 + 其音符）
-        if self.editor_state.shape_select.is_dragging() {
+        // 图形选中工具：结束拖动（提交移动）或结束空白拉框（按框命中选中）
+        if self.editor_state.shape_select.is_dragging()
+            || self.editor_state.shape_select.is_marqueeing()
+        {
             self.handle_shape_select_released();
             return;
         }
