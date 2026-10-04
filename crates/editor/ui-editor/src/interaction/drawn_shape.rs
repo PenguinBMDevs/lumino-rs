@@ -5,12 +5,16 @@
 //!   音符登记进 `EditorState::shape_select`（见 `record_*` 方法），并绑定本次音符
 //!   创建历史的分组 ID，供撤销/重做同步（见 `Editor::undo/redo`）。
 //! - **点选**：鼠标工具（`Tool::ShapeSelect`）左键按下 —— 命中当前音轨**最上层**
-//!   的可见图形则选中（高亮描边由 `grid::drawn_shape_box` 渲染），点空白取消选中。
+//!   的可见图形则选中（高亮描边 + 选框由 `grid::drawn_shape_box` 渲染），点空白取消选中。
 //! - **框选**：鼠标工具在空白处按下并拖动 → 叠加层实时画出拉框，松手后选中框内
 //!   **最上层**的可见图形（见 [`Editor::finish_shape_marquee`]）。拉框过小视为一次
 //!   普通点击，不改变选中态（保持「点空白取消选中」语义）。
-//! - **拖动移动**：按住选中图形拖动 → 实时预览偏移（叠加层）→ 松手后把该图形生成的
+//! - **选中选框**：选中图形周围绘制屏幕外接框（含四角手柄）——见
+//!   [`Editor::selected_shape_box`]。渲染与命中同源，是「看得见 ↔ 抓得住」的同一口径。
+//! - **拖动移动**：按下并拖动 → 实时预览偏移（叠加层）→ 松手后把该图形生成的
 //!   音符整体按 `MoveOp`（删旧 + 加新）平移，并同步平移几何；历史可撤销/重做。
+//!   拖动入口**统一**为「命中图形 **或** 落在选中图形选框内部」：点选（细线需命中）
+//!   与框选（选中后框内任意位置可拖）两种来源共用同一条移动链路。
 //! - **删除**：Delete 键或右键菜单「删除」→ 快照历史 + 按值删除该图形的全部音符 +
 //!   标记图形已删除；撤销该删除可恢复。
 //!
@@ -28,6 +32,7 @@
 
 use std::collections::{HashMap, HashSet};
 
+use iced_core::{Point, Rectangle, Size};
 use lumino_editor_state::{DrawnShapeSource, ShapeMarquee, ShapeNote, shape_tool::point_in_shape};
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::TickIndexedEvents;
@@ -41,6 +46,13 @@ const HIT_TOLERANCE_PX: f32 = 6.0;
 
 /// 空白拉框的最小屏幕边长（像素）：低于此值视为「一次点击」而非框选
 const MARQUEE_MIN_PX: f32 = 4.0;
+
+/// 选中图形「选框」相对其几何外接框的四周外扩（像素）
+///
+/// 让选框略大于图形本身：细线图形（折线）不至于退化成零宽/零高的框，
+/// 也让「框内拖动」有一圈可抓取的余量。渲染与命中**共用**本常量，
+/// 保证「看到的框」就是「抓得住的框」。
+pub(crate) const SHAPE_BOX_PADDING_PX: f32 = 3.0;
 
 /// 单条画刷笔画的登记三元组：(落笔基准轨, 折线点列, 该笔画生成的音符)
 type StrokeRecord = (usize, Vec<(f32, f32)>, Vec<ShapeNote>);
@@ -206,6 +218,47 @@ impl Editor {
         self.hit_test_drawn_shape(tick, key)
     }
 
+    // ── 选框（选中态外接框） ───────────────────────────────
+
+    /// 选中图形的**选框**（屏幕空间轴对齐矩形，含拖拽实时预览偏移）
+    ///
+    /// 返回值已按四周 [`SHAPE_BOX_PADDING_PX`] 外扩，是**唯一的选框口径**：
+    /// - 渲染（`grid::drawn_shape_box`）用它画框与四角手柄；
+    /// - 命中（[`Self::point_in_selected_box`]）用它判定「框内拖动」。
+    ///
+    /// 渲染与命中同源，杜绝「看到的框抓不住 / 抓得住的框看不见」。
+    /// 无选中、图形不属当前音轨、几何为空（空折线）时返回 `None`。
+    pub(crate) fn selected_shape_box(&self) -> Option<Rectangle> {
+        let shape = self.editor_state.shape_select.selected_shape()?;
+        if shape.track != self.editor_state.data.current_track {
+            return None;
+        }
+        // 正在拖动该图形：选框跟随拖拽预览偏移（文档未变，仅渲染层位移）
+        let (dtick, dkey) = match self.editor_state.shape_select.drag() {
+            Some(d) if d.shape_id == shape.id => (d.delta_tick, d.delta_key),
+            _ => (0.0, 0.0),
+        };
+        let (t0, t1, k0, k1) = shape.source.bounds()?;
+        let a = self.line_pos_screen_pos((t0 + dtick, k0 + dkey));
+        let b = self.line_pos_screen_pos((t1 + dtick, k1 + dkey));
+        let min_x = a.x.min(b.x) - SHAPE_BOX_PADDING_PX;
+        let min_y = a.y.min(b.y) - SHAPE_BOX_PADDING_PX;
+        let w = (a.x - b.x).abs() + SHAPE_BOX_PADDING_PX * 2.0;
+        let h = (a.y - b.y).abs() + SHAPE_BOX_PADDING_PX * 2.0;
+        Some(Rectangle::new(
+            Point::new(min_x, min_y),
+            Size::new(w.max(1.0), h.max(1.0)),
+        ))
+    }
+
+    /// 逻辑坐标点是否落在选中图形的选框内（「框内拖动移动图形」的命中判定）
+    pub(crate) fn point_in_selected_box(&self, tick: f32, key: f32) -> bool {
+        let Some(rect) = self.selected_shape_box() else {
+            return false;
+        };
+        rect.contains(self.line_pos_screen_pos((tick, key)))
+    }
+
     /// 选中指定绘制图形（供右键菜单等外部入口）；`None` = 取消选中
     pub fn select_drawn_shape(&mut self, id: Option<u64>) {
         self.editor_state.shape_select.select(id);
@@ -214,17 +267,33 @@ impl Editor {
 
     // ── 点选 / 拖动 ───────────────────────────────────────
 
-    /// 鼠标工具：左键按下 —— 命中则选中并起拖；点空白则取消选中并**起框**（框选）
+    /// 鼠标工具：左键按下 —— 点选并起拖 / 框内起拖 / 空白起框
+    ///
+    /// 拖动目标的确定顺序（**统一点选与框选两种来源的移动方式**）：
+    /// ① 命中某图形（点选口径，细线需命中描边）→ 选中并拖动它；
+    /// ② 未命中图形，但落在**当前选中图形的选框内部** → 拖动该图形
+    ///    （无需精确点中细线，框内任意位置都能拖）；
+    /// ③ 都不满足 → 空白按下：取消选中并起框（框选；是否构成框选由松手时的
+    ///    屏幕尺度判定，见 [`Self::finish_shape_marquee`]）。
     pub(crate) fn handle_shape_select_pressed(&mut self, tick: f32, key: f32) {
         let hit = self.hit_test_drawn_shape(tick, key);
-        self.editor_state.shape_select.select(hit);
-        if let Some(id) = hit {
-            self.editor_state.shape_select.begin_drag(id, tick, key);
-        } else {
-            // 空白按下：起框。是否真的构成框选由松手时的屏幕尺度判定，
-            // 因此「点一下空白取消选中」的既有语义不受影响。
-            let snapped = self.snap_tick(tick);
-            self.editor_state.shape_select.begin_marquee(snapped, key);
+        let drag_target = match hit {
+            Some(id) => Some(id),
+            None => match self.editor_state.shape_select.selected() {
+                Some(id) if self.point_in_selected_box(tick, key) => Some(id),
+                _ => None,
+            },
+        };
+        match drag_target {
+            Some(id) => {
+                self.editor_state.shape_select.select(Some(id));
+                self.editor_state.shape_select.begin_drag(id, tick, key);
+            }
+            None => {
+                self.editor_state.shape_select.select(None);
+                let snapped = self.snap_tick(tick);
+                self.editor_state.shape_select.begin_marquee(snapped, key);
+            }
         }
         // 仅叠加层视觉变化（文档未变）：清网格缓存驱动重绘。
         // **不能**用 `mark_notes_changed()`——那会置 notes_changed 并重建空间索引（O(N)）。
@@ -642,10 +711,19 @@ mod tests {
         editor.handle_shape_tool_released();
         assert!(editor.confirm_shape_tool());
         editor.set_tool(Tool::ShapeSelect);
+        // 命中测试口径：椭圆内部，而非外接矩形
+        assert_eq!(
+            editor.hit_test_drawn_shape(2.0, 62.0),
+            Some(0),
+            "圆心应命中"
+        );
+        assert_eq!(
+            editor.hit_test_drawn_shape(0.05, 60.05),
+            None,
+            "外接矩形角落（椭圆之外）不应命中"
+        );
         editor.handle_shape_select_pressed(2.0, 62.0);
         assert!(editor.editor_state.shape_select.selected().is_some());
-        editor.handle_shape_select_pressed(0.05, 60.05);
-        assert_eq!(editor.editor_state.shape_select.selected(), None);
     }
 
     #[test]
@@ -1073,5 +1151,246 @@ mod tests {
         editor.handle_shape_select_moved(0.0, 55.0);
         editor.handle_shape_select_released();
         assert_eq!(editor.editor_state.shape_select.selected(), None);
+    }
+
+    // ── 选中选框 + 框内拖动（统一移动方式） ─────────────────
+
+    /// 一条大 L 形折线（逻辑 0..500 × 60..80）+ 与之匹配的文档音符，
+    /// 并已完成选中。选框内部有大量「远离折线」的空白，用于验证「框内拖动」。
+    fn editor_with_selected_polyline() -> Editor {
+        let mut editor = Editor::new();
+        seed_notes(
+            &mut editor,
+            2,
+            1,
+            &[
+                Note::new(0.0, 60, 1.0),
+                Note::new(500.0, 60, 1.0),
+                Note::new(500.0, 80, 1.0),
+            ],
+        );
+        editor.editor_state.view.snap_precision = 1.0;
+        let points = vec![(0.0, 60.0), (500.0, 60.0), (500.0, 80.0)];
+        let notes = vec![
+            ShapeNote {
+                track: 1,
+                tick: 0.0,
+                key: 60,
+                length: 1.0,
+            },
+            ShapeNote {
+                track: 1,
+                tick: 500.0,
+                key: 60,
+                length: 1.0,
+            },
+            ShapeNote {
+                track: 1,
+                tick: 500.0,
+                key: 80,
+                length: 1.0,
+            },
+        ];
+        let id = editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Polyline { points },
+            notes,
+        );
+        editor.set_tool(Tool::ShapeSelect);
+        editor.editor_state.shape_select.select(Some(id));
+        editor
+    }
+
+    #[test]
+    fn test_selected_shape_box_exists_and_padding() {
+        let editor = test_editor();
+        assert!(
+            editor.selected_shape_box().is_none(),
+            "无选中时不应有选框"
+        );
+
+        let editor2 = editor_with_selected_polyline();
+        let rect = editor2.selected_shape_box().expect("选中后应有选框");
+        assert!(rect.width > 0.0 && rect.height > 0.0, "选框必须有面积");
+        // 折线逻辑 0..500 × 60..80 → 屏幕外接框按 padding 外扩
+        let a = editor2.line_pos_screen_pos((0.0, 60.0));
+        let b = editor2.line_pos_screen_pos((500.0, 80.0));
+        let min_x = a.x.min(b.x) - SHAPE_BOX_PADDING_PX;
+        assert!(
+            (rect.position().x - min_x).abs() < 1e-3,
+            "选框左边界应为几何外接框左边界外扩 padding"
+        );
+
+        // 图形属 track 1，切到 track 2 后不应再有选框
+        let mut editor3 = editor_with_selected_polyline();
+        editor3.editor_state.data.current_track = 2;
+        assert!(
+            editor3.selected_shape_box().is_none(),
+            "图形不属当前音轨时不应有选框"
+        );
+    }
+
+    #[test]
+    fn test_press_inside_selection_box_keeps_selection_and_start_drag() {
+        let mut editor = editor_with_selected_polyline();
+        // (250, 70) 位于折线选框内部，但远离折线本身（点选命中应为 None）
+        assert_eq!(editor.hit_test_drawn_shape(250.0, 70.0), None);
+        assert!(editor.point_in_selected_box(250.0, 70.0), "该点应在选框内");
+        let id = editor.editor_state.shape_select.selected();
+        editor.handle_shape_select_pressed(250.0, 70.0);
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            id,
+            "点选框内部不应取消选中"
+        );
+        assert!(editor.editor_state.shape_select.is_dragging(), "应进入拖动");
+        assert_eq!(
+            editor.editor_state.shape_select.drag().map(|d| d.shape_id),
+            id,
+            "拖动的应是当前选中图形"
+        );
+        // 未移动即松手：不产生移动，选中保持
+        editor.handle_shape_select_released();
+        assert_eq!(editor.editor_state.shape_select.selected(), id);
+        assert!(editor.editor_state.shape_select.shapes()[0].moves.is_empty());
+    }
+
+    #[test]
+    fn test_drag_inside_selection_box_moves_polyline_and_notes() {
+        let mut editor = editor_with_selected_polyline();
+        // 框内空白处按下并拖动 (+10 tick, +2 key)
+        editor.handle_shape_select_pressed(250.0, 70.0);
+        editor.handle_shape_select_moved(260.0, 72.0);
+        editor.handle_shape_select_released();
+
+        match &editor.editor_state.shape_select.shapes()[0].source {
+            DrawnShapeSource::Polyline { points } => assert_eq!(
+                points,
+                &vec![(10.0, 62.0), (510.0, 62.0), (510.0, 82.0)],
+                "折线几何应整体平移 (+10, +2)"
+            ),
+            other => panic!("期望 Polyline，实际 {other:?}"),
+        }
+        assert_eq!(
+            editor.editor_state.shape_select.shapes()[0].moves.len(),
+            1,
+            "应记录一次移动"
+        );
+        // 文档音符随之平移
+        let mut keys: Vec<u16> = note_keys(&editor);
+        keys.sort_unstable();
+        assert_eq!(keys, vec![62, 62, 82], "音符应整体上移 2 个半音");
+        let mut ticks: Vec<u32> = note_ticks(&editor);
+        ticks.sort_unstable();
+        assert_eq!(ticks, vec![10, 510, 510], "音符应整体右移 10 tick");
+
+        // 撤销 → 几何与音符复原
+        assert!(editor.undo(), "应能撤销框内拖动产生的移动");
+        match &editor.editor_state.shape_select.shapes()[0].source {
+            DrawnShapeSource::Polyline { points } => assert_eq!(
+                points,
+                &vec![(0.0, 60.0), (500.0, 60.0), (500.0, 80.0)],
+                "撤销后几何应复原"
+            ),
+            other => panic!("期望 Polyline，实际 {other:?}"),
+        }
+        assert!(note_keys(&editor).contains(&60));
+    }
+
+    #[test]
+    fn test_point_hit_takes_priority_over_selection_box() {
+        let mut editor = editor_with_selected_polyline();
+        let poly_id = editor
+            .editor_state
+            .shape_select
+            .selected()
+            .expect("前置：折线已选中");
+        // 在折线选框内部再登记一个小矩形（后登记 = 最上层）
+        let rect_id = editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (240.0, 68.0, 260.0, 72.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            Vec::new(),
+        );
+        assert!(
+            editor.point_in_selected_box(250.0, 70.0),
+            "前置：该点确在折线选框内"
+        );
+        editor.handle_shape_select_pressed(250.0, 70.0);
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            Some(rect_id),
+            "点中图形应优先于「选框内部拖动」（否则无法选中重叠的其它图形）"
+        );
+        assert_eq!(
+            editor.editor_state.shape_select.drag().map(|d| d.shape_id),
+            Some(rect_id),
+            "拖动应落在被命中的那个图形上"
+        );
+        editor.handle_shape_select_released();
+        assert_eq!(editor.editor_state.shape_select.selected(), Some(rect_id));
+        assert_ne!(rect_id, poly_id, "两个图形应各有独立 ID");
+    }
+
+    #[test]
+    fn test_press_outside_selection_box_clears_and_starts_marquee() {
+        let mut editor = editor_with_selected_polyline();
+        // (900, 10) 落在选框外 → 取消选中并起框
+        assert!(!editor.point_in_selected_box(900.0, 10.0));
+        editor.handle_shape_select_pressed(900.0, 10.0);
+        assert_eq!(
+            editor.editor_state.shape_select.selected(),
+            None,
+            "选框外按下应取消选中"
+        );
+        assert!(
+            editor.editor_state.shape_select.is_marqueeing(),
+            "选框外按下应起框"
+        );
+        assert!(!editor.editor_state.shape_select.is_dragging());
+        editor.handle_shape_select_released();
+    }
+
+    #[test]
+    fn test_selection_box_follows_drag_preview_offset() {
+        let mut editor = editor_with_selected_polyline();
+        let base = editor.selected_shape_box().expect("应有选框");
+        editor.handle_shape_select_pressed(250.0, 70.0);
+        editor.handle_shape_select_moved(260.0, 72.0);
+        let dragged = editor.selected_shape_box().expect("拖拽中仍应有选框");
+        // 拖拽预览：选框应随预览偏移移动（未落文档）
+        let dx = dragged.position().x - base.position().x;
+        let dy = dragged.position().y - base.position().y;
+        assert!(
+            (dx - 10.0 * editor.editor_state.view.zoom_x).abs() < 1e-3,
+            "选框 X 应跟随预览偏移，实际 dx={dx}"
+        );
+        assert!((dy + 2.0 * editor.editor_state.view.zoom_y).abs() < 1e-3, "选框 Y 应跟随预览偏移（key 增大 y 减小），实际 dy={dy}");
+        editor.handle_shape_select_released();
+    }
+
+    #[test]
+    fn test_press_just_outside_box_top_is_not_grabbed() {
+        // 真实按下链路（`handle_tool_pressed`）必须用**未取整**的原始 key：
+        // 选框命中区精细到 3px，若按键位整数化（zoom_y=20 时 1 key = 20px），
+        // 框外 5px 的点会被量化进框内、被误判成「框内拖动」而不是起框。
+        let mut editor = editor_with_selected_polyline();
+        let top_y = editor.line_pos_screen_pos((0.0, 80.0)).y - SHAPE_BOX_PADDING_PX;
+        let x = editor.line_pos_screen_pos((250.0, 70.0)).x;
+        let pos = iced_core::Point::new(x, top_y - 5.0);
+        let snapped = editor.snap_tick(editor.pos_to_tick(pos));
+        editor.handle_tool_pressed(pos, false, snapped, 0);
+        assert!(
+            editor.editor_state.shape_select.is_marqueeing(),
+            "框外按下应起框，而非被整数 key 量化误判为框内拖动"
+        );
+        assert_eq!(editor.editor_state.shape_select.selected(), None);
+        assert!(!editor.editor_state.shape_select.is_dragging());
     }
 }

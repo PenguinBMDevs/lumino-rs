@@ -1,4 +1,4 @@
-//! 已绘制图形叠加层：**常显轮廓**（鼠标工具）+ **选中高亮** + **框选矩形**
+//! 已绘制图形叠加层：**常显轮廓**（鼠标工具）+ **选中高亮** + **选中选框** + **框选矩形**
 //!
 //! 「鼠标工具」（`Tool::ShapeSelect`）需要「看得见才点得中」：
 //! - **常显轮廓**：鼠标工具激活时，把当前音轨上全部可见图形以弱色细线画出，
@@ -6,6 +6,9 @@
 //!   图形轮廓不可见，表现为「图案消失了、无从框选」。
 //! - **选中高亮**：被选中图形叠加发光描边（外发光 + 实线双描边），与
 //!   `shape_tool_box` 的待确认预览区分（预览为细线，高亮更粗且带光晕）。
+//! - **选中选框**：选中图形的屏幕外接框（含四角手柄），把「当前选中了哪个图形、
+//!   从哪里可以拖动它」明示出来。框内区域就是可拖动区（命中判定见
+//!   `interaction::drawn_shape` 的 `point_in_selected_box`）——渲染与命中同源。
 //! - **框选矩形**：空白处拉框时实时绘制半透明选择框。
 //!
 //! 渲染口径与命中测试同源：形状工具图形走 `shape_vertices` / 椭圆，折线
@@ -13,7 +16,7 @@
 //! 撤销隐藏时绘制。
 
 use crate::Editor;
-use iced_core::{Color, Point, Rectangle};
+use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::{DrawnShape, DrawnShapeSource};
 use lumino_editor_state::shape_tool::{effective_rect, shape_vertices};
@@ -33,6 +36,12 @@ const IDLE_ALPHA: f32 = 0.55;
 const MARQUEE_FILL_ALPHA: f32 = 0.12;
 /// 框选矩形描边透明度
 const MARQUEE_STROKE_ALPHA: f32 = 0.75;
+/// 选中选框描边宽度（像素）
+const BOX_STROKE_WIDTH: f32 = 1.5;
+/// 选中选框四角手柄边长（像素）
+const BOX_HANDLE_SIZE: f32 = 6.0;
+/// 选中选框描边透明度
+const BOX_STROKE_ALPHA: f32 = 0.85;
 
 /// 生成椭圆路径（本 iced 版本无 `Path::ellipse`，改用多边形逼近）
 fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
@@ -157,9 +166,69 @@ fn rect_path(a: Point, b: Point) -> Path {
     })
 }
 
-/// 绘制已绘制图形叠加层（常显轮廓 / 选中高亮 / 框选矩形）
+/// 叠加层绘制内容（与渲染后端解耦，便于单测「要不要画、画了什么」）
+struct Overlay {
+    /// 常显轮廓（鼠标工具下当前轨全部可见图形，排除选中者）
+    idle_paths: Vec<Path>,
+    /// 选中高亮（发光 + 实线双描边）
+    selected_path: Option<Path>,
+    /// 选中选框（外接框 + 四角手柄）
+    selection_box: Option<Rectangle>,
+    /// 框选拉框矩形
+    marquee_path: Option<Path>,
+}
+
+impl Overlay {
+    fn collect(editor: &Editor) -> Self {
+        // 鼠标工具激活时把全部可见图形以弱色轮廓常显：没有它，「图案」在切换工具后
+        // 就只剩音符、看不见可选中范围（用户反馈：切换后图案消失、无从框选）。
+        // 其余工具只画选中高亮，避免常显轮廓干扰正常音符编辑。
+        let select_mode = editor.current_tool() == lumino_message::Tool::ShapeSelect;
+        let current_track = editor.editor_state.data.current_track;
+        let selected_id = editor.editor_state.shape_select.selected();
+        let idle_paths: Vec<Path> = if select_mode {
+            editor
+                .editor_state
+                .shape_select
+                .visible_on(current_track)
+                .filter(|s| Some(s.id) != selected_id)
+                .filter_map(|s| outline_path(editor, s, 0.0, 0.0))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let marquee_path = editor
+            .editor_state
+            .shape_select
+            .marquee()
+            .map(|m| {
+                let (t0, t1, k0, k1) = m.rect();
+                let a = editor.line_pos_screen_pos((t0, k0));
+                let b = editor.line_pos_screen_pos((t1, k1));
+                rect_path(a, b)
+            });
+        Self {
+            idle_paths,
+            selected_path: selected_outline(editor),
+            // 选中选框：与命中判定同源（`Editor::selected_shape_box`），
+            // 保证「看到的框」就是「抓得住的框」。
+            selection_box: editor.selected_shape_box(),
+            marquee_path,
+        }
+    }
+
+    /// 四者皆无 → 不产生空几何
+    fn is_empty(&self) -> bool {
+        self.idle_paths.is_empty()
+            && self.selected_path.is_none()
+            && self.selection_box.is_none()
+            && self.marquee_path.is_none()
+    }
+}
+
+/// 绘制已绘制图形叠加层（常显轮廓 / 选中高亮 / 选中选框 / 框选矩形）
 ///
-/// 三者皆无时返回 `None`（不产生空几何）。
+/// 四者皆无时返回 `None`（不产生空几何）。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -176,49 +245,21 @@ pub fn draw(
     );
     let marquee_color = palette.primary.base.color;
 
-    // 鼠标工具激活时把全部可见图形以弱色轮廓常显：没有它，「图案」在切换工具后
-    // 就只剩音符、看不见可选中范围（用户反馈：切换后图案消失、无从框选）。
-    // 其余工具只画选中高亮，避免常显轮廓干扰正常音符编辑。
-    let select_mode = editor.current_tool() == lumino_message::Tool::ShapeSelect;
-    let current_track = editor.editor_state.data.current_track;
-    let selected_id = editor.editor_state.shape_select.selected();
-    let idle_paths: Vec<Path> = if select_mode {
-        editor
-            .editor_state
-            .shape_select
-            .visible_on(current_track)
-            .filter(|s| Some(s.id) != selected_id)
-            .filter_map(|s| outline_path(editor, s, 0.0, 0.0))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    let selected_path = selected_outline(editor);
-    let marquee_path = editor
-        .editor_state
-        .shape_select
-        .marquee()
-        .map(|m| {
-            let (t0, t1, k0, k1) = m.rect();
-            let a = editor.line_pos_screen_pos((t0, k0));
-            let b = editor.line_pos_screen_pos((t1, k1));
-            rect_path(a, b)
-        });
-
-    if idle_paths.is_empty() && selected_path.is_none() && marquee_path.is_none() {
+    let overlay = Overlay::collect(editor);
+    if overlay.is_empty() {
         return None;
     }
 
     let mut frame = canvas::Frame::new(renderer, bounds.size());
 
-    for path in &idle_paths {
+    for path in &overlay.idle_paths {
         frame.stroke(
             path,
             Stroke::default().with_width(IDLE_WIDTH).with_color(idle),
         );
     }
 
-    if let Some(path) = &selected_path {
+    if let Some(path) = &overlay.selected_path {
         let glow = Color::from_rgba(strong.r, strong.g, strong.b, GLOW_ALPHA);
         frame.stroke(path, Stroke::default().with_width(GLOW_WIDTH).with_color(glow));
         frame.stroke(
@@ -227,7 +268,36 @@ pub fn draw(
         );
     }
 
-    if let Some(path) = &marquee_path {
+    // 选中选框：外侧描边 + 四角实心手柄（手柄压在框角上，便于识别「可拖动」）
+    if let Some(rect) = overlay.selection_box {
+        let box_color = Color::from_rgba(strong.r, strong.g, strong.b, BOX_STROKE_ALPHA);
+        let path = Path::rectangle(rect.position(), rect.size());
+        frame.stroke(
+            &path,
+            Stroke::default()
+                .with_width(BOX_STROKE_WIDTH)
+                .with_color(box_color),
+        );
+        let half = BOX_HANDLE_SIZE / 2.0;
+        let corners = [
+            rect.position(),
+            Point::new(rect.position().x + rect.width, rect.position().y),
+            Point::new(rect.position().x, rect.position().y + rect.height),
+            Point::new(
+                rect.position().x + rect.width,
+                rect.position().y + rect.height,
+            ),
+        ];
+        for c in corners {
+            let handle = Path::rectangle(
+                Point::new(c.x - half, c.y - half),
+                Size::new(BOX_HANDLE_SIZE, BOX_HANDLE_SIZE),
+            );
+            frame.fill(&handle, strong);
+        }
+    }
+
+    if let Some(path) = &overlay.marquee_path {
         let fill = Color::from_rgba(
             marquee_color.r,
             marquee_color.g,
@@ -254,11 +324,13 @@ pub fn draw(
 mod tests {
     use super::*;
     use crate::Editor;
+    use crate::tests::test_helpers::seed_notes;
     use lumino_editor_state::ShapeKind;
 
-    /// 空编辑器 + 一个已登记的矩形图形（逻辑 0..4 × key 60..64）
+    /// 非 Conductor 轨（track 1）+ 一个已登记的矩形图形（逻辑 0..4 × key 60..64）
     fn editor_with_rect() -> Editor {
         let mut editor = Editor::new();
+        seed_notes(&mut editor, 2, 1, &[]);
         editor.editor_state.shape_select.add(
             1,
             None,
@@ -313,5 +385,75 @@ mod tests {
     fn test_rect_path_accepts_reversed_corners() {
         // 反向两角 → 仍能规范化成矩形路径（仅构建，不断言像素）
         let _p = rect_path(Point::new(10.0, 20.0), Point::new(2.0, 5.0));
+    }
+
+    #[test]
+    fn test_overlay_includes_selection_box_only_when_selected() {
+        let mut editor = editor_with_rect();
+        // 未选中且非鼠标工具 → 无内容，不产出几何
+        let overlay = Overlay::collect(&editor);
+        assert!(overlay.selection_box.is_none(), "未选中不应有选框");
+        assert!(overlay.selected_path.is_none());
+        assert!(overlay.is_empty(), "无内容时不应产出几何");
+
+        // 选中后 → 有选框，叠加层非空（渲染侧不再返回 None）
+        let id = editor.editor_state.shape_select.shapes()[0].id;
+        editor.editor_state.shape_select.select(Some(id));
+        let overlay = Overlay::collect(&editor);
+        let rect = overlay.selection_box.expect("选中后应有选框");
+        assert!(rect.width > 0.0 && rect.height > 0.0, "选框必须有面积");
+        assert!(overlay.selected_path.is_some(), "选中高亮仍应保留");
+        assert!(!overlay.is_empty(), "有选框时应产出几何");
+    }
+
+    #[test]
+    fn test_mouse_tool_shows_idle_outlines_and_marquee() {
+        use lumino_message::Tool;
+        let mut editor = editor_with_rect();
+        // 再加一个图形，验证「常显轮廓排除选中者」：被选中者单独走高亮
+        editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (8.0, 60.0, 12.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            Vec::new(),
+        );
+        editor.set_tool(Tool::ShapeSelect);
+        let first = editor.editor_state.shape_select.shapes()[0].id;
+        editor.editor_state.shape_select.select(Some(first));
+        editor.editor_state.shape_select.begin_marquee(0.0, 60.0);
+        editor.editor_state.shape_select.update_marquee(20.0, 70.0);
+
+        let overlay = Overlay::collect(&editor);
+        assert_eq!(
+            overlay.idle_paths.len(),
+            1,
+            "常显轮廓应排除选中的那一个（它走高亮）"
+        );
+        assert!(overlay.marquee_path.is_some(), "拉框中应画出拉框矩形");
+        assert!(overlay.selection_box.is_some());
+    }
+
+    #[test]
+    fn test_selection_box_encloses_shape_screen_bounds() {
+        let mut editor = editor_with_rect();
+        let id = editor.editor_state.shape_select.shapes()[0].id;
+        editor.editor_state.shape_select.select(Some(id));
+        let rect = editor.selected_shape_box().expect("应有选框");
+        // 图形逻辑 0..4 × 60..64 的屏幕两角都应落在选框内部（选框只增不减）
+        let corners = [
+            editor.line_pos_screen_pos((0.0, 60.0)),
+            editor.line_pos_screen_pos((4.0, 64.0)),
+        ];
+        for c in corners {
+            assert!(
+                rect.contains(c),
+                "选框应包住图形屏幕角点 {c:?}，实际 {rect:?}"
+            );
+        }
     }
 }

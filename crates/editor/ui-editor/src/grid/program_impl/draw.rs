@@ -116,7 +116,7 @@ pub(crate) fn draw(
     }
 
     {
-        // 已绘制图形选中高亮（鼠标工具）：与工具无关，选中即绘制
+        // 已绘制图形叠加层（常显轮廓 / 选中高亮 / 选中选框 / 拉框）：与工具无关，选中即绘制
         puffin::profile_scope!("draw::drawn_shape_box");
         if let Some(sel_geom) = crate::grid::drawn_shape_box::draw(editor, renderer, theme, bounds) {
             geometries.push(sel_geom);

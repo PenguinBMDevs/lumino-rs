@@ -288,6 +288,14 @@ impl ShapeSelectState {
         })
     }
 
+    /// 当前选中图形的**逻辑外接框** `(min_tick, max_tick, min_key, max_key)`
+    ///
+    /// UI 层以此换算「选框」（选中态的框选框 + 框内拖动命中区）。
+    /// 无选中 / 几何为空（空折线）时返回 `None`。
+    pub fn selected_bounds(&self) -> Option<(f32, f32, f32, f32)> {
+        self.selected_shape()?.source.bounds()
+    }
+
     /// 当前选中的图形对象（可变）
     pub fn selected_shape_mut(&mut self) -> Option<&mut DrawnShape> {
         let id = self.selected?;
@@ -537,6 +545,39 @@ mod tests {
         st.select(Some(a));
         st.on_undo_group(10);
         assert_eq!(st.selected(), None, "被隐藏的图形不应保持选中");
+    }
+
+    #[test]
+    fn test_selected_bounds_normalizes_and_requires_selection() {
+        let mut st = ShapeSelectState::default();
+        // 未选中 → None（选框无从计算）
+        assert_eq!(st.selected_bounds(), None);
+        let a = st.add(1, Some(11), rect_source(), vec![]);
+        st.select(Some(a));
+        // 逻辑外接框规范化为 (min_tick, max_tick, min_key, max_key)
+        assert_eq!(st.selected_bounds(), Some((0.0, 4.0, 60.0, 64.0)));
+        // 空折线几何 → None（无外接框）
+        let b = st.add(1, None, DrawnShapeSource::Polyline { points: Vec::new() }, vec![]);
+        st.select(Some(b));
+        assert_eq!(st.selected_bounds(), None);
+        // 撤销创建隐藏后 → 无选中 → None
+        st.select(Some(a));
+        st.on_undo_group(11);
+        assert_eq!(st.selected_bounds(), None, "隐藏图形不应再有选框");
+    }
+
+    #[test]
+    fn test_selected_bounds_for_reversed_shape_rect() {
+        let mut st = ShapeSelectState::default();
+        let s = DrawnShapeSource::Shape {
+            kind: ShapeKind::Rectangle,
+            rect: (9.0, 70.0, 1.0, 62.0),
+            shift_constrained: false,
+            filled: false,
+        };
+        let a = st.add(1, None, s, vec![]);
+        st.select(Some(a));
+        assert_eq!(st.selected_bounds(), Some((1.0, 9.0, 62.0, 70.0)));
     }
 
     #[test]
