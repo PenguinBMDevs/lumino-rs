@@ -24,7 +24,9 @@ mod confirm;
 pub(crate) mod fill;
 pub(crate) mod geom;
 mod hit_test;
-mod paths;
+// `pub(crate)`：形状工具描边复用同一套逐音高行解析（`paths::path_notes`），
+// 「曲线轮廓」与「形状描边」必须同源，不允许各自长一套。
+pub(crate) mod paths;
 
 #[cfg(test)]
 mod tests;

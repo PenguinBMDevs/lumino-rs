@@ -3,9 +3,15 @@
 //! 与曲线工具（`line_tool`）同构：拖拽拉出外接框 → 实时预览 → √ 批量确认生成音符。
 //! 区别在于形状工具是「按住拖拽拉框」范式（曲线工具是「多点锚点」范式）。
 //!
-//! 画出的图形在确认（√）前作为临时叠加；确认后转成音符（**每格一个，长度 = 吸附精度**）。
-//! 与曲线工具一样，形状不保存为矢量对象，而是「固化为音符」——但音符生成仍走 snap 网格，
-//! 尚未对齐曲线工具的蜘蛛网式逐音高行解析（`interaction/line_tool/paths.rs`）。
+//! 画出的图形在确认（√）前作为临时叠加；确认后转成音符。与曲线工具一样，
+//! 形状不保存为矢量对象，而是「固化为音符」，且**描边与填充分两条口径**：
+//!
+//! - **描边（轮廓，`filled = false`）**：走形状边界的**连续几何**
+//!   （[`shape_outline_path`]）→ 与曲线工具轮廓**同源**的蜘蛛网式逐音高行解析
+//!   （`ui-editor` 的 `line_tool::paths::path_notes`）：每个音高行一条音符、
+//!   两两无缝连奏、长度自然变化，**不使用吸附精度**，切分档位也不作用于它；
+//! - **填充（`filled = true`）**：仍是覆盖格点（[`shape_cells`]）——每格一条
+//!   snap 长音符；开启「x 分音符」切分档位时按行合并连续格点后按全局网格切分。
 //!
 //! 填充桶（`fill_enabled`）决定确认时是否额外生成图形内部音符：
 //! 既可在拉框时开着填充桶直接拉出实心图形，也可在拉出轮廓后再次用填充桶点选填充。
@@ -13,7 +19,10 @@
 mod geometry;
 mod state;
 
-pub use geometry::{effective_rect, point_in_shape, shape_cells, shape_vertices};
+pub use geometry::{
+    CIRCLE_OUTLINE_SEGMENTS, effective_rect, point_in_shape, shape_cells, shape_outline_path,
+    shape_vertices,
+};
 
 /// 形状类型
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]

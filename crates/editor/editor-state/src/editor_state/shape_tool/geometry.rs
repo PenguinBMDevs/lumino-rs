@@ -1,6 +1,12 @@
-//! 形状工具几何计算：外接框规范化、屏幕空间正图形约束、顶点、内外判定与格点生成
+//! 形状工具几何计算：外接框规范化、屏幕空间正图形约束、顶点、内外判定、格点与描边折线
 
 use super::ShapeKind;
+
+/// 圆形**描边折线**的采样段数（与预览渲染的 64 段同量级）
+///
+/// 只决定椭圆被折线逼近的精细度：`path_notes` 对折线跨音高行的段是**解析展开**的
+/// （逐行插值求交点），不会因段数少而漏行，故无需随缩放/半径自适应。
+pub const CIRCLE_OUTLINE_SEGMENTS: usize = 64;
 
 /// 规范化外接框：保证 lo <= hi（与拖拽方向无关）
 pub(super) fn normalize_rect(a: (f32, f32), b: (f32, f32)) -> (f32, f32, f32, f32) {
@@ -182,8 +188,13 @@ fn point_in_triangle(p: (f32, f32), a: (f32, f32), b: (f32, f32), c: (f32, f32))
 
 /// 生成图形覆盖的网格格点（逻辑坐标：tick = snap 倍数、key 整数）
 ///
-/// - `filled = true`：图形内部全部格点；
-/// - `filled = false`：仅边界格点（轮廓，用于空心图形）。
+/// - `filled = true`：图形内部全部格点（**形状工具的填充腿走这一支**）；
+/// - `filled = false`：仅边界格点（空心图形的网格轮廓）。
+///
+/// ⚠️ **描边（轮廓）的音符生成不走本函数**：形状工具的描边改走
+/// [`shape_outline_path`]（边界连续几何）→ 蜘蛛网式逐音高行解析，与曲线工具轮廓同源
+/// （见 `ui-editor` 的 `interaction/shape_tool.rs`）；`filled = false` 仅保留为
+/// 「按 snap 网格枚举轮廓格点」这一几何查询本身，供其它调用方使用。
 ///
 /// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数，
 /// 用于屏幕空间的正图形约束（见 `effective_rect`）。
@@ -245,4 +256,56 @@ pub fn shape_cells(
         }
     }
     cells
+}
+
+/// 形状**描边**（轮廓）折线，逻辑坐标 `(tick, key)`，**闭合环：末点 == 首点**
+///
+/// 与 [`shape_cells`] 的「按 snap 网格枚举轮廓格点」相对：这里给出的是形状边界的
+/// **连续几何**，供「音符生成」走与曲线工具轮廓同源的蜘蛛网式逐音高行解析
+/// （`ui-editor` 的 `interaction::line_tool::paths::path_notes`）——每个音高行一条
+/// 音符、两两无缝连奏、长度由边界与行边界的解析交点决定，不再依赖吸附精度。
+///
+/// - 矩形 / 三角形：顶点 + 闭合点（顶点序与 [`shape_vertices`] 一致，
+///   闭合环如何起头交给 `path_notes` 的 `loop_from_left` 决定）；
+/// - 圆：按椭圆参数采样 [`CIRCLE_OUTLINE_SEGMENTS`] 段 + 闭合点。末点**显式取首点**
+///   而不是再算一次 `cos(TAU)`——`path_notes` 靠 `pts[0] == pts[last]` 识别闭合环，
+///   浮点采样下 `cos(TAU)` 未必逐位等于 `cos(0)`，差一位就会退化按开放路径处理
+///   （多做首尾拉伸，接缝处留下接痕）。
+///
+/// `px_per_tick` / `px_per_key` 为卷帘 X(tick) / Y(key) 方向每单位像素数，
+/// 用于屏幕空间的正图形约束（见 [`effective_rect`]）。渲染与生成必须传同一组尺度，
+/// 否则「看到的图形」与「生成的音符」分叉。
+pub fn shape_outline_path(
+    kind: ShapeKind,
+    rect: (f32, f32, f32, f32),
+    shift_constrained: bool,
+    px_per_tick: f32,
+    px_per_key: f32,
+) -> Vec<(f32, f32)> {
+    let rect = effective_rect(kind, rect, shift_constrained, px_per_tick, px_per_key);
+    let mut out: Vec<(f32, f32)> = match kind {
+        ShapeKind::Rectangle => {
+            let (x0, y0, x1, y1) = rect;
+            vec![(x0, y0), (x1, y0), (x1, y1), (x0, y1)]
+        }
+        ShapeKind::Triangle => normal_triangle_verts(rect).to_vec(),
+        ShapeKind::Circle => {
+            let (x0, y0, x1, y1) = rect;
+            let mx = (x0 + x1) / 2.0;
+            let my = (y0 + y1) / 2.0;
+            let rx = (x1 - x0) / 2.0;
+            let ry = (y1 - y0) / 2.0;
+            (0..CIRCLE_OUTLINE_SEGMENTS)
+                .map(|i| {
+                    let a = (i as f32 / CIRCLE_OUTLINE_SEGMENTS as f32) * std::f32::consts::TAU;
+                    (mx + rx * a.cos(), my + ry * a.sin())
+                })
+                .collect()
+        }
+    };
+    // 显式闭合（理由见函数文档：闭合环判定是逐位相等）
+    if let Some(&first) = out.first() {
+        out.push(first);
+    }
+    out
 }

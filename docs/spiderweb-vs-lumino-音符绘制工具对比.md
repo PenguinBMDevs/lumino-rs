@@ -142,7 +142,15 @@
 
 1. **引擎已就位，工具是缺口**：Lumino 的曲线→音符（`paths.py`）与填充几何（`custom.py`）已 1:1 移植，语义参考可**直接复用 Spiderweb 的算法**（甚至逐函数对照移植），实现成本主要在**交互层 + 参数面板**。
 2. **`notes/` 24 模块 → 已搬 2 个**：`arc / bezier / claw / convert / engine / envelope / fonts / funnel / hzbass / joined / pattern / polygon / shrink / smooth / strum / text / tumour` 均未移植。建议按 P0 顺序：`tumour → claw → strum → pattern → funnel/hzbass → convert/joined → polygon/arc`。
-3. **Shape 工具本身还没对齐蜘蛛网语义**：`ui-editor/src/interaction/shape_tool.rs:7-9` 自述「音符生成**尚未**对齐曲线工具的蜘蛛网式处理」，仍是「按 snap 网格枚举格点、每格一个定长音符」——这是 P0 之前的**存量欠债**（形状与曲线两套音符生成语义不一致）。
+3. ~~**Shape 工具本身还没对齐蜘蛛网语义**：`ui-editor/src/interaction/shape_tool.rs:7-9` 自述「音符生成**尚未**对齐曲线工具的蜘蛛网式处理」，仍是「按 snap 网格枚举格点、每格一个定长音符」——这是 P0 之前的**存量欠债**（形状与曲线两套音符生成语义不一致）。~~
+   **✅ 已对齐（2026-10-04）**：形状工具的**描边**改走形状边界闭合折线
+   （`editor-state/src/editor_state/shape_tool/geometry.rs` 新增 `shape_outline_path`：矩形/三角形取顶点 + 闭合点，
+   圆按 64 段采样椭圆且末点显式复用首点），再交给曲线工具同一套逐音高行解析
+   （`ui-editor/src/interaction/line_tool/paths.rs` `path_notes`）——每个音高行一条、两两无缝、
+   长度由解析交点决定，**不再使用吸附精度**（闭合环从最左点重启、竖直段各占 1 tick 同口径）；
+   **填充**腿仍是覆盖格点（`shape_cells(filled = true)` + 可选 `chop_span` 切分），
+   与曲线工具「轮廓走 `path_notes` / 填充走区间切分」的结构一致。
+   缺口只剩「填充的 Spam / Outline spam / Ends / 轮廓独立通道」等 P1 项（见 §四 P1-15）。
 4. **Channels 是很多能力的公共底座**：Tumours/Claw/Strum/Formula 生成的重叠音符都需要分通道，`notes/engine.py` 的 As drawn/Single/Multi 建议与 P0 一起做，否则后续工具都会卡在「重叠被压平」。
 
 ---

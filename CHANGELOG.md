@@ -9,6 +9,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 形状工具描边对齐曲线工具（蜘蛛网式逐音高行）
+
+- **存量欠债** — 音符画工具箱里两套「描边」语义不一致：曲线工具的轮廓
+  （`interaction/line_tool/paths.rs` 的 `path_notes`）按几何交点逐音高行解析 → 每个音高行
+  一条无缝变长连奏音符、不使用吸附精度；形状工具的轮廓却是「按 snap 网格枚举格点、
+  每格一条定长音符」——陡峭边只剩零散格点、时间轴上不连续（对比报告
+  `docs/spiderweb-vs-lumino-音符绘制工具对比.md` §五.3 记为 P0 之前的欠债）。
+- **修复（只动描边，填充腿有意不动）** — 新增 `lumino_editor_state::shape_tool::shape_outline_path`
+  （`editor-state/.../shape_tool/geometry.rs`）：形状边界 → **闭合** `(tick, key)` 折线，
+  矩形/三角形取顶点 + 闭合点，圆按 `CIRCLE_OUTLINE_SEGMENTS = 64` 段采样椭圆；末点**显式
+  复用首点**（`path_notes` 靠 `pts[0] == pts[last]` 逐位相等识别闭合环，重算 `cos(TAU)` 在
+  f32 下未必相等，差一位就退化成开放路径多做首尾拉伸）。形状工具 √ 时把该折线交给曲线
+  工具**同一套** `paths::path_notes(..., end_dot = false)`：每个音高行一条音符、起点 = 进入
+  该行的 tick、终点 = 下一条起点（闭合环从最左点重启、竖直段各占 1 tick 同口径），
+  **全程不再使用吸附精度**，与曲线轮廓逐项同源。
+- **口径与边界** — 描边音符按**精确整 tick** 去重（起点是解析交点、落在吸附网格之外，
+  沿用「除以 snap 再取整」的键会把相邻两行/两段误并成一条）；key 越界行按曲线工具同口径
+  裁掉；「x 分音符」切分档位（`fill_division`）仍只作用于填充区间，对描边不生效。
+- **填充腿行为不变（有意保留）** — `filled = true` 仍走 `shape_cells(filled = true)` 格点：
+  未开切分 = 每格一条 snap 长音符，开启切分 = 按行合并后 `chop_span` 切分；
+  `shape_cells(filled = false)` 保留为几何查询本身并在文档标注「描边已不走它」，防未来误用旧口径。
+- **回归与结构** — 形状工具测试改为断言**逐音高行覆盖**而非格点数：矩形描边 10 条
+  （上下边各 1 条贯通 + 右竖直边 5 条 1 tick + 左竖直边 5 条中与水平边同起点的 2 条被
+  `keep_longest` 合并）、圆描边逐行覆盖且最高/最低行各 1 条、中间行各 2 条；新增「描边不受
+  切分档位影响（逐条一致）」「登记音符与文档音符逐条同源」「圆描边折线闭合 + 吃屏幕空间
+  Shift 约束」用例。`interaction/shape_tool.rs`（本次编辑后 708 行）按 REF-001 文件长度纪律拆为
+  `shape_tool.rs`（交互）+ `shape_tool/confirm.rs`（√/× 生成）+ `shape_tool/tests.rs`（测试），
+  与 `line_tool.rs` + `line_tool/` 同构。
+- **行为变化（需视觉签核）** — 空心矩形/圆/三角 √ 生成的音符**数量与长度都变了**：1 tick
+  吸附精度下 0..4 × 60..64 的空心矩形由 16 条 1 tick 格点音符变为 10 条（含 4 tick 贯通
+  音符与角点 1 tick）。对已保存工程无影响（音符已落盘，重新绘制才走新口径）。
+- **验证** — `cargo test --profile fast-release -p lumino-editor-state --lib`（315 passed）、
+  `-p lumino-ui-editor --lib`（719 passed）、`cargo clippy --profile fast-release -p
+  lumino-editor-state -p lumino-ui-editor --all-targets -- -D warnings`（0 warning）。
+
 ### 音符画 · 鼠标工具（框选）框选不到未 √ 的曲线/图形（BUG 修复）
 
 - **症状** — 在音符画工具栏画完曲线/形状/笔画后切到「鼠标工具」拉框框选，图案明明画在

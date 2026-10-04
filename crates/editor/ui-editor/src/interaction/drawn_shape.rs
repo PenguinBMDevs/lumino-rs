@@ -967,6 +967,12 @@ mod tests {
     use lumino_editor_state::{BezierAnchor, BrushStroke, ShapeKind, ShapeToolInteraction};
     use lumino_message::Tool;
 
+    /// 0..4 × 60..64（snap = 1）的矩形**描边**音符数 = 10：
+    /// 上下水平边各 1 条贯通 4 tick、右竖直边逐音高行 5 条 1 tick、
+    /// 左竖直边 5 条中与水平边同起点的 2 条被 `keep_longest` 合并 → 存 3 条。
+    /// （旧的「按 snap 枚举轮廓格点」口径在同一矩形上是 16 条定长音符。）
+    const RECT_OUTLINE_NOTES: usize = 10;
+
     /// 构造非 Conductor 轨（track 1）编辑器，吸附精度 = 1
     fn test_editor() -> Editor {
         let mut editor = Editor::new();
@@ -975,7 +981,9 @@ mod tests {
         editor
     }
 
-    /// 拉出并确认一个 0..4 × 60..64 的矩形轮廓（16 条音符），返回编辑器
+    /// 拉出并确认一个 0..4 × 60..64 的矩形描边（snap = 1），返回编辑器
+    ///
+    /// 描边音符数见 [`RECT_OUTLINE_NOTES`]（不再是「每格一条」的 16 条）。
     fn draw_and_confirm_rect() -> Editor {
         let mut editor = test_editor();
         editor.set_shape(ShapeKind::Rectangle);
@@ -1017,9 +1025,36 @@ mod tests {
         let shape = &st.shapes()[0];
         assert_eq!(shape.track, 1, "登记在当前音轨");
         assert!(shape.group.is_some(), "应绑定音符创建历史分组");
-        assert_eq!(shape.notes.len(), 16, "轮廓矩形 = 5×5 - 3×3 = 16 格");
         assert!(shape.notes.iter().all(|n| n.track == 1));
-        assert!(shape.notes.iter().all(|n| n.length == 1.0), "定长 = snap");
+        // 登记的音符必须与文档里的音符**逐条同源**（描边走几何解析后长度不再恒为 snap，
+        // 只断言数量会漏掉「登记与写入分叉」这类回归）
+        let mut registered: Vec<(f32, u16, f32)> = shape
+            .notes
+            .iter()
+            .map(|n| (n.tick, n.key, n.length))
+            .collect();
+        let mut written: Vec<(f32, u16, f32)> = editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .map(|n| {
+                (
+                    n.start_tick as f32,
+                    n.key as u16,
+                    (n.end_tick - n.start_tick) as f32,
+                )
+            })
+            .collect();
+        let key_of = |n: &(f32, u16, f32)| (n.0.round() as i64, n.1, (n.2 * 1000.0).round() as i64);
+        registered.sort_unstable_by_key(key_of);
+        written.sort_unstable_by_key(key_of);
+        assert_eq!(registered, written, "登记音符应与文档音符逐条一致");
+        assert_eq!(
+            registered.len(),
+            RECT_OUTLINE_NOTES,
+            "矩形描边 = 上下边各 1 条 + 右竖直边 5 条 + 左竖直边 3 条"
+        );
         match &shape.source {
             DrawnShapeSource::Shape {
                 kind,
@@ -1153,7 +1188,10 @@ mod tests {
         assert!(st.shapes()[0].notes.iter().all(|n| n.key >= 62));
         assert_eq!(st.shapes()[0].moves.len(), 1, "应记录一次移动");
         // 文档音符随之平移：数量不变、key 全部 >= 62、最小起点 = 4
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            RECT_OUTLINE_NOTES
+        );
         assert!(note_keys(&editor).iter().all(|&k| k >= 62));
         assert_eq!(note_ticks(&editor).iter().copied().min(), Some(4));
     }
@@ -1185,7 +1223,10 @@ mod tests {
         editor.handle_shape_select_moved(2.2, 62.0);
         editor.handle_shape_select_released();
         assert!(editor.editor_state.shape_select.shapes()[0].moves.is_empty());
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            RECT_OUTLINE_NOTES
+        );
     }
 
     // ── 删除 ─────────────────────────────────────────────
@@ -1214,7 +1255,7 @@ mod tests {
         assert!(editor.undo(), "应能撤销删除");
         assert_eq!(
             editor.editor_state.data.current_track_note_count(),
-            16,
+            RECT_OUTLINE_NOTES,
             "撤销删除应恢复音符"
         );
         assert_eq!(
@@ -1349,7 +1390,10 @@ mod tests {
         // ⑤ 切回形状工具仍能 √ 固化 —— 图案没被毁
         editor.set_tool(Tool::Shape);
         assert!(editor.confirm_shape_tool(), "切回后仍可 √ 固化");
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            RECT_OUTLINE_NOTES
+        );
         assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 1);
     }
 
@@ -1457,7 +1501,10 @@ mod tests {
             }
             other => panic!("期望 Shape，实际 {other:?}"),
         }
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+        assert_eq!(
+            editor.editor_state.data.current_track_note_count(),
+            RECT_OUTLINE_NOTES
+        );
     }
 
     #[test]
