@@ -155,11 +155,12 @@ impl DrawnShape {
     }
 }
 
-/// 图形拖拽移动状态（鼠标工具按住选中图形拖动）
+/// 图形拖拽移动状态（鼠标工具在**选中集合**上拖动）
+///
+/// **不记录具体图形 ID**：拖动作用于整个选中集合（单选时集合里恰好一个），
+/// 因此「点选后拖动」与「框选多个后整组拖动」走的是同一条链路，无需分支。
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ShapeDrag {
-    /// 被拖拽的图形 ID
-    pub shape_id: u64,
     /// 按下时的逻辑坐标 (tick, key)
     pub start_tick: f32,
     /// 按下时的逻辑 key
@@ -181,6 +182,8 @@ pub struct ShapeMarquee {
     pub cur_tick: f32,
     /// 当前点 key
     pub cur_key: f32,
+    /// 起框时是否按住修饰键（Shift）——为真时松手「并入」既有选中集，否则「替换」
+    pub additive: bool,
 }
 
 impl ShapeMarquee {
@@ -197,16 +200,19 @@ impl ShapeMarquee {
     }
 }
 
-/// 图形选中状态
+/// 图形选中状态（**多选**）
+///
+/// 选中集是**有序去重**的图形 ID 列表：点选 / Shift 点选 / 框选都往里加，
+/// 移动 / 删除 / 高亮 / 选框一律以「集合」为单位。
 #[derive(Debug, Clone, PartialEq, Default)]
 pub struct ShapeSelectState {
     /// 全部已登记图形（含被隐藏 / 已删除的）
     shapes: Vec<DrawnShape>,
     /// 下一个自增 ID
     next_id: u64,
-    /// 当前选中的图形 ID
-    selected: Option<u64>,
-    /// 拖拽移动状态
+    /// 选中集合（按加入顺序，去重）
+    selected: Vec<u64>,
+    /// 拖拽移动状态（作用于整个选中集合）
     drag: Option<ShapeDrag>,
     /// 空白处拉框（框选）状态
     marquee: Option<ShapeMarquee>,
@@ -217,7 +223,7 @@ impl ShapeSelectState {
     pub fn clear(&mut self) {
         self.shapes.clear();
         self.next_id = 0;
-        self.selected = None;
+        self.selected.clear();
         self.drag = None;
         self.marquee = None;
     }
@@ -261,45 +267,110 @@ impl ShapeSelectState {
         self.shapes.is_empty()
     }
 
-    /// 当前选中的图形 ID
-    pub fn selected(&self) -> Option<u64> {
-        self.selected
+    // ── 选中集（多选） ─────────────────────────────────────
+
+    /// 未过期的可见图形（内部查询）
+    fn visible_shape(&self, id: u64) -> Option<&DrawnShape> {
+        self.shapes.iter().find(|s| s.id == id && s.is_visible())
     }
 
-    /// 选中指定图形；`None` = 取消选中。指向不存在 / 不可见的 ID 时退化为取消选中。
-    pub fn select(&mut self, id: Option<u64>) {
-        self.selected = match id {
-            Some(id)
-                if self
-                    .shapes
-                    .iter()
-                    .any(|s| s.id == id && s.is_visible()) =>
-            {
-                Some(id)
+    /// 选中集合（图形 ID，按加入顺序）
+    pub fn selected_ids(&self) -> &[u64] {
+        &self.selected
+    }
+
+    /// 选中数量
+    pub fn selection_len(&self) -> usize {
+        self.selected.len()
+    }
+
+    /// 某图形是否已被选中
+    pub fn is_selected(&self, id: u64) -> bool {
+        self.selected.contains(&id)
+    }
+
+    /// **唯一**选中一个图形（替换整个选中集）；指向不存在 / 不可见的 ID 时清空选中
+    pub fn select_only(&mut self, id: u64) {
+        self.selected.clear();
+        if self.visible_shape(id).is_some() {
+            self.selected.push(id);
+        }
+    }
+
+    /// 用给定集合**替换**选中集（自动过滤不存在 / 不可见者并去重，保留给定顺序）
+    pub fn select_all_of(&mut self, ids: impl IntoIterator<Item = u64>) {
+        self.selected.clear();
+        for id in ids {
+            if !self.selected.contains(&id) && self.visible_shape(id).is_some() {
+                self.selected.push(id);
             }
-            _ => None,
-        };
+        }
     }
 
-    /// 当前选中的图形对象（仅在可见时返回）
-    pub fn selected_shape(&self) -> Option<&DrawnShape> {
-        self.shapes.iter().find(|s| {
-            Some(s.id) == self.selected && s.is_visible()
-        })
+    /// 加入选中集（已选中 / 不存在 / 不可见时无变化）；返回是否发生变化
+    pub fn add_to_selection(&mut self, id: u64) -> bool {
+        if self.selected.contains(&id) || self.visible_shape(id).is_none() {
+            return false;
+        }
+        self.selected.push(id);
+        true
     }
 
-    /// 当前选中图形的**逻辑外接框** `(min_tick, max_tick, min_key, max_key)`
+    /// 从选中集移除；返回是否发生变化
+    pub fn remove_from_selection(&mut self, id: u64) -> bool {
+        let before = self.selected.len();
+        self.selected.retain(|&x| x != id);
+        self.selected.len() != before
+    }
+
+    /// 切换选中（返回切换后**是否处于选中态**）
+    pub fn toggle_selection(&mut self, id: u64) -> bool {
+        if self.is_selected(id) {
+            self.remove_from_selection(id);
+            false
+        } else {
+            self.add_to_selection(id);
+            self.is_selected(id)
+        }
+    }
+
+    /// 清空选中集
+    pub fn clear_selection(&mut self) {
+        self.selected.clear();
+    }
+
+    /// 选中集合内的可见图形（按**登记顺序**，便于渲染/遍历确定）
+    pub fn selected_shapes(&self) -> impl Iterator<Item = &DrawnShape> {
+        let selected = &self.selected;
+        self.shapes
+            .iter()
+            .filter(move |s| s.is_visible() && selected.contains(&s.id))
+    }
+
+    /// 指定音轨上被选中的可见图形（按登记顺序）
+    pub fn selected_shapes_on(&self, track: usize) -> impl Iterator<Item = &DrawnShape> {
+        let selected = &self.selected;
+        self.shapes
+            .iter()
+            .filter(move |s| s.track == track && s.is_visible() && selected.contains(&s.id))
+    }
+
+    /// 指定音轨上选中图形的**并集外接框** `(min_tick, max_tick, min_key, max_key)`
     ///
-    /// UI 层以此换算「选框」（选中态的框选框 + 框内拖动命中区）。
-    /// 无选中 / 几何为空（空折线）时返回 `None`。
-    pub fn selected_bounds(&self) -> Option<(f32, f32, f32, f32)> {
-        self.selected_shape()?.source.bounds()
-    }
-
-    /// 当前选中的图形对象（可变）
-    pub fn selected_shape_mut(&mut self) -> Option<&mut DrawnShape> {
-        let id = self.selected?;
-        self.shapes.iter_mut().find(|s| s.id == id && s.is_visible())
+    /// UI 层以此换算「选中选框」（框选框 + 框内拖动命中区）：多选时是整组的外接框。
+    /// 该轨无选中 / 全部几何为空时返回 `None`。
+    pub fn selection_bounds_on(&self, track: usize) -> Option<(f32, f32, f32, f32)> {
+        let mut acc: Option<(f32, f32, f32, f32)> = None;
+        for s in self.selected_shapes_on(track) {
+            let Some(b) = s.source.bounds() else {
+                continue;
+            };
+            acc = Some(match acc {
+                None => b,
+                Some(a) => (a.0.min(b.0), a.1.max(b.1), a.2.min(b.2), a.3.max(b.3)),
+            });
+        }
+        acc
     }
 
     /// 某音轨上当前可见的图形，按登记顺序
@@ -396,10 +467,16 @@ impl ShapeSelectState {
 
     // ── 拖拽移动 ─────────────────────────────────────────
 
-    /// 开始拖拽指定图形
-    pub fn begin_drag(&mut self, shape_id: u64, start_tick: f32, start_key: f32) {
+    /// 开始拖拽**选中集合**（无选中时不进入拖拽态）
+    ///
+    /// 与拉框**互斥**：若此前处于拉框态则一并收敛（同一时刻只会有一个手势在跑，
+    /// 避免 `moved`/`released` 的早退分支误把拉框事件当成拖拽来消费）。
+    pub fn begin_drag(&mut self, start_tick: f32, start_key: f32) {
+        if self.selected.is_empty() {
+            return;
+        }
+        self.marquee = None;
         self.drag = Some(ShapeDrag {
-            shape_id,
             start_tick,
             start_key,
             delta_tick: 0.0,
@@ -429,24 +506,28 @@ impl ShapeSelectState {
         self.drag.is_some()
     }
 
-    /// 结束拖拽并返回 `(图形 ID, dtick, dkey)`；无实际位移时返回 `None`
-    pub fn end_drag(&mut self) -> Option<(u64, f32, f32)> {
+    /// 结束拖拽并返回 `(dtick, dkey)`；无实际位移时返回 `None`
+    pub fn end_drag(&mut self) -> Option<(f32, f32)> {
         let d = self.drag.take()?;
         if d.delta_tick == 0.0 && d.delta_key == 0.0 {
             return None;
         }
-        Some((d.shape_id, d.delta_tick, d.delta_key))
+        Some((d.delta_tick, d.delta_key))
     }
 
     // ── 空白拉框（框选） ───────────────────────────────────
 
-    /// 从空白处起框（框选）
-    pub fn begin_marquee(&mut self, tick: f32, key: f32) {
+    /// 从空白处起框（框选）；`additive` = 起框时按住修饰键 → 松手并入既有选中集
+    ///
+    /// 与拖拽**互斥**：若此前处于拖拽态则一并收敛（理由同 `begin_drag`）。
+    pub fn begin_marquee(&mut self, tick: f32, key: f32, additive: bool) {
+        self.drag = None;
         self.marquee = Some(ShapeMarquee {
             start_tick: tick,
             start_key: key,
             cur_tick: tick,
             cur_key: key,
+            additive,
         });
     }
 
@@ -473,23 +554,23 @@ impl ShapeSelectState {
         self.marquee.take()
     }
 
-    /// 删除指定图形记录（含选中态收敛）
+    /// 删除指定图形记录（含选中集收敛）
     pub fn remove(&mut self, id: u64) -> bool {
         let before = self.shapes.len();
         self.shapes.retain(|s| s.id != id);
-        if self.selected == Some(id) {
-            self.selected = None;
-        }
+        self.selected.retain(|&x| x != id);
         self.shapes.len() != before
     }
 
-    /// 收敛选中态：选中项不可见 / 不存在时取消选中
+    /// 收敛选中集：剔除已不可见 / 已不存在的图形
     fn collapse_selection(&mut self) {
-        if let Some(id) = self.selected
-            && !self.shapes.iter().any(|s| s.id == id && s.is_visible())
-        {
-            self.selected = None;
-        }
+        let alive: Vec<u64> = self
+            .shapes
+            .iter()
+            .filter(|s| s.is_visible())
+            .map(|s| s.id)
+            .collect();
+        self.selected.retain(|id| alive.contains(id));
     }
 
     /// 当前可见图形引用的历史分组集合（供调试 / 测试）
@@ -534,40 +615,92 @@ mod tests {
     }
 
     #[test]
-    fn test_select_validates_existence_and_visibility() {
+    fn test_select_only_validates_existence_and_visibility() {
         let mut st = ShapeSelectState::default();
         let a = st.add(1, Some(10), rect_source(), vec![]);
-        st.select(Some(a));
-        assert_eq!(st.selected(), Some(a));
-        st.select(Some(9999));
-        assert_eq!(st.selected(), None);
+        st.select_only(a);
+        assert_eq!(st.selected_ids(), &[a]);
+        st.select_only(9999);
+        assert!(st.selected_ids().is_empty(), "不存在的 ID 应清空选中集");
         // 撤销创建后不可再选中
-        st.select(Some(a));
+        st.select_only(a);
         st.on_undo_group(10);
-        assert_eq!(st.selected(), None, "被隐藏的图形不应保持选中");
+        assert!(
+            st.selected_ids().is_empty(),
+            "被隐藏的图形不应保持选中"
+        );
     }
 
     #[test]
-    fn test_selected_bounds_normalizes_and_requires_selection() {
+    fn test_selection_multi_add_remove_toggle() {
         let mut st = ShapeSelectState::default();
-        // 未选中 → None（选框无从计算）
-        assert_eq!(st.selected_bounds(), None);
-        let a = st.add(1, Some(11), rect_source(), vec![]);
-        st.select(Some(a));
-        // 逻辑外接框规范化为 (min_tick, max_tick, min_key, max_key)
-        assert_eq!(st.selected_bounds(), Some((0.0, 4.0, 60.0, 64.0)));
-        // 空折线几何 → None（无外接框）
-        let b = st.add(1, None, DrawnShapeSource::Polyline { points: Vec::new() }, vec![]);
-        st.select(Some(b));
-        assert_eq!(st.selected_bounds(), None);
-        // 撤销创建隐藏后 → 无选中 → None
-        st.select(Some(a));
-        st.on_undo_group(11);
-        assert_eq!(st.selected_bounds(), None, "隐藏图形不应再有选框");
+        let a = st.add(1, None, rect_source(), vec![]);
+        let b = st.add(1, None, rect_source(), vec![]);
+        let c = st.add(1, None, rect_source(), vec![]);
+
+        assert!(st.add_to_selection(a));
+        assert!(st.add_to_selection(b));
+        assert!(!st.add_to_selection(b), "重复加入应无变化");
+        assert_eq!(st.selected_ids(), &[a, b], "保持加入顺序");
+        assert_eq!(st.selection_len(), 2);
+        assert!(st.is_selected(a) && !st.is_selected(c));
+
+        // 切换：c 加入（true）、a 移出（false）
+        assert!(st.toggle_selection(c));
+        assert!(!st.toggle_selection(a));
+        assert_eq!(st.selected_ids(), &[b, c]);
+
+        // 集合替换：去重 + 过滤不存在 / 不可见
+        st.select_all_of([a, c, c, 9999]);
+        assert_eq!(st.selected_ids(), &[a, c]);
+
+        st.clear_selection();
+        assert!(st.selected_ids().is_empty());
+        assert!(!st.add_to_selection(9999), "不存在的 ID 不可加入");
     }
 
     #[test]
-    fn test_selected_bounds_for_reversed_shape_rect() {
+    fn test_selection_bounds_on_is_union_over_track() {
+        let mut st = ShapeSelectState::default();
+        let a = st.add(1, None, rect_source(), vec![]); // 0..4 × 60..64
+        let b = st.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (10.0, 50.0, 20.0, 55.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            vec![],
+        );
+        let c = st.add(2, None, rect_source(), vec![]);
+        st.select_all_of([a, b, c]);
+
+        assert_eq!(
+            st.selection_bounds_on(1),
+            Some((0.0, 20.0, 50.0, 64.0)),
+            "多选外接框应为该轨全部选中图形的并集"
+        );
+        assert_eq!(st.selection_bounds_on(2), Some((0.0, 4.0, 60.0, 64.0)));
+        assert_eq!(st.selection_bounds_on(3), None, "无选中图形的音轨应无外接框");
+
+        st.select_only(a);
+        assert_eq!(st.selection_bounds_on(1), Some((0.0, 4.0, 60.0, 64.0)));
+
+        // 空折线几何不参与并集
+        let e = st.add(
+            1,
+            None,
+            DrawnShapeSource::Polyline { points: Vec::new() },
+            vec![],
+        );
+        st.select_all_of([e]);
+        assert_eq!(st.selection_bounds_on(1), None);
+    }
+
+    #[test]
+    fn test_selection_bounds_normalizes_reversed_rect() {
         let mut st = ShapeSelectState::default();
         let s = DrawnShapeSource::Shape {
             kind: ShapeKind::Rectangle,
@@ -576,8 +709,23 @@ mod tests {
             filled: false,
         };
         let a = st.add(1, None, s, vec![]);
-        st.select(Some(a));
-        assert_eq!(st.selected_bounds(), Some((1.0, 9.0, 62.0, 70.0)));
+        st.select_only(a);
+        assert_eq!(st.selection_bounds_on(1), Some((1.0, 9.0, 62.0, 70.0)));
+    }
+
+    #[test]
+    fn test_selected_shapes_on_filters_track_and_visibility() {
+        let mut st = ShapeSelectState::default();
+        let a = st.add(1, Some(5), rect_source(), vec![]);
+        let b = st.add(2, None, rect_source(), vec![]);
+        st.select_all_of([a, b]);
+        assert_eq!(st.selected_shapes().count(), 2);
+        assert_eq!(st.selected_shapes_on(1).count(), 1);
+        assert_eq!(st.selected_shapes_on(2).count(), 1);
+        // 撤销创建 → a 隐藏 → 自动收敛出选中集
+        st.on_undo_group(5);
+        assert_eq!(st.selected_shapes_on(1).count(), 0);
+        assert_eq!(st.selected_ids(), &[b], "隐藏者应被收敛、其余保留");
     }
 
     #[test]
@@ -598,10 +746,10 @@ mod tests {
     fn test_delete_and_reconcile_restores() {
         let mut st = ShapeSelectState::default();
         let a = st.add(1, Some(1), rect_source(), vec![note(0.0, 60)]);
-        st.select(Some(a));
+        st.select_only(a);
         assert!(st.mark_deleted(a));
         assert_eq!(st.visible_on(1).count(), 0, "删除后不可见");
-        assert_eq!(st.selected(), None, "删除应收敛选中");
+        assert!(st.selected_ids().is_empty(), "删除应收敛选中集");
         // 撤销删除 → 音符回来了 → 对账恢复可见
         st.reconcile_alive(&[(a, true)]);
         assert_eq!(st.visible_on(1).count(), 1, "撤销删除应恢复");
@@ -649,10 +797,32 @@ mod tests {
     }
 
     #[test]
+    fn test_translate_multiple_shapes_share_one_group() {
+        let mut st = ShapeSelectState::default();
+        let a = st.add(1, None, rect_source(), vec![note(10.0, 60)]);
+        let b = st.add(1, None, rect_source(), vec![note(20.0, 62)]);
+        st.select_all_of([a, b]);
+        assert!(st.translate_shape(a, Some(9), 5.0, 1.0));
+        assert!(st.translate_shape(b, Some(9), 5.0, 1.0));
+        // 同组一次撤销应把两个图形一起还原
+        st.on_undo_group(9);
+        assert_eq!(st.shapes()[0].notes[0].tick, 10.0);
+        assert_eq!(st.shapes()[1].notes[0].tick, 20.0);
+        // 重做一起前进
+        st.on_redo_group(9);
+        assert_eq!(st.shapes()[0].notes[0].tick, 15.0);
+        assert_eq!(st.shapes()[1].notes[0].tick, 25.0);
+    }
+
+    #[test]
     fn test_drag_lifecycle() {
         let mut st = ShapeSelectState::default();
         let a = st.add(1, None, rect_source(), vec![]);
-        st.begin_drag(a, 0.0, 60.0);
+        // 无选中 → 不进入拖拽态
+        st.begin_drag(0.0, 60.0);
+        assert!(!st.is_dragging(), "无选中不应起拖");
+        st.select_only(a);
+        st.begin_drag(0.0, 60.0);
         assert!(st.is_dragging());
         // snap = 10：raw 6 → 对齐到 10；raw 14 → 10
         st.update_drag(6.0, 62.4, 10.0);
@@ -661,8 +831,7 @@ mod tests {
         assert_eq!(d.delta_key, 2.0);
         st.update_drag(14.0, 62.4, 10.0);
         assert_eq!(st.drag().expect("拖拽态应存在").delta_tick, 10.0);
-        let out = st.end_drag();
-        assert_eq!(out, Some((a, 10.0, 2.0)));
+        assert_eq!(st.end_drag(), Some((10.0, 2.0)));
         assert!(!st.is_dragging());
     }
 
@@ -670,7 +839,8 @@ mod tests {
     fn test_drag_without_movement_returns_none() {
         let mut st = ShapeSelectState::default();
         let a = st.add(1, None, rect_source(), vec![]);
-        st.begin_drag(a, 0.0, 60.0);
+        st.select_only(a);
+        st.begin_drag(0.0, 60.0);
         st.update_drag(0.4, 60.0, 1.0);
         assert_eq!(st.end_drag(), None, "原地按一下不应产生移动历史");
     }
@@ -695,26 +865,47 @@ mod tests {
     }
 
     #[test]
-    fn test_marquee_lifecycle_normalizes_rect() {
+    fn test_drag_and_marquee_are_mutually_exclusive() {
+        // 同一时刻只能跑一个手势：否则 moved/released 的早退分支会互相错配
+        let mut st = ShapeSelectState::default();
+        let a = st.add(1, None, rect_source(), vec![]);
+        st.select_only(a);
+        st.begin_drag(0.0, 60.0);
+        assert!(st.is_dragging());
+        st.begin_marquee(0.0, 60.0, false);
+        assert!(!st.is_dragging(), "起框应收敛拖拽态");
+        assert!(st.is_marqueeing());
+        st.begin_drag(0.0, 60.0);
+        assert!(st.is_dragging(), "起拖应收敛拉框态");
+        assert!(!st.is_marqueeing());
+    }
+
+    #[test]
+    fn test_marquee_lifecycle_normalizes_rect_and_keeps_additive() {
         let mut st = ShapeSelectState::default();
         assert!(!st.is_marqueeing());
-        st.begin_marquee(10.0, 70.0);
+        st.begin_marquee(10.0, 70.0, false);
         assert!(st.is_marqueeing());
         // 反向拖动（左下 → 右上）应被规范化成 (min, max) 布局
         st.update_marquee(2.0, 60.0);
         let m = st.marquee().expect("拉框态应存在");
         assert_eq!(m.rect(), (2.0, 10.0, 60.0, 70.0));
+        assert!(!m.additive);
         let taken = st.end_marquee().expect("结束应返回矩形");
         assert_eq!(taken.rect(), (2.0, 10.0, 60.0, 70.0));
         assert!(!st.is_marqueeing(), "结束后拉框态应清空");
         assert!(st.end_marquee().is_none(), "重复结束应为 None");
+        // 修饰键起框 → 标记为并入
+        st.begin_marquee(0.0, 60.0, true);
+        assert!(st.marquee().expect("拉框态应存在").additive);
+        st.end_marquee();
     }
 
     #[test]
     fn test_clear_resets_marquee() {
         let mut st = ShapeSelectState::default();
         st.add(1, None, rect_source(), vec![]);
-        st.begin_marquee(0.0, 60.0);
+        st.begin_marquee(0.0, 60.0, false);
         st.clear();
         assert!(!st.is_marqueeing());
         assert!(st.is_empty());
@@ -724,10 +915,11 @@ mod tests {
     fn test_clear_resets_everything() {
         let mut st = ShapeSelectState::default();
         let a = st.add(1, Some(3), rect_source(), vec![]);
-        st.select(Some(a));
+        st.select_only(a);
         st.clear();
         assert!(st.is_empty());
-        assert_eq!(st.selected(), None);
+        assert!(st.selected_ids().is_empty());
+        assert_eq!(st.selection_len(), 0);
         assert!(!st.is_dragging());
         assert_eq!(st.add(1, None, rect_source(), vec![]), 0);
     }

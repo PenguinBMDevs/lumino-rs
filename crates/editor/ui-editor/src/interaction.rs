@@ -187,9 +187,9 @@ impl Editor {
     /// 其余选中音符保留，用户感知为"Delete 键不能删除批量音符"。
     /// 标准 DAW 语义：有选中集合 → 删除整个选中集合；无选中 → 删除悬停音符。
     pub(crate) fn handle_delete_pressed(&mut self) {
-        // 鼠标工具（图形选中）：有选中图形时删除该图形（图形对象 + 它生成的音符）
+        // 鼠标工具（图形选中）：有选中图形时删除**整个选中集**（图形对象 + 它们生成的音符）
         if self.editor_state.tool == lumino_message::Tool::ShapeSelect
-            && self.editor_state.shape_select.selected().is_some()
+            && self.editor_state.shape_select.selection_len() > 0
         {
             self.delete_selected_drawn_shape();
             return;

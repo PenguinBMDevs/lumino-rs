@@ -99,10 +99,11 @@ impl Root {
             PianoRollContextMenuAction::Open { position, target } => {
                 let pos = iced_core::Point::new(position.x, position.y);
                 match target {
-                    // 图形目标：右键命中哪个图形就把哪个设为唯一选中（菜单「删除」作用于它）
+                    // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
+                    // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
                     ContextMenuTarget::DrawnShape => {
                         if let Some(id) = self.editor.drawn_shape_at_screen(pos) {
-                            self.editor.select_drawn_shape(Some(id));
+                            self.editor.select_drawn_shape(id);
                         }
                     }
                     // 音符目标：右键点击音符且该音符不在选中集合时，先将其设为唯一选中。

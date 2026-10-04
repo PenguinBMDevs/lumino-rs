@@ -4,11 +4,11 @@
 //! - **常显轮廓**：鼠标工具激活时，把当前音轨上全部可见图形以弱色细线画出，
 //!   使用户一眼看到「哪些图案可选中」。否则切换工具后画布上只剩音符，
 //!   图形轮廓不可见，表现为「图案消失了、无从框选」。
-//! - **选中高亮**：被选中图形叠加发光描边（外发光 + 实线双描边），与
+//! - **选中高亮**：被选中的每一个图形都叠加发光描边（外发光 + 实线双描边），与
 //!   `shape_tool_box` 的待确认预览区分（预览为细线，高亮更粗且带光晕）。
-//! - **选中选框**：选中图形的屏幕外接框（含四角手柄），把「当前选中了哪个图形、
-//!   从哪里可以拖动它」明示出来。框内区域就是可拖动区（命中判定见
-//!   `interaction::drawn_shape` 的 `point_in_selected_box`）——渲染与命中同源。
+//! - **选中选框**：选中集（多选时为**并集**）的屏幕外接框 + 四角手柄，把「当前选中了哪些
+//!   图形、从哪里可以拖动它们」明示出来。框内区域就是可拖动区（命中判定见
+//!   `interaction::drawn_shape` 的 `point_in_selection_box`）——渲染与命中同源。
 //! - **框选矩形**：空白处拉框时实时绘制半透明选择框。
 //!
 //! 渲染口径与命中测试同源：形状工具图形走 `shape_vertices` / 椭圆，折线
@@ -123,18 +123,18 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
     }
 }
 
-/// 选中图形的轮廓（含拖拽实时预览偏移）
-fn selected_outline(editor: &Editor) -> Option<Path> {
-    let shape = editor.editor_state.shape_select.selected_shape()?;
-    if shape.track != editor.editor_state.data.current_track {
-        return None;
-    }
-    // 预览偏移：正在拖拽的正是当前选中图形时生效
-    let (dtick, dkey) = match editor.editor_state.shape_select.drag() {
-        Some(d) if d.shape_id == shape.id => (d.delta_tick, d.delta_key),
-        _ => (0.0, 0.0),
-    };
-    outline_path(editor, shape, dtick, dkey)
+/// 选中集内**全部**图形的轮廓（同轨；含整组拖拽实时预览偏移）
+///
+/// 多选时逐个选中图形都画发光描边；拖拽作用于整个选中集，故所有图形套用同一预览偏移。
+fn selected_outlines(editor: &Editor) -> Vec<Path> {
+    let track = editor.editor_state.data.current_track;
+    let (dtick, dkey) = editor.drag_preview_delta();
+    editor
+        .editor_state
+        .shape_select
+        .selected_shapes_on(track)
+        .filter_map(|s| outline_path(editor, s, dtick, dkey))
+        .collect()
 }
 
 /// 连点成线；`close` = 首尾闭合
@@ -168,11 +168,11 @@ fn rect_path(a: Point, b: Point) -> Path {
 
 /// 叠加层绘制内容（与渲染后端解耦，便于单测「要不要画、画了什么」）
 struct Overlay {
-    /// 常显轮廓（鼠标工具下当前轨全部可见图形，排除选中者）
+    /// 常显轮廓（鼠标工具下当前轨全部可见图形，排除已选中者）
     idle_paths: Vec<Path>,
-    /// 选中高亮（发光 + 实线双描边）
-    selected_path: Option<Path>,
-    /// 选中选框（外接框 + 四角手柄）
+    /// 选中高亮（逐个选中图形：发光 + 实线双描边）
+    selected_paths: Vec<Path>,
+    /// 选中集选框（并集外接框 + 四角手柄）
     selection_box: Option<Rectangle>,
     /// 框选拉框矩形
     marquee_path: Option<Path>,
@@ -185,13 +185,12 @@ impl Overlay {
         // 其余工具只画选中高亮，避免常显轮廓干扰正常音符编辑。
         let select_mode = editor.current_tool() == lumino_message::Tool::ShapeSelect;
         let current_track = editor.editor_state.data.current_track;
-        let selected_id = editor.editor_state.shape_select.selected();
         let idle_paths: Vec<Path> = if select_mode {
             editor
                 .editor_state
                 .shape_select
                 .visible_on(current_track)
-                .filter(|s| Some(s.id) != selected_id)
+                .filter(|s| !editor.editor_state.shape_select.is_selected(s.id))
                 .filter_map(|s| outline_path(editor, s, 0.0, 0.0))
                 .collect()
         } else {
@@ -209,10 +208,10 @@ impl Overlay {
             });
         Self {
             idle_paths,
-            selected_path: selected_outline(editor),
-            // 选中选框：与命中判定同源（`Editor::selected_shape_box`），
+            selected_paths: selected_outlines(editor),
+            // 选中选框：与命中判定同源（`Editor::selection_box`），
             // 保证「看到的框」就是「抓得住的框」。
-            selection_box: editor.selected_shape_box(),
+            selection_box: editor.selection_box(),
             marquee_path,
         }
     }
@@ -220,7 +219,7 @@ impl Overlay {
     /// 四者皆无 → 不产生空几何
     fn is_empty(&self) -> bool {
         self.idle_paths.is_empty()
-            && self.selected_path.is_none()
+            && self.selected_paths.is_empty()
             && self.selection_box.is_none()
             && self.marquee_path.is_none()
     }
@@ -259,13 +258,15 @@ pub fn draw(
         );
     }
 
-    if let Some(path) = &overlay.selected_path {
+    if !overlay.selected_paths.is_empty() {
         let glow = Color::from_rgba(strong.r, strong.g, strong.b, GLOW_ALPHA);
-        frame.stroke(path, Stroke::default().with_width(GLOW_WIDTH).with_color(glow));
-        frame.stroke(
-            path,
-            Stroke::default().with_width(CORE_WIDTH).with_color(strong),
-        );
+        for path in &overlay.selected_paths {
+            frame.stroke(path, Stroke::default().with_width(GLOW_WIDTH).with_color(glow));
+            frame.stroke(
+                path,
+                Stroke::default().with_width(CORE_WIDTH).with_color(strong),
+            );
+        }
     }
 
     // 选中选框：外侧描边 + 四角实心手柄（手柄压在框角上，便于识别「可拖动」）
@@ -393,16 +394,16 @@ mod tests {
         // 未选中且非鼠标工具 → 无内容，不产出几何
         let overlay = Overlay::collect(&editor);
         assert!(overlay.selection_box.is_none(), "未选中不应有选框");
-        assert!(overlay.selected_path.is_none());
+        assert!(overlay.selected_paths.is_empty());
         assert!(overlay.is_empty(), "无内容时不应产出几何");
 
         // 选中后 → 有选框，叠加层非空（渲染侧不再返回 None）
         let id = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select(Some(id));
+        editor.editor_state.shape_select.select_only(id);
         let overlay = Overlay::collect(&editor);
         let rect = overlay.selection_box.expect("选中后应有选框");
         assert!(rect.width > 0.0 && rect.height > 0.0, "选框必须有面积");
-        assert!(overlay.selected_path.is_some(), "选中高亮仍应保留");
+        assert_eq!(overlay.selected_paths.len(), 1, "选中高亮仍应保留");
         assert!(!overlay.is_empty(), "有选框时应产出几何");
     }
 
@@ -410,7 +411,7 @@ mod tests {
     fn test_mouse_tool_shows_idle_outlines_and_marquee() {
         use lumino_message::Tool;
         let mut editor = editor_with_rect();
-        // 再加一个图形，验证「常显轮廓排除选中者」：被选中者单独走高亮
+        // 再加一个图形，验证「常显轮廓排除已选中者」：被选中者单独走高亮
         editor.editor_state.shape_select.add(
             1,
             None,
@@ -424,26 +425,73 @@ mod tests {
         );
         editor.set_tool(Tool::ShapeSelect);
         let first = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select(Some(first));
-        editor.editor_state.shape_select.begin_marquee(0.0, 60.0);
+        editor.editor_state.shape_select.select_only(first);
+        editor.editor_state.shape_select.begin_marquee(0.0, 60.0, false);
         editor.editor_state.shape_select.update_marquee(20.0, 70.0);
 
         let overlay = Overlay::collect(&editor);
         assert_eq!(
             overlay.idle_paths.len(),
             1,
-            "常显轮廓应排除选中的那一个（它走高亮）"
+            "常显轮廓应排除已选中的那一个（它走高亮）"
         );
+        assert_eq!(overlay.selected_paths.len(), 1);
         assert!(overlay.marquee_path.is_some(), "拉框中应画出拉框矩形");
         assert!(overlay.selection_box.is_some());
+    }
+
+    #[test]
+    fn test_overlay_glows_every_selected_shape_and_boxes_union() {
+        use lumino_message::Tool;
+        let mut editor = editor_with_rect();
+        // 第二个图形（并列在右下），用于验证「多选 → 逐个高亮 + 选框取并集」
+        let second = editor.editor_state.shape_select.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (20.0, 40.0, 24.0, 44.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            Vec::new(),
+        );
+        editor.set_tool(Tool::ShapeSelect);
+        let first = editor.editor_state.shape_select.shapes()[0].id;
+        editor.editor_state.shape_select.select_all_of([first, second]);
+
+        let overlay = Overlay::collect(&editor);
+        assert_eq!(
+            overlay.selected_paths.len(),
+            2,
+            "多选时每个选中图形都应有发光描边"
+        );
+        assert_eq!(
+            overlay.idle_paths.len(),
+            0,
+            "全部被选中 → 无常显轮廓"
+        );
+        let rect = overlay.selection_box.expect("多选应有并集选框");
+        // 并集外接框应同时包住两个图形的角点
+        for c in [
+            editor.line_pos_screen_pos((0.0, 60.0)),
+            editor.line_pos_screen_pos((4.0, 64.0)),
+            editor.line_pos_screen_pos((20.0, 40.0)),
+            editor.line_pos_screen_pos((24.0, 44.0)),
+        ] {
+            assert!(
+                rect.contains(c),
+                "并集选框应包住各选中图形角点 {c:?}，实际 {rect:?}"
+            );
+        }
     }
 
     #[test]
     fn test_selection_box_encloses_shape_screen_bounds() {
         let mut editor = editor_with_rect();
         let id = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select(Some(id));
-        let rect = editor.selected_shape_box().expect("应有选框");
+        editor.editor_state.shape_select.select_only(id);
+        let rect = editor.selection_box().expect("应有选框");
         // 图形逻辑 0..4 × 60..64 的屏幕两角都应落在选框内部（选框只增不减）
         let corners = [
             editor.line_pos_screen_pos((0.0, 60.0)),
