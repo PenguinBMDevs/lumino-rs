@@ -121,3 +121,59 @@ jobs:
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 强制 mimalloc 使用静态 CRT，解决 Windows 链接冲突
           LUMINO_MEMORY_SOFT_LIMIT_MB: 65536   # 64 GiB：避免 runner 内存紧张触发测试内 OOM panic
+
+  # ── 金丝雀构建：Windows x64 release → 推 Hugging Face ─────────────
+  # 与门禁并行，不等 lint/test。push 即构建，炸了下次 push 自然覆盖。
+  # 文件名：Lumino-rs_Canary_Dev-prewiew_<short-sha>_<yyyymmdd>.exe
+  canary:
+    name: Canary Build & Publish
+    if: github.event_name == 'push'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      # 与 lint/test 相同的缓存配置，避免 target 目录冷启动全量重编
+      - name: Cache cargo & target
+        uses: actions/cache@v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      # runner 默认就是 x86_64，显式声明 target 防配置漂移
+      - name: Build release (x86_64-pc-windows-msvc)
+        run: cargo build --release --target x86_64-pc-windows-msvc
+        env:
+          MIMALLOC_SYS_USE_STATIC_CRT: 1   # 与 test job 保持一致的 mimalloc 静态 CRT 配置
+
+      - name: Upload canary to Hugging Face
+        shell: bash
+        env:
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
+        run: |
+          SHORT_SHA="${GITHUB_SHA::7}"
+          BUILD_DATE="$(date -u +%Y%m%d)"
+          CANARY_NAME="Lumino-rs_Canary_Dev-prewiew_${SHORT_SHA}_${BUILD_DATE}.exe"
+
+          cp "target/x86_64-pc-windows-msvc/release/lumino-rs.exe" "$CANARY_NAME"
+
+          pip install --quiet huggingface_hub
+          python -c "
+          from huggingface_hub import HfApi
+          api = HfApi(token='$HF_TOKEN')
+          api.upload_file(
+              path_or_fileobj='$CANARY_NAME',
+              path_in_repo='$CANARY_NAME',
+              repo_id='PenguinBMDevs/lumino-canary',
+              repo_type='model',
+              commit_message=f'canary: ${SHORT_SHA} (${BUILD_DATE})',
+          )
+          print('Uploaded: $CANARY_NAME')
+          "

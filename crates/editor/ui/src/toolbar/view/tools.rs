@@ -89,7 +89,7 @@ impl Toolbar {
                 space().width(4),
                 // 音符画工具箱入口开关：固定图标（DrawToolbox），仅随浮层开合高亮；
                 // 点击开关「音符画悬浮工具条」。工具设置（画刷/形状下拉、分音符填充）
-                // 已迁到悬浮条，由悬浮条条目的 Ctrl+点击触发（本按钮为纯开关）。
+                // 已迁到悬浮条，由悬浮条条目「已启用后再次点击」触发（本按钮为纯开关）。
                 self.render_draw_tool_toggle(t, window),
                 space().width(4),
                 tool_button(

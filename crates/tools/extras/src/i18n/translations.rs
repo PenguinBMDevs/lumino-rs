@@ -221,6 +221,8 @@ pub struct MainTranslations {
     pub fill_division_suffix: &'static str,
     /// 颜料桶「分音符填充」提示：留空 = 整块填充
     pub fill_division_hint: &'static str,
+    /// 颜料桶「分音符填充」面板：关闭填充按钮（停用颜料桶并收起面板）
+    pub fill_division_disable: &'static str,
 
     // ── 力度/速度编辑面板 ──
     /// 力度标签

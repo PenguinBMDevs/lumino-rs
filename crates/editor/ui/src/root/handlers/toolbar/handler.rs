@@ -24,13 +24,13 @@ impl ToolbarHandler {
             return;
         }
 
-        // 颜料桶「分音符填充」面板打开时，除再次 Ctrl+点颜料桶与悬停外，其余工具栏操作
+        // 颜料桶「分音符填充」面板打开时，除再次点击颜料桶与悬停外，其余工具栏操作
         // 先关闭它——与画刷 / 形状下拉同一「外部关闭」语义（面板内值变更 / 确认 / 取消
         // 走 `FillDivision` 消息，不经此处，故面板内交互不受影响）。
         if root.state.fill_division_dialog.is_open
             && !matches!(
                 event,
-                crate::toolbar::Event::ToolPanelItemCtrlSelected(
+                crate::toolbar::Event::ToolPanelItemSettingsRequested(
                     crate::toolbar::ToolPanelItem::FillBucket
                 ) | crate::toolbar::Event::ButtonHovered(_)
             )

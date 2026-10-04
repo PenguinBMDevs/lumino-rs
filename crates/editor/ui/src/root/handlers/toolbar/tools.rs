@@ -32,14 +32,14 @@ impl ToolbarHandler {
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
                 }
             },
-            // Ctrl+点击条目：先镜像「选择」结果，再落下该工具的设置副作用。
-            crate::toolbar::Event::ToolPanelItemCtrlSelected(item) => match item {
+            // 再次点击已启用条目：先镜像「选择」结果，再落下该工具的设置副作用。
+            crate::toolbar::Event::ToolPanelItemSettingsRequested(item) => match item {
                 crate::toolbar::ToolPanelItem::StrokeSettings => {}
                 crate::toolbar::ToolPanelItem::FillBucket => {
-                    // 颜料桶的 Ctrl 设置 = 「分音符填充」对话框（工具栏侧已确保填充开启）。
+                    // 颜料桶的设置 = 「分音符填充」面板（工具栏侧已确保填充开启）。
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
                     root.open_fill_division_dialog();
-                    tracing::info!("Root: 打开分音符填充对话框（悬浮条 Ctrl+单击颜料桶）");
+                    tracing::info!("Root: 打开分音符填充面板（悬浮条再次点击颜料桶）");
                 }
                 _ => {
                     // 画刷 / 形状等：镜像工具与填充状态；设置下拉的开关由工具栏侧处理。

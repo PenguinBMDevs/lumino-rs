@@ -245,9 +245,12 @@ impl Event {
         Message::Toolbar(Self::ToolPanelItemSelected(item))
     }
 
-    /// 构造“Ctrl+点击绘制工具条条目”的工具栏消息（选择该工具并打开其设置）
-    pub const fn tool_panel_item_ctrl_selected(item: ToolPanelItem) -> Message {
-        Message::Toolbar(Self::ToolPanelItemCtrlSelected(item))
+    /// 构造“再次点击已启用条目 → 弹出该条目设置面板”的工具栏消息
+    ///
+    /// 仅由悬浮条视图在「该条目已启用（工具已激活 / 填充已开启）时被再次点击」发出，
+    /// 不再由 Ctrl 状态决定（旧 `tool_panel_item_ctrl_selected` 已随之移除）。
+    pub const fn tool_panel_item_settings_requested(item: ToolPanelItem) -> Message {
+        Message::Toolbar(Self::ToolPanelItemSettingsRequested(item))
     }
 
     /// 构造“开始拖拽音符绘制悬浮工具条”的工具栏消息

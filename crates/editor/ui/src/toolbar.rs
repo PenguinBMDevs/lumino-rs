@@ -109,13 +109,13 @@ pub struct Toolbar {
     /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量递推跟随，
     /// 使面板在光标离开面板/窗口范围时仍持续移动（首次 move 时为 None 仅记录）
     pub(crate) tool_panel_last_cursor: Option<(f32, f32)>,
-    /// 画刷工具下拉是否打开（ctrl+点击附属按钮触发）
+    /// 画刷工具下拉是否打开（悬浮条「画刷」条目再次点击触发）
     pub brush_dropdown_open: bool,
     /// 画刷工具配置（粗细度 + 每层音轨分配）
     pub brush: BrushConfig,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
-    /// 形状工具下拉是否打开（ctrl+点击形状工具触发，隐藏菜单选择矩形/圆形/三角形）
+    /// 形状工具下拉是否打开（悬浮条「形状」条目再次点击触发，菜单选择矩形/圆形/三角形）
     pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
     pub current_shape: ShapeType,

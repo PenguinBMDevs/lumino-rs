@@ -9,6 +9,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画悬浮工具条 · 工具设置面板改「已启用后再次点击」弹出 + 面板居中对齐按钮（BUG 修复）
+
+- **症状（交互）** — 悬浮工具条上要弹出某工具的设置面板（画刷设置 / 形状选择 / 分音符
+  填充），必须**按住 Ctrl 再单击**条目：手势不可发现，且 Ctrl 状态在焦点切换等场景下本就
+  不可靠（`Editor::ctrl_pressed` 需要 canvas + 窗口级双通道兜底）。
+- **症状（对齐）** — 弹出的面板没有居中对齐按钮，而是贴在**悬浮工具条左端**。
+- **根因（对齐）** — 设置面板悬浮层 `CurveToolGroup` 的锚点 = 它的**内容元素**。此前传入的
+  内容是**整条胶囊**（宽 265），面板（宽 248）于是以"胶囊中心"居中：`(265-248)/2 = 8.5`，
+  面板左缘只比胶囊左缘右移 8.5px ⇒ 视觉上就是"贴左端"；与被点的按钮中心（形状按钮在胶囊
+  内偏移 205）相差 **72.5px**（实测：面板中心 700.0 vs 按钮中心 772.5）。几何层的居中逻辑
+  本身没错，错的是**锚点给成了整条胶囊**。
+- **修复（对齐）** — 把设置面板挂到**触发它的那个图标按钮**上：`CurveToolGroup::new(该按钮,
+  面板)`（面板元素随条目在行内构造，`draw_tool_settings_menu` 返回归属条目），锚点因此严格
+  等于被点按钮 ⇒ 面板水平居中于该按钮。
+- **修复（交互）** — 条目**已启用**（工具已激活 / 填充已开启）时**再次点击同一条目**即弹出
+  设置面板；未启用时首次点击仍只做选择。点击→消息的唯一出口收敛为
+  `root/draw_toolbar.rs::tool_panel_item_press`，事件由 `ToolPanelItemCtrlSelected` 改名为
+  `ToolPanelItemSettingsRequested`（名字与 Ctrl 解耦，不再保留误导性的 Ctrl 契约）。
+- **补齐关闭路径** — 「再次点击颜料桶」不再等价于"再点一次即关闭填充"（悬浮条上原 toggle
+  关闭入口随之消失，而主工具栏的填充开关按钮早已移除），故在分音符填充面板内新增
+  **「关闭填充」**（`FillToggled(false)`：停用填充并收起面板）。另一条等效路径不变——点击
+  其它绘制工具条目会关闭填充共存态。
+- **明确不动的地方** — 画布上 Ctrl+单击打开分音符填充面板的路径保留（另一条独立入口）；
+  画刷 / 形状下拉的"点击面板内空白即关闭"语义不变。
+- **验证** — 先复现后修复：`test_settings_panel_is_centered_on_its_trigger_button` 用
+  headless iced 渲染器（`iced_wgpu` + `Shell::headless`）实测布局，修复前 **FAILED**
+  （面板中心 700.0 vs 按钮中心 772.5），修复后画刷 / 形状 / 颜料桶三个条目均居中（±1px）。
+  另加 `test_tool_panel_item_press_contract`（逐条目钉死点击→消息映射）、
+  `test_tool_settings_menu_owner`（面板归属条目）、
+  `test_panel_second_click_fill_bucket_opens_panel_without_ctrl`（全程不按 Ctrl）、
+  `test_fill_panel_disable_button_turns_fill_off`；`cargo test -p lumino-ui --lib` 399 全绿。
+
 ### 音符画 · 曲线/形状工具生成音符的最小长度下限（BUG 修复）
 
 - **症状** — 纵向卷帘下画一条**垂直于时间轴的直线**（时间原地不动、一瞬间跨过多个音高

@@ -268,12 +268,13 @@ fn test_settings_dialog_same_theme_not_requeued() {
 // - `root_tests/cloud_snapshot.rs`：云存储快照同步边界测试
 // - `root_tests/about_egg.rs`：关于页 logo 彩蛋（UI-007）接线测试
 // - `root_tests/echo_cave.rs`：关于页回声洞彩蛋（UI-006）接线测试
+// - `root_tests/fill_division_panel.rs`：颜料桶「分音符填充」面板触发/关闭链路测试
 // ================================================================
 
 mod about_egg;
 mod cloud_snapshot;
 mod echo_cave;
-mod fill_division_ctrl;
+mod fill_division_panel;
 mod sidebar;
 mod speed_change;
 mod tool_panel_switch;

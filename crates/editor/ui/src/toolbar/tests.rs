@@ -1,7 +1,8 @@
 use super::*;
 
 // ---------------------------------------------------------------------------
-// 悬浮条条目的「普通点击 / Ctrl+点击」行为（原主工具栏入口按钮 Ctrl 旁路已整体迁到悬浮条）
+// 悬浮条条目的点击行为（普通点击 = 选择；**已启用条目再次点击 = 弹出设置**）
+// 视图层的点击→消息映射见 `root/draw_toolbar.rs::tool_panel_item_press` 的专项测试。
 // ---------------------------------------------------------------------------
 
 /// 悬浮条普通点击条目：仅选择工具，不打开任何设置下拉。
@@ -16,67 +17,70 @@ fn test_tool_panel_plain_click_selects_without_opening_settings() {
     assert!(toolbar.tool_panel_open, "选择条目后悬浮条应保持打开");
 }
 
-/// Ctrl+点击画刷：选择画刷 **并** 打开画刷设置下拉。
+/// 已启用条目再次点击（= `ToolPanelItemSettingsRequested`）：
+/// 画刷 **并** 打开画刷设置下拉。
 #[test]
-fn test_tool_panel_ctrl_click_brush_selects_and_opens_dropdown() {
+fn test_tool_panel_settings_requested_brush_opens_dropdown() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
 
-    toolbar.update(Event::ToolPanelItemCtrlSelected(ToolPanelItem::Brush));
-    assert_eq!(toolbar.current_tool, Tool::Brush, "Ctrl+点击画刷应切到画刷");
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
+    assert_eq!(toolbar.current_tool, Tool::Brush, "再次点击画刷应切到画刷");
     assert!(
         toolbar.brush_dropdown_open,
-        "Ctrl+点击画刷应打开画刷设置下拉"
+        "再次点击画刷应打开画刷设置下拉"
     );
     assert!(!toolbar.shape_dropdown_open, "画刷/形状下拉应互斥");
 }
 
-/// Ctrl+点击形状：选择形状 **并** 打开形状选择下拉（矩形/圆形/三角形）。
+/// 已启用条目再次点击：形状 **并** 打开形状选择下拉（矩形/圆形/三角形）。
 #[test]
-fn test_tool_panel_ctrl_click_shape_selects_and_opens_dropdown() {
+fn test_tool_panel_settings_requested_shape_opens_dropdown() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
 
-    toolbar.update(Event::ToolPanelItemCtrlSelected(ToolPanelItem::Shape));
-    assert_eq!(toolbar.current_tool, Tool::Shape, "Ctrl+点击形状应切到形状");
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Shape));
+    assert_eq!(toolbar.current_tool, Tool::Shape, "再次点击形状应切到形状");
     assert!(
         toolbar.shape_dropdown_open,
-        "Ctrl+点击形状应打开形状选择下拉"
+        "再次点击形状应打开形状选择下拉"
     );
     assert!(!toolbar.brush_dropdown_open, "画刷/形状下拉应互斥");
 }
 
-/// Ctrl+点击颜料桶：确保填充开启（分音符填充对话框由 Root 侧弹出）。
-/// 已开启状态下再 Ctrl+点击仍保持开启 —— 不因 toggle 语义被关掉。
+/// 已启用条目再次点击颜料桶：确保填充开启（分音符填充面板由 Root 侧弹出）。
+/// 已开启状态下再次点击仍保持开启 —— 不因 toggle 语义被关掉
+/// （关闭填充走面板内的「关闭填充」按钮）。
 #[test]
-fn test_tool_panel_ctrl_click_fill_enables_fill() {
+fn test_tool_panel_settings_requested_fill_keeps_fill_on() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
     toolbar.fill_enabled = false;
 
-    toolbar.update(Event::ToolPanelItemCtrlSelected(ToolPanelItem::FillBucket));
-    assert!(toolbar.fill_enabled, "Ctrl+点击颜料桶应开启填充");
+    toolbar.update(Event::ToolPanelItemSettingsRequested(
+        ToolPanelItem::FillBucket,
+    ));
+    assert!(toolbar.fill_enabled, "再次点击颜料桶应开启填充");
     assert!(!toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open);
 
-    toolbar.update(Event::ToolPanelItemCtrlSelected(ToolPanelItem::FillBucket));
-    assert!(
-        toolbar.fill_enabled,
-        "Ctrl+点击颜料桶不应把已开启的填充关掉"
-    );
+    toolbar.update(Event::ToolPanelItemSettingsRequested(
+        ToolPanelItem::FillBucket,
+    ));
+    assert!(toolbar.fill_enabled, "再次点击颜料桶不应把已开启的填充关掉");
 }
 
-/// Ctrl+点击无独立设置的条目（曲线）：退化为普通选择，不打开任何下拉。
+/// 无独立设置的条目（曲线）收到设置请求：退化为普通选择，不打开任何下拉。
 #[test]
-fn test_tool_panel_ctrl_click_curve_degrades_to_plain_select() {
+fn test_tool_panel_settings_requested_curve_degrades_to_plain_select() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
     toolbar.current_tool = Tool::Pencil;
 
-    toolbar.update(Event::ToolPanelItemCtrlSelected(ToolPanelItem::Curve));
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Curve));
     assert_eq!(toolbar.current_tool, Tool::Curve);
     assert!(
         !toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open,
-        "无设置条目 Ctrl+点击不应打开任何设置下拉"
+        "无设置条目不应打开任何设置下拉"
     );
 }
 

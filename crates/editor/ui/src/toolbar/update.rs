@@ -374,9 +374,10 @@ impl Toolbar {
                 // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
                 tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
             }
-            Event::ToolPanelItemCtrlSelected(item) => {
-                // Ctrl+点击：选择语义 + 打开该工具的「设置」（旧主工具栏
-                // 「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，现已整体迁到悬浮条）。
+            Event::ToolPanelItemSettingsRequested(item) => {
+                // 「已启用条目被再次点击」= 弹出该工具的设置面板。视图层只在条目已启用时
+                // 发本事件（见 `root/draw_toolbar.rs::tool_panel_item_press`），
+                // 因此这里仍先套用一次选择语义（幂等，且保证填充态不被 toggle 掉）。
                 self.apply_tool_panel_item(item);
                 match item {
                     ToolPanelItem::Brush => {
@@ -390,22 +391,24 @@ impl Toolbar {
                         self.brush_dropdown_open = false;
                     }
                     ToolPanelItem::FillBucket => {
-                        // 颜料桶的设置 = 「分音符填充」对话框；确保填充开启后由 Root 侧弹窗
-                        // （`sync_toolbar_tool_state` 响应本事件触发 `open_fill_division_dialog`）。
+                        // 颜料桶的设置 = 「分音符填充」面板；`apply_tool_panel_item` 对颜料桶
+                        // 是 toggle 语义，可能把刚点亮的填充关掉，这里显式复位为"开启"。
+                        // 关闭填充走面板内的「关闭填充」按钮（`FillToggled(false)`）。
                         self.fill_enabled = true;
                     }
-                    // 曲线 / 文字无独立设置，Ctrl+点击等同普通选择
+                    // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
                     _ => {}
                 }
-                tracing::debug!("工具栏: 绘制工具条 Ctrl+选择 {:?}", item);
+                tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
             }
         }
     }
 
     /// 应用「绘制工具条条目」的**普通选择语义**（切换工具 / 切换填充共存态）。
     ///
-    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与 `ToolPanelItemCtrlSelected`
-    /// （Ctrl+点击：选择 + 打开设置）复用，避免两处选择逻辑漂移。
+    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与
+    /// `ToolPanelItemSettingsRequested`（已启用条目再次点击：选择 + 打开设置）复用，
+    /// 避免两处选择逻辑漂移。
     fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
         match item {
             ToolPanelItem::Mouse => {

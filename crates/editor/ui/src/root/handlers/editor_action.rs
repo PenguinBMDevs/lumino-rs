@@ -77,7 +77,8 @@ impl Root {
     /// 打开「分音符填充」面板（输入框预填当前档位）
     ///
     /// 触发路径：画布 Ctrl+单击（`Editor` 置请求位 → 此处取走）；
-    /// 以及音符画工具箱「颜料桶」条目的 Ctrl+点击（`ToolPanelItemCtrlSelected`）。
+    /// 以及音符画悬浮工具条「颜料桶」条目**启用后再次点击**
+    /// （`ToolPanelItemSettingsRequested`）。
     ///
     /// 该面板已从全屏居中弹窗重构为贴图标上方的**工具栏小面板**（由
     /// `root/draw_toolbar.rs` 渲染），故此处需确保音符画工具箱处于展开态——

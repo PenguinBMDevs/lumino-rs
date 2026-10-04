@@ -108,6 +108,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     fill_division_prefix: "使用",
     fill_division_suffix: "分音符填充",
     fill_division_hint: "留空 = 整块填充（不切分）",
+    fill_division_disable: "关闭填充",
 
     // 力度/速度编辑面板
     velocity_panel_velocity: "力度",

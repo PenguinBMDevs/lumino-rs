@@ -108,6 +108,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     fill_division_prefix: "Fill with",
     fill_division_suffix: "note",
     fill_division_hint: "Empty = single block (no split)",
+    fill_division_disable: "Disable fill",
 
     // Velocity/Tempo panel
     velocity_panel_velocity: "Velocity",
