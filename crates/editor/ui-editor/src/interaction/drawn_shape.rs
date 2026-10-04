@@ -34,7 +34,10 @@
 use std::collections::{HashMap, HashSet};
 
 use iced_core::{Point, Rectangle, Size};
-use lumino_editor_state::{DrawnShapeSource, ShapeMarquee, ShapeNote, shape_tool::point_in_shape};
+use lumino_editor_state::{
+    DrawnShapeSource, PendingShapeRef, ShapeMarquee, ShapeNote, shape_tool::point_in_shape,
+};
+use lumino_message::Tool;
 use lumino_midi_loader::NoteEvent;
 use lumino_midi_model::TickIndexedEvents;
 use lumino_note_core::history::{HistoryEntry, MoveOp, OpKind};
@@ -61,6 +64,16 @@ type StrokeRecord = (usize, Vec<(f32, f32)>, Vec<ShapeNote>);
 /// 逻辑 AABB 相交（含接触）；参数布局统一为 `(min_tick, max_tick, min_key, max_key)`
 fn aabb_overlap(a: (f32, f32, f32, f32), b: (f32, f32, f32, f32)) -> bool {
     a.0 <= b.1 && b.0 <= a.1 && a.2 <= b.3 && b.2 <= a.3
+}
+
+/// 按下标删除；越界返回 `false`（不 panic——下标来自持久化的待确认引用，
+/// 任何一处失配都不该把编辑器打崩）
+fn remove_at<T>(list: &mut Vec<T>, index: usize) -> bool {
+    if index >= list.len() {
+        return false;
+    }
+    list.remove(index);
+    true
 }
 
 /// 点到线段的最短距离（同坐标系）
@@ -177,6 +190,247 @@ impl Editor {
         }
     }
 
+    // ── 待确认产物镜像（未 √ 的几何进入图形选中域） ──────────
+
+    /// 重建「待确认产物」镜像（幂等）
+    ///
+    /// **为什么必须有镜像**：曲线 / 形状 / 画刷是两阶段交互——拖动只产生待确认几何，
+    /// 按 √ 才生成音符；而鼠标工具（框选工具）下这些几何**照旧渲染**
+    /// （`Editor::pending_preview_visible`，否则用户「切过去图案就消失」）。
+    /// 既然看得见，就必须框得中、拖得动：本方法把每件待确认几何镜像成图形选中域
+    /// 条目，供框选命中、选中高亮、选框与拖动复用同一条链路。
+    ///
+    /// **音符仍只在 √ 时生成**：镜像 `notes` 恒空，移动 / 删除写回 owning tool 的
+    /// 待确认容器（见 [`Self::translate_pending`] / [`Self::remove_pending`]），
+    /// 文档与历史不受影响。
+    ///
+    /// 调用时机：切换到鼠标工具（进入选中域）、装载新文档（注册表被清空后）。
+    /// 非鼠标工具时清空全部镜像：其它工具下由 owning 预览负责渲染，无需选中域条目。
+    pub fn rebuild_pending_mirrors(&mut self) {
+        // 重建会换掉镜像 ID：先记下当前选中的待确认来源，重建后按来源恢复选中态。
+        // （`set_tool` 可能被同工具重复调用——面板条目重复点击等——重复点击不该清空选区。）
+        let keep: Vec<PendingShapeRef> = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .filter_map(|s| s.pending)
+            .collect();
+        self.editor_state.shape_select.remove_pending_all();
+        if self.current_tool() != Tool::ShapeSelect {
+            return;
+        }
+        let track = self.editor_state.data.current_track;
+        // Conductor 轨（track 0）：各 owning 预览与工具本身都不可用（不渲染），
+        // 镜像自然不建——「看得见」是「框得着」的前提，看不见就不该凭空可选中。
+        if track == 0 {
+            return;
+        }
+        let mut items: Vec<(PendingShapeRef, DrawnShapeSource)> = Vec::new();
+        for i in 0..self.editor_state.shape_tool.shapes.len() {
+            let r = PendingShapeRef::Shape(i);
+            if let Some(src) = self.pending_source(r) {
+                items.push((r, src));
+            }
+        }
+        for i in 0..self.editor_state.line_tool.paths.len() {
+            let r = PendingShapeRef::CurvePath(i);
+            if let Some(src) = self.pending_source(r) {
+                items.push((r, src));
+            }
+        }
+        for i in 0..self.editor_state.brush_tool.strokes.len() {
+            let r = PendingShapeRef::BrushStroke(i);
+            if let Some(src) = self.pending_source(r) {
+                items.push((r, src));
+            }
+        }
+        for (r, src) in items {
+            self.editor_state.shape_select.add_pending(track, r, src);
+        }
+        for r in keep {
+            if let Some(id) = self.editor_state.shape_select.pending_mirror(r) {
+                self.editor_state.shape_select.add_to_selection(id);
+            }
+        }
+    }
+
+    /// 待确认几何的矢量来源（**镜像几何的唯一权威 = owning tool 的待确认容器**）
+    ///
+    /// 每次写回 / 平移后都用本方法重新导出并覆写镜像几何，杜绝「镜像与 owning
+    /// 各自演化」的漂移。曲线按与 √ 登记同源的 `flatten_path` 展平（同一口径）。
+    fn pending_source(&self, r: PendingShapeRef) -> Option<DrawnShapeSource> {
+        match r {
+            PendingShapeRef::Shape(i) => {
+                let s = self.editor_state.shape_tool.shapes.get(i)?;
+                Some(DrawnShapeSource::Shape {
+                    kind: s.kind,
+                    rect: s.rect,
+                    shift_constrained: s.shift_constrained,
+                    filled: s.filled,
+                })
+            }
+            PendingShapeRef::CurvePath(i) => {
+                let path = self.editor_state.line_tool.paths.get(i)?;
+                Some(DrawnShapeSource::Polyline {
+                    points: flatten_path(path)
+                        .into_iter()
+                        .map(|(t, k)| (t as f32, k as f32))
+                        .collect(),
+                })
+            }
+            PendingShapeRef::BrushStroke(i) => {
+                let s = self.editor_state.brush_tool.strokes.get(i)?;
+                Some(DrawnShapeSource::Polyline {
+                    points: s.points.clone(),
+                })
+            }
+        }
+    }
+
+    /// 把镜像几何回灌为 owning tool 的**当前**待确认几何（镜像 ID / 选中态不变）
+    ///
+    /// 待确认几何的唯一权威是 owning tool 的容器，镜像几何只是派生缓存。凡在鼠标工具
+    /// 激活时可能改动待确认几何的入口，都必须回灌一次，否则镜像与预览 / 选框分叉，
+    /// 重新落回「看得见却框不中 / 框与图案错位」这一类 BUG：
+    /// - 镜像自身的拖动写回（[`Self::sync_pending_drag_geometry`]）；
+    /// - **撤销 / 重做待确认路径编辑**（`Editor::undo/redo` 的 brush/line `*_path` 分支）——
+    ///   该入口与工具无关，鼠标工具下按 Ctrl+Z 同样会回退待确认几何。
+    /// - owning 工具自身的交互（拖动锚点/路径）与 √/×：这些入口都只在 owning 工具激活时
+    ///   可达，而离开鼠标工具时镜像已被撤掉，无需回灌。
+    ///
+    /// owning 几何已整体消失（例如撤销回退了整条路径）→ 镜像一并退场，避免留下
+    /// 「画不出来却框得中」的幽灵条目。
+    pub(crate) fn refresh_pending_mirror_geometry(&mut self) {
+        let mirrors: Vec<(u64, PendingShapeRef)> = self
+            .editor_state
+            .shape_select
+            .pending_shapes()
+            .map(|(s, r)| (s.id, r))
+            .collect();
+        for (id, r) in mirrors {
+            match self.pending_source(r) {
+                Some(src) => {
+                    self.editor_state.shape_select.set_source(id, src);
+                }
+                None => {
+                    self.editor_state.shape_select.remove(id);
+                }
+            }
+        }
+    }
+
+    /// 待确认镜像拖动中的**几何即时写回**（每帧增量，owning tool 保持唯一权威）
+    ///
+    /// 已确认图形走「幽灵」语义（拖动只预览、松手才落文档），但待确认几何**没有文档层**：
+    /// 它本身就是待 √ 的产物，直接落位最简单也最不容易分叉——拖动帧里
+    /// 「owning 预览（曲线/形状 canvas、画刷 wgpu 方块）／镜像描边／选中选框」
+    /// 读到的永远是同一份几何。
+    ///
+    /// 增量 = 本次累计偏移 − 已写回偏移（`ShapeDrag` 存的是相对按下点的**累计**偏移）。
+    fn sync_pending_drag_geometry(&mut self) {
+        let Some(d) = self.editor_state.shape_select.drag() else {
+            return;
+        };
+        let (applied_tick, applied_key) = self.pending_drag_applied;
+        let inc = (d.delta_tick - applied_tick, d.delta_key - applied_key);
+        if inc.0 == 0.0 && inc.1 == 0.0 {
+            return;
+        }
+        let mirrors: Vec<(u64, PendingShapeRef)> = self
+            .editor_state
+            .shape_select
+            .selected_shapes()
+            .filter_map(|s| s.pending.map(|r| (s.id, r)))
+            .collect();
+        if mirrors.is_empty() {
+            return;
+        }
+        for (id, r) in mirrors {
+            if self.translate_pending(r, inc.0, inc.1)
+                && let Some(src) = self.pending_source(r)
+            {
+                self.editor_state.shape_select.set_source(id, src);
+            }
+        }
+        self.pending_drag_applied = (d.delta_tick, d.delta_key);
+    }
+
+    /// 把一次整体平移**写回** owning tool 的待确认几何（鼠标工具拖动待确认产物）
+    ///
+    /// 平移口径与拖动已确认图形（[`DrawnShapeSource::translate`]）一致：
+    /// tick 下限钳 0、key 钳 0..=255。历史快照由调用方在**一次拖动结束时**记一次
+    /// （见 [`Self::record_pending_movement`]），避免逐帧刷屏。
+    fn translate_pending(&mut self, r: PendingShapeRef, dtick: f32, dkey: f32) -> bool {
+        match r {
+            PendingShapeRef::Shape(i) => {
+                let Some(s) = self.editor_state.shape_tool.shapes.get_mut(i) else {
+                    return false;
+                };
+                s.rect.0 = (s.rect.0 + dtick).max(0.0);
+                s.rect.2 = (s.rect.2 + dtick).max(0.0);
+                s.rect.1 = (s.rect.1 + dkey).clamp(0.0, 255.0);
+                s.rect.3 = (s.rect.3 + dkey).clamp(0.0, 255.0);
+            }
+            PendingShapeRef::CurvePath(i) => {
+                let Some(path) = self.editor_state.line_tool.paths.get_mut(i) else {
+                    return false;
+                };
+                // 控制柄是**相对**偏移（见 `BezierAnchor::out_handle_abs`），
+                // 平移锚点即可整体平移曲线（与曲线工具拖动整条路径同口径）
+                for a in path.iter_mut() {
+                    a.pos = (
+                        (a.pos.0 + dtick).max(0.0),
+                        (a.pos.1 + dkey).clamp(0.0, 255.0),
+                    );
+                }
+            }
+            PendingShapeRef::BrushStroke(i) => {
+                let Some(s) = self.editor_state.brush_tool.strokes.get_mut(i) else {
+                    return false;
+                };
+                s.translate(dtick, dkey);
+            }
+        }
+        true
+    }
+
+    /// 为一次已完成的待确认几何移动补记历史快照（owning tool 的待确认历史）
+    ///
+    /// 曲线 / 画刷的待确认几何有独立历史（Ctrl+Z 可回退一次移动）；形状工具无
+    /// 待确认几何历史，无从记录。
+    fn record_pending_movement(&mut self, r: PendingShapeRef) {
+        match r {
+            PendingShapeRef::CurvePath(_) => self.editor_state.line_tool.push_path_history(),
+            PendingShapeRef::BrushStroke(_) => self.editor_state.brush_tool.push_path_history(),
+            PendingShapeRef::Shape(_) => {}
+        }
+    }
+
+    /// 删除一件待确认几何（鼠标工具 Delete；无音符 → 不动文档）
+    ///
+    /// 摘除 owning tool 容器里的对应几何 + 其镜像；同容器中下标更大的镜像引用随之前移
+    /// （几何未变，无需重建，镜像 ID 与其余选中态保持稳定）。
+    fn remove_pending(&mut self, r: PendingShapeRef) -> bool {
+        // 无镜像 ⇒ 该件不在选中域（不该由本路径删除），不做任何改动
+        let Some(id) = self.editor_state.shape_select.pending_mirror(r) else {
+            return false;
+        };
+        let removed = match r {
+            PendingShapeRef::Shape(i) => remove_at(&mut self.editor_state.shape_tool.shapes, i),
+            PendingShapeRef::CurvePath(i) => remove_at(&mut self.editor_state.line_tool.paths, i),
+            PendingShapeRef::BrushStroke(i) => {
+                remove_at(&mut self.editor_state.brush_tool.strokes, i)
+            }
+        };
+        if !removed {
+            return false;
+        }
+        self.editor_state.shape_select.remove(id);
+        self.editor_state.shape_select.shift_pending_indices(r);
+        self.record_pending_movement(r);
+        true
+    }
+
     // ── 命中 ─────────────────────────────────────────────
 
     /// 命中当前音轨**最上层**（后登记优先）的可见图形，返回其 ID
@@ -230,20 +484,40 @@ impl Editor {
     ///
     /// 渲染与命中同源，杜绝「看到的框抓不住 / 抓得住的框看不见」。
     /// 当前音轨无选中、几何全为空（空折线）时返回 `None`。
+    ///
+    /// **预览偏移按件区分**：已确认图形走「幽灵」语义（文档未变，几何在原位，
+    /// 选框需叠加拖拽偏移才跟手）；待确认镜像的几何已随拖动**即时落位**
+    /// （见 [`Self::sync_pending_drag_geometry`]），再叠偏移就成了双倍位移。
     pub(crate) fn selection_box(&self) -> Option<Rectangle> {
         let track = self.editor_state.data.current_track;
-        let (t0, t1, k0, k1) = self.editor_state.shape_select.selection_bounds_on(track)?;
-        // 正在拖动整组：选框跟随拖拽预览偏移（文档未变，仅渲染层位移）
         let (dtick, dkey) = self.drag_preview_delta();
-        let a = self.line_pos_screen_pos((t0 + dtick, k0 + dkey));
-        let b = self.line_pos_screen_pos((t1 + dtick, k1 + dkey));
-        let min_x = a.x.min(b.x) - SHAPE_BOX_PADDING_PX;
-        let min_y = a.y.min(b.y) - SHAPE_BOX_PADDING_PX;
-        let w = (a.x - b.x).abs() + SHAPE_BOX_PADDING_PX * 2.0;
-        let h = (a.y - b.y).abs() + SHAPE_BOX_PADDING_PX * 2.0;
+        // 命中集在**屏幕空间**取并集：逻辑空间与屏幕不是线性同尺度（纵横缩放不同），
+        // 先各自换算再合并，才能保证框住每个选中图形（含 padding 外扩）。
+        let mut acc: Option<(f32, f32, f32, f32)> = None;
+        for s in self.editor_state.shape_select.selected_shapes_on(track) {
+            let Some(b) = s.source.bounds() else {
+                continue;
+            };
+            let (dt, dk) = if s.pending.is_some() {
+                (0.0, 0.0)
+            } else {
+                (dtick, dkey)
+            };
+            let a = self.line_pos_screen_pos((b.0 + dt, b.2 + dk));
+            let c = self.line_pos_screen_pos((b.1 + dt, b.3 + dk));
+            let r = (a.x.min(c.x), a.y.min(c.y), a.x.max(c.x), a.y.max(c.y));
+            acc = Some(match acc {
+                None => r,
+                Some(p) => (p.0.min(r.0), p.1.min(r.1), p.2.max(r.2), p.3.max(r.3)),
+            });
+        }
+        let (x0, y0, x1, y1) = acc?;
         Some(Rectangle::new(
-            Point::new(min_x, min_y),
-            Size::new(w.max(1.0), h.max(1.0)),
+            Point::new(x0 - SHAPE_BOX_PADDING_PX, y0 - SHAPE_BOX_PADDING_PX),
+            Size::new(
+                ((x1 - x0) + SHAPE_BOX_PADDING_PX * 2.0).max(1.0),
+                ((y1 - y0) + SHAPE_BOX_PADDING_PX * 2.0).max(1.0),
+            ),
         ))
     }
 
@@ -296,6 +570,12 @@ impl Editor {
     /// ③ 都不满足 → 空白按下：非 `additive` 时取消选中，并起框（是否构成框选由松手时的
     /// 屏幕尺度判定，见 [`Self::finish_shape_marquee`]）。
     pub(crate) fn handle_shape_select_pressed(&mut self, tick: f32, key: f32, additive: bool) {
+        // 新一次拖动从零开始：已写回待确认几何的累计偏移必须归零，否则
+        // `sync_pending_drag_geometry` 会按上一次的残值算出错误增量。
+        self.pending_drag_applied = (0.0, 0.0);
+        // 手势边界自愈：命中判定与选框都建立在镜像几何之上，动手前先保证它是最新的
+        // （任何未预料到的待确认几何改动都不会再退化成「框不中」）。
+        self.refresh_pending_mirror_geometry();
         match self.hit_test_drawn_shape(tick, key) {
             Some(id) => {
                 if additive {
@@ -332,6 +612,8 @@ impl Editor {
         if self.editor_state.shape_select.is_dragging() {
             let snap = self.editor_state.view.snap_precision;
             self.editor_state.shape_select.update_drag(tick, key, snap);
+            // 待确认镜像即时落位（owning 预览 / 镜像描边 / 选框共用同一份几何）
+            self.sync_pending_drag_geometry();
         } else if self.editor_state.shape_select.is_marqueeing() {
             let snapped = self.snap_tick(tick);
             self.editor_state.shape_select.update_marquee(snapped, key);
@@ -348,6 +630,7 @@ impl Editor {
         } else if let Some(area) = self.editor_state.shape_select.end_marquee() {
             self.finish_shape_marquee(area);
         }
+        self.pending_drag_applied = (0.0, 0.0);
         self.grid_cache.clear();
     }
 
@@ -395,29 +678,59 @@ impl Editor {
     /// 把**整个选中集**的全部音符整体平移（`MoveOp` 删旧 + 加新），并同步平移各图形几何
     ///
     /// 多选下所有图形共用**同一个历史分组**，因此一次撤销 / 重做能整组回放。
+    /// 待确认镜像（未 √ 的几何）走另一条路：几何写回 owning tool 的待确认容器，
+    /// 不动文档、不产生历史（音符尚未存在）。
     /// 返回是否实际发生了移动。
     fn move_selected_shapes(&mut self, dtick: f32, dkey: f32) -> bool {
         if dtick == 0.0 && dkey == 0.0 {
             return false;
         }
-        // 选中集快照（ID + 各自音符），后续改文档时不再借用注册表
-        let selected: Vec<(u64, Vec<ShapeNote>)> = self
+        // 选中集快照（ID + 各自音符 + 待确认来源），后续改文档时不再借用注册表
+        let selected: Vec<(u64, Vec<ShapeNote>, Option<PendingShapeRef>)> = self
             .editor_state
             .shape_select
             .selected_shapes()
-            .map(|s| (s.id, s.notes.clone()))
+            .map(|s| (s.id, s.notes.clone(), s.pending))
             .collect();
         if selected.is_empty() {
             return false;
         }
+
+        // ① 待确认镜像：几何在拖动过程中已**即时写回**（`sync_pending_drag_geometry`），
+        //    此处只补「尚未写回的残差」并为整次移动记一次历史（无文档变更）
+        let mut pending_moved = false;
+        for (id, _, pending) in &selected {
+            let Some(r) = *pending else {
+                continue;
+            };
+            let (applied_tick, applied_key) = self.pending_drag_applied;
+            let inc = (dtick - applied_tick, dkey - applied_key);
+            if inc.0 != 0.0 || inc.1 != 0.0 {
+                // 残差非零（本函数被直接调用 / 拖动帧未落几何）：补写；引用失效则跳过
+                if !self.translate_pending(r, inc.0, inc.1) {
+                    continue;
+                }
+                if let Some(src) = self.pending_source(r) {
+                    self.editor_state.shape_select.set_source(*id, src);
+                }
+            }
+            self.record_pending_movement(r);
+            pending_moved = true;
+        }
+        self.pending_drag_applied = (0.0, 0.0);
+
+        // ② 已确认图形：按值定位文档音符 → MoveOp（镜像无音符，天然不参与）
         let max_key = self.editor_state.view.visible_key_count.saturating_sub(1);
         let dt = dtick.round() as i64;
         let dk = dkey.round() as i32;
 
-        // ① 按轨聚合「按值定位用的音符值」（登记时的值语义，与写入同源）
+        // ②-1 按轨聚合「按值定位用的音符值」（登记时的值语义，与写入同源）
         //    跨图形聚合后由同一份 `used` 集合去重，杜绝两个图形重复认领同一文档事件
         let mut lookups_by_track: HashMap<usize, Vec<NoteEvent>> = HashMap::new();
-        for (_, notes) in &selected {
+        for (_, notes, pending) in &selected {
+            if pending.is_some() {
+                continue;
+            }
             for n in notes {
                 lookups_by_track
                     .entry(n.track)
@@ -428,7 +741,7 @@ impl Editor {
             }
         }
 
-        // ② 逐轨按值定位真实事件，构造 originals / moved（同值多份按份数分配）
+        // ②-2 逐轨按值定位真实事件，构造 originals / moved（同值多份按份数分配）
         let mut ops: Vec<MoveOp> = Vec::new();
         let mut seq = 0u16;
         for (track, lookups) in &lookups_by_track {
@@ -478,16 +791,20 @@ impl Editor {
             seq = seq.saturating_add(1);
         }
         if ops.is_empty() {
-            return false;
+            // 仅待确认几何被移动：文档未变 → 不写历史、不重建空间索引
+            return pending_moved;
         }
 
         let modified = self.editor_state.data.apply_move_ops(&ops, false, max_key);
         if modified == 0 {
-            return false;
+            return pending_moved;
         }
         let group = self.editor_state.data.push_move_op(ops);
-        // 整组共用同一分组：几何 / 音符值随组一起平移
-        for (id, _) in selected {
+        // 整组共用同一分组：几何 / 音符值随组一起平移（待确认镜像已在 ① 写回）
+        for (id, _, pending) in selected {
+            if pending.is_some() {
+                continue;
+            }
             self.editor_state
                 .shape_select
                 .translate_shape(id, Some(group), dtick, dkey);
@@ -499,21 +816,41 @@ impl Editor {
     // ── 删除 ─────────────────────────────────────────────
 
     /// 删除**整个选中集**的绘制图形（图形对象 + 它们生成的音符），返回是否删除了内容
+    ///
+    /// 待确认镜像（未 √ 的几何）只摘几何：无音符 → 不动文档、不记文档历史。
     pub(crate) fn delete_selected_drawn_shape(&mut self) -> bool {
         // 取消任何未完成的拖拽：删除后拖拽若残留，会把 is_editing() 永久卡在 true
         // （进而阻塞撤销/重做）。删除是终结操作，拖拽状态必须一并收敛。
         let _ = self.editor_state.shape_select.end_drag();
-        // 选中集快照（ID + 各自音符）
-        let selected: Vec<(u64, Vec<ShapeNote>)> = self
+        // 选中集快照（ID + 各自音符 + 待确认来源）
+        let selected: Vec<(u64, Vec<ShapeNote>, Option<PendingShapeRef>)> = self
             .editor_state
             .shape_select
             .selected_shapes()
-            .map(|s| (s.id, s.notes.clone()))
+            .map(|s| (s.id, s.notes.clone(), s.pending))
             .collect();
         if selected.is_empty() {
             return false;
         }
-        // 先按值定位待删索引（按轨分组；`used` 在整组范围内共享，避免重复认领同一事件）
+
+        // ① 待确认镜像：几何从 owning tool 摘除（含镜像退场与同容器下标前移）
+        let mut pending_deleted = false;
+        for (_, _, pending) in &selected {
+            if pending.is_some_and(|r| self.remove_pending(r)) {
+                pending_deleted = true;
+            }
+        }
+        let selected: Vec<(u64, Vec<ShapeNote>)> = selected
+            .into_iter()
+            .filter_map(|(id, notes, pending)| pending.is_none().then_some((id, notes)))
+            .collect();
+        if selected.is_empty() {
+            self.grid_cache.clear();
+            return pending_deleted;
+        }
+
+        // ② 已确认图形：先按值定位待删索引（按轨分组；`used` 在整组范围内共享，
+        //    避免重复认领同一事件）
         let mut per_track: HashMap<usize, (HashSet<usize>, Vec<usize>)> = HashMap::new();
         for (_, notes) in &selected {
             for n in notes {
@@ -978,9 +1315,38 @@ mod tests {
             editor.editor_state.shape_tool.has_pending(),
             "切换工具不得丢弃待确认图形"
         );
-        // ③ 未 √ 就不该登记为可选中对象（登记只属于 √）
-        assert!(editor.editor_state.shape_select.is_empty());
-        // ④ 切回形状工具仍能 √ 固化 —— 图案没被毁
+        // ③ 切到鼠标工具：待确认几何**进入图形选中域**（镜像），但**不带音符**——
+        //    「没按 √ 就没有音符」与「看得见就必须框得中」两条同时成立。
+        //    （BUG 历史：只保留不登记 ⇒ 用户看到图案却框不中、拖不动、无选框。）
+        assert_eq!(
+            editor.editor_state.shape_select.len(),
+            1,
+            "待确认图形应登记为选中域镜像（否则鼠标工具下框不中）"
+        );
+        let mirror = &editor.editor_state.shape_select.shapes()[0];
+        assert!(
+            mirror.pending.is_some(),
+            "该条目必须是待确认镜像（来源 = 形状工具的待确认图形）"
+        );
+        assert!(
+            mirror.notes.is_empty(),
+            "镜像不得携带音符：音符只属于 √ 确认"
+        );
+        assert!(
+            mirror.source.bounds().is_some(),
+            "镜像必须有几何（可供框选命中与画选框）"
+        );
+        assert!(
+            editor.selection_box().is_none(),
+            "尚未框选 / 点选时不该直接出现选框"
+        );
+        // ④ 离开鼠标工具：镜像撤掉（其余工具由 owning 预览渲染，不该留选中域条目）
+        editor.set_tool(Tool::Pencil);
+        assert!(
+            editor.editor_state.shape_select.is_empty(),
+            "离开鼠标工具应撤掉镜像"
+        );
+        // ⑤ 切回形状工具仍能 √ 固化 —— 图案没被毁
         editor.set_tool(Tool::Shape);
         assert!(editor.confirm_shape_tool(), "切回后仍可 √ 固化");
         assert_eq!(editor.editor_state.data.current_track_note_count(), 16);

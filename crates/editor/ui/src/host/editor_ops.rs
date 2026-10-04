@@ -84,6 +84,9 @@ impl Host {
     /// 用户绘制的图形应保留），见 `runner/menu/file/export.rs`。
     pub fn clear_drawn_shapes(&mut self) {
         self.root.editor.editor_state.shape_select.clear();
+        // 注册表被整体清空会连带清掉「待确认产物镜像」：若此刻正停在鼠标工具，
+        // 立刻按 owning tool 的待确认几何重建，维持「看得见 = 框得着」不变式。
+        self.root.editor.rebuild_pending_mirrors();
     }
 
     /// 设置 MIDI 文档（独占所有权，2026-08 单一权威源改造）

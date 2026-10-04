@@ -26,6 +26,7 @@ pub use editor_state::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeToolInteraction, ShapeToolState,
 };
 pub use editor_state::{
-    DrawnShape, DrawnShapeSource, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote, ShapeSelectState,
+    DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,
+    ShapeSelectState,
 };
 pub use editor_transform::EditorTransform;

@@ -39,7 +39,8 @@ pub use constants::{
 };
 pub use drag_state::DragState;
 pub use drawn_shape::{
-    DrawnShape, DrawnShapeSource, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote, ShapeSelectState,
+    DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,
+    ShapeSelectState,
 };
 pub use editor_data::{
     CollabCreateSyncEntry, CollabTransformSyncEntry, EditorData, NoteDeltaEvent,

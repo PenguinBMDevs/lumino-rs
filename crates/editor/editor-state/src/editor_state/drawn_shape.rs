@@ -124,18 +124,44 @@ pub struct ShapeMove {
     pub dkey: f32,
 }
 
+/// 待确认产物的来源（未 √ 的绘制几何）
+///
+/// 曲线 / 形状 / 画刷的**两阶段交互**：拖动只产生「待确认几何」，按 √ 才生成音符。
+/// 鼠标工具（框选）下这些几何照旧渲染（`Editor::pending_preview_visible`），
+/// 因此它们必须同时进入图形选中域——否则用户「看得见却框不中、拖不动」。
+///
+/// 携带来源的工具与容器下标，作用有二：
+/// - **移动 / 删除写回**：待确认几何仍以 owning tool 的容器为唯一权威，
+///   选中域里的镜像只是它的派生视图（见 `ShapeSelectState::add_pending`）；
+/// - **几何同步**：镜像不自己演化——每次写回 / 平移都由 owning 侧重新导出几何覆写
+///   （见 `ShapeSelectState::set_source`），保证预览与选框读到的永远是同一份几何。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PendingShapeRef {
+    /// 形状工具第 `i` 个待确认图形（`shape_tool.shapes[i]`）
+    Shape(usize),
+    /// 曲线工具第 `i` 条待确认路径（`line_tool.paths[i]`）
+    CurvePath(usize),
+    /// 画刷工具第 `i` 条待确认笔画（`brush_tool.strokes[i]`）
+    BrushStroke(usize),
+}
+
 /// 一个已确认的绘制图形对象
 #[derive(Debug, Clone, PartialEq)]
 pub struct DrawnShape {
     /// 稳定标识（注册表内自增，选中态以此引用）
     pub id: u64,
     /// 所属音轨（仅在当前轨可点选 / 高亮 / 编辑）
+    ///
+    /// 待确认镜像（`pending.is_some()`）例外：几何尚未绑定音轨，随任何非
+    /// Conductor 轨可见可选中（见 [`ShapeSelectState::in_track`]）。
     pub track: usize,
     /// 创建该图形的音符历史分组 ID（`None` = 未接入历史）
     pub group: Option<u64>,
     /// 矢量几何
     pub source: DrawnShapeSource,
     /// 该图形 √ 确认时生成的音符（整体移动 / 删除的作用对象）
+    ///
+    /// 待确认镜像恒为空：未 √ 就没有音符，移动 / 删除只作用于几何。
     pub notes: Vec<ShapeNote>,
     /// 创建操作被撤销而隐藏
     pub hidden_by_creation: bool,
@@ -146,6 +172,8 @@ pub struct DrawnShape {
     pub ever_deleted: bool,
     /// 已应用的移动（历史分组 + 偏移）
     pub moves: Vec<ShapeMove>,
+    /// 待确认几何的来源（`Some` = 未 √ 的镜像，见 [`PendingShapeRef`]）
+    pub pending: Option<PendingShapeRef>,
 }
 
 impl DrawnShape {
@@ -236,10 +264,8 @@ impl ShapeSelectState {
         source: DrawnShapeSource,
         notes: Vec<ShapeNote>,
     ) -> u64 {
-        let id = self.next_id;
-        self.next_id += 1;
-        self.shapes.push(DrawnShape {
-            id,
+        self.push_shape(DrawnShape {
+            id: self.next_id,
             track,
             group,
             source,
@@ -248,8 +274,112 @@ impl ShapeSelectState {
             deleted: false,
             ever_deleted: false,
             moves: Vec::new(),
-        });
+            pending: None,
+        })
+    }
+
+    /// 登记一个**待确认产物的镜像**（未 √ 的几何：无音符、无历史分组），返回其稳定 ID
+    ///
+    /// 两阶段交互下，未 √ 的曲线 / 形状 / 画刷在鼠标工具下照旧渲染（否则用户
+    /// 「切过去图案就消失」），既然看得见就必须框得中、拖得动——本方法把它们纳入
+    /// 选中域。音符仍只在 √ 时生成：镜像的 `notes` 恒空，移动 / 删除由调用方
+    /// 写回 owning tool 的待确认几何（见 `Editor::translate_pending`）。
+    pub fn add_pending(
+        &mut self,
+        track: usize,
+        pending: PendingShapeRef,
+        source: DrawnShapeSource,
+    ) -> u64 {
+        self.push_shape(DrawnShape {
+            id: self.next_id,
+            track,
+            group: None,
+            source,
+            notes: Vec::new(),
+            hidden_by_creation: false,
+            deleted: false,
+            ever_deleted: false,
+            moves: Vec::new(),
+            pending: Some(pending),
+        })
+    }
+
+    /// 入表 + 自增 ID（`add` / `add_pending` 共用）
+    fn push_shape(&mut self, shape: DrawnShape) -> u64 {
+        let id = self.next_id;
+        self.next_id += 1;
+        self.shapes.push(shape);
         id
+    }
+
+    // ── 待确认镜像 ─────────────────────────────────────────
+
+    /// 指定图形的待确认来源（已确认图形返回 `None`）
+    pub fn pending_of(&self, id: u64) -> Option<PendingShapeRef> {
+        self.shapes
+            .iter()
+            .find(|s| s.id == id)
+            .and_then(|s| s.pending)
+    }
+
+    /// 某待确认来源对应的镜像 ID（无镜像返回 `None`）
+    pub fn pending_mirror(&self, r: PendingShapeRef) -> Option<u64> {
+        self.shapes
+            .iter()
+            .find(|s| s.pending == Some(r))
+            .map(|s| s.id)
+    }
+
+    /// 覆写某图形的矢量几何（镜像几何跟随 owning tool 的待确认几何更新）。
+    ///
+    /// 唯一权威始终是 owning tool 的容器：镜像只是派生视图，故每次写回 / 平移后
+    /// 都用「由 owning tool 重新导出」的几何覆写，杜绝两处几何各自演化而漂移。
+    pub fn set_source(&mut self, id: u64, source: DrawnShapeSource) -> bool {
+        let Some(s) = self.shapes.iter_mut().find(|s| s.id == id) else {
+            return false;
+        };
+        s.source = source;
+        true
+    }
+
+    /// 删除**全部**待确认镜像（离开鼠标工具时调用；已确认图形不受影响）
+    pub fn remove_pending_all(&mut self) {
+        self.shapes.retain(|s| s.pending.is_none());
+        self.collapse_selection();
+    }
+
+    /// 待确认容器里删掉一件后，把同容器中**下标更大**的镜像前移一位
+    ///
+    /// 只有同容器（同一 `PendingShapeRef` 变体）且下标在被删元素之后的镜像会受
+    /// 下标位移影响；几何本身不变，故无需重建镜像（ID / 选中集都保持稳定）。
+    pub fn shift_pending_indices(&mut self, removed: PendingShapeRef) {
+        for s in &mut self.shapes {
+            let Some(p) = s.pending.as_mut() else {
+                continue;
+            };
+            let (cur, gone) = match (p, removed) {
+                (PendingShapeRef::Shape(i), PendingShapeRef::Shape(k)) => (i, k),
+                (PendingShapeRef::CurvePath(i), PendingShapeRef::CurvePath(k)) => (i, k),
+                (PendingShapeRef::BrushStroke(i), PendingShapeRef::BrushStroke(k)) => (i, k),
+                _ => continue,
+            };
+            if *cur > gone {
+                *cur -= 1;
+            }
+        }
+    }
+
+    /// 图形是否属于给定音轨的**可交互域**（可见 / 可选中 / 可拖动）
+    ///
+    /// - 已确认图形：严格归其登记音轨；
+    /// - 待确认镜像：几何尚未绑定音轨（owning 预览在任何非 Conductor 轨都渲染），
+    ///   故在任何非 Conductor 轨都可交互——否则用户切轨后又会看到「看得见框不中」。
+    fn in_track(s: &DrawnShape, track: usize) -> bool {
+        if s.pending.is_some() {
+            track != 0
+        } else {
+            s.track == track
+        }
     }
 
     /// 全部图形（含隐藏 / 已删除）
@@ -352,7 +482,7 @@ impl ShapeSelectState {
         let selected = &self.selected;
         self.shapes
             .iter()
-            .filter(move |s| s.track == track && s.is_visible() && selected.contains(&s.id))
+            .filter(move |s| Self::in_track(s, track) && s.is_visible() && selected.contains(&s.id))
     }
 
     /// 指定音轨上选中图形的**并集外接框** `(min_tick, max_tick, min_key, max_key)`
@@ -377,7 +507,12 @@ impl ShapeSelectState {
     pub fn visible_on(&self, track: usize) -> impl DoubleEndedIterator<Item = &DrawnShape> {
         self.shapes
             .iter()
-            .filter(move |s| s.track == track && s.is_visible())
+            .filter(move |s| Self::in_track(s, track) && s.is_visible())
+    }
+
+    /// 全部待确认镜像（几何 + 来源），按登记顺序
+    pub fn pending_shapes(&self) -> impl Iterator<Item = (&DrawnShape, PendingShapeRef)> {
+        self.shapes.iter().filter_map(|s| s.pending.map(|p| (s, p)))
     }
 
     /// 历史分组被撤销：撤销创建 → 隐藏该图形；撤销移动 → 几何反向平移
@@ -922,5 +1057,141 @@ mod tests {
         assert_eq!(st.selection_len(), 0);
         assert!(!st.is_dragging());
         assert_eq!(st.add(1, None, rect_source(), vec![]), 0);
+    }
+
+    // ── 待确认产物镜像（未 √ 的几何进入选中域） ──────────────
+
+    #[test]
+    fn test_add_pending_mirror_has_no_notes_and_shares_track_domain() {
+        let mut st = ShapeSelectState::default();
+        let confirmed = st.add(1, None, rect_source(), vec![note(0.0, 60)]);
+        let mirror = st.add_pending(1, PendingShapeRef::Shape(0), rect_source());
+
+        let m = st
+            .shapes()
+            .iter()
+            .find(|s| s.id == mirror)
+            .expect("镜像应存在");
+        assert!(m.notes.is_empty(), "镜像不得携带音符（音符只属于 √）");
+        assert_eq!(m.group, None, "镜像不绑定历史分组");
+        assert_eq!(m.pending, Some(PendingShapeRef::Shape(0)));
+        assert_eq!(st.pending_of(mirror), Some(PendingShapeRef::Shape(0)));
+        assert_eq!(st.pending_of(confirmed), None, "已确认图形无待确认来源");
+        assert_eq!(st.pending_mirror(PendingShapeRef::Shape(0)), Some(mirror));
+
+        // 镜像的几何尚未绑定音轨：任何非 Conductor 轨都可见可选中
+        assert_eq!(st.visible_on(1).count(), 2);
+        assert_eq!(st.visible_on(2).count(), 1, "镜像应随任意普通轨可见");
+        assert_eq!(st.visible_on(3).count(), 1);
+        assert_eq!(
+            st.visible_on(0).count(),
+            0,
+            "Conductor 轨（track 0）不渲染待确认预览，镜像也不该出现"
+        );
+        // 已确认图形仍是严格的单轨归属
+        let ids: Vec<u64> = st.visible_on(2).map(|s| s.id).collect();
+        assert_eq!(ids, vec![mirror]);
+    }
+
+    #[test]
+    fn test_set_source_overwrites_mirror_geometry() {
+        let mut st = ShapeSelectState::default();
+        let mirror = st.add_pending(1, PendingShapeRef::CurvePath(0), rect_source());
+        assert_eq!(st.selection_bounds_on(1), None, "未选中时无外接框");
+        st.select_only(mirror);
+        assert_eq!(st.selection_bounds_on(1), Some((0.0, 4.0, 60.0, 64.0)));
+
+        let moved = DrawnShapeSource::Polyline {
+            points: vec![(10.0, 62.0), (14.0, 66.0)],
+        };
+        assert!(st.set_source(mirror, moved.clone()));
+        assert_eq!(
+            st.shapes()[0].source,
+            moved,
+            "几何应被覆写为 owning 侧最新值"
+        );
+        assert_eq!(st.selection_bounds_on(1), Some((10.0, 14.0, 62.0, 66.0)));
+        assert!(!st.set_source(9999, moved), "不存在的 ID 应返回 false");
+    }
+
+    #[test]
+    fn test_remove_pending_all_keeps_confirmed_shapes() {
+        let mut st = ShapeSelectState::default();
+        let a = st.add(1, None, rect_source(), vec![note(0.0, 60)]);
+        let m1 = st.add_pending(1, PendingShapeRef::Shape(0), rect_source());
+        let m2 = st.add_pending(1, PendingShapeRef::BrushStroke(0), rect_source());
+        st.select_all_of([a, m1, m2]);
+        assert_eq!(st.selection_len(), 3);
+
+        st.remove_pending_all();
+        assert_eq!(st.len(), 1, "只剩已确认图形");
+        assert_eq!(st.shapes()[0].id, a);
+        assert_eq!(st.selected_ids(), &[a], "镜像退场后选中集应自动收敛");
+        assert!(st.pending_shapes().next().is_none());
+    }
+
+    #[test]
+    fn test_shift_pending_indices_only_affects_later_same_container() {
+        let mut st = ShapeSelectState::default();
+        let s0 = st.add_pending(1, PendingShapeRef::Shape(0), rect_source());
+        let s1 = st.add_pending(1, PendingShapeRef::Shape(1), rect_source());
+        let c0 = st.add_pending(1, PendingShapeRef::CurvePath(0), rect_source());
+        let b2 = st.add_pending(1, PendingShapeRef::BrushStroke(2), rect_source());
+
+        // 形状容器删掉下标 0：同容器的 1 → 0；其它容器不受影响
+        st.shift_pending_indices(PendingShapeRef::Shape(0));
+        assert_eq!(st.pending_of(s0), Some(PendingShapeRef::Shape(0)));
+        assert_eq!(
+            st.pending_of(s1),
+            Some(PendingShapeRef::Shape(0)),
+            "同容器后续下标应前移"
+        );
+        assert_eq!(
+            st.pending_mirror(PendingShapeRef::Shape(1)),
+            None,
+            "前移后不应再有旧下标"
+        );
+        assert_eq!(st.pending_of(c0), Some(PendingShapeRef::CurvePath(0)));
+        assert_eq!(st.pending_of(b2), Some(PendingShapeRef::BrushStroke(2)));
+    }
+
+    #[test]
+    fn test_pending_mirror_participates_in_selection_and_bounds_union() {
+        let mut st = ShapeSelectState::default();
+        let a = st.add(
+            1,
+            None,
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (0.0, 60.0, 4.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+            },
+            vec![],
+        );
+        let m = st.add_pending(
+            1,
+            PendingShapeRef::Shape(0),
+            DrawnShapeSource::Shape {
+                kind: ShapeKind::Rectangle,
+                rect: (200.0, 60.0, 204.0, 64.0),
+                shift_constrained: false,
+                filled: false,
+            },
+        );
+        st.select_all_of([a, m]);
+        assert_eq!(
+            st.selection_bounds_on(1),
+            Some((0.0, 204.0, 60.0, 64.0)),
+            "选框并集应同时覆盖已确认图形与待确认镜像"
+        );
+        // 镜像的几何为空（空折线）时不参与并集（与已确认图形同规则）
+        let empty = st.add_pending(
+            1,
+            PendingShapeRef::CurvePath(7),
+            DrawnShapeSource::Polyline { points: Vec::new() },
+        );
+        st.select_only(empty);
+        assert_eq!(st.selection_bounds_on(1), None);
     }
 }

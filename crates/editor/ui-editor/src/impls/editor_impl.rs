@@ -46,6 +46,7 @@ impl Editor {
                 selection_box_anim: Cell::new(None),
                 cached_selection_bounds: Cell::new(None),
                 marquee_anchor_tick: None,
+                pending_drag_applied: (0.0, 0.0),
                 context_menu: crate::context_menu::PianoRollContextMenuState::default(),
                 selected_bounds: Cell::new(None),
                 arrange_selection_cache:

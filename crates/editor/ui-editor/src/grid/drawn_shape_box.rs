@@ -126,6 +126,9 @@ fn outline_path(editor: &Editor, shape: &DrawnShape, dtick: f32, dkey: f32) -> O
 /// 选中集内**全部**图形的轮廓（同轨；含整组拖拽实时预览偏移）
 ///
 /// 多选时逐个选中图形都画发光描边；拖拽作用于整个选中集，故所有图形套用同一预览偏移。
+/// **例外**：待确认镜像的几何已随拖动即时落位（见
+/// `Editor::sync_pending_drag_geometry`），偏移必须取 0——否则描边会与选框 / owning
+/// 预览分叉出双倍位移。
 fn selected_outlines(editor: &Editor) -> Vec<Path> {
     let track = editor.editor_state.data.current_track;
     let (dtick, dkey) = editor.drag_preview_delta();
@@ -133,7 +136,14 @@ fn selected_outlines(editor: &Editor) -> Vec<Path> {
         .editor_state
         .shape_select
         .selected_shapes_on(track)
-        .filter_map(|s| outline_path(editor, s, dtick, dkey))
+        .filter_map(|s| {
+            let (dt, dk) = if s.pending.is_some() {
+                (0.0, 0.0)
+            } else {
+                (dtick, dkey)
+            };
+            outline_path(editor, s, dt, dk)
+        })
         .collect()
 }
 
@@ -357,6 +367,7 @@ mod tests {
             deleted: false,
             ever_deleted: false,
             moves: Vec::new(),
+            pending: None,
         }
     }
 

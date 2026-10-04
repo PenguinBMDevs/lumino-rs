@@ -16,6 +16,10 @@ impl Editor {
     /// ⚠️ 待确认的绘制内容（曲线路径 / 待确认图形 / 画刷笔画 / 文本框）**不因切换工具丢失**
     /// ——见 `EditorState::set_tool` 只收敛交互手势、保留产物。切到「鼠标工具」
     /// （`Tool::ShapeSelect`）时同样**只保留、不固化**：用户没按 √ 就不该生成音符。
+    ///
+    /// 但「保留」必须同时「可操作」：待确认几何在鼠标工具下照旧渲染，故切换时把它
+    /// 镜像进图形选中域（`rebuild_pending_mirrors`）——否则用户看到图案却框不中、
+    /// 拖不动（看得见却抓不住）。离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染）。
     pub fn set_tool(&mut self, tool: Tool) {
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
@@ -25,6 +29,7 @@ impl Editor {
         if tool != Tool::Shape {
             self.editor_state.shape_tool.fill_enabled = false;
         }
+        self.rebuild_pending_mirrors();
     }
 
     /// 某绘制工具的**待确认预览**此刻是否应渲染/可交互

@@ -54,6 +54,7 @@ mod tests {
     mod batch_move_consistency;
     mod delete_sync_gate;
     mod drawing;
+    mod drawn_shape_marquee_e2e;
     mod flow;
     mod ghost;
     mod interaction;
@@ -207,6 +208,13 @@ pub struct Editor {
     /// 锚点必须固定：否则"向左拖再拖回右侧"时选框无法正确**回缩**，只能单向扩张。
     /// `None` = 当前 `Selecting` 非按下路径建立（不量化，保持原始精确语义）。
     pub(crate) marquee_anchor_tick: Option<f32>,
+
+    /// 鼠标工具拖动「待确认产物镜像」时**已写回** owning tool 的累计偏移 `(dtick, dkey)`
+    ///
+    /// 待确认几何没有幽灵层（它本身就是待 √ 的产物），拖动即时落位；
+    /// `ShapeDrag` 存的是相对按下点的**累计**偏移，故每帧的写回增量 =
+    /// 累计偏移 − 本字段。松手 / 下一次按下归零（见 `sync_pending_drag_geometry`）。
+    pub(crate) pending_drag_applied: (f32, f32),
 
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
