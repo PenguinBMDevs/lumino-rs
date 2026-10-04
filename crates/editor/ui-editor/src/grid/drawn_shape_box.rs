@@ -18,8 +18,8 @@
 use crate::Editor;
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
-use lumino_editor_state::{DrawnShape, DrawnShapeSource};
 use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
+use lumino_editor_state::{DrawnShape, DrawnShapeSource};
 use lumino_ui_core::{Renderer, Theme};
 
 /// 外发光描边宽度（像素）
@@ -213,16 +213,12 @@ impl Overlay {
         } else {
             Vec::new()
         };
-        let marquee_path = editor
-            .editor_state
-            .shape_select
-            .marquee()
-            .map(|m| {
-                let (t0, t1, k0, k1) = m.rect();
-                let a = editor.line_pos_screen_pos((t0, k0));
-                let b = editor.line_pos_screen_pos((t1, k1));
-                rect_path(a, b)
-            });
+        let marquee_path = editor.editor_state.shape_select.marquee().map(|m| {
+            let (t0, t1, k0, k1) = m.rect();
+            let a = editor.line_pos_screen_pos((t0, k0));
+            let b = editor.line_pos_screen_pos((t1, k1));
+            rect_path(a, b)
+        });
         Self {
             idle_paths,
             selected_paths: selected_outlines(editor),
@@ -278,7 +274,10 @@ pub fn draw(
     if !overlay.selected_paths.is_empty() {
         let glow = Color::from_rgba(strong.r, strong.g, strong.b, GLOW_ALPHA);
         for path in &overlay.selected_paths {
-            frame.stroke(path, Stroke::default().with_width(GLOW_WIDTH).with_color(glow));
+            frame.stroke(
+                path,
+                Stroke::default().with_width(GLOW_WIDTH).with_color(glow),
+            );
             frame.stroke(
                 path,
                 Stroke::default().with_width(CORE_WIDTH).with_color(strong),
@@ -446,7 +445,10 @@ mod tests {
         editor.set_tool(Tool::ShapeSelect);
         let first = editor.editor_state.shape_select.shapes()[0].id;
         editor.editor_state.shape_select.select_only(first);
-        editor.editor_state.shape_select.begin_marquee(0.0, 60.0, false);
+        editor
+            .editor_state
+            .shape_select
+            .begin_marquee(0.0, 60.0, false);
         editor.editor_state.shape_select.update_marquee(20.0, 70.0);
 
         let overlay = Overlay::collect(&editor);
@@ -479,7 +481,10 @@ mod tests {
         );
         editor.set_tool(Tool::ShapeSelect);
         let first = editor.editor_state.shape_select.shapes()[0].id;
-        editor.editor_state.shape_select.select_all_of([first, second]);
+        editor
+            .editor_state
+            .shape_select
+            .select_all_of([first, second]);
 
         let overlay = Overlay::collect(&editor);
         assert_eq!(
@@ -487,11 +492,7 @@ mod tests {
             2,
             "多选时每个选中图形都应有发光描边"
         );
-        assert_eq!(
-            overlay.idle_paths.len(),
-            0,
-            "全部被选中 → 无常显轮廓"
-        );
+        assert_eq!(overlay.idle_paths.len(), 0, "全部被选中 → 无常显轮廓");
         let rect = overlay.selection_box.expect("多选应有并集选框");
         // 并集外接框应同时包住两个图形的角点
         for c in [

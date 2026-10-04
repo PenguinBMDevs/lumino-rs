@@ -142,3 +142,39 @@ fn test_reset_clears_all_and_history() {
     state.reset();
     assert_eq!(state, LineToolState::default());
 }
+
+// ── 生成音符最小长度档位（修改接口） ──
+
+#[test]
+fn test_min_note_division_default_and_normalize() {
+    let mut state = LineToolState::default();
+    // 默认 128 分音符：竖直段音符 1 tick 在实机缩放下不足 1px
+    assert_eq!(
+        state.min_note_division,
+        Some(LineToolState::DEFAULT_MIN_NOTE_DIVISION)
+    );
+    assert_eq!(state.min_note_division, Some(128));
+    // 显式改档位
+    state.set_min_note_division(Some(64));
+    assert_eq!(state.min_note_division, Some(64));
+    // None / Some(0) 都归一为「不设下限」（0 分音符无意义，避免除零）
+    state.set_min_note_division(Some(0));
+    assert_eq!(state.min_note_division, None);
+    state.set_min_note_division(None);
+    assert_eq!(state.min_note_division, None);
+}
+
+#[test]
+fn test_reset_keeps_min_note_division() {
+    // 与 `fill_division` 同级：模式设置跨 √ 确认 / × 取消保留
+    let mut state = LineToolState::default();
+    state.set_min_note_division(Some(32));
+    state.set_fill_division(Some(8));
+    state.paths.push(Vec::new());
+    state.push_anchor(0, (0.0, 60.0));
+    state.push_anchor(0, (1920.0, 64.0));
+    state.reset();
+    assert_eq!(state.min_note_division, Some(32), "最小长度档位保留");
+    assert_eq!(state.fill_division, Some(8), "切分档位保留");
+    assert!(state.paths.is_empty(), "路径内容仍被清空");
+}

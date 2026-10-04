@@ -12,10 +12,7 @@ fn test_tool_panel_plain_click_selects_without_opening_settings() {
 
     toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Brush));
     assert_eq!(toolbar.current_tool, Tool::Brush, "普通点击应选择画刷工具");
-    assert!(
-        !toolbar.brush_dropdown_open,
-        "普通点击不应打开画刷设置下拉"
-    );
+    assert!(!toolbar.brush_dropdown_open, "普通点击不应打开画刷设置下拉");
     assert!(toolbar.tool_panel_open, "选择条目后悬浮条应保持打开");
 }
 

@@ -28,9 +28,9 @@ use iced_core::alignment::{Horizontal, Vertical};
 use iced_core::{Background, Border, Color, Length, Padding};
 use iced_widget::{Space, Stack, button, container, mouse_area, row, text, tooltip};
 
+use crate::message::FillDivisionAction;
 use crate::resources::icon;
 use crate::root::Root;
-use crate::message::FillDivisionAction;
 use crate::toolbar::{CurveToolGroup, Event, ShapeType, Tool, ToolPanelItem};
 use crate::{Element, Message, Theme};
 use lumino_extras::i18n::main_translations;
@@ -152,8 +152,7 @@ impl Root {
         // 下拉内按钮 / 输入框仍优先响应自身事件。
         let content: Element<'_> = match self.draw_tool_settings_menu() {
             Some((menu, close_message)) => {
-                let panel_with_close: Element<'_> =
-                    mouse_area(menu).on_press(close_message).into();
+                let panel_with_close: Element<'_> = mouse_area(menu).on_press(close_message).into();
                 CurveToolGroup::new(pill_el, Some(panel_with_close), MENU_WIDTH).into()
             }
             None => pill_el,
@@ -206,25 +205,27 @@ impl Root {
         );
 
         if self.toolbar.brush_dropdown_open {
-            let menu: Element<'_> = container(crate::toolbar::brush_dropdown::render_brush_dropdown(
-                &self.toolbar.brush,
-                self.settings.display.language,
-                panel_background,
-                &self.window.theme,
-            ))
-            .width(Length::Fixed(MENU_WIDTH))
-            .height(Length::Shrink)
-            .into();
+            let menu: Element<'_> =
+                container(crate::toolbar::brush_dropdown::render_brush_dropdown(
+                    &self.toolbar.brush,
+                    self.settings.display.language,
+                    panel_background,
+                    &self.window.theme,
+                ))
+                .width(Length::Fixed(MENU_WIDTH))
+                .height(Length::Shrink)
+                .into();
             Some((menu, Event::close_brush_dropdown()))
         } else if self.toolbar.shape_dropdown_open {
-            let menu: Element<'_> = container(crate::toolbar::shape_dropdown::render_shape_dropdown(
-                self.toolbar.current_shape,
-                panel_background,
-                &self.window.theme,
-            ))
-            .width(Length::Fixed(MENU_WIDTH))
-            .height(Length::Shrink)
-            .into();
+            let menu: Element<'_> =
+                container(crate::toolbar::shape_dropdown::render_shape_dropdown(
+                    self.toolbar.current_shape,
+                    panel_background,
+                    &self.window.theme,
+                ))
+                .width(Length::Fixed(MENU_WIDTH))
+                .height(Length::Shrink)
+                .into();
             Some((menu, Event::close_shape_dropdown()))
         } else if self.state.fill_division_dialog.is_open {
             let menu: Element<'_> = container(
@@ -238,10 +239,7 @@ impl Root {
             .width(Length::Fixed(MENU_WIDTH))
             .height(Length::Shrink)
             .into();
-            Some((
-                menu,
-                Message::FillDivision(FillDivisionAction::CloseDialog),
-            ))
+            Some((menu, Message::FillDivision(FillDivisionAction::CloseDialog)))
         } else {
             None
         }

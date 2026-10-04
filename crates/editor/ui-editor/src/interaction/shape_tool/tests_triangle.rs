@@ -21,6 +21,10 @@ fn test_editor() -> Editor {
     seed_notes(&mut editor, 2, 1, &[]);
     // 吸附精度 1 tick，使格点对齐整数 tick / key
     editor.editor_state.view.snap_precision = 1.0;
+    // 关闭最小长度下限：本文件钉的是**顶点朝向 / 逐行覆盖几何**（1 tick 的角点、
+    // 斜边穿越），下限会把 4 tick 的合成图形整体补齐、几何断言失去意义。
+    // 下限本身在 `shape_tool::tests` 的 `test_outline_min_length_*` 单独钉死。
+    editor.editor_state.line_tool.set_min_note_division(None);
     editor
 }
 

@@ -114,7 +114,9 @@ impl Editor {
         notes: Vec<ShapeNote>,
     ) {
         let group = self.last_create_group();
-        self.editor_state.shape_select.add(track, group, source, notes);
+        self.editor_state
+            .shape_select
+            .add(track, group, source, notes);
     }
 
     /// 登记形状工具的待确认图形（√ 确认后调用，须在 `clear_pending` 之前）
@@ -739,12 +741,9 @@ impl Editor {
                 continue;
             }
             for n in notes {
-                lookups_by_track
-                    .entry(n.track)
-                    .or_default()
-                    .push(lumino_editor_state::note_to_event(Note::new(
-                        n.tick, n.key, n.length,
-                    )));
+                lookups_by_track.entry(n.track).or_default().push(
+                    lumino_editor_state::note_to_event(Note::new(n.tick, n.key, n.length)),
+                );
             }
         }
 
@@ -882,10 +881,7 @@ impl Editor {
             if indices.is_empty() {
                 continue;
             }
-            deleted += self
-                .editor_state
-                .data
-                .remove_notes_merged(*track, indices);
+            deleted += self.editor_state.data.remove_notes_merged(*track, indices);
         }
         let ids: Vec<u64> = selected.into_iter().map(|(id, _)| id).collect();
         if deleted == 0 {
@@ -1096,7 +1092,11 @@ mod tests {
         assert_eq!(st.len(), 1, "一条路径 = 一个图形对象");
         match &st.shapes()[0].source {
             DrawnShapeSource::Polyline { points } => {
-                assert!(points.len() >= 2, "展平折线至少 2 点，实际 {}", points.len());
+                assert!(
+                    points.len() >= 2,
+                    "展平折线至少 2 点，实际 {}",
+                    points.len()
+                );
             }
             other => panic!("期望 Polyline 几何，实际 {other:?}"),
         }
@@ -1235,7 +1235,11 @@ mod tests {
         // 未超过一格：delta 归零
         editor.handle_shape_select_moved(2.2, 62.0);
         editor.handle_shape_select_released();
-        assert!(editor.editor_state.shape_select.shapes()[0].moves.is_empty());
+        assert!(
+            editor.editor_state.shape_select.shapes()[0]
+                .moves
+                .is_empty()
+        );
         assert_eq!(
             editor.editor_state.data.current_track_note_count(),
             RECT_OUTLINE_NOTES
@@ -1288,7 +1292,10 @@ mod tests {
         editor.handle_shape_select_pressed(2.0, 62.0, false);
         // 先手动清空该轨音符（模拟用户已先删掉音符）
         editor.editor_state.data.document = None;
-        assert!(editor.delete_selected_drawn_shape(), "无音符时应仍收掉图形对象");
+        assert!(
+            editor.delete_selected_drawn_shape(),
+            "无音符时应仍收掉图形对象"
+        );
         assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 0);
     }
 
@@ -1326,7 +1333,10 @@ mod tests {
         let mut editor = draw_and_confirm_rect();
         assert!(!editor.editor_state.shape_select.is_empty());
         editor.editor_state.reset();
-        assert!(editor.editor_state.shape_select.is_empty(), "reset 应清空图形注册表");
+        assert!(
+            editor.editor_state.shape_select.is_empty(),
+            "reset 应清空图形注册表"
+        );
     }
 
     #[test]
@@ -1459,7 +1469,13 @@ mod tests {
         // 「其他工具同理」：切到任意工具都保留产物（清空只发生在显式 × / √）
         let mut editor = test_editor();
         draw_pending_rect(&mut editor);
-        for tool in [Tool::Curve, Tool::Brush, Tool::Pencil, Tool::Text, Tool::Pointer] {
+        for tool in [
+            Tool::Curve,
+            Tool::Brush,
+            Tool::Pencil,
+            Tool::Text,
+            Tool::Pointer,
+        ] {
             editor.set_tool(tool);
             assert!(
                 editor.editor_state.shape_tool.has_pending(),
@@ -1478,9 +1494,8 @@ mod tests {
         // 手势（未完成的拖动）必须收敛；产物必须保留 —— 两者不可混为一谈
         let mut editor = test_editor();
         draw_pending_rect(&mut editor);
-        editor.editor_state.shape_tool.interaction = ShapeToolInteraction::Dragging {
-            start: (0.0, 60.0),
-        };
+        editor.editor_state.shape_tool.interaction =
+            ShapeToolInteraction::Dragging { start: (0.0, 60.0) };
         editor.set_tool(Tool::ShapeSelect);
         assert_eq!(
             editor.editor_state.shape_tool.interaction,
@@ -1507,7 +1522,10 @@ mod tests {
             !editor.editor_state.shape_select.is_dragging(),
             "换工具必须收敛拖拽态"
         );
-        assert!(!editor.is_editing(), "拖拽态残留会让 is_editing() 永久为 true");
+        assert!(
+            !editor.is_editing(),
+            "拖拽态残留会让 is_editing() 永久为 true"
+        );
         match &editor.editor_state.shape_select.shapes()[0].source {
             DrawnShapeSource::Shape { rect, .. } => {
                 assert_eq!(*rect, (0.0, 60.0, 4.0, 64.0), "几何不应被平移")
@@ -1694,10 +1712,7 @@ mod tests {
     #[test]
     fn test_selection_box_exists_and_padding() {
         let editor = test_editor();
-        assert!(
-            editor.selection_box().is_none(),
-            "无选中时不应有选框"
-        );
+        assert!(editor.selection_box().is_none(), "无选中时不应有选框");
 
         let editor2 = editor_with_selected_polyline();
         let rect = editor2.selection_box().expect("选中后应有选框");
@@ -1737,7 +1752,11 @@ mod tests {
         // 未移动即松手：不产生移动，选中保持
         editor.handle_shape_select_released();
         assert_eq!(editor.editor_state.shape_select.selected_ids(), &id[..]);
-        assert!(editor.editor_state.shape_select.shapes()[0].moves.is_empty());
+        assert!(
+            editor.editor_state.shape_select.shapes()[0]
+                .moves
+                .is_empty()
+        );
     }
 
     #[test]
@@ -1857,7 +1876,10 @@ mod tests {
             (dx - 10.0 * editor.editor_state.view.zoom_x).abs() < 1e-3,
             "选框 X 应跟随预览偏移，实际 dx={dx}"
         );
-        assert!((dy + 2.0 * editor.editor_state.view.zoom_y).abs() < 1e-3, "选框 Y 应跟随预览偏移（key 增大 y 减小），实际 dy={dy}");
+        assert!(
+            (dy + 2.0 * editor.editor_state.view.zoom_y).abs() < 1e-3,
+            "选框 Y 应跟随预览偏移（key 增大 y 减小），实际 dy={dy}"
+        );
         editor.handle_shape_select_released();
     }
 
@@ -1900,10 +1922,8 @@ mod tests {
             ],
         );
         editor.editor_state.view.snap_precision = 1.0;
-        let line = |key: u16| {
-            DrawnShapeSource::Polyline {
-                points: vec![(0.0, key as f32), (300.0, key as f32)],
-            }
+        let line = |key: u16| DrawnShapeSource::Polyline {
+            points: vec![(0.0, key as f32), (300.0, key as f32)],
         };
         let notes = |key: u16| {
             vec![

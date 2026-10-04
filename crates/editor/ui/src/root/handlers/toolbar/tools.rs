@@ -25,15 +25,13 @@ impl ToolbarHandler {
         // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
         // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
         match event {
-            crate::toolbar::Event::ToolPanelItemSelected(item) => {
-                match item {
-                    crate::toolbar::ToolPanelItem::StrokeSettings => {}
-                    _ => {
-                        root.editor.set_tool(root.toolbar.current_tool);
-                        root.editor.set_fill_enabled(root.toolbar.fill_enabled);
-                    }
+            crate::toolbar::Event::ToolPanelItemSelected(item) => match item {
+                crate::toolbar::ToolPanelItem::StrokeSettings => {}
+                _ => {
+                    root.editor.set_tool(root.toolbar.current_tool);
+                    root.editor.set_fill_enabled(root.toolbar.fill_enabled);
                 }
-            }
+            },
             // Ctrl+点击条目：先镜像「选择」结果，再落下该工具的设置副作用。
             crate::toolbar::Event::ToolPanelItemCtrlSelected(item) => match item {
                 crate::toolbar::ToolPanelItem::StrokeSettings => {}

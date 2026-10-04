@@ -766,10 +766,7 @@ mod tests {
         // 撤销创建后不可再选中
         st.select_only(a);
         st.on_undo_group(10);
-        assert!(
-            st.selected_ids().is_empty(),
-            "被隐藏的图形不应保持选中"
-        );
+        assert!(st.selected_ids().is_empty(), "被隐藏的图形不应保持选中");
     }
 
     #[test]
@@ -825,7 +822,11 @@ mod tests {
             "多选外接框应为该轨全部选中图形的并集"
         );
         assert_eq!(st.selection_bounds_on(2), Some((0.0, 4.0, 60.0, 64.0)));
-        assert_eq!(st.selection_bounds_on(3), None, "无选中图形的音轨应无外接框");
+        assert_eq!(
+            st.selection_bounds_on(3),
+            None,
+            "无选中图形的音轨应无外接框"
+        );
 
         st.select_only(a);
         assert_eq!(st.selection_bounds_on(1), Some((0.0, 4.0, 60.0, 64.0)));
@@ -1002,10 +1003,7 @@ mod tests {
             points: vec![(5.0, 61.0), (1.0, 70.0)],
         };
         assert_eq!(p.bounds(), Some((1.0, 5.0, 61.0, 70.0)));
-        assert_eq!(
-            DrawnShapeSource::Polyline { points: vec![] }.bounds(),
-            None
-        );
+        assert_eq!(DrawnShapeSource::Polyline { points: vec![] }.bounds(), None);
     }
 
     #[test]

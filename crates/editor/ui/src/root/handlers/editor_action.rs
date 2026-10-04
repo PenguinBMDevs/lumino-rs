@@ -5,9 +5,7 @@
 
 use crate::message::EditorAction;
 use crate::root::Root;
-use lumino_message::{
-    ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem,
-};
+use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
 impl Root {
     /// 处理编辑器动作

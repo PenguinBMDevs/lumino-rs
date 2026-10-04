@@ -75,6 +75,22 @@ impl Editor {
         self.editor_state.line_tool.fill_division
     }
 
+    /// 设置曲线/形状工具生成音符的**最小长度档位**（修改接口）
+    ///
+    /// `Some(x)` = 至少 x 分音符（`4·ppq/x` tick，`Some(0)` 归一为 `None`）；
+    /// `None` = 不设下限。默认 128 分音符
+    /// （[`lumino_editor_state::LineToolState::DEFAULT_MIN_NOTE_DIVISION`]）——竖直段音符
+    /// 原本只有 1 tick，实机缩放下不足 1px。只影响之后生成的音符，不改写已有音符。
+    pub fn set_min_note_division(&mut self, division: Option<u32>) {
+        self.editor_state.line_tool.set_min_note_division(division);
+        self.mark_notes_changed();
+    }
+
+    /// 生成音符的最小长度档位（`None` = 不设下限）
+    pub fn min_note_division(&self) -> Option<u32> {
+        self.editor_state.line_tool.min_note_division
+    }
+
     /// 取走「打开分音符填充对话框」请求（一次性标志，Root 每帧取用）
     pub fn take_fill_division_dialog_request(&mut self) -> bool {
         let requested = self.fill_division_dialog_requested;

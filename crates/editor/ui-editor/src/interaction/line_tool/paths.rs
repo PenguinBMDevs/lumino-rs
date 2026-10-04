@@ -13,7 +13,9 @@
 //! - 同一 tick 上跨多行：除最后一条外都取 1 tick，避免紧折角后接平坦段
 //!   时两条长音符叠成实心块；
 //! - 首尾各补成**完整行份额**（[`stretch_ends`]）：原做法首行/末行各只占半份时间；
-//! - 闭合环（首点 = 尾点）从最左点重启、不做首尾拉伸，与自定义图形轮廓同规则。
+//! - 闭合环（首点 = 尾点）从最左点重启、不做首尾拉伸，与自定义图形轮廓同规则；
+//! - 生成的音符长度由**写入层**兜底补齐到 [长度下限](min_note_length_ticks)
+//!   （默认 128 分音符）：1 tick 的竖直段在实机缩放下不足 1px，等于没生成。
 //!
 //! 全程 **f64**：`EDGE = 0.5 - 1e-6` 这种「行内微缩」在 f32 下会被舍入吃掉
 //! （key ≈ 64 处 f32 间距约 3.8e-6，`64.499999` 舍成 `64.5`），音高行会凭空
@@ -45,6 +47,46 @@ impl RawNote {
     pub(crate) fn length(&self) -> i64 {
         (self.end - self.start).max(1)
     }
+}
+
+// ─── 生成音符的长度下限（修改接口）─────────────────────────────────────
+//
+// 根因（RCA）：轮廓音符是逐音高行解析出来的——「时间原地不动」的**竖直段**
+// （一瞬间跨过多个音高行）与「同一 tick 跨多行」的音符，除最后一条外都只占
+// 1 tick（见 `parts_notes` / `line_notes` 的说明，那是为了避免紧折角后面接平坦
+// 段时两条长音符叠成实心块）。1 tick 在 1920 ppq 下 = 1/7680 个全音符：缩放到
+// 实机比例后不足 1px，用户看到的是「音符宽度过小 / 像没生成」——纵向卷帘下
+// 「垂直于时间轴的直线」整条都落在这个分支上，症状最明显。
+//
+// 因此**写入层**给出最小长度下限（几何层不变，保持 Spiderweb 逐行口径）：
+// - 默认 128 分音符 = 全音符/128 = `ppq / 32`；
+// - 修改接口：`LineToolState::min_note_division`（`Some(x)` = x 分音符、
+//   `None` = 不设下限），默认值见 `LineToolState::DEFAULT_MIN_NOTE_DIVISION`。
+//
+// 只补齐**过短**的音符（起点不动、终点外扩），长度达标的音符逐位不变；填充区间
+// （`fill_notes` / `chop_span`）不走这里——它们的长度由用户选的切分档位与图形
+// 覆盖决定，补齐会破坏「填充显示 == 生成音符」的覆盖不变式。
+
+/// 生成音符的最小长度（tick）：`Some(x)` = x 分音符 = `4·ppq/x`（至少 1 tick）；
+/// `None` = 不设下限（保持 `RawNote` 自带的 1 tick）。
+///
+/// 取整口径与填充切分同源（[`super::fill::spans::division_step`]）：x 取非 2 的
+/// 幂（3/5/7…）时步长非整数，不取整会让下限随 ppq 漂移出整 tick。
+pub(crate) fn min_note_length_ticks(division: Option<u32>, ppq: u16) -> f32 {
+    match division {
+        Some(x) => super::fill::spans::division_step(x, ppq),
+        None => 1.0,
+    }
+}
+
+/// [`RawNote`] → 写入用三元组 `(起始 tick, key, 长度)`：起点钳到 0、长度补齐到
+/// [`min_note_length_ticks`] 给出的下限（详见文件中部「长度下限」说明）。
+pub(crate) fn to_note_triple(note: &RawNote, min_ticks: f32) -> (f32, u16, f32) {
+    (
+        note.start.max(0) as f32,
+        note.key as u16,
+        (note.length() as f32).max(min_ticks),
+    )
 }
 
 /// 最接近 `y` 的音高行（行 `q` 覆盖 [q - 0.5, q + 0.5)）

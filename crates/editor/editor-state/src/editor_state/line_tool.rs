@@ -166,6 +166,18 @@ pub struct LineToolState {
     /// 属填充桶的**模式设置**（与 `fill_enabled` 同级）：√ 确认 / × 取消
     /// 后仍保留（`reset` 显式保留），Ctrl+Z 随路径历史一并回滚。
     pub fill_division: Option<u32>,
+    /// 生成音符的**最小长度档位**（修改接口）：`Some(x)` = 曲线/形状工具生成的
+    /// 音符长度不得短于 x 分音符（= `4·ppq/x` tick，见
+    /// `line_tool::paths::min_note_length_ticks`）；`None` = 不设下限。
+    ///
+    /// 默认 [`LineToolState::DEFAULT_MIN_NOTE_DIVISION`] = 128 分音符。
+    /// 来由（BUG 根因）：轮廓音符是逐音高行解析出来的——时间原地不动的**竖直段**
+    /// （一瞬间跨过多个音高行）除最后一条外只占 1 tick，1920 ppq 下即 1/7680 个
+    /// 全音符，实机缩放下不足 1px ⇒ 用户看到的是「音符宽度过小 / 像没生成」。
+    ///
+    /// 属**模式设置**（与 `fill_division` 同级）：√ 确认 / × 取消后仍保留
+    /// （`reset` 显式保留）。改档位只影响之后生成的音符，不改写已有音符。
+    pub min_note_division: Option<u32>,
     /// 路径编辑历史（快照 = 操作后状态；`path_history_index` 指向当前状态）
     ///
     /// 栈始终含初始状态（`[空]`，index 0）；每次操作完成后 push 新状态，
@@ -190,6 +202,7 @@ impl Default for LineToolState {
             last_push_path: None,
             fill_enabled: false,
             fill_division: None,
+            min_note_division: Some(LineToolState::DEFAULT_MIN_NOTE_DIVISION),
             // 历史栈初始含空状态（撤销基准）
             path_history: vec![PathSnapshot::default()],
             path_history_index: 0,
@@ -198,6 +211,12 @@ impl Default for LineToolState {
 }
 
 impl LineToolState {
+    /// 生成音符最小长度的**默认档位**（x 分音符）：128 分音符 = 全音符/128 = `ppq / 32`。
+    ///
+    /// 修改接口：改这个常量 = 改默认下限；运行期改 `min_note_division`（见
+    /// [`Self::set_min_note_division`]）只影响之后生成的音符。
+    pub const DEFAULT_MIN_NOTE_DIVISION: u32 = 128;
+
     /// 是否已有至少一个锚点
     pub fn has_anchor(&self) -> bool {
         self.paths.iter().any(|p| !p.is_empty())
@@ -346,12 +365,14 @@ impl LineToolState {
 
     /// 重置整个路径状态（含历史）
     ///
-    /// `fill_division` 是填充桶的**模式设置**而非本次编辑内容，跨 √ 确认 /
-    /// × 取消保留（否则每次填充都要重新输入分音符）。
+    /// `fill_division` / `min_note_division` 是绘制工具的**模式设置**而非本次
+    /// 编辑内容，跨 √ 确认 / × 取消保留（否则每次绘制都要重新设置一遍）。
     pub fn reset(&mut self) {
         let fill_division = self.fill_division;
+        let min_note_division = self.min_note_division;
         *self = Self::default();
         self.fill_division = fill_division;
+        self.min_note_division = min_note_division;
     }
 
     /// 仅收敛**未完成的交互手势**（拖动锚点 / 控制柄 / 整条路径），保留路径、填充标记与路径历史
@@ -400,6 +421,14 @@ impl LineToolState {
         if !self.paths.is_empty() || self.has_fill() {
             self.push_path_history();
         }
+    }
+
+    /// 设置生成音符的**最小长度档位**（x 分音符；`None` = 不设下限）
+    ///
+    /// 修改接口（见 `min_note_division` 字段说明）：`Some(0)` 归一为 `None`
+    /// （不设下限）——0 分音符无意义，避免除零。
+    pub fn set_min_note_division(&mut self, division: Option<u32>) {
+        self.min_note_division = division.filter(|x| *x > 0);
     }
 
     /// 清除全部填充标记；返回是否清除了内容

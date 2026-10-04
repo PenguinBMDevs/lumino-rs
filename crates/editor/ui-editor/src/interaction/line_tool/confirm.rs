@@ -8,6 +8,8 @@
 //!    **内部区间**，区间端点 = 闭环边与行边界的解析交点；开启切分档位时
 //!    每个区间再按 x 分音符的全局网格切成多条音符；
 //! 3. 两部分合并后同 tick 同 key 只留最长（[`paths::keep_longest`]），
+//!    再按**最小长度下限**补齐过短的音符（默认 128 分音符，`paths::min_note_length_ticks`：
+//!    竖直段只有 1 tick，实机缩放下不足 1px 等于没生成），
 //!    写入当前音轨并使用 `CreateOp` 操作日志；
 //! 4. 写入按规模分流（见 `interaction::batch_insert`）：小规模逐音符插入
 //!    （保留 GPU 段内增量），超过 `BATCH_INSERT_THRESHOLD` 走批量归并——
@@ -63,14 +65,16 @@ impl Editor {
         }
 
         // ③ 同 tick 同 key 只留最长（轮廓与填充大量重叠）+ 钳到合法 tick / key
+        //    + 长度补齐到最小长度下限（默认 128 分音符，见 `paths::min_note_length_ticks`）
         let key_count = self.editor_state.view.key_count as i32;
+        let min_ticks = paths::min_note_length_ticks(
+            self.editor_state.line_tool.min_note_division,
+            self.editor_state.view.ppq,
+        );
         let notes: Vec<(f32, u16, f32)> = paths::keep_longest(&raw)
             .into_iter()
             .filter(|n| n.key >= 0 && n.key < key_count)
-            .map(|n| {
-                // 起点钳到 0；时长至少 1 tick（`RawNote::length` 已保证）
-                (n.start.max(0) as f32, n.key as u16, n.length() as f32)
-            })
+            .map(|n| paths::to_note_triple(&n, min_ticks))
             .collect();
         if notes.is_empty() {
             return false;
@@ -88,10 +92,11 @@ impl Editor {
                 continue;
             }
             let poly = geom::flatten_path(path);
+            // 与写入 payload 同源（含最小长度下限），否则登记的音符长度与实际写入不符
             let owned: Vec<ShapeNote> = paths::keep_longest(&paths::path_notes(&poly, false))
                 .into_iter()
                 .filter(|n| n.key >= 0 && n.key < key_count)
-                .map(|n| (n.start.max(0) as f32, n.key as u16, n.length() as f32))
+                .map(|n| paths::to_note_triple(&n, min_ticks))
                 .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
                 .map(|(tick, key, length)| ShapeNote {
                     track: owner_track,

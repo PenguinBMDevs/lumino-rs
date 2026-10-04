@@ -60,6 +60,39 @@ fn test_vertical_roll_pressed_creates_anchors() {
     assert_eq!(expect_tick1, 0.0, "tick 应从屏幕 Y 计算");
 }
 
+/// 回归 BUG：纵向卷帘下「垂直于时间轴的直线」（时间原地不动、一瞬间跨过多个音高行）
+/// 生成的音符只有 1 tick —— 在 1920 ppq 下是 1/7680 个全音符，缩放到实机比例不足
+/// 1px，用户看到的是「音符宽度过小 / 像没生成」。
+///
+/// 修复后：长度补齐到至少 128 分音符（= `ppq / 32`），档位由
+/// `LineToolState::min_note_division` 提供修改接口。
+#[test]
+fn test_vertical_roll_straight_line_keeps_min_note_length() {
+    let mut editor = vertical_curve_editor();
+    let ppq = editor.editor_state.view.ppq;
+    let min_ticks = (ppq / 32).max(1) as u32;
+    {
+        let line = &mut editor.editor_state.line_tool;
+        // 纵向卷帘：屏幕竖直 = tick 轴 ⇒ 「垂直的直线」= 同一 tick 跨 9 个音高行
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (1920.0, 60.0));
+        line.push_anchor(0, (1920.0, 68.0));
+    }
+    assert!(editor.confirm_line_tool(), "纵向直线应生成音符");
+    let notes = editor.editor_state.data.current_track_notes();
+    assert!(!notes.is_empty(), "9 个音高行应各生成一条音符");
+    for n in notes.iter() {
+        let len = n.end_tick - n.start_tick;
+        assert!(
+            len >= min_ticks,
+            "纵向直线生成的音符长度 {len} 必须 ≥ 128 分音符 = {min_ticks} tick \
+             （key {} @ {})",
+            n.key,
+            n.start_tick
+        );
+    }
+}
+
 /// 纵向卷帘命中测试：锚点屏幕位置（转置）应命中 Anchor（拖动/删除的前提）
 #[test]
 fn test_vertical_roll_hit_test_finds_anchor() {

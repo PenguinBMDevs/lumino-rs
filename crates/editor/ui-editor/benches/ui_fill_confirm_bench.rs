@@ -299,8 +299,8 @@ fn main() {
     let division = Some(DEFAULT_DIVISION);
     let cycles = 5usize;
 
-    let notes_hint = (width / (4.0 * PPQ as f32 / DEFAULT_DIVISION as f32))
-        * (K_HI - K_LO + 1) as f32;
+    let notes_hint =
+        (width / (4.0 * PPQ as f32 / DEFAULT_DIVISION as f32)) * (K_HI - K_LO + 1) as f32;
     println!(
         "工作负载: 矩形宽 {width:.0} tick × {} 行 | 切分 1/{DEFAULT_DIVISION} | 预估音符 ≈ {notes_hint:.0}",
         K_HI - K_LO + 1
@@ -377,9 +377,19 @@ L = 逐音符对照（历史实现）| B = 同载荷批量归并"
     );
     row(
         "结构重建（TrackDelta）",
-        if last.p_cost.msgs == 0 { "是（1 次）" } else { "否" }.into(),
+        if last.p_cost.msgs == 0 {
+            "是（1 次）"
+        } else {
+            "否"
+        }
+        .into(),
         if last.l_cost.msgs == 0 { "是" } else { "否" }.into(),
-        if last.b_struct_dirty { "是（1 次）" } else { "否" }.into(),
+        if last.b_struct_dirty {
+            "是（1 次）"
+        } else {
+            "否"
+        }
+        .into(),
     );
 
     let p_med = median(&p_ms);

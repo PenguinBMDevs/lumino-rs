@@ -16,6 +16,10 @@ fn test_editor() -> Editor {
     seed_notes(&mut editor, 2, 1, &[]);
     // 吸附精度 1 tick，使格点对齐整数 tick / key
     editor.editor_state.view.snap_precision = 1.0;
+    // 关闭最小长度下限：本文件多数用例钉的是**逐音高行覆盖几何**（4 tick 的合成
+    // 图形里竖直段只有 1 tick），下限会把整条图形补齐、几何断言失去意义。
+    // 下限本身由 `test_outline_min_length_*` 单独钉死（默认 128 分音符）。
+    editor.editor_state.line_tool.set_min_note_division(None);
     editor
 }
 
@@ -210,6 +214,10 @@ fn test_shift_uses_raw_mouse_coords_for_square() {
         px_per_tick,
         px_per_key,
         editor.editor_state.view.key_count as i32,
+        crate::interaction::line_tool::paths::min_note_length_ticks(
+            editor.min_note_division(),
+            editor.editor_state.view.ppq,
+        ),
     )
     .into_iter()
     .map(|(t, k, l)| (t.round() as i64, k, (l * 1000.0).round() as i64))
@@ -334,6 +342,76 @@ fn test_no_division_keeps_filled_shape_behaviour() {
             .iter()
             .all(|n| n.end_tick - n.start_tick == 1),
         "填充格音符长度仍为 snap"
+    );
+}
+
+/// 回归 BUG：矩形/三角形的**竖直边**逐音高行只有 1 tick —— 1920 ppq 下是
+/// 1/7680 个全音符，实机缩放下不足 1px（用户看到的是「音符宽度过小 / 像没生成」）。
+/// 修复后：描边音符长度补齐到至少 128 分音符（= `ppq / 32`），水平边不受影响。
+#[test]
+fn test_outline_min_length_fills_short_vertical_segments() {
+    let mut editor = test_editor();
+    // `test_editor` 为几何断言关掉了下限，这里恢复默认档位（128 分音符）
+    let division = lumino_editor_state::LineToolState::DEFAULT_MIN_NOTE_DIVISION;
+    assert_eq!(division, 128, "默认最小长度档位 = 128 分音符");
+    editor.set_min_note_division(Some(division));
+    let min_ticks = (editor.editor_state.view.ppq / 32).max(1) as u32;
+
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    // 0..3840 × key 60..64：水平边 3840 tick（远超下限，不被补齐）
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(3840.0, 64.0);
+    editor.handle_shape_tool_released();
+    assert!(editor.confirm_shape_tool());
+
+    let end = 3840 + min_ticks;
+    assert_eq!(
+        rows(&editor),
+        vec![
+            (60, vec![(0, 3840), (3840, end)]),
+            (61, vec![(0, min_ticks), (3840, end)]),
+            (62, vec![(0, min_ticks), (3840, end)]),
+            (63, vec![(0, min_ticks), (3840, end)]),
+            (64, vec![(0, 3840), (3840, end)]),
+        ],
+        "竖直边逐行音符补齐到 128 分音符，水平边保持 3840 tick"
+    );
+}
+
+/// 修改接口：最小长度按 x 分音符档位换算（`4·ppq/x`）；`None` = 不设下限。
+#[test]
+fn test_outline_min_length_is_configurable() {
+    let mut editor = test_editor();
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(3840.0, 64.0);
+    editor.handle_shape_tool_released();
+
+    // 六十四分音符档（= ppq / 16）比默认的 128 分音符档长一倍
+    editor.set_min_note_division(Some(64));
+    let expected = (editor.editor_state.view.ppq as f32 / 16.0).round() as u32;
+    assert!(editor.confirm_shape_tool());
+    assert_eq!(
+        rows(&editor)[1].1[0],
+        (0, expected),
+        "64 分音符档 = 4·ppq/64 = ppq/16"
+    );
+
+    // None = 关闭下限：竖直段回到几何原样 1 tick
+    let mut editor = test_editor();
+    editor.set_min_note_division(None);
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(3840.0, 64.0);
+    editor.handle_shape_tool_released();
+    assert!(editor.confirm_shape_tool());
+    assert_eq!(
+        rows(&editor)[1].1[0],
+        (0, 1),
+        "关闭下限后竖直段保持 1 tick（几何原样）"
     );
 }
 

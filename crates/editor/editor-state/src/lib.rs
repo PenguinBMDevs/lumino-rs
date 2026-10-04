@@ -20,13 +20,13 @@ pub use editor_state::{
     SELECTION_BOX_EDGE_THRESHOLD, SelectionHitType, SelectionSet,
 };
 pub use editor_state::{
+    DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,
+    ShapeSelectState,
+};
+pub use editor_state::{
     I2mInteraction, ImageToMidiMode, ImageToMidiPreview, ImageToMidiState, PreviewNote, RegionRect,
 };
 pub use editor_state::{
     ShapeInstance, ShapeKind, ShapePreview, ShapeSpec, ShapeToolInteraction, ShapeToolState,
-};
-pub use editor_state::{
-    DrawnShape, DrawnShapeSource, PendingShapeRef, ShapeDrag, ShapeMarquee, ShapeMove, ShapeNote,
-    ShapeSelectState,
 };
 pub use editor_transform::EditorTransform;

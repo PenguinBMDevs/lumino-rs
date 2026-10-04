@@ -4,7 +4,8 @@
 //! （[`shape_outline_path`]），再交给曲线工具那一套蜘蛛网（Spiderweb）式逐音高行解析
 //! （[`paths::path_notes`]）——每个音高行一条音符、起点 = 进入该行的 tick、终点 =
 //! 下一条音符的起点 → **无缝连奏、长度自然变化**，全程不使用吸附精度；闭合环从最左点
-//! 重启、竖直段各占 1 tick，与 `line_tool/paths.rs` 的轮廓口径完全一致。
+//! 重启、竖直段原本各占 1 tick（写入时按最小长度下限补齐到至少 128 分音符，见
+//! [`paths::min_note_length_ticks`]），与 `line_tool/paths.rs` 的轮廓口径完全一致。
 //!
 //! **填充（`filled = true`）不走这条路**：仍是「按 snap 网格枚举格点、每格一条定长
 //! 音符」，开启「x 分音符」切分档位（共享的模式设置，权威在 `line_tool`）时先按行合并
@@ -80,6 +81,10 @@ pub(super) fn chop_cells(cells: &[(f32, u16)], snap: f32, step: f32) -> Vec<(f32
 /// 完全一致（闭合环从最左点重启、不做首尾拉伸、同起点同行只留最长）。
 /// **全程不使用吸附精度**：起点/终点由边界与音高行边界（key ± 0.5）的解析交点决定。
 ///
+/// 长度按 `min_ticks`（[`paths::min_note_length_ticks`]，默认 128 分音符）兜底补齐——
+/// 矩形/三角形的竖直边逐音高行原本只有 1 tick，与本文件同一根因（轮廓竖直段），
+/// 一并修掉；填充腿（[`chop_cells`] / 格点）不补齐，见 [`Editor::confirm_shape_tool`] 说明。
+///
 /// `key_count` 为渲染音高行上限：越界行裁掉（与曲线工具 `confirm` 同口径，
 /// 边界折线的首尾拉伸可能把端点推到行边界外）。
 pub(super) fn outline_notes(
@@ -87,6 +92,7 @@ pub(super) fn outline_notes(
     px_per_tick: f32,
     px_per_key: f32,
     key_count: i32,
+    min_ticks: f32,
 ) -> Vec<(f32, u16, f32)> {
     let poly: Vec<(f64, f64)> = shape_outline_path(spec, px_per_tick, px_per_key)
         .into_iter()
@@ -95,7 +101,7 @@ pub(super) fn outline_notes(
     paths::path_notes(&poly, false)
         .into_iter()
         .filter(|n| n.key >= 0 && n.key < key_count)
-        .map(|n| (n.start.max(0) as f32, n.key as u16, n.length() as f32))
+        .map(|n| paths::to_note_triple(&n, min_ticks))
         .collect()
 }
 
@@ -103,9 +109,12 @@ impl Editor {
     /// 形状工具：确认（√）—— 把所有待确认图形转成音符
     ///
     /// - **描边（`filled = false`）**：走几何解析 → 逐音高行无缝变长音符
-    ///   （与曲线工具轮廓同源的 [`paths::path_notes`]，不受切分档位影响）；
+    ///   （与曲线工具轮廓同源的 [`paths::path_notes`]，不受切分档位影响），
+    ///   过短的竖直段音符按最小长度下限补齐（默认 128 分音符）；
     /// - **填充（`filled = true`）**：每格一条 snap 长音符；开启切分档位时按行合并
     ///   连续格点后用 x 分音符的全局网格切分（与曲线工具填充同源的 [`chop_span`]）。
+    ///   **填充腿不套用最小长度下限**：它的长度就是用户选的档位/格点覆盖，
+    ///   补齐会让音符覆盖大于图形覆盖，破坏「填充显示 == 生成音符」不变式。
     ///
     /// 流程与 `confirm_line_tool` 同构：先整体去重，再批量插入并写入历史。
     pub(crate) fn confirm_shape_tool(&mut self) -> bool {
@@ -126,6 +135,11 @@ impl Editor {
         let px_per_tick = self.editor_state.view.zoom_x;
         let px_per_key = self.editor_state.view.zoom_y;
         let key_count = self.editor_state.view.key_count as i32;
+        // 描边音符的最小长度下限（与曲线工具同一接口/默认值：128 分音符）
+        let min_ticks = paths::min_note_length_ticks(
+            self.editor_state.line_tool.min_note_division,
+            self.editor_state.view.ppq,
+        );
 
         // 描边音符：(起始 tick, key, 长度, 来源图形索引)——起点/长度由几何解析决定
         let mut outline: Vec<(f32, u16, f32, usize)> = Vec::new();
@@ -138,7 +152,7 @@ impl Editor {
             // ① 描边：连续几何 → 逐音高行解析（无网格量化）
             if !shape.filled {
                 outline.extend(
-                    outline_notes(shape.spec(), px_per_tick, px_per_key, key_count)
+                    outline_notes(shape.spec(), px_per_tick, px_per_key, key_count, min_ticks)
                         .into_iter()
                         .map(|(t, k, l)| (t, k, l, idx)),
                 );

@@ -9,6 +9,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 曲线/形状工具生成音符的最小长度下限（BUG 修复）
+
+- **症状** — 纵向卷帘下画一条**垂直于时间轴的直线**（时间原地不动、一瞬间跨过多个音高
+  行），生成的音符每条只占 1 tick：1920 ppq 下是 1/7680 个全音符，缩放到实机比例后不足
+  1px ⇒ 看起来像「音符宽度过小 / 没生成」。
+- **根因** — 轮廓音符由蜘蛛网式逐音高行解析得出（`line_tool/paths.rs`）：为避免紧折角后
+  面接平坦段时两条长音符叠成实心块，同一 tick 跨多行的音符**刻意**只给 1 tick。几何层没错
+  （保持 Spiderweb 口径），缺的是**写入层的可视长度下限**。
+- **修复** — 写入层（`confirm_line_tool` / `confirm_shape_tool` 的轮廓腿）按最小长度下限
+  补齐过短的音符（起点不动、终点外扩）：默认 **128 分音符** = `4·ppq/128` = `ppq/32`。
+  形状工具描边是同一条几何腿，一并修掉。
+- **修改接口（预留）** — `LineToolState::min_note_division`（`Some(x)` = x 分音符、
+  `None` = 不设下限；默认常量 `LineToolState::DEFAULT_MIN_NOTE_DIVISION = 128`），换算函数
+  `line_tool::paths::min_note_length_ticks`；`Editor` 侧暴露 `set_min_note_division` /
+  `min_note_division`。属模式设置，跨 √ 确认 / × 取消保留。
+- **明确不动的地方** — 填充腿（`fill_notes` / `chop_span` / 形状填充格点）**不套用**下限：
+  其长度由用户选的切分档位与图形覆盖决定，补齐会让音符覆盖大于图形覆盖，破坏「填充显示
+  == 生成音符」不变式。
+- **验证** — 先复现后修复：`test_vertical_roll_straight_line_keeps_min_note_length`
+  （修复前实测 1 tick vs 要求 60 tick），另加 `test_confirm_vertical_line_keeps_min_note_length`、
+  `test_min_note_division_is_configurable`、`test_min_note_division_survives_confirm`、
+  `test_outline_min_length_fills_short_vertical_segments`、`test_outline_min_length_is_configurable`、
+  `test_min_note_length_ticks_follows_division`、`test_to_note_triple_clamps_start_and_length`；
+  `cargo test --workspace` 全绿，`cargo clippy -p lumino-ui-editor -p lumino-editor-state --all-targets` 无警告。
+
 ### 音符画 · 三角形朝向跟随拖拽方向（BUG 修复）
 
 - **症状** — 形状工具选中「三角形」拉框，画出来的永远**倒三角**，与拉框方向无关；
@@ -60,11 +85,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   5 条方向用例立即全挂（`test_triangle_apex_follows_drag_direction`、正向/反向/实时翻面/
   填充方向/纵卷帘），复原后全绿 ⇒ 用例是真语义钉子而非同义反复。
   测试文件按 REF-001 纪律拆出 `interaction/shape_tool/tests_triangle.rs`（单文件 ≤ 400 行）。
-  另：`cargo clippy --workspace --all-targets` 在 `lumino-ui` 的**测试目标**上失败
-  （`crates/editor/ui/src/view/video_clip/preview.rs:106` 的 `#[cfg(test)] mod tests` 用
-  默认 `Renderer = ()` 构造视图，iced 0.14 的 trait 约束不满足，17 个 E0277/E0599），
-  该文件由 f3384d9b 引入、**与本次改动无关**（本仓 `cargo test --workspace` 同样会在这里断），
-  已单独记录待办。
+  另（**仅 `--profile fast-release` 的口径差异，不是仓库缺陷**）：该 profile 下
+  `cargo clippy --workspace --all-targets` 会在 `lumino-ui` 的**测试目标**上报 17 个
+  E0277/E0599（`crates/editor/ui/src/view/video_clip/preview.rs:106` 的
+  `#[cfg(test)] mod tests` 用 `()` 当 iced headless 渲染器）。根因是 iced 0.14 把 `()`
+  渲染器整模块门控在 `#[cfg(debug_assertions)]` 下
+  （`iced_core-0.14.0/src/renderer.rs:2`），而 `profile.fast-release` 继承 `release`
+  ⇒ `debug-assertions = false`；仓库测试自己也写着「debug 构建下实现全部所需 trait」。
+  因此**默认 dev profile 的 `cargo test` 与 CI 原样命令都不受影响，测试目标是好的**
+  ——本条目前面所有 fast-release 验证均按 `--lib`（生产代码）口径执行，避免混入该差异。
 
 ### 音符画 · 形状工具描边对齐曲线工具（蜘蛛网式逐音高行）
 

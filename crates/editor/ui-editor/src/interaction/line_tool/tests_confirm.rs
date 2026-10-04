@@ -95,7 +95,8 @@ fn test_confirm_multiple_paths_batch() {
         line.paths.push(Vec::new());
         line.push_anchor(0, (0.0, 60.0));
         line.push_anchor(0, (3840.0, 60.0));
-        // 路径 2：竖直线 (3840,64)-(3840,68) → 5 条音高行，各 1 tick
+        // 路径 2：竖直线 (3840,64)-(3840,68) → 5 条音高行，
+        // 各 1 tick 的竖直段音符按最小长度下限补齐到 128 分音符
         line.paths.push(Vec::new());
         line.push_anchor(1, (3840.0, 64.0));
         line.push_anchor(1, (3840.0, 68.0));
@@ -217,4 +218,90 @@ fn test_confirm_keeps_longest_when_outline_and_fill_overlap() {
     assert_eq!(notes.len(), 1, "同 tick 同 key 只留最长的一条");
     let n = notes.iter().next().expect("应有音符");
     assert_eq!((n.start_tick, n.end_tick), (0, 3840), "保留最长的那条");
+}
+
+// ── 生成音符的**最小长度下限**（BUG：竖直段 1 tick 缩放下不足 1px）──────────
+
+/// 构造曲线工具 + 一条竖直直线 (1920, 60)-(1920, 68)（同一 tick 跨 9 个音高行）
+fn vertical_line_editor() -> Editor {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (1920.0, 60.0));
+        line.push_anchor(0, (1920.0, 68.0));
+    }
+    editor
+}
+
+/// 回归 BUG：竖直线（时间原地不动、一瞬间跨多行）除最后一条外都只占 1 tick ——
+/// 1920 ppq 下 1/7680 个全音符，实机缩放下不足 1px（「音符宽度过小」）。
+/// 修复后：按最小长度下限（默认 128 分音符 = `ppq / 32`）补齐。
+#[test]
+fn test_confirm_vertical_line_keeps_min_note_length() {
+    let mut editor = vertical_line_editor();
+    let min_ticks = (editor.editor_state.view.ppq / 32).max(1) as u32;
+    assert!(editor.confirm_line_tool());
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 9, "9 个音高行各一条音符");
+    for n in notes.iter() {
+        assert_eq!(
+            n.end_tick - n.start_tick,
+            min_ticks,
+            "key {} 的竖直段音符应补齐到 128 分音符 = {min_ticks} tick",
+            n.key
+        );
+    }
+    // 起点不动（仍起于几何交点 1920），只向外扩终点
+    assert!(notes.iter().all(|n| n.start_tick == 1920));
+}
+
+/// 修改接口：`min_note_division` 按 x 分音符换算下限；`None` = 不设下限（几何原样）。
+#[test]
+fn test_min_note_division_is_configurable() {
+    // 六十四分音符档 = ppq / 16（默认 128 分音符档的两倍长）
+    let mut editor = vertical_line_editor();
+    editor.set_min_note_division(Some(64));
+    let expected = (editor.editor_state.view.ppq / 16).max(1) as u32;
+    assert!(editor.confirm_line_tool());
+    assert!(
+        editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .all(|n| n.end_tick - n.start_tick == expected),
+        "64 分音符档 = 4·ppq/64 = ppq/16 = {expected} tick"
+    );
+
+    // 关闭下限：竖直段保持 1 tick（几何原样，用于需要精确几何的调用方）
+    let mut editor = vertical_line_editor();
+    assert_eq!(editor.min_note_division(), Some(128), "默认 128 分音符档");
+    editor.set_min_note_division(None);
+    assert_eq!(editor.min_note_division(), None);
+    assert!(editor.confirm_line_tool());
+    assert!(
+        editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .all(|n| n.end_tick - n.start_tick == 1),
+        "关闭下限后竖直段保持 1 tick"
+    );
+
+    // `Some(0)` 归一为 `None`（0 分音符无意义）
+    editor.set_min_note_division(Some(0));
+    assert_eq!(editor.min_note_division(), None);
+}
+
+/// 档位是模式设置：√ 确认（`reset`）后保留，不必每次重设
+#[test]
+fn test_min_note_division_survives_confirm() {
+    let mut editor = vertical_line_editor();
+    editor.set_min_note_division(Some(32));
+    assert!(editor.confirm_line_tool());
+    assert_eq!(editor.min_note_division(), Some(32), "√ 确认后档位保留");
 }

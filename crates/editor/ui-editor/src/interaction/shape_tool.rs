@@ -8,8 +8,10 @@
 //! （`lumino_editor_state::shape_tool::shape_outline_path`），再交给曲线工具那一套
 //! 蜘蛛网（Spiderweb）式逐音高行解析（`crate::interaction::line_tool::paths::path_notes`）
 //! ——每个音高行一条音符、起点 = 进入该行的 tick、终点 = 下一条音符的起点 →
-//! **无缝连奏、长度自然变化**，全程不使用吸附精度；闭合环从最左点重启、竖直段各占
-//! 1 tick，与 `line_tool/paths.rs` 的轮廓口径完全一致。
+//! **无缝连奏、长度自然变化**，全程不使用吸附精度；闭合环从最左点重启、竖直段
+//! 原本各占 1 tick（写入时按最小长度下限补齐到至少 128 分音符，见
+//! [`crate::interaction::line_tool::paths::min_note_length_ticks`]），与 `line_tool/paths.rs`
+//! 的轮廓口径完全一致。
 //!
 //! **填充（`filled = true`）不走这条路**：仍是「按 snap 网格枚举格点、每格一条定长
 //! 音符」，开启「x 分音符」切分档位时按行合并连续格点后按全局网格切分——与曲线工具里

@@ -6,9 +6,7 @@
 
 use iced_core::{Alignment, Color, Length, Padding, Point};
 use iced_widget::{Space, button, column, container, mouse_area, tooltip};
-use lumino_message::{
-    ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem,
-};
+use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
 use crate::{Element, Message, Theme};
 
