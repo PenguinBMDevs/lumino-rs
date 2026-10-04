@@ -268,6 +268,53 @@ fn chase_multi_port_channels_are_independent() {
     );
 }
 
+/// REND-014 #113：同 tick 数据字节先于 RPN 选择时，追齐必须按引擎（文件序）
+/// 复现——数据归属"旧选择"族，且三个 RPN 族的最终生效值全部追齐
+/// （修复"只追最后选中族"导致的 seek 与实时首播状态不一致）。
+#[test]
+fn chase_reproduces_all_rpn_families_when_data_precedes_select() {
+    let mut engine = engine_with_events(vec![
+        // RPN 0/1（细调音）选择 + 数据
+        ev(0.0, cc(0, 101, 0)),
+        ev(0.0, cc(0, 100, 1)),
+        ev(0.0, cc(0, 6, 127)),
+        ev(0.0, cc(0, 38, 112)),
+        // 同一 tick：CC38=127 归属仍选中的 0/1 → 再切 0/0 → CC6=2
+        ev(100.0, cc(0, 38, 127)),
+        ev(100.0, cc(0, 101, 0)),
+        ev(100.0, cc(0, 100, 0)),
+        ev(100.0, cc(0, 6, 2)),
+    ]);
+
+    engine.seek(200.0);
+    let chase = cc_tuples(&engine.take_pending_chase());
+
+    assert!(
+        chase.contains(&(0, 6, 127)) && chase.contains(&(0, 38, 127)),
+        "细调音族（0/1）最终生效值必须追齐（同 tick 数据先于选择）: {chase:?}"
+    );
+    assert!(
+        chase.contains(&(0, 6, 2)),
+        "灵敏度族（0/0）生效值必须追齐: {chase:?}"
+    );
+    // 每族内部：选择先于数据
+    let pos_sel01 = chase
+        .iter()
+        .position(|&(_, c, v)| c == 100 && v == 1)
+        .expect("0/1 选择应存在");
+    let pos_data01 = chase
+        .iter()
+        .position(|&(_, c, v)| c == 6 && v == 127)
+        .expect("0/1 数据应存在");
+    assert!(pos_sel01 < pos_data01, "0/1 选择必须先于其数据: {chase:?}");
+    // 选择态恢复：末尾最后一个选择应为 0/0（与实时 seek 点一致）
+    let last_sel = chase.iter().rev().find(|&&(_, c, _)| c == 100 || c == 101);
+    assert_eq!(
+        last_sel,
+        Some(&(0, 100, 0)),
+        "追齐末尾必须恢复实时选择态 0/0: {chase:?}"
+    );
+}
 /// REND-002 方案 B：seek 时先追齐打击乐模态、再追齐 Bank Select CC0。
 #[test]
 fn chase_emits_percussion_mode_before_bank_select() {

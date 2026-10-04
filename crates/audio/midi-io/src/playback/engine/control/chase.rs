@@ -6,9 +6,11 @@
 //!
 //! 追齐数据来源为当前轨的 `midi_events`（automation lane 展开结果）与
 //! 非当前轨的 `document.control_events`，两者按 tick 合并后取“每通道最后值”。
-//! 输出顺序：打击乐模态 → Program → RPN/NRPN 选择（MSB→LSB）→ DataEntry
-//! （MSB→LSB）→ 其他 CC（控制器升序）→ Pitch Bend，保证 RPN 数据不会落到
-//! 错误参数上。
+//! RPN/NRPN 按引擎状态机复现（REND-014 #113）：三个 RPN 族（0/0 灵敏度、
+//! 0/1 细调音、0/2 粗调音）的最终生效值全部追齐，且 DataEntry 归属“事件到达
+//! 时”已选中的族——同 tick 数据先于选择时与实时文件序保持一致。
+//! 输出顺序：打击乐模态 → Program → RPN 选择+数据（0/0→0/1→0/2）→ 恢复实时
+//! 选择态 → 其他 CC（控制器升序）→ Pitch Bend。
 //!
 //! 契约：`ChannelPressure` / `PolyPressure`（后触）**不参与追齐**——文档控制事件
 //! 只展开 kind 0/1/2（CC/PC/PB，见 `state.rs::push_control_event`），后触在 seek
@@ -35,8 +37,19 @@ struct ChannelChase {
     program: Option<u8>,
     /// 最后 Pitch Bend（归一化 -1.0..1.0）。
     pitch_bend: Option<f32>,
-    /// 选择类控制器最后一次出现的 tick（下标对应 [`SELECT_CC`]）。
-    select_tick: [Option<f32>; 4],
+    /// 当前 RPN 选择（MSB, LSB）；`None` = 未选择或 NRPN（数据被消费）。
+    rpn_sel: Option<(u8, u8)>,
+    /// 最后一次选择是否为 NRPN（用于恢复选择态；NRPN 数据不生效）。
+    sel_is_nrpn: bool,
+    /// RPN 0/0（弯音灵敏度）DataEntry 字节 (MSB, LSB) + 是否生效过。
+    rpn0: (u8, u8),
+    rpn0_touched: bool,
+    /// RPN 0/1（通道细调音）DataEntry 字节 (MSB, LSB) + 是否生效过。
+    rpn1: (u8, u8),
+    rpn1_touched: bool,
+    /// RPN 0/2（通道粗调音，仅 MSB 生效）+ 是否生效过。
+    rpn2: u8,
+    rpn2_touched: bool,
 }
 
 impl Default for ChannelChase {
@@ -45,7 +58,14 @@ impl Default for ChannelChase {
             cc: [None; 128],
             program: None,
             pitch_bend: None,
-            select_tick: [None; 4],
+            rpn_sel: None,
+            sel_is_nrpn: false,
+            rpn0: (2, 0),
+            rpn0_touched: false,
+            rpn1: (64, 0),
+            rpn1_touched: false,
+            rpn2: 64,
+            rpn2_touched: false,
         }
     }
 }
@@ -88,7 +108,7 @@ impl PlaybackEngine {
             };
             if take_midi {
                 if let Some(event) = self.midi_events.get(i) {
-                    apply_message(&mut states, &mut percussion, event.tick, &event.message);
+                    apply_message(&mut states, &mut percussion, &event.message);
                 }
                 i += 1;
             } else if let Some(event) = doc.and_then(|doc| doc.control_events.get(j)) {
@@ -107,11 +127,61 @@ impl PlaybackEngine {
     }
 }
 
+/// 应用一条控制事件到追齐状态（当前轨 `midi_events` 与 document 共用）。
+///
+/// RPN/NRPN 语义与合成器侧状态机一致（`gpu-synth` `ChannelState::handle_rpn_cc`
+/// / fork `core/src/channel/control.rs`）：DataEntry 只作用于"事件到达时"已选中的
+/// RPN 族——同 tick 内数据先于选择时归属旧族（REND-014 #113，与实时文件序一致）。
+fn apply_control(state: &mut ChannelChase, controller: u8, value: u8) {
+    state.cc[controller as usize] = Some(value);
+    match controller {
+        // NRPN 选择：引擎不实现 NRPN 效果，后续 DataEntry 被消费丢弃。
+        0x62 | 0x63 => {
+            state.rpn_sel = None;
+            state.sel_is_nrpn = true;
+        }
+        0x64 => {
+            let msb = state.rpn_sel.map_or(0, |(m, _)| m);
+            state.rpn_sel = Some((msb, value));
+            state.sel_is_nrpn = false;
+        }
+        0x65 => {
+            let lsb = state.rpn_sel.map_or(0, |(_, l)| l);
+            state.rpn_sel = Some((value, lsb));
+            state.sel_is_nrpn = false;
+        }
+        0x06 | 0x26 => match state.rpn_sel {
+            Some((0, 0)) => {
+                if controller == 0x06 {
+                    state.rpn0.0 = value;
+                } else {
+                    state.rpn0.1 = value;
+                }
+                state.rpn0_touched = true;
+            }
+            Some((0, 1)) => {
+                if controller == 0x06 {
+                    state.rpn1.0 = value;
+                } else {
+                    state.rpn1.1 = value;
+                }
+                state.rpn1_touched = true;
+            }
+            // 粗调音仅 MSB 生效（与引擎一致）。
+            Some((0, 2)) if controller == 0x06 => {
+                state.rpn2 = value;
+                state.rpn2_touched = true;
+            }
+            _ => {}
+        },
+        _ => {}
+    }
+}
+
 /// 应用一条当前轨事件到追齐状态。
 fn apply_message(
     states: &mut [ChannelChase],
     percussion: &mut PercussionTracker,
-    tick: f32,
     message: &MidiMessage,
 ) {
     match message {
@@ -124,10 +194,7 @@ fn apply_message(
             if ch >= states.len() {
                 return;
             }
-            states[ch].cc[*controller as usize] = Some(*value);
-            if let Some(idx) = SELECT_CC.iter().position(|c| c == controller) {
-                states[ch].select_tick[idx] = Some(tick);
-            }
+            apply_control(&mut states[ch], *controller, *value);
             // REND-002 方案 B：Bank Select 参与打击乐模态追齐。
             let _ = percussion.observe_cc(*channel, *controller, *value);
         }
@@ -163,15 +230,43 @@ fn apply_document_event(
     match event.kind {
         0 => {
             let (controller, value) = event.as_control_change();
-            states[ch].cc[controller as usize] = Some(value);
-            if let Some(idx) = SELECT_CC.iter().position(|c| *c == controller) {
-                states[ch].select_tick[idx] = Some(event.tick as f32);
-            }
+            apply_control(&mut states[ch], controller, value);
             let _ = percussion.observe_cc(channel, controller, value);
         }
         1 => states[ch].program = Some(event.as_program_change()),
         2 => states[ch].pitch_bend = Some(event.as_pitch_bend()),
         _ => {}
+    }
+}
+
+/// 追齐一条 RPN 族：选择（101=MSB、100=LSB）→ DataEntry（6=MSB、38=LSB）。
+///
+/// `lsb` 为 `None` 时只发 MSB（RPN 0/2 粗调音仅 MSB 生效，与引擎一致）。
+fn push_rpn_family(out: &mut Vec<MidiMessage>, ch: u16, sel_lsb: u8, msb: u8, lsb: Option<u8>) {
+    for (controller, value) in [(101u8, 0u8), (100, sel_lsb), (6, msb)] {
+        out.push(MidiMessage::ControlChange {
+            channel: ch,
+            controller,
+            value,
+        });
+    }
+    if let Some(lsb) = lsb {
+        out.push(MidiMessage::ControlChange {
+            channel: ch,
+            controller: 38,
+            value: lsb,
+        });
+    }
+}
+
+/// 追齐 RPN 选择态（101=MSB、100=LSB）。
+fn push_rpn_select(out: &mut Vec<MidiMessage>, ch: u16, msb: u8, lsb: u8) {
+    for (controller, value) in [(101u8, msb), (100, lsb)] {
+        out.push(MidiMessage::ControlChange {
+            channel: ch,
+            controller,
+            value,
+        });
     }
 }
 
@@ -190,7 +285,10 @@ fn emit_chase(states: &[ChannelChase], percussion: &PercussionTracker) -> Vec<Mi
         }
         let has_any = state.program.is_some()
             || state.pitch_bend.is_some()
-            || state.cc.iter().any(Option::is_some);
+            || state.cc.iter().any(Option::is_some)
+            || state.rpn0_touched
+            || state.rpn1_touched
+            || state.rpn2_touched;
         if !has_any {
             continue;
         }
@@ -200,36 +298,41 @@ fn emit_chase(states: &[ChannelChase], percussion: &PercussionTracker) -> Vec<Mi
                 program,
             });
         }
-        // 只追“最后一次被选中”的 RPN/NRPN 家族，避免两个家族的残留值互相覆盖。
-        let last_select = state
-            .select_tick
-            .iter()
-            .enumerate()
-            .filter_map(|(idx, &tick)| tick.map(|tick| (idx, tick)))
-            .max_by(|a, b| a.1.total_cmp(&b.1));
-        if let Some((idx, _)) = last_select {
-            // 0/1 = NRPN，2/3 = RPN；先 MSB 再 LSB。
-            let (msb_idx, lsb_idx) = if idx >= 2 { (3, 2) } else { (1, 0) };
-            for sel_idx in [msb_idx, lsb_idx] {
-                let controller = SELECT_CC[sel_idx];
-                if let Some(value) = state.cc[controller as usize] {
-                    out.push(MidiMessage::ControlChange {
-                        channel: ch,
-                        controller,
-                        value,
-                    });
-                }
+        // REND-014 #113：按引擎状态机复现三个 RPN 族的最终生效值（而非只追
+        // “最后一次被选中的家族”）——同 tick 数据先于选择时数据归属旧族，
+        // 只追最后族会丢掉此前已生效的细/粗调音或灵敏度状态，导致 seek 后
+        // 与实时播放的首播行为不一致。
+        let mut last_emitted_sel: Option<(u8, u8)> = None;
+        if state.rpn0_touched {
+            push_rpn_family(&mut out, ch, 0, state.rpn0.0, Some(state.rpn0.1));
+            last_emitted_sel = Some((0, 0));
+        }
+        if state.rpn1_touched {
+            push_rpn_family(&mut out, ch, 1, state.rpn1.0, Some(state.rpn1.1));
+            last_emitted_sel = Some((0, 1));
+        }
+        if state.rpn2_touched {
+            push_rpn_family(&mut out, ch, 2, state.rpn2, None);
+            last_emitted_sel = Some((0, 2));
+        }
+        // 恢复实时选择态：否则 seek 后第一个 DataEntry 会落到追齐留下的最后一族。
+        if let Some((msb, lsb)) = state.rpn_sel {
+            if last_emitted_sel != Some((msb, lsb)) {
+                push_rpn_select(&mut out, ch, msb, lsb);
             }
-            // DataEntry 仅在存在选择状态时追齐（否则目标参数不明确）。
-            for controller in DATA_CC {
-                if let Some(value) = state.cc[controller as usize] {
-                    out.push(MidiMessage::ControlChange {
-                        channel: ch,
-                        controller,
-                        value,
-                    });
-                }
-            }
+        } else if state.sel_is_nrpn
+            && let (Some(msb), Some(lsb)) = (state.cc[99], state.cc[98])
+        {
+            out.push(MidiMessage::ControlChange {
+                channel: ch,
+                controller: 99,
+                value: msb,
+            });
+            out.push(MidiMessage::ControlChange {
+                channel: ch,
+                controller: 98,
+                value: lsb,
+            });
         }
         // 其他 CC（控制器升序，跳过选择与数据字节）。
         for controller in 0u8..=127 {
