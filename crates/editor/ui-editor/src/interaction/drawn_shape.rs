@@ -14,9 +14,10 @@
 //! - **删除**：Delete 键或右键菜单「删除」→ 快照历史 + 按值删除该图形的全部音符 +
 //!   标记图形已删除；撤销该删除可恢复。
 //!
-//! 进入鼠标工具时，当前绘制工具的**待确认内容会被 √ 固化**（见
-//! `Editor::commit_pending_drawing`）——否则 `EditorState::set_tool` 的「切换工具 = ×」
-//! 会把用户刚画好的图案连同登记机会一起丢掉，表现为「切到选择工具图案就消失」。
+//! 进入鼠标工具时，其它绘制工具的**待确认内容原样保留**（`EditorState::set_tool` 只收敛
+//! 未完成的交互手势、不丢弃产物），且其几何预览在选择工具下照样渲染
+//! （`Editor::pending_preview_visible`）——因此「画完切过去」图案不会消失，
+//! 也不会被擅自固化成音符（音符只在用户显式 √ 时生成）。
 //!
 //! 命中判定（逻辑坐标 → 屏幕像素空间，容差统一为像素）：
 //! - 形状工具图形：直接复用 `point_in_shape`（含 Shift 正图形约束与圆形内部判定）；
@@ -497,7 +498,7 @@ fn polyline_hit(editor: &Editor, probe: iced_core::Point, points: &[(f32, f32)])
 mod tests {
     use super::*;
     use crate::tests::test_helpers::seed_notes;
-    use lumino_editor_state::{BezierAnchor, BrushStroke, ShapeKind};
+    use lumino_editor_state::{BezierAnchor, BrushStroke, ShapeKind, ShapeToolInteraction};
     use lumino_message::Tool;
 
     /// 构造非 Conductor 轨（track 1）编辑器，吸附精度 = 1
@@ -807,7 +808,7 @@ mod tests {
         assert!((d - 4.0).abs() < 1e-4, "期望 4.0，实际 {d}");
     }
 
-    // ── 切换到鼠标工具：图案不得消失（回归） ───────────────
+    // ── 切换到鼠标工具：产物保留、不生成音符（回归） ─────────
 
     /// 拉出（但不 √）一个待确认形状：模拟「用户刚画完图案还没确认」的状态
     fn draw_pending_rect(editor: &mut Editor) {
@@ -824,36 +825,32 @@ mod tests {
     }
 
     #[test]
-    fn test_switch_to_mouse_tool_commits_pending_shape() {
+    fn test_switch_to_mouse_tool_keeps_pending_shape_without_notes() {
         let mut editor = test_editor();
         draw_pending_rect(&mut editor);
-        // 切到「鼠标工具」（框选/选择绘制图形）
         editor.set_tool(Tool::ShapeSelect);
-        // 图案不能凭空消失：应视为 √ 固化 —— 音符落地 + 图形登记 + 可命中
+        // ① 切换工具**不得**生成音符：用户没按 √，音符就不该落地
         assert_eq!(
             editor.editor_state.data.current_track_note_count(),
-            16,
-            "切换到鼠标工具应把待确认形状固化为音符（而不是丢弃）"
+            0,
+            "切换到鼠标工具不得直接生成音符"
         );
-        assert_eq!(
-            editor.editor_state.shape_select.visible_on(1).count(),
-            1,
-            "固化后图形应已登记，可被选中"
-        );
+        // ② 待确认图形（图案）必须保留
         assert!(
-            editor.hit_test_drawn_shape(2.0, 62.0).is_some(),
-            "固化后图案应可命中"
+            editor.editor_state.shape_tool.has_pending(),
+            "切换工具不得丢弃待确认图形"
         );
-        editor.handle_shape_select_pressed(2.0, 62.0);
-        editor.handle_shape_select_released();
-        assert!(
-            editor.editor_state.shape_select.selected().is_some(),
-            "固化后图案应可被鼠标工具选中"
-        );
+        // ③ 未 √ 就不该登记为可选中对象（登记只属于 √）
+        assert!(editor.editor_state.shape_select.is_empty());
+        // ④ 切回形状工具仍能 √ 固化 —— 图案没被毁
+        editor.set_tool(Tool::Shape);
+        assert!(editor.confirm_shape_tool(), "切回后仍可 √ 固化");
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 1);
     }
 
     #[test]
-    fn test_switch_to_mouse_tool_commits_pending_curve() {
+    fn test_switch_to_mouse_tool_keeps_pending_curve_paths() {
         let mut editor = test_editor();
         editor.set_tool(Tool::Curve);
         editor.editor_state.line_tool.paths = vec![vec![
@@ -863,15 +860,19 @@ mod tests {
         editor.editor_state.line_tool.recompute_auto_handles();
         editor.set_tool(Tool::ShapeSelect);
         assert_eq!(
-            editor.editor_state.shape_select.visible_on(1).count(),
+            editor.editor_state.line_tool.paths.len(),
             1,
-            "切换到鼠标工具应固化待确认曲线并登记图形"
+            "切换工具不得丢弃待确认曲线路径"
         );
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+        // 切回曲线工具仍可 √ 生成音符
+        editor.set_tool(Tool::Curve);
+        assert!(editor.confirm_line_tool());
         assert!(editor.editor_state.data.current_track_note_count() > 0);
     }
 
     #[test]
-    fn test_switch_to_mouse_tool_commits_pending_brush() {
+    fn test_switch_to_mouse_tool_keeps_pending_brush_strokes() {
         let mut editor = test_editor();
         editor.set_tool(Tool::Brush);
         // 粗细度 1：单层笔画全部落在基准轨，便于断言
@@ -881,34 +882,104 @@ mod tests {
             base_track: 1,
         });
         editor.set_tool(Tool::ShapeSelect);
-        assert!(
-            editor.editor_state.data.current_track_note_count() > 0,
-            "切换到鼠标工具应固化待确认笔画"
+        assert_eq!(
+            editor.editor_state.brush_tool.strokes.len(),
+            1,
+            "切换工具不得丢弃待确认笔画"
         );
-        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 1);
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
+        editor.set_tool(Tool::Brush);
+        assert!(editor.confirm_brush());
+        assert!(editor.editor_state.data.current_track_note_count() > 0);
     }
 
     #[test]
-    fn test_switch_to_other_drawing_tool_still_discards_pending() {
-        // 反向约束：只有进入「鼠标工具」才是 √；切到其它绘制工具仍是「×」
+    fn test_switch_to_any_tool_keeps_pending() {
+        // 「其他工具同理」：切到任意工具都保留产物（清空只发生在显式 × / √）
         let mut editor = test_editor();
         draw_pending_rect(&mut editor);
-        editor.set_tool(Tool::Curve);
-        assert_eq!(
-            editor.editor_state.data.current_track_note_count(),
-            0,
-            "切到其它绘制工具应保持既有「×」语义（丢弃待确认内容）"
-        );
-        assert_eq!(editor.editor_state.shape_select.visible_on(1).count(), 0);
+        for tool in [Tool::Curve, Tool::Brush, Tool::Pencil, Tool::Text, Tool::Pointer] {
+            editor.set_tool(tool);
+            assert!(
+                editor.editor_state.shape_tool.has_pending(),
+                "切到 {tool:?} 后待确认图形应保留"
+            );
+            assert_eq!(
+                editor.editor_state.data.current_track_note_count(),
+                0,
+                "切到 {tool:?} 不得生成音符"
+            );
+        }
     }
 
     #[test]
-    fn test_switch_to_mouse_tool_without_pending_is_noop() {
+    fn test_switch_tool_cancels_interaction_but_keeps_artifacts() {
+        // 手势（未完成的拖动）必须收敛；产物必须保留 —— 两者不可混为一谈
+        let mut editor = test_editor();
+        draw_pending_rect(&mut editor);
+        editor.editor_state.shape_tool.interaction = ShapeToolInteraction::Dragging {
+            start: (0.0, 60.0),
+        };
+        editor.set_tool(Tool::ShapeSelect);
+        assert_eq!(
+            editor.editor_state.shape_tool.interaction,
+            ShapeToolInteraction::None,
+            "切换工具应收敛未完成的交互手势"
+        );
+        assert!(
+            editor.editor_state.shape_tool.has_pending(),
+            "但待确认图形必须留着"
+        );
+    }
+
+    #[test]
+    fn test_switch_tool_cancels_shape_drag_without_moving_it() {
+        // 拖动已绘制图形途中切走：预览偏移丢弃（几何/音符不动），
+        // 拖拽态必须收敛，否则 is_editing() 永久 true → 撤销/重做被静默堵死
+        let mut editor = draw_and_confirm_rect();
+        editor.set_tool(Tool::ShapeSelect);
+        editor.handle_shape_select_pressed(2.0, 62.0);
+        editor.handle_shape_select_moved(6.0, 64.0);
+        assert!(editor.editor_state.shape_select.is_dragging());
+        editor.set_tool(Tool::Curve);
+        assert!(
+            !editor.editor_state.shape_select.is_dragging(),
+            "换工具必须收敛拖拽态"
+        );
+        assert!(!editor.is_editing(), "拖拽态残留会让 is_editing() 永久为 true");
+        match &editor.editor_state.shape_select.shapes()[0].source {
+            DrawnShapeSource::Shape { rect, .. } => {
+                assert_eq!(*rect, (0.0, 60.0, 4.0, 64.0), "几何不应被平移")
+            }
+            other => panic!("期望 Shape，实际 {other:?}"),
+        }
+        assert_eq!(editor.editor_state.data.current_track_note_count(), 16);
+    }
+
+    #[test]
+    fn test_pending_preview_visible_rule() {
         let mut editor = test_editor();
         editor.set_tool(Tool::Shape);
+        assert!(
+            editor.pending_preview_visible(Tool::Shape),
+            "拥有者工具下应可见"
+        );
+        assert!(
+            !editor.pending_preview_visible(Tool::Curve),
+            "非拥有者绘制工具下不应渲染"
+        );
         editor.set_tool(Tool::ShapeSelect);
-        assert_eq!(editor.editor_state.data.current_track_note_count(), 0);
-        assert!(editor.editor_state.shape_select.is_empty());
+        for owner in [Tool::Curve, Tool::Shape, Tool::Brush, Tool::Text] {
+            assert!(
+                editor.pending_preview_visible(owner),
+                "鼠标工具下 {owner:?} 的待确认预览应可见（图案不消失）"
+            );
+        }
+        editor.set_tool(Tool::Pencil);
+        assert!(
+            !editor.pending_preview_visible(Tool::Curve),
+            "铅笔工具下不渲染待确认预览（避免浮层干扰音符编辑）"
+        );
     }
 
     // ── 空白拉框（框选） ──────────────────────────────────

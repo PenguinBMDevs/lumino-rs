@@ -111,7 +111,8 @@ pub fn line_button_rects(editor: &Editor) -> Option<LineButtonRects> {
 
 /// 绘制全部路径（锚点 + 贝塞尔段 + 控制柄）+ 共享 √× 悬浮按钮
 ///
-/// 仅在曲线工具激活时绘制。
+/// 几何在**曲线工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
+/// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于曲线工具。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -122,7 +123,7 @@ pub fn draw(
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != Tool::Curve {
+    if !editor.pending_preview_visible(Tool::Curve) {
         return None;
     }
     let line = &editor.editor_state.line_tool;

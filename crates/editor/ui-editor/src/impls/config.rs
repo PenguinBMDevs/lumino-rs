@@ -13,41 +13,31 @@ impl Editor {
     /// 切到非曲线工具时自动关闭曲线工具颜料桶填充模式；
     /// 切到非形状工具时自动关闭形状工具颜料桶填充模式（均为工具附属开关）。
     ///
-    /// ⚠️ 特例：切到「鼠标工具」（`Tool::ShapeSelect`，图形选中）时，先对当前绘制
-    /// 工具的待确认内容执行 **√ 固化**。`EditorState::set_tool` 对绘制工具采用
-    /// 「切换工具 = ×」语义（丢弃待确认内容），这对「画完就换个工具接着画」是合理的；
-    /// 但「鼠标工具」的职责就是操作**刚画出来的图案**，若也按 × 丢弃，用户会看到
-    /// 图案在切换那一刻凭空消失、无从选中（登记只发生在 √ 时）。详见
-    /// `commit_pending_drawing`。
+    /// ⚠️ 待确认的绘制内容（曲线路径 / 待确认图形 / 画刷笔画 / 文本框）**不因切换工具丢失**
+    /// ——见 `EditorState::set_tool` 只收敛交互手势、保留产物。切到「鼠标工具」
+    /// （`Tool::ShapeSelect`）时同样**只保留、不固化**：用户没按 √ 就不该生成音符。
     pub fn set_tool(&mut self, tool: Tool) {
-        // 仅在「确实发生工具变化」且目标是鼠标工具时固化，避免面板重复点击
-        // （每帧反向覆盖 / 连点同一条目）时反复触发提交。
-        if tool == Tool::ShapeSelect && self.editor_state.tool != Tool::ShapeSelect {
-            self.commit_pending_drawing();
-        }
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
         }
         // 形状工具：离开时关闭其填充桶（避免遗留影响其他工具）
-        // editor_state.set_tool 已重置整个 shape_tool（含 fill_enabled）。
         if tool != Tool::Shape {
             self.editor_state.shape_tool.fill_enabled = false;
         }
     }
 
-    /// 固化（√）当前绘制工具的待确认内容 —— 生成音符 + 登记图形对象
+    /// 某绘制工具的**待确认预览**此刻是否应渲染/可交互
     ///
-    /// 语义与画布上的 √ 按钮完全一致（复用同一批 `confirm_*` 实现，不另立口径）。
-    /// 返回是否真正提交了内容；无待确认内容 / Conductor 轨等不可提交情形返回 `false`
-    /// （此时随后 `EditorState::set_tool` 的清理仍是安全的 no-op）。
-    pub(crate) fn commit_pending_drawing(&mut self) -> bool {
-        match self.editor_state.tool {
-            Tool::Shape => self.confirm_shape_tool(),
-            Tool::Curve => self.confirm_line_tool(),
-            Tool::Brush => self.confirm_brush(),
-            _ => false,
-        }
+    /// 规则：拥有者工具激活时照旧；**鼠标工具（`Tool::ShapeSelect`，图形选中）激活时也渲染**。
+    /// 依据：待确认内容不再因切换工具被丢弃（见 `EditorState::set_tool`），若选择工具下不渲染，
+    /// 用户看到的就是「切过去图案就消失、无从框选」。其余工具不渲染，避免浮层干扰音符编辑。
+    ///
+    /// ⚠️ 仅用于**几何预览**（曲线/形状/画刷方块/文本框），不含 √× 按钮——
+    /// 按钮仍是拥有者工具专属（确认/取消属于绘制工具的操作，选择工具不越权）。
+    pub fn pending_preview_visible(&self, owner: Tool) -> bool {
+        let current = self.current_tool();
+        current == owner || current == Tool::ShapeSelect
     }
 
     /// 设置当前形状类型（由工具栏 `current_shape` 同步）

@@ -244,13 +244,18 @@ fn test_pending_strokes_survive_track_switch_to_conductor() {
 }
 
 #[test]
-fn test_switch_tool_discards_pending_strokes() {
+fn test_switch_tool_keeps_pending_strokes() {
     let mut editor = brush_editor();
     seed_stroke(&mut editor, &[(0.0, 60.0)]);
     editor.set_tool(Tool::Pencil);
     assert!(
-        !editor.editor_state.brush_tool.has_pending(),
-        "切工具视为 ×"
+        editor.editor_state.brush_tool.has_pending(),
+        "切换工具不得丢弃待确认笔画（清空只发生在显式 × / √）"
+    );
+    assert_eq!(
+        editor.editor_state.tool,
+        Tool::Pencil,
+        "工具本身当然要切过去"
     );
 }
 

@@ -263,7 +263,13 @@ impl Host {
         // （`new_preview` + 哨兵 → 着色器 70% alpha、不画边框），与 √ 生成的音符
         // 同一个着色器；实例数由视口窗口界定，每帧成本与笔画长度无关。
         // 旧路径（iced canvas 逐块 `Frame::fill`）实测 8 万方块 = 单帧 81.6ms。
-        if editor.editor_state.brush_tool.has_pending() {
+        //
+        // 与曲线/形状/文字同一条可见性规则：只在**画刷工具或鼠标工具**下渲染
+        // （见 `Editor::pending_preview_visible`）——待确认笔画不因切换工具被丢弃，
+        // 但也不该在铅笔/橡皮等音符编辑工具下当浮层干扰编辑。
+        if editor.editor_state.brush_tool.has_pending()
+            && editor.pending_preview_visible(crate::message::Tool::Brush)
+        {
             return editor
                 .brush_preview_note_instances()
                 .into_iter()

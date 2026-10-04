@@ -65,6 +65,18 @@ impl TextToolState {
         *self = Self::new();
     }
 
+    /// 仅收敛**未完成的输入/拖动会话**（收起输入焦点、结束文本框拖动），
+    /// 保留文本框几何与已输入文字
+    ///
+    /// 供切换工具时调用：文本框与文字是用户的成果，不因切换工具被丢弃
+    /// （见 `EditorState::set_tool`）；停在 `active && !editing` 是可恢复态——
+    /// 切回文字工具后点击框内会重新进入输入（见 `handle_text_tool_pressed`）。
+    pub fn cancel_interaction(&mut self) {
+        self.editing = false;
+        self.drag_grab = None;
+        self.drag_origin = None;
+    }
+
     /// 从拖拽矩形设置框（精确坐标，确认时再吸附）
     pub fn set_drag(&mut self, start_tick: f32, end_tick: f32, start_key: u16, end_key: u16) {
         self.start_tick = start_tick;

@@ -98,6 +98,12 @@ pub fn draw(
     if !editor.text_tool_allowed() {
         return None;
     }
+    // 与曲线/形状/画刷同一条可见性规则：只在**文字工具或鼠标工具**下渲染
+    // （见 `Editor::pending_preview_visible`）——文本框与文字不因切换工具被丢弃，
+    // 但也不该在铅笔/橡皮等音符编辑工具下当浮层干扰编辑。
+    if !editor.pending_preview_visible(lumino_message::Tool::Text) {
+        return None;
+    }
     let (left, top, right, bottom) = box_rect_screen(editor)?;
     let mut frame = canvas::Frame::new(renderer, bounds.size());
     let content = content_bounds(editor);
@@ -154,8 +160,15 @@ pub fn draw(
         }
     }
 
-    // 悬浮按钮
-    if let Some(btns) = button_rects(editor) {
+    // 悬浮按钮：**仅文字工具**下显示与响应。
+    //
+    // 文本框几何在其它工具（含鼠标工具）下照样渲染——产物不因切换工具消失
+    // （见 `Editor::pending_preview_visible` / `EditorState::set_tool`）；但
+    // √×/模式 属于文字工具的输入会话（命中在 `handle_text_tool_pressed` 内），
+    // 在别的工具下画出来只会是「点了没反应」的死按钮。
+    if editor.current_tool() == lumino_message::Tool::Text
+        && let Some(btns) = button_rects(editor)
+    {
         draw_button(
             &mut frame,
             btns.confirm,

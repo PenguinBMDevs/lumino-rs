@@ -20,6 +20,15 @@ impl ShapeToolState {
         self.shapes.clear();
     }
 
+    /// 仅收敛**未完成的拉框交互**，保留全部待确认图形与当前图形类型
+    ///
+    /// 供切换工具时调用：待确认图形是用户的绘制产物，不因切换工具被丢弃
+    /// （见 `EditorState::set_tool`）；清空只发生在显式 × / √。
+    pub fn cancel_interaction(&mut self) {
+        self.interaction = ShapeToolInteraction::None;
+        self.drag_current = (0.0, 0.0);
+    }
+
     /// 设置当前图形类型
     pub fn set_shape_kind(&mut self, kind: ShapeKind) {
         self.shape_kind = kind;

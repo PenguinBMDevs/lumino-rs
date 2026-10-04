@@ -258,13 +258,23 @@ impl BrushToolState {
         }
     }
 
-    /// 丢弃全部待确认笔画与笔画历史（× / 切工具）
+    /// 丢弃全部待确认笔画与笔画历史（**仅显式 ×**；切工具不再调用它）
     pub fn clear_pending(&mut self) {
         self.strokes.clear();
         self.interaction = BrushInteraction::None;
         self.drag_orig = BrushStroke::default();
         self.path_history = vec![Vec::new()];
         self.path_history_index = 0;
+    }
+
+    /// 仅收敛**未完成的交互手势**（落笔中 / 整体拖动中），保留全部笔画与笔画历史
+    ///
+    /// 供切换工具时调用：笔画是用户的绘制产物，不因切换工具被丢弃
+    /// （见 `EditorState::set_tool`）；清空只发生在显式 × / √。
+    pub fn cancel_interaction(&mut self) {
+        self.interaction = BrushInteraction::None;
+        self.drag_orig = BrushStroke::default();
+        self.drag_start_raw = (0.0, 0.0);
     }
 
     // ── 笔画编辑历史（撤销/重做） ─────────────────────────

@@ -207,22 +207,32 @@ impl EditorState {
             self.interaction.edit_state = interaction_state::EditState::Idle;
             self.interaction.selected_notes.clear();
         }
-        // 曲线工具直线模式：切换工具清除直线状态（避免残留干扰其他工具）
+        // ── 待确认的绘制内容（产物）**不因切换工具而丢弃** ──
+        //
+        // 用户切到「鼠标工具」（图形选中）往往只是想操作已画出的图案，随后会切回来继续画；
+        // 旧实现把这些产物当「×」清空（`reset` / `clear_pending`），表现为「一切换图案就消失，
+        // 连 √ 的机会都没有」，且无从恢复。现改为只收敛**未完成的交互手势**
+        // （拖动锚点/控制柄、落笔中、输入会话）——手势属于瞬时输入，产物属于用户成果。
+        // 产物的清空只发生在显式 × / √ / 文档重建（`reset`）。
         if tool != Tool::Curve {
-            self.line_tool.reset();
+            self.line_tool.cancel_interaction();
         }
-        // 画刷矢量笔画：切换工具视为「×」——未确认笔画全部丢弃
-        // （留在画刷内不清空：Ctrl+点击曲线按钮开下拉、切回画刷时笔画应保留）
+        // 画刷矢量笔画：同上，切换工具只收敛未完成的落笔/拖动
         if tool != Tool::Brush {
-            self.brush_tool.clear_pending();
+            self.brush_tool.cancel_interaction();
         }
-        // 文字工具：切换走时清除文本框与输入状态
+        // 文字工具：保留文本框与已输入文字，只结束输入会话（焦点/拖动）
         if tool != Tool::Text {
-            self.text_tool.reset();
+            self.text_tool.cancel_interaction();
         }
-        // 形状工具：切换走时清除拉框状态（保留图形类型，详见 clear_pending）
+        // 形状工具：保留待确认图形与当前图形类型，只收敛未完成的拉框
         if tool != Tool::Shape {
-            self.shape_tool.clear_pending();
+            self.shape_tool.cancel_interaction();
+        }
+        // 图形拖拽（鼠标工具）：切换工具即收敛拖拽态。预览偏移本就未落文档，
+        // 丢弃即回到原几何；残留会让 `is_editing()` 永久 true，静默堵死撤销/重做。
+        if tool != Tool::ShapeSelect {
+            self.shape_select.end_drag();
         }
     }
 

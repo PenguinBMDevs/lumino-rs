@@ -208,7 +208,8 @@ fn draw_one_shape(
 
 /// 绘制全部待确认图形 + 实时拖拽预览 + 共享 √× 悬浮按钮
 ///
-/// 仅在形状工具激活且有内容（拖拽中或已有待确认图形）时绘制。
+/// 几何在**形状工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
+/// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于形状工具。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -219,7 +220,7 @@ pub fn draw(
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != lumino_message::Tool::Shape {
+    if !editor.pending_preview_visible(lumino_message::Tool::Shape) {
         return None;
     }
     let shape_tool = &editor.editor_state.shape_tool;

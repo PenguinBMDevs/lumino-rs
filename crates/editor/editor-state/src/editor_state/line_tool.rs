@@ -354,6 +354,21 @@ impl LineToolState {
         self.fill_division = fill_division;
     }
 
+    /// 仅收敛**未完成的交互手势**（拖动锚点 / 控制柄 / 整条路径），保留路径、填充标记与路径历史
+    ///
+    /// 供切换工具时调用：手势是瞬时输入（切换工具时鼠标早已松开），
+    /// 而**路径是用户的绘制产物**——不得因切换工具被丢弃（见 `EditorState::set_tool`）。
+    pub fn cancel_interaction(&mut self) {
+        self.interaction = LineToolInteraction::None;
+        self.drag_confirmed = false;
+        self.drag_start_snap = (0.0, 0.0);
+        self.drag_start_raw = (0.0, 0.0);
+        self.drag_anchor_orig = BezierAnchor::default();
+        self.drag_line_orig = LinePath::default();
+        self.drag_handle_orig = (0.0, 0.0);
+        self.last_push_path = None;
+    }
+
     // ── 颜料桶填充 ─────────────────────────
 
     /// 是否已有填充标记

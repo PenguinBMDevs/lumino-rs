@@ -414,20 +414,25 @@ fn test_reset_clears_everything() {
     assert_eq!(state, BrushToolState::default());
 }
 
-// ── EditorState 集成（切工具 = ×） ─────────────────────────
+// ── EditorState 集成（切工具保留产物，只收敛手势） ─────────
 
 #[test]
-fn test_switch_tool_discards_pending_strokes() {
+fn test_switch_tool_keeps_pending_strokes() {
     let mut state = EditorState::new();
     state.tool = Tool::Brush;
     state.brush_tool.begin_stroke((0.0, 60.0), 1);
     state.brush_tool.finish_stroke();
 
-    // 切到其他工具 = 丢弃（与曲线/形状/文字工具同处清理）
+    // 切到其他工具：**保留**待确认笔画（只收敛交互手势），用户可能只是去拿选择工具
     state.set_tool(Tool::Pencil);
     assert!(
-        !state.brush_tool.has_pending(),
-        "切走工具必须丢弃待确认笔画（视为 ×）"
+        state.brush_tool.has_pending(),
+        "切换工具不得丢弃待确认笔画（产物属于用户成果，清空只发生在显式 × / √）"
+    );
+    assert_eq!(
+        state.brush_tool.interaction,
+        BrushInteraction::None,
+        "未完成的交互手势必须收敛"
     );
 }
 
