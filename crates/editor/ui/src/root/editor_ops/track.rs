@@ -10,6 +10,7 @@ use crate::root::Root;
 use lumino_midi_loader::NoteEvent;
 
 mod deletion;
+mod port;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）

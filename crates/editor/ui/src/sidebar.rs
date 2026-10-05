@@ -5,6 +5,7 @@ mod core;
 mod handling;
 mod panel;
 mod panel_context_menu;
+mod port_picker;
 mod track_reorder;
 mod view;
 

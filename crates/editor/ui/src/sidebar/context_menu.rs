@@ -41,6 +41,7 @@ pub fn panel(track_id: usize) -> Element<'static> {
         TrackContextMenuItem::Rename,
         TrackContextMenuItem::SetColor,
         TrackContextMenuItem::SetChannel,
+        TrackContextMenuItem::SetPort,
     ]
     .into_iter()
     .map(|item| menu_button(track_id, item))
@@ -96,6 +97,7 @@ const fn item_icon(item: TrackContextMenuItem) -> Icon {
         TrackContextMenuItem::Rename => Icon::PencilOutline,
         TrackContextMenuItem::SetColor => Icon::ContextMenuColorPalette,
         TrackContextMenuItem::SetChannel => Icon::ContextMenuChannel,
+        TrackContextMenuItem::SetPort => Icon::ContextMenuPort,
     }
 }
 
@@ -106,6 +108,7 @@ fn item_label(item: TrackContextMenuItem) -> &'static str {
         TrackContextMenuItem::Rename => "重命名",
         TrackContextMenuItem::SetColor => "设置颜色",
         TrackContextMenuItem::SetChannel => "设置通道",
+        TrackContextMenuItem::SetPort => "设置端口",
     }
 }
 
@@ -170,6 +173,7 @@ mod tests {
         assert_eq!(item_label(TrackContextMenuItem::Rename), "重命名");
         assert_eq!(item_label(TrackContextMenuItem::SetColor), "设置颜色");
         assert_eq!(item_label(TrackContextMenuItem::SetChannel), "设置通道");
+        assert_eq!(item_label(TrackContextMenuItem::SetPort), "设置端口");
     }
 
     #[test]
@@ -186,6 +190,10 @@ mod tests {
         assert_eq!(
             item_icon(TrackContextMenuItem::SetChannel),
             Icon::ContextMenuChannel
+        );
+        assert_eq!(
+            item_icon(TrackContextMenuItem::SetPort),
+            Icon::ContextMenuPort
         );
     }
 

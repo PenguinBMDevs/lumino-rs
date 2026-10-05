@@ -5,6 +5,7 @@
 mod color;
 mod context_menu;
 mod group;
+mod port;
 mod rename;
 mod resize;
 mod route;
@@ -23,6 +24,7 @@ impl Sidebar {
         let prev_context_menu_target = self.track_context_menu.target_track_id;
         let prev_renaming = self.renaming_track.as_ref().map(|(id, _)| *id);
         let prev_color_picking = self.color_picking_track;
+        let prev_port_picking = self.port_picking_track;
         let prev_panel_context_menu_open = self.panel_context_menu.is_open;
         let prev_reorder_hover = self.track_reorder.as_ref().and_then(|r| r.hover_index);
         let prev_roll_bar_active = self.roll_bar_active;
@@ -95,6 +97,10 @@ impl Sidebar {
             TrackColorSelected(id, color) => self.handle_track_color_selected(id, color),
             TrackColorReset(id) => self.handle_track_color_reset(id),
             TrackColorPickerClosed(id) => self.handle_track_color_picker_closed(id),
+            // ── 音轨端口选择 ──
+            TrackPortPickerOpened(id) => self.handle_track_port_picker_opened(id),
+            TrackPortSelected(id, port) => self.handle_track_port_selected(id, port),
+            TrackPortPickerClosed(id) => self.handle_track_port_picker_closed(id),
             // ── 调整宽度 ──
             ResizeDragStarted(_) => self.handle_resize_drag_started(),
             ResizeDragged(_) => self.handle_resize_dragged(),
@@ -122,6 +128,7 @@ impl Sidebar {
             || self.track_context_menu.target_track_id != prev_context_menu_target
             || self.renaming_track.as_ref().map(|(id, _)| *id) != prev_renaming
             || self.color_picking_track != prev_color_picking
+            || self.port_picking_track != prev_port_picking
             || self.panel_context_menu.is_open != prev_panel_context_menu_open
             // 拖拽排序状态变化（开始/移动/激活/结束）需要重绘
             || self.track_reorder.as_ref().and_then(|r| r.hover_index) != prev_reorder_hover

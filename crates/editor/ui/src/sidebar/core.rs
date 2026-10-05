@@ -61,6 +61,8 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
+    /// 正在选择端口的音轨 ID
+    pub port_picking_track: Option<usize>,
     /// 单调递增的音轨 ID 计数器（删除后复用 ID 会导致选中冲突）
     pub(crate) next_track_id: usize,
     /// 已删除音轨的 ID 占用集合（新建音轨时跳过这些 ID）
@@ -84,6 +86,11 @@ pub struct Sidebar {
     ///
     /// Root 取出后转发给 Runner，由 Runner 调用 `DialogManager::open_recover_track`。
     pub pending_recover_track_dialog: bool,
+    /// 待 Root 消费的音轨端口编辑（音轨 ID，内部端口值 0..=15）
+    ///
+    /// sidebar 负责 UI 侧即时更新（标签/重排）；Root 取出后写回
+    /// `document.track_ports` 并置工程脏，保证导出/播放语义与显示一致。
+    pub pending_track_port_change: Option<(usize, u8)>,
     /// 音轨拖拽排序状态（None = 无拖拽进行中）
     pub track_reorder: Option<TrackReorderState>,
     /// 卷帘面板底部按钮当前激活项（`None` = 两个按钮均未点亮）
@@ -149,11 +156,13 @@ impl Sidebar {
             panel_context_menu: PanelContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
+            port_picking_track: None,
             next_track_id: 2,
             reserved_track_ids: HashSet::new(),
             pending_track_deletion: None,
             pending_track_deletion_meta: None,
             pending_recover_track_dialog: false,
+            pending_track_port_change: None,
             track_reorder: None,
             // 默认进入横向卷帘（与用户「默认横向三条杠按钮」要求一致）
             roll_bar_active: Some(RollBarButton::Horizontal),
@@ -205,6 +214,14 @@ impl Sidebar {
         format!("{}{:02}", Self::port_letter(port), channel + 1)
     }
 
+    /// 可选端口数（内部 0..=15，UI 显示 1..=16；对齐 Domino/DAW 惯例）。
+    pub const PORT_CHOICES: u8 = 16;
+
+    /// 端口内部值 → 显示号（0..=15 → 1..=16）。
+    pub const fn display_port_number(port: u8) -> u8 {
+        port + 1
+    }
+
     /// 从 MIDI 数据更新音轨列表（按 port→channel→id 排序，同端口按通道号排列）
     /// 排序键：port（端口字母 A→Z），channel（通道号 01→16），id（稳定排序保序）
     /// track_infos: (track_index, track_name, note_count, channel, port)
@@ -220,6 +237,8 @@ impl Sidebar {
         self.pending_track_deletion = None;
         self.pending_track_deletion_meta = None;
         self.pending_recover_track_dialog = false;
+        self.port_picking_track = None;
+        self.pending_track_port_change = None;
 
         for (idx, (track_idx, name, _note_count, ch, port)) in track_infos.iter().enumerate() {
             let track_name = name.as_deref().unwrap_or("Unknown");
@@ -293,6 +312,11 @@ impl Sidebar {
         let v = self.pending_recover_track_dialog;
         self.pending_recover_track_dialog = false;
         v
+    }
+
+    /// 取出并清空待 Root 消费的音轨端口编辑
+    pub fn take_pending_track_port_change(&mut self) -> Option<(usize, u8)> {
+        self.pending_track_port_change.take()
     }
 
     /// 设置面板右键菜单位置（由 Host 在 process_message 中捕获鼠标位置后调用）

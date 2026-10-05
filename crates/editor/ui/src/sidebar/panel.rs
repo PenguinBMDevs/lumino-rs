@@ -23,6 +23,8 @@ pub struct SidebarViewParams<'a> {
     pub context_menu_target_id: Option<usize>,
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
+    /// 正在选择端口的音轨 ID（内部端口值 0..=15，UI 显示 1..=16）
+    pub port_picking_track: Option<usize>,
     /// 音轨列表面板空白区域右键菜单是否打开
     pub panel_context_menu_open: bool,
     /// 面板右键菜单位置（窗口逻辑坐标，打开时有效）
@@ -202,11 +204,26 @@ pub fn view<'a>(
                 .on_release(Event::track_reorder_ended(None))
                 .on_exit(Event::track_reorder_cancelled());
 
-            // 浮动菜单优先级：颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
+            // 浮动菜单优先级：端口选择器 > 颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
             // base_content 作为 Stack 最底层，按需叠加浮动覆盖层。
             let stack = Stack::new().push(base_content);
 
-            if let Some(target_id) = params.color_picking_track {
+            if let Some(target_id) = params.port_picking_track {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    let current_port = params.tracks[track_index].port;
+                    let picker_y = 28.0 + track_index as f32 * 34.0;
+                    stack
+                        .push(super::port_picker::background_close_overlay(target_id))
+                        .push(super::port_picker::positioned_panel(
+                            target_id,
+                            current_port,
+                            picker_y,
+                        ))
+                        .into()
+                } else {
+                    stack.into()
+                }
+            } else if let Some(target_id) = params.color_picking_track {
                 if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
                     let picker_y = 28.0 + track_index as f32 * 34.0;
                     stack

@@ -11,6 +11,7 @@ impl Sidebar {
         };
         self.renaming_track = None;
         self.color_picking_track = None;
+        self.port_picking_track = None;
     }
 
     /// 处理关闭音轨选项卡右键菜单
@@ -54,6 +55,7 @@ impl Sidebar {
                     }
                     self.renaming_track = None;
                     self.color_picking_track = None;
+                    self.port_picking_track = None;
                 }
             }
             TrackContextMenuItem::Rename => {
@@ -61,13 +63,20 @@ impl Sidebar {
                     self.renaming_track = Some((id, track.name.clone()));
                 }
                 self.color_picking_track = None;
+                self.port_picking_track = None;
             }
             TrackContextMenuItem::SetColor => {
                 self.color_picking_track = Some(id);
                 self.renaming_track = None;
+                self.port_picking_track = None;
             }
             TrackContextMenuItem::SetChannel => {
                 tracing::info!("设置通道功能待实现，音轨 id={}", id);
+            }
+            TrackContextMenuItem::SetPort => {
+                self.port_picking_track = Some(id);
+                self.renaming_track = None;
+                self.color_picking_track = None;
             }
         }
     }
@@ -79,6 +88,7 @@ impl Sidebar {
         // 关闭其他浮动菜单，避免叠加
         self.track_context_menu = TrackContextMenuState::default();
         self.color_picking_track = None;
+        self.port_picking_track = None;
     }
 
     /// 处理关闭音轨列表面板空白区域右键菜单
