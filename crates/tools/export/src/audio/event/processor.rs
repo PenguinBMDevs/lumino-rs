@@ -5,9 +5,8 @@
 use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
 use xsynth_core::{
-    AudioPipe,
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
-    channel_group::{ChannelGroup, SynthEvent, SynthFormat},
+    channel_group::{SynthEvent, SynthFormat},
 };
 
 use lumino_midi_model::multi_port::{PercussionTracker, track_global_channel};
@@ -17,7 +16,7 @@ use crate::audio::{
 };
 use crate::error::ExportResult;
 
-use super::MidiEventProcessor;
+use super::{MidiEventProcessor, SynthBackend};
 
 /// MIDI 弯音事件 → xsynth 归一化值（-1.0..1.0）。
 ///
@@ -75,7 +74,7 @@ impl<'a> MidiEventProcessor<'a> {
     /// 将 MIDI 事件按时间轴播放到给定的合成通道组与采样输出。
     pub fn new(
         config: &'a AudioRenderConfig,
-        channel_group: &'a mut ChannelGroup,
+        channel_group: &'a mut dyn SynthBackend,
         tick_conv: &'a mut TickToTime,
         sink: &'a mut dyn SampleSink,
     ) -> Self {
@@ -468,6 +467,161 @@ mod tests {
             "超上限端口应折叠到端口 15 块"
         );
         assert_eq!(global_event_channel(&config, 16, 9), 15 * 16 + 9);
+    }
+
+    // ── #102 ①：事件级端口映射 e2e（记录型合成桩）──────────────────
+
+    use crate::audio::stream::VecSampleSink;
+    use crate::audio::tick_conv::TickToTime;
+    use midly::num::{u4, u7};
+    use xsynth_core::{AudioStreamParams, ChannelCount};
+
+    /// 记录型合成桩：收集派发事件，渲染输出静音。
+    struct RecordingSink {
+        events: Vec<SynthEvent>,
+        params: AudioStreamParams,
+    }
+
+    impl RecordingSink {
+        fn new(sample_rate: u32) -> Self {
+            Self {
+                events: Vec::new(),
+                params: AudioStreamParams::new(sample_rate, ChannelCount::Stereo),
+            }
+        }
+
+        /// 仅 `SynthEvent::Channel` 的全局通道序列（事件级映射断言用）。
+        fn event_channels(&self) -> Vec<u32> {
+            self.events
+                .iter()
+                .filter_map(|event| match event {
+                    SynthEvent::Channel(ch, _) => Some(*ch),
+                    SynthEvent::AllChannels(_) => None,
+                })
+                .collect()
+        }
+    }
+
+    impl SynthBackend for RecordingSink {
+        fn stream_params(&self) -> &AudioStreamParams {
+            &self.params
+        }
+
+        fn send_event(&mut self, event: SynthEvent) {
+            self.events.push(event);
+        }
+
+        fn read_samples_unchecked(&mut self, buffer: &mut [f32]) {
+            buffer.fill(0.0);
+        }
+    }
+
+    /// 构造指定 MIDI 通道的 NoteOn（力度 100）。
+    fn note_on(channel: u8, key: u8) -> TrackEventKind<'static> {
+        TrackEventKind::Midi {
+            channel: u4::from(channel),
+            message: MidiMessage::NoteOn {
+                key,
+                vel: u7::from(100),
+            },
+        }
+    }
+
+    /// #102 ①：多端口事件级映射——`dispatch_event` 全链路把 (port, ch) 落到
+    /// `port*16+ch` 全局通道；超上限端口折叠到 15 块（B1 决策）。
+    #[test]
+    fn dispatch_event_maps_multi_port_to_global_channels() {
+        let config = AudioRenderConfig {
+            midi_max_port: 1, // 32 全局通道
+            ..Default::default()
+        };
+        let mut recorder = RecordingSink::new(config.sample_rate);
+        let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
+        let mut sink = VecSampleSink::new();
+        {
+            let mut processor =
+                MidiEventProcessor::new(&config, &mut recorder, &mut conv, &mut sink);
+            processor
+                .dispatch_event(&note_on(0, 60), 0)
+                .expect("端口 0 note on");
+            processor
+                .dispatch_event(&note_on(5, 61), 1)
+                .expect("端口 1 note on");
+            processor
+                .dispatch_event(&note_on(9, 36), 7)
+                .expect("上限内端口按自身块映射");
+            processor
+                .dispatch_event(&note_on(3, 62), 20)
+                .expect("超上限端口折叠");
+        }
+        assert_eq!(
+            recorder.event_channels(),
+            vec![0, 16 + 5, 7 * 16 + 9, 15 * 16 + 3],
+            "(port,ch) 必须映射为 port*16+ch；port>=16 折叠到 15 块"
+        );
+    }
+
+    /// #102 ①：单端口恒等映射（端口被忽略，零行为变化基线）。
+    #[test]
+    fn dispatch_event_single_port_is_identity() {
+        let config = AudioRenderConfig::default(); // midi_max_port == 0
+        let mut recorder = RecordingSink::new(config.sample_rate);
+        let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
+        let mut sink = VecSampleSink::new();
+        {
+            let mut processor =
+                MidiEventProcessor::new(&config, &mut recorder, &mut conv, &mut sink);
+            processor
+                .dispatch_event(&note_on(5, 60), 7)
+                .expect("单端口忽略端口");
+        }
+        assert_eq!(recorder.event_channels(), vec![5], "单端口映射必须恒等");
+    }
+
+    /// #102 ①：Bank Select 模态切换先于触发 CC（方案 B 顺序契约，经全链路）。
+    #[test]
+    fn dispatch_event_percussion_switch_precedes_trigger_cc() {
+        let config = AudioRenderConfig {
+            midi_max_port: 1,
+            ..Default::default()
+        };
+        let mut recorder = RecordingSink::new(config.sample_rate);
+        let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
+        let mut sink = VecSampleSink::new();
+        {
+            let mut processor =
+                MidiEventProcessor::new(&config, &mut recorder, &mut conv, &mut sink);
+            let cc = TrackEventKind::Midi {
+                channel: u4::from(2),
+                message: MidiMessage::Controller {
+                    controller: u7::from(0),
+                    value: u7::from(120), // GS Rhythm → 鼓
+                },
+            };
+            processor
+                .dispatch_event(&cc, 1)
+                .expect("端口 1 ch2 CC0=120");
+        }
+        let global = 16 + 2;
+        assert_eq!(recorder.events.len(), 2, "模态切换 + 转发 CC 恰两条");
+        assert!(
+            matches!(
+                recorder.events.first(),
+                Some(SynthEvent::Channel(ch, ChannelEvent::Config(
+                    ChannelConfigEvent::SetPercussionMode(true)
+                ))) if *ch == global
+            ),
+            "必须先对全局通道 {global} 下发 SetPercussionMode(true)"
+        );
+        assert!(
+            matches!(
+                recorder.events.get(1),
+                Some(SynthEvent::Channel(ch, ChannelEvent::Audio(
+                    ChannelAudioEvent::Control(ControlEvent::Raw(0, 120))
+                ))) if *ch == global
+            ),
+            "随后才转发原始 CC"
+        );
     }
 
     // ── REND-002 尾部收尾：NaN 旁路回归 ─────────────────────────────

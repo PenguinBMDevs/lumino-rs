@@ -5,7 +5,6 @@
 //! 调用"的模式（20M 级素材下调用次数从百万级降到万级）。
 
 use crate::error::ExportResult;
-use xsynth_core::AudioPipe;
 
 use super::MidiEventProcessor;
 
