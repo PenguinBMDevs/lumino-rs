@@ -135,16 +135,33 @@ jobs:
       - name: Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      # 与 lint/test 相同的缓存配置，避免 target 目录冷启动全量重编
-      - name: Cache cargo & target
-        uses: actions/cache@v6.1.0
+      # ── canary 专属缓存命名空间 ────────────────────────────────────
+      # canary 走的是 release profile + --target，lint/test 走 debug profile，
+      # 两边不可能互用编译产物（fingerprint 按 profile/target 分家）：
+      #   release + --target 的布局实测为
+      #     target/<triple>/release/**  ← 目标侧：deps 的 rlib、最终 exe
+      #     target/release/**           ← 宿主侧：build script、proc-macro
+      # 而 lint/test 只有 target/debug。所以 canary 必须自带一套缓存，
+      # 靠 lint/test 的 key 只能捞到 ~/.cargo（profile 无关的源码包）。
+      # 另外 actions/cache 的 key 不可变：三个 job 共用同一个 key 时只有最先跑完的
+      # 能写入，canary 的 release target 永远存不进去 → 每轮冷编译。
+      # 故 canary 单开命名空间（对齐 build-all.yml 的 per-target 做法），
+      # 并在构建后显式上传，不走 post 钩子（post-if: success()）。
+      - name: Restore cargo cache (canary)
+        id: cargo-cache
+        uses: actions/cache/restore@v6.1.0
         with:
+          # 只列 canary 自己会产出的目录：降级命中 lint/test 的缓存时只捞 ~/.cargo，
+          # 不把几个 GB 的 target/debug 一起下载/回写；顶层 target/release 是宿主单元，
+          # 少了它每轮都要重编全部 proc-macro/build script
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+            target/x86_64-pc-windows-msvc
+            target/release
+          key: ${{ runner.os }}-cargo-canary-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
+            ${{ runner.os }}-cargo-canary-
             ${{ runner.os }}-cargo-
 
       # runner 默认就是 x86_64，显式声明 target 防配置漂移
@@ -152,6 +169,23 @@ jobs:
         run: cargo build --release --target x86_64-pc-windows-msvc
         env:
           MIMALLOC_SYS_USE_STATIC_CRT: 1   # 与 test job 保持一致的 mimalloc 静态 CRT 配置
+
+      # 显式上传缓存（canary 的核心诉求）：
+      #   - always()：构建半途失败也把已编好的依赖落盘，cargo 下轮续编
+      #   - cache-hit != 'true'：主 key 精确命中时无新内容可写，跳过（也避免重复写报错）
+      #   - continue-on-error：缓存写失败（并发同 key、缓存服务抖动）不拖累后面的发版
+      - name: Save cargo cache (canary)
+        if: always() && steps.cargo-cache.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6.1.0
+        with:
+          # 与 restore 的 path 保持一致：目标侧 + 宿主侧，release 才真的能续编
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/x86_64-pc-windows-msvc
+            target/release
+          key: ${{ steps.cargo-cache.outputs.cache-primary-key }}
 
       - name: Upload canary to Hugging Face
         shell: bash
