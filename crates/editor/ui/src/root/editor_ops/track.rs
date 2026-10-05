@@ -175,25 +175,6 @@ impl Root {
         self.update_playback_notes();
     }
 
-    /// 加载指定音轨的 MIDI 控制事件
-    pub fn load_track_midi_events(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        if !events.is_empty() {
-            self.playback.track_midi_events.insert(track_idx, events);
-            tracing::debug!(
-                "Root: 音轨 {} 已加载 {} 个 MIDI 控制事件",
-                track_idx,
-                self.playback
-                    .track_midi_events
-                    .get(&track_idx)
-                    .map_or(0, |v| v.len())
-            );
-        }
-    }
-
     /// 添加远程音轨（来自协作同步）
     pub fn add_remote_track(&mut self, track_idx: usize) {
         // 2026-08 修复：按对端索引补齐本地 document 与侧边栏（含中间缺失索引），

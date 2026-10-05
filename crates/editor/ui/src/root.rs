@@ -22,10 +22,6 @@ pub use lumino_ui_core::visual_state::VisualState;
 pub struct MemoryBreakdown {
     /// 编辑器内各组件的细分
     pub editor: editor::EditorMemory,
-    /// track_midi_events HashMap 中的总条目数和估算字节
-    pub track_midi_events_entries: usize,
-    /// track_midi_events 数据的估算字节数
-    pub track_midi_events_bytes: usize,
     /// note_instances_buffer 三缓冲信息（由 Host::memory_breakdown 填充）
     pub note_instances_writer_cap: usize,
     /// 写入缓冲当前占用长度

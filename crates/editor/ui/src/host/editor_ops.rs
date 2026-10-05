@@ -129,15 +129,6 @@ impl Host {
         // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 document。
     }
 
-    /// 加载音轨 MIDI 控制事件（CC/PC/PB）
-    pub fn load_track_midi_events(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        self.root.load_track_midi_events(track_idx, events);
-    }
-
     /// 设置播放用 MIDI 输出连接
     pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::PlaybackOutput>) {
         self.root.set_midi_output(output);
