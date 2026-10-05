@@ -6,6 +6,8 @@
 //!
 //! 面板常驻显示全部绘制工具（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字），
 //! 当前激活工具高亮；颜料桶为可切换的「填充开关」（可与曲线/形状共存高亮）。
+//! 胶囊**右端**另有一枚常显的**设置按钮**（齿轮），以分隔线与工具图标区隔：
+//! 它是各绘制工具设置的**聚合入口**（`Toolbar::draw_settings_open`），不参与工具选择语义。
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
 //!
@@ -31,10 +33,10 @@
 //!
 //! **锚点**：设置面板挂在**触发它的那个图标按钮**上（`CurveToolGroup` 的锚点 = 其内容
 //! 元素），因此水平居中于该按钮；若把整条胶囊作为锚点，面板会以"胶囊中心"居中——
-//! 因胶囊宽（265）≈ 面板宽（248），视觉上就成了"贴在悬浮条左端"（已修复的 BUG）。
-//! 纵向上面板浮在锚点内容上方 2px（`PanelOverlay::layout`）：锚点由胶囊改为按钮后，
-//! 面板底缘与胶囊顶缘有约 3px 重叠（按钮内缩在胶囊 5px 内边距里），呈现"从按钮上沿
-//! 弹出"的观感；胶囊贴近窗口顶部时自动翻到按钮下方。
+//! 因胶囊（含右端齿轮约 329 宽）≈ 面板宽（248），视觉上就成了"贴在悬浮条左端"
+//! （已修复的 BUG）。纵向上面板浮在锚点内容上方 2px（`PanelOverlay::layout`）：锚点由
+//! 胶囊改为按钮后，面板底缘与胶囊顶缘有约 3px 重叠（按钮内缩在胶囊 5px 内边距里），
+//! 呈现"从按钮上沿弹出"的观感；胶囊贴近窗口顶部时自动翻到按钮下方。
 
 use iced_core::alignment::{Horizontal, Vertical};
 use iced_core::{Background, Border, Color, Length, Padding};
@@ -128,10 +130,12 @@ impl Root {
         // 工具设置下拉（画刷 / 形状 / 颜料桶分音符填充）：三者互斥，至多一个打开。
         // 随条目**挂在触发它的那个图标按钮**上（见下方循环），面板由此水平居中于按钮。
         let mut settings_menu = self.draw_tool_settings_menu();
+        // 悬浮层小面板的统一底色（工具设置 / 音符画设置同族，取自工具栏底色压暗 10%）
+        let panel_background = self.draw_tool_panel_background();
 
         // 首项为**专用拖拽柄**（独立于按钮区，保证起拖信号不被按钮吞掉），
         // 其后为分隔竖线，再是全部绘制工具图标（常显 + 激活高亮）。
-        let mut row_items: Vec<Element<'_>> = Vec::with_capacity(items.len() + 2);
+        let mut row_items: Vec<Element<'_>> = Vec::with_capacity(items.len() + 4);
         row_items.push(drag_handle());
         row_items.push(grip_divider());
         for (item, ic, desc, selected) in items {
@@ -156,6 +160,23 @@ impl Root {
             settings_menu.is_none(),
             "设置面板的归属条目不在条目列表内：面板将无处挂载"
         );
+        // 不变式（互斥）：工具自带设置与「音符画设置」总面板**不得同屏**——
+        // 两者各挂各的按钮、各带一层锚定悬浮层，同时打开就是两层面板互相压。
+        // 视图层无法自愈（状态由 `Toolbar::update` / `Root::open_fill_division_dialog`
+        // 维护），故用断言把"漏掉某个互斥入口"变成可复现的失败而不是视觉噪音。
+        debug_assert!(
+            !(self.toolbar.draw_settings_open && settings_menu.is_some()),
+            "音符画设置总面板与工具自带设置面板（画刷/形状/分音符填充）不得同时打开"
+        );
+
+        // 右端「设置按钮」（齿轮）：以分隔线与工具图标区隔开，**常显**且不参与工具选择
+        // 语义——它是各绘制工具设置的**聚合入口**（详见 `Toolbar::draw_settings_open`）。
+        // 面板同样复用 `CurveToolGroup` 挂回齿轮按钮自身，故水平居中于该按钮。
+        row_items.push(grip_divider());
+        row_items.push(with_tooltip(
+            self.draw_settings_entry(panel_background),
+            t.tool_panel_settings,
+        ));
 
         // 胶囊面板：横向图标栏 + 主题配色 + 全圆角背景。
         let pill = container(
@@ -202,25 +223,74 @@ impl Root {
         Some(centered.into())
     }
 
+    /// 构建悬浮条**右端「设置按钮」**（齿轮）：按钮本体 + 其设置面板的锚定悬浮层。
+    ///
+    /// - 未打开面板：只是一个图标按钮，点击发 `ToggleDrawSettings`（开）；
+    /// - 已打开面板：包一层 `CurveToolGroup`，把「音符画设置」面板挂在**齿轮按钮**上
+    ///   （锚点 = 内容元素 ⇒ 面板水平居中于齿轮）；点击面板内空白发 `CloseDrawSettings`。
+    ///
+    /// 复用 `CurveToolGroup` 而非另造悬浮层：定位、越界吸附、事件转发三件事已由它统一
+    /// 处理（见 `toolbar/view/curve_tool_group.rs`），设置入口没有理由再造第二套。
+    fn draw_settings_entry(&self, panel_background: Color) -> Element<'_> {
+        let btn = tool_icon_button(
+            icon::Gear,
+            self.toolbar.draw_settings_open,
+            Event::toggle_draw_settings(),
+            &self.window.theme,
+        );
+        if !self.toolbar.draw_settings_open {
+            return btn;
+        }
+
+        let menu: Element<'_> = container(
+            crate::toolbar::draw_settings_dropdown::render_draw_settings_panel(
+                self.settings.display.language,
+                panel_background,
+                &self.window.theme,
+            ),
+        )
+        .width(Length::Fixed(MENU_WIDTH))
+        .height(Length::Shrink)
+        .into();
+        let panel: Element<'_> = mouse_area(menu)
+            .on_press(Event::close_draw_settings())
+            .into();
+        CurveToolGroup::new(btn, Some(panel), MENU_WIDTH).into()
+    }
+
+    /// 悬浮层小面板（工具设置 / 音符画设置）的统一底色：工具栏底色压暗 10%。
+    ///
+    /// 抽为单独方法，避免"画刷 / 形状 / 颜料桶面板"与"音符画设置面板"各自算一遍
+    /// 而漂移出两种深浅（同族面板配色不一致会显得像两个系统）。
+    fn draw_tool_panel_background(&self) -> Color {
+        let toolbar_bg = self
+            .window
+            .theme
+            .extended_palette()
+            .background
+            .weakest
+            .color;
+        Color::from_rgba(
+            toolbar_bg.r * 0.9,
+            toolbar_bg.g * 0.9,
+            toolbar_bg.b * 0.9,
+            toolbar_bg.a,
+        )
+    }
+
     /// 构建悬浮条的「工具设置」下拉（画刷 / 形状 / 颜料桶）。
     ///
     /// 返回 `(归属条目, 菜单元素, 点击菜单外空白时的关闭消息)`；仅当对应下拉处于打开态时
     /// 返回 `Some`（三者互斥）。**归属条目决定面板挂在哪个图标按钮上**：调用方用它
     /// 构造 `CurveToolGroup::new(该按钮, 菜单)`，面板即水平居中于该按钮（见模块头锚点说明）。
-    /// 面板配色贴近工具栏（工具栏底色压暗 10%），与旧主工具栏入口按钮下拉保持一致观感。
+    /// 面板配色贴近工具栏（工具栏底色压暗 10%，见 `draw_tool_panel_background`），
+    /// 与旧主工具栏入口按钮下拉保持一致观感。
     ///
     /// 颜料桶的「分音符填充」面板由 `state.fill_division_dialog.is_open` 驱动
     /// （画布 Ctrl+单击与悬浮条「再次点击颜料桶」两条路径共用同一状态），
     /// 渲染为与画刷 / 形状同风格的小面板——不再是全屏居中弹窗。
     fn draw_tool_settings_menu(&self) -> Option<(ToolPanelItem, Element<'_>, Message)> {
-        let palette = self.window.theme.extended_palette();
-        let toolbar_bg = palette.background.weakest.color;
-        let panel_background = Color::from_rgba(
-            toolbar_bg.r * 0.9,
-            toolbar_bg.g * 0.9,
-            toolbar_bg.b * 0.9,
-            toolbar_bg.a,
-        );
+        let panel_background = self.draw_tool_panel_background();
 
         if self.toolbar.brush_dropdown_open {
             let menu: Element<'_> =
@@ -517,6 +587,13 @@ mod tests {
         layout.children().find_map(|child| find_panel(child, width))
     }
 
+    /// 条目行内的固定槽位数（也是 `find_row` 的定位依据）：
+    /// `0` = 拖拽柄、`1` = 分隔线、`2..=7` = 6 个绘制工具、`8` = 分隔线、
+    /// `9` = 右端「设置按钮」（齿轮）。
+    const ROW_SLOTS: usize = 2 + 6 + 2;
+    /// 右端「设置按钮」（齿轮）在条目行内的槽位号。
+    const GEAR_SLOT: usize = ROW_SLOTS - 1;
+
     /// 回归测试：设置面板必须**水平居中于触发它的那个按钮**。
     ///
     /// 用户反馈 BUG：「弹出的悬浮面板没有居中对齐按钮，而是直接出现在了悬浮工具栏
@@ -531,8 +608,8 @@ mod tests {
             return;
         };
 
-        // 三个有设置的条目各验一次：面板必须居中于**各自**的按钮（而非某个固定位置）。
-        // 槽位号 = 2（拖拽柄 + 分隔线）+ `items` 中的下标；
+        // 四个有设置的入口各验一次：面板必须居中于**各自**的按钮（而非某个固定位置）。
+        // 槽位号见上方 `ROW_SLOTS` 注释；
         // items 顺序：Mouse(0) Curve(1) FillBucket(2) Brush(3) Shape(4) Text(5)
         check_panel_center(&renderer, 2 + 3, "画刷", |root| {
             root.toolbar.brush_dropdown_open = true;
@@ -542,6 +619,9 @@ mod tests {
         });
         check_panel_center(&renderer, 2 + 2, "颜料桶", |root| {
             root.state.fill_division_dialog.is_open = true;
+        });
+        check_panel_center(&renderer, GEAR_SLOT, "音符画设置", |root| {
+            root.toolbar.draw_settings_open = true;
         });
     }
 
@@ -565,9 +645,10 @@ mod tests {
             &layout::Limits::new(Size::ZERO, viewport.size()),
         );
 
-        // 条目行：0 = 拖拽柄，1 = 分隔线，其后 6 个工具按钮（顺序同上方 `items`）
-        let row = find_row(layout::Layout::new(&node), 2 + 6)
-            .expect("应能定位胶囊内的条目行（8 个子节点）");
+        // 条目行：0 = 拖拽柄，1 = 分隔线，其后 6 个工具按钮（顺序同上方 `items`），
+        // 再 1 个分隔线，末位 = 右端设置按钮（齿轮）
+        let row = find_row(layout::Layout::new(&node), ROW_SLOTS)
+            .expect("应能定位胶囊内的条目行（拖拽柄 + 分隔线 + 6 工具 + 分隔线 + 齿轮）");
         let button = row.children().nth(slot).expect("条目应有布局节点").bounds();
 
         let mut overlay = element
@@ -690,6 +771,28 @@ mod tests {
                 "无设置条目 {item:?} 再次点击应退化为普通选择"
             );
         }
+    }
+
+    /// 右端「设置按钮」（齿轮）的点击契约：**只开合总面板**。
+    ///
+    /// 齿轮是独立于 6 个工具条目的**入口按钮**，不得退化为工具选择（否则点设置会顺手
+    /// 把当前绘制工具切掉——用户只是想调参数）。这里把两个消息钉死。
+    #[test]
+    fn test_gear_settings_button_contract() {
+        assert!(
+            matches!(
+                Event::toggle_draw_settings(),
+                Message::Toolbar(Event::ToggleDrawSettings)
+            ),
+            "齿轮按钮按下应发 ToggleDrawSettings"
+        );
+        assert!(
+            matches!(
+                Event::close_draw_settings(),
+                Message::Toolbar(Event::CloseDrawSettings)
+            ),
+            "点击设置面板内空白应发 CloseDrawSettings"
+        );
     }
 
     /// 设置面板的**归属条目**：决定面板挂在哪个图标按钮上（锚点正确性的上游）。

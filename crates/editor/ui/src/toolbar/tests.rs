@@ -301,3 +301,77 @@ fn test_close_tool_panel_closes_settings_dropdown() {
         "关闭悬浮条应一并收起其承载的画刷设置下拉"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 「音符画设置」总面板（悬浮条右端齿轮按钮）
+// ---------------------------------------------------------------------------
+
+/// 齿轮按钮 = 开合总面板；`CloseDrawSettings`（点击面板内空白）显式关闭。
+#[test]
+fn test_draw_settings_toggle_and_close() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    assert!(!toolbar.draw_settings_open, "初始应关闭");
+
+    toolbar.update(Event::ToggleDrawSettings);
+    assert!(toolbar.draw_settings_open, "首次点击齿轮应打开总面板");
+
+    toolbar.update(Event::ToggleDrawSettings);
+    assert!(!toolbar.draw_settings_open, "再次点击齿轮应关闭总面板");
+
+    toolbar.update(Event::ToggleDrawSettings);
+    toolbar.update(Event::CloseDrawSettings);
+    assert!(
+        !toolbar.draw_settings_open,
+        "CloseDrawSettings 应关闭总面板"
+    );
+}
+
+/// 总面板与工具自带的三块设置**互斥**（至多一个打开）。
+#[test]
+fn test_draw_settings_mutually_exclusive_with_tool_settings() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+
+    // 打开画刷下拉 → 再开总面板：画刷下拉必须让位
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
+    assert!(toolbar.brush_dropdown_open);
+    toolbar.update(Event::ToggleDrawSettings);
+    assert!(toolbar.draw_settings_open, "齿轮应打开总面板");
+    assert!(!toolbar.brush_dropdown_open, "打开总面板应关闭画刷设置下拉");
+
+    // 反向：总面板打开时弹工具设置 → 总面板让位
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Shape));
+    assert!(toolbar.shape_dropdown_open);
+    assert!(!toolbar.draw_settings_open, "弹出工具自带设置应关闭总面板");
+}
+
+/// 选择绘制工具条目（普通点击）属于"其它操作"，应先关闭总面板——
+/// 与画刷 / 形状下拉同一「外部关闭」语义，避免面板悬着不消失。
+#[test]
+fn test_tool_panel_item_selected_closes_draw_settings() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    toolbar.update(Event::ToggleDrawSettings);
+    assert!(toolbar.draw_settings_open);
+
+    toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Text));
+    assert_eq!(toolbar.current_tool, Tool::Text);
+    assert!(!toolbar.draw_settings_open, "点击工具条目应关闭设置总面板");
+}
+
+/// 关闭悬浮工具条时，其上承载的总面板必须一并收起（否则再开悬浮条会残留面板）。
+#[test]
+fn test_close_tool_panel_closes_draw_settings() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    toolbar.update(Event::ToggleDrawSettings);
+    assert!(toolbar.draw_settings_open);
+
+    toolbar.update(Event::ToggleToolPanel);
+    assert!(!toolbar.tool_panel_open);
+    assert!(
+        !toolbar.draw_settings_open,
+        "关闭悬浮条应一并收起设置总面板"
+    );
+}

@@ -9,6 +9,58 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画悬浮工具条 · 新增「设置按钮」（UI 入口：悬浮条右端齿轮 + 总面板）
+
+- **新增** — 音符画悬浮工具条**右端**新增一枚**常显的设置按钮**（齿轮图标，
+  `resources/icons/regular/settings-general.svg`），以分隔线与 6 个绘制工具图标区隔；
+  点击开合「音符画设置」总面板（`ToggleDrawSettings` / `CloseDrawSettings`）。
+- **为什么单开一个入口** — 现有三块工具设置（画刷下拉 / 形状下拉 / 分音符填充）都藏在
+  「条目已启用后**再次点击**」这个两段式手势后面（见下一条 CHANGELOG 的交互改造）：
+  想调参数得先激活对应工具、再点第二次。齿轮是**聚合入口**，且**不参与工具选择语义**
+  ——点它不会顺手把当前绘制工具切掉（用户只是想调参数，不是想换工具）。
+- **本轮范围 = UI 入口** — 面板骨架 + 「设置项开发中」占位文案（中英双语：
+  `tool_panel_settings` / `draw_settings_placeholder`）。**不做假控件**：摆一排点了没反应
+  的控件，只会再造一个"能点到、没反应"的静默失效；设置项逐个接入时再补。
+- **实现** — 面板复用 `CurveToolGroup` 悬浮层、并挂回**齿轮按钮自身**（其锚点 = 内容
+  元素），故与画刷 / 形状面板同一规则**水平居中于触发它的按钮**；面板底色抽为
+  `Root::draw_tool_panel_background`（工具栏底色压暗 10%），与三块工具设置同族配色，
+  不给同屏留两种深浅。三块工具设置 + 总面板**互斥**（至多一个打开）：打开任一其它设置、
+  点击工具条目、切换工具、关闭悬浮条，都会先收起总面板。
+- **顺带修掉一条漏网的互斥入口（先复现后修复）** — 互斥不是只有"工具栏事件"一条路：
+  **画布 Ctrl+单击**打开分音符填充面板走的是 `Editor` 置请求位 →
+  `Root::open_fill_division_dialog`，**不经过** `Toolbar::update` 的 guard。该函数此前只
+  收起画刷 / 形状下拉，新增的齿轮面板因此漏在外面——"先点齿轮，再 Ctrl+单击画布"会同屏
+  叠出两块面板（两套锚定悬浮层互相压）。已在 `open_fill_division_dialog` 补上
+  `draw_settings_open = false`，并在视图层加互斥 `debug_assert`
+  （`root/draw_toolbar.rs`）把"将来再漏一个入口"变成可复现的失败而非视觉噪音。
+  **复现证据**：临时移除该行 → `test_canvas_ctrl_click_closes_draw_settings` 失败
+  （`panicked at ...: 画布 Ctrl+单击打开填充面板时，总面板必须让位（互斥）`）；
+  恢复即绿。
+- **验证** — `cargo test -p lumino-ui --lib` **407 → 414 全绿**。新增 / 扩写：
+  - **端到端**（新增 `root/root_tests/draw_settings_panel.rs`，走 `Root::update` 全链路，
+    7 项）：齿轮开合且不关悬浮条、点击面板空白关闭、**点齿轮不扰动工具与填充态**
+    （齿轮退化成工具条目 = 点设置顺手切走工具，这条把它钉死）、
+    **打开总面板收起分音符填充面板**（该面板状态挂在 `Root::state`，只在
+    `ToolbarHandler` 的「外部关闭」guard 里收起——只测 `Toolbar::update` 会漏掉这一环）、
+    反向互斥（弹工具自带设置 → 总面板让位）、关闭悬浮条 → 总面板一并收起且视图不再渲染、
+    上述画布 Ctrl+单击路径的互斥；
+  - **几何 / 契约**：`test_settings_panel_is_centered_on_its_trigger_button` 从 3 个入口
+    扩到 **4 个**（画刷 / 形状 / 颜料桶 / 齿轮），逐项断言面板中心 ≡ 各自触发按钮中心；
+    `test_gear_settings_button_contract` 钉死齿轮只发 `ToggleDrawSettings`、面板空白发
+    `CloseDrawSettings`；`test_draw_settings_panel_fits_menu_width` 中英双语内容宽度不超
+    `MENU_WIDTH`；
+  - **状态机**：`test_draw_settings_toggle_and_close` /
+    `test_draw_settings_mutually_exclusive_with_tool_settings` /
+    `test_tool_panel_item_selected_closes_draw_settings` /
+    `test_close_tool_panel_closes_draw_settings`。
+
+  几何断言与宽度护栏**实际执行**（未走"无 GPU 适配器即跳过"分支——`--nocapture` 下无
+  跳过输出，说明本机拿到了真实适配器、断言真跑过）。`cargo clippy`（ui / ui-core /
+  extras，`--all-targets`）无告警；`cargo check --workspace --all-targets` 通过。
+- **已知共同边界（非本轮引入）** — 悬浮条上的设置面板都**不**响应"点击画布空白即关闭"
+  （画刷 / 形状下拉同样如此）：面板的关闭入口是面板内空白、再次点击触发按钮、点击其它
+  工具条目或关闭悬浮条。齿轮沿用同一套语义，未单独开一条与兄弟面板不一致的路径。
+
 ### 音符画 · 文字工具补齐纵向卷帘支持（文字「正着读」）（BUG 修复）
 
 - **症状** — 纵向卷帘下选中「文字工具」在画布上拉框有反应，但**松手后什么都没有**：

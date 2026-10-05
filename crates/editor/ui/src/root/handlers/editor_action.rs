@@ -82,7 +82,8 @@ impl Root {
     ///
     /// 该面板已从全屏居中弹窗重构为贴图标上方的**工具栏小面板**（由
     /// `root/draw_toolbar.rs` 渲染），故此处需确保音符画工具箱处于展开态——
-    /// 否则面板无处锚定；同时与其他工具设置下拉（画刷 / 形状）互斥。
+    /// 否则面板无处锚定；同时与其他工具设置面板（画刷 / 形状下拉、音符画设置总面板）
+    /// 互斥：三块面板同屏叠加会互相压住，且锚点各挂各的按钮，视觉上是两套面板打架。
     pub(crate) fn open_fill_division_dialog(&mut self) {
         let current = self.editor.fill_division();
         self.state.fill_division_dialog.is_open = true;
@@ -90,6 +91,7 @@ impl Root {
         self.toolbar.tool_panel_open = true;
         self.toolbar.brush_dropdown_open = false;
         self.toolbar.shape_dropdown_open = false;
+        self.toolbar.draw_settings_open = false;
     }
 
     /// 处理钢琴卷帘右键上下文菜单动作

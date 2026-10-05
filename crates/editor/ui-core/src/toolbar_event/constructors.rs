@@ -297,4 +297,14 @@ impl Event {
     pub const fn shape_type_selected(shape: ShapeType) -> Message {
         Message::Toolbar(Self::ShapeTypeSelected(shape))
     }
+
+    /// 构造“切换音符画设置总面板”的工具栏消息（悬浮条右端齿轮按钮）
+    pub const fn toggle_draw_settings() -> Message {
+        Message::Toolbar(Self::ToggleDrawSettings)
+    }
+
+    /// 构造“关闭音符画设置总面板”的工具栏消息（点击面板内空白）
+    pub const fn close_draw_settings() -> Message {
+        Message::Toolbar(Self::CloseDrawSettings)
+    }
 }

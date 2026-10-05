@@ -135,6 +135,13 @@ pub enum Event {
     CloseShapeDropdown,
     /// 形状工具当前图形类型变更（矩形/圆形/三角形）
     ShapeTypeSelected(ShapeType),
+    /// 切换「音符画设置」总面板显示/隐藏（悬浮条**右端齿轮按钮**触发）
+    ///
+    /// 与工具条目自带的三块设置（画刷下拉 / 形状下拉 / 分音符填充）互斥：
+    /// 齿轮面板是**聚合入口**，任一时刻至多一个设置面板打开。
+    ToggleDrawSettings,
+    /// 关闭「音符画设置」总面板（点击面板内空白触发）
+    CloseDrawSettings,
 }
 
 /// 形状工具当前绘制的图形类型

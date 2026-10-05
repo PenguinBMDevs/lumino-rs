@@ -43,6 +43,10 @@ pub struct MainTranslations {
     pub tool_fill: &'static str,
     /// 音符绘制工具集触发按钮（工具栏小三角）
     pub tool_panel_tooltip: &'static str,
+    /// 音符画设置（悬浮条右端齿轮按钮的 tooltip + 设置面板标题）
+    pub tool_panel_settings: &'static str,
+    /// 音符画设置面板：占位说明（设置项尚未接入）
+    pub draw_settings_placeholder: &'static str,
     /// 绘制工具面板：鼠标工具（图形选中）
     pub tool_mouse: &'static str,
     /// 描边设置

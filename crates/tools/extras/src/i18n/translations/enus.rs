@@ -19,6 +19,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     tool_curve: "Curve Tool",
     tool_fill: "Paint Bucket",
     tool_panel_tooltip: "Note Drawing Toolbox",
+    tool_panel_settings: "Note Drawing Settings",
+    draw_settings_placeholder: "Settings in development: stroke, brush, shape and paint bucket options will be gathered here.",
     tool_mouse: "Mouse Tool",
     tool_stroke: "Stroke Settings",
     tool_brush: "Free Stroke",

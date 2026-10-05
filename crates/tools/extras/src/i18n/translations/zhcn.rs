@@ -19,6 +19,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_curve: "曲线工具",
     tool_fill: "颜料桶",
     tool_panel_tooltip: "音符画工具箱",
+    tool_panel_settings: "音符画设置",
+    draw_settings_placeholder: "设置项开发中：后续在此聚合描边、画笔、形状与颜料桶等绘制参数。",
     tool_mouse: "鼠标工具",
     tool_stroke: "描边设置",
     tool_brush: "自由笔画",
