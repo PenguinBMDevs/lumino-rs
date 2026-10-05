@@ -8,7 +8,6 @@
 pub(crate) mod brush_dropdown;
 mod buttons;
 mod default;
-pub(crate) mod draw_settings_dropdown;
 pub mod event;
 pub(crate) mod fill_division_dropdown;
 pub(crate) mod overflow;
@@ -120,9 +119,4 @@ pub struct Toolbar {
     pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
     pub current_shape: ShapeType,
-    /// 「音符画设置」总面板是否打开（悬浮条**右端齿轮按钮**触发）
-    ///
-    /// 与 `brush_dropdown_open` / `shape_dropdown_open` / 分音符填充面板互斥：
-    /// 它是各绘制工具设置的**聚合入口**，担纲"设置按钮"的角色。
-    pub draw_settings_open: bool,
 }

@@ -1,13 +1,13 @@
-//! 音符画「设置按钮」（悬浮条右端齿轮 → 总面板）端到端回归
+//! 音符画「设置按钮」（悬浮条右端齿轮 → **独立对话框窗口**）端到端回归
 //!
-//! 齿轮是**本轮新增的 UI 入口**，它必须：
-//! 1. 点击即开合「音符画设置」总面板，且悬浮条本身保持打开；
-//! 2. **不干扰绘制工具状态**——点设置不该顺手把当前工具切掉（用户只是想调参数）；
-//! 3. 与其余三块设置面板（画刷 / 形状 / 分音符填充）**互斥**，至多一个打开。
+//! 齿轮是设置类入口，且已从"主窗口内锚定小面板"改为**独立 OS 窗口**
+//! （`DialogType::DrawSettings`）。它必须：
+//! 1. 点击即发 `window::Event::OpenDrawSettingsDialog`（开窗交给 Runner，不在主窗落浮层）；
+//! 2. **不干扰绘制工具状态**——点设置不该顺手把当前工具 / 填充态 / 窗口内设置下拉收掉；
+//! 3. 对话框自己的「关闭」→ `DialogResult::Cancel`（Runner 收尾关窗）。
 //!
-//! 走 `Root::update` 全链路（而非直接调 `Toolbar::update`）：第 3 条里分音符填充面板
-//! 的状态挂在 `Root::state` 上，只在 `ToolbarHandler` 的「外部关闭」guard 里被收起 ——
-//! 只测工具栏自身状态会漏掉这一环。
+//! 走 `Root::update` 全链路（而非直接调 `Toolbar::update`）：第 1 条要经
+//! `ToolbarHandler` 转成窗口事件，第 3 条要经 `DialogHandler`，只测工具栏自身会全部漏掉。
 
 use super::*;
 use crate::toolbar::{Event, Tool, ToolPanelItem};
@@ -20,48 +20,38 @@ fn setup_toolbar_open() -> Root {
     root
 }
 
-/// 场景 1：齿轮点击 → 总面板打开；再次点击 → 关闭。悬浮条全程保持打开。
+/// 断言本次发射的事件里含"打开音符画设置对话框"。
+fn assert_emitted_open_dialog() {
+    let events = crate::event::take_events();
+    let found = events.iter().any(|e| {
+        matches!(
+            e,
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(d.as_ref(), crate::event::window::dialog::Event::OpenDrawSettingsDialog)
+        )
+    });
+    assert!(found, "点击齿轮应发射 OpenDrawSettingsDialog 窗口事件");
+}
+
+/// 场景 1：齿轮点击 → 发射开窗事件；悬浮条保持打开（给个可见的落点，不闪退）。
 #[test]
-fn test_gear_toggles_panel_and_keeps_toolbar_open() {
+fn test_gear_emits_open_dialog_window_event() {
     let _guard = crate::test_helpers::event_queue_lock();
     let mut root = setup_toolbar_open();
-    assert!(!root.toolbar.draw_settings_open, "前置：总面板初始关闭");
 
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open, "点击齿轮应打开总面板");
+    root.update(Event::open_draw_settings_dialog());
+
+    assert_emitted_open_dialog();
     assert!(
         root.toolbar.tool_panel_open,
-        "打开总面板不应把悬浮条本身关掉（面板锚定其上）"
+        "请求开窗后悬浮条应保持打开（齿轮不托管对话框开关）"
     );
-    // 面板打开时视图必须能构建（锚点悬浮层走 CurveToolGroup，构建失败会 panic）
-    assert!(
-        root.view_draw_toolbar().is_some(),
-        "悬浮条与总面板同时打开时应能渲染出元素"
-    );
-
-    root.update(Event::toggle_draw_settings());
-    assert!(!root.toolbar.draw_settings_open, "再次点击齿轮应关闭总面板");
+    assert!(root.view_draw_toolbar().is_some(), "悬浮条仍应正常渲染");
 }
 
-/// 场景 2：点击面板内空白（`CloseDrawSettings`）→ 总面板关闭。
-#[test]
-fn test_clicking_panel_blank_closes_draw_settings() {
-    let _guard = crate::test_helpers::event_queue_lock();
-    let mut root = setup_toolbar_open();
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open);
-
-    root.update(Event::close_draw_settings());
-    assert!(
-        !root.toolbar.draw_settings_open,
-        "CloseDrawSettings（点击面板内空白）应关闭总面板"
-    );
-}
-
-/// 场景 3（关键）：齿轮是**纯入口**，不改变当前绘制工具与填充共存态。
+/// 场景 2（关键）：齿轮是**纯入口**，不改变当前绘制工具与填充共存态。
 ///
-/// 若齿轮退化为"工具条目"，点设置会顺手切走当前工具 —— 这正是本轮把它做成
-/// 独立按钮的理由，用测试钉死，避免后续被合并回条目列表。
+/// 若齿轮退化为"工具条目"，点设置会顺手切走当前工具 —— 这正是把它做成独立按钮的理由。
 #[test]
 fn test_gear_does_not_disturb_tool_state() {
     let _guard = crate::test_helpers::event_queue_lock();
@@ -71,8 +61,7 @@ fn test_gear_does_not_disturb_tool_state() {
     root.editor.set_fill_enabled(true);
     root.toolbar.fill_enabled = true;
 
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open);
+    root.update(Event::open_draw_settings_dialog());
 
     assert_eq!(
         root.toolbar.current_tool,
@@ -90,15 +79,16 @@ fn test_gear_does_not_disturb_tool_state() {
     );
 }
 
-/// 场景 4：分音符填充面板打开时点齿轮 —— 填充面板（`Root::state`）必须被收起。
+/// 场景 3：齿轮与其它工具栏动作**同一口径**处理窗口内临时浮层（分音符填充面板被收起）。
 ///
-/// 这一环由 `ToolbarHandler::handle_toolbar_event` 的「外部关闭」guard 负责，
-/// 不在 `Toolbar::update` 内，故必须走 `Root::update` 才测得到。
+/// 这条曾经反过来写过（"独立窗口不与之争位置，故不应关闭"），但那样会让同一面板在
+/// "点工具条目"时关闭、在"点齿轮"时不关，行为不一致。窗口内三块面板本就是
+/// "外部一动作即收起"的临时浮层，且输入值存于 `state`、收起不丢数据——
+/// 统一收敛到既有语义，不给齿轮开例外。
 #[test]
-fn test_gear_closes_fill_division_panel() {
+fn test_gear_closes_in_window_panels_like_any_other_action() {
     let _guard = crate::test_helpers::event_queue_lock();
     let mut root = setup_toolbar_open();
-    // 前置：曲线 + 颜料桶开启 → 再次点击颜料桶条目打开「分音符填充」面板
     root.editor.set_tool(Tool::Curve);
     root.toolbar.current_tool = Tool::Curve;
     root.editor.editor_state.data.current_track = 1;
@@ -109,95 +99,75 @@ fn test_gear_closes_fill_division_panel() {
         root.state.fill_division_dialog.is_open,
         "前置：分音符填充面板已打开"
     );
+    let value_before = root.state.fill_division_dialog.value.clone();
 
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open, "齿轮应打开总面板");
+    root.update(Event::open_draw_settings_dialog());
+
+    assert_emitted_open_dialog();
     assert!(
         !root.state.fill_division_dialog.is_open,
-        "打开总面板应收起分音符填充面板（三块设置面板互斥）"
+        "齿轮应与其它工具栏动作同口径收起窗口内浮层"
+    );
+    assert_eq!(
+        root.state.fill_division_dialog.value, value_before,
+        "收起面板不得丢掉用户已输入的档位（值存在 state 上）"
     );
 }
 
-/// 场景 5：反向互斥 —— 总面板打开时弹出工具自带设置，总面板让位。
+/// 场景 4：对话框窗口 Root 按 `DialogType::DrawSettings` 渲染，不 panic。
 #[test]
-fn test_tool_settings_request_closes_draw_settings() {
+fn test_draw_settings_dialog_root_renders() {
     let _guard = crate::test_helpers::event_queue_lock();
-    let mut root = setup_toolbar_open();
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open);
+    let mut root = Root::new_dialog("dark", DialogType::DrawSettings);
+    root.set_draw_settings_dialog_open(true);
+    assert_eq!(
+        root.state.dialog_type,
+        DialogType::DrawSettings,
+        "对话框类型应为 DrawSettings（否则 overlay 会落到空容器分支）"
+    );
 
-    root.update(Event::tool_panel_item_settings_requested(
-        ToolPanelItem::Shape,
+    let _element = root.view();
+}
+
+/// 场景 5：对话框内「关闭」→ `DialogResult::Cancel`（Runner 据此收尾关窗）。
+#[test]
+fn test_dialog_close_action_yields_cancel_result() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    let mut root = Root::new_dialog("dark", DialogType::DrawSettings);
+    assert!(root.state.dialog_result.is_none(), "前置：无待处理结果");
+
+    root.update(Message::DrawSettings(
+        lumino_message::DrawSettingsAction::CloseDialog,
     ));
-    assert!(root.toolbar.shape_dropdown_open, "形状设置下拉应打开");
+
     assert!(
-        !root.toolbar.draw_settings_open,
-        "弹出形状设置下拉应关闭总面板"
+        matches!(
+            root.state.dialog_result,
+            Some(crate::host::DialogResult::Cancel)
+        ),
+        "「关闭」应产出 DialogResult::Cancel，实际 {:?}",
+        root.state.dialog_result
     );
 }
 
-/// 场景 6：关闭悬浮条 → 其上承载的总面板一并收起（否则重开悬浮条会残留面板）。
+/// 场景 6：对话框内「关闭」不冒发"打开"事件（避免关窗动作把窗口又开回来）。
 #[test]
-fn test_closing_toolbar_closes_draw_settings() {
+fn test_dialog_close_does_not_emit_open_event() {
     let _guard = crate::test_helpers::event_queue_lock();
-    let mut root = setup_toolbar_open();
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open);
+    let mut root = Root::new_dialog("dark", DialogType::DrawSettings);
+    let _ = crate::event::take_events();
 
-    root.update(Message::Toolbar(Event::ToggleToolPanel));
-    assert!(
-        !root.toolbar.tool_panel_open,
-        "再次点击绘制入口应关闭悬浮条"
-    );
-    assert!(
-        !root.toolbar.draw_settings_open,
-        "关闭悬浮条应一并收起总面板"
-    );
-    assert!(
-        root.view_draw_toolbar().is_none(),
-        "悬浮条关闭后不应再渲染（更不该残留面板）"
-    );
-}
+    root.update(Message::DrawSettings(
+        lumino_message::DrawSettingsAction::CloseDialog,
+    ));
 
-/// 场景 7（冰山）：**画布 Ctrl+单击**打开分音符填充面板时，总面板也必须让位。
-///
-/// 这条路径不经过工具栏事件（`Editor` 置请求位 → `Root::open_fill_division_dialog`），
-/// 因此**不会被** `Toolbar::update` 的互斥 guard 覆盖。若只改工具栏一侧，用户
-/// "先点齿轮、再 Ctrl+单击画布"就会同屏叠出两块面板——视图层的互斥 `debug_assert`
-/// 会当场把它变成测试失败。
-#[test]
-fn test_canvas_ctrl_click_closes_draw_settings() {
-    use crate::message::EditorAction;
-
-    let _guard = crate::test_helpers::event_queue_lock();
-    let mut root = setup_toolbar_open();
-    // 前置：曲线 + 颜料桶开启 + 画布有有效尺寸（让按下事件进入工具分发）
-    root.editor.set_tool(Tool::Curve);
-    root.toolbar.current_tool = Tool::Curve;
-    root.editor.set_fill_enabled(true);
-    root.toolbar.fill_enabled = true;
-    root.editor.editor_state.data.current_track = 1;
-    root.editor.editor_state.canvas.size_x = 2000.0;
-    root.editor.editor_state.canvas.size_y = 1200.0;
-    // 前置：总面板已打开
-    root.update(Event::toggle_draw_settings());
-    assert!(root.toolbar.draw_settings_open, "前置：总面板已打开");
-
-    root.update(Message::CtrlKeyChanged(true));
-    root.update(Message::EditorAction(EditorAction::Pressed {
-        pos: crate::message::Point2::new(300.0, 200.0),
-        shift: false,
-        ctrl: true,
-    }));
-
-    assert!(
-        root.state.fill_division_dialog.is_open,
-        "画布 Ctrl+单击应打开分音符填充面板"
-    );
-    assert!(
-        !root.toolbar.draw_settings_open,
-        "画布 Ctrl+单击打开填充面板时，总面板必须让位（互斥）"
-    );
-    // 两块面板不得同屏：视图层互斥 debug_assert 在 debug 构建下即在此触发
-    assert!(root.view_draw_toolbar().is_some());
+    let events = crate::event::take_events();
+    let reopens = events.iter().any(|e| {
+        matches!(
+            e,
+            crate::event::Event::Window(crate::event::window::Event::Dialog(d))
+                if matches!(d.as_ref(), crate::event::window::dialog::Event::OpenDrawSettingsDialog)
+        )
+    });
+    assert!(!reopens, "关闭动作不应冒发 OpenDrawSettingsDialog");
 }

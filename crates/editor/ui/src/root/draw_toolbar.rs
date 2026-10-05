@@ -7,7 +7,9 @@
 //! 面板常驻显示全部绘制工具（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字），
 //! 当前激活工具高亮；颜料桶为可切换的「填充开关」（可与曲线/形状共存高亮）。
 //! 胶囊**右端**另有一枚常显的**设置按钮**（齿轮），以分隔线与工具图标区隔：
-//! 它是各绘制工具设置的**聚合入口**（`Toolbar::draw_settings_open`），不参与工具选择语义。
+//! 它是各绘制工具设置的**聚合入口**，**不参与工具选择语义**，且**不在主窗口落浮层**——
+//! 点开的是**独立 OS 窗口**（`DialogType::DrawSettings`，见 `view/draw_settings_dialog.rs`），
+//! 由 Runner 开窗并对同类型窗口去重。
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
 //!
@@ -24,6 +26,7 @@
 //!
 //! 设置下拉复用 `CurveToolGroup` 悬浮层——**已启用条目再次点击**触发，
 //! 锚定在触发它的图标按钮**上方**（胶囊贴近窗口顶部时自动下翻）。
+//! （齿轮不在此列：它开的是独立窗口，主窗口内没有属于它的悬浮层。）
 //!
 //! **交互（现行）**：条目**已启用**时**再次点击同一条目**即弹出其设置面板，无需按 Ctrl
 //! （点击→消息的唯一出口 = 本模块 `tool_panel_item_press`）。同一面板重复点击条目**保持
@@ -130,8 +133,6 @@ impl Root {
         // 工具设置下拉（画刷 / 形状 / 颜料桶分音符填充）：三者互斥，至多一个打开。
         // 随条目**挂在触发它的那个图标按钮**上（见下方循环），面板由此水平居中于按钮。
         let mut settings_menu = self.draw_tool_settings_menu();
-        // 悬浮层小面板的统一底色（工具设置 / 音符画设置同族，取自工具栏底色压暗 10%）
-        let panel_background = self.draw_tool_panel_background();
 
         // 首项为**专用拖拽柄**（独立于按钮区，保证起拖信号不被按钮吞掉），
         // 其后为分隔竖线，再是全部绘制工具图标（常显 + 激活高亮）。
@@ -160,21 +161,19 @@ impl Root {
             settings_menu.is_none(),
             "设置面板的归属条目不在条目列表内：面板将无处挂载"
         );
-        // 不变式（互斥）：工具自带设置与「音符画设置」总面板**不得同屏**——
-        // 两者各挂各的按钮、各带一层锚定悬浮层，同时打开就是两层面板互相压。
-        // 视图层无法自愈（状态由 `Toolbar::update` / `Root::open_fill_division_dialog`
-        // 维护），故用断言把"漏掉某个互斥入口"变成可复现的失败而不是视觉噪音。
-        debug_assert!(
-            !(self.toolbar.draw_settings_open && settings_menu.is_some()),
-            "音符画设置总面板与工具自带设置面板（画刷/形状/分音符填充）不得同时打开"
-        );
 
         // 右端「设置按钮」（齿轮）：以分隔线与工具图标区隔开，**常显**且不参与工具选择
-        // 语义——它是各绘制工具设置的**聚合入口**（详见 `Toolbar::draw_settings_open`）。
-        // 面板同样复用 `CurveToolGroup` 挂回齿轮按钮自身，故水平居中于该按钮。
+        // 语义——它是各绘制工具设置的**聚合入口**，点开的是**独立 OS 窗口**
+        // （`DialogType::DrawSettings`），因此这里只放一个纯按钮，不带锚定悬浮层、
+        // 也不带开合高亮态（真实开关状态在独立窗口自己的标题栏上，主窗再维护一份会漂移）。
         row_items.push(grip_divider());
         row_items.push(with_tooltip(
-            self.draw_settings_entry(panel_background),
+            tool_icon_button(
+                icon::Gear,
+                false,
+                Event::open_draw_settings_dialog(),
+                &self.window.theme,
+            ),
             t.tool_panel_settings,
         ));
 
@@ -221,41 +220,6 @@ impl Root {
         }
 
         Some(centered.into())
-    }
-
-    /// 构建悬浮条**右端「设置按钮」**（齿轮）：按钮本体 + 其设置面板的锚定悬浮层。
-    ///
-    /// - 未打开面板：只是一个图标按钮，点击发 `ToggleDrawSettings`（开）；
-    /// - 已打开面板：包一层 `CurveToolGroup`，把「音符画设置」面板挂在**齿轮按钮**上
-    ///   （锚点 = 内容元素 ⇒ 面板水平居中于齿轮）；点击面板内空白发 `CloseDrawSettings`。
-    ///
-    /// 复用 `CurveToolGroup` 而非另造悬浮层：定位、越界吸附、事件转发三件事已由它统一
-    /// 处理（见 `toolbar/view/curve_tool_group.rs`），设置入口没有理由再造第二套。
-    fn draw_settings_entry(&self, panel_background: Color) -> Element<'_> {
-        let btn = tool_icon_button(
-            icon::Gear,
-            self.toolbar.draw_settings_open,
-            Event::toggle_draw_settings(),
-            &self.window.theme,
-        );
-        if !self.toolbar.draw_settings_open {
-            return btn;
-        }
-
-        let menu: Element<'_> = container(
-            crate::toolbar::draw_settings_dropdown::render_draw_settings_panel(
-                self.settings.display.language,
-                panel_background,
-                &self.window.theme,
-            ),
-        )
-        .width(Length::Fixed(MENU_WIDTH))
-        .height(Length::Shrink)
-        .into();
-        let panel: Element<'_> = mouse_area(menu)
-            .on_press(Event::close_draw_settings())
-            .into();
-        CurveToolGroup::new(btn, Some(panel), MENU_WIDTH).into()
     }
 
     /// 悬浮层小面板（工具设置 / 音符画设置）的统一底色：工具栏底色压暗 10%。
@@ -594,13 +558,16 @@ mod tests {
     /// 右端「设置按钮」（齿轮）在条目行内的槽位号。
     const GEAR_SLOT: usize = ROW_SLOTS - 1;
 
-    /// 回归测试：设置面板必须**水平居中于触发它的那个按钮**。
+    /// 回归测试：工具自带设置面板必须**水平居中于触发它的那个按钮**。
     ///
     /// 用户反馈 BUG：「弹出的悬浮面板没有居中对齐按钮，而是直接出现在了悬浮工具栏
     /// 左端对齐处」。根因：`CurveToolGroup` 的锚点 = 它的内容元素，而此前传入的内容
     /// 是**整条胶囊**（宽 265），面板（宽 248）于是以"胶囊中心"为准居中——
     /// `(265 - 248) / 2 = 8.5`，看起来就是贴在悬浮条左端；与真正被点的按钮中心
     /// （形状按钮在胶囊内偏移 205）相差 70 余像素。
+    ///
+    /// 注意：**齿轮不在本测试范围内**——它点开的是独立 OS 窗口（`DialogType::DrawSettings`），
+    /// 主窗口内不存在属于它的悬浮层，没有"居中于按钮"这回事。
     #[test]
     fn test_settings_panel_is_centered_on_its_trigger_button() {
         let Some(renderer) = headless_renderer() else {
@@ -608,7 +575,7 @@ mod tests {
             return;
         };
 
-        // 四个有设置的入口各验一次：面板必须居中于**各自**的按钮（而非某个固定位置）。
+        // 三个有窗口内设置的入口各验一次：面板必须居中于**各自**的按钮（而非某个固定位置）。
         // 槽位号见上方 `ROW_SLOTS` 注释；
         // items 顺序：Mouse(0) Curve(1) FillBucket(2) Brush(3) Shape(4) Text(5)
         check_panel_center(&renderer, 2 + 3, "画刷", |root| {
@@ -620,9 +587,55 @@ mod tests {
         check_panel_center(&renderer, 2 + 2, "颜料桶", |root| {
             root.state.fill_division_dialog.is_open = true;
         });
-        check_panel_center(&renderer, GEAR_SLOT, "音符画设置", |root| {
-            root.toolbar.draw_settings_open = true;
-        });
+    }
+
+    /// 齿轮必须落在胶囊**最右端**（工具图标区之后），且其按钮宽度与其它条目同规格。
+    ///
+    /// 需求明确要求"右端设置按钮"：这条几何断言把它钉死——若哪天有人把齿轮挪进工具
+    /// 图标之间（比如插到文字工具后面），中心 x 不再最大，本测试立刻失败。
+    #[test]
+    fn test_gear_entry_sits_at_right_end() {
+        let Some(renderer) = headless_renderer() else {
+            eprintln!("跳过：无可用 GPU 适配器（几何断言需要真实布局）");
+            return;
+        };
+
+        let mut root = Root::new(&UiConfig::default());
+        root.toolbar.tool_panel_open = true;
+        let mut element = root.view_draw_toolbar().expect("悬浮条已打开应渲染");
+        let mut tree = widget::Tree::new(&element);
+        let viewport = Rectangle::with_size(Size::new(1400.0, 900.0));
+        let node = element.as_widget_mut().layout(
+            &mut tree,
+            &renderer,
+            &layout::Limits::new(Size::ZERO, viewport.size()),
+        );
+        let row = find_row(layout::Layout::new(&node), ROW_SLOTS)
+            .expect("应能定位胶囊内的条目行（拖拽柄 + 分隔线 + 6 工具 + 分隔线 + 齿轮）");
+
+        let gear = row
+            .children()
+            .nth(GEAR_SLOT)
+            .expect("齿轮应有布局节点")
+            .bounds();
+        // 参与比较的只有 6 个工具按钮（槽位 2..=7）——拖拽柄/分隔线不算"工具图标区"。
+        let tool_max_right = (2..2 + 6)
+            .filter_map(|i| row.children().nth(i))
+            .map(|c| c.bounds().x + c.bounds().width)
+            .fold(f32::MIN, f32::max);
+
+        assert!(
+            gear.x >= tool_max_right,
+            "齿轮应在全部工具图标的右侧：齿轮左缘 {:.1} vs 工具区右缘 {:.1}",
+            gear.x,
+            tool_max_right
+        );
+        assert!(
+            (gear.width - BUTTON_SIZE).abs() < 1.0 && (gear.height - BUTTON_SIZE).abs() < 1.0,
+            "齿轮按钮应为标准图标按钮尺寸 {BUTTON_SIZE}，实际 {:.1}x{:.1}",
+            gear.width,
+            gear.height
+        );
     }
 
     /// 校验「设置面板水平居中于第 `slot` 个条目（0 = 拖拽柄）的按钮」。
@@ -773,25 +786,20 @@ mod tests {
         }
     }
 
-    /// 右端「设置按钮」（齿轮）的点击契约：**只开合总面板**。
+    /// 右端「设置按钮」（齿轮）的点击契约：**只请求打开独立对话框**。
     ///
-    /// 齿轮是独立于 6 个工具条目的**入口按钮**，不得退化为工具选择（否则点设置会顺手
-    /// 把当前绘制工具切掉——用户只是想调参数）。这里把两个消息钉死。
+    /// 齿轮是独立于 6 个工具条目的**入口按钮**，有两条不能破的语义：
+    /// 1. 不得退化为工具选择（否则点设置会顺手把当前绘制工具切掉——用户只是想调参数）；
+    /// 2. 不得在主窗口内落任何浮层（面板已改为独立 OS 窗口，见 `DialogType::DrawSettings`），
+    ///    故消息里**只有** `OpenDrawSettingsDialog`，没有配套的"关闭/切换"事件。
     #[test]
     fn test_gear_settings_button_contract() {
         assert!(
             matches!(
-                Event::toggle_draw_settings(),
-                Message::Toolbar(Event::ToggleDrawSettings)
+                Event::open_draw_settings_dialog(),
+                Message::Toolbar(Event::OpenDrawSettingsDialog)
             ),
-            "齿轮按钮按下应发 ToggleDrawSettings"
-        );
-        assert!(
-            matches!(
-                Event::close_draw_settings(),
-                Message::Toolbar(Event::CloseDrawSettings)
-            ),
-            "点击设置面板内空白应发 CloseDrawSettings"
+            "齿轮按钮按下应发 OpenDrawSettingsDialog"
         );
     }
 

@@ -94,6 +94,13 @@ impl Host {
         self.window_ctx.window.request_redraw();
     }
 
+    /// 设置「音符画设置」对话框是否打开（用于独立对话框窗口）
+    pub fn set_draw_settings_dialog_open(&mut self, open: bool) {
+        self.root.set_draw_settings_dialog_open(open);
+        self.ui_dirty = true;
+        self.window_ctx.window.request_redraw();
+    }
+
     /// 种入画刷「绘制行为」对话框本地草稿（Runner 在对话框 UI 就绪后注入）
     pub fn set_brush_settings_draft(&mut self, config: lumino_core::BrushConfig) {
         self.root.state.brush_settings_draft = config;

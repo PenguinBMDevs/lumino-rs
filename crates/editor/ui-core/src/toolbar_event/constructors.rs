@@ -298,13 +298,8 @@ impl Event {
         Message::Toolbar(Self::ShapeTypeSelected(shape))
     }
 
-    /// 构造“切换音符画设置总面板”的工具栏消息（悬浮条右端齿轮按钮）
-    pub const fn toggle_draw_settings() -> Message {
-        Message::Toolbar(Self::ToggleDrawSettings)
-    }
-
-    /// 构造“关闭音符画设置总面板”的工具栏消息（点击面板内空白）
-    pub const fn close_draw_settings() -> Message {
-        Message::Toolbar(Self::CloseDrawSettings)
+    /// 构造“打开音符画设置对话框”的工具栏消息（悬浮条右端齿轮按钮）
+    pub const fn open_draw_settings_dialog() -> Message {
+        Message::Toolbar(Self::OpenDrawSettingsDialog)
     }
 }

@@ -32,7 +32,6 @@ impl Toolbar {
             fill_enabled: false,
             shape_dropdown_open: false,
             current_shape: ShapeType::default(),
-            draw_settings_open: false,
         }
     }
 
@@ -85,20 +84,6 @@ impl Toolbar {
             )
         {
             self.shape_dropdown_open = false;
-        }
-
-        // 「音符画设置」总面板打开时，除以下情况外其余操作先关闭面板：
-        // - 再次点击齿轮（ToggleDrawSettings）用于切换关闭
-        // - 悬停事件不应关闭面板
-        // - 显式关闭事件（CloseDrawSettings）
-        // 与画刷 / 形状下拉同一「外部关闭」语义：三块设置面板互斥，至多一个打开。
-        if self.draw_settings_open
-            && !matches!(
-                event,
-                Event::ToggleDrawSettings | Event::ButtonHovered(_) | Event::CloseDrawSettings
-            )
-        {
-            self.draw_settings_open = false;
         }
 
         match event {
@@ -284,7 +269,6 @@ impl Toolbar {
                 self.overflow_menu_open = false;
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
-                self.draw_settings_open = false;
                 // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
                 if !self.tool_panel_open {
                     self.tool_panel_dragging = false;
@@ -306,7 +290,6 @@ impl Toolbar {
                 // 悬浮条关闭即无从承载工具设置下拉，一并收起
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
-                self.draw_settings_open = false;
                 tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
             }
             Event::ToolPanelDragStarted => {
@@ -416,28 +399,14 @@ impl Toolbar {
                     // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
                     _ => {}
                 }
-                // 打开工具自带设置即让出「音符画设置」总面板（三块面板互斥）
-                self.draw_settings_open = false;
                 tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
             }
-            Event::ToggleDrawSettings => {
-                self.draw_settings_open = !self.draw_settings_open;
-                // 与工具自带的三块设置面板互斥（画刷 / 形状下拉；分音符填充面板由
-                // `ToolbarHandler` 的「外部关闭」guard 收起）
-                self.brush_dropdown_open = false;
-                self.shape_dropdown_open = false;
-                tracing::debug!(
-                    "工具栏: 音符画设置面板 {}",
-                    if self.draw_settings_open {
-                        "打开"
-                    } else {
-                        "关闭"
-                    }
-                );
-            }
-            Event::CloseDrawSettings => {
-                self.draw_settings_open = false;
-                tracing::debug!("工具栏: 关闭音符画设置面板");
+            Event::OpenDrawSettingsDialog => {
+                // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
+                // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。
+                // 因此**不动** current_tool / fill_enabled，也不收任何窗口内浮层——
+                // 点设置不该顺手把当前绘制工具或已开的分音符填充面板弄没。
+                tracing::debug!("工具栏: 请求打开音符画设置对话框");
             }
         }
     }

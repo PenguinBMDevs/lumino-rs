@@ -12,6 +12,7 @@ use crate::view::{
     brush_settings_dialog::view_brush_settings_dialog,
     collaboration_dialog::view_collaboration_dialog,
     custom_precision_dialog::view_custom_precision_dialog,
+    draw_settings_dialog::view_draw_settings_dialog,
     export_progress_dialog::view_export_progress_dialog,
     load_confirm_dialog::view_load_confirm_dialog,
     memory_monitor_dialog::view_memory_monitor_dialog,
@@ -222,6 +223,9 @@ impl Root {
                 &self.window.theme,
                 self.settings.display.language,
             ),
+            DialogType::DrawSettings => {
+                view_draw_settings_dialog(&self.window.theme, self.settings.display.language)
+            }
             // 云存储连接面板 / 云文件浏览面板（Phase 3/4 实现完整 UI）
             DialogType::CloudConnect | DialogType::CloudBrowser | DialogType::CloudNotice => {
                 crate::view::cloud_dialog::view_cloud_dialog(self, &self.window.theme)

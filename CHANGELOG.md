@@ -9,57 +9,66 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
-### 音符画悬浮工具条 · 新增「设置按钮」（UI 入口：悬浮条右端齿轮 + 总面板）
+### 音符画悬浮工具条 · 新增「设置按钮」（悬浮条右端齿轮 → 独立对话框窗口）
 
 - **新增** — 音符画悬浮工具条**右端**新增一枚**常显的设置按钮**（齿轮图标，
   `resources/icons/regular/settings-general.svg`），以分隔线与 6 个绘制工具图标区隔；
-  点击开合「音符画设置」总面板（`ToggleDrawSettings` / `CloseDrawSettings`）。
+  点击打开**独立 OS 窗口**「音符画设置」（新 `DialogType::DrawSettings`，460×420，
+  与「画刷绘制行为」同为 `Host::new_dialog` 家族）。
 - **为什么单开一个入口** — 现有三块工具设置（画刷下拉 / 形状下拉 / 分音符填充）都藏在
   「条目已启用后**再次点击**」这个两段式手势后面（见下一条 CHANGELOG 的交互改造）：
   想调参数得先激活对应工具、再点第二次。齿轮是**聚合入口**，且**不参与工具选择语义**
   ——点它不会顺手把当前绘制工具切掉（用户只是想调参数，不是想换工具）。
-- **本轮范围 = UI 入口** — 面板骨架 + 「设置项开发中」占位文案（中英双语：
-  `tool_panel_settings` / `draw_settings_placeholder`）。**不做假控件**：摆一排点了没反应
-  的控件，只会再造一个"能点到、没反应"的静默失效；设置项逐个接入时再补。
-- **实现** — 面板复用 `CurveToolGroup` 悬浮层、并挂回**齿轮按钮自身**（其锚点 = 内容
-  元素），故与画刷 / 形状面板同一规则**水平居中于触发它的按钮**；面板底色抽为
-  `Root::draw_tool_panel_background`（工具栏底色压暗 10%），与三块工具设置同族配色，
-  不给同屏留两种深浅。三块工具设置 + 总面板**互斥**（至多一个打开）：打开任一其它设置、
-  点击工具条目、切换工具、关闭悬浮条，都会先收起总面板。
-- **顺带修掉一条漏网的互斥入口（先复现后修复）** — 互斥不是只有"工具栏事件"一条路：
-  **画布 Ctrl+单击**打开分音符填充面板走的是 `Editor` 置请求位 →
-  `Root::open_fill_division_dialog`，**不经过** `Toolbar::update` 的 guard。该函数此前只
-  收起画刷 / 形状下拉，新增的齿轮面板因此漏在外面——"先点齿轮，再 Ctrl+单击画布"会同屏
-  叠出两块面板（两套锚定悬浮层互相压）。已在 `open_fill_division_dialog` 补上
-  `draw_settings_open = false`，并在视图层加互斥 `debug_assert`
-  （`root/draw_toolbar.rs`）把"将来再漏一个入口"变成可复现的失败而非视觉噪音。
-  **复现证据**：临时移除该行 → `test_canvas_ctrl_click_closes_draw_settings` 失败
-  （`panicked at ...: 画布 Ctrl+单击打开填充面板时，总面板必须让位（互斥）`）；
-  恢复即绿。
-- **验证** — `cargo test -p lumino-ui --lib` **407 → 414 全绿**。新增 / 扩写：
-  - **端到端**（新增 `root/root_tests/draw_settings_panel.rs`，走 `Root::update` 全链路，
-    7 项）：齿轮开合且不关悬浮条、点击面板空白关闭、**点齿轮不扰动工具与填充态**
-    （齿轮退化成工具条目 = 点设置顺手切走工具，这条把它钉死）、
-    **打开总面板收起分音符填充面板**（该面板状态挂在 `Root::state`，只在
-    `ToolbarHandler` 的「外部关闭」guard 里收起——只测 `Toolbar::update` 会漏掉这一环）、
-    反向互斥（弹工具自带设置 → 总面板让位）、关闭悬浮条 → 总面板一并收起且视图不再渲染、
-    上述画布 Ctrl+单击路径的互斥；
-  - **几何 / 契约**：`test_settings_panel_is_centered_on_its_trigger_button` 从 3 个入口
-    扩到 **4 个**（画刷 / 形状 / 颜料桶 / 齿轮），逐项断言面板中心 ≡ 各自触发按钮中心；
-    `test_gear_settings_button_contract` 钉死齿轮只发 `ToggleDrawSettings`、面板空白发
-    `CloseDrawSettings`；`test_draw_settings_panel_fits_menu_width` 中英双语内容宽度不超
-    `MENU_WIDTH`；
-  - **状态机**：`test_draw_settings_toggle_and_close` /
-    `test_draw_settings_mutually_exclusive_with_tool_settings` /
-    `test_tool_panel_item_selected_closes_draw_settings` /
-    `test_close_tool_panel_closes_draw_settings`。
-
-  几何断言与宽度护栏**实际执行**（未走"无 GPU 适配器即跳过"分支——`--nocapture` 下无
-  跳过输出，说明本机拿到了真实适配器、断言真跑过）。`cargo clippy`（ui / ui-core /
-  extras，`--all-targets`）无告警；`cargo check --workspace --all-targets` 通过。
-- **已知共同边界（非本轮引入）** — 悬浮条上的设置面板都**不**响应"点击画布空白即关闭"
-  （画刷 / 形状下拉同样如此）：面板的关闭入口是面板内空白、再次点击触发按钮、点击其它
-  工具条目或关闭悬浮条。齿轮沿用同一套语义，未单独开一条与兄弟面板不一致的路径。
+- **为什么是独立窗口而不是主窗口内的锚定小面板** — 悬浮条小面板宽度固定 248，
+  容纳不下成组的设置项（下拉 / 输入 / 列表）：要么溢出面板背景，要么被迫做成滚动小窗，
+  反而比独立窗口更难用；独立窗口有系统标题栏、可拖动、可独立缩放，且与既有设置类入口
+  （画刷「绘制行为」）一致。**顺带删掉一整类复杂度**：主窗口内不再有这个面板，
+  于是不需要锚点悬浮层、不需要开合状态位、不需要与画刷 / 形状 / 分音符填充三块窗口内
+  面板做互斥（`Toolbar::draw_settings_open`、`ToggleDrawSettings`/`CloseDrawSettings`
+  两个事件、上一版为此加的画布 Ctrl+单击互斥补丁与视图层互斥 `debug_assert` 一并移除）。
+- **本轮范围 = UI 入口** — 对话框骨架（标题 + 占位说明 + 底部「关闭」）+
+  「设置项开发中」占位文案（中英双语：`tool_panel_settings` / `draw_settings_placeholder`）。
+  **不做假控件**：摆一排点了没反应的控件只会再造一个"能点到、没反应"的静默失效。
+  占位阶段**不摆「保存」**——没有可保存的改动，摆上去只会让人以为存了什么
+  （与画刷对话框的 保存/取消 不同：那边有真实草稿）。
+- **实现** — 完整复刻「画刷绘制行为」这条已验证过的独立窗口链路：
+  `DrawSettingsAction`（新，`lumino-message`）→ `Message::DrawSettings` →
+  `DialogHandler` → `window::Event::OpenDrawSettingsDialog` → Runner 开窗 →
+  `DialogType::DrawSettings` → `Host::new_dialog` + `set_draw_settings_dialog_open` →
+  `overlays.rs` 分发到 `view_draw_settings_dialog`。**开窗去重**：齿轮是"开合"语义，
+  但独立窗口不能靠再点一次关闭（主窗可能不在前台），故 Runner 对同类型窗口去重
+  （已存在则 `focus_window`），且判定用**新增的 `DialogManager::is_open_or_pending`**——
+  对话框是**分帧三阶段**创建的（建窗 → GFX → UI），这期间窗口既不在 `dialogs` 里、
+  也已移出 `pending_dialogs`，只看已就绪窗口会在连点两次时真的开出两个窗口。
+- **验证** — `cargo test -p lumino-ui --lib` **412 全绿**；`lumino-dialog` 6 / `lumino-message` 47
+  全绿。新增 / 改写：
+  - **端到端**（重写 `root/root_tests/draw_settings_panel.rs`，走 `Root::update` 全链路，
+    6 项）：齿轮发 `OpenDrawSettingsDialog` 窗口事件且悬浮条保持打开、
+    **点齿轮不扰动当前工具与填充态**（齿轮退化成工具条目 = 点设置顺手切走工具，这条钉死它）、
+    与其它工具栏动作**同口径**收起窗口内浮层（并断言收起不丢已输入的填充档位）、
+    对话框 Root 按 `DrawSettings` 渲染不 panic、「关闭」→ `DialogResult::Cancel`、
+    关闭动作不冒发"打开"事件（避免关窗把窗口又开回来）；
+  - **几何 / 契约**：新增 `test_gear_entry_sits_at_right_end`——齿轮左缘 ≥ 全部工具图标右缘、
+    按钮为标准 34px 规格（"右端设置按钮"这个需求点的几何钉死）；
+    `test_settings_panel_is_centered_on_its_trigger_button` 收回到 **3 个**窗口内入口
+    （画刷 / 形状 / 颜料桶；齿轮已不在主窗口落浮层，没有"居中于按钮"可言）；
+    `test_gear_settings_button_contract` 改为断言齿轮**只发** `OpenDrawSettingsDialog`
+    （不再有配套的"关闭/切换"事件）；
+  - **状态机**：`test_open_draw_settings_dialog_leaves_tool_state_untouched`、
+    `test_open_draw_settings_dialog_is_idempotent`（连点两次无状态变化 = 无开合语义）；
+  - **去重**：`test_is_open_or_pending_sees_queued_dialog`（钉死"排队中也算已开"，
+    并区分它与 `has_dialog_type` 的语义差异）；
+  - **文案**：`test_draw_settings_dialog_texts_are_non_empty`（标题 / 占位说明 / 关闭按钮
+    在两种语言下都不得为空——空标题会渲染成一个只有边框的空白对话框，既不报错也不崩溃，
+    是 UI 上最难定位的一类静默失效）。
+- **一处刻意的不一致，实测后改回统一** — 初版让齿轮"例外放行"分音符填充面板
+  （理由：独立窗口与它不在同一窗口争位置）。写完测试立刻暴露矛盾：点**工具条目**会收起
+  该面板、点**齿轮**却不会，同一动作下三块窗口内面板行为不一致。窗口内面板本就是
+  "外部一动作即收起"的临时浮层，且输入值存于 `Root::state`、收起不丢数据，
+  故撤掉例外、收敛到既有语义（对应 `test_gear_closes_in_window_panels_like_any_other_action`）。
+- **已知共同边界（非本轮引入，现已不适用）** — 上一版「主窗口内锚定面板」曾有一条
+  共同边界：面板不响应"点击画布空白即关闭"。改为独立窗口后该问题自然消失
+  （窗口有自己的标题栏与系统关闭按钮，且不遮挡画布操作）。
 
 ### 音符画 · 文字工具补齐纵向卷帘支持（文字「正着读」）（BUG 修复）
 

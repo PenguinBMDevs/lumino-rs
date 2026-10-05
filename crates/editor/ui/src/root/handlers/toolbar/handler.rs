@@ -27,6 +27,11 @@ impl ToolbarHandler {
         // 颜料桶「分音符填充」面板打开时，除再次点击颜料桶与悬停外，其余工具栏操作
         // 先关闭它——与画刷 / 形状下拉同一「外部关闭」语义（面板内值变更 / 确认 / 取消
         // 走 `FillDivision` 消息，不经此处，故面板内交互不受影响）。
+        //
+        // 齿轮（`OpenDrawSettingsDialog`）**不例外**：它是独立 OS 窗口，与窗口内浮层
+        // 谈不上"同屏打架"，但三块窗口内面板本就是"外部一动作即收起"的临时浮层
+        // （输入值存于 `state`，收起不丢数据）。给齿轮单开例外只会让"同一动作下三块
+        // 面板行为不一致"，得不偿失——统一比省一次点击重要。
         if root.state.fill_division_dialog.is_open
             && !matches!(
                 event,
@@ -70,6 +75,9 @@ impl ToolbarHandler {
 
         // 处理内存监控对话框
         self.handle_toolbar_memory_monitor(root, &event);
+
+        // 处理「音符画设置」对话框（悬浮条右端齿轮）
+        self.handle_toolbar_draw_settings(root, &event);
 
         // 处理录制
         self.handle_toolbar_recording(root, &event);

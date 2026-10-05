@@ -153,6 +153,12 @@ impl DialogWindow {
                 let tracks = main_ui.normal_track_choices();
                 ui.set_brush_settings_tracks(tracks);
             }
+            DialogType::DrawSettings => {
+                // 「音符画设置」当前为占位面板（设置项待接入），无草稿需要种入；
+                // 但仍需切到本对话框类型，否则 overlay 会落到 `DialogType::None`
+                // 的空容器分支（窗口一片空白）。
+                ui.set_draw_settings_dialog_open(true);
+            }
         }
 
         self.window.set_visible(true);

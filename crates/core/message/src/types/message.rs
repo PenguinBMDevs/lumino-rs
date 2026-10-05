@@ -11,6 +11,7 @@ use crate::brush_settings::BrushSettingsAction;
 use crate::cloud_action::CloudAction;
 use crate::collaboration::CollaborationAction;
 use crate::custom_precision::CustomPrecisionAction;
+use crate::draw_settings::DrawSettingsAction;
 use crate::fill_division::FillDivisionAction;
 use crate::load_confirm::LoadConfirmAction;
 use crate::loop_range::LoopRangeAction;
@@ -107,6 +108,8 @@ pub enum Message<W, S, Se, T> {
     CustomPrecision(CustomPrecisionAction),
     /// 画刷「绘制行为」对话框动作
     BrushSettings(BrushSettingsAction),
+    /// 「音符画设置」对话框动作（独立 OS 窗口）
+    DrawSettings(DrawSettingsAction),
     /// 颜料桶「分音符填充」对话框动作（主窗口覆盖层）
     FillDivision(FillDivisionAction),
     /// 协作动作

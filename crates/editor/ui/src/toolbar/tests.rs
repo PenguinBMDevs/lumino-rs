@@ -303,75 +303,63 @@ fn test_close_tool_panel_closes_settings_dropdown() {
 }
 
 // ---------------------------------------------------------------------------
-// 「音符画设置」总面板（悬浮条右端齿轮按钮）
+// 「音符画设置」对话框请求（悬浮条右端齿轮按钮）
 // ---------------------------------------------------------------------------
 
-/// 齿轮按钮 = 开合总面板；`CloseDrawSettings`（点击面板内空白）显式关闭。
+/// 齿轮请求**只作信道**：不改变工具语义。
+///
+/// 齿轮点开的是独立 OS 窗口，工具栏不是它的 owner（没有"开/关"状态位），
+/// 故 `current_tool` / `fill_enabled` / 悬浮条位置一律不动——点设置不该顺手切走工具。
+///
+/// **但**窗口内临时浮层（画刷下拉等）照旧按"外部一动作即收起"的既有语义关闭，
+/// 不为齿轮单开例外（统一比省一次点击重要）。
 #[test]
-fn test_draw_settings_toggle_and_close() {
+fn test_open_draw_settings_dialog_leaves_tool_state_untouched() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
-    assert!(!toolbar.draw_settings_open, "初始应关闭");
+    toolbar.current_tool = Tool::Brush;
+    toolbar.fill_enabled = true;
+    toolbar.brush_dropdown_open = true;
+    let offset_before = toolbar.tool_panel_offset;
 
-    toolbar.update(Event::ToggleDrawSettings);
-    assert!(toolbar.draw_settings_open, "首次点击齿轮应打开总面板");
+    toolbar.update(Event::OpenDrawSettingsDialog);
 
-    toolbar.update(Event::ToggleDrawSettings);
-    assert!(!toolbar.draw_settings_open, "再次点击齿轮应关闭总面板");
-
-    toolbar.update(Event::ToggleDrawSettings);
-    toolbar.update(Event::CloseDrawSettings);
+    assert_eq!(toolbar.current_tool, Tool::Brush, "点齿轮不应改变当前工具");
+    assert!(toolbar.fill_enabled, "点齿轮不应关闭颜料桶");
+    assert!(toolbar.tool_panel_open, "点齿轮不应关闭悬浮工具条");
+    assert_eq!(
+        toolbar.tool_panel_offset, offset_before,
+        "点齿轮不应移动悬浮条"
+    );
     assert!(
-        !toolbar.draw_settings_open,
-        "CloseDrawSettings 应关闭总面板"
+        !toolbar.brush_dropdown_open,
+        "窗口内临时浮层照旧被'外部动作'收起（齿轮不享受例外）"
     );
 }
 
-/// 总面板与工具自带的三块设置**互斥**（至多一个打开）。
+/// 齿轮请求**不带开合态**：连点两次不产生任何"关"的语义。
+///
+/// 独立窗口由自己的标题栏负责开关；主窗按钮再维护一份状态只会与真实窗口状态漂移。
 #[test]
-fn test_draw_settings_mutually_exclusive_with_tool_settings() {
+fn test_open_draw_settings_dialog_is_idempotent() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
 
-    // 打开画刷下拉 → 再开总面板：画刷下拉必须让位
-    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
-    assert!(toolbar.brush_dropdown_open);
-    toolbar.update(Event::ToggleDrawSettings);
-    assert!(toolbar.draw_settings_open, "齿轮应打开总面板");
-    assert!(!toolbar.brush_dropdown_open, "打开总面板应关闭画刷设置下拉");
+    toolbar.update(Event::OpenDrawSettingsDialog);
+    let after_first = (
+        toolbar.current_tool,
+        toolbar.fill_enabled,
+        toolbar.tool_panel_open,
+    );
+    toolbar.update(Event::OpenDrawSettingsDialog);
+    let after_second = (
+        toolbar.current_tool,
+        toolbar.fill_enabled,
+        toolbar.tool_panel_open,
+    );
 
-    // 反向：总面板打开时弹工具设置 → 总面板让位
-    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Shape));
-    assert!(toolbar.shape_dropdown_open);
-    assert!(!toolbar.draw_settings_open, "弹出工具自带设置应关闭总面板");
-}
-
-/// 选择绘制工具条目（普通点击）属于"其它操作"，应先关闭总面板——
-/// 与画刷 / 形状下拉同一「外部关闭」语义，避免面板悬着不消失。
-#[test]
-fn test_tool_panel_item_selected_closes_draw_settings() {
-    let mut toolbar = Toolbar::new();
-    toolbar.tool_panel_open = true;
-    toolbar.update(Event::ToggleDrawSettings);
-    assert!(toolbar.draw_settings_open);
-
-    toolbar.update(Event::ToolPanelItemSelected(ToolPanelItem::Text));
-    assert_eq!(toolbar.current_tool, Tool::Text);
-    assert!(!toolbar.draw_settings_open, "点击工具条目应关闭设置总面板");
-}
-
-/// 关闭悬浮工具条时，其上承载的总面板必须一并收起（否则再开悬浮条会残留面板）。
-#[test]
-fn test_close_tool_panel_closes_draw_settings() {
-    let mut toolbar = Toolbar::new();
-    toolbar.tool_panel_open = true;
-    toolbar.update(Event::ToggleDrawSettings);
-    assert!(toolbar.draw_settings_open);
-
-    toolbar.update(Event::ToggleToolPanel);
-    assert!(!toolbar.tool_panel_open);
-    assert!(
-        !toolbar.draw_settings_open,
-        "关闭悬浮条应一并收起设置总面板"
+    assert_eq!(
+        after_first, after_second,
+        "连续两次齿轮请求不应改变任何工具栏状态（无开合语义）"
     );
 }

@@ -11,6 +11,8 @@ pub mod cloud_action;
 pub mod collaboration;
 pub mod context_menu;
 pub mod custom_precision;
+/// 「音符画设置」对话框动作
+pub mod draw_settings;
 /// 事件系统模块
 pub mod events;
 pub mod fill_division;
@@ -37,6 +39,7 @@ pub use context_menu::{
     PianoRollContextMenuItem, TrackContextMenuItem,
 };
 pub use custom_precision::CustomPrecisionAction;
+pub use draw_settings::DrawSettingsAction;
 pub use fill_division::FillDivisionAction;
 pub use load_confirm::LoadConfirmAction;
 pub use loop_range::LoopRangeAction;

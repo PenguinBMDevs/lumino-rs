@@ -139,4 +139,21 @@ impl ToolbarHandler {
             ));
         }
     }
+
+    /// 处理「音符画设置」对话框（悬浮条右端齿轮按钮 → 独立 OS 窗口）
+    ///
+    /// 与内存监控 / 协作同一条路径：工具栏事件只作**信道**，开窗交给 Runner。
+    /// Runner 侧对同类型窗口做去重（已开则聚焦，不叠第二个窗口）。
+    pub(crate) fn handle_toolbar_draw_settings(
+        &self,
+        _root: &mut Root,
+        event: &crate::toolbar::Event,
+    ) {
+        if matches!(event, crate::toolbar::Event::OpenDrawSettingsDialog) {
+            tracing::info!("Root: 触发打开音符画设置对话框");
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_draw_settings_dialog(),
+            ));
+        }
+    }
 }

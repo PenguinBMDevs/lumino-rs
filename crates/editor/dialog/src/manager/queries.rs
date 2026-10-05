@@ -27,6 +27,24 @@ impl DialogManager {
         self.dialogs.values().any(|d| d.dialog_type == dialog_type)
     }
 
+    /// 检查指定类型的对话框是否**已存在或正在排队/分帧初始化**。
+    ///
+    /// 与 [`Self::has_dialog_type`] 的区别：后者只看**已就绪**的窗口。对话框的创建是
+    /// 分帧的三阶段流程（建窗 → GFX → UI），在此期间窗口既不在 `dialogs` 里、也已经
+    /// 被移出 `pending_dialogs`，只存在于 `initializing`。若去重只看 `dialogs`，
+    /// 用户在几百毫秒内连点两次入口就会排到第二个同类型窗口——去重形同虚设。
+    pub fn is_open_or_pending(&self, dialog_type: DialogType) -> bool {
+        self.has_dialog_type(dialog_type)
+            || self
+                .pending_dialogs
+                .iter()
+                .any(|p| p.dialog_type == dialog_type)
+            || self
+                .initializing
+                .iter()
+                .any(|(_, p)| p.dialog_type == dialog_type)
+    }
+
     /// 将主窗口的云存储 UI 状态广播到所有相关对话框
     ///
     /// 云存储唯一数据源是主窗口 Root（连接快照/目录列表/提醒由 runner 注入），
@@ -111,5 +129,32 @@ impl DialogManager {
             .values()
             .find(|d| d.dialog_type == dialog_type)
             .map(|d| d.window())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 去重判定必须覆盖**排队中**的对话框：只认已就绪窗口会在连点两次时开出两个。
+    #[test]
+    fn test_is_open_or_pending_sees_queued_dialog() {
+        let mut manager = DialogManager::new();
+        assert!(!manager.is_open_or_pending(DialogType::DrawSettings));
+
+        manager.open_dialog(DialogType::DrawSettings);
+
+        assert!(
+            manager.is_open_or_pending(DialogType::DrawSettings),
+            "排队中的对话框必须被去重判定看到（否则连点两次会开两个独立窗口）"
+        );
+        assert!(
+            !manager.has_dialog_type(DialogType::DrawSettings),
+            "排队中的对话框尚未就绪，has_dialog_type 应为 false——两者语义不同，不可互换"
+        );
+        assert!(
+            !manager.is_open_or_pending(DialogType::Settings),
+            "去重必须按类型区分，不得张冠李戴"
+        );
     }
 }
