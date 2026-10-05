@@ -71,7 +71,9 @@ fn test_panel_ctrl_click_fill_bucket_opens_dialog() {
     root.toolbar.tool_panel_open = true;
     root.update(Message::CtrlKeyChanged(true));
 
-    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+    root.update(Event::tool_panel_item_ctrl_selected(
+        ToolPanelItem::FillBucket,
+    ));
 
     assert!(
         root.toolbar.fill_enabled,
@@ -118,7 +120,9 @@ fn test_unrelated_toolbar_event_closes_fill_panel() {
     root.update(Message::CtrlKeyChanged(true));
 
     // 打开分音符填充面板
-    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+    root.update(Event::tool_panel_item_ctrl_selected(
+        ToolPanelItem::FillBucket,
+    ));
     assert!(
         root.state.fill_division_dialog.is_open,
         "前置：悬浮条 Ctrl+点颜料桶应打开分音符填充面板"
@@ -140,8 +144,12 @@ fn test_ctrl_click_fill_again_keeps_panel_open() {
     root.toolbar.tool_panel_open = true;
     root.update(Message::CtrlKeyChanged(true));
 
-    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
-    root.update(Event::tool_panel_item_ctrl_selected(ToolPanelItem::FillBucket));
+    root.update(Event::tool_panel_item_ctrl_selected(
+        ToolPanelItem::FillBucket,
+    ));
+    root.update(Event::tool_panel_item_ctrl_selected(
+        ToolPanelItem::FillBucket,
+    ));
 
     assert!(
         root.state.fill_division_dialog.is_open,
