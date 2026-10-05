@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
-### 音符画 · 文字工具补齐纵向卷帘支持（BUG 修复）
+### 音符画 · 文字工具补齐纵向卷帘支持（文字「正着读」）（BUG 修复）
 
 - **症状** — 纵向卷帘下选中「文字工具」在画布上拉框有反应，但**松手后什么都没有**：
   看不到文本框、看不到 √/×/模式 三个按钮、也弹不出文字输入框；再点一下框还会被
@@ -17,31 +17,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   唯一不可用的一项）。
 - **根因** — `grid/text_tool_box.rs::box_rect_screen`（文本框、√×/模式按钮、
   `TextInput` 覆盖层的**唯一**几何来源）在纵向直接 `return None`：
-  `sample_to_notes` 无入口（其唯一调用点是 `handle_text_tool_pressed` 的按钮命中分支，
+  `confirm_text_tool` 无入口（其唯一调用点是 `handle_text_tool_pressed` 的按钮命中分支，
   而按钮命中又依赖 `button_rects` → `box_rect_screen`），链路三处一起断。
 - **修复（几何）** — `box_rect_screen` 增加纵向转置分支：key→X（覆盖整行 key，
   右缘 = key_hi 右边界）、tick→Y 且 **tick 越大越靠上**（与 `Editor::tick_to_y_vertical`
   同口径）。按钮、输入框、框内拖动随之全部自动可用（无需各自特判）。
-- **修复（预览取向，关键）** — 字形栅格在纵向必须**转置**后再绘制（新增
-  `transpose_preview_rgba`：`x' = 行倒序`、`y' = 列倒序`）。生成侧是「行→key、列→tick」
-  而纵向视图把 key 映射到 X、tick 反向映射到 Y，合成后是一个**镜像变换**；若只转置显示
-  矩形、直接铺图，会得到"预览正立、生成镜像"的新分叉——即看到一套、生成另一套。
-  转置后预览墨格与 √ 生成的音符格在屏幕上**逐格重合**。
+- **修复（轴角色：文字必须正着读，关键）** — 新增 `interaction/text_tool/rasterize.rs::GlyphGrid`
+  作为「字形列/行 → 逻辑轴」的**唯一权威**：横向「列→tick（+snap）、行→key（−1）」；
+  纵向**「列→key（+1）、行→tick（−snap）」**。纵向视图的屏幕轴是 X = key、Y = tick，
+  文字要正着读就必须让 advance 沿屏幕 X、字形"向下"沿屏幕 Y；若照搬横向挂法，字形铺到
+  屏幕上会变成旋转 90° 且翻转的**镜像**（斜着/反着，读不了）。轴角色确定后预览位图
+  **不需要任何转置**（位图 x 即屏幕 X、位图 y 即屏幕 Y），铺进框矩形即为正立可读。
+  采样分辨率同步互换：横向「列 = 时间格、行 = 音高格」，纵向「列 = 音高格、行 = 时间格」。
+- **修复（合并模式合并方向）** — 「key 范围合并」恒为**沿时间轴**合并：横向 = 同一 key
+  行内连续列、纵向 = 同一 key 列内连续行，音符长度 = 该段的时间跨度。若照搬"按行扫描
+  合并"，纵向的合并方向会落到音高轴上，于是"音高跨度"被当成"音符长度"写入文档
+  （长度单位错乱）。
 - **修复（交互口径）** — `handle_text_tool_pressed` / `handle_text_tool_moved` 里写入
   `EditState::Selecting` 的 stored Y：纵向改取 tick 的屏幕 Y（原先无条件用
   `view.key_to_y()` 的横向"key 行上/下边"语义，纵向无意义；虽被纵向渲染分支忽略，
   但属于同类隐患，一并收敛）。
-- **验证** — 新增 5 项回归：`test_box_rect_screen_vertical_transposed`（用独立算术钉死
+- **验证** — 新增 8 项回归：`test_box_rect_screen_vertical_transposed`（独立算术钉死
   key→X / tick→Y，含"tick 越大越靠上"方向断言）、`test_button_rects_vertical_inside_content`
   （三按钮存在、横向排布、完整落在卷帘内容区内）、
-  `test_transpose_preview_maps_row_to_x_and_col_flipped_to_y` 与
-  `test_transpose_preview_non_square_swaps_dims`（转置映射与宽高互换）、
+  `test_vertical_preview_bitmap_axes_match_screen_axes`（**正着读判据**：列增→屏幕 X 增、
+  行增→屏幕 Y 增，且列数 = key 跨度、行数 = 时间格数）、
+  `test_vertical_glyph_grid_matches_preview_and_notes`（预览位图格矩形 ≡ 生成音符的屏幕
+  矩形，逐格重合）、`test_vertical_merged_merges_along_time_axis`（纵向合并沿时间轴、
+  长度 = 时间跨度、空隙断开）、`test_horizontal_glyph_grid_axes`（横向轴角色未被波及：
+  列→tick、行→key，cell 落点与屏幕单调性逐项钉死）、
   `test_vertical_roll_text_tool_reaches_editing_and_confirms`（端到端：拉框 → 松手进编辑态 →
   输入文字 → 点 √ → 生成音符全部落在框的 key/tick 范围内）、
-  `test_vertical_roll_text_box_drag_move_uses_key_axis`（框内拖动走 key 轴、时间轴不动）、
-  `test_vertical_preview_cells_match_generated_notes`（预览格 ≡ 音符格的集合相等）。
-  修复前 `box_rect_screen` 纵向必为 `None`，几何断言即失败；
-  `cargo test -p lumino-ui-editor --lib text_tool` 24 全绿。
+  `test_vertical_roll_text_box_drag_move_uses_key_axis`（框内拖动走 key 轴、时间轴不动）。
+  横向 6 项既有采样用例改为经**生产入口** `sample_to_notes_grid` + 横向 `GlyphGrid` 跑
+  同一批输入与期望值（原先的 `sample_to_notes` 兼容适配层已删除，不留测试专用缝）；
+  `cargo test -p lumino-ui-editor --lib text_tool` 25 全绿。
 
 ### 音符画悬浮工具条 · 工具设置面板改「已启用后再次点击」弹出 + 面板居中对齐按钮（BUG 修复）
 

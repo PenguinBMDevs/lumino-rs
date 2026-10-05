@@ -118,14 +118,19 @@ impl TextToolState {
         }
     }
 
-    /// 框宽对应的采样列数（X 向 = 音符精度）
+    /// 框宽对应的采样列数（**横向卷帘**语义：X 向 = 音符精度 → 时间格数）
+    ///
+    /// 只回答"框内有多少格"；**列挂到哪个逻辑轴**由 `ui-editor` 的
+    /// `GlyphGrid::from_state` 决定——纵向卷帘会把它当作**音高**格数（列→key）。
     pub fn cols(&self, snap: f32) -> usize {
         let (lo, hi) = self.normalized_ticks();
         let snap = snap.max(1.0);
         ((hi - lo) / snap).round().max(1.0) as usize
     }
 
-    /// 框高对应的 key 行数（Y 向 = key 范围）
+    /// 框高对应的 key 行数（**横向卷帘**语义：Y 向 = key 范围 → 音高格数）
+    ///
+    /// 纵向卷帘下它被当作**时间**格数使用（见 `GlyphGrid::from_state`）。
     pub fn rows(&self) -> usize {
         let (lo, hi) = self.normalized_keys();
         (hi - lo + 1) as usize

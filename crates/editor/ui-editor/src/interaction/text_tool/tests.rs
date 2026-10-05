@@ -2,10 +2,24 @@ use super::*;
 use crate::{EditState, Editor};
 use iced_core::Point;
 
+/// 横向卷帘的采样网格（**测试用**手动构造：这些用例喂合成占用网格，
+/// 不经过文本框状态，故直接给出 dims / 原点，与 `GlyphGrid::from_state` 的横向分支同口径）。
+fn horiz_grid(rows: usize, cols: usize, tick_lo: f32, key_top: u16, snap: f32) -> GlyphGrid {
+    GlyphGrid {
+        cols,
+        rows,
+        vertical: false,
+        tick_origin: tick_lo,
+        key_origin: key_top,
+        tick_step: snap,
+    }
+}
+
 #[test]
 fn test_sample_to_notes_normal_single_cell() {
     let occ = vec![vec![true]];
-    let notes = sample_to_notes(&occ, 0.0, 64, 1920.0, false);
+    let grid = horiz_grid(1, 1, 0.0, 64, 1920.0);
+    let notes = sample_to_notes_grid(&occ, &grid, 1920.0, false);
     assert_eq!(notes, vec![(0.0, 64, 1920.0)]);
 }
 
@@ -13,7 +27,8 @@ fn test_sample_to_notes_normal_single_cell() {
 fn test_sample_to_notes_normal_grid() {
     // 2x2 全占用：正常模式生成 4 个独立音符，长度均为 snap
     let occ = vec![vec![true, true], vec![true, true]];
-    let notes = sample_to_notes(&occ, 100.0, 70, 480.0, false);
+    let grid = horiz_grid(2, 2, 100.0, 70, 480.0);
+    let notes = sample_to_notes_grid(&occ, &grid, 480.0, false);
     // 行 0 → key 70，行 1 → key 69
     assert_eq!(notes.len(), 4);
     assert!(notes.contains(&(100.0, 70, 480.0)));
@@ -26,7 +41,8 @@ fn test_sample_to_notes_normal_grid() {
 fn test_sample_to_notes_merged_runs() {
     // 一行 [T, F, T, T, F]：合并为两个音符（[0],[2,3]）
     let occ = vec![vec![true, false, true, true, false]];
-    let notes = sample_to_notes(&occ, 0.0, 60, 1920.0, true);
+    let grid = horiz_grid(1, 5, 0.0, 60, 1920.0);
+    let notes = sample_to_notes_grid(&occ, &grid, 1920.0, true);
     assert_eq!(notes, vec![(0.0, 60, 1920.0), (3840.0, 60, 3840.0)]);
 }
 
@@ -34,7 +50,8 @@ fn test_sample_to_notes_merged_runs() {
 fn test_sample_to_notes_merged_gap_breaks() {
     // 相邻但有空隙的行：空隙处必须断开（不合并本应分开的笔画）
     let occ = vec![vec![true, false, true]];
-    let notes = sample_to_notes(&occ, 0.0, 60, 100.0, true);
+    let grid = horiz_grid(1, 3, 0.0, 60, 100.0);
+    let notes = sample_to_notes_grid(&occ, &grid, 100.0, true);
     // [0..0] len 100, [2..2] len 100
     assert_eq!(notes, vec![(0.0, 60, 100.0), (200.0, 60, 100.0)]);
 }
@@ -43,7 +60,8 @@ fn test_sample_to_notes_merged_gap_breaks() {
 fn test_sample_to_notes_merged_multiline_keys() {
     // 两行：key_top=65 → 行 0 = 65，行 1 = 64
     let occ = vec![vec![true, true], vec![true, false]];
-    let notes = sample_to_notes(&occ, 0.0, 65, 1920.0, true);
+    let grid = horiz_grid(2, 2, 0.0, 65, 1920.0);
+    let notes = sample_to_notes_grid(&occ, &grid, 1920.0, true);
     assert!(notes.contains(&(0.0, 65, 3840.0))); // 行0 连续
     assert!(notes.contains(&(0.0, 64, 1920.0))); // 行1 单格
     assert!(!notes.iter().any(|&(_, k, _)| k == 66));
@@ -52,7 +70,8 @@ fn test_sample_to_notes_merged_multiline_keys() {
 #[test]
 fn test_sample_to_notes_empty() {
     let occ: Vec<Vec<bool>> = vec![];
-    assert!(sample_to_notes(&occ, 0.0, 60, 1920.0, true).is_empty());
+    let grid = horiz_grid(0, 0, 0.0, 60, 1920.0);
+    assert!(sample_to_notes_grid(&occ, &grid, 1920.0, true).is_empty());
 }
 
 #[test]
@@ -326,13 +345,13 @@ fn test_text_tool_press_noop_on_conductor_track() {
     );
 }
 
-// ───────────────────────── 纵向卷帘（转置）回归 ─────────────────────────
+// ─────────────────── 卷帘方向 × 文字工具（轴角色 / 几何 / 生成）回归 ───────────────────
 
-/// 构造纵向卷帘下的文字工具编辑器（画布 800×600、底部键盘 120 → 网格 y ∈ [0,480)）。
+/// 构造文字工具编辑器（画布 800×600、键盘 120）。
 ///
-/// 视图固定：`zoom_x = 1`（tick↔Y 恒等比例）、`zoom_y = 4`（key↔X 每键 4px）、
-/// 无滚动、`snap = 480`。落点换算：`key = x/4`、`tick = 480 - y`。
-fn vertical_text_editor() -> Editor {
+/// 视图固定：`zoom_x = 1`、`zoom_y = 4`、无滚动、`snap = 480`、无标尺。
+/// 纵向落点换算：`key = x/4`、`tick = 480 − y`（网格 y ∈ [0,480)）。
+fn text_tool_editor(is_vertical: bool) -> Editor {
     use crate::tests::test_helpers::seed_notes;
     use lumino_message::Tool;
 
@@ -340,7 +359,7 @@ fn vertical_text_editor() -> Editor {
     editor.editor_state.tool = Tool::Text;
     // 文字工具在 Conductor（track 0）整工具不可用：交互测试必须落在普通轨
     seed_notes(&mut editor, 2, 1, &[]);
-    editor.editor_state.is_vertical_roll = true;
+    editor.editor_state.is_vertical_roll = is_vertical;
     editor.editor_state.canvas.size_x = 800.0;
     editor.editor_state.canvas.size_y = 600.0;
     {
@@ -357,7 +376,52 @@ fn vertical_text_editor() -> Editor {
     editor
 }
 
-/// 纵向卷帘端到端回归（BUG：文字工具在纵向"能拉框、点了没反应"）。
+/// 纵向卷帘的文字工具编辑器
+fn vertical_text_editor() -> Editor {
+    text_tool_editor(true)
+}
+
+/// 横向轴角色（与纵向互为对调）：列→tick（+snap）、行→key（−1）。
+///
+/// 本用例锁死"轴角色互换"没有波及横向：横向仍是「列 = 时间格、行 = 音高格」，
+/// 且字形 advance 沿屏幕向右、字形"向下"沿屏幕向下（key 递减 → Y 递增）。
+#[test]
+fn test_horizontal_glyph_grid_axes() {
+    let mut editor = text_tool_editor(false);
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        // 框：tick [0, 960]（2 个 snap=480 时间格）× key [60, 64]（5 个音高格）
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+    }
+    let snap = editor.editor_state.view.snap_precision;
+    let grid = GlyphGrid::from_state(&editor.editor_state.text_tool, snap, false);
+    assert_eq!(
+        (grid.cols, grid.rows),
+        (2, 5),
+        "横向：列 = 时间格（tick 跨度 / snap）、行 = 音高格（key 跨度）"
+    );
+    // 行 0 = 最高 key（屏幕上方）；列 0 = 框左缘 tick
+    assert_eq!(grid.cell(0, 0), (0.0, 64), "左上 = 起始 tick × 最高 key");
+    assert_eq!(grid.cell(1, 0), (0.0, 63), "行 +1 = key 递减（屏幕向下）");
+    assert_eq!(
+        grid.cell(0, 1),
+        (480.0, 64),
+        "列 +1 = tick 前进一个精度单元"
+    );
+
+    let screen = |cell: (f32, u16)| editor.tick_key_to_pos(cell.0, cell.1);
+    let c0 = screen(grid.cell(0, 0));
+    let c1 = screen(grid.cell(0, 1));
+    let r1 = screen(grid.cell(1, 0));
+    assert!(c1.x > c0.x, "advance 沿屏幕向右：{c0:?} → {c1:?}");
+    assert!((c1.y - c0.y).abs() < 0.01, "同一音高格内 Y 不应变化");
+    assert!(r1.y > c0.y, "字形'向下'沿屏幕向下：{c0:?} → {r1:?}");
+    assert!((r1.x - c0.x).abs() < 0.01, "同一时间格内 X 不应变化");
+}
+
+/// 纵向端到端回归（BUG：文字工具在纵向"能拉框、点了没反应"）。
 ///
 /// **修复前**：`box_rect_screen` 在纵向直接 `return None`，而它是文本框、√×/模式按钮、
 /// TextInput 覆盖层的唯一几何来源 → 三处同时消失，`confirm_text_tool` 无任何入口
@@ -474,62 +538,127 @@ fn test_vertical_roll_text_box_drag_move_uses_key_axis() {
     );
 }
 
-/// 「所见即生成」的**映射层**证明（纵向）：转置后的预览墨格与 `sample_to_notes`
-/// 生成的音符格一一对应。
+/// 「所见即生成」的**生成 + 预览同格**证明（纵向），并锁死"正着读"的轴角色。
 ///
-/// 生成侧口径（`rasterize.rs`）：行→key（行 0 = 最高 key）、列→tick（列 0 = 起始 tick）。
-/// 纵向视图口径：key→X（越大越右）、tick→Y（越大越上）。两者合成后，预览位图在屏幕上
-/// 相对光栅化位图是一个**镜像变换**——若预览直接铺原图，就成了"预览正立、生成镜像"。
-/// 本测试把两侧换算到同一屏幕格上做集合相等，防止任何一侧被单独改动。
+/// 纵向轴角色（`GlyphGrid`）：列→key（+1，屏幕向右）、行→tick（−snap，屏幕向下）。
+/// 因此预览位图 x = 屏幕 X、位图 y = 屏幕 Y，**原样铺进框矩形即正立可读**，
+/// 且每个墨格对应的那枚音符，其屏幕矩形必须与位图格**严格重合**。
 #[test]
-fn test_vertical_preview_cells_match_generated_notes() {
-    use crate::grid::text_tool_box::transpose_preview_rgba;
+fn test_vertical_glyph_grid_matches_preview_and_notes() {
+    use crate::grid::text_tool_box::box_rect_screen;
 
-    let snap = 480.0;
-    let (tick_lo, key_top) = (960.0, 64i32);
-    // 合成占用网格（2 行 × 2 列）：行 0 = key 64、行 1 = key 63；列 0 = tick 960、列 1 = 1440
-    let occ = vec![vec![true, false], vec![false, true]];
-    let notes = sample_to_notes(&occ, tick_lo, key_top, snap, false);
+    let mut editor = vertical_text_editor();
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        // 框：tick [0, 960]（2 个 snap=480 时间格）× key [60, 64]（5 个音高格）
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
+    }
+    let snap = editor.editor_state.view.snap_precision;
+    assert_eq!(snap, 480.0, "本测试的格数断言以 480 精度为前提");
+    let grid = GlyphGrid::from_state(&editor.editor_state.text_tool, snap, true);
     assert_eq!(
-        notes,
-        vec![(tick_lo, 64, snap), (tick_lo + snap, 63, snap)],
-        "生成侧口径：行→key、列→tick"
+        (grid.cols, grid.rows),
+        (5, 2),
+        "纵向：列 = 音高格（key 跨度）、行 = 时间格（tick 跨度 / snap）"
     );
 
-    // 与光栅化同布局的位图（源 x = col、源 y = row，1 像素 / 格）
-    let (w, h) = (2u32, 2u32);
-    let mut src = vec![0u8; (w * h * 4) as usize];
+    // 占用网格：行 0 的列 0/4、行 1 的列 4 有墨
+    let occ = vec![
+        vec![true, false, false, false, true],
+        vec![false, false, false, false, true],
+    ];
+    let notes = sample_to_notes_grid(&occ, &grid, snap, false);
+    assert_eq!(notes.len(), 3, "正常模式：每个墨格一条音符");
+    assert!(
+        notes.iter().all(|&(_, _, len)| len == snap),
+        "正常模式音符长度恒为 snap"
+    );
+    // 行 0 占框顶那一格 ⇒ tick = 960 − 480 = 480；行 1 ⇒ tick = 0
+    assert!(
+        notes.contains(&(480.0, 60, snap)),
+        "行 0 列 0 = 框顶 × 最低 key"
+    );
+    assert!(
+        notes.contains(&(480.0, 64, snap)),
+        "行 0 列 4 = 框顶 × 最高 key（advance 向右 = key 升高）"
+    );
+    assert!(
+        notes.contains(&(0.0, 64, snap)),
+        "行 1 列 4 = 框底 × 最高 key"
+    );
+
+    // 预览位图铺进框矩形后的屏幕格 vs 音符的屏幕矩形：逐格重合
+    let (left, top, right, bottom) = box_rect_screen(&editor).expect("纵向应有框");
+    let cell_w = (right - left) / grid.cols as f32;
+    let cell_h = (bottom - top) / grid.rows as f32;
     for (row, row_ink) in occ.iter().enumerate() {
         for (col, &on) in row_ink.iter().enumerate() {
-            if on {
-                src[((row as u32 * w + col as u32) * 4) as usize + 3] = 255;
+            if !on {
+                continue;
             }
+            let (tick, key) = grid.cell(row, col);
+            // 位图格 (x=col, y=row) 的屏幕矩形
+            let bx0 = left + col as f32 * cell_w;
+            let by0 = top + row as f32 * cell_h;
+            // 音符矩形：起点 tick（时间上最早 = 屏幕下方）→ 起点+snap（上方）
+            let note_low = editor.tick_key_to_pos(tick, key);
+            let note_high = editor.tick_key_to_pos(tick + snap, key);
+            assert!(
+                (note_low.x - bx0).abs() < 0.01,
+                "音符格的屏幕左缘应等于位图格左缘（cell {row},{col}）"
+            );
+            assert!(
+                (note_low.y - (by0 + cell_h)).abs() < 0.01,
+                "音符起始 tick 应落在位图格下缘（纵向时间向上，cell {row},{col}）"
+            );
+            assert!(
+                (note_high.y - by0).abs() < 0.01,
+                "音符末端 tick 应落在位图格上缘（cell {row},{col}）"
+            );
         }
     }
-    let dst = transpose_preview_rgba(&src, w, h);
-    let mut preview_cells: Vec<(usize, usize)> = Vec::new();
-    for y in 0..h as usize {
-        for x in 0..w as usize {
-            if dst[(y * w as usize + x) * 4 + 3] > 0 {
-                preview_cells.push((x, y));
-            }
-        }
+}
+
+/// 纵向「key 范围合并」必须**沿时间轴（行方向）合并**。
+///
+/// 若照搬横向的"按行扫描合并"，纵向的合并方向会变成音高轴，于是"音高跨度"被当成
+/// "音符长度"写入文档（长度单位错乱）。本测试钉死：同一 key 列的连续时间格 → 一条
+/// 长音符，长度 = 格数 × snap，起点 = 段内最小 tick。
+#[test]
+fn test_vertical_merged_merges_along_time_axis() {
+    let mut editor = vertical_text_editor();
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 960.0, 60, 64);
+        tt.active = true;
+        tt.editing = true;
     }
-    preview_cells.sort_unstable();
+    let snap = editor.editor_state.view.snap_precision;
+    let grid = GlyphGrid::from_state(&editor.editor_state.text_tool, snap, true);
+    assert_eq!((grid.cols, grid.rows), (5, 2));
 
-    // 由音符反推期望屏幕格：x = (列数-1) − row（key 越大越右）、y = (行数-1) − col（tick 越大越上）
-    let mut note_cells: Vec<(usize, usize)> = notes
-        .iter()
-        .map(|&(tick, key, _)| {
-            let col = ((tick - tick_lo) / snap).round() as usize;
-            let row = (key_top - key as i32) as usize;
-            (h as usize - 1 - row, w as usize - 1 - col)
-        })
-        .collect();
-    note_cells.sort_unstable();
-
+    // 列 2（key 62）两行都有墨 → 合并为一条长音符（起点 0 = 段内最小 tick）
+    let occ = vec![
+        vec![false, false, true, false, false],
+        vec![false, false, true, false, false],
+    ];
+    let notes = sample_to_notes_grid(&occ, &grid, snap, true);
     assert_eq!(
-        preview_cells, note_cells,
-        "纵向预览墨格必须与 √ 生成的音符格逐格一致（否则就是「看到一套、生成另一套」）"
+        notes,
+        vec![(0.0, 62, 2.0 * snap)],
+        "同一 key 列的连续时间格应合并为一条长音符（长度 = 时间跨度）"
+    );
+
+    // 空隙必须断开：列 2 只有行 0 有墨 → 单格音符
+    let occ_gap = vec![
+        vec![false, false, true, false, false],
+        vec![false, false, false, false, false],
+    ];
+    assert_eq!(
+        sample_to_notes_grid(&occ_gap, &grid, snap, true),
+        vec![(480.0, 62, snap)],
+        "行 0 单独有墨 = 框顶那一格（tick 480）"
     );
 }

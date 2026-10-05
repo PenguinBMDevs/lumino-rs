@@ -1,4 +1,4 @@
-use super::{rasterize::point_in_rect, rasterize_text, sample_to_notes};
+use super::{GlyphGrid, rasterize::point_in_rect, rasterize_text, sample_to_notes_grid};
 use crate::grid::text_tool_box::button_rects;
 use crate::{EditState, Editor, Note};
 use iced_core::Point;
@@ -144,9 +144,10 @@ impl Editor {
 
     /// 文字工具：确认生成音符（√ 按钮）
     ///
-    /// 按字形占位采样：
-    /// 正常模式：每个有墨水的 (col,row) 生成一个音符，长度 = 音符精度；
-    /// key 范围合并模式：每个 key 行内连续有墨水的列合并为一个音符，任意空隙断开（不合并本应分开的笔画）。
+    /// 按字形占位采样（轴角色见 [`GlyphGrid`]，横向/纵向各按视图轴向挂载，保证文字正着读）：
+    /// 正常模式：每个有墨水的采样格生成一个音符，长度 = 音符精度；
+    /// key 范围合并模式：**沿时间轴**把连续墨水合并为一个音符，任意空隙断开
+    /// （不合并本应分开的笔画）。
     ///
     /// 成功后清空文本框与编辑历史，写入当前轨并进入撤销栈。返回是否生成了音符。
     pub(crate) fn confirm_text_tool(&mut self) -> bool {
@@ -161,21 +162,17 @@ impl Editor {
             return false;
         }
         let snap = self.editor_state.view.snap_precision;
-        let (tick_lo, _) = tt.normalized_ticks();
-        let (_key_lo, key_hi) = tt.normalized_keys();
-        let cols = tt.cols(snap);
-        let rows = tt.rows();
-        if cols == 0 || rows == 0 {
+        // 轴角色的唯一决定点：预览（`grid/text_tool_box`）与生成必须用同一个 grid
+        let grid = GlyphGrid::from_state(&tt, snap, self.editor_state.is_vertical_roll);
+        if grid.cols == 0 || grid.rows == 0 {
             return false;
         }
-        let occupancy = match rasterize_text(&tt.text, cols, rows, tt.font_family) {
+        let occupancy = match rasterize_text(&tt.text, grid.cols, grid.rows, tt.font_family) {
             Some(o) => o,
             None => return false,
         };
 
-        // 行 0 = 文字顶部 = 最高 key
-        let key_top = key_hi as i32;
-        let notes = sample_to_notes(&occupancy, tick_lo, key_top, snap, tt.mode.is_merged());
+        let notes = sample_to_notes_grid(&occupancy, &grid, snap, tt.mode.is_merged());
 
         if notes.is_empty() {
             return false;

@@ -5,14 +5,15 @@
 //! 视觉与曲线工具、图片转 MIDI 共用 `confirm_buttons` 模块。
 //!
 //! **横向 / 纵向卷帘均支持**（2026-10 补齐纵向）：`box_rect_screen` 是文本框、按钮与
-//! TextInput 覆盖层的唯一几何来源，纵向走转置映射（key→X、tick→Y 且 tick 越大越靠上）；
-//! 字形预览在纵向必须经 [`transpose_preview_rgba`] 转置后绘制，否则出现"预览正立、
-//! 生成镜像"的分叉（生成侧见 `sample_to_notes`：行→key、列→tick）。
+//! TextInput 覆盖层的唯一几何来源，纵向走转置映射（key→X、tick→Y 且 tick 越大越靠上）。
+//! 字形**两轴的角色**（列→哪个逻辑轴）由 `GlyphGrid::from_state` 唯一决定，纵向把
+//! advance 挂到 key 轴上——因此预览位图无需任何转置，铺进框矩形即为正立可读，且与
+//! √ 生成的音符逐格重合。
 
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
 use crate::grid::utils::content_bounds;
-use crate::interaction::text_tool::rasterize_glyph_alpha;
+use crate::interaction::text_tool::{GlyphGrid, rasterize_glyph_alpha};
 use iced_core::image::{self, FilterMethod};
 use iced_core::{Color, Image, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
@@ -105,35 +106,6 @@ pub fn button_rects(editor: &Editor) -> Option<TextToolButtonRects> {
     })
 }
 
-/// 纵向卷帘字形预览：把字形 RGBA 位图转置为「X = key 轴、Y = tick 轴（tick 越大越靠上）」
-///
-/// 输入布局（与 `rasterize_glyph_alpha` 一致）：`w` = 采样列数 × SS（源 x = `col`，即 tick 方向）、
-/// `h` = key 行数 × SS（源 y = `row`，行 0 = 文字顶部 = 最高 key）。
-///
-/// 输出布局：`w' = h`、`h' = w`，映射关系为
-/// - `x' = h - 1 - row`：行 0（最高 key）→ 屏幕**最右**（纵向 key→X 同向）；
-/// - `y' = w - 1 - col`：列 0（起始 tick）→ 屏幕**最下**（纵向 tick→Y 反向）。
-///
-/// 与音符生成侧 `interaction::text_tool::rasterize::sample_to_notes`（行→key、列→tick）
-/// 严格同源，故转置后的预览与 √ 生成的音符在屏幕上**逐格重合**——纵向卷帘同样满足
-/// 「看到的就是生成的」。注意这不是"把显示矩形转置一下"：转置是**镜像**变换，
-/// 直接铺图会把预览画成正立，与生成的镜像图案不符。
-pub(crate) fn transpose_preview_rgba(src: &[u8], w: u32, h: u32) -> Vec<u8> {
-    let (dw, dh) = (h, w);
-    let mut dst = vec![0u8; (dw as usize) * (dh as usize) * 4];
-    for y in 0..dh {
-        for x in 0..dw {
-            // 逆映射：目标 (x, y) ← 源 (col, row) = (w-1-y, h-1-x)
-            let sx = w - 1 - y;
-            let sy = h - 1 - x;
-            let si = ((sy * w + sx) * 4) as usize;
-            let di = ((y * dw + x) * 4) as usize;
-            dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
-        }
-    }
-    dst
-}
-
 /// 绘制文本框（常驻）+ 悬浮按钮
 pub fn draw(
     editor: &Editor,
@@ -173,14 +145,21 @@ pub fn draw(
 
     // 文字预览：直接渲染「生成音符用的同一份栅格」，保证预览与最终放置的音符完全一致
     // （同为底部对齐、同被拉伸铺满框，方向与音符一一对应）——看到的就是生成的。
+    //
+    // 横向 / 纵向都不做任何转置：栅格的两轴角色由 `GlyphGrid` 决定，位图 x 已是屏幕 X、
+    // 位图 y 已是屏幕 Y（纵向 = 列→key→向右、行→tick→向下），故原样铺进框矩形即正立可读。
     {
         let tt = &editor.editor_state.text_tool;
         let text = tt.text.trim();
         if !text.is_empty() {
-            let snap = editor.editor_state.view.snap_precision;
-            let cols = tt.cols(snap);
-            let rows = tt.rows();
-            if let Some((iw, ih, buf)) = rasterize_glyph_alpha(text, cols, rows, tt.font_family) {
+            let grid = GlyphGrid::from_state(
+                tt,
+                editor.editor_state.view.snap_precision,
+                editor.editor_state.is_vertical_roll,
+            );
+            if let Some((iw, ih, buf)) =
+                rasterize_glyph_alpha(text, grid.cols, grid.rows, tt.font_family)
+            {
                 let (cr, cg, cb) = (
                     (TEXT_PREVIEW_COLOR.r * 255.0) as u8,
                     (TEXT_PREVIEW_COLOR.g * 255.0) as u8,
@@ -193,16 +172,6 @@ pub fn draw(
                     rgba.push(cb);
                     rgba.push(a);
                 }
-                // 纵向卷帘：栅格必须**转置**后再绘制。生成侧是「行→key、列→tick」
-                // （`sample_to_notes`），纵向视图又把 key 映射到 X、tick 反向映射到 Y，
-                // 于是屏幕上的字形是一个**镜像变换**的结果。若按原样 `draw_image` 铺进
-                // 矩形，预览会是"正立"的、与 √ 生成的镜像图案不符——即"看到一套、生成
-                // 另一套"。转置后二者在同一格上逐像素重合（见 `transpose_preview_rgba`）。
-                let (iw, ih, rgba) = if editor.editor_state.is_vertical_roll {
-                    (ih, iw, transpose_preview_rgba(&rgba, iw, ih))
-                } else {
-                    (iw, ih, rgba)
-                };
                 let handle = image::Handle::from_rgba(iw, ih, rgba);
                 let img = Image::new(handle).filter_method(FilterMethod::Linear);
                 // 整框绘制：栅格行 0 对齐框顶，底部对齐的墨水落在框底，与音符放置区重合。
@@ -368,43 +337,38 @@ mod tests {
         }
     }
 
-    /// 「所见即生成」的**映射层**证明：转置后的预览格与音符格同口径。
+    /// 「所见即生成」的**映射层**证明（纵向）：预览位图的像素轴必须与屏幕轴同向，
+    /// 且与 √ 生成的音符落在同一格。
     ///
-    /// 源位图 2 列 × 2 行（颜色编码 = `[col, row]`），转置后：
-    /// - 左上 = (col 1, row 1) = 最高 tick × 最低 key；
-    /// - 右上 = (col 1, row 0) = 最高 tick × 最高 key；
-    /// - 左下 = (col 0, row 1) = 最低 tick × 最低 key；
-    /// - 右下 = (col 0, row 0) = 最低 tick × 最高 key。
-    ///
-    /// 与纵向卷帘屏幕语义（X = key 越大越右、Y = tick 越大越上）逐项吻合。
+    /// 纵向：位图 x = 列 → key 递增 → 屏幕向右；位图 y = 行 → tick 递减 → 屏幕向下。
+    /// 故"文字正着读"的判据是两条单调性：**列增 → 屏幕 X 增、行增 → 屏幕 Y 增**
+    /// （后者等价于时间倒退，因为纵向 tick 越大越靠上）。
     #[test]
-    fn test_transpose_preview_maps_row_to_x_and_col_flipped_to_y() {
-        let mut src = Vec::new();
-        for row in 0..2u8 {
-            for col in 0..2u8 {
-                src.extend_from_slice(&[col, row, 0, 255]);
-            }
-        }
-        let dst = transpose_preview_rgba(&src, 2, 2);
-        assert_eq!(dst.len(), src.len(), "转置不改变总像素数（宽高互换）");
-        let at = |x: usize, y: usize| {
-            let i = (y * 2 + x) * 4;
-            [dst[i], dst[i + 1]]
-        };
-        assert_eq!(at(0, 0), [1, 1], "左上 = 最高 tick × 最低 key");
-        assert_eq!(at(1, 0), [1, 0], "右上 = 最高 tick × 最高 key");
-        assert_eq!(at(0, 1), [0, 1], "左下 = 最低 tick × 最低 key");
-        assert_eq!(at(1, 1), [0, 0], "右下 = 最低 tick × 最高 key");
-    }
+    fn test_vertical_preview_bitmap_axes_match_screen_axes() {
+        use crate::interaction::text_tool::GlyphGrid;
 
-    /// 转置的边界：非方阵下宽高正确互换（3 列 × 2 行 → 2 × 3）。
-    #[test]
-    fn test_transpose_preview_non_square_swaps_dims() {
-        let (w, h) = (3u32, 2u32);
-        let src = vec![7u8; (w * h * 4) as usize];
-        let dst = transpose_preview_rgba(&src, w, h);
-        assert_eq!(dst.len(), (w * h * 4) as usize);
-        assert_eq!(dst.len() / 4, (h * w) as usize, "像素数守恒（2×3 = 3×2）");
-        assert!(dst.iter().all(|&b| b == 7 || b == 0), "只搬移、不合成颜色");
+        let mut editor = editor_with_box(); // tick [0,3840]、key [60,64]
+        editor.editor_state.is_vertical_roll = true;
+        let snap = editor.editor_state.view.snap_precision;
+        assert_eq!(snap, 1920.0, "本测试的格数断言以默认音符精度 1920 为前提");
+        let grid = GlyphGrid::from_state(&editor.editor_state.text_tool, snap, true);
+
+        // 纵向轴角色：advance(列) = key、高度(行) = tick ⇒ 列数 = key 跨度、行数 = 时间格数
+        assert_eq!(grid.cols, 5, "纵向列数 = key 跨度（60..=64）");
+        assert_eq!(grid.rows, 2, "纵向行数 = tick 跨度 / snap（3840/1920）");
+
+        let screen = |cell: (f32, u16)| editor.tick_key_to_pos(cell.0, cell.1);
+        // 列 +1（advance 前进）→ 屏幕 X 增大、Y 不变（同一时间格）
+        let c0 = screen(grid.cell(0, 0));
+        let c1 = screen(grid.cell(0, 1));
+        assert!(
+            c1.x > c0.x,
+            "advance 必须沿屏幕向右（正着读）：{c0:?} → {c1:?}"
+        );
+        assert!((c1.y - c0.y).abs() < 0.01, "同一时间格内 Y 不应变化");
+        // 行 +1（字形向下）→ 屏幕 Y 增大、X 不变（同一音高格）
+        let r1 = screen(grid.cell(1, 0));
+        assert!(r1.y > c0.y, "字形'向下'必须沿屏幕向下：{c0:?} → {r1:?}");
+        assert!((r1.x - c0.x).abs() < 0.01, "同一音高格内 X 不应变化");
     }
 }
