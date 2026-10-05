@@ -15,6 +15,7 @@ use lumino_gpu_synth::midi::MidiEvent;
 use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
 use lumino_midi_model::multi_port::channels_for_max_port_clamped;
 
+use crate::api::layout::{LayoutAction, layout_action};
 use crate::constants::*;
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
@@ -311,40 +312,44 @@ impl SynthControl for Lgs {
     ///   再停旧流、起新流并热替换事件/控制发送器（已创建的输出连接自动跟随）；
     /// - 仅成功才提交布局。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
-        if max_port == self.midi_max_port {
-            tracing::info!(
-                "LGS (GPU): 文档切换，布局未变（max_port={max_port}），轻量复位通道状态"
-            );
-            let playback = self._playback.lock().unwrap_or_else(|e| e.into_inner());
-            if !playback.reset_synth_state() {
-                return Err("LGS (GPU): 复位请求发送失败（渲染线程已停止）".into());
+        match layout_action(self.midi_max_port, max_port) {
+            LayoutAction::LightReset => {
+                tracing::info!(
+                    "LGS (GPU): 文档切换，布局未变（max_port={max_port}），轻量复位通道状态"
+                );
+                let playback = self._playback.lock().unwrap_or_else(|e| e.into_inner());
+                if !playback.reset_synth_state() {
+                    return Err("LGS (GPU): 复位请求发送失败（渲染线程已停止）".into());
+                }
+                Ok(())
             }
-            return Ok(());
+            LayoutAction::Rebuild => {
+                tracing::info!(
+                    "LGS (GPU): 端口布局 {} -> {max_port}，全量重建合成管线",
+                    self.midi_max_port
+                );
+                let mut options = self.options.clone();
+                options.midi_max_port = max_port;
+                let synth = Self::build_synth(&self.soundfont_path, &options)
+                    .map_err(|e| format!("重建 GPU 合成引擎失败: {e}"))?;
+                let device = crate::audio_devices::resolve_audio_output_device(
+                    options.audio_output_device.as_deref(),
+                );
+                {
+                    let mut old = self._playback.lock().unwrap_or_else(|e| e.into_inner());
+                    old.stop();
+                }
+                let playback = AudioPlayback::start(synth, device)
+                    .map_err(|e| format!("重启 GPU 音频流失败: {e}"))?;
+                *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
+                *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) =
+                    playback.control_sender();
+                *self._playback.lock().unwrap_or_else(|e| e.into_inner()) = playback;
+                self.options = options;
+                self.midi_max_port = max_port;
+                Ok(())
+            }
         }
-
-        tracing::info!(
-            "LGS (GPU): 端口布局 {} -> {max_port}，全量重建合成管线",
-            self.midi_max_port
-        );
-        let mut options = self.options.clone();
-        options.midi_max_port = max_port;
-        let synth = Self::build_synth(&self.soundfont_path, &options)
-            .map_err(|e| format!("重建 GPU 合成引擎失败: {e}"))?;
-        let device = crate::audio_devices::resolve_audio_output_device(
-            options.audio_output_device.as_deref(),
-        );
-        {
-            let mut old = self._playback.lock().unwrap_or_else(|e| e.into_inner());
-            old.stop();
-        }
-        let playback =
-            AudioPlayback::start(synth, device).map_err(|e| format!("重启 GPU 音频流失败: {e}"))?;
-        *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
-        *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.control_sender();
-        *self._playback.lock().unwrap_or_else(|e| e.into_inner()) = playback;
-        self.options = options;
-        self.midi_max_port = max_port;
-        Ok(())
     }
 }
 
