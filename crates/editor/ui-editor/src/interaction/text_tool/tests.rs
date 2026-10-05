@@ -325,3 +325,211 @@ fn test_text_tool_press_noop_on_conductor_track() {
         "Conductor 音轨不应写入任何音符"
     );
 }
+
+// ───────────────────────── 纵向卷帘（转置）回归 ─────────────────────────
+
+/// 构造纵向卷帘下的文字工具编辑器（画布 800×600、底部键盘 120 → 网格 y ∈ [0,480)）。
+///
+/// 视图固定：`zoom_x = 1`（tick↔Y 恒等比例）、`zoom_y = 4`（key↔X 每键 4px）、
+/// 无滚动、`snap = 480`。落点换算：`key = x/4`、`tick = 480 - y`。
+fn vertical_text_editor() -> Editor {
+    use crate::tests::test_helpers::seed_notes;
+    use lumino_message::Tool;
+
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Text;
+    // 文字工具在 Conductor（track 0）整工具不可用：交互测试必须落在普通轨
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.editor_state.is_vertical_roll = true;
+    editor.editor_state.canvas.size_x = 800.0;
+    editor.editor_state.canvas.size_y = 600.0;
+    {
+        let view = &mut editor.editor_state.view;
+        view.zoom_x = 1.0;
+        view.zoom_y = 4.0;
+        view.scroll_x = 0.0;
+        view.scroll_y = 0.0;
+        view.keyboard_width = 120.0;
+        view.ruler_height = 0.0;
+        view.snap_precision = 480.0;
+        view.visible_key_count = 128;
+    }
+    editor
+}
+
+/// 纵向卷帘端到端回归（BUG：文字工具在纵向"能拉框、点了没反应"）。
+///
+/// **修复前**：`box_rect_screen` 在纵向直接 `return None`，而它是文本框、√×/模式按钮、
+/// TextInput 覆盖层的唯一几何来源 → 三处同时消失，`confirm_text_tool` 无任何入口
+/// （其唯一调用点是 `handle_text_tool_pressed` 的按钮命中分支），文字工具在纵向静默失效。
+///
+/// **修复后**整条链路必须走通：拉框 → 松手进入编辑态 → 框与三按钮存在 → 输入文字 →
+/// 点 √ 生成落在框内（key ∈ 框的 key 范围）的音符。
+#[test]
+fn test_vertical_roll_text_tool_reaches_editing_and_confirms() {
+    use crate::grid::text_tool_box::{box_rect_screen, button_rects};
+    use lumino_message::EditorAction;
+
+    let mut editor = vertical_text_editor();
+    // 拉框：按下 (x=200 → key 50, y=400 → tick 80→吸附 0)，拖到 (x=280 → key 70, y=100 → tick 380→吸附 480)
+    editor.handle_text_tool_pressed(Point::new(200.0, 400.0), 50);
+    editor.handle_text_tool_moved(Point::new(280.0, 100.0));
+    editor.handle_released();
+
+    let tt = &editor.editor_state.text_tool;
+    assert!(tt.active && tt.editing, "松手后应进入文字编辑态");
+    assert_eq!(tt.normalized_ticks(), (0.0, 480.0), "tick 轴按精度吸附");
+    assert_eq!(
+        tt.normalized_keys(),
+        (50, 70),
+        "key 轴取拉框两端的屏幕 X 格"
+    );
+
+    // 几何存在性（修复前此处必为 None，是本回归的核心断言）
+    let (l, t, r, b) = box_rect_screen(&editor).expect("纵向卷帘必须给出文本框几何");
+    assert!(r > l && b > t, "框必须有面积：{l},{t},{r},{b}");
+    let btns = button_rects(&editor).expect("纵向卷帘必须给出 √/×/模式 按钮");
+
+    // 输入文字走真实消息路径（`set_text_tool_text` 要求 active）
+    editor.handle_action(EditorAction::TextToolTextChanged("A".to_string()));
+    assert_eq!(editor.editor_state.text_tool.text, "A");
+
+    // 字体环境探测：无可用系统字体时只验几何（与既有测试的"CI 缺失则跳过"约定一致）
+    let snap = editor.editor_state.view.snap_precision;
+    let cols = editor.editor_state.text_tool.cols(snap);
+    let rows = editor.editor_state.text_tool.rows();
+    let family = editor.editor_state.text_tool.font_family;
+    if rasterize_text("A", cols, rows, family).is_none() {
+        eprintln!(
+            "跳过 test_vertical_roll_text_tool_reaches_editing_and_confirms 的生成断言：无可用系统字体"
+        );
+        return;
+    }
+
+    // 点 √（按钮命中）→ 生成音符
+    let center = Point::new(
+        btns.confirm.x + btns.confirm.width * 0.5,
+        btns.confirm.y + btns.confirm.height * 0.5,
+    );
+    editor.handle_text_tool_pressed(center, 50);
+    assert!(
+        !editor.editor_state.text_tool.active,
+        "确认后文本框应被清空（进入下一轮）"
+    );
+    let notes = editor.editor_state.data.current_track_notes();
+    assert!(!notes.is_empty(), "确认后当前轨应写入音符");
+    for n in notes.iter() {
+        assert!(
+            (50..=70).contains(&n.key),
+            "生成的音符必须落在框的 key 范围内，实际 key {}",
+            n.key
+        );
+        assert!(
+            n.start_tick <= 480,
+            "生成的音符必须落在框的 tick 范围内，实际 start_tick {}",
+            n.start_tick
+        );
+    }
+}
+
+/// 纵向卷帘：框内拖拽移动必须走 **key 轴（屏幕 X）** 平移，时间轴（Y）不动。
+///
+/// 横向的"框内按下"语义是 X=tick / Y=key；纵向转置后若仍按横向读取，拖动会退化为
+/// "上下拖改 key、左右拖改 tick"——表象是框乱跳。此处钉死转置后的轴向。
+#[test]
+fn test_vertical_roll_text_box_drag_move_uses_key_axis() {
+    let mut editor = vertical_text_editor();
+    {
+        let tt = &mut editor.editor_state.text_tool;
+        tt.set_drag(0.0, 480.0, 50, 70);
+        tt.active = true;
+        tt.editing = true;
+    }
+
+    // 框内按下（x=260 → key 65，y=400 → tick 80）：应进入拖动
+    editor.handle_text_tool_pressed(Point::new(260.0, 400.0), 65);
+    assert!(
+        editor.editor_state.text_tool.is_dragging(),
+        "纵向框内按下也应进入拖拽移动"
+    );
+
+    // 向右拖到 x=300（key 75）：key 轴整体 +10 行，tick 不变
+    editor.handle_text_tool_box_move(Point::new(300.0, 400.0));
+    let tt = &editor.editor_state.text_tool;
+    assert_eq!(
+        (tt.start_key, tt.end_key),
+        (60, 80),
+        "右侧拖拽 = key 轴整体右移 10 行"
+    );
+    assert_eq!(
+        (tt.start_tick, tt.end_tick),
+        (0.0, 480.0),
+        "时间轴未动则 tick 必须不变"
+    );
+
+    editor.handle_released();
+    assert!(
+        !editor.editor_state.text_tool.is_dragging(),
+        "释放后应清除拖拽临时状态"
+    );
+}
+
+/// 「所见即生成」的**映射层**证明（纵向）：转置后的预览墨格与 `sample_to_notes`
+/// 生成的音符格一一对应。
+///
+/// 生成侧口径（`rasterize.rs`）：行→key（行 0 = 最高 key）、列→tick（列 0 = 起始 tick）。
+/// 纵向视图口径：key→X（越大越右）、tick→Y（越大越上）。两者合成后，预览位图在屏幕上
+/// 相对光栅化位图是一个**镜像变换**——若预览直接铺原图，就成了"预览正立、生成镜像"。
+/// 本测试把两侧换算到同一屏幕格上做集合相等，防止任何一侧被单独改动。
+#[test]
+fn test_vertical_preview_cells_match_generated_notes() {
+    use crate::grid::text_tool_box::transpose_preview_rgba;
+
+    let snap = 480.0;
+    let (tick_lo, key_top) = (960.0, 64i32);
+    // 合成占用网格（2 行 × 2 列）：行 0 = key 64、行 1 = key 63；列 0 = tick 960、列 1 = 1440
+    let occ = vec![vec![true, false], vec![false, true]];
+    let notes = sample_to_notes(&occ, tick_lo, key_top, snap, false);
+    assert_eq!(
+        notes,
+        vec![(tick_lo, 64, snap), (tick_lo + snap, 63, snap)],
+        "生成侧口径：行→key、列→tick"
+    );
+
+    // 与光栅化同布局的位图（源 x = col、源 y = row，1 像素 / 格）
+    let (w, h) = (2u32, 2u32);
+    let mut src = vec![0u8; (w * h * 4) as usize];
+    for (row, row_ink) in occ.iter().enumerate() {
+        for (col, &on) in row_ink.iter().enumerate() {
+            if on {
+                src[((row as u32 * w + col as u32) * 4) as usize + 3] = 255;
+            }
+        }
+    }
+    let dst = transpose_preview_rgba(&src, w, h);
+    let mut preview_cells: Vec<(usize, usize)> = Vec::new();
+    for y in 0..h as usize {
+        for x in 0..w as usize {
+            if dst[(y * w as usize + x) * 4 + 3] > 0 {
+                preview_cells.push((x, y));
+            }
+        }
+    }
+    preview_cells.sort_unstable();
+
+    // 由音符反推期望屏幕格：x = (列数-1) − row（key 越大越右）、y = (行数-1) − col（tick 越大越上）
+    let mut note_cells: Vec<(usize, usize)> = notes
+        .iter()
+        .map(|&(tick, key, _)| {
+            let col = ((tick - tick_lo) / snap).round() as usize;
+            let row = (key_top - key as i32) as usize;
+            (h as usize - 1 - row, w as usize - 1 - col)
+        })
+        .collect();
+    note_cells.sort_unstable();
+
+    assert_eq!(
+        preview_cells, note_cells,
+        "纵向预览墨格必须与 √ 生成的音符格逐格一致（否则就是「看到一套、生成另一套」）"
+    );
+}

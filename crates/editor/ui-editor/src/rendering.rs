@@ -240,8 +240,8 @@ impl Editor {
 
     /// 文字工具编辑态的 TextInput 覆盖层（定位在文本框屏幕矩形上）
     ///
-    /// 仅当文本框激活且处于编辑态时返回 `Some`；纵向卷帘下 `box_rect_screen`
-    /// 返回 `None`，故不叠加。
+    /// 仅当文本框激活且处于编辑态时返回 `Some`；横向 / 纵向卷帘均由
+    /// `box_rect_screen` 给出转置后的矩形（纵向：X = key、Y = tick），故两个方向都会叠加。
     #[allow(clippy::type_complexity)]
     fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
         // Conductor 音轨（track 0）：整工具不可用，绝不叠加文字输入框

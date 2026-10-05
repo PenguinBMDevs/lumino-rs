@@ -9,6 +9,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 文字工具补齐纵向卷帘支持（BUG 修复）
+
+- **症状** — 纵向卷帘下选中「文字工具」在画布上拉框有反应，但**松手后什么都没有**：
+  看不到文本框、看不到 √/×/模式 三个按钮、也弹不出文字输入框；再点一下框还会被
+  取消掉。表现为"能选中、点了没反应"的静默失效（音符画悬浮工具条 6 个在架工具中
+  唯一不可用的一项）。
+- **根因** — `grid/text_tool_box.rs::box_rect_screen`（文本框、√×/模式按钮、
+  `TextInput` 覆盖层的**唯一**几何来源）在纵向直接 `return None`：
+  `sample_to_notes` 无入口（其唯一调用点是 `handle_text_tool_pressed` 的按钮命中分支，
+  而按钮命中又依赖 `button_rects` → `box_rect_screen`），链路三处一起断。
+- **修复（几何）** — `box_rect_screen` 增加纵向转置分支：key→X（覆盖整行 key，
+  右缘 = key_hi 右边界）、tick→Y 且 **tick 越大越靠上**（与 `Editor::tick_to_y_vertical`
+  同口径）。按钮、输入框、框内拖动随之全部自动可用（无需各自特判）。
+- **修复（预览取向，关键）** — 字形栅格在纵向必须**转置**后再绘制（新增
+  `transpose_preview_rgba`：`x' = 行倒序`、`y' = 列倒序`）。生成侧是「行→key、列→tick」
+  而纵向视图把 key 映射到 X、tick 反向映射到 Y，合成后是一个**镜像变换**；若只转置显示
+  矩形、直接铺图，会得到"预览正立、生成镜像"的新分叉——即看到一套、生成另一套。
+  转置后预览墨格与 √ 生成的音符格在屏幕上**逐格重合**。
+- **修复（交互口径）** — `handle_text_tool_pressed` / `handle_text_tool_moved` 里写入
+  `EditState::Selecting` 的 stored Y：纵向改取 tick 的屏幕 Y（原先无条件用
+  `view.key_to_y()` 的横向"key 行上/下边"语义，纵向无意义；虽被纵向渲染分支忽略，
+  但属于同类隐患，一并收敛）。
+- **验证** — 新增 5 项回归：`test_box_rect_screen_vertical_transposed`（用独立算术钉死
+  key→X / tick→Y，含"tick 越大越靠上"方向断言）、`test_button_rects_vertical_inside_content`
+  （三按钮存在、横向排布、完整落在卷帘内容区内）、
+  `test_transpose_preview_maps_row_to_x_and_col_flipped_to_y` 与
+  `test_transpose_preview_non_square_swaps_dims`（转置映射与宽高互换）、
+  `test_vertical_roll_text_tool_reaches_editing_and_confirms`（端到端：拉框 → 松手进编辑态 →
+  输入文字 → 点 √ → 生成音符全部落在框的 key/tick 范围内）、
+  `test_vertical_roll_text_box_drag_move_uses_key_axis`（框内拖动走 key 轴、时间轴不动）、
+  `test_vertical_preview_cells_match_generated_notes`（预览格 ≡ 音符格的集合相等）。
+  修复前 `box_rect_screen` 纵向必为 `None`，几何断言即失败；
+  `cargo test -p lumino-ui-editor --lib text_tool` 24 全绿。
+
 ### 音符画悬浮工具条 · 工具设置面板改「已启用后再次点击」弹出 + 面板居中对齐按钮（BUG 修复）
 
 - **症状（交互）** — 悬浮工具条上要弹出某工具的设置面板（画刷设置 / 形状选择 / 分音符

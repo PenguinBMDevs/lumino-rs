@@ -3,6 +3,11 @@
 //! 激活文字工具并拉出框后，常驻绘制文本框（边框 + 淡填充）；
 //! 框右侧绘制 √（确认）/ ×（取消）/ 模式切换三个悬浮按钮，
 //! 视觉与曲线工具、图片转 MIDI 共用 `confirm_buttons` 模块。
+//!
+//! **横向 / 纵向卷帘均支持**（2026-10 补齐纵向）：`box_rect_screen` 是文本框、按钮与
+//! TextInput 覆盖层的唯一几何来源，纵向走转置映射（key→X、tick→Y 且 tick 越大越靠上）；
+//! 字形预览在纵向必须经 [`transpose_preview_rgba`] 转置后绘制，否则出现"预览正立、
+//! 生成镜像"的分叉（生成侧见 `sample_to_notes`：行→key、列→tick）。
 
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
@@ -35,18 +40,31 @@ pub struct TextToolButtonRects {
 
 /// 计算文本框在屏幕上的矩形 (left, top, right, bottom)
 ///
-/// 仅横向卷帘实现；纵向卷帘暂返回 `None`（后续补充转置映射）。
+/// - 横向：X = tick、Y = key（key 越大越靠上）；
+/// - 纵向（转置）：X = key、Y = tick，且 **tick 越大越靠上**
+///   （与 `Editor::tick_to_y_vertical` 同一口径，见 `coords.rs`）。
+///
+/// 两个方向都必须给出几何：本函数是文本框、√×/模式按钮与 TextInput 覆盖层的**唯一**
+/// 几何来源（三处都经 `box_rect_screen?` / `button_rects` 取用），任一方向返回 `None`
+/// 都会让整条文字工具链路（预览 / 按钮 / 输入框）静默失效——纵向卷帘此前正是如此：
+/// 工具可选、拉框有反应，但松手后无框、无按钮、无输入框，表现为"点了没反应"。
 pub fn box_rect_screen(editor: &Editor) -> Option<(f32, f32, f32, f32)> {
     if !editor.editor_state.text_tool.active {
-        return None;
-    }
-    if editor.editor_state.is_vertical_roll {
         return None;
     }
     let tt = &editor.editor_state.text_tool;
     let (tick_lo, tick_hi) = tt.normalized_ticks();
     let (key_lo, key_hi) = tt.normalized_keys();
     let view = &editor.editor_state.view;
+    if editor.editor_state.is_vertical_roll {
+        // key → X（key 越大越靠右，覆盖整行 key：右缘 = key_hi 的右边界）
+        let left = editor.key_to_x_vertical(key_lo);
+        let right = editor.key_to_x_vertical(key_hi) + view.zoom_y;
+        // tick → Y（tick 越大越靠上：tick_hi 在上、tick_lo 在下）
+        let top = editor.tick_to_y_vertical(tick_hi);
+        let bottom = editor.tick_to_y_vertical(tick_lo);
+        return Some((left, top, right, bottom));
+    }
     let left = view.tick_to_x(tick_lo);
     let right = view.tick_to_x(tick_hi);
     let top = view.key_to_y(key_hi);
@@ -85,6 +103,35 @@ pub fn button_rects(editor: &Editor) -> Option<TextToolButtonRects> {
         cancel,
         mode,
     })
+}
+
+/// 纵向卷帘字形预览：把字形 RGBA 位图转置为「X = key 轴、Y = tick 轴（tick 越大越靠上）」
+///
+/// 输入布局（与 `rasterize_glyph_alpha` 一致）：`w` = 采样列数 × SS（源 x = `col`，即 tick 方向）、
+/// `h` = key 行数 × SS（源 y = `row`，行 0 = 文字顶部 = 最高 key）。
+///
+/// 输出布局：`w' = h`、`h' = w`，映射关系为
+/// - `x' = h - 1 - row`：行 0（最高 key）→ 屏幕**最右**（纵向 key→X 同向）；
+/// - `y' = w - 1 - col`：列 0（起始 tick）→ 屏幕**最下**（纵向 tick→Y 反向）。
+///
+/// 与音符生成侧 `interaction::text_tool::rasterize::sample_to_notes`（行→key、列→tick）
+/// 严格同源，故转置后的预览与 √ 生成的音符在屏幕上**逐格重合**——纵向卷帘同样满足
+/// 「看到的就是生成的」。注意这不是"把显示矩形转置一下"：转置是**镜像**变换，
+/// 直接铺图会把预览画成正立，与生成的镜像图案不符。
+pub(crate) fn transpose_preview_rgba(src: &[u8], w: u32, h: u32) -> Vec<u8> {
+    let (dw, dh) = (h, w);
+    let mut dst = vec![0u8; (dw as usize) * (dh as usize) * 4];
+    for y in 0..dh {
+        for x in 0..dw {
+            // 逆映射：目标 (x, y) ← 源 (col, row) = (w-1-y, h-1-x)
+            let sx = w - 1 - y;
+            let sy = h - 1 - x;
+            let si = ((sy * w + sx) * 4) as usize;
+            let di = ((y * dw + x) * 4) as usize;
+            dst[di..di + 4].copy_from_slice(&src[si..si + 4]);
+        }
+    }
+    dst
 }
 
 /// 绘制文本框（常驻）+ 悬浮按钮
@@ -146,6 +193,16 @@ pub fn draw(
                     rgba.push(cb);
                     rgba.push(a);
                 }
+                // 纵向卷帘：栅格必须**转置**后再绘制。生成侧是「行→key、列→tick」
+                // （`sample_to_notes`），纵向视图又把 key 映射到 X、tick 反向映射到 Y，
+                // 于是屏幕上的字形是一个**镜像变换**的结果。若按原样 `draw_image` 铺进
+                // 矩形，预览会是"正立"的、与 √ 生成的镜像图案不符——即"看到一套、生成
+                // 另一套"。转置后二者在同一格上逐像素重合（见 `transpose_preview_rgba`）。
+                let (iw, ih, rgba) = if editor.editor_state.is_vertical_roll {
+                    (ih, iw, transpose_preview_rgba(&rgba, iw, ih))
+                } else {
+                    (iw, ih, rgba)
+                };
                 let handle = image::Handle::from_rgba(iw, ih, rgba);
                 let img = Image::new(handle).filter_method(FilterMethod::Linear);
                 // 整框绘制：栅格行 0 对齐框顶，底部对齐的墨水落在框底，与音符放置区重合。
@@ -251,5 +308,103 @@ mod tests {
         assert!(box_rect_screen(&editor).is_none());
         // 避免未使用告警
         let _ = TextToolState::new();
+    }
+
+    /// 纵向卷帘（BUG 回归）：`box_rect_screen` 必须给出转置几何。
+    ///
+    /// 修复前纵向下直接 `return None`，导致文本框 / √×按钮 / TextInput 覆盖层三处
+    /// 同时消失——文字工具"能选中、点了没反应"。此处用**独立算术**（不调用被测函数
+    /// 之外的转换封装）钉死轴向：key→X（越大越右）、tick→Y（越大越上）。
+    #[test]
+    fn test_box_rect_screen_vertical_transposed() {
+        let mut editor = editor_with_box();
+        editor.editor_state.is_vertical_roll = true;
+        let (l, t, r, b) = box_rect_screen(&editor).expect("纵向卷帘必须给出文本框几何");
+        let view = &editor.editor_state.view;
+        let grid_bottom = editor.editor_state.canvas.size_y - view.keyboard_width;
+        // key 60..64 → X = key × zoom_y − scroll_y（右缘 = key_hi 右边界 = 65 键处）
+        assert_eq!(l, 60.0 * view.zoom_y - view.scroll_y, "左缘 = key_lo 的 X");
+        assert_eq!(
+            r,
+            65.0 * view.zoom_y - view.scroll_y,
+            "右缘 = key_hi 的右边界（覆盖整行 key）"
+        );
+        // tick 0..3840 → Y = grid_bottom − tick × zoom_x + scroll_x（tick 越大越靠上）
+        assert_eq!(
+            b,
+            grid_bottom - 0.0 * view.zoom_x + view.scroll_x,
+            "下缘 = tick_lo 的 Y"
+        );
+        assert_eq!(
+            t,
+            grid_bottom - 3840.0 * view.zoom_x + view.scroll_x,
+            "上缘 = tick_hi 的 Y"
+        );
+        assert!(r > l, "纵向 X 为 key 轴：框必须有宽度");
+        assert!(t < b, "纵向 tick 越大越靠上：上缘 Y 必须小于下缘");
+    }
+
+    /// 纵向卷帘：三个悬浮按钮（√ / × / 模式）必须存在、横向排布且完整落在卷帘内容区内。
+    #[test]
+    fn test_button_rects_vertical_inside_content() {
+        let mut editor = editor_with_box();
+        editor.editor_state.is_vertical_roll = true;
+        let content = crate::grid::utils::content_bounds(&editor);
+        let btns = button_rects(&editor).expect("纵向卷帘必须显示 √/×/模式 三个按钮");
+        assert!(
+            btns.confirm.x < btns.cancel.x && btns.cancel.x < btns.mode.x,
+            "三按钮应自左向右排列"
+        );
+        for r in [btns.confirm, btns.cancel, btns.mode] {
+            assert!(
+                r.x >= content.x - 0.01 && r.y >= content.y - 0.01,
+                "按钮 {r:?} 不应越出内容区左上角 {content:?}"
+            );
+            assert!(
+                r.x + r.width <= content.x + content.width + 0.01
+                    && r.y + r.height <= content.y + content.height + 0.01,
+                "按钮 {r:?} 不应越出内容区右下角 {content:?}"
+            );
+        }
+    }
+
+    /// 「所见即生成」的**映射层**证明：转置后的预览格与音符格同口径。
+    ///
+    /// 源位图 2 列 × 2 行（颜色编码 = `[col, row]`），转置后：
+    /// - 左上 = (col 1, row 1) = 最高 tick × 最低 key；
+    /// - 右上 = (col 1, row 0) = 最高 tick × 最高 key；
+    /// - 左下 = (col 0, row 1) = 最低 tick × 最低 key；
+    /// - 右下 = (col 0, row 0) = 最低 tick × 最高 key。
+    ///
+    /// 与纵向卷帘屏幕语义（X = key 越大越右、Y = tick 越大越上）逐项吻合。
+    #[test]
+    fn test_transpose_preview_maps_row_to_x_and_col_flipped_to_y() {
+        let mut src = Vec::new();
+        for row in 0..2u8 {
+            for col in 0..2u8 {
+                src.extend_from_slice(&[col, row, 0, 255]);
+            }
+        }
+        let dst = transpose_preview_rgba(&src, 2, 2);
+        assert_eq!(dst.len(), src.len(), "转置不改变总像素数（宽高互换）");
+        let at = |x: usize, y: usize| {
+            let i = (y * 2 + x) * 4;
+            [dst[i], dst[i + 1]]
+        };
+        assert_eq!(at(0, 0), [1, 1], "左上 = 最高 tick × 最低 key");
+        assert_eq!(at(1, 0), [1, 0], "右上 = 最高 tick × 最高 key");
+        assert_eq!(at(0, 1), [0, 1], "左下 = 最低 tick × 最低 key");
+        assert_eq!(at(1, 1), [0, 0], "右下 = 最低 tick × 最高 key");
+    }
+
+    /// 转置的边界：非方阵下宽高正确互换（3 列 × 2 行 → 2 × 3）。
+    #[test]
+    fn test_transpose_preview_non_square_swaps_dims() {
+        let (w, h) = (3u32, 2u32);
+        let src = vec![7u8; (w * h * 4) as usize];
+        let dst = transpose_preview_rgba(&src, w, h);
+        assert_eq!(dst.len(), (w * h * 4) as usize);
+        assert_eq!(dst.len() / 4, (h * w) as usize, "像素数守恒（2×3 = 3×2）");
+        assert!(dst.iter().all(|&b| b == 7 || b == 0), "只搬移、不合成颜色");
     }
 }

@@ -85,16 +85,23 @@ impl Editor {
         // 使拖框过程的拉伸变化按精度步进，与最终生成的音符列对齐）。
         let snap = self.editor_state.view.snap_precision.max(1.0);
         let tick = (self.pos_to_tick(pos) / snap).round() * snap;
-        let view = &self.editor_state.view;
-        let top_y = view.key_to_y(key);
-        let bottom_y = top_y + view.zoom_y;
+        // 纵向卷帘：Y 是时间轴，框两端的 stored Y 取 tick 的屏幕 Y
+        // （与 `pressed.rs` 纵向框选分支同口径）——横向才是"key 行上/下边"语义。
+        let (start_y, current_y) = if self.editor_state.is_vertical_roll {
+            let y = self.tick_to_y_vertical(tick);
+            (y, y)
+        } else {
+            let view = &self.editor_state.view;
+            let top_y = view.key_to_y(key);
+            (top_y, top_y + view.zoom_y)
+        };
         self.editor_state.interaction.edit_state = EditState::Selecting {
             start_tick: tick,
             start_key: key,
             current_tick: tick,
             current_key: key,
-            start_y: top_y,
-            current_y: bottom_y,
+            start_y,
+            current_y,
         };
     }
 
@@ -105,6 +112,13 @@ impl Editor {
         let snap = self.editor_state.view.snap_precision.max(1.0);
         let tick = (self.pos_to_tick(pos) / snap).round() * snap;
         let key = self.pos_to_key(pos);
+        // 纵向：stored Y = tick 的屏幕 Y（views 转置后 Y 是时间轴，key 行语义不适用）
+        let new_y = if self.editor_state.is_vertical_roll {
+            self.tick_to_y_vertical(tick)
+        } else {
+            let view = &self.editor_state.view;
+            view.key_to_y(key) + view.zoom_y
+        };
         if let EditState::Selecting {
             current_tick,
             current_key,
@@ -114,8 +128,7 @@ impl Editor {
         {
             *current_tick = tick;
             *current_key = key;
-            let view = &self.editor_state.view;
-            *current_y = view.key_to_y(key) + view.zoom_y;
+            *current_y = new_y;
         }
     }
 
