@@ -39,6 +39,12 @@ impl RunnerInner {
                 self.pending_gpu_check_ui = Some((passed, detail));
                 self.inject_pending_gpu_check_ui();
             }
+            WindowEvent::MidiPortLayoutChanged { max_port } => {
+                // 端口编辑改变文档 max_port：按新布局重建实时合成输出，
+                // 否则新端口事件会被旧通道空间静默丢弃。
+                tracing::info!("MIDI: 文档端口布局变更，应用 max_port={max_port}");
+                self.midi_state.midi.apply_midi_port_layout(max_port);
+            }
             _ => {}
         }
     }

@@ -36,6 +36,11 @@ pub enum Event {
         /// 选中适配器指纹（Runner 据此回写启动缓存；无适配器 / 检测超时时为 `None`）
         fingerprint: Option<String>,
     },
+    /// 文档端口布局变更（UI → Runner）：请求按新 `max_port` 重建实时合成输出布局
+    MidiPortLayoutChanged {
+        /// 文档当前最大端口（FF 21；0 = 单端口）
+        max_port: u8,
+    },
 }
 
 impl Event {
@@ -77,5 +82,11 @@ impl Event {
     /// 构造最小化事件
     pub const fn minimize() -> Self {
         Self::Lifecycle(lifecycle::Event::Minimize)
+    }
+
+    /// 构造"文档端口布局变更"事件（端口编辑导致 `max_port` 变化时由 UI 发出；
+    /// Runner 据此调用 `apply_midi_port_layout` 重建实时输出布局）。
+    pub const fn midi_port_layout_changed(max_port: u8) -> Self {
+        Self::MidiPortLayoutChanged { max_port }
     }
 }

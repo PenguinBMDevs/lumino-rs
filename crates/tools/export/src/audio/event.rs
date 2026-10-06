@@ -45,7 +45,7 @@ pub(crate) struct RecentEvent {
 /// 测试注入记录型桩即可对 `dispatch_event` 的**事件级端口映射**做端到端断言，
 /// 无需真实音色库/音频渲染。调用频率为每事件/每批一次（非每样本），
 /// `dyn` 分发开销可忽略。
-pub trait SynthBackend {
+pub(crate) trait SynthBackend {
     /// 音频流参数（采样率 / 通道数）。
     fn stream_params(&self) -> &AudioStreamParams;
     /// 派发合成事件。
@@ -73,7 +73,7 @@ impl SynthBackend for ChannelGroup {
 /// 参考 OmniConverter 的 EventsProcesser 设计：
 /// - 以渲染时间（delta seconds）驱动，而非依赖外部定时器
 /// - 使用 Vec 回收池减少分配
-pub struct MidiEventProcessor<'a> {
+pub(crate) struct MidiEventProcessor<'a> {
     config: &'a AudioRenderConfig,
     channel_group: &'a mut dyn SynthBackend,
     tick_conv: &'a mut TickToTime,
