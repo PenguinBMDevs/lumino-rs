@@ -271,6 +271,7 @@ fn test_settings_dialog_same_theme_not_requeued() {
 // ================================================================
 
 mod about_egg;
+mod channel;
 mod cloud_snapshot;
 mod echo_cave;
 mod fill_division_ctrl;

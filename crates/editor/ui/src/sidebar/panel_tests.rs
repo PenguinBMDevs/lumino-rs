@@ -193,6 +193,24 @@ fn test_track_context_menu_opened_sets_target() {
     assert!(sidebar.color_picking_track.is_none());
 }
 
+/// 打开音轨右键菜单必须关闭面板空白菜单
+///
+/// 回归：右键流程若残留 `panel_context_menu.is_open`，会被音轨菜单遮住；
+/// 选完端口/通道、菜单关闭后残留「找回删除音轨」浮层。
+#[test]
+fn test_track_context_menu_opened_closes_panel_menu() {
+    let mut sidebar = Sidebar::new();
+    sidebar.panel_context_menu.is_open = true;
+    sidebar.panel_context_menu.mouse_pos = Some((10.0, 20.0));
+
+    sidebar.update(Event::TrackContextMenuOpened(1));
+
+    assert!(
+        !sidebar.panel_context_menu.is_open,
+        "音轨菜单与面板空白菜单必须互斥（防残留浮层）"
+    );
+}
+
 /// 关闭右键菜单后目标音轨被清空
 #[test]
 fn test_track_context_menu_closed_clears_target() {

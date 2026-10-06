@@ -9,6 +9,7 @@
 use crate::root::Root;
 use lumino_midi_loader::NoteEvent;
 
+mod channel;
 mod deletion;
 mod port;
 

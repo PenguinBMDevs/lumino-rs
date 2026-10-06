@@ -8,6 +8,7 @@ impl Sidebar {
     pub(super) fn handle_track_color_picker_opened(&mut self, id: usize) {
         self.color_picking_track = Some(id);
         self.port_picking_track = None;
+        self.channel_picking_track = None;
         self.track_context_menu = TrackContextMenuState::default();
     }
 

@@ -65,9 +65,12 @@ pub fn panel(track_id: usize) -> Element<'static> {
         ..Default::default()
     });
 
-    // 用 mouse_area 包裹面板，吞掉菜单背景上的点击事件，
-    // 避免触发下层的关闭覆盖层
-    mouse_area(panel).on_press(Message::Null).into()
+    // 用 mouse_area 包裹面板，吞掉菜单背景上的左右键点击事件，
+    // 避免触发下层的关闭覆盖层/面板空白菜单
+    mouse_area(panel)
+        .on_press(Message::Null)
+        .on_right_press(Message::Null)
+        .into()
 }
 
 /// 构建单个菜单按钮（图标 + tooltip）
@@ -145,6 +148,7 @@ fn tooltip_style(_theme: &Theme) -> container::Style {
 pub fn background_close_overlay<'a>() -> Element<'a> {
     mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
         .on_press(lumino_ui_core::sidebar_event::Event::track_context_menu_closed())
+        .on_right_press(lumino_ui_core::sidebar_event::Event::track_context_menu_closed())
         .into()
 }
 
