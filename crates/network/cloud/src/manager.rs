@@ -165,10 +165,14 @@ impl CloudManager {
     }
 
     /// 列出目录内容
+    ///
+    /// DEBT-06 #123：只读操作加有限退避重试（网络抖动可自愈）。
     pub fn list_dir(&mut self, id: &str, path: &str) -> Result<Vec<CloudEntry>> {
-        let result = self.rt.block_on(async {
-            let client = Self::client_mut(&mut self.clients, id)?;
-            client.list_dir(path).await
+        let result = retry_read(|| {
+            self.rt.block_on(async {
+                let client = Self::client_mut(&mut self.clients, id)?;
+                client.list_dir(path).await
+            })
         });
         self.handle_io_result(id, result)
     }
@@ -242,6 +246,104 @@ impl CloudManager {
             }
         }
         result
+    }
+}
+
+/// 幂等读操作的有限退避重试（DEBT-06 #123）。
+///
+/// 仅用于只读操作（目录列表等）；写操作重试需要幂等保护，不在本卡范围。
+/// 未连接 / 配置 / 认证等**确定性错误**不重试，避免无谓等待。
+fn retry_read<T, F>(op: F) -> Result<T>
+where
+    F: FnMut() -> Result<T>,
+{
+    retry_read_with_backoff(op, std::time::Duration::from_millis(200))
+}
+
+fn retry_read_with_backoff<T, F>(mut op: F, backoff: std::time::Duration) -> Result<T>
+where
+    F: FnMut() -> Result<T>,
+{
+    const MAX_ATTEMPTS: u32 = 3;
+    let mut last_err: Option<CloudError> = None;
+    for attempt in 0..MAX_ATTEMPTS {
+        if attempt > 0 {
+            std::thread::sleep(backoff * attempt);
+        }
+        match op() {
+            Ok(value) => return Ok(value),
+            Err(
+                e @ (CloudError::NotConnected(_) | CloudError::Config(_) | CloudError::Auth(_)),
+            ) => {
+                return Err(e);
+            }
+            Err(e) => last_err = Some(e),
+        }
+    }
+    Err(last_err.unwrap_or_else(|| CloudError::Operation("读操作重试耗尽".into())))
+}
+
+#[cfg(test)]
+mod retry_tests {
+    use super::*;
+
+    /// 瞬时错误应重试到成功（1ms 退避避免测试变慢）。
+    #[test]
+    fn retry_read_retries_transient_errors() {
+        let mut attempts = 0;
+        let result: Result<u8> = retry_read_with_backoff(
+            || {
+                attempts += 1;
+                if attempts < 3 {
+                    Err(CloudError::Protocol("网络抖动".into()))
+                } else {
+                    Ok(7)
+                }
+            },
+            std::time::Duration::from_millis(1),
+        );
+        assert_eq!(result.expect("第三次应成功"), 7);
+        assert_eq!(attempts, 3, "应恰好重试两次");
+    }
+
+    /// 确定性错误不重试（未连接/配置/认证）。
+    #[test]
+    fn retry_read_bails_out_on_deterministic_errors() {
+        for err in [
+            CloudError::NotConnected("x".into()),
+            CloudError::Config("x".into()),
+            CloudError::Auth("x".into()),
+        ] {
+            let mut attempts = 0;
+            let result: Result<u8> = retry_read_with_backoff(
+                || {
+                    attempts += 1;
+                    Err(match &err {
+                        CloudError::NotConnected(m) => CloudError::NotConnected(m.clone()),
+                        CloudError::Config(m) => CloudError::Config(m.clone()),
+                        _ => CloudError::Auth("x".into()),
+                    })
+                },
+                std::time::Duration::from_millis(1),
+            );
+            assert!(result.is_err());
+            assert_eq!(attempts, 1, "确定性错误只尝试一次");
+        }
+    }
+
+    /// 持续瞬时错误：重试上限（3 次）后返回最后一次错误。
+    #[test]
+    fn retry_read_gives_up_after_max_attempts() {
+        let mut attempts = 0;
+        let result: Result<u8> = retry_read_with_backoff(
+            || {
+                attempts += 1;
+                Err(CloudError::Protocol("持续失败".into()))
+            },
+            std::time::Duration::from_millis(1),
+        );
+        assert!(result.is_err());
+        assert_eq!(attempts, 3);
     }
 }
 

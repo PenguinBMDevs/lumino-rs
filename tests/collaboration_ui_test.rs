@@ -125,8 +125,6 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         server_port: 80,
         username: "客户端A".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_a.set_event_callback(collector_a.callback());
 
@@ -169,8 +167,6 @@ async fn test_mouse_cursor_sync_internal() -> Result<(), Box<dyn std::error::Err
         server_port: 80,
         username: "客户端B".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_b.set_event_callback(collector_b.callback());
 
@@ -434,8 +430,6 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
         server_port: 80,
         username: "批量测试A".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_a.set_event_callback(collector_a.callback());
 
@@ -478,8 +472,6 @@ async fn test_note_batch_sync_internal() -> Result<(), Box<dyn std::error::Error
         server_port: 80,
         username: "批量测试B".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_b.set_event_callback(collector_b.callback());
 
@@ -604,8 +596,6 @@ async fn test_mouse_movement_sync_internal() -> Result<(), Box<dyn std::error::E
         server_port: 80,
         username: "移动测试A".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_a.set_event_callback(collector_a.callback());
 
@@ -648,8 +638,6 @@ async fn test_mouse_movement_sync_internal() -> Result<(), Box<dyn std::error::E
         server_port: 80,
         username: "移动测试B".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_b.set_event_callback(collector_b.callback());
 

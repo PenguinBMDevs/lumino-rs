@@ -70,8 +70,6 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
         server_port: 443,
         username: "测试用户01".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client01.set_event_callback(collector01.callback());
 
@@ -117,8 +115,6 @@ async fn test_collaboration_full() -> Result<(), Box<dyn std::error::Error>> {
         server_port: 443,
         username: "测试用户02".to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client02.set_event_callback(collector02.callback());
 

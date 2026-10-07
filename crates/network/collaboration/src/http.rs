@@ -6,13 +6,31 @@ use crate::Result;
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
-use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::debug;
 
 /// HTTP API 客户端
 pub struct HttpClient {
     client: Client,
     base_url: String,
+}
+
+/// 分块上传流（DEBT-06 #123）。
+///
+/// 旧实现 `bytes.chunks(CHUNK).map(to_vec)` 会把整个载荷**再复制一份**（峰值 2×
+/// 文件大小）。这里改为有界通道逐块生产：峰值 = 原载荷 + 通道容量 × 64 KiB。
+struct ChunkStream {
+    rx: tokio::sync::mpsc::Receiver<Vec<u8>>,
+}
+
+impl futures::Stream for ChunkStream {
+    type Item = std::result::Result<Vec<u8>, std::io::Error>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        self.rx.poll_recv(cx).map(|opt| opt.map(Ok))
+    }
 }
 
 /// 创建房间请求
@@ -66,7 +84,18 @@ impl HttpClient {
         };
 
         Self {
-            client: Client::new(),
+            // DEBT-06 #123：协作 HTTP 必须有超时——旧实现 `Client::new()` 无任何
+            // 超时，服务器假死会让连接/上传永久挂起（UI 停在"连接中/上传中"）。
+            // 用 `read_timeout`（两次读之间的空闲上限）而非总超时：
+            // 大工程上传的总时长不该被上限误杀，但卡死会按空闲超时失败。
+            client: Client::builder()
+                .connect_timeout(std::time::Duration::from_secs(10))
+                .read_timeout(std::time::Duration::from_secs(30))
+                .build()
+                .unwrap_or_else(|e| {
+                    tracing::warn!("协作 HTTP 客户端超时配置构建失败，回退默认配置: {e}");
+                    Client::new()
+                }),
             base_url,
         }
     }
@@ -155,21 +184,25 @@ impl HttpClient {
         let total = bytes.len() as u64;
         let url = format!("{}/api/room/{}/project", self.base_url, code);
 
-        // 分块流式上传，逐块上报已发送字节数（用于进度条）
+        // 分块流式上传，逐块上报已发送字节数（用于进度条）。
+        // DEBT-06 #123：有界通道逐块生产（峰值 ≈ 原载荷 + 2×64KiB），
+        // 旧实现预先把全部块各复制一份到 Vec（峰值 2× 文件大小）。
         const CHUNK: usize = 64 * 1024;
-        let chunks: Vec<Vec<u8>> = bytes.chunks(CHUNK).map(|c| c.to_vec()).collect();
-        let sent = Arc::new(AtomicU64::new(0));
         let body = match on_progress {
             Some(cb) => {
-                let sent_stream = Arc::clone(&sent);
-                let cb_stream = Arc::clone(&cb);
-                let stream = futures::stream::iter(chunks.into_iter().map(move |chunk| {
-                    let cur = sent_stream.fetch_add(chunk.len() as u64, Ordering::Relaxed)
-                        + chunk.len() as u64;
-                    cb_stream(cur, total);
-                    Ok::<_, std::io::Error>(chunk)
-                }));
-                reqwest::Body::wrap_stream(stream)
+                let (tx, rx) = tokio::sync::mpsc::channel::<Vec<u8>>(2);
+                tokio::spawn(async move {
+                    let mut sent: u64 = 0;
+                    for chunk in bytes.chunks(CHUNK) {
+                        if tx.send(chunk.to_vec()).await.is_err() {
+                            // 请求提前结束（取消/错误）：停止生产，释放载荷
+                            return;
+                        }
+                        sent += chunk.len() as u64;
+                        cb(sent, total);
+                    }
+                });
+                reqwest::Body::wrap_stream(ChunkStream { rx })
             }
             None => reqwest::Body::from(bytes),
         };

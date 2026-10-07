@@ -46,8 +46,6 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
         server_port: port,
         username: user.clone(),
         password: pass.clone(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_a.set_event_callback(collector_a.callback());
     let create = client_a
@@ -78,8 +76,6 @@ async fn test_collab_id_sync_local() -> Result<(), Box<dyn std::error::Error>> {
         server_port: port,
         username: user.clone(),
         password: pass.clone(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 0,
     });
     client_b.set_event_callback(collector_b.callback());
     client_b.join_room_and_connect(invite.clone()).await?;
