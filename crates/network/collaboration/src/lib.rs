@@ -23,6 +23,3 @@ pub const DEFAULT_SERVER_PORT: u16 = 3000;
 
 /// 心跳间隔（毫秒）
 pub const HEARTBEAT_INTERVAL_MS: u64 = 25000;
-
-/// 重连间隔（毫秒）
-pub const RECONNECT_INTERVAL_MS: u64 = 5000;

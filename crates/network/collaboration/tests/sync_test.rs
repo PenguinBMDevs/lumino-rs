@@ -19,8 +19,6 @@ async fn setup_client(
         server_port: 3000,
         username: username.to_string(),
         password: String::new(),
-        auto_reconnect: false,
-        max_reconnect_attempts: 1,
     };
 
     let mut client = CollaborationClient::new(config);
