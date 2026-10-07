@@ -46,11 +46,21 @@ impl Editor {
                 .data
                 .visual_position_of(dest_track)
                 .unwrap_or(dest_track) as u16;
-            let _ids = self
+            let ids = self
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            for note in notes.iter() {
+            // DEBT-03 #120：按实际插入数计数/选择/广播——目标轨不存在时 ids 为空，
+            // 旧实现按输入数计数并广播，造成"显示已粘贴 N"与"协作对端幻影音符"。
+            let actual = ids.len();
+            if actual == 0 {
+                tracing::warn!(
+                    "粘贴：目标轨 {dest_track} 不存在，跳过 {} 个音符",
+                    notes.len()
+                );
+                continue;
+            }
+            for note in notes.iter().take(actual) {
                 affected_tracks.insert(dest_track);
                 if dest_track == current_track {
                     current_track_touched = true;

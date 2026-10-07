@@ -216,6 +216,19 @@ impl RunnerInner {
                     .open_dialog(crate::runner::dialog_manager::DialogType::Settings);
             }
             TrackSelected(track_idx) => {
+                // DEBT-03 #120：异步提交窗口内禁止切轨（Runner 侧兜底；UI 内部
+                // `switch_to_track` 亦有守卫）——提交结果按发起轨写回，切轨会错位。
+                if self
+                    .window_state
+                    .window
+                    .ui()
+                    .root()
+                    .editor
+                    .has_pending_commit()
+                {
+                    tracing::warn!("异步提交进行中，忽略切轨请求：{}", track_idx);
+                    return;
+                }
                 // 统一使用 cache-only 模式，只切换音轨索引
                 // 播放时从 cache 流式读取，不单独加载音轨到编辑器
                 tracing::info!("切换到音轨：{}", track_idx);

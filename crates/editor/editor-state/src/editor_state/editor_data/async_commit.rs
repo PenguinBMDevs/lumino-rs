@@ -36,6 +36,9 @@ pub struct PendingCommit {
     pub ops: Vec<MoveOp>,
     /// 接收后台线程结果的通道
     pub receiver: Receiver<Result<AsyncCommitResult>>,
+    /// 提交启动时所在的音轨（DEBT-03 #120：结果必须按此轨写回，
+    /// 绝不跟随轮询时刻的 `current_track`——否则切轨后整轨写入错轨）。
+    pub track_id: usize,
 }
 
 impl EditorData {
@@ -54,6 +57,7 @@ impl EditorData {
         }
 
         let notes = self.current_track_notes().to_vec();
+        let track_id = self.current_track;
         let ops_for_thread = ops.clone();
         let (tx, rx) = mpsc::channel();
 
@@ -63,7 +67,11 @@ impl EditorData {
             let _ = tx.send(result);
         });
 
-        self.pending_commit = Some(PendingCommit { ops, receiver: rx });
+        self.pending_commit = Some(PendingCommit {
+            ops,
+            receiver: rx,
+            track_id,
+        });
         Ok(true)
     }
 
@@ -111,21 +119,32 @@ impl EditorData {
                         }
                     }
                 }
-                // 写回 document（当前音轨整轨替换，单一权威源）
-                self.replace_track_notes(self.current_track, result.notes);
-                for (start, notes) in update_events {
-                    self.note_delta_events.push(
-                        crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
-                            start_index: start,
-                            notes,
-                        },
-                    );
+                // 写回 document：按**提交时捕获的音轨**整轨替换（单一权威源）。
+                // DEBT-03 #120：绝不用 current_track——提交窗口内用户切轨时，
+                // 旧实现会把 A 轨结果整轨写入 B 轨（静默数据损坏）。
+                let track_id = pending.track_id;
+                self.replace_track_notes(track_id, result.notes);
+                if track_id == self.current_track {
+                    for (start, notes) in update_events {
+                        self.note_delta_events.push(
+                            crate::editor_state::editor_data::NoteDeltaEvent::UpdateRange {
+                                start_index: start,
+                                notes,
+                            },
+                        );
+                    }
+                    // 异步提交作用于发起音轨，洋葱皮不显示 → 可豁免全量重建
+                    self.mark_current_track_changed();
+                    // 事件已完整记录（重排走受影响区间，未重排走实际修改区间）→ 清除 dirty
+                    self.note_delta_dirty = false;
+                } else {
+                    // 已切轨：段内增量事件基于旧轨索引，不可用于新当前轨；
+                    // 按受影响音轨标记，渲染层按单轨 Delta 同步。
+                    self.mark_track_notes_changed_for(Some(std::collections::HashSet::from([
+                        track_id,
+                    ])));
                 }
-                // 异步提交作用于当前音轨，洋葱皮不显示 → 可豁免全量重建
-                self.mark_current_track_changed();
-                // 事件已完整记录（重排走受影响区间，未重排走实际修改区间）→ 清除 dirty
-                self.note_delta_dirty = false;
-                self.edited_tracks.insert(self.current_track);
+                self.edited_tracks.insert(track_id);
                 self.push_move_op(pending.ops);
                 Some(Ok(modified))
             }
