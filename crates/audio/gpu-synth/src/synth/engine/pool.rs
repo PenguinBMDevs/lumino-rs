@@ -73,7 +73,7 @@ impl GpuSynth {
                     slice[0] = EnvStageGpu {
                         kind: 0,
                         target_val: 0.0,
-                        duration: (sr / 1000).max(1),
+                        duration: fade_frames(sr) as u32,
                     };
                 } else {
                     for (j, s) in v.env_stages.iter().enumerate() {
@@ -188,7 +188,7 @@ impl GpuSynth {
                     slice[0] = EnvStageGpu {
                         kind: 0,
                         target_val: 0.0,
-                        duration: (sr / 1000).max(1),
+                        duration: fade_frames(sr) as u32,
                     };
                 } else {
                     for (j, s) in v.env_stages.iter().enumerate() {

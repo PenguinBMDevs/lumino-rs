@@ -41,8 +41,9 @@ use limiter::{limit_block, write_samples};
 use progress::ProgressBar;
 use types::{
     FADE_SLOTS_FRACTION, MAX_RENDER_FRAMES, MAX_VOICE_OUT_BYTES, PendingReadback,
-    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, report_progress,
-    spawn_budget_allows,
+    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, fade_complete,
+    fade_frames, report_progress, spawn_budget_allows, trim_fade_budget_for, trim_hysteresis,
+    trimmed_group_count,
 };
 use voice_alloc::{order_port_key_evictions, select_damper_release_groups, select_evictions};
 
@@ -230,6 +231,10 @@ pub struct GpuSynth {
     /// here dropped the NEWEST notes and broke dense passages (measured: 18%
     /// of a black MIDI's note-ons dropped at limit=4).
     spawn_budget: Vec<u32>,
+    /// 本块剩余的裁剪淡出预算（REND-015 #115）：端口级每键裁剪与块内
+    /// `trim_key_voices` 共享，每块在 `apply_events` 开头重置。超出预算的
+    /// 裁剪组留待后续块，避免同块批量淡出叠加成噼啪。
+    trim_fade_budget: usize,
     /// Per-(channel, key) count of active (not ended, not released) note
     /// groups, so `release_key` can bail out in O(1) when a note-off has no
     /// target - black-MIDI peaks fire hundreds of thousands of orphan

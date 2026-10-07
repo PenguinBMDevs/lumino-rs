@@ -4,7 +4,7 @@ impl GpuSynth {
     /// 每块一次的声部池治理（原 `upload_voices` 前段逐语句搬移）。
     ///
     /// 负责：清零每键防风暴预算、执行独占类互斥、重建活跃组计数、
-    /// 每键复音裁剪与全局声部上限裁剪。无行为变化。
+    /// 每键复音裁剪与全局声部上限裁剪。
     pub(crate) fn trim_voice_pool_for_block(&mut self) {
         // The per-key anti-storm guard is per block.
         self.spawn_budget.fill(0);
@@ -16,12 +16,12 @@ impl GpuSynth {
         // that key - including release tails. Over-cap trimming evicts
         // release tails first (they are already decaying), then the
         // quietest/oldest sustained groups; every evicted group gets the
-        // 1 ms fade (`fade_out`), never a fade-less hard kill (#105).
-        //
-        // Why: the old per-(channel,key) cap excluded releasing voices, so
-        // black-MIDI tails accumulated to 30-52k voices per block and
-        // dominated the per-block upload/readback (#94). A port-level cap
-        // bounds the single-port total to 128 x `max_voices_per_key` groups.
+        // 5 ms fade (`fade_out`, REND-015 #115), never a fade-less hard
+        // kill (#105). Trimming only triggers once the bucket exceeds
+        // `cap + trim_hysteresis(cap)`, and new fades are bounded per block
+        // by `trim_fade_budget` so dense passages cannot stack thousands of
+        // simultaneous fades into a crackle; the excess is deferred to
+        // later blocks instead of being cut in one batch.
         let per_key_limit = self.config.max_voices_per_key;
         if per_key_limit > 0 {
             // One O(voices) pass buckets every live voice by (port, key).
@@ -37,9 +37,12 @@ impl GpuSynth {
                     .push(i);
             }
             // Fast path: fewer voices than the cap implies fewer groups.
+            // 触发阈值含迟滞余量（cap + max(1, cap/4)），避免 cap 边界上
+            // 每块 1-2 个组的小批量持续抢（REND-015 #115）。
+            let threshold = per_key_limit + trim_hysteresis(per_key_limit);
             let over: Vec<(usize, u8, Vec<usize>)> = buckets
                 .into_iter()
-                .filter(|(_, positions)| positions.len() > per_key_limit)
+                .filter(|(_, positions)| positions.len() > threshold)
                 .map(|((port, key), positions)| (port, key, positions))
                 .collect();
             for (port, key, positions) in over {
@@ -67,11 +70,18 @@ impl GpuSynth {
         // groups until we fit - cheap here because it runs once per block,
         // not once per event.
         //
-        // Voices already fading (from an earlier trim, 1 ms = one block)
-        // are ended outright - their output has decayed, so ending them is
-        // inaudible - while fresh trims fade out instead of hard-killing
-        // (a hard kill makes a sounding voice vanish in one block, an
-        // audible click/crackle).
+        // Voices already fading (from an earlier trim; the 5 ms fade may
+        // span blocks) are only ended once the fade has actually completed -
+        // their output has decayed, so ending them is inaudible - while
+        // fresh trims fade out instead of hard-killing (a hard kill makes a
+        // sounding voice vanish in one block, an audible click/crackle).
+        //
+        // This path only runs with a global `max_voices` cap (live LGS and
+        // GPU export both use unlimited = 0). New fades here are not taken
+        // from `trim_fade_budget`: the global cap is a physical safety limit
+        // and must still converge; the fade-slot bound below keeps the
+        // hard-kill escape hatch for truly overloaded pools.
+        let fade_len = fade_frames(self.config.sample_rate);
         if self.config.max_voices != 0 {
             let pool = self.config.max_voices + self.config.max_voices / FADE_SLOTS_FRACTION;
             if self.voices.len() > pool {
@@ -105,10 +115,11 @@ impl GpuSynth {
                             if fade_count < fade_slots {
                                 // Fade out instead of hard-killing: a hard kill
                                 // makes a sounding voice vanish in one block,
-                                // an audible click/crackle. A 1 ms linear fade
-                                // (XSynth's `ReleaseType::Kill`) keeps the
-                                // output continuous and the voice ends right
-                                // after, so the pool does not accumulate tails.
+                                // an audible click/crackle. A 5 ms linear fade
+                                // (REND-015 #115, aligned with XSynth's
+                                // `ReleaseType::Kill`) keeps the output
+                                // continuous and the voice ends right after,
+                                // so the pool does not accumulate tails.
                                 v.release_at = self.global_frame;
                                 v.released = true;
                                 v.fade_out = true;
@@ -122,8 +133,11 @@ impl GpuSynth {
                                 v.state.ended = 1;
                                 v.damper_pending = false;
                             }
-                        } else {
-                            // Already fading: end it now (output has decayed).
+                        } else if fade_complete(true, v.release_at, self.global_frame, fade_len) {
+                            // Already faded out: end it now (output has
+                            // decayed, inaudible). A still-fading voice is
+                            // kept and ends on its own once the 5 ms fade
+                            // completes.
                             v.state.ended = 1;
                             v.damper_pending = false;
                         }
@@ -138,12 +152,12 @@ impl GpuSynth {
 
         // Upload-capacity fallback: the physical pool buffers cannot hold
         // more than `pool` voices, and fading voices legitimately keep
-        // occupying slots until their 1 ms fade completes. If the total
+        // occupying slots until their 5 ms fade completes. If the total
         // (active + fading) still exceeds the pool, end fading voices -
-        // their output has already decayed, so this is inaudible. In the
-        // pathological case where even the active voices alone exceed the
-        // pool, end those too (order is preserved for the id-based state
-        // resume).
+        // already-completed fades first (inaudible), then still-fading ones
+        // (their output is already decaying). In the pathological case where
+        // even the active voices alone exceed the pool, end those too (order
+        // is preserved for the id-based state resume).
         // Disabled in unlimited mode: buffers grow instead of trimming.
         if self.config.max_voices != 0 {
             // Measure against the voices still *alive* (not already marked
@@ -158,8 +172,26 @@ impl GpuSynth {
             let pool = self.config.max_voices + self.config.max_voices / FADE_SLOTS_FRACTION;
             if alive > pool {
                 let mut kill = alive - pool;
+                // 1) 已淡完的最先释放：无 click。
                 for v in self.voices.iter_mut() {
-                    if v.fade_out && kill > 0 {
+                    if kill == 0 {
+                        break;
+                    }
+                    if v.state.ended == 0
+                        && v.fade_out
+                        && fade_complete(true, v.release_at, self.global_frame, fade_len)
+                    {
+                        v.state.ended = 1;
+                        kill -= 1;
+                    }
+                }
+                // 2) 物理池仍不够：牺牲未淡完的淡出声部（其输出已在衰减，
+                //    且这是避免 wgpu 越界的安全网）。
+                for v in self.voices.iter_mut() {
+                    if kill == 0 {
+                        break;
+                    }
+                    if v.state.ended == 0 && v.fade_out {
                         v.state.ended = 1;
                         kill -= 1;
                     }
@@ -185,15 +217,17 @@ impl GpuSynth {
         self.rebuild_key_voices();
     }
 
-    /// 端口级每键裁剪（REND-002 #87 / #94 / #105）。
+    /// 端口级每键裁剪（REND-002 #87 / #94 / #105；REND-015 #115 限流）。
     ///
     /// `positions` 是该 `(port, key)` 的全部在响声部（跨 16 通道、含释放
     /// 尾巴）。超出 `limit` 个 note 组时：
     /// - **释放优先**：已进入释放/淡出的组先裁（输出已在衰减）；
     /// - 其次按 `(vel, note_id)` 升序裁最安静/最旧的持续组；
     /// - 保护最新组（`max note_id`）：新音符必发声；
-    /// - 被裁组统一 1 ms 淡出（`fade_out`），绝不无淡出硬杀（#105）；
-    ///   已在淡出的组直接 `ended`（上一块已淡完，无 click）。
+    /// - 被裁组统一 **5 ms** 淡出（`fade_out`），绝不无淡出硬杀（#105）；
+    /// - 已在淡出的组只有淡出播完才 `ended`（5 ms 可能跨块，绝不中途硬切）；
+    /// - 每块新建淡出受共享预算 `trim_fade_budget` 限制（REND-015 #115），
+    ///   超出的组留待后续块；已在淡出的组不占预算（顺手结束已播完的）。
     pub(crate) fn trim_port_key_voices(
         &mut self,
         port: usize,
@@ -224,34 +258,56 @@ impl GpuSynth {
         // 保护最新组（整体 max note_id）；释放尾巴无需保护。
         let protected = groups.iter().map(|g| g.3).max().unwrap_or(0);
         let infos: Vec<(bool, u8, u64)> = groups.iter().map(|g| (g.0, g.2, g.3)).collect();
+        // REND-015 #115 每块预算：组粒度取用，超出的组留待后续块。
+        let max_groups = trimmed_group_count(need_free, self.trim_fade_budget);
+        let fade_len = fade_frames(self.config.sample_rate);
+        let mut started = 0usize;
         let mut freed = 0usize;
         for gi in order_port_key_evictions(&infos) {
-            if freed >= need_free {
+            if freed >= max_groups {
                 break;
             }
             if groups[gi].3 == protected {
                 continue;
             }
-            for &pos in &groups[gi].4 {
-                let Some(v) = self.voices.get_mut(pos) else {
-                    continue;
-                };
-                if v.state.ended != 0 {
-                    continue;
+            // 整组一起淡出：预算在组粒度判断，避免拆开一个 note 的多个 zone。
+            let group_fading = groups[gi].4.iter().any(|&pos| {
+                self.voices
+                    .get(pos)
+                    .is_some_and(|v| v.state.ended == 0 && v.fade_out)
+            });
+            if group_fading {
+                // 已在淡出的组不占预算：只顺手结束已经播完的；未播完的留给
+                // 自己自然结束（5 ms 内绝不硬切）。
+                for &pos in &groups[gi].4 {
+                    let Some(v) = self.voices.get_mut(pos) else {
+                        continue;
+                    };
+                    if v.state.ended == 0
+                        && fade_complete(true, v.release_at, self.global_frame, fade_len)
+                    {
+                        v.state.ended = 1;
+                        v.damper_pending = false;
+                    }
                 }
-                if v.fade_out {
-                    // 上一轮已在淡出：现在直接结束（输出已衰减，无 click）。
-                    v.state.ended = 1;
-                    v.damper_pending = false;
-                } else {
-                    // 统一 1 ms 淡出：尾巴与持续音都不硬杀（#105）。
+            } else {
+                // 统一 5 ms 淡出：尾巴与持续音都不硬杀（#105）。
+                for &pos in &groups[gi].4 {
+                    let Some(v) = self.voices.get_mut(pos) else {
+                        continue;
+                    };
+                    if v.state.ended != 0 {
+                        continue;
+                    }
                     v.release_at = self.global_frame;
                     v.released = true;
                     v.fade_out = true;
                     v.damper_pending = false;
                 }
+                started += 1;
             }
             freed += 1;
         }
+        self.trim_fade_budget = self.trim_fade_budget.saturating_sub(started);
     }
 }

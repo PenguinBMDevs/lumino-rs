@@ -53,6 +53,8 @@ impl GpuSynth {
     // ------------------------------------------------------------------
 
     pub(crate) fn apply_events(&mut self, _base: u64, end: u64) -> Result<(), SynthError> {
+        // REND-015 #115: 每块重置裁剪淡出预算（块内裁剪与块末端口级裁剪共享）。
+        self.trim_fade_budget = trim_fade_budget_for(&self.config);
         // Real-time queue first.
         while let Some(ev) = self.pending_events.pop_front() {
             self.handle_event(ev)?;

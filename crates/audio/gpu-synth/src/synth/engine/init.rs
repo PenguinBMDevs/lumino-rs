@@ -179,6 +179,10 @@ impl GpuSynth {
             let _ = voice_chans_buf.write(&res.ctx.device, &res.ctx.queue, 0, &zero);
         }
 
+        // REND-015 #115: 每块 `apply_events` 开头会重置；这里只是给字段一个
+        // 合法初值（首块应用事件前不会有裁剪）。
+        let trim_fade_budget = trim_fade_budget_for(&config);
+
         let mut engine = Self {
             config,
             res,
@@ -224,6 +228,7 @@ impl GpuSynth {
             note_counter: 0,
             voice_id_counter: 0,
             spawn_budget: vec![0; midi_channels * 128],
+            trim_fade_budget,
             active_notes: vec![0; midi_channels * 128],
             voice_templates: std::collections::HashMap::new(),
             states_sync_counter: 0,
