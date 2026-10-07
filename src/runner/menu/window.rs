@@ -42,10 +42,18 @@ impl RunnerInner {
             WindowEvent::MidiPortLayoutChanged { max_port } => {
                 // 端口编辑改变文档 max_port：按新布局重建实时合成输出，
                 // 否则新端口事件会被旧通道空间静默丢弃。
-                tracing::info!("MIDI: 文档端口布局变更，应用 max_port={max_port}");
-                self.midi_state.midi.apply_midi_port_layout(max_port);
+                // DEBT-05 #122：走后台防抖重建（150ms 合并），UI 线程不做重活。
+                tracing::info!("MIDI: 文档端口布局变更，请求后台重建 max_port={max_port}");
+                self.midi_state
+                    .midi
+                    .apply_midi_port_layout_deferred(max_port);
             }
-            _ => {}
+            WindowEvent::Lifecycle(e) => {
+                // DEBT-05 #122：Lifecycle 变体已迁移到 take_window_action /
+                // TrafficAction 路径，生产无发射方；显式告警而非静默吞掉——
+                // 未来新增变体也会在穷尽匹配处直接暴露（本 match 无 `_` 兜底）。
+                tracing::warn!("收到未消费的窗口生命周期事件（已迁移到 TrafficAction）: {e:?}");
+            }
         }
     }
 

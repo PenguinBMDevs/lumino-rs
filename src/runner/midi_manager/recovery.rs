@@ -59,21 +59,15 @@ impl MidiManager {
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
 
-                // REND-002：初始化期间文档可能已装载/切换，完成时对齐端口布局。
-                // 与异步初始化时注入的布局相同则跳过（新管线已是该布局；且
-                // `set_midi_port_layout` 现在是强制全量重建，跳过可省一次重建）。
-                if self.desired_midi_max_port != self.spawned_midi_max_port
-                    && let Some(api) = self.api.as_mut()
-                {
+                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
+                // 对齐端口布局；重建较慢，统一下发后台防抖 worker（不卡 UI）。
+                if layout::should_align_after_init(
+                    self.desired_midi_max_port,
+                    self.spawned_midi_max_port,
+                ) {
                     let desired = self.desired_midi_max_port;
-                    match api.set_midi_port_layout(desired) {
-                        Ok(()) => {
-                            tracing::info!("XSynth: 初始化后端口布局已对齐 max_port={desired}")
-                        }
-                        Err(e) => {
-                            tracing::error!("XSynth: 初始化后应用端口布局失败（保持默认布局）: {e}")
-                        }
-                    }
+                    tracing::info!("XSynth: 初始化后端口布局对齐 max_port={desired}（后台重建）");
+                    self.apply_midi_port_layout_deferred(desired);
                 }
 
                 true
@@ -120,22 +114,17 @@ impl MidiManager {
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
 
-                // REND-002：初始化期间文档可能已装载/切换，完成时对齐端口布局
-                // （与 XSynth 同口径；相同则跳过，避免刚初始化完又白重建一次）。
-                if self.desired_midi_max_port != self.spawned_midi_max_port
-                    && let Some(api) = self.api.as_mut()
-                {
+                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
+                // 对齐端口布局（后台防抖重建，同 XSynth 口径）。
+                if layout::should_align_after_init(
+                    self.desired_midi_max_port,
+                    self.spawned_midi_max_port,
+                ) {
                     let desired = self.desired_midi_max_port;
-                    match api.set_midi_port_layout(desired) {
-                        Ok(()) => {
-                            tracing::info!("LGS (GPU): 初始化后端口布局已对齐 max_port={desired}")
-                        }
-                        Err(e) => {
-                            tracing::error!(
-                                "LGS (GPU): 初始化后应用端口布局失败（保持默认布局）: {e}"
-                            )
-                        }
-                    }
+                    tracing::info!(
+                        "LGS (GPU): 初始化后端口布局对齐 max_port={desired}（后台重建）"
+                    );
+                    self.apply_midi_port_layout_deferred(desired);
                 }
 
                 true
@@ -192,6 +181,9 @@ impl MidiManager {
         }
 
         self.needs_reinit = false;
+
+        // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
+        self.drain_layout_apply();
 
         tracing::info!(
             "重新初始化 MIDI 输出，使用偏好后端: {:?}",
