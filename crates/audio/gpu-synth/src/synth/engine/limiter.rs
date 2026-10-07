@@ -46,9 +46,19 @@ pub(crate) fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, 
     // delay-line head): the first LOOKAHEAD output frames are those samples
     // scaled by THIS block's gains - the gain applies at the output time,
     // exactly like the delay line itself, so the block boundary is seamless.
-    if tail.len() < LOOKAHEAD * 2 {
-        tail.resize(LOOKAHEAD * 2, 0.0);
+    let tail_bytes = LOOKAHEAD * 2;
+    if tail.len() < tail_bytes {
+        tail.resize(tail_bytes, 0.0);
     }
+
+    // DEBT-04 #121：通用延迟线推进——下一块的 tail = (旧 tail ++ 本块 raw) 的最后
+    // LOOKAHEAD 帧。长块（n >= LOOKAHEAD）时与旧实现 `raw.last(512)` 完全等价；
+    // 短块（n < LOOKAHEAD，UI 允许 64/128 帧 buffer）时正确保留"尚未播出的
+    // 上一段尾巴"。旧实现在 n < 256 时对 `raw.len() - 512` 负索引 panic。
+    let mut next_tail: Vec<f32> = Vec::with_capacity(tail.len() + raw.len());
+    next_tail.extend_from_slice(tail);
+    next_tail.extend_from_slice(&raw);
+    let next_tail = next_tail.split_off(next_tail.len() - tail_bytes);
 
     let mut g = *gain;
     if peak <= 0.98 && g == 1.0 {
@@ -63,9 +73,10 @@ pub(crate) fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, 
                 out[i * 2 + 1] = raw[(i - LOOKAHEAD) * 2 + 1];
             }
         }
-        // The delay-line head for the next block is this block's RAW input
-        // tail (unscaled): the next block scales it with ITS gain.
-        tail.copy_from_slice(&raw[raw.len() - LOOKAHEAD * 2..]);
+        // The delay-line head for the next block is the generalized
+        // `(old_tail ++ raw).last(LOOKAHEAD)` (unscaled): the next block
+        // scales it with ITS gain.
+        tail.copy_from_slice(&next_tail);
         *gain = 1.0;
         return;
     }
@@ -150,7 +161,7 @@ pub(crate) fn limit_block(out: &mut [f32], tail: &mut Vec<f32>, gain: &mut f32, 
         out[i * 2] = vl;
         out[i * 2 + 1] = vr;
     }
-    tail.copy_from_slice(&raw[raw.len() - LOOKAHEAD * 2..]);
+    tail.copy_from_slice(&next_tail);
     *gain = g;
 }
 

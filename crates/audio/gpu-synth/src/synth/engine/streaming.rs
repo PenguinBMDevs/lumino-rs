@@ -70,23 +70,9 @@ impl GpuSynth {
         wav_path: impl AsRef<std::path::Path>,
         limit_frames: Option<u64>,
     ) -> Result<RenderResult, SynthError> {
-        // Reset state exactly like `render_midi_inner`
-        self.offline_cursor = 0;
-        self.offline_events = Vec::new();
-        self.voices.clear();
-        for q in self.key_voices.iter_mut() {
-            q.clear();
-        }
-        self.spawn_budget.fill(0);
-        self.active_notes.fill(0);
-        self.global_frame = 0;
-        self.active_voice_count = 0;
-        self.last_states = None;
-        self.last_out = None;
-        self.prev_voice_ids.clear();
-        self.pending = None;
-        self.pending_events.clear();
-        self.pending_mix_events.clear();
+        // DEBT-04 #121：与文件渲染共用同一复位清单（旧实现此处清 pending_mix_events
+        // 但不清 limiter/通道状态，与 render_midi_parsed 互不一致 → 跨渲染串音）。
+        self.reset_for_offline_render();
 
         let prof = std::env::var("LUMINO_PROFILE").is_ok();
         let t0 = std::time::Instant::now();

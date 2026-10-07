@@ -203,6 +203,14 @@ impl SynthConfig {
                 self.block_size
             )));
         }
+        // DEBT-04 #121：GPU 渲染管线（shader/readback/limiter）按立体声交错布局
+        // 硬编码；Mono 在此层无法正确产出。需要单声道请在导出/上层做真降混
+        // （0.5*(L+R)），不要打开这个开关——旧实现静默产出错误音频。
+        if self.channels == ChannelMode::Mono {
+            return Err(crate::SynthError::Config(
+                "GPU 引擎仅支持立体声（ChannelMode::Stereo）；单声道请在写出前降混".into(),
+            ));
+        }
         if !self.render_silence_threshold.is_finite() || self.render_silence_threshold <= 0.0 {
             return Err(crate::SynthError::Config(
                 "render_silence_threshold must be positive".into(),

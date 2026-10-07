@@ -124,15 +124,17 @@ impl MidiStream {
             sample: item.sample,
             packed: item.packed,
         };
-        let (segs, tpb, sr) = (
-            self.tempo_segs.clone(),
-            self.ticks_per_beat,
-            self.sample_rate,
-        );
+        // DEBT-04 #121：借用切片计算，不再逐事件 `tempo_segs.clone()`
+        //（百万级事件 × 数百 tempo 段 = 纯 memcpy 风暴）。
         if let Some(st) = self.streams.get_mut(item.track_idx)
             && let Ok(Some((tick, ch, k, p))) = st.next_with_tick()
         {
-            let sample = ticks_to_sample(tick, &segs, tpb, sr);
+            let sample = ticks_to_sample(
+                tick,
+                &self.tempo_segs,
+                self.ticks_per_beat,
+                self.sample_rate,
+            );
             let port = self.track_ports.get(item.track_idx).copied().unwrap_or(0);
             let packed = TimedEvent::new(sample, global_channel(port, ch), k, p).packed;
             self.heap.push(Reverse(HeapItem {

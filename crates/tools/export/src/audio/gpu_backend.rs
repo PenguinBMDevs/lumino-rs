@@ -13,7 +13,7 @@ use lumino_midi_loader::MidiDocument;
 
 use crate::error::{ExportError, ExportResult};
 
-use super::config::{AudioChannelMode, AudioRenderConfig};
+use super::config::AudioRenderConfig;
 use super::sink_factory::create_output_sink;
 use super::speed::{DEFAULT_SPEED_WINDOW_SECS, ExportSpeedMeter};
 

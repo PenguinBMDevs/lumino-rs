@@ -386,3 +386,64 @@ fn trimmed_group_count_defers_the_excess() {
     assert_eq!(trimmed_group_count(5, 0), 0);
     assert_eq!(trimmed_group_count(0, 128), 0);
 }
+
+/// DEBT-04 #121：block < 256 帧（含 UI 允许的 64/128）不得触发限幅器负索引 panic。
+#[test]
+fn limiter_handles_short_blocks_without_panic() {
+    for n in [16usize, 64, 128, 256] {
+        let mut tail: Vec<f32> = Vec::new();
+        let mut gain = 1.0f32;
+        for b in 0..4 {
+            let mut out = vec![0.0f32; n * 2];
+            for f in 0..n {
+                // 最后一块注入 >0.98 的峰值，覆盖非快路径的扫描逻辑
+                let v = if b == 3 { 3.0 } else { 0.5 };
+                out[f * 2] = v;
+                out[f * 2 + 1] = v;
+            }
+            limit_block(&mut out, &mut tail, &mut gain, 64000.0);
+            assert!(
+                out.iter().all(|s| s.is_finite()),
+                "n={n} block={b}: 输出必须有限"
+            );
+            assert!(
+                out.iter().all(|s| s.abs() <= 1.001),
+                "n={n} block={b}: 限幅后不得远超满幅"
+            );
+        }
+    }
+}
+
+/// DEBT-04 #121：短块的通用延迟线推进必须保持 LOOKAHEAD 延迟语义不变。
+#[test]
+fn limiter_short_blocks_preserve_lookahead_delay() {
+    const LOOKAHEAD: usize = 256;
+    for n in [16usize, 64, 128] {
+        let mut tail: Vec<f32> = Vec::new();
+        let mut gain = 1.0f32;
+        // n=16 时第 256 帧落在第 17 块，取 30 块覆盖
+        let blocks = 30usize;
+        let mut collected: Vec<f32> = Vec::new();
+        for b in 0..blocks {
+            let mut out = vec![0.0f32; n * 2];
+            if b == 0 {
+                out[0] = 0.5;
+                out[1] = 0.5;
+            }
+            limit_block(&mut out, &mut tail, &mut gain, 64000.0);
+            collected.extend_from_slice(&out);
+        }
+        let idx = LOOKAHEAD * 2;
+        assert_eq!(
+            collected[idx], 0.5,
+            "n={n}: 脉冲必须在第 {LOOKAHEAD} 帧输出（延迟不变）"
+        );
+        assert!(
+            collected
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| i == idx || i == idx + 1 || v == 0.0),
+            "n={n}: 除延迟脉冲外应为静音"
+        );
+    }
+}
