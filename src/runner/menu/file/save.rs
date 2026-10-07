@@ -176,9 +176,10 @@ impl RunnerInner {
         }
 
         // 已有 .lmpj 工程路径 → 覆盖保存原文件（无对话框）
+        // DEBT-01 #118：透传真实启动状态——未启动（并发拒绝 / 无内容）时调用方
+        // 不能挂起等待 `handle_save_completed`，否则关闭动作永久卡死。
         if let Some(path) = self.current_lmpj_source() {
-            self.save_lmpj_project_to(path);
-            return true;
+            return self.save_lmpj_project_to(path);
         }
 
         // 首次保存：弹对话框选择路径/格式
@@ -241,16 +242,23 @@ impl RunnerInner {
 
         match extension.as_str() {
             "lmpj" => self.save_lmpj_project_to(save_path),
-            "mid" | "midi" => self.save_as_midi_with_edits(save_path),
+            "mid" | "midi" => {
+                self.save_as_midi_with_edits(save_path);
+                true
+            }
             _ => {
                 tracing::warn!("不支持的保存格式: {}", extension);
-                return false;
+                false
             }
         }
-        true
     }
 
     /// 保存为 LMPJ 文件（默认使用新格式：按音轨拆分 + 归档）
+    ///
+    /// 返回 `true` 表示保存任务已真正启动（进入异步写入）；`false` 表示未启动
+    /// （保存/云上传进行中被拒绝，或无文档且无编辑器内容可写）。
+    /// 保存确认流程据此决定是否等待 `handle_save_completed` 继续关闭动作
+    /// （DEBT-01 #118：曾经无条件返回 true，未启动时关闭动作永久挂死）。
     ///
     /// 2026-08 单一权威源：优先借用 UI 的 `MidiDocument`（零拷贝）构建 LuminoProject；
     /// 无文档时从编辑器音符重建。保证工程自包含——原始文件可删除后仍能完整加载。
@@ -262,12 +270,12 @@ impl RunnerInner {
     ///
     /// 保存期间 `saving` 标志置位：禁止关闭软件，关闭请求转为 `pending_close`
     /// 延迟处理，保存完成后自动退出。
-    fn save_lmpj_project_to(&mut self, save_path: PathBuf) {
+    fn save_lmpj_project_to(&mut self, save_path: PathBuf) -> bool {
         // 串行限制：保存/云上传进行中，新保存请求直接拒绝
         // （上传完成后用户再按 Ctrl+S 即可，不排队不补传）
         if self.is_saving() || self.is_cloud_saving() {
             tracing::debug!("保存或云上传进行中，忽略重复的保存请求");
-            return;
+            return false;
         }
 
         let project = {
@@ -299,7 +307,7 @@ impl RunnerInner {
 
         let Some(project) = project else {
             tracing::warn!("没有加载的 MIDI 文件且没有编辑器内容，无法保存 LMPJ 格式");
-            return;
+            return false;
         };
 
         // 工程设置对话框中填写的作者/版权写入工程元数据（.lmpj / metadata.toml）
@@ -355,6 +363,8 @@ impl RunnerInner {
                 }
             }
         });
+
+        true
     }
 
     /// 保存为 MIDI（包含编辑器编辑 + 源文件的 PC/CC 事件）

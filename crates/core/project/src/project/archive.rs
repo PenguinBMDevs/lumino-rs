@@ -30,6 +30,57 @@ fn read_u64_le(bytes: &[u8], offset: usize) -> Result<u64> {
     read_le_bytes::<8>(bytes, offset).map(u64::from_le_bytes)
 }
 
+/// 归档格式版本（当前仅支持 v1）。
+pub const ARCHIVE_VERSION: u16 = 1;
+
+/// 支持的压缩标志：0x01 = zstd。
+pub const ARCHIVE_COMPRESSION_ZSTD: u8 = 0x01;
+
+/// 单个部件解压后的上限（2 GiB）：防御损坏文件头 / zstd 炸弹导致的无限分配。
+const MAX_DECOMPRESSED_PART_BYTES: u64 = 1 << 31;
+
+/// 按 `offset/len` 取切片：全部 checked 运算 + 上界校验，损坏文件返回
+/// `FileFormat` 错误而不是 panic（DEBT-01 #118）。
+fn slice_at<'a>(bytes: &'a [u8], offset: u64, len: u64, what: &str) -> Result<&'a [u8]> {
+    let start = usize::try_from(offset)
+        .map_err(|_| CoreError::FileFormat(format!("{what}: 偏移 {offset} 超出地址空间")))?;
+    let len = usize::try_from(len)
+        .map_err(|_| CoreError::FileFormat(format!("{what}: 长度 {len} 超出地址空间")))?;
+    let end = start
+        .checked_add(len)
+        .ok_or_else(|| CoreError::FileFormat(format!("{what}: 偏移 {offset}+{len} 溢出")))?;
+    bytes.get(start..end).ok_or_else(|| {
+        CoreError::FileFormat(format!(
+            "{what}: 数据区越界（{start}..{end}，文件共 {} 字节），文件可能已损坏",
+            bytes.len()
+        ))
+    })
+}
+
+/// zstd 解压 + 结果校验：带上限、可选原始大小比对。
+fn decode_zstd_checked(data: &[u8], what: &str, expected_original_size: u64) -> Result<Vec<u8>> {
+    use std::io::Read;
+    let mut decoder = zstd::stream::Decoder::new(std::io::Cursor::new(data))
+        .map_err(|e| CoreError::Compression(format!("{what} 解压失败: {e}")))?;
+    let mut out = Vec::new();
+    (&mut decoder)
+        .take(MAX_DECOMPRESSED_PART_BYTES + 1)
+        .read_to_end(&mut out)
+        .map_err(|e| CoreError::Compression(format!("{what} 解压失败: {e}")))?;
+    if out.len() as u64 > MAX_DECOMPRESSED_PART_BYTES {
+        return Err(CoreError::FileFormat(format!(
+            "{what} 解压后超过上限（{MAX_DECOMPRESSED_PART_BYTES} 字节），文件可能已损坏"
+        )));
+    }
+    if expected_original_size != 0 && out.len() as u64 != expected_original_size {
+        return Err(CoreError::FileFormat(format!(
+            "{what} 大小与文件头不一致（期望 {expected_original_size}，实际 {}），文件可能已损坏",
+            out.len()
+        )));
+    }
+    Ok(out)
+}
+
 /// LMPJ 归档文件头
 #[derive(Debug, Clone, Copy)]
 pub struct ArchiveHeader {
@@ -138,10 +189,19 @@ impl FileEntry {
             return Err(CoreError::FileFormat("file entry: too short".into()));
         }
         let path_len = u16::from_le_bytes([bytes[0], bytes[1]]) as usize;
-        let mut pos = 2;
+        let mut pos: usize = 2;
 
-        if bytes.len() < pos + path_len + 8 + 8 + 8 + 4 + 1 {
-            return Err(CoreError::FileFormat("file entry: incomplete".into()));
+        // 固定字段 = data_offset(8) + compressed_size(8) + original_size(8) + crc32(4) + flag(1)
+        const FIXED_FIELDS: usize = 8 + 8 + 8 + 4 + 1;
+        let needed = pos
+            .checked_add(path_len)
+            .and_then(|p| p.checked_add(FIXED_FIELDS))
+            .ok_or_else(|| CoreError::FileFormat("file entry: length overflow".into()))?;
+        if bytes.len() < needed {
+            return Err(CoreError::FileFormat(format!(
+                "file entry: incomplete（需要 {needed} 字节，实际 {}）",
+                bytes.len()
+            )));
         }
 
         let path = String::from_utf8(bytes[pos..pos + path_len].to_vec())
@@ -193,17 +253,25 @@ impl FileTable {
     }
 
     /// 从字节解码
+    ///
+    /// DEBT-01 #118：不再信任 `count` 做预分配（损坏文件可声明 42 亿条 →
+    /// 巨量分配）；按剩余字节逐条解码，`pos` 全部 checked 推进。
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         if bytes.len() < 4 {
             return Err(CoreError::FileFormat("file table: too short".into()));
         }
         let count = read_u32_le(bytes, 0)? as usize;
-        let mut entries = Vec::with_capacity(count);
-        let mut pos = 4;
+        let mut entries = Vec::new();
+        let mut pos = 4usize;
 
         for _ in 0..count {
-            let (entry, consumed) = FileEntry::decode(&bytes[pos..])?;
-            pos += consumed;
+            let rest = bytes.get(pos..).ok_or_else(|| {
+                CoreError::FileFormat(format!("file table: 条目区越界（pos={pos}）"))
+            })?;
+            let (entry, consumed) = FileEntry::decode(rest)?;
+            pos = pos
+                .checked_add(consumed)
+                .ok_or_else(|| CoreError::FileFormat("file table: pos overflow".into()))?;
             entries.push(entry);
         }
 
@@ -218,39 +286,91 @@ pub fn compute_crc32(data: &[u8]) -> u32 {
     hasher.finalize()
 }
 
-/// 读取归档中的指定文件
-pub fn read_file_from_archive(archive_bytes: &[u8], file_path: &str) -> Result<Option<Vec<u8>>> {
-    let header = ArchiveHeader::from_bytes(archive_bytes)?;
-    if &header.magic != b"LMPJ" {
-        return Err(CoreError::FileFormat("archive: invalid magic".into()));
-    }
+/// 归档读取器：解析一次文件头 + 文件表，随后可反复读取文件。
+///
+/// DEBT-01 #118：所有偏移/长度经 [`slice_at`] 上界校验；读取时校验 CRC32 与
+/// 原始大小；损坏文件返回 `FileFormat` 错误（绝不 panic / 巨量预分配）。
+pub struct ArchiveReader<'a> {
+    bytes: &'a [u8],
+    file_table: FileTable,
+}
 
-    let ft_start = header.file_table_offset as usize;
-    let ft_end = ft_start + header.file_table_compressed_size as usize;
-    let ft_data = &archive_bytes[ft_start..ft_end];
-
-    let decompressed = zstd::stream::decode_all(std::io::Cursor::new(ft_data))
-        .map_err(|e| CoreError::Compression(format!("file table decompression: {e}")))?;
-
-    let file_table = FileTable::decode(&decompressed)?;
-
-    let entry = file_table.entries.iter().find(|e| e.path == file_path);
-    match entry {
-        Some(e) => {
-            let start = e.data_offset as usize;
-            let end = start + e.compressed_size as usize;
-            let data = &archive_bytes[start..end];
-
-            if e.is_compressed {
-                let decompressed = zstd::stream::decode_all(std::io::Cursor::new(data))
-                    .map_err(|e| CoreError::Compression(format!("file decompression: {e}")))?;
-                Ok(Some(decompressed))
-            } else {
-                Ok(Some(data.to_vec()))
-            }
+impl<'a> ArchiveReader<'a> {
+    /// 解析归档头与文件表。
+    pub fn new(bytes: &'a [u8]) -> Result<Self> {
+        let header = ArchiveHeader::from_bytes(bytes)?;
+        if &header.magic != b"LMPJ" {
+            return Err(CoreError::FileFormat(
+                "这不是有效的 Lumino 工程文件（魔数不匹配）".into(),
+            ));
         }
-        None => Ok(None),
+        if header.version != ARCHIVE_VERSION {
+            return Err(CoreError::FileFormat(format!(
+                "不支持的工程文件版本 v{}（当前支持 v{ARCHIVE_VERSION}）",
+                header.version
+            )));
+        }
+        if header.compression_flags != ARCHIVE_COMPRESSION_ZSTD {
+            return Err(CoreError::FileFormat(format!(
+                "不支持的归档压缩标志 0x{:02X}（仅支持 zstd）",
+                header.compression_flags
+            )));
+        }
+
+        let ft_data = slice_at(
+            bytes,
+            header.file_table_offset,
+            header.file_table_compressed_size,
+            "文件表",
+        )?;
+        let decompressed = decode_zstd_checked(ft_data, "文件表", header.file_table_original_size)?;
+        let file_table = FileTable::decode(&decompressed)?;
+
+        Ok(Self { bytes, file_table })
     }
+
+    /// 读取归档内的一个文件（不存在返回 `None`）。
+    pub fn read(&self, file_path: &str) -> Result<Option<Vec<u8>>> {
+        let Some(entry) = self.file_table.entries.iter().find(|e| e.path == file_path) else {
+            return Ok(None);
+        };
+
+        let data = slice_at(
+            self.bytes,
+            entry.data_offset,
+            entry.compressed_size,
+            &format!("文件 {file_path}"),
+        )?;
+
+        // CRC 覆盖"存储态"字节（压缩后大小），与写入端 `build_archive` 一致
+        let crc = compute_crc32(data);
+        if crc != entry.crc32 {
+            return Err(CoreError::FileFormat(format!(
+                "文件 {file_path} 校验失败（CRC 不匹配），工程可能已损坏"
+            )));
+        }
+
+        let output = if entry.is_compressed {
+            decode_zstd_checked(data, &format!("文件 {file_path}"), entry.original_size)?
+        } else {
+            if entry.original_size != 0 && entry.original_size as usize != data.len() {
+                return Err(CoreError::FileFormat(format!(
+                    "文件 {file_path} 大小与文件头不一致（期望 {}，实际 {}），工程可能已损坏",
+                    entry.original_size,
+                    data.len()
+                )));
+            }
+            data.to_vec()
+        };
+        Ok(Some(output))
+    }
+}
+
+/// 读取归档中的指定文件（便捷入口：每次重新解析文件表）。
+///
+/// 需要连续读取多个文件时请直接使用 [`ArchiveReader`]（只解析一次）。
+pub fn read_file_from_archive(archive_bytes: &[u8], file_path: &str) -> Result<Option<Vec<u8>>> {
+    ArchiveReader::new(archive_bytes)?.read(file_path)
 }
 
 /// 构建归档文件
@@ -392,5 +512,126 @@ mod tests {
         let missing =
             read_file_from_archive(&archive, "notexist").expect("从归档读取不存在的文件失败");
         assert!(missing.is_none());
+    }
+
+    /// 手工构造单块数据区的归档（用于损坏样例测试）。
+    fn craft_archive(entries: Vec<FileEntry>, data: &[u8]) -> Vec<u8> {
+        let mut bytes = vec![0u8; ArchiveHeader::SIZE];
+        bytes.extend_from_slice(data);
+
+        let table = FileTable { entries };
+        let encoded = table.encode();
+        let compressed =
+            zstd::stream::encode_all(std::io::Cursor::new(&encoded), 3).expect("压缩文件表失败");
+
+        let header = ArchiveHeader {
+            magic: *b"LMPJ",
+            version: ARCHIVE_VERSION,
+            compression_flags: ARCHIVE_COMPRESSION_ZSTD,
+            file_table_offset: bytes.len() as u64,
+            file_table_compressed_size: compressed.len() as u64,
+            file_table_original_size: encoded.len() as u64,
+            created_at: 0,
+            _reserved: [0u8; 16],
+        };
+        bytes.extend_from_slice(&compressed);
+        bytes[0..ArchiveHeader::SIZE].copy_from_slice(&header.to_bytes());
+        bytes
+    }
+
+    /// DEBT-01 #118：头部/文件表/数据区的截断与越界必须返回错误而不是 panic。
+    #[test]
+    fn test_corrupt_archive_returns_errors() {
+        // 空文件 / 截断头部
+        assert!(read_file_from_archive(&[], "metadata.toml").is_err());
+        let short = vec![0u8; 10];
+        assert!(read_file_from_archive(&short, "metadata.toml").is_err());
+
+        let mut header = ArchiveHeader {
+            magic: *b"XXXX",
+            version: ARCHIVE_VERSION,
+            compression_flags: ARCHIVE_COMPRESSION_ZSTD,
+            file_table_offset: ArchiveHeader::SIZE as u64,
+            file_table_compressed_size: 0,
+            file_table_original_size: 0,
+            created_at: 0,
+            _reserved: [0u8; 16],
+        };
+        let mut bytes = vec![0u8; ArchiveHeader::SIZE];
+        bytes[0..ArchiveHeader::SIZE].copy_from_slice(&header.to_bytes());
+
+        // 魔数错误
+        let err = read_file_from_archive(&bytes, "x").expect_err("魔数错误必须报错");
+        assert!(
+            err.to_string().contains("工程文件"),
+            "错误文案应指出不是有效工程: {err}"
+        );
+
+        // 版本不支持
+        header.magic = *b"LMPJ";
+        header.version = 2;
+        bytes[0..ArchiveHeader::SIZE].copy_from_slice(&header.to_bytes());
+        let err = read_file_from_archive(&bytes, "x").expect_err("未知版本必须报错");
+        assert!(
+            err.to_string().contains("版本"),
+            "错误文案应包含版本信息: {err}"
+        );
+
+        // 文件表偏移 = u64::MAX：checked 溢出/越界，不 panic
+        header.version = ARCHIVE_VERSION;
+        header.file_table_offset = u64::MAX;
+        header.file_table_compressed_size = 16;
+        bytes[0..ArchiveHeader::SIZE].copy_from_slice(&header.to_bytes());
+        assert!(read_file_from_archive(&bytes, "x").is_err());
+
+        // 文件表压缩后大小越界
+        header.file_table_offset = ArchiveHeader::SIZE as u64;
+        header.file_table_compressed_size = u64::MAX;
+        bytes[0..ArchiveHeader::SIZE].copy_from_slice(&header.to_bytes());
+        assert!(read_file_from_archive(&bytes, "x").is_err());
+    }
+
+    /// DEBT-01 #118：巨量 count 不得触发巨量预分配（立即报错）。
+    #[test]
+    fn test_file_table_huge_count_fails_fast() {
+        let raw = [0xFF, 0xFF, 0xFF, 0xFF]; // count = u32::MAX，但无条目字节
+        assert!(FileTable::decode(&raw).is_err());
+    }
+
+    /// DEBT-01 #118：CRC 不匹配必须被检出（翻转数据区一个字节）。
+    #[test]
+    fn test_crc_mismatch_detected() {
+        let files = vec![("a.bin".to_string(), b"hello-world".to_vec(), false)];
+        let mut archive = build_archive(&files).expect("构建归档失败");
+        // 数据区从文件头之后开始；翻转一个字节
+        archive[ArchiveHeader::SIZE] ^= 0xFF;
+
+        let err = read_file_from_archive(&archive, "a.bin").expect_err("CRC 不匹配必须报错");
+        assert!(
+            err.to_string().contains("校验失败"),
+            "错误文案应包含校验失败: {err}"
+        );
+    }
+
+    /// DEBT-01 #118：原始大小与文件头不一致必须被检出。
+    #[test]
+    fn test_original_size_mismatch_detected() {
+        let data = b"hello";
+        let entry = FileEntry {
+            path: "a.bin".into(),
+            data_offset: ArchiveHeader::SIZE as u64,
+            compressed_size: data.len() as u64,
+            original_size: 999, // 与真实值不符
+            crc32: compute_crc32(data),
+            is_compressed: false,
+        };
+        let bytes = craft_archive(vec![entry], data);
+        assert!(ArchiveReader::new(&bytes).is_ok(), "构造样本应为合法归档");
+
+        let err = read_file_from_archive(&bytes, "a.bin").expect_err("大小不一致必须报错");
+        assert!(
+            err.to_string().contains("大小"),
+            "错误文案应指出大小不一致: {err}"
+        );
     }
 }

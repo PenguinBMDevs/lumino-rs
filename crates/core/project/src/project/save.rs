@@ -18,10 +18,22 @@ use crate::{
 };
 use lumino_core::error::Result;
 
-/// 保存为文件夹形态
-pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
-    let base = path.as_ref();
+use super::atomic;
 
+/// 保存为文件夹形态
+///
+/// DEBT-01 #118：先在同卷临时目录完整写入，成功后再整体换入目标；
+/// 中途失败（磁盘满 / 被强杀 / 写入错误）绝不破坏原有工程。
+pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
+    let base = path.as_ref().to_path_buf();
+    atomic::save_dir_atomic(&base, |tmp| write_folder_contents(project, tmp))
+}
+
+/// 在给定目录内完整写入文件夹形态的全部内容。
+///
+/// 由 [`save_to_folder`] 的原子替换流程调用（参数为临时目录）；
+/// 也供需要"直接写入指定目录"的内部场景复用。
+fn write_folder_contents(project: &LuminoProject, base: &Path) -> Result<()> {
     // 创建目录结构
     folder::create_folder_structure(base)?;
 
@@ -114,10 +126,13 @@ pub fn save_to_folder(project: &LuminoProject, path: impl AsRef<Path>) -> Result
 }
 
 /// 保存为单文件归档形态
+///
+/// DEBT-01 #118：同卷临时文件 → `sync_all` → 换入目标；写失败时原文件保持
+/// 不变（Windows 上先旧→`.bak` 再换入，失败自动回滚）。
 pub fn save_to_archive(project: &LuminoProject, path: impl AsRef<Path>) -> Result<()> {
     let files = build_archive_files(project)?;
     let archive_bytes = archive::build_archive(&files)?;
-    std::fs::write(path, archive_bytes)?;
+    atomic::write_file_atomic(path.as_ref(), &archive_bytes)?;
     Ok(())
 }
 
@@ -368,5 +383,64 @@ mod tests {
         assert_eq!(&bytes[0..4], b"LMPJ");
 
         let _ = std::fs::remove_file(&save_archive_path);
+    }
+
+    fn atomic_test_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("lumino_save_{name}_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("创建测试目录失败");
+        dir
+    }
+
+    fn assert_no_leftovers(dir: &std::path::Path) {
+        let leftovers: Vec<String> = std::fs::read_dir(dir)
+            .expect("读取测试目录失败")
+            .flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains(".tmp-") || n.ends_with(".bak"))
+            .collect();
+        assert!(leftovers.is_empty(), "不应残留临时/备份文件: {leftovers:?}");
+    }
+
+    /// DEBT-01 #118：覆盖保存必须原子替换——旧目标被整体换掉，不留 tmp/bak。
+    #[test]
+    fn test_save_to_archive_atomic_replace() {
+        let dir = atomic_test_dir("archive_replace");
+        let target = dir.join("project.lmpj");
+        std::fs::write(&target, b"stale-not-an-archive").expect("写入旧内容失败");
+
+        let project = create_test_project();
+        save_to_archive(&project, &target).expect("原子保存归档失败");
+
+        let bytes = std::fs::read(&target).expect("读取归档失败");
+        assert_eq!(&bytes[0..4], b"LMPJ", "旧内容必须被完整替换");
+        assert!(
+            archive::read_file_from_archive(&bytes, "metadata.toml")
+                .expect("读取归档内容失败")
+                .is_some(),
+            "替换后的归档必须可读"
+        );
+        assert_no_leftovers(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// DEBT-01 #118：文件夹保存整体换入，旧目录的陈旧文件不得残留。
+    #[test]
+    fn test_save_to_folder_atomic_replace() {
+        let dir = atomic_test_dir("folder_replace");
+        let target = dir.join("project.lmpj");
+        std::fs::create_dir_all(&target).expect("创建旧目录失败");
+        std::fs::write(target.join("stale.bin"), b"stale").expect("写入陈旧文件失败");
+
+        let project = create_test_project();
+        save_to_folder(&project, &target).expect("原子保存文件夹失败");
+
+        assert!(target.join("metadata.toml").exists());
+        assert!(
+            !target.join("stale.bin").exists(),
+            "旧目录的陈旧文件必须整体消失"
+        );
+        assert_no_leftovers(&dir);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }
