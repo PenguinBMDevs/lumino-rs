@@ -10,6 +10,13 @@ use crate::texture_waterfall::types::WaterfallTrackTile;
 
 use super::core::{MAGIC, VERSION, WaterfallCacheError, WaterfallCacheMeta, ZSTD_LEVEL};
 
+/// 元数据硬上限（64 KiB）：`meta_len` 来自文件头（不可信），防止巨量分配（DEBT-02 #119）。
+const MAX_META_BYTES: usize = 64 * 1024;
+/// 压缩体硬上限（256 MiB）：贴图缓存不该超过此体量，损坏文件不得触发无界读。
+const MAX_COMPRESSED_BYTES: u64 = 256 << 20;
+/// 解压像素硬上限（1 GiB）：防御 zstd 炸弹。
+const MAX_TILE_BYTES: u64 = 1 << 30;
+
 /// 写入单音轨贴图缓存
 ///
 /// 成功返回写入的文件路径。若缓存目录不存在会自动创建。
@@ -93,6 +100,12 @@ fn read_cache_file(
     let mut meta_len_buf = [0u8; 4];
     file.read_exact(&mut meta_len_buf)?;
     let meta_len = u32::from_le_bytes(meta_len_buf) as usize;
+    // DEBT-02 #119：meta_len 不可信，超限直接拒绝（旧实现 vec![0; meta_len] 无界）
+    if meta_len > MAX_META_BYTES {
+        return Err(WaterfallCacheError::MetaCodec(format!(
+            "meta 长度 {meta_len} 超过上限 {MAX_META_BYTES}，缓存已损坏"
+        )));
+    }
 
     let mut meta_bytes = vec![0u8; meta_len];
     file.read_exact(&mut meta_bytes)?;
@@ -116,12 +129,19 @@ fn read_cache_file(
         )));
     }
 
+    // DEBT-02 #119：压缩体读取与解压输出都设上限，损坏缓存不得无界分配
     let mut compressed = Vec::new();
-    file.read_to_end(&mut compressed)?;
-    let pixels = zstd::stream::decode_all(compressed.as_slice())
-        .map_err(|e| WaterfallCacheError::PixelCodec(e.to_string()))?;
+    (&mut file)
+        .take(MAX_COMPRESSED_BYTES + 1)
+        .read_to_end(&mut compressed)?;
+    if compressed.len() as u64 > MAX_COMPRESSED_BYTES {
+        return Err(WaterfallCacheError::PixelCodec(format!(
+            "缓存压缩体超过上限 {MAX_COMPRESSED_BYTES} 字节"
+        )));
+    }
+    let pixels = decode_zstd_limited(&compressed)?;
 
-    Ok(WaterfallTrackTile::new(
+    let tile = WaterfallTrackTile::new(
         track_idx,
         time_group,
         pixels,
@@ -129,7 +149,35 @@ fn read_cache_file(
         meta.height,
         meta.tick_start,
         meta.tick_end,
-    ))
+    );
+    // DEBT-02 #119：上传前必须校验像素长度与规格一致（旧实现从不调用 validate）
+    if !tile.validate() {
+        return Err(WaterfallCacheError::PixelCodec(format!(
+            "像素长度 {} 与规格 {}x{}x4={} 不符，缓存已损坏",
+            tile.byte_len(),
+            meta.width,
+            meta.height,
+            tile.expected_byte_len()
+        )));
+    }
+    Ok(tile)
+}
+
+/// zstd 解压像素并限制输出上限（DEBT-02 #119）。
+fn decode_zstd_limited(compressed: &[u8]) -> Result<Vec<u8>, WaterfallCacheError> {
+    let mut decoder = zstd::stream::Decoder::new(std::io::Cursor::new(compressed))
+        .map_err(|e| WaterfallCacheError::PixelCodec(e.to_string()))?;
+    let mut pixels = Vec::new();
+    (&mut decoder)
+        .take(MAX_TILE_BYTES + 1)
+        .read_to_end(&mut pixels)
+        .map_err(|e| WaterfallCacheError::PixelCodec(e.to_string()))?;
+    if pixels.len() as u64 > MAX_TILE_BYTES {
+        return Err(WaterfallCacheError::PixelCodec(format!(
+            "解压像素超过上限 {MAX_TILE_BYTES} 字节"
+        )));
+    }
+    Ok(pixels)
 }
 
 // 本模块没有独立的测试——所有 IO 测试在 `super` 模块的 `tests` 中

@@ -7,6 +7,8 @@ use std::path::{Path, PathBuf};
 
 use crate::archive::{ArchiveEntry, ArchiveError};
 
+use super::sanitize::safe_join;
+
 // ── unarc-rs 后端 ──────────────────────────────────────────
 
 /// 使用 unarc-rs 列出压缩包条目
@@ -72,7 +74,8 @@ pub(super) fn extract_all_unarc(
     {
         let name = entry.name();
         if name.ends_with('/') {
-            let dir_path = output_dir.join(name);
+            // DEBT-02 #119：条目名不可信，目录同样要过 safe_join
+            let dir_path = safe_join(output_dir, name)?;
             std::fs::create_dir_all(&dir_path)?;
             continue;
         }
@@ -81,7 +84,7 @@ pub(super) fn extract_all_unarc(
             .read(&entry)
             .map_err(|e| ArchiveError::LibraryError(format!("unarc-rs 读取数据失败: {e}")))?;
 
-        let entry_path = output_dir.join(name);
+        let entry_path = safe_join(output_dir, name)?;
         if let Some(parent) = entry_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -159,13 +162,17 @@ pub(super) fn extract_all_zip(
             .map_err(|e| ArchiveError::LibraryError(format!("zip 读取条目失败: {e}")))?;
 
         let name = entry.name().to_string();
+        // DEBT-02 #119：zip crate 的 enclosed_name 已拒绝 `../` 与绝对路径；
+        // 返回 None 说明条目名不安全，直接拒绝而不是静默跳过。
+        let Some(rel) = entry.enclosed_name() else {
+            return Err(ArchiveError::UnsafeEntryName(name));
+        };
         if name.ends_with('/') {
-            let dir_path = output_dir.join(&name);
-            std::fs::create_dir_all(dir_path)?;
+            std::fs::create_dir_all(output_dir.join(rel))?;
             continue;
         }
 
-        let entry_path = output_dir.join(&name);
+        let entry_path = output_dir.join(rel);
         if let Some(parent) = entry_path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -275,7 +282,7 @@ pub(super) fn extract_entry_data_xz(path: &Path) -> Result<Vec<u8>, ArchiveError
 pub(super) fn extract_all_gz(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let extracted_data = extract_entry_data_gz(path)?;
     let name = virtual_midi_name(path);
-    let output_path = output_dir.join(&name);
+    let output_path = safe_join(output_dir, &name)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -287,10 +294,62 @@ pub(super) fn extract_all_gz(path: &Path, output_dir: &Path) -> Result<Vec<PathB
 pub(super) fn extract_all_xz(path: &Path, output_dir: &Path) -> Result<Vec<PathBuf>, ArchiveError> {
     let extracted_data = extract_entry_data_xz(path)?;
     let name = virtual_midi_name(path);
-    let output_path = output_dir.join(&name);
+    let output_path = safe_join(output_dir, &name)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&output_path, &extracted_data)?;
     Ok(vec![output_path])
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write as _;
+
+    fn write_zip(path: &Path, entries: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).expect("创建 zip 失败");
+        let mut writer = zip::ZipWriter::new(file);
+        let options = zip::write::SimpleFileOptions::default();
+        for (name, data) in entries {
+            writer
+                .start_file(*name, options)
+                .expect("写入 zip 条目失败");
+            writer.write_all(data).expect("写入 zip 数据失败");
+        }
+        writer.finish().expect("完成 zip 失败");
+    }
+
+    /// DEBT-02 #119：`../` 条目必须被拒绝，且不得写出目标目录。
+    #[test]
+    fn zip_slip_entry_is_rejected() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let zip_path = dir.path().join("evil.zipx");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).expect("创建输出目录失败");
+        write_zip(&zip_path, &[("../evil.mid", b"MThdAAAA")]);
+
+        let result = extract_all_zip(&zip_path, &out);
+
+        assert!(result.is_err(), "路径穿越条目必须报错");
+        assert!(
+            !dir.path().join("evil.mid").exists(),
+            "不得在目标目录之外写出文件"
+        );
+    }
+
+    /// 正常相对路径条目必须照常解压（零回归）。
+    #[test]
+    fn zip_normal_entry_still_extracts() {
+        let dir = tempfile::tempdir().expect("创建临时目录失败");
+        let zip_path = dir.path().join("ok.zipx");
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).expect("创建输出目录失败");
+        write_zip(&zip_path, &[("sub/a.mid", b"MThd")]);
+
+        let files = extract_all_zip(&zip_path, &out).expect("正常条目应解压成功");
+
+        assert_eq!(files.len(), 1);
+        assert!(out.join("sub/a.mid").exists(), "应解压到子目录内");
+    }
 }

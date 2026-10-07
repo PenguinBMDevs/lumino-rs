@@ -9,6 +9,8 @@ use std::path::Path;
 
 use crate::archive::{ArchiveEntry, ArchiveError};
 
+use super::sanitize::safe_join;
+
 /// 列出 ISO 镜像中的所有条目
 ///
 /// 优先使用 iso9660 crate 解析文件系统。如果解析失败，
@@ -130,6 +132,31 @@ pub(super) fn extract_entry_data(path: &Path, entry_name: &str) -> Result<Vec<u8
     }
 }
 
+/// 从 MIDI 魔数起点切片解析所有 MTrk 块后的完整长度。
+///
+/// DEBT-02 #119：`MTrk` 长度字段不可信，超过实际数据的谎报长度必须截断，
+/// 否则 `slice_data[..end]` 会越界 panic。
+fn midi_slice_end(slice_data: &[u8]) -> usize {
+    let mut end = 14.min(slice_data.len()); // 跳过 MThd(4) + 长度(4) + 头体(6)
+    while end.saturating_add(8) <= slice_data.len() {
+        if &slice_data[end..end + 4] != b"MTrk" {
+            break;
+        }
+        let track_len = u32::from_be_bytes([
+            slice_data[end + 4],
+            slice_data[end + 5],
+            slice_data[end + 6],
+            slice_data[end + 7],
+        ]) as usize;
+        let next = end.saturating_add(8).saturating_add(track_len);
+        if next > slice_data.len() {
+            break; // 谎报长度：截断到已解析位置
+        }
+        end = next;
+    }
+    end
+}
+
 /// 回退方案：在原始 ISO 数据中扫描 MIDI 魔数并提取完整 MIDI 数据
 ///
 /// 找到 "MThd" 后尝试解析 MIDI 结构获取完整内容长度。
@@ -149,24 +176,7 @@ fn fallback_raw_extract(path: &Path) -> Result<Vec<u8>, ArchiveError> {
             return Err(ArchiveError::EntryNotFound("content".to_string()));
         }
 
-        // MIDI 文件是一个头块后跟多个音轨块
-        let mut end = 14; // 跳过 MThd 头
-
-        // 解析所有 MTrk 块
-        while end + 8 <= slice_data.len() {
-            if &slice_data[end..end + 4] == b"MTrk" {
-                let track_len = u32::from_be_bytes([
-                    slice_data[end + 4],
-                    slice_data[end + 5],
-                    slice_data[end + 6],
-                    slice_data[end + 7],
-                ]) as usize;
-                end += 8 + track_len;
-            } else {
-                break;
-            }
-        }
-
+        let end = midi_slice_end(slice_data);
         let mut result_data = slice_data[..end].to_vec();
         // 去除尾部零字节（ISO 填充）
         while result_data.last() == Some(&0) {
@@ -234,7 +244,8 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
                     ArchiveError::LibraryError(format!("iso9660 读取文件失败: {e}"))
                 })?;
 
-                let entry_path = output_dir.join(&full_name);
+                // DEBT-02 #119：ISO 标识符也不可信，统一 safe_join
+                let entry_path = safe_join(output_dir, &full_name)?;
                 if let Some(parent) = entry_path.parent() {
                     std::fs::create_dir_all(parent)?;
                 }
@@ -244,4 +255,39 @@ fn extract_all_from_dir<T: iso9660::ISO9660Reader>(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DEBT-02 #119：MTrk 谎报长度必须截断，不得越界 panic。
+    #[test]
+    fn fallback_end_truncates_on_lying_track_len() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&[0u8; 6]);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&u32::MAX.to_be_bytes()); // 谎报长度
+        data.extend_from_slice(&[0u8; 16]);
+
+        let end = midi_slice_end(&data);
+        assert!(end <= data.len(), "end={end} 必须被截断到数据长度内");
+    }
+
+    /// 合法 MIDI：解析到最后一个完整 MTrk 块结束处。
+    #[test]
+    fn fallback_end_parses_valid_tracks() {
+        let mut data = Vec::new();
+        data.extend_from_slice(b"MThd");
+        data.extend_from_slice(&6u32.to_be_bytes());
+        data.extend_from_slice(&[0u8; 6]);
+        data.extend_from_slice(b"MTrk");
+        data.extend_from_slice(&4u32.to_be_bytes());
+        data.extend_from_slice(&[1, 2, 3, 4]);
+        data.extend_from_slice(&[0xAA, 0xBB, 0xCC]); // 尾部非块数据
+
+        assert_eq!(midi_slice_end(&data), data.len() - 3);
+    }
 }

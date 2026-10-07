@@ -195,4 +195,23 @@ mod tests {
             .expect("清理不存在的 MIDI 缓存应返回 Ok(0)");
         assert_eq!(removed, 0);
     }
+
+    /// DEBT-02 #119：meta_len 超限的损坏缓存必须报错，不做巨量分配。
+    #[test]
+    fn test_cache_rejects_oversized_meta_len() {
+        let dir = test_cache_dir("oversized-meta");
+        std::fs::create_dir_all(&dir).expect("创建缓存目录失败");
+        let hash = "0123456789abcdef";
+        let path = waterfall_cache_path(&dir, hash, 0, 0);
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(b"LMOCache");
+        bytes.extend_from_slice(&1u16.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // 恶意 meta_len
+        std::fs::write(&path, bytes).expect("写入损坏缓存失败");
+
+        let expected = sample_meta(&sample_tile(0, 0));
+        let result = read_waterfall_track_tile_cache(&dir, hash, 0, 0, &expected);
+        assert!(result.is_err(), "meta_len 超限必须报错");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
