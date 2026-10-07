@@ -96,6 +96,12 @@ impl MidiFile {
             track_ports.push(port.unwrap_or(0));
         }
 
+        // DEBT-04 #121：tempo 段必须**全局按 tick 升序**。多轨文件合法地把 tempo
+        // 分布在不同轨道，pass 1 按"轨优先"顺序收集会破坏升序假设，导致
+        // `partition_point` 定位错误 → tick→sample 映射错（速度/时长错）。
+        // 稳定排序保持同 tick 的"后者生效"语义（与流式路径 stream/parse.rs 一致）。
+        tempos.sort_by_key(|&(tick, _)| tick);
+
         // Cumulative seconds per tempo segment; tick -> seconds is a binary
         // search (large automated files can contain hundreds of thousands of
         // tempo events; a linear scan per event would be O(events x tempos)).
@@ -293,6 +299,54 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(&path);
+    }
+
+    /// DEBT-04 #121：多轨 tempo 必须全局按 tick 排序——本样本 track 0 的 tempo
+    /// 在 tick 480、track 1 的 tempo 在 tick 0，"按轨收集"天然乱序；未排序时
+    /// tick→sample 映射错误（debug 下 `tick - prev_tick` u64 下溢直接 panic）。
+    #[test]
+    fn tempo_events_from_multiple_tracks_are_sorted() {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"MThd");
+        v.extend_from_slice(&6u32.to_be_bytes());
+        v.extend_from_slice(&1u16.to_be_bytes()); // format 1
+        v.extend_from_slice(&2u16.to_be_bytes());
+        v.extend_from_slice(&480u16.to_be_bytes());
+
+        // track 0：delta 480 后设置 tempo=250000（晚期 tempo 先被收集）
+        let mut t0 = Vec::new();
+        t0.extend_from_slice(&[0x83, 0x60, 0xFF, 0x51, 0x03, 0x03, 0xD0, 0x90]);
+        t0.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+        t0.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+        t0.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        // track 1：tick 0 设置 tempo=500000（早期 tempo 后被收集）
+        let mut t1 = Vec::new();
+        t1.extend_from_slice(&[0x00, 0xFF, 0x51, 0x03, 0x07, 0xA1, 0x20]);
+        t1.extend_from_slice(&[0x00, 0x90, 0x3C, 0x64]);
+        t1.extend_from_slice(&[0x83, 0x60, 0x80, 0x3C, 0x40]);
+        t1.extend_from_slice(&[0x00, 0xFF, 0x2F, 0x00]);
+        for t in [t0, t1] {
+            v.extend_from_slice(b"MTrk");
+            v.extend_from_slice(&(t.len() as u32).to_be_bytes());
+            v.extend_from_slice(&t);
+        }
+
+        let midi = MidiFile::parse(&v, 64_000).expect("乱序 tempo 的多轨 SMF 应可解析");
+        assert_eq!(
+            midi.tempos,
+            vec![(0, 500_000), (480, 250_000)],
+            "tempos 必须按 tick 升序（公开字段同步排序）"
+        );
+        // tick 480 的音符：0..480 用 500000us/beat → 恰好 0.5s → 32000 样本 @64k
+        let has_480_note = midi
+            .sequence
+            .events
+            .iter()
+            .any(|ev| ev.kind() == kind::NOTE_ON && ev.sample == 32_000);
+        assert!(
+            has_480_note,
+            "tick 480 的音符应映射到 32000 样本（0.5s @64k）"
+        );
     }
 
     /// 双轨 SMF（format 1）：每轨先写 FF 21 端口，再写 ch0/key60 的 NoteOn/Off。
