@@ -45,6 +45,8 @@ impl MidiManager {
             winmm_output_device_id: ui_config.system_output_device_id,
             desired_midi_max_port: 0,
             spawned_midi_max_port: 0,
+            layout_apply: None,
+            layout_desired: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
@@ -157,6 +159,10 @@ impl MidiManager {
     /// 2. 创建全新 API 实例 + 连接（保存新 API 到 fallback_api 防止释放）
     /// 3. 兜底：取走主输出连接（播放期间音符预览静音，但至少播放功能正常）
     pub fn create_additional_output(&mut self) -> Option<Box<dyn lumino_midi_io::PlaybackOutput>> {
+        // DEBT-05 #122：若后台布局重建在途，先等它归还 API，否则策略 1 会因
+        // `api == None` 失败（表现为"装载后播放无声"）。
+        self.drain_layout_apply();
+
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
         if let Some(api) = self.api.as_ref()
             && let Ok(outputs) = api.outputs()

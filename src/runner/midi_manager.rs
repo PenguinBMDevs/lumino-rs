@@ -1,5 +1,7 @@
 use lumino_core::storage::config::{AudioEngineKind, SynthBackend, UiConfig};
 use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 
 /// MIDI API 类型别名（REND-002：基础 trait 冻结，能力经 `SynthControl` 扩展）
@@ -89,6 +91,10 @@ pub struct MidiManager {
     /// REND-002：启动本轮 XSynth 异步初始化时注入的布局；完成回调据此判断
     /// 是否需要再对齐（初始化期间文档可能已切换），避免刚初始化完又白重建一次。
     spawned_midi_max_port: u8,
+    /// DEBT-05 #122：后台布局重建在途状态（一次性 worker + 防抖 + 合并）。
+    layout_apply: Option<layout::LayoutApplyInFlight>,
+    /// DEBT-05 #122：worker 在防抖窗口结束时读取的"最新期望布局"。
+    layout_desired: Arc<AtomicU8>,
 }
 
 impl Default for MidiManager {
@@ -119,6 +125,8 @@ impl Default for MidiManager {
             winmm_output_device_id: None,
             desired_midi_max_port: 0,
             spawned_midi_max_port: 0,
+            layout_apply: None,
+            layout_desired: Arc::new(AtomicU8::new(0)),
         }
     }
 }
@@ -126,6 +134,7 @@ impl Default for MidiManager {
 // ── 子模块 ──────────────────────────────────────────────────────────────
 
 mod audio_action;
+mod layout;
 mod lgs;
 mod outputs;
 mod recovery;

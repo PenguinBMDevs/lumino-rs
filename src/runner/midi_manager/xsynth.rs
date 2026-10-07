@@ -119,21 +119,32 @@ impl MidiManager {
         Ok((api, conn))
     }
 
-    /// 应用文档端口布局（REND-002）。
+    /// 应用文档端口布局（REND-002 / DEBT-05 #122）。
     ///
-    /// - 软件合成后端（XSynth / LGS）就绪：直接 `set_midi_port_layout`
-    ///   （XSynth 总是全量重建以清理上一文档遗留的 bank/打击乐模态；LGS 同布局
-    ///   走轻量复位、异布局全量重建；失败保持旧布局）；
-    /// - 后端未就绪（异步初始化中/System 回退）：暂存 desired，待初始化完成时对齐。
+    /// 同步路径（装载/关闭/导出/初始化对齐调用方）：先等待在途后台重建归还 API，
+    /// 再按当前线程同步应用；失败保持旧布局并保留 desired。
+    ///
+    /// 端口编辑热路径请使用 [`Self::apply_midi_port_layout_deferred`]（后台防抖）。
     pub fn apply_midi_port_layout(&mut self, max_port: u8) {
+        // 装载路径是 apply → create_additional_output：必须先收尾在途 worker，
+        // 否则 API 被取走会导致播放输出创建失败（无声音）。
+        self.drain_layout_apply();
         self.desired_midi_max_port = max_port;
+        self.layout_desired.store(max_port, Ordering::SeqCst);
         match self.active_backend {
             SynthBackend::XSynth | SynthBackend::Lgs => {
                 let Some(api) = self.api.as_mut() else {
                     return;
                 };
+                let started = std::time::Instant::now();
                 match api.set_midi_port_layout(max_port) {
-                    Ok(()) => tracing::info!("MIDI: 已应用端口布局 max_port={max_port}"),
+                    Ok(()) => {
+                        self.spawned_midi_max_port = max_port;
+                        tracing::info!(
+                            "MIDI: 已应用端口布局 max_port={max_port}（耗时 {:?}）",
+                            started.elapsed()
+                        );
+                    }
                     Err(e) => tracing::error!("MIDI: 应用端口布局失败（保持旧布局）: {e}"),
                 }
             }

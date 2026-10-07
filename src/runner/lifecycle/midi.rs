@@ -5,6 +5,10 @@ use crate::runner::inner::RunnerInner;
 impl RunnerInner {
     /// 处理 MIDI 重新初始化和 XSynth 异步初始化检查
     pub(crate) fn handle_midi_reinit(&mut self) {
+        // DEBT-05 #122：先收尾后台端口布局重建（归还 API、必要追赶），
+        // 再做流恢复/重初始化等需要 API 的动作。
+        self.midi_state.midi.poll_layout_apply();
+
         // 检查音频流恢复（音频设备被拔出/更换后自动重定向/重建）
         self.midi_state.midi.handle_stream_recovery();
 
