@@ -1,7 +1,20 @@
 impl super::Editor {
+    /// 是否有正在进行的异步提交（DEBT-03 #120：切轨/关闭等需感知）
+    pub fn has_pending_commit(&self) -> bool {
+        self.editor_state.data.has_pending_commit()
+    }
+
     /// 切换到指定音轨（无 MIDI 文件时使用）
     pub fn switch_to_track(&mut self, track_idx: usize) {
         if self.editor_state.data.current_track == track_idx {
+            return;
+        }
+
+        // DEBT-03 #120：异步提交窗口内切轨会让提交结果写错音轨、pending 索引错位。
+        // 提交通常毫秒级完成，此处直接拒绝（Runner 侧 TrackSelected 另有兜底），
+        // 用户稍后再切即可。
+        if self.has_pending_commit() {
+            tracing::warn!("Editor: 异步提交进行中，忽略切轨请求 -> 音轨 {}", track_idx);
             return;
         }
 

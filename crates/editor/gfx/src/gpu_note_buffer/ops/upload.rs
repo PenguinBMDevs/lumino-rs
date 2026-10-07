@@ -51,21 +51,21 @@ impl GpuNoteBuffer {
             return;
         }
 
-        // 检查是否需要扩容
-        if instances.len() > self.capacity {
-            self.grow(instances.len());
-        }
-
-        // 用户硬约束：不再截断——若超出硬件限制会在 grow() 时失败并报错
-        let upload_count = instances.len();
-        if instances.len() > self.max_capacity {
+        // 检查是否需要扩容。
+        // DEBT-03 #120：扩容失败（超硬件上限）必须早退——旧实现丢弃 grow 返回值后
+        // 无条件全量 write_buffer，会向旧的小 buffer 越界写 → wgpu 校验错误。
+        if instances.len() > self.capacity && !self.grow(instances.len()) {
             tracing::error!(
-                "GpuNoteBuffer: instance count {} exceeds hardware max_capacity {} — \
-                 wgpu 硬件限制无法绕过，需要分 buffer 上传架构改造",
+                "GpuNoteBuffer: upload_all 扩容失败（需要 {}，容量 {}，硬件上限 {}），跳过本次上传",
                 instances.len(),
+                self.capacity,
                 self.max_capacity
             );
+            return;
         }
+
+        // 用户硬约束：不再截断——grow 已在超硬件上限时明确失败并早退
+        let upload_count = instances.len();
         self.instance_count = upload_count;
 
         // 优化：复制到 CPU 缓存后直接从缓存上传 GPU

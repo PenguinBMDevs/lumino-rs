@@ -317,3 +317,52 @@ fn test_async_commit_no_reorder_keeps_range_events() {
         "应记录 UpdateRange 事件"
     );
 }
+
+/// DEBT-03 #120 回归：异步提交窗口内切轨，结果必须写回**发起轨**而不是新当前轨。
+///
+/// 旧实现 `replace_track_notes(self.current_track, ...)` 会把 A 轨整轨结果写进
+/// B 轨（静默数据损坏，且 B 轨无历史可 Undo）。本测试先启动提交、立即切轨，
+/// 再轮询完成——断言发起轨生效、新当前轨不被污染、且不发旧索引的段内事件。
+#[test]
+fn test_async_commit_writes_back_to_originating_track_after_switch() {
+    let mut data = make_data_with_notes(); // 音符在 track 1，current_track = 1
+    let ops = data.move_ops_from_drag_state(&{
+        let mut bv = BitVec::from_elem(3, false);
+        bv.set(0, true);
+        let mut ds = DragState::new(bv, 0, 60);
+        ds.set_delta(30, 0);
+        ds
+    });
+    assert!(
+        data.apply_move_ops_async(ops, 127)
+            .expect("异步移动提交应成功")
+    );
+
+    // 提交窗口内切轨（模拟侧边栏在松手后立刻点击另一音轨）
+    data.current_track = 0;
+
+    let modified = loop {
+        if let Some(result) = data.poll_async_commit() {
+            break result.expect("异步提交应成功");
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    };
+    assert_eq!(modified, 1);
+
+    // 结果必须落在发起轨 1：音符移动生效且保持升序
+    let ticks: Vec<u32> = data.track_notes(1).iter().map(|n| n.start_tick).collect();
+    assert_eq!(ticks, vec![10, 20, 30], "发起轨 1 的音符必须被移动");
+
+    // 新当前轨 0 不得被整轨污染
+    assert_eq!(
+        data.track_notes(0).iter().count(),
+        0,
+        "切轨后的当前轨不得被写入提交结果"
+    );
+
+    // 已切轨：不得把旧轨索引的段内事件发给新当前轨
+    assert!(
+        data.note_delta_events.is_empty(),
+        "非当前轨提交不得发段内 UpdateRange（索引属于旧轨）"
+    );
+}
