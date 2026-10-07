@@ -69,6 +69,18 @@ pub struct ClipMeta {
 
 const HEADER_LEN: usize = 4 + 1 + 1 + 2 + 4 + 1 + 2 + 4; // 19
 
+/// 单条记录的最小字节数（DEBT-02 #119）：
+/// delta varint(≥1) + key(1) + length varint(≥1) + velocity(1) + channel(1) + track(2)。
+const MIN_RECORD_BYTES: usize = 7;
+
+/// 记录预分配上限（DEBT-02 #119）：损坏/恶意载荷的 `count` 可达 42.9 亿，
+/// 直接 `with_capacity(count)` 会诱发 ~68GB 预分配（OOM abort）。实际记录数
+/// 不可能超过载荷字节数 / 单条最小字节数，据此夹紧。
+#[inline]
+fn record_capacity_hint(payload_len: usize, count: usize) -> usize {
+    count.min(payload_len / MIN_RECORD_BYTES + 1)
+}
+
 #[inline]
 fn read_varint(buf: &[u8], pos: &mut usize) -> Result<u32, String> {
     let mut v: u32 = 0;
@@ -233,7 +245,9 @@ pub fn decode_clipboard_chunks(
     mut f: impl FnMut(&[ClipRecord]),
 ) -> Result<ClipMeta, String> {
     let (meta, _) = parse_header(bytes)?;
-    let mut buf: Vec<ClipRecord> = Vec::with_capacity(chunk_size.max(1));
+    // DEBT-02 #119：分块缓冲容量同样按载荷长度夹紧，杜绝超大 chunk_size 的预分配。
+    let mut buf: Vec<ClipRecord> =
+        Vec::with_capacity(record_capacity_hint(bytes.len(), chunk_size.max(1)));
     decode_clipboard_records(
         bytes,
         |tick_offset, length, key_offset, velocity, channel, track| {
@@ -288,7 +302,8 @@ pub fn decode_clipboard_records(
 /// 全量解码（小数据 / 单测用；大数据请用 `decode_clipboard_chunks` 以免 O(N) 中间 `Vec`）。
 pub fn decode_clipboard(bytes: &[u8]) -> Result<(ClipMeta, Vec<ClipRecord>), String> {
     let (meta, _) = parse_header(bytes)?;
-    let mut out = Vec::with_capacity(meta.count as usize);
+    // DEBT-02 #119：count 为不可信字段，容量按载荷长度夹紧（防 68GB 预分配）
+    let mut out = Vec::with_capacity(record_capacity_hint(bytes.len(), meta.count as usize));
     decode_clipboard_chunks(bytes, meta.count as usize, |chunk| {
         out.extend_from_slice(chunk)
     })?;
@@ -394,5 +409,28 @@ mod tests {
         .expect("分块解码应成功");
         assert_eq!(seen, 100_000);
         assert!(max_chunk <= 10_000);
+    }
+
+    /// DEBT-02 #119：count=u32::MAX 的损坏载荷必须快速报错，不做 68GB 预分配。
+    #[test]
+    fn test_huge_count_does_not_preallocate() {
+        let mut bytes = Vec::new();
+        bytes.extend_from_slice(&CLIP_MAGIC);
+        bytes.push(CLIP_VERSION);
+        bytes.push(0);
+        bytes.extend_from_slice(&480u16.to_le_bytes());
+        bytes.extend_from_slice(&0u32.to_le_bytes());
+        bytes.push(60);
+        bytes.extend_from_slice(&0u16.to_le_bytes());
+        bytes.extend_from_slice(&u32::MAX.to_le_bytes()); // 恶意 count
+        assert!(decode_clipboard(&bytes).is_err(), "缺失记录体必须报错");
+    }
+
+    /// DEBT-02 #119：容量提示按载荷长度夹紧。
+    #[test]
+    fn test_record_capacity_hint_is_bounded() {
+        assert_eq!(record_capacity_hint(0, usize::MAX), 1);
+        assert_eq!(record_capacity_hint(700, 1000), 101);
+        assert_eq!(record_capacity_hint(700, 10), 10);
     }
 }

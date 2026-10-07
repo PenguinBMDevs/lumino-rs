@@ -168,6 +168,11 @@ impl SoundFont {
             macro_rules! copy_chan {
                 ($buf:expr) => {
                     for c in 0..$buf.spec().channels.count() {
+                        // DEBT-02 #119：声道数由首个 packet 决定；后续 packet 若
+                        // 声道更多，丢弃多余声道而不是越界 panic。
+                        if c >= chans.len() {
+                            continue;
+                        }
                         let ch = $buf.chan(c);
                         chans[c].extend(ch.iter().map(|s| IntoSample::<f32>::into_sample(*s)));
                     }

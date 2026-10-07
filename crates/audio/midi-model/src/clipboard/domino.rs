@@ -53,6 +53,8 @@ fn read_u32(b: &[u8]) -> Result<u32, String> {
 }
 
 /// 把一段字节流解析为分块序列。要求流被完整消费，否则报错。
+///
+/// DEBT-02 #119：长度推进全部 checked，损坏流返回错误而不是 panic。
 fn parse_chunks(buf: &[u8]) -> Result<Vec<Chunk>, String> {
     let mut out = Vec::new();
     let mut pos = 0;
@@ -61,15 +63,21 @@ fn parse_chunks(buf: &[u8]) -> Result<Vec<Chunk>, String> {
         let kind = buf[pos + 1];
         let len =
             u32::from_le_bytes([buf[pos + 2], buf[pos + 3], buf[pos + 4], buf[pos + 5]]) as usize;
-        if pos + CHUNK_HDR + len > buf.len() {
+        let end = pos
+            .checked_add(CHUNK_HDR)
+            .and_then(|p| p.checked_add(len))
+            .ok_or_else(|| {
+                format!("分块长度溢出 id=0x{id:02x} kind=0x{kind:02x} len={len} pos={pos}")
+            })?;
+        if end > buf.len() {
             return Err(format!(
                 "分块长度越界 id=0x{id:02x} kind=0x{kind:02x} len={len} pos={pos} buflen={}",
                 buf.len()
             ));
         }
-        let payload = buf[pos + CHUNK_HDR..pos + CHUNK_HDR + len].to_vec();
+        let payload = buf[pos + CHUNK_HDR..end].to_vec();
         out.push(Chunk { id, kind, payload });
-        pos += CHUNK_HDR + len;
+        pos = end;
     }
     if pos != buf.len() {
         return Err(format!("分块流未完整消费：剩余 {}", buf.len() - pos));
@@ -96,11 +104,23 @@ fn push_chunk(out: &mut Vec<u8>, id: u8, kind: u8, payload: &[u8]) {
     out.extend_from_slice(payload);
 }
 
+/// 解压输出的硬上限（DEBT-02 #119）：剪贴板载荷再大也不该超过 1 GiB；
+/// 损坏/恶意 size 字段不得触发巨量预分配或无限解压。
+const MAX_DECOMPRESSED_BYTES: usize = 1 << 30;
+
 fn zlib_decompress(comp: &[u8], expected: usize) -> Result<Vec<u8>, String> {
-    let mut dec = ZlibDecoder::new(comp);
-    let mut out = Vec::with_capacity(expected.max(64));
-    dec.read_to_end(&mut out)
+    let dec = ZlibDecoder::new(comp);
+    // expected 来自不可信 u32 头部：容量先与硬上限夹紧，再限制读取上限
+    let mut out = Vec::with_capacity(expected.clamp(64, MAX_DECOMPRESSED_BYTES));
+    let mut limited = dec.take(MAX_DECOMPRESSED_BYTES as u64 + 1);
+    limited
+        .read_to_end(&mut out)
         .map_err(|e| format!("zlib 解压失败：{e}"))?;
+    if out.len() > MAX_DECOMPRESSED_BYTES {
+        return Err(format!(
+            "zlib 解压输出超过上限（{MAX_DECOMPRESSED_BYTES} 字节），已拒绝"
+        ));
+    }
     if expected != 0 && out.len() != expected {
         warn!(
             "Domino 解压长度预期 {expected} 与实际 {} 不符，仍继续解析",
@@ -345,5 +365,23 @@ mod tests {
     fn test_reject_non_domino() {
         let junk = b"hello world this is not domino";
         assert!(decode_domino_clipboard(junk).is_err());
+    }
+
+    /// DEBT-02 #119：恶意 size=u32::MAX 不得触发巨量预分配/无限解压。
+    #[test]
+    fn test_huge_size_field_is_rejected() {
+        let mut raw = Vec::new();
+        raw.extend_from_slice(PORTAL_MAGIC);
+        raw.extend_from_slice(&u32::MAX.to_le_bytes());
+        raw.extend_from_slice(&[0u8; 8]); // 垃圾压缩体
+        assert!(decode_domino_clipboard(&raw).is_err());
+    }
+
+    /// DEBT-02 #119：分块长度溢出必须报错而不是 panic。
+    #[test]
+    fn test_chunk_length_overflow_rejected() {
+        // 单个块头声称 len=u32::MAX，实际无 payload
+        let buf = [0xEBu8, 0x03, 0xFF, 0xFF, 0xFF, 0xFF];
+        assert!(parse_chunks(&buf).is_err());
     }
 }

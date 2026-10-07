@@ -248,12 +248,18 @@ pub async fn load_parsed_midi_from_bytes(
         cb(&format!("MIDI 加载完成 (内存: {final_rss} MB)"), 1.0);
     }
 
+    // DEBT-02 #119（分片 5 M10）：division / total_notes 从真实文档取，
+    // 不再硬编码 960 / 0（非 960 PPQN 文档会导出错、统计缺音符）。
+    let division = document.division();
+    let total_notes: u64 = (0..document.track_count())
+        .map(|t| document.track_note_count(t as u16))
+        .sum();
     let info = MidiInfo {
         path: PathBuf::new(),
         track_count,
-        total_notes: 0,
+        total_notes,
         duration_ticks: total_ticks,
-        division: 960,
+        division,
         parse_progress: Some(100.0),
     };
 
