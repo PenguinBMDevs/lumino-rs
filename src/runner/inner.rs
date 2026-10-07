@@ -162,6 +162,10 @@ pub(crate) struct RunnerInner {
     pub(crate) session_tracker: SessionTracker,
     /// 云存储管理器（后台线程锁内执行耗时操作）
     pub(crate) cloud: std::sync::Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
+    /// 云连接无锁快照（DEBT-06 #123）：UI 只读，后台操作完成后发布，
+    /// UI 永不等待跨网络 IO 的业务锁。
+    pub(crate) cloud_status:
+        std::sync::Arc<std::sync::RwLock<crate::runner::cloud::CloudStatusSnapshot>>,
     /// 云入口意图（记录用户从哪里进入，连接成功后按意图打开对应面板）
     pub(crate) cloud_intent: Option<crate::runner::cloud::CloudIntent>,
     /// 断连提醒面板是否已弹出（每次会话只弹一次）
@@ -358,6 +362,9 @@ impl Runner {
             cloud: Arc::new(Mutex::new(lumino_cloud::CloudManager::new(
                 crate::storage::config_dir().join("cloud.json"),
             )?)),
+            cloud_status: Arc::new(std::sync::RwLock::new(
+                crate::runner::cloud::CloudStatusSnapshot::default(),
+            )),
             cloud_intent: None,
             cloud_alert_shown: false,
             saving,

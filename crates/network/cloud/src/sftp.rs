@@ -68,7 +68,14 @@ impl CloudClient for SftpClient {
         let username = conn.username.clone();
         let root_path = conn.root_path.clone();
 
-        let config = Arc::new(SshConfig::default());
+        // DEBT-06 #123：空闲/保活超时——旧实现 `SshConfig::default()` 无超时，
+        // 服务器假死会永久挂起在通道 IO 上。
+        let ssh_config = SshConfig {
+            inactivity_timeout: Some(std::time::Duration::from_secs(120)),
+            keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            ..SshConfig::default()
+        };
+        let config = Arc::new(ssh_config);
         let mut session = connect(config, (address.as_str(), port), SshHandler)
             .await
             .map_err(|e| CloudError::Connect(format!("无法连接 {address}:{port}: {e}")))?;
