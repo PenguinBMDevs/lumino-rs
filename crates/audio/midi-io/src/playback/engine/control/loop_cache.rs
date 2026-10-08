@@ -27,7 +27,7 @@ use super::core::{PendingNoteOff, PlaybackEngine};
 pub(crate) struct LoopWrapCache {
     /// 缓存对应的 loop_start（同一循环配置下逐位相同）
     pub(crate) loop_start: f32,
-    /// 每轨 `(note_cursor, pending_offs)`；当前轨为空占位（其队列单独重建）
+    /// 每轨 `(note_cursor, pending_offs)`（PREF-006 A1：含当前轨）
     pub(crate) tracks: Vec<(usize, BinaryHeap<PendingNoteOff>)>,
     /// 控制事件游标
     pub(crate) control_cursor: usize,
@@ -72,11 +72,7 @@ impl PlaybackEngine {
         let seek_tick = loop_start as u32;
         let mut tracks = Vec::with_capacity(self.track_states.len());
         for track_idx in 0..self.track_states.len() {
-            if track_idx == self.current_track as usize {
-                // 当前轨队列由 `rebuild_queue_from_current_track` 单独重建
-                tracks.push((0, BinaryHeap::new()));
-                continue;
-            }
+            // PREF-006 A1：当前轨也走流式模型，缓存覆盖全部轨。
             tracks.push(scan_pending_offs(doc.track_notes(track_idx), seek_tick));
         }
         self.loop_wrap_cache = Some(LoopWrapCache {
@@ -95,9 +91,6 @@ impl PlaybackEngine {
             return;
         };
         for (track_idx, state) in self.track_states.iter_mut().enumerate() {
-            if track_idx == self.current_track as usize {
-                continue;
-            }
             if let Some((cursor, offs)) = cache.tracks.get(track_idx) {
                 state.note_cursor = *cursor;
                 state.pending_offs = offs.clone();

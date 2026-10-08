@@ -2,7 +2,7 @@
 
 use lumino_midi_model::multi_port::PercussionTracker;
 
-use super::super::{EventType, MidiMessage};
+use super::super::MidiMessage;
 use super::core::PlaybackEngine;
 use crate::playback::PlaybackState;
 use crate::playback::engine::types::global_channel_for_track;
@@ -25,7 +25,8 @@ impl PlaybackEngine {
     /// 处理播放更新
     ///
     /// 返回：需要发送的MIDI消息列表
-    /// 当前音轨从 event_queue 读取，其他音轨从 document 流式读取
+    /// 全部音轨（含当前轨）从 document 流式读取（PREF-006 A1 统一范式）；
+    /// 当前轨的 CC/PC/PB 由 `process_midi_events` 从 automation 路径处理。
     pub fn update(&mut self) -> &mut Vec<MidiMessage> {
         self.reused_messages.clear();
 
@@ -53,8 +54,7 @@ impl PlaybackEngine {
 
         // 临时取出 messages 避免 &mut self + &mut self.reused_messages 双重借用
         let mut messages = std::mem::take(&mut self.reused_messages);
-        self.process_current_track(current_tick, late_bound, &mut messages);
-        self.process_other_tracks(current_tick, late_bound, &mut messages);
+        self.process_streaming_tracks(current_tick, late_bound, &mut messages);
         self.process_midi_events(current_tick, &mut messages);
         self.last_processed_tick = current_tick;
         self.handle_loop_wrap(current_tick, &mut messages);
@@ -81,36 +81,12 @@ impl PlaybackEngine {
         &mut self.reused_messages
     }
 
-    /// 处理当前音轨的事件队列
-    fn process_current_track(
-        &mut self,
-        current_tick: f32,
-        late_bound: f32,
-        messages: &mut Vec<MidiMessage>,
-    ) {
-        while let Some(event) = self.event_queue.peek() {
-            if event.tick > current_tick {
-                break;
-            }
-            let event = if let Some(popped_event) = self.event_queue.pop() {
-                popped_event
-            } else {
-                break;
-            };
-            // 迟到即弃：避免停顿/跳变后补发过时音符。
-            if event.tick < late_bound {
-                continue;
-            }
-            Self::push_midi_message(event.event_type, messages);
-        }
-    }
-
-    /// 处理其他音轨的事件（直接从 `MidiDocument` 音符切片流式读取）
+    /// 处理全部音轨的事件（直接从 `MidiDocument` 音符切片流式读取）
     ///
-    /// 每个非当前音轨维护一个 `note_cursor` 指向下一颗待触发 NoteOn 的音符，
-    /// 并用最小堆保存已触发 NoteOn、等待 NoteOff 的音符。播放时按时间顺序
-    /// 合并 NoteOn/NoteOff，避免预先把整轨事件拷贝排序。
-    pub(super) fn process_other_tracks(
+    /// 每轨（含当前轨，PREF-006 A1 统一范式）维护一个 `note_cursor` 指向下一颗
+    /// 待触发 NoteOn 的音符，并用最小堆保存已触发 NoteOn、等待 NoteOff 的音符。
+    /// 播放时按时间顺序合并 NoteOn/NoteOff，避免预先把整轨事件拷贝排序。
+    pub(super) fn process_streaming_tracks(
         &mut self,
         current_tick: f32,
         late_bound: f32,
@@ -124,9 +100,6 @@ impl PlaybackEngine {
         let note_floor_u = tick_start_u.max(late_bound.max(0.0) as u32);
 
         for track_idx in 0..self.track_states.len() {
-            if track_idx == self.current_track as usize {
-                continue;
-            }
             // 静音/独奏过滤：被静音或未被独奏的音轨不发声。
             if !self.track_should_play(track_idx) {
                 continue;
@@ -279,7 +252,6 @@ impl PlaybackEngine {
             // O(K) 克隆（K = 该时刻在响的音符数），替代每轨 O(N) 全扫。
             self.ensure_loop_wrap_cache(loop_start);
             self.apply_loop_wrap_cache();
-            self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
             // 循环回绕：追齐 loop_start 之前的模态状态（CC/RPN/PB/打击乐模态等），
             // 否则回绕后一段会保留回绕前的旧值。
@@ -320,26 +292,6 @@ impl PlaybackEngine {
                 messages.push(MidiMessage::PitchBend { channel, value });
             }
             _ => {}
-        }
-    }
-
-    #[inline]
-    fn push_midi_message(event_type: EventType, messages: &mut Vec<MidiMessage>) {
-        match event_type {
-            EventType::NoteOn {
-                channel,
-                key,
-                velocity,
-            } => {
-                messages.push(MidiMessage::NoteOn {
-                    channel,
-                    key,
-                    velocity,
-                });
-            }
-            EventType::NoteOff { channel, key } => {
-                messages.push(MidiMessage::NoteOff { channel, key });
-            }
         }
     }
 

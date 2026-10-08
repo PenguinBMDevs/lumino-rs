@@ -55,21 +55,11 @@ fn test_loop_wrapping_seek_back() {
         new_tick,
     );
 
-    // 事件队列应被重建，包含循环起点后的事件
-    assert!(!engine.event_queue.is_empty(), "回绕后事件队列不应为空",);
-
-    // 检查 event_queue 中的事件 tick >= loop_start
-    let events: Vec<_> = engine.event_queue.iter().collect();
-    // BinaryHeap 是最大堆，注意 tick 小的优先级高
-    let min_event_tick = events.iter().map(|event| event.tick).min_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN")
-    });
-    assert!(
-        min_event_tick.is_some()
-            && min_event_tick.expect("事件队列不应为空，至少应有一个事件") >= 50.0,
-        "队列中最先要播放的事件 tick 应 >= loop_start(50)，实际 = {:?}",
-        min_event_tick,
+    // PREF-006 A1：流式模型无预建队列——回绕后当前轨游标应重定位到
+    // loop_start 之前（音符 start=60/90，loop_start=50 → cursor=0）
+    assert_eq!(
+        engine.track_states[0].note_cursor, 0,
+        "回绕后当前轨游标应重定位（无 start<50 的音符）"
     );
 
     // 第二次 update() 不应再次触发循环回绕（tick 还在范围内）

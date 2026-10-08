@@ -6,10 +6,9 @@ use crate::playback::PlaybackState;
 impl PlaybackEngine {
     /// 播放
     ///
-    /// 从停止态起播属于“全新一轮”：对齐时钟起点重建游标与当前轨队列，
-    /// 否则上一轮消费掉的队列/游标停在尾部，下一轮从头播会无声。
-    /// 事件由 set_current_track_notes/set_midi_events/seek 等操作触发重建，
-    /// 暂停恢复（Paused→Playing）沿用剩余队列，此处不重建。
+    /// 从停止态起播属于“全新一轮”：对齐时钟起点重定位全部轨游标
+    /// （PREF-006 A1 流式模型无预建队列，重定位即二分 + 悬挂扫描）。
+    /// 暂停恢复（Paused→Playing）沿用现有游标，此处不重定位。
     pub fn play(&mut self) {
         let was_stopped = self.state() == PlaybackState::Stopped;
         // 先取起播 tick：停止态下 `current_tick()` 即上次 seek 位置（或 0），
@@ -20,7 +19,6 @@ impl PlaybackEngine {
         }
         if was_stopped {
             self.reset_cursors_to(start_tick);
-            self.rebuild_queue_from_current_track(Some(start_tick));
             self.pending_chase.clear();
         }
     }
@@ -44,11 +42,10 @@ impl PlaybackEngine {
         }
         self.control_event_cursor = 0;
         self.midi_event_cursor = 0;
-        self.event_queue.clear();
         self.pending_chase.clear();
         self.last_processed_tick = 0.0;
         // 注意：此处不清掉 document，只清空“进度”，下次从停止态起播时
-        // `play()` 会按起播 tick 重建当前轨队列（懒重建，避免 Stop 本身为大
-        // 工程付出全量重建代价）。
+        // `play()` 会按起播 tick 重定位全部轨游标（懒重定位，避免 Stop 本身
+        // 为大工程付出全量代价）。
     }
 }

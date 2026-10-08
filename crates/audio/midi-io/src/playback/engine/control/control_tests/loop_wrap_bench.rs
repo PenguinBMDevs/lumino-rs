@@ -54,16 +54,46 @@ fn loop_wrap_scan_bench() {
     println!("cache apply x100: median={:?}", apply_samples[50]);
     println!("cache apply x100: worst={:?}", apply_samples[99]);
 
-    // 回绕的另一半成本：当前轨事件队列重建（A1 目标，未优化）
+    // 回绕的另一半成本：当前轨状态重定位（A1 后与其它轨同口径）
     let mut rebuild_samples = Vec::new();
     for _ in 0..5 {
         let t = std::time::Instant::now();
-        engine.rebuild_queue_from_current_track(Some(loop_start));
+        engine.resync_current_track_state(Some(loop_start));
         rebuild_samples.push(t.elapsed());
     }
     rebuild_samples.sort();
     println!(
         "baseline rebuild_current_queue: median={:?} worst={:?}",
         rebuild_samples[2], rebuild_samples[4]
+    );
+
+    // ── A1 基线：重轨作为当前轨时的编辑快照全量重建 ──
+    let heavy = (0..doc.track_count())
+        .max_by_key(|&i| doc.track_notes(i).len())
+        .unwrap_or(0);
+    println!(
+        "heaviest track={heavy} notes={}",
+        doc.track_notes(heavy).len()
+    );
+    engine.set_document(Arc::clone(&doc), heavy as u16);
+    let mut set_doc_samples = Vec::new();
+    let mut rebuild_samples = Vec::new();
+    for _ in 0..5 {
+        let t = std::time::Instant::now();
+        engine.set_document(Arc::clone(&doc), heavy as u16);
+        set_doc_samples.push(t.elapsed());
+        let t = std::time::Instant::now();
+        engine.resync_current_track_state(None);
+        rebuild_samples.push(t.elapsed());
+    }
+    set_doc_samples.sort();
+    rebuild_samples.sort();
+    println!(
+        "A1 baseline set_document(heavy): median={:?}",
+        set_doc_samples[2]
+    );
+    println!(
+        "A1 baseline rebuild_current_queue(heavy): median={:?}",
+        rebuild_samples[2]
     );
 }

@@ -11,9 +11,7 @@
 pub mod engine;
 pub mod manager;
 
-pub use engine::{
-    EventType, MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine, ScheduledEvent,
-};
+pub use engine::{MidiMessage, MidiTrackEvent, NoteEvent, PlaybackEngine};
 pub use manager::PlaybackManager;
 
 // 子模块
