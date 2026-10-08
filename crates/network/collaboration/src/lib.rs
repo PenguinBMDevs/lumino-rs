@@ -9,8 +9,6 @@ pub mod client;
 pub mod error;
 /// HTTP API 客户端模块
 pub mod http;
-/// 覆盖层增量同步模块
-pub mod overlay;
 /// 共享类型模块
 pub mod types;
 

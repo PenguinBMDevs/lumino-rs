@@ -371,14 +371,6 @@ impl Sidebar {
     pub(crate) fn mark_track_id_reserved(&mut self, id: usize) {
         self.reserved_track_ids.insert(id);
     }
-
-    /// 检查指定 ID 是否为已删除占用的轨道编号
-    ///
-    /// 预留 API：供外部模块（如协作同步、工程导出）查询轨道 ID 占用状态。
-    #[allow(dead_code)]
-    pub fn is_track_id_reserved(&self, id: usize) -> bool {
-        self.reserved_track_ids.contains(&id)
-    }
 }
 
 impl Default for Sidebar {

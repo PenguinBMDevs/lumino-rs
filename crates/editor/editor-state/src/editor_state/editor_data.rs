@@ -162,10 +162,10 @@ pub struct EditorData {
     pub pending_track_remove_ranges: Vec<(usize, Vec<(usize, usize)>)>,
     /// 视觉位置 → 文档音轨索引 映射
     ///
-    /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引。
-    /// 侧边栏音轨按原始序号排列，视觉位置 i 等于文档音轨索引（恒等映射）。
-    /// 此映射仍保留供 arrangement 操作统一使用。若将来侧边栏顺序与文档顺序
-    /// 不一致（如拖动排序），只需更新此映射即可。
+    /// `track_visual_order[i]` 返回视觉位置 i 对应的文档音轨索引；
+    /// 侧边栏拖动排序后由 `Root::sync_track_visual_order` 同步更新，
+    /// 映射缺失时消费方回退恒等映射（`document_track_at` 兜底），
+    /// 保证未初始化/部分同步状态下不会越界。
     pub track_visual_order: Vec<usize>,
     /// 工程是否相对「上次保存/加载」发生了未保存的更改。
     ///

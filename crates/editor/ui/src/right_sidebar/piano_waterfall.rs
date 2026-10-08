@@ -24,7 +24,7 @@ use lumino_extras::i18n::{Language, main_translations};
 use crate::right_sidebar::core::{RESIZE_HANDLE_WIDTH, RightSidebar};
 use crate::{Element, Message, Theme, window};
 
-use self::keyboard_renderer::{KEY_HEIGHT_RATIO, MAX_KEY_HEIGHT, MIN_KEY_HEIGHT, PANEL_PADDING};
+use self::keyboard_renderer::PANEL_PADDING;
 use self::waterfall_primitive::WaterfallPrimitive;
 
 /// 瀑布流图元的 iced `shader` 程序：每帧把当前离屏纹理视图交给图元直接合成。
@@ -136,12 +136,4 @@ impl Default for WaterfallPlayerState {
             size: std::cell::RefCell::new(None),
         }
     }
-}
-
-/// 由面板内容宽度推导键盘渲染尺寸（宽度变化时高度按比例联动）
-#[allow(dead_code)]
-pub(crate) fn keyboard_size(content_width: f32) -> (u32, u32) {
-    let w = (content_width - PANEL_PADDING * 2.0).max(1.0);
-    let h = (w * KEY_HEIGHT_RATIO).clamp(MIN_KEY_HEIGHT, MAX_KEY_HEIGHT);
-    (w as u32, h as u32)
 }

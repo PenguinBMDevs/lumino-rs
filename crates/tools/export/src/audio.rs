@@ -15,7 +15,6 @@ pub mod event_stream;
 pub mod gpu_backend;
 pub mod limiter;
 pub mod render_loops;
-pub mod renderer;
 pub mod sink_factory;
 pub mod speed;
 pub mod stream;

@@ -70,10 +70,10 @@ pub struct SynthConfig {
     /// (handled by chunked dispatch). This is the recommended setting for
     /// black MIDI where every note must sound.
     ///
-    /// The default (4096, like XSynth's) keeps the simultaneous-voice noise
-    /// floor low: N voices mix with ~sqrt(N) noise density, so 16k voices
-    /// sound like white noise even when the peak is limited. Raise it only
-    /// if a specific file really needs more simultaneous notes.
+    /// Capping at e.g. 4096 (XSynth's default) keeps the simultaneous-voice
+    /// noise floor low: N voices mix with ~sqrt(N) noise density, so 16k
+    /// voices sound like white noise even when the peak is limited. Raise
+    /// the cap only if a specific file really needs more simultaneous notes.
     ///
     /// Default: `0` (unlimited, black-MIDI mode). Set e.g. `4096` to cap.
     pub max_voices: usize,
@@ -87,7 +87,8 @@ pub struct SynthConfig {
     /// sustained groups; the newest group is always protected. `0` disables
     /// the limit entirely.
     ///
-    /// Default: `8` (XSynth uses 4; 8 keeps fast trills/rolls clean).
+    /// Default: `4` (same as XSynth). Raise to e.g. `8` if fast trills/rolls
+    /// need to stay clean at the cost of more simultaneous voices per key.
     pub max_voices_per_key: usize,
 
     /// 全局 MIDI 通道空间大小（必须是 16 的倍数，16..=256）。
