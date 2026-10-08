@@ -8,36 +8,39 @@ impl GpuSynth {
         let sr = self.config.sample_rate;
 
         // Take this block's deferred controller events; keep the rest for
-        // the blocks that follow.
-        let mut in_block: Vec<(u64, u8, u8, u8)> = Vec::new();
-        let mut rest: Vec<(u64, u8, u8, u8)> = Vec::new();
-        for ev in std::mem::take(&mut self.pending_mix_events) {
+        // the blocks that follow. PREF-006 B：两个缓冲均复用——`pending_mix_events`
+        // 原地 retain 保留后续事件，`mix_in_block` 为常驻 scratch。
+        let mut pending = std::mem::take(&mut self.pending_mix_events);
+        let mut in_block = std::mem::take(&mut self.mix_in_block);
+        in_block.clear();
+        pending.retain(|ev| {
             if ev.0 < end {
-                in_block.push(ev);
+                in_block.push(*ev);
+                false
             } else {
-                rest.push(ev);
+                true
             }
-        }
-        self.pending_mix_events = rest;
+        });
+        self.pending_mix_events = pending;
         in_block.sort_by_key(|e| e.0);
 
         // Frame-exact controller curve: the mix kernel replays this block's
         // events against the block-start lerp states, so the output does not
         // depend on the block size or on how many events a block contains.
-        let events: Vec<MixEvent> = in_block
-            .iter()
-            .map(|e| MixEvent {
-                frame: (e.0 - base) as u32,
-                channel: e.1 as u32,
-                cc: e.2 as u32,
-                value: e.3 as f32 / 128.0,
-            })
-            .collect();
+        let mut events = std::mem::take(&mut self.mix_events);
+        events.clear();
+        events.extend(in_block.iter().map(|e| MixEvent {
+            frame: (e.0 - base) as u32,
+            channel: e.1 as u32,
+            cc: e.2 as u32,
+            value: e.3 as f32 / 128.0,
+        }));
 
         // Per-channel block-start states, then advance the CPU-side lerp
         // state machines through this block (all events + the block end) so
         // the next block starts from the right values.
-        let mut starts: Vec<MixStart> = Vec::with_capacity(self.channels.len());
+        let mut starts = std::mem::take(&mut self.mix_starts);
+        starts.clear();
         for ch_idx in 0..self.channels.len() {
             let st = &mut self.channels[ch_idx];
             starts.push(MixStart {
@@ -84,6 +87,10 @@ impl GpuSynth {
         }
         // `starts` 是定长数组（上限 256）：未使用的通道槽位保持零值。
         starts.resize(MAX_MIDI_CHANNELS, bytemuck::Zeroable::zeroed());
+        let starts_arr: [MixStart; MAX_MIDI_CHANNELS] = starts
+            .as_slice()
+            .try_into()
+            .map_err(|_| SynthError::Gpu("channel count mismatch".into()))?;
         let params = MixParams {
             voice_count: self.active_voice_count,
             block_size: block,
@@ -91,11 +98,14 @@ impl GpuSynth {
             event_count: events.len() as u32,
             lerp_len: sr as f32 * 0.01,
             _pad: [0.0; 3],
-            starts: starts
-                .try_into()
-                .map_err(|_| SynthError::Gpu("channel count mismatch".into()))?,
+            starts: starts_arr,
         };
-        if std::env::var("LUMINO_VOICEDUMP").is_ok() && base > 415_000 && base < 420_000 {
+        // PREF-006 B：环境开关一次性缓存（每块 `env::var` 会走进程锁）
+        static VOICEDUMP: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        if *VOICEDUMP.get_or_init(|| std::env::var("LUMINO_VOICEDUMP").is_ok())
+            && base > 415_000
+            && base < 420_000
+        {
             let s = &self.channels[0];
             eprintln!(
                 "[mix] base={base} ch0 vol={:.4} expr={:.4} pan={:.4}",
@@ -103,6 +113,9 @@ impl GpuSynth {
             );
         }
         queue.write_buffer(&self.mix_params_buf, 0, bytemuck::cast_slice(&[params]));
+        // scratch 归还（下块复用，零分配）
+        self.mix_events = events;
+        self.mix_starts = starts;
         Ok(())
     }
 

@@ -208,6 +208,14 @@ pub struct GpuSynth {
     /// Voice ids of the last uploaded voice list, in upload order; used to
     /// map the read-back states onto the current (possibly shrunk) list.
     prev_voice_ids: Vec<u32>,
+    /// 复用的 scratch：`prev_voice_ids` 的交换缓冲（PREF-006 B：避免每块 clone）
+    scratch_voice_ids: Vec<u32>,
+    /// 复用的 scratch：块内 mix 事件（PREF-006 B：避免每块 Vec 分配）
+    mix_in_block: Vec<(u64, u8, u8, u8)>,
+    /// 复用的 scratch：mix 事件 GPU 布局缓冲
+    mix_events: Vec<MixEvent>,
+    /// 复用的 scratch：mix 起始状态缓冲（定长 `MAX_MIDI_CHANNELS` 后转数组）
+    mix_starts: Vec<MixStart>,
     /// Reused per-block upload buffers (avoid re-allocating ~1.5 MB of
     /// voice parameters every block when the pool sits at the cap).
     upload_params: Vec<VoiceParams>,

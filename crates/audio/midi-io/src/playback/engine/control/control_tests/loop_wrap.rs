@@ -55,21 +55,11 @@ fn test_loop_wrapping_seek_back() {
         new_tick,
     );
 
-    // 事件队列应被重建，包含循环起点后的事件
-    assert!(!engine.event_queue.is_empty(), "回绕后事件队列不应为空",);
-
-    // 检查 event_queue 中的事件 tick >= loop_start
-    let events: Vec<_> = engine.event_queue.iter().collect();
-    // BinaryHeap 是最大堆，注意 tick 小的优先级高
-    let min_event_tick = events.iter().map(|event| event.tick).min_by(|a, b| {
-        a.partial_cmp(b)
-            .expect("f64 的 partial_cmp 应返回 Some，因为 tick 不是 NaN")
-    });
-    assert!(
-        min_event_tick.is_some()
-            && min_event_tick.expect("事件队列不应为空，至少应有一个事件") >= 50.0,
-        "队列中最先要播放的事件 tick 应 >= loop_start(50)，实际 = {:?}",
-        min_event_tick,
+    // PREF-006 A1：流式模型无预建队列——回绕后当前轨游标应重定位到
+    // loop_start 之前（音符 start=60/90，loop_start=50 → cursor=0）
+    assert_eq!(
+        engine.track_states[0].note_cursor, 0,
+        "回绕后当前轨游标应重定位（无 start<50 的音符）"
     );
 
     // 第二次 update() 不应再次触发循环回绕（tick 还在范围内）
@@ -80,6 +70,79 @@ fn test_loop_wrapping_seek_back() {
         "第二次 update 后 tick 不应跳回 0，实际 = {}",
         tick_after_second,
     );
+}
+
+/// PREF-006 A2：回绕缓存——同配置复用；`set_document`（编辑快照）后失效重建。
+#[test]
+fn test_loop_wrap_cache_reuse_and_invalidation() {
+    use lumino_midi_loader::ChunkedList;
+
+    let playback = Arc::new(Mutex::new(Playback::new(480)));
+    let mut engine = PlaybackEngine::new(playback);
+
+    let make_doc = |track1_notes: Vec<DocNoteEvent>| {
+        Arc::new(MidiDocument {
+            notes: vec![
+                ChunkedList::from_sorted(vec![DocNoteEvent::new(0, 10, 60, 100, 0)]),
+                ChunkedList::from_sorted(track1_notes),
+            ],
+            tempo_changes: vec![(0, 120.0)],
+            time_signatures: vec![(0, 4, 4)],
+            key_signatures: vec![(0, 0, false)],
+            control_events: ChunkedList::new(),
+            lyrics: vec![],
+            markers: vec![],
+            text_events: vec![],
+            sys_ex: vec![],
+            track_names: vec![None, None],
+            total_ticks: 0,
+            track_count: 2,
+            tracks: TrackManager::new(2),
+            division: 480,
+            track_ports: vec![],
+            track_max_end_ticks: MidiDocument::new_track_max_ticks(2),
+        })
+    };
+
+    // track 1：一颗跨 loop_start(50) 的长音符 + 一颗 loop_start 之后的音符
+    engine.set_document(
+        make_doc(vec![
+            DocNoteEvent::new(10, 80, 64, 100, 0), // 跨 50 → 应悬挂
+            DocNoteEvent::new(60, 70, 67, 100, 0), // 50 之后 → 不悬挂
+        ]),
+        0,
+    );
+
+    engine.ensure_loop_wrap_cache(50.0);
+    let cache = engine.loop_wrap_cache.as_ref().expect("缓存应已构建");
+    assert_eq!(
+        cache.tracks[1].0, 1,
+        "track1 cursor 应为 1（仅 start<50 的音符）"
+    );
+    assert_eq!(cache.tracks[1].1.len(), 1, "仅跨 loop_start 的音符悬挂");
+
+    engine.apply_loop_wrap_cache();
+    assert_eq!(engine.track_states[1].note_cursor, 1);
+    assert_eq!(engine.track_states[1].pending_offs.len(), 1);
+
+    // 同配置复用：再次 ensure 不应重建（地址不变）
+    let ptr_before = engine.loop_wrap_cache.as_ref().map(|c| c as *const _);
+    engine.ensure_loop_wrap_cache(50.0);
+    let ptr_after = engine.loop_wrap_cache.as_ref().map(|c| c as *const _);
+    assert_eq!(ptr_before, ptr_after, "同配置应复用缓存");
+
+    // 编辑快照（set_document）→ 缓存失效；重建后反映新内容
+    engine.set_document(
+        make_doc(vec![DocNoteEvent::new(10, 45, 64, 100, 0)]), // 不再跨 loop_start
+        0,
+    );
+    assert!(
+        engine.loop_wrap_cache.is_none(),
+        "set_document 后缓存应失效"
+    );
+    engine.ensure_loop_wrap_cache(50.0);
+    let cache = engine.loop_wrap_cache.as_ref().expect("缓存应重建");
+    assert_eq!(cache.tracks[1].1.len(), 0, "新快照中无跨 loop_start 音符");
 }
 
 #[test]

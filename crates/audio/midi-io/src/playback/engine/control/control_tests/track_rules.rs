@@ -67,12 +67,17 @@ fn test_current_track_mute_silences_queue() {
         ]),
         0,
     );
-    assert_eq!(engine.event_queue.len(), 4, "未静音时队列应有 4 个事件");
-
-    // 静音当前轨 → 重建后队列应清空
+    // PREF-006 A1：静音在流式处理时实时过滤——静音后不应发出任何消息
     engine.set_track_play_states(vec![true], vec![false]);
-    engine.rebuild_queue_from_current_track(None);
-    assert_eq!(engine.event_queue.len(), 0, "当前轨静音后队列应清空");
+    let mut messages = Vec::new();
+    engine.process_streaming_tracks(960.0, 0.0, &mut messages);
+    assert!(messages.is_empty(), "当前轨静音后不应发声");
+
+    // 取消静音 → 游标未推进，2 音符应完整发出（NoteOn/NoteOff 各 2）
+    engine.set_track_play_states(vec![false], vec![false]);
+    let mut messages = Vec::new();
+    engine.process_streaming_tracks(960.0, 0.0, &mut messages);
+    assert_eq!(messages.len(), 4, "取消静音后应完整发出 4 条消息");
 }
 
 #[test]
