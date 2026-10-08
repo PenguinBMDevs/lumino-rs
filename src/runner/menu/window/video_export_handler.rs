@@ -27,6 +27,22 @@ impl RunnerInner {
         config: Box<EventVideoExportConfig>,
         document: Option<Arc<lumino_midi_loader::MidiDocument>>,
     ) {
+        // DEBT-07 #124：导出可重入守卫（打开对话框之前拦截）——已有音频导出或
+        // 视频导出进行中时拒绝，避免进度/预览通道与取消标志被覆盖。
+        if self.window_state.audio_export_control.is_some()
+            || self
+                .window_state
+                .video_export_running
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            tracing::warn!("已有导出任务进行中，忽略新的视频导出请求");
+            self.window_state
+                .window
+                .ui_mut()
+                .set_status_message(Some("已有导出任务进行中，请等待完成".to_string()));
+            return;
+        }
+
         let EventVideoExportConfig {
             output_path,
             midi_path: _midi_path,
@@ -113,6 +129,11 @@ impl RunnerInner {
             return;
         };
 
+        // 守卫已通过：登记运行标志（线程内 RAII 保证任何退出路径复位）
+        self.window_state
+            .video_export_running
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+
         // 创建进度通道（复用音频导出的进度通道机制）
         let (progress_tx, progress_rx) = tokio::sync::mpsc::unbounded_channel();
         self.window_state.export_progress_rx = Some(progress_rx);
@@ -157,9 +178,12 @@ impl RunnerInner {
         self.window_state.video_export_cancel = Arc::clone(&cancel_flag);
 
         // 后台线程：逐帧渲染 + FFmpeg 编码
-        let _ = std::thread::Builder::new()
+        let running = Arc::clone(&self.window_state.video_export_running);
+        let spawn_result = std::thread::Builder::new()
             .name("video-render".into())
             .spawn(move || {
+                // DEBT-07 #124：任何退出路径（完成/失败/取消）都复位运行标志
+                let _running_guard = VideoExportRunningGuard(running);
                 let is_gpu_compute_style = matches!(
                     render_mode,
                     lumino_message::events::window::video::RenderMode::Waterfall
@@ -262,6 +286,28 @@ impl RunnerInner {
                     send_export_error(&progress_tx, "导出失败：无 MIDI 数据");
                 }
             });
+        if let Err(e) = spawn_result {
+            // 线程未启动：复位标志并通知对话框失败（旧实现静默吞掉 spawn 失败）
+            self.window_state
+                .video_export_running
+                .store(false, std::sync::atomic::Ordering::SeqCst);
+            tracing::error!("视频导出线程启动失败: {e}");
+            self.window_state
+                .dialog_manager
+                .forward_video_export_failed(format!("导出线程启动失败: {e}"));
+            self.window_state
+                .dialog_manager
+                .mark_dialog_for_close(DialogType::VideoExport);
+        }
+    }
+}
+
+/// 视频导出运行标志的 RAII 守卫（DEBT-07 #124）：线程任何退出路径都会复位。
+struct VideoExportRunningGuard(Arc<AtomicBool>);
+
+impl Drop for VideoExportRunningGuard {
+    fn drop(&mut self) {
+        self.0.store(false, std::sync::atomic::Ordering::SeqCst);
     }
 }
 

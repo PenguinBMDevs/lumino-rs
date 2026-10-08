@@ -171,6 +171,45 @@ impl Drop for WavFileSink {
 pub struct FfmpegSink {
     process: Option<std::process::Child>,
     stdin: Option<std::process::ChildStdin>,
+    /// ffmpeg stderr 尾部（排空线程实时写入；失败时用于错误信息）
+    stderr_tail: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+    /// stderr 排空线程（DEBT-07 #124：必须实时读走，否则管道写满 → `wait()` 死锁）
+    stderr_thread: Option<std::thread::JoinHandle<()>>,
+}
+
+/// 构建 ffmpeg 编码参数（纯函数，供单测断言参数口径）。
+fn build_ffmpeg_args(
+    codec_name: &str,
+    sample_rate: u32,
+    channels: u16,
+    bitrate: u32,
+    has_bitrate: bool,
+    output_str: &str,
+) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "-y".into(),
+        // DEBT-07 #124：禁用 ffmpeg 进度统计输出——配合 stderr 排空线程双保险，
+        // 防止管道缓冲区写满导致的经典 wait 死锁（旧实现只在 wait 后才读 stderr）。
+        "-nostats".into(),
+        "-f".into(),
+        "f32le".into(),
+        "-ar".into(),
+        sample_rate.to_string(),
+        "-ac".into(),
+        channels.to_string(),
+        "-i".into(),
+        "pipe:0".into(),
+    ];
+
+    if bitrate > 0 && has_bitrate {
+        args.push("-b:a".into());
+        args.push(format!("{bitrate}k"));
+    }
+
+    args.push("-c:a".into());
+    args.push(codec_name.into());
+    args.push(output_str.into());
+    args
 }
 
 impl FfmpegSink {
@@ -196,27 +235,19 @@ impl FfmpegSink {
             .ok_or_else(|| ExportError::AudioWrite("PCM 不需要 ffmpeg 编码".into()))?;
 
         // 使用 stdin pipe (pipe:0) 向 ffmpeg 输入 PCM 数据
-        let mut cmd = Command::new(ffmpeg_path);
-        cmd.args([
-            "-y",
-            "-f",
-            "f32le",
-            "-ar",
-            &sample_rate.to_string(),
-            "-ac",
-            &channels.to_string(),
-            "-i",
-            "pipe:0",
-        ]);
-
-        if bitrate > 0 && codec.has_bitrate() {
-            cmd.args(["-b:a", &format!("{}k", bitrate)]);
-        }
-
         let output_str = output_path.to_str().ok_or_else(|| {
             ExportError::AudioWrite(format!("输出路径不是合法 UTF-8: {}", output_path.display()))
         })?;
-        cmd.args(["-c:a", codec_name, output_str]);
+        let args = build_ffmpeg_args(
+            codec_name,
+            sample_rate,
+            channels,
+            bitrate,
+            codec.has_bitrate(),
+            output_str,
+        );
+        let mut cmd = Command::new(ffmpeg_path);
+        cmd.args(&args);
 
         cmd.stdin(Stdio::piped())
             .stdout(Stdio::null())
@@ -231,9 +262,50 @@ impl FfmpegSink {
             .take()
             .ok_or_else(|| ExportError::AudioWrite("无法获取 ffmpeg stdin".into()))?;
 
+        // DEBT-07 #124：实时排空 stderr。旧实现把 stderr 设为 piped 却只在
+        // `wait()` 之后才读——ffmpeg 持续写进度统计，管道缓冲（Windows 约 4-64KB）
+        // 写满后子进程阻塞、父进程 wait 永久挂起（长导出必现）。
+        let stderr = process
+            .stderr
+            .take()
+            .ok_or_else(|| ExportError::AudioWrite("无法获取 ffmpeg stderr".into()))?;
+        let stderr_tail: std::sync::Arc<std::sync::Mutex<Vec<String>>> =
+            std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let tail_clone = std::sync::Arc::clone(&stderr_tail);
+        let stderr_thread = std::thread::Builder::new()
+            .name("ffmpeg-stderr-audio".into())
+            .spawn(move || {
+                use std::io::BufRead;
+                const MAX_TAIL_LINES: usize = 200;
+                let mut reader = std::io::BufReader::new(stderr);
+                let mut line = String::new();
+                loop {
+                    line.clear();
+                    match reader.read_line(&mut line) {
+                        Ok(0) => break,
+                        Ok(_) => {
+                            let trimmed = line.trim_end();
+                            if trimmed.is_empty() {
+                                continue;
+                            }
+                            if let Ok(mut buf) = tail_clone.lock() {
+                                if buf.len() >= MAX_TAIL_LINES {
+                                    buf.remove(0);
+                                }
+                                buf.push(trimmed.to_string());
+                            }
+                        }
+                        Err(_) => break,
+                    }
+                }
+            })
+            .map_err(|e| ExportError::AudioWrite(format!("无法启动 stderr 排空线程: {e}")))?;
+
         Ok(FfmpegSink {
             process: Some(process),
             stdin: Some(stdin),
+            stderr_tail,
+            stderr_thread: Some(stderr_thread),
         })
     }
 
@@ -244,24 +316,24 @@ impl FfmpegSink {
                 .wait()
                 .map_err(|e| ExportError::AudioWrite(format!("ffmpeg 进程等待失败: {e}")))?;
 
+            // 进程退出 → stderr EOF → 排空线程收尾；join 防线程泄漏
+            if let Some(handle) = self.stderr_thread.take() {
+                let _ = handle.join();
+            }
+            let stderr_text = {
+                let tail = self.stderr_tail.lock().unwrap_or_else(|e| e.into_inner());
+                tail.join("\n")
+            };
+
             if !status.success() {
-                // 读取 stderr 获取错误信息
-                if let Some(stderr) = process.stderr.take() {
-                    use std::io::Read;
-                    let mut buf = String::new();
-                    std::io::BufReader::new(stderr)
-                        .read_to_string(&mut buf)
-                        .ok();
-                    if !buf.is_empty() {
-                        return Err(ExportError::AudioWrite(format!(
-                            "ffmpeg 编码失败:\n{}",
-                            buf
-                        )));
-                    }
+                if stderr_text.is_empty() {
+                    return Err(ExportError::AudioWrite(format!(
+                        "ffmpeg 进程退出码: {:?}",
+                        status.code()
+                    )));
                 }
                 return Err(ExportError::AudioWrite(format!(
-                    "ffmpeg 进程退出码: {:?}",
-                    status.code()
+                    "ffmpeg 编码失败:\n{stderr_text}"
                 )));
             }
         }
@@ -311,6 +383,10 @@ impl Drop for FfmpegSink {
             let _ = process.kill();
             let _ = process.wait();
         }
+        // 进程死后 stderr 到达 EOF，排空线程自然收尾；join 防线程泄漏
+        if let Some(handle) = self.stderr_thread.take() {
+            let _ = handle.join();
+        }
     }
 }
 
@@ -325,5 +401,34 @@ impl SampleSink for Box<dyn SampleSink> {
 
     fn finalize(&mut self) -> ExportResult<()> {
         (**self).finalize()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DEBT-07 #124：编码参数必须含 `-nostats`（配合 stderr 排空防死锁）。
+    #[test]
+    fn ffmpeg_args_include_nostats_and_codec() {
+        let args = build_ffmpeg_args("libmp3lame", 48000, 2, 320, true, "out.mp3");
+        assert!(
+            args.iter().any(|a| a == "-nostats"),
+            "必须禁用 ffmpeg 进度统计: {args:?}"
+        );
+        let codec_pos = args
+            .iter()
+            .position(|a| a == "-c:a")
+            .expect("-c:a 必须存在");
+        assert_eq!(args[codec_pos + 1], "libmp3lame");
+        assert!(args.iter().any(|a| a == "320k"), "有比特率能力时应带 -b:a");
+        assert_eq!(args.last().map(String::as_str), Some("out.mp3"));
+    }
+
+    /// 无比特率能力的编码器不得携带 `-b:a`（零回归口径）。
+    #[test]
+    fn ffmpeg_args_omit_bitrate_when_unsupported() {
+        let args = build_ffmpeg_args("flac", 44100, 1, 320, false, "out.flac");
+        assert!(!args.iter().any(|a| a == "-b:a"), "FLAC 不应带 -b:a");
     }
 }

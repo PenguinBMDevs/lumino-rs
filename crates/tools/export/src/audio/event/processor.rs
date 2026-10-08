@@ -53,7 +53,7 @@ const TAIL_SILENCE_EPS: f32 = 0.0001;
 /// NaN 旁路的根因——尾部直接写 sink，漏净化时限幅器关闭会把 NaN/Inf 直写 WAV；
 /// 且 `is_silent` 的 `abs() < eps` 判据对 NaN 恒为 false，污染尾部会让收尾
 /// 循环跑满批次上限（120s 垃圾）。
-pub(super) fn purify_non_finite(buffer: &mut [f32]) -> (u64, Option<usize>) {
+pub(crate) fn purify_non_finite(buffer: &mut [f32]) -> (u64, Option<usize>) {
     let mut bad = 0_u64;
     let mut first_bad: Option<usize> = None;
     for (i, sample) in buffer.iter_mut().enumerate() {

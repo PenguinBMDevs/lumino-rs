@@ -7,7 +7,7 @@
 // - `processor`: MidiEventProcessor 的事件分发 / 弯音归一化 / 尾部收尾
 // - `render`: 批量渲染（帧域）与 Vec 缓冲池
 // - `soundfont`: 音色库路径校验与加载
-mod processor;
+pub(crate) mod processor;
 mod render;
 mod soundfont;
 
