@@ -371,7 +371,6 @@ impl Sidebar {
     pub(crate) fn mark_track_id_reserved(&mut self, id: usize) {
         self.reserved_track_ids.insert(id);
     }
-
 }
 
 impl Default for Sidebar {

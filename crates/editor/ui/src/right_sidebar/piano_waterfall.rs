@@ -137,4 +137,3 @@ impl Default for WaterfallPlayerState {
         }
     }
 }
-
