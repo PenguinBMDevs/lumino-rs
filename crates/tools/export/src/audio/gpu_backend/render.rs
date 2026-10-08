@@ -120,7 +120,7 @@ pub fn render_audio_gpu_from_document(
 
     report("GPU 写入输出...", 0.85);
     // 通过 Sink 写入目标文件（支持 WAV/MP3/FLAC 等）
-    write_gpu_result_to_sink(config, &result.samples, result.sample_rate, result.channels)?;
+    write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
 
     report("GPU 完成", 1.0);
     Ok(())
@@ -216,15 +216,15 @@ pub fn render_audio_gpu_streaming(config: &AudioRenderConfig) -> ExportResult<()
     check_control(config)?;
 
     report("GPU 写入输出...", 0.85);
-    write_gpu_result_to_sink(config, &result.samples, result.sample_rate, result.channels)?;
+    write_gpu_result_to_sink(config, result.samples, result.sample_rate, result.channels)?;
     report("GPU 完成", 1.0);
     Ok(())
 }
 
-/// 将 GPU 渲染结果写入 Sink（处理声道数与采样率）
+/// 将 GPU 渲染结果写入 Sink（处理声道数、净化与限幅）
 fn write_gpu_result_to_sink(
     config: &AudioRenderConfig,
-    samples: &[f32],
+    mut samples: Vec<f32>,
     sample_rate: u32,
     channels: u32,
 ) -> ExportResult<()> {
@@ -243,6 +243,23 @@ fn write_gpu_result_to_sink(
         tracing::warn!("GPU 渲染声道 {} 与配置 {} 不一致", channels, expected_ch);
     }
 
+    // DEBT-07 #124：与 CPU 导出口径对齐——写 sink 前净化非有限样本（按静音），
+    // 并按用户开关应用同一 AudioLimiter。旧实现原样写 WAV：GPU 后端勾选
+    // "限幅器"静默无效，且 NaN/Inf 会直接落盘。
+    let (bad, _) = crate::audio::event::processor::purify_non_finite(&mut samples);
+    if bad > 0 {
+        tracing::warn!("GPU 导出：净化 {bad} 个非有限样本（NaN/Inf → 静音）");
+    }
+    let mut limiter = if config.apply_limiter {
+        Some(crate::audio::limiter::AudioLimiter::new(
+            sample_rate,
+            expected_ch as u16,
+            0.95,
+        ))
+    } else {
+        None
+    };
+
     let mut sink = create_output_sink(config)?;
 
     // 分块写入，避免单次过大；进度从 0.85 映射到 1.0
@@ -256,9 +273,16 @@ fn write_gpu_result_to_sink(
             // 真降混：mono = 0.5 * (L + R)（分块，避免整曲临时副本）
             let mut mono = Vec::with_capacity((end - offset) / 2);
             downmix_stereo_to_mono(&samples[offset..end], &mut mono);
+            if let Some(limiter) = limiter.as_mut() {
+                limiter.process(&mut mono);
+            }
             sink.write_samples(&mono)?;
         } else {
-            sink.write_samples(&samples[offset..end])?;
+            let chunk = &mut samples[offset..end];
+            if let Some(limiter) = limiter.as_mut() {
+                limiter.process(chunk);
+            }
+            sink.write_samples(chunk)?;
         }
         offset = end;
         // 进度回调（按样本进度估算 0.85→1.0）

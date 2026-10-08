@@ -22,6 +22,22 @@ impl RunnerInner {
     ) {
         use std::time::Instant;
 
+        // DEBT-07 #124：导出可重入守卫——已有音频导出（控制句柄存在）或视频导出
+        // 进行中时拒绝，避免进度通道/控制句柄被覆盖、两线程并发写盘。
+        if self.window_state.audio_export_control.is_some()
+            || self
+                .window_state
+                .video_export_running
+                .load(std::sync::atomic::Ordering::SeqCst)
+        {
+            tracing::warn!("已有导出任务进行中，忽略新的音频导出请求");
+            self.window_state
+                .window
+                .ui_mut()
+                .set_status_message(Some("已有导出任务进行中，请等待完成".to_string()));
+            return;
+        }
+
         let lumino_message::events::window::dialog::AudioExportConfig {
             midi_path,
             soundfont_path,
