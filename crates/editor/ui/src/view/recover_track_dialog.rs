@@ -16,11 +16,9 @@ use crate::state::root_state::{RecoverTrackDialogState, RecoverTrackEntry};
 const ROW_HEIGHT: f32 = 36.0;
 /// 列表区域最大高度（超出滚动）
 const LIST_MAX_HEIGHT: f32 = 400.0;
-/// 表头列宽比例（文件名 : 删除时间 : 音符总数）
+/// 表头列宽比例（文件名 : 删除时间；音符总数列自适应剩余宽度）
 const COL_FILENAME: f32 = 240.0;
 const COL_DELETED_AT: f32 = 180.0;
-#[allow(dead_code)]
-const COL_NOTE_COUNT: f32 = 80.0;
 
 /// 渲染找回删除音轨对话框
 pub fn view_recover_track_dialog<'a>(

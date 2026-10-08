@@ -3,8 +3,6 @@
 //! 转发待删除音轨请求给 Runner（写入 `.lmdeltrack` 缓存）、
 //! 找回删除音轨对话框、恢复音轨与永久销毁后的 ID 释放。
 
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use crate::root::Root;
 use lumino_message::events::window::track::{TrackDeletionNote, TrackDeletionPayload};
 use lumino_midi_loader::NoteEvent;
@@ -208,16 +206,5 @@ impl Root {
         let id = track_id as usize;
         self.sidebar.release_reserved_track_id(id);
         tracing::info!("Root: 已永久销毁音轨缓存 track_id={}，释放 reserved ID", id);
-    }
-
-    /// 生成当前时间的 ISO 8601 字符串（用于 deleted_at 字段）
-    #[allow(dead_code)]
-    fn now_iso8601() -> String {
-        let secs = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_secs())
-            .unwrap_or(0);
-        // 简化版 ISO 8601：Unix 秒数（足够排序与显示）
-        format!("ts:{}", secs)
     }
 }
