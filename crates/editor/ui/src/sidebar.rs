@@ -24,9 +24,12 @@ pub use track_reorder::TrackReorderState;
 // ── 单测拆分（避免单文件超 400 行）：直接挂载为同级 file 模块，
 //    避免 `mod.rs`（项目规范禁止）与目录/文件同名碰撞。
 // - `panel_tests`：编排模式 / 面板互斥 / 右键菜单 / 颜色选择
+// - `panel_color_tests`：颜色选择器互斥（对齐 port/channel 选择器）
 // - `roll_bar_tests`：卷帘面板底部按钮（横向/纵向三条杠）互斥与显隐
 #[cfg(test)]
 mod panel_channel_tests;
+#[cfg(test)]
+mod panel_color_tests;
 #[cfg(test)]
 mod panel_port_tests;
 #[cfg(test)]

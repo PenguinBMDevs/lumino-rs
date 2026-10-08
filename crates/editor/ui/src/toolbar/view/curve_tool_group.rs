@@ -201,15 +201,16 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
         layout: Layout<'_>,
         cursor: mouse::Cursor,
     ) {
+        let Some(child) = layout.children().next() else {
+            // 悬浮层布局缺子节点（理论不可达）：跳过本帧绘制而非 panic
+            return;
+        };
         self.menu.as_widget().draw(
             self.tree,
             renderer,
             theme,
             inherited_style,
-            layout
-                .children()
-                .next()
-                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            child,
             cursor,
             &Rectangle::with_size(Size::INFINITE),
         );
@@ -225,13 +226,14 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
         shell: &mut Shell<'_, Message>,
     ) {
         // 关键：把事件转发给面板元素，按钮的 on_press 才能被触发。
+        let Some(child) = layout.children().next() else {
+            // 悬浮层布局缺子节点（理论不可达）：跳过本帧事件转发而非 panic
+            return;
+        };
         self.menu.as_widget_mut().update(
             self.tree,
             event,
-            layout
-                .children()
-                .next()
-                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            child,
             cursor,
             renderer,
             clipboard,
@@ -246,12 +248,13 @@ impl overlay::Overlay<Message, Theme, Renderer> for PanelOverlay<'_, '_> {
         cursor: mouse::Cursor,
         renderer: &Renderer,
     ) -> mouse::Interaction {
+        let Some(child) = layout.children().next() else {
+            // 悬浮层布局缺子节点（理论不可达）：返回无交互而非 panic
+            return mouse::Interaction::None;
+        };
         self.menu.as_widget().mouse_interaction(
             self.tree,
-            layout
-                .children()
-                .next()
-                .expect("面板悬浮层必有唯一子节点（菜单元素）"),
+            child,
             cursor,
             &Rectangle::with_size(Size::INFINITE),
             renderer,

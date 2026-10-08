@@ -1,5 +1,12 @@
 use super::*;
 
+/// `wgpu::BufferSize::new` 仅对 0 字节返回 `None`；统一转成带上下文的 GPU
+/// 错误，避免生产路径 `unwrap`。
+fn checked_buffer_size(bytes: usize) -> Result<wgpu::BufferSize, SynthError> {
+    wgpu::BufferSize::new(bytes as u64)
+        .ok_or_else(|| SynthError::Gpu(format!("buffer size 为 0（bytes={bytes}）")))
+}
+
 impl GpuSynth {
     #[allow(clippy::modulo_one)] // STATES_SYNC_EVERY is 1; the cadence is configurable
     pub(crate) fn dispatch(&mut self, _base: u64) -> Result<(), SynthError> {
@@ -135,7 +142,7 @@ impl GpuSynth {
                     &mut encoder,
                     self.params_buf.buffer(),
                     0,
-                    wgpu::BufferSize::new((std::mem::size_of::<VoiceParams>() * n) as u64).unwrap(),
+                    checked_buffer_size(std::mem::size_of::<VoiceParams>() * n)?,
                     device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_params[..n]));
@@ -144,7 +151,7 @@ impl GpuSynth {
                     &mut encoder,
                     self.states_buf.buffer(),
                     0,
-                    wgpu::BufferSize::new((std::mem::size_of::<VoiceState>() * n) as u64).unwrap(),
+                    checked_buffer_size(std::mem::size_of::<VoiceState>() * n)?,
                     device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_states[..n]));
@@ -154,11 +161,9 @@ impl GpuSynth {
                         &mut encoder,
                         self.env_buf.buffer(),
                         0,
-                        wgpu::BufferSize::new(
-                            (std::mem::size_of::<EnvStageGpu>() * self.upload_env_stages.len())
-                                as u64,
-                        )
-                        .unwrap(),
+                        checked_buffer_size(
+                            std::mem::size_of::<EnvStageGpu>() * self.upload_env_stages.len(),
+                        )?,
                         device,
                     )
                     .copy_from_slice(bytemuck::cast_slice(&self.upload_env_stages));
@@ -168,7 +173,7 @@ impl GpuSynth {
                     &mut encoder,
                     self.voice_chans_buf.buffer(),
                     0,
-                    wgpu::BufferSize::new((4 * n) as u64).unwrap(),
+                    checked_buffer_size(4 * n)?,
                     device,
                 )
                 .copy_from_slice(bytemuck::cast_slice(&self.upload_chans[..n]));

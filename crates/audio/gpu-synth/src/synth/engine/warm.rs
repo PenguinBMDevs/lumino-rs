@@ -179,7 +179,11 @@ impl GpuSynth {
                 .par_iter()
                 .map(|&id| (id, sf.resample_uncached(id, rate)))
                 .collect();
-            let sf = self.sf.as_mut().expect("soundfont present");
+            let Some(sf) = self.sf.as_mut() else {
+                return Err(SynthError::Gpu(
+                    "soundfont missing during prewarm upload".into(),
+                ));
+            };
             let device = &self.res.ctx.device;
             let queue = &self.res.ctx.queue;
             let mut grown = false;

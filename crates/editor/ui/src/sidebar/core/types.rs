@@ -118,7 +118,8 @@ pub struct Track {
     pub id: usize,
     /// 音轨名称
     pub name: String,
-    /// MIDI 端口（0-25 映射到 A-Z，与 yinhe 一致）
+    /// MIDI 端口（产品上限 `PORT_CHOICES = 16`，0-15 → A-P，越界钳制；
+    /// 字母映射函数兼容到 Z，与 yinhe 一致）
     pub port: u8,
     /// MIDI 通道（0-15）
     pub channel: u8,

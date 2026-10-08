@@ -43,6 +43,7 @@ mod collaboration;
 mod document;
 mod draw_toolbar;
 mod editor_ops;
+mod file_dialog;
 pub mod handlers;
 mod memory;
 mod mixer_panel;
@@ -95,6 +96,11 @@ pub struct Root {
     /// 素材扫描结果接收端（后台扫描完成后的素材列表）
     pub(crate) pending_material_scan:
         Option<std::sync::mpsc::Receiver<Vec<crate::right_sidebar::MaterialEntry>>>,
+    /// 后台文件对话框任务（路径选择类；独立线程打开，结果由 `poll_path_dialogs` 消费）
+    pub(crate) pending_path_dialogs: Vec<(file_dialog::PathDialogTask, file_dialog::DialogRx)>,
+    /// 素材导入后台任务结果接收端（对话框/校验/复制均在后台线程）
+    pub(crate) pending_material_import:
+        Option<std::sync::mpsc::Receiver<file_dialog::MaterialImportOutcome>>,
     /// 图片转 MIDI 转换前的工具，√ 写入成功后还原
     pub(crate) i2m_restore_tool: Option<lumino_message::Tool>,
     /// 云存储 UI 状态（连接表单 / 文件浏览）
@@ -166,6 +172,8 @@ impl Root {
                 window_resize_guard: false,
                 pending_i2m: None,
                 pending_material_scan: None,
+                pending_path_dialogs: Vec::new(),
+                pending_material_import: None,
                 i2m_restore_tool: None,
                 cloud: crate::state::cloud_state::CloudUiState::default(),
                 deferred_remote_ops: Vec::new(),

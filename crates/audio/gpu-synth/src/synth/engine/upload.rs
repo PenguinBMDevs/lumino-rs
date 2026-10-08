@@ -37,11 +37,10 @@ impl GpuSynth {
             // No sample fits the budget (large samples): upload the smallest
             // one anyway so progress is never zero - a single sample cannot
             // be split across blocks.
-            let smallest = needed
-                .iter()
-                .min_by_key(|&&id| sf.sample_data(id).len())
-                .copied()
-                .unwrap();
+            let Some(&smallest) = needed.iter().min_by_key(|&&id| sf.sample_data(id).len()) else {
+                // `needed` 非空（上方已判定）；理论不可达，防御性兜底不 panic
+                return Ok(0);
+            };
             todo.push(smallest);
         }
         if todo.is_empty() {

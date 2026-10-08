@@ -93,11 +93,13 @@ impl GpuSynth {
                 // per block on black-MIDI note storms at the pool cap.
                 let mut groups: Vec<(u64, u8, u64, Vec<usize>)> = Vec::new();
                 for (i, v) in self.voices.iter().enumerate() {
-                    match groups.last_mut() {
-                        Some((_, _, note, _)) if *note == v.note_id => {}
-                        _ => groups.push((v.spawn_frame, v.vel, v.note_id, Vec::new())),
+                    if let Some((_, _, note, positions)) = groups.last_mut()
+                        && *note == v.note_id
+                    {
+                        positions.push(i);
+                        continue;
                     }
-                    groups.last_mut().unwrap().3.push(i);
+                    groups.push((v.spawn_frame, v.vel, v.note_id, vec![i]));
                 }
                 // Oldest first: a freshly-spawned note must always sound, even
                 // at extreme NPS (XSynth's steal semantics).

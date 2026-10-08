@@ -8,6 +8,7 @@ use helpers::*;
 
 use crate::message::{Message, VideoExportAction};
 use crate::root::Root;
+use crate::root::file_dialog::PathDialogTask;
 use crate::state::root_state::VideoExportOverlayState;
 use crate::util::parse_uint;
 
@@ -161,14 +162,12 @@ impl DialogHandler {
                 root.state.video_export_dialog.counter_font_path = v;
             }
             V::CounterBrowseFont => {
-                // 浏览字体文件（TTF/OTF/TTC），选择后写入路径
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("字体文件", &["ttf", "otf", "ttc"])
-                    .pick_file()
-                {
-                    root.state.video_export_dialog.counter_font_path =
-                        path.to_string_lossy().to_string();
-                }
+                // 浏览字体文件（TTF/OTF/TTC）：后台线程打开对话框（防 UI 冻结）
+                root.spawn_path_dialog(PathDialogTask::VideoCounterFont, || {
+                    rfd::FileDialog::new()
+                        .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                        .pick_file()
+                });
             }
             V::CounterUseCommasChanged(v) => {
                 root.state.video_export_dialog.counter_use_commas = v;
@@ -225,14 +224,12 @@ impl DialogHandler {
                 st.counter_editor = iced_widget::text_editor::Content::with_text(&st.counter_text);
             }
             V::CounterBrowseCsv => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name("notecounter.csv")
-                    .add_filter("CSV 数据文件", &["csv"])
-                    .save_file()
-                {
-                    root.state.video_export_dialog.counter_csv_output =
-                        path.to_string_lossy().to_string();
-                }
+                root.spawn_path_dialog(PathDialogTask::VideoCounterCsv, || {
+                    rfd::FileDialog::new()
+                        .set_file_name("notecounter.csv")
+                        .add_filter("CSV 数据文件", &["csv"])
+                        .save_file()
+                });
             }
             V::DataCurveNumberChanged { field, value } => {
                 let st = &mut root.state.video_export_dialog;
@@ -279,13 +276,11 @@ impl DialogHandler {
                 root.state.video_export_dialog.dc_font_mode = v;
             }
             V::DataCurveBrowseFont => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("字体文件", &["ttf", "otf", "ttc"])
-                    .pick_file()
-                {
-                    root.state.video_export_dialog.dc_font_path =
-                        path.to_string_lossy().to_string();
-                }
+                root.spawn_path_dialog(PathDialogTask::VideoDataCurveFont, || {
+                    rfd::FileDialog::new()
+                        .add_filter("字体文件", &["ttf", "otf", "ttc"])
+                        .pick_file()
+                });
             }
             V::FpsChanged(v) => {
                 root.state.video_export_dialog.fps = v;
@@ -295,29 +290,28 @@ impl DialogHandler {
             }
             V::BrowseOutput => {
                 let st = &root.state.video_export_dialog;
-                let ext = st.container.to_lowercase();
-                let default_name = format!("output.{}", ext);
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name(&default_name)
-                    .add_filter(&st.container, &[ext.as_str()])
-                    .save_file()
-                {
-                    root.state.video_export_dialog.output_path = path.to_string_lossy().to_string();
-                }
+                let container = st.container.clone();
+                let ext = container.to_lowercase();
+                let default_name = format!("output.{ext}");
+                root.spawn_path_dialog(PathDialogTask::VideoExportOutput, move || {
+                    rfd::FileDialog::new()
+                        .set_file_name(&default_name)
+                        .add_filter(&container, &[ext.as_str()])
+                        .save_file()
+                });
             }
             V::MidiPathChanged(v) => {
                 root.state.video_export_dialog.midi_path = v;
             }
             V::BrowseMidi => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("音乐文件", &["mid", "midi", "lmpj"])
-                    .add_filter("MIDI 文件", &["mid", "midi"])
-                    .add_filter("Lumino 项目", &["lmpj"])
-                    .add_filter("所有文件", &["*"])
-                    .pick_file()
-                {
-                    root.state.video_export_dialog.midi_path = path.to_string_lossy().to_string();
-                }
+                root.spawn_path_dialog(PathDialogTask::VideoExportMidi, || {
+                    rfd::FileDialog::new()
+                        .add_filter("音乐文件", &["mid", "midi", "lmpj"])
+                        .add_filter("MIDI 文件", &["mid", "midi"])
+                        .add_filter("Lumino 项目", &["lmpj"])
+                        .add_filter("所有文件", &["*"])
+                        .pick_file()
+                });
             }
             V::UpdateProgress {
                 message,
