@@ -14,7 +14,9 @@ impl GpuSynth {
             return Err(SynthError::Config("output buffer too small".into()));
         }
 
-        let prof = std::env::var("LUMINO_PROFILE").is_ok();
+        // PREF-006 B：环境开关一次性缓存（每块 `env::var` 会走进程锁）
+        static PROFILE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let prof = *PROFILE.get_or_init(|| std::env::var("LUMINO_PROFILE").is_ok());
         let base = self.global_frame;
 
         let t0 = std::time::Instant::now();
