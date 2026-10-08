@@ -39,46 +39,9 @@ impl Root {
 
     /// 从本地选取 .lmmaterial 素材文件并导入
     ///
-    /// 导入流程：文件对话框选择 → 复制到用户素材目录 → 重新扫描列表。
+    /// 对话框选择、格式校验与复制全部在后台线程完成（防 UI 冻结），
+    /// 结果由 [`Root::poll_material_import`] 消费：成功后重新扫描列表。
     pub(crate) fn import_material_from_local(&mut self) {
-        let Some(path) = rfd::FileDialog::new()
-            .set_title("选择要导入的素材文件")
-            .add_filter("Lumino 素材", &["lmmaterial"])
-            .add_filter("所有文件", &["*"])
-            .pick_file()
-        else {
-            return;
-        };
-
-        // 校验素材格式（从 metadata 判断是否为素材文件）
-        let valid_material = lumino_export::load_project(&path)
-            .map(|p| p.metadata.is_material_file())
-            .unwrap_or(false);
-        if !valid_material {
-            tracing::error!("导入失败：{} 不是素材文件（.lmmaterial）", path.display());
-            self.toast.push(
-                crate::toast::ToastLevel::Error,
-                "素材导入失败：不是有效的素材文件",
-            );
-            return;
-        }
-
-        let user_dir = crate::right_sidebar::user_materials_dir();
-        match crate::right_sidebar::copy_material_to_user_dir(&path, &user_dir) {
-            Ok(dest) => {
-                tracing::info!("素材已导入并复制到用户素材目录: {:?}", dest);
-                self.toast
-                    .push(crate::toast::ToastLevel::Success, "素材已导入");
-                // 重新扫描列表
-                self.start_material_scan();
-            }
-            Err(e) => {
-                tracing::error!("素材复制失败: {e}");
-                self.toast.push(
-                    crate::toast::ToastLevel::Error,
-                    "素材导入失败：复制文件出错",
-                );
-            }
-        }
+        self.spawn_material_import();
     }
 }

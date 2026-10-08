@@ -34,16 +34,23 @@ impl AudioExportControl {
         }
     }
 
+    /// 锁 `pause_mutex`；中毒（持锁线程曾 panic）时降级取回内层值，不 panic。
+    fn lock_pause_mutex(&self) -> std::sync::MutexGuard<'_, bool> {
+        self.pause_mutex
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// 请求暂停（幂等）
     pub fn pause(&self) {
         self.paused.store(true, Ordering::Relaxed);
-        *self.pause_mutex.lock().expect("pause mutex poisoned") = true;
+        *self.lock_pause_mutex() = true;
     }
 
     /// 请求继续（幂等）
     pub fn resume(&self) {
         self.paused.store(false, Ordering::Relaxed);
-        *self.pause_mutex.lock().expect("pause mutex poisoned") = false;
+        *self.lock_pause_mutex() = false;
         self.pause_cond.notify_all();
     }
 
@@ -89,14 +96,17 @@ impl AudioExportControl {
     /// 重新检查 `aborted`，确保中止能及时响应。
     pub fn wait_if_paused(&self) {
         while self.is_paused() && !self.is_aborted() {
-            let guard = self.pause_mutex.lock().expect("pause mutex poisoned");
+            let guard = self.lock_pause_mutex();
             if !*guard {
                 break;
             }
-            let (guard, _) = self
+            let (guard, _) = match self
                 .pause_cond
                 .wait_timeout(guard, std::time::Duration::from_millis(100))
-                .expect("condvar wait failed");
+            {
+                Ok(pair) => pair,
+                Err(poisoned) => poisoned.into_inner(),
+            };
             drop(guard);
             if !self.is_paused() || self.is_aborted() {
                 break;

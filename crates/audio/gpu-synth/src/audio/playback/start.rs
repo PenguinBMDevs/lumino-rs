@@ -66,9 +66,9 @@ impl AudioPlayback {
                     warm_buf.clone()
                 };
                 stats.samples.fetch_add(out.len() as i64, Ordering::SeqCst);
-                sample_tx
-                    .send(out)
-                    .expect("queue prefill: audio queue must be empty at start");
+                sample_tx.send(out).map_err(|_| {
+                    SynthError::Gpu("queue prefill: audio queue closed during startup".into())
+                })?;
             }
         }
 

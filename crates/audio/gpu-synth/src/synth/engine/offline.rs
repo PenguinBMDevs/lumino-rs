@@ -106,7 +106,11 @@ impl GpuSynth {
             // The upload loop holds `&mut self.sf`, so the checkpoint handle is
             // cloned out and polled via the free function instead of `&self`.
             let checkpoint = self.render_checkpoint.clone();
-            let sf = self.sf.as_mut().expect("soundfont present");
+            let Some(sf) = self.sf.as_mut() else {
+                return Err(SynthError::Config(
+                    "soundfont missing during prewarm upload".into(),
+                ));
+            };
             let device = &self.res.ctx.device;
             let queue = &self.res.ctx.queue;
             let mut grown = false;

@@ -13,7 +13,10 @@ impl GpuSynth {
             if ev.sample as u64 >= end {
                 break;
             }
-            let ev = stream.next_event().expect("peeked event must exist");
+            let Some(ev) = stream.next_event() else {
+                // `peek` 已判定存在；理论不可达，防御性退出避免 panic
+                break;
+            };
             self.handle_event(ev)?;
         }
         Ok(())

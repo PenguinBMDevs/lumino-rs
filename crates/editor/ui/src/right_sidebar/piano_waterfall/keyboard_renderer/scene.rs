@@ -50,10 +50,10 @@ impl KeyboardRenderer {
         let tex_view = self.tex_view.as_ref()?;
 
         // 活跃键颜色缓冲：每帧先清零，再由 keycolor compute 写入“正落键”的键
-        let key_colors_buf = self
-            .key_colors
-            .as_ref()
-            .expect("key_colors allocated by ensure_key_colors");
+        let Some(key_colors_buf) = self.key_colors.as_ref() else {
+            // `ensure_key_colors` 刚保证分配；理论不可达，防御性跳过本帧
+            return None;
+        };
         queue.write_buffer(key_colors_buf, 0, &ZERO_KEYCOLORS);
 
         let colors = KeyboardColors::pure();
@@ -80,10 +80,10 @@ impl KeyboardRenderer {
             self.inst_h = height;
             self.inst_keys = key_count;
         }
-        let instance_buffer = self
-            .instance_buffer
-            .as_ref()
-            .expect("instance_buffer allocated above");
+        let Some(instance_buffer) = self.instance_buffer.as_ref() else {
+            // 上方刚保证分配；理论不可达，防御性跳过本帧
+            return None;
+        };
 
         // 音符 uniform（含落点线 keyboard_y）
         let uni = build_uniforms(

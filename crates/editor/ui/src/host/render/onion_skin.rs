@@ -374,7 +374,9 @@ impl Host {
                             fp.muted_tracks
                         );
                     }
-                    OnionSkinAction::Full => unreachable!("Full 已在上方分支处理"),
+                    OnionSkinAction::Full => {
+                        // Full 已在上方分支处理；保留空分支（防御性，避免 unreachable 崩溃）
+                    }
                 }
             }
         }
