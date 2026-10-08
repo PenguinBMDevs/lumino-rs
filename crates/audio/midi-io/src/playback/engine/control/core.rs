@@ -12,6 +12,8 @@ use crate::playback::{
 };
 use lumino_midi_loader::MidiDocument;
 
+use super::loop_cache::LoopWrapCache;
+
 /// 其他音轨的事件读取状态。
 ///
 /// 不再预先构建 CompactEvent 缓冲区和排序，而是直接引用 `MidiDocument` 中
@@ -70,6 +72,8 @@ pub struct PlaybackEngine {
     pub(crate) looping: bool,
     /// 循环范围（开始tick，结束tick）
     pub(crate) loop_range: Option<(f32, f32)>,
+    /// 循环回绕缓存（PREF-006 A2）：循环配置不变时回绕 O(K) 克隆
+    pub(crate) loop_wrap_cache: Option<LoopWrapCache>,
     /// 控制事件（CC/PC/PB）游标
     pub(crate) control_event_cursor: usize,
     /// 额外 MIDI 事件游标（避免每次 update 线性扫描全部事件）
@@ -101,6 +105,7 @@ impl PlaybackEngine {
             last_processed_tick: 0.0,
             looping: false,
             loop_range: None,
+            loop_wrap_cache: None,
             control_event_cursor: 0,
             midi_event_cursor: 0,
             velocity_filter_threshold: 1,
@@ -163,6 +168,8 @@ impl PlaybackEngine {
 
         self.current_track = current_track;
         self.document = Some(doc);
+        // 文档快照变化（编辑 / 换文档 / 换当前轨）→ 回绕缓存失效
+        self.loop_wrap_cache = None;
         // 当前轨队列统一从 document 重建（UI 侧不再传 Vec<NoteEvent> 中转，
         // 消除编辑后全量克隆当前轨音符的 CPU 内存阻塞）
         self.rebuild_queue_from_current_track(None);
@@ -194,6 +201,8 @@ impl PlaybackEngine {
     pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
         self.midi_event_cursor = 0;
         self.midi_events = events;
+        // 额外事件游标依赖事件表 → 回绕缓存失效
+        self.loop_wrap_cache = None;
     }
 
     /// 设置力度过滤阈值。仅当阈值变化时才重建当前轨队列，避免不必要的重排。
@@ -238,11 +247,14 @@ impl PlaybackEngine {
     /// 设置循环范围
     pub fn set_loop_range(&mut self, start: f32, end: f32) {
         self.loop_range = Some((start, end));
+        // loop_start 变化 → 回绕缓存失效
+        self.loop_wrap_cache = None;
     }
 
     /// 清除循环范围
     pub fn clear_loop_range(&mut self) {
         self.loop_range = None;
+        self.loop_wrap_cache = None;
     }
 
     /// 重建当前音轨的事件队列（从 document 流式读取，无 Vec<NoteEvent> 中转）

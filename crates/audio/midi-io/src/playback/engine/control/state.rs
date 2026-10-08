@@ -274,31 +274,11 @@ impl PlaybackEngine {
             if let Some(mut playback) = self.lock_playback() {
                 playback.seek(loop_start);
             }
-            let seek_tick_u = loop_start as u32;
-            if let Some(doc) = self.document.as_ref() {
-                for track_idx in 0..self.track_states.len() {
-                    if track_idx == self.current_track as usize {
-                        continue;
-                    }
-                    let notes = doc.track_notes(track_idx);
-                    let state = &mut self.track_states[track_idx];
-                    state.pending_offs.clear();
-                    state.note_cursor = notes.partition_point(seek_tick_u);
-                    for (note_idx, note) in notes.iter().enumerate().take(state.note_cursor) {
-                        if note.end_tick >= seek_tick_u {
-                            state.pending_offs.push(super::core::PendingNoteOff {
-                                end_tick: note.end_tick,
-                                note_index: note_idx,
-                            });
-                        }
-                    }
-                }
-                let ctrl_events = &doc.control_events;
-                self.control_event_cursor = ctrl_events.partition_point(seek_tick_u);
-                self.midi_event_cursor = self
-                    .midi_events
-                    .partition_point(|midi_event| midi_event.tick < loop_start);
-            }
+            // PREF-006 A2：回绕缓存——循环配置不变时，「loop_start 处仍在发声」的
+            // 悬挂 NoteOff 与各游标是常量：首次构建 O(N) 一次，此后每次回绕只做
+            // O(K) 克隆（K = 该时刻在响的音符数），替代每轨 O(N) 全扫。
+            self.ensure_loop_wrap_cache(loop_start);
+            self.apply_loop_wrap_cache();
             self.rebuild_queue_from_current_track(Some(loop_start));
             self.last_processed_tick = loop_start;
             // 循环回绕：追齐 loop_start 之前的模态状态（CC/RPN/PB/打击乐模态等），
