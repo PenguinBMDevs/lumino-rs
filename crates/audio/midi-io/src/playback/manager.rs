@@ -208,6 +208,26 @@ impl PlaybackManager {
         let _ = self.sender.send(Command::ClearMidiOutput);
     }
 
+    /// 同步清除 MIDI 输出：等待播放线程处理完命令（旧连接已真正释放）后才返回。
+    ///
+    /// #127：WinMM 在同一进程内不允许对同一端口建立第二个连接，重新初始化
+    /// 主输出前必须确认播放引擎持有的旧连接已 drop；异步 [`clear_midi_output`]
+    /// 只投递命令，存在「命令尚未处理就重开端口」的竞争窗口。
+    /// 返回 `false` 表示播放线程已停止或超时未确认（无法保证已释放）。
+    ///
+    /// [`clear_midi_output`]: Self::clear_midi_output
+    pub fn clear_midi_output_sync(&mut self) -> bool {
+        let (ack_tx, ack_rx) = mpsc::channel();
+        if self
+            .sender
+            .send(Command::ClearMidiOutputAck(ack_tx))
+            .is_err()
+        {
+            return false;
+        }
+        ack_rx.recv_timeout(Duration::from_millis(500)).is_ok()
+    }
+
     /// 从当前 MIDI 文档重建当前音轨播放队列（当前轨与其他轨一致从 document 流式读取，
     /// 不再经 Vec<`NoteEvent`> 中转，避免每次编辑后全量克隆当前轨音符的 CPU 阻塞）
     pub fn rebuild_current_track_queue(&mut self) {

@@ -47,6 +47,7 @@ impl MidiManager {
             spawned_midi_max_port: 0,
             layout_apply: None,
             layout_desired: std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            pending_backend_notice: None,
         };
 
         // 如果偏好 XSynth，在后台异步初始化（Core 已同步完成）
@@ -67,6 +68,8 @@ impl MidiManager {
     ///
     /// `selected_device` 为系统播表（WinMM 输出设备）的指定 ID；
     /// 为 `None` 或该设备不存在时，回落到第一个输出设备（系统默认）。
+    /// #127：指定/首个端口打开失败时继续尝试后续端口（回退下一个可用输出），
+    /// 不再"只试一个就放弃"。
     pub(super) fn init_system_output(selected_device: Option<u32>) -> BackendInitResult {
         use lumino_midi_io::ApiKind;
 
@@ -75,20 +78,26 @@ impl MidiManager {
         match lumino_midi_io::new_api(&ApiKind::System) {
             Ok(api) => {
                 if let Ok(outputs) = api.outputs() {
-                    // 指定的 WINMM 播表优先，否则使用第一个（系统默认）
-                    let output = selected_device
-                        .and_then(|id| outputs.iter().find(|o| o.id == id))
-                        .or_else(|| outputs.first());
-                    if let Some(output) = output
-                        && let Ok(conn) = api.open_output(output.id)
-                    {
-                        tracing::info!("MIDI: System 后端已就绪 (输出设备 #{})", output.id);
-                        return BackendInitResult {
-                            api: Some(api),
-                            output: Some(conn),
-                            backend: SynthBackend::System,
-                        };
+                    let candidates = ordered_output_ids(&outputs, selected_device);
+                    for id in &candidates {
+                        if let Ok(conn) = api.open_output(*id) {
+                            match selected_device {
+                                Some(sel) if sel != *id => tracing::info!(
+                                    "MIDI: System 后端已就绪 (指定设备 #{sel} 不可用，回退到输出设备 #{id})"
+                                ),
+                                _ => tracing::info!("MIDI: System 后端已就绪 (输出设备 #{id})"),
+                            }
+                            return BackendInitResult {
+                                api: Some(api),
+                                output: Some(conn),
+                                backend: SynthBackend::System,
+                            };
+                        }
                     }
+                    tracing::warn!(
+                        "MIDI: System 后端已初始化，但 {} 个输出设备均打开失败",
+                        candidates.len()
+                    );
                 }
                 BackendInitResult {
                     api: Some(api),
@@ -164,13 +173,18 @@ impl MidiManager {
         self.drain_layout_apply();
 
         // ── 策略1：在现有 API 上尝试打开第二个连接 ──
+        // #127：指定端口打开失败（被占用等）时按候选顺序回退下一个可用输出。
         if let Some(api) = self.api.as_ref()
             && let Ok(outputs) = api.outputs()
-            && let Some(output) = outputs.first()
-            && let Ok(conn) = api.open_output(output.id)
         {
-            tracing::info!("MIDI 播放输出: 策略1成功，从现有 API 创建了第二个连接");
-            return Some(conn);
+            for id in ordered_output_ids(&outputs, self.winmm_output_device_id) {
+                if let Ok(conn) = api.open_output(id) {
+                    tracing::info!(
+                        "MIDI 播放输出: 策略1成功，从现有 API 创建了第二个连接 (设备 #{id})"
+                    );
+                    return Some(conn);
+                }
+            }
         }
 
         // ── 策略2：创建全新的 API 实例 ──
@@ -201,7 +215,7 @@ impl MidiManager {
                     }
                     _ => lumino_midi_io::ApiKind::System,
                 };
-                Self::try_open_new_api(&api_kind, None)
+                Self::try_open_new_api(&api_kind, None, self.winmm_output_device_id)
             }
         };
 
@@ -237,9 +251,11 @@ impl MidiManager {
     /// 辅助方法：尝试创建新的 API 实例并打开输出连接
     ///
     /// 返回 `(api, connection)` 元组，其中 `api` 需要保持存活。
+    /// #127：按候选顺序尝试全部输出端口（指定设备优先），任一成功即返回。
     fn try_open_new_api(
         api_kind: &lumino_midi_io::ApiKind,
         options: Option<lumino_midi_io::api::xsynth::XSynthOptions>,
+        selected_device: Option<u32>,
     ) -> Option<(
         Box<dyn lumino_midi_io::SynthControl>,
         Box<dyn lumino_midi_io::PlaybackOutput>,
@@ -250,10 +266,12 @@ impl MidiManager {
         };
 
         let outputs = new_api.outputs().ok()?;
-        let output = outputs.first()?;
-        let conn = new_api.open_output(output.id).ok()?;
-
-        Some((new_api, conn))
+        for id in ordered_output_ids(&outputs, selected_device) {
+            if let Ok(conn) = new_api.open_output(id) {
+                return Some((new_api, conn));
+            }
+        }
+        None
     }
 
     /// 创建独立的 MIDI 输入 API（用于录制功能）
@@ -288,5 +306,52 @@ impl MidiManager {
                 None
             }
         }
+    }
+}
+
+/// #127：按「指定设备优先、其余按枚举顺序」生成输出端口尝试顺序。
+///
+/// 单端口打开失败（被占用/设备切换竞态）时用于回退下一个可用输出，
+/// 而不是只试一个就放弃。`selected` 不在列表中时按纯枚举顺序尝试。
+fn ordered_output_ids(outputs: &[lumino_midi_io::OutputInfo], selected: Option<u32>) -> Vec<u32> {
+    let mut ids = Vec::with_capacity(outputs.len());
+    if let Some(sel) = selected
+        && outputs.iter().any(|o| o.id == sel)
+    {
+        ids.push(sel);
+    }
+    for output in outputs {
+        if !ids.contains(&output.id) {
+            ids.push(output.id);
+        }
+    }
+    ids
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use lumino_midi_io::OutputInfo;
+
+    fn output(id: u32, name: &str) -> OutputInfo {
+        OutputInfo {
+            id,
+            name: name.to_string(),
+        }
+    }
+
+    /// #127：候选顺序 = 指定设备优先 + 其余按枚举顺序，且不重复、不丢失。
+    #[test]
+    fn test_ordered_output_ids_prefers_selected_then_enumeration() {
+        let outputs = vec![output(0, "A"), output(1, "B"), output(2, "C")];
+        assert_eq!(ordered_output_ids(&outputs, Some(2)), vec![2, 0, 1]);
+        assert_eq!(ordered_output_ids(&outputs, Some(1)), vec![1, 0, 2]);
+        assert_eq!(ordered_output_ids(&outputs, None), vec![0, 1, 2]);
+        assert_eq!(
+            ordered_output_ids(&outputs, Some(9)),
+            vec![0, 1, 2],
+            "指定设备不存在时应按枚举顺序回退"
+        );
+        assert!(ordered_output_ids(&[], None).is_empty());
     }
 }

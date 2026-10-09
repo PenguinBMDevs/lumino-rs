@@ -105,6 +105,37 @@ fn test_clear_midi_output_clears_pending() {
     root.update(Message::Toolbar(toolbar::Event::Stop));
 }
 
+/// #127：同步清除在无播放管理器（仅 pending 缓存）时必须立即成功并清空缓存。
+#[test]
+fn test_clear_midi_output_sync_clears_pending() {
+    let mut root = create_root();
+    root.set_midi_output(create_mock_output());
+    assert!(root.playback.pending_midi_output.is_some());
+
+    assert!(root.clear_midi_output_sync(), "无播放管理器时应视为已释放");
+    assert!(
+        root.playback.pending_midi_output.is_none(),
+        "同步清除应清空 pending"
+    );
+}
+
+/// #127：有播放管理器时，同步清除需等到播放线程回执（旧连接已释放）后返回 true。
+#[test]
+fn test_clear_midi_output_sync_with_manager() {
+    let mut root = create_root();
+    add_two_test_notes(&mut root);
+    root.set_midi_output(create_mock_output());
+    root.update(Message::Toolbar(toolbar::Event::Play));
+    assert!(root.playback.manager.is_some());
+
+    assert!(
+        root.clear_midi_output_sync(),
+        "有播放管理器时应收到释放回执"
+    );
+
+    root.update(Message::Toolbar(toolbar::Event::Stop));
+}
+
 mod cc;
 mod playback;
 mod rpn;

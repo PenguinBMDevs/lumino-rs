@@ -20,6 +20,11 @@ use super::PlaybackFrame;
 pub(crate) enum Command {
     SetMidiOutput(Box<dyn PlaybackOutput>),
     ClearMidiOutput,
+    /// 同步清除：置空输出连接并回执（#127 重开 WinMM 端口前确认旧连接已释放）。
+    ///
+    /// 回执在 `midi_output` 被 drop 之后发送，发送失败（调用方已放弃等待）
+    /// 不视为错误。
+    ClearMidiOutputAck(std::sync::mpsc::Sender<()>),
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     /// REND-002 修复：清零打击乐模态跟踪（仅「文档真正切换」发；编辑快照不发）
@@ -59,6 +64,11 @@ pub(crate) fn handle_command(
     match cmd {
         Command::SetMidiOutput(output) => *midi_output = Some(output),
         Command::ClearMidiOutput => *midi_output = None,
+        Command::ClearMidiOutputAck(ack) => {
+            // 先 drop 旧连接，再回执——调用方（重初始化前释放）据此确认端口已可重开。
+            *midi_output = None;
+            let _ = ack.send(());
+        }
         Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),
         Command::SetDocument(doc, track) => engine.set_document(doc, track),
         Command::ResetPercussionTracking => engine.reset_percussion_tracking(),
