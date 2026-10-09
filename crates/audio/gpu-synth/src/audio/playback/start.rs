@@ -23,7 +23,7 @@ impl AudioPlayback {
         let needs_resample = resample_needed || device_rate != engine_rate;
 
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let (event_tx, event_rx) = mpsc::channel::<(u8, MidiEvent)>();
+        let (event_tx, event_rx) = mpsc::channel::<StampedEvent>();
         let (stream_tx, stream_rx) = mpsc::channel::<Vec<crate::midi::TimedEvent>>();
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
@@ -39,6 +39,7 @@ impl AudioPlayback {
             render_size: Arc::new(AtomicU64::new((block * channels) as u64)),
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
+            dropped_note_ons: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -112,10 +113,16 @@ impl AudioPlayback {
                             PlaybackControl::ReleaseAllDampers => synth.release_all_dampers(),
                         }
                     }
-                    // Drain pending MIDI events (non-blocking).
-                    while let Ok((ch, ev)) = event_rx.try_recv() {
-                        synth.send_event(ch, ev);
-                    }
+                    // REND-016 #139：有界 drain + 过期 NoteOn 丢弃（墙钟时间闸）。
+                    // 防止大块渲染结束后一次性注入上万积压事件 → 下一块复音更高
+                    // → 级联大块 → 队列耗尽（欠载无声）。
+                    drain::drain_events(
+                        &event_rx,
+                        Instant::now(),
+                        drain::event_deadline(block, engine_rate),
+                        &thread_stats,
+                        |ch, ev| synth.send_event(ch, ev),
+                    );
                     if thread_stop.load(Ordering::Relaxed) || stop_rx.try_recv().is_ok() {
                         break;
                     }

@@ -27,7 +27,7 @@ impl AudioPlayback {
     /// Lumino's `OutputConnection` uses this to inject MIDI events into the
     /// render thread without owning the `AudioPlayback` (which also owns the
     /// cpal audio stream). Returns `None` once playback has been stopped.
-    pub fn event_sender(&self) -> Option<mpsc::Sender<(u8, MidiEvent)>> {
+    pub fn event_sender(&self) -> Option<mpsc::Sender<StampedEvent>> {
         self.event_tx.clone()
     }
 
@@ -70,9 +70,11 @@ impl AudioPlayback {
     }
 
     /// Sends a MIDI event to the engine (applied at the next block).
+    ///
+    /// REND-016 #139：入队时盖墙钟时间戳，渲染线程据此做积压过期丢弃。
     pub fn send_event(&mut self, channel: u8, event: MidiEvent) {
         if let Some(tx) = &self.event_tx {
-            let _ = tx.send((channel, event));
+            let _ = tx.send((channel, event, Instant::now()));
         }
     }
 

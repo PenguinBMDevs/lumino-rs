@@ -8,7 +8,7 @@ use super::*;
 /// 构造只含发送通道的连接（不启动 GPU/音频设备）。
 fn conn() -> (
     LgsOutputConn,
-    mpsc::Receiver<(u8, MidiEvent)>,
+    mpsc::Receiver<StampedEvent>,
     mpsc::Receiver<PlaybackControl>,
 ) {
     let (event_tx, event_rx) = mpsc::channel();
@@ -30,10 +30,10 @@ fn global_channel_passes_through_without_folding() {
     let (mut c, rx, _crx) = conn();
     c.note_on(16, 60, 100).expect("note_on");
     c.control_change(31, 7, 127).expect("cc");
-    let (ch1, ev1) = rx.recv().expect("note_on 事件");
+    let (ch1, ev1, _at) = rx.recv().expect("note_on 事件");
     assert_eq!(ch1, 16, "全局通道 16 不得折叠到 0");
     assert!(matches!(ev1, MidiEvent::NoteOn { key: 60, vel: 100 }));
-    let (ch2, _) = rx.recv().expect("cc 事件");
+    let (ch2, _, _) = rx.recv().expect("cc 事件");
     assert_eq!(ch2, 31);
 }
 

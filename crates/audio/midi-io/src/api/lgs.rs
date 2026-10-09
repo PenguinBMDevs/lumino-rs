@@ -9,8 +9,9 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
-use lumino_gpu_synth::audio::playback::{AudioPlayback, PlaybackControl};
+use lumino_gpu_synth::audio::playback::{AudioPlayback, PlaybackControl, StampedEvent};
 use lumino_gpu_synth::midi::MidiEvent;
 use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
 use lumino_midi_model::multi_port::channels_for_max_port_clamped;
@@ -22,8 +23,8 @@ use crate::{
     PlaybackOutput, SynthControl,
 };
 
-/// 共享 MIDI 事件发送器（输出连接 → GPU 渲染线程）。
-type SharedEventTx = Arc<Mutex<Option<mpsc::Sender<(u8, MidiEvent)>>>>;
+/// 共享 MIDI 事件发送器（输出连接 → GPU 渲染线程；REND-016 #139 带墙钟时间戳）。
+type SharedEventTx = Arc<Mutex<Option<mpsc::Sender<StampedEvent>>>>;
 
 /// LGS (GPU) 后端初始化选项
 #[derive(Debug, Clone)]
@@ -197,11 +198,13 @@ pub(crate) struct LgsOutputConn {
 
 impl LgsOutputConn {
     /// 向 GPU 渲染线程发送一个 MIDI 事件；发送器不可用（已停止）时静默丢弃。
+    ///
+    /// REND-016 #139：入队时盖墙钟时间戳，渲染线程据此做积压过期丢弃。
     fn send_event(&self, channel: u8, event: MidiEvent) {
         if let Ok(guard) = self.event_tx.lock()
             && let Some(tx) = guard.as_ref()
         {
-            let _ = tx.send((channel, event));
+            let _ = tx.send((channel, event, Instant::now()));
         }
     }
 }
