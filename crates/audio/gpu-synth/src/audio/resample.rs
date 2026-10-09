@@ -211,6 +211,31 @@ mod tests {
         assert!(rms < 0.002, "1 kHz preservation rms={rms}");
     }
 
+    /// 升采样（实时 LGS 的实际路径：引擎 64k/48k → 设备 96k）必须原样通过低频。
+    ///
+    /// 现场排查用：LGS 实时"缺低音"若来自重采样器，本测试会以低频幅度误差暴露。
+    #[test]
+    fn resampler_preserves_low_frequencies_when_upsampling() {
+        for (from, to) in [(64_000u32, 96_000u32), (48_000, 96_000)] {
+            for f in [40.0f32, 100.0, 1000.0] {
+                let mut r = SincResampler::new(from, to, 1);
+                let n = from as usize;
+                let input: Vec<f32> = (0..n)
+                    .map(|i| (i as f32 * 2.0 * std::f32::consts::PI * f / from as f32).sin())
+                    .collect();
+                let _ = r.process(&input); // warm-up (emits silence)
+                let out = r.process(&input);
+                let mean_sq: f64 =
+                    out.iter().map(|&s| s as f64 * s as f64).sum::<f64>() / out.len() as f64;
+                let amp = (mean_sq * 2.0).sqrt();
+                assert!(
+                    (amp - 1.0).abs() < 0.02,
+                    "{from}->{to} f={f}Hz 幅度 {amp:.4}（低频被衰减）"
+                );
+            }
+        }
+    }
+
     #[test]
     fn resampler_continuous_across_blocks() {
         // Two consecutive blocks must not jump at the seam: feed a linear
