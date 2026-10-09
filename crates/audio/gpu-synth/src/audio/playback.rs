@@ -45,11 +45,15 @@ use crate::GpuSynth;
 use crate::SynthError;
 use crate::midi::MidiEvent;
 
+mod admission;
 mod api;
 mod config;
 mod drain;
 mod start;
 mod stats;
+
+pub(crate) use admission::AdmissionState;
+pub use admission::EventSender;
 
 /// Read-only view of the realtime playback statistics.
 ///
@@ -111,6 +115,8 @@ pub struct AudioPlayback {
     stop_flag: Arc<AtomicBool>,
     stop_tx: Option<mpsc::Sender<()>>,
     event_tx: Option<mpsc::Sender<StampedEvent>>,
+    /// REND-016 #139：发送端 NoteOn 准入限速状态（Governor 级别由渲染线程发布）。
+    admission: Arc<AdmissionState>,
     stream_tx: Option<mpsc::Sender<Vec<crate::midi::TimedEvent>>>,
     /// 轻量控制命令发送器（REND-002 实时多端口：复位/踏板清理，不重开流）。
     ctrl_tx: Option<mpsc::Sender<PlaybackControl>>,

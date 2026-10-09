@@ -28,6 +28,8 @@ impl AudioPlayback {
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
         let stop_flag = Arc::new(AtomicBool::new(false));
+        // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用）。
+        let admission = Arc::new(AdmissionState::new());
 
         // Stats shared between the callback, the render thread and the caller.
         let stats = PlaybackStatsReader {
@@ -81,6 +83,7 @@ impl AudioPlayback {
         // dropped: if the queue is full we wait (the consumer is draining).
         let thread_stop = stop_flag.clone();
         let thread_stats = stats.clone();
+        let thread_admission = Arc::clone(&admission);
         let thread = thread::Builder::new()
             .name("lumino-gpu-synth-render".into())
             .spawn(move || {
@@ -225,6 +228,8 @@ impl AudioPlayback {
                         );
                     }
                     thread_stats.set_governor_level(governor.level() as u64);
+                    // REND-016 #139：向发送端发布级别（NoteOn 准入限速）。
+                    thread_admission.set_level(governor.level() as u64);
 
                     // Push without dropping: wait while the queue is full.
                     // The wait below is backpressure (the consumer is
@@ -356,6 +361,7 @@ impl AudioPlayback {
             stop_flag,
             stop_tx: Some(stop_tx),
             event_tx: Some(event_tx),
+            admission,
             stream_tx: Some(stream_tx),
             ctrl_tx: Some(ctrl_tx),
             thread: Some(thread),

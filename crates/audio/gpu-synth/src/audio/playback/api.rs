@@ -27,8 +27,13 @@ impl AudioPlayback {
     /// Lumino's `OutputConnection` uses this to inject MIDI events into the
     /// render thread without owning the `AudioPlayback` (which also owns the
     /// cpal audio stream). Returns `None` once playback has been stopped.
-    pub fn event_sender(&self) -> Option<mpsc::Sender<StampedEvent>> {
-        self.event_tx.clone()
+    ///
+    /// REND-016 #139：返回的 `EventSender` 内置发送端准入闸（NoteOn 在
+    /// Overload/Emergency 下受限速约束），与渲染线程共享同一治理状态。
+    pub fn event_sender(&self) -> Option<EventSender> {
+        self.event_tx
+            .as_ref()
+            .map(|tx| EventSender::shared(tx.clone(), Arc::clone(&self.admission)))
     }
 
     /// 返回控制命令发送器的克隆（LGS 输出连接用；播放停止后为 `None`）。
@@ -71,10 +76,11 @@ impl AudioPlayback {
 
     /// Sends a MIDI event to the engine (applied at the next block).
     ///
-    /// REND-016 #139：入队时盖墙钟时间戳，渲染线程据此做积压过期丢弃。
+    /// REND-016 #139：入队时盖墙钟时间戳；NoteOn（vel>0）经发送端准入闸
+    /// （Overload/Emergency 下限速），其余事件全放行。
     pub fn send_event(&mut self, channel: u8, event: MidiEvent) {
         if let Some(tx) = &self.event_tx {
-            let _ = tx.send((channel, event, Instant::now()));
+            EventSender::shared(tx.clone(), Arc::clone(&self.admission)).send(channel, event);
         }
     }
 

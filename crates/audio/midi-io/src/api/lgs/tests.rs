@@ -4,6 +4,7 @@
 //! REND-016 #139 的全局复音上限透传。
 
 use super::*;
+use lumino_gpu_synth::audio::playback::StampedEvent;
 
 /// 构造只含发送通道的连接（不启动 GPU/音频设备）。
 fn conn() -> (
@@ -15,7 +16,7 @@ fn conn() -> (
     let (control_tx, control_rx) = mpsc::channel();
     (
         LgsOutputConn {
-            event_tx: Arc::new(Mutex::new(Some(event_tx))),
+            event_tx: Arc::new(Mutex::new(Some(EventSender::new(event_tx)))),
             control_tx: Arc::new(Mutex::new(Some(control_tx))),
             velocity_filter: Arc::new(AtomicU8::new(0)),
         },
