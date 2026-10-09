@@ -185,6 +185,7 @@ impl GpuSynth {
 
         let mut engine = Self {
             config,
+            base_max_voices: max_voices,
             res,
             sf: None,
             params_buf,

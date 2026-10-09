@@ -1,6 +1,17 @@
 use super::*;
 
 impl GpuSynth {
+    /// REND-016 #139：运行时收缩/恢复全局声部上限（L4 软目标）。
+    ///
+    /// 收缩在下一块的 `trim_voice_pool_for_block` 生效（块渲染成本 ∝ 声部
+    /// 数），用于过载时把渲染耗时拉回实时预算；`None` 恢复构造时配置。
+    /// 返回实际生效上限（受物理池钳制），供打点。
+    pub fn set_runtime_voice_limit(&mut self, limit: Option<usize>) -> usize {
+        let effective = effective_voice_limit(self.base_max_voices, limit);
+        self.config.max_voices = effective;
+        effective
+    }
+
     /// 每块一次的声部池治理（原 `upload_voices` 前段逐语句搬移）。
     ///
     /// 负责：清零每键防风暴预算、执行独占类互斥、重建活跃组计数、

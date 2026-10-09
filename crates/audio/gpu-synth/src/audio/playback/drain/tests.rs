@@ -291,6 +291,21 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
     assert_eq!(stats.dropped_note_ons(), 10);
 }
 
+/// REND-016 #139：Governor 等级 → 运行时声部上限映射（L4 软目标收缩）。
+#[test]
+fn test_governor_level_maps_to_voice_limit() {
+    assert_eq!(GovernorLevel::Normal.voice_limit(), None);
+    assert_eq!(GovernorLevel::High.voice_limit(), None);
+    assert_eq!(
+        GovernorLevel::Overload.voice_limit(),
+        Some(OVERLOAD_VOICE_LIMIT)
+    );
+    assert_eq!(
+        GovernorLevel::Emergency.voice_limit(),
+        Some(EMERGENCY_VOICE_LIMIT)
+    );
+}
+
 /// 紧急冲洗：积压深时**一次调用**横扫整个过期区（远超旧 65536 上限），
 /// 立即回到新鲜区——消除"追平期间数秒级静音"（现场断续问题的根因）。
 #[test]

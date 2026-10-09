@@ -167,6 +167,21 @@ pub(crate) fn trimmed_group_count(need_free: usize, budget_remaining: usize) -> 
 /// per block at 512 frames (524k = (2 GiB - 64 KiB) / (512*8)).
 pub(crate) const MAX_VOICE_OUT_BYTES: u64 = (1 << 31) - (1 << 16); // ~2 GiB - 64 KiB
 
+/// REND-016 #139：运行时声部上限的生效值（纯函数）。
+///
+/// `base` 为构造时配置（0 = 无限）：
+/// - `None` → 恢复 `base`；
+/// - `Some(n)` 且 `base == 0` → 临时限流到 `[64, 1_000_000]`；
+/// - `Some(n)` 且 `base > 0` → 收缩到 `[min(64, base), base]`（不得超过
+///   构造时的物理池容量）。
+pub(crate) fn effective_voice_limit(base: usize, requested: Option<usize>) -> usize {
+    match (base, requested) {
+        (base, None) => base,
+        (0, Some(n)) => n.clamp(64, 1_000_000),
+        (base, Some(n)) => n.clamp(64.min(base), base),
+    }
+}
+
 /// A submission whose readback is still outstanding (see `GpuSynth::pending`).
 pub(crate) struct PendingReadback {
     pub(crate) idx: wgpu::SubmissionIndex,
@@ -196,4 +211,32 @@ pub(crate) const MAX_SPAWNS_PER_KEY_PER_BLOCK: u32 = 65_536;
 #[inline]
 pub(crate) fn spawn_budget_allows(used: u32) -> bool {
     used < MAX_SPAWNS_PER_KEY_PER_BLOCK
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REND-016 #139：运行时声部上限的恢复/收缩/钳制口径。
+    #[test]
+    fn effective_voice_limit_covers_restore_shrink_and_clamp() {
+        // 有构造上限：None 恢复；Some 收缩且不超构造值、不低于 64 的下限或 base
+        assert_eq!(effective_voice_limit(16_384, None), 16_384);
+        assert_eq!(effective_voice_limit(16_384, Some(4_096)), 4_096);
+        assert_eq!(
+            effective_voice_limit(16_384, Some(usize::MAX)),
+            16_384,
+            "不得突破构造时的物理池"
+        );
+        assert_eq!(effective_voice_limit(16_384, Some(1)), 64, "下限 64");
+        assert_eq!(
+            effective_voice_limit(32, Some(1)),
+            32,
+            "base < 64 时以 base 为下限"
+        );
+        // 无限构造：允许临时限流；None 恢复无限
+        assert_eq!(effective_voice_limit(0, Some(4_096)), 4_096);
+        assert_eq!(effective_voice_limit(0, Some(1)), 64);
+        assert_eq!(effective_voice_limit(0, None), 0);
+    }
 }

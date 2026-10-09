@@ -195,25 +195,30 @@ impl AudioPlayback {
                     let total = delay.as_secs_f64();
                     thread_stats.push_render_load(elapsed / total);
 
-                    // REND-016 #139：治理器反馈（负载 EMA + 积压证据 → 级别/预算）。
+                    // REND-016 #139：治理器反馈（负载 EMA + 积压证据 → 级别/预算/
+                    // 运行时声部上限）。收缩声部上限让块渲染成本 ∝ 声部数地下降，
+                    // 是消除"卡顿期间持续欠载静音"的关键手段。
                     if let Some(level) =
                         governor.observe(elapsed / total, drain_outcome.emergency_evidence)
                     {
                         let voices = synth.voice_count();
+                        let applied_limit = synth.set_runtime_voice_limit(level.voice_limit());
                         tracing::warn!(
-                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 本块 drain {} 条，过期 {}，预算 {}）",
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,
                             elapsed / total,
                             voices,
+                            applied_limit,
                             drain_outcome.processed,
                             drain_outcome.dropped_expired,
                             drain_outcome.dropped_budget
                         );
                         eprintln!(
-                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 本块 drain {} 条，过期 {}，预算 {}）",
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,
                             elapsed / total,
                             voices,
+                            applied_limit,
                             drain_outcome.processed,
                             drain_outcome.dropped_expired,
                             drain_outcome.dropped_budget

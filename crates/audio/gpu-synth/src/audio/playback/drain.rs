@@ -54,6 +54,15 @@ const EMERGENCY_COOLDOWN_BLOCKS: u32 = 235;
 const OVERLOAD_NOTE_ON_BUDGET: usize = 4_096;
 /// Emergency 级的新鲜 NoteOn 单块准入预算（更严格：保节奏优先）。
 const EMERGENCY_NOTE_ON_BUDGET: usize = 2_048;
+/// Overload 级运行时声部上限（L4 软目标收缩，REND-016 #139）。
+///
+/// 块渲染成本 ∝ 声部数：过载时把 trim 目标临时压低，把渲染耗时拉回实时
+/// 预算；恢复期由 Governor 逐级回升，风暴过后回到构造配置。
+const OVERLOAD_VOICE_LIMIT: usize = 8_192;
+/// Emergency 级运行时声部上限（保实时优先，比 Overload 更严格）。
+const EMERGENCY_VOICE_LIMIT: usize = 4_096;
+// 编译期不变量：Emergency 必须比 Overload 更严格。
+const _: () = assert!(OVERLOAD_VOICE_LIMIT > EMERGENCY_VOICE_LIMIT);
 
 /// 事件年龄 deadline：3×块时长，且不小于 [`DEADLINE_FLOOR_MS`]。
 pub(crate) fn event_deadline(block: usize, sample_rate: u32) -> Duration {
@@ -80,6 +89,19 @@ pub(crate) enum GovernorLevel {
     Overload = 2,
     /// 紧急：新鲜 NoteOn 施加严格预算 + 过期丢弃（事件闸）。
     Emergency = 3,
+}
+
+impl GovernorLevel {
+    /// 本级对应的运行时声部上限（`None` = 恢复构造时配置）。
+    ///
+    /// 由渲染线程在级别切换时施加到 `GpuSynth::set_runtime_voice_limit`。
+    pub(crate) fn voice_limit(self) -> Option<usize> {
+        match self {
+            GovernorLevel::Normal | GovernorLevel::High => None,
+            GovernorLevel::Overload => Some(OVERLOAD_VOICE_LIMIT),
+            GovernorLevel::Emergency => Some(EMERGENCY_VOICE_LIMIT),
+        }
+    }
 }
 
 /// 负载治理器状态机（见模块文档）。
