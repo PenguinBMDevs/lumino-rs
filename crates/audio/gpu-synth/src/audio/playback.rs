@@ -74,6 +74,8 @@ pub struct PlaybackStatsReader {
     underruns: Arc<AtomicU64>,
     /// REND-016 #139：因积压过期被丢弃的 NoteOn 数（正常素材应恒为 0）。
     dropped_note_ons: Arc<AtomicU64>,
+    /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
+    governor_level: Arc<AtomicU64>,
 }
 
 /// Number of recent render-load samples kept for the moving average.

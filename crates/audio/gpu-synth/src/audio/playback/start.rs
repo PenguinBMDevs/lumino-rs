@@ -40,6 +40,7 @@ impl AudioPlayback {
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),
+            governor_level: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -99,6 +100,8 @@ impl AudioPlayback {
                 // internally by `global_frame` (no per-event channel traffic)
                 // - the only way to keep up with dense black-MIDI.
                 let mut has_stream = false;
+                // REND-016 #139：负载治理器（级别 → 新鲜 NoteOn 准入预算）。
+                let mut governor = drain::Governor::new();
 
                 loop {
                     // Accept an event stream (usually once, at startup).
@@ -113,13 +116,14 @@ impl AudioPlayback {
                             PlaybackControl::ReleaseAllDampers => synth.release_all_dampers(),
                         }
                     }
-                    // REND-016 #139：有界 drain + 过期 NoteOn 丢弃（墙钟时间闸）。
-                    // 防止大块渲染结束后一次性注入上万积压事件 → 下一块复音更高
-                    // → 级联大块 → 队列耗尽（欠载无声）。
-                    drain::drain_events(
+                    // REND-016 #139：有界 drain + 过期 NoteOn 丢弃（墙钟时间闸）+
+                    // 治理器准入预算。防止大块渲染结束后一次性注入上万积压事件
+                    // → 下一块复音更高 → 级联大块 → 队列耗尽（欠载无声）。
+                    let drain_outcome = drain::drain_events(
                         &event_rx,
                         Instant::now(),
                         drain::event_deadline(block, engine_rate),
+                        &governor,
                         &thread_stats,
                         |ch, ev| synth.send_event(ch, ev),
                     );
@@ -189,6 +193,20 @@ impl AudioPlayback {
                     let elapsed = start.elapsed().as_secs_f64();
                     let total = delay.as_secs_f64();
                     thread_stats.push_render_load(elapsed / total);
+
+                    // REND-016 #139：治理器反馈（负载 EMA + 积压证据 → 级别/预算）。
+                    if let Some(level) =
+                        governor.observe(elapsed / total, drain_outcome.emergency_evidence)
+                    {
+                        eprintln!(
+                            "[GOVERNOR] 级别切换 -> L{}（本块 drain {} 条，过期丢弃 {}，预算丢弃 {}）",
+                            level as u8,
+                            drain_outcome.processed,
+                            drain_outcome.dropped_expired,
+                            drain_outcome.dropped_budget
+                        );
+                    }
+                    thread_stats.set_governor_level(governor.level() as u64);
 
                     // Push without dropping: wait while the queue is full.
                     // The wait below is backpressure (the consumer is

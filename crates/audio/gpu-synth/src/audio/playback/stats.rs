@@ -79,4 +79,14 @@ impl PlaybackStatsReader {
             self.dropped_note_ons.fetch_add(dropped, Ordering::Relaxed);
         }
     }
+
+    /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
+    pub fn governor_level(&self) -> u64 {
+        self.governor_level.load(Ordering::Relaxed)
+    }
+
+    /// 发布当前治理级别（渲染线程侧，lock-free）。
+    pub(crate) fn set_governor_level(&self, level: u64) {
+        self.governor_level.store(level, Ordering::Relaxed);
+    }
 }
