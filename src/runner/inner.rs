@@ -5,6 +5,7 @@ use winit::event_loop::ControlFlow;
 
 use super::dialog_manager::DialogManager;
 use super::file_handler::FileHandler;
+use super::lifecycle::midi::MidiOutputRetry;
 use super::midi_handler::MidiHandler;
 use super::midi_manager::MidiManager;
 use super::progress_manager::ProgressManager;
@@ -201,6 +202,8 @@ pub(crate) struct RunnerInner {
     /// 手动检查在后台线程执行，结果经事件总线回传时设置对话框可能尚未创建；
     /// 暂存于此，由 `about_to_wait` 逐帧尝试注入。
     pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
+    /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
+    pub(crate) midi_output_retry: MidiOutputRetry,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -278,16 +281,7 @@ impl Runner {
             super::cloud_progress::CloudProgressManager::new();
 
         // 创建 MIDI 管理器
-        let mut midi = MidiManager::from_config(&config.ui);
-
-        // 为播放引擎创建独立的 MIDI 输出连接（用于新项目的播放功能）
-        // 这样用户自绘音符在点击播放按钮时能正常发声
-        if let Some(output) = midi.create_additional_output() {
-            window.ui_mut().set_playback_midi_output(output);
-            tracing::info!("Runner: 播放引擎 MIDI 输出连接已就绪");
-        } else {
-            tracing::error!("Runner: 无法创建播放引擎 MIDI 输出，播放将无声");
-        }
+        let midi = MidiManager::from_config(&config.ui);
 
         // 为录制功能创建独立的 MIDI 输入 API
         if let Some(input_api) = midi.create_input_api() {
@@ -315,7 +309,7 @@ impl Runner {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
 
-        let runner = RunnerInner {
+        let mut runner = RunnerInner {
             window_state: WindowState {
                 window,
                 storage,
@@ -375,7 +369,11 @@ impl Runner {
             pending_close_action: None,
             run_pending_after_save: false,
             pending_gpu_check_ui: None,
+            midi_output_retry: MidiOutputRetry::default(),
         };
+
+        // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
+        runner.setup_playback_output();
 
         Ok(runner)
     }

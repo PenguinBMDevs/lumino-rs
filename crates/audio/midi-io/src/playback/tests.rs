@@ -209,3 +209,43 @@ fn test_manager_no_filter_plays_default_output() {
     );
     manager.stop();
 }
+
+/// #127：`clear_midi_output_sync` 返回时，旧连接必须已被播放线程真正释放。
+///
+/// 用 Drop 探针验证：异步 `clear_midi_output` 只投递命令，无法保证返回时
+/// 端口已释放；同步版本必须以回执确认 drop 完成（重开 WinMM 端口的前置条件）。
+#[test]
+fn test_manager_clear_midi_output_sync_waits_for_release() {
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    struct DropProbeOutput {
+        dropped: Arc<AtomicBool>,
+    }
+    impl Drop for DropProbeOutput {
+        fn drop(&mut self) {
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+    impl OutputConnection for DropProbeOutput {
+        fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), crate::Error> {
+            Ok(())
+        }
+        fn close(self: Box<Self>) {}
+    }
+    impl crate::PlaybackOutput for DropProbeOutput {}
+
+    let dropped = Arc::new(AtomicBool::new(false));
+    let mut manager = PlaybackManager::new(480);
+    manager.set_midi_output(Box::new(DropProbeOutput {
+        dropped: Arc::clone(&dropped),
+    }));
+    // set_midi_output 异步投递：等待播放线程安装连接后再清除。
+    std::thread::sleep(Duration::from_millis(60));
+    assert!(!dropped.load(Ordering::SeqCst), "清除前不应释放");
+
+    assert!(manager.clear_midi_output_sync(), "同步清除应收到回执");
+    assert!(
+        dropped.load(Ordering::SeqCst),
+        "clear_midi_output_sync 返回后旧连接必须已释放"
+    );
+}

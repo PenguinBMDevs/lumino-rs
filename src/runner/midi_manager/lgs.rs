@@ -13,12 +13,21 @@ impl MidiManager {
 
         if ui_config.soundfont_path.is_empty() {
             tracing::warn!("LGS (GPU) 异步初始化: 音色库路径未设置");
+            // #127 问题1：不得静默降级——生成可见提示（Runner 每帧写入状态栏）。
+            self.pending_backend_notice = Some(
+                "LGS 未生效：未设置音色库，当前使用 System 后端；请在设置中加载音色库（.sf2/.sfz）"
+                    .to_string(),
+            );
             return;
         }
 
         let path = PathBuf::from(&ui_config.soundfont_path);
         if !path.exists() {
             tracing::warn!("LGS (GPU) 异步初始化: 音色库文件不存在: {:?}", path);
+            self.pending_backend_notice = Some(format!(
+                "LGS 未生效：音色库文件不存在（{}），当前使用 System 后端",
+                path.display()
+            ));
             return;
         }
 
