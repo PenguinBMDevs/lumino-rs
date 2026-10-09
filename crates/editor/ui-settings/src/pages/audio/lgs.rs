@@ -98,6 +98,36 @@ pub(super) fn render_lgs_options<'a>(
     );
     col = col.push(iced_widget::space().height(20));
 
+    // 全局最大复音数（硬上限/量程，REND-016 #139 防爆）：0=自动（16384）
+    let global_limit_val = settings.synth.lgs_global_voice_limit.unwrap_or(0);
+    let global_display = match settings.synth.lgs_global_voice_limit {
+        None => format!(
+            "{} ({})",
+            t.global_voice_limit_auto,
+            lumino_core::storage::config::LGS_AUTO_MAX_VOICES
+        ),
+        Some(v) => v.to_string(),
+    };
+    col = col.push(
+        row![
+            with_setting_tooltip_inline(
+                text(format!("{}: {}", t.global_voice_limit, global_display))
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(200.0),
+                t.global_voice_limit_hint,
+            ),
+            iced_widget::slider(0.0..=65536.0, global_limit_val as f64, |v| {
+                Message::Settings(crate::Event::LgsGlobalVoiceLimitChanged(v as usize))
+            })
+            .step(1024.0_f32)
+            .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
     // LGS (GPU) 专属响度过滤（与 XSynth 全局力度过滤相互独立；LGS 输出连接在 note_on 处实时丢弃过轻音符）
     col = col.push(
         row![

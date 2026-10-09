@@ -34,6 +34,11 @@ pub struct LgsOptions {
     pub block_size: usize,
     /// 每个 (通道, 键) 的最大同音数
     pub max_voices_per_key: usize,
+    /// 全局并发声部硬上限（0 = 不限制；REND-016 #139 防爆）。
+    ///
+    /// 超限时按 REND-015 的 fade-steal 语义裁剪最老/最轻的声部组（5ms 淡出），
+    /// 新音符优先发声；0 保持黑 MIDI 全量模式（旧行为）。
+    pub max_voices: usize,
     /// 是否使用 64 点 sinc 高质量插值（否则线性插值）
     pub use_sinc: bool,
     /// 响度(力度)过滤阈值：MIDI 力度 <= 此值的音符不发声（0=关闭过滤）
@@ -67,14 +72,12 @@ pub struct Lgs {
 }
 
 impl Lgs {
-    /// 构建 GPU 合成引擎（含音色库加载；不涉及音频流）。
-    ///
-    /// `new` 与 `set_midi_port_layout` 重建共用；端口布局决定
-    /// `SynthConfig.midi_channels`（对齐 XSynth `rt_format`）。
-    fn build_synth(soundfont_path: &Path, options: &LgsOptions) -> Result<GpuSynth, Error> {
-        let config = SynthConfig {
+    /// 由 LGS 选项构造 GPU `SynthConfig`（纯函数，便于单测断言 REND-016 复音上限透传）。
+    fn synth_config_from(options: &LgsOptions) -> SynthConfig {
+        SynthConfig {
             sample_rate: options.sample_rate,
             block_size: options.block_size,
+            max_voices: options.max_voices,
             max_voices_per_key: options.max_voices_per_key,
             midi_channels: channels_for_max_port_clamped(options.midi_max_port) as usize,
             interpolation: if options.use_sinc {
@@ -83,7 +86,15 @@ impl Lgs {
                 InterpolationMode::Linear
             },
             ..SynthConfig::default()
-        };
+        }
+    }
+
+    /// 构建 GPU 合成引擎（含音色库加载；不涉及音频流）。
+    ///
+    /// `new` 与 `set_midi_port_layout` 重建共用；端口布局决定
+    /// `SynthConfig.midi_channels`（对齐 XSynth `rt_format`）。
+    fn build_synth(soundfont_path: &Path, options: &LgsOptions) -> Result<GpuSynth, Error> {
+        let config = Self::synth_config_from(options);
 
         let mut synth = GpuSynth::new(config)
             .map_err(|e| Error::InitFailed(format!("LGS (GPU) 初始化失败: {e}")))?;
@@ -119,9 +130,10 @@ impl Lgs {
 
         let version = format!("lumino-gpu-synth {}", lumino_gpu_synth::VERSION);
         tracing::info!(
-            "LGS (GPU): 初始化完成（midi_max_port={}，midi_channels={}）",
+            "LGS (GPU): 初始化完成（midi_max_port={}，midi_channels={}，max_voices={}）",
             options.midi_max_port,
-            channels_for_max_port_clamped(options.midi_max_port)
+            channels_for_max_port_clamped(options.midi_max_port),
+            options.max_voices
         );
 
         Ok(Self {
@@ -374,46 +386,4 @@ impl PlaybackOutput for LgsOutputConn {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 构造只含发送通道的连接（不启动 GPU/音频设备）。
-    fn conn() -> (
-        LgsOutputConn,
-        mpsc::Receiver<(u8, MidiEvent)>,
-        mpsc::Receiver<PlaybackControl>,
-    ) {
-        let (event_tx, event_rx) = mpsc::channel();
-        let (control_tx, control_rx) = mpsc::channel();
-        (
-            LgsOutputConn {
-                event_tx: Arc::new(Mutex::new(Some(event_tx))),
-                control_tx: Arc::new(Mutex::new(Some(control_tx))),
-                velocity_filter: Arc::new(AtomicU8::new(0)),
-            },
-            event_rx,
-            control_rx,
-        )
-    }
-
-    /// REND-002 实时多端口：全局通道（16..=255）必须原样透传，不得 4bit 折叠。
-    #[test]
-    fn global_channel_passes_through_without_folding() {
-        let (mut c, rx, _crx) = conn();
-        c.note_on(16, 60, 100).expect("note_on");
-        c.control_change(31, 7, 127).expect("cc");
-        let (ch1, ev1) = rx.recv().expect("note_on 事件");
-        assert_eq!(ch1, 16, "全局通道 16 不得折叠到 0");
-        assert!(matches!(ev1, MidiEvent::NoteOn { key: 60, vel: 100 }));
-        let (ch2, _) = rx.recv().expect("cc 事件");
-        assert_eq!(ch2, 31);
-    }
-
-    /// 踏板清理走控制通道（引擎级 AllChannels 等价语义，不逐通道发事件）。
-    #[test]
-    fn release_all_dampers_goes_through_control_channel() {
-        let (mut c, _rx, crx) = conn();
-        c.release_all_dampers().expect("release");
-        assert!(matches!(crx.recv(), Ok(PlaybackControl::ReleaseAllDampers)));
-    }
-}
+mod tests;

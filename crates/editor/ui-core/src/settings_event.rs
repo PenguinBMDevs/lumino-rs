@@ -57,6 +57,8 @@ pub enum Event {
     LgsBlockSizeChanged(usize),
     /// LGS (GPU) 每键最大同音数变更（0=不限制）
     LgsMaxVoicesChanged(usize),
+    /// LGS (GPU) 全局最大复音数（硬上限/量程）变更（0 = 自动；REND-016 #139）
+    LgsGlobalVoiceLimitChanged(usize),
     /// LGS (GPU) 专属响度(力度)过滤阈值变更（0=关闭过滤，1-127）
     LgsVelocityFilterChanged(u8),
     /// 主题变更

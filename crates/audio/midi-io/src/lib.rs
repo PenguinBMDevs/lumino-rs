@@ -328,6 +328,8 @@ pub enum ApiKind {
         block_size: usize,
         /// 每 (通道, 键) 最大同音数
         max_voices_per_key: usize,
+        /// 全局并发声部硬上限（0 = 不限制；REND-016 #139 防爆，实时默认 16384）
+        max_voices: usize,
         /// 是否使用 64 点 sinc 高质量插值
         use_sinc: bool,
         /// 响度(力度)过滤阈值（0=关闭过滤）
@@ -359,6 +361,7 @@ pub fn new_api_with_options(
             sample_rate,
             block_size,
             max_voices_per_key,
+            max_voices,
             use_sinc,
             velocity_filter_threshold,
             audio_output_device,
@@ -369,6 +372,7 @@ pub fn new_api_with_options(
                 sample_rate: *sample_rate,
                 block_size: *block_size,
                 max_voices_per_key: *max_voices_per_key,
+                max_voices: *max_voices,
                 use_sinc: *use_sinc,
                 velocity_filter_threshold: *velocity_filter_threshold,
                 audio_output_device: audio_output_device.clone(),

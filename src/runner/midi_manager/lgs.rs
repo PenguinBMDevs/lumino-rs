@@ -3,6 +3,7 @@
 //! 从 `midi_manager.rs` 零逻辑变更拆分而来。
 
 use super::*;
+use lumino_core::storage::config::LGS_AUTO_MAX_VOICES;
 
 impl MidiManager {
     /// 启动 LGS (GPU) 异步初始化
@@ -72,6 +73,8 @@ impl MidiManager {
             sample_rate: ui_config.lgs_sample_rate,
             block_size: ui_config.lgs_block_size,
             max_voices_per_key: ui_config.lgs_max_voices_per_key,
+            // REND-016 #139：全局复音上限透传（None = 自动 16384）
+            max_voices: resolve_lgs_max_voices(ui_config.lgs_global_voice_limit),
             use_sinc: ui_config.lgs_use_sinc,
             velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
             audio_output_device: ui_config.audio_output_device.clone(),
@@ -99,5 +102,38 @@ impl MidiManager {
             .map_err(|e| format!("打开 LGS (GPU) 输出连接失败: {:?}", e))?;
 
         Ok((api, conn))
+    }
+}
+
+/// REND-016 #139：解析 LGS 全局复音上限。
+///
+/// 配置 `None` = 自动（[`LGS_AUTO_MAX_VOICES`] = 16384）；显式值夹紧到
+/// [64, 1_000_000]（上限与 GPU `SynthConfig::validate` 一致，防止手改配置
+/// 产生无效值导致 GPU 初始化失败）。
+fn resolve_lgs_max_voices(configured: Option<usize>) -> usize {
+    configured
+        .unwrap_or(LGS_AUTO_MAX_VOICES)
+        .clamp(64, 1_000_000)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// REND-016 #139：自动 / 显式 / 越界三种配置的解析口径。
+    #[test]
+    fn test_resolve_lgs_max_voices_covers_auto_and_clamp() {
+        assert_eq!(resolve_lgs_max_voices(None), LGS_AUTO_MAX_VOICES);
+        assert_eq!(resolve_lgs_max_voices(Some(8192)), 8192);
+        assert_eq!(
+            resolve_lgs_max_voices(Some(0)),
+            64,
+            "0 视为非法下界，夹紧到 64"
+        );
+        assert_eq!(
+            resolve_lgs_max_voices(Some(usize::MAX)),
+            1_000_000,
+            "上限对齐 SynthConfig::validate"
+        );
     }
 }
