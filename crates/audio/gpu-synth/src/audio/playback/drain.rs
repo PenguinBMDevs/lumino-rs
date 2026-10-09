@@ -21,8 +21,12 @@ use super::*;
 const MAX_EVENTS_PER_BLOCK: usize = 4_096;
 /// 紧急路径：最老事件年龄超过该倍数 deadline 时放宽单块上限。
 const EMERGENCY_DRAIN_MULTIPLIER: u32 = 4;
-/// 紧急路径单块 drain 上限。
-const EMERGENCY_MAX_EVENTS_PER_BLOCK: usize = 65_536;
+/// 紧急冲洗（L4 积压全清）单次扫描上限。
+///
+/// 积压已深时（最老事件年龄超 4×deadline）一次性扫完整个过期区：过期
+/// NoteOn 丢弃、NoteOff/状态事件照常投递，渲染线程直接跳回新鲜区——把
+/// 「积压追平期间数秒级的静音」压缩到一次扫描（百万级 ≈ 0.1-0.2s）。
+const FLUSH_MAX_EVENTS: usize = 2_000_000;
 /// deadline = 3×块时长（1024@48k ≈ 64ms）。
 const DEADLINE_BLOCKS: u64 = 3;
 /// deadline 下限：块极小时防止误杀正常事件。
@@ -221,6 +225,7 @@ pub(crate) fn drain_events(
     let mut dropped_budget = 0u64;
     let mut admitted_note_ons = 0usize;
     let mut emergency_evidence = false;
+    let mut flush_mode = false;
     let budget = governor.note_on_budget();
 
     while processed < cap {
@@ -230,10 +235,13 @@ pub(crate) fn drain_events(
         processed += 1;
         let age = now.saturating_duration_since(enqueued_at);
 
-        // 紧急放宽：FIFO 下首个事件即最老事件，其年龄超限说明积压已深。
+        // 紧急冲洗（REND-016 #139）：FIFO 下首个事件即最老事件，其年龄超限
+        // 说明积压已深——本块一次性扫完过期区（而不是每块只扫 65536 条），
+        // 让渲染线程立即回到新鲜区，消除"追平期间的长静音"。
         if processed == 1 && age > deadline * EMERGENCY_DRAIN_MULTIPLIER {
-            cap = EMERGENCY_MAX_EVENTS_PER_BLOCK;
+            cap = FLUSH_MAX_EVENTS;
             emergency_evidence = true;
+            flush_mode = true;
         }
 
         if is_droppable(&event) {
@@ -250,6 +258,22 @@ pub(crate) fn drain_events(
         on_event(channel, event);
     }
 
+    if flush_mode {
+        tracing::warn!(
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条，丢弃过期 NoteOn {} 条（累计 {}，L{}）",
+            processed,
+            dropped_expired,
+            stats.dropped_note_ons() + dropped_expired,
+            governor.level() as u8
+        );
+        eprintln!(
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条，丢弃过期 NoteOn {} 条（累计 {}，L{}）",
+            processed,
+            dropped_expired,
+            stats.dropped_note_ons() + dropped_expired,
+            governor.level() as u8
+        );
+    }
     let total_dropped = dropped_expired + dropped_budget;
     if total_dropped > 0 {
         stats.record_dropped_note_ons(total_dropped);

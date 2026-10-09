@@ -290,3 +290,52 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
     assert_eq!(delivered, EMERGENCY_NOTE_ON_BUDGET + 1, "NoteOff 必须保留");
     assert_eq!(stats.dropped_note_ons(), 10);
 }
+
+/// 紧急冲洗：积压深时**一次调用**横扫整个过期区（远超旧 65536 上限），
+/// 立即回到新鲜区——消除"追平期间数秒级静音"（现场断续问题的根因）。
+#[test]
+fn test_drain_flushes_deep_backlog_in_one_pass() {
+    let (tx, rx) = mpsc::channel::<StampedEvent>();
+    let now = Instant::now();
+    let old = now
+        .checked_sub(Duration::from_millis(1000))
+        .expect("时钟回绕");
+    let expired = 65_536 + 10; // 超过历史"紧急放宽"上限（65536），证明一次性冲刷
+
+    for i in 0..expired {
+        tx.send((
+            0,
+            MidiEvent::NoteOn {
+                key: (i % 128) as u8,
+                vel: 1,
+            },
+            old,
+        ))
+        .expect("send");
+    }
+    tx.send((0, MidiEvent::NoteOff { key: 0 }, old))
+        .expect("send"); // 陈旧但不可丢
+    tx.send((0, MidiEvent::NoteOn { key: 60, vel: 100 }, now))
+        .expect("send"); // 新鲜区
+
+    let stats = test_stats();
+    let mut delivered = 0usize;
+    let outcome = drain_events(
+        &rx,
+        now,
+        Duration::from_millis(50),
+        &Governor::new(),
+        &stats,
+        |_, _| delivered += 1,
+    );
+
+    assert!(outcome.emergency_evidence, "应报告积压证据");
+    assert_eq!(
+        outcome.processed,
+        expired + 2,
+        "一次调用应横扫整个过期区（超过旧紧急上限）"
+    );
+    assert_eq!(outcome.dropped_expired as usize, expired);
+    assert_eq!(delivered, 2, "陈旧 NoteOff 与新鲜 NoteOn 必须投递");
+    assert_eq!(stats.dropped_note_ons() as usize, expired);
+}
