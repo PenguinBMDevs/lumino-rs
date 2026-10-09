@@ -277,6 +277,14 @@ fn log_drop_rate_limited(
         .as_millis() as i64;
     let prev = LAST_DROP_LOG.fetch_max(ms, Ordering::Relaxed);
     if ms - prev > 500 {
+        // 双通道：tracing 进文件日志（GUI release 唯一可见），eprintln 供控制台构建。
+        tracing::warn!(
+            "[EVENT-DROP] 过期 {} + 预算 {} 条（累计 {}，L{}）",
+            expired,
+            budget,
+            stats.dropped_note_ons(),
+            level as u8
+        );
         eprintln!(
             "[EVENT-DROP] 过期 {} + 预算 {} 条（累计 {}，L{}）",
             expired,

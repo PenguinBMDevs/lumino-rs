@@ -158,6 +158,7 @@ impl AudioPlayback {
                         // block; print it once so the freeze is diagnosable
                         // instead of looking like a hung process.
                         if !last_err {
+                            tracing::error!("[render] block error: {e}");
                             eprintln!("[render] block error: {e}");
                             last_err = true;
                         }
@@ -198,9 +199,21 @@ impl AudioPlayback {
                     if let Some(level) =
                         governor.observe(elapsed / total, drain_outcome.emergency_evidence)
                     {
-                        eprintln!(
-                            "[GOVERNOR] 级别切换 -> L{}（本块 drain {} 条，过期丢弃 {}，预算丢弃 {}）",
+                        let voices = synth.voice_count();
+                        tracing::warn!(
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,
+                            elapsed / total,
+                            voices,
+                            drain_outcome.processed,
+                            drain_outcome.dropped_expired,
+                            drain_outcome.dropped_budget
+                        );
+                        eprintln!(
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 本块 drain {} 条，过期 {}，预算 {}）",
+                            level as u8,
+                            elapsed / total,
+                            voices,
                             drain_outcome.processed,
                             drain_outcome.dropped_expired,
                             drain_outcome.dropped_budget
@@ -246,7 +259,10 @@ impl AudioPlayback {
         let stream_owner = thread::Builder::new()
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
-                let err_fn = |e| eprintln!("lumino-gpu-synth playback error: {e}");
+                let err_fn = |e| {
+                    tracing::error!("lumino-gpu-synth playback error: {e}");
+                    eprintln!("lumino-gpu-synth playback error: {e}");
+                };
                 let mut next_block: Vec<f32> = Vec::new();
                 let mut next_pos = 0usize;
                 let stream = match device.build_output_stream(
@@ -273,6 +289,10 @@ impl AudioPlayback {
                                             as i64;
                                         let prev = LAST_UD_LOG.fetch_max(ms, Ordering::Relaxed);
                                         if ms - prev > 500 {
+                                            tracing::warn!(
+                                                "[UNDERRUN] queue empty (total: {})",
+                                                cb_stats.underruns.load(Ordering::Relaxed)
+                                            );
                                             eprintln!(
                                                 "[UNDERRUN] queue empty (total: {})",
                                                 cb_stats.underruns.load(Ordering::Relaxed)
