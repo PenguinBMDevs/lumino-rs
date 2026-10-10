@@ -103,12 +103,15 @@ impl AudioPlayback {
                 let mut buf = vec![0.0f32; block * channels];
                 let mut resampler = SincResampler::new(engine_rate, device_rate, channels);
                 let mut last_err = false;
-                // Max allowed render time per block: 90% of realtime so the
-                // thread runs slightly ahead and the queue accumulates a
-                // cushion that absorbs peak blocks (dense black-MIDI). The
-                // queue's `try_send` wait throttles when we run too far
-                // ahead. NOTE: based on `block` (one frame, all channels) —
-                // using `block * channels` would double the budget.
+                // Max allowed per-block cost (drain + render) budget: 90% of
+                // realtime so the thread runs slightly ahead and the queue
+                // accumulates a cushion that absorbs peak blocks (dense
+                // black-MIDI). `start` is captured at the top of the loop
+                // (before drain) so this budget covers the FULL per-block
+                // cost, not just `render_block`. The queue's `try_send` wait
+                // throttles when we run too far ahead. NOTE: based on `block`
+                // (one frame, all channels) — using `block * channels` would
+                // double the budget.
                 let delay = Duration::from_secs_f64(block as f64 / engine_rate.max(1) as f64 * 0.9);
 
                 // If a full event stream is supplied, the engine consumes it
@@ -125,6 +128,12 @@ impl AudioPlayback {
                 let mut clean_since_frame: Option<u64> = None;
 
                 loop {
+                    // REND-016 #139：块周期起点——必须**包含 drain/冲洗时间**：
+                    // ① 负载 EMA 计入 drain 成本（否则冲洗慢块不触发治理器，
+                    //    现场表现为"load 0.17 却持续缓速"且无任何日志）；
+                    // ② 节奏锚点不把 drain 耗时叠加在 delay 之上（旧口径每块
+                    //    周期 = drain + delay，天然慢于实时）。
+                    let start = Instant::now();
                     // Accept an event stream (usually once, at startup).
                     if let Ok(events) = stream_rx.try_recv() {
                         synth.set_events(events);
@@ -189,7 +198,6 @@ impl AudioPlayback {
                     // keeping the queue nearly empty - the cause of the
                     // periodic underruns.
 
-                    let start = Instant::now();
                     if let Err(e) = synth.render_block(&mut buf) {
                         // Never die silently: a wedged GPU surfaces here every
                         // block; print it once so the freeze is diagnosable

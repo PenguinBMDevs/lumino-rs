@@ -4,9 +4,10 @@
 //! 全部 drain 进下一块 → 复音更高 → 块更大 → 级联，最终缓冲队列耗尽（欠载
 //! 无声）。本模块给 GPU 补上「双闸 + 反馈」：
 //!
-//! - **事件闸（有界 drain）**：每块最多 [`MAX_EVENTS_PER_BLOCK`] 条；最老事件
+//! - **事件闸（有界 drain）**：每块最多 [`MAX_EVENTS_PER_BLOCK`] 条且受
+//!   [`DRAIN_TIME_BUDGET`] 时间预算约束（到点即停，块耗时恒定）；最老事件
 //!   年龄超过 [`EMERGENCY_DRAIN_MULTIPLIER`]×deadline 时放宽到
-//!   [`EMERGENCY_MAX_EVENTS_PER_BLOCK`]，尽快冲掉积压；
+//!   [`FLUSH_MAX_EVENTS`] 与 [`DRAIN_FLUSH_TIME_BUDGET`]，尽快冲掉积压；
 //! - **过期丢弃**：`age > deadline` 的 NoteOn 丢弃（时间已追不回，保其余事件
 //!   的时间对齐）；NoteOff / 状态类事件永不丢（防挂音 / 上下文错乱）；
 //! - **反馈闸（Governor）**：按 render-load EMA 与「时间已落后」证据分四级
@@ -19,6 +20,17 @@ use super::*;
 
 /// 单块事件 drain 上限（正常路径）。
 const MAX_EVENTS_PER_BLOCK: usize = 4_096;
+/// 正常路径单块 drain 的**时间预算**：到点即停，剩余留待下块。
+///
+/// 计数上限（[`MAX_EVENTS_PER_BLOCK`]）无法约束"事件便宜但量极大"的释放墙
+/// （现场爆点后 10 万+ NoteOff 同 tick 到达）：每块固定 4096 条会把墙拖成
+/// 数十块慢块 → 缓速。时间预算让每块 drain 成本恒定（≈4ms），容量随事件
+/// 单价自适应（NoteOff 廉价 → 1.5~2.5M 条/s）。
+const DRAIN_TIME_BUDGET: Duration = Duration::from_millis(4);
+/// 紧急冲洗路径的时间预算（略放宽，加速清空过期区；不再单块扫 2M）。
+const DRAIN_FLUSH_TIME_BUDGET: Duration = Duration::from_millis(8);
+/// 时间检查间隔（事件数）：摊销 `Instant::now()` 成本。
+const DRAIN_TIME_CHECK_EVERY: usize = 256;
 /// 紧急路径：最老事件年龄超过该倍数 deadline 时放宽单块上限。
 ///
 /// 取 2×（1024@48k ≈ 100ms）：尽早进入冲洗/治理，减少"闸还没开、队列已耗尽"
@@ -278,8 +290,15 @@ pub(crate) fn drain_events(
     let mut controls = 0u64;
     let mut oldest_ms = 0u64;
     let budget = governor.note_on_budget();
+    // REND-016 #139：时间预算（块耗时恒定，防释放墙拖慢块）。
+    let drain_start = Instant::now();
+    let mut time_budget = DRAIN_TIME_BUDGET;
 
     while processed < cap {
+        // 时间预算：到点即停（剩余留待下块）。每 256 条检查一次，摊销时钟成本。
+        if processed.is_multiple_of(DRAIN_TIME_CHECK_EVERY) && drain_start.elapsed() > time_budget {
+            break;
+        }
         let Ok((channel, event, enqueued_at)) = rx.try_recv() else {
             break;
         };
@@ -295,10 +314,11 @@ pub(crate) fn drain_events(
         }
 
         // 紧急冲洗（REND-016 #139）：FIFO 下首个事件即最老事件，其年龄超限
-        // 说明积压已深——本块一次性扫完过期区（而不是每块只扫 65536 条），
-        // 让渲染线程立即回到新鲜区，消除"追平期间的长静音"。
+        // 说明积压已深——本块按放宽的时间预算扫完过期区（而不是每块只扫
+        // 65536 条），让渲染线程尽快回到新鲜区，消除"追平期间的长静音"。
         if processed == 1 && age > deadline * EMERGENCY_DRAIN_MULTIPLIER {
             cap = FLUSH_MAX_EVENTS;
+            time_budget = DRAIN_FLUSH_TIME_BUDGET;
             emergency_evidence = true;
             flush_mode = true;
         }
@@ -318,25 +338,28 @@ pub(crate) fn drain_events(
     }
 
     if flush_mode {
+        let elapsed_ms = drain_start.elapsed().as_millis();
         tracing::warn!(
-            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms（累计 {}，L{}）",
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms，耗时 {}ms（累计 {}，L{}）",
             processed,
             note_offs,
             controls,
             dropped_expired,
             dropped_budget,
             oldest_ms,
+            elapsed_ms,
             stats.dropped_note_ons() + dropped_expired,
             governor.level() as u8
         );
         eprintln!(
-            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms（累计 {}，L{}）",
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms，耗时 {}ms（累计 {}，L{}）",
             processed,
             note_offs,
             controls,
             dropped_expired,
             dropped_budget,
             oldest_ms,
+            elapsed_ms,
             stats.dropped_note_ons() + dropped_expired,
             governor.level() as u8
         );
