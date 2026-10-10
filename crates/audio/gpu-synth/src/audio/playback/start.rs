@@ -111,8 +111,10 @@ impl AudioPlayback {
                 // internally by `global_frame` (no per-event channel traffic)
                 // - the only way to keep up with dense black-MIDI.
                 let mut has_stream = false;
-                // REND-016 #139：负载治理器（级别 → 新鲜 NoteOn 准入预算）。
+                // REND-016 #139：负载治理器（级别 → 新鲜 NoteOn 准入预算/声部上限）。
                 let mut governor = drain::Governor::new();
+                // 发送端闸丢弃计数快照（用于计算"丢弃压力"，驱动快速释放）。
+                let mut last_admission_dropped = thread_admission.dropped();
 
                 loop {
                     // Accept an event stream (usually once, at startup).
@@ -138,6 +140,15 @@ impl AudioPlayback {
                         &thread_stats,
                         |ch, ev| synth.send_event(ch, ev),
                     );
+                    // REND-016 #139：本块"丢弃压力"证据（发送端闸丢弃 + 渲染端
+                    // 过期/预算丢弃 + 紧急冲洗）。压力消失 → Governor 快速逐级
+                    // 放行，避免爆点后"等引擎静下来才放行"的人工静音尾巴。
+                    let admission_dropped = thread_admission.dropped();
+                    let gate_pressure = admission_dropped > last_admission_dropped
+                        || drain_outcome.dropped_expired > 0
+                        || drain_outcome.dropped_budget > 0
+                        || drain_outcome.emergency_evidence;
+                    last_admission_dropped = admission_dropped;
                     if thread_stop.load(Ordering::Relaxed) || stop_rx.try_recv().is_ok() {
                         break;
                     }
@@ -210,7 +221,7 @@ impl AudioPlayback {
                     // 运行时声部上限）。收缩声部上限让块渲染成本 ∝ 声部数地下降，
                     // 是消除"卡顿期间持续欠载静音"的关键手段。
                     if let Some(level) =
-                        governor.observe(elapsed / total, drain_outcome.emergency_evidence)
+                        governor.observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
                     {
                         let voices = synth.voice_count();
                         let applied_limit = synth.set_runtime_voice_limit(level.voice_limit());

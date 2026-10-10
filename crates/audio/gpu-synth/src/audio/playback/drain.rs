@@ -20,7 +20,10 @@ use super::*;
 /// 单块事件 drain 上限（正常路径）。
 const MAX_EVENTS_PER_BLOCK: usize = 4_096;
 /// 紧急路径：最老事件年龄超过该倍数 deadline 时放宽单块上限。
-const EMERGENCY_DRAIN_MULTIPLIER: u32 = 4;
+///
+/// 取 2×（1024@48k ≈ 100ms）：尽早进入冲洗/治理，减少"闸还没开、队列已耗尽"
+/// 的前置静音窗口。
+const EMERGENCY_DRAIN_MULTIPLIER: u32 = 2;
 /// 紧急冲洗（L4 积压全清）单次扫描上限。
 ///
 /// 积压已深时（最老事件年龄超 4×deadline）一次性扫完整个过期区：过期
@@ -36,14 +39,15 @@ const DEADLINE_FLOOR_MS: u64 = 50;
 const EMA_ALPHA: f64 = 0.2;
 /// 升级到下一级所需的高负载持续块数。
 const ENTER_SUSTAIN_BLOCKS: u32 = 20;
-/// 降级所需的恢复持续块数。
-const RECOVER_SUSTAIN_BLOCKS: u32 = 100;
+/// 降级（释放）所需的无压力持续块数（≈0.4s @ ~47 块/s）。
+///
+/// 释放不看负载 EMA，而看"压力"证据（见 [`Governor::observe`]）：风暴一停
+/// 入口速率回落、丢弃消失即可逐级放行，避免"等引擎静下来才放行"的人工静音尾巴。
+const RELEASE_SUSTAIN_BLOCKS: u32 = 20;
 /// 级别进入阈值：Normal→High / High→Overload / Overload→Emergency。
 const HIGH_ENTER_LOAD: f64 = 0.90;
 const OVERLOAD_ENTER_LOAD: f64 = 1.20;
 const EMERGENCY_ENTER_LOAD: f64 = 1.50;
-/// 降级恢复阈值（EMA 低于它开始累计恢复块数）。
-const RECOVER_LOAD: f64 = 0.70;
 /// Emergency 退出后的冷却块数（≈5s @ ~47 块/s），防密度泵动。
 const EMERGENCY_COOLDOWN_BLOCKS: u32 = 235;
 /// Overload 级的新鲜 NoteOn 单块准入预算。
@@ -111,8 +115,8 @@ pub(crate) struct Governor {
     ema_valid: bool,
     /// 连续高于「升级阈值」的块数。
     enter_streak: u32,
-    /// 连续低于「恢复阈值」的块数。
-    recover_streak: u32,
+    /// 连续「无压力」的块数（释放依据）。
+    release_streak: u32,
     /// Emergency 退出后的冷却剩余块数（>0 时禁止直接重入 Emergency）。
     cooldown: u32,
 }
@@ -125,7 +129,7 @@ impl Governor {
             ema: 0.0,
             ema_valid: false,
             enter_streak: 0,
-            recover_streak: 0,
+            release_streak: 0,
             cooldown: 0,
         }
     }
@@ -144,12 +148,21 @@ impl Governor {
         }
     }
 
-    /// 每块渲染完成后喂入负载与「时间已落后」证据；更新级别。
+    /// 每块渲染完成后喂入负载、积压证据与丢弃压力；更新级别。
     ///
     /// 返回级别变化后的新级别（`Some` 表示发生切换，供调用方打点）。
-    /// `emergency_evidence`：本块事件闸触发了紧急放宽（积压已深，允许
-    /// 越过持续块数要求直接进入 Emergency；冷却期内除外）。
-    pub(crate) fn observe(&mut self, load: f64, emergency_evidence: bool) -> Option<GovernorLevel> {
+    /// - `emergency_evidence`：本块事件闸触发了紧急冲洗（积压已深，允许越过
+    ///   持续块数要求直接进入 Emergency；冷却期内除外）；
+    /// - `gate_pressure`：本块仍有丢弃压力（发送端闸丢弃 / 过期丢弃 / 预算
+    ///   丢弃 / 紧急冲洗）。**释放只看压力**：压力消失持续
+    ///   [`RELEASE_SUSTAIN_BLOCKS`] 块即逐级放行——风暴一停就恢复，不等负载
+    ///   EMA 慢慢回落（旧口径"等引擎静下来才放行"会制造爆点后的人工静音尾巴）。
+    pub(crate) fn observe(
+        &mut self,
+        load: f64,
+        emergency_evidence: bool,
+        gate_pressure: bool,
+    ) -> Option<GovernorLevel> {
         if self.cooldown > 0 {
             self.cooldown -= 1;
         }
@@ -187,13 +200,14 @@ impl Governor {
             self.enter_streak = 0;
         }
 
-        // 降级：低于恢复阈值并持续足够块数，逐级回落（迟滞）。
-        if self.ema < RECOVER_LOAD {
-            self.recover_streak += 1;
+        // 降级（释放）：看"压力"证据而不是负载 EMA——压力消失说明风暴已过
+        // （入口速率回落），持续 RELEASE_SUSTAIN_BLOCKS 块后逐级回落。
+        if gate_pressure {
+            self.release_streak = 0;
         } else {
-            self.recover_streak = 0;
+            self.release_streak += 1;
         }
-        if self.recover_streak >= RECOVER_SUSTAIN_BLOCKS && self.level != GovernorLevel::Normal {
+        if self.release_streak >= RELEASE_SUSTAIN_BLOCKS && self.level != GovernorLevel::Normal {
             let was_emergency = self.level == GovernorLevel::Emergency;
             let new_level = match self.level {
                 GovernorLevel::Emergency => GovernorLevel::Overload,
@@ -213,7 +227,7 @@ impl Governor {
     fn set_level(&mut self, level: GovernorLevel) -> GovernorLevel {
         self.level = level;
         self.enter_streak = 0;
-        self.recover_streak = 0;
+        self.release_streak = 0;
         level
     }
 }

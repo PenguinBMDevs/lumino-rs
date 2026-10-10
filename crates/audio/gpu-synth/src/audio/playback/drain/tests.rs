@@ -37,7 +37,7 @@ fn test_event_deadline_scale_and_floor() {
 fn test_governor_stays_normal_under_normal_load() {
     let mut g = Governor::new();
     for _ in 0..300 {
-        assert_eq!(g.observe(0.5, false), None);
+        assert_eq!(g.observe(0.5, false, false), None);
     }
     assert_eq!(g.level(), GovernorLevel::Normal);
     assert_eq!(g.note_on_budget(), None);
@@ -49,25 +49,25 @@ fn test_governor_escalates_on_sustained_load() {
     let mut g = Governor::new();
     // 0.95 > HIGH_ENTER
     for _ in 0..10 {
-        g.observe(0.95, false);
+        g.observe(0.95, false, false);
     }
     assert_eq!(g.level(), GovernorLevel::Normal, "未满持续块数不得升级");
     for _ in 0..50 {
-        g.observe(0.95, false);
+        g.observe(0.95, false, false);
     }
     assert_eq!(g.level(), GovernorLevel::High);
     assert_eq!(g.note_on_budget(), None, "High 级不限制预算");
 
     // 1.3 > OVERLOAD_ENTER（阈值 1.2），持续累计后进入 Overload
     for _ in 0..60 {
-        g.observe(1.3, false);
+        g.observe(1.3, false, false);
     }
     assert_eq!(g.level(), GovernorLevel::Overload);
     assert_eq!(g.note_on_budget(), Some(OVERLOAD_NOTE_ON_BUDGET));
 
     // 1.6 > EMERGENCY_ENTER（阈值 1.5），持续累计后进入 Emergency
     for _ in 0..60 {
-        g.observe(1.6, false);
+        g.observe(1.6, false, false);
     }
     assert_eq!(g.level(), GovernorLevel::Emergency);
     assert_eq!(g.note_on_budget(), Some(EMERGENCY_NOTE_ON_BUDGET));
@@ -77,41 +77,58 @@ fn test_governor_escalates_on_sustained_load() {
 #[test]
 fn test_governor_evidence_enters_emergency_immediately() {
     let mut g = Governor::new();
-    let change = g.observe(0.5, true);
+    let change = g.observe(0.5, true, false);
     assert_eq!(change, Some(GovernorLevel::Emergency));
     assert_eq!(g.note_on_budget(), Some(EMERGENCY_NOTE_ON_BUDGET));
 }
 
-/// 降级需恢复持续 100 块、逐级回落；Emergency 退出后有冷却期。
+/// 释放看「压力」：压力消失持续 `RELEASE_SUSTAIN_BLOCKS` 块即逐级回落；
+/// Emergency 退出后有冷却期（期间证据也不能直入）。
 #[test]
-fn test_governor_exit_hysteresis_and_cooldown() {
+fn test_governor_release_on_no_pressure_and_cooldown() {
     let mut g = Governor::new();
-    g.observe(0.5, true); // 证据直入 Emergency
+    g.observe(0.5, true, false); // 证据直入 Emergency
     assert_eq!(g.level(), GovernorLevel::Emergency);
 
-    // 恢复期：0.5 < RECOVER_LOAD，100 块后回落到 Overload
-    for _ in 0..(RECOVER_SUSTAIN_BLOCKS - 1) {
-        g.observe(0.5, false);
+    // 无压力但未满释放块数：不得降级
+    for _ in 0..(RELEASE_SUSTAIN_BLOCKS - 1) {
+        g.observe(0.5, false, false);
     }
-    assert_eq!(g.level(), GovernorLevel::Emergency, "未满恢复块数不得降级");
-    g.observe(0.5, false);
-    assert_eq!(g.level(), GovernorLevel::Overload, "逐级回落");
+    assert_eq!(g.level(), GovernorLevel::Emergency, "未满释放块数不得降级");
+    g.observe(0.5, false, false);
+    assert_eq!(g.level(), GovernorLevel::Overload, "无压力满额后逐级回落");
 
     // 冷却期内：证据也不能直接重入 Emergency
-    assert_eq!(g.observe(0.5, true), None, "冷却期内禁止证据直入");
+    assert_eq!(g.observe(0.5, true, false), None, "冷却期内禁止证据直入");
     assert_eq!(g.level(), GovernorLevel::Overload);
 
-    // 冷却剩余 234；喂高负载至冷却剩 9 块时仍被门控
+    // 冷却剩余 234；带压力喂高负载至冷却剩 9 块 → 保持 Overload（冷却门控升级）
     for _ in 0..(EMERGENCY_COOLDOWN_BLOCKS - 10) {
-        g.observe(1.6, false);
+        g.observe(1.6, false, true);
     }
     assert_eq!(g.level(), GovernorLevel::Overload, "冷却未结束不得升级");
 
-    // 再喂 10 块 → 冷却归零，负载持续满足 → 升级 Emergency
+    // 再喂 10 块 → 冷却归零 + 高负载持续 → 升级 Emergency
     for _ in 0..10 {
-        g.observe(1.6, false);
+        g.observe(1.6, false, true);
     }
     assert_eq!(g.level(), GovernorLevel::Emergency, "冷却结束应可再次升级");
+}
+
+/// 丢弃压力持续存在时，即使负载 EMA 已回落也**不释放**（防止风暴未过就放行）。
+#[test]
+fn test_governor_pressure_blocks_release() {
+    let mut g = Governor::new();
+    g.observe(0.5, true, false);
+    assert_eq!(g.level(), GovernorLevel::Emergency);
+    for _ in 0..(RELEASE_SUSTAIN_BLOCKS * 5) {
+        g.observe(0.5, false, true);
+    }
+    assert_eq!(g.level(), GovernorLevel::Emergency, "有压力时不得释放");
+    for _ in 0..RELEASE_SUSTAIN_BLOCKS {
+        g.observe(0.5, false, false);
+    }
+    assert_eq!(g.level(), GovernorLevel::Overload, "压力消失后应释放");
 }
 
 /// 只有过期 NoteOn 被丢；NoteOff / CC / PC 无论多老都保留；新鲜事件全保留。
@@ -255,7 +272,7 @@ fn test_drain_emergency_escalates_cap() {
 #[test]
 fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
     let mut governor = Governor::new();
-    governor.observe(0.5, true); // 证据直入 Emergency
+    governor.observe(0.5, true, false); // 证据直入 Emergency
     assert_eq!(governor.level(), GovernorLevel::Emergency);
 
     let (tx, rx) = mpsc::channel::<StampedEvent>();
