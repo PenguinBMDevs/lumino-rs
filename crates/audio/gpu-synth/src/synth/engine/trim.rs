@@ -12,12 +12,22 @@ impl GpuSynth {
         effective
     }
 
-    /// REND-016 #139：过载重同步——所有在响的持续声部置为 5ms 淡出（无爆音硬切）。
+    /// REND-016 #139：过载重同步（入口）——**所有在响声部**（含释放尾巴）置为
+    /// 5ms 淡出（无爆音硬切）。
     ///
     /// 用于引擎落后于时间线后的"重置"：爆点处一次短促淡出，之后只保留当前
-    /// 位置的干净内容；已在淡出/已结束的声部不重复处理。返回被标记声部数。
+    /// 位置的干净内容；已结束的声部不动。返回被标记声部数。
     pub fn fade_all_voices(&mut self) -> usize {
         fade_all_voices_in(&mut self.voices, self.global_frame)
+    }
+
+    /// REND-016 #139：过载重同步（出口）——只清"风暴期出生"的余波：
+    /// `spawn_frame < cutoff` 的声部（含其释放尾巴）5ms 淡出；
+    /// 新段落（cutoff 之后出生）的声部不动。
+    ///
+    /// 返回被标记声部数。
+    pub fn fade_voices_spawned_before(&mut self, cutoff: u64) -> usize {
+        fade_voices_spawned_before(&mut self.voices, cutoff, self.global_frame)
     }
 
     /// 每块一次的声部池治理（原 `upload_voices` 前段逐语句搬移）。
@@ -333,14 +343,33 @@ impl GpuSynth {
     }
 }
 
-/// 把所有在响的持续声部置为 5ms 淡出（REND-016 #139 过载重同步；纯函数便于单测）。
+/// 把所有在响声部（含释放尾巴）置为 5ms 淡出（REND-016 #139 重同步入口；纯函数）。
 ///
-/// 已在淡出（`release_at != u64::MAX`）或已结束的声部不重复处理；
-/// 返回本次被标记的声部数。
+/// 已结束的声部不动；返回本次被标记的声部数。
 pub(crate) fn fade_all_voices_in(voices: &mut [Voice], global_frame: u64) -> usize {
     let mut count = 0usize;
     for v in voices {
-        if v.state.ended == 0 && v.release_at == u64::MAX {
+        if v.state.ended == 0 {
+            v.release_at = global_frame;
+            v.released = true;
+            v.fade_out = true;
+            v.damper_pending = false;
+            count += 1;
+        }
+    }
+    count
+}
+
+/// 把 `spawn_frame < cutoff` 的在响声部（含释放尾巴）置为 5ms 淡出
+/// （REND-016 #139 重同步出口：只清风暴余波，不动新段落；纯函数）。
+pub(crate) fn fade_voices_spawned_before(
+    voices: &mut [Voice],
+    cutoff: u64,
+    global_frame: u64,
+) -> usize {
+    let mut count = 0usize;
+    for v in voices {
+        if v.state.ended == 0 && v.spawn_frame < cutoff {
             v.release_at = global_frame;
             v.released = true;
             v.fade_out = true;

@@ -119,6 +119,10 @@ impl AudioPlayback {
                 let mut governor = drain::Governor::new();
                 // 发送端闸丢弃计数快照（用于计算"丢弃压力"，驱动快速释放）。
                 let mut last_admission_dropped = thread_admission.dropped();
+                // REND-016 #139：干净窗口跟踪——压力 true→false 的首帧记为
+                // "风暴结束点"，出口重同步据此只清风暴期出生的余波。
+                let mut had_pressure = false;
+                let mut clean_since_frame: Option<u64> = None;
 
                 loop {
                     // Accept an event stream (usually once, at startup).
@@ -153,6 +157,13 @@ impl AudioPlayback {
                         || drain_outcome.dropped_budget > 0
                         || drain_outcome.emergency_evidence;
                     last_admission_dropped = admission_dropped;
+                    // REND-016 #139：干净窗口起点（压力 true→false 的首帧）。
+                    if gate_pressure {
+                        had_pressure = true;
+                        clean_since_frame = None;
+                    } else if had_pressure && clean_since_frame.is_none() {
+                        clean_since_frame = Some(synth.global_frame());
+                    }
                     if thread_stop.load(Ordering::Relaxed) || stop_rx.try_recv().is_ok() {
                         break;
                     }
@@ -228,22 +239,39 @@ impl AudioPlayback {
                     if let Some(level) =
                         governor.observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
                     {
-                        // REND-016 #139：过载重同步（进出 Emergency）——切断旧内容：
-                        // 全部在响声部 5ms 淡出 + 递增音频 flush 纪元（回调丢弃旧缓冲），
-                        // 避免爆点后"旧尾段与当前位置混响"（现场反馈的不可用听感）。
-                        if matches!(level, drain::GovernorLevel::Emergency)
-                            || matches!(level_before, drain::GovernorLevel::Emergency)
-                        {
+                        // REND-016 #139：过载重同步——**入口**全清（含释放尾巴）+ 丢弃
+                        // 旧音频；**出口**只清"风暴期出生"的余波（不动新段落、不动音频
+                        // 缓冲），避免风暴余波叠加到后面段落（现场"打击乐/砸琴被冲掉"）。
+                        let entering = matches!(level, drain::GovernorLevel::Emergency)
+                            && !matches!(level_before, drain::GovernorLevel::Emergency);
+                        let leaving = !matches!(level, drain::GovernorLevel::Emergency)
+                            && matches!(level_before, drain::GovernorLevel::Emergency);
+                        if entering {
                             let faded = synth.fade_all_voices();
                             thread_flush_epoch.fetch_add(1, Ordering::Relaxed);
                             tracing::warn!(
-                                "[RESYNC] 过载重同步：淡出 {} 个声部 + 丢弃旧音频（L{}）",
+                                "[RESYNC] 入口全清：淡出 {} 个声部（含尾巴）+ 丢弃旧音频（L{}）",
                                 faded,
                                 level as u8
                             );
                             eprintln!(
-                                "[RESYNC] 过载重同步：淡出 {} 个声部 + 丢弃旧音频（L{}）",
+                                "[RESYNC] 入口全清：淡出 {} 个声部（含尾巴）+ 丢弃旧音频（L{}）",
                                 faded,
+                                level as u8
+                            );
+                        } else if leaving {
+                            let cutoff = clean_since_frame.unwrap_or(synth.global_frame());
+                            let faded = synth.fade_voices_spawned_before(cutoff);
+                            tracing::warn!(
+                                "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
+                                faded,
+                                cutoff,
+                                level as u8
+                            );
+                            eprintln!(
+                                "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
+                                faded,
+                                cutoff,
                                 level as u8
                             );
                         }
