@@ -52,6 +52,10 @@ pub enum ArchiveError {
     #[error("压缩包中未找到条目: {0}")]
     EntryNotFound(String),
 
+    /// 条目名不安全（路径穿越 / 绝对路径 / 盘符等，DEBT-02 #119）
+    #[error("压缩包条目名不安全（疑似路径穿越攻击），已拒绝: {0}")]
+    UnsafeEntryName(String),
+
     /// 内部解压库错误
     #[error("解压库错误: {0}")]
     LibraryError(String),

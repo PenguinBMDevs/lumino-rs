@@ -67,14 +67,26 @@ impl ArrangeSelectionHits {
     pub(crate) fn flat(&self) -> Rc<[(f64, f64, usize, u8)]> {
         Rc::clone(&self.flat)
     }
+
+    /// 无效缓存哨兵：键取全 `u64::MAX`，与任何真实键（gen/revision/指纹）不相等。
+    fn sentinel() -> Self {
+        Self {
+            key: (u64::MAX, u64::MAX, u64::MAX),
+            by_track: Vec::new(),
+            flat: Rc::from(Vec::new()),
+        }
+    }
 }
 
 /// `Editor` 上的走带选区命中缓存槽
-pub(crate) type ArrangeSelectionCache = RefCell<Option<ArrangeSelectionHits>>;
+///
+/// 槽内始终持有值：未命中时为空哨兵（键全 `u64::MAX`），
+/// 读取路径无需 `Option` 解包，也就不存在 `expect` 崩溃点。
+pub(crate) type ArrangeSelectionCache = RefCell<ArrangeSelectionHits>;
 
-/// 构造空缓存槽
+/// 构造空缓存槽（哨兵键与任何真实键不相等，首次访问必然走慢路径）
 pub(crate) fn new_arrange_selection_cache() -> ArrangeSelectionCache {
-    RefCell::new(None)
+    RefCell::new(ArrangeSelectionHits::sentinel())
 }
 
 /// 计算 `track_visual_order` 的变更指纹（O(音轨数)，远小于音符量级）。
@@ -108,21 +120,15 @@ impl Editor {
         // 快路径：键命中直接返回（守卫在此随 return 转移，不提前 drop）
         {
             let cache = self.arrange_selection_cache.borrow();
-            if let Some(hits) = cache.as_ref()
-                && hits.key == key
-            {
-                return Ref::map(cache, |c| {
-                    c.as_ref().expect("快路径已判定 Some，此处必然命中")
-                });
+            if cache.key == key {
+                return cache;
             }
         }
         // 慢路径：上作用域的 `Ref` 已释放，这里才能可变借用
 
         let hits = Self::scan_arrangement_selection(editor_data, key);
-        *self.arrange_selection_cache.borrow_mut() = Some(hits);
-        Ref::map(self.arrange_selection_cache.borrow(), |c| {
-            c.as_ref().expect("走带选区缓存刚写入即应命中")
-        })
+        *self.arrange_selection_cache.borrow_mut() = hits;
+        self.arrange_selection_cache.borrow()
     }
 
     /// 全量扫描文档，按走带选区收集命中音符（唯一的 O(全文档音符) 入口）。

@@ -9,6 +9,8 @@ use crate::{
     window,
 };
 
+use super::track_reorder::{TRACK_ROW_HEIGHT, TRACK_ROW_OFFSET_Y};
+
 mod color;
 mod track_item;
 
@@ -23,6 +25,10 @@ pub struct SidebarViewParams<'a> {
     pub context_menu_target_id: Option<usize>,
     pub renaming_track: Option<&'a (usize, String)>,
     pub color_picking_track: Option<usize>,
+    /// 正在选择端口的音轨 ID（内部端口值 0..=15，UI 显示 1..=16）
+    pub port_picking_track: Option<usize>,
+    /// 正在选择通道的音轨 ID（内部通道值 0..=15，UI 显示 1..=16）
+    pub channel_picking_track: Option<usize>,
     /// 音轨列表面板空白区域右键菜单是否打开
     pub panel_context_menu_open: bool,
     /// 面板右键菜单位置（窗口逻辑坐标，打开时有效）
@@ -202,13 +208,43 @@ pub fn view<'a>(
                 .on_release(Event::track_reorder_ended(None))
                 .on_exit(Event::track_reorder_cancelled());
 
-            // 浮动菜单优先级：颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
+            // 浮动菜单优先级：端口/通道选择器 > 颜色选择器 > 音轨右键菜单 > 面板空白右键菜单。
             // base_content 作为 Stack 最底层，按需叠加浮动覆盖层。
             let stack = Stack::new().push(base_content);
 
-            if let Some(target_id) = params.color_picking_track {
+            if let Some(target_id) = params.port_picking_track {
                 if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
-                    let picker_y = 28.0 + track_index as f32 * 34.0;
+                    let current_port = params.tracks[track_index].port;
+                    let picker_y = TRACK_ROW_OFFSET_Y + track_index as f32 * TRACK_ROW_HEIGHT;
+                    stack
+                        .push(super::port_picker::background_close_overlay(target_id))
+                        .push(super::port_picker::positioned_panel(
+                            target_id,
+                            current_port,
+                            picker_y,
+                        ))
+                        .into()
+                } else {
+                    stack.into()
+                }
+            } else if let Some(target_id) = params.channel_picking_track {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    let current_channel = params.tracks[track_index].channel;
+                    let picker_y = TRACK_ROW_OFFSET_Y + track_index as f32 * TRACK_ROW_HEIGHT;
+                    stack
+                        .push(super::channel_picker::background_close_overlay(target_id))
+                        .push(super::channel_picker::positioned_panel(
+                            target_id,
+                            current_channel,
+                            picker_y,
+                        ))
+                        .into()
+                } else {
+                    stack.into()
+                }
+            } else if let Some(target_id) = params.color_picking_track {
+                if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
+                    let picker_y = TRACK_ROW_OFFSET_Y + track_index as f32 * TRACK_ROW_HEIGHT;
                     stack
                         .push(super::color_picker::background_close_overlay(target_id))
                         .push(super::color_picker::positioned_panel(target_id, picker_y))
@@ -218,8 +254,8 @@ pub fn view<'a>(
                 }
             } else if let Some(target_id) = params.context_menu_target_id {
                 if let Some(track_index) = params.tracks.iter().position(|t| t.id == target_id) {
-                    // 预估菜单垂直位置：面板顶部内边距(8) + 标题行(12) + 间距(8) + 音轨索引 * 音轨行高(34)
-                    let menu_y = 28.0 + track_index as f32 * 34.0;
+                    // 预估菜单垂直位置：面板顶部内边距 + 标题行 + 音轨索引 × 音轨行高
+                    let menu_y = TRACK_ROW_OFFSET_Y + track_index as f32 * TRACK_ROW_HEIGHT;
                     stack
                         .push(super::context_menu::background_close_overlay())
                         .push(super::context_menu::positioned_menu(target_id, menu_y))

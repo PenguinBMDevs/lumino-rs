@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use crate::api::layout::{LayoutAction, layout_action};
 use crate::api::xsynth_output::XSynthOutputConn;
 use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputInfo, PlaybackOutput,
@@ -55,16 +56,22 @@ impl SynthControl for XSynth {
     /// - **不同布局**：`rebuild_with_layout` 全量重建（104–188ms），仅在新管线
     ///   构建成功后提交布局；失败返回 Err，旧管线继续服务，调用方负责告警。
     fn set_midi_port_layout(&mut self, max_port: u8) -> Result<(), String> {
-        if max_port == self.midi_max_port {
+        match layout_action(self.midi_max_port, max_port) {
             // N-2：布局未变 → 轻量复位（微秒级），不重开音频流；
             // 仍满足“文档切换清掉上一文档 bank/模态”的语义。
-            tracing::info!("XSynth: 文档切换，布局未变（max_port={max_port}），轻量复位通道状态");
-            return self.reset_channel_state();
+            LayoutAction::LightReset => {
+                tracing::info!(
+                    "XSynth: 文档切换，布局未变（max_port={max_port}），轻量复位通道状态"
+                );
+                self.reset_channel_state()
+            }
+            LayoutAction::Rebuild => {
+                tracing::info!(
+                    "XSynth: 端口布局 {} -> {max_port}，全量重建合成管线",
+                    self.midi_max_port
+                );
+                self.rebuild_with_layout(max_port)
+            }
         }
-        tracing::info!(
-            "XSynth: 端口布局 {} -> {max_port}，全量重建合成管线",
-            self.midi_max_port
-        );
-        self.rebuild_with_layout(max_port)
     }
 }

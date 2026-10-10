@@ -7,7 +7,7 @@ use crate::root::Root;
 
 mod mapping;
 
-use mapping::{map_message_port, sort_midi_events};
+use mapping::sort_midi_events;
 
 impl Root {
     /// 更新播放管理器中的音符数据
@@ -118,24 +118,7 @@ impl Root {
             }
         }
 
-        // 来源 2：其他音轨的预加载控制事件（来自 load_track_midi_events）。
-        // REND-002：按键（轨道索引）查端口并映射全局通道。
-        for (track_idx, events) in &self.playback.track_midi_events {
-            let port = self
-                .editor
-                .editor_state
-                .data
-                .document
-                .as_ref()
-                .map_or(0, |doc| doc.track_port(*track_idx as u16));
-            for ev in events {
-                let mut mapped = ev.clone();
-                mapped.message = map_message_port(&mapped.message, port);
-                midi_events.push(mapped);
-            }
-        }
-
-        // 来源 3：从 document 中读取当前音轨的 ProgramChange 事件。
+        // 来源 2：从 document 中读取当前音轨的 ProgramChange 事件。
         // ProgramChange 不存储在 automation_lanes 中（无对应 variant），
         // 必须直接从 doc.control_events 提取，否则当前音轨无法切换乐器。
         // （其他音轨的 PC 事件由 PlaybackEngine::process_other_tracks 直接读取）

@@ -61,6 +61,10 @@ pub struct Sidebar {
     pub renaming_track: Option<(usize, String)>,
     /// 正在选择颜色的音轨 ID
     pub color_picking_track: Option<usize>,
+    /// 正在选择端口的音轨 ID
+    pub port_picking_track: Option<usize>,
+    /// 正在选择通道的音轨 ID
+    pub channel_picking_track: Option<usize>,
     /// 单调递增的音轨 ID 计数器（删除后复用 ID 会导致选中冲突）
     pub(crate) next_track_id: usize,
     /// 已删除音轨的 ID 占用集合（新建音轨时跳过这些 ID）
@@ -84,6 +88,17 @@ pub struct Sidebar {
     ///
     /// Root 取出后转发给 Runner，由 Runner 调用 `DialogManager::open_recover_track`。
     pub pending_recover_track_dialog: bool,
+    /// 待 Root 消费的音轨端口编辑 `(音轨 ID, 旧端口, 新端口)`（内部值 0..=15）
+    ///
+    /// sidebar 负责 UI 侧即时更新（标签/重排）；Root 取出后写回
+    /// `document.track_ports` 并置工程脏，保证导出/播放语义与显示一致。
+    /// 携带旧端口用于写入失败时回滚 sidebar，避免 UI 与文档静默分叉。
+    pub pending_track_port_change: Option<(usize, u8, u8)>,
+    /// 待 Root 消费的音轨通道编辑 `(音轨 ID, 旧通道, 新通道)`（内部值 0..=15）
+    ///
+    /// 通道编辑会批量改写该轨音符/控制事件（真实发声与持久化语义），
+    /// Root 消费后置脏并刷新播放映射；携带旧通道用于失败回滚。
+    pub pending_track_channel_change: Option<(usize, u8, u8)>,
     /// 音轨拖拽排序状态（None = 无拖拽进行中）
     pub track_reorder: Option<TrackReorderState>,
     /// 卷帘面板底部按钮当前激活项（`None` = 两个按钮均未点亮）
@@ -149,11 +164,15 @@ impl Sidebar {
             panel_context_menu: PanelContextMenuState::default(),
             renaming_track: None,
             color_picking_track: None,
+            port_picking_track: None,
+            channel_picking_track: None,
             next_track_id: 2,
             reserved_track_ids: HashSet::new(),
             pending_track_deletion: None,
             pending_track_deletion_meta: None,
             pending_recover_track_dialog: false,
+            pending_track_port_change: None,
+            pending_track_channel_change: None,
             track_reorder: None,
             // 默认进入横向卷帘（与用户「默认横向三条杠按钮」要求一致）
             roll_bar_active: Some(RollBarButton::Horizontal),
@@ -205,6 +224,19 @@ impl Sidebar {
         format!("{}{:02}", Self::port_letter(port), channel + 1)
     }
 
+    /// 可选端口数（内部 0..=15，UI 显示 1..=16；对齐 Domino/DAW 惯例）。
+    ///
+    /// 与合成层产品上限同源（`multi_port::MAX_PORTS`），避免 UI 与引擎分叉。
+    pub const PORT_CHOICES: u8 = lumino_midi_model::multi_port::MAX_PORTS;
+
+    /// MIDI 通道数（内部 0..=15，UI 显示 1..=16；与 midi-io 同源）。
+    pub const CHANNEL_CHOICES: u8 = lumino_midi_io::MIDI_CHANNEL_COUNT;
+
+    /// 内部 0 基值 → 显示号（端口/通道共用：0→1 … 15→16）。
+    pub const fn display_number(value: u8) -> u8 {
+        value + 1
+    }
+
     /// 从 MIDI 数据更新音轨列表（按 port→channel→id 排序，同端口按通道号排列）
     /// 排序键：port（端口字母 A→Z），channel（通道号 01→16），id（稳定排序保序）
     /// track_infos: (track_index, track_name, note_count, channel, port)
@@ -220,6 +252,10 @@ impl Sidebar {
         self.pending_track_deletion = None;
         self.pending_track_deletion_meta = None;
         self.pending_recover_track_dialog = false;
+        self.port_picking_track = None;
+        self.channel_picking_track = None;
+        self.pending_track_port_change = None;
+        self.pending_track_channel_change = None;
 
         for (idx, (track_idx, name, _note_count, ch, port)) in track_infos.iter().enumerate() {
             let track_name = name.as_deref().unwrap_or("Unknown");
@@ -295,6 +331,16 @@ impl Sidebar {
         v
     }
 
+    /// 取出并清空待 Root 消费的音轨端口编辑
+    pub fn take_pending_track_port_change(&mut self) -> Option<(usize, u8, u8)> {
+        self.pending_track_port_change.take()
+    }
+
+    /// 取出并清空待 Root 消费的音轨通道编辑
+    pub fn take_pending_track_channel_change(&mut self) -> Option<(usize, u8, u8)> {
+        self.pending_track_channel_change.take()
+    }
+
     /// 设置面板右键菜单位置（由 Host 在 process_message 中捕获鼠标位置后调用）
     pub fn set_panel_context_menu_pos(&mut self, x: f32, y: f32) {
         self.panel_context_menu.mouse_pos = Some((x, y));
@@ -324,14 +370,6 @@ impl Sidebar {
     /// 标记指定音轨 ID 为已删除占用状态
     pub(crate) fn mark_track_id_reserved(&mut self, id: usize) {
         self.reserved_track_ids.insert(id);
-    }
-
-    /// 检查指定 ID 是否为已删除占用的轨道编号
-    ///
-    /// 预留 API：供外部模块（如协作同步、工程导出）查询轨道 ID 占用状态。
-    #[allow(dead_code)]
-    pub fn is_track_id_reserved(&self, id: usize) -> bool {
-        self.reserved_track_ids.contains(&id)
     }
 }
 

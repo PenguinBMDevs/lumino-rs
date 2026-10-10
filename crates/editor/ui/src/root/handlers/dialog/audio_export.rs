@@ -2,6 +2,7 @@
 
 use crate::message::{AudioExportAction, Message};
 use crate::root::Root;
+use crate::root::file_dialog::PathDialogTask;
 use crate::util::{parse_u8_bounded, parse_uint};
 
 use super::DialogHandler;
@@ -219,51 +220,51 @@ impl DialogHandler {
             A::BrowseOutput => {
                 let st = &root.state.audio_export_dialog;
                 let current = st.output_path.clone();
-                let ext = st.format.extension();
+                let ext = st.format.extension().to_string();
+                let filter_label = format!("{} 文件", st.format);
                 let default_name = std::path::Path::new(&current)
                     .file_name()
                     .and_then(|n| n.to_str())
-                    .unwrap_or("export.wav");
+                    .unwrap_or("export.wav")
+                    .to_string();
                 let default_dir = std::path::Path::new(&current)
                     .parent()
                     .and_then(|p| p.to_str())
-                    .unwrap_or(".");
-                if let Some(path) = rfd::FileDialog::new()
-                    .set_file_name(
-                        default_name
-                            .rsplit_once('.')
-                            .map(|(base, _)| format!("{base}.{ext}"))
-                            .unwrap_or_else(|| format!("export.{ext}")),
-                    )
-                    .set_directory(default_dir)
-                    .add_filter(format!("{} 文件", st.format), &[ext])
-                    .save_file()
-                {
-                    root.state.audio_export_dialog.output_path = path.to_string_lossy().to_string();
-                }
+                    .unwrap_or(".")
+                    .to_string();
+                // 对话框在后台线程打开（防 UI 冻结），结果由 poll_path_dialogs 写回
+                root.spawn_path_dialog(PathDialogTask::AudioExportOutput, move || {
+                    rfd::FileDialog::new()
+                        .set_file_name(
+                            default_name
+                                .rsplit_once('.')
+                                .map(|(base, _)| format!("{base}.{ext}"))
+                                .unwrap_or_else(|| format!("export.{ext}")),
+                        )
+                        .set_directory(default_dir)
+                        .add_filter(filter_label, &[ext.as_str()])
+                        .save_file()
+                });
             }
             A::BrowseMidi => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("音乐文件", &["mid", "midi", "lmpj"])
-                    .add_filter("MIDI 文件", &["mid", "midi"])
-                    .add_filter("Lumino 项目", &["lmpj"])
-                    .add_filter("所有文件", &["*"])
-                    .pick_file()
-                {
-                    root.state.audio_export_dialog.midi_path = path.to_string_lossy().to_string();
-                }
+                root.spawn_path_dialog(PathDialogTask::AudioExportMidi, || {
+                    rfd::FileDialog::new()
+                        .add_filter("音乐文件", &["mid", "midi", "lmpj"])
+                        .add_filter("MIDI 文件", &["mid", "midi"])
+                        .add_filter("Lumino 项目", &["lmpj"])
+                        .add_filter("所有文件", &["*"])
+                        .pick_file()
+                });
             }
             A::BrowseSoundfont => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("音色库文件", &["sf2", "sfz"])
-                    .add_filter("SF2 文件", &["sf2"])
-                    .add_filter("SFZ 文件", &["sfz"])
-                    .add_filter("所有文件", &["*"])
-                    .pick_file()
-                {
-                    root.state.audio_export_dialog.soundfont_path =
-                        path.to_string_lossy().to_string();
-                }
+                root.spawn_path_dialog(PathDialogTask::AudioExportSoundfont, || {
+                    rfd::FileDialog::new()
+                        .add_filter("音色库文件", &["sf2", "sfz"])
+                        .add_filter("SF2 文件", &["sf2"])
+                        .add_filter("SFZ 文件", &["sfz"])
+                        .add_filter("所有文件", &["*"])
+                        .pick_file()
+                });
             }
             A::StartRendering => {
                 begin_audio_export_render(root);

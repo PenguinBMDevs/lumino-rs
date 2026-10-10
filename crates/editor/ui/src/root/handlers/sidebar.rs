@@ -216,6 +216,12 @@ impl Root {
         // 消费 sidebar 中"找回删除音轨"对话框打开请求，转发给 Runner 打开对话框
         self.forward_pending_recover_track_dialog();
 
+        // 消费 sidebar 中待应用的端口编辑，写回文档（导出/播放映射依赖文档端口）
+        self.forward_pending_track_port_change();
+
+        // 消费 sidebar 中待应用的通道编辑，批量改写音符/控制事件/自动化 lane 通道
+        self.forward_pending_track_channel_change();
+
         // 分组切换 → 同步 AppMode（必须在 sidebar.update 之后，因为 active_group 在那里改变）
         if matches!(&event, sidebar::Event::GroupToggled(_)) {
             match self.sidebar.active_group {

@@ -27,6 +27,8 @@ impl Sidebar {
                 context_menu_target_id: self.track_context_menu.target_track_id,
                 renaming_track: self.renaming_track.as_ref(),
                 color_picking_track: self.color_picking_track,
+                port_picking_track: self.port_picking_track,
+                channel_picking_track: self.channel_picking_track,
                 panel_context_menu_open: self.panel_context_menu.is_open,
                 panel_context_menu_pos: self.panel_context_menu.mouse_pos,
                 track_reorder: self.track_reorder.as_ref(),

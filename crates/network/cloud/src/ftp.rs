@@ -66,6 +66,15 @@ impl CloudClient for FtpClient {
         let handle = std::thread::spawn(move || -> Result<(FtpStream, String)> {
             let mut ftp = FtpStream::connect((address.as_str(), port))
                 .map_err(|e| CloudError::Connect(format!("无法连接 {address}:{port}: {e}")))?;
+            // DEBT-06 #123：FTP 读写超时——旧实现无任何超时，服务器黑洞时后台
+            // 线程永久阻塞在 IO 上（连接状态卡死、不自愈）。
+            let io_timeout = std::time::Duration::from_secs(30);
+            ftp.get_ref()
+                .set_read_timeout(Some(io_timeout))
+                .map_err(|e| CloudError::Operation(format!("设置 FTP 读超时失败: {e}")))?;
+            ftp.get_ref()
+                .set_write_timeout(Some(io_timeout))
+                .map_err(|e| CloudError::Operation(format!("设置 FTP 写超时失败: {e}")))?;
             ftp.login(&username, &password)
                 .map_err(|e| CloudError::Auth(format!("FTP 登录失败: {e}")))?;
             // 进入默认根目录（root_path 为空则保持登录后目录）

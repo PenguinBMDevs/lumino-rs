@@ -115,13 +115,13 @@ fn test_replay_after_auto_stop_emits_sound() {
         "自动停止后 MIDI 事件游标应复位到 0"
     );
 
-    // 再次起播：队列必须重建（2 音符 = 4 事件），否则后续播放无声
+    // 再次起播：当前轨游标必须重定位（PREF-006 A1 流式模型无预建队列），
+    // 否则后续播放无声
     engine.play();
     assert_eq!(engine.state(), PlaybackState::Playing);
     assert_eq!(
-        engine.event_queue.len(),
-        4,
-        "自动停止后重播应重建当前轨队列（2 音符 = 4 事件），否则无声"
+        engine.track_states[0].note_cursor, 0,
+        "自动停止后重播应重定位当前轨游标到开头，否则无声"
     );
     let tick = engine.current_tick();
     assert!(tick < 50.0, "重播起播 tick 应在开头附近，实际 = {}", tick,);

@@ -24,6 +24,18 @@ jobs:
       - name: Check UTF-8 BOM in *.rs
         run: bash scripts/check-bom.sh
 
+  # ── 文件行数守卫：独立 ubuntu job（仓库硬规「单文件 < 400 行」）────
+  # DEBT-09 #126：存量超限文件列入 scripts/file-length-whitelist.txt；
+  # 未登记的超限文件直接红，防止拆分后回涨。
+  file-length-guard:
+    name: File Length Guard (*.rs)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.1
+
+      - name: Check *.rs line count (400 limit + whitelist)
+        run: bash scripts/check-file-length.sh
+
   # ── 静态检查：cargo check + cargo clippy（×3 OS 并行）──────────────
   # check 与 clippy 同机串行，避免重复拉取依赖；test 单独成 job 并行跑。
   lint:

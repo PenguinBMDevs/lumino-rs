@@ -112,6 +112,18 @@ pub enum Event {
     TrackColorReset(usize),
     /// 关闭颜色选择器
     TrackColorPickerClosed(usize),
+    /// 打开端口选择器
+    TrackPortPickerOpened(usize),
+    /// 选择音轨端口（内部值 0..=15，UI 显示 1..=16）
+    TrackPortSelected(usize, u8),
+    /// 关闭端口选择器
+    TrackPortPickerClosed(usize),
+    /// 打开通道选择器
+    TrackChannelPickerOpened(usize),
+    /// 选择音轨通道（内部值 0..=15，UI 显示 1..=16）
+    TrackChannelSelected(usize, u8),
+    /// 关闭通道选择器
+    TrackChannelPickerClosed(usize),
     /// 音轨拖拽排序候选开始（左键按下，用于长按计时与移动跟踪）
     TrackReorderStarted(usize),
     /// 音轨拖拽排序中鼠标移动（列表局部坐标，用于更新插入指示位置）

@@ -23,6 +23,7 @@ impl RunnerInner {
     /// 失败仅记录日志并显示离线标志，**不弹提醒面板**（用户主动操作才提醒）。
     pub(super) fn startup_auto_connect(&self) {
         let mgr = Arc::clone(&self.cloud);
+        let status = Arc::clone(&self.cloud_status);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let results = mgr.connect_all_auto();
@@ -32,6 +33,8 @@ impl RunnerInner {
                     Err(e) => tracing::warn!("启动自动连接失败 {id}: {e}"),
                 }
             }
+            // DEBT-06 #123：自动连接改变在线状态 → 先发布快照再通知 UI
+            super::cloud::publish_cloud_snapshot(&status, &mgr);
             // 全部尝试完成后通知主线程刷新 UI 快照（静默，不弹提醒）
             event::emit(event::Event::cloud(cloud_event::Event::AutoConnectFinished));
         });
@@ -87,34 +90,24 @@ impl RunnerInner {
             .sync_cloud_to_dialogs(main_ui);
     }
 
-    /// 将 CloudManager 的连接快照注入 UI（设备下拉 + 在线状态 + 设置面板云管理页）
+    /// 将云连接快照注入 UI（设备下拉 + 在线状态 + 设置面板云管理页）
+    ///
+    /// DEBT-06 #123：只读**无锁快照**，不再抢 `cloud` 业务锁——旧实现在大文件
+    /// 传输期间被后台线程持锁，UI 线程打开设置页/云面板会冻结。
     pub(super) fn refresh_cloud_connections(&mut self) {
-        let snapshot = {
-            let mgr = lock_cloud(&self.cloud);
-            mgr.connections()
-                .iter()
-                .map(|c| {
-                    (
-                        c.id.clone(),
-                        c.name.clone(),
-                        c.protocol.display_name().to_string(),
-                        c.address.clone(),
-                        mgr.status(&c.id).is_online(),
-                    )
-                })
-                .collect::<Vec<_>>()
-        };
+        let snapshot = super::cloud::read_cloud_snapshot(&self.cloud_status);
+        let snapshot: Vec<super::cloud::CloudConnSnapshot> = snapshot.connections;
         let ui = self.window_state.window.ui_mut();
         // 文件浏览面板的设备下拉
         {
             let state = ui.cloud_state_mut();
             state.connections = snapshot
                 .iter()
-                .map(|(id, name, protocol, _, online)| CloudConnInfo {
-                    id: id.clone(),
-                    name: name.clone(),
-                    protocol: protocol.clone(),
-                    online: *online,
+                .map(|c| CloudConnInfo {
+                    id: c.id.clone(),
+                    name: c.name.clone(),
+                    protocol: c.protocol.clone(),
+                    online: c.online,
                 })
                 .collect();
             // 当前选中不在线 → 自动切换到第一个在线连接
@@ -132,15 +125,13 @@ impl RunnerInner {
             let settings = ui.settings_mut();
             settings.cloud.connections = snapshot
                 .into_iter()
-                .map(
-                    |(id, name, protocol, address, online)| lumino_ui::settings::CloudConnItem {
-                        id,
-                        name,
-                        protocol,
-                        address,
-                        online,
-                    },
-                )
+                .map(|c| lumino_ui::settings::CloudConnItem {
+                    id: c.id,
+                    name: c.name,
+                    protocol: c.protocol,
+                    address: c.address,
+                    online: c.online,
+                })
                 .collect();
         }
         // 广播到已打开的设置/云对话框（独立 Root 同步快照）

@@ -5,9 +5,8 @@
 use midly::{MidiMessage, PitchBend, TrackEventKind};
 use tracing::info;
 use xsynth_core::{
-    AudioPipe,
     channel::{ChannelAudioEvent, ChannelConfigEvent, ChannelEvent, ControlEvent},
-    channel_group::{ChannelGroup, SynthEvent, SynthFormat},
+    channel_group::{SynthEvent, SynthFormat},
 };
 
 use lumino_midi_model::multi_port::{PercussionTracker, track_global_channel};
@@ -17,7 +16,7 @@ use crate::audio::{
 };
 use crate::error::ExportResult;
 
-use super::MidiEventProcessor;
+use super::{MidiEventProcessor, SynthBackend};
 
 /// MIDI 弯音事件 → xsynth 归一化值（-1.0..1.0）。
 ///
@@ -46,36 +45,19 @@ pub(super) fn global_event_channel(config: &AudioRenderConfig, port: u8, channel
 /// 尾部静音判定阈值：样本绝对值低于此值视为静音。
 const TAIL_SILENCE_EPS: f32 = 0.0001;
 
-/// 非有限样本（NaN/Inf）按静音净化。
-///
-/// 返回 `(净化数量, 首个非有限样本偏移)`。
-///
-/// **渲染主循环与尾部收尾必须共用本函数**：两处口径分叉正是 REND-002 尾部
-/// NaN 旁路的根因——尾部直接写 sink，漏净化时限幅器关闭会把 NaN/Inf 直写 WAV；
-/// 且 `is_silent` 的 `abs() < eps` 判据对 NaN 恒为 false，污染尾部会让收尾
-/// 循环跑满批次上限（120s 垃圾）。
-pub(super) fn purify_non_finite(buffer: &mut [f32]) -> (u64, Option<usize>) {
-    let mut bad = 0_u64;
-    let mut first_bad: Option<usize> = None;
-    for (i, sample) in buffer.iter_mut().enumerate() {
-        if !sample.is_finite() {
-            if first_bad.is_none() {
-                first_bad = Some(i);
-            }
-            *sample = 0.0;
-            bad += 1;
-        }
-    }
-    (bad, first_bad)
-}
+mod dsp;
 
+#[cfg(test)]
+mod tests;
+
+pub(crate) use dsp::purify_non_finite;
 impl<'a> MidiEventProcessor<'a> {
     /// 创建 MIDI 事件处理器。
     ///
     /// 将 MIDI 事件按时间轴播放到给定的合成通道组与采样输出。
     pub fn new(
         config: &'a AudioRenderConfig,
-        channel_group: &'a mut ChannelGroup,
+        channel_group: &'a mut dyn SynthBackend,
         tick_conv: &'a mut TickToTime,
         sink: &'a mut dyn SampleSink,
     ) -> Self {
@@ -409,179 +391,5 @@ impl<'a> MidiEventProcessor<'a> {
 
         info!("音频渲染完成");
         Ok(())
-    }
-}
-
-/// 简单的限幅器（兜底，已被 AudioLimiter 替代，保留用于独立调用）
-#[allow(dead_code)]
-fn apply_limiter(samples: &mut [f32], _channels: u16) {
-    // 简单的峰值限制
-    let threshold = 0.95;
-    for sample in samples.iter_mut() {
-        if sample.abs() > threshold {
-            *sample = sample.signum() * threshold;
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// 单端口：恒等映射，且**忽略**传入端口（门控关闭，零行为变化）。
-    #[test]
-    fn single_port_is_identity_and_ignores_port() {
-        let config = AudioRenderConfig::default();
-        for ch in 0u8..16 {
-            assert_eq!(global_event_channel(&config, 0, ch), u32::from(ch));
-        }
-        assert_eq!(
-            global_event_channel(&config, 7, 5),
-            5u32,
-            "单端口下端口必须被忽略（门控关闭）"
-        );
-    }
-
-    /// 多端口：`port*16+ch`，端口 0 恒等，端口间互不重叠。
-    #[test]
-    fn multi_port_maps_to_port_blocks() {
-        let config = AudioRenderConfig {
-            midi_max_port: 6,
-            ..Default::default()
-        };
-        assert_eq!(global_event_channel(&config, 0, 5), 5);
-        assert_eq!(global_event_channel(&config, 1, 5), 21, "端口 1 ch5 → 21");
-        assert_eq!(global_event_channel(&config, 1, 9), 25, "端口 1 ch9 → 25");
-        assert_eq!(global_event_channel(&config, 6, 15), 111, "7 端口边界");
-    }
-
-    /// 超产品上限端口折叠到端口 15 块（B1），不丢事件。
-    #[test]
-    fn over_limit_port_folds_to_last_block() {
-        let config = AudioRenderConfig {
-            midi_max_port: 127,
-            ..Default::default()
-        };
-        assert_eq!(
-            global_event_channel(&config, 127, 3),
-            15 * 16 + 3,
-            "超上限端口应折叠到端口 15 块"
-        );
-        assert_eq!(global_event_channel(&config, 16, 9), 15 * 16 + 9);
-    }
-
-    // ── REND-002 尾部收尾：NaN 旁路回归 ─────────────────────────────
-
-    /// 尾部批次必须净化非有限样本并计数。
-    ///
-    /// 用**限幅器关闭**构造：限幅器开启时它自己也会净化输入，会掩盖尾部缺失
-    /// 净化的缺陷——那正是本回归要锁的场景（NaN 直写 WAV）。
-    #[test]
-    fn tail_batch_purifies_non_finite_without_limiter() {
-        use crate::audio::stream::VecSampleSink;
-        use crate::audio::tick_conv::TickToTime;
-        use xsynth_core::channel_group::ChannelGroup;
-
-        let config = AudioRenderConfig {
-            apply_limiter: false,
-            ..Default::default()
-        };
-        let mut group = ChannelGroup::new(config.build_group_config());
-        let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
-        let mut sink = VecSampleSink::new();
-        {
-            let mut processor = MidiEventProcessor::new(&config, &mut group, &mut conv, &mut sink);
-            let mut buffer = vec![f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.25];
-            let silent = processor
-                .write_tail_batch(&mut buffer)
-                .expect("尾部批次应成功");
-
-            assert!(
-                buffer.iter().all(|s| s.is_finite()),
-                "尾部批次必须净化非有限样本: {buffer:?}"
-            );
-            assert_eq!(buffer[..3], [0.0, 0.0, 0.0], "非有限样本应归零");
-            assert!(
-                (buffer[3] - 0.25).abs() < f32::EPSILON,
-                "有限样本不得被改动"
-            );
-            assert_eq!(processor.non_finite_total(), 3, "计数必须覆盖尾部净化");
-            assert!(!silent, "仍含 0.25 有效样本，不得判静音");
-        }
-
-        let samples = sink.into_samples();
-        assert!(
-            samples.iter().all(|s| s.is_finite()),
-            "写入 sink 的样本必须全部有限（限幅器关闭时旧实现直写 NaN）"
-        );
-    }
-
-    /// 全非有限批次净化后必须判静音。
-    ///
-    /// 回归：`is_silent` 判据 `abs() < eps` 对 NaN 恒为 false，污染尾部会让
-    /// 收尾循环跑满 120 批（每批 1 秒）→ 120 秒垃圾。
-    #[test]
-    fn tail_batch_all_non_finite_becomes_silent() {
-        use crate::audio::stream::VecSampleSink;
-        use crate::audio::tick_conv::TickToTime;
-        use xsynth_core::channel_group::ChannelGroup;
-
-        let config = AudioRenderConfig {
-            apply_limiter: false,
-            ..Default::default()
-        };
-        let mut group = ChannelGroup::new(config.build_group_config());
-        let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
-        let mut sink = VecSampleSink::new();
-        {
-            let mut processor = MidiEventProcessor::new(&config, &mut group, &mut conv, &mut sink);
-            let mut buffer = vec![f32::NAN; 8];
-            let silent = processor
-                .write_tail_batch(&mut buffer)
-                .expect("尾部批次应成功");
-
-            assert!(silent, "全非有限样本净化后应为静音（收尾必须能提前退出）");
-            assert_eq!(processor.non_finite_total(), 8);
-            assert!(buffer.iter().all(|&s| s == 0.0), "净化后应全为零");
-        }
-        let _ = sink.into_samples();
-    }
-
-    /// `finalize` 收尾有界、输出全有限（限幅器开/关双例）。
-    ///
-    /// 静音合成器首批即判静音：写出量应恰好 1 批。旧实现下若尾部受污染，
-    /// 会一路写到批次上限（120 批）。
-    #[test]
-    fn finalize_tail_is_bounded_and_finite() {
-        use crate::audio::stream::VecSampleSink;
-        use crate::audio::tick_conv::TickToTime;
-        use xsynth_core::channel_group::ChannelGroup;
-
-        for apply_limiter in [true, false] {
-            let config = AudioRenderConfig {
-                apply_limiter,
-                ..Default::default()
-            };
-            let batch = config.sample_rate as usize * usize::from(config.channels.channel_count());
-            let mut group = ChannelGroup::new(config.build_group_config());
-            let mut conv = TickToTime::new(vec![(0, 120.0)], 480);
-            let mut sink = VecSampleSink::new();
-            {
-                let mut processor =
-                    MidiEventProcessor::new(&config, &mut group, &mut conv, &mut sink);
-                processor.finalize().expect("收尾应成功");
-            }
-
-            let samples = sink.into_samples();
-            assert_eq!(
-                samples.len(),
-                batch,
-                "静音尾部应只写 1 批（apply_limiter={apply_limiter}）"
-            );
-            assert!(
-                samples.iter().all(|s| s.is_finite()),
-                "收尾输出必须全有限（apply_limiter={apply_limiter}）"
-            );
-        }
     }
 }

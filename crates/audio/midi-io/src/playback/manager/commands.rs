@@ -20,6 +20,11 @@ use super::PlaybackFrame;
 pub(crate) enum Command {
     SetMidiOutput(Box<dyn PlaybackOutput>),
     ClearMidiOutput,
+    /// 同步清除：置空输出连接并回执（#127 重开 WinMM 端口前确认旧连接已释放）。
+    ///
+    /// 回执在 `midi_output` 被 drop 之后发送，发送失败（调用方已放弃等待）
+    /// 不视为错误。
+    ClearMidiOutputAck(std::sync::mpsc::Sender<()>),
     RebuildCurrentTrackQueue,
     SetDocument(Arc<lumino_midi_loader::MidiDocument>, u16),
     /// REND-002 修复：清零打击乐模态跟踪（仅「文档真正切换」发；编辑快照不发）
@@ -59,6 +64,11 @@ pub(crate) fn handle_command(
     match cmd {
         Command::SetMidiOutput(output) => *midi_output = Some(output),
         Command::ClearMidiOutput => *midi_output = None,
+        Command::ClearMidiOutputAck(ack) => {
+            // 先 drop 旧连接，再回执——调用方（重初始化前释放）据此确认端口已可重开。
+            *midi_output = None;
+            let _ = ack.send(());
+        }
         Command::RebuildCurrentTrackQueue => engine.rebuild_current_track_queue(),
         Command::SetDocument(doc, track) => engine.set_document(doc, track),
         Command::ResetPercussionTracking => engine.reset_percussion_tracking(),
@@ -71,18 +81,14 @@ pub(crate) fn handle_command(
             engine.set_velocity_filter_threshold(threshold);
         }
         Command::SetTrackPlayStates(muted, soloed) => {
-            // 当前轨发声状态变化时需要重建当前轨队列，使独奏/静音即时生效。
+            // PREF-006 A1：当前轨流式读取，静音/独奏在 `process_streaming_tracks`
+            // 每次 update 实时过滤，无需重建队列。
             let was_current_playable = engine.track_should_play(engine.current_track as usize);
             engine.set_track_play_states(muted, soloed);
             let is_current_playable = engine.track_should_play(engine.current_track as usize);
-            if was_current_playable != is_current_playable {
-                // 从当前播放位置重建当前轨队列（保留已发出事件之后的音符，
-                // 丢弃过去已发出、其 NoteOff 不会再补发的悬挂音符）。
-                let tick = engine.last_processed_tick.max(0.0);
-                engine.rebuild_queue_from_current_track(Some(tick));
+            if was_current_playable && !is_current_playable {
                 // 当前轨由"发声"转为"静音"：立即静音清理，避免悬挂音符。
-                if was_current_playable
-                    && engine.is_playing()
+                if engine.is_playing()
                     && let Some(out) = midi_output
                 {
                     let _ = out.all_notes_off();

@@ -7,7 +7,12 @@ impl Sidebar {
     /// 处理打开颜色选择器
     pub(super) fn handle_track_color_picker_opened(&mut self, id: usize) {
         self.color_picking_track = Some(id);
+        self.port_picking_track = None;
+        self.channel_picking_track = None;
         self.track_context_menu = TrackContextMenuState::default();
+        // 互斥：关闭面板空白菜单与重命名态，避免选完颜色后残留浮层/死事件
+        self.panel_context_menu.reset();
+        self.renaming_track = None;
     }
 
     /// 处理选择音轨颜色

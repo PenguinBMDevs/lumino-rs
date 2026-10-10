@@ -6,7 +6,7 @@
 //! - 连接/断开与连接快照注入
 //! - 文件操作（列目录/下载/保存/新建文件夹）见 `cloud_ops` 模块
 
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, RwLock};
 
 use lumino_cloud::{CloudConnection, CloudManager, CloudProtocol};
 use lumino_ui::event::{self, cloud as cloud_event};
@@ -24,6 +24,86 @@ pub enum CloudIntent {
     Material,
     /// 素材库"上传到云"（上传指定素材文件到目标目录）
     UploadMaterial,
+}
+
+/// 云连接展示快照条目（DEBT-06 #123：UI 只读，不含管理器内部状态）。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CloudConnSnapshot {
+    /// 连接 id
+    pub id: String,
+    /// 连接名称
+    pub name: String,
+    /// 协议显示名
+    pub protocol: String,
+    /// 地址
+    pub address: String,
+    /// 是否在线
+    pub online: bool,
+}
+
+/// 云连接无锁快照（DEBT-06 #123）。
+///
+/// 背景：后台网络操作全程持有 `cloud` 大锁；UI 线程（打开设置页/云面板/入口分流）
+/// 若也去抢这把锁，大文件传输期间界面就会冻结。现在所有 UI 读取都读这份快照，
+/// 由后台操作完成后发布（`publish_cloud_snapshot`），UI 永不等待网络锁。
+#[derive(Debug, Clone, Default)]
+pub struct CloudStatusSnapshot {
+    /// 连接列表（含在线状态）
+    pub connections: Vec<CloudConnSnapshot>,
+}
+
+impl CloudStatusSnapshot {
+    /// 在线连接 id 列表。
+    pub fn online_ids(&self) -> Vec<String> {
+        self.connections
+            .iter()
+            .filter(|c| c.online)
+            .map(|c| c.id.clone())
+            .collect()
+    }
+
+    /// 乐观标记某连接离线（断开请求发出后立即生效，无需等后台线程）。
+    pub fn mark_offline(&mut self, id: &str) {
+        if let Some(c) = self.connections.iter_mut().find(|c| c.id == id) {
+            c.online = false;
+        }
+    }
+
+    /// 乐观移除某连接（删除请求发出后立即生效）。
+    pub fn remove_connection(&mut self, id: &str) {
+        self.connections.retain(|c| c.id != id);
+    }
+
+    /// 从管理器构建快照（调用方需已持有 `cloud` 锁或处于串行上下文）。
+    fn from_manager(mgr: &CloudManager) -> Self {
+        let connections = mgr
+            .connections()
+            .iter()
+            .map(|c| CloudConnSnapshot {
+                id: c.id.clone(),
+                name: c.name.clone(),
+                protocol: c.protocol.display_name().to_string(),
+                address: c.address.clone(),
+                online: mgr.status(&c.id).is_online(),
+            })
+            .collect();
+        Self { connections }
+    }
+}
+
+/// 发布云快照（后台线程用；只写快照锁，不碰业务锁）。
+pub(super) fn publish_cloud_snapshot(
+    status: &Arc<RwLock<CloudStatusSnapshot>>,
+    mgr: &CloudManager,
+) {
+    *status.write().unwrap_or_else(|e| e.into_inner()) = CloudStatusSnapshot::from_manager(mgr);
+}
+
+/// 读取云快照（恢复 poisoned 锁）。
+pub(super) fn read_cloud_snapshot(
+    status: &Arc<RwLock<CloudStatusSnapshot>>,
+) -> CloudStatusSnapshot {
+    status.read().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// 锁并获取 CloudManager 可变引用（恢复 poisoned 锁）
@@ -124,18 +204,24 @@ impl RunnerInner {
             }
             cloud_event::Event::DeleteConnection { id } => {
                 let mgr = Arc::clone(&self.cloud);
-                let id_for_ui = id.clone();
+                let status = Arc::clone(&self.cloud_status);
+                let id_for_thread = id.clone();
                 std::thread::spawn(move || {
                     let mut mgr = lock_cloud(&mgr);
-                    if let Err(e) = mgr.remove_connection(&id) {
-                        tracing::warn!("删除云连接失败 {id}: {e}");
+                    if let Err(e) = mgr.remove_connection(&id_for_thread) {
+                        tracing::warn!("删除云连接失败 {id_for_thread}: {e}");
                     }
+                    // 删除完成后发布最新快照，UI 立即看到结果
+                    publish_cloud_snapshot(&status, &mgr);
                 });
-                // 立即刷新 UI 快照
+                // 乐观更新 UI 快照（不等后台线程，也不抢业务锁）
+                {
+                    let mut snap = self.cloud_status.write().unwrap_or_else(|e| e.into_inner());
+                    snap.remove_connection(&id);
+                }
                 self.window_state.window.ui_mut().cloud_state_mut().notice =
                     Some("连接已删除".to_string());
                 self.refresh_cloud_connections();
-                let _ = id_for_ui;
             }
             cloud_event::Event::DismissAlert => {
                 self.window_state
@@ -179,10 +265,15 @@ impl RunnerInner {
     // ── 入口分流 ──
 
     /// 云入口统一分流：无在线连接 → 打开连接面板；已连接 → 打开文件浏览面板
+    ///
+    /// DEBT-06 #123：改为读无锁快照——旧实现 UI 线程抢 `cloud` 大锁，
+    /// 后台大文件传输期间打开云入口会冻住事件循环。
     pub(super) fn ensure_cloud_ready(&mut self, intent: CloudIntent) {
         self.cloud_intent = Some(intent);
-        let has_online = lock_cloud(&self.cloud).online_ids().is_empty();
-        if !has_online {
+        let has_online = !read_cloud_snapshot(&self.cloud_status)
+            .online_ids()
+            .is_empty();
+        if has_online {
             self.refresh_cloud_connections();
             self.open_cloud_browser(intent);
         } else {
@@ -239,6 +330,7 @@ impl RunnerInner {
         password: String,
     ) {
         let mgr = Arc::clone(&self.cloud);
+        let status = Arc::clone(&self.cloud_status);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let protocol = match protocol.as_str() {
@@ -258,6 +350,8 @@ impl RunnerInner {
             let conn_id = conn.id.clone();
             let _ = mgr.upsert_connection(conn);
             let result = mgr.connect(&conn_id);
+            // 状态变化后先发布快照，再回传结果（UI 收结果时快照已是最新）
+            publish_cloud_snapshot(&status, &mgr);
             event::emit(event::Event::cloud(cloud_event::Event::ConnectResult {
                 id: conn_id,
                 ok: result.is_ok(),
@@ -301,19 +395,30 @@ impl RunnerInner {
     /// 断开连接（后台执行）
     fn run_cloud_disconnect(&mut self, id: String) {
         let mgr = Arc::clone(&self.cloud);
+        let status = Arc::clone(&self.cloud_status);
+        let id_for_thread = id.clone();
         std::thread::spawn(move || {
-            lock_cloud(&mgr).disconnect(&id);
+            let mut mgr = lock_cloud(&mgr);
+            mgr.disconnect(&id_for_thread);
+            publish_cloud_snapshot(&status, &mgr);
         });
-        // 立即刷新 UI 快照（断开是本地操作，无需等线程）
+        // 乐观置离线（不等后台线程，也不抢业务锁）
+        {
+            let mut snap = self.cloud_status.write().unwrap_or_else(|e| e.into_inner());
+            snap.mark_offline(&id);
+        }
+        // 立即刷新 UI 快照
         self.refresh_cloud_connections();
     }
 
     /// 后台连接已保存的指定连接，结果回传
     fn run_cloud_connect_existing(&mut self, id: String) {
         let mgr = Arc::clone(&self.cloud);
+        let status = Arc::clone(&self.cloud_status);
         std::thread::spawn(move || {
             let mut mgr = lock_cloud(&mgr);
             let result = mgr.connect(&id);
+            publish_cloud_snapshot(&status, &mgr);
             event::emit(event::Event::cloud(cloud_event::Event::ConnectResult {
                 id,
                 ok: result.is_ok(),

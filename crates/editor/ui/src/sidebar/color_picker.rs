@@ -71,9 +71,12 @@ pub fn panel(track_id: usize) -> Element<'static> {
             ..Default::default()
         });
 
-    // 用 mouse_area 包裹面板，吞掉面板上的点击事件，
-    // 避免触发下层的关闭覆盖层
-    mouse_area(panel).on_press(Message::Null).into()
+    // 用 mouse_area 包裹面板，吞掉面板上的左右键点击，
+    // 避免触发下层的关闭覆盖层/面板空白菜单
+    mouse_area(panel)
+        .on_press(Message::Null)
+        .on_right_press(Message::Null)
+        .into()
 }
 
 /// 构建定位在右侧的颜色选择器覆盖层
@@ -91,10 +94,11 @@ pub fn positioned_panel<'a>(track_id: usize, top_y: f32) -> Element<'a> {
         .into()
 }
 
-/// 点击外部区域关闭颜色选择器
+/// 点击外部区域关闭颜色选择器（左右键均吞掉，防右键穿透置位面板空白菜单）
 pub fn background_close_overlay<'a>(track_id: usize) -> Element<'a> {
     mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
         .on_press(lumino_ui_core::sidebar_event::Event::track_color_picker_closed(track_id))
+        .on_right_press(lumino_ui_core::sidebar_event::Event::track_color_picker_closed(track_id))
         .into()
 }
 

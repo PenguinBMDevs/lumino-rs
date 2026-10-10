@@ -32,11 +32,15 @@ impl GpuSynth {
         self.upload_chans.resize(n.max(1), 0);
 
         // Snapshot data needed for the parallel phase to avoid borrowing
-        // `self` inside the closure.
+        // `self` inside the closure. PREF-006 B：`prev_voice_ids` 与
+        // `last_states` 用 take/交换代替 clone（每块省 O(voices) 的 memcpy；
+        // `last_states` 用完原样放回，供下一块 readback 的 resume 匹配）。
         let sample_offsets = &self.sample_offsets;
-        let prev_ids = self.prev_voice_ids.clone();
-        let new_ids: Vec<u32> = self.voices.iter().map(|v| v.id).collect();
-        let last_states = self.last_states.clone();
+        let prev_ids = std::mem::take(&mut self.prev_voice_ids);
+        let mut new_ids = std::mem::take(&mut self.scratch_voice_ids);
+        new_ids.clear();
+        new_ids.extend(self.voices.iter().map(|v| v.id));
+        let last_states = self.last_states.take();
         let st_count = last_states
             .as_ref()
             .map_or(0, |st| st.len() / VoiceState::SIZE);
@@ -73,7 +77,7 @@ impl GpuSynth {
                     slice[0] = EnvStageGpu {
                         kind: 0,
                         target_val: 0.0,
-                        duration: (sr / 1000).max(1),
+                        duration: fade_frames(sr) as u32,
                     };
                 } else {
                     for (j, s) in v.env_stages.iter().enumerate() {
@@ -188,7 +192,7 @@ impl GpuSynth {
                     slice[0] = EnvStageGpu {
                         kind: 0,
                         target_val: 0.0,
-                        duration: (sr / 1000).max(1),
+                        duration: fade_frames(sr) as u32,
                     };
                 } else {
                     for (j, s) in v.env_stages.iter().enumerate() {
@@ -235,6 +239,9 @@ impl GpuSynth {
             }
         }
         self.prev_voice_ids = new_ids;
+        // 旧列表缓冲转为下一块的 scratch（交换复用，零分配）
+        self.scratch_voice_ids = prev_ids;
+        self.last_states = last_states;
         // (Upload is deferred to `dispatch` so all GPU work - staging copies,
         // render pass, readback copies - happens in ONE submit; separate
         // submits measured ~9ms each of fixed wgpu/Vulkan overhead.)

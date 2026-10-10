@@ -24,6 +24,29 @@ use crate::{Element, Message};
 
 use super::{EditState, Editor};
 
+/// 编辑器视图上的悬浮层种类（互斥渲染）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewOverlay {
+    /// 右键上下文菜单（含背景点击关闭层）
+    ContextMenu,
+    /// 文字工具编辑态的 TextInput 覆盖层
+    TextToolInput,
+}
+
+/// 互斥优先级（纯函数）：右键菜单 > 文字输入覆盖层
+///
+/// 菜单是用户显式触发的即时操作，两者同时满足时菜单胜出；
+/// 菜单关闭后文字输入覆盖层自然恢复。
+fn pick_overlay(context_menu: bool, text_tool: bool) -> Option<ViewOverlay> {
+    if context_menu {
+        Some(ViewOverlay::ContextMenu)
+    } else if text_tool {
+        Some(ViewOverlay::TextToolInput)
+    } else {
+        None
+    }
+}
+
 impl Editor {
     /// 计算当前视口内可见的音符数据范围
     ///
@@ -152,26 +175,30 @@ impl Editor {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // 纵向模式同样支持右键上下文菜单（复用横向组件）
-        if self.context_menu.open
-            && let Some(position) = self.context_menu.position
-        {
-            return iced_widget::Stack::new()
-                .push(content)
-                .push(crate::context_menu::background_close_overlay())
-                .push(crate::context_menu::view(
-                    position,
-                    self.context_menu.target,
-                ))
-                .into();
+        // 悬浮层互斥（优先级：右键菜单 > 文字输入覆盖层），同一时刻至多渲染一层。
+        // 纵向模式同样复用该互斥模型，右键上下文菜单不再缺失。
+        match self.view_overlay() {
+            Some(ViewOverlay::ContextMenu) => {
+                // 优先级函数已保证 position 为 Some；缺失按原点兜底（防御）
+                let position = self.context_menu.position.unwrap_or_default();
+                iced_widget::Stack::new()
+                    .push(content)
+                    .push(crate::context_menu::background_close_overlay())
+                    .push(crate::context_menu::view(
+                        position,
+                        self.context_menu.target,
+                    ))
+                    .into()
+            }
+            Some(ViewOverlay::TextToolInput) => {
+                // 优先级函数已保证激活；构造失败（理论不可达）退回纯内容
+                match self.text_tool_input_overlay() {
+                    Some(overlay) => iced_widget::Stack::new().push(content).push(overlay).into(),
+                    None => content.into(),
+                }
+            }
+            None => content.into(),
         }
-
-        // 文字工具编辑态：在文本框位置叠加 TextInput 覆盖层
-        if let Some(overlay) = self.text_tool_input_overlay() {
-            return iced_widget::Stack::new().push(content).push(overlay).into();
-        }
-
-        content.into()
     }
 
     /// 构建编辑器视图
@@ -213,29 +240,49 @@ impl Editor {
 
         let editor_content = iced_widget::column![content_with_vscroll, horizontal_scrollbar];
 
-        // 如果右键上下文菜单打开，叠加悬浮面板
-        if self.context_menu.open
-            && let Some(position) = self.context_menu.position
-        {
-            return iced_widget::Stack::new()
-                .push(editor_content)
-                .push(crate::context_menu::background_close_overlay())
-                .push(crate::context_menu::view(
-                    position,
-                    self.context_menu.target,
-                ))
-                .into();
+        // 悬浮层互斥（优先级：右键菜单 > 文字输入覆盖层），同一时刻至多渲染一层
+        match self.view_overlay() {
+            Some(ViewOverlay::ContextMenu) => {
+                // 优先级函数已保证 position 为 Some；缺失按原点兜底（防御）
+                let position = self.context_menu.position.unwrap_or_default();
+                iced_widget::Stack::new()
+                    .push(editor_content)
+                    .push(crate::context_menu::background_close_overlay())
+                    .push(crate::context_menu::view(
+                        position,
+                        self.context_menu.target,
+                    ))
+                    .into()
+            }
+            Some(ViewOverlay::TextToolInput) => {
+                // 优先级函数已保证激活；构造失败（理论不可达）退回纯内容
+                match self.text_tool_input_overlay() {
+                    Some(overlay) => iced_widget::Stack::new()
+                        .push(editor_content)
+                        .push(overlay)
+                        .into(),
+                    None => editor_content.into(),
+                }
+            }
+            None => editor_content.into(),
         }
+    }
 
-        // 文字工具编辑态：在文本框位置叠加 TextInput 覆盖层
-        if let Some(overlay) = self.text_tool_input_overlay() {
-            return iced_widget::Stack::new()
-                .push(editor_content)
-                .push(overlay)
-                .into();
-        }
+    /// 当前应渲染的悬浮层（互斥模型入口；优先级见 [`pick_overlay`]）
+    fn view_overlay(&self) -> Option<ViewOverlay> {
+        pick_overlay(
+            self.context_menu.open && self.context_menu.position.is_some(),
+            self.text_tool_input_overlay_active(),
+        )
+    }
 
-        editor_content.into()
+    /// 文字输入覆盖层是否处于激活态（纯判定，供互斥模型与覆盖层构造共用）
+    fn text_tool_input_overlay_active(&self) -> bool {
+        // Conductor 音轨（track 0）：整工具不可用，绝不叠加文字输入框
+        self.text_tool_allowed()
+            && self.editor_state.text_tool.active
+            && self.editor_state.text_tool.editing
+            && crate::grid::text_tool_box::box_rect_screen(self).is_some()
     }
 
     /// 文字工具编辑态的 TextInput 覆盖层（定位在文本框屏幕矩形上）
@@ -244,10 +291,7 @@ impl Editor {
     /// `box_rect_screen` 给出转置后的矩形（纵向：X = key、Y = tick），故两个方向都会叠加。
     #[allow(clippy::type_complexity)]
     fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
-        // Conductor 音轨（track 0）：整工具不可用，绝不叠加文字输入框
-        if !self.text_tool_allowed()
-            || !(self.editor_state.text_tool.active && self.editor_state.text_tool.editing)
-        {
+        if !self.text_tool_input_overlay_active() {
             return None;
         }
         let (left, top, right, bottom) = crate::grid::text_tool_box::box_rect_screen(self)?;

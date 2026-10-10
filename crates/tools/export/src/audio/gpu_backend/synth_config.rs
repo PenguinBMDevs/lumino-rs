@@ -19,10 +19,10 @@ pub(super) fn build_synth_config(config: &AudioRenderConfig) -> lumino_gpu_synth
     use lumino_gpu_synth::synth::dsp::EnvelopeCurveConfig;
     use lumino_gpu_synth::{ChannelMode, SynthConfig};
 
-    let channels = match config.channels {
-        AudioChannelMode::Mono => ChannelMode::Mono,
-        AudioChannelMode::Stereo => ChannelMode::Stereo,
-    };
+    // DEBT-04 #121：GPU 引擎只支持立体声（SynthConfig::validate 拒绝 Mono）。
+    // 导出单声道时在写 sink 前真降混（见 gpu_backend::render::write_gpu_result_to_sink），
+    // 不再把 ChannelMode::Mono 传给引擎——旧实现静默产出错误音频（仅 warn）。
+    let channels = ChannelMode::Stereo;
 
     let envelope_curves = if config.linear_envelope {
         EnvelopeCurveConfig {

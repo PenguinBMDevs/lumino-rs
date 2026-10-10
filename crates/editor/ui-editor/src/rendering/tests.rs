@@ -250,3 +250,34 @@ fn copy_delta_merges_all_three_sources() {
         Some((115, 0))
     );
 }
+
+// ── 悬浮层互斥优先级（rendering::pick_overlay） ──
+
+use super::{ViewOverlay, pick_overlay};
+
+#[test]
+fn overlay_priority_context_menu_wins() {
+    assert_eq!(
+        pick_overlay(true, true),
+        Some(ViewOverlay::ContextMenu),
+        "右键菜单与文字输入同时激活时菜单胜出"
+    );
+}
+
+#[test]
+fn overlay_priority_text_tool_when_no_menu() {
+    assert_eq!(
+        pick_overlay(false, true),
+        Some(ViewOverlay::TextToolInput),
+        "无菜单时文字输入覆盖层生效"
+    );
+}
+
+#[test]
+fn overlay_priority_none_when_idle() {
+    assert_eq!(
+        pick_overlay(false, false),
+        None,
+        "两者都不激活时不渲染悬浮层"
+    );
+}

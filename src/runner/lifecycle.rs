@@ -13,5 +13,5 @@ mod dialog;
 mod handler;
 mod inner;
 mod memory;
-mod midi;
+pub(crate) mod midi;
 mod test_mode;

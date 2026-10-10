@@ -61,8 +61,11 @@ pub fn render_midicomsole_frame_gpu(args: MidiConsoleFrameArgs<'_>) {
                 }
             }
         }
-        let ctx = guard.as_mut().expect("GPU 上下文已建立");
-        Some(ctx.ctx.render_frame(&cells, tick))
+        let Some(ctx) = guard.as_mut() else {
+            // 上方刚建立；理论不可达，防御性回退 CPU 路径
+            return None;
+        };
+        ctx.ctx.render_frame(&cells, tick)
     });
 
     match rgba {

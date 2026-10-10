@@ -1,7 +1,5 @@
 //! 播放引擎类型定义
 
-use std::cmp::Ordering;
-
 /// REND-002：来源轨道端口 + MIDI 通道 → 合成层全局通道。
 ///
 /// 单端口文档端口恒为 0 → 恒等；多端口 `port*16+channel`；超产品上限端口折叠
@@ -24,62 +22,6 @@ pub struct NoteEvent {
     pub velocity: u8,
     /// 音符长度（tick）
     pub length: f32,
-}
-
-/// 调度的音符事件（内部使用）
-#[derive(Debug, Clone)]
-pub struct ScheduledEvent {
-    /// 事件时刻（tick）
-    pub tick: f32,
-    /// 事件类型
-    pub event_type: EventType,
-    /// 序列号，用于相同 tick 时保持顺序
-    pub seq: u64,
-}
-
-/// 调度事件类型
-#[derive(Debug, Clone)]
-pub enum EventType {
-    /// Note On 事件
-    NoteOn {
-        /// 合成层全局通道
-        channel: u16,
-        /// 音高
-        key: u8,
-        /// 力度
-        velocity: u8,
-    },
-    /// Note Off 事件
-    NoteOff {
-        /// 合成层全局通道
-        channel: u16,
-        /// 音高
-        key: u8,
-    },
-}
-
-impl PartialEq for ScheduledEvent {
-    fn eq(&self, other: &Self) -> bool {
-        self.tick == other.tick && self.seq == other.seq
-    }
-}
-
-impl Eq for ScheduledEvent {}
-
-impl PartialOrd for ScheduledEvent {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for ScheduledEvent {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // 先按 tick 排序，相同 tick 按 seq 排序
-        other
-            .tick
-            .total_cmp(&self.tick)
-            .then_with(|| other.seq.cmp(&self.seq))
-    }
 }
 
 /// MIDI消息

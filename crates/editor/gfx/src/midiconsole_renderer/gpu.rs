@@ -28,8 +28,8 @@ impl MidiconsoleGpuContext {
         })
     }
 
-    /// 渲染一帧并以 RGBA 字节返回。
-    pub fn render_frame(&mut self, cells: &[CellGpu], tick: u32) -> Vec<u8> {
+    /// 渲染一帧并以 RGBA 字节返回（失败时 `None`，调用方回退 CPU）。
+    pub fn render_frame(&mut self, cells: &[CellGpu], tick: u32) -> Option<Vec<u8>> {
         self.renderer
             .render_to_rgba(&self.device, &self.queue, cells, tick)
     }

@@ -23,24 +23,26 @@ impl MidiManager {
         }
     }
 
-    /// 检查异步初始化是否完成，如果完成则切换到 XSynth
+    /// 检查异步初始化是否已完成（含成功/失败两种落定）
     ///
-    /// 返回 `true` 表示后端已成功切换到 XSynth，调用方应据此更新播放 MIDI 输出。
-    pub fn check_async_init_complete(&mut self) -> bool {
+    /// 返回 [`AsyncInitOutcome`]：`Switched` 表示后端已成功切换；`Failed`
+    /// 表示初始化失败/线程断开、保持当前后端。两者都必须重连播放输出
+    /// （#127：失败分支此前不重连，播放引擎停留在已被释放的旧连接上 → 无声）。
+    pub fn check_async_init_complete(&mut self) -> AsyncInitOutcome {
         if self.is_xsynth_initializing {
             self.finish_xsynth_init()
         } else if self.is_lgs_initializing {
             self.finish_lgs_init()
         } else {
-            false
+            AsyncInitOutcome::Pending
         }
     }
 
     /// 处理 XSynth 异步初始化结果（非阻塞）
-    fn finish_xsynth_init(&mut self) -> bool {
+    fn finish_xsynth_init(&mut self) -> AsyncInitOutcome {
         let rx = match &self.xsynth_init_rx {
             Some(rx) => rx,
-            None => return false,
+            None => return AsyncInitOutcome::Pending,
         };
 
         // 非阻塞检查接收器
@@ -59,50 +61,44 @@ impl MidiManager {
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
 
-                // REND-002：初始化期间文档可能已装载/切换，完成时对齐端口布局。
-                // 与异步初始化时注入的布局相同则跳过（新管线已是该布局；且
-                // `set_midi_port_layout` 现在是强制全量重建，跳过可省一次重建）。
-                if self.desired_midi_max_port != self.spawned_midi_max_port
-                    && let Some(api) = self.api.as_mut()
-                {
+                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
+                // 对齐端口布局；重建较慢，统一下发后台防抖 worker（不卡 UI）。
+                if layout::should_align_after_init(
+                    self.desired_midi_max_port,
+                    self.spawned_midi_max_port,
+                ) {
                     let desired = self.desired_midi_max_port;
-                    match api.set_midi_port_layout(desired) {
-                        Ok(()) => {
-                            tracing::info!("XSynth: 初始化后端口布局已对齐 max_port={desired}")
-                        }
-                        Err(e) => {
-                            tracing::error!("XSynth: 初始化后应用端口布局失败（保持默认布局）: {e}")
-                        }
-                    }
+                    tracing::info!("XSynth: 初始化后端口布局对齐 max_port={desired}（后台重建）");
+                    self.apply_midi_port_layout_deferred(desired);
                 }
 
-                true
+                AsyncInitOutcome::Switched
             }
             Ok(XSynthInitResult::Failed(e)) => {
                 tracing::warn!("XSynth: 异步初始化失败: {}", e);
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
                 // 保持在当前后端（System）
-                false
+                AsyncInitOutcome::Failed
             }
             Err(std::sync::mpsc::TryRecvError::Empty) => {
                 // 还在初始化中，不做任何事
-                false
+                AsyncInitOutcome::Pending
             }
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("XSynth: 初始化线程异常断开");
                 self.is_xsynth_initializing = false;
                 self.xsynth_init_rx = None;
-                false
+                AsyncInitOutcome::Failed
             }
         }
     }
 
     /// 处理 LGS (GPU) 异步初始化结果（非阻塞）
-    fn finish_lgs_init(&mut self) -> bool {
+    fn finish_lgs_init(&mut self) -> AsyncInitOutcome {
         let rx = match &self.lgs_init_rx {
             Some(rx) => rx,
-            None => return false,
+            None => return AsyncInitOutcome::Pending,
         };
 
         match rx.try_recv() {
@@ -120,21 +116,39 @@ impl MidiManager {
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
 
-                true
+                // REND-002 / DEBT-05 #122：初始化期间文档可能已装载/切换，完成时
+                // 对齐端口布局（后台防抖重建，同 XSynth 口径）。
+                if layout::should_align_after_init(
+                    self.desired_midi_max_port,
+                    self.spawned_midi_max_port,
+                ) {
+                    let desired = self.desired_midi_max_port;
+                    tracing::info!(
+                        "LGS (GPU): 初始化后端口布局对齐 max_port={desired}（后台重建）"
+                    );
+                    self.apply_midi_port_layout_deferred(desired);
+                }
+
+                AsyncInitOutcome::Switched
             }
             Ok(LgsInitResult::Failed(e)) => {
                 tracing::warn!("LGS (GPU): 异步初始化失败: {}", e);
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
+                // #127 问题1：失败不得静默——生成可见提示（原因随提示展示）。
+                self.pending_backend_notice =
+                    Some(format!("LGS 初始化失败，已回退 System 后端：{e}"));
                 // 保持在当前后端（System）
-                false
+                AsyncInitOutcome::Failed
             }
-            Err(std::sync::mpsc::TryRecvError::Empty) => false,
+            Err(std::sync::mpsc::TryRecvError::Empty) => AsyncInitOutcome::Pending,
             Err(std::sync::mpsc::TryRecvError::Disconnected) => {
                 tracing::warn!("LGS (GPU): 初始化线程异常断开");
                 self.is_lgs_initializing = false;
                 self.lgs_init_rx = None;
-                false
+                self.pending_backend_notice =
+                    Some("LGS 初始化线程异常断开，已回退 System 后端".to_string());
+                AsyncInitOutcome::Failed
             }
         }
     }
@@ -174,6 +188,9 @@ impl MidiManager {
         }
 
         self.needs_reinit = false;
+
+        // DEBT-05 #122：在途后台布局重建先收尾归还 API，再重建整个后端。
+        self.drain_layout_apply();
 
         tracing::info!(
             "重新初始化 MIDI 输出，使用偏好后端: {:?}",

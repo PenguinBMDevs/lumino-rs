@@ -144,6 +144,15 @@ impl CollaborationClient {
         tokio::spawn(async move {
             let mut heartbeat = interval(Duration::from_millis(crate::HEARTBEAT_INTERVAL_MS));
 
+            // DEBT-06 #123：网络断开/心跳失败/流结束都必须发出可见的 `Disconnected`
+            // 事件（旧实现只 `state.set`，UI 永远停在"已连接"）。
+            // 用户主动断开（shutdown 分支）不发事件——UI 自己知道。
+            let notify_disconnected = || {
+                if let Some(cb) = &event_callback {
+                    cb(CollaborationEvent::Disconnected);
+                }
+            };
+
             loop {
                 tokio::select! {
                     msg = read.next() => {
@@ -160,6 +169,7 @@ impl CollaborationClient {
                             }
                             Some(Ok(Message::Close(_))) => {
                                 state.set(ClientState::Disconnected);
+                                notify_disconnected();
                                 break;
                             }
                             Some(Err(e)) => {
@@ -170,9 +180,13 @@ impl CollaborationClient {
                                     error!("WebSocket 错误: {}", e);
                                 }
                                 state.set(ClientState::Error);
+                                // 传输错误是终态：发事件并退出（旧实现不退出，空转）。
+                                notify_disconnected();
+                                break;
                             }
                             None => {
                                 state.set(ClientState::Disconnected);
+                                notify_disconnected();
                                 break;
                             }
                             _ => {}
@@ -190,6 +204,7 @@ impl CollaborationClient {
                             if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 tracing::warn!("心跳发送失败: {}", e);
                                 state.set(ClientState::Disconnected);
+                                notify_disconnected();
                                 break;
                             }
                         }
@@ -202,6 +217,7 @@ impl CollaborationClient {
                             if let Err(e) = writer.send(Message::Text(text.into())).await {
                                 error!("发送消息失败: {}", e);
                                 state.set(ClientState::Error);
+                                notify_disconnected();
                                 break;
                             }
                             trace!("WS 消息发送完成");

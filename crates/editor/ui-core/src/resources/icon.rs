@@ -139,6 +139,7 @@ define_icons! {
     (ContextMenuSelectAll, "../../../../../resources/icons/context-menu/select-all-notes.svg"),
     (ContextMenuColorPalette, "../../../../../resources/icons/context-menu/set-track-color.svg"),
     (ContextMenuChannel, "../../../../../resources/icons/context-menu/set-midi-channel.svg"),
+    (ContextMenuPort, "../../../../../resources/icons/context-menu/set-midi-port.svg"),
     (ContextMenuRecoverTrack, "../../../../../resources/icons/context-menu/recover-deleted-track.svg"),
     // 素材库右键菜单图标
     (ContextMenuUploadToCloud, "../../../../../resources/icons/context-menu/upload-to-cloud.svg"),

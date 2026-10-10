@@ -142,15 +142,6 @@ impl Host {
         // 洋葱皮渲染通过 build_onion_skin_instances 直接遍历 document。
     }
 
-    /// 加载音轨 MIDI 控制事件（CC/PC/PB）
-    pub fn load_track_midi_events(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        self.root.load_track_midi_events(track_idx, events);
-    }
-
     /// 设置播放用 MIDI 输出连接
     pub fn set_playback_midi_output(&mut self, output: Box<dyn lumino_midi_io::PlaybackOutput>) {
         self.root.set_midi_output(output);
@@ -159,6 +150,14 @@ impl Host {
     /// 清除播放用 MIDI 输出连接
     pub fn clear_playback_midi_output(&mut self) {
         self.root.clear_midi_output();
+    }
+
+    /// 同步清除播放用 MIDI 输出连接（等待播放线程释放完成后返回；#127）。
+    ///
+    /// Runner 在重初始化 MIDI 前调用：必须确认旧 WinMM 连接已释放，
+    /// 否则同进程二次打开同一端口必然失败 → 换设备后播放永久无声。
+    pub fn clear_playback_midi_output_sync(&mut self) -> bool {
+        self.root.clear_midi_output_sync()
     }
 
     /// 设置 MIDI API（用于录制等需要输入的功能）

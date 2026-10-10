@@ -76,11 +76,3 @@ fn with_toolbar_overlay<'a>(
 
     stack.into()
 }
-
-/// 关闭背景：点击菜单外部区域关闭
-///
-/// 作为 Stack 的底层，覆盖整个父区域，点击时关闭菜单。
-#[allow(dead_code)]
-pub fn background_close_overlay<'a>() -> Element<'a> {
-    overflow::background_close_overlay()
-}

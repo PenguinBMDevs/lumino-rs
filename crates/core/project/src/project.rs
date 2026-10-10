@@ -5,6 +5,7 @@
 //! - 单文件形式（`.lmpj` 归档文件）
 
 pub mod archive;
+mod atomic;
 pub mod conversion;
 pub mod data_formats;
 pub mod deleted_track;

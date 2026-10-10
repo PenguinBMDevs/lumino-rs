@@ -217,6 +217,36 @@ impl Event {
         Message::Sidebar(Self::TrackColorPickerClosed(track_id))
     }
 
+    /// 构造"打开音轨端口选择器"的侧边栏消息
+    pub fn track_port_picker_opened(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackPortPickerOpened(track_id))
+    }
+
+    /// 构造"选择音轨端口"的侧边栏消息（内部值 0..=15，UI 显示 1..=16）
+    pub fn track_port_selected(track_id: usize, port: u8) -> Message {
+        Message::Sidebar(Self::TrackPortSelected(track_id, port))
+    }
+
+    /// 构造"关闭音轨端口选择器"的侧边栏消息
+    pub fn track_port_picker_closed(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackPortPickerClosed(track_id))
+    }
+
+    /// 构造"打开音轨通道选择器"的侧边栏消息
+    pub fn track_channel_picker_opened(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackChannelPickerOpened(track_id))
+    }
+
+    /// 构造"选择音轨通道"的侧边栏消息（内部值 0..=15，UI 显示 1..=16）
+    pub fn track_channel_selected(track_id: usize, channel: u8) -> Message {
+        Message::Sidebar(Self::TrackChannelSelected(track_id, channel))
+    }
+
+    /// 构造"关闭音轨通道选择器"的侧边栏消息
+    pub fn track_channel_picker_closed(track_id: usize) -> Message {
+        Message::Sidebar(Self::TrackChannelPickerClosed(track_id))
+    }
+
     /// 构造"音轨拖拽排序候选开始"的侧边栏消息
     pub const fn track_reorder_started(track_id: usize) -> Message {
         Message::Sidebar(Self::TrackReorderStarted(track_id))

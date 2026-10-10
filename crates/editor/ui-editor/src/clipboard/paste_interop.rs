@@ -174,11 +174,20 @@ impl Editor {
         let mut inserted = 0usize;
         let mut batch_acc: Vec<(f32, u16, f32, u8, u8, usize)> = Vec::new();
         for (dest_track, notes) in by_track {
-            let _ids = self
+            let ids = self
                 .editor_state
                 .data
                 .batch_insert_notes_to_track_with_ids(dest_track, &notes);
-            for note in notes.iter() {
+            // DEBT-03 #120：按实际插入数计数与广播（目标轨不存在时 ids 为空）
+            let actual = ids.len();
+            if actual == 0 {
+                tracing::warn!(
+                    "粘贴：目标轨 {dest_track} 不存在，跳过 {} 个音符",
+                    notes.len()
+                );
+                continue;
+            }
+            for note in notes.iter().take(actual) {
                 inserted += 1;
                 if collab_sync {
                     batch_acc.push((

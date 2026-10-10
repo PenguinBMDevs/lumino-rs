@@ -112,9 +112,56 @@ impl Editor {
                 note.velocity,
                 note.channel,
             );
-            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护（按值）；
-            let _ = self.editor_state.data.insert_note_with_id(track, right);
-            let _ = self.editor_state.data.insert_note_with_id(track, left);
+            // insert_note 按 start_tick 有序插入，left/right 顺序由文档维护（按值）。
+            // DEBT-03 #120：插入结果必须检查——失败时回滚原音符、不计成功、不广播
+            // （旧实现 `let _ = insert` 导致本地净丢音 + 对端幻影音符）。
+            let track_exists = self
+                .editor_state
+                .data
+                .document
+                .as_ref()
+                .is_some_and(|doc| track < doc.track_count());
+            if !track_exists {
+                tracing::error!("Razor: 目标轨 {track} 不存在，回滚原音符");
+                self.editor_state.data.insert_note(
+                    track,
+                    Note::from_raw(
+                        note_tick,
+                        note_key,
+                        note_length,
+                        note.velocity,
+                        note.channel,
+                    ),
+                );
+                continue;
+            }
+            let right_ok = self
+                .editor_state
+                .data
+                .insert_note_with_id(track, right)
+                .is_some();
+            let left_ok = self
+                .editor_state
+                .data
+                .insert_note_with_id(track, left)
+                .is_some();
+            if !(right_ok && left_ok) {
+                // 轨已校验，理论上不可达；兜底以"优先不丢音"为准（可能产生重复，日志待查）。
+                tracing::error!(
+                    "Razor: 切分插入异常（track {track}, right={right_ok}, left={left_ok}），回插原音符"
+                );
+                self.editor_state.data.insert_note(
+                    track,
+                    Note::from_raw(
+                        note_tick,
+                        note_key,
+                        note_length,
+                        note.velocity,
+                        note.channel,
+                    ),
+                );
+                continue;
+            }
             sync_entries.push((
                 false,
                 note_tick,

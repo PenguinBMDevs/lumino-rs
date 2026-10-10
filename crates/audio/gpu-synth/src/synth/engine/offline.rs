@@ -1,6 +1,36 @@
 use super::*;
 
 impl GpuSynth {
+    /// 离线渲染前的完整状态复位（DEBT-04 #121）。
+    ///
+    /// 旧实现在 `render_midi_parsed` / `render_midi_to_wav_streaming` 各自手写
+    /// 复位清单且互不一致：`pending_mix_events`、`limiter_gain`、`limiter_tail`、
+    /// `channels`（音量/表情/声像 lerp + 踏板 + RPN 状态）都未清 → 同一实例连续
+    /// 渲染两篇作品时，前一篇的延迟 CC/限幅增益会串到后一篇开头。
+    pub(crate) fn reset_for_offline_render(&mut self) {
+        self.offline_cursor = 0;
+        self.offline_events = Vec::new();
+        self.voices.clear();
+        for q in self.key_voices.iter_mut() {
+            q.clear();
+        }
+        self.spawn_budget.fill(0);
+        self.active_notes.fill(0);
+        self.global_frame = 0;
+        self.active_voice_count = 0;
+        self.last_states = None;
+        self.last_out = None;
+        self.prev_voice_ids.clear();
+        self.pending = None;
+        self.pending_events.clear();
+        self.pending_mix_events.clear();
+        self.limiter_gain = 1.0;
+        self.limiter_tail.clear();
+        for ch in &mut self.channels {
+            *ch = ChannelState::new();
+        }
+    }
+
     /// 从磁盘路径解析并渲染（兼容入口）。
     pub(crate) fn render_midi_inner(
         &mut self,
@@ -30,20 +60,8 @@ impl GpuSynth {
         limit_frames: Option<u64>,
         parse_time: std::time::Duration,
     ) -> Result<RenderResult, SynthError> {
-        self.offline_cursor = 0;
-        self.offline_events = Vec::new();
-        self.voices.clear();
-        for q in self.key_voices.iter_mut() {
-            q.clear();
-        }
-        self.spawn_budget.fill(0);
-        self.active_notes.fill(0);
-        self.global_frame = 0;
-        self.active_voice_count = 0;
-        self.last_states = None;
-        self.last_out = None;
-        self.prev_voice_ids.clear();
-        self.pending = None;
+        // DEBT-04 #121：完整复位（含 limiter/通道状态），杜绝跨渲染串音
+        self.reset_for_offline_render();
 
         let prof = std::env::var("LUMINO_PROFILE").is_ok();
         // t1 语义与拆分前一致：解析完成、渲染开始前的时刻（profile 口径不变）。
@@ -88,7 +106,11 @@ impl GpuSynth {
             // The upload loop holds `&mut self.sf`, so the checkpoint handle is
             // cloned out and polled via the free function instead of `&self`.
             let checkpoint = self.render_checkpoint.clone();
-            let sf = self.sf.as_mut().expect("soundfont present");
+            let Some(sf) = self.sf.as_mut() else {
+                return Err(SynthError::Config(
+                    "soundfont missing during prewarm upload".into(),
+                ));
+            };
             let device = &self.res.ctx.device;
             let queue = &self.res.ctx.queue;
             let mut grown = false;

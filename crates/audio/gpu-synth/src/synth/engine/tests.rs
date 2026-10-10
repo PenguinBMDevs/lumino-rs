@@ -1,13 +1,34 @@
-use super::types::MAX_SPAWNS_PER_KEY_PER_BLOCK;
+use super::types::{
+    MAX_SPAWNS_PER_KEY_PER_BLOCK, MAX_TRIM_FADES_PER_BLOCK, fade_complete, fade_frames,
+    trim_fade_budget_for, trim_hysteresis, trimmed_group_count,
+};
 use super::voice_alloc::select_release_note_id;
 use super::{
-    ChannelState, RenderCheckpoint, checkpoint_ok, limit_block, select_damper_release_groups,
-    select_evictions, spawn_budget_allows,
+    ChannelState, RenderCheckpoint, checkpoint_ok, limit_block, order_port_key_evictions,
+    select_damper_release_groups, select_evictions, spawn_budget_allows,
 };
+use crate::config::SynthConfig;
 use crate::error::SynthError;
 use crate::synth::voices::test_voice;
 
 const LOOKAHEAD: usize = 256;
+
+#[test]
+fn port_key_evictions_prefer_release_tails_then_quietest() {
+    // (releasing, vel, note_id)：释放尾巴优先；同类别按 (vel, note_id) 升序。
+    let groups = [
+        (false, 100u8, 5u64),
+        (true, 100, 9),
+        (false, 40, 2),
+        (true, 20, 7),
+    ];
+    let order = order_port_key_evictions(&groups);
+    assert_eq!(
+        order,
+        vec![3, 1, 2, 0],
+        "尾巴（3,1）先裁且按 vel 升序；持续组（2,0）其后"
+    );
+}
 
 #[test]
 fn limiter_kills_single_sample_spike() {
@@ -301,4 +322,128 @@ fn evictions_never_steal_the_protected_group_when_candidates_run_short() {
     // 保护 id 不在列表里（异常输入）：此时全部组都是普通候选。
     let groups = [(0, 10, 7), (1, 20, 8)];
     assert_eq!(select_evictions(&groups, 2, Some(99)), vec![0, 1]);
+}
+
+/// REND-015 #115：裁剪淡出 5 ms（64k → 320 帧、48k → 240 帧），至少 1 帧。
+#[test]
+fn fade_frames_is_five_ms() {
+    assert_eq!(fade_frames(64_000), 320);
+    assert_eq!(fade_frames(48_000), 240);
+    assert_eq!(fade_frames(1), 1, "低采样率下也至少 1 帧");
+}
+
+/// REND-015 #115：只有淡出播完才允许直接 ended；未播完必须继续衰减。
+#[test]
+fn fade_complete_requires_the_full_fade() {
+    let len = fade_frames(64_000); // 320 帧
+    assert!(
+        !fade_complete(true, 1_000, 1_000, len),
+        "刚进入淡出不算完成"
+    );
+    assert!(!fade_complete(true, 1_000, 1_000 + len - 1, len));
+    assert!(fade_complete(true, 1_000, 1_000 + len, len));
+    assert!(fade_complete(true, 1_000, 2_000, len), "晚于完成点也算完成");
+    assert!(
+        !fade_complete(false, 1_000, 2_000, len),
+        "非裁剪淡出不受影响"
+    );
+    assert!(
+        !fade_complete(true, u64::MAX, 2_000, len),
+        "未释放的声部不受影响"
+    );
+}
+
+/// REND-015 #115：迟滞余量 = max(1, cap/4)，触发阈值 = cap + 余量。
+#[test]
+fn trim_hysteresis_is_a_quarter_of_the_cap() {
+    assert_eq!(trim_hysteresis(0), 1, "防御：cap=0 不会走到调用方");
+    assert_eq!(trim_hysteresis(1), 1);
+    assert_eq!(trim_hysteresis(4), 1);
+    assert_eq!(trim_hysteresis(8), 2);
+    assert_eq!(trim_hysteresis(32), 8);
+    assert_eq!(trim_hysteresis(128), 32);
+}
+
+/// REND-015 #115：每块预算 128；有全局池上限时不超过 fade 槽位数。
+#[test]
+fn trim_fade_budget_respects_pool_slots() {
+    let mut config = SynthConfig::default(); // max_voices = 0（不限）
+    assert_eq!(trim_fade_budget_for(&config), MAX_TRIM_FADES_PER_BLOCK);
+    config.max_voices = 4096;
+    assert_eq!(
+        trim_fade_budget_for(&config),
+        MAX_TRIM_FADES_PER_BLOCK.min(4096 / 2)
+    );
+    config.max_voices = 64;
+    assert_eq!(trim_fade_budget_for(&config), 32, "预算不超过 64/2 槽位");
+}
+
+/// REND-015 #115：超限组按预算分批处理，余量留待后续块。
+#[test]
+fn trimmed_group_count_defers_the_excess() {
+    assert_eq!(trimmed_group_count(200, 128), 128);
+    assert_eq!(trimmed_group_count(72, 128), 72);
+    assert_eq!(trimmed_group_count(5, 0), 0);
+    assert_eq!(trimmed_group_count(0, 128), 0);
+}
+
+/// DEBT-04 #121：block < 256 帧（含 UI 允许的 64/128）不得触发限幅器负索引 panic。
+#[test]
+fn limiter_handles_short_blocks_without_panic() {
+    for n in [16usize, 64, 128, 256] {
+        let mut tail: Vec<f32> = Vec::new();
+        let mut gain = 1.0f32;
+        for b in 0..4 {
+            let mut out = vec![0.0f32; n * 2];
+            for f in 0..n {
+                // 最后一块注入 >0.98 的峰值，覆盖非快路径的扫描逻辑
+                let v = if b == 3 { 3.0 } else { 0.5 };
+                out[f * 2] = v;
+                out[f * 2 + 1] = v;
+            }
+            limit_block(&mut out, &mut tail, &mut gain, 64000.0);
+            assert!(
+                out.iter().all(|s| s.is_finite()),
+                "n={n} block={b}: 输出必须有限"
+            );
+            assert!(
+                out.iter().all(|s| s.abs() <= 1.001),
+                "n={n} block={b}: 限幅后不得远超满幅"
+            );
+        }
+    }
+}
+
+/// DEBT-04 #121：短块的通用延迟线推进必须保持 LOOKAHEAD 延迟语义不变。
+#[test]
+fn limiter_short_blocks_preserve_lookahead_delay() {
+    const LOOKAHEAD: usize = 256;
+    for n in [16usize, 64, 128] {
+        let mut tail: Vec<f32> = Vec::new();
+        let mut gain = 1.0f32;
+        // n=16 时第 256 帧落在第 17 块，取 30 块覆盖
+        let blocks = 30usize;
+        let mut collected: Vec<f32> = Vec::new();
+        for b in 0..blocks {
+            let mut out = vec![0.0f32; n * 2];
+            if b == 0 {
+                out[0] = 0.5;
+                out[1] = 0.5;
+            }
+            limit_block(&mut out, &mut tail, &mut gain, 64000.0);
+            collected.extend_from_slice(&out);
+        }
+        let idx = LOOKAHEAD * 2;
+        assert_eq!(
+            collected[idx], 0.5,
+            "n={n}: 脉冲必须在第 {LOOKAHEAD} 帧输出（延迟不变）"
+        );
+        assert!(
+            collected
+                .iter()
+                .enumerate()
+                .all(|(i, &v)| i == idx || i == idx + 1 || v == 0.0),
+            "n={n}: 除延迟脉冲外应为静音"
+        );
+    }
 }

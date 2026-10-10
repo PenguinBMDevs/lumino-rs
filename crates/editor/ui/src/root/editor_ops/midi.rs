@@ -53,6 +53,25 @@ impl Root {
         self.playback.pending_midi_output = None;
     }
 
+    /// 同步清除 MIDI 输出连接：等待播放线程确认旧连接已释放后才返回（#127）。
+    ///
+    /// 重初始化 MIDI 前必须确保旧连接（尤其是 WinMM 端口）已真正 drop，
+    /// 否则同进程二次打开同一端口必然失败。返回 `false` 表示等待超时或
+    /// 播放线程已停止（无法确认释放）；无播放管理器时视为已释放（`true`）。
+    pub fn clear_midi_output_sync(&mut self) -> bool {
+        let released = match &mut self.playback.manager {
+            Some(manager) => manager.clear_midi_output_sync(),
+            None => true,
+        };
+        self.playback.pending_midi_output = None;
+        if released {
+            tracing::info!("Root::clear_midi_output_sync: MIDI output connection released");
+        } else {
+            tracing::warn!("Root::clear_midi_output_sync: 超时未确认 MIDI 输出连接释放");
+        }
+        released
+    }
+
     /// 系统 MIDI (WinMM) 播表（输出设备）自动扫描。
     ///
     /// 通过 System API 枚举所有可用的 WinMM MIDI 输出端口，写入设置面板，

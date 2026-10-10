@@ -193,19 +193,24 @@ impl MidiconsoleRenderer {
     }
 
     /// 渲染一帧并以 RGBA 字节返回（未做行对齐 padding）。
+    ///
+    /// 网格数量不符或 GPU 读回失败时返回 `None`（调用方回退 CPU 路径），不 panic。
     pub fn render_to_rgba(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         cells: &[CellGpu],
         tick: u32,
-    ) -> Vec<u8> {
+    ) -> Option<Vec<u8>> {
         let cell_count = GRID_COLS * GRID_ROWS;
-        assert_eq!(
-            cells.len(),
-            cell_count,
-            "网格单元数量须等于 GRID_COLS*GRID_ROWS"
-        );
+        if cells.len() != cell_count {
+            tracing::warn!(
+                "midiconsole 网格单元数量不符：期望 {}，实际 {}",
+                cell_count,
+                cells.len()
+            );
+            return None;
+        }
 
         // 更新 uniform（移动高亮带中心随 tick 推进）
         let band_center = (tick as f32 * BAND_SPEED) % self.frame_h as f32;
@@ -297,9 +302,15 @@ impl MidiconsoleRenderer {
             submission_index: None,
             timeout: Some(std::time::Duration::from_secs(30)),
         });
-        rx.recv_timeout(std::time::Duration::from_secs(30))
-            .expect("map_async 回调未收到")
-            .expect("map_async 失败");
+        let Ok(callback) = rx.recv_timeout(std::time::Duration::from_secs(30)) else {
+            tracing::warn!("midiconsole 读回超时（map_async 回调未收到）");
+            return None;
+        };
+        if callback.is_err() {
+            staging.unmap();
+            tracing::warn!("midiconsole 读回失败（map_async 返回错误）");
+            return None;
+        }
 
         let data = slice.get_mapped_range();
         let mut out = vec![0u8; (self.frame_w * self.frame_h * bpp) as usize];
@@ -313,6 +324,6 @@ impl MidiconsoleRenderer {
         }
         drop(data);
         staging.unmap();
-        out
+        Some(out)
     }
 }

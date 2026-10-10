@@ -41,6 +41,7 @@ pub fn panel(track_id: usize) -> Element<'static> {
         TrackContextMenuItem::Rename,
         TrackContextMenuItem::SetColor,
         TrackContextMenuItem::SetChannel,
+        TrackContextMenuItem::SetPort,
     ]
     .into_iter()
     .map(|item| menu_button(track_id, item))
@@ -64,9 +65,12 @@ pub fn panel(track_id: usize) -> Element<'static> {
         ..Default::default()
     });
 
-    // 用 mouse_area 包裹面板，吞掉菜单背景上的点击事件，
-    // 避免触发下层的关闭覆盖层
-    mouse_area(panel).on_press(Message::Null).into()
+    // 用 mouse_area 包裹面板，吞掉菜单背景上的左右键点击事件，
+    // 避免触发下层的关闭覆盖层/面板空白菜单
+    mouse_area(panel)
+        .on_press(Message::Null)
+        .on_right_press(Message::Null)
+        .into()
 }
 
 /// 构建单个菜单按钮（图标 + tooltip）
@@ -96,6 +100,7 @@ const fn item_icon(item: TrackContextMenuItem) -> Icon {
         TrackContextMenuItem::Rename => Icon::PencilOutline,
         TrackContextMenuItem::SetColor => Icon::ContextMenuColorPalette,
         TrackContextMenuItem::SetChannel => Icon::ContextMenuChannel,
+        TrackContextMenuItem::SetPort => Icon::ContextMenuPort,
     }
 }
 
@@ -106,6 +111,7 @@ fn item_label(item: TrackContextMenuItem) -> &'static str {
         TrackContextMenuItem::Rename => "重命名",
         TrackContextMenuItem::SetColor => "设置颜色",
         TrackContextMenuItem::SetChannel => "设置通道",
+        TrackContextMenuItem::SetPort => "设置端口",
     }
 }
 
@@ -142,6 +148,7 @@ fn tooltip_style(_theme: &Theme) -> container::Style {
 pub fn background_close_overlay<'a>() -> Element<'a> {
     mouse_area(Space::new().width(Length::Fill).height(Length::Fill))
         .on_press(lumino_ui_core::sidebar_event::Event::track_context_menu_closed())
+        .on_right_press(lumino_ui_core::sidebar_event::Event::track_context_menu_closed())
         .into()
 }
 
@@ -170,6 +177,7 @@ mod tests {
         assert_eq!(item_label(TrackContextMenuItem::Rename), "重命名");
         assert_eq!(item_label(TrackContextMenuItem::SetColor), "设置颜色");
         assert_eq!(item_label(TrackContextMenuItem::SetChannel), "设置通道");
+        assert_eq!(item_label(TrackContextMenuItem::SetPort), "设置端口");
     }
 
     #[test]
@@ -186,6 +194,10 @@ mod tests {
         assert_eq!(
             item_icon(TrackContextMenuItem::SetChannel),
             Icon::ContextMenuChannel
+        );
+        assert_eq!(
+            item_icon(TrackContextMenuItem::SetPort),
+            Icon::ContextMenuPort
         );
     }
 

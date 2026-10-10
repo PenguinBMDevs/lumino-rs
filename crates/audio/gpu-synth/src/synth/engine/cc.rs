@@ -104,6 +104,40 @@ impl GpuSynth {
         }
     }
 
+    /// 释放全部通道的延音踏板（REND-002 实时多端口：对齐 XSynth
+    /// `AllChannels(Control(Raw(64,0)))`）。
+    ///
+    /// 只释放"NoteOff 已到、被踏板扣住"的组（`damper_pending`），仍被按键
+    /// 按住的音符继续发声——与 CC64=0 的单通道语义逐通道一致。
+    pub fn release_all_dampers(&mut self) {
+        for ch in 0..self.channels.len() {
+            if !self.channels[ch].damper {
+                continue;
+            }
+            self.channels[ch].damper = false;
+            let groups = select_damper_release_groups(&self.voices, ch);
+            if groups.is_empty() {
+                continue;
+            }
+            for v in &mut self.voices {
+                if v.channel as usize == ch
+                    && v.damper_pending
+                    && !v.released
+                    && v.release_at == u64::MAX
+                    && v.state.ended == 0
+                {
+                    v.release_at = self.global_frame;
+                    v.damper_pending = false;
+                }
+            }
+            // 每个被释放的 note 组只减一次活跃计数。
+            for (key, _) in &groups {
+                let slot = &mut self.active_notes[ch * 128 + *key as usize];
+                *slot = slot.saturating_sub(1);
+            }
+        }
+    }
+
     /// Recomputes a channel's `pitch_multiplier` is already done in
     /// `ChannelState`; this pushes the new multiplier onto every *active*
     /// voice of the channel so a bend-sensitivity or tuning change takes
@@ -127,6 +161,8 @@ impl GpuSynth {
     /// sounding voice vanish in one block, an audible click at the
     /// polyphony cap). Whole notes are released, never split zones -
     /// mirroring XSynth's `pop_quietest_voice_group` + `fade_out_killing`.
+    /// REND-015 #115: the evictions get the shared 5 ms fade and consume the
+    /// per-block `trim_fade_budget` (excess is deferred, not mass-faded).
     ///
     /// `protected` is the note_id that must survive this trim (the group just
     /// spawned); `None` protects the newest group (max note_id). This mirrors
@@ -174,29 +210,26 @@ impl GpuSynth {
             .map(|(spawn, vel, nid, _)| (*spawn, *vel, *nid))
             .collect();
         let evict = select_evictions(&infos, need_free, protected);
-        // For dense black MIDI (>20k), hard-kill is inaudible (dense mix
-        // masks the 1-block click) but saves 1 block of fading voices
-        // (20k * 32ms tail = 640k voice-blocks). Flame showed fading
-        // accumulation is the 80k→70k leak.
-        let hard_kill = self.voices.len() > 20000;
-        for &gi in &evict {
+        // REND-011 (#105)：不再按声部总数硬杀（旧行为 >20k 无淡出），统一
+        // 5 ms 淡出（REND-015 #115）。块内裁剪与端口级裁剪共享每块淡出
+        // 预算（组粒度），预算用尽的超限组留待块末端口级裁剪或后续块。
+        let max_groups = trimmed_group_count(need_free, self.trim_fade_budget);
+        let mut started = 0usize;
+        for &gi in evict.iter().take(max_groups) {
             for &pos in &groups[gi].3 {
                 if let Some(v) = self.voices.get_mut(pos)
                     && v.release_at == u64::MAX
                     && v.state.ended == 0
                 {
-                    if hard_kill {
-                        v.state.ended = 1;
-                        v.damper_pending = false;
-                    } else {
-                        v.release_at = self.global_frame;
-                        v.released = true;
-                        v.fade_out = true;
-                        v.damper_pending = false;
-                    }
+                    v.release_at = self.global_frame;
+                    v.released = true;
+                    v.fade_out = true;
+                    v.damper_pending = false;
                 }
             }
+            started += 1;
         }
+        self.trim_fade_budget = self.trim_fade_budget.saturating_sub(started);
         // Compact the key index: drop ended and fading entries so
         // per-event scans (release_key, further trims) stay bounded by the
         // cap. Fading voices remain in `voices` for GPU but are not per-key.
@@ -233,13 +266,17 @@ impl GpuSynth {
     /// `upload_voices` - the previous per-note-on scan was O(voices) per
     /// event and dominated black-MIDI peak blocks.
     ///
-    /// Killed voices FADE OUT (1 ms, XSynth's `ReleaseType::Kill`) instead
-    /// of being hard-ended: a hard `ended = 1` here makes a sounding voice
-    /// vanish instantly, an audible click - and in black-MIDI exclusive
-    /// storms (the same note retriggered thousands of times) that is a
-    /// continuous crackle, the user's "800-1000 voices and it pops"
-    /// symptom. The fade stage is the release, so the voice ends 1 ms later
-    /// and the newest note still wins immediately.
+    /// Killed voices FADE OUT (5 ms, REND-015 #115; the XSynth
+    /// `ReleaseType::Kill` counterpart) instead of being hard-ended: a hard
+    /// `ended = 1` here makes a sounding voice vanish instantly, an audible
+    /// click - and in black-MIDI exclusive storms (the same note retriggered
+    /// thousands of times) that is a continuous crackle, the user's
+    /// "800-1000 voices and it pops" symptom. The fade stage is the release,
+    /// so the voice ends 5 ms later and the newest note still wins
+    /// immediately. Exclusive trims are intentionally NOT taken from the
+    /// per-block fade budget: instrument semantics (e.g. closed hi-hat
+    /// choking open hi-hat) require the note to be released right away, and
+    /// each retrigger affects a single note group.
     pub(crate) fn trim_exclusive(&mut self) {
         let mut newest: std::collections::HashMap<u8, u64> = std::collections::HashMap::new();
         for v in &self.voices {

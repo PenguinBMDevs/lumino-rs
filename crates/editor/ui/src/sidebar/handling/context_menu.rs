@@ -9,8 +9,13 @@ impl Sidebar {
         self.track_context_menu = TrackContextMenuState {
             target_track_id: Some(id),
         };
+        // 互斥：关闭面板空白菜单。否则右键流程会把 panel_context_menu.is_open
+        // 置位并被音轨菜单遮住，选完端口/通道后残留「找回删除音轨」浮层。
+        self.panel_context_menu.reset();
         self.renaming_track = None;
         self.color_picking_track = None;
+        self.port_picking_track = None;
+        self.channel_picking_track = None;
     }
 
     /// 处理关闭音轨选项卡右键菜单
@@ -54,6 +59,8 @@ impl Sidebar {
                     }
                     self.renaming_track = None;
                     self.color_picking_track = None;
+                    self.port_picking_track = None;
+                    self.channel_picking_track = None;
                 }
             }
             TrackContextMenuItem::Rename => {
@@ -61,13 +68,28 @@ impl Sidebar {
                     self.renaming_track = Some((id, track.name.clone()));
                 }
                 self.color_picking_track = None;
+                self.port_picking_track = None;
+                self.channel_picking_track = None;
             }
             TrackContextMenuItem::SetColor => {
                 self.color_picking_track = Some(id);
                 self.renaming_track = None;
+                self.port_picking_track = None;
+                self.channel_picking_track = None;
             }
             TrackContextMenuItem::SetChannel => {
-                tracing::info!("设置通道功能待实现，音轨 id={}", id);
+                // 打开通道选择器（内部 0..=15，UI 显示 1..=16）
+                self.channel_picking_track = Some(id);
+                self.renaming_track = None;
+                self.color_picking_track = None;
+                self.port_picking_track = None;
+            }
+            TrackContextMenuItem::SetPort => {
+                // 打开端口选择器（内部 0..=15，UI 显示 1..=16）
+                self.port_picking_track = Some(id);
+                self.renaming_track = None;
+                self.color_picking_track = None;
+                self.channel_picking_track = None;
             }
         }
     }
@@ -79,6 +101,8 @@ impl Sidebar {
         // 关闭其他浮动菜单，避免叠加
         self.track_context_menu = TrackContextMenuState::default();
         self.color_picking_track = None;
+        self.port_picking_track = None;
+        self.channel_picking_track = None;
     }
 
     /// 处理关闭音轨列表面板空白区域右键菜单

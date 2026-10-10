@@ -5,6 +5,7 @@ use winit::event_loop::ControlFlow;
 
 use super::dialog_manager::DialogManager;
 use super::file_handler::FileHandler;
+use super::lifecycle::midi::MidiOutputRetry;
 use super::midi_handler::MidiHandler;
 use super::midi_manager::MidiManager;
 use super::progress_manager::ProgressManager;
@@ -82,6 +83,8 @@ pub(crate) struct WindowState {
     pub(crate) video_preview_rx: Option<tokio::sync::mpsc::UnboundedReceiver<(Vec<u8>, u32, u32)>>,
     /// 视频导出取消标志（后台线程通过此标志检测用户取消）
     pub(crate) video_export_cancel: Arc<AtomicBool>,
+    /// 视频导出运行标志（DEBT-07 #124：导出入口守卫，防可重入；线程 RAII 复位）
+    pub(crate) video_export_running: Arc<AtomicBool>,
     /// 音频导出控制（暂停/中止，跨线程共享）
     pub(crate) audio_export_control: Option<Arc<lumino_export::audio::control::AudioExportControl>>,
 }
@@ -162,6 +165,10 @@ pub(crate) struct RunnerInner {
     pub(crate) session_tracker: SessionTracker,
     /// 云存储管理器（后台线程锁内执行耗时操作）
     pub(crate) cloud: std::sync::Arc<std::sync::Mutex<lumino_cloud::CloudManager>>,
+    /// 云连接无锁快照（DEBT-06 #123）：UI 只读，后台操作完成后发布，
+    /// UI 永不等待跨网络 IO 的业务锁。
+    pub(crate) cloud_status:
+        std::sync::Arc<std::sync::RwLock<crate::runner::cloud::CloudStatusSnapshot>>,
     /// 云入口意图（记录用户从哪里进入，连接成功后按意图打开对应面板）
     pub(crate) cloud_intent: Option<crate::runner::cloud::CloudIntent>,
     /// 断连提醒面板是否已弹出（每次会话只弹一次）
@@ -195,6 +202,8 @@ pub(crate) struct RunnerInner {
     /// 手动检查在后台线程执行，结果经事件总线回传时设置对话框可能尚未创建；
     /// 暂存于此，由 `about_to_wait` 逐帧尝试注入。
     pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
+    /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
+    pub(crate) midi_output_retry: MidiOutputRetry,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -272,16 +281,7 @@ impl Runner {
             super::cloud_progress::CloudProgressManager::new();
 
         // 创建 MIDI 管理器
-        let mut midi = MidiManager::from_config(&config.ui);
-
-        // 为播放引擎创建独立的 MIDI 输出连接（用于新项目的播放功能）
-        // 这样用户自绘音符在点击播放按钮时能正常发声
-        if let Some(output) = midi.create_additional_output() {
-            window.ui_mut().set_playback_midi_output(output);
-            tracing::info!("Runner: 播放引擎 MIDI 输出连接已就绪");
-        } else {
-            tracing::error!("Runner: 无法创建播放引擎 MIDI 输出，播放将无声");
-        }
+        let midi = MidiManager::from_config(&config.ui);
 
         // 为录制功能创建独立的 MIDI 输入 API
         if let Some(input_api) = midi.create_input_api() {
@@ -309,7 +309,7 @@ impl Runner {
             tracing::error!("Failed to init macOS menu: {:?}", e);
         }
 
-        let runner = RunnerInner {
+        let mut runner = RunnerInner {
             window_state: WindowState {
                 window,
                 storage,
@@ -322,6 +322,7 @@ impl Runner {
                 export_progress_rx: None,
                 video_preview_rx: None,
                 video_export_cancel: Arc::new(AtomicBool::new(false)),
+                video_export_running: Arc::new(AtomicBool::new(false)),
                 audio_export_control: None,
             },
             midi_state: MidiState {
@@ -358,6 +359,9 @@ impl Runner {
             cloud: Arc::new(Mutex::new(lumino_cloud::CloudManager::new(
                 crate::storage::config_dir().join("cloud.json"),
             )?)),
+            cloud_status: Arc::new(std::sync::RwLock::new(
+                crate::runner::cloud::CloudStatusSnapshot::default(),
+            )),
             cloud_intent: None,
             cloud_alert_shown: false,
             saving,
@@ -365,7 +369,11 @@ impl Runner {
             pending_close_action: None,
             run_pending_after_save: false,
             pending_gpu_check_ui: None,
+            midi_output_retry: MidiOutputRetry::default(),
         };
+
+        // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）
+        runner.setup_playback_output();
 
         Ok(runner)
     }

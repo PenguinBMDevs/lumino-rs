@@ -75,6 +75,8 @@ pub enum TrackContextMenuItem {
     SetColor,
     /// 设置通道
     SetChannel,
+    /// 设置端口（内部值 0..=15，UI 显示 1..=16）
+    SetPort,
 }
 
 /// 音轨列表面板空白区域右键上下文菜单项

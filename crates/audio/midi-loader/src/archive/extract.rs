@@ -15,6 +15,7 @@ use crate::archive::{ArchiveEntry, ArchiveError, format::ArchiveFormat};
 // 子模块
 mod backends;
 mod iso;
+mod sanitize;
 mod tar;
 
 use backends::{
@@ -168,7 +169,8 @@ pub fn extract_entry_to_dir(
     let extracted_data = extract_entry_data(path, entry_name)?;
     std::fs::create_dir_all(output_dir)?;
 
-    let output_path = output_dir.join(&extracted_data.name);
+    // DEBT-02 #119：条目名不可信，必须经 safe_join 拒绝 ../、绝对路径、盘符等
+    let output_path = sanitize::safe_join(output_dir, &extracted_data.name)?;
     if let Some(parent) = output_path.parent() {
         std::fs::create_dir_all(parent)?;
     }

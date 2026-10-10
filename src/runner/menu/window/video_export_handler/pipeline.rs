@@ -27,6 +27,41 @@ pub(super) struct FramePipeline<'a> {
     pub(super) progress_map: fn(f64) -> f64,
 }
 
+/// 单次等待帧数据的上限（DEBT-07 #124）：到点轮询取消标志，取消 200ms 内生效。
+const FRAME_WAIT_TIMEOUT: Duration = Duration::from_millis(100);
+
+/// 帧等待失败原因。
+#[derive(Debug)]
+enum FrameWaitError {
+    /// 用户取消/终止请求
+    Cancelled,
+    /// 生产者全部退出（渲染线程异常结束）
+    Closed,
+}
+
+/// 等待一帧数据，带取消轮询（纯逻辑，可单测）。
+///
+/// 旧实现直接 `recv()` 阻塞：Runner 自持发送端（`frame_tx_waterfall`）时发送端
+/// 永不 drop，渲染线程异常退出后 `recv()` 永久阻塞、取消标志形同虚设。
+fn recv_frame_or_cancel(
+    rx: &Receiver<Vec<u8>>,
+    cancel: &AtomicBool,
+    timeout: Duration,
+) -> Result<Vec<u8>, FrameWaitError> {
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            return Err(FrameWaitError::Cancelled);
+        }
+        match rx.recv_timeout(timeout) {
+            Ok(buf) => return Ok(buf),
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                return Err(FrameWaitError::Closed);
+            }
+        }
+    }
+}
+
 impl<'a> FramePipeline<'a> {
     /// 运行完整流水线：预填充 PIPELINE_DEPTH 帧 → 主循环（收帧→处理→补发）→ drain 余帧。
     ///
@@ -78,15 +113,22 @@ impl<'a> FramePipeline<'a> {
             }
 
             let recv_start = Instant::now();
-            let frame_data = match self.frame_rx.recv() {
-                Ok(buf) => buf,
-                Err(_) => {
-                    tracing::error!("帧数据通道关闭");
-                    send_export_error(self.progress_tx, "导出失败：帧数据通道关闭");
-                    cancelled = true;
-                    break;
-                }
-            };
+            // DEBT-07 #124：带超时轮询取消，不再对 recv() 永久阻塞
+            let frame_data =
+                match recv_frame_or_cancel(self.frame_rx, self.cancel_flag, FRAME_WAIT_TIMEOUT) {
+                    Ok(buf) => buf,
+                    Err(FrameWaitError::Cancelled) => {
+                        tracing::info!("视频导出：用户取消（等待帧数据时），正在收尾...");
+                        cancelled = true;
+                        break;
+                    }
+                    Err(FrameWaitError::Closed) => {
+                        tracing::error!("帧数据通道关闭（渲染线程异常退出）");
+                        send_export_error(self.progress_tx, "导出失败：帧数据通道关闭");
+                        cancelled = true;
+                        break;
+                    }
+                };
             let recv_us = recv_start.elapsed().as_micros() as u64;
 
             // 默认值仅在 queue 与帧数据 FIFO 失步时出现（理论不发生），ppq 用 0 无实际影响
@@ -169,16 +211,22 @@ impl<'a> FramePipeline<'a> {
             }
         }
 
-        // drain 剩余 inflight 帧
+        // drain 剩余 inflight 帧（DEBT-07 #124：同样带取消轮询，取消不挂起）
         while !self.param_queue.is_empty() && !cancelled {
-            let drain_frame = match self.frame_rx.recv() {
-                Ok(buf) => buf,
-                Err(_) => {
-                    tracing::error!("drain 阶段帧数据通道关闭");
-                    cancelled = true;
-                    break;
-                }
-            };
+            let drain_frame =
+                match recv_frame_or_cancel(self.frame_rx, self.cancel_flag, FRAME_WAIT_TIMEOUT) {
+                    Ok(buf) => buf,
+                    Err(FrameWaitError::Cancelled) => {
+                        tracing::info!("视频导出：用户取消（drain 阶段），正在收尾...");
+                        cancelled = true;
+                        break;
+                    }
+                    Err(FrameWaitError::Closed) => {
+                        tracing::error!("drain 阶段帧数据通道关闭");
+                        cancelled = true;
+                        break;
+                    }
+                };
 
             let drain_params = self.param_queue.pop_front().unwrap_or_default();
             let (should_stop, _stats) = process(drain_frame, drain_params);
@@ -191,5 +239,39 @@ impl<'a> FramePipeline<'a> {
         }
 
         (processed_frames, cancelled, smoothed_fps)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// DEBT-07 #124：等待帧数据期间取消应即时返回（生产者仍持有发送端）。
+    #[test]
+    fn recv_frame_or_cancel_returns_on_cancel() {
+        let (_tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        let cancel = AtomicBool::new(true);
+        let result = recv_frame_or_cancel(&rx, &cancel, Duration::from_millis(50));
+        assert!(matches!(result, Err(FrameWaitError::Cancelled)));
+    }
+
+    /// 生产者全部退出 → Closed（旧实现会永久阻塞）。
+    #[test]
+    fn recv_frame_or_cancel_detects_closed_channel() {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        drop(tx);
+        let cancel = AtomicBool::new(false);
+        let result = recv_frame_or_cancel(&rx, &cancel, Duration::from_millis(50));
+        assert!(matches!(result, Err(FrameWaitError::Closed)));
+    }
+
+    /// 数据正常到达 → Ok；取消标志为 false 时不误伤。
+    #[test]
+    fn recv_frame_or_cancel_returns_data() {
+        let (tx, rx) = std::sync::mpsc::channel::<Vec<u8>>();
+        tx.send(vec![1, 2, 3]).expect("发送测试帧");
+        let cancel = AtomicBool::new(false);
+        let result = recv_frame_or_cancel(&rx, &cancel, Duration::from_millis(50));
+        assert_eq!(result.expect("应收到数据"), vec![1, 2, 3]);
     }
 }

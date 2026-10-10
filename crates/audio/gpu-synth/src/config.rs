@@ -70,22 +70,25 @@ pub struct SynthConfig {
     /// (handled by chunked dispatch). This is the recommended setting for
     /// black MIDI where every note must sound.
     ///
-    /// The default (4096, like XSynth's) keeps the simultaneous-voice noise
-    /// floor low: N voices mix with ~sqrt(N) noise density, so 16k voices
-    /// sound like white noise even when the peak is limited. Raise it only
-    /// if a specific file really needs more simultaneous notes.
+    /// Capping at e.g. 4096 (XSynth's default) keeps the simultaneous-voice
+    /// noise floor low: N voices mix with ~sqrt(N) noise density, so 16k
+    /// voices sound like white noise even when the peak is limited. Raise
+    /// the cap only if a specific file really needs more simultaneous notes.
     ///
     /// Default: `0` (unlimited, black-MIDI mode). Set e.g. `4096` to cap.
     pub max_voices: usize,
 
-    /// Maximum number of simultaneous voices for the *same key* on the same
-    /// channel (XSynth-style per-key polyphony limit).
+    /// Maximum number of simultaneously sounding note *groups* for the same
+    /// key **within one MIDI port** - all 16 channels of the port share the
+    /// cap (REND-002 #87 / REND-008 #94 semantics).
     ///
-    /// When a note-on would exceed this, the oldest voice of that key is
-    /// faded out, so a repeated note always steals from its own key rather
-    /// than from unrelated notes. `0` disables the limit entirely.
+    /// Release tails count toward the cap and are evicted first (REND-011
+    /// #105): over-cap trimming fades tails, then the quietest/oldest
+    /// sustained groups; the newest group is always protected. `0` disables
+    /// the limit entirely.
     ///
-    /// Default: `8` (XSynth uses 4; 8 keeps fast trills/rolls clean).
+    /// Default: `4` (same as XSynth). Raise to e.g. `8` if fast trills/rolls
+    /// need to stay clean at the cost of more simultaneous voices per key.
     pub max_voices_per_key: usize,
 
     /// 全局 MIDI 通道空间大小（必须是 16 的倍数，16..=256）。
@@ -200,6 +203,14 @@ impl SynthConfig {
                 "block_size must be a power of two >= 16, got {}",
                 self.block_size
             )));
+        }
+        // DEBT-04 #121：GPU 渲染管线（shader/readback/limiter）按立体声交错布局
+        // 硬编码；Mono 在此层无法正确产出。需要单声道请在导出/上层做真降混
+        // （0.5*(L+R)），不要打开这个开关——旧实现静默产出错误音频。
+        if self.channels == ChannelMode::Mono {
+            return Err(crate::SynthError::Config(
+                "GPU 引擎仅支持立体声（ChannelMode::Stereo）；单声道请在写出前降混".into(),
+            ));
         }
         if !self.render_silence_threshold.is_finite() || self.render_silence_threshold <= 0.0 {
             return Err(crate::SynthError::Config(

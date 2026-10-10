@@ -318,6 +318,11 @@ impl Editor {
     /// 返回 `true` 表示有数据被修改。
     pub fn drain_async_commit(&mut self) -> bool {
         let mut any_modified = false;
+        // DEBT-03 #120：等待上限——提交线程 panic/卡死时绝不无限 yield 自旋占核。
+        // 取 30s：百万级工程的正常提交也可能耗秒级，不能被误杀；上限只用于兜底
+        // "永不返回"的病态情况。
+        const DRAIN_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+        let deadline = std::time::Instant::now() + DRAIN_TIMEOUT;
         while self.editor_state.data.has_pending_commit() {
             // 同 poll_async_commit 的条件分支（保留旧框→新值重选，否则幽灵值重映射）。
             let identity = self.capture_selection_identity();
@@ -349,6 +354,18 @@ impl Editor {
                     self.pending_drag_state = None;
                 }
                 None => {
+                    if std::time::Instant::now() >= deadline {
+                        // DEBT-03 #120：超时降级——丢弃 pending、标记刷新，绝不在 UI 线程
+                        // 无限循环（worker panic/卡死时旧实现 100% 占核不可恢复）。
+                        tracing::error!(
+                            "Editor: 异步提交等待超时（>{:?}），丢弃 pending 并降级刷新",
+                            DRAIN_TIMEOUT
+                        );
+                        self.editor_state.data.cancel_async_commit();
+                        self.pending_drag_state = None;
+                        self.mark_notes_changed();
+                        break;
+                    }
                     // 避免忙等：让出时间片
                     std::thread::yield_now();
                 }

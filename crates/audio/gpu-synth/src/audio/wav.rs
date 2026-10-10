@@ -31,6 +31,10 @@ pub fn read_wav(path: impl AsRef<Path>) -> Result<WavData, SynthError> {
     read_wav_from(&mut f)
 }
 
+/// data 块硬上限（2 GiB）：块长度来自文件头（不可信），禁止直接巨量分配
+/// （DEBT-02 #119）。
+const MAX_WAV_DATA_BYTES: usize = 1 << 31;
+
 /// Reads a WAV from any reader.
 pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
     let mut header = [0u8; 12];
@@ -50,21 +54,35 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
             Err(e) => return Err(e.into()),
         }
         let id = &chunk_hdr[0..4];
-        let size = u32::from_le_bytes(chunk_hdr[4..8].try_into().unwrap()) as usize;
+        let size =
+            u32::from_le_bytes([chunk_hdr[4], chunk_hdr[5], chunk_hdr[6], chunk_hdr[7]]) as usize;
         match id {
             b"fmt " => {
-                let mut buf = vec![0u8; size.min(40)];
+                // fmt 块至少 16 字节；短块直接报错。
+                // DEBT-02 #119：旧实现按 `size.min(40)` 分配后固定读 buf[14..16]，
+                // size < 16 时越界 panic。
+                if size < 16 {
+                    return Err(SynthError::Config(format!("fmt chunk too short: {size}")));
+                }
+                let fmt_len = size.min(40);
+                let mut buf = vec![0u8; fmt_len];
                 r.read_exact(&mut buf)?;
                 let tag = u16::from_le_bytes([buf[0], buf[1]]);
                 let ch = u16::from_le_bytes([buf[2], buf[3]]);
                 let rate = u32::from_le_bytes([buf[4], buf[5], buf[6], buf[7]]);
                 let bits = u16::from_le_bytes([buf[14], buf[15]]);
                 fmt = Some((tag, ch, rate, bits));
-                if size > 40 {
-                    skip(r, size - 40)?;
+                if size > fmt_len {
+                    skip(r, size - fmt_len)?;
                 }
             }
             b"data" => {
+                // DEBT-02 #119：data 长度不可信，超过硬上限直接拒绝（防巨量分配）
+                if size > MAX_WAV_DATA_BYTES {
+                    return Err(SynthError::Config(format!(
+                        "data chunk too large: {size} bytes"
+                    )));
+                }
                 let mut buf = vec![0u8; size];
                 r.read_exact(&mut buf)?;
                 data = Some(buf);
@@ -102,8 +120,12 @@ pub fn read_wav_from(r: &mut impl Read) -> Result<WavData, SynthError> {
             .0
             .iter()
             .map(|c| {
-                let v = i32::from_le_bytes([c[0], c[1], c[2], 0]);
-                (v >> 8) as f32 / 32768.0
+                // 24-bit 小端 → i32：按最高位做符号扩展，再按 2^23 归一化。
+                // DEBT-02 #119：旧实现 `[c0,c1,c2,0] >> 8 / 32768` 未做符号扩展，
+                // 负样本会变成正的大值（幅度/符号双错）。
+                let top = if c[2] & 0x80 != 0 { 0xFF } else { 0x00 };
+                let v = i32::from_le_bytes([c[0], c[1], c[2], top]);
+                v as f32 / 8_388_608.0
             })
             .collect(),
         (1, 32) => raw
@@ -314,4 +336,82 @@ fn skip(r: &mut impl Read, mut n: usize) -> Result<(), SynthError> {
         n -= chunk;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wav_with_chunks(fmt_tag: u16, channels: u16, rate: u32, bits: u16, data: &[u8]) -> Vec<u8> {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&fmt_tag.to_le_bytes());
+        v.extend_from_slice(&channels.to_le_bytes());
+        v.extend_from_slice(&rate.to_le_bytes());
+        let block_align = channels * (bits / 8);
+        v.extend_from_slice(&(rate * block_align as u32).to_le_bytes());
+        v.extend_from_slice(&block_align.to_le_bytes());
+        v.extend_from_slice(&bits.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&(data.len() as u32).to_le_bytes());
+        v.extend_from_slice(data);
+        v
+    }
+
+    /// DEBT-02 #119：24-bit 负样本必须按符号扩展解码（旧实现负变正）。
+    #[test]
+    fn decodes_24bit_pcm_with_sign() {
+        let mut data = Vec::new();
+        data.extend_from_slice(&[0x00, 0x00, 0xC0]); // -0.5
+        data.extend_from_slice(&[0x00, 0x00, 0x40]); // +0.5
+        let bytes = wav_with_chunks(1, 1, 48_000, 24, &data);
+        let wav = read_wav_from(&mut bytes.as_slice()).expect("24-bit WAV 应可读");
+        assert!(
+            (wav.samples[0] + 0.5).abs() < 1e-4,
+            "负半幅应为 -0.5，实际 {}",
+            wav.samples[0]
+        );
+        assert!(
+            (wav.samples[1] - 0.5).abs() < 1e-4,
+            "正半幅应为 +0.5，实际 {}",
+            wav.samples[1]
+        );
+    }
+
+    /// DEBT-02 #119：短 fmt 块必须报错而不是越界 panic。
+    #[test]
+    fn short_fmt_chunk_is_rejected_without_panic() {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&4u32.to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&12u32.to_le_bytes());
+        v.extend_from_slice(&[0u8; 12]);
+        assert!(read_wav_from(&mut v.as_slice()).is_err());
+    }
+
+    /// DEBT-02 #119：data 长度超过硬上限必须拒绝，不做巨量分配。
+    #[test]
+    fn huge_data_size_is_rejected_without_allocation() {
+        let mut v = Vec::new();
+        v.extend_from_slice(b"RIFF");
+        v.extend_from_slice(&0u32.to_le_bytes());
+        v.extend_from_slice(b"WAVE");
+        v.extend_from_slice(b"fmt ");
+        v.extend_from_slice(&16u32.to_le_bytes());
+        v.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        v.extend_from_slice(&1u16.to_le_bytes()); // mono
+        v.extend_from_slice(&48_000u32.to_le_bytes());
+        v.extend_from_slice(&96_000u32.to_le_bytes());
+        v.extend_from_slice(&2u16.to_le_bytes());
+        v.extend_from_slice(&16u16.to_le_bytes());
+        v.extend_from_slice(b"data");
+        v.extend_from_slice(&u32::MAX.to_le_bytes());
+        assert!(read_wav_from(&mut v.as_slice()).is_err());
+    }
 }

@@ -207,7 +207,7 @@ impl Primitive for WaterfallPrimitive {
             *pipeline
                 .bind_group
                 .lock()
-                .expect("waterfall bind_group lock") = Some(Arc::new(bg));
+                .unwrap_or_else(|poisoned| poisoned.into_inner()) = Some(Arc::new(bg));
             pipeline.cached_view = Some(self.view.clone());
         }
     }
@@ -216,7 +216,7 @@ impl Primitive for WaterfallPrimitive {
         let guard = pipeline
             .bind_group
             .lock()
-            .expect("waterfall bind_group lock");
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
         match guard.as_ref() {
             Some(bg) => {
                 render_pass.set_pipeline(&pipeline.pipeline);

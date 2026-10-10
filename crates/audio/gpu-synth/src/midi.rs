@@ -131,7 +131,15 @@ impl TimedEvent {
             },
             kind::PROGRAM_CHANGE => MidiEvent::ProgramChange { program: p as u8 },
             kind::PITCH_BEND => MidiEvent::PitchBend { value: p as u16 },
-            _ => unreachable!("invalid packed kind: {}", self.kind()),
+            _ => {
+                // 打包 kind 超出已知集合（仅可能来自损坏数据）：按无操作事件
+                // 解码并告警，避免单个坏事件 panic 掉整条渲染管线。
+                eprintln!("[warn] invalid packed MIDI kind: {}", self.kind());
+                MidiEvent::ControlChange {
+                    controller: 123, // All Notes Off
+                    value: 0,
+                }
+            }
         }
     }
 
@@ -181,6 +189,20 @@ mod tests {
                 assert_eq!(ev.kind(), k);
                 assert_eq!(ev.payload(), payload);
             }
+        }
+    }
+
+    #[test]
+    fn timed_event_invalid_kind_decodes_to_inert_event() {
+        // kind 5..=15 超出已知集合（仅可能来自损坏数据）：
+        // 解码不得 panic，且不得被误判为 NoteOn
+        for bad_kind in 5..=15u32 {
+            let ev = TimedEvent::new(0, 0, bad_kind, 60);
+            let decoded = ev.event();
+            assert!(
+                !matches!(decoded, MidiEvent::NoteOn { .. }),
+                "无效 kind {bad_kind} 不得解码为 NoteOn"
+            );
         }
     }
 

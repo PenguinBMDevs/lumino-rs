@@ -7,7 +7,7 @@
 // - `processor`: MidiEventProcessor 的事件分发 / 弯音归一化 / 尾部收尾
 // - `render`: 批量渲染（帧域）与 Vec 缓冲池
 // - `soundfont`: 音色库路径校验与加载
-mod processor;
+pub(crate) mod processor;
 mod render;
 mod soundfont;
 
@@ -17,7 +17,10 @@ use std::collections::VecDeque;
 use std::sync::Arc;
 
 use lumino_midi_model::multi_port::PercussionTracker;
-use xsynth_core::channel_group::ChannelGroup;
+use xsynth_core::{
+    AudioPipe, AudioStreamParams,
+    channel_group::{ChannelGroup, SynthEvent},
+};
 
 use super::{
     config::AudioRenderConfig, limiter::AudioLimiter, stream::SampleSink, tick_conv::TickToTime,
@@ -36,14 +39,43 @@ pub(crate) struct RecentEvent {
     pub(crate) b: u16,
 }
 
+/// 事件处理器的合成后端抽象（REND-010 #102 ①）。
+///
+/// 生产实现是 xsynth [`ChannelGroup`]（`send_event` 派发 + `AudioPipe` 渲染）；
+/// 测试注入记录型桩即可对 `dispatch_event` 的**事件级端口映射**做端到端断言，
+/// 无需真实音色库/音频渲染。调用频率为每事件/每批一次（非每样本），
+/// `dyn` 分发开销可忽略。
+pub(crate) trait SynthBackend {
+    /// 音频流参数（采样率 / 通道数）。
+    fn stream_params(&self) -> &AudioStreamParams;
+    /// 派发合成事件。
+    fn send_event(&mut self, event: SynthEvent);
+    /// 渲染音频样本到缓冲（测试桩可只填静音）。
+    fn read_samples_unchecked(&mut self, buffer: &mut [f32]);
+}
+
+impl SynthBackend for ChannelGroup {
+    fn stream_params(&self) -> &AudioStreamParams {
+        AudioPipe::stream_params(self)
+    }
+
+    fn send_event(&mut self, event: SynthEvent) {
+        ChannelGroup::send_event(self, event);
+    }
+
+    fn read_samples_unchecked(&mut self, buffer: &mut [f32]) {
+        AudioPipe::read_samples_unchecked(self, buffer)
+    }
+}
+
 /// 事件处理器 — 将 MIDI 事件流式渲染到 SampleSink
 ///
 /// 参考 OmniConverter 的 EventsProcesser 设计：
 /// - 以渲染时间（delta seconds）驱动，而非依赖外部定时器
 /// - 使用 Vec 回收池减少分配
-pub struct MidiEventProcessor<'a> {
+pub(crate) struct MidiEventProcessor<'a> {
     config: &'a AudioRenderConfig,
-    channel_group: &'a mut ChannelGroup,
+    channel_group: &'a mut dyn SynthBackend,
     tick_conv: &'a mut TickToTime,
     sink: &'a mut dyn SampleSink,
     sample_rate: u32,

@@ -6,11 +6,10 @@ use std::sync::Arc;
 
 use lumino_midi_model::multi_port::{PercussionTracker, channels_for_max_port_clamped};
 
-use crate::playback::engine::types::global_channel_for_track;
-use crate::playback::{
-    EventType, MidiMessage, MidiTrackEvent, Playback, PlaybackAccessor, ScheduledEvent,
-};
+use crate::playback::{MidiMessage, MidiTrackEvent, Playback, PlaybackAccessor};
 use lumino_midi_loader::MidiDocument;
+
+use super::loop_cache::{LoopWrapCache, scan_pending_offs};
 
 /// 其他音轨的事件读取状态。
 ///
@@ -49,13 +48,11 @@ impl Ord for PendingNoteOff {
 
 /// 播放引擎
 ///
-/// 当前音轨从内存队列读取（支持实时编辑），其他音轨从 document 流式读取（零拷贝）。
+/// 当前轨与其他轨统一从 document 流式读取（PREF-006 A1）：编辑快照只更新
+/// `Arc` 与游标钳制，不再有 O(当前轨音符数) 的预建队列重建。
 pub struct PlaybackEngine {
     /// 播放器
     pub(crate) playback: Arc<Mutex<Playback>>,
-    /// 当前音轨的待播放事件队列（优先队列，按tick排序）
-    /// 仅有当前轨（可能有编辑），其他轨直接从 document 流式读取
-    pub(crate) event_queue: BinaryHeap<ScheduledEvent>,
     /// 非音符MIDI事件（CC/PC/PB等）
     pub(crate) midi_events: Vec<MidiTrackEvent>,
     /// MIDI 文档（当前轨与其他轨统一从此流式读取）
@@ -70,6 +67,8 @@ pub struct PlaybackEngine {
     pub(crate) looping: bool,
     /// 循环范围（开始tick，结束tick）
     pub(crate) loop_range: Option<(f32, f32)>,
+    /// 循环回绕缓存（PREF-006 A2）：循环配置不变时回绕 O(K) 克隆
+    pub(crate) loop_wrap_cache: Option<LoopWrapCache>,
     /// 控制事件（CC/PC/PB）游标
     pub(crate) control_event_cursor: usize,
     /// 额外 MIDI 事件游标（避免每次 update 线性扫描全部事件）
@@ -93,7 +92,6 @@ impl PlaybackEngine {
     pub fn new(playback: Arc<Mutex<Playback>>) -> Self {
         Self {
             playback,
-            event_queue: BinaryHeap::new(),
             midi_events: Vec::new(),
             document: None,
             track_states: Vec::new(),
@@ -101,6 +99,7 @@ impl PlaybackEngine {
             last_processed_tick: 0.0,
             looping: false,
             loop_range: None,
+            loop_wrap_cache: None,
             control_event_cursor: 0,
             midi_event_cursor: 0,
             velocity_filter_threshold: 1,
@@ -163,9 +162,11 @@ impl PlaybackEngine {
 
         self.current_track = current_track;
         self.document = Some(doc);
-        // 当前轨队列统一从 document 重建（UI 侧不再传 Vec<NoteEvent> 中转，
-        // 消除编辑后全量克隆当前轨音符的 CPU 内存阻塞）
-        self.rebuild_queue_from_current_track(None);
+        // 文档快照变化（编辑 / 换文档 / 换当前轨）→ 回绕缓存失效
+        self.loop_wrap_cache = None;
+        // PREF-006 A1：不再重建当前轨队列——当前轨与其他轨统一从 document
+        // 流式读取，编辑快照只更新 Arc 与游标（上面已钳制越界 cursor），
+        // 编辑成本从 O(当前轨音符数) 降为 O(块数)（Arc 指针级）。
     }
 
     /// REND-002 修复：清零打击乐模态跟踪（**文档真正切换**时调用）。
@@ -185,23 +186,26 @@ impl PlaybackEngine {
         self.percussion = PercussionTracker::new(channels);
     }
 
-    /// 从当前 MIDI 文档重建当前音轨播放队列（与其他轨一致从 document 流式读取）
+    /// 从当前 MIDI 文档重建当前音轨读取状态（外部命令入口）
+    ///
+    /// PREF-006 A1：等价于把当前轨游标重定位到当前播放位置（流式模型无预建队列）。
     pub fn rebuild_current_track_queue(&mut self) {
-        self.rebuild_queue_from_current_track(None);
+        self.resync_current_track_state(None);
     }
 
     /// 设置非音符MIDI事件列表
     pub fn set_midi_events(&mut self, events: Vec<MidiTrackEvent>) {
         self.midi_event_cursor = 0;
         self.midi_events = events;
+        // 额外事件游标依赖事件表 → 回绕缓存失效
+        self.loop_wrap_cache = None;
     }
 
-    /// 设置力度过滤阈值。仅当阈值变化时才重建当前轨队列，避免不必要的重排。
+    /// 设置力度过滤阈值。
+    ///
+    /// PREF-006 A1：过滤在触发时按阈值实时判定（与其它轨一致），无需重建当前轨状态。
     pub fn set_velocity_filter_threshold(&mut self, threshold: u8) {
-        if self.velocity_filter_threshold != threshold {
-            self.velocity_filter_threshold = threshold;
-            self.rebuild_queue_from_current_track(None);
-        }
+        self.velocity_filter_threshold = threshold;
     }
 
     /// 设置音轨静音/独奏状态（按 document 音轨索引）
@@ -238,64 +242,32 @@ impl PlaybackEngine {
     /// 设置循环范围
     pub fn set_loop_range(&mut self, start: f32, end: f32) {
         self.loop_range = Some((start, end));
+        // loop_start 变化 → 回绕缓存失效
+        self.loop_wrap_cache = None;
     }
 
     /// 清除循环范围
     pub fn clear_loop_range(&mut self) {
         self.loop_range = None;
+        self.loop_wrap_cache = None;
     }
 
-    /// 重建当前音轨的事件队列（从 document 流式读取，无 Vec<NoteEvent> 中转）
-    pub(crate) fn rebuild_queue_from_current_track(&mut self, seek_tick: Option<f32>) {
-        self.event_queue.clear();
+    /// 将当前轨读取状态重定位到指定 tick（seek / 起播 / 外部强制重同步）。
+    ///
+    /// PREF-006 A1：当前轨不再预建事件队列——与其它轨统一为
+    /// 「document 流式 + cursor + pending_offs」；重定位 = 二分 + 悬挂音符扫描。
+    pub(crate) fn resync_current_track_state(&mut self, seek_tick: Option<f32>) {
+        let tick = seek_tick.unwrap_or_else(|| self.current_tick());
         let Some(doc) = self.document.as_ref() else {
             return;
         };
-        // 当前轨被静音或未被独奏 → 整轨不出声，直接清空队列。
-        if !self.track_should_play(self.current_track as usize) {
+        let idx = self.current_track as usize;
+        let Some(state) = self.track_states.get_mut(idx) else {
             return;
-        }
-        let notes = doc.track_notes(self.current_track as usize);
-        // REND-002：当前轨所有事件映射到该轨端口对应的全局通道。
-        let port = doc.track_port(self.current_track);
-        // 每颗音符最多产生 NoteOn + NoteOff 两个事件，预分配避免反复扩容。
-        self.event_queue.reserve(notes.len() * 2);
-        let mut seq: u64 = 0;
-
-        for ne in notes.iter() {
-            let tick = ne.start_tick as f32;
-            let length = (ne.end_tick - ne.start_tick) as f32;
-            if let Some(st) = seek_tick
-                && tick + length <= st
-            {
-                continue;
-            }
-            // 力度过滤：低于等于阈值的音符不加入播放队列。
-            // 这是用户配置的语义过滤，不是性能节流；默认阈值 1 只过滤 velocity=0。
-            if ne.velocity <= self.velocity_filter_threshold {
-                continue;
-            }
-            let channel = global_channel_for_track(port, ne.channel);
-            self.event_queue.push(ScheduledEvent {
-                tick,
-                event_type: EventType::NoteOn {
-                    channel,
-                    key: ne.key,
-                    velocity: ne.velocity,
-                },
-                seq,
-            });
-            seq += 1;
-            self.event_queue.push(ScheduledEvent {
-                tick: tick + length,
-                event_type: EventType::NoteOff {
-                    channel,
-                    key: ne.key,
-                },
-                seq,
-            });
-            seq += 1;
-        }
+        };
+        let (cursor, pending_offs) = scan_pending_offs(doc.track_notes(idx), tick as u32);
+        state.note_cursor = cursor;
+        state.pending_offs = pending_offs;
     }
 
     /// 安全地跳转播放位置（内部辅助方法）

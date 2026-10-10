@@ -37,6 +37,43 @@ fn rt_format(midi_max_port: u8) -> SynthFormat {
     }
 }
 
+/// 构造同布局轻量复位的完整事件序列（顺序即语义）。
+///
+/// N-2 实测：全量重建 100–180ms（重开 cpal 流 + join 通道线程），且缩回
+/// 16 通道比扩到 112 通道更贵；而“文档切换清模态”用轻量复位即可：
+/// 1. 逐通道显式 `SetPercussionMode(false)`（fork 在 bank=128 时忽略 CC0，
+///    必须走 config 事件才能退出打击乐模态）；
+/// 2. `AllChannels(SystemReset)` 杀声部 + 复位控制器/程序；
+/// 3. **再按布局恢复各端口 ch9 的打击乐默认**——`SynthFormat::Custom` 不自动
+///    开启 ch9（见 `init_synth`），若只清不恢复，切文档后鼓轨会退化为旋律。
+///    放在 `SystemReset` **之后**：无论 SystemReset 是否清模态，终态都正确。
+///
+/// #102 N-5：抽成纯函数以便单测锁定顺序与覆盖；下发由 `reset_channel_state` 负责。
+fn reset_channel_state_events(midi_max_port: u8) -> Vec<SynthEvent> {
+    let channels = channels_for_max_port_clamped(midi_max_port);
+    let mut events = Vec::new();
+    for ch in 0..channels {
+        events.push(SynthEvent::Channel(
+            ch,
+            ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(false)),
+        ));
+    }
+    events.push(SynthEvent::AllChannels(ChannelEvent::Audio(
+        ChannelAudioEvent::SystemReset,
+    )));
+    // Custom 布局下 `percussion_channels` 覆盖每个端口的 ch9（含 port 0）；
+    // 单端口（`midi_max_port == 0`）由 `SynthFormat::Midi` 自动开启，不重复下发。
+    if midi_max_port != 0 {
+        for channel in percussion_channels(midi_max_port) {
+            events.push(SynthEvent::Channel(
+                channel,
+                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
+            ));
+        }
+    }
+    events
+}
+
 impl XSynth {
     /// 使用指定音色库路径创建 XSynth 后端
     pub fn new(soundfont_path: &Path, options: Option<XSynthOptions>) -> Result<Self, Error> {
@@ -221,39 +258,16 @@ impl XSynth {
     /// 同布局文档切换：不重开音频流，仅复位各通道模态/程序与控制状态。
     ///
     /// N-2 实测：全量重建 100–180ms（重开 cpal 流 + join 通道线程），且缩回
-    /// 16 通道比扩到 112 通道更贵；而“文档切换清模态”用轻量复位即可：
-    /// 1. 逐通道显式 `SetPercussionMode(false)`（fork 在 bank=128 时忽略 CC0，
-    ///    必须走 config 事件才能退出打击乐模态）；
-    /// 2. `AllChannels(SystemReset)` 杀声部 + 复位控制器/程序；
-    /// 3. **再按布局恢复各端口 ch9 的打击乐默认**——`SynthFormat::Custom` 不自动
-    ///    开启 ch9（见 `init_synth`），若只清不恢复，切文档后鼓轨会退化为旋律。
-    ///    放在 `SystemReset` **之后**：无论 SystemReset 是否清模态，终态都正确。
+    /// 16 通道比扩到 112 通道更贵；而“文档切换清模态”用轻量复位即可。
+    /// 事件序列与顺序契约见 `reset_channel_state_events`。
     pub(super) fn reset_channel_state(&mut self) -> Result<(), String> {
-        let channels =
-            lumino_midi_model::multi_port::channels_for_max_port_clamped(self.midi_max_port);
         let mut sender = self
             .sender_shared
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        for ch in 0..channels {
-            sender.send_event(SynthEvent::Channel(
-                ch,
-                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(false)),
-            ));
-        }
-        sender.send_event(SynthEvent::AllChannels(ChannelEvent::Audio(
-            ChannelAudioEvent::SystemReset,
-        )));
-        // Custom 布局下 `percussion_channels` 覆盖每个端口的 ch9（含 port 0）；
-        // 单端口（`midi_max_port == 0`）由 `SynthFormat::Midi` 自动开启，不重复下发。
-        if self.midi_max_port != 0 {
-            for channel in percussion_channels(self.midi_max_port) {
-                sender.send_event(SynthEvent::Channel(
-                    channel,
-                    ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
-                ));
-            }
+        for event in reset_channel_state_events(self.midi_max_port) {
+            sender.send_event(event);
         }
         Ok(())
     }
@@ -313,5 +327,83 @@ mod tests {
             SynthFormat::Custom { channels: 256 },
             "超上限端口折叠"
         );
+    }
+
+    /// #102 N-5：轻量复位事件序列——单端口：16 通道退出打击乐 + SystemReset，
+    /// 不额外恢复 ch9（`SynthFormat::Midi` 自动开启）。
+    #[test]
+    fn reset_events_single_port_clear_then_system_reset() {
+        let events = reset_channel_state_events(0);
+        assert_eq!(events.len(), 16 + 1, "16 通道退出 + SystemReset");
+        for (ch, event) in events[..16].iter().enumerate() {
+            assert_eq!(
+                percussion_off_channel(event),
+                Some(ch as u32),
+                "第 {ch} 条应为通道 {ch} 退出打击乐"
+            );
+        }
+        assert!(is_system_reset(&events[16]), "SystemReset 收尾");
+        assert!(
+            events.iter().all(|e| percussion_on_channel(e).is_none()),
+            "单端口不得重复下发 ch9 恢复"
+        );
+    }
+
+    /// #102 N-5：多端口：逐通道退出 → SystemReset → 按端口 ch9 恢复；
+    /// 恢复必须在 SystemReset 之后（无论 SystemReset 是否清模态，终态正确）。
+    #[test]
+    fn reset_events_multi_port_restore_percussion_after_reset() {
+        let max_port = 6u8;
+        let channels = channels_for_max_port_clamped(max_port) as usize; // 112
+        let events = reset_channel_state_events(max_port);
+        let restored = percussion_channels(max_port);
+        assert_eq!(events.len(), channels + 1 + restored.len());
+
+        for (ch, event) in events[..channels].iter().enumerate() {
+            assert_eq!(
+                percussion_off_channel(event),
+                Some(ch as u32),
+                "出口段应按全局通道序逐通道退出"
+            );
+        }
+        assert!(
+            is_system_reset(&events[channels]),
+            "SystemReset 位于出口段之后"
+        );
+        let on: Vec<u32> = events[channels + 1..]
+            .iter()
+            .filter_map(percussion_on_channel)
+            .collect();
+        assert_eq!(on, restored, "SystemReset 之后逐端口恢复 ch9");
+    }
+
+    /// 若事件为“通道退出打击乐”，返回通道号。
+    fn percussion_off_channel(event: &SynthEvent) -> Option<u32> {
+        match event {
+            SynthEvent::Channel(
+                ch,
+                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(false)),
+            ) => Some(*ch),
+            _ => None,
+        }
+    }
+
+    /// 若事件为“通道恢复打击乐”，返回通道号。
+    fn percussion_on_channel(event: &SynthEvent) -> Option<u32> {
+        match event {
+            SynthEvent::Channel(
+                ch,
+                ChannelEvent::Config(ChannelConfigEvent::SetPercussionMode(true)),
+            ) => Some(*ch),
+            _ => None,
+        }
+    }
+
+    /// 是否为全通道 SystemReset。
+    fn is_system_reset(event: &SynthEvent) -> bool {
+        matches!(
+            event,
+            SynthEvent::AllChannels(ChannelEvent::Audio(ChannelAudioEvent::SystemReset))
+        )
     }
 }

@@ -9,7 +9,9 @@
 use crate::root::Root;
 use lumino_midi_loader::NoteEvent;
 
+mod channel;
 mod deletion;
+mod port;
 
 impl Root {
     /// 更新音轨列表（从 MIDI 导入）
@@ -173,25 +175,6 @@ impl Root {
         self.editor.editor_state.data.current_track = track_idx;
         self.editor.mark_notes_changed();
         self.update_playback_notes();
-    }
-
-    /// 加载指定音轨的 MIDI 控制事件
-    pub fn load_track_midi_events(
-        &mut self,
-        track_idx: usize,
-        events: Vec<crate::playback::MidiTrackEvent>,
-    ) {
-        if !events.is_empty() {
-            self.playback.track_midi_events.insert(track_idx, events);
-            tracing::debug!(
-                "Root: 音轨 {} 已加载 {} 个 MIDI 控制事件",
-                track_idx,
-                self.playback
-                    .track_midi_events
-                    .get(&track_idx)
-                    .map_or(0, |v| v.len())
-            );
-        }
     }
 
     /// 添加远程音轨（来自协作同步）

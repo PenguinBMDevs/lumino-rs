@@ -2,6 +2,7 @@
 
 mod chase;
 mod core;
+mod loop_cache;
 mod play;
 mod position;
 mod state;

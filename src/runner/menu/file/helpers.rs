@@ -38,7 +38,6 @@ impl RunnerInner {
             ├─────────────────────────────────────────────────────────┤\n\
             │ MidiDocument.notes:    {:>8} MB  (16B/音符, 唯一持有)   │\n\
             │ 音符总数:               {:>8}  ({:>6} 条音轨)          │\n\
-            │ track_midi_events:     {:>8} MB  ({} 条)               │\n\
             ├─────────────────────────────────────────────────────────┤\n\
             │ note_instances(三缓冲):                                │\n\
             │   writer 缓冲:         {:>8} MB  (cap={}, len={})      │\n\
@@ -50,8 +49,6 @@ impl RunnerInner {
             mem.editor.document_events_bytes / (1024 * 1024),
             mem.editor.track_notes_count,
             mem.editor.track_notes_entries,
-            mem.track_midi_events_bytes / (1024 * 1024),
-            mem.track_midi_events_entries,
             writer_total / (1024 * 1024),
             mem.note_instances_writer_cap,
             mem.note_instances_writer_len,

@@ -118,6 +118,7 @@ impl EditorData {
             };
             // 逐个按值定位即删（窗口二分，无全扫；每次重查保证同值多份取到不同副本）。
             let mut deleted = 0usize;
+            let mut deleted_notes: Vec<NoteEvent> = Vec::with_capacity(olds.len());
             for old in &olds {
                 let idx_opt = self
                     .document
@@ -127,7 +128,8 @@ impl EditorData {
                 let Some(idx) = idx_opt else {
                     continue;
                 };
-                if self.remove_note(track_id, idx).is_some() {
+                if let Some(removed) = self.remove_note(track_id, idx) {
+                    deleted_notes.push(removed);
                     deleted += 1;
                 }
             }
@@ -140,7 +142,28 @@ impl EditorData {
                 .as_mut()
                 .map(|doc| doc.batch_insert_notes(track_id, news))
                 .unwrap_or(0);
-            modified += deleted.min(inserted.max(deleted));
+            if inserted == 0 {
+                // DEBT-03 #120：插入失败（目标轨不存在/文档状态变化）时回滚已删项，
+                // 绝不让音符永久丢失，也不把本 op 计为成功。
+                let mut rolled_back = 0usize;
+                for old in &deleted_notes {
+                    if self
+                        .document
+                        .as_mut()
+                        .is_some_and(|doc| doc.insert_note(track_id, *old))
+                    {
+                        rolled_back += 1;
+                    }
+                }
+                tracing::error!(
+                    "MoveOp: 插入失败（track {track_id}），已回滚 {rolled_back}/{} 个已删音符",
+                    deleted_notes.len()
+                );
+                continue;
+            }
+            // 恒等式修正：旧写法 `deleted.min(inserted.max(deleted))` 恒等于 deleted，
+            // 误导读者以为考虑了插入数；此处显式按删除数计。
+            modified += deleted;
             dirty_tracks.insert(track_id);
         }
 

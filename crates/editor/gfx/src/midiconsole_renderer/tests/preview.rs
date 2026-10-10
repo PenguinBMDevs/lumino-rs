@@ -143,7 +143,9 @@ fn test_gpu_renders_preview_png() {
         set(&mut grid, GRID_ROWS - 1, c, ' ', fg_light, bg_bright);
     }
 
-    let rgba = renderer.render_to_rgba(&device, &queue, &grid, 40);
+    let rgba = renderer
+        .render_to_rgba(&device, &queue, &grid, 40)
+        .expect("GPU 读回应成功");
 
     // 统计非黑像素 / 明亮字形像素 / 底部亮条背景像素
     let mut non_black = 0usize;

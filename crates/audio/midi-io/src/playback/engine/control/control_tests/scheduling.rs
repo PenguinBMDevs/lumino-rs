@@ -14,8 +14,11 @@ fn test_event_scheduling() {
         0,
     );
 
-    // 当前轨有 2 个音符 = 4 个事件（NoteOn + NoteOff）
-    assert_eq!(engine.event_queue.len(), 4);
+    // PREF-006 A1：当前轨亦流式——驱动一帧到曲尾，2 音符应发出 4 条消息
+    // （NoteOn/NoteOff 各 2）
+    let mut messages = Vec::new();
+    engine.process_streaming_tracks(960.0, 0.0, &mut messages);
+    assert_eq!(messages.len(), 4, "2 音符应产生 NoteOn+NoteOff 各 2 条");
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn test_document_streaming_emits_events_in_order() {
     // wall-clock 语义，CI runner 卡顿会把全部音符误判为迟到（macOS 实测返回空
     // 事件列表），故此测试不走 wall-clock，改用固定 current_tick=10 / late_bound=0。
     let mut messages = Vec::new();
-    engine.process_other_tracks(10.0, 0.0, &mut messages);
+    engine.process_streaming_tracks(10.0, 0.0, &mut messages);
 
     // 收集所有 NoteOn/NoteOff 的 key 与类型，验证时间顺序
     let event_keys: Vec<_> = messages

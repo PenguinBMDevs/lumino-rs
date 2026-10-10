@@ -89,9 +89,10 @@ pub struct Voice {
     /// Index of the terminal stage.
     pub finished_idx: u32,
     /// Whether the voice is being trimmed for polyphony and must fade out
-    /// fast (XSynth's `ReleaseType::Kill`: 1 ms linear fade to zero) instead
-    /// of using its normal release envelope. A hard kill makes a sounding
-    /// voice vanish in one block - an audible click at the polyphony cap.
+    /// fast (REND-015 #115 / XSynth's `ReleaseType::Kill` counterpart:
+    /// 5 ms linear fade to zero) instead of using its normal release
+    /// envelope. A hard kill makes a sounding voice vanish in one block -
+    /// an audible click at the polyphony cap.
     pub fade_out: bool,
     /// Number of sample channels (1 = mono, 2 = stereo pair).
     pub channels: u32,

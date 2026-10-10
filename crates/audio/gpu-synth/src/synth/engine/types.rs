@@ -85,15 +85,78 @@ pub(crate) fn checkpoint_ok(checkpoint: &Option<RenderCheckpoint>) -> Result<(),
 pub(crate) const STATES_SYNC_EVERY: u32 = 1;
 
 /// Headroom between the polyphony trim target and the physical GPU pool:
-/// voices trimmed for polyphony fade out over 1 ms (one block), so the
-/// pool must be able to hold the active voices PLUS one block's worth of
-/// fading voices. `max_voices` stays the *active* polyphony target (and the
-/// trim threshold); the pool is sized 1.5x so a sudden black-MIDI storm
-/// fades everything out smoothly instead of hard-killing at the cap.
-/// The fading voices are pruned by the next readback (they end after the
-/// 1 ms fade), so the surplus is transient and the pool returns to
+/// voices trimmed for polyphony fade out over [`FADE_OUT_MS`] (5 ms), so the
+/// pool must be able to hold the active voices PLUS the fading ones.
+/// `max_voices` stays the *active* polyphony target (and the trim threshold);
+/// the pool is sized 1.5x so a sudden black-MIDI storm fades everything out
+/// smoothly instead of hard-killing at the cap. New fades are additionally
+/// bounded per block by [`MAX_TRIM_FADES_PER_BLOCK`], and
+/// [`trim_fade_budget_for`] clamps that budget into the fade slots for capped
+/// pools, so the surplus stays transient and the pool returns to
 /// `max_voices` when the storm passes.
 pub(crate) const FADE_SLOTS_FRACTION: usize = 2; // pool = max_voices * (1 + 1/FRACTION)
+
+/// 被裁剪声部的淡出时长（毫秒）。
+///
+/// 与 CPU 侧 fork 的 `KILL_FADE_SECS = 0.005`（REND-009 决策）对齐：
+/// 1 ms 淡出在密集裁剪下会叠加成"电锯音/噼啪"（REND-015 #115），
+/// 5 ms 线性衰减既消除瞬态，又能在短时间内结束声部、不积压尾巴。
+pub(crate) const FADE_OUT_MS: u64 = 5;
+
+/// 淡出时长对应的帧数（至少 1 帧，防止 0 时长）。
+#[inline]
+pub(crate) fn fade_frames(sample_rate: u32) -> u64 {
+    (sample_rate as u64 * FADE_OUT_MS / 1000).max(1)
+}
+
+/// 淡出是否已经播完（REND-015 #115）。
+///
+/// 只有播完的淡出声部才允许被直接 `ended`：5 ms 淡出可能跨块
+/// （小 buffer / 高采样率），在衰减中直接结束会硬切出 click。
+#[inline]
+pub(crate) fn fade_complete(
+    fade_out: bool,
+    release_at: u64,
+    global_frame: u64,
+    fade_frames: u64,
+) -> bool {
+    fade_out && release_at != u64::MAX && global_frame.saturating_sub(release_at) >= fade_frames
+}
+
+/// 每块最多新建的裁剪淡出组数（REND-015 #115）。
+///
+/// 端口级每键裁剪与块内每键裁剪共享此预算，超出部分留待后续块：把
+/// "同块批量淡出"摊成多块的小批量，避免密集淡出叠加成噼啪。128 组/块
+/// ≈ 16 组/ms @ 8 ms 块，5 ms 淡出窗口内约 80 组同时衰减。
+pub(crate) const MAX_TRIM_FADES_PER_BLOCK: usize = 128;
+
+/// 本块的有效裁剪淡出预算。
+///
+/// 不限全局池（`max_voices == 0`，实时 LGS 与 GPU 导出的既有配置）直接用
+/// [`MAX_TRIM_FADES_PER_BLOCK`]；有全局上限时不能超过 fade 槽位数
+/// （`max_voices / FADE_SLOTS_FRACTION`），否则预算本身会撑满槽位、逼出
+/// "槽位满 → 硬杀"路径。
+#[inline]
+pub(crate) fn trim_fade_budget_for(config: &SynthConfig) -> usize {
+    if config.max_voices == 0 {
+        MAX_TRIM_FADES_PER_BLOCK
+    } else {
+        MAX_TRIM_FADES_PER_BLOCK.min((config.max_voices / FADE_SLOTS_FRACTION).max(1))
+    }
+}
+
+/// 每键裁剪的迟滞余量（REND-015 #115）：触发阈值为 `cap + trim_hysteresis(cap)`，
+/// 避免在 cap 边界上每块小批量持续抢；触发后仍裁到 `cap`。
+#[inline]
+pub(crate) fn trim_hysteresis(cap: usize) -> usize {
+    (cap / 4).max(1)
+}
+
+/// 本块允许处理的裁剪组数：`need_free` 与剩余预算取小，超出部分留待下块。
+#[inline]
+pub(crate) fn trimmed_group_count(need_free: usize, budget_remaining: usize) -> usize {
+    need_free.min(budget_remaining)
+}
 
 /// Hard cap for the voice output buffer (per-voice output for one block).
 /// The wgpu/D3D12-style maximum buffer size is 2 GiB - 1; staying well

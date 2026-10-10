@@ -27,9 +27,6 @@ impl Host {
         root.editor.spatial.note_index_dirty = std::cell::Cell::new(true);
         root.editor.spatial.query_cache = std::cell::RefCell::new(Vec::new());
 
-        // MIDI 控制事件
-        root.playback.track_midi_events.clear();
-
         // 协作远端光标
         root.editor.remote_cursors.clear();
 

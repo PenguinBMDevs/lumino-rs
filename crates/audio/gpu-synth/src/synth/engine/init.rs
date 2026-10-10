@@ -179,6 +179,10 @@ impl GpuSynth {
             let _ = voice_chans_buf.write(&res.ctx.device, &res.ctx.queue, 0, &zero);
         }
 
+        // REND-015 #115: 每块 `apply_events` 开头会重置；这里只是给字段一个
+        // 合法初值（首块应用事件前不会有裁剪）。
+        let trim_fade_budget = trim_fade_budget_for(&config);
+
         let mut engine = Self {
             config,
             res,
@@ -217,6 +221,10 @@ impl GpuSynth {
             last_out: None,
             last_states: None,
             prev_voice_ids: Vec::new(),
+            scratch_voice_ids: Vec::new(),
+            mix_in_block: Vec::new(),
+            mix_events: Vec::new(),
+            mix_starts: Vec::new(),
             upload_params: Vec::new(),
             upload_states: Vec::new(),
             upload_env_stages: Vec::new(),
@@ -224,6 +232,7 @@ impl GpuSynth {
             note_counter: 0,
             voice_id_counter: 0,
             spawn_budget: vec![0; midi_channels * 128],
+            trim_fade_budget,
             active_notes: vec![0; midi_channels * 128],
             voice_templates: std::collections::HashMap::new(),
             states_sync_counter: 0,
@@ -301,6 +310,34 @@ impl GpuSynth {
     /// Unloads the current soundfont.
     pub fn unload_soundfont(&mut self) {
         self.sf = None;
+    }
+
+    /// 清空实时合成状态（文档切换、同布局轻量复位；REND-002 实时多端口）。
+    ///
+    /// 对齐 XSynth `reset_channel_state` 语义：清通道控制器/程序/弯音状态与
+    /// 全部声部/事件队列，保留引擎、音频流与已上传采样（不重建、不重开设备）。
+    pub fn reset_channel_state(&mut self) {
+        for c in &mut self.channels {
+            *c = ChannelState::new();
+        }
+        self.voices.clear();
+        for q in self.key_voices.iter_mut() {
+            q.clear();
+        }
+        self.spawn_budget.fill(0);
+        self.active_notes.fill(0);
+        self.pending_events.clear();
+        self.pending_mix_events.clear();
+        self.offline_events.clear();
+        self.offline_cursor = 0;
+        self.active_voice_count = 0;
+        self.prev_voice_ids.clear();
+        self.last_out = None;
+        self.last_states = None;
+        self.pending = None;
+        self.voice_templates.clear();
+        self.limiter_gain = 1.0;
+        self.limiter_tail.clear();
     }
 
     /// Returns the number of currently active voices.

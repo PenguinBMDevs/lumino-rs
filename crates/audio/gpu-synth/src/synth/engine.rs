@@ -41,10 +41,11 @@ use limiter::{limit_block, write_samples};
 use progress::ProgressBar;
 use types::{
     FADE_SLOTS_FRACTION, MAX_RENDER_FRAMES, MAX_VOICE_OUT_BYTES, PendingReadback,
-    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, report_progress,
-    spawn_budget_allows,
+    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, fade_complete,
+    fade_frames, report_progress, spawn_budget_allows, trim_fade_budget_for, trim_hysteresis,
+    trimmed_group_count,
 };
-use voice_alloc::{select_damper_release_groups, select_evictions};
+use voice_alloc::{order_port_key_evictions, select_damper_release_groups, select_evictions};
 
 pub use types::{RenderCheckpoint, RenderProgress, RenderProgressFn, RenderResult};
 
@@ -207,6 +208,14 @@ pub struct GpuSynth {
     /// Voice ids of the last uploaded voice list, in upload order; used to
     /// map the read-back states onto the current (possibly shrunk) list.
     prev_voice_ids: Vec<u32>,
+    /// 复用的 scratch：`prev_voice_ids` 的交换缓冲（PREF-006 B：避免每块 clone）
+    scratch_voice_ids: Vec<u32>,
+    /// 复用的 scratch：块内 mix 事件（PREF-006 B：避免每块 Vec 分配）
+    mix_in_block: Vec<(u64, u8, u8, u8)>,
+    /// 复用的 scratch：mix 事件 GPU 布局缓冲
+    mix_events: Vec<MixEvent>,
+    /// 复用的 scratch：mix 起始状态缓冲（定长 `MAX_MIDI_CHANNELS` 后转数组）
+    mix_starts: Vec<MixStart>,
     /// Reused per-block upload buffers (avoid re-allocating ~1.5 MB of
     /// voice parameters every block when the pool sits at the cap).
     upload_params: Vec<VoiceParams>,
@@ -230,6 +239,10 @@ pub struct GpuSynth {
     /// here dropped the NEWEST notes and broke dense passages (measured: 18%
     /// of a black MIDI's note-ons dropped at limit=4).
     spawn_budget: Vec<u32>,
+    /// 本块剩余的裁剪淡出预算（REND-015 #115）：端口级每键裁剪与块内
+    /// `trim_key_voices` 共享，每块在 `apply_events` 开头重置。超出预算的
+    /// 裁剪组留待后续块，避免同块批量淡出叠加成噼啪。
+    trim_fade_budget: usize,
     /// Per-(channel, key) count of active (not ended, not released) note
     /// groups, so `release_key` can bail out in O(1) when a note-off has no
     /// target - black-MIDI peaks fire hundreds of thousands of orphan

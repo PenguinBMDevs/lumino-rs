@@ -32,6 +32,17 @@ impl GpuNoteBuffer {
     /// 旧缓冲在替换引用时由 [`TrackedBuffer`] Drop 自动注销，无需手动 `sub_buffer`。
     pub(crate) fn grow(&mut self, required_capacity: usize) -> bool {
         puffin::profile_function!();
+        // DEBT-03 #120：超出硬件上限必须明确失败。旧实现里 `create_buffer` 不返回
+        // Result（wgpu 超限走 validation error 通道），grow 会"成功"返回 true，
+        // 调用方继续向旧的小 buffer 越界写 → wgpu 校验错误炸掉渲染线程。
+        if required_capacity > self.max_capacity {
+            tracing::error!(
+                "GpuNoteBuffer: 需要 {} 个实例，超过硬件上限 max_capacity {}，拒绝扩容",
+                required_capacity,
+                self.max_capacity
+            );
+            return false;
+        }
         let mut new_capacity = self
             .capacity
             .saturating_mul(Self::GROWTH_FACTOR)

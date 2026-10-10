@@ -2,59 +2,6 @@
 
 use crate::playback::{MidiMessage, MidiTrackEvent};
 
-/// REND-002：把消息的 MIDI 通道映射到合成层全局通道（端口来自来源轨道）。
-pub(super) fn map_message_port(message: &MidiMessage, port: u8) -> MidiMessage {
-    let map =
-        |ch: u16| -> u16 { lumino_midi_model::multi_port::track_global_channel(port, ch as u8) };
-    match message {
-        MidiMessage::NoteOn {
-            channel,
-            key,
-            velocity,
-        } => MidiMessage::NoteOn {
-            channel: map(*channel),
-            key: *key,
-            velocity: *velocity,
-        },
-        MidiMessage::NoteOff { channel, key } => MidiMessage::NoteOff {
-            channel: map(*channel),
-            key: *key,
-        },
-        MidiMessage::ControlChange {
-            channel,
-            controller,
-            value,
-        } => MidiMessage::ControlChange {
-            channel: map(*channel),
-            controller: *controller,
-            value: *value,
-        },
-        MidiMessage::ProgramChange { channel, program } => MidiMessage::ProgramChange {
-            channel: map(*channel),
-            program: *program,
-        },
-        MidiMessage::PitchBend { channel, value } => MidiMessage::PitchBend {
-            channel: map(*channel),
-            value: *value,
-        },
-        MidiMessage::ChannelPressure { channel, pressure } => MidiMessage::ChannelPressure {
-            channel: map(*channel),
-            pressure: *pressure,
-        },
-        MidiMessage::PolyPressure {
-            channel,
-            key,
-            pressure,
-        } => MidiMessage::PolyPressure {
-            channel: map(*channel),
-            key: *key,
-            pressure: *pressure,
-        },
-        // 派生消息（模态切换）不携带来源轨道端口，原样保留。
-        MidiMessage::PercussionMode { .. } => message.clone(),
-    }
-}
-
 /// 同 tick 控制消息排序秩：RPN/NRPN 参数选择必须先于 DataEntry 生效。
 ///
 /// - `0`：参数选择（CC98/99 = NRPN LSB/MSB，CC100/101 = RPN LSB/MSB）
@@ -73,7 +20,7 @@ fn control_order_rank(message: &MidiMessage) -> u8 {
 
 /// 按 tick 稳定排序 MIDI 事件；同 tick 内保证“选择 → 其他 → DataEntry”的次序。
 ///
-/// `midi_events` 由多条来源拼装（automation lane / 预加载事件 / ProgramChange），
+/// `midi_events` 由多条来源拼装（automation lane / document ProgramChange），
 /// 跨 lane 汇总会按 lane 创建顺序重排同 tick 事件——例如文件先出现 NRPN 时，
 /// CC6 lane 可能排在 RPN 的 CC101/100 lane 之前，导致 DataEntry 写到上一次
 /// 选择的参数上。此处在同 tick 内施加最小次序约束；不同 tick 与无关消息的

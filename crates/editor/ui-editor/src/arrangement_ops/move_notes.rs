@@ -162,17 +162,25 @@ impl Editor {
         let Some(doc) = &editor_data.document else {
             return (indices_by_source, moved_by_dest);
         };
-        for track_idx in 0..doc.track_count() {
+        let track_count = doc.track_count();
+        if track_count == 0 {
+            return (indices_by_source, moved_by_dest);
+        }
+        for track_idx in 0..track_count {
             let visual_pos = editor_data
                 .visual_position_of(track_idx)
                 .unwrap_or(track_idx);
             for (i, note) in editor_data.track_notes(track_idx).iter().enumerate() {
                 if selection.contains(visual_pos as u16, note.start_tick, note.key) {
-                    let dest_visual = (visual_pos as i32 + delta_tracks).max(0) as usize;
+                    // DEBT-03 #120：目标视觉位必须钳制到文档轨数内。旧实现越界时
+                    // `unwrap_or(dest_visual)` 会指向不存在的文档轨 → insert 失败静默丢音。
+                    let dest_visual =
+                        ((visual_pos as i32 + delta_tracks).max(0) as usize).min(track_count - 1);
                     let dest_track = editor_data
                         .track_visual_order
                         .get(dest_visual)
                         .copied()
+                        .filter(|t| *t < track_count)
                         .unwrap_or(dest_visual);
                     let new_tick = (note.start_tick as f64 + delta_ticks as f64).max(0.0) as f32;
                     let moved = Note::from_raw(

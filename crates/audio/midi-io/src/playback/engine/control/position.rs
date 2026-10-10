@@ -1,6 +1,7 @@
 //! 位置/跳转/同步
 
-use super::core::{PendingNoteOff, PlaybackEngine};
+use super::core::PlaybackEngine;
+use super::loop_cache::scan_pending_offs;
 
 impl PlaybackEngine {
     /// 获取当前tick
@@ -12,10 +13,9 @@ impl PlaybackEngine {
     /// 跳转
     pub fn seek(&mut self, tick: f32) {
         self.seek_playback(tick);
-        // 重设游标到 seek_tick 位置
+        // 重设全部轨游标到 seek_tick 位置（PREF-006 A1：当前轨亦流式，
+        // 无预建队列需要重建）
         self.reset_cursors_to(tick);
-        // 重建当前轨事件队列
-        self.rebuild_queue_from_current_track(Some(tick));
         // 模态状态追齐：把 seek 点之前的最后 CC/PC/PB/RPN/打击乐模态状态排队，
         // 由命令层 flush 到输出（暂停中 seek 也发，保证按 Play 时状态正确）。
         // `compute_chase` 同时返回该点的打击乐模态，用于同步引擎内部跟踪器
@@ -32,23 +32,12 @@ impl PlaybackEngine {
         };
         let seek_tick = tick as u32;
         for track_idx in 0..self.track_states.len() {
-            if track_idx == self.current_track as usize {
-                continue;
-            }
-            let notes = doc.track_notes(track_idx);
-            let state = &mut self.track_states[track_idx];
-            state.pending_offs.clear();
             // ChunkedList::partition_point(tick) = 第一个 tick >= seek_tick 的索引
             // （等价于旧 `notes.partition_point(|n| n.start_tick < seek_tick)`）
-            state.note_cursor = notes.partition_point(seek_tick);
-            for (note_idx, note) in notes.iter().enumerate().take(state.note_cursor) {
-                if note.end_tick >= seek_tick {
-                    state.pending_offs.push(PendingNoteOff {
-                        end_tick: note.end_tick,
-                        note_index: note_idx,
-                    });
-                }
-            }
+            let (cursor, pending_offs) = scan_pending_offs(doc.track_notes(track_idx), seek_tick);
+            let state = &mut self.track_states[track_idx];
+            state.note_cursor = cursor;
+            state.pending_offs = pending_offs;
         }
         // 重置控制事件游标（ChunkedList 分块二分）
         self.control_event_cursor = doc.control_events.partition_point(seek_tick);
