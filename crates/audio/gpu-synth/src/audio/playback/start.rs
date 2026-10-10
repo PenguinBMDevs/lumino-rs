@@ -110,7 +110,6 @@ impl AudioPlayback {
         let thread_stop = stop_flag.clone();
         let thread_stats = stats.clone();
         let thread_admission = Arc::clone(&admission);
-        let thread_flush_epoch = Arc::clone(&flush_epoch);
         let thread = thread::Builder::new()
             .name("lumino-gpu-synth-render".into())
             .spawn(move || {
@@ -133,9 +132,10 @@ impl AudioPlayback {
                 // REND-016 #139：运行时声部上限随块周期缩放（每声部每块 ≈1µs，
                 // 与块大小无关——512 块 8ms 预算下 12288 声部 ≈12.5ms 必然饱和）。
                 let (overload_limit, emergency_limit) = drain::voice_limits_for(block_period);
-                // 声部数即时升级阈值 = Emergency 池满线（上限 + 50% 淡出槽）：
-                // 声部超过它说明保护必须立即生效，不等证据/EMA。
-                let escalate_voices = emergency_limit + emergency_limit / 2;
+                // 声部数即时升级阈值 = Overload 池满线（上限 + 50% 淡出槽）：
+                // 只有真正超出可负担规模的大爆点才跳过证据/EMA 直入 Emergency
+                // （小爆点走负载 EMA 的常规升级路径，不再被误触发）。
+                let escalate_voices = overload_limit + overload_limit / 2;
 
                 // If a full event stream is supplied, the engine consumes it
                 // internally by `global_frame` (no per-event channel traffic)
@@ -285,24 +285,24 @@ impl AudioPlayback {
                             }
                         });
                     if let Some(level) = level_change {
-                        // REND-016 #139：过载重同步——**入口**全清（含释放尾巴）+ 丢弃
-                        // 旧音频；**出口**只清"风暴期出生"的余波（不动新段落、不动音频
-                        // 缓冲），避免风暴余波叠加到后面段落（现场"打击乐/砸琴被冲掉"）。
+                        // REND-016 #139：过载重同步——**入口**只降级保护（现场反馈：
+                        // "丢旧音频"造成可听跳跃、"淡出全部声部"造成暴力切断，比糊
+                        // 过去更难接受）；**出口**只清"风暴期出生"的余波（不动新段落、
+                        // 不动音频缓冲），避免风暴余波叠加到后面段落。
                         let entering = matches!(level, drain::GovernorLevel::Emergency)
                             && !matches!(level_before, drain::GovernorLevel::Emergency);
                         let leaving = !matches!(level, drain::GovernorLevel::Emergency)
                             && matches!(level_before, drain::GovernorLevel::Emergency);
                         if entering {
-                            let faded = synth.fade_all_voices();
-                            thread_flush_epoch.fetch_add(1, Ordering::Relaxed);
+                            // 不丢弃音频、不淡出声部：仅施加运行时声部上限——
+                            // trim 保留最老的声部（正在演奏的乐句），爆点新音符
+                            // 被裁掉，音乐"糊过去"而不是被切断。
                             tracing::warn!(
-                                "[RESYNC] 入口全清：淡出 {} 个声部（含尾巴）+ 丢弃旧音频（L{}）",
-                                faded,
+                                "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
                                 level as u8
                             );
                             eprintln!(
-                                "[RESYNC] 入口全清：淡出 {} 个声部（含尾巴）+ 丢弃旧音频（L{}）",
-                                faded,
+                                "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
                                 level as u8
                             );
                         } else if leaving {
