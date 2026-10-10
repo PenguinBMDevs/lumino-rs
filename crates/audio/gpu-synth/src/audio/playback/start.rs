@@ -236,9 +236,22 @@ impl AudioPlayback {
                     // 运行时声部上限）。收缩声部上限让块渲染成本 ∝ 声部数地下降，
                     // 是消除"卡顿期间持续欠载静音"的关键手段。
                     let level_before = governor.level();
-                    if let Some(level) =
-                        governor.observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
-                    {
+                    let level_change = governor
+                        .observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
+                        .or_else(|| {
+                            // REND-016 #139：声部数即时升级——证据/EMA 要等 ~100ms，
+                            // 而声部爆掉的第一块就可能被 2~3 万声部拖成秒级巨块
+                            // （缓速根因）。超阈值时跳过等待直入 Emergency（下一块
+                            // 就 trim 到 8192）。
+                            if !matches!(governor.level(), drain::GovernorLevel::Emergency)
+                                && synth.voice_count() > drain::VOICE_ESCALATE_VOICES
+                            {
+                                Some(governor.force_emergency())
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(level) = level_change {
                         // REND-016 #139：过载重同步——**入口**全清（含释放尾巴）+ 丢弃
                         // 旧音频；**出口**只清"风暴期出生"的余波（不动新段落、不动音频
                         // 缓冲），避免风暴余波叠加到后面段落（现场"打击乐/砸琴被冲掉"）。

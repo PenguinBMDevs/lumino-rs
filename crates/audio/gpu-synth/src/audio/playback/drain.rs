@@ -67,6 +67,10 @@ const EMERGENCY_NOTE_ON_BUDGET: usize = 2_048;
 const OVERLOAD_VOICE_LIMIT: usize = 16_384;
 /// Emergency 级运行时声部上限（保实时优先，比 Overload 更严格）。
 const EMERGENCY_VOICE_LIMIT: usize = 8_192;
+/// 声部数即时升级阈值（REND-016 #139）：声部超过此值时**跳过证据/EMA 等待**
+/// 直接进 Emergency——保护必须在"声部爆掉的第一块"生效，否则单块耗时失控
+/// （现场 1.4s 巨块 → 缓速）。
+pub(crate) const VOICE_ESCALATE_VOICES: usize = 12_000;
 // 编译期不变量：Emergency 必须比 Overload 更严格。
 const _: () = assert!(OVERLOAD_VOICE_LIMIT > EMERGENCY_VOICE_LIMIT);
 
@@ -139,6 +143,12 @@ impl Governor {
     /// 当前级别。
     pub(crate) fn level(&self) -> GovernorLevel {
         self.level
+    }
+
+    /// 声部数超阈值的即时升级（REND-016 #139）：跳过证据/EMA 等待直入
+    /// Emergency（冷却期也允许——声部爆掉的第一块就要 trim）。
+    pub(crate) fn force_emergency(&mut self) -> GovernorLevel {
+        self.set_level(GovernorLevel::Emergency)
     }
 
     /// 本块新鲜 NoteOn 的准入预算（`None` = 不限）。

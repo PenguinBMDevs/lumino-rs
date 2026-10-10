@@ -268,6 +268,20 @@ fn test_drain_emergency_escalates_cap() {
     );
 }
 
+/// 声部数即时升级：`force_emergency` 跳过证据/EMA 等待直入 Emergency。
+#[test]
+fn test_governor_force_emergency_escalates_immediately() {
+    let mut governor = Governor::new();
+    assert_eq!(governor.level(), GovernorLevel::Normal);
+    assert_eq!(governor.force_emergency(), GovernorLevel::Emergency);
+    assert_eq!(governor.level(), GovernorLevel::Emergency);
+    assert_eq!(
+        governor.note_on_budget(),
+        Some(EMERGENCY_NOTE_ON_BUDGET),
+        "即时升级后应施加 Emergency 准入预算"
+    );
+}
+
 /// Emergency 级的准入预算：新鲜 NoteOn 超预算被丢，NoteOff 不受影响。
 #[test]
 fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
