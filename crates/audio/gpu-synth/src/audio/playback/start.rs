@@ -2,7 +2,14 @@ use super::config::negotiate_config;
 use super::*;
 
 impl AudioPlayback {
-    pub fn start(mut synth: GpuSynth, device: Option<cpal::Device>) -> Result<Self, SynthError> {
+    /// Starts a realtime playback session.
+    ///
+    /// `nps_gate_enabled`：LGS 防爆闸开关（发送端软 NPS 闸；关闭时恒放行）。
+    pub fn start(
+        mut synth: GpuSynth,
+        device: Option<cpal::Device>,
+        nps_gate_enabled: bool,
+    ) -> Result<Self, SynthError> {
         let engine_rate = synth.config().sample_rate;
         let channels = synth.config().channels.channel_count();
         let block = synth.config().block_size;
@@ -28,8 +35,9 @@ impl AudioPlayback {
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
         let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
         let stop_flag = Arc::new(AtomicBool::new(false));
-        // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用）。
-        let admission = Arc::new(AdmissionState::new());
+        // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
+        // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
+        let admission = Arc::new(AdmissionState::new(nps_gate_enabled));
 
         // Stats shared between the callback, the render thread and the caller.
         let stats = PlaybackStatsReader {

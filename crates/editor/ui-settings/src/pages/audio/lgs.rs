@@ -10,7 +10,9 @@ use super::super::super::components::constants::{
     SPACING_CONTENT, SPACING_ICON_LABEL, SPACING_MAIN, TEXT_SIZE_CONTENT,
 };
 use super::super::super::components::styles::create_content_text_style;
-use super::super::super::components::with_setting_tooltip_inline;
+use super::super::super::components::{
+    with_setting_tooltip_inline, with_setting_tooltip_inline_action,
+};
 use crate::SettingsPanel;
 
 /// 渲染 LGS (GPU) 选项
@@ -122,6 +124,27 @@ pub(super) fn render_lgs_options<'a>(
             })
             .step(1024.0_f32)
             .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // 防爆闸（发送端软 NPS 闸，REND-016 #139）：默认开；关闭后过载会周期性静音，
+    // 供用户 A/B「连续但变薄」与「断续」两种降级体感。
+    col = col.push(
+        row![
+            iced_widget::Checkbox::new(settings.synth.lgs_soft_nps_gate)
+                .on_toggle(|on| Message::Settings(crate::Event::LgsSoftNpsGateChanged(on))),
+            with_setting_tooltip_inline_action(
+                text(t.lgs_nps_gate)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.lgs_nps_gate_hint,
+                Message::Settings(crate::Event::LgsSoftNpsGateChanged(
+                    !settings.synth.lgs_soft_nps_gate,
+                )),
+            ),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),

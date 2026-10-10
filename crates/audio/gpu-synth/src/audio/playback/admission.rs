@@ -2,18 +2,23 @@
 //!
 //! 黑 MIDI 洪峰实测可达 ~1.8M 事件/s，远超管线（drain/引擎）处理上限；渲染端
 //! 冲洗只能清掉"已积压"的事件，无法阻止下一块周期又涌入几十万条超龄事件 →
-//! 表现为周期性的"出声一下 → 自然衰减 → 静音"。本闸在**发送端**把 NoteOn
-//! 限速成细流（NoteOff / 状态类事件全放行），使渲染端始终面对可按时处理的
-//! 事件量。速率由渲染线程的 Governor 级别驱动：
+//! 表现为周期性的"出声一下 → 自然衰减 → 静音"。
 //!
+//! 本闸在**发送端**限速 NoteOn（NoteOff / 状态类事件全放行），策略与 CPU
+//! （xsynth-Lumino `EmergencyGate`）对齐：**令牌桶 + 突发容量**——
+//! 桶容量 = 50ms 的音符量，桶满时一批和弦/重音**成组通过**，持续超量才逐个
+//! 拒绝；被拒 NoteOn 的 NoteOff 会被**配对抵消**（防挂音，顺带减少事件量）。
+//!
+//! 速率由渲染线程的 Governor 级别驱动：
 //! - Normal / High：不限速（正常素材零影响）；
-//! - Overload：≈ [`OVERLOAD_NPS`] 音符/s；
-//! - Emergency：≈ [`EMERGENCY_NPS`] 音符/s（保连续优先）。
+//! - Overload：≈ [`OVERLOAD_NPS`] 音符/s；Emergency：≈ [`EMERGENCY_NPS`] 音符/s；
+//! - 用户开关（LGS 防爆闸，默认开）关闭时恒放行、零丢音路径。
 
 use super::*;
 
+use std::sync::Mutex;
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicI64, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, Ordering};
 
 /// 进程内单调时钟（微秒）。
 fn now_us() -> i64 {
@@ -29,32 +34,79 @@ const EMERGENCY_NPS: i64 = 8_000;
 /// Governor 级别阈值（数值与 `drain::GovernorLevel` 对齐）。
 const LEVEL_OVERLOAD: u64 = 2;
 const LEVEL_EMERGENCY: u64 = 3;
-/// 首次放行用的哨兵：`now - MIN/2` 恒为巨大值。
-const LAST_SENTINEL: i64 = i64::MIN / 2;
+/// 突发容量：50ms 的音符量（CPU 为 100ms，这里略收紧以减少块耗时尖峰）。
+const BURST_MS: i64 = 50;
+/// 每个音符的毫令牌数（定点，1 音符 = 1000 毫令牌）。
+const TOKENS_PER_NOTE: i64 = 1_000;
+/// (channel, key) 配对表大小（全局通道 256 × 键 128）。
+const PAIR_SLOTS: usize = 256 * 128;
 
-/// 发送端准入状态（渲染线程发布级别，发送端应用限速）。
+/// 级别 → 准入速率（0 = 不限速）。
+fn rate_for_level(level: u64) -> i64 {
+    if level >= LEVEL_EMERGENCY {
+        EMERGENCY_NPS
+    } else if level >= LEVEL_OVERLOAD {
+        OVERLOAD_NPS
+    } else {
+        0
+    }
+}
+
+/// 令牌桶内部状态（毫令牌定点数）。
+struct BucketState {
+    tokens_milli: i64,
+    burst_milli: i64,
+    last_us: i64,
+}
+
+/// 发送端准入状态（渲染线程发布级别，发送端应用令牌桶限速）。
 pub(crate) struct AdmissionState {
+    /// 用户开关（LGS 防爆闸；false = 恒放行）。
+    enabled: AtomicBool,
     /// 当前 Governor 级别（渲染线程每块发布；0 = Normal）。
     level: AtomicU64,
-    /// 上一次放行的 NoteOn 时刻（微秒）。
-    last_note_on_us: AtomicI64,
+    /// 令牌桶。
+    bucket: Mutex<BucketState>,
     /// 被闸丢弃的 NoteOn 累计数。
     dropped: AtomicU64,
+    /// 被丢弃 NoteOn 的配对计数（(ch,key) → 待抵消的 NoteOff 数）。
+    skipped: Box<[AtomicU32]>,
 }
 
 impl AdmissionState {
-    /// 创建（默认 Normal = 不限速）。
-    pub(crate) fn new() -> Self {
+    /// 创建（`enabled` = 用户开关；默认 Normal = 不限速）。
+    pub(crate) fn new(enabled: bool) -> Self {
         Self {
+            enabled: AtomicBool::new(enabled),
             level: AtomicU64::new(0),
-            last_note_on_us: AtomicI64::new(LAST_SENTINEL),
+            bucket: Mutex::new(BucketState {
+                tokens_milli: 0,
+                burst_milli: 0,
+                last_us: 0,
+            }),
             dropped: AtomicU64::new(0),
+            skipped: (0..PAIR_SLOTS).map(|_| AtomicU32::new(0)).collect(),
         }
     }
 
     /// 渲染线程发布当前治理级别。
+    ///
+    /// 级别变化时重置令牌桶为满突发（与 CPU `EmergencyGate::set` 同语义），
+    /// 避免携带旧的空桶导致启用瞬间完全静音。
     pub(crate) fn set_level(&self, level: u64) {
-        self.level.store(level, Ordering::Relaxed);
+        let old = self.level.swap(level, Ordering::Relaxed);
+        if old != level {
+            let rate = rate_for_level(level);
+            let mut b = self.bucket.lock().unwrap_or_else(|e| e.into_inner());
+            b.burst_milli = rate.max(0).saturating_mul(BURST_MS);
+            b.tokens_milli = b.burst_milli;
+            b.last_us = now_us();
+        }
+    }
+
+    /// 用户开关状态。
+    pub(crate) fn enabled(&self) -> bool {
+        self.enabled.load(Ordering::Relaxed)
     }
 
     /// 当前级别。
@@ -67,42 +119,65 @@ impl AdmissionState {
         self.dropped.load(Ordering::Relaxed)
     }
 
-    /// 按给定时刻判定是否放行一个 NoteOn（纯时间参数，便于单测）。
+    /// 按给定时刻判定是否放行一个 NoteOn（纯令牌桶，不含配对；便于单测）。
     ///
-    /// Normal/High 恒放行；Overload/Emergency 按最小间隔（1/rate 秒）放行，
-    /// 间隔不足则丢弃并计数。时间戳用 CAS 推进，多发送端共享同一状态。
+    /// 未启用 / Normal / High 恒放行；Overload / Emergency 下：桶满时一批
+    /// 成组通过，持续超量则按速率补充（µs 粒度）。
     pub(crate) fn allow_note_on_at(&self, now_us: i64) -> bool {
-        let rate = match self.level() {
-            l if l >= LEVEL_EMERGENCY => EMERGENCY_NPS,
-            l if l >= LEVEL_OVERLOAD => OVERLOAD_NPS,
-            _ => return true,
-        };
-        let min_gap = 1_000_000 / rate;
-        let mut last = self.last_note_on_us.load(Ordering::Relaxed);
-        loop {
-            if now_us.saturating_sub(last) < min_gap {
-                self.dropped.fetch_add(1, Ordering::Relaxed);
-                return false;
-            }
-            match self.last_note_on_us.compare_exchange_weak(
-                last,
-                now_us,
-                Ordering::Relaxed,
-                Ordering::Relaxed,
-            ) {
-                Ok(_) => return true,
-                Err(current) => last = current,
-            }
+        if !self.enabled() {
+            return true;
+        }
+        let rate = rate_for_level(self.level());
+        if rate <= 0 {
+            return true;
+        }
+        let mut b = self.bucket.lock().unwrap_or_else(|e| e.into_inner());
+        let elapsed = now_us.saturating_sub(b.last_us);
+        if elapsed > 0 {
+            b.tokens_milli = (b.tokens_milli + elapsed * rate / 1000).min(b.burst_milli);
+            b.last_us = now_us;
+        }
+        if b.tokens_milli >= TOKENS_PER_NOTE {
+            b.tokens_milli -= TOKENS_PER_NOTE;
+            true
+        } else {
+            false
         }
     }
 
-    /// 放行判定（真实时钟）+ 限频 `[NPS-GATE]` 告警。
-    pub(crate) fn allow_note_on(&self) -> bool {
+    /// 真实时钟放行判定 + 丢弃计数 + 配对记录 + 限频告警。
+    pub(crate) fn note_on_allowed(&self, channel: u8, key: u8) -> bool {
         let allowed = self.allow_note_on_at(now_us());
-        if !allowed {
-            self.log_gate_rate_limited();
+        if allowed {
+            return true;
         }
-        allowed
+        self.dropped.fetch_add(1, Ordering::Relaxed);
+        let slot = channel as usize * 128 + key as usize;
+        if let Some(counter) = self.skipped.get(slot) {
+            let _ = counter.fetch_add(1, Ordering::Relaxed);
+        }
+        self.log_gate_rate_limited();
+        false
+    }
+
+    /// NoteOff（或 vel=0 的 NoteOn）配对抵消。
+    ///
+    /// 若对应 NoteOn 曾被丢弃，则吞掉该 NoteOff（返回 `true`），避免向引擎
+    /// 发送永远不会发声的 NoteOff（CPU 同语义）。
+    pub(crate) fn note_off_paired(&self, channel: u8, key: u8) -> bool {
+        let slot = channel as usize * 128 + key as usize;
+        let Some(counter) = self.skipped.get(slot) else {
+            return false;
+        };
+        let mut cur = counter.load(Ordering::Relaxed);
+        while cur > 0 {
+            match counter.compare_exchange_weak(cur, cur - 1, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => return true,
+                Err(actual) => cur = actual,
+            }
+        }
+        false
     }
 
     fn log_gate_rate_limited(&self) {
@@ -130,7 +205,8 @@ impl AdmissionState {
 /// REND-016 #139：实时事件注入器（mpsc 发送端 + 发送端准入闸）。
 ///
 /// 所有 MIDI 事件经此进入渲染线程：入队时盖墙钟时间戳；NoteOn（vel>0）在
-/// Overload/Emergency 下受限速闸约束，NoteOff / 状态类事件永不限流。
+/// Overload/Emergency 下受令牌桶限速（成组放行）；被拒 NoteOn 的 NoteOff
+/// 被配对吞掉；其余事件全放行。
 #[derive(Clone)]
 pub struct EventSender {
     tx: mpsc::Sender<StampedEvent>,
@@ -138,11 +214,11 @@ pub struct EventSender {
 }
 
 impl EventSender {
-    /// 构造一个独立注入器（自带未连接治理器的准入状态；测试/工具用）。
+    /// 构造一个独立注入器（自带准入状态；测试/工具用；默认启用闸）。
     pub fn new(tx: mpsc::Sender<StampedEvent>) -> Self {
         Self {
             tx,
-            admission: Arc::new(AdmissionState::new()),
+            admission: Arc::new(AdmissionState::new(true)),
         }
     }
 
@@ -153,10 +229,17 @@ impl EventSender {
 
     /// 发送一个 MIDI 事件（NoteOn 受限速闸约束；其余全放行）。
     pub fn send(&self, channel: u8, event: MidiEvent) {
-        if let MidiEvent::NoteOn { vel, .. } = &event
-            && *vel > 0
-            && !self.admission.allow_note_on()
-        {
+        // 闸判定：true = 本次事件被拦截（NoteOn 限速丢弃 / NoteOff 配对抵消）。
+        let gated_out = match &event {
+            MidiEvent::NoteOn { key, vel } if *vel > 0 => {
+                !self.admission.note_on_allowed(channel, *key)
+            }
+            MidiEvent::NoteOff { key } => self.admission.note_off_paired(channel, *key),
+            // vel == 0 的 NoteOn 与 NoteOff 同语义（配对抵消）。
+            MidiEvent::NoteOn { key, .. } => self.admission.note_off_paired(channel, *key),
+            _ => false,
+        };
+        if gated_out {
             return;
         }
         let _ = self.tx.send((channel, event, Instant::now()));
@@ -167,10 +250,16 @@ impl EventSender {
 mod tests {
     use super::*;
 
-    /// Normal/High 级别不限速（正常素材零影响）。
+    /// 开关关闭 / Normal / High：恒放行（正常素材零影响）。
     #[test]
-    fn gate_is_open_below_overload() {
-        let s = AdmissionState::new();
+    fn gate_is_open_when_disabled_or_below_overload() {
+        let disabled = AdmissionState::new(false);
+        disabled.set_level(3);
+        for _ in 0..10_000 {
+            assert!(disabled.allow_note_on_at(0), "关闭开关时不得限速");
+        }
+
+        let s = AdmissionState::new(true);
         for i in 0..100 {
             assert!(s.allow_note_on_at(i), "Normal 下不得限速");
         }
@@ -181,77 +270,115 @@ mod tests {
         assert_eq!(s.dropped(), 0);
     }
 
-    /// Overload：最小间隔 31us（32k/s）；间隔不足则丢弃并计数。
+    /// Overload：50ms 突发成组放行，之后按 32k/s 补充。
     #[test]
-    fn gate_enforces_overload_rate() {
-        let s = AdmissionState::new();
+    fn gate_admits_burst_then_enforces_rate() {
+        let s = AdmissionState::new(true);
         s.set_level(2);
-        assert!(s.allow_note_on_at(1_000_000));
-        assert!(!s.allow_note_on_at(1_000_010), "31us 内应被限");
-        assert!(s.allow_note_on_at(1_000_040), "超过间隔应放行");
+        let burst_notes = OVERLOAD_NPS * BURST_MS / 1000; // 1600
+        for i in 0..burst_notes {
+            assert!(s.allow_note_on_at(1_000_000), "突发内第 {i} 个应放行");
+        }
+        assert!(!s.allow_note_on_at(1_000_000), "突发耗尽后应拒绝");
+        // 1ms 补充 32 个（32k/s）
+        let mut allowed = 0;
+        for _ in 0..100 {
+            if s.allow_note_on_at(1_001_000) {
+                allowed += 1;
+            }
+        }
+        assert_eq!(allowed, 32, "1ms 应恰好补充 32 个");
+    }
+
+    /// Emergency 更严格：突发 400，补充 8/ms。
+    #[test]
+    fn gate_emergency_is_stricter() {
+        let s = AdmissionState::new(true);
+        s.set_level(3);
+        let burst_notes = EMERGENCY_NPS * BURST_MS / 1000; // 400
+        for _ in 0..burst_notes {
+            assert!(s.allow_note_on_at(1_000_000));
+        }
+        assert!(!s.allow_note_on_at(1_000_000));
+        let mut allowed = 0;
+        for _ in 0..100 {
+            if s.allow_note_on_at(1_001_000) {
+                allowed += 1;
+            }
+        }
+        assert_eq!(allowed, 8);
+    }
+
+    /// 级别变化时令牌桶重置为满突发（避免携带空桶）。
+    #[test]
+    fn level_change_resets_bucket() {
+        let s = AdmissionState::new(true);
+        s.set_level(3);
+        let burst_notes = EMERGENCY_NPS * BURST_MS / 1000;
+        for _ in 0..burst_notes {
+            assert!(s.allow_note_on_at(1_000_000));
+        }
+        assert!(!s.allow_note_on_at(1_000_000), "桶已空");
+        s.set_level(2); // 升级恢复：重置为 Overload 满桶
+        assert!(s.allow_note_on_at(1_000_000), "级别变化应重置满桶");
+    }
+
+    /// 配对抵消：被丢 NoteOn 的 NoteOff 被吞掉，未配对的 NoteOff 正常放行。
+    #[test]
+    fn skipped_note_on_pairs_its_note_off() {
+        let s = AdmissionState::new(true);
+        s.set_level(3);
+        // 清空桶且不随时间补充 → 下一个 NoteOn 必被丢（确定性）
+        {
+            let mut b = s.bucket.lock().unwrap_or_else(|e| e.into_inner());
+            b.tokens_milli = 0;
+            b.last_us = i64::MAX;
+        }
+        assert!(!s.note_on_allowed(0, 60), "桶空时 NoteOn 应被丢");
+        assert!(s.note_off_paired(0, 60), "对应 NoteOff 应被吞掉");
+        assert!(!s.note_off_paired(0, 60), "只有一个待配对");
+        assert!(!s.note_off_paired(0, 61), "未丢过的键不受影响");
         assert_eq!(s.dropped(), 1);
     }
 
-    /// Emergency：最小间隔 125us（8k/s），比 Overload 更严格。
+    /// 发送器端到端：仅真实 NoteOn 受闸；配对的 NoteOff 被吞；其余全放行。
     #[test]
-    fn gate_emergency_is_stricter() {
-        let s = AdmissionState::new();
-        s.set_level(3);
-        assert!(s.allow_note_on_at(1_000_000));
-        assert!(!s.allow_note_on_at(1_000_100));
-        assert!(s.allow_note_on_at(1_000_130));
-        // 同样的时间差在 Overload 下会放行，证明 Emergency 更严格
-        let o = AdmissionState::new();
-        o.set_level(2);
-        assert!(o.allow_note_on_at(1_000_000));
-        assert!(o.allow_note_on_at(1_000_100));
-    }
-
-    /// 发送器：Emergency 下 NoteOn 受闸，NoteOff / vel=0 / 状态事件全放行。
-    #[test]
-    fn event_sender_gates_only_real_note_on() {
+    fn event_sender_gates_note_on_and_swallows_paired_note_off() {
         let (tx, rx) = mpsc::channel::<StampedEvent>();
         let sender = EventSender::new(tx);
         sender.admission.set_level(3);
+        {
+            let mut b = sender
+                .admission
+                .bucket
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            b.tokens_milli = 0;
+            b.last_us = i64::MAX;
+        }
 
-        // 把上次放行时刻推到未来 → 下一个 NoteOn 必被限（确定性，不依赖真实时钟）
-        sender
-            .admission
-            .last_note_on_us
-            .store(i64::MAX, Ordering::Relaxed);
-        sender.send(0, MidiEvent::NoteOn { key: 60, vel: 100 });
-        sender.send(0, MidiEvent::NoteOff { key: 60 });
-        sender.send(0, MidiEvent::NoteOn { key: 61, vel: 0 });
+        sender.send(0, MidiEvent::NoteOn { key: 60, vel: 100 }); // 被丢
+        sender.send(0, MidiEvent::NoteOff { key: 60 }); // 配对吞掉
+        sender.send(0, MidiEvent::NoteOff { key: 61 }); // 放行
         sender.send(
             0,
             MidiEvent::ControlChange {
                 controller: 64,
                 value: 0,
             },
-        );
+        ); // 放行
+        sender.send(0, MidiEvent::NoteOn { key: 62, vel: 0 }); // vel=0 放行
 
         let mut got = Vec::new();
         while let Ok(ev) = rx.try_recv() {
             got.push(ev.1);
         }
-        assert_eq!(got.len(), 3, "仅真实 NoteOn 被限速丢弃");
-        assert!(matches!(got[0], MidiEvent::NoteOff { key: 60 }));
-        assert!(matches!(got[1], MidiEvent::NoteOn { key: 61, vel: 0 }));
+        assert_eq!(got.len(), 3, "被丢 NoteOn 与其配对 NoteOff 均不入队");
+        assert!(matches!(got[0], MidiEvent::NoteOff { key: 61 }));
         assert!(matches!(
-            got[2],
+            got[1],
             MidiEvent::ControlChange { controller: 64, .. }
         ));
-        assert_eq!(sender.admission.dropped(), 1);
-    }
-
-    /// 闸恢复：级别回落到 Normal 后立即全放行。
-    #[test]
-    fn gate_reopens_after_recovery() {
-        let s = AdmissionState::new();
-        s.set_level(3);
-        assert!(s.allow_note_on_at(1_000_000));
-        assert!(!s.allow_note_on_at(1_000_000));
-        s.set_level(0);
-        assert!(s.allow_note_on_at(1_000_000));
+        assert!(matches!(got[2], MidiEvent::NoteOn { key: 62, vel: 0 }));
     }
 }

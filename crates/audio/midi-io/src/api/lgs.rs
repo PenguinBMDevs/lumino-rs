@@ -40,6 +40,11 @@ pub struct LgsOptions {
     /// 超限时按 REND-015 的 fade-steal 语义裁剪最老/最轻的声部组（5ms 淡出），
     /// 新音符优先发声；0 保持黑 MIDI 全量模式（旧行为）。
     pub max_voices: usize,
+    /// LGS 防爆闸（发送端软 NPS 闸；REND-016 #139）。
+    ///
+    /// 开启时：过载（Governor L2+）对 NoteOn 令牌桶限速（突发 50ms 成组放行，
+    /// 被拒 NoteOn 的 NoteOff 配对抵消）；关闭时恒放行（过载会周期性静音）。
+    pub soft_nps_gate: bool,
     /// 是否使用 64 点 sinc 高质量插值（否则线性插值）
     pub use_sinc: bool,
     /// 响度(力度)过滤阈值：MIDI 力度 <= 此值的音符不发声（0=关闭过滤）
@@ -123,7 +128,7 @@ impl Lgs {
         let device = crate::audio_devices::resolve_audio_output_device(
             options.audio_output_device.as_deref(),
         );
-        let playback = AudioPlayback::start(synth, device)
+        let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
             .map_err(|e| Error::InitFailed(format!("LGS (GPU) 音频流启动失败: {e}")))?;
         let event_tx = Arc::new(Mutex::new(playback.event_sender()));
         let control_tx = Arc::new(Mutex::new(playback.control_sender()));
@@ -355,7 +360,7 @@ impl SynthControl for Lgs {
                     let mut old = self._playback.lock().unwrap_or_else(|e| e.into_inner());
                     old.stop();
                 }
-                let playback = AudioPlayback::start(synth, device)
+                let playback = AudioPlayback::start(synth, device, options.soft_nps_gate)
                     .map_err(|e| format!("重启 GPU 音频流失败: {e}"))?;
                 *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
                 *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) =

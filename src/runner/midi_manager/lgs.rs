@@ -75,6 +75,8 @@ impl MidiManager {
             max_voices_per_key: ui_config.lgs_max_voices_per_key,
             // REND-016 #139：全局复音上限透传（None = 自动 16384）
             max_voices: resolve_lgs_max_voices(ui_config.lgs_global_voice_limit),
+            // REND-016 #139：防爆闸（发送端软 NPS 闸）开关
+            soft_nps_gate: ui_config.lgs_soft_nps_gate,
             use_sinc: ui_config.lgs_use_sinc,
             velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
             audio_output_device: ui_config.audio_output_device.clone(),

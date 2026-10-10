@@ -110,6 +110,9 @@ pub struct UiConfig {
     /// LGS (GPU) 全局最大复音数（硬上限/量程；None = 自动，见 [`LGS_AUTO_MAX_VOICES`]）
     #[serde(default)]
     pub lgs_global_voice_limit: Option<usize>,
+    /// LGS (GPU) 防爆闸（发送端软 NPS 闸；REND-016 #139，默认开启）
+    #[serde(default = "default_lgs_soft_nps_gate")]
+    pub lgs_soft_nps_gate: bool,
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值（否则线性插值）
     #[serde(default)]
     pub lgs_use_sinc: bool,
@@ -236,6 +239,7 @@ impl Default for UiConfig {
             lgs_block_size: default_lgs_block_size(),
             lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
             lgs_global_voice_limit: None,
+            lgs_soft_nps_gate: true,
             lgs_use_sinc: false,
             lgs_velocity_filter_threshold: default_lgs_velocity_filter_threshold(),
             selection_box_mode: SelectionBoxMode::default(),

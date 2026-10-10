@@ -60,6 +60,7 @@ impl SettingsPanel {
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
                 lgs_global_voice_limit: ui_config.lgs_global_voice_limit,
+                lgs_soft_nps_gate: ui_config.lgs_soft_nps_gate,
                 lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
                 audio_output_devices: Vec::new(),
                 selected_audio_output_device: ui_config.audio_output_device.clone(),
@@ -229,6 +230,9 @@ impl SettingsPanel {
                 } else {
                     Some(v.clamp(64, 65536))
                 };
+            }
+            Event::LgsSoftNpsGateChanged(on) => {
+                self.synth.lgs_soft_nps_gate = on;
             }
             Event::LgsVelocityFilterChanged(v) => {
                 self.synth.lgs_velocity_filter_threshold = v.clamp(0, 127);

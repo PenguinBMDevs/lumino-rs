@@ -54,6 +54,7 @@ fn synth_config_passes_global_voice_limit() {
         block_size: 1024,
         max_voices_per_key: 4,
         max_voices: 16_384,
+        soft_nps_gate: true,
         use_sinc: false,
         velocity_filter_threshold: 0,
         audio_output_device: None,

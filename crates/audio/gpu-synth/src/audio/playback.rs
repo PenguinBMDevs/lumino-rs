@@ -104,7 +104,7 @@ pub enum PlaybackControl {
 ///
 /// let mut synth = GpuSynth::new(SynthConfig::default())?;
 /// synth.load_soundfont("assets/test.sf2", 0, 0)?;
-/// let mut playback = AudioPlayback::start(synth, None)?;
+/// let mut playback = AudioPlayback::start(synth, None, true)?;
 /// playback.note_on(0, 60, 100);
 /// std::thread::sleep(std::time::Duration::from_millis(500));
 /// playback.note_off(0, 60);
