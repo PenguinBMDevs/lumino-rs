@@ -136,10 +136,12 @@ impl Lgs {
 
         let version = format!("lumino-gpu-synth {}", lumino_gpu_synth::VERSION);
         tracing::info!(
-            "LGS (GPU): 初始化完成（midi_max_port={}，midi_channels={}，max_voices={}）",
+            "LGS (GPU): 初始化完成（midi_max_port={}，midi_channels={}，max_voices={}，sample_rate={}，block_size={}）",
             options.midi_max_port,
             channels_for_max_port_clamped(options.midi_max_port),
-            options.max_voices
+            options.max_voices,
+            options.sample_rate,
+            options.block_size
         );
 
         Ok(Self {
