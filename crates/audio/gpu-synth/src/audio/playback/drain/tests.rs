@@ -163,6 +163,7 @@ fn test_drain_drops_only_expired_note_on() {
         &rx,
         now,
         Duration::from_millis(50),
+        Duration::from_millis(16),
         &Governor::new(),
         &stats,
         |ch, ev| got.push((ch, ev)),
@@ -206,6 +207,7 @@ fn test_drain_cap_defers_excess() {
         &rx,
         now,
         Duration::from_millis(50),
+        Duration::from_millis(16),
         &governor,
         &stats,
         |_, _| n += 1,
@@ -220,6 +222,7 @@ fn test_drain_cap_defers_excess() {
         &rx,
         now,
         Duration::from_millis(50),
+        Duration::from_millis(16),
         &governor,
         &stats,
         |_, _| n += 1,
@@ -255,6 +258,7 @@ fn test_drain_emergency_escalates_cap() {
         &rx,
         now,
         Duration::from_millis(50),
+        Duration::from_millis(16),
         &Governor::new(),
         &stats,
         |_, _| {},
@@ -312,6 +316,7 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
         &rx,
         now,
         Duration::from_millis(50),
+        Duration::from_millis(16),
         &governor,
         &stats,
         |_, _| delivered += 1,
@@ -322,23 +327,59 @@ fn test_drain_budget_drops_fresh_note_ons_in_emergency() {
     assert_eq!(stats.dropped_note_ons(), 10);
 }
 
-/// REND-016 #139：Governor 等级 → 运行时声部上限映射（L4 软目标收缩）。
+/// REND-016 #139：Governor 等级 → 运行时声部上限映射（L4 软目标收缩，
+/// 值随块周期缩放，见 [`voice_limits_for`]）。
 #[test]
 fn test_governor_level_maps_to_voice_limit() {
-    assert_eq!(GovernorLevel::Normal.voice_limit(), None);
-    assert_eq!(GovernorLevel::High.voice_limit(), None);
+    let mut governor = Governor::new();
+    assert_eq!(governor.voice_limit(), None, "Normal 不限制");
+
+    // 按块周期缩放后的上限（512/1024 两档）。
+    governor.set_voice_limits(4_800, 3_200);
+    governor.force_emergency();
     assert_eq!(
-        GovernorLevel::Overload.voice_limit(),
-        Some(OVERLOAD_VOICE_LIMIT)
+        governor.voice_limit(),
+        Some(3_200),
+        "Emergency 用缩放后的上限（512 块 8ms 预算）"
+    );
+
+    // Overload：负载持续超阈值后使用 Overload 缩放上限。
+    let mut g = Governor::new();
+    g.set_voice_limits(4_800, 3_200);
+    for _ in 0..(ENTER_SUSTAIN_BLOCKS * 2) {
+        g.observe(OVERLOAD_ENTER_LOAD + 0.1, false, false);
+    }
+    assert_eq!(g.level(), GovernorLevel::Overload);
+    assert_eq!(g.voice_limit(), Some(4_800));
+}
+
+/// 声部上限随块周期缩放（每声部每块 ≈1µs）：512/1024/8192 三档 + 下限保底。
+#[test]
+fn test_voice_limits_scale_with_block_period() {
+    assert_eq!(
+        voice_limits_for(Duration::from_millis(8)),
+        (4_800, 3_200),
+        "512@64k：8ms 预算下 Emergency 只负担 3200 声部"
     );
     assert_eq!(
-        GovernorLevel::Emergency.voice_limit(),
-        Some(EMERGENCY_VOICE_LIMIT)
+        voice_limits_for(Duration::from_millis(16)),
+        (9_600, 6_400),
+        "1024@64k"
+    );
+    assert_eq!(
+        voice_limits_for(Duration::from_millis(128)),
+        (OVERLOAD_VOICE_LIMIT, EMERGENCY_VOICE_LIMIT),
+        "8192 块：封顶"
+    );
+    let (o, e) = voice_limits_for(Duration::from_millis(2));
+    assert!(
+        o >= OVERLOAD_VOICE_LIMIT_FLOOR && e >= EMERGENCY_VOICE_LIMIT_FLOOR,
+        "块极小时有下限保底"
     );
 }
 
-/// 紧急冲洗：积压深时**一次调用**横扫整个过期区（远超旧 65536 上限），
-/// 立即回到新鲜区——消除"追平期间数秒级静音"（现场断续问题的根因）。
+/// 紧急冲洗：积压深时**一次调用**横扫整个过期区（时间预算内，远超旧 65536
+/// 上限），立即回到新鲜区——消除"追平期间数秒级静音"（现场断续问题的根因）。
 #[test]
 fn test_drain_flushes_deep_backlog_in_one_pass() {
     let (tx, rx) = mpsc::channel::<StampedEvent>();
@@ -370,6 +411,9 @@ fn test_drain_flushes_deep_backlog_in_one_pass() {
         &rx,
         now,
         Duration::from_millis(50),
+        // 大块周期 → 宽时间预算（60ms 冲洗），确保 6.5 万条在预算内扫完
+        // （小块预算下语义是"分块横扫"，见 `voice_limits_for` 同类设计）。
+        Duration::from_millis(100),
         &Governor::new(),
         &stats,
         |_, _| delivered += 1,

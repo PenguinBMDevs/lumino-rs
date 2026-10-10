@@ -1,6 +1,14 @@
 use super::config::negotiate_config;
 use super::*;
 
+/// 采样队列最大缓冲时长（ms）：按时间封顶延迟——固定 32 块在块大时缓冲
+/// 过久（8192@64k ≈ 4.1s，"没法听"）。见队列创建处。
+const QUEUE_MAX_LATENCY_MS: u64 = 600;
+/// 队列深度下限（欠载缓冲：至少几块才能吸收峰值块）。
+const QUEUE_MIN_BLOCKS: usize = 4;
+/// 队列深度上限（原固定值；512/1024 行为不变）。
+const QUEUE_MAX_BLOCKS: usize = 32;
+
 impl AudioPlayback {
     /// Starts a realtime playback session.
     ///
@@ -33,7 +41,14 @@ impl AudioPlayback {
         let (event_tx, event_rx) = mpsc::channel::<StampedEvent>();
         let (stream_tx, stream_rx) = mpsc::channel::<Vec<crate::midi::TimedEvent>>();
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
-        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
+        // REND-016 #139：采样队列深度按**时间**封顶（≤600ms 音频）——固定
+        // 32 块在块大时缓冲过久（8192@64k ≈ 4.1s 延迟，现场"没法听"）；
+        // 512/1024 下仍为上限 32 块，行为不变。
+        let block_period_ms = (block as u64).saturating_mul(1000) / u64::from(engine_rate.max(1));
+        let queue_blocks = (QUEUE_MAX_LATENCY_MS / block_period_ms.max(1))
+            .clamp(QUEUE_MIN_BLOCKS as u64, QUEUE_MAX_BLOCKS as u64)
+            as usize;
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(queue_blocks);
         let stop_flag = Arc::new(AtomicBool::new(false));
         // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
         // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
@@ -73,7 +88,7 @@ impl AudioPlayback {
         {
             let mut warm_buf = vec![0.0f32; block * channels];
             let mut warm_resampler = SincResampler::new(engine_rate, device_rate, channels);
-            for _ in 0..8 {
+            for _ in 0..queue_blocks.min(8) {
                 let _ = synth.render_block(&mut warm_buf);
                 let out = if needs_resample {
                     warm_resampler.process(&warm_buf)
@@ -112,7 +127,15 @@ impl AudioPlayback {
                 // throttles when we run too far ahead. NOTE: based on `block`
                 // (one frame, all channels) — using `block * channels` would
                 // double the budget.
-                let delay = Duration::from_secs_f64(block as f64 / engine_rate.max(1) as f64 * 0.9);
+                let block_period =
+                    Duration::from_secs_f64(block as f64 / engine_rate.max(1) as f64);
+                let delay = block_period.mul_f64(0.9);
+                // REND-016 #139：运行时声部上限随块周期缩放（每声部每块 ≈1µs，
+                // 与块大小无关——512 块 8ms 预算下 12288 声部 ≈12.5ms 必然饱和）。
+                let (overload_limit, emergency_limit) = drain::voice_limits_for(block_period);
+                // 声部数即时升级阈值 = Emergency 池满线（上限 + 50% 淡出槽）：
+                // 声部超过它说明保护必须立即生效，不等证据/EMA。
+                let escalate_voices = emergency_limit + emergency_limit / 2;
 
                 // If a full event stream is supplied, the engine consumes it
                 // internally by `global_frame` (no per-event channel traffic)
@@ -120,6 +143,7 @@ impl AudioPlayback {
                 let mut has_stream = false;
                 // REND-016 #139：负载治理器（级别 → 新鲜 NoteOn 准入预算/声部上限）。
                 let mut governor = drain::Governor::new();
+                governor.set_voice_limits(overload_limit, emergency_limit);
                 // 发送端闸丢弃计数快照（用于计算"丢弃压力"，驱动快速释放）。
                 let mut last_admission_dropped = thread_admission.dropped();
                 // REND-016 #139：干净窗口跟踪——压力 true→false 的首帧记为
@@ -153,6 +177,7 @@ impl AudioPlayback {
                         &event_rx,
                         Instant::now(),
                         drain::event_deadline(block, engine_rate),
+                        block_period,
                         &governor,
                         &thread_stats,
                         |ch, ev| synth.send_event(ch, ev),
@@ -252,7 +277,7 @@ impl AudioPlayback {
                             // （缓速根因）。超阈值时跳过等待直入 Emergency（下一块
                             // 就 trim 到 8192）。
                             if !matches!(governor.level(), drain::GovernorLevel::Emergency)
-                                && synth.voice_count() > drain::VOICE_ESCALATE_VOICES
+                                && synth.voice_count() > escalate_voices
                             {
                                 Some(governor.force_emergency())
                             } else {
@@ -297,7 +322,7 @@ impl AudioPlayback {
                             );
                         }
                         let voices = synth.voice_count();
-                        let applied_limit = synth.set_runtime_voice_limit(level.voice_limit());
+                        let applied_limit = synth.set_runtime_voice_limit(governor.voice_limit());
                         tracing::warn!(
                             "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
                             level as u8,

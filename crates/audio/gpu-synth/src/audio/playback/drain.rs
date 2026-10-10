@@ -4,10 +4,10 @@
 //! 全部 drain 进下一块 → 复音更高 → 块更大 → 级联，最终缓冲队列耗尽（欠载
 //! 无声）。本模块给 GPU 补上「双闸 + 反馈」：
 //!
-//! - **事件闸（有界 drain）**：每块最多 [`MAX_EVENTS_PER_BLOCK`] 条且受
-//!   [`DRAIN_TIME_BUDGET`] 时间预算约束（到点即停，块耗时恒定）；最老事件
+//! - **事件闸（有界 drain）**：每块最多 [`MAX_EVENTS_PER_BLOCK`] 条且受时间
+//!   预算约束（块周期 × [`DRAIN_DUTY`]，到点即停，块耗时恒定）；最老事件
 //!   年龄超过 [`EMERGENCY_DRAIN_MULTIPLIER`]×deadline 时放宽到
-//!   [`FLUSH_MAX_EVENTS`] 与 [`DRAIN_FLUSH_TIME_BUDGET`]，尽快冲掉积压；
+//!   [`FLUSH_MAX_EVENTS`] 与 2× 时间预算，尽快冲掉积压；
 //! - **过期丢弃**：`age > deadline` 的 NoteOn 丢弃（时间已追不回，保其余事件
 //!   的时间对齐）；NoteOff / 状态类事件永不丢（防挂音 / 上下文错乱）；
 //! - **反馈闸（Governor）**：按 render-load EMA 与「时间已落后」证据分四级
@@ -18,17 +18,18 @@
 
 use super::*;
 
-/// 单块事件 drain 上限（正常路径）。
+/// 单块事件 drain 的计数上限（正常路径）。
 const MAX_EVENTS_PER_BLOCK: usize = 4_096;
-/// 正常路径单块 drain 的**时间预算**：到点即停，剩余留待下块。
-///
-/// 计数上限（[`MAX_EVENTS_PER_BLOCK`]）无法约束"事件便宜但量极大"的释放墙
-/// （现场爆点后 10 万+ NoteOff 同 tick 到达）：每块固定 4096 条会把墙拖成
-/// 数十块慢块 → 缓速。时间预算让每块 drain 成本恒定（≈4ms），容量随事件
-/// 单价自适应（NoteOff 廉价 → 1.5~2.5M 条/s）。
-const DRAIN_TIME_BUDGET: Duration = Duration::from_millis(4);
-/// 紧急冲洗路径的时间预算（略放宽，加速清空过期区；不再单块扫 2M）。
-const DRAIN_FLUSH_TIME_BUDGET: Duration = Duration::from_millis(8);
+/// 正常路径单块 drain 的时间预算**下限**（块小时保持此值）。
+const DRAIN_TIME_BUDGET_MIN: Duration = Duration::from_millis(4);
+/// drain 时间预算 = 块周期 × 此占比（**块大时随周期放大**，保事件吞吐容量
+/// 恒定——固定 4ms 在 8192 块（周期 128ms）下 duty 仅 3.5%，容量塌方 →
+/// 积压无限涨 → 现场"8192 没法听"）。
+const DRAIN_DUTY: f64 = 0.30;
+/// 正常路径单块 drain 的时间预算上限。
+const DRAIN_TIME_BUDGET_MAX: Duration = Duration::from_millis(32);
+/// 紧急冲洗时间预算 = 正常预算 × 此倍数。
+const DRAIN_FLUSH_MULTIPLIER: u32 = 2;
 /// 时间检查间隔（事件数）：摊销 `Instant::now()` 成本。
 const DRAIN_TIME_CHECK_EVERY: usize = 256;
 /// 紧急路径：最老事件年龄超过该倍数 deadline 时放宽单块上限。
@@ -70,21 +71,33 @@ const EMERGENCY_COOLDOWN_BLOCKS: u32 = 235;
 const OVERLOAD_NOTE_ON_BUDGET: usize = 4_096;
 /// Emergency 级的新鲜 NoteOn 单块准入预算（更严格：保节奏优先）。
 const EMERGENCY_NOTE_ON_BUDGET: usize = 2_048;
-/// Overload 级运行时声部上限（L4 软目标收缩，REND-016 #139）。
+/// Overload 级运行时声部上限**封顶**（L4 软目标收缩，REND-016 #139）。
 ///
-/// 块渲染成本 ∝ 声部数：过载时把 trim 目标临时压低，把渲染耗时拉回实时
-/// 预算；恢复期由 Governor 逐级回升，风暴过后回到构造配置。
+/// 实际值由 [`voice_limits_for`] 按块周期缩放（块小 → 每块可负担的声部少）。
 /// 取值依据（现场实测）：正常段落 ~3k 声部（load 0.1），爆点是**单 tick
 /// 3 万声部**；上限必须低于爆点规模才能把块耗时压回预算，同时高于正常段落。
 const OVERLOAD_VOICE_LIMIT: usize = 16_384;
-/// Emergency 级运行时声部上限（保实时优先，比 Overload 更严格）。
+/// Emergency 级运行时声部上限**封顶**（保实时优先，比 Overload 更严格）。
 const EMERGENCY_VOICE_LIMIT: usize = 8_192;
-/// 声部数即时升级阈值（REND-016 #139）：声部超过此值时**跳过证据/EMA 等待**
-/// 直接进 Emergency——保护必须在"声部爆掉的第一块"生效，否则单块耗时失控
-/// （现场 1.4s 巨块 → 缓速）。
-pub(crate) const VOICE_ESCALATE_VOICES: usize = 12_000;
+/// 运行时声部上限下限（块极小时防止过度收缩）。
+const OVERLOAD_VOICE_LIMIT_FLOOR: usize = 4_096;
+const EMERGENCY_VOICE_LIMIT_FLOOR: usize = 2_048;
 // 编译期不变量：Emergency 必须比 Overload 更严格。
 const _: () = assert!(OVERLOAD_VOICE_LIMIT > EMERGENCY_VOICE_LIMIT);
+
+/// 按块周期推导运行时声部上限（REND-016 #139）。
+///
+/// 每声部每块成本 ≈1µs（现场 12288 声部 ≈12.5ms/块，`collect`+`upload`
+/// 主导，与块大小无关）——**块越小，每块可负担的声部越少**。固定
+/// 8192（+50% 淡出槽 = 12288）在 512 块（8ms 预算）下必然饱和（音频断续，
+/// 现场"最后一段卡过去"）。Overload 允许占块预算 60%，Emergency 40%
+/// （更严，另留 4ms 给 drain 下限与调度）；受构造常量封顶、下限保底。
+pub(crate) fn voice_limits_for(block_period: Duration) -> (usize, usize) {
+    let period_us = block_period.as_micros() as usize;
+    let overload = (period_us * 6 / 10).clamp(OVERLOAD_VOICE_LIMIT_FLOOR, OVERLOAD_VOICE_LIMIT);
+    let emergency = (period_us * 4 / 10).clamp(EMERGENCY_VOICE_LIMIT_FLOOR, EMERGENCY_VOICE_LIMIT);
+    (overload, emergency)
+}
 
 /// 事件年龄 deadline：3×块时长，且不小于 [`DEADLINE_FLOOR_MS`]。
 pub(crate) fn event_deadline(block: usize, sample_rate: u32) -> Duration {
@@ -113,19 +126,6 @@ pub(crate) enum GovernorLevel {
     Emergency = 3,
 }
 
-impl GovernorLevel {
-    /// 本级对应的运行时声部上限（`None` = 恢复构造时配置）。
-    ///
-    /// 由渲染线程在级别切换时施加到 `GpuSynth::set_runtime_voice_limit`。
-    pub(crate) fn voice_limit(self) -> Option<usize> {
-        match self {
-            GovernorLevel::Normal | GovernorLevel::High => None,
-            GovernorLevel::Overload => Some(OVERLOAD_VOICE_LIMIT),
-            GovernorLevel::Emergency => Some(EMERGENCY_VOICE_LIMIT),
-        }
-    }
-}
-
 /// 负载治理器状态机（见模块文档）。
 pub(crate) struct Governor {
     level: GovernorLevel,
@@ -137,10 +137,14 @@ pub(crate) struct Governor {
     release_streak: u32,
     /// Emergency 退出后的冷却剩余块数（>0 时禁止直接重入 Emergency）。
     cooldown: u32,
+    /// REND-016 #139：按块周期缩放的运行时声部上限（[`voice_limits_for`]）。
+    overload_voice_limit: usize,
+    emergency_voice_limit: usize,
 }
 
 impl Governor {
-    /// 创建治理器（Normal 起步）。
+    /// 创建治理器（Normal 起步；声部上限先用构造常量，启动时由
+    /// [`Governor::set_voice_limits`] 按块周期覆盖）。
     pub(crate) fn new() -> Self {
         Self {
             level: GovernorLevel::Normal,
@@ -149,6 +153,23 @@ impl Governor {
             enter_streak: 0,
             release_streak: 0,
             cooldown: 0,
+            overload_voice_limit: OVERLOAD_VOICE_LIMIT,
+            emergency_voice_limit: EMERGENCY_VOICE_LIMIT,
+        }
+    }
+
+    /// 设置按块周期缩放的运行时声部上限（启动时调用一次）。
+    pub(crate) fn set_voice_limits(&mut self, overload: usize, emergency: usize) {
+        self.overload_voice_limit = overload;
+        self.emergency_voice_limit = emergency;
+    }
+
+    /// 当前级别对应的运行时声部上限（`None` = 恢复构造时配置）。
+    pub(crate) fn voice_limit(&self) -> Option<usize> {
+        match self.level {
+            GovernorLevel::Normal | GovernorLevel::High => None,
+            GovernorLevel::Overload => Some(self.overload_voice_limit),
+            GovernorLevel::Emergency => Some(self.emergency_voice_limit),
         }
     }
 
@@ -270,11 +291,13 @@ pub(crate) struct DrainOutcome {
 
 /// 有界 drain 一帧积压事件（语义见模块文档）。
 ///
-/// 准入预算来自 `governor`；`stats` 记录累计丢弃。
+/// 准入预算来自 `governor`；`stats` 记录累计丢弃；`block_period` 用于推导
+/// 时间预算（块周期 × [`DRAIN_DUTY`]，随块大小自适应）。
 pub(crate) fn drain_events(
     rx: &mpsc::Receiver<StampedEvent>,
     now: Instant,
     deadline: Duration,
+    block_period: Duration,
     governor: &Governor,
     stats: &PlaybackStatsReader,
     mut on_event: impl FnMut(u8, MidiEvent),
@@ -290,9 +313,14 @@ pub(crate) fn drain_events(
     let mut controls = 0u64;
     let mut oldest_ms = 0u64;
     let budget = governor.note_on_budget();
-    // REND-016 #139：时间预算（块耗时恒定，防释放墙拖慢块）。
+    // REND-016 #139：时间预算（块耗时恒定，防释放墙拖慢块；随块周期缩放，
+    // 保任意块大小下的事件吞吐容量一致）。
     let drain_start = Instant::now();
-    let mut time_budget = DRAIN_TIME_BUDGET;
+    let normal_budget = block_period
+        .mul_f64(DRAIN_DUTY)
+        .clamp(DRAIN_TIME_BUDGET_MIN, DRAIN_TIME_BUDGET_MAX);
+    let flush_budget = normal_budget * DRAIN_FLUSH_MULTIPLIER;
+    let mut time_budget = normal_budget;
 
     while processed < cap {
         // 时间预算：到点即停（剩余留待下块）。每 256 条检查一次，摊销时钟成本。
@@ -318,7 +346,7 @@ pub(crate) fn drain_events(
         // 65536 条），让渲染线程尽快回到新鲜区，消除"追平期间的长静音"。
         if processed == 1 && age > deadline * EMERGENCY_DRAIN_MULTIPLIER {
             cap = FLUSH_MAX_EVENTS;
-            time_budget = DRAIN_FLUSH_TIME_BUDGET;
+            time_budget = flush_budget;
             emergency_evidence = true;
             flush_mode = true;
         }
