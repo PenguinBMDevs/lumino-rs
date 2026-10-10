@@ -62,9 +62,11 @@ const EMERGENCY_NOTE_ON_BUDGET: usize = 2_048;
 ///
 /// 块渲染成本 ∝ 声部数：过载时把 trim 目标临时压低，把渲染耗时拉回实时
 /// 预算；恢复期由 Governor 逐级回升，风暴过后回到构造配置。
-const OVERLOAD_VOICE_LIMIT: usize = 8_192;
+/// 取值必须能容纳**正常密度**（现场 Bad Apple 8.49M 平均 ≈37k/s × 0.9s 释放
+/// ≈33k 声部；上限低于此值会造成正常段落被持续偷声）。
+const OVERLOAD_VOICE_LIMIT: usize = 65_536;
 /// Emergency 级运行时声部上限（保实时优先，比 Overload 更严格）。
-const EMERGENCY_VOICE_LIMIT: usize = 4_096;
+const EMERGENCY_VOICE_LIMIT: usize = 32_768;
 // 编译期不变量：Emergency 必须比 Overload 更严格。
 const _: () = assert!(OVERLOAD_VOICE_LIMIT > EMERGENCY_VOICE_LIMIT);
 
@@ -335,8 +337,9 @@ fn log_drop_rate_limited(
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
         .as_millis() as i64;
-    let prev = LAST_DROP_LOG.fetch_max(ms, Ordering::Relaxed);
+    let prev = LAST_DROP_LOG.load(Ordering::Relaxed);
     if ms - prev > 500 {
+        LAST_DROP_LOG.store(ms, Ordering::Relaxed);
         // 双通道：tracing 进文件日志（GUI release 唯一可见），eprintln 供控制台构建。
         tracing::warn!(
             "[EVENT-DROP] 过期 {} + 预算 {} 条（累计 {}，L{}）",
