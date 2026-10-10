@@ -111,6 +111,40 @@ impl GpuSynth {
         }
 
         self.global_frame += block as u64;
+
+        // REND-016 #139：慢块诊断——块耗时超过 1.5×预算时输出阶段分解（限频 1s）。
+        // 用于定位"缓速"：`samples=` 高 → 懒重采样在渲染线程同步执行；
+        // `apply=` 高 → 事件应用；`dispatch/readback` 高 → GPU。
+        let total_us = (t6 - t0).as_micros();
+        let budget_us = (block as u128) * 1_000_000 / self.config.sample_rate.max(1) as u128;
+        if total_us > budget_us * 3 / 2 {
+            use std::sync::atomic::{AtomicI64, Ordering};
+            static LAST_SLOW: AtomicI64 = AtomicI64::new(0);
+            let ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis() as i64;
+            let prev = LAST_SLOW.load(Ordering::Relaxed);
+            if ms - prev > 1000 {
+                LAST_SLOW.store(ms, Ordering::Relaxed);
+                let msg = format!(
+                    "[SLOW-BLOCK] total={}us（预算 {}us）voices={} apply={}us collect={}us sync={}us upload={}us samples={}us mix={}us dispatch={}us readback={}us",
+                    total_us,
+                    budget_us,
+                    self.voices.len(),
+                    (t1 - t0).as_micros(),
+                    (t1b - t1).as_micros(),
+                    (t1c - t1b).as_micros(),
+                    (t2 - t1c).as_micros(),
+                    (t3 - t2).as_micros(),
+                    (t4 - t3).as_micros(),
+                    (t5 - t4).as_micros(),
+                    (t6 - t5).as_micros(),
+                );
+                tracing::warn!("{msg}");
+                eprintln!("{msg}");
+            }
+        }
         Ok(())
     }
 

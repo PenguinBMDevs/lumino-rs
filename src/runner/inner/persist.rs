@@ -44,6 +44,8 @@ impl RunnerInner {
         // 或（仅当当前/此前为 LGS 时）专属响度过滤阈值变化（与 XSynth 全局力度过滤相互独立）。
         let lgs_changed = new.synth.lgs_block_size != old.lgs_block_size
             || new.synth.lgs_max_voices_per_key != old.lgs_max_voices_per_key
+            || new.synth.lgs_global_voice_limit != old.lgs_global_voice_limit
+            || new.synth.lgs_soft_nps_gate != old.lgs_soft_nps_gate
             || (new.synth.lgs_velocity_filter_threshold != old.lgs_velocity_filter_threshold
                 && (new.synth.backend == lumino_core::storage::config::SynthBackend::Lgs
                     || old.preferred_backend == lumino_core::storage::config::SynthBackend::Lgs));
@@ -169,11 +171,15 @@ impl RunnerInner {
         }
         if diff.lgs_changed {
             tracing::info!(
-                "LGS (GPU) 参数已改变: block_size {} -> {}, max_voices {} -> {}, velocity_filter {} -> {}",
+                "LGS (GPU) 参数已改变: block_size {} -> {}, max_voices {} -> {}, 全局上限 {:?} -> {:?}, 防爆闸 {} -> {}, velocity_filter {} -> {}",
                 old.lgs_block_size,
                 new.synth.lgs_block_size,
                 old.lgs_max_voices_per_key,
                 new.synth.lgs_max_voices_per_key,
+                old.lgs_global_voice_limit,
+                new.synth.lgs_global_voice_limit,
+                old.lgs_soft_nps_gate,
+                new.synth.lgs_soft_nps_gate,
                 old.lgs_velocity_filter_threshold,
                 new.synth.lgs_velocity_filter_threshold
             );
@@ -245,6 +251,8 @@ impl RunnerInner {
             config.ui.xsynth_soft_nps_gate = new.synth.xsynth_soft_nps_gate;
             config.ui.lgs_block_size = new.synth.lgs_block_size;
             config.ui.lgs_max_voices_per_key = new.synth.lgs_max_voices_per_key;
+            config.ui.lgs_global_voice_limit = new.synth.lgs_global_voice_limit;
+            config.ui.lgs_soft_nps_gate = new.synth.lgs_soft_nps_gate;
             config.ui.lgs_velocity_filter_threshold = new.synth.lgs_velocity_filter_threshold;
             config.ui.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             config.ui.eraser_behavior = new.editing.eraser_behavior;

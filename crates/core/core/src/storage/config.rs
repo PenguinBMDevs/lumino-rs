@@ -13,6 +13,12 @@ pub use enums::{
 
 use defaults::*;
 
+/// LGS (GPU) 全局复音上限的「自动」值（REND-016 #139）。
+///
+/// 与 CPU 的 auto=10000 同口径的硬上限（GPU 声部更廉价故略高）；
+/// 用于防止黑 MIDI 声部风暴一次性全量进入 dispatch 导致实时欠载（无声/断续）。
+pub const LGS_AUTO_MAX_VOICES: usize = 16_384;
+
 /// 用户界面配置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -101,6 +107,12 @@ pub struct UiConfig {
     /// LGS (GPU) 每个 (通道, 键) 最大同音数
     #[serde(default = "default_lgs_max_voices_per_key")]
     pub lgs_max_voices_per_key: usize,
+    /// LGS (GPU) 全局最大复音数（硬上限/量程；None = 自动，见 [`LGS_AUTO_MAX_VOICES`]）
+    #[serde(default)]
+    pub lgs_global_voice_limit: Option<usize>,
+    /// LGS (GPU) 防爆闸（发送端软 NPS 闸；REND-016 #139，默认开启）
+    #[serde(default = "default_lgs_soft_nps_gate")]
+    pub lgs_soft_nps_gate: bool,
     /// LGS (GPU) 是否使用 64 点 sinc 高质量插值（否则线性插值）
     #[serde(default)]
     pub lgs_use_sinc: bool,
@@ -226,6 +238,8 @@ impl Default for UiConfig {
             lgs_sample_rate: default_lgs_sample_rate(),
             lgs_block_size: default_lgs_block_size(),
             lgs_max_voices_per_key: default_lgs_max_voices_per_key(),
+            lgs_global_voice_limit: None,
+            lgs_soft_nps_gate: true,
             lgs_use_sinc: false,
             lgs_velocity_filter_threshold: default_lgs_velocity_filter_threshold(),
             selection_box_mode: SelectionBoxMode::default(),

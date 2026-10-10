@@ -66,4 +66,27 @@ impl PlaybackStatsReader {
     pub fn underruns(&self) -> u64 {
         self.underruns.load(Ordering::Relaxed)
     }
+
+    /// REND-016 #139：被丢弃的过期 NoteOn 累计数。正常 / 中度密集素材应恒为 0；
+    /// 仅在积压已深（事件时间追不回）时增长。
+    pub fn dropped_note_ons(&self) -> u64 {
+        self.dropped_note_ons.load(Ordering::Relaxed)
+    }
+
+    /// 累计被丢弃的过期 NoteOn（渲染线程侧，lock-free）。
+    pub(crate) fn record_dropped_note_ons(&self, dropped: u64) {
+        if dropped > 0 {
+            self.dropped_note_ons.fetch_add(dropped, Ordering::Relaxed);
+        }
+    }
+
+    /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
+    pub fn governor_level(&self) -> u64 {
+        self.governor_level.load(Ordering::Relaxed)
+    }
+
+    /// 发布当前治理级别（渲染线程侧，lock-free）。
+    pub(crate) fn set_governor_level(&self, level: u64) {
+        self.governor_level.store(level, Ordering::Relaxed);
+    }
 }

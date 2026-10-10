@@ -59,6 +59,8 @@ impl SettingsPanel {
                 xsynth_soft_nps_gate: ui_config.xsynth_soft_nps_gate,
                 lgs_block_size: ui_config.lgs_block_size,
                 lgs_max_voices_per_key: ui_config.lgs_max_voices_per_key,
+                lgs_global_voice_limit: ui_config.lgs_global_voice_limit,
+                lgs_soft_nps_gate: ui_config.lgs_soft_nps_gate,
                 lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
                 audio_output_devices: Vec::new(),
                 selected_audio_output_device: ui_config.audio_output_device.clone(),
@@ -220,6 +222,17 @@ impl SettingsPanel {
             }
             Event::LgsMaxVoicesChanged(v) => {
                 self.synth.lgs_max_voices_per_key = v.clamp(0, 128);
+            }
+            Event::LgsGlobalVoiceLimitChanged(v) => {
+                // 0 = 自动（LGS_AUTO_MAX_VOICES=16384）；其余夹紧 [64, 65536]（与 CPU 同口径）
+                self.synth.lgs_global_voice_limit = if v == 0 {
+                    None
+                } else {
+                    Some(v.clamp(64, 65536))
+                };
+            }
+            Event::LgsSoftNpsGateChanged(on) => {
+                self.synth.lgs_soft_nps_gate = on;
             }
             Event::LgsVelocityFilterChanged(v) => {
                 self.synth.lgs_velocity_filter_threshold = v.clamp(0, 127);

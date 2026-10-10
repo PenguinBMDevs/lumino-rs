@@ -41,9 +41,9 @@ use limiter::{limit_block, write_samples};
 use progress::ProgressBar;
 use types::{
     FADE_SLOTS_FRACTION, MAX_RENDER_FRAMES, MAX_VOICE_OUT_BYTES, PendingReadback,
-    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, fade_complete,
-    fade_frames, report_progress, spawn_budget_allows, trim_fade_budget_for, trim_hysteresis,
-    trimmed_group_count,
+    STATES_SYNC_EVERY, VoiceDebugInfo, VoiceTemplateCache, checkpoint_ok, effective_voice_limit,
+    fade_complete, fade_frames, report_progress, spawn_budget_allows, trim_fade_budget_for,
+    trim_hysteresis, trimmed_group_count,
 };
 use voice_alloc::{order_port_key_evictions, select_damper_release_groups, select_evictions};
 
@@ -120,6 +120,10 @@ struct ChannelState {
 /// ```
 pub struct GpuSynth {
     config: SynthConfig,
+    /// 构造时的全局声部上限（0 = 无限）。REND-016 #139：L4 运行时收缩后，
+    /// `None` 恢复到此值（运行时限值始终不得低于/高于物理池约束，见
+    /// `set_runtime_voice_limit`）。
+    base_max_voices: usize,
     res: GpuResources,
     sf: Option<SoundFont>,
 

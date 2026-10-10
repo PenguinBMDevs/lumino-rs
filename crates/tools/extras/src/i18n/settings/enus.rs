@@ -37,6 +37,8 @@ pub(super) static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     voice_target_ratio_hint: "Runtime target = ratio x hard limit (default 1-1/e ~= 0.632, ~37% transient headroom; 1-1/e^2 ~= 0.865 is more aggressive but leaves only 13.5%)",
     soft_nps_gate: "Overload safety gate (temporary throttling under heavy overload, off by default)",
     soft_nps_gate_hint: "When off there is no NoteOn drop path at all; when on it briefly throttles only under sustained overload and releases automatically",
+    lgs_nps_gate: "Anti-overload gate (LGS, on by default)",
+    lgs_nps_gate_hint: "On: under overload (L2+) NoteOns are token-bucket limited (50ms bursts pass as groups; the NoteOff of a dropped note is cancelled) - keeps audio continuous but thinner. Off: no limiting; overload causes periodic silence",
     velocity_filter: "Velocity Filter Threshold",
     velocity_filter_hint: "Notes with velocity <= threshold will not play (0=disabled)",
     midi_input_device: "MIDI Input Device:",

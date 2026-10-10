@@ -1,8 +1,23 @@
 use super::config::negotiate_config;
 use super::*;
 
+/// 采样队列最大缓冲时长（ms）：按时间封顶延迟——固定 32 块在块大时缓冲
+/// 过久（8192@64k ≈ 4.1s，"没法听"）。见队列创建处。
+const QUEUE_MAX_LATENCY_MS: u64 = 600;
+/// 队列深度下限（欠载缓冲：至少几块才能吸收峰值块）。
+const QUEUE_MIN_BLOCKS: usize = 4;
+/// 队列深度上限（原固定值；512/1024 行为不变）。
+const QUEUE_MAX_BLOCKS: usize = 32;
+
 impl AudioPlayback {
-    pub fn start(mut synth: GpuSynth, device: Option<cpal::Device>) -> Result<Self, SynthError> {
+    /// Starts a realtime playback session.
+    ///
+    /// `nps_gate_enabled`：LGS 防爆闸开关（发送端软 NPS 闸；关闭时恒放行）。
+    pub fn start(
+        mut synth: GpuSynth,
+        device: Option<cpal::Device>,
+        nps_gate_enabled: bool,
+    ) -> Result<Self, SynthError> {
         let engine_rate = synth.config().sample_rate;
         let channels = synth.config().channels.channel_count();
         let block = synth.config().block_size;
@@ -23,11 +38,24 @@ impl AudioPlayback {
         let needs_resample = resample_needed || device_rate != engine_rate;
 
         let (stop_tx, stop_rx) = mpsc::channel::<()>();
-        let (event_tx, event_rx) = mpsc::channel::<(u8, MidiEvent)>();
+        let (event_tx, event_rx) = mpsc::channel::<StampedEvent>();
         let (stream_tx, stream_rx) = mpsc::channel::<Vec<crate::midi::TimedEvent>>();
         let (ctrl_tx, ctrl_rx) = mpsc::channel::<PlaybackControl>();
-        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(32);
+        // REND-016 #139：采样队列深度按**时间**封顶（≤600ms 音频）——固定
+        // 32 块在块大时缓冲过久（8192@64k ≈ 4.1s 延迟，现场"没法听"）；
+        // 512/1024 下仍为上限 32 块，行为不变。
+        let block_period_ms = (block as u64).saturating_mul(1000) / u64::from(engine_rate.max(1));
+        let queue_blocks = (QUEUE_MAX_LATENCY_MS / block_period_ms.max(1))
+            .clamp(QUEUE_MIN_BLOCKS as u64, QUEUE_MAX_BLOCKS as u64)
+            as usize;
+        let (sample_tx, sample_rx) = mpsc::sync_channel::<Vec<f32>>(queue_blocks);
         let stop_flag = Arc::new(AtomicBool::new(false));
+        // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
+        // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
+        let admission = Arc::new(AdmissionState::new(nps_gate_enabled));
+        // REND-016 #139：过载重同步纪元——渲染线程在进出 Emergency 时递增；
+        // 音频回调发现纪元变化后丢弃已渲染的旧音频（直接跳到最新内容）。
+        let flush_epoch = Arc::new(AtomicU64::new(0));
 
         // Stats shared between the callback, the render thread and the caller.
         let stats = PlaybackStatsReader {
@@ -39,6 +67,8 @@ impl AudioPlayback {
             render_size: Arc::new(AtomicU64::new((block * channels) as u64)),
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
+            dropped_note_ons: Arc::new(AtomicU64::new(0)),
+            governor_level: Arc::new(AtomicU64::new(0)),
         };
         let cb_stats = stats.clone();
 
@@ -58,7 +88,7 @@ impl AudioPlayback {
         {
             let mut warm_buf = vec![0.0f32; block * channels];
             let mut warm_resampler = SincResampler::new(engine_rate, device_rate, channels);
-            for _ in 0..8 {
+            for _ in 0..queue_blocks.min(8) {
                 let _ = synth.render_block(&mut warm_buf);
                 let out = if needs_resample {
                     warm_resampler.process(&warm_buf)
@@ -79,6 +109,7 @@ impl AudioPlayback {
         // dropped: if the queue is full we wait (the consumer is draining).
         let thread_stop = stop_flag.clone();
         let thread_stats = stats.clone();
+        let thread_admission = Arc::clone(&admission);
         let thread = thread::Builder::new()
             .name("lumino-gpu-synth-render".into())
             .spawn(move || {
@@ -86,20 +117,47 @@ impl AudioPlayback {
                 let mut buf = vec![0.0f32; block * channels];
                 let mut resampler = SincResampler::new(engine_rate, device_rate, channels);
                 let mut last_err = false;
-                // Max allowed render time per block: 90% of realtime so the
-                // thread runs slightly ahead and the queue accumulates a
-                // cushion that absorbs peak blocks (dense black-MIDI). The
-                // queue's `try_send` wait throttles when we run too far
-                // ahead. NOTE: based on `block` (one frame, all channels) —
-                // using `block * channels` would double the budget.
-                let delay = Duration::from_secs_f64(block as f64 / engine_rate.max(1) as f64 * 0.9);
+                // Max allowed per-block cost (drain + render) budget: 90% of
+                // realtime so the thread runs slightly ahead and the queue
+                // accumulates a cushion that absorbs peak blocks (dense
+                // black-MIDI). `start` is captured at the top of the loop
+                // (before drain) so this budget covers the FULL per-block
+                // cost, not just `render_block`. The queue's `try_send` wait
+                // throttles when we run too far ahead. NOTE: based on `block`
+                // (one frame, all channels) — using `block * channels` would
+                // double the budget.
+                let block_period =
+                    Duration::from_secs_f64(block as f64 / engine_rate.max(1) as f64);
+                let delay = block_period.mul_f64(0.9);
+                // REND-016 #139：运行时声部上限随块周期缩放（每声部每块 ≈1µs，
+                // 与块大小无关——512 块 8ms 预算下 12288 声部 ≈12.5ms 必然饱和）。
+                let (overload_limit, emergency_limit) = drain::voice_limits_for(block_period);
+                // 声部数即时升级阈值 = Overload 池满线（上限 + 50% 淡出槽）：
+                // 只有真正超出可负担规模的大爆点才跳过证据/EMA 直入 Emergency
+                // （小爆点走负载 EMA 的常规升级路径，不再被误触发）。
+                let escalate_voices = overload_limit + overload_limit / 2;
 
                 // If a full event stream is supplied, the engine consumes it
                 // internally by `global_frame` (no per-event channel traffic)
                 // - the only way to keep up with dense black-MIDI.
                 let mut has_stream = false;
+                // REND-016 #139：负载治理器（级别 → 新鲜 NoteOn 准入预算/声部上限）。
+                let mut governor = drain::Governor::new();
+                governor.set_voice_limits(overload_limit, emergency_limit);
+                // 发送端闸丢弃计数快照（用于计算"丢弃压力"，驱动快速释放）。
+                let mut last_admission_dropped = thread_admission.dropped();
+                // REND-016 #139：干净窗口跟踪——压力 true→false 的首帧记为
+                // "风暴结束点"，出口重同步据此只清风暴期出生的余波。
+                let mut had_pressure = false;
+                let mut clean_since_frame: Option<u64> = None;
 
                 loop {
+                    // REND-016 #139：块周期起点——必须**包含 drain/冲洗时间**：
+                    // ① 负载 EMA 计入 drain 成本（否则冲洗慢块不触发治理器，
+                    //    现场表现为"load 0.17 却持续缓速"且无任何日志）；
+                    // ② 节奏锚点不把 drain 耗时叠加在 delay 之上（旧口径每块
+                    //    周期 = drain + delay，天然慢于实时）。
+                    let start = Instant::now();
                     // Accept an event stream (usually once, at startup).
                     if let Ok(events) = stream_rx.try_recv() {
                         synth.set_events(events);
@@ -112,9 +170,33 @@ impl AudioPlayback {
                             PlaybackControl::ReleaseAllDampers => synth.release_all_dampers(),
                         }
                     }
-                    // Drain pending MIDI events (non-blocking).
-                    while let Ok((ch, ev)) = event_rx.try_recv() {
-                        synth.send_event(ch, ev);
+                    // REND-016 #139：有界 drain + 过期 NoteOn 丢弃（墙钟时间闸）+
+                    // 治理器准入预算。防止大块渲染结束后一次性注入上万积压事件
+                    // → 下一块复音更高 → 级联大块 → 队列耗尽（欠载无声）。
+                    let drain_outcome = drain::drain_events(
+                        &event_rx,
+                        Instant::now(),
+                        drain::event_deadline(block, engine_rate),
+                        block_period,
+                        &governor,
+                        &thread_stats,
+                        |ch, ev| synth.send_event(ch, ev),
+                    );
+                    // REND-016 #139：本块"丢弃压力"证据（发送端闸丢弃 + 渲染端
+                    // 过期/预算丢弃 + 紧急冲洗）。压力消失 → Governor 快速逐级
+                    // 放行，避免爆点后"等引擎静下来才放行"的人工静音尾巴。
+                    let admission_dropped = thread_admission.dropped();
+                    let gate_pressure = admission_dropped > last_admission_dropped
+                        || drain_outcome.dropped_expired > 0
+                        || drain_outcome.dropped_budget > 0
+                        || drain_outcome.emergency_evidence;
+                    last_admission_dropped = admission_dropped;
+                    // REND-016 #139：干净窗口起点（压力 true→false 的首帧）。
+                    if gate_pressure {
+                        had_pressure = true;
+                        clean_since_frame = None;
+                    } else if had_pressure && clean_since_frame.is_none() {
+                        clean_since_frame = Some(synth.global_frame());
                     }
                     if thread_stop.load(Ordering::Relaxed) || stop_rx.try_recv().is_ok() {
                         break;
@@ -141,12 +223,12 @@ impl AudioPlayback {
                     // keeping the queue nearly empty - the cause of the
                     // periodic underruns.
 
-                    let start = Instant::now();
                     if let Err(e) = synth.render_block(&mut buf) {
                         // Never die silently: a wedged GPU surfaces here every
                         // block; print it once so the freeze is diagnosable
                         // instead of looking like a hung process.
                         if !last_err {
+                            tracing::error!("[render] block error: {e}");
                             eprintln!("[render] block error: {e}");
                             last_err = true;
                         }
@@ -183,6 +265,89 @@ impl AudioPlayback {
                     let total = delay.as_secs_f64();
                     thread_stats.push_render_load(elapsed / total);
 
+                    // REND-016 #139：治理器反馈（负载 EMA + 积压证据 → 级别/预算/
+                    // 运行时声部上限）。收缩声部上限让块渲染成本 ∝ 声部数地下降，
+                    // 是消除"卡顿期间持续欠载静音"的关键手段。
+                    let level_before = governor.level();
+                    let level_change = governor
+                        .observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
+                        .or_else(|| {
+                            // REND-016 #139：声部数即时升级——证据/EMA 要等 ~100ms，
+                            // 而声部爆掉的第一块就可能被 2~3 万声部拖成秒级巨块
+                            // （缓速根因）。超阈值时跳过等待直入 Emergency（下一块
+                            // 就 trim 到 8192）。
+                            if !matches!(governor.level(), drain::GovernorLevel::Emergency)
+                                && synth.voice_count() > escalate_voices
+                            {
+                                Some(governor.force_emergency())
+                            } else {
+                                None
+                            }
+                        });
+                    if let Some(level) = level_change {
+                        // REND-016 #139：过载重同步——**入口**只降级保护（现场反馈：
+                        // "丢旧音频"造成可听跳跃、"淡出全部声部"造成暴力切断，比糊
+                        // 过去更难接受）；**出口**只清"风暴期出生"的余波（不动新段落、
+                        // 不动音频缓冲），避免风暴余波叠加到后面段落。
+                        let entering = matches!(level, drain::GovernorLevel::Emergency)
+                            && !matches!(level_before, drain::GovernorLevel::Emergency);
+                        let leaving = !matches!(level, drain::GovernorLevel::Emergency)
+                            && matches!(level_before, drain::GovernorLevel::Emergency);
+                        if entering {
+                            // 不丢弃音频、不淡出声部：仅施加运行时声部上限——
+                            // trim 保留最老的声部（正在演奏的乐句），爆点新音符
+                            // 被裁掉，音乐"糊过去"而不是被切断。
+                            tracing::warn!(
+                                "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
+                                level as u8
+                            );
+                            eprintln!(
+                                "[RESYNC] 入口降级保护：不切断、不跳段，仅施加声部上限（L{}）",
+                                level as u8
+                            );
+                        } else if leaving {
+                            let cutoff = clean_since_frame.unwrap_or(synth.global_frame());
+                            let faded = synth.fade_voices_spawned_before(cutoff);
+                            tracing::warn!(
+                                "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
+                                faded,
+                                cutoff,
+                                level as u8
+                            );
+                            eprintln!(
+                                "[RESYNC] 出口清余波：淡出风暴期声部 {} 个（cutoff 帧 {}，L{}）",
+                                faded,
+                                cutoff,
+                                level as u8
+                            );
+                        }
+                        let voices = synth.voice_count();
+                        let applied_limit = synth.set_runtime_voice_limit(governor.voice_limit());
+                        tracing::warn!(
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
+                            level as u8,
+                            elapsed / total,
+                            voices,
+                            applied_limit,
+                            drain_outcome.processed,
+                            drain_outcome.dropped_expired,
+                            drain_outcome.dropped_budget
+                        );
+                        eprintln!(
+                            "[GOVERNOR] 级别切换 -> L{}（load {:.2}, voices {}, 运行时声部上限 {}，本块 drain {} 条，过期 {}，预算 {}）",
+                            level as u8,
+                            elapsed / total,
+                            voices,
+                            applied_limit,
+                            drain_outcome.processed,
+                            drain_outcome.dropped_expired,
+                            drain_outcome.dropped_budget
+                        );
+                    }
+                    thread_stats.set_governor_level(governor.level() as u64);
+                    // REND-016 #139：向发送端发布级别（NoteOn 准入限速）。
+                    thread_admission.set_level(governor.level() as u64);
+
                     // Push without dropping: wait while the queue is full.
                     // The wait below is backpressure (the consumer is
                     // draining), NOT render load - so the render-load
@@ -218,15 +383,30 @@ impl AudioPlayback {
         // 然后持活直到 `stop_flag` 置位（Stream 析构即停止音频回调）。
         let (stream_tx_result, stream_rx_result) = mpsc::channel::<Result<(), SynthError>>();
         let owner_stop = stop_flag.clone();
+        let owner_flush_epoch = Arc::clone(&flush_epoch);
         let stream_owner = thread::Builder::new()
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
-                let err_fn = |e| eprintln!("lumino-gpu-synth playback error: {e}");
+                let err_fn = |e| {
+                    tracing::error!("lumino-gpu-synth playback error: {e}");
+                    eprintln!("lumino-gpu-synth playback error: {e}");
+                };
                 let mut next_block: Vec<f32> = Vec::new();
                 let mut next_pos = 0usize;
+                // REND-016 #139：已见到的重同步纪元（变化时丢弃旧缓冲）。
+                let mut flush_seen = 0u64;
                 let stream = match device.build_output_stream(
                     &stream_config,
                     move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                        // REND-016 #139：过载重同步——纪元变化则丢弃已渲染的旧音频，
+                        // 直接跳到最新内容（避免爆点后旧尾段播完才恢复）。
+                        let epoch = owner_flush_epoch.load(Ordering::Relaxed);
+                        if epoch != flush_seen {
+                            flush_seen = epoch;
+                            while sample_rx.try_recv().is_ok() {}
+                            next_block.clear();
+                            next_pos = 0;
+                        }
                         cb_stats
                             .last_request_samples
                             .store(data.len() as i64, Ordering::SeqCst);
@@ -248,6 +428,10 @@ impl AudioPlayback {
                                             as i64;
                                         let prev = LAST_UD_LOG.fetch_max(ms, Ordering::Relaxed);
                                         if ms - prev > 500 {
+                                            tracing::warn!(
+                                                "[UNDERRUN] queue empty (total: {})",
+                                                cb_stats.underruns.load(Ordering::Relaxed)
+                                            );
                                             eprintln!(
                                                 "[UNDERRUN] queue empty (total: {})",
                                                 cb_stats.underruns.load(Ordering::Relaxed)
@@ -306,6 +490,7 @@ impl AudioPlayback {
             stop_flag,
             stop_tx: Some(stop_tx),
             event_tx: Some(event_tx),
+            admission,
             stream_tx: Some(stream_tx),
             ctrl_tx: Some(ctrl_tx),
             thread: Some(thread),

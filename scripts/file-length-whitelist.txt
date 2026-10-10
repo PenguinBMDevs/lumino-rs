@@ -7,7 +7,6 @@
 crates/audio/gpu-synth/src/audio/wav.rs
 crates/audio/gpu-synth/src/synth/engine/init.rs
 crates/audio/gpu-synth/src/synth/engine/tests.rs
-crates/audio/midi-io/src/api/lgs.rs
 crates/audio/midi-io/src/api/xsynth/init.rs
 crates/audio/midi-io/src/ui_sfx.rs
 crates/audio/midi-model/src/clipboard.rs

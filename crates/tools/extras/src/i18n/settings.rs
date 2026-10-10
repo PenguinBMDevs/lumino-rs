@@ -85,6 +85,10 @@ pub struct SettingsTranslations {
     pub soft_nps_gate: &'static str,
     /// 过载保命闸提示
     pub soft_nps_gate_hint: &'static str,
+    /// LGS 防爆闸
+    pub lgs_nps_gate: &'static str,
+    /// LGS 防爆闸提示
+    pub lgs_nps_gate_hint: &'static str,
     /// 力度过滤阈值
     pub velocity_filter: &'static str,
     /// 力度过滤阈值提示

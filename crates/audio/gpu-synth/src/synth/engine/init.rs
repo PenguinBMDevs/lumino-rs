@@ -185,6 +185,7 @@ impl GpuSynth {
 
         let mut engine = Self {
             config,
+            base_max_voices: max_voices,
             res,
             sf: None,
             params_buf,
@@ -248,6 +249,11 @@ impl GpuSynth {
     /// Returns the engine configuration.
     pub fn config(&self) -> &SynthConfig {
         &self.config
+    }
+
+    /// 当前渲染帧位置（音频时间线；REND-016 #139 过载重同步判定用）。
+    pub fn global_frame(&self) -> u64 {
+        self.global_frame
     }
 
     /// Installs (or clears) the cooperative checkpoint used by the offline

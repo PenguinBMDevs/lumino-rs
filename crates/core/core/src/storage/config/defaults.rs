@@ -33,6 +33,9 @@ pub(super) fn default_lgs_block_size() -> usize {
 pub(super) fn default_lgs_max_voices_per_key() -> usize {
     4
 }
+pub(super) fn default_lgs_soft_nps_gate() -> bool {
+    true
+}
 pub(super) fn default_automation_line_thickness() -> f32 {
     2.0
 }

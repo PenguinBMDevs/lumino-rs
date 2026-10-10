@@ -447,3 +447,50 @@ fn limiter_short_blocks_preserve_lookahead_delay() {
         );
     }
 }
+
+/// REND-016 #139：入口全清——所有在响声部（含释放尾巴）置为 5ms 淡出；
+/// 已结束的声部不动。
+#[test]
+fn fade_all_voices_marks_all_alive_including_tails() {
+    use super::trim::fade_all_voices_in;
+    let sustained = test_voice(1, 60, 0, true);
+    let mut tail = test_voice(2, 61, 0, false);
+    tail.release_at = 5;
+    tail.released = true;
+    tail.fade_out = true;
+    let mut ended = test_voice(3, 62, 0, false);
+    ended.state.ended = 1;
+    let mut voices = [sustained, tail, ended];
+
+    let marked = fade_all_voices_in(&mut voices, 100);
+
+    assert_eq!(marked, 2, "在响持续音 + 释放尾巴都要清");
+    assert_eq!(voices[0].release_at, 100);
+    assert!(voices[0].released && voices[0].fade_out && !voices[0].damper_pending);
+    assert_eq!(voices[1].release_at, 100, "释放尾巴也加速淡出");
+    assert_eq!(voices[2].release_at, u64::MAX, "已结束的不动");
+}
+
+/// REND-016 #139：出口只清风暴余波——`spawn_frame < cutoff` 的声部（含尾巴）
+/// 被标记；新段落声部不动。
+#[test]
+fn fade_voices_spawned_before_respects_cutoff() {
+    use super::trim::fade_voices_spawned_before;
+    let mut old = test_voice(1, 60, 0, false);
+    old.spawn_frame = 10;
+    let mut fresh = test_voice(2, 61, 0, false);
+    fresh.spawn_frame = 500;
+    let mut old_tail = test_voice(3, 62, 0, false);
+    old_tail.spawn_frame = 20;
+    old_tail.release_at = 30;
+    old_tail.released = true;
+    old_tail.fade_out = true;
+    let mut voices = [old, fresh, old_tail];
+
+    let marked = fade_voices_spawned_before(&mut voices, 100, 1000);
+
+    assert_eq!(marked, 2, "风暴期持续音与尾巴都要清");
+    assert_eq!(voices[0].release_at, 1000);
+    assert_eq!(voices[1].release_at, u64::MAX, "新段落声部不动");
+    assert_eq!(voices[2].release_at, 1000, "风暴期释放尾巴也清");
+}

@@ -31,6 +31,13 @@ use std::time::{Duration, Instant};
 /// DIAG: throttle for the `[UNDERRUN]` stderr marker below.
 static LAST_UD_LOG: AtomicI64 = AtomicI64::new(0);
 
+/// 带墙钟时间戳的实时 MIDI 事件（发送端记录入队时刻）。
+///
+/// REND-016 #139 积压治理：渲染线程按「入队时刻」计算事件年龄，
+/// `age > deadline` 的 **NoteOn** 会被丢弃（时间已追不回）；NoteOff /
+/// 状态类事件永不丢（防挂音 / 上下文错乱）。
+pub type StampedEvent = (u8, MidiEvent, Instant);
+
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 
 use super::resample::SincResampler;
@@ -38,10 +45,15 @@ use crate::GpuSynth;
 use crate::SynthError;
 use crate::midi::MidiEvent;
 
+mod admission;
 mod api;
 mod config;
+mod drain;
 mod start;
 mod stats;
+
+pub(crate) use admission::AdmissionState;
+pub use admission::EventSender;
 
 /// Read-only view of the realtime playback statistics.
 ///
@@ -64,6 +76,10 @@ pub struct PlaybackStatsReader {
     render_size: Arc<AtomicU64>,
     voice_count: Arc<AtomicU64>,
     underruns: Arc<AtomicU64>,
+    /// REND-016 #139：因积压过期被丢弃的 NoteOn 数（正常素材应恒为 0）。
+    dropped_note_ons: Arc<AtomicU64>,
+    /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
+    governor_level: Arc<AtomicU64>,
 }
 
 /// Number of recent render-load samples kept for the moving average.
@@ -88,7 +104,7 @@ pub enum PlaybackControl {
 ///
 /// let mut synth = GpuSynth::new(SynthConfig::default())?;
 /// synth.load_soundfont("assets/test.sf2", 0, 0)?;
-/// let mut playback = AudioPlayback::start(synth, None)?;
+/// let mut playback = AudioPlayback::start(synth, None, true)?;
 /// playback.note_on(0, 60, 100);
 /// std::thread::sleep(std::time::Duration::from_millis(500));
 /// playback.note_off(0, 60);
@@ -98,7 +114,9 @@ pub enum PlaybackControl {
 pub struct AudioPlayback {
     stop_flag: Arc<AtomicBool>,
     stop_tx: Option<mpsc::Sender<()>>,
-    event_tx: Option<mpsc::Sender<(u8, MidiEvent)>>,
+    event_tx: Option<mpsc::Sender<StampedEvent>>,
+    /// REND-016 #139：发送端 NoteOn 准入限速状态（Governor 级别由渲染线程发布）。
+    admission: Arc<AdmissionState>,
     stream_tx: Option<mpsc::Sender<Vec<crate::midi::TimedEvent>>>,
     /// 轻量控制命令发送器（REND-002 实时多端口：复位/踏板清理，不重开流）。
     ctrl_tx: Option<mpsc::Sender<PlaybackControl>>,

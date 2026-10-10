@@ -37,6 +37,8 @@ pub(super) static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     voice_target_ratio_hint: "运行目标 = 比例 × 硬上限（默认 1-1/e≈0.632，留约 37% 暂态余量；1-1/e²≈0.865 更激进但余量仅 13.5%）",
     soft_nps_gate: "过载保命闸（仅在重度过载时临时限速，默认关闭）",
     soft_nps_gate_hint: "关闭时不存在任何 NoteOn 丢弃路径；开启后仅在负载持续超限时短暂限速，回落后自动解除",
+    lgs_nps_gate: "防爆闸（LGS，默认开启）",
+    lgs_nps_gate_hint: "开启时：过载（L2+）自动对 NoteOn 令牌桶限速（突发 50ms 成组放行，被拒音符的 NoteOff 配对抵消），保连续但会变薄；关闭时：完全放行，过载会周期性静音",
     velocity_filter: "力度过滤阈值",
     velocity_filter_hint: "力度小于等于阈值的音符将不播放（0=关闭过滤）",
     midi_input_device: "MIDI 输入设备:",

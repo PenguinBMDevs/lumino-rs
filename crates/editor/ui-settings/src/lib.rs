@@ -62,6 +62,10 @@ pub struct SynthSettings {
     pub lgs_block_size: usize,
     /// LGS (GPU) 每个 (通道, 键) 最大同音数（0=不限制，默认 4）
     pub lgs_max_voices_per_key: usize,
+    /// LGS (GPU) 全局最大复音数（硬上限/量程；None = 自动 = 16384；REND-016 #139）
+    pub lgs_global_voice_limit: Option<usize>,
+    /// LGS (GPU) 防爆闸（发送端软 NPS 闸，默认开；REND-016 #139）
+    pub lgs_soft_nps_gate: bool,
     /// LGS (GPU) 专属响度(力度)过滤阈值（0=关闭过滤，默认 1，与 XSynth 全局力度过滤相互独立）
     pub lgs_velocity_filter_threshold: u8,
     /// 音频播放输出设备（CPAL 音频设备）扫描结果列表（设备名）
