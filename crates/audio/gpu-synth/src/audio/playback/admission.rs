@@ -29,11 +29,11 @@ fn now_us() -> i64 {
 
 /// Overload 级 NoteOn 准入速率（音符/s）。
 ///
-/// 必须**高于素材的正常密度**，否则正常段落也会被持续限速 → 压力永不消失、
-/// 级别无法释放（现场 Bad Apple 8.49M 平均 ≈37k/s 的教训）。
-const OVERLOAD_NPS: i64 = 128_000;
+/// 必须**高于素材的正常密度**（现场实测正常段落 ~10–24k/s），否则正常段落
+/// 也会被持续限速 → 压力永不消失、级别无法释放。
+const OVERLOAD_NPS: i64 = 64_000;
 /// Emergency 级 NoteOn 准入速率（音符/s）。
-const EMERGENCY_NPS: i64 = 64_000;
+const EMERGENCY_NPS: i64 = 32_000;
 /// Governor 级别阈值（数值与 `drain::GovernorLevel` 对齐）。
 const LEVEL_OVERLOAD: u64 = 2;
 const LEVEL_EMERGENCY: u64 = 3;
@@ -317,7 +317,7 @@ mod tests {
             }
         }
         assert_eq!(allowed, (EMERGENCY_NPS / 1000) as usize);
-        // 最小间隔 = 1e6/rate 微秒：桶空后 10µs 内拒绝、20µs 后放行
+        // 最小间隔 = 1e6/rate 微秒：桶空后不足间隔拒绝、超过间隔放行
         let s2 = AdmissionState::new(true);
         s2.set_level(3);
         {
@@ -325,8 +325,9 @@ mod tests {
             b.tokens_milli = 0;
             b.last_us = 2_000_000;
         }
-        assert!(!s2.allow_note_on_at(2_000_010));
-        assert!(s2.allow_note_on_at(2_000_020));
+        let gap_us = 1_000_000 / EMERGENCY_NPS;
+        assert!(!s2.allow_note_on_at(2_000_000 + gap_us / 2));
+        assert!(s2.allow_note_on_at(2_000_000 + gap_us + 1));
     }
 
     /// 级别变化时令牌桶重置为满突发（避免携带空桶）。

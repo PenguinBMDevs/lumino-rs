@@ -62,11 +62,11 @@ const EMERGENCY_NOTE_ON_BUDGET: usize = 2_048;
 ///
 /// 块渲染成本 ∝ 声部数：过载时把 trim 目标临时压低，把渲染耗时拉回实时
 /// 预算；恢复期由 Governor 逐级回升，风暴过后回到构造配置。
-/// 取值必须能容纳**正常密度**（现场 Bad Apple 8.49M 平均 ≈37k/s × 0.9s 释放
-/// ≈33k 声部；上限低于此值会造成正常段落被持续偷声）。
-const OVERLOAD_VOICE_LIMIT: usize = 65_536;
+/// 取值依据（现场实测）：正常段落 ~3k 声部（load 0.1），爆点是**单 tick
+/// 3 万声部**；上限必须低于爆点规模才能把块耗时压回预算，同时高于正常段落。
+const OVERLOAD_VOICE_LIMIT: usize = 16_384;
 /// Emergency 级运行时声部上限（保实时优先，比 Overload 更严格）。
-const EMERGENCY_VOICE_LIMIT: usize = 32_768;
+const EMERGENCY_VOICE_LIMIT: usize = 8_192;
 // 编译期不变量：Emergency 必须比 Overload 更严格。
 const _: () = assert!(OVERLOAD_VOICE_LIMIT > EMERGENCY_VOICE_LIMIT);
 
