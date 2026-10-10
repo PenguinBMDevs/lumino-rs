@@ -264,6 +264,9 @@ pub(crate) fn drain_events(
     let mut admitted_note_ons = 0usize;
     let mut emergency_evidence = false;
     let mut flush_mode = false;
+    let mut note_offs = 0u64;
+    let mut controls = 0u64;
+    let mut oldest_ms = 0u64;
     let budget = governor.note_on_budget();
 
     while processed < cap {
@@ -272,6 +275,14 @@ pub(crate) fn drain_events(
         };
         processed += 1;
         let age = now.saturating_duration_since(enqueued_at);
+        if processed == 1 {
+            oldest_ms = age.as_millis() as u64;
+        }
+        match &event {
+            MidiEvent::NoteOff { .. } => note_offs += 1,
+            MidiEvent::NoteOn { .. } => {}
+            _ => controls += 1,
+        }
 
         // 紧急冲洗（REND-016 #139）：FIFO 下首个事件即最老事件，其年龄超限
         // 说明积压已深——本块一次性扫完过期区（而不是每块只扫 65536 条），
@@ -298,16 +309,24 @@ pub(crate) fn drain_events(
 
     if flush_mode {
         tracing::warn!(
-            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条，丢弃过期 NoteOn {} 条（累计 {}，L{}）",
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms（累计 {}，L{}）",
             processed,
+            note_offs,
+            controls,
             dropped_expired,
+            dropped_budget,
+            oldest_ms,
             stats.dropped_note_ons() + dropped_expired,
             governor.level() as u8
         );
         eprintln!(
-            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条，丢弃过期 NoteOn {} 条（累计 {}，L{}）",
+            "[EVENT-FLUSH] 紧急冲洗：扫描 {} 条（NoteOff {} / 控制 {} / 过期 NoteOn {} / 预算 {}），最老 {}ms（累计 {}，L{}）",
             processed,
+            note_offs,
+            controls,
             dropped_expired,
+            dropped_budget,
+            oldest_ms,
             stats.dropped_note_ons() + dropped_expired,
             governor.level() as u8
         );
