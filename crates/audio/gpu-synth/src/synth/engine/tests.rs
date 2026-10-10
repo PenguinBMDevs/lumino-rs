@@ -447,3 +447,26 @@ fn limiter_short_blocks_preserve_lookahead_delay() {
         );
     }
 }
+
+/// REND-016 #139：过载重同步——所有在响持续声部置为 5ms 淡出；
+/// 已在淡出 / 已结束的声部不重复处理。
+#[test]
+fn fade_all_voices_marks_sustained_only() {
+    use super::trim::fade_all_voices_in;
+    let sustained = test_voice(1, 60, 0, true);
+    let mut fading = test_voice(2, 61, 0, false);
+    fading.release_at = 5;
+    fading.released = true;
+    fading.fade_out = true;
+    let mut ended = test_voice(3, 62, 0, false);
+    ended.state.ended = 1;
+    let mut voices = [sustained, fading, ended];
+
+    let marked = fade_all_voices_in(&mut voices, 100);
+
+    assert_eq!(marked, 1, "只标记在响的持续声部");
+    assert_eq!(voices[0].release_at, 100);
+    assert!(voices[0].released && voices[0].fade_out && !voices[0].damper_pending);
+    assert_eq!(voices[1].release_at, 5, "已在淡出的不重复标记");
+    assert_eq!(voices[2].release_at, u64::MAX, "已结束的不动");
+}

@@ -12,6 +12,14 @@ impl GpuSynth {
         effective
     }
 
+    /// REND-016 #139：过载重同步——所有在响的持续声部置为 5ms 淡出（无爆音硬切）。
+    ///
+    /// 用于引擎落后于时间线后的"重置"：爆点处一次短促淡出，之后只保留当前
+    /// 位置的干净内容；已在淡出/已结束的声部不重复处理。返回被标记声部数。
+    pub fn fade_all_voices(&mut self) -> usize {
+        fade_all_voices_in(&mut self.voices, self.global_frame)
+    }
+
     /// 每块一次的声部池治理（原 `upload_voices` 前段逐语句搬移）。
     ///
     /// 负责：清零每键防风暴预算、执行独占类互斥、重建活跃组计数、
@@ -323,4 +331,22 @@ impl GpuSynth {
         }
         self.trim_fade_budget = self.trim_fade_budget.saturating_sub(started);
     }
+}
+
+/// 把所有在响的持续声部置为 5ms 淡出（REND-016 #139 过载重同步；纯函数便于单测）。
+///
+/// 已在淡出（`release_at != u64::MAX`）或已结束的声部不重复处理；
+/// 返回本次被标记的声部数。
+pub(crate) fn fade_all_voices_in(voices: &mut [Voice], global_frame: u64) -> usize {
+    let mut count = 0usize;
+    for v in voices {
+        if v.state.ended == 0 && v.release_at == u64::MAX {
+            v.release_at = global_frame;
+            v.released = true;
+            v.fade_out = true;
+            v.damper_pending = false;
+            count += 1;
+        }
+    }
+    count
 }

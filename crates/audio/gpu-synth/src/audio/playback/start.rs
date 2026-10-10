@@ -38,6 +38,9 @@ impl AudioPlayback {
         // REND-016 #139：发送端准入限速状态（渲染线程发布级别，发送端应用；
         // `nps_gate_enabled` = 用户「LGS 防爆闸」开关）。
         let admission = Arc::new(AdmissionState::new(nps_gate_enabled));
+        // REND-016 #139：过载重同步纪元——渲染线程在进出 Emergency 时递增；
+        // 音频回调发现纪元变化后丢弃已渲染的旧音频（直接跳到最新内容）。
+        let flush_epoch = Arc::new(AtomicU64::new(0));
 
         // Stats shared between the callback, the render thread and the caller.
         let stats = PlaybackStatsReader {
@@ -92,6 +95,7 @@ impl AudioPlayback {
         let thread_stop = stop_flag.clone();
         let thread_stats = stats.clone();
         let thread_admission = Arc::clone(&admission);
+        let thread_flush_epoch = Arc::clone(&flush_epoch);
         let thread = thread::Builder::new()
             .name("lumino-gpu-synth-render".into())
             .spawn(move || {
@@ -220,9 +224,29 @@ impl AudioPlayback {
                     // REND-016 #139：治理器反馈（负载 EMA + 积压证据 → 级别/预算/
                     // 运行时声部上限）。收缩声部上限让块渲染成本 ∝ 声部数地下降，
                     // 是消除"卡顿期间持续欠载静音"的关键手段。
+                    let level_before = governor.level();
                     if let Some(level) =
                         governor.observe(elapsed / total, drain_outcome.emergency_evidence, gate_pressure)
                     {
+                        // REND-016 #139：过载重同步（进出 Emergency）——切断旧内容：
+                        // 全部在响声部 5ms 淡出 + 递增音频 flush 纪元（回调丢弃旧缓冲），
+                        // 避免爆点后"旧尾段与当前位置混响"（现场反馈的不可用听感）。
+                        if matches!(level, drain::GovernorLevel::Emergency)
+                            || matches!(level_before, drain::GovernorLevel::Emergency)
+                        {
+                            let faded = synth.fade_all_voices();
+                            thread_flush_epoch.fetch_add(1, Ordering::Relaxed);
+                            tracing::warn!(
+                                "[RESYNC] 过载重同步：淡出 {} 个声部 + 丢弃旧音频（L{}）",
+                                faded,
+                                level as u8
+                            );
+                            eprintln!(
+                                "[RESYNC] 过载重同步：淡出 {} 个声部 + 丢弃旧音频（L{}）",
+                                faded,
+                                level as u8
+                            );
+                        }
                         let voices = synth.voice_count();
                         let applied_limit = synth.set_runtime_voice_limit(level.voice_limit());
                         tracing::warn!(
@@ -285,6 +309,7 @@ impl AudioPlayback {
         // 然后持活直到 `stop_flag` 置位（Stream 析构即停止音频回调）。
         let (stream_tx_result, stream_rx_result) = mpsc::channel::<Result<(), SynthError>>();
         let owner_stop = stop_flag.clone();
+        let owner_flush_epoch = Arc::clone(&flush_epoch);
         let stream_owner = thread::Builder::new()
             .name("lumino-gpu-synth-stream-owner".into())
             .spawn(move || {
@@ -294,9 +319,20 @@ impl AudioPlayback {
                 };
                 let mut next_block: Vec<f32> = Vec::new();
                 let mut next_pos = 0usize;
+                // REND-016 #139：已见到的重同步纪元（变化时丢弃旧缓冲）。
+                let mut flush_seen = 0u64;
                 let stream = match device.build_output_stream(
                     &stream_config,
                     move |data: &mut [f32], _info: &cpal::OutputCallbackInfo| {
+                        // REND-016 #139：过载重同步——纪元变化则丢弃已渲染的旧音频，
+                        // 直接跳到最新内容（避免爆点后旧尾段播完才恢复）。
+                        let epoch = owner_flush_epoch.load(Ordering::Relaxed);
+                        if epoch != flush_seen {
+                            flush_seen = epoch;
+                            while sample_rx.try_recv().is_ok() {}
+                            next_block.clear();
+                            next_pos = 0;
+                        }
                         cb_stats
                             .last_request_samples
                             .store(data.len() as i64, Ordering::SeqCst);
