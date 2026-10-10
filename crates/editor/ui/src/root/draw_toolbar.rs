@@ -6,10 +6,15 @@
 //!
 //! 面板常驻显示全部绘制工具（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字），
 //! 当前激活工具高亮；颜料桶为可切换的「填充开关」（可与曲线/形状共存高亮）。
-//! 胶囊**右端**另有一枚常显的**设置按钮**（齿轮），以分隔线与工具图标区隔：
-//! 它是各绘制工具设置的**聚合入口**，**不参与工具选择语义**，且**不在主窗口落浮层**——
-//! 点开的是**独立 OS 窗口**（`DialogType::DrawSettings`，见 `view/draw_settings_dialog.rs`），
-//! 由 Runner 开窗并对同类型窗口去重。
+//! 胶囊**右端**是一整块**设置区**（以分隔线与工具图标区隔），自左向右两枚常显入口：
+//! - **「粗细」**（`icon::Thickness`，本轮只交付入口）：点击只发
+//!   `Event::ThicknessSettingsRequested`，控件（滑杆 / 步进）下一轮接入；
+//! - **「设置」齿轮**：各绘制工具设置的**聚合入口**，**不在主窗口落浮层**——
+//!   点开的是**独立 OS 窗口**（`DialogType::DrawSettings`，见
+//!   `view/draw_settings_dialog.rs`），由 Runner 开窗并对同类型窗口去重。
+//!
+//! 两枚设置入口都**不参与工具选择语义**（点设置不该顺手切走正在用的绘制工具），
+//! 也都不带开合高亮态（真实开关状态在自己的窗口 / 面板上，主窗再维护一份会漂移）。
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
 //!
@@ -136,9 +141,9 @@ impl Root {
 
         // 首项为**专用拖拽柄**（独立于按钮区，保证起拖信号不被按钮吞掉），
         // 其后为分隔竖线，再是全部绘制工具图标（常显 + 激活高亮）。
-        let mut row_items: Vec<Element<'_>> = Vec::with_capacity(items.len() + 4);
+        let mut row_items: Vec<Element<'_>> = Vec::with_capacity(items.len() + 5);
         row_items.push(drag_handle());
-        row_items.push(grip_divider());
+        row_items.push(separator());
         for (item, ic, desc, selected) in items {
             // 已启用的条目：再次点击 = 弹出该工具的设置（不再依赖 Ctrl）。
             let on_press = tool_panel_item_press(*item, *selected);
@@ -162,11 +167,24 @@ impl Root {
             "设置面板的归属条目不在条目列表内：面板将无处挂载"
         );
 
-        // 右端「设置按钮」（齿轮）：以分隔线与工具图标区隔开，**常显**且不参与工具选择
-        // 语义——它是各绘制工具设置的**聚合入口**，点开的是**独立 OS 窗口**
-        // （`DialogType::DrawSettings`），因此这里只放一个纯按钮，不带锚定悬浮层、
-        // 也不带开合高亮态（真实开关状态在独立窗口自己的标题栏上，主窗再维护一份会漂移）。
-        row_items.push(grip_divider());
+        // 右端「设置区」：以分隔线与工具图标区隔开，**常显**且不参与工具选择语义。
+        // 区内涵两枚纯按钮，自左向右：
+        // 1. 「粗细」（`icon::Thickness` → 仓内 `stroke-settings.svg` 那枚双线图）——
+        //    本轮**只交付入口**：按钮 + 图标就位、点击发消息，粗细控件下一轮接入；
+        // 2. 齿轮——各绘制工具设置的**聚合入口**，点开的是**独立 OS 窗口**
+        //    （`DialogType::DrawSettings`）。
+        // 两枚都不带锚定悬浮层、也不带开合高亮态（真实开关状态在对应窗口 / 面板自己的
+        // 标题栏上，主窗再维护一份只会与真实状态漂移）。
+        row_items.push(separator());
+        row_items.push(with_tooltip(
+            tool_icon_button(
+                icon::Thickness,
+                false,
+                Event::thickness_settings_requested(),
+                &self.window.theme,
+            ),
+            t.tool_thickness,
+        ));
         row_items.push(with_tooltip(
             tool_icon_button(
                 icon::Gear,
@@ -361,8 +379,9 @@ fn drag_handle() -> Element<'static> {
         .into()
 }
 
-/// 拖拽柄与工具图标区之间的分隔竖线，提示"左端为拖拽把手"。
-fn grip_divider() -> Element<'static> {
+/// 区段之间的分隔竖线：胶囊内共两处——拖拽柄与工具图标区之间、工具图标区与右端设置区
+/// 之间（"左端是把手、右端是设置"两个边界各画一条）。
+fn separator() -> Element<'static> {
     container(
         Space::new()
             .width(Length::Fixed(1.0))
@@ -553,9 +572,11 @@ mod tests {
 
     /// 条目行内的固定槽位数（也是 `find_row` 的定位依据）：
     /// `0` = 拖拽柄、`1` = 分隔线、`2..=7` = 6 个绘制工具、`8` = 分隔线、
-    /// `9` = 右端「设置按钮」（齿轮）。
-    const ROW_SLOTS: usize = 2 + 6 + 2;
-    /// 右端「设置按钮」（齿轮）在条目行内的槽位号。
+    /// `9` = 右端设置区的「粗细」按钮、`10` = 右端设置区的「设置」按钮（齿轮）。
+    const ROW_SLOTS: usize = 2 + 6 + 3;
+    /// 右端设置区的「粗细」按钮（齿轮左侧）在条目行内的槽位号。
+    const THICKNESS_SLOT: usize = ROW_SLOTS - 2;
+    /// 右端设置区的「设置」按钮（齿轮）在条目行内的槽位号。
     const GEAR_SLOT: usize = ROW_SLOTS - 1;
 
     /// 回归测试：工具自带设置面板必须**水平居中于触发它的那个按钮**。
@@ -589,6 +610,31 @@ mod tests {
         });
     }
 
+    /// 布局悬浮条 → 返回**条目行**内每个槽位的绝对矩形（槽位含义见 `ROW_SLOTS` 注释）。
+    ///
+    /// 抽为几何断言的公共前置：左右端位置、按钮尺寸几条断言都要先拿到同一份真实布局，
+    /// 各处各写一遍 `Tree::new` + `layout` 迟早会在视口尺寸 / `Limits` 上漂移。
+    fn layout_row_slots(renderer: &crate::Renderer, root: &mut Root) -> Option<Vec<Rectangle>> {
+        let mut element = root.view_draw_toolbar()?;
+        let mut tree = widget::Tree::new(&element);
+        let viewport = Rectangle::with_size(Size::new(1400.0, 900.0));
+        let node = element.as_widget_mut().layout(
+            &mut tree,
+            renderer,
+            &layout::Limits::new(Size::ZERO, viewport.size()),
+        );
+        let row = find_row(layout::Layout::new(&node), ROW_SLOTS)?;
+        Some(row.children().map(|child| child.bounds()).collect())
+    }
+
+    /// 6 个绘制工具按钮（槽位 `2..=7`）的右缘最大值 = **工具图标区**的右边界。
+    fn tool_slots_max_right(slots: &[Rectangle]) -> f32 {
+        (2..2 + 6)
+            .filter_map(|i| slots.get(i))
+            .map(|r| r.x + r.width)
+            .fold(f32::MIN, f32::max)
+    }
+
     /// 齿轮必须落在胶囊**最右端**（工具图标区之后），且其按钮宽度与其它条目同规格。
     ///
     /// 需求明确要求"右端设置按钮"：这条几何断言把它钉死——若哪天有人把齿轮挪进工具
@@ -602,27 +648,11 @@ mod tests {
 
         let mut root = Root::new(&UiConfig::default());
         root.toolbar.tool_panel_open = true;
-        let mut element = root.view_draw_toolbar().expect("悬浮条已打开应渲染");
-        let mut tree = widget::Tree::new(&element);
-        let viewport = Rectangle::with_size(Size::new(1400.0, 900.0));
-        let node = element.as_widget_mut().layout(
-            &mut tree,
-            &renderer,
-            &layout::Limits::new(Size::ZERO, viewport.size()),
-        );
-        let row = find_row(layout::Layout::new(&node), ROW_SLOTS)
-            .expect("应能定位胶囊内的条目行（拖拽柄 + 分隔线 + 6 工具 + 分隔线 + 齿轮）");
+        let slots = layout_row_slots(&renderer, &mut root)
+            .expect("应能定位胶囊内的条目行（拖拽柄 + 分隔线 + 6 工具 + 分隔线 + 粗细 + 齿轮）");
 
-        let gear = row
-            .children()
-            .nth(GEAR_SLOT)
-            .expect("齿轮应有布局节点")
-            .bounds();
-        // 参与比较的只有 6 个工具按钮（槽位 2..=7）——拖拽柄/分隔线不算"工具图标区"。
-        let tool_max_right = (2..2 + 6)
-            .filter_map(|i| row.children().nth(i))
-            .map(|c| c.bounds().x + c.bounds().width)
-            .fold(f32::MIN, f32::max);
+        let gear = slots[GEAR_SLOT];
+        let tool_max_right = tool_slots_max_right(&slots);
 
         assert!(
             gear.x >= tool_max_right,
@@ -635,6 +665,56 @@ mod tests {
             "齿轮按钮应为标准图标按钮尺寸 {BUTTON_SIZE}，实际 {:.1}x{:.1}",
             gear.width,
             gear.height
+        );
+    }
+
+    /// 「粗细」按钮必须落在**工具图标区右侧、齿轮左侧**，且与其它条目同规格。
+    ///
+    /// 需求把位置定死在"与齿轮同属**右端设置区**"：若哪天有人把它塞进工具图标之间
+    /// （比如跟在文字工具后面），它就会与齿轮不再相邻、并混进"工具条目"的选择语义
+    /// （`apply_tool_panel_item` 会顺手改 `current_tool` / `fill_enabled`），本测试失败。
+    #[test]
+    fn test_thickness_entry_sits_left_of_gear_in_settings_group() {
+        let Some(renderer) = headless_renderer() else {
+            eprintln!("跳过：无可用 GPU 适配器（几何断言需要真实布局）");
+            return;
+        };
+
+        let mut root = Root::new(&UiConfig::default());
+        root.toolbar.tool_panel_open = true;
+        let slots = layout_row_slots(&renderer, &mut root)
+            .expect("应能定位胶囊内的条目行（拖拽柄 + 分隔线 + 6 工具 + 分隔线 + 粗细 + 齿轮）");
+
+        let thickness = slots[THICKNESS_SLOT];
+        let gear = slots[GEAR_SLOT];
+        let tool_max_right = tool_slots_max_right(&slots);
+
+        assert!(
+            thickness.x >= tool_max_right,
+            "「粗细」应在工具图标区右侧：粗细左缘 {:.1} vs 工具区右缘 {:.1}",
+            thickness.x,
+            tool_max_right
+        );
+        assert!(
+            thickness.x + thickness.width <= gear.x,
+            "「粗细」应在齿轮左侧（设置区内自左向右为 粗细 → 齿轮）：\
+             粗细右缘 {:.1} vs 齿轮左缘 {:.1}",
+            thickness.x + thickness.width,
+            gear.x
+        );
+        // 两枚设置入口必须**相邻**：中间只隔一个按钮间距（row 的 spacing），
+        // 不得再插第三个控件或额外留白（"右端两枚设置入口"是对外承诺的形态）。
+        let gap = gear.x - (thickness.x + thickness.width);
+        assert!(
+            (gap - BUTTON_SPACING).abs() < 0.5,
+            "粗细与齿轮之间应恰好隔一个按钮间距 {BUTTON_SPACING}，实际 {gap:.1}"
+        );
+        assert!(
+            (thickness.width - BUTTON_SIZE).abs() < 1.0
+                && (thickness.height - BUTTON_SIZE).abs() < 1.0,
+            "「粗细」按钮应为标准图标按钮尺寸 {BUTTON_SIZE}，实际 {:.1}x{:.1}",
+            thickness.width,
+            thickness.height
         );
     }
 
@@ -743,9 +823,8 @@ mod tests {
     /// 这是"不再需要 Ctrl+单击"的视图层唯一出口，逐条钉死。
     #[test]
     fn test_tool_panel_item_press_contract() {
-        const ALL: [ToolPanelItem; 7] = [
+        const ALL: [ToolPanelItem; 6] = [
             ToolPanelItem::Mouse,
-            ToolPanelItem::StrokeSettings,
             ToolPanelItem::Curve,
             ToolPanelItem::FillBucket,
             ToolPanelItem::Brush,
@@ -775,7 +854,6 @@ mod tests {
         // 已启用但无独立设置：仍是普通选择（不产生空的设置请求）
         for item in [
             ToolPanelItem::Mouse,
-            ToolPanelItem::StrokeSettings,
             ToolPanelItem::Curve,
             ToolPanelItem::Text,
         ] {
@@ -800,6 +878,35 @@ mod tests {
                 Message::Toolbar(Event::OpenDrawSettingsDialog)
             ),
             "齿轮按钮按下应发 OpenDrawSettingsDialog"
+        );
+    }
+
+    /// 右端「粗细」按钮的点击契约：**只发专属的设置请求消息**。
+    ///
+    /// 三条不能破的语义（与齿轮同族，二者都属右端设置区）：
+    /// 1. **不是工具条目**：不得发 `ToolPanelItemSelected` / `...SettingsRequested`
+    ///    ——那会趟上"选择语义"，点设置顺手把当前绘制工具切走；
+    /// 2. **不与齿轮同一条消息**：两枚入口各自可独立接落地（粗细控件 / 设置窗口），
+    ///    共用一个变体等于把两个功能焊死；
+    /// 3. **无开合态**：连点两次不产生任何"关"的语义（本轮控件未接入，更谈不上开合）。
+    #[test]
+    fn test_thickness_button_contract() {
+        let msg = Event::thickness_settings_requested();
+        assert!(
+            matches!(msg, Message::Toolbar(Event::ThicknessSettingsRequested)),
+            "「粗细」按钮按下应发 ThicknessSettingsRequested"
+        );
+        assert!(
+            !matches!(
+                msg,
+                Message::Toolbar(Event::ToolPanelItemSelected(_))
+                    | Message::Toolbar(Event::ToolPanelItemSettingsRequested(_))
+            ),
+            "「粗细」是设置入口，不得退化为工具条目（否则会切走当前绘制工具）"
+        );
+        assert!(
+            !matches!(msg, Message::Toolbar(Event::OpenDrawSettingsDialog)),
+            "「粗细」与齿轮必须各自可独立接落地，不得共用同一条消息"
         );
     }
 
@@ -868,6 +975,9 @@ mod tests {
     }
 
     /// 设置判定：仅画刷 / 形状 / 颜料桶有独立设置，其余退化为普通选择。
+    ///
+    /// 「粗细」/ 齿轮**不在本函数取值域内**——它们是右端设置区入口、不是 `ToolPanelItem`，
+    /// 走各自的专属事件，因此这里既不该也不需要为它们写分支。
     #[test]
     fn test_has_settings_scope() {
         assert!(has_settings(ToolPanelItem::Brush));
@@ -875,7 +985,6 @@ mod tests {
         assert!(has_settings(ToolPanelItem::FillBucket));
         assert!(!has_settings(ToolPanelItem::Curve));
         assert!(!has_settings(ToolPanelItem::Text));
-        assert!(!has_settings(ToolPanelItem::StrokeSettings));
         assert!(!has_settings(ToolPanelItem::Mouse));
     }
 }

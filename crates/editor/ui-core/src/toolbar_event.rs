@@ -135,6 +135,17 @@ pub enum Event {
     CloseShapeDropdown,
     /// 形状工具当前图形类型变更（矩形/圆形/三角形）
     ShapeTypeSelected(ShapeType),
+    /// 请求打开「粗细设置」（悬浮条**右端「粗细」按钮**触发）
+    ///
+    /// 与齿轮（[`Self::OpenDrawSettingsDialog`]）同属**右端设置区**，故同样
+    /// **不参与工具选择语义**：点它不得切走当前绘制工具、不得关掉颜料桶填充态，
+    /// 也不在主窗口内落任何浮层（同「设置」而非「工具条目」的定位）。
+    ///
+    /// **本轮范围 = 入口**：按钮与图标已就位，**落地尚未接入**——故这里只发消息，
+    /// 由 `Toolbar::update` 留一条 `tracing::info`：宁可先留可追溯的日志，
+    /// 也不摆一个点了完全无痕的假控件（静默失效是本仓明令禁止的一类 BUG）。
+    /// 下一轮把粗细控件（滑杆 / 步进）挂到本事件上即可，入口契约不变。
+    ThicknessSettingsRequested,
     /// 打开「音符画设置」对话框（悬浮条**右端齿轮按钮**触发）
     ///
     /// 该入口**不参与工具选择语义**，也不在主窗口内落任何浮层：它是独立 OS 窗口
@@ -163,12 +174,16 @@ pub enum ShapeType {
 /// 绘制工具选择面板中的条目
 ///
 /// 点击后由 `Toolbar::update` 翻译为具体的工具选择/设置动作。
+///
+/// ⚠️ **只放"工具条目"**，不放设置入口：悬浮条右端的「粗细」
+/// （`Event::ThicknessSettingsRequested`）与齿轮（`Event::OpenDrawSettingsDialog`）
+/// 各自带**专属事件**——一旦把它们塞进本枚举，就会趟上 `apply_tool_panel_item`
+/// 的"选择语义"（改 `current_tool` / 动 `fill_enabled`），需要处处写例外分支；
+/// 旧 `StrokeSettings` 变体正是这条弯路（自加入起就一直是个空分支 + 不可达）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolPanelItem {
     /// 鼠标工具（图形选中）：点选已确认的绘制图形，选中的图形高亮描边
     Mouse,
-    /// 描边设置
-    StrokeSettings,
     /// 曲线工具
     Curve,
     /// 填充桶

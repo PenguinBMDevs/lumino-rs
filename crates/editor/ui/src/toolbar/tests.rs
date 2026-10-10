@@ -363,3 +363,56 @@ fn test_open_draw_settings_dialog_is_idempotent() {
         "连续两次齿轮请求不应改变任何工具栏状态（无开合语义）"
     );
 }
+
+// ---------------------------------------------------------------------------
+// 悬浮条右端「粗细」按钮请求（本轮只有入口：消息已发出，控件待接入）
+// ---------------------------------------------------------------------------
+
+/// 「粗细」请求**只作信道**：工具栏侧不留任何状态（更谈不上开合态）。
+///
+/// 本轮控件未接入，故只钉住"发消息不产生副作用"这一半契约；
+/// 下一轮把粗细值接进来时，这里就是"状态该落在哪"的第一处改动点。
+#[test]
+fn test_thickness_settings_requested_leaves_tool_state_untouched() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    toolbar.current_tool = Tool::Shape;
+    toolbar.fill_enabled = true;
+    toolbar.brush_dropdown_open = true;
+    let offset_before = toolbar.tool_panel_offset;
+
+    toolbar.update(Event::ThicknessSettingsRequested);
+    let after_first = (
+        toolbar.current_tool,
+        toolbar.fill_enabled,
+        toolbar.tool_panel_open,
+        toolbar.tool_panel_offset,
+    );
+    toolbar.update(Event::ThicknessSettingsRequested);
+    let after_second = (
+        toolbar.current_tool,
+        toolbar.fill_enabled,
+        toolbar.tool_panel_open,
+        toolbar.tool_panel_offset,
+    );
+
+    assert_eq!(
+        toolbar.current_tool,
+        Tool::Shape,
+        "设置入口不得切走当前工具"
+    );
+    assert!(toolbar.fill_enabled, "设置入口不得改动颜料桶填充态");
+    assert!(toolbar.tool_panel_open, "设置入口不得关闭悬浮工具条");
+    assert_eq!(
+        toolbar.tool_panel_offset, offset_before,
+        "设置入口不得移动悬浮条"
+    );
+    assert!(
+        !toolbar.brush_dropdown_open,
+        "窗口内临时浮层照旧被'外部动作'收起（新入口不享受例外）"
+    );
+    assert_eq!(
+        after_first, after_second,
+        "连续两次请求不应改变任何工具栏状态（无开合语义）"
+    );
+}

@@ -401,6 +401,13 @@ impl Toolbar {
                 }
                 tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
             }
+            Event::ThicknessSettingsRequested => {
+                // 本轮只有入口：按钮 / 图标已就位，粗细控件下一轮接入。
+                // 特意留一条 info 级日志而不是静默 `_ => {}`——"能点到、没有任何痕迹"的
+                // 静默失效是本仓明令禁止的一类 BUG（见「不做假控件」纪律）；
+                // 同时**不动** current_tool / fill_enabled：它是设置入口，不是工具条目。
+                tracing::info!("工具栏: 请求打开粗细设置（入口已就绪，控件待接入）");
+            }
             Event::OpenDrawSettingsDialog => {
                 // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
                 // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。
@@ -423,10 +430,6 @@ impl Toolbar {
                 // 仅用于点选已确认的绘制图形，不参与音符编辑。
                 self.current_tool = Tool::ShapeSelect;
                 self.fill_enabled = false;
-            }
-            ToolPanelItem::StrokeSettings => {
-                // 描边设置：功能开发中（UI 占位）
-                tracing::info!("工具栏: 描边设置（功能开发中）");
             }
             ToolPanelItem::Curve => {
                 // 曲线工具：独立基础工具，选中后关闭填充共存态

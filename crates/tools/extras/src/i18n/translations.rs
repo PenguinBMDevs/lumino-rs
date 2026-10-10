@@ -49,8 +49,13 @@ pub struct MainTranslations {
     pub draw_settings_placeholder: &'static str,
     /// 绘制工具面板：鼠标工具（图形选中）
     pub tool_mouse: &'static str,
-    /// 描边设置
-    pub tool_stroke: &'static str,
+    /// 粗细设置（音符画悬浮条**右端「粗细」按钮**的 tooltip）
+    ///
+    /// 原名 `tool_stroke`（「描边设置」）：该条目自旧「绘制工具下拉」起就只存在于
+    /// 枚举 / 翻译表 / SVG 三处、从未被渲染，属**不可达存量**；本轮它落成真按钮，
+    /// 文案随之收敛到与图形几何无关的「粗细」——「描边」在本仓另有确定含义
+    /// （曲线 / 形状轮廓的音符生成口径），两者混用会像两个系统。
+    pub tool_thickness: &'static str,
     /// 画刷工具
     pub tool_brush: &'static str,
     /// 形状工具

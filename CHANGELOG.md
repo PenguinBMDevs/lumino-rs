@@ -9,6 +9,55 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画悬浮工具条 · 右端「设置区」新增「粗细」按钮（本轮 = 入口 + 图标）
+
+- **新增** — 音符画悬浮工具条**右端设置区**新增一枚**常显的「粗细」按钮**，落在齿轮
+  **左侧**（设置区自左向右：粗细 → 齿轮；两者与工具图标区之间仍以分隔线隔开），
+  为与其它条目同规格的 34px 图标按钮，带悬浮 tooltip（新文案键 `tool_thickness`：
+  「粗细设置」/「Stroke Width」）。
+- **图标** — 复用仓内既有 `resources/icons/toolbar/stroke-settings.svg`（上下两条粗细不同的
+  横线）。该文件与 `Icon::StrokeSettings` 自旧「绘制工具下拉」起就一直挂在图标表里，
+  却**从未被任何视图渲染过**——全量图标回归只证明"能解析、能光栅化"，不证明"真的出现过"。
+  本轮把它激活，枚举名收敛为 `Icon::Thickness`（**文件名不动**：SVG 术语 `stroke-width`
+  就是线宽/粗细）。交付前用 crate 自身的 `usvg + resvg` 管线把它光栅化到 **22px**
+  （悬浮条内实际尺寸）做目视签核：粗线占 4 行、细线占 2 行（≈3.7px vs ≈1.4px，对比
+  2.6 倍，一眼可分），内容垂直占据第 5..16 行、上下留白 5 / 6 行（居中偏差 ≤ 0.5px），
+  横线两端圆帽不越界。
+- **本轮范围 = 入口** — 点击只发**专属事件** `Event::ThicknessSettingsRequested`，
+  粗细控件（滑杆 / 步进）**下一轮**接入。
+  - **不接落地，但也不做静默失效** — 工具栏侧为此留一条 `tracing::info`
+    （"入口已就绪，控件待接入"）：本仓纪律是**不做假控件**（点了毫无反应 = 最难定位的一类
+    静默失效），留日志至少让"点了怎么没反应"可追溯；同时**不发任何窗口事件**——本轮更
+    不该冒出一个用户看不见的开窗请求。这条由端到端断言钉住（`test_thickness_entry_emits_no_window_event_yet`），
+    下一轮接落地时，第一处改动就是它。
+- **为什么是专属事件，而不是复用 `ToolPanelItem`** — 旧枚举里有个 `StrokeSettings` 变体，
+  自加入起就是**空分支 + 不可达**（悬浮条只渲染 6 个工具，从未渲染它）：它的存在方式正是
+  "把设置入口塞进工具条目枚举"的代价——`apply_tool_panel_item` 按**选择语义**改
+  `current_tool` / toggle `fill_enabled`，设置入口得处处写例外。本轮**删除该变体**
+  （`ToolPanelItem` 收敛回纯"工具条目"），`Toolbar::update` 与 `ToolbarHandler` 里对应的
+  两处空分支一并清掉；右端两枚入口（粗细 / 齿轮）各带专属事件，可独立接落地。
+- **文案收敛（顺带清死键）** — `tool_stroke`（「描边设置」）→ `tool_thickness`（「粗细设置」）。
+  「描边」在本仓另有确定含义（曲线 / 形状轮廓的**音符生成口径**，见下一条 CHANGELOG），
+  与"线宽粗细"混用会让同一条悬浮条像两个系统；旧键 `tool_stroke` **无任何读取点**，
+  随之一并删除（不留两个近义键）。
+- **验证** — `cargo test -p lumino-ui --lib` **449 全绿**、`-p lumino-ui-core --lib` 73、
+  `-p lumino-extras --lib` 29 全绿；`cargo clippy -p lumino-ui -p lumino-ui-core
+  -p lumino-extras --all-targets -- -D warnings` 0 warning；`cargo fmt --all -- --check` 干净。
+  新增 5 项：
+  - **几何**（真实 iced 布局，未走"无适配器即跳过"分支）：新增
+    `test_thickness_entry_sits_left_of_gear_in_settings_group`——粗细在**全部工具图标右侧**、
+    在**齿轮左侧**、与齿轮**恰好隔一个按钮间距**（4px，即"右端两枚设置入口"的形态承诺）、
+    标准 34px 规格；顺带把两条几何断言的布局前置抽成公共 `layout_row_slots`
+    （两处各写一遍 `Tree::new` + `layout` 迟早会在视口尺寸 / `Limits` 上漂移）；
+  - **契约**：`test_thickness_button_contract`——只发 `ThicknessSettingsRequested`，
+    不得退化为 `ToolPanelItemSelected` / `...SettingsRequested`（否则点设置顺手切走当前
+    绘制工具），也不得与齿轮共用同一条消息（否则两个入口被焊死成一体）；
+  - **状态机**：`test_thickness_settings_requested_leaves_tool_state_untouched`——工具栏侧
+    不留任何状态、连点两次无差异、窗口内临时浮层照旧被"外部动作"收起；
+  - **端到端**（新 `root/root_tests/draw_thickness_entry.rs`，走 `Root::update` 全链路，3 项）：
+    点击**不冒发任何窗口事件**且悬浮条保持打开、不扰动工具栏 / 编辑器的工具与填充态、
+    与齿轮同口径收起分音符填充面板且不丢已输入档位。
+
 ### 音符画悬浮工具条 · 新增「设置按钮」（悬浮条右端齿轮 → 独立对话框窗口）
 
 - **新增** — 音符画悬浮工具条**右端**新增一枚**常显的设置按钮**（齿轮图标，

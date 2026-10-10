@@ -22,7 +22,7 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     tool_panel_settings: "音符画设置",
     draw_settings_placeholder: "设置项开发中：后续在此聚合描边、画笔、形状与颜料桶等绘制参数。",
     tool_mouse: "鼠标工具",
-    tool_stroke: "描边设置",
+    tool_thickness: "粗细设置",
     tool_brush: "自由笔画",
     tool_shape: "形状工具",
     tool_text: "文字输入",

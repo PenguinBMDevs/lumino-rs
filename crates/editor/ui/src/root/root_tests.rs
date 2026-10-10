@@ -270,12 +270,14 @@ fn test_settings_dialog_same_theme_not_requeued() {
 // - `root_tests/echo_cave.rs`：关于页回声洞彩蛋（UI-006）接线测试
 // - `root_tests/fill_division_panel.rs`：颜料桶「分音符填充」面板触发/关闭链路测试
 // - `root_tests/draw_settings_panel.rs`：音符画悬浮条「设置按钮」（右端齿轮 → 总面板）链路测试
+// - `root_tests/draw_thickness_entry.rs`：音符画悬浮条右端「粗细」按钮（本轮只有入口）链路测试
 // ================================================================
 
 mod about_egg;
 mod channel;
 mod cloud_snapshot;
 mod draw_settings_panel;
+mod draw_thickness_entry;
 mod echo_cave;
 mod fill_division_panel;
 mod port;

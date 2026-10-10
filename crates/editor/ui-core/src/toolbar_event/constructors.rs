@@ -298,6 +298,14 @@ impl Event {
         Message::Toolbar(Self::ShapeTypeSelected(shape))
     }
 
+    /// 构造“请求打开粗细设置”的工具栏消息（悬浮条右端「粗细」按钮）
+    ///
+    /// 本轮只把入口的消息发出来，落地（粗细控件）下一轮接——契约与齿轮同族：
+    /// **不碰工具状态**，因此调用点不需要任何 `selected` / 开合态参与。
+    pub const fn thickness_settings_requested() -> Message {
+        Message::Toolbar(Self::ThicknessSettingsRequested)
+    }
+
     /// 构造“打开音符画设置对话框”的工具栏消息（悬浮条右端齿轮按钮）
     pub const fn open_draw_settings_dialog() -> Message {
         Message::Toolbar(Self::OpenDrawSettingsDialog)
