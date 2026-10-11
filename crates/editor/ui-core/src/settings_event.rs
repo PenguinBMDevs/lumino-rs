@@ -3,8 +3,8 @@
 //! 设置面板的事件枚举（仅枚举，不包含面板逻辑）。
 
 use lumino_core::storage::config::{
-    AudioEngineKind, EraserBehavior, NoteCountDisplay, SelectionBoxMode, SynthBackend,
-    TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
+    SynthBackend, TrackAddBehavior,
 };
 use lumino_extras::i18n::Language;
 
@@ -63,6 +63,12 @@ pub enum Event {
     LgsSoftNpsGateChanged(bool),
     /// LGS (GPU) 专属响度(力度)过滤阈值变更（0=关闭过滤，1-127）
     LgsVelocityFilterChanged(u8),
+    /// 状态栏 GPU 缓冲状态指示器总开关
+    GpuBufferStatusEnabledChanged(bool),
+    /// 指示器 GOV/DROP 防爆治理指标段开关
+    GpuGovernorMetricsEnabledChanged(bool),
+    /// 状态栏 LOAD 显示口径（瞬时 / 3 秒平均）
+    GpuLoadDisplayChanged(GpuLoadDisplay),
     /// 主题变更
     ThemeChanged(String),
     /// 橡皮擦工具行为变更

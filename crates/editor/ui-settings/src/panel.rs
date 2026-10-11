@@ -62,6 +62,9 @@ impl SettingsPanel {
                 lgs_global_voice_limit: ui_config.lgs_global_voice_limit,
                 lgs_soft_nps_gate: ui_config.lgs_soft_nps_gate,
                 lgs_velocity_filter_threshold: ui_config.lgs_velocity_filter_threshold,
+                gpu_buffer_status_enabled: ui_config.gpu_buffer_status_enabled,
+                gpu_governor_metrics_enabled: ui_config.gpu_governor_metrics_enabled,
+                gpu_load_display: ui_config.gpu_load_display,
                 audio_output_devices: Vec::new(),
                 selected_audio_output_device: ui_config.audio_output_device.clone(),
             },
@@ -236,6 +239,15 @@ impl SettingsPanel {
             }
             Event::LgsVelocityFilterChanged(v) => {
                 self.synth.lgs_velocity_filter_threshold = v.clamp(0, 127);
+            }
+            Event::GpuBufferStatusEnabledChanged(on) => {
+                self.synth.gpu_buffer_status_enabled = on;
+            }
+            Event::GpuGovernorMetricsEnabledChanged(on) => {
+                self.synth.gpu_governor_metrics_enabled = on;
+            }
+            Event::GpuLoadDisplayChanged(mode) => {
+                self.synth.gpu_load_display = mode;
             }
             Event::ThemeChanged(_) => {
                 // 主题变更由外部处理

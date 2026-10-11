@@ -158,6 +158,14 @@ impl MidiManager {
     pub fn take_pending_backend_notice(&mut self) -> Option<String> {
         self.pending_backend_notice.take()
     }
+
+    /// 取当前后端（仅 LGS 实现）的 GPU 缓冲状态快照。
+    ///
+    /// 非 LGS 后端由 `SynthControl` 默认实现返回 `None`；端口布局重建窗口期
+    /// `api` 被 worker 暂持，同样返回 `None`（UI 短暂隐藏指示器）。
+    pub fn gpu_buffer_stats(&self) -> Option<lumino_midi_io::GpuBufferStats> {
+        self.api.as_ref()?.gpu_buffer_stats()
+    }
 }
 
 // ── 子模块 ──────────────────────────────────────────────────────────────

@@ -10,6 +10,9 @@ const MIDI_OUTPUT_RETRY_ATTEMPTS: u8 = 3;
 /// #127：播放输出创建失败后的自动重试间隔。
 const MIDI_OUTPUT_RETRY_INTERVAL: Duration = Duration::from_millis(750);
 
+/// GPU 缓冲状态推送到状态栏的轮询间隔（4Hz：低频采样，避免逐帧取快照）。
+const GPU_STATS_POLL_INTERVAL: Duration = Duration::from_millis(250);
+
 /// #127：播放输出创建失败后的自愈重试状态。
 ///
 /// 启动创建失败时由 [`MidiOutputRetry::new`] 立即武装；运行期重连失败由
@@ -158,6 +161,25 @@ impl RunnerInner {
                 .ui_mut()
                 .set_status_message(Some(notice));
         }
+
+        // 低频推送 GPU (LGS) 缓冲状态到状态栏（非 LGS 推 None 隐藏）。
+        self.tick_gpu_buffer_status();
+    }
+
+    /// 按 250ms 节流把 GPU (LGS) 缓冲状态推送到状态栏。
+    ///
+    /// 快照为无锁 relaxed 原子读取（不触碰音频线程）；非 LGS 后端 / 后端未就绪
+    /// （含端口布局重建窗口期）推 `None`，由 UI 隐藏指示器。
+    fn tick_gpu_buffer_status(&mut self) {
+        if self.gpu_stats_last_poll.elapsed() < GPU_STATS_POLL_INTERVAL {
+            return;
+        }
+        self.gpu_stats_last_poll = Instant::now();
+        let stats = self.midi_state.midi.gpu_buffer_stats();
+        self.window_state
+            .window
+            .ui_mut()
+            .set_gpu_buffer_status(stats);
     }
 
     /// 把当前已就绪的 MIDI 输出连接注入播放引擎，使播放输出现实音频。

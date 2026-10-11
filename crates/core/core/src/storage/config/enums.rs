@@ -123,3 +123,22 @@ impl std::fmt::Display for AudioEngineKind {
         }
     }
 }
+
+/// 状态栏渲染负载(LOAD)的显示口径
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum GpuLoadDisplay {
+    /// 短窗平均：最近 3 秒（按块周期换算）滚动平均，数值稳定（默认）
+    #[default]
+    ShortAverage,
+    /// 瞬时：最近一块的 render_load，可抓单块尖峰，数值/颜色变化快
+    Instant,
+}
+
+impl std::fmt::Display for GpuLoadDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            GpuLoadDisplay::ShortAverage => write!(f, "3 秒平均"),
+            GpuLoadDisplay::Instant => write!(f, "瞬时"),
+        }
+    }
+}
