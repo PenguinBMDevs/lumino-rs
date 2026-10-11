@@ -10,7 +10,9 @@ use std::sync::atomic::{AtomicU8, Ordering};
 use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 
-use lumino_gpu_synth::audio::playback::{AudioPlayback, EventSender, PlaybackControl};
+use lumino_gpu_synth::audio::playback::{
+    AudioPlayback, EventSender, GpuBufferStats, PlaybackControl, PlaybackStatsReader,
+};
 use lumino_gpu_synth::midi::MidiEvent;
 use lumino_gpu_synth::{GpuSynth, InterpolationMode, SynthConfig};
 use lumino_midi_model::multi_port::channels_for_max_port_clamped;
@@ -21,6 +23,8 @@ use crate::{
     Api, Error, InputConnection, InputInfo, MidiInputCallback, OutputConnection, OutputInfo,
     PlaybackOutput, SynthControl,
 };
+
+mod stats;
 
 /// 共享 MIDI 事件注入器（输出连接 → GPU 渲染线程；REND-016 #139 带墙钟时间戳
 /// 与发送端准入限速）。
@@ -74,6 +78,8 @@ pub struct Lgs {
     /// 音色库路径（重建/重初始化时重用）
     soundfont_path: PathBuf,
     options: LgsOptions,
+    /// 播放统计读取器（`new` 与端口布局重建时刷新；无锁克隆，读取原子）
+    stats: PlaybackStatsReader,
     version: String,
 }
 
@@ -133,6 +139,8 @@ impl Lgs {
         let event_tx = Arc::new(Mutex::new(playback.event_sender()));
         let control_tx = Arc::new(Mutex::new(playback.control_sender()));
         let velocity_filter = Arc::new(AtomicU8::new(options.velocity_filter_threshold));
+        // 统计读取器（克隆句柄，读取无锁原子）
+        let stats = playback.stats();
 
         let version = format!("lumino-gpu-synth {}", lumino_gpu_synth::VERSION);
         tracing::info!(
@@ -152,6 +160,7 @@ impl Lgs {
             velocity_filter,
             soundfont_path: soundfont_path.to_path_buf(),
             options: options.clone(),
+            stats,
             version,
         })
     }
@@ -367,12 +376,19 @@ impl SynthControl for Lgs {
                 *self.event_tx.lock().unwrap_or_else(|e| e.into_inner()) = playback.event_sender();
                 *self.control_tx.lock().unwrap_or_else(|e| e.into_inner()) =
                     playback.control_sender();
+                // 管线重建后统计读取器随之刷新（旧朗读器随旧流冻结）
+                self.stats = playback.stats();
                 *self._playback.lock().unwrap_or_else(|e| e.into_inner()) = playback;
                 self.options = options;
                 self.midi_max_port = max_port;
                 Ok(())
             }
         }
+    }
+
+    /// GPU 缓冲状态快照（队列毫秒/负载/声部/欠载）。
+    fn gpu_buffer_stats(&self) -> Option<GpuBufferStats> {
+        Some(self.buffer_stats())
     }
 }
 
