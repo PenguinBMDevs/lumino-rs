@@ -2,7 +2,9 @@
 //!
 //! 支持多条路径同时存在（批量绘制）：
 //! - 锚点：实心圆（醒目标注，端点可拖动、中间锚点自由移动）；
-//! - 曲线段：3-4 像素粗三次贝塞尔（控制柄与锚点重合时退化为直线）；
+//! - 曲线段：线宽 = **全局粗细 × 单 key 高**（`Editor::draw_line_width_px`，
+//!   随缩放实时重算；控制柄与锚点重合时退化为直线）——即"画出来多粗、√ 后就生成
+//!   多高的音符带"（与形状 / 画刷同源，见 `BrushConfig` 的全局粗细注释）；
 //! - 控制柄：方块 + 锚点间辅助线（首锚点 out、尾锚点 in、中间 in+out），
 //!   拖动控制柄弯曲曲线；
 //! - 实心填充：颜料桶点击封闭区域后，内部格点以半透明色块显示
@@ -19,8 +21,6 @@ use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
 
-/// 曲线段粗细（像素，用户要求 3-4 像素，取 4）
-const LINE_WIDTH: f32 = 4.0;
 /// 锚点半径（像素）
 const ANCHOR_RADIUS: f32 = 6.0;
 /// 锚点描边宽度（像素）
@@ -153,7 +153,7 @@ pub fn draw(
                     p.bezier_curve_to(p1, p2, pb);
                 });
                 let stroke = Stroke::default()
-                    .with_width(LINE_WIDTH)
+                    .with_width(editor.draw_line_width_px())
                     .with_color(anchor_color);
                 frame.stroke(&curve, stroke);
                 has_content = true;

@@ -1,7 +1,12 @@
 //! 画刷「绘制行为」对话框视图
 //!
-//! 渲染分层音轨分配列表（粗细度 1..N），每层一行：名称 + 音轨下拉（默认自动/各普通音轨），
-//! 行尾圆形 +/- SVG 按钮用于插入/删除层。底部「保存」「取消」。无可用音轨时整列禁用。
+//! 渲染**逐层音轨分配**列表（第 1..N 层，N = 全局绘制粗细），每层一行：
+//! 名称 + 音轨下拉（默认自动/各普通音轨），行尾圆形 +/- SVG 按钮用于插入/删除层。
+//! 底部「保存」「取消」。无可用音轨时整列禁用。
+//!
+//! ⚠️ 本对话框**只编辑音轨分配**，不编辑粗细本身：粗细是**全局**值，唯一控制入口是
+//! 悬浮条右端的「粗细」面板滑杆（`toolbar/thickness_dropdown.rs`）。此处增删层会
+//! 连带改变全局粗细（层数 = 粗细），保存后滑杆同步显示新值。
 
 use iced_core::Length;
 use iced_widget::{button, column, container, pick_list, row, scrollable, space, text};
@@ -52,7 +57,8 @@ pub fn view_brush_settings_dialog<'a>(
     // 构建每一层的行
     let mut level_rows: Vec<Element<'a>> = Vec::new();
     for level in 0..draft.tracks.len() {
-        let label = format!("粗细度 {}", level + 1);
+        // 层号而非"粗细度"：N 是层序号，粗细（= 层数）是全局值、由「粗细」面板管
+        let label = format!("第 {} 层", level + 1);
         let assigned = draft.tracks.get(level).copied().flatten();
         let can_remove = draft.tracks.len() > BrushConfig::MIN_THICKNESS as usize;
 

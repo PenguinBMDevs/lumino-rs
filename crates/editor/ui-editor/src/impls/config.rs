@@ -4,6 +4,7 @@
 
 use crate::{CacheInvalidation, Editor};
 use iced_core::Point;
+use lumino_core::BrushConfig;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
 
@@ -59,6 +60,32 @@ impl Editor {
     /// 颜料桶填充模式是否开启
     pub fn fill_enabled(&self) -> bool {
         self.editor_state.line_tool.fill_enabled
+    }
+
+    /// **全局绘制粗细**（= 生成音符的纵向 key 层数，1-100）
+    ///
+    /// 单一权威：音符画悬浮工具条的「粗细」滑杆与画刷下拉展示/写入的都是它
+    /// （物理载体是 `Editor::brush.thickness`——见 `BrushConfig` 的类型注释：
+    /// 该字段已从"画刷私有"提升为**全局**，图片名保留以免大改对话框 / 历史载荷）。
+    ///
+    /// 消费点（三处同源，改一处必须一起看）：
+    /// 1. 画刷笔画：`brush/cells.rs` 逐层铺 key + 每层音轨分配；
+    /// 2. 曲线 / 形状的**描边**：`paths::expand_layers` 在生成音符前纵向铺 N 层；
+    /// 3. 画布上"正在画的线"的线宽：[`Editor::draw_line_width_px`]（= 层数 × 单 key 高）。
+    pub fn draw_thickness(&self) -> u8 {
+        self.brush.thickness.max(BrushConfig::MIN_THICKNESS)
+    }
+
+    /// 画布上绘制线条的**线宽（像素）** = 全局粗细层数 × 单 key 高（`zoom_y`）。
+    ///
+    /// 与「生成的音符带」严格同源：厚度 N 层 ⇒ 生成的音符纵向覆盖 N 个 key，
+    /// 画出来的线也正好 N 个 key 高（随缩放实时重算）。这就是"粗细"这一根滑杆
+    /// 同时管显示与产物的口径（见 `draw_thickness`）。
+    ///
+    /// 下限 1px：缩到极小（`zoom_y < 1`）时线不能消失（否则"看不见自己在画什么"）。
+    pub fn draw_line_width_px(&self) -> f32 {
+        let thickness = self.draw_thickness() as f32;
+        (thickness * self.editor_state.view.zoom_y).max(1.0)
     }
 
     /// 设置颜料桶填充的**切分档位**（`Some(x)` = x 分音符切分；`None` = 整块填充）

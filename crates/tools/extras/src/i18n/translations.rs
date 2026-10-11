@@ -56,6 +56,10 @@ pub struct MainTranslations {
     /// 文案随之收敛到与图形几何无关的「粗细」——「描边」在本仓另有确定含义
     /// （曲线 / 形状轮廓的音符生成口径），两者混用会像两个系统。
     pub tool_thickness: &'static str,
+    /// 粗细的单位（「N 层」里的「层」）
+    pub draw_thickness_unit: &'static str,
+    /// 粗细面板说明行（全局粗细 = 生成音符的纵向层数；画布线宽同源）
+    pub draw_thickness_hint: &'static str,
     /// 画刷工具
     pub tool_brush: &'static str,
     /// 形状工具

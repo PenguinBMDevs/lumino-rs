@@ -9,7 +9,76 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
-### 音符画悬浮工具条 · 右端「设置区」新增「粗细」按钮（本轮 = 入口 + 图标）
+### 音符画悬浮工具条 · 「粗细」控件落地（向上弹出面板 + 滑杆 1-100）+ 全局粗细三处同源
+
+- **控件** — 右端「粗细」按钮改为**开合**语义（`ToggleThicknessPanel` / `CloseThicknessPanel`），
+  弹出**窗口内锚定面板**（`CurveToolGroup` 同一套悬浮层，**向上弹出**；顶部空间不足才下翻），
+  面板内是**一根滑杆**：量程 `1..=100`、**步进（精度阈值）1**，就地显示"当前值 + 单位 + 量程"，
+  底下一行说明文案。量程两端**直接取 `BrushConfig::MIN/MAX_THICKNESS`**——滑杆右端与
+  `set_thickness` 的 clamp **同源**，改一处即同步；把上限从 20 放宽到 100 就是这一步，
+  否则滑到头却写不进去（静默截断）。
+- **「粗细」= 全局绘制粗细（纵向 key 层数）** — 需求口径「粗细全局」落在**一份值**上：
+  物理载体 `BrushConfig::thickness`，唯一权威 `Toolbar::brush.thickness`（面板滑杆写、
+  画刷下拉**只读**展示、绘制行为对话框增删层也改它），经既有通道
+  `handler.rs` 的 `editor.brush = toolbar.brush.clone()` 全量同步进编辑器。
+  `BrushConfig` 的类型注释已从"画刷私有"改写为**全局绘制粗细**（字段名保留：换成新类型/新字段
+  会连带改对话框、历史载荷与 bench，收益不抵风险）。
+- **三处同源消费（本仓「所见即所得」纪律的落法）** — 一根滑杆同时管**产物**与**显示**：
+  1. **画刷笔画**：每格向上铺 `thickness` 层（既有 `cov::expand_layers`，逐层音轨分配不变）；
+  2. **曲线 / 形状的描边**：新增 `paths::expand_layers` 在生成前把逐音高行解析结果向上铺
+     N 层（`line_tool/confirm.rs` 的写入腿 + 逐路径归属腿、`shape_tool/confirm.rs::outline_notes`）。
+     **展开先于 `keep_longest`**——先按 (start,key) 去重再展开，去重就形同虚设；越界层交给
+     既有 `key >= 0 && key < key_count` 过滤裁掉（钳位口径只写一遍）；
+  3. **画布线宽**：新增 `Editor::draw_line_width_px()` = 层数 × `zoom_y`（下限 1px）。
+     曲线段（原硬编码 `LINE_WIDTH = 4.0`）、待确认形状轮廓（原字面量 `2.5`）、
+     画刷笔画总宽（原 `brush_total_width_px` 自算）**全部收敛到这一个函数**，
+     于是"画出来多粗"与"√ 后生成多高"严格同源。
+- **有意不动的地方** — ① 颜料桶**填充**腿：面积不是笔画，铺层会让覆盖越过图形边界
+  （填充腿连最小长度下限都不套，同一理由）；② 文字工具：字形栅格化的 key 跨度由文本框决定；
+  ③ `drawn_shape_box` 的常显轮廓 / 选中高亮 / 框选：那是"可选中范围"的 UI 提示，不是画出来的线；
+  ④ `fill_division` 切分档位（只作用于填充）。
+- **删掉的重复控制** — 画刷下拉里的「粗细度 −/+」步进按钮**删除**（同一份值摆两个控件、
+  且旧按钮的上限硬编码 20——正是"看起来能调、其实两处打架"的那类坑），改为**只读**显示当前值、
+  保留「绘制行为」入口；随之删除 `Event::BrushThicknessChanged`、死分支
+  `BrushSettingsAction::ThicknessChanged`（有 handler 无 emitter）及其构造器。
+  绘制行为对话框的层标签由「粗细度 N」改为「第 N 层」（N 是层序号，粗细值本身归滑杆管）。
+- **已知边界** —
+  - **行为变化（需视觉签核）**：粗细 > 1 时曲线 / 形状描边的**生成音符数量与纵向覆盖都会变**；
+    层副本会在同一 `(tick, key)` 上相遇并被既有"同 tick 同 key 只留最长"规则收缩，
+    故条数 < N × 单层条数（矩形粗细 3 的实测：单层 10 条 → 加厚带覆盖 key 60..=66）。
+    默认值 1 **逐位不变**（有断言钉死）。
+  - **量程上限 100 是重负载**：画刷预览块数 = 可见格 × 粗细，bench 一直把"粗细度 20"当病态档
+    （`ui_brush_stroke_bench`）；100 层意味着同一笔最多 5 倍于该病态档。本轮按需求把滑杆开到 100，
+    **未加额外钳制**——真机若卡，先看"笔画点数 + 粗细 + zoom"。
+  - **跨会话不持久化**：粗细沿用画刷配置的既有行为（不入 `UiConfig`、切工程不重置、重启回落 1）。
+    要不要落盘是下一轮的口径（可照 `automation_line_thickness` 那条"字段 → 设置页 → 实时生效 →
+    关窗 diff → 落盘"的链）。
+- **验证** — `cargo test -p lumino-ui -p lumino-ui-editor -p lumino-core -p lumino-ui-core
+  -p lumino-extras -p lumino-message --lib` **1386 全绿**（ui 456 / ui-editor 751 / core 30 /
+  ui-core 73 / extras 29 / message 47）；clippy 0 warning；fmt 干净。新增 / 改写 14 项：
+  - **控件**：`test_thickness_panel_toggles_without_touching_tool_state`（开合 + 不动工具 /
+    填充 / 悬浮条位置）、`test_thickness_panel_stays_open_while_dragging_slider`
+    （**拖滑杆不得把自己关掉**——guard 里显式放行 `DrawThicknessChanged`，这是最容易被写成
+    "一拖就关"的一处）、`test_draw_thickness_changed_clamps_to_slider_range`（0→1、200→100，
+    且 `MAX_THICKNESS == 100`）、`test_slider_range_matches_clamp_range`（**滑杆右端必须写得进去**，
+    钉死"滑到头却没变化"）、`test_thickness_panel_exclusive_and_closed_by_external_actions`
+    （与其余窗口内面板互斥 + 外部动作收起）、关条即收面板（`test_close_tool_panel_closes_settings_dropdown`
+    扩写：悬浮条不在就没有锚点）、以及面板渲染冒烟（两种语言 × 边界值）+ **宽度护栏**
+    `test_thickness_dropdown_fits_menu_width`（两种语言 × 粗细 1 / 100：内容超宽会溢出面板背景，
+    只测中间值会漏掉三位数那一档）；
+  - **归属**：`test_tool_settings_menu_owner` 增加 `SettingsPanelOwner::Thickness`——
+    面板锚定在右端按钮（不是工具条目），否则会以胶囊中心为准居中、看起来贴在悬浮条左端；
+  - **契约**：`test_thickness_button_contract` 改为只发 `ToggleThicknessPanel`（不得退化为
+    工具条目、不得与齿轮共用消息）+ 面板内空白发 `CloseThicknessPanel`；
+  - **端到端**（`root/root_tests/draw_thickness_entry.rs`，4 项）：窗口内开合且**不冒发任何
+    窗口事件**、**滑杆值一路同步到编辑器**（`editor.brush.thickness` / `draw_thickness()` /
+    `draw_line_width_px()` 三者同源）、不扰动工具与填充态、与齿轮同口径收起分音符填充面板且不丢档位；
+  - **几何**：`paths::expand_layers` 4 项（粗细 1 = 恒等、向上铺层且 tick/长度逐位不变、
+    越界 key 原样交给调用方裁剪、条数按 N 倍展开）＋曲线确认 2 项（3 层 → key 60/61/62
+    同 tick 区间；默认 1 层逐位不变）＋形状描边 1 项（矩形粗细 3 → 带状覆盖 key 60..=66
+    每行无空洞，条数落在 [单层, 单层 × 3]——钉**覆盖不变量**而不是某个依赖路径行走顺序的定值条数）。
+
+### 音符画悬浮工具条 · 右端「设置区」新增「粗细」按钮（入口 + 图标）
 
 - **新增** — 音符画悬浮工具条**右端设置区**新增一枚**常显的「粗细」按钮**，落在齿轮
   **左侧**（设置区自左向右：粗细 → 齿轮；两者与工具图标区之间仍以分隔线隔开），
@@ -23,13 +92,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （悬浮条内实际尺寸）做目视签核：粗线占 4 行、细线占 2 行（≈3.7px vs ≈1.4px，对比
   2.6 倍，一眼可分），内容垂直占据第 5..16 行、上下留白 5 / 6 行（居中偏差 ≤ 0.5px），
   横线两端圆帽不越界。
-- **本轮范围 = 入口** — 点击只发**专属事件** `Event::ThicknessSettingsRequested`，
-  粗细控件（滑杆 / 步进）**下一轮**接入。
-  - **不接落地，但也不做静默失效** — 工具栏侧为此留一条 `tracing::info`
-    （"入口已就绪，控件待接入"）：本仓纪律是**不做假控件**（点了毫无反应 = 最难定位的一类
-    静默失效），留日志至少让"点了怎么没反应"可追溯；同时**不发任何窗口事件**——本轮更
-    不该冒出一个用户看不见的开窗请求。这条由端到端断言钉住（`test_thickness_entry_emits_no_window_event_yet`），
-    下一轮接落地时，第一处改动就是它。
+- **入口的落地** — 该按钮最终是**开合窗口内面板**（全局粗细滑杆）的入口：面板、量程、以及
+  "一根滑杆同时管显示与产物"的口径见**上一条**（同一 Unreleased 周期内接完，此处不再叙述中间态）。
 - **为什么是专属事件，而不是复用 `ToolPanelItem`** — 旧枚举里有个 `StrokeSettings` 变体，
   自加入起就是**空分支 + 不可达**（悬浮条只渲染 6 个工具，从未渲染它）：它的存在方式正是
   "把设置入口塞进工具条目枚举"的代价——`apply_tool_panel_item` 按**选择语义**改
@@ -40,23 +104,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   「描边」在本仓另有确定含义（曲线 / 形状轮廓的**音符生成口径**，见下一条 CHANGELOG），
   与"线宽粗细"混用会让同一条悬浮条像两个系统；旧键 `tool_stroke` **无任何读取点**，
   随之一并删除（不留两个近义键）。
-- **验证** — `cargo test -p lumino-ui --lib` **449 全绿**、`-p lumino-ui-core --lib` 73、
-  `-p lumino-extras --lib` 29 全绿；`cargo clippy -p lumino-ui -p lumino-ui-core
-  -p lumino-extras --all-targets -- -D warnings` 0 warning；`cargo fmt --all -- --check` 干净。
-  新增 5 项：
-  - **几何**（真实 iced 布局，未走"无适配器即跳过"分支）：新增
-    `test_thickness_entry_sits_left_of_gear_in_settings_group`——粗细在**全部工具图标右侧**、
-    在**齿轮左侧**、与齿轮**恰好隔一个按钮间距**（4px，即"右端两枚设置入口"的形态承诺）、
-    标准 34px 规格；顺带把两条几何断言的布局前置抽成公共 `layout_row_slots`
-    （两处各写一遍 `Tree::new` + `layout` 迟早会在视口尺寸 / `Limits` 上漂移）；
-  - **契约**：`test_thickness_button_contract`——只发 `ThicknessSettingsRequested`，
-    不得退化为 `ToolPanelItemSelected` / `...SettingsRequested`（否则点设置顺手切走当前
-    绘制工具），也不得与齿轮共用同一条消息（否则两个入口被焊死成一体）；
-  - **状态机**：`test_thickness_settings_requested_leaves_tool_state_untouched`——工具栏侧
-    不留任何状态、连点两次无差异、窗口内临时浮层照旧被"外部动作"收起；
-  - **端到端**（新 `root/root_tests/draw_thickness_entry.rs`，走 `Root::update` 全链路，3 项）：
-    点击**不冒发任何窗口事件**且悬浮条保持打开、不扰动工具栏 / 编辑器的工具与填充态、
-    与齿轮同口径收起分音符填充面板且不丢已输入档位。
+- **验证（入口阶段口径）** — 当时 `cargo test -p lumino-ui --lib` **449 全绿**、
+  `-p lumino-ui-core --lib` 73、`-p lumino-extras --lib` 29；clippy 0 warning、fmt 干净。
+  该阶段新增的 **几何**断言仍在（真实 iced 布局，未走"无适配器即跳过"分支）：
+  `test_thickness_entry_sits_left_of_gear_in_settings_group`——粗细在**全部工具图标右侧**、
+  在**齿轮左侧**、与齿轮**恰好隔一个按钮间距**（4px，即"右端两枚设置入口"的形态承诺）、
+  标准 34px 规格；顺带把两条几何断言的布局前置抽成公共 `layout_row_slots`
+  （两处各写一遍 `Tree::new` + `layout` 迟早会在视口尺寸 / `Limits` 上漂移）。
+  该阶段的契约 / 端到端用例已随控件落地**改写**为上一条里的最终形态。
 
 ### 音符画悬浮工具条 · 新增「设置按钮」（悬浮条右端齿轮 → 独立对话框窗口）
 

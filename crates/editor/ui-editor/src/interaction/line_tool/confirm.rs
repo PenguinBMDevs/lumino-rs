@@ -4,6 +4,8 @@
 //! 1. 每条路径按几何容差展平为折线（[`geom::flatten_path`]），再用
 //!    [`paths::path_notes`] 逐音高行解析求出跨越边界；每个音高行一条音符，
 //!    起点 = 进入该行的 tick、终点 = 下一条音符的起点 → 无缝、长度自然变化；
+//!    随后按**全局绘制粗细**（`Editor::draw_thickness`，纵向 key 层数）纵向展开
+//!    （[`paths::expand_layers`]）——画出来多粗、√ 后就生成多高的音符带；
 //! 2. 颜料桶标记的封闭区域用 [`fill::fill_notes`]（与预览同源）逐音高行求
 //!    **内部区间**，区间端点 = 闭环边与行边界的解析交点；开启切分档位时
 //!    每个区间再按 x 分音符的全局网格切成多条音符；
@@ -37,15 +39,21 @@ impl Editor {
         }
         let line_paths = self.editor_state.line_tool.paths.clone();
         let fill_marks = self.editor_state.line_tool.fill.clone();
+        // 全局绘制粗细（纵向 key 层数）：轮廓生成前统一展开，见 `paths::expand_layers`
+        let thickness = self.draw_thickness();
 
-        // ① 路径轮廓 → 音符：几何容差展平后逐音高行解析求交（无网格量化）
+        // ① 路径轮廓 → 音符：几何容差展平后逐音高行解析求交（无网格量化），
+        //    再按全局粗细纵向铺 `thickness` 层（画布线宽与生成音符带同源）
         let mut raw: Vec<paths::RawNote> = Vec::new();
         for path in &line_paths {
             if path.len() < 2 {
                 continue;
             }
             let poly = geom::flatten_path(path);
-            raw.extend(paths::path_notes(&poly, false));
+            raw.extend(paths::expand_layers(
+                paths::path_notes(&poly, false),
+                thickness,
+            ));
         }
 
         // ② 颜料桶填充 → 逐音高行内部区间（与预览同源：fill::fill_notes）
@@ -92,19 +100,23 @@ impl Editor {
                 continue;
             }
             let poly = geom::flatten_path(path);
-            // 与写入 payload 同源（含最小长度下限），否则登记的音符长度与实际写入不符
-            let owned: Vec<ShapeNote> = paths::keep_longest(&paths::path_notes(&poly, false))
-                .into_iter()
-                .filter(|n| n.key >= 0 && n.key < key_count)
-                .map(|n| paths::to_note_triple(&n, min_ticks))
-                .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
-                .map(|(tick, key, length)| ShapeNote {
-                    track: owner_track,
-                    tick,
-                    key,
-                    length,
-                })
-                .collect();
+            // 与写入 payload 同源（含全局粗细的纵向铺层 + 最小长度下限），
+            // 否则登记的音符与实际写入不符
+            let owned: Vec<ShapeNote> = paths::keep_longest(&paths::expand_layers(
+                paths::path_notes(&poly, false),
+                thickness,
+            ))
+            .into_iter()
+            .filter(|n| n.key >= 0 && n.key < key_count)
+            .map(|n| paths::to_note_triple(&n, min_ticks))
+            .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
+            .map(|(tick, key, length)| ShapeNote {
+                track: owner_track,
+                tick,
+                key,
+                length,
+            })
+            .collect();
             per_path_notes.push(owned);
         }
 

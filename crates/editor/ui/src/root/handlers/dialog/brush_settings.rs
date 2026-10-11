@@ -3,6 +3,9 @@
 //! - 主窗侧 `OpenDialog(config)`：触发 Runner 打开独立 OS 窗口（注入当前配置）。
 //! - 对话框侧：编辑本地草稿 `root.state.brush_settings_draft`，
 //!   `Save` 通过 `DialogResult::BrushSettings` 回传主窗应用。
+//!
+//! 草稿的 `thickness` 就是**全局绘制粗细**（= 层数）：本对话框的增删层会连带改它，
+//! 保存后与悬浮条「粗细」面板滑杆同步（唯一权威在 `Toolbar::brush.thickness`）。
 
 use lumino_core::BrushConfig;
 use lumino_message::BrushSettingsAction;
@@ -34,12 +37,12 @@ impl DialogHandler {
             }
             BrushSettingsAction::Save => {
                 let config = root.state.brush_settings_draft.clone();
-                tracing::info!("画刷绘制行为: 保存配置（粗细度={}）", config.thickness);
+                // 层数 = 全局绘制粗细（增删层即改粗细，滑杆随之同步）
+                tracing::info!(
+                    "画刷绘制行为: 保存配置（层数/全局粗细={}）",
+                    config.thickness
+                );
                 root.state.dialog_result = Some(DialogResult::BrushSettings(config));
-            }
-            BrushSettingsAction::ThicknessChanged(t) => {
-                let t = t.clamp(BrushConfig::MIN_THICKNESS, BrushConfig::MAX_THICKNESS);
-                root.state.brush_settings_draft.set_thickness(t);
             }
             BrushSettingsAction::LevelTrackChanged(level, track) => {
                 root.state.brush_settings_draft.set_track(level, track);

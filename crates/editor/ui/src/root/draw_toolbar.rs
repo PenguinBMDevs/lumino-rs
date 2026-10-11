@@ -7,14 +7,16 @@
 //! 面板常驻显示全部绘制工具（鼠标 / 曲线 / 颜料桶 / 画刷 / 形状 / 文字），
 //! 当前激活工具高亮；颜料桶为可切换的「填充开关」（可与曲线/形状共存高亮）。
 //! 胶囊**右端**是一整块**设置区**（以分隔线与工具图标区隔），自左向右两枚常显入口：
-//! - **「粗细」**（`icon::Thickness`，本轮只交付入口）：点击只发
-//!   `Event::ThicknessSettingsRequested`，控件（滑杆 / 步进）下一轮接入；
+//! - **「粗细」**（`icon::Thickness`）：开合**窗口内锚定面板**——内含**全局绘制粗细**
+//!   滑杆（1-100、步进 1），面板**向上弹出**、锚定在该按钮上方（见
+//!   `toolbar/thickness_dropdown.rs`）。它是**设置入口**，不参与工具选择语义，
+//!   仅在面板打开时高亮；
 //! - **「设置」齿轮**：各绘制工具设置的**聚合入口**，**不在主窗口落浮层**——
 //!   点开的是**独立 OS 窗口**（`DialogType::DrawSettings`，见
 //!   `view/draw_settings_dialog.rs`），由 Runner 开窗并对同类型窗口去重。
 //!
-//! 两枚设置入口都**不参与工具选择语义**（点设置不该顺手切走正在用的绘制工具），
-//! 也都不带开合高亮态（真实开关状态在自己的窗口 / 面板上，主窗再维护一份会漂移）。
+//! 两枚设置入口都**不参与工具选择语义**（点设置不该顺手切走正在用的绘制工具）；
+//! 齿轮不带开合高亮态（真实开关状态在独立窗口自己的标题栏上，主窗再维护一份会漂移）。
 //! 开关由工具栏「绘制入口」按钮（`ToggleToolPanel`）控制，状态存于
 //! `Toolbar::tool_panel_open`，拖拽偏移存于 `Toolbar::tool_panel_offset`。
 //!
@@ -135,8 +137,9 @@ impl Root {
             ),
         ];
 
-        // 工具设置下拉（画刷 / 形状 / 颜料桶分音符填充）：三者互斥，至多一个打开。
-        // 随条目**挂在触发它的那个图标按钮**上（见下方循环），面板由此水平居中于按钮。
+        // 工具设置下拉（画刷 / 形状 / 颜料桶分音符填充）+ 右端「粗细」面板：
+        // 四者互斥，至多一个打开。随归属**挂在触发它的那个图标按钮**上（见下方循环），
+        // 面板由此水平居中于该按钮、并**向上弹出**（`CurveToolGroup` 同一套悬浮层）。
         let mut settings_menu = self.draw_tool_settings_menu();
 
         // 首项为**专用拖拽柄**（独立于按钮区，保证起拖信号不被按钮吞掉），
@@ -151,7 +154,8 @@ impl Root {
 
             // 打开着设置面板的条目：`CurveToolGroup` 的锚点 = 它的内容元素，
             // 故把**按钮**（而非整条胶囊）作为内容传入——面板才会居中于该按钮。
-            let anchored: Element<'_> = match settings_menu.take_if(|(owner, ..)| *owner == *item) {
+            let owner = SettingsPanelOwner::Item(*item);
+            let anchored: Element<'_> = match settings_menu.take_if(|(o, ..)| *o == owner) {
                 Some((_, menu, close)) => {
                     // 面板配色 / 宽度与旧主工具栏下拉一致；点击面板内空白即关闭。
                     let panel: Element<'_> = mouse_area(menu).on_press(close).into();
@@ -163,28 +167,34 @@ impl Root {
         }
         // 不变式：设置面板的归属条目必在上表内（否则面板无处挂载、被静默丢弃）。
         debug_assert!(
-            settings_menu.is_none(),
+            !matches!(settings_menu, Some((SettingsPanelOwner::Item(_), ..))),
             "设置面板的归属条目不在条目列表内：面板将无处挂载"
         );
 
         // 右端「设置区」：以分隔线与工具图标区隔开，**常显**且不参与工具选择语义。
-        // 区内涵两枚纯按钮，自左向右：
+        // 区内涵两枚按钮，自左向右：
         // 1. 「粗细」（`icon::Thickness` → 仓内 `stroke-settings.svg` 那枚双线图）——
-        //    本轮**只交付入口**：按钮 + 图标就位、点击发消息，粗细控件下一轮接入；
+        //    开合**窗口内锚定面板**（全局粗细滑杆，向上弹出；见 `thickness_dropdown.rs`）。
+        //    它是设置入口，故只在"面板开着"时高亮，**不参与工具选择语义**；
         // 2. 齿轮——各绘制工具设置的**聚合入口**，点开的是**独立 OS 窗口**
-        //    （`DialogType::DrawSettings`）。
-        // 两枚都不带锚定悬浮层、也不带开合高亮态（真实开关状态在对应窗口 / 面板自己的
-        // 标题栏上，主窗再维护一份只会与真实状态漂移）。
+        //    （`DialogType::DrawSettings`）。它**不带开合高亮态**：真实开关状态在独立
+        //    窗口自己的标题栏上，主窗再维护一份只会与真实状态漂移。
         row_items.push(separator());
-        row_items.push(with_tooltip(
-            tool_icon_button(
-                icon::Thickness,
-                false,
-                Event::thickness_settings_requested(),
-                &self.window.theme,
-            ),
-            t.tool_thickness,
-        ));
+        let thickness_btn = tool_icon_button(
+            icon::Thickness,
+            self.toolbar.thickness_panel_open,
+            Event::toggle_thickness_panel(),
+            &self.window.theme,
+        );
+        let thickness_anchored: Element<'_> =
+            match settings_menu.take_if(|(o, ..)| *o == SettingsPanelOwner::Thickness) {
+                Some((_, menu, close)) => {
+                    let panel: Element<'_> = mouse_area(menu).on_press(close).into();
+                    CurveToolGroup::new(thickness_btn, Some(panel), MENU_WIDTH).into()
+                }
+                None => thickness_btn,
+            };
+        row_items.push(with_tooltip(thickness_anchored, t.tool_thickness));
         row_items.push(with_tooltip(
             tool_icon_button(
                 icon::Gear,
@@ -194,6 +204,11 @@ impl Root {
             ),
             t.tool_panel_settings,
         ));
+        // 不变式：设置面板若有归属，必须已被上面两条消费掉（否则面板被静默丢弃）。
+        debug_assert!(
+            settings_menu.is_none(),
+            "设置面板的归属按钮不在本行内：面板将无处挂载"
+        );
 
         // 胶囊面板：横向图标栏 + 主题配色 + 全圆角背景。
         let pill = container(
@@ -260,18 +275,22 @@ impl Root {
         )
     }
 
-    /// 构建悬浮条的「工具设置」下拉（画刷 / 形状 / 颜料桶）。
+    /// 构建悬浮条的「窗口内设置面板」（画刷 / 形状 / 颜料桶 / **粗细**）。
     ///
-    /// 返回 `(归属条目, 菜单元素, 点击菜单外空白时的关闭消息)`；仅当对应下拉处于打开态时
-    /// 返回 `Some`（三者互斥）。**归属条目决定面板挂在哪个图标按钮上**：调用方用它
-    /// 构造 `CurveToolGroup::new(该按钮, 菜单)`，面板即水平居中于该按钮（见模块头锚点说明）。
+    /// 返回 `(归属, 菜单元素, 点击菜单外空白时的关闭消息)`；仅当对应面板处于打开态时
+    /// 返回 `Some`（**四者互斥**）。**归属决定面板挂在哪枚按钮上**：调用方用它
+    /// 构造 `CurveToolGroup::new(该按钮, 菜单)`，面板即水平居中于该按钮**上方**
+    /// （向上弹出；顶部空间不足才下翻，见模块头锚点说明）。
     /// 面板配色贴近工具栏（工具栏底色压暗 10%，见 `draw_tool_panel_background`），
     /// 与旧主工具栏入口按钮下拉保持一致观感。
     ///
     /// 颜料桶的「分音符填充」面板由 `state.fill_division_dialog.is_open` 驱动
     /// （画布 Ctrl+单击与悬浮条「再次点击颜料桶」两条路径共用同一状态），
     /// 渲染为与画刷 / 形状同风格的小面板——不再是全屏居中弹窗。
-    fn draw_tool_settings_menu(&self) -> Option<(ToolPanelItem, Element<'_>, Message)> {
+    ///
+    /// 右端「粗细」面板由 `toolbar.thickness_panel_open` 驱动（悬浮条右端按钮开合），
+    /// 内容是**全局绘制粗细**滑杆（1-100，步进 1）——曲线/形状描边与画刷笔画共用。
+    fn draw_tool_settings_menu(&self) -> Option<(SettingsPanelOwner, Element<'_>, Message)> {
         let panel_background = self.draw_tool_panel_background();
 
         if self.toolbar.brush_dropdown_open {
@@ -285,7 +304,11 @@ impl Root {
                 .width(Length::Fixed(MENU_WIDTH))
                 .height(Length::Shrink)
                 .into();
-            Some((ToolPanelItem::Brush, menu, Event::close_brush_dropdown()))
+            Some((
+                SettingsPanelOwner::Item(ToolPanelItem::Brush),
+                menu,
+                Event::close_brush_dropdown(),
+            ))
         } else if self.toolbar.shape_dropdown_open {
             let menu: Element<'_> =
                 container(crate::toolbar::shape_dropdown::render_shape_dropdown(
@@ -296,7 +319,11 @@ impl Root {
                 .width(Length::Fixed(MENU_WIDTH))
                 .height(Length::Shrink)
                 .into();
-            Some((ToolPanelItem::Shape, menu, Event::close_shape_dropdown()))
+            Some((
+                SettingsPanelOwner::Item(ToolPanelItem::Shape),
+                menu,
+                Event::close_shape_dropdown(),
+            ))
         } else if self.state.fill_division_dialog.is_open {
             let menu: Element<'_> = container(
                 crate::toolbar::fill_division_dropdown::render_fill_division_dropdown(
@@ -310,14 +337,43 @@ impl Root {
             .height(Length::Shrink)
             .into();
             Some((
-                ToolPanelItem::FillBucket,
+                SettingsPanelOwner::Item(ToolPanelItem::FillBucket),
                 menu,
                 Message::FillDivision(FillDivisionAction::CloseDialog),
+            ))
+        } else if self.toolbar.thickness_panel_open {
+            let menu: Element<'_> = container(
+                crate::toolbar::thickness_dropdown::render_thickness_dropdown(
+                    self.toolbar.brush.thickness,
+                    self.settings.display.language,
+                    panel_background,
+                    &self.window.theme,
+                ),
+            )
+            .width(Length::Fixed(MENU_WIDTH))
+            .height(Length::Shrink)
+            .into();
+            Some((
+                SettingsPanelOwner::Thickness,
+                menu,
+                Event::close_thickness_panel(),
             ))
         } else {
             None
         }
     }
+}
+
+/// 「窗口内设置面板」的归属：决定面板锚定在哪枚按钮上。
+///
+/// 面板必须锚定在**触发它的那枚按钮**上（而不是整条胶囊），否则会以胶囊中心为准居中，
+/// 看起来"贴在悬浮条左端"（已修复的 BUG，见模块头）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SettingsPanelOwner {
+    /// 悬浮条的工具条目（画刷 / 形状 / 颜料桶）
+    Item(ToolPanelItem),
+    /// 悬浮条右端的「粗细」按钮（全局粗细滑杆面板）
+    Thickness,
 }
 
 /// 该条目是否有可弹出的「工具设置」。
@@ -805,6 +861,42 @@ mod tests {
         }
     }
 
+    /// 面板宽度护栏：粗细面板（信息行 + 滑杆 + 说明）在中文 / 英文下内容宽度都不得
+    /// 超过 `MENU_WIDTH`——面板由调用方固定为 `MENU_WIDTH`，内容超宽会溢出面板背景。
+    ///
+    /// 连**两端值**一起测：三位数「100 层」比一位数更宽，只测中间值会漏掉最长那一档。
+    #[test]
+    fn test_thickness_dropdown_fits_menu_width() {
+        use lumino_extras::i18n::Language;
+
+        let Some(renderer) = headless_renderer() else {
+            eprintln!("跳过：无可用 GPU 适配器（文本度量需要真实渲染器）");
+            return;
+        };
+
+        for lang in [Language::ZhCn, Language::EnUs] {
+            for value in [1_u8, 100] {
+                let mut element = crate::toolbar::thickness_dropdown::render_thickness_dropdown(
+                    value,
+                    lang,
+                    Color::from_rgba(0.1, 0.1, 0.1, 1.0),
+                    &crate::Theme::Dark,
+                );
+                let mut tree = widget::Tree::new(&element);
+                let node = element.as_widget_mut().layout(
+                    &mut tree,
+                    &renderer,
+                    &layout::Limits::new(Size::ZERO, Size::INFINITE),
+                );
+                let width = node.bounds().width;
+                assert!(
+                    width <= MENU_WIDTH,
+                    "{lang:?} / 粗细 {value}：面板内容宽度 {width:.1} 超出 MENU_WIDTH {MENU_WIDTH}"
+                );
+            }
+        }
+    }
+
     /// 该消息是否为「弹出设置」请求（`Message` 未实现 `PartialEq`，按变体精确匹配）
     fn is_settings_request(msg: &Message, item: ToolPanelItem) -> bool {
         matches!(
@@ -881,20 +973,20 @@ mod tests {
         );
     }
 
-    /// 右端「粗细」按钮的点击契约：**只发专属的设置请求消息**。
+    /// 右端「粗细」按钮的点击契约：**只发开合面板的专属消息**。
     ///
-    /// 三条不能破的语义（与齿轮同族，二者都属右端设置区）：
+    /// 三条不能破的语义（与齿轮同属右端设置区，但落地方式不同——它在主窗口内弹面板）：
     /// 1. **不是工具条目**：不得发 `ToolPanelItemSelected` / `...SettingsRequested`
     ///    ——那会趟上"选择语义"，点设置顺手把当前绘制工具切走；
-    /// 2. **不与齿轮同一条消息**：两枚入口各自可独立接落地（粗细控件 / 设置窗口），
-    ///    共用一个变体等于把两个功能焊死；
-    /// 3. **无开合态**：连点两次不产生任何"关"的语义（本轮控件未接入，更谈不上开合）。
+    /// 2. **不与齿轮同一条消息**：齿轮开独立窗口、粗细开窗口内面板，两个功能不得焊死；
+    /// 3. **开合态由主窗维护**：对应 `ToggleThicknessPanel`（再点一次收起），
+    ///    与齿轮"无开合态"（窗口自带标题栏）形成对照。
     #[test]
     fn test_thickness_button_contract() {
-        let msg = Event::thickness_settings_requested();
+        let msg = Event::toggle_thickness_panel();
         assert!(
-            matches!(msg, Message::Toolbar(Event::ThicknessSettingsRequested)),
-            "「粗细」按钮按下应发 ThicknessSettingsRequested"
+            matches!(msg, Message::Toolbar(Event::ToggleThicknessPanel)),
+            "「粗细」按钮按下应发 ToggleThicknessPanel"
         );
         assert!(
             !matches!(
@@ -908,9 +1000,17 @@ mod tests {
             !matches!(msg, Message::Toolbar(Event::OpenDrawSettingsDialog)),
             "「粗细」与齿轮必须各自可独立接落地，不得共用同一条消息"
         );
+        // 面板内空白点击 → 关闭消息（与画刷 / 形状下拉同形）
+        assert!(
+            matches!(
+                Event::close_thickness_panel(),
+                Message::Toolbar(Event::CloseThicknessPanel)
+            ),
+            "点面板内空白应发 CloseThicknessPanel"
+        );
     }
 
-    /// 设置面板的**归属条目**：决定面板挂在哪个图标按钮上（锚点正确性的上游）。
+    /// 设置面板的**归属**：决定面板锚定在哪枚按钮上（锚点正确性的上游）。
     #[test]
     fn test_tool_settings_menu_owner() {
         let mut root = Root::new(&UiConfig::default());
@@ -923,21 +1023,29 @@ mod tests {
         root.toolbar.brush_dropdown_open = true;
         assert_eq!(
             root.draw_tool_settings_menu().map(|(owner, ..)| owner),
-            Some(ToolPanelItem::Brush)
+            Some(SettingsPanelOwner::Item(ToolPanelItem::Brush))
         );
         root.toolbar.brush_dropdown_open = false;
 
         root.toolbar.shape_dropdown_open = true;
         assert_eq!(
             root.draw_tool_settings_menu().map(|(owner, ..)| owner),
-            Some(ToolPanelItem::Shape)
+            Some(SettingsPanelOwner::Item(ToolPanelItem::Shape))
         );
         root.toolbar.shape_dropdown_open = false;
 
         root.state.fill_division_dialog.is_open = true;
         assert_eq!(
             root.draw_tool_settings_menu().map(|(owner, ..)| owner),
-            Some(ToolPanelItem::FillBucket)
+            Some(SettingsPanelOwner::Item(ToolPanelItem::FillBucket))
+        );
+        root.state.fill_division_dialog.is_open = false;
+
+        // 右端「粗细」按钮：归属不是工具条目，而是设置区的独立归属
+        root.toolbar.thickness_panel_open = true;
+        assert_eq!(
+            root.draw_tool_settings_menu().map(|(owner, ..)| owner),
+            Some(SettingsPanelOwner::Thickness)
         );
     }
 

@@ -156,21 +156,25 @@ impl NotePrecision {
 
 /// 画刷工具配置
 ///
-/// 粗细度 = 画笔纵向覆盖的半音数（1-20）。每个粗细度层级（从底向上 `0..N-1`）
-/// 对应一条音轨。`tracks[i]` 为第 `i+1` 层显式指定的音轨 id；
-/// `None` 表示未指定，绘制时按默认规则（从当前音轨起沿普通音轨序行走、跳过
-/// Conductor 音轨）自动分配。
+/// ⚠️ **`thickness` 不是画刷私有参数，而是全局绘制粗细**：音符画悬浮工具条的
+/// 「粗细」面板（滑杆 1-100）与画刷下拉展示的是**同一个值**，曲线 / 形状的描边
+/// 也按它纵向铺层。值 = 生成音符的**纵向 key 层数**；画布上线宽 = 层数 × 单 key 高
+/// （随缩放），使「画出来的线」与「生成的音符带」严格同源（所见即所得）。
+///
+/// `tracks[i]` 为第 `i+1` 层显式指定的音轨 id（**画刷专属**：曲线/形状的描边各层
+/// 仍落在当前轨）；`None` 表示未指定，绘制时按默认规则（从当前音轨起沿普通音轨序
+/// 行走、跳过 Conductor 音轨）自动分配。
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct BrushConfig {
-    /// 粗细度（1-20 个 key 范围）
+    /// 粗细度 = 全局绘制粗细（1-100 个 key 层）
     pub thickness: u8,
     /// 每个粗细度层级分配的音轨（长度 = thickness，`None` = 默认自动分配）
     pub tracks: Vec<Option<usize>>,
 }
 
 impl BrushConfig {
-    /// 最大粗细度
-    pub const MAX_THICKNESS: u8 = 20;
+    /// 最大粗细度（全局绘制粗细上限；滑杆量程同源，改这里等于改滑杆右端）
+    pub const MAX_THICKNESS: u8 = 100;
     /// 最小粗细度
     pub const MIN_THICKNESS: u8 = 1;
 

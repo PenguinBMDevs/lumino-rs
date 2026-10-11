@@ -167,7 +167,9 @@ fn draw_one_shape(
                 let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
                 frame.fill(&path, fill);
             }
-            let stroke = Stroke::default().with_width(2.5).with_color(color);
+            let stroke = Stroke::default()
+                .with_width(editor.draw_line_width_px())
+                .with_color(color);
             frame.stroke(&path, stroke);
         }
         _ => {
@@ -192,7 +194,9 @@ fn draw_one_shape(
                 let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
                 frame.fill(&path, fill);
             }
-            let stroke = Stroke::default().with_width(2.5).with_color(color);
+            let stroke = Stroke::default()
+                .with_width(editor.draw_line_width_px())
+                .with_color(color);
             frame.stroke(&path, stroke);
         }
     }

@@ -278,11 +278,6 @@ impl Event {
         Message::Toolbar(Self::CloseBrushDropdown)
     }
 
-    /// 构造“画刷粗细度变更”的工具栏消息
-    pub const fn brush_thickness_changed(thickness: u8) -> Message {
-        Message::Toolbar(Self::BrushThicknessChanged(thickness))
-    }
-
     /// 构造“切换形状工具下拉”的工具栏消息
     pub const fn toggle_shape_dropdown() -> Message {
         Message::Toolbar(Self::ToggleShapeDropdown)
@@ -298,12 +293,21 @@ impl Event {
         Message::Toolbar(Self::ShapeTypeSelected(shape))
     }
 
-    /// 构造“请求打开粗细设置”的工具栏消息（悬浮条右端「粗细」按钮）
+    /// 构造“开合粗细悬浮面板”的工具栏消息（悬浮条右端「粗细」按钮；向上弹出）
     ///
-    /// 本轮只把入口的消息发出来，落地（粗细控件）下一轮接——契约与齿轮同族：
-    /// **不碰工具状态**，因此调用点不需要任何 `selected` / 开合态参与。
-    pub const fn thickness_settings_requested() -> Message {
-        Message::Toolbar(Self::ThicknessSettingsRequested)
+    /// 只作开合信道：**不碰工具状态**，故调用点不需要任何 `selected` 参与。
+    pub const fn toggle_thickness_panel() -> Message {
+        Message::Toolbar(Self::ToggleThicknessPanel)
+    }
+
+    /// 构造“关闭粗细悬浮面板”的工具栏消息（点面板内空白触发）
+    pub const fn close_thickness_panel() -> Message {
+        Message::Toolbar(Self::CloseThicknessPanel)
+    }
+
+    /// 构造“全局绘制粗细变更”的工具栏消息（粗细面板滑杆，1-100 个 key 层）
+    pub const fn draw_thickness_changed(thickness: u8) -> Message {
+        Message::Toolbar(Self::DrawThicknessChanged(thickness))
     }
 
     /// 构造“打开音符画设置对话框”的工具栏消息（悬浮条右端齿轮按钮）

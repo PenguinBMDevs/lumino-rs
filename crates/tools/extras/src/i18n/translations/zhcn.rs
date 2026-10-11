@@ -23,6 +23,8 @@ pub(crate) static ZHCN_MAIN: MainTranslations = MainTranslations {
     draw_settings_placeholder: "设置项开发中：后续在此聚合描边、画笔、形状与颜料桶等绘制参数。",
     tool_mouse: "鼠标工具",
     tool_thickness: "粗细设置",
+    draw_thickness_unit: "层",
+    draw_thickness_hint: "全局：曲线/形状描边与笔画都按它纵向铺层；画布线宽 = 层数 × 单音高行高（随缩放）",
     tool_brush: "自由笔画",
     tool_shape: "形状工具",
     tool_text: "文字输入",

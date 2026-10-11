@@ -305,3 +305,85 @@ fn test_to_note_triple_clamps_start_and_length() {
     };
     assert_eq!(to_note_triple(&vertical, 60.0), (1920.0, 62, 60.0));
 }
+
+// ─── 全局绘制粗细的纵向铺层（expand_layers） ─────────────────────────────
+
+/// 粗细 1（默认）= 原样返回：一条线仍然是「每条音高行一条音符」，零行为变化。
+#[test]
+fn test_expand_layers_thickness_one_is_identity() {
+    let base = sorted(path_notes(&[(0.0, 60.0), (3840.0, 62.0)], false));
+    assert_eq!(base.len(), 3, "前置：key 60..62 共 3 条音高行音符");
+
+    let expanded = expand_layers(base.clone(), 1);
+    assert_eq!(expanded, base, "粗细 1 不得改变任何音符");
+    // 0 也视作"不铺层"（防御性：上游任何路径都不该写出 0）
+    assert_eq!(expand_layers(base.clone(), 0), base);
+}
+
+/// 粗细 N = 每条音符向上铺 N 层（key + level），tick / 长度逐位不变。
+///
+/// 层序与画刷笔画同口径：level 0 = 原行，向上逐层——这是"画出来多粗"
+/// （线宽 = 层数 × 单 key 高）与"生成多高"同源的几何依据。
+#[test]
+fn test_expand_layers_stacks_upward_and_keeps_timing() {
+    let base = vec![RawNote {
+        start: 0,
+        end: 960,
+        key: 60,
+    }];
+
+    let expanded = sorted(expand_layers(base, 3));
+    assert_eq!(
+        expanded,
+        vec![
+            RawNote {
+                start: 0,
+                end: 960,
+                key: 60
+            },
+            RawNote {
+                start: 0,
+                end: 960,
+                key: 61
+            },
+            RawNote {
+                start: 0,
+                end: 960,
+                key: 62
+            },
+        ],
+        "3 层应得到 key 60/61/62 三条同 tick 同长度音符"
+    );
+}
+
+/// 铺层不裁剪越界 key：越界层由调用方既有的 `key < key_count` 过滤裁掉
+/// （展开与裁剪分两处，是为了让曲线 / 形状两条链路共用同一份钳位口径）。
+#[test]
+fn test_expand_layers_leaves_out_of_range_keys_for_caller() {
+    let base = vec![RawNote {
+        start: 0,
+        end: 10,
+        key: 126,
+    }];
+    let expanded = sorted(expand_layers(base, 5));
+    assert_eq!(expanded.len(), 5);
+    assert_eq!(
+        expanded.iter().map(|n| n.key).collect::<Vec<_>>(),
+        vec![126, 127, 128, 129, 130],
+        "展开层原样保留越界 key（含 >127），由调用方的 key_count 过滤裁剪"
+    );
+}
+
+/// 多条音符的展开是**按音符独立**的（互不串行、层数不累加）。
+#[test]
+fn test_expand_layers_multiplies_note_count() {
+    let base = sorted(path_notes(&[(0.0, 60.0), (3840.0, 64.0)], false));
+    let n = base.len();
+    let expanded = expand_layers(base, 4);
+    assert_eq!(
+        expanded.len(),
+        n * 4,
+        "每条音符独立铺 4 层：{n} 条应得到 {} 条",
+        n * 4
+    );
+}

@@ -127,30 +127,35 @@ pub enum Event {
     ToggleBrushDropdown,
     /// 关闭「画刷工具下拉」
     CloseBrushDropdown,
-    /// 画刷粗细度变更（下拉 +/- 步进，1-20）
-    BrushThicknessChanged(u8),
     /// 切换「形状工具下拉」（ctrl+点击形状工具触发）：矩形/圆形/三角形选择
     ToggleShapeDropdown,
     /// 关闭「形状工具下拉」
     CloseShapeDropdown,
     /// 形状工具当前图形类型变更（矩形/圆形/三角形）
     ShapeTypeSelected(ShapeType),
-    /// 请求打开「粗细设置」（悬浮条**右端「粗细」按钮**触发）
+    /// 开合「粗细」悬浮面板（悬浮条**右端「粗细」按钮**触发；向上弹出）
     ///
     /// 与齿轮（[`Self::OpenDrawSettingsDialog`]）同属**右端设置区**，故同样
-    /// **不参与工具选择语义**：点它不得切走当前绘制工具、不得关掉颜料桶填充态，
-    /// 也不在主窗口内落任何浮层（同「设置」而非「工具条目」的定位）。
+    /// **不参与工具选择语义**：点它不得切走当前绘制工具、不得关掉颜料桶填充态。
+    /// 与齿轮的区别：它在**主窗口内**弹出锚定面板（本事件即开合），不涉及独立窗口。
     ///
-    /// **本轮范围 = 入口**：按钮与图标已就位，**落地尚未接入**——故这里只发消息，
-    /// 由 `Toolbar::update` 留一条 `tracing::info`：宁可先留可追溯的日志，
-    /// 也不摆一个点了完全无痕的假控件（静默失效是本仓明令禁止的一类 BUG）。
-    /// 下一轮把粗细控件（滑杆 / 步进）挂到本事件上即可，入口契约不变。
-    ThicknessSettingsRequested,
+    /// 开合语义（与主工具栏画刷附属按钮的 [`Self::ToggleBrushDropdown`] 同形）：
+    /// 再点一次收起。面板内容 = 全局粗细滑杆（1-100，步进 1，
+    /// 见 [`Self::DrawThicknessChanged`]）。
+    ToggleThicknessPanel,
+    /// 关闭「粗细」悬浮面板（点面板内空白 / 其它工具栏动作触发）
+    CloseThicknessPanel,
+    /// **全局绘制粗细**变更（粗细面板滑杆；1-100 个 key 层）
+    ///
+    /// 全局唯一值：曲线 / 形状的**描边**与画刷**笔画**共用它纵向铺层，
+    /// 画布上"正在画的线"的线宽 = 层数 × 单 key 高（随缩放）。
+    /// 值与工具状态无关，故本事件**只改粗细**，不动 `current_tool` / `fill_enabled`。
+    DrawThicknessChanged(u8),
     /// 打开「音符画设置」对话框（悬浮条**右端齿轮按钮**触发）
     ///
     /// 该入口**不参与工具选择语义**，也不在主窗口内落任何浮层：它是独立 OS 窗口
     /// （`DialogType::DrawSettings`）的请求，由 `ToolbarHandler` 转成窗口事件后交 Runner。
-    /// 因此它与画刷 / 形状下拉 / 分音符填充三块窗口内面板**无所谓互斥**——
+    /// 因此它与画刷 / 形状下拉 / 分音符填充 / 粗细四块**窗口内**面板无所谓互斥——
     /// 不同窗口不在同一块画布上争位置。齿轮按钮也**不带开合态**：
     /// 独立窗口有自己的标题栏与关闭按钮，主窗按钮再维护一份"开/关"只会与真实窗口状态漂移。
     OpenDrawSettingsDialog,
@@ -176,7 +181,7 @@ pub enum ShapeType {
 /// 点击后由 `Toolbar::update` 翻译为具体的工具选择/设置动作。
 ///
 /// ⚠️ **只放"工具条目"**，不放设置入口：悬浮条右端的「粗细」
-/// （`Event::ThicknessSettingsRequested`）与齿轮（`Event::OpenDrawSettingsDialog`）
+/// （`Event::ToggleThicknessPanel`）与齿轮（`Event::OpenDrawSettingsDialog`）
 /// 各自带**专属事件**——一旦把它们塞进本枚举，就会趟上 `apply_tool_panel_item`
 /// 的"选择语义"（改 `current_tool` / 动 `fill_enabled`），需要处处写例外分支；
 /// 旧 `StrokeSettings` 变体正是这条弯路（自加入起就一直是个空分支 + 不可达）。

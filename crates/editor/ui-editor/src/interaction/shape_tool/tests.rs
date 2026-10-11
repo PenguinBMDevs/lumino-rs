@@ -77,6 +77,44 @@ fn test_rectangle_outline_produces_notes() {
     assert!(!editor.editor_state.shape_tool.has_pending());
 }
 
+/// 全局绘制粗细（纵向 key 层数）作用在**形状描边**上：同一个矩形，粗细 3 层后
+/// 音符带向上加厚 2 行（key 60..=66），且每一行都被覆盖。
+///
+/// 断言的是**带状覆盖的几何不变量**而不是某一个定值条数：多层展开后不同来源
+/// （水平边 / 竖直边 / 相邻行的层副本）会在同一 `(tick, key)` 上相遇，由既有的
+/// 「同 tick 同 key 只留最长」规则收敛——最终条数取决于路径行走顺序，钉死具体
+/// 条数会把测试绑死在实现细节上。逐层精确性由 `paths::expand_layers` 的单测钉死。
+#[test]
+fn test_rectangle_outline_expands_by_global_thickness() {
+    let mut editor = test_editor();
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.brush.set_thickness(3);
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(4.0, 64.0);
+    editor.handle_shape_tool_released();
+    assert!(editor.confirm_shape_tool());
+
+    let got = rows(&editor);
+    let keys: Vec<u16> = got.iter().map(|(k, _)| *k).collect();
+    assert_eq!(
+        keys,
+        vec![60, 61, 62, 63, 64, 65, 66],
+        "粗细 3 层应把 60..=64 的描边带向上加厚到 66（每行都有音符，无空洞）"
+    );
+    assert!(
+        got.iter().all(|(_, spans)| !spans.is_empty()),
+        "加厚后的每一行都必须被音符覆盖"
+    );
+
+    let total = editor.editor_state.data.current_track_note_count();
+    let base = 10; // 粗细 1 时该矩形的描边条数（见上一个用例）
+    assert!(
+        (base..=base * 3).contains(&total),
+        "条数应落在 [单层条数, 单层条数 × 3] 内（层副本会被同 tick 同 key 去重收缩），实际 {total}"
+    );
+}
+
 /// 圆形没有 `shape_vertices`（渲染走椭圆参数曲线）：描边由椭圆采样折线解析得到，
 /// 口径必须与矩形/三角形一致（同样不用吸附精度）。
 #[test]
@@ -218,6 +256,8 @@ fn test_shift_uses_raw_mouse_coords_for_square() {
             editor.min_note_division(),
             editor.editor_state.view.ppq,
         ),
+        // 全局粗细：本用例的默认值（1 层），与编辑器实际生成口径同源
+        editor.draw_thickness(),
     )
     .into_iter()
     .map(|(t, k, l)| (t.round() as i64, k, (l * 1000.0).round() as i64))

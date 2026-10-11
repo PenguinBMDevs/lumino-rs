@@ -312,6 +312,10 @@ fn main() {
     println!("=== Lumino 画刷（自由笔画）性能基准 ===");
     let path = std::env::var("LUMINO_BENCH_MIDI").unwrap_or_else(|_| DEFAULT_MIDI.to_string());
     let cycles = env_usize("LUMINO_BENCH_CYCLES", DEFAULT_CYCLES);
+    // 粗细 = 全局绘制粗细（纵向层数，见 `BrushConfig::MAX_THICKNESS`）。
+    // 默认 20 = 本 bench 历来的"病态档"（C 档增长曲线就是按它标定的）；
+    // 全局上限现在是 **100**（滑杆量程同源）——想量最坏情况就 `LUMINO_BRUSH_THICKNESS=100`，
+    // 那是本档负载的 5 倍。
     let thickness = env_usize("LUMINO_BRUSH_THICKNESS", 20) as u8;
 
     let t_load = Instant::now();

@@ -6,6 +6,8 @@
 //! 下一条音符的起点 → **无缝连奏、长度自然变化**，全程不使用吸附精度；闭合环从最左点
 //! 重启、竖直段原本各占 1 tick（写入时按最小长度下限补齐到至少 128 分音符，见
 //! [`paths::min_note_length_ticks`]），与 `line_tool/paths.rs` 的轮廓口径完全一致。
+//! 解析结果还要按**全局绘制粗细**（纵向 key 层数）向上铺层
+//! （[`paths::expand_layers`]，与曲线轮廓 / 画刷笔画同一口径）。
 //!
 //! **填充（`filled = true`）不走这条路**：仍是「按 snap 网格枚举格点、每格一条定长
 //! 音符」，开启「x 分音符」切分档位（共享的模式设置，权威在 `line_tool`）时先按行合并
@@ -81,6 +83,10 @@ pub(super) fn chop_cells(cells: &[(f32, u16)], snap: f32, step: f32) -> Vec<(f32
 /// 完全一致（闭合环从最左点重启、不做首尾拉伸、同起点同行只留最长）。
 /// **全程不使用吸附精度**：起点/终点由边界与音高行边界（key ± 0.5）的解析交点决定。
 ///
+/// `thickness` = **全局绘制粗细**（纵向 key 层数）：解析结果按 [`paths::expand_layers`]
+/// 向上铺 `thickness` 层（与曲线轮廓、画刷笔画同一口径），越界层由下面的
+/// `key < key_count` 过滤裁掉。
+///
 /// 长度按 `min_ticks`（[`paths::min_note_length_ticks`]，默认 128 分音符）兜底补齐——
 /// 矩形/三角形的竖直边逐音高行原本只有 1 tick，与本文件同一根因（轮廓竖直段），
 /// 一并修掉；填充腿（[`chop_cells`] / 格点）不补齐，见 [`Editor::confirm_shape_tool`] 说明。
@@ -93,12 +99,13 @@ pub(super) fn outline_notes(
     px_per_key: f32,
     key_count: i32,
     min_ticks: f32,
+    thickness: u8,
 ) -> Vec<(f32, u16, f32)> {
     let poly: Vec<(f64, f64)> = shape_outline_path(spec, px_per_tick, px_per_key)
         .into_iter()
         .map(|(t, k)| (t as f64, k as f64))
         .collect();
-    paths::path_notes(&poly, false)
+    paths::expand_layers(paths::path_notes(&poly, false), thickness)
         .into_iter()
         .filter(|n| n.key >= 0 && n.key < key_count)
         .map(|n| paths::to_note_triple(&n, min_ticks))
@@ -149,12 +156,19 @@ impl Editor {
         // 切分音符：(起始 tick, key, 长度, 来源图形索引)
         let mut chopped: Vec<(f32, u16, f32, usize)> = Vec::new();
         for (idx, shape) in self.editor_state.shape_tool.shapes.iter().enumerate() {
-            // ① 描边：连续几何 → 逐音高行解析（无网格量化）
+            // ① 描边：连续几何 → 逐音高行解析（无网格量化）+ 全局粗细纵向铺层
             if !shape.filled {
                 outline.extend(
-                    outline_notes(shape.spec(), px_per_tick, px_per_key, key_count, min_ticks)
-                        .into_iter()
-                        .map(|(t, k, l)| (t, k, l, idx)),
+                    outline_notes(
+                        shape.spec(),
+                        px_per_tick,
+                        px_per_key,
+                        key_count,
+                        min_ticks,
+                        self.draw_thickness(),
+                    )
+                    .into_iter()
+                    .map(|(t, k, l)| (t, k, l, idx)),
                 );
                 continue;
             }

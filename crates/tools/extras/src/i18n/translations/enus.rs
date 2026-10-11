@@ -23,6 +23,8 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     draw_settings_placeholder: "Settings in development: stroke, brush, shape and paint bucket options will be gathered here.",
     tool_mouse: "Mouse Tool",
     tool_thickness: "Stroke Width",
+    draw_thickness_unit: "layers",
+    draw_thickness_hint: "Global: curve/shape outlines and strokes both expand by it; on-canvas stroke = layers x key height (follows zoom)",
     tool_brush: "Free Stroke",
     tool_shape: "Shape Tool",
     tool_text: "Text Input",

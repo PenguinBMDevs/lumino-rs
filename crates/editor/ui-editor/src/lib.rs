@@ -264,10 +264,14 @@ pub struct Editor {
     /// 避免在提交热路径重新扫描选中集合。
     pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
 
-    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    /// 画刷工具配置（**全局绘制粗细** + 每层音轨分配）
+    ///
+    /// ⚠️ `thickness` 是**全局**值，不是画刷私有：曲线 / 形状的描边与画刷笔画共用它
+    /// 纵向铺层（读 `Editor::draw_thickness`），画布线宽 = 层数 × 单 key 高
+    /// （`Editor::draw_line_width_px`）。见 `lumino_core::BrushConfig` 的类型注释。
     ///
     /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
-    /// 本字段只保留配置：改粗细度/层音轨后预览与生成立即按新配置解释。
+    /// 本字段只保留配置：改粗细后预览与生成立即按新配置解释。
     pub brush: lumino_core::BrushConfig,
 
     /// 待打开「分音符填充」对话框的请求标志（由画布 Ctrl+单击置位）

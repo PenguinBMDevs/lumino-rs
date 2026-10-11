@@ -88,26 +88,19 @@ fn test_tool_panel_settings_requested_curve_degrades_to_plain_select() {
 // 下拉开关语义
 // ---------------------------------------------------------------------------
 
-/// 画刷下拉内部的粗细 +/- 按钮点击后，下拉应保持打开（不被误关）。
-/// 仅点击面板内空白（CloseBrushDropdown）或再次切换（ToggleBrushDropdown）才关闭。
+/// 画刷下拉打开时，面板内交互（只读展示 + 悬停）不应把它误关；
+/// 仅点击面板内空白（`CloseBrushDropdown`）或再次切换（`ToggleBrushDropdown`）才关闭。
+///
+/// 注：此处原先钉的是"点画刷下拉里的粗细 +/- 按钮不关下拉"——那两个按钮已**删除**
+/// （粗细是全局值，唯一控制入口是悬浮条右端的「粗细」面板滑杆），故改钉悬停/显式关闭。
 #[test]
-fn test_brush_dropdown_stays_open_on_thickness_button() {
+fn test_brush_dropdown_stays_open_on_hover_until_close_event() {
     let mut toolbar = Toolbar::new();
     toolbar.brush_dropdown_open = true;
 
-    // 点击下拉内部的「+」按钮：改粗细，但不应关闭下拉
-    toolbar.update(Event::BrushThicknessChanged(5));
-    assert!(
-        toolbar.brush_dropdown_open,
-        "点击画刷下拉内部的粗细按钮不应关闭下拉"
-    );
-
-    // 再次点击「-」按钮：同样保持打开（连续操作不关闭）
-    toolbar.update(Event::BrushThicknessChanged(3));
-    assert!(
-        toolbar.brush_dropdown_open,
-        "连续操作画刷下拉按钮不应关闭下拉"
-    );
+    // 悬停事件不应关闭下拉（鼠标进出按钮会反复发它）
+    toolbar.update(Event::ButtonHovered(None));
+    assert!(toolbar.brush_dropdown_open, "悬停不应关闭画刷下拉");
 
     // 点击面板内空白（外部关闭消息）：应关闭
     toolbar.update(Event::CloseBrushDropdown);
@@ -287,18 +280,26 @@ fn test_toggle_close_resets_drag_state() {
     );
 }
 
-/// 关闭悬浮工具条时应一并收起其承载的工具设置下拉。
+/// 关闭悬浮工具条时应一并收起其承载的工具设置下拉与粗细面板。
+///
+/// 粗细面板锚定在悬浮条右端按钮上：悬浮条不在就没有锚点，留着"开"状态会让下次打开
+/// 悬浮条时凭空弹出一块用户早已看不见的面板。
 #[test]
 fn test_close_tool_panel_closes_settings_dropdown() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
     toolbar.brush_dropdown_open = true;
+    toolbar.thickness_panel_open = true;
 
     toolbar.update(Event::ToggleToolPanel);
     assert!(!toolbar.tool_panel_open);
     assert!(
         !toolbar.brush_dropdown_open,
         "关闭悬浮条应一并收起其承载的画刷设置下拉"
+    );
+    assert!(
+        !toolbar.thickness_panel_open,
+        "关闭悬浮条应一并收起粗细面板（锚点已不存在）"
     );
 }
 
@@ -365,54 +366,117 @@ fn test_open_draw_settings_dialog_is_idempotent() {
 }
 
 // ---------------------------------------------------------------------------
-// 悬浮条右端「粗细」按钮请求（本轮只有入口：消息已发出，控件待接入）
+// 悬浮条右端「粗细」按钮 → 全局粗细面板（滑杆 1-100，步进 1）
 // ---------------------------------------------------------------------------
 
-/// 「粗细」请求**只作信道**：工具栏侧不留任何状态（更谈不上开合态）。
+/// 「粗细」按钮是**开合**语义：开 → 再点关；且开合**不动**工具状态。
 ///
-/// 本轮控件未接入，故只钉住"发消息不产生副作用"这一半契约；
-/// 下一轮把粗细值接进来时，这里就是"状态该落在哪"的第一处改动点。
+/// 与齿轮（独立窗口、无开合态）的关键区别：本面板在主窗口内、锚定在悬浮条自己的
+/// 按钮上，所以开合态必须由主窗维护；同时**不得**动 `current_tool` / `fill_enabled`
+/// （它是设置入口，不是工具条目），也**不得**关掉悬浮条本身（否则锚点被一起拆掉）。
 #[test]
-fn test_thickness_settings_requested_leaves_tool_state_untouched() {
+fn test_thickness_panel_toggles_without_touching_tool_state() {
     let mut toolbar = Toolbar::new();
     toolbar.tool_panel_open = true;
     toolbar.current_tool = Tool::Shape;
     toolbar.fill_enabled = true;
-    toolbar.brush_dropdown_open = true;
     let offset_before = toolbar.tool_panel_offset;
 
-    toolbar.update(Event::ThicknessSettingsRequested);
-    let after_first = (
-        toolbar.current_tool,
-        toolbar.fill_enabled,
+    toolbar.update(Event::ToggleThicknessPanel);
+    assert!(toolbar.thickness_panel_open, "首次点击「粗细」应打开面板");
+    assert_eq!(toolbar.current_tool, Tool::Shape, "开面板不得切走当前工具");
+    assert!(toolbar.fill_enabled, "开面板不得改动颜料桶填充态");
+    assert!(
         toolbar.tool_panel_open,
-        toolbar.tool_panel_offset,
+        "开面板不得关闭悬浮工具条（锚点在它身上）"
     );
-    toolbar.update(Event::ThicknessSettingsRequested);
-    let after_second = (
-        toolbar.current_tool,
-        toolbar.fill_enabled,
-        toolbar.tool_panel_open,
-        toolbar.tool_panel_offset,
-    );
-
-    assert_eq!(
-        toolbar.current_tool,
-        Tool::Shape,
-        "设置入口不得切走当前工具"
-    );
-    assert!(toolbar.fill_enabled, "设置入口不得改动颜料桶填充态");
-    assert!(toolbar.tool_panel_open, "设置入口不得关闭悬浮工具条");
     assert_eq!(
         toolbar.tool_panel_offset, offset_before,
-        "设置入口不得移动悬浮条"
+        "开面板不得移动悬浮条"
     );
+
+    toolbar.update(Event::ToggleThicknessPanel);
     assert!(
-        !toolbar.brush_dropdown_open,
-        "窗口内临时浮层照旧被'外部动作'收起（新入口不享受例外）"
+        !toolbar.thickness_panel_open,
+        "再次点击「粗细」应收起面板（开合语义）"
     );
+}
+
+/// 面板打开时，**滑杆**的粗细变更必须放行且不关面板——否则滑杆一拖就把自己关掉。
+#[test]
+fn test_thickness_panel_stays_open_while_dragging_slider() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+    toolbar.update(Event::ToggleThicknessPanel);
+    assert!(toolbar.thickness_panel_open, "前置：面板已打开");
+
+    for v in [5_u8, 40, 100, 1] {
+        toolbar.update(Event::DrawThicknessChanged(v));
+        assert!(
+            toolbar.thickness_panel_open,
+            "拖滑杆（粗细={v}）不得关闭面板"
+        );
+        assert_eq!(toolbar.brush.thickness, v, "粗细应写入全局值");
+    }
+
+    // 显式关闭（点面板内空白）
+    toolbar.update(Event::CloseThicknessPanel);
+    assert!(!toolbar.thickness_panel_open, "关闭事件应收起面板");
+}
+
+/// 全局粗细与滑杆量程同源：越界值由 `set_thickness` 夹到 `1..=100`。
+///
+/// 这条同时钉死"上限从 20 放宽到 100"：滑杆右端 100 必须能原样存下来，
+/// 而不是被静默截成 20（那正是"滑到头却没变化"的一类静默失效）。
+#[test]
+fn test_draw_thickness_changed_clamps_to_slider_range() {
+    let mut toolbar = Toolbar::new();
+
+    toolbar.update(Event::DrawThicknessChanged(0));
     assert_eq!(
-        after_first, after_second,
-        "连续两次请求不应改变任何工具栏状态（无开合语义）"
+        toolbar.brush.thickness,
+        BrushConfig::MIN_THICKNESS,
+        "越界下限应夹到最小粗细"
+    );
+
+    toolbar.update(Event::DrawThicknessChanged(200));
+    assert_eq!(
+        toolbar.brush.thickness,
+        BrushConfig::MAX_THICKNESS,
+        "越界上限应夹到最大粗细（= 滑杆右端）"
+    );
+    assert_eq!(BrushConfig::MAX_THICKNESS, 100, "滑杆右端应为 100");
+}
+
+/// 面板与其余**窗口内**面板互斥；且任何"外部动作"都会收起它（不给新入口开例外）。
+#[test]
+fn test_thickness_panel_exclusive_and_closed_by_external_actions() {
+    let mut toolbar = Toolbar::new();
+    toolbar.tool_panel_open = true;
+
+    // 打开粗细面板 → 收起画刷 / 形状下拉
+    toolbar.brush_dropdown_open = true;
+    toolbar.shape_dropdown_open = true;
+    toolbar.update(Event::ToggleThicknessPanel);
+    assert!(toolbar.thickness_panel_open);
+    assert!(
+        !toolbar.brush_dropdown_open && !toolbar.shape_dropdown_open,
+        "打开粗细面板应收起其余窗口内面板"
+    );
+
+    // 反向：打开画刷设置（工具条目再次点击）应收起粗细面板
+    toolbar.update(Event::ToolPanelItemSettingsRequested(ToolPanelItem::Brush));
+    assert!(
+        !toolbar.thickness_panel_open,
+        "其它工具栏动作（工具条目再次点击）应收起粗细面板"
+    );
+
+    // 外部动作同样收起（此处用齿轮的独立窗口请求做代表）
+    toolbar.update(Event::ToggleThicknessPanel);
+    assert!(toolbar.thickness_panel_open);
+    toolbar.update(Event::OpenDrawSettingsDialog);
+    assert!(
+        !toolbar.thickness_panel_open,
+        "齿轮请求照旧按'外部一动作即收起'处理（新面板不享受例外）"
     );
 }

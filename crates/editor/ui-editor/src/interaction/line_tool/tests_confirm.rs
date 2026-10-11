@@ -45,6 +45,53 @@ fn test_confirm_line_creates_notes() {
     assert!(editor.editor_state.line_tool.paths.is_empty(), "确认后清空");
 }
 
+// ── 全局绘制粗细（纵向铺层，见 `paths::expand_layers`） ──
+
+/// 全局粗细 = 生成的纵向 key 层数：水平线按它向上铺 N 层，tick 区间逐位不变。
+///
+/// 层序与画刷笔画同口径（level 0 = 原行、逐层向上）；画布线宽 = 层数 × 单 key 高
+/// （`Editor::draw_line_width_px`），故"画出来多粗"与"√ 后生成多高"严格同源。
+#[test]
+fn test_confirm_horizontal_line_expands_by_global_thickness() {
+    let mut editor = line_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    // 全局粗细 3 层（值与画刷共用同一字段，见 `BrushConfig` 注释）
+    editor.brush.set_thickness(3);
+    assert!(editor.confirm_line_tool());
+
+    let notes = editor.editor_state.data.current_track_notes();
+    assert_eq!(notes.len(), 3, "粗细 3 层 → key 60/61/62 各一条");
+    for key in 60u8..=62 {
+        let n = notes
+            .iter()
+            .find(|n| n.key == key)
+            .expect("每一层都应有音符");
+        assert_eq!(
+            (n.start_tick, n.end_tick),
+            (0, 3840),
+            "铺层只加 key，不改 tick 区间"
+        );
+    }
+    assert!(
+        notes.iter().all(|n| n.key >= 60),
+        "层只向上铺，不得下探到起点行以下"
+    );
+}
+
+/// 全局粗细 1（默认）= 与铺层功能引入前逐位一致（零行为变化）。
+#[test]
+fn test_confirm_default_thickness_is_unchanged() {
+    let mut editor = line_editor();
+    seed_notes(&mut editor, 2, 1, &[]);
+    assert_eq!(editor.draw_thickness(), 1, "默认粗细应为 1 层");
+    assert!(editor.confirm_line_tool());
+    assert_eq!(
+        editor.editor_state.data.current_track_note_count(),
+        1,
+        "粗细 1 时仍只有一条音符"
+    );
+}
+
 #[test]
 fn test_confirm_last_anchor_aligns_note_tail() {
     // 最后一个锚点对齐最后一个音符**尾部**（曲线终点之外不得多出音符）

@@ -29,10 +29,12 @@ const STROKE_HIT_SLOP: f32 = 2.0;
 pub(crate) const LAYER_DARKEN: f32 = 0.6;
 
 impl Editor {
-    /// 画刷笔画总宽（像素）= 粗细度 × 单 key 高度（`zoom_y`）——随缩放实时重算
+    /// 画刷笔画总宽（像素）= 全局粗细（层数）× 单 key 高度（`zoom_y`）——随缩放实时重算
+    ///
+    /// 与曲线 / 形状的绘制线宽**同一个函数**：一笔画在画布上有多宽、√ 后生成的音符带
+    /// 就有多高，三者共用全局粗细一份值（见 `Editor::draw_line_width_px`）。
     pub(crate) fn brush_total_width_px(&self) -> f32 {
-        let thickness = self.brush.thickness.max(1) as f32;
-        (thickness * self.editor_state.view.zoom_y).max(1.0)
+        self.draw_line_width_px()
     }
 
     /// 某层分配音轨（doc 索引）
