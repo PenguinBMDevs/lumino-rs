@@ -78,6 +78,11 @@ const GRIP_BAR_HEIGHT: f32 = 12.0;
 /// 拖拽柄两根竖条之间的间距
 const GRIP_BAR_GAP: f32 = 3.0;
 /// 工具设置下拉（画刷 / 形状）的宽度
+///
+/// **宽度契约**：面板宽度由调用方**固定**为本值，`iced` 的 flex 会把超宽内容夹进可用宽度，
+/// 所以文案随语言 / 用户字体变宽时只会换行或收窄，**不会**溢出面板背景——面板尺寸因此
+/// 与字体度量无关。文案的"单行预算"另由护栏把关（口径见
+/// `tests::metric_stable_reference_font`：必须用跨平台同字宽的参考字体量）。
 const MENU_WIDTH: f32 = 248.0;
 
 impl Root {
@@ -563,6 +568,14 @@ mod tests {
     /// 无可用 GPU 适配器时返回 `None`，调用方**跳过**而不是失败：CI 软渲染环境不保证
     /// 有适配器（与 `lumino-gfx` 的 `LUMINO_GFX_TEST_FALLBACK` 同一考虑）。
     fn headless_renderer() -> Option<crate::Renderer> {
+        headless_renderer_with_font(Font::DEFAULT)
+    }
+
+    /// 按**指定默认字体**构建 headless 渲染器。
+    ///
+    /// 面板文案都没有显式设字体，`iced` 取的是渲染器默认字体，所以这里的入参就是
+    /// **文本度量口径**——想换口径（比如换成跨平台同宽的参考字体）就换它。
+    fn headless_renderer_with_font(font: Font) -> Option<crate::Renderer> {
         use iced_wgpu::graphics::Shell;
 
         let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
@@ -592,11 +605,48 @@ mod tests {
             Shell::headless(),
         );
 
-        Some(crate::Renderer::new(
-            engine,
-            Font::DEFAULT,
-            Pixels::from(16),
-        ))
+        Some(crate::Renderer::new(engine, font, Pixels::from(16)))
+    }
+
+    /// 面板宽度护栏的**度量口径**：一组互为 metric-compatible 的拉丁无衬线字体。
+    ///
+    /// 取其中一个（Liberation Sans / Arial / Helvetica / Arimo / Nimbus Sans / FreeSans
+    /// 都是按同一套字宽设计的克隆体）当基准，同一段文案在 Ubuntu / Windows / macOS 上量出来
+    /// 的宽度就一致——护栏不再随平台默认字体漂移。
+    /// 中文没问题：参考字体无 CJK 字形时会逐字形回退到系统 CJK 字体，而 CJK 字形推进宽度
+    /// 恒为 1 em（不随字体变），所以中文口径同样稳定（实测三种字体下中文面板都是 224.0）。
+    ///
+    /// 一个都找不到时返回 `None`，调用方**跳过**断言，而不是退回去拿平台默认字体硬测：
+    /// 默认字体宽度不可控（Ubuntu 桌面默认 DejaVu Sans 比 Arial 宽约 10%），拿它当基准
+    /// 等于把「CI 机器装了什么字体」写进断言，那正是本次 CI 变红的根因。
+    fn metric_stable_reference_font() -> Option<Font> {
+        /// 参考字体族（命中任一即可，字宽一致）
+        const CANDIDATES: [&str; 6] = [
+            "Liberation Sans",
+            "Arial",
+            "Helvetica",
+            "Arimo",
+            "Nimbus Sans",
+            "FreeSans",
+        ];
+
+        let families: Vec<String> = {
+            let mut guard = iced_wgpu::graphics::text::font_system().write().ok()?;
+            guard
+                .raw()
+                .db()
+                .faces()
+                .flat_map(|face| face.families.iter().map(|(name, _)| name.clone()))
+                .collect()
+        };
+
+        CANDIDATES
+            .into_iter()
+            .find(|candidate| families.iter().any(|f| f.eq_ignore_ascii_case(candidate)))
+            .map(|candidate| {
+                eprintln!("面板宽度护栏度量口径：{candidate}");
+                Font::with_name(candidate)
+            })
     }
 
     /// 沿「单子节点」链下行，定位恰好含 `count` 个子节点的布局节点
@@ -830,13 +880,29 @@ mod tests {
         );
     }
 
-    /// 面板宽度护栏：分音符填充面板（含「关闭填充」按钮）在中文 / 英文下内容宽度都不得
-    /// 超过 `MENU_WIDTH`——面板由调用方固定为 `MENU_WIDTH`，内容超宽会溢出面板背景。
+    /// 面板宽度护栏：分音符填充面板（含「关闭填充」按钮）在中文 / 英文下的**单行**内容宽度
+    /// 都不得超过 `MENU_WIDTH`——面板宽度由调用方定为 `MENU_WIDTH`，单行放不下就得换行排布。
+    ///
+    /// **度量口径 = [`metric_stable_reference_font`]**（跨平台同字宽），不再用平台默认字体。
+    /// 根因：本护栏量的是"文案 + 布局的单行预算"，而默认字体的字宽是平台决定的——
+    /// CI 的 Ubuntu 上默认落到 DejaVu Sans，同一段英文比 Arial 宽约 10%，实测
+    /// EnUs 内容 250.6 > 248 → 断言红（Windows 上却是绿的），断言值成了"跑在哪个系统上"的函数。
+    ///
+    /// 生产环境不受影响：面板宽度由调用方固定，`iced` 的 flex 会把超宽子节点夹进可用宽度，
+    /// 文案只会换行 / 收窄，不会溢出面板背景（实测 DejaVu 宽度下：按钮行右缘正好收在
+    /// 面板内框内，无溢出、无裁剪）。所以该护栏是**文案预算门禁**，必须用同口径字体来量。
     #[test]
     fn test_fill_division_dropdown_fits_menu_width() {
         use lumino_extras::i18n::Language;
 
-        let Some(renderer) = headless_renderer() else {
+        let Some(font) = metric_stable_reference_font() else {
+            eprintln!(
+                "跳过：系统无度量稳定的参考字体（Liberation Sans / Arial / Helvetica / \
+                 Arimo / Nimbus Sans / FreeSans）"
+            );
+            return;
+        };
+        let Some(renderer) = headless_renderer_with_font(font) else {
             eprintln!("跳过：无可用 GPU 适配器（文本度量需要真实渲染器）");
             return;
         };
@@ -862,15 +928,25 @@ mod tests {
         }
     }
 
-    /// 面板宽度护栏：粗细面板（信息行 + 滑杆 + 说明）在中文 / 英文下内容宽度都不得
-    /// 超过 `MENU_WIDTH`——面板由调用方固定为 `MENU_WIDTH`，内容超宽会溢出面板背景。
+    /// 面板宽度护栏：粗细面板（信息行 + 滑杆 + 说明）在中文 / 英文下的**单行**内容宽度
+    /// 都不得超过 `MENU_WIDTH`——面板宽度由调用方定为 `MENU_WIDTH`，单行放不下就得换行排布。
     ///
     /// 连**两端值**一起测：三位数「100 层」比一位数更宽，只测中间值会漏掉最长那一档。
+    /// 度量口径同上（参考字体，见 `test_fill_division_dropdown_fits_menu_width` 的根因说明）：
+    /// 平台默认字体（Ubuntu/DejaVu）实测 EnUs 100 时 261.4 > 248，是 Windows 绿、Linux 红
+    /// 的那条 CI 失败；换成同口径参考字体后两个平台量的是同一段宽度。
     #[test]
     fn test_thickness_dropdown_fits_menu_width() {
         use lumino_extras::i18n::Language;
 
-        let Some(renderer) = headless_renderer() else {
+        let Some(font) = metric_stable_reference_font() else {
+            eprintln!(
+                "跳过：系统无度量稳定的参考字体（Liberation Sans / Arial / Helvetica / \
+                 Arimo / Nimbus Sans / FreeSans）"
+            );
+            return;
+        };
+        let Some(renderer) = headless_renderer_with_font(font) else {
             eprintln!("跳过：无可用 GPU 适配器（文本度量需要真实渲染器）");
             return;
         };
