@@ -9,6 +9,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### REND-017 · GPU 渲染缓冲状态指示器（#140，状态栏 + 设置可关）
+
+- **动机** — REND-016 #139 之后，GPU (LGS) 渲染/缓冲状态对用户仍不可知：过载只有「突然
+  无声/卡顿」，编辑时感觉迟钝却无法判断是否 GPU 渲染落后；排障与设置决策都缺可视反馈。
+- **数据链路（无锁、零音频线程负担）** — `PlaybackStatsReader`（既有 relaxed 原子）
+  → gpu-synth 新增 `GpuBufferStats::snapshot`（含 `samples_per_second` 交错样本换算基准，
+  重采样时按设备率）→ midi-io `SynthControl::gpu_buffer_stats()` 扩展能力（默认 None，
+  仅 LGS 覆写）→ Runner 每 250ms（4Hz）轮询经 `Host::set_gpu_buffer_status` 注入状态栏。
+- **状态栏指示器** — GPU 组：`Q 248ms→`（队列深度，毫秒整数 + 趋势箭头）、`LOAD 63%`
+  （颜色分级：<60% 常规 / 60–90% 黄 / ≥90% 红）、`V`（活跃声部）、`UR`（欠载计数，>0 红）；
+  异常时附 `GOV`（REND-016 治理级别）与 `DROP`（丢弃计数）。非 LGS / 后端未就绪自动隐藏；
+  未播放也显示（渲染线程常开、数据真实，直接服务「编辑时排障」）。
+- **设置（音频→LGS 区）** — 三项，均持久化且**不触发后端重建**（纯显示项）：
+  `gpu_buffer_status_enabled`（总开关，默认开）、`gpu_governor_metrics_enabled`（GOV/DROP
+  副开关，默认开）、`gpu_load_display`（LOAD 口径：3 秒平均〔默认〕/ 瞬时）。
+- **关键设计决策** — ① 轮询快照而非句柄传递：端口布局重建会整体替换 `AudioPlayback`
+  （旧 reader 冻结失效），轮询经最新 api 现场读天然免疫；② `STATS_RING` 128→1024
+  （8KB）支撑 3 秒短窗（默认 512@64k → 375 块；小块配置夹紧到环容量）；③ 队列以毫秒整数
+  显示（量程 0–600ms，容量按时间封顶 32ms–600ms），颜色与趋势承担危险度表达。
+- **附带发现（不在本卡修复）** — `flush_epoch`「过载重同步清队列」为死代码（无任何递增点，
+  `7bb878b9` 改「宁糊不切」后遗留），其清队列路径永不触发，不影响本卡指标准确性。
+- **验证** — 新增 11 项单测（gpu-synth 窗口/换算 2、midi-io 窗口换算 1、core 配置缺字段/往返 2、
+  状态栏分级/趋势/变更检测 4、设置面板镜像/事件 2）；`cargo test --workspace` 全绿（0 failed，
+  含 doctest）；`cargo fmt --check` / `cargo clippy --workspace --all-targets` 无新增警告。
+  记录见 `docs/2026-10-11-REND-017-GPU缓冲状态指示器-实施记录.md`。
+- **遗留** — 真机复验（LGS 播放实时性 / #139 过载场景肉眼可见 / 开关持久化）待现场执行。
+
 ### 音符画 · 描边预览改为「画会生成的音符块」（BUG 修复：矩形/曲线的宽度显示 X2）
 
 - **症状（用户报）** — 粗细度是"中间铺开"的：调大后画布上**预览**从线条两侧一起变宽，
