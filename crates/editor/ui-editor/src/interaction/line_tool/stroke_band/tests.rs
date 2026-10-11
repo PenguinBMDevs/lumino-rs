@@ -4,6 +4,11 @@
 //! 用户报的 BUG（"矩形竖边改了粗细还是细一条"）就钉在
 //! [`test_vertical_segment_widens_horizontally`] 这条上——旧实现（按 key 向上平移
 //! N 层）在这里必然失败：竖直段被平移只是变长/重复，横向宽度不动。
+//!
+//! 另一类 BUG（"矩形右上角有缺口、音符没盖到角上"）钉在文件末尾的拐角补齐三条上：
+//! [`test_open_path_corner_gets_outer_square`] / [`test_collinear_vertex_adds_no_note`] /
+//! [`test_closed_loop_corner_at_wrap_vertex`]——每段一条单侧矩形在拐角外侧各留一块
+//! 方格，必须用相邻两段偏移向量张成的平行四边形补齐（预览的 Miter 拐角是实心的）。
 
 use super::*;
 
@@ -186,5 +191,121 @@ fn test_band_clamps_to_key_hi() {
     assert!(
         keys.iter().all(|k| *k <= 127),
         "加粗带不得越过 key_hi=127，实际 {keys:?}"
+    );
+}
+
+/// 时间轴左侧的溢出：带在 tick 0 附近外溢到负 tick 时，起点必须在**本模块内**就钳到 0。
+///
+/// 留到调用方（`paths::to_note_triple`）才钳会漏掉合并：`keep_longest` 按
+/// `(start, key)` 分组，`(-21, 60)` 与中心线的 `(0, 60)` 是两组，钳完就变成两条
+/// 同 start 同 key 的重叠音符（渲染叠层 + 历史里两条）。
+#[test]
+fn test_band_clamps_negative_start_before_dedupe() {
+    // 向右上的斜段（法线带 +tick 分量）：带在 tick 0 附近向左外溢到负 tick
+    let poly = [(0.0, 60.0), (800.0, 64.0)];
+    let notes = outline_notes(&poly, 3, ZX, ZY, KEY_HI);
+    assert!(
+        notes.iter().all(|n| n.start >= 0),
+        "不得出现负起点音符：{:?}",
+        notes.iter().filter(|n| n.start < 0).collect::<Vec<_>>()
+    );
+    let mut seen = std::collections::HashSet::new();
+    for n in &notes {
+        assert!(
+            seen.insert((n.start, n.key)),
+            "出现重复音符（同 start 同 key）: {n:?}"
+        );
+    }
+}
+
+// ─── 拐角补齐（用户报「矩形右上角缺口」的根因）─────────────────────────//
+// 单侧矩形在拐角**外侧**各留一块方格：矩形 A 止于角点的 tick、矩形 B 止于角点的
+// key，谁都不越界到「tick > 角点 ∧ key > 角点」那一格。预览是 `Stroke` 默认 Miter
+// 拼接（拐角实心），所以生成侧必须用「两条偏移向量张成的平行四边形」把外角补上。
+
+/// 开放折线的内部拐角：外角方格必须被补上，且端帽不越界（预览默认 Butt）。
+///
+/// 折线 = 顶边向右 + 右边向下，拐角正是用户报的**右上角**：粗细 3（偏移 2 个 key 高
+/// = 400 tick / 2 行）时，角点外角方格 = `tick 800..1200 × key 64..66`。
+/// 断言逐行精确区间：拐角补齐前，64/65/66 行只有 `[0,800]`（顶边自身），
+/// 缺的正是 `[800,1200]` 这一段。
+#[test]
+fn test_open_path_corner_gets_outer_square() {
+    let poly = [(0.0, 64.0), (800.0, 64.0), (800.0, 60.0)];
+    let map = by_key(&band_notes(&poly, 3, ZX, ZY, KEY_HI));
+
+    let expected: BTreeMap<i32, Vec<(i64, i64)>> = [
+        (60, vec![(800, 1200)]),
+        (61, vec![(800, 1200)]),
+        (62, vec![(800, 1200)]),
+        (63, vec![(800, 1200)]),
+        // 拐角补齐：顶边带 [0,800] 与右边带 [800,1200] 在 64 行相接，
+        // 64..66 行合并成一条贯通区间（外角方格被填上）
+        (64, vec![(0, 1200)]),
+        (65, vec![(0, 1200)]),
+        (66, vec![(0, 1200)]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        map, expected,
+        "开放折线的外角方格必须补齐；端帽（tick 1200 之外）不得外溢"
+    );
+}
+
+/// 共线（同向）拐角：平行四边形退化为零面积，**不得**留下碎音符。
+///
+/// 不加这个守卫时，退化四边形的两条重合边会被 even-odd 配成 `(x, x)` 的零宽区间，
+/// 再被「至少 1 tick」兜底成每行一条 1 tick 的垃圾音符——直线中间凭空多出一列音符。
+#[test]
+fn test_collinear_vertex_adds_no_note() {
+    let straight = band_notes(&[(0.0, 60.0), (1600.0, 60.0)], 3, ZX, ZY, KEY_HI);
+    let with_mid_vertex = band_notes(
+        &[(0.0, 60.0), (800.0, 60.0), (1600.0, 60.0)],
+        3,
+        ZX,
+        ZY,
+        KEY_HI,
+    );
+    assert_eq!(
+        by_key(&with_mid_vertex),
+        by_key(&straight),
+        "共线拐角不应改变加粗带（不能在直线上留下 1 tick 碎音符）"
+    );
+}
+
+/// **闭合环**首顶点（回绕拐角）同样要补：顶点 0 的「前一段」是最后一段。
+///
+/// 对抗性构造：把矩形的顶点序旋转到**缺失的那个外角**落在下标 0——如果回绕取的是
+/// `按 j-1 直接减`（越界/取错段），或者干脆漏掉顶点 0，右上角立刻又缺回来。
+#[test]
+fn test_closed_loop_corner_at_wrap_vertex() {
+    // 顶点序：(右上) → 右下 → 左下 → 左上 → 回到右上（首尾逐位相等 = 闭合环）
+    let poly = [
+        (800.0, 64.0),
+        (800.0, 60.0),
+        (0.0, 60.0),
+        (0.0, 64.0),
+        (800.0, 64.0),
+    ];
+    let map = by_key(&band_notes(&poly, 3, ZX, ZY, KEY_HI));
+
+    let expected: BTreeMap<i32, Vec<(i64, i64)>> = [
+        // 下边带 + 左边带 + 右边带在 60..62 行首尾相接成一条
+        (60, vec![(0, 1200)]),
+        (61, vec![(0, 1200)]),
+        (62, vec![(0, 1200)]),
+        // 63 行只有左右竖边覆盖 → 露出「偏移后的洞」
+        (63, vec![(0, 400), (800, 1200)]),
+        (64, vec![(0, 1200)]),
+        // 65/66 行 = 上边带 [0,800] + 顶点 0 的外角方格 [800,1200]
+        (65, vec![(0, 1200)]),
+        (66, vec![(0, 1200)]),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(
+        map, expected,
+        "闭合环的首顶点拐角必须补齐（前一段 = 最后一段）"
     );
 }

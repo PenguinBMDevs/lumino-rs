@@ -267,8 +267,9 @@ pub struct Editor {
     /// 画刷工具配置（**全局绘制粗细** + 每层音轨分配）
     ///
     /// ⚠️ `thickness` 是**全局**值，不是画刷私有：曲线 / 形状的描边与画刷笔画共用它
-    /// 纵向铺层（读 `Editor::draw_thickness`），画布线宽 = 层数 × 单 key 高
-    /// （`Editor::draw_line_width_px`）。见 `lumino_core::BrushConfig` 的类型注释。
+    /// （读 `Editor::draw_thickness`）。画布上"线条有多宽"不再由线宽参数表达，而是
+    /// **直接画 √ 会生成的音符块**（`Editor::shape_outline_blocks` /
+    /// `Editor::path_outline_blocks`，与写入同源）。见 `lumino_core::BrushConfig` 注释。
     ///
     /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
     /// 本字段只保留配置：改粗细后预览与生成立即按新配置解释。

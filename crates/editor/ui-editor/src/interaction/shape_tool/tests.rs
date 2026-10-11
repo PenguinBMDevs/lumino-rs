@@ -169,6 +169,211 @@ fn test_rectangle_vertical_edges_widen_by_global_thickness() {
     );
 }
 
+/// 覆盖探针：`(tick, key)` 这一格是否被某条音符盖住（半开区间 `[start, end)`，
+/// 与音符的时间语义一致）。
+///
+/// 为什么要探针而不是「该行有没有音符」：`test_rectangle_outline_expands_by_global_thickness`
+/// 只断言了 `60..=66` 每行非空——**行非空 ≠ 该行该 tick 有音符**。上一轮的水平边带覆盖了
+/// 64/65/66 行的左半段，行非空成立，而右上角外角方格（tick > 800）空着却没人发现。
+/// 几何断言必须落到「格」上，这是本次 BUG 逃逸的直接原因。
+fn covers(editor: &Editor, tick: u32, key: u16) -> bool {
+    editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .any(|n| n.key as u16 == key && n.start_tick <= tick && tick < n.end_tick)
+}
+
+/// 回归 BUG（用户报）：矩形**右上角外角在加粗后出现缺口**——音符没覆盖到角上。
+///
+/// 根因：加粗带由「每段折线一条单侧矩形」求并而成，两段各自的矩形在拐角**外侧**留下的
+/// 那块方格没有被任何一段覆盖（矩形段止于 `tick = 800` / `key = 64`，谁都不越界到
+/// `tick > 800 ∧ key > 64`）。预览是 `Stroke` + 默认 **Miter** 拼接（`shape_tool_box.rs`
+/// 的 `frame.stroke`），拐角是实心的 → 生成音符必须补上同一块外角方格才叫「所见即所得」。
+///
+/// 量尺：粗细 3 层、默认缩放（1 tick = 0.1px、1 key = 20px）⇒ 偏移量 = 2 key 高
+/// = 400 tick / 2 行；右上外角方格 = tick `800..1200` × key `64..66`。
+#[test]
+fn test_rectangle_corner_gap_is_filled_by_band() {
+    let mut editor = test_editor();
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.brush.set_thickness(3);
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(800.0, 64.0);
+    editor.handle_shape_tool_released();
+    assert!(editor.confirm_shape_tool());
+
+    // ① 右上角外角方格必须被覆盖（BUG 位置）
+    assert!(
+        covers(&editor, 1000, 65),
+        "右上角外角方格（tick 1000 / key 65）必须被音符覆盖——预览是 Miter 实心角，\
+         生成侧不能留缺口。实际该行区间：{:?}",
+        rows(&editor)
+            .into_iter()
+            .filter(|(k, _)| *k == 65)
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        covers(&editor, 801, 64),
+        "外角方格紧贴角点的内边界也必须覆盖"
+    );
+    assert!(
+        covers(&editor, 1199, 65),
+        "外角方格最外一格（tick 1199 / key 65）"
+    );
+    // ② 其余三条边（下、左、右）的加宽带不受影响
+    assert!(covers(&editor, 1000, 61), "右竖边加宽带（key 61）");
+    assert!(covers(&editor, 200, 65), "上水平边加宽带（key 65）");
+    assert!(covers(&editor, 200, 61), "下水平边加宽带（key 61）");
+    // ③ 图形内部（偏移后的洞）必须保持空：不得为了补角把整块填满。
+    //    单侧偏向（向上优先、其次向右）⇒ 洞 = 原矩形平移 (+400 tick, +2 key) 后的内边界：
+    //    只有 key 63 行露出洞，且洞恰为 tick 400..800。
+    assert!(!covers(&editor, 600, 63), "矩形内部的洞不应有音符");
+    assert!(
+        covers(&editor, 399, 63),
+        "左侧加宽带右边界（tick 399）在音符内"
+    );
+    assert!(
+        !covers(&editor, 400, 63),
+        "洞从左侧加宽带右边界 tick 400 起"
+    );
+    assert!(
+        !covers(&editor, 799, 63),
+        "洞到右侧加宽带左边界 tick 800 止（不含）"
+    );
+    assert!(
+        covers(&editor, 800, 63),
+        "右侧加宽带左边界 tick 800 在音符内"
+    );
+    assert!(
+        covers(&editor, 600, 62),
+        "底边加宽带向上铺到 62 行 → 该行整条被覆盖"
+    );
+}
+
+/// **描边预览 == 实际写入**（「所见即生成」的结构不变式）。
+///
+/// 画布预览现在直接画 [`Editor::shape_outline_blocks`] 给出的音符块（此前是
+/// `Stroke::width = 粗细 × 单 key 高` 的**居中**描边，产物却是**单侧向外**铺
+/// `N-1` 层 —— 竖直边在粗细 2 时预览比产物宽一倍，用户报的"宽度显示 X2"）。
+/// 这条把"两边同一份几何"钉死：任何一边的参数漂移（粗细 / zoom / 长度下限 /
+/// key 过滤）都会让它红。
+#[test]
+fn test_outline_preview_blocks_match_generated_notes() {
+    let mut editor = test_editor();
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.brush.set_thickness(3);
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(800.0, 64.0);
+    editor.handle_shape_tool_released();
+
+    // 预览块 = 画布上真正画出来的东西
+    let spec = editor.editor_state.shape_tool.shapes[0].spec();
+    let mut preview: Vec<(i64, i64, u16)> = editor
+        .shape_outline_blocks(spec, false)
+        .into_iter()
+        .map(|(a, b, k)| (a as i64, b as i64, k))
+        .collect();
+    preview.sort_unstable();
+    assert!(!preview.is_empty(), "描边预览不得为空");
+
+    // ① 预览必须是**向外拓展**的带（含右上角外角方格），不是居中描边：
+    //    居中（±1.5 个 key）会下探到 key 59；向外铺 2 层则只到 60..66
+    assert!(
+        preview.iter().all(|(_, _, k)| (60..=66).contains(k)),
+        "预览块只应落在 key 60..=66（向外铺），实际 {:?}",
+        preview.iter().map(|(_, _, k)| *k).collect::<Vec<_>>()
+    );
+    let covers = |blocks: &[(i64, i64, u16)], tick: i64, key: u16| {
+        blocks
+            .iter()
+            .any(|&(a, b, k)| k == key && a <= tick && tick < b)
+    };
+    assert!(covers(&preview, 1000, 65), "预览必须含右上角外角方格");
+
+    assert!(editor.confirm_shape_tool());
+    let mut written: Vec<(i64, i64, u16)> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|n| (n.start_tick as i64, n.end_tick as i64, n.key as u16))
+        .collect();
+    written.sort_unstable();
+    assert_eq!(
+        preview, written,
+        "预览块必须与实际写入的音符逐条一致（预览一套、产物一套 = 该 BUG 的根因）"
+    );
+}
+
+/// 预览块必须用**补齐过长度**的音符（最小长度下限，默认 128 分音符）。
+///
+/// 竖直边逐音高行原本只有 1 tick（实机 < 1px）：若预览拿"未补齐"的几何去画，看到的
+/// 是 1px 细线、√ 之后却是有长度的音符——又一处"预览一套、产物一套"。
+#[test]
+fn test_outline_preview_blocks_include_min_length_padding() {
+    let mut editor = test_editor();
+    // 恢复默认下限档位（`test_editor` 为几何断言关掉了它）
+    editor.set_min_note_division(Some(
+        lumino_editor_state::LineToolState::DEFAULT_MIN_NOTE_DIVISION,
+    ));
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = false;
+    editor.brush.set_thickness(3);
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(800.0, 64.0);
+    editor.handle_shape_tool_released();
+
+    let spec = editor.editor_state.shape_tool.shapes[0].spec();
+    let mut preview: Vec<(i64, i64, u16)> = editor
+        .shape_outline_blocks(spec, false)
+        .into_iter()
+        .map(|(a, b, k)| (a as i64, b as i64, k))
+        .collect();
+    preview.sort_unstable();
+    let min_ticks = (editor.editor_state.view.ppq / 32).max(1) as i64;
+    assert!(
+        preview.iter().any(|(a, b, _)| b - a == min_ticks),
+        "预览里应出现被补齐到 {min_ticks} tick 的音符（竖直边），实际 {preview:?}"
+    );
+
+    assert!(editor.confirm_shape_tool());
+    let mut written: Vec<(i64, i64, u16)> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|n| (n.start_tick as i64, n.end_tick as i64, n.key as u16))
+        .collect();
+    written.sort_unstable();
+    assert_eq!(preview, written, "补齐长度也必须预览与写入同源");
+}
+
+/// 填充图形的预览不得画"随粗细变宽的描边"：填充腿根本不生成描边、也不吃粗细，
+/// 画出来等于显示一个不会存在的产物。
+#[test]
+fn test_filled_shape_has_no_outline_preview_blocks() {
+    let mut editor = test_editor();
+    editor.set_shape(ShapeKind::Rectangle);
+    editor.editor_state.shape_tool.fill_enabled = true;
+    editor.brush.set_thickness(3);
+    editor.handle_shape_tool_pressed(0.0, 60.0, false);
+    editor.handle_shape_tool_moved(800.0, 64.0);
+    editor.handle_shape_tool_released();
+    let spec = editor.editor_state.shape_tool.shapes[0].spec();
+    assert!(
+        editor.shape_outline_blocks(spec, true).is_empty(),
+        "填充图形不生成描边 → 描边预览块必须为空"
+    );
+    assert!(
+        !editor.shape_outline_blocks(spec, false).is_empty(),
+        "同一图形按描边处理时必须有预览块（对照组：证明上面不是恒空）"
+    );
+}
+
 /// 圆形没有 `shape_vertices`（渲染走椭圆参数曲线）：描边由椭圆采样折线解析得到，
 /// 口径必须与矩形/三角形一致（同样不用吸附精度）。
 #[test]

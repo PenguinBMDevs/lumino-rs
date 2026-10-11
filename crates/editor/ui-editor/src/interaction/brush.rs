@@ -31,8 +31,13 @@ pub(crate) const LAYER_DARKEN: f32 = 0.6;
 impl Editor {
     /// 画刷笔画总宽（像素）= 全局粗细（层数）× 单 key 高度（`zoom_y`）——随缩放实时重算
     ///
-    /// 与曲线 / 形状的绘制线宽**同一个函数**：一笔画在画布上有多宽、√ 后生成的音符带
-    /// 就有多高，三者共用全局粗细一份值（见 `Editor::draw_line_width_px`）。
+    /// 用途是画刷自己的**命中带**（笔画实心区判定）；预览走覆盖格方块、生成走逐层音符，
+    /// 两者同源（`brush_pending_notes_by_stroke`）。
+    ///
+    /// ⚠️ 曲线 / 形状的描边预览**不再**用这个宽度当线宽：它们的产物是沿线段法线**单侧
+    /// 向外**铺 `N-1` 层，用"层数 × 单 key 高"的居中描边去表达会差半个带（竖直边在
+    /// 粗细 2 时差 2 倍）。那两条腿现在直接画 √ 会生成的音符块
+    /// （`Editor::shape_outline_blocks` / `Editor::path_outline_blocks`）。
     pub(crate) fn brush_total_width_px(&self) -> f32 {
         self.draw_line_width_px()
     }

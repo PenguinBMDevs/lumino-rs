@@ -49,8 +49,8 @@ fn test_confirm_line_creates_notes() {
 
 /// 全局粗细 = 生成的纵向 key 层数：水平线按它向上铺 N 层，tick 区间逐位不变。
 ///
-/// 层序与画刷笔画同口径（level 0 = 原行、逐层向上）；画布线宽 = 层数 × 单 key 高
-/// （`Editor::draw_line_width_px`），故"画出来多粗"与"√ 后生成多高"严格同源。
+/// 层序与画刷笔画同口径（level 0 = 原行、逐层向上）；画布预览直接画同一批音符块
+/// （`Editor::path_outline_blocks`），故"画出来多粗"与"√ 后生成多高"严格同源。
 #[test]
 fn test_confirm_horizontal_line_expands_by_global_thickness() {
     let mut editor = line_editor();
@@ -145,6 +145,99 @@ fn test_confirm_vertical_line_widens_by_global_thickness() {
         wide.iter().all(|w| *w >= extra - 1),
         "粗细 3：竖直线的**每条**音符都应横向加宽到 ≥ {} tick（沿法线），实际 {wide:?}",
         extra - 1
+    );
+}
+
+/// 回归 BUG（同类）：**曲线工具**的折线拐角同样必须补外角方格。
+///
+/// 与形状工具的 `test_rectangle_corner_gap_is_filled_by_band` 是同一处几何：两条链路
+/// 共用同一个加粗入口（[`stroke_band::outline_notes`]），所以拐角补齐对曲线折线、
+/// 图形描边、圆的折线逼近一次性生效——这里钉**曲线**这一侧。
+///
+/// 折线 = 顶边向右 800 tick、再向下 4 个 key，拐角落在右上角；粗细 3 ⇒ 偏移
+/// 2 个 key 高 = 400 tick / 2 行 ⇒ 外角方格 = `tick 800..1200 × key 64..66`。
+#[test]
+fn test_confirm_polyline_corner_is_filled_by_band() {
+    let l_editor = |thickness: u8| {
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Curve;
+        seed_notes(&mut editor, 2, 1, &[]);
+        // 量拐角外角方格的确切区间：关掉最小长度下限，免得 1 tick 中心线被撑宽
+        editor.editor_state.line_tool.set_min_note_division(None);
+        {
+            let line = &mut editor.editor_state.line_tool;
+            line.paths.push(Vec::new());
+            line.push_anchor(0, (0.0, 64.0));
+            line.push_anchor(0, (800.0, 64.0));
+            line.push_anchor(0, (800.0, 60.0));
+        }
+        editor.brush.set_thickness(thickness);
+        assert!(editor.confirm_line_tool());
+        editor
+    };
+
+    let thin = l_editor(1);
+    assert!(
+        !covers(thin.editor_state.data.current_track_notes(), 1000, 65),
+        "粗细 1：key 65 只可能来自加粗，不得有音符"
+    );
+
+    let wide = l_editor(3);
+    let notes = wide.editor_state.data.current_track_notes();
+    assert!(
+        covers(notes, 1000, 65),
+        "右上角外角方格（tick 1000 / key 65）必须被覆盖"
+    );
+    assert!(covers(notes, 0, 65), "上边加宽带在 65 行仍应贯通到 tick 0");
+    assert!(covers(notes, 1199, 65), "外角方格最外一格（tick 1199）");
+    assert!(
+        !covers(notes, 1200, 65),
+        "端帽之外（tick 1200 起）不得有音符"
+    );
+    assert!(covers(notes, 1000, 62), "右竖边的加宽带不受拐角补齐影响");
+}
+
+/// **曲线描边预览 == 实际写入**（「所见即生成」的结构不变式，与形状工具的
+/// `test_outline_preview_blocks_match_generated_notes` 同一条纪律）。
+///
+/// 画布预览现在直接画 [`Editor::path_outline_blocks`] 的音符块（此前是
+/// `Stroke::width = 粗细 × 单 key 高` 的**居中**描边，而产物是**单侧向外**铺 `N-1` 层）。
+#[test]
+fn test_path_preview_blocks_match_generated_notes() {
+    let mut editor = Editor::new();
+    editor.editor_state.tool = Tool::Curve;
+    seed_notes(&mut editor, 2, 1, &[]);
+    editor.editor_state.line_tool.set_min_note_division(None);
+    {
+        let line = &mut editor.editor_state.line_tool;
+        line.paths.push(Vec::new());
+        line.push_anchor(0, (0.0, 64.0));
+        line.push_anchor(0, (800.0, 64.0));
+        line.push_anchor(0, (800.0, 60.0));
+    }
+    editor.brush.set_thickness(3);
+
+    let path = editor.editor_state.line_tool.paths[0].clone();
+    let mut preview: Vec<(i64, i64, u16)> = editor
+        .path_outline_blocks(&path)
+        .into_iter()
+        .map(|(a, b, k)| (a as i64, b as i64, k))
+        .collect();
+    preview.sort_unstable();
+    assert!(!preview.is_empty(), "曲线描边预览不得为空");
+
+    assert!(editor.confirm_line_tool());
+    let mut written: Vec<(i64, i64, u16)> = editor
+        .editor_state
+        .data
+        .current_track_notes()
+        .iter()
+        .map(|n| (n.start_tick as i64, n.end_tick as i64, n.key as u16))
+        .collect();
+    written.sort_unstable();
+    assert_eq!(
+        preview, written,
+        "曲线预览块必须与写入的音符逐条一致（单路径、无填充 ⇒ 两者同源且无跨路径合并）"
     );
 }
 

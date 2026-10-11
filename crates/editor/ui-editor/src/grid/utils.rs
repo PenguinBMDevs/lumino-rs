@@ -1,7 +1,46 @@
 //! 工具函数
 
 use crate::Editor;
-use iced_core::{Point, Rectangle, Size};
+use iced_core::{Color, Point, Rectangle, Size};
+use iced_widget::canvas;
+use lumino_ui_core::Renderer;
+
+/// 描边预览的**引导线宽**（像素）
+///
+/// 固定值、**与全局粗细无关**：它只是"我画的这条线在哪"的定位提示（与曲线工具的
+/// 锚点/控制柄同类），**不代表产物宽度**。产物的宽度由**音符块**本身表达
+/// （见 [`fill_note_blocks`]）——让引导线跟着粗细变宽，正是"预览居中描边 vs 产物
+/// 单侧向外铺开"这一显示偏差的来源（用户报的"宽度显示 X2"）。
+pub(crate) const OUTLINE_GUIDE_WIDTH: f32 = 1.5;
+
+/// 把逻辑坐标下的**音符块** `(起 tick, 止 tick, key)` 画成屏幕矩形。
+///
+/// 格子口径与音符渲染 / 填充预览的 block 画法完全一致：一个 key 占
+/// `[key - 0.5, key + 0.5]`（见 `line_tool_box` 的填充预览块）。描边预览与填充预览
+/// 共用本函数，所以"描边预览的味道"和"填充预览的味道"不会各长一套。
+///
+/// 返回是否画了至少一块，供调用方决定 `has_content`。
+///
+/// key 用泛型：描边预览的音符块 key 是 `u16`（音高行），填充预览的块 key 是 `f32`
+/// ——同一个格子口径，不该为了类型对齐在渲染热路径上多做一次转换/分配。
+pub(crate) fn fill_note_blocks<K: Copy + Into<f32>>(
+    frame: &mut canvas::Frame<Renderer>,
+    editor: &Editor,
+    blocks: &[(f32, f32, K)],
+    color: Color,
+) -> bool {
+    for &(t0, t1, key) in blocks {
+        let k: f32 = key.into();
+        let a = editor.line_pos_screen_pos((t0, k - 0.5));
+        let b = editor.line_pos_screen_pos((t1, k + 0.5));
+        let rect = Rectangle::new(
+            Point::new(a.x.min(b.x), a.y.min(b.y)),
+            Size::new((b.x - a.x).abs(), (b.y - a.y).abs()),
+        );
+        frame.fill_rectangle(rect.position(), rect.size(), color);
+    }
+    !blocks.is_empty()
+}
 
 /// 卷帘内容区（选框/按钮的可见范围）
 ///

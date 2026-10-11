@@ -85,7 +85,9 @@ pub(super) fn chop_cells(cells: &[(f32, u16)], snap: f32, step: f32) -> Vec<(f32
 ///
 /// `thickness` = **全局绘制粗细**（纵向 key 层数）：解析结果交给曲线工具同一套
 /// 加粗几何 [`stroke_band::outline_notes`]——**沿线段法线**加粗（水平段纵向、竖直段
-/// 横向、斜段沿法线），越界层由下面的 `key < key_count` 过滤裁掉。
+/// 横向、斜段沿法线），**拐角用相邻两段偏移向量张成的平行四边形补外角**（否则矩形的
+/// 右上角会缺一块方格——预览的 Miter 拐角是实心的），越界层由下面的 `key < key_count`
+/// 过滤裁掉。
 ///
 /// 长度按 `min_ticks`（[`paths::min_note_length_ticks`]，默认 128 分音符）兜底补齐——
 /// 矩形/三角形的竖直边逐音高行原本只有 1 tick，与本文件同一根因（轮廓竖直段），
@@ -101,18 +103,67 @@ pub(super) fn outline_notes(
     min_ticks: f32,
     thickness: u8,
 ) -> Vec<(f32, u16, f32)> {
-    let poly: Vec<(f64, f64)> = shape_outline_path(spec, px_per_tick, px_per_key)
+    stroke_band::outline_blocks(
+        &shape_poly(spec, px_per_tick, px_per_key),
+        thickness,
+        px_per_tick,
+        px_per_key,
+        key_count,
+        min_ticks,
+    )
+    .into_iter()
+    .map(|(start, end, key)| (start, key, end - start))
+    .collect()
+}
+
+/// 形状边界 → 闭合折线（逻辑坐标 `(tick, key)`，`f64`）
+///
+/// 描边的**生成**与**预览**都从这条折线出发（[`stroke_band::outline_blocks`]），
+/// 保证「看到的带」与「√ 生成的音符」是同一份几何。
+fn shape_poly(spec: ShapeSpec, px_per_tick: f32, px_per_key: f32) -> Vec<(f64, f64)> {
+    shape_outline_path(spec, px_per_tick, px_per_key)
         .into_iter()
         .map(|(t, k)| (t as f64, k as f64))
-        .collect();
-    stroke_band::outline_notes(&poly, thickness, px_per_tick, px_per_key, key_count)
-        .into_iter()
-        .filter(|n| n.key >= 0 && n.key < key_count)
-        .map(|n| paths::to_note_triple(&n, min_ticks))
         .collect()
 }
 
 impl Editor {
+    /// 一个**描边**图形的**预览音符块**（逻辑坐标 `(起 tick, 止 tick, key)`）。
+    ///
+    /// 与 [`Self::confirm_shape_tool`] 的描边腿**同源**——同一个
+    /// [`stroke_band::outline_blocks`]、同一组 zoom / 全局粗细 / 长度下限。画布预览
+    /// 直接画这些块，于是"看到的宽度"就是"√ 后生成的宽度"：此前的预览是**居中**描边
+    /// （宽度 = N × 单 key 高），而产物是**单侧向外**铺 `N-1` 层——两者在竖直边上
+    /// 差到 2 倍（粗细 2 时预览 2 层 vs 产物 1 层），就是用户报的"宽度显示 X2"缺陷。
+    ///
+    /// 填充图形（`filled == true`）返回空：填充腿不生成描边、也不吃粗细，给它画一条
+    /// 随粗细变宽的边框等于显示一个根本不会生成的产物。这条规则放在**唯一权威源**里
+    /// （而不是渲染侧各自 `if`），避免又多一处会忘记的口径。
+    pub(crate) fn shape_outline_blocks(
+        &self,
+        spec: ShapeSpec,
+        filled: bool,
+    ) -> Vec<(f32, f32, u16)> {
+        if filled {
+            return Vec::new();
+        }
+        let px_per_tick = self.editor_state.view.zoom_x;
+        let px_per_key = self.editor_state.view.zoom_y;
+        let key_count = self.editor_state.view.key_count as i32;
+        let min_ticks = paths::min_note_length_ticks(
+            self.editor_state.line_tool.min_note_division,
+            self.editor_state.view.ppq,
+        );
+        stroke_band::outline_blocks(
+            &shape_poly(spec, px_per_tick, px_per_key),
+            self.draw_thickness(),
+            px_per_tick,
+            px_per_key,
+            key_count,
+            min_ticks,
+        )
+    }
+
     /// 形状工具：确认（√）—— 把所有待确认图形转成音符
     ///
     /// - **描边（`filled = false`）**：走几何解析 → 逐音高行无缝变长音符

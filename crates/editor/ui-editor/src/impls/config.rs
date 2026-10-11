@@ -68,22 +68,26 @@ impl Editor {
     /// （物理载体是 `Editor::brush.thickness`——见 `BrushConfig` 的类型注释：
     /// 该字段已从"画刷私有"提升为**全局**，字段名保留以免大改对话框 / 历史载荷）。
     ///
-    /// 消费点（三处同源，改一处必须一起看）：
+    /// 消费点（改一处必须一起看）：
     /// 1. 画刷笔画：`brush/cells.rs` 逐层铺 key + 每层音轨分配；
     /// 2. 曲线 / 形状的**描边**：`line_tool::stroke_band` 沿**线段法线**把中心线加粗成带
-    ///    （水平段纵向、竖直段横向——不是"一律向上铺 key"，那对竖直段等于拉长）；
-    /// 3. 画布上"正在画的线"的线宽：[`Editor::draw_line_width_px`]（= 层数 × 单 key 高）。
+    ///    （水平段纵向、竖直段横向、拐角补外角方格——不是"一律向上铺 key"，那对竖直段
+    ///    等于拉长）；
+    /// 3. **画布预览**：曲线 / 形状的描边预览直接画"√ 会生成的音符块"
+    ///    （`Editor::shape_outline_blocks` / `Editor::path_outline_blocks`），
+    ///    与第 2 点共用 `stroke_band` 的同一份几何——**不再**用"线宽 = 层数 × 单 key 高"
+    ///    的居中描边（那与单侧向外的产物差半个带，竖直边在粗细 2 时差 2 倍）。
     pub fn draw_thickness(&self) -> u8 {
         self.brush.thickness.max(BrushConfig::MIN_THICKNESS)
     }
 
-    /// 画布上绘制线条的**线宽（像素）** = 全局粗细层数 × 单 key 高（`zoom_y`）。
+    /// **画刷**笔画/命中带的总宽（像素）= 全局粗细层数 × 单 key 高（`zoom_y`）
     ///
-    /// 与「生成的音符带」严格同源：厚度 N 层 ⇒ 生成的音符纵向覆盖 N 个 key，
-    /// 画出来的线也正好 N 个 key 高（随缩放实时重算）。这就是"粗细"这一根滑杆
-    /// 同时管显示与产物的口径（见 `draw_thickness`）。
+    /// 用途收窄到画刷：笔画命中判定（`brush_total_width_px`）与画刷预览的层高。
+    /// 曲线 / 形状的**描边预览**曾经也用它当线宽，但那与产物（单侧向外铺 `N-1` 层）
+    /// 不是一份几何——现在预览直接画音符块（见 `draw_thickness` 第 3 点）。
     ///
-    /// 下限 1px：缩到极小（`zoom_y < 1`）时线不能消失（否则"看不见自己在画什么"）。
+    /// 下限 1px：缩到极小（`zoom_y < 1`）时命中带不能消失（否则"按不住自己画的线"）。
     pub fn draw_line_width_px(&self) -> f32 {
         let thickness = self.draw_thickness() as f32;
         (thickness * self.editor_state.view.zoom_y).max(1.0)

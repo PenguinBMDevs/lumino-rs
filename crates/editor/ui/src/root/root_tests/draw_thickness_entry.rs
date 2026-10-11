@@ -85,12 +85,13 @@ fn test_thickness_slider_value_is_global_in_editor() {
         );
     }
 
-    // 画布线宽 = 层数 × 单 key 高（同源；至少 1px）
+    // 画刷命中带宽 = 层数 × 单 key 高（同源；至少 1px）——描边预览现在直接画音符块，
+    // 不再引用这个线宽（见 `Editor::shape_outline_blocks`）
     let zoom_y = root.editor.editor_state.view.zoom_y;
     root.update(Event::draw_thickness_changed(10));
     assert!(
         (root.editor.draw_line_width_px() - (10.0 * zoom_y).max(1.0)).abs() < 1e-3,
-        "画布线宽应为 层数 × 单 key 高"
+        "画刷命中带宽应为 层数 × 单 key 高"
     );
 }
 
