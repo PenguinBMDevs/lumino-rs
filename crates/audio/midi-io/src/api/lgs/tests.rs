@@ -46,6 +46,14 @@ fn release_all_dampers_goes_through_control_channel() {
     assert!(matches!(crx.recv(), Ok(PlaybackControl::ReleaseAllDampers)));
 }
 
+/// 播放会话清零：ResetStats 经控制通道下发到渲染线程。
+#[test]
+fn reset_playback_stats_goes_through_control_channel() {
+    let (mut c, _rx, crx) = conn();
+    c.reset_playback_stats().expect("reset_playback_stats");
+    assert!(matches!(crx.recv(), Ok(PlaybackControl::ResetStats)));
+}
+
 /// REND-016 #139：全局复音上限必须透传到 GPU `SynthConfig`（0 = 不限制保持旧行为）。
 #[test]
 fn synth_config_passes_global_voice_limit() {

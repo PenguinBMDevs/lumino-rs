@@ -21,6 +21,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   （颜色分级：<60% 常规 / 60–90% 黄 / ≥90% 红）、`V`（活跃声部）、`UR`（欠载计数，>0 红）；
   异常时附 `GOV`（REND-016 治理级别）与 `DROP`（丢弃计数）。非 LGS / 后端未就绪自动隐藏；
   未播放也显示（渲染线程常开、数据真实，直接服务「编辑时排障」）。
+- **播放统计口径** — `UR`/`DROP` 展示「播放会话」累计：从停止态按下播放时清零重新计数
+  （暂停/恢复不打断累积，停止后数字保留），下次起播再清。配套 3 项单测
+  （清零范围 / 控制通道 / 起播时序）。
 - **设置（音频→LGS 区）** — 三项，均持久化且**不触发后端重建**（纯显示项）：
   `gpu_buffer_status_enabled`（总开关，默认开）、`gpu_governor_metrics_enabled`（GOV/DROP
   副开关，默认开）、`gpu_load_display`（LOAD 口径：3 秒平均〔默认〕/ 瞬时）。

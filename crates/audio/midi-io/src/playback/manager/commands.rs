@@ -106,6 +106,13 @@ pub(crate) fn handle_command(
             }
         }
         Command::Play => {
+            // 新的播放会话（从停止态开始）：清零累计统计（欠载/丢弃），
+            // 使状态栏反映"本次播放"；暂停→恢复属同一会话，不清零。
+            if engine.state() == PlaybackState::Stopped
+                && let Some(out) = midi_output
+            {
+                let _ = out.reset_playback_stats();
+            }
             engine.play();
             push_state_frame(engine, frame_tx, last_frame, midi_output.as_deref());
         }

@@ -123,6 +123,11 @@ pub enum PlaybackControl {
     ResetState,
     /// 释放全部通道的延音踏板（暂停清理）。
     ReleaseAllDampers,
+    /// 清零累计统计（欠载 / 丢弃 NoteOn）。
+    ///
+    /// 每次从停止态开始播放时下发：状态栏显示"本次播放"的累计值，
+    /// 而不是进程生命周期的累计值；暂停恢复属同一播放会话，不清零。
+    ResetStats,
 }
 
 /// A running realtime playback session.

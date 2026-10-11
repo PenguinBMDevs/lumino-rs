@@ -249,3 +249,58 @@ fn test_manager_clear_midi_output_sync_waits_for_release() {
         "clear_midi_output_sync 返回后旧连接必须已释放"
     );
 }
+
+/// 播放会话清零时机：停止态起播清零一次；暂停→恢复不清零；停止后再起播再清。
+///
+/// 语义 = 「一个播放会话从停止态按下播放开始，直到停止」；计数（欠载/丢弃）
+/// 由状态栏展示，下一次起播时归零重新计数。
+#[test]
+fn test_manager_resets_stats_on_fresh_play_only() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    struct ResetRecordingOutput {
+        resets: Arc<AtomicUsize>,
+    }
+    impl OutputConnection for ResetRecordingOutput {
+        fn send_raw(&mut self, _data: [u8; 3]) -> Result<(), crate::Error> {
+            Ok(())
+        }
+        fn close(self: Box<Self>) {}
+    }
+    impl crate::PlaybackOutput for ResetRecordingOutput {
+        fn reset_playback_stats(&mut self) -> Result<(), crate::Error> {
+            self.resets.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        }
+    }
+
+    // 长文档：测试期间不会自然播完（默认两轨文档 10 tick ≈10ms 会立刻自动停止）。
+    let mut doc = (*two_track_doc()).clone();
+    doc.total_ticks = 480 * 600;
+
+    let resets = Arc::new(AtomicUsize::new(0));
+    let mut manager = PlaybackManager::new(480);
+    manager.set_document(Arc::new(doc), 0);
+    manager.set_midi_output(Box::new(ResetRecordingOutput {
+        resets: Arc::clone(&resets),
+    }));
+    // set_midi_output 异步投递：等待播放线程安装连接。
+    std::thread::sleep(Duration::from_millis(60));
+
+    manager.play();
+    std::thread::sleep(Duration::from_millis(60));
+    assert_eq!(resets.load(Ordering::SeqCst), 1, "停止态起播应清零一次");
+
+    manager.pause();
+    std::thread::sleep(Duration::from_millis(60));
+    manager.play();
+    std::thread::sleep(Duration::from_millis(60));
+    assert_eq!(resets.load(Ordering::SeqCst), 1, "暂停恢复不应清零");
+
+    manager.stop();
+    std::thread::sleep(Duration::from_millis(60));
+    manager.play();
+    std::thread::sleep(Duration::from_millis(60));
+    assert_eq!(resets.load(Ordering::SeqCst), 2, "停止后再次起播应再清零");
+    manager.stop();
+}

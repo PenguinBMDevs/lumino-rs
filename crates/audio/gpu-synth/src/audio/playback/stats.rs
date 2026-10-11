@@ -93,6 +93,14 @@ impl PlaybackStatsReader {
         }
     }
 
+    /// 清零累计计数（欠载 / 丢弃 NoteOn），供"每次开始播放"重置显示。
+    ///
+    /// 只清累计量；瞬时量（负载/声部/队列/治理级别）天然连续刷新，不受影响。
+    pub(crate) fn reset_counters(&self) {
+        self.underruns.store(0, Ordering::Relaxed);
+        self.dropped_note_ons.store(0, Ordering::Relaxed);
+    }
+
     /// REND-016 #139：当前治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）。
     pub fn governor_level(&self) -> u64 {
         self.governor_level.load(Ordering::Relaxed)
@@ -171,6 +179,23 @@ mod tests {
         );
         // 窗口为 0 时夹紧到 1（取最近一块）
         assert!((reader.average_renderer_load_window(0) - 0.7).abs() < 1e-9);
+    }
+
+    /// 清零累计计数：欠载/丢弃归零，瞬时量（声部数等）不受影响。
+    #[test]
+    fn test_reset_counters_clears_cumulative_only() {
+        let reader = test_reader(96_000);
+        reader.underruns.fetch_add(3, Ordering::Relaxed);
+        reader.record_dropped_note_ons(7);
+        reader.voice_count.store(42, Ordering::Relaxed);
+        reader.governor_level.store(2, Ordering::Relaxed);
+
+        reader.reset_counters();
+
+        assert_eq!(reader.underruns(), 0, "欠载累计应清零");
+        assert_eq!(reader.dropped_note_ons(), 0, "丢弃累计应清零");
+        assert_eq!(reader.voice_count(), 42, "瞬时量不应被清零");
+        assert_eq!(reader.governor_level(), 2, "治理级别是实时状态，不应被清零");
     }
 
     /// 队列毫秒换算按「交错样本/秒」口径；负值钳到 0。

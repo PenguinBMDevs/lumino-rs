@@ -177,6 +177,7 @@ impl AudioPlayback {
                         match cmd {
                             PlaybackControl::ResetState => synth.reset_channel_state(),
                             PlaybackControl::ReleaseAllDampers => synth.release_all_dampers(),
+                            PlaybackControl::ResetStats => thread_stats.reset_counters(),
                         }
                     }
                     // REND-016 #139：有界 drain + 过期 NoteOn 丢弃（墙钟时间闸）+

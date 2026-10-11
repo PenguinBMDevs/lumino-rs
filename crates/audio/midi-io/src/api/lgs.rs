@@ -411,6 +411,16 @@ impl PlaybackOutput for LgsOutputConn {
         }
         Ok(())
     }
+
+    /// 清零累计统计（欠载 / 丢弃 NoteOn）：经控制通道下发到渲染线程。
+    fn reset_playback_stats(&mut self) -> Result<(), Error> {
+        if let Ok(guard) = self.control_tx.lock()
+            && let Some(tx) = guard.as_ref()
+        {
+            let _ = tx.send(PlaybackControl::ResetStats);
+        }
+        Ok(())
+    }
 }
 
 #[cfg(test)]

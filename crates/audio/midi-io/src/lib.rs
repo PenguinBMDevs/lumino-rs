@@ -313,6 +313,15 @@ pub trait PlaybackOutput: OutputConnection {
         }
         Ok(())
     }
+
+    /// 清零播放统计的累计计数（欠载 / 丢弃 NoteOn）。
+    ///
+    /// 每次从停止态开始播放时调用：状态栏显示"本次播放"的累计值，
+    /// 而不是进程生命周期的累计值；暂停恢复属同一播放会话，不调用。
+    /// 纯 MIDI 设备无对应语义，默认 no-op。
+    fn reset_playback_stats(&mut self) -> Result<(), Error> {
+        Ok(())
+    }
 }
 
 /// 后端类型描述
