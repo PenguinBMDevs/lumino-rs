@@ -6,8 +6,8 @@
 //! 下一条音符的起点 → **无缝连奏、长度自然变化**，全程不使用吸附精度；闭合环从最左点
 //! 重启、竖直段原本各占 1 tick（写入时按最小长度下限补齐到至少 128 分音符，见
 //! [`paths::min_note_length_ticks`]），与 `line_tool/paths.rs` 的轮廓口径完全一致。
-//! 解析结果还要按**全局绘制粗细**（纵向 key 层数）向上铺层
-//! （[`paths::expand_layers`]，与曲线轮廓 / 画刷笔画同一口径）。
+//! 解析结果还要按**全局绘制粗细**沿线段法线加粗
+//! （[`stroke_band::outline_notes`]，与曲线轮廓共用同一入口）。
 //!
 //! **填充（`filled = true`）不走这条路**：仍是「按 snap 网格枚举格点、每格一条定长
 //! 音符」，开启「x 分音符」切分档位（共享的模式设置，权威在 `line_tool`）时先按行合并
@@ -28,7 +28,7 @@ use lumino_editor_state::shape_tool::{ShapeSpec, shape_cells, shape_outline_path
 use lumino_note_core::history::CreateOp;
 
 use crate::interaction::line_tool::fill::spans::{chop_span, division_step};
-use crate::interaction::line_tool::paths;
+use crate::interaction::line_tool::{paths, stroke_band};
 use crate::{Editor, Note};
 
 /// 按音高行把格点合并成连续区间，再按 x 分音符的全局网格切分。
@@ -83,9 +83,9 @@ pub(super) fn chop_cells(cells: &[(f32, u16)], snap: f32, step: f32) -> Vec<(f32
 /// 完全一致（闭合环从最左点重启、不做首尾拉伸、同起点同行只留最长）。
 /// **全程不使用吸附精度**：起点/终点由边界与音高行边界（key ± 0.5）的解析交点决定。
 ///
-/// `thickness` = **全局绘制粗细**（纵向 key 层数）：解析结果按 [`paths::expand_layers`]
-/// 向上铺 `thickness` 层（与曲线轮廓、画刷笔画同一口径），越界层由下面的
-/// `key < key_count` 过滤裁掉。
+/// `thickness` = **全局绘制粗细**（纵向 key 层数）：解析结果交给曲线工具同一套
+/// 加粗几何 [`stroke_band::outline_notes`]——**沿线段法线**加粗（水平段纵向、竖直段
+/// 横向、斜段沿法线），越界层由下面的 `key < key_count` 过滤裁掉。
 ///
 /// 长度按 `min_ticks`（[`paths::min_note_length_ticks`]，默认 128 分音符）兜底补齐——
 /// 矩形/三角形的竖直边逐音高行原本只有 1 tick，与本文件同一根因（轮廓竖直段），
@@ -105,7 +105,7 @@ pub(super) fn outline_notes(
         .into_iter()
         .map(|(t, k)| (t as f64, k as f64))
         .collect();
-    paths::expand_layers(paths::path_notes(&poly, false), thickness)
+    stroke_band::outline_notes(&poly, thickness, px_per_tick, px_per_key, key_count)
         .into_iter()
         .filter(|n| n.key >= 0 && n.key < key_count)
         .map(|n| paths::to_note_triple(&n, min_ticks))

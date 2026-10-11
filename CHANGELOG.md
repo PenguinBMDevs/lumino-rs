@@ -9,6 +9,63 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 全局粗细的加粗改为「沿线段法线」（BUG 修复：竖直边/竖直线永远变不宽）
+
+- **症状（用户报）** — 调大粗细度后，矩形**竖直边**（以及曲线工具画的竖直线）仍然是
+  "很细一条"，宽度不跟着粗细度走；水平边则正常变厚。
+- **复现（修复前实测）** — 默认 zoom（1 tick = 0.1px、1 key = 20px）下：
+  - 竖直线（曲线工具，key 60→64）粗细 3：每条音符宽度 **1 tick**（应为 399+ tick）；
+  - 矩形 0..800 × 60..64 描边粗细 3：key 63 行上左右竖边宽度 **1 tick / 1 tick**
+    （应为 400 / 400 tick）。
+- **根因（RCA）** — 上一版的加粗实现是「把 `path_notes` 出的中心线音符按 `key + level`
+  **向上平移** N 层」（`paths::expand_layers`）。**平移不是加粗**：它只在"平移方向恰好
+  垂直于线段"时成立——水平段刚好如此，竖直段被平移等于把线**拉长**（横向宽度原地不动），
+  斜段则被按"水平段"硬套、方向也错。用户看到的"竖边很细一条"就是这个几何错误。
+- **修复（几何）** — 新增 `interaction/line_tool/stroke_band.rs`：加粗沿**线段法线**做。
+  每段折线构造一条**单侧矩形**（段两端各沿法线偏移 `(N-1)·zoom_y` 像素；法线定号为
+  「向上优先、其次向右」，与画刷笔画"从落笔 key 向上铺层"同偏向、且与线段走向无关），
+  再用填充引擎同一套逐音高行区间解析（`fill::spans::row_spans`，凸四边形下 even-odd
+  即内部）求出该段在每一行的 tick 区间，全部线段**按行求并**
+  （`spans::merge_spans` 提升为 `pub(crate)` 复用，不再写第二份区间合并），
+  最后与中心线音符走既有 `keep_longest` 合并（中心线的短音符被更长的带吸收，
+  不会在带里留下细线夹层）。于是：水平段纵向加厚 N 行（与上一版口径一致）、
+  **竖直段横向加宽 `(N-1)·zoom_y/zoom_x` 个 tick**、斜段沿法线加厚。
+- **修复（同源）** — 曲线轮廓与形状描边走**同一个入口** `stroke_band::outline_notes`
+  （`line_tool/confirm.rs` 的写入腿 + 逐路径归属腿、`shape_tool/confirm.rs::outline_notes`），
+  旧的 `paths::expand_layers` **删除**——两条链路各自长一套加粗口径正是这类 BUG 的温床。
+- **与卷帘方向无关** — `zoom_x` / `zoom_y` 的含义是"每 tick / 每 key 多少像素"，纵向卷帘
+  只是让这两个方向占据不同的屏幕轴（`coords.rs` 的转置），像素度量不变；因此加粗模块
+  **没有任何卷帘分支**，两个方向天然一致。
+- **口径与边界** — ① 粗细 1 时加宽量为 0，`band_notes` 直接返回空、出口与加粗功能引入前
+  **逐位一致**（有断言）；② 中心线那一层仍由 `path_notes` 出，带只补 `N-1` 层；
+  ③ 越界行裁到 `key_hi`；④ 极端缩放（`zoom_x` 远大于 `zoom_y`）下横向加宽不足 1 tick 时
+  取整为 1 tick——这是 tick 量化的下限，再由最小长度下限兜底。
+- **同族缺陷（已确认，本轮未擅自动）** — **画刷笔画**的粗细仍是"每格按 key 向上铺 N 层"
+  （`cov::expand_layers`，逐层对应一条音轨）：竖直笔画同样只被"拉长"而不加宽，
+  且它的**命中带**是均匀宽度（`brush_total_width_px = N·zoom_y`）——于是竖直笔画出现
+  "抓得住 40px、画出来 1 格宽"的内在不一致。它**不是**本次这种"显示与产物不一致"的 BUG
+  （画布上的画刷预览与生成**同用**这一套，彼此一致），而是**模型层面**的同族缺陷：
+  修它要把"层"从"key 层"改成"距中心线的层距"，牵动逐层音轨分配语义、绘制行为对话框、
+  bench 与 15 个测试文件——属于需要单独签核的口径变更，本轮只落报告与证据。
+- **残留（显示侧，非 BUG）** — 画布预览是**居中**描边（宽度 = N·zoom_y），生成带是
+  **单侧**铺开（向上/向右）→ 像素**宽度**已一致，对齐仍差约半个带（≤ 半个 key）。
+  要彻底对齐得让预览也画同一份带几何（用 `stroke_band` 的单侧矩形直接填充），
+  属显示侧改动、需视觉签核，留待下一步。
+- **验证** — `cargo test -p lumino-ui-editor -p lumino-ui -p lumino-ui-core -p lumino-core
+  -p lumino-extras -p lumino-message --lib` **1391 全绿**（ui-editor 756 / ui 456 / ui-core 73 /
+  core 30 / extras 29 / message 47）。新增 8 项：
+  - **端到端复现（两条链路各一条，修复前必失败）**：
+    `test_confirm_vertical_line_widens_by_global_thickness`（曲线竖直线：粗细 3 下**每条**
+    音符宽度必须 ≥ 399 tick；修复前实测 `[1,1,1,1,1,1,1]`）、
+    `test_rectangle_vertical_edges_widen_by_global_thickness`（矩形竖边：取 key 63 作量尺
+    ——下水平边铺到 62、上水平边从 64 起，只有左右竖边覆盖该行，宽度可被完整量出；
+    粗细 1 = `[(0,1),(800,801)]`、粗细 3 = `[(0,400),(800,1200)]`）；
+  - **加粗几何单测（新 `stroke_band/tests.rs`，6 项）**：粗细 1 不加粗且出口逐位等于中心线生成、
+    退化输入（空/单点/零缩放/零长度段）不 panic 不产垃圾、水平段只向上铺 N 行且 tick 区间不变、
+    **竖直段横向加宽到 `(N-1)·zoom_y/zoom_x` 且与线段走向无关**、斜段沿法线（中段行弦长
+    ≥ 1.2 × 带宽、带上界超出线段 key 上界）、`outline_notes` 把中心线短线吸收进带、
+    越界行裁到 `key_hi`。
+
 ### 音符画悬浮工具条 · 「粗细」控件落地（向上弹出面板 + 滑杆 1-100）+ 全局粗细三处同源
 
 - **控件** — 右端「粗细」按钮改为**开合**语义（`ToggleThicknessPanel` / `CloseThicknessPanel`），
@@ -24,11 +81,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `BrushConfig` 的类型注释已从"画刷私有"改写为**全局绘制粗细**（字段名保留：换成新类型/新字段
   会连带改对话框、历史载荷与 bench，收益不抵风险）。
 - **三处同源消费（本仓「所见即所得」纪律的落法）** — 一根滑杆同时管**产物**与**显示**：
-  1. **画刷笔画**：每格向上铺 `thickness` 层（既有 `cov::expand_layers`，逐层音轨分配不变）；
-  2. **曲线 / 形状的描边**：新增 `paths::expand_layers` 在生成前把逐音高行解析结果向上铺
-     N 层（`line_tool/confirm.rs` 的写入腿 + 逐路径归属腿、`shape_tool/confirm.rs::outline_notes`）。
-     **展开先于 `keep_longest`**——先按 (start,key) 去重再展开，去重就形同虚设；越界层交给
-     既有 `key >= 0 && key < key_count` 过滤裁掉（钳位口径只写一遍）；
+  1. **画刷笔画**：每格按 key 向上铺 `thickness` 层（既有 `cov::expand_layers`，逐层音轨分配不变）；
+  2. **曲线 / 形状的描边**：生成前按全局粗细加粗（`line_tool/confirm.rs` 的写入腿 +
+     逐路径归属腿、`shape_tool/confirm.rs::outline_notes`）。加粗口径在同期的下一条
+     CHANGELOG 里从"按 key 向上平移 N 层"**修正为沿线段法线**（竖直段永远变不宽即其 BUG），
+     这里不再复述中间态；
   3. **画布线宽**：新增 `Editor::draw_line_width_px()` = 层数 × `zoom_y`（下限 1px）。
      曲线段（原硬编码 `LINE_WIDTH = 4.0`）、待确认形状轮廓（原字面量 `2.5`）、
      画刷笔画总宽（原 `brush_total_width_px` 自算）**全部收敛到这一个函数**，
@@ -73,10 +130,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **端到端**（`root/root_tests/draw_thickness_entry.rs`，4 项）：窗口内开合且**不冒发任何
     窗口事件**、**滑杆值一路同步到编辑器**（`editor.brush.thickness` / `draw_thickness()` /
     `draw_line_width_px()` 三者同源）、不扰动工具与填充态、与齿轮同口径收起分音符填充面板且不丢档位；
-  - **几何**：`paths::expand_layers` 4 项（粗细 1 = 恒等、向上铺层且 tick/长度逐位不变、
-    越界 key 原样交给调用方裁剪、条数按 N 倍展开）＋曲线确认 2 项（3 层 → key 60/61/62
-    同 tick 区间；默认 1 层逐位不变）＋形状描边 1 项（矩形粗细 3 → 带状覆盖 key 60..=66
-    每行无空洞，条数落在 [单层, 单层 × 3]——钉**覆盖不变量**而不是某个依赖路径行走顺序的定值条数）。
+  - **几何**：曲线确认 2 项（3 层 → key 60/61/62 同 tick 区间；默认 1 层逐位不变）＋形状描边 1 项
+    （矩形粗细 3 → 带状覆盖 key 60..=66 每行无空洞，条数落在 [单层, 单层 × 3]——钉
+    **覆盖不变量**而不是某个依赖路径行走顺序的定值条数）＋当时那套"按 key 向上铺层"的
+    4 项单测（已随下一条 CHANGELOG 的口径修正一并删除：它的前提本身就是 BUG）。
 
 ### 音符画悬浮工具条 · 右端「设置区」新增「粗细」按钮（入口 + 图标）
 

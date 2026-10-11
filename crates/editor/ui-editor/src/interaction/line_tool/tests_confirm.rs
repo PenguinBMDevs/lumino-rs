@@ -45,7 +45,7 @@ fn test_confirm_line_creates_notes() {
     assert!(editor.editor_state.line_tool.paths.is_empty(), "确认后清空");
 }
 
-// ── 全局绘制粗细（纵向铺层，见 `paths::expand_layers`） ──
+// ── 全局绘制粗细（沿线段法线加粗，见 `stroke_band`） ──
 
 /// 全局粗细 = 生成的纵向 key 层数：水平线按它向上铺 N 层，tick 区间逐位不变。
 ///
@@ -89,6 +89,62 @@ fn test_confirm_default_thickness_is_unchanged() {
         editor.editor_state.data.current_track_note_count(),
         1,
         "粗细 1 时仍只有一条音符"
+    );
+}
+
+/// **竖直线**同样吃全局粗细：加粗沿线段法线（这里是横向），而不是把线拉长。
+///
+/// 与形状工具的 `test_rectangle_vertical_edges_widen_by_global_thickness` 同一根因
+/// （旧实现"按 key 向上平移 N 层"对竖直方向无效），两条链路共用同一个加粗入口——
+/// 这条钉的是**曲线工具**这一侧。
+#[test]
+fn test_confirm_vertical_line_widens_by_global_thickness() {
+    // 关掉最小长度下限：本用例量的是**竖直线自身的横向宽度**，下限（默认 128 分音符
+    // = 60 tick）会把 1 tick 的窄线直接撑宽，把待测的量盖掉。
+    let vertical_editor = |thickness: u8| {
+        let mut editor = Editor::new();
+        editor.editor_state.tool = Tool::Curve;
+        seed_notes(&mut editor, 2, 1, &[]);
+        editor.editor_state.line_tool.set_min_note_division(None);
+        {
+            let line = &mut editor.editor_state.line_tool;
+            line.paths.push(Vec::new());
+            // 竖直线：tick 恒为 0，跨 key 60..64
+            line.push_anchor(0, (0.0, 60.0));
+            line.push_anchor(0, (0.0, 64.0));
+        }
+        editor.brush.set_thickness(thickness);
+        assert!(editor.confirm_line_tool());
+        editor
+    };
+    let widths = |editor: &Editor| -> Vec<u32> {
+        editor
+            .editor_state
+            .data
+            .current_track_notes()
+            .iter()
+            .map(|n| n.end_tick - n.start_tick)
+            .collect()
+    };
+
+    let probe = Editor::new();
+    let zx = probe.editor_state.view.zoom_x;
+    let zy = probe.editor_state.view.zoom_y;
+    let extra = ((3 - 1) as f32 * zy / zx).round() as u32;
+    assert!(extra > 1, "前置：竖直线应明显加宽（{extra} tick）");
+
+    let thin = widths(&vertical_editor(1));
+    assert!(
+        thin.iter().all(|w| *w <= 2),
+        "粗细 1（基准）：竖直线每条音符应仍是 1~2 tick，实际 {thin:?}"
+    );
+
+    let wide = widths(&vertical_editor(3));
+    assert!(!wide.is_empty(), "粗细 3 仍应生成音符");
+    assert!(
+        wide.iter().all(|w| *w >= extra - 1),
+        "粗细 3：竖直线的**每条**音符都应横向加宽到 ≥ {} tick（沿法线），实际 {wide:?}",
+        extra - 1
     );
 }
 

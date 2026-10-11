@@ -502,36 +502,5 @@ pub(crate) fn path_notes(path: &[Pt], end_dot: bool) -> Vec<RawNote> {
     keep_longest(&line_notes(&pts, end_dot))
 }
 
-/// 按**全局绘制粗细**纵向展开一批音符：每条 → `thickness` 条（`key + level`）。
-///
-/// 「粗细」= 生成音符的纵向 key 层数（全局唯一值，见 `BrushConfig` 的类型注释），
-/// 层序与画刷笔画**同一口径**：level 0 = 原行，向上逐层（`key + 1`、`key + 2`…）。
-/// 曲线 / 形状的**描边**都用它——于是"画出来多粗"（画布线宽 = 层数 × 单 key 高，
-/// 见 `Editor::draw_line_width_px`）与"√ 后生成多高"严格同源。
-///
-/// 为什么在 `RawNote` 这一层展开、且**先于** [`keep_longest`]：
-/// - 展开后 `key` 仍是 `i32`（可为负、可越界），交给调用方既有的
-///   `key >= 0 && key < key_count` 过滤裁层——钳位口径只写一遍；
-/// - 展开会让"不同路径之间"以及"轮廓与填充之间"的同 `(start, key)` 碰撞变多，
-///   先展开再 `keep_longest` 才能用既有规则（同 tick 同 key 只留最长）一次收敛；
-///   若反过来先去重再展开，去重就形同虚设。
-///
-/// `thickness <= 1` 原样返回（默认值下零行为变化、零额外分配）。
-pub(crate) fn expand_layers(notes: Vec<RawNote>, thickness: u8) -> Vec<RawNote> {
-    if thickness <= 1 {
-        return notes;
-    }
-    let mut out = Vec::with_capacity(notes.len() * thickness as usize);
-    for note in notes {
-        for level in 0..thickness as i32 {
-            out.push(RawNote {
-                key: note.key + level,
-                ..note
-            });
-        }
-    }
-    out
-}
-
 #[cfg(test)]
 mod tests;

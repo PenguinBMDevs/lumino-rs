@@ -24,7 +24,7 @@ pub(crate) static ENUS_MAIN: MainTranslations = MainTranslations {
     tool_mouse: "Mouse Tool",
     tool_thickness: "Stroke Width",
     draw_thickness_unit: "layers",
-    draw_thickness_hint: "Global: curve/shape outlines and strokes both expand by it; on-canvas stroke = layers x key height (follows zoom)",
+    draw_thickness_hint: "Global: curve/shape outlines and strokes thicken along the segment normal; on-canvas stroke = layers x key height (follows zoom)",
     tool_brush: "Free Stroke",
     tool_shape: "Shape Tool",
     tool_text: "Text Input",

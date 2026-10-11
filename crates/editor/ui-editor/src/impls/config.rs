@@ -62,15 +62,16 @@ impl Editor {
         self.editor_state.line_tool.fill_enabled
     }
 
-    /// **全局绘制粗细**（= 生成音符的纵向 key 层数，1-100）
+    /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）
     ///
     /// 单一权威：音符画悬浮工具条的「粗细」滑杆与画刷下拉展示/写入的都是它
     /// （物理载体是 `Editor::brush.thickness`——见 `BrushConfig` 的类型注释：
-    /// 该字段已从"画刷私有"提升为**全局**，图片名保留以免大改对话框 / 历史载荷）。
+    /// 该字段已从"画刷私有"提升为**全局**，字段名保留以免大改对话框 / 历史载荷）。
     ///
     /// 消费点（三处同源，改一处必须一起看）：
     /// 1. 画刷笔画：`brush/cells.rs` 逐层铺 key + 每层音轨分配；
-    /// 2. 曲线 / 形状的**描边**：`paths::expand_layers` 在生成音符前纵向铺 N 层；
+    /// 2. 曲线 / 形状的**描边**：`line_tool::stroke_band` 沿**线段法线**把中心线加粗成带
+    ///    （水平段纵向、竖直段横向——不是"一律向上铺 key"，那对竖直段等于拉长）；
     /// 3. 画布上"正在画的线"的线宽：[`Editor::draw_line_width_px`]（= 层数 × 单 key 高）。
     pub fn draw_thickness(&self) -> u8 {
         self.brush.thickness.max(BrushConfig::MIN_THICKNESS)

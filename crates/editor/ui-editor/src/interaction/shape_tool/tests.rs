@@ -83,7 +83,7 @@ fn test_rectangle_outline_produces_notes() {
 /// 断言的是**带状覆盖的几何不变量**而不是某一个定值条数：多层展开后不同来源
 /// （水平边 / 竖直边 / 相邻行的层副本）会在同一 `(tick, key)` 上相遇，由既有的
 /// 「同 tick 同 key 只留最长」规则收敛——最终条数取决于路径行走顺序，钉死具体
-/// 条数会把测试绑死在实现细节上。逐层精确性由 `paths::expand_layers` 的单测钉死。
+/// 条数会把测试绑死在实现细节上。逐层精确性由 `stroke_band` 的单测钉死。
 #[test]
 fn test_rectangle_outline_expands_by_global_thickness() {
     let mut editor = test_editor();
@@ -112,6 +112,60 @@ fn test_rectangle_outline_expands_by_global_thickness() {
     assert!(
         (base..=base * 3).contains(&total),
         "条数应落在 [单层条数, 单层条数 × 3] 内（层副本会被同 tick 同 key 去重收缩），实际 {total}"
+    );
+}
+
+/// 全局粗细对**竖直边**同样生效：矩形的左右竖边必须按厚度**横向**加宽，
+/// 而不是永远停在 1 tick（或仅被最小长度下限撑到几十 tick）。
+///
+/// BUG 背景（用户报）：早先的加粗实现是"把中心线音符按 key 向上平移 N 层"——
+/// 这对水平边成立（向上 = 垂直于线），但对竖边等于把线**拉长**：横向宽度原地不动，
+/// 于是"改了粗细度，矩形竖边还是很细一条，宽度不匹配"。加粗必须沿**线段法线**做。
+///
+/// 取 `key 63` 作为量尺：下水平边的带铺到 62、上水平边的带从 64 起，只有左右两条
+/// 竖边覆盖 63——两条竖边的宽度在这里能被**完整**量出来（在 60..62 行它们会和水平
+/// 边合并成一条区间，量不出竖边自身的宽度）。
+#[test]
+fn test_rectangle_vertical_edges_widen_by_global_thickness() {
+    // 真实尺度（默认 zoom：1 tick = 0.1px、1 key = 20px）：800 tick 宽已是 80px，
+    // 不会被"像素尺度下几乎竖直"这类退化情形掩盖问题
+    let draw = |thickness: u8| {
+        let mut editor = test_editor();
+        editor.set_shape(ShapeKind::Rectangle);
+        editor.editor_state.shape_tool.fill_enabled = false;
+        editor.brush.set_thickness(thickness);
+        editor.handle_shape_tool_pressed(0.0, 60.0, false);
+        editor.handle_shape_tool_moved(800.0, 64.0);
+        editor.handle_shape_tool_released();
+        assert!(editor.confirm_shape_tool());
+        editor
+    };
+    let spans_at = |editor: &Editor, key: u16| -> Vec<(u32, u32)> {
+        rows(editor)
+            .into_iter()
+            .find(|(k, _)| *k == key)
+            .map(|(_, spans)| spans)
+            .unwrap_or_default()
+    };
+
+    let view = test_editor();
+    let zx = view.editor_state.view.zoom_x;
+    let zy = view.editor_state.view.zoom_y;
+    let extra = ((3 - 1) as f32 * zy / zx).round() as u32;
+    assert!(
+        extra > 1,
+        "前置：该缩放下竖边应明显加宽（2 个 key 高 = {extra} tick）"
+    );
+
+    assert_eq!(
+        spans_at(&draw(1), 63),
+        vec![(0, 1), (800, 801)],
+        "粗细 1（基准）：左右竖边各 1 tick"
+    );
+    assert_eq!(
+        spans_at(&draw(3), 63),
+        vec![(0, extra), (800, 800 + extra)],
+        "粗细 3：左右竖边必须各按法线横向加宽到 {extra} tick"
     );
 }
 

@@ -4,8 +4,9 @@
 //! 1. 每条路径按几何容差展平为折线（[`geom::flatten_path`]），再用
 //!    [`paths::path_notes`] 逐音高行解析求出跨越边界；每个音高行一条音符，
 //!    起点 = 进入该行的 tick、终点 = 下一条音符的起点 → 无缝、长度自然变化；
-//!    随后按**全局绘制粗细**（`Editor::draw_thickness`，纵向 key 层数）纵向展开
-//!    （[`paths::expand_layers`]）——画出来多粗、√ 后就生成多高的音符带；
+//!    随后按**全局绘制粗细**（`Editor::draw_thickness`）**沿线段法线**加粗
+//!    （[`stroke_band::outline_notes`]：水平段纵向铺 N 行、竖直段横向加宽——只按 key
+//!    向上平移对竖直段是"拉长"而不是加粗，那是已修的 BUG）；
 //! 2. 颜料桶标记的封闭区域用 [`fill::fill_notes`]（与预览同源）逐音高行求
 //!    **内部区间**，区间端点 = 闭环边与行边界的解析交点；开启切分档位时
 //!    每个区间再按 x 分音符的全局网格切成多条音符；
@@ -20,7 +21,7 @@
 //!
 //! 从 `line_tool.rs` 拆出（文件长度纪律）：交互处理与提交职责分离。
 
-use super::{fill, geom, paths};
+use super::{fill, geom, paths, stroke_band};
 use crate::{Editor, Note};
 use lumino_editor_state::ShapeNote;
 use lumino_note_core::history::CreateOp;
@@ -39,20 +40,22 @@ impl Editor {
         }
         let line_paths = self.editor_state.line_tool.paths.clone();
         let fill_marks = self.editor_state.line_tool.fill.clone();
-        // 全局绘制粗细（纵向 key 层数）：轮廓生成前统一展开，见 `paths::expand_layers`
+        // 全局绘制粗细（纵向 key 层数）+ 视图像素尺度：加粗沿线段法线做，需要 zoom
         let thickness = self.draw_thickness();
+        let zoom_x = self.editor_state.view.zoom_x;
+        let zoom_y = self.editor_state.view.zoom_y;
+        let key_count = self.editor_state.view.key_count as i32;
 
         // ① 路径轮廓 → 音符：几何容差展平后逐音高行解析求交（无网格量化），
-        //    再按全局粗细纵向铺 `thickness` 层（画布线宽与生成音符带同源）
+        //    再按全局粗细**沿法线**加粗（水平段纵向、竖直段横向——见 `stroke_band`）
         let mut raw: Vec<paths::RawNote> = Vec::new();
         for path in &line_paths {
             if path.len() < 2 {
                 continue;
             }
             let poly = geom::flatten_path(path);
-            raw.extend(paths::expand_layers(
-                paths::path_notes(&poly, false),
-                thickness,
+            raw.extend(stroke_band::outline_notes(
+                &poly, thickness, zoom_x, zoom_y, key_count,
             ));
         }
 
@@ -74,7 +77,6 @@ impl Editor {
 
         // ③ 同 tick 同 key 只留最长（轮廓与填充大量重叠）+ 钳到合法 tick / key
         //    + 长度补齐到最小长度下限（默认 128 分音符，见 `paths::min_note_length_ticks`）
-        let key_count = self.editor_state.view.key_count as i32;
         let min_ticks = paths::min_note_length_ticks(
             self.editor_state.line_tool.min_note_division,
             self.editor_state.view.ppq,
@@ -100,23 +102,21 @@ impl Editor {
                 continue;
             }
             let poly = geom::flatten_path(path);
-            // 与写入 payload 同源（含全局粗细的纵向铺层 + 最小长度下限），
+            // 与写入 payload 同源（含全局粗细的**法线加粗** + 最小长度下限），
             // 否则登记的音符与实际写入不符
-            let owned: Vec<ShapeNote> = paths::keep_longest(&paths::expand_layers(
-                paths::path_notes(&poly, false),
-                thickness,
-            ))
-            .into_iter()
-            .filter(|n| n.key >= 0 && n.key < key_count)
-            .map(|n| paths::to_note_triple(&n, min_ticks))
-            .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
-            .map(|(tick, key, length)| ShapeNote {
-                track: owner_track,
-                tick,
-                key,
-                length,
-            })
-            .collect();
+            let owned: Vec<ShapeNote> =
+                stroke_band::outline_notes(&poly, thickness, zoom_x, zoom_y, key_count)
+                    .into_iter()
+                    .filter(|n| n.key >= 0 && n.key < key_count)
+                    .map(|n| paths::to_note_triple(&n, min_ticks))
+                    .filter(|(t, k, _)| claimed.insert((*t as i64, *k)))
+                    .map(|(tick, key, length)| ShapeNote {
+                        track: owner_track,
+                        tick,
+                        key,
+                        length,
+                    })
+                    .collect();
             per_path_notes.push(owned);
         }
 

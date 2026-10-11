@@ -289,7 +289,8 @@ impl Root {
     /// 渲染为与画刷 / 形状同风格的小面板——不再是全屏居中弹窗。
     ///
     /// 右端「粗细」面板由 `toolbar.thickness_panel_open` 驱动（悬浮条右端按钮开合），
-    /// 内容是**全局绘制粗细**滑杆（1-100，步进 1）——曲线/形状描边与画刷笔画共用。
+    /// 内容是**全局绘制粗细**滑杆（1-100，步进 1）——曲线/形状描边与画刷笔画共用
+    /// （描边沿线段法线加粗，竖直段也会横向变宽，见 `line_tool::stroke_band`）。
     fn draw_tool_settings_menu(&self) -> Option<(SettingsPanelOwner, Element<'_>, Message)> {
         let panel_background = self.draw_tool_panel_background();
 
