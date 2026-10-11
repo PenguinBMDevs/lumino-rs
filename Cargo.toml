@@ -160,6 +160,11 @@ crossbeam-channel = "0.5"
 # ── 系统 / 平台 / 内存分配器 ──
 windows = "0.62.2"
 libc = "0.2"
+# 系统显示语言检测（UI-018）：Windows = GetUserPreferredUILanguages（显示语言，
+# 非区域格式）/ macOS = CFLocaleCopyPreferredLanguages / Linux = LANGUAGE>LC_ALL>LANG。
+# 该版本早已由 cosmic-text 传递引入（字体回退按 locale 选字体）且每次启动都在执行，
+# 故提为直接依赖不新增任何包；显式锁定以与 Cargo.lock 对齐。
+sys-locale = "0.3.2"
 mimalloc = { version = "0.1", default-features = false }
 tikv-jemallocator = "0.6"
 tikv-jemalloc-ctl = "0.6"

@@ -13,6 +13,7 @@ use super::super::components::constants::*;
 use super::super::components::styles::create_content_text_style;
 use super::super::components::{with_setting_tooltip_inline, with_setting_tooltip_inline_action};
 use crate::SettingsPanel;
+use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::NoteCountDisplay;
 use lumino_core::tr;
 use lumino_extras::i18n::{Language, settings_translations};
@@ -49,6 +50,57 @@ impl LocalizedNoteCountDisplay {
     }
 }
 
+/// 界面语言下拉项（UI-018）：在「具体语言」之外多一个「跟随系统」。
+///
+/// `Language` 本身只有两种具体语言，**不**为多一个选项去污染该枚举——那会打断全仓
+/// 21 处 exhaustive `match`，并把「偏好」与「生效语言」混成一个类型。这里沿用同文件
+/// [`LocalizedNoteCountDisplay`] 的包装范式：`PartialEq` 只比偏好、不比显示名，
+/// 这样切换语言导致显示名变化时下拉选中态不会丢。
+#[derive(Clone)]
+struct LanguageOption {
+    preference: LanguagePreference,
+    name: String,
+}
+
+impl PartialEq for LanguageOption {
+    fn eq(&self, other: &Self) -> bool {
+        self.preference == other.preference
+    }
+}
+
+impl Eq for LanguageOption {}
+
+impl std::fmt::Display for LanguageOption {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LanguageOption {
+    fn from_preference(preference: LanguagePreference, follow_system: &'static str) -> Self {
+        let name = match preference {
+            // 具体语言用**自称**（走 `Language` 的 Display，与既有下拉一致）
+            LanguagePreference::Fixed(lang) => lang.to_string(),
+            LanguagePreference::System => follow_system.to_string(),
+        };
+        Self { preference, name }
+    }
+
+    /// 完整选项列表：「跟随系统」在前，随后是全部具体语言。
+    fn all(follow_system: &'static str) -> Vec<Self> {
+        let mut options = vec![Self::from_preference(
+            LanguagePreference::System,
+            follow_system,
+        )];
+        options.extend(
+            Language::all()
+                .into_iter()
+                .map(|lang| Self::from_preference(LanguagePreference::Fixed(lang), follow_system)),
+        );
+        options
+    }
+}
+
 /// 渲染界面设置页面
 pub fn view<'a>(
     settings: &'a SettingsPanel,
@@ -82,9 +134,12 @@ pub fn view<'a>(
     // 字体设置部分
     let font_section = font::build_font_section(settings, t, system_fonts);
 
-    // 语言选项
-    let language_options = Language::all();
-    let current_language = settings.display.language;
+    // 语言选项：「跟随系统」+ 全部具体语言（UI-018）
+    let language_options = LanguageOption::all(t.language_follow_system);
+    let current_language = LanguageOption::from_preference(
+        settings.display.language_preference,
+        t.language_follow_system,
+    );
 
     column![
         text(t.ui_title)
@@ -97,8 +152,8 @@ pub fn view<'a>(
                 .size(TEXT_SIZE_CONTENT)
                 .style(create_content_text_style()),
             iced_widget::space().width(SPACING_MAIN),
-            pick_list(language_options, Some(current_language), |lang| {
-                Message::Settings(crate::Event::LanguageChanged(lang))
+            pick_list(language_options, Some(current_language), |option| {
+                Message::Settings(crate::Event::LanguagePreferenceChanged(option.preference))
             })
             .width(200.0),
         ]

@@ -125,6 +125,7 @@ pub(super) static ZHCN_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui_automation_line_thickness_hint: "自动化面板中事件瞄点之间的连线粗细（1-10 像素）",
     ui_monitor_refresh_interval: "监控数据刷新间隔:",
     ui_monitor_refresh_interval_hint: "底边栏 CPU/MEM/FPS 监控数据的刷新频率（50-2000ms，默认 100ms）",
+    language_follow_system: "跟随系统",
     log_retention_section: "日志",
     log_retention_count: "日志文件保留份数:",
     log_retention_count_hint: "日志文件存储在配置目录的 logs/ 下，超过此份数时自动删除最旧的日志（0 = 不限制）",

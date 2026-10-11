@@ -1,6 +1,6 @@
 #![cfg(target_os = "macos")]
 
-use std::{collections::HashMap, sync::OnceLock};
+use std::{cell::RefCell, collections::HashMap};
 
 use lumino_extras::i18n::Language;
 use lumino_ui::event::{self as event, Event as CoreEvent};
@@ -11,7 +11,11 @@ use muda::{
 };
 
 thread_local! {
-    static MENU: OnceLock<AppMenu> = const { OnceLock::new() };
+    /// 当前已安装的原生菜单。
+    ///
+    /// UI-018：不用 `OnceLock`——原生菜单是 NSMenu，语言变更后必须**整表重建**
+    /// （事件映射表也随语言一起换），否则菜单栏会停在旧语言。
+    static MENU: RefCell<Option<AppMenu>> = const { RefCell::new(None) };
 }
 
 struct AppMenu {
@@ -94,14 +98,21 @@ fn build_submenu(
 }
 
 pub fn init(lang: Language) -> muda::Result<()> {
-    MENU.with(|cell| init_inner(lang, cell))
+    let first_time = MENU.with(|cell| cell.borrow().is_none());
+    install_menu(lang)?;
+    if first_time {
+        register_event_handler();
+    }
+    Ok(())
 }
 
-fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
-    if cell.get().is_some() {
-        return Ok(());
-    }
-
+/// 构建并安装原生菜单；**可重复调用**（语言变更后整表重建）。
+///
+/// 安全性依据（muda 0.17 源码）：`init_for_nsapp` 等价于
+/// `NSApplication::setMainMenu(Some(new_menu))`，而 `Menu` 的 `Drop` 只清理 GTK
+/// 结构、**不会**调用 `setMainMenu(None)`——因此「先装新菜单、旧菜单随后在赋值时
+/// 释放」不会把新菜单一起带走。
+fn install_menu(lang: Language) -> muda::Result<()> {
     let mut map = HashMap::new();
 
     let app = app_menu()?;
@@ -109,26 +120,28 @@ fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     // 原生菜单在启动时静态构建，无法感知 UI 的选中状态，
     // 因此导出素材等条件菜单项保持禁用（false）
     let ui_configs = ui_menus(lang, false);
+    // 子菜单标题必须按 `lang` 取显示名：`MenuKind` 的 `Display` 曾硬编码简体中文，
+    // 导致英文界面下 macOS 菜单栏永远显示中文（UI-018 缺陷 D-2，已删除该 Display）。
     let file = build_submenu(
-        &ui_configs[0].kind.to_string(),
+        ui_configs[0].kind.display_name(lang),
         &ui_configs[0].items,
         lang,
         &mut map,
     )?;
     let edit = build_submenu(
-        &ui_configs[1].kind.to_string(),
+        ui_configs[1].kind.display_name(lang),
         &ui_configs[1].items,
         lang,
         &mut map,
     )?;
     let view = build_submenu(
-        &ui_configs[2].kind.to_string(),
+        ui_configs[2].kind.display_name(lang),
         &ui_configs[2].items,
         lang,
         &mut map,
     )?;
     let help = build_submenu(
-        &ui_configs[3].kind.to_string(),
+        ui_configs[3].kind.display_name(lang),
         &ui_configs[3].items,
         lang,
         &mut map,
@@ -137,20 +150,21 @@ fn init_inner(lang: Language, cell: &OnceLock<AppMenu>) -> muda::Result<()> {
     let menu = Menu::with_items(&[&app, &file, &edit, &view, &help])?;
     menu.init_for_nsapp();
 
-    let app_menu = AppMenu { menu, map };
-    let _ = cell.set(app_menu);
+    MENU.with(|cell| *cell.borrow_mut() = Some(AppMenu { menu, map }));
+    Ok(())
+}
 
+/// 注册菜单事件分发（**只注册一次**；处理器每次都从 thread-local 读当前菜单，
+/// 因此重建菜单后事件映射自动跟随）。
+fn register_event_handler() {
     MenuEvent::set_event_handler(Some(move |event: MenuEvent| {
-        MENU.with(|shell| {
-            if let Some(app_menu) = shell.get() {
+        MENU.with(|shell| match shell.borrow().as_ref() {
+            Some(app_menu) => {
                 if let Some(core_event) = app_menu.map.get(event.id()) {
                     event::emit(core_event.clone());
                 }
-            } else {
-                tracing::warn!("MenuEvent handler called but MENU is not initialized.");
             }
+            None => tracing::warn!("MenuEvent handler called but MENU is not initialized."),
         });
     }));
-
-    Ok(())
 }

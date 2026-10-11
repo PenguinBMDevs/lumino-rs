@@ -125,6 +125,7 @@ pub(super) static ENUS_SETTINGS: SettingsTranslations = SettingsTranslations {
     ui_automation_line_thickness_hint: "Line thickness between event anchor points in the automation panel (1-10 pixels)",
     ui_monitor_refresh_interval: "Monitor refresh interval:",
     ui_monitor_refresh_interval_hint: "Refresh interval for CPU/MEM/FPS monitoring data in the bottom bar (50-2000ms, default 100ms)",
+    language_follow_system: "Follow System",
     log_retention_section: "Logging",
     log_retention_count: "Log file retention count:",
     log_retention_count_hint: "Log files are stored in logs/ under the config directory. Oldest files are auto-deleted when exceeding this limit (0 = unlimited)",

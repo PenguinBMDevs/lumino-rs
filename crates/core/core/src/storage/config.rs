@@ -1,3 +1,4 @@
+use crate::locale::LanguagePreference;
 use crate::types::Language;
 use serde::{Deserialize, Serialize};
 
@@ -41,9 +42,17 @@ pub struct UiConfig {
     /// 主题名称（例如 "Light"）
     #[serde(default)]
     pub theme: String,
-    /// 界面语言
+    /// 界面语言（**始终是已解析的生效值**，全仓 UI 直接读它；UI-018）
     #[serde(default)]
     pub language: Language,
+    /// 界面语言偏好（UI-018）：`None` = 老配置（未声明偏好，语义等同「固定为当前
+    /// `language`」）；全新安装由 [`UiConfig::default`] 写 `Some(System)`。
+    ///
+    /// 与 `language` 分开存是刻意的：`language` 只表示「现在用哪种语言」，
+    /// 本字段记住用户「要不要跟随系统」的**意图**——否则用户手动选定的英文
+    /// 会在下次启动被系统语言检测悄悄覆盖。
+    #[serde(default)]
+    pub language_preference: Option<LanguagePreference>,
     /// 用户偏好的合成器后端（用户设置中选择的）
     #[serde(default = "default_synth_backend")]
     pub preferred_backend: SynthBackend,
@@ -231,12 +240,28 @@ pub struct UiConfig {
     pub domino_clipboard_enabled: bool,
 }
 
+/// 界面语言偏好的实际语义（UI-018）。
+///
+/// 老配置（`language_preference == None`）视为「用户固定为当前 `language`」，而不是
+/// 「跟随系统」——这样升级不会把用户手动选过的英文改回中文；想跟随系统的人
+/// 只需在设置面板显式选一次「跟随系统」。
+impl UiConfig {
+    /// 生效的语言偏好（把老配置的 `None` 归一化为 `Fixed(language)`）。
+    pub fn effective_language_preference(&self) -> LanguagePreference {
+        self.language_preference
+            .unwrap_or(LanguagePreference::Fixed(self.language))
+    }
+}
+
 /// 用户界面配置默认值
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
             theme: "Light".into(),
             language: Language::default(),
+            // 全新安装默认跟随系统语言（UI-018）；老配置反序列化得到 `None`，
+            // 走「保留既有 language」分支，不受此处默认值影响。
+            language_preference: Some(LanguagePreference::System),
             preferred_backend: SynthBackend::XSynth,
             soundfont_path: String::new(),
             use_native_titlebar: false,

@@ -2,11 +2,11 @@
 //!
 //! 设置面板的事件枚举（仅枚举，不包含面板逻辑）。
 
+use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{
     AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
     SynthBackend, TrackAddBehavior,
 };
-use lumino_extras::i18n::Language;
 
 /// MIDI 输出类型（顶层选择）
 ///
@@ -107,8 +107,8 @@ pub enum Event {
     AudioOutputSelected(String),
     /// 请求扫描音频播放输出设备（CPAL 音频设备列表）
     ScanAudioOutputs,
-    /// 界面语言变更
-    LanguageChanged(Language),
+    /// 界面语言偏好变更（跟随系统 / 固定语言；UI-018）
+    LanguagePreferenceChanged(LanguagePreference),
     /// 高精度洋葱皮贴图是否启用
     HiresOnionEnabledChanged(bool),
     /// 高精度洋葱皮贴图每组小节数变更

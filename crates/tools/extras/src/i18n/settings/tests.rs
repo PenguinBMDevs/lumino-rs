@@ -33,5 +33,13 @@ fn test_settings_translations_not_empty() {
         assert!(!t.compat_domino_clipboard.is_empty());
         assert!(!t.compat_domino_clipboard_hint.is_empty());
         assert!(!t.compat_domino_clipboard_unsupported_hint.is_empty());
+        // UI-018：语言「跟随系统」选项
+        assert!(!t.language_follow_system.is_empty());
     }
+}
+
+#[test]
+fn test_language_follow_system_option_is_localized() {
+    assert_eq!(get(Language::ZhCn).language_follow_system, "跟随系统");
+    assert_eq!(get(Language::EnUs).language_follow_system, "Follow System");
 }

@@ -260,10 +260,18 @@ impl Runner {
         let config = storage.config.get();
         let ui_state = storage.ui_state.get();
 
+        // UI-018：界面语言在配置加载时已解析（环境变量 > 用户固定 > 系统显示语言），
+        // 这里记录**生效语言与来源**。刻意放在文件日志启动之后——配置层打印时
+        // 文件日志层还没接上，用户回传的日志里会缺这一行（排障刚需）。
+        tracing::info!(
+            "界面语言 = {}（{}）",
+            config.ui.language,
+            storage.config.language_source()
+        );
+
         // 文案目录（`lumino_core::i18n`）走进程级当前语言：启动即按配置落一次，
-        // 之后由设置面板的 `LanguageChanged` 事件同步（见 root/handlers/settings.rs）。
+        // 之后由设置面板的 `LanguagePreferenceChanged` 事件同步（见 root/handlers/settings.rs）。
         lumino_core::i18n::set_current_language(config.ui.language);
-        tracing::info!("界面语言 = {:?}（来源：启动配置）", config.ui.language);
 
         // 保存进行中标志：WindowManager（关闭拦截）与 RunnerInner（保存任务）共享
         let saving = Arc::new(AtomicBool::new(false));

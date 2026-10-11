@@ -277,6 +277,8 @@ pub struct SettingsTranslations {
     pub ui_monitor_refresh_interval: &'static str,
     /// 监控数据刷新间隔提示
     pub ui_monitor_refresh_interval_hint: &'static str,
+    /// 界面语言：跟随系统选项（UI-018）
+    pub language_follow_system: &'static str,
 
     // ── 兼容性页面 ──
     /// 兼容性菜单项
