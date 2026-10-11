@@ -120,8 +120,9 @@ fn test_confirm_merges_path_and_fill() {
     editor.handle_fill_pressed(Point::new(100.0, 100.0), 480.0, 61);
     assert!(editor.confirm_line_tool());
     let notes = editor.editor_state.data.current_track_notes();
-    // 轮廓（顶/底各铺满 + 两条竖直边各 1 tick）+ 填充（60/61/62 三行铺满）
-    // → 去重后 6 条：三条铺满 [0,960) 的行音符 + 960 处三条 1 tick 音符
+    // 轮廓（顶/底各铺满 + 两条竖直边各 1 tick，按最小长度下限补齐到 128 分音符）
+    // + 填充（60/61/62 三行铺满）
+    // → 去重后 6 条：三条铺满 [0,960) 的行音符 + 960 处三条补齐后的角点音符
     assert_eq!(notes.len(), 6, "轮廓 + 填充合并去重: {notes:?}");
     for key in [60u16, 61, 62] {
         assert!(

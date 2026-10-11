@@ -245,9 +245,12 @@ impl Event {
         Message::Toolbar(Self::ToolPanelItemSelected(item))
     }
 
-    /// 构造“Ctrl+点击绘制工具条条目”的工具栏消息（选择该工具并打开其设置）
-    pub const fn tool_panel_item_ctrl_selected(item: ToolPanelItem) -> Message {
-        Message::Toolbar(Self::ToolPanelItemCtrlSelected(item))
+    /// 构造“再次点击已启用条目 → 弹出该条目设置面板”的工具栏消息
+    ///
+    /// 仅由悬浮条视图在「该条目已启用（工具已激活 / 填充已开启）时被再次点击」发出，
+    /// 不再由 Ctrl 状态决定（旧 `tool_panel_item_ctrl_selected` 已随之移除）。
+    pub const fn tool_panel_item_settings_requested(item: ToolPanelItem) -> Message {
+        Message::Toolbar(Self::ToolPanelItemSettingsRequested(item))
     }
 
     /// 构造“开始拖拽音符绘制悬浮工具条”的工具栏消息
@@ -275,11 +278,6 @@ impl Event {
         Message::Toolbar(Self::CloseBrushDropdown)
     }
 
-    /// 构造“画刷粗细度变更”的工具栏消息
-    pub const fn brush_thickness_changed(thickness: u8) -> Message {
-        Message::Toolbar(Self::BrushThicknessChanged(thickness))
-    }
-
     /// 构造“切换形状工具下拉”的工具栏消息
     pub const fn toggle_shape_dropdown() -> Message {
         Message::Toolbar(Self::ToggleShapeDropdown)
@@ -293,5 +291,27 @@ impl Event {
     /// 构造“形状类型变更”的工具栏消息
     pub const fn shape_type_selected(shape: ShapeType) -> Message {
         Message::Toolbar(Self::ShapeTypeSelected(shape))
+    }
+
+    /// 构造“开合粗细悬浮面板”的工具栏消息（悬浮条右端「粗细」按钮；向上弹出）
+    ///
+    /// 只作开合信道：**不碰工具状态**，故调用点不需要任何 `selected` 参与。
+    pub const fn toggle_thickness_panel() -> Message {
+        Message::Toolbar(Self::ToggleThicknessPanel)
+    }
+
+    /// 构造“关闭粗细悬浮面板”的工具栏消息（点面板内空白触发）
+    pub const fn close_thickness_panel() -> Message {
+        Message::Toolbar(Self::CloseThicknessPanel)
+    }
+
+    /// 构造“全局绘制粗细变更”的工具栏消息（粗细面板滑杆，1-100 个 key 层）
+    pub const fn draw_thickness_changed(thickness: u8) -> Message {
+        Message::Toolbar(Self::DrawThicknessChanged(thickness))
+    }
+
+    /// 构造“打开音符画设置对话框”的工具栏消息（悬浮条右端齿轮按钮）
+    pub const fn open_draw_settings_dialog() -> Message {
+        Message::Toolbar(Self::OpenDrawSettingsDialog)
     }
 }

@@ -43,8 +43,23 @@ pub struct MainTranslations {
     pub tool_fill: &'static str,
     /// 音符绘制工具集触发按钮（工具栏小三角）
     pub tool_panel_tooltip: &'static str,
-    /// 描边设置
-    pub tool_stroke: &'static str,
+    /// 音符画设置（悬浮条右端齿轮按钮的 tooltip + 设置面板标题）
+    pub tool_panel_settings: &'static str,
+    /// 音符画设置面板：占位说明（设置项尚未接入）
+    pub draw_settings_placeholder: &'static str,
+    /// 绘制工具面板：鼠标工具（图形选中）
+    pub tool_mouse: &'static str,
+    /// 粗细设置（音符画悬浮条**右端「粗细」按钮**的 tooltip）
+    ///
+    /// 原名 `tool_stroke`（「描边设置」）：该条目自旧「绘制工具下拉」起就只存在于
+    /// 枚举 / 翻译表 / SVG 三处、从未被渲染，属**不可达存量**；本轮它落成真按钮，
+    /// 文案随之收敛到与图形几何无关的「粗细」——「描边」在本仓另有确定含义
+    /// （曲线 / 形状轮廓的音符生成口径），两者混用会像两个系统。
+    pub tool_thickness: &'static str,
+    /// 粗细的单位（「N 层」里的「层」）
+    pub draw_thickness_unit: &'static str,
+    /// 粗细面板说明行（全局粗细 = 生成音符的纵向层数；画布线宽同源）
+    pub draw_thickness_hint: &'static str,
     /// 画刷工具
     pub tool_brush: &'static str,
     /// 形状工具
@@ -63,6 +78,8 @@ pub struct MainTranslations {
     pub tool_text_desc: &'static str,
     /// 橡皮擦说明（绘制工具面板底部描述条）
     pub tool_eraser_desc: &'static str,
+    /// 鼠标工具说明（绘制工具面板底部描述条）
+    pub tool_mouse_desc: &'static str,
     /// 量化
     pub tool_quantize: &'static str,
     /// 变速
@@ -217,6 +234,8 @@ pub struct MainTranslations {
     pub fill_division_suffix: &'static str,
     /// 颜料桶「分音符填充」提示：留空 = 整块填充
     pub fill_division_hint: &'static str,
+    /// 颜料桶「分音符填充」面板：关闭填充按钮（停用颜料桶并收起面板）
+    pub fill_division_disable: &'static str,
 
     // ── 力度/速度编辑面板 ──
     /// 力度标签

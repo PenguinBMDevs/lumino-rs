@@ -16,6 +16,31 @@ impl RunnerInner {
             OpenBrushSettingsDialog(config) => {
                 self.window_state.dialog_manager.open_brush_settings(config);
             }
+            OpenDrawSettingsDialog => {
+                // 齿轮是"开合"语义，但独立窗口不能靠再点一次关闭（主窗可能不在前台），
+                // 故同一时间只允许一个：已存在/正在初始化则把焦点交回它，不叠开第二个窗口。
+                // 用 `is_open_or_pending`（含排队与分帧初始化中）——对话框是分帧创建的，
+                // 只看已就绪窗口会在连点两次时漏判、真的开出两个。
+                if self
+                    .window_state
+                    .dialog_manager
+                    .is_open_or_pending(DialogType::DrawSettings)
+                {
+                    tracing::info!("音符画设置对话框已打开或在初始化中，忽略重复打开请求");
+                    if let Some(window) = self
+                        .window_state
+                        .dialog_manager
+                        .dialog_window_of_type(DialogType::DrawSettings)
+                    {
+                        window.focus_window();
+                    }
+                } else {
+                    self.open_dialog_traced(DialogType::DrawSettings, "音符画设置");
+                }
+            }
+            CloseDrawSettingsDialog => {
+                self.close_dialog_traced(DialogType::DrawSettings, "音符画设置")
+            }
             CloseCustomPrecisionDialog => {
                 self.close_dialog_traced(DialogType::CustomPrecision, "自定义精度")
             }

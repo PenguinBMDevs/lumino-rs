@@ -5,7 +5,7 @@
 
 use crate::message::EditorAction;
 use crate::root::Root;
-use lumino_message::{PianoRollContextMenuAction, PianoRollContextMenuItem};
+use lumino_message::{ContextMenuTarget, PianoRollContextMenuAction, PianoRollContextMenuItem};
 
 impl Root {
     /// 处理编辑器动作
@@ -77,7 +77,8 @@ impl Root {
     /// 打开「分音符填充」面板（输入框预填当前档位）
     ///
     /// 触发路径：画布 Ctrl+单击（`Editor` 置请求位 → 此处取走）；
-    /// 以及音符画工具箱「颜料桶」条目的 Ctrl+点击（`ToolPanelItemCtrlSelected`）。
+    /// 以及音符画悬浮工具条「颜料桶」条目**启用后再次点击**
+    /// （`ToolPanelItemSettingsRequested`）。
     ///
     /// 该面板已从全屏居中弹窗重构为贴图标上方的**工具栏小面板**（由
     /// `root/draw_toolbar.rs` 渲染），故此处需确保音符画工具箱处于展开态——
@@ -94,19 +95,30 @@ impl Root {
     /// 处理钢琴卷帘右键上下文菜单动作
     pub(crate) fn handle_piano_roll_context_menu(&mut self, action: PianoRollContextMenuAction) {
         match action {
-            PianoRollContextMenuAction::Open { position } => {
+            PianoRollContextMenuAction::Open { position, target } => {
                 let pos = iced_core::Point::new(position.x, position.y);
-                // 右键点击音符且该音符不在选中集合时，先将其设为唯一选中。
-                // 使菜单的 删除/剪切/复制 作用于"右键目标"，与 Delete 键
-                // "有选中集合即删除选中集合"的语义一致——否则右键一个未选中的
-                // 音符，菜单"删除"会删掉旧的批量选区。
-                if let Some((index, _)) = self.editor.hit_test_note(pos)
-                    && !self.editor.is_note_selected(index)
-                {
-                    self.editor.selection_clear();
-                    self.editor.selection_insert(index);
+                match target {
+                    // 图形目标：右键命中哪个图形就作用于它。若它**已在选中集内**则保持
+                    // 整个多选不变（菜单「删除」作用于既有批量选区），与音符目标的语义一致。
+                    ContextMenuTarget::DrawnShape => {
+                        if let Some(id) = self.editor.drawn_shape_at_screen(pos) {
+                            self.editor.select_drawn_shape(id);
+                        }
+                    }
+                    // 音符目标：右键点击音符且该音符不在选中集合时，先将其设为唯一选中。
+                    // 使菜单的 删除/剪切/复制 作用于"右键目标"，与 Delete 键
+                    // "有选中集合即删除选中集合"的语义一致——否则右键一个未选中的
+                    // 音符，菜单"删除"会删掉旧的批量选区。
+                    ContextMenuTarget::Notes => {
+                        if let Some((index, _)) = self.editor.hit_test_note(pos)
+                            && !self.editor.is_note_selected(index)
+                        {
+                            self.editor.selection_clear();
+                            self.editor.selection_insert(index);
+                        }
+                    }
                 }
-                self.editor.context_menu.open(pos);
+                self.editor.context_menu.open(pos, target);
             }
             PianoRollContextMenuAction::Close => {
                 self.editor.context_menu.close();
@@ -129,6 +141,10 @@ impl Root {
                         let _ = self.handle_editor_action(EditorAction::Paste);
                     }
                     PianoRollContextMenuItem::Delete => {
+                        let _ = self.handle_editor_action(EditorAction::DeletePressed);
+                    }
+                    PianoRollContextMenuItem::DeleteDrawnShape => {
+                        // 与 Delete 键同一条路径：鼠标工具下会优先删除选中的绘制图形
                         let _ = self.handle_editor_action(EditorAction::DeletePressed);
                     }
                     PianoRollContextMenuItem::SelectAll => {

@@ -25,21 +25,17 @@ impl ToolbarHandler {
         // `toolbar.current_tool`，若此处不同步到编辑器，面板选择就会被瞬间覆盖、
         // 表现为「点了工具却不切换」。这是与上一条 `ToolSelected` 完全一致的处理路径。
         match event {
-            crate::toolbar::Event::ToolPanelItemSelected(item) => match item {
-                crate::toolbar::ToolPanelItem::StrokeSettings => {}
-                _ => {
-                    root.editor.set_tool(root.toolbar.current_tool);
-                    root.editor.set_fill_enabled(root.toolbar.fill_enabled);
-                }
-            },
-            // Ctrl+点击条目：先镜像「选择」结果，再落下该工具的设置副作用。
-            crate::toolbar::Event::ToolPanelItemCtrlSelected(item) => match item {
-                crate::toolbar::ToolPanelItem::StrokeSettings => {}
+            crate::toolbar::Event::ToolPanelItemSelected(_) => {
+                root.editor.set_tool(root.toolbar.current_tool);
+                root.editor.set_fill_enabled(root.toolbar.fill_enabled);
+            }
+            // 再次点击已启用条目：先镜像「选择」结果，再落下该工具的设置副作用。
+            crate::toolbar::Event::ToolPanelItemSettingsRequested(item) => match item {
                 crate::toolbar::ToolPanelItem::FillBucket => {
-                    // 颜料桶的 Ctrl 设置 = 「分音符填充」对话框（工具栏侧已确保填充开启）。
+                    // 颜料桶的设置 = 「分音符填充」面板（工具栏侧已确保填充开启）。
                     root.editor.set_fill_enabled(root.toolbar.fill_enabled);
                     root.open_fill_division_dialog();
-                    tracing::info!("Root: 打开分音符填充对话框（悬浮条 Ctrl+单击颜料桶）");
+                    tracing::info!("Root: 打开分音符填充面板（悬浮条再次点击颜料桶）");
                 }
                 _ => {
                     // 画刷 / 形状等：镜像工具与填充状态；设置下拉的开关由工具栏侧处理。
@@ -136,6 +132,23 @@ impl ToolbarHandler {
             tracing::info!("Root: 触发打开内存监控对话框");
             crate::event::emit(crate::event::Event::Window(
                 crate::event::window::Event::open_memory_monitor_dialog(),
+            ));
+        }
+    }
+
+    /// 处理「音符画设置」对话框（悬浮条右端齿轮按钮 → 独立 OS 窗口）
+    ///
+    /// 与内存监控 / 协作同一条路径：工具栏事件只作**信道**，开窗交给 Runner。
+    /// Runner 侧对同类型窗口做去重（已开则聚焦，不叠第二个窗口）。
+    pub(crate) fn handle_toolbar_draw_settings(
+        &self,
+        _root: &mut Root,
+        event: &crate::toolbar::Event,
+    ) {
+        if matches!(event, crate::toolbar::Event::OpenDrawSettingsDialog) {
+            tracing::info!("Root: 触发打开音符画设置对话框");
+            crate::event::emit(crate::event::Event::Window(
+                crate::event::window::Event::open_draw_settings_dialog(),
             ));
         }
     }

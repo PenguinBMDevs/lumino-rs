@@ -4,6 +4,7 @@
 
 use crate::{CacheInvalidation, Editor};
 use iced_core::Point;
+use lumino_core::BrushConfig;
 use lumino_editor_state::editor_state::viewport::Viewport;
 use lumino_message::Tool;
 
@@ -12,16 +13,37 @@ impl Editor {
     ///
     /// 切到非曲线工具时自动关闭曲线工具颜料桶填充模式；
     /// 切到非形状工具时自动关闭形状工具颜料桶填充模式（均为工具附属开关）。
+    ///
+    /// ⚠️ 待确认的绘制内容（曲线路径 / 待确认图形 / 画刷笔画 / 文本框）**不因切换工具丢失**
+    /// ——见 `EditorState::set_tool` 只收敛交互手势、保留产物。切到「鼠标工具」
+    /// （`Tool::ShapeSelect`）时同样**只保留、不固化**：用户没按 √ 就不该生成音符。
+    ///
+    /// 但「保留」必须同时「可操作」：待确认几何在鼠标工具下照旧渲染，故切换时把它
+    /// 镜像进图形选中域（`rebuild_pending_mirrors`）——否则用户看到图案却框不中、
+    /// 拖不动（看得见却抓不住）。离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染）。
     pub fn set_tool(&mut self, tool: Tool) {
         self.editor_state.set_tool(tool);
         if tool != Tool::Curve {
             self.editor_state.line_tool.fill_enabled = false;
         }
         // 形状工具：离开时关闭其填充桶（避免遗留影响其他工具）
-        // editor_state.set_tool 已重置整个 shape_tool（含 fill_enabled）。
         if tool != Tool::Shape {
             self.editor_state.shape_tool.fill_enabled = false;
         }
+        self.rebuild_pending_mirrors();
+    }
+
+    /// 某绘制工具的**待确认预览**此刻是否应渲染/可交互
+    ///
+    /// 规则：拥有者工具激活时照旧；**鼠标工具（`Tool::ShapeSelect`，图形选中）激活时也渲染**。
+    /// 依据：待确认内容不再因切换工具被丢弃（见 `EditorState::set_tool`），若选择工具下不渲染，
+    /// 用户看到的就是「切过去图案就消失、无从框选」。其余工具不渲染，避免浮层干扰音符编辑。
+    ///
+    /// ⚠️ 仅用于**几何预览**（曲线/形状/画刷方块/文本框），不含 √× 按钮——
+    /// 按钮仍是拥有者工具专属（确认/取消属于绘制工具的操作，选择工具不越权）。
+    pub fn pending_preview_visible(&self, owner: Tool) -> bool {
+        let current = self.current_tool();
+        current == owner || current == Tool::ShapeSelect
     }
 
     /// 设置当前形状类型（由工具栏 `current_shape` 同步）
@@ -40,6 +62,37 @@ impl Editor {
         self.editor_state.line_tool.fill_enabled
     }
 
+    /// **全局绘制粗细**（层数，1-100；1 层 = 单 key 高的像素宽度）
+    ///
+    /// 单一权威：音符画悬浮工具条的「粗细」滑杆与画刷下拉展示/写入的都是它
+    /// （物理载体是 `Editor::brush.thickness`——见 `BrushConfig` 的类型注释：
+    /// 该字段已从"画刷私有"提升为**全局**，字段名保留以免大改对话框 / 历史载荷）。
+    ///
+    /// 消费点（改一处必须一起看）：
+    /// 1. 画刷笔画：`brush/cells.rs` 逐层铺 key + 每层音轨分配；
+    /// 2. 曲线 / 形状的**描边**：`line_tool::stroke_band` 沿**线段法线**把中心线加粗成带
+    ///    （水平段纵向、竖直段横向、拐角补外角方格——不是"一律向上铺 key"，那对竖直段
+    ///    等于拉长）；
+    /// 3. **画布预览**：曲线 / 形状的描边预览直接画"√ 会生成的音符块"
+    ///    （`Editor::shape_outline_blocks` / `Editor::path_outline_blocks`），
+    ///    与第 2 点共用 `stroke_band` 的同一份几何——**不再**用"线宽 = 层数 × 单 key 高"
+    ///    的居中描边（那与单侧向外的产物差半个带，竖直边在粗细 2 时差 2 倍）。
+    pub fn draw_thickness(&self) -> u8 {
+        self.brush.thickness.max(BrushConfig::MIN_THICKNESS)
+    }
+
+    /// **画刷**笔画/命中带的总宽（像素）= 全局粗细层数 × 单 key 高（`zoom_y`）
+    ///
+    /// 用途收窄到画刷：笔画命中判定（`brush_total_width_px`）与画刷预览的层高。
+    /// 曲线 / 形状的**描边预览**曾经也用它当线宽，但那与产物（单侧向外铺 `N-1` 层）
+    /// 不是一份几何——现在预览直接画音符块（见 `draw_thickness` 第 3 点）。
+    ///
+    /// 下限 1px：缩到极小（`zoom_y < 1`）时命中带不能消失（否则"按不住自己画的线"）。
+    pub fn draw_line_width_px(&self) -> f32 {
+        let thickness = self.draw_thickness() as f32;
+        (thickness * self.editor_state.view.zoom_y).max(1.0)
+    }
+
     /// 设置颜料桶填充的**切分档位**（`Some(x)` = x 分音符切分；`None` = 整块填充）
     ///
     /// 由主窗口「分音符填充」对话框确认后调用。变更会同步进路径历史
@@ -52,6 +105,22 @@ impl Editor {
     /// 颜料桶填充的切分档位（`None` = 整块填充）
     pub fn fill_division(&self) -> Option<u32> {
         self.editor_state.line_tool.fill_division
+    }
+
+    /// 设置曲线/形状工具生成音符的**最小长度档位**（修改接口）
+    ///
+    /// `Some(x)` = 至少 x 分音符（`4·ppq/x` tick，`Some(0)` 归一为 `None`）；
+    /// `None` = 不设下限。默认 128 分音符
+    /// （[`lumino_editor_state::LineToolState::DEFAULT_MIN_NOTE_DIVISION`]）——竖直段音符
+    /// 原本只有 1 tick，实机缩放下不足 1px。只影响之后生成的音符，不改写已有音符。
+    pub fn set_min_note_division(&mut self, division: Option<u32>) {
+        self.editor_state.line_tool.set_min_note_division(division);
+        self.mark_notes_changed();
+    }
+
+    /// 生成音符的最小长度档位（`None` = 不设下限）
+    pub fn min_note_division(&self) -> Option<u32> {
+        self.editor_state.line_tool.min_note_division
     }
 
     /// 取走「打开分音符填充对话框」请求（一次性标志，Root 每帧取用）

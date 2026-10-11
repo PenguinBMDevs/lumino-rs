@@ -175,7 +175,8 @@ impl Editor {
             .width(Length::Fill)
             .height(Length::Fill);
 
-        // 悬浮层互斥（优先级：右键菜单 > 文字输入覆盖层），同一时刻至多渲染一层
+        // 悬浮层互斥（优先级：右键菜单 > 文字输入覆盖层），同一时刻至多渲染一层。
+        // 纵向模式同样复用该互斥模型，右键上下文菜单不再缺失。
         match self.view_overlay() {
             Some(ViewOverlay::ContextMenu) => {
                 // 优先级函数已保证 position 为 Some；缺失按原点兜底（防御）
@@ -183,7 +184,10 @@ impl Editor {
                 iced_widget::Stack::new()
                     .push(content)
                     .push(crate::context_menu::background_close_overlay())
-                    .push(crate::context_menu::view(position))
+                    .push(crate::context_menu::view(
+                        position,
+                        self.context_menu.target,
+                    ))
                     .into()
             }
             Some(ViewOverlay::TextToolInput) => {
@@ -244,7 +248,10 @@ impl Editor {
                 iced_widget::Stack::new()
                     .push(editor_content)
                     .push(crate::context_menu::background_close_overlay())
-                    .push(crate::context_menu::view(position))
+                    .push(crate::context_menu::view(
+                        position,
+                        self.context_menu.target,
+                    ))
                     .into()
             }
             Some(ViewOverlay::TextToolInput) => {
@@ -280,8 +287,8 @@ impl Editor {
 
     /// 文字工具编辑态的 TextInput 覆盖层（定位在文本框屏幕矩形上）
     ///
-    /// 仅当文本框激活且处于编辑态时返回 `Some`；纵向卷帘下 `box_rect_screen`
-    /// 返回 `None`，故不叠加。
+    /// 仅当文本框激活且处于编辑态时返回 `Some`；横向 / 纵向卷帘均由
+    /// `box_rect_screen` 给出转置后的矩形（纵向：X = key、Y = tick），故两个方向都会叠加。
     #[allow(clippy::type_complexity)]
     fn text_tool_input_overlay<'a>(&'a self) -> Option<Element<'a>> {
         if !self.text_tool_input_overlay_active() {

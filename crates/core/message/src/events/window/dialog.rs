@@ -67,6 +67,10 @@ pub enum Event {
     OpenCustomPrecisionDialog,
     /// 打开画刷「绘制行为」对话框窗口（携带当前画刷配置）
     OpenBrushSettingsDialog(lumino_core::BrushConfig),
+    /// 打开「音符画设置」对话框窗口（各绘制工具设置的聚合入口）
+    OpenDrawSettingsDialog,
+    /// 关闭「音符画设置」对话框窗口
+    CloseDrawSettingsDialog,
     /// 打开加载确认对话框
     OpenLoadConfirmDialog {
         /// 文件路径

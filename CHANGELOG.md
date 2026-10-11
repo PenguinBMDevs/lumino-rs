@@ -9,6 +9,531 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.1] - Unreleased
 
+### 音符画 · 描边预览改为「画会生成的音符块」（BUG 修复：矩形/曲线的宽度显示 X2）
+
+- **症状（用户报）** — 粗细度是"中间铺开"的：调大后画布上**预览**从线条两侧一起变宽，
+  而 √ 生成的音符带只向**外侧**铺——矩形工具的宽度改变后预览显示是实际产物的 **2 倍**
+  （最典型：粗细 2 时竖直边预览 2 层、产物 1 层）。
+- **根因（RCA）** — 两条腿各画一套几何：产物走 `stroke_band`（沿线段法线**单侧向外**
+  铺 `N-1` 层），预览走 `frame.stroke(.., Stroke::width = 全局粗细 × 单 key 高)`
+  ——`Stroke` 是**沿路径居中**铺开。于是竖直方向上预览 = `N` 层、产物 = `N-1` 层，
+  比值 `N/(N-1)`（粗细 2 时正好 2 倍）。这与本仓既有的「所见即生成」纪律冲突：
+  填充预览（`line_tool_box` 的 block 画法）与画刷预览（`brush_pending_notes_by_stroke`）
+  早就都是"画会生成的音符块"，只有描边预览还在用线宽参数表达宽度。
+- **修复（渲染）** — 描边预览直接画 `√` 会生成的**音符块**：新增
+  `Editor::shape_outline_blocks(spec, filled)` / `Editor::path_outline_blocks(path)`，
+  与写入腿共用同一个 `stroke_band::outline_blocks`（新增，唯一入口：`outline_notes`
+  → key 过滤 → `to_note_triple` 长度补齐 → `(起 tick, 止 tick, key)` 块）。
+  块在本仓的格子口径是 `[key-0.5, key+0.5)`（与音符渲染、填充预览一致），抽成
+  `grid::utils::fill_note_blocks`（填充预览的 block 画法一并改用它，消灭第二份格子口径）。
+  于是"预览的宽度"= "产物的宽度"是**结构保证**，不再依赖两处参数碰巧一致。
+- **配套（引导线）** — 矢量轮廓降级为**固定宽度**的引导线
+  （`OUTLINE_GUIDE_WIDTH = 1.5px`，与粗细**无关**）：它只回答"我画的线在哪"，与锚点/
+  控制柄同类；跟着粗细变宽正是本 BUG 的来源。填充图形不再画随粗细变宽的边框——
+  填充腿不生成描边、也不吃粗细，那条边框等于显示一个不会存在的产物。
+- **口径收窄** — `Editor::draw_line_width_px`（层数 × 单 key 高）语义收窄到**画刷**
+  （笔画命中带 `brush_total_width_px`）；曲线 / 形状的描边预览不再引用它。
+- **反向验证（证明新测试有效）** — 把预览的粗细参数固定成 1：两条不变式用例全红；
+  把预览的长度下限参数改成 `1.0`：补齐用例红并打印出 `(800,801)` 未补齐的块
+  （产物是补齐到 60 tick 的 `(800,860)`）。
+- **验证** — 全部 lib 测试 **1401 全绿**（+4：形状描边预览 == 写入 / 补齐长度同源 /
+  填充图形无描边预览 / 曲线描边预览 == 写入）。新增用例都做过**反向验证**（见上一条）。
+- **画刷不动** — 按用户口径：画刷工具（逐层铺 key + 命中带 + 方块预览）保留原样。
+- **残留** — 预览与产物现在逐块一致；仅剩"预览块用实色、注释/锚点用引导线"这类视觉
+  层次差异（不表达宽度），需视觉签核。
+
+### 音符画 · 加粗带的**拐角补齐**（BUG 修复：矩形右上角出现缺口、音符没盖到角上）
+
+- **症状（用户报）** — 矩形工具描边确认后，**右上角出现异常缺口**：音符没有覆盖到角上。
+  粗细越大缺口越大（缺口尺寸 = 加宽量 × 加宽量）。
+- **复现（修复前实测）** — 矩形 `0..800 × 60..64`、粗细 3、默认 zoom（1 tick = 0.1px、
+  1 key = 20px）：`key 65` 行只有 `[(0,800)]`，即外角方格 `tick 800..1200 × key 64..66`
+  （实机 **40×40px**）整块没有音符。
+- **根因（RCA）** — 加粗带是「每段折线一条单侧矩形 → 按行求并」。上边的矩形止于角点的
+  tick（800）、右竖边的矩形止于角点的 key（64），**谁都不越界到 `tick > 800 ∧ key > 64`**，
+  于是两段的并集在拐角**外侧**缺一块方格。为什么只有右上角缺：法线定号是全局的
+  「向上优先、其次向右」，只有"向上 + 向右"同时外扩的那个角（右上）两条边会双双逃出，
+  其余三个角至少有一条边的带盖住。为什么预览没有这个缺口：预览走 `frame.stroke`
+  （`Stroke` 默认 **Miter** 拼接，拐角实心），生成侧漏了预览有的那块。
+- **修复（几何）** — `band_notes` 增加**拐角补齐**：以每个顶点为起点，用相邻两段的
+  **偏移向量张成的平行四边形**填外角（垂直拐角时正好是缺掉的那个正方格；斜拐角时是其
+  外切方格——比真 miter 略大、比留缺口安全）。顶点范围：闭合环（首点 = 尾点，判定与
+  `paths::path_notes` 同一条）每个顶点都补，顶点 0 的"前一段"取最后一段；开放折线只补
+  内部顶点（两端是 Butt 端帽，与预览默认端帽一致）。共线（同向）拐角的平行四边形零面积
+  → **必须跳过**（像素度量下的叉积判据）：不跳时退化四边形会被 even-odd 配成零宽区间、
+  再被"至少 1 tick"兜底成**直线上的一列碎音符**（实测：去掉守卫后 key 63/64 各多一条
+  `(800,801)`）。
+- **同源一次性覆盖** — 曲线折线、形状描边（矩形/三角/圆）共用同一个入口
+  `stroke_band::outline_notes`，所以拐角补齐对三条链路同时生效。圆不单独写用例：它就是
+  闭合折线（64 段），拐角走的是与"矩形首顶点回绕"同一条代码路径（该用例已单独钉死）。
+- **顺带修掉（同一函数，探针发现）** — 偏左法线（如向右上的斜段）会让带在 tick 0
+  左侧外溢到负 tick；`keep_longest` 按 `(start, key)` 分组，`(-21, k)` 与中心线的 `(0, k)`
+  算成两组，等调用方 `to_note_triple` 把起点钳到 0 之后就留下**两条同 start 同 key 的
+  重叠音符**（渲染叠层、历史里两条）。改为在 `band_notes` 内就钳起点，并丢弃完全落在
+  `tick < 0` 的区间（否则钳完会凭空多一条 tick 0 的 1 tick 假音符）。
+- **已核实、非缺陷** — 曲线工具下加粗带用**展平折线**、中心线用**首尾拉伸后**的折线
+  （`path_notes` 的 `stretch_ends`）：两者行归属一致（拉伸落在 `EDGE = 0.5 - 1e-6` 内、
+  不跨行），且带的行区间**包住**中心线（45° 斜线探针实测：`key 63` 带 `[439,3360)` ⊇
+  中心线 `[2304,3072)`）→ 无缺口；仅"脊线"在带内被重新分配，肉眼不可见。形状不受影响：
+  闭合环从不走拉伸。
+- **验证** — 全部 lib 测试 **1397 全绿**（+6：拐角 4 条 + 负起点钳制 1 条 + 形状端到端 1 条）。
+  新增/变更用例都做过**反向验证**：临时关掉拐角补齐循环，4 条拐角用例全部失败
+  （`65: [(0,800)]` vs 期望 `[(0,1200)]`）；临时关掉共线守卫，`test_collinear_vertex_adds_no_note`
+  失败并露出碎音符；临时去掉起点钳制，`test_band_clamps_negative_start_before_dedupe`
+  失败并列出 4 条负起点音符。
+- **边界** — 粗细 1 仍**逐位不变**（`band_notes` 直接返回空，有断言）；斜拐角的补齐量取
+  "外切方格"而非真 miter 交点（近 180° 反向折角无交点、真 miter 还需 miter limit）——
+  少的那点尖角远小于"留缺口"，且预览端帽/拐角本就是实心。
+
+### 音符画 · 全局粗细的加粗改为「沿线段法线」（BUG 修复：竖直边/竖直线永远变不宽）
+
+- **症状（用户报）** — 调大粗细度后，矩形**竖直边**（以及曲线工具画的竖直线）仍然是
+  "很细一条"，宽度不跟着粗细度走；水平边则正常变厚。
+- **复现（修复前实测）** — 默认 zoom（1 tick = 0.1px、1 key = 20px）下：
+  - 竖直线（曲线工具，key 60→64）粗细 3：每条音符宽度 **1 tick**（应为 399+ tick）；
+  - 矩形 0..800 × 60..64 描边粗细 3：key 63 行上左右竖边宽度 **1 tick / 1 tick**
+    （应为 400 / 400 tick）。
+- **根因（RCA）** — 上一版的加粗实现是「把 `path_notes` 出的中心线音符按 `key + level`
+  **向上平移** N 层」（`paths::expand_layers`）。**平移不是加粗**：它只在"平移方向恰好
+  垂直于线段"时成立——水平段刚好如此，竖直段被平移等于把线**拉长**（横向宽度原地不动），
+  斜段则被按"水平段"硬套、方向也错。用户看到的"竖边很细一条"就是这个几何错误。
+- **修复（几何）** — 新增 `interaction/line_tool/stroke_band.rs`：加粗沿**线段法线**做。
+  每段折线构造一条**单侧矩形**（段两端各沿法线偏移 `(N-1)·zoom_y` 像素；法线定号为
+  「向上优先、其次向右」，与画刷笔画"从落笔 key 向上铺层"同偏向、且与线段走向无关），
+  再用填充引擎同一套逐音高行区间解析（`fill::spans::row_spans`，凸四边形下 even-odd
+  即内部）求出该段在每一行的 tick 区间，全部线段**按行求并**
+  （`spans::merge_spans` 提升为 `pub(crate)` 复用，不再写第二份区间合并），
+  最后与中心线音符走既有 `keep_longest` 合并（中心线的短音符被更长的带吸收，
+  不会在带里留下细线夹层）。于是：水平段纵向加厚 N 行（与上一版口径一致）、
+  **竖直段横向加宽 `(N-1)·zoom_y/zoom_x` 个 tick**、斜段沿法线加厚。
+- **修复（同源）** — 曲线轮廓与形状描边走**同一个入口** `stroke_band::outline_notes`
+  （`line_tool/confirm.rs` 的写入腿 + 逐路径归属腿、`shape_tool/confirm.rs::outline_notes`），
+  旧的 `paths::expand_layers` **删除**——两条链路各自长一套加粗口径正是这类 BUG 的温床。
+- **与卷帘方向无关** — `zoom_x` / `zoom_y` 的含义是"每 tick / 每 key 多少像素"，纵向卷帘
+  只是让这两个方向占据不同的屏幕轴（`coords.rs` 的转置），像素度量不变；因此加粗模块
+  **没有任何卷帘分支**，两个方向天然一致。
+- **口径与边界** — ① 粗细 1 时加宽量为 0，`band_notes` 直接返回空、出口与加粗功能引入前
+  **逐位一致**（有断言）；② 中心线那一层仍由 `path_notes` 出，带只补 `N-1` 层；
+  ③ 越界行裁到 `key_hi`；④ 极端缩放（`zoom_x` 远大于 `zoom_y`）下横向加宽不足 1 tick 时
+  取整为 1 tick——这是 tick 量化的下限，再由最小长度下限兜底。
+- **同族缺陷（已确认，本轮未擅自动）** — **画刷笔画**的粗细仍是"每格按 key 向上铺 N 层"
+  （`cov::expand_layers`，逐层对应一条音轨）：竖直笔画同样只被"拉长"而不加宽，
+  且它的**命中带**是均匀宽度（`brush_total_width_px = N·zoom_y`）——于是竖直笔画出现
+  "抓得住 40px、画出来 1 格宽"的内在不一致。它**不是**本次这种"显示与产物不一致"的 BUG
+  （画布上的画刷预览与生成**同用**这一套，彼此一致），而是**模型层面**的同族缺陷：
+  修它要把"层"从"key 层"改成"距中心线的层距"，牵动逐层音轨分配语义、绘制行为对话框、
+  bench 与 15 个测试文件——属于需要单独签核的口径变更，本轮只落报告与证据。
+- **残留（显示侧，非 BUG）** — ~~画布预览是**居中**描边、生成带是**单侧**铺开，
+  对齐差半个带~~ → **已按用户口径"统一为向外拓展宽度"修复**：预览直接画会生成的音符块
+  （见上一节「描边预览改为画会生成的音符块」），两者逐块一致；画刷保留原样。
+- **验证** — `cargo test -p lumino-ui-editor -p lumino-ui -p lumino-ui-core -p lumino-core
+  -p lumino-extras -p lumino-message --lib` **1391 全绿**（ui-editor 756 / ui 456 / ui-core 73 /
+  core 30 / extras 29 / message 47）。新增 8 项：
+  - **端到端复现（两条链路各一条，修复前必失败）**：
+    `test_confirm_vertical_line_widens_by_global_thickness`（曲线竖直线：粗细 3 下**每条**
+    音符宽度必须 ≥ 399 tick；修复前实测 `[1,1,1,1,1,1,1]`）、
+    `test_rectangle_vertical_edges_widen_by_global_thickness`（矩形竖边：取 key 63 作量尺
+    ——下水平边铺到 62、上水平边从 64 起，只有左右竖边覆盖该行，宽度可被完整量出；
+    粗细 1 = `[(0,1),(800,801)]`、粗细 3 = `[(0,400),(800,1200)]`）；
+  - **加粗几何单测（新 `stroke_band/tests.rs`，6 项）**：粗细 1 不加粗且出口逐位等于中心线生成、
+    退化输入（空/单点/零缩放/零长度段）不 panic 不产垃圾、水平段只向上铺 N 行且 tick 区间不变、
+    **竖直段横向加宽到 `(N-1)·zoom_y/zoom_x` 且与线段走向无关**、斜段沿法线（中段行弦长
+    ≥ 1.2 × 带宽、带上界超出线段 key 上界）、`outline_notes` 把中心线短线吸收进带、
+    越界行裁到 `key_hi`。
+
+### 音符画悬浮工具条 · 「粗细」控件落地（向上弹出面板 + 滑杆 1-100）+ 全局粗细三处同源
+
+- **控件** — 右端「粗细」按钮改为**开合**语义（`ToggleThicknessPanel` / `CloseThicknessPanel`），
+  弹出**窗口内锚定面板**（`CurveToolGroup` 同一套悬浮层，**向上弹出**；顶部空间不足才下翻），
+  面板内是**一根滑杆**：量程 `1..=100`、**步进（精度阈值）1**，就地显示"当前值 + 单位 + 量程"，
+  底下一行说明文案。量程两端**直接取 `BrushConfig::MIN/MAX_THICKNESS`**——滑杆右端与
+  `set_thickness` 的 clamp **同源**，改一处即同步；把上限从 20 放宽到 100 就是这一步，
+  否则滑到头却写不进去（静默截断）。
+- **「粗细」= 全局绘制粗细（纵向 key 层数）** — 需求口径「粗细全局」落在**一份值**上：
+  物理载体 `BrushConfig::thickness`，唯一权威 `Toolbar::brush.thickness`（面板滑杆写、
+  画刷下拉**只读**展示、绘制行为对话框增删层也改它），经既有通道
+  `handler.rs` 的 `editor.brush = toolbar.brush.clone()` 全量同步进编辑器。
+  `BrushConfig` 的类型注释已从"画刷私有"改写为**全局绘制粗细**（字段名保留：换成新类型/新字段
+  会连带改对话框、历史载荷与 bench，收益不抵风险）。
+- **三处同源消费（本仓「所见即所得」纪律的落法）** — 一根滑杆同时管**产物**与**显示**：
+  1. **画刷笔画**：每格按 key 向上铺 `thickness` 层（既有 `cov::expand_layers`，逐层音轨分配不变）；
+  2. **曲线 / 形状的描边**：生成前按全局粗细加粗（`line_tool/confirm.rs` 的写入腿 +
+     逐路径归属腿、`shape_tool/confirm.rs::outline_notes`）。加粗口径在同期的下一条
+     CHANGELOG 里从"按 key 向上平移 N 层"**修正为沿线段法线**（竖直段永远变不宽即其 BUG），
+     这里不再复述中间态；
+  3. **画布线宽**：新增 `Editor::draw_line_width_px()` = 层数 × `zoom_y`（下限 1px）。
+     曲线段（原硬编码 `LINE_WIDTH = 4.0`）、待确认形状轮廓（原字面量 `2.5`）、
+     画刷笔画总宽（原 `brush_total_width_px` 自算）**全部收敛到这一个函数**，
+     于是"画出来多粗"与"√ 后生成多高"严格同源。
+- **有意不动的地方** — ① 颜料桶**填充**腿：面积不是笔画，铺层会让覆盖越过图形边界
+  （填充腿连最小长度下限都不套，同一理由）；② 文字工具：字形栅格化的 key 跨度由文本框决定；
+  ③ `drawn_shape_box` 的常显轮廓 / 选中高亮 / 框选：那是"可选中范围"的 UI 提示，不是画出来的线；
+  ④ `fill_division` 切分档位（只作用于填充）。
+- **删掉的重复控制** — 画刷下拉里的「粗细度 −/+」步进按钮**删除**（同一份值摆两个控件、
+  且旧按钮的上限硬编码 20——正是"看起来能调、其实两处打架"的那类坑），改为**只读**显示当前值、
+  保留「绘制行为」入口；随之删除 `Event::BrushThicknessChanged`、死分支
+  `BrushSettingsAction::ThicknessChanged`（有 handler 无 emitter）及其构造器。
+  绘制行为对话框的层标签由「粗细度 N」改为「第 N 层」（N 是层序号，粗细值本身归滑杆管）。
+- **已知边界** —
+  - **行为变化（需视觉签核）**：粗细 > 1 时曲线 / 形状描边的**生成音符数量与纵向覆盖都会变**；
+    层副本会在同一 `(tick, key)` 上相遇并被既有"同 tick 同 key 只留最长"规则收缩，
+    故条数 < N × 单层条数（矩形粗细 3 的实测：单层 10 条 → 加厚带覆盖 key 60..=66）。
+    默认值 1 **逐位不变**（有断言钉死）。
+  - **量程上限 100 是重负载**：画刷预览块数 = 可见格 × 粗细，bench 一直把"粗细度 20"当病态档
+    （`ui_brush_stroke_bench`）；100 层意味着同一笔最多 5 倍于该病态档。本轮按需求把滑杆开到 100，
+    **未加额外钳制**——真机若卡，先看"笔画点数 + 粗细 + zoom"。
+  - **跨会话不持久化**：粗细沿用画刷配置的既有行为（不入 `UiConfig`、切工程不重置、重启回落 1）。
+    要不要落盘是下一轮的口径（可照 `automation_line_thickness` 那条"字段 → 设置页 → 实时生效 →
+    关窗 diff → 落盘"的链）。
+- **验证** — `cargo test -p lumino-ui -p lumino-ui-editor -p lumino-core -p lumino-ui-core
+  -p lumino-extras -p lumino-message --lib` **1386 全绿**（ui 456 / ui-editor 751 / core 30 /
+  ui-core 73 / extras 29 / message 47）；clippy 0 warning；fmt 干净。新增 / 改写 14 项：
+  - **控件**：`test_thickness_panel_toggles_without_touching_tool_state`（开合 + 不动工具 /
+    填充 / 悬浮条位置）、`test_thickness_panel_stays_open_while_dragging_slider`
+    （**拖滑杆不得把自己关掉**——guard 里显式放行 `DrawThicknessChanged`，这是最容易被写成
+    "一拖就关"的一处）、`test_draw_thickness_changed_clamps_to_slider_range`（0→1、200→100，
+    且 `MAX_THICKNESS == 100`）、`test_slider_range_matches_clamp_range`（**滑杆右端必须写得进去**，
+    钉死"滑到头却没变化"）、`test_thickness_panel_exclusive_and_closed_by_external_actions`
+    （与其余窗口内面板互斥 + 外部动作收起）、关条即收面板（`test_close_tool_panel_closes_settings_dropdown`
+    扩写：悬浮条不在就没有锚点）、以及面板渲染冒烟（两种语言 × 边界值）+ **宽度护栏**
+    `test_thickness_dropdown_fits_menu_width`（两种语言 × 粗细 1 / 100：内容超宽会溢出面板背景，
+    只测中间值会漏掉三位数那一档）；
+  - **归属**：`test_tool_settings_menu_owner` 增加 `SettingsPanelOwner::Thickness`——
+    面板锚定在右端按钮（不是工具条目），否则会以胶囊中心为准居中、看起来贴在悬浮条左端；
+  - **契约**：`test_thickness_button_contract` 改为只发 `ToggleThicknessPanel`（不得退化为
+    工具条目、不得与齿轮共用消息）+ 面板内空白发 `CloseThicknessPanel`；
+  - **端到端**（`root/root_tests/draw_thickness_entry.rs`，4 项）：窗口内开合且**不冒发任何
+    窗口事件**、**滑杆值一路同步到编辑器**（`editor.brush.thickness` / `draw_thickness()` /
+    `draw_line_width_px()` 三者同源）、不扰动工具与填充态、与齿轮同口径收起分音符填充面板且不丢档位；
+  - **几何**：曲线确认 2 项（3 层 → key 60/61/62 同 tick 区间；默认 1 层逐位不变）＋形状描边 1 项
+    （矩形粗细 3 → 带状覆盖 key 60..=66 每行无空洞，条数落在 [单层, 单层 × 3]——钉
+    **覆盖不变量**而不是某个依赖路径行走顺序的定值条数）＋当时那套"按 key 向上铺层"的
+    4 项单测（已随下一条 CHANGELOG 的口径修正一并删除：它的前提本身就是 BUG）。
+
+### 音符画悬浮工具条 · 右端「设置区」新增「粗细」按钮（入口 + 图标）
+
+- **新增** — 音符画悬浮工具条**右端设置区**新增一枚**常显的「粗细」按钮**，落在齿轮
+  **左侧**（设置区自左向右：粗细 → 齿轮；两者与工具图标区之间仍以分隔线隔开），
+  为与其它条目同规格的 34px 图标按钮，带悬浮 tooltip（新文案键 `tool_thickness`：
+  「粗细设置」/「Stroke Width」）。
+- **图标** — 复用仓内既有 `resources/icons/toolbar/stroke-settings.svg`（上下两条粗细不同的
+  横线）。该文件与 `Icon::StrokeSettings` 自旧「绘制工具下拉」起就一直挂在图标表里，
+  却**从未被任何视图渲染过**——全量图标回归只证明"能解析、能光栅化"，不证明"真的出现过"。
+  本轮把它激活，枚举名收敛为 `Icon::Thickness`（**文件名不动**：SVG 术语 `stroke-width`
+  就是线宽/粗细）。交付前用 crate 自身的 `usvg + resvg` 管线把它光栅化到 **22px**
+  （悬浮条内实际尺寸）做目视签核：粗线占 4 行、细线占 2 行（≈3.7px vs ≈1.4px，对比
+  2.6 倍，一眼可分），内容垂直占据第 5..16 行、上下留白 5 / 6 行（居中偏差 ≤ 0.5px），
+  横线两端圆帽不越界。
+- **入口的落地** — 该按钮最终是**开合窗口内面板**（全局粗细滑杆）的入口：面板、量程、以及
+  "一根滑杆同时管显示与产物"的口径见**上一条**（同一 Unreleased 周期内接完，此处不再叙述中间态）。
+- **为什么是专属事件，而不是复用 `ToolPanelItem`** — 旧枚举里有个 `StrokeSettings` 变体，
+  自加入起就是**空分支 + 不可达**（悬浮条只渲染 6 个工具，从未渲染它）：它的存在方式正是
+  "把设置入口塞进工具条目枚举"的代价——`apply_tool_panel_item` 按**选择语义**改
+  `current_tool` / toggle `fill_enabled`，设置入口得处处写例外。本轮**删除该变体**
+  （`ToolPanelItem` 收敛回纯"工具条目"），`Toolbar::update` 与 `ToolbarHandler` 里对应的
+  两处空分支一并清掉；右端两枚入口（粗细 / 齿轮）各带专属事件，可独立接落地。
+- **文案收敛（顺带清死键）** — `tool_stroke`（「描边设置」）→ `tool_thickness`（「粗细设置」）。
+  「描边」在本仓另有确定含义（曲线 / 形状轮廓的**音符生成口径**，见下一条 CHANGELOG），
+  与"线宽粗细"混用会让同一条悬浮条像两个系统；旧键 `tool_stroke` **无任何读取点**，
+  随之一并删除（不留两个近义键）。
+- **验证（入口阶段口径）** — 当时 `cargo test -p lumino-ui --lib` **449 全绿**、
+  `-p lumino-ui-core --lib` 73、`-p lumino-extras --lib` 29；clippy 0 warning、fmt 干净。
+  该阶段新增的 **几何**断言仍在（真实 iced 布局，未走"无适配器即跳过"分支）：
+  `test_thickness_entry_sits_left_of_gear_in_settings_group`——粗细在**全部工具图标右侧**、
+  在**齿轮左侧**、与齿轮**恰好隔一个按钮间距**（4px，即"右端两枚设置入口"的形态承诺）、
+  标准 34px 规格；顺带把两条几何断言的布局前置抽成公共 `layout_row_slots`
+  （两处各写一遍 `Tree::new` + `layout` 迟早会在视口尺寸 / `Limits` 上漂移）。
+  该阶段的契约 / 端到端用例已随控件落地**改写**为上一条里的最终形态。
+
+### 音符画悬浮工具条 · 新增「设置按钮」（悬浮条右端齿轮 → 独立对话框窗口）
+
+- **新增** — 音符画悬浮工具条**右端**新增一枚**常显的设置按钮**（齿轮图标，
+  `resources/icons/regular/settings-general.svg`），以分隔线与 6 个绘制工具图标区隔；
+  点击打开**独立 OS 窗口**「音符画设置」（新 `DialogType::DrawSettings`，460×420，
+  与「画刷绘制行为」同为 `Host::new_dialog` 家族）。
+- **为什么单开一个入口** — 现有三块工具设置（画刷下拉 / 形状下拉 / 分音符填充）都藏在
+  「条目已启用后**再次点击**」这个两段式手势后面（见下一条 CHANGELOG 的交互改造）：
+  想调参数得先激活对应工具、再点第二次。齿轮是**聚合入口**，且**不参与工具选择语义**
+  ——点它不会顺手把当前绘制工具切掉（用户只是想调参数，不是想换工具）。
+- **为什么是独立窗口而不是主窗口内的锚定小面板** — 悬浮条小面板宽度固定 248，
+  容纳不下成组的设置项（下拉 / 输入 / 列表）：要么溢出面板背景，要么被迫做成滚动小窗，
+  反而比独立窗口更难用；独立窗口有系统标题栏、可拖动、可独立缩放，且与既有设置类入口
+  （画刷「绘制行为」）一致。**顺带删掉一整类复杂度**：主窗口内不再有这个面板，
+  于是不需要锚点悬浮层、不需要开合状态位、不需要与画刷 / 形状 / 分音符填充三块窗口内
+  面板做互斥（`Toolbar::draw_settings_open`、`ToggleDrawSettings`/`CloseDrawSettings`
+  两个事件、上一版为此加的画布 Ctrl+单击互斥补丁与视图层互斥 `debug_assert` 一并移除）。
+- **本轮范围 = UI 入口** — 对话框骨架（标题 + 占位说明 + 底部「关闭」）+
+  「设置项开发中」占位文案（中英双语：`tool_panel_settings` / `draw_settings_placeholder`）。
+  **不做假控件**：摆一排点了没反应的控件只会再造一个"能点到、没反应"的静默失效。
+  占位阶段**不摆「保存」**——没有可保存的改动，摆上去只会让人以为存了什么
+  （与画刷对话框的 保存/取消 不同：那边有真实草稿）。
+- **实现** — 完整复刻「画刷绘制行为」这条已验证过的独立窗口链路：
+  `DrawSettingsAction`（新，`lumino-message`）→ `Message::DrawSettings` →
+  `DialogHandler` → `window::Event::OpenDrawSettingsDialog` → Runner 开窗 →
+  `DialogType::DrawSettings` → `Host::new_dialog` + `set_draw_settings_dialog_open` →
+  `overlays.rs` 分发到 `view_draw_settings_dialog`。**开窗去重**：齿轮是"开合"语义，
+  但独立窗口不能靠再点一次关闭（主窗可能不在前台），故 Runner 对同类型窗口去重
+  （已存在则 `focus_window`），且判定用**新增的 `DialogManager::is_open_or_pending`**——
+  对话框是**分帧三阶段**创建的（建窗 → GFX → UI），这期间窗口既不在 `dialogs` 里、
+  也已移出 `pending_dialogs`，只看已就绪窗口会在连点两次时真的开出两个窗口。
+- **验证** — `cargo test -p lumino-ui --lib` **412 全绿**；`lumino-dialog` 6 / `lumino-message` 47
+  全绿。新增 / 改写：
+  - **端到端**（重写 `root/root_tests/draw_settings_panel.rs`，走 `Root::update` 全链路，
+    6 项）：齿轮发 `OpenDrawSettingsDialog` 窗口事件且悬浮条保持打开、
+    **点齿轮不扰动当前工具与填充态**（齿轮退化成工具条目 = 点设置顺手切走工具，这条钉死它）、
+    与其它工具栏动作**同口径**收起窗口内浮层（并断言收起不丢已输入的填充档位）、
+    对话框 Root 按 `DrawSettings` 渲染不 panic、「关闭」→ `DialogResult::Cancel`、
+    关闭动作不冒发"打开"事件（避免关窗把窗口又开回来）；
+  - **几何 / 契约**：新增 `test_gear_entry_sits_at_right_end`——齿轮左缘 ≥ 全部工具图标右缘、
+    按钮为标准 34px 规格（"右端设置按钮"这个需求点的几何钉死）；
+    `test_settings_panel_is_centered_on_its_trigger_button` 收回到 **3 个**窗口内入口
+    （画刷 / 形状 / 颜料桶；齿轮已不在主窗口落浮层，没有"居中于按钮"可言）；
+    `test_gear_settings_button_contract` 改为断言齿轮**只发** `OpenDrawSettingsDialog`
+    （不再有配套的"关闭/切换"事件）；
+  - **状态机**：`test_open_draw_settings_dialog_leaves_tool_state_untouched`、
+    `test_open_draw_settings_dialog_is_idempotent`（连点两次无状态变化 = 无开合语义）；
+  - **去重**：`test_is_open_or_pending_sees_queued_dialog`（钉死"排队中也算已开"，
+    并区分它与 `has_dialog_type` 的语义差异）；
+  - **文案**：`test_draw_settings_dialog_texts_are_non_empty`（标题 / 占位说明 / 关闭按钮
+    在两种语言下都不得为空——空标题会渲染成一个只有边框的空白对话框，既不报错也不崩溃，
+    是 UI 上最难定位的一类静默失效）。
+- **一处刻意的不一致，实测后改回统一** — 初版让齿轮"例外放行"分音符填充面板
+  （理由：独立窗口与它不在同一窗口争位置）。写完测试立刻暴露矛盾：点**工具条目**会收起
+  该面板、点**齿轮**却不会，同一动作下三块窗口内面板行为不一致。窗口内面板本就是
+  "外部一动作即收起"的临时浮层，且输入值存于 `Root::state`、收起不丢数据，
+  故撤掉例外、收敛到既有语义（对应 `test_gear_closes_in_window_panels_like_any_other_action`）。
+- **已知共同边界（非本轮引入，现已不适用）** — 上一版「主窗口内锚定面板」曾有一条
+  共同边界：面板不响应"点击画布空白即关闭"。改为独立窗口后该问题自然消失
+  （窗口有自己的标题栏与系统关闭按钮，且不遮挡画布操作）。
+
+### 音符画 · 文字工具补齐纵向卷帘支持（文字「正着读」）（BUG 修复）
+
+- **症状** — 纵向卷帘下选中「文字工具」在画布上拉框有反应，但**松手后什么都没有**：
+  看不到文本框、看不到 √/×/模式 三个按钮、也弹不出文字输入框；再点一下框还会被
+  取消掉。表现为"能选中、点了没反应"的静默失效（音符画悬浮工具条 6 个在架工具中
+  唯一不可用的一项）。
+- **根因** — `grid/text_tool_box.rs::box_rect_screen`（文本框、√×/模式按钮、
+  `TextInput` 覆盖层的**唯一**几何来源）在纵向直接 `return None`：
+  `confirm_text_tool` 无入口（其唯一调用点是 `handle_text_tool_pressed` 的按钮命中分支，
+  而按钮命中又依赖 `button_rects` → `box_rect_screen`），链路三处一起断。
+- **修复（几何）** — `box_rect_screen` 增加纵向转置分支：key→X（覆盖整行 key，
+  右缘 = key_hi 右边界）、tick→Y 且 **tick 越大越靠上**（与 `Editor::tick_to_y_vertical`
+  同口径）。按钮、输入框、框内拖动随之全部自动可用（无需各自特判）。
+- **修复（轴角色：文字必须正着读，关键）** — 新增 `interaction/text_tool/rasterize.rs::GlyphGrid`
+  作为「字形列/行 → 逻辑轴」的**唯一权威**：横向「列→tick（+snap）、行→key（−1）」；
+  纵向**「列→key（+1）、行→tick（−snap）」**。纵向视图的屏幕轴是 X = key、Y = tick，
+  文字要正着读就必须让 advance 沿屏幕 X、字形"向下"沿屏幕 Y；若照搬横向挂法，字形铺到
+  屏幕上会变成旋转 90° 且翻转的**镜像**（斜着/反着，读不了）。轴角色确定后预览位图
+  **不需要任何转置**（位图 x 即屏幕 X、位图 y 即屏幕 Y），铺进框矩形即为正立可读。
+  采样分辨率同步互换：横向「列 = 时间格、行 = 音高格」，纵向「列 = 音高格、行 = 时间格」。
+- **修复（合并模式合并方向）** — 「key 范围合并」恒为**沿时间轴**合并：横向 = 同一 key
+  行内连续列、纵向 = 同一 key 列内连续行，音符长度 = 该段的时间跨度。若照搬"按行扫描
+  合并"，纵向的合并方向会落到音高轴上，于是"音高跨度"被当成"音符长度"写入文档
+  （长度单位错乱）。
+- **修复（交互口径）** — `handle_text_tool_pressed` / `handle_text_tool_moved` 里写入
+  `EditState::Selecting` 的 stored Y：纵向改取 tick 的屏幕 Y（原先无条件用
+  `view.key_to_y()` 的横向"key 行上/下边"语义，纵向无意义；虽被纵向渲染分支忽略，
+  但属于同类隐患，一并收敛）。
+- **验证** — 新增 8 项回归：`test_box_rect_screen_vertical_transposed`（独立算术钉死
+  key→X / tick→Y，含"tick 越大越靠上"方向断言）、`test_button_rects_vertical_inside_content`
+  （三按钮存在、横向排布、完整落在卷帘内容区内）、
+  `test_vertical_preview_bitmap_axes_match_screen_axes`（**正着读判据**：列增→屏幕 X 增、
+  行增→屏幕 Y 增，且列数 = key 跨度、行数 = 时间格数）、
+  `test_vertical_glyph_grid_matches_preview_and_notes`（预览位图格矩形 ≡ 生成音符的屏幕
+  矩形，逐格重合）、`test_vertical_merged_merges_along_time_axis`（纵向合并沿时间轴、
+  长度 = 时间跨度、空隙断开）、`test_horizontal_glyph_grid_axes`（横向轴角色未被波及：
+  列→tick、行→key，cell 落点与屏幕单调性逐项钉死）、
+  `test_vertical_roll_text_tool_reaches_editing_and_confirms`（端到端：拉框 → 松手进编辑态 →
+  输入文字 → 点 √ → 生成音符全部落在框的 key/tick 范围内）、
+  `test_vertical_roll_text_box_drag_move_uses_key_axis`（框内拖动走 key 轴、时间轴不动）。
+  横向 6 项既有采样用例改为经**生产入口** `sample_to_notes_grid` + 横向 `GlyphGrid` 跑
+  同一批输入与期望值（原先的 `sample_to_notes` 兼容适配层已删除，不留测试专用缝）；
+  `cargo test -p lumino-ui-editor --lib text_tool` 25 全绿。
+
+### 音符画悬浮工具条 · 工具设置面板改「已启用后再次点击」弹出 + 面板居中对齐按钮（BUG 修复）
+
+- **症状（交互）** — 悬浮工具条上要弹出某工具的设置面板（画刷设置 / 形状选择 / 分音符
+  填充），必须**按住 Ctrl 再单击**条目：手势不可发现，且 Ctrl 状态在焦点切换等场景下本就
+  不可靠（`Editor::ctrl_pressed` 需要 canvas + 窗口级双通道兜底）。
+- **症状（对齐）** — 弹出的面板没有居中对齐按钮，而是贴在**悬浮工具条左端**。
+- **根因（对齐）** — 设置面板悬浮层 `CurveToolGroup` 的锚点 = 它的**内容元素**。此前传入的
+  内容是**整条胶囊**（宽 265），面板（宽 248）于是以"胶囊中心"居中：`(265-248)/2 = 8.5`，
+  面板左缘只比胶囊左缘右移 8.5px ⇒ 视觉上就是"贴左端"；与被点的按钮中心（形状按钮在胶囊
+  内偏移 205）相差 **72.5px**（实测：面板中心 700.0 vs 按钮中心 772.5）。几何层的居中逻辑
+  本身没错，错的是**锚点给成了整条胶囊**。
+- **修复（对齐）** — 把设置面板挂到**触发它的那个图标按钮**上：`CurveToolGroup::new(该按钮,
+  面板)`（面板元素随条目在行内构造，`draw_tool_settings_menu` 返回归属条目），锚点因此严格
+  等于被点按钮 ⇒ 面板水平居中于该按钮。
+- **修复（交互）** — 条目**已启用**（工具已激活 / 填充已开启）时**再次点击同一条目**即弹出
+  设置面板；未启用时首次点击仍只做选择。点击→消息的唯一出口收敛为
+  `root/draw_toolbar.rs::tool_panel_item_press`，事件由 `ToolPanelItemCtrlSelected` 改名为
+  `ToolPanelItemSettingsRequested`（名字与 Ctrl 解耦，不再保留误导性的 Ctrl 契约）。
+- **补齐关闭路径** — 「再次点击颜料桶」不再等价于"再点一次即关闭填充"（悬浮条上原 toggle
+  关闭入口随之消失，而主工具栏的填充开关按钮早已移除），故在分音符填充面板内新增
+  **「关闭填充」**（`FillToggled(false)`：停用填充并收起面板）。另一条等效路径不变——点击
+  其它绘制工具条目会关闭填充共存态。
+- **明确不动的地方** — 画布上 Ctrl+单击打开分音符填充面板的路径保留（另一条独立入口）；
+  画刷 / 形状下拉的"点击面板内空白即关闭"语义不变。
+- **验证** — 先复现后修复：`test_settings_panel_is_centered_on_its_trigger_button` 用
+  headless iced 渲染器（`iced_wgpu` + `Shell::headless`）实测布局，修复前 **FAILED**
+  （面板中心 700.0 vs 按钮中心 772.5），修复后画刷 / 形状 / 颜料桶三个条目均居中（±1px）。
+  另加 `test_tool_panel_item_press_contract`（逐条目钉死点击→消息映射）、
+  `test_tool_settings_menu_owner`（面板归属条目）、
+  `test_panel_second_click_fill_bucket_opens_panel_without_ctrl`（全程不按 Ctrl）、
+  `test_fill_panel_disable_button_turns_fill_off`；`cargo test -p lumino-ui --lib` 399 全绿。
+
+### 音符画 · 曲线/形状工具生成音符的最小长度下限（BUG 修复）
+
+- **症状** — 纵向卷帘下画一条**垂直于时间轴的直线**（时间原地不动、一瞬间跨过多个音高
+  行），生成的音符每条只占 1 tick：1920 ppq 下是 1/7680 个全音符，缩放到实机比例后不足
+  1px ⇒ 看起来像「音符宽度过小 / 没生成」。
+- **根因** — 轮廓音符由蜘蛛网式逐音高行解析得出（`line_tool/paths.rs`）：为避免紧折角后
+  面接平坦段时两条长音符叠成实心块，同一 tick 跨多行的音符**刻意**只给 1 tick。几何层没错
+  （保持 Spiderweb 口径），缺的是**写入层的可视长度下限**。
+- **修复** — 写入层（`confirm_line_tool` / `confirm_shape_tool` 的轮廓腿）按最小长度下限
+  补齐过短的音符（起点不动、终点外扩）：默认 **128 分音符** = `4·ppq/128` = `ppq/32`。
+  形状工具描边是同一条几何腿，一并修掉。
+- **修改接口（预留）** — `LineToolState::min_note_division`（`Some(x)` = x 分音符、
+  `None` = 不设下限；默认常量 `LineToolState::DEFAULT_MIN_NOTE_DIVISION = 128`），换算函数
+  `line_tool::paths::min_note_length_ticks`；`Editor` 侧暴露 `set_min_note_division` /
+  `min_note_division`。属模式设置，跨 √ 确认 / × 取消保留。
+- **明确不动的地方** — 填充腿（`fill_notes` / `chop_span` / 形状填充格点）**不套用**下限：
+  其长度由用户选的切分档位与图形覆盖决定，补齐会让音符覆盖大于图形覆盖，破坏「填充显示
+  == 生成音符」不变式。
+- **验证** — 先复现后修复：`test_vertical_roll_straight_line_keeps_min_note_length`
+  （修复前实测 1 tick vs 要求 60 tick），另加 `test_confirm_vertical_line_keeps_min_note_length`、
+  `test_min_note_division_is_configurable`、`test_min_note_division_survives_confirm`、
+  `test_outline_min_length_fills_short_vertical_segments`、`test_outline_min_length_is_configurable`、
+  `test_min_note_length_ticks_follows_division`、`test_to_note_triple_clamps_start_and_length`；
+  `cargo test --workspace` 全绿，`cargo clippy -p lumino-ui-editor -p lumino-editor-state --all-targets` 无警告。
+
+### 音符画 · 三角形朝向跟随拖拽方向（BUG 修复）
+
+- **症状** — 形状工具选中「三角形」拉框，画出来的永远**倒三角**，与拉框方向无关；
+  预览、√ 生成音符、鼠标工具点选命中、填充四条腿一起倒。中途一度修成「永远正立」，
+  同样不符合预期——**顶点必须跟随拖拽方向**。
+- **期望语义（本次口径）** — 顶点始终朝**拖拽起点**那一侧的 key 边：
+  向下拉（key 递减 / 屏幕向下）⇒ 顶点在高音高侧 ⇒ 横卷帘**正立**（高度为正）；
+  向上拉 ⇒ 顶点在低音高侧 ⇒ **倒立**（高度为负）；拖拽过程中越过起点 ⇒ **实时翻面**
+  （预览每帧重算，不必松手）；纵向卷帘转置后同一条规则（向左拉 ⇒ 顶点朝右）。
+- **根因** — 不是某一侧写反，而是**方向在规范化时被丢掉**：`ShapeInstance::rect` 经
+  `normalize_rect` 强制 `y0 <= y1`，朝向信息无处承载，`normal_triangle_verts` 只能钉死
+  某一侧。首版（提交 `3814001c`）钉在 key 小的一侧 = 屏幕下方 ⇒ 永远倒三角；上一轮修正
+  钉到 key 大的一侧 ⇒ 永远正立——两次同一个根因。（key 轴正向 = 音高更高：横卷帘
+  `ViewState::key_to_y = (max_key - key)·zoom_y`（key 越大越靠屏幕上方）、纵卷帘
+  `Editor::tick_key_to_pos_f32`（key 越大越靠右）。）
+- **修复** — 把方向提升为**随几何走的一等信息**，而不是从外接框里猜：
+  - 新增 `ShapeSpec { kind, rect, shift_constrained, apex_high }`（几何参数打包，渲染 /
+    命中 / 格点 / 描边四条腿共用）；`apex_high` = 三角形顶点是否在 key **大**的一侧；
+  - `ShapeInstance`、持久登记的 `DrawnShapeSource::Shape`（鼠标工具高亮 + 命中共用，
+    丢了它就会把三角形画成镜像）、`ShapePreview` 都带上该字段；
+    `ShapeToolState::{end_drag, preview_rect}` 按 `apex_high = 当前 key <= 起点 key` 计算
+    ⇒ 拖拽中越过起点即翻面；
+  - `normal_triangle_verts(rect, apex_high)` 按朝向选底边/顶点；
+    `screen_equilateral_rect(..., apex_high)`（Shift 等边三角形：底边留在拖拽当前点侧、
+    顶点朝起点侧延伸 h，等边高 = 底宽_px × √3 / 2，外接框仍保持规范序）；
+  - 5 个几何入口改吃 `ShapeSpec` 并顺带消掉 `point_in_shape` / `shape_cells` 逼近
+    clippy `too_many_arguments` 的参数膨胀；调用方由编译器逐一列出（漏一处编不过）。
+- **同类一并修（Shift 正图形约束在单轴拖拽下退化）** — 规范化后的外接框在「纯水平/纯竖直
+  拖拽」时有一轴位移为 0，老实现 `f32::signum(0.0) == 0` 会把算好的边长乘成 0：
+  矩形被压成一条发丝、圆被压成一个点、三角形被压成零高/零宽。新增
+  `constraint_scale`（零位移轴不参与取 min）与 `axis_dir`（零位移按正向处理），
+  矩形/圆/三角三条腿统一；**两轴都有位移时取值逐位不变**（`min` 语义与既有测试不变），
+  纯竖直拖拽的三角形改由拖拽高度反推所需底宽（h × 2 / √3）。
+- **回归测试** — `editor-state`：向下拉 / 向上拉的 `apex_high` 与规范化外接框分别断言、
+  拖拽中越过起点时预览朝向三次翻转、正立/倒立逐点镜像（顶点 + 描边折线 + `shape_vertices`）、
+  命中判定跟随朝向、格点朝向、Shift 等边约束跟随朝向且单轴拖拽不退化。
+  `ui-editor`：向下拉 = 正立（顶点屏幕在上）且描边逐音高行分布逐条断言、向上拉 = 倒立
+  且为其**逐行镜像**、反向拖拽过程中预览实时翻面（松手后与最终朝向一致）、纵向卷帘
+  正反两向、填充三角形宽行随方向翻到 key 60 / key 64、登记来源保留 `apex_high`。
+- **行为变化（需视觉签核）** — 三角形朝向由拖拽方向决定（上下拉各得正立/倒立，拖拽中
+  可翻面），含填充三角形与鼠标工具的命中区域；单轴拖拽 + Shift 现在会得到完整正图形
+  而不是发丝/点。对已保存工程无影响（音符已落盘，重新绘制才走新几何）。
+- **验证** — `cargo test --profile fast-release -p lumino-editor-state --lib`（322 passed）、
+  `-p lumino-ui-editor --lib`（725 passed）、
+  `cargo clippy --profile fast-release -p lumino-editor-state -p lumino-ui-editor --all-targets
+  -- -D warnings`（0 warning）、`cargo clippy --profile fast-release --workspace --lib
+  -- -D warnings`（0 warning，全仓生产代码）、`bash scripts/check-bom.sh`（通过）。
+  **变异验证**：把 `apex_high_of` 改回「恒为 true」（即上一轮的"永远正立"）后，
+  5 条方向用例立即全挂（`test_triangle_apex_follows_drag_direction`、正向/反向/实时翻面/
+  填充方向/纵卷帘），复原后全绿 ⇒ 用例是真语义钉子而非同义反复。
+  测试文件按 REF-001 纪律拆出 `interaction/shape_tool/tests_triangle.rs`（单文件 ≤ 400 行）。
+  另（**仅 `--profile fast-release` 的口径差异，不是仓库缺陷**）：该 profile 下
+  `cargo clippy --workspace --all-targets` 会在 `lumino-ui` 的**测试目标**上报 17 个
+  E0277/E0599（`crates/editor/ui/src/view/video_clip/preview.rs:106` 的
+  `#[cfg(test)] mod tests` 用 `()` 当 iced headless 渲染器）。根因是 iced 0.14 把 `()`
+  渲染器整模块门控在 `#[cfg(debug_assertions)]` 下
+  （`iced_core-0.14.0/src/renderer.rs:2`），而 `profile.fast-release` 继承 `release`
+  ⇒ `debug-assertions = false`；仓库测试自己也写着「debug 构建下实现全部所需 trait」。
+  因此**默认 dev profile 的 `cargo test` 与 CI 原样命令都不受影响，测试目标是好的**
+  ——本条目前面所有 fast-release 验证均按 `--lib`（生产代码）口径执行，避免混入该差异。
+
+### 音符画 · 形状工具描边对齐曲线工具（蜘蛛网式逐音高行）
+
+- **存量欠债** — 音符画工具箱里两套「描边」语义不一致：曲线工具的轮廓
+  （`interaction/line_tool/paths.rs` 的 `path_notes`）按几何交点逐音高行解析 → 每个音高行
+  一条无缝变长连奏音符、不使用吸附精度；形状工具的轮廓却是「按 snap 网格枚举格点、
+  每格一条定长音符」——陡峭边只剩零散格点、时间轴上不连续（对比报告
+  `docs/spiderweb-vs-lumino-音符绘制工具对比.md` §五.3 记为 P0 之前的欠债）。
+- **修复（只动描边，填充腿有意不动）** — 新增 `lumino_editor_state::shape_tool::shape_outline_path`
+  （`editor-state/.../shape_tool/geometry.rs`）：形状边界 → **闭合** `(tick, key)` 折线，
+  矩形/三角形取顶点 + 闭合点，圆按 `CIRCLE_OUTLINE_SEGMENTS = 64` 段采样椭圆；末点**显式
+  复用首点**（`path_notes` 靠 `pts[0] == pts[last]` 逐位相等识别闭合环，重算 `cos(TAU)` 在
+  f32 下未必相等，差一位就退化成开放路径多做首尾拉伸）。形状工具 √ 时把该折线交给曲线
+  工具**同一套** `paths::path_notes(..., end_dot = false)`：每个音高行一条音符、起点 = 进入
+  该行的 tick、终点 = 下一条起点（闭合环从最左点重启、竖直段各占 1 tick 同口径），
+  **全程不再使用吸附精度**，与曲线轮廓逐项同源。
+- **口径与边界** — 描边音符按**精确整 tick** 去重（起点是解析交点、落在吸附网格之外，
+  沿用「除以 snap 再取整」的键会把相邻两行/两段误并成一条）；key 越界行按曲线工具同口径
+  裁掉；「x 分音符」切分档位（`fill_division`）仍只作用于填充区间，对描边不生效。
+- **填充腿行为不变（有意保留）** — `filled = true` 仍走 `shape_cells(filled = true)` 格点：
+  未开切分 = 每格一条 snap 长音符，开启切分 = 按行合并后 `chop_span` 切分；
+  `shape_cells(filled = false)` 保留为几何查询本身并在文档标注「描边已不走它」，防未来误用旧口径。
+- **回归与结构** — 形状工具测试改为断言**逐音高行覆盖**而非格点数：矩形描边 10 条
+  （上下边各 1 条贯通 + 右竖直边 5 条 1 tick + 左竖直边 5 条中与水平边同起点的 2 条被
+  `keep_longest` 合并）、圆描边逐行覆盖且最高/最低行各 1 条、中间行各 2 条；新增「描边不受
+  切分档位影响（逐条一致）」「登记音符与文档音符逐条同源」「圆描边折线闭合 + 吃屏幕空间
+  Shift 约束」用例。`interaction/shape_tool.rs`（本次编辑后 708 行）按 REF-001 文件长度纪律拆为
+  `shape_tool.rs`（交互）+ `shape_tool/confirm.rs`（√/× 生成）+ `shape_tool/tests.rs`（测试），
+  与 `line_tool.rs` + `line_tool/` 同构。
+- **行为变化（需视觉签核）** — 空心矩形/圆/三角 √ 生成的音符**数量与长度都变了**：1 tick
+  吸附精度下 0..4 × 60..64 的空心矩形由 16 条 1 tick 格点音符变为 10 条（含 4 tick 贯通
+  音符与角点 1 tick）。对已保存工程无影响（音符已落盘，重新绘制才走新口径）。
+- **验证** — `cargo test --profile fast-release -p lumino-editor-state --lib`（315 passed）、
+  `-p lumino-ui-editor --lib`（719 passed）、`cargo clippy --profile fast-release -p
+  lumino-editor-state -p lumino-ui-editor --all-targets -- -D warnings`（0 warning）。
+
+### 音符画 · 鼠标工具（框选）框选不到未 √ 的曲线/图形（BUG 修复）
+
+- **症状** — 在音符画工具栏画完曲线/形状/笔画后切到「鼠标工具」拉框框选，图案明明画在
+  画布上，却**框不中、没有选中选框、也拖不动**；点选同样落空。
+- **根因** — 两阶段交互（拖动只产生待确认几何，√ 才生成音符）下，切换工具只**保留**
+  产物不**固化**（`EditorState::set_tool`，故没有音符是对的）；但产物在鼠标工具下照旧渲染
+  （`Editor::pending_preview_visible`，本意就是"看得见才框得着"），却**只在 owning tool
+  的待确认容器里**——图形选中域 `ShapeSelectState` 里没有对应条目，框选命中集为空。
+  「可见性不变式」与「可选中不变式」脱钩：看得见，抓不住。
+- **修复** — 进入鼠标工具时把每件待确认几何**镜像**进图形选中域
+  （`DrawnShape.pending: Option<PendingShapeRef>` + `PendingShapeRef::{Shape, CurvePath,
+  BrushStroke}`）；音符仍只在 √ 时生成，镜像 `notes` 恒空：
+  - 框选 / 点选 / 选中高亮 / 并集选框 / 框内拖动全部复用既有链路（渲染与命中同源）；
+  - 拖动**即时写回** owning tool 的待确认几何（几何是唯一权威，镜像每帧重新导出），
+    于是 canvas 曲线/形状预览、wgpu 画刷方块预览、镜像描边、选中选框读到的永远是同一份几何；
+  - 平移口径与已确认图形一致（tick 钳 ≥ 0、key 钳 0..=255），曲线按相对控制柄整条平移，
+    画刷走 `BrushStroke::translate`；曲线/画刷的待确认历史记一次快照（Ctrl+Z 可回退），
+    形状工具无待确认几何历史；
+  - Delete 删除待确认几何（不动文档、不记文档历史），同容器后续镜像下标前移，引用不错位；
+  - 待确认几何尚未绑定音轨，镜像随任意非 Conductor 轨可见可选中（与 owning 预览的
+    渲染规则严格对齐：Conductor 轨不渲染 → 也不建镜像）；
+  - 离开鼠标工具即撤掉镜像（其余工具由 owning 预览渲染），重复切换保留选中态；
+  - **镜像几何回灌** — `Editor::undo/redo` 的「待确认路径编辑历史」分支（brush/line
+    `*_path()`，与当前工具无关：鼠标工具下按 Ctrl+Z 同样回退待确认几何）后同帧回灌镜像，
+    并在每次鼠标工具按下前自愈一次；owning 几何整体消失（撤销回退整条路径）时镜像一并
+    退场，绝不留「画不出来却框得中」的幽灵条目。
+- **回归防护** — 新增端到端测试 `tests/drawn_shape_marquee_e2e.rs`（10 项，走真实
+  `handle_action` + 屏幕坐标链路）：已 √ 的形状/曲线/画刷、多选并集选框 + 框内整组拖动、
+  纵向卷帘，未 √ 的形状/曲线/画刷「框选 → 选框 → 拖动 → √ 落在拖动后位置」、
+  「Delete 待确认几何 + 后续镜像可继续拖动」，以及「撤销待确认路径编辑后镜像同帧回灌」。
+
 ### 设置面板 · 关于页「回声洞」彩蛋（UI-006）
 
 - **回声洞彩蛋文本** — 「设置 → 关于」页**最后一个文本内容下方**新增一行灰阶小字（12px，
@@ -797,4 +1322,3 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 性能进一步优化
 - 更多 MIDI CC 支持
 - 插件系统
-- VST3 支持

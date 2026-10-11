@@ -262,3 +262,46 @@ fn test_direction_changes_ignores_still_segments() {
     // 上 → 下 → 上：两处都算方向反转
     assert_eq!(direction_changes(&[0.0, 5.0, 3.0, 8.0]), vec![1, 2]);
 }
+
+// ── 生成音符长度下限（修改接口：x 分音符 → tick）────────────────────────
+
+#[test]
+fn test_min_note_length_ticks_follows_division() {
+    // 128 分音符 = 全音符/128 = 4·ppq/128 = ppq/32
+    assert_eq!(min_note_length_ticks(Some(128), 1920), 60.0);
+    // 六十四分音符 = ppq/16、三十二分音符 = ppq/8
+    assert_eq!(min_note_length_ticks(Some(64), 1920), 120.0);
+    assert_eq!(min_note_length_ticks(Some(32), 1920), 240.0);
+    // 非 2 的幂档位取整到整 tick（与填充切分同口径），且恒 ≥ 1 tick
+    assert_eq!(min_note_length_ticks(Some(3), 480), 640.0);
+    assert_eq!(min_note_length_ticks(Some(4096), 480), 1.0);
+    // None = 不设下限（保持 RawNote 自带的 1 tick）
+    assert_eq!(min_note_length_ticks(None, 1920), 1.0);
+}
+
+#[test]
+fn test_to_note_triple_clamps_start_and_length() {
+    // 起负 tick 钳到 0，长度补齐到下限（起点不动、只外扩终点）
+    let short = RawNote {
+        start: -5,
+        end: -4,
+        key: 60,
+    };
+    assert_eq!(to_note_triple(&short, 60.0), (0.0, 60, 60.0));
+
+    // 长度已达标的音符逐位不变
+    let long = RawNote {
+        start: 1920,
+        end: 3840,
+        key: 64,
+    };
+    assert_eq!(to_note_triple(&long, 60.0), (1920.0, 64, 1920.0));
+
+    // 竖直段（1 tick）补齐到下限
+    let vertical = RawNote {
+        start: 1920,
+        end: 1921,
+        key: 62,
+    };
+    assert_eq!(to_note_triple(&vertical, 60.0), (1920.0, 62, 60.0));
+}

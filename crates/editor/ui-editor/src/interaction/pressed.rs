@@ -73,6 +73,16 @@ impl Editor {
                 self.handle_brush_pressed(pos, hit_result, key);
             }
             Tool::Text => self.handle_text_tool_pressed(pos, key),
+            // 图形选中工具（鼠标工具）：点选已确认的绘制图形（原始坐标，不做网格吸附）
+            // key 用**未取整**的原始值：命中判定含「选中选框内部」这一 3px 级精细区域，
+            // 若先量化成整数 key（zoom_y=20 时约 20px/半音）会产生可感知的命中死区。
+            // 与 `handle_moved` / `drawn_shape_at_screen` 的坐标口径保持一致。
+            // `shift` 作为 additive 修饰键：切换图形选中态 / 框选并入既有选中集。
+            Tool::ShapeSelect => {
+                let tick = self.pos_to_tick(pos);
+                let raw_key = self.pos_to_raw_key(pos);
+                self.handle_shape_select_pressed(tick, raw_key, shift);
+            }
             Tool::Shape => {
                 // Shift 按住：使用鼠标原始浮点坐标（绕过 key/音符精度吸附，自由跟随鼠标）；
                 // 否则：网格吸附坐标。正图形约束在几何层基于该坐标计算，保证「Shift=正图案」。

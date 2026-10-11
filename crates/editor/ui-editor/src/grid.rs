@@ -18,6 +18,7 @@
 pub mod bars;
 pub mod brush_tool_box;
 pub mod confirm_buttons;
+pub mod drawn_shape_box;
 pub mod i2m_box;
 pub mod keyboard;
 pub mod keys;

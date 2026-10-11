@@ -94,6 +94,18 @@ impl Root {
         }
     }
 
+    /// 设置「音符画设置」对话框是否打开（独立 OS 窗口）
+    ///
+    /// 无独立状态位：该对话框本轮为占位面板，`dialog_type` 本身就是"开/关"的唯一来源
+    /// （其余对话框额外带 `is_open` 是因为面板内还挂着草稿数据）。
+    pub fn set_draw_settings_dialog_open(&mut self, open: bool) {
+        if open {
+            self.state.dialog_type = DialogType::DrawSettings;
+        } else if self.state.dialog_type == DialogType::DrawSettings {
+            self.state.dialog_type = DialogType::None;
+        }
+    }
+
     /// 设置找回删除音轨对话框的条目列表（由 Runner 扫描缓存目录后填充）
     pub fn set_recover_track_dialog_entries(
         &mut self,

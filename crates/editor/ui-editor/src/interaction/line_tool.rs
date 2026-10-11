@@ -18,13 +18,19 @@
 //! 纯几何算法（贝塞尔求值/距离/展平）在 `line_tool/geom.rs`，
 //! 命中测试/坐标转换/放置吸附在 `line_tool/hit_test.rs`，
 //! √ 确认时的音符生成（蜘蛛网式逐音高行解析求交 + 逐行填充区间）在
-//! `line_tool/paths.rs` 与 `line_tool/fill/spans.rs`（不经任何"设定精度"）。
+//! `line_tool/paths.rs` 与 `line_tool/fill/spans.rs`（不经任何"设定精度"），
+//! 「全局粗细」的加粗几何（沿法线把中心线膨胀成带）在 `line_tool/stroke_band.rs`
+//! ——曲线轮廓与形状描边**共用**它，加粗口径只允许有一份。
 
 mod confirm;
 pub(crate) mod fill;
 pub(crate) mod geom;
 mod hit_test;
-mod paths;
+// `pub(crate)`：形状工具描边复用同一套逐音高行解析（`paths::path_notes`），
+// 「曲线轮廓」与「形状描边」必须同源，不允许各自长一套。
+pub(crate) mod paths;
+// `pub(crate)`：同上——形状描边也要吃全局粗细，加粗几何必须与曲线共用。
+pub(crate) mod stroke_band;
 
 #[cfg(test)]
 mod tests;

@@ -29,6 +29,7 @@ impl Toolbar {
             tool_panel_last_cursor: None,
             brush_dropdown_open: false,
             brush: BrushConfig::new(),
+            thickness_panel_open: false,
             fill_enabled: false,
             shape_dropdown_open: false,
             current_shape: ShapeType::default(),
@@ -63,10 +64,7 @@ impl Toolbar {
         if self.brush_dropdown_open
             && !matches!(
                 event,
-                Event::ToggleBrushDropdown
-                    | Event::ButtonHovered(_)
-                    | Event::CloseBrushDropdown
-                    | Event::BrushThicknessChanged(_)
+                Event::ToggleBrushDropdown | Event::ButtonHovered(_) | Event::CloseBrushDropdown
             )
         {
             self.brush_dropdown_open = false;
@@ -84,6 +82,24 @@ impl Toolbar {
             )
         {
             self.shape_dropdown_open = false;
+        }
+
+        // 「粗细」悬浮面板打开时，除以下情况外其余操作先关闭面板：
+        // - 再次点击「粗细」按钮（ToggleThicknessPanel）用于切换关闭
+        // - 悬停事件不应关闭面板
+        // - 显式关闭事件（CloseThicknessPanel）
+        // - **拖动滑杆产生的粗细变更**（DrawThicknessChanged）：那是面板**内部**交互，
+        //   必须放行——否则滑杆一拖就把自己关掉（面板永远拖不动）
+        if self.thickness_panel_open
+            && !matches!(
+                event,
+                Event::ToggleThicknessPanel
+                    | Event::ButtonHovered(_)
+                    | Event::CloseThicknessPanel
+                    | Event::DrawThicknessChanged(_)
+            )
+        {
+            self.thickness_panel_open = false;
         }
 
         match event {
@@ -265,10 +281,13 @@ impl Toolbar {
             }
             Event::ToggleToolPanel => {
                 self.tool_panel_open = !self.tool_panel_open;
-                // 与溢出菜单、画刷/形状下拉互斥：打开绘制工具条时关闭其余浮层
+                // 与溢出菜单、画刷/形状下拉/粗细面板互斥：打开绘制工具条时关闭其余浮层
                 self.overflow_menu_open = false;
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
+                // 关闭时一并收起粗细面板：它锚定在悬浮条的按钮上，悬浮条不在就没有锚点；
+                // 留着"开"状态会让下次打开悬浮条时凭空弹出一块面板（用户早已看不见它）
+                self.thickness_panel_open = false;
                 // 关闭时复位拖拽态与抓取点，避免残留的全窗口拖拽覆盖层拦截后续交互
                 if !self.tool_panel_open {
                     self.tool_panel_dragging = false;
@@ -287,9 +306,10 @@ impl Toolbar {
                 self.tool_panel_open = false;
                 self.tool_panel_dragging = false;
                 self.tool_panel_last_cursor = None;
-                // 悬浮条关闭即无从承载工具设置下拉，一并收起
+                // 悬浮条关闭即无从承载工具设置下拉 / 粗细面板，一并收起
                 self.brush_dropdown_open = false;
                 self.shape_dropdown_open = false;
+                self.thickness_panel_open = false;
                 tracing::debug!("工具栏: 关闭音符绘制悬浮工具条");
             }
             Event::ToolPanelDragStarted => {
@@ -363,9 +383,36 @@ impl Toolbar {
                 self.current_shape = shape;
                 tracing::debug!("工具栏: 形状类型切换为 {:?}", shape);
             }
-            Event::BrushThicknessChanged(thickness) => {
+            Event::DrawThicknessChanged(thickness) => {
+                // **全局**绘制粗细（唯一权威在 Toolbar::brush.thickness）：
+                // 曲线/形状描边 + 画刷笔画共用；clamp 由 `set_thickness` 统一执行
+                // （量程与粗细面板滑杆同源，见 `thickness_dropdown.rs`）。
+                // 注意**不收面板**：本事件来自面板内滑杆（guard 已显式放行）。
                 self.brush.set_thickness(thickness);
-                tracing::debug!("工具栏: 画刷粗细度变更为 {}", self.brush.thickness);
+                tracing::debug!("工具栏: 全局绘制粗细变更为 {} 层", self.brush.thickness);
+            }
+            Event::ToggleThicknessPanel => {
+                self.thickness_panel_open = !self.thickness_panel_open;
+                if self.thickness_panel_open {
+                    // 与其余**窗口内**面板互斥（同一时刻至多一块；分音符填充面板的
+                    // 状态在 `Root::state`，由 ToolbarHandler 的"外部动作即收起"统一处理）。
+                    // 注意**不动** `tool_panel_open`：本面板锚定在悬浮条自己的按钮上，
+                    // 关掉悬浮条等于把锚点一起拆了。
+                    self.brush_dropdown_open = false;
+                    self.shape_dropdown_open = false;
+                }
+                tracing::debug!(
+                    "工具栏: 粗细面板 {}",
+                    if self.thickness_panel_open {
+                        "打开"
+                    } else {
+                        "关闭"
+                    }
+                );
+            }
+            Event::CloseThicknessPanel => {
+                self.thickness_panel_open = false;
+                tracing::debug!("工具栏: 关闭粗细面板");
             }
             Event::ToolPanelItemSelected(item) => {
                 // 普通点击：仅执行选择语义（切工具 / 切换填充共存态），保持面板打开。
@@ -374,13 +421,14 @@ impl Toolbar {
                 // （与旧下拉"逐项选择即关闭"行为不同——那是一次性下拉的语义）。
                 tracing::debug!("工具栏: 绘制工具条选择 {:?}", item);
             }
-            Event::ToolPanelItemCtrlSelected(item) => {
-                // Ctrl+点击：选择语义 + 打开该工具的「设置」（旧主工具栏
-                // 「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，现已整体迁到悬浮条）。
+            Event::ToolPanelItemSettingsRequested(item) => {
+                // 「已启用条目被再次点击」= 弹出该工具的设置面板。视图层只在条目已启用时
+                // 发本事件（见 `root/draw_toolbar.rs::tool_panel_item_press`），
+                // 因此这里仍先套用一次选择语义（幂等，且保证填充态不被 toggle 掉）。
                 self.apply_tool_panel_item(item);
                 match item {
                     ToolPanelItem::Brush => {
-                        // 画刷设置下拉（粗细度 / 绘制行为）
+                        // 画刷设置下拉（全局粗细只读显示 / 绘制行为入口）
                         self.brush_dropdown_open = true;
                         self.shape_dropdown_open = false;
                     }
@@ -390,27 +438,38 @@ impl Toolbar {
                         self.brush_dropdown_open = false;
                     }
                     ToolPanelItem::FillBucket => {
-                        // 颜料桶的设置 = 「分音符填充」对话框；确保填充开启后由 Root 侧弹窗
-                        // （`sync_toolbar_tool_state` 响应本事件触发 `open_fill_division_dialog`）。
+                        // 颜料桶的设置 = 「分音符填充」面板；`apply_tool_panel_item` 对颜料桶
+                        // 是 toggle 语义，可能把刚点亮的填充关掉，这里显式复位为"开启"。
+                        // 关闭填充走面板内的「关闭填充」按钮（`FillToggled(false)`）。
                         self.fill_enabled = true;
                     }
-                    // 曲线 / 文字无独立设置，Ctrl+点击等同普通选择
+                    // 曲线 / 文字无独立设置（视图层不会为本事件选中它们）
                     _ => {}
                 }
-                tracing::debug!("工具栏: 绘制工具条 Ctrl+选择 {:?}", item);
+                tracing::debug!("工具栏: 绘制工具条再次点击 → 打开设置 {:?}", item);
+            }
+            Event::OpenDrawSettingsDialog => {
+                // 工具栏自身无状态可改：本事件只是"请求打开独立对话框"的信道，
+                // 实际开窗由 `ToolbarHandler` 转 `window::Event::OpenDrawSettingsDialog` 交 Runner。
+                // 因此**不动** current_tool / fill_enabled，也不收任何窗口内浮层——
+                // 点设置不该顺手把当前绘制工具或已开的分音符填充面板弄没。
+                tracing::debug!("工具栏: 请求打开音符画设置对话框");
             }
         }
     }
 
     /// 应用「绘制工具条条目」的**普通选择语义**（切换工具 / 切换填充共存态）。
     ///
-    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与 `ToolPanelItemCtrlSelected`
-    /// （Ctrl+点击：选择 + 打开设置）复用，避免两处选择逻辑漂移。
+    /// 抽为独立方法，供 `ToolPanelItemSelected`（普通点击）与
+    /// `ToolPanelItemSettingsRequested`（已启用条目再次点击：选择 + 打开设置）复用，
+    /// 避免两处选择逻辑漂移。
     fn apply_tool_panel_item(&mut self, item: ToolPanelItem) {
         match item {
-            ToolPanelItem::StrokeSettings => {
-                // 描边设置：功能开发中（UI 占位）
-                tracing::info!("工具栏: 描边设置（功能开发中）");
+            ToolPanelItem::Mouse => {
+                // 鼠标工具（图形选中）：独立工具，不与填充桶共存；
+                // 仅用于点选已确认的绘制图形，不参与音符编辑。
+                self.current_tool = Tool::ShapeSelect;
+                self.fill_enabled = false;
             }
             ToolPanelItem::Curve => {
                 // 曲线工具：独立基础工具，选中后关闭填充共存态

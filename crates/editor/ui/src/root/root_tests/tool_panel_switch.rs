@@ -65,6 +65,13 @@ fn test_panel_curve_switches_to_curve() {
 }
 
 #[test]
+fn test_panel_mouse_switches_to_shape_select() {
+    let _guard = crate::test_helpers::event_queue_lock();
+    // 鼠标工具 = 图形选中工具（Tool::ShapeSelect），独立于音符编辑的 Pointer
+    select_and_assert(ToolPanelItem::Mouse, Tool::ShapeSelect, false);
+}
+
+#[test]
 fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
     let _guard = crate::test_helpers::event_queue_lock();
     // 填充桶现在随时可切换：从画刷点击仅开启填充，不强制切换到曲线
@@ -84,7 +91,9 @@ fn test_panel_fill_bucket_from_brush_toggles_fill_keeps_tool() {
     );
     assert!(root.editor.fill_enabled(), "填充桶应开启填充");
 
-    // 再点一次关闭填充
+    // 事件层的 toggle 语义（`apply_tool_panel_item`）仍可关闭填充。
+    // 注意：视图层对**已启用**的颜料桶发的是 `ToolPanelItemSettingsRequested`（弹面板），
+    // 故悬浮条上的关闭路径是面板内「关闭填充」按钮，而非再次点击条目本身。
     handler.handle(
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),
@@ -110,7 +119,7 @@ fn test_panel_fill_bucket_from_curve_toggles_fill() {
     assert_eq!(root.editor.current_tool(), Tool::Curve);
     assert!(root.editor.fill_enabled(), "曲线下首次点填充桶应开启填充");
 
-    // 再点一次应关闭填充（仍保持曲线）
+    // 事件层 toggle 语义仍可关闭填充（视图层关闭路径见上一测试的说明；仍保持曲线）
     handler.handle(
         &mut root,
         Message::Toolbar(Event::ToolPanelItemSelected(ToolPanelItem::FillBucket)),

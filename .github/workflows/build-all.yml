@@ -3,14 +3,6 @@ name: Multi-Platform Rust Build
 on:
   workflow_dispatch:
     inputs:
-      release_mode:
-        description: 'Build mode (release or debug)'
-        required: true
-        default: 'release'
-        type: choice
-        options:
-          - release
-          - debug
       version:
         description: 'Version (e.g., 0.1.0)'
         required: true
@@ -26,174 +18,125 @@ env:
   RUSTFLAGS: "--cap-lints warn"
 
 jobs:
-  build-linux:
-    name: Build Linux ${{ matrix.arch }}
+  # ==================== Linux x86_64 ====================
+  build-linux-x86_64:
+    name: Build Linux x86_64
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - target: x86_64-unknown-linux-gnu
-            arch: x86_64
-            extension: ""
-            linker: x86_64-linux-gnu-gcc
-            cross_packages: ""
-            deb_arch: amd64
-          - target: aarch64-unknown-linux-gnu
-            arch: aarch64
-            extension: ""
-            linker: aarch64-linux-gnu-gcc
-            cross_packages: gcc-aarch64-linux-gnu g++-aarch64-linux-gnu libc6-dev-arm64-cross
-            deb_arch: arm64
-          - target: armv7-unknown-linux-gnueabihf
-            arch: armv7
-            extension: ""
-            linker: arm-linux-gnueabihf-gcc
-            cross_packages: gcc-arm-linux-gnueabihf g++-arm-linux-gnueabihf libc6-dev-armhf-cross
-            deb_arch: armhf
-    env:
-      # 动态设置链接器
-      CARGO_TARGET_${{ matrix.target == 'aarch64-unknown-linux-gnu' && 'AARCH64_UNKNOWN_LINUX_GNU' || matrix.target == 'armv7-unknown-linux-gnueabihf' && 'ARMV7_UNKNOWN_LINUX_GNUEABIHF' || 'X86_64_UNKNOWN_LINUX_GNU' }}_LINKER: ${{ matrix.linker }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.target }}
+          targets: x86_64-unknown-linux-gnu
 
-      # 替换为 actions/cache 以支持降级复用
-      - name: Cache cargo & target
-        uses: actions/cache@v6.1.0
+      - name: Cache cargo registry & git
+        uses: actions/cache@v5.0.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
-          key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: ${{ runner.os }}-x86_64-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.target }}-cargo-
-            ${{ runner.os }}-cargo-
+            ${{ runner.os }}-x86_64-cargo-
 
-      - name: Install system dependencies (including cross-compile libs)
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          if [ "${{ matrix.arch }}" != "x86_64" ]; then
-            # 启用目标架构的多架构支持
-            sudo dpkg --add-architecture ${{ matrix.deb_arch }}
-            sudo apt-get update
-            # 安装目标架构的系统库（关键包含 fontconfig）
-            sudo apt-get install -y --no-install-recommends \
-              libasound2-dev:${{ matrix.deb_arch }} \
-              libfreetype6-dev:${{ matrix.deb_arch }} \
-              libfontconfig1-dev:${{ matrix.deb_arch }} \
-              libgtk-3-dev:${{ matrix.deb_arch }} \
-              libx11-dev:${{ matrix.deb_arch }} \
-              libxcb1-dev:${{ matrix.deb_arch }} \
-              libxcb-render0-dev:${{ matrix.deb_arch }} \
-              libxcb-shape0-dev:${{ matrix.deb_arch }} \
-              libxcb-xfixes0-dev:${{ matrix.deb_arch }} \
-              libwayland-dev:${{ matrix.deb_arch }} \
-              libxkbcommon-dev:${{ matrix.deb_arch }} \
-              libvulkan-dev:${{ matrix.deb_arch }} \
-              libssl-dev:${{ matrix.deb_arch }} \
-              libzstd-dev:${{ matrix.deb_arch }} \
-              libtiff-dev:${{ matrix.deb_arch }} \
-              libpng-dev:${{ matrix.deb_arch }} \
-              libjpeg-dev:${{ matrix.deb_arch }} \
-              libwebp-dev:${{ matrix.deb_arch }} \
-              libgif-dev:${{ matrix.deb_arch }} \
-              libpulse-dev:${{ matrix.deb_arch }} \
-              libdbus-1-dev:${{ matrix.deb_arch }} \
-              libxi-dev:${{ matrix.deb_arch }} \
-              libxtst-dev:${{ matrix.deb_arch }} \
-              libxrandr-dev:${{ matrix.deb_arch }} \
-              libxinerama-dev:${{ matrix.deb_arch }} \
-              libxcursor-dev:${{ matrix.deb_arch }} \
-              libxcomposite-dev:${{ matrix.deb_arch }} \
-              libxdamage-dev:${{ matrix.deb_arch }} \
-              libpq-dev:${{ matrix.deb_arch }} \
-              libsqlite3-dev:${{ matrix.deb_arch }}
-          else
-            # x86_64 主机库
-            sudo apt-get install -y --no-install-recommends \
-              build-essential \
-              cmake \
-              pkg-config \
-              nasm \
-              libclang-dev \
-              clang \
-              libasound2-dev \
-              libfreetype6-dev \
-              libfontconfig1-dev \
-              libgtk-3-dev \
-              libx11-dev \
-              libxcb1-dev \
-              libxcb-render0-dev \
-              libxcb-shape0-dev \
-              libxcb-xfixes0-dev \
-              libwayland-dev \
-              libxkbcommon-dev \
-              libvulkan-dev \
-              libssl-dev \
-              libzstd-dev \
-              libtiff-dev \
-              libpng-dev \
-              libjpeg-dev \
-              libwebp-dev \
-              libgif-dev \
-              libpulse-dev \
-              libdbus-1-dev \
-              libxi-dev \
-              libxtst-dev \
-              libxrandr-dev \
-              libxinerama-dev \
-              libxcursor-dev \
-              libxcomposite-dev \
-              libxdamage-dev \
-              libpq-dev \
-              libsqlite3-dev
-          fi
-          # 安装交叉编译工具链（对于 x86_64 cross_packages 为空）
-          sudo apt-get install -y --no-install-recommends ${{ matrix.cross_packages }}
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config nasm libclang-dev clang \
+            libasound2-dev libfreetype6-dev libfontconfig1-dev \
+            libgtk-3-dev libx11-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev \
+            libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev \
+            libtiff-dev libpng-dev libjpeg-dev libwebp-dev libgif-dev \
+            libpulse-dev libdbus-1-dev libxi-dev libxtst-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxcomposite-dev libxdamage-dev libpq-dev libsqlite3-dev
 
-      - name: Setup cross-compilation environment
-        if: matrix.arch != 'x86_64'
-        run: |
-          echo "PKG_CONFIG_ALLOW_CROSS=1" >> $GITHUB_ENV
-          # 添加目标架构的 pkgconfig 搜索路径
-          echo "PKG_CONFIG_PATH=/usr/lib/${{ matrix.deb_arch }}-linux-gnu/pkgconfig:/usr/share/pkgconfig" >> $GITHUB_ENV
-          # 可选：设置 sysroot（通常不需要）
-          # echo "PKG_CONFIG_SYSROOT_DIR=/" >> $GITHUB_ENV
-
-      - name: Build
-        run: |
-          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
-            cargo build --target ${{ matrix.target }} --release
-          else
-            cargo build --target ${{ matrix.target }}
-          fi
+      - name: Build (release)
+        run: cargo build --target x86_64-unknown-linux-gnu --release
 
       - name: Generate filename
         id: filename
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-${{ matrix.arch }}${{ matrix.extension }}"
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-x86_64"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Rename binary
         run: |
-          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
-          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+          mv "target/x86_64-unknown-linux-gnu/release/lumino-rs" \
+             "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v6.0.0
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}
           if-no-files-found: error
 
+  # ==================== Linux ARM64（GitHub 原生 ARM 运行器）====================
+  build-linux-arm64:
+    name: Build Linux arm64
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+
+      - name: Cache cargo registry & git
+        uses: actions/cache@v5.0.0
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-arm64-cargo-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-arm64-cargo-
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake pkg-config nasm libclang-dev clang \
+            libasound2-dev libfreetype6-dev libfontconfig1-dev \
+            libgtk-3-dev libx11-dev libxcb1-dev libxcb-render0-dev \
+            libxcb-shape0-dev libxcb-xfixes0-dev libwayland-dev \
+            libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev \
+            libtiff-dev libpng-dev libjpeg-dev libwebp-dev libgif-dev \
+            libpulse-dev libdbus-1-dev libxi-dev libxtst-dev \
+            libxrandr-dev libxinerama-dev libxcursor-dev \
+            libxcomposite-dev libxdamage-dev libpq-dev libsqlite3-dev
+
+      - name: Build (release)
+        run: cargo build --target aarch64-unknown-linux-gnu --release
+
+      - name: Generate filename
+        id: filename
+        run: |
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-Linux-arm64"
+          echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
+
+      - name: Rename binary
+        run: |
+          mv "target/aarch64-unknown-linux-gnu/release/lumino-rs" \
+             "${{ steps.filename.outputs.filename }}"
+
+      - uses: actions/upload-artifact@v6.0.0
+        with:
+          name: ${{ steps.filename.outputs.filename }}
+          path: ${{ steps.filename.outputs.filename }}
+          if-no-files-found: error
+
+  # ==================== Windows ====================
   build-windows:
     name: Build Windows ${{ matrix.arch }}
     runs-on: windows-latest
@@ -209,7 +152,7 @@ jobs:
             extension: .exe
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
@@ -218,32 +161,24 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 统一使用 actions/cache
-      - name: Cache cargo & target
-        uses: actions/cache@v6.1.0
+      - name: Cache cargo registry & git
+        uses: actions/cache@v5.0.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
-            ${{ runner.os }}-cargo-
 
       - name: Install LLVM (for bindgen)
         uses: KyleMayes/install-llvm-action@v2
         with:
           version: "17"
 
-      - name: Build
+      - name: Build (release)
         shell: pwsh
-        run: |
-          if ("${{ github.event.inputs.release_mode }}" -eq "release") {
-            cargo build --target ${{ matrix.target }} --release
-          } else {
-            cargo build --target ${{ matrix.target }}
-          }
+        run: cargo build --target ${{ matrix.target }} --release
 
       - name: Generate filename
         id: filename
@@ -255,15 +190,16 @@ jobs:
       - name: Rename binary
         shell: pwsh
         run: |
-          $BUILD_TYPE = if ("${{ github.event.inputs.release_mode }}" -eq "release") { "release" } else { "debug" }
-          Move-Item "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+          Move-Item "target/${{ matrix.target }}/release/lumino-rs${{ matrix.extension }}" \
+                    "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v6.0.0
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}
           if-no-files-found: error
 
+  # ==================== macOS ====================
   build-macos:
     name: Build macOS ${{ matrix.arch }}
     runs-on: macos-latest
@@ -279,7 +215,7 @@ jobs:
             extension: ""
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7.0.1
+        uses: actions/checkout@v5.0.0
         with:
           fetch-depth: 0
 
@@ -288,48 +224,70 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
-      # 统一使用 actions/cache
-      - name: Cache cargo & target
-        uses: actions/cache@v6.1.0
+      - name: Cache cargo registry & git
+        uses: actions/cache@v5.0.0
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
-            target
           key: ${{ runner.os }}-${{ matrix.target }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-${{ matrix.target }}-cargo-
-            ${{ runner.os }}-cargo-
 
       - name: Install dependencies
-        run: |
-          brew install cmake pkg-config nasm llvm
+        run: brew install cmake pkg-config nasm llvm
 
       - name: Set environment variables
-        run: |
-          echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
+        run: echo "$(brew --prefix llvm)/bin" >> $GITHUB_PATH
 
-      - name: Build
-        run: |
-          if [ "${{ github.event.inputs.release_mode }}" = "release" ]; then
-            cargo build --target ${{ matrix.target }} --release
-          else
-            cargo build --target ${{ matrix.target }}
-          fi
+      - name: Build (release)
+        run: cargo build --target ${{ matrix.target }} --release
 
       - name: Generate filename
         id: filename
         run: |
-          FILENAME="Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}${{ matrix.extension }}"
+          FILENAME="Lumino-v${{ github.event.inputs.version }}-macOS-${{ matrix.arch }}"
           echo "filename=${FILENAME}" >> $GITHUB_OUTPUT
 
       - name: Rename binary
         run: |
-          BUILD_TYPE="${{ github.event.inputs.release_mode == 'release' && 'release' || 'debug' }}"
-          mv "target/${{ matrix.target }}/${BUILD_TYPE}/lumino-rs${{ matrix.extension }}" "${{ steps.filename.outputs.filename }}"
+          mv "target/${{ matrix.target }}/release/lumino-rs" \
+             "${{ steps.filename.outputs.filename }}"
 
-      - uses: actions/upload-artifact@v7.0.1
+      - uses: actions/upload-artifact@v6.0.0
         with:
           name: ${{ steps.filename.outputs.filename }}
           path: ${{ steps.filename.outputs.filename }}
           if-no-files-found: error
+
+  # ==================== Release（需手动审批）====================
+  release:
+    name: Create Release
+    needs:
+      - build-linux-x86_64
+      - build-linux-arm64
+      - build-windows
+      - build-macos
+    runs-on: ubuntu-latest
+    environment: release          # ← 在仓库 Settings → Environments 中配置 required reviewers
+    permissions:
+      contents: write
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v6.0.0
+        with:
+          path: artifacts/
+
+      - name: List downloaded artifacts
+        run: find artifacts -type f -exec ls -la {} \;
+
+      - name: Create Release (draft)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ github.event.inputs.version }}
+          name: Release v${{ github.event.inputs.version }}
+          draft: true            # 创建为草稿，需人工在 Releases 页面手动 Publish
+          generate_release_notes: true
+          files: artifacts/**/*
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -53,6 +53,8 @@ pub enum DialogType {
     CloudNotice,
     /// 画刷「绘制行为」对话框（独立 OS 窗口）
     BrushSettings,
+    /// 「音符画设置」对话框（独立 OS 窗口：各绘制工具设置的聚合入口）
+    DrawSettings,
 }
 
 /// Root 组件的状态

@@ -110,12 +110,13 @@ pub enum Event {
     CloseToolPanel,
     /// 选择「音符绘制悬浮工具条」中的某个条目
     ToolPanelItemSelected(ToolPanelItem),
-    /// Ctrl+点击「音符绘制悬浮工具条」中的条目：选择该工具并打开其设置
+    /// 再次点击「音符绘制悬浮工具条」中**已启用**的条目：弹出该条目的设置面板
     ///
-    /// 等同于旧主工具栏入口按钮「Ctrl+点当前工具按钮 = 打开该工具设置」的语义，
-    /// 现已整体迁移到悬浮条：画刷→画刷设置下拉、形状→形状选择下拉、
-    /// 颜料桶→分音符填充对话框；其余条目无独立设置，退化为普通选择。
-    ToolPanelItemCtrlSelected(ToolPanelItem),
+    /// 触发条件（视图层 `root/draw_toolbar.rs::tool_panel_item_press` 保证）：
+    /// 条目已启用（工具已激活 / 填充已开启）时再次点击同一条目。
+    /// 画刷→画刷设置下拉、形状→形状选择下拉、颜料桶→分音符填充面板；
+    /// 其余条目无独立设置，退化为普通选择（视图层直接发 `ToolPanelItemSelected`）。
+    ToolPanelItemSettingsRequested(ToolPanelItem),
     /// 开始拖拽「音符绘制悬浮工具条」（面板本体按下）
     ToolPanelDragStarted,
     /// 拖拽「音符绘制悬浮工具条」中（携带相对全窗口覆盖层的绝对光标位置）
@@ -126,14 +127,38 @@ pub enum Event {
     ToggleBrushDropdown,
     /// 关闭「画刷工具下拉」
     CloseBrushDropdown,
-    /// 画刷粗细度变更（下拉 +/- 步进，1-20）
-    BrushThicknessChanged(u8),
     /// 切换「形状工具下拉」（ctrl+点击形状工具触发）：矩形/圆形/三角形选择
     ToggleShapeDropdown,
     /// 关闭「形状工具下拉」
     CloseShapeDropdown,
     /// 形状工具当前图形类型变更（矩形/圆形/三角形）
     ShapeTypeSelected(ShapeType),
+    /// 开合「粗细」悬浮面板（悬浮条**右端「粗细」按钮**触发；向上弹出）
+    ///
+    /// 与齿轮（[`Self::OpenDrawSettingsDialog`]）同属**右端设置区**，故同样
+    /// **不参与工具选择语义**：点它不得切走当前绘制工具、不得关掉颜料桶填充态。
+    /// 与齿轮的区别：它在**主窗口内**弹出锚定面板（本事件即开合），不涉及独立窗口。
+    ///
+    /// 开合语义（与主工具栏画刷附属按钮的 [`Self::ToggleBrushDropdown`] 同形）：
+    /// 再点一次收起。面板内容 = 全局粗细滑杆（1-100，步进 1，
+    /// 见 [`Self::DrawThicknessChanged`]）。
+    ToggleThicknessPanel,
+    /// 关闭「粗细」悬浮面板（点面板内空白 / 其它工具栏动作触发）
+    CloseThicknessPanel,
+    /// **全局绘制粗细**变更（粗细面板滑杆；1-100 个 key 层）
+    ///
+    /// 全局唯一值：曲线 / 形状的**描边**与画刷**笔画**共用它纵向铺层，
+    /// 画布上"正在画的线"的线宽 = 层数 × 单 key 高（随缩放）。
+    /// 值与工具状态无关，故本事件**只改粗细**，不动 `current_tool` / `fill_enabled`。
+    DrawThicknessChanged(u8),
+    /// 打开「音符画设置」对话框（悬浮条**右端齿轮按钮**触发）
+    ///
+    /// 该入口**不参与工具选择语义**，也不在主窗口内落任何浮层：它是独立 OS 窗口
+    /// （`DialogType::DrawSettings`）的请求，由 `ToolbarHandler` 转成窗口事件后交 Runner。
+    /// 因此它与画刷 / 形状下拉 / 分音符填充 / 粗细四块**窗口内**面板无所谓互斥——
+    /// 不同窗口不在同一块画布上争位置。齿轮按钮也**不带开合态**：
+    /// 独立窗口有自己的标题栏与关闭按钮，主窗按钮再维护一份"开/关"只会与真实窗口状态漂移。
+    OpenDrawSettingsDialog,
 }
 
 /// 形状工具当前绘制的图形类型
@@ -154,10 +179,16 @@ pub enum ShapeType {
 /// 绘制工具选择面板中的条目
 ///
 /// 点击后由 `Toolbar::update` 翻译为具体的工具选择/设置动作。
+///
+/// ⚠️ **只放"工具条目"**，不放设置入口：悬浮条右端的「粗细」
+/// （`Event::ToggleThicknessPanel`）与齿轮（`Event::OpenDrawSettingsDialog`）
+/// 各自带**专属事件**——一旦把它们塞进本枚举，就会趟上 `apply_tool_panel_item`
+/// 的"选择语义"（改 `current_tool` / 动 `fill_enabled`），需要处处写例外分支；
+/// 旧 `StrokeSettings` 变体正是这条弯路（自加入起就一直是个空分支 + 不可达）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ToolPanelItem {
-    /// 描边设置
-    StrokeSettings,
+    /// 鼠标工具（图形选中）：点选已确认的绘制图形，选中的图形高亮描边
+    Mouse,
     /// 曲线工具
     Curve,
     /// 填充桶

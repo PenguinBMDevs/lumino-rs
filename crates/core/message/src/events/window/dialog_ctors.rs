@@ -21,6 +21,14 @@ impl Event {
     pub fn open_brush_settings_dialog(config: lumino_core::BrushConfig) -> Self {
         Self::dialog(dialog::Event::OpenBrushSettingsDialog(config))
     }
+    /// 构造打开「音符画设置」对话框事件
+    pub fn open_draw_settings_dialog() -> Self {
+        Self::dialog(dialog::Event::OpenDrawSettingsDialog)
+    }
+    /// 构造关闭「音符画设置」对话框事件
+    pub fn close_draw_settings_dialog() -> Self {
+        Self::dialog(dialog::Event::CloseDrawSettingsDialog)
+    }
     /// 构造关闭自定义精度对话框事件
     pub fn close_custom_precision_dialog() -> Self {
         Self::dialog(dialog::Event::CloseCustomPrecisionDialog)

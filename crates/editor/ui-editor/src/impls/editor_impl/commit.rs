@@ -27,6 +27,7 @@ impl Editor {
             || self.pending_copy_drag_state.is_some()
             || self.editor_state.data.has_pending_commit()
             || self.editor_state.brush_tool.is_active()
+            || self.editor_state.shape_select.is_dragging()
             || self.editor_state.line_tool.interaction
                 != lumino_editor_state::LineToolInteraction::None
             || matches!(

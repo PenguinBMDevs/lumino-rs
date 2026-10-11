@@ -182,9 +182,19 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
                 if let Some(position) = cursor_over_bounds {
                     let local_pos = Point::new(position.x - bounds.x, position.y - bounds.y);
                     if self.editor.is_inside_canvas(local_pos) {
+                        // 鼠标工具下右键命中已绘制图形 → 「图形」目标菜单（目前仅删除）
+                        let target = if self.editor.current_tool()
+                            == lumino_message::Tool::ShapeSelect
+                            && self.editor.drawn_shape_at_screen(local_pos).is_some()
+                        {
+                            lumino_message::ContextMenuTarget::DrawnShape
+                        } else {
+                            lumino_message::ContextMenuTarget::Notes
+                        };
                         return Some(Action::publish(Message::PianoRollContextMenu(
                             lumino_message::PianoRollContextMenuAction::Open {
                                 position: lumino_message::Point2::new(local_pos.x, local_pos.y),
+                                target,
                             },
                         )));
                     }
@@ -373,6 +383,11 @@ impl Program<Message, Theme, Renderer> for VerticalRollGrid<'_> {
             geometries.push(geom);
         }
         if let Some(geom) = crate::grid::text_tool_box::draw(self.editor, renderer, theme, bounds) {
+            geometries.push(geom);
+        }
+        // 已绘制图形选中高亮（鼠标工具）：与工具无关，选中即绘制
+        if let Some(geom) = crate::grid::drawn_shape_box::draw(self.editor, renderer, theme, bounds)
+        {
             geometries.push(geom);
         }
 

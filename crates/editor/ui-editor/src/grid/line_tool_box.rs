@@ -2,7 +2,11 @@
 //!
 //! 支持多条路径同时存在（批量绘制）：
 //! - 锚点：实心圆（醒目标注，端点可拖动、中间锚点自由移动）；
-//! - 曲线段：3-4 像素粗三次贝塞尔（控制柄与锚点重合时退化为直线）；
+//! - 曲线段：**引导线**（固定 [`OUTLINE_GUIDE_WIDTH`] 像素，与粗细无关）+ **描边产物
+//!   预览**——后者直接画 √ 会生成的音符块（[`Editor::path_outline_blocks`]，与写入走
+//!   同一个 `stroke_band::outline_blocks`），所以"画出来多粗"就是"√ 后生成多高的音符带"。
+//!   此前这里用 `Stroke::width = 粗细 × 单 key 高` 的**居中**描边，而产物是**单侧向外**
+//!   铺 `N-1` 层——差值在竖直方向上最大到 2 倍（用户报的"宽度显示 X2"）；
 //! - 控制柄：方块 + 锚点间辅助线（首锚点 out、尾锚点 in、中间 in+out），
 //!   拖动控制柄弯曲曲线；
 //! - 实心填充：颜料桶点击封闭区域后，内部格点以半透明色块显示
@@ -12,15 +16,13 @@
 
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
-use crate::grid::utils::content_bounds;
+use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use crate::interaction::line_tool::fill::region::{FillRegion, fill_region};
 use iced_core::{Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_message::Tool;
 use lumino_ui_core::Renderer;
 
-/// 曲线段粗细（像素，用户要求 3-4 像素，取 4）
-const LINE_WIDTH: f32 = 4.0;
 /// 锚点半径（像素）
 const ANCHOR_RADIUS: f32 = 6.0;
 /// 锚点描边宽度（像素）
@@ -111,7 +113,8 @@ pub fn line_button_rects(editor: &Editor) -> Option<LineButtonRects> {
 
 /// 绘制全部路径（锚点 + 贝塞尔段 + 控制柄）+ 共享 √× 悬浮按钮
 ///
-/// 仅在曲线工具激活时绘制。
+/// 几何在**曲线工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
+/// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于曲线工具。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -122,7 +125,7 @@ pub fn draw(
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != Tool::Curve {
+    if !editor.pending_preview_visible(Tool::Curve) {
         return None;
     }
     let line = &editor.editor_state.line_tool;
@@ -139,7 +142,7 @@ pub fn draw(
     let white = iced_core::Color::WHITE;
 
     for (pi, path) in line.paths.iter().enumerate() {
-        // 曲线段（贝塞尔；控制柄与锚点重合时退化为直线）
+        // 曲线段（贝塞尔；控制柄与锚点重合时退化为直线）：固定宽度的**引导线**
         if path.len() >= 2 {
             for pair in path.windows(2) {
                 let (a, b) = (pair[0], pair[1]);
@@ -152,11 +155,20 @@ pub fn draw(
                     p.bezier_curve_to(p1, p2, pb);
                 });
                 let stroke = Stroke::default()
-                    .with_width(LINE_WIDTH)
+                    .with_width(OUTLINE_GUIDE_WIDTH)
                     .with_color(anchor_color);
                 frame.stroke(&curve, stroke);
                 has_content = true;
             }
+        }
+        // 描边产物预览 = √ 会生成的音符块（与写入 / 逐路径归属同源）
+        if fill_note_blocks(
+            &mut frame,
+            editor,
+            &editor.path_outline_blocks(path),
+            anchor_color,
+        ) {
+            has_content = true;
         }
 
         // 控制柄（辅助线 + 方块，常驻显示）
@@ -213,15 +225,7 @@ pub fn draw(
             let path = build_fill_path(editor, &region);
             frame.fill(&path, fill_color);
         } else {
-            for &(t0, t1, key) in &region.blocks {
-                let a = editor.line_pos_screen_pos((t0, key - 0.5));
-                let b = editor.line_pos_screen_pos((t1, key + 0.5));
-                let rect = Rectangle::new(
-                    Point::new(a.x.min(b.x), a.y.min(b.y)),
-                    Size::new((b.x - a.x).abs(), (b.y - a.y).abs()),
-                );
-                frame.fill_rectangle(rect.position(), rect.size(), fill_color);
-            }
+            fill_note_blocks(&mut frame, editor, &region.blocks, fill_color);
         }
         has_content = true;
     }

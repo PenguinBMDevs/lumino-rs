@@ -68,6 +68,7 @@ impl DialogWindow {
             DialogType::CloudBrowser => (720.0, 520.0, "云存储文件", true),
             DialogType::CloudNotice => (440.0, 200.0, "云存储提醒", false),
             DialogType::BrushSettings => (480.0, 600.0, "画刷绘制行为", false),
+            DialogType::DrawSettings => (460.0, 420.0, "音符画设置", false),
         };
 
         let mut attributes = WindowAttributes::default()

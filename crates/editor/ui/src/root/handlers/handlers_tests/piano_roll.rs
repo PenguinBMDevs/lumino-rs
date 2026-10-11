@@ -40,6 +40,7 @@ fn test_piano_roll_context_menu_open_close() {
     root.update(Message::PianoRollContextMenu(
         lumino_message::PianoRollContextMenuAction::Open {
             position: lumino_message::Point2::new(120.0, 80.0),
+            target: lumino_message::ContextMenuTarget::Notes,
         },
     ));
     assert!(root.editor.context_menu.open);
@@ -64,6 +65,7 @@ fn test_piano_roll_context_menu_item_click_closes_and_dispatches() {
     root.update(Message::PianoRollContextMenu(
         lumino_message::PianoRollContextMenuAction::Open {
             position: lumino_message::Point2::new(100.0, 100.0),
+            target: lumino_message::ContextMenuTarget::Notes,
         },
     ));
     assert!(root.editor.context_menu.open);
@@ -83,4 +85,31 @@ fn test_piano_roll_context_menu_item_click_closes_and_dispatches() {
     ));
     assert!(!root.editor.context_menu.open);
     assert_eq!(root.editor.editor_state.interaction.selected_notes.len(), 1);
+}
+
+/// 图形目标右键菜单：Open 记录目标（决定渲染条目集），删除项走 DeletePressed 链路
+#[test]
+fn test_piano_roll_context_menu_drawn_shape_target() {
+    let mut root = create_root();
+
+    root.update(Message::PianoRollContextMenu(
+        lumino_message::PianoRollContextMenuAction::Open {
+            position: lumino_message::Point2::new(60.0, 40.0),
+            target: lumino_message::ContextMenuTarget::DrawnShape,
+        },
+    ));
+    assert!(root.editor.context_menu.open);
+    assert_eq!(
+        root.editor.context_menu.target,
+        lumino_message::ContextMenuTarget::DrawnShape,
+        "图形目标应被记录（渲染层据此只显示「删除」）"
+    );
+
+    // 无命中图形时点删除：安全退化（不 panic、菜单关闭）
+    root.update(Message::PianoRollContextMenu(
+        lumino_message::PianoRollContextMenuAction::ItemClicked(
+            lumino_message::PianoRollContextMenuItem::DeleteDrawnShape,
+        ),
+    ));
+    assert!(!root.editor.context_menu.open, "点菜单项应关闭菜单");
 }

@@ -1,8 +1,15 @@
-//! 画刷工具下拉（ctrl+点击附属按钮触发）
+//! 画刷工具下拉（悬浮条「画刷」条目再次点击触发）
 //!
-//! 包含粗细度步进（1-20）与「绘制行为」入口（粗细度>1 时显示，齿轮按钮打开独立对话框）。
+//! 内容：**全局粗细的只读显示** + 「绘制行为」入口（该值 > 1 时显示，齿轮按钮打开
+//! 独立对话框，逐层分配音轨）。
 //!
-//! 布局规则：顶部为粗细度信息行，所有交互按钮（− / + / 绘制行为）统一沉到底部一行；
+//! ⚠️ **这里不再有「粗细度 −/+」步进按钮**：粗细已是**全局**值（曲线 / 形状的描边与
+//! 画刷笔画共用），唯一控制入口是悬浮条右端的「粗细」面板滑杆——同一份值摆两个控件
+//! （还是两个不同的量程：这里曾硬编码 20）正是"看起来能调、其实两处打架"的那类坑。
+//! 本下拉保留一个只读的当前值，是为了让用户在画刷语境里也能看到笔头多粗、并据此
+//! 决定要不要点开「绘制行为」。
+//!
+//! 布局规则：顶部为粗细信息行，交互按钮（绘制行为）统一沉到底部一行；
 //! 与「绘制工具选择面板」(`tool_panel.rs`) 同属曲线工具下拉，圆角对齐为 8。
 
 use iced_core::{Alignment, Background, Border, Color};
@@ -12,7 +19,6 @@ use lumino_ui_core::color::contrast_text_color;
 use crate::Element;
 use crate::message::{BrushSettingsAction, Message};
 use crate::resources::icon;
-use crate::toolbar::Event;
 use lumino_core::BrushConfig;
 use lumino_extras::i18n::{Language, main_translations};
 
@@ -23,42 +29,27 @@ pub(crate) fn render_brush_dropdown<'a>(
     panel_background: Color,
     theme: &'a iced_core::Theme,
 ) -> Element<'a> {
-    let _t = main_translations(language);
-    let _ = &_t;
+    let t = main_translations(language);
 
-    let thickness = brush.thickness;
-    let dec = if thickness > 1 {
-        thickness - 1
-    } else {
-        thickness
-    };
-    let inc = if thickness < BrushConfig::MAX_THICKNESS {
-        thickness + 1
-    } else {
-        thickness
-    };
+    // 全局粗细（只读展示；量程与「粗细」面板滑杆同源，见 `thickness_dropdown.rs`）
+    let thickness = brush
+        .thickness
+        .clamp(BrushConfig::MIN_THICKNESS, BrushConfig::MAX_THICKNESS);
 
-    // 顶部信息行：粗细度标题 + 当前值 / 上限
+    // 顶部信息行：标题 + 当前值 / 上限
     let info_row = row![
-        text("粗细度").size(14),
+        text(t.tool_thickness).size(14),
         space().width(8),
-        text(format!("{thickness} / {}", BrushConfig::MAX_THICKNESS)).size(14),
+        text(format!(
+            "{thickness} {} / {}",
+            t.draw_thickness_unit,
+            BrushConfig::MAX_THICKNESS
+        ))
+        .size(14),
     ];
 
-    // 底部按钮行：所有交互按钮统一沉到末尾（步进 + 绘制行为入口）
+    // 底部按钮行：绘制行为入口（逐层音轨分配）
     let mut buttons: Vec<Element<'a>> = Vec::new();
-    buttons.push(
-        button(text("-").size(16))
-            .on_press(Event::brush_thickness_changed(dec))
-            .padding([2, 10])
-            .into(),
-    );
-    buttons.push(
-        button(text("+").size(16))
-            .on_press(Event::brush_thickness_changed(inc))
-            .padding([2, 10])
-            .into(),
-    );
     if thickness > 1 {
         buttons.push(
             button(

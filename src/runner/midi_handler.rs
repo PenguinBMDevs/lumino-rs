@@ -80,6 +80,8 @@ impl MidiHandler {
         // 将 MidiDocument 所有权移交给编辑器（单一权威源，零拷贝）
         let t_setdoc = std::time::Instant::now();
         ui.set_midi_document(document);
+        // 新文档与旧文档的绘制图形无任何关系：清空图形注册表，避免旧描边残留
+        ui.clear_drawn_shapes();
         let t_setdoc = t_setdoc.elapsed();
 
         if !tempo_ui.is_empty() {

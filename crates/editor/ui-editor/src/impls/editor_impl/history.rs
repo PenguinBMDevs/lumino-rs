@@ -35,12 +35,15 @@ impl Editor {
         // 画刷待确认笔画的编辑历史优先（document 未变，只需重绘覆盖层）
         if self.editor_state.brush_tool.undo_path() {
             self.invalidate_caches(CacheInvalidation::GRID);
+            // 鼠标工具下待确认几何有镜像条目：撤销回退了几何，镜像必须同帧回灌
+            self.refresh_pending_mirror_geometry();
             tracing::info!("Editor: 撤销画刷笔画编辑");
             return true;
         }
         // 曲线工具路径编辑历史优先（最近的曲线操作）
         if self.editor_state.line_tool.undo_path() {
             self.grid_cache.clear();
+            self.refresh_pending_mirror_geometry();
             self.mark_notes_changed();
             tracing::info!("Editor: 撤销曲线路径编辑");
             return true;
@@ -65,7 +68,20 @@ impl Editor {
         } else {
             None
         };
+        // 本次将撤销的历史条目的分组 ID —— 撤销成功后让绘制图形对象跟随历史状态：
+        // 创建被撤销 → 图形隐藏；删除被撤销 → 图形恢复；移动被撤销 → 几何反向平移。
+        let undone_group = self
+            .editor_state
+            .data
+            .history
+            .undo_back()
+            .and_then(crate::interaction::drawn_shape::history_entry_group);
         if self.editor_state.data.undo() {
+            if let Some(group) = undone_group {
+                self.editor_state.shape_select.on_undo_group(group);
+            }
+            // 删除走 Snapshot 历史（分组在 redo 侧丢失）→ 按「音符是否还在」对账
+            self.reconcile_drawn_shapes();
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =
@@ -143,12 +159,15 @@ impl Editor {
         // 画刷待确认笔画编辑历史优先
         if self.editor_state.brush_tool.redo_path() {
             self.invalidate_caches(CacheInvalidation::GRID);
+            // 同 undo：鼠标工具下的镜像条目必须随待确认几何同步回灌
+            self.refresh_pending_mirror_geometry();
             tracing::info!("Editor: 重做画刷笔画编辑");
             return true;
         }
         // 曲线工具路径编辑历史优先
         if self.editor_state.line_tool.redo_path() {
             self.grid_cache.clear();
+            self.refresh_pending_mirror_geometry();
             self.mark_notes_changed();
             tracing::info!("Editor: 重做曲线路径编辑");
             return true;
@@ -175,7 +194,18 @@ impl Editor {
         } else {
             None
         };
+        // 本次将重做的历史条目的分组 ID —— 与 undo 的图形状态变更成对回放。
+        let redone_group = self
+            .editor_state
+            .data
+            .history
+            .redo_back()
+            .and_then(crate::interaction::drawn_shape::history_entry_group);
         if self.editor_state.data.redo() {
+            if let Some(group) = redone_group {
+                self.editor_state.shape_select.on_redo_group(group);
+            }
+            self.reconcile_drawn_shapes();
             if let Some(targets) = move_targets {
                 self.selection_clear();
                 let mut used: std::collections::HashSet<usize> =

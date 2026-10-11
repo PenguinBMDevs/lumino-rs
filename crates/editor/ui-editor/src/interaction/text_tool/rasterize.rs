@@ -1,5 +1,6 @@
 use ab_glyph::{Font, Point as AbPoint, PxScale, ScaleFont};
 use iced_core::Point;
+use lumino_editor_state::text_tool::TextToolState;
 
 use super::font::load_font;
 
@@ -11,6 +12,111 @@ const COVERAGE_THRESHOLD: f32 = 0.08;
 /// 点是否落在矩形内
 pub(super) fn point_in_rect(p: Point, r: iced_core::Rectangle) -> bool {
     p.x >= r.x && p.x <= r.x + r.width && p.y >= r.y && p.y <= r.y + r.height
+}
+
+/// 字形采样网格 —— **「列/行 → 逻辑轴」的唯一权威**
+///
+/// 「列」= 字形 advance 方向（文字从左到右），「行」= 字形高度方向（文字从上到下）。
+/// 卷帘方向决定这两轴挂到哪个逻辑轴上，**只有一种挂法能让文字在屏幕上正着读**：
+///
+/// | 方向 | 列（advance，屏幕向右） | 行（高度，屏幕向下） |
+/// |---|---|---|
+/// | 横向 | 时间 +snap（tick 递增） | 音高 −1（key 递减） |
+/// | 纵向 | 音高 +1（key 递增） | 时间 −snap（tick 递减） |
+///
+/// **纵向为什么必须这么挂**：纵向视图的屏幕轴是 `X = key`（key 越大越靠右）、
+/// `Y = tick`（tick 越大越靠上，见 `coords.rs`）。文字要正着读，其 advance 就必须沿
+/// 屏幕 X、其"向下"就必须沿屏幕 Y；若照搬横向的「列→tick、行→key」，把字形按原样铺到
+/// 屏幕上会得到一个**旋转 90° 且翻转**的图形（镜像），也就是"斜着/反着"读不了。
+/// 轴角色换了之后，预览位图**不需要任何转置**：位图 x 就是屏幕 X、位图 y 就是屏幕 Y。
+///
+/// 采样分辨率同样随方向互换：横向「列 = 时间格（框内 tick 跨度 / snap）、行 = 音高格
+/// （框内 key 跨度）」；纵向「列 = 音高格、行 = 时间格」——即把横向的两个格数对调。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct GlyphGrid {
+    /// 采样列数（advance 方向）
+    pub cols: usize,
+    /// 采样行数（高度方向）
+    pub rows: usize,
+    /// 是否纵向卷帘（决定列/行各自挂到哪个逻辑轴）
+    pub vertical: bool,
+    /// 行 0 所在侧的时间原点：横向 = 框左缘 tick（`tick_lo`）、纵向 = 框顶 tick（`tick_hi`）
+    pub tick_origin: f32,
+    /// 列 0 所在的音高原点：横向 = 行 0 的 key（`key_hi`）、纵向 = 框左缘 key（`key_lo`）
+    pub key_origin: u16,
+    /// 每个时间格的 tick 跨度（= 音符精度 snap）
+    pub tick_step: f32,
+}
+
+impl GlyphGrid {
+    /// 由文本框状态 + 卷帘方向构造（轴角色的**唯一**决定点）
+    pub fn from_state(tt: &TextToolState, snap: f32, vertical: bool) -> Self {
+        let snap = snap.max(1.0);
+        let (tick_lo, tick_hi) = tt.normalized_ticks();
+        let (key_lo, key_hi) = tt.normalized_keys();
+        // 框内的"时间格数 / 音高格数"（与 `TextToolState::cols/rows` 同源，不另立公式）
+        let time_cells = tt.cols(snap);
+        let pitch_cells = tt.rows();
+        if vertical {
+            // 纵向：advance(列) = 音高格、高度(行) = 时间格
+            Self {
+                cols: pitch_cells,
+                rows: time_cells,
+                vertical: true,
+                tick_origin: tick_hi,
+                key_origin: key_lo,
+                tick_step: snap,
+            }
+        } else {
+            // 横向：advance(列) = 时间格、高度(行) = 音高格
+            Self {
+                cols: time_cells,
+                rows: pitch_cells,
+                vertical: false,
+                tick_origin: tick_lo,
+                key_origin: key_hi,
+                tick_step: snap,
+            }
+        }
+    }
+
+    /// 时间格 `k`（横向 = 列号、纵向 = 行号）的起始 tick
+    ///
+    /// - 横向：`tick_lo + k·snap`（列 0 在框左缘）；
+    /// - 纵向：`tick_hi − (k+1)·snap`（行 0 占框**顶**那一格，避免整块字形飘出框外一格）。
+    pub fn tick_of_time_cell(&self, k: usize) -> f32 {
+        if self.vertical {
+            (self.tick_origin - (k as f32 + 1.0) * self.tick_step).max(0.0)
+        } else {
+            (self.tick_origin + k as f32 * self.tick_step).max(0.0)
+        }
+    }
+
+    /// 音高格 `k`（横向 = 行号、纵向 = 列号）的 key
+    ///
+    /// - 横向：`key_hi − k`（行 0 在屏幕上方 = 最高音）；
+    /// - 纵向：`key_lo + k`（列 0 在屏幕左方 = 最低音，advance 向右升高）。
+    pub fn key_of_pitch_cell(&self, k: usize) -> u16 {
+        if self.vertical {
+            (self.key_origin as usize + k).min(255) as u16
+        } else {
+            (self.key_origin as i32 - k as i32).clamp(0, 255) as u16
+        }
+    }
+
+    /// 采样格 `(row, col)` → 逻辑 `(tick, key)`
+    pub fn cell(&self, row: usize, col: usize) -> (f32, u16) {
+        // 纵向下"时间格"是行、"音高格"是列；横向相反
+        let (time_k, pitch_k) = if self.vertical {
+            (row, col)
+        } else {
+            (col, row)
+        };
+        (
+            self.tick_of_time_cell(time_k),
+            self.key_of_pitch_cell(pitch_k),
+        )
+    }
 }
 
 /// 将文字光栅化为灰度位图（行优先，**行 0 = 文字顶部**，底部对齐到框底）。
@@ -125,62 +231,88 @@ pub(crate) fn rasterize_text(
     Some(occ)
 }
 
-/// 纯函数：将占用网格转换为音符列表（不依赖字体 / 画布）。
+/// 纯函数：将占用网格按 [`GlyphGrid`] 的轴角色转换为音符列表（不依赖字体 / 画布）。
 ///
-/// `merged = false`（正常采样）：每个有墨水的 (col,row) 生成一个音符，长度 = snap；
-/// `merged = true`（key 范围合并）：每个 key 行内连续有墨水的列合并为一个音符，
-/// 任意空隙断开；音符长度 = 连续列数 × snap。
+/// `merged = false`（正常采样）：每个有墨水的采样格生成一个音符，长度 = snap；
+/// `merged = true`（key 范围合并）：**沿时间轴**把连续墨水合并为一个音符，
+/// 长度 = 该段的时间跨度（横向 = 同一 key 行内的连续列；纵向 = 同一 key 列内的连续行），
+/// 任意空隙断开，不合并本应分开的笔画。
 ///
-/// `key_top` 为文字顶部对应的 key（行 0 映射到 `key_top`，向下递减）。
-pub(crate) fn sample_to_notes(
-    occupancy: &[Vec<bool>],
-    tick_lo: f32,
-    key_top: i32,
+/// 合并方向恒为**时间轴**：若照搬"按行合并"到纵向，合并方向会变成音高轴，于是
+/// "音高跨度"会被当成"音符长度"写进文档（长度单位错乱），故合并方向必须由 `grid` 决定。
+pub(crate) fn sample_to_notes_grid(
+    occ: &[Vec<bool>],
+    grid: &GlyphGrid,
     snap: f32,
     merged: bool,
 ) -> Vec<(f32, u16, f32)> {
     let mut notes = Vec::new();
-    if merged {
-        for (r, row) in occupancy.iter().enumerate() {
-            let mut run_start: Option<usize> = None;
-            for (c, &cell) in row.iter().enumerate() {
-                match (run_start, cell) {
-                    (Some(_), true) => continue,
-                    (Some(start), false) => {
-                        let end = c.saturating_sub(1);
-                        if end >= start {
-                            let key = (key_top - r as i32).clamp(0, 255) as u16;
-                            let tick = tick_lo + start as f32 * snap;
-                            let len = (end - start + 1) as f32 * snap;
-                            notes.push((tick, key, len));
-                        }
-                        run_start = None;
-                    }
-                    (None, true) => run_start = Some(c),
-                    (None, false) => {}
-                }
-            }
-            // 行尾收尾：仍有一段未闭合的连续墨水
-            if let Some(start) = run_start {
-                let end = row.len().saturating_sub(1);
-                if end >= start {
-                    let key = (key_top - r as i32).clamp(0, 255) as u16;
-                    let tick = tick_lo + start as f32 * snap;
-                    let len = (end - start + 1) as f32 * snap;
-                    notes.push((tick, key, len));
-                }
-            }
-        }
-    } else {
-        for (r, row) in occupancy.iter().enumerate() {
-            for (c, &cell) in row.iter().enumerate() {
-                if cell {
-                    let key = (key_top - r as i32).clamp(0, 255) as u16;
-                    let tick = tick_lo + c as f32 * snap;
+    let rows = occ.len();
+    let cols = occ.first().map_or(0, Vec::len);
+    if rows == 0 || cols == 0 {
+        return notes;
+    }
+
+    // 正常采样：逐格生成，长度 = snap（与方向无关）
+    if !merged {
+        for (r, row) in occ.iter().enumerate() {
+            for (c, &on) in row.iter().enumerate() {
+                if on {
+                    let (tick, key) = grid.cell(r, c);
                     notes.push((tick, key, snap));
                 }
             }
         }
+        return notes;
+    }
+
+    // 合并采样：外层遍历**音高格**（横向 = 行、纵向 = 列），内层按**时间递增**遍历时间格。
+    // 纵向的时间格是行号且 tick 随行号递减，故时间递增 = 行号倒序。
+    let pitch_cells = if grid.vertical { cols } else { rows };
+    let time_cells = if grid.vertical { rows } else { cols };
+    for p in 0..pitch_cells {
+        let mut run_start: Option<usize> = None; // 扫描顺序中首个时间格
+        let mut run_last = 0usize;
+        for k in 0..time_cells {
+            let t = if grid.vertical { time_cells - 1 - k } else { k };
+            let on = if grid.vertical {
+                occ.get(t)
+                    .and_then(|row| row.get(p))
+                    .copied()
+                    .unwrap_or(false)
+            } else {
+                occ.get(p)
+                    .and_then(|row| row.get(t))
+                    .copied()
+                    .unwrap_or(false)
+            };
+            if on {
+                if run_start.is_none() {
+                    run_start = Some(t);
+                }
+                run_last = t;
+            } else if let Some(start) = run_start.take() {
+                push_time_run(&mut notes, grid, p, start, run_last, snap);
+            }
+        }
+        if let Some(start) = run_start {
+            push_time_run(&mut notes, grid, p, start, run_last, snap);
+        }
     }
     notes
+}
+
+/// 时间轴合并段 `[start, last]`（扫描顺序，`start` 为段内**最早**时间格）→ 一条音符
+fn push_time_run(
+    notes: &mut Vec<(f32, u16, f32)>,
+    grid: &GlyphGrid,
+    pitch_cell: usize,
+    start: usize,
+    last: usize,
+    snap: f32,
+) {
+    let len = (last.abs_diff(start) + 1) as f32 * snap;
+    let key = grid.key_of_pitch_cell(pitch_cell);
+    let tick = grid.tick_of_time_cell(start);
+    notes.push((tick, key, len));
 }

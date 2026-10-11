@@ -54,6 +54,7 @@ mod tests {
     mod batch_move_consistency;
     mod delete_sync_gate;
     mod drawing;
+    mod drawn_shape_marquee_e2e;
     mod flow;
     mod ghost;
     mod interaction;
@@ -208,6 +209,13 @@ pub struct Editor {
     /// `None` = 当前 `Selecting` 非按下路径建立（不量化，保持原始精确语义）。
     pub(crate) marquee_anchor_tick: Option<f32>,
 
+    /// 鼠标工具拖动「待确认产物镜像」时**已写回** owning tool 的累计偏移 `(dtick, dkey)`
+    ///
+    /// 待确认几何没有幽灵层（它本身就是待 √ 的产物），拖动即时落位；
+    /// `ShapeDrag` 存的是相对按下点的**累计**偏移，故每帧的写回增量 =
+    /// 累计偏移 − 本字段。松手 / 下一次按下归零（见 `sync_pending_drag_geometry`）。
+    pub(crate) pending_drag_applied: (f32, f32),
+
     /// 钢琴卷帘右键上下文菜单状态
     pub context_menu: context_menu::PianoRollContextMenuState,
 
@@ -256,10 +264,15 @@ pub struct Editor {
     /// 避免在提交热路径重新扫描选中集合。
     pub(crate) local_selection_fingerprints: Vec<(usize, f32, u16, f32)>,
 
-    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    /// 画刷工具配置（**全局绘制粗细** + 每层音轨分配）
+    ///
+    /// ⚠️ `thickness` 是**全局**值，不是画刷私有：曲线 / 形状的描边与画刷笔画共用它
+    /// （读 `Editor::draw_thickness`）。画布上"线条有多宽"不再由线宽参数表达，而是
+    /// **直接画 √ 会生成的音符块**（`Editor::shape_outline_blocks` /
+    /// `Editor::path_outline_blocks`，与写入同源）。见 `lumino_core::BrushConfig` 注释。
     ///
     /// 笔画几何与待确认状态在 `editor_state.brush_tool`（独立笔画历史），
-    /// 本字段只保留配置：改粗细度/层音轨后预览与生成立即按新配置解释。
+    /// 本字段只保留配置：改粗细后预览与生成立即按新配置解释。
     pub brush: lumino_core::BrushConfig,
 
     /// 待打开「分音符填充」对话框的请求标志（由画布 Ctrl+单击置位）

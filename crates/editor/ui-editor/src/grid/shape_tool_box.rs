@@ -5,14 +5,20 @@
 //!
 //! 形状以矢量绘制（与网格精度无关），填充桶开启时内部以半透明色块显示，
 //! √ 确认后成为实心音符（见 `interaction::shape_tool::confirm_shape_tool`）。
+//!
+//! **描边预览与产物同源**（用户报"宽度显示 X2"的修复）：`filled = false` 时预览画的
+//! 就是 √ 会生成的**音符块**（[`Editor::shape_outline_blocks`]，与写入走同一个
+//! `stroke_band::outline_blocks`）；矢量轮廓降级为固定宽度的**引导线**
+//! （[`OUTLINE_GUIDE_WIDTH`]，与粗细无关）。此前预览用 `Stroke::width = 粗细 × 单 key 高`
+//! 的居中描边——产物是**单侧向外**铺 `N-1` 层，竖直边在粗细 2 时预览比产物宽一倍。
 
 use crate::Editor;
 use crate::grid::confirm_buttons::{BUTTON_SIZE, CANCEL_ICON, CONFIRM_ICON, draw_button};
-use crate::grid::utils::content_bounds;
+use crate::grid::utils::{OUTLINE_GUIDE_WIDTH, content_bounds, fill_note_blocks};
 use iced_core::{Color, Point, Rectangle, Size};
 use iced_widget::canvas::{self, Geometry, Path, Stroke};
 use lumino_editor_state::ShapeKind;
-use lumino_editor_state::shape_tool::{effective_rect, shape_vertices};
+use lumino_editor_state::shape_tool::{ShapeSpec, effective_rect, shape_vertices};
 use lumino_ui_core::Renderer;
 
 /// 填充色块透明度（半透明叠加在网格上，√ 确认后成为实心音符）
@@ -30,12 +36,7 @@ pub struct ShapeButtonRects {
 }
 
 /// 单个图形在屏幕坐标下的包围盒 (min_x, max_x, min_y, max_y)
-fn shape_screen_aabb(
-    editor: &Editor,
-    kind: ShapeKind,
-    rect: (f32, f32, f32, f32),
-    shift: bool,
-) -> (f32, f32, f32, f32) {
+fn shape_screen_aabb(editor: &Editor, spec: ShapeSpec) -> (f32, f32, f32, f32) {
     let mut min_x = f32::INFINITY;
     let mut max_x = f32::NEG_INFINITY;
     let mut min_y = f32::INFINITY;
@@ -49,8 +50,8 @@ fn shape_screen_aabb(
     // 统一应用屏幕空间 Shift 正图形约束，使包围盒与生成音符一致
     let px_per_tick = editor.editor_state.view.zoom_x;
     let px_per_key = editor.editor_state.view.zoom_y;
-    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
-    match kind {
+    let rect = effective_rect(spec, px_per_tick, px_per_key);
+    match spec.kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
             let mx = (cx0 + cx1) / 2.0;
@@ -61,8 +62,7 @@ fn shape_screen_aabb(
             acc(editor.line_pos_screen_pos((mx, cy1)));
         }
         _ => {
-            let verts =
-                shape_vertices(kind, rect, false, px_per_tick, px_per_key).unwrap_or_default();
+            let verts = shape_vertices(spec, px_per_tick, px_per_key).unwrap_or_default();
             for (t, k) in verts {
                 acc(editor.line_pos_screen_pos((t, k)));
             }
@@ -87,7 +87,7 @@ pub fn shape_button_rects(editor: &Editor) -> Option<ShapeButtonRects> {
 
     let mut bounds: Option<(f32, f32, f32, f32)> = None;
     for shape in &shape_tool.shapes {
-        let b = shape_screen_aabb(editor, shape.kind, shape.rect, shape.shift_constrained);
+        let b = shape_screen_aabb(editor, shape.spec());
         bounds = Some(match bounds {
             None => b,
             Some((min_x, max_x, min_y, max_y)) => (
@@ -143,22 +143,28 @@ fn ellipse_path(center: Point, rx: f32, ry: f32) -> Path {
     })
 }
 
-/// 绘制单个矢量形状（轮廓 + 可选填充），在 `draw` 内联调用（避免泛型渲染器约束）
+/// 绘制单个矢量形状（引导轮廓 + 可选填充 + **描边产物预览**），在 `draw` 内联调用
+/// （避免泛型渲染器约束）
+///
+/// - **引导轮廓**：固定 [`OUTLINE_GUIDE_WIDTH`]、与粗细无关——只回答"图形边界在哪"；
+/// - **填充**：半透明色块（`filled` 时），与填充腿生成的格点同区域；
+/// - **描边产物预览**：`filled == false` 时直接画**会生成的音符块**
+///   （[`Editor::shape_outline_blocks`]，与 √ 写入同源）。此前这里是
+///   `Stroke::width = 全局粗细 × 单 key 高` 的**居中**描边：竖直边在粗细 2 时比产物
+///   宽一倍（产物单侧向外只铺 1 层），即用户报的"宽度显示 X2"缺陷。
 #[inline]
 fn draw_one_shape(
     frame: &mut canvas::Frame<Renderer>,
     editor: &Editor,
-    kind: ShapeKind,
-    rect: (f32, f32, f32, f32),
-    shift: bool,
+    spec: ShapeSpec,
     filled: bool,
     color: Color,
 ) {
     // 统一应用屏幕空间 Shift 正图形约束，使预览与生成音符一致
     let px_per_tick = editor.editor_state.view.zoom_x;
     let px_per_key = editor.editor_state.view.zoom_y;
-    let rect = effective_rect(kind, rect, shift, px_per_tick, px_per_key);
-    match kind {
+    let rect = effective_rect(spec, px_per_tick, px_per_key);
+    match spec.kind {
         ShapeKind::Circle => {
             let (cx0, cy0, cx1, cy1) = rect;
             let mx = (cx0 + cx1) / 2.0;
@@ -175,11 +181,13 @@ fn draw_one_shape(
                 let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
                 frame.fill(&path, fill);
             }
-            let stroke = Stroke::default().with_width(2.5).with_color(color);
+            let stroke = Stroke::default()
+                .with_width(OUTLINE_GUIDE_WIDTH)
+                .with_color(color);
             frame.stroke(&path, stroke);
         }
         _ => {
-            let verts = match shape_vertices(kind, rect, false, px_per_tick, px_per_key) {
+            let verts = match shape_vertices(spec, px_per_tick, px_per_key) {
                 Some(v) => v,
                 None => return,
             };
@@ -200,15 +208,25 @@ fn draw_one_shape(
                 let fill = Color::from_rgba(color.r, color.g, color.b, FILL_ALPHA);
                 frame.fill(&path, fill);
             }
-            let stroke = Stroke::default().with_width(2.5).with_color(color);
+            let stroke = Stroke::default()
+                .with_width(OUTLINE_GUIDE_WIDTH)
+                .with_color(color);
             frame.stroke(&path, stroke);
         }
     }
+    // 描边产物预览 = √ 会生成的音符块（填充图形由权威源返回空，不画描边预览）
+    fill_note_blocks(
+        frame,
+        editor,
+        &editor.shape_outline_blocks(spec, filled),
+        color,
+    );
 }
 
 /// 绘制全部待确认图形 + 实时拖拽预览 + 共享 √× 悬浮按钮
 ///
-/// 仅在形状工具激活且有内容（拖拽中或已有待确认图形）时绘制。
+/// 几何在**形状工具或鼠标工具（图形选中）**激活时绘制（后者让「画完切过去」的图案不消失，
+/// 见 `Editor::pending_preview_visible`）；√× 按钮仍只属于形状工具。
 pub fn draw(
     editor: &Editor,
     renderer: &Renderer,
@@ -219,7 +237,7 @@ pub fn draw(
     if editor.editor_state.data.current_track == 0 {
         return None;
     }
-    if editor.current_tool() != lumino_message::Tool::Shape {
+    if !editor.pending_preview_visible(lumino_message::Tool::Shape) {
         return None;
     }
     let shape_tool = &editor.editor_state.shape_tool;
@@ -233,21 +251,13 @@ pub fn draw(
 
     // 待确认图形（虚线感由填充/轮廓区分，这里统一实线轮廓）
     for shape in &shape_tool.shapes {
-        draw_one_shape(
-            &mut frame,
-            editor,
-            shape.kind,
-            shape.rect,
-            shape.shift_constrained,
-            shape.filled,
-            base_color,
-        );
+        draw_one_shape(&mut frame, editor, shape.spec(), shape.filled, base_color);
         has_content = true;
     }
 
     // 实时拖拽预览
-    if let Some((kind, rect, shift, filled)) = shape_tool.preview_rect(editor.shift_pressed()) {
-        draw_one_shape(&mut frame, editor, kind, rect, shift, filled, base_color);
+    if let Some((spec, filled)) = shape_tool.preview_rect(editor.shift_pressed()) {
+        draw_one_shape(&mut frame, editor, spec, filled, base_color);
         has_content = true;
     }
 

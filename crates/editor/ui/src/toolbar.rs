@@ -16,6 +16,7 @@ mod resize;
 pub(crate) mod shape_dropdown;
 #[cfg(test)]
 mod tests;
+pub(crate) mod thickness_dropdown;
 pub mod types;
 mod update;
 mod view;
@@ -109,13 +110,20 @@ pub struct Toolbar {
     /// 拖拽期间上一帧的绝对光标位置（相对全窗口覆盖层）；用于计算增量递推跟随，
     /// 使面板在光标离开面板/窗口范围时仍持续移动（首次 move 时为 None 仅记录）
     pub(crate) tool_panel_last_cursor: Option<(f32, f32)>,
-    /// 画刷工具下拉是否打开（ctrl+点击附属按钮触发）
+    /// 画刷工具下拉是否打开（悬浮条「画刷」条目再次点击触发）
     pub brush_dropdown_open: bool,
-    /// 画刷工具配置（粗细度 + 每层音轨分配）
+    /// **全局绘制粗细**（= 生成音符的纵向 key 层数，1-100）+ 画刷每层音轨分配。
+    ///
+    /// ⚠️ `thickness` 是**全局**值（曲线 / 形状的描边与画刷笔画共用），不是画刷私有；
+    /// 唯一控制入口是悬浮条右端的「粗细」面板滑杆（见
+    /// `toolbar/thickness_dropdown.rs`），画刷下拉只**展示**它、画刷「绘制行为」
+    /// 对话框只编辑 `tracks`（每层音轨）。详见 `lumino_core::BrushConfig` 的类型注释。
     pub brush: BrushConfig,
+    /// 「粗细」悬浮面板是否打开（悬浮条右端「粗细」按钮开合，向上弹出）
+    pub thickness_panel_open: bool,
     /// 颜料桶填充模式开关（仅曲线工具激活时可操作）
     pub fill_enabled: bool,
-    /// 形状工具下拉是否打开（ctrl+点击形状工具触发，隐藏菜单选择矩形/圆形/三角形）
+    /// 形状工具下拉是否打开（悬浮条「形状」条目再次点击触发，菜单选择矩形/圆形/三角形）
     pub shape_dropdown_open: bool,
     /// 形状工具当前图形类型（矩形/圆形/三角形），由形状工具下拉切换并持久保存
     pub current_shape: ShapeType,

@@ -93,7 +93,11 @@ pub(crate) fn row_spans(poly: &[(f32, f32)], q: f32) -> Vec<(f32, f32)> {
 }
 
 /// 区间合并：按起点排序，相接（含端点相等）或重叠的合成一个。
-fn merge_spans(spans: &[(f32, f32)]) -> Vec<(f32, f32)> {
+///
+/// `pub(crate)`：全局粗细的加粗带（`line_tool/stroke_band.rs`）要把**多段**折线
+/// 各自算出的行区间按行求并——同一套合并规则，不再写第二份（区间合并的边界口径
+/// 很容易写成"相接算不算相邻"两套）。
+pub(crate) fn merge_spans(spans: &[(f32, f32)]) -> Vec<(f32, f32)> {
     if spans.is_empty() {
         return Vec::new();
     }

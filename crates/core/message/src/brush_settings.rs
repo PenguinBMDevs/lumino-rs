@@ -17,8 +17,6 @@ pub enum BrushSettingsAction {
     Save,
     /// 取消
     Cancel,
-    /// 粗细度变更（1-20）
-    ThicknessChanged(u8),
     /// 设置某层音轨（level 0-based，None=默认自动分配）
     LevelTrackChanged(usize, Option<usize>),
     /// 在 level 之后插入新层

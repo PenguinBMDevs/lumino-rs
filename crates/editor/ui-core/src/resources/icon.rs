@@ -92,8 +92,11 @@ define_icons! {
     (DrawToolbox, "../../../../../resources/icons/toolbar/draw-toolbox.svg"),
     // 颜料桶右侧的「绘制工具选择面板」触发小三角
     (ToolPanelCaret, "../../../../../resources/icons/toolbar/caret-down.svg"),
+    // 悬浮条**右端「粗细」按钮**的图标：上下两条粗细不同的横线。
+    // 文件沿用它原本的名字 `stroke-settings.svg`（SVG 术语里 stroke-width 就是线宽/粗细）；
+    // 该图标此前从未被任何视图渲染过（旧「绘制工具下拉」的描边设置条目胎死腹中），本轮激活。
+    (Thickness, "../../../../../resources/icons/toolbar/stroke-settings.svg"),
     // 绘制工具选择面板条目图标
-    (StrokeSettings, "../../../../../resources/icons/toolbar/stroke-settings.svg"),
     (BrushTool, "../../../../../resources/icons/toolbar/brush-tool.svg"),
     (ShapeTool, "../../../../../resources/icons/toolbar/shape-tool.svg"),
     (TextInput, "../../../../../resources/icons/toolbar/text-input.svg"),
