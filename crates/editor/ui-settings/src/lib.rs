@@ -17,6 +17,7 @@ mod tests;
 use iced_core::{Border, Length};
 use iced_widget::{column, container, row, scrollable, text};
 
+use lumino_core::locale::LanguagePreference;
 use lumino_core::storage::config::{NoteCountDisplay, SynthBackend, TrackAddBehavior};
 use lumino_core::tr;
 use lumino_extras::i18n::Language;
@@ -123,8 +124,10 @@ pub struct DisplaySettings {
     pub note_count_display: NoteCountDisplay,
     /// 力度面板显示样式（true=曲线折线图，false=柱状图）
     pub velocity_curve_style: bool,
-    /// 界面语言
+    /// 界面语言（已解析的生效值）
     pub language: Language,
+    /// 界面语言偏好（跟随系统 / 固定语言；UI-018）
+    pub language_preference: LanguagePreference,
     /// 播放键盘颜色指示
     pub playback_key_colors_enabled: bool,
     /// 当前选中的调色板名称

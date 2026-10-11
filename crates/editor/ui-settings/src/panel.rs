@@ -90,6 +90,7 @@ impl SettingsPanel {
                 note_count_display: ui_config.note_count_display,
                 velocity_curve_style: ui_config.velocity_curve_style,
                 language: ui_config.language,
+                language_preference: ui_config.effective_language_preference(),
                 playback_key_colors_enabled: ui_config.playback_key_colors_enabled,
                 selected_palette,
                 available_palettes,
@@ -335,9 +336,13 @@ impl SettingsPanel {
                 // 实际扫描由 editor/ui 的 Root::scan_audio_outputs 执行并写回设置面板
                 tracing::debug!("设置: 收到音频播放输出设备扫描请求");
             }
-            Event::LanguageChanged(lang) => {
-                self.display.language = lang;
-                tracing::debug!("设置: 界面语言切换为 {:?}", lang);
+            Event::LanguagePreferenceChanged(preference) => {
+                // UI-018：偏好变更后立即解析出生效语言，界面本帧即切换；
+                // 「跟随系统」实时探测，避免用户以为没生效。
+                let language = preference.resolve();
+                self.display.language_preference = preference;
+                self.display.language = language;
+                tracing::debug!("设置: 界面语言偏好切换为 {preference:?}（生效语言 {language}）");
             }
             // 高精度洋葱皮贴图设置
             Event::HiresOnionEnabledChanged(v) => {

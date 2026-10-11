@@ -18,6 +18,8 @@ tracing = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 bincode = { workspace = true }
+# 系统显示语言检测（UI-018，见 src/locale.rs）
+sys-locale = { workspace = true }
 
 [dev-dependencies]
 bit-vec = { workspace = true }

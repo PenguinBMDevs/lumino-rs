@@ -14,6 +14,8 @@ struct ConfigDiff {
     lgs_changed: bool,
     winmm_changed: bool,
     audio_output_changed: bool,
+    /// 界面语言偏好或生效语言变更（UI-018：需落盘 + 重建 macOS 原生菜单）
+    language_changed: bool,
 }
 
 fn display_or_empty(s: &str) -> &str {
@@ -55,7 +57,13 @@ impl RunnerInner {
         // 音频播放输出设备（CPAL 音频设备）变化需要重建软件合成器（XSynth / LGS）的音频流
         let audio_output_changed =
             new.synth.selected_audio_output_device != old.audio_output_device;
-        let other_changed = new.display.language != old.language
+        // UI-018：偏好（跟随系统 / 固定语言）与生效语言任一变化，都要落盘并重建
+        // macOS 原生菜单。老配置的 `None` 偏好按 `Fixed(language)` 归一化后再比较，
+        // 否则「从老配置升上来」会被误判成偏好变更。
+        let language_changed = new.display.language_preference
+            != old.effective_language_preference()
+            || new.display.language != old.language;
+        let other_changed = language_changed
             || new.editing.selection_box_mode != old.selection_box_mode
             || new.midi.velocity_filter_threshold != old.velocity_filter_threshold
             || new.editing.eraser_behavior != old.eraser_behavior
@@ -101,6 +109,7 @@ impl RunnerInner {
                 lgs_changed,
                 winmm_changed,
                 audio_output_changed,
+                language_changed,
             })
         } else {
             None
@@ -140,6 +149,7 @@ impl RunnerInner {
                 lgs_changed: false,
                 winmm_changed: false,
                 audio_output_changed: false,
+                language_changed: false,
             },
         };
         if diff.synth_changed {
@@ -232,12 +242,29 @@ impl RunnerInner {
             // 不再重建窗口（重建成本高且主窗口会闪烁，iced 0.14 的 Renderer 默认字体不可热更），
             // 设置面板内有「字体修改将在重启程序后生效」的显式提示。
         }
+        if diff.language_changed {
+            tracing::info!(
+                "界面语言已改变: {} -> {}（偏好 {:?}）",
+                old.language,
+                new.display.language,
+                new.display.language_preference,
+            );
+            // macOS 原生菜单是 NSMenu（iced 不参与绘制），启动时静态构建、语言变更后
+            // 必须显式重建，否则菜单栏会停在旧语言（UI-018 缺陷 D-1）。
+            #[cfg(target_os = "macos")]
+            if let Err(e) = crate::platform::macos::init(new.display.language) {
+                tracing::error!("重建 macOS 原生菜单失败: {:?}", e);
+            }
+        }
         if current_theme != old.theme {
             tracing::info!("主题已改变: {} -> {}", old.theme, current_theme);
         }
         self.window_state.storage.config.patch(|config| {
             config.ui.theme.clone_from(&current_theme);
             config.ui.language = new.display.language;
+            // UI-018：把「跟随系统 / 固定语言」的**意图**落盘；不写的话下次启动
+            // 会退化成「老配置保留」，用户选的「跟随系统」形同虚设。
+            config.ui.language_preference = Some(new.display.language_preference);
             config.ui.preferred_backend = new.synth.backend;
             config.ui.audio_engine = new.synth.audio_engine;
             config.ui.soundfont_path = new.synth.soundfont_path.clone();
