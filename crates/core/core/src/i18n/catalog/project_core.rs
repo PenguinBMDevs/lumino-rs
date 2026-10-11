@@ -147,6 +147,9 @@ pub fn lookup(zh: &str) -> Option<&'static str> {
         "线性插值" => Some("Linear interpolation"),
         "CPU (兼容)" => Some("CPU (compatible)"),
         "GPU (加速)" => Some("GPU (accelerated)"),
+        // ── 状态栏渲染负载显示口径（`GpuLoadDisplay`，REND-017 合入）──
+        "3 秒平均" => Some("3s average"),
+        "瞬时" => Some("Instant"),
         _ => None,
     }
 }

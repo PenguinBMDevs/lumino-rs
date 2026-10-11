@@ -204,6 +204,8 @@ pub(crate) struct RunnerInner {
     pub(crate) pending_gpu_check_ui: Option<(bool, String)>,
     /// #127：播放输出创建失败后的自愈重试状态（启动即失败时立即武装）。
     pub(crate) midi_output_retry: MidiOutputRetry,
+    /// GPU 缓冲状态上次轮询时刻（250ms 节流，避免每帧取快照）。
+    pub(crate) gpu_stats_last_poll: std::time::Instant,
 }
 
 /// 被保存确认对话框挂起的关闭类动作
@@ -375,6 +377,7 @@ impl Runner {
             run_pending_after_save: false,
             pending_gpu_check_ui: None,
             midi_output_retry: MidiOutputRetry::default(),
+            gpu_stats_last_poll: std::time::Instant::now(),
         };
 
         // 为播放引擎创建输出连接（#127：启动失败转入自愈重试）

@@ -69,6 +69,12 @@ pub struct SynthSettings {
     pub lgs_soft_nps_gate: bool,
     /// LGS (GPU) 专属响度(力度)过滤阈值（0=关闭过滤，默认 1，与 XSynth 全局力度过滤相互独立）
     pub lgs_velocity_filter_threshold: u8,
+    /// 状态栏 GPU 缓冲状态指示器总开关（默认开）
+    pub gpu_buffer_status_enabled: bool,
+    /// 指示器 GOV/DROP 防爆治理指标段开关（默认开）
+    pub gpu_governor_metrics_enabled: bool,
+    /// 状态栏 LOAD 显示口径（默认 3 秒平均）
+    pub gpu_load_display: lumino_core::storage::config::GpuLoadDisplay,
     /// 音频播放输出设备（CPAL 音频设备）扫描结果列表（设备名）
     pub audio_output_devices: Vec<String>,
     /// 当前选中的音频播放输出设备（设备名；None = 系统默认输出设备）

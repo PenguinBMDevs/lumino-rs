@@ -3,12 +3,110 @@ pub mod performance;
 use iced_core::Length;
 use iced_core::widget::text::Wrapping;
 use iced_widget::{button, container, row, space, text};
+use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_extras::i18n::{Language, main_translations};
+use lumino_midi_io::GpuBufferStats;
 use lumino_ui_core::button_descs::ButtonId;
 
 use super::Element;
 use crate::Theme;
 use performance::PerfData;
+
+/// 状态栏 GPU 缓冲状态指示器的显示参数（由 Root 按用户设置构造）。
+#[derive(Debug, Clone, Copy)]
+pub struct GpuStatusFlags {
+    /// 总开关（关闭 = 整个 GPU 指标组隐藏）
+    pub enabled: bool,
+    /// 是否显示 GOV/DROP 治理指标段（防爆治理配套）
+    pub show_governor: bool,
+    /// LOAD 显示口径（瞬时 / 3 秒短窗平均）
+    pub load_mode: GpuLoadDisplay,
+}
+
+impl Default for GpuStatusFlags {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            show_governor: true,
+            load_mode: GpuLoadDisplay::default(),
+        }
+    }
+}
+
+/// 队列深度趋势（与上一次 4Hz 采样比较，±10ms 内视为持平）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub(crate) enum QueueTrend {
+    /// 上升（缓冲变深）
+    Up,
+    /// 下降（缓冲变浅，趋向欠载）
+    Down,
+    /// 持平
+    #[default]
+    Flat,
+}
+
+impl QueueTrend {
+    /// 箭头显示字符。
+    pub(crate) fn arrow(self) -> &'static str {
+        match self {
+            QueueTrend::Up => "↑",
+            QueueTrend::Down => "↓",
+            QueueTrend::Flat => "→",
+        }
+    }
+}
+
+/// 指标颜色档位。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MetricTone {
+    /// 常规（强调色）
+    Normal,
+    /// 警告（黄）
+    Warning,
+    /// 危险（红）
+    Danger,
+}
+
+/// 负载分级：<60% 常规；60–90% 警告；≥90% 危险（1.0 = 90% 实时预算上限）。
+pub(crate) fn load_tone(load: f64) -> MetricTone {
+    if load >= 0.9 {
+        MetricTone::Danger
+    } else if load >= 0.6 {
+        MetricTone::Warning
+    } else {
+        MetricTone::Normal
+    }
+}
+
+/// 欠载分级：0 = 常规；>0 = 危险（欠载即已静音丢音）。
+pub(crate) fn underrun_tone(underruns: u64) -> MetricTone {
+    if underruns == 0 {
+        MetricTone::Normal
+    } else {
+        MetricTone::Danger
+    }
+}
+
+/// 治理级别分级：0=常规 / 1=警告 / ≥2=危险（2=Overload / 3=Emergency）。
+pub(crate) fn governor_tone(level: u64) -> MetricTone {
+    match level {
+        0 => MetricTone::Normal,
+        1 => MetricTone::Warning,
+        _ => MetricTone::Danger,
+    }
+}
+
+/// 队列趋势：与上一采样比较（±10ms 内视为持平，抑制 4Hz 抖动）。
+pub(crate) fn queue_trend(prev_ms: f64, cur_ms: f64) -> QueueTrend {
+    const EPSILON_MS: f64 = 10.0;
+    if cur_ms > prev_ms + EPSILON_MS {
+        QueueTrend::Up
+    } else if cur_ms < prev_ms - EPSILON_MS {
+        QueueTrend::Down
+    } else {
+        QueueTrend::Flat
+    }
+}
 
 /// 状态栏显示的信息
 #[derive(Debug, Clone, Default)]
@@ -30,6 +128,10 @@ pub struct StatusBar {
     /// 由 `set_hover_label` 写入按钮角色标识：鼠标悬停时显示
     /// `按钮名 - {解释说明}`，离开时清空。
     hover_label: Option<ButtonId>,
+    /// GPU (LGS) 缓冲状态快照（None = 非 LGS/未就绪，指示器隐藏）
+    gpu_stats: Option<GpuBufferStats>,
+    /// 队列趋势（与上一次注入的快照比较）
+    queue_trend: QueueTrend,
 }
 
 impl StatusBar {
@@ -39,6 +141,8 @@ impl StatusBar {
             fps: None,
             perf_data: PerfData::default(),
             hover_label: None,
+            gpu_stats: None,
+            queue_trend: QueueTrend::Flat,
         }
     }
 
@@ -50,6 +154,21 @@ impl StatusBar {
     /// 设置性能监控数据
     pub fn set_perf_data(&mut self, data: PerfData) {
         self.perf_data = data;
+    }
+
+    /// 注入 GPU 缓冲状态快照；返回是否有可见变化（供调用方标脏重绘）。
+    ///
+    /// `None` 表示当前不是 LGS（或后端未就绪），指示器隐藏。
+    /// 队列趋势基于与上一次快照的比较更新（仅在两次都有快照时有意义）。
+    pub fn set_gpu_stats(&mut self, stats: Option<GpuBufferStats>) -> bool {
+        let new_trend = match (self.gpu_stats, stats) {
+            (Some(old), Some(new)) => queue_trend(old.queue_ms, new.queue_ms),
+            _ => QueueTrend::Flat,
+        };
+        let changed = self.gpu_stats != stats || self.queue_trend != new_trend;
+        self.gpu_stats = stats;
+        self.queue_trend = new_trend;
+        changed
     }
 
     /// 设置/清除悬停描述文字。
@@ -76,7 +195,12 @@ impl StatusBar {
         self.hover_label.is_none() && self.info.left_text.is_empty() && self.fps.is_some()
     }
 
-    pub fn view<'a>(&'a self, language: Language, note_count: Option<usize>) -> Element<'a> {
+    pub fn view<'a>(
+        &'a self,
+        language: Language,
+        note_count: Option<usize>,
+        gpu: GpuStatusFlags,
+    ) -> Element<'a> {
         let translations = main_translations(language);
 
         // 左侧描述区：优先显示悬停按钮的 `按钮名 - {解释说明}`，
@@ -143,16 +267,28 @@ impl StatusBar {
             iced_widget::Space::new().into()
         };
 
+        // GPU (LGS) 缓冲状态组——仅当设置开关开启且存在快照
+        // （LGS 后端）时显示；插在 CPU/MEM/FPS 组左侧。
+        let gpu_section: Option<Element<'a>> = if gpu.enabled {
+            self.gpu_stats
+                .map(|stats| build_gpu_section(stats, self.queue_trend, gpu))
+        } else {
+            None
+        };
+
+        let mut metrics_row = row![left_section, iced_widget::space().width(Length::Fill)];
+        if let Some(gpu_section) = gpu_section {
+            metrics_row = metrics_row.push(gpu_section);
+            metrics_row = metrics_row.push(iced_widget::space().width(12));
+        }
+        metrics_row = metrics_row.push(perf_section);
+        metrics_row = metrics_row.push(text(&self.info.right_text).size(12));
+
         container(
-            row![
-                left_section,
-                iced_widget::space().width(Length::Fill),
-                perf_section,
-                text(&self.info.right_text).size(12),
-            ]
-            .spacing(8)
-            .padding([0, 8])
-            .align_y(iced_core::Alignment::Center),
+            metrics_row
+                .spacing(8)
+                .padding([0, 8])
+                .align_y(iced_core::Alignment::Center),
         )
         .width(Length::Fill)
         .height(20)
@@ -162,6 +298,62 @@ impl StatusBar {
         })
         .into()
     }
+}
+
+/// 构建 GPU 指标组（Q 队列毫秒 + 趋势箭头 / LOAD / V / UR /
+/// 异常时附 GOV、DROP）。
+fn build_gpu_section<'a>(
+    stats: GpuBufferStats,
+    trend: QueueTrend,
+    flags: GpuStatusFlags,
+) -> Element<'a> {
+    let load = match flags.load_mode {
+        GpuLoadDisplay::ShortAverage => stats.average_render_load,
+        GpuLoadDisplay::Instant => stats.render_load,
+    };
+
+    // Q 毫秒整数：量程 0–600ms（容量按时间封顶），毫秒分辨率才能区分
+    // 「缓冲还稳」与「下一块就断」；数据源本身即块级/回调级粒度（个位数 ms）。
+    let queue_metric = format!("Q {:.0}ms{}", stats.queue_ms, trend.arrow());
+
+    let mut row = row![
+        metric_label("GPU"),
+        metric_value(queue_metric),
+        space().width(8),
+        metric_label("LOAD"),
+        metric_value_toned(format!("{:.0}%", load * 100.0), load_tone(load)),
+        space().width(8),
+        metric_label("V"),
+        metric_value(stats.voice_count.to_string()),
+        space().width(8),
+        metric_label("UR"),
+        metric_value_toned(stats.underruns.to_string(), underrun_tone(stats.underruns)),
+    ]
+    .spacing(6)
+    .align_y(iced_core::Alignment::Center);
+
+    // 防爆治理指标：仅在异常（级别 >0 或发生过丢弃）时出现，
+    // 且受「显示防爆治理指标」副开关控制。
+    if flags.show_governor {
+        if stats.governor_level > 0 {
+            row = row.push(space().width(8));
+            row = row.push(metric_label("GOV"));
+            row = row.push(metric_value_toned(
+                stats.governor_level.to_string(),
+                governor_tone(stats.governor_level),
+            ));
+        }
+        if stats.dropped_note_ons > 0 {
+            row = row.push(space().width(8));
+            row = row.push(metric_label("DROP"));
+            row = row.push(metric_value_toned(
+                stats.dropped_note_ons.to_string(),
+                MetricTone::Danger,
+            ));
+        }
+    }
+
+    row.into()
 }
 
 /// 指标标签（弱色小字，仿照 yinhe mode_bar 的 `metric` 标签）
@@ -186,6 +378,22 @@ fn metric_value<'a>(value: String) -> Element<'a> {
             text::Style {
                 color: Some(palette.primary.strong.color),
             }
+        })
+        .into()
+}
+
+/// 按颜色档位渲染的指标数值（常规=强调色 / 警告=黄 / 危险=红）。
+fn metric_value_toned<'a>(value: String, tone: MetricTone) -> Element<'a> {
+    text(value)
+        .size(12)
+        .style(move |theme: &Theme| {
+            let palette = theme.extended_palette();
+            let color = match tone {
+                MetricTone::Normal => palette.primary.strong.color,
+                MetricTone::Warning => palette.warning.base.color,
+                MetricTone::Danger => palette.danger.strong.color,
+            };
+            text::Style { color: Some(color) }
         })
         .into()
 }
@@ -215,7 +423,7 @@ fn metric_clickable_value<'a>(value: String, on_press: crate::Message) -> Elemen
 
 #[cfg(test)]
 mod tests {
-    use super::StatusBar;
+    use super::*;
 
     /// 状态消息：设置后显示，清除后恢复空（view 回退"就绪"）
     #[test]
@@ -228,5 +436,59 @@ mod tests {
 
         bar.set_status_message(None);
         assert!(bar.info.left_text.is_empty());
+    }
+
+    /// 负载颜色分级阈值（60% / 90%）。
+    #[test]
+    fn test_load_tone_thresholds() {
+        assert_eq!(load_tone(0.0), MetricTone::Normal);
+        assert_eq!(load_tone(0.59), MetricTone::Normal);
+        assert_eq!(load_tone(0.6), MetricTone::Warning);
+        assert_eq!(load_tone(0.89), MetricTone::Warning);
+        assert_eq!(load_tone(0.9), MetricTone::Danger);
+        assert_eq!(load_tone(2.5), MetricTone::Danger, ">100% 仍为危险档");
+    }
+
+    /// 欠载/治理级别分级。
+    #[test]
+    fn test_underrun_and_governor_tone() {
+        assert_eq!(underrun_tone(0), MetricTone::Normal);
+        assert_eq!(underrun_tone(3), MetricTone::Danger);
+        assert_eq!(governor_tone(0), MetricTone::Normal);
+        assert_eq!(governor_tone(1), MetricTone::Warning);
+        assert_eq!(governor_tone(2), MetricTone::Danger);
+        assert_eq!(governor_tone(3), MetricTone::Danger);
+    }
+
+    /// 队列趋势判定带 ±10ms 死区（抑制 4Hz 采样抖动）。
+    #[test]
+    fn test_queue_trend_epsilon() {
+        assert_eq!(queue_trend(100.0, 105.0), QueueTrend::Flat);
+        assert_eq!(queue_trend(100.0, 90.0), QueueTrend::Flat);
+        assert_eq!(queue_trend(100.0, 111.0), QueueTrend::Up);
+        assert_eq!(queue_trend(100.0, 89.0), QueueTrend::Down);
+        assert_eq!(queue_trend(0.0, 0.0), QueueTrend::Flat);
+    }
+
+    /// 快照注入的变更检测与趋势更新（相同快照不重复标脏）。
+    #[test]
+    fn test_set_gpu_stats_change_detection_and_trend() {
+        let mut bar = StatusBar::new();
+        let stats = GpuBufferStats {
+            queue_ms: 100.0,
+            ..GpuBufferStats::default()
+        };
+        assert!(bar.set_gpu_stats(Some(stats)), "首次注入应视为变化");
+        assert!(!bar.set_gpu_stats(Some(stats)), "相同快照不应重复标脏");
+
+        let deeper = GpuBufferStats {
+            queue_ms: 200.0,
+            ..stats
+        };
+        assert!(bar.set_gpu_stats(Some(deeper)), "队列变化应标脏");
+        assert_eq!(bar.queue_trend, QueueTrend::Up, "队列变深 → 上升箭头");
+
+        assert!(bar.set_gpu_stats(None), "清空（切非 LGS）应标脏");
+        assert!(bar.gpu_stats.is_none(), "快照应已被清空");
     }
 }

@@ -6,20 +6,20 @@
 
 | 口径 | 条数 |
 |---|---|
-| 含中文的字符串字面量（含测试） | 9460 |
-| 其中测试 / 基准 / 示例 | 5419 |
-| 生产代码 | 4041 |
-| **疑似用户可见文案（缺口主体）** | **275** |
+| 含中文的字符串字面量（含测试） | 9498 |
+| 其中测试 / 基准 / 示例 | 5445 |
+| 生产代码 | 4053 |
+| **疑似用户可见文案（缺口主体）** | **277** |
 | 涉及文件数（疑似文案） | 63 |
 
 ## 生产代码分类明细
 
 | 分类 | 条数 | 是否算 i18n 缺口 |
 |---|---:|---|
-| `i18n-table` | 1296 | — 表自身 |
-| `i18n-wrapped` | 1209 | ✅ 已覆盖（tr!/trf!） |
+| `i18n-table` | 1304 | — 表自身 |
+| `i18n-wrapped` | 1211 | ✅ 已覆盖（tr!/trf!） |
 | `log` | 1066 | ❌ 否（开发者日志） |
-| `ui` | 275 | ✅ 是 |
+| `ui` | 277 | ✅ 是 |
 | `assert/panic` | 136 | ❌ 否 |
 | `enum-parse` | 32 | ⚠️ 枚举解析错误串 |
 | `print` | 16 | ❌ 否 |
@@ -41,8 +41,8 @@
 | `crates/editor/dialog` | 9 |
 | `crates/audio/midiplayer` | 5 |
 | `crates/editor/ui-editor` | 5 |
+| `crates/editor/ui-settings` | 4 |
 | `crates/editor/editor-state` | 2 |
-| `crates/editor/ui-settings` | 2 |
 | `crates/audio/gpu-synth` | 1 |
 | `crates/core/diagnostics` | 1 |
 | `crates/network/cloud` | 1 |
@@ -76,6 +76,7 @@
 | `crates/editor/dialog/src/window/initialize.rs` | 4 |
 | `crates/editor/ui-core/src/sidebar_event/group.rs` | 4 |
 | `crates/editor/ui-core/src/sidebar_event/route.rs` | 4 |
+| `crates/editor/ui-settings/src/pages/audio/types.rs` | 4 |
 | `crates/editor/ui/src/right_sidebar/piano_waterfall/keyboard_renderer/shaders.rs` | 4 |
 | `crates/editor/ui/src/root/handlers/toolbar/tools/note_ops.rs` | 4 |
 | `src/runner/menu/window/video_export_handler/memory_task/task.rs` | 4 |
@@ -84,7 +85,6 @@
 | `crates/editor/editor-state/src/editor_state/editor_data/async_commit.rs` | 2 |
 | `crates/editor/ui-editor/src/edit_view.rs` | 2 |
 | `crates/editor/ui-editor/src/impls/editor_impl/history.rs` | 2 |
-| `crates/editor/ui-settings/src/pages/audio/types.rs` | 2 |
 | `crates/editor/ui/src/root/handlers/dialog/video_export/helpers.rs` | 2 |
 | `crates/editor/ui/src/root/handlers/toolbar/tools/note_group_ops.rs` | 2 |
 | `crates/editor/ui/src/view/video_export_dialog/data_curve_settings_style.rs` | 2 |
@@ -329,6 +329,8 @@
 
 - L34 | 内置合成器
 - L39 | 系统 MIDI
+- L106 | 3 秒平均
+- L108 | 瞬时
 
 ### `crates/editor/ui/src/host/dialog/state.rs`
 

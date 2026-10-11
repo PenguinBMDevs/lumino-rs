@@ -15,8 +15,15 @@ impl Root {
             NoteCountDisplay::StatusBar => Some(self.editor_note_count()),
             NoteCountDisplay::ProjectSettings => None,
         };
+        // GPU 指示器显示参数来自设置（总开关 / GOV 副开关 / LOAD 口径）；
+        // 快照数据本身由 Runner 每 250ms 经 Host 注入 StatusBar。
+        let gpu = crate::statusbar::GpuStatusFlags {
+            enabled: self.settings.synth.gpu_buffer_status_enabled,
+            show_governor: self.settings.synth.gpu_governor_metrics_enabled,
+            load_mode: self.settings.synth.gpu_load_display,
+        };
         self.statusbar
-            .view(self.settings.display.language, note_count)
+            .view(self.settings.display.language, note_count, gpu)
     }
 
     /// 当前工程音符总量（O(轨道数)；UI-015 状态栏显示用）

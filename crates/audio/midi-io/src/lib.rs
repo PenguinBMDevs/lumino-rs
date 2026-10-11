@@ -15,6 +15,8 @@ pub mod ui_sfx;
 mod profiling;
 
 pub use constants::*;
+/// LGS (GPU) 播放缓冲状态快照（转出 gpu-synth 类型，供 Runner/UI 使用）。
+pub use lumino_gpu_synth::audio::playback::GpuBufferStats;
 
 use thiserror::Error;
 
@@ -130,6 +132,14 @@ pub trait SynthControl: Api {
     /// 保持 16 通道折叠语义，见 C1 决策 a）。
     fn set_midi_port_layout(&mut self, _max_port: u8) -> Result<(), String> {
         Ok(())
+    }
+
+    /// GPU (LGS) 播放缓冲状态快照（默认 `None` = 后端无此能力）。
+    ///
+    /// 无锁 relaxed 原子读取，供 UI 低频（2–5Hz）展示队列/负载/声部/欠载；
+    /// 外部 MIDI 设备与未实现此能力的后端返回 `None`（UI 隐藏指示器）。
+    fn gpu_buffer_stats(&self) -> Option<GpuBufferStats> {
+        None
     }
 }
 

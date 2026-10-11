@@ -119,6 +119,18 @@ pub struct SettingsTranslations {
     pub lgs_buffer: &'static str,
     /// LGS (GPU) 缓冲区大小提示
     pub lgs_buffer_hint: &'static str,
+    /// 状态栏 GPU 缓冲状态指示器总开关
+    pub gpu_buffer_status: &'static str,
+    /// 状态栏 GPU 缓冲状态指示器提示
+    pub gpu_buffer_status_hint: &'static str,
+    /// GOV/DROP 防爆治理指标段
+    pub gpu_governor_metrics: &'static str,
+    /// GOV/DROP 防爆治理指标段提示
+    pub gpu_governor_metrics_hint: &'static str,
+    /// 状态栏 LOAD 显示口径
+    pub gpu_load_display: &'static str,
+    /// 状态栏 LOAD 显示口径提示
+    pub gpu_load_display_hint: &'static str,
     /// 音频播放输出设备标签
     pub audio_output_device: &'static str,
     /// 音频播放输出设备默认项（系统默认输出设备）

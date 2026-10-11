@@ -126,3 +126,24 @@ impl std::fmt::Display for AudioEngineKind {
         }
     }
 }
+
+/// 状态栏渲染负载(LOAD)的显示口径
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub enum GpuLoadDisplay {
+    /// 短窗平均：最近 3 秒（按块周期换算）滚动平均，数值稳定（默认）
+    #[default]
+    ShortAverage,
+    /// 瞬时：最近一块的 render_load，可抓单块尖峰，数值/颜色变化快
+    Instant,
+}
+
+impl std::fmt::Display for GpuLoadDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // 设置页下拉走 `LocalizedGpuLoadDisplay`（带 `Language` 参数）；这里同步取词，
+        // 保证同一个枚举的两条显示路径不会一条中文一条英文。
+        match self {
+            GpuLoadDisplay::ShortAverage => write!(f, "{}", tr!("3 秒平均")),
+            GpuLoadDisplay::Instant => write!(f, "{}", tr!("瞬时")),
+        }
+    }
+}
