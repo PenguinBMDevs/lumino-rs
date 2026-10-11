@@ -57,6 +57,14 @@ impl AudioPlayback {
         // 音频回调发现纪元变化后丢弃已渲染的旧音频（直接跳到最新内容）。
         let flush_epoch = Arc::new(AtomicU64::new(0));
 
+        // 队列样本计数（交错样本）的换算基准——重采样时队列块按
+        // 设备率计数，否则按引擎率计数；供 UI 把 samples 换算成时间。
+        let queue_rate = if needs_resample {
+            device_rate
+        } else {
+            engine_rate
+        };
+
         // Stats shared between the callback, the render thread and the caller.
         let stats = PlaybackStatsReader {
             samples: Arc::new(AtomicI64::new(0)),
@@ -65,6 +73,7 @@ impl AudioPlayback {
             render_time: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
             render_time_head: Arc::new(AtomicU64::new(0)),
             render_size: Arc::new(AtomicU64::new((block * channels) as u64)),
+            samples_per_second: u64::from(queue_rate) * channels as u64,
             voice_count: Arc::new(AtomicU64::new(0)),
             underruns: Arc::new(AtomicU64::new(0)),
             dropped_note_ons: Arc::new(AtomicU64::new(0)),

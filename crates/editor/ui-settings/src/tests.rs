@@ -169,3 +169,52 @@ fn test_menu_index_about_is_bound_to_menu_table() {
         "「关于」项必须唯一，否则 MENU_INDEX_ABOUT 的语义不明确"
     );
 }
+
+// ── GPU 缓冲状态指示器设置 ──
+
+/// 面板初始化镜像 UiConfig 三个指示器字段；默认（配置默认）为开/开/3 秒平均。
+#[test]
+fn test_gpu_status_panel_init_and_defaults() {
+    let panel = SettingsPanel::new(&UiConfig::default());
+    assert!(panel.synth.gpu_buffer_status_enabled, "总开关默认开");
+    assert!(
+        panel.synth.gpu_governor_metrics_enabled,
+        "GOV/DROP 段默认开"
+    );
+    assert_eq!(
+        panel.synth.gpu_load_display,
+        lumino_core::storage::config::GpuLoadDisplay::ShortAverage,
+        "LOAD 口径默认 3 秒平均"
+    );
+
+    // 配置显式关闭 / 瞬时 → 面板镜像
+    let config = UiConfig {
+        gpu_buffer_status_enabled: false,
+        gpu_governor_metrics_enabled: false,
+        gpu_load_display: lumino_core::storage::config::GpuLoadDisplay::Instant,
+        ..UiConfig::default()
+    };
+    let panel = SettingsPanel::new(&config);
+    assert!(!panel.synth.gpu_buffer_status_enabled);
+    assert!(!panel.synth.gpu_governor_metrics_enabled);
+    assert_eq!(
+        panel.synth.gpu_load_display,
+        lumino_core::storage::config::GpuLoadDisplay::Instant
+    );
+}
+
+/// 事件更新三个字段（开关随时可切换、口径可切换）。
+#[test]
+fn test_gpu_status_events_update_fields() {
+    use lumino_core::storage::config::GpuLoadDisplay;
+
+    let mut panel = SettingsPanel::new(&UiConfig::default());
+    panel.update(Event::GpuBufferStatusEnabledChanged(false));
+    assert!(!panel.synth.gpu_buffer_status_enabled);
+    panel.update(Event::GpuGovernorMetricsEnabledChanged(false));
+    assert!(!panel.synth.gpu_governor_metrics_enabled);
+    panel.update(Event::GpuLoadDisplayChanged(GpuLoadDisplay::Instant));
+    assert_eq!(panel.synth.gpu_load_display, GpuLoadDisplay::Instant);
+    panel.update(Event::GpuLoadDisplayChanged(GpuLoadDisplay::ShortAverage));
+    assert_eq!(panel.synth.gpu_load_display, GpuLoadDisplay::ShortAverage);
+}

@@ -75,6 +75,9 @@ impl RunnerInner {
             || new.editing.automation_line_thickness != old.automation_line_thickness
             || new.editing.tempo_max_bpm != old.tempo_max_bpm
             || new.logging.monitor_refresh_interval_ms != old.monitor_refresh_interval_ms
+            || new.synth.gpu_buffer_status_enabled != old.gpu_buffer_status_enabled
+            || new.synth.gpu_governor_metrics_enabled != old.gpu_governor_metrics_enabled
+            || new.synth.gpu_load_display != old.gpu_load_display
             || new.compat.check_on_startup != old.gpu_check_on_startup
             || new.compat.domino_clipboard_enabled != old.domino_clipboard_enabled
             || new.compat.warning_suppressed != old.gpu_warning_suppressed.unwrap_or(false);
@@ -254,6 +257,10 @@ impl RunnerInner {
             config.ui.lgs_global_voice_limit = new.synth.lgs_global_voice_limit;
             config.ui.lgs_soft_nps_gate = new.synth.lgs_soft_nps_gate;
             config.ui.lgs_velocity_filter_threshold = new.synth.lgs_velocity_filter_threshold;
+            // GPU 指示器为纯显示项——只持久化，不进 lgs_changed（不触发后端重建）
+            config.ui.gpu_buffer_status_enabled = new.synth.gpu_buffer_status_enabled;
+            config.ui.gpu_governor_metrics_enabled = new.synth.gpu_governor_metrics_enabled;
+            config.ui.gpu_load_display = new.synth.gpu_load_display;
             config.ui.velocity_filter_threshold = new.midi.velocity_filter_threshold;
             config.ui.eraser_behavior = new.editing.eraser_behavior;
             config.ui.auto_scroll.mode = self

@@ -7,8 +7,8 @@ mod enums;
 
 pub use autoscroll::{AutoScrollConfig, AutoScrollMode};
 pub use enums::{
-    AudioEngineKind, EraserBehavior, NoteCountDisplay, SelectionBoxMode, SynthBackend,
-    TrackAddBehavior,
+    AudioEngineKind, EraserBehavior, GpuLoadDisplay, NoteCountDisplay, SelectionBoxMode,
+    SynthBackend, TrackAddBehavior,
 };
 
 use defaults::*;
@@ -119,6 +119,15 @@ pub struct UiConfig {
     /// LGS (GPU) 专属响度(力度)过滤阈值：力度 <= 此值的音符不渲染（0=关闭过滤），与 XSynth 全局力度过滤相互独立
     #[serde(default = "default_lgs_velocity_filter_threshold")]
     pub lgs_velocity_filter_threshold: u8,
+    /// 状态栏 GPU 缓冲状态指示器总开关（默认开启）
+    #[serde(default = "default_true")]
+    pub gpu_buffer_status_enabled: bool,
+    /// 指示器中的 GOV/DROP 防爆治理指标段（默认开启；总开关关闭时整体隐藏）
+    #[serde(default = "default_true")]
+    pub gpu_governor_metrics_enabled: bool,
+    /// 状态栏 LOAD 显示口径（默认 3 秒短窗平均）
+    #[serde(default)]
+    pub gpu_load_display: GpuLoadDisplay,
     /// 是否启用 HiDPI 图标渲染（关闭时使用1x获得零性能开销，开启时使用2x获得视网膜清晰度）
     #[serde(default = "default_true")]
     pub icon_hidpi: bool,
@@ -242,6 +251,9 @@ impl Default for UiConfig {
             lgs_soft_nps_gate: true,
             lgs_use_sinc: false,
             lgs_velocity_filter_threshold: default_lgs_velocity_filter_threshold(),
+            gpu_buffer_status_enabled: true,
+            gpu_governor_metrics_enabled: true,
+            gpu_load_display: GpuLoadDisplay::default(),
             selection_box_mode: SelectionBoxMode::default(),
             eraser_behavior: EraserBehavior::default(),
             program_font_name: String::from("Microsoft YaHei"),
@@ -362,5 +374,53 @@ mod tests {
         let json = serde_json::to_string(&config).expect("UiConfig 应能序列化");
         let restored: UiConfig = serde_json::from_str(&json).expect("UiConfig 应能反序列化");
         assert!(restored.domino_clipboard_enabled);
+    }
+
+    /// 旧配置缺少 GPU 缓冲状态指示器字段时应回落默认
+    /// （总开关/GOV 段 = 开，LOAD 口径 = 3 秒平均），不得导致反序列化失败。
+    #[test]
+    fn test_legacy_config_without_gpu_status_defaults() {
+        let mut value =
+            serde_json::to_value(UiConfig::default()).expect("UiConfig 应能序列化为 JSON");
+        let obj = value
+            .as_object_mut()
+            .expect("UiConfig 序列化结果应为 JSON 对象");
+        for key in [
+            "gpu_buffer_status_enabled",
+            "gpu_governor_metrics_enabled",
+            "gpu_load_display",
+        ] {
+            assert!(
+                obj.remove(key).is_some(),
+                "默认配置应写出 {key} 键（以便本用例验证缺字段行为）"
+            );
+        }
+
+        let restored: UiConfig =
+            serde_json::from_value(value).expect("缺 GPU 指示器字段的旧配置应能反序列化");
+        assert!(restored.gpu_buffer_status_enabled, "缺字段应落为默认开启");
+        assert!(
+            restored.gpu_governor_metrics_enabled,
+            "缺字段应落为默认开启"
+        );
+        assert_eq!(
+            restored.gpu_load_display,
+            GpuLoadDisplay::ShortAverage,
+            "缺字段应落为 3 秒平均"
+        );
+    }
+
+    /// LOAD 口径可正确往返（瞬时模式持久化）。
+    #[test]
+    fn test_gpu_load_display_serde_roundtrip() {
+        let config = UiConfig {
+            gpu_load_display: GpuLoadDisplay::Instant,
+            gpu_buffer_status_enabled: false,
+            ..UiConfig::default()
+        };
+        let json = serde_json::to_string(&config).expect("UiConfig 应能序列化");
+        let restored: UiConfig = serde_json::from_str(&json).expect("UiConfig 应能反序列化");
+        assert_eq!(restored.gpu_load_display, GpuLoadDisplay::Instant);
+        assert!(!restored.gpu_buffer_status_enabled);
     }
 }

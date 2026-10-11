@@ -3,8 +3,11 @@
 //! 由 `pages/audio.rs` 原样拆分，函数体逻辑零变更。
 
 use iced_core::{Alignment, Length};
-use iced_widget::{column, row, text, text_input};
+use iced_widget::{column, pick_list, row, text, text_input};
+use lumino_core::storage::config::GpuLoadDisplay;
 use lumino_ui_core::{Message, Theme};
+
+use super::types::LocalizedGpuLoadDisplay;
 
 use super::super::super::components::constants::{
     SPACING_CONTENT, SPACING_ICON_LABEL, SPACING_MAIN, TEXT_SIZE_CONTENT,
@@ -169,6 +172,74 @@ pub(super) fn render_lgs_options<'a>(
             },)
             .step(1)
             .width(200.0),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // 状态栏 GPU 缓冲状态指示器总开关（默认开启）
+    col = col.push(
+        row![
+            iced_widget::Checkbox::new(settings.synth.gpu_buffer_status_enabled).on_toggle(|on| {
+                Message::Settings(crate::Event::GpuBufferStatusEnabledChanged(on))
+            }),
+            with_setting_tooltip_inline_action(
+                text(t.gpu_buffer_status)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.gpu_buffer_status_hint,
+                Message::Settings(crate::Event::GpuBufferStatusEnabledChanged(
+                    !settings.synth.gpu_buffer_status_enabled,
+                )),
+            ),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // GOV/DROP 防爆治理指标段（仅异常时出现）
+    col = col.push(
+        row![
+            iced_widget::Checkbox::new(settings.synth.gpu_governor_metrics_enabled).on_toggle(
+                |on| Message::Settings(crate::Event::GpuGovernorMetricsEnabledChanged(on))
+            ),
+            with_setting_tooltip_inline_action(
+                text(t.gpu_governor_metrics)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style()),
+                t.gpu_governor_metrics_hint,
+                Message::Settings(crate::Event::GpuGovernorMetricsEnabledChanged(
+                    !settings.synth.gpu_governor_metrics_enabled,
+                )),
+            ),
+        ]
+        .spacing(SPACING_ICON_LABEL)
+        .align_y(Alignment::Center),
+    );
+    col = col.push(iced_widget::space().height(20));
+
+    // LOAD 显示口径（瞬时 / 3 秒平均，默认 3 秒平均）
+    let load_mode_options = vec![
+        LocalizedGpuLoadDisplay::new(GpuLoadDisplay::ShortAverage, settings.display.language),
+        LocalizedGpuLoadDisplay::new(GpuLoadDisplay::Instant, settings.display.language),
+    ];
+    let current_load_mode =
+        LocalizedGpuLoadDisplay::new(settings.synth.gpu_load_display, settings.display.language);
+    col = col.push(
+        row![
+            with_setting_tooltip_inline(
+                text(t.gpu_load_display)
+                    .size(TEXT_SIZE_CONTENT)
+                    .style(create_content_text_style())
+                    .width(200.0),
+                t.gpu_load_display_hint,
+            ),
+            pick_list(load_mode_options, Some(current_load_mode), |m| {
+                Message::Settings(crate::Event::GpuLoadDisplayChanged(m.inner))
+            })
+            .width(160.0),
         ]
         .spacing(SPACING_ICON_LABEL)
         .align_y(Alignment::Center),

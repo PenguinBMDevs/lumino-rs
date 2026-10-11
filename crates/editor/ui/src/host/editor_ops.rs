@@ -165,6 +165,15 @@ impl Host {
         self.root.set_midi_api(api);
     }
 
+    /// 注入 LGS (GPU) 缓冲状态快照（`None` = 非 LGS/未就绪，隐藏指示器）。
+    ///
+    /// Runner 每 250ms 调用一次；值有变化时才标脏重绘（静息不空转）。
+    pub fn set_gpu_buffer_status(&mut self, stats: Option<lumino_midi_io::GpuBufferStats>) {
+        if self.root.statusbar.set_gpu_stats(stats) {
+            self.mark_dirty();
+        }
+    }
+
     /// 播放管理器是否已初始化
     pub fn has_playback_manager(&self) -> bool {
         self.root.playback.manager.is_some()

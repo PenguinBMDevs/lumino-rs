@@ -12,6 +12,7 @@ fn test_stats() -> PlaybackStatsReader {
         render_time: Arc::new(std::array::from_fn(|_| AtomicU64::new(0))),
         render_time_head: Arc::new(AtomicU64::new(0)),
         render_size: Arc::new(AtomicU64::new(0)),
+        samples_per_second: 96_000,
         voice_count: Arc::new(AtomicU64::new(0)),
         underruns: Arc::new(AtomicU64::new(0)),
         dropped_note_ons: Arc::new(AtomicU64::new(0)),

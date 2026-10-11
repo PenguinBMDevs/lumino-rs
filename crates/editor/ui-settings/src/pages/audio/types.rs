@@ -2,7 +2,7 @@
 //!
 //! 由 `pages/audio.rs` 原样拆分，仅调整可见性，逻辑零变更。
 
-use lumino_core::storage::config::SynthBackend;
+use lumino_core::storage::config::{GpuLoadDisplay, SynthBackend};
 use lumino_extras::i18n::Language;
 use lumino_ui_core::settings_event::OutputType;
 
@@ -76,5 +76,38 @@ impl LocalizedBuiltinEngine {
             _ => "Unknown",
         };
         Self { inner: b, name }
+    }
+}
+
+/// 本地化 GPU 负载显示口径（瞬时 / 3 秒平均）
+#[derive(Debug, Clone, Copy)]
+pub(super) struct LocalizedGpuLoadDisplay {
+    pub(super) inner: GpuLoadDisplay,
+    name: &'static str,
+}
+
+impl PartialEq for LocalizedGpuLoadDisplay {
+    fn eq(&self, other: &Self) -> bool {
+        self.inner == other.inner
+    }
+}
+
+impl Eq for LocalizedGpuLoadDisplay {}
+
+impl std::fmt::Display for LocalizedGpuLoadDisplay {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl LocalizedGpuLoadDisplay {
+    pub(super) fn new(mode: GpuLoadDisplay, lang: Language) -> Self {
+        let name = match (mode, lang) {
+            (GpuLoadDisplay::ShortAverage, Language::ZhCn) => "3 秒平均",
+            (GpuLoadDisplay::ShortAverage, Language::EnUs) => "3s average",
+            (GpuLoadDisplay::Instant, Language::ZhCn) => "瞬时",
+            (GpuLoadDisplay::Instant, Language::EnUs) => "Instant",
+        };
+        Self { inner: mode, name }
     }
 }

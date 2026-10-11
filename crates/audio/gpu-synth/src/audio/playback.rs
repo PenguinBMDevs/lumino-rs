@@ -74,6 +74,9 @@ pub struct PlaybackStatsReader {
     render_time: Arc<[AtomicU64; STATS_RING]>,
     render_time_head: Arc<AtomicU64>,
     render_size: Arc<AtomicU64>,
+    /// 队列样本计数的换算基准（交错样本/秒 = 计数速率 × 声道数；
+    /// 重采样时按设备率计数）。供 UI 把 `samples` 换算成时间（秒）。
+    samples_per_second: u64,
     voice_count: Arc<AtomicU64>,
     underruns: Arc<AtomicU64>,
     /// REND-016 #139：因积压过期被丢弃的 NoteOn 数（正常素材应恒为 0）。
@@ -83,7 +86,35 @@ pub struct PlaybackStatsReader {
 }
 
 /// Number of recent render-load samples kept for the moving average.
-const STATS_RING: usize = 128;
+///
+/// 由 128 扩容到 1024——状态栏「短窗平均」按 3 秒换算样本数
+/// （默认 512@64k → 375 样本；256@64k → 750），128 环只能覆盖约 1 秒。
+/// 1024 环 = 8KB/实例，对单一 AudioPlayback 可忽略。
+const STATS_RING: usize = 1024;
+
+/// LGS 播放/渲染缓冲状态快照（无锁原子读取，供 UI 低频展示）。
+///
+/// 所有字段取自 [`PlaybackStatsReader`] 的一次 best-effort 采样；
+/// 该结构只做展示，不参与任何控制决策。
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct GpuBufferStats {
+    /// 队列中已渲染未消费的样本数（交错样本；可为负 = 渲染落后于消费）
+    pub queue_samples: i64,
+    /// 队列深度（毫秒；按 `samples_per_second` 换算，负值钳到 0）
+    pub queue_ms: f64,
+    /// 最近一块的渲染负载（0..≈1+；>1 表示该块超出了 90% 实时预算）
+    pub render_load: f64,
+    /// 短窗平均渲染负载（最近 k 块，k 由调用方按秒数换算；抑制块级抖动）
+    pub average_render_load: f64,
+    /// 活跃声部数
+    pub voice_count: u64,
+    /// 累计欠载次数（音频回调取不到样本写静音的次数；健康状态恒为 0 增长）
+    pub underruns: u64,
+    /// 当前防爆治理级别（0=Normal / 1=High / 2=Overload / 3=Emergency）
+    pub governor_level: u64,
+    /// 累计被丢弃的过期 NoteOn 数（正常素材应恒为 0）
+    pub dropped_note_ons: u64,
+}
 
 /// 实时播放控制命令（REND-002 实时多端口）：不重开音频流的轻量操作。
 #[derive(Debug, Clone, Copy)]
